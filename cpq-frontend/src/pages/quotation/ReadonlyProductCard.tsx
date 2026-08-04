@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { ComponentDataItem, ComponentField } from './QuotationStep2';
-import { computeAllFormulas, computeProductSubtotal, buildSnapshotExpansions, buildCrossTabRows, EMPTY_LINEITEMS } from './QuotationStep2';
+import {
+  computeAllFormulas, computeProductSubtotal, buildSnapshotExpansions, buildCrossTabRows, EMPTY_LINEITEMS,
+  computeTabFormulasTree, usesTreeTokensTab, type TreeFormulaRowInput,
+} from './QuotationStep2';
 import { enrichComponentData, buildComponentDataFromStructure } from './enrichComponentData';
 import { useDriverExpansions, driverExpansionKey, fieldsOverrideHash, bnfDriverLookupKey } from './useDriverExpansions';
 import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
@@ -103,7 +106,7 @@ function buildFormulaCache(
   // 2026-05-31 修复（小计合计/产品小计 ¥∞）：必须按行喂 driver 展开的 basicDataValues，
   // 否则 BASIC_DATA 分母字段（如 成材率）取不到值 → ?? 0 → 工序单价=单价÷0=Infinity →
   // 子小计求和 = ∞。与渲染层 preComputedCaches 同款（按 driver 行数 + 行级 bdv）。
-  driverExpansion?: { rowCount: number; rows: Array<{ basicDataValues?: Record<string, any> }> },
+  driverExpansion?: { rowCount: number; rows: Array<{ basicDataValues?: Record<string, any>; __sys?: { nodeId?: string; parentId?: string | null; lvl?: number } }> },
   // cross_tab_ref 三视图对齐 (Task 4.3): PASS1 小计循环不传（undefined），
   // 仅渲染层 PASS2 才传 crossTabRows，镜像后端两阶段。
   crossTabRows?: Record<string, Array<Record<string, any>>>,
@@ -112,11 +115,39 @@ function buildFormulaCache(
   // AP-51 行数纪律：driver 权威优先，仅 rowCount=0 时退回持久化行数。
   const effectiveCount = useDriver ? driverExpansion!.rowCount : rows.length;
   const caches: Array<{ formulaCache: Record<string, number | null>; fieldValues: Record<string, number> }> = [];
+
+  // task-0803 Task 7：BOM 树页签分流（AP-50：与编辑页 QuotationStep2 共用 computeTabFormulasTree 入口，
+  // 不各写一份）。previous_row_subtotal 链在 BOM 页签禁用（§4.3.7），命中即整页签批量算一次。
+  const hasBomSysRows = useDriver && !!driverExpansion!.rows.some((r) => r?.__sys?.nodeId !== undefined);
+  const useTree = hasBomSysRows && usesTreeTokensTab(comp);
+  let treeResults: Record<number, Record<string, number | null>> | undefined;
+  let treeFieldValuesByRow: Array<Record<string, number>> | undefined;
+  if (useTree) {
+    const treeRowInputs: TreeFormulaRowInput[] = [];
+    for (let ri = 0; ri < effectiveCount; ri++) {
+      const row = rows[ri] ?? {};
+      const expRow = driverExpansion!.rows[ri];
+      const sys = expRow?.__sys;
+      treeRowInputs.push({
+        row, basicDataValues: expRow?.basicDataValues,
+        nodeId: sys?.nodeId, parentId: sys?.parentId, lvl: sys?.lvl,
+      });
+    }
+    treeFieldValuesByRow = [];
+    treeResults = computeTabFormulasTree(
+      comp, treeRowInputs, compSubtotals, undefined, undefined, partNo, globalVariableDefs, crossTabRows,
+      { fieldValuesByRow: treeFieldValuesByRow });
+  }
+
   // Plan 2b：上一行全量公式值，previous_row_subtotal 按本列取。
   let prevRowValues: Record<string, number | null> | undefined = undefined;
   for (let ri = 0; ri < effectiveCount; ri++) {
     const row = rows[ri] ?? {};
     const bdv = useDriver ? driverExpansion!.rows[ri]?.basicDataValues : undefined;
+    if (treeResults) {
+      caches.push({ formulaCache: treeResults[ri] ?? {}, fieldValues: treeFieldValuesByRow?.[ri] ?? {} });
+      continue;
+    }
     // AP-50 修复：传入 out.fieldValues 让 computeAllFormulas 回填所有字段（含输入型），
     // 用于列小计累加时对输入型小计列回退取值（与 computeTabSubtotalsByColumn 同口径）。
     const fv: Record<string, number> = {};
@@ -132,8 +163,10 @@ function buildFormulaCache(
   return caches;
 }
 
+// task-0801（AP-50：详情页须与编辑页 QuotationStep2.formatCurrency 同口径）：不再固定 2 位
+// toLocaleString，改走 formatNumber（DISPLAY_SCALE=6 兜底去尾零）。
 const formatCurrency = (val: number) =>
-  `¥ ${(val || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  `¥ ${formatNumber(val || 0, { isComputed: true }) ?? '0'}`;
 
 /** 单元格值格式化 — V197 同 QuotationStep2.formatPathValue 同款逻辑, 支持 JSONB 包装对象 */
 const formatCellValue = (v: any): string => {
@@ -589,6 +622,25 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                     // 数值已静默归 0; 详情页同样显示 ⚠ 而非误导的 0。
                     const preComputedErrors: Array<Record<string, string>> = [];
                     {
+                      // task-0803 Task 7：BOM 树页签分流。AP-50：与编辑页 QuotationStep2 共用同一个
+                      // computeTabFormulasTree 入口（不各写一份）；命中 snapFormula(快照真零计算)仍优先。
+                      const useTreeActive = activeComponentBomTree && usesTreeTokensTab(activeComp);
+                      const treeResultsActive = useTreeActive
+                        ? computeTabFormulasTree(
+                            activeComp,
+                            Array.from({ length: effectiveCount }, (_, ri) => {
+                              const ra = rowAt(ri, activeComp, s);
+                              const sys = ra.expIndex >= 0 ? (activeDriverExpansion!.rows[ra.expIndex] as any)?.__sys : undefined;
+                              return {
+                                row: ra.row,
+                                basicDataValues: ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined,
+                                nodeId: sys?.nodeId, parentId: sys?.parentId, lvl: sys?.lvl,
+                              };
+                            }),
+                            compSubtotals, undefined, undefined, lineItem.productPartNo,
+                            globalVariableDefs, crossTabRows,
+                          )
+                        : undefined;
                       // Plan 2b：上一行全量公式值，previous_row_subtotal 按本列取。
                       let prevRowValues: Record<string, number | null> | undefined = undefined;
                       // 撞键消歧：详情/核价侧也按组件成批算唯一 rowKey（与编辑页 + 后端一致）。
@@ -624,6 +676,8 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         const errForRow: Record<string, string> = {};
                         const cache: Record<string, number | null> = (snapFormula && Object.keys(snapFormula).length > 0)
                           ? (snapFormula as Record<string, number | null>)
+                          : treeResultsActive
+                          ? (treeResultsActive[ri] ?? {})
                           : computeAllFormulas(
                               activeComp, rawRow, compSubtotals,
                               undefined, undefined, lineItem.productPartNo,
@@ -903,8 +957,9 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         if (isNumericCol && colName && colName in colSums) {
                           const v = colSums[colName] ?? 0;
                           // ¥ 仅当 is_amount===true；其他数值列（含管理费/利润等 is_subtotal 但非金额列）纯数字
-                          // C2：金额列 = ¥ + 通用精度（与其它小计列同款 4 位去末尾 0，仅多 ¥ 前缀）
-                          const plain = v === 0 ? '0' : parseFloat(v.toFixed(4)).toString();
+                          // C2：金额列 = ¥ + 通用精度（task-0801：改走 formatNumber DISPLAY_SCALE=6
+                          // 去尾零兜底，与编辑页 QuotationStep2 同款同口径，AP-50）
+                          const plain = v === 0 ? '0' : (formatNumber(v, { isComputed: true }) ?? '0');
                           const text = field.is_amount === true ? `¥ ${plain}` : plain;
                           return (
                             <td key={colName || fi} className="qt-subtotal-cell" style={field.is_amount === true ? undefined : { color: '#595959' }}>
@@ -925,7 +980,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         {activeComponentVersionable && <td />}
                         <td className="qt-subtotal-label-cell">合计</td>
                         <td colSpan={Math.max(1, activeComp.fields.length - 1)} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
-                          {/* 本页签金额合计走"其余"高精度 4 位（精度优先）；仅最终产品小计保持 formatCurrency 2 位 */}
+                          {/* task-0801：全口径统一 6 位去尾零（formatNumber 兜底），产品小计/页签合计不再分叉 2 位 vs 4 位 */}
                           {`¥ ${formatNumber(sumTabColumns(activeComp as any, compSubtotals), { isComputed: true }) ?? '0'}`}
                         </td>
                       </tr>

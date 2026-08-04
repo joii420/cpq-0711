@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Popover, Button, Segmented, Alert, Space, message, Dropdown, Modal } from 'antd';
 import { DatabaseOutlined, SettingOutlined, PlusOutlined, DownOutlined, ReloadOutlined } from '@ant-design/icons';
-import { evaluateExpression, getGlobalPathCache, evaluateListFormulaString } from '../../utils/formulaEngine';
+import { evaluateExpression, getGlobalPathCache, evaluateListFormulaString, type TreeEvalContext } from '../../utils/formulaEngine';
+import { buildTreeRelations, isTreeRows as isTreeRowsInput, type TreeRowRef } from './bomTreeRelations';
+import { CellGraph } from './cellGraph';
 import { evalCondTree, condTreeColumns, type CondTree } from '../../utils/condTree';
 import { usePathFormulaCache } from './usePathFormulaCache';
 import { globalVariableService, type GlobalVariableDefinition } from '../../services/globalVariableService';
@@ -24,12 +26,14 @@ import { applyUnitConversion, factorFor } from '../../utils/unitConversion';
 import { formatNumber } from '../../utils/formatNumber';
 import { findDuplicateRowKeys } from './rowDedup';
 import { sumTabColumns, sumAmountFromByCol, AMOUNT_TOTAL_KEY } from './tabTotalLines';
+import { sumDecimal, roundToDisplay } from '../../utils/precision';
 import { isCardValueFailed, getCardValueError } from './cardValueFailed';
 import { templateService } from '../../services/templateService';
 import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
 import { useTreeCollapse } from './useTreeCollapse';
 import { splitRows, rowAt, isManualRow } from './manualRows';
 import { resolveInputDefault, resolveInputDefaultForBake } from './inputDefaults';
+import { isKeyUnset } from './keyPresenceAuthority';
 import { resolveFieldWidth } from '../component/types';
 import BomTreeAddLeafDrawer from './BomTreeAddLeafDrawer';
 import BomTreeDeleteConfirmDrawer from './BomTreeDeleteConfirmDrawer';
@@ -60,7 +64,13 @@ export interface ComponentField {
   /** 列展示宽度(px)，空/0=默认 120。来自 component.fields，经 snapshot/结构透传。 */
   width?: number;
   /** Plan 3a：条件公式。存在即走条件模式（优先于 formula_name）。 */
-  conditional_formula?: { rules: { when: CondTree; formula: string }[]; default: string };
+  conditional_formula?: {
+    rules: { when: CondTree; formula: string; formula_id?: string }[];
+    default: string;
+    default_formula_id?: string;
+  };
+  /** BL-0098：公式稳定 id —— 解析主键，优先级高于 formula_name（与后端 resolveFormula 镜像）。 */
+  formula_id?: string;
   is_required?: boolean;
   formula_name?: string;  // FORMULA fields: which formula definition to use
   datasource_binding?: {
@@ -365,6 +375,12 @@ function resolveFormula(
   const field = comp.fields.find(f => (f.name || f.key) === formulaFieldName && f.field_type === 'FORMULA');
   const fieldIndex = field ? comp.fields.indexOf(field) : -1;
 
+  // -1. BL-0098 终态：field.formula_id 绑定（最高优先，与后端 FormulaCalculator.resolveFormula 镜像）。
+  //     绑了但找不到 → 返 undefined 不 fallback，避免公式被删后静默换成别的公式算。
+  if (field?.formula_id) {
+    return comp.formulas.find(f => (f as any).id === field.formula_id);
+  }
+
   // 0. (2026-05-20) field.formula_name 显式绑定 — 组件管理 UI 通过 Select 写入此字段, 优先级最高
   if (field?.formula_name) {
     const found = comp.formulas.find(f => f.name === field.formula_name);
@@ -452,10 +468,15 @@ function computeAllFormulas(
     const name = f.name || f.key || '';
     const cf = (f as any).conditional_formula;
     if (cf && Array.isArray(cf.rules)) {
+      // BL-0098：条件公式的规则/默认分支也按 formula_id 优先解析（与后端 condRefFormula 镜像）。
+      // 绑了 id 查不到 → undefined，不回落名字（配置漂移不能静默换分支）。
+      const byRef = (id?: string, name?: string) =>
+        id ? comp.formulas!.find(x => (x as any).id === id)
+           : (name ? comp.formulas!.find(x => x.name === name) : undefined);
       const rules = cf.rules
-        .map((r: any) => ({ when: r.when as CondTree, formula: comp.formulas!.find(x => x.name === r.formula)! }))
+        .map((r: any) => ({ when: r.when as CondTree, formula: byRef(r.formula_id, r.formula)! }))
         .filter((r: any) => r.formula);
-      const def = cf.default ? comp.formulas!.find(x => x.name === cf.default) : undefined;
+      const def = byRef(cf.default_formula_id, cf.default);
       formulaFields.push({ name, conditional: { rules, default: def } });
     } else {
       const formula = resolveFormula(comp, name);
@@ -710,6 +731,441 @@ function computeAllFormulas(
   return results;
 }
 
+// ======================================================================
+// task-0803 Task 7 —— BOM 树页签级求值入口（computeTabFormulasTree）
+// ======================================================================
+//
+// 🚨 上面的 computeAllFormulas 一字不改 —— 非 BOM 页签的全部调用点继续用它，零回归门禁。
+// 本节是全新的、独立的页签级批量求值入口，只服务于「行集是树 且 公式真用了父子 token」的场景。
+//
+// 架构与后端 FormulaCalculator#computeRowsCellTopo 逐位镜像：
+//   1. 全量建每行的求值素材（fieldValues/rawPresent/currentRowForEval），与 computeAllFormulas
+//      同款字段值收集规则（此处独立实现，不复用/不改 computeAllFormulas 内部代码）。
+//   2. 建树关系（bomTreeRelations.ts）。
+//   3. 建 (行×列) 单元格依赖图（cellGraph.ts）——行内边用精确依赖（buildFormulaDepsForTree），
+//      不能用「按公式声明顺序串成链」的偷懒做法，否则双向混用时会假造出环。
+//   4. Kahn 拓扑求值；环上 cell 置 0，环外正常求值。
+
+/** 页签级批量求值的单行输入。 */
+export interface TreeFormulaRowInput {
+  row: Record<string, any>;
+  basicDataValues?: Record<string, any>;
+  nodeId?: string | null;
+  parentId?: string | null;
+  lvl?: number | null;
+}
+
+/** 单个 FORMULA 字段的求值定义（单一 / 条件模式）——与 computeAllFormulas 内同名匿名结构同形，独立声明。 */
+interface FormulaFieldDefForTree {
+  name: string;
+  formula?: ComponentFormula;
+  conditional?: { rules: { when: CondTree; formula: ComponentFormula }[]; default?: ComponentFormula };
+}
+
+/** 收集本组件全部 FORMULA 字段的求值定义（单一/条件模式）。镜像 computeAllFormulas L453-474，独立实现。 */
+function collectFormulaFieldDefsForTree(comp: ComponentDataItem): FormulaFieldDefForTree[] {
+  const out: FormulaFieldDefForTree[] = [];
+  if (!comp.fields || !comp.formulas) return out;
+  for (const f of comp.fields) {
+    if (f.field_type !== 'FORMULA') continue;
+    const name = f.name || f.key || '';
+    const cf = (f as any).conditional_formula;
+    if (cf && Array.isArray(cf.rules)) {
+      const byRef = (id?: string, refName?: string) =>
+        id ? comp.formulas!.find(x => (x as any).id === id)
+           : (refName ? comp.formulas!.find(x => x.name === refName) : undefined);
+      const rules = cf.rules
+        .map((r: any) => ({ when: r.when as CondTree, formula: byRef(r.formula_id, r.formula)! }))
+        .filter((r: any) => r.formula);
+      const def = byRef(cf.default_formula_id, cf.default);
+      out.push({ name, conditional: { rules, default: def } });
+    } else {
+      const formula = resolveFormula(comp, name);
+      if (formula) out.push({ name, formula });
+    }
+  }
+  return out;
+}
+
+/** targetExpr 内所有顶层 field token 名（PGET/C* 依赖边收集用；与 formulaEngine.ts 内同名函数各自独立实现，逻辑一致）。 */
+function fieldTokensOf(expr: any[] | undefined): Set<string> {
+  const out = new Set<string>();
+  if (!expr) return out;
+  for (const t of expr) if (t?.type === 'field' && t.value) out.add(t.value);
+  return out;
+}
+
+interface TreeDepDef { dir: 'PARENT' | 'CHILD'; cols: Set<string> }
+
+/** 扫一条表达式里的 tree_ref token（跨行依赖边收集用）。 */
+function treeRefsInExpr(expr: any[] | undefined): TreeDepDef[] {
+  const out: TreeDepDef[] = [];
+  if (!expr) return out;
+  for (const t of expr) {
+    if (t?.type === 'tree_ref') out.push({ dir: t.dir, cols: fieldTokensOf(t.targetExpr) });
+  }
+  return out;
+}
+
+/** 该表达式是否含 tree_attr（不产生跨行依赖边，但需要树上下文才能求值）。 */
+function hasTreeAttrInExpr(expr: any[] | undefined): boolean {
+  return !!expr?.some((t: any) => t?.type === 'tree_attr');
+}
+
+/** 扫一个公式字段（含条件公式各分支/默认分支）里的全部 tree_ref。 */
+function treeDepsOfField(ff: FormulaFieldDefForTree): TreeDepDef[] {
+  if (ff.conditional) {
+    const out: TreeDepDef[] = [];
+    for (const r of ff.conditional.rules) out.push(...treeRefsInExpr(r.formula?.expression as any[]));
+    out.push(...treeRefsInExpr(ff.conditional.default?.expression as any[]));
+    return out;
+  }
+  return treeRefsInExpr(ff.formula?.expression as any[]);
+}
+
+/** 该字段是否用到父子 token（tree_ref 或 tree_attr，含条件公式各分支）。 */
+function fieldUsesTreeTokens(ff: FormulaFieldDefForTree): boolean {
+  if (treeDepsOfField(ff).length > 0) return true;
+  if (ff.conditional) {
+    if (ff.conditional.rules.some(r => hasTreeAttrInExpr(r.formula?.expression as any[]))) return true;
+    return hasTreeAttrInExpr(ff.conditional.default?.expression as any[]);
+  }
+  return hasTreeAttrInExpr(ff.formula?.expression as any[]);
+}
+
+/**
+ * 路由判据的一半：该页签的公式是否真的用到了父子 token（PGET / C* 族 / 树属性）。
+ * 🔒 只有「行集是树」（isTreeRowsInput）且本函数为 true 才走单元格拓扑；任一不满足 → 走原 computeAllFormulas 逐行路径。
+ */
+export function usesTreeTokensTab(comp: ComponentDataItem): boolean {
+  return collectFormulaFieldDefsForTree(comp).some(fieldUsesTreeTokens);
+}
+
+/** 页签是否为 BOM 树行集（任意行带非空 nodeId）。对外暴露给调用点做路由判定，语义 = bomTreeRelations.isTreeRows。 */
+export function isBomTreeRowSet(rows: Array<TreeFormulaRowInput | undefined | null>): boolean {
+  return isTreeRowsInput(rows as TreeRowRef[]);
+}
+
+/** 精确列间依赖（并集：条件树列 ∪ 各分支公式引用列）。镜像 computeAllFormulas L478-492，独立实现，供单元格图行内边使用。 */
+function buildFormulaDepsForTree(
+  formulaFields: FormulaFieldDefForTree[],
+  nameSet: Set<string>,
+): Record<string, string[]> {
+  const deps: Record<string, string[]> = {};
+  for (const ff of formulaFields) {
+    const d = new Set<string>();
+    if (ff.conditional) {
+      for (const r of ff.conditional.rules) {
+        condTreeColumns(r.when).forEach(c => { if (nameSet.has(c)) d.add(c); });
+        getFormulaDeps(r.formula).forEach(c => { if (nameSet.has(c)) d.add(c); });
+      }
+      if (ff.conditional.default) getFormulaDeps(ff.conditional.default).forEach(c => { if (nameSet.has(c)) d.add(c); });
+    } else if (ff.formula) {
+      getFormulaDeps(ff.formula).forEach(c => { if (nameSet.has(c)) d.add(c); });
+    }
+    deps[ff.name] = [...d];
+  }
+  return deps;
+}
+
+/** 单行求值素材：与 computeAllFormulas 的字段值收集循环（L526-674）同规则，独立实现 + 额外产出 rawPresent（判「有值」用）。 */
+function resolveRowForTree(
+  comp: ComponentDataItem,
+  row: Record<string, any>,
+  basicDataValues: Record<string, any> | undefined,
+  partNo: string | undefined,
+  pathCache: Record<string, number> | undefined,
+): { fieldValues: Record<string, number>; rawPresent: Record<string, boolean>; currentRowForEval: Record<string, any> } {
+  const fieldValues: Record<string, number> = {};
+  const rawPresent: Record<string, boolean> = {};
+  const isPresent = (v: any) => v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && v.length === 0);
+
+  for (const f of comp.fields) {
+    if (f.field_type === 'FORMULA') continue; // 公式列的值在单元格拓扑求值阶段逐格写回 fieldValues
+    const key = f.name || f.key || '';
+    if (!key) continue;
+
+    if (f.field_type === 'BASIC_DATA' && f.basic_data_path && partNo) {
+      const effPath = f.basic_data_path;
+      let cached: any = undefined;
+      if (basicDataValues) {
+        const lookupKey = bnfDriverLookupKey(effPath);
+        if (Object.prototype.hasOwnProperty.call(basicDataValues, lookupKey)) {
+          cached = basicDataValues[lookupKey];
+        }
+      }
+      if (cached === undefined) {
+        const cacheKey = `${partNo}::${effPath}`;
+        const cache = pathCache ?? (getGlobalPathCache() as Record<string, any>);
+        cached = cache[cacheKey];
+      }
+      let num: number | null = null;
+      if (typeof cached === 'number') {
+        num = cached;
+      } else if (cached != null) {
+        const formatted = formatPathValue(cached);
+        if (formatted != null) {
+          const parsed = parseFloat(formatted);
+          if (!isNaN(parsed)) num = parsed;
+        }
+      }
+      fieldValues[key] = num ?? 0;
+      rawPresent[key] = isPresent(cached);
+      continue;
+    }
+
+    if (f.field_type === 'DATA_SOURCE' && f.datasource_binding) {
+      const binding = f.datasource_binding;
+      const dsType = binding.type ?? 'DATABASE_QUERY';
+      let resolved: any = row[key];
+      if (basicDataValues) {
+        if (dsType === 'GLOBAL_VARIABLE' && binding.global_variable_code) {
+          const gvKey = `@gvar:${binding.global_variable_code}`;
+          if (Object.prototype.hasOwnProperty.call(basicDataValues, gvKey)) {
+            const v = basicDataValues[gvKey];
+            if (v != null && !(Array.isArray(v) && v.length === 0)) resolved = v;
+          }
+        } else if (dsType === 'BNF_PATH' && binding.bnf_path) {
+          const lookupKey = bnfDriverLookupKey(binding.bnf_path);
+          if (Object.prototype.hasOwnProperty.call(basicDataValues, lookupKey)) {
+            const v = basicDataValues[lookupKey];
+            if (v != null && !(Array.isArray(v) && v.length === 0)) resolved = v;
+          }
+          if ((resolved === undefined || resolved === null || resolved === '') && partNo) {
+            const cache = pathCache ?? (getGlobalPathCache() as Record<string, any>);
+            const v = cache[`${partNo}::${binding.bnf_path}`];
+            if (v != null && !(Array.isArray(v) && v.length === 0)) resolved = v;
+          }
+        }
+      }
+      if ((resolved === undefined || resolved === null || resolved === '')
+          && f.content != null && f.content !== '') {
+        resolved = f.content;
+      }
+      let num: number | null = null;
+      if (typeof resolved === 'number') {
+        num = resolved;
+      } else if (resolved != null) {
+        const formatted = formatPathValue(resolved);
+        if (formatted != null) {
+          const parsed = parseFloat(formatted);
+          if (!isNaN(parsed)) num = parsed;
+        }
+      }
+      if (num != null) fieldValues[key] = num;
+      rawPresent[key] = isPresent(resolved);
+      continue;
+    }
+
+    let raw: any = row[key];
+    if ((raw === undefined || raw === null || raw === '')
+        && f.field_type === 'FIXED_VALUE'
+        && f.content != null && f.content !== '') {
+      raw = f.content;
+    }
+    if ((raw === undefined || raw === null)
+        && (f.field_type === 'INPUT_NUMBER' || f.field_type === 'INPUT_TEXT' || f.field_type === 'INPUT')) {
+      const def = resolveInputDefault(f, {
+        basicDataValues,
+        partNo,
+        pathCache: pathCache ?? (getGlobalPathCache() as Record<string, any>),
+      });
+      if (def !== undefined) raw = def;
+    }
+    const val = typeof raw === 'number' ? raw : parseFloat(raw);
+    if (!isNaN(val)) fieldValues[key] = val;
+    rawPresent[key] = isPresent(raw);
+  }
+
+  // cross_tab match 键 b_field / global_variable 动态 key 取宿主行字段名值；镜像 computeAllFormulas L629-646。
+  let currentRowForEval: Record<string, any> = row;
+  {
+    let augmented: Record<string, any> | undefined;
+    for (const f of comp.fields) {
+      if ((f.field_type === 'INPUT_TEXT' || f.field_type === 'INPUT_NUMBER' || f.field_type === 'INPUT')
+          && f.default_source) {
+        const k = f.name || f.key || '';
+        if (k && row[k] == null) {
+          const v = resolveInputDefaultSourceForRow(f, basicDataValues);
+          if (v != null) { if (!augmented) augmented = { ...row }; augmented[k] = v; }
+        }
+      }
+    }
+    if (augmented) currentRowForEval = augmented;
+  }
+
+  // 单位换算：镜像 computeAllFormulas L648-674。
+  {
+    let ctClone = false;
+    for (const f of comp.fields) {
+      const usf = (f as any).unit_source_field as string | undefined;
+      if (!usf) continue;
+      const C = f.name || f.key || '';
+      if (!C) continue;
+      const unitText = currentRowForEval[usf] ?? (row as any)[usf];
+      const factor = factorFor(unitText == null ? '' : String(unitText));
+      if (factor === 1) continue;
+      if (typeof fieldValues[C] === 'number') fieldValues[C] = fieldValues[C] * factor;
+      const cv = currentRowForEval[C];
+      if (cv != null && cv !== '') {
+        const n = typeof cv === 'number' ? cv : parseFloat(cv);
+        if (!isNaN(n)) {
+          if (!ctClone && currentRowForEval === row) { currentRowForEval = { ...row }; ctClone = true; }
+          currentRowForEval[C] = n * factor;
+        }
+      }
+    }
+  }
+
+  return { fieldValues, rawPresent, currentRowForEval };
+}
+
+/**
+ * task-0803 Task 7：BOM 树页签级求值入口 —— 单元格 (行×列) 拓扑求值。
+ *
+ * 🚨 与 computeAllFormulas 的关系：computeAllFormulas 一字不改，本函数是全新独立入口，
+ * 仅供「行集是树 且 公式真用了父子 token」的调用点分流使用（判据见 isBomTreeRowSet + usesTreeTokensTab）。
+ *
+ * @returns 行下标 → { 字段名 → 值 }（仅含 FORMULA 字段，语义对齐 computeAllFormulas 的返回值）
+ */
+export function computeTabFormulasTree(
+  comp: ComponentDataItem,
+  rows: TreeFormulaRowInput[],
+  allComponentSubtotals?: Record<string, number>,
+  quotationFields?: Record<string, number>,
+  pathCache?: Record<string, number>,
+  partNo?: string,
+  globalVariableDefs?: Record<string, GlobalVariableDefinition>,
+  crossTabRows?: Record<string, Array<Record<string, any>>>,
+  /**
+   * 输出袋：调用方传入则回填每行「已解析字段值」（非公式字段的解析值 + 本行公式列结果），
+   * 语义对齐 computeAllFormulas 的 out.fieldValues —— 供 is_subtotal 但非 FORMULA 类型的列
+   * （如 INPUT_NUMBER）在列小计累加时回退取值（AP-50：ReadonlyProductCard.buildFormulaCache 需要）。
+   */
+  outBag?: { fieldValuesByRow?: Array<Record<string, number>> },
+): Record<number, Record<string, number | null>> {
+  const n = rows.length;
+  const out: Record<number, Record<string, number | null>> = {};
+  for (let i = 0; i < n; i++) out[i] = {};
+  if (!comp.fields || !comp.formulas || n === 0) return out;
+
+  const formulaFields = collectFormulaFieldDefsForTree(comp);
+  if (formulaFields.length === 0) return out;
+  const nameSet = new Set(formulaFields.map(f => f.name));
+  const order = formulaFields.map(f => f.name);
+  const cols = order.length;
+  const colIdx = new Map(order.map((name, idx) => [name, idx]));
+
+  // 1. 树关系（BOM 页签墓碑行在到达这里之前已被上游过滤——见 bomTreeRelations.ts 顶部注释）。
+  const relations = buildTreeRelations(rows as TreeRowRef[]);
+
+  // 2. 全量建每行求值素材。
+  const rowBundles = rows.map(r => resolveRowForTree(comp, r.row, r.basicDataValues, partNo, pathCache));
+  const rawPresent = rowBundles.map(b => b.rawPresent);
+
+  const treeCtx: TreeEvalContext = {
+    rowIndex: -1, // 求值时逐格覆盖
+    parentOf: (i) => relations.parentOf(i),
+    childrenOf: (i) => relations.childrenOf(i),
+    lvl: (i) => relations.lvl(i),
+    isRoot: (i) => relations.isRoot(i),
+    isLeaf: (i) => relations.isLeaf(i),
+    rowBundles: rowBundles.map((b, i) => ({
+      fieldValues: b.fieldValues,
+      basicDataValues: rows[i].basicDataValues,
+      currentRow: b.currentRowForEval,
+    })),
+    rawPresent,
+    formulaColumns: nameSet,
+    pathCache,
+    partNo,
+    globalVariableDefs,
+  };
+
+  // 3. 建 (行×列) 依赖图：行内边用精确依赖（不能用"按声明顺序串成链"的偷懒做法，双向混用会假造环）。
+  const intraDeps = buildFormulaDepsForTree(formulaFields, nameSet);
+  const g = new CellGraph(n, cols);
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < cols; c++) {
+      const col = order[c];
+      for (const d of intraDeps[col] ?? []) {
+        const dc = colIdx.get(d);
+        if (dc !== undefined) g.addEdge(r, dc, r, c);
+      }
+      for (const td of treeDepsOfField(formulaFields[c])) {
+        if (td.dir === 'PARENT') {
+          const p = relations.parentOf(r);
+          if (p < 0) continue; // 根行：边不成立（PGET 返 0）
+          for (const rc of td.cols) {
+            const dc = colIdx.get(rc);
+            if (dc !== undefined) g.addEdge(p, dc, r, c);
+          }
+        } else if (td.dir === 'CHILD') {
+          for (const kid of relations.childrenOf(r)) {
+            for (const rc of td.cols) {
+              const dc = colIdx.get(rc);
+              if (dc !== undefined) g.addEdge(kid, dc, r, c);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 4. 按 cell 拓扑序求值。
+  const { order: topoCells, cycles } = g.topoOrder();
+  const resultsByRow: Array<Record<string, number | null>> = Array.from({ length: n }, () => ({}));
+
+  for (const cell of topoCells) {
+    const ff = formulaFields[cell.col];
+    const bundle = rowBundles[cell.row];
+    let expr: any[] | undefined;
+    if (ff.conditional) {
+      const lookup = (colName: string) => {
+        const rv = rows[cell.row].row?.[colName];
+        if (rv != null) return rv;
+        const bf = comp.fields.find(f => (f.name || f.key) === colName && f.field_type === 'BASIC_DATA');
+        if (bf && (bf as any).basic_data_path && rows[cell.row].basicDataValues) {
+          const v = (rows[cell.row].basicDataValues as any)[bnfDriverLookupKey((bf as any).basic_data_path)];
+          if (v != null) return Array.isArray(v) ? (v.length === 1 ? v[0] : v) : v;
+        }
+        return bundle.fieldValues[colName];
+      };
+      const hit = ff.conditional.rules.find(rule => evalCondTree(rule.when, lookup));
+      expr = (hit ? hit.formula : ff.conditional.default)?.expression;
+    } else {
+      expr = ff.formula!.expression;
+    }
+    treeCtx.rowIndex = cell.row;
+    let val: number | null = null;
+    try {
+      val = expr ? evaluateExpression(
+        expr, bundle.fieldValues, allComponentSubtotals || {}, undefined, quotationFields,
+        pathCache, partNo, rows[cell.row].basicDataValues, undefined /* BOM 页签禁用 PREV，需求 §4.3.7 */,
+        globalVariableDefs, bundle.currentRowForEval, crossTabRows, undefined, treeCtx,
+      ) : null;
+    } catch {
+      val = null;
+    }
+    resultsByRow[cell.row][ff.name] = val;
+    if (val != null) bundle.fieldValues[ff.name] = val;
+  }
+
+  // 5. 环上 cell（及其下游，拓扑上本就无法求值）→ 置 0；环外 cell 已在上面正常求值。
+  for (const cell of cycles) {
+    const ff = formulaFields[cell.col];
+    resultsByRow[cell.row][ff.name] = 0;
+    rowBundles[cell.row].fieldValues[ff.name] = 0;
+  }
+
+  if (outBag?.fieldValuesByRow) {
+    for (let i = 0; i < n; i++) outBag.fieldValuesByRow[i] = rowBundles[i].fieldValues;
+  }
+
+  for (let i = 0; i < n; i++) out[i] = resultsByRow[i];
+  return out;
+}
+
 /**
  * BASIC_DATA 字段行级取值 (RAW, 文本保留文本) — 镜像 computeAllFormulas BASIC_DATA 分支 (见 ~444-470),
  * 但 computeAllFormulas 会把结果 parseFloat 进 number-only 的 fieldValues; 此处 cross_tab_ref 需 RAW
@@ -874,8 +1330,12 @@ function componentKeys(comp: ComponentDataItem): string[] {
 }
 
 /**
- * 对 rows 应用 canonical 单位换算后，按 colFilter 选出目标列，逐列 Σ 行（typeof==='number'&&isFinite），
- * 结果 4dp 舍入（与后端 setScale(4,HALF_UP) 对齐）。返回 { colName → sum } Map。
+ * 对 rows 应用 canonical 单位换算后，按 colFilter 选出目标列，逐列 Σ 行（typeof==='number'&&isFinite）。
+ * 返回 { colName → sum } Map。
+ *
+ * task-0801：累加改十进制精确（sumDecimal），**不再 round4 中途截断** —— 链路一（单页签列小计，
+ * 量级 ≤10⁶）内部精确算，结果保持 number 承载，呈现精度由显示层 formatNumber（兜底 6 位）负责；
+ * 与后端 setScale(4,HALF_UP) 对齐的旧口径已随 task-0801 全面改为 6 位，不在此中途规整。
  *
  * 调用方：
  *   buildColumnSumsByComp → colFilter = is_subtotal || field_type ∈ {INPUT_NUMBER,FORMULA,DATA_SOURCE}
@@ -886,7 +1346,6 @@ function sumColumnsCanonical(
   rows: Array<Record<string, any>>,
   colFilter: (f: ComponentField) => boolean,
 ): Record<string, number> {
-  const round4 = (x: number) => Math.round(x * 1e4) / 1e4;
   const targetFields = fields.filter(colFilter);
   const result: Record<string, number> = {};
   if (targetFields.length === 0) return result;
@@ -895,7 +1354,7 @@ function sumColumnsCanonical(
   for (const f of targetFields) {
     const colName: string = f.name || (f as any).key || '';
     if (!colName) continue;
-    let sum = 0;
+    const values: number[] = [];
     for (const row of convRows) {
       const v = row[colName];
       // INPUT_NUMBER 等输入列在 resolvedRow 里是原始字符串（输入框写 "12"），
@@ -903,9 +1362,9 @@ function sumColumnsCanonical(
       // 否则字符串被 typeof==='number' 丢成 0 → 输入列小计恒 0、改输入不变）。
       // 公式/小计列已是数字，走 number 分支不变。空/非数字 → NaN → 跳过（计 0）。
       const n = typeof v === 'number' ? v : parseFloat(v);
-      if (isFinite(n)) sum += n;
+      if (isFinite(n)) values.push(n);
     }
-    result[colName] = round4(sum);
+    result[colName] = sumDecimal(values).toNumber();
   }
   return result;
 }
@@ -972,6 +1431,37 @@ export function buildCrossTabRows(
   function computeRows(comp: ComponentDataItem, exp: import('./useDriverExpansions').DriverExpansion | undefined): Array<Record<string, any>> {
     const s = splitRows(comp, exp);
     const rows: Array<Record<string, any>> = [];
+
+    // task-0803 Task 7：BOM 树页签分流。previous_row_subtotal 链在 BOM 页签禁用（§4.3.7），
+    // 命中即整组件批量算一次，不再逐行 prevRowValues 串行。非 BOM 页签仅多付一次廉价 .some() 扫描。
+    const hasBomSysRows = !!exp?.rows?.some((r: any) => r?.__sys?.nodeId !== undefined);
+    const useTree = hasBomSysRows && usesTreeTokensTab(comp);
+    if (useTree) {
+      const treeRowInputs: TreeFormulaRowInput[] = [];
+      const bakedRows: Array<Record<string, any>> = [];
+      const driverRows: Array<Record<string, any> | undefined> = [];
+      const bdvArr: Array<Record<string, any> | undefined> = [];
+      for (let i = 0; i < s.totalRows; i++) {
+        const ra = rowAt(i, comp, s);
+        const row = fillFixedDefaults(comp.fields!, ra.row);
+        const expRow = ra.expIndex >= 0 ? exp!.rows[ra.expIndex] : undefined;
+        const sys = (expRow as any)?.__sys;
+        bakedRows.push(row);
+        driverRows.push(expRow?.driverRow);
+        bdvArr.push(expRow?.basicDataValues);
+        treeRowInputs.push({
+          row, basicDataValues: expRow?.basicDataValues,
+          nodeId: sys?.nodeId, parentId: sys?.parentId, lvl: sys?.lvl,
+        });
+      }
+      const treeResults = computeTabFormulasTree(
+        comp, treeRowInputs, allComponentSubtotals, undefined, undefined, partNo, globalVariableDefs, store);
+      for (let i = 0; i < s.totalRows; i++) {
+        rows.push(buildResolvedRow(comp.fields!, bakedRows[i], driverRows[i], bdvArr[i], treeResults[i] ?? {}));
+      }
+      return rows;
+    }
+
     // 每组件独立 reset prevRowValues（不跨组件复用，与渲染层 effectiveRows 口径一致）
     let prevRowValues: Record<string, number | null> | undefined = undefined;
     for (let i = 0; i < s.totalRows; i++) {
@@ -1085,30 +1575,29 @@ export function subtotalsFromResolvedRows(
   rows: Array<Record<string, any>>,
   allComponentSubtotals: Record<string, number>,
 ): void {
-  // sumColumnsCanonical 内部已做 is_subtotal 过滤、applyUnitConversion canonical 换算、4dp 舍入。
+  // sumColumnsCanonical 内部已做 is_subtotal 过滤、applyUnitConversion canonical 换算，
+  // 十进制精确累加（task-0801：不再中途 4dp 舍入）。
   // 若无 is_subtotal 列，colSums 为空对象，下方循环不执行（与原有 early-return 语义一致）。
   const colSums = sumColumnsCanonical(comp.fields ?? [], rows, (f) => !!f.is_subtotal);
   if (Object.keys(colSums).length === 0) return;
 
   const keys = componentKeys(comp);
-  const round4 = (x: number) => Math.round(x * 1e4) / 1e4;
 
   // 写入 `key#colName` 键；同时累加 totalForComp（与后端 backfillSubtotalsFromResolved 对齐）
-  let totalForComp = 0;
+  // task-0801：Σ colVal 改十进制精确累加（sumDecimal），不再 round4 中途截断。
   for (const [colName, colVal] of Object.entries(colSums)) {
     for (const k of keys) {
       allComponentSubtotals[`${k}#${colName}`] = colVal;
     }
-    totalForComp += colVal;
   }
-  totalForComp = round4(totalForComp);
+  const totalForComp = sumDecimal(Object.values(colSums)).toNumber();
   // 总小计键（与 PASS1 的 componentSubtotals[comp.tabName] 对齐）—— 裸键 = Σ所有 is_subtotal 列（不变）。
   for (const k of keys) {
     allComponentSubtotals[k] = totalForComp;
   }
   // BL-0017：哨兵列键 = Σ金额列（按 resolvedRows colSums 过滤 is_amount），专供 `[页签(总计)]`。
   // 必须在此 PASS2 回填（卡片视图权威值），否则 PASS1 的哨兵键会与裸键回填不同步。
-  const amountTotalResolved = round4(sumAmountFromByCol(comp.fields, colSums));
+  const amountTotalResolved = sumAmountFromByCol(comp.fields, colSums);
   for (const k of keys) {
     allComponentSubtotals[`${k}#${AMOUNT_TOTAL_KEY}`] = amountTotalResolved;
   }
@@ -1171,7 +1660,40 @@ export function computeTabSubtotalsByColumn(
   if (subtotalFields.length === 0) return out;
   for (const sf of subtotalFields) out[sf.name] = 0;
   const s = splitRows(comp, driverExpansion as any);
+
+  // task-0803 Task 7：BOM 树页签分流。判据分两层，非 BOM 页签只多付一次廉价 .some() 扫描
+  // （usesTreeTokensTab 被 && 短路不执行），零额外 fillFixedDefaults/resolveRowForTree 开销。
+  const hasBomSysRows = !!driverExpansion?.rows?.some((r: any) => r?.__sys?.nodeId !== undefined);
+  const useTree = hasBomSysRows && usesTreeTokensTab(comp);
+  let treeResults: Record<number, Record<string, number | null>> | undefined;
+  // fv 回退（同下方非 BOM 分支的 out.fieldValues 语义）：is_subtotal 但非 FORMULA 类型的列
+  // （如 INPUT_NUMBER）不进 treeResults（仅含 FORMULA 结果），需按行取 outBag.fieldValuesByRow 回退。
+  let treeFieldValuesByRow: Array<Record<string, number>> | undefined;
+  if (useTree) {
+    const treeRowInputs: TreeFormulaRowInput[] = [];
+    for (let i = 0; i < s.totalRows; i++) {
+      const ra = rowAt(i, comp, s);
+      const row = fillFixedDefaults(comp.fields, ra.row);
+      const expRow = ra.expIndex >= 0 ? driverExpansion!.rows[ra.expIndex] : undefined;
+      const sys = (expRow as any)?.__sys;
+      treeRowInputs.push({
+        row, basicDataValues: expRow?.basicDataValues,
+        nodeId: sys?.nodeId, parentId: sys?.parentId, lvl: sys?.lvl,
+      });
+    }
+    treeFieldValuesByRow = [];
+    treeResults = computeTabFormulasTree(
+      comp, treeRowInputs, allComponentSubtotals, quotationFields, pathCache, partNo, globalVariableDefs,
+      undefined, { fieldValuesByRow: treeFieldValuesByRow });
+  }
+
   for (let i = 0; i < s.totalRows; i++) {
+    if (treeResults) {
+      const cache = treeResults[i] ?? {};
+      const fv = treeFieldValuesByRow?.[i] ?? {};
+      for (const sf of subtotalFields) out[sf.name] += cache[sf.name] ?? fv[sf.name] ?? 0;
+      continue;
+    }
     const ra = rowAt(i, comp, s);
     const row = fillFixedDefaults(comp.fields, ra.row);
     const basicDataValues = ra.expIndex >= 0 ? driverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
@@ -1201,9 +1723,8 @@ function computeTabSubtotal(
   // Plan 2-核心：委托按列求和后取所有小计列之和（单小计列时 = 原行为）。
   const byCol = computeTabSubtotalsByColumn(
     comp, allComponentSubtotals, quotationFields, pathCache, partNo, driverExpansion, globalVariableDefs);
-  let sum = 0;
-  for (const v of Object.values(byCol)) sum += v;
-  return sum;
+  // task-0801：Σ 列小计改十进制精确累加（sumDecimal），不再 number `+=` 链式累加。
+  return sumDecimal(Object.values(byCol)).toNumber();
 }
 
 /**
@@ -1244,13 +1765,13 @@ export function getComponentSubtotals(
       comp, componentSubtotals, undefined, undefined, partNo, lookupExpansion(comp),
       globalVariableDefs,
     );
-    let subtotal = 0;
     for (const [colName, colVal] of Object.entries(byCol)) {
-      subtotal += colVal;
       if (comp.componentId) componentSubtotals[`${comp.componentId}#${colName}`] = colVal;
       if (comp.componentCode) componentSubtotals[`${comp.componentCode}#${colName}`] = colVal;
       componentSubtotals[`${comp.tabName}#${colName}`] = colVal;
     }
+    // task-0801：Σ 列小计改十进制精确累加（sumDecimal），不再 number `+=` 链式累加。
+    const subtotal = sumDecimal(Object.values(byCol)).toNumber();
     // 裸键 = Σ所有 is_subtotal 列（不变，专供 previous_row_subtotal / 产品小计兜底 / 折扣）。
     if (comp.componentId) componentSubtotals[comp.componentId] = subtotal;
     if (comp.componentCode) componentSubtotals[comp.componentCode] = subtotal;
@@ -1873,8 +2394,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
           if (!key) continue;
           const guard = `${comp.componentId}-${ri}-${key}`;
           if (bakedRef.current.has(guard)) continue;
-          const cur = curRow[key];
-          if (!(cur === undefined || cur === null || cur === '')) { bakedRef.current.add(guard); continue; }
+          // spec 2026-08-03：判据由「值为空」收紧为「键不存在」，用户清空('')不再被回填。
+          // bakedRef 只活在当前挂载实例、刷新即清零，故判据本身必须是持久的（读行数据的键）。
+          if (!isKeyUnset(curRow, key)) { bakedRef.current.add(guard); continue; }
           // 导入带出一次性烘焙默认值进行数据 → 之后用户清空(='')即真实持久值, 不再被渲染兜底回弹。
           // resolveInputDefaultForBake: 有 default_source 时只烘已解析的源值(源未命中返 undefined, 等驱动补值
           // 下一轮再烘, 不提前冻结 content); 无 default_source 时烘静态 content。bakedRef 守卫保证"清空后不再回填"。
@@ -2118,9 +2640,10 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     });
   }, [item.componentData, executeDsQuery]);
 
-  // 金额显示：统一走 formatNumber（计算口径 2 位），保留 ¥ 前缀与空值兜底 ¥0
+  // 金额显示：统一走 formatNumber（task-0801：不再固定 2 位，走 DISPLAY_SCALE=6 兜底去尾零），
+  // 保留 ¥ 前缀与空值兜底 ¥0。
   const formatCurrency = (val: number) =>
-    `¥ ${formatNumber(val || 0, { isComputed: true, decimals: 2 }) ?? '0'}`;
+    `¥ ${formatNumber(val || 0, { isComputed: true }) ?? '0'}`;
 
   // 2026-05-17 WYSIWYG 原则: 模板配几个组件就显示几个 Tab.
   // 2026-05-19 (方案 A 用户决议, 推翻同日 QT-1409 的"自动隐藏空 Tab"策略):
@@ -2387,7 +2910,12 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
         <Alert
           type={cardValueError ? 'error' : 'warning'}
           showIcon
-          message={cardValueError ? '核价渲染失败' : '该料号卡片数据待重算'}
+          message={
+            // repair-0803 B1：文案按侧区分——原先写死「核价渲染失败」，报价侧带原文时也会显示成核价，误导排查方向。
+            cardValueError
+              ? (cardSide === 'COSTING' ? '核价渲染失败' : '卡片渲染失败')
+              : '该料号卡片数据待重算'
+          }
           description={
             // QUOTE 侧带可用「重算」入口(refreshCardSnapshot 仅刷报价侧);
             // COSTING 侧该入口刷不到核价值 → 不给假希望, 只留静态提示(按侧/按行重算归 BL-0012)。
@@ -2402,9 +2930,21 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                 <span style={{ color: '#8c8c8c' }}>请重新生成核价快照后查看</span>
               )
             ) : (
-              <Button size="small" loading={recomputing} disabled={!quotationId} onClick={handleRecompute}>
-                重算
-              </Button>
+              // repair-0803 B1：报价侧原先只有「重算」按钮、不展示错误原文——即便后端落了 __errorMsg
+              // 也看不到，配置员只能靠翻后端日志。现与核价侧对齐：有原文就显式展示 + 给出排查指引。
+              <span>
+                {cardValueError && (
+                  <span style={{ color: '#8c8c8c', display: 'block', marginBottom: 8 }}>
+                    <div style={{ color: '#cf1322', wordBreak: 'break-all' }}>{cardValueError}</div>
+                    <div style={{ marginTop: 4 }}>
+                      请检查该产品卡片各页签组件的 $view 取数配置（列名 / 表结构是否与视图定义一致）后重算。
+                    </div>
+                  </span>
+                )}
+                <Button size="small" loading={recomputing} disabled={!quotationId} onClick={handleRecompute}>
+                  重算
+                </Button>
+              </span>
             )
           }
           style={{ margin: 8 }}
@@ -2635,9 +3175,28 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     // 错误旁路: 与 preComputedCaches 平行 — 每行 computeAllFormulas 的 out.errors
                     // (cross_tab_ref 细项多命中等; 数值已静默归 0)。渲染层据此显示 ⚠。
                     const preComputedErrors: Array<Record<string, string>> = [];
+                    // task-0803 Task 7：BOM 树页签分流 —— 该页签是树行集(activeComponentBomTree)
+                    // 且公式真用了父子 token 时，整页签批量算一次(单元格拓扑，previous_row_subtotal
+                    // 链在 BOM 页签禁用，§4.3.7)；命中 snapFormula(快照真零计算)仍优先，与非 BOM 路径同口径。
+                    // AP-50：编辑页与详情页(ReadonlyProductCard)必须复用同一个 computeTabFormulasTree 入口。
+                    const useTreeActive = activeComponentBomTree && usesTreeTokensTab(activeComponent);
+                    const treeResultsActive = useTreeActive
+                      ? computeTabFormulasTree(
+                          activeComponent,
+                          effectiveRows.map((r) => ({
+                            row: r.row,
+                            basicDataValues: r.basicDataValues,
+                            nodeId: (r as any).__sys?.nodeId,
+                            parentId: (r as any).__sys?.parentId,
+                            lvl: (r as any).__sys?.lvl,
+                          })),
+                          allComponentSubtotals, undefined, undefined, item.productPartNo,
+                          globalVariableDefs, crossTabRows,
+                        )
+                      : undefined;
                     // Plan 2b：上一行全量公式值，previous_row_subtotal 按本列取。
                     let prevRowValues: Record<string, number | null> | undefined = undefined;
-                    for (const r of effectiveRows) {
+                    effectiveRows.forEach((r, __treeRowIdx) => {
                       // Phase4 Task3: 报价侧优先读快照 formulaResults[rowKey](真零计算);
                       // 缺(无快照/新行/LIST_FORMULA 字符串公式未进 formulaResults)时 computeAllFormulas 兜底(防漂移)。
                       // repair-0727 F0：新键（可能带 nodeId 前缀）未命中时按 r.legacyRowKey 回退一次，
@@ -2648,6 +3207,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                       const errForRow: Record<string, string> = {};
                       const cache: Record<string, number | null> = (snapFormula && Object.keys(snapFormula).length > 0)
                         ? (snapFormula as Record<string, number | null>)
+                        : treeResultsActive
+                        ? (treeResultsActive[__treeRowIdx] ?? {})
                         : computeAllFormulas(
                             activeComponent, r.row, allComponentSubtotals,
                             undefined, undefined, item.productPartNo, r.basicDataValues,
@@ -2657,7 +3218,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                       preComputedCaches.push(cache);
                       preComputedErrors.push(errForRow);
                       prevRowValues = cache;
-                    }
+                    });
                     // 行键实时判重：组合键重复的行下标集合（driver 列取 driverRow、输入字段取 row 上的手填值）。
                     // 下标 = effectiveRows[i].rowIndex（与渲染 <tr key={rowIndex}> 同源，AP-54）。
                     const dupRowIdx = findDuplicateRowKeys(
@@ -2951,7 +3512,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         if (isNumericCol && colName && colName in colSums) {
                           const v = colSums[colName] ?? 0;
                           // ¥ 仅当 is_amount===true；其他数值列（含管理费/利润等 is_subtotal 但非金额列）纯数字
-                          // C2：小计为计算值 → formatNumber 计算口径（未配 decimals 兜底 2 位），金额列加 ¥ 前缀
+                          // C2：小计为计算值 → formatNumber 计算口径（未配 decimals 兜底 6 位去尾零，task-0801），金额列加 ¥ 前缀
                           const plain = v === 0 ? '0' : (formatNumber(v, { isComputed: true }) ?? '—');
                           const text = field.is_amount === true ? `¥ ${plain}` : plain;
                           return (
@@ -2973,7 +3534,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         {activeComponentBomTree && (<><td /><td /></>)}
                         <td className="qt-subtotal-label-cell">合计</td>
                         <td colSpan={activeComponent.fields.length} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
-                          {/* 本页签金额合计走"其余"高精度 4 位（精度优先）；仅最终产品小计保持 formatCurrency 2 位 */}
+                          {/* task-0801：全口径统一 6 位去尾零（formatNumber 兜底），产品小计/页签合计不再分叉 2 位 vs 4 位 */}
                           {`¥ ${formatNumber(sumTabColumns(activeComponent as any, allComponentSubtotals), { isComputed: true }) ?? '0'}`}
                         </td>
                       </tr>

@@ -289,12 +289,21 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
         if (record.field_type === 'FORMULA') {
           // 2026-05-20: 单一模式从公式列表选一个绑定 (field.formula_name)
           // Plan 3b: 条件模式 (field.conditional_formula) — 按规则逐行选公式，配置抽屉编辑。
+          // BL-0098：value 改绑公式**稳定 id**（label 仍显示公式名），改名/调序不再断链。
+          // 兜底：极老的存量公式可能还没有 id（理论上 V375 已补齐 + newFormulaRow 生成），
+          // 此时退回用名字当 value，行为与改造前一致。
           const options = (formulas || [])
             .map(f => ({
-              value: f.name || '',
+              value: f.id || f.name || '',
               label: `${f.name || '(未命名)'}${f.result_type ? ` · ${f.result_type}` : ''}`,
             }))
             .filter(o => o.value);
+          // 回显：优先 formula_id；存量只有 formula_name 时按名字反查 id，避免下拉显示空白。
+          const boundValue =
+            record.formula_id
+            || (record.formula_name
+                ? ((formulas || []).find(f => f.name === record.formula_name)?.id ?? record.formula_name)
+                : undefined);
           const isCond = !!record.conditional_formula;
           return (
             <Space size={4} wrap>
@@ -314,8 +323,15 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
                     </Tooltip>
                   : <Select
                       size="small" style={{ minWidth: 160, fontSize: 12 }} placeholder="选择绑定公式" allowClear
-                      value={record.formula_name || undefined} options={options}
-                      onChange={(v) => updateField(record.key, { formula_name: v || undefined })}
+                      value={boundValue} options={options}
+                      onChange={(v) => {
+                        // BL-0098：同时写 id（解析主键）与 name（展示冗余，便于人肉排查）。
+                        const picked = (formulas || []).find(f => (f.id || f.name) === v);
+                        updateField(record.key, {
+                          formula_id: picked?.id || undefined,
+                          formula_name: picked?.name || undefined,
+                        });
+                      }}
                       showSearch optionFilterProp="label" />
               )}
               {isCond && (
@@ -780,7 +796,11 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
         open={condFormulaKey !== null}
         value={condFormulaKey ? fields.find(f => f.key === condFormulaKey)?.conditional_formula as ConditionalFormulaValue | undefined : undefined}
         fieldName={condFormulaKey ? fields.find(f => f.key === condFormulaKey)?.name : undefined}
-        formulaOptions={(formulas || []).map(f => ({ label: f.name || '', value: f.name || '' })).filter(o => o.value)}
+        // BL-0098：value 改绑公式稳定 id（label 仍是公式名）；抽屉据此同时写
+        // rules[].formula_id / default_formula_id 与名字冗余，公式改名不再断链。
+        formulaOptions={(formulas || [])
+          .map(f => ({ label: f.name || '', value: f.id || f.name || '' }))
+          .filter(o => o.value && o.label)}
         columnOptions={fields.map(f => ({ label: f.name, value: f.name })).filter(o => o.value)}
         onClose={() => setCondFormulaKey(null)}
         onConfirm={(next) => {

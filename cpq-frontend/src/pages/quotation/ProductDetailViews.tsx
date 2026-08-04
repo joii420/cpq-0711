@@ -21,6 +21,7 @@ import type { GlobalVariableDefinition } from '../../services/globalVariableServ
 import ReadonlyProductCard from './ReadonlyProductCard';
 import ReadonlyExcelView from './ReadonlyExcelView';
 import ComparisonBoard from './ComparisonBoard';
+import { formatNumber } from '../../utils/formatNumber';
 import { usePathFormulaCache } from './usePathFormulaCache';
 import { enrichComponentData } from './enrichComponentData';
 import type { LineItem } from './QuotationStep2';
@@ -259,7 +260,8 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
               <Text>
                 原价合计：
                 <Text strong>
-                  ¥{Number(quotation.originalAmount || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
+                  {/* task-0801：不再固定 2 位 toLocaleString，改走 formatNumber（6 位去尾零兜底） */}
+                  ¥{formatNumber(quotation.originalAmount || 0, { isComputed: true }) ?? '0'}
                 </Text>
               </Text>
               <Text>
@@ -268,7 +270,7 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
               <Text style={{ fontSize: 16 }}>
                 报价总金额：
                 <Text strong style={{ fontSize: 18, color: '#c00' }}>
-                  ¥{Number(quotation.totalAmount || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}
+                  ¥{formatNumber(quotation.totalAmount || 0, { isComputed: true }) ?? '0'}
                 </Text>
               </Text>
             </Space>
@@ -279,10 +281,11 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
       {/* task-0713（F5/3a）：核价侧单据总价 —— 读 costingTotalAmount（Σ核价成本 subtotal，
           不含 Step3 折扣），与上方报价总金额（含折扣）是两条口径。切换版本后由
           onVersionSwitched 增量更新 quotation.costingTotalAmount 即时反映，不整单重查。
-          精度守 cpq-decimal-display-policy：对外总额 2 位。
+          精度口径（2026-08-01 task-0801 起）：对外总额统一 DISPLAY_SCALE=6 去尾零，
+          原固定 2 位口径（cpq-decimal-display-policy 记忆）已作废，见 formatNumber.ts 头注。
           coid 门控：只有核价管理场景（CostingReviewPage 传入 coid）才显示本行；
           报价管理详情（QuotationDetail 不传 coid）没有 costing_order 语境，
-          costingTotalAmount 无意义（会显示误导性的 ¥0.00），故不渲染。 */}
+          costingTotalAmount 无意义（会显示误导性的 ¥0），故不渲染。 */}
       {!!coid && mainTab === 'costing' && viewType === 'card' && (
         <Row justify="end" style={{ marginTop: 16 }}>
           <Col>
@@ -290,7 +293,7 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
               <Text style={{ fontSize: 16 }}>
                 核价单据总价：
                 <Text strong style={{ fontSize: 18, color: '#c00' }}>
-                  ¥{Number(quotation.costingTotalAmount || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ¥{formatNumber(quotation.costingTotalAmount || 0, { isComputed: true }) ?? '0'}
                 </Text>
               </Text>
             </Space>

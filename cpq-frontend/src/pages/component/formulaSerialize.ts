@@ -69,6 +69,133 @@ function normalizeOp(op: string): string {
 }
 
 // ─────────────────────────────────────────────
+// task-0803 Task 8b: BOM 树父子取值 —— PGET/C* 函数 + [层级]/[是否叶子]/[是否根] 树属性保留字
+//
+// 真实入口订正后的落地点：这是文本表达式语言的新语法糖，与既有 SUM/KSUM/SUMIF 同层，
+// 不是独立的按钮式 UI（那是上一轮接错入口的孤儿代码 FormulaBuilder.tsx / TreeRefDrawer.tsx）。
+// ─────────────────────────────────────────────
+
+/** PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT → {dir, agg} 映射（parse 与 serialize 唯一权威表，改一处两侧同步）。 */
+const TREE_FN_MAP: Record<string, { dir: 'PARENT' | 'CHILD'; agg: string }> = {
+  PGET: { dir: 'PARENT', agg: 'NONE' },
+  CSUM: { dir: 'CHILD', agg: 'SUM' },
+  CAVG: { dir: 'CHILD', agg: 'AVG' },
+  CMAX: { dir: 'CHILD', agg: 'MAX' },
+  CMIN: { dir: 'CHILD', agg: 'MIN' },
+  CCOUNT: { dir: 'CHILD', agg: 'COUNT' },
+};
+/** 反查：`${dir}|${agg}` → 函数名，供 tokensToDrawerExpression 回显用；由 TREE_FN_MAP 派生，天然同步。 */
+const TREE_FN_REVERSE: Record<string, string> = Object.fromEntries(
+  Object.entries(TREE_FN_MAP).map(([fn, { dir, agg }]) => [`${dir}|${agg}`, fn]),
+);
+
+/**
+ * 树属性保留字（[层级]/[是否叶子]/[是否根]）。
+ * 裁决（2026-08-03，task-0803 Task 8b 需求订正）：即使宿主组件恰好有同名字段（如字段就叫
+ * "层级"），这三个方括号写法始终优先解析为 tree_attr 保留字，不退化为同名字段引用。
+ * 实现位置见下方 expressionToTokens 内 bracket_expr 无点分支：此裁决检查必须排在
+ * "同组件裸字段"兜底之前。
+ */
+const TREE_ATTR_RESERVED: Record<string, 'LVL' | 'IS_LEAF' | 'IS_ROOT'> = {
+  '层级': 'LVL',
+  '是否叶子': 'IS_LEAF',
+  '是否根': 'IS_ROOT',
+};
+/** 反查：attr code → 中文保留字，供序列化回显用；与 TREE_ATTR_RESERVED 手工保持逐字同步。 */
+const TREE_ATTR_REVERSE: Record<string, string> = {
+  LVL: '层级',
+  IS_LEAF: '是否叶子',
+  IS_ROOT: '是否根',
+};
+
+/**
+ * PGET/C* 括号内的取值表达式使用「裸字段名」语法（不加 `[]`）——因为父子取值永远指向
+ * 宿主本页签的字段，不需要像跨页签引用那样用 `[alias.field]` 消歧义。
+ * 例：`PGET(累计用量)`、`CSUM(用量 * 单价)`。
+ *
+ * 但方括号语法在这里并未被禁止：`[层级]`/`[是否叶子]`/`[是否根]` 三个树属性保留字，以及（误用时的）
+ * `[alias.field]` 跨页签引用，都仍写在方括号里。因此这里不重新实现一套独立的迷你语法，而是
+ * 把"裸标识符 run"预处理成 `[标识符]` 形式，再整体交给 expressionToTokens 递归解析——
+ * 跨页签引用误用时会被正常解析成 cross_tab_ref token，再由 validateTreeRefWhitelist（F-7）
+ * 拦截，不需要在这里另写一套白名单逻辑（"禁止另写一套"同样适用于解析器，不只是保存校验）。
+ *
+ * 数字字面量保持原样不包裹（否则会被误判成字段名 "3"）；已被 `[...]` / `{...}` 包裹的片段原样跳过。
+ */
+function wrapBareIdentifiers(body: string): string {
+  let out = '';
+  let i = 0;
+  while (i < body.length) {
+    const ch = body[i];
+    if (ch === '[') {
+      const end = body.indexOf(']', i);
+      if (end === -1) { out += body.slice(i); break; }
+      out += body.slice(i, end + 1);
+      i = end + 1;
+      continue;
+    }
+    if (ch === '{') {
+      const end = body.indexOf('}', i);
+      if (end === -1) { out += body.slice(i); break; }
+      out += body.slice(i, end + 1);
+      i = end + 1;
+      continue;
+    }
+    if (/\s/.test(ch)) { out += ch; i++; continue; }
+    if ('+-*/×÷()'.includes(ch)) { out += ch; i++; continue; }
+    // 数字字面量：整数/小数，原样保留
+    if (/[0-9]/.test(ch) || (ch === '.' && /[0-9]/.test(body[i + 1] ?? ''))) {
+      let num = '';
+      while (i < body.length && /[0-9.]/.test(body[i])) num += body[i++];
+      out += num;
+      continue;
+    }
+    // 裸标识符 run：吃到下一个运算符/括号/空白/方括号/花括号为止，整体包一层 []
+    let name = '';
+    while (i < body.length && !/[\s+\-*/×÷()[\]{}]/.test(body[i])) {
+      name += body[i++];
+    }
+    if (!name) throw new Error(`PGET/C* 表达式中含有无法识别的字符 '${ch}'`);
+    out += `[${name}]`;
+  }
+  return out;
+}
+
+/**
+ * tree_ref.targetExpr → 文本，PGET/C* 专用回显（字段裸写，不加 []；树属性仍带 []）。
+ * 与顶层 tokensToDrawerExpression 分开实现，是因为顶层 case 'field' 固定回显为 `[value]`
+ * （给主语言用），而这里同一个 field token 类型必须回显成裸字符串——语义相同、展示形态不同，
+ * 不能共用同一段渲染代码，故单独实现（非重复实现同一逻辑）。
+ */
+function renderTreeRefTargetExpr(teList: FormulaToken[]): string {
+  return teList
+    .map((te) => {
+      switch (te.type) {
+        case 'field':
+          return te.value ?? '';
+        case 'tree_attr':
+          return `[${TREE_ATTR_REVERSE[te.attr ?? ''] ?? te.attr ?? ''}]`;
+        case 'operator':
+          return ` ${te.value ?? ''} `;
+        case 'number':
+          return te.value ?? '';
+        case 'bracket_open':
+          return '(';
+        case 'bracket_close':
+          return ')';
+        case 'path':
+          return `{${te.path ?? ''}}`;
+        default:
+          // 合法保存的 tree_ref.targetExpr 只含白名单类型（F-7 已在保存前拦截其余类型），
+          // 这里防御性兜底为空串而非抛错——避免详情页因历史脏数据/绕过保存的数据直接崩溃。
+          return '';
+      }
+    })
+    .join('')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+// ─────────────────────────────────────────────
 // Tokeniser: lex the drawer expression string into raw segments
 // ─────────────────────────────────────────────
 
@@ -82,6 +209,7 @@ type RawToken =
   | { kind: 'whitespace' }
   | { kind: 'func'; name: string }           // SUM/AVG/MAX/MIN/COUNT/KSUM/KAVG/KMAX/KMIN/KCOUNT
   | { kind: 'sumif_call'; funcName: string; body: string } // SUMIF/COUNTIF/AVGIF/MINIF/MAXIF(...) 整体
+  | { kind: 'tree_call'; funcName: string; body: string }  // task-0803: PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT(...) 整体
 
 /**
  * Lex `expr` into raw tokens. Throws with a descriptive message on unrecognised input.
@@ -166,6 +294,39 @@ function lex(expr: string): RawToken[] {
         if (closeIdx === -1) throw new Error(`函数 ${upper} 的 '(' 缺少对应的 ')'`);
         const body = expr.slice(bodyStart, closeIdx);
         tokens.push({ kind: 'sumif_call', funcName: upper, body });
+        i = closeIdx + 1;
+        continue;
+      }
+      // task-0803: PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT —— BOM 树父子取值函数。
+      // 整体括号抽取写法照抄上面 SUMIF_FNS（含引号内括号不计深度的防御）；括号内容留给
+      // expressionToTokens 递归解析成 targetExpr（见 wrapBareIdentifiers 顶部注释）。
+      if (upper in TREE_FN_MAP) {
+        let j = i;
+        while (j < expr.length && /\s/.test(expr[j])) j++;
+        if (j >= expr.length || expr[j] !== '(') {
+          throw new Error(`函数 ${upper} 后必须紧跟 '('`);
+        }
+        let depth = 0;
+        let inStr = false;
+        let strChar = '';
+        let bodyStart = j + 1;
+        let closeIdx = -1;
+        for (let p = j; p < expr.length; p++) {
+          const c = expr[p];
+          if (inStr) {
+            if (c === strChar) inStr = false;
+          } else {
+            if (c === "'" || c === '"') { inStr = true; strChar = c; }
+            else if (c === '(') depth++;
+            else if (c === ')') {
+              depth--;
+              if (depth === 0) { closeIdx = p; break; }
+            }
+          }
+        }
+        if (closeIdx === -1) throw new Error(`函数 ${upper} 的 '(' 缺少对应的 ')'`);
+        const body = expr.slice(bodyStart, closeIdx);
+        tokens.push({ kind: 'tree_call', funcName: upper, body });
         i = closeIdx + 1;
         continue;
       }
@@ -419,6 +580,28 @@ export function expressionToTokens(
       continue;
     }
 
+    // ── task-0803 Task 8b: PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT 解析 ──
+    // lex 已把 FUNC(body) 整体抽出；body 用裸字段名语法（wrapBareIdentifiers 包一层 [] 后）
+    // 递归复用本函数本身解析成 targetExpr。是否合法（内层混入 cross_tab_ref/嵌套 tree_ref 等）
+    // 不在这里判断——解析只管语法，语义白名单交给保存前的 validateTreeRefWhitelist（F-7），
+    // 与 SUMIF 值表达式解析（parseValueExpr 不做语义收敛）分工一致。
+    if (raw.kind === 'tree_call') {
+      const meta = TREE_FN_MAP[raw.funcName];
+      const wrapped = wrapBareIdentifiers(raw.body);
+      const targetExpr = expressionToTokens(wrapped, tabDefs, selfRowKeyFields, selfComponentId);
+      if (targetExpr.length === 0) {
+        throw new Error(`${raw.funcName}() 内必须填写取值表达式`);
+      }
+      result.push({
+        type: 'tree_ref',
+        dir: meta.dir,
+        agg: meta.agg,
+        targetExpr,
+      });
+      k++;
+      continue;
+    }
+
     // ── FN(...) 折叠 ──
     //   单列   FN([alias.field])            → 旧 cross_tab_ref（单 target，向后兼容）
     //   行级   FN([宿主.列] * [source.列])  → cross_tab_ref + targetExpr（SUMPRODUCT）
@@ -642,7 +825,12 @@ export function expressionToTokens(
               targetExpr.push({
                 type: 'component_subtotal',
                 value: col,
-                tab_name: col,
+                // repair-0803 F1（BL-0099）：tab_name 应为**页签名**，原先误填列名 col，
+                // 导致后端 appendToken 第 2 级回退拼出 "税率#税率" 这类恒不命中的键。
+                // 当前靠第 1 级 component_code+"#"+col 兜住未出事，但一旦 alias 落空就会
+                // 连续跌到第 3/4 级「取整个组件小计合计」（如 产品 = 管理费+税率之和）而静默算错。
+                // 注意：本文件 :856 的 tab_name: AMOUNT_TOTAL_KEY 是 BL-0017 的哨兵键设计，不在此列。
+                tab_name: td.alias,
                 component_code: td.alias,
                 label: `${td.componentName ?? td.alias}·${col}`,
               });
@@ -821,7 +1009,8 @@ export function expressionToTokens(
             result.push({
               type: 'component_subtotal',
               value: fieldPart,
-              tab_name: fieldPart,
+              // repair-0803 F1（BL-0099）：同 :645，tab_name 应为页签名而非列名。
+              tab_name: tabDef.alias,
               component_code: tabDef.alias,
               label: `${tabDef.componentName ?? tabDef.alias}·${fieldPart}`,
             });
@@ -830,6 +1019,10 @@ export function expressionToTokens(
               makeCrossTabRef(alias, fieldPart, isAgg ? 'SUM' : 'NONE', tabDefs, selfRowKeyFields),
             );
           }
+        } else if (TREE_ATTR_RESERVED[body]) {
+          // task-0803 Task 8b: 树属性保留字（[层级]/[是否叶子]/[是否根]）—— 优先于同名字段
+          // 的裁决（见文件顶部 TREE_ATTR_RESERVED 注释），必须排在下面"同组件裸字段"兜底之前。
+          result.push({ type: 'tree_attr', attr: TREE_ATTR_RESERVED[body] });
         } else {
           // Check for whole-tab total: [alias(总计)] (no dot but ends in (总计))
           if (body.endsWith('(总计)')) {
@@ -1072,6 +1265,21 @@ export function tokensToDrawerExpression(
         break;
       }
 
+      case 'tree_ref': {
+        // task-0803 Task 8b: PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT 回显。
+        // targetExpr 内字段裸写（不加 []）—— 见 renderTreeRefTargetExpr 顶部注释，
+        // 与顶层 case 'field' 固定回显 `[value]` 是两套展示形态，故不复用同一段渲染代码。
+        const fnName = TREE_FN_REVERSE[`${token.dir}|${token.agg}`] ?? 'PGET';
+        const inner = renderTreeRefTargetExpr(token.targetExpr ?? []);
+        parts.push(`${fnName}(${inner})`);
+        break;
+      }
+
+      case 'tree_attr':
+        // task-0803 Task 8b: [层级]/[是否叶子]/[是否根] 树属性保留字回显。
+        parts.push(`[${TREE_ATTR_REVERSE[token.attr ?? ''] ?? token.attr ?? ''}]`);
+        break;
+
       default:
         // Other token types (component_subtotal, product_attribute, etc.) are not produced
         // by expressionToTokens and have no drawer-string representation — skip.
@@ -1215,6 +1423,158 @@ export function checkMappable(tokens: FormulaToken[]): { mappable: boolean; reas
       reason: '存在与宿主无公共行键的跨页签引用（match 为空），不可对齐。请改引可比页签或用其整页签小计 [页签(总计)]。' };
   }
   return { mappable: true };
+}
+
+// ─────────────────────────────────────────────
+// tree_ref.targetExpr 内层白名单校验（task-0803 Task 6）
+// ─────────────────────────────────────────────
+
+/**
+ * task-0803：{@code tree_ref.targetExpr} 内允许的 token type 白名单。
+ *
+ * <p>🔒 必须与后端 {@code TokenMappabilityValidator.TREE_REF_INNER_ALLOWED_TYPES} 逐字一致
+ * （人工核对：两侧集合内容相同，无法共享常量跨 Java/TS 语言边界）——见
+ * `cpq-backend/src/main/java/com/cpq/component/formula/TokenMappabilityValidator.java`。
+ *
+ * <p>放行 {@code tree_attr}（PGET/C* 的 targetExpr 里允许再引用「层级/是否叶子/是否根」这类
+ * 树属性）与 {@code global_variable}（全局变量与树上下文无关，天然可算）。
+ *
+ * <p>必拒：嵌套 {@code tree_ref}（禁止 PGET/C* 套 PGET/C*，语义会失控地递归穿层）、
+ * {@code cross_tab_ref}（跨页签引用与「同页签父子行」是两套模型，混用行键语义对不上）、
+ * {@code component_subtotal} / {@code b_field} / {@code previous_row_subtotal}
+ * （这些都假定「当前页签的行序/列小计」上下文，父子取值求值时子/父行是另一行的 RowContext，
+ * 这些 token 在那个上下文里没有稳定语义）。
+ */
+const TREE_REF_INNER_ALLOWED_TYPES = new Set<string>([
+  'field', 'operator', 'number', 'bracket_open', 'bracket_close', 'global_variable', 'tree_attr',
+]);
+
+export interface TreeRefValidationResult {
+  valid: boolean;
+  reason?: string;
+}
+
+/**
+ * 递归扫描任意 token / token 数组，逐一找出其中所有 {@code tree_ref} token（无论嵌套多深），
+ * 并对每个找到的 {@code tree_ref} 校验其 {@code targetExpr} 是否只含白名单类型。
+ *
+ * <p>⚠️ 必须递归（2026-08-03 后端评审教训）：若只扫顶层 token（如"遍历公式数组，
+ * 只在 top-level token.type==='tree_ref' 时才检查"），一个 {@code tree_ref} 藏进
+ * {@code cross_tab_ref.targetExpr}（或任何其他容器 token 的 targetExpr/sources 等
+ * 数组字段）里就能悄悄绕过校验——后端 {@code TokenMappabilityValidator.validate()}
+ * 就踩过这个坑（该函数原本只在扫到 cross_tab_ref 时才下钻其 targetExpr 里的
+ * cross_tab_ref 子 token，一个 tree_ref 混进同一个 targetExpr 数组会被直接跳过）。
+ *
+ * <p>因此这里不区分"当前是否已经在 tree_ref 内部"，而是对每个 token 无差别下钻
+ * 所有"值为数组"的属性键（targetExpr 是已知的一个，未来新增的容器字段——只要是数组——
+ * 天然被这个通用遍历覆盖到，不需要逐个新字段名手动补线），一旦发现某个 token 的
+ * {@code type === 'tree_ref'}，就地校验它自身 {@code targetExpr} 的白名单，然后
+ * 继续往下钻（防御性：即使白名单类型本身按约定是叶子级、理论上不含嵌套数组，
+ * 仍然递归以防未来协议变化引入嵌套）。
+ *
+ * @returns 命中的第一条违规原因；全部合规则返回 null。
+ */
+function scanTreeRefViolations(node: unknown): string | null {
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const err = scanTreeRefViolations(item);
+      if (err) return err;
+    }
+    return null;
+  }
+  if (node && typeof node === 'object') {
+    const token = node as Record<string, unknown>;
+
+    if (token.type === 'tree_ref') {
+      const targetExpr = token.targetExpr;
+      if (Array.isArray(targetExpr)) {
+        for (const inner of targetExpr) {
+          if (!inner || typeof inner !== 'object') continue;
+          const innerType = (inner as Record<string, unknown>).type;
+          if (typeof innerType === 'string' && innerType && !TREE_REF_INNER_ALLOWED_TYPES.has(innerType)) {
+            return `tree_ref.targetExpr 内出现不允许的 token 类型「${innerType}」` +
+              '（白名单：field/operator/number/bracket_open/bracket_close/global_variable/tree_attr）。';
+          }
+        }
+      }
+    }
+
+    // 无差别下钻本 token 的所有属性值（含 targetExpr / sources 等）——保证 tree_ref
+    // 即使被包在 cross_tab_ref.targetExpr 等容器内部、嵌套任意深度也逃不掉校验。
+    for (const key of Object.keys(token)) {
+      const err = scanTreeRefViolations(token[key]);
+      if (err) return err;
+    }
+  }
+  return null;
+}
+
+/**
+ * 校验一段 {@link FormulaToken}[]（整条公式，或任意子表达式如 targetExpr）内所有
+ * {@code tree_ref} token 的 {@code targetExpr} 是否只含白名单类型。
+ *
+ * 递归扫描整棵 token 树（不仅仅是顶层），能捕获 {@code tree_ref} 被嵌套在
+ * {@code cross_tab_ref.targetExpr} 等任意容器内部的情形——详见
+ * {@link scanTreeRefViolations} 的注释。
+ */
+export function validateTreeRefWhitelist(
+  tokens: FormulaToken[] | null | undefined,
+): TreeRefValidationResult {
+  if (!tokens || tokens.length === 0) return { valid: true };
+  const err = scanTreeRefViolations(tokens);
+  return err ? { valid: false, reason: err } : { valid: true };
+}
+
+/**
+ * task-0803 Task 8b：递归判断一段 {@link FormulaToken}[] 内是否出现过任意 tree_ref token
+ * （PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT 解析后的产物），不论嵌套多深（复用
+ * {@link scanTreeRefViolations} 同款"无差别下钻所有数组属性值"的通用递归，理由同上——
+ * 一个 tree_ref 藏进 cross_tab_ref.targetExpr 等容器内部也不能漏检）。
+ *
+ * 只测 tree_ref（不含 tree_attr）——一个类型精确的诊断用途工具函数。
+ * ⚠️ **不要**用它做 F-2 的 BOM-only 保存拦截判据：那个判据必须与后端
+ * `ComponentService.assertTreeTokenGates` 的 `hasTreeToken` 口径一致（tree_ref **或**
+ * tree_attr 任一命中即拒），否则前端放行、后端 400，体验割裂——见下方 {@link containsTreeToken}
+ * （2026-08-03 评审订正：此前误判 tree_attr 不受 BOM-only 限制，实为文案漏列，语义与
+ * tree_ref 相同；`checkTreeRefTabTypeGate` 已改用 containsTreeToken）。
+ */
+export function containsTreeRef(tokens: FormulaToken[] | null | undefined): boolean {
+  if (!tokens || tokens.length === 0) return false;
+  const scan = (node: unknown): boolean => {
+    if (Array.isArray(node)) return node.some(scan);
+    if (node && typeof node === 'object') {
+      const t = node as Record<string, unknown>;
+      if (t.type === 'tree_ref') return true;
+      return Object.keys(t).some((k) => scan(t[k]));
+    }
+    return false;
+  };
+  return scan(tokens);
+}
+
+/**
+ * task-0803 Task 8b（F-2 用，2026-08-03 评审订正）：递归判断一段 {@link FormulaToken}[] 内是否
+ * 出现过 tree_ref **或** tree_attr 中的任意一种——镜像后端 `ComponentService
+ * .assertTreeTokenGates` 的 `hasTreeToken` 判定口径（该方法对 `"tree_ref".equals(type)` 与
+ * `"tree_attr".equals(type)` 一视同仁地置位 `hasTreeToken`，非 BOM 页签命中即 400）。
+ * 需求 §4.3.8 闸② 原文：「公式含 tree_ref 或 tree_attr 且 tabType≠BOM → 400」。
+ *
+ * {@link checkTreeRefTabTypeGate}（TabJoinFormulaDrawer.tsx）用这个函数做保存前拦截，
+ * 不能用只测 tree_ref 的 {@link containsTreeRef}，否则非 BOM 页签的 `[层级]` 会被前端放行、
+ * 保存时才收到后端 400，前后端口径打架。
+ */
+export function containsTreeToken(tokens: FormulaToken[] | null | undefined): boolean {
+  if (!tokens || tokens.length === 0) return false;
+  const scan = (node: unknown): boolean => {
+    if (Array.isArray(node)) return node.some(scan);
+    if (node && typeof node === 'object') {
+      const t = node as Record<string, unknown>;
+      if (t.type === 'tree_ref' || t.type === 'tree_attr') return true;
+      return Object.keys(t).some((k) => scan(t[k]));
+    }
+    return false;
+  };
+  return scan(tokens);
 }
 
 // ─────────────────────────────────────────────

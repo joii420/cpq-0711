@@ -158,7 +158,8 @@ public class TabJoinPlanEvaluator {
             int close = matchParen(expr, open);
             String inner = expr.substring(open + 1, close);
             out.append(expr, i, fnStart);
-            out.append(reduceAggS(fn, inner, rows, scalars).toPlainString());
+            // task-0801 B3："B" 后缀（JEXL BigDecimal 字面量语法），否则仍按 Double 解析（R-3）。
+            out.append(reduceAggS(fn, inner, rows, scalars).toPlainString()).append('B');
             i = close + 1;
         }
         return out.toString();
@@ -172,8 +173,10 @@ public class TabJoinPlanEvaluator {
             case "SUM" -> vals.stream().reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
             case "COUNT" -> java.math.BigDecimal.valueOf(vals.size());
             case "AVG" -> vals.isEmpty() ? java.math.BigDecimal.ZERO
+                // task-0801 B4：除法中间精度 10→12（PrecisionPolicy.DIVISION_SCALE，统一口径）。
                 : vals.stream().reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add)
-                      .divide(java.math.BigDecimal.valueOf(vals.size()), 10, java.math.RoundingMode.HALF_UP);
+                      .divide(java.math.BigDecimal.valueOf(vals.size()),
+                              com.cpq.common.PrecisionPolicy.DIVISION_SCALE, java.math.RoundingMode.HALF_UP);
             case "MIN" -> vals.stream().min(java.math.BigDecimal::compareTo).orElse(java.math.BigDecimal.ZERO);
             case "MAX" -> vals.stream().max(java.math.BigDecimal::compareTo).orElse(java.math.BigDecimal.ZERO);
             default -> java.math.BigDecimal.ZERO;
@@ -192,7 +195,9 @@ public class TabJoinPlanEvaluator {
             Tok tok = parseTok(m.group(1));
             String lit;
             if (tok.total()) {
-                java.math.BigDecimal s = scalars.get(tok.raw()); lit = s != null ? s.toPlainString() : "0";
+                // task-0801 B3："B" 后缀（JEXL BigDecimal 字面量语法），否则仍按 Double 解析（R-3）。
+                java.math.BigDecimal s = scalars.get(tok.raw());
+                lit = (s != null ? s.toPlainString() : "0") + "B";
             } else lit = numLit(row.get(tok.raw()));
             m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(lit));
         }
@@ -220,10 +225,11 @@ public class TabJoinPlanEvaluator {
         return s.length() - 1;
     }
 
+    /** task-0801 B3："B" 后缀（JEXL BigDecimal 字面量语法），否则仍按 Double 解析（R-3）。 */
     private String numLit(Object v) {
-        if (v == null) return "0";
-        try { return new java.math.BigDecimal(v.toString().trim()).toPlainString(); }
-        catch (Exception e) { return "0"; }
+        if (v == null) return "0B";
+        try { return new java.math.BigDecimal(v.toString().trim()).toPlainString() + "B"; }
+        catch (Exception e) { return "0B"; }
     }
 
     private java.math.BigDecimal toBig(Object v) {
@@ -256,6 +262,22 @@ public class TabJoinPlanEvaluator {
             throw new IllegalStateException(
                 "Excel 列模型暂不支持多 source 链式 SUM（sources.size=" + sources.size() +
                 "），请改用页签连表渲染（模型 A）");
+        }
+        // task-0803 Task5⑥：BOM 父子取值（tree_ref/tree_attr）——Excel 列模型（本连表求值器）
+        // 没有宿主行的树上下文（父子关系只在 BOM 树页签自身的单元格拓扑路径
+        // com.cpq.quotation.service.FormulaCalculator#computeRowsCellTopo 中维护），
+        // 显式拒绝而非静默返 0（静默少算比报错更危险）。
+        // 2026-08-03 评审确认的可达性结论：Excel 模型（TAB_JOIN_FORMULA/COMPONENT_FIELD 等
+        // source_type）读的是"已算好的组件行值"（如 ExcelViewService 的
+        // COMPONENT_FIELD → componentRowData.get(fieldKey)），并不重新求值组件公式本身，
+        // 所以 tree_ref 正常路径下不会真的跑到这条 evaluateColumn 里被重算；本闸与它的
+        // KSUM/多 source 同伴一样是纯防御性兜底（防手工构造的 column 配置绕过）。真正保证
+        // "遇到父子取值不会静默少算"的是 ExcelViewService（约 :481-486）
+        // 对 TAB_JOIN_FORMULA 求值异常的 try/catch → warn → 该列置空 的降级管线，不是本闸。
+        Object colType = col.get("type");
+        if ("tree_ref".equals(colType) || "tree_attr".equals(colType)) {
+            throw new IllegalStateException(
+                "Excel 列模型暂不支持 BOM 父子取值（tree_ref/tree_attr），请改用页签连表渲染（模型 A）");
         }
         // ────────────────────────────────────────────────────────────────────────────
         String expr = (String) col.getOrDefault("expression", "");

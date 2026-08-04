@@ -5,7 +5,11 @@
  * `${key}#${AMOUNT_TOTAL_KEY}`（= Σ金额列）实现，求值器不变、裸键不变。本行显示与
  * `[页签(总计)]` 现已**同值同口径**（不再分叉）。裸键 `allComponentSubtotals[tabName]` 仍 =
  * Σ所有 is_subtotal 列，专供 previous_row_subtotal / 产品小计兜底 / 折扣，未受 BL-0017 影响。
+ *
+ * task-0801：本文件两处累加改十进制精确（sumDecimal），不再 number `+=` 链式累加 —— 链路一
+ * （单页签金额合计，量级 ≤10⁶）内部精确算，结果仍以 number 承载，呈现精度由显示层负责。
  */
+import { sumDecimal } from '../../utils/precision';
 
 /** BL-0017 哨兵列键：`${componentId|code|tabName}#__amount_total__` = 该页签金额列小计之和。 */
 export const AMOUNT_TOTAL_KEY = '__amount_total__';
@@ -31,11 +35,11 @@ export function sumAmountFromByCol(
   const amountCols = new Set(
     fields.filter((f) => f.is_amount && f.is_subtotal).map((f) => f.name),
   );
-  let total = 0;
+  const values: number[] = [];
   for (const [col, val] of Object.entries(byCol)) {
-    if (amountCols.has(col)) total += val;
+    if (amountCols.has(col)) values.push(val);
   }
-  return total;
+  return sumDecimal(values).toNumber();
 }
 
 /**
@@ -48,12 +52,15 @@ export function sumTabColumns(
   subtotalMap: Record<string, number>,
 ): number {
   if (!comp?.fields) return 0;
-  let total = 0;
+  const values: number[] = [];
   for (const f of comp.fields) {
     // M1 保险：金额合计只认「既是金额、又有真实小计值」的列（per-column 小计仅为 is_subtotal 列写入）
     if (!(f.is_amount && f.is_subtotal)) continue;
-    total += subtotalMap[`${comp.componentCode}#${f.name}`]
-          ?? subtotalMap[`${comp.tabName}#${f.name}`] ?? 0;
+    values.push(
+      subtotalMap[`${comp.componentCode}#${f.name}`]
+      ?? subtotalMap[`${comp.tabName}#${f.name}`] ?? 0,
+    );
   }
+  const total = sumDecimal(values).toNumber();
   return total;
 }

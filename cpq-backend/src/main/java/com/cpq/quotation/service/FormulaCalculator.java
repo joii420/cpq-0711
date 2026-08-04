@@ -1,5 +1,6 @@
 package com.cpq.quotation.service;
 
+import com.cpq.common.PrecisionPolicy;
 import com.cpq.quotation.rowkey.DeletedRowKeys;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -8,7 +9,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -39,7 +39,8 @@ import java.util.Map;
 public class FormulaCalculator {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final BigDecimal ZERO4 = BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
+    // task-0801 B2：十进制化 —— 不再带 scale(4)，避免把 4 位截断传染给整条求值链（呈现边界由 B5 统一规整到 6 位）。
+    private static final BigDecimal ZERO = BigDecimal.ZERO;
 
     private final com.cpq.formula.predicate.ConditionPredicateEvaluator predicateEval =
             new com.cpq.formula.predicate.ConditionPredicateEvaluator();
@@ -68,25 +69,52 @@ public class FormulaCalculator {
         public Map<String, Object> currentRowRaw = new HashMap<>();
         /** cross_tab_ref：同卡片已算行存储（组件标识→行表，行=字段名→已算值）。 */
         public Map<String, List<Map<String, Object>>> crossTabRows = new HashMap<>();
+
+        /**
+         * task-0803：BOM 树求值上下文。
+         * {@code null} = 非树页签、或该页签公式未使用父子 token —— 此时 {@code tree_ref}/{@code tree_attr}
+         * 求值一律返 0（需求 §4.3.8 闸 ⑤ 兜底，防存量脏数据静默算错）。
+         */
+        public TreeEvalContext tree = null;
+        /** task-0803：本行在 baseRows 中的下标；{@code tree != null} 时有效，否则 -1。 */
+        public int rowIndex = -1;
     }
+
+    /**
+     * task-0803：BOM 树页签的整页签求值上下文。
+     *
+     * <p>与 {@code baseRows} 下标一一对应；{@code rowContexts} 在单元格拓扑求值过程中被逐格填充，
+     * 因此 {@code PGET}/{@code C*} 读到的父/子行值，一定是拓扑序保证已算好的那一份。
+     *
+     * @param relations      父子关系（按 {@code __nodeId} 认边，已排除墓碑）
+     * @param rowContexts    各行求值上下文（可变，随求值填充）
+     * @param resolvedRaw    各行「已解析原始值」视图（字段名 → 原始值），判「有值」用
+     * @param formulaColumns 公式列名集合 —— 需求 §4.3.4 判据 6：公式列恒有值
+     */
+    public record TreeEvalContext(com.cpq.quotation.service.formula.TreeRelations relations,
+                                  List<RowContext> rowContexts,
+                                  List<Map<String, Object>> resolvedRaw,
+                                  java.util.Set<String> formulaColumns) {}
 
     // ======================================================================
     // Layer 1 — evaluateExpression（单公式 token 数组 → BigDecimal）
     // ======================================================================
 
     public BigDecimal evaluateExpression(JsonNode tokens, RowContext ctx) {
-        if (tokens == null || !tokens.isArray() || tokens.size() == 0) return ZERO4;
+        if (tokens == null || !tokens.isArray() || tokens.size() == 0) return ZERO;
         RowContext c = ctx != null ? ctx : new RowContext();
         try {
             StringBuilder expr = new StringBuilder();
             for (JsonNode token : tokens) {
                 appendToken(expr, token, c);
             }
-            double result = new ArithParser(expr.toString()).parse();
-            if (Double.isNaN(result) || Double.isInfinite(result)) return ZERO4; // 除零/非有限 → 0
-            return BigDecimal.valueOf(result).setScale(4, RoundingMode.HALF_UP);
+            // task-0801 B2：ArithParser 全程 BigDecimal 精确运算，此处不再 setScale(4) 截断
+            // （呈现边界由调用方 / B5 统一规整到 6 位）。除零语义由 ArithParser 内部经
+            // PrecisionPolicy.divide() 兜底为 ZERO（不抛异常，api.md G-9），故此处不再需要
+            // Double.isNaN/isInfinite 判断。
+            return new ArithParser(expr.toString()).parse();
         } catch (Exception e) {
-            return ZERO4; // 解析异常 → 0（对齐前端 try/catch）
+            return ZERO; // 解析异常 → 0（对齐前端 try/catch）
         }
     }
 
@@ -203,10 +231,14 @@ public class FormulaCalculator {
             case "cross_tab_ref": {
                 Object v = evalCrossTab(token, ctx);
                 if (v == null) {
-                    // I-2: KAVG/KMAX/KMIN 空集 → null → 注入非法表达式 → 外层 try/catch → 0
-                    // 对齐前端 `expr += '(null.x)'` 行为
-                    expr.append("(0/0)");  // 触发 ArithParser 除零 → Double.isInfinite → ZERO4
-                    break;
+                    // I-2: KAVG/KMAX/KMIN 空集 → null → 直接抛异常 → 外层 try/catch → 整表达式塌 0
+                    // 对齐前端 `expr += '(null.x)'` 行为。
+                    // task-0801 B2 十进制化后注意：原实现注入字面量 "(0/0)"，依赖 double 除零产生
+                    // NaN 再由 evaluateExpression 的 Double.isNaN 检测触发降级；BigDecimal 化后
+                    // 除零改由 PrecisionPolicy.divide() 优雅返回 ZERO（不抛异常，api.md G-9），
+                    // "(0/0)" 这条路已不再能触发降级 —— 故直接 throw，与下面 FormulaErrorMarker
+                    // 分支手法一致，语义（整表达式塌 0）完全不变。
+                    throw new IllegalStateException("cross_tab_ref empty aggregate (I-2 KAVG/KMAX/KMIN)");
                 }
                 if (v instanceof FormulaErrorMarker) {
                     throw new IllegalStateException("cross_tab_ref multi/non-numeric");
@@ -215,10 +247,125 @@ public class FormulaCalculator {
                 expr.append(numStr(n != null ? n : 0.0));
                 break;
             }
+            // task-0803：BOM 页签父子取值。求值结果当字面量追加（带括号防负数与前一个运算符粘连）。
+            case "tree_ref": {
+                expr.append('(').append(evalTreeRef(token, ctx).toPlainString()).append(')');
+                break;
+            }
+            case "tree_attr": {
+                expr.append('(').append(evalTreeAttr(token, ctx).toPlainString()).append(')');
+                break;
+            }
             default:
                 // 未知 token 忽略（对齐前端 switch 不命中分支）
                 break;
         }
+    }
+
+    // ======================================================================
+    // task-0803 — BOM 页签父子取值（tree_ref / tree_attr）
+    // ======================================================================
+
+    /**
+     * {@code tree_ref} 求值：{@code dir=PARENT} 取直接父行（PGET）；{@code dir=CHILD} 聚合直接子行（C* 族）。
+     *
+     * <p>边界口径（需求 §4.3.3，全部返 0，无例外）：根行 PGET → 0；叶子行 C* → 0；
+     * 子行全部无值 → 0；拿不到树上下文（非树页签 / 存量脏数据）→ 0。
+     */
+    private BigDecimal evalTreeRef(JsonNode token, RowContext ctx) {
+        TreeEvalContext t = ctx.tree;
+        if (t == null || ctx.rowIndex < 0 || ctx.rowIndex >= t.rowContexts().size()) return ZERO;
+        JsonNode targetExpr = token.path("targetExpr");
+        if (!targetExpr.isArray() || targetExpr.size() == 0) return ZERO;
+
+        String dir = token.path("dir").asText("");
+        if ("PARENT".equals(dir)) {
+            int p = t.relations().parentOf(ctx.rowIndex);
+            if (p < 0) return ZERO;                                  // 根行无父 → 0
+            return evaluateExpression(targetExpr, t.rowContexts().get(p));
+        }
+        if (!"CHILD".equals(dir)) return ZERO;
+
+        List<Integer> kids = t.relations().childrenOf(ctx.rowIndex);
+        if (kids.isEmpty()) return ZERO;                              // 叶子行 → 0
+
+        java.util.Set<String> names = collectFieldNames(targetExpr);
+        List<BigDecimal> nums = new ArrayList<>(kids.size());
+        for (int c : kids) {
+            if (!hasValueForAgg(t, c, names)) continue;               // 空值不参与（§4.3.4）
+            nums.add(evaluateExpression(targetExpr, t.rowContexts().get(c)));
+        }
+        if (nums.isEmpty()) return ZERO;                              // 子行全无值 → 0
+        return aggregateTreeNums(token.path("agg").asText("SUM"), nums);
+    }
+
+    /** {@code tree_attr} 求值：层级 / 是否叶子 / 是否根。拿不到树上下文 → 0。 */
+    private BigDecimal evalTreeAttr(JsonNode token, RowContext ctx) {
+        TreeEvalContext t = ctx.tree;
+        if (t == null || ctx.rowIndex < 0) return ZERO;
+        return switch (token.path("attr").asText("")) {
+            case "LVL" -> BigDecimal.valueOf(t.relations().lvl(ctx.rowIndex));
+            case "IS_LEAF" -> t.relations().isLeaf(ctx.rowIndex) ? BigDecimal.ONE : ZERO;
+            case "IS_ROOT" -> t.relations().isRoot(ctx.rowIndex) ? BigDecimal.ONE : ZERO;
+            default -> ZERO;
+        };
+    }
+
+    /** 收集表达式里所有 {@code field} token 的列名（判「有值」用）。 */
+    private static java.util.Set<String> collectFieldNames(JsonNode expr) {
+        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+        if (expr == null || !expr.isArray()) return out;
+        for (JsonNode tk : expr) {
+            if ("field".equals(tk.path("type").asText(""))) {
+                String v = tk.path("value").asText("");
+                if (!v.isEmpty()) out.add(v);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 需求 §4.3.4「有值」判据（实现版）：
+     * <ol>
+     *   <li>判据 5：表达式无 {@code field} token（纯常量/树属性）→ 有值（{@code CSUM(1)} = 子行数）</li>
+     *   <li>判据 6：引用的是<b>公式列</b> → 恒有值（公式列总能算出数，哪怕 0）。
+     *       <b>已明示接受的取舍</b>：聚合公式列时 spine 补位空行仍会参与（2026-08-03 用户裁决）</li>
+     *   <li>判据 3：任一引用列在该行有非空原始值 → 有值（数值 0 也算有值）</li>
+     *   <li>判据 2：引用列全部取不到值 → 无值，跳过该子行</li>
+     * </ol>
+     */
+    private static boolean hasValueForAgg(TreeEvalContext t, int rowIdx, java.util.Set<String> names) {
+        if (names.isEmpty()) return true;
+        Map<String, Object> raw = (rowIdx >= 0 && rowIdx < t.resolvedRaw().size())
+            ? t.resolvedRaw().get(rowIdx) : Map.of();
+        for (String n : names) {
+            if (t.formulaColumns().contains(n)) return true;
+            if (!isBlank(raw.get(n))) return true;
+        }
+        return false;
+    }
+
+    /**
+     * C* 族聚合。
+     *
+     * <p>🔒 <b>口径必须与 cross_tab_ref 的聚合分支保持一致</b>（本类内 {@code aggregateHits} 的
+     * {@code switch (agg)}）：BigDecimal 全程、{@code PrecisionPolicy.sum} 累加、AVG 走
+     * {@code DIVISION_SCALE + HALF_UP}、MAX/MIN 按 {@code compareTo} 选值。
+     * 这里<b>刻意另写一份而非抽取共用</b> —— cross_tab_ref 那段是热路径且语义含 {@code ERR} 分流，
+     * 抽取会改动它的代码路径，违反本任务的零回归门禁。改动任一处时请同步核对另一处。
+     * 差异仅一处：本方法支持 {@code COUNT}（返回有值子行数），cross_tab_ref 那边 COUNT 走别的路径。
+     */
+    private static BigDecimal aggregateTreeNums(String agg, List<BigDecimal> nums) {
+        if (nums == null || nums.isEmpty()) return ZERO;
+        return switch (agg) {
+            case "SUM" -> PrecisionPolicy.sum(nums);
+            case "AVG" -> PrecisionPolicy.sum(nums).divide(BigDecimal.valueOf(nums.size()),
+                PrecisionPolicy.DIVISION_SCALE, java.math.RoundingMode.HALF_UP);
+            case "MAX" -> nums.stream().max(BigDecimal::compareTo).orElse(ZERO);
+            case "MIN" -> nums.stream().min(BigDecimal::compareTo).orElse(ZERO);
+            case "COUNT" -> BigDecimal.valueOf(nums.size());
+            default -> ZERO;
+        };
     }
 
     /** path token 取值：basicDataValues["{path}"] → toNumber；缺失 → null（后端无 pathCache，basicDataValues 已解析）。 */
@@ -320,23 +467,29 @@ public class FormulaCalculator {
             return java.math.BigDecimal.ZERO;
         }
 
-        List<Double> nums = new ArrayList<>(hits.size());
+        // task-0801 B4-2（审计追加发现）：原实现 toNumber()（→Double）逐项收集后再
+        // nums.stream().mapToDouble().sum()/average()/max()/min() 是双重转换 + double 累加
+        // （BigDecimal targetRowValue → double → 再累加 → BigDecimal.valueOf 包回），SUM 多项时
+        // 会在 double 二进制精度上产生可见误差（如 2.26+4.52 不精确等于 6.78）。旧代码靠
+        // evaluateExpression 顶层 setScale(4) 掩盖，B2 去掉该截断后原样冒出。改走 BigDecimal
+        // 全程收集 + PrecisionPolicy 累加/除法，MAX/MIN 直接按 BigDecimal 比较选值。
+        List<BigDecimal> nums = new ArrayList<>(hits.size());
         for (Map<String, Object> h : hits) {
             Object rv = targetRowValue(h, token, ctx);
             if (rv instanceof FormulaErrorMarker) return ERR;  // 多 source 广播 multiSrcHitErr
-            Double n = toNumber(rv);
+            BigDecimal n = toBigNumber(rv);
             if (n == null) return ERR;
             nums.add(n);
         }
-        double r;
         switch (agg) {
-            case "SUM": r = nums.stream().mapToDouble(Double::doubleValue).sum(); break;
-            case "AVG": r = nums.stream().mapToDouble(Double::doubleValue).average().orElse(0); break;  // 死分支保留
-            case "MAX": r = nums.stream().mapToDouble(Double::doubleValue).max().orElse(0); break;
-            case "MIN": r = nums.stream().mapToDouble(Double::doubleValue).min().orElse(0); break;
+            case "SUM": return PrecisionPolicy.sum(nums);
+            case "AVG": return nums.isEmpty() ? BigDecimal.ZERO
+                : PrecisionPolicy.sum(nums).divide(BigDecimal.valueOf(nums.size()),
+                    PrecisionPolicy.DIVISION_SCALE, java.math.RoundingMode.HALF_UP);  // 死分支保留
+            case "MAX": return nums.stream().max(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
+            case "MIN": return nums.stream().min(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
             default: return ERR;
         }
-        return java.math.BigDecimal.valueOf(r);
     }
 
     /**
@@ -568,9 +721,8 @@ public class FormulaCalculator {
         // Plan 2-核心：委托按列计算后求所有小计列之和（单小计列时 = 原行为）。
         Map<String, BigDecimal> byCol = computeTabSubtotalsByColumn(
             fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows, componentSubtotals);
-        BigDecimal sum = ZERO4;
-        for (BigDecimal v : byCol.values()) sum = sum.add(v);
-        return sum.setScale(4, RoundingMode.HALF_UP);
+        // task-0801 B2：BigDecimal 精确累加，不再 setScale(4) 截断（呈现边界由 B5 统一规整）。
+        return PrecisionPolicy.sum(byCol.values());
     }
 
     /** 逐列求和：每个 is_subtotal 列 → 该列各行结果之和。Plan 2-核心：多小计列。零破坏：旧签名不过滤。 */
@@ -615,16 +767,19 @@ public class FormulaCalculator {
             componentSubtotals, new HashMap<>(), new HashMap<>(), Map.of(), deleted, rowKeyFieldNames,
             cache, cacheKey);
         for (String sf : subtotalFields) {
-            double sum = 0.0;
+            // task-0801 B2：累加过程改 BigDecimal 精确求和（原 double += 几十行累加会有中间误差），
+            // 不再 setScale(4) 截断；仅在写回 out（BigDecimal 结果 map，供 componentSubtotals
+            // 落值/公式引用）时保留全精度，呈现边界由 B5 统一规整。
+            BigDecimal sum = BigDecimal.ZERO;
             for (RowResult rr : rows) {
                 // FORMULA 字段优先取 formulaValues；INPUT_NUMBER/FIXED_VALUE/BASIC_DATA 等
                 // 输入型字段的值在 fieldValues 里，formulaValues 中无此键，回退读 fieldValues。
                 Double v = rr.formulaValues.containsKey(sf)
                     ? rr.formulaValues.get(sf)
                     : rr.fieldValues.get(sf);
-                if (v != null) sum += v;
+                if (v != null) sum = sum.add(PrecisionPolicy.of(v.doubleValue()));
             }
-            out.put(sf, BigDecimal.valueOf(sum).setScale(4, RoundingMode.HALF_UP));
+            out.put(sf, sum);
         }
         return out;
     }
@@ -818,42 +973,29 @@ public class FormulaCalculator {
         List<FormulaField> formulaFields = collectFormulaFields(fields, formulas, formulaAssignments);
         List<String> order = topoOrder(formulaFields);
 
+        // ── task-0803 路由 ───────────────────────────────────────────────────
+        // 只有「行集是树」**且**「公式真用了父子 token」才走单元格拓扑求值。
+        // 任一不满足 → 下方原逐行路径**一字不动**（零回归门禁）。
+        if (com.cpq.quotation.service.formula.TreeRelations.isTreeRows(baseRows)
+                && usesTreeTokens(formulaFields)) {
+            return computeRowsCellTopo(fields, baseRows, effKeys, keep, editByKey, formulaFields,
+                order, componentSubtotals, quotationFields, productAttributes, crossTabRows);
+        }
+
         Map<String, Double> prevRowValues = null;  // Plan 2b：上一行全量公式值（按字段名）
         int idx = 0;
         for (JsonNode baseRow : baseRows) {
             // driver 默认行永久删除：idx 仍随完整集递增（effKeys.get(idx) 对齐完整集），命中则 continue（不重排）
             if (keep != null && !keep[idx]) { idx++; continue; }
 
-            JsonNode driverRow = baseRow.path("driverRow");
+            String effKey = effKeys.get(idx);
             JsonNode basicDataValues = baseRow.path("basicDataValues");
 
-            String effKey = effKeys.get(idx);
-
-            JsonNode editValues = editByKey.containsKey(effKey)
-                ? editByKey.get(effKey).path("values") : null;
-
-            // mergedRow = driverRow + editRows（编辑覆盖）
-            Map<String, JsonNode> mergedRow = mergeRow(driverRow, editValues);
-
-            // Layer 2: 字段值收集（AP-37 每 field_type）
-            Map<String, Double> fieldValues =
-                collectFieldValues(fields, mergedRow, basicDataValues);
-
-            RowContext ctx = new RowContext();
-            ctx.fieldValues = fieldValues;
-            ctx.componentSubtotals = componentSubtotals != null ? componentSubtotals : new HashMap<>();
-            ctx.quotationFields = quotationFields != null ? quotationFields : new HashMap<>();
-            ctx.productAttributes = productAttributes != null ? productAttributes : new HashMap<>();
-            ctx.basicDataValues = toBasicDataMap(basicDataValues);
-            // cross_tab_ref（Task 1.3）：兄弟组件已算行 + 本行原始合并值（含文本，供匹配键 b 取值）
-            ctx.crossTabRows = crossTabRows != null ? crossTabRows : Map.of();
-            ctx.currentRowRaw = toRawRowMap(mergedRow);
-            fillInputDefaultSourceByFieldName(fields, basicDataValues, ctx.currentRowRaw);
-
-            // 单位换算（修正时机，物化点3）：必须在 collectFieldValues + fillInputDefaultSourceByFieldName 之后做——
-            // driver / data-source(default_source $view) 列的值此刻才解析进 fieldValues / currentRowRaw，
-            // 顶部对 mergedRow 换算会漏掉它们。用同行已解析单位换算 fieldValues[C] 与 currentRowRaw[C]。
-            com.cpq.engine.unit.UnitConversion.convertResolvedRow(fields, fieldValues, ctx.currentRowRaw);
+            // task-0803：上下文构建抽成 buildRowEvalCtx，与单元格拓扑路径共用（防两条路径逻辑漂移）
+            RowEvalCtx re = buildRowEvalCtx(fields, baseRow, effKey, editByKey,
+                componentSubtotals, quotationFields, productAttributes, crossTabRows);
+            RowContext ctx = re.ctx();
+            Map<String, Double> fieldValues = re.fieldValues();
 
             // 按拓扑序求值，结果回填 fieldValues 供下游公式引用
             Map<String, Double> results = new LinkedHashMap<>();
@@ -876,6 +1018,251 @@ public class FormulaCalculator {
             idx++;
         }
         return out;
+    }
+
+    // ======================================================================
+    // task-0803 — 单行上下文构建（两条求值路径共用）
+    // ======================================================================
+
+    /**
+     * task-0803：BOM 树页签的单元格级拓扑求值。
+     *
+     * <p>与原逐行路径的区别只在<b>求值顺序</b>：行上下文构建、条件公式选表达式、结果回填
+     * 全部复用同一套代码（{@link #buildRowEvalCtx} / {@link #selectConditionalExpr}）。
+     *
+     * <p><b>行下标口径</b>：全程按<b>完整</b> {@code baseRows} 下标（含被墓碑过滤的行），
+     * 与 {@code effKeys} 对齐；只在最后产出 {@link RowResult} 时按 {@code keep} 过滤。
+     * 这是 AP-54「渲染用过滤子集、写回用原集合」的同款纪律 —— 树关系必须建在完整下标上，
+     * 否则父子边全错位。
+     *
+     * <p><b>PREV 不支持</b>：BOM 页签禁用 {@code previous_row_subtotal}（需求 §4.3.7，
+     * 树上「上一行」语义模糊），故此路径恒置 {@code previousRowSubtotal = null}。
+     */
+    private List<RowResult> computeRowsCellTopo(JsonNode fields, JsonNode baseRows,
+            List<String> effKeys, boolean[] keep, Map<String, JsonNode> editByKey,
+            List<FormulaField> formulaFields, List<String> order,
+            Map<String, Double> componentSubtotals, Map<String, Double> quotationFields,
+            Map<String, Double> productAttributes,
+            Map<String, List<Map<String, Object>>> crossTabRows) {
+
+        int n = baseRows.size();
+        int cols = order.size();
+
+        // 1. 全量建行上下文（含被墓碑过滤的行，保持下标一一对应）
+        List<RowContext> ctxs = new ArrayList<>(n);
+        List<Map<String, Object>> resolvedRaw = new ArrayList<>(n);
+        List<Map<String, Double>> fieldValuesByRow = new ArrayList<>(n);
+        List<JsonNode> bdvByRow = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            RowEvalCtx re = buildRowEvalCtx(fields, baseRows.get(i), effKeys.get(i), editByKey,
+                componentSubtotals, quotationFields, productAttributes, crossTabRows);
+            ctxs.add(re.ctx());
+            fieldValuesByRow.add(re.fieldValues());
+            resolvedRaw.add(re.ctx().currentRowRaw);
+            bdvByRow.add(re.basicDataValues());
+        }
+
+        // 2. 树关系：被 keep 过滤掉的行 = 墓碑，既不作父也不作子
+        java.util.Set<String> deadNodeIds = new java.util.HashSet<>();
+        if (keep != null) {
+            for (int i = 0; i < n; i++) {
+                if (keep[i]) continue;
+                JsonNode nid = baseRows.get(i).get("__nodeId");
+                if (nid != null && !nid.isNull() && !nid.asText("").isEmpty()) {
+                    deadNodeIds.add(nid.asText());
+                }
+            }
+        }
+        com.cpq.quotation.service.formula.TreeRelations relations =
+            com.cpq.quotation.service.formula.TreeRelations.of(baseRows, deadNodeIds);
+
+        // 3. 树上下文回填（rowContexts 随求值逐格填充，故 PGET/C* 读到的一定是拓扑序保证已算好的）
+        java.util.Set<String> formulaCols = new java.util.LinkedHashSet<>(order);
+        TreeEvalContext tree = new TreeEvalContext(relations, ctxs, resolvedRaw, formulaCols);
+        for (int i = 0; i < n; i++) {
+            ctxs.get(i).tree = tree;
+            ctxs.get(i).rowIndex = i;
+        }
+
+        // 4. 建单元格依赖图
+        //    行内边用 buildFormulaDeps 的**精确**列依赖，不能用「按 order 串成链」的偷懒做法 ——
+        //    链边会在双向混用时造出假环（反例：R.y=CSUM(C.x) + C.w=PGET(R.z)，
+        //    若 y 早于 z、w 早于 x，链边把它们连成环，而精确图不会）。
+        Map<String, Integer> colIdx = new HashMap<>();
+        for (int c = 0; c < cols; c++) colIdx.put(order.get(c), c);
+        Map<String, List<String>> intraDeps = buildFormulaDeps(formulaFields, formulaCols);
+
+        com.cpq.quotation.service.formula.CellGraph g =
+            new com.cpq.quotation.service.formula.CellGraph(n, cols);
+        for (int r = 0; r < n; r++) {
+            for (int c = 0; c < cols; c++) {
+                String col = order.get(c);
+                for (String d : intraDeps.getOrDefault(col, List.of())) {
+                    Integer dc = colIdx.get(d);
+                    if (dc != null) g.addEdge(r, dc, r, c);
+                }
+                for (TreeDep td : treeDepsOfField(findByName(formulaFields, col))) {
+                    if ("PARENT".equals(td.dir())) {
+                        int p = relations.parentOf(r);
+                        if (p < 0) continue;                       // 根行：边不成立（PGET 返 0）
+                        for (String rc : td.cols()) {
+                            Integer dc = colIdx.get(rc);
+                            if (dc != null) g.addEdge(p, dc, r, c);
+                        }
+                    } else if ("CHILD".equals(td.dir())) {
+                        for (int kid : relations.childrenOf(r)) {
+                            for (String rc : td.cols()) {
+                                Integer dc = colIdx.get(rc);
+                                if (dc != null) g.addEdge(kid, dc, r, c);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. 按 cell 拓扑序求值
+        com.cpq.quotation.service.formula.CellGraph.Result topo = g.topoOrder();
+        List<Map<String, Double>> resultsByRow = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) resultsByRow.add(new LinkedHashMap<>());
+
+        for (com.cpq.quotation.service.formula.CellGraph.Cell cell : topo.order()) {
+            String col = order.get(cell.col());
+            FormulaField ff = findByName(formulaFields, col);
+            if (ff == null) continue;
+            RowContext ctx = ctxs.get(cell.row());
+            ctx.previousRowSubtotal = null;                        // BOM 页签禁 PREV
+            JsonNode expr = ff.isConditional()
+                ? selectConditionalExpr(ff, ctx, fields, bdvByRow.get(cell.row()))
+                : ff.expression;
+            double val = expr != null ? evaluateExpression(expr, ctx).doubleValue() : 0.0;
+            resultsByRow.get(cell.row()).put(col, val);
+            ctx.fieldValues.put(col, val);
+        }
+
+        // 6. 环上（及其下游）cell → 0，环外照常求值（不是整页签炸）
+        for (com.cpq.quotation.service.formula.CellGraph.Cell cell : topo.cycles()) {
+            String col = order.get(cell.col());
+            resultsByRow.get(cell.row()).put(col, 0.0);
+            ctxs.get(cell.row()).fieldValues.put(col, 0.0);
+        }
+
+        // 7. 产出：只对未被墓碑过滤的行；列序按 order 保持稳定（与原路径一致）
+        List<RowResult> out = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            if (keep != null && !keep[i]) continue;
+            Map<String, Double> ordered = new LinkedHashMap<>();
+            for (String col : order) {
+                Double v = resultsByRow.get(i).get(col);
+                if (v != null) ordered.put(col, v);
+            }
+            out.add(new RowResult(effKeys.get(i), ordered, fieldValuesByRow.get(i)));
+        }
+        return out;
+    }
+
+    /** 单行求值上下文的构建产物。 */
+    private record RowEvalCtx(RowContext ctx, Map<String, Double> fieldValues, JsonNode basicDataValues) {}
+
+    /** task-0803：一处 {@code tree_ref} 引用（方向 + 它引用的列名集合），用于建跨行依赖边。 */
+    private record TreeDep(String dir, java.util.Set<String> cols) {}
+
+    /** 扫一条表达式里的 {@code tree_ref} token。 */
+    private static List<TreeDep> treeDepsOf(JsonNode expr) {
+        List<TreeDep> out = new ArrayList<>();
+        if (expr == null || !expr.isArray()) return out;
+        for (JsonNode tk : expr) {
+            if ("tree_ref".equals(tk.path("type").asText(""))) {
+                out.add(new TreeDep(tk.path("dir").asText(""), collectFieldNames(tk.path("targetExpr"))));
+            }
+        }
+        return out;
+    }
+
+    /** 扫一个公式字段（含条件公式的每条规则与默认分支）里的全部 {@code tree_ref}。 */
+    private static List<TreeDep> treeDepsOfField(FormulaField ff) {
+        List<TreeDep> out = new ArrayList<>();
+        if (ff == null) return out;
+        if (ff.isConditional()) {
+            if (ff.rules != null) for (CondRule r : ff.rules) out.addAll(treeDepsOf(r.expression));
+            out.addAll(treeDepsOf(ff.defaultExpression));
+        } else {
+            out.addAll(treeDepsOf(ff.expression));
+        }
+        return out;
+    }
+
+    /** 该表达式是否含 {@code tree_attr}（不产生依赖边，但需要树上下文才能求值）。 */
+    private static boolean hasTreeAttr(JsonNode expr) {
+        if (expr == null || !expr.isArray()) return false;
+        for (JsonNode tk : expr) {
+            if ("tree_attr".equals(tk.path("type").asText(""))) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 该页签的公式是否真的用到了父子 token。
+     *
+     * <p>🔒 <b>路由判据的一半</b>：只有「行集是树」<b>且</b>「公式真用了父子 token」才走单元格拓扑；
+     * 任一不满足 → 原逐行路径<b>一字不动</b>（零回归门禁）。
+     */
+    private static boolean usesTreeTokens(List<FormulaField> ffs) {
+        if (ffs == null) return false;
+        for (FormulaField ff : ffs) {
+            if (!treeDepsOfField(ff).isEmpty()) return true;
+            if (ff.isConditional()) {
+                if (ff.rules != null) for (CondRule r : ff.rules) if (hasTreeAttr(r.expression)) return true;
+                if (hasTreeAttr(ff.defaultExpression)) return true;
+            } else if (hasTreeAttr(ff.expression)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 构建某一行的 {@link RowContext}。
+     *
+     * <p>task-0803 从 {@code computeRows} 循环体抽出，供「逐行顺序求值」（原路径）与
+     * 「单元格拓扑求值」（BOM 树路径）共用 —— 两条路径若各建一份，
+     * 单位换算时机、default_source 回填这类微妙顺序早晚会漂移。
+     */
+    private RowEvalCtx buildRowEvalCtx(JsonNode fields, JsonNode baseRow, String effKey,
+                                       Map<String, JsonNode> editByKey,
+                                       Map<String, Double> componentSubtotals,
+                                       Map<String, Double> quotationFields,
+                                       Map<String, Double> productAttributes,
+                                       Map<String, List<Map<String, Object>>> crossTabRows) {
+        JsonNode driverRow = baseRow.path("driverRow");
+        JsonNode basicDataValues = baseRow.path("basicDataValues");
+
+        JsonNode editValues = (effKey != null && editByKey.containsKey(effKey))
+            ? editByKey.get(effKey).path("values") : null;
+
+        // mergedRow = driverRow + editRows（编辑覆盖）
+        Map<String, JsonNode> mergedRow = mergeRow(driverRow, editValues);
+
+        // Layer 2: 字段值收集（AP-37 每 field_type）
+        Map<String, Double> fieldValues = collectFieldValues(fields, mergedRow, basicDataValues);
+
+        RowContext ctx = new RowContext();
+        ctx.fieldValues = fieldValues;
+        ctx.componentSubtotals = componentSubtotals != null ? componentSubtotals : new HashMap<>();
+        ctx.quotationFields = quotationFields != null ? quotationFields : new HashMap<>();
+        ctx.productAttributes = productAttributes != null ? productAttributes : new HashMap<>();
+        ctx.basicDataValues = toBasicDataMap(basicDataValues);
+        // cross_tab_ref（Task 1.3）：兄弟组件已算行 + 本行原始合并值（含文本，供匹配键 b 取值）
+        ctx.crossTabRows = crossTabRows != null ? crossTabRows : Map.of();
+        ctx.currentRowRaw = toRawRowMap(mergedRow);
+        fillInputDefaultSourceByFieldName(fields, basicDataValues, ctx.currentRowRaw);
+
+        // 单位换算（修正时机，物化点3）：必须在 collectFieldValues + fillInputDefaultSourceByFieldName 之后做——
+        // driver / data-source(default_source $view) 列的值此刻才解析进 fieldValues / currentRowRaw，
+        // 顶部对 mergedRow 换算会漏掉它们。用同行已解析单位换算 fieldValues[C] 与 currentRowRaw[C]。
+        com.cpq.engine.unit.UnitConversion.convertResolvedRow(fields, fieldValues, ctx.currentRowRaw);
+
+        return new RowEvalCtx(ctx, fieldValues, basicDataValues);
     }
 
     // ======================================================================
@@ -1232,36 +1619,44 @@ public class FormulaCalculator {
                 continue;
             }
 
-            // ── INPUT_NUMBER / INPUT_TEXT / INPUT: editValues 覆盖 → driverRow[name] → default_source → content ──
+            // ── INPUT_NUMBER / INPUT_TEXT / INPUT ─────────────────────────────
+            // spec 2026-08-03「键存在即权威」：editValues 明确含该字段（present 且非 null）
+            // = 用户已定值 → 原样落键，**含显式清空 ""**。
+            // 改动前这里是 `if (nonEmpty(v)) out.put(...)`，空值被挡掉不落键，导致
+            // 「用户清空」与「从未填过」在 row_data 里物理同形 → 前端 bake 判成空格子
+            // 重新烘默认值 → 用户删掉的数字重开又回来。
+            // 本口径与本类 fillInputDefaultSourceByFieldName(「仅键缺失才补」) 一致。
             if ("INPUT_NUMBER".equals(type) || "INPUT_TEXT".equals(type) || "INPUT".equals(type)) {
-                // 显式编辑(含清空'')优先且独占：editValues 明确含该字段(present, 非 null)→ 用其值, 不再回落
-                // driverRow/default_source/content（清空'' → nonEmpty 假 → 不写入 out → 下游 cross_tab 按空/0）。
-                // 与前端 buildResolvedRow 对称（仅 out[key]==null 才补 default_source）。
                 JsonNode editNode = (editValues != null) ? editValues.path(name) : null;
                 boolean editHas = editNode != null && !editNode.isMissingNode() && !editNode.isNull();
-                Object v = editHas ? nodeToObject(editNode) : null;
-                if (!editHas) {
-                    if (driverRow != null) v = nodeToObject(driverRow.path(name));
-                    if (!nonEmpty(v)) {
-                        JsonNode ds = defaultSource(f);
-                        if (ds != null && basicDataValues != null) {
-                            String dsType = ds.path("type").asText("");
-                            if ("GLOBAL_VARIABLE".equals(dsType)) {
-                                Object g = lookupBdv(basicDataValues, "@gvar:" + ds.path("code").asText(""));
+                if (editHas) {
+                    Object uv = unwrapNode(nodeToObject(editNode));
+                    // 空值的物理表示统一为 ""：若落成 null，mergeRowDataInputsIntoEdits 的
+                    // `!v.isNull()` 会跳过该键 → 下一轮又退化成「键缺失」被回填。
+                    out.put(name, uv != null ? uv : "");
+                    continue;
+                }
+                Object v = null;
+                if (driverRow != null) v = nodeToObject(driverRow.path(name));
+                if (!nonEmpty(v)) {
+                    JsonNode ds = defaultSource(f);
+                    if (ds != null && basicDataValues != null) {
+                        String dsType = ds.path("type").asText("");
+                        if ("GLOBAL_VARIABLE".equals(dsType)) {
+                            Object g = lookupBdv(basicDataValues, "@gvar:" + ds.path("code").asText(""));
+                            if (nonEmpty(g)) v = g;
+                        } else if ("BNF_PATH".equals(dsType) || "BASIC_DATA".equals(dsType)) {
+                            String p = ds.path("path").asText("");
+                            if (!p.isEmpty()) {
+                                Object g = lookupBdv(basicDataValues, bnfDriverLookupKey(p));
                                 if (nonEmpty(g)) v = g;
-                            } else if ("BNF_PATH".equals(dsType) || "BASIC_DATA".equals(dsType)) {
-                                String p = ds.path("path").asText("");
-                                if (!p.isEmpty()) {
-                                    Object g = lookupBdv(basicDataValues, bnfDriverLookupKey(p));
-                                    if (nonEmpty(g)) v = g;
-                                }
                             }
                         }
                     }
-                    if (!nonEmpty(v)) {
-                        String c = content(f);
-                        if (c != null && !c.isEmpty()) v = c;
-                    }
+                }
+                if (!nonEmpty(v)) {
+                    String c = content(f);
+                    if (c != null && !c.isEmpty()) v = c;
                 }
                 if (nonEmpty(v)) out.put(name, unwrapNode(v));
                 continue;
@@ -1385,12 +1780,18 @@ public class FormulaCalculator {
                     int ruleIdx = 0;
                     for (JsonNode rule : cf.path("rules")) {
                         ruleIdx++;   // 1-based 原始序号：解析不到的规则被跳过也不影响后续编号
-                        String rfName = rule.path("formula").asText(null);
-                        JsonNode expr = exprOfFormula(formulas, rfName);
-                        if (expr != null) rules.add(new CondRule(rule.path("when"), expr, rfName, ruleIdx));
+                        // BL-0098：先按 formula_id 认，再回落公式名（存量条件公式无 id）。
+                        JsonNode fm = condRefFormula(formulas, rule.path("formula_id"), rule.path("formulaId"),
+                                                     rule.path("formula"));
+                        if (fm != null) {
+                            rules.add(new CondRule(rule.path("when"), fm.path("expression"),
+                                                   fm.path("name").asText(""), ruleIdx));
+                        }
                     }
-                    String defName = cf.path("default").asText(null);
-                    JsonNode defExpr = exprOfFormula(formulas, defName);
+                    JsonNode defFm = condRefFormula(formulas, cf.path("default_formula_id"),
+                                                    cf.path("defaultFormulaId"), cf.path("default"));
+                    JsonNode defExpr = defFm != null ? defFm.path("expression") : null;
+                    String defName = defFm != null ? defFm.path("name").asText("") : cf.path("default").asText(null);
                     out.add(new FormulaField(name, rules, defExpr, defName));
                 } else {
                     ResolvedFormula rf = resolveFormula(f, name, fields, formulas, formulaAssignments, fullIdx);
@@ -1407,6 +1808,57 @@ public class FormulaCalculator {
         if (name == null || name.isEmpty()) return null;
         JsonNode found = findFormulaByName(formulas, name);
         return found != null ? found.path("expression") : null;
+    }
+
+    /**
+     * BL-0098：解析条件公式里一处引用（规则分支 / 默认分支）指向的公式对象。
+     *
+     * <p>优先级：{@code formula_id}（蛇形）→ {@code formulaId}（驼峰，冻结结构用）→ 公式名。
+     * <b>绑了 id 但查不到 → 返 null，不回落到名字</b> —— 与普通字段的 {@code resolveFormula}
+     * 同款语义：配置漂移（公式被删）不能静默换成别的公式算。
+     * 存量条件公式无 id，走名字分支，行为逐位不变。
+     */
+    private JsonNode condRefFormula(JsonNode formulas, JsonNode idSnake, JsonNode idCamel, JsonNode nameNode) {
+        String id = idSnake != null && !idSnake.isMissingNode() && !idSnake.isNull()
+            ? idSnake.asText(null) : null;
+        if (id == null || id.isEmpty()) {
+            id = idCamel != null && !idCamel.isMissingNode() && !idCamel.isNull()
+                ? idCamel.asText(null) : null;
+        }
+        if (id != null && !id.isEmpty()) {
+            return findFormulaById(formulas, id);   // 查不到 → null，刻意不回落名字
+        }
+        String name = nameNode != null ? nameNode.asText(null) : null;
+        if (name == null || name.isEmpty()) return null;
+        return findFormulaByName(formulas, name);
+    }
+
+    /**
+     * BL-0098 测试与固化用：条件公式第 {@code ruleIndex} 条规则最终命中的公式名。
+     * 解析不到返回 {@code null}。
+     */
+    public String resolveConditionalRuleFormulaName(JsonNode field, JsonNode formulas, int ruleIndex) {
+        if (field == null || formulas == null) return null;
+        JsonNode cf = field.has("conditional_formula") ? field.path("conditional_formula")
+            : field.path("conditionalFormula");
+        JsonNode rules = cf.path("rules");
+        if (!rules.isArray() || ruleIndex < 0 || ruleIndex >= rules.size()) return null;
+        JsonNode rule = rules.get(ruleIndex);
+        JsonNode fm = condRefFormula(formulas, rule.path("formula_id"), rule.path("formulaId"),
+                                     rule.path("formula"));
+        return fm == null ? null : fm.path("name").asText(null);
+    }
+
+    /**
+     * BL-0098 测试与固化用：条件公式默认分支最终命中的公式名。解析不到返回 {@code null}。
+     */
+    public String resolveConditionalDefaultFormulaName(JsonNode field, JsonNode formulas) {
+        if (field == null || formulas == null) return null;
+        JsonNode cf = field.has("conditional_formula") ? field.path("conditional_formula")
+            : field.path("conditionalFormula");
+        JsonNode fm = condRefFormula(formulas, cf.path("default_formula_id"), cf.path("defaultFormulaId"),
+                                     cf.path("default"));
+        return fm == null ? null : fm.path("name").asText(null);
     }
 
     /** Plan 3a：按行选条件公式表达式（首条命中即停，全不中走默认）。 */
@@ -1448,8 +1900,11 @@ public class FormulaCalculator {
         return null;
     }
 
-    /** 解析结果：命中的公式名（用于环定位提示）+ 其表达式。 */
-    private record ResolvedFormula(String name, JsonNode expression) {}
+    /**
+     * BL-0098：解析结果带上公式的稳定 id（可能为 null —— 存量公式尚未补 id，
+     * 或走位置回退命中了一条没有 id 的公式）。调用方须容忍 null，不得编造。
+     */
+    private record ResolvedFormula(String name, String id, JsonNode expression) {}
 
     /**
      * port resolveFormula: 0.field.formula_name 显式 1.formula_assignments[完整字段下标]
@@ -1462,12 +1917,28 @@ public class FormulaCalculator {
                                            JsonNode formulas, JsonNode formulaAssignments, int fullFieldIndex) {
         if (formulas == null || !formulas.isArray()) return null;
 
+        // -1. BL-0098 终态：显式 formula_id 绑定（最高优先）。
+        //     绑定了但找不到 → 返 null 不 fallback ——语义与下方 formula_name 分支一致：
+        //     配置漂移（公式被删）不能静默换成别的公式算，那正是 BL-0098 要根除的行为。
+        //     蛇形（component/template 正本）与驼峰（API/quotation_view_structure 冻结结构）都认。
+        String formulaId = field.has("formula_id") ? field.path("formula_id").asText(null)
+            : field.path("formulaId").asText(null);
+        if (formulaId != null && !formulaId.isEmpty()) {
+            JsonNode foundById = findFormulaById(formulas, formulaId);
+            return foundById != null
+                ? new ResolvedFormula(foundById.path("name").asText(""), formulaId,
+                                      foundById.path("expression"))
+                : null;
+        }
+
         // 0. 显式 formula_name 绑定（最高优先；绑定了但找不到 → null 不 fallback）
         String formulaName = field.has("formula_name") ? field.path("formula_name").asText(null)
             : field.path("formulaName").asText(null);
         if (formulaName != null && !formulaName.isEmpty()) {
             JsonNode found = findFormulaByName(formulas, formulaName);
-            return found != null ? new ResolvedFormula(formulaName, found.path("expression")) : null;
+            return found != null
+                ? new ResolvedFormula(formulaName, idOf(found), found.path("expression"))
+                : null;
         }
 
         // 1. 模板级 formula_assignments[完整字段下标] → 公式名
@@ -1477,27 +1948,85 @@ public class FormulaCalculator {
                 String assignedName = assigned.asText("");
                 if (!assignedName.isEmpty()) {
                     JsonNode found = findFormulaByName(formulas, assignedName);
-                    if (found != null) return new ResolvedFormula(assignedName, found.path("expression"));
+                    if (found != null) {
+                        return new ResolvedFormula(assignedName, idOf(found), found.path("expression"));
+                    }
                 }
             }
         }
 
         // 2. 字段名 == 公式名
         JsonNode byName = findFormulaByName(formulas, fieldName);
-        if (byName != null) return new ResolvedFormula(fieldName, byName.path("expression"));
+        if (byName != null) return new ResolvedFormula(fieldName, idOf(byName), byName.path("expression"));
 
         // 3. positional fallback（FORMULA 字段在 fields 中的相对位置）
         int posIdx = formulaFieldPosition(fields, fieldName);
         if (posIdx >= 0 && posIdx < formulas.size()) {
             JsonNode fm = formulas.get(posIdx);
-            return new ResolvedFormula(fm.path("name").asText(""), fm.path("expression"));
+            return new ResolvedFormula(fm.path("name").asText(""), idOf(fm), fm.path("expression"));
         }
         return null;
+    }
+
+    /**
+     * repair-0803 B3（BL-0098）：对外暴露「某 FORMULA 字段最终会用哪条公式」的解析口径，
+     * 供组件保存期把隐式绑定<b>固化</b>成显式 {@code formula_name}。
+     *
+     * <p><b>为什么必须复用本方法而不是另写一套</b>：{@link #resolveFormula} 的 4 级回退
+     * （显式名 → formula_assignments → 同名 → <b>按位置</b>）是求值期的唯一真相。
+     * 固化逻辑若自己实现一遍，两处口径一旦漂移，固化结果就会与实际算法不符 ——
+     * 那正是 BL-0098 本身的问题（隐式绑定与用户认知不一致）在另一个层面重演。
+     *
+     * @param fullFieldIndex 该字段在 {@code fields} 数组中的<b>完整下标</b>（非 FORMULA 字段也计数），
+     *                       与 {@code formula_assignments} 的键一致
+     * @return 解析到的公式名；解析不到返回 {@code null}（调用方应保持原样不写入）
+     */
+    public String resolveFormulaNameForField(JsonNode field, JsonNode fields, JsonNode formulas,
+                                             JsonNode formulaAssignments, int fullFieldIndex) {
+        if (field == null || fields == null || formulas == null) return null;
+        ResolvedFormula rf = resolveFormula(field, fieldName(field), fields, formulas,
+                formulaAssignments, fullFieldIndex);
+        if (rf == null) return null;
+        String name = rf.name();
+        return (name == null || name.isEmpty()) ? null : name;
+    }
+
+    /**
+     * BL-0098：对外暴露「某 FORMULA 字段最终会用哪条公式」的**稳定 id**，供组件保存期把隐式绑定
+     * <b>固化</b>成显式 {@code formula_id}。
+     *
+     * <p>与 {@link #resolveFormulaNameForField} 共用同一个 {@link #resolveFormula} 口径 ——
+     * 固化逻辑必须复用求值期的唯一真相，自己实现一遍就是 BL-0098 在另一个层面重演。
+     *
+     * @return 解析到的公式 id；解析不到、或命中的公式尚无 id → {@code null}（调用方应保持原样不写入）
+     */
+    public String resolveFormulaIdForField(JsonNode field, JsonNode fields, JsonNode formulas,
+                                           JsonNode formulaAssignments, int fullFieldIndex) {
+        if (field == null || fields == null || formulas == null) return null;
+        ResolvedFormula rf = resolveFormula(field, fieldName(field), fields, formulas,
+                formulaAssignments, fullFieldIndex);
+        return rf == null ? null : rf.id();
     }
 
     private JsonNode findFormulaByName(JsonNode formulas, String name) {
         for (JsonNode fm : formulas) {
             if (name.equals(fm.path("name").asText(null))) return fm;
+        }
+        return null;
+    }
+
+    /** BL-0098：取公式对象的稳定 id；缺失/空串 → null（不编造）。 */
+    private static String idOf(JsonNode formula) {
+        if (formula == null) return null;
+        String id = formula.path("id").asText(null);
+        return (id == null || id.isEmpty()) ? null : id;
+    }
+
+    /** BL-0098：按稳定 id 查公式；id 空或查不到 → null。 */
+    private JsonNode findFormulaById(JsonNode formulas, String id) {
+        if (id == null || id.isEmpty() || formulas == null || !formulas.isArray()) return null;
+        for (JsonNode fm : formulas) {
+            if (id.equals(fm.path("id").asText(null))) return fm;
         }
         return null;
     }
@@ -1900,6 +2429,36 @@ public class FormulaCalculator {
         return null;
     }
 
+    /**
+     * Object/JsonNode → BigDecimal（数字直取精确转换；字符串走 BigDecimal 精确解析；数组/列表取
+     * 首值递归；否则 null）。task-0801 B4-2：供 evalCrossTab 聚合（SUM/AVG/MAX/MIN）使用，
+     * 避免先转 Double 再做 double 累加的双重转换损耗（见 evalCrossTab 聚合分支注释）。
+     */
+    private BigDecimal toBigNumber(Object o) {
+        if (o == null) return null;
+        if (o instanceof BigDecimal bd) return bd;
+        if (o instanceof Number n) return PrecisionPolicy.of(n);
+        if (o instanceof String s) {
+            String t = s.trim();
+            if (t.isEmpty()) return null;
+            try { return new BigDecimal(t); } catch (Exception e) { return null; }
+        }
+        if (o instanceof JsonNode n) {
+            if (n.isNull() || n.isMissingNode()) return null;
+            if (n.isNumber()) return n.decimalValue();
+            if (n.isTextual()) {
+                try { return new BigDecimal(n.textValue().trim()); } catch (Exception e) { return null; }
+            }
+            if (n.isArray()) return n.size() == 0 ? null : toBigNumber(n.get(0));
+            return null;
+        }
+        if (o instanceof List) {
+            List<?> l = (List<?>) o;
+            return l.isEmpty() ? null : toBigNumber(l.get(0));
+        }
+        return null;
+    }
+
     /** Object/JsonNode → Double（数字直取；字符串 parseFloat；数组/列表取首值递归；否则 null）。 */
     private Double toNumber(Object o) {
         if (o == null) return null;
@@ -1955,7 +2514,9 @@ public class FormulaCalculator {
     }
 
     // ======================================================================
-    // 算术串求值（递归下降，double；复刻 new Function('return (expr)')）
+    // 算术串求值（递归下降，task-0801 B2 十进制化：BigDecimal；
+    // 只换数值类型，运算符优先级/一元负号/全角转换/递归结构与改造前逐行对齐，
+    // 复刻 new Function('return (expr)')）
     // ======================================================================
 
     private static class ArithParser {
@@ -1964,8 +2525,8 @@ public class FormulaCalculator {
 
         ArithParser(String s) { this.s = s; }
 
-        double parse() {
-            double v = expr();
+        BigDecimal parse() {
+            BigDecimal v = expr();
             skip();
             if (i < s.length()) throw new RuntimeException("trailing: " + s.substring(i));
             return v;
@@ -1973,41 +2534,45 @@ public class FormulaCalculator {
 
         private void skip() { while (i < s.length() && s.charAt(i) == ' ') i++; }
 
-        private double expr() {
-            double v = term();
+        private BigDecimal expr() {
+            BigDecimal v = term();
             while (true) {
                 skip();
                 if (i < s.length() && (s.charAt(i) == '+' || s.charAt(i) == '-')) {
                     char op = s.charAt(i++);
-                    double r = term();
-                    v = op == '+' ? v + r : v - r;
+                    BigDecimal r = term();
+                    // +/- 精确无损（不设 MathContext；十进制加减本就不产生舍入）
+                    v = op == '+' ? v.add(r) : v.subtract(r);
                 } else break;
             }
             return v;
         }
 
-        private double term() {
-            double v = factor();
+        private BigDecimal term() {
+            BigDecimal v = factor();
             while (true) {
                 skip();
                 if (i < s.length() && (s.charAt(i) == '*' || s.charAt(i) == '/')) {
                     char op = s.charAt(i++);
-                    double r = factor();
-                    v = op == '*' ? v * r : v / r;
+                    BigDecimal r = factor();
+                    // * 用 MathContext 约束精度/防 scale 无限增长；/ 走 PrecisionPolicy.divide()
+                    // （12 位中间精度 + 除零优雅返 0，语义对齐 api.md G-9，不抛异常）。
+                    v = op == '*' ? v.multiply(r, PrecisionPolicy.MC)
+                                  : PrecisionPolicy.divide(v, r);
                 } else break;
             }
             return v;
         }
 
-        private double factor() {
+        private BigDecimal factor() {
             skip();
             if (i >= s.length()) throw new RuntimeException("unexpected eof");
             char c = s.charAt(i);
             if (c == '+') { i++; return factor(); }
-            if (c == '-') { i++; return -factor(); }
+            if (c == '-') { i++; return factor().negate(); }
             if (c == '(') {
                 i++;
-                double v = expr();
+                BigDecimal v = expr();
                 skip();
                 if (i >= s.length() || s.charAt(i) != ')') throw new RuntimeException("missing )");
                 i++;
@@ -2016,12 +2581,13 @@ public class FormulaCalculator {
             return number();
         }
 
-        private double number() {
+        private BigDecimal number() {
             skip();
             int start = i;
             while (i < s.length() && (Character.isDigit(s.charAt(i)) || s.charAt(i) == '.')) i++;
             if (i == start) throw new RuntimeException("expected number at " + i);
-            return Double.parseDouble(s.substring(start, i));
+            // BigDecimal(String) 十进制精确解析，无 double 中转，无精度损失。
+            return new BigDecimal(s.substring(start, i));
         }
     }
 }

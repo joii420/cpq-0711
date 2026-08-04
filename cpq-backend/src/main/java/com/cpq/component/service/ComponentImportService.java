@@ -43,6 +43,11 @@ public class ComponentImportService {
     @Inject
     EntityManager em;
 
+    // task-0803 Task5⑤：导入 bundle 复用 ComponentService 的父子取值(tree_ref/tree_attr)/
+    // previous_row_subtotal 校验闸(①②④)，同包 package-private 方法可直接调用。
+    @Inject
+    ComponentService componentService;
+
     @Transactional(Transactional.TxType.SUPPORTS)
     public ImportPreviewResult preview(UUID targetDirId, ComponentExportBundle bundle, String conflictPolicy) {
         ComponentDirectory dir = ComponentDirectory.findById(targetDirId);
@@ -158,6 +163,15 @@ public class ComponentImportService {
     /**
      * 提交导入(P3):单事务,只 INSERT 新组件 + 其 component_sql_view(全新 UUID),
      * 不 UPDATE/DELETE 任何现有数据,不绑定模板。
+     *
+     * <p><b>task-0803 Task5 裁决 G4（测试评审会定稿，需求说明 §11.5，2026-08-03）</b>：
+     * 导入失败粒度 = <b>整包回滚</b>。本方法整体只有这一层 {@code @Transactional}
+     * （默认 {@code TxType.REQUIRED}），第三遍循环里
+     * {@link ComponentService#assertTreeTokenGates} 抛出的 {@code BusinessException}
+     * 不会被吞掉（见下方 catch 块只重新包装、仍然抛出），会正常传播出本方法触发整个
+     * 事务回滚——bundle 内已在第一遍 INSERT 的全部 Component/ComponentSqlView 一并撤销，
+     * 不会出现"部分组件导入成功、部分因校验闸拒绝"的半成品状态。这是明确裁决，不是
+     * 恰好如此的偶然行为；后续若要改成"按组件粒度部分提交"需先过架构评审。
      *
      * @param ignoreMissingDeps true 时即使依赖缺失也继续(相关字段运行时取数可能失败)
      */
@@ -312,6 +326,44 @@ public class ComponentImportService {
                     // Panache 实体在 @Transactional 方法内，赋值后由 Hibernate 脏检查
                     // 自动 flush；无需显式调用 c.persist()（已 managed 状态）
                 }
+            }
+        }
+
+        // ── 第三遍：BL-0098 公式 id 补齐 + 字段绑定固化 + 显式绑定校验 ──────────
+        // 必须在第二遍 FormulaRefRemapper.remap 之后：remap 整体重写 c.formulas，
+        // 放在它之前补的 id 有被洗掉的风险。
+        // 老 bundle 不带 id/formula_id → 这里按现役回退链固化，行为与导入前一致；
+        // 新 bundle 自带 id（作用域=组件内，无需全局唯一）→ 原样保留，不重新生成。
+        for (Component c : createdComponents) {
+            try {
+                List<Map<String, Object>> fieldList = MAPPER.readValue(
+                    c.fields == null || c.fields.isBlank() ? "[]" : c.fields,
+                    MAPPER.getTypeFactory().constructCollectionType(List.class, Map.class));
+                List<Map<String, Object>> formulaList = MAPPER.readValue(
+                    c.formulas == null || c.formulas.isBlank() ? "[]" : c.formulas,
+                    MAPPER.getTypeFactory().constructCollectionType(List.class, Map.class));
+
+                FormulaIdBinder.ensureFormulaIds(formulaList);
+                FormulaIdBinder.bindFormulaIdsToFields(fieldList, formulaList);
+                FormulaIdBinder.validateExplicitBinding(fieldList);
+
+                c.fields = MAPPER.writeValueAsString(fieldList);
+                c.formulas = MAPPER.writeValueAsString(formulaList);
+                // Panache 实体在 @Transactional 方法内已 managed，赋值后 Hibernate 脏检查自动 flush
+
+                // task-0803 Task5⑤：同一循环里跑闸①②④（父子取值 tabType 联动 + BOM 禁 PREV），
+                // 不留导入这条路径绕过配置期校验的口子。c.tabType 已在第一遍(persist 前)写入。
+                componentService.assertTreeTokenGates(c.tabType, c.formulas);
+            } catch (BusinessException e) {
+                // 校验闸门抛出的是业务语义 400（非结构解析失败），保留原始 code，只加上下文前缀。
+                throw new BusinessException(e.getCode(),
+                    "组件「" + c.name + "」(" + c.code + ") 导入失败：" + e.getMessage());
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException(
+                    "组件「" + c.name + "」(" + c.code + ") 导入失败：" + e.getMessage(), e);
+            } catch (Exception e) {
+                throw new IllegalStateException(
+                    "组件「" + c.name + "」(" + c.code + ") 公式 id 处理失败：" + e.getMessage(), e);
             }
         }
 

@@ -1,17 +1,19 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
-  Drawer, Button, Space, message, Table, Typography, Tooltip,
+  Drawer, Button, Space, message, Typography, Tooltip,
   Select, Form, Input, Divider,
 } from 'antd';
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import { tabJoinFormulaService, type TabDef } from '../../services/tabJoinFormulaService';
-import TabFieldMatrix from './tabjoin/TabFieldMatrix';
-import FormulaRichInput, { type FormulaRichInputHandle } from './tabjoin/FormulaRichInput';
-import SampleCardPicker from './tabjoin/SampleCardPicker';
+import TabFieldPanel from './tabjoin/TabFieldPanel';
+import FormulaEditorPanel from './tabjoin/FormulaEditorPanel';
+import type { FormulaRichInputHandle } from './tabjoin/FormulaRichInput';
 import {
   expressionToTokens,
   tokensToDrawerExpression,
   checkMappable,
+  containsTreeToken,
+  validateTreeRefWhitelist,
 } from '../component/formulaSerialize';
 import type { FormulaToken } from '../component/types';
 import { checkParenBalance } from './tabjoin/formulaBracketCheck';
@@ -39,12 +41,19 @@ export type TabJoinFormulaSavePayload =
 
 interface Props {
   open: boolean;
-  /** 正在编辑公式的组件 id（页签集 / 样本卡 / 试算均以此组件为作用域） */
+  /** 正在编辑公式的组件 id（页签集以此组件为作用域） */
   componentId: string;
   /** 组件类型 — 决定保存形态：EXCEL → string column；NORMAL/SUBTOTAL → token[] */
   componentType: ComponentFormulaType;
   /** 本组件行键字段，供跨页签引用构建 match[] 对齐对（仅 token 形态需要） */
   selfRowKeyFields?: string[];
+  /**
+   * task-0803 F-2：正在编辑公式的组件的页签类型属性(ComponentItem.tabType，与
+   * ComponentManagement 表单同源)。父子取值函数（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT）
+   * 仅 BOM 类型页签可用，保存前据此拦截（见 save() 内 checkTreeRefTabTypeGate）。
+   * EXCEL 组件不做该项拦截（EXCEL 走 buildColumn 字符串路径，不解析 tree_ref），传或不传均可。
+   */
+  tabType?: string;
   column: any;
   /**
    * NORMAL/SUBTOTAL 模式下，编辑已有公式时传入原始 FormulaToken[]。
@@ -55,9 +64,6 @@ interface Props {
   onClose: () => void;
   onSave: (payload: TabJoinFormulaSavePayload) => void;
 }
-
-const FUNCS = ['SUM', 'AVG', 'MIN', 'MAX', 'COUNT'];
-const OPS = ['+', '-', '*', '/', '(', ')'];
 
 // ── SUMIF 族函数 ──────────────────────────────────────────────────────────────
 
@@ -70,9 +76,6 @@ const FUNC_TO_AGG: Record<SumifFunc, ExpressionToken['agg']> = {
   MINIF: 'MIN',
   MAXIF: 'MAX',
 };
-
-// 条件聚合函数（EXCEL 线文本可解析：SUMIF([页签.字段]=值, [页签.字段])）。
-const SUMIF_TEXT_FUNCS: SumifFunc[] = ['SUMIF', 'COUNTIF', 'AVGIF', 'MINIF', 'MAXIF'];
 
 /**
  * 纯函数：把 SUMIF 向导的用户输入转为带 predicate 的 cross_tab_ref ExpressionToken。
@@ -134,6 +137,41 @@ export function buildSumifText(input: {
   return `${input.func}(${condText}, ${valueText})`;
 }
 
+// ── task-0803 Task 8b: 父子取值（PGET/C*）保存前拦截 —— 纯函数化，供 save() 调用 + 单测直接覆盖 ──
+
+/**
+ * F-2：父子取值函数（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT）与树属性（[层级]/[是否叶子]/[是否根]）
+ * 仅 BOM 类型页签可用。正在编辑的组件页签类型（tabType）不是 'BOM' 且解析出的 tokens 里出现过
+ * tree_ref **或** tree_attr（containsTreeToken 递归扫描，含嵌套场景）→ 返回拦截文案；合规返回
+ * null。未配置 tabType 时人类可读标签显示「未配置」，不显示内部 code。
+ *
+ * 2026-08-03 评审订正：此前误用只测 tree_ref 的 containsTreeRef，导致非 BOM 页签的 [层级] 被
+ * 前端放行、保存时才收到后端 ComponentService.assertTreeTokenGates 的 400（该方法对 tree_ref/
+ * tree_attr 一视同仁）。改用 containsTreeToken 使前后端判据口径一致，见需求 §4.3.8 闸②。
+ */
+export function checkTreeRefTabTypeGate(
+  tokens: FormulaToken[],
+  tabType: string | undefined,
+): string | null {
+  if (tabType === 'BOM') return null;
+  if (!containsTreeToken(tokens)) return null;
+  const label = tabType ?? '未配置';
+  return `父子取值（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT）与树属性（[层级]/[是否叶子]/[是否根]）仅 BOM 类型页签可用（当前页签类型：${label}）`;
+}
+
+/**
+ * F-7：tree_ref.targetExpr 内层白名单校验的保存前拦截文案。
+ * 直接复用 formulaSerialize.validateTreeRefWhitelist（禁止另写一套校验规则）；这里只包一层
+ * 固定的终端用户文案 —— validateTreeRefWhitelist 返回的 reason 是排障用的技术性描述
+ * （如 "tree_ref.targetExpr 内出现不允许的 token 类型「cross_tab_ref」…"），不直接展示给用户。
+ */
+export const TREE_REF_INNER_VIOLATION_TEXT =
+  '父子取值的目标表达式内不能再引用跨页签数据或其他父子取值，请改用本页签的列';
+
+export function checkTreeRefInnerWhitelist(tokens: FormulaToken[]): string | null {
+  return validateTreeRefWhitelist(tokens).valid ? null : TREE_REF_INNER_VIOLATION_TEXT;
+}
+
 // ── SUMIF 条件行编辑器内部类型 ─────────────────────────────────────────────
 
 type CondOp = '=' | '!=' | '<>' | '>' | '<' | '>=' | '<=';
@@ -185,6 +223,7 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
   componentId,
   componentType,
   selfRowKeyFields,
+  tabType,
   column,
   initialTokens,
   onClose,
@@ -197,12 +236,17 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
 
   const parenCheck = useMemo(() => checkParenBalance(expression), [expression]);
 
-  // 试算相关状态
-  const [sampleLi, setSampleLi] = useState<string | undefined>(undefined);
-  const [dryRunValue, setDryRunValue] = useState<string | number | null>(null);
-  const [dryRunRows, setDryRunRows] = useState<{ rowKey: string; value: number | null }[] | null>(null);
-  const [dryRunErrors, setDryRunErrors] = useState<string[]>([]);
-  const [dryRunLoading, setDryRunLoading] = useState(false);
+  // 窄屏降级：视口 < 1100px 时两栏改单栏（AC-18 附带项）
+  const [isNarrow, setIsNarrow] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 1100px)').matches,
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mql = window.matchMedia('(max-width: 1100px)');
+    const handler = (e: MediaQueryListEvent) => setIsNarrow(e.matches);
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, []);
 
   // ── SUMIF 配置区状态 ──────────────────────────────────────────────────────
   /** SUMIF 配置区是否展开 */
@@ -289,7 +333,7 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
     exprRef.current?.insertAtCursor(text, caretOffsetFromEnd);
   };
 
-  /** 从当前表达式解析 tabs，组装 column payload（save 和 dryRun 共用） */
+  /** 从当前表达式解析 tabs，组装 column payload（save 时使用） */
   const buildColumn = (expr: string) => {
     const refAliases = Array.from(
       new Set(
@@ -430,6 +474,20 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
       message.error(e?.message ?? '表达式解析失败，请检查语法');
       return;
     }
+
+    // F-2（task-0803）：父子取值仅 BOM 类型页签可用
+    const treeRefGateMsg = checkTreeRefTabTypeGate(tokens, tabType);
+    if (treeRefGateMsg) {
+      message.error(treeRefGateMsg);
+      return;
+    }
+    // F-7（task-0803）：tree_ref.targetExpr 内层白名单（复用 formulaSerialize.validateTreeRefWhitelist）
+    const treeRefInnerMsg = checkTreeRefInnerWhitelist(tokens);
+    if (treeRefInnerMsg) {
+      message.error(treeRefInnerMsg);
+      return;
+    }
+
     const mappable = checkMappable(tokens);
     if (!mappable.mappable) {
       message.error(`${mappable.reason ?? '该公式无法映射为组件公式'}，请改用 Excel 组件`);
@@ -439,67 +497,18 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
     onSave({ kind: 'tokens', tokens });
   };
 
-  const runDryRun = async () => {
-    const expr = expression.trim();
-    if (!expr) {
-      message.warning('请先填表达式');
-      return;
-    }
-    if (!sampleLi) {
-      message.warning('请先选样本卡片');
-      return;
-    }
-    setDryRunLoading(true);
-    try {
-      if (componentType === 'EXCEL') {
-        // EXCEL 路径：沿用旧端点，返回单值
-        setDryRunRows(null);
-        const col = buildColumn(expr);
-        const res: any = await tabJoinFormulaService.dryRunByComponent(componentId, sampleLi, col);
-        const data = res?.data ?? res;
-        setDryRunValue(data?.value ?? null);
-        setDryRunErrors(data?.errors ?? []);
-        if (data?.errors?.length) {
-          message.warning(data.errors.join('; '));
-        }
-      } else {
-        // NORMAL / SUBTOTAL 路径：走 token 试算端点，返逐行结果
-        setDryRunValue(null);
-        const tokens = expressionToTokens(expr, tabDefs, selfRowKeyFields, componentId);
-        const res: any = await tabJoinFormulaService.dryRunToken(
-          componentId,
-          sampleLi,
-          tokens,
-          selfRowKeyFields ?? [],
-        );
-        const data = res?.data ?? res;
-        setDryRunRows(data?.rows ?? []);
-        setDryRunErrors(data?.errors ?? []);
-        if (data?.errors?.length) {
-          message.warning(data.errors.join('; '));
-        }
-      }
-    } catch (e: any) {
-      setDryRunValue(null);
-      setDryRunRows(null);
-      setDryRunErrors([]);
-      message.error('试算失败: ' + (e?.message ?? String(e)));
-    } finally {
-      setDryRunLoading(false);
-    }
-  };
-
   // 保存按钮是否可点击：表达式非空 + 括号合法
   const saveDisabled = !parenCheck.ok && expression.trim().length > 0;
 
   return (
     <Drawer
       title="配置页签连表公式"
-      width={1100}
+      width={'min(1520px, 92vw)'}
       placement="right"
       open={open}
       onClose={onClose}
       destroyOnClose
+      styles={{ body: { padding: 0 } }}
       extra={
         <Space>
           <Button onClick={onClose}>取消</Button>
@@ -511,413 +520,283 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
         </Space>
       }
     >
-      {/* 试算条 */}
-      <div style={{ marginBottom: 16, padding: '10px 12px', background: '#f0f5ff', border: '1px solid #adc6ff', borderRadius: 6 }}>
-        <Space wrap align="center">
-          <Text style={{ fontSize: 13 }}>试算：</Text>
-          <SampleCardPicker
-            componentId={componentId}
-            value={sampleLi}
-            onChange={(li) => {
-              setSampleLi(li || undefined);
-              setDryRunValue(null);
-              setDryRunRows(null);
-              setDryRunErrors([]);
-            }}
-          />
-          <Button
-            type="default"
-            loading={dryRunLoading}
-            onClick={runDryRun}
-          >
-            试算
-          </Button>
-          {/* EXCEL 单值结果 */}
-          {componentType === 'EXCEL' && dryRunValue !== null && dryRunErrors.length === 0 && (
-            <Text strong style={{ color: '#1677ff' }}>
-              试算结果：{String(dryRunValue)}
-            </Text>
-          )}
-          {/* 错误显示（所有类型公用） */}
-          {dryRunErrors.length > 0 && (
-            <Text style={{ color: '#cf1322', fontSize: 12 }}>
-              错误：{dryRunErrors.join('; ')}
-            </Text>
-          )}
-        </Space>
-        {/* NORMAL / SUBTOTAL 逐行试算结果小表 */}
-        {componentType !== 'EXCEL' && dryRunRows !== null && dryRunErrors.length === 0 && dryRunRows.length > 0 && (
-          <Table
-            size="small"
-            pagination={false}
-            style={{ marginTop: 8 }}
-            rowKey={(_, i) => String(i)}
-            dataSource={dryRunRows}
-            columns={[
-              { title: '行键', dataIndex: 'rowKey', key: 'rowKey' },
-              {
-                title: '试算值',
-                dataIndex: 'value',
-                key: 'value',
-                render: (v: number | null) => (v == null ? '—' : String(v)),
-              },
-            ]}
-          />
-        )}
-        {/* SUBTOTAL 语义是单值；若 rows 多行，仅供参考（取首行即为合计行） */}
-        {componentType !== 'EXCEL' && dryRunRows !== null && dryRunErrors.length === 0 && dryRunRows.length === 0 && (
-          <Text type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12 }}>
-            试算无行（样本卡该组件 0 行）
-          </Text>
-        )}
-      </div>
-
-      {/* 公式表达式 */}
-      <Text strong>公式表达式</Text>
-      <div style={{ color: '#8a909a', fontSize: 12, marginBottom: 6 }}>
-        列来源：页签连表公式 · 单卡片单值 · 行键自动对齐(全外连·缺补0) · 明细默认按对齐行求和
-      </div>
-      <FormulaRichInput
-        ref={exprRef}
-        value={expression}
-        onChange={setExpression}
-        tabDefs={tabDefs}
-        selfRowKeyFields={selfRowKeyFields}
-        enforceMappable={enforceMappable}
-        placeholder="例:[投料.金额] * [加工.工时] + [回料(总计)]"
-      />
-      {!parenCheck.ok && (
-        <Text type="danger" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
-          {parenCheck.error}
-        </Text>
-      )}
-
-      {/* 运算符 + 函数工具条 */}
-      <Space style={{ marginTop: 10 }} wrap>
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          运算符
-        </Text>
-        {OPS.map((op) => (
-          <Button key={op} size="small" style={{ fontFamily: 'monospace', fontWeight: 600 }}
-            onClick={() => insertAtCursor(op)}>
-            {op}
-          </Button>
-        ))}
-        <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-          函数
-        </Text>
-        {FUNCS.map((fn) => (
-          <Button
-            key={fn}
-            size="small"
-            style={{ color: '#fa8c16', borderColor: '#ffd591' }}
-            onClick={() => insertAtCursor(`${fn}()`, 1)}
-          >
-            {fn}
-          </Button>
-        ))}
-        <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-          条件聚合
-        </Text>
-        {SUMIF_TEXT_FUNCS.map((fn) => (
-          <Button
-            key={fn}
-            size="small"
-            title={
-              componentType === 'EXCEL'
-                ? `${fn}(条件, 取值表达式)，如 ${fn}([页签.类型]='管理费', [页签.金额])`
-                : `点击展开下方「条件聚合」构造器配置 ${fn}（条件过滤后按行键聚合）`
-            }
-            style={{ color: '#722ed1', borderColor: '#d3adf7' }}
-            onClick={() => {
-              // EXCEL 线：文本可解析，直接插入；组件线：展开可视化构造器并预选该函数。
-              if (componentType === 'EXCEL') {
-                insertAtCursor(`${fn}()`, 1);
-              } else {
-                setSumifFunc(fn);
-                setSumifPanelOpen(true);
-              }
-            }}
-          >
-            {fn}
-          </Button>
-        ))}
-      </Space>
-
-      {/* 规则提示 */}
       <div
         style={{
-          marginTop: 10,
-          padding: '8px 12px',
-          background: '#fffbe6',
-          border: '1px solid #ffe58f',
-          borderRadius: 6,
-          fontSize: 12,
-          color: '#874d00',
-          lineHeight: 1.7,
+          display: 'grid',
+          gridTemplateColumns: isNarrow ? '1fr' : 'minmax(430px, 42fr) minmax(520px, 58fr)',
         }}
       >
-        明细字段默认按对齐行自动求和；套 <code style={{ background: '#fff', border: '1px solid #ffe58f', borderRadius: 3, padding: '0 4px' }}>AVG/MIN/MAX/COUNT</code> 改聚合方式。
-        按顶层 +/- 拆项：含裸明细的项逐行求和，纯标量/总计项算一次。
-        引用格式：<code style={{ background: '#fff', border: '1px solid #ffe58f', borderRadius: 3, padding: '0 4px' }}>[页签名称.字段名]</code> 或{' '}
-        <code style={{ background: '#fff', border: '1px solid #ffe58f', borderRadius: 3, padding: '0 4px' }}>[页签名称(总计)]</code>。
-        <br />
-        <strong>行级聚合（粗 host × 细 source）</strong>：写{' '}
-        <code style={{ background: '#fff', border: '1px solid #ffe58f', borderRadius: 3, padding: '0 4px' }}>SUM([宿主别名.列] * [细页签名称.列])</code>{' '}
-        —— 按行键对齐(LEFT JOIN)后<strong>逐行</strong>算括号内表达式，再按宿主行键聚合(SUMPRODUCT)；宿主列在每个对齐行广播为同值。
-        <br />
-        SUMIF 用法：<code style={{ background: '#fff', border: '1px solid #ffe58f', borderRadius: 3, padding: '0 4px' }}>SUMIF([页签.条件字段]='值', [页签.值字段])</code>，可与运算符自由组合。
-      </div>
+        {/* 左栏：页签字段面板（搜索 + 上下卡片列表，各自独立滚动） */}
+        <div
+          style={{
+            borderRight: isNarrow ? 'none' : '1px solid #f0f0f0',
+            padding: '14px 16px',
+            overflow: 'auto',
+            maxHeight: '78vh',
+          }}
+        >
+          <TabFieldPanel
+            tabDefs={tabDefs}
+            selfRowKeyFields={selfRowKeyFields}
+            onInsert={(token) => insertAtCursor(token)}
+          />
+        </div>
 
-      {/* ── SUMIF 条件聚合配置区（仅 NORMAL/SUBTOTAL 组件） ── */}
-      {componentType !== 'EXCEL' && (
-        <div style={{ marginTop: 16 }}>
-          <Divider style={{ margin: '0 0 10px 0' }}>
-            <Button
-              type="link"
-              style={{ fontSize: 13, padding: 0 }}
-              onClick={() => setSumifPanelOpen((v) => !v)}
-            >
-              {sumifPanelOpen ? '收起 SUMIF 条件聚合' : '展开 SUMIF 条件聚合（按条件过滤后聚合）'}
-            </Button>
-          </Divider>
+        {/* 右栏：公式配置（表达式框 + 图例 + 工具条 + 规则提示）+ SUMIF 折叠区，各自独立滚动 */}
+        <div style={{ padding: '14px 16px', overflow: 'auto', maxHeight: '78vh' }}>
+          <FormulaEditorPanel
+            expression={expression}
+            onChange={setExpression}
+            tabDefs={tabDefs}
+            selfRowKeyFields={selfRowKeyFields}
+            enforceMappable={enforceMappable}
+            componentType={componentType}
+            parenCheck={parenCheck}
+            inputRef={exprRef}
+            onInsert={insertAtCursor}
+            onClearExpression={() => setExpression('')}
+            onOpenSumif={(fn) => {
+              setSumifFunc(fn);
+              setSumifPanelOpen(true);
+            }}
+          />
 
-          {sumifPanelOpen && (
-            <div
-              style={{
-                padding: '14px 16px',
-                background: '#f6f0ff',
-                border: '1px solid #d3adf7',
-                borderRadius: 8,
-                marginBottom: 12,
-              }}
-            >
-              <Text strong style={{ fontSize: 13, color: '#531dab' }}>
-                SUMIF 条件聚合构造器
-              </Text>
-              <Text type="secondary" style={{ fontSize: 12, marginLeft: 8 }}>
-                （配置完成后点「插入 SUMIF 到表达式」，SUMIF 文本将插入到表达式框光标处）
-              </Text>
-
-              <Form layout="vertical" style={{ marginTop: 12 }}>
-                {/* 函数选择 + 来源页签 */}
-                <Space align="start" wrap>
-                  <Form.Item label="函数" style={{ marginBottom: 8, minWidth: 120 }}>
-                    <Select<SumifFunc>
-                      value={sumifFunc}
-                      onChange={setSumifFunc}
-                      style={{ width: 120 }}
-                    >
-                      {(Object.keys(FUNC_TO_AGG) as SumifFunc[]).map((fn) => (
-                        <Option key={fn} value={fn}>{fn}</Option>
-                      ))}
-                    </Select>
-                  </Form.Item>
-                  <Form.Item label="来源页签" style={{ marginBottom: 8, minWidth: 200 }}>
-                    <Select
-                      value={sumifSourceId || undefined}
-                      onChange={(v) => {
-                        setSumifSourceId(v);
-                        setCondRows([{ id: nextId(), lhsField: '', op: '=', rhsKind: 'literal', rhsValue: '', logic: 'AND' }]);
-                        setValueFieldRows([{ id: nextId(), fieldName: '' }]);
-                      }}
-                      placeholder="选择来源页签"
-                      style={{ width: 200 }}
-                    >
-                      {tabDefs
-                        .filter((d) => d.componentId !== componentId)
-                        .map((d) => (
-                          <Option key={d.componentId} value={d.componentId}>
-                            {d.componentName ?? d.alias}
-                          </Option>
-                        ))}
-                    </Select>
-                  </Form.Item>
-                </Space>
-
-                {/* 过滤条件行编辑器 */}
-                <Form.Item label="过滤条件" style={{ marginBottom: 8 }}>
-                  <div style={{ background: '#fff', border: '1px solid #e6d5ff', borderRadius: 6, padding: '8px 10px' }}>
-                    {condRows.map((row, idx) => (
-                      <div key={row.id} style={{ marginBottom: idx < condRows.length - 1 ? 8 : 0 }}>
-                        <Space align="center" wrap>
-                          {/* AND/OR 连接符（第一行不显示） */}
-                          {idx > 0 && (
-                            <Select<CondLogic>
-                              value={condRows[0].logic}
-                              onChange={(v) =>
-                                setCondRows((prev) => prev.map((r) => ({ ...r, logic: v })))
-                              }
-                              style={{ width: 70 }}
-                              size="small"
-                            >
-                              <Option value="AND">AND</Option>
-                              <Option value="OR">OR</Option>
-                            </Select>
-                          )}
-                          {idx === 0 && (
-                            <Text type="secondary" style={{ width: 70, display: 'inline-block', fontSize: 12 }}>
-                              条件
-                            </Text>
-                          )}
-                          {/* 左侧字段（source 页签字段） */}
-                          <Select
-                            value={row.lhsField || undefined}
-                            onChange={(v) => updateCondRow(row.id, { lhsField: v })}
-                            placeholder="来源字段"
-                            style={{ width: 140 }}
-                            size="small"
-                            showSearch
-                            disabled={!sumifSourceId}
-                          >
-                            {conditionFields.map((f) => (
-                              <Option key={f} value={f}>{f}</Option>
-                            ))}
-                          </Select>
-                          {/* 运算符 */}
-                          <Select<CondOp>
-                            value={row.op}
-                            onChange={(v) => updateCondRow(row.id, { op: v })}
-                            style={{ width: 70 }}
-                            size="small"
-                          >
-                            {(['=', '!=', '<>', '>', '<', '>=', '<='] as CondOp[]).map((op) => (
-                              <Option key={op} value={op}>{op}</Option>
-                            ))}
-                          </Select>
-                          {/* 右侧类型 */}
-                          <Select<'literal' | 'hostField'>
-                            value={row.rhsKind}
-                            onChange={(v) => updateCondRow(row.id, { rhsKind: v, rhsValue: '' })}
-                            style={{ width: 90 }}
-                            size="small"
-                          >
-                            <Option value="literal">字面量</Option>
-                            <Option value="hostField">宿主字段</Option>
-                          </Select>
-                          {/* 右侧值 */}
-                          {row.rhsKind === 'literal' ? (
-                            <Input
-                              value={row.rhsValue}
-                              onChange={(e) => updateCondRow(row.id, { rhsValue: e.target.value })}
-                              placeholder="值（如 管理费）"
-                              style={{ width: 140 }}
-                              size="small"
-                            />
-                          ) : (
-                            <Input
-                              value={row.rhsValue}
-                              onChange={(e) => updateCondRow(row.id, { rhsValue: e.target.value })}
-                              placeholder="宿主字段名"
-                              style={{ width: 140 }}
-                              size="small"
-                            />
-                          )}
-                          {/* 删除行 */}
-                          {condRows.length > 1 && (
-                            <Button
-                              size="small"
-                              type="text"
-                              danger
-                              icon={<DeleteOutlined />}
-                              onClick={() => removeCondRow(row.id)}
-                            />
-                          )}
-                        </Space>
-                      </div>
-                    ))}
-                    <Button
-                      size="small"
-                      type="dashed"
-                      icon={<PlusOutlined />}
-                      onClick={addCondRow}
-                      style={{ marginTop: 8 }}
-                    >
-                      添加条件行
-                    </Button>
-                  </div>
-                </Form.Item>
-
-                {/* 聚合值字段（COUNTIF 可不填） */}
-                {sumifFunc !== 'COUNTIF' && (
-                  <Form.Item
-                    label={`聚合值字段（${sumifFunc} 的目标列）`}
-                    style={{ marginBottom: 8 }}
-                  >
-                    <div style={{ background: '#fff', border: '1px solid #e6d5ff', borderRadius: 6, padding: '8px 10px' }}>
-                      {valueFieldRows.map((row, idx) => (
-                        <div key={row.id} style={{ marginBottom: idx < valueFieldRows.length - 1 ? 8 : 0 }}>
-                          <Space align="center">
-                            <Select
-                              value={row.fieldName || undefined}
-                              onChange={(v) =>
-                                setValueFieldRows((prev) =>
-                                  prev.map((r) => (r.id === row.id ? { ...r, fieldName: v } : r)),
-                                )
-                              }
-                              placeholder="选择字段"
-                              style={{ width: 200 }}
-                              size="small"
-                              showSearch
-                              disabled={!sumifSourceId}
-                            >
-                              {sourceFields.map((f) => (
-                                <Option key={f} value={f}>{f}</Option>
-                              ))}
-                            </Select>
-                            {valueFieldRows.length > 1 && (
-                              <Button
-                                size="small"
-                                type="text"
-                                danger
-                                icon={<DeleteOutlined />}
-                                onClick={() => removeValueFieldRow(row.id)}
-                              />
-                            )}
-                          </Space>
-                        </div>
-                      ))}
-                      <Button
-                        size="small"
-                        type="dashed"
-                        icon={<PlusOutlined />}
-                        onClick={addValueFieldRow}
-                        style={{ marginTop: 8 }}
-                      >
-                        添加值字段
-                      </Button>
-                    </div>
-                  </Form.Item>
-                )}
-
-                {/* 插入按钮 */}
+          {/* ── SUMIF 条件聚合配置区（仅 NORMAL/SUBTOTAL 组件） ── */}
+          {componentType !== 'EXCEL' && (
+            <div style={{ marginTop: 16 }}>
+              <Divider style={{ margin: '0 0 10px 0' }}>
                 <Button
-                  type="primary"
-                  style={{ background: '#722ed1', borderColor: '#722ed1' }}
-                  onClick={handleInsertSumifToken}
+                  type="link"
+                  style={{ fontSize: 13, padding: 0 }}
+                  onClick={() => setSumifPanelOpen((v) => !v)}
                 >
-                  插入 {sumifFunc} 到表达式
+                  {sumifPanelOpen ? '收起 SUMIF 条件聚合' : '展开 SUMIF 条件聚合（按条件过滤后聚合）'}
                 </Button>
-              </Form>
+              </Divider>
+
+              {sumifPanelOpen && (
+                <div
+                  style={{
+                    padding: '14px 16px',
+                    background: '#f6f0ff',
+                    border: '1px solid #d3adf7',
+                    borderRadius: 8,
+                    marginBottom: 12,
+                  }}
+                >
+                  <Text strong style={{ fontSize: 13, color: '#531dab' }}>
+                    SUMIF 条件聚合构造器
+                  </Text>
+                  <Text type="secondary" style={{ fontSize: 12, marginLeft: 8 }}>
+                    （配置完成后点「插入 SUMIF 到表达式」，SUMIF 文本将插入到表达式框光标处）
+                  </Text>
+
+                  <Form layout="vertical" style={{ marginTop: 12 }}>
+                    {/* 函数选择 + 来源页签 */}
+                    <Space align="start" wrap>
+                      <Form.Item label="函数" style={{ marginBottom: 8, minWidth: 120 }}>
+                        <Select<SumifFunc>
+                          value={sumifFunc}
+                          onChange={setSumifFunc}
+                          style={{ width: 120 }}
+                        >
+                          {(Object.keys(FUNC_TO_AGG) as SumifFunc[]).map((fn) => (
+                            <Option key={fn} value={fn}>{fn}</Option>
+                          ))}
+                        </Select>
+                      </Form.Item>
+                      <Form.Item label="来源页签" style={{ marginBottom: 8, minWidth: 200 }}>
+                        <Select
+                          value={sumifSourceId || undefined}
+                          onChange={(v) => {
+                            setSumifSourceId(v);
+                            setCondRows([{ id: nextId(), lhsField: '', op: '=', rhsKind: 'literal', rhsValue: '', logic: 'AND' }]);
+                            setValueFieldRows([{ id: nextId(), fieldName: '' }]);
+                          }}
+                          placeholder="选择来源页签"
+                          style={{ width: 200 }}
+                        >
+                          {tabDefs
+                            .filter((d) => d.componentId !== componentId)
+                            .map((d) => (
+                              <Option key={d.componentId} value={d.componentId}>
+                                {d.componentName ?? d.alias}
+                              </Option>
+                            ))}
+                        </Select>
+                      </Form.Item>
+                    </Space>
+
+                    {/* 过滤条件行编辑器 */}
+                    <Form.Item label="过滤条件" style={{ marginBottom: 8 }}>
+                      <div style={{ background: '#fff', border: '1px solid #e6d5ff', borderRadius: 6, padding: '8px 10px' }}>
+                        {condRows.map((row, idx) => (
+                          <div key={row.id} style={{ marginBottom: idx < condRows.length - 1 ? 8 : 0 }}>
+                            <Space align="center" wrap>
+                              {/* AND/OR 连接符（第一行不显示） */}
+                              {idx > 0 && (
+                                <Select<CondLogic>
+                                  value={condRows[0].logic}
+                                  onChange={(v) =>
+                                    setCondRows((prev) => prev.map((r) => ({ ...r, logic: v })))
+                                  }
+                                  style={{ width: 70 }}
+                                  size="small"
+                                >
+                                  <Option value="AND">AND</Option>
+                                  <Option value="OR">OR</Option>
+                                </Select>
+                              )}
+                              {idx === 0 && (
+                                <Text type="secondary" style={{ width: 70, display: 'inline-block', fontSize: 12 }}>
+                                  条件
+                                </Text>
+                              )}
+                              {/* 左侧字段（source 页签字段） */}
+                              <Select
+                                value={row.lhsField || undefined}
+                                onChange={(v) => updateCondRow(row.id, { lhsField: v })}
+                                placeholder="来源字段"
+                                style={{ width: 140 }}
+                                size="small"
+                                showSearch
+                                disabled={!sumifSourceId}
+                              >
+                                {conditionFields.map((f) => (
+                                  <Option key={f} value={f}>{f}</Option>
+                                ))}
+                              </Select>
+                              {/* 运算符 */}
+                              <Select<CondOp>
+                                value={row.op}
+                                onChange={(v) => updateCondRow(row.id, { op: v })}
+                                style={{ width: 70 }}
+                                size="small"
+                              >
+                                {(['=', '!=', '<>', '>', '<', '>=', '<='] as CondOp[]).map((op) => (
+                                  <Option key={op} value={op}>{op}</Option>
+                                ))}
+                              </Select>
+                              {/* 右侧类型 */}
+                              <Select<'literal' | 'hostField'>
+                                value={row.rhsKind}
+                                onChange={(v) => updateCondRow(row.id, { rhsKind: v, rhsValue: '' })}
+                                style={{ width: 90 }}
+                                size="small"
+                              >
+                                <Option value="literal">字面量</Option>
+                                <Option value="hostField">宿主字段</Option>
+                              </Select>
+                              {/* 右侧值 */}
+                              {row.rhsKind === 'literal' ? (
+                                <Input
+                                  value={row.rhsValue}
+                                  onChange={(e) => updateCondRow(row.id, { rhsValue: e.target.value })}
+                                  placeholder="值（如 管理费）"
+                                  style={{ width: 140 }}
+                                  size="small"
+                                />
+                              ) : (
+                                <Input
+                                  value={row.rhsValue}
+                                  onChange={(e) => updateCondRow(row.id, { rhsValue: e.target.value })}
+                                  placeholder="宿主字段名"
+                                  style={{ width: 140 }}
+                                  size="small"
+                                />
+                              )}
+                              {/* 删除行 */}
+                              {condRows.length > 1 && (
+                                <Button
+                                  size="small"
+                                  type="text"
+                                  danger
+                                  icon={<DeleteOutlined />}
+                                  onClick={() => removeCondRow(row.id)}
+                                />
+                              )}
+                            </Space>
+                          </div>
+                        ))}
+                        <Button
+                          size="small"
+                          type="dashed"
+                          icon={<PlusOutlined />}
+                          onClick={addCondRow}
+                          style={{ marginTop: 8 }}
+                        >
+                          添加条件行
+                        </Button>
+                      </div>
+                    </Form.Item>
+
+                    {/* 聚合值字段（COUNTIF 可不填） */}
+                    {sumifFunc !== 'COUNTIF' && (
+                      <Form.Item
+                        label={`聚合值字段（${sumifFunc} 的目标列）`}
+                        style={{ marginBottom: 8 }}
+                      >
+                        <div style={{ background: '#fff', border: '1px solid #e6d5ff', borderRadius: 6, padding: '8px 10px' }}>
+                          {valueFieldRows.map((row, idx) => (
+                            <div key={row.id} style={{ marginBottom: idx < valueFieldRows.length - 1 ? 8 : 0 }}>
+                              <Space align="center">
+                                <Select
+                                  value={row.fieldName || undefined}
+                                  onChange={(v) =>
+                                    setValueFieldRows((prev) =>
+                                      prev.map((r) => (r.id === row.id ? { ...r, fieldName: v } : r)),
+                                    )
+                                  }
+                                  placeholder="选择字段"
+                                  style={{ width: 200 }}
+                                  size="small"
+                                  showSearch
+                                  disabled={!sumifSourceId}
+                                >
+                                  {sourceFields.map((f) => (
+                                    <Option key={f} value={f}>{f}</Option>
+                                  ))}
+                                </Select>
+                                {valueFieldRows.length > 1 && (
+                                  <Button
+                                    size="small"
+                                    type="text"
+                                    danger
+                                    icon={<DeleteOutlined />}
+                                    onClick={() => removeValueFieldRow(row.id)}
+                                  />
+                                )}
+                              </Space>
+                            </div>
+                          ))}
+                          <Button
+                            size="small"
+                            type="dashed"
+                            icon={<PlusOutlined />}
+                            onClick={addValueFieldRow}
+                            style={{ marginTop: 8 }}
+                          >
+                            添加值字段
+                          </Button>
+                        </div>
+                      </Form.Item>
+                    )}
+
+                    {/* 插入按钮 */}
+                    <Button
+                      type="primary"
+                      style={{ background: '#722ed1', borderColor: '#722ed1' }}
+                      onClick={handleInsertSumifToken}
+                    >
+                      插入 {sumifFunc} 到表达式
+                    </Button>
+                  </Form>
+                </div>
+              )}
             </div>
           )}
         </div>
-      )}
-
-      {/* 页签字段矩阵 + 置灰锁定 */}
-      <div style={{ marginTop: 14 }}>
-        <div style={{ fontSize: 12, color: '#8a909a', fontWeight: 600, marginBottom: 6 }}>
-          页签字段（全部展示 · 点明细锁定行键类 · 行键不同则该页签明细置灰，仅留总计可选）
-        </div>
-        <TabFieldMatrix
-          tabDefs={tabDefs}
-          expression={expression}
-          onInsert={(token) => insertAtCursor(token)}
-          onClearExpression={() => setExpression('')}
-          selfRowKeyFields={selfRowKeyFields}
-        />
       </div>
-
     </Drawer>
   );
 };

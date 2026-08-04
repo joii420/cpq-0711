@@ -148,13 +148,17 @@ public class FormulaCalculatorTest {
     }
 
     @Test
-    @DisplayName("T6: 4 位小数 HALF_UP")
+    @DisplayName("T6: task-0801 起改为 12 位除法中间精度，不再内部截断 4 位（呈现层才规整 6 位）")
     void t6_rounding() {
-        // 2/3 = 0.6666... → 0.6667
+        // 2/3 = 0.6666... → 内部按 PrecisionPolicy.DIVISION_SCALE(12) 位精度，不在此处截断
         String t = "[{\"type\":\"number\",\"value\":\"2\"},"
             + "{\"type\":\"operator\",\"value\":\"/\"},"
             + "{\"type\":\"number\",\"value\":\"3\"}]";
-        assertEquals(0.6667, eval(t, new RowContext()), 1e-9);
+        assertEquals(0.666666666667, eval(t, new RowContext()), 1e-9);
+        // 呈现边界规整到 6 位（PrecisionPolicy.DISPLAY_SCALE）：0.666667
+        java.math.BigDecimal displayed = com.cpq.common.PrecisionPolicy.round(
+            calc.evaluateExpression(json(t), new RowContext()));
+        assertEquals(0, displayed.compareTo(new java.math.BigDecimal("0.666667")), "实际=" + displayed);
     }
 
     @Test

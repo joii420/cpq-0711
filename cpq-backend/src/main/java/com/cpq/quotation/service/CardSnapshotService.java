@@ -313,6 +313,12 @@ public class CardSnapshotService {
                     if (!f.path("formula_name").isMissingNode() && !f.path("formula_name").isNull()) {
                         fieldNode.put("formulaName", f.path("formula_name").asText(null));
                     }
+                    // BL-0098（AP-44 完备性）：公式稳定 id 必须一并搬运 —— 本方法是**白名单逐键映射**，
+                    // 漏搬则此后新建的每一张报价单冻结结构都拿不到 id，求值永久退回按名字/位置猜，
+                    // 本次修复对新单形同虚设（且静默：不报错，只是绑定又变回可漂移的）。
+                    if (!f.path("formula_id").isMissingNode() && !f.path("formula_id").isNull()) {
+                        fieldNode.put("formulaId", f.path("formula_id").asText(null));
+                    }
                     // Plan 3a：条件公式整块搬运（AP-44 完备性，否则渲染期条件解析静默失效）
                     if (f.path("conditional_formula").isObject()) {
                         fieldNode.set("conditionalFormula", f.path("conditional_formula"));
@@ -525,8 +531,12 @@ public class CardSnapshotService {
             // ── Pass1:只 build 字符串到内存(只读 li,不赋字段 → 脏窗口为空,任何 fallback em 查此刻 flush 空)──
             Map<UUID, String> quoteVals = new HashMap<>();
             Map<UUID, String> costingVals = new HashMap<>();
+            // repair-0803 B1：逐行收集报价侧渲染失败原文 → 下方落带原文哨兵（对齐核价侧 BL-0030 能力）
+            Map<UUID, String> quoteErrors = new HashMap<>();
             for (QuotationLineItem li : lines) {
-                quoteVals.put(li.id, safeCall(() -> buildCardValues(li, q.customerTemplateId, prefetch)));
+                final String[] errOut = new String[1];
+                quoteVals.put(li.id, safeCall(() -> buildCardValues(li, q.customerTemplateId, prefetch, errOut)));
+                if (errOut[0] != null) quoteErrors.put(li.id, errOut[0]);
                 if (q.costingCardTemplateId != null) {
                     if (costingRenderError != null) {
                         costingVals.put(li.id, null);   // 整单渲染已失败 → 不逐 li 重试(S1 兜底会再抛),下方落带原文哨兵
@@ -547,7 +557,10 @@ public class CardSnapshotService {
                     LOG.warnf("[cardvalues-sentinel] quote build 失败 line=%s → 落失败哨兵", li.id);
                 if (costingVals.containsKey(li.id) && costingVals.get(li.id) == null)
                     LOG.warnf("[cardvalues-sentinel] costing build 失败 line=%s → 落失败哨兵", li.id);
-                li.quoteCardValues = orSentinel(quoteVals.get(li.id));
+                // repair-0803 B1：有失败原文 → 落带原文哨兵，前端显示具体错误而非通用「待重算」
+                li.quoteCardValues = quoteErrors.containsKey(li.id)
+                    ? failedSentinelWithError(quoteErrors.get(li.id))
+                    : orSentinel(quoteVals.get(li.id));
                 li.quoteValuesAt = now;
                 if (costingVals.containsKey(li.id))
                     li.costingCardValues = costingRenderError != null
@@ -1199,6 +1212,23 @@ public class CardSnapshotService {
 
     /** B2 重载：{@code prefetch!=null} 时复用预取模板 snapshot + 整单 IN compdata；{@code null}=逐行查（零破坏）。 */
     String buildCardValues(QuotationLineItem li, UUID templateId, CardValuesPrefetch prefetch) {
+        return buildCardValues(li, templateId, prefetch, null);
+    }
+
+    /**
+     * repair-0803 B1 重载：{@code errOut != null} 时把失败原文写入 {@code errOut[0]}，
+     * 供调用方落<b>带错误原文的哨兵</b>（{@link #failedSentinelWithError}）而非通用哨兵。
+     *
+     * <p><b>为什么需要</b>：报价侧原先只落 {@link #orSentinel} 通用哨兵，前端仅显示
+     * 「该料号卡片数据待重算」而<b>不含任何错误原文</b>——核价侧早有此能力（BL-0030，
+     * {@code costingRenderError} → {@code failedSentinelWithError}），报价侧一直缺。
+     * 2026-08-02 排查 QT-20260802-0049 时，因看不到是哪条 SQL 出错，只能靠翻后端控制台日志
+     * （dev 环境还不落日志文件），排查成本极高。本重载把该能力补齐到报价侧。
+     *
+     * <p>行为完全向后兼容：{@code errOut == null}（即原 3 参重载）时与改造前逐字节一致。
+     */
+    String buildCardValues(QuotationLineItem li, UUID templateId, CardValuesPrefetch prefetch,
+                           String[] errOut) {
         if (li == null || li.id == null || templateId == null) return null;
         try {
             // 1. 配置源：**优先用建单时冻结的 quotation_view_structure**（严格冻结语义）。
@@ -1274,6 +1304,13 @@ public class CardSnapshotService {
         } catch (Exception e) {
             LOG.warnf("[card-snapshot] buildCardValues failed li=%s tmpl=%s: %s",
                 li.id, templateId, e.getMessage());
+            // repair-0803 B1：把失败原文透出给调用方（errOut==null 时行为与改造前一致）。
+            // 注意用 e.toString() 而非 getMessage()——PG 的 "current transaction is aborted" 类异常
+            // getMessage() 常为空或过短，带上异常类名才能定位到真正的首因。
+            if (errOut != null && errOut.length > 0) {
+                String msg = e.getMessage();
+                errOut[0] = "卡片渲染失败: " + ((msg == null || msg.isBlank()) ? e.toString() : msg);
+            }
             return null;
         }
     }
@@ -1733,8 +1770,13 @@ public class CardSnapshotService {
                 tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
                 rkfByComp.get(cid), baseRows, editRows, componentSubtotals, deleted, rkfNames,
                 rowCache, cid.isBlank() ? null : cid);
-            double sub = 0.0;
-            for (java.math.BigDecimal v : byCol.values()) sub += v.doubleValue();
+            // task-0801 B4-2（技术总监验收补漏）：累加过程必须 BigDecimal 精确，只在写回
+            // componentSubtotals（Map<String,Double>，链路一约定承载类型不变）时才 doubleValue()。
+            // 原写法 `double sub = 0.0; sub += v.doubleValue();` 是 double 累加，与本文件
+            // backfillSubtotalsFromResolved（:2996/3004）已改的写法不一致——同一语义两种实现。
+            java.math.BigDecimal subBd = java.math.BigDecimal.ZERO;
+            for (java.math.BigDecimal v : byCol.values()) subBd = subBd.add(v);
+            double sub = subBd.doubleValue();
             String code = tab.path("componentCode").asText(null);
             String tabName = tab.path("tabName").asText("");
             if (!cid.isBlank()) componentSubtotals.put(cid, sub);
@@ -1754,33 +1796,24 @@ public class CardSnapshotService {
         //   输出顺序仍按原 snapshot 顺序（拓扑序只决定计算次序，不改变 UI tab 顺序）。
 
         // 1) 组件级拓扑序（仅 NORMAL tab；SUBTOTAL 不参与，单独在原序补算）
-        // 1a) 解析表：component_code / tabName / componentId → componentId（供 component_subtotal 依赖解析）
-        Map<String, String> refToCid = new HashMap<>();
-        for (JsonNode tab : snapshot) {
-            if (!"NORMAL".equals(tab.path("componentType").asText("NORMAL"))) continue;
-            String cid = tab.path("componentId").asText("");
-            if (!cid.isBlank()) refToCid.put(cid, cid);
-            String code = tab.path("componentCode").asText("");
-            if (!code.isBlank()) refToCid.put(code, cid);
-            String tn = tab.path("tabName").asText("");
-            if (!tn.isBlank()) refToCid.put(tn, cid);
-        }
+        // 1a) 收集参与拓扑的页签（cid + code/tabName 别名 + formulas + fields）。
+        //     依赖建图交给 CrossTabComponentOrder.buildComponentDeps —— cross_tab_ref 全量建边；
+        //     component_subtotal 按<b>列粒度</b>判定（repair-0803）：引用零依赖列（INPUT_NUMBER 等）
+        //     不建边，否则「产品.税率(INPUT) → 物料成本 → 产品.管理费」这条列级直线依赖链会被
+        //     折成 产品⇄物料 页签级假环 → topoOrder 误抛循环引用 → 整卡渲染失败（QT-20260803-0052）。
         List<String> compIds = new ArrayList<>();
-        Map<String, Set<String>> compDeps = new LinkedHashMap<>();
+        List<CrossTabComponentOrder.TabDep> tabDeps = new ArrayList<>();
         for (JsonNode tab : snapshot) {
             // 仅 NORMAL tab 进拓扑序（跳过 SUBTOTAL 及 EXCEL —— EXCEL 不参与公式计算/cross_tab_ref）
             if (!"NORMAL".equals(tab.path("componentType").asText("NORMAL"))) continue;
             String cid = tab.path("componentId").asText("");
             compIds.add(cid);
-            // cross_tab_ref 源依赖（既有） + component_subtotal 跨组件依赖（QT-1743 修复，与前端对齐）
-            Set<String> deps = new LinkedHashSet<>(CrossTabComponentOrder.extractSourceRefs(tab.path("formulas")));
-            for (String r : CrossTabComponentOrder.extractSubtotalRefs(tab.path("formulas"))) {
-                String tcid = refToCid.get(r);
-                if (tcid != null && !tcid.equals(cid)) deps.add(tcid);  // 排除自引用（二阶列由 B6 两阶段处理）
-            }
-            compDeps.put(cid, deps);
+            tabDeps.add(new CrossTabComponentOrder.TabDep(cid,
+                tab.path("componentCode").asText(""), tab.path("tabName").asText(""),
+                tab.path("formulas"), tab.path("fields")));
         }
-        List<String> order = CrossTabComponentOrder.topoOrder(compIds, compDeps);
+        List<String> order = CrossTabComponentOrder.topoOrder(
+            compIds, CrossTabComponentOrder.buildComponentDeps(tabDeps));
 
         // componentId → snapshot tab（按 componentId 反查；SUBTOTAL 走原序补算时直接遍历 snapshot）
         Map<String, JsonNode> tabById = new LinkedHashMap<>();
@@ -3248,34 +3281,37 @@ public class CardSnapshotService {
             rowsForSum.add(com.cpq.engine.unit.UnitConversion.convertObjectRow(fields, r));
         }
 
-        double totalSum = 0.0;
-        double amountTotal = 0.0; // BL-0017：Σ 金额列（is_amount && is_subtotal），累加未四舍五入的原始 colSum
+        // task-0801 B4-2：累加过程改 BigDecimal 精确求和（原 double += 几十行累加会有中间误差，
+        // 且中途 setScale(4) 截断），只在写回 componentSubtotals（Map<String,Double>，链路一约定
+        // 承载类型不变，见 dev-docs/task-0801-公式计算精度优化/backtask.md §1）时才 .doubleValue()。
+        java.math.BigDecimal totalSum = java.math.BigDecimal.ZERO;
+        // BL-0017（task-0729 B8.1）：Σ 金额列（is_amount && is_subtotal）。merge master 时同步改为
+        // BigDecimal 精确求和（与 totalSum 同一处理），累加未四舍五入的原始 colSum，最后统一舍入
+        // （避免复合舍入误差）。
+        java.math.BigDecimal amountTotal = java.math.BigDecimal.ZERO;
         for (String col : subtotalFields) {
-            double colSum = 0.0;
+            java.math.BigDecimal colSum = java.math.BigDecimal.ZERO;
             for (Map<String, Object> row : rowsForSum) {
                 Object val = row.get(col);
                 if (val == null) continue;
-                double d;
+                java.math.BigDecimal d;
                 if (val instanceof Number n) {
-                    d = n.doubleValue();
+                    d = com.cpq.common.PrecisionPolicy.of(n);
                 } else {
-                    try { d = Double.parseDouble(val.toString()); } catch (NumberFormatException ignore) { continue; }
+                    try { d = new java.math.BigDecimal(val.toString().trim()); } catch (NumberFormatException ignore) { continue; }
                 }
-                colSum += d;
+                colSum = colSum.add(d);
             }
-            java.math.BigDecimal rounded =
-                java.math.BigDecimal.valueOf(colSum).setScale(4, java.math.RoundingMode.HALF_UP);
-            double roundedDouble = rounded.doubleValue();
+            double colSumDouble = colSum.doubleValue();
             // 写 per-column 键（三种 key 形式，与 PASS1 写法对称）
-            if (!cid.isBlank()) componentSubtotals.put(cid + "#" + col, roundedDouble);
-            if (code != null && !code.isBlank()) componentSubtotals.put(code + "#" + col, roundedDouble);
-            componentSubtotals.put(tabName + "#" + col, roundedDouble);
-            totalSum += roundedDouble;
-            if (amountCols.contains(col)) amountTotal += colSum; // 累加未舍入原值，最后统一舍入（避免复合舍入误差）
+            if (!cid.isBlank()) componentSubtotals.put(cid + "#" + col, colSumDouble);
+            if (code != null && !code.isBlank()) componentSubtotals.put(code + "#" + col, colSumDouble);
+            componentSubtotals.put(tabName + "#" + col, colSumDouble);
+            totalSum = totalSum.add(colSum);
+            if (amountCols.contains(col)) amountTotal = amountTotal.add(colSum); // BL-0017：累加未舍入原值，最后统一舍入
         }
         // 回填总小计（= 所有 is_subtotal 列之和，与 PASS1 computeTabSubtotalsByColumn 逻辑对称）
-        double roundedTotal = java.math.BigDecimal.valueOf(totalSum)
-            .setScale(4, java.math.RoundingMode.HALF_UP).doubleValue();
+        double roundedTotal = totalSum.doubleValue();
         if (!cid.isBlank()) componentSubtotals.put(cid, roundedTotal);
         if (code != null && !code.isBlank()) componentSubtotals.put(code, roundedTotal);
         componentSubtotals.put(tabName, roundedTotal);
@@ -3283,7 +3319,7 @@ public class CardSnapshotService {
         // BL-0017 哨兵键登记（task-0729 B8.1 补齐）：`${cid|code|tabName}#__amount_total__` = Σ金额列。
         // 🔒 buildTabNode:~1806 的排除逻辑必须保留 —— 登记后该键会真的出现在 componentSubtotals 里，
         // 若泄漏进 subtotalByColumn 会污染快照 + 造成 golden 漂移（本次未改动该排除逻辑）。
-        double roundedAmountTotal = java.math.BigDecimal.valueOf(amountTotal)
+        double roundedAmountTotal = amountTotal
             .setScale(4, java.math.RoundingMode.HALF_UP).doubleValue();
         putAmountTotalSentinel(cid, code, tabName, roundedAmountTotal, componentSubtotals);
     }

@@ -1,7 +1,23 @@
 # formula-golden — 双端公式一致性黄金用例集（task-0729 B9 L1）
 
 > ---
-> ## 🚨🚨🚨 合并 `task-0801` 前必读 —— 这里有一颗定时炸弹，合并那天必须同步拆 🚨🚨🚨
+> ## ✅ 已兑现（2026-08-03，随 `merge master` 带入 task-0801/0803）
+>
+> 下面这段警示曾经预埋、现已兑现，**保留作历史记录，不删**——下次再遇到"两个分支各自独立演进导致
+> 口径分歧"的场景，这是一份完整的活教材（从"预判风险→提前写警示→按未经验证的转述改一次→实测证伪
+> 撤回→分支真合并后再次实测确认→正式改定"，全过程可追溯）。
+>
+> **实际兑现情况**：merge master 时前端已把 master 侧 `precision.ts` 的 `ArithDecimalParser`
+> 原样复制到隔离脚本**实测**（不是照抄代码猜行为），确认 `evaluateArithmetic()` 与后端新
+> `PrecisionPolicy`（`DIVISION_SCALE=12`、出口不再统一舍入）语义一致；`formulaEngine.ts` 的
+> `evaluateExpression` 冲突块整体采用 master 侧（详见 `merge-master-前端冲突预案.md` §1）；
+> `dec-001`/`dec-002`/`dec-004` 三条 `expected` 已改回 12 位精度系列值
+> （`3.333333333333`/`0.333333333333`/`2.00005`），`expectedSource` 均为 `frontend-engine`
+> （前端引擎合并后实测值，非猜测）。合并后重跑 `npx vitest run src/utils/formulaGolden.test.ts`
+> 确认这三条仍然通过（数值来源从"本分支临时口径"切换为"两分支合一后的正式口径"）。
+>
+> <details>
+> <summary>点击展开：原始警示全文（预埋时的措辞，未做任何删改）</summary>
 >
 > **`task-0801`（commit `f8278099` "公式计算精度优化"，目前是独立分支，未合并进本分支）一旦合并
 > 进来，会把后端 `FormulaCalculator.evaluateExpression` 从"除法/结果统一 `setScale(4, HALF_UP)`"
@@ -28,6 +44,8 @@
 > 一个长期挂红却没人管的"狼来了"信号。**任何人合并/审查 `task-0801` 相关 PR 时，看到这段警示就该
 > 立刻联动这两处改动一起提交，不要拆成两次 PR（拆开会有一段时间线上是"后端已 12 位、前端还 4 位、
 > 用例还挂着旧 expected"的三方不一致窗口期）。**
+>
+> </details>
 > ---
 
 ## 契约（不可违反）

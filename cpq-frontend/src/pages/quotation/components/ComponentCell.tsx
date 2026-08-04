@@ -29,7 +29,6 @@ import type { PathCache } from '../usePathFormulaCache';
 import type { GlobalVariableDefinition } from '../../../services/globalVariableService';
 import type { ConfigTemplateMap } from '../useConfigTemplates';
 import { formatPathValue } from './formatPathValue';
-import { resolveInputDefault } from '../inputDefaults';
 import { formatNumber } from '../../../utils/formatNumber';
 
 // re-export 供已有 `import { formatPathValue } from '.../ComponentCell'` 的调用方使用
@@ -640,25 +639,17 @@ export const ComponentCell: React.FC<ComponentCellProps> = ({
   }
 
   // readonly=true: 只读文本渲染
+  //
+  // spec 2026-08-03「快照即权威」：只读态**不再**回退解析 default_source。
+  // 行数据是什么就显示什么，空就是「—」。改动前这里在值为空时显示默认值，
+  // 于是用户清空后编辑页空白、详情页仍有数字 —— AP-50 双端不一致的典型形状。
+  // 默认值的唯一写入时机是「键不存在时烘一次」（QuotationStep2 bake effect），
+  // 烘完即落进行数据，只读态自然读得到，无需在渲染层再补一次。
   if (readonly) {
     if (!isEmpty) {
       const formatted = formatPathValue(rawCell);
       return <span>{formatted ?? String(rawCell)}</span>;
     }
-
-    // default_source 解析（统一解析器；含 BASIC_DATA + content 兜底）
-    if (isNumber || field.field_type === 'INPUT_TEXT' || field.field_type === 'INPUT') {
-      const def = resolveInputDefault(field, {
-        basicDataValues,
-        partNo,
-        pathCache: pathCacheState as Record<string, any>,
-      });
-      if (def !== undefined) {
-        const formatted = formatPathValue(def) ?? String(def);
-        return <span title="默认值">{formatted}</span>;
-      }
-    }
-
     return <span className="qt-ds-placeholder">—</span>;
   }
 

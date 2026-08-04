@@ -614,11 +614,14 @@ describe('component_subtotal — subtotal column references', () => {
       selfRKF,
     );
     expect(tokens).toHaveLength(3);
+    // repair-0803 F1（BL-0099）：tab_name 由「列名」修正为「页签别名」。
+    // 原断言 tab_name:'金额' 是照着错误实现写的——后端 appendToken 第 2 级回退拼
+    // tab_name+"#"+value，填列名会得到 "金额#金额" 这种恒不命中的键。
     expect(tokens[0]).toMatchObject({
       type: 'component_subtotal',
       component_code: 'COMP_RL',
       value: '金额',
-      tab_name: '金额',
+      tab_name: 'COMP_RL',
       label: '回料·金额',
     });
     expect(tokens[1]).toEqual({ type: 'operator', value: '+' });
@@ -626,7 +629,7 @@ describe('component_subtotal — subtotal column references', () => {
       type: 'component_subtotal',
       component_code: 'COMP_INV',
       value: '金额',
-      tab_name: '金额',
+      tab_name: 'COMP_INV',
       label: '投料·金额',
     });
   });
@@ -1120,7 +1123,10 @@ describe('E2 — SUM 内跨组件小计列免行键（component_subtotal）', ()
       {
         type: 'component_subtotal',
         value: '税率',
-        tab_name: '税率',
+        // repair-0803 F1（BL-0099）：由 '税率'（列名）修正为页签别名。
+        // 这条断言的原值恰好就是 2026-08-02 线上故障单 QT-20260802-0049 涉及的 [产品.税率]，
+        // 当初照着错误实现写死，把 bug 固化成了测试。
+        tab_name: 'COMP-0135',
         component_code: 'COMP-0135',
         label: '产品·税率',
       },

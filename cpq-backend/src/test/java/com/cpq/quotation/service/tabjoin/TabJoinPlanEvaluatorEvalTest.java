@@ -63,4 +63,15 @@ class TabJoinPlanEvaluatorEvalTest {
         bd("180", ev.evalExpression("SUM([a.x]) * (1 + 2)",
             List.of(w("a.x", 10), w("a.x", 50)), Map.of()));
     }
+
+    /**
+     * task-0801 B8 T2（求值点 #5 — TabJoinPlanEvaluator）：0.1+0.2 必须十进制精确 = 0.3。
+     * 走真实生产路径：detail 令牌 [t.x]/[t.y] → numLit() 加 "B" 后缀 → SafeArithmetic
+     * （3 参构造器配 PrecisionPolicy.MC/DIVISION_SCALE）求值。若只配 MathContext 没加后缀，
+     * 两个 Double 字面量相加会得 0.30000000000000004（R-3 未修复）。
+     */
+    @Test void t0801_decimalPrecision_pointOnePlusPointTwo() {
+        var rows = List.of(w("t.x", new BigDecimal("0.1"), "t.y", new BigDecimal("0.2")));
+        bd("0.3", ev.evalExpression("[t.x]+[t.y]", rows, Map.of()));
+    }
 }

@@ -105,7 +105,7 @@
 | 九 | Excel 导入 | 21 | `/api/cpq/imports`、`/api/cpq/excel-templates`、`/api/cpq/import-*` |
 | 十 | 3D 配置器与选配 | 79 | `/api/cpq/configurator-*`、`/api/cpq/feature-library`、`/api/cpq/part-*`、`/api/cpq/sel-*` |
 | 十一 | 产品配置与物料配方 | 21 | `/api/cpq/configure-*`、`/api/cpq/material-recipes` |
-| 十二 | 产品、定价与其他 | 27 | `/api/cpq/products`、`/api/cpq/pricing-*`、`/api/cpq/element-prices` |
+| 十二 | 产品、定价与其他 | 51（含 task-0729 客户价格调整策略 24 个） | `/api/cpq/products`、`/api/cpq/pricing-*`、`/api/cpq/element-prices`、`/api/cpq/price-adjust/*` |
 
 > 端点数为估算（按独立 HTTP 路由方法计），以正文实际列举为准。
 
@@ -9515,3 +9515,80 @@ Cell：`quote`(Object 报价值)、`costing`(Object 核价值)、`highlighted`(b
   | valueA | String | A 值 |
   | valueB | String | B 值 |
   | sameValue | boolean | 两值是否相同 |
+
+---
+
+### 12.X 客户价格调整策略与价格版本（task-0729，5 个 Resource 类）
+
+> **最后来源：task-0729**（2026-08-01~08-03 交付）。
+> 🔒 **本节以实际交付代码为准回写，不是照抄 `dev-docs/task-0729-客户价格调整策略和价格版本/api.md` 初稿**——两者存在以下已知出入：
+> 1. **响应体信封**：api.md 初稿沿用全局 `ApiResponse<T>{code,message,data}` 约定，但**实际交付改为裸 DTO / 裸数组**（2026-08-03 修正，5 个 Resource 类统一生效）——前端 `priceAdjustService.ts`/`api.ts` 拦截器只做一层 `response.data` 解包，套 `ApiResponse` 会导致前端读到 `undefined`。**本节所有端点均为裸 DTO，不套信封**，与本文件开头「全局约定 §4」及本类目其余小节（12.1~12.W）的 `ApiResponse<T>` 约定**不同**，调用方须注意。
+> 2. **策略 CRUD（§1.1~§1.7 对应下方 12.X.1）是后补交付**——原始 backtask 分工遗漏了这部分 Resource 层，本次一并补齐。
+> 3. 部分 api.md 草案端点未实现或路径/参数与草案有出入，均以下方实际签名为准。
+>
+> 类级鉴权除注明外统一为 `@RoleAllowed({"PRICING_MANAGER", "SYSTEM_ADMIN"})`。
+
+#### 12.X.1 PriceAdjustStrategyResource（客户调价策略配置，屏 1）
+
+类级 `@Path`：`/api/cpq/price-adjust/strategies`
+
+| 方法 | 路径 | 说明 | 请求/响应要点 |
+|------|------|------|----------------|
+| GET | `/{customerNo}` | 读取客户调价策略；不存在返 200 + `exists:false` 空壳（不是 404） | 响应 `StrategyDTO`: `exists,customerNo,enabled,cycleType,cycleWeekday,cycleDayOfMonth,cycleNthWeek,executeTime,materialScopeMode,costDiffThreshold,latestVersionNo,pendingVersionNo,materialCount,elementCount,hasComparisonConfig,updatedAt,updatedBy,budgetRecomputeTriggered,affectedReviewCount` |
+| PUT | `/{customerNo}` | 保存/更新策略 | 请求体 `PutStrategyRequest`: `enabled,cycleType,cycleWeekday,cycleDayOfMonth,cycleNthWeek,executeTime,materialScopeMode,costDiffThreshold`；响应同 GET 的 `StrategyDTO` |
+| GET | `/{customerNo}/materials` | 分页查询该客户物料 + 已选中标记 | 查询参数：`page,size,customerPartNo,customerMaterialName,materialNo,materialName,selectedOnly`；响应 `PageResult<MaterialRowDTO>`（`materialNo,materialName,customerPartNo,customerMaterialName,selected`） |
+| PUT | `/{customerNo}/materials` | 覆盖式保存参与调价的物料清单 | 请求体 `PutMaterialsRequest`: `materialNos(List<String>),confirmRemoval`；响应 200 空体 |
+| GET | `/{customerNo}/elements` | 元素×最近 10 版本 pivot 矩阵 | 查询参数：`page,size,keyword,includeDisabled`（默认 true）；响应 `ElementsMatrixResponse`: `versionColumns(VersionColumnDTO[]: versionId,versionNo,status,baseDate), content(ElementRowDTO[]: elementCode,elementName,elementNo,elementEnabled,selected,prices(ElementPriceCellDTO[]: unitPrice,changeRate,priceState∈NORMAL/NOT_IN_LIST/NO_PRICE)), page,size,totalElements,totalPages` |
+| PUT | `/{customerNo}/elements` | 覆盖式保存参与调价的元素清单 | 请求体 `PutElementsRequest`: `elementCodes(List<String>),confirmUnselect`；响应 200 空体 |
+| GET | `/{customerNo}/logs` | 策略变更历史 | 查询参数：`page,size`；响应 `PageResult<StrategyLogDTO>`（`id,changedAt,changedBy,changeType,summary,beforeSnapshot,afterSnapshot`） |
+
+#### 12.X.2 PriceAdjustComparisonColumnResource（对拍比对列配置，屏 1）
+
+类级 `@Path`：`/api/cpq/price-adjust`
+
+| 方法 | 路径 | 说明 | 请求/响应要点 |
+|------|------|------|----------------|
+| GET | `/strategies/{customerNo}/template-series` | 模板系列选择器数据源 | 响应 `TemplateSeriesDTO[]`：`templateSeriesId,seriesName,latestVersion,isDefault,templateCount,hasComparisonConfig,columnCount` |
+| GET | `/comparison-columns` | 读取比对列配置（未配置返默认列） | 查询参数：`customerNo,templateSeriesId`；响应 `ComparisonColumnsDTO`: `configured,customerNo,templateSeriesId,columns(ComparisonColumnDef[])` |
+| PUT | `/comparison-columns` | **唯一写入口**，保存后异步重算该客户×模板系列下 PENDING 料号 | 请求体 `PutComparisonColumnsRequest`: `customerNo,templateSeriesId,columns(ComparisonColumnDef[])`；`ComparisonColumnDef`: `id,kind(PRODUCT_TOTAL\|TAB_PAIR),sortOrder,threshold,quoteComponentId,quoteMetric,quoteLabel,costingComponentId,costingMetric,costingLabel,removable`（默认「产品总价」列 `removable=false`，⚠️ 类内 `isProductTotal()` 显式 `@JsonIgnore`，否则往返序列化会丢字段） |
+
+#### 12.X.3 PriceAdjustVersionResource（价格版本生成与轨迹，屏 1）
+
+类级 `@Path`：`/api/cpq/price-adjust/versions`
+
+| 方法 | 路径 | 说明 | 请求/响应要点 |
+|------|------|------|----------------|
+| POST | `/generate` | 手动「立即生成一次」——与定时任务走完全相同的服务方法 | 请求体 `GenerateVersionRequest`: `customerNo(必填),confirmSupersede(默认 false，已有 PENDING 版本时需二次确认覆盖)`；201 响应 `VersionDTO` 精简（`versionId,versionNo,baseDate,itemCount,budgetJobId,budgetStatus`） |
+| GET | （类根路径） | 版本轨迹列表 | 查询参数：`customerNo,page,size`；响应 `PageResult<VersionDTO>`：`versionId,versionNo,baseDate,status,triggerType,createdAt,createdBy,itemCount,budgetJobId,budgetStatus,progress(Progress: total,approved,rejected,pending,budgeting)` |
+| GET | `/{versionId}/items` | 版本明细（元素级） | 响应 `PageResult<VersionItemDTO>`：`elementCode,elementName,currentPrice,previousPrice,changeRate,currency,priceUnit,noPrice,inheritedFromPrevious` |
+
+#### 12.X.4 PriceAdjustReviewResource（审核，屏 2）
+
+类级 `@Path`：`/api/cpq/price-adjust/reviews`
+
+| 方法 | 路径 | 说明 | 请求/响应要点 |
+|------|------|------|----------------|
+| GET | （类根路径） | 审核列表 | 查询参数：`page,size,customerNo,status,breachedOnly(默认 false),keyword`；响应 `PageResult<ReviewListItemDTO>`：`reviewId,customerNo,customerName,materialNo,materialName,currentVersionNo,targetVersionNo,budgetStatus,reviewStatus,basisQuotationNo,basisQuotationDate,quoteCostCurrent,quoteCostAdjusted,costingCost,diffCurrent,diffAdjusted,columnCount,breachedCount,amberCount,missingCount,staleCount,rowRed` |
+| GET | `/{reviewId}` | 审核详情 | 响应 `ReviewDetailDTO`：`reviewId,customerNo,materialNo,materialName,currentVersionNo,targetVersionNo,budgetStatus,reviewStatus,elementChanges(ElementChange[]: elementCode,elementName,matchedRule,previousPrice,currentPrice,changeRate,usageQty,unitPriceImpact,noPrice,inheritedFromPrevious),elementImpactTotal,templateSeriesId,templateSeriesName,comparisonColumns(ColumnResult[]: columnId,label,threshold,quoteCurrent,...)` |
+| POST | `/impact` | 影响预览（审核前查看波及范围，纯只读） | 请求体 `ApproveRejectRequest`（仅用 `reviewIds`）；响应 `ImpactResultDTO`：`materialCount,versionPaths(VersionPath[]: materialNo,from,to),quotationCount,breachedMaterials(BreachedMaterial[]: materialNo,breachedCount),excludedQuotationCount` |
+| POST | `/approve` | **通过**——同步完成校验+指针推进+建 job（事务提交），再在事务外触发异步 `PriceAdjustJobExecutionService.executeJob` | 请求体 `ApproveRejectRequest`: `reviewIds(List<UUID>),comment`；**202** 响应 `ApproveResult`：`jobId,materialCount,quotationCount,itemCount`（非全量 `ApiResponse` 包装，裸 DTO） |
+| POST | `/reject` | 驳回（`reason` 必填，指针不动，不产生 job） | 请求体 `ApproveRejectRequest`: `reviewIds,reason(必填)`；200 空体 |
+| POST | `/{reviewId}/recompute-budget` | 单条重算预算 | 202 空体 |
+
+#### 12.X.5 PriceAdjustJobResource（更新任务，屏 6 + 常驻页）
+
+类级 `@Path`：`/api/cpq/price-adjust`
+
+| 方法 | 路径 | 说明 | 请求/响应要点 |
+|------|------|------|----------------|
+| GET | `/jobs` | 任务列表 | 查询参数：`page,size,status,customerNo`（🔒 两个过滤条件都可选，Panache `Parameters` 不接受未出现在查询串里的 key，故按"是否有任何条件"分叉查询，不用 `1=1`+占位 key）；响应 `PageResult<JobDTO>`：`jobId,customerNo,versionNo,triggeredBy,triggeredAt,status,total,success,failed,conflict,stale,finishedAt,notified` |
+| GET | `/jobs/{jobId}` | 任务详情 | 不存在 404；响应 `JobDTO` |
+| GET | `/jobs/{jobId}/items` | 任务明细行 | 查询参数：`page,size(默认 50),status`；响应 `PageResult<JobItemDTO>`：`itemId,quotationId,quotationNo,materialNo,lineItemId,status,errorCode,errorMessage,diffValue,retryCount,updatedAt` |
+| POST | `/jobs/{jobId}/retry` | 批量重试该批次全部 `FAILED`+`CONFLICT`（不含 `STALE`） | 异步 `retryJob`；202 空体 |
+| POST | `/job-items/{itemId}/retry` | 单条重试 | `STALE` 项返 **409**；异步 `retryJobItem`；202 空体 |
+
+#### 附：核心状态机与不变量（跨上述 5 个 Resource，回写时一并补充）
+
+- **`MaterialPriceUpdateJobItem.status`**：`WAITING → RUNNING → {SUCCESS｜CONFLICT｜FAILED｜STALE}`。`CONFLICT`=写回期间 `row_version` 冲突，可直接重试；`FAILED`=数据问题（含 S0 `SUBTOTAL_MISMATCH` 口径守卫、S5 核价树渲染异常等），需人工处理后重试；`STALE`=所属版本已被新版取代（生成新版时把未完成 job_item 提前置 STALE），终态不可重试。
+- **单一升版通道**：`MaterialVersionUpgradeService.upgrade(lineItemId, targetVersionId, dryRun)` 是全系统唯一升版入口，S0~S9 顺序执行（L3 口径守卫 → 读版本价 → 定位价格字段 → 字段级写回 → 重算双侧卡片 → 写回行金额 → 失效导出快照 → 聚合单据 → 写本期价格版本快照 R）。`dryRun=true` 用于 B4 审核页试算预算（事务内真实执行后整体回滚，DB 无痕迹）。
+- **异步派发规则**：`PriceAdjustReviewService.approve()` 严格两段式——同步事务提交后才在事务外调 `managedExecutor.runAsync`，若在事务内部派发会导致异步线程抢跑读不到刚插入的 job/job_item 行（真实联调复现过一次 HTTP 500）。

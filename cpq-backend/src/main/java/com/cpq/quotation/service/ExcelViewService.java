@@ -1,6 +1,8 @@
 package com.cpq.quotation.service;
 
+import com.cpq.common.DecimalJexl;
 import com.cpq.common.NumberFormatUtil;
+import com.cpq.common.PrecisionPolicy;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.component.entity.Component;
 import com.cpq.quotation.entity.Quotation;
@@ -21,7 +23,6 @@ import org.jboss.logging.Logger;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.*;
 
 /**
@@ -621,9 +622,10 @@ public class ExcelViewService {
         String resolved = sb.toString();
 
         // 用轻量 JEXL 求值（纯算术）
+        // task-0801 B3（求值点 #4）：DecimalJexl.newEngine() 统一配 BigDecimal 算术，
+        // 配合 toNumericStr() 数字字面量 "B" 后缀修复 R-3。
         try {
-            org.apache.commons.jexl3.JexlEngine jexl = new org.apache.commons.jexl3.JexlBuilder()
-                    .silent(true).strict(false).create();
+            org.apache.commons.jexl3.JexlEngine jexl = DecimalJexl.newEngine();
             Object result = jexl.createExpression(resolved).evaluate(new org.apache.commons.jexl3.MapContext());
             return normalizeNumeric(result);
         } catch (Exception e) {
@@ -670,13 +672,16 @@ public class ExcelViewService {
         return pn != null ? pn.toString() : null;
     }
 
-    /** 转数值字符串（用于表达式替换） */
+    /**
+     * 转数值字符串（用于表达式替换）。
+     * task-0801 B3：追加 "B" 后缀（JEXL BigDecimal 字面量语法），否则仍按 Double 解析（R-3）。
+     */
     private String toNumericStr(Object v) {
-        if (v == null) return "0";
-        if (v instanceof java.math.BigDecimal bd) return bd.toPlainString();
-        if (v instanceof Number n) return new java.math.BigDecimal(n.toString()).toPlainString();
+        if (v == null) return "0B";
+        if (v instanceof java.math.BigDecimal bd) return bd.toPlainString() + "B";
+        if (v instanceof Number n) return new java.math.BigDecimal(n.toString()).toPlainString() + "B";
         String s = v.toString().trim();
-        try { new java.math.BigDecimal(s); return s; } catch (Exception e) { return "0"; }
+        try { new java.math.BigDecimal(s); return s + "B"; } catch (Exception e) { return "0B"; }
     }
 
     /** 规范化数值结果 */
@@ -914,14 +919,17 @@ public class ExcelViewService {
             String sourceType = (String) col.get("source_type");
             boolean isComputed = isComputedColumn(sourceType);
             Integer explicitDecimals = explicitDecimals(col);
-            // 解析有效位数：显式优先 → 计算列兜底 4 位（精度优先）→ 原始/取数列 null（保留原精度）
+            // 解析有效位数：显式优先 → 计算列兜底 6 位（task-0801：呈现精度统一 PrecisionPolicy.DISPLAY_SCALE）
+            // → 原始/取数列 null（保留原精度）
             Integer scale = explicitDecimals != null ? explicitDecimals
                     : (isComputed ? COMPUTED_FALLBACK_DECIMALS : null);
             if (scale != null) {
-                num = num.setScale(scale, RoundingMode.HALF_UP);
+                num = num.setScale(scale, PrecisionPolicy.ROUNDING);
                 cell.setCellStyle(numberStyleFor(workbook, dataFormat, numberStyleCache, scale));
             }
-            cell.setCellValue(num.doubleValue());
+            // task-0801 B6：POI 数值单元格只保证 15 位有效数字；超限（亿级金额 9 位整数 + 6 位
+            // 小数 = 15 位正好触顶）改写字符串保精度，宁可失去可计算性也不静默丢精度。
+            writeAmountCellValue(cell, num);
         } else if (value instanceof Boolean) {
             cell.setCellValue((Boolean) value);
         } else {
@@ -929,9 +937,24 @@ public class ExcelViewService {
         }
     }
 
+    /**
+     * task-0801 B6「已知限制」处理：POI NUMERIC 单元格底层是 IEEE754 double，Excel 只保证
+     * 15 位有效数字。有效数字（{@link BigDecimal#stripTrailingZeros()} 后 {@link BigDecimal#precision()}）
+     * ≤15 → 照常写数值（保留 Excel 可计算性）；>15 → 写字符串（{@link Cell#setCellValue(String)}），
+     * 不静默丢精度。集中一处，不散落各导出方法。
+     */
+    private void writeAmountCellValue(Cell cell, BigDecimal num) {
+        if (num.stripTrailingZeros().precision() > 15) {
+            cell.setCellValue(num.toPlainString());
+        } else {
+            cell.setCellValue(num.doubleValue());
+        }
+    }
+
     // 导出走 POI DataFormat（需数值态+格式串）故未复用 NumberFormatUtil，单列一份兜底位数。
-    // ⚠️ 与 NumberFormatUtil.COMPUTED_FALLBACK + 前端 formatNumber.COMPUTED_FALLBACK 保持同步。
-    private static final int COMPUTED_FALLBACK_DECIMALS = 4;
+    // ⚠️ 与 NumberFormatUtil.COMPUTED_FALLBACK + 前端 formatNumber.COMPUTED_FALLBACK 保持同步；
+    // 单一来源 PrecisionPolicy.DISPLAY_SCALE，不再自持字面量（task-0801）。
+    private static final int COMPUTED_FALLBACK_DECIMALS = PrecisionPolicy.DISPLAY_SCALE;
 
     /** 与前端 isComputedExcelColumn 同一份计算列类型集。 */
     private boolean isComputedColumn(String sourceType) {
