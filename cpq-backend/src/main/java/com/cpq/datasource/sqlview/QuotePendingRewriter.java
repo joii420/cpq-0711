@@ -41,10 +41,12 @@ public final class QuotePendingRewriter {
 
     private QuotePendingRewriter() {}
 
-    /** 7 张版本化表白名单（占号表 material_customer_map 不参与，见 backtask B3.1 明确排除）。 */
+    /** 8 张版本化表白名单（占号表 material_customer_map 不参与，见 backtask B3.1 明确排除）。
+     *  repair-0804：annual_discount 并入。 */
     public static final Set<String> WHITELIST_TABLES = Set.of(
         "unit_price", "material_bom", "material_bom_item",
-        "element_bom", "element_bom_item", "capacity", "plating_scheme");
+        "element_bom", "element_bom_item", "capacity", "plating_scheme",
+        "annual_discount");
 
     /** 物化期注入的行锚点系统列名。 */
     public static final String ANCHOR_COLUMN = "__v6_id";

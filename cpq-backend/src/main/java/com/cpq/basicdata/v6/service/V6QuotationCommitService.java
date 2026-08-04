@@ -141,17 +141,17 @@ public class V6QuotationCommitService {
         }
     }
 
-    /** 7 张版本化表 + 占号表 + material_master（repair-0726 B3 并入；过户是同列名 UPDATE，
-     *  语义与另外 8 张表一致，可安全并入同一循环——与删除场景不同，删除需要引用守卫，
+    /** 8 张版本化表 + 占号表 + material_master（repair-0726 B3 并入；过户是同列名 UPDATE，
+     *  语义与另外 9 张表一致，可安全并入同一循环——与删除场景不同，删除需要引用守卫，
      *  不能放进这张字面量清单，见 {@code QuoteImportService#clearPreviousPending}/
-     *  {@code QuotationService#cleanupPendingV6Data}）。与
+     *  {@code QuotationService#cleanupPendingV6Data}）。repair-0804：annual_discount 并入版本化表。与
      *  {@link com.cpq.basicdata.v6.quote.QuoteImportService#PENDING_TABLES} <b>同源但故意不等长</b>
-     *  （本清单 9 项 vs 导入侧删除清单 8 项）：material_master 只并入这里的过户 UPDATE，不并入删除
+     *  （本清单 10 项 vs 导入侧删除清单 9 项）：material_master 只并入这里的过户 UPDATE，不并入删除
      *  ——删除需要引用守卫，两清单不该"顺手对齐成一样长"。未抽公共常量是因两者分属不同包且各自
      *  private，重复字面量的耦合成本低于抽共享工具类。 */
     private static final List<String> PENDING_TABLES = List.of(
         "unit_price", "material_bom", "material_bom_item", "element_bom", "element_bom_item",
-        "capacity", "plating_scheme", "material_customer_map", "material_master");
+        "capacity", "plating_scheme", "annual_discount", "material_customer_map", "material_master");
 
     public static class CommitResult {
         public UUID quotationId;

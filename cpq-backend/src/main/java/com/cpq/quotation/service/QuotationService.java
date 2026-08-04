@@ -1784,21 +1784,22 @@ public class QuotationService {
     }
 
     /**
-     * task-0721 B8：清理该报价单在 7 张版本化表 + 占号表 material_customer_map 的全部 pending 行，
-     * 以及 material_master 的 pending 料号（repair-0726 B3，带引用守卫）。用于报价单删除（本单从未
-     * 生效过，pending 无保留价值）。与 {@code QuoteImportService}/{@code V6QuotationCommitService}
-     * 的 pending 表清单同源（8 表字面量重复，见 {@code V6QuotationCommitService.PENDING_TABLES}
-     * 注释：分属不同包各自 private，重复的耦合成本低于抽共享工具类）。
+     * task-0721 B8：清理该报价单在 8 张版本化表 + 占号表 material_customer_map 的全部 pending 行，
+     * 以及 material_master 的 pending 料号（repair-0726 B3，带引用守卫；repair-0804：annual_discount
+     * 并入版本化表）。用于报价单删除（本单从未生效过，pending 无保留价值）。与
+     * {@code QuoteImportService}/{@code V6QuotationCommitService} 的 pending 表清单同源
+     * （9 表字面量重复，见 {@code V6QuotationCommitService.PENDING_TABLES} 注释：分属不同包各自
+     * private，重复的耦合成本低于抽共享工具类）。
      *
      * <p>repair-0726 B3：{@link com.cpq.basicdata.v6.repository.MaterialMasterRepository#deletePendingWithGuard}
-     * 的引用守卫刻意排除本单自己的 pending 行（{@code <> :qid}），因此本方法内 8 表 DELETE 与料号回收
-     * 的先后顺序<b>不影响正确性</b>——代码保持"先 8 表、后料号"仅为直观，非必需。⚠️ <b>不要移除守卫里的
-     * {@code <> :qid}</b>：一旦移除，本单自己的 material_bom_item 就会顶住守卫，届时"先删 8 表、后删
+     * 的引用守卫刻意排除本单自己的 pending 行（{@code <> :qid}），因此本方法内 9 表 DELETE 与料号回收
+     * 的先后顺序<b>不影响正确性</b>——代码保持"先 9 表、后料号"仅为直观，非必需。⚠️ <b>不要移除守卫里的
+     * {@code <> :qid}</b>：一旦移除，本单自己的 material_bom_item 就会顶住守卫，届时"先删 9 表、后删
      * 料号"才真正成为铁律。
      */
     private static final java.util.List<String> B8_PENDING_TABLES = java.util.List.of(
         "unit_price", "material_bom", "material_bom_item", "element_bom", "element_bom_item",
-        "capacity", "plating_scheme", "material_customer_map");
+        "capacity", "plating_scheme", "annual_discount", "material_customer_map");
 
     private void cleanupPendingV6Data(UUID quotationId) {
         for (String table : B8_PENDING_TABLES) {

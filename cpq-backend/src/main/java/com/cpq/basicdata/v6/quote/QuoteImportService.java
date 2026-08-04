@@ -291,15 +291,15 @@ public class QuoteImportService {
         }
     }
 
-    /** 7 张版本化表 + 占号表（task-0721 B1 pending 列覆盖范围，见 V349 迁移）。<b>material_master
-     *  故意不在这张清单里</b>——它的删除必须走带引用守卫的
-     *  {@link MaterialMasterRepository#deletePendingWithGuard}，不能跟这 8 张表一样无脑
-     *  DELETE（会删掉仍被引用的料号）。与
+    /** 8 张版本化表 + 占号表（task-0721 B1 pending 列覆盖范围，见 V349 迁移；repair-0804：
+     *  annual_discount 并入版本化表）。<b>material_master 故意不在这张清单里</b>——它的删除必须走
+     *  带引用守卫的 {@link MaterialMasterRepository#deletePendingWithGuard}，不能跟这 9 张表一样
+     *  无脑 DELETE（会删掉仍被引用的料号）。与
      *  {@link com.cpq.basicdata.v6.service.V6QuotationCommitService#PENDING_TABLES} 同源但
-     *  故意不等长（8 vs 9）：过户是同列名 UPDATE 可以并列 material_master，删除不行。 */
+     *  故意不等长（9 vs 10）：过户是同列名 UPDATE 可以并列 material_master，删除不行。 */
     private static final List<String> PENDING_TABLES = List.of(
         "unit_price", "material_bom", "material_bom_item", "element_bom", "element_bom_item",
-        "capacity", "plating_scheme", "material_customer_map");
+        "capacity", "plating_scheme", "annual_discount", "material_customer_map");
 
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public UUID createImportRecord(UUID customerId, String fileName, UUID importedBy) {
