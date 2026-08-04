@@ -1809,5 +1809,190 @@
         "子计数": 0
       }
     }
+  },
+  {
+    "name": "典型用法-树属性驱动条件公式：BOM 成本 rollup（叶取自身，非叶取子和）",
+    "_doc": "需求 §4.3.3 点名的 BOM rollup 陷阱的**标准解法**，也是 [是否叶子]/[是否根]/[层级] 三个树属性的主用途验证。直接写 成本=CSUM(成本) 会把叶子行自己的成本清成 0（叶无子→CSUM=0 覆盖取数值），引擎刻意不做隐式兜底。正解：①配一个 FORMULA 列承接树属性（叶=[是否叶子]）；②目标列用**字段级条件公式**按那列分流（when 叶=1 → 单价*用量；default → CSUM(成本)）。树属性是表达式里的保留字、不是列，条件树 CondTree 按**列名**引用，故必须经①这一步中转。依赖图会自动串起来：成本 →(条件列) 叶，成本 →(tree_ref) 子行的成本，由单元格拓扑排序保证子先父后。本用例同时固化 层级/是否根 的取值，作为三属性的活文档。",
+    "fields": [
+      {
+        "name": "单价",
+        "field_type": "INPUT_NUMBER"
+      },
+      {
+        "name": "用量",
+        "field_type": "INPUT_NUMBER"
+      },
+      {
+        "name": "叶",
+        "field_type": "FORMULA",
+        "formula_name": "叶公式"
+      },
+      {
+        "name": "层级",
+        "field_type": "FORMULA",
+        "formula_name": "层级公式"
+      },
+      {
+        "name": "根",
+        "field_type": "FORMULA",
+        "formula_name": "根公式"
+      },
+      {
+        "name": "成本",
+        "field_type": "FORMULA",
+        "conditional_formula": {
+          "rules": [
+            {
+              "when": {
+                "kind": "leaf",
+                "left": "叶",
+                "op": "eq",
+                "rhs": {
+                  "type": "literal",
+                  "value": "1"
+                }
+              },
+              "formula": "叶成本公式"
+            }
+          ],
+          "default": "非叶成本公式"
+        }
+      }
+    ],
+    "formulas": [
+      {
+        "name": "叶公式",
+        "expression": [
+          {
+            "type": "tree_attr",
+            "attr": "IS_LEAF"
+          }
+        ]
+      },
+      {
+        "name": "层级公式",
+        "expression": [
+          {
+            "type": "tree_attr",
+            "attr": "LVL"
+          }
+        ]
+      },
+      {
+        "name": "根公式",
+        "expression": [
+          {
+            "type": "tree_attr",
+            "attr": "IS_ROOT"
+          }
+        ]
+      },
+      {
+        "name": "叶成本公式",
+        "expression": [
+          {
+            "type": "field",
+            "value": "单价"
+          },
+          {
+            "type": "operator",
+            "value": "*"
+          },
+          {
+            "type": "field",
+            "value": "用量"
+          }
+        ]
+      },
+      {
+        "name": "非叶成本公式",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "SUM",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "成本"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rows": [
+      {
+        "nodeId": "R",
+        "parentId": null,
+        "lvl": 1,
+        "values": {}
+      },
+      {
+        "nodeId": "A",
+        "parentId": "R",
+        "lvl": 2,
+        "values": {}
+      },
+      {
+        "nodeId": "B",
+        "parentId": "R",
+        "lvl": 2,
+        "values": {
+          "单价": 7,
+          "用量": 1
+        }
+      },
+      {
+        "nodeId": "A1",
+        "parentId": "A",
+        "lvl": 3,
+        "values": {
+          "单价": 10,
+          "用量": 2
+        }
+      },
+      {
+        "nodeId": "A2",
+        "parentId": "A",
+        "lvl": 3,
+        "values": {
+          "单价": 5,
+          "用量": 3
+        }
+      }
+    ],
+    "expected": {
+      "0": {
+        "叶": 0,
+        "层级": 1,
+        "根": 1,
+        "成本": 42
+      },
+      "1": {
+        "叶": 0,
+        "层级": 2,
+        "根": 0,
+        "成本": 35
+      },
+      "2": {
+        "叶": 1,
+        "层级": 2,
+        "根": 0,
+        "成本": 7
+      },
+      "3": {
+        "叶": 1,
+        "层级": 3,
+        "根": 0,
+        "成本": 20
+      },
+      "4": {
+        "叶": 1,
+        "层级": 3,
+        "根": 0,
+        "成本": 15
+      }
+    }
   }
 ]
