@@ -1561,5 +1561,253 @@
         "倒数": 0.5
       }
     }
+  },
+  {
+    "name": "回归-C*聚合取数列(BASIC_DATA)：driver列名≠字段名",
+    "_doc": "2026-08-03 核价侧端到端实测抓到的后端缺陷回归用例。字段「组成用量」是 BASIC_DATA，basic_data_path='$wl_bom_view.composition_qty'——即**字段名(中文) ≠ driver 视图列名(composition_qty)**，这是核价/报价 BOM 页签取数列的真实形态。老用例的 rows.values 直接落进 driverRow 且键就是字段名，两端都能平凡解析，因此从未覆盖到这条路径。缺陷：后端 hasValueForAgg 读的是 currentRowRaw（键为 driver 列名，且只有 fillInputDefaultSourceByFieldName 按字段名补 INPUT_* 三种类型），BASIC_DATA 字段按字段名永远取不到 → isBlank → 所有子行被 evalTreeRef 的 CHILD 分支过滤掉 → C* 族恒返 0。前端 resolveRowForTree 显式处理 BASIC_DATA，结果正确 —— 故本用例在修复前是**后端红/前端绿**的真实分歧。对照列「子计数父值」聚合的是 FORMULA 列，走 formulaColumns 短路，修复前后都对——它与「子求和」的一红一绿正是定位根因的鉴别器，勿删。",
+    "fields": [
+      {
+        "name": "组成用量",
+        "field_type": "BASIC_DATA",
+        "basic_data_path": "$wl_bom_view.composition_qty"
+      },
+      {
+        "name": "父用量",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "子求和",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "子均值",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "子最大",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "子最小",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "子计数",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "子计数父值",
+        "field_type": "FORMULA"
+      }
+    ],
+    "formulas": [
+      {
+        "name": "父用量",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "PARENT",
+            "agg": "NONE",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "组成用量"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "子求和",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "SUM",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "组成用量"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "子均值",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "AVG",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "组成用量"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "子最大",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "MAX",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "组成用量"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "子最小",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "MIN",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "组成用量"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "子计数",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "COUNT",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "组成用量"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "子计数父值",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "COUNT",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "父用量"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rows": [
+      {
+        "nodeId": "R",
+        "parentId": null,
+        "lvl": 1,
+        "values": {}
+      },
+      {
+        "nodeId": "A",
+        "parentId": "R",
+        "lvl": 2,
+        "values": {},
+        "basicDataValues": {
+          "{$wl_bom_view.composition_qty}": 2
+        }
+      },
+      {
+        "nodeId": "B",
+        "parentId": "R",
+        "lvl": 2,
+        "values": {},
+        "basicDataValues": {
+          "{$wl_bom_view.composition_qty}": 5
+        }
+      },
+      {
+        "nodeId": "C",
+        "parentId": "R",
+        "lvl": 2,
+        "values": {}
+      },
+      {
+        "nodeId": "A1",
+        "parentId": "A",
+        "lvl": 3,
+        "values": {},
+        "basicDataValues": {
+          "{$wl_bom_view.composition_qty}": 0.3
+        }
+      },
+      {
+        "nodeId": "A2",
+        "parentId": "A",
+        "lvl": 3,
+        "values": {},
+        "basicDataValues": {
+          "{$wl_bom_view.composition_qty}": 0.7
+        }
+      }
+    ],
+    "expected": {
+      "0": {
+        "父用量": 0,
+        "子求和": 7,
+        "子均值": 3.5,
+        "子最大": 5,
+        "子最小": 2,
+        "子计数": 2,
+        "子计数父值": 3
+      },
+      "1": {
+        "父用量": 0,
+        "子求和": 1,
+        "子均值": 0.5,
+        "子最大": 0.7,
+        "子最小": 0.3,
+        "子计数": 2,
+        "子计数父值": 2
+      },
+      "2": {
+        "父用量": 0,
+        "子求和": 0,
+        "子均值": 0,
+        "子最大": 0,
+        "子最小": 0,
+        "子计数": 0,
+        "子计数父值": 0
+      },
+      "3": {
+        "父用量": 0,
+        "子求和": 0,
+        "子计数": 0,
+        "子计数父值": 0
+      },
+      "4": {
+        "父用量": 2,
+        "子求和": 0,
+        "子计数": 0
+      },
+      "5": {
+        "父用量": 2,
+        "子求和": 0,
+        "子计数": 0
+      }
+    }
   }
 ]

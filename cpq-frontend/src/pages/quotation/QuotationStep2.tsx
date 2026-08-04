@@ -885,7 +885,13 @@ function resolveRowForTree(
     const key = f.name || f.key || '';
     if (!key) continue;
 
-    if (f.field_type === 'BASIC_DATA' && f.basic_data_path && partNo) {
+    // 🚨 2026-08-03：原条件是 `&& partNo`，把整个 BASIC_DATA 分支都挡在 partNo 之后。
+    // 但 basicDataValues 是行级已解析值，取它压根不需要 partNo —— 只有 pathCache 兜底才需要
+    // （key 是 `${partNo}::${path}`）。partNo 缺失时旧代码会跌到下方通用分支去读 row[字段名]，
+    // 而树页签的 row 是 driver 行、键为视图列名（composition_qty）≠ 字段名（组成用量）→ 判成无值。
+    // 后端 resolveRowByFieldName 没有 partNo 这个概念、直接读 basicDataValues，故旧条件是一处
+    // 两端可分歧的隐患。现把 partNo 的要求收窄到 pathCache 兜底那一步。
+    if (f.field_type === 'BASIC_DATA' && f.basic_data_path) {
       const effPath = f.basic_data_path;
       let cached: any = undefined;
       if (basicDataValues) {
@@ -894,7 +900,7 @@ function resolveRowForTree(
           cached = basicDataValues[lookupKey];
         }
       }
-      if (cached === undefined) {
+      if (cached === undefined && partNo) {
         const cacheKey = `${partNo}::${effPath}`;
         const cache = pathCache ?? (getGlobalPathCache() as Record<string, any>);
         cached = cache[cacheKey];

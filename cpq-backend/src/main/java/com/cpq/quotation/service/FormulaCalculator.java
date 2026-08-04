@@ -334,6 +334,41 @@ public class FormulaCalculator {
      *   <li>判据 2：引用列全部取不到值 → 无值，跳过该子行</li>
      * </ol>
      */
+    /**
+     * 构造 {@code TreeEvalContext.resolvedRaw} 的单行视图 —— <b>专供 {@link #hasValueForAgg} 判「有值」</b>
+     * （该 record 字段目前仅此一个消费点，改动不外溢）。
+     *
+     * <p>🚨 <b>为什么不能直接用 {@code ctx.currentRowRaw}</b>（2026-08-03 核价侧端到端实测抓到的缺陷）：
+     * {@code currentRowRaw = toRawRowMap(driverRow + editValues)}，键是 <b>driver 视图列名</b>
+     * （如 {@code composition_qty}）；随后的 {@link #fillInputDefaultSourceByFieldName} 只按字段名补
+     * {@code INPUT_NUMBER/INPUT_TEXT/INPUT} 三种类型。于是 {@code BASIC_DATA} / {@code DATA_SOURCE}
+     * 字段<b>按字段名永远取不到值</b> → {@code isBlank} 恒真 → {@code evalTreeRef} 的 CHILD 分支把
+     * 所有子行过滤光 → {@code CSUM/CAVG/CMAX/CMIN/CCOUNT} 静默返 0。
+     * 而 BOM 页签的列绝大多数正是取数列，等于 C* 族在主用途上不可用。
+     *
+     * <p>修法：以 {@code currentRowRaw} 为底（保留 driver 列名直读 + 显式清空 {@code ""} 的语义），
+     * 叠加 {@link #resolveRowByFieldName} 的<b>按字段名</b>解析结果（覆盖 BASIC_DATA / DATA_SOURCE /
+     * INPUT / FIXED_VALUE 全类型，且仅在 {@code nonEmpty} 时落键 —— 键缺失即「无值」，与 isBlank 同义）。
+     * 叠加而非替换：某些字段名恰等于 driver 列名、而按字段名解析拿不到值（无 path 无 content）时，
+     * 底层的直读值仍需保留。
+     *
+     * <p>FORMULA 列不受影响：{@link #hasValueForAgg} 先查 {@code formulaColumns} 短路返回 true
+     * （判据 6「公式列恒有值」），根本不看本视图，故这里不传 formulaValues。
+     *
+     * <p>回归守卫：共享夹具用例「回归-C*聚合取数列(BASIC_DATA)：driver列名≠字段名」。
+     */
+    private Map<String, Object> buildTreeAggPresenceView(JsonNode fields, JsonNode baseRow,
+            String effKey, Map<String, JsonNode> editByKey, Map<String, Object> currentRowRaw) {
+        Map<String, Object> merged = new LinkedHashMap<>();
+        if (currentRowRaw != null) merged.putAll(currentRowRaw);
+        JsonNode editValues = (effKey != null && editByKey != null && editByKey.containsKey(effKey))
+            ? editByKey.get(effKey).path("values") : null;
+        Map<String, Object> byFieldName = resolveRowByFieldName(
+            fields, baseRow.path("driverRow"), baseRow.path("basicDataValues"), editValues, null);
+        merged.putAll(byFieldName);
+        return merged;
+    }
+
     private static boolean hasValueForAgg(TreeEvalContext t, int rowIdx, java.util.Set<String> names) {
         if (names.isEmpty()) return true;
         Map<String, Object> raw = (rowIdx >= 0 && rowIdx < t.resolvedRaw().size())
@@ -1058,7 +1093,8 @@ public class FormulaCalculator {
                 componentSubtotals, quotationFields, productAttributes, crossTabRows);
             ctxs.add(re.ctx());
             fieldValuesByRow.add(re.fieldValues());
-            resolvedRaw.add(re.ctx().currentRowRaw);
+            resolvedRaw.add(buildTreeAggPresenceView(fields, baseRows.get(i), effKeys.get(i),
+                editByKey, re.ctx().currentRowRaw));
             bdvByRow.add(re.basicDataValues());
         }
 
