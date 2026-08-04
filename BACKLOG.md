@@ -757,6 +757,45 @@ task-0721 B8 修复合并    2026-07-21
 
 </details>
 
+### [BL-0108] 报价单删除被 `material_price_update_job_item` 外键阻塞 —— 实测 33 张 DRAFT 单永久删不掉且报裸 500
+- **优先级**：P1
+- **来源**：task-0803（BOM 父子取值公式）端到端验证收尾清理时实测发现
+- **状态**：TODO（本次仅手工清了自己那 1 条测试数据，**代码缺陷未修**）
+- **登记日期**：2026-08-03
+- **现象**：`DELETE /api/cpq/quotations/{id}` 对一张 `status='DRAFT'` 的单返 `{"code":500,"message":"Internal server error"}`。
+  前端拿到的是无信息量的 500，用户无从知道为什么删不掉。
+- **根因（已实证）**：DB 层真实报错是
+  ```
+  update or delete on table "quotation" violates foreign key constraint
+  "material_price_update_job_item_quotation_id_fkey" on table "material_price_update_job_item"
+  ```
+  `QuotationService.java:1762-1784` 的删除序列清了 8 张 pending V6 表（`cleanupPendingV6Data`）+ `quotation_approval`
+  + `quotation_withdraw_request`，并 detach 了 `import_record`，但**没有覆盖 `material_price_update_job_item`**。
+  该表由 task-0729 调价模块引入，其 FK 是 `NO ACTION`（阻塞型），删除逻辑未同步扩展。
+- **实测影响面**（`cpq_db_0724`，2026-08-03）：
+  ```sql
+  SELECT count(DISTINCT i.quotation_id) FROM material_price_update_job_item i
+    JOIN quotation q ON q.id = i.quotation_id WHERE q.status='DRAFT';   -- 33
+  ```
+  **33 张 DRAFT 单当前无法删除**。任何被调价 job 扫过的草稿单都会中招，且 job 明细里
+  `status='FAILED'` 的行同样阻塞（本次那条即 `SUBTOTAL_MISMATCH` 失败行）。
+- **同类风险（一并排查）**：`quotation` 的 9 个入向 FK 中，`NO ACTION` 阻塞型共 5 个 ——
+  `costing_order` / `import_record` / `material_price_update_job_item` / `quotation_approval` / `quotation_withdraw_request`。
+  删除逻辑只覆盖了后三个，**`costing_order` 同样未覆盖**，有核价单的 DRAFT 单会踩完全相同的坑。
+  另 4 个（`quotation_line_item` / `quotation_view_structure` / `quotation_component_sql_snapshot` /
+  `quotation_price_revision`）是 `CASCADE`，无风险。
+- **范围**：
+  1. `QuotationService.delete()` 删除序列补 `material_price_update_job_item`（job 明细对已删单无保留价值，直接 DELETE）；
+  2. 同步决策 `costing_order` 的处置口径（级联删 or 明确拒绝并给出可读原因）；
+  3. `GlobalExceptionMapper` 把 FK 违反（`ConstraintViolationException` / SQLState 23503）映射成可读 400，
+     而不是让用户看到裸 500 —— 否则下一个漏网的 FK 仍然是同样的排查成本；
+  4. 加一条守卫测试：删一张带 job 明细 + 带 costing_order 的 DRAFT 单必须成功。
+- **依赖**：task-0729 调价模块合并落地后一并修（该表属其范围）
+- **预估规模**：S（点状补删除语句）～ M（含异常映射与口径决策）
+- **验收要点**：①上面那条 33 单的 SQL 归零后，任取一张原先删不掉的 DRAFT 单能删成功；②带 `costing_order`
+  的 DRAFT 单同口径通过；③人为构造 FK 阻塞时接口返可读 400 而非 500。
+- **相关**：[[BL-0092]]（同为"报价单删除路径没跟上新增表"的族类问题，那条是删完留悬空占号，这条是根本删不掉）
+
 ## P2
 
 ### [BL-0070] Q04/Q05 元素BOM 相关测试 fixture 用 stale 列名（pre-existing 坏测试）
