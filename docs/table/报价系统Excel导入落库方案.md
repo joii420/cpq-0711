@@ -1,6 +1,8 @@
 # 报价系统基础数据 Excel 导入落库方案
 
-> 版本：V3.6 | 日期：2026-07-30
+> 版本：V3.7 | 日期：2026-08-03
+>
+> **V3.7（2026-08-03，repair-0804）· 年降三 Sheet 落库统一**：§8「来料年降」、§15「组装加工费年降」原落 `unit_price`（`price_type=INCOMING_MATERIAL_REDUCTION` / `COMPONENT_REDUCTION`），§19「年降系数」原落 `annual_discount` 且无版本化/无 pending 隔离/无客户维度。本次三者收敛到单表 `annual_discount`，用 `discount_type`（`INCOMING_MATERIAL` / `ASSEMBLY_PROCESS` / `FINISHED`）区分，`target_no` 为泛化挂载目标（材质料号 / 工序编号 / NULL），统一走组级版本化 + pending 隔离，并补齐 `customer_no`、补回 `seq_no`「项次」与 `discount_times`「降价次数」。`unit_price` 两个退役 `price_type` 的存量已清除，CHECK 约束保留不动。**三个 Sheet 内同一 `(销售料号, 年降顺序[, 挂载目标])` 的重复行走「组内归并、逐字段末值非空胜」**（典型：一行填「年降系数（%）」、另一行填「单次固定年降值」），与 V3.6 给「来料回收折扣」定的口径一致，不撞唯一键报错。详见 `dev-docs/task-0708-导入报价单和导入核价单的数据落库规则澄清/repair-0804-年降三sheet的入库规则/需求文档.md`。
 >
 > **V3.6（2026-07-30，task-0730）· §9 来料回收折扣新增 项次/值/货币/计价单位 四列**：`项次→seq_no`（不必填不补号，空即 NULL）、`值→pricing_price`、`货币→currency`、`计价单位→unit`；「值」与「回收折扣（%）」**并存但必填其一**（Phase 1 拦截）；同一 `(成品料号, 投入料号, COALESCE(项次,0))` 的重复行走**组内 upsert 末值胜**，不再撞唯一键报错。`CONTENT` 同步扩为 `[seq_no, cost_ratio, pricing_price, currency, unit]`（漏加会导致「只改值不改折扣%」被静默吞掉）。**顺带修正本节两处历史漂移**：主料号列名早已由「宏丰料号」改为「销售料号」（代码有回退兼容）；投入料号的名称反查规则已被 update-0723 U10 覆盖（材质走 `material_recipe`、查无即报错，只有零件/外购件才发号）。零 DDL、零 Flyway 迁移。
 >
@@ -58,19 +60,21 @@
 | 5 | 元素回收折扣 | `element_bom_item` | — | — |
 | 6 | 来料固定加工费 | `unit_price` | `INCOMING_MATERIAL_PROCESS` | `来料加工费` |
 | 7 | 来料其他费用 | `unit_price` | `INCOMING_MATERIAL_OTHER` | `要素名称（动态）` |
-| 8 | 来料年降 | `unit_price` | `INCOMING_MATERIAL_REDUCTION` | `年降系数` |
+| 8 | 来料年降 | `annual_discount`（`discount_type=INCOMING_MATERIAL`） | — | — |
 | 9 | 来料回收折扣 | `unit_price` | `INCOMING_MATERIAL_RECYCLE` | `回收折扣` |
 | 10 | 自制加工费 | `unit_price` | `PROCESS` | `自制加工费` |
 | 11 | 成品其他费用 | `unit_price` | `FINISHED_MATERIAL_OTHER` | `要素名称（动态）` |
 | 12 | 组成件BOM | `material_bom`（主表） + `material_bom_item`（子表） | — | — |
 | 13 | 组成件其他费用 | `unit_price` | `COMPONENT_OTHER` | `要素名称（动态）` |
 | 14 | 组装加工费 | `capacity` | — | — |
-| 15 | 组装加工费年降 | `unit_price` | `COMPONENT_REDUCTION` | `年降系数` |
+| 15 | 组装加工费年降 | `annual_discount`（`discount_type=ASSEMBLY_PROCESS`） | — | — |
 | 16 | 电镀方案 | `plating_scheme` | — | — |
 | 17 | 电镀费用（加工费） | `unit_price` | `PLATING` | `电镀加工费` |
 | 17 | 电镀费用（材料费） | `unit_price` | `PLATING` | `电镀材料费` |
 | 18 | 单重 | `material_master` | — | — |
-| 19 | 年降系数 | `annual_discount` | — | — |
+| 19 | 年降系数 | `annual_discount`（`discount_type=FINISHED`） | — | — |
+
+> 📌 **repair-0804**：#8「来料年降」、#15「组装加工费年降」原落 `unit_price`（`price_type=INCOMING_MATERIAL_REDUCTION` / `COMPONENT_REDUCTION`），本次统一迁至 `annual_discount`，改用 `discount_type` 判别；`unit_price` 的这两个 `price_type` 已随迁移退役（存量清除，`chk_unit_price_type` CHECK 约束保留枚举值不动）。详见下方 §8 / §15 / §19 与「三、通用落库规则」的 `price_type 与 cost_type 区别`。
 
 ---
 
@@ -327,31 +331,30 @@
 
 ### 8. 来料年降
 
-> ✅ **2026-06-17 实现**：本 Sheet「投入料号/组成件料号」为空+名称有值时，按名称匹配料号表 / 匹配不到自动生成 9 字头料号并登记料号表(material_type=组成件)，再回填键列继续落库；§5 为更新型仅匹配不生成（详见 `docs/superpowers/plans/2026-06-17-quote-import-materialno-autogen-extend.md`）。
+> 📌 **投入料号恒按材质料号处理**（task-0717）：原始码直接作 `target_no`，**不 resolve、不铸号、不登记 `material_customer_map` / `material_master`**；名称由视图 JOIN `material_recipe` 取，年降表不冗余存名称。
 
-**目标表：** `unit_price`
+**目标表：** `annual_discount`（repair-0804 起；改造前落 `unit_price`，`price_type=INCOMING_MATERIAL_REDUCTION`，已随本次迁移退役）
 
 | 固定写入字段 | 固定值 / 来源 |
 |------------|--------------|
 | `system_type` | `QUOTE` |
-| `price_type` | `INCOMING_MATERIAL_REDUCTION` |
-| `cost_type` | `年降系数` |
+| `discount_type` | `INCOMING_MATERIAL` |
 | `customer_no` | **由系统导入时提供** |
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号（成品料号） | `finished_material_no` | ✅ | 成品料号 |
-| 项次 | `seq_no` | ✅ | 序号 |
-| 投入料号 | `code` | ✅ | 元素代码/材料料号/零件号/耗材料号 |
-| 投入料号名称 | — | ❌ | 不导入 |
-| 年降顺序 | `discount_order` | ✅ | 序号（年降顺序） |
-| 年降系数（%） | `cost_ratio` | ✅ | 比例 |
-| 单次固定年降值 | `pricing_price` | ✅ | 费用(固定) |
+| 销售料号（成品料号） | `material_no` | ✅ | 销售料号（旧列名 `宏丰料号` 仍兼容回退） |
+| 项次 | `seq_no` | ✅ | 序号（**repair-0804 新增导入**，改造前未落库） |
+| 投入料号 | `target_no` | ✅ | 材质料号，原样落库（见上方 📌，不 resolve、不铸号） |
+| 投入料号名称 | — | ❌ | 不导入；名称由视图 JOIN `material_recipe` 取 |
+| 年降顺序 | `discount_order` | ✅ | **必填**（Phase 1 `QuoteImportValidator` 拦截空值；组内行集维度） |
+| 年降系数（%） | `discount_ratio` | ✅ | 比例，与「单次固定年降值」二选一填写 |
+| 单次固定年降值 | `fixed_discount_value` | ✅ | 固定金额，与「年降系数（%）」二选一填写 |
 | 货币 | `currency` | ✅ | 币种 |
 | 计价单位 | `unit` | ✅ | 计量单位 |
-| 降价次数 | — | ❌ | 不导入 |
+| 降价次数 | `discount_times` | ✅ | **repair-0804 新增导入**，改造前不导入 |
 
-> 📌 `cost_type=年降系数` 固定写入；年降系数（%）与单次固定年降值二选一填写，另一个为空。降价次数列不导入。
+> 📌 `discount_type=INCOMING_MATERIAL` 固定写入；年降系数（%）与单次固定年降值二选一填写，另一个为空；客户编号由系统自动提供。
 
 ---
 
@@ -588,32 +591,31 @@
 
 ### 15. 组装加工费年降
 
-**目标表：** `unit_price`
+**目标表：** `annual_discount`（repair-0804 起；改造前落 `unit_price`，`price_type=COMPONENT_REDUCTION`，已随本次迁移退役）
 
 | 固定写入字段 | 固定值 / 来源 |
 |------------|--------------|
 | `system_type` | `QUOTE` |
-| `price_type` | `COMPONENT_REDUCTION` |
-| `cost_type` | `年降系数` |
+| `discount_type` | `ASSEMBLY_PROCESS` |
 | `customer_no` | **由系统导入时提供** |
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号（成品料号） | `finished_material_no` | ✅ | 成品料号 |
-| 项次 | `seq_no` | ✅ | 序号 |
-| 组装工序 | `operation_no` | ✅ | **作业编号**（经解析，见下方 📌；允许为空） |
-| 年降顺序 | `discount_order` | ✅ | 序号（年降顺序） |
-| 年降系数（%） | `cost_ratio` | ✅ | 比例 |
-| 单次固定年降值 | `pricing_price` | ✅ | 费用(固定) |
+| 销售料号（成品料号） | `material_no` | ✅ | 销售料号（旧列名 `宏丰料号` 仍兼容回退） |
+| 项次 | `seq_no` | ✅ | 序号（**repair-0804 新增导入**，改造前未落库） |
+| 组装工序 | `target_no` | ✅ | **真工序编号**（经解析，见下方 📌；允许为空） |
+| 年降顺序 | `discount_order` | ✅ | **必填**（Phase 1 `QuoteImportValidator` 拦截空值；组内行集维度） |
+| 年降系数（%） | `discount_ratio` | ✅ | 比例，与「单次固定年降值」二选一填写 |
+| 单次固定年降值 | `fixed_discount_value` | ✅ | 固定金额，与「年降系数（%）」二选一填写 |
 | 货币 | `currency` | ✅ | 币种 |
 | 计价单位 | `unit` | ✅ | 计量单位 |
-| 降价次数 | — | ❌ | 不导入 |
+| 降价次数 | `discount_times` | ✅ | **repair-0804 新增导入**，改造前不导入 |
 
-> 📌 `price_type=COMPONENT_REDUCTION`，`cost_type=年降系数` 固定写入；年降系数（%）与单次固定年降值二选一填写。客户编号由系统自动提供；降价次数不导入。
+> 📌 `discount_type=ASSEMBLY_PROCESS` 固定写入；年降系数（%）与单次固定年降值二选一填写。客户编号由系统自动提供。
 >
-> 📌 **组装工序解析规则（repair-0727，2026-07-27）**：与 §14 同一套 `ProcessNoResolver` 两段匹配（`QuoteImportValidator.validateAssemblyAnnualDiscount`），差异有二：① 本表**不写工序名称**（`unit_price` 无该列，且 `COMPONENT_REDUCTION` 当前无 SQL 视图消费名称，不为此加列）；② 「组装工序」列**允许为空**（`operation_no` 允许 NULL）——为空则跳过解析、不记错；只有「填了但解析不到」才按销售料号聚合报错、整单拦截。
+> 📌 **组装工序解析规则（repair-0727，2026-07-27，本次落库列变化但解析语义未变）**：与 §14 同一套 `ProcessNoResolver` 两段匹配（`QuoteImportValidator.validateAssemblyAnnualDiscount`），差异有二：① 本表**不写工序名称**（`annual_discount` 无名称列，名称由视图 JOIN `process_master` 取）；② 「组装工序」列**允许为空**（`target_no` 允许 NULL）——为空则跳过解析、不记错；只有「填了但解析不到」才按销售料号聚合报错、整单拦截。
 >
-> ⚠️ **升级时序约束**：`operation_no` 是 `unit_price` 版本化 `groupKey` 的一部分（不像 §14 `process_no` 只在 `CONTENT`/`VERSION_TRIGGER`）。本次改动把该列的取值从「Excel 原文（可能是中文名）」换成「真编号」，若在改动上线**前**已导入过一次「组装加工费年降」产生了 `COMPONENT_REDUCTION` 数据，上线后重导会因 `operation_no` 变化被当成全新组、老组 `is_current` 不会自动切走（双 current）——本次改动上线时 `COMPONENT_REDUCTION` 实测为 0 行，故无迁移成本；若届时已有数据须先手工下线老组（`UPDATE unit_price SET is_current=false WHERE price_type='COMPONENT_REDUCTION' AND is_current AND operation_no !~ '^[A-Z]'` 之类的清理，视实际编号规则调整）。
+> 📌 **repair-0804 迁表说明**：本 Sheet 已从 `unit_price`（`operation_no` 列）迁至 `annual_discount`（`target_no` 列），`target_no` 仍在 groupKey 内，语义不变（解析后的真工序编号）。因整表重建（V377）时 `COMPONENT_REDUCTION` 存量已清空、`annual_discount` 无同类历史数据，**不再有 §15 旧版记载的"升级时序约束/双 current"问题**——`unit_price` 时代那条 ⚠️ 已随迁表消失。
 
 ---
 
@@ -708,19 +710,32 @@
 
 ### 19. 年降系数
 
-**目标表：** `annual_discount`
+**目标表：** `annual_discount`（结构已随 repair-0804 变化：新增 `discount_type`/`system_type`/`customer_no`，纳入组级版本化 + pending 隔离，见下方 📌）
+
+| 固定写入字段 | 固定值 / 来源 |
+|------------|--------------|
+| `system_type` | `QUOTE` |
+| `discount_type` | `FINISHED` |
+| `customer_no` | **由系统导入时提供**（repair-0804 新增维度，改造前无客户维度，见下方 📌） |
+| `target_no` | 恒 `NULL`（整单级年降，无挂载目标） |
 
 | Excel 列名 | 目标表字段 | 是否导入 | 备注说明 |
 |-----------|-----------|:-------:|---------|
-| 宏丰料号 | `material_no` | ✅ | 料号 |
-| 年降顺序 | `discount_order` | ✅ | 年降顺序 |
-| 年降系数（%/年） | `discount_ratio` | ✅ | 年降系数(%) |
-| 单次固定年降金额 | `fixed_discount_value` | ✅ | 单次年降值 |
+| 宏丰料号 | `material_no` | ✅ | 销售料号 |
+| 年降顺序 | `discount_order` | ✅ | **必填**（Phase 1 `QuoteImportValidator` 拦截空值；组内行集维度） |
+| 年降系数（%/年） | `discount_ratio` | ✅ | 年降系数(%)，与「单次固定年降金额」二选一填写 |
+| 单次固定年降金额 | `fixed_discount_value` | ✅ | 单次年降值，与「年降系数（%/年）」二选一填写 |
 | 货币 | `currency` | ✅ | 货币 |
 | 计价单位 | `unit` | ✅ | 计价单位 |
 | 降价次数 | `discount_times` | ✅ | 降价次数 |
 
-> 📌 年降系数（%）与单次固定年降金额二选一填写；全字段导入，每行生成一条 `annual_discount` 记录。
+> 📌 `discount_type=FINISHED` 固定写入；年降系数（%）与单次固定年降金额二选一填写；本 Sheet 无「项次」列，`seq_no` 恒 NULL。
+>
+> ⚠️ **写入语义变更（repair-0804）**：改造前按 `material_no` **行级 upsert**（`ON CONFLICT DO UPDATE SET col = COALESCE(EXCLUDED.col, existing.col)`，空值不覆盖旧值）；现改为与 §8/§15 一致的**组级版本化整组替换**——同一 `(customer_no, material_no)` 组内，本次导入的行集即当前状态，Excel 留空的列**不再保留旧值**，重导前请确认整组数据齐全。
+>
+> ⚠️ **客户维度补齐（repair-0804）**：改造前 `annual_discount` 无 `customer_no` 列，同一销售料号导给不同客户会按 `material_no` 撞唯一键**静默互相覆盖**；现纳入 `customer_no` 维度，不同客户各自独立成组。
+>
+> ⚠️ **pending 隔离补齐（repair-0804）**：改造前 `annual_discount` 无 `pending_quotation_id` 列，导入在报价单 pending 期即直落正表、立即对所有报价单生效；现与其余 V6 版本化表一致纳入 pending 隔离（导入期 `is_current=false` + `pending_quotation_id`），待核价通过回填后才转正、对外可见。
 
 ---
 
@@ -730,7 +745,7 @@
 |--------|------|
 | **客户编号自动提供** | 凡目标表中存在 `customer_no` 字段的 Sheet，客户编号均由系统在导入时自动提供，Excel 文件中不维护此字段，程序不从 Excel 读取。 |
 | **system_type 固定值** | 所有报价系统导入数据的 `system_type` 固定写入 `QUOTE`。 |
-| **price_type 与 cost_type 区别** | `price_type` 标识价格来源分类，`cost_type` 标识费用用途分类，两字段独立写入 `unit_price`。**2026-06-08 起 price_type 大类 `MATERIAL`/`COMPONENT` 已细分化并彻底废弃**，列直接存 9 个细分值：元素=`ELEMENT`（不在本次细分范围）；来料类=`INCOMING_MATERIAL_PROCESS`(固定加工费)/`INCOMING_MATERIAL_OTHER`(其他费用)/`INCOMING_MATERIAL_REDUCTION`(年降)/`INCOMING_MATERIAL_RECYCLE`(回收折扣)；`PROCESS`(自制加工费)；`FINISHED_MATERIAL_OTHER`(成品其他费用)；`COMPONENT_OTHER`(组成件其他费用)/`COMPONENT_REDUCTION`(组装加工费年降)；`PLATING`(电镀费用，两条靠 cost_type 区分)。`cost_type` 保持原样与细分 price_type 并存。详见 `docs/superpowers/specs/2026-06-08-quote-price-type-subdivide-design.md`。 |
+| **price_type 与 cost_type 区别** | `price_type` 标识价格来源分类，`cost_type` 标识费用用途分类，两字段独立写入 `unit_price`。**2026-06-08 起 price_type 大类 `MATERIAL`/`COMPONENT` 已细分化并彻底废弃**，列直接存 9 个细分值，其中 **7 个在用 + 2 个已退役**：元素=`ELEMENT`（不在本次细分范围，在用）；来料类=`INCOMING_MATERIAL_PROCESS`(固定加工费，在用)/`INCOMING_MATERIAL_OTHER`(其他费用，在用)/~~`INCOMING_MATERIAL_REDUCTION`(年降)~~（**已退役，repair-0804 迁至 `annual_discount.discount_type=INCOMING_MATERIAL`**）/`INCOMING_MATERIAL_RECYCLE`(回收折扣，在用)；`PROCESS`(自制加工费，在用)；`FINISHED_MATERIAL_OTHER`(成品其他费用，在用)；`COMPONENT_OTHER`(组成件其他费用，在用)/~~`COMPONENT_REDUCTION`(组装加工费年降)~~（**已退役，repair-0804 迁至 `annual_discount.discount_type=ASSEMBLY_PROCESS`**）；`PLATING`(电镀费用，两条靠 cost_type 区分，在用)。`cost_type` 保持原样与细分 price_type 并存。**两个已退役枚举值的存量已清除，`chk_unit_price_type` CHECK 约束里保留枚举值不动**（动 CHECK 收益为零）。细分规则出处 `docs/superpowers/specs/2026-06-08-quote-price-type-subdivide-design.md`；退役规则出处 `dev-docs/task-0708-导入报价单和导入核价单的数据落库规则澄清/repair-0804-年降三sheet的入库规则/需求文档.md`。 |
 | **动态 cost_type** | 来料其他费用、成品其他费用、组成件其他费用等 Sheet 中，`cost_type` 取自 Excel「要素名称」列动态写入，非固定值。 |
 | **固定金额与比例区分** | `pricing_price` 存储固定金额，`cost_ratio` 存储比例（%），同一条记录两者互斥填写，以对应字段是否为空判断费用类型。 |
 | **一行拆多条** | 「电镀费用」Sheet 每行拆分为两条 `unit_price` 记录（电镀加工费 + 电镀材料费）；其余 Sheet 一行对应一条记录（或主+子各一条）。 |

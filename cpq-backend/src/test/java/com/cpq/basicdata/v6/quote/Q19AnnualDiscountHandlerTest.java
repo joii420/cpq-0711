@@ -12,16 +12,15 @@ import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** repair-0804：Q08 来料年降 → annual_discount(discount_type=INCOMING_MATERIAL, target_no=投入料号)。 */
+/** repair-0804：Q19 年降系数 → annual_discount(discount_type=FINISHED) 版本化。 */
 @QuarkusTest
-class Q08IncomingAnnualDiscountHandlerTest {
+class Q19AnnualDiscountHandlerTest {
 
-    @Inject Q08IncomingAnnualDiscountHandler handler;
+    @Inject Q19AnnualDiscountHandler handler;
     @Inject EntityManager em;
 
-    static final String TARGET = "TEST-Q08-CODE";
-    static final String MAT = "TEST-Q08-FMN";
-    static final UUID UID = UUID.fromString("00000000-0000-0000-0000-000000000008");
+    static final String MAT = "TEST-Q19-MAT";
+    static final UUID UID = UUID.fromString("00000000-0000-0000-0000-000000000019");
 
     @Transactional void cleanup() {
         em.createNativeQuery("DELETE FROM annual_discount WHERE material_no=:m")
@@ -37,14 +36,12 @@ class Q08IncomingAnnualDiscountHandlerTest {
     private SheetRow row(int order, String ratio) {
         Map<String, String> m = new LinkedHashMap<>();
         m.put("销售料号", MAT);
-        m.put("项次", String.valueOf(order));
-        m.put("投入料号", TARGET);
-        m.put("投入料号名称", "不导入的名称");
         m.put("年降顺序", String.valueOf(order));
-        m.put("年降系数（%）", ratio);
+        m.put("年降系数（%/年）", ratio);
+        m.put("单次固定年降金额", "");
         m.put("货币", "CNY");
         m.put("计价单位", "PCS");
-        m.put("降价次数", "2");
+        m.put("降价次数", "3");
         return new SheetRow(order, m);
     }
     private String version() {
@@ -60,46 +57,44 @@ class Q08IncomingAnnualDiscountHandlerTest {
     }
 
     @Transactional
-    @Test void writesIncomingTypeWithTargetNo() {
+    @Test void writesFinishedTypeWithNullTarget() {
         handler.handle(List.of(row(1, "5.5")), ctx());
 
         Object[] r = (Object[]) em.createNativeQuery(
-            "SELECT discount_type, target_no, customer_no, seq_no, discount_times " +
+            "SELECT discount_type, system_type, customer_no, target_no, discount_times, seq_no " +
             "FROM annual_discount WHERE material_no=:m AND is_current=true")
             .setParameter("m", MAT).getSingleResult();
 
-        assertEquals("INCOMING_MATERIAL", r[0]);
-        assertEquals(TARGET, r[1], "target_no 存投入料号（材质料号）原样，不 resolve 不铸号");
-        assertEquals("C1", r[2]);
-        assertEquals(1, ((Number) r[3]).intValue(), "项次此前被丢弃，本次必须落库");
-        assertEquals(2, ((Number) r[4]).intValue(), "降价次数此前被丢弃，本次必须落库");
+        assertEquals("FINISHED", r[0]);
+        assertEquals("QUOTE", r[1]);
+        assertEquals("C1", r[2], "年降系数以前没有客户维度，本次必须补上");
+        assertNull(r[3], "FINISHED 类型无挂载目标，target_no 必须为 null");
+        assertEquals(3, ((Number) r[4]).intValue());
+        assertNull(r[5], "年降系数 sheet 无「项次」列");
     }
 
     @Transactional
     @Test void importTwice_idempotent() {
-        handler.handle(List.of(row(1, "0.95"), row(2, "0.90")), ctx());
-        handler.handle(List.of(row(1, "0.95"), row(2, "0.90")), ctx());
+        handler.handle(List.of(row(1, "5.5"), row(2, "3.0")), ctx());
+        handler.handle(List.of(row(1, "5.5"), row(2, "3.0")), ctx());
         assertEquals("2000", version());
         assertEquals(2L, total());
     }
 
     @Transactional
-    @Test void changeValue_bumps() {
-        handler.handle(List.of(row(1, "0.95"), row(2, "0.90")), ctx());
-        handler.handle(List.of(row(1, "0.95"), row(2, "0.80")), ctx());
+    @Test void changeValue_bumpsVersion() {
+        handler.handle(List.of(row(1, "5.5"), row(2, "3.0")), ctx());
+        handler.handle(List.of(row(1, "5.5"), row(2, "2.0")), ctx());
         assertEquals("2001", version());
-        assertEquals(4L, total());
+        assertEquals(4L, total(), "老组保留但 is_current=false");
     }
 
     @Transactional
-    @Test void blankInputPartNo_recordsError() {
-        Map<String, String> m = new LinkedHashMap<>();
-        m.put("销售料号", MAT);
-        m.put("投入料号", "");
-        m.put("年降顺序", "1");
-        m.put("年降系数（%）", "5.5");
-        var result = handler.handle(List.of(new SheetRow(1, m)), ctx());
-        assertEquals(1, result.failedRows);
-        assertEquals(0L, total());
+    @Test void differentCustomers_coexist() {
+        ImportContext c1 = ctx();
+        ImportContext c2 = ctx(); c2.customerNo = "C2";
+        handler.handle(List.of(row(1, "5.5")), c1);
+        handler.handle(List.of(row(1, "9.9")), c2);
+        assertEquals(2L, total(), "同料号不同客户必须并存，不得互相覆盖（改造前会覆盖）");
     }
 }

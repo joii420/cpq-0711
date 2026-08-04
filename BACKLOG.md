@@ -835,9 +835,10 @@ task-0721 B8 修复合并    2026-07-21
 - **用户可见后果**：任何"缺值/为 0 时走另一条计算路径"的需求都写不出来。典型两例：
   1. `2 / PGET([X])` 中 PGET 返 0（根行 / 父列空 / 父列真为 0）时，除零语义使整式恒为 0，
      配置者无法改成"退化为除以 1"；
-  2. §4.3.3 已提示的 BOM rollup 陷阱（`成本 = CSUM([成本])` 会把叶子行清 0），
-     文档给的解法是"条件公式分流"，但**语言里其实没有条件原语** —— 目前只能靠多配一列
-     `[是否叶子]` 再由业务在别处组合，绕得很别扭。
+  2. ~~§4.3.3 的 BOM rollup 陷阱解法"条件公式分流"没有条件原语支撑~~ —— **2026-08-04 订正：此条我写错了**。
+     字段级 `conditional_formula`（`rules[].when` 走 `CondTree` + `default`）是存在的，rollup 这条主线成立
+     （共享夹具第 19 条用例已固化：`叶=[是否叶子]` 承接树属性 → `成本` 按 `叶=1` 分流，两端 19/19）。
+     本条目真正的缺口只剩**表达式内**的 `IF`，即除零那类"同一个表达式里按值走两条路"的场景。
 - **范围**：
   1. 评估给公式语言加 `IF(cond, a, b)` + 比较运算符（`= <> > >= < <=`）的成本；
   2. 必须**前后端双端镜像**并纳入共享夹具（`tree-formula-parity-cases.json` 模式），否则必然漂移；
@@ -847,6 +848,36 @@ task-0721 B8 修复合并    2026-07-21
 - **依赖**：无（独立能力增强）
 - **预估规模**：M
 - **相关**：task-0803 需求 §4.3.3 除零口径说明；夹具第 17 条用例已把现状语义钉死，扩展时不得破坏
+
+### [BL-0110] 价格调整预算/dryRun 路径同样漏 `@ActivateRequestContext`（与 BL-0108 同根因家族续集）—— 已修复
+- **优先级**：P1
+- **来源**：BL-0108 ①②合入 master 后测试立即复现，同一 `ContextNotActiveException` 根因家族
+- **状态**：**已修复并验证**（同分支 `fix/repair-0803-quotation-delete-fk-block` 延续，未新开）
+- **登记日期**：2026-08-03　**修复日期**：2026-08-03
+- **现象**：`recompute-budget` 两次独立复现 `budget_status=FAILED`，`budget_error` 是与
+  `PriceAdjustJobExecutionService.executeItem`（BL-0108 那次）逐字一致的
+  `ContextNotActiveException`（`DataLoader` 的 `RequestScoped` context 不可用）——区别是这次
+  **没有伪装成 SUCCESS**（BL-0108 ② 的纵深防御第一次实战验证：完整堆栈 + `FAILED` 而非假成功，
+  定位耗时从 8 轮排查缩短到立即）。
+- **根因**：`PriceAdjustBudgetService` 两层嵌套 `@Transactional(REQUIRES_NEW)`
+  （`processMaterial` 外层 → `runDryRunSnapshot` 内层，内层挂起外层另开事务）→
+  `materialVersionUpgradeService.upgrade(dryRun=true)` → S5 核价渲染 → `DataLoader`。
+  `@ActivateRequestContext` 原本只挂在**外部调用方**（`onVersionGenerated`/
+  `recomputeSingleReview`）身上，**两层 REQUIRES_NEW 边界本身都没有**。
+- **顺带发现**：`PriceAdjustComparisonColumnService`/`PriceAdjustStrategyService` 各有一处
+  **直接** `managedExecutor.runAsync(() -> budgetService.processMaterial(...))`，完全绕开
+  `onVersionGenerated`/`recomputeSingleReview` 身上挂的保护——另外两个独立裸入口（未在
+  coordinator 原排查表中）。
+- **修法**：`processMaterial` 与 `runDryRunSnapshot` **各自**补 `@ActivateRequestContext`
+  （两层都要补），修复点落在共享核心方法本身，一次性覆盖全部 4 个入口（含上面顺带发现的 2 个）。
+- **验证**：真实 `recompute-budget` 端点重放失败 review → `ContextNotActiveException` 消失，
+  `budget_status: FAILED→READY`；`@Scheduled` 同款异步机制复测（临时端点，未新建版本/未动
+  指针，验证完已移除）→ 0 次异常，正常完成；`status=PENDING`+`budget_status=READY` 确认
+  `approve` 的 `REVIEW_BUDGET_NOT_READY` 拦截不再触发。
+- **相关**：[[BL-0108]]（同一 `ContextNotActiveException` 根因家族，本条是价格调整模块内的
+  第二个中招入口——已排查全部 `managedExecutor.runAsync` 用法，确认再无第三个未覆盖入口）
+- **详情**：`dev-docs/task-0729-客户价格调整策略和价格版本/repair-0803-报价单删除阻塞外键/`
+  「续集」章节（需求文档 + test-report 同一目录延续记录）
 
 ## P2
 

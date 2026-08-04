@@ -1561,5 +1561,586 @@
         "倒数": 0.5
       }
     }
+  },
+  {
+    "name": "回归-C*聚合取数列(BASIC_DATA)：driver列名≠字段名",
+    "_doc": "2026-08-03 核价侧端到端实测抓到的后端缺陷回归用例。字段「组成用量」是 BASIC_DATA，basic_data_path='$wl_bom_view.composition_qty'——即**字段名(中文) ≠ driver 视图列名(composition_qty)**，这是核价/报价 BOM 页签取数列的真实形态。老用例的 rows.values 直接落进 driverRow 且键就是字段名，两端都能平凡解析，因此从未覆盖到这条路径。缺陷：后端 hasValueForAgg 读的是 currentRowRaw（键为 driver 列名，且只有 fillInputDefaultSourceByFieldName 按字段名补 INPUT_* 三种类型），BASIC_DATA 字段按字段名永远取不到 → isBlank → 所有子行被 evalTreeRef 的 CHILD 分支过滤掉 → C* 族恒返 0。前端 resolveRowForTree 显式处理 BASIC_DATA，结果正确 —— 故本用例在修复前是**后端红/前端绿**的真实分歧。对照列「子计数父值」聚合的是 FORMULA 列，走 formulaColumns 短路，修复前后都对——它与「子求和」的一红一绿正是定位根因的鉴别器，勿删。",
+    "fields": [
+      {
+        "name": "组成用量",
+        "field_type": "BASIC_DATA",
+        "basic_data_path": "$wl_bom_view.composition_qty"
+      },
+      {
+        "name": "父用量",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "子求和",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "子均值",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "子最大",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "子最小",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "子计数",
+        "field_type": "FORMULA"
+      },
+      {
+        "name": "子计数父值",
+        "field_type": "FORMULA"
+      }
+    ],
+    "formulas": [
+      {
+        "name": "父用量",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "PARENT",
+            "agg": "NONE",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "组成用量"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "子求和",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "SUM",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "组成用量"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "子均值",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "AVG",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "组成用量"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "子最大",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "MAX",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "组成用量"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "子最小",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "MIN",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "组成用量"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "子计数",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "COUNT",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "组成用量"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "子计数父值",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "COUNT",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "父用量"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rows": [
+      {
+        "nodeId": "R",
+        "parentId": null,
+        "lvl": 1,
+        "values": {}
+      },
+      {
+        "nodeId": "A",
+        "parentId": "R",
+        "lvl": 2,
+        "values": {},
+        "basicDataValues": {
+          "{$wl_bom_view.composition_qty}": 2
+        }
+      },
+      {
+        "nodeId": "B",
+        "parentId": "R",
+        "lvl": 2,
+        "values": {},
+        "basicDataValues": {
+          "{$wl_bom_view.composition_qty}": 5
+        }
+      },
+      {
+        "nodeId": "C",
+        "parentId": "R",
+        "lvl": 2,
+        "values": {}
+      },
+      {
+        "nodeId": "A1",
+        "parentId": "A",
+        "lvl": 3,
+        "values": {},
+        "basicDataValues": {
+          "{$wl_bom_view.composition_qty}": 0.3
+        }
+      },
+      {
+        "nodeId": "A2",
+        "parentId": "A",
+        "lvl": 3,
+        "values": {},
+        "basicDataValues": {
+          "{$wl_bom_view.composition_qty}": 0.7
+        }
+      }
+    ],
+    "expected": {
+      "0": {
+        "父用量": 0,
+        "子求和": 7,
+        "子均值": 3.5,
+        "子最大": 5,
+        "子最小": 2,
+        "子计数": 2,
+        "子计数父值": 3
+      },
+      "1": {
+        "父用量": 0,
+        "子求和": 1,
+        "子均值": 0.5,
+        "子最大": 0.7,
+        "子最小": 0.3,
+        "子计数": 2,
+        "子计数父值": 2
+      },
+      "2": {
+        "父用量": 0,
+        "子求和": 0,
+        "子均值": 0,
+        "子最大": 0,
+        "子最小": 0,
+        "子计数": 0,
+        "子计数父值": 0
+      },
+      "3": {
+        "父用量": 0,
+        "子求和": 0,
+        "子计数": 0,
+        "子计数父值": 0
+      },
+      "4": {
+        "父用量": 2,
+        "子求和": 0,
+        "子计数": 0
+      },
+      "5": {
+        "父用量": 2,
+        "子求和": 0,
+        "子计数": 0
+      }
+    }
+  },
+  {
+    "name": "典型用法-树属性驱动条件公式：BOM 成本 rollup（叶取自身，非叶取子和）",
+    "_doc": "需求 §4.3.3 点名的 BOM rollup 陷阱的**标准解法**，也是 [是否叶子]/[是否根]/[层级] 三个树属性的主用途验证。直接写 成本=CSUM(成本) 会把叶子行自己的成本清成 0（叶无子→CSUM=0 覆盖取数值），引擎刻意不做隐式兜底。正解：①配一个 FORMULA 列承接树属性（叶=[是否叶子]）；②目标列用**字段级条件公式**按那列分流（when 叶=1 → 单价*用量；default → CSUM(成本)）。树属性是表达式里的保留字、不是列，条件树 CondTree 按**列名**引用，故必须经①这一步中转。依赖图会自动串起来：成本 →(条件列) 叶，成本 →(tree_ref) 子行的成本，由单元格拓扑排序保证子先父后。本用例同时固化 层级/是否根 的取值，作为三属性的活文档。",
+    "fields": [
+      {
+        "name": "单价",
+        "field_type": "INPUT_NUMBER"
+      },
+      {
+        "name": "用量",
+        "field_type": "INPUT_NUMBER"
+      },
+      {
+        "name": "叶",
+        "field_type": "FORMULA",
+        "formula_name": "叶公式"
+      },
+      {
+        "name": "层级",
+        "field_type": "FORMULA",
+        "formula_name": "层级公式"
+      },
+      {
+        "name": "根",
+        "field_type": "FORMULA",
+        "formula_name": "根公式"
+      },
+      {
+        "name": "成本",
+        "field_type": "FORMULA",
+        "conditional_formula": {
+          "rules": [
+            {
+              "when": {
+                "kind": "leaf",
+                "left": "叶",
+                "op": "eq",
+                "rhs": {
+                  "type": "literal",
+                  "value": "1"
+                }
+              },
+              "formula": "叶成本公式"
+            }
+          ],
+          "default": "非叶成本公式"
+        }
+      }
+    ],
+    "formulas": [
+      {
+        "name": "叶公式",
+        "expression": [
+          {
+            "type": "tree_attr",
+            "attr": "IS_LEAF"
+          }
+        ]
+      },
+      {
+        "name": "层级公式",
+        "expression": [
+          {
+            "type": "tree_attr",
+            "attr": "LVL"
+          }
+        ]
+      },
+      {
+        "name": "根公式",
+        "expression": [
+          {
+            "type": "tree_attr",
+            "attr": "IS_ROOT"
+          }
+        ]
+      },
+      {
+        "name": "叶成本公式",
+        "expression": [
+          {
+            "type": "field",
+            "value": "单价"
+          },
+          {
+            "type": "operator",
+            "value": "*"
+          },
+          {
+            "type": "field",
+            "value": "用量"
+          }
+        ]
+      },
+      {
+        "name": "非叶成本公式",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "CHILD",
+            "agg": "SUM",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "成本"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "rows": [
+      {
+        "nodeId": "R",
+        "parentId": null,
+        "lvl": 1,
+        "values": {}
+      },
+      {
+        "nodeId": "A",
+        "parentId": "R",
+        "lvl": 2,
+        "values": {}
+      },
+      {
+        "nodeId": "B",
+        "parentId": "R",
+        "lvl": 2,
+        "values": {
+          "单价": 7,
+          "用量": 1
+        }
+      },
+      {
+        "nodeId": "A1",
+        "parentId": "A",
+        "lvl": 3,
+        "values": {
+          "单价": 10,
+          "用量": 2
+        }
+      },
+      {
+        "nodeId": "A2",
+        "parentId": "A",
+        "lvl": 3,
+        "values": {
+          "单价": 5,
+          "用量": 3
+        }
+      }
+    ],
+    "expected": {
+      "0": {
+        "叶": 0,
+        "层级": 1,
+        "根": 1,
+        "成本": 42
+      },
+      "1": {
+        "叶": 0,
+        "层级": 2,
+        "根": 0,
+        "成本": 35
+      },
+      "2": {
+        "叶": 1,
+        "层级": 2,
+        "根": 0,
+        "成本": 7
+      },
+      "3": {
+        "叶": 1,
+        "层级": 3,
+        "根": 0,
+        "成本": 20
+      },
+      "4": {
+        "叶": 1,
+        "层级": 3,
+        "根": 0,
+        "成本": 15
+      }
+    }
+  },
+  {
+    "name": "典型用法-条件公式给 PGET 除零兜底（订正：保护是写得出来的）",
+    "_doc": "承接用户 2026-08-03 的提问「2/PGET(父列) 在 PGET 无值时是除以 0 还是除以 1」。当时答复「除以 0、结果恒 0，且当前语言写不出保护」——**后半句是错的**。表达式内确实没有 IF/比较运算符（BL-0109 这部分仍成立），但**字段级条件公式**可以做到，套路与 BOM rollup 用例完全一样：①配中转 FORMULA 列承接 PGET（父用量=PGET(数值)）；②目标列按该列分流（when 父用量=0 → 走兜底公式；default → 2/[父用量]）。注意条件命中的是「父用量算出来等于 0」这一个事实，它同时覆盖三种成因：根行无父 / 父行该列为空 / 父行该列真的是 0 —— 引擎本就不区分这三者，所以这个守卫是完备的（反过来说，若业务需要区分，得另配 [是否根] 列再叠一条规则）。",
+    "fields": [
+      {
+        "name": "数值",
+        "field_type": "INPUT_NUMBER"
+      },
+      {
+        "name": "父用量",
+        "field_type": "FORMULA",
+        "formula_name": "父用量公式"
+      },
+      {
+        "name": "倒数",
+        "field_type": "FORMULA",
+        "conditional_formula": {
+          "rules": [
+            {
+              "when": {
+                "kind": "leaf",
+                "left": "父用量",
+                "op": "eq",
+                "rhs": {
+                  "type": "literal",
+                  "value": "0"
+                }
+              },
+              "formula": "兜底公式"
+            }
+          ],
+          "default": "正常倒数公式"
+        }
+      }
+    ],
+    "formulas": [
+      {
+        "name": "父用量公式",
+        "expression": [
+          {
+            "type": "tree_ref",
+            "dir": "PARENT",
+            "agg": "NONE",
+            "targetExpr": [
+              {
+                "type": "field",
+                "value": "数值"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "兜底公式",
+        "expression": [
+          {
+            "type": "number",
+            "value": 2
+          }
+        ]
+      },
+      {
+        "name": "正常倒数公式",
+        "expression": [
+          {
+            "type": "number",
+            "value": 2
+          },
+          {
+            "type": "operator",
+            "value": "/"
+          },
+          {
+            "type": "field",
+            "value": "父用量"
+          }
+        ]
+      }
+    ],
+    "rows": [
+      {
+        "nodeId": "R",
+        "parentId": null,
+        "lvl": 1,
+        "values": {}
+      },
+      {
+        "nodeId": "A",
+        "parentId": "R",
+        "lvl": 2,
+        "values": {
+          "数值": 4
+        }
+      },
+      {
+        "nodeId": "B",
+        "parentId": "R",
+        "lvl": 2,
+        "values": {
+          "数值": 0
+        }
+      },
+      {
+        "nodeId": "A1",
+        "parentId": "A",
+        "lvl": 3,
+        "values": {}
+      },
+      {
+        "nodeId": "A2",
+        "parentId": "A",
+        "lvl": 3,
+        "values": {}
+      },
+      {
+        "nodeId": "B1",
+        "parentId": "B",
+        "lvl": 3,
+        "values": {}
+      }
+    ],
+    "expected": {
+      "0": {
+        "父用量": 0,
+        "倒数": 2
+      },
+      "1": {
+        "父用量": 0,
+        "倒数": 2
+      },
+      "2": {
+        "父用量": 0,
+        "倒数": 2
+      },
+      "3": {
+        "父用量": 4,
+        "倒数": 0.5
+      },
+      "4": {
+        "父用量": 4,
+        "倒数": 0.5
+      },
+      "5": {
+        "父用量": 0,
+        "倒数": 2
+      }
+    }
   }
 ]

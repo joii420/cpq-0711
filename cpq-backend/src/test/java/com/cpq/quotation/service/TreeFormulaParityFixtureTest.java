@@ -76,7 +76,12 @@ class TreeFormulaParityFixtureTest {
             if (parentId != null && !parentId.isNull()) br.put("__parentId", parentId.asText());
             br.put("__lvl", r.path("lvl").asInt(0));
             br.set("driverRow", r.path("values"));
-            br.putObject("basicDataValues");
+            // 用例可选带 basicDataValues（键形如 "{$view.col}"），用于建模 BASIC_DATA 字段——
+            // 这是「driver 列名 ≠ 字段名」的真实形态，2026-08-03 抓到的后端 hasValueForAgg
+            // 漏 BASIC_DATA 缺陷只有在这种形态下才暴露。缺省仍为空对象，老用例零影响。
+            JsonNode bdv = r.get("basicDataValues");
+            if (bdv != null && bdv.isObject()) br.set("basicDataValues", bdv);
+            else br.putObject("basicDataValues");
             out.add(br);
         }
         return out;

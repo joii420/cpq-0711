@@ -126,7 +126,19 @@ public class PriceAdjustBudgetService {
     // 逐料号处理（B4.1 成员判定 + 指针推进/进池）
     // -------------------------------------------------------------------------
 
-    /** @return true=进入待办池（已建 review 行）；false=无活单直接推进指针，未进池 */
+    /**
+     * @return true=进入待办池（已建 review 行）；false=无活单直接推进指针，未进池
+     *
+     * <p>repair-0803（BL-0108 同根因续集）：{@code @ActivateRequestContext} 补在本方法
+     * （REQUIRES_NEW 事务边界本身）上——与 {@link PriceAdjustJobExecutionService#executeItem}
+     * 的修法完全同一套模式（详见该方法 javadoc）。本方法有 4 个调用方（{@link #onVersionGenerated}
+     * / {@code PriceAdjustReviewService#recomputeSingleReview} /
+     * {@code PriceAdjustComparisonColumnService} / {@code PriceAdjustStrategyService}），其中
+     * 后两个**直接**通过 {@code managedExecutor.runAsync} 调用本方法，完全绕开前两者身上挂的
+     * {@code @ActivateRequestContext}——挂在调用方各自补一遍必然漏，挂在本方法（唯一收敛点）
+     * 一次性覆盖全部 4 个入口。
+     */
+    @ActivateRequestContext
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     boolean processMaterial(UUID versionId, String customerNo, BigDecimal costDiffThreshold, String materialNo) {
         ElementPriceVersion version = ElementPriceVersion.findById(versionId);
@@ -310,7 +322,15 @@ public class PriceAdjustBudgetService {
      * 隔离子事务跑 dryRun 升版，事务内立即读出调整后的卡片值并解析为分离态 POJO（{@code SideValues}
      * 不持有任何 Hibernate 托管引用，可安全带出事务边界）；方法返回时子事务因 dryRun=true 已被
      * {@code upgrade()} 内部标记 rollback-only 自动回滚，不落任何痕迹。
+     *
+     * <p>repair-0803（BL-0108 同根因续集）：本方法内部调 {@code materialVersionUpgradeService
+     * .upgrade(dryRun=true)} → S5 重算核价卡片 → {@code BomTreeRenderService.render()} →
+     * {@code DataLoader}（{@code @RequestScoped}）。本方法又是**嵌套**在 {@link #processMaterial}
+     * 的 REQUIRES_NEW 内的**第二层** REQUIRES_NEW（会挂起外层事务另开一个）——外层
+     * {@code processMaterial} 补了 {@code @ActivateRequestContext} 不代表这一层自动继承，
+     * 与 {@code executeItem} 的教训完全一致：**每一层 REQUIRES_NEW 边界都要单独补**，不能只补最外层。
      */
+    @ActivateRequestContext
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     DryRunSnapshot runDryRunSnapshot(UUID lineItemId, UUID targetVersionId) {
         DryRunSnapshot snap = new DryRunSnapshot();

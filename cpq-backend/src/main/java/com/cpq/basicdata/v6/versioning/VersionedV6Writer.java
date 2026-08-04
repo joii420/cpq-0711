@@ -59,13 +59,15 @@ public class VersionedV6Writer {
         "unit_price", "capacity", "plating_scheme",
         "element_bom", "element_bom_item",
         "material_bom", "material_bom_item",
-        "labor_rate", "production_energy", "auxiliary_energy", "tooling_cost", "exchange_rate_v6");
+        "labor_rate", "production_energy", "auxiliary_energy", "tooling_cost", "exchange_rate_v6",
+        "annual_discount");
 
     /** 必须按 system_type 维度隔离的表：groupKey 缺 system_type 会导致 flip/版本号跨 QUOTE/PRICING 污染。 */
     private static final Set<String> SYSTEM_TYPE_SCOPED = Set.of(
         "material_bom", "material_bom_item", "element_bom", "element_bom_item",
         "capacity", "plating_scheme",
-        "labor_rate", "production_energy", "auxiliary_energy", "tooling_cost");
+        "labor_rate", "production_energy", "auxiliary_energy", "tooling_cost",
+        "annual_discount");
 
     /** 护栏①：system_type 维度表的 groupKey 必须含 system_type，否则入口直接抛错（防静默跨域污染）。 */
     private static void requireSystemType(String table, Map<String, Object> groupKey) {

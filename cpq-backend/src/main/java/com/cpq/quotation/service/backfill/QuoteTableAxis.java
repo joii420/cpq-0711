@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * task-0721 报价数据版本升级 · B5 —— 7 张版本化表的「组轴（groupKey）/ 版本列 / 主从关系」静态登记表。
+ * task-0721 报价数据版本升级 · B5 —— 8 张版本化表的「组轴（groupKey）/ 版本列 / 主从关系」静态登记表。
  *
  * <p><b>为什么要硬编码</b>：{@code unit_price} 被 10+ 个 QUOTE 侧 Handler（Q01/Q06~Q11/Q13/Q15/Q17）
  * 用不同的 {@code price_type} 子集共享，各 Handler 的 {@code groupKeyOf} Map 只放自己关心的列
@@ -32,7 +32,7 @@ final class QuoteTableAxis {
         "id", "created_at", "updated_at", "created_by", "updated_by", "is_current", "source",
         "pending_quotation_id", "pending_supersedes");
 
-    /** 单表（非主从）7 张受管表中的 4 张：unit_price / capacity / plating_scheme。 */
+    /** 单表（非主从）8 张受管表中的 4 张：unit_price / capacity / plating_scheme / annual_discount。 */
     static final class Spec {
         final String table;
         final String versionColumn;
@@ -89,6 +89,13 @@ final class QuoteTableAxis {
             "effective_date", "expire_date", "source_url", "source_name", "fetch_rule", "hf_part_no"),
         null);
 
+    /** repair-0804：年降三 Sheet 统一落库表（单表，非主从）。 */
+    static final Spec ANNUAL_DISCOUNT = new Spec("annual_discount", "version_no", List.of(
+        "system_type", "customer_no", "discount_type", "material_no", "target_no"),
+        List.of("discount_order", "discount_ratio", "fixed_discount_value",
+            "currency", "unit", "discount_times", "seq_no"),
+        null);
+
     static final Spec MATERIAL_BOM_ITEM = new Spec("material_bom_item", "bom_version", List.of(
         "system_type", "customer_no", "material_no"),
         List.of("seq_no", "component_no", "part_no", "effective_datetime", "expire_datetime",
@@ -114,7 +121,7 @@ final class QuoteTableAxis {
             "hf_part_no", "production_no"),
         new MasterSpec("element_bom", "characteristic", List.of("bom_type")));
 
-    /** 按表名取登记的轴定义；未登记（非 7 张受管表之一）返回 null。 */
+    /** 按表名取登记的轴定义；未登记（非 8 张受管表之一）返回 null。 */
     static Spec of(String table) {
         return switch (table) {
             case "unit_price" -> UNIT_PRICE;
@@ -122,18 +129,20 @@ final class QuoteTableAxis {
             case "plating_scheme" -> PLATING_SCHEME;
             case "material_bom_item" -> MATERIAL_BOM_ITEM;
             case "element_bom_item" -> ELEMENT_BOM_ITEM;
+            case "annual_discount" -> ANNUAL_DISCOUNT;
             default -> null;
         };
     }
 
-    /** 7 张受管表全集（回填 B5.1 用于扫描"无 snapshot 表征"的纯 pending 组，路径②）。 */
+    /** 8 张受管表全集（回填 B5.1 用于扫描"无 snapshot 表征"的纯 pending 组，路径②）。 */
     static final List<String> ALL_MANAGED_TABLES = List.of(
         "unit_price", "material_bom", "material_bom_item", "element_bom", "element_bom_item",
-        "capacity", "plating_scheme");
+        "capacity", "plating_scheme", "annual_discount");
 
-    /** 路径②/③扫描对象：单表或"子表代表主从组"的 7 张受管表清单（子表齐全即代表整组，主表不单独扫描）。 */
+    /** 路径②/③扫描对象：单表或"子表代表主从组"的 8 张受管表清单（子表齐全即代表整组，主表不单独扫描）。 */
     static final List<String> SCAN_TABLES = List.of(
-        "unit_price", "material_bom_item", "element_bom_item", "capacity", "plating_scheme");
+        "unit_price", "material_bom_item", "element_bom_item", "capacity", "plating_scheme",
+        "annual_discount");
 
     /**
      * repair-0727 B4（backtask B4 §2 产品归属推导）+ execute() 摘要 {@code affectedProducts} 复用同一口径：

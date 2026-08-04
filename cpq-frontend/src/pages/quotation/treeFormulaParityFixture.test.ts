@@ -25,12 +25,14 @@ interface FixtureRow {
   parentId: string | null;
   lvl: number;
   values: Record<string, any>;
+  /** 可选：建模 BASIC_DATA 字段（键形如 "{$view.col}"）。见后端 harness 同名注释。 */
+  basicDataValues?: Record<string, any>;
 }
 
 interface FixtureCase {
   name: string;
   _doc?: string;
-  fields: { name: string; field_type: string }[];
+  fields: { name: string; field_type: string; basic_data_path?: string }[];
   formulas: { name: string; expression: any[] }[];
   rows: FixtureRow[];
   expected: Record<string, Record<string, number>>;
@@ -75,6 +77,7 @@ function buildComp(c: FixtureCase): ComponentDataItem {
 function buildRows(c: FixtureCase): TreeFormulaRowInput[] {
   return c.rows.map(r => ({
     row: r.values ?? {},
+    basicDataValues: r.basicDataValues,
     nodeId: r.nodeId,
     parentId: r.parentId ?? null,
     lvl: r.lvl,

@@ -43,3 +43,33 @@
   选项），用户需要先手工处理核价单才能删除报价单
 - **业务决策留白**：级联删除核价单 vs 保持拒绝但提供更明确的处理路径（如提示"请先撤回/
   归档核价单"或提供后台清理入口）——按 coordinator 要求不擅自决定
+
+---
+
+# 续集测试报告：预算/dryRun 路径 `@ActivateRequestContext` 覆盖
+
+- 执行环境：同上（分支延续，未新开）
+- 测试数据：coordinator 准备的 `QT-20260803-0059`（`af69f016-...`）+ `CUST-0001` 策略/
+  元素配置 + `element_daily_price`（Cu 今日 4200）+ 版本 `V26080301`(PENDING) + review
+  `494dcc28-944b-4c16-8677-8abb5479d90b`（`FAILED`，`budget_error` 含 17 个组件的
+  `ContextNotActiveException`）——全程未清理/未改动这套环境本身
+- **意外发现**：`findBasisLine` 按"最近一张活单"选中的实际是比 `0059` 更新的杂散测试单
+  `QT-20260803-0062`（非 coordinator 准备、非本次改动引入，疑似并发测试遗留），其
+  `li.subtotal` 陈旧触发 L3 口径守卫。已对齐该行 subtotal 为正确重算值（214.0，来自
+  守卫报错信息本身），过程记录在案，未删除/未新建任何单据
+
+## 排查表逐项结论
+见需求文档「续集」章节的排查结果表，7 项逐一给出结论（2 项本次修复、2 项修复自动覆盖、
+2 项本次新发现且自动覆盖、1 项确认不涉及）。
+
+## 验证结果
+
+| 验证项 | 结果 | 证据 |
+|---|---|---|
+| 走真实 `recompute-budget` 端点重放失败 review | ✅ PASS | `ContextNotActiveException` 消失；对齐杂散单 subtotal 后 `budget_status: FAILED→READY`，`column_count=1`，`budget_error` 为空 |
+| `@Scheduled` 同款异步机制复测（临时端点，不新建版本/不动指针） | ✅ PASS | 对已存在的 `V26080301` 重放 `onVersionGenerated`：日志 `materials=1` 正常完成，`ContextNotActiveException` 命中数 = 0（`grep -c` 于本次重放的日志区间） |
+| `approve` 前置条件达成 | ✅ PASS | `status=PENDING` + `budget_status=READY` 同时满足，`doApprove` 的 `REVIEW_BUDGET_NOT_READY` 拦截不再触发 |
+
+## 回归结论
+`./mvnw -o compile` 0 错误（worktree + 主仓）；后端健康 401；临时验证端点
+（`task0729-scheduled-scan-path-verify`）验证完已从代码中移除。
