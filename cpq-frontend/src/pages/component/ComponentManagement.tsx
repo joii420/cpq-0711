@@ -1598,6 +1598,7 @@ const ComponentManagement: React.FC = () => {
             key: 'fields', label: '字段配置',
             children: (
               <FieldConfigTable
+                tabType={tabType}
                 fields={fields}
                 formulas={formulas}
                 componentId={selectedComponent?.id}

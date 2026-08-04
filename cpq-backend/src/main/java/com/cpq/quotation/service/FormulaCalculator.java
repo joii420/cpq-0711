@@ -332,6 +332,47 @@ public class FormulaCalculator {
         };
     }
 
+    /**
+     * task-0803（2026-08-04）：<b>条件公式里</b>的树属性保留字 → 属性值。
+     *
+     * <p>用户诉求：配条件公式时想直接选「是否叶子/是否根/层级」当判据，而不是被迫先配一个
+     * FORMULA 中转列承接、再按那列比。因为 {@code CondTree} 的 {@code left} 本来就是字符串，
+     * 这里复用<b>与表达式完全相同的三个中文保留字</b>（前端 {@code formulaSerialize.TREE_ATTR_RESERVED}），
+     * 不新增 CondTree schema，存量零迁移。
+     *
+     * <p>🔒 <b>保留字优先于同名列</b> —— 与表达式内口径一致（表达式里 {@code [层级]} 同样压过同名字段）。
+     * 故本方法必须放在 {@code selectConditionalExpr} 的 lookup <b>最前面</b>；两处口径若分叉，
+     * 会出现「同一个 [层级] 在表达式里是树层级、在条件里是用户那一列」的诡异不一致。
+     *
+     * @return 命中保留字 → BigDecimal(1/0/层级)；非保留字或拿不到树上下文 → {@code null}（调用方继续走原查找链）
+     */
+    private static Object treeAttrByReservedName(String col, RowContext ctx) {
+        if (col == null || ctx == null || ctx.tree == null || ctx.rowIndex < 0) return null;
+        return switch (col) {
+            case "层级" -> BigDecimal.valueOf(ctx.tree.relations().lvl(ctx.rowIndex));
+            case "是否叶子" -> ctx.tree.relations().isLeaf(ctx.rowIndex) ? BigDecimal.ONE : ZERO;
+            case "是否根" -> ctx.tree.relations().isRoot(ctx.rowIndex) ? BigDecimal.ONE : ZERO;
+            default -> null;
+        };
+    }
+
+    /** 条件树里是否出现树属性保留字（供路由判据 + 保存期闸门用）。 */
+    static boolean condTreeUsesTreeAttr(JsonNode when) {
+        if (when == null || when.isNull() || when.isMissingNode()) return false;
+        String kind = when.path("kind").asText("");
+        if ("group".equals(kind)) {
+            for (JsonNode c : when.path("children")) if (condTreeUsesTreeAttr(c)) return true;
+            return false;
+        }
+        String left = when.path("left").asText("");
+        if (TREE_ATTR_COLS.contains(left)) return true;
+        JsonNode rhs = when.path("rhs");
+        return "column".equals(rhs.path("type").asText("")) && TREE_ATTR_COLS.contains(rhs.path("value").asText(""));
+    }
+
+    /** 树属性保留字集合。与前端 formulaSerialize.TREE_ATTR_RESERVED 的键逐字同步。 */
+    static final java.util.Set<String> TREE_ATTR_COLS = java.util.Set.of("层级", "是否叶子", "是否根");
+
     /** 收集表达式里所有 {@code field} token 的列名（判「有值」用）。 */
     private static java.util.Set<String> collectFieldNames(JsonNode expr) {
         java.util.Set<String> out = new java.util.LinkedHashSet<>();
@@ -1272,7 +1313,12 @@ public class FormulaCalculator {
         for (FormulaField ff : ffs) {
             if (!treeDepsOfField(ff).isEmpty()) return true;
             if (ff.isConditional()) {
-                if (ff.rules != null) for (CondRule r : ff.rules) if (hasTreeAttr(r.expression)) return true;
+                // 🚨 必须同时扫 r.when：某列可能表达式里没有任何 tree token、只在**条件**里用了
+                //    树属性（如 when [是否叶子]=1）。漏扫 → 不路由到树引擎 → 树属性解析不出来 →
+                //    条件恒不命中 → **静默算错**（不报错、不抛异常，只是走了 default 分支）。
+                if (ff.rules != null) for (CondRule r : ff.rules) {
+                    if (hasTreeAttr(r.expression) || condTreeUsesTreeAttr(r.when)) return true;
+                }
                 if (hasTreeAttr(ff.defaultExpression)) return true;
             } else if (hasTreeAttr(ff.expression)) {
                 return true;
@@ -1930,6 +1976,10 @@ public class FormulaCalculator {
         //   ② BASIC_DATA 列按字段名解析其原始值（path 在 basicDataValues 里）
         //   ③ 回退已算 fieldValues（公式列计算结果，数字）。
         java.util.function.Function<String, Object> lookup = col -> {
+            // ⓪ 树属性保留字最优先（task-0803 2026-08-04）——必须压在最前，与表达式内
+            //    「保留字优先于同名字段」的口径一致。见 treeAttrByReservedName 的 javadoc。
+            Object treeAttr = treeAttrByReservedName(col, ctx);
+            if (treeAttr != null) return treeAttr;
             Object raw = ctx.currentRowRaw != null ? ctx.currentRowRaw.get(col) : null;
             if (raw != null) return raw;
             Object bd = basicDataRawByName(col, fields, basicDataValues);
