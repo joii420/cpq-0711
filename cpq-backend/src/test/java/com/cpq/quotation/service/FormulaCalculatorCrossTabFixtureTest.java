@@ -114,6 +114,15 @@ class FormulaCalculatorCrossTabFixtureTest {
                     crossTabRows.put("A", aRows != null ? aRows : List.of());
                     ctx.crossTabRows = crossTabRows;
                 }
+                // repair-0803：宿主已算字段值（b_field 在 currentRow 键缺失时的回落来源）。
+                // 夹具字段 hostFieldValues 由前后端共同消费，是 AC-2 前后端对拍的锚点。
+                @SuppressWarnings("unchecked")
+                Map<String, Object> hostFieldValuesRaw = (Map<String, Object>) c.get("hostFieldValues");
+                if (hostFieldValuesRaw != null) {
+                    for (Map.Entry<String, Object> e : hostFieldValuesRaw.entrySet()) {
+                        if (e.getValue() instanceof Number n) ctx.hostFieldValues.put(e.getKey(), n.doubleValue());
+                    }
+                }
                 // Optional context extras
                 if (quotationFieldsRaw != null) {
                     for (Map.Entry<String, Object> e : quotationFieldsRaw.entrySet()) {

@@ -478,6 +478,9 @@ describe('cross-tab fixture', () => {
     const crossTabRowsRaw = (c as any).crossTabRows as Record<string, Array<Record<string, any>>> | undefined;
     const quotationFieldsRaw = (c as any).quotationFields as Record<string, number> | undefined;
     const componentSubtotalsRaw = (c as any).componentSubtotals as Record<string, number> | undefined;
+    // repair-0803：宿主已算字段值（b_field 在 currentRow 键缺失时的回落来源）。
+    // 后端 FormulaCalculatorCrossTabFixtureTest 消费同一字段填 ctx.hostFieldValues —— 这是 AC-2 对拍锚点。
+    const hostFieldValuesRaw = (c as any).hostFieldValues as Record<string, number> | undefined;
     const expected = (c as any).expected as number;
     const expectError = (c as any).expectError as boolean | undefined;
 
@@ -507,6 +510,9 @@ describe('cross-tab fixture', () => {
         undefined, // globalVariableDefs
         currentRow,
         resolvedCrossTabRows,
+        undefined, // outDiag
+        undefined, // treeCtx
+        hostFieldValuesRaw, // repair-0803：宿主已算字段值（b_field 回落来源）
       );
       if (expectError) {
         // Error-path cases: result collapses to 0 (crossTabError check is engine-level, not fixture-level)
