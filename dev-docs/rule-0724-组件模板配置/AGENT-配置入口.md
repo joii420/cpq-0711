@@ -98,7 +98,8 @@
 - **零件·加工费（$jg_view，`unit_price` price_type='PROCESS'）**：hf_part_no=`up.finished_material_no`(按成品收窄本行)、料号=`up.code`(零件料号)、工序=`COALESCE(pm.process_name, up.operation_no)`（`process_master` via `process_no=operation_no`）、单价=`up.pricing_price`、单位=`up.unit`、项次=`up.seq_no`。
 - **外购件（$wg_view，`material_bom_item` characteristic='OUTSOURCED'）**：销售料号=`mbi.material_no`(=hf_part_no)、〔组成件料号=`mbi.component_no`——**模板有这列才出可见列**，没有就只当取名 JOIN 键〕、组成件名称=`COALESCE(mm.material_name, mr.name)` via component_no、组成数量=`mbi.composition_qty`、组成单位=`mbi.issue_unit`。
 - **BOM 树（树契约，见 §4.2）**：视图输出 `material_no`(子)/`parent_no`(父)，走 `costing_bom_tree_config`。
-- **费用类（tabType 空，`unit_price` OTHER/PLATING）**：hf_part_no=`code`/`finished_material_no`、要素=`cost_type`、费用=`pricing_price`。
+- **费用类（tabType 空，`unit_price` OTHER）**：hf_part_no=`code`/`finished_material_no`、要素=`cost_type`、费用=`pricing_price`。
+- **电镀（`unit_price` PLATING，repair-0802 起有零件维度）**：hf_part_no=**`up.finished_material_no`**（销售料号，🚫 不再是 `code`——`code` 现在是零件号，绑它整页签 0 行）、销售料号=`up.finished_material_no`、投入料号=`up.code`（零件料号，非必填；空则导入时已回退为销售料号）、投入料号名称=`COALESCE(mm.material_name, mr.name)` via `code`、加工费/材料费=**CASE-WHEN 行转列**（`cost_type` 两值）、`GROUP BY (finished_material_no, code)`。模板有投入料号列 → `tabType=零件`+`partNoField=投入料号`；没有 → `tabType` 留空。完整 SQL 见 `报价侧.md §7.4`，核价侧 `$dj_view` 见 `核价侧.md`。
 
 > 未在表内的字段 = 非标准 → 看「备注」；仍不明 → 问用户（业务白话）。
 
