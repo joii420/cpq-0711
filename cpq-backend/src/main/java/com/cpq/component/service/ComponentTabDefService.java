@@ -97,6 +97,9 @@ public class ComponentTabDefService {
             def.put("componentId", componentId);
             def.put("componentName", c.name);
             def.put("componentType", c.componentType);
+            // task-0803（2026-08-04）：前端据此判定「该源页签是不是 BOM 树」，
+            // 决定 SUMIF 条件字段下拉里要不要追加三个树属性（是否叶子/是否根/层级）。
+            def.put("tabType", c.tabType);
             def.put("sortOrder", sortOrder);
             def.put("rowKeyFields", rowKeyFields);
             def.put("detailFields", detailFields);

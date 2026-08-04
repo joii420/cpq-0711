@@ -20,6 +20,15 @@ import { checkParenBalance } from './tabjoin/formulaBracketCheck';
 import type { ExpressionToken, ConditionPredicate, PredicateOperand } from '../../utils/formulaEngine';
 import { serializePredicate } from '../../utils/predicateText';
 
+/**
+ * task-0803（2026-08-04）：SUMIF 条件里可选的树属性保留字（判**源页签的行**）。
+ * 与表达式/条件公式共用同一套中文保留字，全工程六处同步：
+ * 本文件、utils/condTree.TREE_ATTR_COLS、pages/component/formulaSerialize.TREE_ATTR_RESERVED、
+ * pages/component/FieldConfigTable.TREE_ATTR_COND_OPTIONS、后端 FormulaCalculator.TREE_ATTR_COLS、
+ * 后端 ComponentService.TREE_ATTR_COLS。
+ */
+const TREE_ATTR_SOURCE_FIELDS = ['是否叶子', '是否根', '层级'];
+
 const { Text } = Typography;
 const { Option } = Select;
 
@@ -276,8 +285,13 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
   // 过滤条件字段：源页签全部字段（含文本字段，如 类型='管理费'）；后端无 allFields 时回退数值字段
   const conditionFields = useMemo(() => {
     const all = sumifSourceTab?.allFields;
-    if (all && all.length > 0) return all;
-    return sourceFields;
+    const base = (all && all.length > 0) ? all : sourceFields;
+    // task-0803（2026-08-04）：源页签是 BOM 树时，条件字段追加三个树属性保留字，
+    // 让用户能写 SUMIF([物料BOM.是否叶子]=1, [物料BOM.金额])——只聚合源页签里是叶子的那些行。
+    // 值在求值期由 CardSnapshotService.injectTreeAttrsForCrossTab / putCrossTab 物化到源行上，
+    // 谓词求值器 arow.get(字段名) 零改动即可读到。非 BOM 源页签不追加（那些行没有树坐标）。
+    if (sumifSourceTab?.tabType !== 'BOM') return base;
+    return [...base, ...TREE_ATTR_SOURCE_FIELDS.filter(a => !base.includes(a))];
   }, [sumifSourceTab, sourceFields]);
   // 宿主页签别名（self===true 的那个）
   const hostAlias = useMemo(

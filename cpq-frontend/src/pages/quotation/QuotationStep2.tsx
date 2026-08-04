@@ -1501,7 +1501,16 @@ export function buildCrossTabRows(
       const treeResults = computeTabFormulasTree(
         comp, treeRowInputs, allComponentSubtotals, undefined, undefined, partNo, globalVariableDefs, store);
       for (let i = 0; i < s.totalRows; i++) {
-        rows.push(buildResolvedRow(comp.fields!, bakedRows[i], driverRows[i], bdvArr[i], treeResults[i] ?? {}));
+        const rr = buildResolvedRow(comp.fields!, bakedRows[i], driverRows[i], bdvArr[i], treeResults[i] ?? {});
+        // task-0803（2026-08-04）：带上树坐标，供 putCrossTab 给「喂给 cross_tab 的副本」注入树属性
+        // （SUMIF 条件里写 [页签.是否叶子] 用）。与后端 resolvedRows 携带 __nodeId 同理。
+        // 仅多一个 __ 前缀键；列小计/落库均按 fields 驱动，不看行上的额外键。
+        (rr as any).__sys = {
+          nodeId: treeRowInputs[i].nodeId,
+          parentId: treeRowInputs[i].parentId,
+          lvl: treeRowInputs[i].lvl,
+        };
+        rows.push(rr);
       }
       return rows;
     }
@@ -1538,6 +1547,22 @@ export function buildCrossTabRows(
   // 三者各换各的副本，互不双重换算（与后端 CardSnapshotService crossTabRows.put 换算副本对称）。
   const putCrossTab = (cid: string, comp: ComponentDataItem, rows: Array<Record<string, any>>) => {
     const ctRows = rows.map(r => applyUnitConversion(comp.fields as any, r));
+    // task-0803（2026-08-04）：树页签的源行副本注入三个树属性，让 SUMIF 族条件能写
+    // SUMIF([物料BOM.是否叶子]=1, [物料BOM.金额]) —— 只聚合源页签里是叶子的那些行。
+    // 逐位镜像后端 CardSnapshotService.injectTreeAttrsForCrossTab（含「同名列被覆盖是刻意的」口径）。
+    // 只改喂 store 的副本，不动 rows 本身（落库/列小计另走通道）。
+    if (rows.some(r => (r as any).__sys?.nodeId !== undefined)) {
+      const rel = buildTreeRelations(rows.map(r => ({
+        nodeId: (r as any).__sys?.nodeId,
+        parentId: (r as any).__sys?.parentId,
+        lvl: (r as any).__sys?.lvl,
+      })) as any);
+      ctRows.forEach((cr, i) => {
+        cr['是否叶子'] = rel.isLeaf(i) ? 1 : 0;
+        cr['是否根'] = rel.isRoot(i) ? 1 : 0;
+        cr['层级'] = rel.lvl(i);
+      });
+    }
     store[cid] = ctRows;
     if (comp.componentCode) store[comp.componentCode] = ctRows;
     if (comp.componentId) store[comp.componentId] = ctRows;

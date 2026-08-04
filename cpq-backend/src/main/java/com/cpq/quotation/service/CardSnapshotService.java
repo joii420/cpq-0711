@@ -1863,6 +1863,7 @@ public class CardSnapshotService {
             // 单位换算（cross_tab 物化点）：跨组件引用方读 canonical（按同行单位列换算）。
             // 仅换喂 crossTabRows 的副本——pass1Resolved 原值留给 backfill(各自换副本) + 落库 resolvedRows。
             List<Map<String, Object>> pass1CrossTab = convertRowsForCrossTab(tab.path("fields"), pass1Resolved);
+            injectTreeAttrsForCrossTab(baseRows, pass1CrossTab);
             crossTabRows.put(cid, pass1CrossTab);
             if (code != null && !code.isBlank()) crossTabRows.put(code, pass1CrossTab);
             // 第 1 次 backfill：用 pass1 的 resolved 更新本组件一阶列列小计到 componentSubtotals，
@@ -1887,6 +1888,7 @@ public class CardSnapshotService {
                     tab, baseRows, editRows, formulaResults, rkfByComp.get(cid), deleted, rkfNames);
                 // 更新 crossTabRows 为第 2 次 resolved（二阶列已算对，兄弟组件引用此组件 cross_tab_ref 时应取最终值）
                 List<Map<String, Object>> resolvedCrossTab = convertRowsForCrossTab(tab.path("fields"), resolved);
+                injectTreeAttrsForCrossTab(baseRows, resolvedCrossTab);
                 crossTabRows.put(cid, resolvedCrossTab);
                 if (code != null && !code.isBlank()) crossTabRows.put(code, resolvedCrossTab);
                 // 第 2 次 backfill：更新二阶列本身的列小计
@@ -3347,6 +3349,49 @@ public class CardSnapshotService {
      * 单位换算（cross_tab 物化点）：把一组 resolved 行换算成 canonical 副本喂 crossTabRows，原行不变。
      * 配 unit_source_field 的输入列按同行单位归一到 KG/PCS；未配列原样。与前端 buildCrossTabRows putCrossTab 对称。
      */
+
+    /**
+     * task-0803（2026-08-04）：给喂给 {@code crossTabRows} 的源行<b>副本</b>注入三个树属性键
+     * （{@code 是否叶子 / 是否根 / 层级}），让 SUMIF 族的条件能写
+     * {@code SUMIF([物料BOM.是否叶子]=1, [物料BOM.金额])} —— 即「只聚合源页签里是叶子的那些行」。
+     *
+     * <p>🔑 <b>为什么注入而不是改谓词求值器</b>：{@code ConditionPredicateEvaluator.resolve} 对
+     * {@code sourceField} 就是 {@code arow.get(字段名)}，把属性物化成行上的键即可零改动接入，
+     * 也不必把 {@code __parentId/__lvl} propagate 进落库的 resolvedRows。
+     *
+     * <p>🔑 <b>为什么改副本安全</b>：{@code convertRowsForCrossTab} 已经产出独立副本
+     * （见其调用点注释「仅换喂 crossTabRows 的副本」），落库的 resolvedRows 是另一份，
+     * 故注入不会污染卡片值 JSON。
+     *
+     * <p>⚠️ <b>必须按 {@code __nodeId} 匹配，不能按下标</b>：{@code buildResolvedRows} 会剔除墓碑行，
+     * 结果集比 baseRows 短且下标错位。resolvedRows 恰好携带 {@code __nodeId}（见其内 put），据此回查。
+     *
+     * <p>⚠️ 同名列被覆盖是<b>刻意</b>的 —— 与表达式/条件里「保留字优先于同名字段」口径一致。
+     * 非树页签（baseRows 无 {@code __nodeId}）整体跳过，零影响。
+     */
+    private void injectTreeAttrsForCrossTab(ArrayNode baseRows, List<Map<String, Object>> crossTabCopy) {
+        if (baseRows == null || crossTabCopy == null || crossTabCopy.isEmpty()) return;
+        if (!com.cpq.quotation.service.formula.TreeRelations.isTreeRows(baseRows)) return;
+        com.cpq.quotation.service.formula.TreeRelations rel =
+            com.cpq.quotation.service.formula.TreeRelations.of(baseRows, java.util.Set.of());
+        Map<String, Integer> idxByNodeId = new HashMap<>();
+        for (int i = 0; i < baseRows.size(); i++) {
+            JsonNode nid = baseRows.get(i).get("__nodeId");
+            if (nid != null && !nid.isNull() && !nid.asText("").isEmpty()) {
+                idxByNodeId.putIfAbsent(nid.asText(), i);
+            }
+        }
+        for (Map<String, Object> row : crossTabCopy) {
+            Object nid = row.get("__nodeId");
+            if (nid == null) continue;
+            Integer i = idxByNodeId.get(nid.toString());
+            if (i == null) continue;
+            row.put("是否叶子", rel.isLeaf(i) ? 1 : 0);
+            row.put("是否根", rel.isRoot(i) ? 1 : 0);
+            row.put("层级", rel.lvl(i));
+        }
+    }
+
     private List<Map<String, Object>> convertRowsForCrossTab(JsonNode fields, List<Map<String, Object>> rows) {
         List<Map<String, Object>> out = new ArrayList<>(rows.size());
         for (Map<String, Object> r : rows) {
