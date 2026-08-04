@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>原型 · 公式循环引用链路抽屉</title>
+<style>
+  :root{
+    --primary:#1677ff; --err:#ff4d4f; --err-bg:#fff2f0; --err-border:#ffccc7;
+    --warn:#faad14; --warn-bg:#fffbe6; --warn-border:#ffe58f;
+    --t1:rgba(0,0,0,.88); --t2:rgba(0,0,0,.65); --t3:rgba(0,0,0,.45);
+    --border:#d9d9d9; --split:#f0f0f0; --bg:#fff; --page:#f5f5f5; --hover:#fafafa;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --err-bg:#2a1215; --err-border:#58181c; --warn-bg:#2b2111; --warn-border:#594214;
+      --t1:rgba(255,255,255,.88); --t2:rgba(255,255,255,.65); --t3:rgba(255,255,255,.45);
+      --border:#424242; --split:#303030; --bg:#1f1f1f; --page:#141414; --hover:#262626;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--page);color:var(--t1);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    font-size:14px;line-height:1.5715;}
+
+  /* ── 原型控制条（非产品 UI） ── */
+  .ctrl{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--split);
+    padding:12px 16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .ctrl .tag{font-size:12px;color:var(--t3);border:1px dashed var(--border);border-radius:4px;padding:2px 8px;margin-right:4px}
+  .btn{border:1px solid var(--border);background:var(--bg);color:var(--t1);border-radius:6px;
+    padding:5px 14px;cursor:pointer;font-size:14px;transition:.2s}
+  .btn:hover{border-color:var(--primary);color:var(--primary)}
+  .btn.on{background:var(--primary);border-color:var(--primary);color:#fff}
+
+  /* ── 模拟页面 + 抽屉 ── */
+  .stage{position:relative;height:calc(100vh - 58px);overflow:hidden}
+  .mask{position:absolute;inset:0;background:rgba(0,0,0,.45)}
+  .behind{padding:24px;filter:blur(1px);opacity:.5;user-select:none}
+  .behind h3{margin:0 0 12px;font-size:16px}
+  .behind .row{height:36px;background:var(--bg);border:1px solid var(--split);border-radius:6px;margin-bottom:8px;max-width:60%}
+
+  .drawer{position:absolute;top:0;right:0;bottom:0;width:720px;max-width:100%;
+    background:var(--bg);box-shadow:-6px 0 16px rgba(0,0,0,.08);display:flex;flex-direction:column}
+  .dw-head{padding:16px 24px;border-bottom:1px solid var(--split);display:flex;align-items:flex-start;gap:12px}
+  .dw-title{font-size:16px;font-weight:600;flex:1}
+  .dw-sub{font-size:13px;color:var(--t3);margin-top:4px;font-weight:400}
+  .x{border:0;background:transparent;color:var(--t3);font-size:18px;cursor:pointer;line-height:1;padding:4px}
+  .x:hover{color:var(--t1)}
+  .dw-body{flex:1;overflow:auto;padding:16px 24px}
+  .dw-foot{padding:12px 24px;border-top:1px solid var(--split);text-align:right}
+  .btn-primary{background:var(--primary);border:1px solid var(--primary);color:#fff;border-radius:6px;
+    padding:6px 18px;cursor:pointer;font-size:14px}
+
+  /* ── 顶部说明条 ── */
+  .alert{display:flex;gap:10px;background:var(--err-bg);border:1px solid var(--err-border);
+    border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:var(--t2)}
+  .alert b{color:var(--err)}
+
+  /* ── 每个环的卡片 ── */
+  .cycle{border:1px solid var(--split);border-radius:8px;margin-bottom:14px;overflow:hidden}
+  .cy-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:var(--hover);cursor:pointer;user-select:none}
+  .cy-head:hover{background:var(--split)}
+  .caret{color:var(--t3);font-size:12px;transition:transform .18s;display:inline-block}
+  .cycle.collapsed .caret{transform:rotate(-90deg)}
+  .cycle.collapsed .cy-body{display:none}
+  .idx{font-weight:600;font-size:14px}
+  .scope{font-size:12px;padding:1px 8px;border-radius:10px;border:1px solid}
+  .scope.field{color:#d46b08;background:var(--warn-bg);border-color:var(--warn-border)}
+  .scope.tab{color:#0958d9;background:#e6f4ff;border-color:#91caff}
+  @media (prefers-color-scheme: dark){ .scope.tab{background:#111a2c;border-color:#15325b;color:#65a9ff} }
+  .where{font-size:13px;color:var(--t3);margin-left:auto}
+
+  .cy-body{padding:14px}
+  .lab{font-size:12px;color:var(--t3);margin-bottom:8px}
+
+  /* 链路 */
+  .chain{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:12px;
+    background:var(--err-bg);border:1px solid var(--err-border);border-radius:6px;margin-bottom:14px}
+  .node{display:inline-flex;align-items:center;gap:5px;background:var(--bg);border:1px solid var(--err-border);
+    border-radius:6px;padding:5px 11px;font-size:13px;font-weight:500;white-space:nowrap}
+  .node .pre{color:var(--t3);font-weight:400;font-size:12px}
+  .node.loop{border-style:dashed;opacity:.75}
+  .arrow{color:var(--err);font-size:15px;font-weight:700}
+
+  /* 边说明 */
+  .edges{list-style:none;margin:0;padding:0}
+  .edges li{display:flex;gap:9px;padding:7px 0;border-top:1px dashed var(--split);font-size:13px;color:var(--t2);line-height:1.7}
+  .edges li:first-child{border-top:0}
+  .dot{color:var(--t3);flex-shrink:0}
+  .nm{color:var(--t1);font-weight:500}
+  .fx{color:var(--primary);font-weight:500}
+  .col{color:#d46b08;font-weight:500}
+  .ctype{color:var(--t3);font-size:12px}
+  @media (prefers-color-scheme: dark){ .col{color:#e8b339} }
+
+  .hint{margin-top:14px;padding:10px 12px;background:var(--warn-bg);border:1px solid var(--warn-border);
+    border-radius:6px;font-size:12px;color:var(--t2);line-height:1.8}
+  .note{margin-top:18px;padding:12px 14px;border:1px dashed var(--border);border-radius:8px;
+    font-size:12px;color:var(--t3);line-height:1.9}
+  .note b{color:var(--t2)}
+</style>
+</head>
+<body>
+
+<div class="ctrl">
+  <span class="tag">原型控制（非产品 UI）</span>
+  <button class="btn on" data-s="a">场景 A · 字段环</button>
+  <button class="btn" data-s="b">场景 B · 页签环</button>
+  <button class="btn" data-s="c">场景 C · 两环并存</button>
+  <button class="btn" data-s="d">场景 D · 三环（默认只展开第 1 个）</button>
+</div>
+
+<div class="stage">
+  <div class="behind">
+    <h3>组件管理 / 编辑组件「物料」</h3>
+    <div class="row"></div><div class="row"></div><div class="row"></div><div class="row"></div>
+  </div>
+  <div class="mask"></div>
+
+  <div class="drawer">
+    <div class="dw-head">
+      <div class="dw-title">
+        公式存在循环引用（<span id="cnt">1</span> 处）
+        <div class="dw-sub">保存已中止。请按下方链路逐个修改后重新保存。</div>
+      </div>
+      <button class="x">✕</button>
+    </div>
+
+    <div class="dw-body">
+      <div class="alert">
+        <span>⛔</span>
+        <div>公式之间形成了<b>首尾相接的引用</b>，系统无法确定谁先计算。请打断其中<b>任意一条</b>引用即可解除。</div>
+      </div>
+
+      <div id="list"></div>
+
+      <div class="note">
+        <b>原型说明</b><br>
+        · 链路与边说明<b>全程使用组件名称 / 公式名称 / 字段名称</b>，不出现任何 UUID 或字段 id（对应 AC-11：响应体全文 UUID 匹配数须为 0）<br>
+        · 本期为<b>只读展示</b>：节点不可点击、不跳转（跳转增强已登记 BACKLOG）<br>
+        · 抽屉宽 <b>720</b>，右侧滑出，符合 CLAUDE.md「弹出式交互一律用 Drawer」<br>
+        · 环 ≥3 个时默认只展开第 1 个，其余折叠
+      </div>
+    </div>
+
+    <div class="dw-foot"><button class="btn-primary">知道了</button></div>
+  </div>
+</div>
+
+<script>
+// 数据形态 = api.md §1 的 cycles[]
+const FIELD_CYCLE = {
+  scope:'FIELD', componentName:'物料',
+  nodes:[
+    {fieldName:'原材料成本', formulaName:'v2-原材料成本公式(银点类)'},
+    {fieldName:'来料加工费', formulaName:'来料加工费取值公式'}
+  ],
+  edges:[
+    {from:'原材料成本', to:'来料加工费', via:'公式', viaFormulaName:'v2-原材料成本公式(银点类)'},
+    {from:'来料加工费', to:'原材料成本', via:'公式', viaFormulaName:'来料加工费取值公式'}
+  ]
+};
+const FIELD_CYCLE_COND = {
+  scope:'FIELD', componentName:'物料',
+  nodes:[
+    {fieldName:'材料成本', formulaName:'银点材料成本公式'},
+    {fieldName:'来料损耗率', formulaName:'来料损耗率取值公式'},
+    {fieldName:'材料损耗成本', formulaName:'材料损耗成本'}
+  ],
+  edges:[
+    {from:'材料成本', to:'来料损耗率', via:'条件规则2命中的公式', viaFormulaName:'银点材料成本公式'},
+    {from:'来料损耗率', to:'材料损耗成本', via:'公式', viaFormulaName:'来料损耗率取值公式'},
+    {from:'材料损耗成本', to:'材料成本', via:'条件规则1的判断条件', viaFormulaName:'材料损耗成本'}
+  ]
+};
+// 真页签环：两条边被引用的都是【公式列】，才构成互相等待。
+// 反例（不成环，勿用作样例）：物料引用产品的 [税率]——INPUT_NUMBER 输入列，
+// 谁先算都不变 → repair-0803 起不建边，正是曾经的假环 QT-20260803-0052。
+const TAB_CYCLE = {
+  scope:'TAB',
+  nodes:[
+    {componentName:'产品', formulaName:'管理费'},
+    {componentName:'物料', formulaName:'v2-原材料成本公式(银点类)'}
+  ],
+  edges:[
+    {from:'产品', to:'物料', col:'材料成本', colType:'公式列', viaFormulaName:'管理费'},
+    {from:'物料', to:'产品', col:'管理费',   colType:'公式列', viaFormulaName:'v2-原材料成本公式(银点类)'}
+  ]
+};
+const SCENES = { a:[FIELD_CYCLE], b:[TAB_CYCLE], c:[FIELD_CYCLE, TAB_CYCLE], d:[FIELD_CYCLE, TAB_CYCLE, FIELD_CYCLE_COND] };
+
+const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+function nodeLabel(cy, n){
+  return cy.scope === 'TAB'
+    ? `<span class="pre">页签</span>「${esc(n.componentName)}」`
+    : `「${esc(n.fieldName)}」`;
+}
+
+function renderChain(cy){
+  const parts = [];
+  cy.nodes.forEach((n,i) => {
+    if (i) parts.push('<span class="arrow">→</span>');
+    parts.push(`<span class="node">${nodeLabel(cy,n)}</span>`);
+  });
+  // 闭合回首节点（后端不重复下发首尾，由前端补）
+  parts.push('<span class="arrow">→</span>');
+  parts.push(`<span class="node loop">${nodeLabel(cy, cy.nodes[0])}</span>`);
+  return `<div class="chain">${parts.join('')}</div>`;
+}
+
+function renderEdges(cy){
+  const li = cy.edges.map(e => {
+    let html;
+    if (cy.scope === 'TAB') {
+      // 页签环：谁的哪条公式 → 引用了哪个页签的哪一列（并标出该列类型，说明为何构成依赖）
+      html = `<span class="nm">页签「${esc(e.from)}」</span> 的 `
+           + `<span class="fx">公式「${esc(e.viaFormulaName)}」</span> 中引用了 `
+           + `<span class="nm">页签「${esc(e.to)}」</span> 的 <span class="col">[${esc(e.col)}]</span>`
+           + `<span class="ctype">（${esc(e.colType)}）</span>`;
+    } else {
+      html = `<span class="nm">「${esc(e.from)}」</span> 的 `
+           + `<span class="fx">${esc(e.via)}「${esc(e.viaFormulaName)}」</span> 中引用了 `
+           + `<span class="col">[${esc(e.to)}]</span>`;
+    }
+    return `<li><span class="dot">·</span><div>${html}</div></li>`;
+  }).join('');
+  return `<div class="lab">每一条引用（打断其中任意一条即可解环）</div><ul class="edges">${li}</ul>`;
+}
+
+function renderCycle(cy, i, collapsed){
+  const where = cy.scope === 'FIELD'
+    ? `组件「${esc(cy.componentName)}」内的字段之间`
+    : `产品卡片内的页签之间`;
+  const scopeTag = cy.scope === 'FIELD'
+    ? `<span class="scope field">字段环</span>` : `<span class="scope tab">页签环</span>`;
+  const hint = cy.scope === 'FIELD'
+    ? `这些字段的公式互相引用。系统按「被引用者先算」推导顺序，成环后无法定序 —— 保存已阻止。`
+    : `页签之间也需要先后顺序：<b>被引用的页签必须先算完</b>，成环后整张卡片无法渲染。`
+      + `<br><b>判定口径</b>：只有引用<b>公式列</b>才产生这种等待关系（该列的值要算过才有）。`
+      + `引用<b>输入列 / 取数列</b>（如「税率」这类手工填写的列）不建立依赖 —— 它的值与谁先算无关，`
+      + `因此<b>两个页签互相引用但引用的都是输入列时，不算环</b>。`;
+  return `
+  <div class="cycle${collapsed?' collapsed':''}">
+    <div class="cy-head">
+      <span class="caret">▾</span>
+      <span class="idx">环 ${i+1}</span>
+      ${scopeTag}
+      <span class="where">${where}</span>
+    </div>
+    <div class="cy-body">
+      ${renderChain(cy)}
+      ${renderEdges(cy)}
+      <div class="hint">💡 ${hint}</div>
+    </div>
+  </div>`;
+}
+
+function draw(key){
+  const cycles = SCENES[key];
+  document.getElementById('cnt').textContent = cycles.length;
+  // ≥3 个时默认只展开第 1 个
+  const collapseRest = cycles.length >= 3;
+  document.getElementById('list').innerHTML =
+    cycles.map((c,i) => renderCycle(c, i, collapseRest && i > 0)).join('');
+  document.querySelectorAll('.cy-head').forEach(h =>
+    h.onclick = () => h.parentElement.classList.toggle('collapsed'));
+}
+
+document.querySelectorAll('.ctrl .btn').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.ctrl .btn').forEach(x => x.classList.remove('on'));
+  b.classList.add('on');
+  draw(b.dataset.s);
+});
+draw('a');
+</script>
+</body>
+</html>
