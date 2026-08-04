@@ -760,8 +760,10 @@ task-0721 B8 修复合并    2026-07-21
 ### [BL-0108] 报价单删除被 `material_price_update_job_item` 外键阻塞 —— 实测 33 张 DRAFT 单永久删不掉且报裸 500
 - **优先级**：P1
 - **来源**：task-0803（BOM 父子取值公式）端到端验证收尾清理时实测发现
-- **状态**：TODO（本次仅手工清了自己那 1 条测试数据，**代码缺陷未修**）
-- **登记日期**：2026-08-03
+- **状态**：① ② **已修复并验证**（`fix/repair-0803-quotation-delete-fk-block`，需求文档
+  + test-report 见 `dev-docs/task-0729-客户价格调整策略和价格版本/repair-0803-报价单删除阻塞外键/`）；
+  ③（`costing_order`）**TODO——已排查、只报不修，待业务决策处置口径**（级联删 vs 明确拒绝）
+- **登记日期**：2026-08-03　**修复日期**：2026-08-03
 - **现象**：`DELETE /api/cpq/quotations/{id}` 对一张 `status='DRAFT'` 的单返 `{"code":500,"message":"Internal server error"}`。
   前端拿到的是无信息量的 500，用户无从知道为什么删不掉。
 - **根因（已实证）**：DB 层真实报错是
@@ -795,6 +797,31 @@ task-0721 B8 修复合并    2026-07-21
 - **验收要点**：①上面那条 33 单的 SQL 归零后，任取一张原先删不掉的 DRAFT 单能删成功；②带 `costing_order`
   的 DRAFT 单同口径通过；③人为构造 FK 阻塞时接口返可读 400 而非 500。
 - **相关**：[[BL-0092]]（同为"报价单删除路径没跟上新增表"的族类问题，那条是删完留悬空占号，这条是根本删不掉）
+
+<details>
+<summary>✅ ①② 修复交付记录（2026-08-03，展开查看）</summary>
+
+- **① `material_price_update_job_item` 清理**：`QuotationService.delete()` 新增
+  `cleanupPriceAdjustJobItems()`——直接 DELETE 本单的 job_item；若某 job 因此 item 清零，
+  一并删除该 job（避免孤儿审计记录）。实测：删除一张挂在 10 个多 item job 下的测试单，
+  10 个 job 均原样保留仅各 -1；隔离构造一个单 item job 场景，验证该 job 与 item 均正确
+  一并删除，同批次其它多 item job 不受影响。
+- **② 可读错误改造**：`delete()` 内部沿 `getCause()` 链定位根 `SQLException`
+  （SQLState=23503），翻译为 `BusinessException`，**实际返回 409**（不是原验收要点写的
+  400——FK 冲突语义上更贴近"资源状态冲突"，用 409 Conflict 而非 400 Bad Request，本次
+  按 HTTP 语义更正，未改变"给可读消息"这个核心目标）。友好名映射表已同时登记
+  `costing_order_quotation_id_fkey`（虽然③本身不修，但②的错误翻译对它同样生效，实测
+  返回 `无法删除该报价单：存在关联的核价单（costing_order），请先处理后再删除`，
+  见 test-report AC-4）。
+- **发现的既有盲区**（非本次修复范围，记入需求文档 §8）：全局
+  `GlobalExceptionMapper.handleHibernateConstraint` 实测**未拦下**本次 500——说明该
+  mapper 对某些异常包装路径存在盲区，本次绕开、未深挖根因。
+- **③ `costing_order` 排查结论**：当前 2 张 DRAFT 单被阻塞（`QT-20260726-0006`/
+  `QT-20260727-0019`，共 7 条 `costing_order` 记录，**均为 `WITHDRAWN` 状态**——FK 不看
+  costing_order 自身状态，已撤回的核价单记录依然挡删除，这个细节留给业务决策时参考）。
+  处置口径（级联删 vs 保持拒绝+更明确引导）未定，待 coordinator/业务方拍板。
+
+</details>
 
 ## P2
 

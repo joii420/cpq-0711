@@ -4556,3 +4556,19 @@ E2E:
 
 **遗留**：[[BL-0105]] 前端 `resolveRowForTree` 重复约 120 行字段解析（零回归门禁造成的有意取舍，有静默漂移风险）；[[BL-0106]] 孤儿组件标注；[[BL-0107]] EXCEL 列显式提示 + 语法高亮增强；AC-29 性能阈值待业务方定（需求 §11.5 G7）。
 
+---
+
+[2026-08-03] task-0729 repair-0803 报价单删除阻塞外键（BL-0108）—— ①补齐 material_price_update_job_item 清理 ②外键冲突翻译成可读 409 ③costing_order 只排查不修 | `cpq-backend/src/main/java/com/cpq/quotation/service/QuotationService.java`（`delete()` 改写 + 新增 `cleanupPriceAdjustJobItems`/`translateDeleteFailure`/`extractConstraintName`）、`dev-docs/task-0729-客户价格调整策略和价格版本/repair-0803-报价单删除阻塞外键/{需求文档.md,test-report.md}`、`BACKLOG.md`（BL-0108 状态更新） | worktree `repair-0803-quotation-delete-fk`，分支 `fix/repair-0803-quotation-delete-fk-block`（基于合并后 master HEAD `6bd10a6b` 建）。
+
+**目录放置判定**（按新生效的 `dev-docs/任务平台规则.md` §1.2）：根因是 task-0729 B1 引入的 `material_price_update_job_item` 表未同步进删除序列，判定为"task 自身范围内 BUG"，放 `task-0729-.../repair-0803-.../` 而非系统级根目录 `repair-0803-*`。
+
+**① job_item 清理**：`cleanupPriceAdjustJobItems` 直接 DELETE 本单的 job_item（对已删单无保留价值，重试也无处可试）；🔒 决策记录：若某 job 名下全部 item 因此清零，**一并删除该 job**（避免留下"汇总字段指向不存在明细"的孤儿审计记录）——理由已写进方法 javadoc。
+
+**② 可读错误改造（价值最大的一条）**：`delete()` 内部主动 `em.flush()` 强制 FK 检查同步发生在方法体 try 块内（而非被 `@Transactional` 拦截器延后到提交阶段才抛——那样任何 catch 都拦不住），沿 `getCause()` 链找根 `SQLException`（SQLState=23503，不依赖具体包装类型），翻译成 `BusinessException(409, ...)` 并给出友好表名映射。**顺带排查发现一个既有盲区**：全局 `GlobalExceptionMapper.handleHibernateConstraint`（捕获 `org.hibernate.exception.ConstraintViolationException`）实测**未能拦下**BL-0108 报告的原始 500——说明该 mapper 对某些异常包装路径有盲区（本次未深挖根因，绕开处理，记入需求文档 §8 供后续参考）。
+
+**③ costing_order 只排查不修**：当前 2 张 DRAFT 单被阻塞（`QT-20260726-0006`/`QT-20260727-0019`，共 7 条 `costing_order` 记录**均为 WITHDRAWN 状态**——FK 不看 costing_order 自身状态，已撤回的核价单依然挡删除，这是留给业务决策的一个细节）。走②改造后该场景已实测返回可读 409（`存在关联的核价单（costing_order），请先处理后再删除`），但仍是拒绝而非放行——级联删 vs 保持拒绝的处置口径按 coordinator 明确要求不擅自决定，留待业务裁定。
+
+**验证（全部走真实 DELETE /api/cpq/quotations/{id} 端点，隔离测试数据，未碰真实业务单）**：①删一张挂在 10 个多 item job 下的测试单（QT-20260802-0048）→ 200，job_item 0 孤儿，10 个 job 均保留仅各 -1；②隔离插入一个单 item 测试 job（指向 QT-20260802-0049）→ 删除后该 job 与其 item 一并消失，同批次其它 10 个多 item job 不受影响；③隔离插入一条测试 `costing_order`（指向 QT-20260803-0056）→ 删除返 409 可读提示（非 500）→ 复查 quotation/costing_order 均未被误删（事务正确回滚）→ 测试 fixture 已清理。`./mvnw -o compile` 0 错误（worktree+主仓）；后端健康 401。
+
+**自检声明**：编译 0 错误 ✅；AC-1~AC-5 全部实测通过（见 test-report.md）✅；未触碰真实业务数据（`QT-20260726-0006` 等既存阻塞记录原样未动）✅；BACKLOG.md BL-0108 状态已更新（①②已完成、③留 TODO 注明待业务决策）✅。
+
