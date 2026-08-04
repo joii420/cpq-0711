@@ -90,11 +90,21 @@ public class MaterialVersionUpgradeService {
     public static final Set<String> ACTIVE_STATUSES =
         Set.of("DRAFT", "SUBMITTED", "APPROVED", "REJECTED", "COSTING_REJECTED");
 
-    /** L3 守卫阈值默认值（元，E14-11）。系统参数表（api.md §6 settings）尚未建，暂硬编码，可配置化留待后续。 */
+    /**
+     * L3 守卫阈值**默认值**（元，E14-11）。
+     *
+     * <p>🔄 2026-08-04：系统参数表 {@code price_adjust_settings}（api.md §6.1）已随 V378 建立，
+     * 运行时阈值改从 {@link PriceAdjustSettingsService#getSubtotalGuardThreshold()} 读取（验收
+     * #70④「阈值可配且即时生效，不需要重启服务」）。本常量降级为**文档与兜底基准**：与 V378 的
+     * 种子值、{@link PriceAdjustSettingsService#FALLBACK_SUBTOTAL_GUARD_THRESHOLD} 三处同值，
+     * 保证配置化前后守卫默认行为逐字节不变。**不要再在业务分支里直接引用它做比较**。
+     */
     public static final BigDecimal DEFAULT_SUBTOTAL_GUARD_THRESHOLD = new BigDecimal("0.01");
 
     @Inject
     EntityManager em;
+    @Inject
+    PriceAdjustSettingsService settingsService;
     @Inject
     FormulaCalculator formulaCalculator;
     @Inject
@@ -148,10 +158,13 @@ public class MaterialVersionUpgradeService {
         BigDecimal oldRecomputed = CostingSubtotalUtil.extractUnitSubtotal(oldRecomputeJson);
         BigDecimal baseline = li.subtotal != null ? li.subtotal : BigDecimal.ZERO;
         BigDecimal diff = oldRecomputed.subtract(baseline).abs();
-        if (diff.compareTo(DEFAULT_SUBTOTAL_GUARD_THRESHOLD) > 0) {
+        // 🔒 每次升版都重新读库取阈值（不缓存）——验收 #70④ 要求 PUT /price-adjust/settings 后
+        // 「对同一个此前被拦的问题单重新走一次升版流程」即可放行，不重启服务。
+        BigDecimal guardThreshold = settingsService.getSubtotalGuardThreshold();
+        if (diff.compareTo(guardThreshold) > 0) {
             UpgradeResult r = UpgradeResult.failed("SUBTOTAL_MISMATCH", String.format(
                 "L3 口径守卫拦截：后端旧价重算 %s vs li.subtotal %s，差异 %s > 阈值 %s，不写回，可重试",
-                oldRecomputed, baseline, diff, DEFAULT_SUBTOTAL_GUARD_THRESHOLD));
+                oldRecomputed, baseline, diff, guardThreshold));
             r.diffValue = diff;
             r.dryRun = dryRun;
             r.oldSubtotal = li.subtotal;
