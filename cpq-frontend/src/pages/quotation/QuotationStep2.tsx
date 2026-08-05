@@ -1880,8 +1880,35 @@ export function getComponentSubtotalsFull(
   customerId?: string,
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
 ): Record<string, number> {
-  const subs = getComponentSubtotals(item, driverExpansions, customerId, globalVariableDefs);
-  if (!item.componentData) return subs;
+  return buildLineItemEvalContext(item, driverExpansions, customerId, globalVariableDefs).subtotals;
+}
+
+/** 报价行「完整口径」求值上下文：PASS1 组件小计 + PASS2 cross_tab 源行 store。 */
+export interface LineItemEvalContext {
+  /** PASS1 → PASS2 回填后的组件/列小计 map（= getComponentSubtotalsFull 的返回值）。 */
+  subtotals: Record<string, number>;
+  /** buildCrossTabRows 产出的 cross_tab 源行 store（componentId/componentCode/tabName 三键）。 */
+  crossTabRows: Record<string, Array<Record<string, any>>>;
+}
+
+/**
+ * 一次算出「与卡片渲染同值」所需的**全部**上下文（PASS1 小计 → PASS2 buildCrossTabRows），
+ * 供折扣 / 保存 / 导出这类消费点共用，避免各自重跑一遍 PASS1+PASS2。
+ *
+ * ⚠️ 为什么必须把 `crossTabRows` 一并交出去（2026-08-05 repair-0805 回归教训）：
+ * 只拿回填后的小计是不够的 —— 消费点若还要**逐行重算公式**（saveDraft 的 snapshotRows 落
+ * row_data 就是），必须把同一个 store 当 `crossTabRows` 喂回 computeAllFormulas /
+ * computeTabFormulasTree，否则该行所有 `cross_tab_ref` 跨页签聚合一律求值成 0，
+ * 把屏幕上非 0 的公式列**清零落库**（纯 PASS1 口径陷阱，见 getComponentSubtotals 头注）。
+ */
+export function buildLineItemEvalContext(
+  item: LineItem,
+  driverExpansions?: import('./useDriverExpansions').DriverExpansionMap,
+  customerId?: string,
+  globalVariableDefs?: Record<string, GlobalVariableDefinition>,
+): LineItemEvalContext {
+  const subtotals = getComponentSubtotals(item, driverExpansions, customerId, globalVariableDefs);
+  if (!item.componentData) return { subtotals, crossTabRows: {} };
   const partNo = item.productPartNo;
   // lookupExpansion 与 PASS1 / 渲染层同源同维度（lineItemId+partNo+componentId+customerId+driverPath+fieldsHash）
   const lookupExpansion = (comp: ComponentDataItem) => {
@@ -1890,11 +1917,15 @@ export function getComponentSubtotalsFull(
     const k = driverExpansionKey(lineItemId, partNo, comp.componentId, customerId, comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]));
     return driverExpansions[k];
   };
-  // try/catch 兜底：单据数据异常时保留 PASS1 结果，不崩折扣/保存链路。
+  // try/catch 兜底：单据数据异常时保留 PASS1 结果（buildCrossTabRows 是就地回填，
+  // 抛错前已回填的部分保留 —— 与改造前 getComponentSubtotalsFull 语义逐字一致），
+  // crossTabRows 退空对象（等价于改造前"根本没有 store"的旧行为），不崩折扣/保存链路。
   try {
-    buildCrossTabRows(item.componentData, subs, partNo, lookupExpansion, globalVariableDefs);
-  } catch { /* 回填失败 → 退回 PASS1 口径 */ }
-  return subs;
+    const { store } = buildCrossTabRows(item.componentData, subtotals, partNo, lookupExpansion, globalVariableDefs);
+    return { subtotals, crossTabRows: store };
+  } catch {
+    return { subtotals, crossTabRows: {} };
+  }
 }
 
 /**
