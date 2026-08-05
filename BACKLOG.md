@@ -116,6 +116,26 @@
 
 ## P1
 
+### [BL-0119] 「保存 payload 构建」链路零自动化覆盖 —— repair-0805 的自引回归就漏在这
+- **优先级**：P1（测试债；本次已被人工 A/B 逮到，下次未必）
+- **来源**：2026-08-05 repair-0805 交付验收，技术总监受控 A/B 发现自引回归后立项
+- **状态**：TODO　**登记日期**：2026-08-05
+- **背景**：repair-0805 交付了 **48 条单测全绿**，却没拦住一个把 `row_data` 公式列**静默写 0** 的回归。
+  原因：用例全在纯函数层（`computeAllFormulas` / `buildUniqueRowKeys` / `buildCrossTabRows`），
+  而被打坏的是 **`QuotationWizard.snapshotRows`（保存 payload 构建器）**——它是个**未导出的闭包**，
+  当前架构下无法单测，只能靠开浏览器点「下一步」再查库。
+- **回归形态（值得作为用例原型）**：`snapshotRows` 用「纯 PASS1 口径」（`crossTabRows=undefined`）求值，
+  `cross_tab_ref` 全算 0；修复前那些列因解析不到而**连 key 都没有**，`if (v != null)` 守卫顺带挡住了写入——
+  **一个 bug 在替另一个 bug 兜底**。阶段一让 key 出现，0 就写进去了。
+- **范围**：①把 `snapshotRows` 抽成可测的纯函数并导出；②补用例断言「含 `cross_tab_ref` 的组件，
+  `snapshotRows` 输出的公式列 == `buildCrossTabRows` 的 `resolvedRows` 同列值」；
+  ③考虑一条轻量 E2E/集成：开编辑页→点下一步→断言 `row_data` 逐格不变（no-op 不变性）。
+- **相关**：`snapshotRows` 与 `buildCrossTabRows.computeRows` 是**两份平行实现**，本次只做到「逐参对齐」未合并；
+  已知残留分歧：`computeRows` 对手动行也算公式，`snapshotRows` 对手动行整体跳过。根治需合并两份实现（另立项）。
+- **依赖**：无。**预估规模**：S（①②）/ M（含③）
+- **验收要点**：①故意把 `crossTabRows` 改回 `undefined` → 新用例必须失败（反向门禁）；②no-op 保存后 `row_data` 逐格不变。
+
+
 ### [BL-0113] 渲染侧**三条**组装路径的公式绑定键未「两端同迁」—— repair-0805 的同构隐患
 - **优先级**：P1（当前自洽未爆，但只要有人补一端就是 [[BL-0112]] 重演）
 - **来源**：2026-08-05 repair-0805 交付时，前端与测试工程师各自独立发现，技术总监逐行核实
