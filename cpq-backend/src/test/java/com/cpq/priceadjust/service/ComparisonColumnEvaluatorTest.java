@@ -229,4 +229,29 @@ class ComparisonColumnEvaluatorTest {
         ComparisonColumnEvaluator.ColumnEval eval = ComparisonColumnEvaluator.evaluate(null, sideWithProductTotal(100), col);
         assertEquals(ComparisonColumnEvaluator.MISSING, eval.status);
     }
+
+    // ── #48 补充：非零阈值下的 AMBER/RED 判据边界（技术总监指定用例，2026-08-04）──
+
+    @Test
+    void evaluate_48_threshold50_diffPositive30_isAmber() {
+        // costDiffThreshold=50，差额=+30（quote130-costing100）：0<=30<50 → AMBER
+        ComparisonColumnDef col = productTotalCol();
+        col.threshold = new BigDecimal("50");
+        ComparisonColumnEvaluator.ColumnEval eval = ComparisonColumnEvaluator.evaluate(
+            sideWithProductTotal(130), sideWithProductTotal(100), col);
+        assertEquals(ComparisonColumnEvaluator.AMBER, eval.status);
+        assertEquals(0, new BigDecimal("30").compareTo(eval.diff));
+    }
+
+    @Test
+    void evaluate_48_threshold0_diffNegative20_isRed() {
+        // costDiffThreshold=0（非零判据要求的另一端：阈值本身可以是0，但差额为负时仍必须是RED不是AMBER），
+        // 差额=-20（quote80-costing100）：diff<0 优先于阈值判定 → RED
+        ComparisonColumnDef col = productTotalCol();
+        col.threshold = BigDecimal.ZERO;
+        ComparisonColumnEvaluator.ColumnEval eval = ComparisonColumnEvaluator.evaluate(
+            sideWithProductTotal(80), sideWithProductTotal(100), col);
+        assertEquals(ComparisonColumnEvaluator.RED, eval.status);
+        assertEquals(0, new BigDecimal("-20").compareTo(eval.diff));
+    }
 }
