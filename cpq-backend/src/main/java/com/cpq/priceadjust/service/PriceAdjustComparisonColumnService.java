@@ -34,12 +34,15 @@ public class PriceAdjustComparisonColumnService {
 
     private static final Logger LOG = Logger.getLogger(PriceAdjustComparisonColumnService.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final ComparisonColumnDef DEFAULT_PRODUCT_TOTAL = defaultProductTotalColumn();
 
     @Inject EntityManager em;
     @Inject PriceAdjustBudgetService budgetService;
     @Inject ManagedExecutor managedExecutor;
 
+    /**
+     * 🔒 每次调用返回<b>新实例</b>，不做 static 常量共享——{@link #normalizeRemovable} 会就地改写
+     * 元素的 {@code removable}，若各请求共用同一个对象就是跨请求可变共享状态。
+     */
     private static ComparisonColumnDef defaultProductTotalColumn() {
         ComparisonColumnDef c = new ComparisonColumnDef();
         c.id = "col-default";
@@ -50,6 +53,26 @@ public class PriceAdjustComparisonColumnService {
         c.costingLabel = "产品总价";
         c.removable = false;
         return c;
+    }
+
+    /**
+     * 🔒 回显归一：{@code removable} 是<b>派生字段</b>，恒等于「不是 PRODUCT_TOTAL」，
+     * <b>不采信库里存的值</b>。
+     *
+     * <p>判定复用 {@link ComparisonColumnDef#isProductTotal()}——与
+     * {@link #doPutColumns} 的 400 守卫是<b>同一个方法</b>，「这一列能不能删」因此在系统里
+     * 只有一处定义。
+     *
+     * <p><b>不归一会怎样</b>：库里存过 {@code PRODUCT_TOTAL + removable=true} 的组合（自定义列
+     * 与默认列共存时尤甚），前端 {@code ComparisonColumnPanel.tsx:151} 据此渲染出删除按钮、
+     * {@code :136} 的「默认列」标签同时消失——<b>一个字段错，两处 UI 同向地把不可删的默认列
+     * 伪装成普通可删列</b>，用户点下去必然吃 400。
+     */
+    private static List<ComparisonColumnDef> normalizeRemovable(List<ComparisonColumnDef> columns) {
+        for (ComparisonColumnDef c : columns) {
+            if (c != null) c.removable = !c.isProductTotal();
+        }
+        return columns;
     }
 
     // -------------------------------------------------------------------------
@@ -121,7 +144,7 @@ public class PriceAdjustComparisonColumnService {
         ComparisonColumnConfig cfg = ComparisonColumnConfig.find(customerNo, templateSeriesId);
         if (cfg == null) {
             dto.configured = false;
-            dto.columns = List.of(DEFAULT_PRODUCT_TOTAL);
+            dto.columns = normalizeRemovable(new ArrayList<>(List.of(defaultProductTotalColumn())));
             return dto;
         }
         dto.configured = true;
@@ -133,11 +156,12 @@ public class PriceAdjustComparisonColumnService {
         try {
             ComparisonColumnDef[] arr = MAPPER.readValue(json, ComparisonColumnDef[].class);
             List<ComparisonColumnDef> out = new ArrayList<>(List.of(arr));
-            if (out.isEmpty()) out.add(DEFAULT_PRODUCT_TOTAL);
-            return out;
+            if (out.isEmpty()) out.add(defaultProductTotalColumn());
+            // 🔒 归一必须在这里（唯一读出口），不能只在 getColumns 做——库里存的 removable 不可信
+            return normalizeRemovable(out);
         } catch (Exception e) {
             LOG.warnf("[comparison-columns] parse失败 customer/series 配置损坏，降级为默认列: %s", e.getMessage());
-            return List.of(DEFAULT_PRODUCT_TOTAL);
+            return normalizeRemovable(new ArrayList<>(List.of(defaultProductTotalColumn())));
         }
     }
 
@@ -178,7 +202,10 @@ public class PriceAdjustComparisonColumnService {
             throw new BusinessException(400, "columns 不能为空");
         }
         // 🔒 默认「产品总价」列不可删除（验收 #24③）：保存内容里必须仍含至少一条 PRODUCT_TOTAL 列。
-        boolean hasProductTotal = columns.stream().anyMatch(c -> "PRODUCT_TOTAL".equals(c.kind));
+        // 🔒 判定走 ComparisonColumnDef#isProductTotal()——与 normalizeRemovable 的回显判定
+        //    共用同一个方法。原写法在这里另抄了一份 "PRODUCT_TOTAL".equals(c.kind) 字面量，
+        //    与回显各判各的，正是「守卫拦得住、回显却说可删」的成因。
+        boolean hasProductTotal = columns.stream().anyMatch(ComparisonColumnDef::isProductTotal);
         if (!hasProductTotal) {
             throw new BusinessException(400, "比对列必须保留一条 PRODUCT_TOTAL（产品总价）列，不可删除");
         }

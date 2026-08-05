@@ -254,8 +254,27 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
       setLoading(false);
       return;
     }
-    // QUOTE frozen 模式：用 quoteCardStructure 离线组装，不发 /templates 请求
-    if (frozen && quoteCardStructure) {
+    // QUOTE：优先用 quoteCardStructure 离线组装（不发 /templates 请求）。
+    //
+    // 🔒 C3（2026-08-04，#42③ 翻案返修）：判据从 `frozen &&` 放宽为**编辑页同款** canUseStruct
+    //    （镜像 QuotationWizard.tsx:468-481，同一判据 + 同一组装函数）。
+    //    背景：元素角色字段（elementCodeField/elementPriceField/elementCurrencyField）等 tab 级
+    //    结构性字段只冻进 quotation_view_structure，模板 components_snapshot 里没有；详情页此前只在
+    //    frozen 模式走结构、live 模式走 enrichComponentData(模板快照) → activeComponent.elementPriceField
+    //    恒 undefined → 单价列锁定徽标对**所有行（含 driver 行）**都不出现。AP-50 要的"双端一致"
+    //    此前只在代码层面成立、生产上并未兑现。放宽后详情页与编辑页**取源同源**，结构才是这张单的
+    //    权威（quotation_view_structure 创建即冻、永不重建；模板快照会随 republish 漂移 —— AP-39）。
+    //
+    // 🔒 `frozen ||` 刻意保留：核价工作台（CostingReviewPage 传 frozen DTO）今天不看 templateId
+    //    就走结构，保留该短路让那条路径**逐字节不变**（其设计目标之一是"零 live /templates 请求"，
+    //    若 frozen DTO 的 templateId 与行不匹配而落到 enrich 分支就会破坏该保证）。
+    //
+    // 无结构 / templateId 对不上（存量单）→ canUseStruct 为假 → 原样回退下面的 enrich，零影响。
+    const canUseStruct = !!quoteCardStructure
+      && Array.isArray(quoteCardStructure.tabs) && quoteCardStructure.tabs.length > 0
+      && (!quoteCardStructure.templateId
+          || String(quoteCardStructure.templateId) === String(lineItem.templateId));
+    if (quoteCardStructure && (frozen || canUseStruct)) {
       const built = buildComponentDataFromStructure(quoteCardStructure, lineItem.componentData || []);
       setComponents(built);
       setLoading(false);
@@ -868,11 +887,15 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                                 // 与编辑页 QuotationStep2.tsx 对齐同一读取口径）。🚨 R1：详情页本来就
                                 // readonly=true，priceLocked 判定不受 readonly 影响，这里必须照样透传，
                                 // 不能因为"反正详情页已经只读了"就省略——版本徽标只有这里才会挂上去。
-                                // 🚨 联调修复（2026-08-02）：标记挂在 driverRow（quote_card_values 快照的
-                                // baseRows[].driverRow，与 _元素/_料号 等系统列同级），不在 rawRow（=
-                                // row_data，用户可编辑值持久化）上——原写法恒读不到标记，徽标永不出现。
-                                priceLocked: !!(driverRow as any)?.__priceLocked,
-                                priceVersionNo: (driverRow as any)?.__priceVersion,
+                                // 🚨 标记有【两个落点，两个都要读】（2026-08-04 验收返修，与编辑页
+                                // QuotationStep2.tsx 逐字同款）：driver 行在 driverRow（quoteCardValues
+                                // 快照 baseRows[].driverRow，与 _元素/_料号 系统列同级）；手动行在 rawRow
+                                // （= row_data，PriceReconciler#reconcileRows 的第二个循环按"元素∈调价
+                                // 清单"写入）。手动行 rowAt().expIndex 恒 -1 → driverRow 恒 undefined，
+                                // 只读 driverRow 会让手动行永远锁不住（2026-08-02 那版"不影响非驱动行"
+                                // 的判断已被实测证伪）。故 driverRow 优先、rawRow 兜底。
+                                priceLocked: !!((driverRow as any)?.__priceLocked ?? (rawRow as any)?.__priceLocked),
+                                priceVersionNo: (driverRow as any)?.__priceVersion ?? (rawRow as any)?.__priceVersion,
                               };
                               const isFirstField = activeComp.fields[0] === field;
                               // BOM 树激活时缩进已移到系统「料号」列，字段首列不再重复缩进（避免双重缩进）。

@@ -87,10 +87,42 @@ class PriceAdjustScheduledScanServiceTest {
         assertNotNull(svc.computeSlotIfDue(s, now));
     }
 
+    /**
+     * ⚠️ <b>2026-08-04 改写：本用例原先断言的是 bug 本身</b>。
+     *
+     * <p>原文是 {@code executeTime=09:00, now=09:01 → assertNull}，即「过了那一分钟就不再执行」，
+     * 与 {@code testcases.md:116} 的补跑要求（"把 executeTime 设为过去 5 分钟前……下一分钟扫描
+     * 应立即补上该时刻的版本"）直接冲突。它把「精确分钟相等」这个错误判据锁死在测试里，
+     * 是补跑缺失能长期不被发现的原因之一——10 条测试全绿，其中一条绿在错的地方。
+     *
+     * <p>现改为断言正确语义：执行时刻已过 ⟹ <b>补跑</b>，且返回的 slot 是<b>原定时刻</b>
+     * （09:00），不是补跑发生的当前时刻（09:01）——{@code testcases.md:121} 专门盯这一点，
+     * 因为 slot 同时是 {@code UNIQUE(customer_no, scheduled_slot)} 幂等键。
+     */
     @Test
-    void computeSlotIfDue_daily_wrongMinute_notDue() {
+    void computeSlotIfDue_daily_afterExecuteTime_catchesUpWithOriginalSlot() {
         CustomerPriceAdjustStrategy s = strategy("DAILY", null, null, null);
         var now = java.time.OffsetDateTime.of(2026, 8, 2, 9, 1, 0, 0, java.time.ZoneOffset.UTC);
+        var slot = svc.computeSlotIfDue(s, now);
+        assertNotNull(slot, "执行时刻已过且当天尚未生成 → 必须补跑");
+        assertEquals(java.time.OffsetDateTime.of(2026, 8, 2, 9, 0, 0, 0, java.time.ZoneOffset.UTC), slot,
+                "slot 必须是原定时刻 09:00，不是补跑发生的 09:01——否则每分钟算出不同幂等键，唯一约束拦不住");
+    }
+
+    /** 补跑跨越数小时后仍指向同一个原定 slot（幂等键在一整天内恒定）。 */
+    @Test
+    void computeSlotIfDue_daily_hoursLate_stillSameOriginalSlot() {
+        CustomerPriceAdjustStrategy s = strategy("DAILY", null, null, null);
+        var now = java.time.OffsetDateTime.of(2026, 8, 2, 23, 47, 0, 0, java.time.ZoneOffset.UTC);
+        assertEquals(java.time.OffsetDateTime.of(2026, 8, 2, 9, 0, 0, 0, java.time.ZoneOffset.UTC),
+                svc.computeSlotIfDue(s, now));
+    }
+
+    /** 真正的「尚未到点」：执行时刻之前不得生成（补跑不能反向提前）。 */
+    @Test
+    void computeSlotIfDue_daily_beforeExecuteTime_notDue() {
+        CustomerPriceAdjustStrategy s = strategy("DAILY", null, null, null);
+        var now = java.time.OffsetDateTime.of(2026, 8, 2, 8, 59, 0, 0, java.time.ZoneOffset.UTC);
         assertNull(svc.computeSlotIfDue(s, now));
     }
 
@@ -100,5 +132,9 @@ class PriceAdjustScheduledScanServiceTest {
         // 2026-08-02 是周日
         var now = java.time.OffsetDateTime.of(2026, 8, 2, 9, 0, 0, 0, java.time.ZoneOffset.UTC);
         assertNull(svc.computeSlotIfDue(s, now));
+        // 🔒 2026-08-04 补：补跑判据【不得越过】周期判定——今天本就不该执行，
+        //    哪怕 now 远超 executeTime 也必须不生成（否则补跑会把非执行日也补出版本）。
+        assertNull(svc.computeSlotIfDue(s,
+                java.time.OffsetDateTime.of(2026, 8, 2, 23, 59, 0, 0, java.time.ZoneOffset.UTC)));
     }
 }

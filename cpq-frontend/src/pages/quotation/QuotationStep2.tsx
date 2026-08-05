@@ -3449,15 +3449,22 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           // Phase 1 手动行标记(供后续 Task 7 ComponentCell 消费)
                           isManualRow: isManualRowFlag,
                           // task-0729 跨屏·元素单价列只读态（fronttask §8 / api.md §4.3）：
-                          // 纯读后端在该行 quoteCardValues 上追加的标记，不在前端重新判定。
-                          // 🚨 联调修复（2026-08-02）：标记挂在 driverRow 上（quote_card_values.tabs[].
-                          // baseRows[].driverRow.__priceLocked，与 _元素/_料号 等系统列同级），不在
-                          // row（= quotation_line_component_data.row_data，用户可编辑值持久化）上。
-                          // 之前误读 row.__priceLocked 导致标记恒 undefined、徽标永不出现。driverRow 与
-                          // row 同源于同一 ra.expIndex（见上方 effectiveRows 构造），行位置对齐；
-                          // 非 driver 行 driverRow 恒 undefined，可选链兜底 false，不影响非驱动行为。
-                          priceLocked: !!(driverRow as any)?.__priceLocked,
-                          priceVersionNo: (driverRow as any)?.__priceVersion,
+                          // 纯读后端在该行上追加的标记，不在前端重新判定。
+                          // 🚨 标记有【两个落点，两个都要读】（2026-08-04 验收返修）：
+                          //   · driver 行 → PriceReconciler 写进 snapshot_rows 的 driverRow，
+                          //     经 quoteCardValues.tabs[].baseRows[].driverRow 到这里（与 _元素/_料号
+                          //     等系统列同级），即下面的 driverRow；
+                          //   · 手动行 → 同一次归位的第二个循环（PriceReconciler#reconcileRows，条件
+                          //     只看"元素∈调价清单"）写进 quotation_line_component_data.row_data 的
+                          //     条目，即下面的 row。
+                          // 手动行 rowAt().expIndex 恒 -1（manualRows.ts）→ driverRow 恒 undefined，
+                          // 只读 driverRow 时 priceLocked 恒 false → 手动行永远锁不住。2026-08-02 那版
+                          // 注释里"非 driver 行 driverRow 恒 undefined…不影响非驱动行为"的判断【已被实测
+                          // 证伪】：后端对清单内元素的手动行确实是锁的，前端漏读才是 bug 本身。
+                          // 无 driver 的页签（useDriver=false，expIndex 同样 -1）也靠 row 这一路取到标记。
+                          // 取值口径：driverRow 优先、row 兜底；两个键由后端成对写入/成对不写，不会分叉。
+                          priceLocked: !!((driverRow as any)?.__priceLocked ?? (row as any)?.__priceLocked),
+                          priceVersionNo: (driverRow as any)?.__priceVersion ?? (row as any)?.__priceVersion,
                         };
                         const cellInner = (
                           <ComponentCell

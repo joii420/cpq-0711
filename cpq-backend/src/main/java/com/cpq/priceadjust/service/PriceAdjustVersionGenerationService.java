@@ -192,6 +192,14 @@ public class PriceAdjustVersionGenerationService {
             pending.status = ElementPriceVersion.STATUS_SUPERSEDED;
             pending.persist();
             MaterialPriceUpdateJobItem.staleAllUnfinishedByJobIds(staleJobIds);
+            // 🔒 验收 #7（2026-08-01 返修「裁定死不再留给实现选择」）：旧版名下【待处理】审核
+            //    一律置 VOIDED。漏这步则旧版的未决审核永久孤悬——既不进新版待办池，也不被标失效，
+            //    财务侧看不到它、也不知道它已过期。
+            //    只动 PENDING：APPROVED/REJECTED 是既成事实不回滚（裁决 27），
+            //    material_price_version_ref 指针同样不推进。
+            int voidedReviews = MaterialPriceReview.voidPendingByVersion(pending.id);
+            LOG.infof("[price-adjust-version] customer=%s 旧版 %s 作废：job_item 置 STALE %d 批，"
+                    + "待处理审核置 VOIDED %d 条", customerNo, pending.versionNo, staleJobIds.size(), voidedReviews);
         }
 
         String versionNo = nextVersionNo(customerNo, baseDate);
