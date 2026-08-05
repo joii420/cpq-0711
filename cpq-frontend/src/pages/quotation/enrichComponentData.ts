@@ -164,6 +164,9 @@ export async function enrichComponentData(
       }));
 
       const formulas: ComponentFormula[] = (snapshotComp.formulas || []).map((fm: any) => ({
+        // BL-0098 / repair-0805：公式稳定 id —— 字段侧 formula_id 的查找目标。
+        // 漏搬会让 resolveFormula 的 id 分支恒不命中（且刻意不回落）→ 整列静默显示 '—'。
+        id: fm.id ?? fm.formulaId,
         name: fm.name || '',
         expression: Array.isArray(fm.expression) ? fm.expression : [],
         result_type: fm.result_type,
@@ -295,6 +298,9 @@ export function buildComponentDataFromStructure(
     }));
 
     const formulas: ComponentFormula[] = (tab.formulas || []).map((fm: any) => ({
+      // BL-0098 / repair-0805：公式稳定 id —— 冻结结构里实为 snake 的 `id`，
+      // 兼容写法同时认 camel `formulaId`。与上面模板快照路径必须一起搬（AP-41 不对称故障）。
+      id: fm.id ?? fm.formulaId,
       name: fm.name || '',
       expression: Array.isArray(fm.expression) ? fm.expression : [],
       result_type: fm.result_type,

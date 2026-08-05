@@ -129,6 +129,14 @@ export interface ComponentField {
 }
 
 export interface ComponentFormula {
+  /**
+   * BL-0098 公式稳定 id —— 字段 → 公式的解析主键（`field.formula_id` / 条件公式的
+   * `formula_id` / `default_formula_id` 都按它查找）。
+   * 🚨 组装渲染模型时（enrichComponentData 两条路径）必须原样搬过来，丢了会让所有按 id
+   * 绑定的 FORMULA 字段解析恒不命中 → 该字段整个不进计算列表 → 那些列静默显示 '—'
+   * （repair-0805 / BL-0112 就是这么炸的）。
+   */
+  id?: string;
   name: string;
   expression: any[];
   result_type?: string;
@@ -378,7 +386,7 @@ function resolveFormula(
   // -1. BL-0098 终态：field.formula_id 绑定（最高优先，与后端 FormulaCalculator.resolveFormula 镜像）。
   //     绑了但找不到 → 返 undefined 不 fallback，避免公式被删后静默换成别的公式算。
   if (field?.formula_id) {
-    return comp.formulas.find(f => (f as any).id === field.formula_id);
+    return comp.formulas.find(f => f.id === field.formula_id);
   }
 
   // 0. (2026-05-20) field.formula_name 显式绑定 — 组件管理 UI 通过 Select 写入此字段, 优先级最高
@@ -492,7 +500,7 @@ function computeAllFormulas(
       // BL-0098：条件公式的规则/默认分支也按 formula_id 优先解析（与后端 condRefFormula 镜像）。
       // 绑了 id 查不到 → undefined，不回落名字（配置漂移不能静默换分支）。
       const byRef = (id?: string, name?: string) =>
-        id ? comp.formulas!.find(x => (x as any).id === id)
+        id ? comp.formulas!.find(x => x.id === id)
            : (name ? comp.formulas!.find(x => x.name === name) : undefined);
       const rules = cf.rules
         .map((r: any) => ({ when: r.when as CondTree, formula: byRef(r.formula_id, r.formula)! }))
@@ -796,7 +804,7 @@ function collectFormulaFieldDefsForTree(comp: ComponentDataItem): FormulaFieldDe
     const cf = (f as any).conditional_formula;
     if (cf && Array.isArray(cf.rules)) {
       const byRef = (id?: string, refName?: string) =>
-        id ? comp.formulas!.find(x => (x as any).id === id)
+        id ? comp.formulas!.find(x => x.id === id)
            : (refName ? comp.formulas!.find(x => x.name === refName) : undefined);
       const rules = cf.rules
         .map((r: any) => ({ when: r.when as CondTree, formula: byRef(r.formula_id, r.formula)! }))
