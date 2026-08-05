@@ -7,6 +7,7 @@ import com.cpq.priceadjust.entity.ComparisonColumnConfig;
 import com.cpq.priceadjust.entity.CustomerPriceAdjustMaterial;
 import com.cpq.priceadjust.entity.CustomerPriceAdjustStrategy;
 import com.cpq.priceadjust.entity.ElementPriceVersion;
+import com.cpq.priceadjust.entity.ElementPriceVersionItem;
 import com.cpq.priceadjust.entity.MaterialPriceReview;
 import com.cpq.priceadjust.entity.MaterialPriceReviewColumn;
 import com.cpq.priceadjust.entity.MaterialPriceVersionRef;
@@ -25,6 +26,7 @@ import org.jboss.logging.Logger;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -159,11 +161,31 @@ public class PriceAdjustBudgetService {
             return false;
         }
 
-        // 进池：建 review 行 + 走预算计算（B4.2 + B4.3）。
-        // 🔒 find-or-create：uq_mpr_version_material UNIQUE(version_id, material_no) 决定这里必须
-        // 幂等——recomputeBudget（B5 §2.6）会用同一 versionId+materialNo 重跑本方法，若无条件 new+
-        // persist 会撞唯一约束；命中既有行时原地刷新字段，不新建第二条。
+        // 🔒 find-or-create 的读取部分前置到这里：裁决 39 判定也要用它（"已在池中的不得被踢出池"）。
+        // uq_mpr_version_material UNIQUE(version_id, material_no) 决定进池必须幂等——recomputeBudget
+        // （B5 §2.6）会用同一 versionId+materialNo 重跑本方法，若无条件 new+persist 会撞唯一约束；
+        // 命中既有行时原地刷新字段，不新建第二条。
         MaterialPriceReview review = MaterialPriceReview.findByVersionAndMaterial(versionId, materialNo);
+
+        // 🔒 裁决 39（锚点已按 §11.5.5 补丁 1 改判）：相关元素价与【该料号版本指针**当前指向**的
+        // 那一版】逐个相同 → 无事可审 → 不进待办池，指针照常推进（版本明细里仍有记录可查）。
+        // 三个边界，缺一个都会出事：
+        //  · previousVersionId == null（该料号从无指针，如首次纳入策略范围）→ 没有可比基准，
+        //    必须进池，绝不能把"没得比"当成"无变化"；
+        //  · basis == null（无活单但曾被驳回，走 §11.5.5 补丁 2 的反例外）→ 没有依据单可扫相关元素，
+        //    且该分支存在的意义正是"驳回决定不得被静默撤销"，此处跳过+推进指针会直接违反补丁 2；
+        //  · review != null（本版该料号已在池中，本次是 B5 单条重算 / B4.4 配置变更重算的调用）→
+        //    只刷新预算，不把已在池的料号踢出池并推进指针，否则 markPendingForRecompute 刚标成
+        //    QUEUED 的行会永久悬停在 QUEUED（既不 READY 也不消失）。
+        if (review == null && basis != null && previousVersionId != null
+                && !hasRelevantPriceChange(versionId, previousVersionId, basis.lineItemId)) {
+            advancePointer(customerNo, materialNo, versionId);
+            LOG.infof("[price-adjust-budget] versionId=%s material=%s 相关元素价与指针版本 %s 逐个相同，"
+                + "不进待办池、指针照常推进（裁决 39）", versionId, materialNo, previousVersionId);
+            return false;
+        }
+
+        // 进池：建 review 行 + 走预算计算（B4.2 + B4.3）。
         if (review == null) {
             review = new MaterialPriceReview();
             review.versionId = versionId;
@@ -197,6 +219,78 @@ public class PriceAdjustBudgetService {
             LOG.errorf(e, "[price-adjust-budget] review=%s material=%s 预算计算失败", review.id, materialNo);
         }
         return true;
+    }
+
+    /**
+     * 裁决 39（§11.5.5 补丁 1）：该料号的「相关元素」在 {@code versionId} 与
+     * {@code previousVersionId}（= 该料号版本指针**当前指向**的那一版，<b>不是</b>"上一个 V 版本"）
+     * 两版里是否存在差异。
+     *
+     * <p><b>「相关元素」的来源</b>：{@link MaterialVersionUpgradeService#collectMaterialElementCodes}
+     * —— 即 S3a/S3b 真正会去改写价格的那批行上扫出来的元素编码全集，与升版执行同一口径。
+     * 🔒 不另写一套：两套口径一旦分岔，"预算算的元素"与"准入判定的元素"就不是同一批，
+     * 比现在"全都进池"更难查。
+     *
+     * <p><b>比什么</b>：{@code current_price} + {@code currency} —— 正是 S1
+     * （{@code loadVersionPrices}）读出、S3a/S3b 写进行里的两个值。{@code price_unit} 全链路
+     * 不参与写回故不比；{@code change_rate}/{@code previous_price} 是派生展示列，更不比。
+     * 两版都为 NULL（彻底无价）判为相同 —— 升版对这种元素本就一行都不动。
+     * 金额用 {@code compareTo} 判等，不用 {@code equals}（5450 与 5450.000000 必须视为同价）。
+     *
+     * <p><b>保守方向（重要）</b>：任何"证明不了没变"的情形一律判为**有变动 → 照常进池**，包括
+     * 相关元素集合为空（扫不出元素）、某元素只在其中一版有 item。宁可多进池让财务点一下，
+     * 也不能静默跳过 + 推进指针 —— 后者等于未经审核就接受了本期价。
+     *
+     * @return {@code true} = 有差异（应进池）；{@code false} = 逐个相同（无事可审）
+     */
+    boolean hasRelevantPriceChange(UUID versionId, UUID previousVersionId, UUID basisLineItemId) {
+        Set<String> relevant = materialVersionUpgradeService.collectMaterialElementCodes(basisLineItemId);
+        if (relevant.isEmpty()) {
+            // 扫不出相关元素 ≠ 该料号与元素价无关（可能是页签从未物化 / 冻结结构缺失）——
+            // 证明不了"没变"，保守判为有变动，维持本次改动前的行为（照常进池）。
+            LOG.debugf("[price-adjust-budget] lineItem=%s 未扫出任何相关元素，保守判为有变动（照常进池）",
+                basisLineItemId);
+            return true;
+        }
+        Map<String, EffectivePrice> cur = loadVersionEffectivePrices(versionId);
+        Map<String, EffectivePrice> prev = loadVersionEffectivePrices(previousVersionId);
+
+        for (String code : relevant) {
+            EffectivePrice a = cur.get(code);
+            EffectivePrice b = prev.get(code);
+            BigDecimal pa = a != null ? a.price : null;
+            BigDecimal pb = b != null ? b.price : null;
+            if (pa == null ? pb != null : (pb == null || pa.compareTo(pb) != 0)) {
+                LOG.debugf("[price-adjust-budget] 元素 %s 价格有变动：%s → %s（version %s → %s）",
+                    code, pb, pa, previousVersionId, versionId);
+                return true;
+            }
+            String ca = a != null ? a.currency : null;
+            String cb = b != null ? b.currency : null;
+            if (!java.util.Objects.equals(ca, cb)) {
+                LOG.debugf("[price-adjust-budget] 元素 %s 币种有变动：%s → %s（version %s → %s）",
+                    code, cb, ca, previousVersionId, versionId);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 版本明细里一个元素的「生效价 + 币种」（判等用；{@code price} 可为 null = 彻底无价）。 */
+    private record EffectivePrice(BigDecimal price, String currency) { }
+
+    /**
+     * 读一版全部元素的生效价 + 币种。🔒 与 {@code MaterialVersionUpgradeService#loadVersionPrices}
+     * 不同，本方法**保留 {@code current_price IS NULL}（彻底无价）的元素**：判等时"两版都无价"
+     * 要能判为相同，而"一版有价、另一版无价"必须判为不同——若沿用那个过滤版方法，后者会因
+     * 两边都 miss 被误判为相同，故不能复用。
+     */
+    private Map<String, EffectivePrice> loadVersionEffectivePrices(UUID versionId) {
+        Map<String, EffectivePrice> out = new java.util.HashMap<>();
+        for (ElementPriceVersionItem it : ElementPriceVersionItem.listByVersion(versionId)) {
+            out.put(it.elementCode, new EffectivePrice(it.currentPrice, it.currency));
+        }
+        return out;
     }
 
     private void advancePointer(String customerNo, String materialNo, UUID versionId) {

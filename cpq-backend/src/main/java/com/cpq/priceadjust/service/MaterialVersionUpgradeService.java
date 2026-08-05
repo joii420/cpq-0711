@@ -23,6 +23,7 @@ import org.jboss.logging.Logger;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -413,16 +414,13 @@ public class MaterialVersionUpgradeService {
             JsonNode driverRowNode = rowNode.path("driverRow");
             if (!(driverRowNode instanceof ObjectNode)) continue;
             ObjectNode driverRow = (ObjectNode) driverRowNode;
-            JsonNode basicDataValues = rowNode.path("basicDataValues");
 
-            // 元素编码可能来自 BASIC_DATA（如 COMP-0049「元素代码」）或 INPUT_TEXT+default_source
-            // （如 mc_view「元素」，SQL 原始列带 _ 前缀，字段名不带）——统一走既有字段解析器，
-            // 不自己再拼一套 default_source 解析（对齐 S2 "运行期禁止正则解析 SQL" 的精神）。
-            Map<String, Object> resolved = formulaCalculator.resolveRowByFieldName(
-                fieldsNode, driverRow, basicDataValues, null, null);
-            Object elementCodeVal = resolved.get(pbc.elementCodeField);
+            // 🔒 元素编码解析已抽成 resolveDriverRowElementCode —— 与裁决 39 的「相关元素」收集
+            // （{@link #collectMaterialElementCodes}）共用同一份实现，杜绝"预算算的元素"与
+            // "准入判定的元素"不是同一批。
+            String elementCodeVal = resolveDriverRowElementCode(fieldsNode, rowNode, pbc.elementCodeField);
             if (elementCodeVal == null) continue; // 该行解析不出元素编码，不动
-            ElementPrice ep = versionPrices.get(elementCodeVal.toString());
+            ElementPrice ep = versionPrices.get(elementCodeVal);
             if (ep == null) continue; // 元素不在本版明细里（含无价/不在策略清单），不动
 
             // 只改价格/货币两个键；价格列/货币列在价格策略 SQL 契约里就是"别名逐字=字段名、不加前缀"
@@ -444,9 +442,10 @@ public class MaterialVersionUpgradeService {
             // （"手动行恒在尾部"只是前端纪律不是结构保证，AP-54 同族）。
             boolean isManual = "manual".equals(dataRow.path("_origin").asText(""));
 
-            JsonNode ecNode = dataRow.get(pbc.elementCodeField);
-            if (ecNode == null || ecNode.isNull()) continue; // 对不上就不动（S3b/S4b 共同前提，验收 #35）
-            ElementPrice ep = versionPrices.get(ecNode.asText());
+            // 🔒 同上，解析抽成 resolveDataRowElementCode，与 collectMaterialElementCodes 共用。
+            String elementCodeVal = resolveDataRowElementCode(dataRow, pbc.elementCodeField);
+            if (elementCodeVal == null) continue; // 对不上就不动（S3b/S4b 共同前提，验收 #35）
+            ElementPrice ep = versionPrices.get(elementCodeVal);
             if (ep == null) continue; // 元素不在本版明细里，不动——既不改价也不清价
 
             if (isManual) {
@@ -493,6 +492,96 @@ public class MaterialVersionUpgradeService {
             return new RowUpdateOutcome(changed, true); // row_version 不匹配 → 冲突
         }
         return new RowUpdateOutcome(changed, false);
+    }
+
+    /**
+     * S3a 用的元素编码解析（driver 行）。{@code snapshot_rows} 的一条 row 形如
+     * {@code {driverRow:{...}, basicDataValues:{...}}}；元素编码可能来自 BASIC_DATA
+     * （如 COMP-0049「元素代码」）或 INPUT_TEXT+default_source（如 mc_view「元素」，SQL 原始列带
+     * {@code _} 前缀而字段名不带）—— 统一走既有字段解析器，不自己再拼一套 default_source 解析
+     * （对齐 S2「运行期禁止正则解析 SQL」的精神）。
+     *
+     * <p>🔒 抽成独立方法的唯一目的：让 {@link #collectMaterialElementCodes}（裁决 39 的「相关元素」
+     * 收集）与 {@link #upgradeComponentRows}（真正改写价格的那批行）**共用同一份口径**。
+     *
+     * @return 解析不出（无 driverRow / 字段解析为 null）返回 {@code null}
+     */
+    String resolveDriverRowElementCode(JsonNode fieldsNode, JsonNode rowNode, String elementCodeField) {
+        JsonNode driverRowNode = rowNode.path("driverRow");
+        if (!(driverRowNode instanceof ObjectNode)) return null;
+        Map<String, Object> resolved = formulaCalculator.resolveRowByFieldName(
+            fieldsNode, driverRowNode, rowNode.path("basicDataValues"), null, null);
+        Object v = resolved.get(elementCodeField);
+        return v == null ? null : v.toString();
+    }
+
+    /**
+     * S3b/S4b 用的元素编码解析（{@code row_data} 行）。row_data 无论手动行还是驱动行 autosave
+     * 快照都是「字段名→值」平铺结构（{@code RowDataMaterializer} 产物），直接按字段名取键，
+     * 不需要 {@code resolveRowByFieldName} 那层间接寻址。
+     *
+     * <p>🔒 与 {@link #resolveDriverRowElementCode} 同理，供 {@link #collectMaterialElementCodes} 共用。
+     */
+    String resolveDataRowElementCode(JsonNode dataRow, String elementCodeField) {
+        if (!(dataRow instanceof ObjectNode)) return null;
+        JsonNode ec = dataRow.get(elementCodeField);
+        return (ec == null || ec.isNull()) ? null : ec.asText();
+    }
+
+    /**
+     * 🔒 <b>裁决 39 / §11.5.5 补丁 1 支撑</b>：收集该 line item 上「价格承载组件」里实际出现的
+     * 全部元素编码 —— 即该料号的<b>「相关元素」</b>集合。
+     *
+     * <p><b>为什么是这个定义</b>：升版真正会改到该料号的，就是 S3a（{@code snapshot_rows}.driverRow）
+     * 与 S3b/S4b（{@code row_data}）里能解析出元素编码、且该编码命中版本明细的那些行
+     * （见 {@link #upgradeComponentRows}）。因此"这个料号用到哪些元素" = 这两处扫出来的编码全集。
+     * 本方法与 {@code upgradeComponentRows} 走**完全相同的三步**（冻结结构 →
+     * {@link #locatePriceBearingComponents} → 两个 {@code resolveXxxElementCode}），只是不改写、
+     * 只收集，不存在第二套口径。
+     *
+     * <p>⚠️ 返回空集只代表"<b>扫不出</b>元素"（该单无价格承载组件 / 页签从未物化过 component_data /
+     * 冻结结构缺失），**不代表"该料号与元素价无关"**。调用方必须按「证明不了没变」保守处理
+     * （见 {@code PriceAdjustBudgetService#hasRelevantPriceChange}）。
+     */
+    public Set<String> collectMaterialElementCodes(UUID lineItemId) {
+        Set<String> out = new LinkedHashSet<>();
+        if (lineItemId == null) return out;
+        QuotationLineItem li = QuotationLineItem.findById(lineItemId);
+        if (li == null) return out;
+
+        List<UpgradeResult.PriceBearingComponent> priceBearing =
+            locatePriceBearingComponents(loadFrozenQuoteTabsNative(li.quotationId));
+        for (UpgradeResult.PriceBearingComponent pbc : priceBearing) {
+            UUID componentId;
+            try {
+                componentId = UUID.fromString(pbc.componentId);
+            } catch (IllegalArgumentException e) {
+                continue;
+            }
+            @SuppressWarnings("unchecked")
+            List<Object[]> rows = em.createNativeQuery(
+                    "SELECT snapshot_rows, row_data FROM quotation_line_component_data " +
+                    "WHERE line_item_id = :lid AND component_id = :cid")
+                .setParameter("lid", lineItemId)
+                .setParameter("cid", componentId)
+                .getResultList();
+            if (rows.isEmpty()) continue; // 该页签从未物化过 component_data，无行可扫
+
+            Object[] row = rows.get(0);
+            ArrayNode snapshotRows = parseArray((String) row[0]);
+            ArrayNode rowData = parseArray((String) row[1]);
+            JsonNode fieldsNode = loadComponentFields(componentId);
+
+            for (JsonNode rowNode : snapshotRows) {
+                String ec = resolveDriverRowElementCode(fieldsNode, rowNode, pbc.elementCodeField);
+                if (ec != null && !ec.isBlank()) out.add(ec);
+            }
+            for (JsonNode rd : rowData) {
+                String ec = resolveDataRowElementCode(rd, pbc.elementCodeField);
+                if (ec != null && !ec.isBlank()) out.add(ec);
+            }
+        }
+        return out;
     }
 
     private JsonNode loadComponentFields(UUID componentId) {
