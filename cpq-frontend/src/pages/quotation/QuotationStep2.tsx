@@ -20,7 +20,7 @@ import type { CellContext } from './components/ComponentCell';
 import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
 import { quotationService } from '../../services/quotationService';
 import type { CardStructure, CardValues } from '../../services/quotationService';
-import { computeRowKey, buildUniqueRowKeys, getByKeyWithLegacyFallback } from './useCardSnapshots';
+import { computeRowKey, buildUniqueRowKeys, buildLegacyRowKeySets, getByKeyWithLegacyFallback } from './useCardSnapshots';
 import { rowFingerprint, keepRow, type Tombstone } from './deletedRows';
 import { applyUnitConversion, factorFor } from '../../utils/unitConversion';
 import { formatNumber } from '../../utils/formatNumber';
@@ -129,6 +129,14 @@ export interface ComponentField {
 }
 
 export interface ComponentFormula {
+  /**
+   * BL-0098 公式稳定 id —— 字段 → 公式的解析主键（`field.formula_id` / 条件公式的
+   * `formula_id` / `default_formula_id` 都按它查找）。
+   * 🚨 组装渲染模型时（enrichComponentData 两条路径）必须原样搬过来，丢了会让所有按 id
+   * 绑定的 FORMULA 字段解析恒不命中 → 该字段整个不进计算列表 → 那些列静默显示 '—'
+   * （repair-0805 / BL-0112 就是这么炸的）。
+   */
+  id?: string;
   name: string;
   expression: any[];
   result_type?: string;
@@ -378,7 +386,7 @@ function resolveFormula(
   // -1. BL-0098 终态：field.formula_id 绑定（最高优先，与后端 FormulaCalculator.resolveFormula 镜像）。
   //     绑了但找不到 → 返 undefined 不 fallback，避免公式被删后静默换成别的公式算。
   if (field?.formula_id) {
-    return comp.formulas.find(f => (f as any).id === field.formula_id);
+    return comp.formulas.find(f => f.id === field.formula_id);
   }
 
   // 0. (2026-05-20) field.formula_name 显式绑定 — 组件管理 UI 通过 Select 写入此字段, 优先级最高
@@ -492,7 +500,7 @@ function computeAllFormulas(
       // BL-0098：条件公式的规则/默认分支也按 formula_id 优先解析（与后端 condRefFormula 镜像）。
       // 绑了 id 查不到 → undefined，不回落名字（配置漂移不能静默换分支）。
       const byRef = (id?: string, name?: string) =>
-        id ? comp.formulas!.find(x => (x as any).id === id)
+        id ? comp.formulas!.find(x => x.id === id)
            : (name ? comp.formulas!.find(x => x.name === name) : undefined);
       const rules = cf.rules
         .map((r: any) => ({ when: r.when as CondTree, formula: byRef(r.formula_id, r.formula)! }))
@@ -796,7 +804,7 @@ function collectFormulaFieldDefsForTree(comp: ComponentDataItem): FormulaFieldDe
     const cf = (f as any).conditional_formula;
     if (cf && Array.isArray(cf.rules)) {
       const byRef = (id?: string, refName?: string) =>
-        id ? comp.formulas!.find(x => (x as any).id === id)
+        id ? comp.formulas!.find(x => x.id === id)
            : (refName ? comp.formulas!.find(x => x.name === refName) : undefined);
       const rules = cf.rules
         .map((r: any) => ({ when: r.when as CondTree, formula: byRef(r.formula_id, r.formula)! }))
@@ -1872,8 +1880,35 @@ export function getComponentSubtotalsFull(
   customerId?: string,
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
 ): Record<string, number> {
-  const subs = getComponentSubtotals(item, driverExpansions, customerId, globalVariableDefs);
-  if (!item.componentData) return subs;
+  return buildLineItemEvalContext(item, driverExpansions, customerId, globalVariableDefs).subtotals;
+}
+
+/** 报价行「完整口径」求值上下文：PASS1 组件小计 + PASS2 cross_tab 源行 store。 */
+export interface LineItemEvalContext {
+  /** PASS1 → PASS2 回填后的组件/列小计 map（= getComponentSubtotalsFull 的返回值）。 */
+  subtotals: Record<string, number>;
+  /** buildCrossTabRows 产出的 cross_tab 源行 store（componentId/componentCode/tabName 三键）。 */
+  crossTabRows: Record<string, Array<Record<string, any>>>;
+}
+
+/**
+ * 一次算出「与卡片渲染同值」所需的**全部**上下文（PASS1 小计 → PASS2 buildCrossTabRows），
+ * 供折扣 / 保存 / 导出这类消费点共用，避免各自重跑一遍 PASS1+PASS2。
+ *
+ * ⚠️ 为什么必须把 `crossTabRows` 一并交出去（2026-08-05 repair-0805 回归教训）：
+ * 只拿回填后的小计是不够的 —— 消费点若还要**逐行重算公式**（saveDraft 的 snapshotRows 落
+ * row_data 就是），必须把同一个 store 当 `crossTabRows` 喂回 computeAllFormulas /
+ * computeTabFormulasTree，否则该行所有 `cross_tab_ref` 跨页签聚合一律求值成 0，
+ * 把屏幕上非 0 的公式列**清零落库**（纯 PASS1 口径陷阱，见 getComponentSubtotals 头注）。
+ */
+export function buildLineItemEvalContext(
+  item: LineItem,
+  driverExpansions?: import('./useDriverExpansions').DriverExpansionMap,
+  customerId?: string,
+  globalVariableDefs?: Record<string, GlobalVariableDefinition>,
+): LineItemEvalContext {
+  const subtotals = getComponentSubtotals(item, driverExpansions, customerId, globalVariableDefs);
+  if (!item.componentData) return { subtotals, crossTabRows: {} };
   const partNo = item.productPartNo;
   // lookupExpansion 与 PASS1 / 渲染层同源同维度（lineItemId+partNo+componentId+customerId+driverPath+fieldsHash）
   const lookupExpansion = (comp: ComponentDataItem) => {
@@ -1882,11 +1917,15 @@ export function getComponentSubtotalsFull(
     const k = driverExpansionKey(lineItemId, partNo, comp.componentId, customerId, comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]));
     return driverExpansions[k];
   };
-  // try/catch 兜底：单据数据异常时保留 PASS1 结果，不崩折扣/保存链路。
+  // try/catch 兜底：单据数据异常时保留 PASS1 结果（buildCrossTabRows 是就地回填，
+  // 抛错前已回填的部分保留 —— 与改造前 getComponentSubtotalsFull 语义逐字一致），
+  // crossTabRows 退空对象（等价于改造前"根本没有 store"的旧行为），不崩折扣/保存链路。
   try {
-    buildCrossTabRows(item.componentData, subs, partNo, lookupExpansion, globalVariableDefs);
-  } catch { /* 回填失败 → 退回 PASS1 口径 */ }
-  return subs;
+    const { store } = buildCrossTabRows(item.componentData, subtotals, partNo, lookupExpansion, globalVariableDefs);
+    return { subtotals, crossTabRows: store };
+  } catch {
+    return { subtotals, crossTabRows: {} };
+  }
 }
 
 /**
@@ -2073,15 +2112,17 @@ export function buildSnapshotExpansions(
       // 其完整集下标对应的 __effKey，渲染层据此对齐删除/查表，守 AP-54 单一口径。
       // COSTING 侧 uniqFull=null → __effKey=undefined，行为不变（spec §3.7 隔离）。
       // repair-0727 F0：QUOTE 侧树行 __effKey 加 nodeId 前缀，对齐后端 B0
-      // FormulaCalculator#buildRawRowKeys（三处「报价侧信号」单一口径）。legacyFull 并行算一份
-      // 不加前缀的旧口径键，供渲染层查 editRows/formulaResults 未命中新键时回退，兼容改造前写入
-      // 的存量单据。两者在非树行 / COSTING 侧逐字节相同（br.__nodeId 缺失时 uniqFull===legacyFull）。
+      // FormulaCalculator#buildRawRowKeys（三处「报价侧信号」单一口径）。
+      // repair-0805 F6：legacySets 并行算两档历史口径键（无前缀旧解析 / 带前缀旧解析），
+      // 供渲染层查 editRows/formulaResults 未命中新键时依次回退，兼容两次换代前写入的存量单据。
+      // 三者在非树行 / COSTING 侧逐字节相同（br.__nodeId 缺失时 uniqFull===legacy*）。
+      // F7：comp.fields 是 ComponentField[]（snake），已被 RowKeyFieldDef 精确覆盖 —— 不再 as any。
       const rkfForSide = (side === 'QUOTE') ? (rowKeyFieldsByComp?.get(cid) ?? []) : [];
       const uniqFull = (side === 'QUOTE' && rkfForSide.length > 0)
-        ? buildUniqueRowKeys(comp.fields as any, rkfForSide, baseRows, true)  // 完整集 effKey，不变量
+        ? buildUniqueRowKeys(comp.fields, rkfForSide, baseRows, true)  // 完整集 effKey，不变量
         : null;
-      const legacyFull = (side === 'QUOTE' && rkfForSide.length > 0)
-        ? buildUniqueRowKeys(comp.fields as any, rkfForSide, baseRows)  // 旧口径（无前缀），F0 查表回退用
+      const legacySets = (side === 'QUOTE' && rkfForSide.length > 0)
+        ? buildLegacyRowKeySets(comp.fields, rkfForSide, baseRows, true)
         : null;
 
       // kept：保留 (baseRow, 完整集下标) 对；默认保留全部
@@ -2115,9 +2156,12 @@ export function buildSnapshotExpansions(
           // 与 buildSnapshotExpansions 过滤口径、后端 resolvedRows/formulaResults 键完全一致。
           // COSTING 侧 uniqFull=null → __effKey=undefined，渲染层不使用（守 AP-41 隔离）。
           __effKey: uniqFull ? uniqFull[i] : undefined,
-          // repair-0727 F0：旧口径键（无 nodeId 前缀），渲染层查 editRows/formulaResults 未命中
-          // __effKey 时回退用（存量单据兼容）。非树行 / COSTING 侧与 __effKey 恒相同。
-          __legacyEffKey: legacyFull ? legacyFull[i] : undefined,
+          // repair-0727 F0 / repair-0805 F6：两档历史口径键，渲染层查 editRows/formulaResults
+          // 未命中 __effKey 时依次回退（存量单据兼容）。非树行 / COSTING 侧与 __effKey 恒相同。
+          //   __legacyEffKey         = 无 nodeId 前缀 + 旧段解析（F0 之前那代）
+          //   __legacyEffKeyPrefixed = 有 nodeId 前缀 + 旧段解析（F0 之后 ~ F5 之前那代）
+          __legacyEffKey: legacySets ? legacySets.legacyNoPrefix[i] : undefined,
+          __legacyEffKeyPrefixed: legacySets ? legacySets.legacyPrefixed[i] : undefined,
           // BOM 递归展开：透传 spine 系统列（__ 前缀），供卡片渲染固定列 + 建树。
           // task-0721 F1：本提取无侧别判断（COSTING/QUOTE 通用）——只要该组件的 baseRow
           // 带 __nodeId 就注入 __sys，纯数据驱动。缺 __* 字段的普通快照行 → __sys 仍 undefined
@@ -3129,9 +3173,10 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     const activeUniqRowKeys = useSnapEdit
                       ? buildUniqueRowKeys(activeComponent.fields, activeRowKeyFields, activeUniqRowKeyTuples, true)
                       : [];
-                    const activeLegacyUniqRowKeys = useSnapEdit
-                      ? buildUniqueRowKeys(activeComponent.fields, activeRowKeyFields, activeUniqRowKeyTuples)
-                      : [];
+                    // repair-0805 F6：两档历史口径键（无前缀旧解析 / 带前缀旧解析），查表未命中新键时依次回退。
+                    const activeLegacyRowKeySets = useSnapEdit
+                      ? buildLegacyRowKeySets(activeComponent.fields, activeRowKeyFields, activeUniqRowKeyTuples, true)
+                      : { legacyPrefixed: [] as string[], legacyNoPrefix: [] as string[] };
                     // FIXED_VALUE 默认值回填：driver 展开行 / 旧报价单回读的行都有可能没经过 handleAddRow，
                     // 导致 row[key] === undefined。回填后单元格 / 公式 / 列小计 / 产品小计 共享同一份数据视图。
                     const effectiveRows = Array.from({ length: effectiveCount }, (_, i) => {
@@ -3207,13 +3252,16 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                       const rowKey = useSnapEdit
                         ? (driverEffKey ?? activeUniqRowKeys[i] ?? String(i))
                         : String(i);
-                      // repair-0727 F0：并行的旧口径键（无 nodeId 前缀），查 editRows/formulaResults
-                      // 未命中 rowKey（新键）时回退用，兼容改造前写入的存量单据。
-                      const driverLegacyEffKey = ra.expIndex >= 0
-                        ? (activeDriverExpansion!.rows[ra.expIndex] as any)?.__legacyEffKey as string | undefined
+                      // repair-0727 F0 + repair-0805 F6：并行的两档历史口径键，查 editRows/formulaResults
+                      // 未命中 rowKey（新键）时依次回退，兼容两次换代前写入的存量单据。
+                      const driverRowRaw = ra.expIndex >= 0
+                        ? (activeDriverExpansion!.rows[ra.expIndex] as any)
                         : undefined;
                       const legacyRowKey = useSnapEdit
-                        ? (driverLegacyEffKey ?? activeLegacyUniqRowKeys[i] ?? String(i))
+                        ? ((driverRowRaw?.__legacyEffKey as string | undefined) ?? activeLegacyRowKeySets.legacyNoPrefix[i] ?? String(i))
+                        : String(i);
+                      const legacyRowKeyPrefixed = useSnapEdit
+                        ? ((driverRowRaw?.__legacyEffKeyPrefixed as string | undefined) ?? activeLegacyRowKeySets.legacyPrefixed[i] ?? String(i))
                         : String(i);
                       // AP-54: realRowIndex = 对象引用映射回 comp.rows 真实下标，用于写路径(handleRowChange/handleDeleteRow 等)
                       const realRowIndex = ra.isManual
@@ -3225,6 +3273,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         realRowIndex,
                         rowKey,
                         legacyRowKey,
+                        legacyRowKeyPrefixed,
                         basicDataValues: ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined,
                         driverRow: ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.driverRow : undefined,
                         // 核价 BOM 递归展开（P1）：spine 系统列（仅 COSTING 行有值）
@@ -3268,10 +3317,13 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     effectiveRows.forEach((r, __treeRowIdx) => {
                       // Phase4 Task3: 报价侧优先读快照 formulaResults[rowKey](真零计算);
                       // 缺(无快照/新行/LIST_FORMULA 字符串公式未进 formulaResults)时 computeAllFormulas 兜底(防漂移)。
-                      // repair-0727 F0：新键（可能带 nodeId 前缀）未命中时按 r.legacyRowKey 回退一次，
-                      // 兼容改造前写入 formulaResults 的存量单据（尚未触发重算的旧快照）。
+                      // repair-0727 F0 + repair-0805 F6：新键未命中时按两档历史口径键依次回退，
+                      // 兼容换代前写入 formulaResults 的存量单据（尚未触发重算的旧快照）。
                       const snapFormula = useSnapEdit
-                        ? getByKeyWithLegacyFallback(activeSnap?.formula, r.rowKey, (r as any).legacyRowKey)
+                        ? getByKeyWithLegacyFallback(
+                            activeSnap?.formula, r.rowKey,
+                            (r as any).legacyRowKeyPrefixed, (r as any).legacyRowKey,
+                          )
                         : undefined;
                       const errForRow: Record<string, string> = {};
                       const cache: Record<string, number | null> = (snapFormula && Object.keys(snapFormula).length > 0)

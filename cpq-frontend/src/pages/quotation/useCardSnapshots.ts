@@ -48,45 +48,206 @@ export interface CardSnapshotReader {
   getCell: (componentId: string, rowIndex: number, fieldName: string) => any;
 }
 
+/** rowKey 解析用的默认值来源（后端 `default_source`）。 */
+export interface RowKeyDefaultSource {
+  type?: string | null;
+  code?: string | null;
+  path?: string | null;
+}
+
+/** rowKey 解析用的数据源绑定（后端 `datasource_binding`）。 */
+export interface RowKeyDatasourceBinding {
+  type?: string | null;
+  global_variable_code?: string | null;
+  bnf_path?: string | null;
+}
+
 /**
- * 单个 rowKey 段解析（字段感知）。
+ * repair-0805 F7 —— rowKey 解析所需的字段形状（**精确类型，禁止再退回 `any[]`**）。
  *
- * 优先级：
- * 1. driverRow[fieldName] 直读（字段名即为视图列名的旧场景，如 material_no）
- * 2. defaultSource.GLOBAL_VARIABLE → basicDataValues["@gvar:CODE"]
- * 3. defaultSource.BNF_PATH / BASIC_DATA → basicDataValues[bnfDriverLookupKey(path)]
- * 4. 降级：driverRow[path 末段]（path = "$view.col" 时取 "col"，兼容部分旧场景）
- * 全空 → undefined（调用方按行号兜底）。
+ * 同一份 rowKey 算法被两种键风格的调用方共用，两边都必须能编译期检查：
+ * - **camelCase**：`CardStructureTab.fields`（后端 `CardSnapshotService#buildCardStructure` 冻结结构）
+ * - **snake_case**：`ComponentField`（`enrichComponentData` 两条路径产出的渲染模型）
  *
- * 对齐后端 FormulaCalculator 4-arg computeRowKey 的 resolveRowByFieldName 分支。
+ * 与后端 `FormulaCalculator` 的访问器（`:2600-2634`）逐个对齐：每个语义键都 camel/snake 双读。
+ *
+ * ⚠️ 历史教训（本次事故的元教训）：本类型此前写成 `fields: any[]`，把 6 个调用点的类型检查
+ * 全部吞掉 —— 渲染模型是 snake 而解析只认 camel 这件事因此静默了 3 周。**不要再放宽它。**
+ */
+export interface RowKeyFieldDef {
+  name?: string | null;
+  /** 后端 `fieldName(f)`：`name` → `key`。 */
+  key?: string | null;
+  fieldType?: string | null;
+  field_type?: string | null;
+  defaultSource?: RowKeyDefaultSource | null;
+  default_source?: RowKeyDefaultSource | null;
+  basicDataPath?: string | null;
+  basic_data_path?: string | null;
+  datasourceBinding?: RowKeyDatasourceBinding | null;
+  datasource_binding?: RowKeyDatasourceBinding | null;
+  /** 后端 `content(f)`：`defaultValue` → `content`。 */
+  defaultValue?: unknown;
+  content?: unknown;
+}
+
+// ── 字段访问器：与后端 FormulaCalculator:2600-2634 逐个对齐（snake / camel 双读）───────────
+const fieldNameOf = (f: RowKeyFieldDef): string => String(f.name ?? f.key ?? '');
+const fieldTypeOf = (f: RowKeyFieldDef): string => String(f.fieldType ?? f.field_type ?? '').toUpperCase();
+const defaultSourceOf = (f: RowKeyFieldDef) => f.defaultSource ?? f.default_source ?? null;
+const basicDataPathOf = (f: RowKeyFieldDef) => f.basicDataPath ?? f.basic_data_path ?? null;
+const datasourceBindingOf = (f: RowKeyFieldDef) => f.datasourceBinding ?? f.datasource_binding ?? null;
+const contentOf = (f: RowKeyFieldDef) => f.defaultValue ?? f.content ?? null;
+
+/**
+ * 非空判据 —— 对齐后端 `pickNonEmpty:1594-1600`：**空串视为未命中**（不是 `!= null`）。
+ * 空数组 `String([]) === ''` 亦落空，与后端 `nonEmpty` 的「空数组 → false」一致。
+ */
+function nonEmptyStr(v: unknown): string | undefined {
+  if (v == null) return undefined;
+  const s = String(v);
+  return s.length > 0 ? s : undefined;
+}
+
+/** `default_source` 取值：GLOBAL_VARIABLE → `@gvar:CODE`；BNF_PATH / BASIC_DATA → `{path}`。 */
+function fromDefaultSource(
+  ds: RowKeyDefaultSource | null,
+  basicDataValues: Record<string, any> | undefined,
+): string | undefined {
+  if (!ds || !basicDataValues) return undefined;
+  const dsType = ds.type;
+  if (dsType === 'GLOBAL_VARIABLE' && ds.code) {
+    return nonEmptyStr(basicDataValues[`@gvar:${ds.code}`]);
+  }
+  if ((dsType === 'BNF_PATH' || dsType === 'BASIC_DATA') && ds.path) {
+    return nonEmptyStr(basicDataValues[bnfDriverLookupKey(ds.path)]);
+  }
+  return undefined;
+}
+
+/** `basic_data_path` 取值（后端 BASIC_DATA 分支 `:1775-1780`）。 */
+function fromBasicDataPath(
+  path: string | null,
+  basicDataValues: Record<string, any> | undefined,
+): string | undefined {
+  if (!path || !basicDataValues) return undefined;
+  return nonEmptyStr(basicDataValues[bnfDriverLookupKey(path)]);
+}
+
+/** `datasource_binding` 取值（后端 DATA_SOURCE 分支 `:1792-1814`）。 */
+function fromDatasourceBinding(
+  binding: RowKeyDatasourceBinding | null,
+  basicDataValues: Record<string, any> | undefined,
+): string | undefined {
+  if (!binding || !basicDataValues) return undefined;
+  const t = binding.type ?? 'DATABASE_QUERY';
+  if (t === 'GLOBAL_VARIABLE' && binding.global_variable_code) {
+    return nonEmptyStr(basicDataValues[`@gvar:${binding.global_variable_code}`]);
+  }
+  if (t === 'BNF_PATH' && binding.bnf_path) {
+    return nonEmptyStr(basicDataValues[bnfDriverLookupKey(binding.bnf_path)]);
+  }
+  return undefined;
+}
+
+/**
+ * 单个 rowKey 段解析（字段感知）—— **逐条镜像后端 `FormulaCalculator#resolveRowByFieldName`**
+ * （`:1714-1824`，口径书面化见 `dev-docs/.../repair-0805-.../backend-rowkey-contract.md` §1.1）。
+ *
+ * ```
+ * ① driverRow[fieldName] 直读                （后端 pickNonEmpty:1427，空串 = 未命中）
+ * ② 按 field_type 分支：
+ *    FORMULA / LIST_FORMULA          → 无（后端取 formulaValues，rowKey 场景恒传 null）
+ *    BASIC_DATA                      → basic_data_path → content
+ *    DATA_SOURCE                     → datasource_binding → content
+ *    INPUT / INPUT_TEXT / INPUT_NUMBER → default_source → content
+ *    FIXED_VALUE                     → content
+ *    (缺失 / 未知类型)                → default_source → basic_data_path → datasource_binding → content
+ * ```
+ * 全空 → `undefined`（调用方按行号兜底，对齐后端 `!any → null` + `buildRawRowKeys:1481`）。
+ *
+ * **repair-0805 F5 相对旧实现的三处改动**（依据后端契约文档 §1.7 未对齐表）：
+ * - **X1**：`default_source` 现在 camel/snake 双读 —— 旧实现只认 `f.defaultSource`，
+ *   而渲染模型统一输出 `default_source` → 179 处绑定（106 个组件）解析恒落空、退化成行号。
+ * - **X2**：补齐 `BASIC_DATA` 字段按 `basic_data_path` 解析这一级 —— 旧实现完全没有这条通路，
+ *   42 处绑定（17 个核价通用模板组件 COMP-0048~0063）**连 camelCase 调用方也一起坏着**。
+ * - **X3/X4**：补齐 `content`/`defaultValue` 兜底与按 `field_type` 分支（当前库 0 处命中，
+ *   属把口径补完整，不改变现有数据的结果）。
+ *
+ * **删掉的一级（X5）**：旧实现第 4 级「降级读 `driverRow[path 末段]`」后端并不存在。
+ * 保留它会在「`basicDataValues` 缺该键但 `driverRow` 有同名别名列」时让前端算出内容键、
+ * 后端算出行号 —— 即用一个新分歧换掉旧分歧，快照照样命中不了。故按「以后端口径为准」删除。
+ * 详细论证见提交说明。
  */
 function resolveRowKeyPart(
   fieldName: string,
-  defaultSource: { type?: string; code?: string; path?: string } | undefined | null,
+  field: RowKeyFieldDef | undefined,
   driverRow: Record<string, any> | undefined,
   basicDataValues: Record<string, any> | undefined,
 ): string | undefined {
-  // 1. 直读 driverRow（兼容字段名 == 视图列名的旧场景）
+  // ① 直读 driverRow（兼容字段名 == 视图列名的旧场景）
+  const direct = driverRow ? nonEmptyStr(driverRow[fieldName]) : undefined;
+  if (direct !== undefined) return direct;
+  if (!field) return undefined;
+
+  // ② 按 field_type 分支
+  const content = () => nonEmptyStr(contentOf(field));
+  switch (fieldTypeOf(field)) {
+    case 'FORMULA':
+    case 'LIST_FORMULA':
+      return undefined;
+    case 'BASIC_DATA':
+      return fromBasicDataPath(basicDataPathOf(field), basicDataValues) ?? content();
+    case 'DATA_SOURCE':
+      return fromDatasourceBinding(datasourceBindingOf(field), basicDataValues) ?? content();
+    case 'INPUT':
+    case 'INPUT_TEXT':
+    case 'INPUT_NUMBER':
+      return fromDefaultSource(defaultSourceOf(field), basicDataValues) ?? content();
+    case 'FIXED_VALUE':
+      return content();
+    default:
+      // 类型缺失 / 未知：取各分支并集（后端此处落 FIXED_VALUE 分支，但前端渲染模型经
+      // normalizeFieldType 后类型恒非空、结构快照由后端白名单写入亦恒非空 —— 真实数据到不了这里。
+      // 走并集是为「形状不全的调用方」保持既有的宽松行为，不收窄。
+      return fromDefaultSource(defaultSourceOf(field), basicDataValues)
+        ?? fromBasicDataPath(basicDataPathOf(field), basicDataValues)
+        ?? fromDatasourceBinding(datasourceBindingOf(field), basicDataValues)
+        ?? content();
+  }
+}
+
+/**
+ * repair-0805 F6 —— **旧口径**单段解析：逐字节冻结 F5 之前的实现，只用来读存量键。
+ *
+ * F5 把前端键从「解析落空 → 行号」改成了「内容键」。存量 `editRows` 是用户在 F5 之前编辑时
+ * 由前端算出的键写进去的（行号形态），换口径后会变孤儿。渲染层查表未命中新键时按本函数
+ * 算出的旧键再试一次即可读回。
+ *
+ * **不要"修正"本函数** —— 它的价值恰恰在于复刻旧的（错的）口径，包括只认 camelCase
+ * `defaultSource`、以及那一级后端没有的 `driverRow[path 末段]` 降级。
+ */
+function resolveRowKeyPartLegacy(
+  fieldName: string,
+  field: RowKeyFieldDef | undefined,
+  driverRow: Record<string, any> | undefined,
+  basicDataValues: Record<string, any> | undefined,
+): string | undefined {
+  const defaultSource = field?.defaultSource ?? undefined;
   if (driverRow) {
     const direct = driverRow[fieldName];
     if (direct != null && String(direct).length > 0) return String(direct);
   }
-
-  // 2/3. defaultSource 解析
   if (defaultSource && basicDataValues) {
     const dsType = defaultSource.type;
     if (dsType === 'GLOBAL_VARIABLE' && defaultSource.code) {
-      const gvKey = `@gvar:${defaultSource.code}`;
-      const v = basicDataValues[gvKey];
+      const v = basicDataValues[`@gvar:${defaultSource.code}`];
       if (v != null && String(v).length > 0) return String(v);
     } else if ((dsType === 'BNF_PATH' || dsType === 'BASIC_DATA') && defaultSource.path) {
-      const lookupKey = bnfDriverLookupKey(defaultSource.path);
-      const v = basicDataValues[lookupKey];
+      const v = basicDataValues[bnfDriverLookupKey(defaultSource.path)];
       if (v != null && String(v).length > 0) return String(v);
     }
   }
-
-  // 4. 降级：driverRow[path 末段]（如 "$wgj_view._料件" → "_料件"）
   if (defaultSource?.path && driverRow) {
     const lastSeg = defaultSource.path.split('.').pop() ?? '';
     if (lastSeg) {
@@ -94,7 +255,6 @@ function resolveRowKeyPart(
       if (v != null && String(v).length > 0) return String(v);
     }
   }
-
   return undefined;
 }
 
@@ -108,23 +268,25 @@ function resolveRowKeyPart(
  * 分隔符 `||`，全空 → 行号字符串（与后端 null → 调用方按 idx 兜底 对齐）。
  */
 export function computeRowKey(
-  fields: Array<{ name: string; fieldType?: string; defaultSource?: { type?: string; code?: string; path?: string } | null }> | undefined | null,
+  fields: RowKeyFieldDef[] | undefined | null,
   rowKeyFields: string[] | undefined | null,
   driverRow: Record<string, any> | undefined,
   rowIndex: number,
   basicDataValues?: Record<string, any>,
+  /** repair-0805 F6：true = 用 F5 之前的旧口径解析（只读存量键用，见 resolveRowKeyPartLegacy）。 */
+  legacyResolution?: boolean,
 ): string {
   if (!rowKeyFields || rowKeyFields.length === 0) return String(rowIndex);
   if (rowKeyFields.length === 1 && rowKeyFields[0] === '__seq_no__') return String(rowIndex);
 
   // 懒建字段 map（大多数调用只有少量 rowKeyFields，按需查找即可）
-  const fieldMap = new Map<string, { defaultSource?: { type?: string; code?: string; path?: string } | null }>();
-  for (const f of (fields ?? [])) fieldMap.set(f.name, f);
+  const fieldMap = new Map<string, RowKeyFieldDef>();
+  for (const f of (fields ?? [])) fieldMap.set(fieldNameOf(f), f);
 
+  const resolve = legacyResolution ? resolveRowKeyPartLegacy : resolveRowKeyPart;
   let any = false;
   const parts = rowKeyFields.map((fieldName) => {
-    const fd = fieldMap.get(fieldName);
-    const part = resolveRowKeyPart(fieldName, fd?.defaultSource, driverRow, basicDataValues);
+    const part = resolve(fieldName, fieldMap.get(fieldName), driverRow, basicDataValues);
     if (part !== undefined) { any = true; return part; }
     return '';
   });
@@ -165,13 +327,18 @@ export function uniquifyRowKeys(keys: string[]): string[] {
  * 与后端顺序一致（先加前缀、后唯一化），确保 `#N` 消歧序号在两侧算出相同结果。
  */
 export function buildUniqueRowKeys(
-  fields: any[] | undefined,
+  fields: RowKeyFieldDef[] | undefined | null,
   rowKeyFields: string[] | undefined | null,
   baseRows: Array<{ driverRow?: Record<string, any>; basicDataValues?: Record<string, any>; __nodeId?: string | null }> | undefined,
   applyNodePrefix?: boolean,
+  /**
+   * repair-0805 F6：true = 按 F5 之前的旧口径算键（解析落空 → 行号），**只用于查存量数据**。
+   * 与 `applyNodePrefix` 正交 —— 两个开关组合出三种历史键形态，见 `buildLegacyRowKeySets`。
+   */
+  legacyResolution?: boolean,
 ): string[] {
   const raw = (baseRows ?? []).map((br, i) => {
-    const base = computeRowKey(fields, rowKeyFields, br?.driverRow, i, br?.basicDataValues);
+    const base = computeRowKey(fields, rowKeyFields, br?.driverRow, i, br?.basicDataValues, legacyResolution);
     const nodeId = applyNodePrefix ? br?.__nodeId : undefined;
     return nodeId ? `${nodeId}::${base}` : base;
   });
@@ -179,24 +346,58 @@ export function buildUniqueRowKeys(
 }
 
 /**
- * repair-0727 F0：查表旧键回退。新键（树行可能带 `nodeId::` 前缀）未命中时，用调用方并行算出的
- * 旧口径键（不传 `applyNodePrefix`，逐字节等于改造前的 `buildUniqueRowKeys` 产物）再查一次。
+ * repair-0805 F6 —— 一次算齐**全部历史口径键**，供渲染层查表未命中新键时按序回退。
+ *
+ * 键口径共经历两次换代，库里因此可能同时存在三种形态：
+ *
+ * | 写入时期 | `nodeId::` 前缀 | 段解析口径 | 本函数产出 |
+ * |---|---|---|---|
+ * | repair-0727 F0 之前 | 无 | 旧（camel-only `defaultSource`） | `legacyNoPrefix` |
+ * | F0 之后 ~ 0805 F5 之前 | 有（报价侧树行） | 旧 | `legacyPrefixed` |
+ * | F5 之后（当前） | 有 | 新（camel/snake 双读 + `basic_data_path`） | 新键，不由本函数产出 |
+ *
+ * 核价侧 / 非树行 `applyNodePrefix=false` 时两者逐字节相同，`getByKeyWithLegacyFallback` 内去重。
+ */
+export function buildLegacyRowKeySets(
+  fields: RowKeyFieldDef[] | undefined | null,
+  rowKeyFields: string[] | undefined | null,
+  baseRows: Array<{ driverRow?: Record<string, any>; basicDataValues?: Record<string, any>; __nodeId?: string | null }> | undefined,
+  applyNodePrefix?: boolean,
+): { legacyPrefixed: string[]; legacyNoPrefix: string[] } {
+  return {
+    legacyPrefixed: buildUniqueRowKeys(fields, rowKeyFields, baseRows, applyNodePrefix, true),
+    legacyNoPrefix: buildUniqueRowKeys(fields, rowKeyFields, baseRows, false, true),
+  };
+}
+
+/**
+ * 查表旧键回退。新键未命中时，按调用方给出的**历史口径键**依次再查。
  *
  * 兼容存量单据：`editRows`（用户编辑，前端写入时用当时的 rowKey 存）与 `formulaResults`
- * （后端计算结果，仅在下次重算前维持旧值）在 B0/F0 落地前写入的条目都是不带前缀的旧键，
+ * （后端计算结果，仅在下次重算前维持旧值）在换代前写入的条目都是老形态的键，
  * 不加回退会让历史编辑值 / 尚未重算的公式结果全部读不到（存量单据"编辑值消失"）。
  *
- * `legacyKey === key`（非树行 / 无 nodeId）时不重复查第二次。
+ * - repair-0727 F0：第一档 legacy = 无 `nodeId::` 前缀。
+ * - repair-0805 F6：追加一档 legacy = **旧段解析口径**（解析落空 → 行号）。
+ *   两档正交，故按 `buildLegacyRowKeySets` 的产物**依次**传入即可。
+ *
+ * 与 key 相同 / 彼此相同的候选只查一次（既有优化保留，避免同一 Map 反复 get）。
  */
 export function getByKeyWithLegacyFallback<T>(
   map: Map<string, T> | undefined,
   key: string,
-  legacyKey?: string,
+  ...legacyKeys: Array<string | undefined>
 ): T | undefined {
   if (!map) return undefined;
   const hit = map.get(key);
   if (hit !== undefined) return hit;
-  if (legacyKey !== undefined && legacyKey !== key) return map.get(legacyKey);
+  const tried = new Set<string>([key]);
+  for (const lk of legacyKeys) {
+    if (lk === undefined || tried.has(lk)) continue;
+    tried.add(lk);
+    const v = map.get(lk);
+    if (v !== undefined) return v;
+  }
   return undefined;
 }
 
@@ -216,6 +417,25 @@ function findKeyedValues(
   if (!rows) return undefined;
   const found = rows.find((r) => r.rowKey === rowKey);
   return found?.values;
+}
+
+/** 数组版查表旧键回退（editRows / formulaResults 是数组不是 Map），语义同 getByKeyWithLegacyFallback。 */
+function findKeyedValuesWithLegacy(
+  rows: Array<{ rowKey: string; values: Record<string, any> }> | undefined,
+  rowKey: string,
+  legacyKeys: Array<string | undefined>,
+): Record<string, any> | undefined {
+  if (!rows) return undefined;
+  const hit = findKeyedValues(rows, rowKey);
+  if (hit) return hit;
+  const tried = new Set<string>([rowKey]);
+  for (const lk of legacyKeys) {
+    if (lk === undefined || tried.has(lk)) continue;
+    tried.add(lk);
+    const v = findKeyedValues(rows, lk);
+    if (v) return v;
+  }
+  return undefined;
 }
 
 function isEmpty(v: any): boolean {
@@ -266,17 +486,17 @@ export function useCardSnapshots(
     for (const t of (values?.tabs ?? [])) valByComp.set(t.componentId, t);
 
     // 每组件唯一化 rowKey 表（撞键消歧）：rowKeyOf/getCell 按下标取，保证与写路径 + 后端一致。
-    // repair-0727 F0：QUOTE 侧树行加 nodeId 前缀（对齐后端 buildRawRowKeys）；同时并行算一份
-    // legacyKeysByComp（不加前缀，逐字节等于改造前产物），供 getCell 查 editRows/formulaResults
-    // 未命中时按同一行位置回退，兼容改造前写入的存量单据（旧键）。COSTING 侧两份表逐字节相同
-    // （applyNodePrefix=false 时行为不变），回退恒等价于直接命中，零副作用。
+    // repair-0727 F0：QUOTE 侧树行加 nodeId 前缀（对齐后端 buildRawRowKeys）。
+    // repair-0805 F6：同时并行算两档历史口径键（见 buildLegacyRowKeySets），供 getCell 查
+    // editRows/formulaResults 未命中新键时按同一行位置依次回退，兼容两次换代前写入的存量单据。
+    // COSTING 侧两档逐字节相同，getByKeyWithLegacyFallback 内去重，零额外开销。
     const applyNodePrefix = side === 'QUOTE';
     const uniqKeysByComp = new Map<string, string[]>();
-    const legacyKeysByComp = new Map<string, string[]>();
+    const legacyKeysByComp = new Map<string, { legacyPrefixed: string[]; legacyNoPrefix: string[] }>();
     for (const t of tabs) {
       const vt = valByComp.get(t.componentId);
       uniqKeysByComp.set(t.componentId, buildUniqueRowKeys(t.fields, t.rowKeyFields, vt?.baseRows, applyNodePrefix));
-      legacyKeysByComp.set(t.componentId, buildUniqueRowKeys(t.fields, t.rowKeyFields, vt?.baseRows));
+      legacyKeysByComp.set(t.componentId, buildLegacyRowKeySets(t.fields, t.rowKeyFields, vt?.baseRows, applyNodePrefix));
     }
 
     const rowKeyOf = (componentId: string, rowIndex: number): string => {
@@ -300,12 +520,12 @@ export function useCardSnapshots(
       const baseRow = vt.baseRows?.[rowIndex];
       const rk = (uniqKeysByComp.get(componentId)?.[rowIndex])
         ?? computeRowKey(st.fields, st.rowKeyFields, baseRow?.driverRow, rowIndex, baseRow?.basicDataValues);
-      // F0：旧键回退 —— 未命中新键（可能带 nodeId 前缀）时按同一行位置试旧键。
-      const legacyRk = legacyKeysByComp.get(componentId)?.[rowIndex];
+      // F0 + F6：旧键回退 —— 未命中新键时按同一行位置依次试两档历史口径键。
+      const legacySets = legacyKeysByComp.get(componentId);
+      const legacyRks = [legacySets?.legacyPrefixed?.[rowIndex], legacySets?.legacyNoPrefix?.[rowIndex]];
 
       // 1. 编辑覆盖
-      let editVals = findKeyedValues(vt.editRows, rk);
-      if (!editVals && legacyRk !== undefined && legacyRk !== rk) editVals = findKeyedValues(vt.editRows, legacyRk);
+      const editVals = findKeyedValuesWithLegacy(vt.editRows, rk, legacyRks);
       if (editVals && !isEmpty(editVals[fieldName])) return editVals[fieldName];
 
       if (!field) {
@@ -316,8 +536,7 @@ export function useCardSnapshots(
       // 2. 按字段类型
       switch (field.fieldType) {
         case 'FORMULA': {
-          let fr = findKeyedValues(vt.formulaResults, rk);
-          if (!fr && legacyRk !== undefined && legacyRk !== rk) fr = findKeyedValues(vt.formulaResults, legacyRk);
+          const fr = findKeyedValuesWithLegacy(vt.formulaResults, rk, legacyRks);
           return fr ? fr[fieldName] : undefined;
         }
         case 'BASIC_DATA': {

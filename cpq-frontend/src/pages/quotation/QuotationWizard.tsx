@@ -14,7 +14,8 @@ import { quotationSnapshotService } from '../../services/quotationSnapshotServic
 import { customerService } from '../../services/customerService';
 import QuotationStep2, {
   computeProductSubtotal, computeAllFormulas, buildSnapshotExpansions, EMPTY_LINEITEMS,
-  computeTabFormulasTree, usesTreeTokensTab, type TreeFormulaRowInput,
+  computeTabFormulasTree, usesTreeTokensTab, buildLineItemEvalContext,
+  type TreeFormulaRowInput, type LineItemEvalContext,
 } from './QuotationStep2';
 import QuotationStep3 from './QuotationStep3';
 import type { LineItem, ComponentDataItem } from './QuotationStep2';
@@ -84,8 +85,11 @@ function computeProductSubtotalSafe(
   driverExpansions?: import('./useDriverExpansions').DriverExpansionMap,
   customerId?: string,
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
+  // repair-0805：调用方若已构建完整口径上下文（buildLineItemEvalContext），把它的 subtotals 传进来，
+  // computeProductSubtotal 直接复用、跳过内部再跑一遍 PASS1+PASS2（值等价，省一次整行重算）。
+  precomputedSubtotals?: Record<string, number>,
 ): number {
-  return computeProductSubtotal(li, driverExpansions, customerId, undefined, globalVariableDefs);
+  return computeProductSubtotal(li, driverExpansions, customerId, precomputedSubtotals, globalVariableDefs);
 }
 
 const QuotationWizard: React.FC = () => {
@@ -900,6 +904,21 @@ const QuotationWizard: React.FC = () => {
   }, [isImportFlow, customerTemplateId, selectedCustomer?.id, lineItems.length, form]);
 
   const buildDraftPayload = (values: any) => {
+    // repair-0805：每个报价行的「完整口径求值上下文」（PASS1 组件小计 + PASS2 cross_tab 源行 store）
+    // 在**行级**算一次并缓存，供该行的 subtotal 与各页签 snapshotRows 共用。
+    //
+    // ⚠️ 不能把它下沉到 snapshotRows 里按组件现算 —— snapshotRows 是每页签调一次，
+    // 那样等于 N 个页签 × 一次全卡 PASS1+PASS2 = N² 重算（首存性能是本项目历史痛点）。
+    // 也不能提到 buildDraftPayload 之外缓存：driverExpansions / 行编辑值随时在变，跨次复用会读到脏上下文。
+    const evalCtxCache = new Map<LineItem, LineItemEvalContext>();
+    const evalCtxOf = (li: LineItem): LineItemEvalContext => {
+      let ctx = evalCtxCache.get(li);
+      if (!ctx) {
+        ctx = buildLineItemEvalContext(li, driverExpansions, customerIdValue, gvDefs);
+        evalCtxCache.set(li, ctx);
+      }
+      return ctx;
+    };
     return {
       name: values.name,
       contactId: values.contactId,
@@ -947,7 +966,8 @@ const QuotationWizard: React.FC = () => {
         // → 跳过 part_version_locked 查询 → 卡片版本号停在 2000 + 读路径丢版本过滤 → BOM 重复显示。
         customerPartNo: (li as any).customerPartNo || (li as any).customerProductNo || null,
         productAttributeValues: JSON.stringify(li.productAttributeValues || {}),
-        subtotal: computeProductSubtotalSafe(li, driverExpansions, customerIdValue, gvDefs),
+        // repair-0805：复用行级上下文的 subtotals（= getComponentSubtotalsFull 同值），省一次 PASS1+PASS2。
+        subtotal: computeProductSubtotalSafe(li, driverExpansions, customerIdValue, gvDefs, evalCtxOf(li).subtotals),
         sortOrder: idx,
         // 选配/回读的工序回传:后端 saveDraft 据此回写 quotation_line_process(工序跨保存存活)。
         // 导入行此处为空(不携带 processNos),改由 seedProcessesFromBase 让后端从基础工序 seed。
@@ -1000,7 +1020,7 @@ const QuotationWizard: React.FC = () => {
           tabName: cd.tabName || '',
           // WYSIWYG 快照：保存前把 BASIC_DATA（driver 展开行级值）
           // 与 FORMULA（公式引擎计算结果）一并写入 rowData，让"屏幕看到的数据 == DB 存的数据"。
-          rowData: JSON.stringify(snapshotRows(li, cd, ci)),
+          rowData: JSON.stringify(snapshotRows(li, cd, ci, evalCtxOf(li))),
           subtotal: cd.subtotal || 0,
           sortOrder: ci,
         })),
@@ -1010,7 +1030,14 @@ const QuotationWizard: React.FC = () => {
 
   // 把行内 BASIC_DATA / FORMULA 字段的运行时值，按行写回到 row[fieldName]，再序列化保存。
   // 不修改 React state，仅生成 payload 用的副本，避免 state 写入风暴。
-  const snapshotRows = (li: LineItem, cd: ComponentDataItem, _ci: number): Record<string, any>[] => {
+  const snapshotRows = (
+    li: LineItem,
+    cd: ComponentDataItem,
+    _ci: number,
+    // repair-0805：行级「完整口径」上下文（PASS1 小计 + PASS2 cross_tab 源行 store），
+    // 由 buildDraftPayload 按行算一次传入 —— 见下方 componentSubtotals / crossTabRows 用法。
+    evalCtx: LineItemEvalContext,
+  ): Record<string, any>[] => {
     const partNo = li.productPartNo || '';
     const fields = cd.fields || [];
     const componentId = cd.componentId || '';
@@ -1021,10 +1048,22 @@ const QuotationWizard: React.FC = () => {
       : '';
     const expansion = expansionKey ? driverExpansions[expansionKey] : undefined;
 
-    // 构建本 line item 的 component subtotals（公式引擎需要）
-    const componentSubtotals: Record<string, number> = {};
+    // 本 line item 的 component subtotals + cross_tab 源行（公式引擎需要）。
+    //
+    // 🚨 repair-0805 回归教训（改这里前务必读完）：本函数是「保存」消费点，落的是 row_data，
+    // 必须与卡片渲染**同值**，因此这两样都要用完整口径（PASS1 → PASS2 buildCrossTabRows）：
+    //   · componentSubtotals：曾经只塞 `{tabName: c.subtotal}`（无 `key#列名` 列键、无
+    //     componentId/componentCode 键、无 PASS2 回填）→ 引用别的页签列小计的公式取不到键按 0 算；
+    //   · crossTabRows：曾经压根不传（纯 PASS1 口径）→ 本行所有 cross_tab_ref 跨页签聚合求值成 0。
+    // 这两条以前被「公式解析不出来 → formulaCache 无该键 → 不写 row_data」这个 bug 兜着没爆；
+    // 阶段一把公式解析修好后，0 就会真的被写进 row_data，把屏幕上非 0 的公式列清零落库。
+    // 参见 QuotationStep2.tsx `getComponentSubtotals` 头注的「纯 PASS1 口径」警告。
+    const crossTabRows = evalCtx.crossTabRows;
+    const componentSubtotals: Record<string, number> = { ...evalCtx.subtotals };
+    // 补缺不覆盖：PASS1/PASS2 只覆盖 NORMAL 组件，SUBTOTAL 等非 NORMAL 页签的裸键沿用行上
+    // 持久化的 c.subtotal（= 本函数改造前的口径），保证这类键不因改造而消失。
     (li.componentData || []).forEach(c => {
-      if (c.tabName) componentSubtotals[c.tabName] = c.subtotal || 0;
+      if (c.tabName && !(c.tabName in componentSubtotals)) componentSubtotals[c.tabName] = c.subtotal || 0;
     });
 
     // Phase 1 Task 8: 用 splitRows/rowAt 迭代 driver 行 + 手动新增行，
@@ -1108,7 +1147,8 @@ const QuotationWizard: React.FC = () => {
         });
       }
       treeResults = computeTabFormulasTree(
-        cd, treeRowInputs, componentSubtotals, undefined, undefined, partNo, gvDefs);
+        // 末位 crossTabRows：与 buildCrossTabRows.computeRows 的树分支逐参对齐（QuotationStep2:1509）。
+        cd, treeRowInputs, componentSubtotals, undefined, undefined, partNo, gvDefs, crossTabRows);
     }
 
     const out: Record<string, any>[] = [];
@@ -1152,7 +1192,9 @@ const QuotationWizard: React.FC = () => {
         const formulaCache = computeAllFormulas(
           cd, enriched, componentSubtotals,
           undefined, undefined, partNo, basicDataValues, undefined,
-          gvDefs, undefined, prevRowValues,   // B-GV-1: gvDefs; Plan 2b: 末位 prevRowValues(按本列)
+          // B-GV-1: gvDefs; repair-0805: crossTabRows(第10参,不传则 cross_tab_ref 全 0); Plan 2b: prevRowValues(按本列)
+          // 与 buildCrossTabRows.computeRows 的非树分支逐参对齐（QuotationStep2:1533）。
+          gvDefs, crossTabRows, prevRowValues,
         );
         for (const f of fields) {
           if (f.field_type !== 'FORMULA') continue;

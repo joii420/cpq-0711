@@ -9,7 +9,7 @@ import { useDriverExpansions, driverExpansionKey, fieldsOverrideHash, bnfDriverL
 import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
 import { splitRows, rowAt } from './manualRows';
 import { useTreeCollapse } from './useTreeCollapse';
-import { computeRowKey, buildUniqueRowKeys, getByKeyWithLegacyFallback } from './useCardSnapshots';
+import { computeRowKey, buildUniqueRowKeys, buildLegacyRowKeySets, getByKeyWithLegacyFallback } from './useCardSnapshots';
 import type { CardStructure, CardValues } from '../../services/quotationService';
 import { useConfigTemplates } from './useConfigTemplates';
 import { usePathFormulaCache } from './usePathFormulaCache';
@@ -678,19 +678,21 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                       const roUniqRowKeys = useSnap
                         ? buildUniqueRowKeys(activeComp.fields, activeRowKeyFields, roUniqRowKeyTuples, !isCosting)
                         : [];
-                      const roLegacyUniqRowKeys = useSnap
-                        ? buildUniqueRowKeys(activeComp.fields, activeRowKeyFields, roUniqRowKeyTuples)
-                        : [];
+                      // repair-0805 F6：两档历史口径键（无前缀旧解析 / 带前缀旧解析），查表未命中新键时依次回退。
+                      const roLegacyRowKeySets = useSnap
+                        ? buildLegacyRowKeySets(activeComp.fields, activeRowKeyFields, roUniqRowKeyTuples, !isCosting)
+                        : { legacyPrefixed: [] as string[], legacyNoPrefix: [] as string[] };
                       for (let ri = 0; ri < effectiveCount; ri++) {
                         const ra = rowAt(ri, activeComp, s);
                         const rawRow = ra.row;
                         const rowBdv = ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
                         // Phase4 Task4: 优先读快照 formulaResults[rowKey](真零计算, 与编辑页 AP-50 同源), 缺时 computeAllFormulas 兜底。
                         const rowKey = useSnap ? (roUniqRowKeys[ri] ?? String(ri)) : String(ri);
-                        // F0：新键未命中时按同一行位置的旧口径键回退（存量单据兼容）。
-                        const legacyRowKey = useSnap ? (roLegacyUniqRowKeys[ri] ?? String(ri)) : String(ri);
+                        // F0 + F6：新键未命中时按同一行位置的两档历史口径键依次回退（存量单据兼容）。
+                        const legacyRowKeyPrefixed = useSnap ? (roLegacyRowKeySets.legacyPrefixed[ri] ?? String(ri)) : String(ri);
+                        const legacyRowKey = useSnap ? (roLegacyRowKeySets.legacyNoPrefix[ri] ?? String(ri)) : String(ri);
                         const snapFormula = useSnap
-                          ? getByKeyWithLegacyFallback(activeSnap?.formula, rowKey, legacyRowKey)
+                          ? getByKeyWithLegacyFallback(activeSnap?.formula, rowKey, legacyRowKeyPrefixed, legacyRowKey)
                           : undefined;
                         const errForRow: Record<string, string> = {};
                         const cache: Record<string, number | null> = (snapFormula && Object.keys(snapFormula).length > 0)
