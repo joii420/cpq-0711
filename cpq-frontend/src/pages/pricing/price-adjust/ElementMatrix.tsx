@@ -71,6 +71,14 @@ const ElementMatrix: React.FC<ElementMatrixProps> = ({ customerNo, selected, onC
   const handleQuery = () => fetchPage(1);
   const handleReset = () => { setKeyword(''); setIncludeDisabled(true); };
 
+  /**
+   * keys 的语义**取决于 rowSelection.preserveSelectedRowKeys**（见下方 Table 处注释），
+   * 与 MaterialRangeMatrix.handleSelectionChange 完全同构：
+   *  · 开（现状）：keys = 跨页全集 → 下面的 delete 循环只删真正被取消勾选的，语义正确；
+   *  · 关：keys 只剩本页 → 同一段循环会把他页已选全部抹掉（#2 同款放大器）。
+   * 所以这段**不是**冗余，也不能改成"只增不减"——取消勾选全靠它（且元素侧取消勾选在父层
+   * 还要走二次确认，更不能悄悄失效）。开关与这段必须成对存在。
+   */
   const handleSelectionChange = (keys: React.Key[]) => {
     const keySet = new Set(keys.map(String));
     const next = new Map(selected);
@@ -159,6 +167,18 @@ const ElementMatrix: React.FC<ElementMatrixProps> = ({ customerNo, selected, onC
         rowSelection={{
           selectedRowKeys: Array.from(selected.keys()),
           onChange: handleSelectionChange,
+          // 🔒 跨页保留选中的开关本体（与 MaterialRangeMatrix 同构修复，#2 同款缺陷）。
+          // antd 6.3.5 useSelection.js#setSelectedKeys：未开该开关时用 getRecordByKey(key) 把不在
+          // 当前 dataSource（本页 20 行）的 key 全部过滤掉 → 内部 state 与 onChange 回传都只剩本页，
+          // 翻页后再勾一次，他页已选静默丢失 → 保存时按 selected.keys() 提交，漏掉的元素不参与调价。
+          // 现网 element 表 37 行 > 每页 20，本组件**一直在分页**，该缺陷是可触达的。
+          //
+          // 🔑 元素侧特有的一维：includeDisabled 关掉时，已停用元素会从 dataSource 消失。
+          //    没有本开关时，此后任何一次勾选都会把「已勾选但当前不可见的停用元素」一并抹掉，
+          //    直接违反验收 #51「停用元素仍留在清单里、照常参与调价」。开关同时兜住这一条。
+          //
+          // ⚠️ 与上方 handleSelectionChange 的 delete 循环是**一对**，任何一方单独改动都会重现缺陷。
+          preserveSelectedRowKeys: true,
         }}
         pagination={{
           current: page,
