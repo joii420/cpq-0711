@@ -248,7 +248,12 @@ const PriceAdjustStrategyTab: React.FC<PriceAdjustStrategyTabProps> = ({ custome
           <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
             <Form.Item name="enabled" label="启用状态" valuePropName="checked" style={{ minWidth: 320 }}
               extra="停用后不再自动生成版本；已生成版本与已生效价格不受影响。">
-              <Switch checkedChildren="已启用" unCheckedChildren="已停用" />
+              {/* 🔒 与 ElementMatrix 的元素停用标签**刻意用不同的词**，二者指的不是一回事：
+                  这里是「本客户的调价策略开不开」→ 开启/关闭；
+                  ElementMatrix 里那个标签说的是「元素在主数据中被停用」，不得跟着改成"关闭"
+                  —— 元素不是被关闭而是被停用，无差别替换会让那个标签读不通。
+                  （措辞刻意避开该标签的原文，好让"改文案时 grep 一遍"的审计不出现噪音命中） */}
+              <Switch checkedChildren="开启" unCheckedChildren="关闭" />
             </Form.Item>
             <Form.Item name="costDiffThreshold" label="成本差额预警线" rules={[{ required: true, message: '请输入成本差额预警线' }]}
               style={{ minWidth: 260 }} extra="报价侧成本 − 核价侧成本 < 该值即标红。金额（元），默认 0，只提醒不阻断。">
