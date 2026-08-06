@@ -116,6 +116,24 @@
 
 ## P1
 
+### [BL-0126] jsonb 往返丢精度缺陷族 —— 还有第 3、第 4 个写点未修
+- **优先级**：P1
+- **来源**：task-0729 验收 `#58` 修复后全工程 grep（2026-08-05）
+- **状态**：待开发（**均在 priceadjust 之外，本任务按边界未动**）
+- **判据**：`new ObjectMapper()` 无配置 **+** `readTree` 解析既有 jsonb **+** `writeValueAsString` 写回同一列 → 整组数据被重新序列化，小数被 double 规范化
+- **已修 2 处**：`PriceReconciler:95`（`4f069534`）、`MaterialVersionUpgradeService:79`（`e0e8e4e8`）
+  - ⚠️ 后者一次覆盖**三组**持久化 JSON：`snapshot_rows`/`row_data` + **`quote_card_values`**（`cleanEditRowOverrides:315→348`）+ **`quotation_price_revision` 三列快照**（`materializeAndSealInitialRevision:731→721`）。**后两组此前无人注意 —— R 基线快照一直在被静默改写**
+- **待修 #3 · `QuotationTreeService`（确凿同构，已实证到行）**
+  - `:112 parseRows` 用无配置 MAPPER `readTree` 既有 `snapshot_rows` → `rebuilt.add(rows.get(i))` **原样搬运每一行** → `:297 writeSnapshotRows` 写回
+  - **后果**：报价侧 BOM 树**每加一个手工叶子，整组兄弟行的小数就被重新规范化一次**
+  - 修法：同 `PriceReconciler` 的三项配置（`USE_BIG_DECIMAL_FOR_FLOATS` + `JsonNodeFactory.withExactBigDecimals(true)` + `WRITE_BIGDECIMAL_AS_PLAIN`），**缺一不可**（只加第一项会从"丢精度"变成"`2200.000000` → `2.2E+3`"）
+- **待修 #4 · `ConfigureSnapshotService`（高度可疑，需再追一层定性）**
+  - `:1222/:1233 writeRowData`、`:1467 writeSnapshot`；`byComp` 由上游同款默认 MAPPER 解析的 `JsonNode` 组装
+  - 需追 `computeLineRowData` 的入参来源才能确认是否同构
+- **实证数据**（升版路径修复前）：`99999999999999.999999 → 100000000000000`（数值被改）、50 位小数截成 `3.141592653589793`、`100.000000 → 100.0`
+- **现网痕迹**：`QT-20260726-0018 | 171.368000` vs `QT-20260728-0023 | 171.368`（同版本同元素两种字面并存）
+- **预估规模**：S（#3，1 行 + 验证）+ S（#4，先定性）
+
 ### [BL-0120] 组件导入导出功能升级 —— 绑定校验前移 + 旧版 bundle 兼容 + 往返保真
 - **优先级**：P1（当前缺陷：绑定问题只在导入**提交**时才 400，用户拿着 JSON 无从修改）
 - **来源**：2026-08-05 repair-0805 收尾时用户指出「应该在导出时就拦」
