@@ -224,9 +224,13 @@ class EditRowsFromRowDataTest {
         assertNull(seed(snapshot(), baseRows("[]"), "[{\"row_index\":0}]", "[\"料件\"]", null), "无 baseRows → 不产出");
     }
 
-    /** T1.9 显式 editRows 优先：同 (rowKey, 字段) 冲突时保留 editCardValue 写入的值。 */
+    /**
+     * T1.9 合并方向：同 (rowKey, 字段) 冲突时 <b>row_data 覆盖</b>既有 editRows。
+     * 沿用 2026-06-02 mergeRowDataInputsIntoEdits 的既定语义 —— editRows 由 editCardValue 在失焦那刻写，
+     * row_data 由 1.5s 防抖 saveDraft 随后写，后者更新。
+     */
     @Test
-    void t1_9_explicit_edits_win_over_seeded() throws Exception {
+    void t1_9_rowdata_wins_over_existing_edits() throws Exception {
         JsonNode snap = snapshot();
         ArrayNode base = baseRows("[{\"driverRow\":{\"料件\":\"Ag粉\"}}]");
         List<String> keys = FormulaCalculator.uniquifyRowKeys(
@@ -244,6 +248,7 @@ class EditRowsFromRowDataTest {
         svc.seedEditRowsFromRowData(snap, baseMap(base), rd, rkfMap("[\"料件\"]"), del, into);
 
         JsonNode v = valuesOf(into.get("C1"), keys.get(0));
-        assertEquals("7", v.path("材料占比").asText(), "显式 editRows 值优先，不被回种覆盖");
+        assertEquals("0.25", v.path("材料占比").asText(), "row_data 是更新的输入，覆盖既有 editRows 同字段");
+        assertEquals("Ag粉", v.path("料件").asText(), "既有 editRows 里没有的字段照常补上");
     }
 }

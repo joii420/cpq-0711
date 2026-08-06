@@ -2431,7 +2431,14 @@ public class CardSnapshotService {
         return true;
     }
 
-    /** 合并回种结果：显式 editRows（editCardValue 写入）优先，同 (rowKey, 字段) 冲突时保留既有值。 */
+    /**
+     * 合并回种结果：同 (rowKey, 字段) 冲突时 <b>row_data 覆盖既有 editRows</b>。
+     *
+     * <p>方向沿用 2026-06-02 {@code mergeRowDataInputsIntoEdits} 的既定语义（"row_data 是当前权威输入"）：
+     * {@code editRows} 由 {@code editCardValue} 在失焦那一刻写，{@code row_data} 由 1.5s 防抖 saveDraft
+     * 随后写 —— 后者更新。{@code buildCardValues} 路径下 {@code into} 恒空，本方向只对
+     * {@code mergeRowDataInputsIntoEdits} 那三个调用点生效，保持它们行为语义不变。
+     */
     private void mergeSeededInto(Map<String, ArrayNode> into, String cid, ArrayNode seeded) {
         ArrayNode existing = into.get(cid);
         if (existing == null || existing.size() == 0) { into.put(cid, seeded); return; }
@@ -2446,9 +2453,7 @@ public class CardSnapshotService {
             JsonNode hitValues = hit.path("values");
             if (!hitValues.isObject()) { hit.set("values", sr.path("values")); continue; }
             ObjectNode hv = (ObjectNode) hitValues;
-            sr.path("values").fields().forEachRemaining(e -> {
-                if (!hv.has(e.getKey())) hv.set(e.getKey(), e.getValue());   // 既有值优先
-            });
+            sr.path("values").fields().forEachRemaining(e -> hv.set(e.getKey(), e.getValue()));
         }
     }
 
@@ -3189,12 +3194,23 @@ public class CardSnapshotService {
     /**
      * 2026-06-02 修复: 把 quotation_line_component_data.row_data（autosave 持久化的当前 INPUT 值，
      * 与前端渲染 comp.rows 同源）按 rowKey 合并进 editRows，供草稿打开重刷 formulaResults 用当前输入重算。
-     * <ul>
-     *   <li>仅取 {@code INPUT_NUMBER/INPUT_TEXT} 用户输入字段；不取 driver/FORMULA/LIST_FORMULA（由 baseRows/重算提供）。</li>
-     *   <li>row_data[i] 与 baseRows[i] 同序（同 driver 展开）；rowKey 用 baseRows[i].driverRow 计算（与 filter 对齐），空 rkf → 位置下标。</li>
-     *   <li>row_data 是当前权威输入 → 覆盖 editRows 同字段；row_data 缺该字段则保留旧 editRows 值。</li>
-     *   <li>任一步失败 → 降级返回原 editRows，不阻断打开。</li>
-     * </ul>
+     *
+     * <p><b>BL-0127（2026-08-05）改为 delegate 到 {@link #seedEditRowsFromRowData}，原地实现已删除。</b>
+     * 两个原因：
+     * <ol>
+     *   <li><b>原实现在冻结结构上一直是死的</b> —— 它按 snake {@code field_type} 取字段类型，而
+     *       {@code loadQuoteTabsForValues} 优先返回<b>冻结结构</b>（{@code quotation_view_structure}），
+     *       后者全库 <b>1507/1507 是 camel {@code fieldType}</b>（0 条 snake）→ {@code inputFields} 恒空
+     *       → 整个合并恒 no-op。2026-06-02 想拦的「单元格读快照旧值、列小计前端实时算 → 不一致」
+     *       就是本次 QT-20260805-0080 的同一症状，守卫没生效，故障因此活到今天。</li>
+     *   <li><b>原实现按 {@code Math.min(baseRows, rowData)} 直接下标配对</b>，不看墓碑 —— 有永久删除行时
+     *       row_data（减墓碑口径）会整体错位，把 A 行输入写到 B 行头上；且行键用不带 {@code __nodeId}
+     *       前缀的旧口径，树页签对不上。若只把 camel 补上、不换算法，等于把一个恒 no-op 的函数
+     *       "唤醒"成一个会静默改错数的函数。</li>
+     * </ol>
+     * 收敛后全工程只有一份 row_data→editRows 算法（repair-0727 B0「单一口径」纪律）。
+     * 合并方向（row_data 覆盖 editRows 同字段）与原语义保持一致，见 {@link #mergeSeededInto}。
+     * 任一步失败 → 降级返回原 editRows，不阻断打开（行为不变）。
      */
     private Map<String, ArrayNode> mergeRowDataInputsIntoEdits(
             JsonNode snapshot, Map<String, ArrayNode> baseRowsByComp,
@@ -3214,73 +3230,21 @@ public class CardSnapshotService {
                 "WHERE line_item_id = :lid AND row_data IS NOT NULL")
                 .setParameter("lid", lineItemId)
                 .getResultList();
-            Map<String, JsonNode> rowDataByComp = new LinkedHashMap<>();
+            Map<String, String> rowDataByComp = new LinkedHashMap<>();
             for (Object[] r : rd) {
-                if (r[0] != null && r[1] != null) {
-                    JsonNode arr = MAPPER.readTree(r[1].toString());
-                    if (arr.isArray()) rowDataByComp.put(r[0].toString(), arr);
-                }
+                if (r[0] != null && r[1] != null) rowDataByComp.put(r[0].toString(), r[1].toString());
             }
             if (rowDataByComp.isEmpty()) return oldEdits;
 
+            // 行键节点（每组件一次）——与既有实现一致，逐行查 row_key_fields
+            Map<String, JsonNode> rkfByComp = new LinkedHashMap<>();
             for (JsonNode tab : snapshot) {
                 String cid = tab.path("componentId").asText("");
-                if (cid.isBlank()) continue;
-                JsonNode rowData = rowDataByComp.get(cid);
-                if (rowData == null || !rowData.isArray() || rowData.size() == 0) continue;
-
-                // INPUT 字段名集合（仅用户输入，不含 FORMULA/LIST_FORMULA/driver）
-                List<String> inputFields = new ArrayList<>();
-                for (JsonNode f : tab.path("fields")) {
-                    String ft = f.path("field_type").asText("");
-                    if ("INPUT_NUMBER".equals(ft) || "INPUT_TEXT".equals(ft)) {
-                        String n = f.path("name").asText("");
-                        if (!n.isEmpty()) inputFields.add(n);
-                    }
-                }
-                if (inputFields.isEmpty()) continue;
-
-                ArrayNode baseRows = baseRowsByComp.getOrDefault(cid, MAPPER.createArrayNode());
-                JsonNode rkf = loadRowKeyFieldsNode(cid);
-                ArrayNode edits = merged.computeIfAbsent(cid, k -> MAPPER.createArrayNode());
-                Map<String, ObjectNode> editByKey = new LinkedHashMap<>();
-                for (JsonNode er : edits) {
-                    if (er.isObject()) editByKey.put(er.path("rowKey").asText(""), (ObjectNode) er);
-                }
-
-                JsonNode fieldsDef = tab.path("fields");
-                // 行键唯一化预扫（撞键→#序号），对齐 computeRows / buildResolvedRows / 前端；
-                // 须按全部 baseRows 定序号，再按下标取（保证与逐行求值的 #序号一致）。
-                List<String> rawKeys = new ArrayList<>();
-                for (int i = 0; i < baseRows.size(); i++) {
-                    JsonNode br = baseRows.get(i);
-                    String rk = formulaCalculator.computeRowKey(rkf, fieldsDef,
-                            br.path("driverRow"), br.path("basicDataValues"));
-                    rawKeys.add((rk != null && !rk.isEmpty()) ? rk : String.valueOf(i));
-                }
-                List<String> uniqKeys = FormulaCalculator.uniquifyRowKeys(rawKeys);
-
-                int n = Math.min(baseRows.size(), rowData.size());
-                for (int i = 0; i < n; i++) {
-                    String rowKey = uniqKeys.get(i);
-                    JsonNode rdRow = rowData.get(i);
-
-                    ObjectNode editRow = editByKey.get(rowKey);
-                    if (editRow == null) {
-                        editRow = MAPPER.createObjectNode();
-                        editRow.put("rowKey", rowKey);
-                        editRow.putObject("values");
-                        edits.add(editRow);
-                        editByKey.put(rowKey, editRow);
-                    }
-                    ObjectNode vals = editRow.path("values").isObject()
-                        ? (ObjectNode) editRow.path("values") : editRow.putObject("values");
-                    for (String fld : inputFields) {
-                        JsonNode v = rdRow.path(fld);
-                        if (!v.isMissingNode() && !v.isNull()) vals.set(fld, v); // 当前权威输入覆盖
-                    }
-                }
+                if (!cid.isBlank() && !rkfByComp.containsKey(cid)) rkfByComp.put(cid, loadRowKeyFieldsNode(cid));
             }
+
+            seedEditRowsFromRowData(snapshot, baseRowsByComp, rowDataByComp, rkfByComp,
+                loadTombstonesByComp(lineItemId), merged);
             return merged;
         } catch (Exception e) {
             LOG.warnf("[card-snapshot] mergeRowDataInputsIntoEdits 降级 li=%s: %s", lineItemId, e.getMessage());
