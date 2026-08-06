@@ -247,6 +247,13 @@ const QuotationWizard: React.FC = () => {
   // 止血B(2026-06-25):保存在飞状态,驱动「保存草稿/下一步/上一步」按钮禁用 + loading,
   //   配合 handleSaveDraft 的 savingRef 在飞守卫,杜绝卡顿期连点并发触发 saveDraft(→OptimisticLock/腐蚀)。
   const [saving, setSaving] = useState(false);
+  // 方向3 T3-3（2026-08-06）：提交在飞守卫 —— 双击「提交审批」会并发两条提交请求，
+  //   后端提交前置的金额重算是单飞的（拿不到锁直接 409，不再拿旧值静默冻结），
+  //   于是第二条几乎必然 409，用户看到一次「成功」+ 一次红色报错，体验上像是失败了。
+  //   ref 与 state 双写：ref 用于同步拦截（同一 tick 内的两次 click，setState 还没生效），
+  //   state 只负责按钮 loading/disabled 的渲染。与 savingRef/saving 同款写法。
+  const submittingRef = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
   // Plan 1b：提交行键冲突 Drawer
   const [rowKeyConflicts, setRowKeyConflicts] = useState<RowKeyConflictDTO[]>([]);
   const [conflictDrawerOpen, setConflictDrawerOpen] = useState(false);
@@ -967,6 +974,24 @@ const QuotationWizard: React.FC = () => {
         customerPartNo: (li as any).customerPartNo || (li as any).customerProductNo || null,
         productAttributeValues: JSON.stringify(li.productAttributeValues || {}),
         // repair-0805：复用行级上下文的 subtotals（= getComponentSubtotalsFull 同值），省一次 PASS1+PASS2。
+        //
+        // ── 方向3 T3（2026-08-06）：这个值【只是兜底，不是权威】——保留但降级 ──
+        //   为什么还送：后端保存时原样写库，保证该字段永远有值、无空窗期，
+        //     下游读取方（后端 44 处 / 前端 257 处）全都不用改。
+        //   谁才是权威：后端在整单卡片值懒算完成后，会从卡片值里取本行的产品小计页签值，
+        //     在【同一个事务内】把库里这一份覆盖掉。覆盖点是后端卡片值赋值的统一收敛入口，
+        //     报价单的 5 条卡片值写路径（懒算批量 / 加产品+导入 / 刷新基础数据 / 单元格失焦改价 /
+        //     树删除重灌）全部经过它，所以任何一条路径产出的数都同源。
+        //   由此产生的一个【预期行为】：编辑页看到的数与保存后列表/详情里的数可能不一样。
+        //     编辑页（本文件 Step5 合计、Step2 卡片底部"产品小计"）是前端实时算的显示值；
+        //     列表页/详情页读的是后端权威值。两者不一致时以后端那份为准，不是 bug。
+        //     ⚠️ 时间差：覆盖发生在"懒算完成后"而不是"保存返回的瞬间"，
+        //        所以保存刚返回的那一小段时间里，库里存的仍是这份兜底值。
+        //   一句话：前端算的这一份，从此只用于页面即时显示，不再承担一致性责任。
+        //   出处：dev-docs/task-0729-客户价格调整策略和价格版本/
+        //         方向3-总价单一来源改造-开发计划.md（§一 核心设计 / §四 T1 实施结果 A、B）
+        //   （本段刻意用中文描述后端字段与方法，不写它们的完整标识符 ——
+        //     那些符号正被 grep 审计，写进注释会变成噪音命中。）
         subtotal: computeProductSubtotalSafe(li, driverExpansions, customerIdValue, gvDefs, evalCtxOf(li).subtotals),
         sortOrder: idx,
         // 选配/回读的工序回传:后端 saveDraft 据此回写 quotation_line_process(工序跨保存存活)。
@@ -1242,7 +1267,9 @@ const QuotationWizard: React.FC = () => {
     }
   };
 
-  const handleSaveDraft = async (silent = false) => {
+  // opts.skipWarm：跳过保存成功后的 fire-and-forget 卡片值 warm。
+  //   仅提交路径使用 —— 见 handleSubmit 里的说明（warm 与提交抢同一把单飞锁，必 409）。
+  const handleSaveDraft = async (silent = false, opts?: { skipWarm?: boolean }) => {
     if (!quotationId) return;
     // 止血B(2026-06-25)在飞守卫:已有保存在飞(autoSave 或手动)→ 标记补跑后返回,不并发起第二条
     //   saveDraft。背景:首存慢(几十秒)时用户在卡顿期连点「保存草稿/下一步」会并发触发多个 saveDraft,
@@ -1266,8 +1293,10 @@ const QuotationWizard: React.FC = () => {
       setQuotationPreservingStructures(res.data);
       // 回填重建后的新行 id + partVersionLocked,避免卡片版本号停在旧值、并触发展开按新 id 重拉
       syncLineItemsFromResponse(res.data);
-      // lazy-cardvalues：显式保存(保存草稿/下一步/提交前置存)成功后 warm,与导入首存同口径,fire-and-forget。
-      warmCardValues(quotationId, (res.data?.lineItems ?? lineItems) as any[]);
+      // lazy-cardvalues：显式保存(保存草稿/下一步)成功后 warm,与导入首存同口径,fire-and-forget。
+      // 方向3 T3-3：提交路径(skipWarm)不再 warm —— 提交接口内部本来就会做同一件事,
+      //   而且是在提交事务里做(权威)。这里再 fire-and-forget 一次只会跟它抢同一把单飞锁。
+      if (!opts?.skipWarm) warmCardValues(quotationId, (res.data?.lineItems ?? lineItems) as any[]);
       if (!silent) message.success('草稿已保存');
       safeSetLocalDraft(`cpq-draft-${quotationId}`, JSON.stringify(payload));
     } catch (e: any) {
@@ -1292,9 +1321,28 @@ const QuotationWizard: React.FC = () => {
 
   const handleSubmit = async () => {
     if (!quotationId) return;
+    // 方向3 T3-3：在飞守卫（同步）。按钮的 disabled 由 React 渲染驱动，慢一拍；
+    //   同一 tick 内的第二次 click 只有 ref 拦得住。返回前给一句提示，避免"点了没反应"。
+    if (submittingRef.current) {
+      message.info('正在提交中，请稍候…');
+      return;
+    }
+    submittingRef.current = true;
+    setSubmitting(true);
     try {
       // Save draft first
-      await handleSaveDraft();
+      // 方向3 T3-3（实测发现，2026-08-06）：这里必须 skipWarm。
+      //   保存接口会把本单所有行的卡片值置空 → 保存成功后原本会 fire-and-forget 发一条
+      //   "补算卡片值"请求 → 它拿走该报价单的单飞锁并占用数百毫秒；紧接着(实测相隔 1ms)
+      //   发出的提交请求在服务端要做同一件事，拿不到锁就直接 409。
+      //   实测 A/B（从同一张单复制出的两张全新草稿，单击一次「提交审批」）：
+      //     不 skipWarm → 补算与提交同一毫秒发出 → 提交 409，单据停在草稿；
+      //     skipWarm    → 只发提交一条 → 200，单据进入已提交。
+      //   提交接口内部自己会把卡片值补算完（且在提交事务内，才是权威的那一次），
+      //   所以这里这次纯属重复劳动 + 自己跟自己抢锁，去掉即可。
+      //   ⚠️ 改这行前先看：dev-docs/task-0729-客户价格调整策略和价格版本/
+      //      方向3-总价单一来源改造-开发计划.md §四 T1 实施结果 C（提交时序 / 拿不到锁改抛 409）。
+      await handleSaveDraft(false, { skipWarm: true });
       await quotationSnapshotService.submit(quotationId);
       message.success('报价单已提交审批');
       // Reload to get updated status
@@ -1305,8 +1353,15 @@ const QuotationWizard: React.FC = () => {
         setRowKeyConflicts(conflicts);
         setConflictDrawerOpen(true);
       } else {
-        message.error(e.message);
+        // 方向3 T3-3：后端在"提交前置的金额重算"拿不到单飞锁时返回 409，其 message 是
+        //   专门写给用户看的可操作文案（含"请稍候几秒后重新提交"），必须原样透出、
+        //   不能吞成通用错误。链路：后端信封 message → api.ts buildApiError → e.message。
+        //   409 延长到 6s，避免默认 3s 一闪而过导致用户没看清该怎么办。
+        message.error(e.message, e?.httpStatus === 409 ? 6 : undefined);
       }
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
     }
   };
 
@@ -1787,7 +1842,21 @@ const QuotationWizard: React.FC = () => {
               { title: '产品名称', dataIndex: 'productName' },
               { title: '产品料号', dataIndex: 'productPartNo' },
               // task-0801：不再固定 toLocaleString()（默认最多 3 位），走 formatNumber 6 位去尾零兜底
-              { title: '小计', dataIndex: 'subtotal', render: (v: number) => `¥${formatNumber(v || 0, { isComputed: true }) ?? '0'}` },
+              //
+              // 方向3 T3-2（2026-08-06）：本列原先读 li.subtotal —— 那是后端值，且只在【打开页面时】
+              //   回读一次（保存后的回填不含该字段），而正下方的合计/原始总金额走前端实时算。
+              //   于是同一屏出现两个口径：实测行小计 ¥37.330516 vs 合计 ¥37.330542。
+              //   改为与合计同源的实时算：编辑页内部自洽，且随输入实时跟随（编辑反馈不变）。
+              // 🔒 方向别搞反：不要反过来把合计改成读后端值。那样用户每改一次输入框就分岔一次
+              //   （合计动、行不动，要等保存+懒算才跳），比现状更难解释。
+              //   落库权威值仍以后端为准 —— 见本文件 buildDraftPayload 中 subtotal 那段说明；
+              //   两者残差是末位舍入量级（实测 2.6e-5），在项目的小数显示口径下渲染不出来。
+              {
+                title: '小计',
+                key: 'subtotal',
+                render: (_: unknown, li: LineItem) =>
+                  `¥${formatNumber(computeProductSubtotal(li, driverExpansions, customerIdValue), { isComputed: true }) ?? '0'}`,
+              },
             ]}
             summary={() => (
               <Table.Summary>
@@ -1827,6 +1896,10 @@ const QuotationWizard: React.FC = () => {
               size="large"
               icon={<SendOutlined />}
               onClick={handleSubmit}
+              // 方向3 T3-3：提交在飞时禁用 + loading，配合 handleSubmit 的 submittingRef
+              //   同步守卫，杜绝双击并发提交（第二条必然撞后端单飞锁 → 409）。
+              loading={submitting}
+              disabled={submitting}
             >
               提交审批
             </Button>

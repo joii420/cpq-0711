@@ -4882,3 +4882,117 @@ ZZM- 夹具 4 表计数全 0 ✅；未触碰 `CUST-0729-*` / `CUST-0805-*`。
 **自检**：`mvnw -o test -Dtest=<task0805 全部+护栏>` → 130/0/0 ✅；全量 A/B 失败集合逐条重合、零回归 ✅；前端 `tsc` 改动文件 0 错误 + `vitest` 1105/2 failed（既有，干净 HEAD 同样失败）✅；5 个改动 tsx/ts + 主入口 Vite transform 全 200 ✅；临时实例已关停、主仓 5174/8081 未受影响（200/401）✅。
 
 **遗留**：① AC-5 真人点击走查未做（agent 无浏览器能力），建议合并后在 5174 上点一遍固化抽屉；② `M-05` 非管理员 403 提示本环境无法构造账号，未验证；③ 全量套件既有 319 个失败方法（共享测试库数据外键冲突）建议单独立项。
+
+---
+
+## [2026-08-06] 方向3 T3 前端收尾 —— 提交处兜底语义注释 + 双源显示排查 + 提交防抖（含一个实测抓到的真 bug）
+
+**背景**：方向3 后端已交付（`49e540c6` T1 + `05196bb4` T2）。改造后总价的权威来源变成「卡片值算完后由后端覆盖」，**前端算的那份降级为仅供页面即时显示**。T3 是前端收尾。
+
+**涉及文件**：`cpq-frontend/src/pages/quotation/QuotationWizard.tsx`（唯一改动文件，+64/-5）
+- `:249-256` 新增 `submittingRef` / `submitting`
+- `:977-995` 提交 payload 处的兜底语义注释
+- `:1270` `handleSaveDraft` 增 `opts.skipWarm`
+- `:1296-1299` warm 改条件触发
+- `:1322-1362` `handleSubmit` 在飞守卫 + skipWarm + 409 文案透出
+- `:1880-1887` 提交按钮 `loading`/`disabled`
+
+### 🔴 实测抓到的真 bug：单击「提交审批」100% 返回 409（前端自己跟自己抢锁）
+
+后端 §4.1-C 把「拿不到单飞锁」从「用旧值静默冻结」改成抛 409，并评估**最现实的触发源是用户双击**。实测**不是** ——
+
+```
++11524ms REQ  POST .../ensure-card-values   ← handleSaveDraft 成功后 fire-and-forget 的 warm
++11525ms REQ  POST .../submit               ← 1ms 后发出
++11916ms RESP 200 ensure-card-values        ← warm 占住单飞锁 ~390ms
++12374ms RESP 409 submit                    ← 提交拿不到锁
+```
+
+链路：`saveDraft` 无条件把本单所有行卡片值置 NULL（`QuotationService:505-506`）→ `shouldWarmCardValues` 恒真 → warm 必发 → 与紧随其后的 submit 抢同一把 advisory lock。**用户单击一次就必然 409，且重试同样失败**（重试还会再 saveDraft 再置 NULL）。
+
+**修法**：提交路径 `handleSaveDraft(false, { skipWarm: true })`。提交接口内部本来就会补算（且在提交事务内，才是权威的那次），前端这次纯属重复劳动 + 自己跟自己抢锁。
+**A/B 实证**（同一张单复制出的两张全新草稿，单击一次）：不 skipWarm → 409 且停在草稿；skipWarm → 200 且进入已提交。
+
+### ⚠️ 量具教训：**409 有多种，只看状态码会把"沙箱被污染"误读成"锁竞争"**
+
+首轮结论差点错。沙箱在早期一次 curl 提交中成功过，留下 PENDING 核价单 → 之后所有提交返回的其实是 `已存在进行中的核价单` 的 409，不是锁 409。**两者状态码相同、时序也像**。改用「每轮开全新沙箱 + 断言 toast 原文 + 建单前查 `costing_order` 计数」重做，结论才站住。
+👉 **规范：状态码不是判别器，带 code 的错误必须断言 message 原文。**
+
+### 排查结论：三处 UI 的总价来源不统一（**只排查未改**，等裁决）
+
+| 位置 | 取值 | 来源 |
+|---|---|---|
+| 编辑页 Step2 卡片底部「产品小计」 | `computeProductSubtotal(...)` | 前端实时算 |
+| 编辑页 Step5「小计」列 | `li.subtotal` | 后端值，但**只在打开页面时回读** |
+| 编辑页 Step5 合计/原始总金额/最终总金额 | `computeProductSubtotal(...)` | 前端实时算 |
+| 列表页「总金额」 | `quotation.totalAmount` | 后端权威 |
+| 详情页 原价合计/报价总金额 | `quotation.originalAmount/totalAmount` | 后端权威 |
+| 详情页 只读卡片「产品小计」 | `computeProductSubtotal(...)` | 前端实时算 |
+
+**关键点**：`syncLineItemsFromResponse` 只回灌 `id/partVersionLocked/4 份卡片值`，**不回灌 `subtotal`** → 保存后 Step5「小计」列停在打开页面时的旧值。
+**后果**：Step5 同屏出现两个不同的数（截图实证：行小计 `¥59.57999` vs 合计 `¥59.580015`；另一张 `¥37.330516` vs `¥37.330542`）。0082 故障场景下这个差是 `59.58` vs `37.33`。
+**这不是本次引入**（改造前两侧本就各算各的），但改造后后端值会被主动纠正，差异从"偶发"变成"系统性"。**改不改待裁决。**
+
+### 自检
+`tsc --noEmit` 0 错误 ✅；`QuotationWizard.tsx` 经**临时端口 5199**（非共享 5174）transform 200 且产物含新代码、无临时对照残留 ✅；
+双击防抖四条证据链（同 tick 连发/`disabled` 仍为 false/守卫提示出现/1 条请求 200）+ **阴性对照**（拆守卫 → 2 条请求 `[200,409]`）✅；
+409 文案 UI 实测（外部持 advisory lock 制造确定性 409）→ 用户可见完整中文提示 ✅；
+沙箱 5 张全部删除、advisory lock 归零、临时 spec/vite 已清、`0082/0083/0087` 逐字节未动 ✅。
+
+### 遗留
+- 上表「三处 UI 双源」待产品裁决（建议：`syncLineItemsFromResponse` 回灌 `subtotal` + Step5 合计改 Σ 行小计，两处一起改才自洽）。
+- `handleSubmit` 里 `await handleSaveDraft()` 遇到**已有保存在飞**时会立即返回（`savingRef` 守卫）→ 提交可能先于草稿落地；且此时那条在飞保存自己的 warm 仍会与提交抢锁。本次未动，属既有形态。
+
+### 追补（同日晚）：skipWarm 数据正确性实测 + 两处 warm 轮询与提交路径的关系
+
+**1. skipWarm 只验了「返回 200」不够，补了数据对照**（技术总监要求）。同源复制两张全新草稿，走到 Step5 后分叉：
+A = 点「提交审批」（skipWarm，补算只能发生在提交事务内）；B = 点「保存草稿」（会 warm）→ 等落地 → 外部 curl 提交。
+结果：`li.subtotal` / `cd.subtotal`(8/8) / `original_amount` / `total_amount` / `line_total_amount` **全部逐位相同**；
+`quote_card_values` 与 `costing_card_values` 的**冻结副本 vs 库列 vs 对照组**六份**规范化 md5 全等**。
+👉 **提交接口确实在事务内补算，skipWarm 不会提交空卡片值、不会污染冻结凭据。**
+
+⚠️ **量具坑（差点报假警）**：`frozen_dto` 里嵌的卡片值与库列**原始 md5 不同**（长度差 2175 字节），一度像是"冻结了错的副本"。
+递归 diff 得 **0 条语义差异** —— 差异全在序列化格式（空白/键序）。
+👉 **JSON 不能用原始 md5 判等，必须 `sort_keys` + 去空白规范化后再比。**
+
+**2. 两处 `cardValuesWarming` 轮询与提交路径的关系**（全工程只有这两处消费该字段）：
+| 位置 | 触发 | 循环参数（读实现，非注释） |
+|---|---|---|
+| `loadQuotation`（`:578`） | 打开/刷新编辑页且有行缺卡片值 | `warmAttempts < 20`，**固定** 800ms |
+| `warmCardValues`（`:764`） | saveDraft 成功后 fire-and-forget | `attempts < 20`，**固定** 800ms |
+
+- 注释写「退避轮询」，**实现是定间隔，没有退避**；`~16s` = 20×800ms 的**纯 sleep 预算**，不含 21 次往返。
+- **两处都不接管提交的 409**：它们只认 `POST /ensure-card-values` **200 响应体**里的 `cardValuesWarming`（`QuotationResource:202-207`）；
+  submit 的 409 被 axios reject 到 `handleSubmit` 的 catch，全工程无任何 409 重试。**不存在「后端超时→前端轮询接手」的叠加。**
+- 但**反向耦合真实存在**：`next()`（`:1504`）是 fire-and-forget 调 `handleSaveDraft(true)` 后**立即切步**，
+  所以「下一步→Step5」启动的那次 warm 与提交按钮**可以共存**——这是 `skipWarm` 修不掉的残余窗口。
+
+**3. 后端已落 `awaitWarmBeforeSubmit`**（`QuotationResource:328`，3000ms 预算 + 150ms 非阻塞 probe），dev server 已编译。
+实测 gap=0（下一步后立刻点提交、warm 在飞）→ submit 耗时 3.12s 但**返回 200**，等待逻辑生效。
+⚠️ **它带来新的 409 文案**：`系统正在处理该报价单的金额（已等待 %d 毫秒），请稍后重新提交`（旧文案仍作后备保留）。
+前端**透传 `e.message` 不写死文本**，实测新文案完整显示：`已等待 3051 毫秒`。
+
+**4. 环境**：本轮沙箱（0098/0099/0107/0108/0109 + 一张对照副本）全部删除，advisory lock 归零，临时 spec 全清。
+⚠️ **`QT-20260806-0083` 在本轮被并发会话改动**（1 行 → 10 行，9 行于 15:52:27–15:52:40 的 13 秒内追加；同期出现非本会话创建的 0100/0103）。
+已用实验排除自己：连续 `copy` 前后源单行数 10→10→10，**`copy` 不写源单**。0082/0087 未受影响。
+
+### 追补②：T3-2 裁定落地 —— Step5「小计」列改为与合计同源
+
+技术总监裁定：**改渲染层 1 处**（`QuotationWizard.tsx` Step5 产品明细「小计」列），
+从 `dataIndex:'subtotal'`（后端值，且只在打开页面时回读一次）改为
+`computeProductSubtotal(li, driverExpansions, customerIdValue)` —— 与正下方的合计/原始总金额同源。
+
+🔒 **方向不可反**：不要把合计改成读后端值。那样用户每改一次输入框就分岔一次（合计动、行不动，
+要等保存+懒算才跳），比改造前更难解释。**编辑页的天职是"所见即所改"，实时算才是正确交互语义。**
+
+**为什么这条的严重性比初判低**：后端 T1 之后两侧口径已收敛。实测（复制 0082 到沙箱只读打开）
+改前 行 `¥37.330516` vs 合计 `¥37.330542`；改后两者同为 `¥37.330542`，
+与库里权威值 `37.330516` 的残差是 **2.6e-5 末位舍入量级**，在项目小数显示口径下渲染不出来。
+`59.58 vs 37.33` 那种口径级大差**不会再产生**（那是 `li.subtotal` 陈旧造成的，现已被覆盖修复）。
+
+**代价**：1 文件 1 处；`computeProductSubtotal` 本文件已 import；**不碰 `QuotationStep2.tsx`**，
+不触发 AP-44 字段类型联动协议，不强制跑 AP-44 双 spec。
+
+⚠️ **顺带记一条环境坑**：`pkill -f "vite --port 5199"` 会把**执行它的那条 shell 自己**也匹配上
+（命令行里含同样字符串）→ 自杀，同一条命令里 pkill 之后的语句全部不执行（本次 RECORD 追加就这么丢过一次）。
+清理临时进程要么用更精确的 pattern，要么单独一条命令跑。
