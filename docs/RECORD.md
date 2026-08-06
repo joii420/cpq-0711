@@ -4814,3 +4814,40 @@ ZZM- 夹具 4 表计数全 0 ✅；未触碰 `CUST-0729-*` / `CUST-0805-*`。
 - 不误伤：锁标记复查仍 **5 单/14/11 原样未动**（证明惰性撤锁确实未被触发，与"不主动归位"的裁定一致）✅；禁区 `CUST-0729-FV*` / `CUST-0805-FE*` / `ZZM-*` 策略行数 0 ✅
 - `./mvnw -o compile` 0 错误 ✅；8081 `/api/cpq/components` → 401 ✅
 - 备份：`scratchpad/task0729-enabled-backup-20260805-232512.sql`（3 行逐行 UPDATE 还原语句，含原 `enabled` + 原 `updated_at`），内容已随交付报告全文回传，不依赖 scratchpad 存活。
+
+---
+
+## [2026-08-06] 报价卡片快照 / BL-0127 - 修「用户改了单元格，只有小计变、行内公式列不动」 | 合并 master（872113c0 / d06fd90e / caf720ba / 2ca1dec0）
+
+**报障**：`QT-20260805-0080`，把「材料占比」从 25 改成 0.25 → 列小计变成 6.447752，行内「材料成本」仍是 608.775811 那套旧值。
+
+**根因（三段闭环）**：
+1. 行内 FORMULA 单元格**优先读快照** `formulaResults`（`QuotationStep2.tsx:3322-3338`），列小计/产品小计**一律本地实时重算**（`buildCrossTabRows`，`:2855` 写在 ProductCard 渲染体里、非 useMemo，每次渲染全量跑）→ 同一列两个引擎；
+2. `saveDraft` 重建行时 `li.quoteCardValues = null`（D-1 失效），`editRows` 随之被抹掉；
+3. 懒重建 `buildCardValues` 对 editRows **硬编码 null**（"加产品时恒空"），只读纯 driver 的 `snapshot_rows`。
+→ 快照恒等于「没人编辑过」的口径。**全库 34 行有卡片值、非空 editRows = 0 行**，正是这条通道从未通电的实证。
+
+**为什么现在才炸**：`feb287b8`(2026-06-01) 引入"行内读快照"后，前端 rowKey 与后端口径不一致（**1/497 命中**）→ 该分支空转两个月，行内实际走本地引擎、与小计同源；`1463ee12`(repair-0805 阶段二) 把 rowKey 归一到 **497/497** → 快照第一次成为行内的权威 → 根因 1+2+3 同时可见。
+
+**爆炸半径不止显示**：比对视图（`ComparisonViewService:286,292`）、价格升版（`MaterialVersionUpgradeService:263-276`，重算后**写回 li.subtotal + recompute**）、复制报价单（`QuotationService:1548`）、树删除重算（`QuotationTreeService`）读的都是这份快照。
+
+**修法（方案甲：补输入，引擎零改动）**：
+- `assembleTabsWithFormulaResults` 加八参重载透传 `rowDataByComp`；七参及以下 delegate 传 null → 核价侧/editCardValue/加产品逐位不变
+- 新增 `seedEditRowsFromRowData`：把 `row_data` 里「已定值」的 INPUT* 列回种为 editRows。**行键只走 `buildRawRowKeys + uniquifyRowKeys` 单一口径**；只回种 `INPUT/INPUT_TEXT/INPUT_NUMBER` 且 `editable≠false`；`""` 也回种（键存在即已定值，与前端 `isKeyUnset` 同判据）；`__priceLocked` 行豁免
+- **配对按内容键**（不是按位置）：`usableKeyPartIndexes` 挑出每条扁平行都有的行键段（`row_data` 天然没有 driver 侧字段如「销售料号」），建 key→行队列，同键多行按出现序排队；一段可用段都没有才退回位置配对 + 内容校验
+- 两条 compData 查询（逐行 + 整单预取）同时补 `row_data` 列（AP-41 族：漏一条 = 一条链路好一条静默坏）
+
+**顺带修掉的两个既有缺陷**：
+1. `mergeRowDataInputsIntoEdits`（2026-06-02 为**同一症状**加的守卫）按 snake `field_type` 取字段类型，而冻结结构**全库 1507/1507 是 camel `fieldType`** → `inputFields` 恒空 → **该守卫一直是死的**。已 delegate 到新实现（单一口径，repair-0727 B0 纪律）。
+2. `filterEditRowsToNewBaseRows` 的合法键集合只按**无 `__nodeId` 前缀**的旧口径建 → 带前缀的权威键 editRows **每次重刷都被静默丢掉**（不止影响回种，`editCardValue` 在 repair-0805 F5 之后写入的键同样中招）。已并入两档键集合。
+
+**验证**：
+- 单测 `EditRowsFromRowDataTest` 11 条全绿；**变异探针证明有鉴别力**：内容键校验恒真 → t1_6 红；配对改用 baseRows 下标 → t1_4 红；强制退回位置配对 → t1_10 红
+- A/B 值中性：全量 `mvnw test` 干净 HEAD `2213/159F/393E` vs 本分支 `2223/159F/393E`（多出 10 条全绿，失败逐个同名）
+- **真实单据 8081 实跑刷新**：各页签 editRows 由 `产品1/物料0/材料成本0/其他费用0/来料固定0/来料其他2/组装1` → `产品1/物料5/材料成本5/其他费用3/来料固定2/来料其他6/组装1`；物料.材料成本 = `0|0.066086|0.147162|6.087758|0.074475|0.072271`，列小计 `6.447751577216461` **与用户截图 ¥6.447752 逐位一致**
+
+**⚠️ 两条必须知道的环境事实**：
+- **master 全量测试本来就是红的**：`159 failures + 393 errors`，全部指向共享测试库 `cpq_db` 的 `element_price_version`（`customer_no='TEST-B5-...'`）脏数据导致的事务毒化。判本次是否引入回归**必须做 A/B**，不能看绝对值。
+- **共享测试库的 Flyway 是移动靶**：并发会话把未提交的 `V380` 应用到了 `cpq_db`，本分支（基于旧 HEAD）启动即 `FlywayValidateException`。合入 master 后自解。
+
+**遗留**（`dev-docs/repair-0803-BL0098-公式绑定改绑ID/repair-0805-行内公式列不随编辑重算/需求文档.md §5`）：S2 可见性保险（快照值与本地值不一致时 ⚠）、AC-3 自动化回归（改 INPUT → saveDraft → 重开）、AC-5/AC-6（比对视图 / 价格升版两条链路实测）、AC-7 三视图人工验收。另发现一个理论洞（**全库 0 条、未实际发生**）：`editCardValue` 在 `quote_card_values` 恰为 NULL 的窗口会写出「非空但空壳」的快照，`ensureCardValues` 的 `IS NULL` 判据此后再也选不中它。
