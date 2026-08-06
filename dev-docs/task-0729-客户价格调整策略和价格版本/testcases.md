@@ -1328,7 +1328,7 @@ END $$;
 
 ---
 
-### #49　缺核价数据不装作全通过：`status=MISSING` 计入整行标红；反向 `STALE` 不计入
+### #49　缺数据不装作全通过：`status=MISSING` 计入整行标红；反向 `STALE` 不计入
 
 | 归属 | 测试层级 |
 |---|---|
@@ -1345,7 +1345,12 @@ END $$;
 - 🔒 ①：核价数据缺失那一列 `status='MISSING'`。
 - 🔒 🔒 ②：`SELECT breached_count FROM material_price_review WHERE id=...` **> 0**（`MISSING` 计入 `breached_count`），`rowRed=true`（整行标红）。
 - 🔒 ③：待办池汇总标记出现 `⚪K`（`K=missing_count`，如 `🔴0 🟠0 ⚪1 / N列`或等价格式，具体以 `missingCount>0` 时的字符串拼装规则为准，核心是**必须出现 `⚪` 标记**）。
-- 🔒 ④：抽屉对应列显示文案「—（缺核价数据）」（`missingSide` 字段辅助定位，`api.md` §2.2 示例已给出该口径）。
+- 🔒 ④：抽屉对应列显示文案 —— **四态逐字符**（全角括号 `（）`、全角冒号 `：`、前导为 em dash `—` U+2014）：
+  - `missingSide=QUOTE` → `—（缺数据：报价侧）`
+  - `missingSide=COSTING` → `—（缺数据：核价侧）`
+  - `missingSide=BOTH` → `—（缺数据：两侧）`
+  - `missingSide` 为空/`null` → `—（缺数据）`　⚠️ **别漏这条**：现网 `missing_side` 有 8 行是 NULL，走无侧别分支
+  > 📝 2026-08-05 文案修正：主干由「缺核价数据」改为中性的「缺数据」—— 原文案在 `QUOTE`/`BOTH` 时自相矛盾（说"缺核价数据"却又说缺在报价侧）。前端 `ReviewDetailDrawer.tsx` 已用 `Record<ComparisonMissingSide,string>` 映射表实现，联合类型扩大时会编译报错而非静默落 else。
 - 🔒 🔒 **⑤ 反向核心断言**：`STALE` 样本那一列 `status='STALE'`，`SELECT breached_count FROM material_price_review WHERE id=(STALE样本的reviewId)` **不因这一列而增加**（即若该料号只有这一列失效、其余列正常，`breached_count` 应为 0，`rowRed=false`）——`MISSING` 与 `STALE` **必须分开处理**，前者标红后者不标红，混用会导致"模板改版就让整池飘红"或"核价缺数据却装作全通过"两个方向的错误。
 
 **证据形式**：`MISSING`/`STALE` 两条样本的 `material_price_review_column`/`material_price_review` 完整查询输出并排对比。

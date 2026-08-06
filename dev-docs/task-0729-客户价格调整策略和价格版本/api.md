@@ -362,7 +362,7 @@
     { "columnId":"col-2", "label":"投料·材料小计 ↔ 材料成本·页签合计", "threshold":2.00, "sortOrder":1,
       "quoteAdjusted":88.10, "costingAdjusted":90.00, "diffAdjusted":-1.90, "status":"RED" },
     { "columnId":"col-3", "label":"加工费对照", "status":"MISSING",
-      "diffAdjusted": null, "missingSide":"COSTING" }   // 前端显示「—（缺核价数据）」
+      "diffAdjusted": null, "missingSide":"COSTING" }   // 前端显示「—（缺数据）」
   ],
 
   // 三、逐单明细（下钻）
