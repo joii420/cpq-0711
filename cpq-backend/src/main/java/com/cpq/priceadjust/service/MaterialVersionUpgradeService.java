@@ -76,7 +76,37 @@ import java.util.UUID;
 public class MaterialVersionUpgradeService {
 
     private static final Logger LOG = Logger.getLogger(MaterialVersionUpgradeService.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    /**
+     * 🚨 <b>三项配置缺一不可（验收 #58 孪生写点，2026-08-05 补）</b>——与
+     * {@code PriceReconciler.MAPPER} <b>必须逐字一致</b>，两者是同构写点：
+     * 整数组读出 → 改 2 个键 → 整数组写回。默认 ObjectMapper 会把小数读成 {@code DoubleNode}，
+     * 回写时按 double 最短表示输出，<b>静默改写数值</b>。
+     *
+     * <pre>
+     * 缺 USE_BIG_DECIMAL_FOR_FLOATS  → 99999999999999.999999 变成 100000000000000（数值真的变了）
+     *                                  50 位小数截成 double 16 位；100.000000 → 100.0
+     * 缺 withExactBigDecimals(true)  → JsonNodeFactory 默认对 BigDecimal 调 stripTrailingZeros()，
+     *                                  2200.000000 变成 2.2E+3（比丢精度更糟）
+     * 缺 WRITE_BIGDECIMAL_AS_PLAIN   → 回写可能用科学计数法，改变 jsonb 字面
+     * </pre>
+     *
+     * <p>⚠️ <b>本类比 PriceReconciler 影响更大</b>：它是生产主链路
+     * （{@code PriceAdjustJobExecutionService#executeItem} → {@code upgrade(.., dryRun=false)}，
+     * 每次审核通过的升版都走），且本 MAPPER 同时经手<b>三组</b>持久化 JSON：
+     * ① {@code quotation_line_component_data.snapshot_rows/row_data}（{@link #upgradeComponentRows}）、
+     * ② {@code quotation_line_item.quote_card_values}（{@code cleanEditRowOverrides} 的 readTree→write 往返）、
+     * ③ {@code quotation_price_revision} 的三列快照（{@code materializeAndSealInitialRevision}）。
+     * 三者此前都在被静默改写 —— 现网已出现「同版本同元素两种字面并存」
+     * （{@code 171.368000} vs {@code 171.368}）。
+     *
+     * <p>🔒 <b>再出现第三个同构写点时，请把这三行原样抄过去</b>，不要只加第一项
+     * （只加第一项会把"丢精度"换成"变形 2.2E+3"，更难发现）。
+     */
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+        .enable(com.fasterxml.jackson.databind.DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+        .enable(com.fasterxml.jackson.core.JsonGenerator.Feature.WRITE_BIGDECIMAL_AS_PLAIN)
+        .setNodeFactory(com.fasterxml.jackson.databind.node.JsonNodeFactory.withExactBigDecimals(true));
 
     /**
      * 🔒 活单白名单（E14-2，唯一常量，禁止另起第二份定义）。同时服务三处：

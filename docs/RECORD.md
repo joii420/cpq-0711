@@ -4721,3 +4721,28 @@ E2E:
 **自检**：`./mvnw -o compile` 5 次 0 错误（先加 `unlockOnly` 字段 → 拆预取方法 → 改调用点，任一中间态可编译）✅；8081 401 ✅；`mvnw -o test -Dtest='com.cpq.priceadjust.**'` → **52 tests, 0 failures** ✅；ZZ 前缀在 8 张表计数全 0 ✅；未触碰 `CUST-0729-QA` / `CUST-0729-QB` / `CUST-0001`。
 
 [2026-08-03] 报价渲染(repair-0803-snapshot) 补记 —— 合并后由「影响面自查」揪出的真回归 + Excel 取值路径澄清 - **已修并合 master**（`fe34fa91` + merge `9b9c1d34`） | 改 `cpq-frontend/src/pages/quotation/BulkImportPartsDrawer.tsx#buildEmptyRow`，测试 `keyPresenceAuthority.test.ts` +2 例 | 🐛 **回归（本次改动引入，合并后才发现）**：`buildEmptyRow` 原本**故意**给每个 `INPUT_TEXT/INPUT_NUMBER` 写 `''`，注释写明「默认值由 resolveInputDefault 动态给出，不在建行写死」—— 它用 `''` 表达「还没值、请填默认值」，与本次确立的「`''` = 用户已定值、不许碰」**契约正面冲突**。后果：`buildLineItemFromTemplate`（**批量导入 / 加产品 / autoPopulate 导入流**的公共入口）建出的**第 0 行**，INPUT 列默认值永不被烘；汇率/损耗率这类被公式引用的列会算成 0 → **金额偏低且不报警**。第 1 行起不受影响（`comp.rows` 无该下标 → `|| {}` → 键缺失 → 烘正常），故症状是「首行空、其余正常」，极易被当成数据问题放过。**修法**：INPUT_* 一个键都不写 —— 键缺失才是「从未定值」的正确表达，与原注释意图完全一致，只是换了表达方式。 | 🔑 **教训（可复用）**：确立「用某个值表示某种状态」的不变式时，**必须反向 grep 谁在生产这个值**。本次只查了 6 处「消费方」判空口径，漏了 `buildEmptyRow` 这个**生产方**——它正好用同一个 `''` 表达相反的意思。判据类改动的检查清单应是「消费方 + 生产方」双向，不能只顺着数据流向下查。 | ✅ **Excel 取值路径澄清（原列为未验证点，现已查证）**：`buildExcelSnapshot` 读的是**内存 `comp.rows`，不是持久化 `row_data`**，故「`''` vs 键缺失」在持久化层面对 Excel 无影响；但其 `COMPONENT_FIELD` 分支用 `Object.prototype.hasOwnProperty.call(row, fk)` 做「该组件有无此列」的选择判据，**与键存在语义直接耦合** —— 该分支正是上述回归的第二受害面（改动前取到默认值 → 回归期取到 `Number('')`=**0** → 修复后回到默认值）。**残留差异（窄，已知未测）**：某 INPUT 列无任何可解析默认值时键保持缺失 → 该列不再返回 `0`，而是跳到下一个 NORMAL 组件找同名字段、找不到才 null；语义更对（空≠0），但若两个 NORMAL 组件共用同名字段且第一个无值，会取到第二个组件的值 —— 该组合未在现网数据中查证。 | **自检**：前端 `tsc` 0 错误、`vitest` **900 passed**（回归修复前 898 + 新增 2 条护栏）。
+
+---
+
+[2026-08-05] 价格调整策略（task-0729 验收期修复 · 续五） - F-1 `#58` 孪生写点（升版主链路精度）+ F-2 `#61` 存量数据收口 | 涉及文件：`MaterialVersionUpgradeService.java`（MAPPER 三项配置）+ 生产数据修复（`CUST-0001` 4 行 job_item） |
+
+**F-1 根因**：`#58` 只修了 `PriceReconciler`，**孪生写点 `MaterialVersionUpgradeService:79` 的 MAPPER 一项配置都没有**，且它是**生产主链路**（`PriceAdjustJobExecutionService#executeItem` → `upgrade(dryRun=false)`，每次审核通过的升版都走）。结构完全同构：整数组读出 → 改 2 个键 → 整数组写回。现网已出现分叉（同版本同元素 `171.368000` vs `171.368` 并存）。
+**修法**：与 `PriceReconciler` 逐字一致的三项配置。⚠️ **本类 MAPPER 同时经手三组持久化 JSON**，一次修复覆盖三处：① `quotation_line_component_data.snapshot_rows/row_data`；② `quotation_line_item.quote_card_values`（`cleanEditRowOverrides` 的 readTree→write 往返）；③ `quotation_price_revision` 三列快照（`materializeAndSealInitialRevision`）—— 后两处此前无人注意，R 基线快照一直在被静默改写。
+
+🔴 **全工程 grep 结论：不止第三个，还有第四个（均在 priceadjust 之外，未改，待裁）**
+- `QuotationTreeService:112 parseRows` + `:297 writeSnapshotRows` —— **确凿同构**：`readTree` 解析既有 `snapshot_rows` → `rebuilt.add(rows.get(i))` 原样搬运 → `writeValueAsString` 写回。报价侧 BOM 树每加一个手工叶子，**整组兄弟行的小数都被重新规范化**。
+- `ConfigureSnapshotService:1222/1233 writeRowData` + `:1467 writeSnapshot` —— 选配物化路径写 `row_data`/`snapshot_rows`，`byComp` 由上游同款默认 MAPPER 解析的 `JsonNode` 组装。
+- 判据（供后续排查复用）：**同时满足「`new ObjectMapper()` 无配置」+「readTree 既有 jsonb」+「writeValueAsString 写回同一列」= 必然静默改写数值**。全工程 64 个 `new ObjectMapper()`，写这两列的共 4 处，priceadjust 内 2 处已修。
+
+**F-2**：`#61` 修复是前向的，存量 `CUST-0001 / V26080501(SUPERSEDED) / FAILED` 4 条仍可重试（会把作废版本价格写进活单且绕过审核）。SQL 批量转 STALE（**SET 只有 status + updated_at**，`error_code`/`error_message`/`retry_count` 完整保留）+ `recountByJobIds`。
+🔒 **口径纪律**：刻意**不另写 SQL 版计数逻辑**（那正是 875331de 抽 `recountFrom` 要消除的"两处各写一份"），改为**临时端点调用同一个 Java 实现**，用完立即删除（`QuotationAdminResource` 已复原，`git diff` 为空）。也**不走 `retryJob`** —— 它会重置 `finishedAt` 并可能触发对真实用户的通知。
+⚠️ **勘察发现范围里混入复验工程师沙箱 `CUST-0729-FV2`（3 条）**，按"别碰测试客户"的约定，UPDATE 加了 `customer_no NOT LIKE 'CUST-0729-%' / 'CUST-0805-%' / 'ZZ%'` 排除，实际只动生产客户 —— 恰好 4 行，与预期数量吻合。
+
+**事务边界澄清**（技术总监点名要求分清）：`recountByJobIds` 含 `persist()` 需事务，但**生产路径不缺** —— `PriceAdjustVersionGenerationService#generateVersion` 本身是 `@Transactional`（`:82`），`:194` 的调用在其内部，`875331de` 一直生效（ZZ61 实测计数器 `4/1/1/1/0 → 4/1/0/0/3` 即证据）。缺事务的只是**我临时建的验证端点**，`@Transactional` 只补在端点上，**生产事务边界一字未动**。
+
+**验证**：
+- F-1（**真实升版 `dryRun=false`**，8 个探针）：无辜兄弟行（元素不在版本明细 → S3a `continue`）`snapshot_rows` driverRow 与 `row_data` 整行**均逐字节原样**；`99999999999999.999999` 未变 `100000000000000`；50 位小数完整保留（未截 double 16 位）；`100.000000` 未变 `100.0`；`-0.000001` 未变 `-0.0000010`；写价分支 `2200.000000` 保持 scale（非 `2200.0`/`2.2E+3`）。
+- F-2：4 条转 STALE；留痕 4/4 完整（`SUBTOTAL_MISMATCH` + L3 原文 + `retry_count=0`）；表头与明细逐项吻合（`29/25/0/0/4`）；25 条 SUCCESS 未误伤；`CUST-0729-FV2` 3 条未被触碰；对 STALE 项 retry → **409**（修复前 202）。
+- 备份：`scratchpad/F2-backup-20260805-192235.sql`（含逐行 UPDATE 回滚语句 + job 计数器回滚语句），备份内容已随交付报告全文回传，不依赖 scratchpad 存活。
+
+**自检**：`./mvnw -o compile` 4 次 0 错误 ✅；8081 401 ✅；`mvnw -o test -Dtest='com.cpq.priceadjust.**'` → **52 tests, 0 failures** ✅；ZZ 夹具 5 张表计数全 0 ✅；临时端点已删除且该文件 `git diff` 为空 ✅。
