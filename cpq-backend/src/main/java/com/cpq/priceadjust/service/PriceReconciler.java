@@ -164,7 +164,12 @@ public class PriceReconciler {
         if (q == null) return result;
 
         BatchContext ctx = prefetch(q);
-        if (ctx == null) return result; // 策略不存在/未启用 → 整单不动（策略启用是三条件之一）
+        // ⚠️ 这句注释原文是「策略不存在/未启用 → 整单不动」，2026-08-05 起已失效：#59⑤ 之后
+        //    「策略未启用」不再短路，而是走 ctx.unlockOnly 逐行撤锁（见 prefetch 内注释）。
+        //    prefetch 如今只在「客户不存在或 customer.code 为空」时返 null —— 连客户编号都取不到，
+        //    策略、元素清单、料号范围全都无从查起，此时才真的整单不动。
+        //    （本任务已三次栽在注释与实现不符上，顺手更正，不改行为。）
+        if (ctx == null) return result;
 
         for (QuotationLineItem li : ctx.lines) {
             String materialNo = li.productPartNoSnapshot;

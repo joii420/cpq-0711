@@ -43,6 +43,7 @@ const ElementMatrix: React.FC<ElementMatrixProps> = ({ customerNo, selected, onC
 
   const [keyword, setKeyword] = useState('');
   const [includeDisabled, setIncludeDisabled] = useState(true);
+  const [onlySelected, setOnlySelected] = useState(false);
 
   const fetchPage = useCallback(async (p: number) => {
     setLoading(true);
@@ -66,10 +67,28 @@ const ElementMatrix: React.FC<ElementMatrixProps> = ({ customerNo, selected, onC
     }
   }, [customerNo, keyword, includeDisabled]);
 
-  useEffect(() => { fetchPage(1); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [customerNo, includeDisabled]);
+  // 「只看已选」期间不发任何请求（含切 includeDisabled）：该视图的数据源是 selected Map 本身；
+  // 关掉它时再回后端取一次第 1 页，保证列表与最新筛选条件一致（与 MaterialRangeMatrix 同款）。
+  useEffect(() => {
+    if (!onlySelected) fetchPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerNo, includeDisabled, onlySelected]);
 
   const handleQuery = () => fetchPage(1);
-  const handleReset = () => { setKeyword(''); setIncludeDisabled(true); };
+  const handleReset = () => { setKeyword(''); setIncludeDisabled(true); setOnlySelected(false); };
+
+  /**
+   * 「只看已选」= **纯前端复核视图**：直接渲染当前 selected Map，不请求后端
+   * （对齐 MaterialRangeMatrix 的既定设计 —— 走后端 selectedOnly 查询会读到**保存前**的旧状态，
+   *  刚勾未保存的项就看不见，复核视图反而骗人）。故它天然「不受分页/筛选影响」。
+   *
+   * 🔑 元素侧特有：**不经过 includeDisabled 过滤**。已勾选但已停用的元素在主列表里会被
+   *   includeDisabled=false 隐藏，而这类元素恰恰最需要复核（已在清单里 + 当前不可见 =
+   *   用户最容易忘记它还参与调价，验收 #51 明确要求它照常参与）。它们在本视图里
+   *   仍按 elementEnabled=false 渲染「已停用」标签（Tag 逻辑在 columns 内，无需分支）。
+   */
+  const selectedRowsArr = React.useMemo(() => Array.from(selected.values()), [selected]);
+  const displayRows = onlySelected ? selectedRowsArr : rows;
 
   /**
    * keys 的语义**取决于 rowSelection.preserveSelectedRowKeys**（见下方 Table 处注释），
@@ -85,7 +104,9 @@ const ElementMatrix: React.FC<ElementMatrixProps> = ({ customerNo, selected, onC
     for (const k of Array.from(next.keys())) {
       if (!keySet.has(k)) next.delete(k);
     }
-    for (const r of rows) {
+    // 回填迭代 displayRows 而非 rows：与 MaterialRangeMatrix 同口径，「只看已选」视图下
+    // 当前渲染的就是 selected 本身（该视图内只可能取消、不可能新增，故两者等价，取同口径防分叉）。
+    for (const r of displayRows) {
       if (keySet.has(r.elementCode) && !next.has(r.elementCode)) {
         next.set(r.elementCode, r);
       }
@@ -148,8 +169,10 @@ const ElementMatrix: React.FC<ElementMatrixProps> = ({ customerNo, selected, onC
         <Checkbox checked={includeDisabled} onChange={(e) => setIncludeDisabled(e.target.checked)}>
           含已停用 <Tag color="blue" style={{ fontSize: 10, marginLeft: 2 }}>新</Tag>
         </Checkbox>
+        <Checkbox checked={onlySelected} onChange={(e) => setOnlySelected(e.target.checked)}>只看已选</Checkbox>
         <Space>
-          <Button size="small" onClick={handleQuery}>查询</Button>
+          {/* 「只看已选」是纯前端视图，查询按钮此时无意义（同 MaterialRangeMatrix） */}
+          <Button size="small" onClick={handleQuery} disabled={onlySelected}>查询</Button>
           <Button size="small" onClick={handleReset}>重置</Button>
         </Space>
       </div>
@@ -161,7 +184,7 @@ const ElementMatrix: React.FC<ElementMatrixProps> = ({ customerNo, selected, onC
         size="small"
         rowKey="elementCode"
         loading={loading}
-        dataSource={rows}
+        dataSource={displayRows}
         columns={columns}
         scroll={{ x: 'max-content' }}
         rowSelection={{
@@ -180,7 +203,9 @@ const ElementMatrix: React.FC<ElementMatrixProps> = ({ customerNo, selected, onC
           // ⚠️ 与上方 handleSelectionChange 的 delete 循环是**一对**，任何一方单独改动都会重现缺陷。
           preserveSelectedRowKeys: true,
         }}
-        pagination={{
+        // 「只看已选」走**客户端分页**（数据源是本地 selected Map，不能再用服务端 total/onChange，
+        // 否则翻页会去后端取错的数据）；常规模式仍是服务端分页。同 MaterialRangeMatrix。
+        pagination={onlySelected ? { pageSize: PAGE_SIZE, size: 'small', showTotal: (t) => `共 ${t} 条` } : {
           current: page,
           pageSize: PAGE_SIZE,
           total,

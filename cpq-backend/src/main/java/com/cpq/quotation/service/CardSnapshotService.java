@@ -205,8 +205,18 @@ public class CardSnapshotService {
      * sortOrder, componentType, dataDriverPath, treeConfig?, rowKeyFields, fields:[], formulas:[] }] }
      *
      * <p><b>AP-39</b>: DATA_SOURCE 字段的 {@code datasource_binding} 完整搬运（不丢）。
+     *
+     * <p>task-0729 §1.10a（2026-08-06）：可见性从 private 提升为 public，供
+     * {@code ComparisonViewService#getMetaByTemplates}（比对列配置屏的页签目录 meta）复用
+     * ——<b>只提可见性，不新写一份</b>。它是「模板 {@code components_snapshot}（<b>数组</b>、
+     * snake_case {@code field_type/is_subtotal}、无 {@code label}）→ 卡片结构（<b>对象</b>
+     * {@code {tabs:[…]}}、camelCase {@code fieldType/isSubtotal}、{@code label} 由 name 派生）」
+     * 的<b>唯一适配器</b>；比对列 meta 需要的正是后一种形状，另抄一份必然与冻结结构漂移。
+     *
+     * <p>🔒 本方法<b>纯只读</b>（只 SELECT template 与 component），落库由调用方
+     * {@link #upsertStructure} 负责——比对列 meta 那条路径刻意<b>不</b>落库，见该方法注释。
      */
-    private String buildCardStructure(UUID templateId, String templateKind) {
+    public String buildCardStructure(UUID templateId, String templateKind) {
         try {
             @SuppressWarnings("unchecked")
             List<Object[]> rows = em.createNativeQuery(
@@ -1012,16 +1022,18 @@ public class CardSnapshotService {
             if (lineItemIds != null && !lineItemIds.isEmpty()) {
                 @SuppressWarnings("unchecked")
                 List<Object[]> rows = em.createNativeQuery(
-                    "SELECT line_item_id, component_id, snapshot_rows, deleted_row_keys " +
+                    "SELECT line_item_id, component_id, snapshot_rows, deleted_row_keys, row_data " +
                     "FROM quotation_line_component_data WHERE line_item_id IN (:ids)")
                     .setParameter("ids", lineItemIds)
                     .getResultList();
                 for (Object[] r : rows) {
                     if (r[0] == null) continue;
                     UUID lid = (r[0] instanceof UUID u) ? u : UUID.fromString(r[0].toString());
-                    // 仅保留 [component_id, snapshot_rows, deleted_row_keys]，与逐行查列序一致
+                    // 仅保留 [component_id, snapshot_rows, deleted_row_keys, row_data]，与逐行查列序一致。
+                    // BL-0127：row_data 是第 4 列 —— 预取路径与逐行路径必须同时带上，否则
+                    // 「预取命中时不回种编辑、未命中才回种」= 一条链路好一条静默坏（AP-41 族）。
                     byLine.computeIfAbsent(lid, k -> new ArrayList<>())
-                          .add(new Object[]{ r[1], r[2], r[3] });
+                          .add(new Object[]{ r[1], r[2], r[3], r[4] });
                 }
             }
         } catch (Exception e) {
@@ -1262,7 +1274,7 @@ public class CardSnapshotService {
             } else {
                 @SuppressWarnings("unchecked")
                 List<Object[]> q = em.createNativeQuery(
-                    "SELECT component_id, snapshot_rows, deleted_row_keys " +
+                    "SELECT component_id, snapshot_rows, deleted_row_keys, row_data " +
                     "FROM quotation_line_component_data WHERE line_item_id = :lid")
                     .setParameter("lid", li.id)
                     .getResultList();
@@ -1271,11 +1283,14 @@ public class CardSnapshotService {
 
             Map<String, String> snapByCompId = new LinkedHashMap<>();
             Map<String, List<DeletedRowKeys.Tombstone>> delByComp = new HashMap<>();
+            // BL-0127：row_data = 用户「已定值」的承载（前端 bake/编辑都写这里），供下方回种 editRows。
+            Map<String, String> rowDataByCompId = new LinkedHashMap<>();
             for (Object[] r : compData) {
                 if (r[0] == null) continue;
                 String cid = r[0].toString();
                 if (r[1] != null) snapByCompId.put(cid, r[1].toString());
                 delByComp.put(cid, DeletedRowKeys.parse(r[2] == null ? null : r[2].toString()));
+                if (r.length > 3 && r[3] != null) rowDataByCompId.put(cid, r[3].toString());
             }
 
             // 3. 预构建每个组件的 baseRows（按 componentId）
@@ -1292,12 +1307,16 @@ public class CardSnapshotService {
                 baseRowsByComp.put(cid, rows);
             }
 
-            // 4. 组装 tabs（Task 3: 填 formulaResults，加产品时 editRows 恒空；报价侧传真实墓碑）
+            // 4. 组装 tabs（Task 3: 填 formulaResults；报价侧传真实墓碑）
             // F1：报价侧透传 rkf 预取（prefetch 缺失 → null → 回落逐行查）
             // task-0729 B8.1：产品属性上下文（口径补齐，当前 0 usage 场景零额外查询开销）
+            // BL-0127：末位透传 row_data —— editRows 不再恒空，由 seedEditRowsFromRowData 从
+            //   「用户已定值」回种。原先此处硬编码 editRows=null，叠加 saveDraft 的 D-1 置 NULL，
+            //   使用户编辑永远进不了快照（行内公式列冻在 driver 默认口径，而列小计走前端实时引擎 → 分叉）。
             ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, null, null, delByComp,
                 prefetch != null ? prefetch.rowKeyFieldsByComp : null,
-                buildProductAttributesContext(li, li.quotationId, templateId));
+                buildProductAttributesContext(li, li.quotationId, templateId),
+                rowDataByCompId);
 
             return MAPPER.writeValueAsString(root);
 
@@ -1725,6 +1744,34 @@ public class CardSnapshotService {
                                                       Map<String, List<DeletedRowKeys.Tombstone>> delByComp,
                                                       Map<String, JsonNode> rkfPrefetch,
                                                       Map<String, Double> productAttributesCtx) {
+        // 七参签名零破坏：delegate 到八参（rowDataByComp=null → 不回种，行为逐位不变）。
+        return assembleTabsWithFormulaResults(snapshot, baseRowsByComp, editRowsByComp, rkfOverride, delByComp,
+            rkfPrefetch, productAttributesCtx, null);
+    }
+
+    /**
+     * 八参重载（BL-0127）：{@code rowDataByComp} 非空时，从 {@code quotation_line_component_data.row_data}
+     * <b>回种用户已定值的 INPUT* 列</b>为 editRows，再进入既有 PASS1/PASS2。
+     *
+     * <p><b>为什么需要</b>：{@link #buildCardValues} 原先对 editRows 传 {@code null}（"加产品时恒空"），
+     * 而 {@code saveDraft} 的 D-1 失效会把整份 {@code quote_card_values}（含 editRows）置 NULL，
+     * 于是「用户编辑 → 快照」这条路被彻底掐断：重建后的 formulaResults 永远是 driver 默认值口径。
+     * 前端行内 FORMULA 单元格优先读该快照、列小计却走本地实时引擎 → 同一列两个值（本任务报障现象）。
+     *
+     * <p><b>口径</b>：「键存在即已定值」——与前端 bake 守卫（{@code QuotationStep2.tsx} 的
+     * {@code isKeyUnset}）和 {@code 2026-08-03 row-data-snapshot-authority} 的 D1/D2 同一判据：
+     * {@code row_data} 行里只要该 INPUT* 键存在（哪怕值是空串）就是用户已定值，回种；键不存在才交给
+     * 后端按 {@code default_source} 解析。
+     *
+     * <p>{@code rowDataByComp=null}（核价侧 / editCardValue / 加产品 / 单测旧调用）→ 与改造前逐位一致。
+     */
+    private ObjectNode assembleTabsWithFormulaResults(JsonNode snapshot, Map<String, ArrayNode> baseRowsByComp,
+                                                      Map<String, ArrayNode> editRowsByComp,
+                                                      Map<String, JsonNode> rkfOverride,
+                                                      Map<String, List<DeletedRowKeys.Tombstone>> delByComp,
+                                                      Map<String, JsonNode> rkfPrefetch,
+                                                      Map<String, Double> productAttributesCtx,
+                                                      Map<String, String> rowDataByComp) {
         final Map<String, Double> productAttrs =
             productAttributesCtx != null ? productAttributesCtx : java.util.Map.of();
         ObjectNode root = MAPPER.createObjectNode();
@@ -1752,7 +1799,15 @@ public class CardSnapshotService {
 
         // 草稿重刷：旧 editRows 按 rowKey 对齐到新 baseRows，丢弃新数据中不存在的 rowKey（AP-54 业务键对齐）
         Map<String, ArrayNode> filteredEdit = filterEditRowsToNewBaseRows(
-            snapshot, baseRowsByComp, editRowsByComp, rkfByComp, emptyEdit);
+            snapshot, baseRowsByComp, editRowsByComp, rkfByComp, emptyEdit, delByComp);
+
+        // BL-0127 回种：必须放在 filterEditRowsToNewBaseRows **之后** —— 该方法按不带 __nodeId 前缀的
+        // computeRowKey 建 newKeys 集合，而回种产出的是带前缀的权威键（buildRawRowKeys），
+        // 放前面会被它整批过滤掉（树页签尤甚）。回种键本就是照当前 baseRows 算的，无需再过滤。
+        // 显式 editRows（editCardValue 写的）优先级更高：同 (rowKey, 字段) 冲突时保留既有值。
+        if (rowDataByComp != null && !rowDataByComp.isEmpty()) {
+            seedEditRowsFromRowData(snapshot, baseRowsByComp, rowDataByComp, rkfByComp, delByComp, filteredEdit);
+        }
 
         // PASS 1: componentSubtotals（顺序累加，后 tab 可引用前 tab 小计；含保留的 editRows）
         // 报价侧：传入 deleted 以反映永久删除行后的正确小计基数（核价侧 delByComp=null → 不过滤）
@@ -2191,10 +2246,19 @@ public class CardSnapshotService {
     /**
      * 草稿重刷：把旧 editRows 按 rowKey 叠加到新 baseRows 行键集合上，丢弃新数据里不存在的 rowKey。
      * editRowsByComp 为 null（加产品/核价）→ 返回空映射（editRows 恒空）。
+     *
+     * <p><b>BL-0127</b>：合法键集合必须同时含<b>两档口径</b> ——
+     * ① {@code computeRowKey} 的内容键（无 {@code __nodeId} 前缀，本方法原有口径）；
+     * ② {@link FormulaCalculator#buildRawRowKeys} 的权威键（报价侧树页签带 {@code nodeId::} 前缀）。
+     * 只认 ① 会把带前缀的 editRows <b>整批丢掉</b> —— 而带前缀正是
+     * {@code computeRows}/{@code buildResolvedRows} 查表用的键，也是 repair-0805 F5 之后
+     * {@code editCardValue} 写进来的键。实测：树页签「物料」6 行回种全被这里过滤，
+     * 非树页签只有恰好无前缀的行侥幸存活（6 行里活 2 行）。
      */
     private Map<String, ArrayNode> filterEditRowsToNewBaseRows(
             JsonNode snapshot, Map<String, ArrayNode> baseRowsByComp,
-            Map<String, ArrayNode> editRowsByComp, Map<String, JsonNode> rkfByComp, ArrayNode emptyEdit) {
+            Map<String, ArrayNode> editRowsByComp, Map<String, JsonNode> rkfByComp, ArrayNode emptyEdit,
+            Map<String, List<DeletedRowKeys.Tombstone>> delByComp) {
         Map<String, ArrayNode> filtered = new LinkedHashMap<>();
         if (editRowsByComp == null || editRowsByComp.isEmpty()) return filtered;
         for (JsonNode tab : snapshot) {
@@ -2217,6 +2281,10 @@ public class CardSnapshotService {
             }
             java.util.Set<String> newKeys = new java.util.HashSet<>(
                     FormulaCalculator.uniquifyRowKeys(rawNewKeys));
+            // BL-0127：并入带 __nodeId 前缀的权威键（报价侧树页签），否则这一档 editRows 会被整批丢掉
+            List<DeletedRowKeys.Tombstone> del = (delByComp == null) ? null : delByComp.get(cid);
+            newKeys.addAll(FormulaCalculator.uniquifyRowKeys(
+                    formulaCalculator.buildRawRowKeys(rkf, fieldsDef, baseRows, del)));
 
             ArrayNode kept = MAPPER.createArrayNode();
             for (JsonNode er : oldEdits) {
@@ -2225,6 +2293,198 @@ public class CardSnapshotService {
             if (kept.size() > 0) filtered.put(cid, kept);
         }
         return filtered;
+    }
+
+    // =========================================================================
+    // BL-0127 — 从 row_data 回种用户已定值的 INPUT* 列为 editRows
+    // =========================================================================
+
+    /** 可回种的字段类型（用户输入型）。FORMULA / BASIC_DATA / DATA_SOURCE / FIXED_VALUE 一律不回种 ——
+     *  回种公式值 = 后端不再算 = 权威反转成前端，属架构级错误。 */
+    private static final java.util.Set<String> SEEDABLE_FIELD_TYPES =
+        java.util.Set.of("INPUT", "INPUT_TEXT", "INPUT_NUMBER");
+
+    /** 字段类型访问器（冻结结构用 camel {@code fieldType}，模板快照用 snake {@code field_type}）。 */
+    private static String fieldTypeOf(JsonNode f) {
+        if (f.has("fieldType")) return f.path("fieldType").asText("");
+        return f.path("field_type").asText("");
+    }
+
+    /**
+     * 把 {@code row_data}（前端 bake/编辑写入的「已定值」承载）里的 INPUT* 列回种为 editRows，
+     * 就地合并进 {@code into}（= 已过滤的 editRows 映射）。
+     *
+     * <p><b>行对齐</b>（本方法唯一的风险点，逐条对照 `实现计划.md` R1/R2/R6）：
+     * <ol>
+     *   <li>行键一律走 {@link FormulaCalculator#buildRawRowKeys} + {@code uniquifyRowKeys} 单一口径
+     *       （带 {@code __nodeId::} 前缀），<b>不另造算法</b>；</li>
+     *   <li>{@code row_data} 的行序 = {@code snapshot_rows} <b>减去墓碑行</b>（全库实测：188/194 等长，
+     *       6 例不等长中 3 例差值恰为墓碑数、3 例是纯手动行页签），故按 {@code keepMask} 保留序<b>顺序配对</b>；</li>
+     *   <li><b>逐行校验</b>：用行键字段名从扁平行直读拼出内容键，与该 baseRow 的内容键比对；
+     *       不等即<b>跳过该行</b>（宁可不回种、退化成改造前行为，也不能把值写到别的料号头上）。</li>
+     * </ol>
+     *
+     * <p><b>取值口径</b>：「键存在即已定值」——扁平行里该 INPUT* 键存在就回种（值为 {@code ""} 也回种，
+     * 代表用户显式清空）；键不存在则不回种，交由后端按 {@code default_source} 解析。与前端 bake 守卫
+     * （{@code isKeyUnset}）同判据。
+     *
+     * <p><b>价格锁豁免</b>：{@code driverRow.__priceLocked == true} 的行整行跳过 —— 这些行的价格由
+     * task-0729 归位写入、UI 上本就只读，回种可能把陈旧覆盖值顶回去（正是 {@code cleanEditRowOverrides}
+     * 要清掉的东西）。代价：锁定行上的其它可编辑列本次不回种（相对改造前无退化）。
+     */
+    // 包级可见（非 private）：供 EditRowsFromRowDataTest 直接钉行为契约（行对齐是本改动唯一风险点，
+    // 只经 buildCardValues 端到端测会把对齐失败掩盖成"值恰好一样"）。
+    void seedEditRowsFromRowData(JsonNode snapshot,
+                                 Map<String, ArrayNode> baseRowsByComp,
+                                 Map<String, String> rowDataByComp,
+                                 Map<String, JsonNode> rkfByComp,
+                                 Map<String, List<DeletedRowKeys.Tombstone>> delByComp,
+                                 Map<String, ArrayNode> into) {
+        for (JsonNode tab : snapshot) {
+            String cid = tab.path("componentId").asText("");
+            if (cid.isBlank()) continue;
+            String rdJson = rowDataByComp.get(cid);
+            if (rdJson == null || rdJson.isBlank()) continue;
+            ArrayNode baseRows = baseRowsByComp.get(cid);
+            if (baseRows == null || baseRows.size() == 0) continue;
+
+            JsonNode fieldsDef = tab.path("fields");
+            List<String> seedable = new ArrayList<>();
+            for (JsonNode f : fieldsDef) {
+                if (!SEEDABLE_FIELD_TYPES.contains(fieldTypeOf(f))) continue;
+                if (f.has("editable") && f.path("editable").isBoolean() && !f.path("editable").asBoolean()) continue;
+                String name = f.path("name").asText("");
+                if (!name.isEmpty()) seedable.add(name);
+            }
+            if (seedable.isEmpty()) continue;
+
+            JsonNode flatRows;
+            try {
+                flatRows = MAPPER.readTree(rdJson);
+            } catch (Exception e) {
+                LOG.warnf("[seed-editrows] comp=%s row_data 解析失败，跳过回种: %s", cid, e.getMessage());
+                continue;
+            }
+            if (flatRows == null || !flatRows.isArray() || flatRows.size() == 0) continue;
+
+            JsonNode rkf = rkfByComp.get(cid);
+            List<DeletedRowKeys.Tombstone> deleted = (delByComp == null) ? null : delByComp.get(cid);
+            List<String> uniqKeys = FormulaCalculator.uniquifyRowKeys(
+                formulaCalculator.buildRawRowKeys(rkf, fieldsDef, baseRows, deleted));
+            List<String> rkfNames = rowKeyFieldNamesOf(rkf);
+
+            // 墓碑保留掩码：与 buildResolvedRows / computeRows 同款（fps 用完整 baseRows 算，守 AP-54 头号不变量）
+            boolean[] keep = null;
+            if (deleted != null && !deleted.isEmpty()) {
+                List<String> fps = new ArrayList<>(baseRows.size());
+                List<String> nodeIds = new ArrayList<>(baseRows.size());
+                for (JsonNode br : baseRows) {
+                    fps.add(DeletedRowKeys.rowFingerprint(rkfNames, br.path("driverRow")));
+                    JsonNode nid = br.get("__nodeId");
+                    nodeIds.add((nid != null && !nid.isNull()) ? nid.asText(null) : null);
+                }
+                keep = DeletedRowKeys.keepMask(uniqKeys, fps, nodeIds, deleted);
+            }
+
+            ArrayNode seeded = MAPPER.createArrayNode();
+            int rd = 0, skipped = 0, paired = 0;
+            for (int ri = 0; ri < baseRows.size(); ri++) {
+                if (keep != null && !keep[ri]) continue;
+                if (rd >= flatRows.size()) break;              // 保留行多于 row_data 行（尚未保存）→ 余下不回种
+                JsonNode flat = flatRows.get(rd);
+                rd++;
+                if (flat == null || !flat.isObject()) { skipped++; continue; }
+                JsonNode br = baseRows.get(ri);
+
+                // 价格锁豁免
+                if (br.path("driverRow").path("__priceLocked").asBoolean(false)) { skipped++; continue; }
+
+                // 行对齐校验（有内容键时才可校验；无行键字段的组件只能位置对齐，与既有各处一致）
+                String baseContentKey = formulaCalculator.computeRowKey(
+                    rkf, fieldsDef, br.path("driverRow"), br.path("basicDataValues"));
+                if (baseContentKey != null && !baseContentKey.isEmpty() && !rkfNames.isEmpty()) {
+                    if (!flatRowMatchesContentKey(baseContentKey, rkfNames, flat)) { skipped++; continue; }
+                }
+
+                ObjectNode values = MAPPER.createObjectNode();
+                for (String fname : seedable) {
+                    if (!flat.has(fname)) continue;            // 键不存在 = 从未定值
+                    values.set(fname, flat.get(fname));        // 键存在即已定值（含 ""）
+                }
+                if (values.size() == 0) continue;
+                ObjectNode row = MAPPER.createObjectNode();
+                row.put("rowKey", uniqKeys.get(ri));
+                row.set("values", values);
+                seeded.add(row);
+                paired++;
+            }
+
+            if (skipped > 0) {
+                LOG.warnf("[seed-editrows] comp=%s 行对齐校验失败/豁免 %d 行（已跳过，未回种），成功 %d 行，" +
+                          "baseRows=%d row_data=%d", cid, skipped, paired, baseRows.size(), flatRows.size());
+            }
+            if (seeded.size() == 0) continue;
+            mergeSeededInto(into, cid, seeded);
+        }
+    }
+
+    /**
+     * 行对齐校验：扁平行（字段名 → 值）与该 baseRow 的内容键比对。
+     *
+     * <p><b>只比对扁平行里<u>确实存在</u>的行键段</b>，缺失段视作「无证据」而非「不匹配」——
+     * 行键常含 driver 侧才有的字段（如 {@code 销售料号}），{@code row_data} 里天然没有这一段；
+     * 若把缺失当不匹配，会把大量对齐正常的行误判成错位而拒绝回种（实测：三个页签 10 行全被误拒）。
+     *
+     * <p>一段可比段都没有时返回 {@code true} = 退回位置信任 —— 与本方法引入前的既有实现
+     * （{@code Math.min} 纯下标配对）同等信任级别，不会更糟；有可比段时任一段不符即判错位。
+     */
+    private static boolean flatRowMatchesContentKey(String baseKey, List<String> rkfNames, JsonNode flat) {
+        String[] baseParts = baseKey.split("\\|\\|", -1);
+        if (baseParts.length != rkfNames.size()) return true;   // 口径不可比 → 不作为否决依据
+        for (int i = 0; i < rkfNames.size(); i++) {
+            JsonNode v = flat.get(rkfNames.get(i));
+            if (v == null || v.isNull()) continue;              // 扁平行没这一段 → 无证据
+            String s = v.asText("");
+            if (s.isEmpty()) continue;
+            if (!samePart(baseParts[i], s)) return false;
+        }
+        return true;
+    }
+
+    /** 单段比对：先逐字比，再做数值比（{@code 25} vs {@code 25.0} 属同值，JSON 类型漂移常见）。 */
+    private static boolean samePart(String a, String b) {
+        if (a.equals(b)) return true;
+        try {
+            return new java.math.BigDecimal(a).compareTo(new java.math.BigDecimal(b)) == 0;
+        } catch (Exception ignore) {
+            return false;   // 非数值 → 判不等
+        }
+    }
+
+    /**
+     * 合并回种结果：同 (rowKey, 字段) 冲突时 <b>row_data 覆盖既有 editRows</b>。
+     *
+     * <p>方向沿用 2026-06-02 {@code mergeRowDataInputsIntoEdits} 的既定语义（"row_data 是当前权威输入"）：
+     * {@code editRows} 由 {@code editCardValue} 在失焦那一刻写，{@code row_data} 由 1.5s 防抖 saveDraft
+     * 随后写 —— 后者更新。{@code buildCardValues} 路径下 {@code into} 恒空，本方向只对
+     * {@code mergeRowDataInputsIntoEdits} 那三个调用点生效，保持它们行为语义不变。
+     */
+    private void mergeSeededInto(Map<String, ArrayNode> into, String cid, ArrayNode seeded) {
+        ArrayNode existing = into.get(cid);
+        if (existing == null || existing.size() == 0) { into.put(cid, seeded); return; }
+        Map<String, ObjectNode> byKey = new LinkedHashMap<>();
+        for (JsonNode er : existing) {
+            if (er.isObject()) byKey.put(er.path("rowKey").asText(""), (ObjectNode) er);
+        }
+        for (JsonNode sr : seeded) {
+            String k = sr.path("rowKey").asText("");
+            ObjectNode hit = byKey.get(k);
+            if (hit == null) { existing.add(sr); continue; }
+            JsonNode hitValues = hit.path("values");
+            if (!hitValues.isObject()) { hit.set("values", sr.path("values")); continue; }
+            ObjectNode hv = (ObjectNode) hitValues;
+            sr.path("values").fields().forEachRemaining(e -> hv.set(e.getKey(), e.getValue()));
+        }
     }
 
     /**
@@ -2964,12 +3224,23 @@ public class CardSnapshotService {
     /**
      * 2026-06-02 修复: 把 quotation_line_component_data.row_data（autosave 持久化的当前 INPUT 值，
      * 与前端渲染 comp.rows 同源）按 rowKey 合并进 editRows，供草稿打开重刷 formulaResults 用当前输入重算。
-     * <ul>
-     *   <li>仅取 {@code INPUT_NUMBER/INPUT_TEXT} 用户输入字段；不取 driver/FORMULA/LIST_FORMULA（由 baseRows/重算提供）。</li>
-     *   <li>row_data[i] 与 baseRows[i] 同序（同 driver 展开）；rowKey 用 baseRows[i].driverRow 计算（与 filter 对齐），空 rkf → 位置下标。</li>
-     *   <li>row_data 是当前权威输入 → 覆盖 editRows 同字段；row_data 缺该字段则保留旧 editRows 值。</li>
-     *   <li>任一步失败 → 降级返回原 editRows，不阻断打开。</li>
-     * </ul>
+     *
+     * <p><b>BL-0127（2026-08-05）改为 delegate 到 {@link #seedEditRowsFromRowData}，原地实现已删除。</b>
+     * 两个原因：
+     * <ol>
+     *   <li><b>原实现在冻结结构上一直是死的</b> —— 它按 snake {@code field_type} 取字段类型，而
+     *       {@code loadQuoteTabsForValues} 优先返回<b>冻结结构</b>（{@code quotation_view_structure}），
+     *       后者全库 <b>1507/1507 是 camel {@code fieldType}</b>（0 条 snake）→ {@code inputFields} 恒空
+     *       → 整个合并恒 no-op。2026-06-02 想拦的「单元格读快照旧值、列小计前端实时算 → 不一致」
+     *       就是本次 QT-20260805-0080 的同一症状，守卫没生效，故障因此活到今天。</li>
+     *   <li><b>原实现按 {@code Math.min(baseRows, rowData)} 直接下标配对</b>，不看墓碑 —— 有永久删除行时
+     *       row_data（减墓碑口径）会整体错位，把 A 行输入写到 B 行头上；且行键用不带 {@code __nodeId}
+     *       前缀的旧口径，树页签对不上。若只把 camel 补上、不换算法，等于把一个恒 no-op 的函数
+     *       "唤醒"成一个会静默改错数的函数。</li>
+     * </ol>
+     * 收敛后全工程只有一份 row_data→editRows 算法（repair-0727 B0「单一口径」纪律）。
+     * 合并方向（row_data 覆盖 editRows 同字段）与原语义保持一致，见 {@link #mergeSeededInto}。
+     * 任一步失败 → 降级返回原 editRows，不阻断打开（行为不变）。
      */
     private Map<String, ArrayNode> mergeRowDataInputsIntoEdits(
             JsonNode snapshot, Map<String, ArrayNode> baseRowsByComp,
@@ -2989,73 +3260,21 @@ public class CardSnapshotService {
                 "WHERE line_item_id = :lid AND row_data IS NOT NULL")
                 .setParameter("lid", lineItemId)
                 .getResultList();
-            Map<String, JsonNode> rowDataByComp = new LinkedHashMap<>();
+            Map<String, String> rowDataByComp = new LinkedHashMap<>();
             for (Object[] r : rd) {
-                if (r[0] != null && r[1] != null) {
-                    JsonNode arr = MAPPER.readTree(r[1].toString());
-                    if (arr.isArray()) rowDataByComp.put(r[0].toString(), arr);
-                }
+                if (r[0] != null && r[1] != null) rowDataByComp.put(r[0].toString(), r[1].toString());
             }
             if (rowDataByComp.isEmpty()) return oldEdits;
 
+            // 行键节点（每组件一次）——与既有实现一致，逐行查 row_key_fields
+            Map<String, JsonNode> rkfByComp = new LinkedHashMap<>();
             for (JsonNode tab : snapshot) {
                 String cid = tab.path("componentId").asText("");
-                if (cid.isBlank()) continue;
-                JsonNode rowData = rowDataByComp.get(cid);
-                if (rowData == null || !rowData.isArray() || rowData.size() == 0) continue;
-
-                // INPUT 字段名集合（仅用户输入，不含 FORMULA/LIST_FORMULA/driver）
-                List<String> inputFields = new ArrayList<>();
-                for (JsonNode f : tab.path("fields")) {
-                    String ft = f.path("field_type").asText("");
-                    if ("INPUT_NUMBER".equals(ft) || "INPUT_TEXT".equals(ft)) {
-                        String n = f.path("name").asText("");
-                        if (!n.isEmpty()) inputFields.add(n);
-                    }
-                }
-                if (inputFields.isEmpty()) continue;
-
-                ArrayNode baseRows = baseRowsByComp.getOrDefault(cid, MAPPER.createArrayNode());
-                JsonNode rkf = loadRowKeyFieldsNode(cid);
-                ArrayNode edits = merged.computeIfAbsent(cid, k -> MAPPER.createArrayNode());
-                Map<String, ObjectNode> editByKey = new LinkedHashMap<>();
-                for (JsonNode er : edits) {
-                    if (er.isObject()) editByKey.put(er.path("rowKey").asText(""), (ObjectNode) er);
-                }
-
-                JsonNode fieldsDef = tab.path("fields");
-                // 行键唯一化预扫（撞键→#序号），对齐 computeRows / buildResolvedRows / 前端；
-                // 须按全部 baseRows 定序号，再按下标取（保证与逐行求值的 #序号一致）。
-                List<String> rawKeys = new ArrayList<>();
-                for (int i = 0; i < baseRows.size(); i++) {
-                    JsonNode br = baseRows.get(i);
-                    String rk = formulaCalculator.computeRowKey(rkf, fieldsDef,
-                            br.path("driverRow"), br.path("basicDataValues"));
-                    rawKeys.add((rk != null && !rk.isEmpty()) ? rk : String.valueOf(i));
-                }
-                List<String> uniqKeys = FormulaCalculator.uniquifyRowKeys(rawKeys);
-
-                int n = Math.min(baseRows.size(), rowData.size());
-                for (int i = 0; i < n; i++) {
-                    String rowKey = uniqKeys.get(i);
-                    JsonNode rdRow = rowData.get(i);
-
-                    ObjectNode editRow = editByKey.get(rowKey);
-                    if (editRow == null) {
-                        editRow = MAPPER.createObjectNode();
-                        editRow.put("rowKey", rowKey);
-                        editRow.putObject("values");
-                        edits.add(editRow);
-                        editByKey.put(rowKey, editRow);
-                    }
-                    ObjectNode vals = editRow.path("values").isObject()
-                        ? (ObjectNode) editRow.path("values") : editRow.putObject("values");
-                    for (String fld : inputFields) {
-                        JsonNode v = rdRow.path(fld);
-                        if (!v.isMissingNode() && !v.isNull()) vals.set(fld, v); // 当前权威输入覆盖
-                    }
-                }
+                if (!cid.isBlank() && !rkfByComp.containsKey(cid)) rkfByComp.put(cid, loadRowKeyFieldsNode(cid));
             }
+
+            seedEditRowsFromRowData(snapshot, baseRowsByComp, rowDataByComp, rkfByComp,
+                loadTombstonesByComp(lineItemId), merged);
             return merged;
         } catch (Exception e) {
             LOG.warnf("[card-snapshot] mergeRowDataInputsIntoEdits 降级 li=%s: %s", lineItemId, e.getMessage());
