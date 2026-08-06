@@ -225,6 +225,53 @@ class EditRowsFromRowDataTest {
     }
 
     /**
+     * T1.10 driver 重展开后行序与 row_data 完全不同 → 必须按内容键配对，不能按位置。
+     *
+     * <p>取自真实单据 QT-20260805-0080「材料成本」页签实测：
+     * baseRows = H85/Zn, TU2丝/Cu, 羰基镍粉/Ni, Ag粉/Ag, H85/Cu
+     * row_data = Ag粉/Ag, H85/Cu, H85/Zn, TU2丝/Cu, 羰基镍粉/Ni
+     * 按位置配会把 Ag粉 的单价写到 H85/Zn 头上（静默改错数）。
+     * 行键含 driver 侧才有的「销售料号」——row_data 没这一段，可用段只剩 元素+料件。
+     */
+    @Test
+    void t1_10_pairs_by_content_key_when_order_differs() throws Exception {
+        JsonNode snap = M.readTree("""
+            [{"componentId":"C1","tabName":"材料成本","componentType":"NORMAL","fields":[
+              {"name":"销售料号","fieldType":"INPUT_TEXT"},
+              {"name":"元素","fieldType":"INPUT_TEXT"},
+              {"name":"料件","fieldType":"INPUT_TEXT"},
+              {"name":"元素单价","fieldType":"INPUT_NUMBER"}
+            ]}]""");
+        ArrayNode base = baseRows("""
+            [{"driverRow":{"销售料号":"P1","元素":"Zn","料件":"H85"}},
+             {"driverRow":{"销售料号":"P1","元素":"Cu","料件":"TU2丝"}},
+             {"driverRow":{"销售料号":"P1","元素":"Ni","料件":"羰基镍粉"}},
+             {"driverRow":{"销售料号":"P1","元素":"Ag","料件":"Ag粉"}},
+             {"driverRow":{"销售料号":"P1","元素":"Cu","料件":"H85"}}]""");
+        // row_data 顺序不同，且没有「销售料号」这一段
+        String rowData = """
+            [{"row_index":0,"元素":"Ag","料件":"Ag粉","元素单价":28892.5},
+             {"row_index":1,"元素":"Cu","料件":"H85","元素单价":101.14},
+             {"row_index":2,"元素":"Zn","料件":"H85","元素单价":24.17},
+             {"row_index":3,"元素":"Cu","料件":"TU2丝","元素单价":101.14},
+             {"row_index":4,"元素":"Ni","料件":"羰基镍粉","元素单价":105}]""";
+
+        ArrayNode edits = seed(snap, base, rowData, "[\"销售料号\",\"元素\",\"料件\"]", null);
+        assertNotNull(edits, "顺序不同不应导致整批拒绝");
+        assertEquals(5, edits.size(), "5 行都应配上");
+
+        List<String> keys = FormulaCalculator.uniquifyRowKeys(
+            formulaCalculator.buildRawRowKeys(M.readTree("[\"销售料号\",\"元素\",\"料件\"]"),
+                snap.get(0).path("fields"), base, List.of()));
+        // 逐行核对：值必须落到内容对应的那一行，而不是同下标那一行
+        assertEquals("24.17",   valuesOf(edits, keys.get(0)).path("元素单价").asText(), "Zn/H85");
+        assertEquals("101.14",  valuesOf(edits, keys.get(1)).path("元素单价").asText(), "Cu/TU2丝");
+        assertEquals("105",     valuesOf(edits, keys.get(2)).path("元素单价").asText(), "Ni/羰基镍粉");
+        assertEquals("28892.5", valuesOf(edits, keys.get(3)).path("元素单价").asText(), "Ag/Ag粉");
+        assertEquals("101.14",  valuesOf(edits, keys.get(4)).path("元素单价").asText(), "Cu/H85");
+    }
+
+    /**
      * T1.9 合并方向：同 (rowKey, 字段) 冲突时 <b>row_data 覆盖</b>既有 editRows。
      * 沿用 2026-06-02 mergeRowDataInputsIntoEdits 的既定语义 —— editRows 由 editCardValue 在失焦那刻写，
      * row_data 由 1.5s 防抖 saveDraft 随后写，后者更新。

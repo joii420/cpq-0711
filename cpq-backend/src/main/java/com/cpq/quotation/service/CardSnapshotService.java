@@ -2386,23 +2386,45 @@ public class CardSnapshotService {
                 keep = DeletedRowKeys.keepMask(uniqKeys, fps, nodeIds, deleted);
             }
 
+            // 配对索引：优先按内容键（扁平行里确实有的那几段行键字段）建 key→行队列；
+            // 拿不到可用段时退回位置配对。见 buildFlatRowIndex 说明。
+            int[] usableParts = usableKeyPartIndexes(rkfNames, flatRows);
+            Map<String, java.util.ArrayDeque<Integer>> flatByKey =
+                (usableParts.length > 0) ? buildFlatRowIndex(rkfNames, usableParts, flatRows) : null;
+            boolean[] flatUsed = new boolean[flatRows.size()];
+
             ArrayNode seeded = MAPPER.createArrayNode();
             int rd = 0, skipped = 0, paired = 0;
             for (int ri = 0; ri < baseRows.size(); ri++) {
                 if (keep != null && !keep[ri]) continue;
-                if (rd >= flatRows.size()) break;              // 保留行多于 row_data 行（尚未保存）→ 余下不回种
-                JsonNode flat = flatRows.get(rd);
-                rd++;
-                if (flat == null || !flat.isObject()) { skipped++; continue; }
                 JsonNode br = baseRows.get(ri);
+                String baseContentKey = formulaCalculator.computeRowKey(
+                    rkf, fieldsDef, br.path("driverRow"), br.path("basicDataValues"));
+
+                JsonNode flat;
+                if (flatByKey != null) {
+                    // 按内容键取 —— driver 重展开后的行序与 row_data 行序可以完全不同
+                    // （实测「材料成本」页签：baseRows=H85/Zn,TU2丝/Cu,羰基镍粉/Ni,Ag粉/Ag,H85/Cu
+                    //   而 row_data=Ag粉/Ag,H85/Cu,H85/Zn,TU2丝/Cu,羰基镍粉/Ni）。按位置配会把
+                    //   Ag粉 的单价写到 H85/Zn 头上 —— 静默改错数。
+                    if (baseContentKey == null || baseContentKey.isEmpty()) { skipped++; continue; }
+                    var q = flatByKey.get(restrictKey(baseContentKey, rkfNames.size(), usableParts));
+                    Integer idx = (q == null || q.isEmpty()) ? null : q.pollFirst();
+                    if (idx == null) { skipped++; continue; }    // row_data 里没有这一行（新展开出来的行）
+                    flat = flatRows.get(idx);
+                    flatUsed[idx] = true;
+                } else {
+                    if (rd >= flatRows.size()) break;            // 保留行多于 row_data 行（尚未保存）→ 余下不回种
+                    flat = flatRows.get(rd);
+                    rd++;
+                }
+                if (flat == null || !flat.isObject()) { skipped++; continue; }
 
                 // 价格锁豁免
                 if (br.path("driverRow").path("__priceLocked").asBoolean(false)) { skipped++; continue; }
 
-                // 行对齐校验（有内容键时才可校验；无行键字段的组件只能位置对齐，与既有各处一致）
-                String baseContentKey = formulaCalculator.computeRowKey(
-                    rkf, fieldsDef, br.path("driverRow"), br.path("basicDataValues"));
-                if (baseContentKey != null && !baseContentKey.isEmpty() && !rkfNames.isEmpty()) {
+                // 位置配对时仍做一次内容校验（内容键配对已天然自证，不必重复）
+                if (flatByKey == null && baseContentKey != null && !baseContentKey.isEmpty() && !rkfNames.isEmpty()) {
                     if (!flatRowMatchesContentKey(baseContentKey, rkfNames, flat)) { skipped++; continue; }
                 }
 
@@ -2425,6 +2447,64 @@ public class CardSnapshotService {
             }
             if (seeded.size() == 0) continue;
             mergeSeededInto(into, cid, seeded);
+        }
+    }
+
+    /**
+     * 挑出「可用于配对」的行键段下标 —— 即<b>每一条扁平行都带非空值</b>的那些行键字段。
+     *
+     * <p>行键常含 driver 侧才有的字段（如 {@code 销售料号}），{@code row_data} 行天然没有这一段；
+     * 只要还剩至少一段两边都有，就能按内容配对，比按位置可靠得多。一段都不剩 → 返回空数组，
+     * 调用方退回位置配对（与本改动引入前的既有实现同等信任级别）。
+     */
+    private static int[] usableKeyPartIndexes(List<String> rkfNames, JsonNode flatRows) {
+        if (rkfNames == null || rkfNames.isEmpty() || flatRows == null || flatRows.size() == 0) return new int[0];
+        List<Integer> usable = new ArrayList<>();
+        for (int i = 0; i < rkfNames.size(); i++) {
+            boolean allPresent = true;
+            for (JsonNode flat : flatRows) {
+                JsonNode v = (flat == null) ? null : flat.get(rkfNames.get(i));
+                if (v == null || v.isNull() || v.asText("").isEmpty()) { allPresent = false; break; }
+            }
+            if (allPresent) usable.add(i);
+        }
+        int[] out = new int[usable.size()];
+        for (int i = 0; i < out.length; i++) out[i] = usable.get(i);
+        return out;
+    }
+
+    /** 按可用段给扁平行建 内容键 → 行下标队列（同键多行按出现序排队，供撞键行依次取用）。 */
+    private static Map<String, java.util.ArrayDeque<Integer>> buildFlatRowIndex(
+            List<String> rkfNames, int[] usableParts, JsonNode flatRows) {
+        Map<String, java.util.ArrayDeque<Integer>> map = new LinkedHashMap<>();
+        for (int i = 0; i < flatRows.size(); i++) {
+            JsonNode flat = flatRows.get(i);
+            if (flat == null || !flat.isObject()) continue;
+            List<String> parts = new ArrayList<>(usableParts.length);
+            for (int p : usableParts) {
+                JsonNode v = flat.get(rkfNames.get(p));
+                parts.add(v == null || v.isNull() ? "" : normalizePart(v.asText("")));
+            }
+            map.computeIfAbsent(String.join("||", parts), k -> new java.util.ArrayDeque<>()).addLast(i);
+        }
+        return map;
+    }
+
+    /** 把 baseRow 的完整内容键裁到可用段，口径与 {@link #buildFlatRowIndex} 一致。 */
+    private static String restrictKey(String baseKey, int expectedParts, int[] usableParts) {
+        String[] parts = baseKey.split("\\|\\|", -1);
+        if (parts.length != expectedParts) return baseKey;    // 段数对不上 → 原样（必然不命中，走 skip）
+        List<String> kept = new ArrayList<>(usableParts.length);
+        for (int p : usableParts) kept.add(normalizePart(parts[p]));
+        return String.join("||", kept);
+    }
+
+    /** 段值归一：数值统一成 plain string（{@code 25} / {@code 25.0} 视作同值），非数值原样。 */
+    private static String normalizePart(String s) {
+        try {
+            return new java.math.BigDecimal(s).stripTrailingZeros().toPlainString();
+        } catch (Exception ignore) {
+            return s;
         }
     }
 
