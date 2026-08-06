@@ -127,6 +127,12 @@ All UI, prototypes, and PRD are in Chinese. Code artifacts (variables, APIs, com
 
 **计划执行方式（默认，不必再询问用户）**：写好实现计划（`superpowers:writing-plans`）后，**默认走 `superpowers:subagent-driven-development`**——每个 Task 派全新子代理实现，Task 间做两阶段评审（先 spec 合规、再代码质量），连续执行不中途请示。除非用户当次明确要求改用 `superpowers:executing-plans` 或手动执行。
 
+🚨 **任务文档一律落 `dev-docs/`，不要写 `docs/superpowers/specs/`**（2026-08-05 立规）
+- **目录约定**：`dev-docs/<task-0MDD|repair-0MDD>-<中文任务名>/`，内含 `需求文档.md`（唯一权威口径）+ 按需 `实现计划.md` / `test.md` / `api.md` / `问题分析报告.md`。派生的返修任务嵌在父任务目录下（如 `dev-docs/repair-0803-BL0098-公式绑定改绑ID/repair-0805-.../`）。
+- ⚠️ **`docs/superpowers/specs/` 已停用**（仅保留历史存档，不再新增）。
+- ⚠️ **`superpowers:brainstorming` 技能的检查清单里硬写了 `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` 这个默认路径 —— 不要照搬。** 该技能自己也写明「User preferences for spec location override this default」，本节即是那个 override。任何 superpowers 技能与 CLAUDE.md 冲突时，**一律以 CLAUDE.md 为准**。
+- 立项后同步在 `BACKLOG.md` 登记条目（编号 `BL-NNNN`），交付后回写 `docs/RECORD.md`。
+
 **生命周期**：
 1. **起步**：调 `superpowers:using-git-worktrees` 建独立 worktree + 特性分支，后续所有编码/提交都在该 worktree 内进行。
 2. **开发**：按本文「质量保证规范」「修改后强制自检」完成功能 + 测试 + 自检；协议级改动跑 E2E。默认按上面「计划执行方式」用 subagent-driven 推进。
