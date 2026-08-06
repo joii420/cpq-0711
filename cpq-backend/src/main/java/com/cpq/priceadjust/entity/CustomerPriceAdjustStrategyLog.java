@@ -1,5 +1,6 @@
 package com.cpq.priceadjust.entity;
 
+import com.cpq.system.entity.User;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -55,4 +56,29 @@ public class CustomerPriceAdjustStrategyLog extends PanacheEntityBase {
 
     @Column(name = "changed_at", nullable = false)
     public OffsetDateTime changedAt = OffsetDateTime.now();
+
+    /**
+     * 记录变更人：<b>{@code changedBy} 与 {@code changedByName} 必须同时落</b>。
+     *
+     * <p>🚨 <b>2026-08-05 新增（验收 #54）</b>：原先两个写点各自手写这两行赋值，
+     * {@code PriceAdjustComparisonColumnService} 只写了 {@code changedBy}、漏了
+     * {@code changedByName} → `COMPARISON_COLUMN` 类型日志的「变更人」列全库为空
+     * （其余三类 STRATEGY/MATERIAL_SCOPE/ELEMENT_LIST 都非空），四类变更里唯独比对列
+     * 查不到是谁改的。改成本方法后<b>物理上无法只落一半</b>，同类遗漏不会再发生。
+     *
+     * <p>🔒 本类的两个写点（{@code PriceAdjustStrategyService#writeAuditLog} /
+     * {@code PriceAdjustComparisonColumnService#writeAuditLog}）<b>都必须走这里</b>，
+     * 不要各自再写一份 {@code User.findById().fullName}。
+     */
+    public void stampActor(UUID actorId) {
+        this.changedBy = actorId;
+        this.changedByName = resolveUserName(actorId);
+    }
+
+    /** uuid → 用户显示名，全 priceadjust 包唯一实现（口径漂移是本任务反复出现的问题）。 */
+    public static String resolveUserName(UUID id) {
+        if (id == null) return null;
+        User u = User.findById(id);
+        return u != null ? u.fullName : null;
+    }
 }

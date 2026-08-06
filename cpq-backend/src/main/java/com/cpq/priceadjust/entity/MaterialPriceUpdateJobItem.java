@@ -66,7 +66,20 @@ public class MaterialPriceUpdateJobItem extends PanacheEntityBase {
     }
 
     /**
-     * job 名下未完成项（WAITING/RUNNING）一律置 STALE 终态（§11.6.3.2，版本被新版取代时）。
+     * job 名下<b>所有非 SUCCESS 项</b>（WAITING/RUNNING/FAILED/CONFLICT）一律置 STALE 终态
+     * （§11.6.3.2，版本被新版取代时）。
+     *
+     * <p>🚨 <b>2026-08-05 修复（验收 #61）</b>：原集合只有 {@code (WAITING, RUNNING)}，漏了
+     * {@code FAILED}/{@code CONFLICT} —— 旧批次里真实失败的项在版本被取代后仍是 FAILED，屏 7
+     * 上照样可点重试，而 {@code PriceAdjustJobExecutionService#executeItem} 用的是
+     * {@code job.versionId}（<b>已作废的旧版</b>）→ 把作废版本的价格写进活单，<b>且绕开新版
+     * 待办池的审核</b>。STALE 的三层拦截（{@code PriceAdjustJobResource#retryJobItem} 409 /
+     * {@code retryJobItem} 409 / {@code executeItem} 早返）本来就都在，只是这批项从来没被标成
+     * STALE，拦截器一次都没触发过 —— 扩集合后三层自动生效，不需要改第二处。
+     *
+     * <p>🔒 <b>SET 子句只改 {@code status} + {@code updatedAt}，不碰 {@code errorCode} /
+     * {@code errorMessage}</b> —— 失败留痕完整保留（STALE 的语义是"已失效"，不是"没失败过"）。
+     * <br>🔒 {@code SUCCESS} 不在集合内：已成功的项是既成事实，不回滚（同裁决 27 精神）。
      * jobIds 由调用方（PriceAdjustVersionGenerationService）先按 versionId 查出 MaterialPriceUpdateJob
      * 再传入，避免这里跨实体写子查询。
      *
@@ -81,7 +94,7 @@ public class MaterialPriceUpdateJobItem extends PanacheEntityBase {
      */
     public static int staleAllUnfinishedByJobIds(List<UUID> jobIds) {
         if (jobIds == null || jobIds.isEmpty()) return 0;
-        return update("status = ?1, updatedAt = ?2 where status in (?3, ?4) and jobId in ?5",
-                STALE, OffsetDateTime.now(), WAITING, RUNNING, jobIds);
+        return update("status = ?1, updatedAt = ?2 where status in (?3, ?4, ?5, ?6) and jobId in ?7",
+                STALE, OffsetDateTime.now(), WAITING, RUNNING, FAILED, CONFLICT, jobIds);
     }
 }

@@ -6,7 +6,6 @@ import com.cpq.priceadjust.dto.*;
 import com.cpq.priceadjust.entity.*;
 import com.cpq.priceadjust.exception.ElementUnselectNeedsConfirmException;
 import com.cpq.priceadjust.exception.MaterialRemovalNeedsConfirmException;
-import com.cpq.system.entity.User;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.panache.common.Page;
@@ -535,15 +534,13 @@ public class PriceAdjustStrategyService {
         log.summary = summary;
         log.beforeSnapshot = beforeJson;
         log.afterSnapshot = afterJson;
-        log.changedBy = actorId;
-        log.changedByName = resolveUserName(actorId);
+        log.stampActor(actorId); // 🔒 changedBy + changedByName 一起落（#54：另一个写点曾只写一半）
         log.persist();
     }
 
+    /** 委托到唯一实现，避免同一口径在包内出现第二份（见 CustomerPriceAdjustStrategyLog#resolveUserName）。 */
     private String resolveUserName(UUID id) {
-        if (id == null) return null;
-        User u = User.findById(id);
-        return u != null ? u.fullName : null;
+        return CustomerPriceAdjustStrategyLog.resolveUserName(id);
     }
 
     private String serializeStrategy(CustomerPriceAdjustStrategy s) {

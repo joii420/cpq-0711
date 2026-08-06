@@ -4658,3 +4658,23 @@ E2E:
 **验证（真实数据，合成客户 `ZZ47-C` · SPECIFIED 范围只圈 `ZZ47-M1`；`ZZ47-M2` 为范围外产品行；`ZZ47E` 为元素主数据 INACTIVE 但仍在调价清单；验完全量清理零残留）**：连跑 4 次归位 —— `rowsChanged` **19 → 7 → 7 → 7**（第一次多出的 12 = 撤锁次数：LI1 的 X 行 driver+row_data 各 1，LI2 五行 × 双侧 10），`lineItemsInScope` 恒 1。范围外 LI2 的 `row_version` **4 次归位后恒为 1** —— UPDATE 只在首次撤锁时发过一次，此后零白写（比 rowsChanged 更硬的"不虚增"证据）。逐条断言全 `t`：元素∉清单(ZZ47X) row_data 与 snapshot driverRow **均等于 `{"元素","元素单价":555.55,"货币":"USD"}`（值逐字节原样、锁已撤）**；料号∉范围 LI2 双侧数组**逐字节等于「种子仅去两标记」**；停用元素 ZZ47E 仍∈清单 → 777.00 + 锁保留（#51 不回归）；ZZ47A → 1234.56/CNY + 锁保留（不误伤）；ZZ47C → 四键全清（#47 不回归）；ZZ47B → 800.00 + 锁保留（#47 场景①不回归）。LI1 内容 md5 跨第 3/4 次完全一致。
 
 **自检**：`./mvnw -o compile` 0 错误（分 3 次落，每次落完即编译，任一中间态可编译：先加新方法 → 再改 `reconcileRows` → 最后改调用点）✅；共享 8081 业务端点 401 ✅；`mvnw -o test -Dtest='com.cpq.priceadjust.**'` → **52 tests, 0 failures** ✅；ZZ47 前缀在 8 张表计数均为 0 ✅；全程未触碰 `CUST-0729-QA` / `CUST-0729-QB` / `CUST-0001`。
+
+---
+
+[2026-08-05] 价格调整策略（task-0729 验收期修复 · 续二） - `#61` 旧批次 FAILED/CONFLICT 仍可重试（写作废价+绕审核）+ `#54` 比对列日志缺变更人 | 涉及文件：`MaterialPriceUpdateJobItem.java`(扩集合) / `CustomerPriceAdjustStrategyLog.java`(新增 `stampActor` + `resolveUserName`) / `PriceAdjustComparisonColumnService.java` / `PriceAdjustStrategyService.java` |
+
+**`#61` 根因**：`staleAllUnfinishedByJobIds` 的 status 集合只有 `(WAITING, RUNNING)`，漏了 `FAILED`/`CONFLICT`。版本被取代后这批项仍是 FAILED，屏 7 上照样可点重试，而 `PriceAdjustJobExecutionService#executeItem` 用的是 `job.versionId`（**已作废的旧版**）→ 把作废版本的价格写进活单、**且绕开新版待办池的审核**。
+**修法 = 扩集合**为 `(WAITING, RUNNING, FAILED, CONFLICT)`。🔑 **STALE 的三层拦截（Resource 409 / `retryJobItem` 409 / `executeItem` 早返）本来就都在，只是这批项从来没被标成 STALE，拦截器一次都没触发过** —— 扩集合后三层自动生效，不改第二处。
+🔒 **核实（技术总监点名要求）**：SET 子句是 `status = ?1, updatedAt = ?2`，**不碰 `error_code` / `error_message`**，失败留痕完整保留（STALE 语义是"已失效"不是"没失败过"）；`SUCCESS` 不在集合内。
+⚠️ **本修复的已知副作用（未修，待裁）**：`staleAllUnfinishedByJobIds` 是 item 级批量 UPDATE，不重算 job 行的 `failed_count`/`conflict_count`/`stale_count`（`finalizeJob` 才算，而被取代的 job 不会再执行）→ 屏 7 表头「失败 1 / 冲突 1 / 已失效 0」与明细行全 STALE **对不上**。修复前 WAITING→STALE 无对应计数器故看不出来，本次才显形。纯展示层，无数据损坏、无绕过。
+
+**`#54` 根因**：`PriceAdjustComparisonColumnService#writeAuditLog` 只写 `changedBy`、漏写 `changedByName` → 四类变更里唯独 `COMPARISON_COLUMN` 的「变更人」全库为空（实测 7/7 NULL，而 ELEMENT_LIST 10/10、MATERIAL_SCOPE 13/13、STRATEGY 29/29 全非空）。
+**修法**：把「记录变更人」下沉成实体方法 `CustomerPriceAdjustStrategyLog#stampActor(actorId)`（同时落两个字段），两个写点都改走它 —— **物理上无法只落一半**，同类遗漏不会再发生（比"补一行赋值"更根治）。`resolveUserName` 收敛为实体上的唯一实现，StrategyService 的私有同名方法改为委托（`:80` 的 `dto.updatedBy` 仍需它，不能删）。**存量 7 条 NULL 不回填**（历史数据无法追溯当时是谁，回填只能造假）。
+
+**验证（真实数据，合成客户 `ZZ61-C`(被测) + `ZZ61-D`(对照)，验完零残留）**：
+- `#61`：造 FAILED(`SUBTOTAL_MISMATCH`)/CONFLICT(`ROW_VERSION_CONFLICT`)/SUCCESS/WAITING 四态 → 走**真实** `POST /versions/generate {confirmSupersede:true}` 取代旧版 → FAILED/CONFLICT/WAITING 三条转 `STALE` 且 `error_code`+`error_message` **逐字保留**，`SUCCESS` 原样不动；对照客户 ZZ61-D 的 **PENDING** 版本下 FAILED 项**完全未动**（jobId 作用域正确）。拦截：对两条 STALE 项 retry → **409**（修复前 202）；对 ZZ61-D 的 PENDING FAILED 项 retry → **202**（不误伤）。
+- `#54`：`PUT /comparison-columns` → DB `changed_by_name='系统管理员'`；`GET /strategies/{cno}/logs` → `changedBy:"系统管理员"`，与 STRATEGY 类型格式一致。非回归：同一客户再跑 `PUT /strategies/{cno}` 与 `PUT .../elements`，STRATEGY / ELEMENT_LIST 两类日志的 `changed_by_name` 同样非空（我改过 StrategyService 的写点，必须复验）。
+
+**踩坑**：主仓跑 `./mvnw compile` / `mvnw test` 会写共享 dev server 正在用的 `target/classes`，期间 8081 会瞬时返 500（`Error restarting Quarkus`）或连接被拒，**几秒后自愈**。判"是不是我打挂了"要**重试几次再下结论**，别看到一次 500 就回滚。
+
+**自检**：`./mvnw -o compile` 4 次全 0 错误（先加实体方法 → 再改两个调用点，任一中间态可编译）✅；8081 业务端点 401 ✅；`mvnw -o test -Dtest='com.cpq.priceadjust.**'` → **52 tests, 0 failures** ✅；ZZ61 前缀在 8 张表计数全 0 ✅；存量 COMPARISON_COLUMN 仍 7/7 NULL（确认未回填）✅；未触碰 `CUST-0729-QA` / `CUST-0729-QB` / `CUST-0001`。

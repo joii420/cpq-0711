@@ -276,7 +276,7 @@ public class PriceAdjustComparisonColumnService {
         log.summary = "比对列配置变更";
         log.beforeSnapshot = beforeSnapshot;
         log.afterSnapshot = afterSnapshot;
-        log.changedBy = actorId;
+        log.stampActor(actorId); // 🔒 changedBy + changedByName 一起落，别只写其中一个（#54 根因）
         log.persist();
     }
 }
