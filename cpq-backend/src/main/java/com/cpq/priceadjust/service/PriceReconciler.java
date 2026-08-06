@@ -37,7 +37,7 @@ import java.util.UUID;
  *
  * <p><b>归位 = 把 §11.4.1 取价优先级表幂等地应用到每一行的价格列</b>：
  * <pre>
- * 元素 ∉ 调价清单                    → 不动（整行一个字节都不碰）
+ * 元素 ∉ 调价清单                    → <b>值</b>不动（一个字节都不碰），但撤锁标记
  * 元素 ∈ 清单 且 指针有值             → 写该版本价，清手工值
  * 元素 ∈ 清单 且 指针为空             → task-0722 实时算（基准日=报价单创建日期），清手工值
  * </pre>
@@ -45,7 +45,19 @@ import java.util.UUID;
  * 不合并成一个 if（本类 {@link #reconcileRows} 的 write/clear 两段分开写，故意的）。
  *
  * <p>作用域三条件（E11-4，全部成立才归位/才只读）：<b>元素∈清单 ∧ 料号∈范围 ∧ 策略启用</b>。
- * 范围外、停用客户的行一个字节都不碰。
+ *
+ * <p>🔒 <b>"不动"= 值不动，不等于"标记也不动"</b>（2026-08-05 修正，原文写的是"整行一个字节
+ * 都不碰"，那是 bug 不是设计）。作用域三条件任一不成立 → 该单价列<b>应恢复可编辑</b>
+ * （§11.15.2.6(1)；范围维度另见需求说明 §11.2.3 补充「移出范围的料号，其单价列可编辑性随之
+ * 恢复」，元素维度另见验收 #58「确认后该元素出清单、对应单价列恢复可编辑」）。
+ * 只加锁不解锁 = 永久锁死。当前落地情况：
+ * <pre>
+ * 元素 ∉ 清单   → ✅ 已撤锁（{@link #reconcileRows} 两个循环，值不动）
+ * 料号 ∉ 范围   → ✅ 已撤锁（{@link #unlockAllRows}，值不动）
+ * 策略停用      → ⏸ 未撤锁：{@link #prefetch} 返 null 整单短路，改法与现有结构冲突且
+ *                 触发频率低（罕见运维操作），已记 BACKLOG，规范上仍要求撤。
+ * </pre>
+ * 🔒 撤的是<b>可编辑性</b>不是<b>取价</b>：裁决 5 明确料号范围不影响取价，故绝不能顺手改值。
  *
  * <p>🔒 <b>性能纪律（E14-7）</b>：整单一次预取（策略/元素清单/料号范围/指针/版本明细/冻结结构
  * /component_data 各查一次），{@link #prefetch} 之后逐行处理全在内存，禁止逐行查库。
@@ -133,13 +145,18 @@ public class PriceReconciler {
         for (QuotationLineItem li : ctx.lines) {
             String materialNo = li.productPartNoSnapshot;
             if (materialNo == null || materialNo.isBlank()) continue;
-            if (!ctx.inScope(materialNo)) continue; // 料号∉范围 → 整行不动
-            result.lineItemsInScope++;
+            // 🔒 料号∉范围：**值一个字节都不碰**（裁决 5：范围不影响取价），但只读三条件已破 →
+            //    必须撤锁，否则该单价列永久锁死（需求说明 §11.2.3 补充「移出范围的料号，其单价列
+            //    可编辑性随之恢复」/ §11.15.2.6(1)）。与「元素∉清单」同构，两处一起修，不留半边。
+            boolean inScope = ctx.inScope(materialNo);
+            if (inScope) result.lineItemsInScope++;
 
             for (UpgradeResult.PriceBearingComponent pbc : ctx.priceBearingComponents) {
                 RowGroup rg = ctx.rowGroups.get(li.id + "|" + pbc.componentId);
                 if (rg == null) continue;
-                int changed = reconcileRows(rg, pbc, materialNo, ctx);
+                int changed = inScope
+                    ? reconcileRows(rg, pbc, materialNo, ctx)
+                    : unlockAllRows(rg);
                 result.rowsChanged += changed;
             }
         }
@@ -189,7 +206,11 @@ public class PriceReconciler {
             Object elementCodeVal = resolved.get(pbc.elementCodeField);
             if (elementCodeVal == null) continue;
             String elementCode = elementCodeVal.toString();
-            if (!ctx.elementCodesInList.contains(elementCode)) continue; // 元素∉清单 → 不动
+            if (!ctx.elementCodesInList.contains(elementCode)) {
+                // 元素∉清单 → 值一个字节都不碰，但要撤锁（见本方法 javadoc「不动 = 值不动」）
+                if (stripPriceLockMarks(driverRow)) changed++;
+                continue;
+            }
 
             ElementPrice ep = pointerVersionId != null
                 ? (versionPrices != null ? versionPrices.get(elementCode) : null)
@@ -212,7 +233,11 @@ public class PriceReconciler {
             JsonNode ecNode = dataRow.get(pbc.elementCodeField);
             if (ecNode == null || ecNode.isNull()) continue;
             String elementCode = ecNode.asText();
-            if (!ctx.elementCodesInList.contains(elementCode)) continue; // 元素∉清单 → 不动
+            if (!ctx.elementCodesInList.contains(elementCode)) {
+                // 元素∉清单 → 值一个字节都不碰，但要撤锁（见本方法 javadoc「不动 = 值不动」）
+                if (stripPriceLockMarks(dataRow)) changed++;
+                continue;
+            }
 
             ElementPrice ep = pointerVersionId != null
                 ? (versionPrices != null ? versionPrices.get(elementCode) : null)
@@ -245,17 +270,59 @@ public class PriceReconciler {
         }
 
         if (changed == 0) return 0;
+        return persistRowGroup(rg, snapshotRows, rowData) ? changed : 0;
+    }
 
-        String newSnapshotRowsJson = writeJson(snapshotRows);
-        String newRowDataJson = writeJson(rowData);
-        UUID componentId = UUID.fromString(pbc.componentId);
+    /**
+     * 作用域外行的「撤锁」：<b>业务值一个字节都不碰，只撤 {@code __priceLocked}/{@code __priceVersion}
+     * 两个可编辑性标记</b>。
+     *
+     * <p>用于「料号 ∉ 范围」——§11.15.2.6(1) 的只读三条件（元素∈清单 ∧ 料号∈范围 ∧ 策略启用）
+     * 有一条不成立，该单价列就该恢复可编辑（需求说明 §11.2.3 补充：「移出范围的料号，其单价列
+     * 可编辑性<b>随之恢复</b>」）。范围外料号与元素在不在清单无关，故整组行无差别撤锁。
+     *
+     * <p>🔒 <b>撤的是"可编辑性"，不是"取价"</b>：裁决 5 明确料号范围<b>不影响取价</b>（范围外的
+     * 元素价该怎么算还怎么算，只是改由销售自填/实时算）。所以这里绝不能顺手改值——改值会把
+     * 「不动」变成「动」，正好踩反 §11.4.1。
+     *
+     * @return 真正被撤掉标记的行数（没有键可删 → 0 → 不发 UPDATE，保证幂等且 rowsChanged 不虚高）
+     */
+    int unlockAllRows(RowGroup rg) {
+        ArrayNode snapshotRows = parseArray(rg.snapshotRowsJson);
+        ArrayNode rowData = parseArray(rg.rowDataJson);
+        int changed = 0;
+        for (JsonNode rowNode : snapshotRows) {
+            if (rowNode.path("driverRow") instanceof ObjectNode driverRow && stripPriceLockMarks(driverRow)) changed++;
+        }
+        for (JsonNode rd : rowData) {
+            if (rd instanceof ObjectNode dataRow && stripPriceLockMarks(dataRow)) changed++;
+        }
+        if (changed == 0) return 0;
+        return persistRowGroup(rg, snapshotRows, rowData) ? changed : 0;
+    }
+
+    /**
+     * 撤掉一行的两个可编辑性标记，<b>不碰任何业务键</b>。
+     *
+     * @return 是否真的删掉了键（调用方据此决定要不要计入 changed —— 没删掉却计数会让每次
+     *         saveDraft 对全部作用域外行白写一次 UPDATE，违反 E14-7 且 rowsChanged 虚高）
+     */
+    private static boolean stripPriceLockMarks(ObjectNode row) {
+        boolean removed = false;
+        if (row.has("__priceLocked")) { row.remove("__priceLocked"); removed = true; }
+        if (row.has("__priceVersion")) { row.remove("__priceVersion"); removed = true; }
+        return removed;
+    }
+
+    /** 乐观锁写回 component_data（{@link #reconcileRows} 与 {@link #unlockAllRows} 共用同一段，不写第二份）。 */
+    private boolean persistRowGroup(RowGroup rg, ArrayNode snapshotRows, ArrayNode rowData) {
         int updated = em.createNativeQuery(
                 "UPDATE quotation_line_component_data " +
                 "SET snapshot_rows = CAST(:sr AS jsonb), row_data = CAST(:rd AS jsonb), " +
                 "    row_version = row_version + 1 " +
                 "WHERE id = :id AND row_version = :seen")
-            .setParameter("sr", newSnapshotRowsJson)
-            .setParameter("rd", newRowDataJson)
+            .setParameter("sr", writeJson(snapshotRows))
+            .setParameter("rd", writeJson(rowData))
             .setParameter("id", rg.id)
             .setParameter("seen", rg.rowVersion)
             .executeUpdate();
@@ -263,9 +330,9 @@ public class PriceReconciler {
             // 归位与并发写（如同时刷新/其它归位调用）撞车：本轮不重试，下一次归位时机（下次
             // saveDraft/下次升版）会用当时的最新 row_version 重新归位，幂等，不阻断整单保存。
             LOG.warnf("[price-reconcile] component_data id=%s row_version 冲突（expected=%d），本次归位跳过", rg.id, rg.rowVersion);
-            return 0;
+            return false;
         }
-        return changed;
+        return true;
     }
 
     // -------------------------------------------------------------------------

@@ -4639,3 +4639,22 @@ E2E:
 **另发现两点（本轮未改）**：① `snapshot_rows` 的 driverRow 若带**上一轮遗留**的 `__priceLocked=true`，本次解不出价时 guard 只是 `continue`，残留锁不会被撤 → 该格仍死（实测 `ZZ47D` 行复现）；② 「料号∉范围」`continue` / 「策略停用」`prefetch` 返 null 两条路径同样只加锁不解锁，与 §11.15.2.6 三条件（元素∈清单 ∧ 料号∈范围 ∧ 策略启用）声明的"作用域外应可编辑"不一致 —— 与 BACKLOG 那条「元素∉清单」合起来是**同一个「只加锁不解锁」缺陷族的 4 个入口**。
 
 **自检**：`./mvnw -o compile` 0 错误 ✅；共享 8081 业务端点 401（应用在跑、鉴权正常）✅；`mvnw -o test -Dtest='com.cpq.priceadjust.**'` → **52 tests, 0 failures** ✅；夹具清理后 ZZ47 前缀在 customer/quotation/strategy/epv/mpvr 五表计数均为 0 ✅；全程未触碰 `CUST-0729-QA` / `CUST-0729-QB` / `CUST-0001`。
+
+---
+
+[2026-08-05] 价格调整策略（task-0729 验收期修复 · 续） - 「只加锁不解锁」缺陷族：元素∉清单 / 料号∉范围 两个入口补撤锁 | 涉及文件：`cpq-backend/src/main/java/com/cpq/priceadjust/service/PriceReconciler.java`（`reconcileQuotation` 调用点 + `reconcileRows` 两个循环 + 新增 `unlockAllRows` / `stripPriceLockMarks` / `persistRowGroup` + 类 javadoc） |
+
+**背景**：`#47`（元素∈清单但解不出价 → 死格）修完后评估同族，发现「只加锁不解锁」实际有 **4 个入口**，且交付报告 §2.5 给出的推迟理由（"元素被停用与用户改行在后端完全一样，要区分必须改数据协议"）**前提与实现不符** —— `customer_price_adjust_element` 无 enabled 列、`doPutElements` 注释逐字写着「从不读 element.status 做任何过滤/剔除」、§11.2.1 明写「停用保留在清单里、照常参与调价」。**停用走 ∈清单 分支，与 ∉清单 零交集**，歧义不存在。剩下两种成因（财务手动取消勾选 / 用户改行元素）期望一致都是解锁（验收 #58 逐字：「确认后该元素出清单、对应单价列恢复可编辑」），故**无需区分、无需改数据协议**。
+🔴 决定性证据：`PriceAdjustStrategyService#countUnlockedQuotationsForElements`（`:442-456`）已上线，取消勾选时真的去 JOIN `quotation_line_component_data` 数「将解锁的存量单张数」并弹窗告诉财务 —— **系统当面承诺 N 张单会解锁，后端一张都没解锁**。不是行为未定，是承诺未兑现。
+
+**本轮修两条（技术总监批准）**：
+1. **元素 ∉ 清单**：`reconcileRows` 两个循环的 `continue` 前只 `remove` 两个标记。
+2. **料号 ∉ 范围**：`reconcileQuotation` 的 `continue` 改为 `inScope ? reconcileRows(...) : unlockAllRows(rg)`（依据需求说明 §11.2.3 补充「移出范围的料号，其单价列可编辑性随之恢复」+ §11.15.2.6(1) 三条件）。
+
+🔒 **两条铁律**：① **撤的是「可编辑性」不是「取价」——业务值一个字节都不碰**（裁决 5：料号范围不影响取价；改值会把"不动"变成"动"，正好踩反 §11.4.1）；② **`changed++` 只在真删掉了键时递增**，否则每次 saveDraft 对全部作用域外行白写 UPDATE（违反 E14-7 且 rowsChanged 虚高）。类 javadoc 那句「元素∉清单 → 整行一个字节都不碰」精确改写为「**值**不动，但撤锁标记」——原文那是 bug 不是设计。
+
+**未修两条（已裁定，记 BACKLOG）**：③ **策略停用** —— `prefetch` 返 null 整单短路，改法与现有结构冲突、改动面远大于前两条，且触发频率低（罕见运维操作），规范（E11 断链 4）仍要求撤；④ **`snapshot_rows` 侧「锁过又失价」残留死锁** —— driverRow 带上一轮遗留锁时 guard 只 `continue` 不撤锁；§11.3.2.1「无价沿用上一版价」基本堵死版本通道，残余风险只在"指针为空走实时算"，`#47` 场景②不受影响。
+
+**验证（真实数据，合成客户 `ZZ47-C` · SPECIFIED 范围只圈 `ZZ47-M1`；`ZZ47-M2` 为范围外产品行；`ZZ47E` 为元素主数据 INACTIVE 但仍在调价清单；验完全量清理零残留）**：连跑 4 次归位 —— `rowsChanged` **19 → 7 → 7 → 7**（第一次多出的 12 = 撤锁次数：LI1 的 X 行 driver+row_data 各 1，LI2 五行 × 双侧 10），`lineItemsInScope` 恒 1。范围外 LI2 的 `row_version` **4 次归位后恒为 1** —— UPDATE 只在首次撤锁时发过一次，此后零白写（比 rowsChanged 更硬的"不虚增"证据）。逐条断言全 `t`：元素∉清单(ZZ47X) row_data 与 snapshot driverRow **均等于 `{"元素","元素单价":555.55,"货币":"USD"}`（值逐字节原样、锁已撤）**；料号∉范围 LI2 双侧数组**逐字节等于「种子仅去两标记」**；停用元素 ZZ47E 仍∈清单 → 777.00 + 锁保留（#51 不回归）；ZZ47A → 1234.56/CNY + 锁保留（不误伤）；ZZ47C → 四键全清（#47 不回归）；ZZ47B → 800.00 + 锁保留（#47 场景①不回归）。LI1 内容 md5 跨第 3/4 次完全一致。
+
+**自检**：`./mvnw -o compile` 0 错误（分 3 次落，每次落完即编译，任一中间态可编译：先加新方法 → 再改 `reconcileRows` → 最后改调用点）✅；共享 8081 业务端点 401 ✅；`mvnw -o test -Dtest='com.cpq.priceadjust.**'` → **52 tests, 0 failures** ✅；ZZ47 前缀在 8 张表计数均为 0 ✅；全程未触碰 `CUST-0729-QA` / `CUST-0729-QB` / `CUST-0001`。
