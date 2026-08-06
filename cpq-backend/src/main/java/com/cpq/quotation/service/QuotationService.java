@@ -847,6 +847,21 @@ public class QuotationService {
             LOG.warnf("[QuotationService] freezeSqlViewsForQuotation failed (non-blocking): %s", e.getMessage());
         }
 
+        // ── 方向3 T3（2026-08-06）：卡片值必须先补算完，li.subtotal 才是权威值 ──
+        // 🔒 位置严格不可变通：必须在下面的 lineDiscountService.recompute 之【前】。
+        //    recompute 的 S0 直接取 li.subtotal（见 LineDiscountService 类注释），而 li.subtotal
+        //    的权威值由懒算覆盖产生（CardSnapshotService#assignQuoteCardValues）。改造前这里的顺序是
+        //    「recompute(旧值) → totalAmount → createForSubmission → 其内部第一句才 ensureCardValues」
+        //    ——于是 9 个行金额字段、整单总额、frozen_dto 三者冻的都是即将被改掉的旧数，提交完当场分叉。
+        //    本行等于把 CostingFreezeService#createForSubmission 的第一句往前挪几行，冻结核心一字未动；
+        //    ensureCardValues 幂等（IS NULL 谓词 + 单飞锁），故 :861 那次会命中 0 行、净增量≈0。
+        // 🔒 拿不到单飞锁（另一并发 warm 在飞）时【不允许】继续：继续 = 用旧值算完并冻结，而冻结数据
+        //    是不可逆的历史凭据。宁可让用户重提一次，也不能让错数定型。
+        int warmedLines = cardSnapshotService.ensureCardValues(id);
+        if (warmedLines == CardSnapshotService.WARMING_IN_PROGRESS) {
+            throw new BusinessException(409, "系统正在重算该报价单的金额，请稍候几秒后重新提交");
+        }
+
         // Step3：提交时权威重算每行折后小计（防前端篡改），整单总额 = Σ行合计。
         BigDecimal lineSum = BigDecimal.ZERO;
         for (QuotationLineItem li : lineItems) {

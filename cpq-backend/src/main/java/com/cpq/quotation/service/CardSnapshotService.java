@@ -558,8 +558,16 @@ public class CardSnapshotService {
                     }
                 }
             }
+            // ── Pass1.5(方向3 T1,2026-08-06):整批一次 IN 预载 componentData(供 Pass2b 覆盖页签小计) ──
+            // 🔒 位置纪律:必须夹在 Pass1 与 Pass2 之间。此刻实体仍全部干净(Pass1 只读不赋值),
+            //    这条 IN 查询不会触发 Hibernate 的 flush-before-query,Pass2「中间零查询 → commit
+            //    单次 flush → P1 JDBC batch 合并 N 条 UPDATE」的既有不变量原样保住(放到 Pass2 之后
+            //    就会把 li 的脏值提前 flush 掉,拆成两批)。
+            Map<UUID, List<com.cpq.quotation.entity.QuotationLineComponentData>> cdByLine =
+                preloadComponentDataByLine(newLineIds);
             // ── Pass2:一次性赋托管实体 4 字段(中间零查询)→ commit 单次 flush,P1 batch 合并 N 条 UPDATE ──
             OffsetDateTime now = OffsetDateTime.now();
+            SubtotalOverrideCounter counter = new SubtotalOverrideCounter();
             for (QuotationLineItem li : lines) {
                 // build 确定性失败(null)→ 落非 NULL 哨兵,而非 NULL：前端「全有或全无」gate 不被打回实时风暴,
                 // 且 ensureCardValues 的 IS NULL 谓词下次不再重选该行(自愈、不无限重算)。失败非静默——warn 记下哪侧。
@@ -568,9 +576,16 @@ public class CardSnapshotService {
                 if (costingVals.containsKey(li.id) && costingVals.get(li.id) == null)
                     LOG.warnf("[cardvalues-sentinel] costing build 失败 line=%s → 落失败哨兵", li.id);
                 // repair-0803 B1：有失败原文 → 落带原文哨兵，前端显示具体错误而非通用「待重算」
-                li.quoteCardValues = quoteErrors.containsKey(li.id)
-                    ? failedSentinelWithError(quoteErrors.get(li.id))
-                    : orSentinel(quoteVals.get(li.id));
+                // ── Pass2b(方向3 T1):赋卡片值的同一个动作里覆盖 li.subtotal + 各页签 cd.subtotal ──
+                // 🔒 走与其余 4 条写路径同一个收敛点 assignQuoteCardValues(见其注释);cd 用 Pass1.5
+                //    预载的整批结果 → 本循环仍是「中间零查询」,批处理不变量不破。
+                // 🔒 同事务是硬要求(设计点 1):分开事务会留下「卡片值已更新、总价还没跟上」的窗口,
+                //    那正是本次故障(QT-20260806-0082,前端 59.58 vs 后端 37.33)的成因形态。
+                assignQuoteCardValues(li,
+                    quoteErrors.containsKey(li.id)
+                        ? failedSentinelWithError(quoteErrors.get(li.id))
+                        : orSentinel(quoteVals.get(li.id)),
+                    cdByLine.get(li.id), counter);
                 li.quoteValuesAt = now;
                 if (costingVals.containsKey(li.id))
                     li.costingCardValues = costingRenderError != null
@@ -578,10 +593,194 @@ public class CardSnapshotService {
                         : orSentinel(costingVals.get(li.id));
                 li.cardSnapshotAt = now;
             }
+            // ── Pass2c(方向3 T1):单头总额跟随行总价 ──
+            recomputeDraftHeaderTotals(q.id);
+            counter.log(quotationId);
         } finally {
             com.cpq.formula.dataloader.QuotationIdContext.clear();
         }
         LOG.debugf("[cardvalues-batch] quotation=%s 集合化落库 %d 行(单事务)", quotationId, lines.size());
+    }
+
+    // =========================================================================
+    // 方向 3 · 总价单一来源改造（2026-08-06）
+    // =========================================================================
+
+    /** 方向 3 T1：覆盖生效计数（供防空转日志）。批量路径整批一条，单行路径逐次一条。 */
+    private static final class SubtotalOverrideCounter {
+        int liChanged;
+        int cdChanged;
+        void log(UUID quotationId) {
+            if (liChanged > 0 || cdChanged > 0) {
+                LOG.infof("[subtotal-single-source] quotation=%s 覆盖生效：行总价 %d 处、页签小计 %d 处与前端提交值不同",
+                    quotationId, liChanged, cdChanged);
+            }
+        }
+    }
+
+    /**
+     * 方向 3 T1 · <b>报价侧卡片值的唯一写入口（收敛点）</b>。
+     *
+     * <p><b>为什么必须收敛</b>：{@code quoteCardValues} 全工程有 5 条写路径（懒算批量 / 加产品·导入
+     * 逐行 / 刷新基础数据 / 单元格失焦 / 树删除重灌），改造前它们各自裸赋值
+     * {@code li.quoteCardValues = json}。而 {@code li.subtotal} 与各页签 {@code cd.subtotal} 是
+     * 这份 JSON 的<b>派生量</b> —— 卡片值变了、派生量就必须跟着变，本来就该是同一个动作。任何一条
+     * 路径漏挂，那条路径就会重新产出「卡片值已更新、总价还停在旧值」的分叉，也就是本次故障
+     * （{@code QT-20260806-0082}，前端 59.58 vs 后端 37.33）的成因形态。
+     *
+     * <p><b>不是改成派生字段</b>：两个列保留、类型不变、非空性不变，保存路径仍写前端提交值
+     * （兜底，无空窗期，后端 44 / 前端 257 处读取方一处都不用改）；只是卡片值算完后由后端权威值
+     * <b>覆盖</b>掉。
+     *
+     * <p>🔒 <b>取数口径唯一</b>（设计点 2）：走 {@link CostingSubtotalUtil}，与 L3 守卫
+     * （{@code MaterialVersionUpgradeService} S0）和 S6 写回用的<b>是同一个方法</b>。绝不新写
+     * 第二套提取 —— 否则守卫比较的两边又变成两套口径，本次的 bug 会换个形式回来。
+     *
+     * <p><b>不覆盖的三种情况</b>（一律保留兜底值，绝不抹成 0）：
+     * <ol>
+     *   <li>卡片值是失败哨兵或 null/空 —— 哨兵 JSON 的 {@code tabs} 是空数组，提取必得 0，
+     *       覆盖下去就是把总价写坏；</li>
+     *   <li>模板没有 SUBTOTAL 页签 —— 本就没有「产品行总价」这个概念；</li>
+     *   <li>页签算出的 {@code subtotal} 字段缺失 —— 没算出来 ≠ 算出来是 0。</li>
+     * </ol>
+     *
+     * <p><b>无反馈环</b>（已核实）：{@code cd.subtotal} 不参与 {@code quoteCardValues} 的生成
+     * （{@code assembleTabsWithFormulaResults} 的 {@code componentSubtotals} 全部由
+     * baseRows/editRows/computeRows 在内存算出，无一处读 {@code cd.subtotal}），故覆盖不会改变
+     * 下一轮自己的输入，结构上不可能自激。但它<b>会</b>被
+     * {@code ComponentDataEffectiveRows#computeScaled}（NORMAL 页签「沿用持久化值」）读走，
+     * 进而影响 Excel 列的 {@code [页签(总计)]} / {@code __subtotal__} token —— 那是单向传播、
+     * 不回流卡片值，且改造前这些 token 一直读到前端提交的 0。
+     *
+     * @param json        本次要落库的卡片值（可为 null / 哨兵，赋值语义与改造前逐字相同）
+     * @param preloadedCd 该行的 componentData（已托管）。传 {@code null} = 由本方法自行查一次；
+     *                    批量路径务必预载后传入，否则会退化成逐行查库
+     */
+    void assignQuoteCardValues(QuotationLineItem li, String json,
+                               List<com.cpq.quotation.entity.QuotationLineComponentData> preloadedCd,
+                               SubtotalOverrideCounter counter) {
+        if (li == null) return;
+        li.quoteCardValues = json;                       // 原赋值语义逐字不变（含 null / 哨兵）
+        if (!isAuthoritativeCardValues(json)) return;    // 情况 1：保留兜底值，不覆盖
+
+        java.math.BigDecimal unit = CostingSubtotalUtil.extractUnitSubtotalOrNull(json);
+        if (unit != null) {                              // 情况 2/3：取不到 → 不覆盖
+            java.math.BigDecimal rounded = com.cpq.common.PrecisionPolicy.round(unit);
+            if (li.subtotal == null || li.subtotal.compareTo(rounded) != 0) counter.liChanged++;
+            li.subtotal = rounded;
+        }
+
+        Map<String, java.math.BigDecimal> tabs = CostingSubtotalUtil.extractTabSubtotalsByComponentId(json);
+        if (tabs.isEmpty()) return;
+        List<com.cpq.quotation.entity.QuotationLineComponentData> cds = preloadedCd != null
+            ? preloadedCd
+            : com.cpq.quotation.entity.QuotationLineComponentData.list("lineItemId", li.id);
+        for (com.cpq.quotation.entity.QuotationLineComponentData cd : cds) {
+            if (cd.componentId == null) continue;         // 历史脏数据 / 非组件页签 → 保留兜底值
+            java.math.BigDecimal v = tabs.get(cd.componentId.toString());
+            if (v == null) continue;                      // 该页签没算出 subtotal → 保留兜底值
+            java.math.BigDecimal rounded = com.cpq.common.PrecisionPolicy.round(v);
+            if (cd.subtotal == null || cd.subtotal.compareTo(rounded) != 0) counter.cdChanged++;
+            cd.subtotal = rounded;
+        }
+    }
+
+    /** 单行写路径便捷重载：自查 componentData + 自己打计数日志。 */
+    void assignQuoteCardValues(QuotationLineItem li, String json, UUID quotationId) {
+        SubtotalOverrideCounter c = new SubtotalOverrideCounter();
+        assignQuoteCardValues(li, json, null, c);
+        c.log(quotationId);
+    }
+
+    /**
+     * 收敛点的<b>「延后覆盖」变体</b>：卡片值已由调用方自行赋好，本方法只按它覆盖派生小计。
+     *
+     * <p>🔒 <b>为什么必须有这个变体</b>：{@code editCardValue} / {@code materializeAndProject} 两条
+     * 写路径在赋完卡片值之后、同一事务里还要调
+     * {@code materializeWholeLineRowData}（<b>{@code REQUIRES_NEW} + 原生 SQL</b>，写
+     * {@code quotation_line_component_data.row_data}）。若在它之前就覆盖 {@code cd.subtotal}，
+     * Hibernate 会在覆盖时的那次查询处 <b>auto-flush</b>，让<b>外层</b>事务先拿到这些 cd 行的写锁；
+     * 紧接着内层 {@code REQUIRES_NEW} 另开事务去 UPDATE 同一批行 → 外层等内层返回、内层等外层放锁
+     * → 自锁，直到 JTA 60s 超时把整个请求打成 500（已实测：放前面必 500 且耗时恒 60.1s，
+     * 放到 flush/clear 之后 200）。
+     *
+     * <p>所以这两条路径的顺序必须是：赋卡片值 → 跑完 {@code REQUIRES_NEW} 物化 →
+     * {@code em.flush()/clear()} → <b>再</b>调本方法覆盖派生小计。
+     */
+    void applySubtotalsFromCardValues(QuotationLineItem li, UUID quotationId) {
+        if (li == null) return;
+        SubtotalOverrideCounter c = new SubtotalOverrideCounter();
+        assignQuoteCardValues(li, li.quoteCardValues, null, c);   // 同一份覆盖逻辑，json 取自实体现值
+        c.log(quotationId);
+    }
+
+    /**
+     * 卡片值是否「权威可用」—— 非 null / 非空 / 非失败哨兵。
+     * 哨兵两种形态（{@link #CARD_VALUE_FAILED_SENTINEL} 与 {@link #failedSentinelWithError}）
+     * 都带 {@code __cardValueFailed} 标记，用它统一判定。
+     */
+    private static boolean isAuthoritativeCardValues(String json) {
+        return json != null && !json.isBlank() && !json.contains("__cardValueFailed");
+    }
+
+    /**
+     * 方向 3 T1：<b>单头总额跟随行总价</b>（{@code quotation.original_amount} / {@code total_amount}）。
+     *
+     * <p>覆盖了 {@code li.subtotal} 却不动单头，只会把分叉从「行」搬到「单」—— 列表页金额列与
+     * 详情页总价当场对不上。所以覆盖完必须在<b>同一事务</b>里把单头一起算过。
+     *
+     * <p>🔒 <b>只在 DRAFT 执行</b>。全工程存在<b>两套互不相同</b>的单头口径，用错会静默改语义：
+     * <table border="1">
+     *   <tr><th>口径</th><th>公式</th><th>PART 子件</th><th>写入点</th></tr>
+     *   <tr><td>草稿</td><td>{@code Σ li.subtotal × finalDiscountRate/100}</td><td><b>计入</b></td>
+     *       <td>{@code QuotationService} saveDraft:667 / recalculate:2064 / :2508</td></tr>
+     *   <tr><td>提交</td><td>{@code Σ li.lineTotalAmount}（已含行折扣 × 年用量）</td><td><b>排除</b></td>
+     *       <td>{@code QuotationService.submit:858}</td></tr>
+     * </table>
+     * 懒算发生在草稿期 → 镜像草稿口径。而 {@code ensureCardValues} 也会被非草稿单触发
+     * （{@code ComparisonViewService} / {@code CostingFreezeService.createForSubmission}），
+     * 那时单头已由 submit 用<b>另一套口径</b>算定，若不加这道 status 闸门就会被本方法当场覆写成
+     * 草稿口径 —— 那是把已提交单据的金额语义改掉，比原 bug 更严重。
+     *
+     * <p>🔒 <b>不复用 {@code QuotationService.recalculate}</b>：那个方法里这段聚合只占 6 行，其余是
+     * {@code derivedAttributeCalculatorV5.calculate} 逐行派生属性重算 —— 另一件事，而且很贵，
+     * 不能顺带跑。这里只抽那 6 行。
+     *
+     * <p><b>为什么能读到新值</b>：{@code QuotationLineItem.list()} 对本批次内的行，Hibernate 按
+     * 一级缓存<b>身份</b>返回的就是上面刚被改脏的同一个实例 → 天然读到覆盖后的 {@code subtotal}，
+     * 不需要 flush/clear。（改用 JPQL {@code SELECT sum(subtotal)} 聚合就会绕开一级缓存踩坑，
+     * 故意不那么写。）
+     */
+    @Transactional
+    public void recomputeDraftHeaderTotals(UUID quotationId) {
+        if (quotationId == null) return;
+        // 🔒 必须在本方法（= 本事务）内 findById 取托管实体，不能由调用方把 Quotation 传进来：
+        //    refreshDraftQuoteCards 本身没有 @Transactional（它逐行 self.refreshQuoteCardValues 各开各的事务），
+        //    调用方在事务外 findById 拿到的是【游离态】实体，赋值不会被脏检查落库——静默丢写。
+        //    调用方已在事务内时，这次 findById 命中一级缓存，零额外查询。
+        Quotation q = Quotation.findById(quotationId);
+        if (q == null || !"DRAFT".equals(q.status)) return;
+        List<QuotationLineItem> all = QuotationLineItem.list("quotationId", q.id);
+        java.math.BigDecimal total = java.math.BigDecimal.ZERO;
+        for (QuotationLineItem li : all) {                 // 草稿口径：不排除 PART，与 :667/:2055 一致
+            if (li.subtotal != null) total = total.add(li.subtotal);
+        }
+        q.originalAmount = com.cpq.common.PrecisionPolicy.round(total);
+        // finalDiscountRate 实体默认 100（非空），但 :2063 仍做了空防御，此处对齐更保守的那一处。
+        q.totalAmount = (q.finalDiscountRate != null)
+            ? com.cpq.common.PrecisionPolicy.round(total.multiply(q.finalDiscountRate)
+                .divide(new java.math.BigDecimal("100"),
+                        com.cpq.common.PrecisionPolicy.DIVISION_SCALE, java.math.RoundingMode.HALF_UP))
+            : com.cpq.common.PrecisionPolicy.round(total);
+    }
+
+    /** 方向 3 T1：整批一次 IN 预载 componentData（按 lineItemId 分组）；空输入返回空 map。 */
+    private Map<UUID, List<com.cpq.quotation.entity.QuotationLineComponentData>>
+            preloadComponentDataByLine(java.util.Collection<UUID> lineIds) {
+        if (lineIds == null || lineIds.isEmpty()) return Map.of();
+        return com.cpq.quotation.entity.QuotationLineComponentData
+            .<com.cpq.quotation.entity.QuotationLineComponentData>list("lineItemId IN ?1", new ArrayList<>(lineIds))
+            .stream().collect(java.util.stream.Collectors.groupingBy(cd -> cd.lineItemId));
     }
 
     /**
@@ -606,7 +805,12 @@ public class CardSnapshotService {
         if (managed == null || q == null) return;
         try {
             // 报价侧：卡片值复用 snapshot_rows（Task 6 真实填充，不二次 expand）
-            managed.quoteCardValues = safeCall(() -> buildCardValues(managed, q.customerTemplateId, prefetch));
+            // 方向3 T1 写路径 2/5（加产品 + 导入逐行）：走收敛点。本路径被 ImportExecutionService
+            // 在 N-行循环里逐行调用（且 prefetch 恒 null），收敛点自查 componentData = 每行 +1 条
+            // 索引查询 —— 该增量已实测（见交付报告「路径 2 性能闸门」），相对本方法既有的逐行
+            // buildCardValues 开销可忽略。
+            assignQuoteCardValues(managed,
+                safeCall(() -> buildCardValues(managed, q.customerTemplateId, prefetch)), q.id);
             // 报价侧 Excel 值：前端权威（saveDraft）；仅从未 saveDraft 的新行 bootstrap 一次。
             // P3:computeExcel=false(首存)时跳过 bootstrap,留 NULL → ensureExcelValues 懒算。
             if (computeExcel && managed.quoteExcelValues == null) {
@@ -2860,7 +3064,8 @@ public class CardSnapshotService {
                 // task-0729 B8.1：产品属性上下文（口径补齐）
                 ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, mergedEdits, null, delByComp,
                     null, buildProductAttributesContext(managed, q.id, q.customerTemplateId));
-                managed.quoteCardValues = MAPPER.writeValueAsString(root);
+                // 方向3 T1 写路径 3/5（刷新基础数据）：走收敛点，卡片值与派生小计同一动作落库。
+                assignQuoteCardValues(managed, MAPPER.writeValueAsString(root), q.id);
 
                 // 4. 报价 Excel 值前端权威（buildExcelSnapshot + saveDraft），此处不再后端重算。
                 // Phase6 (2026-06-21) 退役：原 buildExcelValues 重算已删除；
@@ -2912,6 +3117,9 @@ public class CardSnapshotService {
                 LOG.warnf("[card-snapshot] refreshDraftQuoteCards line=%s failed: %s", li.id, e.getMessage());
             }
         }
+        // 方向3 T1：整单刷新改了每行 li.subtotal → 单头必须跟上，否则分叉只是从「行」搬到「单」。
+        // 🔒 放在循环【外】：recomputeDraftHeaderTotals 内部要查本单全部行，放循环里就是 O(N²)。
+        self.recomputeDraftHeaderTotals(quotationId);
         return n;
     }
 
@@ -2975,6 +3183,9 @@ public class CardSnapshotService {
 
             // 重算（baseRows 不变 + 新 editRows；报价侧传真实墓碑，确保删除行不出现在重算结果中）
             ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, editRowsByComp, null, delByComp);
+            // 方向3 T1 写路径 4/5（单元格失焦）：此处只赋卡片值，派生小计的覆盖延后到下方
+            // materializeWholeLineRowData（REQUIRES_NEW）跑完 + flush/clear 之后 —— 原因见
+            // applySubtotalsFromCardValues 的注释（提前覆盖会与内层 REQUIRES_NEW 自锁，JTA 60s 超时）。
             li.quoteCardValues = MAPPER.writeValueAsString(root);
 
             // 失焦同步（Excel 视图随卡片更新）：按组件拓扑序重物化整行所有非 SUBTOTAL 组件的 row_data 并落库。
@@ -3002,6 +3213,10 @@ public class CardSnapshotService {
 
             liManaged.quoteValuesAt = OffsetDateTime.now();
             // 核价两列：物理不参与本次 UPDATE
+
+            // 方向3 T1：REQUIRES_NEW 物化 + flush/clear 都已过去，此刻覆盖派生小计不会再与内层争锁。
+            applySubtotalsFromCardValues(liManaged, liManaged.quotationId);
+            recomputeDraftHeaderTotals(liManaged.quotationId);
 
             Map<String, Object> resp = new LinkedHashMap<>();
             resp.put("quoteCardValues", liManaged.quoteCardValues);
@@ -3102,6 +3317,9 @@ public class CardSnapshotService {
                 // task-0729 B8.1：产品属性上下文（口径补齐）
                 ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, mergedEdits, null, delByComp,
                     null, buildProductAttributesContext(li, q.id, q.customerTemplateId));
+                // 方向3 T1 写路径 5/5（树删除重灌）：同 editCardValue —— 此处只赋卡片值，派生小计的
+                // 覆盖延后到 materializeWholeLineRowData（REQUIRES_NEW）+ flush/clear 之后，
+                // 否则外层先锁住 cd 行、内层 REQUIRES_NEW 再写同一批行 → 自锁 60s 超时。
                 li.quoteCardValues = MAPPER.writeValueAsString(root);
             }
             materializeWholeLineRowData(li, snapshot, baseRowsByComp, mergedEdits, delByComp);
@@ -3112,6 +3330,10 @@ public class CardSnapshotService {
             QuotationLineItem liM = QuotationLineItem.findById(lineItemId);
             if (liM == null) return null;
             liM.quoteValuesAt = OffsetDateTime.now();
+            if (rebuildQuoteCardValues) {   // 与上方赋值配对：重灌了卡片值才需要覆盖派生小计
+                applySubtotalsFromCardValues(liM, liM.quotationId);
+                recomputeDraftHeaderTotals(liM.quotationId);
+            }
 
             java.util.Map<String, Object> resp = new LinkedHashMap<>();
             resp.put("quoteCardValues", liM.quoteCardValues);
