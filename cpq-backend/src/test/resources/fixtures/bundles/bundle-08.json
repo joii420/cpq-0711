@@ -1,0 +1,192 @@
+{
+  "bundleVersion": "1.0",
+  "exportedAt": "2026-08-02T19:24:58.874985611-07:00",
+  "source": {
+    "directoryId": "76cf3440-371e-4f91-a59b-b5b3f1143b27",
+    "directoryName": "报价通用组件"
+  },
+  "components": [
+    {
+      "id": "bc3f73d0-4694-43b3-a78f-c92e7ca86a32",
+      "code": "COMP-0170",
+      "name": "来料其他费用",
+      "componentType": "NORMAL",
+      "columnCount": 8,
+      "status": "ACTIVE",
+      "dataDriverPath": "$lqt_view",
+      "tabType": null,
+      "partNoField": null,
+      "partNameField": null,
+      "sortField": "项次",
+      "rowKeyFields": [
+        "销售料号",
+        "料件",
+        "要素"
+      ],
+      "fields": [
+        {
+          "name": "销售料号",
+          "notes": "= 所属成品 up.finished_material_no",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$lqt_view._销售料号",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "料号",
+          "notes": "= 投入料号 up.code",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$lqt_view._料号",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "料件",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$lqt_view._料件",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "项次",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$lqt_view._项次",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "要素",
+          "notes": "= up.cost_type，如「来料管理费」",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$lqt_view._要素",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "费用",
+          "notes": "",
+          "content": "",
+          "is_amount": true,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": true,
+          "default_source": {
+            "path": "$lqt_view._费用",
+            "type": "BASIC_DATA"
+          },
+          "unit_source_field": "单位"
+        },
+        {
+          "name": "比例",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$lqt_view._比例",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$lqt_view._单位",
+            "type": "BASIC_DATA"
+          }
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "lqt_view",
+          "sqlTemplate": "-- 来料其他费用（费用页签，tabType 空不参与树；price_type='INCOMING_MATERIAL_OTHER'）\n-- Q07 落库口径：groupKey=(cost_type=要素, code=投入料号, finished_material_no=销售料号)，\n--   content=[seq_no=项次, pricing_price=值, cost_ratio=比例, currency=货币, unit=单位]。\n-- 模板未勾「料号列」→ partNoField 留空（§3.4）；tabType 空属费用类，不受「料号/名称至少一个」约束。\n-- task-0726 BOM 闭包：hf_part_no 输出「闭包根料号」，使子件的数据也进入本页签（§3.8.1 判据）。\n-- ⚠️ 铁律1：白名单表必须在顶层 FROM，不能写成 FROM bom_closure JOIN <白名单表>，否则\n--          QuotePendingRewriter 主位表探测退化选中 CTE base case 的表 → 锚点注入报\n--          \"each UNION query must have the same number of columns\"。\n-- ⚠️ 铁律2：必须 LEFT JOIN bom_closure_d + COALESCE 兜底 —— 无任何 BOM 行的单料产品不在闭包里，\n--          写成 INNER JOIN 或直取 cl.root_no 会让这类产品的页签整个空白。\nWITH RECURSIVE bom_closure AS (\n  SELECT DISTINCT b.material_no AS root_no, b.material_no AS node_no, 0 AS lvl\n  FROM material_bom_item b\n  WHERE b.system_type = 'QUOTE' AND b.is_current AND b.customer_no = :customerCode\n  UNION            -- ⚠️ 铁律3：用 UNION 去重，不能 UNION ALL（同一对父子常并存 RECIPE+ASSEMBLY 两条边）\n  SELECT c.root_no, b.component_no, c.lvl + 1\n  FROM bom_closure c\n    JOIN material_bom_item b ON b.material_no = c.node_no\n  WHERE b.system_type = 'QUOTE' AND b.is_current AND b.customer_no = :customerCode\n    AND c.lvl < 10                          -- 深度上限，防环\n), bom_closure_d AS (\n  -- 🔒 (root,node) 唯一化：多条边/多层路径到达同一子件时只留一行（取最浅层）。\n  --    漏这层 → 平铺页签行数成倍复制、页签小计翻倍（§3.8.3 铁律3）。\n  SELECT root_no, node_no, MIN(lvl) AS lvl FROM bom_closure GROUP BY root_no, node_no\n)\nSELECT\n  COALESCE(cl.root_no, up.finished_material_no) AS hf_part_no,\n  up.finished_material_no AS _销售料号,\n  up.code                 AS _料号,\n  COALESCE(mm.material_name, mr.name) AS _料件,\n  up.seq_no               AS _项次,\n  up.cost_type            AS _要素,\n  up.pricing_price        AS _费用,\n  up.cost_ratio           AS _比例,\n  up.unit                 AS _单位\nFROM unit_price up\n  LEFT JOIN bom_closure_d cl ON cl.node_no = up.finished_material_no\n  LEFT JOIN material_master mm ON mm.material_no = up.code\n  LEFT JOIN material_recipe mr ON mr.code = up.code\nWHERE up.system_type = 'QUOTE' AND up.price_type = 'INCOMING_MATERIAL_OTHER' AND up.is_current = true\n  AND up.customer_no = :customerCode\nORDER BY COALESCE(cl.lvl, 0), up.finished_material_no, up.seq_no",
+          "declaredColumns": [
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_销售料号",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_料号",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "_料件",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_项次",
+              "dataType": "int4",
+              "nullable": true
+            },
+            {
+              "name": "_要素",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_费用",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_比例",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_单位",
+              "dataType": "varchar",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [
+            "customerCode"
+          ],
+          "scope": "COMPONENT",
+          "description": null
+        }
+      ]
+    }
+  ],
+  "dependencies": {
+    "globalVariables": [],
+    "datasources": []
+  },
+  "checksum": "sha256:9b71de8fbf8604012bec220b63f4bdfd0cde6e2dd22489dd1bd492a688a22d2f"
+}

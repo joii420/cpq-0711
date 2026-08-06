@@ -109,7 +109,7 @@ class ComponentImportRefRemapTest {
         );
 
         // 执行 commit（ignoreMissingDeps=true，测试环境无真实依赖）
-        ImportCommitResult result = importService.commit(targetDirId, bundle, "RENAME", true);
+        ImportCommitResult result = importService.commit(targetDirId, bundle, "RENAME", true, false);
 
         assertEquals(2, result.createdCount, "应创建 2 个组件");
 
@@ -153,7 +153,7 @@ class ComponentImportRefRemapTest {
                 item(origIdB, codeB, "组件B", "[]")
         );
 
-        ImportCommitResult result = importService.commit(targetDirId, bundle, "RENAME", true);
+        ImportCommitResult result = importService.commit(targetDirId, bundle, "RENAME", true, false);
         assertEquals(2, result.createdCount);
 
         String newIdA = findComponentIdByOrigCode(result, codeA);
@@ -214,7 +214,7 @@ class ComponentImportRefRemapTest {
             );
 
             // RENAME 策略：B 与已有组件冲突 → 被重命名为系统顺序号 COMP-####（方案A，不再是 __impN）
-            ImportCommitResult result = importService.commit(targetDirId, bundle, "RENAME", true);
+            ImportCommitResult result = importService.commit(targetDirId, bundle, "RENAME", true, false);
             assertEquals(2, result.createdCount, "A 和 B（重命名后）都应被创建");
 
             // 找到 B 副本的 finalCode
@@ -293,7 +293,7 @@ class ComponentImportRefRemapTest {
 
         ComponentExportBundle bundle = buildBundle(itemA, itemB);
 
-        ImportCommitResult result = importService.commit(targetDirId, bundle, "RENAME", true);
+        ImportCommitResult result = importService.commit(targetDirId, bundle, "RENAME", true, false);
         assertEquals(2, result.createdCount);
 
         String newIdA = findComponentIdByOrigCode(result, codeA);
@@ -352,7 +352,7 @@ class ComponentImportRefRemapTest {
             );
 
             // SKIP 策略：B 冲突 → 跳过
-            ImportCommitResult result = importService.commit(targetDirId, bundle, "SKIP", true);
+            ImportCommitResult result = importService.commit(targetDirId, bundle, "SKIP", true, false);
             assertEquals(1, result.createdCount, "只应创建 A（B 被 SKIP）");
             assertEquals(1, result.skippedCount, "B 应被跳过");
 
@@ -410,7 +410,7 @@ class ComponentImportRefRemapTest {
             ComponentExportBundle bundle = buildBundle(
                     item(origIdB, conflictCode, "组件B", "[]")
             );
-            ImportCommitResult result = importService.commit(targetDirId, bundle, "RENAME", true);
+            ImportCommitResult result = importService.commit(targetDirId, bundle, "RENAME", true, false);
             assertEquals(1, result.createdCount, "冲突组件应被重命名后创建");
 
             String finalCodeB = result.created.stream()

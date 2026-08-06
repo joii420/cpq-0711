@@ -1,0 +1,172 @@
+{
+  "bundleVersion": "1.0",
+  "exportedAt": "2026-08-02T19:24:55.779216186-07:00",
+  "source": {
+    "directoryId": "a58038a5-c6bf-49a7-aa9e-a7a2e7687045",
+    "directoryName": "报价通用组件"
+  },
+  "components": [
+    {
+      "id": "b8c2307f-4982-468d-8528-e7b98a465496",
+      "code": "COMP-0167",
+      "name": "组装加工费",
+      "componentType": "NORMAL",
+      "columnCount": 7,
+      "status": "ACTIVE",
+      "dataDriverPath": "$zz_view",
+      "tabType": "主件",
+      "partNoField": "销售料号",
+      "partNameField": "料件",
+      "sortField": "项次",
+      "rowKeyFields": [
+        "项次",
+        "工序"
+      ],
+      "fields": [
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$zz_view._销售料号",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "料件",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$zz_view._料件",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "项次",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$zz_view._项次",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "工序",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$zz_view._工序",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "加工费",
+          "notes": "",
+          "content": "",
+          "is_amount": true,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": true,
+          "default_source": {
+            "path": "$zz_view._加工费",
+            "type": "BASIC_DATA"
+          },
+          "unit_source_field": "单位"
+        },
+        {
+          "name": "单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$zz_view._单位",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "不良率",
+          "notes": "= capacity.default_defect_rate ← Q14「拒收率/不良率」",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$zz_view._不良率",
+            "type": "BASIC_DATA"
+          }
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "zz_view",
+          "sqlTemplate": "-- 组装加工费（主件=成品自身的组装工序；源 capacity，QUOTE 口径）\n-- capacity 无 customer_no 列 → 不加 :customerCode 过滤，靠 hf_part_no=material_no 按本行成品收窄。\n-- 本页签是「产品自身的组装工序」→ 不做 BOM 闭包（§3.8.1 判据）。\n-- 现网工序名常写在 process_no（process_name 空）→ 工序绑 COALESCE(NULLIF(process_name,''), process_no)。\nSELECT\n  c.material_no AS hf_part_no,\n  c.material_no AS _销售料号,\n  COALESCE(mm.material_name, mr.name) AS _料件,\n  c.seq_no AS _项次,\n  COALESCE(NULLIF(c.process_name, ''), c.process_no) AS _工序,\n  c.fixed_cost AS _加工费,\n  c.capacity_unit AS _单位,\n  c.default_defect_rate AS _不良率\nFROM capacity c\n  LEFT JOIN material_master mm ON mm.material_no = c.material_no\n  LEFT JOIN material_recipe mr ON mr.code = c.material_no\nWHERE c.system_type = 'QUOTE' AND c.is_current\nORDER BY c.seq_no",
+          "declaredColumns": [
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "_销售料号",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "_料件",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_项次",
+              "dataType": "int4",
+              "nullable": true
+            },
+            {
+              "name": "_工序",
+              "dataType": "text",
+              "nullable": true
+            },
+            {
+              "name": "_加工费",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_单位",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_不良率",
+              "dataType": "numeric",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [],
+          "scope": "COMPONENT",
+          "description": null
+        }
+      ]
+    }
+  ],
+  "dependencies": {
+    "globalVariables": [],
+    "datasources": []
+  },
+  "checksum": "sha256:74fac3f6da342ef022601b66440d14389c3c77888afc4e676b21924c8620f54b"
+}

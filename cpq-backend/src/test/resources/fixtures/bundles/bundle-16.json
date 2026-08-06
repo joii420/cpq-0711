@@ -1,0 +1,793 @@
+{
+  "bundleVersion": "1.0",
+  "exportedAt": "2026-07-26T23:00:14.480051270-07:00",
+  "source": {
+    "directoryId": "2cd8c5bc-1c9b-4c6a-ab9d-589879f1c415",
+    "directoryName": "__暂存-罗克韦尔-0726c"
+  },
+  "components": [
+    {
+      "id": "928fb320-4f4b-43da-8e8e-b5f1b07124f1",
+      "code": "COMP-0088",
+      "name": "产品",
+      "componentType": "NORMAL",
+      "columnCount": 6,
+      "status": "ACTIVE",
+      "dataDriverPath": "$cp_view",
+      "tabType": "主件",
+      "partNoField": "销售料号",
+      "partNameField": "客户料号名称",
+      "sortField": null,
+      "rowKeyFields": [
+        "销售料号"
+      ],
+      "fields": [
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 0,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$cp_view._销售料号",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "客户料号名称",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 1,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$cp_view._客户料号名称",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "客户产品编号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 2,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$cp_view._客户产品编号",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 3,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$cp_view._单位",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "汇率",
+          "notes": "",
+          "content": "1",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "sort_order": 4,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$cp_view._汇率",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "报价",
+          "notes": "销售手填，不带数据",
+          "content": "0",
+          "is_amount": true,
+          "field_type": "INPUT_NUMBER",
+          "sort_order": 5,
+          "is_subtotal": false
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "cp_view",
+          "sqlTemplate": "-- 产品(主件, 平铺契约: hf_part_no + :customerCode)\n-- 本页签展示「产品自身属性」→ 按 task-0726 §3.8.1 判据【不做 BOM 闭包】，否则会串入子件信息。\nSELECT\n  mm.material_no AS hf_part_no,\n  mm.material_no AS _销售料号,\n  mcm.customer_material_name AS _客户料号名称,\n  mcm.customer_product_no AS _客户产品编号,\n  mm.standard_unit AS _单位,\n  mcm.exchange_rate AS _汇率\nFROM material_master mm\nLEFT JOIN material_customer_map mcm\n  ON mcm.material_no = mm.material_no AND mcm.customer_no = :customerCode",
+          "declaredColumns": [
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "_销售料号",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "_客户料号名称",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_客户产品编号",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_单位",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_汇率",
+              "dataType": "numeric",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [
+            "customerCode"
+          ],
+          "scope": "COMPONENT",
+          "description": "产品 驱动视图(rule-0724 + task-0726 闭包)"
+        }
+      ]
+    },
+    {
+      "id": "019cacc5-fc2c-4101-9203-6a8c897c5d57",
+      "code": "COMP-0089",
+      "name": "BOM",
+      "componentType": "NORMAL",
+      "columnCount": 7,
+      "status": "ACTIVE",
+      "dataDriverPath": "$bom_view",
+      "tabType": "BOM",
+      "partNoField": null,
+      "partNameField": "料件",
+      "sortField": null,
+      "rowKeyFields": [
+        "料件"
+      ],
+      "fields": [
+        {
+          "name": "料件",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 0,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$bom_view._料件",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "损耗率%",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "sort_order": 1,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$bom_view._损耗率",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "净重",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "sort_order": 2,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$bom_view._净重",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "毛重",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "sort_order": 3,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$bom_view._毛重",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "用量单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 4,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$bom_view._用量单位",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "组成数量",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "sort_order": 5,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$bom_view._组成数量",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "组成单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 6,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$bom_view._组成单位",
+            "type": "BASIC_DATA"
+          }
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "bom_view",
+          "sqlTemplate": "-- BOM 树页签(树契约: material_no=子 / parent_no=父 + :total_material_no; 边式全子件 + 根分支)\n-- 走 Pass2 树渲染(BomTreeRenderService, usage=QUOTE)，禁用 :customerCode 平铺契约(报价侧.md §5.6)。\nSELECT\n  mbi.component_no AS material_no,\n  mbi.material_no  AS parent_no,\n  COALESCE(mm.material_name, mr.name) AS _料件,\n  mbi.scrap_rate AS _损耗率,\n  mbi.net_weight AS _净重,\n  mbi.rough_weight AS _毛重,\n  mbi.weight_unit AS _用量单位,\n  mbi.composition_qty AS _组成数量,\n  mbi.issue_unit AS _组成单位\nFROM material_bom_item mbi\n  LEFT JOIN material_master mm ON mm.material_no = mbi.component_no\n  LEFT JOIN material_recipe mr ON mr.code = mbi.component_no\nWHERE mbi.system_type = 'QUOTE' AND mbi.is_current\n  AND mbi.component_no = ANY(:total_material_no)\nUNION ALL\nSELECT\n  mm.material_no, NULL::text, mm.material_name,\n  NULL::numeric, NULL::numeric, NULL::numeric,\n  NULL::varchar, NULL::numeric, mm.standard_unit\nFROM material_master mm\nWHERE mm.material_no = ANY(:total_material_no)\n  AND NOT EXISTS (SELECT 1 FROM material_bom_item x\n                  WHERE x.component_no = mm.material_no\n                    AND x.system_type = 'QUOTE' AND x.is_current)",
+          "declaredColumns": [
+            {
+              "name": "material_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "parent_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_料件",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_损耗率",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_净重",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_毛重",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_用量单位",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_组成数量",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_组成单位",
+              "dataType": "varchar",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [
+            "total_material_no"
+          ],
+          "scope": "COMPONENT",
+          "description": "BOM 驱动视图(rule-0724 + task-0726 闭包)"
+        }
+      ]
+    },
+    {
+      "id": "f0fa3c2c-e266-4690-ba59-b1230425c9fd",
+      "code": "COMP-0090",
+      "name": "材料成本",
+      "componentType": "NORMAL",
+      "columnCount": 9,
+      "status": "ACTIVE",
+      "dataDriverPath": "$mc_view",
+      "tabType": "材质元素",
+      "partNoField": null,
+      "partNameField": "材质",
+      "sortField": "项次",
+      "rowKeyFields": [
+        "料号",
+        "材质",
+        "元素"
+      ],
+      "fields": [
+        {
+          "name": "料号",
+          "notes": "所属销售料号(element_bom_item.material_no)；BOM 闭包后区分主件/子件行，已进行键",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 0,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._料号",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "材质",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 1,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._材质",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "项次",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "sort_order": 2,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._项次",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "元素",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 3,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._元素",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "组成含量(%)",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "sort_order": 4,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._组成含量",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "损耗率%",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "sort_order": 5,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._损耗率",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "毛重",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "sort_order": 6,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._毛重",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "毛用量单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 7,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._毛用量单位",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "元素单价",
+          "notes": "接客户价格策略 f_customer_element_price(无价留 NULL 手填，禁 COALESCE 兜 0)",
+          "content": "",
+          "is_amount": true,
+          "field_type": "INPUT_NUMBER",
+          "sort_order": 8,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view.元素单价",
+            "type": "BASIC_DATA"
+          }
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "mc_view",
+          "sqlTemplate": "-- 材料成本(材质元素, 平铺契约: hf_part_no + :customerCode; 元素单价接客户价格策略)\n-- 「料号」列 = 所属销售料号(ebi.material_no)：闭包后主件与子件的材质行同页签共存，靠本列区分归属\n--   (task-0726 §3.8.4)；它必须同时在 rowKeyFields 里，否则撞键 → 编辑串行/末值塌缩。\n-- 材质料号(material_part_no) 模板无此列 → 只作 JOIN 键 + ORDER BY 键，不出可见列(料号铁律 §3.4)。\n-- task-0726 BOM 闭包: hf_part_no 输出「闭包根料号」, 使子件(如 S-80011)的材质也进入本页签。\n-- ⚠️ 铁律1(task-0726 §3.8.3): 白名单表必须在顶层 FROM，不能写成 FROM bom_closure JOIN <白名单表>，\n--          否则 QuotePendingRewriter 主位表探测退化选中 CTE base case 的表 → 锚点注入致\n--          \"each UNION query must have the same number of columns\"。\n-- ⚠️ 铁律2: 必须 LEFT JOIN bom_closure + COALESCE 兜底 —— 无任何 BOM 行的单料产品不在闭包里，\n--          写成 INNER JOIN 或直取 cl.root_no 会让这类产品的页签整个空白。\nWITH RECURSIVE bom_closure AS (\n  SELECT DISTINCT b.material_no AS root_no, b.material_no AS node_no, 0 AS lvl\n  FROM material_bom_item b\n  WHERE b.system_type = 'QUOTE' AND b.is_current AND b.customer_no = :customerCode\n  UNION            -- ⚠️ 用 UNION 去重，不能用 UNION ALL：同一对父子常并存多条 BOM 边\n                   --    (RECIPE + ASSEMBLY 各一条) → UNION ALL 会生出重复路径\n  SELECT c.root_no, b.component_no, c.lvl + 1\n  FROM bom_closure c\n    JOIN material_bom_item b ON b.material_no = c.node_no\n  WHERE b.system_type = 'QUOTE' AND b.is_current AND b.customer_no = :customerCode\n    AND c.lvl < 10                          -- 深度上限，防环\n), bom_closure_d AS (\n  -- 🔒 (root,node) 唯一化：多条边/多层路径到达同一子件时只保留一行(取最浅层)。\n  --    漏这层 → 平铺页签行数成倍复制、页签小计翻倍(实测 4 行→8 行)。\n  SELECT root_no, node_no, MIN(lvl) AS lvl FROM bom_closure GROUP BY root_no, node_no\n)\nSELECT\n  COALESCE(cl.root_no, ebi.material_no) AS hf_part_no,\n  ebi.material_no AS _料号,\n  COALESCE(mr.name, mm2.material_name) AS _材质,   -- 逐行取自本行 material_part_no(一号多材质铁律)\n  ebi.seq_no AS _项次,\n  ebi.component_no AS _元素,\n  ebi.content AS _组成含量,\n  ebi.scrap_rate AS _损耗率,\n  ebi.composition_qty AS _毛重,\n  ebi.issue_unit AS _毛用量单位,\n  cep.unit_price AS 元素单价                        -- 价格策略列: 别名逐字、不加 _\nFROM element_bom_item ebi\n  LEFT JOIN bom_closure_d cl ON cl.node_no = ebi.material_no\n  LEFT JOIN material_recipe mr  ON mr.code = ebi.material_part_no\n  LEFT JOIN material_master mm2 ON mm2.material_no = ebi.material_part_no\n  LEFT JOIN f_customer_element_price(:customerCode, :priceBaseDate) cep\n         ON cep.element_code = ebi.component_no     -- LEFT JOIN + 元素符号键\nWHERE ebi.system_type = 'QUOTE' AND ebi.is_current AND ebi.customer_no = :customerCode\nORDER BY COALESCE(cl.lvl, 0), ebi.material_no, ebi.material_part_no, ebi.seq_no",
+          "declaredColumns": [
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_料号",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "_材质",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_项次",
+              "dataType": "int4",
+              "nullable": true
+            },
+            {
+              "name": "_元素",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_组成含量",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_损耗率",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_毛重",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_毛用量单位",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "元素单价",
+              "dataType": "numeric",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [
+            "customerCode",
+            "priceBaseDate"
+          ],
+          "scope": "COMPONENT",
+          "description": "材料成本 驱动视图(rule-0724 + task-0726 闭包)"
+        }
+      ]
+    },
+    {
+      "id": "1c5c4bdc-972f-4137-b68d-6c74ab9a5753",
+      "code": "COMP-0091",
+      "name": "外购件成本",
+      "componentType": "NORMAL",
+      "columnCount": 5,
+      "status": "ACTIVE",
+      "dataDriverPath": "$wg_view",
+      "tabType": "外购件",
+      "partNoField": null,
+      "partNameField": "料件",
+      "sortField": null,
+      "rowKeyFields": [
+        "料号",
+        "料件"
+      ],
+      "fields": [
+        {
+          "name": "料号",
+          "notes": "所属销售料号(material_bom_item.material_no)；BOM 闭包后区分主件/子件行，已进行键",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 0,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$wg_view._料号",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "料件",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 1,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$wg_view._料件",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "组成数量",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "sort_order": 2,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$wg_view._组成数量",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "组成单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 3,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$wg_view._组成单位",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "单价",
+          "notes": "数字输入框(手填，无源)",
+          "content": "0",
+          "is_amount": true,
+          "field_type": "INPUT_NUMBER",
+          "sort_order": 4,
+          "is_subtotal": false
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "wg_view",
+          "sqlTemplate": "-- 外购件成本(外购件, 平铺契约; characteristic='OUTSOURCED')\n-- 「料号」列 = 所属销售料号(mbi.material_no)，见 task-0726 §3.8.4；组成件料号(component_no) 模板无此列\n--   → 只作取名 JOIN 键，不出可见列(料号铁律 §3.4)。\n-- task-0726 BOM 闭包: hf_part_no 输出「闭包根料号」, 使子件下挂的外购件也进入本页签。\n-- ⚠️ 铁律1(task-0726 §3.8.3): 白名单表必须在顶层 FROM，不能写成 FROM bom_closure JOIN <白名单表>，\n--          否则 QuotePendingRewriter 主位表探测退化选中 CTE base case 的表 → 锚点注入致\n--          \"each UNION query must have the same number of columns\"。\n-- ⚠️ 铁律2: 必须 LEFT JOIN bom_closure + COALESCE 兜底 —— 无任何 BOM 行的单料产品不在闭包里，\n--          写成 INNER JOIN 或直取 cl.root_no 会让这类产品的页签整个空白。\nWITH RECURSIVE bom_closure AS (\n  SELECT DISTINCT b.material_no AS root_no, b.material_no AS node_no, 0 AS lvl\n  FROM material_bom_item b\n  WHERE b.system_type = 'QUOTE' AND b.is_current AND b.customer_no = :customerCode\n  UNION            -- ⚠️ 用 UNION 去重，不能用 UNION ALL：同一对父子常并存多条 BOM 边\n                   --    (RECIPE + ASSEMBLY 各一条) → UNION ALL 会生出重复路径\n  SELECT c.root_no, b.component_no, c.lvl + 1\n  FROM bom_closure c\n    JOIN material_bom_item b ON b.material_no = c.node_no\n  WHERE b.system_type = 'QUOTE' AND b.is_current AND b.customer_no = :customerCode\n    AND c.lvl < 10                          -- 深度上限，防环\n), bom_closure_d AS (\n  -- 🔒 (root,node) 唯一化：多条边/多层路径到达同一子件时只保留一行(取最浅层)。\n  --    漏这层 → 平铺页签行数成倍复制、页签小计翻倍(实测 4 行→8 行)。\n  SELECT root_no, node_no, MIN(lvl) AS lvl FROM bom_closure GROUP BY root_no, node_no\n)\nSELECT\n  COALESCE(cl.root_no, mbi.material_no) AS hf_part_no,\n  mbi.material_no AS _料号,\n  COALESCE(mm.material_name, mr.name) AS _料件,\n  mbi.composition_qty AS _组成数量,\n  mbi.issue_unit AS _组成单位\nFROM material_bom_item mbi\n  LEFT JOIN bom_closure_d cl ON cl.node_no = mbi.material_no\n  LEFT JOIN material_master mm ON mm.material_no = mbi.component_no\n  LEFT JOIN material_recipe mr ON mr.code = mbi.component_no\nWHERE mbi.system_type = 'QUOTE' AND mbi.is_current\n  AND mbi.characteristic = 'OUTSOURCED'\n  AND mbi.customer_no = :customerCode\nORDER BY COALESCE(cl.lvl, 0), mbi.material_no, mbi.seq_no",
+          "declaredColumns": [
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_料号",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "_料件",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_组成数量",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_组成单位",
+              "dataType": "varchar",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [
+            "customerCode"
+          ],
+          "scope": "COMPONENT",
+          "description": "外购件成本 驱动视图(rule-0724 + task-0726 闭包)"
+        }
+      ]
+    },
+    {
+      "id": "d2c34bf1-e20c-446f-b823-30f912761444",
+      "code": "COMP-0092",
+      "name": "加工费",
+      "componentType": "NORMAL",
+      "columnCount": 6,
+      "status": "ACTIVE",
+      "dataDriverPath": "$jg_view",
+      "tabType": "零件",
+      "partNoField": null,
+      "partNameField": "料件",
+      "sortField": "项次",
+      "rowKeyFields": [
+        "料号",
+        "料件",
+        "项次",
+        "工序"
+      ],
+      "fields": [
+        {
+          "name": "料号",
+          "notes": "所属销售料号(unit_price.finished_material_no)；BOM 闭包后区分主件/子件行，已进行键",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 0,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$jg_view._料号",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "料件",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 1,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$jg_view._料件",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "项次",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "sort_order": 2,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$jg_view._项次",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "工序",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 3,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$jg_view._工序",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "加工费",
+          "notes": "",
+          "content": "0",
+          "is_amount": true,
+          "field_type": "INPUT_NUMBER",
+          "sort_order": 4,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$jg_view._加工费",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "sort_order": 5,
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$jg_view._单位",
+            "type": "BASIC_DATA"
+          }
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "jg_view",
+          "sqlTemplate": "-- 加工费(零件, 平铺契约; price_type='PROCESS'; 工序=process_master.process_name)\n-- 「料号」列 = 所属销售料号(up.finished_material_no)，见 task-0726 §3.8.4；零件料号(up.code) 模板无此列\n--   → 只作取名 JOIN 键，不出可见列(料号铁律 §3.4)。partNoField 留空由「料件」担标识。\n-- task-0726 BOM 闭包: hf_part_no 输出「闭包根料号」, 使子件自身的加工费也进入本页签。\n-- ⚠️ 铁律1(task-0726 §3.8.3): 白名单表必须在顶层 FROM，不能写成 FROM bom_closure JOIN <白名单表>，\n--          否则 QuotePendingRewriter 主位表探测退化选中 CTE base case 的表 → 锚点注入致\n--          \"each UNION query must have the same number of columns\"。\n-- ⚠️ 铁律2: 必须 LEFT JOIN bom_closure + COALESCE 兜底 —— 无任何 BOM 行的单料产品不在闭包里，\n--          写成 INNER JOIN 或直取 cl.root_no 会让这类产品的页签整个空白。\nWITH RECURSIVE bom_closure AS (\n  SELECT DISTINCT b.material_no AS root_no, b.material_no AS node_no, 0 AS lvl\n  FROM material_bom_item b\n  WHERE b.system_type = 'QUOTE' AND b.is_current AND b.customer_no = :customerCode\n  UNION            -- ⚠️ 用 UNION 去重，不能用 UNION ALL：同一对父子常并存多条 BOM 边\n                   --    (RECIPE + ASSEMBLY 各一条) → UNION ALL 会生出重复路径\n  SELECT c.root_no, b.component_no, c.lvl + 1\n  FROM bom_closure c\n    JOIN material_bom_item b ON b.material_no = c.node_no\n  WHERE b.system_type = 'QUOTE' AND b.is_current AND b.customer_no = :customerCode\n    AND c.lvl < 10                          -- 深度上限，防环\n), bom_closure_d AS (\n  -- 🔒 (root,node) 唯一化：多条边/多层路径到达同一子件时只保留一行(取最浅层)。\n  --    漏这层 → 平铺页签行数成倍复制、页签小计翻倍(实测 4 行→8 行)。\n  SELECT root_no, node_no, MIN(lvl) AS lvl FROM bom_closure GROUP BY root_no, node_no\n)\nSELECT\n  COALESCE(cl.root_no, up.finished_material_no) AS hf_part_no,\n  up.finished_material_no AS _料号,\n  COALESCE(mm.material_name, mr.name) AS _料件,     -- 该费用项针对的零件名(经 up.code)\n  up.seq_no AS _项次,\n  COALESCE(pm.process_name, up.operation_no) AS _工序,\n  up.pricing_price AS _加工费,\n  up.unit AS _单位\nFROM unit_price up\n  LEFT JOIN bom_closure_d cl ON cl.node_no = up.finished_material_no\n  LEFT JOIN material_master mm ON mm.material_no = up.code\n  LEFT JOIN material_recipe mr ON mr.code = up.code\n  LEFT JOIN process_master pm ON pm.process_no = up.operation_no\nWHERE up.system_type = 'QUOTE' AND up.price_type = 'PROCESS' AND up.is_current = true\n  AND up.customer_no = :customerCode\nORDER BY COALESCE(cl.lvl, 0), up.finished_material_no, up.seq_no",
+          "declaredColumns": [
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_料号",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_料件",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_项次",
+              "dataType": "int4",
+              "nullable": true
+            },
+            {
+              "name": "_工序",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_加工费",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_单位",
+              "dataType": "varchar",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [
+            "customerCode"
+          ],
+          "scope": "COMPONENT",
+          "description": "加工费 驱动视图(rule-0724 + task-0726 闭包)"
+        }
+      ]
+    }
+  ],
+  "dependencies": {
+    "globalVariables": [],
+    "datasources": []
+  },
+  "checksum": "sha256:1a78965e90a27f8a699f20ca507754023663bcf9f95b1b694b1b85e95ed8da38"
+}

@@ -1,0 +1,247 @@
+{
+  "bundleVersion": "1.0",
+  "exportedAt": "2026-08-02T19:24:52.249786163-07:00",
+  "source": {
+    "directoryId": "c478e4fa-1947-40d3-836f-630aa27dd505",
+    "directoryName": "报价通用组件"
+  },
+  "components": [
+    {
+      "id": "380ecdd6-4f29-46e5-9486-dcd3bee32f75",
+      "code": "COMP-0163",
+      "name": "物料",
+      "componentType": "NORMAL",
+      "columnCount": 11,
+      "status": "ACTIVE",
+      "dataDriverPath": "$bom_view",
+      "tabType": "BOM",
+      "partNoField": null,
+      "partNameField": "料件",
+      "sortField": null,
+      "rowKeyFields": [
+        "料件"
+      ],
+      "fields": [
+        {
+          "name": "料件",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$bom_view._料件",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "产出类型",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$bom_view._产出类型",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "组成数量",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$bom_view._组成数量",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "材料毛重",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$bom_view._材料毛重",
+            "type": "BASIC_DATA"
+          },
+          "unit_source_field": "单位"
+        },
+        {
+          "name": "材料净重",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$bom_view._材料净重",
+            "type": "BASIC_DATA"
+          },
+          "unit_source_field": "单位"
+        },
+        {
+          "name": "单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$bom_view._单位",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "材料占比",
+          "notes": "小数口径（0.3=30%）；仅材质边(characteristic=RECIPE)有值，组装边留空属预期。",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$bom_view._材料占比",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "损耗率",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$bom_view._损耗率",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "不良率",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$bom_view._不良率",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "回收价格",
+          "notes": "来料回收折扣的『值』；单价口径故不进小计（R7 例外）。",
+          "content": "",
+          "is_amount": true,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$bom_view._回收价格",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "回收比例",
+          "notes": "来料回收折扣的『回收折扣%』(cost_ratio)。",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$bom_view._回收比例",
+            "type": "BASIC_DATA"
+          }
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "bom_view",
+          "sqlTemplate": "-- 物料（BOM 树页签；树契约：material_no=子 / parent_no=父 + :total_material_no；边式全子件 + 根分支）\n-- 走 Pass2 树渲染（BomTreeRenderService, usage=QUOTE），禁用 :customerCode 平铺契约（报价侧.md §5.6）。\n-- ⚠️ 加删任何一列，UNION ALL 两个分支都要同步改，根分支用 NULL::<类型> 占位；列数不等 PG 直接报错。\nSELECT\n  mbi.component_no AS material_no,\n  mbi.material_no  AS parent_no,\n  COALESCE(mm.material_name, mr.name) AS _料件,\n  -- 【产出类型】= material_bom_item.component_usage_type ← Excel「产出料号类型/产出类型」。\n  --   ⚠️ 同名列陷阱：element_bom_item 上的同名列 0 写点、恒 NULL，只有本表这列有数据（§7.2.1）。\n  mbi.component_usage_type AS _产出类型,\n  mbi.composition_qty AS _组成数量,\n  mbi.rough_weight AS _材料毛重,\n  mbi.net_weight AS _材料净重,\n  mbi.weight_unit AS _单位,\n  -- 【材料占比】= material_bom_item.material_ratio（V365）← Excel「材质占比/材料占比」。\n  --   本页签 FROM material_bom_item 可直接绑；材质边出数、组装边留空属预期（报价侧.md §7.2.2）。\n  mbi.material_ratio AS _材料占比,\n  mbi.scrap_rate AS _损耗率,\n  mbi.defect_rate AS _不良率,\n  -- 【回收价格/回收比例】= 来料回收折扣（unit_price price_type='INCOMING_MATERIAL_RECYCLE'）。\n  --   Q09IncomingRecoveryHandler：groupKey=(code=投入料号, finished_material_no=成品料号)，\n  --   content=[seq_no=项次, cost_ratio=回收折扣%, pricing_price=值, currency, unit]。\n  --   匹配维度 =【投入料号 + 直接父件】：code=本行子件、finished=本行父件。\n  --   ⚠️ 已知取舍：三层以上 BOM 中孙件那行取不到值（它的父不是成品）。\n  -- ⚠️ unit_price 是版本化表 → 禁写进带 is_current 的 LEFT JOIN（§3.6：参数错位、dry-run 照过、\n  --    只在真实渲染炸），故用相关标量子查询。树契约不注入 :customerCode，靠(成品+投入料号)两维定位。\n  (SELECT r.pricing_price FROM unit_price r\n    WHERE r.system_type = 'QUOTE' AND r.price_type = 'INCOMING_MATERIAL_RECYCLE' AND r.is_current\n      AND r.code = mbi.component_no AND r.finished_material_no = mbi.material_no\n    ORDER BY COALESCE(r.seq_no, 0) LIMIT 1) AS _回收价格,\n  (SELECT r.cost_ratio FROM unit_price r\n    WHERE r.system_type = 'QUOTE' AND r.price_type = 'INCOMING_MATERIAL_RECYCLE' AND r.is_current\n      AND r.code = mbi.component_no AND r.finished_material_no = mbi.material_no\n    ORDER BY COALESCE(r.seq_no, 0) LIMIT 1) AS _回收比例\nFROM material_bom_item mbi\n  LEFT JOIN material_master mm ON mm.material_no = mbi.component_no\n  LEFT JOIN material_recipe mr ON mr.code = mbi.component_no\nWHERE mbi.system_type = 'QUOTE' AND mbi.is_current\n  AND mbi.component_no = ANY(:total_material_no)\nUNION ALL\n-- 根分支：无父边的成品自身（树根）\nSELECT\n  mm.material_no, NULL::text, mm.material_name,\n  NULL::varchar,                                 -- 产出类型\n  NULL::numeric, NULL::numeric, NULL::numeric,   -- 组成数量 / 材料毛重 / 材料净重\n  NULL::varchar,                                 -- 单位\n  NULL::numeric, NULL::numeric, NULL::numeric,   -- 材料占比 / 损耗率 / 不良率\n  NULL::numeric, NULL::numeric                   -- 根分支（成品自身）无回收折扣\nFROM material_master mm\nWHERE mm.material_no = ANY(:total_material_no)\n  AND NOT EXISTS (SELECT 1 FROM material_bom_item x\n                  WHERE x.component_no = mm.material_no\n                    AND x.system_type = 'QUOTE' AND x.is_current)",
+          "declaredColumns": [
+            {
+              "name": "material_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "parent_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_料件",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_产出类型",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_组成数量",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_材料毛重",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_材料净重",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_单位",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_材料占比",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_损耗率",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_不良率",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_回收价格",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_回收比例",
+              "dataType": "numeric",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [
+            "total_material_no"
+          ],
+          "scope": "COMPONENT",
+          "description": null
+        }
+      ]
+    }
+  ],
+  "dependencies": {
+    "globalVariables": [],
+    "datasources": []
+  },
+  "checksum": "sha256:f59fdc142dae15365046faa4eca5f5dd9f2bd6d1bc14c8c989348816a1a7e4f2"
+}
