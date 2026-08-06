@@ -4746,3 +4746,38 @@ E2E:
 - 备份：`scratchpad/F2-backup-20260805-192235.sql`（含逐行 UPDATE 回滚语句 + job 计数器回滚语句），备份内容已随交付报告全文回传，不依赖 scratchpad 存活。
 
 **自检**：`./mvnw -o compile` 4 次 0 错误 ✅；8081 401 ✅；`mvnw -o test -Dtest='com.cpq.priceadjust.**'` → **52 tests, 0 failures** ✅；ZZ 夹具 5 张表计数全 0 ✅；临时端点已删除且该文件 `git diff` 为空 ✅。
+
+---
+
+[2026-08-06] 价格调整策略（task-0729 · api.md 第 5 个漏派端点补交） - 比对列配置区「模板系列 → 页签/可比对值目录」meta 端点 | 涉及文件：`PriceAdjustComparisonColumnResource.java`（新端点）/ `PriceAdjustComparisonColumnService.java`（系列→两侧 templateId 解析）/ `ComparisonViewService.java`（`getMetaByTemplates`）/ `CardSnapshotService.java`（`buildCardStructure` 提可见性）/ `ComparisonMetaDTO.java`（`costingSource`）/ `api.md` §1.10a |
+
+**症状**：「价格调整策略 → 配置比对列」点开连线配置报「加载页签/可比对值目录失败（后端接口未就绪或暂不可用）」。前端开发时就发现契约缺失，按 `/price-adjust/template-series/{id}/comparison-view-meta` 占位并做了降级展示（`priceAdjustService.ts:105-117` 有原文标注），后端一直没补 → 404。
+
+**端点**：`GET /api/cpq/price-adjust/template-series/{templateSeriesId}/comparison-view-meta` → `ComparisonMetaDTO`（**与 task-0717 同一个 DTO 类**，前端 `LinkConfigDrawer` 零改动复用；路径/形状均按前端占位不动）。权限 `PRICING_MANAGER`/`SYSTEM_ADMIN`。编号取 `§1.10a` —— `§1.11` 已被 `POST /versions/generate` 占用。
+
+🔑 **本任务的真正难点不在写接口，在「模板系列级的 tabs 结构从哪来」**（task-0717 那条是从 `quotation.quote/costingCardStructure` 单级冻结结构拿的，本屏没有 quotationId）。三条勘察结论：
+1. **形状不一致**：`template.components_snapshot` 是**数组** + snake_case（`field_type`/`is_subtotal`）+ **无 `label`**；`buildTabMetas` 期望的是**对象** `{tabs:[…]}` + camelCase + 有 `label`。→ **适配器已存在**：`CardSnapshotService#buildCardStructure`（`ensureStructure` 用的同一个方法）。实测其产物与同模板冻结出的 `COSTING_CARD` 逐 tab、逐 componentId 一致；且模板 `is_subtotal` 字段名集合 ≡ 卡片值 `subtotalByColumn` 的 key 集合 —— **meta 给出的 metric key 就是评估期 `ComparisonColumnEvaluator` 要查的那把 key**。
+2. **模板系列只对应报价侧**（`listTemplateSeries` 硬过滤 `template_kind='QUOTATION'`）；**核价模板与系列无外键关系**，由开单时按 `categoryId + customerId` 独立解析（`computeAutoDefaults` 第 5 步，注释原文「核价模板(独立,不记忆)」）。
+3. 🔴 **同一系列可以跨多个核价模板**（实测系列 `a91209e6` 的 18 张单：10 张 v1.1、1 张 v1.0、7 张未绑）→ 比对列在核价侧**本质上有歧义**，只能取代表。取并集不可行（同名页签跨模板 componentId 不同，会配到永远命中不了的 id）。
+
+**核价侧三级降级**（业务方 2026-08-06 拍板，`costingSource` 回传实际命中级别 + INFO 日志）：
+`SERIES_LATEST`（该客户×该系列最近活单）→ `CUSTOMER_LATEST`（该客户最近活单，不限系列，**业务方明示口径**）→ `AUTO_DEFAULT`（computeAutoDefaults 规则）→ `NONE`（→ `costingTabs: []`，仍 200）。
+🔑 **为何 ①② 用「最近活单」而不直接用 computeAutoDefaults**：**配置口径必须与消费口径一致** —— 配置的唯一用途是评估期被 `ComparisonColumnEvaluator` 消费，而评估走 `findBasisLine`（最近活单 + `ACTIVE_STATUSES`）。两者一旦分叉，用户配的 componentId 在评估时**静默命中不了**（记 STALE，不报错、UI 上只是那列恒空）。③ 算的是「下次开单用哪个」而评估读的是「已存在那张单」，核价模板换代后必然分叉，只能垫底。
+🔑 **为何 ① 优先于业务方明示的 ②**：一个客户可有多个系列（`CUST-0001` 实测 4 个），若该客户最近活单属于**别的**系列，② 拿到的核价模板与当前配置的系列无关；① 是 ② 的收窄，收窄不到时自然退化成 ②，故 ①+② 是业务方意图的超集。
+🔒 三级复用**同一个** `MaterialVersionUpgradeService.ACTIVE_STATUSES`；①② 的活单判据+排序抽成 `findLatestActiveQuotationCostingTemplate` **只写一份**（两级只差一个定位维度）——本任务「两处口径漂移」已出现五次，不再添第六次。
+
+**版本口径 = 系列内 `created_at DESC` 首个** —— 🔒 刻意跟随 `listTemplateSeries` 的 `latestVersion` 子查询，**而非** `computeAutoDefaults` 的 `PUBLISHED + published_at DESC`。理由 **同屏自洽**：用户在同一个下拉看到 "v1.2"，配置依据就必须是 v1.2；若用后者，用户看到 v1.2、实际配的是另一版结构，**这种不一致用户无法察觉也无法理解**。⚠️ 当前各系列全 PUBLISHED，两口径结果相同 —— **正因为现在看不出差别才必须写死**，否则以后归档一版就分叉，而分叉时没人会想到来查这里。
+
+🔒 **纯只读**：不同于 task-0717 的 `getMeta(quotationId)`（会调 `ensureStructure` **写** `quotation_view_structure`）—— **配置态页面不得产生写副作用**。已用 md5 实证（下）。
+🔒 **复用不新写**：`buildCardStructure` 只提可见性（private→public）；`buildTabMetas` **保持 private**（新方法 `getMetaByTemplates` 就在同一个类里）；`costingSource` 加 `@JsonInclude(NON_NULL)` → task-0717 响应体逐字节不变（实测 data 层键仍只有 `costingTabs`/`quoteTabs`）。
+
+⚠️ **路由可达性（JAX-RS 两阶段分发，上周刚踩过）**：方法级路径首段 `template-series` 与本包任何资源类的**类级**路径末段（`strategies`/`reviews`/`settings`/`versions`）都不同，故不会被截胡。**通则：方法级路径的第一段不得等于另一个资源类的类级路径末段。**已实跑 curl 验证可达，不以 grep 到注解为准。
+
+**验证（ZZM- 夹具 4 系列 2 单，专门造成「主口径与兜底给出不同结果」的判别器：核价 v1.0=17 tab / v1.1=18 tab；验完零残留）**：
+四级逐项吻合 —— ① 系列内有活单绑 v1.0 → `SERIES_LATEST`/17（**主口径赢过兜底**）；② 系列无活单·客户有活单 → `CUSTOMER_LATEST`/17；② 系列仅 `CANCELLED` 单 → `CUSTOMER_LATEST`/17（**证 `ACTIVE_STATUSES` 生效**，非活单被滤掉）；③ 通用模板无单有分类 → `AUTO_DEFAULT`/18；④ 通用模板无单无分类 → `NONE`/0/**HTTP 200**（非 404/500）。
+
+**🔴 歧义量化（业务方备案，只查不改，全库 41 单）**：`罗克韦尔模板1` 18 单跨 2 个核价模板 → 命中主口径 10、**用了别的核价模板致该列恒 STALE 1**、未绑核价模板 7；其余 4 系列各只用 1 个核价模板。**合计：仅 1 张单会因核价模板不同使 `TAB_PAIR` 列恒 STALE**；另 11 张未绑核价模板的单核价侧本就无值（与本口径无关）。此歧义为既有架构导致，非本端点引入。
+
+**自检（七项全过）**：`./mvnw -o compile` 5 次 0 错误（先提可见性 → 加 `getMetaByTemplates` → 加解析 → 挂端点 → 改编号，任一中间态可编译）✅；真实 curl 200 + `quoteTabs=9`/`costingTabs=18` 非空 ✅；可达性 —— 业务 404 返中文 `模板系列不存在: <id>`，与路由 404 `{"code":404,"message":"Not found"}` 明确可辨 ✅；形状逐字段对齐 `comparisonViewService.ts:16-37`（`TabMeta{componentId,tabName,sortOrder,metrics}` / `MetricMeta{key,label,type}`）✅；核价侧空分支 200 + `costingTabs:[]` ✅；**只读验证 `quotation_view_structure` 调用前后 135 行 / md5 `dfb61049…` 逐字节不变** ✅；无 token → 401 `{"code":401,"message":"未登录"}` ✅。
+⚠️ **测试 13 失败为预先存在，已 A/B 实证非本次引入**：`mvnw -o test -Dtest='com.cpq.priceadjust.**,com.cpq.costing.**'` → 69 tests / 13 failures，全部集中在 `ComparisonViewResourceTest.setupOnce:65->createQuotationViaApi:88`(10) + `CostingComparisonResourceTest.setupOnce:56`(3)，均为夹具登录返 401。**stash 掉本次 5 个文件在干净 master 跑同一条命令，失败清单与计数逐项一致** —— 不是凭直觉判「非本次引入」，是背靠背对照。纯单测部分（`ComparisonColumnEvaluatorTest` 22 / `PriceAdjustReviewServiceTest` 7 等）全绿。
+ZZM- 夹具 4 表计数全 0 ✅；未触碰 `CUST-0729-*` / `CUST-0805-*`。
