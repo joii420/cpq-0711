@@ -74,6 +74,13 @@ const MaterialRangeMatrix: React.FC<MaterialRangeMatrixProps> = ({ customerNo, s
   const displayRows = onlySelected ? selectedRowsArr : rows;
   const displayTotal = onlySelected ? selectedRowsArr.length : total;
 
+  /**
+   * keys 的语义**取决于 rowSelection.preserveSelectedRowKeys**（见下方 Table 处注释）：
+   *  · 开（现状）：keys = 跨页全集 → 下面的 delete 循环只删真正被取消勾选的，语义正确；
+   *  · 关：keys 只剩本页 → 同一段 delete 循环会把他页已选全部抹掉（#2 的放大器）。
+   * 所以这段**不是**冗余，也不能改成"只增不减"——取消勾选、以及「只看已选」视图里的移除，
+   * 全靠它。删掉它 = 勾了就取消不掉；关掉开关 = 翻页即丢。两者必须成对存在。
+   */
   const handleSelectionChange = (keys: React.Key[]) => {
     const keySet = new Set(keys.map(String));
     const next = new Map(selected);
@@ -121,6 +128,15 @@ const MaterialRangeMatrix: React.FC<MaterialRangeMatrixProps> = ({ customerNo, s
         rowSelection={{
           selectedRowKeys: Array.from(selected.keys()),
           onChange: handleSelectionChange,
+          // 🔒 跨页保留选中的**开关本体**，缺它则本组件顶部「（跨页保留选中）」是句谎话。
+          // antd 6.3.5 useSelection.js#setSelectedKeys：未开该开关时走 else 分支，用
+          // getRecordByKey(key) 把不在当前 dataSource（本页 20 行）的 key **全部过滤掉** ——
+          // 内部 mergedSelectedKeys 与 onChange 回传的 keys 都只剩本页，他页已勾选静默丢失，
+          // 保存时按 selected.keys() 提交 → 用户以为存了 5 个料号，实际只存了翻页后勾的那几个。
+          // ⚠️ 与下方 handleSelectionChange 的「不在 keys 里就 delete」是**一对**：
+          //    开关保证 keys 是全集，delete 循环才只删真正被取消勾选的；关掉开关那段就会变成
+          //    "翻页即清空他页"。两者任何一方单独改动都会重现本 bug（#2）。
+          preserveSelectedRowKeys: true,
         }}
         pagination={onlySelected ? { pageSize: PAGE_SIZE, size: 'small' } : {
           current: page,
