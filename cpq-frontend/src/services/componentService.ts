@@ -90,6 +90,98 @@ export async function batchExpandDriver(
 }
 // ──────────────────────────────────────────────────────────────────
 
+// ── task-0805：公式绑定报告 / 导入预览增强 / 一键固化 类型定义 ──────────────
+// 契约来源：dev-docs/task-0805-组件导入导出功能升级/实现计划.md §2（冻结口径，前后端共同依据）。
+
+/**
+ * 绑定去向判定。与后端 FormulaCalculator.resolveFormula 的解析口径一一对应——
+ * 前端只展示，不得另写一遍回退链判断（那正是 BL-0098 换个层面重演）。
+ */
+export type FormulaBindingStatus = 'BOUND' | 'RESOLVED_BY_NAME' | 'RESOLVED_BY_POSITION' | 'UNRESOLVABLE';
+
+/**
+ * 单条「字段 → 公式」绑定去向。出现在两处：
+ * ① 导出 bindingReport.items（含 componentCode/componentName）；
+ * ② 导入预览 ComponentPlan.formulaBinding（不含 componentCode/componentName，由所属 ComponentPlan 提供上下文）。
+ */
+export interface FormulaBindingItem {
+  componentCode?: string;
+  componentName?: string;
+  /** 条件公式内部引用格式为「字段名 › 规则N」/「字段名 › 默认」。 */
+  fieldName: string;
+  resolvedFormulaId: string | null;
+  resolvedFormulaName: string | null;
+  status: FormulaBindingStatus;
+  /** UNRESOLVABLE 时给人话原因，其余为 null。 */
+  message: string | null;
+}
+
+/** GET .../export 响应体顶层新增字段（R1）。导出永不因 unboundCount>0 阻断。 */
+export interface BindingReport {
+  unboundCount: number;
+  totalFormulaRefs: number;
+  items: FormulaBindingItem[];
+}
+
+/** POST .../import 预览响应体新增的全 bundle 绑定汇总。 */
+export interface BindingSummary {
+  totalFormulaRefs: number;
+  bound: number;
+  resolvedByName: number;
+  resolvedByPosition: number;
+  unresolvable: number;
+}
+
+/** R5/AC-7：跨组件引用无法重映射清单（老 bundle Item.id 缺失场景）。 */
+export interface CrossRefIssue {
+  componentCode: string;
+  refType: string;
+  ref: string;
+  reason: 'BUNDLE_MISSING_ITEM_ID' | 'REF_NOT_IN_BUNDLE';
+}
+
+/** POST .../admin/formula-binding/consolidate 清单条目状态（与 FormulaBindingStatus 是不同取值域，见实现计划 §2.4）。 */
+export type ConsolidateStatus = 'CONSOLIDATED' | 'UNRESOLVABLE' | 'ERROR';
+
+export interface ConsolidateItem {
+  componentCode: string;
+  componentName?: string;
+  fieldName?: string;
+  resolvedFormulaId?: string | null;
+  resolvedFormulaName?: string | null;
+  status: ConsolidateStatus;
+  message?: string | null;
+}
+
+export interface ConsolidateResult {
+  dryRun: boolean;
+  /**
+   * ⚠️ dryRun=true 时后端恒为 0（只有实际 UPDATE 才会计数，见 FormulaBindingAdminResource#consolidate）。
+   * 预览阶段判断"会影响多少组件"须从 items 里按 status=CONSOLIDATED 去重 componentCode 自行统计，
+   * 不能直接读这个字段——FormulaBindingConsolidateDrawer 已按此口径实现。
+   */
+  componentsUpdated: number;
+  itemCount: number;
+  items: ConsolidateItem[];
+}
+
+/**
+ * 从导出下载的 blob 文本中解析 bindingReport（F1）。
+ * 🔒 解析失败必须静默降级——下载已经成功完成，绝不能让报告解析失败看起来像导出失败。
+ */
+function tryParseBindingReport(text: string): BindingReport | null {
+  try {
+    const parsed = JSON.parse(text);
+    const report = parsed?.bindingReport;
+    if (report && typeof report.unboundCount === 'number' && Array.isArray(report.items)) {
+      return report as BindingReport;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export const componentService = {
   listDirectories: (params?: { keyword?: string; includeDisabled?: boolean }) => api.get('/component-directories', { params }) as Promise<any>,
   createDirectory: (data: any) => api.post('/component-directories', data) as Promise<any>,
@@ -99,8 +191,12 @@ export const componentService = {
    * P1: 导出目录直属组件为 JSON bundle 并触发浏览器下载(只读)。
    * 注意: api 响应拦截器已 `return response.data`,故此处返回值**本身**即 Blob(responseType=blob),
    * 不能再取 .data(否则得到 undefined → 文件内容变成字符串 "undefined")。
+   *
+   * task-0805 F1：额外从下载内容里解析顶层 `bindingReport`（R1，不发第二次请求），
+   * 供调用方判断是否提示"存在未绑定公式的字段"。解析失败一律静默降级为 null——
+   * 下载本身已经成功，不能因为报告解析问题让导出看起来失败了。
    */
-  exportDirectory: async (id: string) => {
+  exportDirectory: async (id: string): Promise<{ bindingReport: BindingReport | null }> => {
     const data: any = await api.get(`/component-directories/${id}/export`, { responseType: 'blob' });
     const blob = data instanceof Blob
       ? data
@@ -114,6 +210,15 @@ export const componentService = {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+
+    let bindingReport: BindingReport | null = null;
+    try {
+      const text = await blob.text();
+      bindingReport = tryParseBindingReport(text);
+    } catch {
+      bindingReport = null;
+    }
+    return { bindingReport };
   },
   /** P2: 导入预览(dry-run,不写库)。bundle=导出的 JSON 对象。 */
   importPreview: (dirId: string, bundle: any, conflictPolicy: string) =>
@@ -121,12 +226,35 @@ export const componentService = {
       `/component-directories/${dirId}/import?conflictPolicy=${encodeURIComponent(conflictPolicy)}`,
       bundle,
     ) as Promise<any>,
-  /** P3: 导入提交(单事务,只新增)。ignoreMissingDeps=true 时忽略缺失依赖。 */
-  importCommit: (dirId: string, bundle: any, conflictPolicy: string, ignoreMissingDeps: boolean) =>
+  /**
+   * P3: 导入提交(单事务,只新增)。ignoreMissingDeps=true 时忽略缺失依赖。
+   * task-0805 R3：新增 ignoreUnboundFormulas（形状照抄 ignoreMissingDeps）——
+   * 默认 false 时后端 validateExplicitBinding 遇未绑定公式字段仍 400 拒绝；显式 true 才放行。
+   */
+  importCommit: (
+    dirId: string,
+    bundle: any,
+    conflictPolicy: string,
+    ignoreMissingDeps: boolean,
+    ignoreUnboundFormulas: boolean = false,
+  ) =>
     api.post(
-      `/component-directories/${dirId}/import/commit?conflictPolicy=${encodeURIComponent(conflictPolicy)}&ignoreMissingDeps=${ignoreMissingDeps}`,
+      `/component-directories/${dirId}/import/commit?conflictPolicy=${encodeURIComponent(conflictPolicy)}&ignoreMissingDeps=${ignoreMissingDeps}&ignoreUnboundFormulas=${ignoreUnboundFormulas}`,
       bundle,
     ) as Promise<any>,
+  /**
+   * task-0805 F3/R4：一键固化公式绑定（dryRun 预览 / dryRun=false 落库），作用域收窄到
+   * directoryId 和/或 componentIds（都不传 = 全库，本任务前端只用目录级）。
+   * ⚠️ 端点 @RoleAllowed({"SYSTEM_ADMIN"})，SALES_MANAGER 调用会收到 403——
+   * 调用方需捕获 e.httpStatus === 403 给出可读提示，不能让页面白屏。
+   */
+  consolidateFormulaBinding: (params: { dryRun: boolean; directoryId?: string; componentIds?: string[] }) => {
+    const qs = new URLSearchParams();
+    qs.set('dryRun', String(params.dryRun));
+    if (params.directoryId) qs.set('directoryId', params.directoryId);
+    if (params.componentIds && params.componentIds.length > 0) qs.set('componentIds', params.componentIds.join(','));
+    return api.post(`/admin/formula-binding/consolidate?${qs.toString()}`) as Promise<ConsolidateResult>;
+  },
   list: (params: any) => api.get('/components', { params }) as Promise<any>,
   getById: (id: string) => api.get(`/components/${id}`) as Promise<any>,
   /**

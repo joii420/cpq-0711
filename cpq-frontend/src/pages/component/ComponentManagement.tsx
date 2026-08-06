@@ -21,7 +21,7 @@ import {
 } from 'antd';
 import { buildDraftSnapshot, rebuildFieldKeys, rebuildFormulaKeys } from './componentDraft';
 import { readDraft, clearDraft, useDraftAutosave, listAllDrafts } from './useComponentDraft';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ExportOutlined, ImportOutlined, FolderAddOutlined, BulbOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, DeleteOutlined, ExportOutlined, ImportOutlined, FolderAddOutlined, BulbOutlined, ToolOutlined } from '@ant-design/icons';
 import { componentService } from '../../services/componentService';
 import { datasourceService } from '../../services/datasourceService';
 import { tabJoinFormulaService, type TabDef } from '../../services/tabJoinFormulaService';
@@ -29,6 +29,7 @@ import type { DirectoryNode, ComponentItem, FieldItem, ComponentType, FormulaIte
 import { newFormulaRow, TAB_TYPE_COLOR } from './types';
 import FieldConfigTable from './FieldConfigTable';
 import ComponentImportDrawer from './ComponentImportDrawer';
+import FormulaBindingConsolidateDrawer from './FormulaBindingConsolidateDrawer';
 import ConfigGuideDrawer from './ConfigGuideDrawer';
 import FormulaCycleDrawer, { type FormulaCycle } from './FormulaCycleDrawer';
 import SqlViewListPanel from './SqlViewListPanel';
@@ -613,6 +614,8 @@ const MasterList: React.FC<MasterListProps> = ({
   const [busy, setBusy] = useState<string | null>(null);
   // 任务4: 按目录导入/导出
   const [importTarget, setImportTarget] = useState<{ id: string; name: string } | null>(null);
+  // task-0805 F3: 按目录固化公式绑定
+  const [consolidateTarget, setConsolidateTarget] = useState<{ id: string; name: string } | null>(null);
   // 目录管理：新建 / 重命名 Modal + 删除二次确认
   const [dirModal, setDirModal] = useState<{ open: boolean; mode: 'create' | 'rename'; id?: string }>(
     { open: false, mode: 'create' },
@@ -667,8 +670,34 @@ const MasterList: React.FC<MasterListProps> = ({
   const handleExportDir = async (e: React.MouseEvent, dir: DirectoryNode) => {
     e.stopPropagation();
     try {
-      await componentService.exportDirectory(dir.id);
+      const { bindingReport } = await componentService.exportDirectory(dir.id);
       message.success(`已导出目录「${dir.name}」的组件`);
+      // task-0805 F1（R1）：导出永不阻断，但 unboundCount>0 时提示 + 可跳固化抽屉。
+      // bindingReport 解析失败时 componentService.exportDirectory 已静默降级为 null，这里不再二次报错。
+      if (bindingReport && bindingReport.unboundCount > 0) {
+        const key = `export-binding-${dir.id}-${Date.now()}`;
+        notification.warning({
+          key,
+          message: '导出完成，但存在未绑定公式的字段',
+          description: (
+            <div>
+              <div>
+                {`共 ${bindingReport.unboundCount} / ${bindingReport.totalFormulaRefs} 处字段无法确定绑定的公式；`}
+                建议在源环境固化后再分发此文件，否则接收方导入时会看到同样的问题。
+              </div>
+              <Button
+                size="small"
+                type="link"
+                style={{ padding: 0, marginTop: 4 }}
+                onClick={() => { notification.destroy(key); setConsolidateTarget({ id: dir.id, name: dir.name }); }}
+              >
+                去固化绑定 →
+              </Button>
+            </div>
+          ),
+          duration: 8,
+        });
+      }
     } catch (err) {
       message.error((err as { message?: string }).message ?? '导出失败');
     }
@@ -723,6 +752,14 @@ const MasterList: React.FC<MasterListProps> = ({
           )}
           {comp.status === 'DISABLED' && (
             <span style={{ fontSize: 10, marginLeft: 6, opacity: 0.85 }}>（已停用）</span>
+          )}
+          {comp.hasUnboundFormula && (
+            <span
+              style={{ fontSize: 10, marginLeft: 6, opacity: 0.9, color: '#d48806' }}
+              title="存在未绑定公式的字段，建议在字段配置中手工核对或使用「固化绑定」"
+            >
+              （待绑定）
+            </span>
           )}
         </div>
         <div className="cmm-c-code">
@@ -803,6 +840,10 @@ const MasterList: React.FC<MasterListProps> = ({
               <Tooltip title="导入组件到本目录">
                 <Button type="text" size="small" icon={<ImportOutlined />}
                   onClick={(e) => { e.stopPropagation(); setImportTarget({ id: dir.id, name: dir.name }); }} />
+              </Tooltip>
+              <Tooltip title="固化本目录的公式绑定（写库，需系统管理员权限）">
+                <Button type="text" size="small" icon={<ToolOutlined />}
+                  onClick={(e) => { e.stopPropagation(); setConsolidateTarget({ id: dir.id, name: dir.name }); }} />
               </Tooltip>
               <Tooltip title="删除目录（需为空：无子目录且无组件）">
                 <Button type="text" size="small" danger icon={<DeleteOutlined />}
@@ -921,6 +962,15 @@ const MasterList: React.FC<MasterListProps> = ({
         targetDirName={importTarget?.name}
         onClose={() => setImportTarget(null)}
         onImported={() => { setImportTarget(null); onRefresh(); }}
+      />
+
+      {/* task-0805 F3: 按目录固化公式绑定抽屉 */}
+      <FormulaBindingConsolidateDrawer
+        open={!!consolidateTarget}
+        directoryId={consolidateTarget?.id ?? null}
+        directoryName={consolidateTarget?.name}
+        onClose={() => setConsolidateTarget(null)}
+        onConsolidated={() => { setConsolidateTarget(null); onRefresh(); }}
       />
 
       {/* 目录新建 / 重命名 Modal */}

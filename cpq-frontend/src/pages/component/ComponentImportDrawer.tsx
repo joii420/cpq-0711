@@ -1,10 +1,16 @@
 import React, { useState } from 'react';
 import {
-  Drawer, Upload, Button, Select, Space, Alert, Table, Tag, Typography, message, Descriptions, Checkbox,
+  Drawer, Upload, Button, Select, Space, Alert, Table, Tag, Typography, message, notification, Descriptions, Checkbox,
 } from 'antd';
 import { InboxOutlined, EyeOutlined, ImportOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { componentService } from '../../services/componentService';
+import {
+  componentService,
+  type FormulaBindingItem,
+  type FormulaBindingStatus,
+  type BindingSummary,
+  type CrossRefIssue,
+} from '../../services/componentService';
 
 const { Dragger } = Upload;
 const { Text } = Typography;
@@ -27,6 +33,8 @@ interface ComponentPlan {
   newCode?: string;
   conflict: boolean;
   sqlViewCount: number;
+  /** 🆕 task-0805 R2：逐字段绑定去向（不含 componentCode/componentName，由本 ComponentPlan 提供上下文）。 */
+  formulaBinding?: FormulaBindingItem[];
 }
 interface DepItem { code: string; exists: boolean; }
 interface PreviewResult {
@@ -39,6 +47,16 @@ interface PreviewResult {
   dependencies: { globalVariables: DepItem[]; datasources: DepItem[]; missingCount: number };
   canCommit: boolean;
   blockers: string[];
+  /**
+   * 🆕 task-0805 §1.2：高优先级但不阻断（checksum 不一致 / 跨组件引用无法重映射 / 按位置推导绑定）。
+   * 修既有缺陷：这三类过去被塞进 blockers 但 canCommit 仍为 true，导致用户永远看不到——
+   * 本抽屉现在无条件渲染 warnings，不再依附 canCommit。
+   */
+  warnings?: string[];
+  /** 🆕 全 bundle 绑定汇总。 */
+  bindingSummary?: BindingSummary;
+  /** 🆕 R5/AC-7：跨组件引用无法重映射清单（老 bundle Item.id 缺失场景）；已随人话文案并入 warnings，此处仅保留类型供未来消费。 */
+  crossRefIssues?: CrossRefIssue[];
 }
 
 const ACTION_TAG: Record<string, { color: string; text: string }> = {
@@ -48,6 +66,15 @@ const ACTION_TAG: Record<string, { color: string; text: string }> = {
   ABORT: { color: 'red', text: '冲突中止' },
 };
 
+const BINDING_STATUS_TAG: Record<FormulaBindingStatus, { color: string; text: string }> = {
+  BOUND: { color: 'green', text: '已绑定' },
+  RESOLVED_BY_NAME: { color: 'blue', text: '按名称解析' },
+  RESOLVED_BY_POSITION: { color: 'orange', text: '按位置推导' },
+  UNRESOLVABLE: { color: 'red', text: '无法解析' },
+};
+
+type BindingRow = FormulaBindingItem & { componentCode: string; componentName: string; action: string };
+
 const ComponentImportDrawer: React.FC<Props> = ({ open, targetDirId, targetDirName, onClose, onImported }) => {
   const [bundle, setBundle] = useState<any>(null);
   const [fileName, setFileName] = useState<string>('');
@@ -55,9 +82,16 @@ const ComponentImportDrawer: React.FC<Props> = ({ open, targetDirId, targetDirNa
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [ignoreMissing, setIgnoreMissing] = useState(false);
+  // task-0805 R3：与 ignoreMissing 形状一致、互相独立的第二个显式开关。
+  const [ignoreUnboundFormulas, setIgnoreUnboundFormulas] = useState(false);
+  // task-0805 F2：绑定表默认只展示非 BOUND 行，避免大包糊一脸。
+  const [showAllBindings, setShowAllBindings] = useState(false);
   const [committing, setCommitting] = useState(false);
 
-  const reset = () => { setBundle(null); setFileName(''); setPreview(null); setPolicy('RENAME'); setIgnoreMissing(false); };
+  const reset = () => {
+    setBundle(null); setFileName(''); setPreview(null); setPolicy('RENAME');
+    setIgnoreMissing(false); setIgnoreUnboundFormulas(false); setShowAllBindings(false);
+  };
 
   const handleClose = () => { reset(); onClose(); };
 
@@ -88,6 +122,7 @@ const ComponentImportDrawer: React.FC<Props> = ({ open, targetDirId, targetDirNa
     if (!bundle) return message.warning('请先上传 bundle 文件');
     setLoading(true);
     setIgnoreMissing(false);
+    setIgnoreUnboundFormulas(false);
     try {
       const resp: any = await componentService.importPreview(targetDirId, bundle, policy);
       setPreview((resp?.data?.data ?? resp?.data) as PreviewResult);
@@ -98,19 +133,45 @@ const ComponentImportDrawer: React.FC<Props> = ({ open, targetDirId, targetDirNa
     }
   };
 
-  // 是否允许提交:预览通过(canCommit) 或 仅缺依赖且勾选了"仍然导入"(且非 ABORT 冲突场景)
-  const missingOnly = !!preview
-    && preview.dependencies.missingCount > 0
-    && !(preview.conflictPolicy === 'ABORT' && preview.summary.conflicts > 0);
-  const canSubmit = !!preview && (preview.canCommit || (missingOnly && ignoreMissing));
+  // 逐字段绑定去向：把每个 ComponentPlan.formulaBinding 摊平，补上组件上下文，供表格 + 提交判定共用。
+  const bindingRows: BindingRow[] = preview
+    ? preview.components.flatMap((p) =>
+        (p.formulaBinding ?? []).map((b) => ({ ...b, componentCode: p.code, componentName: p.name, action: p.action })),
+      )
+    : [];
+  const visibleBindingRows = showAllBindings ? bindingRows : bindingRows.filter((r) => r.status !== 'BOUND');
+
+  // 是否允许提交：
+  //  ① 预览直接放行(canCommit)；
+  //  ② 或者每一类阻断原因都被对应的显式开关覆盖 —— 缺依赖→ignoreMissing；未绑定公式→ignoreUnboundFormulas；
+  //     ABORT 冲突没有覆盖开关，属硬阻断，两个勾选都救不了。
+  const abortConflictBlock = !!preview && preview.conflictPolicy === 'ABORT' && preview.summary.conflicts > 0;
+  const missingDepsBlock = !!preview && preview.dependencies.missingCount > 0;
+  // 只统计"会真正落库"的组件（CREATE/RENAME）里的 UNRESOLVABLE——SKIP 的组件根本不会被导入，不该拖后腿。
+  const unresolvableBlock = bindingRows.some((r) => r.status === 'UNRESOLVABLE' && r.action !== 'SKIP');
+  const canSubmit = !!preview && (
+    preview.canCommit
+    || (!abortConflictBlock
+        && (!missingDepsBlock || ignoreMissing)
+        && (!unresolvableBlock || ignoreUnboundFormulas))
+  );
 
   const doCommit = async () => {
     if (!targetDirId || !bundle || !preview) return;
     setCommitting(true);
     try {
-      const resp: any = await componentService.importCommit(targetDirId, bundle, policy, ignoreMissing);
+      const resp: any = await componentService.importCommit(targetDirId, bundle, policy, ignoreMissing, ignoreUnboundFormulas);
       const r = (resp?.data?.data ?? resp?.data);
-      message.success(`导入完成:新建 ${r.createdCount} 个组件(含 ${r.sqlViewsCreated} 个SQL视图)，跳过 ${r.skippedCount} 个`);
+      if (r.unboundCount > 0) {
+        notification.warning({
+          message: '导入完成，但存在未绑定公式的字段',
+          description: `新建 ${r.createdCount} 个组件(含 ${r.sqlViewsCreated} 个SQL视图)，跳过 ${r.skippedCount} 个；`
+            + `其中 ${r.unboundCount} 处字段未绑定公式，已按「待绑定」标记，请前往组件管理逐一核对或使用「固化绑定」。`,
+          duration: 8,
+        });
+      } else {
+        message.success(`导入完成:新建 ${r.createdCount} 个组件(含 ${r.sqlViewsCreated} 个SQL视图)，跳过 ${r.skippedCount} 个`);
+      }
       onImported?.();
       handleClose();
     } catch (e: any) {
@@ -147,11 +208,28 @@ const ComponentImportDrawer: React.FC<Props> = ({ open, targetDirId, targetDirNa
     ...preview.dependencies.datasources.map((d) => ({ ...d, kind: '数据源' })),
   ] : [];
 
+  // task-0805 R2：逐字段绑定去向表——组件 / 字段 / 将绑到的公式 / 状态。
+  const bindingColumns: ColumnsType<BindingRow> = [
+    {
+      title: '组件', dataIndex: 'componentCode', width: 170,
+      render: (v: string, r) => <span>{v}{r.componentName ? <Text type="secondary"> ({r.componentName})</Text> : null}</span>,
+    },
+    { title: '字段', dataIndex: 'fieldName', width: 160 },
+    {
+      title: '将绑到的公式', dataIndex: 'resolvedFormulaName',
+      render: (v: string | null, r) => v ?? (r.message ? <Text type="danger">{r.message}</Text> : '—'),
+    },
+    {
+      title: '状态', dataIndex: 'status', width: 120,
+      render: (s: FormulaBindingStatus) => { const t = BINDING_STATUS_TAG[s] || { color: 'default', text: s }; return <Tag color={t.color}>{t.text}</Tag>; },
+    },
+  ];
+
   return (
     <Drawer
       title={`导入组件到目录:${targetDirName ?? ''}`}
       placement="right"
-      width={760}
+      width={960}
       open={open}
       onClose={handleClose}
       destroyOnClose
@@ -207,6 +285,17 @@ const ComponentImportDrawer: React.FC<Props> = ({ open, targetDirId, targetDirNa
               </Descriptions.Item>
             </Descriptions>
 
+            {/* task-0805 §1.2：warnings 无条件渲染，不依附 canCommit——修既有缺陷
+                (checksum 不一致过去混进 blockers 但 canCommit 仍为 true，用户永远看不到)。 */}
+            {!!preview.warnings && preview.warnings.length > 0 && (
+              <Alert
+                type="warning"
+                showIcon
+                message="提醒(不阻断提交,建议核对)"
+                description={<ul style={{ margin: 0, paddingLeft: 18 }}>{preview.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
+              />
+            )}
+
             {preview.canCommit
               ? <Alert type="success" showIcon message="校验通过,可提交导入" />
               : <Alert
@@ -216,14 +305,46 @@ const ComponentImportDrawer: React.FC<Props> = ({ open, targetDirId, targetDirNa
                   description={
                     <>
                       <ul style={{ margin: 0, paddingLeft: 18 }}>{preview.blockers.map((b, i) => <li key={i}>{b}</li>)}</ul>
-                      {missingOnly && (
-                        <Checkbox checked={ignoreMissing} onChange={(e) => setIgnoreMissing(e.target.checked)} style={{ marginTop: 8 }}>
+                      {missingDepsBlock && !abortConflictBlock && (
+                        <Checkbox checked={ignoreMissing} onChange={(e) => setIgnoreMissing(e.target.checked)} style={{ marginTop: 8, display: 'block' }}>
                           依赖缺失仍然导入(相关字段运行时取数可能失败)
+                        </Checkbox>
+                      )}
+                      {unresolvableBlock && !abortConflictBlock && (
+                        <Checkbox checked={ignoreUnboundFormulas} onChange={(e) => setIgnoreUnboundFormulas(e.target.checked)} style={{ marginTop: 8, display: 'block' }}>
+                          未绑定公式仍然导入(导入后需在组件管理中固化绑定)
                         </Checkbox>
                       )}
                     </>
                   }
                 />}
+
+            {bindingRows.length > 0 && (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text strong>
+                    公式绑定去向
+                    {preview.bindingSummary && (
+                      <Text type="secondary" style={{ fontWeight: 'normal', marginLeft: 8 }}>
+                        (共 {preview.bindingSummary.totalFormulaRefs} 处 · 已绑定 {preview.bindingSummary.bound} · 按名称 {preview.bindingSummary.resolvedByName} · 按位置 {preview.bindingSummary.resolvedByPosition} · 无法解析 {preview.bindingSummary.unresolvable})
+                      </Text>
+                    )}
+                  </Text>
+                  <Checkbox checked={showAllBindings} onChange={(e) => setShowAllBindings(e.target.checked)}>
+                    显示全部(含已绑定)
+                  </Checkbox>
+                </div>
+                <Table
+                  size="small"
+                  rowKey={(r, i) => `${r.componentCode}-${r.fieldName}-${i}`}
+                  columns={bindingColumns}
+                  dataSource={visibleBindingRows}
+                  pagination={false}
+                  style={{ marginTop: 6 }}
+                  scroll={{ y: 240 }}
+                />
+              </div>
+            )}
 
             <div>
               <Text strong>依赖校验</Text>
