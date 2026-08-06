@@ -1,6 +1,7 @@
 package com.cpq.component.dto;
 
 import com.cpq.component.entity.Component;
+import com.cpq.component.service.FormulaIdBinder;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -45,6 +46,10 @@ public class ComponentDTO {
     public String status;
     /** EXCEL 类型组件的列配置 JSON（数组），Task 1.1 新增字段 */
     public String excelColumns;
+    /** task-0805 §1.4：派生字段（不落库、不加迁移）—— 存在未显式绑定 formula_id 的 FORMULA 字段
+     *  （条件公式豁免，判据与 {@link FormulaIdBinder#listUnboundFormulaFields} 一致）。
+     *  R3 的 ignoreUnboundFormulas=true 放行场景、以及 BL-0098 之前遗留的坏配置都会被标出来。 */
+    public Boolean hasUnboundFormula;
     public OffsetDateTime createdAt;
     public OffsetDateTime updatedAt;
 
@@ -75,6 +80,7 @@ public class ComponentDTO {
         dto.elementPriceField = component.elementPriceField;
         dto.elementCurrencyField = component.elementCurrencyField;
         dto.excelColumns = component.excelColumns;
+        dto.hasUnboundFormula = !FormulaIdBinder.listUnboundFormulaFields(dto.fields).isEmpty();
         return dto;
     }
 

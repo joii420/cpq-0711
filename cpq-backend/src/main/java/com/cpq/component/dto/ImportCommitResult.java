@@ -22,6 +22,11 @@ public class ImportCommitResult {
     /** 被跳过的原始 code(SKIP 策略下冲突项)。 */
     public List<String> skipped;
 
+    /** task-0805 R3：ignoreUnboundFormulas=true 时放行的未绑定字段清单(逐条点名)。 */
+    public List<UnboundWarning> unboundWarnings;
+    /** = unboundWarnings.size()。 */
+    public int unboundCount;
+
     public static class CreatedItem {
         /** bundle 里的原始 code。 */
         public String originalCode;
@@ -31,5 +36,11 @@ public class ImportCommitResult {
         public String componentId;
         public boolean renamed;
         public int sqlViewCount;
+    }
+
+    /** task-0805 R3：单条未绑定放行记录。 */
+    public static class UnboundWarning {
+        public String componentCode;
+        public String fieldName;
     }
 }

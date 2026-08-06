@@ -2016,8 +2016,11 @@ public class FormulaCalculator {
     /**
      * BL-0098：解析结果带上公式的稳定 id（可能为 null —— 存量公式尚未补 id，
      * 或走位置回退命中了一条没有 id 的公式）。调用方须容忍 null，不得编造。
+     *
+     * <p>task-0805：{@code origin} 是纯旁挂标签（供 {@link #inspectFormulaBindingForField} 外部展示
+     * 用），不参与本类任何判断/分支——分支顺序与判断条件不因引入这个字段而改变一个字。
      */
-    private record ResolvedFormula(String name, String id, JsonNode expression) {}
+    private record ResolvedFormula(String name, String id, JsonNode expression, String origin) {}
 
     /**
      * port resolveFormula: 0.field.formula_name 显式 1.formula_assignments[完整字段下标]
@@ -2040,7 +2043,7 @@ public class FormulaCalculator {
             JsonNode foundById = findFormulaById(formulas, formulaId);
             return foundById != null
                 ? new ResolvedFormula(foundById.path("name").asText(""), formulaId,
-                                      foundById.path("expression"))
+                                      foundById.path("expression"), "BY_ID")
                 : null;
         }
 
@@ -2050,7 +2053,7 @@ public class FormulaCalculator {
         if (formulaName != null && !formulaName.isEmpty()) {
             JsonNode found = findFormulaByName(formulas, formulaName);
             return found != null
-                ? new ResolvedFormula(formulaName, idOf(found), found.path("expression"))
+                ? new ResolvedFormula(formulaName, idOf(found), found.path("expression"), "BY_NAME")
                 : null;
         }
 
@@ -2062,7 +2065,7 @@ public class FormulaCalculator {
                 if (!assignedName.isEmpty()) {
                     JsonNode found = findFormulaByName(formulas, assignedName);
                     if (found != null) {
-                        return new ResolvedFormula(assignedName, idOf(found), found.path("expression"));
+                        return new ResolvedFormula(assignedName, idOf(found), found.path("expression"), "BY_ASSIGNMENT");
                     }
                 }
             }
@@ -2070,13 +2073,13 @@ public class FormulaCalculator {
 
         // 2. 字段名 == 公式名
         JsonNode byName = findFormulaByName(formulas, fieldName);
-        if (byName != null) return new ResolvedFormula(fieldName, idOf(byName), byName.path("expression"));
+        if (byName != null) return new ResolvedFormula(fieldName, idOf(byName), byName.path("expression"), "BY_FIELD_NAME");
 
         // 3. positional fallback（FORMULA 字段在 fields 中的相对位置）
         int posIdx = formulaFieldPosition(fields, fieldName);
         if (posIdx >= 0 && posIdx < formulas.size()) {
             JsonNode fm = formulas.get(posIdx);
-            return new ResolvedFormula(fm.path("name").asText(""), idOf(fm), fm.path("expression"));
+            return new ResolvedFormula(fm.path("name").asText(""), idOf(fm), fm.path("expression"), "BY_POSITION");
         }
         return null;
     }
@@ -2119,6 +2122,90 @@ public class FormulaCalculator {
         ResolvedFormula rf = resolveFormula(field, fieldName(field), fields, formulas,
                 formulaAssignments, fullFieldIndex);
         return rf == null ? null : rf.id();
+    }
+
+    /**
+     * task-0805 B1：对外暴露「某 FORMULA 字段最终会用哪条公式，以及是靠哪一级回退命中的」，
+     * 供导出 / 导入预览的只读绑定检查（{@code FormulaBindingInspector}）展示「将绑到哪条公式」。
+     *
+     * <p>与 {@link #resolveFormulaNameForField} / {@link #resolveFormulaIdForField} 共用同一个
+     * {@link #resolveFormula} 口径——本方法只是把内部已经算好的 {@code origin} 标签一并透出，
+     * <b>不改变</b> {@link #resolveFormula} 的分支顺序、判断条件或返回时机一个字。
+     *
+     * @return 解析到的绑定信息；解析不到返回 {@code null}（调用方不得编造）
+     */
+    public FormulaBindingInfo inspectFormulaBindingForField(JsonNode field, JsonNode fields, JsonNode formulas,
+                                                             JsonNode formulaAssignments, int fullFieldIndex) {
+        if (field == null || fields == null || formulas == null) return null;
+        ResolvedFormula rf = resolveFormula(field, fieldName(field), fields, formulas,
+                formulaAssignments, fullFieldIndex);
+        return rf == null ? null : new FormulaBindingInfo(rf.id(), rf.name(), rf.origin());
+    }
+
+    /**
+     * task-0805 B1（扩展，非 §3 明细字面要求，但同一低风险模式的自然延伸——见交付报告）：
+     * 条件公式「规则分支」引用的绑定检查版本，供 {@code FormulaBindingInspector} 逐规则出报告。
+     *
+     * <p>复用私有 {@link #condRefFormula}（求值期条件引用解析的唯一口径，与
+     * {@link #resolveConditionalRuleFormulaName} 同源），本方法只是额外算出 {@code origin}
+     * 标签（BY_ID / BY_NAME）——不改变 condRefFormula 的判断顺序或结果。
+     *
+     * @return 解析到的绑定信息；解析不到返回 {@code null}
+     */
+    public FormulaBindingInfo inspectConditionalRuleBinding(JsonNode field, JsonNode formulas, int ruleIndex) {
+        if (field == null || formulas == null) return null;
+        JsonNode cf = field.has("conditional_formula") ? field.path("conditional_formula")
+            : field.path("conditionalFormula");
+        JsonNode rules = cf.path("rules");
+        if (!rules.isArray() || ruleIndex < 0 || ruleIndex >= rules.size()) return null;
+        JsonNode rule = rules.get(ruleIndex);
+        return inspectCondRef(formulas, rule.path("formula_id"), rule.path("formulaId"), rule.path("formula"));
+    }
+
+    /**
+     * task-0805 B1（扩展，理由同 {@link #inspectConditionalRuleBinding}）：
+     * 条件公式「默认分支」引用的绑定检查版本。
+     */
+    public FormulaBindingInfo inspectConditionalDefaultBinding(JsonNode field, JsonNode formulas) {
+        if (field == null || formulas == null) return null;
+        JsonNode cf = field.has("conditional_formula") ? field.path("conditional_formula")
+            : field.path("conditionalFormula");
+        return inspectCondRef(formulas, cf.path("default_formula_id"), cf.path("defaultFormulaId"), cf.path("default"));
+    }
+
+    /**
+     * {@link #condRefFormula} 只返回命中的公式对象（供求值用），不携带「是靠 id 还是靠名字命中」。
+     * 这里额外镜像一次 condRefFormula 内部同款的 id 优先判断，仅用于给结果贴 origin 标签——
+     * <b>不改变</b> condRefFormula 本身的解析结果，实际解析仍完全委派给它。
+     */
+    private FormulaBindingInfo inspectCondRef(JsonNode formulas, JsonNode idSnake, JsonNode idCamel, JsonNode nameNode) {
+        String id = idSnake != null && !idSnake.isMissingNode() && !idSnake.isNull() ? idSnake.asText(null) : null;
+        if (id == null || id.isEmpty()) {
+            id = idCamel != null && !idCamel.isMissingNode() && !idCamel.isNull() ? idCamel.asText(null) : null;
+        }
+        JsonNode fm = condRefFormula(formulas, idSnake, idCamel, nameNode);
+        if (id != null && !id.isEmpty()) {
+            return fm == null ? null : new FormulaBindingInfo(idOf(fm), fm.path("name").asText(""), "BY_ID");
+        }
+        String name = nameNode != null ? nameNode.asText(null) : null;
+        if (name == null || name.isEmpty()) return null;
+        return fm == null ? null : new FormulaBindingInfo(idOf(fm), fm.path("name").asText(""), "BY_NAME");
+    }
+
+    /**
+     * task-0805：公式绑定解析结果的对外只读快照（id / name / 来源标签）。
+     * 来源标签取值：{@code BY_ID / BY_NAME / BY_ASSIGNMENT / BY_FIELD_NAME / BY_POSITION}
+     * （字段级）或 {@code BY_ID / BY_NAME}（条件公式内部引用）。
+     */
+    public static final class FormulaBindingInfo {
+        public final String id;
+        public final String name;
+        public final String origin;
+        public FormulaBindingInfo(String id, String name, String origin) {
+            this.id = id;
+            this.name = name;
+            this.origin = origin;
+        }
     }
 
     private JsonNode findFormulaByName(JsonNode formulas, String name) {

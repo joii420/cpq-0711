@@ -1,0 +1,129 @@
+{
+  "bundleVersion": "1.0",
+  "exportedAt": "2026-08-02T19:24:51.437582493-07:00",
+  "source": {
+    "directoryId": "0de1ae9d-6940-483e-9cf9-df6d23240f56",
+    "directoryName": "报价通用组件"
+  },
+  "components": [
+    {
+      "id": "aaf887b7-ae9b-4d27-a04d-05d30cecc458",
+      "code": "COMP-0162",
+      "name": "产品",
+      "componentType": "NORMAL",
+      "columnCount": 5,
+      "status": "ACTIVE",
+      "dataDriverPath": "$cp_view",
+      "tabType": "主件",
+      "partNoField": "销售料号",
+      "partNameField": null,
+      "sortField": null,
+      "rowKeyFields": [
+        "销售料号"
+      ],
+      "fields": [
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$cp_view._销售料号",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "客户料号名称",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$cp_view._客户料号名称",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "客户产品编号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$cp_view._客户产品编号",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "报价货币",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$cp_view._报价货币",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "税率",
+          "notes": "无源手填（2026-08-02 用户定）：V6 客户主数据无税率列，customer_tax 空表且在 AP-53 禁表黑名单内；成品其他费用里的『税率』行另在【其他费用】页签展示。",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "cp_view",
+          "sqlTemplate": "-- 产品（主件，平铺契约：hf_part_no + :customerCode）\n-- 本页签展示「产品自身属性」→ 按 §3.8.1 判据【不做 BOM 闭包】，否则会串入子件信息。\n-- 「税率」无源手填，故本视图不输出该列（§6 自检 0：视图输出列与字段一一对应，无没人绑的死列）。\nSELECT\n  mm.material_no AS hf_part_no,\n  mm.material_no AS _销售料号,\n  mcm.customer_material_name AS _客户料号名称,\n  mcm.customer_product_no AS _客户产品编号,\n  mcm.quote_currency AS _报价货币\nFROM material_master mm\nLEFT JOIN material_customer_map mcm\n  ON mcm.material_no = mm.material_no AND mcm.customer_no = :customerCode",
+          "declaredColumns": [
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "_销售料号",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "_客户料号名称",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_客户产品编号",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_报价货币",
+              "dataType": "varchar",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [
+            "customerCode"
+          ],
+          "scope": "COMPONENT",
+          "description": null
+        }
+      ]
+    }
+  ],
+  "dependencies": {
+    "globalVariables": [],
+    "datasources": []
+  },
+  "checksum": "sha256:4d270160fffa6ffece9267eb69cfe877adbadc152f6da97612a2ada97603131f"
+}

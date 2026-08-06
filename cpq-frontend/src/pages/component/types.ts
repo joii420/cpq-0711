@@ -104,6 +104,13 @@ export interface ComponentItem {
   excelColumns?: string;
   /** 后端 ComponentDTO.updatedAt（ISO 字符串）；草稿陈旧检测用。getById 返回。 */
   updatedAt?: string;
+  /**
+   * task-0805 R3/§1.4：派生标记（非数据库列，后端 ComponentDTO 按 fields 计算，不加迁移）。
+   * true = 该组件存在 field_type=FORMULA 且无 conditional_formula 且无 formula_id 的字段——
+   * 含 ignoreUnboundFormulas=true 放行导入的组件，也含 BL-0098 之前遗留的坏配置。
+   * 引导用户使用「固化绑定」（FormulaBindingConsolidateDrawer）或在字段配置中手工显式选择公式。
+   */
+  hasUnboundFormula?: boolean;
 }
 
 export interface FieldItem {

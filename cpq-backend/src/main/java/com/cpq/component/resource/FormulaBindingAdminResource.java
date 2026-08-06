@@ -49,20 +49,52 @@ public class FormulaBindingAdminResource {
 
     /**
      * @param dryRun {@code true}（默认）只出清单不写库；显式传 {@code false} 才真正固化
+     * @param directoryId task-0805 R4：可选，限定只固化该目录下的组件；不传 = 不限目录
+     * @param componentIds task-0805 R4：可选，逗号分隔的组件 id 列表，限定只固化这些组件；
+     *        不传 = 不限组件。与 {@code directoryId} 同传时取交集（本目录内且在这批 id 里）
+     * @implNote {@code directoryId}/{@code componentIds} 都不传时，拼出的 SQL 文本与本任务之前
+     *        完全一致（不额外拼 WHERE 子句），全库行为逐字节不变。
      */
     @POST
     @Path("/consolidate")
     @Transactional
-    public Response consolidate(@QueryParam("dryRun") Boolean dryRun) {
+    public Response consolidate(@QueryParam("dryRun") Boolean dryRun,
+                                 @QueryParam("directoryId") UUID directoryId,
+                                 @QueryParam("componentIds") String componentIdsParam) {
         boolean dry = dryRun == null || dryRun;
         List<Map<String, Object>> report = new ArrayList<>();
 
-        @SuppressWarnings("unchecked")
-        List<Object[]> rows = em.createNativeQuery(
+        List<UUID> componentIds = null;
+        if (componentIdsParam != null && !componentIdsParam.isBlank()) {
+            componentIds = new ArrayList<>();
+            for (String raw : componentIdsParam.split(",")) {
+                String s = raw.trim();
+                if (s.isEmpty()) continue;
+                componentIds.add(UUID.fromString(s));
+            }
+        }
+
+        StringBuilder sql = new StringBuilder(
             "SELECT id, code, name, fields, formulas FROM component "
-            + "WHERE jsonb_typeof(fields) = 'array' AND jsonb_typeof(formulas) = 'array' "
-            + "ORDER BY code")
-            .getResultList();
+            + "WHERE jsonb_typeof(fields) = 'array' AND jsonb_typeof(formulas) = 'array'");
+        if (directoryId != null) {
+            sql.append(" AND directory_id = :directoryId");
+        }
+        if (componentIds != null && !componentIds.isEmpty()) {
+            sql.append(" AND id IN :componentIds");
+        }
+        sql.append(" ORDER BY code");
+
+        var nativeQuery = em.createNativeQuery(sql.toString());
+        if (directoryId != null) {
+            nativeQuery.setParameter("directoryId", directoryId);
+        }
+        if (componentIds != null && !componentIds.isEmpty()) {
+            nativeQuery.setParameter("componentIds", componentIds);
+        }
+
+        @SuppressWarnings("unchecked")
+        List<Object[]> rows = nativeQuery.getResultList();
 
         int changed = 0;
         for (Object[] r : rows) {

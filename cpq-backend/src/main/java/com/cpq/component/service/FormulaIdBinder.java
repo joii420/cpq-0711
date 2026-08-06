@@ -1,5 +1,6 @@
 package com.cpq.component.service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -81,25 +82,38 @@ public final class FormulaIdBinder {
     }
 
     /**
-     * 校验每个 FORMULA 字段都已显式绑定。
+     * task-0805 B6：列出固化后仍未显式绑定的 FORMULA 字段名（条件公式豁免，理由同
+     * {@link #validateExplicitBinding}）。{@link #validateExplicitBinding} 内部复用本方法
+     * 生成报错清单——两处口径必须只有一份，不能各写一遍判断条件。
      *
-     * @throws IllegalArgumentException 存在未绑定字段时抛出，消息点名具体字段
+     * <p>供 commit 端 {@code ignoreUnboundFormulas=true} 时降级为警告放行（不再直接
+     * 400 拒绝），而不必用 {@code try/catch(IllegalArgumentException)} 吞异常——那样会
+     * 连带吞掉同一循环里其它来源的 IAE。
      */
-    public static void validateExplicitBinding(List<Map<String, Object>> fields) {
-        if (fields == null) return;
-        StringBuilder unbound = new StringBuilder();
+    public static List<String> listUnboundFormulaFields(List<Map<String, Object>> fields) {
+        List<String> unbound = new ArrayList<>();
+        if (fields == null) return unbound;
         for (Map<String, Object> f : fields) {
             if (f == null || !isFormulaField(f)) continue;
             if (f.get("conditional_formula") != null) continue;   // 条件公式豁免
             Object id = f.get("formula_id");
             if (id == null || String.valueOf(id).isBlank()) {
-                if (unbound.length() > 0) unbound.append("、");
-                unbound.append(String.valueOf(f.get("name")));
+                unbound.add(String.valueOf(f.get("name")));
             }
         }
-        if (unbound.length() > 0) {
+        return unbound;
+    }
+
+    /**
+     * 校验每个 FORMULA 字段都已显式绑定。
+     *
+     * @throws IllegalArgumentException 存在未绑定字段时抛出，消息点名具体字段
+     */
+    public static void validateExplicitBinding(List<Map<String, Object>> fields) {
+        List<String> unbound = listUnboundFormulaFields(fields);
+        if (!unbound.isEmpty()) {
             throw new IllegalArgumentException(
-                "以下公式字段未绑定公式，请在字段配置中显式选择：" + unbound
+                "以下公式字段未绑定公式，请在字段配置中显式选择：" + String.join("、", unbound)
                 + "（BL-0098：系统不再按位置自动匹配公式）");
         }
     }

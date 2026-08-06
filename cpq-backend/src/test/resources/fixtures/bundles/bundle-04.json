@@ -1,0 +1,157 @@
+{
+  "bundleVersion": "1.0",
+  "exportedAt": "2026-08-02T19:24:57.823482131-07:00",
+  "source": {
+    "directoryId": "511337f8-343b-4edc-b821-b57800a6da49",
+    "directoryName": "报价通用组件"
+  },
+  "components": [
+    {
+      "id": "3045ccf7-2ab5-4caf-9d0a-383c561704c5",
+      "code": "COMP-0169",
+      "name": "其他费用",
+      "componentType": "NORMAL",
+      "columnCount": 6,
+      "status": "ACTIVE",
+      "dataDriverPath": "$qt_view",
+      "tabType": "主件",
+      "partNoField": "销售料号",
+      "partNameField": null,
+      "sortField": "项次",
+      "rowKeyFields": [
+        "项次",
+        "要素"
+      ],
+      "fields": [
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$qt_view._销售料号",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "项次",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$qt_view._项次",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "要素",
+          "notes": "= up.cost_type：材料管理费/外购件管理费/利润/税率/包装费…",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$qt_view._要素",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "费用",
+          "notes": "",
+          "content": "",
+          "is_amount": true,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": true,
+          "default_source": {
+            "path": "$qt_view._费用",
+            "type": "BASIC_DATA"
+          },
+          "unit_source_field": "单位"
+        },
+        {
+          "name": "比例",
+          "notes": "= up.cost_ratio（按比例登记的费用项值落这列，「费用」列为空）",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$qt_view._比例",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$qt_view._单位",
+            "type": "BASIC_DATA"
+          }
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "qt_view",
+          "sqlTemplate": "-- 其他费用（成品其他费用；price_type='FINISHED_MATERIAL_OTHER'；料号在 code 列）\n-- 本页签是「本成品自身的费用项」→ 不做 BOM 闭包（§3.8.1 判据）。\n-- ⚠️ 现网口径：固定金额项写 pricing_price，按比例登记的项（材料管理费/利润/税率…）值在 cost_ratio、\n--    pricing_price 为空 —— 故「费用」「比例」两列并存，各取各的，不互相兜底。\nSELECT\n  up.code AS hf_part_no,\n  up.code AS _销售料号,\n  up.seq_no AS _项次,\n  up.cost_type AS _要素,\n  up.pricing_price AS _费用,\n  up.cost_ratio AS _比例,\n  up.unit AS _单位\nFROM unit_price up\nWHERE up.system_type = 'QUOTE' AND up.price_type = 'FINISHED_MATERIAL_OTHER' AND up.is_current = true\n  AND up.customer_no = :customerCode\nORDER BY up.seq_no",
+          "declaredColumns": [
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "_销售料号",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "_项次",
+              "dataType": "int4",
+              "nullable": true
+            },
+            {
+              "name": "_要素",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_费用",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_比例",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_单位",
+              "dataType": "varchar",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [
+            "customerCode"
+          ],
+          "scope": "COMPONENT",
+          "description": null
+        }
+      ]
+    }
+  ],
+  "dependencies": {
+    "globalVariables": [],
+    "datasources": []
+  },
+  "checksum": "sha256:1be033ca2c79fa4d2f2e245916d68ea7b37b18ee098fb9d7e296a653ae9e39c9"
+}
