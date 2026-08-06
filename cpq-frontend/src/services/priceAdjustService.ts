@@ -103,12 +103,15 @@ export const priceAdjustService = {
   },
 
   /**
-   * ⚠️ 契约缺口（非本文件杜撰口径，仅是为了让 UI 能先行接线）：
-   * api.md 未给出比对列配置区「模板系列 → 页签/可比对值目录」的 meta 数据源端点
-   * （task-0717 的 GET /quotations/{id}/comparison-view/meta 是按 quotationId 取，
-   * 本屏是按 templateSeriesId 取，语义不同、无法直接复用同一 URL）。
-   * 此处按既有 /price-adjust 前缀 + 复用同名 ComparisonMetaDTO 形状占位，
-   * 需与后端 backtask 对齐后确认真实路径 —— 对齐前调用会 404，前端已做降级展示。
+   * 比对列配置区的 meta 数据源：模板系列 → 页签/可比对值目录。
+   * 端点已于 2026-08-06 由后端补交（api.md §1.10a）：
+   *   GET /price-adjust/template-series/{id}/comparison-view-meta
+   *
+   * 📌 为什么 DTO 形状是复用 task-0717 的 ComparisonMetaDTO（保留这段历史，别删）：
+   * task-0717 原端点 GET /quotations/{id}/comparison-view/meta 是按 **quotationId** 取，
+   * 本屏按 **templateSeriesId** 取，语义不同故不能复用同一 URL；但两者产出的
+   * 「页签 → 可比对值」目录结构完全一致，因此 URL 另开、DTO 形状照搬，
+   * LinkConfigDrawer 得以零改动复用。
    */
   async getComparisonMeta(templateSeriesId: string): Promise<{ quoteTabs: any[]; costingTabs: any[] }> {
     return (await api.get(`${BASE}/template-series/${encodeURIComponent(templateSeriesId)}/comparison-view-meta`)) as unknown as {

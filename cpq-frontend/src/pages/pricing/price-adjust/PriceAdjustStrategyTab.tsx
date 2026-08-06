@@ -76,7 +76,11 @@ const PriceAdjustStrategyTab: React.FC<PriceAdjustStrategyTabProps> = ({ custome
       const s = await priceAdjustService.getStrategy(customerNo);
       setStrategy(s);
       form.setFieldsValue({
-        enabled: s.exists ? s.enabled : true,
+        // 🔒 策略**不存在**时默认关闭（业务方要求「客户价格调整策略默认为关闭」）。
+        // 后端 StrategyDTO.notExists() 把 enabled 留 null 交给前端定，此处就是那个"定"的地方 ——
+        // 原来填 true 会让后端实体/DB 的默认值被完全绕过（新客户打开页面即显示开启，一保存就落 true）。
+        // ⚠️ 只动冒号右边的"不存在分支"，三元结构不能改：已存在的策略必须继续回显它自己的真实状态。
+        enabled: s.exists ? s.enabled : false,
         cycleType: s.exists ? s.cycleType : 'MONTHLY_DAY',
         cycleWeekday: s.cycleWeekday ?? undefined,
         cycleDayOfMonth: s.cycleDayOfMonth ?? 1,
@@ -244,7 +248,10 @@ const PriceAdjustStrategyTab: React.FC<PriceAdjustStrategyTabProps> = ({ custome
           </Space>
         }
       >
-        <Form form={form} layout="vertical" initialValues={{ enabled: true, cycleType: 'MONTHLY_DAY', materialScopeMode: 'ALL', costDiffThreshold: 0 }}>
+        {/* enabled 默认 false：与上方 load() 的"不存在分支"是同一个默认值的两个落点
+            （initialValues 管首帧、load 管拉到策略后的回填），两处必须一致，否则会出现
+            "刚打开是关的、请求回来跳成开的"这种闪烁。业务方要求默认关闭。 */}
+        <Form form={form} layout="vertical" initialValues={{ enabled: false, cycleType: 'MONTHLY_DAY', materialScopeMode: 'ALL', costDiffThreshold: 0 }}>
           <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
             <Form.Item name="enabled" label="启用状态" valuePropName="checked" style={{ minWidth: 320 }}
               extra="停用后不再自动生成版本；已生成版本与已生效价格不受影响。">

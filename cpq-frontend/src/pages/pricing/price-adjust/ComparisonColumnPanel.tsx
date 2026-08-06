@@ -25,10 +25,13 @@ const makeDefaultColumn = (): PriceAdjustColumnDef => ({
  * （buildTabPairColumns/nextSortOrder），本文件只负责把连线抽屉产出的 pairs 转成
  * 带 removable 的 PriceAdjustColumnDef 并走 price-adjust 专属的 PUT 端点。
  *
- * ⚠️ 已知契约缺口：LinkConfigDrawer 需要 ComparisonMetaDTO（页签/可比对值目录），
- * task-0717 原端点按 quotationId 取，本屏按 templateSeriesId 取，api.md 未给出对应端点
- * （priceAdjustService.getComparisonMeta 已标注该缺口）。缺口未解决前，打开「配置比对列」
- * 会因该请求失败而提示错误，不会导致页面崩溃或死等 —— 这属预期，等后端接口就绪后自然打通。
+ * 📌 meta 数据源（页签/可比对值目录）：端点已于 2026-08-06 由后端补交（api.md §1.10a）
+ * GET /price-adjust/template-series/{id}/comparison-view-meta，「配置比对列」已正常打开。
+ * 该端点与 task-0717 的 GET /quotations/{id}/comparison-view/meta **URL 不同、DTO 形状相同**
+ * （前者按 quotationId、本屏按 templateSeriesId，语义不同不能共用 URL；但页签→可比对值的
+ * 目录结构一致，故照搬 ComparisonMetaDTO，LinkConfigDrawer 零改动复用）——
+ * 这解释了为什么这里的类型是从 task-0717 引来的，别当成误用。
+ * 此后再打不开就是**真故障**（网络/权限/数据），不是"接口没做"。
  */
 const ComparisonColumnPanel: React.FC<ComparisonColumnPanelProps> = ({ customerNo }) => {
   const [seriesList, setSeriesList] = useState<TemplateSeriesDTO[]>([]);
@@ -114,8 +117,13 @@ const ComparisonColumnPanel: React.FC<ComparisonColumnPanelProps> = ({ customerN
       setMeta(m as unknown as ComparisonMetaDTO);
       setDrawerOpen(true);
     } catch (e: any) {
-      setMetaError('加载页签/可比对值目录失败（后端接口未就绪或暂不可用），无法打开连线配置');
-      message.error('暂无法打开连线配置，接口未就绪');
+      // 🔒 文案不得再暗示"功能尚未上线"：该端点已于 2026-08-06 补交（api.md §1.10a），
+      // 此后再报错就是**真故障**（网络/权限/该模板系列数据异常）。说成没上线会把用户和
+      // 排查方向都带反 —— 一个是等开发，一个是查环境。带上后端原因便于定位。
+      // （措辞刻意避开旧文案原词，好让"改文案先 grep"的审计不出现噪音命中）
+      const reason = e?.message ? `：${e.message}` : '';
+      setMetaError(`加载页签/可比对值目录失败${reason}，无法打开连线配置。请重试；若持续失败，请联系管理员排查网络/权限或该模板系列的数据。`);
+      message.error('加载失败，暂无法打开连线配置');
     }
   };
 
