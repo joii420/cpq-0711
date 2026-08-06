@@ -120,7 +120,16 @@
 - **优先级**：P1
 - **来源**：task-0729 验收 `#58` 修复后全工程 grep（2026-08-05）
 - **状态**：待开发（**均在 priceadjust 之外，本任务按边界未动**）
-- **判据**：`new ObjectMapper()` 无配置 **+** `readTree` 解析既有 jsonb **+** `writeValueAsString` 写回同一列 → 整组数据被重新序列化，小数被 double 规范化
+- 🔑 **可复现判据（本条最值钱的部分，交给下一个人直接用）**：
+  ```
+  ① 该类持有 new ObjectMapper() 且【未配】三项：
+       USE_BIG_DECIMAL_FOR_FLOATS / JsonNodeFactory.withExactBigDecimals(true) / WRITE_BIGDECIMAL_AS_PLAIN
+  ② 用它 readTree(...) 解析【库里已有的】jsonb 值
+  ③ 又用它 writeValueAsString(...) 写回【同一列】
+  三条同时成立 = 读改写往返 = 整组数据被重新序列化，小数被 double 规范化
+  ```
+  > ⚠️ 判据的可靠性有交叉验证：后端从**修复点正向扫写点**、复验从**先实证破坏形态再反推谁用同样裸 mapper 做读改写** —— **两条方向相反的路径独立收敛到同一处（`QuotationTreeService`）**。所以这不是某次灵光，是可复现的检查方法。
+- **待修 #4 的定性方法（约十几分钟）**：确认 `ConfigureSnapshotService.writeSnapshot` / `writeRowData` 的**上游调用方**里，有没有哪条是先 `MAPPER.readTree(库里已有的 snapshot_rows/row_data)` 再拼字符串回写。**有 = 第四处；没有 = 它只是构建新值，不受影响。**
 - **已修 2 处**：`PriceReconciler:95`（`4f069534`）、`MaterialVersionUpgradeService:79`（`e0e8e4e8`）
   - ⚠️ 后者一次覆盖**三组**持久化 JSON：`snapshot_rows`/`row_data` + **`quote_card_values`**（`cleanEditRowOverrides:315→348`）+ **`quotation_price_revision` 三列快照**（`materializeAndSealInitialRevision:731→721`）。**后两组此前无人注意 —— R 基线快照一直在被静默改写**
 - **待修 #3 · `QuotationTreeService`（确凿同构，已实证到行）**
