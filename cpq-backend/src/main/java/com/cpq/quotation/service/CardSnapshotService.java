@@ -962,6 +962,40 @@ public class CardSnapshotService {
      */
     @Transactional
     public int ensureCardValues(UUID quotationId) {
+        return ensureCardValues(quotationId, false);
+    }
+
+    /**
+     * 方向3 修法①（2026-08-06）：{@code forceRecomputeAll=true} 时<b>无视 {@code IS NULL} 谓词，
+     * 强制重算整单全部行</b>。仅提交路径使用。
+     *
+     * <p><b>要解决的静默错值</b>（实测 4/4 复现，判据 {@code 加工费 83.825536→999.999}
+     * ⇒ {@code li.subtotal 37.330516→38.246716}）：
+     * <pre>
+     *   t0  autoSave 的 warm 起飞，读到【编辑前】的数据开始算
+     *   t1  用户点提交 → saveDraft 置 NULL + 写入【编辑后】的 row_data，先 commit
+     *   t2  warm 后 commit，把【编辑前】算出的卡片值写回 → 覆盖了 t1 的 NULL
+     *   t3  submit → ensureCardValues 的 IS NULL 选不中 → 不重算 → 提交【编辑前】的金额
+     * </pre>
+     * 用户改的值确实存进了 {@code row_data}，但提交出去的是旧价，<b>且没有任何报错</b>。
+     *
+     * <p>🔒 <b>为什么提交路径必须 force</b>：提交路径上「卡片值非 NULL」这个状态<b>本身就是异常的</b>
+     * —— 紧邻的 {@code saveDraft(skipWarm)} 刚把它们全置 NULL，此刻还非 NULL 只可能是被在飞 warm
+     * 用旧数据填回来的。与其信任一个异常状态，不如显式重建。
+     *
+     * <p>🔒 <b>为什么不是「先置 NULL 再算」</b>：那样要多一条 UPDATE，凭空拉长 {@code quotation_line_item}
+     * 的行锁持有窗口，扩大与并发 saveDraft 的 ABBA 死锁面（该死锁已实测到，见 BACKLOG）。
+     * 改选行谓词不写任何额外的行 —— 要重算的行本来就要被 UPDATE，<b>死锁面零增量</b>。
+     *
+     * <p>🔒 <b>成本≈0</b>：提交路径上 {@code saveDraft(skipWarm)} 刚把全单置 NULL，正常情况下
+     * {@code missing} 本就等于全集；force 只在「被 warm 填回」这个异常态下才真的多算 —— 那正是要修的场景。
+     *
+     * <p>⚠️ <b>本方法只治提交金额，不治别的列</b>。根因是 Hibernate 全列 UPDATE 把 warm 的陈旧
+     * 内存快照整行写回（{@code annual_volume} / {@code discount_*} 等同样被覆盖），那条由
+     * {@code QuotationLineItem} 上的 {@code @DynamicUpdate} 治（修法②）。两者治不同的面，缺一不可。
+     */
+    @Transactional
+    public int ensureCardValues(UUID quotationId, boolean forceRecomputeAll) {
         if (quotationId == null) return 0;
         // 单飞:加锁必须早于缺失行 SELECT,否则两事务都读 NULL → 双重补算
         Boolean locked = (Boolean) em.createNativeQuery(
@@ -973,9 +1007,11 @@ public class CardSnapshotService {
         if (q == null) return 0;
         boolean hasCostingTpl = q.costingCardTemplateId != null;
 
-        String sql = "SELECT id FROM quotation_line_item WHERE quotation_id = :q " +
-            "AND ( quote_card_values IS NULL" +
-            (hasCostingTpl ? " OR costing_card_values IS NULL" : "") + " )";
+        String sql = forceRecomputeAll
+            ? "SELECT id FROM quotation_line_item WHERE quotation_id = :q"
+            : "SELECT id FROM quotation_line_item WHERE quotation_id = :q " +
+              "AND ( quote_card_values IS NULL" +
+              (hasCostingTpl ? " OR costing_card_values IS NULL" : "") + " )";
         @SuppressWarnings("unchecked")
         java.util.List<Object> rawIds = em.createNativeQuery(sql)
             .setParameter("q", quotationId).getResultList();

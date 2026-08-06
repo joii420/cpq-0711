@@ -9,7 +9,36 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
+/**
+ * 报价单产品行。
+ *
+ * <h3>🔒 {@code @DynamicUpdate} 是修复「并发写互相整行覆盖」的关键，不要摘掉（方向3 修法②，2026-08-06）</h3>
+ *
+ * <p><b>根因</b>：Hibernate 默认对每次 UPDATE 生成<b>全列</b>语句
+ * （{@code update quotation_line_item set annual_volume=?,...,subtotal=?,... where id=?}），
+ * 值取自实体<b>加载那一刻</b>的内存快照。于是两个并发事务哪怕改的是<b>完全不同的列</b>，
+ * 后提交的那个也会把先提交的写入<b>整行覆盖回旧值</b> —— 与业务代码写没写那一列无关。
+ *
+ * <p><b>实测到的事故形态</b>（判据 {@code 加工费 83.825536→999.999}，4/4 复现）：
+ * <pre>
+ *   t0  warm 加载 li（此刻 subtotal=37.330516）→ 开始算卡片值（耗时 0.5~1.7s）
+ *   t1  saveDraft 写入用户新编辑（subtotal→38.246716、row_data 新值）并 commit
+ *   t2  warm commit → 全列 UPDATE 把 t0 的内存快照整行写回 → subtotal 被打回 37.330516
+ * </pre>
+ * 受害的<b>不止 {@code subtotal}</b>：{@code annualVolume} / {@code discount*} /
+ * {@code lineTotalAmount} 等所有列都在同一条语句里被旧值覆盖 —— 用户改的年用量、折扣会被静默冲掉。
+ *
+ * <p><b>本注解的作用</b>：UPDATE 只包含<b>本次真正变脏</b>的列，两个改不同列的并发事务不再互相覆盖。
+ * 代价是失去 JDBC 语句缓存复用（本实体的更新非高频热点，可接受）；<b>副作用是正向的</b> ——
+ * 写入列变少，缓解已实测到的 warm × saveDraft ABBA 死锁（见 BACKLOG）。
+ *
+ * <p>⚠️ <b>它不是万能的</b>：两个事务改<b>同一列</b>时仍是后写覆盖先写（last-write-wins）。
+ * 那需要 {@code @Version} 乐观锁根治，因写点众多、每处都要处理冲突异常，已记 BACKLOG 独立评估。
+ * 提交路径的金额可信另由 {@code CardSnapshotService#ensureCardValues(UUID, boolean)} 的
+ * force 重算（修法①）保障，两者治不同的面。
+ */
 @Entity
+@org.hibernate.annotations.DynamicUpdate
 @Table(name = "quotation_line_item")
 public class QuotationLineItem extends PanacheEntityBase {
 

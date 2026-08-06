@@ -260,7 +260,139 @@ public class QuotationResource {
         UUID currentUserId = sessionHelper.getCurrentUserIdOrFallback(request);
         // P3 lazy-excel:提交冻结前确保 Excel 值已补算(首存懒算留 NULL),否则冻结/导出会缺 Excel 快照。
         try { cardSnapshotService.ensureExcelValues(id); em.clear(); } catch (Exception ignore) { /* 尽力,不阻断提交 */ }
+        awaitWarmBeforeSubmit(id);
         return ApiResponse.success(quotationService.submit(id, currentUserId));
+    }
+
+    /** 提交前等 warm 让锁的预算（ms）。见 {@link #awaitWarmBeforeSubmit} 的取值依据。 */
+    private static final long SUBMIT_WARM_WAIT_BUDGET_MS = 8000L;
+    /** 两次 probe 之间的休眠（ms）。休眠期间【不持有】DB 连接，见 awaitWarmBeforeSubmit 不变量②。 */
+    private static final long SUBMIT_WARM_PROBE_INTERVAL_MS = 150L;
+
+    /**
+     * 提交前有界等待整单卡片值 warm 让出单飞锁。
+     *
+     * <p><b>要解决的现象</b>：用户改一格 → autoSave 防抖 → {@code saveDraft} 无条件把全单卡片值置 NULL
+     * → warm（{@code ensure-card-values}）fire-and-forget 起飞并占住单飞锁 0.5~1.7s；用户此刻点提交，
+     * {@code ensureCardValues} 取不到锁返回 {@code WARMING_IN_PROGRESS} → 409。<b>单击就会中</b>，
+     * 不需要双击。前端在飞守卫拦不住它 —— 守卫管的是 save，而 warm 是 save <b>完成之后</b>才起飞的，活得比守卫长。
+     *
+     * <hr>
+     * <h4>🔒 不变量①：等待必须在【事务外】—— 放进事务内会造成死锁，不是性能问题而是正确性问题</h4>
+     *
+     * {@code CardSnapshotService#ensureCardValues} 是 {@code @Transactional(REQUIRED)}，
+     * 若在 {@code QuotationService#submit} 内部等锁，就是<b>加入 submit 的事务</b>等。而此时：
+     * <pre>
+     *   T_submit: 已持有 quotation 行写锁（submit 前段改过 q 的客户快照字段/assignedApproverId/
+     *             submissionSnapshot，中途查询触发 auto-flush 已把 UPDATE 发出去）
+     *             →  等 advisory 锁
+     *   T_warm  : 已持有 advisory 锁
+     *             →  等 quotation 行锁（CardSnapshotService#recomputeDraftHeaderTotals 会
+     *                UPDATE quotation.original_amount/total_amount）
+     * </pre>
+     * 成环。PG 的死锁检测器能发现（advisory 等待也在锁管理器里），所以不会挂死，
+     * 但会变成<b>随机杀掉一方的 deadlock 错误</b> —— 比现在这个必现且干净的 409 更糟。
+     *
+     * <p>⚠️ 这个环是<b>方向3 Q2 引入的</b>：在那之前 warm 只写 {@code quotation_line_item}，
+     * 不碰 {@code quotation} 行，没有环。也就是说<b>「取不到锁就立刻失败」这个现状不是疏漏，是保护</b>。
+     * 本方法把等待放在 Resource 层（本类无 {@code @Transactional}，且上一行 {@code ensureExcelValues}
+     * 已是同款事务外前置调用），{@code quotationService.submit(...)} 的事务此刻<b>尚未开启</b> → 环不成立。
+     *
+     * <hr>
+     * <h4>🔒 不变量②：必须用【非阻塞 probe + sleep】，不能改成 SQL 阻塞等待</h4>
+     *
+     * 把 {@code pg_try_advisory_xact_lock} 换成阻塞版 {@code pg_advisory_xact_lock}（+{@code lock_timeout}）
+     * 代码更短、看起来更「正统」，但<b>等待期间会一直占着一条 DB 连接</b>：
+     * <pre>
+     *   连接池 quarkus.datasource.jdbc.max-size = 20   ← 20 个并发等待就把【整个应用】打死
+     *   工作线程池 default max-threads       = 200
+     * </pre>
+     * 现写法每次 probe 是一次独立短事务，<b>sleep 期间连接已归还池</b>，等待只占线程不占连接
+     * —— 把瓶颈从 20 挪到 200。这是本方案能成立的关键，改动前请先想清楚这 20 与 200 的差别。
+     *
+     * <hr>
+     * <h4>🔒 不变量③：本方法只治【可用性】，不治【金额正确性】—— 且顺序是硬约束</h4>
+     *
+     * 三件事各治一面，<b>缺一不可，且本方法绝不能单独存在</b>：
+     * <table border="1">
+     *   <tr><th>做什么</th><th>治什么</th></tr>
+     *   <tr><td>{@code CardSnapshotService#ensureCardValues(id, force=true)}（修法①）</td>
+     *       <td>提交金额可信 —— 无视 {@code IS NULL} 强制重算</td></tr>
+     *   <tr><td>{@code QuotationLineItem} 上的 {@code @DynamicUpdate}（修法②）</td>
+     *       <td>{@code annual_volume}/{@code discount_*} 等<b>其它列</b>不被全列 UPDATE 用旧值覆盖</td></tr>
+     *   <tr><td><b>本方法</b>（修法③）</td><td><b>只治 409 这个可用性问题</b></td></tr>
+     * </table>
+     *
+     * 🔴 <b>单独落本方法会把「可见失败」变成「静默错值」</b>：
+     * <pre>
+     *   只有 409（改造前）：submit 退场 → 用户重试 → saveDraft 又置 NULL → 从最新 row_data 重算 → 金额正确
+     *   只加等锁（危险）  ：submit 等到 warm 算完 —— 而【warm 算完正是陈旧值写回的那一刻】
+     *                      → IS NULL 选不中 → 200 但提交的是编辑前的金额
+     * </pre>
+     * 即：<b>等锁的终点恰好是污染发生的时刻</b>。所以修法① 必须先于或同时于本方法落地，
+     * 任何人想单独回退①而保留本方法，等于亲手制造静默错价。
+     *
+     * <hr>
+     * <h4>预算取值依据（实测，非估算）</h4>
+     *
+     * 锁是事务级（{@code pg_try_advisory_xact_lock}），持锁时长 == {@code ensureCardValues} 整个事务时长。
+     * 实测（每档 5 次）：1 行 median 525ms / 3 行 595ms / 5 行 689ms（max 1442ms）/ <b>10 行 1708ms</b>，
+     * 近似线性；与测试侧独立拟合的 {@code T(N) ≈ 0.44 + 0.065N} 吻合。
+     * 反推：<b>3s ≈ 39 行 / 8s ≈ 116 行</b>。RECORD 有 <b>77 行</b>首存记载 —— 落在 3s 之外、8s 之内，
+     * 故取 <b>8000ms</b>。
+     *
+     * <p>为什么 8s 不会拖垮系统：sleep 期间<b>不持有 DB 连接</b>（见不变量②），只占工作线程；
+     * 200 线程 ÷ 8s ⇒ 需持续 <b>25 次提交/秒</b>才可能耗尽，本系统不可能到该量级。
+     * JTA 60s 侧：8s 等待 + 大单自算 ~10s ≈ 18s，余量充足。
+     *
+     * <p>🔴 <b>仍不覆盖超大单</b>（130~180 行，前端 {@code QuotationWizard} 有「大单 ensure 可阻塞 ~9-12s」
+     * 的现场记载）。本方法是<b>概率性改善</b>，不是根治。根治见 BACKLOG「saveDraft 增量失效」：
+     * 现在每次 autoSave 都触发<b>整单</b>重算，只失效真正变动的行才能让 warm 变快、碰撞窗口按比例缩小。
+     *
+     * <p>大单超时后重试仍可成功（有界）：点提交时用户已停止编辑，且前端 {@code handleSubmit} 里那次
+     * {@code saveDraft} 带 {@code skipWarm} 不再发新 warm → 在飞的 warm 飞完即可提交。
+     */
+    private void awaitWarmBeforeSubmit(UUID id) {
+        long deadline = System.nanoTime() + SUBMIT_WARM_WAIT_BUDGET_MS * 1_000_000L;
+        long t0 = System.nanoTime();
+        int probes = 0;
+        while (true) {
+            probes++;
+            int r;
+            try {
+                r = cardSnapshotService.ensureCardValues(id);
+            } catch (Exception e) {
+                // 补算本身失败不在这里判定 —— 交给 submit 内部那次（它会以同样方式再试一次并如实报错）
+                LOG.warnf("[submit-warm-wait] quotation=%s probe#%d 异常（不阻断，交由 submit 内部处理）: %s",
+                        id, probes, e.getMessage());
+                return;
+            }
+            if (r != com.cpq.quotation.service.CardSnapshotService.WARMING_IN_PROGRESS) {
+                long waitedMs = (System.nanoTime() - t0) / 1_000_000L;
+                // 🔒 防假绿判据：本行只在【真的等过】时打印。验收要证明「确实等了」而不是「碰巧没撞上」，
+                //    就看这行是否出现且 probes>1 —— 若把整个重试逻辑删掉，本行永不出现。
+                if (probes > 1) {
+                    LOG.infof("[submit-warm-wait] quotation=%s 等待 %dms（probe %d 次）后取得单飞锁，继续提交",
+                            id, waitedMs, probes);
+                }
+                em.clear();   // 驱逐 probe 期间读进来的陈旧 L1，让 submit 读到 warm 落库的新值
+                return;
+            }
+            if (System.nanoTime() >= deadline) {
+                long waitedMs = (System.nanoTime() - t0) / 1_000_000L;
+                LOG.warnf("[submit-warm-wait] quotation=%s 等待 %dms（probe %d 次）仍未取得单飞锁，拒绝提交",
+                        id, waitedMs, probes);
+                // 文案：已经等过了，语义不再是「稍等就好」，而是「这张单确实大 / 系统繁忙」。
+                throw new BusinessException(409, String.format(
+                        "系统正在处理该报价单的金额（已等待 %d 毫秒），请稍后重新提交", waitedMs));
+            }
+            try {
+                Thread.sleep(SUBMIT_WARM_PROBE_INTERVAL_MS);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return;   // 被中断则不再等，交给 submit 内部按原逻辑处理
+            }
+        }
     }
 
     /**

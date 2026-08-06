@@ -857,7 +857,11 @@ public class QuotationService {
         //    ensureCardValues 幂等（IS NULL 谓词 + 单飞锁），故 :861 那次会命中 0 行、净增量≈0。
         // 🔒 拿不到单飞锁（另一并发 warm 在飞）时【不允许】继续：继续 = 用旧值算完并冻结，而冻结数据
         //    是不可逆的历史凭据。宁可让用户重提一次，也不能让错数定型。
-        int warmedLines = cardSnapshotService.ensureCardValues(id);
+        // 🔒 方向3 修法①：force=true —— 提交路径必须【无视 IS NULL 谓词强制重算】，不能沿用懒算语义。
+        //    紧邻的 saveDraft(skipWarm) 刚把全单卡片值置 NULL，此刻还非 NULL 只可能是被在飞 warm
+        //    用【编辑前】的数据填回来的（实测 4/4）；沿用 IS NULL 会跳过重算 → 提交旧价且无报错。
+        //    详见 CardSnapshotService#ensureCardValues(UUID, boolean) 的注释。
+        int warmedLines = cardSnapshotService.ensureCardValues(id, true);
         if (warmedLines == CardSnapshotService.WARMING_IN_PROGRESS) {
             throw new BusinessException(409, "系统正在重算该报价单的金额，请稍候几秒后重新提交");
         }
