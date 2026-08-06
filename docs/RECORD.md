@@ -4814,3 +4814,34 @@ ZZM- 夹具 4 表计数全 0 ✅；未触碰 `CUST-0729-*` / `CUST-0805-*`。
 - 不误伤：锁标记复查仍 **5 单/14/11 原样未动**（证明惰性撤锁确实未被触发，与"不主动归位"的裁定一致）✅；禁区 `CUST-0729-FV*` / `CUST-0805-FE*` / `ZZM-*` 策略行数 0 ✅
 - `./mvnw -o compile` 0 错误 ✅；8081 `/api/cpq/components` → 401 ✅
 - 备份：`scratchpad/task0729-enabled-backup-20260805-232512.sql`（3 行逐行 UPDATE 还原语句，含原 `enabled` + 原 `updated_at`），内容已随交付报告全文回传，不依赖 scratchpad 存活。
+
+---
+
+[2026-08-06] 组件管理（task-0805） - 组件导入导出功能升级：绑定校验从「导入提交」前移到「导出 + 导入预览」 | 涉及文件：后端 `FormulaCalculator`(旁挂 origin)/新增 `FormulaBindingInspector`/`ComponentExportService`/`ComponentImportService`/`FormulaIdBinder`/`ComponentDTO`/`FormulaBindingAdminResource` + 4 个 DTO；前端 `ComponentImportDrawer`/新增 `FormulaBindingConsolidateDrawer`/`ComponentManagement`/`componentService`；测试 9 文件 86 例 + 18 份真实 bundle 夹具 |
+
+**背景**：导出（零校验）/ 预览（不查绑定）/ 提交（400 拒绝）三个环节里只有最后一个拦，且报错文案「请在字段配置中显式选择」只有在**源环境**才做得到 —— 导入时用户手上只有一个 JSON，实际改不了。
+
+**交付**：R1 导出出 `bindingReport`（只警告不阻断）；R2 preview 逐字段展示「将绑到哪条公式」+ status；R3 commit 加 `ignoreUnboundFormulas` 显式开关 + 派生 `hasUnboundFormula` 待绑定标记；R4 `consolidate` 按目录/组件收窄 + UI 抽屉；R5 老 bundle 三类标识正确落库 + `hasNullId` 断链显式暴露；R6 往返保真对拍。
+
+🔑 **三条设计裁决（供后续同类改动参考）**：
+1. **`bindingReport` 放 bundle 顶层而非 `Item` 内** —— `computeChecksum` 只覆盖 `source+components+dependencies`，加顶层字段天然不影响校验；往 `Item` 里加一个键就会让**全部存量 bundle 的 checksum 集体翻红**。
+2. **`warnings` 与 `blockers` 分家** —— 顺带修一个既有缺陷：checksum 不一致的提示原本塞进 `blockers` 但 `canCommit` 仍为 true，而前端只在 `!canCommit` 时渲染 blockers，**那条警告用户从来没看见过**。
+3. **「待绑定」用 DTO 派生，不加库列不写迁移** —— 判据本身是纯函数（FORMULA + 非条件公式 + 无 `formula_id`），附带把 BL-0098 之前遗留的坏配置也一并标出来。
+
+⚠️ **AC-8 往返保真的判定方法经澄清（需求 §3.6 已补）**：「逐字段字面相等」在两处**数学上不可满足** —— ① 真实历史 bundle 的 `formula_id` 是 0/19，不是稳定态，起点须两阶段构造；② `FormulaRefRemapper` 每次导入都重映射到新组件 UUID（这正是 AC-6③ 要的**正确行为**），故 A 与 A″ 的 `cross_tab_ref.source` **必然不同**，字面比法下「remap 正常→失败、remap 删除→通过」方向完全相反。跨组件引用必须按**拓扑等价**判定。
+
+⚠️ **连带作废一条反向门禁设计**：「注释掉某步骤 → 往返对拍必须失败」**检不出**——往返对拍比的是同一份代码连续处理两次的产物，某步骤整体缺失时两侧「一致地错」，字面相等反而成立。往返测试只能检出「两次处理不一致（非幂等）」类回归。门禁已改挂 **AC-6 单次导入断言**（拿原始 bundle 已知值与落库值做单次比较），实测三条均能如实变红。
+
+**验证（技术总监亲验，不采信 agent 代跑）**：
+- 我亲跑 `Tests run: 130, Failures: 0, Errors: 0` BUILD SUCCESS（86 新增 + 38 既有护栏 + 6 G3 重映射）。三个护栏文件 `FormulaIdBinderTest`/`FormulaBindByIdTest`/`FormulaNameResolutionTest` **全程未改动**，它们全绿即证明 B1 动 `resolveFormula` 没有改坏求值口径。
+- **零回归铁证**：干净 master 基线全量 `2224 tests/159 failures/393 errors` vs 分支 `2309/159/393`；失败**方法集合**逐条对拍 —— 基线 319、分支 319、**只在分支失败 0、只在基线失败 0**。
+- 真实端到端（临时实例 8082 + 开发库真实数据）：导出 200 且条件公式逐条出报告（`材料成本 › 规则1/› 默认`）；preview `checksumValid=true`；commit 默认 400 且**落库残留 0**，带开关 200 且 `hasUnboundFormula=true`；consolidate 三种作用域正确收窄。
+- 夹具 18/18 与源文件 **sha256 逐字节一致**；`T0805%` / `ZZ0805%` 残留均为 **0**。
+
+🐛 **过程中修掉的一个假阻断**：`FormulaBindingInspector` 判条件公式时多要求 `rules` 是数组，而 `FormulaIdBinder` 只要 `conditional_formula != null` 就豁免 → 「只配 default 无 rules」的字段会被 **preview 判 UNRESOLVABLE 阻断，而 commit 实际放行**（预览比实际更严）。实测该形态在 18 份包与开发库均 0 命中，属潜伏边界，已对齐判据 + 补用例。
+
+⚠️ **踩坑（重要，下次同类任务必看）**：**两个 agent 在同一个 worktree 并发跑 `mvn` 会互相踩 `target/`**，实测触发三类假故障：`ClassNotFoundException`（类文件正被重写）/ `clean` 删不掉锁定文件 / Quarkus 起不来。后端工程师据此误判为「BL-0095 导致所有 Quarkus 测试起不来」，我据此一度误判为「缺 V380 迁移致 Flyway validate 失败」——**两条归因都是错的**。判据：同一命令重跑即通过 = 争用假象；失败**方法集合**能与基线逐条重合 = 与本次改动无关。**规范：同一 worktree 同一时刻只允许一方跑全量/clean。**
+
+**自检**：`mvnw -o test -Dtest=<task0805 全部+护栏>` → 130/0/0 ✅；全量 A/B 失败集合逐条重合、零回归 ✅；前端 `tsc` 改动文件 0 错误 + `vitest` 1105/2 failed（既有，干净 HEAD 同样失败）✅；5 个改动 tsx/ts + 主入口 Vite transform 全 200 ✅；临时实例已关停、主仓 5174/8081 未受影响（200/401）✅。
+
+**遗留**：① AC-5 真人点击走查未做（agent 无浏览器能力），建议合并后在 5174 上点一遍固化抽屉；② `M-05` 非管理员 403 提示本环境无法构造账号，未验证；③ 全量套件既有 319 个失败方法（共享测试库数据外键冲突）建议单独立项。
