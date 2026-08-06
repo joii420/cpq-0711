@@ -4698,3 +4698,24 @@ E2E:
 - 机械断言（SQL 侧 `COUNT(*) FILTER` 对账）：两个 job 均 `表头与明细逐项吻合 = t`。
 
 **自检**：`./mvnw -o compile` 3 次 0 错误（先加实体方法 → 改 finalizeJob → 改 supersede 调用点，任一中间态可编译）✅；8081 401 ✅；`mvnw -o test -Dtest='com.cpq.priceadjust.**'` → **52 tests, 0 failures** ✅；ZZ47/ZZ61 前缀在 8 张表计数全 0 ✅；未触碰 `CUST-0729-QA` / `CUST-0729-QB` / `CUST-0001`。
+
+---
+
+[2026-08-05] 价格调整策略（task-0729 验收期修复 · 续四） - `#58` 归位 JSON 往返静默丢精度 + `#59⑤` 策略停用/清单清空的撤锁（撤锁族四入口全收口） | 涉及文件：`PriceReconciler.java`（`MAPPER` 配置 / `BatchContext.unlockOnly` / `prefetch` 拆三个私有预取方法 / `reconcileQuotation` 分流 / 类 javadoc） |
+
+**`#58` 根因**：`MAPPER = new ObjectMapper()` 未开 `USE_BIG_DECIMAL_FOR_FLOATS` → `parseArray` 把小数读成 `DoubleNode`，`writeJson` 按 double 最短表示回写。实测 `123456789.123456789` → `123456789.12345679`（真丢 7 位）、`2200.000000` → `2200.0`；整数走 `LongNode` 未损。
+🔑 **爆炸半径是「撤锁」放大的**：改动前作用域外的行组因 `changed==0` 从不落 UPDATE，JSON 往返压根不发生；加撤锁后组内只要**任一行**带锁标记就重写**整个数组**，把无辜兄弟行一起卷进往返 —— `unlockAllRows` 那句「值一个字节都不碰」**在字面层原本不成立**。
+**修法**：`MAPPER` 三项配置缺一不可 —— ① `USE_BIG_DECIMAL_FOR_FLOATS`（否则丢精度）；② `JsonNodeFactory.withExactBigDecimals(true)`（默认 `_cfgBigDecimalExact=false` 会对 BigDecimal 调 `stripTrailingZeros()`，把 `2200.000000` 变成 `2.2E+3`，比丢精度更糟）；③ `WRITE_BIGDECIMAL_AS_PLAIN`（禁止回写科学计数法）。写价分支不受影响（`ep.price` 本就是 BigDecimal）。
+
+**`#59⑤` 根因**：撤锁族原本还剩两个入口在 `prefetch` 里直接短路 —— 策略停用 `return null`、元素清单为空 `return ctx` → 整单锁标记一个键都不动。**入口 B（财务清空元素清单）是日常操作，不是罕见运维**，此前按"罕见"推迟的前提不成立。
+⚠️ **`elementCodesInList.isEmpty()` 那句短路注释（「逐行判定会全部落元素∉清单」）写下时是对的，2026-08-05 给「元素∉清单」补了撤锁动作之后就失效了** —— 全部落"元素∉清单"如今意味着"全部都要撤锁"，短路等于跳过撤锁。**这处注释与代码的不一致是我们自己改出来的**，已连同代码一并更正（新注释显式记录了这段因果，防止下次再按旧理由加回短路）。
+**修法**：`BatchContext.unlockOnly` 整单模式，两处短路改为打标记继续往下走，逐行走 `unlockAllRows`。unlockOnly 下跳过指针/版本明细/实时价/组件 fields 四组查询（只服务取价），保留冻结结构 + component_data 两组（定位待撤锁的行）——E14-7 性能纪律。顺带把 `prefetch` 拆成 `prefetchPricing` / `prefetchComponentFields` / `prefetchRowGroups` 三个私有方法，模式分支才读得清。
+
+**撤锁族四入口现已全部收口**（类 javadoc 内有对照表）：元素∉清单 ✅ / 料号∉范围 ✅ / 策略停用 ✅ / 元素清单为空 ✅。
+
+**验证（合成 `ZZ47-C`，探针行含 `123456789.123456789` / `0.1380000000000000001` / `2200.000000` / `9007199254740993`，验完零残留）**：
+- `#58` 五项全 `t`：探针行（∉清单无锁、被整数组重写卷入）row_data 与 snapshot driverRow **逐字节原样**；`2200.000000` 未变成 `2200.0`/`2.2E+3`；写价分支 `1234.560000` 未被 stripTrailingZeros；撤锁行除两个 `__` 键外逐字节相同。
+- `#59⑤` 四项：入口 A（策略停用）三行锁标记全消失 + row_data 逐字节等于基线（仅去两标记）+ **`ZZ47A` 停留在手工值 111.11 未被取价覆盖**（证明 unlockOnly 只撤锁不取价）；入口 B（清单清空）同样 `rowsChanged=6` 全撤、值不变；不误伤：策略启用且清单非空时行为与改动前完全一致（A→1234.560000+锁，X/P 撤锁值不动）；性能：unlockOnly 且无锁可撤 → `rowsChanged=0` 且 `row_version` 3→3 **不发 UPDATE**。
+- 往返可逆：重新启用策略 → `rowsChanged=2`，A 的价与锁恢复（`V26ZZ4701`），X/P 保持解锁。
+
+**自检**：`./mvnw -o compile` 5 次 0 错误（先加 `unlockOnly` 字段 → 拆预取方法 → 改调用点，任一中间态可编译）✅；8081 401 ✅；`mvnw -o test -Dtest='com.cpq.priceadjust.**'` → **52 tests, 0 failures** ✅；ZZ 前缀在 8 张表计数全 0 ✅；未触碰 `CUST-0729-QA` / `CUST-0729-QB` / `CUST-0001`。

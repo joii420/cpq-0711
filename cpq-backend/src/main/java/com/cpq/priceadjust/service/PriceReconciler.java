@@ -10,6 +10,7 @@ import com.cpq.priceadjust.entity.QuotationPriceRevision;
 import com.cpq.quotation.entity.Quotation;
 import com.cpq.quotation.entity.QuotationLineItem;
 import com.cpq.quotation.service.FormulaCalculator;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -54,9 +55,11 @@ import java.util.UUID;
  * <pre>
  * 元素 ∉ 清单   → ✅ 已撤锁（{@link #reconcileRows} 两个循环，值不动）
  * 料号 ∉ 范围   → ✅ 已撤锁（{@link #unlockAllRows}，值不动）
- * 策略停用      → ⏸ 未撤锁：{@link #prefetch} 返 null 整单短路，改法与现有结构冲突且
- *                 触发频率低（罕见运维操作），已记 BACKLOG，规范上仍要求撤。
+ * 策略停用      → ✅ 已撤锁（{@code BatchContext.unlockOnly} 整单模式，值不动）
+ * 元素清单为空   → ✅ 已撤锁（同上；财务清空清单是日常操作，不是罕见运维）
  * </pre>
+ * 四个入口<b>全部收口</b>（2026-08-05，验收 #59⑤）。原先前两个短路在 {@link #prefetch}
+ * （{@code return null} / {@code return ctx}），整单一个键都不动。
  * 🔒 撤的是<b>可编辑性</b>不是<b>取价</b>：裁决 5 明确料号范围不影响取价，故绝不能顺手改值。
  *
  * <p>🔒 <b>性能纪律（E14-7）</b>：整单一次预取（策略/元素清单/料号范围/指针/版本明细/冻结结构
@@ -71,7 +74,28 @@ import java.util.UUID;
 public class PriceReconciler {
 
     private static final Logger LOG = Logger.getLogger(PriceReconciler.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    /**
+     * 🚨 <b>必须开 {@code USE_BIG_DECIMAL_FOR_FLOATS}（验收 #58）</b>：本类会把整个
+     * {@code snapshot_rows}/{@code row_data} 数组反序列化再原样写回，默认 ObjectMapper 把小数
+     * 读成 {@code DoubleNode}，回写时按 double 最短表示输出 → <b>静默丢精度</b>
+     * （实测 {@code 123456789.123456789} → {@code 123456789.12345679}，
+     * {@code 2200.000000} → {@code 2200.0}）。开了之后走 {@code DecimalNode}，字面原样保留。
+     *
+     * <p>🔒 {@code withExactBigDecimals(true)} 同样不能省：{@code JsonNodeFactory} 默认
+     * ({@code _cfgBigDecimalExact=false}) 会对 BigDecimal 调 {@code stripTrailingZeros()}，
+     * 把 {@code 2200.000000} 变成 {@code 2.2E+3}（比丢精度更难看，且改变 jsonb 字面）。
+     *
+     * <p>🔒 {@code WRITE_BIGDECIMAL_AS_PLAIN}：禁止回写成科学计数法，保持 jsonb 里的十进制字面。
+     *
+     * <p><b>为什么本轮必须修</b>：改动前作用域外的行组因 {@code changed==0} 从不落 UPDATE，
+     * JSON 往返压根不发生；加了「撤锁」之后，组内只要有<b>任一行</b>带锁标记就会重写<b>整个数组</b>，
+     * 把本不该动的兄弟行也卷进往返 —— {@link #unlockAllRows} 那句"值一个字节都不碰"
+     * 在字面层原本并不成立，这行配置才让它成立。
+     */
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+        .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+        .enable(com.fasterxml.jackson.core.JsonGenerator.Feature.WRITE_BIGDECIMAL_AS_PLAIN)
+        .setNodeFactory(com.fasterxml.jackson.databind.node.JsonNodeFactory.withExactBigDecimals(true));
 
     @Inject EntityManager em;
     @Inject FormulaCalculator formulaCalculator;
@@ -148,7 +172,9 @@ public class PriceReconciler {
             // 🔒 料号∉范围：**值一个字节都不碰**（裁决 5：范围不影响取价），但只读三条件已破 →
             //    必须撤锁，否则该单价列永久锁死（需求说明 §11.2.3 补充「移出范围的料号，其单价列
             //    可编辑性随之恢复」/ §11.15.2.6(1)）。与「元素∉清单」同构，两处一起修，不留半边。
-            boolean inScope = ctx.inScope(materialNo);
+            // unlockOnly（策略停用 / 元素清单为空，#59⑤）= 整单退出调价机制 → 无条件走撤锁分支，
+            // 与「料号∉范围」同一出口。
+            boolean inScope = !ctx.unlockOnly && ctx.inScope(materialNo);
             if (inScope) result.lineItemsInScope++;
 
             for (UpgradeResult.PriceBearingComponent pbc : ctx.priceBearingComponents) {
@@ -340,6 +366,16 @@ public class PriceReconciler {
     // -------------------------------------------------------------------------
 
     static final class BatchContext {
+        /**
+         * 整单「只撤锁」模式（验收 #59⑤）：作用域三条件里与料号无关的两条整体不成立 ——
+         * <b>策略停用</b> 或 <b>元素清单为空</b>。此时全单每一行都该恢复可编辑，故走
+         * {@link #unlockAllRows}：只撤 {@code __priceLocked}/{@code __priceVersion}，
+         * <b>不取价、不改任何业务值</b>。
+         *
+         * <p>此模式下 prefetch 会跳过指针/版本明细/实时价/组件 fields 四组查询（都只服务于取价），
+         * 只留冻结结构 + component_data 两组（定位要撤锁的行）—— E14-7 性能纪律。
+         */
+        boolean unlockOnly;
         boolean allMode;
         Set<String> elementCodesInList = new HashSet<>();
         Set<String> specifiedMaterials = new HashSet<>();
@@ -370,18 +406,32 @@ public class PriceReconciler {
         String customerNo = customer.code;
 
         CustomerPriceAdjustStrategy strategy = CustomerPriceAdjustStrategy.findByCustomerNo(customerNo);
-        if (strategy == null || !Boolean.TRUE.equals(strategy.enabled)) return null; // 策略启用是三条件之一
 
         BatchContext ctx = new BatchContext();
-        for (CustomerPriceAdjustElement e : CustomerPriceAdjustElement.listByStrategy(strategy.id)) {
-            ctx.elementCodesInList.add(e.elementCode);
+        boolean strategyActive = strategy != null && Boolean.TRUE.equals(strategy.enabled);
+        if (strategyActive) {
+            for (CustomerPriceAdjustElement e : CustomerPriceAdjustElement.listByStrategy(strategy.id)) {
+                ctx.elementCodesInList.add(e.elementCode);
+            }
         }
-        if (ctx.elementCodesInList.isEmpty()) return ctx; // 清单为空，逐行判定会全部落"元素∉清单"，直接短路返回空 ctx 也对，但保留结构一致性
 
-        ctx.allMode = !"SPECIFIED".equals(strategy.materialScopeMode);
-        if (!ctx.allMode) {
-            for (CustomerPriceAdjustMaterial m : CustomerPriceAdjustMaterial.listByStrategy(strategy.id)) {
-                ctx.specifiedMaterials.add(m.materialNo);
+        // 🚨 验收 #59⑤：这两种情况以前分别 `return null`（策略停用）和 `return ctx`（清单为空）
+        //    直接短路 → 整单锁标记一个键都不动 → 销售永久改不了单价，且无绕开手段。
+        //    「停用策略」「清空元素清单」正是业务上"退出调价机制"的正规操作（后者更是财务日常），
+        //    退出后必须恢复可编辑。改为标记 unlockOnly 继续往下走，逐行只撤锁。
+        //
+        //    ⚠️ 原 `elementCodesInList.isEmpty()` 短路的注释理由是「逐行判定会全部落元素∉清单」——
+        //    那句话在写下时是对的，但 2026-08-05 给「元素∉清单」补了撤锁动作之后就失效了：
+        //    全部落"元素∉清单"如今意味着"全部都要撤锁"，短路等于把撤锁跳过。**这处不一致是我们
+        //    自己改出来的**，注释与代码一起在此更正。
+        ctx.unlockOnly = !strategyActive || ctx.elementCodesInList.isEmpty();
+
+        if (!ctx.unlockOnly) {
+            ctx.allMode = !"SPECIFIED".equals(strategy.materialScopeMode);
+            if (!ctx.allMode) {
+                for (CustomerPriceAdjustMaterial m : CustomerPriceAdjustMaterial.listByStrategy(strategy.id)) {
+                    ctx.specifiedMaterials.add(m.materialNo);
+                }
             }
         }
 
@@ -394,6 +444,32 @@ public class PriceReconciler {
         }
         if (materialNos.isEmpty()) return ctx;
 
+        // 🔒 unlockOnly 下面四组查询（指针/版本明细/实时价/组件 fields）全部只服务于"取价"，
+        //    只撤锁时一个都不需要 → 直接跳过，别白查（E14-7 性能纪律）。
+        if (!ctx.unlockOnly) {
+            prefetchPricing(ctx, q, customerNo, materialNos);
+        }
+
+        // 冻结结构 → 价格承载组件（两种模式都要：撤锁也得先知道哪些组件是价格承载组件）
+        JsonNode frozenTabs = loadFrozenQuoteTabs(q.id);
+        ctx.priceBearingComponents = upgradeService.locatePriceBearingComponents(frozenTabs);
+        if (ctx.priceBearingComponents.isEmpty()) return ctx;
+
+        List<UUID> componentIds = new ArrayList<>();
+        for (UpgradeResult.PriceBearingComponent pbc : ctx.priceBearingComponents) {
+            componentIds.add(UUID.fromString(pbc.componentId));
+        }
+
+        if (!ctx.unlockOnly) {
+            prefetchComponentFields(ctx, componentIds);
+        }
+
+        prefetchRowGroups(ctx, componentIds);
+        return ctx;
+    }
+
+    /** 取价相关的三组批量预取（指针 / 版本明细 / 实时价）。仅非 unlockOnly 模式调用。 */
+    private void prefetchPricing(BatchContext ctx, Quotation q, String customerNo, Set<String> materialNos) {
         // 指针（一次批量）
         @SuppressWarnings("unchecked")
         List<Object[]> ptrRows = em.createNativeQuery(
@@ -443,18 +519,10 @@ public class PriceReconciler {
             String currency = (String) r[2];
             ctx.realtimePrices.put(ec, new ElementPrice(price, currency));
         }
+    }
 
-        // 冻结结构 → 价格承载组件（一次批量，全部产品行共用同一份 QUOTE_CARD 结构）
-        JsonNode frozenTabs = loadFrozenQuoteTabs(q.id);
-        ctx.priceBearingComponents = upgradeService.locatePriceBearingComponents(frozenTabs);
-        if (ctx.priceBearingComponents.isEmpty()) return ctx;
-
-        List<UUID> componentIds = new ArrayList<>();
-        for (UpgradeResult.PriceBearingComponent pbc : ctx.priceBearingComponents) {
-            componentIds.add(UUID.fromString(pbc.componentId));
-        }
-
-        // 组件 fields（一次批量）
+    /** 组件 fields（一次批量）。仅非 unlockOnly 模式需要——它只服务于 driverRow 的按字段名解析取价。 */
+    private void prefetchComponentFields(BatchContext ctx, List<UUID> componentIds) {
         @SuppressWarnings("unchecked")
         List<Object[]> fieldRows = em.createNativeQuery(
                 "SELECT id, fields FROM component WHERE id = ANY(:ids)")
@@ -469,8 +537,10 @@ public class PriceReconciler {
                 ctx.fieldsByComponent.put(cid.toString(), MAPPER.createArrayNode());
             }
         }
+    }
 
-        // component_data（一次批量，覆盖全部产品行 × 全部价格承载组件）
+    /** component_data（一次批量，覆盖全部产品行 × 全部价格承载组件）。两种模式都要。 */
+    private void prefetchRowGroups(BatchContext ctx, List<UUID> componentIds) {
         List<UUID> lineIds = new ArrayList<>();
         for (QuotationLineItem li : ctx.lines) lineIds.add(li.id);
         @SuppressWarnings("unchecked")
@@ -491,8 +561,6 @@ public class PriceReconciler {
             rg.rowVersion = ((Number) r[5]).longValue();
             ctx.rowGroups.put(lineItemId + "|" + componentId, rg);
         }
-
-        return ctx;
     }
 
     /** 同 {@code MaterialVersionUpgradeService#loadFrozenQuoteTabsNative} 的极简查询，独立持有
