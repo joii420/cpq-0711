@@ -22,8 +22,16 @@ public class CustomerPriceAdjustStrategy extends PanacheEntityBase {
     @Column(name = "customer_no", nullable = false, length = 64)
     public String customerNo;
 
+    /**
+     * 🔒 <b>默认关闭</b>（task-0729 需求变更，V380）：业务方明确「客户的价格调整策略默认为关闭状态」。
+     *
+     * <p>此初始值服务的是 {@code PriceAdjustStrategyService#findOrCreateStrategy} 那条路径
+     * （保存料号范围 / 元素清单时顺带建策略，不经过策略 PUT）。走策略 PUT 的新建分支由
+     * {@code doPutStrategy} 显式给 {@code Boolean.FALSE}，<b>两处都得是 false 才算数</b>
+     * ——只改这里会被 PUT 的显式赋值绕过。
+     */
     @Column(name = "enabled", nullable = false)
-    public Boolean enabled = true;
+    public Boolean enabled = false;
 
     @Column(name = "cycle_type", nullable = false, length = 20)
     public String cycleType = "MONTHLY_DAY";
