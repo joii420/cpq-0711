@@ -2208,3 +2208,50 @@ task-0721 B8 修复合并    2026-07-21
   2. **语法高亮**：`FormulaRichInput`/`parseFormulaSegments` 未给 `tree_ref`/`tree_attr` 做专属着色；`[层级]` 走既有"无点裸字段"分支（紫色，不报错但非专属高亮），`PGET(...)` 函数名不着色 —— 与既有 `SUM`/`KSUM` 同样不着色的行为一致，**非本次引入的新缺口**。
 - **依赖**：无。**预估规模**：S
 
+
+### [BL-0130] `QuotationLineItem` 并发写「同一列」仍是后写覆盖先写 —— `@Version` 乐观锁根治
+- **优先级**：P1
+- **来源**：方向3 修法② 交付（2026-08-06），由 `@DynamicUpdate` 的已知边界引出
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-06
+- **背景**：本轮已用 `@DynamicUpdate` 修掉「并发事务改**不同列**却整行互相覆盖」——根因是 Hibernate 默认全列 UPDATE，值取自实体**加载那一刻**的内存快照，与业务代码写没写那一列无关。A/B 定量：`annual_volume` 哨兵存活 OFF **0/8** → ON **8/8**（OFF 下 100% 丢失）。
+- **剩余缺口**：两个事务改**同一列**时仍是 last-write-wins，`@DynamicUpdate` 管不了。
+- **为什么本轮没做**：`QuotationLineItem` 写点众多（saveDraft / warm / editCardValue / 树删除 / 升版 / submit …），加 `@Version` 后每一处都要处理 `OptimisticLockException`（重试？报错？合并？），是独立设计题而非一行注解。
+- **范围**：评估 `@Version` 可行性；逐个写点定义冲突语义；确认前端能否承受「保存冲突请重试」这类交互。
+- **依赖**：建议在 BL-0132（`saveDraft` 增量失效）之后做——并发面收窄后冲突概率下降，改造风险更低。**预估规模**：L
+- **验收要点**：并发改同一列时冲突可被检测（而非静默覆盖）；所有写点都有明确的冲突处理；不引入新的 500。
+
+### [BL-0131] warm × saveDraft 并发更新 `quotation_line_item` 触发 PG ABBA 死锁（既有）
+- **优先级**：P2
+- **来源**：方向3 竞态实测（2026-08-06）
+- **状态**：TODO（未排期）　**登记日期**：2026-08-06
+- **现象**：`ensure-card-values`(warm) 与 `saveDraft` 并发更新**同一批** `quotation_line_item` 行，两者**加锁顺序不同** → ABBA 环 → PG 检测并杀掉一方。日志原文：
+  ```
+  ERROR: deadlock detected
+  Detail: Process 1647548 waits for ShareLock on transaction 7489398; blocked by process 1647549.
+         Process 1647549 waits for ShareLock on transaction 7489399; blocked by process 1647548.
+  Where: while updating tuple (7,8) in relation "quotation_line_item"
+  → jakarta.persistence.PessimisticLockException ← LockAcquisitionException ← PSQLException(40P01) → HTTP 500
+  ```
+- **复现**：10 行单，warm 起飞后 **0.05~0.10s** 内发 saveDraft。发生率 **7~8 / 8**。
+  ⚠️ **需 ≥2 行**才能形成加锁顺序环；**1 行单 0/8**（两者串行，无序可乱）。
+- **耗时构成**（勿误判成 JTA 超时）：`deadlock_timeout=1s` 是**检测前的等待**，总耗时 = 冲突前已跑时间(0.5~1.9s) + 1s + 回滚 ≈ **1.5~2.9s**；JTA 超时是 **60.1s**，两者量级差 20 倍，看耗时即可区分。
+- **非 `@DynamicUpdate` 所致**：A/B 10 行组 OFF **7/8** vs ON **8/8**，基本相同。
+- **用户可见性≈0**：被杀的**永远是 warm、从不是 saveDraft**（0/16）。warm 是 fire-and-forget，死了卡片值留 NULL，下次 ensure 重算 → **自愈**，用户编辑从未因此丢失。故列 P2。
+- **范围**：统一两条路径的行加锁顺序（如都按 `id` 排序更新）；或让 warm 遇死锁自动重试。
+- **依赖**：与 BL-0132 同根因族。**预估规模**：M
+
+### [BL-0132] `saveDraft` 改增量失效（只 NULL 真正变动的行）
+- **优先级**：P1
+- **来源**：方向3 性能与竞态分析（2026-08-06）
+- **状态**：TODO（未排期）　**登记日期**：2026-08-06
+- **背景**：`saveDraft` 目前**无条件把全单卡片值置 NULL**（`QuotationService:505`，对 payload 里每一行），于是**每一次 autoSave 防抖都触发整单重算**。实测 warm 耗时 1/3/5/10 行 = 525/595/689/**1708**ms，近似线性（与测试独立拟合的 `T(N)≈0.44+0.065N` 吻合）。10 行单 = 每次 autoSave 付 1.7s 后端重算。
+- **它是三个已知问题的共同根因**：
+  1. 提交 409（warm 占单飞锁 → 本轮用 8s 有界等锁**止血**，但 8s≈116 行，130~180 行大单仍会 409）
+  2. BL-0131 的死锁（并发面越大越容易撞）
+  3. 提交金额静默错值（本轮用修法① 强制重算止血）
+- 🔴 **改动时的强制注意（反直觉，务必读）**：10 行单下 warm 几乎**必死**于 BL-0131 的死锁（7~8/8），warm 回滚 → **它没机会覆盖 saveDraft 的写入**。也就是说**死锁在意外地挡住陈旧覆盖**，数据丢失主要发生在**小单**（1 行，warm 能成功，实测 8/8 丢失）。这解释了该缺陷为何能长期存活——大单被死锁掩盖、小单金额差异不显眼。
+  ⇒ **修增量失效会顺带拆掉这层意外保护**：并发面收窄后 warm 更容易跑成功，原本被死锁挡下的覆盖路径会**开始生效**。所以本项**必须在 BL-0130（`@Version`）之前或同时评估**，不能只看到「并发变少了」就以为更安全。
+- **范围**：识别「哪些行真的变了」（row_data / snapshot_rows / 结构）→ 只失效这些行；需与前端 payload 语义对齐。
+- **依赖**：无（但见上面的联动警告）。**预估规模**：L
+- **验收要点**：①未改动的行卡片值不被置 NULL；②warm 耗时随改动行数而非总行数增长；③提交 409 率显著下降；④**回归覆盖小单场景的陈旧覆盖**（拆掉死锁保护后的新暴露面）。
