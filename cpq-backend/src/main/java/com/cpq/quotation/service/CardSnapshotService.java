@@ -1799,7 +1799,7 @@ public class CardSnapshotService {
 
         // 草稿重刷：旧 editRows 按 rowKey 对齐到新 baseRows，丢弃新数据中不存在的 rowKey（AP-54 业务键对齐）
         Map<String, ArrayNode> filteredEdit = filterEditRowsToNewBaseRows(
-            snapshot, baseRowsByComp, editRowsByComp, rkfByComp, emptyEdit);
+            snapshot, baseRowsByComp, editRowsByComp, rkfByComp, emptyEdit, delByComp);
 
         // BL-0127 回种：必须放在 filterEditRowsToNewBaseRows **之后** —— 该方法按不带 __nodeId 前缀的
         // computeRowKey 建 newKeys 集合，而回种产出的是带前缀的权威键（buildRawRowKeys），
@@ -2246,10 +2246,19 @@ public class CardSnapshotService {
     /**
      * 草稿重刷：把旧 editRows 按 rowKey 叠加到新 baseRows 行键集合上，丢弃新数据里不存在的 rowKey。
      * editRowsByComp 为 null（加产品/核价）→ 返回空映射（editRows 恒空）。
+     *
+     * <p><b>BL-0127</b>：合法键集合必须同时含<b>两档口径</b> ——
+     * ① {@code computeRowKey} 的内容键（无 {@code __nodeId} 前缀，本方法原有口径）；
+     * ② {@link FormulaCalculator#buildRawRowKeys} 的权威键（报价侧树页签带 {@code nodeId::} 前缀）。
+     * 只认 ① 会把带前缀的 editRows <b>整批丢掉</b> —— 而带前缀正是
+     * {@code computeRows}/{@code buildResolvedRows} 查表用的键，也是 repair-0805 F5 之后
+     * {@code editCardValue} 写进来的键。实测：树页签「物料」6 行回种全被这里过滤，
+     * 非树页签只有恰好无前缀的行侥幸存活（6 行里活 2 行）。
      */
     private Map<String, ArrayNode> filterEditRowsToNewBaseRows(
             JsonNode snapshot, Map<String, ArrayNode> baseRowsByComp,
-            Map<String, ArrayNode> editRowsByComp, Map<String, JsonNode> rkfByComp, ArrayNode emptyEdit) {
+            Map<String, ArrayNode> editRowsByComp, Map<String, JsonNode> rkfByComp, ArrayNode emptyEdit,
+            Map<String, List<DeletedRowKeys.Tombstone>> delByComp) {
         Map<String, ArrayNode> filtered = new LinkedHashMap<>();
         if (editRowsByComp == null || editRowsByComp.isEmpty()) return filtered;
         for (JsonNode tab : snapshot) {
@@ -2272,6 +2281,10 @@ public class CardSnapshotService {
             }
             java.util.Set<String> newKeys = new java.util.HashSet<>(
                     FormulaCalculator.uniquifyRowKeys(rawNewKeys));
+            // BL-0127：并入带 __nodeId 前缀的权威键（报价侧树页签），否则这一档 editRows 会被整批丢掉
+            List<DeletedRowKeys.Tombstone> del = (delByComp == null) ? null : delByComp.get(cid);
+            newKeys.addAll(FormulaCalculator.uniquifyRowKeys(
+                    formulaCalculator.buildRawRowKeys(rkf, fieldsDef, baseRows, del)));
 
             ArrayNode kept = MAPPER.createArrayNode();
             for (JsonNode er : oldEdits) {
@@ -2390,7 +2403,7 @@ public class CardSnapshotService {
                 String baseContentKey = formulaCalculator.computeRowKey(
                     rkf, fieldsDef, br.path("driverRow"), br.path("basicDataValues"));
                 if (baseContentKey != null && !baseContentKey.isEmpty() && !rkfNames.isEmpty()) {
-                    if (!sameContentKey(baseContentKey, contentKeyOfFlatRow(rkfNames, flat))) { skipped++; continue; }
+                    if (!flatRowMatchesContentKey(baseContentKey, rkfNames, flat)) { skipped++; continue; }
                 }
 
                 ObjectNode values = MAPPER.createObjectNode();
@@ -2415,30 +2428,37 @@ public class CardSnapshotService {
         }
     }
 
-    /** 扁平行（字段名 → 值）按行键字段名拼内容键，与 {@code computeRowKey} 的 {@code ||} 拼接口径一致。 */
-    private static String contentKeyOfFlatRow(List<String> rkfNames, JsonNode flat) {
-        List<String> parts = new ArrayList<>(rkfNames.size());
-        for (String n : rkfNames) {
-            JsonNode v = flat.get(n);
-            parts.add((v == null || v.isNull()) ? "" : v.asText(""));
-        }
-        return String.join("||", parts);
-    }
-
-    /** 内容键比对：先逐字比；不等再按段做数值比（{@code 25} vs {@code 25.0} 属同值，JSON 类型漂移常见）。 */
-    private static boolean sameContentKey(String a, String b) {
-        if (a.equals(b)) return true;
-        String[] pa = a.split("\\|\\|", -1);
-        String[] pb = b.split("\\|\\|", -1);
-        if (pa.length != pb.length) return false;
-        for (int i = 0; i < pa.length; i++) {
-            if (pa[i].equals(pb[i])) continue;
-            try {
-                if (new java.math.BigDecimal(pa[i]).compareTo(new java.math.BigDecimal(pb[i])) == 0) continue;
-            } catch (Exception ignore) { /* 非数值 → 判不等 */ }
-            return false;
+    /**
+     * 行对齐校验：扁平行（字段名 → 值）与该 baseRow 的内容键比对。
+     *
+     * <p><b>只比对扁平行里<u>确实存在</u>的行键段</b>，缺失段视作「无证据」而非「不匹配」——
+     * 行键常含 driver 侧才有的字段（如 {@code 销售料号}），{@code row_data} 里天然没有这一段；
+     * 若把缺失当不匹配，会把大量对齐正常的行误判成错位而拒绝回种（实测：三个页签 10 行全被误拒）。
+     *
+     * <p>一段可比段都没有时返回 {@code true} = 退回位置信任 —— 与本方法引入前的既有实现
+     * （{@code Math.min} 纯下标配对）同等信任级别，不会更糟；有可比段时任一段不符即判错位。
+     */
+    private static boolean flatRowMatchesContentKey(String baseKey, List<String> rkfNames, JsonNode flat) {
+        String[] baseParts = baseKey.split("\\|\\|", -1);
+        if (baseParts.length != rkfNames.size()) return true;   // 口径不可比 → 不作为否决依据
+        for (int i = 0; i < rkfNames.size(); i++) {
+            JsonNode v = flat.get(rkfNames.get(i));
+            if (v == null || v.isNull()) continue;              // 扁平行没这一段 → 无证据
+            String s = v.asText("");
+            if (s.isEmpty()) continue;
+            if (!samePart(baseParts[i], s)) return false;
         }
         return true;
+    }
+
+    /** 单段比对：先逐字比，再做数值比（{@code 25} vs {@code 25.0} 属同值，JSON 类型漂移常见）。 */
+    private static boolean samePart(String a, String b) {
+        if (a.equals(b)) return true;
+        try {
+            return new java.math.BigDecimal(a).compareTo(new java.math.BigDecimal(b)) == 0;
+        } catch (Exception ignore) {
+            return false;   // 非数值 → 判不等
+        }
     }
 
     /**
