@@ -325,6 +325,17 @@ export interface ElementChangeDTO {
 
 export type ComparisonCellStatus = 'NORMAL' | 'RED' | 'AMBER' | 'MISSING' | 'STALE';
 
+/**
+ * status=MISSING 时的缺失侧，与后端 `ComparisonColumnEvaluator` 三态严格对齐：
+ * 两侧都取不到值 → `BOTH`，否则按缺的那一侧 `QUOTE` / `COSTING`。
+ *
+ * 🔒 消费方必须用**完整映射/穷举分支**（如 `Record<ComparisonMissingSide, string>`），
+ *    禁止 `x === 'QUOTE' ? A : B` 这类二元判断 —— 那会让新枚举值静默落进 else
+ *    （2026-08-05 实修：`BOTH` 曾被显示成「核价侧」，把业务排查方向带偏）。
+ *    用映射表时，后端再加枚举值会在这里被 tsc 直接报出来。
+ */
+export type ComparisonMissingSide = 'QUOTE' | 'COSTING' | 'BOTH';
+
 export interface ComparisonColumnResultDTO {
   columnId: string;
   label: string;
@@ -338,7 +349,7 @@ export interface ComparisonColumnResultDTO {
   diffAdjusted?: number | null;
   status: ComparisonCellStatus;
   /** status=MISSING 时标注缺失侧 */
-  missingSide?: 'QUOTE' | 'COSTING';
+  missingSide?: ComparisonMissingSide;
 }
 
 export interface ReviewQuotationDTO {

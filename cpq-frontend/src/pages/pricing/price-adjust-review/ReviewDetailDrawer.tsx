@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { priceAdjustService } from '../../../services/priceAdjustService';
 import type {
   ReviewDetailDTO, ElementChangeDTO, ComparisonColumnResultDTO, ReviewQuotationDTO,
+  ComparisonMissingSide,
 } from '../../../types/price-adjust';
 
 const { Text } = Typography;
@@ -26,6 +27,19 @@ function fmtRate(v: number | null | undefined): { text: string; color?: string }
   if (v < 0) return { text: `${pct}%`, color: '#389e0d' };
   return { text: `${pct}%` };
 }
+
+/**
+ * 缺失侧文案：**全量映射，不用二元三元**。
+ * 后端 `ComparisonColumnEvaluator` 产出 QUOTE / COSTING / BOTH 三态，原写法
+ * `=== 'QUOTE' ? '报价侧' : '核价侧'` 让 BOTH 静默落进 else 显示成「核价侧」，
+ * 把业务排查方向带偏（实际两侧都没数据）。用 Record 后，后端再加枚举值时
+ * 这里会直接编译不过，而不是又静默错一次。
+ */
+const MISSING_SIDE_LABEL: Record<ComparisonMissingSide, string> = {
+  QUOTE: '报价侧',
+  COSTING: '核价侧',
+  BOTH: '两侧',
+};
 
 const cellStyle: Record<ComparisonColumnResultDTO['status'], React.CSSProperties> = {
   RED: { background: '#fff1f0', color: '#cf1322' },
@@ -88,7 +102,7 @@ const ReviewDetailDrawer: React.FC<ReviewDetailDrawerProps> = ({ open, reviewId,
     {
       title: '差异', dataIndex: 'diffAdjusted', align: 'right' as const,
       render: (v: number | null, r: ComparisonColumnResultDTO) => {
-        if (r.status === 'MISSING') return <span style={cellStyle.MISSING}>—（缺核价数据{r.missingSide ? `：${r.missingSide === 'QUOTE' ? '报价侧' : '核价侧'}` : ''}）</span>;
+        if (r.status === 'MISSING') return <span style={cellStyle.MISSING}>—（缺核价数据{r.missingSide ? `：${MISSING_SIDE_LABEL[r.missingSide]}` : ''}）</span>;
         if (r.status === 'STALE') return <Tooltip title="该比对列配置已失效（模板改版后 componentId/指标找不到），不计入标红判定"><span style={cellStyle.STALE}>已失效</span></Tooltip>;
         return <b>{fmt(v)}</b>;
       },
