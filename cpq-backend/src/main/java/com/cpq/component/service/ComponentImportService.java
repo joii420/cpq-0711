@@ -105,7 +105,23 @@ public class ComponentImportService {
         }
         Set<String> existing = queryExistingCodes(bundleCodes);
 
+        // task-0805 R5/AC-7：bundle 内已知 Item.id 集合 + 是否存在 id 缺失的老格式条目
+        // （用于判断「跨组件引用无法重映射」的 reason：BUNDLE_MISSING_ITEM_ID vs REF_NOT_IN_BUNDLE）。
+        Set<String> bundleItemIds = new LinkedHashSet<>();
+        boolean hasNullOrBlankId = false;
+        for (ComponentExportBundle.Item it : bundle.components) {
+            if (it.id != null && !it.id.isBlank()) {
+                bundleItemIds.add(it.id);
+            } else {
+                hasNullOrBlankId = true;
+            }
+        }
+
         List<ImportPreviewResult.ComponentPlan> plans = new ArrayList<>();
+        List<FormulaBindingInspector.Report> bindingReports = new ArrayList<>();
+        List<ImportPreviewResult.CrossRefIssue> crossRefIssues = new ArrayList<>();
+        List<String> unresolvableBlockerLines = new ArrayList<>();
+        int resolvedByPositionCount = 0;
         int create = 0, rename = 0, skip = 0, conflicts = 0;
         for (ComponentExportBundle.Item it : bundle.components) {
             ImportPreviewResult.ComponentPlan p = new ImportPreviewResult.ComponentPlan();
@@ -130,9 +146,42 @@ public class ComponentImportService {
                     }
                 }
             }
+
+            // ── R2：逐字段公式绑定去向（复现 commit 第三遍的处理顺序，全程内存副本，绝不写库）──
+            FormulaBindingInspector.Report binding =
+                    FormulaBindingInspector.inspect(it.code, it.name, it.fields, it.formulas);
+            bindingReports.add(binding);
+            p.formulaBinding = toPlanBindingItems(binding);
+
+            // action=SKIP/ABORT 的组件根本不会落库，其 UNRESOLVABLE 不计入 blockers（只给 CREATE/RENAME）。
+            boolean willImport = "CREATE".equals(p.action) || "RENAME".equals(p.action);
+            for (FormulaBindingInspector.Item item : binding.items) {
+                if ("RESOLVED_BY_POSITION".equals(item.status)) {
+                    resolvedByPositionCount++;
+                }
+                if (willImport && "UNRESOLVABLE".equals(item.status)) {
+                    unresolvableBlockerLines.add(
+                            "组件「" + it.name + "」(" + it.code + ") 的字段「" + item.fieldName + "」" + item.message);
+                }
+            }
+
+            // ── R5/AC-7：跨组件引用（cross_tab_ref.source）是否能在 bundle 内找到对应 Item.id ──
+            for (String ref : extractAllUuidRefs(it.formulas)) {
+                if (bundleItemIds.contains(ref)) continue; // 指向 bundle 内已知条目，导入时可被 idMap 正确重映射
+                ImportPreviewResult.CrossRefIssue issue = new ImportPreviewResult.CrossRefIssue();
+                issue.componentCode = it.code;
+                issue.refType = "UUID";
+                issue.ref = ref;
+                // bundle 内存在 id 缺失的老格式条目时，无法排除该 ref 正指向那个条目 → 判定含糊；
+                // 否则 bundle 内 id 齐全，unmatched 就是确凿的外部引用。
+                issue.reason = hasNullOrBlankId ? "BUNDLE_MISSING_ITEM_ID" : "REF_NOT_IN_BUNDLE";
+                crossRefIssues.add(issue);
+            }
+
             plans.add(p);
         }
         r.components = plans;
+        r.crossRefIssues = crossRefIssues;
 
         ImportPreviewResult.Summary s = new ImportPreviewResult.Summary();
         s.total = plans.size();
@@ -141,6 +190,35 @@ public class ComponentImportService {
         s.toSkip = skip;
         s.conflicts = conflicts;
         r.summary = s;
+
+        // ── R2：全 bundle 绑定汇总（不分 action，覆盖 bundle 内全部组件）──
+        FormulaBindingInspector.Report merged = FormulaBindingInspector.merge(bindingReports);
+        ImportPreviewResult.BindingSummary bs = new ImportPreviewResult.BindingSummary();
+        bs.totalFormulaRefs = merged.totalFormulaRefs;
+        bs.unresolvable = merged.unboundCount;
+        for (FormulaBindingInspector.Item item : merged.items) {
+            switch (item.status) {
+                case "BOUND" -> bs.bound++;
+                case "RESOLVED_BY_NAME" -> bs.resolvedByName++;
+                case "RESOLVED_BY_POSITION" -> bs.resolvedByPosition++;
+                default -> { /* UNRESOLVABLE 已计入 unresolvable，无需重复累加 */ }
+            }
+        }
+        r.bindingSummary = bs;
+
+        // ── §1.2：warnings（高优先级但不阻断，前端必须无条件渲染）──
+        r.warnings = new ArrayList<>();
+        if (!r.checksumValid) {
+            // checksum 不一致改为 warning（不再塞进 blockers；旧实现塞进 blockers 但从不影响
+            // canCommit，前端却只在 !canCommit 时渲染 blockers，导致这条提示用户永远看不到）。
+            r.warnings.add("⚠ checksum 校验不一致(bundle 可能被改动或损坏),请确认来源");
+        }
+        if (!crossRefIssues.isEmpty()) {
+            r.warnings.add("⚠ " + crossRefIssues.size() + " 处跨组件引用无法重映射，详见 crossRefIssues");
+        }
+        if (resolvedByPositionCount > 0) {
+            r.warnings.add("⚠ " + resolvedByPositionCount + " 处公式绑定按位置推导而来，请核对是否正确");
+        }
 
         // ── 是否可提交 ────────────────────────────────────────────
         boolean canCommit = true;
@@ -152,12 +230,28 @@ public class ComponentImportService {
             canCommit = false;
             r.blockers.add("存在 " + conflicts + " 个 code 冲突,ABORT 策略下整体中止");
         }
-        if (!r.checksumValid) {
-            // checksum 不一致仅警告,不强制阻止(允许手工编辑后的 bundle)
-            r.blockers.add("⚠ checksum 校验不一致(bundle 可能被改动或损坏),请确认来源");
+        if (!unresolvableBlockerLines.isEmpty()) {
+            // R3：默认仍阻断提交；commit 端 ignoreUnboundFormulas=true 时可显式放行（见 §2.3）。
+            canCommit = false;
+            r.blockers.addAll(unresolvableBlockerLines);
         }
         r.canCommit = canCommit;
         return r;
+    }
+
+    /** FormulaBindingInspector.Item → ComponentPlan.formulaBinding 的每项(去掉 componentCode/componentName)。 */
+    private List<ImportPreviewResult.FormulaBindingItem> toPlanBindingItems(FormulaBindingInspector.Report report) {
+        List<ImportPreviewResult.FormulaBindingItem> out = new ArrayList<>(report.items.size());
+        for (FormulaBindingInspector.Item it : report.items) {
+            ImportPreviewResult.FormulaBindingItem fi = new ImportPreviewResult.FormulaBindingItem();
+            fi.fieldName = it.fieldName;
+            fi.resolvedFormulaId = it.resolvedFormulaId;
+            fi.resolvedFormulaName = it.resolvedFormulaName;
+            fi.status = it.status;
+            fi.message = it.message;
+            out.add(fi);
+        }
+        return out;
     }
 
     /**
@@ -174,10 +268,15 @@ public class ComponentImportService {
      * 恰好如此的偶然行为；后续若要改成"按组件粒度部分提交"需先过架构评审。
      *
      * @param ignoreMissingDeps true 时即使依赖缺失也继续(相关字段运行时取数可能失败)
+     * @param ignoreUnboundFormulas task-0805 R3：true 时即使存在未显式绑定的 FORMULA 字段
+     *        也继续(默认 false 时行为逐字节不变——{@link FormulaIdBinder#validateExplicitBinding}
+     *        抛出 400，单事务整体回滚)。放行时不足以固化的字段会被记入
+     *        {@link ImportCommitResult#unboundWarnings}，供该组件在组件管理中标记「待绑定」。
      */
     @Transactional
     public ImportCommitResult commit(UUID targetDirId, ComponentExportBundle bundle,
-                                     String conflictPolicy, boolean ignoreMissingDeps) {
+                                     String conflictPolicy, boolean ignoreMissingDeps,
+                                     boolean ignoreUnboundFormulas) {
         ComponentDirectory dir = ComponentDirectory.findById(targetDirId);
         if (dir == null) {
             throw new BusinessException(404, "目标目录不存在: " + targetDirId);
@@ -214,6 +313,7 @@ public class ComponentImportService {
         result.conflictPolicy = policy;
         result.created = new ArrayList<>();
         result.skipped = new ArrayList<>();
+        result.unboundWarnings = new ArrayList<>();
         int sqlViews = 0;
 
         // ── 第一遍：创建所有新组件，同时收集 idMap / codeMap ─────────────────
@@ -345,7 +445,21 @@ public class ComponentImportService {
 
                 FormulaIdBinder.ensureFormulaIds(formulaList);
                 FormulaIdBinder.bindFormulaIdsToFields(fieldList, formulaList);
-                FormulaIdBinder.validateExplicitBinding(fieldList);
+                // task-0805 R3：默认行为逐字节不变——validateExplicitBinding 直接抛出 IllegalArgumentException，
+                // 由本方法下面的 catch 块加上下文前缀后继续往外抛（整包回滚）。
+                // ignoreUnboundFormulas=true 时改走 listUnboundFormulaFields 记录清单放行，
+                // 两个分支复用同一份「谁未绑定」的判断（FormulaIdBinder 内部单一口径），
+                // 不使用 try/catch(IllegalArgumentException) 吞异常——那会连带吞掉本循环里其它来源的 IAE。
+                if (ignoreUnboundFormulas) {
+                    for (String fieldName : FormulaIdBinder.listUnboundFormulaFields(fieldList)) {
+                        ImportCommitResult.UnboundWarning w = new ImportCommitResult.UnboundWarning();
+                        w.componentCode = c.code;
+                        w.fieldName = fieldName;
+                        result.unboundWarnings.add(w);
+                    }
+                } else {
+                    FormulaIdBinder.validateExplicitBinding(fieldList);
+                }
 
                 c.fields = MAPPER.writeValueAsString(fieldList);
                 c.formulas = MAPPER.writeValueAsString(formulaList);
@@ -369,6 +483,7 @@ public class ComponentImportService {
 
         result.createdCount = result.created.size();
         result.skippedCount = result.skipped.size();
+        result.unboundCount = result.unboundWarnings.size();
         result.sqlViewsCreated = sqlViews;
         return result;
     }

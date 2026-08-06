@@ -51,6 +51,8 @@ public class ComponentExportService {
 
         Set<String> gvars = new LinkedHashSet<>();
         Set<String> datasources = new LinkedHashSet<>();
+        // task-0805 R1：逐组件跑只读公式绑定扫描，最后汇总进 bundle.bindingReport。
+        List<FormulaBindingInspector.Report> bindingReports = new ArrayList<>(components.size());
 
         List<ComponentExportBundle.Item> items = new ArrayList<>(components.size());
         for (Component c : components) {
@@ -78,6 +80,10 @@ public class ComponentExportService {
             // 依赖扫描(只读): 从字段 JSON 收集全局变量 / 数据源引用
             scanDependencies(item.fields, gvars, datasources);
 
+            // task-0805 R1：只读公式绑定扫描(在 item.fields/item.formulas 的深拷贝上跑,
+            // 不改这两个 JsonNode 本身——它们随后原样进入 bundle.components)。
+            bindingReports.add(FormulaBindingInspector.inspect(item.code, item.name, item.fields, item.formulas));
+
             // 该组件的 SQL 视图(组件内唯一,随组件走)
             List<ComponentSqlView> views = ComponentSqlView.list("componentId", c.id);
             List<ComponentExportBundle.SqlView> sqlViews = new ArrayList<>(views.size());
@@ -102,7 +108,31 @@ public class ComponentExportService {
 
         // checksum: 基于 source+components+dependencies 的规范 JSON(不含 checksum 自身)
         bundle.checksum = computeChecksum(bundle);
+
+        // task-0805 R1：汇总公式绑定报告；顶层字段，晚于 checksum 赋值以显式表明二者无关
+        // （computeChecksum 的 payload 只装 source/components/dependencies，不含 bindingReport）。
+        bundle.bindingReport = toBindingReport(FormulaBindingInspector.merge(bindingReports));
         return bundle;
+    }
+
+    /** FormulaBindingInspector.Report → 导出 bundle 顶层字段的 DTO 形状(§2.1 契约)。 */
+    private ComponentExportBundle.BindingReport toBindingReport(FormulaBindingInspector.Report report) {
+        ComponentExportBundle.BindingReport br = new ComponentExportBundle.BindingReport();
+        br.unboundCount = report.unboundCount;
+        br.totalFormulaRefs = report.totalFormulaRefs;
+        br.items = new ArrayList<>(report.items.size());
+        for (FormulaBindingInspector.Item it : report.items) {
+            ComponentExportBundle.BindingReportItem out = new ComponentExportBundle.BindingReportItem();
+            out.componentCode = it.componentCode;
+            out.componentName = it.componentName;
+            out.fieldName = it.fieldName;
+            out.resolvedFormulaId = it.resolvedFormulaId;
+            out.resolvedFormulaName = it.resolvedFormulaName;
+            out.status = it.status;
+            out.message = it.message;
+            br.items.add(out);
+        }
+        return br;
     }
 
     private JsonNode readJson(String raw) {

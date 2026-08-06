@@ -63,7 +63,8 @@ public class ComponentDirectoryResource {
 
     /**
      * P3 导入提交: 单事务按计划 INSERT 新组件 + 其 component_sql_view(全新 UUID),
-     * 不动任何现有数据、不绑定模板。依赖缺失默认阻止(ignoreMissingDeps=true 显式忽略)。
+     * 不动任何现有数据、不绑定模板。依赖缺失默认阻止(ignoreMissingDeps=true 显式忽略)；
+     * task-0805 R3：未显式绑定的 FORMULA 字段同样默认阻止(ignoreUnboundFormulas=true 显式忽略)。
      */
     @POST
     @Path("/{id}/import/commit")
@@ -71,8 +72,10 @@ public class ComponentDirectoryResource {
             @PathParam("id") UUID id,
             @QueryParam("conflictPolicy") @DefaultValue("RENAME") String conflictPolicy,
             @QueryParam("ignoreMissingDeps") @DefaultValue("false") boolean ignoreMissingDeps,
+            @QueryParam("ignoreUnboundFormulas") @DefaultValue("false") boolean ignoreUnboundFormulas,
             ComponentExportBundle bundle) {
-        return ApiResponse.success(importService.commit(id, bundle, conflictPolicy, ignoreMissingDeps));
+        return ApiResponse.success(
+                importService.commit(id, bundle, conflictPolicy, ignoreMissingDeps, ignoreUnboundFormulas));
     }
 
     @GET

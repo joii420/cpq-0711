@@ -24,6 +24,10 @@ public class ComponentExportBundle {
     public Dependencies dependencies;
     /** 内容校验和(sha256,基于 source+components+dependencies 的规范 JSON),防损坏/篡改。 */
     public String checksum;
+    /** task-0805 R1：公式绑定完整性只读扫描报告。顶层可选字段，**不参与 checksum 计算**
+     *  （computeChecksum 只覆盖 source+components+dependencies）；导出永不因此阻断。
+     *  老 bundle 反序列化时此字段为 null，导入端可容忍。 */
+    public BindingReport bindingReport;
 
     public static class Source {
         public String directoryId;
@@ -75,5 +79,28 @@ public class ComponentExportBundle {
         public List<String> globalVariables;
         /** 引用到的数据源 code(DATABASE_QUERY / HTTP_API 绑定)。 */
         public List<String> datasources;
+    }
+
+    /** task-0805 R1：整个目录的公式绑定完整性汇总（跨该目录所有导出组件）。 */
+    public static class BindingReport {
+        /** = items 中 status==UNRESOLVABLE 的条数。 */
+        public int unboundCount;
+        /** 扫描到的绑定点总数（普通 FORMULA 字段 + 条件公式内部引用）。 */
+        public int totalFormulaRefs;
+        public List<BindingReportItem> items;
+    }
+
+    /** task-0805：单条绑定检查结果（条件公式内部引用的 fieldName 写成「字段名 › 规则N」/「字段名 › 默认」）。 */
+    public static class BindingReportItem {
+        public String componentCode;
+        public String componentName;
+        public String fieldName;
+        /** 解析不到为 null。 */
+        public String resolvedFormulaId;
+        public String resolvedFormulaName;
+        /** BOUND | RESOLVED_BY_NAME | RESOLVED_BY_POSITION | UNRESOLVABLE */
+        public String status;
+        /** UNRESOLVABLE 时给人话原因，其余为 null。 */
+        public String message;
     }
 }
