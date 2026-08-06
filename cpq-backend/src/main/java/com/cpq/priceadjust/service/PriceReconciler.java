@@ -150,8 +150,12 @@ public class PriceReconciler {
 
     /**
      * 单行归位：driverRow（snapshot_rows）与 row_data 的判定条件不同——
-     * 写（driverRow 价格/货币键 + __priceLocked/__priceVersion 标记）要求"元素∈清单 且解出了价"；
+     * 写（价格/货币键 + __priceLocked/__priceVersion 标记）两侧一致，要求"元素∈清单 <b>且</b>解出了价"；
      * 清（row_data 手工陈旧价格键）只要求"元素∈清单"，与是否解出价无关（🔒 两个 if 不合并）。
+     *
+     * <p>🚨 <b>"清值"与"撤锁"必须同进同出</b>（验收 #47）：元素∈清单但解不出价时，删掉价格键的
+     * 同时必须删掉 {@code __priceLocked}/{@code __priceVersion}。只删值不删锁 = 只读的空格 =
+     * 死格（销售既拿不到系统价也填不进去），正是 §11.4.1 改判前那条已被作废的口径。
      *
      * <p>与 S3/S4（{@code MaterialVersionUpgradeService.upgradeComponentRows}）的关系：本方法是
      * 归位机制在 saveDraft/单元格编辑两个新增时机的实现；S3/S4 是升版本体既有实现（已独立验证、
@@ -219,6 +223,10 @@ public class PriceReconciler {
                 if (pbc.elementCurrencyField != null && !pbc.elementCurrencyField.isBlank() && ep.currency != null) {
                     dataRow.put(pbc.elementCurrencyField, ep.currency);
                 }
+                // 🔒 标记与"写得出价"绑定，与 driverRow 分支（:193 guard）同款口径 —— 价格机制
+                // 真的接管了这一格，才把它锁成只读 + 打版本徽标。
+                dataRow.put("__priceLocked", true);
+                dataRow.put("__priceVersion", versionLabel);
             } else {
                 // 元素∈清单但本次解不出价（版本明细该元素无价/实时算无数据）→ 仍需清掉陈旧手工值，
                 // 不留一个不受价格机制控制的过期数字（§11.4.1 的"清手工值"独立判定）。
@@ -226,9 +234,13 @@ public class PriceReconciler {
                 if (pbc.elementCurrencyField != null && !pbc.elementCurrencyField.isBlank()) {
                     dataRow.remove(pbc.elementCurrencyField);
                 }
+                // 🚨 只删值不删锁 = 只读的空格 = 死格（验收 #47 / §11.3.2.1「从无历史价则视同不在
+                // 清单、解锁可编辑」）。清值时必须把锁标记一并撤掉，否则销售既拿不到系统价、也填
+                // 不进去，且无绕开手段。前端 `!!(driverRow.__priceLocked ?? rawRow.__priceLocked)`
+                // 会让残留在 row_data 上的 true 直接把该格渲染成 "— 🔒"。
+                dataRow.remove("__priceLocked");
+                dataRow.remove("__priceVersion");
             }
-            dataRow.put("__priceLocked", true);
-            dataRow.put("__priceVersion", versionLabel);
             changed++;
         }
 
