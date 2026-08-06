@@ -84,6 +84,46 @@ public class ComparisonViewService {
         return meta;
     }
 
+    /**
+     * task-0729 §1.10a（2026-08-06）：<b>模板级</b>「页签 → 可比对值」目录 —— 与
+     * {@link #getMeta(UUID)} 同一份 {@link #buildTabMetas} 算法，只是换了结构来源。
+     *
+     * <p><b>为什么不能复用 {@code getMeta(quotationId)}</b>：价格调整策略的比对列配置维度是
+     * 「客户 × 模板系列」，屏上根本没有 quotationId；且 {@code getMeta} 会调
+     * {@code CardSnapshotService#ensureStructure} <b>写</b> {@code quotation_view_structure}
+     * ——<b>配置态页面不得产生写副作用</b>。本方法全程只读。
+     *
+     * <p>结构来源 = {@link CardSnapshotService#buildCardStructure}（模板 {@code components_snapshot}
+     * → 卡片结构的唯一适配器）。实测其产物与同一模板冻结出的 {@code QUOTE_CARD}/{@code COSTING_CARD}
+     * 逐 tab、逐 componentId 一致，故这里给出的 componentId/metric 与评估期
+     * {@code ComparisonColumnEvaluator} 要查的键<b>同源</b>。
+     *
+     * <p>任一侧 templateId 为 null 或结构解析失败 → 该侧返回<b>空列表</b>（不抛异常）：比对列
+     * 允许只保留 PRODUCT_TOTAL，不该因为一侧推不出模板就打不开连线抽屉。
+     */
+    public ComparisonMetaDTO getMetaByTemplates(UUID quoteTemplateId, UUID costingTemplateId) {
+        ComparisonMetaDTO meta = new ComparisonMetaDTO();
+        meta.quoteTabs = buildTabMetasFromTemplate(quoteTemplateId, "QUOTATION");
+        meta.costingTabs = buildTabMetasFromTemplate(costingTemplateId, "COSTING");
+        return meta;
+    }
+
+    private List<ComparisonMetaDTO.TabMeta> buildTabMetasFromTemplate(UUID templateId, String templateKind) {
+        if (templateId == null) return new ArrayList<>();
+        try {
+            String structureJson = cardSnapshotService.buildCardStructure(templateId, templateKind);
+            if (structureJson == null || structureJson.isBlank()) {
+                LOG.infof("[comparison-meta] 模板 %s (%s) 无 components_snapshot，该侧目录为空", templateId, templateKind);
+                return new ArrayList<>();
+            }
+            return buildTabMetas(MAPPER.readTree(structureJson));
+        } catch (Exception e) {
+            LOG.warnf("[comparison-meta] 模板 %s (%s) 结构解析失败: %s，该侧目录降级为空",
+                templateId, templateKind, e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
     private List<ComparisonMetaDTO.TabMeta> buildTabMetas(JsonNode structure) {
         List<ComparisonMetaDTO.TabMeta> out = new ArrayList<>();
         if (structure == null) return out;

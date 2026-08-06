@@ -205,8 +205,18 @@ public class CardSnapshotService {
      * sortOrder, componentType, dataDriverPath, treeConfig?, rowKeyFields, fields:[], formulas:[] }] }
      *
      * <p><b>AP-39</b>: DATA_SOURCE 字段的 {@code datasource_binding} 完整搬运（不丢）。
+     *
+     * <p>task-0729 §1.10a（2026-08-06）：可见性从 private 提升为 public，供
+     * {@code ComparisonViewService#getMetaByTemplates}（比对列配置屏的页签目录 meta）复用
+     * ——<b>只提可见性，不新写一份</b>。它是「模板 {@code components_snapshot}（<b>数组</b>、
+     * snake_case {@code field_type/is_subtotal}、无 {@code label}）→ 卡片结构（<b>对象</b>
+     * {@code {tabs:[…]}}、camelCase {@code fieldType/isSubtotal}、{@code label} 由 name 派生）」
+     * 的<b>唯一适配器</b>；比对列 meta 需要的正是后一种形状，另抄一份必然与冻结结构漂移。
+     *
+     * <p>🔒 本方法<b>纯只读</b>（只 SELECT template 与 component），落库由调用方
+     * {@link #upsertStructure} 负责——比对列 meta 那条路径刻意<b>不</b>落库，见该方法注释。
      */
-    private String buildCardStructure(UUID templateId, String templateKind) {
+    public String buildCardStructure(UUID templateId, String templateKind) {
         try {
             @SuppressWarnings("unchecked")
             List<Object[]> rows = em.createNativeQuery(

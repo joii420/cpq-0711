@@ -108,7 +108,11 @@ public class PriceAdjustStrategyService {
 
         boolean triggerChanged = false;
         if (!isNew) {
-            boolean enabledChanged = !Objects.equals(s.enabled, req.enabled);
+            // 🔒 先算「生效值」再比，不能拿 s.enabled 直接和原始 req.enabled 比：
+            //    req.enabled == null 表示「本次不改这个字段」，生效值 == 原值，实际什么都没变；
+            //    旧写法 Objects.equals(TRUE, null) == false 会把它误判成「变了」→ 白白触发一次
+            //    全量预算重算（markPendingForRecompute 扫该客户所有 PENDING 料号并异步派发）。
+            boolean enabledChanged = req.enabled != null && !Objects.equals(s.enabled, req.enabled);
             boolean thresholdChanged = !bigDecimalEquals(s.costDiffThreshold, req.costDiffThreshold);
             triggerChanged = enabledChanged || thresholdChanged;
         }
@@ -117,8 +121,15 @@ public class PriceAdjustStrategyService {
             s = new CustomerPriceAdjustStrategy();
             s.customerNo = customerNo;
             s.createdBy = actorId;
+            // 🔒 默认关闭（task-0729 需求变更，V380）：新建策略未显式给值时落 false。
+            //    改动前这里是 Boolean.TRUE，会绕过实体字段初始值，只改实体等于没改。
+            s.enabled = req.enabled != null ? req.enabled : Boolean.FALSE;
+        } else if (req.enabled != null) {
+            // 🔒 更新路径只在显式给值时才改；req.enabled == null 走 else 保持原值 ——
+            //    若照抄新建分支的 FALSE 兜底，任何不带该字段的 PUT 都会静默关停一个已启用的
+            //    策略，比改动前的「默认开」更危险（默认开至少是显性的，静默关没人看得见）。
+            s.enabled = req.enabled;
         }
-        s.enabled = req.enabled != null ? req.enabled : Boolean.TRUE;
         s.cycleType = req.cycleType;
         s.cycleWeekday = req.cycleWeekday;
         s.cycleDayOfMonth = req.cycleDayOfMonth;

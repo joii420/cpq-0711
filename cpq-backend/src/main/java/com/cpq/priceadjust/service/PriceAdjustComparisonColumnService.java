@@ -1,6 +1,8 @@
 package com.cpq.priceadjust.service;
 
 import com.cpq.common.exception.BusinessException;
+import com.cpq.costing.dto.ComparisonMetaDTO;
+import com.cpq.costing.service.ComparisonViewService;
 import com.cpq.priceadjust.dto.ComparisonColumnDef;
 import com.cpq.priceadjust.dto.ComparisonColumnsDTO;
 import com.cpq.priceadjust.dto.TemplateSeriesDTO;
@@ -8,6 +10,7 @@ import com.cpq.priceadjust.entity.ComparisonColumnConfig;
 import com.cpq.priceadjust.entity.CustomerPriceAdjustStrategy;
 import com.cpq.priceadjust.entity.CustomerPriceAdjustStrategyLog;
 import com.cpq.priceadjust.entity.MaterialPriceReview;
+import com.cpq.template.entity.Template;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -38,6 +41,8 @@ public class PriceAdjustComparisonColumnService {
     @Inject EntityManager em;
     @Inject PriceAdjustBudgetService budgetService;
     @Inject ManagedExecutor managedExecutor;
+    /** §1.10a meta：两侧页签目录的组装复用 task-0717 的同一份 buildTabMetas，不新写一份。 */
+    @Inject ComparisonViewService comparisonViewService;
 
     /**
      * 🔒 每次调用返回<b>新实例</b>，不做 static 常量共享——{@link #normalizeRemovable} 会就地改写
@@ -118,6 +123,172 @@ public class PriceAdjustComparisonColumnService {
             out.add(dto);
         }
         return out;
+    }
+
+    // -------------------------------------------------------------------------
+    // §1.10a 页签/可比对值目录 meta（2026-08-06 补交，原 api.md 遗漏）
+    // -------------------------------------------------------------------------
+
+    /**
+     * 比对列连线抽屉的数据源：该模板系列两侧的「页签 → 可比对值」目录。
+     *
+     * <p>本方法只负责一件事：<b>把「模板系列」解析成「报价侧 templateId + 核价侧 templateId」</b>，
+     * 组装交给 {@link ComparisonViewService#getMetaByTemplates}（与 task-0717 按 quotationId
+     * 取 meta 共用同一份 buildTabMetas）。
+     *
+     * <h3>报价侧取版本口径 = 系列内 {@code created_at DESC} 首个</h3>
+     * 🔒 <b>刻意跟随 {@link #listTemplateSeries}（§1.8）而非
+     * {@code TemplateService#computeAutoDefaults}</b>（后者用 {@code status='PUBLISHED'
+     * ORDER BY published_at DESC}）。理由是<b>同屏自洽</b>：§1.8 的 {@code latestVersion}
+     * 就是用 {@code created_at DESC LIMIT 1} 算的，用户在同一个下拉里看到 "v1.2"，
+     * 配置依据就必须是 v1.2；若改用 PUBLISHED 口径，用户看到 v1.2、实际配的是另一版的
+     * 页签结构，<b>这种不一致用户无法察觉也无法理解</b>。
+     * <p>⚠️ 当前库里各系列全是 PUBLISHED，两种口径结果相同 —— <b>正因为现在看不出差别，
+     * 才必须把口径写死</b>，否则以后归档一版就分叉，而分叉时没人会想到来查这里。
+     *
+     * <h3>核价侧取模板口径 = 三级降级（业务方 2026-08-06 拍板）</h3>
+     * <pre>
+     * ① SERIES_LATEST   该客户 ×【该系列】下最近活单的 costing_card_template_id  ← 主口径，最精确
+     * ② CUSTOMER_LATEST 该客户最近活单的 costing_card_template_id（不限系列）    ← 业务方明示的口径
+     * ③ AUTO_DEFAULT    computeAutoDefaults 规则（categoryId + 客户专属优先 + published_at DESC）
+     * ④ NONE            都推不出 → costingTabs 空数组（200，不报错）
+     * </pre>
+     *
+     * <p>🔑 <b>为什么 ① 优先于业务方明示的 ②</b>：业务方原话是「该<b>客户</b>最近活单」，但
+     * <b>一个客户可以有多个模板系列</b>（实测 {@code CUST-0001} 有 4 个）。若该客户最近那张活单
+     * 属于<b>别的</b>系列，②拿到的核价模板与当前正在配置的系列无关。① 是 ② 的收窄，能更准时更准；
+     * 收窄不到（该系列下无活单）时自然退化成 ②，<b>正好是业务方说的那条</b>。故 ①+② 是业务方
+     * 意图的超集，<b>业务方 2026-08-06 明示接受 ② 作为口径</b>。
+     *
+     * <p>🔑 <b>为什么 ①② 用「最近活单」而不是直接用 computeAutoDefaults</b>（将来必被追问）：
+     * <b>配置口径必须与消费口径一致。</b>比对列配置的唯一用途是评估期被
+     * {@code ComparisonColumnEvaluator} 消费，而评估走的是
+     * {@code PriceAdjustBudgetService#findBasisLine} —— <b>最近活单 + ACTIVE_STATUSES</b>。
+     * 配置依据与消费依据一旦分叉，用户配的 componentId 在评估时就<b>命中不了，而且是静默命中
+     * 不了</b>（评估记 STALE，不报错、不提示、UI 上只是那一列恒空）。
+     * ③ 算的是「<b>下次开单</b>会用哪个」，而评估读的是「<b>已存在的那张单</b>」，两者在核价模板
+     * 换代后必然分叉 —— 所以它只能垫底，不能当主口径。
+     *
+     * <p>🔒 三级全部复用<b>同一个</b> {@link MaterialVersionUpgradeService#ACTIVE_STATUSES}
+     * （全工程唯一定义）与同样的 {@code created_at DESC}，不另写第二份活单判据。
+     *
+     * <p>🔴 <b>已知歧义（既有架构导致，非本端点引入）</b>：模板系列与核价模板<b>无外键关系</b>
+     * ——核价模板由开单时按 {@code categoryId + customerId} 独立解析，因此<b>同一系列的不同
+     * 单可以用不同核价模板</b>（实测系列 {@code a91209e6} 的 18 张单里，10 张用 v1.1、1 张用
+     * v1.0、7 张未绑）。配置是系列级、只能取一个代表，故少数派模板的单在评估时该列恒 STALE。
+     * 取并集不可行：同名页签跨模板 componentId 不同，连线会配到一个永远命中不了的 id 上。
+     *
+     * <p>实际命中的是哪一级会回传到 {@link ComparisonMetaDTO#costingSource} 并打 INFO 日志
+     * —— 四级取到的模板可能不同，出问题时必须一眼可辨。
+     *
+     * @throws BusinessException 404 系列不存在（中文业务消息，与路由 404 区分）
+     */
+    public ComparisonMetaDTO getComparisonMeta(UUID templateSeriesId) {
+        if (templateSeriesId == null) {
+            throw new BusinessException(400, "templateSeriesId 不能为空");
+        }
+
+        // 报价侧：系列内最新一张（created_at DESC）——口径同 §1.8 latestVersion，理由见方法注释
+        Template quoteTemplate = Template.find(
+            "templateSeriesId = ?1 ORDER BY createdAt DESC", templateSeriesId).firstResult();
+        if (quoteTemplate == null) {
+            throw new BusinessException(404, "模板系列不存在: " + templateSeriesId);
+        }
+
+        CostingResolution costing = resolveCostingTemplate(quoteTemplate);
+        LOG.infof("[comparison-meta] series=%s quoteTpl=%s(%s) → costingTpl=%s source=%s",
+            templateSeriesId, quoteTemplate.id, quoteTemplate.version, costing.templateId, costing.source);
+
+        ComparisonMetaDTO meta = comparisonViewService.getMetaByTemplates(quoteTemplate.id, costing.templateId);
+        meta.costingSource = costing.source;
+        return meta;
+    }
+
+    /** 核价侧模板的解析来源（回传到 {@link ComparisonMetaDTO#costingSource}，语义见 getComparisonMeta 注释）。 */
+    public static final class CostingSource {
+        /** ① 该客户 × 该系列下最近活单实际绑定的核价模板（主口径，最精确）。 */
+        public static final String SERIES_LATEST = "SERIES_LATEST";
+        /** ② 该客户最近活单实际绑定的核价模板，不限系列（业务方 2026-08-06 明示的口径）。 */
+        public static final String CUSTOMER_LATEST = "CUSTOMER_LATEST";
+        /** ③ computeAutoDefaults 同款规则推「下次开单会用哪个」（系列/客户都无活单时）。 */
+        public static final String AUTO_DEFAULT = "AUTO_DEFAULT";
+        /** ④ 三级都推不出 → costingTabs 空数组（200，不报错）。 */
+        public static final String NONE = "NONE";
+
+        private CostingSource() {}
+    }
+
+    private static final class CostingResolution {
+        final UUID templateId;
+        final String source;
+
+        CostingResolution(UUID templateId, String source) {
+            this.templateId = templateId;
+            this.source = source;
+        }
+    }
+
+    /**
+     * 核价模板三级降级解析（每级理由见 {@link #getComparisonMeta} 注释）。
+     * 三级都推不出 → {@code templateId=null / source=NONE}，调用方据此给出空 costingTabs，不报错。
+     */
+    private CostingResolution resolveCostingTemplate(Template quoteTemplate) {
+        // ① 该客户 × 该系列下最近活单
+        UUID bySeries = findLatestActiveQuotationCostingTemplate(
+            "JOIN template t ON t.id = q.customer_template_id ",
+            "t.template_series_id = :key",
+            quoteTemplate.templateSeriesId);
+        if (bySeries != null) return new CostingResolution(bySeries, CostingSource.SERIES_LATEST);
+
+        // ② 该客户最近活单（不限系列）——业务方明示口径；模板无 customerId（通用模板）时跳过
+        if (quoteTemplate.customerId != null) {
+            UUID byCustomer = findLatestActiveQuotationCostingTemplate(
+                "", "q.customer_id = :key", quoteTemplate.customerId);
+            if (byCustomer != null) return new CostingResolution(byCustomer, CostingSource.CUSTOMER_LATEST);
+        }
+
+        // ③ 兜底：按「下次开单会用哪个」推
+        if (quoteTemplate.categoryId == null) {
+            LOG.infof("[comparison-meta] series=%s 无活单且模板无 categoryId，核价侧目录为空",
+                quoteTemplate.templateSeriesId);
+            return new CostingResolution(null, CostingSource.NONE);
+        }
+        Template costing = Template.find(
+                "categoryId = ?1 AND templateKind = 'COSTING' AND status = 'PUBLISHED' "
+                        + "AND (customerId = ?2 OR customerId IS NULL) "
+                        + "ORDER BY CASE WHEN customerId = ?2 THEN 0 ELSE 1 END, publishedAt DESC NULLS LAST",
+                quoteTemplate.categoryId, quoteTemplate.customerId).firstResult();
+        if (costing == null) {
+            LOG.infof("[comparison-meta] series=%s 无活单、兜底规则亦无匹配核价模板，核价侧目录为空",
+                quoteTemplate.templateSeriesId);
+            return new CostingResolution(null, CostingSource.NONE);
+        }
+        return new CostingResolution(costing.id, CostingSource.AUTO_DEFAULT);
+    }
+
+    /**
+     * ①② 共用的「最近活单绑的核价模板」查询——两级只差一个定位维度（系列 / 客户），
+     * <b>活单判据与排序只写一份</b>，避免两级口径漂移。
+     *
+     * <p>🔒 {@code costing_card_template_id IS NOT NULL} 不可省：实测同一系列存在大量未绑核价
+     * 模板的单（{@code a91209e6} 系列 18 张里 7 张），漏了这个条件会取到一张 NULL 的「最近单」，
+     * 直接把核价侧目录打空 —— 而且是静默打空。
+     *
+     * @param extraJoin 额外 JOIN 片段（按系列定位时需 JOIN template，按客户定位时为空串）
+     * @param keyPredicate 定位谓词，参数名固定 {@code :key}
+     */
+    private UUID findLatestActiveQuotationCostingTemplate(String extraJoin, String keyPredicate, UUID key) {
+        @SuppressWarnings("unchecked")
+        List<UUID> rows = em.createNativeQuery(
+                "SELECT q.costing_card_template_id FROM quotation q " + extraJoin +
+                "WHERE " + keyPredicate +
+                "  AND q.costing_card_template_id IS NOT NULL " +
+                "  AND q.status = ANY(:statuses) " +
+                "ORDER BY q.created_at DESC LIMIT 1")
+            .setParameter("key", key)
+            .setParameter("statuses", MaterialVersionUpgradeService.ACTIVE_STATUSES.toArray(new String[0]))
+            .getResultList();
+        return rows.isEmpty() ? null : rows.get(0);
     }
 
     private int parseColumnCount(String columnsJson) {

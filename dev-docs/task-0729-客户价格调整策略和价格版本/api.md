@@ -243,6 +243,75 @@
 
 **响应**：`200` + `{ "budgetRecomputeTriggered": true, "affectedReviewCount": 7 }`
 
+### 1.10a `GET /api/cpq/price-adjust/template-series/{templateSeriesId}/comparison-view-meta`
+
+> 🆕 **2026-08-06 补交，原 api.md 遗漏该端点。** 前端开发时已发现契约缺失，按此路径占位并做了降级展示
+> （`priceAdjustService.ts:113`），本节把契约补上，**路径与形状均与前端占位一致，前端零改动**。
+> 编号用 `1.10a` 而非 `1.11` —— `§1.11` 已被 `POST /versions/generate` 占用。
+
+屏 1 比对列配置区**连线配置抽屉**（`LinkConfigDrawer`）的数据源：该模板系列两侧的「页签 → 可比对值」目录。
+
+**响应**：`200` + `ComparisonMetaDTO`（**与 task-0717 `GET /quotations/{id}/comparison-view/meta` 同一个 DTO 类**，前端连线抽屉零改动复用；差别只在入参维度 —— 那条按 `quotationId` 单级取，本条按 `templateSeriesId` 系列级取）
+
+```jsonc
+{ "quoteTabs": [
+    { "componentId":"74c0cede-...", "tabName":"物料", "sortOrder":1,
+      "metrics":[ { "key":"材料成本", "label":"材料成本", "type":"SUBTOTAL_FIELD" },
+                  { "key":"__TAB_TOTAL__", "label":"页签合计", "type":"TAB_TOTAL" } ] }
+  ],
+  "costingTabs": [ /* 同构 */ ],
+  "costingSource": "SERIES_LATEST"   // 溯源标记，见下
+}
+```
+
+**服务端行为**
+
+1. 🔒 **纯只读**。不同于 task-0717 的 `getMeta(quotationId)`（它会调 `ensureStructure` **写** `quotation_view_structure`），本端点全程不写库 —— **配置态页面不得产生写副作用**。
+2. **两侧页签目录的组装复用 task-0717 的同一份 `buildTabMetas`**，只是结构来源换成
+   `CardSnapshotService#buildCardStructure(templateId, kind)`（模板 `components_snapshot` → 卡片结构的唯一适配器；
+   实测其产物与同一模板冻结出的 `QUOTE_CARD`/`COSTING_CARD` 逐 tab、逐 componentId 一致）。
+3. **报价侧取版本口径 = 系列内 `created_at DESC` 首个** —— 🔒 刻意跟随 §1.8 的 `latestVersion`（同一子查询口径）
+   而非 `computeAutoDefaults` 的 `PUBLISHED + published_at DESC`。理由是**同屏自洽**：用户在同一个下拉里看到 "v1.2"，
+   配置依据就必须是 v1.2。
+4. **核价侧取模板口径 = 三级降级**（业务方 2026-08-06 拍板）：
+
+   | `costingSource` | 口径 | 说明 |
+   |---|---|---|
+   | `SERIES_LATEST` | 该客户 ×**该系列**下最近活单的 `costing_card_template_id` | 主口径，最精确 |
+   | `CUSTOMER_LATEST` | 该客户最近活单的 `costing_card_template_id`（不限系列） | 业务方明示的口径 |
+   | `AUTO_DEFAULT` | `computeAutoDefaults` 规则（categoryId + 客户专属优先 + `published_at DESC`） | 系列/客户都无活单时 |
+   | `NONE` | 三级都推不出 | → `costingTabs: []`，仍返 `200` |
+
+   - 🔑 **为何 ①②用「最近活单」而不是直接用 `computeAutoDefaults`**：**配置口径必须与消费口径一致**。
+     比对列配置的唯一用途是评估期被 `ComparisonColumnEvaluator` 消费，而评估走的是
+     `PriceAdjustBudgetService#findBasisLine`（**最近活单 + `ACTIVE_STATUSES`**）。两者一旦分叉，
+     用户配的 componentId 在评估时**静默命中不了**（记 STALE，不报错、UI 上只是那列恒空）。
+   - 🔒 三级全部复用**同一个** `MaterialVersionUpgradeService.ACTIVE_STATUSES`（全工程唯一定义）。
+   - `costingSource` 用 `@JsonInclude(NON_NULL)`，task-0717 那条端点的响应体**逐字节不变**。
+5. **权限**：`PRICING_MANAGER` / `SYSTEM_ADMIN`（与 §1.9/§1.10 一致）。
+6. **错误**：系列不存在 → `404` + 中文业务消息 `{"code":404,"message":"模板系列不存在: <id>"}`
+   （与路由 404 `{"code":404,"message":"Not found"}` 区分）。
+
+**🔴 已知歧义（既有架构导致，非本端点引入）**
+
+模板系列与核价模板**无外键关系** —— 核价模板由开单时按 `categoryId + customerId` 独立解析，因此
+**同一系列的不同单可以用不同核价模板**。比对列配置是**系列级**的、只能取一个代表，故少数派模板的单
+在评估时其 `TAB_PAIR` 列恒 STALE。取并集不可行（同名页签跨模板 componentId 不同，会配到一个永远命中不了的 id）。
+
+2026-08-06 全库实测（41 张单）：
+
+| 系列 | 总单数 | 用过几个核价模板 | 命中主口径（列有效） | 用了别的核价模板（**该列恒 STALE**） | 未绑核价模板（核价侧本就无值） |
+|---|---|---|---|---|---|
+| 罗克韦尔模板1 | 18 | 2 | 10 | **1** | 7 |
+| 罗克韦尔模板3 | 8 | 1 | 8 | 0 | 0 |
+| 罗克韦尔模板2 | 6 | 1 | 2 | 0 | 4 |
+| 测试客户-4 | 5 | 1 | 5 | 0 | 0 |
+| 施耐德BUG2 | 4 | 1 | 4 | 0 | 0 |
+| **合计** | **41** | — | **29** | **1** | **11** |
+
+即：当前数据下**仅 1 张单**会因核价模板不同而使 `TAB_PAIR` 列恒 STALE；另有 11 张未绑核价模板的单，
+其核价侧本就无值（与本口径无关）。
+
 ### 1.11 `POST /api/cpq/price-adjust/versions/generate`
 
 「立即生成一次」（屏 1 按钮）。
