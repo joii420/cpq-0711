@@ -352,6 +352,27 @@ public class PriceAdjustBudgetService {
         // 升版后「调整值」：隔离子事务跑 dryRun（🔒 禁止在预算阶段触发整单 ensureCardValues，硬约束4）。
         DryRunSnapshot snap = runDryRunSnapshot(basis.lineItemId, versionId);
 
+        // ---- 方向3 T2：L3 口径守卫告警落库（dryRun 路径 = 高频侦测路径）----
+        // 🔒 本方法跑在 processMaterial 的 REQUIRES_NEW 事务里（**会提交**），而 runDryRunSnapshot 是
+        //    嵌套在里面的另一个 REQUIRES_NEW（dryRun 恒回滚）。snap.upgradeResult 是普通 POJO，
+        //    不随那次回滚消失 —— 与下面 budgetError 从被回滚事务里带出消息是**同一个既有机制**，
+        //    故告警持久化【不需要】新增任何事务边界（无第三层嵌套，绕开 BL-0108/0110 那类风险）。
+        // 为什么必须在 dryRun 路径记：预算预览对每个版本的每个料号都跑，且**先于人工审核**；
+        //    非 dryRun 只对已通过审核的跑。只在非 dryRun 记 = 被驳回/从未通过的单永久丢失分叉，
+        //    且把发现时点推迟到人工决策之后 —— 等于保留机制、废掉「早发现」这个目的。
+        if (snap.upgradeResult != null && snap.upgradeResult.warnCode != null) {
+            review.warnCode = snap.upgradeResult.warnCode;
+            review.warnMessage = snap.upgradeResult.warnMessage;
+            review.warnDiff = snap.upgradeResult.diffValue;
+            LOG.warnf("[price-adjust-budget] review=%s material=%s L3 守卫告警 %s diff=%s（不阻断预算）",
+                review.id, review.materialNo, snap.upgradeResult.warnCode, snap.upgradeResult.diffValue);
+        } else {
+            // 幂等：重算预算时若分叉已消失，必须清掉上一轮的告警，否则告警会永久粘住。
+            review.warnCode = null;
+            review.warnMessage = null;
+            review.warnDiff = null;
+        }
+
         if (snap.upgradeResult == null || snap.upgradeResult.status == UpgradeResult.Status.FAILED
                 || snap.upgradeResult.status == UpgradeResult.Status.CONFLICT) {
             review.budgetStatus = MaterialPriceReview.BUDGET_FAILED;

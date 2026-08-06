@@ -52,6 +52,20 @@ public class MaterialPriceUpdateJobItem extends PanacheEntityBase {
     @Column(name = "diff_value", precision = 20, scale = 6)
     public BigDecimal diffValue;
 
+    /**
+     * task-0729 方向3 T2（V381）：L3 口径守卫告警码（如 {@code SUBTOTAL_MISMATCH}）。
+     *
+     * <p>🔒 <b>刻意不复用 {@link #errorCode}</b>：本类既有语义是「{@code errorCode} 非空 = 非成功态」
+     * （见类注释三种非成功态）。告警行的 {@link #status} 仍是 {@code SUCCESS}，若复用就会出现
+     * 「{@code status=SUCCESS} 却带 {@code errorCode}」的行，让每个消费点都要重新判断「这是真失败
+     * 还是告警」，屏 7 的「可重试」判定会被直接带偏。差异值复用既有 {@link #diffValue}（语义相同）。
+     */
+    @Column(name = "warn_code", length = 50)
+    public String warnCode;
+
+    @Column(name = "warn_message", columnDefinition = "TEXT")
+    public String warnMessage;
+
     @Column(name = "retry_count", nullable = false)
     public Integer retryCount = 0;
 

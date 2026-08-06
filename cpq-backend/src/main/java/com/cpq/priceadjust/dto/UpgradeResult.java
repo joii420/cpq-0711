@@ -21,6 +21,21 @@ public class UpgradeResult {
     public String errorCode;   // 如 SUBTOTAL_MISMATCH
     public String message;
     public BigDecimal diffValue;      // L3 守卫专用：|旧价重算 - li.subtotal|
+
+    /**
+     * task-0729 方向3 T2：L3 口径守卫<b>告警</b>码（{@code SUBTOTAL_MISMATCH}）。
+     *
+     * <p>与 {@link #errorCode} 正交：{@code errorCode} 非空 ⇒ {@link #status} 非 SUCCESS（阻断）；
+     * 本字段非空 ⇒ <b>不阻断</b>，{@code status} 仍可为 {@code SUCCESS}，只是顺带检出前后端算值分叉。
+     *
+     * <p>🔒 <b>本 POJO 是跨事务边界带出告警的载体</b>：dryRun 路径下
+     * {@code PriceAdjustBudgetService#runDryRunSnapshot}(REQUIRES_NEW) 会整体回滚，
+     * 但本对象是普通 POJO、不随回滚消失，由外层<b>会提交</b>的
+     * {@code processMaterial}(REQUIRES_NEW) 事务负责落库。故告警持久化<b>不需要</b>新增任何事务边界
+     * （既有的 {@code budgetError} 就是靠同一机制从被回滚的 dryRun 事务里带出来的）。
+     */
+    public String warnCode;
+    public String warnMessage;
     public BigDecimal oldSubtotal;
     public BigDecimal newSubtotal;
     public boolean dryRun;

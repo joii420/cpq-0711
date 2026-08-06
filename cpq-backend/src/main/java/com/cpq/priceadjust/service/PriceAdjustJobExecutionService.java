@@ -98,6 +98,18 @@ public class PriceAdjustJobExecutionService {
         }
 
         UpgradeResult ur = materialVersionUpgradeService.upgrade(item.lineItemId, job.versionId, false);
+        // ---- 方向3 T2：L3 口径守卫告警落库（非 dryRun 路径）----
+        // 🔒 warn_* 与 error_* 正交：status 仍是 SUCCESS，只是顺带检出前后端算值分叉、**未阻断**。
+        //    刻意不复用 errorCode —— 本类语义是「errorCode 非空 = 非成功态」，复用会产出
+        //    「status=SUCCESS 却带 errorCode」的行，把屏 7 的「可重试」判定带偏。
+        //    差异值复用既有 diffValue 列（语义相同，不新增）。
+        item.warnCode = ur.warnCode;
+        item.warnMessage = ur.warnMessage;
+        if (ur.warnCode != null) {
+            if (ur.diffValue != null) item.diffValue = ur.diffValue;
+            LOG.warnf("[price-adjust-job] item=%s material=%s L3 守卫告警 %s diff=%s（不阻断升版）",
+                item.id, item.materialNo, ur.warnCode, ur.diffValue);
+        }
         switch (ur.status) {
             case SUCCESS, SKIPPED -> {
                 item.status = MaterialPriceUpdateJobItem.SUCCESS;

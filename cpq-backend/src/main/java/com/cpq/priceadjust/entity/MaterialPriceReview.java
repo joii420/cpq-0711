@@ -49,6 +49,23 @@ public class MaterialPriceReview extends PanacheEntityBase {
     @Column(name = "budget_status", nullable = false, length = 20)
     public String budgetStatus = BUDGET_QUEUED;
 
+    /**
+     * task-0729 方向3 T2（V381）：L3 口径守卫告警码（如 {@code SUBTOTAL_MISMATCH}）。
+     *
+     * <p>🔒 与 {@link #budgetError} 语义正交，不要混用：{@code budgetError} 是<b>预算算不出来</b>
+     * （{@code budgetStatus=FAILED}，阻断审核）；本字段是<b>预算算出来了、但顺带发现前后端算值分叉</b>
+     * （{@code budgetStatus} 仍可为 {@code READY}，<b>不阻断</b>）。
+     */
+    @Column(name = "warn_code", length = 50)
+    public String warnCode;
+
+    @Column(name = "warn_message", columnDefinition = "TEXT")
+    public String warnMessage;
+
+    /** 守卫检出的差异绝对值 {@code |后端旧价重算 - li.subtotal|}。 */
+    @Column(name = "warn_diff", precision = 20, scale = 6)
+    public java.math.BigDecimal warnDiff;
+
     @Column(name = "budget_error", columnDefinition = "TEXT")
     public String budgetError;
 

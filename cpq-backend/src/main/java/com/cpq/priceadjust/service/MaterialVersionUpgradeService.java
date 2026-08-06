@@ -183,25 +183,36 @@ public class MaterialVersionUpgradeService {
         result.oldSubtotal = li.subtotal;
 
         // ---- S0：L3 口径守卫（E14-11）。必须在 S3 动 snapshot_rows 之前跑——用【当前未改动】的
-        // 数据重算一遍报价侧卡片，与已落库 li.subtotal 比对。差异超阈值 → 两端口径本就对不上，
-        // 说明后端算法与前端历史保存值有分歧，此时再拿新价去改会把错的数字当成客户报价，必须先拦。
+        // 数据重算一遍报价侧卡片，与已落库 li.subtotal 比对。
+        //
+        // 🔄 方向3 T2（2026-08-06）：**拦截 → 告警**。原行为 = 差异超阈值就 return failed 中断升版。
+        //
+        // 为什么改：方向3 T1（49e540c6）把 li.subtotal 收敛为「卡片值算完即覆盖」的单一来源后，
+        // 本守卫比较的两边（后端旧价重算 vs li.subtotal）**趋于恒等** → 代码还是拦截语义，
+        // 但它已经拦不到东西了。**「看起来有守卫、实际不报警」比没有守卫更危险**，因为没人知道它不工作。
+        //
+        // 🔒 为什么不干脆删掉：**「不再误报」的另一面是「不再报警」，而这次帮我们发现问题的正是它。**
+        // 故保留发现能力（WARN 日志 + 可查记录），只去掉阻塞。两边同源后本告警应当归零；
+        // 一旦它再次响起，就说明出现了新的双端算值分叉 —— 那正是我们要知道的事。
         String oldRecomputeJson = cardSnapshotService.buildCardValues(li, li.templateId);
         BigDecimal oldRecomputed = CostingSubtotalUtil.extractUnitSubtotal(oldRecomputeJson);
         BigDecimal baseline = li.subtotal != null ? li.subtotal : BigDecimal.ZERO;
         BigDecimal diff = oldRecomputed.subtract(baseline).abs();
-        // 🔒 每次升版都重新读库取阈值（不缓存）——验收 #70④ 要求 PUT /price-adjust/settings 后
-        // 「对同一个此前被拦的问题单重新走一次升版流程」即可放行，不重启服务。
+        // 🔒 每次升版都重新读库取阈值（不缓存）——E14-11 业务方明确的可配项，验收 #70④ 要求
+        // PUT /price-adjust/settings 后即时生效、不重启服务。**禁止硬编码**。
         BigDecimal guardThreshold = settingsService.getSubtotalGuardThreshold();
         if (diff.compareTo(guardThreshold) > 0) {
-            UpgradeResult r = UpgradeResult.failed("SUBTOTAL_MISMATCH", String.format(
-                "L3 口径守卫拦截：后端旧价重算 %s vs li.subtotal %s，差异 %s > 阈值 %s，不写回，可重试",
-                oldRecomputed, baseline, diff, guardThreshold));
-            r.diffValue = diff;
-            r.dryRun = dryRun;
-            r.oldSubtotal = li.subtotal;
-            LOG.warnf("[b0-upgrade] li=%s S0 SUBTOTAL_MISMATCH diff=%s (旧价重算=%s, li.subtotal=%s)，不写回",
+            // ⚠️ 只挂告警字段，**不 return** —— 升版继续往下走（S1~S9 照常执行、照常写回）。
+            // 告警的持久化由调用方在自己【会提交】的事务里做（见 UpgradeResult#warnCode 注释）：
+            //   dryRun    → PriceAdjustBudgetService#computeBudget      → material_price_review（屏 4）
+            //   非 dryRun → PriceAdjustJobExecutionService#executeItem  → material_price_update_job_item（屏 7）
+            result.warnCode = "SUBTOTAL_MISMATCH";
+            result.warnMessage = String.format(
+                "L3 口径守卫告警：后端旧价重算 %s vs li.subtotal %s，差异 %s > 阈值 %s（不阻断升版）",
+                oldRecomputed, baseline, diff, guardThreshold);
+            result.diffValue = diff;
+            LOG.warnf("[b0-upgrade] li=%s S0 SUBTOTAL_MISMATCH diff=%s (旧价重算=%s, li.subtotal=%s) —— 告警不阻断，继续升版",
                 lineItemId, diff, oldRecomputed, baseline);
-            return r;
         }
 
         // ---- S1：读版本价（一套，报价核价共用，E12）。🔒 不走视图、不走取价函数——
@@ -246,6 +257,10 @@ public class MaterialVersionUpgradeService {
                     pbc.componentCode, pbc.tabName));
                 r.dryRun = dryRun;
                 r.oldSubtotal = li.subtotal;
+                // 方向3 T2：S0 的告警已经检出、与本次 CONFLICT 无关，不能因为换了个 result 对象就丢掉。
+                r.warnCode = result.warnCode;
+                r.warnMessage = result.warnMessage;
+                if (result.diffValue != null) r.diffValue = result.diffValue;
                 LOG.warnf("[b0-upgrade] li=%s component=%s CONFLICT，整单回滚", lineItemId, pbc.componentCode);
                 return r;
             }
