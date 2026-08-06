@@ -192,6 +192,11 @@ public class PriceAdjustVersionGenerationService {
             pending.status = ElementPriceVersion.STATUS_SUPERSEDED;
             pending.persist();
             MaterialPriceUpdateJobItem.staleAllUnfinishedByJobIds(staleJobIds);
+            // 🔒 同一事务里按 items 真实状态全量重算 job 计数器 + 批次状态（禁止增量推算）。
+            //    上一行是 item 级批量 UPDATE，不碰 job 行；而被取代的 job 永远不会再执行、
+            //    finalizeJob 再也走不到 → 表头「失败 N / 冲突 N / 已失效 0」会与明细行全 STALE
+            //    对不上，财务看到数字对不上会怀疑整个功能。口径与 finalizeJob 共用同一实现。
+            MaterialPriceUpdateJob.recountByJobIds(staleJobIds);
             // 🔒 验收 #7（2026-08-01 返修「裁定死不再留给实现选择」）：旧版名下【待处理】审核
             //    一律置 VOIDED。漏这步则旧版的未决审核永久孤悬——既不进新版待办池，也不被标失效，
             //    财务侧看不到它、也不知道它已过期。

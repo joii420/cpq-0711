@@ -138,34 +138,13 @@ public class PriceAdjustJobExecutionService {
         MaterialPriceUpdateJob job = MaterialPriceUpdateJob.findById(jobId);
         if (job == null) return;
         List<MaterialPriceUpdateJobItem> all = MaterialPriceUpdateJobItem.listByJob(jobId);
-        int success = 0, failed = 0, conflict = 0, stale = 0;
-        for (MaterialPriceUpdateJobItem it : all) {
-            switch (it.status) {
-                case MaterialPriceUpdateJobItem.SUCCESS -> success++;
-                case MaterialPriceUpdateJobItem.FAILED -> failed++;
-                case MaterialPriceUpdateJobItem.CONFLICT -> conflict++;
-                case MaterialPriceUpdateJobItem.STALE -> stale++;
-                default -> { /* WAITING/RUNNING 理论上不应残留，忽略 */ }
-            }
-        }
-        job.successCount = success;
-        job.failedCount = failed;
-        job.conflictCount = conflict;
-        job.staleCount = stale;
-        job.totalCount = all.size();
-        if (failed == 0 && conflict == 0 && stale == 0) {
-            job.status = MaterialPriceUpdateJob.SUCCESS;
-        } else if (success == 0 && stale == all.size()) {
-            job.status = MaterialPriceUpdateJob.STALE;
-        } else if (success == 0) {
-            job.status = MaterialPriceUpdateJob.FAILED;
-        } else {
-            job.status = MaterialPriceUpdateJob.PARTIAL;
-        }
+        // 🔒 计数口径唯一实现见 MaterialPriceUpdateJob#recountFrom —— supersede 转 STALE 后也走它，
+        //    两处各写一份迟早漂（本方法原先是唯一重算点，被取代的 job 永远走不到这里）。
+        job.recountFrom(all);
         job.finishedAt = OffsetDateTime.now();
         job.persist();
         LOG.infof("[price-adjust-job] jobId=%s finalized status=%s total=%d success=%d failed=%d conflict=%d stale=%d",
-            jobId, job.status, job.totalCount, success, failed, conflict, stale);
+            jobId, job.status, job.totalCount, job.successCount, job.failedCount, job.conflictCount, job.staleCount);
 
         // task-0729 B11：批次终态落库后通知（触发财务 + 受影响报价单销售负责人）。非阻断——
         // 通知失败绝不能让批次 finalize 结果回滚（同 PriceReconciler 接入 saveDraft 的既定手法）。

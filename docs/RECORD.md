@@ -4678,3 +4678,23 @@ E2E:
 **踩坑**：主仓跑 `./mvnw compile` / `mvnw test` 会写共享 dev server 正在用的 `target/classes`，期间 8081 会瞬时返 500（`Error restarting Quarkus`）或连接被拒，**几秒后自愈**。判"是不是我打挂了"要**重试几次再下结论**，别看到一次 500 就回滚。
 
 **自检**：`./mvnw -o compile` 4 次全 0 错误（先加实体方法 → 再改两个调用点，任一中间态可编译）✅；8081 业务端点 401 ✅；`mvnw -o test -Dtest='com.cpq.priceadjust.**'` → **52 tests, 0 failures** ✅；ZZ61 前缀在 8 张表计数全 0 ✅；存量 COMPARISON_COLUMN 仍 7/7 NULL（确认未回填）✅；未触碰 `CUST-0729-QA` / `CUST-0729-QB` / `CUST-0001`。
+
+---
+
+[2026-08-05] 价格调整策略（task-0729 验收期修复 · 续三） - `#61` 连带：旧版被取代后 job 计数器与明细对不上 | 涉及文件：`MaterialPriceUpdateJob.java`(新增 `recountFrom` / `recountByJobIds`) / `PriceAdjustJobExecutionService.java`(`finalizeJob` 改用共享实现) / `PriceAdjustVersionGenerationService.java`(supersede 后重算) |
+
+**背景**：`#61` 把 FAILED/CONFLICT 也纳入转 STALE 后，暴露一个**本次修复引入的展示缺陷** —— `staleAllUnfinishedByJobIds` 是 item 级批量 UPDATE，不碰 job 行的计数器；而 `finalizeJob`（唯一重算点）对**被取代的 job 永远不会再被调用**。结果屏 7 表头显示「失败 1 / 冲突 1 / 已失效 0」，点开明细全是 STALE。修复前只有 WAITING→STALE，WAITING 没有对应计数器列，所以矛盾看不出来。
+
+**修法**：把「按 items 真实状态重算五个计数器 + 批次状态」下沉为实体方法 `MaterialPriceUpdateJob#recountFrom(items)`，**两个调用方共用同一实现**（`finalizeJob` / supersede）。supersede 侧在 `generateVersion`（已是 `@Transactional`）**同一事务内**调 `recountByJobIds(staleJobIds)`。
+🔒 **全量重算，禁止增量推算**（`failedCount -= staleCount` 这类算法在并发或部分失败时会漂）—— 直接按 item 状态数一遍。
+🔒 **不抽出就是两处各写一份，迟早漂**（与 `stampActor` 同一手法：把"靠人记得"换成"结构上做不到"）。`recountByJobIds` 内先 `flush()+clear()` —— 上一行的 Panache 批量 UPDATE 绕过一级缓存，不清会读到陈旧 item 实体。
+🔒 **不碰 `finishedAt`**：那是"批次执行结束"语义，仍由 `finalizeJob` 单独负责，supersede 不是一次执行。
+连带改善：全 STALE 且无成功项的 job，状态按同一套推导自动落到 `MaterialPriceUpdateJob.STALE`（枚举与 CHECK 约束本就有该值）。
+
+**验证（合成 `ZZ61-C` 被测 + `ZZ61-D` 对照，验完零残留）**：
+- 自检1 正向：C 的 job 由 `PARTIAL 4/1/1/1/0` → `PARTIAL 4/1/0/0/3`，与明细 `STALE,STALE,SUCCESS,STALE` **逐项吻合**（status 仍 PARTIAL 正确：success=1≠0）。
+- 自检2 不误伤：D（**未被取代的 PENDING 版本**）计数器被**故意 seed 成错的** `RUNNING 99/0/0/0/0`，supersede 后**原样不动** —— 证明重算严格限定在被取代版本名下的 jobId。
+- 自检3 `finalizeJob` 不回归：随后 retry D 的 FAILED 项触发 `finalizeJob` → D 由错误的 `99/0/0/0/0` **纠正为** `PARTIAL 3/1/1/1/0`，与明细 `FAILED,SUCCESS,CONFLICT` 吻合。两条重算路径结果一致、不打架。
+- 机械断言（SQL 侧 `COUNT(*) FILTER` 对账）：两个 job 均 `表头与明细逐项吻合 = t`。
+
+**自检**：`./mvnw -o compile` 3 次 0 错误（先加实体方法 → 改 finalizeJob → 改 supersede 调用点，任一中间态可编译）✅；8081 401 ✅；`mvnw -o test -Dtest='com.cpq.priceadjust.**'` → **52 tests, 0 failures** ✅；ZZ47/ZZ61 前缀在 8 张表计数全 0 ✅；未触碰 `CUST-0729-QA` / `CUST-0729-QB` / `CUST-0001`。
