@@ -4996,3 +4996,46 @@ A = 点「提交审批」（skipWarm，补算只能发生在提交事务内）�
 ⚠️ **顺带记一条环境坑**：`pkill -f "vite --port 5199"` 会把**执行它的那条 shell 自己**也匹配上
 （命令行里含同样字符串）→ 自杀，同一条命令里 pkill 之后的语句全部不执行（本次 RECORD 追加就这么丢过一次）。
 清理临时进程要么用更精确的 pattern，要么单独一条命令跑。
+
+### 追补③：全列 UPDATE 覆盖用户输入 —— 前端侧影响面排查（只排查，修在后端）
+
+**后端根因**（后端 4/4 复现）：`QuotationLineItem` 未加 `@DynamicUpdate`，Hibernate 的 UPDATE **写全列**。
+后台计算开始时读进内存的旧值，会在 flush 时把**整行**写回 —— 与那段代码有没有写这些字段无关。
+受害的不止 `subtotal`：`annual_volume`（用户改的年用量）/ `discount_*` / `line_total_amount` 全部可能被旧值覆盖。
+
+**前端侧结论：保留用户输入 → 完全静默，用户没有任何征兆。**
+
+这 9 个字段在 `QuotationWizard.tsx` 全文只出现两处：
+`applyQuotationData`（`:434-442`，后端→界面）与 `buildDraftPayload`（`:1015-1023`，界面→后端）。
+`applyQuotationData` 的调用点只有三个：`:565` loadQuotation 的 GET / `:584` loadQuotation 内 warm 回灌 /
+`:602` 后端失败读 localStorage。**`handleSaveDraft` 与 `autoSaveDraft` 一个都不调它** ——
+它们走 `setQuotationPreservingStructures`（只动单头 state）+ `syncLineItemsFromResponse`
+（回灌白名单只有 `id` / `partVersionLocked` / 4 份卡片值）。Step3 渲染读 `lineItems` 本地 state（`:1769`）。
+→ **saveDraft 响应里这些字段被直接丢弃**，界面始终显示用户自己填的数。
+
+🔴 **比"静默"更糟的是时序 —— 静默到无法挽回**：
+```
+handleSubmit:  submit()          ← 后端在这里冻结 frozen_dto + 建核价单
+               loadQuotation()   ← 紧接着才 applyQuotationData 回读
+```
+用户**第一次有机会看到数字跳回旧值的时刻，是提交完成之后**，那时错值已写进不可逆的历史凭据。
+
+🔴 **"自愈"机制解释了它为什么能活这么久，也解释了为什么测不出来**：
+前端每次 saveDraft 都原样重发本地值（`:1015-1023`），所以被冲掉后只要再触发一次保存
+（改任何字段 / 切步骤 / 1.5s 防抖 autosave），本地正确值会把库里旧值盖回去。
+```
+改完【继续编辑】→ 下次 autosave 救回来 → 看不出问题
+改完【直接提交】→ 中间没有别的保存    → 冲掉的值直接被冻结
+```
+受害窗口恰好落在**最常见的收尾动作**上；而自愈同时保证它在开发/测试中几乎不会被发现 ——
+测试通常反复保存、反复检查，**每一次都在悄悄修复它**。
+👉 **通用教训：一个 bug 若只在「一气呵成走完流程」时出现，就会系统性地躲开所有耐心的验证。**
+定级按「完全静默 + 命中概率偏高」，不要写「用户能察觉」。
+
+（唯一可见面：详情页 `ProductDetailViews` 读后端 `quotation` 对象，会显示被冲掉的值 —— 但那已是提交后的另一个页面。）
+
+⚠️ **同时作废一条本会话早先的实测证据**：后端 `awaitWarmBeforeSubmit`（提交前等 3s 让锁）
+已从工作区撤下并重编译（当前 dev server 中出现次数 = 0）。此前实测的
+「下一步→0ms 立刻提交→等 3.12s→200」**不再成立，会退回立即 409**。
+复测提交路径前务必先确认服务端有没有那段代码 —— 该测量当时正确，但那份代码已经不在了。
+（本轮已提交的 `skipWarm` / 防抖 / Step5 同源均不依赖它。）
