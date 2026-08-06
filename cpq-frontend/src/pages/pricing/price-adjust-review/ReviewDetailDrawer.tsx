@@ -102,7 +102,10 @@ const ReviewDetailDrawer: React.FC<ReviewDetailDrawerProps> = ({ open, reviewId,
     {
       title: '差异', dataIndex: 'diffAdjusted', align: 'right' as const,
       render: (v: number | null, r: ComparisonColumnResultDTO) => {
-        if (r.status === 'MISSING') return <span style={cellStyle.MISSING}>—（缺核价数据{r.missingSide ? `：${MISSING_SIDE_LABEL[r.missingSide]}` : ''}）</span>;
+        // 主干用中性「缺数据」：原文案「缺核价数据」在 missingSide=QUOTE 时自相矛盾
+        // （说缺核价数据、又说缺在报价侧），BOTH 同样别扭。改后三态都读得通：
+        // 缺数据：报价侧 / 核价侧 / 两侧；missingSide 为空时退化为「—（缺数据）」。
+        if (r.status === 'MISSING') return <span style={cellStyle.MISSING}>—（缺数据{r.missingSide ? `：${MISSING_SIDE_LABEL[r.missingSide]}` : ''}）</span>;
         if (r.status === 'STALE') return <Tooltip title="该比对列配置已失效（模板改版后 componentId/指标找不到），不计入标红判定"><span style={cellStyle.STALE}>已失效</span></Tooltip>;
         return <b>{fmt(v)}</b>;
       },
