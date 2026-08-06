@@ -3330,10 +3330,25 @@ public class CardSnapshotService {
             QuotationLineItem liM = QuotationLineItem.findById(lineItemId);
             if (liM == null) return null;
             liM.quoteValuesAt = OffsetDateTime.now();
-            if (rebuildQuoteCardValues) {   // 与上方赋值配对：重灌了卡片值才需要覆盖派生小计
+            // 与上方赋值配对：重灌了卡片值才需要覆盖派生小计。
+            // rebuildQuoteCardValues=false（树删除 tx2）时，li.subtotal / cd.subtotal 已由 tx1 的
+            // snapshotQuoteSideOnly → assignQuoteCardValues 算好；本方法只重写 cd.row_data、不动卡片值，
+            // 故派生小计无需再算一次。
+            if (rebuildQuoteCardValues) {
                 applySubtotalsFromCardValues(liM, liM.quotationId);
-                recomputeDraftHeaderTotals(liM.quotationId);
             }
+            // 🔴 单头重算【必须在 if 之外】（D3-28 缺陷：树删除后 li.subtotal 变了、q.total_amount 不动）。
+            // 上面那个 if 的配对关系对「覆盖派生小计」成立、对「重算单头」**不成立**：
+            //   单头要跟的是 li.subtotal 的【当前值】，而 rebuildQuoteCardValues=false 这条路上
+            //   它已经被 tx1（QuotationTreeService#executeDelete → snapshotQuoteSideOnly）改掉了。
+            // 症状：树删除后行总价 37.330516→30.026838 正确，但列表页「总金额」仍是删除前的数
+            //       —— 分叉只是从「行」搬到了「单」。
+            // 安全性：本方法自带 DRAFT 闸门 + 自己 findById 取托管实体，幂等；四个调用方都是
+            //       单行单请求的端点（不在任何 N 行循环里），多调一次无害、漏调就是分叉。
+            // 🔒 位置不可上移：必须留在 materializeWholeLineRowData（REQUIRES_NEW）+ flush/clear
+            //       之后，否则外层先锁住行、内层另开事务再写 → 自锁至 JTA 60s 超时（见
+            //       applySubtotalsFromCardValues 注释里的实测记录）。
+            recomputeDraftHeaderTotals(liM.quotationId);
 
             java.util.Map<String, Object> resp = new LinkedHashMap<>();
             resp.put("quoteCardValues", liM.quoteCardValues);
