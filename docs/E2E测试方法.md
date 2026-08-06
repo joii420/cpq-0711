@@ -533,6 +533,20 @@ page.getByRole('button', { name: /^保\s*存$/ })
 1. **同名按钮可能藏在未激活的 Tab 面板里** —— 页面上有 3 个「保存」时，`.first()` 会点到隐藏的那个并超时。加 `:visible` 或用容器限定
 2. **`psql -c` 的多条语句是一个事务** —— 建测试数据时后半句报错（如 NOT NULL），**前半句一起回滚**。表现为"页面上搜不到刚建的客户"，很容易误判成功能问题
 
+### 4.6.1b 横向滚动表格的第一行是 antd 的隐藏测量行
+
+配了 `scroll={{ x: 'max-content' }}` 的 `<Table>`，`tbody` 的**第一行**是 antd 自动插入的测量行：
+
+```html
+<tr class="ant-table-measure-row" style="height:0;font-size:0">   ← 永远 hidden
+```
+
+后果：`tbody tr` 取到的第一行**永远是它**，`waitFor({state:'visible'})` **必然超时**（实测日志刷 45 次 `locator resolved to hidden <tr class="ant-table-measure-row">`）。
+
+**正确写法**：行选择器一律用 `tr.ant-table-row`，不要用 `tbody tr`。
+
+⚠️ **同一套 helper 在两个页面上表现不同**就是这个原因 —— 没配 `scroll` 的表格没有这一行。本项目实测：料号矩阵没配、元素矩阵配了，helper 直接搬过去就炸。
+
 ### 4.6.2 环境状态没归零时，测出来的每个数字都在说谎
 
 实测案例：上一轮保存的 5 个已选项被页面 seed 回填，测试脚本仍按"点下标 0/1/2"操作 → 实际是**取消勾选** → 日志打出「勾 3 个后计数器 = 2」，**看着活像功能坏了**。
