@@ -5039,3 +5039,37 @@ handleSubmit:  submit()          ← 后端在这里冻结 frozen_dto + 建核�
 「下一步→0ms 立刻提交→等 3.12s→200」**不再成立，会退回立即 409**。
 复测提交路径前务必先确认服务端有没有那段代码 —— 该测量当时正确，但那份代码已经不在了。
 （本轮已提交的 `skipWarm` / 防抖 / Step5 同源均不依赖它。）
+
+---
+
+## [2026-08-06] task-0729 价格调整审核「直达比对视图」404 —— 前端路由从未注册该路径 | repair-0806
+
+**症状**：`/pricing/reviews` → 料号审核抽屉（如 `3120011203`）→ 点「直达比对视图」/ 单号链接 →
+`/quotations/{id}/comparison` 报 react-router 默认错误页 `Unexpected Application Error! 404 Not Found`。
+
+**根因（单一，非数据问题）**：
+- 后端 `PriceAdjustReviewService.java:221` 按 `dev-docs/task-0729/api.md §2.2` 契约下发
+  `comparisonViewUrl = "/quotations/" + q.id + "/comparison"`；
+- 但 task-0717 的比对视图**不是独立页面**，而是 `ProductDetailViews.tsx` 内「报价单 / 核价单 / 比对视图」
+  一级 Segmented 的第三个子视图（挂在 `/quotations/:id` 详情页的「报价单信息」Tab 里）；
+- `src/router/index.tsx` 只有 `quotations/:id` 与 `quotations/:id/edit`，**`quotations/:id/comparison` 从未注册** → 无路由匹配 → 404。
+- 报价单本身正常（`b8371fb7-…` = QT-20260806-0083，DRAFT，1 个 SIMPLE 行），与数据无关。
+
+**为什么没被测出来**：`e2e/tmp-task0729-screen34-mocked.spec.ts:96-97` 的 mock 把 `comparisonViewUrl`
+写成 `/quotations/q-1`（少了 `/comparison` 后缀），且该 spec 从未点击「直达比对视图」。
+👉 教训：**mock 里的 URL 字段若不照抄后端真实产出，就等于把该字段的契约测掉了**。
+
+**修法（保留 api.md 的 URL 契约不动，前端补深链承接）**：
+| 文件 | 改动 |
+|------|------|
+| `cpq-frontend/src/router/index.tsx` | 新增 `{ path: 'quotations/:id/comparison', element: <QuotationDetail /> }`。守卫口径同 `/quotations/:id`（**不挂 `QUOTATION_MGMT_ROLES`**——直达入口在价格调整审核，属定价经理/系统管理员，加销售角色守卫会把正主挡在门外） |
+| `cpq-frontend/src/pages/quotation/QuotationDetail.tsx` | `useLocation()` 判 `pathname.endsWith('/comparison')` → 传 `initialMainTab='comparison'` |
+| `cpq-frontend/src/pages/quotation/ProductDetailViews.tsx` | 新增可选 prop `initialMainTab`，作 `mainTab` 的 `useState` 初值；不传时保持默认 `'quote'`（CostingReviewPage 调用方零影响） |
+
+**回归证据**：新增 `e2e/repair-0806-comparison-deeplink.spec.ts`（先写失败用例复现 404，再修）——
+修前 `Unexpected Application Error` 命中 1 → 失败；修后 `1 passed`：深链无错误页 + Segmented 预选「比对视图」
++ ComparisonBoard 真挂载（工具栏过滤框存在、无 error Alert）+ 截图 `screenshots/r0806-comparison-deeplink.png`
+显示料号 `3120011203` 报价 59.58 / 核价 0.00 / 差异 +59.58；同时断言不带 `/comparison` 的普通详情深链
+仍默认「报价单」子视图（无回归）。
+
+**自检**：`npx tsc --noEmit` 0 错误 ✅；三个改动文件 Vite transform 均 200 ✅；E2E 1 passed ✅。
