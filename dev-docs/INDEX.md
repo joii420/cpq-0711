@@ -24,7 +24,7 @@
 | 主线 | 状态 | 最近动作 |
 |---|---|---|
 | `task-0806-模板发布全量冻结` | 🔴 **P0 刚立项**（需求文档 `1446eaa5`） | 模板 PUBLISHED 后「内容层」仍是活的 —— 保存组件即静默改写最多 6 张已发布模板 + 在途报价单。是**代码漂移出基线文档**（基线 `:178/:182` + §10.2#4 写的就是不可变）。`BL-0133`；待出实现计划 |
-| `task-0806-价格调整更新任务性能优化` | 📐 **刚立项**（需求文档 + 实现计划） | 更新任务 58s(18项) → 目标 22~25s。`BL-0138`；**分组键必须含取价基准日**（实测反例：按 job 整批会写坏 5/18 张单的核价卡片）；待进场 |
+| `task-0806-价格调整更新任务性能优化` | 📐 **刚立项**（需求文档 + 实现计划） | 更新任务 58s(18项) → 目标 22~25s。`BL-0140`；**分组键必须含取价基准日**（实测反例：按 job 整批会写坏 5/18 张单的核价卡片）；待进场 |
 | `task-0729-客户价格调整策略和价格版本` **方向 3** | 🟢 **刚交付**（验收报告 `c2562242`） | 总价单一来源改造；收尾三修 `3a69ca97`；遗留 BL-0130/0131/0132（竞态与并发覆盖） |
 | `task-0805-组件导入导出功能升级` | ✅ 已合并 `13b62f42` | 绑定校验前移到导出/预览；BL-0120 → DONE |
 | **BL-0127 族**（卡片快照回种用户编辑） | ✅ 已交付 `fe5abcdf` | 行内公式列不随编辑重算；收敛 `row_data→editRows` 为单一实现 |
@@ -153,7 +153,7 @@ done | sort | cut -d'|' -f1 | uniq -c | sort -rn | awk '$1>=4'
 | 目录 | 一句话 | 状态 | 主战场文件 |
 |---|---|---|---|
 | `task-0806-报价编辑链路优化与前后端对账/` | 把后端从**显示权威降级为校验器**：DRAFT 行内走前端引擎（与列小计同源、零等待），后端异步照算做**对账**，不一致亮标记 + **禁提交**；其上叠异步/懒物化/缓存三级优化。实测一格编辑 900ms 分布：整行物化 `row_data` 356ms(45%) > 整卡重算 120ms > 小计+整单表头 78ms | 📐 **需求文档定稿，D1~D9 已拍板，待实现**（`BL-0137` P0） | `QuotationStep2.tsx` `ReadonlyProductCard.tsx` `CardSnapshotService.java`（`editCardValue`/`materializeWholeLineRowData`） |
-| `task-0806-价格调整更新任务性能优化/` | 价格调整通过后「更新任务」提速：18 项 job 实测 58s（3.22s/项）→ 目标 22~25s。热点 = 核价树 `render()` 43.5% + S0 口径守卫 14.3%。**实测否定两条路**：不是 N+1（一次 render 恰好 17 条 SQL、零重复）、不能上线程池（2026-06-22 同款设计已 revert）。真正浪费 = `refreshCostingCardValuesForLine` 逐项调 `render(List.of(li))` → 18 项发 306 条 SQL 而非 17 条 | 📐 **需求文档 + 实现计划定稿，待实现**（`BL-0138` P1） | `BomTreeRenderService.java` `CardSnapshotService.java`（`refreshCostingCardValuesForLine`）`PriceAdjustJobExecutionService.java` `MaterialVersionUpgradeService.java` |
+| `task-0806-价格调整更新任务性能优化/` | 价格调整通过后「更新任务」提速：18 项 job 实测 58s（3.22s/项）→ 目标 22~25s。热点 = 核价树 `render()` 43.5% + S0 口径守卫 14.3%。**实测否定两条路**：不是 N+1（一次 render 恰好 17 条 SQL、零重复）、不能上线程池（2026-06-22 同款设计已 revert）。真正浪费 = `refreshCostingCardValuesForLine` 逐项调 `render(List.of(li))` → 18 项发 306 条 SQL 而非 17 条 | 📐 **需求文档 + 实现计划定稿，待实现**（`BL-0140` P1） | `BomTreeRenderService.java` `CardSnapshotService.java`（`refreshCostingCardValuesForLine`）`PriceAdjustJobExecutionService.java` `MaterialVersionUpgradeService.java` |
 | `task-0806-模板发布全量冻结/` | 模板 PUBLISHED 后**内容层仍活穿透**（③ 类：refresh 改写快照 / 6 字段从未进快照 / 渲染期 10 处直读活表）→ 新建 `template_component_snapshot` 关系表 + `refreshSnapshotsByComponent` 整体下线 + 读取收口 `PublishedTemplateReader` | 📐 **需求文档定稿，待实现**（`BL-0133` P0） | `TemplateService.java:340` `ComponentService.java:733` `CardSnapshotService.java` `ConfigureSnapshotService.java` `ExcelViewService.java` |
 | `task-0721-报价侧树状结构与页签类型属性/` | 报价卡片按 BOM 树渲染（复用核价 spine 引擎）+ 页签类型属性（BOM/材质元素/零件/组成件/外购件/主件） | ✅ 已交付 | `QuotationStep2.tsx` `QuotationTreeService.java` |
 | └ `repair-0727-报价单报价侧删除行BUG/` | **一行有 4 套身份**（`__effKey`/fp 墓碑/rowKey/`__nodeId`），删除与校验都没用 `__nodeId` | ✅ 合 master `bf3822a3` | `DeletedRowKeys.java` `BomTreeDeleteConfirmDrawer.tsx` |
