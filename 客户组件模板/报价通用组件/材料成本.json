@@ -1,0 +1,279 @@
+{
+  "bundleVersion": "1.0",
+  "exportedAt": "2026-08-02T19:24:53.147186931-07:00",
+  "source": {
+    "directoryId": "7bd86c7c-e3a8-422d-b176-43c1ab376dc8",
+    "directoryName": "报价通用组件"
+  },
+  "components": [
+    {
+      "id": "341cad25-62cc-4d00-9cd9-fdda2ecad7ca",
+      "code": "COMP-0164",
+      "name": "材料成本",
+      "componentType": "NORMAL",
+      "columnCount": 13,
+      "status": "ACTIVE",
+      "dataDriverPath": "$mc_view",
+      "tabType": "材质元素",
+      "partNoField": "料号",
+      "partNameField": "料件",
+      "sortField": "项次",
+      "rowKeyFields": [
+        "销售料号",
+        "料号",
+        "元素"
+      ],
+      "fields": [
+        {
+          "name": "销售料号",
+          "notes": "= 所属销售料号（闭包后区分主件/子件归属，§3.8.4）",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._销售料号",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "料号",
+          "notes": "= 材质料号 element_bom_item.material_part_no（本页签语义层级料号）",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._料号",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "料件",
+          "notes": "= 材质名，逐行取自本行 material_part_no（一号多材质铁律）",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._料件",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "项次",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._项次",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "元素",
+          "notes": "价格策略的元素列（element_code_field）",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._元素",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "组成含量(%)",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._组成含量",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "损耗率%",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._损耗率",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "毛重",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._毛重",
+            "type": "BASIC_DATA"
+          },
+          "unit_source_field": "毛用量单位"
+        },
+        {
+          "name": "毛用量单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._毛用量单位",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "净用量",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._净用量",
+            "type": "BASIC_DATA"
+          },
+          "unit_source_field": "净用量单位"
+        },
+        {
+          "name": "净用量单位",
+          "notes": "⚠️ 与「毛用量单位」同源：element_bom_item 只有一个 issue_unit 列（导入器：净用量单位非空存它，否则存毛用量单位），2026-08-02 用户定两列都绑它，故两列显示同值。",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._净用量单位",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "元素单价",
+          "notes": "接客户价格策略 f_customer_element_price；单价口径不进小计（R7 例外）。无价留 NULL 手填，禁 COALESCE 兜底 0。",
+          "content": "",
+          "is_amount": true,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view.元素单价",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "元素回收折扣",
+          "notes": "= element_bom_item.recovery_discount ← 「元素回收折扣」sheet（Q05）",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$mc_view._元素回收折扣",
+            "type": "BASIC_DATA"
+          }
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "mc_view",
+          "sqlTemplate": "-- 材料成本（材质元素，平铺契约：hf_part_no + :customerCode；元素单价接客户价格策略）\n-- 「销售料号」= 所属销售料号(ebi.material_no)：闭包后主件与子件的材质行同页签共存，靠本列区分归属\n--   (§3.8.4)；它必须同时在 rowKeyFields 里，否则撞键 → 编辑串行/末值塌缩。\n-- 「料号」= 材质料号(ebi.material_part_no) = 本页签语义层级的料号（§3.4 第二步）。\n-- 「产出类型」不在本模板的本页签（该列在【物料】BOM 页签直接取 mbi.component_usage_type）。\n-- task-0726 BOM 闭包：hf_part_no 输出「闭包根料号」，使子件的数据也进入本页签（§3.8.1 判据）。\n-- ⚠️ 铁律1：白名单表必须在顶层 FROM，不能写成 FROM bom_closure JOIN <白名单表>，否则\n--          QuotePendingRewriter 主位表探测退化选中 CTE base case 的表 → 锚点注入报\n--          \"each UNION query must have the same number of columns\"。\n-- ⚠️ 铁律2：必须 LEFT JOIN bom_closure_d + COALESCE 兜底 —— 无任何 BOM 行的单料产品不在闭包里，\n--          写成 INNER JOIN 或直取 cl.root_no 会让这类产品的页签整个空白。\nWITH RECURSIVE bom_closure AS (\n  SELECT DISTINCT b.material_no AS root_no, b.material_no AS node_no, 0 AS lvl\n  FROM material_bom_item b\n  WHERE b.system_type = 'QUOTE' AND b.is_current AND b.customer_no = :customerCode\n  UNION            -- ⚠️ 铁律3：用 UNION 去重，不能 UNION ALL（同一对父子常并存 RECIPE+ASSEMBLY 两条边）\n  SELECT c.root_no, b.component_no, c.lvl + 1\n  FROM bom_closure c\n    JOIN material_bom_item b ON b.material_no = c.node_no\n  WHERE b.system_type = 'QUOTE' AND b.is_current AND b.customer_no = :customerCode\n    AND c.lvl < 10                          -- 深度上限，防环\n), bom_closure_d AS (\n  -- 🔒 (root,node) 唯一化：多条边/多层路径到达同一子件时只留一行（取最浅层）。\n  --    漏这层 → 平铺页签行数成倍复制、页签小计翻倍（§3.8.3 铁律3）。\n  SELECT root_no, node_no, MIN(lvl) AS lvl FROM bom_closure GROUP BY root_no, node_no\n)\nSELECT\n  COALESCE(cl.root_no, ebi.material_no) AS hf_part_no,\n  ebi.material_no AS _销售料号,\n  ebi.material_part_no AS _料号,                   -- 材质料号（partNoField）\n  COALESCE(mr.name, mm2.material_name) AS _料件,   -- 材质名：逐行取自本行 material_part_no\n  ebi.seq_no AS _项次,\n  ebi.component_no AS _元素,\n  ebi.content AS _组成含量,\n  ebi.scrap_rate AS _损耗率,\n  ebi.composition_qty AS _毛重,\n  ebi.issue_unit AS _毛用量单位,\n  -- 【净用量】= element_bom_item.base_qty ←「物料与元素BOM」sheet 的「净用量」(Q04:72)。\n  ebi.base_qty AS _净用量,\n  -- 【净用量单位】⚠️ V6 只有一个 issue_unit 列：Q04 的口径是「净用量单位非空则存它，否则存毛用量单位」，\n  --   即毛/净两个单位在库里共用同一列。2026-08-02 用户拍板：两列都绑 issue_unit（显示同值）。\n  ebi.issue_unit AS _净用量单位,\n  -- 【元素回收折扣】= element_bom_item.recovery_discount ←「元素回收折扣」sheet（Q05 按\n  --   (销售料号, 材质料号, 元素) 三维 UPDATE 到本行上），故直接取本行列、无需子查询。\n  ebi.recovery_discount AS _元素回收折扣,\n  -- 价格策略列：别名逐字、不加 _（硬约束6）。本模板无「货币」列 → element_currency_field 留空。\n  cep.unit_price AS 元素单价\nFROM element_bom_item ebi\n  LEFT JOIN bom_closure_d cl ON cl.node_no = ebi.material_no\n  LEFT JOIN material_recipe mr  ON mr.code = ebi.material_part_no\n  LEFT JOIN material_master mm2 ON mm2.material_no = ebi.material_part_no\n  LEFT JOIN f_customer_element_price(:customerCode, :priceBaseDate) cep\n         ON cep.element_code = ebi.component_no     -- LEFT JOIN + 元素符号键（硬约束 1/2）\nWHERE ebi.system_type = 'QUOTE' AND ebi.is_current AND ebi.customer_no = :customerCode\nORDER BY COALESCE(cl.lvl, 0), ebi.material_no, ebi.material_part_no, ebi.seq_no",
+          "declaredColumns": [
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_销售料号",
+              "dataType": "varchar",
+              "nullable": false
+            },
+            {
+              "name": "_料号",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_料件",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_项次",
+              "dataType": "int4",
+              "nullable": true
+            },
+            {
+              "name": "_元素",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_组成含量",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_损耗率",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_毛重",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_毛用量单位",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_净用量",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_净用量单位",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_元素回收折扣",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "元素单价",
+              "dataType": "numeric",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [
+            "customerCode",
+            "priceBaseDate"
+          ],
+          "scope": "COMPONENT",
+          "description": null
+        }
+      ]
+    }
+  ],
+  "dependencies": {
+    "globalVariables": [],
+    "datasources": []
+  },
+  "checksum": "sha256:6d8dbe3a1caa46ffcb95675404465a722b30dca3e2ebc72290c4ee2a09f8f8f7"
+}

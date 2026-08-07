@@ -1,0 +1,176 @@
+{
+  "bundleVersion": "1.0",
+  "exportedAt": "2026-08-03T18:01:30.511118298-07:00",
+  "source": {
+    "directoryId": "65ac9b8b-1786-4cef-b50c-40edd50b3363",
+    "directoryName": "报价通用组件"
+  },
+  "components": [
+    {
+      "id": "4856ae6d-dad2-4613-bea6-eb12aec1b192",
+      "code": "COMP-0174",
+      "name": "电镀费用",
+      "componentType": "NORMAL",
+      "columnCount": 7,
+      "status": "ACTIVE",
+      "dataDriverPath": "$dp_view",
+      "tabType": null,
+      "partNoField": null,
+      "partNameField": null,
+      "sortField": "项次",
+      "rowKeyFields": [
+        "销售料号",
+        "料件",
+        "项次",
+        "要素"
+      ],
+      "fields": [
+        {
+          "name": "销售料号",
+          "notes": "= up.finished_material_no（repair-0802 起必有值；hf_part_no 走闭包根兜底）",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$dp_view._销售料号",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "料件",
+          "notes": "= 投入料号名称（经 up.code 取名）；≠ 电镀元素名称",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$dp_view._料件",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "项次",
+          "notes": "⚠️ Q17 不写 seq_no → 当前恒空，可手填",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$dp_view._项次",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "要素",
+          "notes": "= up.cost_type：电镀加工费 / 电镀材料费",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$dp_view._要素",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "费用",
+          "notes": "",
+          "content": "",
+          "is_amount": true,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": true,
+          "default_source": {
+            "path": "$dp_view._费用",
+            "type": "BASIC_DATA"
+          },
+          "unit_source_field": "单位"
+        },
+        {
+          "name": "单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$dp_view._单位",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "不良率",
+          "notes": "= up.defect_rate ← Q17「不良率」列",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$dp_view._不良率",
+            "type": "BASIC_DATA"
+          }
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "dp_view",
+          "sqlTemplate": "-- 电镀费用（费用页签，tabType 空不参与树；price_type='PLATING'）\n-- 行式出行：每（销售料号 × 投入料号）两行 —— cost_type='电镀加工费' / '电镀材料费'，值在 pricing_price。\n--\n-- 🔑 repair-0802（2026-08-02）新口径 —— 本视图 2026-08-03 按此重写，与旧版语义相反，勿回退：\n--    | 列                        | 改造前        | 改造后（现行）                          |\n--    | up.code                   | 销售料号      | **投入料号（零件料号）**，两列皆空时回退=销售料号 |\n--    | up.finished_material_no   | 恒 NULL       | **销售料号（成品）**，必有值              |\n--    Q17PlatingCostHandler 落库口径已归队 Q06/Q07/Q13，groupKey 含 (code, finished_material_no) 两个料号维度。\n--    ⇒ hf_part_no（驱动收窄键）与闭包 JOIN 键**必须绑 finished_material_no**：\n--      继续绑 up.code 会拿零件号去匹配本报价行的成品料号，且当同一零件被多个成品共用时，\n--      会把 A 成品的电镀费串到 B 成品的报价行上（2026-08-03 单事务造数 A/B 实证：旧写法在\n--      只共用零件的 P-TEST9 上凭空多出 1.396/1.550 两行，新写法 0 行）。\n--\n-- ⚠️ 不用 报价侧.md §7.4 的 PIVOT 行转列写法：本模板把「要素」做成了一列（每行一个费用项），保持行式即可。\n--    行式下没有 GROUP BY，§5.4 随动规则 2「GROUP BY 必须含 up.code」天然满足（每行独立、不会被 MAX() 吞并）。\n-- ⚠️ 「料件」= 投入料号名称（经 up.code 取名），**不是电镀元素名称**（镀层元素 Ag/Ni 在 unit_price 无源）。\n-- ⚠️ up.seq_no 无写入路径（Q17 的 CONTENT 只有 pricing_price/currency/unit/defect_rate）→「项次」列恒空、可手填。\n--\n-- task-0726 BOM 闭包：hf_part_no 输出「闭包根料号」，使子件的数据也进入本页签（§3.8.1 判据：\n--    本页签展示的是整个产品结构的成本构成）。闭包 JOIN 键按 §3.8.2 对照表「零件/unit_price」行 = finished_material_no。\n-- ⚠️ 铁律1：白名单表必须在顶层 FROM，不能写成 FROM bom_closure JOIN <白名单表>，否则\n--          QuotePendingRewriter 主位表探测退化选中 CTE base case 的表 → 锚点注入报\n--          \"each UNION query must have the same number of columns\"。\n-- ⚠️ 铁律2：必须 LEFT JOIN bom_closure_d + COALESCE 兜底 —— 无任何 BOM 行的单料产品不在闭包里，\n--          写成 INNER JOIN 或直取 cl.root_no 会让这类产品的页签整个空白。\nWITH RECURSIVE bom_closure AS (\n  SELECT DISTINCT b.material_no AS root_no, b.material_no AS node_no, 0 AS lvl\n  FROM material_bom_item b\n  WHERE b.system_type = 'QUOTE' AND b.is_current AND b.customer_no = :customerCode\n  UNION            -- ⚠️ 铁律3：用 UNION 去重，不能 UNION ALL（同一对父子常并存 RECIPE+ASSEMBLY 两条边）\n  SELECT c.root_no, b.component_no, c.lvl + 1\n  FROM bom_closure c\n    JOIN material_bom_item b ON b.material_no = c.node_no\n  WHERE b.system_type = 'QUOTE' AND b.is_current AND b.customer_no = :customerCode\n    AND c.lvl < 10                          -- 深度上限，防环\n), bom_closure_d AS (\n  -- 🔒 (root,node) 唯一化：多条边/多层路径到达同一子件时只留一行（取最浅层）。\n  --    漏这层 → 平铺页签行数成倍复制、页签小计翻倍（§3.8.3 铁律3）。\n  SELECT root_no, node_no, MIN(lvl) AS lvl FROM bom_closure GROUP BY root_no, node_no\n)\nSELECT\n  COALESCE(cl.root_no, up.finished_material_no) AS hf_part_no,\n  up.finished_material_no AS _销售料号,             -- 本行归属成品（repair-0802 起直接给出，不再靠闭包反推）\n  COALESCE(mm.material_name, mr.name) AS _料件,     -- 投入料号名称（经 up.code = 被电镀的零件料号）\n  up.seq_no AS _项次,                               -- Q17 不写 seq_no → 恒空，可手填\n  up.cost_type AS _要素,                            -- 电镀加工费 / 电镀材料费\n  up.pricing_price AS _费用,\n  up.unit AS _单位,\n  up.defect_rate AS _不良率\nFROM unit_price up\n  LEFT JOIN bom_closure_d cl ON cl.node_no = up.finished_material_no\n  LEFT JOIN material_master mm ON mm.material_no = up.code\n  LEFT JOIN material_recipe mr ON mr.code = up.code\nWHERE up.system_type = 'QUOTE' AND up.price_type = 'PLATING' AND up.is_current = true\n  AND up.customer_no = :customerCode\nORDER BY COALESCE(cl.lvl, 0), up.finished_material_no, up.code, COALESCE(up.seq_no, 0), up.cost_type",
+          "declaredColumns": [
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_销售料号",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_料件",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_项次",
+              "dataType": "int4",
+              "nullable": true
+            },
+            {
+              "name": "_要素",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_费用",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_单位",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_不良率",
+              "dataType": "numeric",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [
+            "customerCode"
+          ],
+          "scope": "COMPONENT",
+          "description": null
+        }
+      ]
+    }
+  ],
+  "dependencies": {
+    "globalVariables": [],
+    "datasources": []
+  },
+  "checksum": "sha256:f0b12807b0e19494f1f9b17e681407af6b7c750f7164ea9cc4943f2eae6e2e04"
+}

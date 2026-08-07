@@ -1,0 +1,176 @@
+{
+  "bundleVersion": "1.0",
+  "exportedAt": "2026-08-02T19:24:56.940311186-07:00",
+  "source": {
+    "directoryId": "4ec1cb84-c093-464b-b2e3-123936296774",
+    "directoryName": "报价通用组件"
+  },
+  "components": [
+    {
+      "id": "2d033c35-bd22-4b85-a357-48f66741402d",
+      "code": "COMP-0168",
+      "name": "来料固定加工费",
+      "componentType": "NORMAL",
+      "columnCount": 7,
+      "status": "ACTIVE",
+      "dataDriverPath": "$ll_view",
+      "tabType": null,
+      "partNoField": null,
+      "partNameField": null,
+      "sortField": "项次",
+      "rowKeyFields": [
+        "销售料号",
+        "料件",
+        "项次",
+        "工序"
+      ],
+      "fields": [
+        {
+          "name": "销售料号",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$ll_view._销售料号",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "料件",
+          "notes": "来料件名（经 up.code 取名）",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$ll_view._料件",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "项次",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$ll_view._项次",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "工序",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$ll_view._工序",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "加工费",
+          "notes": "该 price_type 金额常落 base_value、pricing_price 恒空 → COALESCE 两列取",
+          "content": "",
+          "is_amount": true,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": true,
+          "default_source": {
+            "path": "$ll_view._加工费",
+            "type": "BASIC_DATA"
+          },
+          "unit_source_field": "单位"
+        },
+        {
+          "name": "比例",
+          "notes": "= up.cost_ratio（Q06 写「比例」列）",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_NUMBER",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$ll_view._比例",
+            "type": "BASIC_DATA"
+          }
+        },
+        {
+          "name": "单位",
+          "notes": "",
+          "content": "",
+          "is_amount": false,
+          "field_type": "INPUT_TEXT",
+          "is_subtotal": false,
+          "default_source": {
+            "path": "$ll_view._单位",
+            "type": "BASIC_DATA"
+          }
+        }
+      ],
+      "formulas": [],
+      "excelColumns": [],
+      "sqlViews": [
+        {
+          "sqlViewName": "ll_view",
+          "sqlTemplate": "-- 来料固定加工费（费用页签，tabType 空不参与树；price_type='INCOMING_MATERIAL_PROCESS'）\n-- 「销售料号」= 所属销售料号(up.finished_material_no)；「料件」= 来料件名（经 up.code 取名）。\n-- ⚠️ 该 price_type 的金额落在 base_value、pricing_price 恒空 → 绑 COALESCE(pricing_price, base_value)。\n-- task-0726 BOM 闭包：hf_part_no 输出「闭包根料号」，使子件的数据也进入本页签（§3.8.1 判据）。\n-- ⚠️ 铁律1：白名单表必须在顶层 FROM，不能写成 FROM bom_closure JOIN <白名单表>，否则\n--          QuotePendingRewriter 主位表探测退化选中 CTE base case 的表 → 锚点注入报\n--          \"each UNION query must have the same number of columns\"。\n-- ⚠️ 铁律2：必须 LEFT JOIN bom_closure_d + COALESCE 兜底 —— 无任何 BOM 行的单料产品不在闭包里，\n--          写成 INNER JOIN 或直取 cl.root_no 会让这类产品的页签整个空白。\nWITH RECURSIVE bom_closure AS (\n  SELECT DISTINCT b.material_no AS root_no, b.material_no AS node_no, 0 AS lvl\n  FROM material_bom_item b\n  WHERE b.system_type = 'QUOTE' AND b.is_current AND b.customer_no = :customerCode\n  UNION            -- ⚠️ 铁律3：用 UNION 去重，不能 UNION ALL（同一对父子常并存 RECIPE+ASSEMBLY 两条边）\n  SELECT c.root_no, b.component_no, c.lvl + 1\n  FROM bom_closure c\n    JOIN material_bom_item b ON b.material_no = c.node_no\n  WHERE b.system_type = 'QUOTE' AND b.is_current AND b.customer_no = :customerCode\n    AND c.lvl < 10                          -- 深度上限，防环\n), bom_closure_d AS (\n  -- 🔒 (root,node) 唯一化：多条边/多层路径到达同一子件时只留一行（取最浅层）。\n  --    漏这层 → 平铺页签行数成倍复制、页签小计翻倍（§3.8.3 铁律3）。\n  SELECT root_no, node_no, MIN(lvl) AS lvl FROM bom_closure GROUP BY root_no, node_no\n)\nSELECT\n  COALESCE(cl.root_no, up.finished_material_no) AS hf_part_no,\n  up.finished_material_no AS _销售料号,\n  COALESCE(mm.material_name, mr.name) AS _料件,\n  up.seq_no AS _项次,\n  COALESCE(pm.process_name, up.operation_no) AS _工序,\n  COALESCE(up.pricing_price, up.base_value) AS _加工费,\n  up.cost_ratio AS _比例,\n  up.unit AS _单位\nFROM unit_price up\n  LEFT JOIN bom_closure_d cl ON cl.node_no = up.finished_material_no\n  LEFT JOIN material_master mm ON mm.material_no = up.code\n  LEFT JOIN material_recipe mr ON mr.code = up.code\n  LEFT JOIN process_master pm ON pm.process_no = up.operation_no\nWHERE up.system_type = 'QUOTE' AND up.price_type = 'INCOMING_MATERIAL_PROCESS' AND up.is_current = true\n  AND up.customer_no = :customerCode\nORDER BY COALESCE(cl.lvl, 0), up.finished_material_no, up.seq_no",
+          "declaredColumns": [
+            {
+              "name": "hf_part_no",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_销售料号",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_料件",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_项次",
+              "dataType": "int4",
+              "nullable": true
+            },
+            {
+              "name": "_工序",
+              "dataType": "varchar",
+              "nullable": true
+            },
+            {
+              "name": "_加工费",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_比例",
+              "dataType": "numeric",
+              "nullable": true
+            },
+            {
+              "name": "_单位",
+              "dataType": "varchar",
+              "nullable": true
+            }
+          ],
+          "requiredVariables": [
+            "customerCode"
+          ],
+          "scope": "COMPONENT",
+          "description": null
+        }
+      ]
+    }
+  ],
+  "dependencies": {
+    "globalVariables": [],
+    "datasources": []
+  },
+  "checksum": "sha256:60a8e9d0511521af2880c9fdb3e7210459d10429ebc100fc9536d042cd1b14e1"
+}
