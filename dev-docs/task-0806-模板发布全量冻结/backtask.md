@@ -165,9 +165,12 @@ public interface PublishedTemplateReader {
 
 ### 2.3 `refreshSnapshotsByComponent` 整体退役（B6）—— FR-3
 
+> ⚠️ **2026-08-07 更正**：本表原列「4 个调用点」，**漏了第 5 个** —— `TemplateService.promoteOverrideToComponent:923` 的**方法内部自调用**。测试工程师审用例时 grep 源码发现（主线立项时的 grep 输出里其实有这一行，写文档时漏抄）。不处理会在删除方法体后**直接编译不过**。已补入下表。
+
 | 位置 | 动作 |
 |---|---|
 | `TemplateService:340-414` | **删除方法本体** |
+| `TemplateService.promoteOverrideToComponent:923`（**补漏**） | 内部自调用 → 改走新的批量化重冻实现，不得残留对已删方法的引用 |
 | `ComponentService.update:729-740` | **删除**整个 try 块（含 `[H1 auto-sync]` 日志）。⚠️ 别误删紧随其后的 `syncExcelColumnsToImportedCopies`（Bug3 源→副本同步，与本任务无关） |
 | `ComponentService.setDriverView:790-796` | **删除**整个 try 块 |
 | `ComponentResource:143-147` | **删除路由**（D11，不做 410 过渡） |

@@ -103,6 +103,12 @@
 | 模板不存在 | `404` `Template not found: {id}` |
 | 模板为 DRAFT | `400` `DRAFT 模板无快照，无差异可比` |
 | 快照行存在但组件已被删除 | 该 tab 返回 `componentExists: false`，`fieldDrifts` 为空（不视为 drift） |
+
+> 📌 **`componentExists: false` 是刻意的防御性分支，不是可从 UI 触达的常规场景**（2026-08-07 测试提问后裁定）。
+> 正常 API 路径到不了这个状态：`ComponentService.delete:862` 的 `checkNotReferencedByTemplate` 会拦下任何仍被 `template_component`（含 DRAFT）引用的组件删除。
+> **但这个状态在结构上是可能的** —— 新表刻意不建 FK 到 `component`（§5.1.1），所以裸 SQL、未来的目录级联删除、或 `task-0723 废弃业务与表清洗` 这类批量清理都可能造出它。
+> **保留该分支**：快照的意义就是脱钩，读快照时绝不能因为组件没了就崩。测试用裸 SQL 构造覆盖（`test.md` TC-10-5）。
+> **不要**因为「当前打不到」就删掉它 —— 那会让将来某条清理路径直接把渲染打挂。
 | 组件被 `DISABLED` | **不视为 drift**（D5：status 不进快照也不进渲染路径） |
 
 ---
@@ -294,7 +300,7 @@ ALTER TABLE operation_log ADD COLUMN details jsonb;
 | `operator_id` | 当前登录用户 |
 | `operation_type` | `TEMPLATE_SNAPSHOT_FORCE_REFRESH`（A5）/ `TEMPLATE_TC_DELETE`（A6）/ `TEMPLATE_OVERRIDE_PROMOTE`（A7） |
 | `target_type` | `TEMPLATE` |
-| `target_id` | 模板 ID（A5/A7 批量时每个模板各写一行） |
+| `target_id` | 模板 ID（A5/A7 批量时每个模板各写一行）。**批量 17 个模板就写 17 行，不额外写聚合摘要行**（2026-08-07 裁定）—— 审计要能按 `target_id` 精确回答「这个模板被谁在什么时候动过」，加一条聚合行等于制造第二个真相源，查起来反而要对账 |
 | `summary` | 人话摘要，例：`强制重新对齐已发布模板快照：报价模板V2 v1.3，12 个页签，3 处字段差异` |
 | `details` | `{ "endpoint": "...", "before": {...}, "after": {...}, "fieldDrifts": [...] }` |
 
