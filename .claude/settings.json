@@ -1,5 +1,18 @@
 {
   "enabledPlugins": {
     "superpowers@claude-plugins-official": true
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "IN=$(cat); [ \"$(printf '%s' \"$IN\" | jq -r '.stop_hook_active // false')\" = \"true\" ] && exit 0; R=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; IDX=\"$R/dev-docs/INDEX.md\"; [ -f \"$IDX\" ] || exit 0; M=\"\"; for d in \"$R\"/dev-docs/*/; do [ -d \"$d\" ] || continue; b=$(basename \"$d\"); /usr/bin/grep -qaF \"$b\" \"$IDX\" || M=\"$M $b\"; done; for d in \"$R\"/dev-docs/*/*/; do [ -d \"$d\" ] || continue; b=$(basename \"$d\"); case \"$b\" in repair-*|update-*|childtask-*) /usr/bin/grep -qaF \"$b\" \"$IDX\" || M=\"$M $b\";; esac; done; [ -z \"$M\" ] && exit 0; printf '%s' \"$M\" | jq -Rs '{decision:\"block\",reason:(\"dev-docs/INDEX.md 未收录以下任务目录：\"+(.|ltrimstr(\" \")|rtrimstr(\"\\n\"))+\" —— 请按 INDEX §9 的 T1 追加条目（嵌套子目录用 ├/└ 挂在父任务行下方），并顺手重跑 §0.5 反查表命令，然后再结束本轮。\")}'"
+          }
+        ]
+      }
+    ]
   }
 }

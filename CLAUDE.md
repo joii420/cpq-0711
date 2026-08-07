@@ -78,6 +78,7 @@ Templates and components use JSONB storage for flexible field/formula configurat
 - `docs/archive/PRD-v2.8-历史档案.md` - 已废弃的历史 PRD (v1.0~v2.8),仅作变更决策回溯用途,**不再维护**（2026-06-18 由 `docs/PRD.md` 移入 `archive/`）
 - `docs/RECORD.md` - Development record for multi-agent shared memory（开始工作前必须先阅读此文件了解历史上下文）
 - 📋 `BACKLOG.md`（项目根目录） - **spec 评审推迟功能的持久化清单**（新会话第一个开发指令前必读；spec 评审后写入、开发完成后更新状态；规则与格式见本文末「Backlog 自动管理规则」）
+- 🗂️ **`dev-docs/INDEX.md` - 历史任务索引（36 目录 / 216 篇的导航表）**。**排查任何 bug、接任何新需求前必读**：§0「按症状反查」一眼定位「这事属于哪个历史任务」，再去读那个目录的主文档，避免重踩已定位过的根因。dev-docs 约 5 MB，**禁止全量扫**，一律先过 INDEX 再定向深读。新建任务目录 / 任务状态变化时必须回写本索引（规则见 INDEX §9）
 - 🔒 **`docs/三大核心模块基线.md` - 组件管理 / 模板管理 / 报价单渲染 三大核心架构基线（2026-05-21 终态锁定，后续不轻易修改；任何破坏性改动前必读 + 评估 + 走 architect）**
 - `docs/统一智能视图路径方案.md` - 配置驱动方案。**当前版本采用 §2 核心方案（已随 V202 智能视图落地）**；§13（RuntimeContext 上下文字典 + 显式谓词 path + Tab visibleWhen 表达式）为**未来演进方向的备选设计，尚未实施**，不要当成现行终态
 - `docs/反模式.md` - 反模式速查（PR 自检用，新增功能前必读）
@@ -121,6 +122,44 @@ All UI, prototypes, and PRD are in Chinese. Code artifacts (variables, APIs, com
 - 当需求发生变更时，必须同步更新 PRD-v3.md 的对应章节
 - 在 PRD-v3.md 末尾或第 9 章演进史中记录所有调整
 - 不要再修改 `docs/archive/PRD-v2.8-历史档案.md`（原 PRD.md，已废弃归档）
+
+### 🚫 后端严禁 N+1 查库（强制，无商量余地）
+
+**定义**：查询次数随数据量线性增长 —— 即「先查一批 N 条，再对每条各查一次」。典型形态：
+
+```java
+// ❌ 违规：循环里查库
+for (UUID id : ids)           { repo.findById(id); }
+for (Row r : rows)            { repo.find("materialNo", r.getNo()).firstResult(); }
+for (Component c : components){ sqlViewExecutor.execute(c.getViewName(), ...); }
+// ❌ 违规：懒加载在循环里触发（隐式 N+1，不出现 SQL 字样，最难发现）
+for (Quotation q : quotations){ q.getLineItems().size(); }
+// ❌ 违规：Stream 里藏循环查库
+ids.stream().map(repo::findById).toList();
+```
+
+**必须改成批量**，四选一：
+
+| 手法 | 用法 |
+|---|---|
+| `IN` 批量 | `repo.list("id in ?1", ids)` → 回内存建 `Map<K,V>` 分发 |
+| 元组 `IN` | 复合键用 `(col1, col2) IN ((?,?),(?,?)…)`（`repair-0727` 的既有做法） |
+| `JOIN FETCH` | 关联对象一次带出，杜绝懒加载触发 |
+| `ANY(:arr)` | PG 数组参数，`$view` / BNF 路径侧已有先例（见 RECORD `ANY(:hfPartNos)`） |
+
+**硬指标**：**单个业务操作的 SQL 条数必须是常数**，与 N（料号数 / 行数 / 页签数 / 版本数 / 产品数）无关。
+`repair-0727` 定的口径可直接复用：**每张表最多 2 条 SQL**。
+
+**唯一例外路径**（不是自己说了算）：确实无法批量时，必须**同时**满足三条 ——
+① 在代码处写明 `// N+1 例外：<原因>` ② 在 `BACKLOG.md` 登记 `BL-NNNN` 并标 P1 以上 ③ **向用户报备并获批**。
+三条缺一即视为违规。
+
+**自检（后端改动结束前必跑，写进 PR）**：
+1. 人工过一遍新增/改动代码里所有 `for` / `forEach` / `stream()` 循环体，确认**没有 repository 调用、没有 `SqlViewExecutor.execute`、没有触发懒加载的 getter**
+2. 有条件就开 SQL 计数断言（参考 `repair-0727` 的 `AC-R8 无 N+1` 三条后端单测 + `test.md` T8）
+3. 关键链路补一句日志证据：`[perf] <操作> N=<数据量> sql=<条数>` —— **N 翻倍而 sql 不变**才算过
+
+**已知存量**（新代码不得再增）：`PriceReconciler.java:348-351` 按版本数 N+1（`BL-0121`，已登记未修）。
 
 ## 开发流程规范（新功能必须用隔离 worktree 分支）🔒
 **强制**：开发任何新功能 / 较大改动，**必须**先用 `superpowers:using-git-worktrees` 技能创建**隔离 worktree 分支**，在该隔离工作区里开发，**不直接在主工作区或 master 上改**。
@@ -179,7 +218,13 @@ All UI, prototypes, and PRD are in Chinese. Code artifacts (variables, APIs, com
 3. **需求变更沟通**：如果用户要求的修改内容与 PRD-v3.md 中的预期不符，必须先与用户沟通确认修改方案，确认后将最终修改方案同步更新到 `docs/PRD-v3.md` 中（含演进史章节）
 4. **开发记录（多Agent共享记忆）**：
    - **开始工作前**：必须先阅读 `docs/RECORD.md` 了解历史开发上下文和已知问题
-   - **完成工作后**：必须将本次开发的核心内容或修复的核心问题追加到 `docs/RECORD.md`
+   - **排查 bug 时**：先过 `dev-docs/INDEX.md` §0「按症状反查」定位历史任务 → 读该目录主文档的根因/决策 → 再动手复现。**禁止跳过本步直接读代码**（历史已定位过的根因重查一遍 = 纯浪费 + 大概率得出与既有结论不一致的判断）
+   - **新会话进场时**：读 `dev-docs/INDEX.md` **§0.0 当前项目态势** —— 一节掌握活跃主线 / 未闭合缺陷 / 未合并分支 / BACKLOG 概况，避免与在途工作撞车或重复已交付的东西
+   - **要改热点代码文件时**：先查 `dev-docs/INDEX.md` **§0.5 按代码文件反查**（如 `QuotationStep2.tsx` 被 22/36 个任务动过，压着多条历史契约），再配合 `codegraph_impact` 确认精确影响面
+   - **完成工作后**：必须将本次开发的核心内容或修复的核心问题追加到 `docs/RECORD.md`；若本次新建了 `dev-docs/` 任务目录或改变了任务状态，同步回写 `dev-docs/INDEX.md`（4 个强制触发点 + 状态列判据见 INDEX §9）
+   - **收尾强制输出（forcing function）**：每次开发任务结束，回复里必须包含一行
+     `dev-docs 索引：新增 N 条 / 更新 M 条状态 / 无变化`
+     没有这一行 = 没检查过索引，等同未完成（与「Backlog 状态：共 N 条…」同级的强制项）
    - 记录格式：`[日期] 模块 - 简要描述 | 涉及文件 | 关键决策或注意事项`
 
 ## 修改后强制自检（每次代码改动结束前必须跑一遍）
@@ -233,6 +278,8 @@ All UI, prototypes, and PRD are in Chinese. Code artifacts (variables, APIs, com
 2. `curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8081/q/health` 或具体 endpoint → 期望 200/401（不要 500）
 3. 如果是 Flyway 迁移：`PGPASSWORD=... psql ... -c "SELECT version, success FROM flyway_schema_history WHERE version = 'NN'"` 必须 success=t
 4. 不要手动 `psql -f V_xx.sql`！让 Quarkus dev mode 自己跑 Flyway，否则会在重启时碰到"已存在"导致启动失败
+5. 🚫 **N+1 自检（强制，见「开发规范 §🚫 后端严禁 N+1 查库」）**：逐个检查本次新增/改动的 `for` / `forEach` / `stream()` 循环体，确认里面**没有 repository 调用 / `SqlViewExecutor.execute` / 触发懒加载的关联 getter**；SQL 条数必须与 N 无关。声明格式示例：
+   > `N+1 自检：本次改动 3 处循环，均为纯内存运算，无查库 ✅` 或 `批量化验证：料号 5→20 条，SQL 条数恒为 4 ✅`
 
 **视图 DROP CASCADE / 重建（schema DDL）后必须重启 Quarkus**：
 1. 触发场景：任何 `DROP VIEW ... CASCADE`、`DROP TABLE ... CASCADE`、视图列结构变更、视图重建（V109/V110/V111 是典型案例）
