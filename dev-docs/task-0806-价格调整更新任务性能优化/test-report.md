@@ -536,7 +536,55 @@ GET /jobs/{id}/items?page=1&size=2 → JobItemDTO 字段：itemId/quotationId/qu
 
 ---
 
-## 5. AC 逐条达成对照表
+## 4d. 缺陷清单
+
+**本轮未发现由本次改造（T2~T4：守卫1维度审计 + 方案B分组批量预渲染 + 守卫2失败回退）引入的功能性缺陷。**
+
+所有真实执行的正确性用例（Method A 75/75 item + Method B 4 job 全量真实批量执行 + 还原校验）均 0 不一致；`com.cpq.priceadjust.*` 全包单测 53/53 PASS；`DriverBatchSafetyAuditorTest`/`PriceAdjustJobExecutionServiceBatchFallbackTest` 单测全绿；无 FAILED/CONFLICT item、无异常抛出、无数据损坏。
+
+### 遗留待验证项（非缺陷，是测试覆盖缺口，需 PM/主线决策是否补测）
+
+| 编号 | 缺口 | 原因 | 建议 |
+|---|---|---|---|
+| TC-API-07/09/10 | PRICING_MANAGER/无角色的 GET/PUT 权限行为未实测 | 现网测试账号密码未知，未冒险重置共享账号 | 建议获取合法测试凭据后补测，或由主线在自己环境验证 |
+| TC-CONC-01（窄窗口） | "执行中途转 STALE" 时间窗口场景未覆盖 | 需专用测试钩子（Thread.sleep），本轮判定过于侵入，主动未尝试 | 若判定必须验证，建议用受控单测（Mockito 模拟 supersede 时机）而非生产代码插桩 |
+| TC-CONC-02/05 | 并发触发 executeJob / retry 时执行中状态处理 | 时间约束，本轮未执行 | test.md 已标注为"探索性、非 AC 直接覆盖"，可延后 |
+| TC-CONC-03 | FR-6 customerId 唯一性断言未独立执行专属 fixture | 代码逻辑清晰无歧义（简单相等性检查+明确异常），判定优先级让位给更高风险项 | 建议追加一条 JUnit 用例固化该断言，防止未来重构悄悄破坏 |
+| TC-PERF-03 | SQL 条数插桩未搭建 | 时间约束 | 若需精确验证 D-2 的"分组数×17"结论，需补插桩 |
+| TC-FE-01/02/03 | 无 UI/浏览器验证 | 共享前端 dev server 指向主工作区 master 后端，无法反映本分支；本环境无 Playwright 工具 | **建议合并前至少人工点开 1~2 张 `c2915208`/`6c0aebc8` 涉及的报价单，核对核价单子视图与比对视图渲染无异常** |
+| TC-EDGE-01/03 | 未构造"单 item job"/"分组数=item数"专属场景 | 时间约束，已有增量覆盖（小分组自然出现在真实 job 中） | 优先级 P1/P2，可延后 |
+
+---
+
+## 6. 回归结论
+
+1. **AC-1/AC-2/AC-3/AC-3a/AC-6（核心正确性 + 确定性）：真实验证通过，证据充分。** `c2915208`（AC-2 强制反例）单独验证，Method A（内存态，75/75 item）与 Method B（4 job 全量真实批量执行 + 逐条还原校验）双重印证，未发现任何不一致。这是本任务最关键的安全底线，已达标。
+2. **AC-4/AC-5（失败隔离 + 安全降级）：单测真实验证通过。** 注入语法错误的 driver 组件后，仅相关分组回退逐项，其余分组不受影响，未出现"一个组件挂全批挂"的退化。
+3. **AC-8（维度审计器）：真实库判定精确匹配预期基线**（1 PER_PRICE_BASE_DATE + 16 GLOBAL + 0 PER_LINE_ITEM）。
+4. **AC-9（原调用方零影响）：代码复核 + 相关单测全绿，未见行为漂移。**
+5. **AC-10（性能）：如实记录，未达成明确的加速比结论**——本轮未能构造出有效的"改造前端到端"同 JVM 对照组（唯一的尝试因 `managedExecutor` 异步并发失真而被舍弃），实测数字显示冷/暖 JVM 差异（29.24s vs 17.22s，同为 3 组量级）比批量算法本身的边际收益更显著。**这不构成阻断项**（AC-10 明确无门槛），但也不能据此宣称达成 "~25s" 目标，如实标注为未确认。
+6. **AC-7（S0 开关）+ 6 条 settings API 字段级用例 + TC-CONC-04：全部 BLOCKED**，因 D-5 未拍板、`subtotalGuardEnabled` 字段本轮零 DDL 未落地，符合 backtask.md T6 "本轮不实现"的既定安排，不计入通过/失败统计。
+7. **权限/并发/前端 UI 三类共 9 条用例本轮未执行**（凭据缺失/风险规避/时间约束/工具缺失），已在 §4d 逐条列出原因与建议，**不建议在缺口未澄清前直接合并**，尤其 TC-FE-01/02（前端渲染回归，P0）与 TC-API-10（写权限收紧，P0）建议合并前至少补做一次。
+
+**总体判断**：本次改造（T2~T4）的**核心正确性与安全边界已获得真实、可复现的证据支撑，未发现回归缺陷**；性能收益未能给出确定性结论（非阻断，如实记录）；权限/并发窄场景/前端 UI 三类共 9 条用例因客观条件限制本轮未执行，建议作为合并前的补充检查项，而非视为"已验证通过"。
+
+---
+
+## 7. 收尾自检
+
+- [x] 临时探针端点已全部删除：`src/main/java/com/cpq/priceadjust/service/TmpPerfProbeService.java`、`src/main/java/com/cpq/priceadjust/resource/TmpPerfProbeResource.java` 均 `ls` 返回 "No such file or directory"；`curl http://localhost:8099/api/cpq/tmp-perf/verify-job` 返回 `000`（服务已停，见下一条）
+- [x] 8099 临时后端已 `pkill`：`curl --max-time 3 http://localhost:8099/api/cpq/components` 返回 `000`（连接被拒绝/无响应）
+- [x] 共享库（`cpq_db_0724`）无脏数据残留：`SELECT count(*) FROM pg_tables WHERE tablename LIKE '_t0806%'` → `0`（全部 scratch 表已 DROP）
+- [x] 4 个基准 job 最终状态与测试开始前一致：
+  ```
+  06b54e9a | SUCCESS | 18/18/0/0/0
+  1b7208ab | SUCCESS | 17/17/0/0/0
+  6c0aebc8 | PARTIAL | 29/25/0/0/4   -- 4 STALE 为测试前既有，非本次新增
+  c2915208 | SUCCESS | 24/24/0/0/0
+  ```
+- [x] `git status --short` 输出为空，工作区干净，无遗留探针代码/测试专用 `component_sql_view` 记录（`DriverBatchSafetyAuditorTest`/`PriceAdjustJobExecutionServiceBatchFallbackTest` 均在自己的 `@AfterEach` 内清理了自建 fixture，本会话未额外新建/遗留任何测试专用 DB 记录）
+- [x] `git branch --contains <本报告提交>`：`* feat/task-0806-price-adjust-job-perf`（未误提交到 master 或其他分支）
+- [x] 本报告按分块 `Write`+`Edit` 落盘，每块独立 `git commit`（`546ed496`/`1515e2d1`/`9023bf48`/`23fcb5f3` + 本块），避免单次大输出导致连接中断丢失已完成工作
 
 | AC | 内容 | 状态 | 依据用例 |
 |---|---|---|---|
