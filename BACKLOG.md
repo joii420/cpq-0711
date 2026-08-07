@@ -9,7 +9,20 @@
 
 ## P0
 
-### [BL-0069] `mat_*`（V44）废弃表「已断供仍被读」故障族 —— 5 条实证失效路径
+### [BL-0133] 模板发布后「内容层」仍是活的 —— 改一个组件静默改写最多 6 张已发布模板
+- **优先级**：P0（用户定性「灾难性 bug」；静默改写已发布模板 + 在途报价单，无提示无留痕）
+- **来源**：2026-08-06 用户提出 → 立项 `dev-docs/task-0806-模板发布全量冻结/需求文档.md`
+- **状态**：[~] 进行中（需求文档已定稿，待出实现计划）
+- **登记日期**：2026-08-06
+- **背景**：`docs/三大核心模块基线.md:178/:182` 与 §10.2#4 定的契约是「快照不可变 / 只在用户明确触发时刷新 / 不直接动 PUBLISHED」，但 `ComponentService.update:733` 每次保存组件就无条件调 `refreshSnapshotsByComponent` 改写所有引用它的已发布模板。**代码漂移出了自己的基线文档**。
+- **三类活穿透**：① `refreshSnapshotsByComponent` 改写已发布快照（4 个调用点）；② `component` 18 个渲染配置字段里 6 个从未进快照（`rowKeyFields`/`sortField`/`element*Field`/`columnCount`）；③ 渲染期 10 处直读活表（`CardSnapshotService` 5 + `ConfigureSnapshotService` 1 + `ExcelViewService` 4）
+- **爆炸半径（实测）**：17 个 PUBLISHED 模板 / 149 tc / 53 组件；单组件被引用模板数 max **6**、avg 2.8；54 张报价单引用 PUBLISHED 模板
+- **范围**：新建 `template_component_snapshot` 关系表（发布时冻结，`components_snapshot` jsonb 改为从它派生）+ `refreshSnapshotsByComponent` 整体下线 + 10 处读取收口到 `PublishedTemplateReader` + 快照 miss 显式报错（含 `ComponentSqlViewService:400` fallback）+ 存量一次性对齐 + `frozen-drift` 版本差异视图
+- **已定决策**：D1 严格版本化（只能发新版生效）/ D2 ①②③ 一步做到位、admin 后门保留但加预览+审计 / D3 存量一次性对齐后冻死 / D4 只做 `Template`(QUOTATION+COSTING) / D5 `component.status` 不进快照也不进渲染路径
+- **依赖**：无（可独立开工）
+- **验收要点**：改被 6 模板共享的组件（`COMP-0045` 等）→ 6 个模板快照 + jsonb **一字节未变** + 报价单渲染**逐位一致**；值中性验证；双 spec E2E；N+1 恒定
+
+
 - **优先级**：P0（其中漂移检测假阴性破坏的是安全属性，最高）
 - **来源**：2026-07-21「废弃表检查」会话——用户就新库部署脚本为何仍建 `mat_*` 表发起排查，三路审计（代码消费方 / 视图配置 / 数据痕迹）+ 技术总监亲验 SQL + 临时后端空库实测。
 - **状态**：TODO（未排期）
@@ -154,6 +167,16 @@
 ---
 
 ## P1
+
+### [BL-0134] `ConfigTemplate`（选配配置模板）PUBLISHED 后仍可改名 / 改 code / 加大类
+- **优先级**：P1
+- **来源**：2026-08-06 task-0806 立项时勘察发现（该任务 §2.2 明确不做，拆出单独修）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-06
+- **背景**：`ConfigTemplateService.updateTemplate:87` 与 `createCategory:153` 都**只挡 `ARCHIVED`**，不挡 `PUBLISHED` → 已发布的选配配置模板还能改名、改 code、往里加大类。与 `Template` 侧「PUBLISHED 全线锁死」的口径不一致。
+- **范围**：给 `updateTemplate` / `createCategory` / `updateCategory` / item 层 CUD 补 `PUBLISHED` 守卫；确认是否需要类似 `createNewDraft` 的版本派生路径
+- **依赖**：无。与 [[BL-0133]] 同族但修法完全不同（守卫缺失 vs 快照活穿透），刻意不合并
+- **验收要点**：PUBLISHED 状态下上述端点全部 400；已有数据不受影响
 
 ### [BL-0126] jsonb 往返丢精度缺陷族 —— 还有第 3、第 4 个写点未修
 - **优先级**：P1
@@ -1159,6 +1182,26 @@ task-0721 B8 修复合并    2026-07-21
   「续集」章节（需求文档 + test-report 同一目录延续记录）
 
 ## P2
+
+### [BL-0135] `ConfiguratorTemplate`（3D 选配模板）`update` 完全无状态守卫
+- **优先级**：P2
+- **来源**：2026-08-06 task-0806 立项时勘察发现（该任务 §2.2 明确不做）
+- **状态**：TODO（未排期）—— ⚠️ **前置：等 `feat/task-0712-selection-config` 分支合并**，否则撞车
+- **登记日期**：2026-08-06
+- **背景**：`ConfiguratorTemplateService.update:60` 是 Map patch，**没有任何 status 守卫**，连 `status` 字段本身都能被 patch 回去（PUBLISHED → DRAFT 原地降级）。模块内只有 `importFeatures:130` 挡了 PUBLISHED，且注释自称「PUBLISHED template cannot be modified directly. Create draft version first (§13)」——**该不变量只在一处被执行**。
+- **范围**：给 `update` 补 PUBLISHED 守卫；`status` 从 patch 白名单移除（状态迁移只能走 `publish`/`archive` 专用端点）
+- **依赖**：`feat/task-0712-selection-config` 合并
+- **验收要点**：PUBLISHED 模板 patch 任何字段返 400；无法通过 patch 把 status 改回 DRAFT
+
+### [BL-0136] 报价单层快照纵深防御 —— 报价单仍实时 JOIN 模板快照，未各自冻一份
+- **优先级**：P2
+- **来源**：2026-08-06 task-0806 方案对比中的「路径丙」，本期不做
+- **状态**：TODO（未排期）—— 前置：[[BL-0133]] 交付
+- **登记日期**：2026-08-06
+- **背景**：`ConfigureSnapshotService.loadComponentsSnapshot:929` 是 `JOIN template t ON t.id = q.customer_template_id` **实时读**模板快照，报价单自己不持有副本。[[BL-0133]] 把模板层冻死后这已足够安全；但 admin 后门（本期保留）或 Flyway 若改了模板快照，在途报价单仍会被波及。
+- **对照**：SQL 视图那条线已经是双层冻结（模板层 + 报价单 SUBMITTED 时 `quotation_component_sql_snapshot`），`components_snapshot` 只有模板层一层，**不对称**
+- **范围**：评估是否在报价单创建/首存时复制一份快照到报价单维度；权衡存储放大 vs 纵深防御
+- **验收要点**：模板快照被后门改写后，已有报价单渲染结果不变
 
 ### [BL-0114] 后端 `buildCardStructure` 白名单漏搬 `decimals` —— 与 `formulaId` 同一方法、同一类错误
 - **优先级**：P2（休眠：当前 DB 实测 0 个组件配了 `decimals`）
