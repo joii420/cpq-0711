@@ -309,6 +309,31 @@ public class MaterialVersionUpgradeService {
         // taxAmount：全工程未发现任何"从行汇总推导税额"的既有公式（taxRate/taxAmount 全库零业务
         // 逻辑引用，纯手填字段），本次不新造算法，税额原样不动——如实说明，非遗漏。
 
+        // ---- S8b（2026-08-07 修，用户实测暴露）：草稿单的单头改用【草稿口径】重算 ----
+        //
+        // 本方法是全工程改 li.subtotal 的 6 个写点里，**唯一跨类、且单头无人负责**的那个：
+        //   其余 5 处（QuotationService:464↔666 / 1566,1587↔1514 / 2322↔2526、
+        //   CardSnapshotService:670↔recomputeDraftHeaderTotals）写行总价与写单头都在同一方法体内，
+        //   写的人一眼能看到要配对；本处 li.subtotal 在 priceadjust 模块、单头写点在 quotation 模块，
+        //   **配对关系跨了模块边界，就没人看见了**。
+        //
+        // 修的是两个病，不是一个：
+        //   ① original_amount 从来没被本方法写过 → 升版后停在升版前的值（用户实测：37.330516 不动）
+        //   ② 上面 S8 的 total_amount 用的是【提交口径】Σ lineTotalAmount（含 ×年用量、排除 PART），
+        //      对 DRAFT 单是错的口径 —— 草稿口径应是 Σ li.subtotal × finalDiscountRate/100（含 PART）。
+        //      年用量为空时 lineTotalAmount=0 → 整单总额被写成 0（实测 R26080602.quote_total_amount=0.000000，
+        //      而升版前的 R26080601 是 37.330516）。**没人写只是留旧值，写错口径是主动破坏。**
+        //
+        // 🔒 为什么调 recomputeDraftHeaderTotals 而不是就地补一行：
+        //    它是单头口径的唯一实现，自带 ①DRAFT 闸门（非草稿单不被草稿口径覆写，S8 的提交口径继续生效）
+        //    ②自己 findById 取托管实体（不受调用方事务边界影响）。就地补一行会复制出第二套口径，
+        //    而"两套单头口径"正是 D3-28 与本缺陷的共同根因。
+        //
+        // 🔒 位置不可下移到 S9 之后：S9 的 updateCurrentPeriodRevision 会把 q.totalAmount 冻进
+        //    quotation_price_revision.quote_total_amount（:728）。放到 S9 之后，库里的活数据虽被修好，
+        //    **冻进凭据的仍是错值**，而凭据不会被任何自愈路径纠正 —— 那是不可逆的污染。
+        cardSnapshotService.recomputeDraftHeaderTotals(q.id);
+
         // ---- S9：本期 R = 升版【后】状态（F4）。同一 V 版内多次料号升版合并进同一条
         //      （based_version_id 天然去重键，UNIQUE(quotation_id, based_version_id)）；
         //      🔒 E11-5：每次并入都必须用当前（升版后）状态整单覆写双侧快照，不能只改
