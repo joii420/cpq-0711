@@ -20,20 +20,29 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * task-0806 · FR-5（守卫 2）/ AC-4 单测：批量预渲染<b>某一分组</b>失败时，只有该分组不写入预渲染结果
- * （回退逐项），<b>不影响其它分组</b>——{@link PriceAdjustJobExecutionService#precomputeBatch} 整体
- * 不抛异常、不把"批量失败"升级成"整批 job 失败"。
+ * task-0806 · FR-5（守卫 2）/ AC-4 单测 + {@code templateHasTreeTab} 门槛回归。
  *
- * <p>构造两个 line item，分属两个不同的核价模板（天然落入不同分组，不依赖日期差异）：
+ * <p>构造三个 line item，分属三个不同的核价模板（天然落入不同分组，不依赖日期差异）：
  * <ul>
- *   <li>模板 A：挂一个 driver 组件，其 {@code $view} sql_template 语法错误（查不存在的表），
- *       {@code render()} 对该分组必然抛异常；</li>
- *   <li>模板 B：无任何 driver 组件，{@code render()} 对该分组必然成功（返回空 baseRows）。</li>
+ *   <li>模板 A（含树页签）：挂一个 {@code bom_recursive_expand=true} 的 driver 组件，其
+ *       {@code $view} sql_template 语法错误（查不存在的表），{@code render()} 对该分组必然抛异常；</li>
+ *   <li>模板 B（含树页签）：挂一个 {@code bom_recursive_expand=true} 的 driver 组件，其
+ *       {@code $view} sql_template 语法合法但恒返回 0 行（{@code WHERE false}），
+ *       {@code render()} 对该分组必然成功；</li>
+ *   <li>模板 C（<b>不含树页签</b>）：无任何 driver 组件——{@code templateHasTreeTab(C)==false}。</li>
  * </ul>
  *
- * <p>预期：{@code precomputeBatch} 返回的 map 里，模板 A 那个 line item <b>没有</b>条目（回退逐项，
- * 交给 {@code upgrade()} 默认路径自己再 render 一次并按现有逻辑精确 FAILED），模板 B 那个 line item
- * <b>有</b>条目（该分组批量成功，未被拖累）；整个方法调用不抛异常。
+ * <p>预期：
+ * <ol>
+ *   <li>模板 A 那个 line item 结果 map 里<b>没有</b>条目（FR-5 回退逐项，交给
+ *       {@code upgrade()} 默认路径自己再 render 一次并按现有逻辑精确 FAILED）；</li>
+ *   <li>模板 B 那个 line item <b>有</b>条目（该分组批量成功，未被模板 A 的失败拖累）；</li>
+ *   <li>模板 C 那个 line item <b>没有</b>条目（2026-08-07 亲验补丁：{@code templateHasTreeTab}
+ *       门槛——不含树页签的模板老路径本就不调用 {@code render()}，批量路径必须对齐，否则
+ *       {@code precomputedBaseRows} 从"恒 null"变成"非 null 的空结果"，与老路径分叉进
+ *       {@code buildCostingCardValues} 不同代码分支）。</li>
+ * </ol>
+ * 整个 {@code precomputeBatch} 调用全程不抛异常。
  *
  * <p>🔒 <b>踩坑记录</b>：测试方法本身<b>不能</b>整体包一层 {@code @Transactional}——那样会与
  * {@code precomputeBatch} 内部分组级 {@code @Transactional(REQUIRES_NEW)}（本任务为隔离"一个分组
@@ -54,8 +63,10 @@ class PriceAdjustJobExecutionServiceBatchFallbackTest {
     @Inject
     EntityManager em;
 
-    private UUID templateAId, templateBId, componentAId;
-    private UUID quotationAId, quotationBId, lineItemAId, lineItemBId;
+    private UUID templateAId, templateBId, templateCId;
+    private UUID componentAId, componentBId;
+    private UUID quotationAId, quotationBId, quotationCId;
+    private UUID lineItemAId, lineItemBId, lineItemCId;
     private UUID jobId;
 
     @AfterEach
@@ -65,37 +76,41 @@ class PriceAdjustJobExecutionServiceBatchFallbackTest {
             em.createNativeQuery("DELETE FROM material_price_update_job WHERE id = :id")
                 .setParameter("id", jobId).executeUpdate(); // cascades job_item
         }
-        if (lineItemAId != null) em.createNativeQuery("DELETE FROM quotation_line_item WHERE id = :id")
-            .setParameter("id", lineItemAId).executeUpdate();
-        if (lineItemBId != null) em.createNativeQuery("DELETE FROM quotation_line_item WHERE id = :id")
-            .setParameter("id", lineItemBId).executeUpdate();
-        if (quotationAId != null) em.createNativeQuery("DELETE FROM quotation WHERE id = :id")
-            .setParameter("id", quotationAId).executeUpdate();
-        if (quotationBId != null) em.createNativeQuery("DELETE FROM quotation WHERE id = :id")
-            .setParameter("id", quotationBId).executeUpdate();
-        if (templateAId != null) em.createNativeQuery("DELETE FROM template WHERE id = :id")
-            .setParameter("id", templateAId).executeUpdate(); // cascades template_component
-        if (templateBId != null) em.createNativeQuery("DELETE FROM template WHERE id = :id")
-            .setParameter("id", templateBId).executeUpdate();
-        if (componentAId != null) em.createNativeQuery("DELETE FROM component WHERE id = :id")
-            .setParameter("id", componentAId).executeUpdate(); // cascades component_sql_view
+        for (UUID liId : List.of(lineItemAId, lineItemBId, lineItemCId)) {
+            if (liId != null) em.createNativeQuery("DELETE FROM quotation_line_item WHERE id = :id")
+                .setParameter("id", liId).executeUpdate();
+        }
+        for (UUID qId : List.of(quotationAId, quotationBId, quotationCId)) {
+            if (qId != null) em.createNativeQuery("DELETE FROM quotation WHERE id = :id")
+                .setParameter("id", qId).executeUpdate();
+        }
+        for (UUID tId : List.of(templateAId, templateBId, templateCId)) {
+            if (tId != null) em.createNativeQuery("DELETE FROM template WHERE id = :id")
+                .setParameter("id", tId).executeUpdate(); // cascades template_component
+        }
+        for (UUID cId : List.of(componentAId, componentBId)) {
+            if (cId != null) em.createNativeQuery("DELETE FROM component WHERE id = :id")
+                .setParameter("id", cId).executeUpdate(); // cascades component_sql_view
+        }
     }
 
     @Test
-    void oneGroupRenderFailure_doesNotAffectOtherGroup_andDoesNotThrow() {
+    void groupFailureIsolation_andNoTreeTabTemplateIsSkipped() {
         seedFixture(); // 独立事务，方法返回时已提交
 
         List<MaterialPriceUpdateJobItem> items = loadItems(jobId);
-        assertEquals(2, items.size());
+        assertEquals(3, items.size());
 
         // ---- 执行：不应抛异常 ----
         Map<UUID, CardSnapshotService.PrecomputedTreeRows> result = executionService.precomputeBatch(jobId, items);
 
         assertNotNull(result, "precomputeBatch 不应返回 null");
         assertFalse(result.containsKey(lineItemAId),
-            "模板 A 分组 render() 必然失败 -> 不应写入预渲染结果（回退逐项，交给 upgrade() 默认路径）");
+            "模板 A（含树页签）分组 render() 必然失败 -> 不应写入预渲染结果（回退逐项，交给 upgrade() 默认路径）");
         assertTrue(result.containsKey(lineItemBId),
-            "模板 B 分组应正常批量成功，不应被模板 A 的失败拖累");
+            "模板 B（含树页签）分组应正常批量成功，不应被模板 A 的失败拖累");
+        assertFalse(result.containsKey(lineItemCId),
+            "模板 C 不含树页签 -> 不应参与批量预渲染（对齐老路径 templateHasTreeTab 门槛，2026-08-07 亲验补丁）");
     }
 
     @Transactional
@@ -108,21 +123,21 @@ class PriceAdjustJobExecutionServiceBatchFallbackTest {
         UUID customerId = firstExisting("customer");
         UUID salesRepId = firstExisting("\"user\"");
 
-        // ---- 模板 A：1 个必然失败的 driver 组件 ----
+        // ---- 模板 A（含树页签）：1 个必然失败的 driver 组件 ----
         templateAId = UUID.randomUUID();
         em.createNativeQuery("INSERT INTO template (id, template_series_id, name) VALUES (:id, :sid, 'BF测试模板A')")
             .setParameter("id", templateAId).setParameter("sid", UUID.randomUUID()).executeUpdate();
         componentAId = UUID.randomUUID();
-        String viewName = "bf_broken_view_" + componentAId.toString().replace("-", "");
+        String viewNameA = "bf_broken_view_" + componentAId.toString().replace("-", "");
         em.createNativeQuery(
-                "INSERT INTO component (id, name, code, fields, formulas, data_driver_path) " +
-                "VALUES (:id, 'BF测试组件A', :code, '[]', '[]', :ddp)")
+                "INSERT INTO component (id, name, code, fields, formulas, data_driver_path, bom_recursive_expand) " +
+                "VALUES (:id, 'BF测试组件A', :code, '[]', '[]', :ddp, true)")
             .setParameter("id", componentAId).setParameter("code", "TEST-BF-A-" + componentAId)
-            .setParameter("ddp", "$" + viewName).executeUpdate();
+            .setParameter("ddp", "$" + viewNameA).executeUpdate();
         em.createNativeQuery(
                 "INSERT INTO component_sql_view (id, component_id, sql_view_name, sql_template) " +
                 "VALUES (:id, :cid, :vn, :tpl)")
-            .setParameter("id", UUID.randomUUID()).setParameter("cid", componentAId).setParameter("vn", viewName)
+            .setParameter("id", UUID.randomUUID()).setParameter("cid", componentAId).setParameter("vn", viewNameA)
             .setParameter("tpl", "SELECT * FROM this_table_definitely_does_not_exist_bf_test")
             .executeUpdate();
         em.createNativeQuery(
@@ -130,16 +145,42 @@ class PriceAdjustJobExecutionServiceBatchFallbackTest {
             .setParameter("id", UUID.randomUUID()).setParameter("tid", templateAId).setParameter("cid", componentAId)
             .executeUpdate();
 
-        // ---- 模板 B：无 driver 组件（空模板，render() 必然成功） ----
+        // ---- 模板 B（含树页签）：1 个合法但恒 0 行的 driver 组件（render() 必然成功） ----
         templateBId = UUID.randomUUID();
         em.createNativeQuery("INSERT INTO template (id, template_series_id, name) VALUES (:id, :sid, 'BF测试模板B')")
             .setParameter("id", templateBId).setParameter("sid", UUID.randomUUID()).executeUpdate();
+        componentBId = UUID.randomUUID();
+        String viewNameB = "bf_empty_view_" + componentBId.toString().replace("-", "");
+        em.createNativeQuery(
+                "INSERT INTO component (id, name, code, fields, formulas, data_driver_path, bom_recursive_expand) " +
+                "VALUES (:id, 'BF测试组件B', :code, '[]', '[]', :ddp, true)")
+            .setParameter("id", componentBId).setParameter("code", "TEST-BF-B-" + componentBId)
+            .setParameter("ddp", "$" + viewNameB).executeUpdate();
+        em.createNativeQuery(
+                "INSERT INTO component_sql_view (id, component_id, sql_view_name, sql_template) " +
+                "VALUES (:id, :cid, :vn, :tpl)")
+            .setParameter("id", UUID.randomUUID()).setParameter("cid", componentBId).setParameter("vn", viewNameB)
+            .setParameter("tpl", "SELECT 'x'::text AS material_no, NULL::text AS parent_no WHERE false")
+            .executeUpdate();
+        em.createNativeQuery(
+                "INSERT INTO template_component (id, template_id, component_id, sort_order) VALUES (:id, :tid, :cid, 0)")
+            .setParameter("id", UUID.randomUUID()).setParameter("tid", templateBId).setParameter("cid", componentBId)
+            .executeUpdate();
 
-        // ---- 两张最小报价单 + 各一行，costing_card_template_id 分别指向 A / B ----
+        // ---- 模板 C（不含树页签）：无任何 driver 组件 ----
+        templateCId = UUID.randomUUID();
+        em.createNativeQuery("INSERT INTO template (id, template_series_id, name) VALUES (:id, :sid, 'BF测试模板C')")
+            .setParameter("id", templateCId).setParameter("sid", UUID.randomUUID()).executeUpdate();
+
+        // ---- 三张最小报价单 + 各一行，costing_card_template_id 分别指向 A / B / C ----
         quotationAId = UUID.randomUUID();
         quotationBId = UUID.randomUUID();
+        quotationCId = UUID.randomUUID();
         OffsetDateTime createdAt = OffsetDateTime.now();
-        for (UUID[] pair : List.of(new UUID[]{quotationAId, templateAId}, new UUID[]{quotationBId, templateBId})) {
+        for (UUID[] pair : List.of(
+                new UUID[]{quotationAId, templateAId},
+                new UUID[]{quotationBId, templateBId},
+                new UUID[]{quotationCId, templateCId})) {
             em.createNativeQuery(
                     "INSERT INTO quotation (id, quotation_number, customer_id, name, sales_rep_id, status, " +
                     "costing_card_template_id, created_at) " +
@@ -154,28 +195,32 @@ class PriceAdjustJobExecutionServiceBatchFallbackTest {
         }
         lineItemAId = UUID.randomUUID();
         lineItemBId = UUID.randomUUID();
+        lineItemCId = UUID.randomUUID();
         em.createNativeQuery(
                 "INSERT INTO quotation_line_item (id, quotation_id, product_part_no_snapshot) VALUES (:id, :qid, 'BF-PART-A')")
             .setParameter("id", lineItemAId).setParameter("qid", quotationAId).executeUpdate();
         em.createNativeQuery(
                 "INSERT INTO quotation_line_item (id, quotation_id, product_part_no_snapshot) VALUES (:id, :qid, 'BF-PART-B')")
             .setParameter("id", lineItemBId).setParameter("qid", quotationBId).executeUpdate();
+        em.createNativeQuery(
+                "INSERT INTO quotation_line_item (id, quotation_id, product_part_no_snapshot) VALUES (:id, :qid, 'BF-PART-C')")
+            .setParameter("id", lineItemCId).setParameter("qid", quotationCId).executeUpdate();
 
-        // ---- job + 两条 item ----
+        // ---- job + 三条 item ----
         jobId = UUID.randomUUID();
         em.createNativeQuery(
                 "INSERT INTO material_price_update_job (id, customer_no, status) VALUES (:id, 'TEST-BF', 'RUNNING')")
             .setParameter("id", jobId).executeUpdate();
-        em.createNativeQuery(
-                "INSERT INTO material_price_update_job_item (id, job_id, quotation_id, material_no, line_item_id, status) " +
-                "VALUES (:id, :jid, :qid, 'BF-PART-A', :liid, 'WAITING')")
-            .setParameter("id", UUID.randomUUID()).setParameter("jid", jobId).setParameter("qid", quotationAId)
-            .setParameter("liid", lineItemAId).executeUpdate();
-        em.createNativeQuery(
-                "INSERT INTO material_price_update_job_item (id, job_id, quotation_id, material_no, line_item_id, status) " +
-                "VALUES (:id, :jid, :qid, 'BF-PART-B', :liid, 'WAITING')")
-            .setParameter("id", UUID.randomUUID()).setParameter("jid", jobId).setParameter("qid", quotationBId)
-            .setParameter("liid", lineItemBId).executeUpdate();
+        for (UUID[] triple : List.of(
+                new UUID[]{quotationAId, lineItemAId}, // materialNo 用固定字符串区分，见下方循环体
+                new UUID[]{quotationBId, lineItemBId},
+                new UUID[]{quotationCId, lineItemCId})) {
+            em.createNativeQuery(
+                    "INSERT INTO material_price_update_job_item (id, job_id, quotation_id, material_no, line_item_id, status) " +
+                    "VALUES (:id, :jid, :qid, 'BF-PART', :liid, 'WAITING')")
+                .setParameter("id", UUID.randomUUID()).setParameter("jid", jobId).setParameter("qid", triple[0])
+                .setParameter("liid", triple[1]).executeUpdate();
+        }
     }
 
     private UUID firstExisting(String table) {

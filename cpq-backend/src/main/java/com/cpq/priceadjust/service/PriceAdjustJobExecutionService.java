@@ -55,6 +55,7 @@ public class PriceAdjustJobExecutionService {
     @Inject PriceAdjustNotificationService notificationService;
     @Inject BomTreeRenderService bomTreeRenderService;
     @Inject DriverBatchSafetyAuditor safetyAuditor;
+    @Inject CardSnapshotService cardSnapshotService;
 
     /**
      * task-0806 · FR-1（方案 B）+ FR-4/FR-5/FR-6/FR-7：逐项循环<b>之前</b>按
@@ -121,7 +122,12 @@ public class PriceAdjustJobExecutionService {
      *       断言失败 / {@code render()} 本身抛异常（FR-5，如注入的必然失败 driver 组件）→ 该分组不
      *       写入，组内全部 item 逐项；</li>
      *   <li>FR-4 守卫 1 前置闸门：分组内任一 driver 组件判定为 {@link BatchSafetyLevel#PER_LINE_ITEM}
-     *       → 直接跳过批量渲染（不算异常，是正常的保守分流），该组照样逐项。</li>
+     *       → 直接跳过批量渲染（不算异常，是正常的保守分流），该组照样逐项；</li>
+     *   <li>{@link CardSnapshotService#templateHasTreeTab} 前置闸门（2026-08-07 亲验补丁）：模板
+     *       不含树页签 → 直接跳过（不算异常），该组照样逐项——老路径 {@code refreshCostingCardValuesForLine}
+     *       对这类模板恒不调用 {@code render()}（{@code precomputedBaseRows} 恒 null，走
+     *       {@code buildCostingCardValues} 的旧引擎分支），批量路径必须与它对齐，否则会在"未来有人建一个
+     *       不含树页签的核价模板"时让两条路径分叉进 {@code buildCostingCardValues} 的不同代码分支。</li>
      * </ol>
      *
      * <p>🚨 <b>分组级 {@code REQUIRES_NEW} 是必需的，不是可选的美化</b>——实测（AC-4 单测）发现：
@@ -200,13 +206,29 @@ public class PriceAdjustJobExecutionService {
     /**
      * 单分组渲染，独立事务（见 {@link #precomputeBatch} 的 REQUIRES_NEW 必要性说明）。
      *
-     * @return 该分组的 {@code render()} 结果；{@code null} = FR-4 守卫命中 PER_LINE_ITEM，
-     *         正常跳过（不是异常）；抛异常 = FR-6 断言失败或 {@code render()} 本身失败，由调用方
-     *         （{@link #precomputeBatch}）捕获并软回退。
+     * @return 该分组的 {@code render()} 结果；{@code null} = 正常跳过、不是异常（FR-4 守卫命中
+     *         PER_LINE_ITEM，或本分组模板不含树页签——见下方门槛说明）；抛异常 = FR-6 断言失败或
+     *         {@code render()} 本身失败，由调用方（{@link #precomputeBatch}）捕获并软回退。
      */
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     Map<UUID, Map<String, ArrayNode>> renderGroupInNewTx(UUID jobId, GroupKey key, List<QuotationLineItem> groupItems,
                                                           Map<UUID, Quotation> quotationById) {
+        // 🔒 亲验反馈补丁（2026-08-07）：老路径 refreshCostingCardValuesForLine 在调用 render() 前
+        // 有一道 CardSnapshotService#templateHasTreeTab 门槛——不含树页签的核价模板走
+        // expandFlatDriverBaseRows 旧引擎，precomputedBaseRows 恒为 null。批量路径若无条件对所有
+        // 模板都跑 render() 并把结果当 precomputed 喂给 buildCostingCardValues，会让"不含树页签的
+        // 模板"额外多算出一份 render() 结果、且下游据此走了"precomputedBaseRows != null"分支——
+        // 与老路径分叉进 buildCostingCardValues 的不同代码分支，产出可能不同。当前库两个在用核价
+        // 模板都含树页签（不可达），但这正是守卫纪律要防的"未来有人建一个不含树页签的核价模板"那类
+        // 潜伏分叉，必须堵死：不含树页签的模板整组不批量，直接跳过（items 走 upgrade() 默认路径，
+        // 其内部 templateHasTreeTab 判定为 false 时 precomputed 恒为 null，与改造前逐位一致）。
+        if (!cardSnapshotService.templateHasTreeTab(key.templateId)) {
+            LOG.infof("[price-adjust-job] jobId=%s 分组 (template=%s, priceBaseDate=%s, items=%d) " +
+                    "模板不含树页签，不参与批量预渲染（与老路径 templateHasTreeTab 门槛对齐）",
+                jobId, key.templateId, key.priceBaseDate, groupItems.size());
+            return null;
+        }
+
         // FR-6：分组内 customerId 必须唯一，不唯一直接抛错（被 precomputeBatch 的 catch 接住 -> 软回退逐项）。
         // 🔒 复用 precomputeBatch 已批量加载的 quotationById（N+1 纪律）——quotationById 里的 Quotation
         // 是外层事务加载的托管实体，本方法只读它们的标量字段（customerId），不触发懒加载，跨事务读安全。

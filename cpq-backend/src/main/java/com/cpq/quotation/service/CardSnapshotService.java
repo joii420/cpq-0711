@@ -1683,8 +1683,17 @@ public class CardSnapshotService {
             .maximumSize(500)
             .build();
 
-    /** Task 3.1 事项B：该核价模板是否含树页签组件（勾了 {@code bom_recursive_expand} 的 driver 组件）。 */
-    boolean templateHasTreeTab(UUID templateId) {
+    /**
+     * Task 3.1 事项B：该核价模板是否含树页签组件（勾了 {@code bom_recursive_expand} 的 driver 组件）。
+     *
+     * <p>🔒 task-0806：可见性从包内可见放宽为 {@code public}（纯签名放宽，逻辑一字未改），供
+     * {@code PriceAdjustJobExecutionService#precomputeBatch}（跨包）复用同一份判定——批量预渲染
+     * 分组前必须先过这道门槛，否则对"不含树页签"的核价模板，批量路径（直接喂
+     * {@code precomputedBaseRows}）与老路径（{@code templateHasTreeTab==false} 时走
+     * {@link #expandFlatDriverBaseRows} 旧引擎）会分叉进 {@code buildCostingCardValues} 的不同分支，
+     * 产出可能不同。不新写第二份判定，直接复用本方法。
+     */
+    public boolean templateHasTreeTab(UUID templateId) {
         if (templateId == null) return false;
         Boolean cached = treeTabCache.getIfPresent(templateId);
         if (cached != null) return cached;
