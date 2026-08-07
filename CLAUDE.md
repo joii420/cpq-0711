@@ -164,17 +164,22 @@ ids.stream().map(repo::findById).toList();
 ## 开发流程规范（新功能必须用隔离 worktree 分支）🔒
 **强制**：开发任何新功能 / 较大改动，**必须**先用 `superpowers:using-git-worktrees` 技能创建**隔离 worktree 分支**，在该隔离工作区里开发，**不直接在主工作区或 master 上改**。
 
-**计划执行方式（默认，不必再询问用户）**：写好实现计划（`superpowers:writing-plans`）后，**默认走 `superpowers:subagent-driven-development`**——每个 Task 派全新子代理实现，Task 间做两阶段评审（先 spec 合规、再代码质量），连续执行不中途请示。除非用户当次明确要求改用 `superpowers:executing-plans` 或手动执行。
+🚨 **任务文档形态以 `dev-docs/任务平台规则.md` §3 为准，禁止使用 `superpowers:writing-plans`**（2026-08-06 立规）
+- **不产出 `实现计划.md`**（那是 writing-plans 的产物）。开发文档就是规则 §3 定义的那几份：`需求文档.md`（§3.1，交付验收唯一标准）+ `fronttask.md`（§3.2）+ `backtask.md`（§3.3）+ `api.md`（§3.4）+ `test.md`（§3.5）+ `test-report.md`（§3.6）。
+- **前端/接口零改动的任务也要写 `fronttask.md` / `api.md`**，内容是「为什么不改」的判定依据 + 回归确认清单 + 二期触发条件。规则 §3 明写「宁可写细，不可留空槽」——留空槽 = 该文档未完成。
+- **流程顺序按规则 §4 走，闸门不可跳**：步 1 写需求文档 → 步 3 写开发文档 → 🚦**步 4 闸门 A：用户确认** → 步 5 才建 worktree + 特性分支。**未过闸门 A 严禁建分支写代码，更不许合并进 master。**
+- 单个开发 Task **内部**的推进手法仍用 `superpowers:subagent-driven-development`（每个 Task 派全新子代理，Task 间两阶段评审：先 spec 合规、再代码质量，连续执行不中途请示）。规则 §4 管**外层流程**，subagent-driven 管**单任务内部执行**，两者不冲突。
 
-🚨 **任务文档一律落 `dev-docs/`，不要写 `docs/superpowers/specs/`**（2026-08-05 立规）
-- **目录约定**：`dev-docs/<task-0MDD|repair-0MDD>-<中文任务名>/`，内含 `需求文档.md`（唯一权威口径）+ 按需 `实现计划.md` / `test.md` / `api.md` / `问题分析报告.md`。派生的返修任务嵌在父任务目录下（如 `dev-docs/repair-0803-BL0098-公式绑定改绑ID/repair-0805-.../`）。
+**任务文档一律落 `dev-docs/`，不要写 `docs/superpowers/specs/`**（2026-08-05 立规）
+- **目录约定**：`dev-docs/<task-0MDD|repair-0MDD>-<中文任务名>/`。派生的返修任务嵌在父任务目录下（如 `dev-docs/repair-0803-BL0098-公式绑定改绑ID/repair-0805-.../`）。文档清单见上一条。
 - ⚠️ **`docs/superpowers/specs/` 已停用**（仅保留历史存档，不再新增）。
 - ⚠️ **`superpowers:brainstorming` 技能的检查清单里硬写了 `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` 这个默认路径 —— 不要照搬。** 该技能自己也写明「User preferences for spec location override this default」，本节即是那个 override。任何 superpowers 技能与 CLAUDE.md 冲突时，**一律以 CLAUDE.md 为准**。
 - 立项后同步在 `BACKLOG.md` 登记条目（编号 `BL-NNNN`），交付后回写 `docs/RECORD.md`。
 
 **生命周期**：
-1. **起步**：调 `superpowers:using-git-worktrees` 建独立 worktree + 特性分支，后续所有编码/提交都在该 worktree 内进行。
-2. **开发**：按本文「质量保证规范」「修改后强制自检」完成功能 + 测试 + 自检；协议级改动跑 E2E。默认按上面「计划执行方式」用 subagent-driven 推进。
+0. **立项**：按 `dev-docs/任务平台规则.md` §1 判定类型与位置 → 建目录 → 写需求文档 + 开发文档 → **等用户过闸门 A**。⚠️ 这一步在建 worktree **之前**，不要反过来。
+1. **起步**：闸门 A 通过后，调 `superpowers:using-git-worktrees` 建独立 worktree + 特性分支，后续所有编码/提交都在该 worktree 内进行。
+2. **开发**：按本文「质量保证规范」「修改后强制自检」完成功能 + 测试 + 自检；协议级改动跑 E2E。单个 Task 内部用 subagent-driven 推进。
 3. **确认**：完成后**由用户确认**功能达标（不得自行宣布"完成即合并"）。
 4. **收尾（用户确认后自动执行）**：走 `superpowers:finishing-a-development-branch` 的"合并并清理"路径 —— 切回 `master` → `git merge <特性分支>` → 跑一遍测试确认合并结果 → **`git worktree remove` 删除新建的 worktree 目录** + 删除该特性分支。
 
