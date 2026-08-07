@@ -3,6 +3,7 @@ package com.cpq.configure.service;
 import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.service.ComponentDriverService;
 import com.cpq.datasource.sqlview.QuotePendingScope;
+import com.cpq.datasource.sqlview.TemplateRenderScope;
 import com.cpq.formula.dataloader.QuotationIdContext;
 import com.cpq.quotation.entity.QuotationLineItem;
 import com.cpq.quotation.rowkey.DeletedRowKeys;
@@ -283,6 +284,12 @@ public class ConfigureSnapshotService {
             // 独立方法，不共用本 open()。
             String _status = self.loadQuotationStatus(quotationId);
             UUID _pqPrev = QuotePendingScope.open(quotationId, _status);
+            // task-0806 B17-a：模板渲染域，覆盖本方法内全部 componentDriverService.expand/expandMulti
+            // 调用点（下方直接 expand 兜底 + precomputeQuoteDriverBuckets 内 expandMulti），让
+            // ComponentDriverService.setNested 能拿到真实 templateId（原恒传 null）。与 :365 下方
+            // treeComps 分支各自查询 loadCustomerTemplateId 的旧写法合并为同一次取值，见该处改动。
+            UUID _customerTemplateId = self.loadCustomerTemplateId(quotationId);
+            UUID _tplPrev = TemplateRenderScope.open(_customerTemplateId);
             try {
                 // 物化所需:模板 components_snapshot(含各 tab 的 componentCode/fields/formulas)。一次加载,逐行复用。
                 JsonNode componentsSnapshot = self.loadComponentsSnapshot(quotationId);
@@ -362,7 +369,9 @@ public class ConfigureSnapshotService {
                 // 落带原文的失败哨兵行，仅影响树页签本身；同行其它(非树)组件独立展开，不受牵连。
                 String treeRenderError = null;
                 if (!treeComps.isEmpty() && anyNeedsExpand) {
-                    UUID customerTemplateId = self.loadCustomerTemplateId(quotationId);
+                    // task-0806 B17-a：复用外层已 hoist 的 _customerTemplateId，省一次 REQUIRES_NEW 查询
+                    // （原为独立 self.loadCustomerTemplateId(quotationId) 调用，同一值，改为直接引用）。
+                    UUID customerTemplateId = _customerTemplateId;
                     if (customerTemplateId != null) {
                         List<QuotationLineItem> liteLines = new ArrayList<>();
                         for (Map<String, Object> li : lineItems) {
@@ -590,6 +599,7 @@ public class ConfigureSnapshotService {
                     }
                 }
             } finally {
+                TemplateRenderScope.restore(_tplPrev);
                 QuotePendingScope.restore(_pqPrev);
                 QuotationIdContext.clear();
             }

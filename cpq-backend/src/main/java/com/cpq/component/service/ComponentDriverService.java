@@ -351,7 +351,7 @@ public class ComponentDriverService {
                                        UUID lineItemId, String compositeType, List<UUID> childLineItemIds,
                                        boolean skipCache) {
         // 阶段 3: 设 SqlViewRuntimeContext ThreadLocal，让 BNF path $xxx 引用能拿到 currentComponentId
-        // （quotation/template 上下文留 null，本入口只知道 componentId 维度；
+        // （quotation 上下文留 null，本入口只知道 componentId 维度；
         // QuotationService.submit / 渲染期上层可进一步 setNested 补 quotationId+status）
         //
         // task-0725 T2（根因 1）：quotationId 改从 QuotePendingScope.pendingOwner() 取——它是「已判定
@@ -364,9 +364,20 @@ public class ComponentDriverService {
         //   ② ComponentSqlViewService:379「冻结态读 quotation_component_sql_snapshot」分支在本链路
         //      保持休眠（传真实 status 会点亮它 → 已提交单的视图 SQL 来源从 component_sql_view
         //      静默切到 quotation_component_sql_snapshot，属超范围的静默行为变更）
+        //
+        // task-0806 B17-a：第 2 参 templateId 原恒传 null（"template 上下文留 null"），导致
+        // ComponentSqlViewService.lookupForResolver 的「② 模板已发布 snapshot 优先」与
+        // 「③ 已发布模板未命中快照即报错」两层结构上永远点不亮，全部静默落到「④ 兜底实时读活表」
+        // ——sql_views_snapshot 冻结名存实亡。改读 TemplateRenderScope.currentTemplateId()：由知道
+        // templateId 的渲染编排入口（CardSnapshotService#expandFlatDriverBaseRows /
+        // #precomputeCostingDriverUnion、ConfigureSnapshotService#snapshotLines、
+        // BomTreeRenderService#render、CostingVersionService#switchVersion）在展开前 open()。
+        // 未被任何编排入口 open 过时（如 ComponentResource 组件管理侧调试/预览端点）取值仍为 null，
+        // 行为与改动前逐位一致——纯加法式接线，不改变任何既有无模板上下文调用点的语义。
         UUID _pq = com.cpq.datasource.sqlview.QuotePendingScope.pendingOwner();
+        UUID _tpl = com.cpq.datasource.sqlview.TemplateRenderScope.currentTemplateId();
         com.cpq.datasource.sqlview.SqlViewRuntimeContext.Snapshot _prevSqlViewCtx =
-                com.cpq.datasource.sqlview.SqlViewRuntimeContext.setNested(componentId, null, _pq, null);
+                com.cpq.datasource.sqlview.SqlViewRuntimeContext.setNested(componentId, _tpl, _pq, null);
         try {
         // cache key �?override 哈希避免不同 snapshot 共享 cache 串号
         // Bug B: �?lineItemId 维度，防止同 partNo 不同 lineItem 的工�?cache 串行
@@ -669,9 +680,11 @@ public class ComponentDriverService {
         // task-0725 T2：同上方私有 expand() 的 quotationId/quotationStatus 传播不变量
         // （pendingOwner() 非 null ⟹ 非冻结，status 恒传 null 同时满足 SqlViewExecutor:555 门槛
         // 与 ComponentSqlViewService:379 休眠分支两个消费者的正确性，见该方法内的详细注释）。
+        // task-0806 B17-a：templateId 同上方私有 expand() 一样改读 TemplateRenderScope（原恒传 null）。
         UUID _pq = com.cpq.datasource.sqlview.QuotePendingScope.pendingOwner();
+        UUID _tpl = com.cpq.datasource.sqlview.TemplateRenderScope.currentTemplateId();
         com.cpq.datasource.sqlview.SqlViewRuntimeContext.Snapshot _prev =
-                com.cpq.datasource.sqlview.SqlViewRuntimeContext.setNested(componentId, null, _pq, null);
+                com.cpq.datasource.sqlview.SqlViewRuntimeContext.setNested(componentId, _tpl, _pq, null);
         try {
             Map<String, ExpandDriverResponse> resultByPart = new java.util.LinkedHashMap<>();
             if (partNos == null || partNos.isEmpty()) return resultByPart;

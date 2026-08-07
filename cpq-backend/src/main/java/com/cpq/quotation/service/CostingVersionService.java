@@ -5,6 +5,7 @@ import com.cpq.common.exception.BusinessException;
 import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.service.ComponentDriverService;
 import com.cpq.datasource.sqlview.BomTreeVarsContext;
+import com.cpq.datasource.sqlview.TemplateRenderScope;
 import com.cpq.quotation.dto.VersionOptionsResponseDTO;
 import com.cpq.quotation.dto.VersionSwitchRequest;
 import com.cpq.quotation.dto.VersionSwitchResponseDTO;
@@ -177,66 +178,74 @@ public class CostingVersionService {
         }
         UUID templateId = q.costingCardTemplateId;
 
-        // 校验 componentId 存在 + 是否为主树组件（bom_recursive_expand）
-        boolean isTreeComponent = isTreeComponent(req.componentId);
+        // task-0806 B17-a：模板渲染域，覆盖下方非主树分支 buildMixedBaseRows→expandRows→
+        // componentDriverService.expandUncached（主树分支 bomTreeRenderService.render 已自带同款
+        // open，此处对它是无害的嵌套 open，值相同）。
+        UUID _tplPrev = TemplateRenderScope.open(templateId);
+        try {
+            // 校验 componentId 存在 + 是否为主树组件（bom_recursive_expand）
+            boolean isTreeComponent = isTreeComponent(req.componentId);
 
-        // ── upsert override + flush（先落库，让下面的重查读到最新覆盖）──────────────────
-        CostingOrderVersionOverride ov = CostingOrderVersionOverride.find(coid, req.componentId, req.partNo);
-        OffsetDateTime now = OffsetDateTime.now();
-        if (ov == null) {
-            ov = new CostingOrderVersionOverride();
-            ov.costingOrderId = coid;
-            ov.componentId = req.componentId;
-            ov.partNo = req.partNo;
-            ov.viewVersion = req.viewVersion;
-            ov.createdAt = now;
-            ov.updatedAt = now;
-            ov.persist();
-        } else {
-            ov.viewVersion = req.viewVersion;
-            ov.updatedAt = now;
+            // ── upsert override + flush（先落库，让下面的重查读到最新覆盖）──────────────────
+            CostingOrderVersionOverride ov = CostingOrderVersionOverride.find(coid, req.componentId, req.partNo);
+            OffsetDateTime now = OffsetDateTime.now();
+            if (ov == null) {
+                ov = new CostingOrderVersionOverride();
+                ov.costingOrderId = coid;
+                ov.componentId = req.componentId;
+                ov.partNo = req.partNo;
+                ov.viewVersion = req.viewVersion;
+                ov.createdAt = now;
+                ov.updatedAt = now;
+                ov.persist();
+            } else {
+                ov.viewVersion = req.viewVersion;
+                ov.updatedAt = now;
+            }
+            em.flush();
+
+            Map<UUID, Map<String, String>> overridesByComponent = loadOverridesByComponent(coid);
+
+            // ── 重查 + 重装（scope 按 §E 规则）───────────────────────────────────────────
+            Map<String, ArrayNode> baseRowsByComp;
+            Set<String> affectedTabs = new LinkedHashSet<>();
+            if (isTreeComponent) {
+                // 主树切：该 line 各 driver 组件跑一次 $view（整卡重查），远程查询次数与料号数无关。
+                Map<UUID, Map<String, ArrayNode>> rendered =
+                        bomTreeRenderService.render(templateId, List.of(li), overridesByComponent);
+                baseRowsByComp = rendered.getOrDefault(li.id, new LinkedHashMap<>());
+                affectedTabs.addAll(driverComponentIdsOf(templateId));
+            } else {
+                // 非主树切：仅该组件 $view 跑一次（partNo 组限定），其余页签复用缓存 baseRows。
+                baseRowsByComp = buildMixedBaseRows(co, li, q, req.componentId, req.partNo, overridesByComponent);
+                affectedTabs.add(req.componentId.toString());
+            }
+
+            String newCostingCardValues = cardSnapshotService.buildCostingCardValues(
+                    li, templateId, q.customerId, q.id, null, null, baseRowsByComp);
+            boolean hasTreeTab = cardSnapshotService.templateHasTreeTab(templateId);
+            String newCostingExcelValues = cardSnapshotService.buildExcelValues(
+                    li, templateId, q.customerId, newCostingCardValues, hasTreeTab);
+
+            // ── 写回 costing_render（仅受影响 line） + 重算 costing_total_amount ─────────────
+            Map<String, RenderEntry> renderMap = parseRenderMap(co.costingRender);
+            renderMap.put(li.id.toString(), new RenderEntry(newCostingCardValues, newCostingExcelValues));
+            co.costingRender = serializeRenderMap(renderMap);
+            co.costingTotalAmount = recomputeTotal(q.id, renderMap);
+            // co 是 em.find 拿到的受管实体，事务提交时自动 flush（不显式 persist）
+
+            VersionSwitchResponseDTO resp = new VersionSwitchResponseDTO();
+            resp.lineItemId = li.id.toString();
+            resp.costingCardValues = newCostingCardValues;
+            resp.costingExcelColumns = newCostingExcelValues;
+            resp.costingTotalAmount = co.costingTotalAmount;
+            resp.affectedTabs = new ArrayList<>(affectedTabs);
+            LOG.infof("[costing-version] switchVersion coid=%s line=%s comp=%s part=%s -> %s (tree=%s)",
+                    coid, li.id, req.componentId, req.partNo, req.viewVersion, isTreeComponent);
+            return resp;
+        } finally {
+            TemplateRenderScope.restore(_tplPrev);
         }
-        em.flush();
-
-        Map<UUID, Map<String, String>> overridesByComponent = loadOverridesByComponent(coid);
-
-        // ── 重查 + 重装（scope 按 §E 规则）───────────────────────────────────────────
-        Map<String, ArrayNode> baseRowsByComp;
-        Set<String> affectedTabs = new LinkedHashSet<>();
-        if (isTreeComponent) {
-            // 主树切：该 line 各 driver 组件跑一次 $view（整卡重查），远程查询次数与料号数无关。
-            Map<UUID, Map<String, ArrayNode>> rendered =
-                    bomTreeRenderService.render(templateId, List.of(li), overridesByComponent);
-            baseRowsByComp = rendered.getOrDefault(li.id, new LinkedHashMap<>());
-            affectedTabs.addAll(driverComponentIdsOf(templateId));
-        } else {
-            // 非主树切：仅该组件 $view 跑一次（partNo 组限定），其余页签复用缓存 baseRows。
-            baseRowsByComp = buildMixedBaseRows(co, li, q, req.componentId, req.partNo, overridesByComponent);
-            affectedTabs.add(req.componentId.toString());
-        }
-
-        String newCostingCardValues = cardSnapshotService.buildCostingCardValues(
-                li, templateId, q.customerId, q.id, null, null, baseRowsByComp);
-        boolean hasTreeTab = cardSnapshotService.templateHasTreeTab(templateId);
-        String newCostingExcelValues = cardSnapshotService.buildExcelValues(
-                li, templateId, q.customerId, newCostingCardValues, hasTreeTab);
-
-        // ── 写回 costing_render（仅受影响 line） + 重算 costing_total_amount ─────────────
-        Map<String, RenderEntry> renderMap = parseRenderMap(co.costingRender);
-        renderMap.put(li.id.toString(), new RenderEntry(newCostingCardValues, newCostingExcelValues));
-        co.costingRender = serializeRenderMap(renderMap);
-        co.costingTotalAmount = recomputeTotal(q.id, renderMap);
-        // co 是 em.find 拿到的受管实体，事务提交时自动 flush（不显式 persist）
-
-        VersionSwitchResponseDTO resp = new VersionSwitchResponseDTO();
-        resp.lineItemId = li.id.toString();
-        resp.costingCardValues = newCostingCardValues;
-        resp.costingExcelColumns = newCostingExcelValues;
-        resp.costingTotalAmount = co.costingTotalAmount;
-        resp.affectedTabs = new ArrayList<>(affectedTabs);
-        LOG.infof("[costing-version] switchVersion coid=%s line=%s comp=%s part=%s -> %s (tree=%s)",
-                coid, li.id, req.componentId, req.partNo, req.viewVersion, isTreeComponent);
-        return resp;
     }
 
     // =========================================================================

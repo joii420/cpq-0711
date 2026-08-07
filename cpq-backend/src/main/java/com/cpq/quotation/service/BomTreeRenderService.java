@@ -5,6 +5,7 @@ import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.entity.CostingBomTreeConfig;
 import com.cpq.component.service.ComponentDriverService;
 import com.cpq.datasource.sqlview.BomTreeVarsContext;
+import com.cpq.datasource.sqlview.TemplateRenderScope;
 import com.cpq.datasource.sqlview.VersionFilterMacro;
 import com.cpq.formula.dataloader.QuotationIdContext;
 import com.cpq.quotation.entity.Quotation;
@@ -142,20 +143,28 @@ public class BomTreeRenderService {
         if (lineItems == null || lineItems.isEmpty()) {
             return new LinkedHashMap<>();
         }
-        UUID ctxQuotationId = lineItems.get(0).quotationId;
-        if (ctxQuotationId == null) {
-            return renderInternal(templateId, lineItems, overridesByComponent, usage);
-        }
-        UUID prevQuotationId = QuotationIdContext.get();
-        QuotationIdContext.set(ctxQuotationId);
+        // task-0806 B17-a：模板渲染域，覆盖下方 renderInternal 内 componentDriverService.expandUncached
+        // 调用点，让 ComponentDriverService.setNested 能拿到真实 templateId（原恒传 null）。本方法是
+        // BOM 树渲染唯一入口，templateId 就是其显式参数，故直接在此包一层，renderInternal 本身无需改动。
+        UUID prevTemplateId = TemplateRenderScope.open(templateId);
         try {
-            return renderInternal(templateId, lineItems, overridesByComponent, usage);
-        } finally {
-            if (prevQuotationId != null) {
-                QuotationIdContext.set(prevQuotationId);   // 恢复外层，而不是清空
-            } else {
-                QuotationIdContext.clear();
+            UUID ctxQuotationId = lineItems.get(0).quotationId;
+            if (ctxQuotationId == null) {
+                return renderInternal(templateId, lineItems, overridesByComponent, usage);
             }
+            UUID prevQuotationId = QuotationIdContext.get();
+            QuotationIdContext.set(ctxQuotationId);
+            try {
+                return renderInternal(templateId, lineItems, overridesByComponent, usage);
+            } finally {
+                if (prevQuotationId != null) {
+                    QuotationIdContext.set(prevQuotationId);   // 恢复外层，而不是清空
+                } else {
+                    QuotationIdContext.clear();
+                }
+            }
+        } finally {
+            TemplateRenderScope.restore(prevTemplateId);
         }
     }
 

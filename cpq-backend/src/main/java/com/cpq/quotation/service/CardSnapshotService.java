@@ -4,6 +4,7 @@ import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.service.ComponentDriverService;
 import com.cpq.configure.service.ConfigureSnapshotService;
 import com.cpq.datasource.sqlview.QuotePendingScope;
+import com.cpq.datasource.sqlview.TemplateRenderScope;
 import com.cpq.formula.dataloader.QuotationIdContext;
 import com.cpq.quotation.entity.Quotation;
 import com.cpq.quotation.entity.QuotationLineItem;
@@ -1107,12 +1108,16 @@ public class CardSnapshotService {
         List<String> unionList = new ArrayList<>(union);
 
         QuotationIdContext.set(quotationId);
+        // task-0806 B17-a：expandForPartSet 内部经 expandMulti 走 ComponentDriverService.setNested，
+        // 打开模板渲染域让 templateId 真实传播（原恒 null），使 SQL 视图 snapshot fallback 生效。
+        UUID _tplPrev = TemplateRenderScope.open(q.costingCardTemplateId);
         try {
             for (UUID compId : eligible) {
                 unionByComp.put(compId,
                     componentDriverService.expandForPartSet(compId, q.customerId, unionList, null, null));
             }
         } finally {
+            TemplateRenderScope.restore(_tplPrev);
             QuotationIdContext.clear();
         }
         return unionByComp;
@@ -2873,6 +2878,13 @@ public class CardSnapshotService {
 
         String compositeType = li.compositeType;
         QuotationIdContext.set(quotationId);
+        // task-0806 B17-a：打开模板渲染域，让下方 componentDriverService.expand 内部
+        // SqlViewRuntimeContext.setNested 能拿到真实 templateId（原恒传 null，见 ComponentDriverService
+        // 调用点注释），使 ComponentSqlViewService.lookupForResolver 的「② 模板已发布 snapshot 优先」
+        // 真正生效。unionByComp 命中分支（nrBucket!=null）不调用 expand，其结果来自调用方各自的
+        // 预取（如 CardSnapshotService#precomputeCostingDriverUnion，已自行 open 同一域），故此处
+        // 无条件 open 不影响那条分支的正确性，只是多余但无害。
+        UUID _tplPrev = TemplateRenderScope.open(templateId);
         try {
             for (Object[] dc : driverComps) {
                 if (dc == null || dc[0] == null) continue;
@@ -2904,6 +2916,7 @@ public class CardSnapshotService {
                 }
             }
         } finally {
+            TemplateRenderScope.restore(_tplPrev);
             QuotationIdContext.clear();
         }
         return baseRowsByComp;
