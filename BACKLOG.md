@@ -155,6 +155,37 @@
 
 ## P1
 
+### [BL-0133] 价格调整更新任务性能优化（核价树渲染批量化 + S0 守卫可配）
+- **优先级**：P1
+- **来源**：2026-08-06 用户报「价格调整通过后的更新任务非常慢」，主线全程实测取证
+- **状态**：[~] 进行中 —— 已立项，文档就绪，待进场开发
+- **登记日期**：2026-08-06
+- **任务目录**：`dev-docs/task-0806-价格调整更新任务性能优化/`（`需求文档.md` = 验收唯一标准）
+- **分支 / worktree**：`feat/task-0806-price-adjust-job-perf` / `.claude/worktrees/task-0806-price-adjust-job-perf`（基于本地 master HEAD `717ca4f0`）
+- **背景（实测基线）**：18 项 job 58s（3.22s/项）。插桩实测构成：核价树 `render()` **43.5%**、S0 口径守卫 **14.3%**、`buildCostingCardValues` 11.3%、报价侧 `buildCardValues` 8.6%、S9 凭据 3.8%、其余 17.8%。**73% 在"重算卡片"，"改价格键"本身几乎不花时间。**
+- **实测否定的两个方向**：
+  - **不是 N+1** —— 一次 render 恰好 17 条 SQL，每个 driver 组件 1 条、零重复（`evaluatePath` 叶子列短路 + `DataLoader.resultCache` 不含 driverRow 维度，两道防线已挡住逐行查）
+  - **不能上线程池** —— 2026-06-22 同款设计已实证撤回（5.6x 但 73 行中 9 行算错），本链路写价格且落不可逆凭据，代价更高
+- **真正的浪费**：`refreshCostingCardValuesForLine` 每次只传 `List.of(li)`，而 `render()` 本就支持整批 → 18 项 job 发 **306 条** SQL 而非 17 条（冷缓存对照实验已排除缓存假象）
+- 🚨 **本条最值钱的部分 —— 已实证的陷阱（谁做这个任务必须先读）**：
+  ```
+  不能按 job 整批渲染。
+  render() 用 lineItems.get(0).quotationId 设 QuotationIdContext，
+  而 $wl_ys_bom_view 含 f_material_element_price(:customerCode, :priceBaseDate)，
+  :priceBaseDate = 报价单 created_at 的 LocalDate（SqlViewExecutor#enrichPriceBaseDate）
+  ⇒ 批次跨多个建单日时，组长的基准日被套给全批
+  实测 job c2915208（24 单跨 6 个建单日）：5 张单的 costing_card_values 被写成别单的数据
+  全模板 17 个 driver 组件审计：只有 COMP-0049 带日期维度；全库无 :quotationId/:lineItemId
+  ```
+- **方案**：分组键 = `(costingCardTemplateId, 取价基准日)`（方案 B，已在反例上验证 0 不一致）；加强版按组件真实依赖维度分层（方案 A，让成本不随分组数增长）。两道强制守卫：①视图维度审计，出现 `:quotationId`/`:lineItemId` 或解析失败 → 强制逐项 + 告警；②批量渲染失败必须回退逐项，不得把"单组件失败"放大成"整批 FAILED"
+- **预期收益**：58s → 22~25s（实测方案 B 在 4 个真实 job 上 1.7~4.7x，随建单日分散度变化）
+- **依赖**：无（task-0729 已交付）
+- **预估规模**：M（3-5 天）
+- **验收要点**：见需求文档 §7 八条门禁。**门禁 2 强制包含 `c2915208`** —— 只跑其他 job 会假绿（它们跨 3 个建单日却也 PASS，因那几天没跨价格版本边界，纯属数据碰巧）
+- 📌 **方法论（不止本任务适用）**：**"抽样 0 不一致"不是安全证明。** 说明问题的是结构性事实 + 存在性反例，不是样本通过率
+
+---
+
 ### [BL-0126] jsonb 往返丢精度缺陷族 —— 还有第 3、第 4 个写点未修
 - **优先级**：P1
 - **来源**：task-0729 验收 `#58` 修复后全工程 grep（2026-08-05）
