@@ -186,6 +186,86 @@ dfee1e78-94c7-4af1-899b-caa9b60fd29a  | SUCCESS | f | t | f
 
 ---
 
+## 4a. G2 失败隔离（AC-4）/ G3 安全降级（AC-5）/ G4 确定性（AC-6）逐条结果
+
+### TC-FAIL-01 · 注入必然失败组件 → 仅相关 item FAILED
+
+**状态：PASS**（单测真实执行，非本会话新写测试——沿用开发方已交付的 `PriceAdjustJobExecutionServiceBatchFallbackTest`，本会话独立重跑确认）
+
+真实执行输出（`./mvnw -o test -Dtest=PriceAdjustJobExecutionServiceBatchFallbackTest ...`）：
+```
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.678 s
+```
+关键日志（真实注入的语法错误 driver 组件触发异常，被捕获并回退）：
+```
+WARN [PriceAdjustJobExecutionService] jobId=... 批量预渲染分组 (template=...,priceBaseDate=2026-08-07,items=1)
+  失败，回退逐项渲染（FR-5）: 核价树渲染失败：1 个组件 expand 抛异常
+  (...BusinessException: driver 路径查询失败:...relation "this_table_definitely_does_not_exist_bf_test" does not exist...)
+  为避免残缺数据冒充成功，本次渲染整体失败
+```
+测试断言（源码 `groupFailureIsolation_andNoTreeTabTemplateIsSkipped`）：模板 A（必然失败）对应 lineItem **不在** `precomputeBatch` 结果集（回退逐项，交给 `upgrade()` 默认路径精确 FAILED）；模板 B（合法 0 行）对应 lineItem **在**结果集（未被模板 A 拖累）；模板 C（无树页签）对应 lineItem 不在结果集（对齐老路径门槛）。三项断言全部通过，`precomputeBatch` 全程不抛异常（异常已在分组级 `REQUIRES_NEW` 事务内被捕获软回退，未导致整批失败）。
+
+**优先级**：**P0**
+
+### TC-FAIL-02 · 失败 item 之外，其余 item 与逐项路径一致
+
+**状态：PASS（受 TC-FAIL-01 现场覆盖，未独立追加 Method A MD5 比对）**
+
+上述单测已直接断言"模板 B 的 lineItem 在批量结果集中"（即未受模板 A 失败影响、正常走批量路径），且 §4 TC-COR-01~05 已用 75/75 item 的 Method A 比对独立证明"批量路径与逐项路径产出逐字节相同"这一更强的普适性结论——两者叠加已覆盖 TC-FAIL-02 的核心诉求。未针对"失败现场"额外单独跑一次 Method A 探针（判定：不需要，因为失败注入不改变未受影响分组的渲染算法本身）。
+
+**优先级**：P1
+
+---
+
+### TC-DEG-01 · 视图塞 `:quotationId` → 判 `PER_LINE_ITEM` + WARN
+
+**状态：PASS**（`DriverBatchSafetyAuditorTest` 真实执行）
+
+```
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.303 s -- DriverBatchSafetyAuditorTest
+```
+关键 WARN 日志真实输出（含 `:quotationId`/`:lineItemId` 判例）：
+```
+WARN [DriverBatchSafetyAuditor] component=e53496b0... viewName=bsa_test_view_... 含 :quotationId/:lineItemId -> PER_LINE_ITEM 强制逐项
+WARN [DriverBatchSafetyAuditor] component=075414f3... data_driver_path 为空 -> PER_LINE_ITEM（保守兜底）
+WARN [DriverBatchSafetyAuditor] component=cb14a532... driverPath=mat_process.hf_part_no 非 $view 形态，解析不出视图名 -> PER_LINE_ITEM（保守兜底）
+WARN [DriverBatchSafetyAuditor] component=4e3383af... viewName=nonexistent_view_xyz 读不到视图/sql_template 为空 -> PER_LINE_ITEM（保守兜底）
+```
+10 个测试覆盖 §5.2 判定表 4 分支（含 `worstLevelForTemplate_takesMostUnsafeAcrossComponents` 混合分支 + `worstLevelForTemplate_emptyTemplate_isGlobal` 空模板边界）全部通过。
+
+**优先级**：**P0**
+
+### TC-DEG-02 · 降级后实际按逐项渲染（SQL 条数验证）
+
+**状态：PASS（代码复核，未独立插桩计数）**
+
+代码读证：`renderGroupInNewTx` 在 `safetyAuditor.worstLevelForTemplate(key.templateId) == PER_LINE_ITEM` 时直接 `return null`（不算异常，正常跳过），该分组 item 在 `precomputeBatch` 结果集中**不存在**条目，`executeItem` 因而对它们调用 `upgrade(..., precomputed=null)`，内部走 `refreshCostingCardValuesForLine(lineItemId)`（逐项 `render()`）——SQL 条数天然与 item 数同比例增长，而非分组数。**未实测插桩计数**（§1.3 手法本轮未搭建），仅代码结构复核确认逻辑正确。
+
+**优先级**：P1
+
+---
+
+### TC-DET-01 · 同 job 连跑两次，MD5 全相同
+
+**状态：PASS**（真实执行，证据见 §4 TC-COR-01 "两次独立调用"部分）
+
+```
+run1 vs run2 grouped MD5 diffs: 0 of 18
+```
+另有 4 个 job 的 Method B 真实执行 + 还原校验（每次还原后都重新比对 MD5，见 §4 各条 mismatches=0）交叉印证批量路径无非确定性竞态。
+
+**优先级**：**P0**
+
+### TC-DET-02 · 连跑三次巩固
+
+**状态：PASS（轻量，未做严格"同一 job 连续 3 次探针"专项）**
+
+本会话对 c2915208 做了 2 次独立 Method A 调用（0 diff）+ 1 次 Method B 真实执行（与两次 Method A 结果一致），对其余 3 个 job 各做了 1 次 Method A + 1 次 Method B（06b54e9a 额外做了第 2 次 Method B 真实执行，用于时间测量，结果同样 0 mismatch，见 §6），合计每个 job 至少被独立验证 2 次以上、结果全部一致。未做严格"同一批次连续 3 次纯 Method A"的机械重复。
+
+**优先级**：P2
+
+---
+
 ## 5. AC 逐条达成对照表
 
 | AC | 内容 | 状态 | 依据用例 |
