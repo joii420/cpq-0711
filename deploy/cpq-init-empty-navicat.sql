@@ -13,8 +13,31 @@
 --       · V365: material_bom_item 增列 material_ratio numeric(18,6)(材质占比, 小数口径 0.3=30%,
 --                仅材质行 characteristic='RECIPE' 有值)
 --       · 内网无 Flyway 时, 这两列的等价增量脚本见 deploy/2026-07-31-quotation-product-category-and-material-ratio.sql
--- 内容: 128 业务活表 + flyway_schema_history + 3 活视图 + 4 函数 + 1 个 admin 用户
+-- 同步: 2026-08-04  已增量同步 V366~V378 的全部**结构**变更, 与 cpq_db_0724 表/列/索引/
+--                   约束/函数/视图六维全等(逐库 pg_dump 归一化比对, 唯一差异是函数体中文注释)。
+--       ⚠️ 基线号一并上调 362 -> 378(不是"仍停在 362")。原因: V368 含 CREATE TABLE(无
+--          IF NOT EXISTS)、V377 含 RENAME COLUMN, 均**非幂等**, 基线不上调则连 Quarkus 时
+--          会重放 V366~V378 并因"表已存在 / 列不存在"启动失败。这与 V363~V365 那批
+--          "幂等可重放"的处理方式不同, 勿照抄上面几行的做法。
+--       · V367: quotation/quotation_line_item/quotation_line_component_data/costing_order
+--                共 12 个金额列 numeric(18,4) -> numeric(20,6)
+--       · V368: 新增 13 张 task-0729 调价体系表(customer_price_adjust_* / element_price_version* /
+--                material_price_* / quotation_price_revision / comparison_column_config);
+--                quotation_line_item + quotation_line_component_data 各加 row_version(乐观锁);
+--                component 加 element_code_field / element_price_field / element_currency_field
+--       · V369: 新增函数 f_material_element_price(text, date)(料号级元素取价, 版本指针优先 + 实时兜底)
+--       · V371: notification 的 chk_notification_type 扩 2 个取值(PRICE_ADJUST_JOB_SUMMARY /
+--                PRICE_ADJUST_QUOTATION_REVIEW)
+--       · V377: annual_discount 年降单表化 —— biz_type 改名 discount_type 且取值细化为三 Sheet,
+--                新增 9 列(客户维度/版本化/pending 隔离), 删 discount_strategy + discount_base,
+--                唯一键由 4 维扩到 7 维
+--       · V378: 新增 price_adjust_settings(单行系统参数表, 含 id=1 种子行)
+--       · ⚠️ 本次**只同步结构**, 未含 V366/V369/V370/V372~V376 对 component.fields、
+--          component_sql_view.sql_template、公式稳定 id 的业务配置 UPDATE(空库无这些行, 无意义)。
+--          已建库的内网环境如需补结构, 用等价增量脚本 deploy/0804-dbupdate.sql
+-- 内容: 142 业务活表 + flyway_schema_history + 3 活视图 + 5 函数 + 1 个 admin 用户
 --       + 2 条 BOM 树递归 SQL 配置(唯一的业务配置种子, 见文件末尾)
+--       + 1 条 price_adjust_settings 系统参数种子行(id=1, 阈值 0.01)
 -- 不含: task-0723 的 _drop 废弃表/视图、Flyway 历史迁移记录(仅留 1 行 baseline)、业务数据
 --       (报价单/料号/BOM/模板等一律不含)
 -- admin 登录: 用户名 admin  /  密码 Admin@2026
@@ -55,6 +78,12 @@ SET row_security = off;
 
 
 --
+-- Name: f_material_element_price(text, date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+
+
+--
 -- Name: get_bom_components(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -87,10 +116,8 @@ CREATE TABLE public._bak_component_formulas_20260612 (
 
 CREATE TABLE public.annual_discount (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    biz_type character varying(20) NOT NULL,
+    discount_type character varying(30) NOT NULL,
     material_no character varying(20) NOT NULL,
-    discount_strategy character varying(50) NOT NULL,
-    discount_base numeric(18,6),
     discount_order integer NOT NULL,
     discount_ratio numeric(10,4),
     fixed_discount_value numeric(18,6),
@@ -101,7 +128,15 @@ CREATE TABLE public.annual_discount (
     updated_at timestamp(6) with time zone DEFAULT now() NOT NULL,
     created_by uuid,
     updated_by uuid,
-    CONSTRAINT chk_annual_discount_biz_type CHECK (((biz_type)::text = ANY (ARRAY[('INCOMING'::character varying)::text, ('ASSEMBLY'::character varying)::text, ('FINISHED'::character varying)::text])))
+    system_type character varying(10) NOT NULL,
+    customer_no character varying(20),
+    target_no character varying(30),
+    seq_no integer,
+    version_no character varying(20) NOT NULL,
+    is_current boolean DEFAULT true NOT NULL,
+    pending_quotation_id uuid,
+    pending_supersedes uuid[],
+    CONSTRAINT chk_annual_discount_type CHECK (((discount_type)::text = ANY ((ARRAY['INCOMING_MATERIAL'::character varying, 'ASSEMBLY_PROCESS'::character varying, 'FINISHED'::character varying])::text[])))
 );
 
 
@@ -296,6 +331,21 @@ CREATE TABLE public.capacity (
 
 
 --
+-- Name: comparison_column_config; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.comparison_column_config (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    customer_no character varying(64) NOT NULL,
+    template_series_id uuid NOT NULL,
+    columns jsonb DEFAULT '[]'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by uuid
+);
+
+
+--
 -- Name: comparison_tag; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -339,6 +389,9 @@ CREATE TABLE public.component (
     part_no_field character varying(100),
     part_name_field character varying(100),
     sort_field character varying(120),
+    element_code_field character varying(100),
+    element_price_field character varying(100),
+    element_currency_field character varying(100),
     CONSTRAINT chk_component_status CHECK (((status)::text = ANY (ARRAY[('ACTIVE'::character varying)::text, ('DISABLED'::character varying)::text]))),
     CONSTRAINT chk_component_type CHECK (((component_type)::text = ANY ((ARRAY['NORMAL'::character varying, 'SUBTOTAL'::character varying, 'EXCEL'::character varying])::text[])))
 );
@@ -491,12 +544,12 @@ CREATE TABLE public.costing_order (
     status character varying(32) DEFAULT 'PENDING'::character varying NOT NULL,
     reject_reason text,
     frozen_dto jsonb,
-    total_amount numeric(18,4),
+    total_amount numeric(20,6),
     reviewed_by uuid,
     reviewed_at timestamp with time zone,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     costing_render jsonb,
-    costing_total_amount numeric(18,4),
+    costing_total_amount numeric(20,6),
     CONSTRAINT chk_co_status CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'APPROVED'::character varying, 'REJECTED'::character varying, 'WITHDRAWN'::character varying])::text[])))
 );
 
@@ -790,6 +843,73 @@ CREATE TABLE public.customer_material_mapping (
     customer_part_no character varying(200) NOT NULL,
     material_id uuid NOT NULL,
     created_at timestamp(6) with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: customer_price_adjust_element; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.customer_price_adjust_element (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    strategy_id uuid NOT NULL,
+    element_code character varying(32) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: customer_price_adjust_material; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.customer_price_adjust_material (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    strategy_id uuid NOT NULL,
+    material_no character varying(50) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: customer_price_adjust_strategy; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.customer_price_adjust_strategy (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    customer_no character varying(64) NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    cycle_type character varying(20) DEFAULT 'MONTHLY_DAY'::character varying NOT NULL,
+    cycle_weekday smallint,
+    cycle_day_of_month smallint,
+    cycle_nth_week smallint,
+    execute_time time without time zone DEFAULT '09:00:00'::time without time zone NOT NULL,
+    material_scope_mode character varying(20) DEFAULT 'ALL'::character varying NOT NULL,
+    cost_diff_threshold numeric(18,4) DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    updated_by uuid,
+    CONSTRAINT chk_cpas_cycle_type CHECK (((cycle_type)::text = ANY ((ARRAY['DAILY'::character varying, 'WEEKLY'::character varying, 'MONTHLY_DAY'::character varying, 'MONTHLY_NTH_WEEK'::character varying])::text[]))),
+    CONSTRAINT chk_cpas_scope_mode CHECK (((material_scope_mode)::text = ANY ((ARRAY['ALL'::character varying, 'SPECIFIED'::character varying])::text[])))
+);
+
+
+--
+-- Name: customer_price_adjust_strategy_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.customer_price_adjust_strategy_log (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    strategy_id uuid NOT NULL,
+    customer_no character varying(64) NOT NULL,
+    change_type character varying(30) NOT NULL,
+    summary character varying(500),
+    before_snapshot jsonb,
+    after_snapshot jsonb,
+    changed_by uuid,
+    changed_by_name character varying(100),
+    changed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_cpasl_change_type CHECK (((change_type)::text = ANY ((ARRAY['STRATEGY'::character varying, 'MATERIAL_SCOPE'::character varying, 'ELEMENT_LIST'::character varying, 'COMPARISON_COLUMN'::character varying])::text[])))
 );
 
 
@@ -1223,6 +1343,44 @@ CREATE TABLE public.element_price_strategy_log (
     changed_by uuid,
     changed_by_name character varying(100),
     CONSTRAINT chk_epsl_action CHECK (((action)::text = ANY ((ARRAY['CREATE'::character varying, 'UPDATE'::character varying, 'DELETE'::character varying])::text[])))
+);
+
+
+--
+-- Name: element_price_version; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.element_price_version (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    customer_no character varying(64) NOT NULL,
+    version_no character varying(20) NOT NULL,
+    base_date date NOT NULL,
+    status character varying(20) DEFAULT 'PENDING'::character varying NOT NULL,
+    trigger_type character varying(20) NOT NULL,
+    scheduled_slot timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    CONSTRAINT chk_epv_status CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'SUPERSEDED'::character varying])::text[]))),
+    CONSTRAINT chk_epv_trigger_type CHECK (((trigger_type)::text = ANY ((ARRAY['SCHEDULED'::character varying, 'MANUAL'::character varying])::text[])))
+);
+
+
+--
+-- Name: element_price_version_item; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.element_price_version_item (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    version_id uuid NOT NULL,
+    element_code character varying(32) NOT NULL,
+    current_price numeric(20,6),
+    previous_price numeric(20,6),
+    change_rate numeric(12,6),
+    currency character varying(10),
+    price_unit character varying(20),
+    no_price boolean DEFAULT false NOT NULL,
+    inherited_from_previous boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -1686,6 +1844,118 @@ CREATE TABLE public.material_master (
 
 
 --
+-- Name: material_price_review; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.material_price_review (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    version_id uuid NOT NULL,
+    previous_version_id uuid,
+    customer_no character varying(64) NOT NULL,
+    material_no character varying(50) NOT NULL,
+    template_series_id uuid,
+    basis_quotation_id uuid,
+    status character varying(20) DEFAULT 'PENDING'::character varying NOT NULL,
+    budget_status character varying(20) DEFAULT 'QUEUED'::character varying NOT NULL,
+    budget_error text,
+    breached_count integer DEFAULT 0 NOT NULL,
+    amber_count integer DEFAULT 0 NOT NULL,
+    missing_count integer DEFAULT 0 NOT NULL,
+    stale_count integer DEFAULT 0 NOT NULL,
+    column_count integer DEFAULT 0 NOT NULL,
+    reviewed_by uuid,
+    reviewed_at timestamp with time zone,
+    review_comment text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_mpr_budget_status CHECK (((budget_status)::text = ANY ((ARRAY['QUEUED'::character varying, 'COMPUTING'::character varying, 'READY'::character varying, 'FAILED'::character varying])::text[]))),
+    CONSTRAINT chk_mpr_status CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'APPROVED'::character varying, 'REJECTED'::character varying, 'VOIDED'::character varying])::text[])))
+);
+
+
+--
+-- Name: material_price_review_column; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.material_price_review_column (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    review_id uuid NOT NULL,
+    column_id character varying(50) NOT NULL,
+    column_label character varying(200),
+    threshold numeric(20,6),
+    sort_order integer DEFAULT 0 NOT NULL,
+    quote_current numeric(20,6),
+    quote_adjusted numeric(20,6),
+    costing_current numeric(20,6),
+    costing_adjusted numeric(20,6),
+    diff_current numeric(20,6),
+    diff_adjusted numeric(20,6),
+    status character varying(20) NOT NULL,
+    missing_side character varying(20),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_mprc_status CHECK (((status)::text = ANY ((ARRAY['RED'::character varying, 'AMBER'::character varying, 'NORMAL'::character varying, 'MISSING'::character varying, 'STALE'::character varying])::text[])))
+);
+
+
+--
+-- Name: material_price_update_job; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.material_price_update_job (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    customer_no character varying(64) NOT NULL,
+    version_id uuid,
+    version_no character varying(20),
+    triggered_by uuid,
+    triggered_at timestamp with time zone DEFAULT now() NOT NULL,
+    status character varying(20) DEFAULT 'RUNNING'::character varying NOT NULL,
+    total_count integer DEFAULT 0 NOT NULL,
+    success_count integer DEFAULT 0 NOT NULL,
+    failed_count integer DEFAULT 0 NOT NULL,
+    conflict_count integer DEFAULT 0 NOT NULL,
+    stale_count integer DEFAULT 0 NOT NULL,
+    finished_at timestamp with time zone,
+    notified boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_mpuj_status CHECK (((status)::text = ANY ((ARRAY['RUNNING'::character varying, 'SUCCESS'::character varying, 'PARTIAL'::character varying, 'FAILED'::character varying, 'STALE'::character varying])::text[])))
+);
+
+
+--
+-- Name: material_price_update_job_item; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.material_price_update_job_item (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    job_id uuid NOT NULL,
+    quotation_id uuid NOT NULL,
+    material_no character varying(50) NOT NULL,
+    line_item_id uuid,
+    status character varying(20) DEFAULT 'WAITING'::character varying NOT NULL,
+    error_code character varying(50),
+    error_message text,
+    diff_value numeric(20,6),
+    retry_count integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chk_mpuji_status CHECK (((status)::text = ANY ((ARRAY['WAITING'::character varying, 'RUNNING'::character varying, 'SUCCESS'::character varying, 'FAILED'::character varying, 'CONFLICT'::character varying, 'STALE'::character varying])::text[])))
+);
+
+
+--
+-- Name: material_price_version_ref; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.material_price_version_ref (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    customer_no character varying(64) NOT NULL,
+    material_no character varying(50) NOT NULL,
+    version_id uuid NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: material_recipe; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1810,7 +2080,7 @@ CREATE TABLE public.notification (
     is_read boolean DEFAULT false NOT NULL,
     read_at timestamp(6) with time zone,
     created_at timestamp(6) with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT chk_notification_type CHECK (((type)::text = ANY (ARRAY[('APPROVAL_SUBMITTED'::character varying)::text, ('APPROVAL_APPROVED'::character varying)::text, ('APPROVAL_REJECTED'::character varying)::text, ('APPROVAL_REMINDER'::character varying)::text, ('PASSWORD_RESET'::character varying)::text, ('ROLE_CHANGED'::character varying)::text, ('SYSTEM'::character varying)::text])))
+    CONSTRAINT chk_notification_type CHECK (((type)::text = ANY ((ARRAY['APPROVAL_SUBMITTED'::character varying, 'APPROVAL_APPROVED'::character varying, 'APPROVAL_REJECTED'::character varying, 'APPROVAL_REMINDER'::character varying, 'PASSWORD_RESET'::character varying, 'ROLE_CHANGED'::character varying, 'SYSTEM'::character varying, 'PRICE_ADJUST_JOB_SUMMARY'::character varying, 'PRICE_ADJUST_QUOTATION_REVIEW'::character varying])::text[])))
 );
 
 
@@ -1940,6 +2210,20 @@ CREATE TABLE public.plating_scheme (
     pending_quotation_id uuid,
     pending_supersedes uuid[],
     CONSTRAINT chk_plating_scheme_system_type CHECK (((system_type)::text = ANY ((ARRAY['QUOTE'::character varying, 'PRICING'::character varying, 'BOTH'::character varying])::text[])))
+);
+
+
+--
+-- Name: price_adjust_settings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.price_adjust_settings (
+    id smallint DEFAULT 1 NOT NULL,
+    subtotal_guard_threshold numeric(20,6) DEFAULT 0.01 NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_by uuid,
+    CONSTRAINT chk_pas_singleton CHECK ((id = 1)),
+    CONSTRAINT chk_pas_threshold_nonneg CHECK ((subtotal_guard_threshold >= (0)::numeric))
 );
 
 
@@ -2452,11 +2736,11 @@ CREATE TABLE public.quotation (
     stage character varying(30) DEFAULT 'INITIAL_CONTACT'::character varying,
     expected_close_date date,
     status character varying(20) DEFAULT 'DRAFT'::character varying NOT NULL,
-    total_amount numeric(18,4) DEFAULT 0,
+    total_amount numeric(20,6) DEFAULT 0,
     expiry_date date,
     payment_terms text,
     delivery_cycle integer,
-    original_amount numeric(18,4) DEFAULT 0,
+    original_amount numeric(20,6) DEFAULT 0,
     system_discount_rate numeric(5,2) DEFAULT 100,
     final_discount_rate numeric(5,2) DEFAULT 100,
     discount_adjustment_reason text,
@@ -2472,7 +2756,7 @@ CREATE TABLE public.quotation (
     updated_at timestamp(6) with time zone DEFAULT now() NOT NULL,
     remarks text,
     tax_rate numeric(5,2) DEFAULT 0 NOT NULL,
-    tax_amount numeric(18,4) DEFAULT 0 NOT NULL,
+    tax_amount numeric(20,6) DEFAULT 0 NOT NULL,
     customer_template_id uuid,
     import_batch_id uuid,
     referenced_versions jsonb,
@@ -2541,12 +2825,13 @@ CREATE TABLE public.quotation_line_component_data (
     component_id uuid,
     tab_name character varying(200),
     row_data jsonb DEFAULT '[]'::jsonb,
-    subtotal numeric(18,4) DEFAULT 0,
+    subtotal numeric(20,6) DEFAULT 0,
     sort_order integer DEFAULT 0,
     created_at timestamp(6) with time zone DEFAULT now() NOT NULL,
     snapshot_rows jsonb,
     snapshot_at timestamp with time zone,
-    deleted_row_keys jsonb DEFAULT '[]'::jsonb NOT NULL
+    deleted_row_keys jsonb DEFAULT '[]'::jsonb NOT NULL,
+    row_version bigint DEFAULT 0 NOT NULL
 );
 
 
@@ -2575,7 +2860,7 @@ CREATE TABLE public.quotation_line_item (
     product_id uuid,
     template_id uuid,
     product_attribute_values jsonb DEFAULT '{}'::jsonb,
-    subtotal numeric(18,4) DEFAULT 0,
+    subtotal numeric(20,6) DEFAULT 0,
     system_discount_rate numeric(5,2) DEFAULT 100,
     final_discount_rate numeric(5,2) DEFAULT 100,
     discount_adjustment_reason text,
@@ -2590,12 +2875,12 @@ CREATE TABLE public.quotation_line_item (
     part_version_locked integer DEFAULT 2000 NOT NULL,
     annual_volume integer,
     discount_source character varying(32),
-    discount_base_amount numeric(18,4),
+    discount_base_amount numeric(20,6),
     discount_rate_applied numeric(8,4),
-    line_discount_amount numeric(18,4),
-    line_unit_price numeric(18,4),
-    line_final_price numeric(18,4),
-    line_total_amount numeric(18,4),
+    line_discount_amount numeric(20,6),
+    line_unit_price numeric(20,6),
+    line_final_price numeric(20,6),
+    line_total_amount numeric(20,6),
     discount_rule_code character varying(64),
     parent_line_item_id uuid,
     composite_type character varying(16) DEFAULT 'SIMPLE'::character varying NOT NULL,
@@ -2606,6 +2891,7 @@ CREATE TABLE public.quotation_line_item (
     card_snapshot_at timestamp with time zone,
     quote_values_at timestamp with time zone,
     deleted_tree_nodes jsonb,
+    row_version bigint DEFAULT 0 NOT NULL,
     CONSTRAINT chk_quotation_line_item_composite_type CHECK (((composite_type)::text = ANY (ARRAY[('SIMPLE'::character varying)::text, ('COMPOSITE'::character varying)::text, ('PART'::character varying)::text])))
 );
 
@@ -2646,6 +2932,27 @@ CREATE SEQUENCE public.quotation_number_seq
     NO MINVALUE
     NO MAXVALUE
     CACHE 1;
+
+
+--
+-- Name: quotation_price_revision; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.quotation_price_revision (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    quotation_id uuid NOT NULL,
+    revision_no character varying(20) NOT NULL,
+    based_version_id uuid,
+    sealed boolean DEFAULT false NOT NULL,
+    upgraded_material_nos jsonb DEFAULT '[]'::jsonb NOT NULL,
+    quote_card_values jsonb,
+    costing_card_values jsonb,
+    snapshot_rows jsonb,
+    quote_total_amount numeric(20,6),
+    first_effective_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
 
 
 --
@@ -3264,6 +3571,22 @@ ALTER TABLE ONLY public.capacity
 
 
 --
+-- Name: comparison_column_config comparison_column_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.comparison_column_config
+    ADD CONSTRAINT comparison_column_config_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: comparison_column_config uq_ccc_customer_series; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.comparison_column_config
+    ADD CONSTRAINT uq_ccc_customer_series UNIQUE (customer_no, template_series_id);
+
+
+--
 -- Name: comparison_tag comparison_tag_code_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3496,6 +3819,62 @@ ALTER TABLE ONLY public.customer
 
 
 --
+-- Name: customer_price_adjust_element customer_price_adjust_element_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_price_adjust_element
+    ADD CONSTRAINT customer_price_adjust_element_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: customer_price_adjust_element uq_cpae_strategy_element; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_price_adjust_element
+    ADD CONSTRAINT uq_cpae_strategy_element UNIQUE (strategy_id, element_code);
+
+
+--
+-- Name: customer_price_adjust_material customer_price_adjust_material_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_price_adjust_material
+    ADD CONSTRAINT customer_price_adjust_material_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: customer_price_adjust_material uq_cpam_strategy_material; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_price_adjust_material
+    ADD CONSTRAINT uq_cpam_strategy_material UNIQUE (strategy_id, material_no);
+
+
+--
+-- Name: customer_price_adjust_strategy customer_price_adjust_strategy_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_price_adjust_strategy
+    ADD CONSTRAINT customer_price_adjust_strategy_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: customer_price_adjust_strategy uq_cpas_customer; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_price_adjust_strategy
+    ADD CONSTRAINT uq_cpas_customer UNIQUE (customer_no);
+
+
+--
+-- Name: customer_price_adjust_strategy_log customer_price_adjust_strategy_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_price_adjust_strategy_log
+    ADD CONSTRAINT customer_price_adjust_strategy_log_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: customer_tax customer_tax_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3672,6 +4051,46 @@ ALTER TABLE ONLY public.element_price_strategy
 
 
 --
+-- Name: element_price_version element_price_version_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.element_price_version
+    ADD CONSTRAINT element_price_version_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: element_price_version uq_epv_customer_slot; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.element_price_version
+    ADD CONSTRAINT uq_epv_customer_slot UNIQUE (customer_no, scheduled_slot);
+
+
+--
+-- Name: element_price_version uq_epv_customer_version; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.element_price_version
+    ADD CONSTRAINT uq_epv_customer_version UNIQUE (customer_no, version_no);
+
+
+--
+-- Name: element_price_version_item element_price_version_item_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.element_price_version_item
+    ADD CONSTRAINT element_price_version_item_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: element_price_version_item uq_epvi_version_element; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.element_price_version_item
+    ADD CONSTRAINT uq_epvi_version_element UNIQUE (version_id, element_code);
+
+
+--
 -- Name: equipment equipment_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3832,6 +4251,62 @@ ALTER TABLE ONLY public.material_master
 
 
 --
+-- Name: material_price_review material_price_review_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_price_review
+    ADD CONSTRAINT material_price_review_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: material_price_review uq_mpr_version_material; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_price_review
+    ADD CONSTRAINT uq_mpr_version_material UNIQUE (version_id, material_no);
+
+
+--
+-- Name: material_price_review_column material_price_review_column_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_price_review_column
+    ADD CONSTRAINT material_price_review_column_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: material_price_review_column uq_mprc_review_column; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_price_review_column
+    ADD CONSTRAINT uq_mprc_review_column UNIQUE (review_id, column_id);
+
+
+--
+-- Name: material_price_update_job material_price_update_job_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_price_update_job
+    ADD CONSTRAINT material_price_update_job_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: material_price_update_job_item material_price_update_job_item_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_price_update_job_item
+    ADD CONSTRAINT material_price_update_job_item_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: material_price_version_ref material_price_version_ref_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_price_version_ref
+    ADD CONSTRAINT material_price_version_ref_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: material_recipe material_recipe_code_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3949,6 +4424,14 @@ ALTER TABLE ONLY public.plating_fee
 
 ALTER TABLE ONLY public.plating_scheme
     ADD CONSTRAINT plating_scheme_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: price_adjust_settings pk_price_adjust_settings; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.price_adjust_settings
+    ADD CONSTRAINT pk_price_adjust_settings PRIMARY KEY (id);
 
 
 --
@@ -4277,6 +4760,22 @@ ALTER TABLE ONLY public.quotation
 
 ALTER TABLE ONLY public.quotation
     ADD CONSTRAINT quotation_quotation_number_key UNIQUE (quotation_number);
+
+
+--
+-- Name: quotation_price_revision quotation_price_revision_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quotation_price_revision
+    ADD CONSTRAINT quotation_price_revision_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: quotation_price_revision uq_qpr_quotation_based_version; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quotation_price_revision
+    ADD CONSTRAINT uq_qpr_quotation_based_version UNIQUE (quotation_id, based_version_id);
 
 
 --
@@ -4627,7 +5126,7 @@ ALTER TABLE ONLY public.variable_label
 -- Name: idx_annual_discount_material; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_annual_discount_material ON public.annual_discount USING btree (material_no, biz_type);
+CREATE INDEX idx_annual_discount_material ON public.annual_discount USING btree (material_no, discount_type);
 
 
 --
@@ -4876,6 +5375,13 @@ CREATE INDEX idx_covo_order ON public.costing_order_version_override USING btree
 
 
 --
+-- Name: idx_cpasl_strategy_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_cpasl_strategy_time ON public.customer_price_adjust_strategy_log USING btree (strategy_id, changed_at DESC);
+
+
+--
 -- Name: idx_cpq_ff_group; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5121,6 +5627,20 @@ CREATE INDEX idx_epsl_target ON public.element_price_strategy_log USING btree (c
 
 
 --
+-- Name: idx_epv_customer_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_epv_customer_created ON public.element_price_version USING btree (customer_no, created_at DESC);
+
+
+--
+-- Name: idx_epvi_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_epvi_version ON public.element_price_version_item USING btree (version_id);
+
+
+--
 -- Name: idx_equipment_group_status; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5342,6 +5862,48 @@ CREATE INDEX idx_model_config_file_config ON public.model_config_file USING btre
 --
 
 CREATE INDEX idx_model_config_lookup ON public.model_config USING btree (subject_type, subject_key, is_current);
+
+
+--
+-- Name: idx_mpr_customer_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mpr_customer_status ON public.material_price_review USING btree (customer_no, status);
+
+
+--
+-- Name: idx_mpr_status_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mpr_status_version ON public.material_price_review USING btree (status, version_id);
+
+
+--
+-- Name: idx_mprc_review; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mprc_review ON public.material_price_review_column USING btree (review_id);
+
+
+--
+-- Name: idx_mpuj_customer_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mpuj_customer_time ON public.material_price_update_job USING btree (customer_no, triggered_at DESC);
+
+
+--
+-- Name: idx_mpuji_job_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mpuji_job_status ON public.material_price_update_job_item USING btree (job_id, status);
+
+
+--
+-- Name: idx_mpuji_quotation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mpuji_quotation ON public.material_price_update_job_item USING btree (quotation_id);
 
 
 --
@@ -5814,6 +6376,13 @@ CREATE INDEX idx_qli_quotation ON public.quotation_line_item USING btree (quotat
 
 
 --
+-- Name: idx_qpr_quotation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_qpr_quotation ON public.quotation_price_revision USING btree (quotation_id, first_effective_at);
+
+
+--
 -- Name: idx_quotation_costing_card_template; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6052,6 +6621,13 @@ CREATE INDEX idx_variable_label_status ON public.variable_label USING btree (sta
 
 
 --
+-- Name: ix_annual_discount_pending; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_annual_discount_pending ON public.annual_discount USING btree (pending_quotation_id) WHERE (pending_quotation_id IS NOT NULL);
+
+
+--
 -- Name: ix_capacity_pending; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6132,7 +6708,7 @@ CREATE INDEX ix_unit_price_pending ON public.unit_price USING btree (pending_quo
 -- Name: uq_annual_discount; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX uq_annual_discount ON public.annual_discount USING btree (biz_type, material_no, discount_strategy, discount_order);
+CREATE UNIQUE INDEX uq_annual_discount ON public.annual_discount USING btree (system_type, discount_type, material_no, COALESCE(customer_no, ''::character varying), COALESCE(target_no, ''::character varying), version_no, COALESCE(discount_order, 0));
 
 
 --
@@ -6262,6 +6838,13 @@ CREATE UNIQUE INDEX uq_eps_name_url ON public.element_price_source USING btree (
 
 
 --
+-- Name: uq_epv_customer_pending; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_epv_customer_pending ON public.element_price_version USING btree (customer_no) WHERE ((status)::text = 'PENDING'::text);
+
+
+--
 -- Name: uq_equipment_no; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6360,6 +6943,13 @@ CREATE UNIQUE INDEX uq_model_config_current ON public.model_config USING btree (
 
 
 --
+-- Name: uq_mpvr_customer_material; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_mpvr_customer_material ON public.material_price_version_ref USING btree (customer_no, material_no) INCLUDE (version_id);
+
+
+--
 -- Name: uq_packaging_consumable; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6413,6 +7003,13 @@ CREATE UNIQUE INDEX uq_production_consumable ON public.production_consumable USI
 --
 
 CREATE UNIQUE INDEX uq_production_energy ON public.production_energy USING btree (system_type, material_no, process_no, COALESCE(price_type, ''::character varying), COALESCE(equipment_no, ''::character varying), COALESCE(calc_version, ''::character varying));
+
+
+--
+-- Name: uq_qpr_quotation_initial; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_qpr_quotation_initial ON public.quotation_price_revision USING btree (quotation_id) WHERE (based_version_id IS NULL);
 
 
 --
@@ -6588,6 +7185,30 @@ ALTER TABLE ONLY public.customer_material_mapping
 
 
 --
+-- Name: customer_price_adjust_element customer_price_adjust_element_strategy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_price_adjust_element
+    ADD CONSTRAINT customer_price_adjust_element_strategy_id_fkey FOREIGN KEY (strategy_id) REFERENCES public.customer_price_adjust_strategy(id) ON DELETE CASCADE;
+
+
+--
+-- Name: customer_price_adjust_material customer_price_adjust_material_strategy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_price_adjust_material
+    ADD CONSTRAINT customer_price_adjust_material_strategy_id_fkey FOREIGN KEY (strategy_id) REFERENCES public.customer_price_adjust_strategy(id) ON DELETE CASCADE;
+
+
+--
+-- Name: customer_price_adjust_strategy_log customer_price_adjust_strategy_log_strategy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customer_price_adjust_strategy_log
+    ADD CONSTRAINT customer_price_adjust_strategy_log_strategy_id_fkey FOREIGN KEY (strategy_id) REFERENCES public.customer_price_adjust_strategy(id) ON DELETE CASCADE;
+
+
+--
 -- Name: customer_tax customer_tax_customer_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6665,6 +7286,14 @@ ALTER TABLE ONLY public.element_price
 
 ALTER TABLE ONLY public.element_price_strategy
     ADD CONSTRAINT element_price_strategy_source_id_fkey FOREIGN KEY (source_id) REFERENCES public.element_price_source(id);
+
+
+--
+-- Name: element_price_version_item element_price_version_item_version_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.element_price_version_item
+    ADD CONSTRAINT element_price_version_item_version_id_fkey FOREIGN KEY (version_id) REFERENCES public.element_price_version(id) ON DELETE CASCADE;
 
 
 --
@@ -6793,6 +7422,62 @@ ALTER TABLE ONLY public.import_session
 
 ALTER TABLE ONLY public.import_session_decision
     ADD CONSTRAINT import_session_decision_import_session_id_fkey FOREIGN KEY (import_session_id) REFERENCES public.import_session(id) ON DELETE CASCADE;
+
+
+--
+-- Name: material_price_review material_price_review_previous_version_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_price_review
+    ADD CONSTRAINT material_price_review_previous_version_id_fkey FOREIGN KEY (previous_version_id) REFERENCES public.element_price_version(id);
+
+
+--
+-- Name: material_price_review material_price_review_version_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_price_review
+    ADD CONSTRAINT material_price_review_version_id_fkey FOREIGN KEY (version_id) REFERENCES public.element_price_version(id);
+
+
+--
+-- Name: material_price_review_column material_price_review_column_review_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_price_review_column
+    ADD CONSTRAINT material_price_review_column_review_id_fkey FOREIGN KEY (review_id) REFERENCES public.material_price_review(id) ON DELETE CASCADE;
+
+
+--
+-- Name: material_price_update_job material_price_update_job_version_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_price_update_job
+    ADD CONSTRAINT material_price_update_job_version_id_fkey FOREIGN KEY (version_id) REFERENCES public.element_price_version(id);
+
+
+--
+-- Name: material_price_update_job_item material_price_update_job_item_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_price_update_job_item
+    ADD CONSTRAINT material_price_update_job_item_job_id_fkey FOREIGN KEY (job_id) REFERENCES public.material_price_update_job(id) ON DELETE CASCADE;
+
+
+--
+-- Name: material_price_update_job_item material_price_update_job_item_quotation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_price_update_job_item
+    ADD CONSTRAINT material_price_update_job_item_quotation_id_fkey FOREIGN KEY (quotation_id) REFERENCES public.quotation(id);
+
+
+--
+-- Name: material_price_version_ref material_price_version_ref_version_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_price_version_ref
+    ADD CONSTRAINT material_price_version_ref_version_id_fkey FOREIGN KEY (version_id) REFERENCES public.element_price_version(id);
 
 
 --
@@ -7144,6 +7829,22 @@ ALTER TABLE ONLY public.quotation
 
 
 --
+-- Name: quotation_price_revision quotation_price_revision_based_version_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quotation_price_revision
+    ADD CONSTRAINT quotation_price_revision_based_version_id_fkey FOREIGN KEY (based_version_id) REFERENCES public.element_price_version(id);
+
+
+--
+-- Name: quotation_price_revision quotation_price_revision_quotation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quotation_price_revision
+    ADD CONSTRAINT quotation_price_revision_quotation_id_fkey FOREIGN KEY (quotation_id) REFERENCES public.quotation(id) ON DELETE CASCADE;
+
+
+--
 -- Name: quotation_view_structure quotation_view_structure_quotation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7368,6 +8069,43 @@ SELECT w.element_code,
  WHERE agg.raw_value IS NOT NULL;
 $$;
 
+CREATE FUNCTION public.f_material_element_price(p_customer_no text, p_base_date date) RETURNS TABLE(material_no character varying, element_code character varying, unit_price numeric, currency character varying, price_unit character varying)
+    LANGUAGE sql STABLE
+    AS $$
+WITH pointers AS (
+    SELECT material_no, version_id
+      FROM material_price_version_ref
+     WHERE customer_no = p_customer_no
+),
+versioned AS (
+    SELECT p.material_no, i.element_code, i.current_price AS unit_price,
+           i.currency, i.price_unit
+      FROM pointers p
+      JOIN element_price_version_item i ON i.version_id = p.version_id
+     WHERE i.current_price IS NOT NULL
+),
+candidate_materials AS (
+    SELECT material_no FROM material_bom_item
+     WHERE customer_no IN (p_customer_no, '_GLOBAL_') AND is_current = true
+    UNION
+    SELECT material_no FROM element_bom_item
+     WHERE customer_no IN (p_customer_no, '_GLOBAL_') AND is_current = true
+),
+realtime AS (
+    SELECT cm.material_no, f.element_code, f.unit_price, f.currency, f.price_unit
+      FROM candidate_materials cm
+      CROSS JOIN f_customer_element_price(p_customer_no, p_base_date) f
+)
+SELECT v.material_no, v.element_code, v.unit_price, v.currency, v.price_unit
+  FROM versioned v
+UNION ALL
+SELECT r.material_no, r.element_code, r.unit_price, r.currency, r.price_unit
+  FROM realtime r
+  LEFT JOIN versioned v2
+    ON v2.material_no = r.material_no AND v2.element_code = r.element_code
+ WHERE v2.material_no IS NULL;
+$$;
+
 CREATE FUNCTION public.get_bom_components(p_material_no text) RETURNS TABLE(js integer, hf_part_no text, material_no text, component_no text)
     LANGUAGE sql STABLE
     AS $$
@@ -7492,10 +8230,25 @@ WHERE NOT EXISTS (
 );
 
 -- ============================================================
--- Flyway 基线记录 (V362)
--- 新库带此 baseline: 连 Quarkus 时 flyway 跳过 V1~V362 历史重放, 只跑 V363+ 新迁移
--- ⚠️ 本脚本的表结构已含 V362(material_master.pending_quotation_id + 暂存表退役),
---    基线号必须 >= 362, 否则 Quarkus 启动会重放 V362 并因"列已存在"而失败
+-- 调价系统参数 (单行, id=1) —— 与 Flyway V378 同源
+-- ------------------------------------------------------------
+-- price_adjust_settings 有 CHECK(id=1) 单例约束, 服务层无条件 findById(1);
+-- 缺此行则 L3 升版口径守卫取不到阈值。0.01 与后端
+-- MaterialVersionUpgradeService.DEFAULT_SUBTOTAL_GUARD_THRESHOLD 同值。
+-- 幂等: ON CONFLICT DO NOTHING, 与 V378 重复应用互不冲突。
+-- ============================================================
+INSERT INTO public.price_adjust_settings (id, subtotal_guard_threshold)
+VALUES (1, 0.01)
+ON CONFLICT (id) DO NOTHING;
+
+
+-- ============================================================
+-- Flyway 基线记录 (V378)
+-- 新库带此 baseline: 连 Quarkus 时 flyway 跳过 V1~V378 历史重放, 只跑 V379+ 新迁移
+-- ⚠️ 本脚本的表结构已含 V378, 基线号必须 >= 378。
+--    与 V363~V365 那批"幂等可重放、基线仍停 362"的处理**不同**: V368 含 CREATE TABLE
+--    (无 IF NOT EXISTS)、V377 含 RENAME COLUMN, 非幂等 —— 基线若低于 378, Quarkus 启动
+--    会重放它们并因"表已存在 / 列 biz_type 不存在"而失败。
 -- ============================================================
 CREATE TABLE public.flyway_schema_history (
     installed_rank integer NOT NULL,
@@ -7513,15 +8266,17 @@ CREATE TABLE public.flyway_schema_history (
 CREATE INDEX flyway_schema_history_s_idx ON public.flyway_schema_history USING btree (success);
 INSERT INTO public.flyway_schema_history
   (installed_rank, version, description, type, script, checksum, installed_by, installed_on, execution_time, success)
-VALUES (1, '362', '<< Flyway Baseline >>', 'BASELINE', '<< Flyway Baseline >>', NULL, 'baseline', now(), 0, true);
+VALUES (1, '378', '<< Flyway Baseline >>', 'BASELINE', '<< Flyway Baseline >>', NULL, 'baseline', now(), 0, true);
 
 
 -- ============================================================
 -- 导入后自检(逐条核对期望值)
 -- ============================================================
--- SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';  -- 期望 129
+-- SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';  -- 期望 143
 -- SELECT count(*) FROM information_schema.views  WHERE table_schema='public';                              -- 期望 3
--- SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public';     -- 期望 4
+-- SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public';     -- 期望 5
+-- SELECT version FROM flyway_schema_history;                                                               -- 期望 378
+-- SELECT id, subtotal_guard_threshold FROM price_adjust_settings;                                          -- 期望 1 行, 1 / 0.010000
 -- SELECT username, role FROM "user";                                                                       -- 期望仅 admin / SYSTEM_ADMIN
 -- SELECT count(*) FROM "user";                                                                             -- 期望 1
 -- SELECT "usage", is_active, length(sql_template) FROM costing_bom_tree_config ORDER BY "usage";           -- 期望 COSTING/QUOTE 各 1 行 t，长度 1586/1063
