@@ -107,6 +107,13 @@ public class CardSnapshotService {
     @Inject
     CardSnapshotService self;
 
+    /**
+     * task-0806 B8：渲染期「这个模板有哪些页签/driver 组件/树页签」的问题统一改问它——
+     * 不再各自手写 {@code JOIN component} 直读活表。批量接口，SQL 条数与页签数无关。
+     */
+    @Inject
+    com.cpq.template.service.PublishedTemplateReader publishedTemplateReader;
+
     // =========================================================================
     // ensureStructure — 4 份结构快照（创建即冻）
     // =========================================================================
@@ -229,6 +236,15 @@ public class CardSnapshotService {
             JsonNode snapshot = MAPPER.readTree(snapshotJson);
             if (!snapshot.isArray()) return null;
 
+            // task-0806 B8（bonus fix）：rowKeyFields / element*Field 此前在下方 per-tab 循环里
+            // 各自两次直读活 component 表（N+1，且是「渲染期活穿透」的一种未被 backtask.md 10 点
+            // 清单收录的形态——这两个字段此前根本不进 components_snapshot jsonb，只能靠活读兜底）。
+            // 改为整单一次经 PublishedTemplateReader 取冻结快照，按 componentId 建 map 供下方内存查找。
+            Map<String, com.cpq.template.entity.TemplateComponentSnapshot> tcsByComponentId = new HashMap<>();
+            for (com.cpq.template.entity.TemplateComponentSnapshot s : publishedTemplateReader.allTabsOf(templateId)) {
+                tcsByComponentId.putIfAbsent(s.componentId.toString(), s);
+            }
+
             ObjectNode root = MAPPER.createObjectNode();
             // version 2 (Task5 2026-06-01): 字段补全 config keys + 顶层 productAttributes（前端旁路 enrich/loadProductAttributes 全靠它）
             root.put("version", 2);
@@ -271,23 +287,22 @@ public class CardSnapshotService {
                     tabNode.set("treeConfig", treeCfg.deepCopy());
                 }
 
-                // rowKeyFields：从 component 表读（AP-39 补充：行键冻进结构）
-                if (componentId != null && !componentId.isBlank()) {
-                    String rowKeyFields = loadRowKeyFields(componentId);
-                    if (rowKeyFields != null) {
-                        tabNode.set("rowKeyFields", MAPPER.readTree(rowKeyFields));
-                    } else {
-                        tabNode.putArray("rowKeyFields");
-                    }
-                    // task-0729 B10（标记透传第2条）：元素编码列/元素单价列/货币列冻进结构，与
-                    // rowKeyFields 同一模式（组件级角色字段，component 表直读）。前端手动行
-                    // "请先填写元素"占位分支要靠这两个字段名判断当前手动行是否命中价格承载列。
-                    String[] roleFields = loadElementRoleFields(componentId);
-                    if (roleFields[0] != null) tabNode.put("elementCodeField", roleFields[0]);
-                    if (roleFields[1] != null) tabNode.put("elementPriceField", roleFields[1]);
-                    if (roleFields[2] != null) tabNode.put("elementCurrencyField", roleFields[2]);
+                // rowKeyFields / element*Field：task-0806 B8 起改从冻结快照（PublishedTemplateReader
+                // 整单一次预取的 tcsByComponentId）取值，不再逐 tab 直读活 component 表（AP-39 补充：行键冻进结构）。
+                com.cpq.template.entity.TemplateComponentSnapshot tcs =
+                        (componentId != null && !componentId.isBlank()) ? tcsByComponentId.get(componentId) : null;
+                if (tcs != null && tcs.rowKeyFields != null && !tcs.rowKeyFields.isBlank()) {
+                    tabNode.set("rowKeyFields", MAPPER.readTree(tcs.rowKeyFields));
                 } else {
                     tabNode.putArray("rowKeyFields");
+                }
+                // task-0729 B10（标记透传第2条）：元素编码列/元素单价列/货币列冻进结构，与
+                // rowKeyFields 同一模式（组件级角色字段）。前端手动行"请先填写元素"占位分支
+                // 要靠这两个字段名判断当前手动行是否命中价格承载列。
+                if (tcs != null) {
+                    if (tcs.elementCodeField != null) tabNode.put("elementCodeField", tcs.elementCodeField);
+                    if (tcs.elementPriceField != null) tabNode.put("elementPriceField", tcs.elementPriceField);
+                    if (tcs.elementCurrencyField != null) tabNode.put("elementCurrencyField", tcs.elementCurrencyField);
                 }
 
                 // formula_assignments：公式指派（列名 → 公式名）。buildCardValues 走冻结结构算值时
@@ -1067,17 +1082,14 @@ public class CardSnapshotService {
 
         // 核价模板的全部 driver 组件清单(整单一次)。Phase 2-2'：非递归无行维度组件(COMP-0021/22/23 类)
         // 是唯一还会命中合桶的类别(递归组件恒由 BomTreeRenderService 整单渲染,见类注释)。
-        @SuppressWarnings("unchecked")
-        List<Object> driverComps = em.createNativeQuery(
-            "SELECT DISTINCT c.id FROM template_component tc JOIN component c ON c.id = tc.component_id " +
-            "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
-            .setParameter("tid", q.costingCardTemplateId).getResultList();
+        // task-0806 B8：改走 PublishedTemplateReader（冻结快照），不再直读活 component 表。
+        List<com.cpq.template.entity.TemplateComponentSnapshot> driverComps =
+            publishedTemplateReader.driverCompsOf(q.costingCardTemplateId);
         if (driverComps.isEmpty()) return unionByComp;
 
         List<UUID> eligible = new ArrayList<>();          // partNo 合桶(无行维度)
-        for (Object idObj : driverComps) {     // 单列 SELECT → 元素即 c.id
-            if (idObj == null) continue;
-            UUID compId = (idObj instanceof UUID u) ? u : UUID.fromString(idObj.toString());
+        for (com.cpq.template.entity.TemplateComponentSnapshot dc : driverComps) {
+            UUID compId = dc.componentId;
             if (componentDriverService.eligibleForNonRecursiveCostingBucket(compId)) {
                 eligible.add(compId);
             }
@@ -1293,13 +1305,14 @@ public class CardSnapshotService {
                 System.getenv().getOrDefault("CPQ_FIRSTSAVE_DRIVERCOMPS_PREFETCH", "true")));
         if (!enabled) return;
         try {
-            @SuppressWarnings("unchecked")
-            List<Object[]> rows = em.createNativeQuery(
-                "SELECT DISTINCT c.id, c.bom_recursive_expand FROM template_component tc " +
-                "JOIN component c ON c.id = tc.component_id " +
-                "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
-                .setParameter("tid", templateId)
-                .getResultList();
+            // task-0806 B8：改走 PublishedTemplateReader（冻结快照）。列形状(id, bom_recursive_expand)
+            // 保持不变——下游 expandFlatDriverBaseRows 的 dc.length 兜底判断依赖这个 2 列旧形状。
+            List<com.cpq.template.entity.TemplateComponentSnapshot> driverComps =
+                publishedTemplateReader.driverCompsOf(templateId);
+            List<Object[]> rows = new ArrayList<>(driverComps.size());
+            for (com.cpq.template.entity.TemplateComponentSnapshot s : driverComps) {
+                rows.add(new Object[]{ s.componentId, s.bomRecursiveExpand });
+            }
             into.put(templateId, rows);
         } catch (Exception e) {
             LOG.warnf("[card-snapshot] prefetchDriverComps failed tmpl=%s: %s（已降级,回落逐行查）", templateId, e.getMessage());
@@ -1636,12 +1649,8 @@ public class CardSnapshotService {
         if (templateId == null) return false;
         Boolean cached = treeTabCache.getIfPresent(templateId);
         if (cached != null) return cached;
-        Number count = (Number) em.createNativeQuery(
-                "SELECT count(*) FROM template_component tc JOIN component c ON c.id = tc.component_id " +
-                "WHERE tc.template_id = :tid AND c.bom_recursive_expand = true")
-            .setParameter("tid", templateId)
-            .getSingleResult();
-        boolean has = count != null && count.longValue() > 0;
+        // task-0806 B8：改走 PublishedTemplateReader（冻结快照），不再直读活 component 表。
+        boolean has = publishedTemplateReader.hasRecursiveExpand(templateId);
         treeTabCache.put(templateId, has);
         return has;
     }
@@ -2850,15 +2859,15 @@ public class CardSnapshotService {
             driverComps = driverCompsPrefetch;          // F4：命中预取,0 往返（2 列，见下方 dc.length 兜底）
         } else {
             DRIVER_COMPS_QUERY_COUNT.incrementAndGet();
-            @SuppressWarnings("unchecked")
-            List<Object[]> queried = em.createNativeQuery(
-                // task-0721 二次修正：加 c.tab_type 第 3 列，供下方跳过 tab_type='BOM' 树组件
-                // （见类方法注释——树组件不该在这里跑 live $view，交给调用方 overlayTreeTabsFromFrozenSnapshot）。
-                "SELECT DISTINCT c.id, c.bom_recursive_expand, c.tab_type FROM template_component tc " +
-                "JOIN component c ON c.id = tc.component_id " +
-                "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
-                .setParameter("tid", templateId)
-                .getResultList();
+            // task-0806 B8：改走 PublishedTemplateReader（冻结快照）。列形状 (id, bom_recursive_expand,
+            // tab_type) 保持不变——task-0721 二次修正加的第 3 列供下方跳过 tab_type='BOM' 树组件
+            // （树组件不该在这里跑 live $view，交给调用方 overlayTreeTabsFromFrozenSnapshot）。
+            List<com.cpq.template.entity.TemplateComponentSnapshot> rows =
+                publishedTemplateReader.driverCompsOf(templateId);
+            List<Object[]> queried = new ArrayList<>(rows.size());
+            for (com.cpq.template.entity.TemplateComponentSnapshot s : rows) {
+                queried.add(new Object[]{ s.componentId, s.bomRecursiveExpand, s.tabType });
+            }
             driverComps = queried;
         }
 
@@ -2924,17 +2933,13 @@ public class CardSnapshotService {
     private void overlayTreeTabsFromFrozenSnapshot(UUID templateId, UUID lineItemId,
                                                     Map<String, ArrayNode> baseRowsByComp) {
         if (templateId == null || lineItemId == null) return;
-        @SuppressWarnings("unchecked")
-        List<Object> treeCompIds = em.createNativeQuery(
-                "SELECT DISTINCT c.id FROM template_component tc JOIN component c ON c.id = tc.component_id " +
-                "WHERE tc.template_id = :tid AND c.tab_type = 'BOM'")
-                .setParameter("tid", templateId)
-                .getResultList();
-        if (treeCompIds.isEmpty()) return;
-        for (Object idObj : treeCompIds) {
-            if (idObj == null) continue;
-            String cidStr = idObj.toString();
-            UUID cid = UUID.fromString(cidStr);
+        // task-0806 B8：改走 PublishedTemplateReader（冻结快照），不再直读活 component 表。
+        List<com.cpq.template.entity.TemplateComponentSnapshot> treeTabs =
+                publishedTemplateReader.treeTabsOf(templateId);
+        if (treeTabs.isEmpty()) return;
+        for (com.cpq.template.entity.TemplateComponentSnapshot tab : treeTabs) {
+            UUID cid = tab.componentId;
+            String cidStr = cid.toString();
             @SuppressWarnings("unchecked")
             List<Object> rows = em.createNativeQuery(
                     "SELECT snapshot_rows::text FROM quotation_line_component_data " +
@@ -3553,26 +3558,8 @@ public class CardSnapshotService {
         }
     }
 
-    /**
-     * task-0729 B10：组件三个元素角色字段（{@code element_code_field}/{@code element_price_field}/
-     * {@code element_currency_field}），与 {@link #loadRowKeyFields} 同一模式直读 component 表。
-     * 未接价格策略的组件三项皆 NULL（正常情况，不代表异常）。
-     */
-    private String[] loadElementRoleFields(String componentId) {
-        try {
-            @SuppressWarnings("unchecked")
-            List<Object[]> rows = em.createNativeQuery(
-                "SELECT element_code_field, element_price_field, element_currency_field " +
-                "FROM component WHERE id = :cid")
-                .setParameter("cid", UUID.fromString(componentId))
-                .getResultList();
-            if (rows.isEmpty() || rows.get(0) == null) return new String[]{null, null, null};
-            Object[] r = rows.get(0);
-            return new String[]{(String) r[0], (String) r[1], (String) r[2]};
-        } catch (Exception e) {
-            return new String[]{null, null, null};
-        }
-    }
+    // task-0806 B8：loadElementRoleFields 已随其唯一调用点（buildCardStructure）改走
+    // PublishedTemplateReader 一并删除——元素角色字段现从冻结快照取，不再直读活 component 表。
 
     /**
      * 2026-06-02 修复: 把 quotation_line_component_data.row_data（autosave 持久化的当前 INPUT 值，

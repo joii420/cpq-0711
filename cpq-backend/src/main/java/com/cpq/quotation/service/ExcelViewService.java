@@ -65,6 +65,16 @@ public class ExcelViewService {
         return excelColumnResolver.getEffectiveColumns(t);
     }
 
+    /**
+     * task-0806 B8：渲染期改问冻结快照，不再直读活 component / template_component 表。
+     * 仅用于已发布模板上下文（{@code buildMissingSubtotalMetas} / {@code buildTabJoinEffectiveRows}
+     * 内部已用 {@code componentsSnapshot != null} 作为 PUBLISHED/ARCHIVED 判据才会调用本类字段）；
+     * {@link #tabDefsOfTemplate} 的 DRAFT 分支（{@code buildLiveComponentsList}）架构上就该继续
+     * 走活表（§5.1.2：DRAFT 模板不写快照，草稿期一律走活表），不经本 reader。
+     */
+    @Inject
+    com.cpq.template.service.PublishedTemplateReader publishedTemplateReader;
+
     // ---- Template excel-view-config API ----
 
     public String getExcelViewConfig(UUID templateId) {
@@ -511,25 +521,59 @@ public class ExcelViewService {
         java.util.Map<java.util.UUID, com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta> metaById =
             new java.util.HashMap<>();
         java.util.Set<java.util.UUID> presentInCd = new java.util.HashSet<>();
+
+        // task-0806 B8：整单一次经 PublishedTemplateReader 预取该模板全部页签的冻结快照
+        // （loadFrozenComponentMetaMap 内部按 componentsSnapshot 非空判据，只在 PUBLISHED/ARCHIVED
+        // 时才有内容；DRAFT 返回空 map，下方循环逐 cd 回落 Component.findById——与改造前 DRAFT
+        // 语义一致，§5.1.2 允许草稿期读活表）。
+        java.util.Map<java.util.UUID, com.cpq.template.entity.TemplateComponentSnapshot> tcsByComponentId =
+            loadFrozenComponentMetaMap(templateId);
+
         for (com.cpq.quotation.entity.QuotationLineComponentData cd : cdList) {
             if (cd.componentId == null) continue;
             presentInCd.add(cd.componentId);
             if (metaById.containsKey(cd.componentId)) continue;
-            com.cpq.component.entity.Component c =
-                com.cpq.component.entity.Component.findById(cd.componentId);
-            if (c == null) continue;
-            metaById.put(cd.componentId,
-                new com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta(
-                    c.code, c.name, c.componentType, parseComponentFormulas(c.formulas),
-                    com.cpq.quotation.service.card.ComponentDataEffectiveRows.amountColsFromFieldsJson(c.fields)));
+            com.cpq.template.entity.TemplateComponentSnapshot s = tcsByComponentId.get(cd.componentId);
+            if (s != null) {
+                metaById.put(cd.componentId,
+                    new com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta(
+                        s.componentCode, s.componentName, s.componentType, parseComponentFormulas(s.formulas),
+                        com.cpq.quotation.service.card.ComponentDataEffectiveRows.amountColsFromFieldsJson(s.fields)));
+            } else {
+                // 冻结快照未命中（DRAFT 模板 / 组件已被移出模板但历史行仍引用的边界情形）：
+                // 兜底读活表，架构上允许（§5.1.2 DRAFT 场景），不是「已发布模板活穿透」。
+                com.cpq.component.entity.Component c = com.cpq.component.entity.Component.findById(cd.componentId);
+                if (c == null) continue;
+                metaById.put(cd.componentId,
+                    new com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta(
+                        c.code, c.name, c.componentType, parseComponentFormulas(c.formulas),
+                        com.cpq.quotation.service.card.ComponentDataEffectiveRows.amountColsFromFieldsJson(c.fields)));
+            }
         }
 
-        // 从模板 componentsSnapshot 找出 SUBTOTAL 组件中未出现在 cdList 的，补成 extraSubtotalMetas。
+        // 从冻结快照找出 SUBTOTAL 组件中未出现在 cdList 的，补成 extraSubtotalMetas。
         java.util.Map<java.util.UUID, com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta> extraSubtotalMetas =
-            buildMissingSubtotalMetas(templateId, presentInCd);
+            buildMissingSubtotalMetas(tcsByComponentId, presentInCd);
 
         return com.cpq.quotation.service.card.ComponentDataEffectiveRows.compute(
             cdList, metaById, extraSubtotalMetas, formulaCalculator);
+    }
+
+    /**
+     * task-0806 B8：该模板全部页签的冻结快照，按 componentId 建 map（一次 Reader 调用）。
+     * 仅 PUBLISHED/ARCHIVED（{@code componentsSnapshot} 非空）才有内容；DRAFT / 模板不存在
+     * → 返回空 map（调用方据此回落活表，与改造前 DRAFT 语义一致）。
+     */
+    private java.util.Map<java.util.UUID, com.cpq.template.entity.TemplateComponentSnapshot>
+            loadFrozenComponentMetaMap(UUID templateId) {
+        if (templateId == null) return java.util.Map.of();
+        Template t = Template.findById(templateId);
+        if (t == null || t.componentsSnapshot == null || t.componentsSnapshot.isBlank()) return java.util.Map.of();
+        java.util.Map<java.util.UUID, com.cpq.template.entity.TemplateComponentSnapshot> map = new java.util.HashMap<>();
+        for (com.cpq.template.entity.TemplateComponentSnapshot s : publishedTemplateReader.allTabsOf(templateId)) {
+            map.putIfAbsent(s.componentId, s);
+        }
+        return map;
     }
 
     /** Component.formulas JSON 字符串 → JsonNode；坏/空 → null（subtotal 退回持久化值或 0）。 */
@@ -541,36 +585,21 @@ public class ExcelViewService {
     }
 
     /**
-     * 从模板 componentsSnapshot 取出所有 componentType=SUBTOTAL 且不在 presentInCd 的组件，
-     * 加载其 Component.formulas 组成 componentId → Meta。无模板/无 SUBTOTAL → 空 Map。
+     * 从冻结快照（{@code tcsByComponentId}）取出所有 componentType=SUBTOTAL 且不在
+     * presentInCd 的组件，组成 componentId → Meta。空 map（DRAFT）→ 空结果。
      */
     private java.util.Map<java.util.UUID, com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta>
-            buildMissingSubtotalMetas(UUID templateId, java.util.Set<java.util.UUID> presentInCd) {
+            buildMissingSubtotalMetas(java.util.Map<java.util.UUID, com.cpq.template.entity.TemplateComponentSnapshot> tcsByComponentId,
+                                       java.util.Set<java.util.UUID> presentInCd) {
         java.util.Map<java.util.UUID, com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta> out =
             new java.util.HashMap<>();
-        if (templateId == null) return out;
-        try {
-            Template t = Template.findById(templateId);
-            if (t == null || t.componentsSnapshot == null || t.componentsSnapshot.isBlank()) return out;
-            com.fasterxml.jackson.databind.JsonNode snap = MAPPER.readTree(t.componentsSnapshot);
-            if (snap == null || !snap.isArray()) return out;
-            for (com.fasterxml.jackson.databind.JsonNode c : snap) {
-                String type = c.path("componentType").asText("");
-                if (!"SUBTOTAL".equals(type)) continue;
-                String cidStr = c.path("componentId").asText("");
-                if (cidStr.isBlank()) continue;
-                java.util.UUID cid;
-                try { cid = java.util.UUID.fromString(cidStr); } catch (Exception e) { continue; }
-                if (presentInCd.contains(cid)) continue;   // 已有 cd → 走 Pass 2，不重复合成
-                com.cpq.component.entity.Component comp = com.cpq.component.entity.Component.findById(cid);
-                if (comp == null) continue;
-                out.put(cid,
-                    new com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta(
-                        comp.code, comp.name, comp.componentType, parseComponentFormulas(comp.formulas),
-                        com.cpq.quotation.service.card.ComponentDataEffectiveRows.amountColsFromFieldsJson(comp.fields)));
-            }
-        } catch (Exception e) {
-            LOG.warnf("[ExcelView] buildMissingSubtotalMetas failed tmpl=%s: %s", templateId, e.getMessage());
+        for (com.cpq.template.entity.TemplateComponentSnapshot s : tcsByComponentId.values()) {
+            if (!"SUBTOTAL".equals(s.componentType)) continue;
+            if (presentInCd.contains(s.componentId)) continue;   // 已有 cd → 走 Pass 2，不重复合成
+            out.put(s.componentId,
+                new com.cpq.quotation.service.card.ComponentDataEffectiveRows.Meta(
+                    s.componentCode, s.componentName, s.componentType, parseComponentFormulas(s.formulas),
+                    com.cpq.quotation.service.card.ComponentDataEffectiveRows.amountColsFromFieldsJson(s.fields)));
         }
         return out;
     }
@@ -1071,8 +1100,9 @@ public class ExcelViewService {
         if (t == null) return List.of();
         // PUBLISHED 用冻结的 componentsSnapshot；DRAFT 期 snapshot 尚未冻结(发布时才生成)，
         // 从实时 template_component 关联构建——否则草稿配公式时 tab-defs 永远返空。
+        boolean published = t.componentsSnapshot != null && !t.componentsSnapshot.isBlank();
         List<Map<String, Object>> snapshotList;
-        if (t.componentsSnapshot != null && !t.componentsSnapshot.isBlank()) {
+        if (published) {
             try {
                 snapshotList = MAPPER.readValue(t.componentsSnapshot,
                     new TypeReference<List<Map<String, Object>>>() {});
@@ -1085,22 +1115,49 @@ public class ExcelViewService {
             snapshotList = buildLiveComponentsList(templateId);
         }
         if (snapshotList.isEmpty()) return List.of();
-        // 收集 componentId → rowKeyFields（从 Component 表）
+
+        // 收集 componentId → rowKeyFields。task-0806 B8：PUBLISHED 分支改问冻结快照
+        // （PublishedTemplateReader，一次批量取），不再逐 componentId 直读活 component 表；
+        // DRAFT 分支（buildLiveComponentsList 产出）架构上就该继续读活表（§5.1.2），保持原逻辑。
         Map<String, List<String>> rkfByCompId = new LinkedHashMap<>();
-        for (Map<String, Object> entry : snapshotList) {
-            String cid = (String) entry.get("componentId");
-            if (cid == null || rkfByCompId.containsKey(cid)) continue;
-            try {
-                Component comp = Component.findById(UUID.fromString(cid));
-                if (comp != null && comp.rowKeyFields != null && !comp.rowKeyFields.isBlank()) {
-                    List<String> rkf = MAPPER.readValue(comp.rowKeyFields,
-                        new TypeReference<List<String>>() {});
-                    rkfByCompId.put(cid, rkf);
+        if (published) {
+            Map<UUID, com.cpq.template.entity.TemplateComponentSnapshot> tcsByComponentId = new HashMap<>();
+            for (com.cpq.template.entity.TemplateComponentSnapshot s : publishedTemplateReader.allTabsOf(templateId)) {
+                tcsByComponentId.putIfAbsent(s.componentId, s);
+            }
+            for (Map<String, Object> entry : snapshotList) {
+                String cid = (String) entry.get("componentId");
+                if (cid == null || rkfByCompId.containsKey(cid)) continue;
+                com.cpq.template.entity.TemplateComponentSnapshot s;
+                try {
+                    s = tcsByComponentId.get(UUID.fromString(cid));
+                } catch (Exception e) {
+                    s = null;
+                }
+                if (s != null && s.rowKeyFields != null && !s.rowKeyFields.isBlank()) {
+                    try {
+                        rkfByCompId.put(cid, MAPPER.readValue(s.rowKeyFields, new TypeReference<List<String>>() {}));
+                    } catch (Exception ignore) {
+                        rkfByCompId.put(cid, List.of());
+                    }
                 } else {
                     rkfByCompId.put(cid, List.of());
                 }
-            } catch (Exception ignore) {
-                rkfByCompId.put(cid, List.of());
+            }
+        } else {
+            for (Map<String, Object> entry : snapshotList) {
+                String cid = (String) entry.get("componentId");
+                if (cid == null || rkfByCompId.containsKey(cid)) continue;
+                try {
+                    Component comp = Component.findById(UUID.fromString(cid));
+                    if (comp != null && comp.rowKeyFields != null && !comp.rowKeyFields.isBlank()) {
+                        rkfByCompId.put(cid, MAPPER.readValue(comp.rowKeyFields, new TypeReference<List<String>>() {}));
+                    } else {
+                        rkfByCompId.put(cid, List.of());
+                    }
+                } catch (Exception ignore) {
+                    rkfByCompId.put(cid, List.of());
+                }
             }
         }
         return parseTabDefs(snapshotList, rkfByCompId);

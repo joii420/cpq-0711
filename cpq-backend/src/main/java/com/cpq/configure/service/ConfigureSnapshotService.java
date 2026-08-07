@@ -81,6 +81,10 @@ public class ConfigureSnapshotService {
     @Inject
     ConfigureSnapshotService self;
 
+    /** task-0806 B8：driver 组件清单改问冻结快照，不再直读活 component 表。 */
+    @Inject
+    com.cpq.template.service.PublishedTemplateReader publishedTemplateReader;
+
     public static class DriverComp {
         public UUID id;
         public String name;
@@ -842,21 +846,52 @@ public class ConfigureSnapshotService {
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     @SuppressWarnings("unchecked")
     public List<DriverComp> loadDriverComponents(UUID quotationId) {
-        // 按 template_component 取 live driver 组件(live component id,expand 可直接加载)
-        // driver_path 用于判定组合父级该"聚合子件"(composite_child_*_mirror)还是"父级展开"($zcj_bom 子配件清单)
-        // task-0721 B3：附带 c.tab_type，供 BomTreeRenderService.isQuoteTreeTabType 单一收口点路由判断。
-        // task-0721（2026-07-21 补录，2026-07-23 补 part_name_field）：附带 c.part_no_field/
-        // c.part_name_field/c.fields，供类型判定命中收集按"标识列"显式取值（料号列优先，名称列兜底；
-        // 不再按字段名启发式猜测）。
-        List<Object[]> rows = em.createNativeQuery(
-                "SELECT DISTINCT c.id, c.name, c.data_driver_path, c.tab_type, c.part_no_field, c.fields, " +
-                "c.sort_field, c.part_name_field " +
-                "FROM quotation q " +
-                "JOIN template_component tc ON tc.template_id = q.customer_template_id " +
-                "JOIN component c ON c.id = tc.component_id " +
-                "WHERE q.id = :q AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
+        // task-0806 B8：PUBLISHED/ARCHIVED（已有冻结快照）改走 PublishedTemplateReader，不再直读活
+        // component 表；DRAFT（尚无快照，架构上允许——§5.1.2）继续走原 live JOIN 查询，行为不变。
+        // 本方法服务的不只是"报价单渲染"这一已强制 PUBLISHED 的场景（task-0729），也被
+        // snapshotQuotation/snapshotLines 用于草稿期"加产品整份快照"预写路径（实测 T7 用例
+        // 直接构造 status=DRAFT 的模板验证该行为），故不能像 CardSnapshotService 的纯渲染读取点
+        // 那样无条件假设"这里只服务已发布模板"。
+        // driver_path 用于判定组合父级该"聚合子件"(composite_child_*_mirror)还是"父级展开"
+        // ($zcj_bom 子配件清单)。task-0721 B3：附带 tab_type，供 BomTreeRenderService.isQuoteTreeTabType
+        // 单一收口点路由判断。task-0721（2026-07-21 补录，2026-07-23 补 part_name_field）：附带
+        // part_no_field/part_name_field/fields，供类型判定命中收集按"标识列"显式取值（料号列优先，
+        // 名称列兜底；不再按字段名启发式猜测）。
+        List<Object[]> qRows = em.createNativeQuery(
+                "SELECT customer_template_id, (SELECT status FROM template WHERE id = q.customer_template_id) "
+                        + "FROM quotation q WHERE q.id = :q")
                 .setParameter("q", quotationId).getResultList();
+        if (qRows.isEmpty() || qRows.get(0) == null || qRows.get(0)[0] == null) return List.of();
+        UUID templateId = qRows.get(0)[0] instanceof UUID u ? u : UUID.fromString(qRows.get(0)[0].toString());
+        String status = qRows.get(0)[1] != null ? qRows.get(0)[1].toString() : null;
+
         List<DriverComp> out = new ArrayList<>();
+        Set<UUID> seen = new HashSet<>();   // 与旧 SQL 的 DISTINCT c.id 同语义：同 componentId 只取一次
+        if ("PUBLISHED".equals(status) || "ARCHIVED".equals(status)) {
+            for (com.cpq.template.entity.TemplateComponentSnapshot s : publishedTemplateReader.driverCompsOf(templateId)) {
+                if (!seen.add(s.componentId)) continue;
+                DriverComp dc = new DriverComp();
+                dc.id = s.componentId;
+                dc.name = s.componentName;
+                dc.driverPath = s.dataDriverPath;
+                dc.tabType = s.tabType;
+                dc.partNoField = s.partNoField;
+                dc.fields = (s.fields != null && !s.fields.isBlank()) ? s.fields : "[]";
+                dc.sortField = s.sortField;
+                dc.partNameField = s.partNameField;
+                out.add(dc);
+            }
+            return out;
+        }
+
+        // DRAFT（或状态查不到，理论不该发生但兜底同旧行为）：活表照旧
+        List<Object[]> rows = em.createNativeQuery(
+                "SELECT DISTINCT c.id, c.name, c.data_driver_path, c.tab_type, c.part_no_field, c.fields, "
+                        + "c.sort_field, c.part_name_field "
+                        + "FROM template_component tc "
+                        + "JOIN component c ON c.id = tc.component_id "
+                        + "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
+                .setParameter("tid", templateId).getResultList();
         for (Object[] r : rows) {
             if (r[0] == null) continue;
             DriverComp dc = new DriverComp();
