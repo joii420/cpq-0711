@@ -53,7 +53,140 @@
 
 ---
 
-## 4. AC 逐条达成对照表
+## 4. G1 核心正确性逐条结果 + 证据原文（AC-1/AC-2/AC-3/AC-3a）
+
+### TC-COR-01 · `c2915208`（详见 §3，本节补证据原文）
+
+**Method A 证据**（`POST /api/cpq/tmp-perf/verify-job {"jobId":"c2915208-..."}`, HTTP 200，18 行）：
+```
+lineItemId=fd4b985c... seqMd5=451119daccb60417066a7dcce76dc022 groupedMd5=451119daccb60417066a7dcce76dc022 seqLen=69357 groupedLen=69357 hitPrecomputed=true match=true
+（其余 17 行同构，全部 match=true）
+```
+比对脚本（Python，逐行核对 baseline.md 记录的 MD5+长度）输出：
+```
+total compared: 18
+baseline compare mismatches: 0 / 18
+```
+两次独立调用（TC-DET-01 用）`groupedMd5` 逐行对比：
+```
+run1 vs run2 grouped MD5 diffs: 0 of 18
+```
+
+**Method B 证据**（真实批量执行，S0 快照→重置 WAITING→`POST /jobs/{id}/retry`→轮询→比对→恢复→校验）：
+- S0 快照：`SELECT (SELECT count(*) FROM _t0806_s0_item_c2915208)... = 24 | 24 | 65`（items|lines|revisions）
+- 执行结果（`GET /jobs/c2915208...`）：
+```json
+{"status":"SUCCESS","total":24,"success":24,"failed":0,"conflict":0,"stale":0,
+ "finishedAt":"2026-08-07T13:34:22.018143Z"}
+```
+- DB 直查（24 行 item×line_item×quotation JOIN）：全部 `status=SUCCESS`，`warn_code` 全空；18 行有模板的 `costing_card_values` MD5 按建单日聚成 3 组（13/2/3 行，与 baseline.md 分组结构一致）。
+- `quotation_price_revision` 自洽校验（按 `revision.quote_card_values -> lineItemId` 提取，非顶层比较）：23 个报价单有 revision，其中 20 个本次真实处理过的 `quote_match=t`/`costing_match=t`（或双侧同为 NULL，语义等价），3 个（`4eb6bd46`/`9cee093c`/`9f19ed72`）因非活单状态或无价格承载组件被 `upgrade()` 判 `SKIPPED`，revision 未被今日触碰（`revision_no` 停留在 2026-08-03 之前，符合"未处理=不改"语义，非缺陷）。
+- 还原校验（恢复 S0 后）：
+```
+mismatches|total
+0|24        -- costing/quote/subtotal 对比
+0|24        -- job_item.status 对比
+```
+- scratch 表已 `DROP`（`_t0806_s0_item_c2915208`/`_t0806_s0_li_c2915208`/`_t0806_s0_rev_c2915208`）。
+
+**优先级**：**P0（唯一不可替代）**
+
+---
+
+### TC-COR-02 · `6c0aebc8`（AC-1/AC-3，最大批量，含 AC-3a/STALE 联测）
+
+**状态：PASS**
+
+- Method A：22/22 item `seqMd5==groupedMd5`，且与 `baseline.md` 记录值逐行匹配（脚本合并输出：`c2915208+6c0aebc8+06b54e9a+1b7208ab 共 75 项，total compared: 75, mismatches: 0`）。
+- Method B：S0 快照 `29|29|68`（items|lines|revisions）；确认 STALE 行 `031b95ad-2283-47a7-998b-4c4cc6ee34c3` 执行前即为 `STALE`；仅重置非 STALE 的 25 行为 `WAITING`，触发 `retry`：
+```json
+{"status":"PARTIAL","total":29,"success":25,"failed":0,"conflict":0,"stale":4,
+ "finishedAt":"2026-08-07T13:39:36.599008Z"}
+```
+（4 STALE 与重置前既有 STALE 计数一致，无新增/丢失）
+- 还原校验：
+```
+mismatches|total
+0|29        -- costing/quote/subtotal
+0|29        -- job_item.status
+```
+- scratch 表已 DROP。
+
+**优先级**：P0
+
+---
+
+### TC-COR-03 · `06b54e9a`（AC-1/AC-3）
+
+**状态：PASS**
+
+- Method A：18/18 `seqMd5==groupedMd5`，与 baseline.md 精确匹配（同上合并脚本覆盖）。
+- Method B：S0 快照 `18|18|90`；真实执行：
+```json
+{"status":"SUCCESS","total":18,"success":18,"failed":0,"conflict":0,"stale":0,
+ "finishedAt":"2026-08-07T13:42:25.300324Z"}
+```
+- 还原校验：`mismatches|total` → `0|18`。scratch 表已 DROP（含后续第二轮"顺序执行"实验用的 `_t0806_s0b_*` 表，也已核实 DROP，见 §6 TC-PERF-01）。
+
+**优先级**：P1
+
+---
+
+### TC-COR-04 · `1b7208ab`（AC-1/AC-3）
+
+**状态：PASS**
+
+- Method A：17/17 `seqMd5==groupedMd5`，与 baseline.md 精确匹配。
+- Method B：S0 快照 `17|17|86`；真实执行：
+```json
+{"status":"SUCCESS","total":17,"success":17,"failed":0,"conflict":0,"stale":0,
+ "finishedAt":"2026-08-07T13:43:11.945187Z"}
+```
+- 还原校验：`mismatches|total` → `0|17`。scratch 表已 DROP。
+
+**优先级**：P1
+
+---
+
+### TC-COR-05 · Method A 快速扫描（4 job 全量）
+
+**状态：PASS**
+
+- 汇总：4 job / 75 line item，`costingMatch=true` 100%（逐 job 明细：c2915208 18/18、6c0aebc8 22/22、06b54e9a 18/18、1b7208ab 17/17，均 0 mismatches）。
+- 明确本条**仅辅助**：最终验收以上方 TC-COR-01~04 的 Method B 真实入库结果为准（本报告未只用本条宣布 AC-1/AC-3 通过）。
+
+**优先级**：P1
+
+---
+
+### TC-COR-06 · 无核价模板 item 完全不受影响（AC-3a）★
+
+**状态：PASS**
+
+- 对象：`c2915208` 6 行 + `6c0aebc8` 7 行（含 STALE 行 `031b95ad`），SQL 直查（在 TC-COR-02 真实执行后、恢复前采样）：
+```
+line_item_id                          | status  | costing_changed | quote_changed | subtotal_changed
+031b95ad-2283-47a7-998b-4c4cc6ee34c3  | STALE   | f | f | f
+dd5dd2aa-37a5-42c3-ac59-c614b69efda9  | SUCCESS | f | f | f
+d788fbd8-d329-4f7b-af88-5f79ce616681  | SUCCESS | f | t | f
+b4a77def-e19c-458c-9de6-23659f219096  | SUCCESS | f | t | f
+4474aeb8-e5e6-4ed9-8bc9-50cfa4b170ac  | SUCCESS | f | t | f
+a4e4ab9a-9c87-48e0-95cc-9016bdb2b326  | SUCCESS | f | t | f
+dfee1e78-94c7-4af1-899b-caa9b60fd29a  | SUCCESS | f | t | f
+```
+（`c2915208` 的 6 行结果同构，均 `costing_changed=f, subtotal_changed=f`）
+
+**解读**：
+1. `costing_card_values` 与 `subtotal` **0 变化**——符合"不进 render() 路径"预期。
+2. STALE 行 `031b95ad` **三列全 0 变化**——FR-7 + AC-3a 双重满足，未被批量结果覆盖写入。
+3. `quote_card_values` 对 5/6 活单行**合法变化**——**这不是缺陷**：`git diff da8e5ed5~1 da8e5ed5` 显示本任务只改了 `CardSnapshotService.refreshCostingCardValuesForLine`（核价侧 S5）与 `MaterialVersionUpgradeService.upgrade()` 的 S5 调用路由，**从未触碰 S6（报价侧卡片重算/写回）**——quote_card_values 随真实升版而更新是 S6 既有行为（无论有无核价模板都会跑），与本次批量化改造无关，AC-3a 原文"改造前后逐字节相同"指的是"批量代码 vs 逐项代码对这批行的处理结果相同"（因为它们从不进分组，两条代码路径对它们而言是同一段代码），不是"升版前后 quote_card_values 不变"。
+4. 分组逻辑核查：代码读证 `PriceAdjustJobExecutionService#precomputeBatch` 分组阶段 `if (q == null || q.costingCardTemplateId == null) continue;`——无模板行在分组构建阶段即被跳过，从未进入任何 `render()` 分组调用，非"退化成 `(null,日期)` 分组再空跑"。
+
+**优先级**：**P0**
+
+---
+
+## 5. AC 逐条达成对照表
 
 | AC | 内容 | 状态 | 依据用例 |
 |---|---|---|---|
