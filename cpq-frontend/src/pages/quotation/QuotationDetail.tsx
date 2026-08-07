@@ -9,7 +9,7 @@ import {
   MailOutlined, PrinterOutlined, CheckCircleOutlined, CloseCircleOutlined,
   CalendarOutlined, SendOutlined, UploadOutlined, DatabaseOutlined,
 } from '@ant-design/icons';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { quotationService } from '../../services/quotationService';
 import { quotationSnapshotService } from '../../services/quotationSnapshotService';
 import { boundGlobalVariableService } from '../../services/boundGlobalVariableService';
@@ -47,6 +47,10 @@ const QuotationDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
+  const location = useLocation();
+  // repair-0806：/quotations/:id/comparison 深链（价格调整审核抽屉「直达比对视图」，
+  // 后端 PriceAdjustReviewService#comparisonViewUrl 下发）→ 产品明细一级视图预选比对视图。
+  const deepLinkComparison = location.pathname.endsWith('/comparison');
   const [quotation, setQuotation] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -369,7 +373,11 @@ const QuotationDetail: React.FC = () => {
           </Card>
 
           {/* 产品明细 — 两级视图切换（抽至 ProductDetailViews，反 AP-50） */}
-          <ProductDetailViews quotation={quotation} locateTarget={locateTarget} />
+          <ProductDetailViews
+            quotation={quotation}
+            locateTarget={locateTarget}
+            initialMainTab={deepLinkComparison ? 'comparison' : undefined}
+          />
 
           {/* Approval History */}
           {quotation.approvalHistory && quotation.approvalHistory.length > 0 && (

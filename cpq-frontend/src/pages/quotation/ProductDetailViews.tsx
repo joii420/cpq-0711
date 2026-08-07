@@ -42,9 +42,12 @@ interface Props {
   /** task-0713（F3）：版本切换成功后的增量回调，由上层（CostingReviewPage）合并到本地状态，
    *  本组件自身不持有 quotation 状态，只透传。 */
   onVersionSwitched?: (result: VersionSwitchResult) => void;
+  /** repair-0806：一级视图初始值（深链预选）。不传时保持既有默认 'quote'，
+   *  仅作 useState 初值，切换后仍由用户交互接管，不受上层重渲染回拉。 */
+  initialMainTab?: 'quote' | 'costing' | 'comparison';
 }
 
-const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, coid, editable, onVersionSwitched }) => {
+const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, coid, editable, onVersionSwitched, initialMainTab }) => {
   // ----------------------------------------------------------------
   // task-0717：比对视图（ComparisonBoard）桶 / 只读判定。
   // 本组件被两个调用方共用：
@@ -60,7 +63,7 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
   // ----------------------------------------------------------------
   // 两级视图切换 state
   // ----------------------------------------------------------------
-  const [mainTab, setMainTab] = useState<'quote' | 'costing' | 'comparison'>('quote');
+  const [mainTab, setMainTab] = useState<'quote' | 'costing' | 'comparison'>(initialMainTab ?? 'quote');
   const [viewType, setViewType] = useState<'card' | 'excel'>('card');
 
   // ----------------------------------------------------------------

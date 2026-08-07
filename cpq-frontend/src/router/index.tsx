@@ -116,6 +116,13 @@ const router = createBrowserRouter([
       { path: 'quotations', element: <RoleGuard roles={QUOTATION_MGMT_ROLES}><QuotationList /></RoleGuard> },
       { path: 'quotations/new', element: <RoleGuard roles={QUOTATION_MGMT_ROLES}><QuotationWizard /></RoleGuard> },
       { path: 'quotations/:id', element: <QuotationDetail /> },
+      // repair-0806：比对视图深链。task-0717 的比对视图是 ProductDetailViews 内的
+      // Segmented 子视图（没有独立页面），但 task-0729 后端按 api.md 契约下发
+      // comparisonViewUrl = /quotations/{id}/comparison（价格调整审核抽屉「直达比对视图」）。
+      // 此处复用 QuotationDetail 承接该路径，由它读 pathname 预选中比对子视图；
+      // 守卫口径同 /quotations/:id（不挂 QUOTATION_MGMT_ROLES）——直达入口在
+      // 价格调整审核（定价经理/系统管理员），加销售角色守卫会把正主挡在门外。
+      { path: 'quotations/:id/comparison', element: <QuotationDetail /> },
       { path: 'quotations/:id/edit', element: <RoleGuard roles={QUOTATION_MGMT_ROLES}><QuotationWizard /></RoleGuard> },
       { path: 'costing-orders/:coid/review', element: <CostingReviewPage /> },
       { path: 'materials', element: <InternalMaterialManagement /> },

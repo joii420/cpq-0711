@@ -1,0 +1,41 @@
+{
+  /*
+   * 单元测试（vitest）专用 TS 项目。
+   *
+   * 存在理由：测试文件（如 formulaGolden.test.ts / treeFormulaParityFixture.test.ts）需要
+   * `node:fs` / `node:path` / `node:url` 读取仓库根 `formula-golden/*.json` 黄金用例，
+   * 而 tsconfig.app.json 是**浏览器端**项目，刻意不引入 node 类型 —— 否则应用源码里误用
+   * `process` / `Buffer` / `fs` 这类只在 Node 存在的 API 时，TS 不再报错，故障要到运行时才炸。
+   *
+   * 因此把测试文件从 app 项目排除、单独放进本项目（types 含 node），二者都由 `tsc -b` 检查：
+   * 应用代码保持浏览器语义，测试代码拿到 node 类型，且测试文件不会失去类型检查。
+   */
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "esnext",
+    "types": ["node", "vite/client"],
+    "skipLibCheck": true,
+
+    /* Bundler mode —— 与 tsconfig.app.json 保持一致 */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": [
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/**/__tests__/**/*.ts",
+    "src/**/__tests__/**/*.tsx"
+  ]
+}
