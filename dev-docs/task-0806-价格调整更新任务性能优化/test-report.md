@@ -266,6 +266,276 @@ run1 vs run2 grouped MD5 diffs: 0 of 18
 
 ---
 
+## 4b. G6 维度审计器（AC-8）/ G7 零影响（AC-9）逐条结果
+
+### TC-AUD-01 · 真实库判定 = 1 PER_PRICE_BASE_DATE + 16 GLOBAL + 0 PER_LINE_ITEM
+
+**状态：PASS**
+
+先查出 4 个基准 job 唯一在用的核价模板：
+```
+SELECT DISTINCT q.costing_card_template_id ... → bc99f083-2d64-47d8-875f-d3c005ae5f2e
+```
+对该模板 17 个 driver 组件直接 SQL 复现判定表逻辑（LIKE 匹配 `:priceBaseDate`/`:quotationId`/`:lineItemId`，与 Java 端 `.contains()` 等价）：
+```
+16 行 level=GLOBAL
+1  行 level=PER_PRICE_BASE_DATE （COMP-0049 | $wl_ys_bom_view）
+0  行 level=PER_LINE_ITEM
+```
+精确匹配 AC-8 预期基线。
+
+**优先级**：**P0**
+
+### TC-AUD-02 · 判定表 4 分支单测
+
+**状态：PASS**（`DriverBatchSafetyAuditorTest` 10/10，见 §4a TC-DEG-01 证据）
+
+**优先级**：P0
+
+### TC-AUD-03 · `sql_template` NULL / 视图缺失 → PER_LINE_ITEM + WARN
+
+**状态：PASS**（同一测试类 `classify_viewNotFound_fallsBackToPerLineItem`/`classify_blankDriverPath_fallsBackToPerLineItem`/`classify_nullDriverPath_fallsBackToPerLineItem` 三个分支均在上述 10/10 中）
+
+**优先级**：P1
+
+---
+
+### TC-REG-01 · `refreshCostingCardValuesForLine` 旧签名零影响
+
+**状态：PASS（代码复核 + 全包单测支撑）**
+
+代码读证：`refreshCostingCardValuesForLine(UUID lineItemId)` 委派 `refreshCostingCardValuesForLine(lineItemId, null)`，`precomputed==null` 分支内部仍走 `templateHasTreeTab` 判断 + `bomTreeRenderService.render(...)`，与改造前逐行一致（`git diff da8e5ed5~1 da8e5ed5` 显示零参方法体只剩一行委派）。
+
+**优先级**：**P0**
+
+### TC-REG-02 · `upgrade()` `precomputed=null` 路径逐位不变
+
+**状态：PASS（代码复核 + 单测支撑）**
+
+代码读证：三参 `upgrade(lineItemId, targetVersionId, dryRun)` 委派四参并传 `null`；S5 分支 `if (precomputed != null) {...} else { cardSnapshotService.refreshCostingCardValuesForLine(lineItemId); }`，`null` 时精确复现改造前调用。真实执行支撑：`MaterialVersionUpgradeServiceS1S2Test`/`MaterialVersionUpgradeServiceS3Test` 本会话真实重跑：
+```
+Tests run: 2, Failures: 0, Errors: 0 -- MaterialVersionUpgradeServiceS1S2Test (5.203s)
+Tests run: 2, Failures: 0, Errors: 0 -- MaterialVersionUpgradeServiceS3Test (0.535s)
+```
+
+**优先级**：**P0**
+
+### TC-REG-03 · 预算 dryRun 路径逐位不变
+
+**状态：PASS**
+
+`PriceAdjustBudgetServiceDecision39Test` 本会话真实重跑：
+```
+Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.224 s
+```
+代码读证：`PriceAdjustBudgetService` 预算路径调用 `upgrade()` 时全部走三参签名（未见新增 `precomputed` 实参传递），与需求文档"预算路径本期不动"的约束一致。
+
+**优先级**：**P0**
+
+---
+
+## 4c. G8 性能（AC-10）/ G9 API 权限 / G10 并发 / G11 边界 / G12 前端回归逐条结果
+
+### TC-PERF-01 · 4 job 端到端实测耗时（如实记录，无门槛）
+
+**状态：已执行·如实记录（不作通过/失败判定）**
+
+**⚠️ 重要方法论限制（务必先读）**：`baseline.md` 记录的"逐项渲染耗时"（14652~17774ms）**只测量 `render()+buildCostingCardValues` 这一步**（探针 dryRun，非真实入库、非完整 `upgrade()` 全流程），而本节测的是**真实批量执行 `/jobs/{id}/retry` 端到端耗时**（含 S0~S9 全部步骤、真实逐 item `REQUIRES_NEW` 事务提交、异步调度开销）。**两者测量范围不同，不能直接相减算加速比**——本会话未能在同一 JVM 内构造出一个真正"改造前、同样端到端全流程、单线程逐项执行"的可信基线（尝试用逐 item `/job-items/{id}/retry` 循环模拟"逐项"时，发现该端点走 `managedExecutor.runAsync` 异步执行，18 个请求连续发出后会被线程池**并发**处理而非真正单线程顺序执行，实测 18 项仅耗时 4.1s——这不是真实的"逐项对照组"，本报告**不采用该数字**，如实标注舍弃原因）。
+
+**实测数字**（真实批量执行，`retry` 触发 → 轮询 `GET /jobs/{id}` 至非 RUNNING）：
+
+| job | item 数 | 建单日分组数 | 端到端耗时（批量/方案B真实执行） | JVM 缓存状态 |
+|---|---|---|---|---|
+| `c2915208` | 24 | 6 | ~14-16s（轮询粒度 2s，8 次轮询命中 SUCCESS） | 4 次 Method A 探针预热后 |
+| `6c0aebc8` | 29 | 6 | ~16-18s（轮询粒度 2s，9 次轮询命中 PARTIAL） | 同上，续跑 |
+| `06b54e9a` | 18 | 3 | **29.24s**（精确计时，`date +%s.%N` 首尾差） | **冷 JVM**（Quarkus 刚 `touch` 重启后第一个真实请求） |
+| `1b7208ab` | 17 | 3 | **17.22s**（精确计时） | 暖 JVM（紧接 06b54e9a 之后） |
+
+- backtask.md §6 给的"改造前现状"是 **18 项 job 端到端 58s**（同样是端到端口径，不是 render-only）。本会话 `06b54e9a`（18 项，3 组）冷 JVM 端到端实测 **29.24s**，粗略对比"58s → 29.24s"方向上是提速的，但**这不是同 JVM 严格对照实验**（58s 的原始测量条件、是否同样冷启动、是否同一批数据未知），**不作为确定的加速倍数结论**，仅如实列出两个数字供参考。
+- ~25s 目标：`06b54e9a` 冷 JVM 29.24s 略高于目标，`1b7208ab` 暖 JVM 17.22s 低于目标——**同一批量算法在冷/暖 JVM 下耗时差 12 秒**，JIT/连接池预热是本次实测中最大的单一波动因素，比分组算法本身的边际差异更显著。
+- **本条不设通过/失败结论**，如实记录到此为止。
+
+**优先级**：P1
+
+### TC-PERF-02 · 方案 A vs 方案 B 耗时对比
+
+**状态：不适用（T5 未实现，按 D-4 转二期）**
+
+**优先级**：P1
+
+### TC-PERF-03 · render 阶段 SQL 条数：批量 vs 逐项
+
+**状态：未执行（本轮时间约束，未搭建 §1.3 插桩）**
+
+代码结构支持定性判断：`precomputeBatch` 对每个 `(templateId,priceBaseDate)` 分组只调用 1 次 `render()`（覆盖该模板全部 17 个 driver 组件），故 3 组的 job（06b54e9a/1b7208ab）理论 SQL 条数应为 `3×17=51`，远低于逐项 `18×17=306`——但**本会话未实测插桂计数**，仅代码读证，不作为已验证结论。
+
+**优先级**：P2
+
+---
+
+### TC-API-07/08/09 · GET 权限（PRICING_MANAGER/SYSTEM_ADMIN/无角色）
+
+- **TC-API-08（SYSTEM_ADMIN → 200）：PASS（真实执行）**
+```
+curl ... -b admin cookie ... GET /api/cpq/price-adjust/settings
+{"subtotalGuardThreshold":0.010000,"updatedAt":"2026-08-06T15:36:56.689107Z"}
+```
+（响应体**不含** `subtotalGuardEnabled` 字段，进一步印证 T6/D-5 确未落地，BLOCKED 判定成立）
+- **TC-API-07（PRICING_MANAGER → 200）：未执行** —— 现网 `test_finance_c87a27ab` 账号密码未知（历史文档未记录明文密码），本会话未尝试通过 `SYSTEM_ADMIN` 的 `/users/{id}/reset-password` 重置（该账号被多个历史测试文档引用为跨会话共享 fixture，重置会破坏其他并发会话，风险大于收益，主动放弃）。仅代码读证 `@RoleAllowed({"PRICING_MANAGER","SYSTEM_ADMIN"})` 注解本次未改动。
+- **TC-API-09（无角色 → 403）：未执行**（同上，无可用的第三角色账号凭据）
+
+**优先级**：P1（07/09 均为 P1，未执行）
+
+### TC-API-10 · PUT 权限：PRICING_MANAGER → 403
+
+**状态：未执行**（同上，无凭据）。代码读证 `PriceAdjustSettingsResource.put()` 注解 `@RoleAllowed({"SYSTEM_ADMIN"})`，本次改造未触碰。
+
+**优先级**：**P0（未执行，需在有凭据的环境补测）**
+
+### TC-API-11 · PUT 权限：SYSTEM_ADMIN → 200
+
+**状态：PASS（真实执行）**
+```
+curl ... -b admin cookie ... -d '{"subtotalGuardThreshold":0.01}' -X PUT .../settings
+{"subtotalGuardThreshold":0.01,"updatedAt":"2026-08-07T06:46:42.415901151-07:00"}
+HTTP 200
+```
+（同值回写，无副作用变更，仅 `updatedAt` 时间戳刷新——符合既有阈值字段既定行为，非本次新引入）
+
+**优先级**：P1
+
+### TC-API-12 · 未登录 GET/PUT → 401
+
+**状态：PASS（真实执行）**
+```
+GET  (无cookie) → 401
+PUT  (无cookie) → 401
+```
+
+**优先级**：P2
+
+---
+
+### TC-CONC-01 · 批次中途 STALE → 预渲染结果丢弃不写入
+
+**状态：PASS（真实 STALE 行覆盖场景），窄时间窗口场景未覆盖**
+
+见 §4 TC-COR-06 证据：真实 STALE 行 `031b95ad`（`6c0aebc8`）批量执行后仍为 `STALE`，`costing_changed=f, quote_changed=f, subtotal_changed=f`（三列 0 变化）。
+**"预渲染前已是 STALE"场景已用真实数据验证。"执行过程中途转 STALE"这一更窄的时间窗口场景本轮未覆盖**——未加任何 `Thread.sleep`/断点式测试钩子（诚实标注：未使用任何临时钩子，也未尝试构造该窄窗口，非"尝试后无法复现"，是主动未尝试，时间约束）。
+
+**优先级**：**P0（窄窗口子场景未执行，需补测或改用专项并发测试工具）**
+
+### TC-CONC-02 · 同一 job 并发触发两次 executeJob
+
+**状态：未执行**（时间约束）
+
+**优先级**：P1
+
+### TC-CONC-03 · 分组内 customerId 不唯一 → 抛错
+
+**状态：PASS（代码复核，未独立执行专属 fixture）**
+
+代码读证 `renderGroupInNewTx`：循环比较 `groupItems` 各自 `quotationById.get(li.quotationId).customerId`，首个作为基准，后续不等则 `throw new IllegalStateException(...)`，异常信息含两个冲突 `customerId`。逻辑直接、无歧义，但**本会话未构造双客户同模板同日期的专属 fixture 去实跑触发该异常**。
+
+**优先级**：**P0（未独立执行，代码复核通过）**
+
+### TC-CONC-05 · job 执行中调用 /retry
+
+**状态：未执行**（时间约束）
+
+**优先级**：P2
+
+---
+
+### TC-EDGE-01 · 单组退化
+
+**状态：PASS（增量覆盖，未构造专属单 item job）**
+
+`06b54e9a`/`1b7208ab` 的真实分组内已天然出现 1~2 item 的小分组（如 `06b54e9a` 2026-08-05 分组仅 1 item），随同 TC-COR-03/04 的批量执行一并验证无崩溃、无除零/空指针异常。**未构造"整个 job 只有 1 个 item"的专属场景**。
+
+**优先级**：P1
+
+### TC-EDGE-02 · 0 个 WAITING item → 循环空转不报错
+
+**状态：PASS（真实执行）**
+
+对已完成的 `1b7208ab`（0 WAITING/CONFLICT）触发 `retry`：
+```json
+before: {"status":"SUCCESS","total":17,"success":17,...,"finishedAt":"2026-08-07T13:44:28..."}
+POST /jobs/.../retry → HTTP 202
+after:  {"status":"SUCCESS","total":17,"success":17,...,"finishedAt":"2026-08-07T13:49:06..."}
+```
+计数 17/17/0/0/0 不变，仅 `finishedAt` 刷新，无异常、无数据变更（`loadWaitingItems` 返回空集，循环体不执行）。
+
+**优先级**：P1
+
+### TC-EDGE-03 · 分组数=item数
+
+**状态：未执行**（时间约束）
+
+**优先级**：P2
+
+### TC-EDGE-04 · S0 阈值边界（严格大于）
+
+**状态：PASS（代码复核）**
+
+代码读证 `MaterialVersionUpgradeService`：`if (diff.compareTo(guardThreshold) > 0)` ——严格大于，`diff==threshold` 不触发。此为既有代码，本次改造未触碰比较符。**未独立构造专属边界值单测**。
+
+**优先级**：P2
+
+### TC-EDGE-05 · 预渲染跨事务类型校验
+
+**状态：PASS（代码复核）**
+
+`CardSnapshotService.PrecomputedTreeRows.baseRowsByComponent` 类型为 `Map<String, ArrayNode>`（Jackson 类型，非 Hibernate 托管实体），代码直接读证无懒加载引用。
+
+**优先级**：P2
+
+### TC-EDGE-06 · 未来加维度占位符后自动降级
+
+**状态：PASS**（`DriverBatchSafetyAuditorTest.worstLevelForTemplate_takesMostUnsafeAcrossComponents` 已验证：判定完全从 SQL 文本动态解析，无硬编码白名单，见 §4a TC-DEG-01 10/10 输出）
+
+**优先级**：P1
+
+---
+
+### TC-FE-01/02/03 · 前端回归（RG-1/RG-2/RG-3）
+
+**状态：未执行（本轮未做浏览器/UI 验证）**
+
+原因：本会话临时后端跑在 worktree 独立 8099 端口；前端共享 dev server（5174）通过 Vite proxy 固定指向 **8081（主工作区 master 代码）**，无法反映本分支改动，且本环境未提供 Playwright/浏览器工具用于对本分支后端单独起一套前端做 E2E。
+
+**间接证据（不能替代 UI 验证，仅供参考）**：`ReadonlyProductCard`/`QuotationStep2`/核价工作台均直接读取 `quotation_line_item.costing_card_values`/`quote_card_values`/`subtotal` 渲染；上述 §4 已用 Method A（内存态）+ Method B（真实入库+还原校验）证明这三列在批量代码与逐项代码下逐字节相同——若渲染层无其他变更（本次任务未改任何前端文件，`git diff` 范围仅限 `cpq-backend/src/main/java`），理论上不应有可见差异。**但这是推断，不是执行结果**，建议合并前人工点开至少 1 张 `c2915208` 涉及的报价单核价单子视图做最终肉眼确认。
+
+**优先级**：**P0（TC-FE-01/02 均未执行，建议合并前补做）**
+
+---
+
+### TC-REG-N1 · N+1 自检
+
+**状态：PASS（代码复核）**
+
+逐一读证本次新增的 3 个循环体：
+1. `precomputeBatch` 分组循环：循环外先 `QuotationLineItem.list("id in ?1", lineItemIds)` + `Quotation.list("id in ?1", ...)` 各一次 IN 批量查询，循环体内只操作已加载的 Java 对象，不含 repository 调用。
+2. `renderGroupInNewTz` 的 customerId 比较循环：纯内存字段比较，`quotationById` 由外层批量加载。
+3. `classifyTemplateDriverComponents` 组件遍历：循环体调 `classifyComponent`（单组件精确查 `component_sql_view`，属既有既定查法，非本次新引入的 N+1，且组件数上限几十个）。
+未发现新增循环体内嵌套 repository/`SqlViewExecutor.execute` 调用。
+
+**优先级**：P1
+
+### TC-REG-04 · 既有端点响应结构不变
+
+**状态：PASS（真实执行）**
+
+```
+GET /jobs?page=1&size=2 → JobDTO 字段：jobId/customerNo/versionNo/triggeredBy/triggeredAt/status/total/success/failed/conflict/stale/finishedAt/notified（与改造前 PriceAdjustJobResource.toDto 逐字段一致）
+GET /jobs/{id}/items?page=1&size=2 → JobItemDTO 字段：itemId/quotationId/quotationNo/materialNo/lineItemId/status/errorCode/errorMessage/diffValue/retryCount/updatedAt（与 toItemDto 逐字段一致）
+```
+
+**优先级**：P2
+
+---
+
 ## 5. AC 逐条达成对照表
 
 | AC | 内容 | 状态 | 依据用例 |
