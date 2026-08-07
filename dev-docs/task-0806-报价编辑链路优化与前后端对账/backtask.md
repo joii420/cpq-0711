@@ -9,10 +9,12 @@
 
 | 阶段 | 后端要做什么 | 工作量 |
 |---|---|---|
+| **⓪** | **`ComponentService.VALID_FIELD_TYPES` 由 8 收窄为 6**（剔 `DATA_SOURCE` / `INPUT`），**代码分支一处不删** | **极小（一行）** |
 | **①** | 只做 **API-3 提交闸门**（FR-6）+ **API-5 埋点落日志**（FR-5）。**分流/对账全在前端** | 小 |
 | **②** | **FR-8 防丢更新**（串行化 / 乐观锁 + `409`） | 中 |
 | **③** | **FR-11~13 懒物化**（含 6 处挂 ensure + API-2） | **大（本任务主体）** |
 | **④** | **FR-14~17 缓存**（含前置：收敛结构写入口） | 中 |
+| **⑤** | **后端零改动** —— Decimal 统一是前端把自己对齐到后端既有的 `BigDecimal` 口径。后端只需**配合验收**（提供对拍基准值） | 无 |
 
 ---
 
@@ -177,6 +179,21 @@ materializeWholeLineRowData → for(每个组件) → writeRowData(REQUIRES_NEW 
 ---
 
 ## 9. Task 列表（逐项可勾选）
+
+### 阶段⓪（一行改动，但要验清楚）
+- [ ] B0-1 `ComponentService.java:39` `VALID_FIELD_TYPES` 由 8 → 6：保留 `BASIC_DATA` / `INPUT_TEXT` / `INPUT_NUMBER` / `FORMULA` / `FIXED_VALUE` / `LIST_FORMULA`，剔 `DATA_SOURCE` / `INPUT`
+- [ ] B0-2 **确认代码分支一处未删**：`git diff` 只应有那一行（`DATA_SOURCE` / `INPUT` 的解析、渲染、序列化分支全部原样保留）
+- [ ] B0-3 **AC-18 验证**：新建组件选 `DATA_SOURCE` → `400` 且错误信息列出 6 种合法值
+- [ ] B0-4 **存量回归**：全库三载体（组件表含 DISABLED / 冻结结构 / 模板快照）复查 `DATA_SOURCE`+`INPUT` 仍为 **0**；任一非 0 则**立即回滚本项**并重新评估
+  ```sql
+  SELECT COALESCE(f->>'field_type', f->>'fieldType') t, count(*)
+  FROM component c, jsonb_array_elements(c.fields) f GROUP BY 1;
+  -- 冻结结构 / 模板快照同款查询见 需求文档 §2.2 实测记录
+  ```
+- [ ] B0-5 ✅ **同文件第二个白名单已查清，本次不动**：`ComponentService.java:36` 的 `EDITABLE_FIELD_TYPES = {INPUT_NUMBER, INPUT_TEXT, LIST_FORMULA}` 是「**用户可录入**的字段类型」（含可编辑字段的多行 driver 组件须声明 `rowKeyFields`）。
+  - 它**本来就不含** `DATA_SOURCE` / `INPUT`（裸）→ 本次收窄与它**零交集**
+  - 它**含 `LIST_FORMULA`** → 又一条「`LIST_FORMULA` 是活的能力、不能删」的佐证（D13）
+  - **禁止顺手改它**：它管的是「能不能编辑」，`VALID_FIELD_TYPES` 管的是「能不能配」，两个语义不同
 
 ### 阶段①
 - [ ] B1-1 `assertLineSettled` + 提交前置校验，`409` 返回 `conflicts` 清单
