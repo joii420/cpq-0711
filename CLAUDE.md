@@ -180,8 +180,11 @@ ids.stream().map(repo::findById).toList();
 0. **立项**：按 `dev-docs/任务平台规则.md` §1 判定类型与位置 → 建目录 → 写需求文档 + 开发文档 → **等用户过闸门 A**。⚠️ 这一步在建 worktree **之前**，不要反过来。
 1. **起步**：闸门 A 通过后，调 `superpowers:using-git-worktrees` 建独立 worktree + 特性分支，后续所有编码/提交都在该 worktree 内进行。
 2. **开发**：按本文「质量保证规范」「修改后强制自检」完成功能 + 测试 + 自检；协议级改动跑 E2E。单个 Task 内部用 subagent-driven 推进。
-3. **确认**：完成后**由用户确认**功能达标（不得自行宣布"完成即合并"）。
-4. **收尾（用户确认后自动执行）**：走 `superpowers:finishing-a-development-branch` 的"合并并清理"路径 —— 切回 `master` → `git merge <特性分支>` → 跑一遍测试确认合并结果 → **`git worktree remove` 删除新建的 worktree 目录** + 删除该特性分支。
+3. **主线亲验**：按 `dev-docs/任务平台规则.md` §6 亲自复验（**不采信子代理的"已完成"**），逐条对照 AC 打勾。**这一步不可省。**
+4. **收尾合并（亲验通过即自动执行，不等用户许可）**：走 `superpowers:finishing-a-development-branch` 的"合并并清理"路径 —— 切回 `master` → `git merge <特性分支>` → 跑一遍测试/E2E 确认合并结果 → **`git worktree remove` 删除新建的 worktree 目录** + 删除该特性分支。
+5. **用户验收（闸门 B）**：汇报"AC 逐条达成 + 亲验证据 + 已合并"，由用户在**已合并环境**真机验收。
+   > 🔄 **为什么合并在验收之前**（2026-08-06 用户裁决，方案 A）：dev server（5174 / 8081）服务的是**主工作区已合并代码**，特性分支代码在 worktree 里，不先合并用户根本没法真机验收。
+   > ⚠️ 配套两条：①**自动合并跳过的是"等用户点头"，不是"亲验"** —— 没有 §6 亲验证据就合并 = 拿 master 当测试环境；②验收不达标走 **fix-forward**（新开 `repair-MMDD-*` 返修），不默认 revert，除非缺陷会污染数据或破坏在途单据。
 
 **worktree 共享约束（勿踩）**：worktree 只隔离 **git 工作区 + 分支**；后端 dev server(8081) / 前端 dev server(5174) / 远程 DB / `node_modules` / `.codegraph/` 仍是**共享**的。**不要**在 worktree 里另起 dev server 或重装依赖，直接复用主工作区已运行的实例做 `curl` / E2E 自检（详见历史记忆 `cpq-concurrent-sessions-and-worktree`）。
 
