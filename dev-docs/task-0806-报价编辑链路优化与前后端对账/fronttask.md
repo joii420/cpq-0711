@@ -15,6 +15,8 @@
 | `src/pages/quotation/QuotationWizard.tsx` | 提交前置校验的错误处理（`409 RECONCILE_PENDING` 弹窗） | ① |
 | `src/services/quotationService.ts` | 新增 `ensureRowData` / `reconcileReport` 调用 | ①③ |
 | `src/pages/quotation/ExcelView.tsx` | 打开 Excel 视图前调 `ensure-row-data` | ③ |
+| `src/utils/formulaEngine.ts` | **求值管线载体 number → Decimal**（阶段⑤ 主战场） | ⑤ |
+| `src/utils/precision.ts` | 出口转换点调整（`evaluateArithmetic` 的返回契约） | ⑤ |
 
 ---
 
@@ -128,6 +130,57 @@ tooltip 文案按 `需求文档.md §5.4`：
 
 ---
 
+## 4.5 阶段⑤ · 求值管线 Decimal 统一（FR-18~21）
+
+### 病灶在哪
+
+```ts
+// formulaEngine.ts:792 与 :905 —— 两处出口
+const result = evaluateArithmetic(expr);        // 内部全程 Decimal，精确
+return result === null ? 0 : result.toNumber(); // ← 精度在这里丢
+```
+
+`ArithDecimalParser` 内部是精确的，但**每条表达式一出门就转回 number**。所以下游的聚合：
+
+```ts
+// :189-197
+function aggregateTreeNums(agg: string, nums: number[]): number {
+  case 'SUM': return nums.reduce((s, x) => s + x, 0);   // ← 拿到的已经是 number，无原料
+```
+
+后端同位置是 `PrecisionPolicy.sum(nums)`（BigDecimal）→ **SUM/AVG 是确定的分歧源**。
+
+### 改法
+
+**把 Decimal 的生存期从「一条表达式内」延长到「整条求值管线」**，只在最终出口转 number：
+
+| 边界 | 改前 | 改后 |
+|---|---|---|
+| `evaluateArithmetic` 返回 | `Decimal \| null` → 调用方立刻 `.toNumber()` | 保持 `Decimal`，**调用方不再立即转** |
+| `evaluateExpression` | 返回 `number` | 返回 `Decimal` |
+| `evalTreeRefToken` / `cross_tab_ref` 聚合 | `number[]` → `number` | `Decimal[]` → `Decimal` |
+| `aggregateTreeNums` | `nums.reduce((s,x)=>s+x,0)` | `Decimal.plus` 精确累加；`AVG` 用 `div` + `DIVISION_SCALE` |
+| **最终出口**（写 `formulaCache` / 落 payload / 交给显示层） | — | **在这里且只在这里 `.toNumber()`** |
+
+- `MAX` / `MIN` / `COUNT` 无精度问题，但**不得再经 number 中转**（用 `Decimal.cmp` 比较）
+- 除法 scale 沿用 `precision.ts` 现有的 `DIVISION_SCALE = 12`，**不要另立**
+
+### ⚠️ 这一阶段会改变现有的值 —— 验收判据跟别的阶段不一样
+
+| 阶段 | 判据 |
+|---|---|
+| ⓪①②③④ | **AC-13 值中性**：逐值不变 |
+| **⑤** | **AC-16**：每处变化必须**可解释为精度提升**，且幅度 **< 6 位显示精度**。超出即缺陷 |
+
+另两条硬要求：
+- **AC-17 存量不回溯**：已提交单据的 `quote_card_values` / `submissionSnapshot` **逐字节不变**（D12）
+- **AC-19**：① 对账里 `SUM`/`AVG` 列的告警**归零**（以 ① 上线后累积的告警为基准）
+- **FR-21**：`GoldenCardValuesEquiv` 的 `amt-002/003` **期望值重新标定**，标定依据写进 `test-report.md`
+
+> 💡 **为什么 ⑤ 必须排在 ① 之后**：对账会把 SUM/AVG 的实际差异**量化出来**，那就是这一阶段的验收基准。没有基准就改，改完无法判定对没对。
+
+---
+
 ## 5. 状态管理与缓存 key
 
 **本任务不新增任何前端缓存，也不改动任何现有 cache key。**
@@ -194,3 +247,15 @@ tooltip 文案按 `需求文档.md §5.4`：
 ### 阶段③（前端侧）
 - [ ] F3-1 打开 Excel 视图 / 导出前调 API-2
 - [ ] F3-2 自检 §7 全项
+
+### 阶段⑤（Decimal 统一，前端主战场）
+- [ ] F5-1 `evaluateExpression` 返回类型 `number` → `Decimal`
+- [ ] F5-2 `evalTreeRefToken` / `cross_tab_ref` 聚合链路全程 Decimal
+- [ ] F5-3 `aggregateTreeNums`：SUM/AVG 用 Decimal 精确算；MAX/MIN/COUNT 用 `Decimal.cmp`，不经 number 中转
+- [ ] F5-4 收口出口转换：**只在写 `formulaCache` / 落 payload / 显示层** `.toNumber()`，全文件 grep 确认无第二处
+- [ ] F5-5 除法 scale 沿用 `DIVISION_SCALE = 12`，不另立常量
+- [ ] F5-6 `GoldenCardValuesEquiv` `amt-002/003` 期望值重新标定 + 依据写入 `test-report.md`
+- [ ] F5-7 **AC-16 差异审计**：逐格列出改造前后变化，每处标注「可解释为精度提升」，超 6 位的按缺陷处理
+- [ ] F5-8 **AC-17 存量不回溯**：抽 5 张已提交单据验 `quote_card_values` / `submissionSnapshot` 逐字节不变
+- [ ] F5-9 **AC-19**：① 对账的 SUM/AVG 告警归零
+- [ ] F5-10 自检 §7 全项（**必跑 E2E**，`formulaEngine.ts` 是 6 任务叠协议文件）
