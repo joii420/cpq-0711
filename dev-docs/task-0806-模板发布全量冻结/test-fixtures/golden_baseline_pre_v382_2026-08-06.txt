@@ -1,0 +1,205 @@
+Output format is aligned.
+== golden baseline: components_snapshot / sql_views_snapshot md5 per PUBLISHED+ARCHIVED template (pre-V382) ==
+                  id                  |     name      | version |  status   | template_kind |              cs_md5              |             svs_md5              | cs_len 
+--------------------------------------+---------------+---------+-----------+---------------+----------------------------------+----------------------------------+--------
+ c911d2db-b844-4357-86dc-be600aa2f289 | 施耐德BUG2    | v1.0    | PUBLISHED | QUOTATION     | 3b08d471d6ecab98791c3a383d8997af | 0240cdb940128ab2ebd39b0e596bba41 |      9
+ 22cda6d9-9b36-4952-a106-9fbfd1351387 | 施耐德BUG2    | v1.1    | PUBLISHED | QUOTATION     | 11ed3abdf0f93b59fd016422a307b127 | 0240cdb940128ab2ebd39b0e596bba41 |      9
+ e8850e62-6f86-48a2-9fde-83dc74b9b9c5 | 施耐德BUG2    | v1.2    | PUBLISHED | QUOTATION     | c80e61f6f59aa2c4a5efeed1d582556b | 0240cdb940128ab2ebd39b0e596bba41 |      9
+ ffcd08ce-de64-43ad-9d62-207cac4bb2dc | 施耐德BUG2    | v1.3    | PUBLISHED | QUOTATION     | 91467c6533a781a3ce8b814fc111b966 | 0240cdb940128ab2ebd39b0e596bba41 |      9
+ 3d3fe868-95de-47da-aa58-ec092c27f245 | 核价模板1     | v1.0    | PUBLISHED | COSTING       | 8b982573c272058d1389a7540f50efd5 | 115fec190f28cf06de0d7f69562e1b6d |     17
+ bc99f083-2d64-47d8-875f-d3c005ae5f2e | 核价模板1     | v1.1    | PUBLISHED | COSTING       | e923f6058922c89599259b6033705921 | 115fec190f28cf06de0d7f69562e1b6d |     18
+ 88d5d815-385b-45ca-bd4b-de0e0bad8a30 | 测试客户-4    | v1.0    | PUBLISHED | QUOTATION     | bd71f8513e5bac2c208132bdfd63408e | 015771ad855a29a9c6ef33827406cb51 |      8
+ 0a61d6a7-c9da-4ffc-b4b0-cb6fb75b48e0 | 测试客户-4    | v1.1    | PUBLISHED | QUOTATION     | 0b78d048e13a5be162b881a9fd38717c | 015771ad855a29a9c6ef33827406cb51 |      8
+ 3e95eddd-37fe-412e-bec7-f5667f3d5b03 | 测试客户-4    | v1.2    | PUBLISHED | QUOTATION     | ec9a9fda991aecc37a39f0110be0675d | 015771ad855a29a9c6ef33827406cb51 |      8
+ 3f941cb7-059f-449e-9348-d8c5259c3433 | 测试客户-4    | v1.3    | PUBLISHED | QUOTATION     | 3a16597eb5aaaea008ffaf6b61db5db0 | 015771ad855a29a9c6ef33827406cb51 |      8
+ 05b6ac45-6899-4a78-a4de-78becad2cee4 | 测试客户-4    | v1.4    | PUBLISHED | QUOTATION     | 17046c72490f956864715f46935d2a13 | 015771ad855a29a9c6ef33827406cb51 |      8
+ 2ca51461-2d32-4b84-a982-2d3f0ee23be7 | 测试客户-4    | v1.5    | PUBLISHED | QUOTATION     | a8186e17ebff2f4ee419b04d947cc3e9 | 015771ad855a29a9c6ef33827406cb51 |      8
+ 70f1b149-b0d9-4cb1-9245-6c3cee1bc3af | 罗克韦尔模板1 | v1.0    | PUBLISHED | QUOTATION     | efd4c898a621d34f5e93bb262daae4b6 | ed431e64b28c3331c4df5972577ad53f |      6
+ 9e2e6ef3-3865-4e90-a509-803761b6e837 | 罗克韦尔模板2 | v1.0    | PUBLISHED | QUOTATION     | 1f3d099e3e7e78048cdac59e2d47a52e | cc569a6fa3e3a6a471959f81e7ae62e8 |      6
+ 7fd29ac2-b2d3-48b4-8e31-9b107ae9eedd | 罗克韦尔模板3 | v1.0    | PUBLISHED | QUOTATION     | 0af0b838d2f7c87e357fae863da6f222 | aee466d658f0b62c9e821f8a0d78f775 |      6
+ 1badebec-5a13-4f54-bde7-18a7d1c3f44c | 罗克韦尔模板3 | v1.1    | PUBLISHED | QUOTATION     | e51a0339ffa17751b36dcf046d00083e | aee466d658f0b62c9e821f8a0d78f775 |      6
+ 0317efe5-48c7-4337-9c3b-4c249362b466 | 罗克韦尔模板3 | v1.2    | PUBLISHED | QUOTATION     | b434a7edc229d7df172ccb5dd22d0690 | aee466d658f0b62c9e821f8a0d78f775 |      6
+(17 rows)
+
+== template_component row count per template (== expected snapshot row count, AC-1/AC-9) ==
+                  id                  |     name      | version | tc_count 
+--------------------------------------+---------------+---------+----------
+ c911d2db-b844-4357-86dc-be600aa2f289 | 施耐德BUG2    | v1.0    |        9
+ 22cda6d9-9b36-4952-a106-9fbfd1351387 | 施耐德BUG2    | v1.1    |        9
+ e8850e62-6f86-48a2-9fde-83dc74b9b9c5 | 施耐德BUG2    | v1.2    |        9
+ ffcd08ce-de64-43ad-9d62-207cac4bb2dc | 施耐德BUG2    | v1.3    |        9
+ 3d3fe868-95de-47da-aa58-ec092c27f245 | 核价模板1     | v1.0    |       17
+ bc99f083-2d64-47d8-875f-d3c005ae5f2e | 核价模板1     | v1.1    |       18
+ 88d5d815-385b-45ca-bd4b-de0e0bad8a30 | 测试客户-4    | v1.0    |        8
+ 0a61d6a7-c9da-4ffc-b4b0-cb6fb75b48e0 | 测试客户-4    | v1.1    |        8
+ 3e95eddd-37fe-412e-bec7-f5667f3d5b03 | 测试客户-4    | v1.2    |        8
+ 3f941cb7-059f-449e-9348-d8c5259c3433 | 测试客户-4    | v1.3    |        8
+ 05b6ac45-6899-4a78-a4de-78becad2cee4 | 测试客户-4    | v1.4    |        8
+ 2ca51461-2d32-4b84-a982-2d3f0ee23be7 | 测试客户-4    | v1.5    |        8
+ 70f1b149-b0d9-4cb1-9245-6c3cee1bc3af | 罗克韦尔模板1 | v1.0    |        6
+ 9e2e6ef3-3865-4e90-a509-803761b6e837 | 罗克韦尔模板2 | v1.0    |        6
+ 7fd29ac2-b2d3-48b4-8e31-9b107ae9eedd | 罗克韦尔模板3 | v1.0    |        6
+ 1badebec-5a13-4f54-bde7-18a7d1c3f44c | 罗克韦尔模板3 | v1.1    |        6
+ 0317efe5-48c7-4337-9c3b-4c249362b466 | 罗克韦尔模板3 | v1.2    |        6
+(17 rows)
+
+== total tc rows (should == 149 per requirement doc) ==
+ count 
+-------
+   149
+(1 row)
+
+== per-tc-row golden md5 (component content fields) keyed by template_id+sort_order, for AC-1/AC-3/AC-9 row-level diff ==
+             template_id              | sort_order |                tc_id                 |   code    |             row_md5              
+--------------------------------------+------------+--------------------------------------+-----------+----------------------------------
+ 0317efe5-48c7-4337-9c3b-4c249362b466 |          0 | 8479447d-7f80-4963-bc5d-fe39297ff715 | COMP-0088 | 7431d68ee0503b294b3d75ece46d8c08
+ 0317efe5-48c7-4337-9c3b-4c249362b466 |          1 | d9da3a91-7d62-46b2-bc81-f1eea13a2db0 | COMP-0089 | 87c6a9e92491658091ddcd6564cbfb64
+ 0317efe5-48c7-4337-9c3b-4c249362b466 |          2 | 04a2859e-d452-4e9a-9115-4b4e1480eb13 | COMP-0090 | d8b07d18505a14aaae823d8782f98dfb
+ 0317efe5-48c7-4337-9c3b-4c249362b466 |          3 | 889e8741-c2ed-4d9d-a484-4bb068f7d3aa | COMP-0091 | 4e84c153bd20c58d2e415be32887f80e
+ 0317efe5-48c7-4337-9c3b-4c249362b466 |          4 | 7269b031-80cd-4fa7-8be6-9cc6791ab8c2 | COMP-0092 | c243386da452509c729d338e901b42fe
+ 0317efe5-48c7-4337-9c3b-4c249362b466 |          5 | 9ea32b67-92f8-4915-aa9b-b425595c1d7c | COMP-0098 | cfb527452cda651b8c60bfecc0f4b509
+ 05b6ac45-6899-4a78-a4de-78becad2cee4 |          0 | 901a6076-8813-445a-8a6e-c61d0046bea9 | COMP-0183 | 6f9bf1ced42a537b5b883f0432d429c1
+ 05b6ac45-6899-4a78-a4de-78becad2cee4 |          1 | aefd85b6-e53e-43c8-8c6a-3bb551c5548f | COMP-0185 | f5395fb59c0f6fdf5490ee39d8715301
+ 05b6ac45-6899-4a78-a4de-78becad2cee4 |          2 | 5271750b-51ae-4e57-a700-7a79f8acf652 | COMP-0045 | 708c278011bf290d2c718499e3621c8c
+ 05b6ac45-6899-4a78-a4de-78becad2cee4 |          3 | 76ba3c01-1145-4474-aeb7-6c20e81d7b6e | COMP-0181 | f556ea6033283a473510b4e8345bc1ac
+ 05b6ac45-6899-4a78-a4de-78becad2cee4 |          4 | 3821ee3a-8c29-4313-a88c-22801e4f51ad | COMP-0047 | 084d3dc6b220eff50284d6acb9462f4d
+ 05b6ac45-6899-4a78-a4de-78becad2cee4 |          5 | 9973305c-8f69-47a6-8e92-1feb664ffd85 | COMP-0046 | e42a4a6d62b95ecab485124decf6c9a8
+ 05b6ac45-6899-4a78-a4de-78becad2cee4 |          6 | 396aea00-c7f4-43db-b8fe-98cee78df6d8 | COMP-0182 | fac732d9961e85c02d5d6d52ae9e1265
+ 05b6ac45-6899-4a78-a4de-78becad2cee4 |          7 | 5818493e-2289-4217-81c3-31e0a549d47e | COMP-0184 | 9c40ef13778d1daa57a92ec8b71f2925
+ 0a61d6a7-c9da-4ffc-b4b0-cb6fb75b48e0 |          0 | 854621f0-bbe2-43f8-994d-47e748aea2fe | COMP-0183 | 6f9bf1ced42a537b5b883f0432d429c1
+ 0a61d6a7-c9da-4ffc-b4b0-cb6fb75b48e0 |          1 | cd1b4396-61ac-41d1-bfb2-acdaefb6ab7c | COMP-0185 | f5395fb59c0f6fdf5490ee39d8715301
+ 0a61d6a7-c9da-4ffc-b4b0-cb6fb75b48e0 |          2 | 5f61a03e-debb-49e8-b665-364954ff3d2f | COMP-0045 | 708c278011bf290d2c718499e3621c8c
+ 0a61d6a7-c9da-4ffc-b4b0-cb6fb75b48e0 |          3 | 79a105dd-4449-4e9c-be11-0906d5e8f68a | COMP-0181 | f556ea6033283a473510b4e8345bc1ac
+ 0a61d6a7-c9da-4ffc-b4b0-cb6fb75b48e0 |          4 | 015b7856-cadf-452f-9aec-e44b9a2f3987 | COMP-0047 | 084d3dc6b220eff50284d6acb9462f4d
+ 0a61d6a7-c9da-4ffc-b4b0-cb6fb75b48e0 |          5 | 2914ad07-18c5-4269-a0d3-d2edd0dc7dc4 | COMP-0046 | e42a4a6d62b95ecab485124decf6c9a8
+ 0a61d6a7-c9da-4ffc-b4b0-cb6fb75b48e0 |          6 | c6a75bb0-4544-4758-b5c8-7df217926873 | COMP-0182 | fac732d9961e85c02d5d6d52ae9e1265
+ 0a61d6a7-c9da-4ffc-b4b0-cb6fb75b48e0 |          7 | 2f37cd84-6bcd-4373-bcbf-c5e18f71f388 | COMP-0184 | 9c40ef13778d1daa57a92ec8b71f2925
+ 1badebec-5a13-4f54-bde7-18a7d1c3f44c |          0 | e250f4ce-f80f-41ce-8675-e8d5f64c8ba2 | COMP-0088 | 7431d68ee0503b294b3d75ece46d8c08
+ 1badebec-5a13-4f54-bde7-18a7d1c3f44c |          1 | df6b4bf0-3685-4c21-b4aa-24fb773b6eab | COMP-0089 | 87c6a9e92491658091ddcd6564cbfb64
+ 1badebec-5a13-4f54-bde7-18a7d1c3f44c |          2 | fb8e4fa3-68a5-4737-9356-cbff668f9f69 | COMP-0090 | d8b07d18505a14aaae823d8782f98dfb
+ 1badebec-5a13-4f54-bde7-18a7d1c3f44c |          3 | ae1a3012-00d2-403f-8d91-9044f80db98d | COMP-0091 | 4e84c153bd20c58d2e415be32887f80e
+ 1badebec-5a13-4f54-bde7-18a7d1c3f44c |          4 | 3a1bbfdb-2599-4390-8cfd-1ff2f492f6a0 | COMP-0092 | c243386da452509c729d338e901b42fe
+ 1badebec-5a13-4f54-bde7-18a7d1c3f44c |          5 | debee011-f1c9-40ee-a646-ca2e70d04427 | COMP-0098 | cfb527452cda651b8c60bfecc0f4b509
+ 22cda6d9-9b36-4952-a106-9fbfd1351387 |          0 | f73a219a-843a-493d-9adb-9ef44d7e60c7 | COMP-0160 | 71aa1224975f612b914fc8b035f139b8
+ 22cda6d9-9b36-4952-a106-9fbfd1351387 |          1 | 54419cb0-8216-485c-adc6-df47207ec4cf | COMP-0157 | 5ac2de9c47e36451184eb90d626cb0f0
+ 22cda6d9-9b36-4952-a106-9fbfd1351387 |          2 | 3cffe5b9-3389-44e3-a6b8-cc685c2a15ff | COMP-0154 | b35a13fa5d03e862a65d10c051bf4ebd
+ 22cda6d9-9b36-4952-a106-9fbfd1351387 |          3 | 0e122ab6-3684-4d0e-8938-fe142e8040f5 | COMP-0145 | d6a9ba053d44ab1d9725178352b46a91
+ 22cda6d9-9b36-4952-a106-9fbfd1351387 |          4 | 82a751d6-122e-4442-8bed-41678221a2de | COMP-0158 | f556ea6033283a473510b4e8345bc1ac
+ 22cda6d9-9b36-4952-a106-9fbfd1351387 |          5 | 9dfbc049-57c5-4dde-b44d-8b51d8df52b0 | COMP-0159 | fac732d9961e85c02d5d6d52ae9e1265
+ 22cda6d9-9b36-4952-a106-9fbfd1351387 |          6 | e8cf2aae-6f56-45de-88b6-4bcb1723a96d | COMP-0156 | 084d3dc6b220eff50284d6acb9462f4d
+ 22cda6d9-9b36-4952-a106-9fbfd1351387 |          7 | 30dee2e4-4424-485a-ae4c-e686c5f2f823 | COMP-0155 | e42a4a6d62b95ecab485124decf6c9a8
+ 22cda6d9-9b36-4952-a106-9fbfd1351387 |          8 | 026a1130-0d89-45c0-96c8-58de26fc54cf | COMP-0161 | 50eff9b9a029ea18291d90e023f245c7
+ 2ca51461-2d32-4b84-a982-2d3f0ee23be7 |          0 | e42b66cd-9926-4be5-8331-682dc8703a50 | COMP-0183 | 6f9bf1ced42a537b5b883f0432d429c1
+ 2ca51461-2d32-4b84-a982-2d3f0ee23be7 |          1 | 3627633c-e1b4-44ec-9f2b-efb5eb25302b | COMP-0185 | f5395fb59c0f6fdf5490ee39d8715301
+ 2ca51461-2d32-4b84-a982-2d3f0ee23be7 |          2 | 1c01cf3f-5f26-44d0-b07d-060e34b16e68 | COMP-0045 | 708c278011bf290d2c718499e3621c8c
+ 2ca51461-2d32-4b84-a982-2d3f0ee23be7 |          3 | a8b64c88-78ed-4067-aaeb-a4e3ae932069 | COMP-0181 | f556ea6033283a473510b4e8345bc1ac
+ 2ca51461-2d32-4b84-a982-2d3f0ee23be7 |          4 | 256a8383-39cd-4faa-bce3-e2d2fef73bef | COMP-0047 | 084d3dc6b220eff50284d6acb9462f4d
+ 2ca51461-2d32-4b84-a982-2d3f0ee23be7 |          5 | 986478e4-1da5-496f-bdf6-7ffbcf1ec4ba | COMP-0046 | e42a4a6d62b95ecab485124decf6c9a8
+ 2ca51461-2d32-4b84-a982-2d3f0ee23be7 |          6 | dc8ad67e-693c-482b-995d-fdf8b39c3005 | COMP-0182 | fac732d9961e85c02d5d6d52ae9e1265
+ 2ca51461-2d32-4b84-a982-2d3f0ee23be7 |          7 | c4ec9a67-866a-4dd2-9e8f-5c358b8c230a | COMP-0184 | 9c40ef13778d1daa57a92ec8b71f2925
+ 3d3fe868-95de-47da-aa58-ec092c27f245 |          0 | 5433b0d6-9fc3-446b-80b0-357dfdb19d72 | COMP-0048 | 4b75f3f83934b184514d05e2e6008513
+ 3d3fe868-95de-47da-aa58-ec092c27f245 |          1 | 3018eeb3-06a0-41c6-a6e6-1b9762017954 | COMP-0049 | bf1a10e1660f1d9a35f5f788974e1879
+ 3d3fe868-95de-47da-aa58-ec092c27f245 |          2 | 4bd44f6f-efbc-41d7-9443-e8b7b444ddce | COMP-0050 | eaabe335afdf7b34ce6499ffc2587443
+ 3d3fe868-95de-47da-aa58-ec092c27f245 |          3 | 2accc3c7-6c66-42e2-a882-19f5cd767f15 | COMP-0051 | a6451ebd571c69a98dac57c9428d328d
+ 3d3fe868-95de-47da-aa58-ec092c27f245 |          4 | 808849e4-c2c9-43fc-82fa-9691628dc87a | COMP-0052 | c321102a31e15943257b553db7bb2022
+ 3d3fe868-95de-47da-aa58-ec092c27f245 |          5 | 6b9aa289-ca44-43ca-ae26-c89eeed9451e | COMP-0053 | eb6011e6a2360e555d4fe1c73eb12878
+ 3d3fe868-95de-47da-aa58-ec092c27f245 |          6 | 8a1f3477-f245-496b-a81b-7b988907ee16 | COMP-0054 | 05e782c9da52e600edabed2b1ed3d514
+ 3d3fe868-95de-47da-aa58-ec092c27f245 |          7 | add28bf3-0b70-48b8-9bd4-5152c4b96f29 | COMP-0055 | 57ac6baf73b562ba4a495454d922d903
+ 3d3fe868-95de-47da-aa58-ec092c27f245 |          8 | 895d8ba2-55e4-41ef-81a6-0d30eee4e52d | COMP-0056 | f86e813d75a6a5c9c44d8885e3a0801f
+ 3d3fe868-95de-47da-aa58-ec092c27f245 |          9 | e52da633-52bf-4930-ab45-3a9fb16c50ff | COMP-0057 | a55b9f5b0e916b10164a7c4f85c5d6bb
+ 3d3fe868-95de-47da-aa58-ec092c27f245 |         10 | 696a4b9b-cdd8-427f-901a-05f74f2d6d12 | COMP-0058 | b993ef1d23d185344f8beff514e75233
+ 3d3fe868-95de-47da-aa58-ec092c27f245 |         11 | 2a0c9639-e539-4047-b6c8-6f0670d5660d | COMP-0059 | 467fb0408df3ab84765e49020a752987
+ 3d3fe868-95de-47da-aa58-ec092c27f245 |         12 | 27a40c34-0732-4532-b369-388a42b506d6 | COMP-0060 | 69606dc4e6e50e04bb9d7381522915fb
+ 3d3fe868-95de-47da-aa58-ec092c27f245 |         13 | e81b1c7e-8e78-4eb8-a8c9-465fb353b6a3 | COMP-0061 | b6c52ebb84931d7781eed3cb11bd9755
+ 3d3fe868-95de-47da-aa58-ec092c27f245 |         14 | aa9f49bc-c179-4185-9172-ba7ee9c01f17 | COMP-0062 | daa6f24d92d75424d53ab5efd8a108e3
+ 3d3fe868-95de-47da-aa58-ec092c27f245 |         15 | 716f2f86-49a8-4ebe-88f7-06bfdf4d7beb | COMP-0063 | 56f9ceb42462e02c0ce224151ce0763b
+ 3d3fe868-95de-47da-aa58-ec092c27f245 |         16 | c0e4983f-641b-42d6-a8ab-743b7820ecf1 | COMP-0064 | d7499915b752c217929714a4bd6a9418
+ 3e95eddd-37fe-412e-bec7-f5667f3d5b03 |          0 | a375b118-504e-4629-8826-a404540fc0bd | COMP-0183 | 6f9bf1ced42a537b5b883f0432d429c1
+ 3e95eddd-37fe-412e-bec7-f5667f3d5b03 |          1 | 9fddc5c0-d0c9-457f-aeac-30b46e033258 | COMP-0185 | f5395fb59c0f6fdf5490ee39d8715301
+ 3e95eddd-37fe-412e-bec7-f5667f3d5b03 |          2 | facfd9c7-23e6-432b-a57b-7bcc03ae8e18 | COMP-0045 | 708c278011bf290d2c718499e3621c8c
+ 3e95eddd-37fe-412e-bec7-f5667f3d5b03 |          3 | c60a4e3c-1aae-470e-9bf3-38e1c10d72c1 | COMP-0181 | f556ea6033283a473510b4e8345bc1ac
+ 3e95eddd-37fe-412e-bec7-f5667f3d5b03 |          4 | f3ea66b1-31e6-4bd2-9cdc-f64a8eaf30de | COMP-0047 | 084d3dc6b220eff50284d6acb9462f4d
+ 3e95eddd-37fe-412e-bec7-f5667f3d5b03 |          5 | 375c5899-139b-4020-b173-5325abe23922 | COMP-0046 | e42a4a6d62b95ecab485124decf6c9a8
+ 3e95eddd-37fe-412e-bec7-f5667f3d5b03 |          6 | baafd040-8871-40a5-ab59-4e47b8a903ab | COMP-0182 | fac732d9961e85c02d5d6d52ae9e1265
+ 3e95eddd-37fe-412e-bec7-f5667f3d5b03 |          7 | e84f2d52-4327-4e11-be93-a5c813c9ed66 | COMP-0184 | 9c40ef13778d1daa57a92ec8b71f2925
+ 3f941cb7-059f-449e-9348-d8c5259c3433 |          0 | cf8f5807-19fd-409c-8751-599c71f92144 | COMP-0183 | 6f9bf1ced42a537b5b883f0432d429c1
+ 3f941cb7-059f-449e-9348-d8c5259c3433 |          1 | 81cb0efe-5750-4a3d-8459-dc28f77f71e1 | COMP-0185 | f5395fb59c0f6fdf5490ee39d8715301
+ 3f941cb7-059f-449e-9348-d8c5259c3433 |          2 | 7e038350-b4b1-4c0f-b7f2-d4069c165848 | COMP-0045 | 708c278011bf290d2c718499e3621c8c
+ 3f941cb7-059f-449e-9348-d8c5259c3433 |          3 | d7e65d9c-dd2e-4c9e-ac7b-bfcf4a0c1bdf | COMP-0181 | f556ea6033283a473510b4e8345bc1ac
+ 3f941cb7-059f-449e-9348-d8c5259c3433 |          4 | caa73dc7-0e66-4334-83d2-9a4d007b3787 | COMP-0047 | 084d3dc6b220eff50284d6acb9462f4d
+ 3f941cb7-059f-449e-9348-d8c5259c3433 |          5 | 73d76a13-5b2b-4f2d-a95e-d4cfc53b20fb | COMP-0046 | e42a4a6d62b95ecab485124decf6c9a8
+ 3f941cb7-059f-449e-9348-d8c5259c3433 |          6 | 79c18f6d-a969-42d6-94a3-21676e6c9d41 | COMP-0182 | fac732d9961e85c02d5d6d52ae9e1265
+ 3f941cb7-059f-449e-9348-d8c5259c3433 |          7 | c6c4f7e3-9d56-4238-a35e-ed0e110f69df | COMP-0184 | 9c40ef13778d1daa57a92ec8b71f2925
+ 70f1b149-b0d9-4cb1-9245-6c3cee1bc3af |          0 | 08c855b0-440c-482a-96ab-c40ed897eb09 | COMP-0019 | 7431d68ee0503b294b3d75ece46d8c08
+ 70f1b149-b0d9-4cb1-9245-6c3cee1bc3af |          1 | 06febc7e-d1d8-406f-ac85-bcbf42016626 | COMP-0020 | 0784c8980957a305ba2e90b6ab602b1b
+ 70f1b149-b0d9-4cb1-9245-6c3cee1bc3af |          2 | 716883b9-226b-4a68-a667-f6c6eaff3c6a | COMP-0021 | 6cb8f995a070e5797024d03dc5f30cf1
+ 70f1b149-b0d9-4cb1-9245-6c3cee1bc3af |          3 | 1741f7e3-5970-4b88-8004-7a9c5bdab817 | COMP-0022 | c27008e2f96b7d29936bbf0bcc492965
+ 70f1b149-b0d9-4cb1-9245-6c3cee1bc3af |          4 | 5db19cf5-2b49-4643-85b3-a1ddf2795c31 | COMP-0023 | de37ab18d36e1cf257da603833f1ac8e
+ 70f1b149-b0d9-4cb1-9245-6c3cee1bc3af |          5 | 74df75a4-89b3-4a70-b6fc-ccb6e12b074e | COMP-0024 | b8c0f7038064ac19a804fbe9167d242f
+ 7fd29ac2-b2d3-48b4-8e31-9b107ae9eedd |          0 | 43370dcf-a54e-409a-b726-8ec0fb9016f9 | COMP-0088 | 7431d68ee0503b294b3d75ece46d8c08
+ 7fd29ac2-b2d3-48b4-8e31-9b107ae9eedd |          1 | d3cc8704-cbb1-47ca-8b2c-d48c6129eafc | COMP-0089 | 87c6a9e92491658091ddcd6564cbfb64
+ 7fd29ac2-b2d3-48b4-8e31-9b107ae9eedd |          2 | b0d86fca-8561-4d50-841b-c8be57b3e038 | COMP-0090 | d8b07d18505a14aaae823d8782f98dfb
+ 7fd29ac2-b2d3-48b4-8e31-9b107ae9eedd |          3 | b5c30f63-4677-466a-b4e2-e1f64b3553c9 | COMP-0091 | 4e84c153bd20c58d2e415be32887f80e
+ 7fd29ac2-b2d3-48b4-8e31-9b107ae9eedd |          4 | 563e19bc-901a-4142-84b1-72578feec168 | COMP-0092 | c243386da452509c729d338e901b42fe
+ 7fd29ac2-b2d3-48b4-8e31-9b107ae9eedd |          5 | 455edfaf-d139-4475-9a32-4e0c6c23f04f | COMP-0098 | cfb527452cda651b8c60bfecc0f4b509
+ 88d5d815-385b-45ca-bd4b-de0e0bad8a30 |          0 | 569bd3f7-069b-4a65-ad92-a3dbe0cac359 | COMP-0183 | 6f9bf1ced42a537b5b883f0432d429c1
+ 88d5d815-385b-45ca-bd4b-de0e0bad8a30 |          1 | 0f98cca5-0b5e-406f-8e31-0a839452c49f | COMP-0185 | f5395fb59c0f6fdf5490ee39d8715301
+ 88d5d815-385b-45ca-bd4b-de0e0bad8a30 |          2 | 8efce30d-5d67-4eae-b78a-26c33acfea21 | COMP-0045 | 708c278011bf290d2c718499e3621c8c
+ 88d5d815-385b-45ca-bd4b-de0e0bad8a30 |          3 | 54ee536e-fb00-41ad-ae66-c03ce5c87c1e | COMP-0181 | f556ea6033283a473510b4e8345bc1ac
+ 88d5d815-385b-45ca-bd4b-de0e0bad8a30 |          4 | d77306bd-353f-4169-96be-bf11898a3d98 | COMP-0047 | 084d3dc6b220eff50284d6acb9462f4d
+ 88d5d815-385b-45ca-bd4b-de0e0bad8a30 |          5 | dd19a2f8-40f1-4f18-95cb-4e20042d1a4e | COMP-0046 | e42a4a6d62b95ecab485124decf6c9a8
+ 88d5d815-385b-45ca-bd4b-de0e0bad8a30 |          6 | 250ed77b-23de-406a-b75a-627e7423439d | COMP-0182 | fac732d9961e85c02d5d6d52ae9e1265
+ 88d5d815-385b-45ca-bd4b-de0e0bad8a30 |          7 | c58bc285-a46c-483f-97b7-43c063d7b74f | COMP-0184 | 9c40ef13778d1daa57a92ec8b71f2925
+ 9e2e6ef3-3865-4e90-a509-803761b6e837 |          0 | 9ef06891-204f-4399-b493-0dd9ba977d03 | COMP-0025 | 7431d68ee0503b294b3d75ece46d8c08
+ 9e2e6ef3-3865-4e90-a509-803761b6e837 |          1 | 2b35fd47-2fda-42be-a4c7-0099e17dffa1 | COMP-0026 | 87c6a9e92491658091ddcd6564cbfb64
+ 9e2e6ef3-3865-4e90-a509-803761b6e837 |          2 | 31419302-289f-450b-b02c-823cca91499b | COMP-0027 | a471229ab3a0f5338f6e88bf8dee6ca9
+ 9e2e6ef3-3865-4e90-a509-803761b6e837 |          3 | 6704cc1d-7517-4585-8ceb-869eb07b1279 | COMP-0028 | 422a7b6894ca1a948fdbd48b6b7dcc0d
+ 9e2e6ef3-3865-4e90-a509-803761b6e837 |          4 | 324d4fb1-abcc-4ce4-93aa-56ddef1c236b | COMP-0029 | 87e1d13378cee96bcd82a46c934a90e2
+ 9e2e6ef3-3865-4e90-a509-803761b6e837 |          5 | 803a29f7-4731-472c-b4e0-e2dbe1380ee4 | COMP-0030 | 3ebbee72bae7d494d666fa425836695b
+ bc99f083-2d64-47d8-875f-d3c005ae5f2e |          0 | 2b108b09-90f0-4f26-9a15-a1178c47bddc | COMP-0048 | 4b75f3f83934b184514d05e2e6008513
+ bc99f083-2d64-47d8-875f-d3c005ae5f2e |          1 | 3f24237a-4f4b-49ee-88ea-e5a8fe243040 | COMP-0049 | bf1a10e1660f1d9a35f5f788974e1879
+ bc99f083-2d64-47d8-875f-d3c005ae5f2e |          2 | b04397a1-8380-4e76-8b05-299859322f28 | COMP-0050 | eaabe335afdf7b34ce6499ffc2587443
+ bc99f083-2d64-47d8-875f-d3c005ae5f2e |          3 | 4bf16d6c-bde5-443a-a894-d7a5884edc95 | COMP-0051 | a6451ebd571c69a98dac57c9428d328d
+ bc99f083-2d64-47d8-875f-d3c005ae5f2e |          4 | 484231b7-2920-411c-abb2-ed3f1d3ee2ed | COMP-0052 | c321102a31e15943257b553db7bb2022
+ bc99f083-2d64-47d8-875f-d3c005ae5f2e |          5 | 85d8f75c-a3ce-47f0-8960-ad62b899c1cd | COMP-0053 | eb6011e6a2360e555d4fe1c73eb12878
+ bc99f083-2d64-47d8-875f-d3c005ae5f2e |          6 | ca015093-ed59-4948-9069-ba95a264e5ee | COMP-0054 | 05e782c9da52e600edabed2b1ed3d514
+ bc99f083-2d64-47d8-875f-d3c005ae5f2e |          7 | e8213661-d544-4c8d-bd1e-756312c04b8a | COMP-0055 | 57ac6baf73b562ba4a495454d922d903
+ bc99f083-2d64-47d8-875f-d3c005ae5f2e |          8 | 92b19dde-5a4e-434a-ba48-ab1e59228dd7 | COMP-0056 | f86e813d75a6a5c9c44d8885e3a0801f
+ bc99f083-2d64-47d8-875f-d3c005ae5f2e |          9 | 2b958aad-68c7-4132-9eb5-19a9b4d39e40 | COMP-0057 | a55b9f5b0e916b10164a7c4f85c5d6bb
+ bc99f083-2d64-47d8-875f-d3c005ae5f2e |         10 | 93d926bf-8919-45f1-a0c4-0054e55cdb81 | COMP-0058 | b993ef1d23d185344f8beff514e75233
+ bc99f083-2d64-47d8-875f-d3c005ae5f2e |         11 | 0f920ac3-d46e-4436-b9fe-776c921b12e6 | COMP-0059 | 467fb0408df3ab84765e49020a752987
+ bc99f083-2d64-47d8-875f-d3c005ae5f2e |         12 | 2edc826c-05ef-4cff-948e-a3c34fa9e27b | COMP-0060 | 69606dc4e6e50e04bb9d7381522915fb
+ bc99f083-2d64-47d8-875f-d3c005ae5f2e |         13 | b321f6e6-28e8-4008-9ba7-a16cf54a697e | COMP-0061 | b6c52ebb84931d7781eed3cb11bd9755
+ bc99f083-2d64-47d8-875f-d3c005ae5f2e |         14 | 40041465-b6c9-4b79-adcd-30c5fe6bb8f7 | COMP-0062 | daa6f24d92d75424d53ab5efd8a108e3
+ bc99f083-2d64-47d8-875f-d3c005ae5f2e |         15 | c1e7db6f-7da0-4bff-af00-feb1d72cd45a | COMP-0063 | 56f9ceb42462e02c0ce224151ce0763b
+ bc99f083-2d64-47d8-875f-d3c005ae5f2e |         16 | 5ee48216-cee4-47a4-b050-e089076e90cb | COMP-0064 | d7499915b752c217929714a4bd6a9418
+ bc99f083-2d64-47d8-875f-d3c005ae5f2e |         17 | 0b52504a-2bf7-4015-86c7-64bf8262276a | COMP-0082 | 0c7d1ff10470b0f163f4439b65898760
+ c911d2db-b844-4357-86dc-be600aa2f289 |          0 | fbed54f7-0cf7-403a-9d07-f921205ea457 | COMP-0160 | 71aa1224975f612b914fc8b035f139b8
+ c911d2db-b844-4357-86dc-be600aa2f289 |          1 | 8e3a2e3e-9536-49e2-93a6-75b264473362 | COMP-0157 | 5ac2de9c47e36451184eb90d626cb0f0
+ c911d2db-b844-4357-86dc-be600aa2f289 |          2 | 46287b0d-dff1-441b-a3d5-7c8edb3d33e6 | COMP-0154 | b35a13fa5d03e862a65d10c051bf4ebd
+ c911d2db-b844-4357-86dc-be600aa2f289 |          3 | 48eb5e1c-361b-4197-bf32-d406890e821f | COMP-0145 | d6a9ba053d44ab1d9725178352b46a91
+ c911d2db-b844-4357-86dc-be600aa2f289 |          4 | 4fc9b75c-02c5-42cb-b150-72bae918b24d | COMP-0158 | f556ea6033283a473510b4e8345bc1ac
+ c911d2db-b844-4357-86dc-be600aa2f289 |          5 | 4a7b79d5-7374-42d5-936e-fd81c7464203 | COMP-0159 | fac732d9961e85c02d5d6d52ae9e1265
+ c911d2db-b844-4357-86dc-be600aa2f289 |          6 | 3839a41e-3687-4d43-8f46-c9f400d98366 | COMP-0156 | 084d3dc6b220eff50284d6acb9462f4d
+ c911d2db-b844-4357-86dc-be600aa2f289 |          7 | 6c95914a-b63b-44e2-b346-acd72a683b90 | COMP-0155 | e42a4a6d62b95ecab485124decf6c9a8
+ c911d2db-b844-4357-86dc-be600aa2f289 |          8 | 942a1ae0-2880-49f7-9c9d-828327a72480 | COMP-0161 | 50eff9b9a029ea18291d90e023f245c7
+ e8850e62-6f86-48a2-9fde-83dc74b9b9c5 |          0 | 242a0c4d-044a-44a7-9b15-05cca7c7badd | COMP-0160 | 71aa1224975f612b914fc8b035f139b8
+ e8850e62-6f86-48a2-9fde-83dc74b9b9c5 |          1 | 135be111-1995-4a5a-96a3-a5489073987b | COMP-0157 | 5ac2de9c47e36451184eb90d626cb0f0
+ e8850e62-6f86-48a2-9fde-83dc74b9b9c5 |          2 | 0facf8dc-6f3d-49ee-ab53-88a6fbefb549 | COMP-0154 | b35a13fa5d03e862a65d10c051bf4ebd
+ e8850e62-6f86-48a2-9fde-83dc74b9b9c5 |          3 | 8518ea67-f56f-4377-84cf-9850b394c48c | COMP-0145 | d6a9ba053d44ab1d9725178352b46a91
+ e8850e62-6f86-48a2-9fde-83dc74b9b9c5 |          4 | e5b98452-9a7f-45da-b074-a8591a53ef0b | COMP-0158 | f556ea6033283a473510b4e8345bc1ac
+ e8850e62-6f86-48a2-9fde-83dc74b9b9c5 |          5 | 71a04754-6d5a-4328-9b43-0e7f1052420f | COMP-0159 | fac732d9961e85c02d5d6d52ae9e1265
+ e8850e62-6f86-48a2-9fde-83dc74b9b9c5 |          6 | 7f54bc1e-6b08-443c-8df9-d6c76372eef8 | COMP-0156 | 084d3dc6b220eff50284d6acb9462f4d
+ e8850e62-6f86-48a2-9fde-83dc74b9b9c5 |          7 | 30ea4fd6-1fc3-4cea-b05f-256fb88e5e2f | COMP-0155 | e42a4a6d62b95ecab485124decf6c9a8
+ e8850e62-6f86-48a2-9fde-83dc74b9b9c5 |          8 | 4e0870a8-18f5-44b0-a10a-3e52e22445e2 | COMP-0161 | 50eff9b9a029ea18291d90e023f245c7
+ ffcd08ce-de64-43ad-9d62-207cac4bb2dc |          0 | ebf0ebbf-c581-429a-858c-3eecb43cc6e0 | COMP-0160 | 71aa1224975f612b914fc8b035f139b8
+ ffcd08ce-de64-43ad-9d62-207cac4bb2dc |          1 | b438e866-ccfb-4f0c-b09f-d16c2222fcf8 | COMP-0157 | 5ac2de9c47e36451184eb90d626cb0f0
+ ffcd08ce-de64-43ad-9d62-207cac4bb2dc |          2 | 97aeacd6-fa77-4d6d-b166-9d36a3efdd26 | COMP-0154 | b35a13fa5d03e862a65d10c051bf4ebd
+ ffcd08ce-de64-43ad-9d62-207cac4bb2dc |          3 | be543c6f-1791-43a4-ae6a-abeb41c904e0 | COMP-0145 | d6a9ba053d44ab1d9725178352b46a91
+ ffcd08ce-de64-43ad-9d62-207cac4bb2dc |          4 | d3138984-bffd-4292-b399-a7cdbe0c6471 | COMP-0158 | f556ea6033283a473510b4e8345bc1ac
+ ffcd08ce-de64-43ad-9d62-207cac4bb2dc |          5 | b70fe899-469f-4ffb-bee8-fb78c5c3c32e | COMP-0159 | fac732d9961e85c02d5d6d52ae9e1265
+ ffcd08ce-de64-43ad-9d62-207cac4bb2dc |          6 | 707e827e-d78f-4413-aa7b-8a99bda7b171 | COMP-0156 | 084d3dc6b220eff50284d6acb9462f4d
+ ffcd08ce-de64-43ad-9d62-207cac4bb2dc |          7 | c28b4078-3ae0-4cf8-a8be-d71906bff6f1 | COMP-0155 | e42a4a6d62b95ecab485124decf6c9a8
+ ffcd08ce-de64-43ad-9d62-207cac4bb2dc |          8 | ba036f74-5161-4f17-9268-db13bfb7ac3e | COMP-0161 | 50eff9b9a029ea18291d90e023f245c7
+(149 rows)
+
