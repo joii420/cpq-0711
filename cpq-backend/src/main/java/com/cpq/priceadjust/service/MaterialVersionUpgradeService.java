@@ -156,6 +156,27 @@ public class MaterialVersionUpgradeService {
      */
     @Transactional
     public UpgradeResult upgrade(UUID lineItemId, UUID targetVersionId, boolean dryRun) {
+        return upgrade(lineItemId, targetVersionId, dryRun, null);
+    }
+
+    /**
+     * task-0806 · FR-3 重载：接受 {@code PriceAdjustJobExecutionService} 批量预渲染好的核价树结果。
+     *
+     * <p>🔒 <b>默认 {@code null} = 现状行为</b>（需求文档硬约束 3）：三参方法原样保留、委派本方法
+     * 传 {@code precomputed=null}——dryRun / 预算路径（{@code PriceAdjustBudgetService}）全部走
+     * 三参方法，逐位不变。只有 {@code PriceAdjustJobExecutionService#executeJob} 的批量正式升版路径
+     * （{@code dryRun=false}）会传非空 {@code precomputed}。
+     *
+     * <p>本参数只影响 S5 的核价侧重算——原样透传给
+     * {@link CardSnapshotService#refreshCostingCardValuesForLine(UUID, CardSnapshotService.PrecomputedTreeRows)}，
+     * S0~S4/S6~S9 的其余步骤完全不变。
+     *
+     * @param precomputed {@code null} = 未参与批量预渲染，S5 按原逻辑内部调用
+     *                    {@code render()}；非 {@code null} = 已批量预渲染，S5 直接消费不再重复渲染
+     */
+    @Transactional
+    public UpgradeResult upgrade(UUID lineItemId, UUID targetVersionId, boolean dryRun,
+                                  CardSnapshotService.PrecomputedTreeRows precomputed) {
         if (lineItemId == null || targetVersionId == null) {
             return UpgradeResult.failed("BAD_REQUEST", "lineItemId/targetVersionId 不能为空");
         }
@@ -280,7 +301,13 @@ public class MaterialVersionUpgradeService {
         if (q.costingCardTemplateId != null) {
             // 🔒 单行版本（不是 refreshCostingCardValues(quotationId) 那个整单批量版本）——
             // 后者会重算该报价单下全部 line item，违反"只对被升版的料号行执行重算"（硬约束1/验收#14）。
-            cardSnapshotService.refreshCostingCardValuesForLine(lineItemId);
+            // task-0806 FR-3：precomputed 非空时走新重载（跳过内部 render()），null 时走原方法
+            // （内部仍会调用 render()，与改造前逐位一致）——两条路径最终都落到同一份 buildCostingCardValues。
+            if (precomputed != null) {
+                cardSnapshotService.refreshCostingCardValuesForLine(lineItemId, precomputed);
+            } else {
+                cardSnapshotService.refreshCostingCardValuesForLine(lineItemId);
+            }
         }
 
         // ---- S6：写回行金额（🔓 业务方已放行）。从新 quoteCardValues 提取报价侧 SUBTOTAL →

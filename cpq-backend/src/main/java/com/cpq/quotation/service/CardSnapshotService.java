@@ -1181,21 +1181,73 @@ public class CardSnapshotService {
      */
     @Transactional
     public void refreshCostingCardValuesForLine(UUID lineItemId) {
+        refreshCostingCardValuesForLine(lineItemId, null);
+    }
+
+    /**
+     * task-0806 · FR-2 重载：接受调用方（{@code MaterialVersionUpgradeService#upgrade} S5，
+     * 经由 {@code PriceAdjustJobExecutionService} 的分组批量预渲染）已算好的树渲染结果，跳过本方法
+     * 内部原本要做的单行 {@code bomTreeRenderService.render(templateId, List.of(li))} 调用——
+     * 这正是 18 项 job 发 306 条 SQL（应为 17×分组数）的根因所在（需求文档 §1.1/D-2）。
+     *
+     * <p>🔒 <b>原方法签名与行为一个字不许改</b>（需求文档硬约束 2）：上面的零参方法原样保留，
+     * 委派本重载并传 {@code precomputed=null}——{@code null} 语义 = "调用方未参与批量预渲染"，
+     * 与改造前完全一致地内部调用 {@code render()}；其余现存调用方（{@code MaterialVersionUpgradeService}
+     * 未接批量预渲染的路径）零影响。
+     *
+     * <p>{@code precomputed} 非 {@code null}（哪怕其 {@link PrecomputedTreeRows#baseRowsByComponent}
+     * 本身是 {@code null}，代表"批量预渲染了、但这个 line item 没有树数据"）时，本方法<b>不再调用
+     * {@code render()}</b>，直接用传入结果——避免"批量预渲染了但仍然逐项 render 兜底"这种表面批量、
+     * 实际没提速的假优化。
+     *
+     * @param precomputed {@code null} = 未参与批量预渲染，内部按原逻辑调用 {@code render()}；
+     *                    非 {@code null} = 已批量预渲染，直接消费（跨 {@code REQUIRES_NEW} 只读传递，
+     *                    需求文档 §4：不得跨 item 复用可变对象——本方法只读该对象，不 mutate）
+     */
+    @Transactional
+    public void refreshCostingCardValuesForLine(UUID lineItemId, PrecomputedTreeRows precomputed) {
         if (lineItemId == null) return;
         QuotationLineItem li = QuotationLineItem.findById(lineItemId);
         if (li == null) return;
         Quotation q = Quotation.findById(li.quotationId);
         if (q == null || q.costingCardTemplateId == null) return;
-        Map<String, ArrayNode> precomputedTmp = null;
-        if (templateHasTreeTab(q.costingCardTemplateId)) {
+        Map<String, ArrayNode> baseRows;
+        if (precomputed != null) {
+            baseRows = precomputed.baseRowsByComponent;
+        } else if (templateHasTreeTab(q.costingCardTemplateId)) {
             Map<UUID, Map<String, ArrayNode>> rendered =
                 bomTreeRenderService.render(q.costingCardTemplateId, java.util.List.of(li));
-            precomputedTmp = rendered.get(li.id);
+            baseRows = rendered.get(li.id);
+        } else {
+            baseRows = null;
         }
-        final Map<String, ArrayNode> precomputed = precomputedTmp;
+        final Map<String, ArrayNode> precomputedBaseRows = baseRows;
         li.costingCardValues = safeCall(() ->
-            buildCostingCardValues(li, q.costingCardTemplateId, q.customerId, q.id, null, null, precomputed));
-        LOG.infof("[card-snapshot] refreshCostingCardValuesForLine done li=%s", lineItemId);
+            buildCostingCardValues(li, q.costingCardTemplateId, q.customerId, q.id, null, null, precomputedBaseRows));
+        LOG.infof("[card-snapshot] refreshCostingCardValuesForLine done li=%s precomputed=%b",
+            lineItemId, precomputed != null);
+    }
+
+    /**
+     * task-0806 · FR-2/FR-7 载体：批量预渲染结果的显式"已提供"标记。
+     *
+     * <p>区分「未参与批量预渲染，仍需内部调用 {@code render()}」（对应 {@code precomputed == null}）
+     * 与「已参与批量预渲染，该 line item 结果为空（该模板无树页签 / 该行无匹配业务数据）」
+     * （对应 {@code precomputed != null && precomputed.baseRowsByComponent == null}）——
+     * holder 本身非 {@code null} 即代表"已提供，不得再调 render()"，与它内部的 map 是否为 {@code null}
+     * 是两个独立维度，不能用同一个裸 {@code Map} 参数表达（那样"批量算出的 0 结果"与"没参与批量"
+     * 会被折叠成同一个 {@code null}，无法区分）。
+     *
+     * <p>🔒 <b>只读</b>：{@link #baseRowsByComponent} 一经构造不再被本类任何方法 mutate（需求文档
+     * §4 幂等与并发：跨 item 只读传递，不得复用可变对象——2026-06-22 教训，见 CLAUDE.md
+     * 记忆 {@code cpq-expand-layer-not-threadsafe}）。
+     */
+    public static final class PrecomputedTreeRows {
+        public final Map<String, ArrayNode> baseRowsByComponent;
+
+        public PrecomputedTreeRows(Map<String, ArrayNode> baseRowsByComponent) {
+            this.baseRowsByComponent = baseRowsByComponent;
+        }
     }
 
     // =========================================================================

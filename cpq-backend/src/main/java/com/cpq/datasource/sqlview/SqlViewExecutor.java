@@ -468,7 +468,13 @@ public class SqlViewExecutor {
         namedParams.put("priceBaseDate", d);
     }
 
-    /** 查报价单创建日期（按 UUID）。失败/无记录时回退今天，不抛异常打断取价链路。 */
+    /**
+     * 查报价单创建日期（按 UUID）。失败/无记录时回退今天，不抛异常打断取价链路。
+     *
+     * <p>🔒 task-0806：日期推导本体已抽到 {@link PriceBaseDateUtil#deriveFrom}——本方法只负责
+     * 查库拿到 {@code created_at}，"created_at → LocalDate"这一步的口径与该工具类<b>同源</b>，
+     * 是全工程唯一实现（需求文档 §5.3，AP-52 同族教训：日期口径不得另写第二份）。
+     */
     private LocalDate queryQuotationDate(UUID quotationId) {
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement("SELECT created_at FROM quotation WHERE id = ?")) {
@@ -476,7 +482,7 @@ public class SqlViewExecutor {
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
                     OffsetDateTime odt = rs.getObject(1, OffsetDateTime.class);
-                    if (odt != null) return odt.toLocalDate();
+                    if (odt != null) return PriceBaseDateUtil.deriveFrom(odt);
                 }
             }
         } catch (Exception e) {

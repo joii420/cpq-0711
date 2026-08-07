@@ -1,16 +1,31 @@
 package com.cpq.priceadjust.service;
 
+import com.cpq.datasource.sqlview.PriceBaseDateUtil;
 import com.cpq.priceadjust.dto.UpgradeResult;
 import com.cpq.priceadjust.entity.MaterialPriceUpdateJob;
 import com.cpq.priceadjust.entity.MaterialPriceUpdateJobItem;
+import com.cpq.quotation.entity.Quotation;
+import com.cpq.quotation.entity.QuotationLineItem;
+import com.cpq.quotation.service.BatchSafetyLevel;
+import com.cpq.quotation.service.BomTreeRenderService;
+import com.cpq.quotation.service.CardSnapshotService;
+import com.cpq.quotation.service.DriverBatchSafetyAuditor;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.context.control.ActivateRequestContext;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -38,19 +53,189 @@ public class PriceAdjustJobExecutionService {
 
     @Inject MaterialVersionUpgradeService materialVersionUpgradeService;
     @Inject PriceAdjustNotificationService notificationService;
+    @Inject BomTreeRenderService bomTreeRenderService;
+    @Inject DriverBatchSafetyAuditor safetyAuditor;
 
+    /**
+     * task-0806 · FR-1（方案 B）+ FR-4/FR-5/FR-6/FR-7：逐项循环<b>之前</b>按
+     * {@code (costingCardTemplateId, 取价基准日)} 分组批量预渲染核价树，结果按 {@code lineItemId}
+     * 分发给各 {@link #executeItem}；预渲染本身只读、不参与 item 事务（需求文档 §4 事务边界）。
+     */
     public void executeJob(UUID jobId) {
         List<MaterialPriceUpdateJobItem> items = loadWaitingItems(jobId);
         LOG.infof("[price-adjust-job] executeJob jobId=%s items=%d", jobId, items.size());
+        Map<UUID, CardSnapshotService.PrecomputedTreeRows> precomputedByLineItem = precomputeBatch(jobId, items);
         for (MaterialPriceUpdateJobItem item : items) {
             try {
-                executeItem(item.id);
+                CardSnapshotService.PrecomputedTreeRows precomputed =
+                    item.lineItemId != null ? precomputedByLineItem.get(item.lineItemId) : null;
+                executeItem(item.id, precomputed);
             } catch (Exception e) {
                 LOG.errorf(e, "[price-adjust-job] jobId=%s item=%s 未预期异常", jobId, item.id);
                 markItemFailed(item.id, "UNEXPECTED_ERROR", e.getMessage());
             }
         }
         finalizeJob(jobId);
+    }
+
+    /**
+     * task-0806 · 分组键：{@code (costingCardTemplateId, priceBaseDate)}（需求文档 D-3/§5.3）。
+     * 🔒 日期口径必须与 {@link PriceBaseDateUtil#deriveFrom} 同源，不得另写一份（AP-52）。
+     */
+    private static final class GroupKey {
+        final UUID templateId;
+        final LocalDate priceBaseDate;
+
+        GroupKey(UUID templateId, LocalDate priceBaseDate) {
+            this.templateId = templateId;
+            this.priceBaseDate = priceBaseDate;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof GroupKey)) return false;
+            GroupKey other = (GroupKey) o;
+            return Objects.equals(templateId, other.templateId) && Objects.equals(priceBaseDate, other.priceBaseDate);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(templateId, priceBaseDate);
+        }
+    }
+
+    /**
+     * task-0806 · 批量预渲染主体（方案 B）。
+     *
+     * <p>整体只读、不参与任何 item 事务；任一层级失败都<b>软回退</b>（不写入对应 item 的预渲染
+     * 结果，留空 = 该 item 走 {@link MaterialVersionUpgradeService#upgrade(UUID, UUID, boolean)}
+     * 三参默认路径，内部按原逻辑各自调用一次 {@code render()}）——FR-5 守卫 2 的核心：
+     * 批量预渲染的任何异常都不得让整批 job 失败，只能让"批量"这个优化本身失效，退化为改造前的
+     * 逐项慢路径（但仍然<b>正确</b>）。
+     *
+     * <p>三层"软失败"边界，由粗到细：
+     * <ol>
+     *   <li>整个方法级 try/catch：批量取行/取单据本身异常（如 DB 抖动）→ 空 map，全部逐项；</li>
+     *   <li>每个分组独立 {@code @Transactional(REQUIRES_NEW)} + try/catch：FR-6 customerId 唯一性
+     *       断言失败 / {@code render()} 本身抛异常（FR-5，如注入的必然失败 driver 组件）→ 该分组不
+     *       写入，组内全部 item 逐项；</li>
+     *   <li>FR-4 守卫 1 前置闸门：分组内任一 driver 组件判定为 {@link BatchSafetyLevel#PER_LINE_ITEM}
+     *       → 直接跳过批量渲染（不算异常，是正常的保守分流），该组照样逐项。</li>
+     * </ol>
+     *
+     * <p>🚨 <b>分组级 {@code REQUIRES_NEW} 是必需的，不是可选的美化</b>——实测（AC-4 单测）发现：
+     * 若各分组共用同一个外层事务，一个分组因真实 SQL 异常（如注入的必然失败 driver 组件）失败后，
+     * PostgreSQL 会把<b>整个物理事务</b>标记为 aborted（"current transaction is aborted, commands
+     * ignored until end of transaction block"）——哪怕 Java 层 {@code catch} 住了异常，同一事务里
+     * 后续分组的任何 SQL 都会连带失败。必须让每个分组在<b>独立事务</b>（{@link #renderGroupInNewTx}）
+     * 里执行，失败时只回滚它自己，物理连接不同，不会连累其它分组。
+     */
+    @Transactional
+    Map<UUID, CardSnapshotService.PrecomputedTreeRows> precomputeBatch(UUID jobId, List<MaterialPriceUpdateJobItem> items) {
+        Map<UUID, CardSnapshotService.PrecomputedTreeRows> result = new LinkedHashMap<>();
+        Map<GroupKey, List<QuotationLineItem>> groups;
+        Map<UUID, Quotation> quotationById;
+        try {
+            List<UUID> lineItemIds = new ArrayList<>();
+            for (MaterialPriceUpdateJobItem item : items) {
+                if (item.lineItemId != null) lineItemIds.add(item.lineItemId);
+            }
+            if (lineItemIds.isEmpty()) return result;
+
+            // N+1 纪律：各一条 IN 批量查询，不逐 item 单查。
+            List<QuotationLineItem> lineItems = QuotationLineItem.list("id in ?1", lineItemIds);
+            if (lineItems.isEmpty()) return result;
+            Set<UUID> quotationIds = new LinkedHashSet<>();
+            for (QuotationLineItem li : lineItems) {
+                if (li.quotationId != null) quotationIds.add(li.quotationId);
+            }
+            if (quotationIds.isEmpty()) return result;
+            List<Quotation> quotations = Quotation.list("id in ?1", new ArrayList<>(quotationIds));
+            quotationById = new LinkedHashMap<>();
+            for (Quotation q : quotations) quotationById.put(q.id, q);
+
+            // 分组：(costingCardTemplateId, priceBaseDate)。无核价模板的行本就不需要预渲染
+            // （upgrade() S5 对 costingCardTemplateId==null 直接跳过核价侧重算），不入组。
+            groups = new LinkedHashMap<>();
+            for (QuotationLineItem li : lineItems) {
+                Quotation q = quotationById.get(li.quotationId);
+                if (q == null || q.costingCardTemplateId == null) continue;
+                LocalDate priceBaseDate = PriceBaseDateUtil.deriveFrom(q.createdAt);
+                GroupKey key = new GroupKey(q.costingCardTemplateId, priceBaseDate);
+                groups.computeIfAbsent(key, k -> new ArrayList<>()).add(li);
+            }
+        } catch (Exception ex) {
+            LOG.warnf(ex, "[price-adjust-job] jobId=%s 批量预渲染取数/分组阶段异常，全部回退逐项渲染: %s", jobId, ex.getMessage());
+            return new LinkedHashMap<>();
+        }
+
+        for (Map.Entry<GroupKey, List<QuotationLineItem>> e : groups.entrySet()) {
+            GroupKey key = e.getKey();
+            List<QuotationLineItem> groupItems = e.getValue();
+            try {
+                Map<UUID, Map<String, ArrayNode>> rendered = renderGroupInNewTx(jobId, key, groupItems, quotationById);
+                if (rendered == null) {
+                    // FR-4 守卫 1 命中 PER_LINE_ITEM：正常分流，不是异常，不写日志噪音（renderGroupInNewTx 内已 WARN）。
+                    continue;
+                }
+                for (QuotationLineItem li : groupItems) {
+                    result.put(li.id, new CardSnapshotService.PrecomputedTreeRows(rendered.get(li.id)));
+                }
+            } catch (Exception ex) {
+                // FR-5 守卫 2：批量预渲染分组失败（含 FR-6 customerId 唯一性断言、render() 本身抛异常）
+                // -> 该组不写入任何 item 的预渲染结果，各 item 走 upgrade() 默认路径（内部各自逐项调用
+                // render()），让 FAILED 精确落到出问题的单个 item，不拖累整组 / 整批。该分组自己的
+                // REQUIRES_NEW 事务已随异常回滚，不影响本方法继续处理其它分组。
+                LOG.warnf(ex, "[price-adjust-job] jobId=%s 批量预渲染分组 (template=%s, priceBaseDate=%s, items=%d) " +
+                        "失败，回退逐项渲染（FR-5）: %s",
+                    jobId, key.templateId, key.priceBaseDate, groupItems.size(), ex.getMessage());
+            }
+        }
+        LOG.infof("[price-adjust-job] jobId=%s 批量预渲染完成：%d/%d 个 line item 命中预渲染结果",
+            jobId, result.size(), items.size());
+        return result;
+    }
+
+    /**
+     * 单分组渲染，独立事务（见 {@link #precomputeBatch} 的 REQUIRES_NEW 必要性说明）。
+     *
+     * @return 该分组的 {@code render()} 结果；{@code null} = FR-4 守卫命中 PER_LINE_ITEM，
+     *         正常跳过（不是异常）；抛异常 = FR-6 断言失败或 {@code render()} 本身失败，由调用方
+     *         （{@link #precomputeBatch}）捕获并软回退。
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    Map<UUID, Map<String, ArrayNode>> renderGroupInNewTx(UUID jobId, GroupKey key, List<QuotationLineItem> groupItems,
+                                                          Map<UUID, Quotation> quotationById) {
+        // FR-6：分组内 customerId 必须唯一，不唯一直接抛错（被 precomputeBatch 的 catch 接住 -> 软回退逐项）。
+        // 🔒 复用 precomputeBatch 已批量加载的 quotationById（N+1 纪律）——quotationById 里的 Quotation
+        // 是外层事务加载的托管实体，本方法只读它们的标量字段（customerId），不触发懒加载，跨事务读安全。
+        UUID groupCustomerId = null;
+        boolean first = true;
+        for (QuotationLineItem li : groupItems) {
+            Quotation q = quotationById.get(li.quotationId);
+            UUID cid = q != null ? q.customerId : null;
+            if (first) {
+                groupCustomerId = cid;
+                first = false;
+            } else if (!Objects.equals(groupCustomerId, cid)) {
+                throw new IllegalStateException(String.format(
+                    "分组 (template=%s, priceBaseDate=%s) 内 customerId 不唯一（%s vs %s）—— " +
+                    "render() 只取分组首个 line item 的 customerId，跨客户会静默串号，拒绝批量渲染",
+                    key.templateId, key.priceBaseDate, groupCustomerId, cid));
+            }
+        }
+
+        // FR-4 守卫 1：分组内任一 driver 组件不安全（PER_LINE_ITEM）-> 整组不批量，逐项兜底。
+        BatchSafetyLevel level = safetyAuditor.worstLevelForTemplate(key.templateId);
+        if (level == BatchSafetyLevel.PER_LINE_ITEM) {
+            LOG.warnf("[price-adjust-job] jobId=%s 分组 (template=%s, priceBaseDate=%s, items=%d) " +
+                    "含 PER_LINE_ITEM 组件，不批量渲染，逐项走默认路径",
+                jobId, key.templateId, key.priceBaseDate, groupItems.size());
+            return null;
+        }
+
+        return bomTreeRenderService.render(key.templateId, groupItems);
     }
 
     @Transactional
@@ -69,10 +254,25 @@ public class PriceAdjustJobExecutionService {
      * 被 {@code BomTreeRenderService} §④ 逐组件 catch 静默吞掉，导致「物料与元素BOM」等全部
      * driver 组件页签清零、却仍报 {@code SUCCESS}。挂在本方法（即 REQUIRES_NEW 事务边界本身）
      * 上后，request context 与该事务同生命周期，验证通过。
+     *
+     * <p>🔒 task-0806：{@code @ActivateRequestContext}/{@code @Transactional(REQUIRES_NEW)} 的挂载
+     * 位置原样不动（需求文档硬约束 4）——本次只新增 {@code precomputed} 参数，未改注解、未改事务边界。
      */
     @ActivateRequestContext
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     void executeItem(UUID itemId) {
+        executeItem(itemId, null);
+    }
+
+    /**
+     * task-0806 · FR-1 载体：接受批量预渲染好的核价树结果，透传给
+     * {@link MaterialVersionUpgradeService#upgrade(UUID, UUID, boolean, CardSnapshotService.PrecomputedTreeRows)}。
+     * {@code precomputed == null}（未命中批量预渲染 / 单条重试）时行为与改造前的
+     * {@link #executeItem(UUID)} 逐位一致。
+     */
+    @ActivateRequestContext
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    void executeItem(UUID itemId, CardSnapshotService.PrecomputedTreeRows precomputed) {
         MaterialPriceUpdateJobItem item = MaterialPriceUpdateJobItem.findById(itemId);
         if (item == null) return;
         if (MaterialPriceUpdateJobItem.STALE.equals(item.status)) return; // 终态不处理
@@ -97,7 +297,7 @@ public class PriceAdjustJobExecutionService {
             return;
         }
 
-        UpgradeResult ur = materialVersionUpgradeService.upgrade(item.lineItemId, job.versionId, false);
+        UpgradeResult ur = materialVersionUpgradeService.upgrade(item.lineItemId, job.versionId, false, precomputed);
         // ---- 方向3 T2：L3 口径守卫告警落库（非 dryRun 路径）----
         // 🔒 warn_* 与 error_* 正交：status 仍是 SUCCESS，只是顺带检出前后端算值分叉、**未阻断**。
         //    刻意不复用 errorCode —— 本类语义是「errorCode 非空 = 非成功态」，复用会产出

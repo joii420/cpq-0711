@@ -829,8 +829,15 @@ public class ComponentDriverService {
         }
     }
 
-    /** 从 driver path 提取视图名(支持 $name 和 $$comp.name 两种形态,去掉尾部 [predicate])。 */
-    private static String extractSqlViewName(String driverPath) {
+    /**
+     * 从 driver path 提取视图名(支持 $name 和 $$comp.name 两种形态,去掉尾部 [predicate])。
+     *
+     * <p>🔒 task-0806：可见性从 {@code private} 放宽为 {@code public static}（纯签名放宽，
+     * 逻辑一字未改），供 {@code DriverBatchSafetyAuditor}（FR-4 批量安全级别审计器）复用——
+     * 与本类内 {@link #viewHasNoRowDimension} 等既有闸门共用同一份"$view 名解析"实现，
+     * 不新写第二份同类解析逻辑。
+     */
+    public static String extractSqlViewName(String driverPath) {
         if (driverPath == null) return null;
         String s = driverPath.trim();
         if (s.startsWith("$$")) {
