@@ -9,7 +9,20 @@
 
 ## P0
 
-### [BL-0069] `mat_*`（V44）废弃表「已断供仍被读」故障族 —— 5 条实证失效路径
+### [BL-0133] 模板发布后「内容层」仍是活的 —— 改一个组件静默改写最多 6 张已发布模板
+- **优先级**：P0（用户定性「灾难性 bug」；静默改写已发布模板 + 在途报价单，无提示无留痕）
+- **来源**：2026-08-06 用户提出 → 立项 `dev-docs/task-0806-模板发布全量冻结/需求文档.md`
+- **状态**：[~] 进行中（需求文档已定稿，待出实现计划）
+- **登记日期**：2026-08-06
+- **背景**：`docs/三大核心模块基线.md:178/:182` 与 §10.2#4 定的契约是「快照不可变 / 只在用户明确触发时刷新 / 不直接动 PUBLISHED」，但 `ComponentService.update:733` 每次保存组件就无条件调 `refreshSnapshotsByComponent` 改写所有引用它的已发布模板。**代码漂移出了自己的基线文档**。
+- **三类活穿透**：① `refreshSnapshotsByComponent` 改写已发布快照（4 个调用点）；② `component` 18 个渲染配置字段里 6 个从未进快照（`rowKeyFields`/`sortField`/`element*Field`/`columnCount`）；③ 渲染期 10 处直读活表（`CardSnapshotService` 5 + `ConfigureSnapshotService` 1 + `ExcelViewService` 4）
+- **爆炸半径（实测）**：17 个 PUBLISHED 模板 / 149 tc / 53 组件；单组件被引用模板数 max **6**、avg 2.8；54 张报价单引用 PUBLISHED 模板
+- **范围**：新建 `template_component_snapshot` 关系表（发布时冻结，`components_snapshot` jsonb 改为从它派生）+ `refreshSnapshotsByComponent` 整体下线 + 10 处读取收口到 `PublishedTemplateReader` + 快照 miss 显式报错（含 `ComponentSqlViewService:400` fallback）+ 存量一次性对齐 + `frozen-drift` 版本差异视图
+- **已定决策**：D1 严格版本化（只能发新版生效）/ D2 ①②③ 一步做到位、admin 后门保留但加预览+审计 / D3 存量一次性对齐后冻死 / D4 只做 `Template`(QUOTATION+COSTING) / D5 `component.status` 不进快照也不进渲染路径
+- **依赖**：无（可独立开工）
+- **验收要点**：改被 6 模板共享的组件（`COMP-0045` 等）→ 6 个模板快照 + jsonb **一字节未变** + 报价单渲染**逐位一致**；值中性验证；双 spec E2E；N+1 恒定
+
+
 - **优先级**：P0（其中漂移检测假阴性破坏的是安全属性，最高）
 - **来源**：2026-07-21「废弃表检查」会话——用户就新库部署脚本为何仍建 `mat_*` 表发起排查，三路审计（代码消费方 / 视图配置 / 数据痕迹）+ 技术总监亲验 SQL + 临时后端空库实测。
 - **状态**：TODO（未排期）
@@ -150,18 +163,59 @@
 - **依赖**：无（`FormulaCalculator` 的 editRows 覆盖语义已实现，本次只补输入）
 - **预估规模**：M（3-5 天，含 A/B 值中性验证）
 - **验收要点**：见 `需求文档.md §5` AC-1~AC-9；其中 **AC-8 值中性 A/B（无编辑单据逐值不变）必须先过**，**AC-3「改 INPUT → saveDraft → 重开」是当前零覆盖的新增回归**（[[BL-0119]] 同族盲区）
+- ✅ **2026-08-06 已交付合 master**（`872113c0` / `d06fd90e` / `caf720ba` / `2ca1dec0` / `fe5abcdf`）。后续优化另立 [[BL-0137]]
+
+---
+
+### [BL-0137] 报价编辑链路优化与前后端对账 —— 后端从「显示权威」降级为「校验器」
+- **优先级**：P0（P1 每格编辑等 900ms 是体验硬伤；P2 引擎分歧静默是正确性隐患，已实证断过三次）
+- **来源**：2026-08-06 [[BL-0127]] 交付后的架构讨论 + 逐阶段实测
+- **状态**：已立项，D1~D9 已拍板，**待开工**
+- **登记日期**：2026-08-06
+- **任务目录**：`dev-docs/task-0806-报价编辑链路优化与前后端对账/需求文档.md`（唯一权威口径）
+- **要解决的三个问题**：
+  - **P1 每编辑一格等 ~900ms**（实测中位；本机 dev + 远程共享库）
+  - **P2 前后端两套引擎无对账，分歧完全静默** —— 历史上断过三次（rowKey 对不上 497 行只对 1 行 / saveDraft 清空 editRows / 重建不读 row_data），每次都靠线上故障发现
+  - **P3 快照是 4 条链路的数据权威却无自动化覆盖**（比对视图 / 价格升版**写回 `li.subtotal`** / 复制单 / 树删除重算）
+- **实测基线**（本方案全部依据，非估算）：
+  - 一格编辑 900ms 分布：**整行物化 `row_data` 356ms(45%)** > 整卡重算 120ms(15%) > **小计+整单表头重算 78ms(10%)** > 加载结构 53ms > flush/clear 39ms
+  - 写的数据只有 27KB —— **贵在 9 次独立事务提交 × 远程往返，不是数据量**
+  - 缓存实测（用现成 `precomputeCardValuesPrefetch`）：229.5ms → 60.0ms（**计算段省 74%**，端到端 19%）
+  - 冻结结构体量：`QUOTE_CARD` 51 份/均 22KB、全库合计 1.1MB → **内存不是约束**
+- **四阶段（顺序不可换，① 是后三步的安全网）**：
+  1. **分流 + 对账 + 差异可见 + 提交闸门**（五件事必须一起上，只做分流 = 把唯一的人肉探针也拆了）
+  2. **W1 异步**（前端不 await）→ 感知 900ms → **0**
+  3. **W3 懒物化 `row_data`**（抄 `lazy-excel` 现成模式）→ **~356ms/次**
+  4. **缓存**冻结结构（`quotationId+view_kind`）+ 行键（`componentId`）→ 计算段 74%
+- **已裁定决策**：D1 只标记不自动改数 / D2 告警须带两边输入快照 / D3 过期响应丢弃 / D4 按 `DISPLAY_SCALE=6` 判差异 / D5 防抖后整卡对账 / D6 非 DRAFT 显示快照 / **D7 不一致禁止提交** / **D8 先按单实例（不上 Redis 广播）** / D9 默认怀疑后端
+- **前置**：③ 的 `row_data` 读取方穷举 ✅ **已完成**（真需挂 ensure 仅 3 处，其中 2 处当前零命中）；④ 需**先收敛结构写入口为唯一入口**
+- **残留风险（只能缓解）**：懒算雪崩（成本转移非消失）；缓存失效点漏挂（靠收敛入口+TTL+诊断端点三道防线）
+- **🚨 硬规则**：永不缓存"查不到"的结果（`tableColumnsCache` 缓存空集永久残留的教训）
+- **预估规模**：L（分四阶段交付，每阶段可独立上线）
+- **验收要点**：见 `需求文档.md §7` AC-1~AC-12；**AC-11 值中性 A/B 每阶段都要过**；AC-12 耗时须**在生产态（`quarkus-run.jar`）复测**，dev+远程库的数字不能直接用
 
 ---
 
 ## P1
 
-### [BL-0133] 价格调整更新任务性能优化（核价树渲染批量化 + S0 守卫可配）
+### [BL-0134] `ConfigTemplate`（选配配置模板）PUBLISHED 后仍可改名 / 改 code / 加大类
+- **优先级**：P1
+- **来源**：2026-08-06 task-0806 立项时勘察发现（该任务 §2.2 明确不做，拆出单独修）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-06
+- **背景**：`ConfigTemplateService.updateTemplate:87` 与 `createCategory:153` 都**只挡 `ARCHIVED`**，不挡 `PUBLISHED` → 已发布的选配配置模板还能改名、改 code、往里加大类。与 `Template` 侧「PUBLISHED 全线锁死」的口径不一致。
+- **范围**：给 `updateTemplate` / `createCategory` / `updateCategory` / item 层 CUD 补 `PUBLISHED` 守卫；确认是否需要类似 `createNewDraft` 的版本派生路径
+- **依赖**：无。与 [[BL-0133]] 同族但修法完全不同（守卫缺失 vs 快照活穿透），刻意不合并
+- **验收要点**：PUBLISHED 状态下上述端点全部 400；已有数据不受影响
+
+### [BL-0138] 价格调整更新任务性能优化（核价树渲染批量化 + S0 守卫可配）
 - **优先级**：P1
 - **来源**：2026-08-06 用户报「价格调整通过后的更新任务非常慢」，主线全程实测取证
 - **状态**：[~] 进行中 —— 已立项，文档就绪，待进场开发
 - **登记日期**：2026-08-06
 - **任务目录**：`dev-docs/task-0806-价格调整更新任务性能优化/`（`需求文档.md` = 验收唯一标准）
-- **分支 / worktree**：`feat/task-0806-price-adjust-job-perf` / `.claude/worktrees/task-0806-price-adjust-job-perf`（基于本地 master HEAD `717ca4f0`）
+- **分支 / worktree**：**开工时新建**（立项阶段的 `feat/task-0806-price-adjust-job-perf` 已合入 master 并清理）。⚠️ 建 worktree 必须 `git worktree add <path> -b <branch> HEAD` 基于**本地 HEAD**，不能用默认 `fresh`（会从 `origin/master` 开分支，丢掉近百个本地提交）
+- ⚠️ **同日三个 `task-0806-*` 任务，勿混淆**：本条 = 性能优化；[[BL-0133]] = 模板发布全量冻结（P0）；[[BL-0137]] = 报价编辑链路优化与前后端对账
 - **背景（实测基线）**：18 项 job 58s（3.22s/项）。插桩实测构成：核价树 `render()` **43.5%**、S0 口径守卫 **14.3%**、`buildCostingCardValues` 11.3%、报价侧 `buildCardValues` 8.6%、S9 凭据 3.8%、其余 17.8%。**73% 在"重算卡片"，"改价格键"本身几乎不花时间。**
 - **实测否定的两个方向**：
   - **不是 N+1** —— 一次 render 恰好 17 条 SQL，每个 driver 组件 1 条、零重复（`evaluatePath` 叶子列短路 + `DataLoader.resultCache` 不含 driverRow 维度，两道防线已挡住逐行查）
@@ -183,8 +237,6 @@
 - **预估规模**：M（3-5 天）
 - **验收要点**：见需求文档 §7 八条门禁。**门禁 2 强制包含 `c2915208`** —— 只跑其他 job 会假绿（它们跨 3 个建单日却也 PASS，因那几天没跨价格版本边界，纯属数据碰巧）
 - 📌 **方法论（不止本任务适用）**：**"抽样 0 不一致"不是安全证明。** 说明问题的是结构性事实 + 存在性反例，不是样本通过率
-
----
 
 ### [BL-0126] jsonb 往返丢精度缺陷族 —— 还有第 3、第 4 个写点未修
 - **优先级**：P1
@@ -1190,6 +1242,26 @@ task-0721 B8 修复合并    2026-07-21
   「续集」章节（需求文档 + test-report 同一目录延续记录）
 
 ## P2
+
+### [BL-0135] `ConfiguratorTemplate`（3D 选配模板）`update` 完全无状态守卫
+- **优先级**：P2
+- **来源**：2026-08-06 task-0806 立项时勘察发现（该任务 §2.2 明确不做）
+- **状态**：TODO（未排期）—— ⚠️ **前置：等 `feat/task-0712-selection-config` 分支合并**，否则撞车
+- **登记日期**：2026-08-06
+- **背景**：`ConfiguratorTemplateService.update:60` 是 Map patch，**没有任何 status 守卫**，连 `status` 字段本身都能被 patch 回去（PUBLISHED → DRAFT 原地降级）。模块内只有 `importFeatures:130` 挡了 PUBLISHED，且注释自称「PUBLISHED template cannot be modified directly. Create draft version first (§13)」——**该不变量只在一处被执行**。
+- **范围**：给 `update` 补 PUBLISHED 守卫；`status` 从 patch 白名单移除（状态迁移只能走 `publish`/`archive` 专用端点）
+- **依赖**：`feat/task-0712-selection-config` 合并
+- **验收要点**：PUBLISHED 模板 patch 任何字段返 400；无法通过 patch 把 status 改回 DRAFT
+
+### [BL-0136] 报价单层快照纵深防御 —— 报价单仍实时 JOIN 模板快照，未各自冻一份
+- **优先级**：P2
+- **来源**：2026-08-06 task-0806 方案对比中的「路径丙」，本期不做
+- **状态**：TODO（未排期）—— 前置：[[BL-0133]] 交付
+- **登记日期**：2026-08-06
+- **背景**：`ConfigureSnapshotService.loadComponentsSnapshot:929` 是 `JOIN template t ON t.id = q.customer_template_id` **实时读**模板快照，报价单自己不持有副本。[[BL-0133]] 把模板层冻死后这已足够安全；但 admin 后门（本期保留）或 Flyway 若改了模板快照，在途报价单仍会被波及。
+- **对照**：SQL 视图那条线已经是双层冻结（模板层 + 报价单 SUBMITTED 时 `quotation_component_sql_snapshot`），`components_snapshot` 只有模板层一层，**不对称**
+- **范围**：评估是否在报价单创建/首存时复制一份快照到报价单维度；权衡存储放大 vs 纵深防御
+- **验收要点**：模板快照被后门改写后，已有报价单渲染结果不变
 
 ### [BL-0114] 后端 `buildCardStructure` 白名单漏搬 `decimals` —— 与 `formulaId` 同一方法、同一类错误
 - **优先级**：P2（休眠：当前 DB 实测 0 个组件配了 `decimals`）
