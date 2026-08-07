@@ -5073,3 +5073,31 @@ handleSubmit:  submit()          ← 后端在这里冻结 frozen_dto + 建核�
 仍默认「报价单」子视图（无回归）。
 
 **自检**：`npx tsc --noEmit` 0 错误 ✅；三个改动文件 Vite transform 均 200 ✅；E2E 1 passed ✅。
+
+---
+
+## [2026-08-06] task-0806 前端 F1~F3 - 换模板护栏文案改为实话（不再承诺输入值迁移/重算）
+
+**背景（BL-0129，已实测非推断）**：`QuotationService:1670` 换模板复制时显式清空 `snapshot_rows` → 产品行无数据、
+总价恒 0，且三条恢复路径全部失败（`ensure-card-values` / `refresh-card-snapshot` / `saveDraft+懒算` 均返 0）。
+`BL-0133` 严格版本化落地后，「换模板」会从边缘操作变成用新组件配置的主干道，继续挂着骗人的文案不可接受。
+
+**改动**：`cpq-frontend/src/pages/quotation/CopyQuotationDrawer.tsx`
+| 位置 | 改前 | 改后 |
+|---|---|---|
+| `:70` | 裸 `<p>`，零视觉警示：「默认使用源报价单的模板。换模板后：页签相同的迁移用户输入值，不同的留空，公式/数据由新模板重算。」 | 恒显示 `Alert type="warning" showIcon`：「换模板会清空当前报价单已填写的产品数据（总价归零），且当前无法恢复，请务必先导出留档后再继续操作。」 |
+| `:84-91`（`changed===true` 时） | `Alert type="warning"`：「已更换模板：仅页签字段相同的输入值会被迁移，其余留空。」 | 类型不变，改为：「已切换模板：确认后将清空当前已填写的产品数据，且无法恢复，请确保已导出留档。」 |
+
+**关键决策**：
+- 只改文案与呈现（`<p>`→`Alert`），不碰 `handleOk`/`onConfirm`/接口调用，不加二次确认弹窗（D8 明确本期只做知情告警）
+- AC-13 grep 验收「迁移用户输入值｜输入值会被迁移｜由新模板重算」零命中，用 `/usr/bin/grep -a`（本环境 grep=ugrep，中文多的文件会被误判二进制静默返空）
+
+**自检**：worktree 无 `node_modules`，软链主仓 `cpq-frontend/node_modules` 后 `npx tsc --noEmit -p tsconfig.json` 0 错误 ✅；
+`curl --noproxy '*'` 目标文件与 `/` 均 200 ✅；AC-13 grep 零命中 ✅。
+
+**⚠️ 已知但未处理的 pre-existing 失败**（非本次改动引入，已用 `git diff master..HEAD` 确认本分支此时无任何 task-0806
+后端提交、仅含本次这一个前端文件改动）：`npx vitest run src` → `formulaGolden.test.ts` 的 `amt-002`/`amt-003`
+两条（`04-amount-total.json`，task-0729 B9 黄金用例，`component_subtotal` token 用 `tab_name` 而非
+`component_code` 时取值路径疑似未对齐）失败，其余 1103 passed。与本次改动的文件（`CopyQuotationDrawer.tsx`）、
+`components_snapshot` jsonb 契约（AC-2）均无关联，最近改动该测试/引擎文件的提交是 `task-0801/0803`，与
+task-0806 无关，未按 CLAUDE.md 红线"渲染 vitest 挂了不许迁就"处理，已原样上报给协调者定位。
