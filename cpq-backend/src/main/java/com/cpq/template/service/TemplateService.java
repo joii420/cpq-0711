@@ -331,6 +331,25 @@ public class TemplateService {
             checkNotBoundByProducts(id);
         }
 
+        // task-0806 B20（D18）：归档是终态，无法再走 createNewDraft → publish 重新发布——若该
+        // 模板还没按 B20 后的新语义完成过一次"重新发布"（template_component_snapshot 零行，
+        // 过渡期正常状态，见 PublishedTemplateReader 类注释），此处必须按当时活配置补一份快照
+        // 再归档，否则归档后 PublishedTemplateReader 会把它的历史报价单渲染永久判定为「未冻结」
+        // ——但它已经不可能再发新版来补上，等于永久打不开。复用 publish() 落库的同一套私有方法
+        // （persistSnapshotRows + deriveComponentsSnapshotJson），保证"补冻"产出的快照结构与
+        // 正常发布路径完全一致，不另起一套写法。
+        if (TemplateComponentSnapshot.count("templateId", id) == 0) {
+            List<TemplateComponent> tcsForFreeze =
+                    TemplateComponent.list("templateId = ?1 ORDER BY sortOrder ASC", id);
+            Map<UUID, Component> compByIdForFreeze = loadComponentsByIds(
+                    tcsForFreeze.stream().map(tc -> tc.componentId).distinct().collect(Collectors.toList()));
+            List<TemplateComponentSnapshot> freezeRows =
+                    persistSnapshotRows(id, tcsForFreeze, compByIdForFreeze);
+            template.componentsSnapshot = deriveComponentsSnapshotJson(freezeRows);
+            LOG.infof("[task-0806 B20] archive() 自动补冻：templateId=%s 此前未按新语义重新发布过，"
+                    + "补 %d 行快照后再归档", id, freezeRows.size());
+        }
+
         template.status = "ARCHIVED";
         LOG.infof("Archived template id=%s", id);
         List<TemplateComponent> tcs = TemplateComponent.list("templateId = ?1 ORDER BY sortOrder ASC", id);

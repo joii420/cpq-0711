@@ -4,13 +4,21 @@
 -- 老模板的历史报价单不能反向受影响。但代码实现（ComponentService.update:733 每次保存组件
 -- 就无条件调 TemplateService.refreshSnapshotsByComponent）绕过了这条基线，且 component 实体
 -- 18 个渲染配置字段中 rowKeyFields/sortField/element*Field/columnCount 这 6 个从未进过任何
--- snapshot、渲染期靠直读活表兜底——本迁移是"全量冻结"改造的地基（B1+B2+B3）。
+-- snapshot、渲染期靠直读活表兜底——本迁移是"全量冻结"改造的地基（B1+B2）。
 --
--- 本迁移做三件事（同一批，保证两份数据从第一天起同源）：
+-- 本迁移做两件事：
 --   1. 建表 template_component_snapshot —— 已发布模板每个页签的完整生效配置（18 个渲染配置字段全冻）
 --   2. operation_log 加 details jsonb 列（加法式，供 admin 后门审计用）
---   3. 存量对齐：按当前活组件配置为所有 PUBLISHED + ARCHIVED 模板重建一次完整快照，
---      并按新表重新生成 template.components_snapshot jsonb（保证两份同源）
+--
+-- 🔄 2026-08-07 B20（D16 推翻原 D3）：原第 3 步「存量对齐」（按当前活配置为所有已发布/归档
+-- 模板一次性回填快照 + 重生成 components_snapshot jsonb）已删除，不做存量迁移——
+-- 用户口径「都是测试数据，重要的是机制」：未经审阅的现状不该被固化成基线，且省掉迁移脚本
+-- 自身正确性的验证负担。改为「不迁移存量，业务逻辑修正后由用户手工重新发布模板即可」：
+--   - V382 执行后本表行数 = 0（新建空表）；
+--   - 过渡期（模板 PUBLISHED/ARCHIVED 但尚未按新语义重新发布，即快照零行）由
+--     PublishedTemplateReader 显式识别为「未冻结」，不报错、不读活表，见该类 + D17；
+--   - archive() 若发现无快照会自动补冻一份再归档（D18，归档是终态，没法重新发布）；
+--   - 详见 dev-docs/task-0806-模板发布全量冻结/需求文档.md D16~D19。
 
 -- ============================================================================
 -- B1: 新表 template_component_snapshot
@@ -80,78 +88,11 @@ CREATE INDEX idx_tcs_template_driver  ON template_component_snapshot(template_id
 -- B2: operation_log 加 details jsonb 列（加法式，不影响 CustomerService 等既有写入方）
 -- ============================================================================
 
-ALTER TABLE operation_log ADD COLUMN details jsonb;
+-- IF NOT EXISTS：B20 改造时本迁移在 dev 库已先跑过一次旧版本（当时 details 列已建好）；
+-- 手工清库只删了 flyway_schema_history 的版本行 + DROP 本文件新建的快照表，特意保留
+-- 已存在的 operation_log.details 列不动（无害，见需求文档 D16 决策记录）。若不加
+-- IF NOT EXISTS，重跑本迁移会因列已存在而报错。全新环境（该列本就不存在）行为不变。
+ALTER TABLE operation_log ADD COLUMN IF NOT EXISTS details jsonb;
 COMMENT ON COLUMN operation_log.details IS
     'task-0806：结构化 diff（改前改后），供 admin 后门审计用（TEMPLATE_SNAPSHOT_FORCE_REFRESH / '
     'TEMPLATE_TC_DELETE / TEMPLATE_OVERRIDE_PROMOTE）。可空，不影响既有写入方。';
-
--- ============================================================================
--- B3: 存量对齐（幂等：先删后插）+ jsonb 重生成（覆盖 PUBLISHED + ARCHIVED）
--- ============================================================================
-
-DELETE FROM template_component_snapshot
- WHERE template_id IN (SELECT id FROM template WHERE status IN ('PUBLISHED', 'ARCHIVED'));
-
--- 按 tc 逐行插入（不得按 componentId 聚合——AP-40 教训：同 componentId 多 tc 实例必须
--- 各自独立处理，唯一约束 (template_id, template_component_id) 保证每个 tc 恰好一行）。
--- COALESCE 保留 override 优先语义（fields_override / data_driver_path_override 当前全 NULL，
--- 但语义必须对，否则将来谁用 promote-override-to-component 之外的路径写了一个就静默丢）。
-INSERT INTO template_component_snapshot (
-    template_id, template_component_id, component_id, sort_order,
-    tab_name, preset_rows, formula_assignments,
-    component_name, component_code, component_type, column_count,
-    fields, formulas, excel_columns, data_driver_path,
-    tree_config, bom_recursive_expand, tab_type, part_no_field, part_name_field,
-    row_key_fields, sort_field,
-    element_code_field, element_price_field, element_currency_field)
-SELECT tc.template_id, tc.id, tc.component_id, tc.sort_order,
-       tc.tab_name,
-       COALESCE(tc.preset_rows, '[]'::jsonb),
-       COALESCE(tc.formula_assignments, '{}'::jsonb),
-       c.name, c.code, c.component_type, c.column_count,
-       COALESCE(tc.fields_override, c.fields),                                   -- override 优先
-       c.formulas, c.excel_columns,
-       COALESCE(NULLIF(tc.data_driver_path_override, ''), c.data_driver_path),   -- override 优先
-       c.tree_config, c.bom_recursive_expand, c.tab_type, c.part_no_field, c.part_name_field,
-       c.row_key_fields, c.sort_field,
-       c.element_code_field, c.element_price_field, c.element_currency_field
-  FROM template_component tc
-  JOIN component c ON c.id = tc.component_id
-  JOIN template  t ON t.id = tc.template_id
- WHERE t.status IN ('PUBLISHED', 'ARCHIVED');
-
--- 按新表重新生成 components_snapshot jsonb（与 TemplateService.publish() 的 18 键 entry
--- 形状逐字段一致——PostgreSQL jsonb 按内部规则（键长度优先）规范化输出顺序，与构造时的键
--- 插入顺序无关，故这里的 jsonb_build_object 参数顺序不影响与 Java 端输出的等价性，
--- 只要键集合 + 值一致即可，AC-2 的"键顺序一致"由 jsonb 类型本身保证）。
-UPDATE template t
-   SET components_snapshot = sub.snap
-  FROM (
-    SELECT tcs.template_id,
-           jsonb_agg(
-             jsonb_build_object(
-               'id', tcs.template_component_id,
-               'componentId', tcs.component_id,
-               'componentName', tcs.component_name,
-               'componentCode', tcs.component_code,
-               'componentType', tcs.component_type,
-               'excelColumns', tcs.excel_columns,
-               'tabName', tcs.tab_name,
-               'sortOrder', tcs.sort_order,
-               'fields', tcs.fields,
-               'formulas', tcs.formulas,
-               'preset_rows', tcs.preset_rows,
-               'data_driver_path', tcs.data_driver_path,
-               'tree_config', tcs.tree_config,
-               'formula_assignments', tcs.formula_assignments,
-               'tab_type', tcs.tab_type,
-               'part_no_field', tcs.part_no_field,
-               'part_name_field', tcs.part_name_field,
-               'bom_recursive_expand', tcs.bom_recursive_expand
-             ) ORDER BY tcs.sort_order
-           ) AS snap
-      FROM template_component_snapshot tcs
-     GROUP BY tcs.template_id
-  ) sub
- WHERE t.id = sub.template_id
-   AND t.status IN ('PUBLISHED', 'ARCHIVED');

@@ -72,29 +72,42 @@ public class TemplateFreezeDriftService {
                 : Template.list("status IN ?1", statuses);
 
         int withDrift = 0;
+        int unfrozen = 0;
         int totalFieldDrifts = 0;
         List<Map<String, Object>> results = new ArrayList<>();
         for (Template t : templates) {
             Map<String, Object> d = computeDrift(t);
             boolean hasDrift = Boolean.TRUE.equals(d.get("hasDrift"));
+            boolean frozen = Boolean.TRUE.equals(d.get("frozen"));
             int cnt = (Integer) d.get("driftCount");
+            if (!frozen) unfrozen++;
             if (hasDrift) {
                 withDrift++;
                 totalFieldDrifts += cnt;
             }
-            if (!onlyDrift || hasDrift) results.add(d);
+            // task-0806 B20：未冻结（frozen=false）即使 onlyDrift=true 也必须列出——它比
+            // "有 drift" 更值得运维关注（渲染期会 409），不能被默认过滤掉，否则又是一次假阴性。
+            if (!onlyDrift || hasDrift || !frozen) results.add(d);
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("scanned", templates.size());
         out.put("withDrift", withDrift);
+        out.put("unfrozen", unfrozen);
         out.put("totalFieldDrifts", totalFieldDrifts);
         out.put("templates", results);
         return out;
     }
 
+    /**
+     * task-0806 B20（D16~D19，2026-08-07）：{@code frozenRows} 为空不再意味着"零差异"——
+     * 它现在是「该模板尚未按新语义重新发布」的正常过渡态（原 D3 存量对齐已被 D16 推翻）。
+     * 输出必须显式加 {@code frozen} 字段区分"未冻结"与"已冻结无漂移"，<b>绝不能再用
+     * {@code hasDrift:false} 单独表示"没快照"</b>——那正是本次要修的假阴性（同 BL-0069 类型）。
+     */
     private Map<String, Object> computeDrift(Template t) {
         List<TemplateComponentSnapshot> frozenRows =
                 TemplateComponentSnapshot.list("templateId = ?1 ORDER BY sortOrder ASC", t.id);
+        boolean snapshotFrozen = !frozenRows.isEmpty();
         List<TemplateComponent> tcs = TemplateComponent.list("templateId = ?1 ORDER BY sortOrder ASC", t.id);
 
         Map<Integer, TemplateComponent> tcBySort = new LinkedHashMap<>();
@@ -133,7 +146,11 @@ public class TemplateFreezeDriftService {
         out.put("templateVersion", t.version);
         out.put("templateStatus", t.status);
         out.put("frozenAt", frozenAt);
-        out.put("hasDrift", driftCount > 0);
+        // task-0806 B20：frozen=false（零快照行）是「尚未重新发布」的正常过渡态（D17），
+        // 不是故障；hasDrift 恒随之为 false（下方循环对空 frozenRows 天然不产生任何 drift），
+        // 调用方必须先看 frozen 再看 hasDrift——不得把 hasDrift:false 单独当"没有漂移"读。
+        out.put("frozen", snapshotFrozen);
+        out.put("hasDrift", snapshotFrozen && driftCount > 0);
         out.put("driftCount", driftCount);
         out.put("tabs", tabs);
         return out;
@@ -237,6 +254,10 @@ public class TemplateFreezeDriftService {
      * <p>命中判定与运行期 {@code ComponentSqlViewService#lookupFromTemplateSnapshot} 完全同口径：
      * 本组件引用按 {@code componentId::viewName} 精确匹配；跨组件 GLOBAL 引用按
      * {@code ::viewName} 后缀匹配且要求 {@code scope=GLOBAL}。
+     *
+     * <p>task-0806 B20：零快照行（过渡期「未冻结」，D17）的模板<b>跳过</b>本轮体检并单独列在
+     * {@code unfrozenTemplateIds} 里——不跳过的话它会以「零引用」的样子悄悄混进结果，被误读成
+     * 「这个模板没有 SQL 视图缺口」，其实只是压根没有快照可扫（与 {@link #computeDrift} 同一类假阴性）。
      */
     public Map<String, Object> sqlviewClosureCheck(List<String> statuses) {
         List<Template> templates = (statuses == null || statuses.isEmpty())
@@ -245,11 +266,16 @@ public class TemplateFreezeDriftService {
 
         int totalRefs = 0;
         List<Map<String, Object>> misses = new ArrayList<>();
+        List<String> unfrozenTemplateIds = new ArrayList<>();
 
         for (Template t : templates) {
             Map<String, JsonNode> sqlViewsSnapshot = parseSqlViewsSnapshot(t.sqlViewsSnapshot);
             List<TemplateComponentSnapshot> rows =
                     TemplateComponentSnapshot.list("templateId = ?1 ORDER BY sortOrder ASC", t.id);
+            if (rows.isEmpty()) {
+                unfrozenTemplateIds.add(t.id.toString());
+                continue;
+            }
 
             for (TemplateComponentSnapshot row : rows) {
                 Set<String> selfRefs = new LinkedHashSet<>();
@@ -291,6 +317,8 @@ public class TemplateFreezeDriftService {
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("scanned", templates.size());
+        out.put("checked", templates.size() - unfrozenTemplateIds.size());
+        out.put("unfrozenTemplateIds", unfrozenTemplateIds);
         out.put("totalRefs", totalRefs);
         out.put("missCount", misses.size());
         out.put("misses", misses);
