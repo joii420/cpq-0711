@@ -1,6 +1,8 @@
 package com.cpq.priceadjust.service;
 
 import com.cpq.priceadjust.dto.ElementPrice;
+import com.cpq.priceadjust.entity.CustomerPriceAdjustElement;
+import com.cpq.priceadjust.entity.CustomerPriceAdjustStrategy;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.test.junit.QuarkusTest;
@@ -14,6 +16,7 @@ import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -38,6 +41,8 @@ class MaterialVersionUpgradeServiceS3Test {
     EntityManager em;
 
     private UUID quotationId, lineItemId, componentId, versionId;
+    // repair-0807 D-11：清单相关测试专用（loadElementCodesInList 端到端测试），与其余字段独立清理。
+    private UUID strategyId, testCustomerId;
 
     @AfterEach
     @Transactional
@@ -55,6 +60,13 @@ class MaterialVersionUpgradeServiceS3Test {
         }
         if (componentId != null) {
             em.createNativeQuery("DELETE FROM component WHERE id=:id").setParameter("id", componentId).executeUpdate();
+        }
+        if (strategyId != null) {
+            em.createNativeQuery("DELETE FROM customer_price_adjust_element WHERE strategy_id=:id").setParameter("id", strategyId).executeUpdate();
+            em.createNativeQuery("DELETE FROM customer_price_adjust_strategy WHERE id=:id").setParameter("id", strategyId).executeUpdate();
+        }
+        if (testCustomerId != null) {
+            em.createNativeQuery("DELETE FROM customer WHERE id=:id").setParameter("id", testCustomerId).executeUpdate();
         }
     }
 
@@ -74,6 +86,9 @@ class MaterialVersionUpgradeServiceS3Test {
         versionPrices.put("Ag", new ElementPrice(new BigDecimal("999999.0000"), "EUR"));
         versionPrices.put("Cu", new ElementPrice(new BigDecimal("7777.0000"), "EUR"));
         // 故意不给 Ni 价格 —— 版本明细里没有它，验证"对不上就不动"
+        // repair-0807 D-11：Ni 也故意不放进元素清单——Ni ∉ 清单，值应一个字节都不碰（只可能撤锁，
+        // 而本 fixture 里 Ni 原本没有锁标记，所以是彻底 no-op），与"版本明细里没有它"的旧断言语义对齐。
+        Set<String> elementCodesInList = Set.of("Ag", "Cu");
 
         // 直接调包内可见方法（同包）——注意：CDI @ApplicationScoped bean 注入的是客户端代理，
         // 代理只会正确委派非 private 方法；对 private 方法用反射 setAccessible 会绕过代理直接落到
@@ -84,7 +99,7 @@ class MaterialVersionUpgradeServiceS3Test {
             componentId.toString(), "TEST-S3", "材料成本", "元素", "元素单价", "货币");
 
         MaterialVersionUpgradeService.RowUpdateOutcome outcome =
-            svc.upgradeComponentRows(lineItemId, pbc, versionPrices, "V26080702");
+            svc.upgradeComponentRows(lineItemId, pbc, versionPrices, "V26080702", elementCodesInList);
 
         int rowsChanged = outcome.rowsChanged;
         boolean conflict = outcome.conflict;
@@ -212,9 +227,12 @@ class MaterialVersionUpgradeServiceS3Test {
             componentId.toString(), "TEST-S3-AC5", "材料成本", "元素", "元素单价", "货币");
         Map<String, ElementPrice> versionPrices = new LinkedHashMap<>();
         versionPrices.put("Ni", new ElementPrice(null, null)); // 元素∈明细，但本版无价（current_price NULL）
+        // repair-0807 D-11：Ni 必须∈元素清单，才能走到"清单内但无价→删值撤锁"分支
+        // （不在清单会先被"值不动只撤锁"分支拦截，价格键根本不会被删）。
+        Set<String> elementCodesInList = Set.of("Ni");
 
         MaterialVersionUpgradeService.RowUpdateOutcome outcome =
-            svc.upgradeComponentRows(lineItemId, pbc, versionPrices, "V26080702");
+            svc.upgradeComponentRows(lineItemId, pbc, versionPrices, "V26080702", elementCodesInList);
         assertFalse(outcome.conflict);
         assertEquals(1, outcome.rowsChanged);
 
@@ -292,10 +310,12 @@ class MaterialVersionUpgradeServiceS3Test {
             componentId.toString(), "TEST-S3-D9", "材料成本", "元素", "元素单价", "货币");
         Map<String, ElementPrice> versionPrices = new LinkedHashMap<>();
         versionPrices.put("Ni", new ElementPrice(null, null)); // 元素∈明细，但本版无价（current_price NULL）
+        // repair-0807 D-11：Ni 必须∈元素清单，才能走到"清单内但无价→删值撤锁"分支。
+        Set<String> elementCodesInList = Set.of("Ni");
         String newVersionLabel = "V26080702";
 
         MaterialVersionUpgradeService.RowUpdateOutcome outcome =
-            svc.upgradeComponentRows(lineItemId, pbc, versionPrices, newVersionLabel);
+            svc.upgradeComponentRows(lineItemId, pbc, versionPrices, newVersionLabel, elementCodesInList);
         assertFalse(outcome.conflict);
         assertEquals(1, outcome.rowsChanged);
 
@@ -405,10 +425,13 @@ class MaterialVersionUpgradeServiceS3Test {
         Map<String, ElementPrice> versionPrices = svc.loadVersionPrices(versionId);
         assertTrue(versionPrices.containsKey("Ni"), "D-10 前置断言：loadVersionPrices 必须收录无价元素 Ni");
         assertNull(versionPrices.get("Ni").price, "D-10 前置断言：Ni 的 price 必须是 null（而非被过滤掉）");
+        // repair-0807 D-11：Ag/Ni 都要∈元素清单，才能分别走到"覆盖"和"清单内无价→删值撤锁"分支
+        // （D-11 加的清单闸门在 D-10 的 map 判定之外再包一层，两者必须都满足才会写/删）。
+        Set<String> elementCodesInList = Set.of("Ag", "Ni");
 
         String newVersionLabel = "VD1000002";
         MaterialVersionUpgradeService.RowUpdateOutcome outcome =
-            svc.upgradeComponentRows(lineItemId, pbc, versionPrices, newVersionLabel);
+            svc.upgradeComponentRows(lineItemId, pbc, versionPrices, newVersionLabel, elementCodesInList);
         assertFalse(outcome.conflict);
         assertEquals(4, outcome.rowsChanged, "driverRow(Ag+Ni) + row_data(Ag+Ni) 共 4 行命中版本明细");
 
@@ -447,6 +470,145 @@ class MaterialVersionUpgradeServiceS3Test {
     }
 
     /**
+     * D-11 判定表第 1 行（用户裁决，代码评审续，2026-08-07）：元素 <b>∉ 客户调价元素清单</b>时，
+     * 值必须<b>一个字节都不碰</b>——即使该元素在本版明细里有全新的价（{@code versionPrices} 里能查到
+     * 且 {@code price != null}），也不得覆盖。只撤 {@code __priceLocked}/{@code __priceVersion}
+     * 两个可编辑性标记。
+     *
+     * <p>🚨 <b>要害断言是"值没变"，不是"值存在"</b>：现网实测场景——Zn 已被移出清单但仍留在版本
+     * 明细里（{@code current_price=NULL}），28 张单的 Zn 价当前还是走实时取价视图算出来的
+     * （如 24.17）；若只断言"价格键存在"，一个"把 Zn 的 24.17 覆盖成版本明细里别的什么值"的错误
+     * 实现也能骗过去。本测试用一个<b>在版本明细里确实有全新价</b>的元素（Zn=99.0）验证"即使有新价
+     * 也不得覆盖，必须保留调用前的原值 24.17"，比"元素在明细里查不到"更严格。
+     */
+    @Test
+    @Transactional
+    void upgradeComponentRows_elementNotInList_valueUntouchedButUnlocked() throws Exception {
+        componentId = UUID.randomUUID();
+        String fieldsJson = "[{\"name\":\"元素\",\"field_type\":\"INPUT_TEXT\"}]";
+        em.createNativeQuery(
+                "INSERT INTO component (id, name, code, fields, formulas, element_code_field, " +
+                "element_price_field, element_currency_field) " +
+                "VALUES (:id, 'S3-D11测试组件', :code, CAST(:fields AS jsonb), '[]', '元素', '元素单价', '货币')")
+            .setParameter("id", componentId).setParameter("code", "TEST-S3-D11-" + componentId)
+            .setParameter("fields", fieldsJson)
+            .executeUpdate();
+
+        UUID anyCustomerId = (UUID) em.createNativeQuery("SELECT id FROM customer LIMIT 1").getSingleResult();
+        UUID anyUserId = (UUID) em.createNativeQuery("SELECT id FROM \"user\" LIMIT 1").getSingleResult();
+        quotationId = UUID.randomUUID();
+        em.createNativeQuery(
+                "INSERT INTO quotation (id, quotation_number, customer_id, name, sales_rep_id, status, created_at, updated_at) " +
+                "VALUES (:id, :no, :cust, 'S3-D11测试单', :rep, 'DRAFT', now(), now())")
+            .setParameter("id", quotationId).setParameter("no", "TEST-S3-D11-" + quotationId)
+            .setParameter("cust", anyCustomerId).setParameter("rep", anyUserId)
+            .executeUpdate();
+
+        lineItemId = UUID.randomUUID();
+        em.createNativeQuery(
+                "INSERT INTO quotation_line_item (id, quotation_id, subtotal, created_at) " +
+                "VALUES (:id, :qid, 0, now())")
+            .setParameter("id", lineItemId).setParameter("qid", quotationId)
+            .executeUpdate();
+        // driverRow + row_data 各放一个 Zn：实时价 24.17、带陈旧锁标记（模拟"曾被调价机制接管过，
+        // 现已被移出清单"的历史状态）——D-11 要求这两行原值原样保留，只撤锁。
+        String snapshotRowsJson = "[{\"driverRow\":{\"元素\":\"Zn\",\"元素单价\":24.17,\"货币\":\"CNY\"," +
+            "\"__priceLocked\":true,\"__priceVersion\":\"V26080601\"}}]";
+        String rowDataJson = "[{\"元素\":\"Zn\",\"元素单价\":24.17,\"货币\":\"CNY\"," +
+            "\"__priceLocked\":true,\"__priceVersion\":\"V26080601\",\"row_index\":0}]";
+        em.createNativeQuery(
+                "INSERT INTO quotation_line_component_data " +
+                "(id, line_item_id, component_id, snapshot_rows, row_data, row_version, created_at) " +
+                "VALUES (gen_random_uuid(), :lid, :cid, CAST(:sr AS jsonb), CAST(:rd AS jsonb), 0, now())")
+            .setParameter("lid", lineItemId).setParameter("cid", componentId)
+            .setParameter("sr", snapshotRowsJson).setParameter("rd", rowDataJson)
+            .executeUpdate();
+
+        var pbc = new com.cpq.priceadjust.dto.UpgradeResult.PriceBearingComponent(
+            componentId.toString(), "TEST-S3-D11", "材料成本", "元素", "元素单价", "货币");
+        Map<String, ElementPrice> versionPrices = new LinkedHashMap<>();
+        // 🚨 Zn 在本版明细里【确实有全新价】99.0——若三分支判定错误地先查 versionPrices 再查清单，
+        // 这里会被误判成"该覆盖"。必须先判清单，Zn∉清单才是拦下覆盖的唯一原因。
+        versionPrices.put("Zn", new ElementPrice(new BigDecimal("99.0000"), "USD"));
+        Set<String> elementCodesInList = Set.of("Ag"); // Zn 不在清单里（现网实测：Zn 已被移出清单）
+
+        MaterialVersionUpgradeService.RowUpdateOutcome outcome =
+            svc.upgradeComponentRows(lineItemId, pbc, versionPrices, "V26080702", elementCodesInList);
+        assertFalse(outcome.conflict);
+        assertEquals(2, outcome.rowsChanged, "driverRow(Zn 撤锁) + row_data(Zn 撤锁) 共 2 行");
+
+        Object[] row = (Object[]) em.createNativeQuery(
+                "SELECT snapshot_rows, row_data FROM quotation_line_component_data " +
+                "WHERE line_item_id=:lid AND component_id=:cid")
+            .setParameter("lid", lineItemId).setParameter("cid", componentId).getSingleResult();
+        JsonNode driverRow = new ObjectMapper().readTree((String) row[0]).get(0).path("driverRow");
+        JsonNode dataRow = new ObjectMapper().readTree((String) row[1]).get(0);
+
+        // 要害断言：值必须逐字节等于调用前的原值（24.17 / CNY），不是"99.0 被写进去了但因为某种
+        // 巧合看起来还行"，也不是被清空。
+        assertEquals(24.17, driverRow.path("元素单价").asDouble(), 0.0001, "D-11：Zn∉清单，driverRow 单价必须原样保留 24.17，不得被覆盖成明细里的 99.0");
+        assertEquals("CNY", driverRow.path("货币").asText(), "D-11：Zn∉清单，driverRow 货币必须原样保留 CNY，不得被覆盖成 USD");
+        assertFalse(driverRow.has("__priceLocked"), "D-11：Zn∉清单，driverRow 锁标记必须被撤");
+        assertFalse(driverRow.has("__priceVersion"), "D-11：Zn∉清单，driverRow 版本徽标必须被撤");
+
+        assertEquals(24.17, dataRow.path("元素单价").asDouble(), 0.0001, "D-11：Zn∉清单，row_data 单价必须原样保留 24.17");
+        assertEquals("CNY", dataRow.path("货币").asText(), "D-11：Zn∉清单，row_data 货币必须原样保留 CNY");
+        assertFalse(dataRow.has("__priceLocked"), "D-11：Zn∉清单，row_data 锁标记必须被撤");
+        assertFalse(dataRow.has("__priceVersion"), "D-11：Zn∉清单，row_data 版本徽标必须被撤");
+    }
+
+    /**
+     * D-11 判定表第 1 行的整单退化场景：客户调价元素清单为空（{@code elementCodesInList = Set.of()}）
+     * → 等价 {@code PriceReconciler} 的 {@code unlockOnly} 模式，全部行只撤锁，业务值全不动。
+     * 用两个不同元素（一个在版本明细里有价、一个完全没有）验证"清单为空"这条判定与"该元素在明细里
+     * 有没有价"无关——清单是先决条件，没有清单资格，明细查不查得到都不重要。
+     */
+    @Test
+    @Transactional
+    void upgradeComponentRows_emptyElementList_wholeRowOnlyUnlocked() throws Exception {
+        setUpFixture(); // Ag ×2 / Cu ×1 / Ni ×1（driverRow），manual Ag + 非manual Ag（row_data）
+
+        Map<String, ElementPrice> versionPrices = new LinkedHashMap<>();
+        versionPrices.put("Ag", new ElementPrice(new BigDecimal("999999.0000"), "EUR")); // 有价，但清单为空
+        versionPrices.put("Cu", new ElementPrice(new BigDecimal("7777.0000"), "EUR"));
+        var pbc = new com.cpq.priceadjust.dto.UpgradeResult.PriceBearingComponent(
+            componentId.toString(), "TEST-S3", "材料成本", "元素", "元素单价", "货币");
+
+        MaterialVersionUpgradeService.RowUpdateOutcome outcome =
+            svc.upgradeComponentRows(lineItemId, pbc, versionPrices, "V26080702", Set.of()); // 清单为空
+
+        assertFalse(outcome.conflict);
+        // fixture 里没有任何行带 __priceLocked/__priceVersion 陈旧标记，撤锁是 no-op，故 rowsChanged=0
+        // （这本身就是断言的一部分：没有可撤的锁，一次 UPDATE 都不该发生，符合 E14-7 幂等纪律）。
+        assertEquals(0, outcome.rowsChanged, "清单为空且原本无锁标记可撤时，不应有任何行被判定为改动");
+
+        Object[] row = (Object[]) em.createNativeQuery(
+                "SELECT snapshot_rows, row_data FROM quotation_line_component_data " +
+                "WHERE line_item_id=:lid AND component_id=:cid")
+            .setParameter("lid", lineItemId).setParameter("cid", componentId).getSingleResult();
+        JsonNode snapArr = new ObjectMapper().readTree((String) row[0]);
+        for (JsonNode r : snapArr) {
+            JsonNode driverRow = r.path("driverRow");
+            String el = driverRow.path("元素").asText("");
+            if ("Ag".equals(el)) {
+                assertEquals(50.0, driverRow.path("元素单价").asDouble(), 0.01,
+                    "D-11：清单为空，Ag 即使明细里有价 999999 也不得覆盖，须保留原值 50");
+            } else if ("Cu".equals(el)) {
+                assertEquals(10.0, driverRow.path("元素单价").asDouble(), 0.01,
+                    "D-11：清单为空，Cu 即使明细里有价 7777 也不得覆盖，须保留原值 10");
+            } else if ("Ni".equals(el)) {
+                assertEquals(50.0, driverRow.path("元素单价").asDouble(), 0.01, "D-11：清单为空，Ni（明细里也没有）原值保留");
+            }
+            assertFalse(driverRow.has("__priceLocked"), "D-11：清单为空，全部行都不应带锁标记");
+        }
+        JsonNode rowDataArr = new ObjectMapper().readTree((String) row[1]);
+        for (JsonNode r : rowDataArr) {
+            assertEquals(118478.0, r.path("元素单价").asDouble(), 0.01, "D-11：清单为空，row_data 原值保留（无论 manual 与否）");
+            assertFalse(r.has("__priceLocked"), "D-11：清单为空，row_data 也不应带锁标记");
+        }
+    }
+
+    /**
      * AC-17（幂等）：连续两次对同一目标版本调用 {@code upgradeComponentRows}（同一 {@code versionPrices}
      * + 同一 {@code versionLabel}），第二次的 {@code snapshot_rows}/{@code row_data} 内容必须与第一次
      * 逐字节相等——覆盖式写入（FR-2）天然幂等，不应因重复升版产生漂移（{@code row_version} 递增不计入
@@ -459,10 +621,11 @@ class MaterialVersionUpgradeServiceS3Test {
         Map<String, ElementPrice> versionPrices = new LinkedHashMap<>();
         versionPrices.put("Ag", new ElementPrice(new BigDecimal("999999.0000"), "EUR"));
         versionPrices.put("Cu", new ElementPrice(new BigDecimal("7777.0000"), "EUR"));
+        Set<String> elementCodesInList = Set.of("Ag", "Cu");
         var pbc = new com.cpq.priceadjust.dto.UpgradeResult.PriceBearingComponent(
             componentId.toString(), "TEST-S3", "材料成本", "元素", "元素单价", "货币");
 
-        svc.upgradeComponentRows(lineItemId, pbc, versionPrices, "V26080702");
+        svc.upgradeComponentRows(lineItemId, pbc, versionPrices, "V26080702", elementCodesInList);
         Object[] firstRow = (Object[]) em.createNativeQuery(
                 "SELECT snapshot_rows, row_data FROM quotation_line_component_data " +
                 "WHERE line_item_id=:lid AND component_id=:cid")
@@ -470,7 +633,7 @@ class MaterialVersionUpgradeServiceS3Test {
         String firstSnapshot = (String) firstRow[0];
         String firstRowData = (String) firstRow[1];
 
-        svc.upgradeComponentRows(lineItemId, pbc, versionPrices, "V26080702");
+        svc.upgradeComponentRows(lineItemId, pbc, versionPrices, "V26080702", elementCodesInList);
         Object[] secondRow = (Object[]) em.createNativeQuery(
                 "SELECT snapshot_rows, row_data FROM quotation_line_component_data " +
                 "WHERE line_item_id=:lid AND component_id=:cid")
@@ -538,8 +701,11 @@ class MaterialVersionUpgradeServiceS3Test {
         Map<String, ElementPrice> versionPrices = new LinkedHashMap<>();
         versionPrices.put("Ag", new ElementPrice(new BigDecimal("999999.0000"), "EUR"));
         // 注意：Foo 故意不给价，验证"元素不在版本明细里 → 不动"
+        // repair-0807 D-11：Foo 也故意不放进元素清单——Foo ∉ 清单，值不动（与原"不在版本明细"
+        // 断言语义对齐；只放 Ag 进清单）。
+        Set<String> elementCodesInList = Set.of("Ag");
 
-        int cleaned = svc.cleanEditRowOverrides(li, List.of(pbc), versionPrices);
+        int cleaned = svc.cleanEditRowOverrides(li, List.of(pbc), versionPrices, elementCodesInList);
         assertEquals(1, cleaned, "只有 row1(元素=Ag，在版本明细里) 应被改动");
 
         JsonNode root;
@@ -606,8 +772,10 @@ class MaterialVersionUpgradeServiceS3Test {
             componentId.toString(), "TEST-S4A-AC5", "材料成本", "元素", "元素单价", null);
         Map<String, ElementPrice> versionPrices = new LinkedHashMap<>();
         versionPrices.put("Ni", new ElementPrice(null, null)); // 元素∈明细但本版无价
+        // repair-0807 D-11：Ni 必须∈元素清单，才能走到"清单内但无价→删键"分支。
+        Set<String> elementCodesInList = Set.of("Ni");
 
-        int cleaned = svc.cleanEditRowOverrides(li, List.of(pbc), versionPrices);
+        int cleaned = svc.cleanEditRowOverrides(li, List.of(pbc), versionPrices, elementCodesInList);
         assertEquals(1, cleaned);
 
         JsonNode root;
@@ -618,6 +786,76 @@ class MaterialVersionUpgradeServiceS3Test {
         }
         JsonNode r1 = findByRowKey(root.path("tabs").get(0).path("editRows"), "r1");
         assertFalse(r1.path("values").has("元素单价"), "解不出价时价格键仍应被删除");
+    }
+
+    // -------------------------------------------------------------------------
+    // D-11 · loadElementCodesInList（用户裁决，代码评审续）
+    // -------------------------------------------------------------------------
+
+    /** 策略启用时，{@code loadElementCodesInList} 必须返回该策略下全部元素编码。 */
+    @Test
+    @Transactional
+    void loadElementCodesInList_strategyEnabled_returnsElementCodes() {
+        testCustomerId = UUID.randomUUID();
+        String customerCode = "TEST-D11-EN-" + testCustomerId.toString().substring(0, 8);
+        em.createNativeQuery("INSERT INTO customer (id, name, code) VALUES (:id, 'D11清单启用测试客户', :code)")
+            .setParameter("id", testCustomerId).setParameter("code", customerCode).executeUpdate();
+
+        CustomerPriceAdjustStrategy strategy = new CustomerPriceAdjustStrategy();
+        strategy.customerNo = customerCode;
+        strategy.enabled = true;
+        strategy.persist();
+        strategyId = strategy.id;
+
+        CustomerPriceAdjustElement e1 = new CustomerPriceAdjustElement();
+        e1.strategyId = strategy.id;
+        e1.elementCode = "Ag";
+        e1.persist();
+        CustomerPriceAdjustElement e2 = new CustomerPriceAdjustElement();
+        e2.strategyId = strategy.id;
+        e2.elementCode = "Cu";
+        e2.persist();
+
+        Set<String> result = svc.loadElementCodesInList(testCustomerId);
+        assertEquals(Set.of("Ag", "Cu"), result);
+    }
+
+    /**
+     * D-11 判定表第 5 点（用户明确要求的单测）：策略停用（{@code enabled=false}）时，即使清单表里
+     * 仍有残留元素行，{@code loadElementCodesInList} 也必须返回空集合——不加载清单，不是"加载了
+     * 再判断要不要用"。这是正确性要求（javadoc 已写明理由），不是可省的性能优化。
+     */
+    @Test
+    @Transactional
+    void loadElementCodesInList_strategyDisabled_returnsEmpty() {
+        testCustomerId = UUID.randomUUID();
+        String customerCode = "TEST-D11-DIS-" + testCustomerId.toString().substring(0, 8);
+        em.createNativeQuery("INSERT INTO customer (id, name, code) VALUES (:id, 'D11清单停用测试客户', :code)")
+            .setParameter("id", testCustomerId).setParameter("code", customerCode).executeUpdate();
+
+        CustomerPriceAdjustStrategy strategy = new CustomerPriceAdjustStrategy();
+        strategy.customerNo = customerCode;
+        strategy.enabled = false; // 策略停用
+        strategy.persist();
+        strategyId = strategy.id;
+
+        // 清单表里仍有残留行——正是要验证"策略停用时不加载清单"，而不是"清单本身是空的"。
+        CustomerPriceAdjustElement e1 = new CustomerPriceAdjustElement();
+        e1.strategyId = strategy.id;
+        e1.elementCode = "Ag";
+        e1.persist();
+
+        Set<String> result = svc.loadElementCodesInList(testCustomerId);
+        assertTrue(result.isEmpty(),
+            "D-11：策略停用时不加载清单，即使 customer_price_adjust_element 表里仍有残留行");
+    }
+
+    /** 客户不存在（或客户 code 为空）→ 无从查起策略，必须返回空集合而不是抛异常。 */
+    @Test
+    @Transactional
+    void loadElementCodesInList_customerNotFound_returnsEmpty() {
+        Set<String> result = svc.loadElementCodesInList(UUID.randomUUID());
+        assertTrue(result.isEmpty(), "客户不存在时应返回空集合，不抛异常");
     }
 
     private JsonNode findByRowKey(JsonNode editRows, String rowKey) {
