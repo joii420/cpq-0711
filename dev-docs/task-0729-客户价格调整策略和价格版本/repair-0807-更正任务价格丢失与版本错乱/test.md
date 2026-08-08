@@ -1,6 +1,6 @@
 # test · repair-0807 更正任务价格丢失与版本错乱
 
-- 对应需求文档：`./需求文档.md`（AC-1~AC-16 / FR-1~FR-7，验收唯一标准）
+- 对应需求文档：`./需求文档.md`（AC-1a/1b/2~AC-18 / FR-1~FR-7 / D-1~D-9，验收唯一标准）
 - 对应开发文档：`./backtask.md`（T0~T7）/ `./fronttask.md`（F1~F3）/ `./api.md`
 - 分支：`fix/repair-0807-price-update-loss`
 - 角色：`cpq-tester`
@@ -18,6 +18,17 @@
 | 后端 | `http://localhost:8081`（worktree 复用主工作区共享 dev server；`V384` 验证需 copy 到主仓触发，详见 backtask T0） |
 | 前端 | `http://localhost:5174` |
 | 鉴权 | `/price-adjust/reviews*`、`/price-adjust/jobs*` 端点要求 `PRICING_MANAGER` 或 `SYSTEM_ADMIN` 角色会话 |
+
+#### 0.1.1 已知环境坑位（执行阶段必读，主线 2026-08-07 补）
+
+1. **后端自测（`./mvnw test`）不要加 `-Dquarkus.flyway.validate-on-migrate=false`**。共享 test 库（`cpq_db`）里存在两个"已应用但 master 上没有"的迁移：`V382`（`task-0806` 未合并分支遗留）与 `V384`（本次 repair 的）。正确做法是把这两个 `.sql` 作为**未追踪副本**放进本 worktree 的 `cpq-backend/src/main/resources/db/migration/`，让 Flyway `validate` 自然通过——关掉校验会把"我的迁移有没有问题"这个信号一起关掉，不允许图省事这么做。副本已在 `/home/joii/project/cpq-repair-0807` 里就位，**执行阶段不要 `git add` 这两个文件**（它们是本地未追踪的兼容性副本，不属于本次改动范围）。
+2. **`QuotePendingScopeOpenWhitelistTest.openCallSites_fileLevelWhitelist_exactMatch` 是已知恒红，非本次引入**。主线已做 A/B 实测（干净 master 与本修复分支上该方法名逐字一致地失败），根因是 `QuotationService.java:1631` 的**注释文本**里含 `QuotePendingScope.open(` 字样，被朴素字符串扫描误命中——与 repair-0807 无关，已登记 `BL-0155`。执行时看到它红，**如实记录为已知基线失败**即可，不得计入本次缺陷清单，也不得为了让它变绿去改动代码。
+   - 主线 A/B 实测数据（可直接引用进 `test-report.md` 回归结论段）：
+     ```
+     B 干净 master              : Tests run 64, Failures 1, Errors 0, Skipped 0
+     A fix/repair-0807-...      : Tests run 82, Failures 1, Errors 0, Skipped 0
+     失败集合逐条一致；新增 18 个测试全绿
+     ```
 
 ### 0.2 测试数据构造总原则
 
@@ -56,7 +67,7 @@
 | AC-2 | `row_data` 该元素行存在单价+货币两键且=目标版本价/货币 | TC-A2 |
 | AC-3 | `quote_card_values.resolvedRows` 单价非空；`li.subtotal` 与打开编辑页保存一次后逐字节相等 | TC-A3 |
 | AC-4 | 详情页只读渲染目标版本价+`CNY`；产品小计=18.587137 | TC-A4 |
-| AC-5 | 元素∈清单但本版无价 → 价格键+两个锁标记一并删除，前端可编辑；**手动行与非手动行落点必须完全一致**（D-8） | TC-B1（非手动行）、TC-B2（手动行，D-8 已裁决=同口径）、TC-B5（`Cd` 从无历史价对照） |
+| AC-5 | 元素∈清单但本版无价 → 价格键+两个锁标记一并删除，前端可编辑；**三个写点（S3a driver行 / S3b手动行 / S4b非手动行）落点必须完全一致**（D-8 手动行、D-9 driver行） | TC-B1（S4b非手动行）、TC-B2（S3b手动行，D-8）、TC-B7（S3a driver行，D-9）、TC-B5（`Cd` 从无历史价对照） |
 | AC-6 | 无 `quotation_view_structure` 的活单 → 自愈补建4份结构+价格更新（`row_version` **严格大于**升版前值，不约束增量为1），item=SUCCESS | TC-C1 |
 | AC-7 | 补建后仍无价格承载组件 → SKIPPED，`errorMessage`区分两态，批次 `skipped_count≥1` 且 `PARTIAL` | TC-C2、TC-C3 |
 | AC-8 | 屏6a `SKIPPED` 金色标签+原因+无重试按钮 | TC-C4 |
@@ -307,6 +318,32 @@
 - 🔒 `quote_card_values` md5：第一次 = 第二次（业务字段幂等；若实现里有 `updated_at` 之类元信息导致 md5 不同，需在报告里区分"业务字段幂等"与"元信息字段不幂等"，核心业务字段幂等是硬性要求，参照父任务 `#45` 的既有口径）。
 - 🔒 `li.subtotal`：第一次 = 第二次（精确到 6 位小数）。
 - 第二次 `retryJobItem` 响应本身应正常返回（非 409），`job_item.status` 仍为 `SUCCESS`。
+
+**实际结果**：（留空）
+
+---
+
+### TC-B7　driver 行无价 → 四键全删且徽标不得被刷新（AC-5 的 driver 行侧，D-9）
+
+| 字段 | 内容 |
+|---|---|
+| 对应 | AC-5 / D-9（S3a，与 TC-B1/S4b、TC-B2/S3b 合起来覆盖三个写点的完整对称性） |
+| 前置 | 见下 |
+| 优先级 | **P0** |
+| 背景 | 主线代码评审 2026-08-07 发现的缺陷（已退回后端修，本用例是回归验证位）：首版把 `__priceLocked`/`__priceVersion` 写在 `if (ep.price != null)` **之外**，导致「元素∈本版明细但本版无价」时 driver 行价格键保留旧值、却被打上本次新版本徽标——"旧价穿新版徽标"，是根因A的镜像。且前端判据 `driverRow.__priceLocked ?? rawRow.__priceLocked` **driverRow 短路优先**，driver 行不撤锁会把 S4b 在 `row_data` 侧的撤锁整个抵消，导致 AC-5「前端该格可编辑」在 driver 行上根本不成立。 |
+
+**前置数据构造**：造一张单 `QID-B7`，「材料成本」的某个 **driver 行**（非手动行，走 `snapshot_rows.driverRow`）元素 ∈ 本版明细但该元素本版 `current_price IS NULL`（`noPrice` 元素，如复用 TC-B1 的 `Zn` 或另建一个）；升版前该行带**旧价**（如上一版价 `2500.000000`）+ `__priceLocked=true` + `__priceVersion='V26080701'`。
+
+**步骤**
+1. 确认升版前 `driverRow`：价格键 = 旧价、`__priceLocked=true`、`__priceVersion='V26080701'`。
+2. 对 `QID-B7` 执行升版（目标 `V26080702`）。
+3. **不做任何保存动作**，直接 `SELECT snapshot_rows FROM quotation_line_component_data WHERE line_item_id=<QID-B7行id> AND component_id='4a193e48-...'`，取该元素的 `driverRow`。
+
+**期望结果**
+1. 🔒 `driverRow` 的 **价格键、货币键、`__priceLocked`、`__priceVersion` 四者全部不存在**（与 TC-B1/TC-B2 断言的键集合完全一致，三写点对称）。
+2. 🚨 **专项反例断言（本条最容易漏测的一步）**：即使实现有缺陷只删对了锁标记，也要单独验证 —— `driverRow.__priceVersion` **不得等于** `'V26080702'`（新版本号）。光断言"锁没了"测不出"值被刷成新版徽标"这种更隐蔽的半吊子实现；这条必须独立于第1条存在，不能被第1条"键不存在"覆盖掉（若键还在但值被错误刷新，第1条会失败，但反过来"键已被删除"不代表"没有别的代码路径把版本号写回别处"，两条都要断言）。
+3. 🔒 该行价格键**不得残留上一版旧价**（`2500.000000`）——防止实现走了"半吊子修复"：只把锁标记摘了，但价格键既没删也没刷新，旧价还在，此时前端会显示一个"可编辑但预填了旧价"的格子，同样是错误状态。
+4. 前端该格：`__priceLocked` 缺失 → 渲染为可编辑 `<input>`（与 TC-B1 前端断言同款，需前端联调验证，本用例后端部分独立成立）。
 
 **实际结果**：（留空）
 
@@ -929,7 +966,7 @@ curl -s --noproxy '*' -o /dev/null -w '%{http_code}\n' http://localhost:5174/src
 | 分组 | 用例数 | P0 | P1 | P2 |
 |---|---|---|---|---|
 | A 核心三层数据一致性 | 4 | 4 | 0 | 0 |
-| B 写入侧边界值 | 6 | 4 | 2 | 0 |
+| B 写入侧边界值 | 7 | 5 | 2 | 0 |
 | C 结构自愈与SKIPPED | 5 | 3 | 2 | 0 |
 | D 审核抽屉小计与影响 | 7 | 2 | 4 | 1 |
 | E 性能/N+1 | 3 | 1 | 2 | 0 |
@@ -939,9 +976,9 @@ curl -s --noproxy '*' -o /dev/null -w '%{http_code}\n' http://localhost:5174/src
 | I 并发 | 1 | 0 | 1 | 0 |
 | J 字面口径/精度 | 2 | 0 | 2 | 0 |
 | K 前端专项 | 4 | 2 | 1 | 1 |
-| **合计** | **40** | **21** | **17** | **2** |
+| **合计** | **41** | **22** | **17** | **2** |
 
-> 本轮修订新增 4 条（`TC-B6`/AC-17、`TC-C5`/AC-18、`TC-D1b`/AC-9 健康路径对照）、`TC-B2` 由 P1 探测性用例升级为 P0 确定性断言，`37 → 40` 条。
+> 累计修订轨迹：初稿 37 条 → 第一轮补 `TC-B6`/AC-17、`TC-C5`/AC-18、`TC-D1b`/AC-9 健康路径对照 + `TC-B2` 升级为 P0（37→40）→ 第二轮补 `TC-B7`/AC-5·D-9（driver 行无价四键全删，主线代码评审新发现缺陷的回归验证位）（40→41）。
 
 ---
 
