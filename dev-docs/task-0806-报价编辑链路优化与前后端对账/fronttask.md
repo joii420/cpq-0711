@@ -259,7 +259,7 @@ function aggregateTreeNums(agg: string, nums: number[]): number {
 
 ### 阶段③a（前端侧）—— ✅ **零改动**
 
-> 🚨 **2026-08-07 D17 撤销原 F3-1**：阶段③ 经生产态实测重新裁定为 **③a 批量写**（纯后端写法变更）+ **③b 懒物化不做**（转 [[BL-0154]]）。
+> 🚨 **2026-08-07 D17 撤销原 F3-1**：阶段③ 经生产态实测重新裁定为 **③a 批量写**（纯后端写法变更）+ **③b 懒物化不做**（转 [[BL-0156]]）。
 > API-2 `ensure-row-data` **不实现**，故前端**没有**需要调用的新端点。
 
 - [x] ~~F3-1 打开 Excel 视图 / 导出前调 API-2~~ → **撤销**（API-2 不存在）
@@ -269,7 +269,7 @@ function aggregateTreeNums(agg: string, nums: number[]): number {
   - 编辑一格 → 立刻开 **Excel 视图**，值为最新（AC-8）
   - **树删除 / 恢复行** → 行数与卡片一致（`materializeAndProject` 是第二条受益路径，AP-51 行数权威）
   - `tsc --noEmit` 0 错误 + `vitest run src` 与基线一致（本期前端零改动，两项应与 master 完全相同）
-- [ ] F3a-3 **二期触发条件**：若 [[BL-0154]] 将来重启懒物化，F3-1 原样复活（打开 Excel 视图 / 点导出前调 API-2），届时 `api.md` API-2 的契约草案可直接用。
+- [ ] F3a-3 **二期触发条件**：若 [[BL-0156]] 将来重启懒物化，F3-1 原样复活（打开 Excel 视图 / 点导出前调 API-2），届时 `api.md` API-2 的契约草案可直接用。
 
 ### 阶段⑤（Decimal 统一，前端主战场）
 - [ ] F5-1 `evaluateExpression` 返回类型 `number` → `Decimal`

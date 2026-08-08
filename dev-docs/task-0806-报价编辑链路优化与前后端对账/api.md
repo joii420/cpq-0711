@@ -11,7 +11,7 @@
 | 编号 | 方法 + 路径 | 阶段 | 性质 | 对应 FR |
 |---|---|---|---|---|
 | **API-1** | `PUT /api/cpq/quotations/line-items/{lineItemId}/quote-card-edit` | ① ② | **既有端点，语义变更**（后端零改动） | FR-4, FR-7 |
-| ~~**API-2**~~ | ~~`POST /api/cpq/quotations/{quotationId}/ensure-row-data`~~ | ~~③~~ | ❌ **不实现**（D17 裁定 ③b 不做，转 [[BL-0154]]） | ~~FR-12~~ |
+| ~~**API-2**~~ | ~~`POST /api/cpq/quotations/{quotationId}/ensure-row-data`~~ | ~~③~~ | ❌ **不实现**（D17 裁定 ③b 不做，转 [[BL-0156]]） | ~~FR-12~~ |
 | **API-3** | `POST /api/cpq/quotations/{quotationId}/submit` | ① | **既有端点，新增拒绝分支** | FR-6 |
 | **API-4** | `POST /api/cpq/admin/cache/evict` | ④ | **新增**（诊断用） | FR-16 |
 | **API-5** | `POST /api/cpq/quotations/line-items/{lineItemId}/reconcile-report` | ① | **新增**（埋点，fire-and-forget） | FR-5 |
@@ -81,8 +81,8 @@
 ## API-2 · 补算 `row_data`（❌ **不实现** —— D17 裁定 ③b 不做）
 
 > 🚨 **2026-08-07 状态变更**：阶段③ 经生产态实测重新裁定（`需求文档.md` D17 + 附录 A.6）——
-> 拆为 **③a 批量写**（已交付，**后端零契约变更**）+ **③b 懒物化**（裁定不做，转 [[BL-0154]]）。
-> 本端点属 ③b，**不实现、不上线**。下面的设计**原样保留**，作为 [[BL-0154]] 重启时的现成契约草案。
+> 拆为 **③a 批量写**（已交付，**后端零契约变更**）+ **③b 懒物化**（裁定不做，转 [[BL-0156]]）。
+> 本端点属 ③b，**不实现、不上线**。下面的设计**原样保留**，作为 [[BL-0156]] 重启时的现成契约草案。
 > **前端不要调它**（`fronttask.md` F3-1 已同步撤销）。
 
 `POST /api/cpq/quotations/{quotationId}/ensure-row-data`

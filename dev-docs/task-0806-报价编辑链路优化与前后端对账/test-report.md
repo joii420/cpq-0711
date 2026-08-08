@@ -382,7 +382,7 @@ Ag粉 行 材料成本 = 0.63211125158
 | TC-3A-102 | 直接执行 | PASS | TC-3A-010 的实验本身即 8 页签全量（该 lineItem 恰好 8 个非 SUBTOTAL 组件），一次实验双重覆盖 |
 | TC-3A-110 | 引用技术总监证据 | PASS | `2330 run / 159 Failures / 403 Errors / 39 Skipped`（技术总监已跑；本人未重复跑全量耗时 ~10+ 分钟，改为对高风险子集直接重跑，见 TC-3A-112） |
 | TC-3A-111 | 引用技术总监证据 | PASS | 失败方法名去重 `A=562 / B=562`，`comm -13`（只在 B）与 `comm -23`（只在 A）均空——A/B 逐条一致 |
-| TC-3A-112 | 直接执行（核心，K11 正向搜索） | PASS（含 2 处独立发现，均判定非③a回归） | 详见 §10.4 完整清单：19 个直接触碰 `materializeLineRowData`/`computeLineRowData`/`ConfigureSnapshotService` 相关符号的测试类全部枚举并逐个实跑；发现 3 个类因 `BL-0155`（ROCKWELL/SMALL 夹具测试库 count=0）**整体 0 断言执行**（`FirstSaveQuoteBucketEquivTest` 8/8 skip、`PersistWholeBatchEquivTest` 2/2 skip、`RowDataWholeBatchEquivTest` 2/2 skip）；另发现 2 处**与③a无关**的既有失败（`QuotePendingScopeOpenWhitelistTest`/`PriceBaseDateCacheIsolationTest`），已代码追溯定性 |
+| TC-3A-112 | 直接执行（核心，K11 正向搜索） | PASS（含 2 处独立发现，均判定非③a回归） | 详见 §10.4 完整清单：19 个直接触碰 `materializeLineRowData`/`computeLineRowData`/`ConfigureSnapshotService` 相关符号的测试类全部枚举并逐个实跑；发现 3 个类因 `BL-0157`（ROCKWELL/SMALL 夹具测试库 count=0）**整体 0 断言执行**（`FirstSaveQuoteBucketEquivTest` 8/8 skip、`PersistWholeBatchEquivTest` 2/2 skip、`RowDataWholeBatchEquivTest` 2/2 skip）；另发现 2 处**与③a无关**的既有失败（`QuotePendingScopeOpenWhitelistTest`/`PriceBaseDateCacheIsolationTest`），已代码追溯定性 |
 | TC-3A-113 | 直接执行 | PASS | `tsc --noEmit` 0 错误；`vitest run src`：`2 failed / 1103 passed / 1105 total`，失败恰为已知常年红 `amt-002`/`amt-003`，与阶段⓪① 收尾基线（TC-151）逐字吻合 |
 
 ### 10.3 关键证据详情
@@ -479,13 +479,13 @@ batch=true（1 条多值 UPDATE）：
 | SnapshotLineNeedsExpandTest | 4 | 0 | 0 | 0 | ✅ 真跑绿 |
 | ComponentResourceSnapshotBypassUsageTest | 4 | 0 | 0 | 0 | ✅ 真跑绿 |
 | SqlViewExecutorPendingHookTest | 3 | 0 | 0 | 0 | ✅ 真跑绿 |
-| **FirstSaveQuoteBucketEquivTest** | 8 | **8** | 0 | 0 | 🚨 **BL-0155 全盲**（ROCKWELL/SMALL 夹具测试库 count=0，本类断言从未真正执行） |
-| **PersistWholeBatchEquivTest** | 2 | **2** | 0 | 0 | 🚨 **BL-0155 全盲** |
-| **RowDataWholeBatchEquivTest** | 2 | **2** | 0 | 0 | 🚨 **BL-0155 全盲** |
+| **FirstSaveQuoteBucketEquivTest** | 8 | **8** | 0 | 0 | 🚨 **BL-0157 全盲**（ROCKWELL/SMALL 夹具测试库 count=0，本类断言从未真正执行） |
+| **PersistWholeBatchEquivTest** | 2 | **2** | 0 | 0 | 🚨 **BL-0157 全盲** |
+| **RowDataWholeBatchEquivTest** | 2 | **2** | 0 | 0 | 🚨 **BL-0157 全盲** |
 | QuotePendingScopeOpenWhitelistTest | 3 | 0 | **1** | 0 | ⚠️ 失败但**与③a无关**（见下） |
 | PriceBaseDateCacheIsolationTest | 1 | 0 | **1** | 0 | ⚠️ 失败但**与③a无关**（见下） |
 
-**结论**：③a 直接命中的测试符号中，**16/19 个类真跑且全绿**；**3 个类（12 个测试方法）因 BL-0155 整体静默跳过，对本次改动零验证力**（这与 `test-report.md §10.0` 提到的 TC-3A-011 假绿是同一根因家族，只是这次是"整个类都在跳过"而不是单个方法）；**2 处失败经代码追溯确认为 ③a 无关的既有问题**：
+**结论**：③a 直接命中的测试符号中，**16/19 个类真跑且全绿**；**3 个类（12 个测试方法）因 BL-0157 整体静默跳过，对本次改动零验证力**（这与 `test-report.md §10.0` 提到的 TC-3A-011 假绿是同一根因家族，只是这次是"整个类都在跳过"而不是单个方法）；**2 处失败经代码追溯确认为 ③a 无关的既有问题**：
 
 1. `QuotePendingScopeOpenWhitelistTest.openCallSites_fileLevelWhitelist_exactMatch`：该测试对 `src/main/java` 做**全文原文子串扫描**（`content.contains("QuotePendingScope.open(")`），未排除注释。命中的"多余文件" `QuotationService.java` 实际只是**第 1631 行注释文本**中提到了这个方法名（`// ...可见域（QuotePendingScope.open(copy.id)）下重查...`），并非真实调用。`git log` 确认该注释所在提交（`3a69ca97`/`49e540c6`，task-0729）早于本任务，`git show --stat a582935d` 确认 ③a 未touch `QuotationService.java`——**该失败在 ③a 之前已存在，属于测试实现自身对注释误判的既有缺陷，不是回归**（建议登记 BACKLOG，但不阻塞 ③a）。
 2. `PriceBaseDateCacheIsolationTest.expandDoesNotBleedAcrossQuotations`：失败信息 `Expected status code <200> but was <401>`，是测试用 REST-assured 对共享测试库发起的登录/请求会话失效，与 `test-report.md §5`（阶段⓪① 报告）记录的"本次运行期间共享测试环境登录/会话大范围 401"同一环境级现象，与 `row_data`/批量写逻辑无任何交集。
@@ -508,7 +508,7 @@ batch=true（1 条多值 UPDATE）：
 - 回归确认（AC-8）：`getExcelView`/`dryRun` 读取路径即时反映，`export-excel-view` 的既有独立快照机制不受影响（也未被期望受影响）
 - 值中性（AC-13）：无编辑单据只读操作零副作用
 - 第二调用路径（AP-51）：`delete-driver-row`/`restore-driver-rows` 手工验证 + `QuoteBomTreeEndToEndTest` 自动化用例（含历史 60s 超时事故复现场景）均通过
-- 回归基线（AC-15）：后端 A/B 失败方法名集合完全一致（技术总监证据）；K11 正向搜索额外核实 16/19 直接相关测试类真跑绿，3 类因既存夹具问题（BL-0155）零验证力，2 处既有失败与③a无关——**没有发现"绿的变红"，也没有发现"隐藏的红上加红"**
+- 回归基线（AC-15）：后端 A/B 失败方法名集合完全一致（技术总监证据）；K11 正向搜索额外核实 16/19 直接相关测试类真跑绿，3 类因既存夹具问题（BL-0157）零验证力，2 处既有失败与③a无关——**没有发现"绿的变红"，也没有发现"隐藏的红上加红"**
 - 前端零回归（AC-15）：`tsc` 0 错误，`vitest` 结果与基线逐字吻合
 
 ### 10.7 测试数据清理记录
@@ -526,7 +526,7 @@ batch=true（1 条多值 UPDATE）：
 - **27 条用例**：19 PASS 直接执行、4 PASS 代码走查（定性，未故障注入）、2 引用技术总监证据（已交叉复核一致）、2 未执行（环境限制，如实标注）、0 阻塞、0 缺陷判定为③a回归
 - **P0（15条）**：全部有结论（13 直接执行 + 2 引用技术总监证据），无遗漏
 - **AC 逐条**：AC-8/AC-8b/AC-8c/AC-13（③a部分）/AC-15（③a部分）全部达成
-- **本轮最大贡献**：①黑盒闭合了此前双方（后端工程师 javadoc + 我方 test.md §7.5）都标注"未覆盖"的 INSERT 分支缺口（TC-3A-020）；②AC-8c 判据从耗时改为 SQL 语句计数，证据更硬；③K11 正向搜索不止做"结论核对"，额外发现 3 个测试类因 BL-0155 整体零验证力（此前未被明确量化到"类"这一粒度）+ 2 处不相关既有失败，均已代码追溯排除③a嫌疑
+- **本轮最大贡献**：①黑盒闭合了此前双方（后端工程师 javadoc + 我方 test.md §7.5）都标注"未覆盖"的 INSERT 分支缺口（TC-3A-020）；②AC-8c 判据从耗时改为 SQL 语句计数，证据更硬；③K11 正向搜索不止做"结论核对"，额外发现 3 个测试类因 BL-0157 整体零验证力（此前未被明确量化到"类"这一粒度）+ 2 处不相关既有失败，均已代码追溯排除③a嫌疑
 - **非缺陷但需 PM 知悉**：TC-3A-002（export-excel-view 与 row_data 无关，AC-8 字面表述可能超出实际适用范围）
 - **未执行的 2 条（TC-3A-100/101）优先级均为 P1/P2，不阻塞合并结论**——单页签/空数组边界的代码路径（N=1 退化、空 ArrayNode 处理）在 TC-3A-010/020 的多组件实验中已间接过（该实验的 8 组件中部分组件本身只有 1 行，如"产品"tab 恒 1 行，已隐含验证 N=1 场景不产生异常）
 

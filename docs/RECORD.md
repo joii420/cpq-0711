@@ -5252,3 +5252,29 @@ render() 用 lineItems.get(0).quotationId 设 QuotationIdContext，
 **遗留**：`BL-0148`（存量盘点：被静默跳过 / 被写坏的单）· `BL-0149`（`ComponentCell:458` pathCache 缺行维度）· `BL-0150`（`copy` 的 `ensureStructure` 吞异常）· `BL-0154`（`PriceReconciler` driverRow 同款洞）· `BL-0155`（`QuotePendingScopeOpenWhitelistTest` 注释误命中恒红）
 
 **未取得集成级证据的 6 条 AC**：AC-4 / AC-7 / AC-8 / AC-12 / AC-13 / AC-16（详见 `交付验收报告.md` §7，未以单测冒充）
+
+---
+
+## [2026-08-08] task-0806 报价编辑链路优化与前后端对账 · 阶段③a 物化批量写 | 合 master `e40ab0fb` | BL-0137
+
+**一句话**：阶段③ 立项时的主体（懒物化）被生产态实测**推翻并裁掉**；真正的收益来自「编辑路径根本没接上仓里现成的批量写」——一个显式传参拿走 80% 的可用空间。
+
+**根因**：`CardSnapshotService.materializeWholeLineRowData` 调 `ConfigureSnapshotService.materializeLineRowData` 的 **6 参重载**，而该重载在 `:1196` 把 `batchWriteEnabled` **硬编码 `false`** → 8 页签 8 次 `REQUIRES_NEW` 独立事务。批量写 `writeRowDataBatch`（N×M → N×1）**首存路径早就在用**，编辑路径只是历史上没接上，不是刻意选择。
+
+**改法**：改调 7 参重载显式传参 + kill switch `cpq.editpath-batch-write`（默认 true，对齐既有 `cpq.firstsave-batch-write`）。**6 参重载默认值不动**（另有调用方，改默认 = 影响面失控）。K4 时序一行未改（只换「怎么写」不换「何时写」）。
+
+**实测**（打包 jar、同一一次性夹具、逐档重启、中位）：A `batch=false` **775ms** → B `batch=true` **541ms** → C 完全不物化 **481ms**。批量写吃掉 234/294 = **80%**，懒物化只多买 60ms → 按 D14 同一标准裁定不做（[[BL-0156]]）。
+
+**涉及文件**：`CardSnapshotService.java`（`materializeWholeLineRowData`）· 新增 `RowDataBatchWriteEquivTest.java` · 任务目录 6 份文档 · `BACKLOG.md` · `dev-docs/INDEX.md`
+
+### 关键教训（比改动本身更值钱）
+
+1. 🚨 **要判断「优化 X 能省多少」，就直接测「关掉 X」的差值，别拿方法内打点占比外推**。立项时 `附录 A.1` 记「整行物化 356ms/45%」是方法内打点，实测「关掉它」只省 294ms/38% —— **占比是成本归属，差值才是收益**。这个误差差点让我们为 60ms 付一整套懒物化的风险。
+2. 🚨 **只看 dev 数字会低估四成**：同一改动 dev 差值 −144ms、生产态 −234ms，**相差 60%**，方向还与「生产更快所以收益缩水」的直觉相反。`附录 A.5` 那条「必须生产态复测」的纪律这次直接兑现。
+3. 🚨 **基线数字是移动靶，判回归必须同轮跑 A 侧**：文档与 `BL-0151` 记的后端基线是 `159F/393E`，**实测当前 master 是 `159F/403E`**。若直接拿文档数字对比，那 +10 会被误判成本次回归。A/B 必须**同轮实测**，不能引用历史数字。
+4. 🚨 **`BUILD SUCCESS` 不等于测试跑了** —— 交付的等价性测试首版报 `BUILD SUCCESS`，实为 `Skipped: 1`、**零断言**：夹具用了开发库 `cpq_db_0724` 的单据，而 `mvnw test` 走测试库 `cpq_db`。**验收判据必须是 `Skipped: 0`**。
+5. 🚨 **坏范式会传染**：上一条不是个人失误 —— 它照抄了周围既有写法。全仓 **19 个测试文件**硬编码同两张已消失的基准单（`ROCKWELL`/`SMALL`，测试库 `count=0`），其中 **16 条静默跳过**（占全量 `Skipped:39` 四成）。这批正是当年防「优化改了值」的护栏，**现在一条都不设防**。已立 [[BL-0157]]（P1）。**禁止再用 `Assumptions.assumeTrue` 兜底夹具缺失**——护栏的价值全在「夹具没了要吵」。
+6. ⚠️ **`/copy` 产出的副本可能缺 `QUOTE_CARD`/`COSTING_CARD` 冻结结构**（**间歇性**，同源单两次复制结果不同），缺了编辑端点恒 `400`，且 `refresh-card-snapshot` / `ensure-card-values` 都补不回来。造夹具时必须先校验 4 份结构齐全。与 `BL-0148`/`BL-0150` 同族。
+7. ⚠️ **并发会话会撞 BL 号段**：本次与 repair-0807 同时分配了 `BL-0154`/`BL-0155`，合并后同号两条内容不同。已把本任务的改为 `BL-0156`/`BL-0157`（对方先合入且被其验收报告引用）。**登记 BL 前先 `grep` 一次全仓最大号，别只看 BACKLOG.md。**
+
+**遗留**：[[BL-0156]]（③b 懒物化，附 3 条重启条件）· [[BL-0157]]（19 个护栏失效，P1）· `export-excel-view` 读独立 `quote_excel_values` 快照列、与 `row_data` 无关，AC-8 字面表述可能超范围（待 PM 澄清）· 测试期 `QT-20260807-0156` 被提交为 SUBMITTED 无法删除（已登记）
