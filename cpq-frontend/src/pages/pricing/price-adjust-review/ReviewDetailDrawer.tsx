@@ -121,7 +121,21 @@ const ReviewDetailDrawer: React.FC<ReviewDetailDrawerProps> = ({ open, reviewId,
     { title: '创建日期', dataIndex: 'createdAt', render: (v: string) => v ? dayjs(v).format('YYYY-MM-DD') : '—' },
     { title: '状态', dataIndex: 'status' },
     { title: '现小计', dataIndex: 'quoteSubtotalCurrent', align: 'right' as const, render: (v: number | null) => fmt(v) },
-    { title: '调整后小计', dataIndex: 'quoteSubtotalAdjusted', align: 'right' as const, render: (v: number | null) => fmt(v) },
+    {
+      title: '调整后小计', dataIndex: 'quoteSubtotalAdjusted', align: 'right' as const,
+      // repair-0807 FR-5：三态，不能塌成两态。
+      //   adjustedComputed=false → 「未试算」（设计内：只对判断依据单试算，其余仅作参考）
+      //   adjustedComputed=true 且有值 → 数值
+      //   adjustedComputed=true 但值为 null → 「—」（试算跑了却没拿到值 = 异常态，必须与"未试算"区分开）
+      // 🚨 判据必须是 adjustedComputed 这个显式布尔，不能用 v == null 顶替——那会把
+      // "试算失败"也说成"未试算"，混淆两种完全不同的状态。
+      render: (v: number | null, r: ReviewQuotationDTO) => {
+        if (!r.adjustedComputed) {
+          return <Tooltip title="仅对判断依据单试算，其余单据仅作参考"><span style={{ color: 'rgba(0,0,0,.35)' }}>未试算</span></Tooltip>;
+        }
+        return fmt(v);
+      },
+    },
     {
       title: '标记', render: (_: unknown, r: ReviewQuotationDTO) => r.isBasis
         ? <Tag color="blue">判断依据</Tag>

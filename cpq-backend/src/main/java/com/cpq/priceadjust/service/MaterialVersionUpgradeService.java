@@ -1,7 +1,11 @@
 package com.cpq.priceadjust.service;
 
+import com.cpq.customer.entity.Customer;
 import com.cpq.priceadjust.dto.ElementPrice;
 import com.cpq.priceadjust.dto.UpgradeResult;
+import com.cpq.priceadjust.entity.CustomerPriceAdjustElement;
+import com.cpq.priceadjust.entity.CustomerPriceAdjustStrategy;
+import com.cpq.priceadjust.entity.ElementPriceVersion;
 import com.cpq.priceadjust.entity.QuotationPriceRevision;
 import com.cpq.quotation.entity.Quotation;
 import com.cpq.quotation.entity.QuotationLineItem;
@@ -22,6 +26,7 @@ import org.jboss.logging.Logger;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -177,6 +182,26 @@ public class MaterialVersionUpgradeService {
     @Transactional
     public UpgradeResult upgrade(UUID lineItemId, UUID targetVersionId, boolean dryRun,
                                   CardSnapshotService.PrecomputedTreeRows precomputed) {
+        return upgrade(lineItemId, targetVersionId, dryRun, precomputed, null);
+    }
+
+    /**
+     * repair-0807 · FR-5/FR-6 重载：接受 {@code PriceAdjustReviewService} 逐元素预算试算传入的
+     * 元素价覆盖 map（供审核抽屉「合计对单价影响」/「该料号用量」按「只改某一元素、其余沿用上一版价」
+     * 的假设跑 dryRun，需求文档 D-5）。
+     *
+     * <p>🔒 <b>默认 {@code null} = 现状行为</b>（与 task-0806 FR-3 重载同一纪律）：S1 仍按
+     * {@link #loadVersionPrices(UUID)} 从库读目标版本全量明细，四参/五参（precomputed=null 且
+     * versionPricesOverride=null）路径逐位不变。只有 {@code versionPricesOverride} 非 null 时才跳过
+     * S1 的读库，直接用调用方构造好的 map（不得在循环里查 {@code ElementPriceVersion}——N+1）。
+     *
+     * @param versionPricesOverride {@code null} = S1 按原逻辑读 {@code targetVersionId} 的全量版本明细；
+     *                              非 {@code null} = 直接使用该 map（S1 读库步骤整段跳过）
+     */
+    @Transactional
+    public UpgradeResult upgrade(UUID lineItemId, UUID targetVersionId, boolean dryRun,
+                                  CardSnapshotService.PrecomputedTreeRows precomputed,
+                                  Map<String, ElementPrice> versionPricesOverride) {
         if (lineItemId == null || targetVersionId == null) {
             return UpgradeResult.failed("BAD_REQUEST", "lineItemId/targetVersionId 不能为空");
         }
@@ -222,24 +247,63 @@ public class MaterialVersionUpgradeService {
 
         // ---- S1：读版本价（一套，报价核价共用，E12）。🔒 不走视图、不走取价函数——
         //      版本明细就是权威快照，这是裁决 41「预算与实际逐位一致」结构上不可能违反的关键。
-        Map<String, ElementPrice> versionPrices = loadVersionPrices(targetVersionId);
+        // repair-0807：versionPricesOverride 非空时（FR-6 逐元素影响试算）直接用它，跳过读库。
+        // repair-0807 D-10：loadVersionPrices 不再过滤 current_price IS NULL，versionPrices.size()
+        // 语义从「有价元素数」变为「本版明细元素数（含无价）」，日志/字段文案同步更正。
+        Map<String, ElementPrice> versionPrices = versionPricesOverride != null
+            ? versionPricesOverride : loadVersionPrices(targetVersionId);
         result.versionPriceCount = versionPrices.size();
         if (versionPrices.isEmpty()) {
-            LOG.warnf("[b0-upgrade] li=%s targetVersion=%s 版本明细为空（无 current_price 非空的元素）",
+            LOG.warnf("[b0-upgrade] li=%s targetVersion=%s 版本明细为空（该版本 element_price_version_item 无任何行）",
                 lineItemId, targetVersionId);
         }
+
+        // ---- repair-0807 D-11：一次加载客户调价元素清单，透传给 S3a/S3b/S4a/S4b 四个写点
+        //      （与 PriceReconciler#prefetch 同构，禁止在循环里查——N+1）。
+        //
+        // 🚨 为什么必须加这道闸门（现网实测 CUST-0002）：customer_price_adjust_element 清单里只有
+        //    Ag，但目标版本 V26080702 的明细里有 Zn（current_price=NULL，previous_price=24.17）；
+        //    实时取价视图今天仍能返回 Zn=24.17，28/32 张单共 55 行 Zn 带着这个价在用。D-10 之后若
+        //    只按 versionPrices（本版明细） 判定，Zn 会被判成"在本版明细但无价"→ 删值撤锁 → 28 张单
+        //    的 Zn 价被抹、小计下降；而 PriceReconciler 用的是元素清单，Zn ∉ 清单 → 值一个字节都不碰
+        //    ——两条链路对同一行给出相反结果，正是 D-8 要消灭的分叉。用户裁定：Zn 已被移出清单 =
+        //    不再希望它被调价机制接管，该回到走实时价，升版侧不能碰它的值。
+        //
+        // 清单为空或策略停用 → elementCodesInList 为空 → 下面三分支的「元素∉清单」分支覆盖全部行
+        // → 整行只撤锁（等价 PriceReconciler 的 unlockOnly 模式，不需要第二套开关）。
+        Set<String> elementCodesInList = loadElementCodesInList(q.customerId);
 
         // ---- S2：定位价格字段。🔒 直接读组件三个角色字段，运行期禁止正则解析 SQL。
         JsonNode frozenTabs = loadFrozenQuoteTabsNative(q.id);
         List<UpgradeResult.PriceBearingComponent> priceBearing = locatePriceBearingComponents(frozenTabs);
-        result.priceBearingComponents = priceBearing;
 
+        // repair-0807 FR-3：冻结结构缺失（复制单未保存过 / 历史单）→ 先补建再重试一次。
+        // 现网实测 33 张活跃 DRAFT 单无 QUOTE_CARD 结构，它们在每次价格更正里都被静默跳过、却仍计入 SUCCESS。
         if (priceBearing.isEmpty()) {
-            result.status = UpgradeResult.Status.SKIPPED;
-            result.message = "该单卡片结构里没有接价格策略的组件（三角色字段均未配齐），无可升版内容";
-            LOG.infof("[b0-upgrade] li=%s quotation=%s 无价格承载组件，跳过", lineItemId, q.quotationNumber);
-            return result;
+            boolean rebuilt = false;
+            try {
+                // ⚠️ ensureStructure 自带 @Transactional(REQUIRED)，加入本方法当前事务——dryRun 路径下
+                // 补建也会随整体事务回滚，符合"预算试算无副作用"，不为它单开 REQUIRES_NEW。
+                cardSnapshotService.ensureStructure(q.id);
+                rebuilt = true;
+            } catch (Exception e) {
+                LOG.warnf("[b0-upgrade] li=%s 冻结结构补建失败: %s", lineItemId, e.getMessage());
+            }
+            if (rebuilt) {
+                frozenTabs = loadFrozenQuoteTabsNative(q.id);
+                priceBearing = locatePriceBearingComponents(frozenTabs);
+            }
+            if (priceBearing.isEmpty()) {
+                result.status = UpgradeResult.Status.SKIPPED;
+                result.message = rebuilt
+                    ? "冻结结构已补建，但仍无接价格策略的组件（三角色字段未配齐），无可升版内容"
+                    : "冻结结构缺失且补建失败，无法定位价格承载组件";
+                LOG.infof("[b0-upgrade] li=%s quotation=%s 无价格承载组件（rebuilt=%b），跳过",
+                    lineItemId, q.quotationNumber, rebuilt);
+                return result;
+            }
         }
+        result.priceBearingComponents = priceBearing;
 
         // ---- S9 前置（B0-R）：初版 R 定型。§11.10.6 要求"建单时（首次保存且已有产品行）就创建
         //      sealed=false + snapshot NULL 的占位行"——这一半由 saveDraft 链路的
@@ -249,12 +313,17 @@ public class MaterialVersionUpgradeService {
         //      saveDraft 钩子）→ 直接创建并当场定型，同样的懒建兜底（coordinator 已确认此限制）。
         materializeAndSealInitialRevision(q);
 
+        // repair-0807 FR-1：一次查出目标版本 versionNo，透传给 S3a/S3b（禁止在循环里查
+        // ElementPriceVersion——N+1）。查不到时退化为 versionId.toString()（与 PriceReconciler
+        // :222-224 同款兜底，不新造字面）。
+        String versionLabel = resolveVersionLabel(targetVersionId);
+
         // ---- S3a + S3b + S4b：逐价格承载组件，字段级写回 snapshot_rows（driver 行）+
-        //      row_data（手动行改新价 + 非手动行清陈旧价）。
+        //      row_data（手动行改新价 + 非手动行按本版价覆盖/删值撤锁）。
         int totalRowsChanged = 0;
         List<String> perComponentSummary = new ArrayList<>();
         for (UpgradeResult.PriceBearingComponent pbc : priceBearing) {
-            RowUpdateOutcome outcome = upgradeComponentRows(lineItemId, pbc, versionPrices);
+            RowUpdateOutcome outcome = upgradeComponentRows(lineItemId, pbc, versionPrices, versionLabel, elementCodesInList);
             if (outcome.conflict) {
                 txRegistry.setRollbackOnly();
                 UpgradeResult r = UpgradeResult.conflict(String.format(
@@ -276,7 +345,7 @@ public class MaterialVersionUpgradeService {
         // ---- S4a：清 quote_card_values.editRows 里价格承载 tab 的价格键（销售在渲染层单元格
         //      手改过的陈旧覆盖值）。挂在 quotation_line_item 而不是 quotation_line_component_data，
         //      故不走 row_version 乐观锁（li 是本事务内的托管实体，随 upgrade() 整体事务一起提交/回滚）。
-        int editRowsCleaned = cleanEditRowOverrides(li, priceBearing, versionPrices);
+        int editRowsCleaned = cleanEditRowOverrides(li, priceBearing, versionPrices, elementCodesInList);
 
         // ---- S5：重算卡片（报价侧 + 核价侧都算）。走既有 buildCardValues / refreshCostingCardValuesForLine，
         //      不新写第二套卡片组装逻辑。两者都读刚被 S3 改过的 snapshot_rows/row_data，自然得到新价。
@@ -353,7 +422,7 @@ public class MaterialVersionUpgradeService {
 
         result.status = UpgradeResult.Status.SUCCESS;
         result.message = String.format(
-            "升版成功：版本价 %d 条，价格承载组件 %d 个，snapshot_rows/row_data 共改写 %d 行（%s），" +
+            "升版成功：版本明细 %d 条（含无价），价格承载组件 %d 个，snapshot_rows/row_data 共改写 %d 行（%s），" +
             "editRows 清理 %d 条，subtotal %s→%s，quotation.totalAmount=%s",
             versionPrices.size(), priceBearing.size(), totalRowsChanged, String.join(", ", perComponentSummary),
             editRowsCleaned, oldSubtotalForLog, newSubtotal, q.totalAmount);
@@ -372,21 +441,31 @@ public class MaterialVersionUpgradeService {
     }
 
     /**
-     * S4a：清 {@code quotation_line_item.quote_card_values} 里各 tab 的 {@code editRows}
-     * 中价格承载组件那部分的价格/货币键（销售在报价卡片单元格里手改过的陈旧覆盖值）。
+     * S4a：{@code quotation_line_item.quote_card_values} 里各 tab 的 {@code editRows}
+     * 中价格承载组件那部分的价格/货币键（销售在报价卡片单元格里手改过的覆盖值）。
      *
      * <p>editRows 条目形如 {@code {rowKey, values:{字段名: 值, ...}}}——{@code values} 是否含
      * 元素字段取决于该行历史上是否被 {@code mergeRowDataInputsIntoEdits} 合并过 row_data 全量值
      * （常见情形）。🔒 本方法按该 editRow 自身 {@code values} 里的元素字段值匹配 {@code element_code}，
-     * <b>对不上就跳过、不清</b>——不做"价格承载 tab 的 editRows 一律清空"这种粗粒度处理，避免误伤
+     * <b>对不上就跳过、不动</b>——不做"价格承载 tab 的 editRows 一律清空"这种粗粒度处理，避免误伤
      * "元素不在本次升版范围内"的手改值（对齐 S3b/S4b「对不上就不动」的同一纪律，验收 #35 同族）。
-     * 🔒 只删价格/货币两个键，不清元素字段本身（验收 #34）；其余手改字段（如同一 editRow 里若还
+     * 🔒 只写/删价格、货币两个键，不清元素字段本身（验收 #34）；其余手改字段（如同一 editRow 里若还
      * 手改过毛重）原样保留。
      *
-     * @return 实际清理的 editRow 条目数（跨所有价格承载 tab 汇总，调试/日志用）。
+     * <p>repair-0807 FR-2：由「删键」改「覆盖」——元素∈清单且本版明细解出价 → 写入本版价+货币；
+     * 元素∈清单但解不出价 → 删键（+撤锁，防御性对齐 D-11，见下）。
+     *
+     * <p>🔒 <b>repair-0807 D-11</b>：写/删前先判「元素∈客户调价元素清单」——不在清单，值不动，
+     * 只撤 {@code __priceLocked}/{@code __priceVersion}（与 S3a/S3b/S4b 三个写点同一套三分支，
+     * {@code elementCodesInList} 由 {@link #upgrade} 一次加载透传）。editRow.values 正常情况下
+     * 不承载这两个锁标记（渲染层锁标记只读 driverRow/rawRow，见 {@code ComponentCell.tsx}），
+     * 撤锁在此处多数是 no-op，但保留这一步是防御性对齐——四个写点结构统一，不留"某个点悄悄没做"
+     * 的隐藏假设。
+     *
+     * @return 实际改动的 editRow 条目数（跨所有价格承载 tab 汇总，调试/日志用）。
      */
     int cleanEditRowOverrides(QuotationLineItem li, List<UpgradeResult.PriceBearingComponent> priceBearing,
-                               Map<String, ElementPrice> versionPrices) {
+                               Map<String, ElementPrice> versionPrices, Set<String> elementCodesInList) {
         if (li.quoteCardValues == null || li.quoteCardValues.isBlank()) return 0;
         Map<String, UpgradeResult.PriceBearingComponent> byComponentId = new LinkedHashMap<>();
         for (UpgradeResult.PriceBearingComponent pbc : priceBearing) byComponentId.put(pbc.componentId, pbc);
@@ -415,12 +494,33 @@ public class MaterialVersionUpgradeService {
                 ObjectNode values = (ObjectNode) valuesNode;
                 JsonNode ecNode = values.get(pbc.elementCodeField);
                 if (ecNode == null || ecNode.isNull()) continue; // 该 editRow 没带元素字段，对不上就不动
-                if (!versionPrices.containsKey(ecNode.asText())) continue; // 元素不在本次升版范围内，不动
-                boolean removedAny = values.remove(pbc.elementPriceField) != null;
-                if (pbc.elementCurrencyField != null && !pbc.elementCurrencyField.isBlank()) {
-                    removedAny = (values.remove(pbc.elementCurrencyField) != null) || removedAny;
+                String elementCodeVal = ecNode.asText();
+
+                // repair-0807 D-11：元素不在客户调价元素清单里 → 值不动，只撤锁（防御性，见方法 javadoc）。
+                if (!elementCodesInList.contains(elementCodeVal)) {
+                    if (stripPriceLockMarks(values)) { cleaned++; touched = true; }
+                    continue;
                 }
-                if (removedAny) { cleaned++; touched = true; }
+
+                ElementPrice ep = versionPrices.get(elementCodeVal);
+                boolean changedThis;
+                if (ep != null && ep.price != null) {
+                    // repair-0807 FR-2：命中且解出价 → 用本版价覆盖（不再删键）。
+                    values.put(pbc.elementPriceField, ep.price);
+                    changedThis = true;
+                    if (pbc.elementCurrencyField != null && !pbc.elementCurrencyField.isBlank() && ep.currency != null) {
+                        values.put(pbc.elementCurrencyField, ep.currency);
+                    }
+                } else {
+                    // 元素∈清单但（不在本版明细 或 本版明细无价）→ 删键 + 撤锁（防御性对齐 D-11）。
+                    boolean removedAny = values.remove(pbc.elementPriceField) != null;
+                    if (pbc.elementCurrencyField != null && !pbc.elementCurrencyField.isBlank()) {
+                        removedAny = (values.remove(pbc.elementCurrencyField) != null) || removedAny;
+                    }
+                    removedAny = stripPriceLockMarks(values) || removedAny;
+                    changedThis = removedAny;
+                }
+                if (changedThis) { cleaned++; touched = true; }
             }
         }
 
@@ -511,12 +611,36 @@ public class MaterialVersionUpgradeService {
      * 判定是否命中版本价，<b>不是</b>找到第一条匹配就停、也不是遇到匹配就 return（那会静默漏改
      * 其余同元素行，验收 #33 专测）。
      *
-     * <p>🚨 S3b/S4b 按 {@code row_data} 里 {@code _origin === 'manual'} 显式判定手动行 vs 非手动行——
-     * 不靠下标区分（"手动行恒在尾部"只是前端纪律，不是结构保证，AP-54 同族）。两者都按该行**元素列的
-     * 值**匹配 {@code element_code}，对不上就不动（不做名称→编码兜底，验收 #35）。
+     * <p>🚨 S3b/S4b 都按该行**元素列的值**匹配 {@code element_code}，对不上就不动（不做名称→编码
+     * 兜底，验收 #35）。🔒 <b>repair-0807 D-8</b>：{@code row_data} 的三分支写/删口径不再按
+     * {@code _origin === 'manual'} 区分手动行/非手动行——与 {@link PriceReconciler#reconcileRows}
+     * 的 {@code row_data} 循环同构（该方法本就不区分两者），两类行完全同一套判定，避免"手动行留着
+     * 不动"在本版无价时形成 #47 死格的另一种变种（值是旧的、格子还锁着）。
+     *
+     * <p>repair-0807 FR-1/FR-2：S3a/S3b 写价的同时写 {@code __priceLocked}/{@code __priceVersion}
+     * 锁标记（{@code versionLabel} 由 {@link #upgrade} 一次查出透传，不得逐行查库）；S3b/S4b
+     * 由「删键」改「用本版价覆盖」——元素∈本版明细且解出价 → 覆盖新价+锁标记；解不出价 → 删价格键
+     * 的同时必须一并删两个锁标记（AC-5/D-8「只删值不删锁=死格」，口径与 {@link PriceReconciler
+     * #reconcileRows} 逐条对齐）。
+     *
+     * <p>🔒 <b>repair-0807 D-11</b>（用户裁决，代码评审续）：写/删动作前先判「元素∈客户调价元素
+     * 清单」——不在清单里的元素，无论 {@code versionPrices} 里查到什么，值一个字节都不碰，只撤
+     * {@code __priceLocked}/{@code __priceVersion} 两个可编辑性标记（等价 {@link PriceReconciler}
+     * 的 {@code unlockOnly}/「料号∉范围」撤锁语义）。三分支：
+     * <pre>
+     * 元素 ∉ 清单                              → 值不动，只撤锁
+     * 元素 ∈ 清单 且 ep!=null 且 ep.price!=null → 覆盖 价+币+两个锁标记
+     * 元素 ∈ 清单 且（ep==null 或 ep.price==null）→ 删 价+币+两个锁标记
+     * </pre>
+     * 为什么必须加这道闸门：现网 Zn 已被移出客户调价元素清单，但仍留在目标版本明细里
+     * （{@code current_price=NULL}）；若只按 {@code versionPrices} 判定，Zn 会被判成"在明细但
+     * 无价"→ 删值撤锁，而 {@code PriceReconciler} 按清单判定 Zn ∉ 清单 → 值不动——两条链路对同一
+     * 行给出相反结果，正是 D-8 要消灭的分叉。清单为空/策略停用时 {@code elementCodesInList} 为空，
+     * 三分支的第一条覆盖全部行 = 整行只撤锁，无需第二套开关。
      */
     RowUpdateOutcome upgradeComponentRows(UUID lineItemId, UpgradeResult.PriceBearingComponent pbc,
-                                                   Map<String, ElementPrice> versionPrices) {
+                                                   Map<String, ElementPrice> versionPrices, String versionLabel,
+                                                   Set<String> elementCodesInList) {
         UUID componentId = UUID.fromString(pbc.componentId);
 
         @SuppressWarnings("unchecked")
@@ -555,49 +679,93 @@ public class MaterialVersionUpgradeService {
             // "准入判定的元素"不是同一批。
             String elementCodeVal = resolveDriverRowElementCode(fieldsNode, rowNode, pbc.elementCodeField);
             if (elementCodeVal == null) continue; // 该行解析不出元素编码，不动
-            ElementPrice ep = versionPrices.get(elementCodeVal);
-            if (ep == null) continue; // 元素不在本版明细里（含无价/不在策略清单），不动
 
-            // 只改价格/货币两个键；价格列/货币列在价格策略 SQL 契约里就是"别名逐字=字段名、不加前缀"
-            // （task-0729 §11.15.3.4 纪律2），driverRow 直接以字段名为 key 持有该值，无需再经 default_source。
-            if (ep.price != null) driverRow.put(pbc.elementPriceField, ep.price);
-            if (pbc.elementCurrencyField != null && !pbc.elementCurrencyField.isBlank() && ep.currency != null) {
-                driverRow.put(pbc.elementCurrencyField, ep.currency);
+            // repair-0807 D-11：先判元素是否∈客户调价元素清单——不在清单，值一个字节都不碰，
+            // 只撤锁（现网 Zn 已被移出清单但仍留在版本明细里，必须走这条分支而不是"在明细但无价"）。
+            if (!elementCodesInList.contains(elementCodeVal)) {
+                if (stripPriceLockMarks(driverRow)) changed++;
+                continue;
+            }
+
+            // repair-0807 D-9（代码评审 P0 修复）：driverRow 与 row_data（S3b/S4b）三分支口径对齐——
+            // 元素∈清单且解出价 → 覆盖新价+货币+锁标记；元素∈清单但解不出价（ep==null 或
+            // ep.price==null，含"清单内但本版明细压根没这元素"与"明细有但 noPrice"两种情形，
+            // D-10 合并判定，与 PriceReconciler#reconcileRows 逐条对齐）→ 删价格键+货币键+两个
+            // 锁标记，四者全删。
+            //
+            // 价格列/货币列在价格策略 SQL 契约里就是"别名逐字=字段名、不加前缀"（task-0729
+            // §11.15.3.4 纪律2），driverRow 直接以字段名为 key 持有该值，无需再经 default_source。
+            ElementPrice ep = versionPrices.get(elementCodeVal);
+            if (ep != null && ep.price != null) {
+                driverRow.put(pbc.elementPriceField, ep.price);
+                if (pbc.elementCurrencyField != null && !pbc.elementCurrencyField.isBlank() && ep.currency != null) {
+                    driverRow.put(pbc.elementCurrencyField, ep.currency);
+                }
+                driverRow.put("__priceLocked", true);
+                driverRow.put("__priceVersion", versionLabel);
+            } else {
+                driverRow.remove(pbc.elementPriceField);
+                if (pbc.elementCurrencyField != null && !pbc.elementCurrencyField.isBlank()) {
+                    driverRow.remove(pbc.elementCurrencyField);
+                }
+                driverRow.remove("__priceLocked");
+                driverRow.remove("__priceVersion");
             }
             changed++;
         }
 
-        // ---- S3b（手动行改新价）+ S4b（非手动行清手工陈旧价）合并一次遍历 row_data。
+        // ---- S3b（手动行）+ S4b（非手动行）合并一次遍历 row_data。
         // row_data 无论手动行还是驱动行的 autosave 持久化当前值，都是「字段名→值」平铺结构
         // （RowDataMaterializer 产物），元素编码统一按字段名直接取值，无需 resolveRowByFieldName。
+        //
+        // repair-0807 FR-2 / D-8（2026-08-07 测试工程师审用例发现的需求空白，PM 裁决补齐）：
+        // 三分支口径手动行与非手动行【完全一致】，不再按 _origin 分叉——与 PriceReconciler
+        // #reconcileRows 的 row_data 循环同构（该方法本就不区分 manual/non-manual）。改造前 S3b
+        // 只有 `if (ep.price != null) put(...)`、无 else 分支，会让手动行在本版无价时原样保留
+        // 「陈旧手改值 + 陈旧锁标记」——那是 #47 死格的另一种形态（值是旧的、格子还锁着，销售既
+        // 拿不到系统价也改不了）。
+        //
+        // repair-0807 D-11：写/删动作前先判「元素∈客户调价元素清单」，三分支：
+        //   元素 ∉ 清单                              → 值不动，只撤锁
+        //   元素 ∈ 清单 且 ep!=null 且 ep.price!=null → 写新价 + 货币 + __priceLocked + __priceVersion（覆盖）
+        //   元素 ∈ 清单 且（ep==null 或 ep.price==null）→ 删价格键 + 货币键，同时删 __priceLocked / __priceVersion
         for (JsonNode rd : rowData) {
             if (!(rd instanceof ObjectNode)) continue;
             ObjectNode dataRow = (ObjectNode) rd;
-            // 🚨 手动行判定：显式按 _origin === 'manual'，不靠下标区分
-            // （"手动行恒在尾部"只是前端纪律不是结构保证，AP-54 同族）。
-            boolean isManual = "manual".equals(dataRow.path("_origin").asText(""));
 
-            // 🔒 同上，解析抽成 resolveDataRowElementCode，与 collectMaterialElementCodes 共用。
+            // 🔒 元素编码解析抽成 resolveDataRowElementCode，与 collectMaterialElementCodes 共用。
             String elementCodeVal = resolveDataRowElementCode(dataRow, pbc.elementCodeField);
             if (elementCodeVal == null) continue; // 对不上就不动（S3b/S4b 共同前提，验收 #35）
-            ElementPrice ep = versionPrices.get(elementCodeVal);
-            if (ep == null) continue; // 元素不在本版明细里，不动——既不改价也不清价
 
-            if (isManual) {
-                // S3b：手动行按元素值命中，直接改新价（不做名称→编码兜底）。
-                if (ep.price != null) dataRow.put(pbc.elementPriceField, ep.price);
+            // repair-0807 D-11：元素不在客户调价元素清单里 → 值一个字节都不碰，只撤锁
+            // （现网 Zn 已被移出清单但仍留在版本明细里，必须走这条分支而不是"在明细但无价"）。
+            if (!elementCodesInList.contains(elementCodeVal)) {
+                if (stripPriceLockMarks(dataRow)) changed++;
+                continue;
+            }
+
+            ElementPrice ep = versionPrices.get(elementCodeVal);
+            if (ep != null && ep.price != null) {
+                // 解出了价 → 用本版价【覆盖】（不再只删键，根因 B 修复）。旧行为只删价格键，S5
+                // buildCardValues 重建 editRows 时是从 row_data 回种的（seedEditRowsFromRowData），
+                // 键缺失导致该格算不出值——元素报价整格丢失、产品小计塌陷（用户实测 18.00→15.109316）。
+                // 🔒 其余手改字段（毛重/损耗率等）原样保留；🔒 不得清元素字段（验收 #34）。
+                dataRow.put(pbc.elementPriceField, ep.price);
                 if (pbc.elementCurrencyField != null && !pbc.elementCurrencyField.isBlank() && ep.currency != null) {
                     dataRow.put(pbc.elementCurrencyField, ep.currency);
                 }
+                dataRow.put("__priceLocked", true);
+                dataRow.put("__priceVersion", versionLabel);
             } else {
-                // S4b：非手动行 = 驱动行 autosave 持久化的当前输入值快照，可能含销售手改过的陈旧
-                // 单价（mergeRowDataInputsIntoEdits 会把它合并进 editRows 抢占渲染）。🔒 只删价格
-                // 字段这一个键（+货币键，若配置），不是覆盖成新值；其余手改字段（毛重/损耗率等）
-                // 原样保留；🔒 不得清元素字段（否则两次升版结果漂移，验收 #34）。
+                // 元素∈清单但（不在本版明细 或 本版明细无价）→ 仍需清掉陈旧手工值，且【清值必须
+                // 同时撤锁】——只删值不删锁 = 只读的空格 = 死格（AC-5 / D-8 / 反模式 #47，
+                // 与 PriceReconciler#reconcileRows:293-298 同款纪律，手动行不例外）。
                 dataRow.remove(pbc.elementPriceField);
                 if (pbc.elementCurrencyField != null && !pbc.elementCurrencyField.isBlank()) {
                     dataRow.remove(pbc.elementCurrencyField);
                 }
+                dataRow.remove("__priceLocked");
+                dataRow.remove("__priceVersion");
             }
             changed++;
         }
@@ -905,16 +1073,82 @@ public class MaterialVersionUpgradeService {
     }
 
     /**
-     * S1：从 {@code element_price_version_item} 读一套元素价（{@code current_price IS NOT NULL} 才纳入——
-     * 与 {@code f_material_element_price} 的 fallback 判定同一口径，无价元素本就不该参与升版覆盖）。
-     * 🔒 不走视图、不走取价函数——版本明细本身就是权威快照，直接原生 SQL 读表。
+     * repair-0807 FR-1：目标版本的 {@code version_no} 徽标字面，与 {@link PriceReconciler}
+     * 的 {@code versionLabel} 同源（AP-52：不得一处写 versionNo、一处写 versionId.toString()）。
+     * 查不到时退化为 {@code versionId.toString()}（与 {@code PriceReconciler:222-224} 同款兜底）。
+     */
+    String resolveVersionLabel(UUID versionId) {
+        ElementPriceVersion v = ElementPriceVersion.findById(versionId);
+        return (v != null && v.versionNo != null) ? v.versionNo : versionId.toString();
+    }
+
+    /**
+     * repair-0807 D-11：客户调价策略的元素清单（一次加载，透传给 S3a/S3b/S4a/S4b 四个写点，
+     * 与 {@link PriceReconciler#prefetch} 同构，禁止在循环里查）。
+     *
+     * <p>🔒 <b>策略停用时不加载清单</b>（对齐 {@code PriceReconciler.prefetch:432}
+     * 的 {@code ctx.unlockOnly} 判定）——只有 {@code strategyActive} 为真才查
+     * {@code CustomerPriceAdjustElement}，否则返回空集合。这不是可省的优化，是正确性要求：
+     * 若不加这道门槛，策略停用后残留的清单行仍会让下游把清单内元素判成"应接管"，导致"策略已停用，
+     * 但被这条清单遗漏的判定逻辑继续加锁"的回归。
+     *
+     * @return 客户不存在 / 客户编号为空 / 策略不存在 / 策略停用 → 空集合（下游三分支据此走
+     *         "元素∉清单 → 只撤锁不动值"，等价 {@code PriceReconciler} 的 {@code unlockOnly} 模式）
+     */
+    Set<String> loadElementCodesInList(UUID customerId) {
+        Customer customer = Customer.findById(customerId);
+        if (customer == null || customer.code == null) return Set.of();
+        CustomerPriceAdjustStrategy strategy = CustomerPriceAdjustStrategy.findByCustomerNo(customer.code);
+        boolean strategyActive = strategy != null && Boolean.TRUE.equals(strategy.enabled);
+        if (!strategyActive) return Set.of();
+        Set<String> out = new HashSet<>();
+        for (CustomerPriceAdjustElement e : CustomerPriceAdjustElement.listByStrategy(strategy.id)) {
+            out.add(e.elementCode);
+        }
+        return out;
+    }
+
+    /**
+     * repair-0807 D-11：撤掉一行的两个可编辑性标记，<b>不碰任何业务键</b>——与
+     * {@code PriceReconciler#stripPriceLockMarks} 同一语义（同构实现，非字面复用：两个类各自独立
+     * 持有，跨类共享私有辅助方法收益不大，反而增加耦合）。
+     *
+     * @return 是否真的删掉了键（调用方据此决定要不要计入 changed，没删掉却计数会造成每次升版对
+     *         全部清单外行白写一次 UPDATE）
+     */
+    private static boolean stripPriceLockMarks(ObjectNode row) {
+        boolean removed = false;
+        if (row.has("__priceLocked")) { row.remove("__priceLocked"); removed = true; }
+        if (row.has("__priceVersion")) { row.remove("__priceVersion"); removed = true; }
+        return removed;
+    }
+
+    /**
+     * S1：从 {@code element_price_version_item} 读一套元素价。🔒 不走视图、不走取价函数——
+     * 版本明细本身就是权威快照，直接原生 SQL 读表。
+     *
+     * <p>repair-0807 D-10（代码评审 P0 修复，BUG-1）：<b>不过滤 {@code current_price IS NULL}</b>——
+     * map 收录本版明细的<b>全部</b>元素，无价元素的 {@link ElementPrice#price} 为 {@code null}。
+     *
+     * <p>🚨 <b>为什么必须收录（原实现的 bug）</b>：本类没有 {@code PriceReconciler} 那样的独立
+     * 「策略元素清单」集合（{@code ctx.elementCodesInList}）来区分"元素∈本版明细但无价"与
+     * "元素压根不在本版明细里"这两种不同语义——本方法的 map 是唯一的判定依据。旧实现按
+     * {@code current_price IS NOT NULL} 过滤后，两种语义都会在下游被压成同一个
+     * {@code versionPrices.get(ec) == null}，导致 S3a/S3b/S4a/S4b 三个写点的
+     * {@code ep != null && ep.price == null}（"在明细但无价，应删值撤锁"）分支<b>永远走不到</b>——
+     * {@code ep == null} 分支（"不在明细，一个字节都不碰"）会抢先把无价元素当成"不在明细"直接放行，
+     * D-8/D-9 补的 else 分支在真实路径上形同虚设，AC-5 实为未交付。
+     *
+     * <p>与 {@code PriceAdjustBudgetService#loadVersionEffectivePrices} 同一纪律（该方法 javadoc
+     * 已明写"与 loadVersionPrices 不同，本方法保留 current_price IS NULL 的元素"——本次是把预算侧
+     * 早就在用的正确口径同步补到升版侧，消除两处口径不一致）。
      */
     Map<String, ElementPrice> loadVersionPrices(UUID versionId) {
         @SuppressWarnings("unchecked")
         List<Object[]> rows = em.createNativeQuery(
                 "SELECT element_code, current_price, currency " +
                 "FROM element_price_version_item " +
-                "WHERE version_id = :vid AND current_price IS NOT NULL")
+                "WHERE version_id = :vid")
             .setParameter("vid", versionId)
             .getResultList();
         Map<String, ElementPrice> out = new LinkedHashMap<>();

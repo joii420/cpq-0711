@@ -42,7 +42,11 @@ public class UpgradeResult {
 
     /** S2 定位到的价格承载组件预览（调试/验证用，S3 起据此逐个改写）。 */
     public List<PriceBearingComponent> priceBearingComponents;
-    /** S1 读到的版本价条目数（调试/验证用）。 */
+    /**
+     * S1 读到的版本明细条目数（调试/验证用）。repair-0807 D-10：语义是「本版明细元素数」
+     * （含 {@code current_price IS NULL} 的无价元素），不是「有价元素数」——
+     * {@code loadVersionPrices} 已不再过滤无价元素（见其 javadoc）。
+     */
     public int versionPriceCount;
 
     public static UpgradeResult failed(String errorCode, String message) {

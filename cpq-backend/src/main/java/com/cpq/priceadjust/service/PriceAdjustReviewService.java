@@ -4,9 +4,11 @@ import com.cpq.common.dto.PageResult;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.customer.entity.Customer;
 import com.cpq.priceadjust.dto.ApproveRejectRequest;
+import com.cpq.priceadjust.dto.ElementPrice;
 import com.cpq.priceadjust.dto.ImpactResultDTO;
 import com.cpq.priceadjust.dto.ReviewDetailDTO;
 import com.cpq.priceadjust.dto.ReviewListItemDTO;
+import com.cpq.priceadjust.dto.UpgradeResult;
 import com.cpq.priceadjust.entity.ElementPriceVersion;
 import com.cpq.priceadjust.entity.ElementPriceVersionItem;
 import com.cpq.priceadjust.entity.MaterialPriceReview;
@@ -22,6 +24,7 @@ import io.quarkus.panache.common.Page;
 import io.quarkus.panache.common.Parameters;
 import io.quarkus.panache.common.Sort;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.context.control.ActivateRequestContext;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
@@ -29,6 +32,7 @@ import org.eclipse.microprofile.context.ManagedExecutor;
 import org.jboss.logging.Logger;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -37,6 +41,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * task-0729 B5 · 审核 API（api.md §2）。
@@ -53,6 +58,10 @@ public class PriceAdjustReviewService {
     @Inject EntityManager em;
     @Inject PriceAdjustJobExecutionService jobExecutionService;
     @Inject ManagedExecutor managedExecutor;
+    @Inject MaterialVersionUpgradeService materialVersionUpgradeService;
+
+    /** repair-0807 FR-6：合计与 Σ 明细比对告警阈值（D-6，不阻断、不改数，只落 WARN）。 */
+    private static final BigDecimal ELEMENT_IMPACT_RECONCILE_THRESHOLD = new BigDecimal("0.01");
 
     // -------------------------------------------------------------------------
     // §2.1 待办池列表
@@ -158,24 +167,23 @@ public class PriceAdjustReviewService {
         dto.budgetStatus = r.budgetStatus;
         dto.reviewStatus = r.status;
 
-        // 一、为什么变：目标版本的全部元素明细（简化实现：matchedRule 粗粒度描述，
-        // usageQty/unitPriceImpact 需逐行 driver 回溯，本期未做，如实留空——见交付说明已知限制）
+        // 一、为什么变：目标版本的全部元素明细。usageQty/unitPriceImpact 按 FR-6 在下方补算
+        // （只有判断依据单 dryRun 成功时才有值，见下方 basisComputed 分支）。
+        List<ElementPriceVersionItem> versionItems = tgt != null
+            ? ElementPriceVersionItem.listByVersion(tgt.id) : List.of();
         dto.elementChanges = new ArrayList<>();
-        BigDecimal impactTotal = BigDecimal.ZERO;
-        if (tgt != null) {
-            for (ElementPriceVersionItem it : ElementPriceVersionItem.listByVersion(tgt.id)) {
-                ReviewDetailDTO.ElementChange ec = new ReviewDetailDTO.ElementChange();
-                ec.elementCode = it.elementCode;
-                com.cpq.configure.entity.Element el = com.cpq.configure.entity.Element.find("elementCode", it.elementCode).firstResult();
-                ec.elementName = el != null ? el.elementName : it.elementCode;
-                ec.matchedRule = it.inheritedFromPrevious ? "无本期价，沿用上一版" : "客户调价策略";
-                ec.previousPrice = it.previousPrice;
-                ec.currentPrice = it.currentPrice;
-                ec.changeRate = it.changeRate;
-                ec.noPrice = Boolean.TRUE.equals(it.noPrice);
-                ec.inheritedFromPrevious = Boolean.TRUE.equals(it.inheritedFromPrevious);
-                dto.elementChanges.add(ec);
-            }
+        for (ElementPriceVersionItem it : versionItems) {
+            ReviewDetailDTO.ElementChange ec = new ReviewDetailDTO.ElementChange();
+            ec.elementCode = it.elementCode;
+            com.cpq.configure.entity.Element el = com.cpq.configure.entity.Element.find("elementCode", it.elementCode).firstResult();
+            ec.elementName = el != null ? el.elementName : it.elementCode;
+            ec.matchedRule = it.inheritedFromPrevious ? "无本期价，沿用上一版" : "客户调价策略";
+            ec.previousPrice = it.previousPrice;
+            ec.currentPrice = it.currentPrice;
+            ec.changeRate = it.changeRate;
+            ec.noPrice = Boolean.TRUE.equals(it.noPrice);
+            ec.inheritedFromPrevious = Boolean.TRUE.equals(it.inheritedFromPrevious);
+            dto.elementChanges.add(ec);
         }
 
         // 二、比对结果
@@ -199,17 +207,89 @@ public class PriceAdjustReviewService {
             cr.status = col.status;
             cr.missingSide = col.missingSide;
             dto.comparisonColumns.add(cr);
-            if ("col-default".equals(col.columnId)) impactTotal = col.diffAdjusted != null ? col.diffAdjusted : BigDecimal.ZERO;
         }
-        dto.elementImpactTotal = impactTotal;
 
-        // 三、逐单明细：该客户×料号名下全部活单，isBasis 标记判断依据单
+        // 三、逐单明细：该客户×料号名下全部活单，isBasis 标记判断依据单。
+        // repair-0807 FR-7：一次批量查 Quotation/QuotationLineItem，不逐行 findById（N+1，AC-13）。
+        List<Object[]> rows = findAllActiveLines(r.customerNo, r.materialNo);
+        List<UUID> qids = rows.stream().map(row -> (UUID) row[0]).distinct().toList();
+        List<UUID> lids = rows.stream().map(row -> (UUID) row[1]).distinct().toList();
+        Map<UUID, Quotation> qMap = qids.isEmpty() ? Map.of()
+            : Quotation.<Quotation>list("id in ?1", qids).stream().collect(Collectors.toMap(x -> x.id, x -> x));
+        Map<UUID, QuotationLineItem> liMap = lids.isEmpty() ? Map.of()
+            : QuotationLineItem.<QuotationLineItem>list("id in ?1", lids).stream().collect(Collectors.toMap(x -> x.id, x -> x));
+        LOG.infof("[perf] review-detail N=%d sql=%d", rows.size(), 2);
+
+        // repair-0807 FR-5：定位判断依据行（r.basisQuotationId 下 productPartNoSnapshot=materialNo
+        // 那一行），从已批量加载的 rows/liMap 里找，不再单独查一次。
+        UUID basisLineItemId = null;
+        BigDecimal basisCurrentSubtotal = null;
+        if (r.basisQuotationId != null) {
+            for (Object[] row : rows) {
+                if (r.basisQuotationId.equals((UUID) row[0])) {
+                    basisLineItemId = (UUID) row[1];
+                    QuotationLineItem basisLi = liMap.get(basisLineItemId);
+                    basisCurrentSubtotal = basisLi != null ? basisLi.subtotal : null;
+                    break;
+                }
+            }
+        }
+
+        // repair-0807 FR-5（D-1）：只有判断依据行跑一次整体 dryRun 试算，其余行不试算——
+        // 现网该料号 25+ 张活单，逐单试算会把抽屉打开耗时拉到 40s+，不可接受。
+        BigDecimal adjustedTotal = null;
+        boolean basisComputed = false;
+        if (basisLineItemId != null && tgt != null) {
+            adjustedTotal = safeDryRunAdjustedSubtotal(r.id, basisLineItemId, tgt.id, null);
+            if (adjustedTotal != null && basisCurrentSubtotal != null) {
+                basisComputed = true;
+            } else {
+                LOG.warnf("[price-adjust-review] review=%s dryRun 试算失败或依据单现值缺失，"
+                    + "adjustedComputed=false（降级为「未试算」，不阻断）", r.id);
+            }
+        } else {
+            LOG.warnf("[price-adjust-review] review=%s 判断依据单缺失/该单不在活单范围内，adjustedComputed=false", r.id);
+        }
+        BigDecimal unitPriceImpactTotal = basisComputed
+            ? adjustedTotal.subtract(basisCurrentSubtotal) : BigDecimal.ZERO;
+        dto.elementImpactTotal = unitPriceImpactTotal;
+
+        // repair-0807 FR-6（D-5）：逐元素影响。单元素版本数学上必然等于整体 Δ，省 N-1 次 dryRun；
+        // 多元素版本才逐个跑"只改该元素、其余沿用上一版价"的 dryRun。
+        if (basisComputed) {
+            if (versionItems.size() == 1) {
+                ReviewDetailDTO.ElementChange only = dto.elementChanges.get(0);
+                only.unitPriceImpact = unitPriceImpactTotal;
+                only.usageQty = computeUsageQty(only.unitPriceImpact, only.currentPrice, only.previousPrice);
+            } else if (versionItems.size() > 1) {
+                BigDecimal sumImpact = BigDecimal.ZERO;
+                for (int i = 0; i < versionItems.size(); i++) {
+                    ElementPriceVersionItem it = versionItems.get(i);
+                    ReviewDetailDTO.ElementChange ec = dto.elementChanges.get(i);
+                    Map<String, ElementPrice> overridePrices = buildOverridePricesForElement(versionItems, it.elementCode);
+                    BigDecimal adjustedX = safeDryRunAdjustedSubtotal(r.id, basisLineItemId, tgt.id, overridePrices);
+                    if (adjustedX != null) {
+                        ec.unitPriceImpact = adjustedX.subtract(basisCurrentSubtotal);
+                        sumImpact = sumImpact.add(ec.unitPriceImpact);
+                    }
+                    ec.usageQty = computeUsageQty(ec.unitPriceImpact, ec.currentPrice, ec.previousPrice);
+                }
+                // D-6：合计始终取整体 Δ（不取 Σ 明细）；两者差 > 0.01 落 WARN，不阻断、不改数——
+                // 卡片对价格非线性时（阶梯/条件公式）两者本就不必相等，那正是要知道的事。
+                BigDecimal diff = sumImpact.subtract(unitPriceImpactTotal).abs();
+                if (diff.compareTo(ELEMENT_IMPACT_RECONCILE_THRESHOLD) > 0) {
+                    LOG.warnf("[price-adjust-review] review=%s 元素影响明细合计 %s 与整体 Δ %s 不等"
+                        + "（卡片对价格非线性，页面数值仍取整体 Δ）", r.id, sumImpact, unitPriceImpactTotal);
+                }
+            }
+        }
+
         dto.quotations = new ArrayList<>();
-        for (Object[] row : findAllActiveLines(r.customerNo, r.materialNo)) {
+        for (Object[] row : rows) {
             UUID quotationId = (UUID) row[0];
             UUID lineItemId = (UUID) row[1];
-            Quotation q = Quotation.findById(quotationId);
-            QuotationLineItem li = QuotationLineItem.findById(lineItemId);
+            Quotation q = qMap.get(quotationId);
+            QuotationLineItem li = liMap.get(lineItemId);
             if (q == null || li == null) continue;
             ReviewDetailDTO.QuotationRef qr = new ReviewDetailDTO.QuotationRef();
             qr.quotationId = q.id;
@@ -218,11 +298,85 @@ public class PriceAdjustReviewService {
             qr.status = q.status;
             qr.isBasis = q.id.equals(r.basisQuotationId);
             qr.quoteSubtotalCurrent = li.subtotal;
+            if (qr.isBasis && basisComputed) {
+                qr.quoteSubtotalAdjusted = adjustedTotal;
+                qr.adjustedComputed = true;
+            } else {
+                qr.quoteSubtotalAdjusted = null;
+                qr.adjustedComputed = false;
+            }
             qr.comparisonViewUrl = "/quotations/" + q.id + "/comparison";
             dto.quotations.add(qr);
         }
 
         return dto;
+    }
+
+    /**
+     * repair-0807 FR-6（D-5）：为「只改元素 targetElementCode、其余沿用上一版价」的假设构造覆盖 map——
+     * target 用 {@code currentPrice}，其余元素用 {@code previousPrice}；{@code previousPrice} 为
+     * null 的元素直接不放进 map（= 不动该元素，语义与 {@code MaterialVersionUpgradeService} S1
+     * 的"元素不在 map 里 = 一个字节都不碰"完全一致）。target 自身 {@code currentPrice} 为 null 时
+     * 同样不放入（该元素本就无本期价，无法模拟"只改它"）。
+     */
+    Map<String, ElementPrice> buildOverridePricesForElement(List<ElementPriceVersionItem> versionItems, String targetElementCode) {
+        Map<String, ElementPrice> out = new LinkedHashMap<>();
+        for (ElementPriceVersionItem it : versionItems) {
+            if (targetElementCode.equals(it.elementCode)) {
+                if (it.currentPrice != null) out.put(it.elementCode, new ElementPrice(it.currentPrice, it.currency));
+            } else if (it.previousPrice != null) {
+                out.put(it.elementCode, new ElementPrice(it.previousPrice, it.currency));
+            }
+        }
+        return out;
+    }
+
+    /** FR-6：usageQty = unitPriceImpact ÷ (currentPrice − previousPrice)，分母为 0 / 任一侧 null → null。 */
+    BigDecimal computeUsageQty(BigDecimal unitPriceImpact, BigDecimal currentPrice, BigDecimal previousPrice) {
+        if (unitPriceImpact == null || currentPrice == null || previousPrice == null) return null;
+        BigDecimal denom = currentPrice.subtract(previousPrice);
+        if (denom.compareTo(BigDecimal.ZERO) == 0) return null;
+        return unitPriceImpact.divide(denom, 6, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * {@link #dryRunAdjustedSubtotal} 的降级包装：任何异常都不得让审核抽屉 500（api.md §1.3
+     * 「dryRun 失败必须降级为 200 + 留白，不得 500」）——抽屉是财务的只读看板，一次试算失败不该
+     * 卡住整个审核流程。
+     */
+    private BigDecimal safeDryRunAdjustedSubtotal(UUID reviewId, UUID lineItemId, UUID targetVersionId,
+                                                    Map<String, ElementPrice> overridePrices) {
+        try {
+            return dryRunAdjustedSubtotal(lineItemId, targetVersionId, overridePrices);
+        } catch (Exception e) {
+            LOG.warnf(e, "[price-adjust-review] review=%s dryRun 试算异常，降级为未试算: %s", reviewId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * repair-0807 FR-5/FR-6：隔离子事务 dryRun 试算，返回升版后的 {@code li.subtotal}
+     * （{@code overridePrices==null} 时按目标版本全量明细试算；非 null 时按传入的元素价 map 试算，
+     * 供 FR-6 逐元素影响分解）。模式抄 {@code PriceAdjustBudgetService#runDryRunSnapshot}。
+     *
+     * <p>🔒 <b>@ActivateRequestContext 补在 REQUIRES_NEW 事务边界本身</b>——
+     * {@code upgrade(dryRun=true)} → S5 → {@code BomTreeRenderService.render()} →
+     * {@code DataLoader}（{@code @RequestScoped}）。漏补时 GET 请求线程本身虽有 request context，
+     * 但嵌套进新事务的这一层不会自动继承（与 {@code PriceAdjustBudgetService#runDryRunSnapshot:437-454}
+     * 记录的教训完全一致：272 次/34 项全抛 {@code ContextNotActiveException} 且被静默吞掉）。
+     *
+     * @return null = dryRun 未成功（找不到行/版本、FAILED、CONFLICT），调用方须降级为「未试算」
+     */
+    @ActivateRequestContext
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    BigDecimal dryRunAdjustedSubtotal(UUID lineItemId, UUID targetVersionId, Map<String, ElementPrice> overridePrices) {
+        if (lineItemId == null || targetVersionId == null) return null;
+        UpgradeResult ur = materialVersionUpgradeService.upgrade(lineItemId, targetVersionId, true, null, overridePrices);
+        if (ur == null || (ur.status != UpgradeResult.Status.SUCCESS && ur.status != UpgradeResult.Status.SKIPPED)) {
+            return null;
+        }
+        QuotationLineItem li = QuotationLineItem.findById(lineItemId);
+        return li != null ? li.subtotal : null;
     }
 
     // -------------------------------------------------------------------------
@@ -238,10 +392,25 @@ public class PriceAdjustReviewService {
         Set<UUID> allQuotationIds = new LinkedHashSet<>();
         Set<UUID> excludedQuotationIds = new LinkedHashSet<>();
 
-        int materialCount = 0;
+        // repair-0807 FR-7：先收集全部 review 的 findAllActiveLines 结果，再一次批量查 Quotation
+        // （不要每个 review 各查一次 Quotation.findById——N+1，CLAUDE.md 硬规）。
+        List<MaterialPriceReview> reviews = new ArrayList<>();
+        Map<UUID, List<Object[]>> activeRowsByReview = new LinkedHashMap<>();
+        Set<UUID> qidsToLoad = new LinkedHashSet<>();
         for (UUID reviewId : reviewIds) {
             MaterialPriceReview r = MaterialPriceReview.findById(reviewId);
             if (r == null) continue;
+            reviews.add(r);
+            List<Object[]> activeRows = findAllActiveLines(r.customerNo, r.materialNo);
+            activeRowsByReview.put(r.id, activeRows);
+            for (Object[] row : activeRows) qidsToLoad.add((UUID) row[0]);
+        }
+        Map<UUID, Quotation> qMap = qidsToLoad.isEmpty() ? Map.of()
+            : Quotation.<Quotation>list("id in ?1", new ArrayList<>(qidsToLoad)).stream()
+                .collect(Collectors.toMap(x -> x.id, x -> x));
+
+        int materialCount = 0;
+        for (MaterialPriceReview r : reviews) {
             materialCount++;
             ElementPriceVersion cur = r.previousVersionId != null ? ElementPriceVersion.findById(r.previousVersionId) : null;
             ElementPriceVersion tgt = ElementPriceVersion.findById(r.versionId);
@@ -258,15 +427,15 @@ public class PriceAdjustReviewService {
                 result.breachedMaterials.add(bm);
             }
 
-            // 活单：计入 quotationCount + byStatus
-            for (Object[] row : findAllActiveLines(r.customerNo, r.materialNo)) {
+            // 活单：计入 quotationCount + byStatus（Quotation 已批量加载，内存分发）
+            for (Object[] row : activeRowsByReview.getOrDefault(r.id, List.of())) {
                 UUID quotationId = (UUID) row[0];
                 if (allQuotationIds.add(quotationId)) {
-                    Quotation q = Quotation.findById(quotationId);
+                    Quotation q = qMap.get(quotationId);
                     if (q != null) byStatus.merge(q.status, 1, Integer::sum);
                 }
             }
-            // 非活单（SENT/ACCEPTED/EXPIRED/CANCELLED）：明示不会被更新
+            // 非活单（SENT/ACCEPTED/EXPIRED/CANCELLED）：明示不会被更新（SQL 已直接带出 status，无需再查）
             for (Object[] row : findAllExcludedLines(r.customerNo, r.materialNo)) {
                 UUID quotationId = (UUID) row[0];
                 String status = (String) row[1];

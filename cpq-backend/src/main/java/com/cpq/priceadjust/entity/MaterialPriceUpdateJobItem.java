@@ -23,6 +23,12 @@ public class MaterialPriceUpdateJobItem extends PanacheEntityBase {
     public static final String FAILED = "FAILED";
     public static final String CONFLICT = "CONFLICT";
     public static final String STALE = "STALE";
+    /**
+     * repair-0807 FR-4：独立终态——该单未被更新，且重试不会有不同结果（无价格承载组件 /
+     * 补建冻结结构失败）。🔒 与 STALE 同属"不可重试"，但 {@link #errorCode} 保持 null——
+     * SKIPPED 是设计内的"不处理"，不是需要人工介入的异常（api.md §2.2）。
+     */
+    public static final String SKIPPED = "SKIPPED";
 
     @Id
     @GeneratedValue

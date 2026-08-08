@@ -20,6 +20,9 @@ const ITEM_STATUS_TAG: Record<JobItemStatus, { color: string; label: string }> =
   FAILED: { color: 'red', label: '失败' },
   CONFLICT: { color: 'orange', label: '冲突' },
   STALE: { color: 'default', label: '已失效' },
+  // repair-0807：金色而非 default/green —— 该单未被更新，是财务需要注意的信息，
+  // 不是中性完成态；灰色会和「已失效」混，绿色会重演"看起来成功了"的错觉。
+  SKIPPED: { color: 'gold', label: '已跳过' },
 };
 
 /**
@@ -101,8 +104,10 @@ const JobProgressDrawer: React.FC<JobProgressDrawerProps> = ({ open, jobId, onCl
     }
   };
 
-  // job 级只有 total/success/failed/conflict/stale，"等待" 数派生（fronttask §5.1 要求展示但 api.md 未给字段）
-  const waiting = job ? Math.max(0, job.total - job.success - job.failed - job.conflict - job.stale) : 0;
+  // job 级只有 total/success/failed/conflict/stale/skipped，"等待" 数派生（fronttask §5.1 要求展示但 api.md 未给字段）
+  // repair-0807：skipped 也是终态，必须一并扣除，否则已跳过的单会被误算成"仍在等待"，
+  // 拖低 donePercent 且让已完成的批次看起来还没跑完。
+  const waiting = job ? Math.max(0, job.total - job.success - job.failed - job.conflict - job.stale - job.skipped) : 0;
   const donePercent = job && job.total > 0 ? Math.round(((job.total - waiting) / job.total) * 100) : 0;
 
   const columns = [
@@ -160,6 +165,8 @@ const JobProgressDrawer: React.FC<JobProgressDrawerProps> = ({ open, jobId, onCl
             <span style={{ color: '#d46b08' }}>冲突 <b>{job.conflict}</b></span>
             <span style={{ color: 'rgba(0,0,0,.45)' }}>等待 <b>{waiting}</b></span>
             {job.stale > 0 && <span style={{ color: 'rgba(0,0,0,.45)' }}>已失效 <b>{job.stale}</b></span>}
+            {/* repair-0807 FR-4：skippedCount 缺失（字段名与后端未对齐）时不显示，不显示 undefined */}
+            {!!job.skipped && job.skipped > 0 && <span style={{ color: '#d4b106' }}>已跳过 <b>{job.skipped}</b></span>}
           </Space>
           <Progress percent={donePercent} status={job.status === 'FAILED' ? 'exception' : job.status === 'RUNNING' ? 'active' : 'normal'} style={{ marginBottom: 16 }} />
           <div style={{ marginBottom: 16, fontSize: 12.5, color: 'rgba(0,0,0,.45)' }}>

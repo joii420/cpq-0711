@@ -27,8 +27,12 @@ public class ReviewDetailDTO {
         public BigDecimal previousPrice;
         public BigDecimal currentPrice;
         public BigDecimal changeRate;
-        /** 简化实现：精确用量/单价影响分解需逐行 driver 回溯，本期未做，如实留空 */
+        /**
+         * repair-0807 FR-6：该元素在判断依据单该料号上的用量 = unitPriceImpact ÷ (currentPrice −
+         * previousPrice)。分母为 0 或任一价为 null → null（不得返回 0 冒充"没有用量"）。
+         */
         public BigDecimal usageQty;
+        /** repair-0807 FR-6：该元素涨跌对判断依据单单价的影响额，单元素版本=整体 Δ，多元素版本=逐元素 dryRun Δ。 */
         public BigDecimal unitPriceImpact;
         public boolean noPrice;
         public boolean inheritedFromPrevious;
@@ -64,6 +68,8 @@ public class ReviewDetailDTO {
         public boolean isBasis;
         public BigDecimal quoteSubtotalCurrent;
         public BigDecimal quoteSubtotalAdjusted;
+        /** repair-0807 FR-5：该行是否跑过 dryRun 试算。false → 前端渲染「未试算」；仅 isBasis 行为 true。 */
+        public boolean adjustedComputed;
         public String comparisonViewUrl;
     }
 }
