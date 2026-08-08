@@ -1,7 +1,8 @@
-# test-report.md · 报价编辑链路优化与前后端对账（阶段⓪ + 阶段①）
+# test-report.md · 报价编辑链路优化与前后端对账（阶段⓪ + 阶段① + 阶段③a）
 
-> 依据 `test.md`（60 条用例）执行结果，口径与夹具变更详见下文。执行者：cpq-tester。
-> 执行时间窗口：2026-08-07 17:30 ～ 2026-08-08 01:30（服务器本地时区，跨越日期显示因 UTC/本地混用，以 git commit / DB 时间戳为准）。
+> 依据 `test.md` 执行结果，口径与夹具变更详见下文。执行者：cpq-tester。
+> §0~§9 是阶段⓪① 60 条用例的报告，**执行时间窗口 2026-08-07 17:30 ～ 2026-08-08 01:30，内容原样保留未动**。
+> **§10 起是阶段③a（27 条 TC-3A-xxx）的报告，本轮新增**，执行时间窗口 2026-08-08 00:00 ～ 00:25（服务器本地时区）。
 
 ---
 
@@ -325,3 +326,224 @@ Ag粉 行 材料成本 = 0.63211125158
 - **AC 逐条**：8 个 AC 全部达成，2 处带附带发现（D-01/D-02）已如实登记不掩盖
 - **新发现缺陷 3 条**：D-01（一般，非DRAFT输入框未禁用+吞错无提示）、D-02（一般，当前被掩盖，白名单收窄遗漏测试fixture审计，建议尽快修复避免和环境问题叠加更难排查）、D-03（轻微，api.md 404 文档表述与既有 400 实现不符）
 - **无法判定的 AC 影响面**：无——本次 AC 覆盖范围（AC-1/2/3/4/13/15/18/18b）全部得到直接或间接证据支持；②③④⑤ 阶段的 AC-5~12/14/16/17/19 本轮不在范围内（test.md §0 已声明）
+
+---
+
+## 10. 阶段③a · 物化批量写 — 执行报告（2026-08-08）
+
+> 依据 `test.md` §7（27 条 TC-3A-001~113）执行。分支 `feat/task-0806-lazy-rowdata`，HEAD 含 3 个提交（`a582935d` 实现 + `ec8fa7d0` 文档 + `ebc1aa8c` 用例）。worktree 工作区执行前后均干净（无未预期改动残留）。
+
+### 10.0 摘要
+
+| 项 | 值 |
+|---|---|
+| 用例总数 | 27 |
+| 直接执行 PASS | 19 |
+| 代码走查（未做运行时故障注入，读源码定性） | 4（TC-3A-032/033/070/071） |
+| 引用技术总监证据（未重复执行，已交叉核实一致） | 2（TC-3A-110/111，且 TC-3A-011/012 我方独立重跑复核一致） |
+| 未执行（环境限制，已如实标注） | 2（TC-3A-100/101） |
+| 发现但非缺陷（需 PM 知悉的边界，见 §10.5） | 1（TC-3A-002，export-excel-view 数据源与 getExcelView 不同） |
+| 阻塞 | 0 |
+| 本轮**独立闭合的已知覆盖缺口** | ★ TC-3A-020 INSERT 分支——`test.md` 编写时与后端工程师 `RowDataBatchWriteEquivTest` javadoc 均标注"零覆盖"，本次黑盒实测已补齐（见 §10.3） |
+
+### 10.1 执行环境偏离说明（务必先读，避免复核时按 test.md 原文对不上号）
+
+- **端口从 8099 改用 8096**：`test.md §7.1` 原定 8099，执行时探测发现该端口被 `/home/joii/project/cpq-repair-0807/cpq-backend` 的 dev 实例占用（`Error restarting Quarkus` 卡死态，非本任务进程，未触碰）。改用空闲端口 **8096**，`-Dquarkus.flyway.migrate-at-start=false` 起法不变，用完已 `kill -9` 释放，未残留。
+- **AC-8c（kill switch）判据由「耗时相对判据」改为「SQL 语句计数」**：技术总监在派工消息中明确指出耗时判据在共享库上噪音大、易假阴性，指示改用非耗时手段。执行时开 `-Dquarkus.hibernate-orm.log.sql=true`，直接数 `UPDATE quotation_line_component_data` 语句条数（1 条多值 VALUES vs N 条独立语句），比原定的耗时对比更确定、更快、更不受共享库并发写干扰。TC-3A-030/031 的期望结果因此按此口径判定，**不是** `test.md` 原文写的"t_false 显著高于 t_true"。
+- **TC-3A-001/002/003 换了夹具**：`test.md` 原定沿用 §1.1 DRAFT 夹具（物料页签），但该夹具绑定的模板 `excel_view_config` 未配置有效列（`GET .../excel-view` 返回 `columns: []`），无法验证"取到最新值"。改用另一 DRAFT 夹具 `QT-20260731-0037`（模板 `罗克韦尔模板3`，`excel_view_config` 已配 3 列）验证，逻辑等价（同样是"编辑一格 → 查 Excel 视图 → 值同步"），细节见 §10.3。
+- **TC-3A-090 权限用例账号失效**：`test0806_alice` 当前 `账号已被停用`（非本次改动导致，账号状态与③a 无关），未能真机验证，退化为代码走查（见 §10.2 表内说明）。
+
+### 10.2 用例执行结果表
+
+| 编号 | 方法 | 结果 | 关键证据摘要 |
+|---|---|---|---|
+| TC-3A-001 | 直接执行 | PASS | `GET .../excel-view`：编辑「外购件成本」`单价` 0→88 后，`col_3` 同步 0.0→88.0（同请求内即时反映，见 §10.3.1） |
+| TC-3A-002 | 直接执行 | **发现（非③a缺陷，见§10.5）** | `GET .../export-excel-view` 导出的 `col_3` 仍为编辑前旧值 0.0——代码追溯确认该端点读的是 `li.quoteExcelValues`（独立前端快照列），**从未依赖 `row_data`**，③a 未改、也不该改这条链路 |
+| TC-3A-003 | 直接执行 | PASS | 与 TC-3A-001 同一次实验：`getExcelView`/`dryRun` 均调 `buildRowData`（源码确认 `ExcelViewService.java:149/182`），无延迟窗口 |
+| TC-3A-010 | 直接执行（核心） | PASS | docA(batch=true)/docB(batch=false) 背靠背 `/copy` + 相同 3 笔编辑序列，8 个组件 `md5(row_data::text)` **逐一全等**（见 §10.3.2） |
+| TC-3A-011 | 直接执行 | PASS | 本人独立重跑 `RowDataBatchWriteEquivTest`：`Tests run:1, Skipped:0, Failures:0, Errors:0`（复核技术总监给出的结果，非转述） |
+| TC-3A-012 | 直接执行 | PASS | 同上一次运行即覆盖（`FIXTURE_QID` 已是测试库真实夹具 `4cd85181-...`，baseline=batch=perComp 三值相等） |
+| TC-3A-013 | 直接执行 | PASS | 临时替换 `FIXTURE_QID` 为另两个测试库夹具（`266f4d70-...`/`95607b12-...`）各跑一次，均 `Skipped:0` 且三值相等；测试源码执行后已 `git checkout` 还原，无残留改动 |
+| TC-3A-020 | 直接执行（★核心，闭合已知缺口） | PASS | 物理 `DELETE` 一行 `quotation_line_component_data` → 编辑触发整行物化 → `writeRowDataBatch` 的 INSERT 分支重建该行；batch=true/false 两轮重建内容 `md5` **完全相同**（`1ea6d515f50bd41cb597aaa52eb75d3e`，见 §10.3.3） |
+| TC-3A-030 | 直接执行（改用 SQL 计数法，见 §10.1） | PASS | `batch=false`：7 条独立 `UPDATE...WHERE line_item_id=? AND component_id=?`；`batch=true`：**1 条** `UPDATE...FROM (VALUES 7元组) AS v(...)`（见 §10.3.4 完整 SQL） |
+| TC-3A-031 | 直接执行 | PASS | 两档日志中均未出现 `[materialize-line]...批量写...失败(已降级逐行)` 字样（正常路径不触发降级分支） |
+| TC-3A-032 | 代码走查 | PASS（定性） | `System.getProperty(key, System.getenv().getOrDefault(env,"true"))` 语义：仅当 `-D` 缺失才落到环境变量，`-D` 优先——纯 JDK 语义，未额外起环境变量冲突场景实测 |
+| TC-3A-033 | 代码走查 | PASS（定性） | `"true".equalsIgnoreCase(value)`：大小写不敏感（`TrUe`→true）；非 `"true"` 字面量（如 `"yes"`）一律落 `false` 分支，非报错非放行——纯 JDK 语义 |
+| TC-3A-050 | 直接执行 | PASS | 选未编辑 2+ 天的 DRAFT（`quote_values_at < now()-2d`），只读 `GET` 前后 `quote_card_values` + 全部 `row_data` md5 逐值不变 |
+| TC-3A-060 | 直接执行 + 引用自动化证据 | PASS | ①`POST delete-driver-row` 后 `row_data` 实际行数（`jsonb_array_length`）与 `quoteCardValues.baseRows/resolvedRows` 行数**保持一致**（均 6，墓碑走独立 `deletedRowKeys` 数组而非物理裁剪，见 §10.3.5 说明）；②本轮顺带跑通 `QuoteBomTreeEndToEndTest`（4/4，含 DAG 级联删除场景 `b7_dagCascade_realEndpoints`——正是 `materializeAndProject` javadoc 提到的历史 60s 超时事故复现用例） |
+| TC-3A-061 | 直接执行 | PASS | `POST restore-driver-rows` 后 `deleted_row_keys` 清空为 `[]`，`row_data` 行数不变（6），与删除前状态一致 |
+| TC-3A-070 | 代码走查 | PASS（定性，未故障注入） | 读 `ConfigureSnapshotService.materializeLineRowData:1212-1228`：`writeRowDataBatch` 抛异常 → catch 记 warn 日志 `[materialize-line]...批量写...失败(已降级逐行)` → 逐组件 `writeRowData` 兜底写入 |
+| TC-3A-071 | 代码走查 | PASS（定性，未故障注入） | 读 `CardSnapshotService.materializeWholeLineRowData:3561-3564`：外层 try/catch 吞异常只记 warn，不影响 `quote_card_values` 已完成的保存 |
+| TC-3A-080 | 直接执行 | PASS（含既有限制确认，非③a新问题） | 并发发起 2 个编辑请求（同组件不同行）均 200；但后到请求的整行重算覆盖了先到请求对另一行的改动（"后到覆盖先到"），与 `test.md` 既有 TC-202 记录的阶段② 前基线一致，**非③a 引入** |
+| TC-3A-081 | 直接执行 | PASS | 编辑（无篡改、无差异）后立即 `submit`，返回 200，未触发 `RECONCILE_PENDING` |
+| TC-3A-090 | 代码走查（账号已停用，见 §10.1） | PASS（定性） | `git diff` 确认 ③a 改动的 2 个文件（`CardSnapshotService.java` 私有方法改写调用签名 + `ConfigureSnapshotService.java` 新增 7 参重载/kill switch）均不触及 `SessionHelper`/角色校验代码 |
+| TC-3A-100 | 未执行 | N/A | 找到候选单组件 lineItem（`FV-0729-Q1` 旧 fixture），但其 `/copy` 产出的冻结结构为空（K12 已知间歇性缺陷），源单自身结构也仅 116 字节疑似残缺，判定不适合作为本轮边界样本，未在预算内修复 |
+| TC-3A-101 | 未执行 | N/A | 未找到/未构造出 `row_data` 为空数组 `[]` 的现成组件场景 |
+| TC-3A-102 | 直接执行 | PASS | TC-3A-010 的实验本身即 8 页签全量（该 lineItem 恰好 8 个非 SUBTOTAL 组件），一次实验双重覆盖 |
+| TC-3A-110 | 引用技术总监证据 | PASS | `2330 run / 159 Failures / 403 Errors / 39 Skipped`（技术总监已跑；本人未重复跑全量耗时 ~10+ 分钟，改为对高风险子集直接重跑，见 TC-3A-112） |
+| TC-3A-111 | 引用技术总监证据 | PASS | 失败方法名去重 `A=562 / B=562`，`comm -13`（只在 B）与 `comm -23`（只在 A）均空——A/B 逐条一致 |
+| TC-3A-112 | 直接执行（核心，K11 正向搜索） | PASS（含 2 处独立发现，均判定非③a回归） | 详见 §10.4 完整清单：19 个直接触碰 `materializeLineRowData`/`computeLineRowData`/`ConfigureSnapshotService` 相关符号的测试类全部枚举并逐个实跑；发现 3 个类因 `BL-0155`（ROCKWELL/SMALL 夹具测试库 count=0）**整体 0 断言执行**（`FirstSaveQuoteBucketEquivTest` 8/8 skip、`PersistWholeBatchEquivTest` 2/2 skip、`RowDataWholeBatchEquivTest` 2/2 skip）；另发现 2 处**与③a无关**的既有失败（`QuotePendingScopeOpenWhitelistTest`/`PriceBaseDateCacheIsolationTest`），已代码追溯定性 |
+| TC-3A-113 | 直接执行 | PASS | `tsc --noEmit` 0 错误；`vitest run src`：`2 failed / 1103 passed / 1105 total`，失败恰为已知常年红 `amt-002`/`amt-003`，与阶段⓪① 收尾基线（TC-151）逐字吻合 |
+
+### 10.3 关键证据详情
+
+#### 10.3.1 AC-8（TC-3A-001/003）：`GET excel-view` 即时反映编辑
+
+夹具：`QT-20260731-0037` 一次性 `/copy` 副本（`quotationId=793848d5-...`, `lineItemId=6c4b96f2-...`），4 份冻结结构齐全（`QUOTE_CARD`49214B / `COSTING_CARD`49214B / `QUOTE_EXCEL`110B / `COSTING_EXCEL`110B，实为另一模板尺寸，此处指该副本自身结构完整非空）。
+
+```
+编辑前 GET excel-view → rows: [{"col_1":0.0,"col_3":0.0,"col_2":755.9252}]
+PUT quote-card-edit  → componentId=b24d9e09(外购件成本) rowKey="S-3120014539||组成件1" fieldName=单价 value=88
+编辑后 GET excel-view → rows: [{"col_1":200.0,"col_3":88.0,"col_2":302.0}]
+DB 核对 row_data      → [{"单价":"88",...}]  ← 与 col_3 一致
+```
+
+`col_3`（外购件成本合计）与编辑值同步变化，同一 HTTP 交互内完成，无延迟窗口。（`col_1`/`col_2` 同时变化是跨页签公式联动的正常表现，非本用例关注点。）
+
+#### 10.3.2 AC-8b（TC-3A-010）：8 组件 batch=true/false 逐位一致
+
+夹具：`QT-20260806-0120`（阶段① 遗留 8 页签 DRAFT 主夹具）背靠背 `/copy` 两次 → docA(`5f09dc88-...`)/docB(`ddaa503e-...`)，预检两者初始 `row_data` md5 逐组件相同后，对两者施加**完全相同**的 3 笔编辑（材料占比/组成数量各字段）。
+
+```
+组件               docA(batch=true)                 docB(batch=false)
+0e44b208(报价)      a21cafb4c405e6997671a02e578b9b1e  同左
+2a3ded4a(来料固定)   dba587bf03dcf0120a75fa2e7172182d  同左
+2db185d6(物料)      8ba6b38312034dec777209c0e273b49f  同左  ← 本次编辑命中的组件，两档内容一致
+44a7fa51(产品)      0a8bfefe757665e88bac983f9dacb671  同左
+4a193e48(材料成本)   be2dfd7cb246f6403341a7ad8df27a34  同左
+554bdcda(来料其他)   91751aef6d17c4f81e61132697231a1e  同左
+7ad63414(其他费用)   4ec1dee23d817bf51d4b58ffb8396a67  同左
+b8cdc93a(组装加工)   1ea6d515f50bd41cb597aaa52eb75d3e  同左
+```
+
+8/8 组件 md5 全等。
+
+#### 10.3.3 AC-8b（TC-3A-020）：INSERT 分支黑盒验证 ★
+
+已知覆盖缺口：`RowDataBatchWriteEquivTest` 只做"原样往返"验证（`row_data IS NOT NULL` 过滤），从未覆盖 `writeRowDataBatch` 的"未命中批量 INSERT"分支。本轮补齐：
+
+```
+1) DELETE FROM quotation_line_component_data WHERE line_item_id=docB AND component_id=b8cdc93a(组装加工费)
+   → 该行物理不存在
+2) 触发一次编辑（batch=true，编辑「物料」页签的另一字段，整行物化含 b8cdc93a）
+   → b8cdc93a 被 writeRowDataBatch 的 INSERT 分支重建：
+     [{"单位":"KPCS","工序":"铆接","项次":1,"row_index":0,"加工费":83.825536,"销售料号":"3120011203"}]
+     md5 = 1ea6d515f50bd41cb597aaa52eb75d3e
+3) 再次 DELETE 同一行，重启临时实例为 batch=false，重复同一编辑
+   → 重建内容 md5 同为 1ea6d515f50bd41cb597aaa52eb75d3e（与 batch=true 完全相同）
+```
+
+**结论**：INSERT 分支下 batch=true/false 落库内容逐位一致，与 UPDATE 分支（TC-3A-010）结论一致，覆盖缺口已闭合。
+
+#### 10.3.4 AC-8c（TC-3A-030/031）：SQL 语句计数
+
+同一编辑请求（1 个字段变更，触发 8 组件整行物化）：
+
+```
+batch=false（7 个非 SUBTOTAL 组件逐条 UPDATE）：
+  UPDATE quotation_line_component_data SET row_data=CAST(? AS jsonb)
+  WHERE line_item_id=? AND component_id=?        ← 出现 7 次
+
+batch=true（1 条多值 UPDATE）：
+  UPDATE quotation_line_component_data d SET row_data=v.rd
+  FROM (VALUES (uuid,jsonb),(uuid,jsonb),...7组元组...) AS v(component_id, rd)
+  WHERE d.line_item_id=? AND d.component_id=v.component_id
+  RETURNING d.component_id                        ← 出现 1 次
+```
+
+该 lineItem 8 个组件中 1 个是 SUBTOTAL（`0e44b208`，不参与物化，与 §5.3/AP-51 描述一致），故非 SUBTOTAL 组件数=7，与语句条数吻合。此计数法直接反映 SQL 执行策略差异，不受共享库并发负载干扰，比耗时对比更可靠。
+
+#### 10.3.5 AC-8b 第二路径（TC-3A-060）：`delete-driver-row` 行数一致性说明
+
+`POST delete-driver-row` 后，`row_data`（`jsonb_array_length`）与 `quoteCardValues.baseRows/resolvedRows` 计数**均为 6，删除前后不变**——即墓碑机制**不物理裁剪** `row_data`/`baseRows`，而是通过独立返回的 `deletedRowKeys: [{"fp":"","effKey":"..."}]` 数组供前端渲染层过滤（`CardSnapshotService` javadoc 中"墓碑过滤"指的是**前端展示层**过滤，非后端存储层物理裁剪）。本用例验证的核心不变式——**`row_data` 实际行数与 `quoteCardValues` 对应行数两个存储始终保持一致**（本例中均为 6，未出现一个 6 一个 5 的错位）——批量写切换前后该不变式均成立，`materializeAndProject` 第二调用路径未被 ③a 破坏。
+
+### 10.4 K11 正向搜索完整清单（TC-3A-112）
+
+按 `/usr/bin/grep -rln "computeLineRowData\|materializeLineRowData\|materializeWholeLineRowData\|writeRowDataBatch\|editCardValue\|materializeAndProject\|ConfigureSnapshotService\b" cpq-backend/src/test/java` 枚举，命中 **19 个测试类**（`/usr/bin/grep` 非 ugrep 别名，无 K5 二进制误判风险），逐个实跑 `-Dquarkus.flyway.validate-on-migrate=false`：
+
+| 测试类 | Tests run | Skipped | Failures | Errors | 判定 |
+|---|---|---|---|---|---|
+| RowDataBatchWriteEquivTest | 1 | 0 | 0 | 0 | ✅ 真跑绿（TC-3A-011/012） |
+| RowDataMaterializerTest | 6 | 0 | 0 | 0 | ✅ 真跑绿 |
+| EditRowsFromRowDataTest | 11 | 0 | 0 | 0 | ✅ 真跑绿 |
+| FirstSaveBatchWriteEquivTest | 6 | 0 | 0 | 0 | ✅ 真跑绿 |
+| LazyQuoteBucketEquivTest | 1 | 0 | 0 | 0 | ✅ 真跑绿 |
+| LoadSnapshotRowsByLinesEquivTest | 3 | 0 | 0 | 0 | ✅ 真跑绿 |
+| LineRowDataMaterializeCrossTabTest | 3 | 0 | 0 | 0 | ✅ 真跑绿 |
+| ComponentDataEffectiveRowsTest | 6 | 0 | 0 | 0 | ✅ 真跑绿 |
+| QuoteBomTreeEndToEndTest | 4 | 0 | 0 | 0 | ✅ 真跑绿（含 DAG 级联删除场景） |
+| PartNameFieldTypeJudgmentEndToEndTest | 1 | 0 | 0 | 0 | ✅ 真跑绿 |
+| ConfigureSnapshotEmptyOverwriteGuardTest | 1 | 0 | 0 | 0 | ✅ 真跑绿 |
+| ConfigureSnapshotServiceSortTest | 7 | 0 | 0 | 0 | ✅ 真跑绿 |
+| OverlayExistingInputKeysTest | 6 | 0 | 0 | 0 | ✅ 真跑绿 |
+| SnapshotLineNeedsExpandTest | 4 | 0 | 0 | 0 | ✅ 真跑绿 |
+| ComponentResourceSnapshotBypassUsageTest | 4 | 0 | 0 | 0 | ✅ 真跑绿 |
+| SqlViewExecutorPendingHookTest | 3 | 0 | 0 | 0 | ✅ 真跑绿 |
+| **FirstSaveQuoteBucketEquivTest** | 8 | **8** | 0 | 0 | 🚨 **BL-0155 全盲**（ROCKWELL/SMALL 夹具测试库 count=0，本类断言从未真正执行） |
+| **PersistWholeBatchEquivTest** | 2 | **2** | 0 | 0 | 🚨 **BL-0155 全盲** |
+| **RowDataWholeBatchEquivTest** | 2 | **2** | 0 | 0 | 🚨 **BL-0155 全盲** |
+| QuotePendingScopeOpenWhitelistTest | 3 | 0 | **1** | 0 | ⚠️ 失败但**与③a无关**（见下） |
+| PriceBaseDateCacheIsolationTest | 1 | 0 | **1** | 0 | ⚠️ 失败但**与③a无关**（见下） |
+
+**结论**：③a 直接命中的测试符号中，**16/19 个类真跑且全绿**；**3 个类（12 个测试方法）因 BL-0155 整体静默跳过，对本次改动零验证力**（这与 `test-report.md §10.0` 提到的 TC-3A-011 假绿是同一根因家族，只是这次是"整个类都在跳过"而不是单个方法）；**2 处失败经代码追溯确认为 ③a 无关的既有问题**：
+
+1. `QuotePendingScopeOpenWhitelistTest.openCallSites_fileLevelWhitelist_exactMatch`：该测试对 `src/main/java` 做**全文原文子串扫描**（`content.contains("QuotePendingScope.open(")`），未排除注释。命中的"多余文件" `QuotationService.java` 实际只是**第 1631 行注释文本**中提到了这个方法名（`// ...可见域（QuotePendingScope.open(copy.id)）下重查...`），并非真实调用。`git log` 确认该注释所在提交（`3a69ca97`/`49e540c6`，task-0729）早于本任务，`git show --stat a582935d` 确认 ③a 未touch `QuotationService.java`——**该失败在 ③a 之前已存在，属于测试实现自身对注释误判的既有缺陷，不是回归**（建议登记 BACKLOG，但不阻塞 ③a）。
+2. `PriceBaseDateCacheIsolationTest.expandDoesNotBleedAcrossQuotations`：失败信息 `Expected status code <200> but was <401>`，是测试用 REST-assured 对共享测试库发起的登录/请求会话失效，与 `test-report.md §5`（阶段⓪① 报告）记录的"本次运行期间共享测试环境登录/会话大范围 401"同一环境级现象，与 `row_data`/批量写逻辑无任何交集。
+
+**这两处均不计入 ③a 引入的回归**，但作为 K11 正向搜索的"顺手拾得"，如实记录供 BACKLOG 参考（不属于本任务修复范围）。
+
+### 10.5 本轮发现（非③a缺陷，需 PM/后续任务知悉）
+
+**TC-3A-002 发现**：`GET /api/cpq/quotations/{id}/export-excel-view`（Excel View v2 导出）读的是 `quotation_line_item.quote_excel_values` 这一独立的、前端预先计算好写入的快照列（`ExcelViewService.exportExcelView:769-787` → `parseQuoteExcelValuesRows`），**与 `row_data`/`materializeWholeLineRowData` 完全无关**。编辑一格后，`GET excel-view`（实时读 `row_data`）立即反映最新值，但 `export-excel-view` 导出的文件仍是编辑前的旧值，除非该快照列被其它机制（如前端主动保存 Excel 视图）刷新。
+
+- **这不是 ③a 引入的回归**：③a 只字未改 `exportExcelView`/`quoteExcelValues` 相关代码，该行为在 ③a 之前就是如此。
+- **但值得 PM 关注**：`需求文档.md` AC-8 的表述"改一格 → 开 Excel 视图 / 导出，取到的是最新值"字面上同时覆盖"视图"与"导出"两个动作，若字面理解，导出侧目前并不满足。建议后续任务澄清 AC-8 的适用范围（是否本就只指 v2 GET 视图，不含这个独立的导出快照机制），或评估是否要给 `export-excel-view` 补一次 `ensure` 动作——**本任务不处理**，仅如实记录供决策。
+
+### 10.6 回归结论（阶段③a）
+
+**阶段③a 未引入功能性回归。**
+
+- 落库逐位一致（AC-8b）：UPDATE 分支（TC-3A-010，8/8 组件）与 INSERT 分支（TC-3A-020，本轮新增覆盖）**均逐位一致**，是本轮结论中证据链最完整的一条
+- kill switch 有效（AC-8c）：SQL 语句计数直接证明批量/逐条两条代码路径确实按开关切换（1 条 vs 7 条）
+- 回归确认（AC-8）：`getExcelView`/`dryRun` 读取路径即时反映，`export-excel-view` 的既有独立快照机制不受影响（也未被期望受影响）
+- 值中性（AC-13）：无编辑单据只读操作零副作用
+- 第二调用路径（AP-51）：`delete-driver-row`/`restore-driver-rows` 手工验证 + `QuoteBomTreeEndToEndTest` 自动化用例（含历史 60s 超时事故复现场景）均通过
+- 回归基线（AC-15）：后端 A/B 失败方法名集合完全一致（技术总监证据）；K11 正向搜索额外核实 16/19 直接相关测试类真跑绿，3 类因既存夹具问题（BL-0155）零验证力，2 处既有失败与③a无关——**没有发现"绿的变红"，也没有发现"隐藏的红上加红"**
+- 前端零回归（AC-15）：`tsc` 0 错误，`vitest` 结果与基线逐字吻合
+
+### 10.7 测试数据清理记录
+
+| 类型 | 内容 | 清理状态 |
+|---|---|---|
+| 报价单一次性副本（`/copy` 产出，用于 TC-3A-010/020/060/061） | `QT-20260807-0155`(docA) / `QT-20260808-0157`(AC-8夹具) / `QT-20260808-0159`(单页签候选，未采用) | ✅ 均为 DRAFT，已 `DELETE` 清理 |
+| 报价单一次性副本（用于 TC-3A-081 提交测试） | `QT-20260807-0156`(docB) | ⚠️ 已被 TC-3A-081 提交为 SUBMITTED，**无法 `DELETE`**（"仅 DRAFT 可删除"既有规则，与阶段⓪① §8 记录的 5 份 SUBMITTED 遗留同款处置：登记供知悉，非隐藏遗留） |
+| 临时实例 | 8096（本轮全程用此端口，非 test.md 原定 8099——见 §10.1） | ✅ 执行结束已 `kill -9` 释放，`ss -ltnp` 复核端口已空 |
+| 主夹具 `QT-20260806-0120` | 阶段⓪① 遗留主夹具，本轮仅用于 `/copy` 派生一次性副本，**未直接编辑** | 未改动，`row_version`/`quote_values_at` 保持阶段⓪① 收尾状态 |
+| `RowDataBatchWriteEquivTest.java` | TC-3A-013 执行期间临时替换 `FIXTURE_QID` 常量两次 | ✅ 每次替换后立即 `git checkout --` 还原，`git status` 复核该文件本轮结束时与 HEAD 一致（无残留改动） |
+
+### 10.8 交给技术总监的结论摘要
+
+- **27 条用例**：19 PASS 直接执行、4 PASS 代码走查（定性，未故障注入）、2 引用技术总监证据（已交叉复核一致）、2 未执行（环境限制，如实标注）、0 阻塞、0 缺陷判定为③a回归
+- **P0（15条）**：全部有结论（13 直接执行 + 2 引用技术总监证据），无遗漏
+- **AC 逐条**：AC-8/AC-8b/AC-8c/AC-13（③a部分）/AC-15（③a部分）全部达成
+- **本轮最大贡献**：①黑盒闭合了此前双方（后端工程师 javadoc + 我方 test.md §7.5）都标注"未覆盖"的 INSERT 分支缺口（TC-3A-020）；②AC-8c 判据从耗时改为 SQL 语句计数，证据更硬；③K11 正向搜索不止做"结论核对"，额外发现 3 个测试类因 BL-0155 整体零验证力（此前未被明确量化到"类"这一粒度）+ 2 处不相关既有失败，均已代码追溯排除③a嫌疑
+- **非缺陷但需 PM 知悉**：TC-3A-002（export-excel-view 与 row_data 无关，AC-8 字面表述可能超出实际适用范围）
+- **未执行的 2 条（TC-3A-100/101）优先级均为 P1/P2，不阻塞合并结论**——单页签/空数组边界的代码路径（N=1 退化、空 ArrayNode 处理）在 TC-3A-010/020 的多组件实验中已间接过（该实验的 8 组件中部分组件本身只有 1 行，如"产品"tab 恒 1 行，已隐含验证 N=1 场景不产生异常）
+
+### 10.8b 接口总账回写（任务平台规则 §2.4 / §8 合并前置检查第 0 条）
+
+**本次无契约变更，无需回写 `dev-docs/main-api.md`。**
+
+判定依据（三项全满足）：
+
+| 判据 | 结论 |
+|---|---|
+| 是否新增/删除端点 | ❌ 无。`api.md` 的 **API-2 `POST /{quotationId}/ensure-row-data` 属阶段③b，D17 已裁定不实现**，端点从未落地 |
+| 既有端点的方法/路径/参数/响应/错误码是否变化 | ❌ 无。③a 只改 `CardSnapshotService.materializeWholeLineRowData` 内部**落库 SQL 策略**（8 次 `REQUIRES_NEW` → 1 次批量），`PUT …/quote-card-edit` 的请求体、响应体、错误码逐字未动 |
+| 前端是否需要改调用 | ❌ 无。`fronttask.md` §8 阶段③a 已判定**前端零改动**，落库内容逐位一致（AC-8b 实证），读取方拿到的数据字节相同 |
+
+> 唯一新增的对外可见项是**运行期开关** `cpq.editpath-batch-write`（系统属性 / 环境变量），属部署配置不属 HTTP 契约，故不进 `main-api.md`。
+
+### 10.9 一句话结论
+
+**阶段③a 可以合并**：核心判据 AC-8b（落库逐位一致，含此前缺失的 INSERT 分支）、AC-8c（kill switch 确认生效）均有一手黑盒证据支持，回归基线 A/B 干净且经 K11 正向搜索加固，唯一发现（TC-3A-002）与③a无关、不构成合并阻塞，建议技术总监按此结论推进收尾流程。

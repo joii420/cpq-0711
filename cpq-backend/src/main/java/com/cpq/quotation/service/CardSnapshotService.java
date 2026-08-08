@@ -3419,6 +3419,9 @@ public class CardSnapshotService {
                 // 否则外层先锁住 cd 行、内层 REQUIRES_NEW 再写同一批行 → 自锁 60s 超时。
                 li.quoteCardValues = MAPPER.writeValueAsString(root);
             }
+            // task-0806 阶段③a：本调用同样受 cpq.editpath-batch-write kill switch 控制（见
+            // materializeWholeLineRowData javadoc）。baseRowsByComp/mergedEdits/delByComp 与批量写
+            // 开关无关——AP-51 行数权威（row_data 行数 = 墓碑过滤后 baseRows 行数）不受影响。
             materializeWholeLineRowData(li, snapshot, baseRowsByComp, mergedEdits, delByComp);
 
             // flush 落库(quoteCardValues 脏写[若有] + materialize REQUIRES_NEW row_data)后 clear，按 id 重读托管实体
@@ -3480,13 +3483,26 @@ public class CardSnapshotService {
      *
      * <p>委派 {@link ConfigureSnapshotService#materializeLineRowData}（与配置态加产品同一物化入口：单趟
      * 组件拓扑序 + 跨组件 crossTabRows/componentSubtotals 累积），仅额外透传本次编辑产生的
-     * editRows / 各组件行键 / 墓碑。每组件经 {@link ConfigureSnapshotService#writeRowData}（REQUIRES_NEW UPSERT）落库。
+     * editRows / 各组件行键 / 墓碑。落库策略受 {@code cpq.editpath-batch-write} kill switch 控制
+     * （task-0806 阶段③a）：默认整行一次 {@link ConfigureSnapshotService#writeRowDataBatch}
+     * （N×M → N×1，同一 REQUIRES_NEW 事务内一条多值 UPDATE + 未命中再一条多值 INSERT）；关闭时退回
+     * 每组件一次 {@link ConfigureSnapshotService#writeRowData}（REQUIRES_NEW UPSERT，原行为）。
+     * 两条路径写的是同一份 {@code computeLineRowData} 计算结果，只是"怎么写"不同——等价性见
+     * {@code RowDataBatchWriteEquivTest}。
+     *
+     * <p><b>两个调用方都受益</b>：本方法有两处调用——{@link #editCardValue}（单元格失焦同步，:3296）与
+     * {@link #materializeAndProject}（树删除/恢复重算，:3422）。批量写只改变落库的 SQL 执行策略，
+     * 不改变喂给 {@code computeLineRowData} 的 baseRowsByComp/editRowsByComp/墓碑等输入，因此
+     * {@code materializeAndProject} 依赖的"物化后 row_data 行数与墓碑过滤后的 quoteCardValues 行数
+     * 对齐"（AP-51 行数权威）不受影响——行数由 computeLineRowData 内部按 baseRows 迭代决定，与
+     * batchWriteEnabled 无关，该分支只发生在 byComp 算好之后。
      *
      * <p><b>行键来源（AP-54 对齐）</b>：各组件 rowKeyFields 取自 {@link #loadRowKeyFieldsNode}（读 component 表），
      * 与 {@link #loadComponentsSnapshot} 冻进 tab 的行键同源，故 effKey 口径与卡片重算一致。
      *
      * <p><b>降级纪律</b>：整体异常被吞并记 warn，绝不让 row_data 同步失败回滚整次卡片编辑
-     * （与 ConfigureSnapshotService 全程降级一致）；单组件物化/写库失败在 materializeLineRowData 内逐组件降级。
+     * （与 ConfigureSnapshotService 全程降级一致）；单组件物化/写库失败在 materializeLineRowData 内逐组件降级
+     * （批量写路径本身失败时也会自动降级为逐组件写，见 {@code materializeLineRowData} 实现）。
      *
      * @param baseRowsByComp  componentId(字符串) → baseRows（= snapshot_rows）
      * @param editRowsByComp  componentId(字符串) → editRows（含本次编辑）
@@ -3516,8 +3532,32 @@ public class CardSnapshotService {
                 if (ts != null) tombsByComp.put(cid, ts);
             }
 
+            // task-0806 阶段③a：编辑路径此前固定调用 6 参重载 materializeLineRowData(...)，
+            // 该重载内部把 batchWriteEnabled 硬编码为 false（见 ConfigureSnapshotService:1190-1197）
+            // → 每个页签各一次 REQUIRES_NEW 原生 SQL UPSERT，8 页签 = 8 次独立事务提交（生产态实测
+            // 基线中位 775ms，逐组件写占其中约 234ms）。首存路径早就有批量写 writeRowDataBatch
+            // （N×M → N×1，同一事务内一条多值 UPDATE…FROM(VALUES…) + 未命中再一条多值 INSERT，
+            // 见 ConfigureSnapshotService:1673 起），编辑路径只是历史上没接上，不是刻意选择逐组件写。
+            //
+            // kill switch: cpq.editpath-batch-write（默认 true，与既有 cpq.firstsave-batch-write
+            // 同款命名/读取惯例，见 ConfigureSnapshotService:243-247）。
+            //   关闭：-Dcpq.editpath-batch-write=false 或 export CPQ_EDITPATH_BATCH_WRITE=false
+            //   回退到逐组件写（原行为），用于怀疑批量写导致问题时快速止血，无需回滚代码。
+            //
+            // K4 时序未变：本参数只改变"落库走几条 SQL"，不改变"落库在整体流程里的先后位置"——
+            // 仍然是本方法（REQUIRES_NEW）跑完 → 外层 flush()/clear() → 再覆盖派生小计
+            // （applySubtotalsFromCardValues，见其类注释里 60s 自锁的实测记录）。批量写反而把
+            // 8 次 REQUIRES_NEW 收敛成 1 次，出现自锁窗口的机会只少不多。
+            //
+            // 等价性：两个分支的落库内容来自同一份 computeLineRowData 计算结果（byComp），
+            // batchWriteEnabled 只切换"怎么写"不切换"写什么"——见
+            // RowDataBatchWriteEquivTest（对 writeRowDataBatch / writeRowData 两条落库路径的
+            // 逐位一致性护栏）。
+            boolean editBatchWrite = "true".equalsIgnoreCase(
+                    System.getProperty("cpq.editpath-batch-write",
+                            System.getenv().getOrDefault("CPQ_EDITPATH_BATCH_WRITE", "true")));
             configureSnapshotService.materializeLineRowData(
-                    li.id, snapshot, baseByComp, editsByComp, rkfByComp, tombsByComp);
+                    li.id, snapshot, baseByComp, editsByComp, rkfByComp, tombsByComp, editBatchWrite);
         } catch (Exception e) {
             LOG.warnf("[card-snapshot] 失焦同步：整行物化失败 li=%s: %s（已降级，不影响卡片编辑）",
                     li != null ? li.id : "null", e.getMessage());
