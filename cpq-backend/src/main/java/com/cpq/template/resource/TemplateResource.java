@@ -257,4 +257,25 @@ public class TemplateResource {
         UUID operatorId = sessionHelper.getCurrentUserIdOrFallback(httpRequest);
         return ApiResponse.success(templateService.promoteOverrideToComponent(componentIds, confirm, operatorId));
     }
+
+    /**
+     * task-0806 B22-b（D20）/ api.md §13 A12：批量首次冻结所有零快照行的 PUBLISHED/ARCHIVED
+     * 模板。沿用本任务既有 confirm 口径：缺省 {@code confirm=false} 仅预览零写入并列出待冻清单；
+     * {@code confirm=true} 才执行。目标集合恒由零快照行筛出，不可能覆盖已有快照——与 A11 单模板
+     * 版共享同一条「零行守卫」不变量，只是批量版本。
+     *
+     * <p>Body: {@code { "confirm": false } }
+     */
+    @POST
+    @Path("/admin/freeze-unfrozen")
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public ApiResponse<java.util.Map<String, Object>> adminFreezeUnfrozen(
+            java.util.Map<String, Object> body, @Context HttpServerRequest httpRequest) {
+        boolean confirm = body != null && Boolean.TRUE.equals(body.get("confirm"));
+        if (!confirm) {
+            return ApiResponse.success(templateService.previewFreezeUnfrozen());
+        }
+        UUID operatorId = sessionHelper.getCurrentUserIdOrFallback(httpRequest);
+        return ApiResponse.success(templateService.freezeAllUnfrozen(operatorId));
+    }
 }

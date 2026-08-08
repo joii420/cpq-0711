@@ -1149,6 +1149,177 @@ public class TemplateService {
         return out;
     }
 
+    // ---- task-0806 B22-b：批量「首次冻结」（POST /templates/admin/freeze-unfrozen） ----
+    //
+    // 与 forceRealignSnapshots（B7 admin 后门）刻意保持独立实现，不复用：forceRealignSnapshots
+    // 的目标集合可以是任意 PUBLISHED/ARCHIVED 模板（含已有快照的），语义是"明确破坏不可变性"，
+    // 落库后打 LOG.warn「已破坏不可变性」。本组方法的目标集合恒由 findUnfrozenTemplateIds()
+    // 筛出的"零快照行"模板构成——delete 部分恒删 0 行、insert 恒是从无到有，结构上不可能覆盖
+    // 已有快照，不是破坏，是补冻，日志语义必须区分（不打「已破坏不可变性」）。
+
+    /**
+     * 找出所有零快照行的 PUBLISHED/ARCHIVED 模板 id（一次 SQL，N+1 安全——SQL 条数与模板数
+     * 无关）。供 {@link #previewFreezeUnfrozen} 与 {@link #freezeAllUnfrozen} 共用。
+     */
+    @SuppressWarnings("unchecked")
+    private List<UUID> findUnfrozenTemplateIds() {
+        List<Object> rows = em.createNativeQuery(
+                "SELECT t.id FROM template t WHERE t.status IN ('PUBLISHED','ARCHIVED') "
+                + "AND NOT EXISTS (SELECT 1 FROM template_component_snapshot s WHERE s.template_id = t.id) "
+                + "ORDER BY t.published_at DESC NULLS LAST")
+                .getResultList();
+        List<UUID> out = new ArrayList<>();
+        for (Object o : rows) out.add(o instanceof UUID u ? u : UUID.fromString(o.toString()));
+        return out;
+    }
+
+    /**
+     * {@code confirm=false}：仅预览待冻清单，零写入。批量化取模板信息 + 页签数（各一次 IN 查询，
+     * 与目标模板数无关），不在循环里逐个查库。
+     */
+    public Map<String, Object> previewFreezeUnfrozen() {
+        List<UUID> targets = findUnfrozenTemplateIds();
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (targets.isEmpty()) {
+            out.put("preview", true);
+            out.put("templates", List.of());
+            out.put("templateCount", 0);
+            out.put("quotationCount", 0L);
+            return out;
+        }
+
+        Map<UUID, Template> byId = new LinkedHashMap<>();
+        for (Template t : Template.<Template>list("id in ?1", targets)) byId.put(t.id, t);
+        Map<UUID, Long> tabCounts = new LinkedHashMap<>();
+        for (TemplateComponent tc : TemplateComponent.<TemplateComponent>list("templateId in ?1", targets)) {
+            tabCounts.merge(tc.templateId, 1L, Long::sum);
+        }
+
+        List<Map<String, Object>> templates = new ArrayList<>();
+        for (UUID tid : targets) {
+            Template t = byId.get(tid);
+            if (t == null) continue;
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("templateId", t.id.toString());
+            m.put("name", t.name);
+            m.put("version", t.version);
+            m.put("status", t.status);
+            m.put("tabCount", tabCounts.getOrDefault(tid, 0L));
+            templates.add(m);
+        }
+        long quotationCount = countQuotationsForTemplates(targets);
+
+        out.put("preview", true);
+        out.put("templates", templates);
+        out.put("templateCount", targets.size());
+        out.put("quotationCount", quotationCount);
+        return out;
+    }
+
+    /**
+     * {@code confirm=true}：批量执行首次冻结。目标集合恒为 {@link #findUnfrozenTemplateIds}
+     * 筛出的零快照行模板，写入委派 {@link #executeInitialFreezeBatch}（3 条参数化 SQL，条数与
+     * 模板数无关），随后按受影响模板各写一行 {@code operation_log} 审计
+     * （{@code operation_type='TEMPLATE_INITIAL_FREEZE'}）。
+     */
+    @Transactional
+    public Map<String, Object> freezeAllUnfrozen(UUID operatorId) {
+        List<UUID> targets = findUnfrozenTemplateIds();
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (targets.isEmpty()) {
+            out.put("preview", false);
+            out.put("frozenTemplates", 0);
+            out.put("frozenRows", 0);
+            out.put("operationLogIds", List.of());
+            return out;
+        }
+
+        Map<String, Object> result = executeInitialFreezeBatch(targets);
+
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("endpoint", "freeze-unfrozen");
+        details.put("templateIds", targets.stream().map(UUID::toString).collect(Collectors.toList()));
+        details.put("frozenRows", result.get("frozenRows"));
+        List<UUID> logIds = operationLogService.logBatch(operatorId, "TEMPLATE_INITIAL_FREEZE", "TEMPLATE",
+                targets, "批量首次冻结：" + targets.size() + " 个模板", details);
+
+        out.put("preview", false);
+        out.put("frozenTemplates", result.get("frozenTemplates"));
+        out.put("frozenRows", result.get("frozenRows"));
+        out.put("operationLogIds", logIds.stream().map(UUID::toString).collect(Collectors.toList()));
+        // 不打「破坏不可变性」的 WARN——目标集合恒为零快照行模板，是补冻不是覆盖，INFO 即可。
+        LOG.infof("[task-0806 B22-b] freeze-unfrozen 已执行：首次冻结 %d 个模板（零快照行→非破坏性），rows=%s",
+                targets.size(), result.get("frozenRows"));
+        return out;
+    }
+
+    /**
+     * {@link #freezeAllUnfrozen} 的批量写入实现。SQL 结构与 {@link #forceRealignSnapshots} 内部
+     * 一致（DELETE + INSERT...SELECT + jsonb 重生成 UPDATE，均按 {@code targets} 参数化，条数与
+     * 模板数无关），但独立实现——两者语义不同（本方法目标恒零快照行，delete 恒删 0 行；
+     * forceRealignSnapshots 目标可以是已有快照的模板，delete 会真删已有行），日志语义不能共用。
+     */
+    private Map<String, Object> executeInitialFreezeBatch(List<UUID> targets) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        UUID[] tidArr = targets.toArray(new UUID[0]);
+
+        // 目标集合恒为零快照行（findUnfrozenTemplateIds 保证），此 DELETE 恒删 0 行；保留只是
+        // 为了与 persistSnapshotRows「先清后插」的幂等写法保持一致，不因此改变零行守卫的语义。
+        em.createNativeQuery("DELETE FROM template_component_snapshot WHERE template_id = ANY(:tids)")
+                .setParameter("tids", tidArr)
+                .executeUpdate();
+
+        int inserted = em.createNativeQuery(
+                "INSERT INTO template_component_snapshot (" +
+                "    template_id, template_component_id, component_id, sort_order," +
+                "    tab_name, preset_rows, formula_assignments," +
+                "    component_name, component_code, component_type, column_count," +
+                "    fields, formulas, excel_columns, data_driver_path," +
+                "    tree_config, bom_recursive_expand, tab_type, part_no_field, part_name_field," +
+                "    row_key_fields, sort_field," +
+                "    element_code_field, element_price_field, element_currency_field)" +
+                " SELECT tc.template_id, tc.id, tc.component_id, tc.sort_order," +
+                "        tc.tab_name," +
+                "        COALESCE(tc.preset_rows, '[]'::jsonb)," +
+                "        COALESCE(tc.formula_assignments, '{}'::jsonb)," +
+                "        c.name, c.code, c.component_type, c.column_count," +
+                "        COALESCE(tc.fields_override, c.fields)," +
+                "        c.formulas, c.excel_columns," +
+                "        COALESCE(NULLIF(tc.data_driver_path_override, ''), c.data_driver_path)," +
+                "        c.tree_config, c.bom_recursive_expand, c.tab_type, c.part_no_field, c.part_name_field," +
+                "        c.row_key_fields, c.sort_field," +
+                "        c.element_code_field, c.element_price_field, c.element_currency_field" +
+                "   FROM template_component tc" +
+                "   JOIN component c ON c.id = tc.component_id" +
+                "  WHERE tc.template_id = ANY(:tids)")
+                .setParameter("tids", tidArr)
+                .executeUpdate();
+
+        em.createNativeQuery(
+                "UPDATE template t SET components_snapshot = sub.snap, updated_at = now() FROM (" +
+                "  SELECT tcs.template_id, jsonb_agg(jsonb_build_object(" +
+                "    'id', tcs.template_component_id, 'componentId', tcs.component_id," +
+                "    'componentName', tcs.component_name, 'componentCode', tcs.component_code," +
+                "    'componentType', tcs.component_type, 'excelColumns', tcs.excel_columns," +
+                "    'tabName', tcs.tab_name, 'sortOrder', tcs.sort_order," +
+                "    'fields', tcs.fields, 'formulas', tcs.formulas, 'preset_rows', tcs.preset_rows," +
+                "    'data_driver_path', tcs.data_driver_path, 'tree_config', tcs.tree_config," +
+                "    'formula_assignments', tcs.formula_assignments, 'tab_type', tcs.tab_type," +
+                "    'part_no_field', tcs.part_no_field, 'part_name_field', tcs.part_name_field," +
+                "    'bom_recursive_expand', tcs.bom_recursive_expand" +
+                "  ) ORDER BY tcs.sort_order) AS snap" +
+                "  FROM template_component_snapshot tcs" +
+                " WHERE tcs.template_id = ANY(:tids)" +
+                " GROUP BY tcs.template_id" +
+                ") sub WHERE t.id = sub.template_id")
+                .setParameter("tids", tidArr)
+                .executeUpdate();
+
+        out.put("frozenTemplates", targets.size());
+        out.put("frozenRows", inserted);
+        return out;
+    }
+
     // ---- Private helpers ----
 
     /**
