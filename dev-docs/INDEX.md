@@ -65,6 +65,7 @@ git branch --no-merged master                                                   
 | 卡片显示**「该料号卡片数据待重算」** | `repair-0803-公式计算BUG修复`（`$view` 报错毒化 PG 事务 → 整卡片算不出） |
 | 公式列**全空** / 公式不随编辑重算 | `repair-0803-BL0098-公式绑定改绑ID/` 下两个 repair-0805 子目录 |
 | 公式 `SUM()` 里引用本页签 FORMULA 字段**恒取 0** | `repair-0803-公式SUM内引用宿主页签字段` |
+| **行内公式值正常、页签小计列却是 `¥ 0`** / 产品小计比后端存的小一大截 | `repair-0803-公式计算BUG修复/repair-0808-前端页签算序假环致列小计归零`（前端页签算序假环 → cross_tab 源页签还没算就取 → 整列归零；`BL-0101`。**行读后端快照、小计读前端实时重算**，所以看着像"只有小计错"） |
 | 精度不对 / 卡片小计与列表总计不一致 | `task-0801-公式计算精度优化`（统一 6 位，见记忆 `cpq-decimal-display-policy`） |
 | **删除行删错行** / 删不掉 / 删完数据乱 | `task-删除行删错架构重构` → `task-0721-.../repair-0727-报价单报价侧删除行BUG`（4 套行身份） |
 | 复制报价单后数据丢失 | `repair-0729-copy报价单数据丢失的问题` |
@@ -95,15 +96,15 @@ git branch --no-merged master                                                   
 
 | 文件 | 命中任务数 | 历史任务 |
 |---|---|---|
-| **`QuotationStep2.tsx`** | **25 / 39** 🔥 | 0708导入 · 0712核价展示 · 0712选配 · 0713版本选择 · 0715UI · 0717比对 · 0721树 · 0721升版 · 0722元素价格 · 0723清洗 · 0725空白 · 0728版式 · 0729客户价格 · 0801精度 · 0801连表 · 0803父子公式 · **0806编辑链路对账** · **0806模板冻结** · **0806价格任务性能** · 删除行重构 · repair-0727回填 · repair-0729copy · repair-0803BL0098 · repair-0803SUM · rule-0724 |
-| `ReadonlyProductCard.tsx` | 16 | 0712核价展示 · 0713版本选择 · 0721树 · 0722元素价格 · 0725空白 · 0728版式 · 0729客户价格 · 0801精度 · 0801连表 · 0803父子公式 · **0806编辑链路对账** · **0806模板冻结** · **0806价格任务性能** · 删除行重构 · repair-0727回填 · repair-0803BL0098 |
+| **`QuotationStep2.tsx`** | **26 / 40** 🔥 | 0708导入 · 0712核价展示 · 0712选配 · 0713版本选择 · 0715UI · 0717比对 · 0721树 · 0721升版 · 0722元素价格 · 0723清洗 · 0725空白 · 0728版式 · 0729客户价格 · 0801精度 · 0801连表 · 0803父子公式 · **0806编辑链路对账** · **0806模板冻结** · **0806价格任务性能** · 删除行重构 · repair-0727回填 · repair-0729copy · repair-0803BL0098 · repair-0803SUM · **repair-0803公式BUG/repair-0808算序假环** · rule-0724 |
+| `ReadonlyProductCard.tsx` | 17 | 0712核价展示 · 0713版本选择 · 0721树 · 0722元素价格 · 0725空白 · 0728版式 · 0729客户价格 · 0801精度 · 0801连表 · 0803父子公式 · **0806编辑链路对账** · **0806模板冻结** · **0806价格任务性能** · 删除行重构 · repair-0727回填 · repair-0803BL0098 · **repair-0808算序假环** |
 | `CardSnapshotService.java` | 15 | 0712核价展示 · 0721树 · 0725空白 · 0728版式 · 0729客户价格 · 0801精度 · 0803父子公式 · **0806编辑链路对账** · **0806模板冻结** · **0806价格任务性能** · 删除行重构 · repair-0729copy · repair-0803BL0098 · repair-0803SUM · repair-0803公式BUG |
 | `QuotationWizard.tsx` | 12 | 0712核价展示 · 0712选配 · 0722元素价格 · 0723清洗 · 0725空白 · 0729客户价格 · 0729分类 · 0801精度 · 0801连表 · **0806编辑链路对账** · repair-0729copy · rule-0724 |
 | `useDriverExpansions.ts` | 12 | 0713版本选择 · 0722元素价格 · 0725空白 · 0728版式 · 0729客户价格 · 0801连表 · **0806模板冻结** · **0806价格任务性能** · 删除行重构 · repair-0727回填 · repair-0803BL0098 · rule-0724 |
 | `FormulaCalculator.java` | 8 | 0721树 · 0729客户价格 · 0801精度 · 0803父子公式 · 0805导入导出 · 删除行重构 · repair-0803BL0098 · repair-0803SUM |
-| `QuotationService.java` | 7 | 0708导入 · 0729客户价格 · 0729模板校验 · 0801精度 · 删除行重构 · repair-0729copy · repair-0803BL0098 |
+| `QuotationService.java` | 8 | 0708导入 · 0729客户价格 · 0729模板校验 · 0801精度 · 删除行重构 · repair-0729copy · repair-0803BL0098 · **repair-0808算序假环** |
 | `ComponentService.java` | 9 | 0721树 · 0723清洗 · 0729客户价格 · 0803父子公式 · **0806编辑链路对账** · **0806模板冻结** · repair-0803BL0098 · repair-0803SUM · repair-0803公式BUG |
-| `ComponentCell.tsx` | 6 | 0729客户价格 · 0801精度 · 0803父子公式 · 删除行重构 · repair-0803BL0098 · rule-0724 |
+| `ComponentCell.tsx` | 7 | 0729客户价格 · 0801精度 · 0803父子公式 · 删除行重构 · repair-0803BL0098 · **repair-0808算序假环** · rule-0724 |
 | `formulaEngine.ts` | 7 | 0729客户价格 · 0801精度 · 0803父子公式 · **0806编辑链路对账** · **0806模板冻结** · repair-0803SUM · rule-0724 |
 | `SqlViewExecutor.java` | 4 | 0722元素价格 · 0725空白 · 0729客户价格 · repair-0727回填 |
 
@@ -182,6 +183,7 @@ done | sort | cut -d'|' -f1 | uniq -c | sort -rn | awk '$1>=4'
 | `task-0801-公式计算精度优化/` | 全链路统一 6 位小数（引擎 + 小计 + 总计 + 列表一致） | ✅ 已交付 | `PrecisionPolicy.java` `NumberFormatUtil.java` |
 | `task-0801-页签连表公式配置优化/` | 连表公式抽屉改版（左右分栏 / 括号配对可视化 / 试算） | ✅ 已交付 | `TabJoinFormulaDrawer.tsx` `TabFieldMatrix.tsx` |
 | `repair-0803-公式计算BUG修复/` | 「待重算」根因 = `$view` 报错毒化 PG 事务；顺带挖出 BL-0097/0098/0099 三条独立缺陷 | ✅ 已交付 | `CardSnapshotService.java:2245` |
+| └ `repair-0808-前端页签算序假环致列小计归零/` | 上条**未做完的另一半**（`BL-0101`）：后端 repair-0803 已改列粒度建图，**前端仍是页签粒度** → `component_subtotal` 引用零依赖 INPUT 列（产品·税率）也建边 → 与真实的 `产品→物料` cross_tab 边撞成**假环** → `topoOrderComponents` 抛错 → `catch` **静默**退回声明序 → 物料先于其 cross_tab 源页签求值 → 11 个 FORMULA 列整齐归零。表象是「行内值对、小计 ¥0」（行读后端快照 / 小计读前端实时重算，双源） | 🚧 **开发中**（闸门 A 已过，分支 `fix/repair-0808-crosstab-order-column-granularity`） | `crossTabOrder.ts` `QuotationStep2.tsx:1452-1478`（对拍基准 `CrossTabComponentOrder.java#buildComponentDeps`） |
 | `repair-0803-BL0098-公式绑定改绑ID/` | 公式绑定从「按名字/按位置猜」改成**绑不可变 UUID**（5 条决策台账；位置回退代码永久保留给老冻结单） | ✅ 已交付 | `V375__bl0098_formula_stable_id` `FieldConfigTable.tsx` |
 | ├ `repair-0805-渲染侧丢公式id致公式列全空/` | 渲染侧丢 formulaId → 公式列全空（含 34KB `backend-rowkey-contract.md`） | ✅ | — |
 | └ `repair-0805-行内公式列不随编辑重算/` | 行内公式列编辑后不重算 | ✅ | — |
