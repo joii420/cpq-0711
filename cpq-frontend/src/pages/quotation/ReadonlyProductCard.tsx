@@ -225,6 +225,12 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
 }) => {
   const side = sideProp ?? 'QUOTE';
   const isCosting = side === 'COSTING';
+  // task-0806 FR-1（阶段①，AP-50：与 QuotationStep2.tsx 的 isDraft 同一判定口径）：
+  // DRAFT 单据的行内 FORMULA 单元格取值改走前端引擎；非 DRAFT 仍读快照 formulaResults。
+  // 提到最前面统一算一次，供下方 useSnap（快照读取总闸）之外单独叠加到 snapFormula 的读分支——
+  // 不改 useSnap 本身：useSnap 同时驱动是否发 batch-expand（driver 展开）等更大范围的决策
+  // （见该变量声明处大段注释：『零 batch-expand 约定』），阶段①范围只是"显示读哪份"，不动这个闸门。
+  const isDraft = !quotationStatus || quotationStatus === 'DRAFT';
   const [activeTab, setActiveTab] = useState(0);
   const [components, setComponents] = useState<ComponentDataItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -691,7 +697,11 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         // F0 + F6：新键未命中时按同一行位置的两档历史口径键依次回退（存量单据兼容）。
                         const legacyRowKeyPrefixed = useSnap ? (roLegacyRowKeySets.legacyPrefixed[ri] ?? String(ri)) : String(ri);
                         const legacyRowKey = useSnap ? (roLegacyRowKeySets.legacyNoPrefix[ri] ?? String(ri)) : String(ri);
-                        const snapFormula = useSnap
+                        // task-0806 FR-1（阶段①，AP-50 与 QuotationStep2.tsx 同款分流）：DRAFT 恒
+                        // undefined → 落到 treeResultsActive/computeAllFormulas 前端引擎（AC-1）；
+                        // 非 DRAFT 行为不变（AC-2）。只加到这一处『读』分支，不动 useSnap 本身
+                        // （原因见组件顶部 isDraft 声明处注释）。
+                        const snapFormula = (useSnap && !isDraft)
                           ? getByKeyWithLegacyFallback(activeSnap?.formula, rowKey, legacyRowKeyPrefixed, legacyRowKey)
                           : undefined;
                         const errForRow: Record<string, string> = {};
@@ -867,7 +877,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                             {activeComp.fields.map((field) => {
                               const key = field.name || '';
                               const showTrace = !!(quotationId && isTraceField(field));
-                              const isDraft = !quotationStatus || quotationStatus === 'DRAFT';
+                              // isDraft 已提升至组件顶层（task-0806 FR-1 复用同一份判定，见顶部声明处）。
                               const compIndex = components.indexOf(activeComp);
                               const fieldPath = `lineItems[${index}].componentData[${compIndex}].rowData.${key}`;
                               const cellCtx: CellContext = {

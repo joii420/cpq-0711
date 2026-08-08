@@ -5073,3 +5073,80 @@ handleSubmit:  submit()          ← 后端在这里冻结 frozen_dto + 建核�
 仍默认「报价单」子视图（无回归）。
 
 **自检**：`npx tsc --noEmit` 0 错误 ✅；三个改动文件 Vite transform 均 200 ✅；E2E 1 passed ✅。
+
+---
+
+## [2026-08-07] task-0806 报价编辑链路优化与前后端对账 · 阶段①前端（F1-1~F1-9 + FR-0b）
+
+**范围**：`fronttask.md §8` 阶段① 全部 9 项 + 新增 **FR-0b**（组件管理字段类型下拉同步收窄）。worktree
+`/home/joii/project/cpq/.claude/worktrees/task-0806-edit-reconcile`，分支 `feat/task-0806-edit-reconcile`。
+
+**FR-2/AP-41（`quotationStatus` 三处透传）**：`QuotationStep2.tsx` 的 `ProductCardProps` 新增
+`quotationStatus?: string`，报价侧 / 核价侧两处 `<ProductCard>` 调用点（`:4538` COSTING、`:4594` QUOTE）
+补传；`ProductDetailViews.tsx:239` 的 `<ReadonlyProductCard quotationStatus={quotation.status}>` 是既有代码，
+本次核实其覆盖报价/核价两侧读态（`side` prop 切换，同一份 `quotationStatus`）。
+`src/pages/quotation/CostingApprovePreviewDrawer.tsx:325` 另有一个同名但**不相关**的 `<ProductCard>`
+（核价审批预览用，纯只读小组件，不涉及 quoteCardValues/formulaResults），不在 AP-41 范围内。
+
+**FR-1（取值分流）· 关键偏离 fronttask.md 字面代码，已记录理由**：fronttask.md §2.2 给的示意码是把
+`!isDraft` 直接并入 `useSnapEdit`；实测该变量除了控制 snapFormula 显示源，**还**驱动 rowKey 计算
+（`buildUniqueRowKeys`/`activeUniqRowKeys` 等，:3164~3265）与 `handleSnapshotCellEdit` 写调用闸门（:3497）。
+若照抄示意码，DRAFT（编辑期最常见状态）下 rowKey 会退化成 `String(i)`（破坏权威行键口径，写错 rowKey
+会导致后端按位置误配对），且写调用整体不再触发（FR-4 对账失去数据源，等于对账机制在最该生效的
+DRAFT 期反而失灵）。改法：新增独立 `isDraft` 变量，**只**叠加到 snapFormula 读分支（QuotationStep2.tsx
+:3482），`useSnapEdit` 本身不变。`ReadonlyProductCard.tsx` 同款处理（不动 `useSnap` 总闸，只在 snapFormula
+处叠加 `!isDraft`，`isDraft` 提到组件顶层，AP-50 与编辑页同一判定表达式 `!quotationStatus || quotationStatus === 'DRAFT'`）。
+
+**FR-4/FR-5（对账 + 埋点）**：新增 `activeTabCtxRef`（渲染期写，仿 `itemRef.current = item` 模式，记录
+活动页签的 `rowKey/expIndex/row/driverRow/formulaCache`）+ `reconcileDiffs` state。`reconcileTab()` 用
+API-1 响应的 `quoteCardValues.tabs[].formulaResults`（按 rowKey）与 `resolvedRows`（按下标位置对齐
+baseRows，用于 tooltip 的"后端输入"）比对，D4 阈值 `10^-DISPLAY_SCALE`。**已知限制**：对账范围 = 触发
+编辑那一刻的**活动页签**（fronttask.md §2.4 数据来源明确写 `preComputedCaches[rowIdx][fieldName]`，本就是
+按活动页签构建的局部变量），跨页签公式传播若被本次编辑连带改变、但用户未切去查看，暂不会被对账。
+**踩坑并修正**：后端 `ReconcileDiffStore.report()` 是按 lineItemId 整份替换语义（非按 componentId patch）——
+若每次上报只带本轮活动页签的差异，切页签编辑会用不含前一页签差异的报告，静默抹掉后端 pending Map
+里前一页签仍未解决的差异（误放行提交）。修法：`reconcileDiffs` state 保留跨页签累积的全部已知差异，
+每次上报取 `Object.values(merged)` 全量，不是只报本轮 `newDiffKeys`。
+`resolvedRows`（`CardValuesTab` 新增字段）与 `baseRows` 同下标对齐、无独立 rowKey，backendInputs 靠
+driver 展开下标（`expIndex`，effectiveRows 新增字段）间接对齐，手动行（`expIndex=-1`）不取 backendInputs
+（不臆造数据）。
+
+**FR-6/F1-8（提交闸门）**：新建 `ReconcilePendingDrawer.tsx`（Drawer，非 Modal），字段形状（`fieldName`/
+`frontendValue`/`backendValue`）与既有 `RowKeyConflictDrawer` 不同（那是行键重复冲突，不同 409 reason），
+未复用同一个 Drawer。`api.md` 的 `conflicts[]` 不带 `componentId`（只有 `tabName`），定位跳转只能精确到
+产品卡片，不能像行键冲突那样精确切到目标页签（已知限制）。`WRITE_IN_FLIGHT` 分支：提示 + 800ms 退避 +
+自动重试一次（D15 澄清后该分支阶段①恒不触发，代码按 fronttask.md §2.6 原样实现，留给阶段②生效）。
+
+**D15（会话中途追加，前端串行保证）**：新建 `pendingEditTracker.ts`（模块级 in-flight 追踪器，不走
+prop drilling——ProductCard 深嵌在 QuotationStep2 内部，逐层透传给 QuotationWizard 需要三层 prop，
+是新的 AP-41 风险源）。`handleSnapshotCellEdit` 从直接 `async` 函数改为同步外壳 + 内部异步 IIFE，
+IIFE 在函数**同步**创建的瞬间被 `trackPendingEdit` 登记（利用"单元格失焦先于提交按钮 click"的浏览器
+事件顺序保证）；`reconcileTab()` 从 fire-and-forget 改为返回 `Promise<void>`（`.then(ok,ok)` 消音失败但
+仍等待落地）。`QuotationWizard.tsx#handleSubmit` 在 `handleSaveDraft` 之后、`submit` 之前
+`await waitForPendingEdits()`。
+
+**FR-0b（会话中途追加）**：`src/pages/component/types.ts` 的 `FIELD_TYPE_OPTIONS`（唯一被
+`FieldConfigTable.tsx` 消费的字段类型下拉源）从 7 项剔除 `DATA_SOURCE`（该列表本就从未含裸
+`INPUT`），降到 6 项，与后端 6 种白名单对齐。只删下拉选项，不删任何渲染/解析分支（D13）。
+
+**涉及文件**：
+`cpq-frontend/src/pages/quotation/QuotationStep2.tsx`（主战场）/ `ReadonlyProductCard.tsx` /
+`QuotationWizard.tsx` / `ReconcilePendingDrawer.tsx`（新）/ `pendingEditTracker.ts`（新）/
+`src/services/quotationService.ts`（`CardValuesTab.resolvedRows` + `reconcileReport` API-5）/
+`src/pages/component/types.ts`。
+
+**自检**：`npx tsc --noEmit -p tsconfig.json` 0 错误 ✅（含 D15/FR-0b 追加改动后复跑）；7 个改动/新增
+`.tsx`/`.ts` 文件经临时 Vite 实例（worktree 未共享主仓 5174，按已知坑「worktree前端自检坑」自建 5199
+临时实例）transform 均 200 ✅；`npx vitest run src` = 77 passed / 1 failed 文件，1103 passed / 2 failed
+（`formulaGolden.test.ts` amt-002/amt-003，master 存量常年红，非本次引入）✅；E2E `quotation-flow.spec.ts`
+A/B 对照：主仓 5174（基线）与本 worktree 5199（临时实例，同一份共享 8081 后端）**逐条一致** 3 failed
+（全部卡在 Step1「请先填写产品分类和报价模板」/ 选不到"西门子"客户选项，`BL-0078` 类夹具漂移，与
+本次改动无关）——未引入新的 E2E 回归。
+
+**已知限制（留 test-report.md / 后续阶段跟进）**：① 对账范围仅活动页签，跨页签连带变化未主动核对；
+② `frontendInputs`/`backendInputs` 取"该行全部非公式字段"近似"公式引用到的字段"（未做逐公式 token
+解析）；③ `RECONCILE_PENDING` 定位跳转精确到卡片、不到页签（api.md conflicts 无 componentId）；
+④ 本次会话未能验证阶段① 后端新增端点（`reconcile-report`/`submit` 闸门）与本前端实现的真实联调
+——并发的后端验证会话对该 worktree 的后端文件做了 `git stash`（`stash@{0}
+task0806-backend-ab-probe`）做 A/B，前端未动它；契约核对改为静态交叉核对源码（`ReconcileDiffEntry.java`
+/ `ReconcileReportRequest.java`/`SubmitConflictDTO.java` 字段与前端 payload/类型逐一比对一致）。

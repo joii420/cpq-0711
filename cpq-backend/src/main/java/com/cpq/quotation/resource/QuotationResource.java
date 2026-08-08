@@ -59,6 +59,10 @@ public class QuotationResource {
     @Inject
     CustomerPartCandidateService candidateService;
 
+    /** task-0806 阶段① B1-2/B1-3：对账差异埋点落点（API-5 写入、submit 闸门 B1-1 读取）。 */
+    @Inject
+    com.cpq.quotation.service.reconcile.ReconcileDiffStore reconcileDiffStore;
+
     // 加产品整份快照 Phase 2:saveDraft 全量重建后按新行重快照(UPSERT 保留编辑层 row_data)
     @Inject
     com.cpq.configure.service.ConfigureSnapshotService snapshotService;
@@ -231,6 +235,35 @@ public class QuotationResource {
             throw new com.cpq.common.exception.BusinessException(400, "编辑失败：非草稿态或数据缺失");
         }
         return ApiResponse.success(result);
+    }
+
+    /**
+     * task-0806 阶段① API-5：对账差异埋点（fire-and-forget，D1 只记录不改数据）。
+     * 前端把本轮对账发现的差异上报；本端点只落 WARN 日志 + 写进程内差异 Map（B1-3，
+     * 供 {@code submit} 的提交闸门 B1-1 查询），不做任何业务判定、不改任何数据。
+     * {@code diffs} 为空数组 = 本轮对账无差异（消解条件①，见 需求文档.md §4.1）。
+     */
+    @POST
+    @Path("/line-items/{lineItemId}/reconcile-report")
+    public Response reportReconcileDiff(
+            @PathParam("lineItemId") UUID lineItemId,
+            com.cpq.quotation.dto.ReconcileReportRequest body) {
+        List<com.cpq.quotation.dto.ReconcileDiffEntry> diffs =
+                (body != null && body.diffs != null) ? body.diffs : List.of();
+        java.time.Instant reconciledAt = (body != null && body.reconciledAt != null)
+                ? body.reconciledAt : java.time.Instant.now();
+        for (com.cpq.quotation.dto.ReconcileDiffEntry d : diffs) {
+            LOG.warnf("[reconcile-diff] lineItemId=%s componentId=%s tabName=%s rowKey=%s fieldName=%s "
+                    + "frontendValue=%s backendValue=%s frontendInputs=%s backendInputs=%s reconciledAt=%s",
+                    lineItemId, d.componentId, d.tabName, d.rowKey, d.fieldName,
+                    d.frontendValue, d.backendValue, d.frontendInputs, d.backendInputs, reconciledAt);
+        }
+        reconcileDiffStore.report(lineItemId, diffs, reconciledAt);
+        Map<String, Object> data = new HashMap<>();
+        data.put("recorded", diffs.size());
+        // 契约要求 message="accepted"（非 "success"），复用 ApiResponse.error(code,message,data) 的通用三元工厂
+        // ——该方法名虽叫 error 但语义只是「code+message+data 任意组合」，2xx 场景沿用无问题。
+        return Response.status(202).entity(ApiResponse.error(202, "accepted", data)).build();
     }
 
     @POST
