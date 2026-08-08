@@ -1035,6 +1035,22 @@ public class CardSnapshotService {
         for (Object o : rawIds) { UUID u = asUuid(o); if (u != null) missing.add(u); }
         if (missing.isEmpty()) return 0;
 
+        // task-0806 B21：渲染前置门禁——真正需要补算时（missing 非空）才校验模板是否已冻结，
+        // 直接调用 PublishedTemplateReader#allTabsOf，让 TemplateNotFrozenException（D17/409）
+        // 或 BusinessException（D19 快照损坏/500）不经任何 catch 冒泡到 HTTP 层。
+        //
+        // 🔒 放在 missing.isEmpty() 判断之后：整单已全部 warm 好、本次纯粹 no-op 的既有快路径
+        // 不读任何结构，没有"读不到"这回事，不该报错——早于此处校验会让"打开一张老数据都齐全
+        // 但模板恰好还没重新发布"的报价单也报 409，扩大本次改造的破坏面。
+        //
+        // 🔒 不得挪到下面 snapshotNewLinesCardValues 内部：那条路径按行走 safeCall()（:3759），
+        // 会把这个异常降级吞成静默的 __cardValueFailed 哨兵（HTTP 仍 200）——实测验证过，
+        // 这正是本次要根治的"HTTP 200 + N 个空壳页签"（buildCardValues 的"1. 配置源"逻辑
+        // 完全绕开 PublishedTemplateReader，只原生 SQL 直读 template.components_snapshot，
+        // 见 :1567 一带，null 时静默 return null，从不触发本类的冻结校验）。
+        publishedTemplateReader.allTabsOf(q.customerTemplateId);
+        if (hasCostingTpl) publishedTemplateReader.allTabsOf(q.costingCardTemplateId);
+
         java.util.List<UUID> allIds = QuotationLineItem.<QuotationLineItem>list("quotationId", quotationId)
             .stream().map(li -> li.id).collect(java.util.stream.Collectors.toList());
         var union = precomputeCostingDriverUnion(quotationId);

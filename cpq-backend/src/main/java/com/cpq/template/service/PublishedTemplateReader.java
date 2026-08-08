@@ -4,6 +4,8 @@ import com.cpq.common.exception.BusinessException;
 import com.cpq.template.entity.Template;
 import com.cpq.template.entity.TemplateComponentSnapshot;
 import com.cpq.template.exception.TemplateNotFrozenException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.util.ArrayList;
@@ -48,14 +50,20 @@ import java.util.UUID;
 @ApplicationScoped
 public class PublishedTemplateReader {
 
-    /** 该模板全部页签快照，按 sortOrder 升序。一次查询。 */
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    /**
+     * 该模板全部页签快照，按 sortOrder 升序。一次查询 + 一次 {@link Template#findById}
+     * 做「表行数 vs {@code components_snapshot} jsonb 数组长度」一致性校验（B21，见
+     * {@link #verifyConsistentWithJsonb}）——两者由同一次 {@code publish()}/{@code archive()}
+     * 派生自同一份 rows，正常状态下恒相等，不额外增查询（额外那一次 {@code findById} 是本方法
+     * 唯一新增的开销，且与数据行数/页签数无关，符合 CLAUDE.md SQL 条数与 N 无关的铁律）。
+     */
     public List<TemplateComponentSnapshot> allTabsOf(UUID templateId) {
         if (templateId == null) return List.of();
         List<TemplateComponentSnapshot> rows = TemplateComponentSnapshot.list(
                 "templateId = ?1 ORDER BY sortOrder ASC", templateId);
-        if (rows.isEmpty()) {
-            assertNotUnexpectedMiss(templateId);
-        }
+        verifyConsistentWithJsonb(templateId, rows);
         return rows;
     }
 
@@ -179,17 +187,64 @@ public class PublishedTemplateReader {
     }
 
     /**
-     * 结果为空时判定：模板不存在→404；PUBLISHED/ARCHIVED→未冻结（B20，D17：不再是错误，
-     * 抛 {@link TemplateNotFrozenException} 供调用方识别并透出「请重新发布」信号）；
-     * DRAFT→静默放行（返回空列表是合法结果，本类职责外）。
+     * B21（缺口二）：新表行数 vs {@code template.components_snapshot} jsonb 数组长度一致性校验。
+     * 两者都由同一次 {@code TemplateService.publish()}/{@code archive()}（{@code persistSnapshotRows}
+     * + {@code deriveComponentsSnapshotJson}，见该类 :228-231/347-348/517-518）派生自<b>同一份</b>
+     * {@code snapshotRows} 列表，正常状态下恒相等；不相等只可能是发布流程之外的直接篡改
+     * （后门 / 裸 SQL 删了某张表的部分行），正是 D19「快照损坏」要抓的情况。
+     *
+     * <p>此前 D19 的检测点只有 {@link #findTab}（按具体 sortOrder 精确匹配缺失），但
+     * {@code findTab} 目前零生产调用方——检测机制形同虚设。改为在<b>人人都会经过</b>的
+     * {@link #allTabsOf} 里做这道比较，让每一次渲染都在校验，不依赖某条恰好调用
+     * {@code findTab} 的路径。
+     *
+     * <table>
+     *   <caption>判定矩阵</caption>
+     *   <tr><th>表行数</th><th>jsonb 长度</th><th>判定</th></tr>
+     *   <tr><td>0</td><td>0</td><td>未冻结（D17，正常过渡态）→ {@link TemplateNotFrozenException}（409）</td></tr>
+     *   <tr><td>N</td><td>N</td><td>正常，放行</td></tr>
+     *   <tr><td>N</td><td>M（N≠M，含一侧为 0）</td><td>快照损坏（D19）→ {@link BusinessException}（500）</td></tr>
+     * </table>
+     *
+     * <p>DRAFT 模板（本类职责外，草稿期一律走活表）跳过整套校验，含 rows 为空的正常情形。
      */
-    private void assertNotUnexpectedMiss(UUID templateId) {
+    private void verifyConsistentWithJsonb(UUID templateId, List<TemplateComponentSnapshot> rows) {
         Template t = Template.findById(templateId);
         if (t == null) {
-            throw new BusinessException(404, "Template not found: " + templateId);
+            if (rows.isEmpty()) {
+                throw new BusinessException(404, "Template not found: " + templateId);
+            }
+            // 理论不可达：template_component_snapshot.template_id 有 ON DELETE CASCADE FK，
+            // 表有行则模板必存在；此处宽松放行而非抛错，不引入新的失败面。
+            return;
         }
-        if (isFrozenStatus(t.status)) {
+        if (!isFrozenStatus(t.status)) {
+            return; // DRAFT：本类职责外，静默放行
+        }
+        int tableLen = rows.size();
+        int jsonbLen = jsonbArrayLength(t.componentsSnapshot);
+        if (tableLen == 0 && jsonbLen == 0) {
             throw new TemplateNotFrozenException(templateId, t.status);
+        }
+        if (tableLen != jsonbLen) {
+            throw new BusinessException(500,
+                    "模板快照损坏：templateId=" + templateId
+                    + "，template_component_snapshot 行数=" + tableLen
+                    + "，components_snapshot jsonb 长度=" + jsonbLen
+                    + "。两者应恒相等（均由同一次 publish()/archive() 的 persistSnapshotRows 派生），"
+                    + "出现不相等说明其中一侧被发布流程之外的方式改动过（后门 / 裸 SQL），请检查两张表");
+        }
+        // tableLen == jsonbLen 且非 (0,0) —— 正常，放行
+    }
+
+    /** 解析 {@code components_snapshot} jsonb 文本的数组长度；null/blank/非数组/解析失败均记 0。 */
+    private static int jsonbArrayLength(String json) {
+        if (json == null || json.isBlank()) return 0;
+        try {
+            JsonNode node = MAPPER.readTree(json);
+            return node.isArray() ? node.size() : 0;
+        } catch (Exception e) {
+            return 0;
         }
     }
 }

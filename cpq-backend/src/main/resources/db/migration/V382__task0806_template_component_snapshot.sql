@@ -96,3 +96,28 @@ ALTER TABLE operation_log ADD COLUMN IF NOT EXISTS details jsonb;
 COMMENT ON COLUMN operation_log.details IS
     'task-0806：结构化 diff（改前改后），供 admin 后门审计用（TEMPLATE_SNAPSHOT_FORCE_REFRESH / '
     'TEMPLATE_TC_DELETE / TEMPLATE_OVERRIDE_PROMOTE）。可空，不影响既有写入方。';
+
+-- ============================================================================
+-- B21（2026-08-07，缺口一）：PUBLISHED / ARCHIVED 模板的 template.components_snapshot
+-- jsonb 一并清空 —— 两份快照必须同生同灭，否则「未冻结」信号会被陈旧 jsonb 架空
+-- ============================================================================
+--
+-- 实测复现（templateId=70f1b149-b0d9-4cb1-9245-6c3cee1bc3af 罗克韦尔模板1）：本迁移上半段
+-- 只清空了新表 template_component_snapshot（起步 0 行，不回填，D16），但 template 表的
+-- components_snapshot 列——那是【改造前最后一次 publish() 留下的旧 jsonb】——原样留着。
+-- 渲染链路里一大批读取点（CardSnapshotService.buildCardValues / loadComponentsSnapshot 等）
+-- 用原生 SQL 直读 template.components_snapshot，完全不经过 PublishedTemplateReader 网关：
+-- 见到非空 jsonb 就当"已发布"，拿它搭出一副页签骨架，再向新表（0 行）要内容——
+-- 产出 HTTP 200 + N 个页签但 0 数据 0 字段定义的空壳，D17"请重新发布"的提示信号被架空，
+-- 用户看不到任何异常，以为系统坏了。
+--
+-- 清空后两份快照恒同步：「0 行 + NULL」是唯一、诚实、可被 PublishedTemplateReader 识别的
+-- "未冻结"态；后续任何一次 publish()/archive() 都会用同一份 persistSnapshotRows 产出的
+-- rows 同时重建两侧（見 TemplateService:228-231/347-348/517-518），不会再走出这一步产生的
+-- 分叉。选 NULL 而非 '[]'：全仓库现存的 "componentsSnapshot != null && !isBlank()" 判据
+-- （ExcelViewService/CardSnapshotService/ConfigureSnapshotService/QuotationService 等
+-- 十余处）都已经把 NULL 当作"尚未冻结"的既有信号（对从未发布过的草稿模板即是如此），
+-- 复用同一套信号是改动面最小的选择；'[]' 反而会被这些判据误读成"已发布但恰好 0 个页签"，
+-- 在 buildCardValues 等路径产出的是一份没有任何"失败/待重新发布"标记的、貌似合法的空结构，
+-- 比 NULL 更容易被误当成正常状态。
+UPDATE template SET components_snapshot = NULL WHERE status IN ('PUBLISHED', 'ARCHIVED');

@@ -1098,11 +1098,22 @@ public class ExcelViewService {
     public List<Map<String, Object>> tabDefsOfTemplate(UUID templateId) {
         Template t = Template.findById(templateId);
         if (t == null) return List.of();
-        // PUBLISHED 用冻结的 componentsSnapshot；DRAFT 期 snapshot 尚未冻结(发布时才生成)，
-        // 从实时 template_component 关联构建——否则草稿配公式时 tab-defs 永远返空。
-        boolean published = t.componentsSnapshot != null && !t.componentsSnapshot.isBlank();
+        // task-0806 B21：判据从"componentsSnapshot 是否非空"改为"模板状态是否 DRAFT"。
+        // 原判据在 components_snapshot 被 V382 清空后（缺口一：PUBLISHED/ARCHIVED 但尚未按新
+        // 语义重新发布的过渡态）会把这类模板误判成"DRAFT"，从而回落 buildLiveComponentsList
+        // 直读活表——这正是本次改造要消灭的"未冻结时回落活表"红线。只有真正 DRAFT 的模板才配
+        // 读活表（草稿配公式期 snapshot 尚未冻结，历史行为不变）。
+        boolean isDraft = "DRAFT".equals(t.status);
         List<Map<String, Object>> snapshotList;
-        if (published) {
+        if (!isDraft) {
+            if (t.componentsSnapshot == null || t.componentsSnapshot.isBlank()) {
+                // 未冻结（D17，过渡态）或快照损坏——诚实返回空页签定义，不读活表，也不伪装成
+                // "这个模板本来就没有页签"。真正的"未冻结"错误信号由 PublishedTemplateReader
+                // 网关（ensure-card-values 等渲染入口）负责抛 409；本方法只负责不作恶。
+                LOG.warnf("[ExcelView] tabDefsOfTemplate tmpl=%s 尚未冻结（components_snapshot 为空），"
+                    + "请重新发布模板；本次返回空页签定义", templateId);
+                return List.of();
+            }
             try {
                 snapshotList = MAPPER.readValue(t.componentsSnapshot,
                     new TypeReference<List<Map<String, Object>>>() {});
@@ -1116,11 +1127,11 @@ public class ExcelViewService {
         }
         if (snapshotList.isEmpty()) return List.of();
 
-        // 收集 componentId → rowKeyFields。task-0806 B8：PUBLISHED 分支改问冻结快照
+        // 收集 componentId → rowKeyFields。task-0806 B8：非 DRAFT 分支改问冻结快照
         // （PublishedTemplateReader，一次批量取），不再逐 componentId 直读活 component 表；
         // DRAFT 分支（buildLiveComponentsList 产出）架构上就该继续读活表（§5.1.2），保持原逻辑。
         Map<String, List<String>> rkfByCompId = new LinkedHashMap<>();
-        if (published) {
+        if (!isDraft) {
             Map<UUID, com.cpq.template.entity.TemplateComponentSnapshot> tcsByComponentId = new HashMap<>();
             for (com.cpq.template.entity.TemplateComponentSnapshot s : publishedTemplateReader.allTabsOf(templateId)) {
                 tcsByComponentId.putIfAbsent(s.componentId, s);
