@@ -361,6 +361,13 @@ export interface ReviewQuotationDTO {
   isBasis: boolean;
   quoteSubtotalCurrent: number | null;
   quoteSubtotalAdjusted: number | null;
+  /**
+   * repair-0807 FR-5 新增：该行是否跑过试算。
+   * false → 前端渲染「未试算」；true 且值为 null → 渲染「—」（试算跑了但拿不到值，属异常态）。
+   * 🔒 判据必须是这个显式布尔，不能用 quoteSubtotalAdjusted == null 顶替——那会把
+   * "试算失败"也说成"未试算"，混淆两种完全不同的状态（api.md §1.2）。
+   */
+  adjustedComputed: boolean;
   comparisonViewUrl: string;
 }
 
@@ -433,7 +440,9 @@ export interface ReviewBatchRejectPayload {
 // ═════════════════════════ §3 更新任务（屏 6 + 常驻页） ═════════════════════════
 
 export type JobStatus = 'RUNNING' | 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'STALE';
-export type JobItemStatus = 'WAITING' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'CONFLICT' | 'STALE';
+export type JobItemStatus =
+  | 'WAITING' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'CONFLICT' | 'STALE'
+  | 'SKIPPED'; // repair-0807 FR-4：该单未被更新，且重试无意义（无价格承载组件 / 补建结构失败）
 
 export interface UpdateJobDTO {
   jobId: string;
@@ -447,6 +456,15 @@ export interface UpdateJobDTO {
   failed: number;
   conflict: number;
   stale: number;
+  /**
+   * repair-0807 FR-4 新增：该批次里"未被更新"的单数。
+   * ⚠️ 命名沿用本 DTO 既有字段风格（total/success/failed/conflict/stale 均无 Count 后缀），
+   * 未采用 api.md §3.1 JSON 示例里的 `skippedCount`——后端 JobDTO.java 现有同批字段
+   * （total/success/…）已实证偏离 api.md 该处 JSON 示例的命名（无 Count 后缀），
+   * 判断后端会延续同一约定新增 `skipped` 而非 `skippedCount`。若后端最终字段名不同，
+   * 因 §3 边界约定"字段缺失时汇总区不显示该项"，不会崩，但需与后端对齐后修正此处。
+   */
+  skipped: number;
   finishedAt?: string | null;
   notified?: boolean;
 }
