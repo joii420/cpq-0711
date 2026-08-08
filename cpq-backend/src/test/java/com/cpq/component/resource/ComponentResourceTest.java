@@ -50,8 +50,8 @@ class ComponentResourceTest {
               "code": "TEST-COMP-001",
               "directoryId": "%s",
               "fields": [
-                {"name": "weight", "field_type": "INPUT"},
-                {"name": "length", "field_type": "INPUT"},
+                {"name": "weight", "field_type": "INPUT_NUMBER"},
+                {"name": "length", "field_type": "INPUT_NUMBER"},
                 {"name": "total", "field_type": "FORMULA"}
               ],
               "formulas": [
@@ -81,10 +81,10 @@ class ComponentResourceTest {
               "name": "Test Component B",
               "code": "TEST-COMP-002",
               "fields": [
-                {"name": "f1", "field_type": "INPUT"},
+                {"name": "f1", "field_type": "INPUT_TEXT"},
                 {"name": "f2", "field_type": "FIXED_VALUE"},
-                {"name": "f3", "field_type": "INPUT"},
-                {"name": "f4", "field_type": "INPUT"}
+                {"name": "f3", "field_type": "INPUT_TEXT"},
+                {"name": "f4", "field_type": "INPUT_TEXT"}
               ],
               "formulas": []
             }
@@ -141,7 +141,7 @@ class ComponentResourceTest {
               "name": "Test Component D",
               "code": "TEST-COMP-004",
               "fields": [
-                {"name": "qty", "field_type": "INPUT", "is_subtotal": true}
+                {"name": "qty", "field_type": "INPUT_NUMBER", "is_subtotal": true}
               ]
             }
             """;

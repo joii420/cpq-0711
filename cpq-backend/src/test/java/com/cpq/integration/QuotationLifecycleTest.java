@@ -201,7 +201,7 @@ class QuotationLifecycleTest {
                   "code": "LC-COMP-%s",
                   "directoryId": "%s",
                   "fields": [
-                    {"name": "weight", "field_type": "INPUT"}
+                    {"name": "weight", "field_type": "INPUT_NUMBER"}
                   ],
                   "formulas": []
                 }
