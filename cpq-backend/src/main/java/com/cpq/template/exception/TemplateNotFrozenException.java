@@ -30,8 +30,13 @@ public class TemplateNotFrozenException extends BusinessException {
     private final String templateStatus;
 
     public TemplateNotFrozenException(UUID templateId, String templateStatus) {
-        super(409, "模板尚未重新发布：templateId=" + templateId + ", status=" + templateStatus
-                + "。该模板的渲染配置冻结快照为空（过渡期正常状态），请前往模板管理重新发布该模板后再试。");
+        // task-0806 B22-c：原文案指向"重新发布"，但 publish() 只收 DRAFT，已发布模板根本没有
+        // "重新发布"这个操作（createNewDraft→publish 只会产出新版本，老版本永远冻不上）。
+        // B22-a 新增了真正能就地补冻的端点 POST /templates/{id}/freeze，但本期不加前端按钮
+        // （一次性过渡操作，冻完不再需要）——文案改为引导联系管理员处理，而不是让普通用户
+        // 自己去点一个界面上并不存在的按钮。
+        super(409, "模板尚未冻结：templateId=" + templateId + ", status=" + templateStatus
+                + "。该模板的渲染配置冻结快照为空（过渡期正常状态），请联系管理员冻结该模板后再试。");
         this.templateId = templateId;
         this.templateStatus = templateStatus;
     }
