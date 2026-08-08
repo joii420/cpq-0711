@@ -36,8 +36,9 @@ public class ComponentService {
     private static final Set<String> EDITABLE_FIELD_TYPES =
         Set.of("INPUT_NUMBER", "INPUT_TEXT", "LIST_FORMULA");
 
+    // task-0806 阶段⓪ D13：白名单 8 → 6，剔除 DATA_SOURCE / INPUT（禁新配，代码分支全部保留，实测三载体零使用）
     private static final Set<String> VALID_FIELD_TYPES = Set.of(
-        "FIXED_VALUE", "DATA_SOURCE", "INPUT", "INPUT_TEXT", "INPUT_NUMBER", "FORMULA",
+        "FIXED_VALUE", "INPUT_TEXT", "INPUT_NUMBER", "FORMULA",
         "BASIC_DATA",  // V5: BNF 路径绑定基础数据物理表(对应前端 PathPickerDrawer)
         "LIST_FORMULA" // V203/Phase B: 配置模板驱动 + IF-ELSE-IF 条件分支公式
     );

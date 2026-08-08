@@ -34,20 +34,33 @@
 
 ### 2.2 FR-1 · 取值分流
 
-`QuotationStep2.tsx:2649` 现状：
+`QuotationStep2.tsx` 现状：
 
 ```ts
 const useSnapEdit = cardSide === 'QUOTE' && !!quotationId && !!(item as any).id;
 ```
 
-改为**再加状态条件**（非 DRAFT 才读快照）：
+🚨 **正确改法：新增独立 `isDraft`，只叠加到 `snapFormula` 那一处读分支，`useSnapEdit` 本身不动。**
 
 ```ts
-const isDraft = quotationStatus === 'DRAFT';
-const useSnapEdit = cardSide === 'QUOTE' && !!quotationId && !!(item as any).id && !isDraft;
+const useSnapEdit = cardSide === 'QUOTE' && !!quotationId && !!(item as any).id;  // ← 不动
+const isDraft = !quotationStatus || quotationStatus === 'DRAFT';
+// …渲染处：
+const snapFormula = (useSnapEdit && !isDraft) ? getByKeyWithLegacyFallback(...) : undefined;
 ```
 
-- **DRAFT** → `snapFormula` 恒 `undefined` → 走 `computeAllFormulas` / `computeTabFormulasTree`（`:3329-3338` 现有分支，无需新写）
+> ⚠️ **本节原先给的是「把 `!isDraft` 直接并入 `useSnapEdit`」的示意码 —— 那是错的，2026-08-07 实现期发现并纠正。**
+> `useSnapEdit` **不只**控制显示源，它还同时驱动：
+> - **rowKey 计算**（`activeUniqRowKeyTuples` / `activeUniqRowKeys` / `activeLegacyRowKeySets`，以及 `const rowKey = useSnapEdit ? … : String(i)`）
+> - **`handleSnapshotCellEdit` 的写调用闸门**（`if (useSnapEdit && isUserInputField …)`）
+>
+> 若并入 `useSnapEdit`，DRAFT 下会同时发生两件坏事：
+> 1. **rowKey 退化成 `String(i)`** —— 把 repair-0805 F5 刚归一到 **497/497** 的权威行键**打回原形**（后端按位置误配对）
+> 2. **写闸门关闭** —— `handleSnapshotCellEdit` 不再触发，**FR-4 对账在最该生效的 DRAFT 期反而没有数据源**
+>
+> 而 DRAFT 恰恰是编辑期最常见的状态。**这是 AP-50 级别的坑，照抄必炸。**
+
+- **DRAFT** → `snapFormula` 恒 `undefined` → 走 `computeAllFormulas` / `computeTabFormulasTree`（现有分支，无需新写）；rowKey 与写路径**保持原样**
 - **非 DRAFT** → 行为与今天**逐字节相同**
 
 > 💡 **性能前提已实证**：`buildCrossTabRows`（`:2855`）写在 ProductCard 渲染体里、**不在 `useMemo` 内**，每次渲染本来就把所有行所有公式算了一遍（为了出列小计）。所以 DRAFT 走本地引擎**边际成本为 0**，不需要额外优化。

@@ -26,7 +26,7 @@ import { applyUnitConversion, factorFor } from '../../utils/unitConversion';
 import { formatNumber } from '../../utils/formatNumber';
 import { findDuplicateRowKeys } from './rowDedup';
 import { sumTabColumns, sumAmountFromByCol, AMOUNT_TOTAL_KEY } from './tabTotalLines';
-import { sumDecimal, roundToDisplay } from '../../utils/precision';
+import { sumDecimal, roundToDisplay, DISPLAY_SCALE } from '../../utils/precision';
 import { isCardValueFailed, getCardValueError } from './cardValueFailed';
 import { templateService } from '../../services/templateService';
 import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
@@ -37,6 +37,7 @@ import { isKeyUnset } from './keyPresenceAuthority';
 import { resolveFieldWidth } from '../component/types';
 import BomTreeAddLeafDrawer from './BomTreeAddLeafDrawer';
 import BomTreeDeleteConfirmDrawer from './BomTreeDeleteConfirmDrawer';
+import { trackPendingEdit } from './pendingEditTracker';
 import './quotation.css';
 
 // 与 QuotationWizard / BulkImportPartsDrawer / ReadonlyProductCard 中的同名函数保持完全对齐。
@@ -2206,9 +2207,16 @@ interface ProductCardProps {
   /** Plan 1b：定位目标页签 componentId（仅目标卡非空）；locateSeq 变化时切到该页签 */
   locateComponentId?: string;
   locateSeq?: number;
+  /**
+   * task-0806 FR-2（阶段①，AP-41 高危：三处 <ProductCard> 调用点必须全部透传）：
+   * 报价单状态（来自 quotation.status）。DRAFT 下行内 FORMULA 单元格取值改走前端引擎，
+   * 非 DRAFT 仍读快照 formulaResults（逐字节与提交时一致）。缺省按 DRAFT 处理
+   * （与 ReadonlyProductCard 同一判定口径：`!quotationStatus || quotationStatus === 'DRAFT'`）。
+   */
+  quotationStatus?: string;
 }
 
-const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpdate, customerId, driverExpansions, configTemplates, quotationId, pathCacheState, globalVariableDefs, cardSide, cardStructure, onReloadQuotation, locateComponentId, locateSeq }) => {
+const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpdate, customerId, driverExpansions, configTemplates, quotationId, pathCacheState, globalVariableDefs, cardSide, cardStructure, onReloadQuotation, locateComponentId, locateSeq, quotationStatus }) => {
   const [activeTab, setActiveTab] = useState(0);
   const [dsLoading, setDsLoading] = useState<Record<string, boolean>>({});
   const [dsErrors, setDsErrors] = useState<Record<string, string>>({});
@@ -2647,6 +2655,16 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
   // 渲染 FORMULA 改读 formulaResults(真零计算), 编辑值经 comp.rows 即时反馈 + autosave/row_data 兜底持久化。
   // row_data 完整退役(改 INPUT 本地态)留 Task6。
   const useSnapEdit = cardSide === 'QUOTE' && !!quotationId && !!(item as any).id;
+  // task-0806 FR-1（阶段①）：DRAFT 单据的行内 FORMULA 单元格取值改走前端引擎（AC-1）；
+  // 非 DRAFT 仍读快照 formulaResults，逐字节与提交时一致（AC-2 / D6）。
+  // 🚨 判断：只影响下面 snapFormula 的『读』（渲染显示源），**不**并入 useSnapEdit 本身 ——
+  // useSnapEdit 同时还驱动 rowKey 计算（3164~3265 一带）与 handleSnapshotCellEdit 的写调用闸门
+  // （3497）。若把 !isDraft 直接叠进 useSnapEdit（fronttask.md §2.2 给的示意码是这么写的），DRAFT
+  // 下 rowKey 会退化成 String(i)（破坏权威行键口径）且写调用整体不再触发（FR-4 对账失去数据源，
+  // DRAFT 又是编辑期最常见状态）——两者都是本任务明确要保留的行为，故改用独立 isDraft 变量只叠加
+  // 到 snapFormula 那一处读分支，功能效果与 fronttask.md 描述的『DRAFT → snapFormula 恒 undefined』
+  // 完全一致，只是不通过改写 useSnapEdit 本身来达成。与 ReadonlyProductCard.tsx 同一判定口径。
+  const isDraft = !quotationStatus || quotationStatus === 'DRAFT';
   const quoteValuesJson = (item as any).quoteCardValues as string | undefined;
   const sideCardValues = React.useMemo<CardValues | null>(() => {
     if (cardSide !== 'QUOTE' || !quoteValuesJson) return null;
@@ -2700,28 +2718,167 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     });
     return m;
   }, [sideCardValues]);
+  // ─── task-0806 阶段①（FR-4/FR-5）· 对账 ─────────────────────────────────────
+  // preComputedCaches 是每次渲染在 JSX 体内就地算出的局部变量（活动页签，见下方 ~3350 行附近），
+  // handleSnapshotCellEdit 的响应回调发生在渲染之外（异步），故用 ref 在渲染期"顺手"记一份活动
+  // 页签的快照（与 itemRef.current = item 同款模式），供响应回来时读取"当次前端值"。
+  // 🚨 阶段①对账范围 = 当次渲染的『活动页签』整页签（fronttask.md §2.4 数据来源明确写
+  // preComputedCaches[rowIdx][fieldName] —— 该结构本就是按活动页签构建的，非全卡所有页签）。
+  // 用户只能编辑当前可见页签的单元格，故触发编辑时活动页签必是被编辑字段所在页签，覆盖到位。
+  // 跨页签公式传播（cross_tab_ref）若被本次编辑连带改变、但用户未切去那个页签查看，则那个页签
+  // 暂不会被对账 —— 已知限制，写入 test-report。
+  const activeTabCtxRef = useRef<{
+    componentId: string;
+    tabName: string;
+    rows: Array<{
+      rowKey: string; expIndex: number; row: Record<string, any>; driverRow?: Record<string, any>;
+      formulaCache?: Record<string, number | null>;
+    }>;
+    formulaFieldNames: string[];
+  } | null>(null);
+  // 对账差异：key = `${componentId}::${rowKey}::${fieldName}` → 供 ComponentCell ⚠ tooltip 消费，
+  // 也是 reconcile-report 请求体的原料（见 reconcileTab 末尾）。
+  // 🚨 后端 ReconcileDiffStore.report() 是『整份替换』语义（非按字段 patch，key=lineItemId，
+  // 不细分到 componentId/tab）——若每次上报只带『本轮活动页签』的差异，切到另一页签编辑一次就会用
+  // 一份不含前一页签差异的报告，把前一页签仍未解决的差异从后端 pending Map 里静默抹掉（误放行提交）。
+  // 故这里必须把跨页签累积的全部已知差异都留着，每次上报时取其**全量**（见 reconcileTab 末尾的
+  // Object.values(merged)），而不是只报本轮 newDiffKeys。阶段①不在前端做『消解』判定（后端
+  // assertLineSettled 才是提交闸门的权威），这份 state 只是『目前已知差异』的本地镜像 + 渲染用。
+  const [reconcileDiffs, setReconcileDiffs] = useState<Record<string, {
+    tooltip: string;
+    componentId: string; tabName: string; rowKey: string; fieldName: string;
+    frontendValue: any; backendValue: any; frontendInputs: Record<string, any>; backendInputs: Record<string, any>;
+  }>>({});
+
+  /** D4 判定：数字按 DISPLAY_SCALE 阈值比，非数字按字符串比，一边缺失算差异。 */
+  const valuesReconcile = (a: any, b: any): boolean => {
+    const an = typeof a === 'number' ? a : (a != null && a !== '' && !isNaN(Number(a)) ? Number(a) : null);
+    const bn = typeof b === 'number' ? b : (b != null && b !== '' && !isNaN(Number(b)) ? Number(b) : null);
+    if (an != null && bn != null) return Math.abs(an - bn) < Math.pow(10, -DISPLAY_SCALE);
+    if ((a == null || a === '') && (b == null || b === '')) return true;
+    if ((a == null || a === '') !== (b == null || b === '')) return false; // 一边有值一边缺失
+    return String(a) === String(b);
+  };
+
+  /** 行输入摘要：行键字段 + 该公式引用到的字段的近似——取本行全部非 FORMULA/LIST_FORMULA 字段值。 */
+  const buildRowInputs = (row: Record<string, any> | undefined, driverRow: Record<string, any> | undefined): Record<string, any> => {
+    const out: Record<string, any> = {};
+    const src = { ...(driverRow || {}), ...(row || {}) };
+    for (const k of Object.keys(src)) {
+      if (k.startsWith('__') || k.startsWith('_')) continue;
+      if (src[k] == null || src[k] === '') continue;
+      out[k] = src[k];
+    }
+    return out;
+  };
+
+  // task-0806 D15：返回 Promise<void>（内部对账上报请求真正落地才 resolve，不是"发出去就算"），
+  // 供 handleSnapshotCellEdit 串进它自己的整条链并注册进 pendingEditTracker —— 提交前
+  // waitForPendingEdits() 才能等到"最后一次对账上报"真正完成，而不是只等到它被"发出"。
+  const reconcileTab = useCallback((qcvJson: string | undefined, lineItemId: string | undefined): Promise<void> => {
+    const ctx = activeTabCtxRef.current;
+    if (!qcvJson || !ctx || !lineItemId) return Promise.resolve();
+    let parsed: CardValues | null = null;
+    try { parsed = JSON.parse(qcvJson) as CardValues; } catch { return Promise.resolve(); }
+    const tab = parsed?.tabs?.find(t => t.componentId === ctx.componentId);
+    if (!tab) return Promise.resolve();
+    const formulaMap = new Map<string, Record<string, any>>();
+    (tab.formulaResults ?? []).forEach(r => { if (r?.rowKey != null) formulaMap.set(r.rowKey, r.values ?? {}); });
+    const resolvedRows = tab.resolvedRows ?? [];
+
+    type DiffRecord = {
+      tooltip: string;
+      componentId: string; tabName: string; rowKey: string; fieldName: string;
+      frontendValue: any; backendValue: any; frontendInputs: Record<string, any>; backendInputs: Record<string, any>;
+    };
+    const newDiffKeys: Record<string, DiffRecord> = {};
+
+    for (const r of ctx.rows) {
+      const beValues = formulaMap.get(r.rowKey);
+      if (!beValues) continue; // 快照缺该 rowKey（新行）：不算差异，§6 边界
+      // resolvedRows 与 baseRows 同下标位置对齐（无墓碑场景）；仅 driver 行（expIndex>=0）尝试取用，
+      // 手动行/取不到时 backendInputs 留空，不臆造。
+      const beRow = r.expIndex >= 0 ? resolvedRows[r.expIndex] : undefined;
+      for (const fieldName of ctx.formulaFieldNames) {
+        const feVal = r.formulaCache?.[fieldName];
+        const beVal = beValues[fieldName];
+        if (valuesReconcile(feVal, beVal)) continue;
+        const dk = `${ctx.componentId}::${r.rowKey}::${fieldName}`;
+        const feInputs = buildRowInputs(r.row, r.driverRow);
+        const beInputs = beRow ? buildRowInputs(beRow, undefined) : {};
+        const feStr = typeof feVal === 'number' ? String(feVal) : String(feVal ?? '—');
+        const beStr = typeof beVal === 'number' ? String(beVal) : String(beVal ?? '—');
+        const fmtInputs = (o: Record<string, any>) => Object.keys(o).length
+          ? Object.entries(o).map(([k, v]) => `${k}=${v}`).join('  ')
+          : '(无)';
+        newDiffKeys[dk] = {
+          tooltip: `前后端算值不一致\n前端 ${feStr}    输入：${fmtInputs(feInputs)}\n后端 ${beStr}    输入：${fmtInputs(beInputs)}`,
+          componentId: ctx.componentId, tabName: ctx.tabName, rowKey: r.rowKey, fieldName,
+          frontendValue: feVal, backendValue: beVal, frontendInputs: feInputs, backendInputs: beInputs,
+        };
+      }
+    }
+
+    // 按 componentId 前缀整页签替换（该页签旧差异若已消解则自然从新集合里消失），
+    // 但**保留其它页签**已知的差异——`merged` 同步捕获整份合并结果，供下面组报文用
+    // （不能只报 newDiffKeys，见本函数上方 reconcileDiffs 声明处的大段注释）。
+    let merged: Record<string, DiffRecord> = {};
+    setReconcileDiffs(prev => {
+      const kept: Record<string, DiffRecord> = {};
+      const prefix = `${ctx.componentId}::`;
+      Object.keys(prev).forEach(k => { if (!k.startsWith(prefix)) kept[k] = prev[k]; });
+      merged = { ...kept, ...newDiffKeys };
+      return merged;
+    });
+
+    const reportDiffs = Object.values(merged).map(d => ({
+      componentId: d.componentId, tabName: d.tabName, rowKey: d.rowKey, fieldName: d.fieldName,
+      frontendValue: d.frontendValue, backendValue: d.backendValue,
+      frontendInputs: d.frontendInputs, backendInputs: d.backendInputs,
+    }));
+
+    // FR-5：埋点上报（D1：网络失败静默吞掉，不影响用户操作 —— 用 .then(ok,ok) 把失败态"消音"，
+    // 而不是不返回这个 Promise；D15 需要调用方等到它真正落地，"发出去就算"不满足 D15 的时序保证）。
+    return quotationService
+      .reconcileReport(lineItemId, { reconciledAt: new Date().toISOString(), diffs: reportDiffs })
+      .then(() => {}, () => {});
+  }, []);
+
   // 报价单元格编辑回写: onBlur → editQuoteCardValue → 用响应 quoteCardValues 就地回灌(AP-50)
-  const handleSnapshotCellEdit = useCallback(async (componentId: string, rowKey: string, fieldName: string, value: any) => {
+  // task-0806 D15：外壳不再是 async 函数本身，而是同步函数 —— 内部起一个异步 IIFE 并立即（同步）
+  // 注册进 pendingEditTracker。这个"同步注册"是 D15 时序保证的关键：单元格失焦（blur，本函数的
+  // 触发点）在浏览器事件顺序上先于"提交"按钮的 click，故 trackPendingEdit 必定先于
+  // QuotationWizard#handleSubmit 执行、waitForPendingEdits() 才等得到它（若这里还是直接
+  // `async (...) => {...}` 让调用方 fire-and-forget，则没有任何地方持有这次编辑的 Promise，
+  // waitForPendingEdits 无从等起）。IIFE 内部 await reconcileTab(...)，确保"提交前必须先完成
+  // 一次对账上报"不是等到"上报已发出"，而是等到"上报请求已落地"（无论成功或吞掉的失败）。
+  const handleSnapshotCellEdit = useCallback((componentId: string, rowKey: string, fieldName: string, value: any) => {
     const lineItemId = (item as any).id as string | undefined;
     if (!lineItemId) return;
-    try {
-      const res = await quotationService.editQuoteCardValue(lineItemId, { componentId, rowKey, fieldName, value });
-      const qcv = res?.data?.quoteCardValues;
-      const qev = res?.data?.quoteExcelValues;
-      // quoteValuesAt：编辑落库时间戳，作为 Excel 视图取数刷新信号(excelRefreshSignal)，
-      // 编辑完成(后端已重算+物化该料号 row_data)后回灌 → Excel 视图随之重取最新数据。
-      const qva = res?.data?.quoteValuesAt;
-      if (qcv || qev || qva) onUpdate(() => {
-        const patch: Partial<LineItem> = {};
-        if (qcv) patch.quoteCardValues = qcv;
-        if (qev) patch.quoteExcelValues = qev;
-        if (qva) patch.quoteValuesAt = qva;
-        return patch;
-      });
-    } catch {
-      // 网络失败保持旧 autosave 兜底(comp.rows 已被 handleRowChange 更新), 不阻塞用户
-    }
-  }, [item, onUpdate]);
+    const p = (async () => {
+      try {
+        const res = await quotationService.editQuoteCardValue(lineItemId, { componentId, rowKey, fieldName, value });
+        const qcv = res?.data?.quoteCardValues;
+        const qev = res?.data?.quoteExcelValues;
+        // quoteValuesAt：编辑落库时间戳，作为 Excel 视图取数刷新信号(excelRefreshSignal)，
+        // 编辑完成(后端已重算+物化该料号 row_data)后回灌 → Excel 视图随之重取最新数据。
+        const qva = res?.data?.quoteValuesAt;
+        if (qcv || qev || qva) onUpdate(() => {
+          const patch: Partial<LineItem> = {};
+          if (qcv) patch.quoteCardValues = qcv;
+          if (qev) patch.quoteExcelValues = qev;
+          if (qva) patch.quoteValuesAt = qva;
+          return patch;
+        });
+        // task-0806 FR-4：不管本轮编辑是否回灌成功，只要响应带回了 quoteCardValues 就对账一次
+        // （D5：编辑防抖落定后对整卡[活动页签]比一次；阶段①未引入防抖，故每次响应各对账一次）。
+        if (qcv) await reconcileTab(qcv, lineItemId);
+      } catch {
+        // 网络失败保持旧 autosave 兜底(comp.rows 已被 handleRowChange 更新), 不阻塞用户
+      }
+    })();
+    trackPendingEdit(p);
+  }, [item, onUpdate, reconcileTab]);
 
   // Auto-trigger parameterless DATA_SOURCE queries when rows exist
   // H2/K hotfix: 仅 DATABASE_QUERY type 走老 datasourceService.execute 路径;
@@ -3274,6 +3431,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         rowKey,
                         legacyRowKey,
                         legacyRowKeyPrefixed,
+                        // task-0806（阶段①对账 D2 tooltip）：driver 展开下标，供对账时按同下标位置
+                        // 从后端响应 resolvedRows[] 取『后端侧输入』（-1 = 手动行，对账时跳过 backendInputs）。
+                        expIndex: ra.expIndex,
                         basicDataValues: ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined,
                         driverRow: ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.driverRow : undefined,
                         // 核价 BOM 递归展开（P1）：spine 系统列（仅 COSTING 行有值）
@@ -3319,7 +3479,10 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                       // 缺(无快照/新行/LIST_FORMULA 字符串公式未进 formulaResults)时 computeAllFormulas 兜底(防漂移)。
                       // repair-0727 F0 + repair-0805 F6：新键未命中时按两档历史口径键依次回退，
                       // 兼容换代前写入 formulaResults 的存量单据（尚未触发重算的旧快照）。
-                      const snapFormula = useSnapEdit
+                      // task-0806 FR-1（阶段①）：DRAFT 恒 undefined → 落到 treeResultsActive/computeAllFormulas
+                      // 前端引擎（AC-1）；非 DRAFT 行为不变（AC-2）。见 useSnapEdit 声明处的注释，
+                      // 为何用独立 isDraft 变量而不叠进 useSnapEdit 本身。
+                      const snapFormula = (useSnapEdit && !isDraft)
                         ? getByKeyWithLegacyFallback(
                             activeSnap?.formula, r.rowKey,
                             (r as any).legacyRowKeyPrefixed, (r as any).legacyRowKey,
@@ -3347,6 +3510,31 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                       activeRowKeyFields,
                     );
                     const withCache = effectiveRows.map((er, idx) => ({ ...er, formulaCache: preComputedCaches[idx], formulaErrors: preComputedErrors[idx], _isDupKey: dupRowIdx.has(er.rowIndex) }));
+                    // task-0806 FR-4/FR-6（阶段①）：顺手把本轮渲染的活动页签记进 ref，供
+                    // handleSnapshotCellEdit 响应回来时对账用（渲染期写 ref，与 itemRef.current = item
+                    // 同款模式，见该 ref 声明处注释）。仅 QUOTE 侧需要（COSTING 侧 useSnapEdit 恒
+                    // false，不读快照编辑端点，无对账基础）。
+                    if (cardSide === 'QUOTE' && activeComponent.componentId) {
+                      activeTabCtxRef.current = {
+                        componentId: activeComponent.componentId,
+                        tabName: activeComponent.tabName || '',
+                        rows: withCache.map(r => ({
+                          rowKey: r.rowKey, expIndex: (r as any).expIndex ?? -1, row: r.row, driverRow: r.driverRow,
+                          formulaCache: r.formulaCache,
+                        })),
+                        formulaFieldNames: activeComponent.fields.filter(f => f.field_type === 'FORMULA').map(f => f.name),
+                      };
+                      // 已知的对账差异（上一轮对账留下的）叠进 preComputedErrors —— 与已有的计算错误
+                      // （cross_tab_ref 细项多命中等）共用同一条 ⚠ 通道，计算错误优先展示（更紧急）。
+                      const prefix = `${activeComponent.componentId}::`;
+                      withCache.forEach((r, idx) => {
+                        for (const fieldName of activeTabCtxRef.current!.formulaFieldNames) {
+                          if (preComputedErrors[idx][fieldName]) continue;
+                          const diff = reconcileDiffs[`${prefix}${r.rowKey}::${fieldName}`];
+                          if (diff) preComputedErrors[idx][fieldName] = diff.tooltip;
+                        }
+                      });
+                    }
                     // 核价 BOM 递归展开（P1）：COSTING 侧按 spine 系统列 __parentId→__nodeId 建树（不是料号）。
                     // 归一化：根 nodeId='' → '__bomroot__'；根直接子 parentId='' → '__bomroot__'；根自身 parentId=null → null。
                     // 其余为 uuid 边路径，原样。DAG 重复子件 nodeId 各不同 → 各自独立 occurrence，不塌成 DAG。
@@ -4362,6 +4550,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
                 cardSide="COSTING"
                 cardStructure={costingCardStructure}
                 onReloadQuotation={onReloadQuotation}
+                quotationStatus={quotationStatus}
               />
             ))}
           </div>
@@ -4418,6 +4607,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
                   onReloadQuotation={onReloadQuotation}
                   locateComponentId={isLocateTarget ? locateResolved!.componentId : undefined}
                   locateSeq={isLocateTarget ? locateResolved!.seq : undefined}
+                  quotationStatus={quotationStatus}
                 />
               </div>
             );

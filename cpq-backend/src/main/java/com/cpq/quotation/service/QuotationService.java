@@ -95,6 +95,10 @@ public class QuotationService {
     @Inject
     com.cpq.quotation.service.backfill.QuoteBackfillPreviewService quoteBackfillPreviewService;
 
+    /** task-0806 阶段① B1-1（FR-6/D7）：提交前置校验——未落定对账差异 / 在飞写则拒绝提交。 */
+    @Inject
+    com.cpq.quotation.service.reconcile.SubmitGateService submitGateService;
+
     private static final java.util.Set<String> VALID_QUOTATION_STATUSES = java.util.Set.of(
             "DRAFT", "SUBMITTED", "APPROVED", "SENT", "ACCEPTED", "REJECTED", "EXPIRED", "CANCELLED", "COSTING_REJECTED"
     );
@@ -758,6 +762,20 @@ public class QuotationService {
 
         // Create product snapshots for all line items
         List<QuotationLineItem> lineItems = QuotationLineItem.list("quotationId = ?1", id);
+
+        // task-0806 阶段① B1-1（FR-6/D7）：提交闸门 —— 未落定对账差异 / 在飞写则拒绝提交（先于行键校验，
+        // 纯内存查表，便宜）。聚合全部 line item 的差异后一次性抛出（比逐行报错更利于用户一次看全）。
+        {
+            java.util.List<com.cpq.quotation.service.reconcile.SubmitConflictDTO> reconcileConflicts =
+                    new java.util.ArrayList<>();
+            for (QuotationLineItem li : lineItems) {
+                reconcileConflicts.addAll(submitGateService.assertLineSettled(li.id, li.productPartNoSnapshot));
+            }
+            if (!reconcileConflicts.isEmpty()) {
+                throw new com.cpq.common.exception.ReconcilePendingException(
+                        "RECONCILE_PENDING", "存在未落定的前后端差异，无法提交", reconcileConflicts);
+            }
+        }
 
         // 行键唯一性校验（设计 E）：组合行键不可重复，含 driver 展开行。冲突即拒绝提交。
         // 结构快照（含 AP-39 冻入的 rowKeyFields）从 quotation_view_structure 的 QUOTE_CARD 份取。

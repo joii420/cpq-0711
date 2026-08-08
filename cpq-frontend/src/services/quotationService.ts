@@ -85,6 +85,13 @@ export interface CardValuesTab {
   baseRows: CardValueBaseRow[];
   editRows: CardValueKeyedRow[];
   formulaResults: CardValueKeyedRow[];
+  /**
+   * task-0806（阶段① 对账 D2 tooltip 用）：按字段名合并后的整行值（INPUT/BASIC_DATA/FORMULA），
+   * 与 baseRows **同下标位置对齐**（CardSnapshotService#buildResolvedRows 与 baseRows 同一趟
+   * for 循环产出，见 file:2373-2477）。⚠️ 该数组元素本身不带 rowKey 字段——用 baseRows 同下标
+   * 位置去对齐，不要按 rowKey 反查（后端未提供该反查键）。存量单据/旧响应可能没有此字段。
+   */
+  resolvedRows?: Array<Record<string, any>>;
 }
 
 export interface CardValues {
@@ -288,6 +295,26 @@ export const quotationService = {
   // 前端仅负责发起请求 + 用返回的 quoteCardValues 直接回灌（不二次拉取）。
   addTreeLeaf: (qid: string, lid: string, body: { componentId: string; hostNodeId: string; partNo: string }) =>
     api.post(`/quotations/${qid}/line-items/${lid}/tree/add-leaf`, body) as Promise<any>,
+  /**
+   * task-0806 API-5（阶段①）：前后端对账差异埋点。fire-and-forget，前端不阻塞、不处理响应体
+   * （D1：只记录，服务端不据此改任何数据）。调用方须 `.catch(() => {})` 吞掉网络失败，不打扰用户。
+   */
+  reconcileReport: (
+    lineItemId: string,
+    body: {
+      reconciledAt: string;
+      diffs: Array<{
+        componentId: string;
+        tabName: string;
+        rowKey: string;
+        fieldName: string;
+        frontendValue: any;
+        backendValue: any;
+        frontendInputs: Record<string, any>;
+        backendInputs: Record<string, any>;
+      }>;
+    },
+  ) => api.post(`/quotations/line-items/${lineItemId}/reconcile-report`, body) as Promise<any>,
   previewTreeDelete: (
     qid: string,
     lid: string,
