@@ -244,11 +244,13 @@ public class MaterialVersionUpgradeService {
         // ---- S1：读版本价（一套，报价核价共用，E12）。🔒 不走视图、不走取价函数——
         //      版本明细就是权威快照，这是裁决 41「预算与实际逐位一致」结构上不可能违反的关键。
         // repair-0807：versionPricesOverride 非空时（FR-6 逐元素影响试算）直接用它，跳过读库。
+        // repair-0807 D-10：loadVersionPrices 不再过滤 current_price IS NULL，versionPrices.size()
+        // 语义从「有价元素数」变为「本版明细元素数（含无价）」，日志/字段文案同步更正。
         Map<String, ElementPrice> versionPrices = versionPricesOverride != null
             ? versionPricesOverride : loadVersionPrices(targetVersionId);
         result.versionPriceCount = versionPrices.size();
         if (versionPrices.isEmpty()) {
-            LOG.warnf("[b0-upgrade] li=%s targetVersion=%s 版本明细为空（无 current_price 非空的元素）",
+            LOG.warnf("[b0-upgrade] li=%s targetVersion=%s 版本明细为空（该版本 element_price_version_item 无任何行）",
                 lineItemId, targetVersionId);
         }
 
@@ -401,7 +403,7 @@ public class MaterialVersionUpgradeService {
 
         result.status = UpgradeResult.Status.SUCCESS;
         result.message = String.format(
-            "升版成功：版本价 %d 条，价格承载组件 %d 个，snapshot_rows/row_data 共改写 %d 行（%s），" +
+            "升版成功：版本明细 %d 条（含无价），价格承载组件 %d 个，snapshot_rows/row_data 共改写 %d 行（%s），" +
             "editRows 清理 %d 条，subtotal %s→%s，quotation.totalAmount=%s",
             versionPrices.size(), priceBearing.size(), totalRowsChanged, String.join(", ", perComponentSummary),
             editRowsCleaned, oldSubtotalForLog, newSubtotal, q.totalAmount);
@@ -1024,16 +1026,31 @@ public class MaterialVersionUpgradeService {
     }
 
     /**
-     * S1：从 {@code element_price_version_item} 读一套元素价（{@code current_price IS NOT NULL} 才纳入——
-     * 与 {@code f_material_element_price} 的 fallback 判定同一口径，无价元素本就不该参与升版覆盖）。
-     * 🔒 不走视图、不走取价函数——版本明细本身就是权威快照，直接原生 SQL 读表。
+     * S1：从 {@code element_price_version_item} 读一套元素价。🔒 不走视图、不走取价函数——
+     * 版本明细本身就是权威快照，直接原生 SQL 读表。
+     *
+     * <p>repair-0807 D-10（代码评审 P0 修复，BUG-1）：<b>不过滤 {@code current_price IS NULL}</b>——
+     * map 收录本版明细的<b>全部</b>元素，无价元素的 {@link ElementPrice#price} 为 {@code null}。
+     *
+     * <p>🚨 <b>为什么必须收录（原实现的 bug）</b>：本类没有 {@code PriceReconciler} 那样的独立
+     * 「策略元素清单」集合（{@code ctx.elementCodesInList}）来区分"元素∈本版明细但无价"与
+     * "元素压根不在本版明细里"这两种不同语义——本方法的 map 是唯一的判定依据。旧实现按
+     * {@code current_price IS NOT NULL} 过滤后，两种语义都会在下游被压成同一个
+     * {@code versionPrices.get(ec) == null}，导致 S3a/S3b/S4a/S4b 三个写点的
+     * {@code ep != null && ep.price == null}（"在明细但无价，应删值撤锁"）分支<b>永远走不到</b>——
+     * {@code ep == null} 分支（"不在明细，一个字节都不碰"）会抢先把无价元素当成"不在明细"直接放行，
+     * D-8/D-9 补的 else 分支在真实路径上形同虚设，AC-5 实为未交付。
+     *
+     * <p>与 {@code PriceAdjustBudgetService#loadVersionEffectivePrices} 同一纪律（该方法 javadoc
+     * 已明写"与 loadVersionPrices 不同，本方法保留 current_price IS NULL 的元素"——本次是把预算侧
+     * 早就在用的正确口径同步补到升版侧，消除两处口径不一致）。
      */
     Map<String, ElementPrice> loadVersionPrices(UUID versionId) {
         @SuppressWarnings("unchecked")
         List<Object[]> rows = em.createNativeQuery(
                 "SELECT element_code, current_price, currency " +
                 "FROM element_price_version_item " +
-                "WHERE version_id = :vid AND current_price IS NOT NULL")
+                "WHERE version_id = :vid")
             .setParameter("vid", versionId)
             .getResultList();
         Map<String, ElementPrice> out = new LinkedHashMap<>();

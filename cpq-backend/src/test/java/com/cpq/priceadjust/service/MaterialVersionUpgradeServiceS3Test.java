@@ -316,6 +316,137 @@ class MaterialVersionUpgradeServiceS3Test {
     }
 
     /**
+     * D-10（代码评审 P0 修复，BUG-1，2026-08-07）：<b>端到端</b>闸门测试——真的走
+     * {@link MaterialVersionUpgradeService#loadVersionPrices(UUID)} 从库读版本明细，不像本文件
+     * 其余 AC-5/D-9 测试那样手工构造 {@code Map<String, ElementPrice>} 直接传给
+     * {@code upgradeComponentRows}（那样会绕开 {@code loadVersionPrices} 的 SQL 过滤，测的是
+     * "分支逻辑对不对"而不是"分支到底跑不跑得到"）。
+     *
+     * <p>🚨 <b>BUG-1 根因</b>：{@code loadVersionPrices} 原来带 {@code AND current_price IS NOT NULL}，
+     * 无价元素根本进不了 map；三个写点的 {@code ElementPrice ep = versionPrices.get(ec); if (ep ==
+     * null) continue;} 会把"元素∈本版明细但无价"误判成"元素不在本版明细里"直接跳过，D-8/D-9 补的
+     * else 分支（删值+撤锁）在真实路径上永远走不到——只测分支体、不测 map 构造的单测测不出这个洞。
+     * 本测试是防止该缺陷复发的那道闸：真建一条 {@code current_price IS NULL} 的
+     * {@code element_price_version_item}，真调 {@code loadVersionPrices} 拿真实 map，断言
+     * driverRow 与 row_data 两侧该元素行的四个键（价格/货币/{@code __priceLocked}/
+     * {@code __priceVersion}）全部被删——同时用 Ag（真实有价元素）断言"解出价"分支端到端仍然正确，
+     * 防止修复引入新的回归。
+     */
+    @Test
+    @Transactional
+    void upgradeComponentRows_endToEnd_realLoadVersionPrices_noPriceElement_deletesAllFourKeys() throws Exception {
+        componentId = UUID.randomUUID();
+        String fieldsJson = "[{\"name\":\"元素\",\"field_type\":\"INPUT_TEXT\"}]";
+        em.createNativeQuery(
+                "INSERT INTO component (id, name, code, fields, formulas, element_code_field, " +
+                "element_price_field, element_currency_field) " +
+                "VALUES (:id, 'S3-D10测试组件', :code, CAST(:fields AS jsonb), '[]', '元素', '元素单价', '货币')")
+            .setParameter("id", componentId).setParameter("code", "TEST-S3-D10-" + componentId)
+            .setParameter("fields", fieldsJson)
+            .executeUpdate();
+
+        UUID anyCustomerId = (UUID) em.createNativeQuery("SELECT id FROM customer LIMIT 1").getSingleResult();
+        UUID anyUserId = (UUID) em.createNativeQuery("SELECT id FROM \"user\" LIMIT 1").getSingleResult();
+        quotationId = UUID.randomUUID();
+        em.createNativeQuery(
+                "INSERT INTO quotation (id, quotation_number, customer_id, name, sales_rep_id, status, created_at, updated_at) " +
+                "VALUES (:id, :no, :cust, 'S3-D10测试单', :rep, 'DRAFT', now(), now())")
+            .setParameter("id", quotationId).setParameter("no", "TEST-S3-D10-" + quotationId)
+            .setParameter("cust", anyCustomerId).setParameter("rep", anyUserId)
+            .executeUpdate();
+
+        lineItemId = UUID.randomUUID();
+        em.createNativeQuery(
+                "INSERT INTO quotation_line_item (id, quotation_id, subtotal, created_at) " +
+                "VALUES (:id, :qid, 0, now())")
+            .setParameter("id", lineItemId).setParameter("qid", quotationId)
+            .executeUpdate();
+
+        // 真实版本明细：Ag 有价（100.0000），Ni 本期无价（current_price NULL）——D-10 复现的关键数据。
+        versionId = UUID.randomUUID();
+        em.createNativeQuery(
+                "INSERT INTO element_price_version " +
+                "(id, customer_no, version_no, base_date, trigger_type, status) " +
+                "VALUES (:id, 'TEST-S3-D10', 'VD1000001', CURRENT_DATE, 'MANUAL', 'PENDING')")
+            .setParameter("id", versionId).executeUpdate();
+        em.createNativeQuery(
+                "INSERT INTO element_price_version_item (version_id, element_code, current_price, currency) " +
+                "VALUES (:vid, 'Ag', 100.0000, 'CNY')")
+            .setParameter("vid", versionId).executeUpdate();
+        em.createNativeQuery(
+                "INSERT INTO element_price_version_item (version_id, element_code, current_price, currency) " +
+                "VALUES (:vid, 'Ni', NULL, NULL)")
+            .setParameter("vid", versionId).executeUpdate();
+
+        // driverRow 与 row_data 都各放一个 Ag（应被覆盖新价+锁）+ 一个 Ni（应被删值+撤锁，带陈旧锁标记
+        // 模拟"上一版曾锁过"的死格前状态——若 D-10 未修，这两行会原样保留旧值+旧锁/漂移出新徽标）。
+        String snapshotRowsJson = "[" +
+            "{\"driverRow\":{\"元素\":\"Ag\",\"元素单价\":1.0}}," +
+            "{\"driverRow\":{\"元素\":\"Ni\",\"元素单价\":123.45,\"货币\":\"CNY\"," +
+            "\"__priceLocked\":true,\"__priceVersion\":\"V26080601\"}}" +
+            "]";
+        String rowDataJson = "[" +
+            "{\"元素\":\"Ag\",\"元素单价\":1.0,\"row_index\":0}," +
+            "{\"元素\":\"Ni\",\"元素单价\":123.45,\"货币\":\"CNY\"," +
+            "\"__priceLocked\":true,\"__priceVersion\":\"V26080601\",\"row_index\":1}" +
+            "]";
+        em.createNativeQuery(
+                "INSERT INTO quotation_line_component_data " +
+                "(id, line_item_id, component_id, snapshot_rows, row_data, row_version, created_at) " +
+                "VALUES (gen_random_uuid(), :lid, :cid, CAST(:sr AS jsonb), CAST(:rd AS jsonb), 0, now())")
+            .setParameter("lid", lineItemId).setParameter("cid", componentId)
+            .setParameter("sr", snapshotRowsJson).setParameter("rd", rowDataJson)
+            .executeUpdate();
+
+        var pbc = new com.cpq.priceadjust.dto.UpgradeResult.PriceBearingComponent(
+            componentId.toString(), "TEST-S3-D10", "材料成本", "元素", "元素单价", "货币");
+
+        // 🔒 要害步骤：真调 loadVersionPrices，不手工构造 map。
+        Map<String, ElementPrice> versionPrices = svc.loadVersionPrices(versionId);
+        assertTrue(versionPrices.containsKey("Ni"), "D-10 前置断言：loadVersionPrices 必须收录无价元素 Ni");
+        assertNull(versionPrices.get("Ni").price, "D-10 前置断言：Ni 的 price 必须是 null（而非被过滤掉）");
+
+        String newVersionLabel = "VD1000002";
+        MaterialVersionUpgradeService.RowUpdateOutcome outcome =
+            svc.upgradeComponentRows(lineItemId, pbc, versionPrices, newVersionLabel);
+        assertFalse(outcome.conflict);
+        assertEquals(4, outcome.rowsChanged, "driverRow(Ag+Ni) + row_data(Ag+Ni) 共 4 行命中版本明细");
+
+        Object[] row = (Object[]) em.createNativeQuery(
+                "SELECT snapshot_rows, row_data FROM quotation_line_component_data " +
+                "WHERE line_item_id=:lid AND component_id=:cid")
+            .setParameter("lid", lineItemId).setParameter("cid", componentId).getSingleResult();
+        JsonNode snapArr = new ObjectMapper().readTree((String) row[0]);
+        JsonNode rowDataArr = new ObjectMapper().readTree((String) row[1]);
+
+        for (JsonNode r : snapArr) {
+            JsonNode driverRow = r.path("driverRow");
+            if ("Ag".equals(driverRow.path("元素").asText())) {
+                assertEquals(100.0, driverRow.path("元素单价").asDouble(), 0.01, "端到端：Ag driverRow 应覆盖为真实版本价");
+                assertTrue(driverRow.path("__priceLocked").asBoolean(false));
+                assertEquals(newVersionLabel, driverRow.path("__priceVersion").asText());
+            } else if ("Ni".equals(driverRow.path("元素").asText())) {
+                assertFalse(driverRow.has("元素单价"), "D-10 端到端：Ni driverRow 价格键必须被删（真实 loadVersionPrices 路径）");
+                assertFalse(driverRow.has("货币"), "D-10 端到端：Ni driverRow 货币键必须被删");
+                assertFalse(driverRow.has("__priceLocked"), "D-10 端到端：Ni driverRow __priceLocked 必须被删");
+                assertFalse(driverRow.has("__priceVersion"), "D-10 端到端：Ni driverRow __priceVersion 必须被删（不得漂成新版号）");
+            }
+        }
+        for (JsonNode r : rowDataArr) {
+            if ("Ag".equals(r.path("元素").asText())) {
+                assertEquals(100.0, r.path("元素单价").asDouble(), 0.01, "端到端：Ag row_data 应覆盖为真实版本价");
+                assertTrue(r.path("__priceLocked").asBoolean(false));
+                assertEquals(newVersionLabel, r.path("__priceVersion").asText());
+            } else if ("Ni".equals(r.path("元素").asText())) {
+                assertFalse(r.has("元素单价"), "D-10 端到端：Ni row_data 价格键必须被删（真实 loadVersionPrices 路径）");
+                assertFalse(r.has("货币"), "D-10 端到端：Ni row_data 货币键必须被删");
+                assertFalse(r.has("__priceLocked"), "D-10 端到端：Ni row_data __priceLocked 必须被删");
+                assertFalse(r.has("__priceVersion"), "D-10 端到端：Ni row_data __priceVersion 必须被删（不得漂成新版号）");
+            }
+        }
+    }
+
+    /**
      * AC-17（幂等）：连续两次对同一目标版本调用 {@code upgradeComponentRows}（同一 {@code versionPrices}
      * + 同一 {@code versionLabel}），第二次的 {@code snapshot_rows}/{@code row_data} 内容必须与第一次
      * 逐字节相等——覆盖式写入（FR-2）天然幂等，不应因重复升版产生漂移（{@code row_version} 递增不计入
