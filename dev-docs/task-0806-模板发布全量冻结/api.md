@@ -3,6 +3,10 @@
 > **前后端交接的唯一依据**。任何一方要改契约，必须**先改本文件并通知另一方**。
 > 测试完成后，本文件的**最终**契约（非设计初稿）须按端点回写 `dev-docs/main-api.md`（`任务平台规则.md` §2.4）。
 > 关联：`需求文档.md`（FR / AC）｜`backtask.md`｜`fronttask.md`
+>
+> **🔄 2026-08-07 B20 更新**（D16~D19 推翻原 D3）：不做存量迁移；`frozen-drift` 响应新增
+> `frozen` 字段；渲染路径新增 `409 TEMPLATE_NOT_FROZEN`；`archive()` 自动补冻。见文末
+> §12「B20 契约变更」。
 
 ---
 
@@ -11,16 +15,18 @@
 | # | 方法 + 路径 | 变更类型 | FR |
 |---|---|---|---|
 | A1 | `POST /api/cpq/templates/{id}/publish` | **行为变更，契约不变** | FR-1 / FR-2 |
-| A2 | `GET /api/cpq/templates/{id}/frozen-drift` | **新增** | FR-9 |
-| A3 | `GET /api/cpq/templates/admin/frozen-drift` | **新增**（批量版，兼体检 A） | FR-8 |
-| A4 | `GET /api/cpq/templates/admin/sqlview-closure-check` | **新增**（体检 B） | FR-6 / FR-8 |
+| A2 | `GET /api/cpq/templates/{id}/frozen-drift` | **新增**（B20：响应新增 `frozen` 字段） | FR-9 |
+| A3 | `GET /api/cpq/templates/admin/frozen-drift` | **新增**（批量版，兼体检 A；B20：新增 `unfrozen` 字段） | FR-8 |
+| A4 | `GET /api/cpq/templates/admin/sqlview-closure-check` | **新增**（体检 B；B20：新增 `checked`/`unfrozenTemplateIds` 字段） | FR-6 / FR-8 |
 | A5 | `POST /api/cpq/config-center/refresh-all-snapshots` | **改造 + 实现重写** | FR-3 / FR-7 |
 | A6 | `POST /api/cpq/templates/admin/{templateId}/delete-tcs` | **改造**（加预览 + 审计） | FR-7 |
 | A7 | `POST /api/cpq/templates/admin/promote-override-to-component` | **改造**（加预览 + 审计） | FR-7 |
 | A8 | `POST /api/cpq/components/{id}/refresh-template-snapshots` | **删除** | FR-3 |
 | A9 | `POST /api/cpq/templates/admin/migrate-to-unified-view` | **删除** | FR-7 |
+| A10 | `POST /api/cpq/templates/{id}/archive` | **B20 新增行为**（契约/响应形状不变，内部若零快照自动补冻，见 §12.3） | FR-8 |
 
-**前端受影响面：零。** A1 契约不变；A2~A7 全部 `SYSTEM_ADMIN` 运维端点，本期不做 UI（D10）；A8/A9 前端从未调用（已 grep 确认）。前端本期唯一改动是 `CopyQuotationDrawer.tsx` 文案（`fronttask.md`），不涉及接口。
+**前端受影响面（B20 起不再为零）**：A1/A10 契约形状不变；A2~A7 全部 `SYSTEM_ADMIN` 运维端点，本期不做 UI（D10）；A8/A9 前端从未调用（已 grep 确认）。
+**但 B20 新增了一条真实前端影响面**：报价/核价渲染相关端点（`ensure-card-values` / `ensure-excel-values` / BOM 树 / Excel 视图等一切经 `PublishedTemplateReader` 的读取路径）在模板"尚未按新语义重新发布"时会返回 **`HTTP 409, data.code = "TEMPLATE_NOT_FROZEN"`**，前端需要能识别这个 code 并提示用户"请联系管理员重新发布该模板"，而不是把它当通用错误弹一个不明所以的 toast。原有的 `CopyQuotationDrawer.tsx` 文案改动仍保留，不涉及接口。
 
 ---
 
@@ -66,6 +72,7 @@
     "templateVersion": "v1.3",
     "templateStatus": "PUBLISHED",
     "frozenAt": "2026-08-06T10:00:00+08:00",
+    "frozen": true,
     "hasDrift": true,
     "driftCount": 2,
     "tabs": [
@@ -91,8 +98,14 @@
 
 ### 语义（重要，别当告警器用）
 
-- 迁移刚完成时应**全部 `hasDrift: false`**
-- 之后随组件迭代，差异**自然增长 —— 这是严格版本化下的正常状态，不是故障**
+- **`frozen`（B20 新增字段，先看这个再看 `hasDrift`）**：该模板是否已按新语义完成过至少一次
+  "重新发布"（`template_component_snapshot` 非空）。`false` = 过渡期"未冻结"，**不是故障**，
+  是正常状态——原 D3「存量一次性对齐」已被 D16 推翻，本任务上线后所有既有 PUBLISHED/ARCHIVED
+  模板都会先经历这个状态，直到有人手动重新发布。
+- **`frozen:false` 时 `hasDrift` 恒为 `false`，但这不代表"没有差异"，只代表"没东西可比"**——
+  绝不能把 `hasDrift:false` 单独当"一切正常"解读，必须先看 `frozen`。
+- `frozen:true` 时才回到原语义：迁移/重新发布刚完成时应**全部 `hasDrift: false`**，之后随组件
+  迭代，差异**自然增长 —— 这是严格版本化下的正常状态，不是故障**
 - 它回答的是「这个已发布模板比当前组件配置落后多少，值不值得发新版」
 - 同时兼任 admin 后门的安全网：谁偷改了快照，这里可见
 
@@ -102,6 +115,7 @@
 |---|---|
 | 模板不存在 | `404` `Template not found: {id}` |
 | 模板为 DRAFT | `400` `DRAFT 模板无快照，无差异可比` |
+| **模板 PUBLISHED/ARCHIVED 但快照零行（B20 新增）** | **`200`**，返回 `frozen: false, hasDrift: false, driftCount: 0, tabs: []`——**不报错**，这是本端点的诊断职责所在，不是异常 |
 | 快照行存在但组件已被删除 | 该 tab 返回 `componentExists: false`，`fieldDrifts` 为空（不视为 drift） |
 
 > 📌 **`componentExists: false` 是刻意的防御性分支，不是可从 UI 触达的常规场景**（2026-08-07 测试提问后裁定）。
@@ -133,15 +147,21 @@ A2 的批量版，兼**迁移前体检 A**。
   "data": {
     "scanned": 17,
     "withDrift": 0,
+    "unfrozen": 12,
     "totalFieldDrifts": 0,
     "templates": []
   }
 }
 ```
 
-`templates[]` 元素结构同 A2 的 `data`。
+`templates[]` 元素结构同 A2 的 `data`（每项都带 `frozen`）。
 
-> **迁移前用法**：`onlyDrift=true` 跑一次，输出**存档**。这就是 D12 说的「差异清单人工过目」。理论上应接近空——非空处即历史上某次自动传导失败留下的疤，**冻死前必须人工看一眼**。
+**B20 新增 `unfrozen` 字段**：本轮扫描到的模板里，有多少个 `frozen:false`（尚未按新语义重新发布）。
+**`onlyDrift=true`（默认）时，`frozen:false` 的模板依然会被列进 `templates[]`**——即使它们
+`hasDrift` 恒为 `false`：未冻结比"有 drift"更值得运维关注（对应的渲染路径会直接 409），
+不能被默认参数悄悄过滤掉。
+
+> **迁移前用法**：`onlyDrift=true` 跑一次，输出**存档**。这就是 D12 说的「差异清单人工过目」。理论上应接近空——非空处即历史上某次自动传导失败留下的疤，**冻死前必须人工看一眼**。B20 后上线首日预期 `unfrozen` 会很高（等于全部既有 PUBLISHED/ARCHIVED 模板数），随人工逐个重新发布而下降，这是预期曲线，不是回归。
 
 ---
 
@@ -159,6 +179,8 @@ A2 的批量版，兼**迁移前体检 A**。
   "code": 200, "message": "success",
   "data": {
     "scanned": 17,
+    "checked": 5,
+    "unfrozenTemplateIds": ["88d5d815-...", "..."],
     "totalRefs": 214,
     "missCount": 0,
     "misses": [
@@ -177,6 +199,11 @@ A2 的批量版，兼**迁移前体检 A**。
 ```
 
 `reason` 值域：`NOT_IN_SNAPSHOT`（快照里没有）/ `SNAPSHOT_EMPTY`（该模板整个 `sql_views_snapshot` 为空）/ `VIEW_DELETED`（快照有但活表已删，仅提示）
+
+**B20**：`scanned` = 命中 `status` 过滤的模板总数；`checked` = 其中`template_component_snapshot`
+非空、真正参与了本轮体检的模板数；`unfrozenTemplateIds` = 零快照行、**被跳过**的模板 id
+列表——这些模板<b>不会</b>贡献 `totalRefs`/`misses`，不能把它们的"零引用"误读成"没有 SQL
+视图缺口"（同 A3 的假阴性教训，`checked + unfrozenTemplateIds.length == scanned`）。
 
 ### D13 三档判定（**结果必须交用户拍板，实现者不得自决**）
 
@@ -310,14 +337,16 @@ ALTER TABLE operation_log ADD COLUMN details jsonb;
 
 ## 10. 新增错误码
 
-| HTTP | 错误信息（含变量） | 触发 | AC |
+| HTTP | 错误信息（含变量） / `data.code` | 触发 | AC |
 |---|---|---|---|
-| `500` | `模板快照缺失：templateId={id}, sortOrder={n}。已发布模板必须有完整冻结快照，请检查 template_component_snapshot` | 渲染 PUBLISHED / ARCHIVED 模板时快照行缺失。**绝不回落活表** | AC-6 |
+| **`409`** | **`模板尚未重新发布：templateId={id}, status={status}。该模板的渲染配置冻结快照为空（过渡期正常状态），请前往模板管理重新发布该模板后再试。` / `data.code="TEMPLATE_NOT_FROZEN"`** | **（B20，取代下面旧的"零行"500）** 渲染 PUBLISHED/ARCHIVED 模板时快照**零行**——正常过渡态，不是系统故障。响应体额外带 `data.templateId` / `data.templateStatus`，**前端按 `data.code` 判定，禁止按 message 文本匹配** | AC-9②③ |
+| `500` | `模板快照缺失：templateId={id}, sortOrder={n}。已发布模板存在部分页签快照但该页签缺失，快照可能被破坏，请检查 template_component_snapshot` | 渲染 PUBLISHED/ARCHIVED 模板时**有快照但缺某个 sortOrder**（B20 起与上面 409 严格区分：这才是真损坏）。**绝不回落活表** | AC-9④ |
 | `500` | `SQL 视图快照缺失：templateId={id}, componentId={cid}, view={name}。已发布模板不允许回落实时读取` | 已发布上下文 `sql_views_snapshot` miss | AC-7 |
 | `400` | `DRAFT 模板无快照，无差异可比` | 对 DRAFT 模板调 A2 | AC-10 |
 | `404` | `Template not found: {id}` | A2 / A3 / A6 模板不存在 | — |
 
-> 快照缺失刻意用 `500` 而非 `400`：这是**系统不变量被破坏**，不是用户输入错误。必须显眼、必须进日志、必须让人来查。
+> 部分缺行（真损坏）刻意用 `500` 而非 `400`：这是**系统不变量被破坏**，不是用户输入错误。必须显眼、必须进日志、必须让人来查。
+> 零行未冻结改用 `409`（而非旧版的 `500`）：这是**可恢复的正常状态**（重新发布模板即可恢复），语义上更接近"资源状态冲突"而非"服务器内部错误"，也便于前端用 HTTP 状态码本身做粗粒度分流。
 
 ---
 
@@ -336,3 +365,63 @@ ALTER TABLE operation_log ADD COLUMN details jsonb;
 ```
 
 同步更新 `main-api.md` 头部日期说明。
+
+---
+
+## 12. B20 契约变更（2026-08-07，D16~D19 推翻原 D3）
+
+用户拍板：**不迁移存量**。原 D3「一次性对齐存量后冻死」作废，改为「不迁移存量，业务逻辑修正
+后由用户手工重新发布模板即可」，配套「过渡期显式提示」+「归档自动补冻」。三处契约变化：
+
+### 12.1 渲染路径新增 `409 TEMPLATE_NOT_FROZEN`（前端**必须**处理的新状态）
+
+任何经 `PublishedTemplateReader` 读取快照的端点——`ensure-card-values` / `ensure-excel-values` /
+`refresh-card-snapshot` / BOM 树渲染 / Excel 视图 / 核价版本渲染等——若目标模板 `status ∈
+(PUBLISHED, ARCHIVED)` 但 `template_component_snapshot` 零行（该模板还没按新语义重新发布过），
+不再报 `500`，改报：
+
+```json
+{
+  "code": 409,
+  "message": "模板尚未重新发布：templateId=xxx, status=PUBLISHED。该模板的渲染配置冻结快照为空（过渡期正常状态），请前往模板管理重新发布该模板后再试。",
+  "data": {
+    "code": "TEMPLATE_NOT_FROZEN",
+    "templateId": "xxx",
+    "templateStatus": "PUBLISHED"
+  }
+}
+```
+
+**前端接入点**：与 `FormulaCycleException` 的 `errorType` 同款纪律——统一错误拦截器/各请求的
+catch 分支按 `data.code === "TEMPLATE_NOT_FROZEN"` 识别，提示语建议「该产品所用的模板尚未完成
+最新配置的重新发布，请联系模板管理员重新发布后再试」，**不要**当成通用失败弹 toast，也**不要**
+静默吞掉后继续用旧数据渲染。
+
+**受影响面评估**：B20 上线当天，dev 库里所有既有 PUBLISHED/ARCHIVED 模板的
+`template_component_snapshot` 都会是空的（V382 不再回填），直到人工逐个重新发布——也就是说
+上线当天几乎所有已发布模板绑定的报价单，首次触发懒计算（`ensure-card-values` 等）都会先吃到
+这个 409，这是**预期行为**，不是回归。建议前端上线说明里带一句「首次打开某些历史报价单会提示
+"请联系管理员重新发布模板"，属已知过渡期现象，管理员重新发布对应模板后即恢复正常」。
+
+### 12.2 `frozen-drift`（A2/A3）与 `sqlview-closure-check`（A4）新增字段
+
+见 §3 / §4 / §5 各自的更新——核心是新增 `frozen` / `unfrozen` / `checked` /
+`unfrozenTemplateIds` 字段，用于把"未冻结"与"已冻结但无差异/无缺口"区分开，本期同样
+**仅 API，无 UI**（沿用 D10），但契约已定，UI 化时直接接。
+
+### 12.3 `POST /api/cpq/templates/{id}/archive`（A10）：自动补冻
+
+请求/响应形状**完全不变**（仍是 `TemplateDTO`）。内部行为变更：归档前若发现该模板
+`template_component_snapshot` 零行，会先按当时的活组件配置补一份完整快照（与 `publish()`
+落库逻辑完全一致），再置 `ARCHIVED`。**唯一可观测的差异**是极少数情况下响应耗时略增
+（多了一次快照写入，量级与该模板页签数一致，不随其他数据量增长）。前端**不需要任何改动**。
+
+### 12.4 前端需要配合的改动清单（交给 cpq-frontend 的具体交接点）
+
+1. 全局或按模块的请求错误处理里加一个 `data.code === "TEMPLATE_NOT_FROZEN"` 的分支（409），
+   文案见 §12.1；不要复用"通用 500 报错"的展示组件（那个通常带"联系技术支持"字样，会误导
+   用户去找错人——这是配置状态，不是系统故障）。
+2. 若产品详情页/报价单编辑页在渲染前有"能否编辑/能否查看"的预判逻辑，可选（非必须）调用
+   `GET /templates/{id}/frozen-drift` 的 `frozen` 字段做提前判断，避免用户先看到空白再看到报错
+   ——但这是体验优化，**不是本期强制项**（D10：本任务不做冻结相关 UI，只保证契约到位）。
+3. 无需改动：A1 `publish`、A10 `archive` 的请求/响应形状。
