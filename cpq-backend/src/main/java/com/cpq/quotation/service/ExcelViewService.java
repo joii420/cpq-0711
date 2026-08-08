@@ -68,9 +68,10 @@ public class ExcelViewService {
     /**
      * task-0806 B8：渲染期改问冻结快照，不再直读活 component / template_component 表。
      * 仅用于已发布模板上下文（{@code buildMissingSubtotalMetas} / {@code buildTabJoinEffectiveRows}
-     * 内部已用 {@code componentsSnapshot != null} 作为 PUBLISHED/ARCHIVED 判据才会调用本类字段）；
-     * {@link #tabDefsOfTemplate} 的 DRAFT 分支（{@code buildLiveComponentsList}）架构上就该继续
-     * 走活表（§5.1.2：DRAFT 模板不写快照，草稿期一律走活表），不经本 reader。
+     * 经 {@code loadFrozenComponentMetaMap} 调用，B23 起该方法已改按 {@code template.status}
+     * 判据——只有 DRAFT 才不经本 reader）；{@link #tabDefsOfTemplate} 的 DRAFT 分支
+     * （{@code buildLiveComponentsList}）架构上就该继续走活表（§5.1.2：DRAFT 模板不写快照，
+     * 草稿期一律走活表），不经本 reader。
      */
     @Inject
     com.cpq.template.service.PublishedTemplateReader publishedTemplateReader;
@@ -523,9 +524,10 @@ public class ExcelViewService {
         java.util.Set<java.util.UUID> presentInCd = new java.util.HashSet<>();
 
         // task-0806 B8：整单一次经 PublishedTemplateReader 预取该模板全部页签的冻结快照
-        // （loadFrozenComponentMetaMap 内部按 componentsSnapshot 非空判据，只在 PUBLISHED/ARCHIVED
-        // 时才有内容；DRAFT 返回空 map，下方循环逐 cd 回落 Component.findById——与改造前 DRAFT
-        // 语义一致，§5.1.2 允许草稿期读活表）。
+        // （loadFrozenComponentMetaMap 内部 B23 起按 template.status 判据：DRAFT 才返回空 map，
+        // 下方循环逐 cd 回落 Component.findById——与改造前 DRAFT 语义一致，§5.1.2 允许草稿期读活表；
+        // 非 DRAFT 且未冻结时 loadFrozenComponentMetaMap 内部 allTabsOf 会抛
+        // TemplateNotFrozenException 冒泡出去，不会走到这里的空 map 分支——见该方法 Javadoc）。
         java.util.Map<java.util.UUID, com.cpq.template.entity.TemplateComponentSnapshot> tcsByComponentId =
             loadFrozenComponentMetaMap(templateId);
 
@@ -540,8 +542,11 @@ public class ExcelViewService {
                         s.componentCode, s.componentName, s.componentType, parseComponentFormulas(s.formulas),
                         com.cpq.quotation.service.card.ComponentDataEffectiveRows.amountColsFromFieldsJson(s.fields)));
             } else {
-                // 冻结快照未命中（DRAFT 模板 / 组件已被移出模板但历史行仍引用的边界情形）：
-                // 兜底读活表，架构上允许（§5.1.2 DRAFT 场景），不是「已发布模板活穿透」。
+                // 冻结快照未命中：只会发生在①DRAFT 模板（tcsByComponentId 恒为空 map）②模板已冻结
+                // 但该组件已被移出模板、历史行仍引用（边界情形——tcsByComponentId 非空但缺这一个
+                // componentId）。两种都不是「已发布模板尚未冻结时的活穿透」（那种情形已在
+                // loadFrozenComponentMetaMap 内部被 TemplateNotFrozenException 拦截，走不到这里）。
+                // 兜底读活表，架构上允许（§5.1.2 DRAFT 场景 / 组件已移出模板的边界情形）。
                 com.cpq.component.entity.Component c = com.cpq.component.entity.Component.findById(cd.componentId);
                 if (c == null) continue;
                 metaById.put(cd.componentId,
@@ -561,14 +566,34 @@ public class ExcelViewService {
 
     /**
      * task-0806 B8：该模板全部页签的冻结快照，按 componentId 建 map（一次 Reader 调用）。
-     * 仅 PUBLISHED/ARCHIVED（{@code componentsSnapshot} 非空）才有内容；DRAFT / 模板不存在
-     * → 返回空 map（调用方据此回落活表，与改造前 DRAFT 语义一致）。
+     *
+     * <p><b>B23（D-2 修复）</b>：判据从「{@code componentsSnapshot} 是否非空」改为「模板状态是否
+     * DRAFT」，与 {@link #tabDefsOfTemplate}（B21 已改）同款判据。原判据在 V382（B21）把
+     * <b>未冻结的</b> PUBLISHED/ARCHIVED 模板的 {@code components_snapshot} 也置空后
+     * （D16/D17：未冻结时两个来源都空），会把这类模板误判成「DRAFT」→ 调用方
+     * {@link #buildTabJoinEffectiveRows} 据此回落 {@code Component.findById()} 读活表——正是本次
+     * 改造要消灭的「已发布模板静默读活配置」。
+     *
+     * <p>只有真正 DRAFT 才短路返回空 map（草稿期一律走活表，§5.1.2，行为不变）。非 DRAFT
+     * （PUBLISHED/ARCHIVED）一律委托 {@link PublishedTemplateReader#allTabsOf}——已冻结时正常
+     * 返回全部快照行；<b>未冻结</b>时由 {@code allTabsOf} 内部
+     * {@code verifyConsistentWithJsonb} 自然抛 {@link com.cpq.template.exception.TemplateNotFrozenException}
+     * （HTTP 409）。本方法<b>不捕获</b>该异常——按 {@link PublishedTemplateReader} 类级 Javadoc
+     * 的强制约定「调用方必须让它一路冒泡到 HTTP 响应，禁止捕获后回落活表」——异常沿调用链
+     * （{@link #buildTabJoinEffectiveRows} → {@link #buildRowData} → {@code getExcelView}/
+     * {@code dryRun}/{@code updateExcelViewCell}）自然冒泡为 409；个别调用方
+     * （{@link #buildLineRowData}/{@link #buildLineTreeRows}）已有的 {@code catch (Exception)}
+     * 会把它吸收为「优雅降级返回空」，两种落点都不会触发活表回落，符合本次红线。
+     *
+     * @return DRAFT / 模板不存在 → 空 map；PUBLISHED/ARCHIVED 已冻结 → 全部快照行；
+     *         PUBLISHED/ARCHIVED 未冻结 → 不返回，抛 {@code TemplateNotFrozenException}
      */
     private java.util.Map<java.util.UUID, com.cpq.template.entity.TemplateComponentSnapshot>
             loadFrozenComponentMetaMap(UUID templateId) {
         if (templateId == null) return java.util.Map.of();
         Template t = Template.findById(templateId);
-        if (t == null || t.componentsSnapshot == null || t.componentsSnapshot.isBlank()) return java.util.Map.of();
+        if (t == null) return java.util.Map.of();
+        if ("DRAFT".equals(t.status)) return java.util.Map.of();
         java.util.Map<java.util.UUID, com.cpq.template.entity.TemplateComponentSnapshot> map = new java.util.HashMap<>();
         for (com.cpq.template.entity.TemplateComponentSnapshot s : publishedTemplateReader.allTabsOf(templateId)) {
             map.putIfAbsent(s.componentId, s);
