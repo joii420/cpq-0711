@@ -5,6 +5,7 @@ import com.cpq.common.exception.BusinessException;
 import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.service.ComponentDriverService;
 import com.cpq.datasource.sqlview.BomTreeVarsContext;
+import com.cpq.datasource.sqlview.TemplateRenderScope;
 import com.cpq.quotation.dto.VersionOptionsResponseDTO;
 import com.cpq.quotation.dto.VersionSwitchRequest;
 import com.cpq.quotation.dto.VersionSwitchResponseDTO;
@@ -61,6 +62,9 @@ public class CostingVersionService {
     @Inject
     BomTreeRenderService bomTreeRenderService;
 
+    @Inject
+    com.cpq.template.service.PublishedTemplateReader publishedTemplateReader;
+
     // =========================================================================
     // B6：版本下拉（列出模式）
     // =========================================================================
@@ -86,61 +90,76 @@ public class CostingVersionService {
         Quotation q = Quotation.findById(li.quotationId);
         UUID customerId = q != null ? q.customerId : null;
 
-        TreeSet<String> options = new TreeSet<>(CostingVersionService::compareVersionDesc);
-        String isCurrentVersion = null; // is_current=true 对应的版本（override 缺失时的兜底 currentVersion）
+        // task-0806 B19：模板渲染域，覆盖下方 isTreeComponent 对冻结快照的取值。
+        UUID _tplPrev = TemplateRenderScope.open(q != null ? q.costingCardTemplateId : null);
+        try {
+            TreeSet<String> options = new TreeSet<>(CostingVersionService::compareVersionDesc);
+            String isCurrentVersion = null; // is_current=true 对应的版本（override 缺失时的兜底 currentVersion）
 
-        if (isTreeComponent(componentId)) {
-            @SuppressWarnings("unchecked")
-            List<Object[]> rows = em.createNativeQuery(
-                            "SELECT bom_version, is_current FROM material_bom_item " +
-                                    "WHERE system_type='PRICING' AND customer_no='_GLOBAL_' AND material_no=:p " +
-                                    "AND bom_version IS NOT NULL")
-                    .setParameter("p", partNo).getResultList();
-            for (Object[] r : rows) {
-                if (r[0] == null) continue;
-                String v = r[0].toString();
-                options.add(v);
-                if (r[1] instanceof Boolean b && b) isCurrentVersion = v;
+            if (isTreeComponent(componentId)) {
+                @SuppressWarnings("unchecked")
+                List<Object[]> rows = em.createNativeQuery(
+                                "SELECT bom_version, is_current FROM material_bom_item " +
+                                        "WHERE system_type='PRICING' AND customer_no='_GLOBAL_' AND material_no=:p " +
+                                        "AND bom_version IS NOT NULL")
+                        .setParameter("p", partNo).getResultList();
+                for (Object[] r : rows) {
+                    if (r[0] == null) continue;
+                    String v = r[0].toString();
+                    options.add(v);
+                    if (r[1] instanceof Boolean b && b) isCurrentVersion = v;
+                }
+            } else {
+                List<ExpandDriverResponse.Row> listRows = expandRows(componentId, customerId, partNo, null, BomTreeVarsContext.Mode.LIST);
+                for (ExpandDriverResponse.Row row : listRows) {
+                    String mn = partNoOf(row.driverRow);
+                    if (mn == null || !mn.equals(partNo)) continue;
+                    Object vv = row.driverRow.get("view_version");
+                    if (vv != null) options.add(vv.toString());
+                }
+                List<ExpandDriverResponse.Row> curRows = expandRows(componentId, customerId, partNo, Map.of(), BomTreeVarsContext.Mode.RENDER);
+                for (ExpandDriverResponse.Row row : curRows) {
+                    String mn = partNoOf(row.driverRow);
+                    if (mn == null || !mn.equals(partNo)) continue;
+                    Object vv = row.driverRow.get("view_version");
+                    if (vv != null) { isCurrentVersion = vv.toString(); break; }
+                }
             }
-        } else {
-            List<ExpandDriverResponse.Row> listRows = expandRows(componentId, customerId, partNo, null, BomTreeVarsContext.Mode.LIST);
-            for (ExpandDriverResponse.Row row : listRows) {
-                String mn = partNoOf(row.driverRow);
-                if (mn == null || !mn.equals(partNo)) continue;
-                Object vv = row.driverRow.get("view_version");
-                if (vv != null) options.add(vv.toString());
-            }
-            List<ExpandDriverResponse.Row> curRows = expandRows(componentId, customerId, partNo, Map.of(), BomTreeVarsContext.Mode.RENDER);
-            for (ExpandDriverResponse.Row row : curRows) {
-                String mn = partNoOf(row.driverRow);
-                if (mn == null || !mn.equals(partNo)) continue;
-                Object vv = row.driverRow.get("view_version");
-                if (vv != null) { isCurrentVersion = vv.toString(); break; }
-            }
+
+            String currentVersion;
+            CostingOrderVersionOverride ov = CostingOrderVersionOverride.find(coid, componentId, partNo);
+            currentVersion = (ov != null) ? ov.viewVersion : isCurrentVersion;
+
+            VersionOptionsResponseDTO dto = new VersionOptionsResponseDTO();
+            dto.componentId = componentId.toString();
+            dto.partNo = partNo;
+            dto.currentVersion = currentVersion;
+            dto.options = new ArrayList<>(options);
+            return dto;
+        } finally {
+            TemplateRenderScope.restore(_tplPrev);
         }
-
-        String currentVersion;
-        CostingOrderVersionOverride ov = CostingOrderVersionOverride.find(coid, componentId, partNo);
-        currentVersion = (ov != null) ? ov.viewVersion : isCurrentVersion;
-
-        VersionOptionsResponseDTO dto = new VersionOptionsResponseDTO();
-        dto.componentId = componentId.toString();
-        dto.partNo = partNo;
-        dto.currentVersion = currentVersion;
-        dto.options = new ArrayList<>(options);
-        return dto;
     }
 
-    /** 组件是否为主树/子配件类（{@code bom_recursive_expand=true}）。不存在的 componentId 抛 404。 */
+    /**
+     * 组件是否为主树/子配件类（{@code bom_recursive_expand=true}）。task-0806 B19：改经
+     * {@link com.cpq.template.service.PublishedTemplateReader} 取冻结快照，templateId 取自
+     * {@link TemplateRenderScope}（调用方 {@code listVersionOptions}/{@code switchVersion} 均已在
+     * 方法体外层 open 核价模板域）。componentId 不在该模板冻结页签中 → 抛 404（语义同旧实现的
+     * "组件不存在"——旧实现查全局 component 表，本实现查"该核价模板引用的组件"，对正常调用路径
+     * 等价，因为 componentId 恒来自该模板自身的页签）。
+     */
     private boolean isTreeComponent(UUID componentId) {
-        Object flagObj;
-        try {
-            flagObj = em.createNativeQuery("SELECT c.bom_recursive_expand FROM component c WHERE c.id = :cid")
-                    .setParameter("cid", componentId).getSingleResult();
-        } catch (jakarta.persistence.NoResultException e) {
-            throw new BusinessException(404, "组件不存在: " + componentId);
+        UUID templateId = TemplateRenderScope.currentTemplateId();
+        if (templateId == null) {
+            throw new BusinessException(500, "内部错误：模板渲染域未打开，无法判定组件类型 componentId=" + componentId);
         }
-        return (flagObj instanceof Boolean b) && b;
+        for (com.cpq.template.entity.TemplateComponentSnapshot s : publishedTemplateReader.allTabsOf(templateId)) {
+            if (componentId.equals(s.componentId)) {
+                return Boolean.TRUE.equals(s.bomRecursiveExpand);
+            }
+        }
+        throw new BusinessException(404, "组件不存在: " + componentId);
     }
 
     // =========================================================================
@@ -177,66 +196,74 @@ public class CostingVersionService {
         }
         UUID templateId = q.costingCardTemplateId;
 
-        // 校验 componentId 存在 + 是否为主树组件（bom_recursive_expand）
-        boolean isTreeComponent = isTreeComponent(req.componentId);
+        // task-0806 B17-a：模板渲染域，覆盖下方非主树分支 buildMixedBaseRows→expandRows→
+        // componentDriverService.expandUncached（主树分支 bomTreeRenderService.render 已自带同款
+        // open，此处对它是无害的嵌套 open，值相同）。
+        UUID _tplPrev = TemplateRenderScope.open(templateId);
+        try {
+            // 校验 componentId 存在 + 是否为主树组件（bom_recursive_expand）
+            boolean isTreeComponent = isTreeComponent(req.componentId);
 
-        // ── upsert override + flush（先落库，让下面的重查读到最新覆盖）──────────────────
-        CostingOrderVersionOverride ov = CostingOrderVersionOverride.find(coid, req.componentId, req.partNo);
-        OffsetDateTime now = OffsetDateTime.now();
-        if (ov == null) {
-            ov = new CostingOrderVersionOverride();
-            ov.costingOrderId = coid;
-            ov.componentId = req.componentId;
-            ov.partNo = req.partNo;
-            ov.viewVersion = req.viewVersion;
-            ov.createdAt = now;
-            ov.updatedAt = now;
-            ov.persist();
-        } else {
-            ov.viewVersion = req.viewVersion;
-            ov.updatedAt = now;
+            // ── upsert override + flush（先落库，让下面的重查读到最新覆盖）──────────────────
+            CostingOrderVersionOverride ov = CostingOrderVersionOverride.find(coid, req.componentId, req.partNo);
+            OffsetDateTime now = OffsetDateTime.now();
+            if (ov == null) {
+                ov = new CostingOrderVersionOverride();
+                ov.costingOrderId = coid;
+                ov.componentId = req.componentId;
+                ov.partNo = req.partNo;
+                ov.viewVersion = req.viewVersion;
+                ov.createdAt = now;
+                ov.updatedAt = now;
+                ov.persist();
+            } else {
+                ov.viewVersion = req.viewVersion;
+                ov.updatedAt = now;
+            }
+            em.flush();
+
+            Map<UUID, Map<String, String>> overridesByComponent = loadOverridesByComponent(coid);
+
+            // ── 重查 + 重装（scope 按 §E 规则）───────────────────────────────────────────
+            Map<String, ArrayNode> baseRowsByComp;
+            Set<String> affectedTabs = new LinkedHashSet<>();
+            if (isTreeComponent) {
+                // 主树切：该 line 各 driver 组件跑一次 $view（整卡重查），远程查询次数与料号数无关。
+                Map<UUID, Map<String, ArrayNode>> rendered =
+                        bomTreeRenderService.render(templateId, List.of(li), overridesByComponent);
+                baseRowsByComp = rendered.getOrDefault(li.id, new LinkedHashMap<>());
+                affectedTabs.addAll(driverComponentIdsOf(templateId));
+            } else {
+                // 非主树切：仅该组件 $view 跑一次（partNo 组限定），其余页签复用缓存 baseRows。
+                baseRowsByComp = buildMixedBaseRows(co, li, q, req.componentId, req.partNo, overridesByComponent);
+                affectedTabs.add(req.componentId.toString());
+            }
+
+            String newCostingCardValues = cardSnapshotService.buildCostingCardValues(
+                    li, templateId, q.customerId, q.id, null, null, baseRowsByComp);
+            boolean hasTreeTab = cardSnapshotService.templateHasTreeTab(templateId);
+            String newCostingExcelValues = cardSnapshotService.buildExcelValues(
+                    li, templateId, q.customerId, newCostingCardValues, hasTreeTab);
+
+            // ── 写回 costing_render（仅受影响 line） + 重算 costing_total_amount ─────────────
+            Map<String, RenderEntry> renderMap = parseRenderMap(co.costingRender);
+            renderMap.put(li.id.toString(), new RenderEntry(newCostingCardValues, newCostingExcelValues));
+            co.costingRender = serializeRenderMap(renderMap);
+            co.costingTotalAmount = recomputeTotal(q.id, renderMap);
+            // co 是 em.find 拿到的受管实体，事务提交时自动 flush（不显式 persist）
+
+            VersionSwitchResponseDTO resp = new VersionSwitchResponseDTO();
+            resp.lineItemId = li.id.toString();
+            resp.costingCardValues = newCostingCardValues;
+            resp.costingExcelColumns = newCostingExcelValues;
+            resp.costingTotalAmount = co.costingTotalAmount;
+            resp.affectedTabs = new ArrayList<>(affectedTabs);
+            LOG.infof("[costing-version] switchVersion coid=%s line=%s comp=%s part=%s -> %s (tree=%s)",
+                    coid, li.id, req.componentId, req.partNo, req.viewVersion, isTreeComponent);
+            return resp;
+        } finally {
+            TemplateRenderScope.restore(_tplPrev);
         }
-        em.flush();
-
-        Map<UUID, Map<String, String>> overridesByComponent = loadOverridesByComponent(coid);
-
-        // ── 重查 + 重装（scope 按 §E 规则）───────────────────────────────────────────
-        Map<String, ArrayNode> baseRowsByComp;
-        Set<String> affectedTabs = new LinkedHashSet<>();
-        if (isTreeComponent) {
-            // 主树切：该 line 各 driver 组件跑一次 $view（整卡重查），远程查询次数与料号数无关。
-            Map<UUID, Map<String, ArrayNode>> rendered =
-                    bomTreeRenderService.render(templateId, List.of(li), overridesByComponent);
-            baseRowsByComp = rendered.getOrDefault(li.id, new LinkedHashMap<>());
-            affectedTabs.addAll(driverComponentIdsOf(templateId));
-        } else {
-            // 非主树切：仅该组件 $view 跑一次（partNo 组限定），其余页签复用缓存 baseRows。
-            baseRowsByComp = buildMixedBaseRows(co, li, q, req.componentId, req.partNo, overridesByComponent);
-            affectedTabs.add(req.componentId.toString());
-        }
-
-        String newCostingCardValues = cardSnapshotService.buildCostingCardValues(
-                li, templateId, q.customerId, q.id, null, null, baseRowsByComp);
-        boolean hasTreeTab = cardSnapshotService.templateHasTreeTab(templateId);
-        String newCostingExcelValues = cardSnapshotService.buildExcelValues(
-                li, templateId, q.customerId, newCostingCardValues, hasTreeTab);
-
-        // ── 写回 costing_render（仅受影响 line） + 重算 costing_total_amount ─────────────
-        Map<String, RenderEntry> renderMap = parseRenderMap(co.costingRender);
-        renderMap.put(li.id.toString(), new RenderEntry(newCostingCardValues, newCostingExcelValues));
-        co.costingRender = serializeRenderMap(renderMap);
-        co.costingTotalAmount = recomputeTotal(q.id, renderMap);
-        // co 是 em.find 拿到的受管实体，事务提交时自动 flush（不显式 persist）
-
-        VersionSwitchResponseDTO resp = new VersionSwitchResponseDTO();
-        resp.lineItemId = li.id.toString();
-        resp.costingCardValues = newCostingCardValues;
-        resp.costingExcelColumns = newCostingExcelValues;
-        resp.costingTotalAmount = co.costingTotalAmount;
-        resp.affectedTabs = new ArrayList<>(affectedTabs);
-        LOG.infof("[costing-version] switchVersion coid=%s line=%s comp=%s part=%s -> %s (tree=%s)",
-                coid, li.id, req.componentId, req.partNo, req.viewVersion, isTreeComponent);
-        return resp;
     }
 
     // =========================================================================
@@ -252,16 +279,18 @@ public class CostingVersionService {
         return out;
     }
 
-    /** 该模板全部 driver 组件 id（字符串），供主树切的 affectedTabs。 */
-    @SuppressWarnings("unchecked")
+    /**
+     * 该模板全部 driver 组件 id（字符串，去重），供主树切的 affectedTabs。task-0806 B19：改经
+     * {@link com.cpq.template.service.PublishedTemplateReader#driverCompsOf} 取冻结快照，不再直读
+     * 活 {@code component}/{@code template_component} 表。{@code DISTINCT} 去重语义改内存
+     * {@code LinkedHashSet}（同 componentId 可能因多实例挂多个 template_component 行）。
+     */
     private List<String> driverComponentIdsOf(UUID templateId) {
-        List<Object> ids = em.createNativeQuery(
-                        "SELECT DISTINCT c.id FROM template_component tc JOIN component c ON c.id = tc.component_id " +
-                                "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
-                .setParameter("tid", templateId).getResultList();
-        List<String> out = new ArrayList<>();
-        for (Object o : ids) if (o != null) out.add(o.toString());
-        return out;
+        java.util.LinkedHashSet<String> seen = new java.util.LinkedHashSet<>();
+        for (com.cpq.template.entity.TemplateComponentSnapshot s : publishedTemplateReader.driverCompsOf(templateId)) {
+            if (s.componentId != null) seen.add(s.componentId.toString());
+        }
+        return new ArrayList<>(seen);
     }
 
     /**

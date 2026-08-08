@@ -6,6 +6,7 @@ import com.cpq.component.dto.DryRunSqlViewResponse;
 import com.cpq.component.entity.Component;
 import com.cpq.component.entity.ComponentSqlView;
 import com.cpq.component.repository.ComponentSqlViewRepository;
+import com.cpq.common.exception.BusinessException;
 import com.cpq.datasource.sqlview.SqlViewRuntimeContext;
 import com.cpq.template.entity.Template;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -358,7 +359,10 @@ public class ComponentSqlViewService {
      * <ol>
      *   <li>报价单 APPROVED/PUBLISHED/SUBMITTED → 查 quotation_component_sql_snapshot 表（阶段 3 接入）</li>
      *   <li>模板已发布上下文 → 读 template.sql_views_snapshot JSONB（阶段 3 接入）</li>
-     *   <li>兜底：实时读 component_sql_view（DRAFT 期 / 无 snapshot 上下文）</li>
+     *   <li>兜底：实时读 component_sql_view —— 仅当无模板上下文，或模板仍处 DRAFT 期（草稿期
+     *       本就不写 snapshot，见需求文档 §5.1.2 冻结边界）。若 {@code ctx.templateId} 指向的模板
+     *       已 PUBLISHED / ARCHIVED 而前两层均未命中，视为系统不变量被破坏，直接抛
+     *       {@link BusinessException}（500），绝不回落活表（task-0806 B10 / FR-6 / AC-7）</li>
      * </ol>
      *
      * <p>SqlViewRuntimeContext ThreadLocal 提供 templateId / quotationId / quotationStatus
@@ -397,7 +401,17 @@ public class ComponentSqlViewService {
             }
         }
 
-        // 3. 兜底实时读
+        // 3. 已发布 / 已归档模板上下文：前两层均未命中 = snapshot 缺失，是系统不变量被破坏，
+        //    绝不回落活表（task-0806 B10 / FR-6 / AC-7；口径同 §5.3.3 的模板结构快照）。
+        //    DRAFT 模板 status 判定为 false，继续走下面第 4 步兜底实时读——这是设计如此
+        //    （§5.1.2 冻结边界「DRAFT 模板不写快照，草稿期一律走活表」），不是本条禁止的对象。
+        if (ctx.templateId != null && isTemplateFrozen(ctx.templateId)) {
+            throw new BusinessException(500, String.format(
+                    "SQL 视图快照缺失：templateId=%s, componentId=%s, view=%s。已发布模板不允许回落实时读取",
+                    ctx.templateId, componentId, sqlViewName));
+        }
+
+        // 4. 兜底实时读（无模板上下文 / 模板仍处 DRAFT 期）
         if (isCrossComponent) {
             if (componentCode == null || componentCode.isBlank()) {
                 return Optional.empty();
@@ -408,6 +422,17 @@ public class ComponentSqlViewService {
             return Optional.empty();
         }
         return repository.findByComponentAndName(componentId, sqlViewName);
+    }
+
+    /**
+     * 判断模板是否已冻结（PUBLISHED / ARCHIVED）。找不到模板本身（理论上不该发生，
+     * templateId 是调用方从当前渲染上下文塞进 ThreadLocal 的）时保守返回 false，
+     * 交由后续兜底实时读处理——避免把"模板被删"这种另一类问题误判成本条禁止的场景。
+     */
+    private boolean isTemplateFrozen(UUID templateId) {
+        Template t = Template.findById(templateId);
+        if (t == null) return false;
+        return "PUBLISHED".equals(t.status) || "ARCHIVED".equals(t.status);
     }
 
     // ──────────── snapshot 反序列化辅助（阶段 3） ────────────

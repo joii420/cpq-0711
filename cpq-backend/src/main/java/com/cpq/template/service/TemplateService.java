@@ -14,6 +14,7 @@ import com.cpq.template.dto.QuoteImportAutoDefaults;
 import com.cpq.template.dto.TemplateDTO;
 import com.cpq.template.entity.Template;
 import com.cpq.template.entity.TemplateComponent;
+import com.cpq.template.entity.TemplateComponentSnapshot;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -50,6 +51,10 @@ public class TemplateService {
     /** Task 3.1: 列定义统一从 EXCEL 组件解析（校验等迭代列定义站点用）。 */
     @Inject
     com.cpq.quotation.service.ExcelColumnResolver excelColumnResolver;
+
+    /** task-0806：admin 后门审计（confirm=true 时写 operation_log，与业务写入同事务同生共死）。 */
+    @Inject
+    com.cpq.system.service.OperationLogService operationLogService;
 
     public List<TemplateDTO> list(int page, int size, String category, String status, String keyword) {
         return list(page, size, category, null, null, status, keyword, null);
@@ -205,55 +210,25 @@ public class TemplateService {
             throw new BusinessException("模板发布前必须至少包含一个组件");
         }
 
-        // Build components_snapshot
+        // task-0806 B5：唯一写入点。V200 override 优先语义（同 component 在 SIMPLE / COMPOSITE
+        // 模板需要不同 driver_path / fields, 走 template_component.data_driver_path_override /
+        // fields_override; 非 NULL 时盖掉 component 表对应字段）保持不变。
         //
-        // V200 (2026-05-19): 模板级覆盖 — 同 component 在 SIMPLE / COMPOSITE 模板需要不同
-        // driver_path / fields. 引入 template_component.data_driver_path_override 和
-        // fields_override 两列; 非 NULL 时盖掉 component 表对应字段, 否则走 component 默认.
-        //
-        // 没用 override 时与 V199 之前完全等价 → 历史模板行为不变.
+        // N+1 自检：原实现在本循环 + 下方 cross_tab_ref 校验循环内各自对每个 tc 调一次
+        // Component.findById（2 处循环 × N 次查询）。本次改造顺带批量化——整单一次 IN 查
+        // 预载 compById，两个循环均改用内存 map 查找，SQL 条数与 tc 数量无关。
         List<TemplateComponent> tcs = TemplateComponent.list("templateId = ?1 ORDER BY sortOrder ASC", id);
-        List<Map<String, Object>> snapshot = new ArrayList<>();
-        for (TemplateComponent tc : tcs) {
-            Component comp = Component.findById(tc.componentId);
-            if (comp != null) {
-                Map<String, Object> entry = new LinkedHashMap<>();
-                entry.put("id", tc.id.toString());
-                entry.put("componentId", comp.id.toString());
-                entry.put("componentName", comp.name);
-                entry.put("componentCode", comp.code);
-                entry.put("componentType", comp.componentType);
-                // EXCEL 组件列定义随 snapshot 冻结(供 Phase 3 Excel 视图消费);NORMAL/SUBTOTAL 仅携带 "[]"
-                entry.put("excelColumns", parseJsonArray(comp.excelColumns));
-                entry.put("tabName", tc.tabName);
-                entry.put("sortOrder", tc.sortOrder);
-                // V200: fields 走 override 优先
-                String effectiveFields = (tc.fieldsOverride != null && !tc.fieldsOverride.isBlank())
-                        ? tc.fieldsOverride : comp.fields;
-                entry.put("fields", parseJsonArray(effectiveFields));
-                entry.put("formulas", parseJsonArray(comp.formulas));
-                entry.put("preset_rows", parseJsonArray(tc.presetRows));
-                // V200: data_driver_path 走 override 优先
-                String effectiveDriverPath = (tc.dataDriverPathOverride != null && !tc.dataDriverPathOverride.isBlank())
-                        ? tc.dataDriverPathOverride : comp.dataDriverPath;
-                entry.put("data_driver_path", effectiveDriverPath);
-                // 树表配置随组件冻进 snapshot(纯展示;无 template 级 override)
-                entry.put("tree_config", (comp.treeConfig != null && !comp.treeConfig.isBlank())
-                        ? parseJsonObject(comp.treeConfig) : null);
-                entry.put("formula_assignments", parseJsonObject(tc.formulaAssignments));
-                // task-0721 补录(2026-07-22)：页签类型属性随组件冻进 snapshot(无 template 级 override，
-                // 与 tree_config 同款处理)。此前遗漏——违反"改 snapshot 必须同时改 3 层"纪律；
-                // 当前运行期渲染逻辑(ConfigureSnapshotService/BomTreeRenderService/
-                // overlayTreeTabsFromFrozenSnapshot)均直接查活的 component 表，不读这里，
-                // 故本次补录不改变任何现有运行期行为，纯粹补正确性缺口供未来消费方使用。
-                entry.put("tab_type", comp.tabType);
-                entry.put("part_no_field", comp.partNoField);
-                entry.put("part_name_field", comp.partNameField);
-                entry.put("bom_recursive_expand", comp.bomRecursiveExpand);
-                snapshot.add(entry);
-            }
-        }
-        template.componentsSnapshot = toJson(snapshot);
+        Map<UUID, Component> compById = loadComponentsByIds(
+                tcs.stream().map(tc -> tc.componentId).distinct().collect(Collectors.toList()));
+
+        // 唯一写入点：template_component_snapshot 落 N 行（按 tc 逐行，不得按 componentId 聚合
+        // ——AP-40 教训；(template_id, template_component_id) 唯一约束已从 schema 层面消灭该坑，
+        // 未用 sort_order 是因为实测存量数据里同模板内 sort_order 并非天然唯一）。
+        // 重发布场景防脏行：先清掉该模板旧快照行（正常首次 publish 时应为空，防御性操作）。
+        List<TemplateComponentSnapshot> snapshotRows = persistSnapshotRows(id, tcs, compById);
+        // components_snapshot jsonb 从①派生（不再各自拼装）——两份数据同源同事务生成，
+        // 结构上不可能不一致（AC-2：键集合/键顺序/值与改造前逐字段一致）。
+        template.componentsSnapshot = deriveComponentsSnapshotJson(snapshotRows);
 
         // Task 2.2: 模板级 cross_tab_ref 校验 — 每个组件公式里的 cross_tab_ref.source 必须指向
         // 本卡片内存在的组件(componentId), 且组件间 cross_tab_ref 依赖不得成环。
@@ -267,7 +242,7 @@ public class TemplateService {
             List<CrossTabComponentOrder.TabDep> tabDeps = new ArrayList<>();
             Map<String, String> plainNameById = new LinkedHashMap<>();
             for (TemplateComponent tc : tcs) {
-                Component comp = Component.findById(tc.componentId);
+                Component comp = compById.get(tc.componentId);
                 if (comp == null) continue;
                 String cid = comp.id.toString();
                 compIds.add(cid);
@@ -318,100 +293,26 @@ public class TemplateService {
         template.status = "PUBLISHED";
         template.publishedAt = OffsetDateTime.now();
 
+        LOG.infof("[perf] renderTemplate publish templateId=%s tabs=%d sql=constant(batched)", id, tcs.size());
         LOG.infof("Published template id=%s version=%s", id, template.version);
         return TemplateDTO.from(template, tcs);
     }
 
-    /**
-     * H1: 同步所有引用该组件的模板 components_snapshot.
-     *
-     * <p>当组件配置 (fields / formulas / dataDriverPath) 发生平台级变化时, 已发布模板
-     * 的 snapshot 会陈旧 — 报价单按旧 snapshot 渲染会丢失新字段 / 旧路径报错.
-     * 本方法找到所有 components_snapshot 含 componentId 的 template, 用组件最新内容
-     * 覆盖 snapshot 对应数组项的 fields / formulas / data_driver_path / componentType.
-     *
-     * <p>语义说明: 这刻意破坏 PUBLISHED 模板的 "版本快照不可变" 约定, 因为配置层变更
-     * 必须对所有视图同步生效 (用户原则: 所有渲染从配置中心走). version 不变保持版本号语义.
-     *
-     * @param componentId 组件 id
-     * @return 受影响的 template id 列表
-     */
-    @Transactional
-    public List<UUID> refreshSnapshotsByComponent(UUID componentId) {
-        Component comp = Component.findById(componentId);
-        if (comp == null) {
-            throw new BusinessException(404, "Component not found: " + componentId);
-        }
-        // 找所有 components_snapshot 含该 componentId 的 template
-        @SuppressWarnings("unchecked")
-        List<Object> templateIds = em.createNativeQuery(
-                "SELECT id FROM template WHERE components_snapshot::text LIKE :pattern")
-                .setParameter("pattern", "%" + componentId.toString() + "%")
-                .getResultList();
-        List<UUID> affected = new ArrayList<>();
-        List<?> compFields = parseJsonArray(comp.fields);
-        List<?> compFormulas = parseJsonArray(comp.formulas);
-        for (Object obj : templateIds) {
-            UUID tplId = obj instanceof UUID u ? u : UUID.fromString(obj.toString());
-            Template tpl = Template.findById(tplId);
-            if (tpl == null || tpl.componentsSnapshot == null) continue;
-            List<?> snapList = parseJsonArray(tpl.componentsSnapshot);
-            if (snapList == null) continue;
-            // V200/V206 (2026-05-19 H1 bug fix): 同 cid 在模板里出现多次时, 必须按
-            // (templateId, componentId, sortOrder) 精确匹配 tc; firstResult() 只拿第一个
-            // tc 会让所有同 cid snapshot entry 错误共用同一份 fields_override → 后到的
-            // Tab (如"选配-工序列表") 的差异化配置 (LIST_FORMULA 成材率等) 被"工序" Tab 的
-            // fields_override 反向覆盖.
-            boolean touched = false;
-            for (Object entryObj : snapList) {
-                if (!(entryObj instanceof Map)) continue;
-                @SuppressWarnings("unchecked")
-                Map<String, Object> entry = (Map<String, Object>) entryObj;
-                Object cidObj = entry.get("componentId");
-                if (cidObj == null) cidObj = entry.get("component_id");
-                if (cidObj == null || !componentId.toString().equals(cidObj.toString())) continue;
-                // V206: 按 sortOrder 精确匹配 tc
-                Object sortObj = entry.get("sortOrder");
-                if (sortObj == null) sortObj = entry.get("sort_order");
-                Integer sortOrder = (sortObj instanceof Number) ? ((Number) sortObj).intValue() : null;
-                TemplateComponent tc = (sortOrder != null)
-                        ? TemplateComponent.find(
-                                "templateId = ?1 AND componentId = ?2 AND sortOrder = ?3",
-                                tplId, componentId, sortOrder).firstResult()
-                        : TemplateComponent.find(
-                                "templateId = ?1 AND componentId = ?2",
-                                tplId, componentId).firstResult();
-                List<?> effectiveFields = (tc != null && tc.fieldsOverride != null && !tc.fieldsOverride.isBlank())
-                        ? parseJsonArray(tc.fieldsOverride) : compFields;
-                String effectiveDriverPath = (tc != null && tc.dataDriverPathOverride != null && !tc.dataDriverPathOverride.isBlank())
-                        ? tc.dataDriverPathOverride : comp.dataDriverPath;
-                // V200: fields / data_driver_path 走 override 优先, 其余 (formulas / componentType / name / code) 走 component
-                entry.put("fields", effectiveFields);
-                entry.put("formulas", compFormulas);
-                entry.put("data_driver_path", effectiveDriverPath);
-                // 树表配置随组件平台级更新同步(纯展示;无 template 级 override)
-                entry.put("tree_config", (comp.treeConfig != null && !comp.treeConfig.isBlank())
-                        ? parseJsonObject(comp.treeConfig) : null);
-                entry.put("componentType", comp.componentType);
-                // EXCEL 组件列定义随 snapshot 平台级刷新同步(供 Phase 3);NORMAL/SUBTOTAL 仅携带 "[]"
-                entry.put("excelColumns", parseJsonArray(comp.excelColumns));
-                entry.put("componentName", comp.name);
-                entry.put("componentCode", comp.code);
-                // task-0721 补录(2026-07-22)：页签类型属性随组件平台级更新同步(无 template 级 override)
-                entry.put("tab_type", comp.tabType);
-                entry.put("part_no_field", comp.partNoField);
-                entry.put("part_name_field", comp.partNameField);
-                entry.put("bom_recursive_expand", comp.bomRecursiveExpand);
-                touched = true;
-            }
-            if (touched) {
-                tpl.componentsSnapshot = toJson(snapList);
-                affected.add(tplId);
-            }
-        }
-        LOG.infof("[H1 snapshot sync] componentId=%s affected %d templates", componentId, affected.size());
-        return affected;
-    }
+    // task-0806 B6：refreshSnapshotsByComponent（H1）整体退役。
+    //
+    // 该方法曾是"改一个组件、无条件静默改写所有引用它的已发布模板 snapshot"的活穿透源头
+    // （ComponentService.update:733 每次保存组件即自动调用）——违背 docs/三大核心模块基线.md:178
+    // 写明的"snapshot 存在的理由：组件管理改字段后老模板不能反向受影响"。
+    //
+    // 下线后：
+    //   - DRAFT 模板恒无快照，该方法的作用面从来只有 PUBLISHED + ARCHIVED；冻结之后它没有
+    //     任何合法用途（不是限制它只刷 DRAFT，是整个下线）。
+    //   - ComponentService.update / setDriverView 两处自动传导调用点已删除（AC-4）。
+    //   - POST /api/cpq/components/{id}/refresh-template-snapshots 路由已删除（AC-4，D11）。
+    //   - 保留的 admin 后门（ConfigCenterResource.refreshAllSnapshots / TemplateResource 的
+    //     delete-tcs / promote-override-to-component）改走本类下方的 forceRealignSnapshots(...)
+    //     ——同样是"明确破坏不可变性"的操作，但批量化实现（SQL 条数与模板数/组件数无关），
+    //     且统一加 confirm 预览 + operation_log 审计 + LOG.warn 告警（FR-7）。
 
     @Transactional
     public TemplateDTO archive(UUID id, boolean force) {
@@ -430,9 +331,87 @@ public class TemplateService {
             checkNotBoundByProducts(id);
         }
 
+        // task-0806 B20（D18）：归档是终态，无法再走 createNewDraft → publish 重新发布——若该
+        // 模板还没按 B20 后的新语义完成过一次"重新发布"（template_component_snapshot 零行，
+        // 过渡期正常状态，见 PublishedTemplateReader 类注释），此处必须按当时活配置补一份快照
+        // 再归档，否则归档后 PublishedTemplateReader 会把它的历史报价单渲染永久判定为「未冻结」
+        // ——但它已经不可能再发新版来补上，等于永久打不开。复用 publish() 落库的同一套私有方法
+        // （persistSnapshotRows + deriveComponentsSnapshotJson），保证"补冻"产出的快照结构与
+        // 正常发布路径完全一致，不另起一套写法。
+        if (TemplateComponentSnapshot.count("templateId", id) == 0) {
+            List<TemplateComponent> tcsForFreeze =
+                    TemplateComponent.list("templateId = ?1 ORDER BY sortOrder ASC", id);
+            Map<UUID, Component> compByIdForFreeze = loadComponentsByIds(
+                    tcsForFreeze.stream().map(tc -> tc.componentId).distinct().collect(Collectors.toList()));
+            List<TemplateComponentSnapshot> freezeRows =
+                    persistSnapshotRows(id, tcsForFreeze, compByIdForFreeze);
+            template.componentsSnapshot = deriveComponentsSnapshotJson(freezeRows);
+            LOG.infof("[task-0806 B20] archive() 自动补冻：templateId=%s 此前未按新语义重新发布过，"
+                    + "补 %d 行快照后再归档", id, freezeRows.size());
+        }
+
         template.status = "ARCHIVED";
         LOG.infof("Archived template id=%s", id);
         List<TemplateComponent> tcs = TemplateComponent.list("templateId = ?1 ORDER BY sortOrder ASC", id);
+        return TemplateDTO.from(template, tcs);
+    }
+
+    /**
+     * task-0806 B22-a（D20）：已 PUBLISHED/ARCHIVED 但从未按新语义冻结过的模板，补一次「首次
+     * 冻结」——不改 {@code version}/{@code status}/{@code publishedAt}，只补
+     * {@code template_component_snapshot} + 同步派生 {@code components_snapshot} jsonb。
+     *
+     * <p><b>背景</b>：D17 的 409 文案指向"重新发布"，但 {@link #publish} 只收 DRAFT——已发布
+     * 模板根本没有"重新发布"这个操作。{@code createNewDraft → publish} 只会产出新版本
+     * （老版本永远冻不上）；唯一能就地补冻的通道此前只有 admin 后门
+     * {@link #forceRealignSnapshots}，但那个方法的语义是"明确破坏不可变性"，不该是入门路径。
+     *
+     * <p><b>零行守卫是这个操作结构上安全的全部理由</b>：仅当该模板当前一行快照都没有时才允许
+     * 执行——见下方守卫判断。守卫不许放松：一旦允许对已有快照的模板调用本方法，它就退化成
+     * 又一个能覆盖快照的后门，与 D20 的设计初衷相悖。
+     *
+     * @throws BusinessException 400，模板是 DRAFT（草稿本就不该有快照，发布时才生成）
+     * @throws BusinessException 409，模板已有快照行（不是"从未冻结"，应走
+     *         {@code createNewDraft → publish} 发新版本，而不是就地覆盖）
+     */
+    @Transactional
+    public TemplateDTO freeze(UUID id, UUID operatorId) {
+        Template template = Template.findById(id);
+        if (template == null) {
+            throw new BusinessException(404, "Template not found: " + id);
+        }
+        if ("DRAFT".equals(template.status)) {
+            throw new BusinessException(400,
+                    "DRAFT 模板不支持首次冻结：草稿期本就不写快照，发布（publish）时会自动生成，"
+                    + "templateId=" + id);
+        }
+
+        // 零行守卫（核心，不许放松）：仅当该模板 template_component_snapshot 行数 == 0 时才允许
+        // 执行——结构上保证本方法不可能覆盖已有快照，因此不破坏不可变性，可以放心开给业务角色
+        // （SALES_MANAGER），不必只留给 SYSTEM_ADMIN 后门。
+        if (TemplateComponentSnapshot.count("templateId", id) > 0) {
+            throw new BusinessException(409,
+                    "该模板已冻结，如需更新配置请走 createNewDraft → publish 发布新版本。"
+                    + "templateId=" + id + ", status=" + template.status);
+        }
+
+        List<TemplateComponent> tcs = TemplateComponent.list("templateId = ?1 ORDER BY sortOrder ASC", id);
+        // 按当前活配置就地冻一份：复用 publish()/archive() 的同一套落库私有方法
+        // （persistSnapshotRows + deriveComponentsSnapshotJson），保证"首次冻结"产出的快照结构
+        // 与正常发布路径完全一致，不另起一套写法。version / status / publishedAt 一律不动。
+        rebuildSnapshotForTemplate(template, tcs);
+
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("endpoint", "freeze");
+        details.put("tabCount", tcs.size());
+        // 不打「破坏不可变性」的 WARN——零行守卫保证这不是覆盖，是给从未冻过的东西补冻，
+        // 是正常业务操作，用 INFO 级别记录即可。
+        operationLogService.log(operatorId, "TEMPLATE_INITIAL_FREEZE", "TEMPLATE", id,
+                "首次冻结模板：" + template.name + (template.version != null ? " " + template.version : "")
+                        + "，" + tcs.size() + " 个页签", details);
+        LOG.infof("[task-0806 B22-a] freeze：templateId=%s status=%s 首次冻结 %d 行快照"
+                + "（非破坏性操作——冻结前快照行数恒为 0）", id, template.status, tcs.size());
+
         return TemplateDTO.from(template, tcs);
     }
 
@@ -581,195 +560,94 @@ public class TemplateService {
     }
 
     // ---- Admin / data migration endpoints ----
+    //
+    // task-0806 D11：migrate-to-unified-view（一次性历史迁移，基线 §3.5 标注「已跑过」）
+    // 整体删除——不做 410 过渡，直接下线路由 + 服务方法（AC-4）。
 
     /**
-     * Step C1: 统一智能视图路径方案 — 模板数据迁移端点 (2026-05-21).
-     *
-     * <p>对每个 PUBLISHED 模板的每个 tc：
-     * <ol>
-     *   <li>fields_override 各字段: basic_data_path_composite 有值 → 覆盖 basic_data_path，删除 _composite 键</li>
-     *   <li>snapshot 同步刷新</li>
-     * </ol>
-     *
-     * @param templateIds null 或空 → 处理所有 PUBLISHED 模板
-     * @return 迁移摘要（每个模板: id / tcMigrated / fieldsMigrated / errors）
-     */
-    @Transactional
-    public Map<String, Object> migrateToUnifiedView(List<UUID> templateIds) {
-        List<Template> targets;
-        if (templateIds == null || templateIds.isEmpty()) {
-            targets = Template.list("status = 'PUBLISHED' ORDER BY createdAt ASC");
-        } else {
-            targets = new ArrayList<>();
-            for (UUID tid : templateIds) {
-                Template t = Template.findById(tid);
-                if (t != null) targets.add(t);
-            }
-        }
-
-        List<Map<String, Object>> results = new ArrayList<>();
-        int totalTcMigrated = 0;
-        int totalFieldsMigrated = 0;
-
-        for (Template tpl : targets) {
-            Map<String, Object> tplResult = new LinkedHashMap<>();
-            tplResult.put("templateId", tpl.id.toString());
-            tplResult.put("templateName", tpl.name);
-
-            List<TemplateComponent> tcs = TemplateComponent.list("templateId = ?1 ORDER BY sortOrder ASC", tpl.id);
-            int tcMigrated = 0;
-            int fieldsMigrated = 0;
-            List<String> errors = new ArrayList<>();
-
-            for (TemplateComponent tc : tcs) {
-                try {
-                    boolean tcChanged = false;
-
-                    // fields_override: basic_data_path_composite → basic_data_path
-                    // (driver 路径级双轨 data_driver_path_composite 已于 V299 物理 DROP，
-                    //  统一智能视图统一走 data_driver_path_override，此处无需再迁移)
-                    if (tc.fieldsOverride != null && !tc.fieldsOverride.isBlank()) {
-                        List<Map<String, Object>> fields;
-                        try {
-                            fields = MAPPER.readValue(tc.fieldsOverride,
-                                    new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {});
-                        } catch (Exception e) {
-                            errors.add("tc=" + tc.id + " fieldsOverride parse error: " + e.getMessage());
-                            continue;
-                        }
-
-                        boolean fieldsChanged = false;
-                        for (Map<String, Object> field : fields) {
-                            // basic_data_path_composite → basic_data_path
-                            Object compositePathObj = field.get("basic_data_path_composite");
-                            if (compositePathObj != null) {
-                                String compositePath = compositePathObj.toString();
-                                if (!compositePath.isBlank()) {
-                                    LOG.infof("[migrate-unified-view] template=%s tc=%s field=%s: basic_data_path_composite=%s → basic_data_path",
-                                            tpl.id, tc.id, field.get("name"), compositePath);
-                                    field.put("basic_data_path", compositePath);
-                                }
-                                field.remove("basic_data_path_composite");
-                                fieldsChanged = true;
-                                fieldsMigrated++;
-                            }
-                            // 清理其他双轨残留键（formula_composite / default_formula_composite）
-                            // 注意: LIST_FORMULA formula_composite token 迁移 (G3) 暂跳过 (PM 已确认独立任务)
-                            if (field.remove("formula_composite") != null) fieldsChanged = true;
-                            if (field.remove("default_formula_composite") != null) fieldsChanged = true;
-                            // datasource_binding_composite 如有也清理
-                            if (field.remove("datasource_binding_composite") != null) fieldsChanged = true;
-                        }
-
-                        if (fieldsChanged) {
-                            tc.fieldsOverride = MAPPER.writeValueAsString(fields);
-                            tcChanged = true;
-                        }
-                    }
-
-                    if (tcChanged) tcMigrated++;
-                } catch (Exception e) {
-                    errors.add("tc=" + tc.id + " error: " + e.getMessage());
-                    LOG.warnf("[migrate-unified-view] template=%s tc=%s error: %s", tpl.id, tc.id, e.getMessage());
-                }
-            }
-
-            // 3. 刷新 snapshot — 让 basic_data_path 修改在 components_snapshot 生效
-            // 遍历所有涉及到的 componentId 刷新
-            if (tcMigrated > 0) {
-                try {
-                    // 用 publish-style snapshot rebuild
-                    rebuildSnapshotForTemplate(tpl, tcs);
-                } catch (Exception e) {
-                    errors.add("snapshot rebuild error: " + e.getMessage());
-                    LOG.warnf("[migrate-unified-view] template=%s snapshot rebuild error: %s", tpl.id, e.getMessage());
-                }
-            }
-
-            tplResult.put("tcMigrated", tcMigrated);
-            tplResult.put("fieldsMigrated", fieldsMigrated);
-            tplResult.put("errors", errors);
-            results.add(tplResult);
-            totalTcMigrated += tcMigrated;
-            totalFieldsMigrated += fieldsMigrated;
-        }
-
-        Map<String, Object> summary = new LinkedHashMap<>();
-        summary.put("totalTemplates", targets.size());
-        summary.put("totalTcMigrated", totalTcMigrated);
-        summary.put("totalFieldsMigrated", totalFieldsMigrated);
-        summary.put("details", results);
-        LOG.infof("[migrate-unified-view] done: templates=%d, tc=%d, fields=%d",
-                targets.size(), totalTcMigrated, totalFieldsMigrated);
-        return summary;
-    }
-
-    /**
-     * 重建 PUBLISHED 模板的 components_snapshot（基于当前 tc 配置，不改 status/version）.
-     * 逻辑与 publish() 的 snapshot build 段完全对齐。
+     * 重建 PUBLISHED / ARCHIVED 模板的 {@code components_snapshot} + {@code template_component_snapshot}
+     * （基于当前 tc 配置，不改 status/version）。task-0806 起：先清后插整表重建，落库逻辑与
+     * {@link #publish} 的落库段完全对齐（同一 {@link #persistSnapshotRows} / {@link #deriveComponentsSnapshotJson}
+     * 实现，两处不可能分叉）。
      */
     private void rebuildSnapshotForTemplate(Template tpl, List<TemplateComponent> tcs) {
-        List<Map<String, Object>> snapshot = new ArrayList<>();
-        for (TemplateComponent tc : tcs) {
-            com.cpq.component.entity.Component comp = com.cpq.component.entity.Component.findById(tc.componentId);
-            if (comp != null) {
-                Map<String, Object> entry = new LinkedHashMap<>();
-                entry.put("id", tc.id.toString());
-                entry.put("componentId", comp.id.toString());
-                entry.put("componentName", comp.name);
-                entry.put("componentCode", comp.code);
-                entry.put("componentType", comp.componentType);
-                // EXCEL 组件列定义随 snapshot 重建冻结(供 Phase 3);NORMAL/SUBTOTAL 仅携带 "[]"
-                entry.put("excelColumns", parseJsonArray(comp.excelColumns));
-                entry.put("tabName", tc.tabName);
-                entry.put("sortOrder", tc.sortOrder);
-                String effectiveFields = (tc.fieldsOverride != null && !tc.fieldsOverride.isBlank())
-                        ? tc.fieldsOverride : comp.fields;
-                entry.put("fields", parseJsonArray(effectiveFields));
-                entry.put("formulas", parseJsonArray(comp.formulas));
-                entry.put("preset_rows", parseJsonArray(tc.presetRows));
-                String effectiveDriverPath = (tc.dataDriverPathOverride != null && !tc.dataDriverPathOverride.isBlank())
-                        ? tc.dataDriverPathOverride : comp.dataDriverPath;
-                entry.put("data_driver_path", effectiveDriverPath);
-                entry.put("formula_assignments", parseJsonObject(tc.formulaAssignments));
-                // task-0721 补录(2026-07-22)：与 publish()/refreshSnapshotsByComponent 的 snapshot entry 对齐
-                entry.put("tab_type", comp.tabType);
-                entry.put("part_no_field", comp.partNoField);
-                entry.put("part_name_field", comp.partNameField);
-                entry.put("bom_recursive_expand", comp.bomRecursiveExpand);
-                snapshot.add(entry);
-            }
-        }
-        tpl.componentsSnapshot = toJson(snapshot);
+        Map<UUID, Component> compById = loadComponentsByIds(
+                tcs.stream().map(tc -> tc.componentId).distinct().collect(Collectors.toList()));
+        List<TemplateComponentSnapshot> rows = persistSnapshotRows(tpl.id, tcs, compById);
+        tpl.componentsSnapshot = deriveComponentsSnapshotJson(rows);
     }
 
     /**
      * 2026-05-20 admin endpoint: 按 sortOrder 删除 PUBLISHED 模板的 tc 记录.
+     *
+     * <p>task-0806 B7 改造（FR-7 / api.md §7 A6）：加 {@code confirm} 预览门槛 + 执行时写
+     * {@code operation_log} 审计 + {@code LOG.warn} 告警。{@code confirm=false}（含缺省）
+     * 只读不写，返回待删 Tab 清单；{@code confirm=true} 才真正删除并同步快照。
+     *
+     * @param confirm    false=仅预览零写入；true=执行
+     * @param operatorId 当前操作者（执行时写审计用；预览路径不需要）
      */
     @Transactional
-    public Map<String, Object> deleteTemplateComponentsBySortOrder(UUID templateId, List<Integer> sortOrders) {
+    public Map<String, Object> deleteTemplateComponentsBySortOrder(UUID templateId, List<Integer> sortOrders,
+                                                                     boolean confirm, UUID operatorId) {
         Template tpl = Template.findById(templateId);
-        if (tpl == null) throw new com.cpq.common.exception.BusinessException(404, "Template not found: " + templateId);
+        if (tpl == null) throw new BusinessException(404, "Template not found: " + templateId);
 
-        String snapshotBefore = tpl.componentsSnapshot;
         List<TemplateComponent> tcs = TemplateComponent.list("templateId = ?1 ORDER BY sortOrder ASC", templateId);
-
-        int deleted = 0;
+        List<TemplateComponent> toDelete = new ArrayList<>();
         for (TemplateComponent tc : tcs) {
-            if (sortOrders.contains(tc.sortOrder)) {
-                tc.delete();
-                deleted++;
-            }
+            if (sortOrders != null && sortOrders.contains(tc.sortOrder)) toDelete.add(tc);
         }
 
-        // 重建 snapshot
+        if (!confirm) {
+            Map<UUID, Component> compById = loadComponentsByIds(
+                    toDelete.stream().map(tc -> tc.componentId).distinct().collect(Collectors.toList()));
+            List<Map<String, Object>> tabsToDelete = new ArrayList<>();
+            for (TemplateComponent tc : toDelete) {
+                Component c = compById.get(tc.componentId);
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("sortOrder", tc.sortOrder);
+                m.put("tabName", tc.tabName);
+                m.put("componentCode", c != null ? c.code : null);
+                tabsToDelete.add(m);
+            }
+            Map<String, Object> preview = new LinkedHashMap<>();
+            preview.put("preview", true);
+            preview.put("templateId", templateId.toString());
+            preview.put("tabsToDelete", tabsToDelete);
+            LOG.warnf("[admin-backdoor] delete-tcs 预览（未执行）：templateId=%s sortOrders=%s "
+                    + "——确认执行将破坏模板不可变性", templateId, sortOrders);
+            return preview;
+        }
+
+        String snapshotBefore = tpl.componentsSnapshot;
+        int deleted = 0;
+        for (TemplateComponent tc : toDelete) {
+            tc.delete();
+            deleted++;
+        }
+
+        // 重建 snapshot（同步删对应快照行 + 重生成 jsonb，否则快照与 tc 不一致）
         List<TemplateComponent> remaining = TemplateComponent.list("templateId = ?1 ORDER BY sortOrder ASC", templateId);
         rebuildSnapshotForTemplate(tpl, remaining);
 
         Map<String, Object> result = new LinkedHashMap<>();
+        result.put("preview", false);
         result.put("deletedTcs", deleted);
         result.put("snapshotBefore", snapshotBefore);
         result.put("snapshotAfter", tpl.componentsSnapshot);
+
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("endpoint", "delete-tcs");
+        details.put("sortOrders", sortOrders);
+        details.put("deletedTcs", deleted);
+        details.put("before", snapshotBefore);
+        details.put("after", tpl.componentsSnapshot);
+        UUID logId = operationLogService.log(operatorId, "TEMPLATE_TC_DELETE", "TEMPLATE", templateId,
+                "删除模板 Tab：" + tpl.name + (tpl.version != null ? " " + tpl.version : "")
+                        + "，" + deleted + " 个页签", details);
+        result.put("operationLogId", logId != null ? logId.toString() : null);
+        LOG.warnf("[admin-backdoor] delete-tcs 已执行：templateId=%s 已破坏模板不可变性，deleted=%d", templateId, deleted);
         return result;
     }
 
@@ -786,41 +664,33 @@ public class TemplateService {
      *   <li>用权威版 fields_override 更新 component.fields；
      *       同时从 dataDriverPathOverride（非 NULL 时）更新 component.dataDriverPath</li>
      *   <li>将所有引用该组件的 tc 的 fields_override + dataDriverPathOverride 设 NULL（清空覆盖）</li>
-     *   <li>调用 refreshSnapshotsByComponent 同步所有模板 snapshot</li>
+     *   <li>强制重新对齐所有受影响模板 snapshot（{@link #forceRealignSnapshots}，
+     *       task-0806 起替代已退役的 refreshSnapshotsByComponent）</li>
      * </ol>
      *
      * <p>约束：不动 SIMPLE 产品逻辑；不动 DATA_SOURCE.GLOBAL_VARIABLE 字段；零回归。
      *
+     * <p>task-0806 B7（FR-7 / api.md §7 A7）：加 {@code confirm} 预览门槛 + 执行时写
+     * {@code operation_log} 审计（按受影响模板各写一行）+ {@code LOG.warn} 告警。
+     *
      * @param componentIds 目标组件 ID 列表，null 或空则对所有 ACTIVE 组件处理（慎用）
-     * @return 迁移摘要
+     * @param confirm      false=仅预览零写入；true=执行
+     * @param operatorId   当前操作者（执行时写审计用）
+     * @return 迁移摘要（confirm=false 时为预览摘要）
      */
     @Transactional
-    public Map<String, Object> promoteOverrideToComponent(List<UUID> componentIds) {
-        List<Component> targets;
-        if (componentIds == null || componentIds.isEmpty()) {
-            // 安全兜底：不提供 componentIds 时只处理名称以"选配-"开头的组件（避免误操作）
-            @SuppressWarnings("unchecked")
-            List<Object> rows = em.createNativeQuery(
-                    "SELECT id FROM component WHERE name LIKE '选配-%' AND status = 'ACTIVE'")
-                    .getResultList();
-            targets = new ArrayList<>();
-            for (Object row : rows) {
-                UUID cid = row instanceof UUID u ? u : UUID.fromString(row.toString());
-                Component c = Component.findById(cid);
-                if (c != null) targets.add(c);
-            }
-        } else {
-            targets = new ArrayList<>();
-            for (UUID cid : componentIds) {
-                Component c = Component.findById(cid);
-                if (c != null) targets.add(c);
-            }
+    public Map<String, Object> promoteOverrideToComponent(List<UUID> componentIds, boolean confirm, UUID operatorId) {
+        List<Component> targets = resolvePromoteTargets(componentIds);
+
+        if (!confirm) {
+            return buildPromotePreview(targets);
         }
 
         List<Map<String, Object>> details = new ArrayList<>();
         int totalComponentsUpdated = 0;
         int totalTcCleared = 0;
         int totalSnapshotTouched = 0;
+        Set<UUID> allAffectedTemplateIds = new LinkedHashSet<>();
 
         for (Component comp : targets) {
             Map<String, Object> detail = new LinkedHashMap<>();
@@ -918,17 +788,22 @@ public class TemplateService {
             detail.put("tcCleared", tcCleared);
             totalTcCleared += tcCleared;
 
-            // 6. 刷新所有模板 snapshot（基于新 component.fields，tc.fields_override 已清空）
+            // 6. 强制重新对齐所有受影响模板 snapshot（基于新 component.fields，tc.fields_override
+            // 已清空）——task-0806 起替代已退役的 refreshSnapshotsByComponent，走批量化实现。
+            List<UUID> affectedTemplateIds = allTcs.stream().map(tc -> tc.templateId)
+                    .distinct().collect(Collectors.toList());
             try {
-                List<UUID> affected = refreshSnapshotsByComponent(comp.id);
-                detail.put("snapshotTouched", affected.size());
-                totalSnapshotTouched += affected.size();
+                Map<String, Object> realign = forceRealignSnapshots(affectedTemplateIds);
+                int touched = ((Number) realign.getOrDefault("refreshedTemplates", 0)).intValue();
+                detail.put("snapshotTouched", touched);
+                totalSnapshotTouched += touched;
                 detail.put("status", "OK");
             } catch (Exception e) {
                 detail.put("status", "PARTIAL");
                 detail.put("snapshotError", e.getMessage());
-                LOG.warnf("[promote-override] componentId=%s snapshot refresh error: %s", comp.id, e.getMessage());
+                LOG.warnf("[promote-override] componentId=%s snapshot realign error: %s", comp.id, e.getMessage());
             }
+            allAffectedTemplateIds.addAll(affectedTemplateIds);
 
             details.add(detail);
             LOG.infof("[promote-override] componentId=%s: fields %d→%d, driverPath %s→%s, tcCleared=%d",
@@ -936,14 +811,513 @@ public class TemplateService {
         }
 
         Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("preview", false);
         summary.put("targetComponents", targets.size());
         summary.put("componentsUpdated", totalComponentsUpdated);
         summary.put("tcCleared", totalTcCleared);
         summary.put("snapshotTouched", totalSnapshotTouched);
         summary.put("details", details);
-        LOG.infof("[promote-override] done: components=%d updated=%d tcCleared=%d snapshotTouched=%d",
-                targets.size(), totalComponentsUpdated, totalTcCleared, totalSnapshotTouched);
+
+        Map<String, Object> auditDetails = new LinkedHashMap<>();
+        auditDetails.put("endpoint", "promote-override-to-component");
+        auditDetails.put("componentIds", targets.stream().map(c -> c.id.toString()).collect(Collectors.toList()));
+        auditDetails.put("fieldDrifts", details);
+        List<UUID> logIds = operationLogService.logBatch(operatorId, "TEMPLATE_OVERRIDE_PROMOTE", "TEMPLATE",
+                allAffectedTemplateIds,
+                "提升 fields_override 为 component.fields：" + totalComponentsUpdated + " 个组件，"
+                        + "强制重新对齐 " + allAffectedTemplateIds.size() + " 个模板快照",
+                auditDetails);
+        summary.put("operationLogId", logIds.isEmpty() ? null : logIds.get(logIds.size() - 1).toString());
+        summary.put("operationLogIds", logIds.stream().map(UUID::toString).collect(Collectors.toList()));
+
+        LOG.warnf("[admin-backdoor] promote-override-to-component 已执行：已破坏 %d 个模板的不可变性 "
+                        + "(components=%d updated=%d tcCleared=%d snapshotTouched=%d)",
+                allAffectedTemplateIds.size(), targets.size(), totalComponentsUpdated, totalTcCleared, totalSnapshotTouched);
         return summary;
+    }
+
+    /** {@link #promoteOverrideToComponent} 的目标组件解析，preview/execute 两路共用。 */
+    private List<Component> resolvePromoteTargets(List<UUID> componentIds) {
+        List<Component> targets;
+        if (componentIds == null || componentIds.isEmpty()) {
+            // 安全兜底：不提供 componentIds 时只处理名称以"选配-"开头的组件（避免误操作）
+            @SuppressWarnings("unchecked")
+            List<Object> rows = em.createNativeQuery(
+                    "SELECT id FROM component WHERE name LIKE '选配-%' AND status = 'ACTIVE'")
+                    .getResultList();
+            List<UUID> ids = new ArrayList<>();
+            for (Object row : rows) ids.add(row instanceof UUID u ? u : UUID.fromString(row.toString()));
+            targets = new ArrayList<>(loadComponentsByIds(ids).values());
+        } else {
+            targets = new ArrayList<>(loadComponentsByIds(componentIds).values());
+        }
+        return targets;
+    }
+
+    /** {@link #promoteOverrideToComponent} 的 confirm=false 预览路径：零写入。 */
+    private Map<String, Object> buildPromotePreview(List<Component> targets) {
+        Set<UUID> allAffectedTemplateIds = new LinkedHashSet<>();
+        List<Map<String, Object>> targetSummaries = new ArrayList<>();
+        for (Component comp : targets) {
+            List<TemplateComponent> allTcs = TemplateComponent.list("componentId = ?1", comp.id);
+            Set<UUID> tids = allTcs.stream().map(tc -> tc.templateId).collect(Collectors.toCollection(LinkedHashSet::new));
+            allAffectedTemplateIds.addAll(tids);
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("componentId", comp.id.toString());
+            m.put("componentName", comp.name);
+            m.put("affectedTemplateCount", tids.size());
+            targetSummaries.add(m);
+        }
+        List<Map<String, Object>> affectedTemplates = new ArrayList<>();
+        for (UUID tid : allAffectedTemplateIds) {
+            Template t = Template.findById(tid);
+            if (t == null) continue;
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("templateId", t.id.toString());
+            m.put("name", t.name);
+            m.put("version", t.version);
+            m.put("status", t.status);
+            affectedTemplates.add(m);
+        }
+        long quotationCount = countQuotationsForTemplates(allAffectedTemplateIds);
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("preview", true);
+        out.put("targetComponents", targetSummaries);
+        out.put("affectedTemplates", affectedTemplates);
+        out.put("affectedTemplateCount", allAffectedTemplateIds.size());
+        out.put("affectedQuotationCount", quotationCount);
+        out.put("warning", "此操作将把 template_component.fields_override 上升为 component.fields，"
+                + "并强制重新对齐所有引用模板的冻结快照，破坏版本不可变性。受影响的在途报价单渲染结果可能变化。");
+        LOG.warnf("[admin-backdoor] promote-override-to-component 预览（未执行）：targetComponents=%d "
+                + "affectedTemplates=%d", targets.size(), allAffectedTemplateIds.size());
+        return out;
+    }
+
+    /** 公开包装，供 {@code ConfigCenterResource}（A5 预览）复用。 */
+    public long countQuotationsReferencingTemplates(Collection<UUID> templateIds) {
+        return countQuotationsForTemplates(templateIds);
+    }
+
+    /** 引用给定模板集合的报价单总数（一次 SQL，供 admin 后门预览用）。 */
+    private long countQuotationsForTemplates(Collection<UUID> templateIds) {
+        if (templateIds == null || templateIds.isEmpty()) return 0;
+        Number count = (Number) em.createNativeQuery(
+                "SELECT count(DISTINCT id) FROM quotation WHERE customer_template_id = ANY(:tids) "
+                        + "OR costing_card_template_id = ANY(:tids)")
+                .setParameter("tids", templateIds.toArray(new UUID[0]))
+                .getSingleResult();
+        return count != null ? count.longValue() : 0;
+    }
+
+    // ---- task-0806 B5：唯一写入点的落库 + 派生辅助（publish() / rebuildSnapshotForTemplate 共用） ----
+
+    /** 整单一次 IN 查预载组件（N+1 自检：调用方不得在循环里再各自查一次 Component.findById）。 */
+    private Map<UUID, Component> loadComponentsByIds(List<UUID> ids) {
+        if (ids == null || ids.isEmpty()) return Map.of();
+        List<Component> comps = Component.list("id IN ?1", ids);
+        Map<UUID, Component> map = new LinkedHashMap<>();
+        for (Component c : comps) map.put(c.id, c);
+        return map;
+    }
+
+    /**
+     * 唯一写入点：为该模板落 template_component_snapshot（先清后插，按 tc 逐行，不得按
+     * componentId 聚合——AP-40 教训）。{@code compById} 由调用方整单预载，本方法内部零查库。
+     *
+     * @return 已持久化的快照行，顺序与 {@code tcs}（已按 sortOrder 升序）一致
+     */
+    private List<TemplateComponentSnapshot> persistSnapshotRows(UUID templateId, List<TemplateComponent> tcs,
+                                                                  Map<UUID, Component> compById) {
+        TemplateComponentSnapshot.delete("templateId", templateId);
+        List<TemplateComponentSnapshot> rows = new ArrayList<>();
+        for (TemplateComponent tc : tcs) {
+            Component comp = compById.get(tc.componentId);
+            if (comp == null) continue;
+            TemplateComponentSnapshot s = buildSnapshotEntity(tc, comp);
+            s.persist();
+            rows.add(s);
+        }
+        return rows;
+    }
+
+    /** 组装一行快照实体（不持久化）——18 个渲染配置字段全冻（FR-1 + FR-4 补齐的 6 个）。 */
+    private TemplateComponentSnapshot buildSnapshotEntity(TemplateComponent tc, Component comp) {
+        TemplateComponentSnapshot s = new TemplateComponentSnapshot();
+        s.templateId = tc.templateId;
+        s.templateComponentId = tc.id;
+        s.componentId = comp.id;
+        s.sortOrder = tc.sortOrder;
+
+        s.tabName = tc.tabName;
+        s.presetRows = (tc.presetRows != null && !tc.presetRows.isBlank()) ? tc.presetRows : "[]";
+        s.formulaAssignments = (tc.formulaAssignments != null && !tc.formulaAssignments.isBlank())
+                ? tc.formulaAssignments : "{}";
+
+        s.componentName = comp.name;
+        s.componentCode = comp.code;
+        s.componentType = comp.componentType;
+        s.columnCount = comp.columnCount != null ? comp.columnCount : 0;
+        // V200: fields / data_driver_path 走 override 优先（与改造前 publish() 语义一致）
+        s.fields = (tc.fieldsOverride != null && !tc.fieldsOverride.isBlank()) ? tc.fieldsOverride : comp.fields;
+        s.formulas = comp.formulas;
+        s.excelColumns = comp.excelColumns;
+        s.dataDriverPath = (tc.dataDriverPathOverride != null && !tc.dataDriverPathOverride.isBlank())
+                ? tc.dataDriverPathOverride : comp.dataDriverPath;
+        s.treeConfig = (comp.treeConfig != null && !comp.treeConfig.isBlank()) ? comp.treeConfig : null;
+        s.bomRecursiveExpand = comp.bomRecursiveExpand != null ? comp.bomRecursiveExpand : false;
+        s.tabType = comp.tabType;
+        s.partNoField = comp.partNoField;
+        s.partNameField = comp.partNameField;
+        // ② 新补（FR-4）：component 级角色字段，无 tc 级 override 概念
+        s.rowKeyFields = comp.rowKeyFields;
+        s.sortField = comp.sortField;
+        s.elementCodeField = comp.elementCodeField;
+        s.elementPriceField = comp.elementPriceField;
+        s.elementCurrencyField = comp.elementCurrencyField;
+        return s;
+    }
+
+    /**
+     * components_snapshot jsonb 从 template_component_snapshot 派生（AC-2 硬门槛：键集合/
+     * 键顺序/值与改造前逐字段一致——18 个键，形状见改造前 publish() 的 entry 拼装）。
+     * {@code rows} 须已按 sortOrder 升序（{@link #persistSnapshotRows} 保证）。
+     */
+    private String deriveComponentsSnapshotJson(List<TemplateComponentSnapshot> rows) {
+        List<Map<String, Object>> snapshot = new ArrayList<>();
+        for (TemplateComponentSnapshot s : rows) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("id", s.templateComponentId.toString());
+            entry.put("componentId", s.componentId.toString());
+            entry.put("componentName", s.componentName);
+            entry.put("componentCode", s.componentCode);
+            entry.put("componentType", s.componentType);
+            entry.put("excelColumns", parseJsonArray(s.excelColumns));
+            entry.put("tabName", s.tabName);
+            entry.put("sortOrder", s.sortOrder);
+            entry.put("fields", parseJsonArray(s.fields));
+            entry.put("formulas", parseJsonArray(s.formulas));
+            entry.put("preset_rows", parseJsonArray(s.presetRows));
+            entry.put("data_driver_path", s.dataDriverPath);
+            entry.put("tree_config", (s.treeConfig != null && !s.treeConfig.isBlank())
+                    ? parseJsonObject(s.treeConfig) : null);
+            entry.put("formula_assignments", parseJsonObject(s.formulaAssignments));
+            entry.put("tab_type", s.tabType);
+            entry.put("part_no_field", s.partNoField);
+            entry.put("part_name_field", s.partNameField);
+            entry.put("bom_recursive_expand", s.bomRecursiveExpand);
+            snapshot.add(entry);
+        }
+        return toJson(snapshot);
+    }
+
+    /**
+     * B7 A5：把「已发布模板快照」强制重新对齐到当前活组件配置——即 D3 一次性迁移（V382）的
+     * 可重复版本。<b>明确破坏不可变性</b>，仅供 admin 后门 {@code confirm=true} 时调用，或
+     * {@link #promoteOverrideToComponent} 执行路径内部复用。
+     *
+     * <p><b>批量化</b>：3 条 SQL 语句（DELETE + INSERT...SELECT + jsonb 重生成 UPDATE），
+     * 按 {@code templateIds} 参数化，SQL 条数与模板数/组件数无关（AC-11 同款铁律）——不是循环
+     * 调用旧 {@code refreshSnapshotsByComponent} 那种 {@code O(N_template × N_component)}。
+     *
+     * @param templateIds null/空 → 全部 PUBLISHED + ARCHIVED 模板；否则先过滤出确实
+     *                    PUBLISHED/ARCHIVED 的子集（DRAFT 模板无快照可对齐，静默跳过）
+     */
+    @Transactional
+    public Map<String, Object> forceRealignSnapshots(List<UUID> templateIds) {
+        List<UUID> targets = resolveTargetTemplateIds(templateIds);
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (targets.isEmpty()) {
+            out.put("refreshedTemplates", 0);
+            out.put("refreshedRows", 0);
+            return out;
+        }
+        UUID[] tidArr = targets.toArray(new UUID[0]);
+
+        em.createNativeQuery("DELETE FROM template_component_snapshot WHERE template_id = ANY(:tids)")
+                .setParameter("tids", tidArr)
+                .executeUpdate();
+
+        int inserted = em.createNativeQuery(
+                "INSERT INTO template_component_snapshot (" +
+                "    template_id, template_component_id, component_id, sort_order," +
+                "    tab_name, preset_rows, formula_assignments," +
+                "    component_name, component_code, component_type, column_count," +
+                "    fields, formulas, excel_columns, data_driver_path," +
+                "    tree_config, bom_recursive_expand, tab_type, part_no_field, part_name_field," +
+                "    row_key_fields, sort_field," +
+                "    element_code_field, element_price_field, element_currency_field)" +
+                " SELECT tc.template_id, tc.id, tc.component_id, tc.sort_order," +
+                "        tc.tab_name," +
+                "        COALESCE(tc.preset_rows, '[]'::jsonb)," +
+                "        COALESCE(tc.formula_assignments, '{}'::jsonb)," +
+                "        c.name, c.code, c.component_type, c.column_count," +
+                "        COALESCE(tc.fields_override, c.fields)," +
+                "        c.formulas, c.excel_columns," +
+                "        COALESCE(NULLIF(tc.data_driver_path_override, ''), c.data_driver_path)," +
+                "        c.tree_config, c.bom_recursive_expand, c.tab_type, c.part_no_field, c.part_name_field," +
+                "        c.row_key_fields, c.sort_field," +
+                "        c.element_code_field, c.element_price_field, c.element_currency_field" +
+                "   FROM template_component tc" +
+                "   JOIN component c ON c.id = tc.component_id" +
+                "  WHERE tc.template_id = ANY(:tids)")
+                .setParameter("tids", tidArr)
+                .executeUpdate();
+
+        em.createNativeQuery(
+                "UPDATE template t SET components_snapshot = sub.snap, updated_at = now() FROM (" +
+                "  SELECT tcs.template_id, jsonb_agg(jsonb_build_object(" +
+                "    'id', tcs.template_component_id, 'componentId', tcs.component_id," +
+                "    'componentName', tcs.component_name, 'componentCode', tcs.component_code," +
+                "    'componentType', tcs.component_type, 'excelColumns', tcs.excel_columns," +
+                "    'tabName', tcs.tab_name, 'sortOrder', tcs.sort_order," +
+                "    'fields', tcs.fields, 'formulas', tcs.formulas, 'preset_rows', tcs.preset_rows," +
+                "    'data_driver_path', tcs.data_driver_path, 'tree_config', tcs.tree_config," +
+                "    'formula_assignments', tcs.formula_assignments, 'tab_type', tcs.tab_type," +
+                "    'part_no_field', tcs.part_no_field, 'part_name_field', tcs.part_name_field," +
+                "    'bom_recursive_expand', tcs.bom_recursive_expand" +
+                "  ) ORDER BY tcs.sort_order) AS snap" +
+                "  FROM template_component_snapshot tcs" +
+                " WHERE tcs.template_id = ANY(:tids)" +
+                " GROUP BY tcs.template_id" +
+                ") sub WHERE t.id = sub.template_id")
+                .setParameter("tids", tidArr)
+                .executeUpdate();
+
+        out.put("refreshedTemplates", targets.size());
+        out.put("refreshedRows", inserted);
+        LOG.warnf("[admin-backdoor] forceRealignSnapshots：已破坏模板不可变性。templateIds=%s rows=%d",
+                targets, inserted);
+        return out;
+    }
+
+    /**
+     * 公开包装：把请求的 templateId 集合过滤成确实 PUBLISHED/ARCHIVED 的子集
+     * （不传/空 → 全部 PUBLISHED+ARCHIVED）。供 {@code ConfigCenterResource}（A5 预览）复用，
+     * 避免与 {@link #forceRealignSnapshots} 内部同一条过滤 SQL 各写一份。
+     */
+    public List<UUID> resolvePublishedOrArchivedTemplateIds(List<UUID> requested) {
+        return resolveTargetTemplateIds(requested);
+    }
+
+    /**
+     * A5 confirm=true 执行路径的<b>唯一</b>入口：{@link #forceRealignSnapshots} 快照重写 +
+     * {@code operation_log} 审计写在同一个 {@code @Transactional} 方法内，保证「审计与写入
+     * 同生共死」（backtask.md §4：不许审计失败而写入成功）。
+     *
+     * <p>⚠️ 这条方法<b>必须</b>被外部（{@code ConfigCenterResource}）经注入代理跨 bean 调用
+     * ——CDI/Quarkus ArC 的 {@code @Transactional} 拦截器只在跨 bean 调用时生效，Resource 类
+     * 内部自调用（{@code this.xxx()}）会静默跳过拦截器，之前的实现（Resource 里一个
+     * {@code protected @Transactional execute()} 被同类 {@code this.execute()} 调用）就踩了
+     * 这个坑——快照重写和审计各自落在独立事务，审计失败时快照重写已提交，破坏了原子性。
+     */
+    @Transactional
+    public Map<String, Object> forceRealignSnapshotsWithAudit(List<UUID> templateIds, UUID operatorId) {
+        List<UUID> resolvedIds = resolveTargetTemplateIds(templateIds);
+        Map<String, Object> realign = forceRealignSnapshots(resolvedIds);
+
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("endpoint", "refresh-all-snapshots");
+        details.put("templateIds", resolvedIds.stream().map(UUID::toString).collect(Collectors.toList()));
+        details.put("refreshedRows", realign.get("refreshedRows"));
+        List<UUID> logIds = operationLogService.logBatch(operatorId, "TEMPLATE_SNAPSHOT_FORCE_REFRESH", "TEMPLATE",
+                resolvedIds, "强制重新对齐已发布模板快照：" + resolvedIds.size() + " 个模板", details);
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("refreshedTemplates", realign.get("refreshedTemplates"));
+        out.put("refreshedRows", realign.get("refreshedRows"));
+        out.put("operationLogIds", logIds.stream().map(UUID::toString).collect(Collectors.toList()));
+        return out;
+    }
+
+    /** 解析 forceRealignSnapshots 的目标模板：过滤出确实 PUBLISHED/ARCHIVED 的子集。 */
+    @SuppressWarnings("unchecked")
+    private List<UUID> resolveTargetTemplateIds(List<UUID> requested) {
+        List<Object> rows;
+        if (requested != null && !requested.isEmpty()) {
+            rows = em.createNativeQuery(
+                    "SELECT id FROM template WHERE id = ANY(:ids) AND status IN ('PUBLISHED','ARCHIVED')")
+                    .setParameter("ids", requested.toArray(new UUID[0]))
+                    .getResultList();
+        } else {
+            rows = em.createNativeQuery(
+                    "SELECT id FROM template WHERE status IN ('PUBLISHED','ARCHIVED')")
+                    .getResultList();
+        }
+        List<UUID> out = new ArrayList<>();
+        for (Object o : rows) out.add(o instanceof UUID u ? u : UUID.fromString(o.toString()));
+        return out;
+    }
+
+    // ---- task-0806 B22-b：批量「首次冻结」（POST /templates/admin/freeze-unfrozen） ----
+    //
+    // 与 forceRealignSnapshots（B7 admin 后门）刻意保持独立实现，不复用：forceRealignSnapshots
+    // 的目标集合可以是任意 PUBLISHED/ARCHIVED 模板（含已有快照的），语义是"明确破坏不可变性"，
+    // 落库后打 LOG.warn「已破坏不可变性」。本组方法的目标集合恒由 findUnfrozenTemplateIds()
+    // 筛出的"零快照行"模板构成——delete 部分恒删 0 行、insert 恒是从无到有，结构上不可能覆盖
+    // 已有快照，不是破坏，是补冻，日志语义必须区分（不打「已破坏不可变性」）。
+
+    /**
+     * 找出所有零快照行的 PUBLISHED/ARCHIVED 模板 id（一次 SQL，N+1 安全——SQL 条数与模板数
+     * 无关）。供 {@link #previewFreezeUnfrozen} 与 {@link #freezeAllUnfrozen} 共用。
+     */
+    @SuppressWarnings("unchecked")
+    private List<UUID> findUnfrozenTemplateIds() {
+        List<Object> rows = em.createNativeQuery(
+                "SELECT t.id FROM template t WHERE t.status IN ('PUBLISHED','ARCHIVED') "
+                + "AND NOT EXISTS (SELECT 1 FROM template_component_snapshot s WHERE s.template_id = t.id) "
+                + "ORDER BY t.published_at DESC NULLS LAST")
+                .getResultList();
+        List<UUID> out = new ArrayList<>();
+        for (Object o : rows) out.add(o instanceof UUID u ? u : UUID.fromString(o.toString()));
+        return out;
+    }
+
+    /**
+     * {@code confirm=false}：仅预览待冻清单，零写入。批量化取模板信息 + 页签数（各一次 IN 查询，
+     * 与目标模板数无关），不在循环里逐个查库。
+     */
+    public Map<String, Object> previewFreezeUnfrozen() {
+        List<UUID> targets = findUnfrozenTemplateIds();
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (targets.isEmpty()) {
+            out.put("preview", true);
+            out.put("templates", List.of());
+            out.put("templateCount", 0);
+            out.put("quotationCount", 0L);
+            return out;
+        }
+
+        Map<UUID, Template> byId = new LinkedHashMap<>();
+        for (Template t : Template.<Template>list("id in ?1", targets)) byId.put(t.id, t);
+        Map<UUID, Long> tabCounts = new LinkedHashMap<>();
+        for (TemplateComponent tc : TemplateComponent.<TemplateComponent>list("templateId in ?1", targets)) {
+            tabCounts.merge(tc.templateId, 1L, Long::sum);
+        }
+
+        List<Map<String, Object>> templates = new ArrayList<>();
+        for (UUID tid : targets) {
+            Template t = byId.get(tid);
+            if (t == null) continue;
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("templateId", t.id.toString());
+            m.put("name", t.name);
+            m.put("version", t.version);
+            m.put("status", t.status);
+            m.put("tabCount", tabCounts.getOrDefault(tid, 0L));
+            templates.add(m);
+        }
+        long quotationCount = countQuotationsForTemplates(targets);
+
+        out.put("preview", true);
+        out.put("templates", templates);
+        out.put("templateCount", targets.size());
+        out.put("quotationCount", quotationCount);
+        return out;
+    }
+
+    /**
+     * {@code confirm=true}：批量执行首次冻结。目标集合恒为 {@link #findUnfrozenTemplateIds}
+     * 筛出的零快照行模板，写入委派 {@link #executeInitialFreezeBatch}（3 条参数化 SQL，条数与
+     * 模板数无关），随后按受影响模板各写一行 {@code operation_log} 审计
+     * （{@code operation_type='TEMPLATE_INITIAL_FREEZE'}）。
+     */
+    @Transactional
+    public Map<String, Object> freezeAllUnfrozen(UUID operatorId) {
+        List<UUID> targets = findUnfrozenTemplateIds();
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (targets.isEmpty()) {
+            out.put("preview", false);
+            out.put("frozenTemplates", 0);
+            out.put("frozenRows", 0);
+            out.put("operationLogIds", List.of());
+            return out;
+        }
+
+        Map<String, Object> result = executeInitialFreezeBatch(targets);
+
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("endpoint", "freeze-unfrozen");
+        details.put("templateIds", targets.stream().map(UUID::toString).collect(Collectors.toList()));
+        details.put("frozenRows", result.get("frozenRows"));
+        List<UUID> logIds = operationLogService.logBatch(operatorId, "TEMPLATE_INITIAL_FREEZE", "TEMPLATE",
+                targets, "批量首次冻结：" + targets.size() + " 个模板", details);
+
+        out.put("preview", false);
+        out.put("frozenTemplates", result.get("frozenTemplates"));
+        out.put("frozenRows", result.get("frozenRows"));
+        out.put("operationLogIds", logIds.stream().map(UUID::toString).collect(Collectors.toList()));
+        // 不打「破坏不可变性」的 WARN——目标集合恒为零快照行模板，是补冻不是覆盖，INFO 即可。
+        LOG.infof("[task-0806 B22-b] freeze-unfrozen 已执行：首次冻结 %d 个模板（零快照行→非破坏性），rows=%s",
+                targets.size(), result.get("frozenRows"));
+        return out;
+    }
+
+    /**
+     * {@link #freezeAllUnfrozen} 的批量写入实现。SQL 结构与 {@link #forceRealignSnapshots} 内部
+     * 一致（DELETE + INSERT...SELECT + jsonb 重生成 UPDATE，均按 {@code targets} 参数化，条数与
+     * 模板数无关），但独立实现——两者语义不同（本方法目标恒零快照行，delete 恒删 0 行；
+     * forceRealignSnapshots 目标可以是已有快照的模板，delete 会真删已有行），日志语义不能共用。
+     */
+    private Map<String, Object> executeInitialFreezeBatch(List<UUID> targets) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        UUID[] tidArr = targets.toArray(new UUID[0]);
+
+        // 目标集合恒为零快照行（findUnfrozenTemplateIds 保证），此 DELETE 恒删 0 行；保留只是
+        // 为了与 persistSnapshotRows「先清后插」的幂等写法保持一致，不因此改变零行守卫的语义。
+        em.createNativeQuery("DELETE FROM template_component_snapshot WHERE template_id = ANY(:tids)")
+                .setParameter("tids", tidArr)
+                .executeUpdate();
+
+        int inserted = em.createNativeQuery(
+                "INSERT INTO template_component_snapshot (" +
+                "    template_id, template_component_id, component_id, sort_order," +
+                "    tab_name, preset_rows, formula_assignments," +
+                "    component_name, component_code, component_type, column_count," +
+                "    fields, formulas, excel_columns, data_driver_path," +
+                "    tree_config, bom_recursive_expand, tab_type, part_no_field, part_name_field," +
+                "    row_key_fields, sort_field," +
+                "    element_code_field, element_price_field, element_currency_field)" +
+                " SELECT tc.template_id, tc.id, tc.component_id, tc.sort_order," +
+                "        tc.tab_name," +
+                "        COALESCE(tc.preset_rows, '[]'::jsonb)," +
+                "        COALESCE(tc.formula_assignments, '{}'::jsonb)," +
+                "        c.name, c.code, c.component_type, c.column_count," +
+                "        COALESCE(tc.fields_override, c.fields)," +
+                "        c.formulas, c.excel_columns," +
+                "        COALESCE(NULLIF(tc.data_driver_path_override, ''), c.data_driver_path)," +
+                "        c.tree_config, c.bom_recursive_expand, c.tab_type, c.part_no_field, c.part_name_field," +
+                "        c.row_key_fields, c.sort_field," +
+                "        c.element_code_field, c.element_price_field, c.element_currency_field" +
+                "   FROM template_component tc" +
+                "   JOIN component c ON c.id = tc.component_id" +
+                "  WHERE tc.template_id = ANY(:tids)")
+                .setParameter("tids", tidArr)
+                .executeUpdate();
+
+        em.createNativeQuery(
+                "UPDATE template t SET components_snapshot = sub.snap, updated_at = now() FROM (" +
+                "  SELECT tcs.template_id, jsonb_agg(jsonb_build_object(" +
+                "    'id', tcs.template_component_id, 'componentId', tcs.component_id," +
+                "    'componentName', tcs.component_name, 'componentCode', tcs.component_code," +
+                "    'componentType', tcs.component_type, 'excelColumns', tcs.excel_columns," +
+                "    'tabName', tcs.tab_name, 'sortOrder', tcs.sort_order," +
+                "    'fields', tcs.fields, 'formulas', tcs.formulas, 'preset_rows', tcs.preset_rows," +
+                "    'data_driver_path', tcs.data_driver_path, 'tree_config', tcs.tree_config," +
+                "    'formula_assignments', tcs.formula_assignments, 'tab_type', tcs.tab_type," +
+                "    'part_no_field', tcs.part_no_field, 'part_name_field', tcs.part_name_field," +
+                "    'bom_recursive_expand', tcs.bom_recursive_expand" +
+                "  ) ORDER BY tcs.sort_order) AS snap" +
+                "  FROM template_component_snapshot tcs" +
+                " WHERE tcs.template_id = ANY(:tids)" +
+                " GROUP BY tcs.template_id" +
+                ") sub WHERE t.id = sub.template_id")
+                .setParameter("tids", tidArr)
+                .executeUpdate();
+
+        out.put("frozenTemplates", targets.size());
+        out.put("frozenRows", inserted);
+        return out;
     }
 
     // ---- Private helpers ----

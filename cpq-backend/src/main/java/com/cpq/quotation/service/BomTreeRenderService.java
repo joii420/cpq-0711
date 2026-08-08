@@ -5,10 +5,14 @@ import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.entity.CostingBomTreeConfig;
 import com.cpq.component.service.ComponentDriverService;
 import com.cpq.datasource.sqlview.BomTreeVarsContext;
+import com.cpq.datasource.sqlview.TemplateRenderScope;
 import com.cpq.datasource.sqlview.VersionFilterMacro;
 import com.cpq.formula.dataloader.QuotationIdContext;
 import com.cpq.quotation.entity.Quotation;
 import com.cpq.quotation.entity.QuotationLineItem;
+import com.cpq.template.entity.Template;
+import com.cpq.template.entity.TemplateComponentSnapshot;
+import com.cpq.template.service.PublishedTemplateReader;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -71,6 +75,9 @@ public class BomTreeRenderService {
 
     @Inject
     ComponentDriverService componentDriverService;
+
+    @Inject
+    PublishedTemplateReader publishedTemplateReader;
 
     /**
      * task-0721 B3/B4/B6/B7 单一收口点（2026-07-21 业务方裁决 Q1）：判定某组件是否为
@@ -142,20 +149,28 @@ public class BomTreeRenderService {
         if (lineItems == null || lineItems.isEmpty()) {
             return new LinkedHashMap<>();
         }
-        UUID ctxQuotationId = lineItems.get(0).quotationId;
-        if (ctxQuotationId == null) {
-            return renderInternal(templateId, lineItems, overridesByComponent, usage);
-        }
-        UUID prevQuotationId = QuotationIdContext.get();
-        QuotationIdContext.set(ctxQuotationId);
+        // task-0806 B17-a：模板渲染域，覆盖下方 renderInternal 内 componentDriverService.expandUncached
+        // 调用点，让 ComponentDriverService.setNested 能拿到真实 templateId（原恒传 null）。本方法是
+        // BOM 树渲染唯一入口，templateId 就是其显式参数，故直接在此包一层，renderInternal 本身无需改动。
+        UUID prevTemplateId = TemplateRenderScope.open(templateId);
         try {
-            return renderInternal(templateId, lineItems, overridesByComponent, usage);
-        } finally {
-            if (prevQuotationId != null) {
-                QuotationIdContext.set(prevQuotationId);   // 恢复外层，而不是清空
-            } else {
-                QuotationIdContext.clear();
+            UUID ctxQuotationId = lineItems.get(0).quotationId;
+            if (ctxQuotationId == null) {
+                return renderInternal(templateId, lineItems, overridesByComponent, usage);
             }
+            UUID prevQuotationId = QuotationIdContext.get();
+            QuotationIdContext.set(ctxQuotationId);
+            try {
+                return renderInternal(templateId, lineItems, overridesByComponent, usage);
+            } finally {
+                if (prevQuotationId != null) {
+                    QuotationIdContext.set(prevQuotationId);   // 恢复外层，而不是清空
+                } else {
+                    QuotationIdContext.clear();
+                }
+            }
+        } finally {
+            TemplateRenderScope.restore(prevTemplateId);
         }
     }
 
@@ -198,14 +213,38 @@ public class BomTreeRenderService {
         }
 
         // ②-pre 模板 driver 组件清单（提前到递归查询之前，供「主树」组件 override 查找 + §④ 复用，
-        // 避免重复查询）。照抄 CardSnapshotService#expandTemplateDriverBaseRows 的既有查询。
-        @SuppressWarnings("unchecked")
-        List<Object[]> driverComps = em.createNativeQuery(
-                        "SELECT DISTINCT c.id, c.bom_recursive_expand FROM template_component tc " +
-                                "JOIN component c ON c.id = tc.component_id " +
-                                "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
-                .setParameter("tid", templateId)
-                .getResultList();
+        // 避免重复查询）。
+        // task-0806 B18：原实现「照抄 CardSnapshotService#expandTemplateDriverBaseRows 的既有查询」
+        // 与 FR-5 已收口的 5 处同形，却漏列在清单里（B17 排查时发现）。改为与
+        // ConfigureSnapshotService#loadDriverComponents 同款分支写法：PUBLISHED/ARCHIVED 走
+        // PublishedTemplateReader 冻结快照，DRAFT（或模板查不到）保留活表查询（§5.1.2 冻结边界，
+        // DRAFT 不写快照）。结果统一适配回 Object[]{componentId, bomRecursiveExpand} 形状，
+        // 使下方 §④ 复用同一 driverComps 的逻辑零改动。
+        Template _bt18Tpl = Template.findById(templateId);
+        String _bt18Status = (_bt18Tpl != null) ? _bt18Tpl.status : null;
+        List<Object[]> driverComps;
+        if ("PUBLISHED".equals(_bt18Status) || "ARCHIVED".equals(_bt18Status)) {
+            List<Object[]> viaReader = new ArrayList<>();
+            Set<UUID> seenDriverIds = new HashSet<>();   // 与旧 SQL 的 DISTINCT c.id 同语义
+            for (TemplateComponentSnapshot s : publishedTemplateReader.driverCompsOf(templateId)) {
+                if (!seenDriverIds.add(s.componentId)) continue;
+                viaReader.add(new Object[]{s.componentId, s.bomRecursiveExpand});
+            }
+            driverComps = viaReader;
+            LOG.debugf("[task-0806 B18] driverComps via PublishedTemplateReader templateId=%s status=%s count=%d",
+                    templateId, _bt18Status, driverComps.size());
+        } else {
+            @SuppressWarnings("unchecked")
+            List<Object[]> viaActiveTable = em.createNativeQuery(
+                            "SELECT DISTINCT c.id, c.bom_recursive_expand FROM template_component tc " +
+                                    "JOIN component c ON c.id = tc.component_id " +
+                                    "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
+                    .setParameter("tid", templateId)
+                    .getResultList();
+            driverComps = viaActiveTable;
+            LOG.debugf("[task-0806 B18] driverComps via activeTable(DRAFT) templateId=%s status=%s count=%d",
+                    templateId, _bt18Status, driverComps.size());
+        }
         UUID treeComponentId = null;
         for (Object[] dc : driverComps) {
             if (dc != null && dc[0] != null && (dc[1] instanceof Boolean b) && b) {

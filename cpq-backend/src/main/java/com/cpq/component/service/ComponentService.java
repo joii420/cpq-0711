@@ -8,7 +8,6 @@ import com.cpq.component.entity.ComponentSqlView;
 import com.cpq.component.formula.TokenMappabilityValidator;
 import com.cpq.component.repository.ComponentSqlViewRepository;
 import com.cpq.quotation.service.BomTreeRenderService;
-import com.cpq.template.service.TemplateService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -449,8 +448,8 @@ public class ComponentService {
     @Inject
     EntityManager em;
 
-    @Inject
-    TemplateService templateService;
+    // task-0806 B6：TemplateService 注入随 refreshSnapshotsByComponent（H1）整体退役一并移除
+    // ——ComponentService 不再触碰任何模板 snapshot。
 
     @Inject
     ComponentSqlViewRepository sqlViewRepository;
@@ -727,18 +726,11 @@ public class ComponentService {
 
         LOG.infof("Updated component id=%s code=%s", id, component.code);
 
-        // H1: 自动同步引用该组件的所有模板 snapshot — 配置中心原则:
-        // 组件配置是真理源, snapshot 是缓存视图. 配置变更必须对所有引用方立即生效,
-        // 避免 V184/V185/V187 那种手工 DO $$ 循环刷 snapshot 的反复工作.
-        try {
-            List<UUID> affected = templateService.refreshSnapshotsByComponent(id);
-            if (!affected.isEmpty()) {
-                LOG.infof("[H1 auto-sync] componentId=%s synced %d template snapshots", id, affected.size());
-            }
-        } catch (Exception e) {
-            // snapshot 同步失败不阻断组件保存; 仅记录警告 (用户可手工调 refresh 端点重试)
-            LOG.warnf("[H1 auto-sync] failed for componentId=%s: %s", id, e.getMessage());
-        }
+        // task-0806 B6：H1 自动同步（refreshSnapshotsByComponent）整体退役。
+        // 旧注释「组件配置是真理源, snapshot 是缓存视图」正是本任务要推翻的架构漂移——
+        // 已发布模板的 snapshot 必须在 publish() 时一次性冻结、此后不可变（见
+        // docs/三大核心模块基线.md §3.2 + dev-docs/task-0806-模板发布全量冻结/需求文档.md）。
+        // 保存组件不再触碰任何已发布模板的快照；想让新配置生效，只能 createNewDraft → 改 → publish。
 
         // Bug3 源→副本同步：EXCEL 源组件保存后，把 excelColumns(含 TAB_JOIN 列的 expression/tabs)
         // 刷到所有导入副本。副本无显式外键，靠 code 的 __impN 后缀 + 同 base 识别(与
@@ -788,13 +780,8 @@ public class ComponentService {
         // 行键校验（软校验，违规只告警不阻断，与 update() 一致）
         validateRowKeyConfig(component.dataDriverPath, component.fields, component.rowKeyFields, false);
 
-        // 配置中心原则：driver 变更后同步所有引用该组件的模板 snapshot
-        try {
-            templateService.refreshSnapshotsByComponent(componentId);
-        } catch (Exception e) {
-            LOG.warnf("[driver-view] snapshot refresh failed componentId=%s: %s",
-                    componentId, e.getMessage());
-        }
+        // task-0806 B6：H1 自动同步（refreshSnapshotsByComponent）整体退役——driver 变更不再
+        // 触碰任何已发布模板的快照，同 update() 上方的说明。
         return ComponentDTO.from(component);
     }
 
