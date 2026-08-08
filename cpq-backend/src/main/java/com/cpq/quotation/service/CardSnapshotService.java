@@ -1236,7 +1236,7 @@ public class CardSnapshotService {
         /**
          * F1(方案 B)：componentId(字符串) → rowKeyFields 已解析节点。整单一次 IN 查替代 assemble 内
          * 每行每组件 {@code SELECT row_key_fields ...}（2550→1）。值用 {@link com.fasterxml.jackson.databind.node.NullNode}
-         * 哨兵表示"已查、row_key_fields 为 null"(与 {@code loadRowKeyFieldsNode} 返回 null 逐位等价),
+         * 哨兵表示"已查、row_key_fields 为 null"(与 {@link #rowKeyFieldsMapFromScope()} 缺该 key 逐位等价),
          * 故 key 缺失=未预取→回落逐行查,key 存在但值=NullNode→该组件无行键(不再查库)。
          */
         final Map<String, JsonNode> rowKeyFieldsByComp;
@@ -1325,10 +1325,22 @@ public class CardSnapshotService {
     }
 
     /**
-     * F1(方案 B)：从已解析的模板 snapshot 收集全部 distinct componentId，整单一次
-     * {@code SELECT id, row_key_fields FROM component WHERE id IN(...)}，逐位复刻
-     * {@link #loadRowKeyFieldsNode} 的解析口径填入 {@code rkfByComp}（null/空/解析失败 → NullNode 哨兵）。
-     * 失败整体降级（map 留空 → assemble 回落逐行查），不影响正确性。
+     * F1(方案 B)：整单一次经 {@link com.cpq.template.service.PublishedTemplateReader} 取两份模板
+     * （{@code tplById} 的 key 即 {@code q.customerTemplateId}/{@code q.costingCardTemplateId}，至多 2 个）
+     * 的全部冻结页签，按 componentId 落 {@code rkfByComp}（null/空/解析失败 → NullNode 哨兵）。
+     *
+     * <p>task-0806 B19：改走冻结快照，不再直读活 {@code component} 表（原
+     * {@code SELECT id, row_key_fields FROM component WHERE id IN(...)}）。SQL 条数仍恒为
+     * O(模板数)（≤2），与行数/组件数无关。
+     *
+     * <p>⚠️ 已知限度：若同一 componentId 同时被 {@code customerTemplateId} 与
+     * {@code costingCardTemplateId} 两个模板引用，且两模板冻结时 {@code rowKeyFields} 恰好不同
+     * （task-0806 版本漂移场景），本方法按模板遍历顺序后写覆盖先写——与旧实现（活表只有一行,
+     * 天然无歧义）相比存在理论上的二义性；报价/核价两侧目前观察到的组件集合不重叠，暂未发现
+     * 实际冲突（B19 验证已查库确认），后续如需彻底消除应改为按
+     * {@code (templateId, componentId)} 复合键存储。
+     *
+     * <p>失败整体降级（map 留空 → assemble 回落逐行查），不影响正确性。
      */
     private void prefetchRowKeyFields(Map<UUID, JsonNode> tplById, Map<String, JsonNode> rkfByComp) {
         // kill switch: cpq.firstsave-rkf-prefetch(默认 true)。off → map 留空 → assemble 回落逐行查(1:1 旧行为)。
@@ -1336,39 +1348,25 @@ public class CardSnapshotService {
             System.getProperty("cpq.firstsave-rkf-prefetch",
                 System.getenv().getOrDefault("CPQ_FIRSTSAVE_RKF_PREFETCH", "true")));
         if (!enabled) return;
+        if (tplById.isEmpty()) return;
         try {
-            java.util.Set<UUID> compIds = new java.util.LinkedHashSet<>();
-            for (JsonNode snap : tplById.values()) {
-                if (snap == null || !snap.isArray()) continue;
-                for (JsonNode tab : snap) {
-                    String cid = tab.path("componentId").asText("");
-                    if (!cid.isBlank()) {
-                        try { compIds.add(UUID.fromString(cid)); } catch (Exception ignore) { /* 非法 id 跳过 */ }
-                    }
-                }
-            }
-            if (compIds.isEmpty()) return;
-            @SuppressWarnings("unchecked")
-            List<Object[]> rows = em.createNativeQuery(
-                "SELECT id, row_key_fields FROM component WHERE id IN (:ids)")
-                .setParameter("ids", new ArrayList<>(compIds))
-                .getResultList();
             JsonNode nullSentinel = com.fasterxml.jackson.databind.node.NullNode.getInstance();
-            for (Object[] r : rows) {
-                if (r[0] == null) continue;
-                String cid = r[0].toString();
-                // 逐位复刻 loadRowKeyFieldsNode：cell null/blank → null；否则 readTree，失败 → null。
-                JsonNode node = nullSentinel;
-                if (r[1] != null) {
-                    String json = r[1].toString();
-                    if (!json.isBlank()) {
+            Map<UUID, List<com.cpq.template.entity.TemplateComponentSnapshot>> byTpl =
+                publishedTemplateReader.allTabsOfMany(tplById.keySet());
+            for (List<com.cpq.template.entity.TemplateComponentSnapshot> tabs : byTpl.values()) {
+                for (com.cpq.template.entity.TemplateComponentSnapshot s : tabs) {
+                    if (s.componentId == null) continue;
+                    String cid = s.componentId.toString();
+                    // 逐位复刻旧 loadRowKeyFieldsNode 口径：cell null/blank → null；否则 readTree，失败 → null。
+                    JsonNode node = nullSentinel;
+                    if (s.rowKeyFields != null && !s.rowKeyFields.isBlank()) {
                         try {
-                            JsonNode parsed = MAPPER.readTree(json);
+                            JsonNode parsed = MAPPER.readTree(s.rowKeyFields);
                             if (parsed != null) node = parsed;
-                        } catch (Exception ignore) { /* 解析失败 → null 哨兵(同 loadRowKeyFieldsNode catch) */ }
+                        } catch (Exception ignore) { /* 解析失败 → null 哨兵(同旧实现 catch 口径) */ }
                     }
+                    rkfByComp.put(cid, node);
                 }
-                rkfByComp.put(cid, node);
             }
         } catch (Exception e) {
             LOG.warnf("[card-snapshot] prefetchRowKeyFields failed: %s（已降级,回落逐行查）", e.getMessage());
@@ -1973,8 +1971,8 @@ public class CardSnapshotService {
 
     /**
      * 六参重载（F1/方案 B：rowKeyFields 整单预取）：{@code rkfPrefetch} 非空时,组件行键从预取内存读
-     * （key 缺失→回落逐行 {@code loadRowKeyFieldsNode}；值=NullNode 哨兵→该组件无行键,不查库）。
-     * {@code rkfPrefetch=null} 时全程逐行查,与改造前逐位一致(零破坏 + kill switch)。
+     * （key 缺失→回落 {@link #rowKeyFieldsMapFromScope()}；值=NullNode 哨兵→该组件无行键,不查库）。
+     * {@code rkfPrefetch=null} 时全程走 {@link #rowKeyFieldsMapFromScope()}（task-0806 B19 起不再直读活表）。
      * 六参签名零破坏：delegate 到七参（productAttributesCtx=null → 空 map，行为不变）。
      */
     private ObjectNode assembleTabsWithFormulaResults(JsonNode snapshot, Map<String, ArrayNode> baseRowsByComp,
@@ -2037,14 +2035,24 @@ public class CardSnapshotService {
         final FormulaCalculator.RowCache rowCache = formulaCalculator.newRowCache();
 
         final ArrayNode emptyEdit = MAPPER.createArrayNode();
-        // rowKeyFields 缓存（每组件一次）。F1：优先读整单预取(命中=0 往返);未命中或无预取→回落逐行查(零破坏)。
+        // rowKeyFields 缓存（每组件一次）。F1：优先读整单预取(命中=0 往返);未命中或无预取→回落
+        // rowKeyFieldsMapFromScope()（task-0806 B19：整模板一次经 PublishedTemplateReader 冻结快照取，
+        // 不再逐组件查活 component 表）。懒加载：全部命中 rkfPrefetch 时 rkfScopeFallback 永不计算。
         Map<String, JsonNode> rkfByComp = new LinkedHashMap<>();
+        Map<String, JsonNode> rkfScopeFallback = null;
         for (JsonNode tab : snapshot) {
             String cid = tab.path("componentId").asText("");
             if (!rkfByComp.containsKey(cid)) {
                 JsonNode hit = (rkfPrefetch != null) ? rkfPrefetch.get(cid) : null;
-                // hit 存在：NullNode 哨兵→null(无行键)；真实节点→用之。hit 缺失(null)→回落逐行查。
-                JsonNode rkf = (hit != null) ? (hit.isNull() ? null : hit) : loadRowKeyFieldsNode(cid);
+                JsonNode rkf;
+                if (hit != null) {
+                    // hit 存在：NullNode 哨兵→null(无行键)；真实节点→用之。
+                    rkf = hit.isNull() ? null : hit;
+                } else {
+                    // hit 缺失→回落模板域快照（首次未命中才查，同一 assemble 调用内只查一次）。
+                    if (rkfScopeFallback == null) rkfScopeFallback = rowKeyFieldsMapFromScope();
+                    rkf = rkfScopeFallback.get(cid);
+                }
                 rkfByComp.put(cid, rkf);
             }
         }
@@ -3063,6 +3071,10 @@ public class CardSnapshotService {
             Quotation q = Quotation.findById(managed.quotationId);
             if (q == null || q.customerTemplateId == null) return;
 
+            // task-0806 B19：模板渲染域，覆盖下方 mergeRowDataInputsIntoEdits / assembleTabsWithFormulaResults
+            // 内部对 rowKeyFields 冻结快照的取值（rowKeyFieldsMapFromScope() 读 TemplateRenderScope.currentTemplateId()）。
+            UUID _tplPrev = TemplateRenderScope.open(q.customerTemplateId);
+            try {
             // task-0725 T3-P2：报价侧 pending 可见域，包住下方 expandFlatDriverBaseRows（:2124）。
             // 覆盖「刷新基础数据」按钮入口（refreshDraftQuoteCards → 本方法 force=true）。
             // status 从 q.status 取；open() 内建冻结判定，非 DRAFT 时 pendingOwner()=null（AC-10）。
@@ -3130,6 +3142,9 @@ public class CardSnapshotService {
                 // 核价两列：物理不参与本次 UPDATE
             } finally {
                 QuotePendingScope.restore(_pqPrev);
+            }
+            } finally {
+                TemplateRenderScope.restore(_tplPrev);
             }
         } catch (Exception e) {
             LOG.warnf("[card-snapshot] refreshQuoteCardValues failed li=%s: %s", li.id, e.getMessage());
@@ -3205,6 +3220,10 @@ public class CardSnapshotService {
             if (q == null || q.customerTemplateId == null) return null;
             if (!"DRAFT".equals(q.status)) return null; // 仅草稿态可编辑
 
+            // task-0806 B19：模板渲染域，覆盖下方 materializeWholeLineRowData / assembleTabsWithFormulaResults
+            // 内部对 rowKeyFields 冻结快照的取值。
+            UUID _tplPrev = TemplateRenderScope.open(q.customerTemplateId);
+            try {
             JsonNode snapshot = loadQuoteTabsForValues(q.id, q.customerTemplateId);
             if (snapshot == null) return null;
 
@@ -3277,6 +3296,9 @@ public class CardSnapshotService {
             resp.put("quoteExcelValues", liManaged.quoteExcelValues);
             resp.put("quoteValuesAt", liManaged.quoteValuesAt != null ? liManaged.quoteValuesAt.toString() : null);
             return resp;
+            } finally {
+                TemplateRenderScope.restore(_tplPrev);
+            }
         } catch (Exception e) {
             LOG.warnf("[card-snapshot] editCardValue failed li=%s comp=%s rowKey=%s field=%s: %s",
                 lineItemId, componentId, rowKey, fieldName, e.getMessage());
@@ -3354,6 +3376,11 @@ public class CardSnapshotService {
             if (li == null) return null;
             Quotation q = Quotation.findById(li.quotationId);
             if (q == null || q.customerTemplateId == null || !"DRAFT".equals(q.status)) return null;
+
+            // task-0806 B19：模板渲染域，覆盖下方 mergeRowDataInputsIntoEdits / materializeWholeLineRowData /
+            // assembleTabsWithFormulaResults 内部对 rowKeyFields 冻结快照的取值。
+            UUID _tplPrev = TemplateRenderScope.open(q.customerTemplateId);
+            try {
             JsonNode snapshot = loadQuoteTabsForValues(q.id, q.customerTemplateId);
             if (snapshot == null) return null;
 
@@ -3423,6 +3450,9 @@ public class CardSnapshotService {
             }
             resp.put("componentData", comps);
             return resp;
+            } finally {
+                TemplateRenderScope.restore(_tplPrev);
+            }
         } catch (Exception e) {
             LOG.warnf("[card-snapshot] materializeAndProject(rebuild=%s) failed li=%s: %s",
                 rebuildQuoteCardValues, lineItemId, e.getMessage());
@@ -3439,8 +3469,9 @@ public class CardSnapshotService {
      * 组件拓扑序 + 跨组件 crossTabRows/componentSubtotals 累积），仅额外透传本次编辑产生的
      * editRows / 各组件行键 / 墓碑。每组件经 {@link ConfigureSnapshotService#writeRowData}（REQUIRES_NEW UPSERT）落库。
      *
-     * <p><b>行键来源（AP-54 对齐）</b>：各组件 rowKeyFields 取自 {@link #loadRowKeyFieldsNode}（读 component 表），
-     * 与 {@link #loadComponentsSnapshot} 冻进 tab 的行键同源，故 effKey 口径与卡片重算一致。
+     * <p><b>行键来源（AP-54 对齐）</b>：各组件 rowKeyFields 取自 {@link #rowKeyFieldsMapFromScope()}
+     * （task-0806 B19 起改走冻结快照），与 {@link #loadComponentsSnapshot} 冻进 tab 的行键同源，
+     * 故 effKey 口径与卡片重算一致。
      *
      * <p><b>降级纪律</b>：整体异常被吞并记 warn，绝不让 row_data 同步失败回滚整次卡片编辑
      * （与 ConfigureSnapshotService 全程降级一致）；单组件物化/写库失败在 materializeLineRowData 内逐组件降级。
@@ -3457,6 +3488,10 @@ public class CardSnapshotService {
             if (li == null || snapshot == null || baseRowsByComp == null || baseRowsByComp.isEmpty()) return;
 
             // String 键 → UUID 键转换 + 各组件行键加载（与 loadComponentsSnapshot 冻进 tab 的 row_key_fields 同源）。
+            // task-0806 B19：rowKeyFieldsMapFromScope() 整模板一次经 PublishedTemplateReader 取
+            // （TemplateRenderScope 由调用方——editCardValue/materializeAndProject——已 open），
+            // 不再对每个组件各查一次活 component 表。
+            Map<String, JsonNode> rkfMap = rowKeyFieldsMapFromScope();
             Map<UUID, JsonNode> baseByComp = new LinkedHashMap<>();
             Map<UUID, JsonNode> editsByComp = new LinkedHashMap<>();
             Map<UUID, JsonNode> rkfByComp = new LinkedHashMap<>();
@@ -3467,7 +3502,7 @@ public class CardSnapshotService {
                 baseByComp.put(cid, e.getValue());
                 ArrayNode er = editRowsByComp != null ? editRowsByComp.get(e.getKey()) : null;
                 if (er != null) editsByComp.put(cid, er);
-                JsonNode rkf = loadRowKeyFieldsNode(e.getKey());
+                JsonNode rkf = rkfMap.get(e.getKey());
                 if (rkf != null) rkfByComp.put(cid, rkf);
                 List<DeletedRowKeys.Tombstone> ts = delByComp != null ? delByComp.get(e.getKey()) : null;
                 if (ts != null) tombsByComp.put(cid, ts);
@@ -3481,14 +3516,38 @@ public class CardSnapshotService {
         }
     }
 
-    private JsonNode loadRowKeyFieldsNode(String componentId) {
-        String json = loadRowKeyFields(componentId);
-        if (json == null || json.isBlank()) return null;
-        try {
-            return MAPPER.readTree(json);
-        } catch (Exception e) {
-            return null;
+    /**
+     * task-0806 B19：componentId → rowKeyFields 解析节点，整模板一次经
+     * {@link com.cpq.template.service.PublishedTemplateReader} 取（不再逐组件查活 {@code component} 表）。
+     * templateId 取自 {@link TemplateRenderScope}（调用方须已 {@code open}——四处报价侧渲染入口
+     * {@code refreshQuoteCardValues}/{@code editCardValue}/{@code materializeAndProject}/
+     * {@code dryRunTokenRows} 均已在方法体外层 open 该行所属 {@code customerTemplateId}，
+     * {@code assembleTabsWithFormulaResults} 内部懒加载调用同样吃这份外层 scope）。
+     *
+     * <p>scope 未打开（理论不达，说明新增了未接线的调用点）→ 记 ERROR 并返回空 map，
+     * 与旧实现"查不到 → null"同一降级形状，不阻断编辑主流程（本类一贯的降级纪律）。
+     *
+     * <p>替代原 {@code loadRowKeyFieldsNode}/{@code loadRowKeyFields}（直读活表，已删除）。
+     */
+    private Map<String, JsonNode> rowKeyFieldsMapFromScope() {
+        Map<String, JsonNode> out = new HashMap<>();
+        UUID tid = TemplateRenderScope.currentTemplateId();
+        if (tid == null) {
+            LOG.errorf("[card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，" +
+                    "无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）");
+            return out;
         }
+        for (com.cpq.template.entity.TemplateComponentSnapshot s : publishedTemplateReader.allTabsOf(tid)) {
+            if (s.componentId == null) continue;
+            JsonNode node = null;
+            if (s.rowKeyFields != null && !s.rowKeyFields.isBlank()) {
+                try {
+                    node = MAPPER.readTree(s.rowKeyFields);
+                } catch (Exception ignore) { /* 解析失败 → null，同旧实现 catch 口径 */ }
+            }
+            out.put(s.componentId.toString(), node);
+        }
+        return out;
     }
 
     /**
@@ -3540,7 +3599,12 @@ public class CardSnapshotService {
         return result;
     }
 
-    /** F1 可观测性：row_key_fields 单行查执行次数(整单首存应由 ~2550 降到 0,全部命中预取)。供测试断言/监控。 */
+    /**
+     * F1 可观测性：row_key_fields 活表单行查执行次数。task-0806 B19 起该活表读已被
+     * {@link #rowKeyFieldsMapFromScope()} 全面取代（不再有任何代码路径递增本计数器），
+     * 恒为 0——比 B19 之前"预取命中后应降到 0"更强的不变量（连回落路径都不再摸 component 表）。
+     * 字段本身保留：{@code RkfPrefetchEquivTest} 仍断言其值，删除会破坏该测试编译。
+     */
     public static final java.util.concurrent.atomic.AtomicLong ROW_KEY_FIELDS_QUERY_COUNT =
         new java.util.concurrent.atomic.AtomicLong();
 
@@ -3556,21 +3620,8 @@ public class CardSnapshotService {
     public static final java.util.concurrent.atomic.AtomicLong NON_RECURSIVE_EXPAND_QUERY_COUNT =
         new java.util.concurrent.atomic.AtomicLong();
 
-    private String loadRowKeyFields(String componentId) {
-        try {
-            ROW_KEY_FIELDS_QUERY_COUNT.incrementAndGet();
-            @SuppressWarnings("unchecked")
-            var rows = em.createNativeQuery(
-                "SELECT row_key_fields FROM component WHERE id = :cid")
-                .setParameter("cid", UUID.fromString(componentId))
-                .getResultList();
-            if (rows.isEmpty() || rows.get(0) == null) return null;
-            return rows.get(0).toString();
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
+    // task-0806 B19：loadRowKeyFields(componentId) 直读活 component 表已随其唯一形态
+    // （单组件单查）被 rowKeyFieldsMapFromScope() 取代并删除——见该方法 Javadoc。
     // task-0806 B8：loadElementRoleFields 已随其唯一调用点（buildCardStructure）改走
     // PublishedTemplateReader 一并删除——元素角色字段现从冻结快照取，不再直读活 component 表。
 
@@ -3619,11 +3670,14 @@ public class CardSnapshotService {
             }
             if (rowDataByComp.isEmpty()) return oldEdits;
 
-            // 行键节点（每组件一次）——与既有实现一致，逐行查 row_key_fields
+            // 行键节点：task-0806 B19 起整模板一次经 rowKeyFieldsMapFromScope() 取
+            // （TemplateRenderScope 由调用方——refreshQuoteCardValues/materializeAndProject/
+            // dryRunTokenRows——已 open），不再对每个组件各查一次活 component 表。
+            Map<String, JsonNode> rkfMap = rowKeyFieldsMapFromScope();
             Map<String, JsonNode> rkfByComp = new LinkedHashMap<>();
             for (JsonNode tab : snapshot) {
                 String cid = tab.path("componentId").asText("");
-                if (!cid.isBlank() && !rkfByComp.containsKey(cid)) rkfByComp.put(cid, loadRowKeyFieldsNode(cid));
+                if (!cid.isBlank() && !rkfByComp.containsKey(cid)) rkfByComp.put(cid, rkfMap.get(cid));
             }
 
             seedEditRowsFromRowData(snapshot, baseRowsByComp, rowDataByComp, rkfByComp,
@@ -3694,6 +3748,9 @@ public class CardSnapshotService {
         // task-0725 T3-P2：报价侧 pending 可见域，包住下方 expandFlatDriverBaseRows（:2679 原行号）。
         // dryRunTokenRows 恒走 q.customerTemplateId（报价侧公式 dry-run 预览），无核价对等入口。
         UUID _pqPrev = QuotePendingScope.open(q.id, q.status);
+        // task-0806 B19：模板渲染域，覆盖下方 mergeRowDataInputsIntoEdits / dryRunTokenRowsCore→
+        // assembleTabsWithFormulaResults 内部对 rowKeyFields 冻结快照的取值。
+        UUID _tplPrev = TemplateRenderScope.open(q.customerTemplateId);
         try {
             JsonNode snapshot = loadQuoteTabsForValues(q.id, q.customerTemplateId);
             if (snapshot == null || !snapshot.isArray()) {
@@ -3713,6 +3770,7 @@ public class CardSnapshotService {
             return dryRunTokenRowsCore(snapshot, hostComponentId, draftTokens, draftSelfRowKeyFields,
                 baseRowsByComp, mergedEdits);
         } finally {
+            TemplateRenderScope.restore(_tplPrev);
             QuotePendingScope.restore(_pqPrev);
         }
     }

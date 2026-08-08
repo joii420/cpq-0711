@@ -62,6 +62,9 @@ public class CostingVersionService {
     @Inject
     BomTreeRenderService bomTreeRenderService;
 
+    @Inject
+    com.cpq.template.service.PublishedTemplateReader publishedTemplateReader;
+
     // =========================================================================
     // B6：版本下拉（列出模式）
     // =========================================================================
@@ -87,61 +90,76 @@ public class CostingVersionService {
         Quotation q = Quotation.findById(li.quotationId);
         UUID customerId = q != null ? q.customerId : null;
 
-        TreeSet<String> options = new TreeSet<>(CostingVersionService::compareVersionDesc);
-        String isCurrentVersion = null; // is_current=true 对应的版本（override 缺失时的兜底 currentVersion）
+        // task-0806 B19：模板渲染域，覆盖下方 isTreeComponent 对冻结快照的取值。
+        UUID _tplPrev = TemplateRenderScope.open(q != null ? q.costingCardTemplateId : null);
+        try {
+            TreeSet<String> options = new TreeSet<>(CostingVersionService::compareVersionDesc);
+            String isCurrentVersion = null; // is_current=true 对应的版本（override 缺失时的兜底 currentVersion）
 
-        if (isTreeComponent(componentId)) {
-            @SuppressWarnings("unchecked")
-            List<Object[]> rows = em.createNativeQuery(
-                            "SELECT bom_version, is_current FROM material_bom_item " +
-                                    "WHERE system_type='PRICING' AND customer_no='_GLOBAL_' AND material_no=:p " +
-                                    "AND bom_version IS NOT NULL")
-                    .setParameter("p", partNo).getResultList();
-            for (Object[] r : rows) {
-                if (r[0] == null) continue;
-                String v = r[0].toString();
-                options.add(v);
-                if (r[1] instanceof Boolean b && b) isCurrentVersion = v;
+            if (isTreeComponent(componentId)) {
+                @SuppressWarnings("unchecked")
+                List<Object[]> rows = em.createNativeQuery(
+                                "SELECT bom_version, is_current FROM material_bom_item " +
+                                        "WHERE system_type='PRICING' AND customer_no='_GLOBAL_' AND material_no=:p " +
+                                        "AND bom_version IS NOT NULL")
+                        .setParameter("p", partNo).getResultList();
+                for (Object[] r : rows) {
+                    if (r[0] == null) continue;
+                    String v = r[0].toString();
+                    options.add(v);
+                    if (r[1] instanceof Boolean b && b) isCurrentVersion = v;
+                }
+            } else {
+                List<ExpandDriverResponse.Row> listRows = expandRows(componentId, customerId, partNo, null, BomTreeVarsContext.Mode.LIST);
+                for (ExpandDriverResponse.Row row : listRows) {
+                    String mn = partNoOf(row.driverRow);
+                    if (mn == null || !mn.equals(partNo)) continue;
+                    Object vv = row.driverRow.get("view_version");
+                    if (vv != null) options.add(vv.toString());
+                }
+                List<ExpandDriverResponse.Row> curRows = expandRows(componentId, customerId, partNo, Map.of(), BomTreeVarsContext.Mode.RENDER);
+                for (ExpandDriverResponse.Row row : curRows) {
+                    String mn = partNoOf(row.driverRow);
+                    if (mn == null || !mn.equals(partNo)) continue;
+                    Object vv = row.driverRow.get("view_version");
+                    if (vv != null) { isCurrentVersion = vv.toString(); break; }
+                }
             }
-        } else {
-            List<ExpandDriverResponse.Row> listRows = expandRows(componentId, customerId, partNo, null, BomTreeVarsContext.Mode.LIST);
-            for (ExpandDriverResponse.Row row : listRows) {
-                String mn = partNoOf(row.driverRow);
-                if (mn == null || !mn.equals(partNo)) continue;
-                Object vv = row.driverRow.get("view_version");
-                if (vv != null) options.add(vv.toString());
-            }
-            List<ExpandDriverResponse.Row> curRows = expandRows(componentId, customerId, partNo, Map.of(), BomTreeVarsContext.Mode.RENDER);
-            for (ExpandDriverResponse.Row row : curRows) {
-                String mn = partNoOf(row.driverRow);
-                if (mn == null || !mn.equals(partNo)) continue;
-                Object vv = row.driverRow.get("view_version");
-                if (vv != null) { isCurrentVersion = vv.toString(); break; }
-            }
+
+            String currentVersion;
+            CostingOrderVersionOverride ov = CostingOrderVersionOverride.find(coid, componentId, partNo);
+            currentVersion = (ov != null) ? ov.viewVersion : isCurrentVersion;
+
+            VersionOptionsResponseDTO dto = new VersionOptionsResponseDTO();
+            dto.componentId = componentId.toString();
+            dto.partNo = partNo;
+            dto.currentVersion = currentVersion;
+            dto.options = new ArrayList<>(options);
+            return dto;
+        } finally {
+            TemplateRenderScope.restore(_tplPrev);
         }
-
-        String currentVersion;
-        CostingOrderVersionOverride ov = CostingOrderVersionOverride.find(coid, componentId, partNo);
-        currentVersion = (ov != null) ? ov.viewVersion : isCurrentVersion;
-
-        VersionOptionsResponseDTO dto = new VersionOptionsResponseDTO();
-        dto.componentId = componentId.toString();
-        dto.partNo = partNo;
-        dto.currentVersion = currentVersion;
-        dto.options = new ArrayList<>(options);
-        return dto;
     }
 
-    /** 组件是否为主树/子配件类（{@code bom_recursive_expand=true}）。不存在的 componentId 抛 404。 */
+    /**
+     * 组件是否为主树/子配件类（{@code bom_recursive_expand=true}）。task-0806 B19：改经
+     * {@link com.cpq.template.service.PublishedTemplateReader} 取冻结快照，templateId 取自
+     * {@link TemplateRenderScope}（调用方 {@code listVersionOptions}/{@code switchVersion} 均已在
+     * 方法体外层 open 核价模板域）。componentId 不在该模板冻结页签中 → 抛 404（语义同旧实现的
+     * "组件不存在"——旧实现查全局 component 表，本实现查"该核价模板引用的组件"，对正常调用路径
+     * 等价，因为 componentId 恒来自该模板自身的页签）。
+     */
     private boolean isTreeComponent(UUID componentId) {
-        Object flagObj;
-        try {
-            flagObj = em.createNativeQuery("SELECT c.bom_recursive_expand FROM component c WHERE c.id = :cid")
-                    .setParameter("cid", componentId).getSingleResult();
-        } catch (jakarta.persistence.NoResultException e) {
-            throw new BusinessException(404, "组件不存在: " + componentId);
+        UUID templateId = TemplateRenderScope.currentTemplateId();
+        if (templateId == null) {
+            throw new BusinessException(500, "内部错误：模板渲染域未打开，无法判定组件类型 componentId=" + componentId);
         }
-        return (flagObj instanceof Boolean b) && b;
+        for (com.cpq.template.entity.TemplateComponentSnapshot s : publishedTemplateReader.allTabsOf(templateId)) {
+            if (componentId.equals(s.componentId)) {
+                return Boolean.TRUE.equals(s.bomRecursiveExpand);
+            }
+        }
+        throw new BusinessException(404, "组件不存在: " + componentId);
     }
 
     // =========================================================================
@@ -261,16 +279,18 @@ public class CostingVersionService {
         return out;
     }
 
-    /** 该模板全部 driver 组件 id（字符串），供主树切的 affectedTabs。 */
-    @SuppressWarnings("unchecked")
+    /**
+     * 该模板全部 driver 组件 id（字符串，去重），供主树切的 affectedTabs。task-0806 B19：改经
+     * {@link com.cpq.template.service.PublishedTemplateReader#driverCompsOf} 取冻结快照，不再直读
+     * 活 {@code component}/{@code template_component} 表。{@code DISTINCT} 去重语义改内存
+     * {@code LinkedHashSet}（同 componentId 可能因多实例挂多个 template_component 行）。
+     */
     private List<String> driverComponentIdsOf(UUID templateId) {
-        List<Object> ids = em.createNativeQuery(
-                        "SELECT DISTINCT c.id FROM template_component tc JOIN component c ON c.id = tc.component_id " +
-                                "WHERE tc.template_id = :tid AND c.data_driver_path IS NOT NULL AND c.data_driver_path <> ''")
-                .setParameter("tid", templateId).getResultList();
-        List<String> out = new ArrayList<>();
-        for (Object o : ids) if (o != null) out.add(o.toString());
-        return out;
+        java.util.LinkedHashSet<String> seen = new java.util.LinkedHashSet<>();
+        for (com.cpq.template.entity.TemplateComponentSnapshot s : publishedTemplateReader.driverCompsOf(templateId)) {
+            if (s.componentId != null) seen.add(s.componentId.toString());
+        }
+        return new ArrayList<>(seen);
     }
 
     /**

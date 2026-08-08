@@ -7,6 +7,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -31,6 +32,9 @@ public class CostingBomTreeConfigService {
 
     @Inject
     EntityManager em;
+
+    @Inject
+    com.cpq.template.service.PublishedTemplateReader publishedTemplateReader;
 
     public List<CostingBomTreeConfig> list() {
         return CostingBomTreeConfig.listAll();
@@ -165,20 +169,43 @@ public class CostingBomTreeConfigService {
      * {@code IS NULL} 谓词下次打开该报价单/调用 ensureCardValues 时自动补算，单飞锁防并发重复算），
      * 不在本次配置切换事务里做重量级同步批量渲染。
      *
-     * <p><b>零改动</b>（task-0721 B2）：本方法只服务 COSTING usage，逻辑与改造前逐位相同，
-     * 仅调用方从 {@code setActive}/{@code update} 直调改为经 {@link #invalidateRenderedCardValues}
-     * 分派 —— 核价侧行为不变（AC-10）。
+     * <p><b>task-0806 B19</b>：原 EXISTS 子查询直读 {@code component}/{@code template_component} 活表
+     * 判定"该核价模板是否含 {@code bom_recursive_expand=true} 组件"——改经
+     * {@link com.cpq.template.service.PublishedTemplateReader#hasRecursiveExpand} 取冻结快照判定：
+     * 先取当前在用的 distinct {@code costing_card_template_id}（数量=在用 COSTING 模板数，§1.6 实测
+     * 仅 2 个，与报价单/行数无关，SQL 条数不随 N 增长），逐个查 {@code hasRecursiveExpand}
+     * （O(模板数)，非 O(报价单数)，不违反 N+1 铁律），再用命中的模板 id 集合一次
+     * {@code UPDATE ... WHERE EXISTS (... costing_card_template_id = ANY(:tids))}。单个模板判定失败
+     * （理论不达）只记警告并跳过该模板，不让整批失效任务因一个坏模板整体失败——本方法是配置切换的
+     * 维护性批处理，稳妥优先于严格（与 FR-6"禁止回落活表"约束的是"单次渲染 miss"场景不同）。
      */
     @Transactional
     void invalidateTreeTabCostingCardValues() {
-        int n = em.createNativeQuery(
-                "UPDATE quotation_line_item li SET costing_card_values = NULL, costing_excel_values = NULL " +
-                "WHERE li.costing_card_values IS NOT NULL AND EXISTS ( " +
-                "  SELECT 1 FROM quotation q " +
-                "  JOIN template_component tc ON tc.template_id = q.costing_card_template_id " +
-                "  JOIN component c ON c.id = tc.component_id " +
-                "  WHERE q.id = li.quotation_id AND c.bom_recursive_expand = true )")
-            .executeUpdate();
+        @SuppressWarnings("unchecked")
+        List<Object> tplRows = em.createNativeQuery(
+                "SELECT DISTINCT costing_card_template_id FROM quotation WHERE costing_card_template_id IS NOT NULL")
+                .getResultList();
+        List<UUID> matched = new ArrayList<>();
+        for (Object o : tplRows) {
+            if (o == null) continue;
+            UUID tid = (o instanceof UUID u) ? u : UUID.fromString(o.toString());
+            try {
+                if (publishedTemplateReader.hasRecursiveExpand(tid)) matched.add(tid);
+            } catch (Exception e) {
+                LOG.warnf("[costing-bom-tree-config] hasRecursiveExpand 判定失败 templateId=%s: %s（跳过,不纳入失效范围）",
+                        tid, e.getMessage());
+            }
+        }
+        int n = 0;
+        if (!matched.isEmpty()) {
+            n = em.createNativeQuery(
+                    "UPDATE quotation_line_item li SET costing_card_values = NULL, costing_excel_values = NULL " +
+                    "WHERE li.costing_card_values IS NOT NULL AND EXISTS ( " +
+                    "  SELECT 1 FROM quotation q WHERE q.id = li.quotation_id " +
+                    "  AND q.costing_card_template_id = ANY(:tids) )")
+                .setParameter("tids", matched.toArray(new UUID[0]))
+                .executeUpdate();
+        }
         LOG.infof("[costing-bom-tree-config] 递归 SQL 配置变更，失效 %d 行含树页签模板的存量核价卡片值(懒算重算)", n);
     }
 
