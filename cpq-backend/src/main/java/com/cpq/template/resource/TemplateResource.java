@@ -127,6 +127,20 @@ public class TemplateResource {
         return ApiResponse.success(templateService.createNewDraft(id));
     }
 
+    /**
+     * task-0806 B22-a（D20）/ api.md §13 A11：已 PUBLISHED/ARCHIVED 但从未按新语义冻结过的模板
+     * 「首次冻结」——不改 version/status/publishedAt，只补 template_component_snapshot +
+     * 派生 components_snapshot jsonb。仅当该模板零快照行时可用（409 否则），与 publish 同级鉴权
+     * （正常业务操作，不是运维后门）。
+     */
+    @POST
+    @Path("/{id}/freeze")
+    @RoleAllowed({"SALES_MANAGER", "SYSTEM_ADMIN"})
+    public ApiResponse<TemplateDTO> freeze(@PathParam("id") UUID id, @Context HttpServerRequest httpRequest) {
+        UUID operatorId = sessionHelper.getCurrentUserIdOrFallback(httpRequest);
+        return ApiResponse.success(templateService.freeze(id, operatorId));
+    }
+
     @GET
     @Path("/series/{seriesId}/versions")
     public ApiResponse<List<TemplateDTO>> getVersionHistory(@PathParam("seriesId") UUID seriesId) {

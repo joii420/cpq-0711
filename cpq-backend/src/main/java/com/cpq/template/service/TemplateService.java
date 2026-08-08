@@ -356,6 +356,65 @@ public class TemplateService {
         return TemplateDTO.from(template, tcs);
     }
 
+    /**
+     * task-0806 B22-a（D20）：已 PUBLISHED/ARCHIVED 但从未按新语义冻结过的模板，补一次「首次
+     * 冻结」——不改 {@code version}/{@code status}/{@code publishedAt}，只补
+     * {@code template_component_snapshot} + 同步派生 {@code components_snapshot} jsonb。
+     *
+     * <p><b>背景</b>：D17 的 409 文案指向"重新发布"，但 {@link #publish} 只收 DRAFT——已发布
+     * 模板根本没有"重新发布"这个操作。{@code createNewDraft → publish} 只会产出新版本
+     * （老版本永远冻不上）；唯一能就地补冻的通道此前只有 admin 后门
+     * {@link #forceRealignSnapshots}，但那个方法的语义是"明确破坏不可变性"，不该是入门路径。
+     *
+     * <p><b>零行守卫是这个操作结构上安全的全部理由</b>：仅当该模板当前一行快照都没有时才允许
+     * 执行——见下方守卫判断。守卫不许放松：一旦允许对已有快照的模板调用本方法，它就退化成
+     * 又一个能覆盖快照的后门，与 D20 的设计初衷相悖。
+     *
+     * @throws BusinessException 400，模板是 DRAFT（草稿本就不该有快照，发布时才生成）
+     * @throws BusinessException 409，模板已有快照行（不是"从未冻结"，应走
+     *         {@code createNewDraft → publish} 发新版本，而不是就地覆盖）
+     */
+    @Transactional
+    public TemplateDTO freeze(UUID id, UUID operatorId) {
+        Template template = Template.findById(id);
+        if (template == null) {
+            throw new BusinessException(404, "Template not found: " + id);
+        }
+        if ("DRAFT".equals(template.status)) {
+            throw new BusinessException(400,
+                    "DRAFT 模板不支持首次冻结：草稿期本就不写快照，发布（publish）时会自动生成，"
+                    + "templateId=" + id);
+        }
+
+        // 零行守卫（核心，不许放松）：仅当该模板 template_component_snapshot 行数 == 0 时才允许
+        // 执行——结构上保证本方法不可能覆盖已有快照，因此不破坏不可变性，可以放心开给业务角色
+        // （SALES_MANAGER），不必只留给 SYSTEM_ADMIN 后门。
+        if (TemplateComponentSnapshot.count("templateId", id) > 0) {
+            throw new BusinessException(409,
+                    "该模板已冻结，如需更新配置请走 createNewDraft → publish 发布新版本。"
+                    + "templateId=" + id + ", status=" + template.status);
+        }
+
+        List<TemplateComponent> tcs = TemplateComponent.list("templateId = ?1 ORDER BY sortOrder ASC", id);
+        // 按当前活配置就地冻一份：复用 publish()/archive() 的同一套落库私有方法
+        // （persistSnapshotRows + deriveComponentsSnapshotJson），保证"首次冻结"产出的快照结构
+        // 与正常发布路径完全一致，不另起一套写法。version / status / publishedAt 一律不动。
+        rebuildSnapshotForTemplate(template, tcs);
+
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("endpoint", "freeze");
+        details.put("tabCount", tcs.size());
+        // 不打「破坏不可变性」的 WARN——零行守卫保证这不是覆盖，是给从未冻过的东西补冻，
+        // 是正常业务操作，用 INFO 级别记录即可。
+        operationLogService.log(operatorId, "TEMPLATE_INITIAL_FREEZE", "TEMPLATE", id,
+                "首次冻结模板：" + template.name + (template.version != null ? " " + template.version : "")
+                        + "，" + tcs.size() + " 个页签", details);
+        LOG.infof("[task-0806 B22-a] freeze：templateId=%s status=%s 首次冻结 %d 行快照"
+                + "（非破坏性操作——冻结前快照行数恒为 0）", id, template.status, tcs.size());
+
+        return TemplateDTO.from(template, tcs);
+    }
+
     @Transactional
     public TemplateDTO createNewDraft(UUID sourceId) {
         Template source = Template.findById(sourceId);
