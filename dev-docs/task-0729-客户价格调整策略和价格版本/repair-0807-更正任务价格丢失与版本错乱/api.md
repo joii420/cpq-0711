@@ -149,17 +149,25 @@ WAITING | RUNNING | SUCCESS | FAILED | CONFLICT | STALE | SKIPPED   ← SKIPPED 
 
 ```jsonc
 {
-  "id": "32ced881-…",
+  "jobId": "32ced881-…",
+  "customerNo": "CUST-0002",
   "versionNo": "V26080702",
-  "status": "PARTIAL",        // ★ 口径变更：有 SKIPPED 项时不再报 SUCCESS
-  "totalCount": 32,
-  "successCount": 31,
-  "failedCount": 0,
-  "conflictCount": 0,
-  "staleCount": 0,
-  "skippedCount": 1           // ★ 新增
+  "status": "PARTIAL",   // ★ 口径变更：有 SKIPPED 项时不再报 SUCCESS
+  "total": 32,
+  "success": 31,
+  "failed": 0,
+  "conflict": 0,
+  "stale": 0,
+  "skipped": 1,          // ★ 新增
+  "finishedAt": "2026-08-08T01:14:53Z",
+  "notified": true
 }
 ```
+
+> 🔧 **契约更正（2026-08-07，前端联调实证）**：本文件初稿把这一节的字段写成 `id` / `totalCount` / `successCount` / … —— **那是实体（`MaterialPriceUpdateJob`）的字段名，不是 wire 上的字段名**。实际 `JobDTO` 是 `jobId` / `total` / `success` / `failed` / `conflict` / `stale`（无 `Count` 后缀），映射见 `PriceAdjustJobResource:142-146`。
+>
+> **本次新增字段一律随 DTO 既有风格**：wire 上叫 **`skipped`**，实体侧叫 `skippedCount`，映射写 `dto.skipped = j.skippedCount`。
+> 🔒 **不要**为了"和文档初稿一致"在 DTO 层单独用 `skippedCount` —— 那会让同一个 JSON 里 5 个兄弟字段无后缀、第 6 个有后缀，是纯粹的自伤。
 
 ### 3.2 批次状态判定表（`MaterialPriceUpdateJob.recountFrom` 唯一实现）
 
