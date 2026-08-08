@@ -244,37 +244,20 @@
 
 ---
 
-### [BL-0140] 价格调整更新任务性能优化（核价树渲染批量化 + S0 守卫可配）
-- **优先级**：P1
-- **来源**：2026-08-06 用户报「价格调整通过后的更新任务非常慢」，主线全程实测取证
-- **状态**：[~] 进行中 —— **T2/T3/T4 已交付合 master（`880709fc`）**；T6（S0 开关）开发中；**T5 拆出转二期见 [[BL-0144]]**
-- **登记日期**：2026-08-06　**主体交付**：2026-08-07
-- **任务目录**：`dev-docs/task-0806-价格调整更新任务性能优化/`（`需求文档.md` = 验收唯一标准；另有 `baseline.md` / `test.md` / `test-report.md`）
-- **分支 / worktree**：立项与 T2-T4 的 `feat/task-0806-price-adjust-job-perf` 已合并并清理；T6 用 `feat/task-0806-s0-guard-switch`。⚠️ 建 worktree 必须 `git worktree add <path> -b <branch> HEAD` 基于**本地 HEAD**，不能用默认 `fresh`（会从 `origin/master` 开分支，丢掉近百个本地提交）
-- ✅ **已交付部分的主线亲验结论**（2026-08-07，主线自己重算，未采信子代理）：先用**未改动的 master 代码**抓 4 job / 75 个 line item 的 `costing_card_values` MD5 基线（`baseline.md`），再从 worktree 起临时后端走真实生产路径重算 —— **75/75 逐字节相同、0 不一致**（含 AC-2 强制反例 `c2915208` 18/18）；连跑三次确定性 0 不一致；后端测试 34/34 PASS
-- ⚠️ **主线亲验抓到、子代理未发现的潜伏分叉（已修 `19dffedf`）**：`precomputeBatch` 绕过了老路径的 `templateHasTreeTab` 门槛 —— 对**不含树页签的核价模板**，新老两条路径会走进 `buildCostingCardValues` 的不同分支。当前两个在用核价模板都有树页签故不可达，但已按守卫纪律堵死
-- ⚠️ **同日三个 `task-0806-*` 任务，勿混淆**：本条 = 性能优化；[[BL-0133]] = 模板发布全量冻结（P0）；[[BL-0137]] = 报价编辑链路优化与前后端对账
-- **背景（实测基线）**：18 项 job 58s（3.22s/项）。插桩实测构成：核价树 `render()` **43.5%**、S0 口径守卫 **14.3%**、`buildCostingCardValues` 11.3%、报价侧 `buildCardValues` 8.6%、S9 凭据 3.8%、其余 17.8%。**73% 在"重算卡片"，"改价格键"本身几乎不花时间。**
-- **实测否定的两个方向**：
-  - **不是 N+1** —— 一次 render 恰好 17 条 SQL，每个 driver 组件 1 条、零重复（`evaluatePath` 叶子列短路 + `DataLoader.resultCache` 不含 driverRow 维度，两道防线已挡住逐行查）
-  - **不能上线程池** —— 2026-06-22 同款设计已实证撤回（5.6x 但 73 行中 9 行算错），本链路写价格且落不可逆凭据，代价更高
-- **真正的浪费**：`refreshCostingCardValuesForLine` 每次只传 `List.of(li)`，而 `render()` 本就支持整批 → 18 项 job 发 **306 条** SQL 而非 17 条（冷缓存对照实验已排除缓存假象）
-- 🚨 **本条最值钱的部分 —— 已实证的陷阱（谁做这个任务必须先读）**：
-  ```
-  不能按 job 整批渲染。
-  render() 用 lineItems.get(0).quotationId 设 QuotationIdContext，
-  而 $wl_ys_bom_view 含 f_material_element_price(:customerCode, :priceBaseDate)，
-  :priceBaseDate = 报价单 created_at 的 LocalDate（SqlViewExecutor#enrichPriceBaseDate）
-  ⇒ 批次跨多个建单日时，组长的基准日被套给全批
-  实测 job c2915208（24 单跨 6 个建单日）：5 张单的 costing_card_values 被写成别单的数据
-  全模板 17 个 driver 组件审计：只有 COMP-0049 带日期维度；全库无 :quotationId/:lineItemId
-  ```
-- **方案**：分组键 = `(costingCardTemplateId, 取价基准日)`（方案 B，已在反例上验证 0 不一致）；加强版按组件真实依赖维度分层（方案 A，让成本不随分组数增长）。两道强制守卫：①视图维度审计，出现 `:quotationId`/`:lineItemId` 或解析失败 → 强制逐项 + 告警；②批量渲染失败必须回退逐项，不得把"单组件失败"放大成"整批 FAILED"
-- **预期收益**：58s → 22~25s（实测方案 B 在 4 个真实 job 上 1.7~4.7x，随建单日分散度变化）
-- **依赖**：无（task-0729 已交付）
-- **预估规模**：M（3-5 天）
-- **验收要点**：见需求文档 §7 八条门禁。**门禁 2 强制包含 `c2915208`** —— 只跑其他 job 会假绿（它们跨 3 个建单日却也 PASS，因那几天没跨价格版本边界，纯属数据碰巧）
-- 📌 **方法论（不止本任务适用）**：**"抽样 0 不一致"不是安全证明。** 说明问题的是结构性事实 + 存在性反例，不是样本通过率
+### [BL-0146] 预算（dryRun）阶段批量化 —— 端到端等待还有一半没砍
+- **优先级**：P2
+- **来源**：task-0806 §2.2 明确不做，交付时按承诺登记　**状态**：TODO　**登记日期**：2026-08-07
+- **背景**：审核**通过前**的预算试算，对每个料号跑一遍完整 `upgrade(dryRun=true)`，同样逐项渲染。用户从「生成版本」到「通过完成」实际付了**两遍**同样的计算 —— [[BL-0140]] 只砍了后一遍。
+- **难点**：预算按 material 逐 review 计算，批量边界与 job 不同（job 是「客户×版本」，预算是「料号」），不能直接套用 [[BL-0140]] 的分组键；收益未测。
+- **依赖**：[[BL-0140]] 的 `DriverBatchSafetyAuditor` / `PriceBaseDateUtil` 可直接复用　**预估规模**：M
+- **验收要点**：同 [[BL-0140]] 门禁（四项落库产物逐字节全等 + 必测 `c2915208`）；预算值与实际执行值必须逐位一致（这是 task-0729 裁决 41 的结构性保证，不能因批量化被打破）
+
+### [BL-0147] `buildCostingCardValues` 单行路径未启用 prefetch
+- **优先级**：P2
+- **来源**：task-0806 §2.2 明确不做，交付时按承诺登记　**状态**：TODO　**登记日期**：2026-08-07
+- **背景**：整单批量路径 `refreshCostingCardValues(quotationId)` 会先做一次预取（模板快照 / compdata / rowKeyFields），而单行路径 `refreshCostingCardValuesForLine` 传的是 `null` → 每项都在重查模板快照和子表。与 [[BL-0140]] 的树渲染是**同族问题**（同样是"批量能力存在但单行入口没用上"）。
+- **范围**：按 job 批一次预取，传入单行路径　**收益**：未测（`buildCostingCardValues` 占每项 11.3%，prefetch 能省其中多少需实测）
+- **预估规模**：S~M　**验收要点**：同 [[BL-0140]] 门禁；`baseline.md` 的 75 个 MD5 可直接复用作基准
 
 ### [BL-0126] jsonb 往返丢精度缺陷族 —— 还有第 3、第 4 个写点未修
 - **优先级**：P1
@@ -2138,6 +2121,17 @@ task-0721 B8 修复合并    2026-07-21
 ---
 
 ## 已完成
+
+### [DONE 2026-08-07] BL-0140 task-0806 价格调整更新任务性能优化
+- **交付**：master `880709fc`（T2 守卫1 + T3 方案B 分组批量预渲染 + T4 守卫2 失败回退）+ T6 S0 守卫开关（迁移 `V383`，默认关）+ 收尾 `74577376`。任务目录 `dev-docs/task-0806-价格调整更新任务性能优化/`（需求文档 / fronttask / backtask / api / baseline / test / test-report 七件齐）。
+- **主线亲验（不采信子代理）**：用**未改动的 master 代码**抓 4 job / 75 个 line item 的 `costing_card_values` MD5 基线（`baseline.md`），再从 worktree 起临时后端走真实生产路径重算 → **75/75 逐字节相同、0 不一致**（含 AC-2 强制反例 `c2915208` 18/18）；连跑三次确定性 0 不一致；测试 61/61 PASS。
+- **性能（如实记录，非严格对照）**：18 项 job 改造前 58s → 改造后冷 JVM 实测 **29.24s**。⚠️ 58s 的原始测量条件不可考，**不作为确定加速倍数**；实测发现**冷/暖 JVM 差 12s，比分组算法本身的边际差异更显著**。S0 开关实测省 **197ms/项**（交替 A/B 各 5 次）。
+- 🚨 **本任务最值钱的产出（后人必读）**：**不能按 job 整批渲染** —— `render()` 用 `lineItems.get(0).quotationId` 设 `QuotationIdContext`，而 `$wl_ys_bom_view` 含 `f_material_element_price(:customerCode, :priceBaseDate)`，`:priceBaseDate` = 报价单 `created_at` 的 LocalDate ⇒ 跨建单日整批会把组长的基准日套给全批。实测 `c2915208`（24 单跨 6 建单日）**5 张单的 `costing_card_values` 被写成别单的数据**。分组键必须含取价基准日。
+- **实测否定的两个方向**：不是 N+1（一次 render 恰好 17 条 SQL、零重复）；不能上线程池（2026-06-22 同款设计已 revert，5.6x 但 73 行中 9 行算错）。
+- **亲验抓到、子代理未发现**：`precomputeBatch` 绕过老路径 `templateHasTreeTab` 门槛（对不含树页签的核价模板会走进 `buildCostingCardValues` 不同分支）—— 当前不可达，已按守卫纪律堵死。
+- 📌 **三条方法论教训**（已写进 `docs/RECORD.md`）：①「抽样 0 不一致」不是安全证明；②在没测的维度上通过 = 假绿（还原校验只比 line item 不比 revision 行数，漏了 36 行凭据残留，已删）；③**AC 里的性能门槛不要写推导值**（AC-7 原写 ≥0.3s 是折算值，实测仅 197ms，已改为只判功能正确性）。
+- **遗留另立项**：[[BL-0144]] T5 方案A 分层调度（P1，须走 architect 评审）、[[BL-0145]] 料号 3120011203 双端算值分叉（S0 关闭后更需有人接）、[[BL-0146]] 预算阶段批量化、[[BL-0147]] `buildCostingCardValues` prefetch 启用。
+
 
 ### [DONE 2026-07-09] task_0708 导入报价单/核价单落库料号语义纠偏
 - **交付**：master 提交 `4ce28a3`(feat) / `8d61cc0`(P24单重) / `257b8cd`(TC-B1) / `8767d87`(文档) / `1f47c9c`(record) + 迁移 `V315`。
