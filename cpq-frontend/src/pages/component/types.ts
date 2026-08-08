@@ -299,12 +299,16 @@ export interface FormulaToken {
   attr?: 'LVL' | 'IS_LEAF' | 'IS_ROOT';
 }
 
+// task-0806 FR-0b（阶段⓪，与后端 ComponentService.VALID_FIELD_TYPES 8→6 收窄同步）：
+// 只收窄"新配置可选项"——剔除 DATA_SOURCE（此列表本就从未展示过裸 INPUT，故只剩这一项要剔）。
+// 🚨 不删 DATA_SOURCE 的任何渲染/解析/序列化代码分支（FieldConfigTable.tsx 里
+// `record.field_type === 'DATA_SOURCE'` 的既有分支原样保留）——存量组件的 DATA_SOURCE 字段
+// （实测 0 个，但即便有）仍要能正常展示/保存，只是新建/编辑时选不到这个值了。
 export const FIELD_TYPE_OPTIONS = [
   { value: 'FIXED_VALUE', label: '固定值' },
   { value: 'INPUT_TEXT', label: '文本输入' },
   { value: 'INPUT_NUMBER', label: '数字输入' },
   { value: 'BASIC_DATA', label: '基础数据' },
-  { value: 'DATA_SOURCE', label: '数据源' },
   { value: 'FORMULA', label: '公式' },
   { value: 'LIST_FORMULA', label: '列表驱动公式' },
 ] as const;

@@ -30,6 +30,13 @@ public class PriceAdjustSettings extends PanacheEntityBase {
     @Column(name = "subtotal_guard_threshold", nullable = false, precision = 20, scale = 6)
     public BigDecimal subtotalGuardThreshold;
 
+    /**
+     * 🆕 task-0806 FR-9 / D-5：S0 L3 口径守卫总开关。默认 {@code false}（关闭）——升版时跳过
+     * S0 旧价重算（省下 0.46s/项）；{@code true} = 行为与该开关引入前逐位一致。
+     */
+    @Column(name = "subtotal_guard_enabled", nullable = false)
+    public boolean subtotalGuardEnabled = false;
+
     @Column(name = "updated_at", nullable = false)
     public OffsetDateTime updatedAt = OffsetDateTime.now();
 

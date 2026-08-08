@@ -5073,3 +5073,147 @@ handleSubmit:  submit()          ← 后端在这里冻结 frozen_dto + 建核�
 仍默认「报价单」子视图（无回归）。
 
 **自检**：`npx tsc --noEmit` 0 错误 ✅；三个改动文件 Vite transform 均 200 ✅；E2E 1 passed ✅。
+
+---
+
+## [2026-08-07] task-0806 报价编辑链路优化与前后端对账 · 阶段①前端（F1-1~F1-9 + FR-0b）
+
+**范围**：`fronttask.md §8` 阶段① 全部 9 项 + 新增 **FR-0b**（组件管理字段类型下拉同步收窄）。worktree
+`/home/joii/project/cpq/.claude/worktrees/task-0806-edit-reconcile`，分支 `feat/task-0806-edit-reconcile`。
+
+**FR-2/AP-41（`quotationStatus` 三处透传）**：`QuotationStep2.tsx` 的 `ProductCardProps` 新增
+`quotationStatus?: string`，报价侧 / 核价侧两处 `<ProductCard>` 调用点（`:4538` COSTING、`:4594` QUOTE）
+补传；`ProductDetailViews.tsx:239` 的 `<ReadonlyProductCard quotationStatus={quotation.status}>` 是既有代码，
+本次核实其覆盖报价/核价两侧读态（`side` prop 切换，同一份 `quotationStatus`）。
+`src/pages/quotation/CostingApprovePreviewDrawer.tsx:325` 另有一个同名但**不相关**的 `<ProductCard>`
+（核价审批预览用，纯只读小组件，不涉及 quoteCardValues/formulaResults），不在 AP-41 范围内。
+
+**FR-1（取值分流）· 关键偏离 fronttask.md 字面代码，已记录理由**：fronttask.md §2.2 给的示意码是把
+`!isDraft` 直接并入 `useSnapEdit`；实测该变量除了控制 snapFormula 显示源，**还**驱动 rowKey 计算
+（`buildUniqueRowKeys`/`activeUniqRowKeys` 等，:3164~3265）与 `handleSnapshotCellEdit` 写调用闸门（:3497）。
+若照抄示意码，DRAFT（编辑期最常见状态）下 rowKey 会退化成 `String(i)`（破坏权威行键口径，写错 rowKey
+会导致后端按位置误配对），且写调用整体不再触发（FR-4 对账失去数据源，等于对账机制在最该生效的
+DRAFT 期反而失灵）。改法：新增独立 `isDraft` 变量，**只**叠加到 snapFormula 读分支（QuotationStep2.tsx
+:3482），`useSnapEdit` 本身不变。`ReadonlyProductCard.tsx` 同款处理（不动 `useSnap` 总闸，只在 snapFormula
+处叠加 `!isDraft`，`isDraft` 提到组件顶层，AP-50 与编辑页同一判定表达式 `!quotationStatus || quotationStatus === 'DRAFT'`）。
+
+**FR-4/FR-5（对账 + 埋点）**：新增 `activeTabCtxRef`（渲染期写，仿 `itemRef.current = item` 模式，记录
+活动页签的 `rowKey/expIndex/row/driverRow/formulaCache`）+ `reconcileDiffs` state。`reconcileTab()` 用
+API-1 响应的 `quoteCardValues.tabs[].formulaResults`（按 rowKey）与 `resolvedRows`（按下标位置对齐
+baseRows，用于 tooltip 的"后端输入"）比对，D4 阈值 `10^-DISPLAY_SCALE`。**已知限制**：对账范围 = 触发
+编辑那一刻的**活动页签**（fronttask.md §2.4 数据来源明确写 `preComputedCaches[rowIdx][fieldName]`，本就是
+按活动页签构建的局部变量），跨页签公式传播若被本次编辑连带改变、但用户未切去查看，暂不会被对账。
+**踩坑并修正**：后端 `ReconcileDiffStore.report()` 是按 lineItemId 整份替换语义（非按 componentId patch）——
+若每次上报只带本轮活动页签的差异，切页签编辑会用不含前一页签差异的报告，静默抹掉后端 pending Map
+里前一页签仍未解决的差异（误放行提交）。修法：`reconcileDiffs` state 保留跨页签累积的全部已知差异，
+每次上报取 `Object.values(merged)` 全量，不是只报本轮 `newDiffKeys`。
+`resolvedRows`（`CardValuesTab` 新增字段）与 `baseRows` 同下标对齐、无独立 rowKey，backendInputs 靠
+driver 展开下标（`expIndex`，effectiveRows 新增字段）间接对齐，手动行（`expIndex=-1`）不取 backendInputs
+（不臆造数据）。
+
+**FR-6/F1-8（提交闸门）**：新建 `ReconcilePendingDrawer.tsx`（Drawer，非 Modal），字段形状（`fieldName`/
+`frontendValue`/`backendValue`）与既有 `RowKeyConflictDrawer` 不同（那是行键重复冲突，不同 409 reason），
+未复用同一个 Drawer。`api.md` 的 `conflicts[]` 不带 `componentId`（只有 `tabName`），定位跳转只能精确到
+产品卡片，不能像行键冲突那样精确切到目标页签（已知限制）。`WRITE_IN_FLIGHT` 分支：提示 + 800ms 退避 +
+自动重试一次（D15 澄清后该分支阶段①恒不触发，代码按 fronttask.md §2.6 原样实现，留给阶段②生效）。
+
+**D15（会话中途追加，前端串行保证）**：新建 `pendingEditTracker.ts`（模块级 in-flight 追踪器，不走
+prop drilling——ProductCard 深嵌在 QuotationStep2 内部，逐层透传给 QuotationWizard 需要三层 prop，
+是新的 AP-41 风险源）。`handleSnapshotCellEdit` 从直接 `async` 函数改为同步外壳 + 内部异步 IIFE，
+IIFE 在函数**同步**创建的瞬间被 `trackPendingEdit` 登记（利用"单元格失焦先于提交按钮 click"的浏览器
+事件顺序保证）；`reconcileTab()` 从 fire-and-forget 改为返回 `Promise<void>`（`.then(ok,ok)` 消音失败但
+仍等待落地）。`QuotationWizard.tsx#handleSubmit` 在 `handleSaveDraft` 之后、`submit` 之前
+`await waitForPendingEdits()`。
+
+**FR-0b（会话中途追加）**：`src/pages/component/types.ts` 的 `FIELD_TYPE_OPTIONS`（唯一被
+`FieldConfigTable.tsx` 消费的字段类型下拉源）从 7 项剔除 `DATA_SOURCE`（该列表本就从未含裸
+`INPUT`），降到 6 项，与后端 6 种白名单对齐。只删下拉选项，不删任何渲染/解析分支（D13）。
+
+**涉及文件**：
+`cpq-frontend/src/pages/quotation/QuotationStep2.tsx`（主战场）/ `ReadonlyProductCard.tsx` /
+`QuotationWizard.tsx` / `ReconcilePendingDrawer.tsx`（新）/ `pendingEditTracker.ts`（新）/
+`src/services/quotationService.ts`（`CardValuesTab.resolvedRows` + `reconcileReport` API-5）/
+`src/pages/component/types.ts`。
+
+**自检**：`npx tsc --noEmit -p tsconfig.json` 0 错误 ✅（含 D15/FR-0b 追加改动后复跑）；7 个改动/新增
+`.tsx`/`.ts` 文件经临时 Vite 实例（worktree 未共享主仓 5174，按已知坑「worktree前端自检坑」自建 5199
+临时实例）transform 均 200 ✅；`npx vitest run src` = 77 passed / 1 failed 文件，1103 passed / 2 failed
+（`formulaGolden.test.ts` amt-002/amt-003，master 存量常年红，非本次引入）✅；E2E `quotation-flow.spec.ts`
+A/B 对照：主仓 5174（基线）与本 worktree 5199（临时实例，同一份共享 8081 后端）**逐条一致** 3 failed
+（全部卡在 Step1「请先填写产品分类和报价模板」/ 选不到"西门子"客户选项，`BL-0078` 类夹具漂移，与
+本次改动无关）——未引入新的 E2E 回归。
+
+**已知限制（留 test-report.md / 后续阶段跟进）**：① 对账范围仅活动页签，跨页签连带变化未主动核对；
+② `frontendInputs`/`backendInputs` 取"该行全部非公式字段"近似"公式引用到的字段"（未做逐公式 token
+解析）；③ `RECONCILE_PENDING` 定位跳转精确到卡片、不到页签（api.md conflicts 无 componentId）；
+④ 本次会话未能验证阶段① 后端新增端点（`reconcile-report`/`submit` 闸门）与本前端实现的真实联调
+——并发的后端验证会话对该 worktree 的后端文件做了 `git stash`（`stash@{0}
+task0806-backend-ab-probe`）做 A/B，前端未动它；契约核对改为静态交叉核对源码（`ReconcileDiffEntry.java`
+/ `ReconcileReportRequest.java`/`SubmitConflictDTO.java` 字段与前端 payload/类型逐一比对一致）。
+
+---
+
+## [2026-08-07] task-0806 报价编辑链路优化与前后端对账 · 阶段⓪① 交付 | 合 master `2942a4d8`（实现 `286def1c`）| BL-0137
+
+**做了什么**：把后端从「显示权威」降级为「校验器」的第一步。DRAFT 下行内值走前端引擎（与列小计天然同源、零等待），后端照算，两边**对账** —— 不一致亮 ⚠ 并**禁止提交**（D1 只标记不改数 / D7 禁提交，均用户拍板）。另做白名单治理：`VALID_FIELD_TYPES` 8 → 6，剔 `DATA_SOURCE` / 裸 `INPUT`，**代码分支一处未删**。
+
+**主线亲验证据**（不采信子代理自述，逐条自跑）：
+- **AC-15 全覆盖 A/B**：改前/改后均 `2310 run / 159F / 393E / 39 Skipped`，**319 条失败方法名 `diff` 完全为空**
+- **AC-18**：合并前临时实例 8097 + 合并后真实 8081 各验一次，`DATA_SOURCE` / 裸 `INPUT` 均 400，错误信息恰列 6 种合法值
+- **AC-4**：上报差异 → submit `409 RECONCILE_PENDING` + conflicts 清单；上报空差异 → 放行
+- **AP-41**：`QuotationStep2:4538`(COSTING) / `:4594`(QUOTE) / `ProductDetailViews:235` 三处透传
+- `tsc --noEmit` 0 错误；vitest `1103 passed / 2 failed`（`formulaGolden` amt-002/003 master 存量红）
+- E2E A/B：5174 主仓基线 vs 5199 临时实例**逐条一致 3 failed**（BL-0078 夹具漂移），无新增回归
+
+**🚨 教训一：我写的施工单示意码是错的，实现者抓住并纠正**
+`fronttask.md §2.2` 原写「把 `!isDraft` 直接并入 `useSnapEdit`」。实测 `useSnapEdit` **不只**控制显示源，还驱动 **rowKey 计算**（`activeUniqRowKeys` 等 + `const rowKey = useSnapEdit ? … : String(i)`）与 **`handleSnapshotCellEdit` 写闸门**。照抄会让 DRAFT 下：① rowKey 退化成 `String(i)`，把 repair-0805 F5 刚归一到 **497/497** 的权威行键**打回原形**；② 写闸门关闭 → **对账在最该生效的 DRAFT 期反而没有数据源**。正确改法：独立 `isDraft` 只叠到 `snapFormula` 那一处读分支。文档已改正并标注「照抄必炸」。
+> **可复用教训**：改一个布尔开关前，先 grep 它的**全部消费点** —— 一个变量同时当「显示开关」和「身份/写权限开关」用时，加条件 = 一次性改了三件事。
+
+**🚨 教训二：整份替换语义 + 局部上报 = 静默放行**
+`ReconcileDiffStore.report()` 是按 lineItemId **整份替换**。若前端每次只上报「本轮活动页签」的差异，切页签会用不含前一页签差异的报告**覆盖**掉 pending → 提交闸门误放行。修法：前端跨页签累积全部已知差异，每次上报取全量。
+
+**🚨 环境坑（K2 复发）**：并发会话把 `V382` 应用到共享测试库但未提交文件 → 基于本分支跑测试时 `FlywayValidateException` → `@QuarkusTest` **整类启动失败级联跳过**（1233 skipped，看起来像"测试都过了"）。加 `-Dquarkus.flyway.validate-on-migrate=false` 后恢复全覆盖，真实基线仍是 159F/393E。**判回归必须先确认跳过数正常，否则 A/B 是在半个测试集上做的。**
+
+**⚠️ 操作失误自记**：验证 AC-4「清空 pending 后闸门放行」时，"放行"的结果就是**真的执行了提交** —— `QT-20260805-0080` 被从 DRAFT 提交成 SUBMITTED，并连带产生 1 条 `costing_order`。用户确认测试库数据无所谓故未回滚。**教训：验证「闸门放行」这类语义时，要么用一次性单据，要么改为只读确认闸门状态，不要真发那个会产生副作用的动作。**
+
+**涉及文件**：后端 `ComponentService`（白名单一行）/ `QuotationService`（闸门接线）/ `QuotationResource`（API-5）/ `GlobalExceptionMapper` + 新增 `reconcile/{ReconcileDiffStore,SubmitGateService,SubmitConflictDTO}` / `ReconcilePendingException` / 2 个 DTO；前端 `QuotationStep2.tsx`（主战场）/ `ReadonlyProductCard.tsx`（AP-50 同步）/ `QuotationWizard.tsx` / `component/types.ts`（FR-0b 下拉收窄）/ `quotationService.ts` + 新增 `ReconcilePendingDrawer.tsx` / `pendingEditTracker.ts`
+
+**决策台账**：D1~D16（本次新增 D15 阶段① `WRITE_IN_FLIGHT` 恒 false + 提交前必须先完成对账上报；D16 白名单整份校验语义）。**遗留阶段②③④⑤ 未开工**，`test.md` 60 条用例已定稿待执行。
+
+---
+
+## [2026-08-07] task-0806 价格调整更新任务性能优化 —— 核价树分组批量渲染 + S0 守卫开关 | 合 master（`880709fc` + T6）
+
+**背景**：用户报「价格调整审核通过后的更新任务非常慢」。实测 18 项 job 58s（3.22s/项）。
+
+**实测否定的两个方向（写下来，免得后人再走一遍）**：
+- **不是 N+1**：三点插桩实测，一次 `render()` 恰好 **17 条 SQL**，每个 driver 组件 1 条、零重复。两道既有防线已挡住逐行查：① `evaluatePath` 对叶子列已在 driver 行里的字段短路取值；② `$view` 字段路径在 `DataLoader.resultCache` 按 `path::partNo::customerId::lineItem::owner::quotationId` 去重，**不含 driverRow 维度**。
+- **不能上线程池**：2026-06-22 同款设计（有界池 + 每 worker `@ActivateRequestContext`）已实证并 revert（5.6x 但 73 行中 9 行算错）。本链路写价格、落不可逆凭据，代价更高。
+
+**真正的浪费**：`refreshCostingCardValuesForLine` 每次只传 `List.of(li)`，而 `render()` 本就为整批设计 → 18 项 job 发 **306 条** SQL 而非 17 条。冷缓存对照实验（批量先跑）已排除缓存假象。
+
+🚨 **本次最值钱的发现 —— 「按 job 整批渲染」是错的**：
+```
+render() 用 lineItems.get(0).quotationId 设 QuotationIdContext，
+而 $wl_ys_bom_view 含 f_material_element_price(:customerCode, :priceBaseDate)，
+:priceBaseDate = 报价单 created_at 的 LocalDate（SqlViewExecutor#enrichPriceBaseDate）
+⇒ 批次跨多个建单日时，组长的基准日被套给全批
+实测 job c2915208（24 单跨 6 个建单日）：5 张单的 costing_card_values 被写成别单的数据
+—— 而出问题的正是唯一那个接价格的视图
+```
+⇒ 分组键必须 = `(costingCardTemplateId, 取价基准日)`。
+
+**交付**：`PriceBaseDateUtil`（日期口径唯一实现，与 `enrichPriceBaseDate` 同源）/ `DriverBatchSafetyAuditor` + `BatchSafetyLevel`（守卫1：按视图占位符判定批量安全级别，**解析失败一律降级逐项**）/ `PriceAdjustJobExecutionService#precomputeBatch`（分组预渲染，分组级 `REQUIRES_NEW`）/ 守卫2（分组失败回退逐项，FAILED 精确落到单个 item）/ V383 S0 守卫开关（默认关）。
+
+**主线亲验（不采信子代理）**：先用**未改动的 master 代码**抓 4 job / 75 个 line item 的 `costing_card_values` MD5 基线（`baseline.md`），再从 worktree 起临时后端走真实生产路径重算 → **75/75 逐字节相同、0 不一致**（含 AC-2 强制反例 `c2915208` 18/18）；连跑三次确定性 0 不一致；测试 61/61 PASS。
+
+**亲验抓到、子代理未发现的潜伏分叉**（已修）：`precomputeBatch` 绕过老路径的 `templateHasTreeTab` 门槛 —— 对不含树页签的核价模板，新老两条路径会走进 `buildCostingCardValues` 的不同分支。当前不可达（两个在用模板都有树页签），但按守卫纪律堵死。
+
+**性能实测（如实记录，不修饰）**：`06b54e9a`（18 项）冷 JVM 端到端 **29.24s** vs 改造前 58s；但**不是同 JVM 严格对照**（58s 的测量条件未知），不作为确定加速倍数。**冷/暖 JVM 差 12 秒，比分组算法本身的边际差异更显著**。S0 开关实测省 **197ms/项**（交替 A/B 各 5 次），非原估 460ms。
+
+📌 **三条方法论教训**：
+1. **「抽样 0 不一致」不是安全证明** —— job `06b54e9a` 也跨 3 个建单日却 0 不一致，因为那几天没跨价格版本边界，取价函数返回相同值。只跑它就宣布 PASS，会让「写坏 5/18 张单」的缺陷带着"已验证"标签进生产。说明问题的是**结构性事实 + 存在性反例**，不是样本通过率。
+2. **在没测的维度上通过 = 假绿** —— 测试的还原校验只比对了 line item（`0|18`），没校验 revision 行数（S0 快照明明记了第三个数 `18|18|90`），于是"还原成功"这个结论在没测的维度上通过，实际留下 36 行凭据残留（已删，删前 pg_dump 备份）。
+3. **AC 里的性能门槛不要写推导值** —— AC-7 原写「关闭时耗时下降 ≥0.3s」，那 0.3s 是我从「14.3% × 3.22s」折算的，不是实测；实测只有 197ms。**推导值当门槛会让一个正确的实现"验收不通过"**。已改为：AC-7 只判功能正确性，耗时归 AC-10 如实记录。
+
+**遗留**：[[BL-0144]] T5 方案A 分层调度（转二期 P1，须走 architect 评审）；[[BL-0145]] 料号 3120011203 双端算值分叉（338 vs 658，S0 关闭后更需有人接）；预算阶段批量化 + `buildCostingCardValues` prefetch 两项待登记。

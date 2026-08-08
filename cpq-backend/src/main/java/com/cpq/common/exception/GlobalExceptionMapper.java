@@ -27,6 +27,14 @@ public class GlobalExceptionMapper {
                             Map.of("conflicts", rce.getConflicts())))
                     .build();
         }
+        // task-0806 阶段① API-3：提交闸门 —— 未落定对账差异 / 在飞写，见 ReconcilePendingException。
+        if (e instanceof ReconcilePendingException rpe) {
+            return Response.status(e.getCode())
+                    .entity(ApiResponse.error(e.getCode(), e.getMessage(), Map.of(
+                            "reason", rpe.getReason(),
+                            "conflicts", rpe.getConflicts())))
+                    .build();
+        }
         if (e instanceof TreeConflictException tce) {
             return Response.status(e.getCode())
                     .entity(ApiResponse.error(e.getCode(), e.getMessage(),

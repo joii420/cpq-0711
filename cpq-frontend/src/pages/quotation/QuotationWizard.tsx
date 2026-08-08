@@ -39,6 +39,8 @@ import { buildExcelSnapshot } from './buildExcelSnapshot';
 // lazy-cardvalues：纯判定函数抽到小模块(便于单测,不拉本文件重依赖),运行时由此 import 复用。
 import { shouldWarmCardValues } from './cardValuesWarm';
 import RowKeyConflictDrawer, { type RowKeyConflictDTO } from './RowKeyConflictDrawer';
+import ReconcilePendingDrawer, { type ReconcileConflictDTO } from './ReconcilePendingDrawer';
+import { waitForPendingEdits } from './pendingEditTracker';
 import QuotationPriceRevisionsDrawer from './QuotationPriceRevisionsDrawer';
 import { normalizeNumber, toDecimal, roundToDisplay } from '../../utils/precision';
 import { formatNumber } from '../../utils/formatNumber';
@@ -257,6 +259,9 @@ const QuotationWizard: React.FC = () => {
   // Plan 1b：提交行键冲突 Drawer
   const [rowKeyConflicts, setRowKeyConflicts] = useState<RowKeyConflictDTO[]>([]);
   const [conflictDrawerOpen, setConflictDrawerOpen] = useState(false);
+  // task-0806 F1-8（阶段① FR-6 提交闸门）：409 reason=RECONCILE_PENDING 的差异清单 Drawer。
+  const [reconcileConflicts, setReconcileConflicts] = useState<ReconcileConflictDTO[]>([]);
+  const [reconcilePendingOpen, setReconcilePendingOpen] = useState(false);
   const [locateTarget, setLocateTarget] = useState<{ lineItemId?: string; productPartNo?: string; componentId?: string; seq: number } | null>(null);
   const locateSeqRef = useRef(0);
   // Plan A(2026-06-24 空白BUG止血):autosave 默认拒绝门。
@@ -1343,26 +1348,63 @@ const QuotationWizard: React.FC = () => {
       //   ⚠️ 改这行前先看：dev-docs/task-0729-客户价格调整策略和价格版本/
       //      方向3-总价单一来源改造-开发计划.md §四 T1 实施结果 C（提交时序 / 拿不到锁改抛 409）。
       await handleSaveDraft(false, { skipWarm: true });
+      // task-0806 D15：前端提交前必须先完成一次对账上报再发 submit（前端串行保证）——
+      // 阶段① 后端 assertLineSettled 的 WRITE_IN_FLIGHT 判据恒 false，唯一生效的
+      // RECONCILE_PENDING 以"该行最近一次对账上报"为准；此处排空在飞的编辑链
+      // （含其内部 reconcile-report 上报），避免拿着上一轮陈旧对账结果去闯闸门。
+      await waitForPendingEdits();
       await quotationSnapshotService.submit(quotationId);
       message.success('报价单已提交审批');
       // Reload to get updated status
       await loadQuotation(quotationId);
     } catch (e: any) {
-      const conflicts = e?.payload?.conflicts;
-      if (Array.isArray(conflicts) && conflicts.length) {
-        setRowKeyConflicts(conflicts);
-        setConflictDrawerOpen(true);
+      // task-0806 F1-8（阶段① FR-6 / api.md API-3）：新增两个 reason 判据，须在既有通用
+      // conflicts 判据之前拦截 —— 两者字段形状不同（RowKeyConflictDTO 有 componentId+rowIndices，
+      // ReconcileConflictDTO 有 fieldName+frontendValue+backendValue），不可混用同一个 Drawer。
+      const reason = e?.payload?.reason;
+      if (reason === 'RECONCILE_PENDING') {
+        const rc = e?.payload?.conflicts;
+        setReconcileConflicts(Array.isArray(rc) ? rc : []);
+        setReconcilePendingOpen(true);
+      } else if (reason === 'WRITE_IN_FLIGHT') {
+        // fronttask.md §2.6：提示 + 自动重试一次。给在飞写一点落地时间再重试。
+        message.info('正在保存，请稍候…');
+        try {
+          await new Promise(resolve => setTimeout(resolve, 800));
+          await handleSaveDraft(false, { skipWarm: true });
+          await quotationSnapshotService.submit(quotationId);
+          message.success('报价单已提交审批');
+          await loadQuotation(quotationId);
+        } catch (e2: any) {
+          message.error(e2?.message || '提交失败，请稍后重试', e2?.httpStatus === 409 ? 6 : undefined);
+        }
       } else {
-        // 方向3 T3-3：后端在"提交前置的金额重算"拿不到单飞锁时返回 409，其 message 是
-        //   专门写给用户看的可操作文案（含"请稍候几秒后重新提交"），必须原样透出、
-        //   不能吞成通用错误。链路：后端信封 message → api.ts buildApiError → e.message。
-        //   409 延长到 6s，避免默认 3s 一闪而过导致用户没看清该怎么办。
-        message.error(e.message, e?.httpStatus === 409 ? 6 : undefined);
+        const conflicts = e?.payload?.conflicts;
+        if (Array.isArray(conflicts) && conflicts.length) {
+          setRowKeyConflicts(conflicts);
+          setConflictDrawerOpen(true);
+        } else {
+          // 方向3 T3-3：后端在"提交前置的金额重算"拿不到单飞锁时返回 409，其 message 是
+          //   专门写给用户看的可操作文案（含"请稍候几秒后重新提交"），必须原样透出、
+          //   不能吞成通用错误。链路：后端信封 message → api.ts buildApiError → e.message。
+          //   409 延长到 6s，避免默认 3s 一闪而过导致用户没看清该怎么办。
+          message.error(e.message, e?.httpStatus === 409 ? 6 : undefined);
+        }
       }
     } finally {
       submittingRef.current = false;
       setSubmitting(false);
     }
+  };
+
+  const handleLocateReconcileConflict = (c: ReconcileConflictDTO) => {
+    // api.md 的 conflicts 元素不带 componentId（只有 tabName），故只能定位到产品卡片本身，
+    // 不能像行键冲突那样精确切到目标页签——QuotationStep2 的 locateTarget.componentId 留空即可，
+    // 其内部定位逻辑对 componentId 缺省已做兼容（仅不做页签切换，卡片仍会滚动进入视口）。
+    locateSeqRef.current += 1;
+    setLocateTarget({ lineItemId: c.lineItemId, productPartNo: c.productPartNo, componentId: undefined, seq: locateSeqRef.current });
+    setReconcilePendingOpen(false);
+    setCurrentStep(1);
   };
 
   const handleLocateConflict = (c: RowKeyConflictDTO) => {
@@ -1989,6 +2031,12 @@ const QuotationWizard: React.FC = () => {
         conflicts={rowKeyConflicts}
         onLocate={handleLocateConflict}
         onClose={() => setConflictDrawerOpen(false)}
+      />
+      <ReconcilePendingDrawer
+        open={reconcilePendingOpen}
+        conflicts={reconcileConflicts}
+        onLocate={handleLocateReconcileConflict}
+        onClose={() => setReconcilePendingOpen(false)}
       />
       <QuotationPriceRevisionsDrawer
         open={priceRevisionsOpen}
