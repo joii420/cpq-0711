@@ -365,13 +365,35 @@
 ### [BL-0124] task-0729 升版路径完全不写锁标记（与归位侧 #47 同形）
 - **优先级**：P1
 - **来源**：验收 P2 测试 B 顺带实测（2026-08-06）
-- **状态**：[~] 进行中 —— **已被 `repair-0807` 立项覆盖**（2026-08-07，见 `dev-docs/task-0729-客户价格调整策略和价格版本/repair-0807-更正任务价格丢失与版本错乱/`，对应其 FR-1/FR-2；`#42`/`#29` 影响面评估结论落在该需求文档 §7 风险 1）
+- **状态**：[x] **已完成**（2026-08-08 随 `repair-0807` 交付并合并 master `24b68b20`）。实修范围比本条原描述更大：除 FR-1/FR-2 外，开发期又追加 D-9（driver 行「旧价穿新版徽标」）、D-10（`loadVersionPrices` 过滤致 else 分支为死代码）、D-11（升版侧接入调价元素清单，与 `PriceReconciler` 收敛）。⚠️ `PriceReconciler` driverRow 分支的同款洞**未修**，见 [[BL-0154]]
 - **说明**：`MaterialVersionUpgradeService` 全文 **0 处** `__priceLocked` / `__priceVersion`（对照 `PriceReconciler` 有 8 处）。实测真实升版后：
   - `_origin:"manual"` 行价格被改成本版价（`999.999 → 2200.000000`），但 **`__priceVersion` 仍停在陈旧值未刷新**
   - 非 manual 行走 S4b 删掉价格键，却**保留 `__priceLocked:true`** —— **与 `031a2dfa` 在归位侧修的 `#47`「死格」完全同形**
 - ⚠️ 即：`#47` 只在归位侧修好了，**升版侧还有一份同样的缺陷**
 - **前置**：改动会触及 `#42`（手动行锁价）/ `#29`（升版清手改值）两条已 PASS 的验收项，需先做影响面评估
 - **预估规模**：M
+
+### [BL-0154] `PriceReconciler` driverRow 分支「解不出价时不撤锁」—— 与 repair-0807 D-9 同款洞
+- **优先级**：P1（静默死格 / 旧价穿旧徽标，用户无绕开手段）
+- **来源**：`repair-0807` 主线代码评审顺带发现（2026-08-07）
+- **状态**：TODO（未排期）　**登记日期**：2026-08-07
+- **背景**：`PriceReconciler.reconcileRows` 的 **driverRow 分支**（`:246-249`）写的是 `if (ep == null || ep.price == null) continue;` —— 元素∈清单但本版无价时**整行不动**，于是上一版写进去的 `__priceLocked=true` / `__priceVersion` **留在原地**。而同方法的 `row_data` 分支（`:286-299`）在同样情形下是「删值 + 撤锁」。两个分支口径不一致。
+- **为什么是缺陷**：前端判据是 `driverRow.__priceLocked ?? rawRow.__priceLocked`（`QuotationStep2.tsx:3706` / `ReadonlyProductCard.tsx:909`），**driverRow 短路优先** ⇒ driverRow 不撤锁，`row_data` 侧撤得再干净也没用，格子仍是只读，且显示 driverRow 上那个上一版的旧价 + 旧徽标。这正是 `#47`「死格」在 driver 行上的残留形态。
+- **与 repair-0807 的关系**：repair-0807 的 **D-9** 已把**升版侧**（`MaterialVersionUpgradeService` S3a）改成「四键全删」的对称口径。两者**不冲突**（已核）：升版侧撤锁后，下次 `saveDraft` 归位时 `PriceReconciler` 的 driverRow 分支在 `ep.price==null` 时走 `continue`、**不会重新加锁**。但**单独走归位链路**（没经过升版）的场景仍会留旧锁。
+- **为什么不并进 repair-0807**：改它会触及父任务已 PASS 的 `#47` 归位侧验收，需要独立回归面；repair-0807 的范围是升版链路，不擅自扩大。
+- **范围**：把 driverRow 分支改成与 `row_data` 分支同构的三分支（不动 / 覆盖+锁 / 删值+撤锁），并把 `#47` 的归位侧用例补一条 driver 行无价场景
+- **依赖**：建议在 `repair-0807` 合并后做。**预估规模**：S
+- **验收要点**：①元素∈清单但本版无价时，driverRow 的价格键/货币键/`__priceLocked`/`__priceVersion` 四者全删；②该格前端可编辑；③`#47` 原有断言不回归
+
+### [BL-0155] `QuotePendingScopeOpenWhitelistTest` 注释文本误命中 —— 守卫测试恒红
+- **优先级**：P2（不是功能缺陷，但会侵蚀测试基线的可信度）
+- **来源**：`repair-0807` 的 A/B 对照实测（2026-08-07，干净 master 与修复分支同型失败）
+- **状态**：TODO（未排期）　**登记日期**：2026-08-07
+- **背景**：该守卫测试用**朴素字符串扫描**统计 `QuotePendingScope.open(` 的调用文件集合，与白名单精确比对。`QuotationService.java:1631` 有一行**注释**原文含 `（QuotePendingScope.open(copy.id)）`，被算作调用点 ⇒ 实际集合比白名单多一个文件 ⇒ **恒定失败**。已实测：干净 master 与 `fix/repair-0807-price-update-loss` 上失败方法名逐字一致，非任何一次改动引入。
+- **为什么要修**：守卫测试的价值全在"红了就一定有事"。一个恒红的守卫，下一个人只会学会忽略它——真的有人在未授权位置开了 pending 可见域时也不会有人看。同族教训见记忆 `task0709-update0723-quote-import-template`（`grep head -1` 命中注释里的历史 `@Transactional` 文本致误判）。
+- **范围**：扫描前剔除注释（行注释 `//` + 块注释 `/* */`），或改用 codegraph 的真实调用边而非字符串匹配；修完确认白名单精确等于 3 个文件
+- **依赖**：无。**预估规模**：S
+- **验收要点**：①`QuotePendingScopeOpenWhitelistTest` 在干净 master 上通过；②故意在某个未授权文件里写一行**注释**含该字符串 → 仍通过；③故意写一个**真调用** → 失败
 
 ### [BL-0148] 价格更正历史遗留：被静默跳过 / 被写坏的存量单据盘点与补偿
 - **优先级**：P1（存量数据正确性；**已发生**，非潜在风险）

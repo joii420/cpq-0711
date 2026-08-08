@@ -5221,3 +5221,34 @@ render() 用 lineItems.get(0).quotationId 设 QuotationIdContext，
 3. **AC 里的性能门槛不要写推导值** —— AC-7 原写「关闭时耗时下降 ≥0.3s」，那 0.3s 是我从「14.3% × 3.22s」折算的，不是实测；实测只有 197ms。**推导值当门槛会让一个正确的实现"验收不通过"**。已改为：AC-7 只判功能正确性，耗时归 AC-10 如实记录。
 
 **遗留**：[[BL-0144]] T5 方案A 分层调度（转二期 P1，须走 architect 评审）；[[BL-0145]] 料号 3120011203 双端算值分叉（338 vs 658，S0 关闭后更需有人接）；预算阶段批量化 + `buildCostingCardValues` prefetch 两项待登记。
+
+## [2026-08-08] 价格调整 - repair-0807 更正任务价格丢失与版本错乱（三根因 + 审核抽屉调整后小计）
+
+**合并**：`24b68b20`（父任务 `task-0729`，目录 `dev-docs/task-0729-客户价格调整策略和价格版本/repair-0807-更正任务价格丢失与版本错乱/`）
+
+**用户实测现象**（`QT-20260807-0140`）：更正任务报成功后，报价单里元素单价与货币变 `—`、产品小计 18.00 → 15.109316；进编辑页价格与 🔒 版本徽标对不上；**再刷新一次才对**。
+
+**三个根因**（用同批 job 更新的兄弟单在库里逐层取证）：
+1. **升版只改价、不刷版本徽标**（=`BL-0124`）：`MaterialVersionUpgradeService` 全类 0 处 `__priceVersion`；该标记唯一写点是 `PriceReconciler`，只挂在 `saveDraft`。所以"再刷新才对"**不是缓存**，是保存副作用把它治好了。
+2. **S4 只删价格键、不回填**：`row_data` 该元素行恰好少了被删的那两个键；S5 `buildCardValues` 的 editRows 是**从 `row_data` 回种**的（`seedEditRowsFromRowData`），键缺 → 整格算不出值 → 小计塌。
+3. **缺 `QUOTE_CARD` 冻结结构的单被静默跳过却计入 SUCCESS**：`executeItem` 把 `SUCCESS, SKIPPED` 并成一个分支。现网 **33 张活跃 DRAFT** 处于该状态（实测 `QT-20260807-0128`：`row_version=0`、价格停在旧版、`updated_at` 停在建单时刻，而 job 报 32/32 成功）。
+
+**开发期四条追加裁决**（原始文档只有 D-1~D-7）：
+- **D-8** 手动行与非手动行同口径（测试审用例时发现的需求空白）
+- **D-9** driver 行同口径 —— 首版把锁标记写在 `if (ep.price != null)` **之外**，产出「**旧价穿新版徽标**」，且前端 `driverRow.__priceLocked ?? rawRow.__priceLocked` **driverRow 短路优先**，会把 row_data 侧的撤锁整个抵消（代码评审发现）
+- **D-10** `loadVersionPrices` 带 `AND current_price IS NOT NULL` → 无价元素进不了 map → **D-8/D-9 的 else 分支是死代码，AC-5 实为未交付**（测试执行发现）
+- **D-11** 升版侧接入**调价元素清单**，四个写点与 `PriceReconciler` 收敛为同一三分支。实测反例：`CUST-0002` 清单只有 `Ag`，但 `V26080702` 明细里有 `Zn`(`no_price=t`)，只按版本明细判会抹掉 **28/32 张单共 55 行**的 24.17
+
+**涉及文件**：`MaterialVersionUpgradeService.java`（主战场）/ `PriceAdjustReviewService.java` / `PriceAdjustJobExecutionService.java` / `MaterialPriceUpdateJob(Item).java` / `JobDTO.java` / `ReviewDetailDTO.java` / `V384__repair0807_job_item_skipped.sql` / 前端 `JobProgressDrawer.tsx` · `ReviewDetailDrawer.tsx` · `types/price-adjust.ts`
+
+**关键决策与注意事项**：
+- 🔑 **`PriceReconciler` 的 `row_data` 分支能正确处理无价元素，是因为它先判 `elementCodesInList` 这个独立集合**；`MaterialVersionUpgradeService` 没有清单概念，「本版有该元素但无价」与「本版没这个元素」被压成同一个 `ep == null`。**照抄 `PriceReconciler` 时要抄它的 `row_data` 分支，不要抄 driverRow 分支**（后者有同款洞，见 `BL-0154`）。
+- 🔑 `JobDTO` 的 wire 字段是 `total/success/failed/conflict/stale`（**无 `Count` 后缀**），实体侧才是 `xxxCount`。新增字段叫 `skipped`。
+- 🔑 **有 `SKIPPED` 就不许报 `SUCCESS`**（走 `PARTIAL`）—— 本次缺陷的传播路径正是"32/32 全成功"骗过财务。
+- 🔑 单测只喂手工构造的 map，测的是"分支逻辑对不对"而不是"分支跑不跑得到"。D-10 就是这么漏过去的，已补**端到端闸门测试**（真调 `loadVersionPrices`）。
+- ⚠️ **共享 Flyway 历史仍在被并发会话 churn**：`V382`（task-0806 未合并分支）存在两个不同内容的版本，分别匹配 test 库与 dev 库的校验和；期间还被人从 test 库历史里删过一行又重新应用。跑测试遇 Flyway 报错时**先核对副本与库里 checksum 是否一致**，不要直接 `-Dquarkus.flyway.validate-on-migrate=false`（那会把自己迁移的问题一起盖住）。另注意 Flyway 读的是 `target/classes/db/migration/`，删源文件不生效。
+- ⚠️ 主工作区的 `V382` 副本是旧版而 dev 库上是新版校验和 → **8081 重启会 Flyway 验不过**（非本次引入，未擅自替换他人在改的文件）。
+
+**遗留**：`BL-0148`（存量盘点：被静默跳过 / 被写坏的单）· `BL-0149`（`ComponentCell:458` pathCache 缺行维度）· `BL-0150`（`copy` 的 `ensureStructure` 吞异常）· `BL-0154`（`PriceReconciler` driverRow 同款洞）· `BL-0155`（`QuotePendingScopeOpenWhitelistTest` 注释误命中恒红）
+
+**未取得集成级证据的 6 条 AC**：AC-4 / AC-7 / AC-8 / AC-12 / AC-13 / AC-16（详见 `交付验收报告.md` §7，未以单测冒充）
