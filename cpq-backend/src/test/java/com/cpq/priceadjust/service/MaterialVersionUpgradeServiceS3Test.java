@@ -231,6 +231,91 @@ class MaterialVersionUpgradeServiceS3Test {
     }
 
     /**
+     * D-9（代码评审 P0 修复，2026-08-07）：driverRow（snapshot_rows）侧同款场景——元素∈本版明细但
+     * 解不出价（{@code ep.price==null}）时，driverRow 的价格键/货币键/{@code __priceLocked}/
+     * {@code __priceVersion} 必须【四者全删】。
+     *
+     * <p>原实现的 bug：只有价格键的写受 {@code ep.price != null} 保护，货币键与两个锁标记在这层
+     * 判断之外无条件执行——ep.price==null 时价格键保留【旧值】，却被打上【本次新版本】的
+     * {@code __priceLocked=true} + {@code __priceVersion}，产出"旧价穿新版徽标"（根因 A 的镜像，
+     * 比死格更危险：死格至少是空的，这个显示一个看起来权威的错数字）。且前端 priceLocked 判据
+     * {@code driverRow?.__priceLocked ?? rawRow?.__priceLocked} 里 driverRow 命中 true 就短路，
+     * S4b 在 row_data 侧撤的锁在渲染层完全不起作用——AC-5「该格可编辑」在 driver 行上因此不成立。
+     *
+     * <p>🚨 <b>要害断言在 {@code assertNotEquals(versionLabel, ...)}</b>：只验"锁没了"会漏掉
+     * "徽标被刷新成新版号"这个形态——必须显式断言 {@code __priceVersion} 不存在（而不仅仅是"不等于
+     * 旧版号"），否则一个"__priceVersion 被静默改写成新版号但 __priceLocked 被删"的半吊子修复
+     * 也能骗过一个只查 {@code assertFalse(has(__priceLocked))} 的弱断言。
+     */
+    @Test
+    @Transactional
+    void upgradeComponentRows_driverRow_noPriceElement_deletesValueAndUnlocksBothMarks() throws Exception {
+        componentId = UUID.randomUUID();
+        String fieldsJson = "[{\"name\":\"元素\",\"field_type\":\"INPUT_TEXT\"}]";
+        em.createNativeQuery(
+                "INSERT INTO component (id, name, code, fields, formulas, element_code_field, " +
+                "element_price_field, element_currency_field) " +
+                "VALUES (:id, 'S3-D9测试组件', :code, CAST(:fields AS jsonb), '[]', '元素', '元素单价', '货币')")
+            .setParameter("id", componentId).setParameter("code", "TEST-S3-D9-" + componentId)
+            .setParameter("fields", fieldsJson)
+            .executeUpdate();
+
+        UUID anyCustomerId = (UUID) em.createNativeQuery("SELECT id FROM customer LIMIT 1").getSingleResult();
+        UUID anyUserId = (UUID) em.createNativeQuery("SELECT id FROM \"user\" LIMIT 1").getSingleResult();
+        quotationId = UUID.randomUUID();
+        em.createNativeQuery(
+                "INSERT INTO quotation (id, quotation_number, customer_id, name, sales_rep_id, status, created_at, updated_at) " +
+                "VALUES (:id, :no, :cust, 'S3-D9测试单', :rep, 'DRAFT', now(), now())")
+            .setParameter("id", quotationId).setParameter("no", "TEST-S3-D9-" + quotationId)
+            .setParameter("cust", anyCustomerId).setParameter("rep", anyUserId)
+            .executeUpdate();
+
+        lineItemId = UUID.randomUUID();
+        em.createNativeQuery(
+                "INSERT INTO quotation_line_item (id, quotation_id, subtotal, created_at) " +
+                "VALUES (:id, :qid, 0, now())")
+            .setParameter("id", lineItemId).setParameter("qid", quotationId)
+            .executeUpdate();
+        // driverRow 元素=Ni，带陈旧价格键 + 陈旧锁标记（模拟"上一版曾锁过"的死格前状态）——
+        // 这正是复现 D-9 的关键：若 bug 未修，本行会被刷成「旧价 123.45 + 新版号 V26080702」。
+        String snapshotRowsJson = "[{\"driverRow\":{\"元素\":\"Ni\",\"元素单价\":123.45,\"货币\":\"CNY\"," +
+            "\"__priceLocked\":true,\"__priceVersion\":\"V26080601\"}}]";
+        em.createNativeQuery(
+                "INSERT INTO quotation_line_component_data " +
+                "(id, line_item_id, component_id, snapshot_rows, row_data, row_version, created_at) " +
+                "VALUES (gen_random_uuid(), :lid, :cid, CAST(:sr AS jsonb), '[]'::jsonb, 0, now())")
+            .setParameter("lid", lineItemId).setParameter("cid", componentId)
+            .setParameter("sr", snapshotRowsJson)
+            .executeUpdate();
+
+        var pbc = new com.cpq.priceadjust.dto.UpgradeResult.PriceBearingComponent(
+            componentId.toString(), "TEST-S3-D9", "材料成本", "元素", "元素单价", "货币");
+        Map<String, ElementPrice> versionPrices = new LinkedHashMap<>();
+        versionPrices.put("Ni", new ElementPrice(null, null)); // 元素∈明细，但本版无价（current_price NULL）
+        String newVersionLabel = "V26080702";
+
+        MaterialVersionUpgradeService.RowUpdateOutcome outcome =
+            svc.upgradeComponentRows(lineItemId, pbc, versionPrices, newVersionLabel);
+        assertFalse(outcome.conflict);
+        assertEquals(1, outcome.rowsChanged);
+
+        String snapshotRows = (String) em.createNativeQuery(
+                "SELECT snapshot_rows FROM quotation_line_component_data WHERE line_item_id=:lid AND component_id=:cid")
+            .setParameter("lid", lineItemId).setParameter("cid", componentId).getSingleResult();
+        JsonNode arr = new ObjectMapper().readTree(snapshotRows);
+        JsonNode driverRow = arr.get(0).path("driverRow");
+        assertFalse(driverRow.has("元素单价"), "D-9：driverRow 解不出价时价格键必须被删除（不是保留旧值）");
+        assertFalse(driverRow.has("货币"), "D-9：driverRow 解不出价时货币键必须被删除");
+        assertFalse(driverRow.has("__priceLocked"), "D-9：driverRow 删值必须同时撤锁（__priceLocked）");
+        // 🚨 要害断言：不是"__priceVersion 不等于新版号"这种弱断言，而是【键本身不存在】——
+        // 否则一个"把 __priceVersion 悄悄留成旧版号"的半吊子修复也能通过弱断言。
+        assertFalse(driverRow.has("__priceVersion"),
+            "D-9 要害断言：__priceVersion 键必须不存在，不得被刷新成新版号 " + newVersionLabel
+                + "（旧价配新徽标是根因 A 的镜像，比死格更危险）");
+        assertEquals("Ni", driverRow.path("元素").asText(), "元素字段本身不得被清");
+    }
+
+    /**
      * AC-17（幂等）：连续两次对同一目标版本调用 {@code upgradeComponentRows}（同一 {@code versionPrices}
      * + 同一 {@code versionLabel}），第二次的 {@code snapshot_rows}/{@code row_data} 内容必须与第一次
      * 逐字节相等——覆盖式写入（FR-2）天然幂等，不应因重复升版产生漂移（{@code row_version} 递增不计入

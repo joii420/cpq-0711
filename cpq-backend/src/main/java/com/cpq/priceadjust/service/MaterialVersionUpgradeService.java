@@ -632,16 +632,34 @@ public class MaterialVersionUpgradeService {
             ElementPrice ep = versionPrices.get(elementCodeVal);
             if (ep == null) continue; // 元素不在本版明细里（含无价/不在策略清单），不动
 
-            // 只改价格/货币两个键；价格列/货币列在价格策略 SQL 契约里就是"别名逐字=字段名、不加前缀"
-            // （task-0729 §11.15.3.4 纪律2），driverRow 直接以字段名为 key 持有该值，无需再经 default_source。
-            if (ep.price != null) driverRow.put(pbc.elementPriceField, ep.price);
-            if (pbc.elementCurrencyField != null && !pbc.elementCurrencyField.isBlank() && ep.currency != null) {
-                driverRow.put(pbc.elementCurrencyField, ep.currency);
+            // repair-0807 D-9（代码评审 P0 修复）：driverRow 与 row_data（S3b/S4b）三分支口径对齐——
+            // 元素∈明细且解出价 → 覆盖新价+货币+锁标记；元素∈明细但解不出价（ep.price==null，
+            // noPrice 元素）→ 删价格键+货币键+两个锁标记，四者全删。
+            //
+            // 🚨 原实现只在 `if (ep.price != null)` 里包了价格键的写，货币键/两个锁标记却在这层判断
+            // 之外无条件执行——ep.price==null 时价格键保留【旧值】，却被打上【本次新版本】的
+            // __priceLocked=true + __priceVersion。这是根因 A 的镜像："旧价穿新版徽标"，比死格更
+            // 危险（死格至少是空的，这个显示一个看起来权威的错数字）。且前端 priceLocked 判据
+            // `driverRow?.__priceLocked ?? rawRow?.__priceLocked` 里 driverRow 有 true 就短路，
+            // S4b 在 row_data 侧撤的锁在渲染层完全不起作用，AC-5「该格可编辑」在 driver 行上不成立。
+            //
+            // 价格列/货币列在价格策略 SQL 契约里就是"别名逐字=字段名、不加前缀"（task-0729
+            // §11.15.3.4 纪律2），driverRow 直接以字段名为 key 持有该值，无需再经 default_source。
+            if (ep.price != null) {
+                driverRow.put(pbc.elementPriceField, ep.price);
+                if (pbc.elementCurrencyField != null && !pbc.elementCurrencyField.isBlank() && ep.currency != null) {
+                    driverRow.put(pbc.elementCurrencyField, ep.currency);
+                }
+                driverRow.put("__priceLocked", true);
+                driverRow.put("__priceVersion", versionLabel);
+            } else {
+                driverRow.remove(pbc.elementPriceField);
+                if (pbc.elementCurrencyField != null && !pbc.elementCurrencyField.isBlank()) {
+                    driverRow.remove(pbc.elementCurrencyField);
+                }
+                driverRow.remove("__priceLocked");
+                driverRow.remove("__priceVersion");
             }
-            // repair-0807 FR-1：写完价格/货币后追加锁标记（根因 A：升版链路此前只改价、不刷版本徽标，
-            // 导致价是新版价、徽标停在上一版）。
-            driverRow.put("__priceLocked", true);
-            driverRow.put("__priceVersion", versionLabel);
             changed++;
         }
 
