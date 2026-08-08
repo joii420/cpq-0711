@@ -1317,18 +1317,12 @@
 - **鉴权**: 需登录+角色[SYSTEM_ADMIN, PRICING_MANAGER]（端点级 `@RoleAllowed` 覆盖类级）
 - **响应内容**: `ApiResponse<List<Map<String,Object>>>` —— **动态结构，无固定 DTO**。每项为一条可疑路径记录（Service 层组装的 Map，含组件标识、字段名、当前 path、声明列名、建议修正值等键）；全部正常时返回空列表。
 
-#### 刷新模板快照（H1，手工触发）
-- **功能**: 手工同步所有引用该组件的模板 snapshot，用于历史模板（V184 之前发布）修复 / 数据迁移补偿 / 管理脚本。组件 update 已自动调用同款逻辑。
-- **方法**: POST
-- **路径**: `/api/cpq/components/{id}/refresh-template-snapshots`
-- **鉴权**: 需登录+角色[PRICING_MANAGER, SYSTEM_ADMIN]（端点级覆盖）
-- **路径参数**:
+#### ~~刷新模板快照（H1，手工触发）~~ ❌ 已删除
+- **`POST /api/cpq/components/{id}/refresh-template-snapshots` 于 task-0806 整体删除，现返回 404。**
+- 原语义（把组件配置推给所有已发布模板）与「模板发布即冻结」直接冲突 —— 它正是「改一个组件静默改写整条版本历史」的入口之一。其实现 `TemplateService.refreshSnapshotsByComponent` 亦已整体退役。
+- 替代路径：想让新组件配置生效 → `createNewDraft` → 改 → `publish` 出新版本；给从未冻结过的模板补快照 → `POST /templates/{id}/freeze`。
 
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| id | UUID | 组件 ID |
-
-- **响应内容**: `ApiResponse<List<UUID>>`（受影响的 template id 列表）
+> 来源任务：`task-0806-模板发布全量冻结`｜回写日期：2026-08-08
 
 #### 行驱动展开（Y1.5）
 - **功能**: 按组件 dataDriverPath 取 N 行，每行隐式 JOIN 求值所有 BASIC_DATA 字段。无 dataDriverPath 则返回 rowCount=0（前端按单行渲染兜底）。
@@ -2032,18 +2026,46 @@
 | components | ComponentsDiff | 组件差异，含 addedTabs[] / removedTabs[] / modifiedTabs[]（TabChange{tabName, componentId, fieldChanges[], addedFields[], removedFields[]}） |
 | stats | Stats | 统计 {totalDiffs, added, removed, modified, similarityPercent} |
 
-#### 【管理员】迁移到统一智能视图
-- **功能**: 一次性数据迁移——将 PUBLISHED 模板每个 tc 的 `basic_data_path_composite` 上升覆盖 `basic_data_path` 并删 `_composite` 键，同步重建 snapshot
-- **方法**: POST
-- **路径**: `/api/cpq/templates/admin/migrate-to-unified-view`
-- **鉴权**: SYSTEM_ADMIN
-- **请求体**: `Map<String,Object>`（可选）
+#### ~~【管理员】迁移到统一智能视图~~ ❌ 已删除
+- **`POST /api/cpq/templates/admin/migrate-to-unified-view` 于 task-0806 删除，现返回 404。** 一次性历史迁移（`_composite` 字段上升），早已跑过，留着只是「可改写已发布快照」的风险面。
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| templateIds | List&lt;String(UUID)&gt; | 否 | 目标模板 ID 列表；不传或空=处理全部 PUBLISHED 模板 |
+> 来源任务：`task-0806-模板发布全量冻结`｜回写日期：2026-08-08
 
-- **响应内容**: `ApiResponse<Map<String,Object>>`，含 `{ totalTemplates, totalTcMigrated, totalFieldsMigrated, details[] }`
+#### 【模板】首次冻结（task-0806 新增）
+- **功能**: 给**从未冻结过**的已发布/已归档模板，按当前活配置就地生成渲染配置冻结快照。**不改 version / status / publishedAt**。
+- **方法**: POST　**路径**: `/api/cpq/templates/{id}/freeze`　**鉴权**: SALES_MANAGER / SYSTEM_ADMIN
+- 🔒 **零行守卫**：仅当该模板 `template_component_snapshot` 行数为 0 时可用；已有快照 → `409`（「该模板已冻结，如需更新配置请走 createNewDraft → publish」）。此守卫保证本端点**结构上不可能覆盖已有快照**，故不破坏版本不可变性，可开给业务角色。
+- DRAFT 模板 → `400`（草稿本就不该有快照）
+- 审计：写 `operation_log`，`operation_type='TEMPLATE_INITIAL_FREEZE'`
+- **响应内容**: `ApiResponse<TemplateDTO>`
+
+> 来源任务：`task-0806-模板发布全量冻结`｜回写日期：2026-08-08
+
+#### 【管理员】批量首次冻结（task-0806 新增）
+- **功能**: 一次冻结所有零快照的 PUBLISHED/ARCHIVED 模板（过渡期一次性操作）
+- **方法**: POST　**路径**: `/api/cpq/templates/admin/freeze-unfrozen`　**鉴权**: SYSTEM_ADMIN
+- **请求体**: `{ "confirm": false }` —— 缺省 `false` = **仅预览、零写入**并列出待冻清单；`true` 才执行
+- **响应内容**: `ApiResponse<Map<String,Object>>`
+
+> 来源任务：`task-0806-模板发布全量冻结`｜回写日期：2026-08-08
+
+#### 【模板】冻结差异视图（task-0806 新增）
+- **功能**: 对比该已发布模板的冻结快照 vs 当前活组件配置，输出逐字段差异
+- **方法**: GET　**路径**: `/api/cpq/templates/{id}/frozen-drift`　**鉴权**: SYSTEM_ADMIN
+- **响应关键字段**：`frozen`（是否已冻结，**先看这个再看 hasDrift**）/ `hasDrift` / `driftCount` / `tabs[].fieldDrifts[]`
+- ⚠️ `frozen:false` 时 `hasDrift` 恒为 `false`，那只代表「没东西可比」，**不代表一切正常**
+- 语义：差异随组件迭代自然增长是**严格版本化下的正常状态**，不是告警；它回答「这个已发布版本比当前配置落后多少，值不值得发新版」
+- 批量版：`GET /api/cpq/templates/admin/frozen-drift`（增 `unfrozen` 计数；`onlyDrift=true` 时未冻结模板仍会列出）
+
+> 来源任务：`task-0806-模板发布全量冻结`｜回写日期：2026-08-08
+
+#### 【管理员】SQL 视图闭包体检（task-0806 新增）
+- **功能**: 验证每个已发布模板引用到的 SQL 视图都在 `sql_views_snapshot` 闭包内
+- **方法**: GET　**路径**: `/api/cpq/templates/admin/sqlview-closure-check`　**鉴权**: SYSTEM_ADMIN
+- **响应关键字段**：`scanned` / `checked`（真正参与体检的，即已冻结的）/ `unfrozenTemplateIds`（被跳过的）/ `totalRefs` / `missCount` / `misses[]`
+- ⚠️ `checked + unfrozenTemplateIds.length == scanned`；**不能把未冻结模板的「零引用」误读成「没有缺口」**
+
+> 来源任务：`task-0806-模板发布全量冻结`｜回写日期：2026-08-08
 
 #### 【管理员】删除模板指定页签
 - **功能**: 一次性数据修复——按 sortOrder 删除 PUBLISHED 模板的某些 Tab（绕过组件管理 UI）
