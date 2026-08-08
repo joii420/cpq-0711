@@ -5179,3 +5179,41 @@ task0806-backend-ab-probe`）做 A/B，前端未动它；契约核对改为静�
 **涉及文件**：后端 `ComponentService`（白名单一行）/ `QuotationService`（闸门接线）/ `QuotationResource`（API-5）/ `GlobalExceptionMapper` + 新增 `reconcile/{ReconcileDiffStore,SubmitGateService,SubmitConflictDTO}` / `ReconcilePendingException` / 2 个 DTO；前端 `QuotationStep2.tsx`（主战场）/ `ReadonlyProductCard.tsx`（AP-50 同步）/ `QuotationWizard.tsx` / `component/types.ts`（FR-0b 下拉收窄）/ `quotationService.ts` + 新增 `ReconcilePendingDrawer.tsx` / `pendingEditTracker.ts`
 
 **决策台账**：D1~D16（本次新增 D15 阶段① `WRITE_IN_FLIGHT` 恒 false + 提交前必须先完成对账上报；D16 白名单整份校验语义）。**遗留阶段②③④⑤ 未开工**，`test.md` 60 条用例已定稿待执行。
+
+---
+
+## [2026-08-07] task-0806 价格调整更新任务性能优化 —— 核价树分组批量渲染 + S0 守卫开关 | 合 master（`880709fc` + T6）
+
+**背景**：用户报「价格调整审核通过后的更新任务非常慢」。实测 18 项 job 58s（3.22s/项）。
+
+**实测否定的两个方向（写下来，免得后人再走一遍）**：
+- **不是 N+1**：三点插桩实测，一次 `render()` 恰好 **17 条 SQL**，每个 driver 组件 1 条、零重复。两道既有防线已挡住逐行查：① `evaluatePath` 对叶子列已在 driver 行里的字段短路取值；② `$view` 字段路径在 `DataLoader.resultCache` 按 `path::partNo::customerId::lineItem::owner::quotationId` 去重，**不含 driverRow 维度**。
+- **不能上线程池**：2026-06-22 同款设计（有界池 + 每 worker `@ActivateRequestContext`）已实证并 revert（5.6x 但 73 行中 9 行算错）。本链路写价格、落不可逆凭据，代价更高。
+
+**真正的浪费**：`refreshCostingCardValuesForLine` 每次只传 `List.of(li)`，而 `render()` 本就为整批设计 → 18 项 job 发 **306 条** SQL 而非 17 条。冷缓存对照实验（批量先跑）已排除缓存假象。
+
+🚨 **本次最值钱的发现 —— 「按 job 整批渲染」是错的**：
+```
+render() 用 lineItems.get(0).quotationId 设 QuotationIdContext，
+而 $wl_ys_bom_view 含 f_material_element_price(:customerCode, :priceBaseDate)，
+:priceBaseDate = 报价单 created_at 的 LocalDate（SqlViewExecutor#enrichPriceBaseDate）
+⇒ 批次跨多个建单日时，组长的基准日被套给全批
+实测 job c2915208（24 单跨 6 个建单日）：5 张单的 costing_card_values 被写成别单的数据
+—— 而出问题的正是唯一那个接价格的视图
+```
+⇒ 分组键必须 = `(costingCardTemplateId, 取价基准日)`。
+
+**交付**：`PriceBaseDateUtil`（日期口径唯一实现，与 `enrichPriceBaseDate` 同源）/ `DriverBatchSafetyAuditor` + `BatchSafetyLevel`（守卫1：按视图占位符判定批量安全级别，**解析失败一律降级逐项**）/ `PriceAdjustJobExecutionService#precomputeBatch`（分组预渲染，分组级 `REQUIRES_NEW`）/ 守卫2（分组失败回退逐项，FAILED 精确落到单个 item）/ V383 S0 守卫开关（默认关）。
+
+**主线亲验（不采信子代理）**：先用**未改动的 master 代码**抓 4 job / 75 个 line item 的 `costing_card_values` MD5 基线（`baseline.md`），再从 worktree 起临时后端走真实生产路径重算 → **75/75 逐字节相同、0 不一致**（含 AC-2 强制反例 `c2915208` 18/18）；连跑三次确定性 0 不一致；测试 61/61 PASS。
+
+**亲验抓到、子代理未发现的潜伏分叉**（已修）：`precomputeBatch` 绕过老路径的 `templateHasTreeTab` 门槛 —— 对不含树页签的核价模板，新老两条路径会走进 `buildCostingCardValues` 的不同分支。当前不可达（两个在用模板都有树页签），但按守卫纪律堵死。
+
+**性能实测（如实记录，不修饰）**：`06b54e9a`（18 项）冷 JVM 端到端 **29.24s** vs 改造前 58s；但**不是同 JVM 严格对照**（58s 的测量条件未知），不作为确定加速倍数。**冷/暖 JVM 差 12 秒，比分组算法本身的边际差异更显著**。S0 开关实测省 **197ms/项**（交替 A/B 各 5 次），非原估 460ms。
+
+📌 **三条方法论教训**：
+1. **「抽样 0 不一致」不是安全证明** —— job `06b54e9a` 也跨 3 个建单日却 0 不一致，因为那几天没跨价格版本边界，取价函数返回相同值。只跑它就宣布 PASS，会让「写坏 5/18 张单」的缺陷带着"已验证"标签进生产。说明问题的是**结构性事实 + 存在性反例**，不是样本通过率。
+2. **在没测的维度上通过 = 假绿** —— 测试的还原校验只比对了 line item（`0|18`），没校验 revision 行数（S0 快照明明记了第三个数 `18|18|90`），于是"还原成功"这个结论在没测的维度上通过，实际留下 36 行凭据残留（已删，删前 pg_dump 备份）。
+3. **AC 里的性能门槛不要写推导值** —— AC-7 原写「关闭时耗时下降 ≥0.3s」，那 0.3s 是我从「14.3% × 3.22s」折算的，不是实测；实测只有 197ms。**推导值当门槛会让一个正确的实现"验收不通过"**。已改为：AC-7 只判功能正确性，耗时归 AC-10 如实记录。
+
+**遗留**：[[BL-0144]] T5 方案A 分层调度（转二期 P1，须走 architect 评审）；[[BL-0145]] 料号 3120011203 双端算值分叉（338 vs 658，S0 关闭后更需有人接）；预算阶段批量化 + `buildCostingCardValues` prefetch 两项待登记。
