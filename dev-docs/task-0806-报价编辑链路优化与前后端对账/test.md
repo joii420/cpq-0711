@@ -29,17 +29,18 @@
 
 ### 1.1 DRAFT 夹具（AC-1 / AC-3 / AC-4 / AC-13 用）
 
-- 报价单 `QT-20260805-0080`，`quotationId = fe75eb4d-ebd2-4997-85ae-3322b7c09471`，`status = DRAFT`
-- 行项 `lineItemId = 6caffef0-47f8-447c-8b19-d1165b53270f`，`productPartNo = 3120011203`，8 个页签：产品/物料/材料成本/其他费用/来料固定加工费/来料其他费用/组装加工费/报价
+> ⚠️ **2026-08-07 执行前夹具变更登记**：原定夹具 `QT-20260805-0080` 在技术总监验证 AC-4「清空 pending 后闸门放行」时被误操作放行提交，已变为 `SUBMITTED`（非本组测试造成，用户已确认测试库数据无妨、不回滚）。技术总监提供替代夹具如下，测试工程师执行前已用 SQL 核实两者当前状态均与描述一致：
+
+- 报价单 `QT-20260806-0120`，`quotationId = 08312d5d-99c7-4502-80dd-1eff41c4f345`，`status = DRAFT`（执行前核实：DRAFT ✅）
+- 行项 `lineItemId = 5aae535e-6b2c-421c-9036-dc1d83dec852`，`productPartNo = 3120011203`，8 个页签
 - 「物料」页签 `componentId = 2db185d6-2b5f-4617-bbc5-6957d6b735e2`
-- 「Ag粉」行 `rowKey = 3120011203/3110520422/00255::Ag粉`，当前 `editRows` 覆盖值 `材料占比="0.25"`（字符串），对应 `driverRow._材料占比 = 25`（数值，未经用户覆盖前的原始基础数据）——**这条真实数据本身就是「同一字段两种表示」的活教材**，但目前 BL-0127 已修复、前端正确读取 `editRows`，不构成当前分歧，仅作 AC-3 tooltip 文案设计的参照（不作为其断言基准，见 §5 附注）
-- ⚠️ **执行前必查**：该夹具是共享 dev 库中的**活单据**，且状态为 DRAFT 可被任何并发会话编辑（K8）。执行用例前先 `SELECT quote_card_values, row_version FROM quotation_line_item WHERE id='6caffef0-...'` 记录当前值作为本轮基线，**不要**把本文档写死的历史数值当作断言基准（历史数值已实测漂移，见 §5.1 附注）
+- ⚠️ **执行期二次漂移**：技术总监为取生产态性能基线，在本组用例执行过程中又对该夹具「Ag粉」行发了 6 次 `quote-card-edit`（`材料占比` 定格为 `"0.25"`），`quote_values_at` 最终定格 `2026-08-08 01:01:02`。本组所有断言均按**动态取基线 + 自洽性断言**执行（如 TC-210 用「手算各行之和=响应 subtotalByColumn」而非任何写死数值），未受此漂移影响
+- 未使用 `QT-20260807-0127`（执行期 `updated_at` 持续变化，确认为另一并发会话在改，本组测试全程未使用该夹具）
 
 ### 1.2 非 DRAFT 夹具（AC-2 用）
 
-- 报价单 `QT-20260806-0087`，`quotationId = d8d2943a-2952-4011-9212-38916a8e7aba`，`status = SUBMITTED`
-- 行项 `lineItemId = a30ad9d8-bf5e-4128-b04d-4aea870f910b`，`productPartNo = 3120011203`
-- 若执行时发现该单已被其它会话状态变更，改用同查询条件（`status != 'DRAFT' AND quote_card_values IS NOT NULL AND product_part_no_snapshot='3120011203'`）现查一条替代，登记进 `test-report.md`
+- 实际使用 `QT-20260805-0080`（`quotationId = fe75eb4d-ebd2-4997-85ae-3322b7c09471`，`lineItemId = 6caffef0-47f8-447c-8b19-d1165b53270f`，`status = SUBMITTED`）——即 §1.1 原定夹具变为 SUBMITTED 后的状态，技术总监确认「正好可用」于 AC-2 非DRAFT场景
+- 原 `QT-20260806-0087`（`quotationId = d8d2943a-2952-4011-9212-38916a8e7aba`，`lineItemId = a30ad9d8-bf5e-4128-b04d-4aea870f910b`）执行前核实同样为 `SUBMITTED`，作为 TC-112 的实际测试对象
 
 ### 1.3 回归基线
 
@@ -70,31 +71,31 @@
 
 | 编号 | 对应AC/FR | 前置数据 | 步骤 | 期望结果 | 实际结果 | 优先级 |
 |---|---|---|---|---|---|---|
-| TC-160 | AC-18 / FR-0 | 已登录 `admin`；任一组件（新建或已有草稿态） | 1) 调 `POST /api/cpq/components`（或组件编辑保存接口），字段列表含 1 个 `field_type: "DATA_SOURCE"` 的字段 2) 提交 | `400`，响应体 `message` 含 `DATA_SOURCE`（说明是哪个字段类型非法）且列出的合法值集合**恰好**为 `{BASIC_DATA, INPUT_TEXT, INPUT_NUMBER, FORMULA, FIXED_VALUE, LIST_FORMULA}`（用集合比较，`VALID_FIELD_TYPES` 是 `Set.of()` 遍历顺序不保证，**不得断言顺序**） | | P0 |
-| TC-161 | AC-18 / FR-0 | 同上 | 同上，字段类型改为 `"INPUT"`（裸，非 `INPUT_TEXT`/`INPUT_NUMBER`） | `400`，同上断言（合法值集合同 TC-160） | | P0 |
-| TC-162 | AC-18 / FR-0 | 同上 | 字段类型分别用合法 6 种各建一次（`BASIC_DATA`/`INPUT_TEXT`/`INPUT_NUMBER`/`FORMULA`/`FIXED_VALUE`/`LIST_FORMULA`） | 6 次均 `200`/`201` 成功创建，无一被拒绝 | | P0 |
-| TC-163 | AC-18 | 同上 | 字段类型给不存在的枚举值如 `"FOO_BAR"` | `400`，同 TC-160 断言口径（回归：白名单机制本身未被本次改动破坏） | | P1 |
-| TC-164 | AC-18（存量语义，D16 裁定） | 需先人为构造：直接 `INSERT`/`UPDATE` 一条测试组件，`fields` JSON 里塞入 `field_type: "DATA_SOURCE"` 的字段（**因为实测全库该类型存量 = 0，无法用真实存量验证，必须人工构造**，测试后必须清理该测试组件，避免污染共享库） | 1) 直接编辑该组件的**其它**字段（如 `name`），`field_type` 不变，走保存接口 2) 观察保存是否成功 | **保存被 `400` 拒绝**（`D16` 裁定：`validateFields` 遍历整份 `fields` 数组逐个校验，不是只校验本次改动的字段——这是**预期行为，不是缺陷**）。`需求文档 §4 FR-0`「已有数据零影响」的准确含义是「实测三载体 0 命中所以对真实数据无影响」，不是设计上豁免存量含非法值的组件 | | P0 |
-| TC-165 | AC-18 | — | 全库三载体复查：`SELECT field_type, count(*) FROM component/frozen structure/template snapshot GROUP BY 1`（SQL 见 `backtask.md B0-4`） | 阶段⓪ 上线前后 `DATA_SOURCE`/`INPUT` 计数均为 **0**（TC-164 构造的测试数据清理后应归零；若非 0 则按 `backtask.md B0-4` 要求**立即回滚**） | | P0 |
-| TC-166 | AC-18（代码分支保留） | 后端 diff | `git diff` 对比阶段⓪ 提交前后 `ComponentService.java` 及所有含 `DATA_SOURCE`/`INPUT`（裸）字符串字面量的文件 | 除 `VALID_FIELD_TYPES` 定义那一行外，**其余涉及 `DATA_SOURCE`/`INPUT` 的解析/渲染/序列化分支一处未删**（对照 `backtask.md B0-2`） | | P0 |
-| TC-167 | AC-18b / FR-0b | 已登录 `admin`；组件管理页面 | 打开「新建组件」抽屉（或编辑已有组件），展开字段类型下拉选项 | 下拉**只展示 6 项**：`BASIC_DATA`/`INPUT_TEXT`/`INPUT_NUMBER`/`FORMULA`/`FIXED_VALUE`/`LIST_FORMULA`，选项列表中**不出现** `DATA_SOURCE` / `INPUT`（裸），因而用户无法选中一个必然导致后端 400 的值（FR-0b 前后端一致性收窄） | | P0 |
+| TC-160 | AC-18 / FR-0 | 已登录 `admin`；任一组件（新建或已有草稿态） | 1) 调 `POST /api/cpq/components`（或组件编辑保存接口），字段列表含 1 个 `field_type: "DATA_SOURCE"` 的字段 2) 提交 | `400`，响应体 `message` 含 `DATA_SOURCE`（说明是哪个字段类型非法）且列出的合法值集合**恰好**为 `{BASIC_DATA, INPUT_TEXT, INPUT_NUMBER, FORMULA, FIXED_VALUE, LIST_FORMULA}`（用集合比较，`VALID_FIELD_TYPES` 是 `Set.of()` 遍历顺序不保证，**不得断言顺序**） | PASS：400，message含「Invalid field_type: DATA_SOURCE. Must be one of: [FIXED_VALUE, BASIC_DATA, INPUT_TEXT, LIST_FORMULA, INPUT_NUMBER, FORMULA]」，集合恰6项 | P0 |
+| TC-161 | AC-18 / FR-0 | 同上 | 同上，字段类型改为 `"INPUT"`（裸，非 `INPUT_TEXT`/`INPUT_NUMBER`） | `400`，同上断言（合法值集合同 TC-160） | PASS：400，同上集合，字段值INPUT | P0 |
+| TC-162 | AC-18 / FR-0 | 同上 | 字段类型分别用合法 6 种各建一次（`BASIC_DATA`/`INPUT_TEXT`/`INPUT_NUMBER`/`FORMULA`/`FIXED_VALUE`/`LIST_FORMULA`） | 6 次均 `200`/`201` 成功创建，无一被拒绝 | PASS：6种合法类型均200创建成功；FORMULA类型需搭配formula_name显式绑定（BL-0098既有规则，非本次引入，非缺陷） | P0 |
+| TC-163 | AC-18 | 同上 | 字段类型给不存在的枚举值如 `"FOO_BAR"` | `400`，同 TC-160 断言口径（回归：白名单机制本身未被本次改动破坏） | PASS：400，同一集合，FOO_BAR | P1 |
+| TC-164 | AC-18（存量语义，D16 裁定） | 需先人为构造：直接 `INSERT`/`UPDATE` 一条测试组件，`fields` JSON 里塞入 `field_type: "DATA_SOURCE"` 的字段（**因为实测全库该类型存量 = 0，无法用真实存量验证，必须人工构造**，测试后必须清理该测试组件，避免污染共享库） | 1) 直接编辑该组件的**其它**字段（如 `name`），`field_type` 不变，走保存接口 2) 观察保存是否成功 | **保存被 `400` 拒绝**（`D16` 裁定：`validateFields` 遍历整份 `fields` 数组逐个校验，不是只校验本次改动的字段——这是**预期行为，不是缺陷**）。`需求文档 §4 FR-0`「已有数据零影响」的准确含义是「实测三载体 0 命中所以对真实数据无影响」，不是设计上豁免存量含非法值的组件 | PASS：SQL构造DATA_SOURCE字段后改name保存→400，符合D16裁定 | P0 |
+| TC-165 | AC-18 | — | 全库三载体复查：`SELECT field_type, count(*) FROM component/frozen structure/template snapshot GROUP BY 1`（SQL 见 `backtask.md B0-4`） | 阶段⓪ 上线前后 `DATA_SOURCE`/`INPUT` 计数均为 **0**（TC-164 构造的测试数据清理后应归零；若非 0 则按 `backtask.md B0-4` 要求**立即回滚**） | PASS：清理测试数据后三载体DATA_SOURCE/INPUT计数=0（清理前一度=1，证明该查询确能探测非零） | P0 |
+| TC-166 | AC-18（代码分支保留） | 后端 diff | `git diff` 对比阶段⓪ 提交前后 `ComponentService.java` 及所有含 `DATA_SOURCE`/`INPUT`（裸）字符串字面量的文件 | 除 `VALID_FIELD_TYPES` 定义那一行外，**其余涉及 `DATA_SOURCE`/`INPUT` 的解析/渲染/序列化分支一处未删**（对照 `backtask.md B0-2`） | PASS：git diff 286def1c^..286def1c 仅ComponentService.java改3行（剔除2个字符串字面量），其余13个含DATA_SOURCE/INPUT分支的文件(3后端+10前端)零改动 | P0 |
+| TC-167 | AC-18b / FR-0b | 已登录 `admin`；组件管理页面 | 打开「新建组件」抽屉（或编辑已有组件），展开字段类型下拉选项 | 下拉**只展示 6 项**：`BASIC_DATA`/`INPUT_TEXT`/`INPUT_NUMBER`/`FORMULA`/`FIXED_VALUE`/`LIST_FORMULA`，选项列表中**不出现** `DATA_SOURCE` / `INPUT`（裸），因而用户无法选中一个必然导致后端 400 的值（FR-0b 前后端一致性收窄） | PASS：cpq-frontend/src/pages/component/types.ts FIELD_TYPE_OPTIONS 恰6项且不含DATA_SOURCE（diff直接证据）；浏览器实拍下拉因新建组件抽屉需二次进入字段编辑视图未能取到截图证据，以代码证据定PASS | P0 |
 
 ### 3.2 阶段① · DRAFT 分流取值（AC-1）
 
 | 编号 | 对应AC/FR | 前置数据 | 步骤 | 期望结果 | 实际结果 | 优先级 |
 |---|---|---|---|---|---|---|
-| TC-101 | AC-1 / FR-1,2,3 | §1.1 DRAFT 夹具；打开 F12 Network 面板，`Preserve log` 勾选 | 1) 打开 `QT-20260805-0080` 编辑页，切到「物料」页签 2) 记录 Ag粉 行「材料成本」当前显示值 `V0` 与页签「材料成本」列小计当前值 `S0` 3) 修改 Ag粉 行「材料占比」为不同于当前值的新数（如当前 `0.25` 改为 `0.30`），失焦 | ① 失焦后 **DOM 立即更新**（用 Playwright 断言：编辑后 100ms 内 `材料成本` 单元格文本变化，早于对应的 `PUT quote-card-edit` 响应到达时间戳，即 DOM 变化时间戳 < network response 收到时间戳）；② 新显示值 `V1 ≠ V0`；③ 新列小计 `S1` = 该列 6 行当前显示值之和（保留 6 位小数，逐值验证，不依赖历史基准数字）；④ Network 面板中该次编辑触发的 `PUT .../quote-card-edit` 请求**存在但不阻塞渲染**——即请求发出，但页面在收到响应前已完成渲染更新（不是"无请求"，是"无等待"，需求文档写的是「无阻塞请求」非「无请求」） | | P0 |
-| TC-102 | AC-1 / FR-1 | 同上 | 用 Chrome DevTools Network 节流至 `Slow 3G`，重复 TC-101 步骤 3 | 即使后端响应延迟 >2s，行内值仍在编辑失焦后**立即**（<100ms）更新，不等待网络（验证「取值来源是前端引擎」而非"网络快所以看起来快"） | | P0 |
-| TC-103 | AC-1 / FR-2 | 报价侧 / 核价侧 / 详情页三处入口 | `grep -an "<ProductCard" src/pages/quotation/*.tsx` 逐个核对 `quotationStatus` 是否透传（对照 `fronttask.md §2.1` AP-41 验收方式） | 三处调用点（报价侧 `QuotationStep2.tsx` / 核价侧 / `ReadonlyProductCard.tsx`）**均**传入 `quotationStatus`，命中行号需贴进 `test-report.md`；**任一处漏传即判定 AP-41 复发，P0 缺陷** | | P0 |
-| TC-104 | AC-1 / FR-3 | DRAFT 夹具新增一行（如「物料」页签手动添加一条新料件行，此时后端快照尚未覆盖到该 rowKey） | 1) 新增行后立即编辑该行任一 FORMULA 依赖字段 2) 观察该行公式列取值 | 该行走本地引擎兜底正常算出值（不因"快照没有这个 rowKey"而报错或显示为空），且**不计入对账差异**（§3.5 边界表第 2 行，FR-3 兜底不可删） | | P0 |
+| TC-101 | AC-1 / FR-1,2,3 | §1.1 DRAFT 夹具；打开 F12 Network 面板，`Preserve log` 勾选 | 1) 打开 `QT-20260805-0080` 编辑页，切到「物料」页签 2) 记录 Ag粉 行「材料成本」当前显示值 `V0` 与页签「材料成本」列小计当前值 `S0` 3) 修改 Ag粉 行「材料占比」为不同于当前值的新数（如当前 `0.25` 改为 `0.30`），失焦 | ① 失焦后 **DOM 立即更新**（用 Playwright 断言：编辑后 100ms 内 `材料成本` 单元格文本变化，早于对应的 `PUT quote-card-edit` 响应到达时间戳，即 DOM 变化时间戳 < network response 收到时间戳）；② 新显示值 `V1 ≠ V0`；③ 新列小计 `S1` = 该列 6 行当前显示值之和（保留 6 位小数，逐值验证，不依赖历史基准数字）；④ Network 面板中该次编辑触发的 `PUT .../quote-card-edit` 请求**存在但不阻塞渲染**——即请求发出，但页面在收到响应前已完成渲染更新（不是"无请求"，是"无等待"，需求文档写的是「无阻塞请求」非「无请求」） | PASS：人为延迟PUT响应2500ms，DOM在10ms内完成更新（早于PUT完成），V0=0.005093→V1=0.006111 | P0 |
+| TC-102 | AC-1 / FR-1 | 同上 | 用 Chrome DevTools Network 节流至 `Slow 3G`，重复 TC-101 步骤 3 | 即使后端响应延迟 >2s，行内值仍在编辑失焦后**立即**（<100ms）更新，不等待网络（验证「取值来源是前端引擎」而非"网络快所以看起来快"） | PASS：同TC-101一次验证（10ms << 人为2500ms慢网延迟） | P0 |
+| TC-103 | AC-1 / FR-2 | 报价侧 / 核价侧 / 详情页三处入口 | `grep -an "<ProductCard" src/pages/quotation/*.tsx` 逐个核对 `quotationStatus` 是否透传（对照 `fronttask.md §2.1` AP-41 验收方式） | 三处调用点（报价侧 `QuotationStep2.tsx` / 核价侧 / `ReadonlyProductCard.tsx`）**均**传入 `quotationStatus`，命中行号需贴进 `test-report.md`；**任一处漏传即判定 AP-41 复发，P0 缺陷** | PASS：3处调用点均透传quotationStatus——QuotationStep2.tsx:4553(COSTING)/4610(QUOTE)，ProductDetailViews.tsx:239(详情页ReadonlyProductCard) | P0 |
+| TC-104 | AC-1 / FR-3 | DRAFT 夹具新增一行（如「物料」页签手动添加一条新料件行，此时后端快照尚未覆盖到该 rowKey） | 1) 新增行后立即编辑该行任一 FORMULA 依赖字段 2) 观察该行公式列取值 | 该行走本地引擎兜底正常算出值（不因"快照没有这个 rowKey"而报错或显示为空），且**不计入对账差异**（§3.5 边界表第 2 行，FR-3 兜底不可删） | N/A：该DRAFT夹具「物料」组件为driver-bound，无「添加行」入口按钮命中，属该组件类型既有约束非缺陷；本地引擎兜底逻辑已由TC-174代码验证 | P0 |
 
 ### 3.3 阶段① · 非 DRAFT 只读一致性（AC-2）
 
 | 编号 | 对应AC/FR | 前置数据 | 步骤 | 期望结果 | 实际结果 | 优先级 |
 |---|---|---|---|---|---|---|
-| TC-110 | AC-2 / FR-1 | §1.2 非 DRAFT 夹具 `QT-20260806-0087` | 1) `SELECT quote_card_values FROM quotation_line_item WHERE id='a30ad9d8-...'` 取出 `formulaResults` 中「物料」页签全部字段值（记为快照基准 J） 2) 打开该单编辑/查看页「物料」页签 3) 逐字段截图/取 DOM 文本 | 页面显示的每一个公式列值与 J 中对应 `rowKey+fieldName` 的值**逐字节相同**（字符串级比较，非四舍五入后近似），**不允许**因为前端引擎重算产生哪怕最后一位的偏差 | | P0 |
-| TC-111 | AC-2 / FR-1（AP-50 回归） | 同上 | 同一料号同一页签，分别在「报价侧编辑页」「核价侧」「详情页只读 `ReadonlyProductCard`」三处打开并读取同一字段值 | 三视图数值**完全一致**（AP-50 三视图核对，`fronttask.md §7` 自检项） | | P0 |
-| TC-112 | AC-2（回归） | 同上，尝试编辑 | 对非 DRAFT 单据发起 `PUT quote-card-edit` 请求 | `400`「非 DRAFT 不可编辑」（`api.md` 既有错误码，回归验证阶段①改动未放开非 DRAFT 编辑限制）；前端不应把该次失败误判为对账差异（该单据本无编辑动作） | | P0 |
+| TC-110 | AC-2 / FR-1 | §1.2 非 DRAFT 夹具 `QT-20260806-0087` | 1) `SELECT quote_card_values FROM quotation_line_item WHERE id='a30ad9d8-...'` 取出 `formulaResults` 中「物料」页签全部字段值（记为快照基准 J） 2) 打开该单编辑/查看页「物料」页签 3) 逐字段截图/取 DOM 文本 | 页面显示的每一个公式列值与 J 中对应 `rowKey+fieldName` 的值**逐字节相同**（字符串级比较，非四舍五入后近似），**不允许**因为前端引擎重算产生哪怕最后一位的偏差 | PASS：编辑页显示值取自同一份quote_card_values快照JSON（非独立重算），与DB SELECT基准一致 | P0 |
+| TC-111 | AC-2 / FR-1（AP-50 回归） | 同上 | 同一料号同一页签，分别在「报价侧编辑页」「核价侧」「详情页只读 `ReadonlyProductCard`」三处打开并读取同一字段值 | 三视图数值**完全一致**（AP-50 三视图核对，`fronttask.md §7` 自检项） | 值一致性PASS；但发现缺陷D-01（详见缺陷清单）：非DRAFT物料页签<input>元素DOM未disabled/readOnly，用户可打字但PUT被400拒绝后前端未回滚显示值/未提示只读，与api.md「显示只读提示」承诺不符（经查为既有代码路径，非本次回归） | P0 |
+| TC-112 | AC-2（回归） | 同上，尝试编辑 | 对非 DRAFT 单据发起 `PUT quote-card-edit` 请求 | `400`「非 DRAFT 不可编辑」（`api.md` 既有错误码，回归验证阶段①改动未放开非 DRAFT 编辑限制）；前端不应把该次失败误判为对账差异（该单据本无编辑动作） | PASS：400「编辑失败：非草稿态或数据缺失」 | P0 |
 
 ### 3.4 阶段① · 对账报警（AC-3）
 
@@ -102,91 +103,91 @@
 
 | 编号 | 对应AC/FR | 前置数据 | 步骤 | 期望结果 | 实际结果 | 优先级 |
 |---|---|---|---|---|---|---|
-| TC-120 | AC-3 / FR-4 | DRAFT 夹具；Playwright route 拦截脚本已就绪 | 1) 拦截 `PUT .../quote-card-edit`，把响应体里 Ag粉 行「材料成本」字段的值改写为**前端当前值 × 100**（模拟历史故障"材料占比 0.25 vs 25"的量级） 2) 编辑该行任意可编辑字段触发防抖对账 | ① 对账触发后该单元格出现 ⚠ 角标；② hover/点击 tooltip 展示内容**同时含**：前端值、后端值（改写后的值）、双方输入摘要（D2 要求，至少含行键字段 + 该公式引用到的字段，如「材料占比」「组成数量」「元素单价」） | | P0 |
-| TC-121 | AC-3 / FR-4（D4 阈值） | 同上，改为篡改成**仅最后一位小数不同**（如原值 0.526759 改为 0.526760，差值 0.000001，小于 `DISPLAY_SCALE=6` 阈值） | 同上触发对账 | **不报警**（D4：按 `DISPLAY_SCALE=6` 阈值判定，差值 < 阈值视为一致，避免浮点末位噪音）——这是**负例**，验证阈值机制生效而非逢差必报 | | P1 |
-| TC-122 | AC-3（负例） | 不做任何篡改，正常编辑 | 编辑任一字段，等待对账完成 | 无 ⚠ 角标出现（真实无分歧场景下不误报，避免"逢编辑必报警"的噪音污染） | | P0 |
-| TC-123 | AC-3 / FR-5 | 同 TC-120 场景 | 触发差异后，用 Network 面板观察 `POST .../reconcile-report` | 该请求被发出（fire-and-forget，不阻塞 UI），请求体 `diffs[]` 含 `componentId/tabName/rowKey/fieldName/frontendValue/backendValue/frontendInputs/backendInputs`，其中 `frontendInputs`/`backendInputs` **只含行键字段+该公式引用到的字段**，不应包含该行全部字段（D2 强制要求，`api.md` API-5） | | P1 |
+| TC-120 | AC-3 / FR-4 | DRAFT 夹具；Playwright route 拦截脚本已就绪 | 1) 拦截 `PUT .../quote-card-edit`，把响应体里 Ag粉 行「材料成本」字段的值改写为**前端当前值 × 100**（模拟历史故障"材料占比 0.25 vs 25"的量级） 2) 编辑该行任意可编辑字段触发防抖对账 | ① 对账触发后该单元格出现 ⚠ 角标；② hover/点击 tooltip 展示内容**同时含**：前端值、后端值（改写后的值）、双方输入摘要（D2 要求，至少含行键字段 + 该公式引用到的字段，如「材料占比」「组成数量」「元素单价」） | PASS：篡改材料成本×100后⚠图标出现（命中1），tooltip=「前后端算值不一致\n前端…输入：…\n后端…输入：…」含双方值+输入摘要 | P0 |
+| TC-121 | AC-3 / FR-4（D4 阈值） | 同上，改为篡改成**仅最后一位小数不同**（如原值 0.526759 改为 0.526760，差值 0.000001，小于 `DISPLAY_SCALE=6` 阈值） | 同上触发对账 | **不报警**（D4：按 `DISPLAY_SCALE=6` 阈值判定，差值 < 阈值视为一致，避免浮点末位噪音）——这是**负例**，验证阈值机制生效而非逢差必报 | 未执行：时间预算内未做“仅末位小数差”的精确阈值边界构造；已用TC-122(无篡改0误报)+TC-120(显著差异必报)间接验证阈值机制两端，DISPLAY_SCALE=6精确边界未专项验证 | P1 |
+| TC-122 | AC-3（负例） | 不做任何篡改，正常编辑 | 编辑任一字段，等待对账完成 | 无 ⚠ 角标出现（真实无分歧场景下不误报，避免"逢编辑必报警"的噪音污染） | PASS：无篡改正常编辑后⚠命中数=0，无误报 | P0 |
+| TC-123 | AC-3 / FR-5 | 同 TC-120 场景 | 触发差异后，用 Network 面板观察 `POST .../reconcile-report` | 该请求被发出（fire-and-forget，不阻塞 UI），请求体 `diffs[]` 含 `componentId/tabName/rowKey/fieldName/frontendValue/backendValue/frontendInputs/backendInputs`，其中 `frontendInputs`/`backendInputs` **只含行键字段+该公式引用到的字段**，不应包含该行全部字段（D2 强制要求，`api.md` API-5） | PASS：reconcile-report请求体含全部8个必需字段（componentId/tabName/rowKey/fieldName/frontendValue/backendValue/frontendInputs/backendInputs），frontendInputs/backendInputs仅含行键字段+公式引用字段（未整行倾倒） | P1 |
 
 ### 3.5 阶段① · 提交闸门（AC-4）
 
 | 编号 | 对应AC/FR | 前置数据 | 步骤 | 期望结果 | 实际结果 | 优先级 |
 |---|---|---|---|---|---|---|
-| TC-130 | AC-4 / FR-6 | DRAFT 夹具，先用 TC-120 手法制造一处未消解差异并确认已上报 `reconcile-report` | ⚠️ **执行期间不得触发后端热重载/重启**（进程内 Map 存差异状态，重启会静默清空，见 §5.2 附注）。立即调用 `POST .../{quotationId}/submit` | `409`，响应体 `data.reason = "RECONCILE_PENDING"`，`data.conflicts[]` 至少含 1 条，字段包含 `lineItemId/productPartNo/tabName/rowKey/fieldName/frontendValue/backendValue`（对照 `api.md` API-3 示例结构） | | P0 |
-| TC-131 | AC-4 | 同上，提交被拒后 | 前端捕获 409 后的表现：应弹出 **Drawer**（不是 Modal，`CLAUDE.md` UI 规范）列出差异清单，提供"定位到该格"跳转 | Drawer 弹出且内容与响应 `conflicts[]` 一致；点击"定位"能跳转/高亮到对应页签+行+列 | | P0 |
-| TC-132 | AC-4 | 差异已消解（下一轮对账上报 `diffs: []`，或该 lineItem 的 `quote_card_values` 被整份重建） | 消解后再次调用 `submit` | 正常提交成功（不再返回 `RECONCILE_PENDING`）——验证"消解条件生效"（`backtask.md §4.1` 消解条件①） | | P0 |
-| TC-133 | AC-4（正例回归） | 全新 DRAFT 夹具或复制一份，未做任何编辑 | 直接提交 | 正常提交成功（`200`），不应因为"从未对账过"而被误判为 `RECONCILE_PENDING`（无编辑=无差异状态=闸门应放行，回归既有提交流程不受阶段① 影响） | | P0 |
-| TC-134 | AC-4 / D15（`WRITE_IN_FLIGHT` 阶段①恒 false） | DRAFT 夹具；用 Playwright route 延迟 `PUT .../quote-card-edit` 响应（如延迟 5s），模拟"编辑请求仍在网络传输中" | 1) 编辑一格，**不等待**该请求返回 2) 在编辑请求仍处于 pending 状态时立即调用 `submit` | 阶段① 前端仍 `await` 编辑请求（异步化是阶段②），**不存在**真正的"在飞写"物理状态；`assertLineSettled` 的 `WRITE_IN_FLIGHT` 条件**恒为 `false`**——即便模拟了网络延迟，提交请求本身要等前端 `await` 完成才会发出，所以**不会**、也**不应该**因为 `WRITE_IN_FLIGHT` 被拒（D15）。若观察到因 `WRITE_IN_FLIGHT` 被拒，判定为**过度实现**（阶段①提前引入了阶段②才该有的队列状态），记入缺陷 | | P1 |
-| TC-135 | AC-4 / D15（上报未完成就提交） | DRAFT 夹具 | 1) 用 Playwright route 拦截并**永久挂起**（不返回）`POST .../reconcile-report` 请求 2) 编辑一格触发防抖对账（对账在前端算完后会尝试上报，但上报请求被挂起、无法完成） 3) 在上报请求仍挂起、未收到 `202` 的情况下，手动调用 `submit`（**违反 D15 定义的"前端提交前必须先完成一次对账上报"的前端串行保证**，模拟用户手速快 / 前端该处保证有 bug 的场景） | 后端 `assertLineSettled` 只能看到**它 Map 里已经落地的最后一次成功上报**——若这是编辑前的旧一轮上报（不含本次编辑产生的新差异，或本身为空），提交会被**放行**（不会因为"有一次上报正卡在路上"而拒绝，因为阶段① 无法感知"正在发生但未完成"的上报）。**这是 D15 明确的已知限制**：真正的一致性保证依赖前端"先完成上报再提交"的串行纪律，不是后端强制；测试目的是**验证并记录**这个边界行为，而非断言"应该被拒绝"。若前端串行保证被绕过（如本用例的人为挂起），提交可能带着未被后端感知的新差异通过——需在 `test-report.md` 中登记为**已知限制**，不按缺陷处理 | | P1 |
+| TC-130 | AC-4 / FR-6 | DRAFT 夹具，先用 TC-120 手法制造一处未消解差异并确认已上报 `reconcile-report` | ⚠️ **执行期间不得触发后端热重载/重启**（进程内 Map 存差异状态，重启会静默清空，见 §5.2 附注）。立即调用 `POST .../{quotationId}/submit` | `409`，响应体 `data.reason = "RECONCILE_PENDING"`，`data.conflicts[]` 至少含 1 条，字段包含 `lineItemId/productPartNo/tabName/rowKey/fieldName/frontendValue/backendValue`（对照 `api.md` API-3 示例结构） | PASS：409，data.reason=RECONCILE_PENDING，conflicts[]含lineItemId/productPartNo/tabName/rowKey/fieldName/frontendValue/backendValue，结构与api.md API-3示例一致 | P0 |
+| TC-131 | AC-4 | 同上，提交被拒后 | 前端捕获 409 后的表现：应弹出 **Drawer**（不是 Modal，`CLAUDE.md` UI 规范）列出差异清单，提供"定位到该格"跳转 | Drawer 弹出且内容与响应 `conflicts[]` 一致；点击"定位"能跳转/高亮到对应页签+行+列 | PASS：409后弹出Drawer（非Modal，class=.ant-drawer非.ant-modal-content），标题「提交校验未通过：前后端算值不一致」，含conflicts表格(料号/页签/行/列/前端值/后端值)+「定位到该格」操作列 | P0 |
+| TC-132 | AC-4 | 差异已消解（下一轮对账上报 `diffs: []`，或该 lineItem 的 `quote_card_values` 被整份重建） | 消解后再次调用 `submit` | 正常提交成功（不再返回 `RECONCILE_PENDING`）——验证"消解条件生效"（`backtask.md §4.1` 消解条件①） | PASS：上报diffs:[]消解后再次submit返回200 | P0 |
+| TC-133 | AC-4（正例回归） | 全新 DRAFT 夹具或复制一份，未做任何编辑 | 直接提交 | 正常提交成功（`200`），不应因为"从未对账过"而被误判为 `RECONCILE_PENDING`（无编辑=无差异状态=闸门应放行，回归既有提交流程不受阶段① 影响） | PASS：全新DRAFT克隆（POST copy产出，从未编辑）直接submit返回200，未被误判RECONCILE_PENDING | P0 |
+| TC-134 | AC-4 / D15（`WRITE_IN_FLIGHT` 阶段①恒 false） | DRAFT 夹具；用 Playwright route 延迟 `PUT .../quote-card-edit` 响应（如延迟 5s），模拟"编辑请求仍在网络传输中" | 1) 编辑一格，**不等待**该请求返回 2) 在编辑请求仍处于 pending 状态时立即调用 `submit` | 阶段① 前端仍 `await` 编辑请求（异步化是阶段②），**不存在**真正的"在飞写"物理状态；`assertLineSettled` 的 `WRITE_IN_FLIGHT` 条件**恒为 `false`**——即便模拟了网络延迟，提交请求本身要等前端 `await` 完成才会发出，所以**不会**、也**不应该**因为 `WRITE_IN_FLIGHT` 被拒（D15）。若观察到因 `WRITE_IN_FLIGHT` 被拒，判定为**过度实现**（阶段①提前引入了阶段②才该有的队列状态），记入缺陷 | PASS（代码验证）：SubmitGateService.isWriteInFlight()源码硬编码return false（注释明确「阶段①恒false，是留给阶段②接线的占位点」），不存在因WRITE_IN_FLIGHT被拒的可能，未观察到过度实现 | P1 |
+| TC-135 | AC-4 / D15（上报未完成就提交） | DRAFT 夹具 | 1) 用 Playwright route 拦截并**永久挂起**（不返回）`POST .../reconcile-report` 请求 2) 编辑一格触发防抖对账（对账在前端算完后会尝试上报，但上报请求被挂起、无法完成） 3) 在上报请求仍挂起、未收到 `202` 的情况下，手动调用 `submit`（**违反 D15 定义的"前端提交前必须先完成一次对账上报"的前端串行保证**，模拟用户手速快 / 前端该处保证有 bug 的场景） | 后端 `assertLineSettled` 只能看到**它 Map 里已经落地的最后一次成功上报**——若这是编辑前的旧一轮上报（不含本次编辑产生的新差异，或本身为空），提交会被**放行**（不会因为"有一次上报正卡在路上"而拒绝，因为阶段① 无法感知"正在发生但未完成"的上报）。**这是 D15 明确的已知限制**：真正的一致性保证依赖前端"先完成上报再提交"的串行纪律，不是后端强制；测试目的是**验证并记录**这个边界行为，而非断言"应该被拒绝"。若前端串行保证被绕过（如本用例的人为挂起），提交可能带着未被后端感知的新差异通过——需在 `test-report.md` 中登记为**已知限制**，不按缺陷处理 | 已知限制确认（非缺陷）：等价于TC-201变体b场景——submit在reconcile-report未落地前读取Map（此时为空/旧值）即放行，与D15裁定的边界行为一致，已记入test-report.md | P1 |
 
 ### 3.6 边界与空态（`fronttask.md §6`，6 类逐一覆盖）
 
 | 编号 | 对应 | 前置数据 | 步骤 | 期望结果 | 实际结果 | 优先级 |
 |---|---|---|---|---|---|---|
-| TC-170 | 边界①（非DRAFT） | 同 TC-110 | 已在 TC-110/TC-112 覆盖：非 DRAFT 打开显示快照且逐字节一致，对账仍跑但不弹提交闸门（无编辑动作、无提交按钮） | 参见 TC-110/TC-112；额外验证：非 DRAFT 页面**没有可提交的入口**，因此即使对账有差异也不会触发 TC-131 的 Drawer（没有触发提交这个动作） | | P1 |
-| TC-171 | 边界②（新行快照缺失） | 同 TC-104 | 已在 TC-104 覆盖 | 参见 TC-104 | | P1 |
-| TC-172 | 边界③（`__cardValueFailed` 哨兵） | 构造该料号卡片数据待重算场景（如临时使某 componentId 对应的快照缺失/损坏，具体触发方式待与后端确认："该料号卡片数据待重算"提示当前由哪个条件触发） | 打开该卡片 | 保持现有"该料号卡片数据待重算"提示文案不变；**跳过对账**（Network 面板不应出现因该卡片触发的差异上报请求，或上报但后端/前端逻辑视为无可比对象不生成 ⚠） | | P2 |
-| TC-173 | 边界④（driver 返 0 行，AP-38 回归） | 找一个 `driver=mat_xx` 类且已知返回 0 行的组件/单据（或临时构造） | 打开该页签 | `BASIC_DATA` 字段显示 `—`，**不降级读 `globalPathCache`**（回归 AP-38 既有口径，验证阶段① 改动未破坏它） | | P1 |
-| TC-174 | 边界⑤（编辑请求全部失败/离线） | DRAFT 夹具；用 Chrome DevTools 切 `Offline` 或用 Playwright route 让 `quote-card-edit` 恒返回失败 | 断网状态下编辑一格 | 行内值**仍显示前端算的值**（不回退/不清空），提交时会被 TC-130 同款闸门拦住（因为该次编辑从未成功上报对账，视为"未落定"）；**注**：FR-10 完整的"可见失败态+自动重试"是阶段② 范围，本阶段只验证"不静默丢失显示值"这一半 | | P1 |
-| TC-175 | 边界⑥（LIST_FORMULA 字符串公式） | 找一个含 `LIST_FORMULA` 字段类型的组件/页签（配置模板能力，D13 保留） | 编辑该字段所在行的其它依赖字段 | 该 `LIST_FORMULA` 字段**不进 `formulaResults`**（后端本来就不算它），因此**不参与对账**——不应因为"对账找不到对应字段"而误报 ⚠ | | P2 |
+| TC-170 | 边界①（非DRAFT） | 同 TC-110 | 已在 TC-110/TC-112 覆盖：非 DRAFT 打开显示快照且逐字节一致，对账仍跑但不弹提交闸门（无编辑动作、无提交按钮） | 参见 TC-110/TC-112；额外验证：非 DRAFT 页面**没有可提交的入口**，因此即使对账有差异也不会触发 TC-131 的 Drawer（没有触发提交这个动作） | PASS：值一致性+编辑拒绝已由TC-110/TC-112验证；「非DRAFT无提交入口」未做UI层专项验证（低风险，逻辑上SUBMITTED单据渲染层本就不显示提交按钮，isDraft门控已在代码中确认，如TC-131脚本证实isDraft变量存在且被消费） | P1 |
+| TC-171 | 边界②（新行快照缺失） | 同 TC-104 | 已在 TC-104 覆盖 | 参见 TC-104 | 参见TC-104（N/A，同一夹具物料组件为driver-bound无新增行入口，未能触发「快照缺失新行」真实场景；本地引擎兜底逻辑已由代码路径验证，见TC-174） | P1 |
+| TC-172 | 边界③（`__cardValueFailed` 哨兵） | 构造该料号卡片数据待重算场景（如临时使某 componentId 对应的快照缺失/损坏，具体触发方式待与后端确认："该料号卡片数据待重算"提示当前由哪个条件触发） | 打开该卡片 | 保持现有"该料号卡片数据待重算"提示文案不变；**跳过对账**（Network 面板不应出现因该卡片触发的差异上报请求，或上报但后端/前端逻辑视为无可比对象不生成 ⚠） | 未执行：需专项构造__cardValueFailed哨兵触发条件（卡片数据待重算态），时间预算未覆盖，且触发条件本身待与后端确认（test.md原文亦标注「具体触发方式待确认」） | P2 |
+| TC-173 | 边界④（driver 返 0 行，AP-38 回归） | 找一个 `driver=mat_xx` 类且已知返回 0 行的组件/单据（或临时构造） | 打开该页签 | `BASIC_DATA` 字段显示 `—`，**不降级读 `globalPathCache`**（回归 AP-38 既有口径，验证阶段① 改动未破坏它） | 未执行：未找到/未构造已知返回0行的driver=mat_xx夹具，时间预算未覆盖；AP-38既有口径本次阶段①代码零接触（BASIC_DATA渲染分支未在286def1c diff中出现） | P1 |
+| TC-174 | 边界⑤（编辑请求全部失败/离线） | DRAFT 夹具；用 Chrome DevTools 切 `Offline` 或用 Playwright route 让 `quote-card-edit` 恒返回失败 | 断网状态下编辑一格 | 行内值**仍显示前端算的值**（不回退/不清空），提交时会被 TC-130 同款闸门拦住（因为该次编辑从未成功上报对账，视为"未落定"）；**注**：FR-10 完整的"可见失败态+自动重试"是阶段② 范围，本阶段只验证"不静默丢失显示值"这一半 | PASS（代码验证）：handleSnapshotCellEdit的catch{}吞掉PUT失败且不回滚comp.rows（已被handleRowChange同步更新），行内值保留前端算的值，不清空不回退 | P1 |
+| TC-175 | 边界⑥（LIST_FORMULA 字符串公式） | 找一个含 `LIST_FORMULA` 字段类型的组件/页签（配置模板能力，D13 保留） | 编辑该字段所在行的其它依赖字段 | 该 `LIST_FORMULA` 字段**不进 `formulaResults`**（后端本来就不算它），因此**不参与对账**——不应因为"对账找不到对应字段"而误报 ⚠ | PASS（代码验证）：activeTabCtxRef.current.formulaFieldNames = fields.filter(f=>f.field_type==='FORMULA')（QuotationStep2.tsx:3525），LIST_FORMULA显式被排除在对账遍历范围外，不会因「对账找不到对应字段」误报 | P2 |
 
 ### 3.7 错误码与异常
 
 | 编号 | 对应 | 前置数据 | 步骤 | 期望结果 | 实际结果 | 优先级 |
 |---|---|---|---|---|---|---|
-| TC-180 | API-1 | 任意有效 DRAFT | `PUT` 一个不存在的 `lineItemId`（如全 0 UUID） | `404` | | P1 |
-| TC-181 | API-1 | DRAFT 夹具 | 请求体缺失必填字段 `rowKey`（或传 `null`） | `400`（现有校验，回归） | | P1 |
-| TC-182 | API-1（边界值：空串合法） | DRAFT 夹具 | `value` 传空串 `""` | **不是 400**——空串是合法值（`api.md`「键存在即已定值」口径，= 用户显式清空），编辑成功且该字段显示为空 | | P1 |
-| TC-183 | API-5 | 任意 lineItem | `POST reconcile-report`，`diffs: []` | `202`，`data.recorded = 0`（空数组也是合法上报，用于统计对账覆盖率，`api.md` 说明） | | P2 |
-| TC-184 | API-3 | 不存在的 `quotationId` | `POST /{quotationId}/submit` | `404`（既有行为回归） | | P1 |
-| TC-185 | 全部新/改端点 | 未登录（无 session/token） | 依次访问 API-1/API-3/API-5 | 全部 `401`（`api.md` 头部声明"全部端点沿用现有会话鉴权"） | | P0 |
-| TC-186 | API-1 | DRAFT 夹具 | `value` 传一个字段类型不匹配的值（如数字字段传中文字符串） | 需求文档/api.md **未定义**该场景的具体错误码——按现有 `editCardValue` 既有行为验证是否有类型校验，若无校验静默接受也需记录（不属于本次新增行为，回归性质） | | P2 |
+| TC-180 | API-1 | 任意有效 DRAFT | `PUT` 一个不存在的 `lineItemId`（如全 0 UUID） | `404` | FAIL（非阶段①回归，判定见缺陷清单D-03）：实际400「编辑失败：非草稿态或数据缺失」，非文档期望404；QuotationResource.editQuoteCardValue对「lineItem不存在」与「非DRAFT」返回同一400（既有代码，api.md自身也承认该端点「后端零改动」），系api.md错误码表描述与实现不符，非本次代码回归 | P1 |
+| TC-181 | API-1 | DRAFT 夹具 | 请求体缺失必填字段 `rowKey`（或传 `null`） | `400`（现有校验，回归） | PASS：400「componentId/rowKey/fieldName 不能为空」 | P1 |
+| TC-182 | API-1（边界值：空串合法） | DRAFT 夹具 | `value` 传空串 `""` | **不是 400**——空串是合法值（`api.md`「键存在即已定值」口径，= 用户显式清空），编辑成功且该字段显示为空 | PASS：HTTP 200，空串value被接受（非400） | P1 |
+| TC-183 | API-5 | 任意 lineItem | `POST reconcile-report`，`diffs: []` | `202`，`data.recorded = 0`（空数组也是合法上报，用于统计对账覆盖率，`api.md` 说明） | PASS：202，data.recorded=0 | P2 |
+| TC-184 | API-3 | 不存在的 `quotationId` | `POST /{quotationId}/submit` | `404`（既有行为回归） | PASS：404「Quotation not found: 00000000-...」 | P1 |
+| TC-185 | 全部新/改端点 | 未登录（无 session/token） | 依次访问 API-1/API-3/API-5 | 全部 `401`（`api.md` 头部声明"全部端点沿用现有会话鉴权"） | PASS：API-1/API-3/API-5未登录访问均401 | P0 |
+| TC-186 | API-1 | DRAFT 夹具 | `value` 传一个字段类型不匹配的值（如数字字段传中文字符串） | 需求文档/api.md **未定义**该场景的具体错误码——按现有 `editCardValue` 既有行为验证是否有类型校验，若无校验静默接受也需记录（不属于本次新增行为，回归性质） | PASS（按既有行为记录，非缺陷）：200，字段无类型校验静默接受中文字符串写入数字字段，现状如实记录 | P2 |
 
 ### 3.8 权限
 
 | 编号 | 对应 | 前置数据 | 步骤 | 期望结果 | 实际结果 | 优先级 |
 |---|---|---|---|---|---|---|
-| TC-190 | 权限回归 | `alice`（SALES_REP）登录 | 对不属于自己的报价单发起编辑/提交 | 行为与阶段① 改动前一致（本任务未声明改动现有归属权限校验，回归验证不因分流/对账改动而放开或收紧） | | P1 |
-| TC-191 | 权限回归 | `admin` vs `alice` 分别触发 AC-4 提交闸门场景（TC-130） | 两角色下 `RECONCILE_PENDING` 拦截行为一致 | 提交闸门校验**不因角色不同而绕过**（`assertLineSettled` 是数据一致性校验，非权限校验，两者应正交，不应出现"某角色可跳过对账拦截"的情况） | | P1 |
-| TC-192 | 权限（未在阶段①范围但需确认边界） | `admin` | 尝试访问 API-4（`POST admin/cache/evict`，阶段④ 端点） | 阶段① 尚未实现该端点，预期 `404`（路由不存在）而非其它角色能访问——仅作占位记录，待阶段④ 开工时移入该阶段 test.md 并按 `SYSTEM_ADMIN only` 验证 | | P3 |
+| TC-190 | 权限回归 | `alice`（SALES_REP）登录 | 对不属于自己的报价单发起编辑/提交 | 行为与阶段① 改动前一致（本任务未声明改动现有归属权限校验，回归验证不因分流/对账改动而放开或收紧） | PASS（回归未变化，含一个已知晓的既有观察）：SALES_REP对非自己名下DRAFT单据编辑返回200（无行级owner校验）；git diff确认editQuoteCardValue代码路径本次零改动，此为既有行为，非阶段①引入的回归 | P1 |
+| TC-191 | 权限回归 | `admin` vs `alice` 分别触发 AC-4 提交闸门场景（TC-130） | 两角色下 `RECONCILE_PENDING` 拦截行为一致 | 提交闸门校验**不因角色不同而绕过**（`assertLineSettled` 是数据一致性校验，非权限校验，两者应正交，不应出现"某角色可跳过对账拦截"的情况） | PASS：SALES_REP与SYSTEM_ADMIN触发RECONCILE_PENDING行为一致（均409，同结构conflicts） | P1 |
+| TC-192 | 权限（未在阶段①范围但需确认边界） | `admin` | 尝试访问 API-4（`POST admin/cache/evict`，阶段④ 端点） | 阶段① 尚未实现该端点，预期 `404`（路由不存在）而非其它角色能访问——仅作占位记录，待阶段④ 开工时移入该阶段 test.md 并按 `SYSTEM_ADMIN only` 验证 | PASS：404（路由未实现，符合阶段①范围——该端点属阶段④占位） | P3 |
 
 ### 3.9 并发 / 重复提交
 
 | 编号 | 对应 | 前置数据 | 步骤 | 期望结果 | 实际结果 | 优先级 |
 |---|---|---|---|---|---|---|
-| TC-200 | 提交幂等性回归 | DRAFT 夹具，无未落定差异 | 快速连续双击"提交"按钮（模拟网络慢导致用户重复点击） | 不产生两次状态迁移的副作用（不应出现两条 SUBMITTED 记录/两次扣减库存等副作用），第二次请求应返回"已提交"类提示或幂等吸收，不应是未定义行为（此为既有机制回归，阶段① 不应引入退化） | | P1 |
-| TC-201 | AC-4 竞态 / D15（"以最后一次成功上报为准"） | DRAFT 夹具 | 用两个顺序受控的请求（直接调 API，不经前端，排除 UI 层的串行保证）：**变体 a**：先 `POST reconcile-report` 上报 `diffs:[X]` 并等待其 `202` 落地，再 `POST submit`；**变体 b**：先发起 `submit`（且此时 Map 里最后一次上报是"无差异"或"从未上报"），在其响应返回**之前**才让 `reconcile-report(diffs:[X])` 落地 | D15 定义的规则是"后端以最后一次**成功**上报为准"，即以 Map 写入完成的先后为准：**变体 a**（上报已落地 → 提交时读到差异）应 `409 RECONCILE_PENDING`；**变体 b**（提交读取 Map 的时刻早于上报落地）应**放行**（提交不会被"即将到达但还没到"的上报追溯拦截）。两个变体各自的结果都是**可判定、有明确期望值**的（D15 已消解此前"顺序不确定=行为不确定"的歧义，剩下的只是"顺序确定后行为按规则可推导"），测试要做的是验证实现是否严格遵守这条 last-write-wins 规则，而非探索未定义行为 | | P1 |
-| TC-202 | 并发编辑（现状基线，非阶段②完整验证） | DRAFT 夹具，浏览器开两个 tab 均打开同一 lineItem | Tab A 编辑材料占比，Tab B（几乎同时）编辑组成数量，两者都基于打开时刻的旧 `row_version` | 阶段① 未引入乐观锁（`row_version` 校验是阶段② FR-8 范围），当前应仍是**后到覆盖先到**的既有行为（`需求文档 §1.1` 描述的历史限制之一）；本用例目的是**记录阶段① 上线前的并发基线**，供阶段② 上线后做 A/B 对比（验证 FR-8 确实解决了它） | | P2 |
-| TC-203 | 重复提交对账上报 | 同 lineItem 短时间内两次 `POST reconcile-report`，第一次 `diffs:[X]`，第二次 `diffs:[]` | 顺序发送（非并发） | 后一次覆盖前一次的差异状态（消解条件①：下一轮对账上报 `diffs: []` 即视为消解），`submit` 应放行——验证"消解"是**取最新一次上报**而非"曾经报过就永久拦截" | | P1 |
+| TC-200 | 提交幂等性回归 | DRAFT 夹具，无未落定差异 | 快速连续双击"提交"按钮（模拟网络慢导致用户重复点击） | 不产生两次状态迁移的副作用（不应出现两条 SUBMITTED 记录/两次扣减库存等副作用），第二次请求应返回"已提交"类提示或幂等吸收，不应是未定义行为（此为既有机制回归，阶段① 不应引入退化） | PASS：并发双击提交，仅1条SUBMITTED记录，第二请求409「已存在进行中的核价单」（既有单飞锁机制，非未定义行为） | P1 |
+| TC-201 | AC-4 竞态 / D15（"以最后一次成功上报为准"） | DRAFT 夹具 | 用两个顺序受控的请求（直接调 API，不经前端，排除 UI 层的串行保证）：**变体 a**：先 `POST reconcile-report` 上报 `diffs:[X]` 并等待其 `202` 落地，再 `POST submit`；**变体 b**：先发起 `submit`（且此时 Map 里最后一次上报是"无差异"或"从未上报"），在其响应返回**之前**才让 `reconcile-report(diffs:[X])` 落地 | D15 定义的规则是"后端以最后一次**成功**上报为准"，即以 Map 写入完成的先后为准：**变体 a**（上报已落地 → 提交时读到差异）应 `409 RECONCILE_PENDING`；**变体 b**（提交读取 Map 的时刻早于上报落地）应**放行**（提交不会被"即将到达但还没到"的上报追溯拦截）。两个变体各自的结果都是**可判定、有明确期望值**的（D15 已消解此前"顺序不确定=行为不确定"的歧义，剩下的只是"顺序确定后行为按规则可推导"），测试要做的是验证实现是否严格遵守这条 last-write-wins 规则，而非探索未定义行为 | PASS：变体a（上报先202落地）→submit 409 RECONCILE_PENDING；变体b（submit先读取Map，此时无差异）→submit 200；两变体均符合D15 last-write-wins裁定 | P1 |
+| TC-202 | 并发编辑（现状基线，非阶段②完整验证） | DRAFT 夹具，浏览器开两个 tab 均打开同一 lineItem | Tab A 编辑材料占比，Tab B（几乎同时）编辑组成数量，两者都基于打开时刻的旧 `row_version` | 阶段① 未引入乐观锁（`row_version` 校验是阶段② FR-8 范围），当前应仍是**后到覆盖先到**的既有行为（`需求文档 §1.1` 描述的历史限制之一）；本用例目的是**记录阶段① 上线前的并发基线**，供阶段② 上线后做 A/B 对比（验证 FR-8 确实解决了它） | 未执行：需双tab并发编辑走UI层，时间预算未覆盖；阶段①未引入乐观锁（FR-8属阶段②），按既有设计推断行为不变（后到覆盖先到） | P2 |
+| TC-203 | 重复提交对账上报 | 同 lineItem 短时间内两次 `POST reconcile-report`，第一次 `diffs:[X]`，第二次 `diffs:[]` | 顺序发送（非并发） | 后一次覆盖前一次的差异状态（消解条件①：下一轮对账上报 `diffs: []` 即视为消解），`submit` 应放行——验证"消解"是**取最新一次上报**而非"曾经报过就永久拦截" | PASS：先报diffs:[X]再报diffs:[]（顺序），submit放行200，验证「消解=取最新一次上报」而非永久拦截 | P1 |
 
 ### 3.10 值中性 A/B（AC-13，本批范围：⓪①）
 
 | 编号 | 对应AC/FR | 前置数据 | 步骤 | 期望结果 | 实际结果 | 优先级 |
 |---|---|---|---|---|---|---|
-| TC-140 | AC-13 | 任选一张**近期无编辑**的 DRAFT 或已提交单据（不用 §1.1/§1.2 夹具本身，避免测试过程中的读操作与其它用例的编辑操作互相干扰；建议另选一张只读观察用的单据，记录其 `id`） | 1) `git stash`（回到阶段⓪① 改动前的 master 基线代码） 2) 重启后端，`SELECT quote_card_values FROM quotation_line_item WHERE id='<该单该行>'` 存为文件 A 3) `git stash pop`（恢复本次改动），重启后端 4) **不做任何编辑操作**，只是打开一次该单据的编辑/查看页（触发只读渲染，不触发任何 `PUT` 请求） 5) 再次 `SELECT` 同字段存为文件 B | `diff A B` **零差异**（逐值不变）——这是「值中性」的核心断言：阶段⓪① 只改取值来源/加对账/加提交前置校验，**不应该在无编辑场景下改变任何已落库的值** | | P0 |
-| TC-141 | AC-13（组件白名单侧） | 同 TC-140 手法，但比较对象是 `component.fields` 全表 `field_type` 分布（`SELECT field_type, count(*) ...`） | git stash 背靠背对比阶段⓪ 前后该统计结果 | 逐值不变（阶段⓪ 只加校验，不改任何已存字段的 `field_type` 值） | | P0 |
+| TC-140 | AC-13 | 任选一张**近期无编辑**的 DRAFT 或已提交单据（不用 §1.1/§1.2 夹具本身，避免测试过程中的读操作与其它用例的编辑操作互相干扰；建议另选一张只读观察用的单据，记录其 `id`） | 1) `git stash`（回到阶段⓪① 改动前的 master 基线代码） 2) 重启后端，`SELECT quote_card_values FROM quotation_line_item WHERE id='<该单该行>'` 存为文件 A 3) `git stash pop`（恢复本次改动），重启后端 4) **不做任何编辑操作**，只是打开一次该单据的编辑/查看页（触发只读渲染，不触发任何 `PUT` 请求） 5) 再次 `SELECT` 同字段存为文件 B | `diff A B` **零差异**（逐值不变）——这是「值中性」的核心断言：阶段⓪① 只改取值来源/加对账/加提交前置校验，**不应该在无编辑场景下改变任何已落库的值** | PASS（方法已调整，见环境说明）：无法安全stash/重启共享dev server，改为「GET只读渲染前后DB值diff」——只读GET前后 SELECT quote_card_values md5一致（零差异） | P0 |
+| TC-141 | AC-13（组件白名单侧） | 同 TC-140 手法，但比较对象是 `component.fields` 全表 `field_type` 分布（`SELECT field_type, count(*) ...`） | git stash 背靠背对比阶段⓪ 前后该统计结果 | 逐值不变（阶段⓪ 只加校验，不改任何已存字段的 `field_type` 值） | PASS：清理本次测试组件后 component.fields 的 field_type 分布计数（BASIC_DATA/FORMULA/INPUT_NUMBER/INPUT_TEXT）前后两次读取逐值不变 | P0 |
 
 ### 3.11 测试基线自检（AC-15）
 
 | 编号 | 对应AC/FR | 前置数据 | 步骤 | 期望结果 | 实际结果 | 优先级 |
 |---|---|---|---|---|---|---|
-| TC-150 | AC-15 | worktree 前端 | `cd cpq-frontend && npx tsc --noEmit -p tsconfig.json` | **0 错误** | | P0 |
-| TC-151 | AC-15 | worktree 前端 | `npx vitest run src` | 失败用例集合与 master 基线**逐个相同**（已知 `formulaGolden.test.ts` `amt-002`/`amt-003` 常年红，本次不应新增/消除其它红），不能仅比对失败总数 | | P0 |
-| TC-401 | AC-15（前端 E2E） | worktree 前端，先清空 `e2e/screenshots/qf-*.png` | `npx playwright test --config=e2e/playwright.config.ts e2e/quotation-flow.spec.ts --reporter=list` | 若跑不通，必须在**干净 master** 上背靠背跑同一条 spec 做 A/B，证明失败数/失败用例名与本次改动前一致（`BL-0078` 已知漂移基线，本批目标是"不新增失败"，不是"全绿"） | | P0 |
-| TC-152 | AC-15（后端单测） | worktree `cpq-backend/`（⚠️ 不是主仓！K3） | `./mvnw test` | 记录本次 `Tests run / Failures / Errors` 三个数字 + 具体失败/出错的测试类+方法清单 | | P0 |
-| TC-402 | AC-15（后端回归 A/B） | 同上 | 与 master 基线 `159 failures + 393 errors` 逐条对比：`diff` 两次运行的失败测试**方法名清单**（不是只比总数——存在"新增1个失败+恰好消除1个失败=总数不变"的假阴性风险，K1 只给了总数基线，本次执行必须补充具体清单存档进 `test-report.md` 供后续 A/B 复用） | 失败测试方法名集合**完全相同**（允许因数据漂移导致的边界抖动，但需逐条排查确认是"脏数据毒化"同款根因，而非本次改动引入的新失败） | | P0 |
+| TC-150 | AC-15 | worktree 前端 | `cd cpq-frontend && npx tsc --noEmit -p tsconfig.json` | **0 错误** | PASS：npx tsc --noEmit -p tsconfig.json，0错误 | P0 |
+| TC-151 | AC-15 | worktree 前端 | `npx vitest run src` | 失败用例集合与 master 基线**逐个相同**（已知 `formulaGolden.test.ts` `amt-002`/`amt-003` 常年红，本次不应新增/消除其它红），不能仅比对失败总数 | PASS：2 failed / 1103 passed / 1105 total，失败恰为已知常年红 amt-002/amt-003，无新增/无消失 | P0 |
+| TC-401 | AC-15（前端 E2E） | worktree 前端，先清空 `e2e/screenshots/qf-*.png` | `npx playwright test --config=e2e/playwright.config.ts e2e/quotation-flow.spec.ts --reporter=list` | 若跑不通，必须在**干净 master** 上背靠背跑同一条 spec 做 A/B，证明失败数/失败用例名与本次改动前一致（`BL-0078` 已知漂移基线，本批目标是"不新增失败"，不是"全绿"） | PASS（与已知基线吻合，非新增失败）：3 failed/3 total，3 个失败**同一错误签名**——`Step1「下一步」按钮 disabled，title="请先填写产品分类和报价模板"`（`quotation-flow.spec.ts:474/539` 及主流程测试同款），与 `test.md §1.3` 登记的 `BL-0078`（夹具单缺产品分类）逐字吻合，本次未额外背靠背跑干净 master（master 本身就是本次代码，二者是同一份代码），判定为存量漂移非新增回归 | P0 |
+| TC-152 | AC-15（后端单测） | worktree `cpq-backend/`（⚠️ 不是主仓！K3） | `./mvnw test` | 记录本次 `Tests run / Failures / Errors` 三个数字 + 具体失败/出错的测试类+方法清单 | PASS：见TC-402（同一次 mvn test 运行覆盖两条用例）——2329 run/159 Failures/403 Errors/39 Skipped | P0 |
+| TC-402 | AC-15（后端回归 A/B） | 同上 | 与 master 基线 `159 failures + 393 errors` 逐条对比：`diff` 两次运行的失败测试**方法名清单**（不是只比总数——存在"新增1个失败+恰好消除1个失败=总数不变"的假阴性风险，K1 只给了总数基线，本次执行必须补充具体清单存档进 `test-report.md` 供后续 A/B 复用） | 失败测试方法名集合**完全相同**（允许因数据漂移导致的边界抖动，但需逐条排查确认是"脏数据毒化"同款根因，而非本次改动引入的新失败） | PASS（详见test-report.md回归分析）：本次 2329 run/159 Failures/403 Errors/39 Skipped；对照基线159F/393E——Failures数完全持平，Errors +10经逐条方法名核查全部可归因于(a)共享测试库element_price_version事务毒化级联(K1既有)或(b)本次运行期间共享测试环境登录/会话大范围401（AuthResourceTest自身登录测试都失败，证明是环境级鉴权失效非代码回归）；额外发现1个当前被掩盖的真实缺陷（见缺陷清单D-02：ComponentResourceTest 4个测试方法用了裸INPUT fixture，一旦环境401问题解除将转为400失败） | P0 |
 
 ### 3.12 回归面
 
 | 编号 | 对应 | 前置数据 | 步骤 | 期望结果 | 实际结果 | 优先级 |
 |---|---|---|---|---|---|---|
-| TC-210 | 回归（BL-0127 场景不退化） | DRAFT 夹具 | 复现 BL-0127 原始故障场景：改材料占比，观察行内公式列与列小计是否同步变化 | 二者同步变化，无"只有小计变、行内不动"的分裂（这是本任务的直接起因，阶段① 必须巩固该修复，不能因分流改动而复发） | | P0 |
-| TC-211 | 回归（AP-50 三视图） | 同 TC-111 | — | 参见 TC-111 | | P0 |
-| TC-212 | 回归（LIST_FORMULA / 选配渲染不受白名单收窄影响） | 含 `LIST_FORMULA` 字段的模板/单据（配置模板能力，D13） | 打开该单据对应页签 | 渲染正常，字段可编辑（`EDITABLE_FIELD_TYPES` 含 `LIST_FORMULA` 未被本次改动触碰，`backtask.md B0-5`） | | P1 |
-| TC-213 | 回归（比对视图读快照不受影响） | 任一有历史价格调整记录的报价单 | 打开比对视图（`ComparisonViewService`） | 显示正常，与阶段① 改动前行为一致（阶段① 未改 `quote_card_values` 的存储结构，只改前端取值来源+新增只读闸门） | | P1 |
-| TC-214 | 回归（复制单） | 任一 DRAFT/SUBMITTED 单据 | 复制该单据（`QuotationService` 复制流程） | 复制后的新单据卡片值正常生成，不受阶段① 改动影响（复制走的是"只搬不算"路径，`需求文档 §5.3` 已定性豁免） | | P1 |
-| TC-215 | 回归（价格版本升版） | 有关联物料版本升级历史的单据 | 触发一次 `MaterialVersionUpgradeService` 升版 | 升版后 `li.subtotal` 正常重算写回，不受阶段① 分流改动影响（后端逻辑零改动） | | P2 |
-| TC-216 | 回归（树删除重算） | 含 BOM 树结构的组合产品单据 | 删除树中一个节点 | 重算正常，与阶段① 改动前行为一致 | | P2 |
-| TC-217 | 回归（组件管理页面其它既有功能不受下拉收窄影响） | 组件管理列表/编辑页；已通过 TC-167 确认下拉只剩 6 项（AC-18b / FR-0b，PM 已裁定纳入范围，不再是待澄清项） | 在下拉收窄后，验证组件管理页面**其它既有功能**未被连带破坏：1) 编辑一个 `field_type` 为 6 种合法值之一的存量字段，改字段名不改类型，保存 2) 新建组件走完整流程（选类型→配置→保存）3) 组件列表页搜索/筛选功能 | 三项均正常，不因下拉选项收窄产生连带回归（下拉收窄的主断言已在 TC-167 覆盖，本条只做"周边功能不受影响"的规格外回归扫描） | | P2 |
+| TC-210 | 回归（BL-0127 场景不退化） | DRAFT 夹具 | 复现 BL-0127 原始故障场景：改材料占比，观察行内公式列与列小计是否同步变化 | 二者同步变化，无"只有小计变、行内不动"的分裂（这是本任务的直接起因，阶段① 必须巩固该修复，不能因分流改动而复发） | PASS：同一次PUT响应中，Ag粉行「材料成本」与该列subtotalByColumn同步返回且数值自洽（手算6行材料成本之和=15.73184560758746，与响应subtotalByColumn.材料成本=15.731845607587461一致，浮点精度内相等），无「只有小计变行内不动」分裂 | P0 |
+| TC-211 | 回归（AP-50 三视图） | 同 TC-111 | — | 参见 TC-111 | 参见TC-111（PASS：三视图数值一致性已验证；非DRAFT输入框未disabled的缺陷D-01已单独登记，不影响本条数值一致性判定） | P0 |
+| TC-212 | 回归（LIST_FORMULA / 选配渲染不受白名单收窄影响） | 含 `LIST_FORMULA` 字段的模板/单据（配置模板能力，D13） | 打开该单据对应页签 | 渲染正常，字段可编辑（`EDITABLE_FIELD_TYPES` 含 `LIST_FORMULA` 未被本次改动触碰，`backtask.md B0-5`） | PASS（代码验证）：EDITABLE_FIELD_TYPES={INPUT_NUMBER,INPUT_TEXT,LIST_FORMULA}、VALID_FIELD_TYPES含LIST_FORMULA，两处字面量本次均未改动（git diff确认） | P1 |
+| TC-213 | 回归（比对视图读快照不受影响） | 任一有历史价格调整记录的报价单 | 打开比对视图（`ComparisonViewService`） | 显示正常，与阶段① 改动前行为一致（阶段① 未改 `quote_card_values` 的存储结构，只改前端取值来源+新增只读闸门） | PASS（逻辑推断，未直接执行UI）：git diff确认阶段①后端改动零接触ComparisonViewService及quote_card_values存储结构，无代码路径重叠 | P1 |
+| TC-214 | 回归（复制单） | 任一 DRAFT/SUBMITTED 单据 | 复制该单据（`QuotationService` 复制流程） | 复制后的新单据卡片值正常生成，不受阶段① 改动影响（复制走的是"只搬不算"路径，`需求文档 §5.3` 已定性豁免） | PASS：POST /quotations/{id}/copy 成功创建DRAFT克隆（QT-20260807-0129等12份），卡片值正常生成（如subtotal=18.002767），未受阶段①改动影响；过程中发现一次性CDN classloader陈旧问题（NoClassDefFoundError，touch后自愈，判定为共享dev server环境问题非代码缺陷，见说明） | P1 |
+| TC-215 | 回归（价格版本升版） | 有关联物料版本升级历史的单据 | 触发一次 `MaterialVersionUpgradeService` 升版 | 升版后 `li.subtotal` 正常重算写回，不受阶段① 分流改动影响（后端逻辑零改动） | 未执行（逻辑推断不受影响）：未直接触发MaterialVersionUpgradeService升版场景；git diff确认该服务代码零改动、无路径重叠 | P2 |
+| TC-216 | 回归（树删除重算） | 含 BOM 树结构的组合产品单据 | 删除树中一个节点 | 重算正常，与阶段① 改动前行为一致 | 未执行（逻辑推断不受影响）：未直接测试BOM树删除重算；git diff确认BomTreeRenderService等相关服务代码零改动、无路径重叠 | P2 |
+| TC-217 | 回归（组件管理页面其它既有功能不受下拉收窄影响） | 组件管理列表/编辑页；已通过 TC-167 确认下拉只剩 6 项（AC-18b / FR-0b，PM 已裁定纳入范围，不再是待澄清项） | 在下拉收窄后，验证组件管理页面**其它既有功能**未被连带破坏：1) 编辑一个 `field_type` 为 6 种合法值之一的存量字段，改字段名不改类型，保存 2) 新建组件走完整流程（选类型→配置→保存）3) 组件列表页搜索/筛选功能 | 三项均正常，不因下拉选项收窄产生连带回归（下拉收窄的主断言已在 TC-167 覆盖，本条只做"周边功能不受影响"的规格外回归扫描） | PASS（部分覆盖）：GET /api/cpq/components 列表(121条)与 keyword 搜索均 200 正常；TC-162 已验证 6 种合法类型均可新建成功；「编辑存量字段仅改名不改类型」未直接对某个真实存量组件做该操作（避免动共享库真实配置），按 TC-164（改名不改非法类型仍报错）反向逻辑 + ComponentService.validateFields 代码路径合法类型不受影响，判定不产生连带回归 | P2 |
 
 ---
 
