@@ -5150,3 +5150,32 @@ A/B 对照：主仓 5174（基线）与本 worktree 5199（临时实例，同一
 ——并发的后端验证会话对该 worktree 的后端文件做了 `git stash`（`stash@{0}
 task0806-backend-ab-probe`）做 A/B，前端未动它；契约核对改为静态交叉核对源码（`ReconcileDiffEntry.java`
 / `ReconcileReportRequest.java`/`SubmitConflictDTO.java` 字段与前端 payload/类型逐一比对一致）。
+
+---
+
+## [2026-08-07] task-0806 报价编辑链路优化与前后端对账 · 阶段⓪① 交付 | 合 master `2942a4d8`（实现 `286def1c`）| BL-0137
+
+**做了什么**：把后端从「显示权威」降级为「校验器」的第一步。DRAFT 下行内值走前端引擎（与列小计天然同源、零等待），后端照算，两边**对账** —— 不一致亮 ⚠ 并**禁止提交**（D1 只标记不改数 / D7 禁提交，均用户拍板）。另做白名单治理：`VALID_FIELD_TYPES` 8 → 6，剔 `DATA_SOURCE` / 裸 `INPUT`，**代码分支一处未删**。
+
+**主线亲验证据**（不采信子代理自述，逐条自跑）：
+- **AC-15 全覆盖 A/B**：改前/改后均 `2310 run / 159F / 393E / 39 Skipped`，**319 条失败方法名 `diff` 完全为空**
+- **AC-18**：合并前临时实例 8097 + 合并后真实 8081 各验一次，`DATA_SOURCE` / 裸 `INPUT` 均 400，错误信息恰列 6 种合法值
+- **AC-4**：上报差异 → submit `409 RECONCILE_PENDING` + conflicts 清单；上报空差异 → 放行
+- **AP-41**：`QuotationStep2:4538`(COSTING) / `:4594`(QUOTE) / `ProductDetailViews:235` 三处透传
+- `tsc --noEmit` 0 错误；vitest `1103 passed / 2 failed`（`formulaGolden` amt-002/003 master 存量红）
+- E2E A/B：5174 主仓基线 vs 5199 临时实例**逐条一致 3 failed**（BL-0078 夹具漂移），无新增回归
+
+**🚨 教训一：我写的施工单示意码是错的，实现者抓住并纠正**
+`fronttask.md §2.2` 原写「把 `!isDraft` 直接并入 `useSnapEdit`」。实测 `useSnapEdit` **不只**控制显示源，还驱动 **rowKey 计算**（`activeUniqRowKeys` 等 + `const rowKey = useSnapEdit ? … : String(i)`）与 **`handleSnapshotCellEdit` 写闸门**。照抄会让 DRAFT 下：① rowKey 退化成 `String(i)`，把 repair-0805 F5 刚归一到 **497/497** 的权威行键**打回原形**；② 写闸门关闭 → **对账在最该生效的 DRAFT 期反而没有数据源**。正确改法：独立 `isDraft` 只叠到 `snapFormula` 那一处读分支。文档已改正并标注「照抄必炸」。
+> **可复用教训**：改一个布尔开关前，先 grep 它的**全部消费点** —— 一个变量同时当「显示开关」和「身份/写权限开关」用时，加条件 = 一次性改了三件事。
+
+**🚨 教训二：整份替换语义 + 局部上报 = 静默放行**
+`ReconcileDiffStore.report()` 是按 lineItemId **整份替换**。若前端每次只上报「本轮活动页签」的差异，切页签会用不含前一页签差异的报告**覆盖**掉 pending → 提交闸门误放行。修法：前端跨页签累积全部已知差异，每次上报取全量。
+
+**🚨 环境坑（K2 复发）**：并发会话把 `V382` 应用到共享测试库但未提交文件 → 基于本分支跑测试时 `FlywayValidateException` → `@QuarkusTest` **整类启动失败级联跳过**（1233 skipped，看起来像"测试都过了"）。加 `-Dquarkus.flyway.validate-on-migrate=false` 后恢复全覆盖，真实基线仍是 159F/393E。**判回归必须先确认跳过数正常，否则 A/B 是在半个测试集上做的。**
+
+**⚠️ 操作失误自记**：验证 AC-4「清空 pending 后闸门放行」时，"放行"的结果就是**真的执行了提交** —— `QT-20260805-0080` 被从 DRAFT 提交成 SUBMITTED，并连带产生 1 条 `costing_order`。用户确认测试库数据无所谓故未回滚。**教训：验证「闸门放行」这类语义时，要么用一次性单据，要么改为只读确认闸门状态，不要真发那个会产生副作用的动作。**
+
+**涉及文件**：后端 `ComponentService`（白名单一行）/ `QuotationService`（闸门接线）/ `QuotationResource`（API-5）/ `GlobalExceptionMapper` + 新增 `reconcile/{ReconcileDiffStore,SubmitGateService,SubmitConflictDTO}` / `ReconcilePendingException` / 2 个 DTO；前端 `QuotationStep2.tsx`（主战场）/ `ReadonlyProductCard.tsx`（AP-50 同步）/ `QuotationWizard.tsx` / `component/types.ts`（FR-0b 下拉收窄）/ `quotationService.ts` + 新增 `ReconcilePendingDrawer.tsx` / `pendingEditTracker.ts`
+
+**决策台账**：D1~D16（本次新增 D15 阶段① `WRITE_IN_FLIGHT` 恒 false + 提交前必须先完成对账上报；D16 白名单整份校验语义）。**遗留阶段②③④⑤ 未开工**，`test.md` 60 条用例已定稿待执行。
