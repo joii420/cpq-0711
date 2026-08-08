@@ -144,6 +144,7 @@ public class PriceAdjustJobResource {
         dto.failed = j.failedCount;
         dto.conflict = j.conflictCount;
         dto.stale = j.staleCount;
+        dto.skipped = j.skippedCount;
         dto.finishedAt = j.finishedAt;
         dto.notified = Boolean.TRUE.equals(j.notified);
         return dto;

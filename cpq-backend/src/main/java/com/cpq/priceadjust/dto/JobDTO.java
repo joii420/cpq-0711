@@ -16,6 +16,8 @@ public class JobDTO {
     public int failed;
     public int conflict;
     public int stale;
+    /** repair-0807 FR-4：SKIPPED 终态计数（wire 字段名 `skipped`，与兄弟字段无 Count 后缀风格一致）。 */
+    public int skipped;
     public OffsetDateTime finishedAt;
     public boolean notified;
 }

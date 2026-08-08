@@ -333,8 +333,16 @@ public class PriceAdjustJobExecutionService {
                 item.id, item.materialNo, ur.warnCode, ur.diffValue);
         }
         switch (ur.status) {
-            case SUCCESS, SKIPPED -> {
+            // repair-0807 FR-4：SKIPPED 独立终态，不再并入 SUCCESS（api.md §2.2）。errorCode 保持
+            // null——本模块既定语义是「errorCode 非空 = 非成功态需人工处理」，SKIPPED 是设计内的
+            // "不处理"，占用 errorCode 会把屏 7 的可重试判定带偏。
+            case SUCCESS -> {
                 item.status = MaterialPriceUpdateJobItem.SUCCESS;
+                item.errorCode = null;
+                item.errorMessage = ur.message;
+            }
+            case SKIPPED -> {
+                item.status = MaterialPriceUpdateJobItem.SKIPPED;
                 item.errorCode = null;
                 item.errorMessage = ur.message;
             }

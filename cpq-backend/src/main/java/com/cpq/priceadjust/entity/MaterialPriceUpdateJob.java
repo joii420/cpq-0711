@@ -54,6 +54,10 @@ public class MaterialPriceUpdateJob extends PanacheEntityBase {
     @Column(name = "stale_count", nullable = false)
     public Integer staleCount = 0;
 
+    /** repair-0807 FR-4：SKIPPED 终态计数（V384）。有跳过时批次不得报 SUCCESS，见 {@link #recountFrom}。 */
+    @Column(name = "skipped_count", nullable = false)
+    public Integer skippedCount = 0;
+
     @Column(name = "finished_at")
     public OffsetDateTime finishedAt;
 
@@ -82,29 +86,34 @@ public class MaterialPriceUpdateJob extends PanacheEntityBase {
      * supersede 不是一次执行。
      */
     public void recountFrom(java.util.List<MaterialPriceUpdateJobItem> items) {
-        int success = 0, failed = 0, conflict = 0, stale = 0;
+        int success = 0, failed = 0, conflict = 0, stale = 0, skipped = 0;
         for (MaterialPriceUpdateJobItem it : items) {
             switch (it.status) {
                 case MaterialPriceUpdateJobItem.SUCCESS -> success++;
                 case MaterialPriceUpdateJobItem.FAILED -> failed++;
                 case MaterialPriceUpdateJobItem.CONFLICT -> conflict++;
                 case MaterialPriceUpdateJobItem.STALE -> stale++;
-                default -> { /* WAITING/RUNNING 不计入四类终态，但计入 totalCount */ }
+                case MaterialPriceUpdateJobItem.SKIPPED -> skipped++;
+                default -> { /* WAITING/RUNNING 不计入终态，但计入 totalCount */ }
             }
         }
         this.successCount = success;
         this.failedCount = failed;
         this.conflictCount = conflict;
         this.staleCount = stale;
+        this.skippedCount = skipped;
         this.totalCount = items.size();
-        if (failed == 0 && conflict == 0 && stale == 0) {
+        // repair-0807 FR-4（api.md §3.2 判定表，MaterialPriceUpdateJob#recountFrom 唯一实现）：
+        // 🚨 "有跳过就不许报 SUCCESS"——本次缺陷的传播路径正是"32/32 全成功"骗过了财务，其中
+        //    至少 1 张单一个字节都没改。判定顺序不可打乱：SUCCESS 的条件必须显式排除 skipped>0。
+        if (failed == 0 && conflict == 0 && stale == 0 && skipped == 0) {
             this.status = SUCCESS;
         } else if (success == 0 && stale == items.size()) {
             this.status = STALE;
-        } else if (success == 0) {
+        } else if (success == 0 && skipped == 0) {
             this.status = FAILED;
         } else {
-            this.status = PARTIAL;
+            this.status = PARTIAL; // 含"全部成功但有跳过"
         }
     }
 
