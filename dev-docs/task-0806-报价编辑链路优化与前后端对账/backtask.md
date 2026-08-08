@@ -206,15 +206,27 @@ materializeWholeLineRowData → for(每个组件) → writeRowData(REQUIRES_NEW 
 - [ ] B2-2 乐观锁校验 + `409`，冲突时整事务回滚不留半写
 - [ ] B2-3 自检 §8（含并发用例：并行 10 次编辑不丢更新）
 
-### 阶段③
-- [ ] B3-1 定脏标记方案（建议 a）+ Flyway（**开工时才分配版本号**）
-- [ ] B3-2 `materializeWholeLineRowData` 拆分：INPUT 即时写 / 公式列标脏
-- [ ] B3-3 `ensureRowData` 实现（复用 `materializeLineRowData` 拓扑序 + 单飞锁）
-- [ ] B3-4 API-2 端点
-- [ ] B3-5 **6 处挂 ensure**（逐个贴文件:行号进 test-report）
-- [ ] B3-6 **重新验证 K4 时序约束仍成立**（改了物化时机）
-- [ ] B3-7 裁决并记录「`row_data` 双写入源谁赢」
-- [ ] B3-8 自检 §8 + AC-8/AC-9
+### 阶段③a（本期交付 —— D17 重新裁定后的实际范围）
+
+> 🚨 **原 B3-1~B3-8 已作废**，理由见 `需求文档.md` D17 + 附录 A.6。一句话：**编辑路径根本没接上仓里现成的批量写**（`materializeLineRowData` 6 参重载把 `batchWriteEnabled` 硬编码 `false`，`ConfigureSnapshotService.java:1196`），接上就拿到生产态 234ms / 可用空间的 80%；剩给懒物化的只有 60ms，不值那一整套风险。
+
+- [ ] B3a-1 `CardSnapshotService.materializeWholeLineRowData` 改调 **7 参重载**，显式传 `batchWriteEnabled`
+  - ⚠️ **不改 `ConfigureSnapshotService.java:1196` 6 参重载的默认值** —— 它还有别的调用方，改默认 = 影响面失控
+- [ ] B3a-2 kill switch `cpq.editpath-batch-write`（默认 `true`；环境变量 `CPQ_EDITPATH_BATCH_WRITE`）。命名/默认值/读法对齐既有 `cpq.firstsave-batch-write`（`ConfigureSnapshotService.java:243-246`）
+- [ ] B3a-3 javadoc 写清：为什么原来没走批量 / 回退开关怎么用 / **K4 时序约束未被触碰**（赋卡片值 → 物化 → flush/clear → 覆盖派生小计，顺序一行没动 —— 本次只换写法不换时机）
+- [ ] B3a-4 确认**第二条调用路径** `materializeAndProject`（树删除/恢复重算，`CardSnapshotService.java:~3422`）一并受益，且批量写**不破坏墓碑过滤后的行数对齐**（AP-51 行数权威）
+- [ ] B3a-5 **等价性 Java 测试**：同输入下 `batchWriteEnabled=true/false` 落库 `row_data` 逐位一致（AC-8b）。参考同仓 `Golden*` / `BatchStage1*` / `Persist*` 系列写法
+- [ ] B3a-6 自检 §8 + AC-8/AC-8b/AC-8c/AC-13/AC-15
+  - ⚠️ `./mvnw test` **必须加 `-Dquarkus.flyway.validate-on-migrate=false`**，否则 `@QuarkusTest` 整类启动失败、级联跳过 1233 条（表面全绿，实际半个测试集没跑）。**跑完先看 `Skipped` 是不是 39 左右；是 1233 就是参数没生效，结论作废**
+  - ⚠️ 起临时实例验证必须加 `-Dquarkus.flyway.migrate-at-start=false`（共享库已应用 V382/V384，但那两个迁移文件属并发会话、不在本分支）
+
+**本阶段无表结构变更、无 Flyway 迁移、无 API 契约变更**（原预留的 V385 释放，API-2 不实现）。
+
+### ~~阶段③b（懒物化）~~ —— ❌ D17 裁定不做，转 [[BL-0154]]
+
+> ~~B3-1 脏标记 + Flyway / B3-2 拆 INPUT 与公式列 / B3-3 `ensureRowData` / B3-4 API-2 / B3-5 6 处挂 ensure / B3-6 K4 重验 / B3-7 双写入源裁决~~
+>
+> §4.3 的设计推演与 `需求文档.md §5.3` 的 12 处读取方穷举**保留不删** —— 它们是 [[BL-0154]] 重启时的现成前置。本期不实现任何一条。
 
 ### 阶段④
 - [ ] B4-1 **前置**：grep 穷举 `quotation_view_structure` 写入口并收敛为唯一方法

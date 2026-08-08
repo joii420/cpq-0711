@@ -73,6 +73,8 @@ git branch --no-merged master                                                   
 | 料号**跨客户串号** | `task-0708-导入.../repair-2`（RECIPE 模型；`task-0717-报价占号表只存销售料号` 是被推翻的竞争方案） |
 | 编辑页产品分类丢失 / 红字「请选择产品分类」 | `task-0729-报价单产品分类持久化` |
 | 元素单价取不到 / 价格策略不生效 | `task-0722-元素价格策略` → `task-0729-客户价格调整策略和价格版本` |
+| 报价单**改一格等半秒以上** / 想优化编辑落库耗时 | `task-0806-报价编辑链路优化与前后端对账`（**D17 + 附录 A.6**：编辑路径没接上仓里现成的批量写 → 8 页签 8 次 `REQUIRES_NEW`；生产态三档实测 775→541→481ms。**先查 `materializeLineRowData` 是几参重载**）|
+| **想判断某项优化能省多少** | 同上 A.1 的更正段 —— **直接测「关掉它」的差值，别拿方法内打点占比外推**（356ms vs 实测 294ms 的由来）|
 | **改了组件配置，已发布模板 / 在途报价单跟着变**（没发新版也变） | `task-0806-模板发布全量冻结`（`ComponentService.update:733` 自动改写已发布快照；另有 6 个字段从未进快照 + 渲染期 10 处直读活表） |
 | 已发布模板的行序 / 行键 / 元素单价列**莫名变了** | 同上 —— `rowKeyFields` / `sortField` / `element*Field` 是「组件级角色字段」，为绕开 AP-44 挂在表列上，顺带绕开了冻结 |
 | 价格调整审核通过后「更新任务」很慢（几十秒） | `task-0806-价格调整更新任务性能优化`（热点 = 核价树 `render()` 逐项调用，18 项 job 发 306 条 SQL 而非 17 条；**不是 N+1、也不能上线程池**，两条都已实测否定） |
@@ -152,7 +154,7 @@ done | sort | cut -d'|' -f1 | uniq -c | sort -rn | awk '$1>=4'
 
 | 目录 | 一句话 | 状态 | 主战场文件 |
 |---|---|---|---|
-| `task-0806-报价编辑链路优化与前后端对账/` | 把后端从**显示权威降级为校验器**：DRAFT 行内走前端引擎（与列小计同源、零等待），后端异步照算做**对账**，不一致亮标记 + **禁提交**；其上叠异步/懒物化/缓存三级优化。实测一格编辑 900ms 分布：整行物化 `row_data` 356ms(45%) > 整卡重算 120ms > 小计+整单表头 78ms | ⚠️ **阶段⓪① 已合并** `2942a4d8`（白名单收窄 + 分流/对账/提交闸门）；**阶段②③④⑤ 未开工**（`BL-0137` P0，D1~D16，test.md 60 例待执行） | `QuotationStep2.tsx` `ReadonlyProductCard.tsx` `CardSnapshotService.java`（`editCardValue`/`materializeWholeLineRowData`） |
+| `task-0806-报价编辑链路优化与前后端对账/` | 把后端从**显示权威降级为校验器**：DRAFT 行内走前端引擎（与列小计同源、零等待），后端异步照算做**对账**，不一致亮标记 + **禁提交**；其上叠异步/懒物化/缓存三级优化。⚠️ **原记「整行物化 356ms(45%)」已被 D17 生产态实测更正为 294ms(38%)** —— 方法内打点占比 ≠ 「关掉它能省多少」 | ⚠️ **阶段⓪① 已合并** `2942a4d8`（白名单收窄 + 分流/对账/提交闸门）；**阶段③ 范围经实测重裁（D17）**：③a 批量写开发中（分支 `feat/task-0806-lazy-rowdata`），③b 懒物化**裁定不做**→`BL-0154`；**阶段②④⑤ 未开工**（`BL-0137` P0，D1~D17） | `QuotationStep2.tsx` `ReadonlyProductCard.tsx` `CardSnapshotService.java`（`editCardValue`/`materializeWholeLineRowData`） |
 | `task-0806-价格调整更新任务性能优化/` | 价格调整通过后「更新任务」提速：18 项 job 实测 58s（3.22s/项）→ 目标 22~25s。热点 = 核价树 `render()` 43.5% + S0 口径守卫 14.3%。**实测否定两条路**：不是 N+1（一次 render 恰好 17 条 SQL、零重复）、不能上线程池（2026-06-22 同款设计已 revert）。真正浪费 = `refreshCostingCardValuesForLine` 逐项调 `render(List.of(li))` → 18 项发 306 条 SQL 而非 17 条 | ✅ **已交付合 master**（`880709fc` + T6）。主线亲验：75 个 line item 逐字节相同、测试 61/61；实测 18 项 job 冷 JVM 29.24s（**非同 JVM 严格对照，不作确定倍数**）。遗留 [[BL-0144]] T5 转二期 / [[BL-0145]] 价格分叉 | `BomTreeRenderService.java` `CardSnapshotService.java`（`refreshCostingCardValuesForLine`）`PriceAdjustJobExecutionService.java` `MaterialVersionUpgradeService.java` `DriverBatchSafetyAuditor.java` `PriceBaseDateUtil.java` |
 | `task-0806-模板发布全量冻结/` | 模板 PUBLISHED 后**内容层仍活穿透**（③ 类：refresh 改写快照 / 6 字段从未进快照 / 渲染期 10 处直读活表）→ 新建 `template_component_snapshot` 关系表 + `refreshSnapshotsByComponent` 整体下线 + 读取收口 `PublishedTemplateReader` | 📐 **需求文档定稿，待实现**（`BL-0133` P0） | `TemplateService.java:340` `ComponentService.java:733` `CardSnapshotService.java` `ConfigureSnapshotService.java` `ExcelViewService.java` |
 | `task-0721-报价侧树状结构与页签类型属性/` | 报价卡片按 BOM 树渲染（复用核价 spine 引擎）+ 页签类型属性（BOM/材质元素/零件/组成件/外购件/主件） | ✅ 已交付 | `QuotationStep2.tsx` `QuotationTreeService.java` |
