@@ -764,15 +764,18 @@
 - **验收要点**：①点节点跳到对应公式；②目标 token 高亮；③展示文案仍不出现任何 id（AC-11 不得回归）。
 
 ### [BL-0101] 前端页签算序不认 `component_subtotal` 依赖 —— 前后端建图口径不对齐
-- **优先级**：P2（当前无可见故障，但与 QT-1743 同型，属静默算错风险）
+- **优先级**：~~P2（当前无可见故障）~~ → **P1**（2026-08-07 实证发生用户可见故障 `QT-20260807-0146`）
 - **来源**：2026-08-03 repair-0803（QT-20260803-0052 假环）修复时发现
-- **状态**：TODO（未排期）
-- **登记日期**：2026-08-03
+- **状态**：**[x] 已完成**（2026-08-08 由 `dev-docs/repair-0803-公式计算BUG修复/repair-0808-前端页签算序假环致列小计归零/` 交付）
+- **登记日期**：2026-08-03　**完成日期**：2026-08-08
+- **⚠️ 原描述订正（2026-08-08）**：「前端从未跟进 / 全工程没有 `extractSubtotalRefs`」**不准确**。
+  前端其实从 `40983a52`（2026-06-16 修 QT-1743）起就有等价逻辑，只是**内联在 `buildCrossTabRows` 里**、
+  不是 `crossTabOrder.ts` 的导出函数，且是**页签粒度** —— 恰恰踩中本条最后那句警示。
+  真实故障形态因此比预判更糟：不是"前端漏收边算出 0"，而是"前端多收边 → 与真实 cross_tab 边撞成**假环**
+  → `topoOrderComponents` 抛错 → `catch` **静默**退回声明序 → cross_tab 源页签还没算就被引用 → **整页签 11 个公式列全归零**"。
 - **背景**：后端为修 QT-1743（管理费=0）把 `component_subtotal` 跨组件引用并入了页签拓扑依赖
-  （`CardSnapshotService` / `ConfigureSnapshotService`），**前端从未跟进** ——
-  `crossTabOrder.ts` 只有 `extractSourceRefs`（仅收 `cross_tab_ref`），全工程没有 `extractSubtotalRefs`，
-  `QuotationStep2.tsx:960` 据此排序。后端 `CrossTabComponentOrder.java:66` 那句
-  「与前端 `extractSubtotalRefs` 对齐」的注释是不实描述（repair-0803 已订正）。
+  （`CardSnapshotService` / `ConfigureSnapshotService`），后端已于 repair-0803 精化为**列粒度**
+  （`CrossTabComponentOrder.buildComponentDeps`），**前端停留在页签粒度**。
 - **暴露方式**：正因为前端不收这类边，QT-20260803-0052 在编辑页看着正常、一到后端渲染就崩——
   同一份配置两边算出的依赖图不同。修复方向相反时，两边会各错各的。
 - **风险**：前端 `computeAllFormulas` 若在被引用页签之前算引用方，`component_subtotal` 取到未回填的值 → **前端显示 0**，
@@ -783,6 +786,39 @@
 - **依赖**：repair-0803 已合并（后端规则已定型，可作为对拍基准）
 - **预估规模**：S~M
 - **验收要点**：①同一份 structure 前后端算出的页签序一致；②施耐德BUG2 v1.3 这类含反向引用的模板前端不报环；③对拍用例覆盖「引用输入列/引用公式列/整页签合计」三种形状。
+- **交付**：前端新增 `crossTabOrder.ts#buildComponentDeps`（逐条镜像后端）；`buildCrossTabRows` 改用之；`catch` 加 `console.error` 留痕。
+  验收要点①②③全部达成（`crossTabOrderParityQt0146.repair0808.test.ts` 6 例 + `crossTabOrder.test.ts` T-1.1~T-1.14）。
+  **顺带挖出两条存量缺陷 → `BL-0158` / `BL-0159`。**
+
+### [BL-0158] `__amount_total__` 哨兵键前后端口径分叉（后端 4 位截断 vs 前端精确）
+- **优先级**：P2（用户可见的尾差，但量级 ~1e-5；与 task-0801「全链路统一 6 位」口径冲突）
+- **来源**：2026-08-08 repair-0808 前后端对拍时暴露
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-08
+- **背景**：后端 `CardSnapshotService.java:4078-4079` 登记 `__amount_total__` 哨兵键时做
+  `amountTotal.setScale(4, HALF_UP)`；前端 `tabTotalLines.ts#sumAmountFromByCol` 走 `sumDecimal` **精确求和不截断**。
+  于是任何用 `[页签(总计)]` 参与运算的产品小计公式，两端必然差一个截断残值。
+- **实证**（`QT-20260807-0146`）：「组装加工费」整页签合计前端 `0.083825536` / 后端 `0.0838` → 产品小计
+  前端 `137.5310921432503` vs 后端 `137.5310666072503`，尾差 `2.5536e-5`，与截断残值**逐位相等**。
+- **为什么以前没暴露**：BL-0101 缺陷导致该单据前端整页签贡献为 0，两端根本没有可比的非零值。
+- **范围**：产品裁定统一到 4 位还是 6 位（`task-0801` 的既定口径是 **6 位**，4 位是 BL-0017 / task-0729 B8.1 的残留），
+  然后单侧改齐 + 补双端 golden 用例。⚠️ 改后端会动既有快照值，需评估 golden 漂移与存量单据。
+- **预估规模**：S
+- **验收要点**：①同一单据两端 `[页签(总计)]` 求值逐值一致；②`docs` 里对小数口径的表述与代码一致；③既有 golden 用例更新到位。
+
+### [BL-0159] 前端引擎 `tab_name#__amount_total__` 取不到值（golden amt-002/amt-003 长期红）
+- **优先级**：P2（现网模板多用 `component_code` 引用，未见报障；但双端一致性 golden 已长期不绿）
+- **来源**：2026-08-08 repair-0808 全量回归时发现（**A/B 已证为存量**：把本次两个源文件回退到 `b186ec21` 后同样失败）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-08
+- **背景**：`src/utils/formulaGolden.test.ts` 的 `04-amount-total.json` 里 `amt-002`（按 `tab_name#__amount_total__` 取金额列合计）
+  期望 `12.34` 实得 `0`；`amt-003` 连带 `101.22` → `88.88`。即前端 `component_subtotal` 的 `__amount_total__`
+  查找只认 `component_code` 前缀键、不认 `tab_name` 前缀键。
+- **风险**：只用页签名（未配 `component_code`）引用 `[页签(总计)]` 的模板会静默算 0；且"双端一致性黄金用例"处于长期红灯状态，
+  会掩盖后续真实回归（红了也没人看）。
+- **范围**：对齐前端 `component_subtotal` 的键查找顺序（`code#col` → `tabName#col` → 裸键），或修正 golden 夹具口径 —— 二选一需先定契约。
+- **预估规模**：S
+- **验收要点**：①`formulaGolden.test.ts` 全绿；②按 `tab_name` 与按 `component_code` 引用 `[页签(总计)]` 结果一致。
 
 ### [BL-0102] 价格策略接管的 `元素单价` 列仍可编辑 —— 改了保存后被静默改回
 - **优先级**：P1（用户可见的「改了不生效」，与 2026-08-03「行数据即快照」不变式语义冲突）
@@ -2261,6 +2297,15 @@ task-0721 B8 修复合并    2026-07-21
 ---
 
 ## 已完成
+
+### [DONE 2026-08-08] BL-0101 前端页签算序假环致列小计归零（repair-0808）
+- **交付**：`dev-docs/repair-0803-公式计算BUG修复/repair-0808-前端页签算序假环致列小计归零/`（需求文档 / fronttask / backtask / api / test / test-report 六件齐）。
+  代码：`crossTabOrder.ts` 新增 `buildComponentDeps`（列粒度，逐条镜像后端 `CrossTabComponentOrder`）+ `QuotationStep2.tsx#buildCrossTabRows` 改用之 + `catch` 加 `console.error` 留痕。**后端零改动、接口零改动、无 Flyway。**
+- **根因**：前端建图停在**页签粒度** —— `component_subtotal` 引用零依赖 INPUT 列（`产品·税率`）也建边，与真实的 `产品→物料` cross_tab 边撞成**假环** → `topoOrderComponents` 抛错 → `catch` **静默**退回声明序 → 「物料」先于其 cross_tab 源页签求值 → **11 个 FORMULA 列整齐归零**。后端 repair-0803 已改列粒度故算得全对，只有前端显示错。
+- 🚨 **本单最值钱的产出**：**表象是「行内值对、小计 ¥0」，看着像显示 bug，其实是整页签算错**。因为行内 FORMULA 读的是后端持久化快照 `formulaResults`，而小计读的是前端实时重算 `columnSumsByComp` —— **双源**。下次再见到"只有小计不对"，先怀疑前端实时链路，不要从渲染层查起。
+- **主线亲验（不采信子代理）**：用线上真实三件套（结构快照 / 值快照 / `row_data`）跑真实管线 —— 物料 6 个 `is_subtotal` 列与后端 `subtotalByColumn` **十进制逐字符相同**；反向门禁（把建图换回页签粒度）必炸环且六键全塌 0；A/B 证实 `formulaGolden` 那 2 条失败是存量（回退两文件到 `b186ec21` 同样失败）。
+- **顺带挖出两条存量缺陷**：[[BL-0158]]（`__amount_total__` 后端 4 位截断 vs 前端精确，产品小计尾差 2.6e-5）、[[BL-0159]]（前端引擎不认 `tab_name#__amount_total__`，golden 长期红）。
+- **订正**：原 BL-0101 描述「前端从未跟进 / 没有 `extractSubtotalRefs`」不准确 —— 前端从 `40983a52`(2026-06-16) 起就有内联的**页签粒度**等价逻辑，恰恰踩中该条自己的警示。
 
 ### [DONE 2026-08-07] BL-0140 task-0806 价格调整更新任务性能优化
 - **交付**：master `880709fc`（T2 守卫1 + T3 方案B 分组批量预渲染 + T4 守卫2 失败回退）+ T6 S0 守卫开关（迁移 `V383`，默认关）+ 收尾 `74577376`。任务目录 `dev-docs/task-0806-价格调整更新任务性能优化/`（需求文档 / fronttask / backtask / api / baseline / test / test-report 七件齐）。
