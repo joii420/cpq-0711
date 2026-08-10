@@ -5408,3 +5408,31 @@ render() 用 lineItems.get(0).quotationId 设 QuotationIdContext，
 - 渲染期遇 `TEMPLATE_NOT_FROZEN` 判定**只认 `data.code`，禁按 message 文本匹配**。
 - 树属性 `层级`/`是否叶子`/`是否根` 是**保留字且优先于同名字段**——BOM 页签配置要避开这三个字段名，层级口径根=1。
 - ⚠️ **`CLAUDE.md` 有 4 处同款过期引用未动**（第 249 行 E2E 触发清单里的 `TemplateService.java#refreshSnapshotsByComponent`、第 272 行 AP-44 检查点、第 282 行 PR 必含项要求跑已删除的端点、第 99 行 AP-40 描述）。属项目指令文件，未经确认不擅改，已向用户报备。
+
+---
+
+## [2026-08-09] 配置 - 报价通用组件规则复核：材料成本切料号级取价函数（旧配置在静默取错价）+ 规则集 3 处内部矛盾
+
+**涉及文件**：`客户组件模板/报价通用组件/`（`材料成本.sql` / `材料成本.json` / `README.md`）· `dev-docs/rule-0724-组件模板配置/`（`AGENT-配置入口.md` / `报价侧.md` / `核价侧.md`）
+
+**背景**：`客户组件模板/报价通用组件/` 10 个组件生成于 2026-08-02/03，按 2026-08-09 更新后的 rule-0724 逐条复核。
+
+**结论：10 个只有 1 个要改。**
+
+**🔴 材料成本 —— `f_customer_element_price` → `f_material_element_price`**（依据 `报价侧.md §5.2.2`，V369 起生效）：
+```
++ AND cep.material_no = COALESCE(cl.root_no, ebi.material_no)   -- JOIN 键铁律：逐字等于本视图 hf_part_no
+```
+**不是无害清理 —— 旧写法在当前库就已取错价**。A/B 直连实跑（`CUST-0001`）：`S-3120014539` 的 **Ag 单价 14042.1875 → 43358.75**（该客户+料号 2026-08-05 建过 `material_price_version_ref` 指针，旧函数静默按实时价、不报错）；`Cu` 同值（仅 numeric scale 差异）；子件 `S-80011` 自成闭包根、无指针 → fallback 实时价（符合设计）；行数 4=4，无价元素 `C` 仍 NULL 不掉行。
+
+**其余 9 个逐项复核无需改动**：字段全 `INPUT_TEXT`/`INPUT_NUMBER`（`DATA_SOURCE` 退役不影响）· `formulas` 全空零 `FORMULA` 字段（BL-0098 formula_id 不适用，`bindingReport.unboundCount=0`）· 无字段名撞树属性保留字 `层级`/`是否叶子`/`是否根` · 无跨页签公式（repair-0808 列粒度算序不影响）· SQL 全引 V6 表（AP-53 不触发）。
+
+**顺带修掉规则集自身 3 处矛盾**（§5.2.2 是新加的一节，但没同步旧配方，照抄就配错）：`AGENT-配置入口.md §3.6`（Agent 起点）· `报价侧.md §7.2 组件配方大全`（最容易被直接复制）· `核价侧.md`（`wl_ys_bom_view` 实际早已随 V369 切换）。三处均补新函数 + JOIN 键铁律（平铺 `= ebi.material_no` vs 闭包 `= COALESCE(cl.root_no, ebi.material_no)` 两种写法）。
+
+**验证手法（服务器往返，非纯文本编辑）**：建暂存目录 → 导入 bundle → `PUT sql-views`（**保存即 dry-run，200**）→ `PUT /components` 补角色字段 → 重新导出 → `POST /import` preview（`checksumValid=True` / `canCommit=True` / `warnings=[]`）→ 删组件 + 删目录，**共享库零残留**（三张表实测均 0 行）。
+
+**两条教训**：
+1. ⚠️ **别据自写脚本的 checksum 复现结果判定文件损坏**。复核脚本报 6/10 checksum 失效，用后端 `POST /import` preview 逐个实测全部 `checksumValid=True` —— 是 Python 序列化与后端 Jackson 不逐字节一致导致的**误报**。判定文件完整性必须用**产生它的那套实现**去校验，不能用自己重写的等价实现。
+2. ⚠️ **新增规则小节后必须回扫同一文档里的旧配方**。§5.2.2 写好了，但 §5.2.1 原文、§7.2 配方大全、`AGENT-配置入口 §3.6`、`核价侧.md` 四处仍在教旧写法 —— 配置者最常复制的恰恰是「配方大全」而不是新加的规则节。**加规则 ≠ 改规则，得把所有示例一起改。**
+
+**附带实证（已写进该目录 README）**：角色字段 `elementCodeField`/`elementPriceField`/`elementCurrencyField` 确认**仍不在导出格式里**（重新导出的 bundle 组件键无此三项），不补直接保存组件 → `400 COMPONENT_ELEMENT_BINDING_REQUIRED`；README 另加一条「导入组件后模板必须发布/发新版本才生效」（task-0806 起 H1 自动同步已退役）。

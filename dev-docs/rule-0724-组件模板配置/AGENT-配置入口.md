@@ -110,13 +110,26 @@
 
 ### 3.6 元素单价接价格策略（字段勾「接价格策略」时）
 
+🔴 **用 `f_material_element_price`（料号级），不是 `f_customer_element_price`**（task-0729 / V369 起。旧函数仍在库里、但已降级为新函数内部的 fallback；照抄旧写法 = 该组件永远吃不到「客户价格调整策略」产出的价格版本，**静默按实时价、不报错**）。完整论证与迁移背景见 `报价侧.md §5.2.2`。
+
 驱动视图加：
 ```sql
--- 报价侧：LEFT JOIN f_customer_element_price(:customerCode, :priceBaseDate) cep ON cep.element_code = ebi.component_no
--- 核价侧：LEFT JOIN f_customer_element_price('_GLOBAL_', :priceBaseDate) cep ON cep.element_code = ebi.component_no
+-- 报价侧：LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep
+--                ON cep.element_code = ebi.component_no
+--               AND cep.material_no = <本视图 hf_part_no 的输出表达式，逐字照抄>
+-- 核价侧：LEFT JOIN f_material_element_price('_GLOBAL_', :priceBaseDate) cep
+--                ON cep.element_code = ebi.component_no
+--               AND cep.material_no = <同上>
 ```
 输出（别名 = 字段名逐字、不加 `_`）：`cep.unit_price AS 单价, cep.currency AS 货币`（字段实际名叫「元素单价」就 `AS 元素单价`）。
-硬约束：**必 LEFT JOIN**（禁 INNER，否则无价元素掉行）；**JOIN 键=元素符号 `component_no`**（非元素编号）；**禁 `COALESCE(...,0)`**（无价留 NULL 手填）；**不绑「计价单位」**（那是 BOM 发料单位）；`:priceBaseDate` 后端自动注入（=报价单创建日）。表函数 `f_customer_element_price(客户,基准日)` 已落库。
+
+硬约束：**必 LEFT JOIN**（禁 INNER，否则无价元素掉行）；**元素键=元素符号 `component_no`**（非元素编号）；**禁 `COALESCE(...,0)`**（无价留 NULL 手填）；**不绑「计价单位」**（那是 BOM 发料单位）；`:priceBaseDate` 后端自动注入（=报价单创建日）。
+
+🔴 **JOIN 键铁律（最容易静默失败的一处）**：`cep.material_no` 必须与**本视图 `hf_part_no` 的输出表达式逐字一致** ——
+- 平铺形态：`AND cep.material_no = ebi.material_no`
+- 闭包形态：`AND cep.material_no = COALESCE(cl.root_no, ebi.material_no)`
+
+写错不报错、dry-run 照过，只是版本价永远取不到。
 
 #### 3.6.1 🆕 三项显式绑定（2026-07-29 task-0729 · 强制）
 
