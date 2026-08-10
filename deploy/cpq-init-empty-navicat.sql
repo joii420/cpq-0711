@@ -35,9 +35,31 @@
 --       · ⚠️ 本次**只同步结构**, 未含 V366/V369/V370/V372~V376 对 component.fields、
 --          component_sql_view.sql_template、公式稳定 id 的业务配置 UPDATE(空库无这些行, 无意义)。
 --          已建库的内网环境如需补结构, 用等价增量脚本 deploy/0804-dbupdate.sql
--- 内容: 142 业务活表 + flyway_schema_history + 3 活视图 + 5 函数 + 1 个 admin 用户
+-- 同步: 2026-08-09  已增量同步 V379~V384 的全部**结构**变更, 与 cpq_db_0724(已跑到 V384)
+--                   表/列/索引/约束六维全等。基线号 378 -> 384(同 V368 的理由: V382 含
+--                   CREATE TABLE 无 IF NOT EXISTS、V384 含 DROP CONSTRAINT 无 IF EXISTS,
+--                   非幂等, 基线不上调则连 Quarkus 时重放会启动失败)。
+--       · V379: 纯数据回填(quotation_view_structure 元素角色字段), 空库无行 —— 本脚本不含
+--       · V380: customer_price_adjust_strategy.enabled 默认值 true -> false(客户调价策略默认关闭)
+--       · V381: material_price_review 加 warn_code/warn_message/warn_diff;
+--                material_price_update_job_item 加 warn_code/warn_message;
+--                各加一个部分索引 idx_mpr_warn_code / idx_mpuji_warn_code
+--                (L3 口径守卫由"拦截"改"告警", 告警落在用户已在看的两张表上)
+--       · V382: 新增表 template_component_snapshot(task-0806 模板发布全量冻结, 18 个渲染配置
+--                字段全冻; pkey + uq_tcs_template_tc + 4 索引 + template_id 外键 ON DELETE CASCADE);
+--                operation_log 加 details jsonb(结构化 diff, 供 admin 后门审计)。
+--                V382 末尾的 UPDATE template SET components_snapshot=NULL 是存量清理, 空库无行 —— 不含
+--       · V383: price_adjust_settings 加 subtotal_guard_enabled boolean NOT NULL DEFAULT false
+--                (S0 口径守卫总开关, 默认关闭 = 跳过守卫, 性能优先)
+--       · V384: material_price_update_job_item 的 chk_mpuji_status 扩 'SKIPPED';
+--                material_price_update_job 加 skipped_count integer NOT NULL DEFAULT 0
+--       · ⚠️ 同 2026-08-04: 只同步结构, 不含业务配置/存量数据 UPDATE(空库无行)。
+--          已建库的内网环境如需从 V378 补到 V384, 用等价增量脚本 deploy/0809-dbupdate.sql
+--       · 说明: 本脚本全文不带 COMMENT ON(与 pg_dump 源一致的既有风格), 故 V381~V384 的
+--          列注释一并省略 —— 注释无运行时语义, 不影响结构等价性
+-- 内容: 143 业务活表 + flyway_schema_history + 3 活视图 + 5 函数 + 1 个 admin 用户
 --       + 2 条 BOM 树递归 SQL 配置(唯一的业务配置种子, 见文件末尾)
---       + 1 条 price_adjust_settings 系统参数种子行(id=1, 阈值 0.01)
+--       + 1 条 price_adjust_settings 系统参数种子行(id=1, 阈值 0.01, 守卫开关 false)
 -- 不含: task-0723 的 _drop 废弃表/视图、Flyway 历史迁移记录(仅留 1 行 baseline)、业务数据
 --       (报价单/料号/BOM/模板等一律不含)
 -- admin 登录: 用户名 admin  /  密码 Admin@2026
@@ -877,7 +899,7 @@ CREATE TABLE public.customer_price_adjust_material (
 CREATE TABLE public.customer_price_adjust_strategy (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     customer_no character varying(64) NOT NULL,
-    enabled boolean DEFAULT true NOT NULL,
+    enabled boolean DEFAULT false NOT NULL,
     cycle_type character varying(20) DEFAULT 'MONTHLY_DAY'::character varying NOT NULL,
     cycle_weekday smallint,
     cycle_day_of_month smallint,
@@ -1868,6 +1890,9 @@ CREATE TABLE public.material_price_review (
     review_comment text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    warn_code character varying(50),
+    warn_message text,
+    warn_diff numeric(20,6),
     CONSTRAINT chk_mpr_budget_status CHECK (((budget_status)::text = ANY ((ARRAY['QUEUED'::character varying, 'COMPUTING'::character varying, 'READY'::character varying, 'FAILED'::character varying])::text[]))),
     CONSTRAINT chk_mpr_status CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'APPROVED'::character varying, 'REJECTED'::character varying, 'VOIDED'::character varying])::text[])))
 );
@@ -1917,6 +1942,7 @@ CREATE TABLE public.material_price_update_job (
     finished_at timestamp with time zone,
     notified boolean DEFAULT false NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    skipped_count integer DEFAULT 0 NOT NULL,
     CONSTRAINT chk_mpuj_status CHECK (((status)::text = ANY ((ARRAY['RUNNING'::character varying, 'SUCCESS'::character varying, 'PARTIAL'::character varying, 'FAILED'::character varying, 'STALE'::character varying])::text[])))
 );
 
@@ -1938,7 +1964,9 @@ CREATE TABLE public.material_price_update_job_item (
     retry_count integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT chk_mpuji_status CHECK (((status)::text = ANY ((ARRAY['WAITING'::character varying, 'RUNNING'::character varying, 'SUCCESS'::character varying, 'FAILED'::character varying, 'CONFLICT'::character varying, 'STALE'::character varying])::text[])))
+    warn_code character varying(50),
+    warn_message text,
+    CONSTRAINT chk_mpuji_status CHECK (((status)::text = ANY (ARRAY['WAITING'::text, 'RUNNING'::text, 'SUCCESS'::text, 'FAILED'::text, 'CONFLICT'::text, 'STALE'::text, 'SKIPPED'::text])))
 );
 
 
@@ -2095,7 +2123,8 @@ CREATE TABLE public.operation_log (
     target_type character varying(50) NOT NULL,
     target_id uuid,
     summary text,
-    created_at timestamp(6) with time zone DEFAULT now() NOT NULL
+    created_at timestamp(6) with time zone DEFAULT now() NOT NULL,
+    details jsonb
 );
 
 
@@ -2222,6 +2251,7 @@ CREATE TABLE public.price_adjust_settings (
     subtotal_guard_threshold numeric(20,6) DEFAULT 0.01 NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_by uuid,
+    subtotal_guard_enabled boolean DEFAULT false NOT NULL,
     CONSTRAINT chk_pas_singleton CHECK ((id = 1)),
     CONSTRAINT chk_pas_threshold_nonneg CHECK ((subtotal_guard_threshold >= (0)::numeric))
 );
@@ -3202,6 +3232,41 @@ CREATE TABLE public.template_component (
     formula_assignments jsonb DEFAULT '{}'::jsonb NOT NULL,
     data_driver_path_override text,
     fields_override jsonb
+);
+
+
+--
+-- Name: template_component_snapshot; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.template_component_snapshot (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    template_id uuid NOT NULL,
+    template_component_id uuid NOT NULL,
+    component_id uuid NOT NULL,
+    sort_order integer NOT NULL,
+    tab_name character varying(200),
+    preset_rows jsonb DEFAULT '[]'::jsonb NOT NULL,
+    formula_assignments jsonb DEFAULT '{}'::jsonb NOT NULL,
+    component_name character varying(200),
+    component_code character varying(100),
+    component_type character varying(20) DEFAULT 'NORMAL'::character varying NOT NULL,
+    column_count integer DEFAULT 0 NOT NULL,
+    fields jsonb DEFAULT '[]'::jsonb NOT NULL,
+    formulas jsonb DEFAULT '[]'::jsonb NOT NULL,
+    excel_columns jsonb DEFAULT '[]'::jsonb NOT NULL,
+    data_driver_path text,
+    tree_config jsonb,
+    bom_recursive_expand boolean DEFAULT false NOT NULL,
+    tab_type character varying(30),
+    part_no_field character varying(100),
+    part_name_field character varying(100),
+    row_key_fields jsonb,
+    sort_field character varying(120),
+    element_code_field character varying(100),
+    element_price_field character varying(100),
+    element_currency_field character varying(100),
+    frozen_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -4915,6 +4980,14 @@ ALTER TABLE ONLY public.template_component
 
 
 --
+-- Name: template_component_snapshot template_component_snapshot_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.template_component_snapshot
+    ADD CONSTRAINT template_component_snapshot_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: template_global_variable_binding template_global_variable_binding_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5064,6 +5137,14 @@ ALTER TABLE ONLY public.material_recipe_element
 
 ALTER TABLE ONLY public.sel_part_signature
     ADD CONSTRAINT uq_sel_part_signature UNIQUE (customer_no, structure_version, config_fingerprint);
+
+
+--
+-- Name: template_component_snapshot uq_tcs_template_tc; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.template_component_snapshot
+    ADD CONSTRAINT uq_tcs_template_tc UNIQUE (template_id, template_component_id);
 
 
 --
@@ -5879,6 +5960,13 @@ CREATE INDEX idx_mpr_status_version ON public.material_price_review USING btree 
 
 
 --
+-- Name: idx_mpr_warn_code; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mpr_warn_code ON public.material_price_review USING btree (warn_code, updated_at DESC) WHERE (warn_code IS NOT NULL);
+
+
+--
 -- Name: idx_mprc_review; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5904,6 +5992,13 @@ CREATE INDEX idx_mpuji_job_status ON public.material_price_update_job_item USING
 --
 
 CREATE INDEX idx_mpuji_quotation ON public.material_price_update_job_item USING btree (quotation_id);
+
+
+--
+-- Name: idx_mpuji_warn_code; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mpuji_warn_code ON public.material_price_update_job_item USING btree (warn_code, updated_at DESC) WHERE (warn_code IS NOT NULL);
 
 
 --
@@ -6485,6 +6580,34 @@ CREATE INDEX idx_sysconf_category ON public.system_config USING btree (category)
 --
 
 CREATE INDEX idx_tc_template ON public.template_component USING btree (template_id);
+
+
+--
+-- Name: idx_tcs_component; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tcs_component ON public.template_component_snapshot USING btree (component_id);
+
+
+--
+-- Name: idx_tcs_template; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tcs_template ON public.template_component_snapshot USING btree (template_id);
+
+
+--
+-- Name: idx_tcs_template_driver; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tcs_template_driver ON public.template_component_snapshot USING btree (template_id) WHERE ((data_driver_path IS NOT NULL) AND (data_driver_path <> ''::text));
+
+
+--
+-- Name: idx_tcs_template_tabtype; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tcs_template_tabtype ON public.template_component_snapshot USING btree (template_id, tab_type);
 
 
 --
@@ -7909,6 +8032,14 @@ ALTER TABLE ONLY public.template_component
 
 
 --
+-- Name: template_component_snapshot template_component_snapshot_template_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.template_component_snapshot
+    ADD CONSTRAINT template_component_snapshot_template_id_fkey FOREIGN KEY (template_id) REFERENCES public.template(id) ON DELETE CASCADE;
+
+
+--
 -- Name: template template_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8236,6 +8367,8 @@ WHERE NOT EXISTS (
 -- 缺此行则 L3 升版口径守卫取不到阈值。0.01 与后端
 -- MaterialVersionUpgradeService.DEFAULT_SUBTOTAL_GUARD_THRESHOLD 同值。
 -- 幂等: ON CONFLICT DO NOTHING, 与 V378 重复应用互不冲突。
+-- 注(V383): subtotal_guard_enabled 不在 INSERT 列清单里, 走列默认值 false ——
+--           守卫默认关闭(升版跳过 S0 旧价重算, 性能优先), 需要时由系统管理员在界面打开。
 -- ============================================================
 INSERT INTO public.price_adjust_settings (id, subtotal_guard_threshold)
 VALUES (1, 0.01)
@@ -8243,12 +8376,13 @@ ON CONFLICT (id) DO NOTHING;
 
 
 -- ============================================================
--- Flyway 基线记录 (V378)
--- 新库带此 baseline: 连 Quarkus 时 flyway 跳过 V1~V378 历史重放, 只跑 V379+ 新迁移
--- ⚠️ 本脚本的表结构已含 V378, 基线号必须 >= 378。
+-- Flyway 基线记录 (V384)
+-- 新库带此 baseline: 连 Quarkus 时 flyway 跳过 V1~V384 历史重放, 只跑 V385+ 新迁移
+-- ⚠️ 本脚本的表结构已含 V384, 基线号必须 >= 384。
 --    与 V363~V365 那批"幂等可重放、基线仍停 362"的处理**不同**: V368 含 CREATE TABLE
---    (无 IF NOT EXISTS)、V377 含 RENAME COLUMN, 非幂等 —— 基线若低于 378, Quarkus 启动
---    会重放它们并因"表已存在 / 列 biz_type 不存在"而失败。
+--    (无 IF NOT EXISTS)、V377 含 RENAME COLUMN、V382 含 CREATE TABLE(无 IF NOT EXISTS)、
+--    V384 含 DROP CONSTRAINT(无 IF EXISTS), 均非幂等 —— 基线若低于 384, Quarkus 启动
+--    会重放它们并因"表已存在 / 列 biz_type 不存在 / 约束不存在"而失败。
 -- ============================================================
 CREATE TABLE public.flyway_schema_history (
     installed_rank integer NOT NULL,
@@ -8266,17 +8400,18 @@ CREATE TABLE public.flyway_schema_history (
 CREATE INDEX flyway_schema_history_s_idx ON public.flyway_schema_history USING btree (success);
 INSERT INTO public.flyway_schema_history
   (installed_rank, version, description, type, script, checksum, installed_by, installed_on, execution_time, success)
-VALUES (1, '378', '<< Flyway Baseline >>', 'BASELINE', '<< Flyway Baseline >>', NULL, 'baseline', now(), 0, true);
+VALUES (1, '384', '<< Flyway Baseline >>', 'BASELINE', '<< Flyway Baseline >>', NULL, 'baseline', now(), 0, true);
 
 
 -- ============================================================
 -- 导入后自检(逐条核对期望值)
 -- ============================================================
--- SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';  -- 期望 143
+-- SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';  -- 期望 144
 -- SELECT count(*) FROM information_schema.views  WHERE table_schema='public';                              -- 期望 3
 -- SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public';     -- 期望 5
--- SELECT version FROM flyway_schema_history;                                                               -- 期望 378
--- SELECT id, subtotal_guard_threshold FROM price_adjust_settings;                                          -- 期望 1 行, 1 / 0.010000
+-- SELECT version FROM flyway_schema_history;                                                               -- 期望 384
+-- SELECT id, subtotal_guard_threshold, subtotal_guard_enabled FROM price_adjust_settings;                  -- 期望 1 行, 1 / 0.010000 / f
+-- SELECT count(*) FROM template_component_snapshot;                                                        -- 期望 0(空表, 首次 publish 模板时才写入)
 -- SELECT username, role FROM "user";                                                                       -- 期望仅 admin / SYSTEM_ADMIN
 -- SELECT count(*) FROM "user";                                                                             -- 期望 1
 -- SELECT "usage", is_active, length(sql_template) FROM costing_bom_tree_config ORDER BY "usage";           -- 期望 COSTING/QUOTE 各 1 行 t，长度 1586/1063
