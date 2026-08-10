@@ -23,11 +23,11 @@
 |---|---|---|
 | **`AGENT-配置入口.md`** | 🚀 配置 Runbook：模板→配置全流程 + 数据来源映射 + 料号铁律 + 价格策略 + SQL契约 + 自检 | **Agent 起点** |
 | **`组件模板.xlsx`** | 🟡 自描述配置模板（用户填 字段名+tabType，勾角色/接价格策略，备注大白话） | 用户 / Agent |
-| `1-总则与工作流.md` | 4 问工作流 + 料号列绑定值铁律 + 交付方式 | 两侧 |
-| `2-组件与字段.md` | 组件模型 / field_type / default_source / rowKeyFields / `_` 前缀别名 | 两侧 |
+| `1-总则与工作流.md` | 4 问工作流 + 料号列绑定值铁律 + 交付方式 + 🚨**模板发布与冻结(§1.5)** + 导出/导入公式绑定校验(§1.6) | 两侧 |
+| `2-组件与字段.md` | 组件模型 / field_type(**6 种**) / default_source / rowKeyFields / 元素三件套 / `_` 前缀别名 | 两侧 |
 | `3-SQL视图.md` | `$view` 机制 / hf_part_no / 禁表 / 中文别名 / 缓存 key / pending 改写坑 + 生效时间线 / 注释可写命名参数 / BOM 闭包取数 | 两侧 |
-| `4-页签属性与树.md` | tabType / partNoField / partNameField / sort_field / 树契约 | 两侧 |
-| `5-公式与Excel列.md` | 公式引擎 / 字段类型联动(AP-44) / Excel 列 | 两侧 |
+| `4-页签属性与树.md` | tabType / partNoField / partNameField / sort_field / 树契约 / 父子取值公式 | 两侧 |
+| `5-公式与Excel列.md` | 公式引擎(formula_id 绑定 / tree_ref 父子取值) / 字段类型联动(AP-44) / Excel 列 | 两侧 |
 | `报价侧.md` | `:customerCode` / material_no 料号键 / 树可选 / V6 映射 / 组件配方大全 / ConfigureSnapshotService | 报价 |
 | `核价侧.md` | `:versionFilter` 版本 / `_GLOBAL_` / 树主轴 spine / 生产料号桥接 / CardSnapshotService | 核价 |
 | `附录-速查.md` | 6 维度对照表 + 常见坑速查 + V6 现役表映射 | 两侧 |
@@ -38,12 +38,16 @@
 配一套客户模板
 ├─ 先按客户 Excel 推出「组件 + 字段」 …………… 2-组件与字段
 ├─ 逐组件 4 问用户勾选(类型/料号列/料号名称列/行键) … 1-总则 §工作流
+│   └─ 字段接价格策略时再问 2 项(元素列/元素单价列) … AGENT入口 §3.6.1
 ├─ 写每组件 $view ……………………………………… 3-SQL视图 + (报价侧/核价侧 契约)
 │   ├─ 报价：hf_part_no + :customerCode 平铺，或 BOM 树契约
 │   └─ 核价：hf_part_no + :versionFilter，_GLOBAL_ 定价，树主轴 spine
 ├─ 页签属性(tabType/partNoField/sort_field) …… 4-页签属性与树
-└─ 公式列 / Excel 列 ………………………………… 5-公式与Excel列
+├─ 公式列 / Excel 列 ………………………………… 5-公式与Excel列
+└─ 🚨 发布模板才生效(改组件不推已发布模板) … 1-总则 §1.5
 ```
+
+> ⚠️ **2026-08-06 起最容易踩的一条**：配好组件 ≠ 报价单能看到。`refreshSnapshotsByComponent`（H1 自动同步）已退役、`refresh-template-snapshots` 端点已删除，已发布模板与活表**彻底脱钩** —— 必须发模板新版本。详见 `1-总则与工作流.md §1.5`。
 
 ## 报价 vs 核价 6 维度对照（速查，详见 附录-速查.md）
 

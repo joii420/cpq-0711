@@ -5350,3 +5350,61 @@ render() 用 lineItems.get(0).quotationId 设 QuotationIdContext，
 6. ⚠️ **BL 号撞车第二次复现**：本单原登记 `BL-0158`/`BL-0159`，合并前发现并发会话已抢占 `BL-0158`，顺延为 `BL-0159`/`BL-0160`。**登记时 grep 一次不够，合并前必须再查一次**（号段是移动靶）。
 
 **遗留**：[[BL-0159]]（`__amount_total__` 后端 `setScale(4)` vs 前端精确 → 产品小计尾差 2.6e-5，与 task-0801「统一 6 位」口径冲突）· [[BL-0160]]（前端引擎不认 `tab_name#__amount_total__`，`formulaGolden` amt-002/003 长期红）· AC-8 E2E 因 [[BL-0158]]（夹具枯竭）**阻塞不可执行**，已如实标注并改用 `e2e/repair0808-verify.spec.ts` 真机验收
+
+---
+
+## [2026-08-09] 部署 - 内网建库脚本同步至 Flyway V384 + 新增 0809 增量升级脚本
+
+**涉及文件**：`deploy/cpq-init-empty-navicat.sql`（改）· `deploy/0809-dbupdate.sql`（新增）
+
+**背景**：建库脚本上次同步停在 V378（2026-08-04），此后 master 又落了 V379~V384 六个迁移（task-0729 收尾 + task-0806 模板发布全量冻结 + repair-0807）。内网无 Flyway，两个脚本必须手工对齐。
+
+**V379~V384 结构变更清单**（建库脚本与增量脚本口径一致）：
+- V379 纯数据回填（`quotation_view_structure` 元素角色字段），无结构变更
+- V380 `customer_price_adjust_strategy.enabled` 默认值 `true → false` + 存量全关
+- V381 `material_price_review` 加 `warn_code/warn_message/warn_diff`、`material_price_update_job_item` 加 `warn_code/warn_message` + 两个部分索引（L3 口径守卫「拦截→告警」的落点）
+- V382 新表 `template_component_snapshot`（18 个渲染配置字段全冻，唯一键 `(template_id, template_component_id)`）+ `operation_log.details jsonb` + 存量 `template.components_snapshot` 清空
+- V383 `price_adjust_settings.subtotal_guard_enabled`（默认 false）
+- V384 `chk_mpuji_status` 扩 `SKIPPED` + `material_price_update_job.skipped_count`
+
+**关键决策**：
+1. **基线号 378 → 384**（不是「仍停在 378」）。V382 的 `CREATE TABLE` 无 `IF NOT EXISTS`、V384 的 `DROP CONSTRAINT` 无 `IF EXISTS`，均非幂等 —— 基线不上调则连 Quarkus 时重放会启动失败。判据同 V368/V377，与 V363~V365 那批「幂等可重放、基线不动」相反。
+2. **补掉 0804 遗留的坑**：0804-dbupdate.sql 只改结构、不动 `flyway_schema_history`，于是升级过的内网库处于「结构 378 / 基线 362」的错位态，一旦连 Quarkus 必挂。0809 第 7 节补了基线上调（`WHERE type='BASELINE' AND version::int < 384`），并放在最后一节 —— 少数库没有该表时报错也不影响前 6 节成果。
+3. **🚨 V382 的 `UPDATE template SET components_snapshot = NULL` 必须与后端同版本上线**。旧版后端读到 NULL 会当成「模板从未发布」，报价单渲染异常。脚本头写明停机窗口顺序：停旧后端 → 跑脚本 → 起新后端 → 业务方逐个重新发布在用模板。这是全脚本唯一有业务影响的语句，已单独成 3.3 节并标注「只跑一次」。
+4. **沿用 0804 口径**：只同步结构，不含业务配置 UPDATE。V379 依赖的 `component.element_*_field` 三列配置（V370）本就不在内网同步范围，故 V379 在内网是天然 no-op，仍以「第 6 节·可选」列出供将来补跑。
+
+**验证手法（双向比对，两个临时库，验完即删）**：
+- 库 A = 新建库脚本；库 B = 旧建库脚本 + 0809 增量脚本
+- **A vs B**：列 1949 行 / 索引 / 约束 **三维零差异**，且两库表数同为 144、基线同为 384 —— 证明「新建库」与「升级」两条路径殊途同归
+- **A vs dev 库 cpq_db_0724（已跑到 V384）**：在 A 的 144 张表范围内，列 1949=1949 零差异、索引零差异、约束归一化后仅剩 11 处**未触碰**的历史渲染噪声（`ARRAY[…]::text[]` vs `ARRAY[…::text]`，语义等价，非本次引入）
+- **幂等性**：0809 连跑两次 exit 0，只出 `already exists, skipping` NOTICE
+
+**注意事项**：
+- 建库脚本全文不带 `COMMENT ON`（pg_dump 源的既有风格），故 V381~V384 的列注释一并省略；注释无运行时语义，不影响结构等价性。迁移文件里的注释仍是权威出处。
+- 自检期望值同步更新：表数 143 → **144**、基线 378 → **384**、新增 `template_component_snapshot` 应为 0 行、`price_adjust_settings.subtotal_guard_enabled` 应为 `f`。
+
+---
+
+## [2026-08-09] 文档 - rule-0724 组件模板配置规则同步至 2026-08-09 代码现状（8 处规则漂移）
+
+**涉及文件**：`dev-docs/rule-0724-组件模板配置/` 7 份（`README` / `1-总则与工作流` / `2-组件与字段` / `4-页签属性与树` / `5-公式与Excel列` / `AGENT-配置入口` / `附录-速查`）· `deploy/0809-dbupdate.sql`（顺带纠错）
+
+**背景**：rule-0724 上次实质更新 2026-08-03，此后 6 个任务合进 master，打穿了它 8 处规则。**核对方法：逐条查 master 代码 + `git branch --contains` 确认提交在 master，不采信任务文档的转述**。
+
+**P0（照着旧文档做会配错 / 白干）**：
+1. **H1 组件保存自动同步整体退役**（task-0806，merge `8d04336a`）。旧规则「改组件 → 已发布模板快照立即刷新 → 报价单立即生效」作废；`POST /components/{id}/refresh-template-snapshots` **端点已删除**；`config-center/refresh-all-snapshots` 降级为 admin 后门（执行时打日志「已破坏 N 个模板的不可变性」）。→ 新增 `1-总则 §1.5 模板发布与冻结`（三态表 + 冻结 18 字段 + 409 处理 + 后门），并同步改 `2-组件与字段 §2.1`、`5-公式 §5.2 检查点⑨/写后自检`、`4-页签 §4.2`、`README` 决策树、`附录` 常见坑。
+2. **`DATA_SOURCE` + legacy 裸 `INPUT` 已从 `VALID_FIELD_TYPES` 移除**（task-0806 阶段⓪ `286def1c`），保存直接 400。核实为真退役：前端选项已删 + `ComponentCell` 无渲染分支 + 开发库存量 0 个字段。→ C1 由 7 种改 6 种，删 DATA_SOURCE 行与切换矩阵 3 条。
+
+**P1**：③ 公式 token 新增 `tree_ref`/`tree_attr`（task-0803 父子取值 PGET/C* 族），union 14→16，新增 `§5.1.1` + `4-页签` 一节；④ 公式绑定改绑稳定 `formula_id`（BL-0098 V375/V376），`formula_name` 降级为回退；⑤ 导出/导入公式绑定校验（task-0805），新增 `1-总则 §1.6`。
+
+**P2**：⑥ 页签连表公式抽屉「试算」按钮已移除（后端端点仍在、前端零调用）；⑦ `component_subtotal` 依赖边改列粒度（repair-0808），互引不同列不再判假环；⑧ `element_code_field`/`element_price_field`/`element_currency_field`/`column_count` 补进 component 核心列表。
+
+**关键纠错（重要，影响已交付的部署脚本）**：
+> 「已发布模板重新发布一下就好」**是错的**。`publish()` 只收 DRAFT —— 已发布模板根本没有「重新发布」这个操作（`createNewDraft→publish` 只产出**新版本**，老版本永远冻不上）。过渡期存量补冻的正确路径是 **`POST /api/cpq/templates/{id}/freeze`**（`TemplateResource:137`，SALES_MANAGER/SYSTEM_ADMIN，只对零快照模板可用否则 409，不改 version/status/publishedAt，**界面无按钮**）。
+> 此前 `deploy/0809-dbupdate.sql` 的善后指引写的是「业务方逐个重新发布」，本次一并改正（头部上线顺序 ④ + 3.3 节善后 + 自检第 7 条，并补了一条补冻进度查询 SQL）。
+> 来源：`TemplateNotFrozenException:33-37` 的 B22-c 注释明写了这个陷阱——**任务代码里的注释比任务文档更接近真相**。
+
+**注意事项**：
+- 渲染期遇 `TEMPLATE_NOT_FROZEN` 判定**只认 `data.code`，禁按 message 文本匹配**。
+- 树属性 `层级`/`是否叶子`/`是否根` 是**保留字且优先于同名字段**——BOM 页签配置要避开这三个字段名，层级口径根=1。
+- ⚠️ **`CLAUDE.md` 有 4 处同款过期引用未动**（第 249 行 E2E 触发清单里的 `TemplateService.java#refreshSnapshotsByComponent`、第 272 行 AP-44 检查点、第 282 行 PR 必含项要求跑已删除的端点、第 99 行 AP-40 描述）。属项目指令文件，未经确认不擅改，已向用户报备。

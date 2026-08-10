@@ -6,8 +6,15 @@
 ## 5.1 公式引擎
 
 ### 存储与引用
-- 公式存 `component.formulas` JSONB —— 结构 `{ "<formula_name>": [<token>...] }`（一个组件多条命名公式）。
-- 字段 `field_type=FORMULA` + `formula_name` 指向 `formulas` 里的某条 token 数组。
+
+- 公式存 `component.formulas` JSONB —— 一个组件多条命名公式。
+- 🆕 **字段靠 `formula_id` 绑公式，不是靠名字**（BL-0098，2026-08-03 落 V375/V376）：
+  - 每条公式有一个**不可变 `id`**；`field_type=FORMULA` 的字段写 `formula_id` 指向它。
+  - 条件公式同理：`rules[].formula_id` + `default_formula_id`。
+  - 解析顺序 `formula_id → formula_name → …`（`FormulaCalculator.resolveFormula`），`formula_name` 降级为**回退**。
+  - **为什么改**：过去靠「按名字 / 按位置猜」，插一条公式、调个序、改个公式名，都会让那一列**静默换算法或静默不出值**。
+  - **配置纪律**：改公式名现在**安全**了；但手编 / 交付 JSON **必须带 `formula_id`**，否则落到回退链上（导出/导入会点名，见 `1-总则与工作流.md §1.6`）。存量隐式绑定用 `POST /api/cpq/admin/formula-binding/consolidate` 固化。
+  - 迁移范围：`component.formulas`/`fields` ✅、`template.components_snapshot` ✅；`quotation_view_structure`（13 张老单）与 `submission_snapshot` **有意不迁**，靠代码保留的回退链兜底。
 - 引擎：前端 `formulaEngine.ts` + 后端 `FormulaCalculationService` / 卡片引擎 `FormulaCalculator`，前后端语义对等。
 
 ### token 类型（组件 formulas 核心集）
@@ -22,9 +29,35 @@
 | `number` | 数字常量 | `value` |
 | `bracket` | 括号（`bracket_open` / `bracket_close`） | - |
 | `__amount_total__` | 金额总额哨兵 —— 引用当前上下文的金额合计 | - |
+| 🆕 `tree_ref` | BOM 页签**父子取值**（向父取 / 向子聚合），见 §5.1.1 | `dir` + `agg` + `targetExpr` |
+| 🆕 `tree_attr` | BOM 页签**树属性保留字**（层级 / 是否叶子 / 是否根） | `attr` |
 
-> 前端 `formulaEngine.ts` 完整 union 达 **14 种**（另含 `path` / `previous_row_subtotal` / `product_attribute` / `quotation_field` / `datasource_field` / `global_variable`），后端实现其中 9 种；上表为组件 `formulas` 配置常用核心集，完整清单与前后端实现分工见 `配置方法论-合并版.md §5.1`。
-> **重要**：公式引用 DATA_SOURCE 字段用 `datasource_field`（非 `field`）；`global_variable` 的 `path` 由前端编译，不要手写。
+> 前端 `formulaEngine.ts` 完整 union 达 **16 种**（另含 `path` / `previous_row_subtotal` / `product_attribute` / `quotation_field` / `datasource_field` / `global_variable`）；上表为组件 `formulas` 配置常用核心集。
+> **重要**：`global_variable` 的 `path` 由前端编译，不要手写。
+> ⚠️ `datasource_field` token 仍在 union 里，但它服务的 `DATA_SOURCE` **字段类型已退役**（`2-组件与字段.md §2.2 C1`）——新配置不会再产生这种 token。
+
+### 5.1.1 🆕 tree_ref / tree_attr —— BOM 页签父子取值（task-0803）
+
+BOM 树页签的字段公式可以直接引用**父行 / 子行**的值，不必再配 FORMULA 中转列。
+
+| 函数 | `dir` | `agg` | 含义 |
+|---|---|---|---|
+| `PGET` | `PARENT` | `NONE` | 取父节点某表达式的值 |
+| `CSUM` / `CAVG` / `CMAX` / `CMIN` / `CCOUNT` | `CHILD` | `SUM`/`AVG`/`MAX`/`MIN`/`COUNT` | 对全部直接子节点聚合 |
+
+- 配置入口：组件管理 → FORMULA 字段 → 公式抽屉 → 「父子取值」按钮组 → `TreeRefDrawer`。**函数由点的按钮决定、抽屉里不可改**（要换函数得关掉重点另一个），已插入的 `tree_ref` chip **可点击重新打开抽屉编辑**。
+- `targetExpr` 是要取/聚合的表达式（可含本页签字段、四则、树属性）。
+
+🚨 **树属性是保留字，且优先于同名字段**：
+
+```
+[层级]  [是否叶子]  [是否根]
+```
+
+即使该页签**真有**一个叫「层级」的字段，`[层级]` 仍解析成 `tree_attr`、**取不到那个字段**。这个裁决在前后端与测试里三处锁死（`condTree.ts:65` `TREE_ATTR_COLS` / `FormulaCalculator.TREE_ATTR_COLS` / `formulaSerializeTreeRef.test.ts`）。**配 BOM 页签时避免用这三个词当字段名**；层级口径 **根 = 1**。
+
+- 树属性不限于父子取值函数内部，**顶层表达式里也能直接用**（如条件公式拿 `[是否叶子]` 当判据，免配中转列）。
+- 前端序列化期做**递归**白名单校验，非法嵌套在保存前就拒。
 
 ### cross_tab_ref —— 跨页签引用（VLOOKUP / SUMIF）
 B 页签 FORMULA 字段按「A.列 = B.列（可多列 AND）」匹配**同卡片（同目录）**内 A 页签已算行，取值（`agg=NONE`）或聚合（`SUM`/`AVG`/`COUNT`/`MAX`/`MIN`）。
@@ -38,6 +71,7 @@ B 页签 FORMULA 字段按「A.列 = B.列（可多列 AND）」匹配**同卡�
 - **`targetExpr`（进阶）**：目标列可改用公式，内含 `field`（A 匹配行列）、`b_field`（B 当前行列）、四则、`global_variable`；对每匹配 A 行先算再按 `agg` 聚合（SUMPRODUCT 式）；`targetExpr` 非空时优先于 `target`。
 - **语义边界**：0 行匹配→0；`NONE` 多行匹配→整公式报错按 0；聚合非数字→按 0；空/纯空白键不参与匹配；`COUNT` 无需 target。
 - **范围**：仅同卡片（同目录）其他组件，禁跨目录；禁循环依赖（模板 publish 时 `TemplateService` 拓扑校验，有环拒绝）；计算顺序按 `CrossTabComponentOrder.topoOrder`（Kahn BFS，A 先于 B）。
+- 🆕 **依赖边按「列粒度」精化**（repair-0808，QT-20260807-0146）：`cross_tab_ref` 按行取源组件已算行，**恒为顺序依赖**；但 `component_subtotal` 的边细化到**具体哪一列**。含义：两个页签互相引用对方的**不同列**不再判成环——以前会被拒的配法现在合法。前端 `crossTabOrder.ts:66` 与后端 `CrossTabComponentOrder:145` 逐条镜像，改一侧必须同步另一侧。
 - 配置入口：组件管理 → B 组件 → FORMULA 字段 → 公式区「跨页签引用」→ `CrossTabRefDrawer`。
 
 ### 多 source 链式 SUM + KSUM 降维预聚合
@@ -74,7 +108,7 @@ B 页签 FORMULA 字段按「A.列 = B.列（可多列 AND）」匹配**同卡�
 | | ⑥ BNF 路径采集 | `ComponentDriverService.parseBasicDataPaths` |
 | | ⑦ 全局变量 task 采集（3 路径：default_source A / datasource_binding B / BASIC_DATA+global_variable_code C） | `ComponentDriverService.parseGvarDefaultTasks` |
 | | ⑧ 公式 token case | `FormulaCalculationService.buildExpression` |
-| | ⑨ snapshot 同步（**同 cid 多 tc 实例必须按 sortOrder 精确匹配**，禁 `firstResult()`） | `TemplateService.refreshSnapshotsByComponent` |
+| | ⑨ 发布期快照落盘（按 tcs 列表**逐行直接落库**，一行一个 `template_component`） | `TemplateService.persistSnapshotRows`（`publish`/`archive`/`freeze` 三处调用）+ 读取网关 `PublishedTemplateReader` |
 | 渲染层（多视图） | ⑩ enrich mapper + normalizeFieldType（显式 spread 新类型全部 config 字段） | `QuotationWizard.tsx#enrichComponentData` |
 | | ⑪ 批量导入 builder（同 ⑩ 同步改） | `BulkImportPartsDrawer.tsx#buildComponentDataFromTemplate` |
 | | ⑫ 路径预热（fingerprint + tasks 收集新类型路径） | `usePathFormulaCache.ts` |
@@ -89,7 +123,8 @@ B 页签 FORMULA 字段按「A.列 = B.列（可多列 AND）」匹配**同卡�
    grep -rn "FIELD_TYPE\|field_type\|normalizeFieldType" cpq-frontend/src cpq-backend/src
    ```
 2. **写中**：每改一个文件对照清单勾掉一格，漏一格大概率失败。
-3. **写后**：跑 **E2E 双 spec**（`quotation-flow.spec.ts` SIMPLE + `composite-product-flow.spec.ts` COMPOSITE，须 `1 passed` + `'加载中' final count = 0`）+ **报价单 / 核价单 / 详情页三视图**关键 Tab 截图（修复前 vs 后）+ 跑 `POST /components/{id}/refresh-template-snapshots` 后打印各 Tab snapshot.fields 确认同 cid 不同 Tab 配置独立。
+3. **写后**：跑 **E2E 双 spec**（`quotation-flow.spec.ts` SIMPLE + `composite-product-flow.spec.ts` COMPOSITE，须 `1 passed` + `'加载中' final count = 0`）+ **报价单 / 核价单 / 详情页三视图**关键 Tab 截图（修复前 vs 后）+ **发一个模板新版本**（`createNewDraft → publish`）后查 `template_component_snapshot` 各行 `fields`，确认同 cid 不同 Tab 配置独立。
+   > ⚠️ ~~跑 `POST /components/{id}/refresh-template-snapshots`~~ —— **该端点已删除**（task-0806）。新的快照产出点只有 `publish` / `archive` / `freeze` 三处，验证必须走「发新版本」这条真实路径，见 `1-总则与工作流.md §1.5`。
 
 ### AP-37 结构性根因补充（同 componentId 多实例）
 - **enrich 反查不能塌缩同 cid 多条**：用 `Map<cid, Queue<saved>>` 按 `(cid, tabName)` 精确出队，命中后 splice 剔除；结构性字段（`tabName/componentType/dataDriverPath/componentId`）一律 snapshot 优先、saved 兜底；load 路径不能因 fields 已存在跳过 enrich（snapshot 是唯一权威）。
@@ -141,6 +176,8 @@ B 页签 FORMULA 字段按「A.列 = B.列（可多列 AND）」匹配**同卡�
 - **两遍扫描顺序**：第一遍处理 VARIABLE 列（`{code}` 同步 resolve / BNF path 异步进 pathCache），第二遍处理 FORMULA/EXCEL_FORMULA 列。含义：EXCEL_FORMULA 只能引用 VARIABLE 列，**不能引用其他公式列**（无第三遍），嵌套公式须平铺成单行。
 
 ### TAB_JOIN_FORMULA — 页签连表公式
-一列的值由单卡片内多个页签内容按行键对齐后算出**一个单值**。令牌三类：明细 `[别名.字段]`；小计列总计 `[别名.列名(总计)]`；页签总计 `[别名(总计)]`。页签按各自 `rowKeyFields` 完全相等分「行键类」，同类页签全外连对齐（只有同行键类明细才能在一个表达式里逐行运算）。函数 `SUM/AVG/MIN/MAX/COUNT`；缺值→0、除数 0 或缺→按 1。求值器 `TabJoinPlanEvaluator`；试算走 `POST /templates/{id}/excel-view-config/dry-run-tab-formula`。
+一列的值由单卡片内多个页签内容按行键对齐后算出**一个单值**。令牌三类：明细 `[别名.字段]`；小计列总计 `[别名.列名(总计)]`；页签总计 `[别名(总计)]`。页签按各自 `rowKeyFields` 完全相等分「行键类」，同类页签全外连对齐（只有同行键类明细才能在一个表达式里逐行运算）。函数 `SUM/AVG/MIN/MAX/COUNT`；缺值→0、除数 0 或缺→按 1。求值器 `TabJoinPlanEvaluator`。
+
+> ⚠️ **配置抽屉里已没有「试算」按钮**（task-0801 `b8da0069` 移除，改为左右分栏 + 字段搜索 + 括号配对可视化）。后端端点 `POST /templates/{id}/excel-view-config/dry-run-tab-formula` **仍在**（`TemplateExcelViewResource:89`），但**前端零调用** —— 要试算只能自己 curl，别在界面上找。
 
 > 核价 Excel 模板的 `:spineKeys` 复合键过滤 / `:versionFilter` 版本宏见 `核价侧.md`；报价侧 `:customerCode` / `:total_material_no` 树契约见 `报价侧.md`。完整 8 source_type 细节与 `$name` 模板 SQL 视图操作见 `配置方法论-合并版.md §4`。

@@ -152,6 +152,8 @@
 
 - **JSON 交付（标准）**：在**暂存目录**用 API 建好整套组件 → `GET /component-directories/{暂存id}/export` 得 bundle JSON → **删暂存目录** → 交付 JSON 文件；用户建自己的目录 → `POST /component-directories/{新id}/import/commit?conflictPolicy=RENAME`。
   - **bundle 已无损承载**：字段/公式/Excel 列 + `tabType`/`partNoField`/`partNameField`/`rowKeyFields`/`sortField`（行排序，2026-07-24 补齐）+ 每组件 SQL 视图（`sqlTemplate`/`requiredVariables`——**元素价格策略靠这两样带**）+ 依赖清单 + checksum。导入端 `ComponentImportService` 一并还原（含公式引用跨组件重映射）。
+  - 🆕 **导出/导入会查公式绑定完整性**（task-0805，2026-08-06）：导出带 `bindingReport` 点名 `UNRESOLVABLE`（不阻断，不影响 checksum）；导入 preview 逐字段报绑定去向，有未绑定则 `canCommit=false` 且 blockers **点名到组件与字段**；commit **默认 400 整包回滚**，要放行须显式 `ignoreUnboundFormulas=true`。
+    **交付前自己先导一次看 `bindingReport` 全 `BOUND`**，别把带未绑定公式的 bundle 丢给用户。存量隐式绑定用 `POST /api/cpq/admin/formula-binding/consolidate`（支持 `dryRun` + `directoryId`/`componentIds`）固化成 `formula_id`。细则见 `1-总则与工作流.md §1.6`。
 - **API 直接落库（配置/调试）**：`POST /auth/login` → `POST /component-directories{name,parentId}` → 每组件 `POST /components{name,directoryId,componentType,fields[],rowKeyFields[],tabType,partNoField,partNameField,sortField,status:ACTIVE}` → `POST /components/{cid}/sql-views{sqlViewName,sqlTemplate,scope:COMPONENT,requiredVariables}` → `PUT /components/{cid}/driver-view{sqlViewName}`。
 - 更新：`PUT /components/{cid}`（整体替换，先 GET 保 formulas）；`PUT /components/{cid}/sql-views/{viewId}`。
 
@@ -169,9 +171,12 @@
    两者**结论不同处理**：无写点 → **改绑到真正有写点的那张表**（配置错）；有写点但全空 → 数据缺口，配置照旧 + 在交付说明里写明。
    ⚠️ 这类错**全程静默**：不报编译错、`$view` dry-run 照过、`expand-driver` 照常返回，只是该列永远空白。反面教材见 `报价侧.md §7.2.1`（`ebi.component_usage_type`）。
 3. 每个 `$view` PUT 返 200（dry-run 过）。
-4. `refresh-snapshot`（`POST /configure-product/quotations/{id}/refresh-snapshot`）后查 `quotation_line_component_data.snapshot_rows`：各页签行数对、料号/单价出数、树页签父子挂接、多行页签按 sort_field 正序。
-5. 元素单价接价格策略：有价出数 / 无价返 NULL（不是 0、不掉行）/ 换没配策略客户行数不变。
-6. 字段类型未改 → 不触发 AP-44；改了 ConfigureSnapshotService/ComponentService 等协议文件才跑 E2E。
+4. 🚨 **模板得先发布/发新版本，配置才可能被看到**（2026-08-06 起）：组件配置**不再自动推给已发布模板**。验证前确认走的是「新建 DRAFT 模板 → `publish`」或对已发布模板「`createNewDraft` → 改 → `publish` 出新版本」。若报价单返 **409 `TEMPLATE_NOT_FROZEN`**，是该模板从没冻过 → 管理员 `POST /templates/{id}/freeze` 补冻，**不是**去"重新发布"（没这个操作）。规则见 `1-总则与工作流.md §1.5`。
+5. `refresh-snapshot`（`POST /configure-product/quotations/{id}/refresh-snapshot`）后查 `quotation_line_component_data.snapshot_rows`：各页签行数对、料号/单价出数、树页签父子挂接、多行页签按 sort_field 正序。
+6. 元素单价接价格策略：有价出数 / 无价返 NULL（不是 0、不掉行）/ 换没配策略客户行数不变。
+7. 交付 bundle 前先导一次，确认 `bindingReport` 无 `UNRESOLVABLE`（§5）。
+8. 字段类型未改 → 不触发 AP-44；改了 ConfigureSnapshotService/ComponentService 等协议文件才跑 E2E。
+   ⚠️ 别把 `DATA_SOURCE` 写进 `field_type` —— 已退役，保存 400（`2-组件与字段.md §2.2 C1`）。
 
 ## 7. 详细规则索引
 
