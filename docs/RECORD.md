@@ -5327,3 +5327,26 @@ render() 用 lineItems.get(0).quotationId 设 QuotationIdContext，
 `BL-0146`（报价单层视图冻结从未被读，表里 80 行零消费方）· `BL-0147`（`freezeSqlViewsForQuotation` 逐行模板未校验）· `BL-0148-A~D`（`allTabsOfMany` 缺一致性校验 / blanket catch 可能吞 409 / 前端 golden 既有失败 / `findTab` 错误契约不可达）· `BL-0158`（**E2E 夹具已不存在，AC-18 物理上无法执行**，与 `BL-0157` 同族）· `BL-0129` 已提 P1（严格版本化把换模板这条已坏路径变成主干道）
 
 **未验证项如实声明**：AC-18 未执行（夹具缺失）；AC-12 强证据 `GoldenCardValuesEquivTest` 在 master 上也 skip（`BL-0157` 覆盖），由 4 组替代证据支撑；AC-6 行为正确但文档承诺的错误消息格式不可达（`BL-0148-D`）。**这些都没有伪装成通过。**
+
+---
+
+## [2026-08-08] 公式引擎 - repair-0808 前端页签算序假环致列小计归零 | 合 master `e9c8d9ed` | 闭合 BL-0101
+
+**报障**：`QT-20260807-0146`（模板「测试BUG-2」）产品卡「物料」页签 —— **行内公式值都对，页签小计列却是 `¥ 0`**，产品小计 `¥ 0.103826`（后端存的是 `137.53`）。
+
+**根因**：前端 `buildCrossTabRows` 的组件依赖建图停在**页签粒度** —— `component_subtotal` 引用零依赖 INPUT 列（`产品·税率`）也建边，与真实的 `产品→物料`（cross_tab）撞成**假环** → `topoOrderComponents` 抛错 → `catch { order = ids }` **静默**退回声明序 → 「物料」先于它的 cross_tab 源页签求值 → **11 个 FORMULA 列整齐归零**。后端 repair-0803 已把同一建图精化为**列粒度**（`CrossTabComponentOrder.buildComponentDeps`），故后端算得全对，只有前端显示错 —— 这正是 `BL-0101` 预警过、但被判为「当前无可见故障」的那条。
+
+**修法**：前端 `crossTabOrder.ts` 新增 `buildComponentDeps`，逐条镜像后端（`cross_tab_ref` 全量建边；`component_subtotal` 按目标列是否 `FORMULA`/`*_FORMULA` 判顺序敏感；整页签合计/列名缺失/fields 不可读/查无此列一律**保守建边**）；`buildCrossTabRows` 改用之；`catch` 加 `console.error` 留痕并订正失效注释。**后端零改动、接口零改动、无 Flyway。**
+
+**涉及文件**：`crossTabOrder.ts`（新增建图）· `QuotationStep2.tsx:1447-1466`（接线 + 留痕）· `columnSumsByComp.test.ts`（QT-1743 老用例改写）· 新增 `crossTabOrderParityQt0146.repair0808.test.ts` + `__fixtures__/qt20260807-0146/` + `e2e/repair0808-verify.spec.ts` · 任务目录 6 份文档 · `BACKLOG.md` · `dev-docs/INDEX.md`
+
+### 关键教训
+
+1. 🚨 **「行内值对、只有小计错」不是显示 bug，是整页签算错**。行内 FORMULA 读的是后端持久化快照 `formulaResults`，页签小计读的是前端实时重算 `columnSumsByComp` —— **双源**。后端那一路是对的，把前端的错误完整地遮住了 11 个列，只在小计行露出来。下次见到这个形状，**先怀疑前端实时链路，别从渲染层查起**。
+2. 🚨 **只修一端的架构规则，另一端就是定时炸弹**。repair-0803 把后端建图改成列粒度、同时登记了 BL-0101 说「前端要跟」，然后判 P2「当前无可见故障」搁置 —— 5 天后炸。**两端各自实现同一条语义规则时，要么同批改，要么在代码里互相点名**（本次两侧函数同名 `buildComponentDeps` 并在注释里互指）。
+3. 🚨 **静默兜底把配置错误变成了算错**。`catch { order = ids }` 那句注释写「模板保存层已拦截环」—— 但发布期校验走的是**后端列粒度**建图，看不到这个环，压根没人拦。**兜底分支的前提条件会过期，兜底必须留痕**。
+4. ⚠️ **BL-0101 自己的描述是错的**（说前端「从未跟进/没有 `extractSubtotalRefs`」）。实际前端从 `40983a52`(2026-06-16) 起就有**内联的页签粒度**版本 —— 恰恰踩中该条自己写的警示「不要简单照搬页签粒度」。**登记 backlog 时的现状描述会过期，动手前必须重新核代码，不能照着条目描述施工。**
+5. ⚠️ **测试用例可能在守一个错误的假设**。`columnSumsByComp.test.ts` 那条 QT-1743 回归用例**绕过 PASS1**、靠拓扑边把 INPUT 列的值传过去，实现改对后它反而变红。判定方法：**用真实链路做三条对照**（INPUT 列走全链路 / FORMULA 列走全链路 / 绕过 PASS1），确认是用例的 setup 不代表生产，而不是实现错了。改写后拆成两条并补 `buildComponentDeps` 直接断言 —— **把"该不该建边"写进断言，别靠数值间接体现**。
+6. ⚠️ **BL 号撞车第二次复现**：本单原登记 `BL-0158`/`BL-0159`，合并前发现并发会话已抢占 `BL-0158`，顺延为 `BL-0159`/`BL-0160`。**登记时 grep 一次不够，合并前必须再查一次**（号段是移动靶）。
+
+**遗留**：[[BL-0159]]（`__amount_total__` 后端 `setScale(4)` vs 前端精确 → 产品小计尾差 2.6e-5，与 task-0801「统一 6 位」口径冲突）· [[BL-0160]]（前端引擎不认 `tab_name#__amount_total__`，`formulaGolden` amt-002/003 长期红）· AC-8 E2E 因 [[BL-0158]]（夹具枯竭）**阻塞不可执行**，已如实标注并改用 `e2e/repair0808-verify.spec.ts` 真机验收

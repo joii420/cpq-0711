@@ -104,6 +104,52 @@ $ npx vitest run src/pages/quotation src/utils src/pages/component
 - **E2E（AC-8）**：`quotation-flow.spec.ts` 打的是共享 dev server（5174/8081 = 主工作区已合并代码），worktree 内代码 E2E 打不到，故**排在合并之后执行**；结果与处置追加在本文件 §6。
 - **页面验证 T-4.1~T-4.7**：同上，合并后执行。
 
-## 6. 合并后执行结果
+## 6. 合并后执行结果（主线亲跑，2026-08-08）
 
-_（合并后由主线补写：E2E A/B 结果、页面截图/数值、T-4.5 保存后 `total_amount` 与 `subtotalByColumn` 的 SQL 断言、T-4.7 抽样单据）_
+**合并**：`e9c8d9ed`（`--no-ff`，先把 master `2065f29c` 并进分支再合回）。
+**主仓复测**（worktree 绿 ≠ 主仓绿）：`tsc` 0 错误；`vitest src/pages/quotation src/utils src/pages/component` → **1044 passed / 2 failed**，失败仍只有 D-03 那 2 条存量。
+
+### 6.1 dev server 自检
+```
+front /                                  = 200
+/src/pages/quotation/QuotationStep2.tsx  = 200
+/src/pages/quotation/crossTabOrder.ts    = 200   （内容里命中 buildComponentDeps ×2，确认服务的是修复后代码）
+后端 /api/cpq/components                  = 401   （应用在跑、鉴权正常）
+```
+
+### 6.2 AC-8（E2E）—— **无法执行，非本次导致**
+`quotation-flow.spec.ts` 3 个 test 全部卡在 Step1：
+```
+19 × locator resolved to <button disabled title="请先填写产品分类和报价模板" …>
+    at e2e/quotation-flow.spec.ts:539  「编辑态 Step1(客户/模板已锁定预填)下一步应可点」
+3 failed
+```
+即 **`BL-0158`**（2026-08-09 由并发会话登记）：spec 硬编码的「苏州西门子 + 报价模板0608」在 `cpq_db_0724` 中已不存在。
+**归因依据**：失败发生在**选客户/模板阶段**，在产品卡片渲染之前，本次改动（`buildCrossTabRows` 建图）在该路径上根本没有执行机会；且 BL-0158 是在本次合并**之前**于 master 上独立观测到的同一现象。
+→ AC-8 **如实标注为「阻塞·不可执行」，不伪装通过**。解除阻塞前置 = `BL-0158`。
+
+### 6.3 AC-1 / AC-2 真机验收 —— ✅ **通过**（新增 `e2e/repair0808-verify.spec.ts`）
+绕开漂移夹具、按 URL 直达报障单 `QT-20260807-0146` 编辑页 → 点「物料」页签 → 读小计行 DOM：
+```
+[小计行] ["","小计","","","","","","","","","","¥ 131.901658","¥ 5.525608","","","","0","","847.905581","150.452432","111.5175",""]
+1 passed (48.4s)
+```
+- `材料成本 = ¥ 131.901658`、`材料损耗成本 = ¥ 5.525608`（**改前均为 `¥ 0`**）→ **AC-1 达成**
+- 其余 is_subtotal 列 `回收成本 0` / `原材料成本 847.905581` / `材料价格 150.452432` / `铆钉额外费用 111.5175`，与后端 `subtotalByColumn` 一致
+- 页脚 **`产品小计 = ¥ 137.531092`**（改前 `¥ 0.103826`）→ **AC-2 按修订口径达成**（尾差 = D-02 存量）
+- 断言 `console.error` 中**无**「组件依赖成环」→ 假环确已消除（AC-4 的运行期佐证）
+- 证据截图：`cpq-frontend/e2e/screenshots/r0808-01-open.png`、`r0808-02-wuliao.png`
+
+### 6.4 T-4.5 数据不变性
+本次为**纯前端计算层**改动，验收全程未触发保存；后端 `quote_card_values.subtotalByColumn` 与 `quotation.total_amount` 未被写入，保持 `137.5310666072503`。
+> 📌 留给闸门 B 的观察点：用户在页面上**保存**该单后，前端上行的 `subtotal` 会从 `0.103826` 变为 `137.531092`，
+> `quotation.total_amount` 随之从 `137.5310666072503` 变为 `137.531092…` —— **这是修复生效的预期表现**（此前存的才是被 0 污染过的旧值），
+> 剩余 `2.6e-5` 尾差归 `BL-0159`。
+
+### 6.5 遗留
+| 项 | 去向 |
+|---|---|
+| AC-8 E2E 阻塞 | `BL-0158`（他人已登记） |
+| 产品小计尾差 2.6e-5 | `BL-0159`（本次登记） |
+| golden `tab_name#__amount_total__` | `BL-0160`（本次登记） |
+| T-4.7 多模板抽样 | 未做 —— 现网可用模板有限（库里仅 施耐德BUG2 / 测试BUG-2 / 测试客户-4 / 罗克韦尔 / 核价模板1），与 BL-0158 同源的数据枯竭问题；风险 R-1 由「算序变化 = 向后端对齐」这一性质兜底，且三个调用点共用同一建图函数 |
