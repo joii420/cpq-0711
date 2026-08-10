@@ -18,7 +18,7 @@
 
 ## 0.0 当前项目态势（新 Agent 进场先读这一节）⏱️
 
-> **快照时间：2026-08-06**（`master` = `717ca4f0`）。数据由本节末命令重跑，**过期请先刷新再采信**。
+> **快照时间：2026-08-09**（`master` = `b3cf4872`）。数据由本节末命令重跑，**过期请先刷新再采信**。
 
 ### 活跃主线（近 10 天有提交）
 | 主线 | 状态 | 最近动作 |
@@ -28,6 +28,8 @@
 | `task-0729-客户价格调整策略和价格版本` **方向 3** | 🟢 **刚交付**（验收报告 `c2562242`） | 总价单一来源改造；收尾三修 `3a69ca97`；遗留 BL-0130/0131/0132（竞态与并发覆盖） |
 | `task-0805-组件导入导出功能升级` | ✅ 已合并 `13b62f42` | 绑定校验前移到导出/预览；BL-0120 → DONE |
 | **BL-0127 族**（卡片快照回种用户编辑） | ✅ 已交付 `fe5abcdf` | 行内公式列不随编辑重算；收敛 `row_data→editRows` 为单一实现 |
+| `repair-0808-前端页签算序假环致列小计归零` | ✅ **已交付合 master `e9c8d9ed`** | 前端建图停在页签粒度 → 与后端 repair-0803 的列粒度分叉 → 假环 → `catch` 静默退回声明序 → 11 个 FORMULA 列整齐归零。**表象是「行内值对、小计 ¥0」看着像显示 bug，实为整页签算错**（行内读后端快照 vs 小计读前端实时重算 = 双源）。遗留 [[BL-0159]]/[[BL-0160]] |
+| **文档/部署基建同步**（2026-08-09） | ✅ 已交付 `b3cf4872` 等 4 笔 | ① `deploy/cpq-init-empty-navicat.sql` 同步至 Flyway **V384** + 新增 `deploy/0809-dbupdate.sql`（V378→V384 内网增量，含 V382 存量清空与 `freeze` 补冻指引）；② `rule-0724` 规则集同步 **8 处规则漂移**（H1 退役 / `DATA_SOURCE` 退役 / `tree_ref` / `formula_id` / 导入导出校验 …）；③ `客户组件模板/报价通用组件` 材料成本切 `f_material_element_price`（实证旧配置在静默取错价） |
 
 ### ⚠️ 未闭合 / 需要注意
 | 项 | 性质 | 说明 |
@@ -35,7 +37,7 @@
 | `repair-0807-更正任务价格丢失与版本错乱` | ✅ **已交付合 master**（`24b68b20`） | 价格更正任务跑完后，被调价元素的单价是"丢的"、行小计与单据总额偏低，靠"有人打开并保存"才自愈 —— DRAFT 单还有人开，`SUBMITTED` 单没人开就一直挂错金额。另有一类单（缺 `QUOTE_CARD` 冻结结构，现网 33 张活跃 DRAFT）被静默跳过却计入 SUCCESS。存量污染另立 `BL-0148` |
 | `repair-0803-公式SUM内引用宿主页签字段` | 🔴 **静默少算，文档标「待确认」** | `SUM()` 内引用本页签 FORMULA 字段恒取 0，不报错只算少。文档点名现网 `COMP-0157「物料」` 正踩着。**未见对应 BACKLOG 条目** |
 | `BL-0069` `mat_*` 废弃表断供故障族 | 🔴 **P0 · TODO 未排期** | 5 条实证失效路径，其中「漂移检测假阴性」破坏安全属性（13/13 报价单 `referenced_versions` 全 NULL → 恒 `hasDrift=false`，主动骗用户"数据未变"）。#5 已随 task-0722 闭合，其余未修 |
-| `BL-0097` `$view` 报错毒化事务 | 🟡 **状态存疑** | BACKLOG 记 `TODO（未排期）`，但 master 有修复提交 `2d12bde2`（repair-0803）。**二者不一致，动手前先核实** |
+| `BL-0097` `$view` 报错毒化事务 | 🟡 **部分交付，根因未解**（2026-08-09 已核实，存疑解除） | ✅ 错误可见性已修（`2d12bde2`，前端不再只显示「待重算」）；❌ **事务毒化根因未解且 Savepoint 方案已证否**（同提交含 `SavepointIsolationFeasibilityTest`）。**别据「有修复提交」判本条已完成**，需另找方案（独立事务/预校验/连接隔离） |
 | `task-0728-组件SQL视图的用户便捷化配置功能` | ⏸️ **暂停** | 七轮澄清 33 决策，尚有 3 项待你拍板，未拆任务文档 |
 | `task-0723-废弃业务与表清洗` P2 | 🟡 分阶段未完 | `mat_*` 整族退役是多周工程，与 BL-0069 同源 |
 | `task-0715-UI排版审查` | 📋 报告已出，整改未启动 | 180+ 条 / 11 个系统性主题（36 处 Modal 违规、1272 处硬编码 hex、Dashboard 是调试残留） |
@@ -44,7 +46,11 @@
 `feat/task-0712-selection-config`（剩 F6 E2E）· `feat/tesk-0709-pricing-import-versioning`（未进场）· `feat/pricing-sales-part-no`（架构冲突暂搁）· `feat/sel-plan3c-sales-landing`（hold 等 V311）· `feat/quote-material-no`（待确认）
 
 ### BACKLOG 概况
-登记 **140** 条 BL 编号；未完成约 **103** 条（`TODO`/`待开发`），其中 **P0 × 2**、P1 × 33、P2 × 68；另有 **2 条 BLOCKED**（需人工确认意图，不可盲目开发）。
+**2026-08-09 重数并做了一次归档**（此前有 14 条状态已是「已完成」却一直留在未完成区，使计数虚高、扫读误导，已按 BACKLOG 自身规则统一移入文末「已完成」区）。
+
+- **未完成区 135 条**：`TODO` 101 · `待开发` 13 · `BLOCKED` 2（需人工确认意图，不可盲目开发）· `[-]` 2（已裁定不做，附重启条件）· 其他 3（含 [[BL-0097]] 部分交付）
+- **未完成区优先级**：**P0 × 4** · P1 × 39 · P2 × 89
+- **已完成区 42 条**
 > ⚠️ 计数为**近似值** —— BACKLOG 的状态行有 16 种写法（`TODO` / `待开发` / `[x]` / `✅` / `已修` …），无法精确机器统计。**权威口径以 `BACKLOG.md` 原文为准**。
 
 ### 刷新本节
@@ -158,7 +164,7 @@ done | sort | cut -d'|' -f1 | uniq -c | sort -rn | awk '$1>=4'
 
 | 目录 | 一句话 | 状态 | 主战场文件 |
 |---|---|---|---|
-| `task-0806-报价编辑链路优化与前后端对账/` | 把后端从**显示权威降级为校验器**：DRAFT 行内走前端引擎（与列小计同源、零等待），后端异步照算做**对账**，不一致亮标记 + **禁提交**；其上叠异步/懒物化/缓存三级优化。⚠️ **原记「整行物化 356ms(45%)」已被 D17 生产态实测更正为 294ms(38%)** —— 方法内打点占比 ≠ 「关掉它能省多少」 | ⚠️ **阶段⓪① 已合并** `2942a4d8`（白名单收窄 + 分流/对账/提交闸门）；**阶段③ 范围经实测重裁（D17）**：③a 批量写开发中（分支 `feat/task-0806-lazy-rowdata`），③b 懒物化**裁定不做**→`BL-0156`；**阶段②④⑤ 未开工**（`BL-0137` P0，D1~D17） | `QuotationStep2.tsx` `ReadonlyProductCard.tsx` `CardSnapshotService.java`（`editCardValue`/`materializeWholeLineRowData`） |
+| `task-0806-报价编辑链路优化与前后端对账/` | 把后端从**显示权威降级为校验器**：DRAFT 行内走前端引擎（与列小计同源、零等待），后端异步照算做**对账**，不一致亮标记 + **禁提交**；其上叠异步/懒物化/缓存三级优化。⚠️ **原记「整行物化 356ms(45%)」已被 D17 生产态实测更正为 294ms(38%)** —— 方法内打点占比 ≠ 「关掉它能省多少」 | ⚠️ **阶段⓪①③a 已合并**（`2942a4d8` 白名单收窄 + 分流/对账/提交闸门；`e40ab0fb` ③a 批量写，8 次 REQUIRES_NEW → 1 次）；**阶段③ 范围经实测重裁（D17）**：③b 懒物化**裁定不做**→`BL-0156`；**阶段②④⑤ 未开工**（`BL-0137` P0，D1~D17） | `QuotationStep2.tsx` `ReadonlyProductCard.tsx` `CardSnapshotService.java`（`editCardValue`/`materializeWholeLineRowData`） |
 | `task-0806-价格调整更新任务性能优化/` | 价格调整通过后「更新任务」提速：18 项 job 实测 58s（3.22s/项）→ 目标 22~25s。热点 = 核价树 `render()` 43.5% + S0 口径守卫 14.3%。**实测否定两条路**：不是 N+1（一次 render 恰好 17 条 SQL、零重复）、不能上线程池（2026-06-22 同款设计已 revert）。真正浪费 = `refreshCostingCardValuesForLine` 逐项调 `render(List.of(li))` → 18 项发 306 条 SQL 而非 17 条 | ✅ **已交付合 master**（`880709fc` + T6）。主线亲验：75 个 line item 逐字节相同、测试 61/61；实测 18 项 job 冷 JVM 29.24s（**非同 JVM 严格对照，不作确定倍数**）。遗留 [[BL-0144]] T5 转二期 / [[BL-0145]] 价格分叉 | `BomTreeRenderService.java` `CardSnapshotService.java`（`refreshCostingCardValuesForLine`）`PriceAdjustJobExecutionService.java` `MaterialVersionUpgradeService.java` `DriverBatchSafetyAuditor.java` `PriceBaseDateUtil.java` |
 | `task-0806-模板发布全量冻结/` | 模板 PUBLISHED 后**内容层仍活穿透**（实际 18 处活表读，非立项时以为的 10 处）→ 关系表 `template_component_snapshot` + `PublishedTemplateReader` 收口 + miss 报错 + 存量不迁移改「首次冻结」 | ✅ 合 master `8d04336a` | `TemplateService.java` `ComponentService.java` `CardSnapshotService.java` `ConfigureSnapshotService.java` `ExcelViewService.java` `BomTreeRenderService.java` `QuotationTreeService.java` `CostingVersionService.java` |
 | `task-0721-报价侧树状结构与页签类型属性/` | 报价卡片按 BOM 树渲染（复用核价 spine 引擎）+ 页签类型属性（BOM/材质元素/零件/组成件/外购件/主件） | ✅ 已交付 | `QuotationStep2.tsx` `QuotationTreeService.java` |

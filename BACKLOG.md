@@ -9,19 +9,7 @@
 
 ## P0
 
-### [BL-0133] 模板发布后「内容层」仍是活的 —— 改一个组件静默改写最多 6 张已发布模板
-- **优先级**：P0（用户定性「灾难性 bug」；静默改写已发布模板 + 在途报价单，无提示无留痕）
-- **来源**：2026-08-06 用户提出 → 立项 `dev-docs/task-0806-模板发布全量冻结/需求文档.md`
-- **状态**：[~] 进行中（需求文档已定稿，待出实现计划）
-- **登记日期**：2026-08-06
-- **背景**：`docs/三大核心模块基线.md:178/:182` 与 §10.2#4 定的契约是「快照不可变 / 只在用户明确触发时刷新 / 不直接动 PUBLISHED」，但 `ComponentService.update:733` 每次保存组件就无条件调 `refreshSnapshotsByComponent` 改写所有引用它的已发布模板。**代码漂移出了自己的基线文档**。
-- **三类活穿透**：① `refreshSnapshotsByComponent` 改写已发布快照（4 个调用点）；② `component` 18 个渲染配置字段里 6 个从未进快照（`rowKeyFields`/`sortField`/`element*Field`/`columnCount`）；③ 渲染期 10 处直读活表（`CardSnapshotService` 5 + `ConfigureSnapshotService` 1 + `ExcelViewService` 4）
-- **爆炸半径（实测）**：17 个 PUBLISHED 模板 / 149 tc / 53 组件；单组件被引用模板数 max **6**、avg 2.8；54 张报价单引用 PUBLISHED 模板
-- **范围**：新建 `template_component_snapshot` 关系表（发布时冻结，`components_snapshot` jsonb 改为从它派生）+ `refreshSnapshotsByComponent` 整体下线 + 10 处读取收口到 `PublishedTemplateReader` + 快照 miss 显式报错（含 `ComponentSqlViewService:400` fallback）+ 存量一次性对齐 + `frozen-drift` 版本差异视图
-- **已定决策**：D1 严格版本化（只能发新版生效）/ D2 ①②③ 一步做到位、admin 后门保留但加预览+审计 / D3 存量一次性对齐后冻死 / D4 只做 `Template`(QUOTATION+COSTING) / D5 `component.status` 不进快照也不进渲染路径
-- **依赖**：无（可独立开工）
-- **验收要点**：改被 6 模板共享的组件（`COMP-0045` 等）→ 6 个模板快照 + jsonb **一字节未变** + 报价单渲染**逐位一致**；值中性验证；双 spec E2E；N+1 恒定
-
+> ℹ️ [[BL-0133]]（模板发布全量冻结）已于 2026-08-07 交付合 master `8d04336a`，条目已移至文末「已完成」区。
 
 - **优先级**：P0（其中漂移检测假阴性破坏的是安全属性，最高）
 - **来源**：2026-07-21「废弃表检查」会话——用户就新库部署脚本为何仍建 `mat_*` 表发起排查，三路审计（代码消费方 / 视图配置 / 数据痕迹）+ 技术总监亲验 SQL + 临时后端空库实测。
@@ -52,7 +40,10 @@
 ### [BL-0097] 组件 `$view` 查询报错会毒化整个事务 → 整张卡片算值失败，且局部 `catch` 兜不住、错误原文丢失
 - **优先级**：P0（单点 SQL 错误 → 整张产品卡片不可用；且故障原因对用户和排查者**完全不可见**）
 - **来源**：2026-08-02 用户报「QT-20260802-0049 显示『该料号卡片数据待重算』」，技术总监逐层排查定位
-- **状态**：TODO（未排期）
+- **状态**：🟡 **部分交付，根因未解**（2026-08-09 核实）——
+  ✅ **故障链第 5 步（错误原文不可见）已修**：master `2d12bde2`（repair-0803）「报价侧错误可见」，改 `CardSnapshotService` + `QuotationStep2.tsx`，前端不再只显示一句「待重算」。
+  ❌ **故障链第 3 步（事务毒化）未解，且方案已证否**：同一提交含 `SavepointIsolationFeasibilityTest`，结论是 **Savepoint 隔离方案不可行**（见该测试类）。即「单点 `$view` 报错仍会 abort 整个事务」这一根因**依然存在**，需另找方案（独立事务 / 预校验 / 连接隔离）。
+  ⚠️ 因此**不得据「已有修复提交」判定本条已完成** —— 这正是 `dev-docs/INDEX.md §0.0` 曾标注「状态存疑」的那条，现已核实并落此结论。
 - **登记日期**：2026-08-02
 - **故障链（已实证 + 代码注释佐证）**：
   1. 某组件（尤其 `tab_type='BOM'` 树页签）的 `$view` 查询在 PostgreSQL 层报错（列名/表结构不匹配等）；
@@ -81,49 +72,6 @@
 - **依赖**：无。触及 `CardSnapshotService` / `ComponentDriverService`，属报价渲染核心链路（三大基线），**须走 architect 评估 + E2E**
 - **预估规模**：M（方案 3 单独做是 S）
 - **验收要点**：①故意把某组件 `$view` 写错一列 → 该页签显示错误、**其余页签仍正常渲染**；②哨兵带错误原文且前端可见；③不再出现 `current transaction is aborted` 连锁。
-
----
-
-### [BL-0112] 报价渲染侧丢失公式稳定 id → 绑了 `formula_id` 的公式列**整列空白**（BL-0098 引入）
-- **优先级**：P0（用户可见的算值全空 + **V375 之后新建的每一张单 100% 中招** + 列小计残留旧值伪装成正常）
-- **来源**：2026-08-05 用户报障 `QT-20260804-0068`「公式列结果全部不见了」，技术总监逐层排查 + 阳性对照实证
-- **状态**：**[DONE 2026-08-05]** —— 分支 `fix/repair-0805-formula-id-lost-in-enrich`，3 个提交（`e7eb2c42` 阶段一 / `b3950c86` 用例 / `1463ee12` 阶段二）。文档见 `dev-docs/repair-0803-BL0098-公式绑定改绑ID/repair-0805-渲染侧丢公式id致公式列全空/`（需求文档 / 测试用例 / 问题分析报告 / 后端 rowKey 契约）
-- **登记日期**：2026-08-05
-- **根因（已实证）**：[[BL-0098]] 把「字段 → 公式」解析主键从**公式名**换成**公式 id**，
-  但**报价渲染侧的 `enrichComponentData` 两条组装路径没搬公式的 `id`** ——
-  `QuotationStep2.tsx:131-135` 的 `ComponentFormula` 接口**根本没声明 `id`**，
-  `enrichComponentData.ts:166-170`（模板快照）与 `:297-301`（冻结结构）两处白名单 `.map()` 只搬 `name/expression/result_type`。
-  于是 `resolveFormula`（`:381`）按 `field.formula_id` 查恒不命中，而该分支**刻意不回落**（设计正确）
-  → 字段**整个不进 `formulaFields`** → `formulaCache[列名] === undefined` → `ComponentCell:297-299` 渲染 `—`。
-  条件公式（`:495` `byRef`）更隐蔽：`rules` 被 `.filter` 清空、`default` 为 `undefined` → 求值返 `null`。
-  **数据源是好的**（冻结结构里每条公式都带 `id`，与字段 `formulaId` 逐字对得上），**是前端搬运时丢的**。
-- **实证**：后端 `formulaResults` 11 列全是正确数值；前端 `computeAllFormulas` 只剩 `{"材料成本": null}`；
-  把 `formulas[].id` 补回后 11 列全部恢复（阳性对照）。列小计现状值与截图**逐值吻合**。
-- **为什么 tsc 没拦住**：三处查找都写成 `find(x => (x as any).id === …)`，`as any` 绕过了「该属性不在本类型里」。
-  讽刺的是配置侧同名类型 `pages/component/types.ts:199-211` 有 `id` 且写了警告
-  「🚨 丢了会让所有字段绑定失配、那些列静默不出值」—— **警告说中了，只是没覆盖渲染侧**。
-- **元教训**：`1062c41c` 已经发现并修复了**后端** `buildCardStructure` 的同类白名单漏搬，
-  **但没回头检查前端同构的搬运层** —— 同一个错误的两个副本只修了一个。
-- **影响面**：12 个含 FORMULA 字段的组件中 **10 个已绑 `formula_id`**（COMP-0185 10/11、COMP-0157 7/8、COMP-0032 6/7）；
-  覆盖报价编辑页 / 详情页 / 核价侧卡片 / 各级小计 / BOM 树求值 / 前端 Excel 快照。
-  **后端与组件管理配置页不受影响**（故表现为「配的时候好好的，一到报价单就没了」）。
-  **触发条件 = 组件被保存过一次**（不必改公式），所以是持续引爆而非一次性事件。
-- **放大器 [根因 B]**：`useCardSnapshots.computeRowKey` 读 `f.defaultSource`（camelCase），
-  渲染模型里却是 `default_source`（snake_case，`enrichComponentData.ts:286` 写的），调用点又 `as any`
-  → rowKey 退化成行号，与后端内容键永久对不上 → 快照命中不了 → 才落到被根因 A 打废的本地引擎。
-  该分歧 `deletedRows.ts:56-59` 早在 2026-07-14 记载过，当时绕开未修。
-  **修它需配套存量 `editRows` 兼容**（历史编辑值是按旧行号键存的），否则等于拿「用户填的数消失」换命中率。
-- **范围**：阶段一（必修，零风险）`ComponentFormula` 补 `id` + 两条 enrich 路径补搬 + 三处去 `as any`；
-  阶段二（建议）rowKey 口径归一 + legacy 键回退；阶段三（评估）解析失败走 `⚠` 错误旁路让静默故障可见。
-- **依赖**：无。**不触发 AP-44**（无 `field_type` 变动）。触及 `QuotationStep2.tsx`（E2E 强制清单内，
-  当前受 [[BL-0078]] 夹具失效影响跑不通，以真实单据对拍 + 人工三视图替代并如实标注）。
-- **预估规模**：阶段一 = S；阶段二 = M（存量兼容是主要工作量）；阶段三 = S
-- **验收要点**：①`QT-20260804-0068`「物料」6 行 × 11 列全部出数且与后端 `formulaResults` 逐值一致；
-  ②列小计 `材料成本 = 623.597504`（而非 `¥ 0`）；③`comp.formulas` 每条带 `id` 且每个 `field.formula_id` 都能查到（enrich 两路径各断言）；
-  ④条件公式 `rules`/`default` 不再被清空；⑤编辑页/详情页/核价侧三视图一致；⑥三处 `as any` 移除后 `tsc` 0 错误；
-  ⑦**反向门禁**：抹掉夹具里的 `formulas[].id` 后对拍用例必须失败（防恒绿）；
-  ⑧**原始触发路径复验**：组件管理里只点保存不改任何东西，回报价单公式列仍正常。
-- **存量数据**：无需修复 —— 后端快照里的值本来就是对的，前端修好即恢复。
 
 ---
 
@@ -171,7 +119,7 @@
 ### [BL-0137] 报价编辑链路优化与前后端对账 —— 后端从「显示权威」降级为「校验器」
 - **优先级**：P0（P1 每格编辑等 900ms 是体验硬伤；P2 引擎分歧静默是正确性隐患，已实证断过三次）
 - **来源**：2026-08-06 [[BL-0127]] 交付后的架构讨论 + 逐阶段实测
-- **状态**：**阶段⓪① 已交付合 master**（merge `2942a4d8` / 实现 `286def1c`，2026-08-07）；**阶段③a 开发中**（分支 `feat/task-0806-lazy-rowdata`）；**阶段③b 已裁定不做** → [[BL-0156]]（D17）；阶段②④⑤ 未开工
+- **状态**：**阶段⓪① 已交付合 master**（merge `2942a4d8` / 实现 `286def1c`，2026-08-07）；**阶段③a 已交付合 master**（merge `e40ab0fb`，实现 `a582935d`「编辑路径接上已有的批量写，8 次 REQUIRES_NEW → 1 次」，收尾 `b186ec21`，2026-08-08）；**阶段③b 已裁定不做** → [[BL-0156]]（D17）；**阶段②④⑤ 未开工**（本条目因此保持 TODO 不结案）
 - **登记日期**：2026-08-06
 - **任务目录**：`dev-docs/task-0806-报价编辑链路优化与前后端对账/需求文档.md`（唯一权威口径）
 - **要解决的三个问题**：
@@ -392,34 +340,6 @@
 - ⚠️ **若要在懒算里加 `recompute`**：必须重测性能，且会与「草稿/提交两套单头口径」的裁定耦合
 - **预估规模**：M
 
-### [BL-0120] 组件导入导出功能升级 —— 绑定校验前移 + 旧版 bundle 兼容 + 往返保真
-- **优先级**：P1（当前缺陷：绑定问题只在导入**提交**时才 400，用户拿着 JSON 无从修改）
-- **来源**：2026-08-05 repair-0805 收尾时用户指出「应该在导出时就拦」
-- **状态**：**[DONE 2026-08-06]** —— 分支 `feat/task-0805-component-import-export`，4 笔提交（`b5d502d2` 后端 B1~B8 / `c9061e7b` 前端 F1~F4 / `e7423ff7` 测试 86 例+18 夹具 / `6c7ccf32` 验收报告）。文档见 `dev-docs/task-0805-组件导入导出功能升级/`（需求文档含 §3.6 澄清 / 实现计划 / 测试用例 / 验收报告）
-- **登记日期**：2026-08-05
-- **背景**：导出（零校验）/ 导入预览（不查绑定）/ 导入提交（400 拒绝）三个环节里**只有最后一个拦**。
-  preview 本是给用户"提交前看清楚"的，却唯独不报绑定问题 —— 先给安全假象、提交才炸。
-  且报错文案「请在字段配置中显式选择」只有在**源环境**才做得到，导入时用户手上只有 JSON。
-- **范围**：R1 导出出 `bindingReport`（只警告不阻断）；R2 preview 逐字段展示「将绑到哪条公式」；
-  R3 commit 加 `ignoreUnboundFormulas` 显式开关；R4 `consolidate` 按目录/组件收窄 + 组件管理 UI 入口；
-  R5 旧版 bundle 正确落库三类标识（组件 id / 组件 code / 公式 id，含 `hasNullId` 断链缺口）；R6 导出↔导入往返保真。
-- **实测支撑**：工作区 18 份真实历史 bundle / 93 组件 —— 公式带 `id` **0/31**、字段带 `formula_id` **0/19**、
-  可按名字确定性解析 17 + 条件公式 2、**依赖位置猜测 0**。故兼容性的真正命题是「绑定对不对」而非「能不能导进来」。
-- **依赖**：无。不触发 AP-44。**预估规模**：M
-- **验收要点**：见立项文档 §5（AC-1~AC-9），核心两条 = 18 份真实老 bundle 全部导入且绑定正确；导出→导入→再导出往返逐字段相等（含 `formulas[].id` 不变）。
-
-
-### [BL-0124] task-0729 升版路径完全不写锁标记（与归位侧 #47 同形）
-- **优先级**：P1
-- **来源**：验收 P2 测试 B 顺带实测（2026-08-06）
-- **状态**：[x] **已完成**（2026-08-08 随 `repair-0807` 交付并合并 master `24b68b20`）。实修范围比本条原描述更大：除 FR-1/FR-2 外，开发期又追加 D-9（driver 行「旧价穿新版徽标」）、D-10（`loadVersionPrices` 过滤致 else 分支为死代码）、D-11（升版侧接入调价元素清单，与 `PriceReconciler` 收敛）。⚠️ `PriceReconciler` driverRow 分支的同款洞**未修**，见 [[BL-0154]]
-- **说明**：`MaterialVersionUpgradeService` 全文 **0 处** `__priceLocked` / `__priceVersion`（对照 `PriceReconciler` 有 8 处）。实测真实升版后：
-  - `_origin:"manual"` 行价格被改成本版价（`999.999 → 2200.000000`），但 **`__priceVersion` 仍停在陈旧值未刷新**
-  - 非 manual 行走 S4b 删掉价格键，却**保留 `__priceLocked:true`** —— **与 `031a2dfa` 在归位侧修的 `#47`「死格」完全同形**
-- ⚠️ 即：`#47` 只在归位侧修好了，**升版侧还有一份同样的缺陷**
-- **前置**：改动会触及 `#42`（手动行锁价）/ `#29`（升版清手改值）两条已 PASS 的验收项，需先做影响面评估
-- **预估规模**：M
-
 ### [BL-0154] `PriceReconciler` driverRow 分支「解不出价时不撤锁」—— 与 repair-0807 D-9 同款洞
 - **优先级**：P1（静默死格 / 旧价穿旧徽标，用户无绕开手段）
 - **来源**：`repair-0807` 主线代码评审顺带发现（2026-08-07）
@@ -568,110 +488,6 @@
 - **验收要点**：①字段绑 id 查不到 → `out.errors[fieldName]` 有值且 UI 出 `⚠`；②列小计不再用 `row_data` 旧值伪装（或至少标记为陈旧）；③既有"正常无公式"场景不误报。
 
 
-### [BL-0098] FORMULA 字段未显式绑定公式时按「位置」回退匹配 → 配置静默漂移
-- **优先级**：P1（静默改变计算结果，无报错无提示）
-- **来源**：2026-08-02 排查 QT-20260802-0049 时发现，用户实测佐证
-- **状态**：**[DONE 2026-08-03]** —— 分支 `fix/bl-0098-formula-bind-by-id`，13 个提交，实施记录见
-  `dev-docs/repair-0803-BL0098-公式绑定改绑ID/实现计划.md`。落地摘要见本条末尾「✅ 交付记录」。
-- **登记日期**：2026-08-02
-- **背景**：`FormulaCalculator.resolveFormula` 解析 FORMULA 字段用哪条公式时有 4 级回退：
-  ```
-  0. 显式 formula_name
-  1. 模板级 formula_assignments[字段下标]
-  2. 字段名 == 公式名
-  3. positional fallback ← 按该字段在 FORMULA 字段中的相对位置，取 formulas[同位置]
-  ```
-  第 3 级是历史兼容设计，**副作用是配置会静默漂移**。
-- **实证（当前生产配置就踩在上面）**：`COMP-0157「物料」`的 `材料成本` 字段是 FORMULA 类型但
-  `formula_name` 为空、也没有同名公式，于是按位置匹配到 `formulas[2]` = **「银点材料成本公式」**：
-
-  | FORMULA 字段（第 N 个） | formulas 数组（第 N 条） |
-  |---|---|
-  | 来料回收费 (0) | 来料回收费取值公式 (0) |
-  | 来料财务费 (1) | 来料财务费取值公式 (1) |
-  | **材料成本 (2)** | **银点材料成本公式 (2)** ← 隐式绑定 |
-
-  用户本人认为"这条公式没有被字段绑定"，实际它正在决定「材料成本」列的算法。
-- **危害**：只要有人在公式列表里**插入一条新公式、删除一条、或调整顺序**，所有未显式绑定的 FORMULA 字段
-  都会**静默换成另一条公式** —— 不报错、不提示、UI 上也看不出来，只有算出来的钱变了。
----
-
-#### 🔑 2026-08-03 方案变更：改为「公式绑稳定 ID」（用户裁决）
-
-> 原范围是「把按位置猜出来的公式名**固化**进 `formula_name`」。2026-08-03 讨论 task-0803 时用户提出
-> **「公式绑定可以绑公式 ID 吗，避免乱猜公式」**，经实测论证后**采纳**。原范围作废，以本节为准。
-
-**为什么换方案** —— BL-0098 其实是两个独立问题捆在一起：
-
-| 问题 | 现状 | 固化 `formula_name` | 绑 ID |
-|---|---|---|---|
-| **A「没绑就按位置猜」** | 4 处受害，插/删/调序一条公式就静默换算法 | ✅ 能解 | ✅ 能解 |
-| **B「改公式名就断链」** | 0 处受害但**机制活着**：绑了名字找不到 → `FormulaCalculator:1411-1412` 该字段**整个不进计算列表** → 那一列静默不出值、不报错；条件公式同理（`:1405` 静默丢规则） | ❌ 不解（名字仍是主键） | ✅ 根治 |
-
-裁决理由：**名字是用户随时可改的东西，拿它当主键早晚出事**；且「改名时级联更新所有引用」这个替代做法的失败模式是**静默的**（漏一处不报错，只是那列没值），可靠性与「引用永远有效」不是一个量级。
-
-**实测数据（2026-08-03 核实 `cpq_db_0724`，实施时直接用，不必重查）**：
-
-| 项 | 实测 |
-|---|---|
-| 公式对象落库的键 | **只有 `name` / `expression` / `result_type`** —— 39 个对象**全部无 `id`、无 `key`** |
-| 前端 `FormulaItem.key` | `formula-${Date.now()}-${Math.random()}`，**纯 React 列表临时键，落库前丢弃**，不是稳定标识 |
-| 靠位置回退的字段 | **4 处**（全在 ACTIVE 组件）：`COMP-0032`「物料」BOM/材料成本→银点材料成本公式；`COMP-0157`「物料」BOM/材料成本→银点材料成本公式；`COMP-0090`「材料成本」材质元素/材料成本→公式1；`COMP-0049`/公式测试→**位置越界，该列算不出值** |
-| 靠同名匹配的字段 | 0 |
-| `formula_name` 指向不存在公式（已断链） | **0**（机制活着但暂无受害者） |
-| 组件内公式重名 | **0**（名字今天确实唯一） |
-| 模板级 `formula_assignments` | **101 条 `template_component` 全为空**，第 1 级回退从未被使用 |
-| 🚨 **公式定义的承载点** | **3 个**：`component.formulas`（正本，15 个组件）+ `template.components_snapshot`（11 个模板）+ `quotation.submission_snapshot`（2 张已提交单）。`template.formulas` 与 `template_component.fields_override` 均为 0 |
-
-- **新范围**：
-  1. **造稳定 ID**：给公式对象补一个不可变 ID 字段。**作用域 = 组件内**（不需要全局唯一），因此组件复制 / 导入 bundle **原样带走即可**，无需重新生成、无跨环境冲突。
-  2. **迁移回填**：给存量 39 个公式对象生成并写入 ID。🚨 **必须同时覆盖上表 3 个承载点**——只动 `component.formulas` 就是 [[AP-39]] 重演（当年 V190~V193 只动 `component.fields`，漏了所有引用方 jsonb 列，PUBLISHED 模板 snapshot 残留老散字段）。
-  3. **字段绑定改存 ID**：FORMULA 字段新增 ID 引用键；`formula_name` 降级为**展示冗余 + 存量兼容读**，不再是解析主键。条件公式 `conditional_formula.rules[].formula` / `.default` 同步改绑 ID。
-  4. **求值解析改口径**：`FormulaCalculator.resolveFormula` 改为 **ID 优先**；**砍掉第 3 级 positional fallback**（或降级为仅存量兼容且打 warn）。
-  5. **存量 4 处固化**：按当前位置解析出的公式，固化成 ID 绑定。复用已在 master 的 `FormulaCalculator.resolveFormulaNameForField`（commit `2d12bde2`）作为解析口径，**不要另写一套**（口径漂移就是 BL-0098 换个层面重演）。
-  6. **UI 显式化**：字段配置必须显式选公式（存 ID，界面照常显示名字）；未绑定时明确提示，不再静默猜。
-- **已在 master 的脚手架（commit `2d12bde2` repair-0803 B3）**：`FormulaCalculator.resolveFormulaNameForField()` 已对外暴露解析口径，`FormulaNameResolutionTest` 已把 4 级回退语义与 BL-0098 危害钉成测试。⚠️ **但修复本身一件没做**——该方法在整个 `src/main` **无任何生产调用方**，只有测试在调；`ComponentService` 里零固化逻辑。属「手术台备好了，刀没下」。
-- **依赖**：无。改动触及 `FormulaCalculator` + `ComponentService` + 组件管理前端 + 一次性迁移，**不触发 AP-44**（无 `field_type` 变动）
-- **预估规模**：M
-- **验收要点**：①存量 4 处全部绑上 ID，且绑定结果 = 修复前实际生效的公式（值不变）；②**改公式名后各字段算法不变**（B 问题根治的核心判据）；③调整公式顺序 / 插入 / 删除后各字段算法不变；④3 个承载点的 ID 一致，模板 snapshot 与已提交单据快照均已回填；⑤新建 FORMULA 字段未选公式时有明确提示，不再静默按位置猜。
-- **下游影响**：**task-0803（BOM 页签父子取值公式）已把本条列为实施前置**（2026-08-03 用户裁决两者**严格串行**）。
-
----
-
-#### ✅ 交付记录（2026-08-03）
-
-**🚨 首先纠正本条此前的两处误判**（含 `dev-docs/repair-0803-公式计算BUG修复/修复方案.md §1.2` 的原始诊断）：
-
-1. **「4 处按位置猜」实为 1 处。** 统计 SQL 漏了排除条件公式字段。`COMP-0032`/`COMP-0090`/`COMP-0157` 的「材料成本」**是条件公式字段**（`conditional_formula`），`collectFormulaFields` 先判条件分支（`FormulaCalculator:1396-1409`），`resolveFormula` 对它们**从未被调用**，位置回退根本轮不到。真正靠位置回退的只有 `COMP-0049`「物料与元素BOM」的「公式测试」，且它位置越界、本就解析不到。
-2. **「COMP-0157 材料成本被按位置绑到银点材料成本公式」是误判。** 银点材料成本公式是那条条件公式**显式配置的 `default` 分支**，用户自己配的。之所以没人发现，是因为 `formulas[2]` 恰好也是它——两条路径答案相同，纯属巧合。
-
-**实测口径（`cpq_db_0724`，2026-08-03）**：22 个 FORMULA 字段 = 3 个条件公式字段 + 19 个普通字段（18 已显式绑定 + **1** 靠位置回退）。
-
-**范围扩大**：条件公式按名字引用 `rules[].formula` 与 `default`，同样有「改名即静默丢规则/丢默认分支」的问题 B，且**比普通字段更阴险**（列还有值，只是悄悄换了分支）。用户裁决一并修，故本条实际交付覆盖两类绑定。
-
-**落地内容**：
-1. 公式对象补不可变 `id`（作用域=组件内）；`resolveFormula` 插入 `formula_id` 最高优先级，原 4 级回退**原样保留**给 13 张不迁移的老冻结单兜底。
-2. 条件公式新增 `rules[].formula_id` / `default_formula_id`，`condRefFormula` 按 id→名字解析；绑了 id 查不到返 null 不回落名字。
-3. `FormulaIdBinder`：补 id / 固化绑定 / 用 id 反查刷新名字冗余 / 强制显式绑定校验。固化口径复用 `FormulaCalculator`，不另写一套。
-4. 迁移 **V375**（公式补 id + 显式绑定翻译）+ **V376**（条件公式引用翻译），均为纯映射零推断，覆盖 `component.*` + `template.components_snapshot`；按裁决 D2 **不动** `quotation_view_structure`（13 张老单）与 `quotation.submission_snapshot`（只读留证）。
-5. 一次性固化端点 `POST /api/cpq/admin/formula-binding/consolidate`（`dryRun` 出清单）。
-6. 前端配置侧（字段下拉 + 条件公式抽屉）与求值侧（`resolveFormulaForField` + 条件解析）全部改绑 id，与后端镜像；`newFormulaRow` 新建即生成 id。
-7. 保存/导入强制显式绑定。
-
-**过程中另抓到 3 个会让修复形同虚设或引入新问题的点**：
-- 🔒 **端点漏鉴权**：本项目 RBAC 是 **opt-in** 的（`RoleFilter:65`：无 `@RoleAllowed` 则 `skip auth check too`），新端点初版无 token 可调（实测返 200）。已补 `@RoleAllowed({"SYSTEM_ADMIN"})`。**新增任何 `/api/cpq/**` 资源都必须显式加注解，否则默认全开。**
-- **`CardSnapshotService.buildCardStructure` 是白名单逐键搬运**，漏搬 `formula_id` → 此后新建的每张报价单冻结结构都拿不到 id，求值永久退回猜。已补。
-- **`validateFormulas` 会挡住改名**：它校验 `formula_name` 必须存在，而 UI 改公式名时引用处的名字冗余不跟着变 → 保存 400。已加 `refreshNameRedundancyFromIds` 并重排调用顺序。
-- **SQL 空数组陷阱**：库里 79 个 tab 的 `formulas=[]`、10 个 `fields=[]`，`jsonb_agg` 对空集返回 NULL 会把 `[]` 写成 JSON null（渲染层读到即崩）。两个迁移的内层 `jsonb_agg` 全部 `COALESCE(...,'[]'::jsonb)`。
-
-**验证证据**：
-- 后端纯 JUnit **38 passed**（`FormulaIdBinderTest` 18 / `FormulaBindByIdTest` 15 / `FormulaNameResolutionTest` 5，后者锁定原 4 级回退语义未被污染）；前端 vitest **190 passed**；`tsc` 0 错误；改动的 5 个前端文件 Vite transform 均 200。
-- **值不变**：22 个 FORMULA 字段迁移前后生效的公式逐条 `diff` 一致。
-- **改名不断链（端到端）**：改公式名 + 字段留旧名冗余 → `PUT /components/{id}` 返 **200**（原为 400），落库 `formula_id` 不变、名字冗余自动刷新。数据层对照实验：id 链路仍指得到，名字链路已断（= 改造前行为）。
-- 强制校验：未绑定 → 400「以下公式字段未绑定公式…：未绑定列」；显式绑定 → 200 且自动补 id。
-
-**遗留待用户处置**：`COMP-0049`「物料与元素BOM」（ACTIVE，被 2 个模板引用）有 1 个 FORMULA 字段「公式测试」但组件**0 条公式**，该列本就算不出值。强制校验开启后该组件在 UI 上不可保存，需先给该字段选公式或改字段类型。这是预期行为（暴露坏配置），但用户首次碰到会意外。
-
 ### [BL-0099] 跨组件引用 token 把「列名」写进了 `tab_name` 字段
 - **优先级**：P2（当前被回退链兜住，未造成可见故障，但是定时炸弹）
 - **来源**：2026-08-02 排查 QT-20260802-0049 时发现
@@ -762,33 +578,6 @@
   附带**跳转用的 id**（当前刻意未下发——契约要求展示文案零 id，加 id 时必须确保它只用于跳转、不进文案）。
 - **依赖**：repair-0803 已合并。**预估规模**：M
 - **验收要点**：①点节点跳到对应公式；②目标 token 高亮；③展示文案仍不出现任何 id（AC-11 不得回归）。
-
-### [BL-0101] 前端页签算序不认 `component_subtotal` 依赖 —— 前后端建图口径不对齐
-- **优先级**：~~P2（当前无可见故障）~~ → **P1**（2026-08-07 实证发生用户可见故障 `QT-20260807-0146`）
-- **来源**：2026-08-03 repair-0803（QT-20260803-0052 假环）修复时发现
-- **状态**：**[x] 已完成**（2026-08-08 由 `dev-docs/repair-0803-公式计算BUG修复/repair-0808-前端页签算序假环致列小计归零/` 交付）
-- **登记日期**：2026-08-03　**完成日期**：2026-08-08
-- **⚠️ 原描述订正（2026-08-08）**：「前端从未跟进 / 全工程没有 `extractSubtotalRefs`」**不准确**。
-  前端其实从 `40983a52`（2026-06-16 修 QT-1743）起就有等价逻辑，只是**内联在 `buildCrossTabRows` 里**、
-  不是 `crossTabOrder.ts` 的导出函数，且是**页签粒度** —— 恰恰踩中本条最后那句警示。
-  真实故障形态因此比预判更糟：不是"前端漏收边算出 0"，而是"前端多收边 → 与真实 cross_tab 边撞成**假环**
-  → `topoOrderComponents` 抛错 → `catch` **静默**退回声明序 → cross_tab 源页签还没算就被引用 → **整页签 11 个公式列全归零**"。
-- **背景**：后端为修 QT-1743（管理费=0）把 `component_subtotal` 跨组件引用并入了页签拓扑依赖
-  （`CardSnapshotService` / `ConfigureSnapshotService`），后端已于 repair-0803 精化为**列粒度**
-  （`CrossTabComponentOrder.buildComponentDeps`），**前端停留在页签粒度**。
-- **暴露方式**：正因为前端不收这类边，QT-20260803-0052 在编辑页看着正常、一到后端渲染就崩——
-  同一份配置两边算出的依赖图不同。修复方向相反时，两边会各错各的。
-- **风险**：前端 `computeAllFormulas` 若在被引用页签之前算引用方，`component_subtotal` 取到未回填的值 → **前端显示 0**，
-  与后端重算结果不一致（用户看到的和存库的不是一回事）。当前未见报障，可能是现网模板的页签顺序恰好正确。
-- **范围**：前端补齐列粒度的 subtotal 依赖收集，与后端 `CrossTabComponentOrder.buildComponentDeps` **同规则**
-  （引用公式列/整页签合计才建边，引用 INPUT 等零依赖列不建边）；补一组前后端共用的建图对拍用例。
-  ⚠️ 不要简单照搬「页签粒度」——那正是 repair-0803 修掉的假环成因，直接搬会让前端也开始报环。
-- **依赖**：repair-0803 已合并（后端规则已定型，可作为对拍基准）
-- **预估规模**：S~M
-- **验收要点**：①同一份 structure 前后端算出的页签序一致；②施耐德BUG2 v1.3 这类含反向引用的模板前端不报环；③对拍用例覆盖「引用输入列/引用公式列/整页签合计」三种形状。
-- **交付**：前端新增 `crossTabOrder.ts#buildComponentDeps`（逐条镜像后端）；`buildCrossTabRows` 改用之；`catch` 加 `console.error` 留痕。
-  验收要点①②③全部达成（`crossTabOrderParityQt0146.repair0808.test.ts` 6 例 + `crossTabOrder.test.ts` T-1.1~T-1.14）。
-  **顺带挖出两条存量缺陷 → `BL-0159` / `BL-0160`。**
 
 ### [BL-0159] `__amount_total__` 哨兵键前后端口径分叉（后端 4 位截断 vs 前端精确）
 - **优先级**：P2（用户可见的尾差，但量级 ~1e-5；与 task-0801「全链路统一 6 位」口径冲突）
@@ -982,18 +771,6 @@
 - **预估规模**：L（1 周以上）
 - **验收要点**：大单首开/warm 阻塞时长显著下降；卡片值落库逐位等价（`GoldenCardValuesEquivTest` 不变）；无并行竞态（刷新多次行数/值稳定）。
 
-### [BL-0017] `[页签(总计)]` 真实计算口径对齐「金额字段(is_amount)小计之和」
-- **优先级**：P1
-- **来源**：`docs/superpowers/specs/2026-06-30-tabtotal-subtotal-token-corruption-fix.md` §3.6 划出范围 + 两轮评审「语义事实」提示
-- **状态**：✅ **已落地合并 master（2026-06-30，commit `e6c53db`）**。方案 A′ 加性哨兵键（不动裸键、不动求值器）。前端 4 写键点 + 后端 5 点（含计划外新增 `CardSnapshotService` byColNode 排除哨兵）落地；`ComponentDataEffectiveRowsTest` 6/6（含哨兵=Σamount + 折扣缩放）、前端 vitest 210/210、tsc 0 错；**值中性硬证据**：`GoldenCardValuesEquivTest#rockwell` 含/不含本改动纯读 golden 逐位等价 `52380a82…`。详见 spec `…BL0017-tabtotal-amount-sum-impl.md` §10。
-- **推迟原因**：超出本期范围（本期硬约束＝「所见即所存 + 不动公式计算」，只修显示忠实性）；且涉及改动求值口径，须单独立项评估影响面。
-- **登记日期**：2026-06-30
-- **背景**：`[页签(总计)]` 本应＝该页签所有「金额属性」字段(`is_amount && is_subtotal`)的小计之和（用户口述权威规则，已由显示行模块 `tabTotalLines.ts#sumTabColumns` 实现）。但公式引擎的裸键 `componentSubtotals[tabName]` 现＝**所有 `is_subtotal` 列之和**（含非金额的 汇率/利润比例/单率），且因解析期 `value` 被塞首个小计列，`[页签(总计)]` 实际只求**首个小计列的列小计**（前端 `产品#汇率` / 后端 `compCode+"#"+col`），**既非「金额字段之和」也非「整页签总计」**。`tabTotalLines.ts:4-7` 注释明确承认显示行与引擎值「有意分叉」。本期 [BL-本次] 只让它「显示对、保存忠实」，数字仍沿用现状（首个小计列）。
-- **范围**：让 `[页签(总计)]` 求值＝`Σ(is_amount && is_subtotal 列的列小计)`，需三处对齐 —— 前端卡片裸键（`QuotationStep2.tsx#getComponentSubtotals` 裸键改 amount 过滤，复用 `sumTabColumns` 口径）+ 后端 Excel 路径（`ComponentDataEffectiveRows`：**当前根本没登记裸键**，需新增裸键＝amount 列之和，否则 fix 后该路径 `[页签(总计)]` 求值为 0）+ 配置快照（`ConfigureSnapshotService#accumulateColumnSubtotals`：同样只登记 `#列` 键、需补裸键）。同步评估其它读裸键的路径（产品小计兜底 `evalProductSubtotalFromSubtotals` / 按页签折扣）是否要跟随改口径，或给 `[页签(总计)]` 单独引一个「金额合计」键以缩小影响面（A 全局重定义 vs B 单独键，二选一）。
-- **依赖**：本次「所见即所存」修复（[BL-本次] 引入的 `is_tab_total` 标记）先落地；A/B 口径方案须 architect 评审（动核心求值基线，守 `docs/三大核心模块基线.md`）。
-- **预估规模**：M（3-5 天）
-- **验收要点**：`[页签(总计)]` 在报价单卡片 / Excel 视图 / 配置快照三处求值一致＝该页签金额字段小计之和；与页签底部「本页签金额合计」显示行同值（口径统一）；非金额小计列不再计入；其它读裸键路径行为符合所选 A/B 方案预期。
-
 ### [BL-0018] 存量已塌缩 `[页签(总计)]` 公式的批量恢复
 - **优先级**：P2
 - **来源**：`docs/superpowers/specs/2026-06-30-tabtotal-subtotal-token-corruption-fix.md` §3.6（本期不处理存量）
@@ -1068,31 +845,6 @@
 - **验收要点**：spineKeys 视图叶子(版本=NULL)正确命中;不破坏非叶子(有版本)匹配;`ys_view` 等其它 spineKeys 视图无回归。
 - **注**：**协议级**(动 spineKeys 绑定,影响所有 spineKeys 视图)→ 正式落地须独立分支 + `quotation-flow.spec.ts` E2E + 提交。当前改动在主工作区 `SqlViewExecutor.java`,未提交。
 
-### [BL-0031] 选配「工序」落 V6 承载表 + mirror 视图（选配模板方案前置·architect 级）
-- **优先级**：P1
-- **来源**：`docs/superpowers/specs/2026-07-06-选配模板方案-design.md` §2/§9 + 架构复核（`docs/反模式.md` AP-53 续6）
-- **状态**：✅ **已由 task-0712 实质解决（2026-07-15，master `d02b7fe`）**——选配工序落 `unit_price`（`price_type=PROCESS`/`cost_type=自制加工费`，B2 完整落库）+ 组合工艺落 `capacity`（组装加工费，B6）；标识统一到 `process_master.process_no`（缺口1 加法式方案A，V336）；渲染走物理视图 `v_composite_child_processes`（读 `unit_price.operation_no`）。按 `material_no`(=销售料号 V315) 维度落库，与 BL-0031 目标一致。**未新建"专用工序承载表"**（用 unit_price 承载，符合《报价系统Excel导入落库方案》§10），如需独立表另评估，否则可关闭。
-- **登记日期**：2026-07-07
-- **推迟原因**：AP-53 续6 已标"工序在 V6 侧无承载表、需新建业务表 + mirror UNION，走 architect"；若一期强做则范围过大。
-- **背景**：选配方案把"工序"列为一期固定参数，但 V6 侧尚无工序落库承载表（现役选配 Phase1 只落料号+元素+子件）。产品卡片工序 Tab 依赖按 `sales_part_no` 落库 + mirror 视图取数。
-- **范围**：设计工序 V6 承载表 + mirror UNION 视图，供选配/核价按 `sales_part_no` 取工序；对齐「销售料号维度落库 V6.2」口径。
-- **依赖**：material_master/element/bom V6 Phase1（已就绪）；报价料号统一 Spec1。
-- **预估规模**：L（1 周以上）
-- **验收要点**：选配产出报价料号的工序能按 `sales_part_no` 落库并在卡片工序 Tab 渲染；不破坏现役核价工序取数。
-
----
-
-### [BL-0045] 已导入工序码与 process_master 编码体系不相交 → 名称带出为 null
-- **优先级**：P1
-- **来源**：task-0712 主数据维护-核价基础数据维护 验收发现（C8 名称带出）
-- **状态**：**[x] 已完成（DONE 2026-07-13，合并 master `efa5224`；childtask-1）**
-- **登记日期**：2026-07-12
-- **方案（终）**：经 spec 评审逐条澄清（5 问），从原 spec 方案 A（导入 upsert 主表、仅工序）**重构为方案 B + (ii)**：主数据先行、**核价导入不写主表**；补齐**四码**名称（工序/元素/材质/料号）——① 工序建**批量导入**（对齐材质库，upsert `process_master` `ON CONFLICT DO UPDATE`）；② 元素靠材质库导入已落 `element` 主表，不新建；③ 材质走 `material_part_no → material_master.material_recipe_id → material_recipe.name` 两跳 join；④ 料号已被 P05/P06/P24 导入 upsert `material_master`，仅核对。**无 Flyway**（`uq_process_master_no` 已存在 V218:142）。
-- **交付**：后端 `efa52245`（ProcessMasterImportService/DTO/Resource +import/+template、ColumnDef MASTER_2HOP、PricingSheetRegistry+PricingMaintenanceService 两跳 join）+ 前端 `33d628e`（ProcessMasterImportDrawer、v6MasterDataService、V6ProcessCrudTab 入口、EditableSheetTable 灰字兜底）。技术总监亲验：守 B(无 P-handler/无 Flyway)、前后端信封对齐、独立复跑 tsc 0 错 + 后端 10+1+16 测试全绿、合并后 8081 活体 401/5174 200。
-- **文档**：`dev-docs/task-0712-主数据维护-核价基础数据维护/childtask-1/{需求说明,backtask,fronttask,api}.md`；原 spec 已标"方案 A 历史留档"。
-- **落地后待业务动作（方案 B 主数据先行的必然，非缺陷）**：① 工序名须业务拿真工序 Excel 走新导入端点才落 `process_master`（现 0 个 Z 码）；② 材质名须走「材质管理→绑定料号」补绑（现 `material_master` 绑定率 0/39，全显"未绑定"，PRD §5 非目标）。
-- **遗留（P2）**：导入未做 `process_no`(VARCHAR20)/`process_name`(VARCHAR50) 超长截断校验，超限 DB 层报错；backtask/api 未要求，待评估。
-
 ### [BL-0064] 外购件（`characteristic='OUTSOURCED'`）的渲染归属 —— 三态统一的展示侧兑现
 - **优先级**：P1
 - **来源**：`docs/superpowers/specs/2026-07-20-material-bom-item-characteristic-三态统一-design.md` §9.1（本期明确不做下游）
@@ -1138,192 +890,6 @@
 - **依赖**：无（task-0801 已把精度与格式化收敛到 `PrecisionPolicy` / `precision.ts`，本条只动算法不动精度）
 - **预估规模**：M
 - **验收要点**：①同一张单在草稿态与提交后，列表金额**不跳变**；②列表金额 = 报价单内对应指标 = 导出金额；③每个金额列的语义在代码注释与 `api.md` 中各有且仅有一种说法。
-
-### [BL-0096] task-0801 精度优化的 AC-14「亿级金额端到端」未验证（仅算法级单测覆盖）
-- **优先级**：P1（本期核心风险项的验证缺口，非功能缺陷）
-- **来源**：task-0801 公式计算精度优化，技术总监验收时的实测数据缺口
-- **状态**：✅ **已完成（2026-08-02，技术总监造数实测，四处逐位一致 + EDGE-13 兜底实证）**
-
-#### 验证结果（造数 → submit 权威重算 → 四处比对 → 清理复原）
-
-**数据设计**：20 行，单价 `123.456789 + (i-1)×0.000007`（每行互异，避免"相同数相加"被优化）、
-年用量 `799999`（非 10 的幂次，确保乘完仍带满 6 位小数）。
-金标准用 psql `numeric` 精确计算（`SUM(subtotal * annual_volume)`）。
-
-| # | 观测点 | 值 | 与金标准 |
-|---|--------|-----|---------|
-| 0 | psql numeric 金标准 | `1975307218.862890` | — |
-| 1 | DB 落库 `quotation.total_amount` | `1975307218.862890` | **差值 0.000000** |
-| 2 | DB `SUM(line_total_amount)` | `1975307218.862890` | **差值 0.000000** |
-| 3 | API `GET /quotations/{id}` 的 `totalAmount` | `1975307218.862890` | 逐位一致 |
-| 4 | 导出 HTML | `1975307218.86289` | 一致（去尾零，符合"至多 6 位"设计） |
-| 5 | 导出 Excel | `<v>1.97530721886289E9</v>` | 一致（OOXML 对 double 的科学计数法序列化） |
-| 6 | 前端列表页渲染 | `1975307218.86289` | 一致（Playwright 实测，1 passed） |
-
-逐行验算亦全部 0 差值（抽 1/10/20 行：`line_total_amount - subtotal*annual_volume = 0.000000`）。
-该总额为 **10 位整数 + 6 位小数 = 16 位有效数字**，已超 double 可靠边界，链路二的 BigDecimal 全程承载被证明有效。
-
-#### EDGE-13（导出 Excel 超 15 位有效数字写文本）—— 用两组数据形成对照实证
-
-第一组总额 `1975307218.862890` 经 `stripTrailingZeros()` 后是 `197530721886289` = **正好 15 位**，
-未触发字符串分支。故另造一组（末行年用量改 `800000` 使总额末位非 0）得 `1975307342.319812` = **16 位**：
-
-| 总额有效数字 | Excel 单元格 XML | 存储形式 |
-|---|---|---|
-| 15 位 | `<c r="I32" t="n" s="5"><v>1.97530721886289E9</v></c>` | **数值** |
-| 16 位 | `<c r="I32" t="s" s="5"><v>27</v></c>` → `sharedStrings[27]` = `1975307342.319812` | **文本** |
-
-正是 `backtask.md` B6 设计的 `stripTrailingZeros().precision() > 15 → setCellValue(String)` 兜底，
-且文本值与金标准逐位相同（该组 DB 对账差值同样为 `0.000000`）。
-
-#### 收尾
-测试数据已完全清理复原（40 行 line_item + 2 张 submit 产生的 costing_order 已删，
-两张单恢复 `DRAFT` / `total_amount=0`；库中 `AC14-TEST-*` / `EDGE13-*` 残留 **0 行**），
-临时 Playwright 脚本与截图已删除，未留在交付物中。
-
-> 过程记录：首次前端验证 FAIL，经排查是**用例写错**（路由用了 `#/quotations`，实际是 `/quotations`）
-> 而非渲染缺陷 —— 截图显示已登录但停在工作台。改用点击侧边栏导航后 1 passed。
-> 这条印证了 testcase.md 的纪律：任何 FAIL 都必须先区分「产品坏了」与「用例写错了」。
-
----
-
-<details>
-<summary>原始条目内容（保留追溯）</summary>
-
-- **原状态**：TODO（未排期）
-- **登记日期**：2026-08-01
-- **背景**：task-0801 全部设计依据是「年用量达几十万件 → 整单金额冲到亿级 → 15 位有效数字已达 double 极限 → 小数第 5、6 位不可信」，据此把金额汇总链路（产品小计 → ×年用量 → 行合计 → Σ整单总额）改为全程 BigDecimal/Decimal。
-- **缺口**：**该场景在现网数据中完全不存在** —— 实测 `quotation_line_item` 全表 `max(annual_volume) = 1`、平均 = 1、最大行金额 14.00 元。因此：
-  - ✅ **已覆盖**：算法级单测（后端 `FormulaCalculatorGoldenCasesTest` 的 G-10/G-11 + T3/T4 链路基线、前端 `precision.test.ts` 同款），证明**算法在该量级下正确**；
-  - ❌ **未覆盖**：整条「落库 → API → 前端渲染 → 导出」链路在亿级金额下的**端到端保真**，以及导出 Excel 触顶 15 位有效数字时「写字符串而非数值单元格」的兜底逻辑（`testcase.md` 的 PREC-AC14-b / EDGE-13，两条都标注为强制人工造数）。
-- **范围**：按 `testcase.md` §5.3 的造数步骤执行一次：罗克韦尔 + 罗克韦尔模板1 → 加 20 个产品行 → 年用量填 500000~800000 → 单价含 6 位小数 → 保存草稿 → 四处比对（前端显示 / `GET /api/cpq/quotations/{id}` / DB 落库 / 导出 Excel+PDF）+ 与 `psql` 的 `SUM(line_unit_price * annual_volume)` numeric 精确参考值对账，重点看**第 6 位小数**。
-- **依赖**：与 [[BL-0078]] 部分重叠（该造数流程同样受"加产品路径"阻断影响，需先确认「从已有产品添加」可用）
-- **预估规模**：S（0.5~1 天，主要是人工造数与四处对账）
-- **验收要点**：亿级金额下四处数值第 6 位小数一致；导出 Excel 中超 15 位有效数字的金额单元格为文本类型且数值完整。
-  → **两条均已实测通过，见上方验证结果**。实际执行绕开了 BL-0078 的 UI 加产品阻断：
-  改为直接造 `quotation_line_item` 行 + 调 `POST /{id}/submit` 触发后端权威重算
-  （`LineDiscountService.recompute` → `Σ lineTotalAmount`），验的仍是**真实的链路二计算路径**，
-  只是没走 UI 加产品那一段（那段属于 BL-0078 范围，与精度无关）。
-
-</details>
-
-### [BL-0092] ~~报价单删除时不清占号~~ → 孤儿 pending 占号无防御机制
-- **优先级**：P1（用户可见功能全灭：「从已有产品添加」对**所有客户**返回空）
-- **来源**：task-0801 测试工程师修 E2E fixture 时探测发现，技术总监亲验 SQL 确认根因
-- **状态**：✅ **已完成（2026-08-02，commit `fe612af9` / merge `3fc3f204`）**
-
-#### ⚠️ 先更正原始判断（登记时错了）
-
-原条目断言「删除路径无任何清理，只有 `QuoteBackfillService:145` 在审批转正时清占号」——**不成立**。
-`QuotationService.delete()` 早已调用 `cleanupPendingV6Data()`（task-0721 B8 加的），
-覆盖 `B8_PENDING_TABLES` 8 张表 + `material_master` 的 `deletePendingWithGuard`，**9 张表全覆盖**。
-
-**实测验证**：造 pending 行 → 调 `DELETE /api/cpq/quotations/{id}` → 该行残留 **0 条**。删单回收路径完整且有效。
-
-登记时我只看到转正路径就下了结论，没查 `delete()` 的实现 —— 属未穷举调用点的判断失误。
-
-#### 241 条孤儿的真实来源
-
-```
-task-0721 B8 修复合并    2026-07-21
-孤儿数据产生时间        2026-07-27 ~ 07-28   ← 全部在修复之后
-```
-正是 `cpq_db_0724` 迁库重建期，即**绕过应用层直接重建 `quotation` 表**的产物
-（与 [[BL-0078]]「E2E 夹具随迁库集体失效」同一批操作）。
-
-#### 真实缺口（本次修复的对象）
-
-1. 9 张表的 `pending_quotation_id` **零外键约束** —— 任何绕过应用层的操作（迁库 / DBA 直删 / 建库脚本）
-   都会留下永久僵尸，且系统内**没有任何机制能发现**；
-2. `material_master` 的引用守卫**有意**留下悬空（`deletePendingWithGuard` 删不掉仍被引用的行，
-   只打一行 WARN 说"需人工核查引用方"），但从无兜底机制去核查。
-
-#### 交付内容
-
-- `PendingHygieneService`：`inspect()` 只读体检 + `cleanup(dryRun)` 清理。语义与删单回收**完全一致**
-  （8 张表直接 DELETE，`material_master` 走同款引用守卫），区别仅在筛选条件从「属于某张单」
-  换成「归属的单已不存在」。`inspect()` 另用 `information_schema` 反查所有带 `pending_quotation_id`
-  的表做交叉校验，**漏加新表会在 `unmanagedTables` 里暴露，不会静默**。
-- `MaterialMasterRepository#deleteOrphanPendingWithGuard()`：原守卫的"悬空版"，三处引用检查逐条对称改写
-  （引用方是正式行或归属单仍存在 → 有效引用，不删）。
-- `PendingHygieneResource`：`GET /api/cpq/admin/pending-hygiene/inspect`、
-  `POST /api/cpq/admin/pending-hygiene/cleanup?dryRun=`（**默认 true**，真删须显式传 `false`）。
-- `PendingHygieneServiceTest` 4 用例全绿，每例都同时断言"孤儿被删"与"非孤儿仍在"
-  —— 误删活数据是本服务最严重的失败模式，安全性优先于清理彻底性。
-
-#### 历史数据清理结果（2026-08-02 经端点执行，已备份）
-
-| 表 | 清理前孤儿 | 已删 | 剩余 |
-|---|---|---|---|
-| `material_bom_item` | 85 | 85 | 0 |
-| `element_bom` / `element_bom_item` | 43 / 43 | 43 / 43 | 0 / 0 |
-| `capacity` | 32 | 32 | 0 |
-| `material_bom` | 22 | 22 | 0 |
-| `unit_price` | 12 | 12 | 0 |
-| `plating_scheme` | 2 | 2 | 0 |
-| `material_customer_map` | 0（08-01 已单独清） | — | 0 |
-| **`material_master`** | 2 | **0（守卫拦下）** | **2** |
-| **合计** | **241** | **239** | **2** |
-
-备份表 `bl0092_orphan_backup_20260802`（241 行 `row_to_json` 全量，可回滚）。
-**活数据完好性已逐表核验**：`unit_price 94-12=82` / `material_bom_item 170-85=85` /
-`element_bom_item 93-43=50` / `capacity 64-32=32`，全部精确匹配，挂活单的 pending 行一条未动。
-
-#### 遗留：`material_master` 2 条需业务判断（不阻断）
-
-守卫拦下的 2 条及其引用方（8 张表孤儿清完后，这些引用方都是**有效数据**，故守卫拦得对）：
-
-| 料号 | 被 BOM 子件引用 | 被 BOM 母件引用 | 被客户映射引用 |
-|---|---|---|---|
-| `W-1001` | 19 | 0 | 1 |
-| `S-80011` | 18 | 13 | 1 |
-
-这两个料号实际**正在被使用**，只是 pending 标记没清干净。合理处置是**转正**
-（`pending_quotation_id` 置 NULL）而非删除，但这属于业务判断，未擅自执行。
-可用 `MaterialMasterRepository#flipPending` 的同款语义处理，或确认后手工
-`UPDATE material_master SET pending_quotation_id = NULL WHERE material_no IN ('W-1001','S-80011')`。
-
-#### 未做（有意）
-未给 `pending_quotation_id` 加外键约束。`ON DELETE CASCADE` 会绕过 `material_master` 的引用守卫、
-`ON DELETE SET NULL` 会把 pending 行变成"无主僵尸"（仍占唯一约束位）——两种语义都不对。
-现方案是「应用层删单即时回收 + 端点兜底体检清理」，覆盖绕过应用层的场景。
-
----
-
-<details>
-<summary>原始条目内容（保留追溯）</summary>
-
-- **原状态**：TODO（数据已临时清理，**代码缺陷未修**）
-- **登记日期**：2026-08-01
-- **背景（已实证）**：
-  - 占号写入：新建报价单时向 `material_customer_map` 写 `pending_quotation_id` 占住料号；
-  - 占号清理：**只有一处** —— `QuoteBackfillService.java:145`
-    `UPDATE material_customer_map SET pending_quotation_id = NULL WHERE pending_quotation_id = :qid`，
-    走的是**报价单审批转正**路径；
-  - **报价单被删除时没有任何地方清占号** → `pending_quotation_id` 指向一个已不存在的 `quotation.id`，形成悬空引用，该料号**被永久锁死**。
-- **用户可见后果**：`ExistingProductService` 的查询条件是 `system_type='QUOTE' AND pending_quotation_id IS NULL`。
-  2026-08-01 实测：全库 `system_type='QUOTE'` 仅 3 行，**可用行数 = 0**（3 行全部被悬空引用锁住，
-  分别指向 `9928116f-...`(7/27) 与 `6bc9a6b7-...`(8/01)，两个 quotation 均查无此单）。
-  即 **「添加产品 → 从已有产品添加」对任何客户、任何模板都返回空**，UI 显示"未查到匹配的产品"。
-  叠加 `sel_template` 表 0 行（选配子系统全灭），Step2 的两条加产品路径当时**全部不可用**。
-- **已做的临时处置（不是修复）**：2026-08-01 经需求方授权，技术总监执行数据清理并留备份表 `mcm_pending_backup_20260801`：
-  ```sql
-  UPDATE material_customer_map SET pending_quotation_id = NULL
-  WHERE pending_quotation_id IS NOT NULL
-    AND NOT EXISTS (SELECT 1 FROM quotation q WHERE q.id = material_customer_map.pending_quotation_id);
-  -- UPDATE 3 → QUOTE 可用行数 0 → 3
-  ```
-  **这只解了当下的数据死锁，代码缺陷仍在** —— 再删一次报价单就会再产生悬空占号。
-- **范围**：
-  1. 报价单删除路径（含级联删除、撤回、作废等所有会让 `quotation` 行消失的路径）必须同步清占号；
-  2. 评估是否给 `pending_quotation_id` 加外键约束 + `ON DELETE SET NULL`，从 schema 层根治（需先确认无跨库/异步写入场景）；
-  3. 加一个兜底清理（启动时或定时）：清除所有指向不存在报价单的悬空占号；
-  4. 同步检查 `material_master`、`QuoteBackfillService:116/124` 涉及的其它带 `pending_quotation_id` 的 V6 表是否有同样问题（`MaterialMasterRepository.java:326` 也有一处清理逻辑，须一并核对触发条件）。
-- **依赖**：无
-- **预估规模**：S（点状修）～ M（含 schema 约束与全表兜底）
-- **验收要点**：①删除一张有占号的报价单后，其占用的料号立即可被「从已有产品添加」选到；②全库不存在悬空 `pending_quotation_id`；③其它带该字段的表同口径核对通过。
-
-</details>
 
 ### [BL-0108] 报价单删除被 `material_price_update_job_item` 外键阻塞 —— 实测 33 张 DRAFT 单永久删不掉且报裸 500
 - **优先级**：P1
@@ -1464,7 +1030,7 @@ task-0721 B8 修复合并    2026-07-21
 ### [BL-0146] 报价单层 SQL 视图冻结从未被读（`quotation_component_sql_snapshot` 已有 80 行数据，零消费方）
 - **优先级**：P2
 - **来源**：2026-08-07 task-0806 决策 B17-b（用户拍板本期不做）
-- **状态**：TODO（未排期）—— 前置：[[BL-0133]] 交付
+- **状态**：TODO（未排期）—— 前置 [[BL-0133]] **✅ 已就绪**（2026-08-07 合 master `8d04336a`），可开工
 - **登记日期**：2026-08-08
 - **背景**：`submit()` 阶段会把组件 SQL 视图闭包冻进 `quotation_component_sql_snapshot`（**实测已有 80 行真实数据**），但 `ComponentSqlViewService.lookupForResolver` 第①层判据 `ctx.quotationId != null && ctx.isQuotationFrozen()` **结构上永远为假** —— `ComponentDriverService` 传的 `quotationId` 是 `QuotePendingScope.pendingOwner()`（其语义就是「非 null ⟹ 非冻结」），`quotationStatus` 恒传 `null`。**那 80 行从来没被读过**，所有 SUBMITTED 单渲染时用的仍是活表当前值。
 - **已核实的门槛交互**：改传真实 `quotationId`+`status` 后，`SqlViewExecutor:555/569` 两个门槛的**最终布尔结果不变**（DRAFT 单 `_pq` 本就等于真实 id；冻结单 id 从 null 变非 null 但 `isQuotationFrozen()` 同时翻真）。pending 改写机制不会坏。
@@ -1546,7 +1112,7 @@ task-0721 B8 修复合并    2026-07-21
 ### [BL-0138] 批量派生草稿 / 批量发版 —— 严格版本化后改一个组件最多要重发 6 个模板
 - **优先级**：P2
 - **来源**：2026-08-06 task-0806 决策 D7（本期明确不做）
-- **状态**：TODO（未排期）—— 前置：[[BL-0133]] 交付后看真实痛感再评估
+- **状态**：TODO（未排期）—— 前置 [[BL-0133]] **✅ 已就绪**（2026-08-07 合 master `8d04336a`），可开工；本条按原议「看真实痛感再评估」，尚未评估
 - **登记日期**：2026-08-06
 - **背景**：[[BL-0133]] 落地严格版本化后，改一个组件配置要让所有引用它的已发布模板生效，得逐个 `createNewDraft` + `publish`。实测单组件被引用模板数 **max 6 / avg 2.8**，即最多 6 次派生 + 6 次发布。
 - **范围**：「选中 N 个已发布模板 → 批量 createNewDraft → 批量 publish」；批量发布的部分失败须走 `runBatch` 聚合（`docs/列表操作规范.md`）
@@ -1575,7 +1141,7 @@ task-0721 B8 修复合并    2026-07-21
 ### [BL-0139] `frozen-drift` 版本差异视图缺前端入口
 - **优先级**：P2
 - **来源**：2026-08-06 task-0806 决策 D10（本期只做 API）
-- **状态**：TODO（未排期）—— 前置：[[BL-0133]] 交付
+- **状态**：TODO（未排期）—— 前置 [[BL-0133]] **✅ 已就绪**（2026-08-07 合 master `8d04336a`），可开工
 - **登记日期**：2026-08-06
 - **背景**：[[BL-0133]] 提供 `GET /api/cpq/templates/{id}/frozen-drift`（对比已发布模板快照 vs 当前活组件配置），但本期无 UI，管理员只能 curl。而这个视图正是严格版本化下「要不要发新版」的决策依据，长期没入口会让 D1 的运维模型难用。
 - **范围**：模板详情页加「与当前组件配置的差异」抽屉（按 `docs/列表操作规范.md` + Drawer 规范）；列出逐字段差异 + 「派生新草稿」快捷入口
@@ -1595,7 +1161,7 @@ task-0721 B8 修复合并    2026-07-21
 ### [BL-0136] 报价单层快照纵深防御 —— 报价单仍实时 JOIN 模板快照，未各自冻一份
 - **优先级**：P2
 - **来源**：2026-08-06 task-0806 方案对比中的「路径丙」，本期不做
-- **状态**：TODO（未排期）—— 前置：[[BL-0133]] 交付
+- **状态**：TODO（未排期）—— 前置 [[BL-0133]] **✅ 已就绪**（2026-08-07 合 master `8d04336a`），可开工
 - **登记日期**：2026-08-06
 - **背景**：`ConfigureSnapshotService.loadComponentsSnapshot:929` 是 `JOIN template t ON t.id = q.customer_template_id` **实时读**模板快照，报价单自己不持有副本。[[BL-0133]] 把模板层冻死后这已足够安全；但 admin 后门（本期保留）或 Flyway 若改了模板快照，在途报价单仍会被波及。
 - **对照**：SQL 视图那条线已经是双层冻结（模板层 + 报价单 SUBMITTED 时 `quotation_component_sql_snapshot`），`components_snapshot` 只有模板层一层，**不对称**
@@ -1661,17 +1227,6 @@ task-0721 B8 修复合并    2026-07-21
 - **依赖**：无。
 - **预估规模**：M
 - **验收要点**：gap 收敛且方差降低；千行级文件导入成功且耗时线性。
-
-### [BL-0072] `clearPreviousPending` 未覆盖 `pending_material_master_staging`（重导覆盖遗留孤儿行）
-- **优先级**：P2
-- **来源**：task-0709/update-0723 测试用例设计风险点 R3（2026-07-23）
-- **状态**：[x] **已关闭（2026-07-26，repair-0726 随暂存表退役天然解决）**——V362 已 `DROP TABLE pending_material_master_staging`，孤儿行的载体不复存在；同时 `QuoteImportService.clearPreviousPending` 在 8 表 DELETE 后补调 `materialMasterRepo.deletePendingWithGuard(pq)`，重导覆盖时会带引用守卫回收本单旧 pending 料号行。
-- **登记日期**：2026-07-23
-- **背景**：`QuoteImportService.PENDING_TABLES`（8 张：`unit_price/material_bom/material_bom_item/element_bom/element_bom_item/capacity/plating_scheme/material_customer_map`）**不含** `pending_material_master_staging`。重导覆盖场景下，若新文件相比旧文件「减少」了某个只凭名称发号的料号，旧 staging 行会成为孤儿残留（不影响本次导入正确性，但 promote 时可能带入多余料号）。
-- **范围**：评估是否把 `pending_material_master_staging` 纳入 `clearPreviousPending`（注意其键是 `quotation_id + material_no`，与其余 8 表的 `pending_quotation_id` 列名不同）。
-- **依赖**：task-0721 pending 机制。
-- **预估规模**：S
-- **验收要点**：重导覆盖后 staging 的料号集与新文件一致，无孤儿行。
 
 ### [BL-0073] `quotation_line_process` 工序反填 SQL 未按 `pending_quotation_id` 过滤
 - **优先级**：P2（待评估）
@@ -1887,17 +1442,6 @@ task-0721 B8 修复合并    2026-07-21
 - **预估规模**：S（1-2 天）
 - **验收要点**：切版本后该行卡片值被重算（打开显示新版本值，不再陈旧）；未切版本的行不受影响；不引入 batch 风暴。
 
-### [BL-0017] 报价料号统一 Spec 2 —— 选配发号统一（CFG-→XXXX-YYMMNNNNNN）
-- **优先级**：P1
-- **来源**：`docs/superpowers/specs/2026-07-06-报价料号统一-design.md` §9（Spec 1 落地时明确拆出）
-- **状态**：[x] **已被覆盖（2026-07-08，选配 Plan 3b/3c）**。`ConfigureProductService.resolvePart`（custom SIMPLE）+ COMPOSITE 父级发号已从 `partNoProvider`(CFG- 前缀) swap 成 `QuoteMaterialNoAllocator.mintAndRegister`，产出报价料号格式 `{4位客户码}-{yyMM}{6位流水}`（正则 `^\d{4}-\d{6,}$`），与本条诉求一致；`config_fingerprint` 落库改为恒 NULL（R1，防跨客户撞生产侧全局唯一索引），复用判定改走销售侧客户维度指纹 `sel_part_signature`（R3）；`isCfg` 拒绝逻辑（`MaterialBomMergeHandler`）按 spec 保留未放开。详见 `docs/superpowers/plans/2026-06-25-savedraft-setbased-rearchitecture.md` 关联的选配 Plan 3b 集成设计 + `ConfigureProductServiceTest` / `ConfigureProductServiceSalesFingerprintTest` R1/R3 断言。
-- **登记日期**：2026-07-07
-- **推迟原因**：Spec 1（数据基座 + 发号服务）先行；选配是另一子系统。
-- **背景**：`PartNoProvider`/`AutoAllocatePartNoProvider` 现按 `part_no_sequence` 发 `CFG-{符号}-{6位流水}` 作选配 `hf_part_no`；统一后应复用 `QuoteMaterialNoAllocator` 发 `XXXX-YYMMNNNNNN`（选配 `XXXX` 客户码取自选配所在报价/客户上下文）。`ConfiguratorInstanceService` 接入；重估 `MaterialBomMergeHandler.isCfg` 拒绝逻辑（选配号统一后是否放开回填）。
-- **前置条件**：✅ Spec 1 的 `QuoteMaterialNoAllocator` 已就绪。
-- **预估规模**：M（3-5 天）
-- **关联**：`docs/superpowers/specs/2026-07-06-选配模板方案-design.md`（**该方案是本条的严格超集**：含发号统一 `CFG-→XXXX-YYMMNNNNNN` + `isCfg` 重估，再叠加参数池/行业模板/销售侧指纹去重；若该方案落地则本条随之完成，**勿重复立项**）。
-
 ### [BL-0018] 报价料号统一 Spec 3 —— 客户料号维护页面
 - **优先级**：P2
 - **来源**：`docs/superpowers/specs/2026-07-06-报价料号统一-design.md` §9
@@ -1954,17 +1498,6 @@ task-0721 B8 修复合并    2026-07-21
 - **依赖**：无。
 - **预估规模**：S（1-2 天）
 - **验收要点**：一条缺 `::text`（或其它仅运行时暴露）的递归 SQL 在**保存期**即被拦下，不再能存成生效配置。
-
-### [BL-0030] 核价树 render 失败被静默吞成空卡片（AP-31 静默失败族）—— 无任何前端可见报错
-- **优先级**：P1
-- **来源**：2026-07-03 同上根因定位
-- **状态**：[x] **已完成（2026-07-03，master `092f48a`）**。`CardSnapshotService` 批量层 `render()` 加 try/catch:失败时不上抛（否则整单 500+全 NULL→前端无限「加载中…」），逐 li 落带错误原文的失败哨兵 `{tabs:[],__cardValueFailed:true,__errorMsg:"核价渲染失败: …"}`；前端 `cardValueFailed.ts#getCardValueError` 取原文，`QuotationStep2` 核价卡片占位以 error Alert 显式展示原文 + 指引查「核价树配置」。配置员一眼定位，取代翻后端日志。
-- **登记日期**：2026-07-03
-- **背景**：`CostingTreeRenderService.render()` 抛错（递归 SQL 崩 / 无生效配置 / 页签 $view 崩）后，被 `CardSnapshotService.buildCostingCardValues` 的 `try/catch` **catch 成返回 null + 仅 `LOG.warnf`** → `costing_card_values` 留 NULL → 前端**只看到空卡片、无任何红错**。用户无法自知是递归 SQL 崩了，只能靠翻后端日志。另页签 $view 忘输出 `material_no` 时也是渲染期 WARN + 静默落选（已有 WARN 守卫但 UI 不可见）。
-- **范围**：让核价树渲染失败对用户**可见**——如 `ensure-card-values` / 渲染响应带回一个「核价树配置错误 + 具体消息（递归 SQL 报错原文 / 未配置生效 SQL / 页签缺 material_no）」的结构化提示，前端在核价卡片区显式提示而非空白。区分「真无数据」与「配置/SQL 报错」两种空。
-- **依赖**：与 [[BL-0029]] 同批修更省（都属核价树配置期防呆）。
-- **预估规模**：M（3-5 天，含前端提示位）
-- **验收要点**：递归 SQL / 页签 $view 报错时，核价卡片区出现明确错误提示（含原因），而非静默空白。
 
 ### [BL-0032] 选配模板版本 / 发布状态机
 - **优先级**：P2
@@ -2081,21 +1614,6 @@ task-0721 B8 修复合并    2026-07-21
 - **前置条件**：✅ **已就绪**（task-0708 2026-07-09 验收通过：material_recipe 253 落库 + element 主表 39 元素）。
 - **预估规模**：M（3-5 天）
 - **验收要点**：材质编辑抽屉可绑定/解绑料号并落 `material_recipe_id`；智能建议可用；选配抽屉反查材质不回归。
-
-### [BL-0040] 元素主表管理 UI（元素字典 CRUD）
-- **优先级**：P2
-- **来源**：`dev-docs/task-0708-材质库规范澄清/`（Q5）→ **已澄清立项 `dev-docs/task-0709-元素主表管理/`（2026-07-09）**
-- **状态**：**[x] 已完成（2026-07-09 合 master `c27f604`）**。B 模型全落地并终验收通过（技术总监独立查隔离库 cpq_db_elemtest + 代码核实）：element_no 不可改业务主键(V319 补 Au/CdO 号)、material_recipe_element 加 element_no(V320 628行全回填)、符号锁(被引用改符号 409)、只软删、导入按编号 upsert 不覆盖人工值、253/1 零回归、定价 join 通、不动选配/定价边界；前端「元素」页签 + 符号锁 UI。8081 `/elements` 404→401 上线、cpq_db 已应用 V319/V320。
-- **登记日期**：2026-07-09
-- **推迟原因**：本期 `element` 主表只作字典（seed + 导入按符号 upsert 回填），无独立管理界面需求；元素 CRUD 属增强。
-- **背景**：task-0708 新建 `element(element_code 符号 PK / element_name 中文 / element_no 编号 / status)`，仅由 seed + 导入维护；管理端无处增删改元素、无处补录字典外新符号的中文名。
-- **范围**：主数据维护下增「元素」管理页（SelectableTable + 工具栏动作 + Drawer 编辑），支持元素增删改停用、补录中文名、维护元素编号；与导入 upsert 语义对齐（不冲突）。
-- **依赖**：task-0708 的 `element` 主表已建。
-- **前置条件**：✅ **已就绪**（task-0708 2026-07-09 验收通过：`element` 主表已建、39 元素含数字牌号；补录中文名的实际缺口 = 191/206/223/258/721 五个数字牌号暂无中文名）。
-- **预估规模**：S（1-2 天）
-- **验收要点**：可在管理页维护元素字典；补录的中文名不被后续导入的符号占位覆盖；停用元素不破坏已引用它的材质渲染。
-
----
 
 ### [BL-0042] 报价侧产能 `Q14 组装加工费` 触发列拉平（报价/核价升版口径统一）
 - **优先级**：P2
@@ -2377,6 +1895,18 @@ task-0721 B8 修复合并    2026-07-21
 ---
 
 ## 已完成
+
+### [DONE 2026-08-07] BL-0133 模板发布后「内容层」仍是活的 —— 改一个组件静默改写已发布模板
+- **交付**：master `8d04336a`（merge `feat/task-0806-template-freeze`）+ 迁移 `V382`/`V383`。任务目录 `dev-docs/task-0806-模板发布全量冻结/`。
+- **根因**：`docs/三大核心模块基线.md:178` 写明快照不可变，但 `ComponentService.update` 每次保存组件就无条件调 `refreshSnapshotsByComponent` 改写所有引用它的已发布模板 —— **代码漂移出了自己的基线文档**。实测爆炸半径：17 个 PUBLISHED 模板 / 149 tc / 53 组件，单组件被引用 max 6 个模板。
+- **修法**：新建关系表 `template_component_snapshot`（**18 个渲染配置字段全冻**，含此前从不进快照的 6 个：`rowKeyFields`/`sortField`/`element*Field`/`columnCount`）；`publish()` 唯一写入 + `PublishedTemplateReader` 唯一读取 + miss 显式报错、**禁止回落活表**；`refreshSnapshotsByComponent`（H1）与 `POST /components/{id}/refresh-template-snapshots` 端点整体退役。
+- ⚠️ **两处立项决策在交付期被推翻**：
+  - **D3「存量一次性对齐后冻死」→ D16 推翻**，改「不迁移存量」：`V382` 后本表 0 行，`template.components_snapshot` 一并清空，过渡期由 `PublishedTemplateReader` 识别为「未冻结」（HTTP 409 + `data.code=TEMPLATE_NOT_FROZEN`，**判定只认 code、禁按 message 匹配**）。
+  - **「重新发布即可恢复」→ B22-c 推翻**：`publish()` 只收 DRAFT，**已发布模板根本没有「重新发布」这个操作**（`createNewDraft→publish` 只产出新版本，老版本永远冻不上）。补冻走新端点 `POST /templates/{id}/freeze`（`SALES_MANAGER`/`SYSTEM_ADMIN`，仅零快照模板可用否则 409，不改 version/status/publishedAt，**界面无按钮**）。
+- **立项时低估**：活穿透实际 **18 处**，非立项时以为的 10 处。
+- ⚠️ **遗留**：AC-18 未执行（E2E 夹具已不存在，[[BL-0158]]）。
+- **核心教训**：见 `docs/反模式.md` AP-63「写了但不生效」—— 同一个任务里重复 6 次。
+- **配套文档已回写**（2026-08-09）：`dev-docs/rule-0724-组件模板配置/1-总则与工作流.md` 新增 §1.5「模板发布与冻结」；`deploy/0809-dbupdate.sql` 内网升级脚本含 V382 存量清空 + 补冻指引。
 
 ### [DONE 2026-08-08] BL-0101 前端页签算序假环致列小计归零（repair-0808）
 - **交付**：`dev-docs/repair-0803-公式计算BUG修复/repair-0808-前端页签算序假环致列小计归零/`（需求文档 / fronttask / backtask / api / test / test-report 六件齐）。
@@ -2718,3 +2248,480 @@ task-0721 B8 修复合并    2026-07-21
 - **范围**：识别「哪些行真的变了」（row_data / snapshot_rows / 结构）→ 只失效这些行；需与前端 payload 语义对齐。
 - **依赖**：无（但见上面的联动警告）。**预估规模**：L
 - **验收要点**：①未改动的行卡片值不被置 NULL；②warm 耗时随改动行数而非总行数增长；③提交 409 率显著下降；④**回归覆盖小单场景的陈旧覆盖**（拆掉死锁保护后的新暴露面）。
+
+
+### （2026-08-09 归档）以下条目状态早已是「已完成」，此前一直留在未完成区，本次按本文件规则统一移入
+
+### [BL-0112] 报价渲染侧丢失公式稳定 id → 绑了 `formula_id` 的公式列**整列空白**（BL-0098 引入）
+- **优先级**：P0（用户可见的算值全空 + **V375 之后新建的每一张单 100% 中招** + 列小计残留旧值伪装成正常）
+- **来源**：2026-08-05 用户报障 `QT-20260804-0068`「公式列结果全部不见了」，技术总监逐层排查 + 阳性对照实证
+- **状态**：**[DONE 2026-08-05]** —— 分支 `fix/repair-0805-formula-id-lost-in-enrich`，3 个提交（`e7eb2c42` 阶段一 / `b3950c86` 用例 / `1463ee12` 阶段二）。文档见 `dev-docs/repair-0803-BL0098-公式绑定改绑ID/repair-0805-渲染侧丢公式id致公式列全空/`（需求文档 / 测试用例 / 问题分析报告 / 后端 rowKey 契约）
+- **登记日期**：2026-08-05
+- **根因（已实证）**：[[BL-0098]] 把「字段 → 公式」解析主键从**公式名**换成**公式 id**，
+  但**报价渲染侧的 `enrichComponentData` 两条组装路径没搬公式的 `id`** ——
+  `QuotationStep2.tsx:131-135` 的 `ComponentFormula` 接口**根本没声明 `id`**，
+  `enrichComponentData.ts:166-170`（模板快照）与 `:297-301`（冻结结构）两处白名单 `.map()` 只搬 `name/expression/result_type`。
+  于是 `resolveFormula`（`:381`）按 `field.formula_id` 查恒不命中，而该分支**刻意不回落**（设计正确）
+  → 字段**整个不进 `formulaFields`** → `formulaCache[列名] === undefined` → `ComponentCell:297-299` 渲染 `—`。
+  条件公式（`:495` `byRef`）更隐蔽：`rules` 被 `.filter` 清空、`default` 为 `undefined` → 求值返 `null`。
+  **数据源是好的**（冻结结构里每条公式都带 `id`，与字段 `formulaId` 逐字对得上），**是前端搬运时丢的**。
+- **实证**：后端 `formulaResults` 11 列全是正确数值；前端 `computeAllFormulas` 只剩 `{"材料成本": null}`；
+  把 `formulas[].id` 补回后 11 列全部恢复（阳性对照）。列小计现状值与截图**逐值吻合**。
+- **为什么 tsc 没拦住**：三处查找都写成 `find(x => (x as any).id === …)`，`as any` 绕过了「该属性不在本类型里」。
+  讽刺的是配置侧同名类型 `pages/component/types.ts:199-211` 有 `id` 且写了警告
+  「🚨 丢了会让所有字段绑定失配、那些列静默不出值」—— **警告说中了，只是没覆盖渲染侧**。
+- **元教训**：`1062c41c` 已经发现并修复了**后端** `buildCardStructure` 的同类白名单漏搬，
+  **但没回头检查前端同构的搬运层** —— 同一个错误的两个副本只修了一个。
+- **影响面**：12 个含 FORMULA 字段的组件中 **10 个已绑 `formula_id`**（COMP-0185 10/11、COMP-0157 7/8、COMP-0032 6/7）；
+  覆盖报价编辑页 / 详情页 / 核价侧卡片 / 各级小计 / BOM 树求值 / 前端 Excel 快照。
+  **后端与组件管理配置页不受影响**（故表现为「配的时候好好的，一到报价单就没了」）。
+  **触发条件 = 组件被保存过一次**（不必改公式），所以是持续引爆而非一次性事件。
+- **放大器 [根因 B]**：`useCardSnapshots.computeRowKey` 读 `f.defaultSource`（camelCase），
+  渲染模型里却是 `default_source`（snake_case，`enrichComponentData.ts:286` 写的），调用点又 `as any`
+  → rowKey 退化成行号，与后端内容键永久对不上 → 快照命中不了 → 才落到被根因 A 打废的本地引擎。
+  该分歧 `deletedRows.ts:56-59` 早在 2026-07-14 记载过，当时绕开未修。
+  **修它需配套存量 `editRows` 兼容**（历史编辑值是按旧行号键存的），否则等于拿「用户填的数消失」换命中率。
+- **范围**：阶段一（必修，零风险）`ComponentFormula` 补 `id` + 两条 enrich 路径补搬 + 三处去 `as any`；
+  阶段二（建议）rowKey 口径归一 + legacy 键回退；阶段三（评估）解析失败走 `⚠` 错误旁路让静默故障可见。
+- **依赖**：无。**不触发 AP-44**（无 `field_type` 变动）。触及 `QuotationStep2.tsx`（E2E 强制清单内，
+  当前受 [[BL-0078]] 夹具失效影响跑不通，以真实单据对拍 + 人工三视图替代并如实标注）。
+- **预估规模**：阶段一 = S；阶段二 = M（存量兼容是主要工作量）；阶段三 = S
+- **验收要点**：①`QT-20260804-0068`「物料」6 行 × 11 列全部出数且与后端 `formulaResults` 逐值一致；
+  ②列小计 `材料成本 = 623.597504`（而非 `¥ 0`）；③`comp.formulas` 每条带 `id` 且每个 `field.formula_id` 都能查到（enrich 两路径各断言）；
+  ④条件公式 `rules`/`default` 不再被清空；⑤编辑页/详情页/核价侧三视图一致；⑥三处 `as any` 移除后 `tsc` 0 错误；
+  ⑦**反向门禁**：抹掉夹具里的 `formulas[].id` 后对拍用例必须失败（防恒绿）；
+  ⑧**原始触发路径复验**：组件管理里只点保存不改任何东西，回报价单公式列仍正常。
+- **存量数据**：无需修复 —— 后端快照里的值本来就是对的，前端修好即恢复。
+
+---
+
+### [BL-0120] 组件导入导出功能升级 —— 绑定校验前移 + 旧版 bundle 兼容 + 往返保真
+- **优先级**：P1（当前缺陷：绑定问题只在导入**提交**时才 400，用户拿着 JSON 无从修改）
+- **来源**：2026-08-05 repair-0805 收尾时用户指出「应该在导出时就拦」
+- **状态**：**[DONE 2026-08-06]** —— 分支 `feat/task-0805-component-import-export`，4 笔提交（`b5d502d2` 后端 B1~B8 / `c9061e7b` 前端 F1~F4 / `e7423ff7` 测试 86 例+18 夹具 / `6c7ccf32` 验收报告）。文档见 `dev-docs/task-0805-组件导入导出功能升级/`（需求文档含 §3.6 澄清 / 实现计划 / 测试用例 / 验收报告）
+- **登记日期**：2026-08-05
+- **背景**：导出（零校验）/ 导入预览（不查绑定）/ 导入提交（400 拒绝）三个环节里**只有最后一个拦**。
+  preview 本是给用户"提交前看清楚"的，却唯独不报绑定问题 —— 先给安全假象、提交才炸。
+  且报错文案「请在字段配置中显式选择」只有在**源环境**才做得到，导入时用户手上只有 JSON。
+- **范围**：R1 导出出 `bindingReport`（只警告不阻断）；R2 preview 逐字段展示「将绑到哪条公式」；
+  R3 commit 加 `ignoreUnboundFormulas` 显式开关；R4 `consolidate` 按目录/组件收窄 + 组件管理 UI 入口；
+  R5 旧版 bundle 正确落库三类标识（组件 id / 组件 code / 公式 id，含 `hasNullId` 断链缺口）；R6 导出↔导入往返保真。
+- **实测支撑**：工作区 18 份真实历史 bundle / 93 组件 —— 公式带 `id` **0/31**、字段带 `formula_id` **0/19**、
+  可按名字确定性解析 17 + 条件公式 2、**依赖位置猜测 0**。故兼容性的真正命题是「绑定对不对」而非「能不能导进来」。
+- **依赖**：无。不触发 AP-44。**预估规模**：M
+- **验收要点**：见立项文档 §5（AC-1~AC-9），核心两条 = 18 份真实老 bundle 全部导入且绑定正确；导出→导入→再导出往返逐字段相等（含 `formulas[].id` 不变）。
+
+
+### [BL-0124] task-0729 升版路径完全不写锁标记（与归位侧 #47 同形）
+- **优先级**：P1
+- **来源**：验收 P2 测试 B 顺带实测（2026-08-06）
+- **状态**：[x] **已完成**（2026-08-08 随 `repair-0807` 交付并合并 master `24b68b20`）。实修范围比本条原描述更大：除 FR-1/FR-2 外，开发期又追加 D-9（driver 行「旧价穿新版徽标」）、D-10（`loadVersionPrices` 过滤致 else 分支为死代码）、D-11（升版侧接入调价元素清单，与 `PriceReconciler` 收敛）。⚠️ `PriceReconciler` driverRow 分支的同款洞**未修**，见 [[BL-0154]]
+- **说明**：`MaterialVersionUpgradeService` 全文 **0 处** `__priceLocked` / `__priceVersion`（对照 `PriceReconciler` 有 8 处）。实测真实升版后：
+  - `_origin:"manual"` 行价格被改成本版价（`999.999 → 2200.000000`），但 **`__priceVersion` 仍停在陈旧值未刷新**
+  - 非 manual 行走 S4b 删掉价格键，却**保留 `__priceLocked:true`** —— **与 `031a2dfa` 在归位侧修的 `#47`「死格」完全同形**
+- ⚠️ 即：`#47` 只在归位侧修好了，**升版侧还有一份同样的缺陷**
+- **前置**：改动会触及 `#42`（手动行锁价）/ `#29`（升版清手改值）两条已 PASS 的验收项，需先做影响面评估
+- **预估规模**：M
+
+### [BL-0098] FORMULA 字段未显式绑定公式时按「位置」回退匹配 → 配置静默漂移
+- **优先级**：P1（静默改变计算结果，无报错无提示）
+- **来源**：2026-08-02 排查 QT-20260802-0049 时发现，用户实测佐证
+- **状态**：**[DONE 2026-08-03]** —— 分支 `fix/bl-0098-formula-bind-by-id`，13 个提交，实施记录见
+  `dev-docs/repair-0803-BL0098-公式绑定改绑ID/实现计划.md`。落地摘要见本条末尾「✅ 交付记录」。
+- **登记日期**：2026-08-02
+- **背景**：`FormulaCalculator.resolveFormula` 解析 FORMULA 字段用哪条公式时有 4 级回退：
+  ```
+  0. 显式 formula_name
+  1. 模板级 formula_assignments[字段下标]
+  2. 字段名 == 公式名
+  3. positional fallback ← 按该字段在 FORMULA 字段中的相对位置，取 formulas[同位置]
+  ```
+  第 3 级是历史兼容设计，**副作用是配置会静默漂移**。
+- **实证（当前生产配置就踩在上面）**：`COMP-0157「物料」`的 `材料成本` 字段是 FORMULA 类型但
+  `formula_name` 为空、也没有同名公式，于是按位置匹配到 `formulas[2]` = **「银点材料成本公式」**：
+
+  | FORMULA 字段（第 N 个） | formulas 数组（第 N 条） |
+  |---|---|
+  | 来料回收费 (0) | 来料回收费取值公式 (0) |
+  | 来料财务费 (1) | 来料财务费取值公式 (1) |
+  | **材料成本 (2)** | **银点材料成本公式 (2)** ← 隐式绑定 |
+
+  用户本人认为"这条公式没有被字段绑定"，实际它正在决定「材料成本」列的算法。
+- **危害**：只要有人在公式列表里**插入一条新公式、删除一条、或调整顺序**，所有未显式绑定的 FORMULA 字段
+  都会**静默换成另一条公式** —— 不报错、不提示、UI 上也看不出来，只有算出来的钱变了。
+---
+
+#### 🔑 2026-08-03 方案变更：改为「公式绑稳定 ID」（用户裁决）
+
+> 原范围是「把按位置猜出来的公式名**固化**进 `formula_name`」。2026-08-03 讨论 task-0803 时用户提出
+> **「公式绑定可以绑公式 ID 吗，避免乱猜公式」**，经实测论证后**采纳**。原范围作废，以本节为准。
+
+**为什么换方案** —— BL-0098 其实是两个独立问题捆在一起：
+
+| 问题 | 现状 | 固化 `formula_name` | 绑 ID |
+|---|---|---|---|
+| **A「没绑就按位置猜」** | 4 处受害，插/删/调序一条公式就静默换算法 | ✅ 能解 | ✅ 能解 |
+| **B「改公式名就断链」** | 0 处受害但**机制活着**：绑了名字找不到 → `FormulaCalculator:1411-1412` 该字段**整个不进计算列表** → 那一列静默不出值、不报错；条件公式同理（`:1405` 静默丢规则） | ❌ 不解（名字仍是主键） | ✅ 根治 |
+
+裁决理由：**名字是用户随时可改的东西，拿它当主键早晚出事**；且「改名时级联更新所有引用」这个替代做法的失败模式是**静默的**（漏一处不报错，只是那列没值），可靠性与「引用永远有效」不是一个量级。
+
+**实测数据（2026-08-03 核实 `cpq_db_0724`，实施时直接用，不必重查）**：
+
+| 项 | 实测 |
+|---|---|
+| 公式对象落库的键 | **只有 `name` / `expression` / `result_type`** —— 39 个对象**全部无 `id`、无 `key`** |
+| 前端 `FormulaItem.key` | `formula-${Date.now()}-${Math.random()}`，**纯 React 列表临时键，落库前丢弃**，不是稳定标识 |
+| 靠位置回退的字段 | **4 处**（全在 ACTIVE 组件）：`COMP-0032`「物料」BOM/材料成本→银点材料成本公式；`COMP-0157`「物料」BOM/材料成本→银点材料成本公式；`COMP-0090`「材料成本」材质元素/材料成本→公式1；`COMP-0049`/公式测试→**位置越界，该列算不出值** |
+| 靠同名匹配的字段 | 0 |
+| `formula_name` 指向不存在公式（已断链） | **0**（机制活着但暂无受害者） |
+| 组件内公式重名 | **0**（名字今天确实唯一） |
+| 模板级 `formula_assignments` | **101 条 `template_component` 全为空**，第 1 级回退从未被使用 |
+| 🚨 **公式定义的承载点** | **3 个**：`component.formulas`（正本，15 个组件）+ `template.components_snapshot`（11 个模板）+ `quotation.submission_snapshot`（2 张已提交单）。`template.formulas` 与 `template_component.fields_override` 均为 0 |
+
+- **新范围**：
+  1. **造稳定 ID**：给公式对象补一个不可变 ID 字段。**作用域 = 组件内**（不需要全局唯一），因此组件复制 / 导入 bundle **原样带走即可**，无需重新生成、无跨环境冲突。
+  2. **迁移回填**：给存量 39 个公式对象生成并写入 ID。🚨 **必须同时覆盖上表 3 个承载点**——只动 `component.formulas` 就是 [[AP-39]] 重演（当年 V190~V193 只动 `component.fields`，漏了所有引用方 jsonb 列，PUBLISHED 模板 snapshot 残留老散字段）。
+  3. **字段绑定改存 ID**：FORMULA 字段新增 ID 引用键；`formula_name` 降级为**展示冗余 + 存量兼容读**，不再是解析主键。条件公式 `conditional_formula.rules[].formula` / `.default` 同步改绑 ID。
+  4. **求值解析改口径**：`FormulaCalculator.resolveFormula` 改为 **ID 优先**；**砍掉第 3 级 positional fallback**（或降级为仅存量兼容且打 warn）。
+  5. **存量 4 处固化**：按当前位置解析出的公式，固化成 ID 绑定。复用已在 master 的 `FormulaCalculator.resolveFormulaNameForField`（commit `2d12bde2`）作为解析口径，**不要另写一套**（口径漂移就是 BL-0098 换个层面重演）。
+  6. **UI 显式化**：字段配置必须显式选公式（存 ID，界面照常显示名字）；未绑定时明确提示，不再静默猜。
+- **已在 master 的脚手架（commit `2d12bde2` repair-0803 B3）**：`FormulaCalculator.resolveFormulaNameForField()` 已对外暴露解析口径，`FormulaNameResolutionTest` 已把 4 级回退语义与 BL-0098 危害钉成测试。⚠️ **但修复本身一件没做**——该方法在整个 `src/main` **无任何生产调用方**，只有测试在调；`ComponentService` 里零固化逻辑。属「手术台备好了，刀没下」。
+- **依赖**：无。改动触及 `FormulaCalculator` + `ComponentService` + 组件管理前端 + 一次性迁移，**不触发 AP-44**（无 `field_type` 变动）
+- **预估规模**：M
+- **验收要点**：①存量 4 处全部绑上 ID，且绑定结果 = 修复前实际生效的公式（值不变）；②**改公式名后各字段算法不变**（B 问题根治的核心判据）；③调整公式顺序 / 插入 / 删除后各字段算法不变；④3 个承载点的 ID 一致，模板 snapshot 与已提交单据快照均已回填；⑤新建 FORMULA 字段未选公式时有明确提示，不再静默按位置猜。
+- **下游影响**：**task-0803（BOM 页签父子取值公式）已把本条列为实施前置**（2026-08-03 用户裁决两者**严格串行**）。
+
+---
+
+#### ✅ 交付记录（2026-08-03）
+
+**🚨 首先纠正本条此前的两处误判**（含 `dev-docs/repair-0803-公式计算BUG修复/修复方案.md §1.2` 的原始诊断）：
+
+1. **「4 处按位置猜」实为 1 处。** 统计 SQL 漏了排除条件公式字段。`COMP-0032`/`COMP-0090`/`COMP-0157` 的「材料成本」**是条件公式字段**（`conditional_formula`），`collectFormulaFields` 先判条件分支（`FormulaCalculator:1396-1409`），`resolveFormula` 对它们**从未被调用**，位置回退根本轮不到。真正靠位置回退的只有 `COMP-0049`「物料与元素BOM」的「公式测试」，且它位置越界、本就解析不到。
+2. **「COMP-0157 材料成本被按位置绑到银点材料成本公式」是误判。** 银点材料成本公式是那条条件公式**显式配置的 `default` 分支**，用户自己配的。之所以没人发现，是因为 `formulas[2]` 恰好也是它——两条路径答案相同，纯属巧合。
+
+**实测口径（`cpq_db_0724`，2026-08-03）**：22 个 FORMULA 字段 = 3 个条件公式字段 + 19 个普通字段（18 已显式绑定 + **1** 靠位置回退）。
+
+**范围扩大**：条件公式按名字引用 `rules[].formula` 与 `default`，同样有「改名即静默丢规则/丢默认分支」的问题 B，且**比普通字段更阴险**（列还有值，只是悄悄换了分支）。用户裁决一并修，故本条实际交付覆盖两类绑定。
+
+**落地内容**：
+1. 公式对象补不可变 `id`（作用域=组件内）；`resolveFormula` 插入 `formula_id` 最高优先级，原 4 级回退**原样保留**给 13 张不迁移的老冻结单兜底。
+2. 条件公式新增 `rules[].formula_id` / `default_formula_id`，`condRefFormula` 按 id→名字解析；绑了 id 查不到返 null 不回落名字。
+3. `FormulaIdBinder`：补 id / 固化绑定 / 用 id 反查刷新名字冗余 / 强制显式绑定校验。固化口径复用 `FormulaCalculator`，不另写一套。
+4. 迁移 **V375**（公式补 id + 显式绑定翻译）+ **V376**（条件公式引用翻译），均为纯映射零推断，覆盖 `component.*` + `template.components_snapshot`；按裁决 D2 **不动** `quotation_view_structure`（13 张老单）与 `quotation.submission_snapshot`（只读留证）。
+5. 一次性固化端点 `POST /api/cpq/admin/formula-binding/consolidate`（`dryRun` 出清单）。
+6. 前端配置侧（字段下拉 + 条件公式抽屉）与求值侧（`resolveFormulaForField` + 条件解析）全部改绑 id，与后端镜像；`newFormulaRow` 新建即生成 id。
+7. 保存/导入强制显式绑定。
+
+**过程中另抓到 3 个会让修复形同虚设或引入新问题的点**：
+- 🔒 **端点漏鉴权**：本项目 RBAC 是 **opt-in** 的（`RoleFilter:65`：无 `@RoleAllowed` 则 `skip auth check too`），新端点初版无 token 可调（实测返 200）。已补 `@RoleAllowed({"SYSTEM_ADMIN"})`。**新增任何 `/api/cpq/**` 资源都必须显式加注解，否则默认全开。**
+- **`CardSnapshotService.buildCardStructure` 是白名单逐键搬运**，漏搬 `formula_id` → 此后新建的每张报价单冻结结构都拿不到 id，求值永久退回猜。已补。
+- **`validateFormulas` 会挡住改名**：它校验 `formula_name` 必须存在，而 UI 改公式名时引用处的名字冗余不跟着变 → 保存 400。已加 `refreshNameRedundancyFromIds` 并重排调用顺序。
+- **SQL 空数组陷阱**：库里 79 个 tab 的 `formulas=[]`、10 个 `fields=[]`，`jsonb_agg` 对空集返回 NULL 会把 `[]` 写成 JSON null（渲染层读到即崩）。两个迁移的内层 `jsonb_agg` 全部 `COALESCE(...,'[]'::jsonb)`。
+
+**验证证据**：
+- 后端纯 JUnit **38 passed**（`FormulaIdBinderTest` 18 / `FormulaBindByIdTest` 15 / `FormulaNameResolutionTest` 5，后者锁定原 4 级回退语义未被污染）；前端 vitest **190 passed**；`tsc` 0 错误；改动的 5 个前端文件 Vite transform 均 200。
+- **值不变**：22 个 FORMULA 字段迁移前后生效的公式逐条 `diff` 一致。
+- **改名不断链（端到端）**：改公式名 + 字段留旧名冗余 → `PUT /components/{id}` 返 **200**（原为 400），落库 `formula_id` 不变、名字冗余自动刷新。数据层对照实验：id 链路仍指得到，名字链路已断（= 改造前行为）。
+- 强制校验：未绑定 → 400「以下公式字段未绑定公式…：未绑定列」；显式绑定 → 200 且自动补 id。
+
+**遗留待用户处置**：`COMP-0049`「物料与元素BOM」（ACTIVE，被 2 个模板引用）有 1 个 FORMULA 字段「公式测试」但组件**0 条公式**，该列本就算不出值。强制校验开启后该组件在 UI 上不可保存，需先给该字段选公式或改字段类型。这是预期行为（暴露坏配置），但用户首次碰到会意外。
+
+### [BL-0101] 前端页签算序不认 `component_subtotal` 依赖 —— 前后端建图口径不对齐
+- **优先级**：~~P2（当前无可见故障）~~ → **P1**（2026-08-07 实证发生用户可见故障 `QT-20260807-0146`）
+- **来源**：2026-08-03 repair-0803（QT-20260803-0052 假环）修复时发现
+- **状态**：**[x] 已完成**（2026-08-08 由 `dev-docs/repair-0803-公式计算BUG修复/repair-0808-前端页签算序假环致列小计归零/` 交付）
+- **登记日期**：2026-08-03　**完成日期**：2026-08-08
+- **⚠️ 原描述订正（2026-08-08）**：「前端从未跟进 / 全工程没有 `extractSubtotalRefs`」**不准确**。
+  前端其实从 `40983a52`（2026-06-16 修 QT-1743）起就有等价逻辑，只是**内联在 `buildCrossTabRows` 里**、
+  不是 `crossTabOrder.ts` 的导出函数，且是**页签粒度** —— 恰恰踩中本条最后那句警示。
+  真实故障形态因此比预判更糟：不是"前端漏收边算出 0"，而是"前端多收边 → 与真实 cross_tab 边撞成**假环**
+  → `topoOrderComponents` 抛错 → `catch` **静默**退回声明序 → cross_tab 源页签还没算就被引用 → **整页签 11 个公式列全归零**"。
+- **背景**：后端为修 QT-1743（管理费=0）把 `component_subtotal` 跨组件引用并入了页签拓扑依赖
+  （`CardSnapshotService` / `ConfigureSnapshotService`），后端已于 repair-0803 精化为**列粒度**
+  （`CrossTabComponentOrder.buildComponentDeps`），**前端停留在页签粒度**。
+- **暴露方式**：正因为前端不收这类边，QT-20260803-0052 在编辑页看着正常、一到后端渲染就崩——
+  同一份配置两边算出的依赖图不同。修复方向相反时，两边会各错各的。
+- **风险**：前端 `computeAllFormulas` 若在被引用页签之前算引用方，`component_subtotal` 取到未回填的值 → **前端显示 0**，
+  与后端重算结果不一致（用户看到的和存库的不是一回事）。当前未见报障，可能是现网模板的页签顺序恰好正确。
+- **范围**：前端补齐列粒度的 subtotal 依赖收集，与后端 `CrossTabComponentOrder.buildComponentDeps` **同规则**
+  （引用公式列/整页签合计才建边，引用 INPUT 等零依赖列不建边）；补一组前后端共用的建图对拍用例。
+  ⚠️ 不要简单照搬「页签粒度」——那正是 repair-0803 修掉的假环成因，直接搬会让前端也开始报环。
+- **依赖**：repair-0803 已合并（后端规则已定型，可作为对拍基准）
+- **预估规模**：S~M
+- **验收要点**：①同一份 structure 前后端算出的页签序一致；②施耐德BUG2 v1.3 这类含反向引用的模板前端不报环；③对拍用例覆盖「引用输入列/引用公式列/整页签合计」三种形状。
+- **交付**：前端新增 `crossTabOrder.ts#buildComponentDeps`（逐条镜像后端）；`buildCrossTabRows` 改用之；`catch` 加 `console.error` 留痕。
+  验收要点①②③全部达成（`crossTabOrderParityQt0146.repair0808.test.ts` 6 例 + `crossTabOrder.test.ts` T-1.1~T-1.14）。
+  **顺带挖出两条存量缺陷 → `BL-0159` / `BL-0160`。**
+
+### [BL-0017] `[页签(总计)]` 真实计算口径对齐「金额字段(is_amount)小计之和」
+- **优先级**：P1
+- **来源**：`docs/superpowers/specs/2026-06-30-tabtotal-subtotal-token-corruption-fix.md` §3.6 划出范围 + 两轮评审「语义事实」提示
+- **状态**：✅ **已落地合并 master（2026-06-30，commit `e6c53db`）**。方案 A′ 加性哨兵键（不动裸键、不动求值器）。前端 4 写键点 + 后端 5 点（含计划外新增 `CardSnapshotService` byColNode 排除哨兵）落地；`ComponentDataEffectiveRowsTest` 6/6（含哨兵=Σamount + 折扣缩放）、前端 vitest 210/210、tsc 0 错；**值中性硬证据**：`GoldenCardValuesEquivTest#rockwell` 含/不含本改动纯读 golden 逐位等价 `52380a82…`。详见 spec `…BL0017-tabtotal-amount-sum-impl.md` §10。
+- **推迟原因**：超出本期范围（本期硬约束＝「所见即所存 + 不动公式计算」，只修显示忠实性）；且涉及改动求值口径，须单独立项评估影响面。
+- **登记日期**：2026-06-30
+- **背景**：`[页签(总计)]` 本应＝该页签所有「金额属性」字段(`is_amount && is_subtotal`)的小计之和（用户口述权威规则，已由显示行模块 `tabTotalLines.ts#sumTabColumns` 实现）。但公式引擎的裸键 `componentSubtotals[tabName]` 现＝**所有 `is_subtotal` 列之和**（含非金额的 汇率/利润比例/单率），且因解析期 `value` 被塞首个小计列，`[页签(总计)]` 实际只求**首个小计列的列小计**（前端 `产品#汇率` / 后端 `compCode+"#"+col`），**既非「金额字段之和」也非「整页签总计」**。`tabTotalLines.ts:4-7` 注释明确承认显示行与引擎值「有意分叉」。本期 [BL-本次] 只让它「显示对、保存忠实」，数字仍沿用现状（首个小计列）。
+- **范围**：让 `[页签(总计)]` 求值＝`Σ(is_amount && is_subtotal 列的列小计)`，需三处对齐 —— 前端卡片裸键（`QuotationStep2.tsx#getComponentSubtotals` 裸键改 amount 过滤，复用 `sumTabColumns` 口径）+ 后端 Excel 路径（`ComponentDataEffectiveRows`：**当前根本没登记裸键**，需新增裸键＝amount 列之和，否则 fix 后该路径 `[页签(总计)]` 求值为 0）+ 配置快照（`ConfigureSnapshotService#accumulateColumnSubtotals`：同样只登记 `#列` 键、需补裸键）。同步评估其它读裸键的路径（产品小计兜底 `evalProductSubtotalFromSubtotals` / 按页签折扣）是否要跟随改口径，或给 `[页签(总计)]` 单独引一个「金额合计」键以缩小影响面（A 全局重定义 vs B 单独键，二选一）。
+- **依赖**：本次「所见即所存」修复（[BL-本次] 引入的 `is_tab_total` 标记）先落地；A/B 口径方案须 architect 评审（动核心求值基线，守 `docs/三大核心模块基线.md`）。
+- **预估规模**：M（3-5 天）
+- **验收要点**：`[页签(总计)]` 在报价单卡片 / Excel 视图 / 配置快照三处求值一致＝该页签金额字段小计之和；与页签底部「本页签金额合计」显示行同值（口径统一）；非金额小计列不再计入；其它读裸键路径行为符合所选 A/B 方案预期。
+
+### [BL-0031] 选配「工序」落 V6 承载表 + mirror 视图（选配模板方案前置·architect 级）
+- **优先级**：P1
+- **来源**：`docs/superpowers/specs/2026-07-06-选配模板方案-design.md` §2/§9 + 架构复核（`docs/反模式.md` AP-53 续6）
+- **状态**：✅ **已由 task-0712 实质解决（2026-07-15，master `d02b7fe`）**——选配工序落 `unit_price`（`price_type=PROCESS`/`cost_type=自制加工费`，B2 完整落库）+ 组合工艺落 `capacity`（组装加工费，B6）；标识统一到 `process_master.process_no`（缺口1 加法式方案A，V336）；渲染走物理视图 `v_composite_child_processes`（读 `unit_price.operation_no`）。按 `material_no`(=销售料号 V315) 维度落库，与 BL-0031 目标一致。**未新建"专用工序承载表"**（用 unit_price 承载，符合《报价系统Excel导入落库方案》§10），如需独立表另评估，否则可关闭。
+- **登记日期**：2026-07-07
+- **推迟原因**：AP-53 续6 已标"工序在 V6 侧无承载表、需新建业务表 + mirror UNION，走 architect"；若一期强做则范围过大。
+- **背景**：选配方案把"工序"列为一期固定参数，但 V6 侧尚无工序落库承载表（现役选配 Phase1 只落料号+元素+子件）。产品卡片工序 Tab 依赖按 `sales_part_no` 落库 + mirror 视图取数。
+- **范围**：设计工序 V6 承载表 + mirror UNION 视图，供选配/核价按 `sales_part_no` 取工序；对齐「销售料号维度落库 V6.2」口径。
+- **依赖**：material_master/element/bom V6 Phase1（已就绪）；报价料号统一 Spec1。
+- **预估规模**：L（1 周以上）
+- **验收要点**：选配产出报价料号的工序能按 `sales_part_no` 落库并在卡片工序 Tab 渲染；不破坏现役核价工序取数。
+
+---
+
+### [BL-0045] 已导入工序码与 process_master 编码体系不相交 → 名称带出为 null
+- **优先级**：P1
+- **来源**：task-0712 主数据维护-核价基础数据维护 验收发现（C8 名称带出）
+- **状态**：**[x] 已完成（DONE 2026-07-13，合并 master `efa5224`；childtask-1）**
+- **登记日期**：2026-07-12
+- **方案（终）**：经 spec 评审逐条澄清（5 问），从原 spec 方案 A（导入 upsert 主表、仅工序）**重构为方案 B + (ii)**：主数据先行、**核价导入不写主表**；补齐**四码**名称（工序/元素/材质/料号）——① 工序建**批量导入**（对齐材质库，upsert `process_master` `ON CONFLICT DO UPDATE`）；② 元素靠材质库导入已落 `element` 主表，不新建；③ 材质走 `material_part_no → material_master.material_recipe_id → material_recipe.name` 两跳 join；④ 料号已被 P05/P06/P24 导入 upsert `material_master`，仅核对。**无 Flyway**（`uq_process_master_no` 已存在 V218:142）。
+- **交付**：后端 `efa52245`（ProcessMasterImportService/DTO/Resource +import/+template、ColumnDef MASTER_2HOP、PricingSheetRegistry+PricingMaintenanceService 两跳 join）+ 前端 `33d628e`（ProcessMasterImportDrawer、v6MasterDataService、V6ProcessCrudTab 入口、EditableSheetTable 灰字兜底）。技术总监亲验：守 B(无 P-handler/无 Flyway)、前后端信封对齐、独立复跑 tsc 0 错 + 后端 10+1+16 测试全绿、合并后 8081 活体 401/5174 200。
+- **文档**：`dev-docs/task-0712-主数据维护-核价基础数据维护/childtask-1/{需求说明,backtask,fronttask,api}.md`；原 spec 已标"方案 A 历史留档"。
+- **落地后待业务动作（方案 B 主数据先行的必然，非缺陷）**：① 工序名须业务拿真工序 Excel 走新导入端点才落 `process_master`（现 0 个 Z 码）；② 材质名须走「材质管理→绑定料号」补绑（现 `material_master` 绑定率 0/39，全显"未绑定"，PRD §5 非目标）。
+- **遗留（P2）**：导入未做 `process_no`(VARCHAR20)/`process_name`(VARCHAR50) 超长截断校验，超限 DB 层报错；backtask/api 未要求，待评估。
+
+### [BL-0096] task-0801 精度优化的 AC-14「亿级金额端到端」未验证（仅算法级单测覆盖）
+- **优先级**：P1（本期核心风险项的验证缺口，非功能缺陷）
+- **来源**：task-0801 公式计算精度优化，技术总监验收时的实测数据缺口
+- **状态**：✅ **已完成（2026-08-02，技术总监造数实测，四处逐位一致 + EDGE-13 兜底实证）**
+
+#### 验证结果（造数 → submit 权威重算 → 四处比对 → 清理复原）
+
+**数据设计**：20 行，单价 `123.456789 + (i-1)×0.000007`（每行互异，避免"相同数相加"被优化）、
+年用量 `799999`（非 10 的幂次，确保乘完仍带满 6 位小数）。
+金标准用 psql `numeric` 精确计算（`SUM(subtotal * annual_volume)`）。
+
+| # | 观测点 | 值 | 与金标准 |
+|---|--------|-----|---------|
+| 0 | psql numeric 金标准 | `1975307218.862890` | — |
+| 1 | DB 落库 `quotation.total_amount` | `1975307218.862890` | **差值 0.000000** |
+| 2 | DB `SUM(line_total_amount)` | `1975307218.862890` | **差值 0.000000** |
+| 3 | API `GET /quotations/{id}` 的 `totalAmount` | `1975307218.862890` | 逐位一致 |
+| 4 | 导出 HTML | `1975307218.86289` | 一致（去尾零，符合"至多 6 位"设计） |
+| 5 | 导出 Excel | `<v>1.97530721886289E9</v>` | 一致（OOXML 对 double 的科学计数法序列化） |
+| 6 | 前端列表页渲染 | `1975307218.86289` | 一致（Playwright 实测，1 passed） |
+
+逐行验算亦全部 0 差值（抽 1/10/20 行：`line_total_amount - subtotal*annual_volume = 0.000000`）。
+该总额为 **10 位整数 + 6 位小数 = 16 位有效数字**，已超 double 可靠边界，链路二的 BigDecimal 全程承载被证明有效。
+
+#### EDGE-13（导出 Excel 超 15 位有效数字写文本）—— 用两组数据形成对照实证
+
+第一组总额 `1975307218.862890` 经 `stripTrailingZeros()` 后是 `197530721886289` = **正好 15 位**，
+未触发字符串分支。故另造一组（末行年用量改 `800000` 使总额末位非 0）得 `1975307342.319812` = **16 位**：
+
+| 总额有效数字 | Excel 单元格 XML | 存储形式 |
+|---|---|---|
+| 15 位 | `<c r="I32" t="n" s="5"><v>1.97530721886289E9</v></c>` | **数值** |
+| 16 位 | `<c r="I32" t="s" s="5"><v>27</v></c>` → `sharedStrings[27]` = `1975307342.319812` | **文本** |
+
+正是 `backtask.md` B6 设计的 `stripTrailingZeros().precision() > 15 → setCellValue(String)` 兜底，
+且文本值与金标准逐位相同（该组 DB 对账差值同样为 `0.000000`）。
+
+#### 收尾
+测试数据已完全清理复原（40 行 line_item + 2 张 submit 产生的 costing_order 已删，
+两张单恢复 `DRAFT` / `total_amount=0`；库中 `AC14-TEST-*` / `EDGE13-*` 残留 **0 行**），
+临时 Playwright 脚本与截图已删除，未留在交付物中。
+
+> 过程记录：首次前端验证 FAIL，经排查是**用例写错**（路由用了 `#/quotations`，实际是 `/quotations`）
+> 而非渲染缺陷 —— 截图显示已登录但停在工作台。改用点击侧边栏导航后 1 passed。
+> 这条印证了 testcase.md 的纪律：任何 FAIL 都必须先区分「产品坏了」与「用例写错了」。
+
+---
+
+<details>
+<summary>原始条目内容（保留追溯）</summary>
+
+- **原状态**：TODO（未排期）
+- **登记日期**：2026-08-01
+- **背景**：task-0801 全部设计依据是「年用量达几十万件 → 整单金额冲到亿级 → 15 位有效数字已达 double 极限 → 小数第 5、6 位不可信」，据此把金额汇总链路（产品小计 → ×年用量 → 行合计 → Σ整单总额）改为全程 BigDecimal/Decimal。
+- **缺口**：**该场景在现网数据中完全不存在** —— 实测 `quotation_line_item` 全表 `max(annual_volume) = 1`、平均 = 1、最大行金额 14.00 元。因此：
+  - ✅ **已覆盖**：算法级单测（后端 `FormulaCalculatorGoldenCasesTest` 的 G-10/G-11 + T3/T4 链路基线、前端 `precision.test.ts` 同款），证明**算法在该量级下正确**；
+  - ❌ **未覆盖**：整条「落库 → API → 前端渲染 → 导出」链路在亿级金额下的**端到端保真**，以及导出 Excel 触顶 15 位有效数字时「写字符串而非数值单元格」的兜底逻辑（`testcase.md` 的 PREC-AC14-b / EDGE-13，两条都标注为强制人工造数）。
+- **范围**：按 `testcase.md` §5.3 的造数步骤执行一次：罗克韦尔 + 罗克韦尔模板1 → 加 20 个产品行 → 年用量填 500000~800000 → 单价含 6 位小数 → 保存草稿 → 四处比对（前端显示 / `GET /api/cpq/quotations/{id}` / DB 落库 / 导出 Excel+PDF）+ 与 `psql` 的 `SUM(line_unit_price * annual_volume)` numeric 精确参考值对账，重点看**第 6 位小数**。
+- **依赖**：与 [[BL-0078]] 部分重叠（该造数流程同样受"加产品路径"阻断影响，需先确认「从已有产品添加」可用）
+- **预估规模**：S（0.5~1 天，主要是人工造数与四处对账）
+- **验收要点**：亿级金额下四处数值第 6 位小数一致；导出 Excel 中超 15 位有效数字的金额单元格为文本类型且数值完整。
+  → **两条均已实测通过，见上方验证结果**。实际执行绕开了 BL-0078 的 UI 加产品阻断：
+  改为直接造 `quotation_line_item` 行 + 调 `POST /{id}/submit` 触发后端权威重算
+  （`LineDiscountService.recompute` → `Σ lineTotalAmount`），验的仍是**真实的链路二计算路径**，
+  只是没走 UI 加产品那一段（那段属于 BL-0078 范围，与精度无关）。
+
+</details>
+
+### [BL-0092] ~~报价单删除时不清占号~~ → 孤儿 pending 占号无防御机制
+- **优先级**：P1（用户可见功能全灭：「从已有产品添加」对**所有客户**返回空）
+- **来源**：task-0801 测试工程师修 E2E fixture 时探测发现，技术总监亲验 SQL 确认根因
+- **状态**：✅ **已完成（2026-08-02，commit `fe612af9` / merge `3fc3f204`）**
+
+#### ⚠️ 先更正原始判断（登记时错了）
+
+原条目断言「删除路径无任何清理，只有 `QuoteBackfillService:145` 在审批转正时清占号」——**不成立**。
+`QuotationService.delete()` 早已调用 `cleanupPendingV6Data()`（task-0721 B8 加的），
+覆盖 `B8_PENDING_TABLES` 8 张表 + `material_master` 的 `deletePendingWithGuard`，**9 张表全覆盖**。
+
+**实测验证**：造 pending 行 → 调 `DELETE /api/cpq/quotations/{id}` → 该行残留 **0 条**。删单回收路径完整且有效。
+
+登记时我只看到转正路径就下了结论，没查 `delete()` 的实现 —— 属未穷举调用点的判断失误。
+
+#### 241 条孤儿的真实来源
+
+```
+task-0721 B8 修复合并    2026-07-21
+孤儿数据产生时间        2026-07-27 ~ 07-28   ← 全部在修复之后
+```
+正是 `cpq_db_0724` 迁库重建期，即**绕过应用层直接重建 `quotation` 表**的产物
+（与 [[BL-0078]]「E2E 夹具随迁库集体失效」同一批操作）。
+
+#### 真实缺口（本次修复的对象）
+
+1. 9 张表的 `pending_quotation_id` **零外键约束** —— 任何绕过应用层的操作（迁库 / DBA 直删 / 建库脚本）
+   都会留下永久僵尸，且系统内**没有任何机制能发现**；
+2. `material_master` 的引用守卫**有意**留下悬空（`deletePendingWithGuard` 删不掉仍被引用的行，
+   只打一行 WARN 说"需人工核查引用方"），但从无兜底机制去核查。
+
+#### 交付内容
+
+- `PendingHygieneService`：`inspect()` 只读体检 + `cleanup(dryRun)` 清理。语义与删单回收**完全一致**
+  （8 张表直接 DELETE，`material_master` 走同款引用守卫），区别仅在筛选条件从「属于某张单」
+  换成「归属的单已不存在」。`inspect()` 另用 `information_schema` 反查所有带 `pending_quotation_id`
+  的表做交叉校验，**漏加新表会在 `unmanagedTables` 里暴露，不会静默**。
+- `MaterialMasterRepository#deleteOrphanPendingWithGuard()`：原守卫的"悬空版"，三处引用检查逐条对称改写
+  （引用方是正式行或归属单仍存在 → 有效引用，不删）。
+- `PendingHygieneResource`：`GET /api/cpq/admin/pending-hygiene/inspect`、
+  `POST /api/cpq/admin/pending-hygiene/cleanup?dryRun=`（**默认 true**，真删须显式传 `false`）。
+- `PendingHygieneServiceTest` 4 用例全绿，每例都同时断言"孤儿被删"与"非孤儿仍在"
+  —— 误删活数据是本服务最严重的失败模式，安全性优先于清理彻底性。
+
+#### 历史数据清理结果（2026-08-02 经端点执行，已备份）
+
+| 表 | 清理前孤儿 | 已删 | 剩余 |
+|---|---|---|---|
+| `material_bom_item` | 85 | 85 | 0 |
+| `element_bom` / `element_bom_item` | 43 / 43 | 43 / 43 | 0 / 0 |
+| `capacity` | 32 | 32 | 0 |
+| `material_bom` | 22 | 22 | 0 |
+| `unit_price` | 12 | 12 | 0 |
+| `plating_scheme` | 2 | 2 | 0 |
+| `material_customer_map` | 0（08-01 已单独清） | — | 0 |
+| **`material_master`** | 2 | **0（守卫拦下）** | **2** |
+| **合计** | **241** | **239** | **2** |
+
+备份表 `bl0092_orphan_backup_20260802`（241 行 `row_to_json` 全量，可回滚）。
+**活数据完好性已逐表核验**：`unit_price 94-12=82` / `material_bom_item 170-85=85` /
+`element_bom_item 93-43=50` / `capacity 64-32=32`，全部精确匹配，挂活单的 pending 行一条未动。
+
+#### 遗留：`material_master` 2 条需业务判断（不阻断）
+
+守卫拦下的 2 条及其引用方（8 张表孤儿清完后，这些引用方都是**有效数据**，故守卫拦得对）：
+
+| 料号 | 被 BOM 子件引用 | 被 BOM 母件引用 | 被客户映射引用 |
+|---|---|---|---|
+| `W-1001` | 19 | 0 | 1 |
+| `S-80011` | 18 | 13 | 1 |
+
+这两个料号实际**正在被使用**，只是 pending 标记没清干净。合理处置是**转正**
+（`pending_quotation_id` 置 NULL）而非删除，但这属于业务判断，未擅自执行。
+可用 `MaterialMasterRepository#flipPending` 的同款语义处理，或确认后手工
+`UPDATE material_master SET pending_quotation_id = NULL WHERE material_no IN ('W-1001','S-80011')`。
+
+#### 未做（有意）
+未给 `pending_quotation_id` 加外键约束。`ON DELETE CASCADE` 会绕过 `material_master` 的引用守卫、
+`ON DELETE SET NULL` 会把 pending 行变成"无主僵尸"（仍占唯一约束位）——两种语义都不对。
+现方案是「应用层删单即时回收 + 端点兜底体检清理」，覆盖绕过应用层的场景。
+
+---
+
+<details>
+<summary>原始条目内容（保留追溯）</summary>
+
+- **原状态**：TODO（数据已临时清理，**代码缺陷未修**）
+- **登记日期**：2026-08-01
+- **背景（已实证）**：
+  - 占号写入：新建报价单时向 `material_customer_map` 写 `pending_quotation_id` 占住料号；
+  - 占号清理：**只有一处** —— `QuoteBackfillService.java:145`
+    `UPDATE material_customer_map SET pending_quotation_id = NULL WHERE pending_quotation_id = :qid`，
+    走的是**报价单审批转正**路径；
+  - **报价单被删除时没有任何地方清占号** → `pending_quotation_id` 指向一个已不存在的 `quotation.id`，形成悬空引用，该料号**被永久锁死**。
+- **用户可见后果**：`ExistingProductService` 的查询条件是 `system_type='QUOTE' AND pending_quotation_id IS NULL`。
+  2026-08-01 实测：全库 `system_type='QUOTE'` 仅 3 行，**可用行数 = 0**（3 行全部被悬空引用锁住，
+  分别指向 `9928116f-...`(7/27) 与 `6bc9a6b7-...`(8/01)，两个 quotation 均查无此单）。
+  即 **「添加产品 → 从已有产品添加」对任何客户、任何模板都返回空**，UI 显示"未查到匹配的产品"。
+  叠加 `sel_template` 表 0 行（选配子系统全灭），Step2 的两条加产品路径当时**全部不可用**。
+- **已做的临时处置（不是修复）**：2026-08-01 经需求方授权，技术总监执行数据清理并留备份表 `mcm_pending_backup_20260801`：
+  ```sql
+  UPDATE material_customer_map SET pending_quotation_id = NULL
+  WHERE pending_quotation_id IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM quotation q WHERE q.id = material_customer_map.pending_quotation_id);
+  -- UPDATE 3 → QUOTE 可用行数 0 → 3
+  ```
+  **这只解了当下的数据死锁，代码缺陷仍在** —— 再删一次报价单就会再产生悬空占号。
+- **范围**：
+  1. 报价单删除路径（含级联删除、撤回、作废等所有会让 `quotation` 行消失的路径）必须同步清占号；
+  2. 评估是否给 `pending_quotation_id` 加外键约束 + `ON DELETE SET NULL`，从 schema 层根治（需先确认无跨库/异步写入场景）；
+  3. 加一个兜底清理（启动时或定时）：清除所有指向不存在报价单的悬空占号；
+  4. 同步检查 `material_master`、`QuoteBackfillService:116/124` 涉及的其它带 `pending_quotation_id` 的 V6 表是否有同样问题（`MaterialMasterRepository.java:326` 也有一处清理逻辑，须一并核对触发条件）。
+- **依赖**：无
+- **预估规模**：S（点状修）～ M（含 schema 约束与全表兜底）
+- **验收要点**：①删除一张有占号的报价单后，其占用的料号立即可被「从已有产品添加」选到；②全库不存在悬空 `pending_quotation_id`；③其它带该字段的表同口径核对通过。
+
+</details>
+
+### [BL-0072] `clearPreviousPending` 未覆盖 `pending_material_master_staging`（重导覆盖遗留孤儿行）
+- **优先级**：P2
+- **来源**：task-0709/update-0723 测试用例设计风险点 R3（2026-07-23）
+- **状态**：[x] **已关闭（2026-07-26，repair-0726 随暂存表退役天然解决）**——V362 已 `DROP TABLE pending_material_master_staging`，孤儿行的载体不复存在；同时 `QuoteImportService.clearPreviousPending` 在 8 表 DELETE 后补调 `materialMasterRepo.deletePendingWithGuard(pq)`，重导覆盖时会带引用守卫回收本单旧 pending 料号行。
+- **登记日期**：2026-07-23
+- **背景**：`QuoteImportService.PENDING_TABLES`（8 张：`unit_price/material_bom/material_bom_item/element_bom/element_bom_item/capacity/plating_scheme/material_customer_map`）**不含** `pending_material_master_staging`。重导覆盖场景下，若新文件相比旧文件「减少」了某个只凭名称发号的料号，旧 staging 行会成为孤儿残留（不影响本次导入正确性，但 promote 时可能带入多余料号）。
+- **范围**：评估是否把 `pending_material_master_staging` 纳入 `clearPreviousPending`（注意其键是 `quotation_id + material_no`，与其余 8 表的 `pending_quotation_id` 列名不同）。
+- **依赖**：task-0721 pending 机制。
+- **预估规模**：S
+- **验收要点**：重导覆盖后 staging 的料号集与新文件一致，无孤儿行。
+
+### [BL-0017] 报价料号统一 Spec 2 —— 选配发号统一（CFG-→XXXX-YYMMNNNNNN）
+- **优先级**：P1
+- **来源**：`docs/superpowers/specs/2026-07-06-报价料号统一-design.md` §9（Spec 1 落地时明确拆出）
+- **状态**：[x] **已被覆盖（2026-07-08，选配 Plan 3b/3c）**。`ConfigureProductService.resolvePart`（custom SIMPLE）+ COMPOSITE 父级发号已从 `partNoProvider`(CFG- 前缀) swap 成 `QuoteMaterialNoAllocator.mintAndRegister`，产出报价料号格式 `{4位客户码}-{yyMM}{6位流水}`（正则 `^\d{4}-\d{6,}$`），与本条诉求一致；`config_fingerprint` 落库改为恒 NULL（R1，防跨客户撞生产侧全局唯一索引），复用判定改走销售侧客户维度指纹 `sel_part_signature`（R3）；`isCfg` 拒绝逻辑（`MaterialBomMergeHandler`）按 spec 保留未放开。详见 `docs/superpowers/plans/2026-06-25-savedraft-setbased-rearchitecture.md` 关联的选配 Plan 3b 集成设计 + `ConfigureProductServiceTest` / `ConfigureProductServiceSalesFingerprintTest` R1/R3 断言。
+- **登记日期**：2026-07-07
+- **推迟原因**：Spec 1（数据基座 + 发号服务）先行；选配是另一子系统。
+- **背景**：`PartNoProvider`/`AutoAllocatePartNoProvider` 现按 `part_no_sequence` 发 `CFG-{符号}-{6位流水}` 作选配 `hf_part_no`；统一后应复用 `QuoteMaterialNoAllocator` 发 `XXXX-YYMMNNNNNN`（选配 `XXXX` 客户码取自选配所在报价/客户上下文）。`ConfiguratorInstanceService` 接入；重估 `MaterialBomMergeHandler.isCfg` 拒绝逻辑（选配号统一后是否放开回填）。
+- **前置条件**：✅ Spec 1 的 `QuoteMaterialNoAllocator` 已就绪。
+- **预估规模**：M（3-5 天）
+- **关联**：`docs/superpowers/specs/2026-07-06-选配模板方案-design.md`（**该方案是本条的严格超集**：含发号统一 `CFG-→XXXX-YYMMNNNNNN` + `isCfg` 重估，再叠加参数池/行业模板/销售侧指纹去重；若该方案落地则本条随之完成，**勿重复立项**）。
+
+### [BL-0030] 核价树 render 失败被静默吞成空卡片（AP-31 静默失败族）—— 无任何前端可见报错
+- **优先级**：P1
+- **来源**：2026-07-03 同上根因定位
+- **状态**：[x] **已完成（2026-07-03，master `092f48a`）**。`CardSnapshotService` 批量层 `render()` 加 try/catch:失败时不上抛（否则整单 500+全 NULL→前端无限「加载中…」），逐 li 落带错误原文的失败哨兵 `{tabs:[],__cardValueFailed:true,__errorMsg:"核价渲染失败: …"}`；前端 `cardValueFailed.ts#getCardValueError` 取原文，`QuotationStep2` 核价卡片占位以 error Alert 显式展示原文 + 指引查「核价树配置」。配置员一眼定位，取代翻后端日志。
+- **登记日期**：2026-07-03
+- **背景**：`CostingTreeRenderService.render()` 抛错（递归 SQL 崩 / 无生效配置 / 页签 $view 崩）后，被 `CardSnapshotService.buildCostingCardValues` 的 `try/catch` **catch 成返回 null + 仅 `LOG.warnf`** → `costing_card_values` 留 NULL → 前端**只看到空卡片、无任何红错**。用户无法自知是递归 SQL 崩了，只能靠翻后端日志。另页签 $view 忘输出 `material_no` 时也是渲染期 WARN + 静默落选（已有 WARN 守卫但 UI 不可见）。
+- **范围**：让核价树渲染失败对用户**可见**——如 `ensure-card-values` / 渲染响应带回一个「核价树配置错误 + 具体消息（递归 SQL 报错原文 / 未配置生效 SQL / 页签缺 material_no）」的结构化提示，前端在核价卡片区显式提示而非空白。区分「真无数据」与「配置/SQL 报错」两种空。
+- **依赖**：与 [[BL-0029]] 同批修更省（都属核价树配置期防呆）。
+- **预估规模**：M（3-5 天，含前端提示位）
+- **验收要点**：递归 SQL / 页签 $view 报错时，核价卡片区出现明确错误提示（含原因），而非静默空白。
+
+### [BL-0040] 元素主表管理 UI（元素字典 CRUD）
+- **优先级**：P2
+- **来源**：`dev-docs/task-0708-材质库规范澄清/`（Q5）→ **已澄清立项 `dev-docs/task-0709-元素主表管理/`（2026-07-09）**
+- **状态**：**[x] 已完成（2026-07-09 合 master `c27f604`）**。B 模型全落地并终验收通过（技术总监独立查隔离库 cpq_db_elemtest + 代码核实）：element_no 不可改业务主键(V319 补 Au/CdO 号)、material_recipe_element 加 element_no(V320 628行全回填)、符号锁(被引用改符号 409)、只软删、导入按编号 upsert 不覆盖人工值、253/1 零回归、定价 join 通、不动选配/定价边界；前端「元素」页签 + 符号锁 UI。8081 `/elements` 404→401 上线、cpq_db 已应用 V319/V320。
+- **登记日期**：2026-07-09
+- **推迟原因**：本期 `element` 主表只作字典（seed + 导入按符号 upsert 回填），无独立管理界面需求；元素 CRUD 属增强。
+- **背景**：task-0708 新建 `element(element_code 符号 PK / element_name 中文 / element_no 编号 / status)`，仅由 seed + 导入维护；管理端无处增删改元素、无处补录字典外新符号的中文名。
+- **范围**：主数据维护下增「元素」管理页（SelectableTable + 工具栏动作 + Drawer 编辑），支持元素增删改停用、补录中文名、维护元素编号；与导入 upsert 语义对齐（不冲突）。
+- **依赖**：task-0708 的 `element` 主表已建。
+- **前置条件**：✅ **已就绪**（task-0708 2026-07-09 验收通过：`element` 主表已建、39 元素含数字牌号；补录中文名的实际缺口 = 191/206/223/258/721 五个数字牌号暂无中文名）。
+- **预估规模**：S（1-2 天）
+- **验收要点**：可在管理页维护元素字典；补录的中文名不被后续导入的符号占位覆盖；停用元素不破坏已引用它的材质渲染。
+
+---
+
