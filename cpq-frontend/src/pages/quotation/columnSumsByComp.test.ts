@@ -14,7 +14,8 @@
  *   ⑤ 配 unit_source_field 的列按 canonical 求和（非原值）
  */
 import { describe, it, expect } from 'vitest';
-import { buildCrossTabRows } from './QuotationStep2';
+import { buildCrossTabRows, computeTabSubtotalsByColumn } from './QuotationStep2';
+import { buildComponentDeps } from './crossTabOrder';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 断言 ①②: 非小计 FORMULA 列(cross_tab_ref)合计 == Σ行；is_subtotal 列两源同值
@@ -378,14 +379,44 @@ describe('columnSumsByComp — 回归: INPUT_NUMBER 字符串值不得丢成 0',
 // 回归 (QT-20260616-1743): component_subtotal 跨组件依赖必须进拓扑序。
 // 公式列引用别组件列小计(component_subtotal)时，被引用组件必须先处理，否则其列小计未回填→读 0。
 // 此前 extractSourceRefs 只看 cross_tab_ref，漏 component_subtotal → 引用方排前时算 0。
+//
+// repair-0808 订正（2026-08-09）：本 describe 原来只有一条用例，"绕过 PASS1"（直接传空 `acs`）
+// 调 buildCrossTabRows，断言必须靠拓扑边把值传过去。repair-0808 把 component_subtotal 的依赖边
+// 收窄到列粒度（AC-5）：被引用列是 INPUT_NUMBER 时不再建边，因为它的值在行迭代前就已定死、
+// 与页签算序无关——但原用例把 A.cost 设成 INPUT_NUMBER，又跳过 PASS1，导致 C 排前处理时
+// acs['COMP-A#cost'] 还没有任何来源（既无边、也无 PASS1）能写入，于是塌成 0。
+//
+// 这不是回归，是旧用例的 setup 从未反映生产真实调用形状——三个生产调用点
+// （QuotationStep2.tsx:3012 / ReadonlyProductCard.tsx:462 / buildExcelSnapshot.ts:124）
+// 都是先跑 PASS1（`computeTabSubtotalsByColumn` 逐组件登记）再调 buildCrossTabRows，
+// 没有空 acs 的生产路径。改法：setup 换成真实链路（PASS1 + PASS2），并拆成两条覆盖两种列类型：
+//   ① 被引用列 INPUT_NUMBER（repair-0808 起不再建边）—— PASS1 兜底，mgmt 仍 = 200
+//   ② 被引用列 FORMULA（QT-1743 的真形状，仍然建边）—— 引用方排前也 = 200，防止本次改动漏建边
 // ─────────────────────────────────────────────────────────────────────────────
-describe('columnSumsByComp — 回归: component_subtotal 跨组件依赖进拓扑序', () => {
-  const A: any = {
+describe('columnSumsByComp — 回归: component_subtotal 跨组件依赖（QT-1743 不回归 + repair-0808 列粒度）', () => {
+  /** 复刻生产 PASS1（ProductCard QuotationStep2.tsx:2976-3008 的核心：逐 NORMAL 组件登记三键 + 列键）。 */
+  function pass1(comps: any[]): Record<string, number> {
+    const acs: Record<string, number> = {};
+    for (const c of comps) {
+      if (c.componentType !== 'NORMAL') continue;
+      const byCol = computeTabSubtotalsByColumn(c, acs, undefined, undefined, 'PART', undefined);
+      const tot = Object.values(byCol).reduce((a: number, b: number) => a + b, 0);
+      for (const k of [c.componentId, c.componentCode, c.tabName]) {
+        if (!k) continue;
+        acs[k] = tot;
+        for (const [col, v] of Object.entries(byCol)) acs[`${k}#${col}`] = v as number;
+      }
+    }
+    return acs;
+  }
+
+  // ① 被引用列 INPUT_NUMBER：repair-0808 起不建边，靠 PASS1 兜底出精确值（与算序无关）。
+  const A_input: any = {
     componentId: 'COMP-A', componentCode: 'COMP-A', tabName: 'TabA', componentType: 'NORMAL',
     fields: [{ name: 'cost', field_type: 'INPUT_NUMBER', is_subtotal: true }],
     formulas: [], rows: [{ cost: '100' }], subtotal: 0,
   };
-  const C: any = {
+  const C_refInput: any = {
     componentId: 'COMP-C', componentCode: 'COMP-C', tabName: 'TabC', componentType: 'NORMAL',
     fields: [{ name: 'mgmt', field_type: 'FORMULA', formula_name: 'f_mgmt', is_subtotal: true }],
     formulas: [{ name: 'f_mgmt', expression: [
@@ -395,9 +426,55 @@ describe('columnSumsByComp — 回归: component_subtotal 跨组件依赖进拓�
     formulaAssignments: { '0': 'f_mgmt' }, rows: [{}], subtotal: 0,
   };
 
-  it('引用方(C)排在被引用方(A)之前，mgmt 小计=200 非 0；产品小计键同步正确', () => {
-    const acs: Record<string, number> = {};
-    const { columnSumsByComp } = buildCrossTabRows([C, A], acs, 'PART', () => undefined);
+  it('buildComponentDeps: 被引用列 INPUT_NUMBER → deps[COMP-C] 不含 COMP-A（不建边）', () => {
+    const deps = buildComponentDeps([
+      { cid: 'COMP-C', code: 'COMP-C', tabName: 'TabC', formulas: C_refInput.formulas, fields: C_refInput.fields },
+      { cid: 'COMP-A', code: 'COMP-A', tabName: 'TabA', formulas: A_input.formulas, fields: A_input.fields },
+    ]);
+    expect(deps['COMP-C']).not.toContain('COMP-A');
+  });
+
+  it('① 引用方(C)排在被引用方(A)之前（无边，声明序不变）：真实链路(PASS1+PASS2)下 mgmt 小计=200 非 0', () => {
+    const acs = pass1([C_refInput, A_input]);
+    const { columnSumsByComp } = buildCrossTabRows([C_refInput, A_input], acs, 'PART', () => undefined);
+    expect(columnSumsByComp['COMP-A']['cost']).toBe(100);
+    expect(columnSumsByComp['COMP-C']['mgmt']).toBe(200);
+    expect(acs['COMP-C#mgmt']).toBe(200);
+  });
+
+  // ② 被引用列 FORMULA：QT-1743 的真实形状，repair-0808 后仍必须建边——
+  // 这条是防止本次改动把 QT-1743 的修复连带漏掉的门禁。
+  const A_formula: any = {
+    componentId: 'COMP-A', componentCode: 'COMP-A', tabName: 'TabA', componentType: 'NORMAL',
+    fields: [
+      { name: 'qty', field_type: 'INPUT_NUMBER' },
+      { name: 'cost', field_type: 'FORMULA', formula_name: 'f_cost', is_subtotal: true },
+    ],
+    formulas: [{ name: 'f_cost', expression: [
+      { type: 'field', value: 'qty' }, { type: 'operator', value: '*' }, { type: 'number', value: 10 },
+    ] }],
+    formulaAssignments: { '1': 'f_cost' },
+    rows: [{ qty: '10' }], subtotal: 0,
+  };
+  const C_refFormula: any = {
+    ...C_refInput,
+    formulas: [{ name: 'f_mgmt', expression: [
+      { type: 'component_subtotal', component_code: 'COMP-A', value: 'cost', tab_name: 'cost' },
+      { type: 'operator', value: '*' }, { type: 'number', value: 2 },
+    ] }],
+  };
+
+  it('buildComponentDeps: 被引用列 FORMULA → deps[COMP-C] 含 COMP-A（仍建边，QT-1743 门禁）', () => {
+    const deps = buildComponentDeps([
+      { cid: 'COMP-C', code: 'COMP-C', tabName: 'TabC', formulas: C_refFormula.formulas, fields: C_refFormula.fields },
+      { cid: 'COMP-A', code: 'COMP-A', tabName: 'TabA', formulas: A_formula.formulas, fields: A_formula.fields },
+    ]);
+    expect(deps['COMP-C']).toContain('COMP-A');
+  });
+
+  it('② 引用方(C)排在被引用方(A)之前（建边，拓扑序纠正为 A→C）：mgmt 小计=200 非 0', () => {
+    const acs = pass1([C_refFormula, A_formula]);
+    const { columnSumsByComp } = buildCrossTabRows([C_refFormula, A_formula], acs, 'PART', () => undefined);
     expect(columnSumsByComp['COMP-A']['cost']).toBe(100);
     expect(columnSumsByComp['COMP-C']['mgmt']).toBe(200);
     expect(acs['COMP-C#mgmt']).toBe(200);
