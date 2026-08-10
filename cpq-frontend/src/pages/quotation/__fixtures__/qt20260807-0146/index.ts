@@ -14,7 +14,9 @@
 import { buildSnapshotExpansions, buildCrossTabRows, computeTabSubtotalsByColumn } from '../../QuotationStep2';
 import { driverExpansionKey, fieldsOverrideHash } from '../../useDriverExpansions';
 import { buildComponentDataFromStructure } from '../../enrichComponentData';
-import type { ComponentDataItem, LineItem, GlobalVariableDefinition } from '../../QuotationStep2';
+import type { ComponentDataItem, LineItem } from '../../QuotationStep2';
+// GlobalVariableDefinition 的原产地是 services —— QuotationStep2 只是 import 它自用，并未再导出
+import type { GlobalVariableDefinition } from '../../../../services/globalVariableService';
 
 export { QT0146_QUOTE_CARD_STRUCTURE } from './quoteCardStructure';
 export { QT0146_QUOTE_CARD_VALUES } from './quoteCardValues';
