@@ -1440,6 +1440,58 @@ task-0721 B8 修复合并    2026-07-21
 
 ## P2
 
+### [BL-0158] E2E `quotation-flow.spec.ts` 硬编码的夹具在库里已不存在 —— 全 spec 不可执行
+- **优先级**：P2（**但它锁死了 CLAUDE.md 的 E2E 强制门槛，实际影响所有协议级改动的验收**）
+- **来源**：2026-08-09 task-0806 收尾跑 AC-18 时实证
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-09
+- **背景**：`e2e/quotation-flow.spec.ts` 硬编码「苏州西门子 + 报价模板0608 v1.10 + 10110002」。**实测 `cpq_db_0724` 全库只有 6 个客户，无任何名字含「西门子」的客户；模板里也无任何名字含「0608」的**（现存仅 施耐德BUG2 / 测试BUG-2 / 测试客户-4 / 罗克韦尔 / 核价模板1）。
+- **表现**：3 个 test 全失败，卡在 Step1「下一步」按钮 disabled（`title="请先填写产品分类和报价模板"`）—— 因为夹具客户/模板压根选不出来
+- **与 `BL-0157` 同族**：那条讲的是后端 19 个测试文件硬编码已消失的 `ROCKWELL`/`SMALL` 基准单、16 条静默跳过；本条是**前端 E2E 侧的同一个病**（夹具漂移致护栏失效），只是 E2E 是硬失败而非静默跳过
+- **后果**：`CLAUDE.md`「修改后强制自检」第 5 条要求协议级改动必须跑 E2E，但**这个门槛现在物理上过不了** —— task-0806 的 AC-18 因此无法执行（已在 `test-report.md` 如实标注，未伪装通过）
+- **范围**：二选一 —— ① 重建夹具数据（客户 + 模板 + 料号 + 报价单，并说明来源与可重建方式）；② 改 spec 改为**动态挑选**满足条件的现存数据（有产品分类的客户 + 已冻结的 PUBLISHED 模板），并在挑不到时**显式失败而非跳过**（`BL-0157` 的教训：护栏的价值全在「夹具没了要吵」）
+- **验收要点**：`quotation-flow.spec.ts` + `composite-product-flow.spec.ts` 在干净环境可执行且通过；夹具缺失时报错而非静默跳过
+
+### [BL-0146] 报价单层 SQL 视图冻结从未被读（`quotation_component_sql_snapshot` 已有 80 行数据，零消费方）
+- **优先级**：P2
+- **来源**：2026-08-07 task-0806 决策 B17-b（用户拍板本期不做）
+- **状态**：TODO（未排期）—— 前置：[[BL-0133]] 交付
+- **登记日期**：2026-08-08
+- **背景**：`submit()` 阶段会把组件 SQL 视图闭包冻进 `quotation_component_sql_snapshot`（**实测已有 80 行真实数据**），但 `ComponentSqlViewService.lookupForResolver` 第①层判据 `ctx.quotationId != null && ctx.isQuotationFrozen()` **结构上永远为假** —— `ComponentDriverService` 传的 `quotationId` 是 `QuotePendingScope.pendingOwner()`（其语义就是「非 null ⟹ 非冻结」），`quotationStatus` 恒传 `null`。**那 80 行从来没被读过**，所有 SUBMITTED 单渲染时用的仍是活表当前值。
+- **已核实的门槛交互**：改传真实 `quotationId`+`status` 后，`SqlViewExecutor:555/569` 两个门槛的**最终布尔结果不变**（DRAFT 单 `_pq` 本就等于真实 id；冻结单 id 从 null 变非 null 但 `isQuotationFrozen()` 同时翻真）。pending 改写机制不会坏。
+- **真正的风险**：`quotation_component_sql_snapshot` 冻于 **submit 那一刻**，`template.sql_views_snapshot` 冻于 **publish 那一刻** —— 两个不同时间点。草稿放很久才提交时两者可能不一致。点亮后 SUBMITTED 单会从「读活表」改成「读提交那刻的值」，更符合产品语义，但**不能假定值中性**
+- **范围**：先对现有 SUBMITTED/APPROVED 单跑「层①值 vs 层④值」纯读体检，**零差异再接**；有差异要把清单交用户定夺
+- **验收要点**：接通后 SUBMITTED 单渲染值有据可依；pending 改写机制回归通过
+
+### [BL-0147] `QuotationService.freezeSqlViewsForQuotation` 对未冻结模板静默缺项
+- **优先级**：P2
+- **来源**：2026-08-07 task-0806 B23 全仓扫描时发现（非活表泄漏，未改动）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-08
+- **背景**：`QuotationService:925` 按 `li.templateId`（**逐行**的模板绑定，选配/组合产品场景可能与 `q.customerTemplateId` 不同）直读 `componentsSnapshot`，为 null 时**静默把该行的 componentId 排除在冻结集合外** —— 不报错、不回落活表，只是闭包**悄悄缺项**。
+- **与 task-0806 的关系**：B21 加的门禁只校验 `q.customerTemplateId` / `q.costingCardTemplateId` 两个**报价单级**模板，**没有遍历逐行 `li.templateId`**。所以「整单模板已冻结、但某个子行用了另一个未冻结模板」的场景仍是静默降级
+- **范围**：提交前校验逐行 `li.templateId` 的冻结状态，未冻结则拦下（同 D17 口径返 409）
+- **验收要点**：构造「主模板已冻 + 子行模板未冻」场景 → 提交被拦，错误信息定位到具体行与模板
+
+### [BL-0148-A] `PublishedTemplateReader.allTabsOfMany` 缺 N/M 一致性校验
+- **优先级**：P2
+- **来源**：2026-08-07 task-0806 B19 汇报（如实报出，未改）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-08
+- **背景**：B21 给 `allTabsOf` 加了「表行数 vs `components_snapshot` jsonb 长度」一致性校验（D19 损坏检测），但**批量方法 `allTabsOfMany` 没有同款校验** —— 它只处理「某 templateId 一行都查不到」，若某模板返回了几行但与 jsonb 长度不符，**不会被拦截**。
+- **同构隐患**：这与 `findTab` 当年的处境一样 —— **检测逻辑只焊在一条腿上**。整单多卡片场景走的正是 `allTabsOfMany`
+- **权衡点**：批量场景要为每个模板做一次 `Template.findById` 取 jsonb 长度，需评估 N+1（可考虑一次 `IN` 批量取）
+- **验收要点**：整单多模板场景下，任一模板的表/jsonb 不一致都能被检出并报 500
+
+### [BL-0148-B] `CardSnapshotService.refreshQuoteCardValues` 的 blanket catch 可能吞掉 `TemplateNotFrozenException`
+- **优先级**：P2
+- **来源**：2026-08-08 task-0806 测试报告 D-5（未复现，标记为风险）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-08
+- **背景**：该方法有既有的 `catch (Exception)` 兜底。若 `TemplateNotFrozenException`（409）在该路径上被抛出，会被静默吞成降级结果，D17 的「请联系管理员冻结」提示就到不了用户。**测试工程师未能构造出触达场景**（已烘焙的 line item 会在触达 reader 前短路），故标为风险而非确认缺陷
+- **范围**：把 `TemplateNotFrozenException` 从 blanket catch 中豁免（或改为精确捕获业务异常）
+- **验收要点**：构造该路径下的未冻结场景 → 409 能透出，不被降级
+
 ### [BL-0141] W4 依赖图增量重算 / 增量写 —— 已裁定不做，长期观察
 - **优先级**：P2（**不排期**，仅登记备查）
 - **来源**：task-0806 编辑链路优化，决策 `D14`（用户拍板）
@@ -1491,6 +1543,25 @@ task-0721 B8 修复合并    2026-07-21
 - **范围**：「选中 N 个已发布模板 → 批量 createNewDraft → 批量 publish」；批量发布的部分失败须走 `runBatch` 聚合（`docs/列表操作规范.md`）
 - **先决观察**：[[BL-0133]] 的 `frozen-drift` 端点先当发版决策入口用一段时间，确认痛感真实存在再造工具，避免提前优化
 - **验收要点**：批量派生后各草稿的 tc / override / 公式 / Excel 配置与源版本一致；批量发布部分失败时逐条列出失败原因
+
+### [BL-0148-C] 前端 `formulaGolden.test.ts` 两条黄金用例在干净 master 上即失败
+- **优先级**：P2
+- **来源**：2026-08-07 task-0806 前端自检时发现，主线已做 A/B 确认
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-08
+- **背景**：`cpq-frontend/src/utils/formulaGolden.test.ts` 的 `04-amount-total.json` 里 `amt-002` / `amt-003` 失败（期望 `12.3400`、实际 `0`）。**主线在干净 master 上跑同一文件得到同样的 `2 failed | 31 passed`**，确认与 task-0806 无关。BACKLOG 此前无登记。
+- **疑似方向**（未验证）：`component_subtotal` token 用 `tab_name`（而非 `component_code`）取值时，前端引擎的 key 拼接路径没对齐
+- **验收要点**：两条用例通过，或 golden 常量由 owner 重新校准并说明原因
+
+### [BL-0148-D] `PublishedTemplateReader.findTab` 的「500 带 sortOrder」错误契约不可达
+- **优先级**：P2
+- **来源**：2026-08-08 task-0806 测试报告 D-3
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-08
+- **背景**：`api.md` / AC-6 记载的错误消息格式「模板快照缺失：templateId=…, **sortOrder=…**」由 `findTab` 产出，但该方法**零生产调用方**（`codegraph_callers` + grep 双重确认）。实际触发的是 `verifyConsistentWithJsonb`，消息形态不同（含两侧计数、不含具体 sortOrder）。
+- **核心行为是对的**（500 + 不回落活表），只是**文档承诺的消息格式对不上实际**
+- **范围**：二选一 —— ① 把 `findTab` 接进一个真实调用点；② 改文档，按 `verifyConsistentWithJsonb` 的实际消息重写契约。倾向 ②（`findTab` 保留作为单测可用的语义正确实现）
+- **验收要点**：文档描述的错误消息能被真实请求复现
 
 ### [BL-0139] `frozen-drift` 版本差异视图缺前端入口
 - **优先级**：P2

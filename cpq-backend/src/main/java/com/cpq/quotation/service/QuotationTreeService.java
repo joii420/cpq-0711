@@ -51,6 +51,9 @@ public class QuotationTreeService {
     @Inject
     FormulaCalculator formulaCalculator;
 
+    @Inject
+    com.cpq.template.service.PublishedTemplateReader publishedTemplateReader;
+
     // =========================================================================
     // 元数据加载
     // =========================================================================
@@ -67,30 +70,47 @@ public class QuotationTreeService {
         String partNameField;
     }
 
-    /** 该 line item 所属报价模板的全部组件元数据（id/tabType/fields/rowKeyFields/partNoField/partNameField）。 */
-    @SuppressWarnings("unchecked")
+    /**
+     * 该 line item 所属报价模板的全部组件元数据（id/tabType/fields/rowKeyFields/partNoField/partNameField）。
+     *
+     * <p>task-0806 B19：原一次 JOIN 直读活 {@code component}/{@code template_component} 表——
+     * 改走 {@link #resolveCustomerTemplateId} 解出该行所属模板 id 后经
+     * {@link com.cpq.template.service.PublishedTemplateReader#allTabsOf} 取冻结快照（PUBLISHED
+     * 报价单必然绑定 PUBLISHED/ARCHIVED 模板，见该 reader 类注释）。调用方
+     * {@link #buildHitContext} 每次外部请求只调一次，非行/组件数量级循环，SQL 条数仍为 O(1)。
+     */
     private List<CompMeta> loadTemplateComponents(UUID lineItemId) {
-        List<Object[]> rows = em.createNativeQuery(
-                "SELECT c.id, c.tab_type, c.fields, c.row_key_fields, c.part_no_field, c.part_name_field " +
-                "FROM quotation_line_item li " +
-                "JOIN quotation q ON q.id = li.quotation_id " +
-                "JOIN template_component tc ON tc.template_id = q.customer_template_id " +
-                "JOIN component c ON c.id = tc.component_id " +
-                "WHERE li.id = :lid")
-                .setParameter("lid", lineItemId).getResultList();
+        UUID templateId = resolveCustomerTemplateId(lineItemId);
+        if (templateId == null) return List.of();
         List<CompMeta> out = new ArrayList<>();
-        for (Object[] r : rows) {
-            if (r[0] == null) continue;
+        for (com.cpq.template.entity.TemplateComponentSnapshot s : publishedTemplateReader.allTabsOf(templateId)) {
             CompMeta m = new CompMeta();
-            m.id = UUID.fromString(r[0].toString());
-            m.tabType = r[1] != null ? r[1].toString() : null;
-            m.fields = r[2] != null ? r[2].toString() : "[]";
-            m.rowKeyFields = r[3] != null ? r[3].toString() : null;
-            m.partNoField = r[4] != null ? r[4].toString() : null;
-            m.partNameField = r[5] != null ? r[5].toString() : null;
+            m.id = s.componentId;
+            m.tabType = s.tabType;
+            m.fields = (s.fields != null && !s.fields.isBlank()) ? s.fields : "[]";
+            m.rowKeyFields = s.rowKeyFields;
+            m.partNoField = s.partNoField;
+            m.partNameField = s.partNameField;
             out.add(m);
         }
         return out;
+    }
+
+    /**
+     * lineItemId → 所属报价单的 {@code customer_template_id}（1 次轻量原生查询，不含
+     * {@code component} 表，仅用于定位模板 id 供后续 {@link com.cpq.template.service.PublishedTemplateReader}
+     * 查询）。找不到 → null（调用方各自按"该行无模板组件"降级放行/返空）。
+     */
+    @SuppressWarnings("unchecked")
+    private UUID resolveCustomerTemplateId(UUID lineItemId) {
+        if (lineItemId == null) return null;
+        List<Object> rows = em.createNativeQuery(
+                "SELECT q.customer_template_id FROM quotation_line_item li " +
+                "JOIN quotation q ON q.id = li.quotation_id WHERE li.id = :lid")
+                .setParameter("lid", lineItemId).getResultList();
+        if (rows.isEmpty() || rows.get(0) == null) return null;
+        Object v = rows.get(0);
+        return (v instanceof UUID u) ? u : UUID.fromString(v.toString());
     }
 
     /** (lineItemId 固定) componentId → [snapshot_rows, deleted_row_keys] 原始 JSON 字符串。 */
@@ -778,7 +798,7 @@ public class QuotationTreeService {
      */
     public void assertCanAddRowsToRestrictedTab(UUID componentId, String flatRowsJson, UUID lineItemId) {
         if (componentId == null || flatRowsJson == null || flatRowsJson.isBlank() || lineItemId == null) return;
-        Object[] meta = loadSingleComponentTabMeta(componentId);
+        Object[] meta = loadSingleComponentTabMeta(componentId, lineItemId);
         if (meta == null) return;
         String tabType = meta[0] != null ? meta[0].toString() : null;
         if (!"材质元素".equals(tabType) && !"外购件".equals(tabType)) return; // 快速放行,避免无谓解析
@@ -805,13 +825,21 @@ public class QuotationTreeService {
         assertCanAddToRestrictedTab(tabType, partNos, lineItemId);
     }
 
-    /** {@code component} 表单行查询：{@code [tab_type, part_no_field, part_name_field]}；不存在 → null。 */
-    @SuppressWarnings("unchecked")
-    private Object[] loadSingleComponentTabMeta(UUID componentId) {
-        List<Object[]> rows = em.createNativeQuery(
-                "SELECT tab_type, part_no_field, part_name_field FROM component WHERE id = :cid")
-                .setParameter("cid", componentId)
-                .getResultList();
-        return rows.isEmpty() ? null : rows.get(0);
+    /**
+     * componentId 在该 lineItem 所属模板冻结快照里的 {@code [tab_type, part_no_field, part_name_field]}；
+     * 不存在 → null。task-0806 B19：改经 {@link #resolveCustomerTemplateId} 解模板 id 后走
+     * {@link com.cpq.template.service.PublishedTemplateReader#allTabsOf} 内存挑单条，不再直读活
+     * {@code component} 表（原 {@code SELECT tab_type, part_no_field, part_name_field FROM component
+     * WHERE id = :cid}）。
+     */
+    private Object[] loadSingleComponentTabMeta(UUID componentId, UUID lineItemId) {
+        UUID templateId = resolveCustomerTemplateId(lineItemId);
+        if (templateId == null) return null;
+        for (com.cpq.template.entity.TemplateComponentSnapshot s : publishedTemplateReader.allTabsOf(templateId)) {
+            if (componentId.equals(s.componentId)) {
+                return new Object[]{ s.tabType, s.partNoField, s.partNameField };
+            }
+        }
+        return null;
     }
 }

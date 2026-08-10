@@ -89,6 +89,16 @@ public class GlobalExceptionMapper {
                             "unlockedQuotationCount", eunce.getUnlockedQuotationCount())))
                     .build();
         }
+        // task-0806 B20（D16~D17）：模板 PUBLISHED/ARCHIVED 但快照零行 —— 过渡期「未冻结」，
+        // 不是故障。code=TEMPLATE_NOT_FROZEN 是前端的唯一判定依据（禁止按 message 文本匹配）。
+        if (e instanceof com.cpq.template.exception.TemplateNotFrozenException tnfe) {
+            return Response.status(e.getCode())
+                    .entity(ApiResponse.error(e.getCode(), e.getMessage(), Map.of(
+                            "code", com.cpq.template.exception.TemplateNotFrozenException.CODE,
+                            "templateId", String.valueOf(tnfe.getTemplateId()),
+                            "templateStatus", String.valueOf(tnfe.getTemplateStatus()))))
+                    .build();
+        }
         if (e instanceof com.cpq.component.exception.ComponentElementBindingRequiredException cebre) {
             return Response.status(e.getCode())
                     .entity(ApiResponse.error(e.getCode(), e.getMessage(), Map.of(

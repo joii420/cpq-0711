@@ -18,7 +18,6 @@ import com.cpq.datasource.sqlview.QuotePendingScope;
 import com.cpq.formula.dataloader.QuotationIdContext;
 import com.cpq.formula.dataloader.SnapshotRowsContext;
 import com.cpq.quotation.entity.Quotation;
-import com.cpq.template.service.TemplateService;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -47,9 +46,6 @@ public class ComponentResource {
 
     @Inject
     ComponentDriverService componentDriverService;
-
-    @Inject
-    TemplateService templateService;
 
     @Inject
     ComponentImportService componentImportService;
@@ -131,20 +127,10 @@ public class ComponentResource {
         return ApiResponse.success(componentService.auditBasicDataPaths());
     }
 
-    /**
-     * H1: 手工触发: 同步所有引用该组件的模板 snapshot.
-     * 组件 update 已自动调用本同款逻辑; 此端点用于:
-     *  - 历史模板 (V184 之前发布) 修复
-     *  - 数据迁移补偿
-     *  - 管理工具脚本
-     * 返回受影响的 template id 列表.
-     */
-    @POST
-    @Path("/{id}/refresh-template-snapshots")
-    @RoleAllowed({"PRICING_MANAGER", "SYSTEM_ADMIN"})
-    public ApiResponse<List<UUID>> refreshTemplateSnapshots(@PathParam("id") UUID id) {
-        return ApiResponse.success(templateService.refreshSnapshotsByComponent(id));
-    }
+    // task-0806 D11：refresh-template-snapshots 端点整体删除（AC-4）。其唯一实现
+    // TemplateService.refreshSnapshotsByComponent（H1）已退役——语义（把组件配置推给已发布
+    // 模板）与严格版本化直接冲突。不做 410 过渡，路由直接消失 → 404。
+    // 想让新配置生效，走 createNewDraft → 改 → publish 出新版本。
 
     /**
      * Y1.5 行驱动展开 — 按组件 dataDriverPath 取 N 行,

@@ -67,7 +67,12 @@ const CopyQuotationDrawer: React.FC<Props> = ({ open, defaultTemplateId, onClose
         </Space>
       }
     >
-      <p>默认使用源报价单的模板。换模板后：页签相同的迁移用户输入值，不同的留空，公式/数据由新模板重算。</p>
+      <Alert
+        style={{ marginBottom: 12 }}
+        type="warning"
+        showIcon
+        message="换模板会清空当前报价单已填写的产品数据（总价归零），且当前无法恢复，请务必先导出留档后再继续操作。"
+      />
       <Select
         style={{ width: '100%' }}
         loading={loading}
@@ -86,7 +91,7 @@ const CopyQuotationDrawer: React.FC<Props> = ({ open, defaultTemplateId, onClose
           style={{ marginTop: 12 }}
           type="warning"
           showIcon
-          message="已更换模板：仅页签字段相同的输入值会被迁移，其余留空。"
+          message="已切换模板：确认后将清空当前已填写的产品数据，且无法恢复，请确保已导出留档。"
         />
       ) : null}
     </Drawer>

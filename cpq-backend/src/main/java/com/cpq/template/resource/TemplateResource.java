@@ -2,17 +2,22 @@ package com.cpq.template.resource;
 
 import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.security.RoleAllowed;
+import com.cpq.common.security.SessionHelper;
 import com.cpq.template.dto.CompareTemplatesRequest;
 import com.cpq.template.dto.CreateTemplateRequest;
 import com.cpq.template.dto.PublishRequest;
 import com.cpq.template.dto.TemplateComparisonResult;
 import com.cpq.template.dto.TemplateDTO;
 import com.cpq.template.service.TemplateComparisonService;
+import com.cpq.template.service.TemplateFreezeDriftService;
 import com.cpq.template.service.TemplateService;
+import io.vertx.core.http.HttpServerRequest;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -27,6 +32,13 @@ public class TemplateResource {
 
     @Inject
     TemplateComparisonService templateComparisonService;
+
+    /** task-0806 B11：模板发布全量冻结体检 + 差异服务（A2/A3/A4）。 */
+    @Inject
+    TemplateFreezeDriftService templateFreezeDriftService;
+
+    @Inject
+    SessionHelper sessionHelper;
 
     @GET
     public ApiResponse<List<TemplateDTO>> list(
@@ -115,6 +127,20 @@ public class TemplateResource {
         return ApiResponse.success(templateService.createNewDraft(id));
     }
 
+    /**
+     * task-0806 B22-a（D20）/ api.md §13 A11：已 PUBLISHED/ARCHIVED 但从未按新语义冻结过的模板
+     * 「首次冻结」——不改 version/status/publishedAt，只补 template_component_snapshot +
+     * 派生 components_snapshot jsonb。仅当该模板零快照行时可用（409 否则），与 publish 同级鉴权
+     * （正常业务操作，不是运维后门）。
+     */
+    @POST
+    @Path("/{id}/freeze")
+    @RoleAllowed({"SALES_MANAGER", "SYSTEM_ADMIN"})
+    public ApiResponse<TemplateDTO> freeze(@PathParam("id") UUID id, @Context HttpServerRequest httpRequest) {
+        UUID operatorId = sessionHelper.getCurrentUserIdOrFallback(httpRequest);
+        return ApiResponse.success(templateService.freeze(id, operatorId));
+    }
+
     @GET
     @Path("/series/{seriesId}/versions")
     public ApiResponse<List<TemplateDTO>> getVersionHistory(@PathParam("seriesId") UUID seriesId) {
@@ -127,86 +153,99 @@ public class TemplateResource {
         return ApiResponse.success(templateComparisonService.compare(request.templateAId, request.templateBId));
     }
 
+    // task-0806 D11：migrate-to-unified-view 端点整体删除（AC-4）——一次性历史迁移，
+    // 基线 §3.5 标注「已跑过」，其唯一实现 TemplateService.migrateToUnifiedView 已随本任务删除。
+    // 路由消失 → 404。
+
     /**
-     * 2026-05-21: 统一智能视图路径方案 — 一次性模板数据迁移.
+     * task-0806 B11 / api.md §3 · A2：单模板「冻结快照 vs 当前活配置」逐字段差异。
      *
-     * <p>对每个 PUBLISHED 模板的每个 tc:
-     * <ul>
-     *   <li>fields_override 内 basic_data_path_composite 值 → 覆盖 basic_data_path，删除 _composite 键</li>
-     *   <li>snapshot 同步重建</li>
-     * </ul>
-     *
-     * <p>Body (可选): {@code { "templateIds": ["uuid1", "uuid2"] }} — 不传或空 → 处理全部 PUBLISHED 模板.
-     *
-     * <p>返回: { totalTemplates, totalTcMigrated, totalFieldsMigrated, details[] }
+     * <p>语义：迁移刚完成时应全部 {@code hasDrift=false}；随组件迭代差异自然增长——
+     * 这是严格版本化下的正常状态，不是故障。回答的是「这个已发布模板比当前组件配置落后
+     * 多少，值不值得发新版」，同时兼任 admin 后门的安全网。
      */
-    @POST
-    @Path("/admin/migrate-to-unified-view")
+    @GET
+    @Path("/{id}/frozen-drift")
     @RoleAllowed({"SYSTEM_ADMIN"})
-    public ApiResponse<java.util.Map<String, Object>> adminMigrateToUnifiedView(
-            java.util.Map<String, Object> body) {
-        List<UUID> templateIds = null;
-        if (body != null && body.get("templateIds") instanceof List<?> tidList) {
-            templateIds = tidList.stream()
-                    .filter(o -> o != null)
-                    .map(o -> UUID.fromString(o.toString()))
-                    .collect(java.util.stream.Collectors.toList());
-        }
-        return ApiResponse.success(templateService.migrateToUnifiedView(templateIds));
+    public ApiResponse<java.util.Map<String, Object>> frozenDrift(@PathParam("id") UUID id) {
+        return ApiResponse.success(templateFreezeDriftService.driftOf(id));
     }
 
     /**
-     * 2026-05-20: SYSTEM_ADMIN 一次性数据修复 — 删 PUBLISHED 模板的某些 Tab.
+     * task-0806 B11 / api.md §4 · A3：A2 的批量版，兼迁移前体检 A。
      *
-     * <p>用途: V195 等 Flyway SQL 自动写入的 template_component (绕过组件管理 UI),
-     * 用户想删但 PUBLISHED 模板不能走 update 端点 → 走这个 admin endpoint.
+     * @param status    默认 PUBLISHED,ARCHIVED；逗号分隔
+     * @param onlyDrift 默认 true，只返回有差异的模板
+     */
+    @GET
+    @Path("/admin/frozen-drift")
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public ApiResponse<java.util.Map<String, Object>> adminFrozenDrift(
+            @QueryParam("status") @DefaultValue("PUBLISHED,ARCHIVED") String status,
+            @QueryParam("onlyDrift") @DefaultValue("true") boolean onlyDrift) {
+        List<String> statuses = Arrays.asList(status.split(","));
+        return ApiResponse.success(templateFreezeDriftService.driftOfMany(statuses, onlyDrift));
+    }
+
+    /**
+     * task-0806 B11 / api.md §5 · A4：迁移前体检 B——验证每个已发布模板引用到的 SQL 视图
+     * 都在 {@code sql_views_snapshot} 闭包内。是 FR-6「SQL 视图 fallback 切报错」的前置门槛
+     * （D13，结果须交用户按三档拍板，不由实现者自决）。
+     */
+    @GET
+    @Path("/admin/sqlview-closure-check")
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public ApiResponse<java.util.Map<String, Object>> sqlviewClosureCheck(
+            @QueryParam("status") @DefaultValue("PUBLISHED,ARCHIVED") String status) {
+        List<String> statuses = Arrays.asList(status.split(","));
+        return ApiResponse.success(templateFreezeDriftService.sqlviewClosureCheck(statuses));
+    }
+
+    /**
+     * 2026-05-20 admin endpoint: 按 sortOrder 删除 PUBLISHED 模板的 tc 记录.
+     *
+     * <p>task-0806 B7 / api.md §7 A6：加 {@code confirm} 预览门槛（缺省 false=仅预览零写入）+
+     * 执行时写 {@code operation_log} 审计 + {@code LOG.warn} 告警。
      *
      * <p>Body 示例:
      * <pre>POST /api/cpq/templates/admin/{templateId}/delete-tcs
-     * { "sortOrders": [0, 1, 2, 4] }</pre>
-     *
-     * <p>返回: { deletedTcs, snapshotBefore, snapshotAfter }
+     * { "sortOrders": [0, 1, 2, 4], "confirm": false }</pre>
      */
     @POST
     @Path("/admin/{templateId}/delete-tcs")
     @RoleAllowed({"SYSTEM_ADMIN"})
     public ApiResponse<java.util.Map<String, Object>> adminDeleteTcs(
             @PathParam("templateId") UUID templateId,
-            java.util.Map<String, Object> body) {
+            java.util.Map<String, Object> body,
+            @Context HttpServerRequest httpRequest) {
         @SuppressWarnings("unchecked")
         List<Integer> sortOrders = body != null && body.get("sortOrders") instanceof List
                 ? ((List<Object>) body.get("sortOrders")).stream()
                         .map(v -> v instanceof Number ? ((Number) v).intValue() : Integer.parseInt(v.toString()))
                         .collect(java.util.stream.Collectors.toList())
                 : java.util.Collections.emptyList();
-        return ApiResponse.success(templateService.deleteTemplateComponentsBySortOrder(templateId, sortOrders));
+        boolean confirm = body != null && Boolean.TRUE.equals(body.get("confirm"));
+        UUID operatorId = sessionHelper.getCurrentUserIdOrFallback(httpRequest);
+        return ApiResponse.success(
+                templateService.deleteTemplateComponentsBySortOrder(templateId, sortOrders, confirm, operatorId));
     }
 
     /**
      * 2026-05-21: 将 template_component.fields_override 上升为 component.fields（单一来源）.
      *
-     * <p>解决问题：组件管理 UI 看到的字段（component.fields）与实际渲染字段（fields_override 覆盖）
-     * 不一致，用户无法在 UI 中维护"子件"等字段。
-     *
-     * <p>执行后：
-     * <ul>
-     *   <li>component.fields = 最完整的 fields_override（含"子件"字段）</li>
-     *   <li>component.dataDriverPath = 从 tc.dataDriverPathOverride 推断（如有）</li>
-     *   <li>所有 tc.fields_override = NULL，tc.dataDriverPathOverride = NULL</li>
-     *   <li>所有模板 snapshot 同步刷新</li>
-     * </ul>
+     * <p>task-0806 B7 / api.md §7 A7：加 {@code confirm} 预览门槛（缺省 false=仅预览零写入）+
+     * 执行时写 {@code operation_log} 审计（按受影响模板各写一行）+ {@code LOG.warn} 告警。
      *
      * <p>Body（可选）：
-     * <pre>{ "componentIds": ["e42185ec-...", "dae85db8-...", "0a436b6c-..."] }</pre>
+     * <pre>{ "componentIds": ["e42185ec-...", "dae85db8-...", "0a436b6c-..."], "confirm": false }</pre>
      * 不传或 componentIds 为空 → 默认处理所有名称以"选配-"开头的 ACTIVE 组件。
-     *
-     * <p>返回：{ targetComponents, componentsUpdated, tcCleared, snapshotTouched, details[] }
      */
     @POST
     @Path("/admin/promote-override-to-component")
     @RoleAllowed({"SYSTEM_ADMIN"})
     public ApiResponse<java.util.Map<String, Object>> adminPromoteOverrideToComponent(
-            java.util.Map<String, Object> body) {
+            java.util.Map<String, Object> body,
+            @Context HttpServerRequest httpRequest) {
         List<UUID> componentIds = null;
         if (body != null && body.get("componentIds") instanceof List<?> cidList) {
             componentIds = cidList.stream()
@@ -214,6 +253,29 @@ public class TemplateResource {
                     .map(o -> UUID.fromString(o.toString()))
                     .collect(java.util.stream.Collectors.toList());
         }
-        return ApiResponse.success(templateService.promoteOverrideToComponent(componentIds));
+        boolean confirm = body != null && Boolean.TRUE.equals(body.get("confirm"));
+        UUID operatorId = sessionHelper.getCurrentUserIdOrFallback(httpRequest);
+        return ApiResponse.success(templateService.promoteOverrideToComponent(componentIds, confirm, operatorId));
+    }
+
+    /**
+     * task-0806 B22-b（D20）/ api.md §13 A12：批量首次冻结所有零快照行的 PUBLISHED/ARCHIVED
+     * 模板。沿用本任务既有 confirm 口径：缺省 {@code confirm=false} 仅预览零写入并列出待冻清单；
+     * {@code confirm=true} 才执行。目标集合恒由零快照行筛出，不可能覆盖已有快照——与 A11 单模板
+     * 版共享同一条「零行守卫」不变量，只是批量版本。
+     *
+     * <p>Body: {@code { "confirm": false } }
+     */
+    @POST
+    @Path("/admin/freeze-unfrozen")
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public ApiResponse<java.util.Map<String, Object>> adminFreezeUnfrozen(
+            java.util.Map<String, Object> body, @Context HttpServerRequest httpRequest) {
+        boolean confirm = body != null && Boolean.TRUE.equals(body.get("confirm"));
+        if (!confirm) {
+            return ApiResponse.success(templateService.previewFreezeUnfrozen());
+        }
+        UUID operatorId = sessionHelper.getCurrentUserIdOrFallback(httpRequest);
+        return ApiResponse.success(templateService.freezeAllUnfrozen(operatorId));
     }
 }
