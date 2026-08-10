@@ -65,7 +65,14 @@ FROM element_bom_item ebi
   LEFT JOIN bom_closure_d cl ON cl.node_no = ebi.material_no
   LEFT JOIN material_recipe mr  ON mr.code = ebi.material_part_no
   LEFT JOIN material_master mm2 ON mm2.material_no = ebi.material_part_no
-  LEFT JOIN f_customer_element_price(:customerCode, :priceBaseDate) cep
+  -- 🔴 task-0729 / V369 起：料号级取价函数（报价侧.md §5.2.2）。旧的 f_customer_element_price
+  --    继续存在、但已降级为本函数内部的 fallback —— 新配/改配一律用 f_material_element_price，
+  --    否则该组件永远吃不到「客户价格调整策略」产出的价格版本（静默按实时价，不报错）。
+  -- 🔴 JOIN 键铁律：cep.material_no 必须与本视图 hf_part_no 的输出表达式**逐字一致**。
+  --    本视图是闭包形态（hf_part_no = COALESCE(cl.root_no, ebi.material_no)），故照抄该表达式；
+  --    平铺形态的视图写 ON cep.material_no = ebi.material_no。写错 = 静默取不到版本价。
+  LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep
          ON cep.element_code = ebi.component_no     -- LEFT JOIN + 元素符号键（硬约束 1/2）
+        AND cep.material_no = COALESCE(cl.root_no, ebi.material_no)
 WHERE ebi.system_type = 'QUOTE' AND ebi.is_current AND ebi.customer_no = :customerCode
 ORDER BY COALESCE(cl.lvl, 0), ebi.material_no, ebi.material_part_no, ebi.seq_no
