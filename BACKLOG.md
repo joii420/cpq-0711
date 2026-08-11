@@ -582,7 +582,7 @@
 ### [BL-0159] `__amount_total__` 哨兵键前后端口径分叉（后端 4 位截断 vs 前端精确）
 - **优先级**：P2（用户可见的尾差，但量级 ~1e-5；与 task-0801「全链路统一 6 位」口径冲突）
 - **来源**：2026-08-08 repair-0808 前后端对拍时暴露
-- **状态**：已由 `BL-0161` / `task-0810-公式计算12位显示9位` 完成验收，待合并 master；旧 6 位 repair 不再单独进场
+- **状态**：已由 `BL-0161` / `task-0810-公式计算12位显示9位` 交付 master（`df592eab`）；旧 6 位 repair 不再单独进场
 - **登记日期**：2026-08-08
 - **背景**：后端 `CardSnapshotService.java:4078-4079` 登记 `__amount_total__` 哨兵键时做
   `amountTotal.setScale(4, HALF_UP)`；前端 `tabTotalLines.ts#sumAmountFromByCol` 走 `sumDecimal` **精确求和不截断**。
@@ -607,7 +607,7 @@
 ### [BL-0160] 前端引擎 `tab_name#__amount_total__` 取不到值（golden amt-002/amt-003 长期红）
 - **优先级**：P2（现网模板多用 `component_code` 引用，未见报障；但双端一致性 golden 已长期不绿）
 - **来源**：2026-08-08 repair-0808 全量回归时发现（**A/B 已证为存量**：把本次两个源文件回退到 `b186ec21` 后同样失败）
-- **状态**：已由 `BL-0161` / `task-0810-公式计算12位显示9位` 完成验收，待合并 master
+- **状态**：已由 `BL-0161` / `task-0810-公式计算12位显示9位` 交付 master（`df592eab`）
 - **登记日期**：2026-08-08
 - **背景**：`src/utils/formulaGolden.test.ts` 的 `04-amount-total.json` 里 `amt-002`（按 `tab_name#__amount_total__` 取金额列合计）
   期望 `12.34` 实得 `0`；`amt-003` 连带 `101.22` → `88.88`。即前端 `component_subtotal` 的 `__amount_total__`
@@ -621,7 +621,7 @@
 ### [BL-0161] 公式计算工作值保留 12 位、最终显示最多 9 位
 - **优先级**：P1（用户 2026-08-10 直接提出并要求按任务规则开发）
 - **来源**：原 task-0801 的 6 位落库/显示契约无法满足新的 12 位工作精度要求
-- **状态**：✅ 验收通过，待合并 master（2026-08-11；TC-077 按规则保持环境 BLOCKED）
+- **状态**：✅ 已交付 master（2026-08-11，`df592eab`；TC-077 按规则保持环境 BLOCKED）
 - **登记日期**：2026-08-10
 - **范围**：公式节点/跨页签/小计/总额后端全程 BigDecimal、前端全程 Decimal.js Decimal，禁止 Double/JS number；计算值、快照和 API 保留 12 位；最终 UI/PDF/Excel 最多显示 9 位；21 个权威或派生计算金额列扩为 `numeric(26,12)`；精度字段请求/响应采用 decimal string，历史 numeric 快照按原始字面量无损解析。
 - **兼并关系**：本任务吸收 `BL-0159` 两处 4 位残留和 `BL-0160` 页签名金额哨兵 golden 缺口；不再先执行旧 6 位 repair。

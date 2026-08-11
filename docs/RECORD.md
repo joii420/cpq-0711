@@ -5473,3 +5473,5 @@ render() 用 lineItems.get(0).quotationId 设 QuotationIdContext，
 **交付证据**：V385 将 21 个计算金额列扩为 `numeric(26,12)`；任务关键后端 37/37、前端 1147/1147、四套 TypeScript、生产构建和 Playwright exact-5 全部通过且 0 skip；TC-078 N/2N SQL 均为 12，TC-079 字符串快照增量 388 bytes。仓库全量本身存在大规模 RBAC/事务/退役表红灯，已用 detached master 同轮基线做 testcase 差异，并修清 6 条 feature 独有的旧测试断言；不得对外表述为“全量测试通过”。TC-077 因缺固定双部署/同快照/五轮交替环境按规则保持 BLOCKED。
 
 **并发修复**：ensure 与 edit 使用同一 PostgreSQL advisory lock；edit 在取锁后清理 L1 并重读复核。新增自建 fixture 的并发测试证明 edit 会等待 ensure 事务，最终两行卡片值和 12 位字符串完整，无固定报价单、无 Assumptions、无新增 N+1。
+
+**交付状态**：2026-08-11 已快进合并至 master，交付提交 `df592eab72cbf27cfdd025add93a9f103d916f52`；TC-077 仍按测试规则保持环境 BLOCKED，不影响其余 AC-1~AC-20 的验收结论。
