@@ -17,6 +17,7 @@ import {
 } from './comparisonMapping';
 import type { ColumnDef } from './comparisonMapping';
 import type { ComparisonRowDTO } from '../../services/comparisonViewService';
+import { isDecimalString, normalizeDecimalString, type DecimalString } from '../../utils/precision';
 
 const RED_BG = '#ff4d4f';
 const ORANGE_BG = '#fa8c16';
@@ -40,10 +41,10 @@ const ColumnHeaderCell: React.FC<{
   col: ColumnDef;
   readonly: boolean;
   onRemove: (id: string) => void;
-  onUpdateThreshold: (id: string, threshold: number) => void;
+  onUpdateThreshold: (id: string, threshold: DecimalString) => void;
 }> = ({ col, readonly, onRemove, onUpdateThreshold }) => {
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState<number | null>(col.threshold);
+  const [draft, setDraft] = useState<DecimalString | null>(col.threshold);
   const isDefault = col.kind === 'PRODUCT_TOTAL';
 
   const handleOpenChange = (v: boolean) => {
@@ -51,7 +52,7 @@ const ColumnHeaderCell: React.FC<{
     if (v) setDraft(col.threshold);
   };
   const handleConfirm = () => {
-    if (draft != null && !Number.isNaN(draft)) onUpdateThreshold(col.id, draft);
+    if (draft != null && isDecimalString(draft)) onUpdateThreshold(col.id, normalizeDecimalString(draft));
     setOpen(false);
   };
 
@@ -90,12 +91,13 @@ const ColumnHeaderCell: React.FC<{
               content={
                 <div style={{ width: 180 }}>
                   <div style={{ fontSize: 12, color: 'rgba(0,0,0,.65)', marginBottom: 6 }}>设置差异阈值</div>
-                  <InputNumber
+                  <InputNumber<string>
+                    stringMode
                     autoFocus
                     size="small"
                     style={{ width: '100%', marginBottom: 8 }}
                     value={draft}
-                    onChange={setDraft}
+                    onChange={(value) => setDraft(typeof value === 'string' ? value : null)}
                     onPressEnter={handleConfirm}
                   />
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
@@ -135,7 +137,7 @@ export interface ComparisonTableProps {
   rows: ComparisonRowDTO[];
   readonly: boolean;
   onRemoveColumn: (id: string) => void;
-  onUpdateThreshold: (id: string, threshold: number) => void;
+  onUpdateThreshold: (id: string, threshold: DecimalString) => void;
 }
 
 export const ComparisonTable: React.FC<ComparisonTableProps> = ({

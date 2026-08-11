@@ -1,5 +1,6 @@
 package com.cpq.quotation.dto;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -34,6 +35,10 @@ public class CostingOrderListItemDTO {
     public String status;
     /** 驳回原因（status=REJECTED 时非空） */
     public String rejectReason;
+    /** 报价冻结总额，API 由全局 BigDecimal serializer 输出 decimal string。 */
+    public BigDecimal totalAmount;
+    /** 核价汇总总额，API 由全局 BigDecimal serializer 输出 decimal string。 */
+    public BigDecimal costingTotalAmount;
     /** costing_order.entered_costing_at */
     public OffsetDateTime createdAt;
     /** costing_order.updated_at */

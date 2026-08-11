@@ -9,6 +9,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -74,7 +75,7 @@ public class RowDataMaterializer {
     public ArrayNode materializeComponentRows(JsonNode componentsSnapshot,
                                               String componentCode,
                                               JsonNode snapshotRows,
-                                              Map<String, Double> crossComponentSubtotals) {
+                                              Map<String, BigDecimal> crossComponentSubtotals) {
         return materializeComponentRows(componentsSnapshot, componentCode, snapshotRows,
                 crossComponentSubtotals, Map.of());
     }
@@ -89,7 +90,7 @@ public class RowDataMaterializer {
     public ArrayNode materializeComponentRows(JsonNode componentsSnapshot,
                                               String componentCode,
                                               JsonNode snapshotRows,
-                                              Map<String, Double> crossComponentSubtotals,
+                                              Map<String, BigDecimal> crossComponentSubtotals,
                                               Map<String, List<Map<String, Object>>> crossTabRows) {
         // 配置态：editRows 恒空、无行键覆盖、无墓碑过滤 → 委派全参重载传空/ null。
         return materializeComponentRows(componentsSnapshot, componentCode, snapshotRows,
@@ -128,7 +129,7 @@ public class RowDataMaterializer {
                                               JsonNode snapshotRows,
                                               JsonNode editRows,
                                               JsonNode rowKeyFields,
-                                              Map<String, Double> crossComponentSubtotals,
+                                              Map<String, BigDecimal> crossComponentSubtotals,
                                               Map<String, List<Map<String, Object>>> crossTabRows,
                                               List<DeletedRowKeys.Tombstone> deleted,
                                               List<String> rowKeyFieldNames) {
@@ -150,7 +151,7 @@ public class RowDataMaterializer {
         ArrayNode baseRows = (ArrayNode) snapshotRows;
         JsonNode edits = (editRows != null && editRows.isArray()) ? editRows : MAPPER.createArrayNode();
 
-        Map<String, Double> cross = crossComponentSubtotals != null
+        Map<String, BigDecimal> cross = crossComponentSubtotals != null
                 ? crossComponentSubtotals : Map.of();
         Map<String, List<Map<String, Object>>> xtab = crossTabRows != null
                 ? crossTabRows : Map.of();

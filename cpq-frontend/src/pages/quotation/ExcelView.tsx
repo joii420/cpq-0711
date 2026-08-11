@@ -10,7 +10,13 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Spin, message, Tag } from 'antd';
 import { templateService } from '../../services/templateService';
 import type { LineItem } from './QuotationStep2';
-import { evaluateArithmetic, roundToDisplay } from '../../utils/precision';
+import {
+  evaluateArithmetic,
+  isDecimalString,
+  normalizeDecimalString,
+  toCalculationString,
+} from '../../utils/precision';
+import { formatNumber } from '../../utils/formatNumber';
 
 interface ViewColumn {
   col_key: string;
@@ -39,9 +45,9 @@ interface Props {
  */
 function computeExcelFormula(
   formula: string,
-  rowValues: Record<string, string | number>,
+  rowValues: Record<string, string>,
   rowNum: number,
-): string | number {
+): string {
   if (!formula || !formula.startsWith('=')) return '';
 
   // Replace {row} with actual row number
@@ -55,10 +61,10 @@ function computeExcelFormula(
   for (const [colKey, val] of Object.entries(rowValues)) {
     // Replace col+rowNum references: e.g. B2 where rowNum=2
     const cellRef = new RegExp(`\\b${colKey}${rowNum}\\b`, 'g');
-    expr = expr.replace(cellRef, String(val ?? 0));
+    expr = expr.replace(cellRef, isDecimalString(val) ? normalizeDecimalString(val) : '0');
     // Replace bare column references like B (without a row number following)
     const bareRef = new RegExp(`\\b${colKey}(?![0-9])`, 'g');
-    expr = expr.replace(bareRef, String(val ?? 0));
+    expr = expr.replace(bareRef, isDecimalString(val) ? normalizeDecimalString(val) : '0');
   }
 
   // task-0801：十进制精确求值，替代 new Function（不再 eval 任意 JS，更安全）。
@@ -66,13 +72,14 @@ function computeExcelFormula(
   // 求值 + 显示在此合一，故按呈现精度（DISPLAY_SCALE=6）在此边界规整（F4 显示口径），
   // 不像 formulaEngine.ts 的两个纯求值点那样把截断完全下放给显示层。
   const parsed = evaluateArithmetic(expr);
-  return parsed !== null ? roundToDisplay(parsed) : '#ERR';
+  return parsed !== null ? toCalculationString(parsed) : '#ERR';
 }
 
 // ─── Cell value resolution ────────────────────────────────────────────────────
 
 function resolveProductAttribute(lineItem: LineItem, attrName: string): string {
-  return String(lineItem.productAttributeValues?.[attrName] ?? '');
+  const value = lineItem.productAttributeValues?.[attrName];
+  return typeof value === 'string' ? value : '';
 }
 
 function resolveComponentField(
@@ -87,7 +94,7 @@ function resolveComponentField(
   if (!comp) return '';
   const row = comp.rows?.[row_index];
   if (!row) return '';
-  return String(row[field_name] ?? '');
+  return typeof row[field_name] === 'string' ? row[field_name] : '';
 }
 
 function getCellValue(col: ViewColumn, lineItem: LineItem): string {
@@ -264,11 +271,11 @@ const ExcelView: React.FC<Props> = ({ quotationId: _quotationId, lineItems, onUp
           {lineItems.map((item, rowIndex) => {
             const currentRowData = rowData[rowIndex] || {};
             // Build all non-formula values for formula evaluation
-            const rowValues: Record<string, string | number> = {};
+            const rowValues: Record<string, string> = {};
             for (const col of cols) {
               if (col.source_type !== 'EXCEL_FORMULA') {
                 const v = currentRowData[col.col_key] ?? getCellValue(col, item);
-                rowValues[col.col_key] = isNaN(Number(v)) || v === '' ? v : Number(v);
+                rowValues[col.col_key] = typeof v === 'string' ? v : '';
               }
             }
 
@@ -286,7 +293,7 @@ const ExcelView: React.FC<Props> = ({ quotationId: _quotationId, lineItems, onUp
                       <td key={col.col_key} style={formulaCellStyle}>
                         {computed === '#ERR' ? (
                           <span style={{ color: '#ff4d4f' }}>#ERR</span>
-                        ) : String(computed)}
+                        ) : (formatNumber(computed, { isComputed: true }) ?? '0')}
                       </td>
                     );
                   }

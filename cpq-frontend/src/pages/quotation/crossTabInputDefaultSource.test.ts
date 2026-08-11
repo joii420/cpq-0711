@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildCrossTabRows } from './QuotationStep2';
 import { bnfDriverLookupKey } from './useDriverExpansions';
 
-const bdvYs = (liao: string, price: number) => ({
+const bdvYs = (liao: string, price: string) => ({
   [bnfDriverLookupKey('$ys_view._料件')]: liao,
   [bnfDriverLookupKey('$ys_view._单价')]: price,
 });
@@ -10,9 +10,9 @@ const bdvYs = (liao: string, price: number) => ({
 const ysExpansion = {
   rowCount: 3,
   rows: [
-    { driverRow: { _料件: '料8', _单价: 60 },   basicDataValues: bdvYs('料8', 60) },
-    { driverRow: { _料件: '料8', _单价: 34.5 }, basicDataValues: bdvYs('料8', 34.5) },
-    { driverRow: { _料件: '料9', _单价: 99 },   basicDataValues: bdvYs('料9', 99) },
+    { driverRow: { _料件: '料8', _单价: '60' },   basicDataValues: bdvYs('料8', '60') },
+    { driverRow: { _料件: '料8', _单价: '34.5' }, basicDataValues: bdvYs('料8', '34.5') },
+    { driverRow: { _料件: '料9', _单价: '99' },   basicDataValues: bdvYs('料9', '99') },
   ],
 } as any;
 
@@ -58,12 +58,12 @@ describe('cross_tab INPUT+default_source 行解析', () => {
     const ysRows = store['元素'];
     expect(ysRows).toHaveLength(3);
     expect(ysRows[0]['料件']).toBe('料8');
-    expect(Number(ysRows[0]['单价'])).toBe(60);
+    expect(ysRows[0]['单价']).toBe('60');
   });
 
   it('宿主行 match 键经 INPUT default_source 解析 → SUM 命中正确（料8=94.5）', () => {
     const { store } = buildCrossTabRows(componentData, {}, undefined, lookupExpansion);
     const llRow = store['来料'][0];
-    expect(Number(llRow['材料费'])).toBeCloseTo(94.5, 4);
+    expect(llRow['材料费']).toBe('94.5');
   });
 });

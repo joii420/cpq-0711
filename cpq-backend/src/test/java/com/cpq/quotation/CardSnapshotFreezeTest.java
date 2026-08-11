@@ -1,7 +1,13 @@
 package com.cpq.quotation;
 
+import com.cpq.component.entity.Component;
+import com.cpq.quotation.entity.Quotation;
 import com.cpq.quotation.entity.QuotationLineItem;
 import com.cpq.quotation.service.CardSnapshotService;
+import com.cpq.template.entity.Template;
+import com.cpq.template.entity.TemplateComponent;
+import com.cpq.template.entity.TemplateComponentSnapshot;
+import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -134,26 +140,88 @@ public class CardSnapshotFreezeTest {
     // Helpers for T3
     // -----------------------------------------------------------------------
 
-    /**
-     * 找一个满足以下条件的报价单 ID：
-     * <ul>
-     *   <li>status = 'DRAFT'</li>
-     *   <li>有 quotation_view_structure 结构行（至少 QUOTE_CARD）</li>
-     *   <li>至少有 1 条 lineItem（有 driver 数据，供 force 重算）</li>
-     * </ul>
-     */
-    @SuppressWarnings("unchecked")
-    private UUID resolveQuotationIdWithStructure() {
-        var rows = em.createNativeQuery(
-            "SELECT q.id FROM quotation q " +
-            "JOIN quotation_view_structure vs ON vs.quotation_id = q.id AND vs.view_kind = 'QUOTE_CARD' " +
-            "WHERE q.status = 'DRAFT' " +
-            "  AND EXISTS (" +
-            "    SELECT 1 FROM quotation_line_item li " +
-            "    WHERE li.quotation_id = q.id" +
-            "  ) " +
-            "LIMIT 1").getResultList();
-        return rows.isEmpty() ? null : UUID.fromString(rows.get(0).toString());
+    private RefreshFixture createRenderableRefreshFixture() {
+        RefreshFixture fixture = QuarkusTransaction.requiringNew().call(() -> {
+            Component component = new Component();
+            component.name = "CardSnapshotFreeze deterministic component";
+            component.code = "CSF-" + UUID.randomUUID().toString().substring(0, 8);
+            component.fields = "[]";
+            component.formulas = "[]";
+            component.persist();
+
+            Template template = new Template();
+            template.templateSeriesId = UUID.randomUUID();
+            template.name = "CardSnapshotFreeze deterministic template";
+            template.templateKind = "QUOTATION";
+            template.status = "PUBLISHED";
+            template.componentsSnapshot = "[{\"id\":\"" + UUID.randomUUID()
+                + "\",\"componentId\":\"" + component.id + "\",\"componentName\":\""
+                + component.name + "\",\"componentCode\":\"" + component.code
+                + "\",\"componentType\":\"NORMAL\",\"tabName\":\"报价\","
+                + "\"sortOrder\":0,\"fields\":[],\"formulas\":[],\"formula_assignments\":{}}]";
+            template.sqlViewsSnapshot = "{}";
+            template.templateSqlViewsSnapshot = "{}";
+            template.excelViewConfig = "[]";
+            template.persist();
+
+            TemplateComponent mounted = new TemplateComponent();
+            mounted.templateId = template.id;
+            mounted.componentId = component.id;
+            mounted.tabName = "报价";
+            mounted.sortOrder = 0;
+            mounted.persist();
+
+            TemplateComponentSnapshot snapshot = new TemplateComponentSnapshot();
+            snapshot.templateId = template.id;
+            snapshot.templateComponentId = mounted.id;
+            snapshot.componentId = component.id;
+            snapshot.sortOrder = 0;
+            snapshot.tabName = "报价";
+            snapshot.componentName = component.name;
+            snapshot.componentCode = component.code;
+            snapshot.componentType = "NORMAL";
+            snapshot.fields = "[]";
+            snapshot.formulas = "[]";
+            snapshot.persist();
+
+            Object customerId = em.createNativeQuery("SELECT id FROM customer ORDER BY id LIMIT 1").getSingleResult();
+            Object salesRepId = em.createNativeQuery("SELECT id FROM \"user\" ORDER BY id LIMIT 1").getSingleResult();
+            Quotation quotation = new Quotation();
+            quotation.quotationNumber = "CSF-" + UUID.randomUUID();
+            quotation.customerId = customerId instanceof UUID id ? id : UUID.fromString(customerId.toString());
+            quotation.name = "CardSnapshotFreeze deterministic quotation";
+            quotation.salesRepId = salesRepId instanceof UUID id ? id : UUID.fromString(salesRepId.toString());
+            quotation.status = "DRAFT";
+            quotation.customerTemplateId = template.id;
+            quotation.persist();
+
+            QuotationLineItem line = new QuotationLineItem();
+            line.quotationId = quotation.id;
+            line.templateId = template.id;
+            line.productNameSnapshot = "CardSnapshotFreeze deterministic product";
+            line.productPartNoSnapshot = "CSF-P1";
+            line.sortOrder = 0;
+            line.cardSnapshotAt = OffsetDateTime.now().minusHours(2);
+            line.persist();
+            return new RefreshFixture(quotation.id, template.id, mounted.id, component.id);
+        });
+        svc.ensureStructure(fixture.quotationId());
+        return fixture;
+    }
+
+    private void cleanupRefreshFixture(RefreshFixture fixture) {
+        QuarkusTransaction.requiringNew().run(() -> {
+            em.createNativeQuery("DELETE FROM quotation WHERE id = :id")
+                .setParameter("id", fixture.quotationId()).executeUpdate();
+            em.createNativeQuery("DELETE FROM template_component_snapshot WHERE template_id = :id")
+                .setParameter("id", fixture.templateId()).executeUpdate();
+            em.createNativeQuery("DELETE FROM template_component WHERE id = :id")
+                .setParameter("id", fixture.templateComponentId()).executeUpdate();
+            em.createNativeQuery("DELETE FROM template WHERE id = :id")
+                .setParameter("id", fixture.templateId()).executeUpdate();
+            em.createNativeQuery("DELETE FROM component WHERE id = :id")
+                .setParameter("id", fixture.componentId()).executeUpdate();
+        });
     }
 
     /**
@@ -210,12 +278,12 @@ public class CardSnapshotFreezeTest {
     @Order(3)
     @DisplayName("T3: refreshDraftQuoteCards → 不调 rebuildStructureForDraft(结构 createdAt 不变) + 逐行 force=true 重算(quoteValuesAt 被更新)")
     void refreshDraftQuoteCards_doesNotRebuildStructure() {
-        UUID quotationId = resolveQuotationIdWithStructure();
-        assumeTrue(quotationId != null,
-            "需要 DRAFT 报价单且有 quotation_view_structure 行 + lineItem");
+        RefreshFixture fixture = createRenderableRefreshFixture();
+        UUID quotationId = fixture.quotationId();
+        try {
 
-        // seed：所有行设为已 bake 状态（cardSnapshotAt=过去, quoteValuesAt=NULL）
-        seedAllLinesBaked(quotationId);
+            // seed：所有行设为已 bake 状态（cardSnapshotAt=过去, quoteValuesAt=NULL）
+            seedAllLinesBaked(quotationId);
 
         // 记录调用前的结构快照 createdAt（rebuildStructureForDraft = delete+重建 → createdAt 会变）
         em.clear();
@@ -236,10 +304,16 @@ public class CardSnapshotFreezeTest {
             "R1：rebuildStructureForDraft 未被调用 → quotation_view_structure.created_at 必须与调用前完全相同");
 
         // 验证2：第一条 lineItem 的 quoteValuesAt 被更新（证明 force=true 路径有走）
-        OffsetDateTime afterValuesAt = readFirstLineQuoteValuesAt(quotationId);
-        assertNotNull(afterValuesAt,
-            "I-1+force=true：refreshDraftQuoteCards 应逐行调 self.refreshQuoteCardValues(li, true)，quoteValuesAt 必须被更新");
+            OffsetDateTime afterValuesAt = readFirstLineQuoteValuesAt(quotationId);
+            assertNotNull(afterValuesAt,
+                "I-1+force=true：refreshDraftQuoteCards 应逐行刷新真实可渲染行，quoteValuesAt 必须被更新");
+        } finally {
+            cleanupRefreshFixture(fixture);
+        }
     }
+
+    private record RefreshFixture(UUID quotationId, UUID templateId,
+                                  UUID templateComponentId, UUID componentId) {}
 
     // -----------------------------------------------------------------------
     // T2: force=true + cardSnapshotAt!=null → 重算，quoteValuesAt 被更新

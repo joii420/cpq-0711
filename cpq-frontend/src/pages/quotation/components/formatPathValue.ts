@@ -6,6 +6,7 @@
  * 将 formatPathValue 独立成此模块，断开该循环。
  */
 import { formatNumber } from '../../../utils/formatNumber';
+import { tryParseSnapshotJsonLossless } from '../../../utils/losslessJson';
 
 // ─── ENUM 标签（与 QuotationStep2 同源） ────────────────────────────────────
 const ENUM_LABEL: Record<string, string> = {
@@ -32,7 +33,7 @@ const ENUM_LABEL: Record<string, string> = {
  */
 export function formatPathValue(v: any, decimals?: number | null): string | null {
   if (v == null || v === '') return null;
-  if (typeof v === 'number') return formatNumber(v, { decimals }) ?? String(v);
+  if (typeof v === 'number') return null;
   if (typeof v === 'boolean') return String(v);
   if (typeof v === 'string') return ENUM_LABEL[v] ?? v;
   if (Array.isArray(v)) {
@@ -44,7 +45,7 @@ export function formatPathValue(v: any, decimals?: number | null): string | null
   if (typeof v === 'object') {
     if (v.type === 'jsonb' && typeof v.value === 'string') {
       try {
-        const parsed = JSON.parse(v.value);
+        const parsed = tryParseSnapshotJsonLossless<any>(v.value);
         if (Array.isArray(parsed)) {
           if (parsed.length === 0) return null;
           const items = parsed.map((it: any) => formatPathValue(it) ?? '').filter(Boolean);

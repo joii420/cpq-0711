@@ -55,7 +55,7 @@ public class CostingOrder extends PanacheEntityBase {
     public String frozenDto;
 
     // task-0801 B7：precision/scale 18,4 → 20,6（V366）。
-    @Column(name = "total_amount", precision = 20, scale = 6)
+    @Column(name = "total_amount", precision = 26, scale = 12)
     public BigDecimal totalAmount;
 
     // ── task-0713 B5 新增字段（D1 落定：核价侧 live 重算 + 结果缓存回核价单）──────────────
@@ -68,7 +68,7 @@ public class CostingOrder extends PanacheEntityBase {
 
     /** 核价侧单据总价 = Σ 核价成本 subtotal，不含 Step3 折扣。 */
     // task-0801 B7：precision/scale 18,4 → 20,6（V366）。
-    @Column(name = "costing_total_amount", precision = 20, scale = 6)
+    @Column(name = "costing_total_amount", precision = 26, scale = 12)
     public BigDecimal costingTotalAmount;
 
     @Column(name = "reviewed_by")

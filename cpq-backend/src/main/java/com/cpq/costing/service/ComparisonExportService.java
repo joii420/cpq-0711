@@ -9,6 +9,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -64,8 +65,8 @@ public class ComparisonExportService {
                 for (int i = 0; i < cols.size(); i++) {
                     ComparisonExportRequest.Cell cell = cells.get(cols.get(i).tag);
                     int c = 2 + i;
-                    Object qv = cell != null ? cell.quote : null;
-                    Object cv = cell != null ? cell.costing : null;
+                    BigDecimal qv = cell != null ? cell.quote : null;
+                    BigDecimal cv = cell != null ? cell.costing : null;
                     boolean hl = cell != null && cell.highlighted;
                     writeValue(reportRow.createCell(c), qv, hl ? highlightStyle : null);
                     writeValue(costingRow.createCell(c), cv, hl ? highlightStyle : null);
@@ -81,16 +82,9 @@ public class ComparisonExportService {
         }
     }
 
-    private void writeValue(Cell cell, Object v, CellStyle style) {
-        if (v instanceof Number n) {
-            cell.setCellValue(n.doubleValue());
-        } else if (v != null) {
-            String s = String.valueOf(v);
-            try {
-                cell.setCellValue(Double.parseDouble(s.trim()));
-            } catch (NumberFormatException ex) {
-                cell.setCellValue(s);
-            }
+    private void writeValue(Cell cell, BigDecimal value, CellStyle style) {
+        if (value != null) {
+            cell.setCellValue(com.cpq.common.NumberFormatUtil.format(value, null, true));
         }
         if (style != null) cell.setCellStyle(style);
     }

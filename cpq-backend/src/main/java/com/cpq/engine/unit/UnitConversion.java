@@ -125,7 +125,7 @@ public final class UnitConversion {
      * collectFieldValues + fillInputDefaultSourceByFieldName 之后调用，覆盖 driver / data-source 列。
      */
     public static void convertResolvedRow(JsonNode fields,
-                                          Map<String, Double> fieldValues,
+                                          Map<String, BigDecimal> fieldValues,
                                           Map<String, Object> currentRowRaw) {
         Map<String, String> cols = configuredColumns(fields);
         if (cols.isEmpty()) return;
@@ -135,8 +135,8 @@ public final class UnitConversion {
             BigDecimal factor = factorFor(unitObj == null ? null : unitObj.toString());
             if (factor.compareTo(BigDecimal.ONE) == 0) continue;
             if (fieldValues != null) {
-                Double cv = fieldValues.get(c);
-                if (cv != null) fieldValues.put(c, factor.multiply(BigDecimal.valueOf(cv)).doubleValue());
+                BigDecimal cv = fieldValues.get(c);
+                if (cv != null) fieldValues.put(c, factor.multiply(cv));
             }
             if (currentRowRaw != null) {
                 BigDecimal raw = toBig(currentRowRaw.get(c));

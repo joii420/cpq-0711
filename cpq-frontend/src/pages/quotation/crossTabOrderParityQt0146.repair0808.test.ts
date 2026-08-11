@@ -16,6 +16,8 @@
  * 用例书：dev-docs/repair-0803-公式计算BUG修复/repair-0808-前端页签算序假环致列小计归零/test.md
  */
 import { describe, it, expect, vi } from 'vitest';
+import Decimal from 'decimal.js';
+import { isDecimalString, toDecimal } from '../../utils/precision';
 import { buildCrossTabRows, evalProductSubtotalFromSubtotals } from './QuotationStep2';
 import type { LineItem } from './QuotationStep2';
 import { buildComponentDeps, extractSourceRefs, topoOrderComponents } from './crossTabOrder';
@@ -29,14 +31,18 @@ import {
 /**
  * 浮点比较口径：相对误差 ≤ 1e-12（照抄 formulaParityQt0068.repair0805.test.ts 的 expectNumEq）。
  */
-function expectNumEq(actual: unknown, expected: number, label: string) {
-  expect(typeof actual, `${label} 不是数字（实际 ${JSON.stringify(actual)}）`).toBe('number');
-  const a = actual as number;
-  expect(Number.isFinite(a), `${label} 不是有限数：${a}`).toBe(true);
-  const tol = 1e-12 * Math.max(1, Math.abs(expected));
+function expectNumEq(actual: unknown, expected: unknown, label: string) {
+  expect(isDecimalString(actual), `${label} 前端值不是 decimal string（实际 ${JSON.stringify(actual)}）`).toBe(true);
+  expect(isDecimalString(expected), `${label} 后端值不是 decimal string（实际 ${JSON.stringify(expected)}）`).toBe(true);
+  if (!isDecimalString(actual) || !isDecimalString(expected)) return;
+  const a = toDecimal(actual);
+  const e = toDecimal(expected);
+  const base = Decimal.max('1', e.abs());
+  const tolerance = base.times('0.000000000001');
+  const relativeError = a.minus(e).abs().dividedBy(base);
   expect(
-    Math.abs(a - expected) <= tol,
-    `${label} 前端 ${a} ≠ 后端 ${expected}（相对误差 ${Math.abs(a - expected) / Math.max(1, Math.abs(expected))}）`,
+    a.minus(e).abs().lessThanOrEqualTo(tolerance),
+    `${label} 前端 ${actual} ≠ 后端 ${expected}（相对误差 ${relativeError.toString()}）`,
   ).toBe(true);
 }
 
@@ -71,7 +77,7 @@ describe('repair-0808 T-2.1 · 拓扑序（AC-4）', () => {
 describe('repair-0808 T-2.2/T-2.3 · 「物料」列小计对拍（AC-3）', () => {
   it('T-2.2 columnSumsByComp[物料] 与后端 subtotalByColumn 6 键逐值一致（相对误差 ≤1e-12）', () => {
     const { wuliaoColumnSums } = runQt0146Pipeline();
-    const be = backend.subtotalByColumn as Record<string, number>;
+    const be = backend.subtotalByColumn as Record<string, string>;
     const keys = Object.keys(be);
     expect(keys.length, '夹具自检：后端 subtotalByColumn 不是 6 个键').toBe(6);
     for (const k of keys) {
@@ -85,14 +91,14 @@ describe('repair-0808 T-2.2/T-2.3 · 「物料」列小计对拍（AC-3）', () 
     for (const col of WULIAO_FORMULA_COLUMNS) {
       const v = wuliaoColumnSums[col];
       expect(
-        typeof v === 'number' && Number.isFinite(v),
+        isDecimalString(v),
         `「${col}」列和不是有限数：${JSON.stringify(v)}（线上表现即该单元格 '—'）`,
       ).toBe(true);
     }
-    expect(wuliaoColumnSums['回收成本'], '「回收成本」本身业务上就应为 0（非本缺陷症状）').toBe(0);
+    expect(wuliaoColumnSums['回收成本'], '「回收成本」本身业务上就应为 0（非本缺陷症状）').toBe('0');
     for (const col of WULIAO_FORMULA_COLUMNS) {
       if (col === '回收成本') continue;
-      expect(wuliaoColumnSums[col], `「${col}」列和不应为 0（线上表现即该列小计 ¥0，本缺陷的直接症状）`).not.toBe(0);
+      expect(wuliaoColumnSums[col], `「${col}」列和不应为 0（线上表现即该列小计 ¥0，本缺陷的直接症状）`).not.toBe('0');
     }
   });
 });
@@ -111,8 +117,9 @@ describe('repair-0808 T-2.4 · 产品小计对拍（AC-2）', () => {
     // 期望值直接从夹具读（后端「报价」SUBTOTAL 页签自己的 subtotal 字段），不硬编码。
     // 不用 `quotation.total_amount`——该列是 NUMERIC(20,6)，落库时已丢了 6 位以后的精度，
     // 当高精度对拍基准会引入虚假误差，见 index.ts QT0146 常量注释。
-    const backendSubtotal = (valuesTab(QT0146.quoteSubtotalTabName) as any).subtotal as number;
-    expect(typeof backendSubtotal, '夹具自检：「报价」tab 没有 subtotal 字段').toBe('number');
+    const backendSubtotal = (valuesTab(QT0146.quoteSubtotalTabName) as any).subtotal;
+    expect(isDecimalString(backendSubtotal), '夹具自检：「报价」tab subtotal 不是 decimal string').toBe(true);
+    if (!isDecimalString(backendSubtotal)) return;
 
     // 6 个加项/减项本身已在 T-2.2 逐值对上后端 subtotalByColumn（相对误差 ≤1e-12）；
     // 这里残留的绝对误差（实测 ~2.6e-5）是「报价」这个 SUBTOTAL 组件自身公式在后端求值/持久化时
@@ -120,14 +127,14 @@ describe('repair-0808 T-2.4 · 产品小计对拍（AC-2）', () => {
     // 用绝对误差 1e-3 兜底：比实测残差宽 ~40 倍，但比本缺陷真实症状（列小计塌成 0，
     // 产品小计从 137.53 掉到 0.10，相差 4 个数量级）严格 100 倍以上收紧——
     // 假环一旦复发，这条断言必挂，不会被 1e-3 的宽容度掩盖。
-    const absDiff = Math.abs(productSubtotal - backendSubtotal);
+    const absDiff = toDecimal(productSubtotal).minus(backendSubtotal).abs();
     expect(
-      absDiff <= 1e-3,
-      `产品小计 前端 ${productSubtotal} vs 后端 ${backendSubtotal}，绝对误差 ${absDiff} 超出 1e-3`,
+      absDiff.lessThanOrEqualTo('0.001'),
+      `产品小计 前端 ${productSubtotal} vs 后端 ${backendSubtotal}，绝对误差 ${absDiff.toString()} 超出 1e-3`,
     ).toBe(true);
     // 量级门禁（真正守住本缺陷的断言）：修复前产品小计塌成 ~0.1038（见 test.md T-4.2「现状 ¥0.103826」），
     // 与正确值 ~137.53 相差 1300 倍——只要不小于 100，就足以把「假环未修」的场景挡在外面。
-    expect(productSubtotal, '产品小计量级不对：疑似假环未修，列小计塌缩').toBeGreaterThan(100);
+    expect(toDecimal(productSubtotal).greaterThan('100'), '产品小计量级不对：疑似假环未修，列小计塌缩').toBe(true);
   });
 });
 
@@ -187,10 +194,10 @@ describe('repair-0808 T-2.5 · 反向门禁（证明用例真的守着本缺陷�
     expect(String(errSpy.mock.calls[0]?.[0] ?? '')).toContain('组件依赖成环');
     errSpy.mockRestore();
 
-    const be = backend.subtotalByColumn as Record<string, number>;
+    const be = backend.subtotalByColumn as Record<string, string>;
     const wuliaoSums = columnSumsByComp[QT0146.wuliaoComponentId] ?? {};
     for (const k of Object.keys(be)) {
-      expect(wuliaoSums[k] ?? 0, `假环场景下「${k}」列小计必须塌成 0（否则这条反向门禁没守住东西）`).toBe(0);
+      expect(wuliaoSums[k] ?? '0', `假环场景下「${k}」列小计必须塌成 0（否则这条反向门禁没守住东西）`).toBe('0');
     }
   });
 });

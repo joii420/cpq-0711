@@ -11,6 +11,8 @@ import ApproveImpactModal from './ApproveImpactModal';
 import RejectReasonDrawer from './RejectReasonDrawer';
 import JobProgressDrawer from '../price-adjust-jobs/JobProgressDrawer';
 import type { ReviewRowDTO, ReviewStatus } from '../../../types/price-adjust';
+import { formatNumber } from '../../../utils/formatNumber';
+import { toDecimal, type DecimalString } from '../../../utils/precision';
 
 const PAGE_SIZE = 20;
 
@@ -21,9 +23,8 @@ const REVIEW_STATUS_OPTIONS: { value: ReviewStatus; label: string }[] = [
   { value: 'VOIDED', label: '已作废' },
 ];
 
-function fmt(v: number | null | undefined): string {
-  if (v == null) return '—';
-  return v.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function fmt(v: DecimalString | null | undefined): string {
+  return formatNumber(v, { isComputed: true, decimals: 2 }) ?? '—';
 }
 
 /** 🔒 全部数据列都挂同一个 onCell，实现"整行标红"——rowRed 由服务端权威给出，
@@ -128,10 +129,10 @@ const PriceAdjustReviewPage: React.FC = () => {
       title: '报价侧成本(现→调整后)', width: 170, align: 'right' as const, onCell: redCell,
       render: (_: unknown, r) => <span>{fmt(r.quoteCostCurrent)} → <b>{fmt(r.quoteCostAdjusted)}</b></span>,
     },
-    { title: '核价侧成本', dataIndex: 'costingCost', width: 110, align: 'right' as const, onCell: redCell, render: (v: number | null) => fmt(v) },
+    { title: '核价侧成本', dataIndex: 'costingCost', width: 110, align: 'right' as const, onCell: redCell, render: (v: DecimalString | null) => fmt(v) },
     {
       title: '差异', dataIndex: 'diffAdjusted', width: 100, align: 'right' as const, onCell: redCell,
-      render: (v: number | null) => <span style={{ color: v != null && v < 0 ? '#cf1322' : undefined }}>{fmt(v)}</span>,
+      render: (v: DecimalString | null) => <span style={{ color: v != null && toDecimal(v).isNegative() ? '#cf1322' : undefined }}>{fmt(v)}</span>,
     },
     {
       title: '比对状态', width: 190, onCell: redCell,

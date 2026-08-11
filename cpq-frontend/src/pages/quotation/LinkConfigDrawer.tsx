@@ -17,6 +17,7 @@ import { CloseOutlined } from '@ant-design/icons';
 import { genUUID } from '../../utils/uuid';
 import { formatMetricLabel, buildTabPairLabel } from './comparisonMapping';
 import type { LinkPairInput } from './comparisonMapping';
+import { isDecimalString, normalizeDecimalString, type DecimalString } from '../../utils/precision';
 import type { ComparisonMetaDTO, ComparisonTabMeta, ComparisonMetricMeta } from '../../services/comparisonViewService';
 
 type Side = 'quote' | 'costing';
@@ -39,7 +40,7 @@ interface PairRow {
   costingMetric: string;
   costingTabName: string;
   costingMetricLabel: string;
-  threshold: number;
+  threshold: DecimalString;
 }
 
 interface PathDatum {
@@ -165,7 +166,7 @@ export const LinkConfigDrawer: React.FC<LinkConfigDrawerProps> = ({ open, meta, 
       quoteTabName: quoteEnd.tabName, quoteMetricLabel: quoteEnd.metricLabel,
       costingComponentId: costingEnd.componentId, costingMetric: costingEnd.metric,
       costingTabName: costingEnd.tabName, costingMetricLabel: costingEnd.metricLabel,
-      threshold: 0,
+      threshold: '0',
     };
     setPairs((prev) => [...prev, newPair]);
     setPending(null);
@@ -180,7 +181,7 @@ export const LinkConfigDrawer: React.FC<LinkConfigDrawerProps> = ({ open, meta, 
   };
 
   const removePair = (id: string) => setPairs((prev) => prev.filter((p) => p.id !== id));
-  const updateThreshold = (id: string, threshold: number) =>
+  const updateThreshold = (id: string, threshold: DecimalString) =>
     setPairs((prev) => prev.map((p) => (p.id === id ? { ...p, threshold } : p)));
 
   const scrollAndFlash = (id: string) => {
@@ -365,11 +366,15 @@ export const LinkConfigDrawer: React.FC<LinkConfigDrawerProps> = ({ open, meta, 
                   </span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'rgba(0,0,0,.45)', flexShrink: 0 }}>
                     阈值
-                    <InputNumber
+                    <InputNumber<string>
+                      stringMode
                       size="small"
                       style={{ width: 64 }}
                       value={p.threshold}
-                      onChange={(v) => updateThreshold(p.id, v ?? 0)}
+                      onChange={(v) => updateThreshold(
+                        p.id,
+                        typeof v === 'string' && isDecimalString(v) ? normalizeDecimalString(v) : '0',
+                      )}
                       onClick={(e) => e.stopPropagation()}
                     />
                   </span>

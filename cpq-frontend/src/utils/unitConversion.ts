@@ -1,18 +1,20 @@
 // 单位换算预设表（硬编码）。后端镜像 com.cpq.engine.unit.UnitConversion，对拍测试守一致。
 // 设计见 docs/superpowers/specs/2026-06-15-unit-conversion-design.md §3。
 
-const FACTORS: Record<string, number> = {
-  '克': 0.001, 'G': 0.001,
-  '千克': 1, 'KG': 1,
-  '吨': 1000, 'T': 1000,
-  '片': 1, 'PCS': 1,
+import { isDecimalString, normalizeDecimalString, toDecimal, type DecimalString } from './precision';
+
+const FACTORS: Record<string, DecimalString> = {
+  '克': '0.001', 'G': '0.001',
+  '千克': '1', 'KG': '1',
+  '吨': '1000', 'T': '1000',
+  '片': '1', 'PCS': '1',
   // KPCS / 千片：按「每千片 → 每片」的分母口径 ÷1000（2026-07-28 业务修订，原为 ×1000）。
   // 中英别名必须同值，否则同一行写「KPCS」与写「千片」结果相差 100 万倍。
-  'KPCS': 0.001, '千片': 0.001,
-  'G/PCS': 0.001,
+  'KPCS': '0.001', '千片': '0.001',
+  'G/PCS': '0.001',
   // KG/KPCS 与 G/PCS 数学等价：1 kg/千片 = 1000g/1000片 = 1 g/片，故同为 0.001。
-  'KG/KPCS': 0.001,
-  'G/KPCS': 0.000001,
+  'KG/KPCS': '0.001',
+  'G/KPCS': '0.000001',
 };
 
 function normalize(unitText: string | null | undefined): string {
@@ -21,10 +23,10 @@ function normalize(unitText: string | null | undefined): string {
 }
 
 /** 单位 → 系数；未知 / 空 → 1（原值透传）。 */
-export function factorFor(unitText: string | null | undefined): number {
+export function factorFor(unitText: string | null | undefined): DecimalString {
   const key = normalize(unitText);
-  if (key === '') return 1;
-  return FACTORS[key] ?? 1;
+  if (key === '') return '1';
+  return FACTORS[key] ?? '1';
 }
 
 type FieldLike = { name?: string; key?: string; unit_source_field?: string };
@@ -53,9 +55,10 @@ export function applyUnitConversion<T extends Record<string, any>>(
   const out: Record<string, any> = { ...row };
   for (const [c, d] of configured) {
     const raw = row[c];
-    const num = typeof raw === 'number' ? raw : parseFloat(raw);
-    if (raw == null || isNaN(num)) continue;
-    out[c] = num * factorFor(row[d] == null ? '' : String(row[d]));
+    if (!isDecimalString(raw)) continue;
+    out[c] = normalizeDecimalString(
+      toDecimal(raw).times(factorFor(row[d] == null ? '' : String(row[d]))),
+    );
   }
   return out as T;
 }

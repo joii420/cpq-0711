@@ -49,12 +49,12 @@ class ComponentDataEffectiveRowsDiscountTest {
             cd(sub, 2, "[]"));
         // 折 ASM 20% → 8*0.8 + 2 = 8.4
         BigDecimal s1 = ComponentDataEffectiveRows.subtotalWithDiscount(
-            list, metas(asm, oth, sub), sub, fc, "ASM", 0.8);
+            list, metas(asm, oth, sub), sub, fc, "ASM", new BigDecimal("0.8"));
         assertEquals(0, new BigDecimal("8.4000").compareTo(s1),
             "折扣后小计应为 8.4000，实际=" + s1);
         // 无折扣 → 10
         BigDecimal s0 = ComponentDataEffectiveRows.subtotalWithDiscount(
-            list, metas(asm, oth, sub), sub, fc, null, 1.0);
+            list, metas(asm, oth, sub), sub, fc, null, BigDecimal.ONE);
         assertEquals(0, new BigDecimal("10.0000").compareTo(s0),
             "无折扣小计应为 10.0000，实际=" + s0);
     }
@@ -85,15 +85,15 @@ class ComponentDataEffectiveRowsDiscountTest {
             cd(oth, 2, "[{\"费用\":2}]"),
             cd(sub, 3, "[]"));
 
-        BigDecimal s0 = ComponentDataEffectiveRows.subtotalWithDiscount(list, m, sub, fc, null, 1.0);
+        BigDecimal s0 = ComponentDataEffectiveRows.subtotalWithDiscount(list, m, sub, fc, null, BigDecimal.ONE);
         assertEquals(0, new BigDecimal("18.0000").compareTo(s0), "无折扣应为 18，实际=" + s0);
 
         // 仅折 LL#材料成本 20% → 17
-        BigDecimal s1 = ComponentDataEffectiveRows.subtotalWithDiscount(list, m, sub, fc, "LL#材料成本", 0.8);
+        BigDecimal s1 = ComponentDataEffectiveRows.subtotalWithDiscount(list, m, sub, fc, "LL#材料成本", new BigDecimal("0.8"));
         assertEquals(0, new BigDecimal("17.0000").compareTo(s1), "折 LL#材料成本 后应为 17，实际=" + s1);
 
         // 折 LL#材料损耗成本 20% → 3*0.8=2.4 → 5+2.4+8+2=17.4
-        BigDecimal s2 = ComponentDataEffectiveRows.subtotalWithDiscount(list, m, sub, fc, "LL#材料损耗成本", 0.8);
+        BigDecimal s2 = ComponentDataEffectiveRows.subtotalWithDiscount(list, m, sub, fc, "LL#材料损耗成本", new BigDecimal("0.8"));
         assertEquals(0, new BigDecimal("17.4000").compareTo(s2), "折 LL#材料损耗成本 后应为 17.4，实际=" + s2);
     }
 }

@@ -5,6 +5,7 @@ import dayjs, { type Dayjs } from 'dayjs';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
 import { elementPriceStrategyService } from '../../services/elementPriceStrategyService';
 import type { PriceSourceDTO, ElementPriceRowDTO, PageResult, PriceFetchStatus } from '../../types/element-price-strategy';
+import { formatDisplayDecimal, type DecimalString } from '../../utils/precision';
 import PriceEditDrawer from './PriceEditDrawer';
 
 const { RangePicker } = DatePicker;
@@ -192,7 +193,7 @@ const PriceDetailTab: React.FC<Props> = ({ active, sources }) => {
             dataIndex: 'sourceName',
             render: (v: string, r) => r.sourceStatus === 'DISABLED' ? <span style={{ color: 'rgba(0,0,0,.45)' }}>{v}</span> : v,
           },
-          { title: '单价', dataIndex: 'price', align: 'right' as const, render: (v: number) => v.toFixed(4) },
+          { title: '单价', dataIndex: 'price', align: 'right' as const, render: (v: DecimalString) => formatDisplayDecimal(v, 4) },
           { title: '货币', dataIndex: 'currency' },
           { title: '计价单位', dataIndex: 'priceUnit' },
           {

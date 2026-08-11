@@ -3,6 +3,7 @@ import { Select, DatePicker, Input, Button, Table, Space, Alert, message } from 
 import dayjs, { type Dayjs } from 'dayjs';
 import { elementPriceStrategyService } from '../../services/elementPriceStrategyService';
 import type { PriceSourceDTO, PriceHistoryDTO, PageResult } from '../../types/element-price-strategy';
+import { formatDisplayDecimal, isDecimalString } from '../../utils/precision';
 
 const { RangePicker } = DatePicker;
 const PAGE_SIZE = 20;
@@ -62,7 +63,7 @@ const PriceHistoryTab: React.FC<Props> = ({ active, sources }) => {
   };
 
   const renderSnapshotSummary = (snap: Record<string, unknown>) => {
-    const price = snap.price !== undefined && snap.price !== null ? Number(snap.price).toFixed(4) : '—';
+    const price = isDecimalString(snap.price) ? formatDisplayDecimal(snap.price, 4) : '—';
     const currency = snap.currency !== undefined ? String(snap.currency) : '—';
     const priceUnit = snap.priceUnit !== undefined ? String(snap.priceUnit) : '—';
     return <span>单价 {price} {currency}/{priceUnit}</span>;

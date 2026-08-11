@@ -53,7 +53,7 @@ import java.util.UUID;
 public class ComparisonViewService {
 
     private static final Logger LOG = Logger.getLogger(ComparisonViewService.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = com.cpq.common.DecimalJacksonCustomizer.newMapper();
     private static final Set<String> VALID_BUCKETS = Set.of("SALES", "FINANCE");
     private static final Set<String> VALID_KINDS = Set.of("PRODUCT_TOTAL", "TAB_PAIR");
     private static final String TAB_TOTAL_KEY = "__TAB_TOTAL__";
@@ -68,14 +68,6 @@ public class ComparisonViewService {
 
     /** 两侧「页签 → 可比对值」目录（api.md §1）。与 bucket 无关。 */
     public ComparisonMetaDTO getMeta(UUID quotationId) {
-        // 结构快照尽力而为补建（同 QuotationResource.saveDraft 的幂等纪律），保证
-        // quoteCardStructure/costingCardStructure 已就绪；已存在则 no-op。
-        try {
-            cardSnapshotService.ensureStructure(quotationId);
-        } catch (Exception ignore) {
-            // 结构快照尽力而为，不阻断 meta 目录（对齐 QuotationResource.saveDraft 同款容错）
-        }
-
         QuotationDTO dto = quotationService.getById(quotationId); // 报价单不存在时抛 404 BusinessException
 
         ComparisonMetaDTO meta = new ComparisonMetaDTO();
@@ -417,17 +409,14 @@ public class ComparisonViewService {
 
             TabVal tv = new TabVal();
             JsonNode sub = tab.path("subtotal");
-            if (!sub.isMissingNode() && !sub.isNull() && sub.isNumber()) {
-                tv.tabTotal = BigDecimal.valueOf(sub.asDouble());
-            }
+            tv.tabTotal = decimalValue(sub);
             JsonNode byCol = tab.path("subtotalByColumn");
             if (byCol.isObject() && byCol.size() > 0) {
                 Map<String, BigDecimal> m = new LinkedHashMap<>();
                 byCol.fields().forEachRemaining(e -> {
                     JsonNode v = e.getValue();
-                    if (v != null && v.isNumber()) {
-                        m.put(e.getKey(), BigDecimal.valueOf(v.asDouble()));
-                    }
+                    BigDecimal decimal = decimalValue(v);
+                    if (decimal != null) m.put(e.getKey(), decimal);
                 });
                 if (!m.isEmpty()) tv.subtotals = m;
             }
@@ -440,6 +429,20 @@ public class ComparisonViewService {
             }
         }
         return sv;
+    }
+
+    /** New snapshots use decimal strings; historical numeric tokens remain lossless BigDecimal nodes. */
+    private static BigDecimal decimalValue(JsonNode node) {
+        if (node == null || node.isNull() || node.isMissingNode()) return null;
+        if (node.isNumber()) return node.decimalValue();
+        if (node.isTextual()) {
+            try {
+                return new BigDecimal(node.textValue());
+            } catch (NumberFormatException ignore) {
+                return null;
+            }
+        }
+        return null;
     }
 
     /**

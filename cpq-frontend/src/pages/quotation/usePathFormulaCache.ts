@@ -22,9 +22,14 @@ import { setGlobalPathCache } from '../../utils/formulaEngine';
 import type { LineItem } from './QuotationStep2';
 import type { GlobalVariableDefinition } from '../../services/globalVariableService';
 import { compileGlobalVariableTokenForRow } from '../../services/globalVariableService';
+import {
+  normalizePathFormulaResult,
+  PrecisionIngressError,
+  type PathFormulaResult,
+} from './pathFormulaResult';
 
-/** path 求值结果可以是 number / string / boolean / null,UI 直接显示;公式引用按 number 解析 */
-export type PathCache = Record<string, number | string | boolean | null>;
+/** path 求值结果保留 API 的无损字符串/结构，严禁 JS number 进入公式缓存。 */
+export type PathCache = Record<string, PathFormulaResult>;
 
 /** 计算 cache key */
 export const pathCacheKey = (partNo: string, path: string) => `${partNo}::${path}`;
@@ -245,9 +250,10 @@ export function usePathFormulaCache(
           if (!matchedTask) continue;
           const localKey = pathCacheKey(matchedTask.partNo, matchedTask.path);
           if (r.status === 'OK' && r.data?.success) {
-            // 直接存原值(包括 null / array / object)— 让 UI 端 formatPathValue 自行格式化
-            // 不要在这里 toString,否则数组会被序列化为 "[object Object],..." 失真
-            updates[localKey] = (r.data as any).result ?? null;
+            updates[localKey] = normalizePathFormulaResult(
+              r.data.result,
+              `batchEvaluate(${localKey})`,
+            );
           } else {
             // 求值失败/网络错误标记 null,避免反复重试
             updates[localKey] = null;
@@ -267,12 +273,17 @@ export function usePathFormulaCache(
           // 同步维护 ref，下次 effect 读 ref 不会漏掉本次写入
           cacheRef.current = next;
           // 同步写入模块级 cache;evaluateExpression 在 path case 内部用 formatPathValue → parseFloat 取数值
-          setGlobalPathCache(next as any);
+          setGlobalPathCache(next);
           return next;
         });
       })
       .catch((err) => {
         if (controller.signal.aborted || (err && (err as any).code === 'ERR_CANCELED')) return;
+        if (err instanceof PrecisionIngressError) {
+          // eslint-disable-next-line no-console
+          console.error('[path-formula-cache] precision contract violation', err);
+          return;
+        }
         // eslint-disable-next-line no-console
         console.error('[path-formula-cache] batch 整体失败', err);
         // 整个 batch 失败 → 所有 missing 写 null 兜底，避免 effect 反复重跑
@@ -282,7 +293,7 @@ export function usePathFormulaCache(
             next[pathCacheKey(t.partNo, t.path)] = null;
           }
           cacheRef.current = next;
-          setGlobalPathCache(next as any);
+          setGlobalPathCache(next);
           return next;
         });
       });

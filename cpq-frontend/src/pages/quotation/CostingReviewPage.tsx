@@ -14,6 +14,7 @@
  *   - canReview = ['PRICING_MANAGER','SYSTEM_ADMIN'].includes(role) && detail.status === 'PENDING'
  */
 import React, { useEffect, useState } from 'react';
+import { tryParseSnapshotJsonLossless } from '../../utils/losslessJson';
 import {
   Button,
   Card,
@@ -58,14 +59,7 @@ const costingStatusConfig: Record<string, { label: string; color: string }> = {
  * 不因此报错或清空。
  */
 function buildFrozenView(d: CostingOrderDetail): any {
-  let parsed: any = null;
-  if (d.frozenDto) {
-    try {
-      parsed = JSON.parse(d.frozenDto);
-    } catch {
-      parsed = null;
-    }
-  }
+  const parsed = tryParseSnapshotJsonLossless<any>(d.frozenDto);
   if (!parsed) return null;
   const renderMap = d.costingRender ?? {};
   const lineItems = Array.isArray(parsed.lineItems)

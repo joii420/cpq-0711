@@ -1,5 +1,7 @@
 package com.cpq.quotation.dto;
 
+import com.cpq.common.DecimalStringDeserializer;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -26,6 +28,7 @@ public class SaveDraftRequest {
     public String remarks;
 
     // Pricing overrides
+    @JsonDeserialize(using = DecimalStringDeserializer.class)
     public BigDecimal finalDiscountRate;
     public String discountAdjustmentReason;
 
@@ -66,6 +69,7 @@ public class SaveDraftRequest {
          */
         public String customerProductNo;
         public String productAttributeValues;
+        @JsonDeserialize(using = DecimalStringDeserializer.class)
         public BigDecimal subtotal;
         public Integer sortOrder;
         /**
@@ -110,11 +114,17 @@ public class SaveDraftRequest {
         // ─── Step3 行级折扣（V302；前端 buildDraftPayload 早已透传，后端此前丢弃）───
         public Integer annualVolume;
         public String discountSource;
+        @JsonDeserialize(using = DecimalStringDeserializer.class)
         public BigDecimal discountBaseAmount;
+        @JsonDeserialize(using = DecimalStringDeserializer.class)
         public BigDecimal discountRateApplied;
+        @JsonDeserialize(using = DecimalStringDeserializer.class)
         public BigDecimal lineDiscountAmount;
+        @JsonDeserialize(using = DecimalStringDeserializer.class)
         public BigDecimal lineUnitPrice;
+        @JsonDeserialize(using = DecimalStringDeserializer.class)
         public BigDecimal lineFinalPrice;
+        @JsonDeserialize(using = DecimalStringDeserializer.class)
         public BigDecimal lineTotalAmount;
         public String discountRuleCode;
     }
@@ -130,6 +140,7 @@ public class SaveDraftRequest {
         public UUID componentId;
         public String tabName;
         public String rowData;
+        @JsonDeserialize(using = DecimalStringDeserializer.class)
         public BigDecimal subtotal;
         public Integer sortOrder;
     }

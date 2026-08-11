@@ -14,9 +14,10 @@ import {
   type CompositeProcessCandidateDTO,
 } from '../../../services/compositeProcessService';
 import type { CompositeSelectionState } from '../../../types/configure';
+import { toDecimal, type DecimalString } from '../../../utils/precision';
 
 interface Props {
-  sumQty: number;
+  sumQty: DecimalString;
   selections: CompositeSelectionState[];
   onChange: (next: CompositeSelectionState[]) => void;
 }
@@ -29,7 +30,7 @@ const CompositeProcessSection: React.FC<Props> = ({ sumQty, selections, onChange
     compositeProcessService.list().then(setDefs).catch(() => setDefs([]));
   }, []);
 
-  if (sumQty < 2) {
+  if (toDecimal(sumQty).lessThan('2')) {
     return (
       <div
         style={{

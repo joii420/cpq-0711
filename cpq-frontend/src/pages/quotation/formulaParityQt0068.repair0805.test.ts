@@ -13,6 +13,9 @@
  * 用例书：dev-docs/repair-0803-BL0098-公式绑定改绑ID/repair-0805-… 目录下的 test.md
  */
 import { describe, it, expect } from 'vitest';
+import Decimal from 'decimal.js';
+import type { DecimalContext } from '../../utils/formulaEngine';
+import { isDecimalString, toDecimal } from '../../utils/precision';
 import { buildCrossTabRows, computeTabFormulasTree } from './QuotationStep2';
 import type { ComponentDataItem, TreeFormulaRowInput } from './QuotationStep2';
 import {
@@ -27,14 +30,18 @@ import {
  * （前端 0.14716242167146049 / 后端 0.14716242167146046）——同一串乘除的结合序差异，
  * 与本缺陷无关。用相对 1e-12 既容得下这一个 ULP，又拦得住任何真实口径分歧。
  */
-function expectNumEq(actual: unknown, expected: number, label: string) {
-  expect(typeof actual, `${label} 不是数字（实际 ${JSON.stringify(actual)}）`).toBe('number');
-  const a = actual as number;
-  expect(Number.isFinite(a), `${label} 不是有限数：${a}`).toBe(true);
-  const tol = 1e-12 * Math.max(1, Math.abs(expected));
+function expectNumEq(actual: unknown, expected: unknown, label: string) {
+  expect(isDecimalString(actual), `${label} 前端值不是 decimal string（实际 ${JSON.stringify(actual)}）`).toBe(true);
+  expect(isDecimalString(expected), `${label} 后端值不是 decimal string（实际 ${JSON.stringify(expected)}）`).toBe(true);
+  if (!isDecimalString(actual) || !isDecimalString(expected)) return;
+  const a = toDecimal(actual);
+  const e = toDecimal(expected);
+  const base = Decimal.max('1', e.abs());
+  const tol = base.times('0.000000000001');
+  const relativeError = a.minus(e).abs().dividedBy(base);
   expect(
-    Math.abs(a - expected) <= tol,
-    `${label} 前端 ${a} ≠ 后端 ${expected}（相对误差 ${Math.abs(a - expected) / Math.max(1, Math.abs(expected))}）`,
+    a.minus(e).abs().lessThanOrEqualTo(tol),
+    `${label} 前端 ${actual} ≠ 后端 ${expected}（相对误差 ${relativeError.toString()}）`,
   ).toBe(true);
 }
 
@@ -45,7 +52,7 @@ function runPipeline(
 ) {
   const componentData = buildQt0068ComponentData(structure, saved);
   const lookupExpansion = buildQt0068ExpansionLookup(componentData);
-  const allComponentSubtotals: Record<string, number> = {};
+  const allComponentSubtotals: DecimalContext = {};
   const { store, columnSumsByComp } = buildCrossTabRows(
     componentData, allComponentSubtotals, QT0068.productPartNo, lookupExpansion,
   );
@@ -53,7 +60,7 @@ function runPipeline(
     componentData,
     lookupExpansion,
     rows: (store[QT0068.wuliaoComponentId] ?? []) as Array<Record<string, any>>,
-    columnSums: (columnSumsByComp[QT0068.wuliaoComponentId] ?? {}) as Record<string, number>,
+    columnSums: (columnSumsByComp[QT0068.wuliaoComponentId] ?? {}) as DecimalContext,
     allComponentSubtotals,
   };
 }
@@ -66,7 +73,7 @@ function assertAllFormulaCellsHaveValues(structure: any) {
     for (const col of WULIAO_FORMULA_COLUMNS) {
       const v = rows[i][col];
       expect(
-        typeof v === 'number' && Number.isFinite(v),
+        isDecimalString(v),
         `第 ${i} 行「${col}」没算出数：${JSON.stringify(v)}（线上表现即单元格 '—'）`,
       ).toBe(true);
     }
@@ -85,7 +92,7 @@ describe('repair-0805 T4 · 前后端对拍（AC-1，最强门禁）', () => {
     expect(backend.formulaResults).toHaveLength(6);
     let compared = 0;
     for (let i = 0; i < 6; i++) {
-      const be = backend.formulaResults[i].values as Record<string, number>;
+      const be = backend.formulaResults[i].values as DecimalContext;
       for (const col of WULIAO_FORMULA_COLUMNS) {
         expect(
           Object.prototype.hasOwnProperty.call(be, col),
@@ -128,20 +135,20 @@ describe('repair-0805 T4 · 前后端对拍（AC-1，最强门禁）', () => {
     // 条件模式（材料成本）：rules 被 .filter 清空 + default 为 undefined → expr undefined → null
     expect(rows[3]['材料成本']).toBeNull();
     // 列小计随之塌成 0（= 线上截图里的「材料成本 ¥ 0」）
-    expect(columnSums['材料成本']).toBe(0);
+    expect(columnSums['材料成本']).toBe('0');
   });
 });
 
 describe('repair-0805 T5 · 列小计（AC-2）', () => {
   it('T5.1 columnSumsByComp[物料].材料成本 = 623.5975043517194（而非 ¥ 0）', () => {
     const { columnSums } = runPipeline();
-    expectNumEq(columnSums['材料成本'], 623.5975043517194, '列小计.材料成本');
-    expectNumEq(columnSums['材料损耗成本'], 27.614070796432575, '列小计.材料损耗成本');
+    expectNumEq(columnSums['材料成本'], '623.5975043517194', '列小计.材料成本');
+    expectNumEq(columnSums['材料损耗成本'], '27.614070796432575', '列小计.材料损耗成本');
   });
 
   it('T5.2 与后端持久化 subtotalByColumn 的 6 个键逐值一致', () => {
     const { columnSums } = runPipeline();
-    const be = backend.subtotalByColumn as Record<string, number>;
+    const be = backend.subtotalByColumn as DecimalContext;
     const keys = Object.keys(be);
     expect(keys.length, '夹具自检：后端 subtotalByColumn 不是 6 个键').toBe(6);
     for (const k of keys) {
@@ -187,7 +194,7 @@ describe('repair-0805 T3 · 条件公式按 id 解析（AC-4）', () => {
     const drv = (QT0068_SAVED_COMPONENT_DATA as any[])
       .find(c => c.tabName === QT0068.wuliaoTabName).rows[2];
     expect(drv['产出类型'], '夹具自检：第 2 行不是非银点类').toBe('非银点类');
-    expectNumEq(rows[2]['材料成本'], 0.14716242167146046, 'row2.材料成本(非银点类分支)');
+    expectNumEq(rows[2]['材料成本'], '0.14716242167146046', 'row2.材料成本(非银点类分支)');
 
     // 反事实：把该行产出类型翻成'银点类'，值必须变（证明是 when 判据在选分支，而不是巧合相等）
     const saved = deepClone(QT0068_SAVED_COMPONENT_DATA);
@@ -201,9 +208,9 @@ describe('repair-0805 T3 · 条件公式按 id 解析（AC-4）', () => {
     const savedRows = (QT0068_SAVED_COMPONENT_DATA as any[])
       .find(c => c.tabName === QT0068.wuliaoTabName).rows;
     expect(savedRows[3]['产出类型']).toBe('银点类');
-    expectNumEq(rows[3]['材料成本'], 608.77581120944, 'row3.材料成本(default 分支)');
-    expectNumEq(rows[4]['材料成本'], 7.44745950274, 'row4.材料成本(default 分支)');
-    expectNumEq(rows[5]['材料成本'], 7.227071217868, 'row5.材料成本(default 分支)');
+    expectNumEq(rows[3]['材料成本'], '608.77581120944', 'row3.材料成本(default 分支)');
+    expectNumEq(rows[4]['材料成本'], '7.44745950274', 'row4.材料成本(default 分支)');
+    expectNumEq(rows[5]['材料成本'], '7.227071217868', 'row5.材料成本(default 分支)');
   });
 
   it('T3.4 collectFormulaDefs（BOM 树求值入口 :798）跑同一份配置，结论与 computeAllFormulas 一致', () => {
@@ -214,7 +221,7 @@ describe('repair-0805 T3 · 条件公式按 id 解析（AC-4）', () => {
     const exp = lookupExpansion(wuliao)!;
 
     // 先跑一遍拿 crossTabRows store（树入口的 cross_tab_ref 取数依赖它）
-    const subs: Record<string, number> = {};
+    const subs: DecimalContext = {};
     const { store } = buildCrossTabRows(
       componentData, subs, QT0068.productPartNo, lookupExpansion,
     );

@@ -1,6 +1,8 @@
 package com.cpq.elementprice.pricetable;
 
 import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.junit.QuarkusTestProfile;
+import io.quarkus.test.junit.TestProfile;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.UserTransaction;
@@ -14,6 +16,7 @@ import org.junit.jupiter.api.TestMethodOrder;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
@@ -33,9 +36,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 三种动作各写一条日志、DELETE 的 snapshot 是删除前值、写入失败时价格与日志同事务回滚。
  */
 @QuarkusTest
+@TestProfile(PriceMaintenanceResourceTest.RbacOffProfile.class)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @DisplayName("PriceMaintenanceService — update-0724 · B4/B5/B6 手工维护 + 变更历史")
 class PriceMaintenanceResourceTest {
+
+    public static class RbacOffProfile implements QuarkusTestProfile {
+        @Override
+        public Map<String, String> getConfigOverrides() {
+            return Map.of("cpq.security.rbac.enabled", "false");
+        }
+    }
 
     private static final String BASE = "/api/cpq/element-price";
     private static final String ELEM = "TEST-PM-AG";
@@ -82,7 +93,7 @@ class PriceMaintenanceResourceTest {
                 .body("id", notNullValue())
                 .body("fetchStatus", equalTo("MANUAL"))
                 .body("elementCode", equalTo(ELEM))
-                .body("price", equalTo(5860.0f));
+                .body("price", equalTo("5860"));
     }
 
     @Test
@@ -102,7 +113,7 @@ class PriceMaintenanceResourceTest {
         given().queryParam("sourceId", sourceActive.toString()).queryParam("keyword", ELEM)
             .when().get(BASE + "/prices")
             .then().statusCode(200)
-                .body("content[0].price", equalTo(5860.0f));
+                .body("content[0].price", equalTo("5860"));
     }
 
     @Test
@@ -153,6 +164,25 @@ class PriceMaintenanceResourceTest {
             .then().statusCode(400);
     }
 
+    @Test
+    @Order(8)
+    @DisplayName("task-0810: price JSON number is rejected without a partial insert")
+    void create_numericPrice_returns400_withoutPartialWrite() throws Exception {
+        long before = countRows();
+        String body = """
+                {"elementCode":"%s","sourceId":"%s","priceDate":"%s",
+                 "price":98765431.123456789012,"currency":"CNY","priceUnit":"kg"}
+                """.formatted(ELEM, sourceActive, LocalDate.now());
+
+        given().contentType(JSON).body(body)
+            .when().post(BASE + "/prices")
+            .then().statusCode(400)
+                .body("attributeName", equalTo("price"))
+                .body("value", equalTo("98765431.123456789012"));
+
+        assertEquals(before, countRows(), "rejected numeric token must not insert a price row");
+    }
+
     // ══════════════════════ B4.2 修改 ══════════════════════
 
     @Test
@@ -173,13 +203,13 @@ class PriceMaintenanceResourceTest {
         // 强行传键字段（elementCode/sourceId/priceDate）——UpdatePriceRequest 根本不声明这三个字段，
         // Jackson 直接丢弃，验证键不被污染（U4 / api.md §2）。
         String body = """
-                {"price":5920.0000,"currency":"CNY","priceUnit":"kg","elementCode":"Cu","sourceId":"%s","priceDate":"2020-01-01"}
+                {"price":"5920.0000","currency":"CNY","priceUnit":"kg","elementCode":"Cu","sourceId":"%s","priceDate":"2020-01-01"}
                 """.formatted(UUID.randomUUID());
         given().contentType(JSON).body(body)
             .when().put(BASE + "/prices/" + id)
             .then().statusCode(200)
                 .body("fetchStatus", equalTo("MANUAL"))
-                .body("price", equalTo(5920.0f))
+                .body("price", equalTo("5920"))
                 .body("elementCode", equalTo(ELEM));
 
         utx.begin();
@@ -200,7 +230,7 @@ class PriceMaintenanceResourceTest {
     void update_zeroPrice_returns400() throws Exception {
         UUID id = seedRow(ELEM, sourceActive, LocalDate.now(), new BigDecimal("100"), "MANUAL");
         given().contentType(JSON).body("""
-                {"price":0,"currency":"CNY","priceUnit":"kg"}
+                {"price":"0","currency":"CNY","priceUnit":"kg"}
                 """)
             .when().put(BASE + "/prices/" + id)
             .then().statusCode(400);
@@ -211,7 +241,7 @@ class PriceMaintenanceResourceTest {
     @DisplayName("T10: 修改不存在的 id → 404")
     void update_notFound_returns404() {
         given().contentType(JSON).body("""
-                {"price":100,"currency":"CNY","priceUnit":"kg"}
+                {"price":"100","currency":"CNY","priceUnit":"kg"}
                 """)
             .when().put(BASE + "/prices/" + UUID.randomUUID())
             .then().statusCode(404);
@@ -261,7 +291,7 @@ class PriceMaintenanceResourceTest {
                 .then().statusCode(201).extract().path("id");
 
         given().contentType(JSON).body("""
-                {"price":5100,"currency":"CNY","priceUnit":"kg"}
+                {"price":"5100","currency":"CNY","priceUnit":"kg"}
                 """)
             .when().put(BASE + "/prices/" + id)
             .then().statusCode(200);
@@ -340,7 +370,7 @@ class PriceMaintenanceResourceTest {
 
     private String createBody(String elementCode, UUID sourceId, String priceDate, String price) {
         return """
-                {"elementCode":"%s","sourceId":"%s","priceDate":"%s","price":%s,"currency":"CNY","priceUnit":"kg"}
+                {"elementCode":"%s","sourceId":"%s","priceDate":"%s","price":"%s","currency":"CNY","priceUnit":"kg"}
                 """.formatted(elementCode, sourceId, priceDate, price);
     }
 
@@ -356,6 +386,16 @@ class PriceMaintenanceResourceTest {
                 .executeUpdate();
         utx.commit();
         return id;
+    }
+
+    private long countRows() throws Exception {
+        utx.begin();
+        em.joinTransaction();
+        long count = ((Number) em.createNativeQuery(
+                "SELECT COUNT(*) FROM element_daily_price WHERE element_name = :c AND source_id = :s")
+                .setParameter("c", ELEM).setParameter("s", sourceActive).getSingleResult()).longValue();
+        utx.commit();
+        return count;
     }
 
     private LocalDate toLocalDate(Object o) {

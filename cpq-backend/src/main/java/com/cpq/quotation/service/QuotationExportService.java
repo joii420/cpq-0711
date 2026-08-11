@@ -154,7 +154,8 @@ public class QuotationExportService {
                 dataRow.createCell(col++).setCellValue(li.productAttributeValues != null ? li.productAttributeValues : "");
                 if (showDiscount) {
                     // 折扣率(%)：行级 discountRateApplied（非整单 finalDiscountRate）
-                    dataRow.createCell(col++).setCellValue(li.discountRateApplied != null ? li.discountRateApplied.doubleValue() : 0.0);
+                    writeAmountCell(dataRow.createCell(col++),
+                        li.discountRateApplied != null ? li.discountRateApplied : BigDecimal.ZERO);
                     // 单价
                     Cell unitPriceCell = dataRow.createCell(col++);
                     unitPriceCell.setCellStyle(amountStyle);
@@ -195,7 +196,8 @@ public class QuotationExportService {
         if (showDiscount) {
             Row discRow = sheet.createRow(row++);
             discRow.createCell(col - 2).setCellValue("折扣率(%):");
-            discRow.createCell(col - 1).setCellValue(q.finalDiscountRate != null ? q.finalDiscountRate.doubleValue() : 100.0);
+            writeAmountCell(discRow.createCell(col - 1),
+                q.finalDiscountRate != null ? q.finalDiscountRate : new BigDecimal("100"));
         }
 
         Row totalRow = sheet.createRow(row++);
@@ -207,17 +209,9 @@ public class QuotationExportService {
         totalCell.setCellStyle(amountStyle);
     }
 
-    /**
-     * task-0801 B6：POI 数值单元格只保证 15 位有效数字（IEEE754 double）；亿级金额（9 位整数 +
-     * 6 位小数 = 15 位）正好触顶。有效数字超限改写字符串保精度（与
-     * {@code ExcelViewService#writeAmountCellValue} 同一处理约定，宁可失去可计算性也不静默丢精度）。
-     */
+    /** Precision values are always exported as display-formatted text cells. */
     private static void writeAmountCell(Cell cell, BigDecimal v) {
-        if (v.stripTrailingZeros().precision() > 15) {
-            cell.setCellValue(v.toPlainString());
-        } else {
-            cell.setCellValue(v.doubleValue());
-        }
+        cell.setCellValue(com.cpq.common.NumberFormatUtil.format(v, null, true));
     }
 
     private void createRawDataSheet(XSSFWorkbook workbook, QuotationDTO q) {
@@ -350,10 +344,6 @@ public class QuotationExportService {
 
     private CellStyle createAmountStyle(XSSFWorkbook wb) {
         CellStyle style = wb.createCellStyle();
-        DataFormat format = wb.createDataFormat();
-        // task-0801 B6：显示口径由固定 2 位改至多 6 位去尾零（"#" 而非 "0"，得到去末尾 0 语义），
-        // 与 UI / API 精度契约一致（PrecisionPolicy.DISPLAY_SCALE=6）。
-        style.setDataFormat(format.getFormat("#,##0.######"));
         style.setAlignment(HorizontalAlignment.RIGHT);
         return style;
     }
@@ -395,10 +385,9 @@ public class QuotationExportService {
             this.contactEmail = nvl(q.contactEmail);
             this.paymentTerms = nvl(q.paymentTerms);
             this.deliveryCycle = q.deliveryCycle != null ? q.deliveryCycle.toString() : "";
-            // task-0801 B6：金额由固定 2 位改 NumberFormatUtil 统一口径（至多 6 位，HALF_UP，去尾零）；
-            // 默认值 "0.00" → "0"。折扣率（class C 输入值）精度不变。
+            // Display precision is shared by UI/API/export: at most 9 digits, HALF_UP, trim zeros.
             this.originalAmount = formatAmount(q.originalAmount);
-            this.finalDiscountRate = q.finalDiscountRate != null ? q.finalDiscountRate.toPlainString() : "100";
+            this.finalDiscountRate = q.finalDiscountRate != null ? formatAmount(q.finalDiscountRate) : "100";
             this.totalAmount = formatAmount(q.totalAmount);
         }
 

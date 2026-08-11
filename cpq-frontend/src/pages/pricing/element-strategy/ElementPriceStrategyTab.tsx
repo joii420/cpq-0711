@@ -14,6 +14,7 @@ import { formatMethod, formatWindow } from './strategyFormat';
 import StrategyExceptionEditDrawer from './StrategyExceptionEditDrawer';
 import StrategySimulateDrawer from './StrategySimulateDrawer';
 import StrategyHistoryDrawer from './StrategyHistoryDrawer';
+import { formatDisplayDecimal, normalizeDecimalString, type DecimalString } from '../../../utils/precision';
 
 /**
  * 「元素价格策略」Tab 内容（task-0722 · F6.3）
@@ -55,12 +56,12 @@ const ElementPriceStrategyTab: React.FC<Props> = ({ customerNo, customerLabel })
           method: b.default.method,
           windowNum: b.default.windowNum ?? undefined,
           windowUnit: b.default.windowUnit ?? 'DAY',
-          factor: b.default.factor ?? 1,
-          premium: b.default.premium ?? 0,
+          factor: b.default.factor ?? '1',
+          premium: b.default.premium ?? '0',
         });
       } else {
         defaultForm.resetFields();
-        defaultForm.setFieldsValue({ method: 'AVG', windowUnit: 'DAY', factor: 1, premium: 0 });
+        defaultForm.setFieldsValue({ method: 'AVG', windowUnit: 'DAY', factor: '1', premium: '0' });
       }
     } catch (e: any) {
       message.error(e?.message ?? '加载策略失败');
@@ -85,8 +86,8 @@ const ElementPriceStrategyTab: React.FC<Props> = ({ customerNo, customerLabel })
         customerNo,
         sourceId: values.sourceId,
         method: values.method,
-        factor: values.factor ?? 1,
-        premium: values.premium ?? 0,
+        factor: normalizeDecimalString(values.factor ?? '1'),
+        premium: normalizeDecimalString(values.premium ?? '0'),
       };
       if (values.method !== 'LATEST') {
         req.windowNum = values.windowNum;
@@ -143,8 +144,8 @@ const ElementPriceStrategyTab: React.FC<Props> = ({ customerNo, customerLabel })
         method: v.method,
         windowNum: v.method === 'LATEST' ? null : v.windowNum,
         windowUnit: v.method === 'LATEST' ? null : v.windowUnit,
-        factor: v.factor ?? 1,
-        premium: v.premium ?? 0,
+        factor: normalizeDecimalString(v.factor ?? '1'),
+        premium: normalizeDecimalString(v.premium ?? '0'),
       } : null,
       exceptions: (bundle?.exceptions ?? []).map((e) => ({
         id: e.id,
@@ -220,10 +221,10 @@ const ElementPriceStrategyTab: React.FC<Props> = ({ customerNo, customerLabel })
               </Space.Compact>
             </Form.Item>
             <Form.Item name="factor" label="系数" tooltip="默认 1" style={{ width: 110 }}>
-              <InputNumber style={{ width: '100%' }} min={0} />
+              <InputNumber<string> stringMode style={{ width: '100%' }} min="0" />
             </Form.Item>
             <Form.Item name="premium" label="加价" tooltip="默认 0" style={{ width: 110 }}>
-              <InputNumber style={{ width: '100%' }} />
+              <InputNumber<string> stringMode style={{ width: '100%' }} />
             </Form.Item>
           </div>
           <Alert
@@ -267,8 +268,8 @@ const ElementPriceStrategyTab: React.FC<Props> = ({ customerNo, customerLabel })
               ),
             },
             { title: '窗口', dataIndex: 'windowNum', render: (_: unknown, r) => <span style={{ fontSize: 12, color: 'rgba(0,0,0,.45)' }}>{formatWindow(r.windowNum, r.windowUnit)}</span> },
-            { title: '系数', dataIndex: 'factor', align: 'right' as const, render: (v: number) => v.toFixed(2) },
-            { title: '加价', dataIndex: 'premium', align: 'right' as const, render: (v: number) => v.toFixed(2) },
+            { title: '系数', dataIndex: 'factor', align: 'right' as const, render: (v: DecimalString) => formatDisplayDecimal(v, 2) },
+            { title: '加价', dataIndex: 'premium', align: 'right' as const, render: (v: DecimalString) => formatDisplayDecimal(v, 2) },
             { title: '最后变更时间', dataIndex: 'updatedAt', render: (v: string) => <span style={{ fontSize: 12, color: 'rgba(0,0,0,.45)' }}>{dayjs(v).format('YYYY-MM-DD HH:mm')}</span> },
             { title: '变更用户', dataIndex: 'updatedByName', render: (v: string) => <span style={{ fontSize: 12, color: 'rgba(0,0,0,.45)' }}>{v}</span> },
           ]}

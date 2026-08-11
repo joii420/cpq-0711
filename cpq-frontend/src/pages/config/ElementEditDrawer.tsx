@@ -7,6 +7,7 @@ import {
 } from '../../services/elementService';
 import { elementPriceService } from '../../services/elementPriceService';
 import type { ElementLatestPriceDTO } from '../../types/element-price-strategy';
+import { formatDisplayDecimal, type DecimalString } from '../../utils/precision';
 
 interface Props {
   open: boolean;
@@ -16,7 +17,7 @@ interface Props {
 }
 
 /** 数字 4 位小数展示（对齐 cpq-decimal-display-policy：计算/取数列 4 位） */
-const fmtPrice = (v: number) => v.toFixed(4);
+const fmtPrice = (v: DecimalString) => formatDisplayDecimal(v, 4);
 
 const ElementEditDrawer: React.FC<Props> = ({ open, editing, onClose, onSaved }) => {
   const [form] = Form.useForm();
@@ -175,7 +176,7 @@ const ElementEditDrawer: React.FC<Props> = ({ open, editing, onClose, onSaved })
                     title: '最新价',
                     dataIndex: 'price',
                     align: 'right' as const,
-                    render: (v: number) => <b>{fmtPrice(v)}</b>,
+                    render: (v: DecimalString) => <b>{fmtPrice(v)}</b>,
                   },
                   { title: '货币', dataIndex: 'currency' },
                   { title: '计价单位', dataIndex: 'priceUnit' },

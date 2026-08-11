@@ -14,6 +14,7 @@
  *   改为调用 buildCrossTabRows 取 columnSumsByComp——单一来源，口径对齐生产渲染路径。
  */
 import { describe, it, expect } from 'vitest';
+import type { DecimalContext } from '../../utils/formulaEngine';
 import { buildCrossTabRows } from './QuotationStep2';
 
 describe('columnSumsByComp — 物化点2 INPUT_NUMBER 列 unit_source_field canonical 换算', () => {
@@ -36,20 +37,20 @@ describe('columnSumsByComp — 物化点2 INPUT_NUMBER 列 unit_source_field can
       formulas: [],
       // 两行：500g 和 1000g，单位 'g' → 换算为 kg 时各 /1000
       rows: [
-        { 重量: 500, 单位: 'g' },
-        { 重量: 1000, 单位: 'g' },
+        { 重量: '500', 单位: 'g' },
+        { 重量: '1000', 单位: 'g' },
       ],
-      componentData: [], snapshotRows: 2, subtotal: 0,
+      componentData: [], snapshotRows: 2, subtotal: '0',
     };
 
-    const allSubs: Record<string, number> = {};
+    const allSubs: DecimalContext = {};
     // lookupExpansion 返回 undefined → buildCrossTabRows 回退到 comp.rows（totalRows=2）
     const { columnSumsByComp } = buildCrossTabRows([comp], allSubs, undefined, () => undefined);
 
     // 换算后：500g→0.5kg，1000g→1.0kg，合计 1.5
     // 确保不是原值之和 1500
-    expect(columnSumsByComp['UC']?.['重量']).toBeCloseTo(1.5, 4);
-    expect(columnSumsByComp['UC']?.['重量']).not.toBeCloseTo(1500, 0);
+    expect(columnSumsByComp['UC']?.['重量']).toBe('1.5');
+    expect(columnSumsByComp['UC']?.['重量']).not.toBe('1500');
   });
 
   it('未配置 unit_source_field 时行为不变（原值累加）', () => {
@@ -60,13 +61,13 @@ describe('columnSumsByComp — 物化点2 INPUT_NUMBER 列 unit_source_field can
         { name: '数量', field_type: 'INPUT_NUMBER' },  // 无 unit_source_field
       ],
       formulas: [],
-      rows: [{ 数量: 3 }, { 数量: 7 }],
-      componentData: [], snapshotRows: 2, subtotal: 0,
+      rows: [{ 数量: '3' }, { 数量: '7' }],
+      componentData: [], snapshotRows: 2, subtotal: '0',
     };
 
-    const allSubs: Record<string, number> = {};
+    const allSubs: DecimalContext = {};
     const { columnSumsByComp } = buildCrossTabRows([comp], allSubs, undefined, () => undefined);
 
-    expect(columnSumsByComp['UC2']?.['数量']).toBeCloseTo(10, 4);
+    expect(columnSumsByComp['UC2']?.['数量']).toBe('10');
   });
 });

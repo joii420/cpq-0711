@@ -52,7 +52,7 @@ class FormulaCalculatorMultiSubtotalTest {
 
     @Test
     void computeTabSubtotalsByColumn_perColumnSums() {
-        Map<String, BigDecimal> byCol = calc.computeTabSubtotalsByColumn(
+        Map<String, java.math.BigDecimal> byCol = calc.computeTabSubtotalsByColumn(
             j(FIELDS), j(FORMULAS), null, j(RKF), j(BASEROWS), j("[]"), Map.of());
         // 材料费 = 10*2 + 4*5 = 40 ; 加工费 = 3*5 + 1*7 = 22
         assertEquals(0, byCol.get("材料费").compareTo(new BigDecimal("40")), "材料费=" + byCol.get("材料费"));

@@ -1,7 +1,37 @@
 import { describe, it, expect } from 'vitest';
-import { evaluateExpression, isWithinTolerance } from './formulaEngine';
+import {
+  evaluateExpression as evaluateExpressionDecimal,
+  isWithinTolerance as isWithinToleranceDecimal,
+} from './formulaEngine';
 import type { ExpressionToken } from './formulaEngine';
+import type { DecimalString } from './precision';
 import crossTabCases from './__fixtures__/cross-tab-cases.json';
+
+function decimalizeLegacyFixture(value: any): any {
+  if (typeof value === 'number') return String(value);
+  if (Array.isArray(value)) return value.map(decimalizeLegacyFixture);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, decimalizeLegacyFixture(child)]));
+  }
+  return value;
+}
+
+/** Legacy semantic fixtures contain small numeric literals; production output remains decimal string. */
+function evaluateExpression(...args: any[]): DecimalString {
+  const normalized = [...args];
+  for (const index of [1, 2, 3, 4, 5, 7, 8, 10, 11, 14]) {
+    if (normalized[index] !== undefined) normalized[index] = decimalizeLegacyFixture(normalized[index]);
+  }
+  return evaluateExpressionDecimal(...normalized as Parameters<typeof evaluateExpressionDecimal>);
+}
+
+function expectLegacyDecimal(actual: DecimalString, expected: string | number): void {
+  expect(actual).toBe(String(expected));
+}
+
+function isWithinTolerance(left: number, right: number, tolerance?: number): boolean {
+  return isWithinToleranceDecimal(String(left), String(right), tolerance == null ? undefined : String(tolerance));
+}
 
 // ─── Helper: shorthand token builders ────────────────────────────────────────
 
@@ -26,32 +56,32 @@ describe('formulaEngine - basic arithmetic', () => {
   it('单价 × 数量 = 正确结果', () => {
     const tokens = [field('单价'), op('*'), field('数量')];
     const values = { 单价: 45, 数量: 5 };
-    expect(evaluateExpression(tokens, values)).toBe(225);
+    expectLegacyDecimal(evaluateExpression(tokens, values), '225');
   });
 
   it('加法: A + B', () => {
     const tokens = [field('A'), op('+'), field('B')];
-    expect(evaluateExpression(tokens, { A: 100, B: 50 })).toBe(150);
+    expectLegacyDecimal(evaluateExpression(tokens, { A: 100, B: 50 }), '150');
   });
 
   it('减法: A - B', () => {
     const tokens = [field('A'), op('-'), field('B')];
-    expect(evaluateExpression(tokens, { A: 100, B: 30 })).toBe(70);
+    expectLegacyDecimal(evaluateExpression(tokens, { A: 100, B: 30 }), '70');
   });
 
   it('除法: A / B', () => {
     const tokens = [field('A'), op('/'), field('B')];
-    expect(evaluateExpression(tokens, { A: 100, B: 4 })).toBe(25);
+    expectLegacyDecimal(evaluateExpression(tokens, { A: 100, B: 4 }), '25');
   });
 
   it('Unicode 乘号 ×', () => {
     const tokens = [field('单价'), op('×'), field('数量')];
-    expect(evaluateExpression(tokens, { 单价: 10, 数量: 3 })).toBe(30);
+    expectLegacyDecimal(evaluateExpression(tokens, { 单价: 10, 数量: 3 }), '30');
   });
 
   it('Unicode 除号 ÷', () => {
     const tokens = [field('总价'), op('÷'), field('数量')];
-    expect(evaluateExpression(tokens, { 总价: 100, 数量: 4 })).toBe(25);
+    expectLegacyDecimal(evaluateExpression(tokens, { 总价: 100, 数量: 4 }), '25');
   });
 });
 
@@ -60,19 +90,19 @@ describe('formulaEngine - basic arithmetic', () => {
 describe('formulaEngine - brackets and precedence', () => {
   it('(A + B) × C', () => {
     const tokens = [open, field('A'), op('+'), field('B'), close, op('*'), field('C')];
-    expect(evaluateExpression(tokens, { A: 10, B: 5, C: 3 })).toBe(45);
+    expectLegacyDecimal(evaluateExpression(tokens, { A: 10, B: 5, C: 3 }), '45');
   });
 
   it('A × (B + C)', () => {
     const tokens = [field('A'), op('*'), open, field('B'), op('+'), field('C'), close];
-    expect(evaluateExpression(tokens, { A: 2, B: 10, C: 5 })).toBe(30);
+    expectLegacyDecimal(evaluateExpression(tokens, { A: 2, B: 10, C: 5 }), '30');
   });
 
   it('nested brackets: (A + (B × C))', () => {
     const tokens = [
       open, field('A'), op('+'), open, field('B'), op('*'), field('C'), close, close,
     ];
-    expect(evaluateExpression(tokens, { A: 10, B: 3, C: 5 })).toBe(25);
+    expectLegacyDecimal(evaluateExpression(tokens, { A: 10, B: 3, C: 5 }), '25');
   });
 });
 
@@ -82,17 +112,17 @@ describe('formulaEngine - missing and zero values', () => {
   it('missing field defaults to 0', () => {
     const tokens = [field('单价'), op('*'), field('数量')];
     // 数量 not provided → defaults to 0
-    expect(evaluateExpression(tokens, { 单价: 45 })).toBe(0);
+    expectLegacyDecimal(evaluateExpression(tokens, { 单价: 45 }), '0');
   });
 
   it('all fields missing → 0', () => {
     const tokens = [field('A'), op('+'), field('B')];
-    expect(evaluateExpression(tokens, {})).toBe(0);
+    expectLegacyDecimal(evaluateExpression(tokens, {}), '0');
   });
 
   it('field value is 0 → computes correctly', () => {
     const tokens = [field('A'), op('+'), field('B')];
-    expect(evaluateExpression(tokens, { A: 0, B: 5 })).toBe(5);
+    expectLegacyDecimal(evaluateExpression(tokens, { A: 0, B: 5 }), '5');
   });
 
   it('division by zero field → returns 0 (engine catches error)', () => {
@@ -101,7 +131,7 @@ describe('formulaEngine - missing and zero values', () => {
     // task-0801：evaluateArithmetic 对除以 0 有确定性契约（G-9）—— 恒返回 0，不再依赖
     // decimal.js 对 Infinity 的隐式兼容；断言收紧为精确值（原 [Infinity, 0] 宽松断言已可收紧）。
     const result = evaluateExpression(tokens, { A: 100 });
-    expect(result).toBe(0);
+    expectLegacyDecimal(result, '0');
   });
 });
 
@@ -111,12 +141,12 @@ describe('formulaEngine - number literal tokens', () => {
   it('A × 1.05 (tax rate)', () => {
     const tokens = [field('A'), op('*'), num('1.05')];
     const result = evaluateExpression(tokens, { A: 100 });
-    expect(result).toBe(105);
+    expectLegacyDecimal(result, '105');
   });
 
   it('pure numbers: 10 + 20', () => {
     const tokens = [num('10'), op('+'), num('20')];
-    expect(evaluateExpression(tokens, {})).toBe(30);
+    expectLegacyDecimal(evaluateExpression(tokens, {}), '30');
   });
 });
 
@@ -125,7 +155,7 @@ describe('formulaEngine - number literal tokens', () => {
 describe('formulaEngine - decimal precision', () => {
   it('avoids IEEE 754 float errors (0.1 + 0.2)', () => {
     const tokens = [num('0.1'), op('+'), num('0.2')];
-    expect(evaluateExpression(tokens, {})).toBe(0.3);
+    expect(evaluateExpression(tokens, {})).toBe('0.3');
   });
 
   it('task-0801: 不再中途 4 位截断 —— 除法走 DIVISION_SCALE(12) 位中间精度，非 4 位', () => {
@@ -133,12 +163,12 @@ describe('formulaEngine - decimal precision', () => {
     // （中间不截断，见 formulaEngine.ts:584 注释）；除法本身仍受 evaluateArithmetic 的
     // DIVISION_SCALE(12) 位中间精度约束（12 个 3），而不是无限精度、也不再是旧的 4 位。
     const tokens = [num('1'), op('/'), num('3')];
-    expect(evaluateExpression(tokens, {})).toBe(0.333333333333);
+    expect(evaluateExpression(tokens, {})).toBe('0.333333333333');
   });
 
   it('large numbers maintain precision', () => {
     const tokens = [field('A'), op('*'), field('B')];
-    expect(evaluateExpression(tokens, { A: 999999.99, B: 100 })).toBe(99999999);
+    expectLegacyDecimal(evaluateExpression(tokens, { A: '999999.99', B: '100' }), '99999999');
   });
 });
 
@@ -152,17 +182,17 @@ describe('formulaEngine - component_subtotal tokens', () => {
       compSub('COMP-002', '加工费用'),
     ];
     const subtotals = { 'COMP-001': 1000, 'COMP-002': 500 };
-    expect(evaluateExpression(tokens, {}, subtotals)).toBe(1500);
+    expectLegacyDecimal(evaluateExpression(tokens, {}, subtotals), '1500');
   });
 
   it('missing component subtotal defaults to 0', () => {
     const tokens = [compSub('COMP-001', '投料金额'), op('+'), num('100')];
-    expect(evaluateExpression(tokens, {}, {})).toBe(100);
+    expectLegacyDecimal(evaluateExpression(tokens, {}, {}), '100');
   });
 
   it('mixed: field + component subtotal', () => {
     const tokens = [field('手工费'), op('+'), compSub('COMP-001', '投料金额')];
-    expect(evaluateExpression(tokens, { 手工费: 200 }, { 'COMP-001': 800 })).toBe(1000);
+    expectLegacyDecimal(evaluateExpression(tokens, { 手工费: 200 }, { 'COMP-001': 800 }), '1000');
   });
 });
 
@@ -171,12 +201,12 @@ describe('formulaEngine - component_subtotal tokens', () => {
 describe('formulaEngine - product_attribute tokens', () => {
   it('references product attribute', () => {
     const tokens = [prodAttr('数量'), op('*'), field('单价')];
-    expect(evaluateExpression(tokens, { 单价: 50 }, {}, { 数量: 10 })).toBe(500);
+    expectLegacyDecimal(evaluateExpression(tokens, { 单价: 50 }, {}, { 数量: 10 }), '500');
   });
 
   it('missing product attribute defaults to 0', () => {
     const tokens = [prodAttr('数量'), op('*'), num('100')];
-    expect(evaluateExpression(tokens, {}, {}, {})).toBe(0);
+    expectLegacyDecimal(evaluateExpression(tokens, {}, {}, {}), '0');
   });
 });
 
@@ -185,7 +215,7 @@ describe('formulaEngine - product_attribute tokens', () => {
 describe('formulaEngine - real-world scenarios', () => {
   it('投料小计: 单价 × 数量 (PRD standard)', () => {
     const tokens = [field('单价'), op('×'), field('数量')];
-    expect(evaluateExpression(tokens, { 单价: 45, 数量: 5 })).toBe(225);
+    expectLegacyDecimal(evaluateExpression(tokens, { 单价: 45, 数量: 5 }), '225');
   });
 
   it('product subtotal: sum of two component subtotals × product attribute quantity', () => {
@@ -198,21 +228,21 @@ describe('formulaEngine - real-world scenarios', () => {
       op('*'),
       prodAttr('数量'),
     ];
-    expect(evaluateExpression(
+    expectLegacyDecimal(evaluateExpression(
       tokens,
       {},
       { 'COMP-001': 100, 'COMP-002': 50 },
       { 数量: 3 },
-    )).toBe(450);
+    ), '450');
   });
 
   it('discount formula: 原始总价 × 折扣率 / 100', () => {
     const tokens = [field('原始总价'), op('*'), field('折扣率'), op('/'), num('100')];
-    expect(evaluateExpression(tokens, { 原始总价: 10000, 折扣率: 85 })).toBe(8500);
+    expectLegacyDecimal(evaluateExpression(tokens, { 原始总价: 10000, 折扣率: 85 }), '8500');
   });
 
   it('empty expression → returns 0', () => {
-    expect(evaluateExpression([], {})).toBe(0);
+    expectLegacyDecimal(evaluateExpression([], {}), '0');
   });
 });
 
@@ -221,17 +251,17 @@ describe('formulaEngine - real-world scenarios', () => {
 describe('formulaEngine - edge cases', () => {
   it('single field token (no operator)', () => {
     const tokens = [field('A')];
-    expect(evaluateExpression(tokens, { A: 42 })).toBe(42);
+    expectLegacyDecimal(evaluateExpression(tokens, { A: 42 }), '42');
   });
 
   it('single number token', () => {
     const tokens = [num('99.5')];
-    expect(evaluateExpression(tokens, {})).toBe(99.5);
+    expectLegacyDecimal(evaluateExpression(tokens, {}), '99.5');
   });
 
   it('malformed expression (operator only) → returns 0', () => {
     const tokens = [op('+')];
-    expect(evaluateExpression(tokens, {})).toBe(0);
+    expectLegacyDecimal(evaluateExpression(tokens, {}), '0');
   });
 
   it('unmatched brackets → returns 0', () => {
@@ -239,12 +269,12 @@ describe('formulaEngine - edge cases', () => {
     // Missing close bracket — Function constructor may handle it or throw
     const result = evaluateExpression(tokens, { A: 1, B: 2 });
     // Should gracefully return 0 on error
-    expect(typeof result).toBe('number');
+    expect(typeof result).toBe('string');
   });
 
   it('negative result', () => {
     const tokens = [field('A'), op('-'), field('B')];
-    expect(evaluateExpression(tokens, { A: 10, B: 30 })).toBe(-20);
+    expectLegacyDecimal(evaluateExpression(tokens, { A: 10, B: 30 }), '-20');
   });
 });
 
@@ -271,7 +301,7 @@ describe('cross_tab_ref', () => {
     tokens: ExpressionToken[],
     currentRow: Record<string, any> | undefined,
     crossTabRows: Record<string, Array<Record<string, any>>>,
-  ): number {
+  ): DecimalString {
     return evaluateExpression(
       tokens,
       {},        // fieldValues
@@ -305,50 +335,50 @@ describe('cross_tab_ref', () => {
   it('NONE — single match → returns 0.8', () => {
     // Only the first row matches '子件'='P1' uniquely (use 2-row subset)
     const rows2 = [{ 子件: 'P1', 单重: 0.8 }, { 子件: 'P2', 单重: 0.3 }];
-    expect(evalCrossTab([tokenNone], { 子件: 'P1' }, { A: rows2 })).toBe(0.8);
+    expectLegacyDecimal(evalCrossTab([tokenNone], { 子件: 'P1' }, { A: rows2 }), '0.8');
   });
 
   it('NONE — zero match → 0', () => {
-    expect(evalCrossTab([tokenNone], { 子件: 'P9' }, { A: aRows })).toBe(0);
+    expectLegacyDecimal(evalCrossTab([tokenNone], { 子件: 'P9' }, { A: aRows }), '0');
   });
 
   it('NONE — multi match → 0 (error swallowed by outer try/catch)', () => {
     // aRows has two P1 rows → multi match → throws → caught → 0
-    expect(evalCrossTab([tokenNone], { 子件: 'P1' }, { A: aRows })).toBe(0);
+    expectLegacyDecimal(evalCrossTab([tokenNone], { 子件: 'P1' }, { A: aRows }), '0');
   });
 
   it('SUM — multi match sums values: 0.8 + 0.5 = 1.3', () => {
     const token: ExpressionToken = { ...tokenNone, agg: 'SUM' };
-    expect(evalCrossTab([token], { 子件: 'P1' }, { A: aRows })).toBe(1.3);
+    expectLegacyDecimal(evalCrossTab([token], { 子件: 'P1' }, { A: aRows }), '1.3');
   });
 
   it('COUNT — counts matching rows: 2', () => {
     const token: ExpressionToken = { ...tokenNone, agg: 'COUNT' };
-    expect(evalCrossTab([token], { 子件: 'P1' }, { A: aRows })).toBe(2);
+    expectLegacyDecimal(evalCrossTab([token], { 子件: 'P1' }, { A: aRows }), '2');
   });
 
   it('AVG — two matching values (0.8 + 0.5) / 2 = 0.65', () => {
     const token: ExpressionToken = { ...tokenNone, agg: 'AVG' };
-    expect(evalCrossTab([token], { 子件: 'P1' }, { A: aRows })).toBe(0.65);
+    expectLegacyDecimal(evalCrossTab([token], { 子件: 'P1' }, { A: aRows }), '0.65');
   });
 
   it('MAX — returns larger value 0.8', () => {
     const token: ExpressionToken = { ...tokenNone, agg: 'MAX' };
-    expect(evalCrossTab([token], { 子件: 'P1' }, { A: aRows })).toBe(0.8);
+    expectLegacyDecimal(evalCrossTab([token], { 子件: 'P1' }, { A: aRows }), '0.8');
   });
 
   it('MIN — returns smaller value 0.5', () => {
     const token: ExpressionToken = { ...tokenNone, agg: 'MIN' };
-    expect(evalCrossTab([token], { 子件: 'P1' }, { A: aRows })).toBe(0.5);
+    expectLegacyDecimal(evalCrossTab([token], { 子件: 'P1' }, { A: aRows }), '0.5');
   });
 
   it('null/blank match key on currentRow → no match → 0', () => {
-    expect(evalCrossTab([tokenNone], { 子件: '' }, { A: aRows })).toBe(0);
+    expectLegacyDecimal(evalCrossTab([tokenNone], { 子件: '' }, { A: aRows }), '0');
   });
 
   it('null match key on aRow → that row excluded', () => {
     const rowsWithNull = [{ 子件: null, 单重: 0.8 }, { 子件: 'P2', 单重: 0.3 }];
-    expect(evalCrossTab([tokenNone], { 子件: 'P1' }, { A: rowsWithNull })).toBe(0);
+    expectLegacyDecimal(evalCrossTab([tokenNone], { 子件: 'P1' }, { A: rowsWithNull }), '0');
   });
 
   it('multi-column AND match — only rows matching BOTH pairs', () => {
@@ -365,21 +395,21 @@ describe('cross_tab_ref', () => {
       agg: 'NONE',
     };
     // currentRow 子件='P1', 类型='X' → only first row matches
-    expect(evalCrossTab([tokenAnd], { 子件: 'P1', 类型: 'X' }, { A: rowsAnd })).toBe(1.0);
+    expectLegacyDecimal(evalCrossTab([tokenAnd], { 子件: 'P1', 类型: 'X' }, { A: rowsAnd }), '1');
   });
 
   it('SUM — non-numeric target value → error path → returns 0', () => {
     // 匹配行的 target 字段为字符串 'abc'(非数字)→ nums.some(n === null) → crossTabError → 0
     const rowsNonNumeric = [{ 子件: 'P1', 单重: 'abc' }, { 子件: 'P2', 单重: 0.3 }];
     const tokenSum: ExpressionToken = { ...tokenNone, agg: 'SUM' };
-    expect(evalCrossTab([tokenSum], { 子件: 'P1' }, { A: rowsNonNumeric })).toBe(0);
+    expectLegacyDecimal(evalCrossTab([tokenSum], { 子件: 'P1' }, { A: rowsNonNumeric }), '0');
   });
 
   it('SUM — whitespace-only match key on aRow → row excluded → SUM returns 0 (Fix 1 验证)', () => {
     // aRow.子件 = '   '(全空白)→ blank() = true → 该行被排除 → 无命中 → SUM = 0
     const rowsWhitespace = [{ 子件: '   ', 单重: 5 }, { 子件: 'P2', 单重: 0.3 }];
     const tokenSum: ExpressionToken = { ...tokenNone, agg: 'SUM' };
-    expect(evalCrossTab([tokenSum], { 子件: '   ' }, { A: rowsWhitespace })).toBe(0);
+    expectLegacyDecimal(evalCrossTab([tokenSum], { 子件: '   ' }, { A: rowsWhitespace }), '0');
   });
 
   it('targetExpr NONE A.单价*本.数量', () => {
@@ -389,7 +419,7 @@ describe('cross_tab_ref', () => {
       targetExpr: [{ type: 'field', value: '单价' }, { type: 'operator', value: '*' }, { type: 'b_field', value: '数量' }] }];
     const r = evaluateExpression(tok as any, {}, undefined, undefined, undefined, undefined, undefined,
       undefined, undefined, undefined, { 子件: 'P1', 数量: 3 }, { A: aRows });
-    expect(r).toBe(6);
+    expectLegacyDecimal(r, '6');
   });
   it('targetExpr SUM per-row then aggregate', () => {
     const aRows = [{ 子件: 'P1', 单价: 2, 数量: 3 }, { 子件: 'P1', 单价: 4, 数量: 1 }];
@@ -398,7 +428,7 @@ describe('cross_tab_ref', () => {
       targetExpr: [{ type: 'field', value: '单价' }, { type: 'operator', value: '*' }, { type: 'field', value: '数量' }] }];
     const r = evaluateExpression(tok as any, {}, undefined, undefined, undefined, undefined, undefined,
       undefined, undefined, undefined, { 子件: 'P1' }, { A: aRows });
-    expect(r).toBe(10);
+    expectLegacyDecimal(r, '10');
   });
 
   // ─── outDiag 错误旁路 (细项多命中渲染 ⚠) ─────────────────────────────────
@@ -420,7 +450,7 @@ describe('cross_tab_ref', () => {
       { A: aRows },    // crossTabRows
       outDiag,         // ← NEW trailing param
     );
-    expect(r).toBe(0);
+    expectLegacyDecimal(r, '0');
     expect(outDiag.crossTabError).toBeTruthy();
   });
 
@@ -432,7 +462,7 @@ describe('cross_tab_ref', () => {
       [tokenSum], {}, undefined, undefined, undefined, undefined, undefined,
       undefined, undefined, undefined, { 子件: 'P1' }, { A: rowsNonNumeric }, outDiag,
     );
-    expect(r).toBe(0);
+    expectLegacyDecimal(r, '0');
     expect(outDiag.crossTabError).toBeTruthy();
   });
 
@@ -443,7 +473,7 @@ describe('cross_tab_ref', () => {
       [tokenNone], {}, undefined, undefined, undefined, undefined, undefined,
       undefined, undefined, undefined, { 子件: 'P1' }, { A: rows2 }, outDiag,
     );
-    expect(r).toBe(0.8);
+    expectLegacyDecimal(r, '0.8');
     expect(outDiag.crossTabError).toBeUndefined();
   });
 });
@@ -516,9 +546,9 @@ describe('cross-tab fixture', () => {
       );
       if (expectError) {
         // Error-path cases: result collapses to 0 (crossTabError check is engine-level, not fixture-level)
-        expect(result).toBeCloseTo(0, 4);
+        expectLegacyDecimal(result, '0');
       } else {
-        expect(result).toBeCloseTo(expected, 4);
+        expectLegacyDecimal(result, expected);
       }
     });
   }
@@ -598,7 +628,7 @@ describe('T5 前端引擎 KSUM', () => {
     token: any,
     crossTabRows: Record<string, Array<Record<string, any>>>,
     outDiag?: { crossTabError?: string },
-  ): number {
+  ): DecimalString {
     return evaluateExpression(
       [token] as any,
       {},        // fieldValues
@@ -618,20 +648,20 @@ describe('T5 前端引擎 KSUM', () => {
 
   it('KSUM 按宿主键塌缩 = Σ费用=1.5, 广播进每元素驱动行 → (2+1.5)+(3+1.5)=8', () => {
     const result = evalKsum(outerToken, { [ELEM_ID]: elemRows, [WGJ_ID]: wgjRows });
-    expect(result).toBe(8);
+    expectLegacyDecimal(result, '8');
   });
 
   it('决策 K: KSUM 空集(WGJ 无行) → scalar=0 静默, 无 crossTabError → (2+0)+(3+0)=5', () => {
     const diag: { crossTabError?: string } = {};
     const result = evalKsum(outerToken, { [ELEM_ID]: elemRows, [WGJ_ID]: [] }, diag);
-    expect(result).toBe(5);
+    expectLegacyDecimal(result, '5');
     expect(diag.crossTabError).toBeUndefined();
   });
 
   it('决策 K + I-2: KAVG 空集 → 整外层表达式塌 0 + crossTabError 非空', () => {
     const diag: { crossTabError?: string } = {};
     const result = evalKsum(outerTokenKavg, { [ELEM_ID]: elemRows, [WGJ_ID]: [] }, diag);
-    expect(result).toBe(0);
+    expectLegacyDecimal(result, '0');
     expect(diag.crossTabError).toBeTruthy();
   });
 });
@@ -685,7 +715,7 @@ describe('多 source 广播 (token.sources §4.3)', () => {
     token: ExpressionToken,
     crossTabRows: Record<string, Array<Record<string, any>>>,
     outDiag?: { crossTabError?: string },
-  ): number {
+  ): DecimalString {
     return evaluateExpression(
       [token],
       {},
@@ -710,7 +740,7 @@ describe('多 source 广播 (token.sources §4.3)', () => {
     // 驱动行0: 单价=2 + 广播 组成用量=10 = 12
     // 驱动行1: 单价=3 + 广播 组成用量=10 = 13
     // SUM = 25
-    expect(evalMultiSrc(token, crossTabRows)).toBe(25);
+    expectLegacyDecimal(evalMultiSrc(token, crossTabRows), '25');
   });
 
   it('多 source: 粗 source 0 命中 → 该项=0 (不报 crossTabError)', () => {
@@ -724,7 +754,7 @@ describe('多 source 广播 (token.sources §4.3)', () => {
     const outDiag: { crossTabError?: string } = {};
     // 组成用量不注入 → aFieldValues.组成用量 = 0
     // 驱动行0: 2 + 0 = 2 ; 驱动行1: 3 + 0 = 3 ; SUM = 5
-    expect(evalMultiSrc(token, crossTabRows, outDiag)).toBe(5);
+    expectLegacyDecimal(evalMultiSrc(token, crossTabRows, outDiag), '5');
     expect(outDiag.crossTabError).toBeUndefined();
   });
 
@@ -739,7 +769,7 @@ describe('多 source 广播 (token.sources §4.3)', () => {
     ];
     const { token, crossTabRows } = makeMultiSrcToken(elemRows, matRows);
     const outDiag: { crossTabError?: string } = {};
-    expect(evalMultiSrc(token, crossTabRows, outDiag)).toBe(0);
+    expectLegacyDecimal(evalMultiSrc(token, crossTabRows, outDiag), '0');
     expect(outDiag.crossTabError).toBeTruthy();
   });
 });
@@ -751,12 +781,12 @@ describe('isWithinTolerance', () => {
     expect(isWithinTolerance(100, 100)).toBe(true);
   });
 
-  it('within default tolerance ±0.01', () => {
-    expect(isWithinTolerance(100.005, 100.01)).toBe(true);
+  it('uses the 12-place working-value tolerance', () => {
+    expect(isWithinToleranceDecimal('100.000000000001', '100')).toBe(true);
   });
 
   it('exceeds default tolerance', () => {
-    expect(isWithinTolerance(100, 100.02)).toBe(false);
+    expect(isWithinToleranceDecimal('100.000000000002', '100')).toBe(false);
   });
 
   it('custom tolerance', () => {

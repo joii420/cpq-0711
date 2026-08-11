@@ -7,6 +7,8 @@ import { newFormulaRow } from './types';
 import TreeRefDrawer from './TreeRefDrawer';
 import { TREE_REF_FUNC_BUTTONS, treeAttrChipLabel, treeRefDisabledTooltip } from './crossTabText';
 import './styles.css';
+import type { DecimalString } from '../../utils/precision';
+import { createFormulaNumberToken } from './formulaNumberToken';
 
 const RESULT_TYPE_OPTIONS = [
   { value: 'NUMBER', label: '数量' },
@@ -65,7 +67,7 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
   tabType,
 }) => {
   const [numberPopoverOpen, setNumberPopoverOpen] = useState(false);
-  const [numberInputValue, setNumberInputValue] = useState<number | null>(null);
+  const [numberInputValue, setNumberInputValue] = useState<DecimalString | null>(null);
   const [treeRefDrawer, setTreeRefDrawer] = useState<TreeRefDrawerState | null>(null);
 
   const updateFormula = (key: string, patch: Partial<FormulaItem>) => {
@@ -87,9 +89,9 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
   };
 
   const handleNumberConfirm = () => {
-    if (numberInputValue === null || numberInputValue === undefined) return;
-    const strVal = String(numberInputValue);
-    appendToken({ type: 'number', value: strVal, label: strVal });
+    const token = createFormulaNumberToken(numberInputValue);
+    if (!token) return;
+    appendToken(token);
     setNumberInputValue(null);
     setNumberPopoverOpen(false);
   };
@@ -250,7 +252,7 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
           placement="bottom"
           content={
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <InputNumber
+              <InputNumber<DecimalString> stringMode
                 autoFocus
                 size="small"
                 placeholder="输入数字"

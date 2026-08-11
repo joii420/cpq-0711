@@ -14,7 +14,7 @@ export interface ReferencedVersionEntry {
 /** 元素实际单价条目 */
 export interface ElementActualPriceEntry {
   elementName: string;
-  price: number;
+  price: string;
   currency?: string;
 }
 

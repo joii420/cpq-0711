@@ -7,6 +7,7 @@
  * 期望（修复后）：净用量 500 + 计价单位 'G' → canonical 0.5 → cross_tab SUM = 0.5（而非 500）。
  */
 import { describe, it, expect } from 'vitest';
+import type { DecimalContext } from '../../utils/formulaEngine';
 import { buildCrossTabRows } from './QuotationStep2';
 
 // 元素：1 行，净用量(INPUT_NUMBER, 配单位来源=计价单位) + 计价单位(INPUT_TEXT='G')
@@ -17,7 +18,7 @@ const yuansuFields = [
 
 const yuansuExpansion = {
   rowCount: 1,
-  rows: [{ driverRow: { 净用量: 500, 计价单位: 'G' }, basicDataValues: {} }],
+  rows: [{ driverRow: { 净用量: '500', 计价单位: 'G' }, basicDataValues: {} }],
 } as any;
 
 // 来料：1 行，材料费(FORMULA, is_subtotal) = SUM(元素.净用量)
@@ -32,8 +33,8 @@ const componentData = [
     componentId: '元素', componentCode: '元素', tabName: '元素',
     componentType: 'NORMAL',
     fields: yuansuFields, formulas: [],
-    rows: [{ 净用量: 500, 计价单位: 'G' }],
-    componentData: [], snapshotRows: 1, subtotal: 0,
+    rows: [{ 净用量: '500', 计价单位: 'G' }],
+    componentData: [], snapshotRows: 1, subtotal: '0',
   },
   {
     componentId: '来料', componentCode: '来料', tabName: '来料',
@@ -48,7 +49,7 @@ const componentData = [
       },
     ],
     rows: [{}],
-    componentData: [], snapshotRows: 1, subtotal: 0,
+    componentData: [], snapshotRows: 1, subtotal: '0',
   },
 ] as any;
 
@@ -60,18 +61,18 @@ const lookupExpansion = (comp: any) => {
 
 describe('单位换算 cross_tab', () => {
   it('来料.材料费 = SUM(元素.净用量)，净用量 500 + 计价单位 G → 跨页签读 canonical 0.5（非原值 500）', () => {
-    const allComponentSubtotals: Record<string, number> = {};
+    const allComponentSubtotals: DecimalContext = {};
     buildCrossTabRows(componentData, allComponentSubtotals, undefined, lookupExpansion);
-    expect(allComponentSubtotals['来料#材料费']).toBeCloseTo(0.5, 6);
+    expect(allComponentSubtotals['来料#材料费']).toBe('0.5');
   });
 
   it('计价单位为 KG 时系数 ×1，材料费 = 500（确认仅按单位换算，未恒定缩放）', () => {
-    const kgData = JSON.parse(JSON.stringify(componentData));
+    const kgData = structuredClone(componentData);
     kgData[0].rows[0].计价单位 = 'KG';
-    const kgExpansion = { rowCount: 1, rows: [{ driverRow: { 净用量: 500, 计价单位: 'KG' }, basicDataValues: {} }] } as any;
+    const kgExpansion = { rowCount: 1, rows: [{ driverRow: { 净用量: '500', 计价单位: 'KG' }, basicDataValues: {} }] } as any;
     const lookup = (comp: any) => (comp.componentId === '元素' ? kgExpansion : comp.componentId === '来料' ? llExpansion : undefined);
-    const subs: Record<string, number> = {};
+    const subs: DecimalContext = {};
     buildCrossTabRows(kgData, subs, undefined, lookup);
-    expect(subs['来料#材料费']).toBeCloseTo(500, 6);
+    expect(subs['来料#材料费']).toBe('500');
   });
 });

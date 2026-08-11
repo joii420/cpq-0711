@@ -12,6 +12,9 @@ import type {
   ConfiguratorTemplate, ConfiguratorOption, ConfiguratorOptionValue,
 } from '../../types/configurator';
 import ConfiguratorPreview from '../../components/ConfiguratorPreview';
+import { formatDisplayDecimal, isDecimalString } from '../../utils/precision';
+
+const displayPrice = (value: unknown) => isDecimalString(value) ? formatDisplayDecimal(value) : '0';
 
 /**
  * 客户自助公网选配页 — 路由 /share/configurator/:token（公网，无 AuthGuard）
@@ -239,9 +242,9 @@ const PublicConfigurator: React.FC = () => {
                         </Row>
                       ) : o.assignMode === 'MANUAL' ? (
                         o.dataType === 'NUMBER' ? (
-                          <InputNumber value={sel ? Number(sel) : undefined}
-                                       min={o.minValue ? Number(o.minValue) : undefined}
-                                       max={o.maxValue ? Number(o.maxValue) : undefined}
+                          <InputNumber<string> stringMode value={sel || undefined}
+                                       min={o.minValue || undefined}
+                                       max={o.maxValue || undefined}
                                        onChange={v => setSelectedValues({ ...selectedValues, [o.code]: String(v ?? '') })} />
                         ) : (
                           <Input value={sel}
@@ -260,8 +263,8 @@ const PublicConfigurator: React.FC = () => {
           {tpl.showPrice && evalResult && (
             <div style={{ marginBottom: 12, padding: 10, background: '#fff7e6', borderRadius: 6 }}>
               <div style={{ fontSize: 12, color: '#876800' }}>参考报价</div>
-              <div style={{ fontSize: 28, fontWeight: 600, color: '#cf1322' }}>¥{evalResult.totalPrice ? Number(evalResult.totalPrice).toLocaleString() : '0'}</div>
-              <div style={{ fontSize: 11, color: '#876800' }}>含基础价 ¥{evalResult.basePrice}（待销售确认最终价格）</div>
+              <div style={{ fontSize: 28, fontWeight: 600, color: '#cf1322' }}>¥{displayPrice(evalResult.totalPrice)}</div>
+              <div style={{ fontSize: 11, color: '#876800' }}>含基础价 ¥{displayPrice(evalResult.basePrice)}（待销售确认最终价格）</div>
             </div>
           )}
           {!tpl.showPrice && (

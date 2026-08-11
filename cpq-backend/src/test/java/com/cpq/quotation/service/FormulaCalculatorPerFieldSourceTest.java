@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -56,8 +57,8 @@ class FormulaCalculatorPerFieldSourceTest {
 
         FormulaCalculator.RowContext ctx = new FormulaCalculator.RowContext();
         ctx.currentRowRaw.put("料件", "X");
-        ctx.crossTabRows.put("A", List.of(Map.of("料件", "X", "费用", 10.0)));
-        ctx.crossTabRows.put("B", List.of(Map.of("料件", "X", "费用", 3.0)));
+        ctx.crossTabRows.put("A", List.of(Map.of("料件", "X", "费用", new BigDecimal("10"))));
+        ctx.crossTabRows.put("B", List.of(Map.of("料件", "X", "费用", new BigDecimal("3"))));
 
         // 修复前因驱动行(A)覆盖 sub.fieldValues["费用"]=10，field取到10，而非B的3
         // 修复后 field token 带 source=B → bySource["B"]["费用"]=3 → result=3
@@ -89,8 +90,8 @@ class FormulaCalculatorPerFieldSourceTest {
 
         FormulaCalculator.RowContext ctx = new FormulaCalculator.RowContext();
         ctx.currentRowRaw.put("料件", "X");
-        ctx.crossTabRows.put("A", List.of(Map.of("料件", "X", "费用", 10.0)));
-        ctx.crossTabRows.put("B", List.of(Map.of("料件", "X", "费用", 3.0)));
+        ctx.crossTabRows.put("A", List.of(Map.of("料件", "X", "费用", new BigDecimal("10"))));
+        ctx.crossTabRows.put("B", List.of(Map.of("料件", "X", "费用", new BigDecimal("3"))));
 
         // 无 source：驱动行 A 覆盖 → fieldValues["费用"]=10（现有行为保持）
         java.math.BigDecimal result = calc.evaluateExpression(json(tokJson), ctx);
@@ -119,8 +120,8 @@ class FormulaCalculatorPerFieldSourceTest {
 
         FormulaCalculator.RowContext ctx = new FormulaCalculator.RowContext();
         ctx.currentRowRaw.put("料件", "X");
-        ctx.crossTabRows.put("A", List.of(Map.of("料件", "X", "费用", 10.0)));
-        ctx.crossTabRows.put("B", List.of(Map.of("料件", "X", "费用", 3.0)));
+        ctx.crossTabRows.put("A", List.of(Map.of("料件", "X", "费用", new BigDecimal("10"))));
+        ctx.crossTabRows.put("B", List.of(Map.of("料件", "X", "费用", new BigDecimal("3"))));
 
         java.math.BigDecimal result = calc.evaluateExpression(json(tokJson), ctx);
         assertEquals(10.0, result.doubleValue(), 1e-9,
@@ -154,10 +155,10 @@ class FormulaCalculatorPerFieldSourceTest {
         FormulaCalculator.RowContext ctx = new FormulaCalculator.RowContext();
         ctx.currentRowRaw.put("料件", "X");
         ctx.crossTabRows.put("A", List.of(
-            Map.of("料件", "X", "单价", 2.0),
-            Map.of("料件", "X", "单价", 5.0)
+            Map.of("料件", "X", "单价", new BigDecimal("2")),
+            Map.of("料件", "X", "单价", new BigDecimal("5"))
         ));
-        ctx.crossTabRows.put("B", List.of(Map.of("料件", "X", "折扣", 0.8)));
+        ctx.crossTabRows.put("B", List.of(Map.of("料件", "X", "折扣", new BigDecimal("0.8"))));
 
         // 2*0.8 + 5*0.8 = 1.6 + 4.0 = 5.6
         java.math.BigDecimal result = calc.evaluateExpression(json(tokJson), ctx);

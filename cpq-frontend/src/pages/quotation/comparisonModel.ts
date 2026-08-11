@@ -4,10 +4,17 @@
  * 构建「料号并集 × tag 交集」的双行对比模型，并按数值容差+字符严格判定差异。
  */
 import type { CostingTemplateColumn } from '../../services/costingTemplateService';
+import Decimal from 'decimal.js';
+import {
+  isDecimalString,
+  normalizeDecimalString,
+  toDecimal,
+  type DecimalString,
+} from '../../utils/precision';
 
 /** 数值容差常量（集中定义，可调） */
-export const ABS_EPS = 1e-6;
-export const REL_EPS = 1e-6;
+export const ABS_EPS = '0.000000000001';
+export const REL_EPS = '0.000000000001';
 
 export interface TagMeta {
   code: string;
@@ -24,8 +31,8 @@ export interface ComparisonColumnDef {
 }
 
 export interface ComparisonCellPair {
-  quote: any;
-  costing: any;
+  quote: string | null;
+  costing: string | null;
   highlighted: boolean;
 }
 
@@ -44,32 +51,34 @@ export interface ComparisonModel {
 
 interface ExcelRowLike {
   __hfPartNo?: string;
-  [colKey: string]: any;
+  [colKey: string]: unknown;
 }
 
-export function toNumber(v: any): number {
-  if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
-  if (typeof v === 'string') {
-    const t = v.trim();
-    if (t === '') return NaN;
-    const n = Number(t);
-    return Number.isFinite(n) ? n : NaN;
+export function toComparisonDecimal(v: unknown): Decimal | null {
+  return isDecimalString(v) ? toDecimal(v) : null;
+}
+
+export function normalizeComparisonCellValue(value: unknown): string | null {
+  if (value === null || value === undefined || value === '' || value === '__loading__') return null;
+  if (typeof value !== 'string') {
+    throw new TypeError('Comparison precision values must be decimal strings, never JS numbers');
   }
-  return NaN;
+  return isDecimalString(value) ? normalizeDecimalString(value) : value;
 }
 
 /** 数值容差 + 字符严格：返回「两值是否不同」 */
-export function valuesDiffer(a: any, b: any): boolean {
-  const na = toNumber(a);
-  const nb = toNumber(b);
-  if (!Number.isNaN(na) && !Number.isNaN(nb)) {
-    const tol = Math.max(ABS_EPS, REL_EPS * Math.max(Math.abs(na), Math.abs(nb)));
-    return Math.abs(na - nb) > tol;
+export function valuesDiffer(a: unknown, b: unknown): boolean {
+  const na = toComparisonDecimal(a);
+  const nb = toComparisonDecimal(b);
+  if (na && nb) {
+    const relativeBase = Decimal.max(na.abs(), nb.abs());
+    const tolerance = Decimal.max(toDecimal(ABS_EPS), toDecimal(REL_EPS).times(relativeBase));
+    return na.minus(nb).abs().greaterThan(tolerance);
   }
   return String(a ?? '').trim() !== String(b ?? '').trim();
 }
 
-function isBlank(v: any): boolean {
+function isBlank(v: unknown): boolean {
   return v === null || v === undefined || v === '' || v === '__loading__';
 }
 
@@ -156,8 +165,8 @@ export function buildComparisonModel(
     const presence: RowPresence = qrow && crow ? 'BOTH' : qrow ? 'QUOTE_ONLY' : 'COSTING_ONLY';
     const cells: Record<string, ComparisonCellPair> = {};
     for (const t of tags) {
-      const quote = qrow ? qrow[qColKey[t] as string] : undefined;
-      const costing = crow ? crow[cColKey[t] as string] : undefined;
+      const quote = normalizeComparisonCellValue(qrow ? qrow[qColKey[t] as string] : undefined);
+      const costing = normalizeComparisonCellValue(crow ? crow[cColKey[t] as string] : undefined);
       const highlighted =
         presence === 'BOTH' && !isBlank(quote) && !isBlank(costing) && valuesDiffer(quote, costing);
       cells[t] = { quote, costing, highlighted };

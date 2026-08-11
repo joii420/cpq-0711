@@ -50,7 +50,7 @@ class VersionedV6WriterPendingModeTest {
 
         // ① 首次写入(正式，pendingQuotationId=null)：官方 current 版本
         Map<String, Object> row1 = new LinkedHashMap<>();
-        row1.put("seq_no", 1);
+        row1.put("seq_no", new java.math.BigDecimal("1"));
         row1.put("pricing_price", new BigDecimal("1.20"));
         row1.put("unit", "元");
         String v0 = writer.writeVersionedGroup(new VersionedGroupSpec(
@@ -62,7 +62,7 @@ class VersionedV6WriterPendingModeTest {
 
         // ② pending 写入(模拟本单导入)：内容变化(1.20→1.35)，pendingQuotationId 非空
         Map<String, Object> row2 = new LinkedHashMap<>();
-        row2.put("seq_no", 1);
+        row2.put("seq_no", new java.math.BigDecimal("1"));
         row2.put("pricing_price", new BigDecimal("1.35"));
         row2.put("unit", "元");
         String v1 = writer.writeVersionedGroup(new VersionedGroupSpec(
@@ -121,7 +121,7 @@ class VersionedV6WriterPendingModeTest {
         child1.put("component_no", "CHILD-OLD");
         child1.put("composition_qty", new BigDecimal("1.0"));
         child1.put("issue_unit", "EA");
-        child1.put("seq_no", 1);
+        child1.put("seq_no", new java.math.BigDecimal("1"));
 
         String v0 = writer.writeVersionedMasterDetail(
             "material_bom", "bom_version", masterKey, masterFixed,
@@ -135,7 +135,7 @@ class VersionedV6WriterPendingModeTest {
         child2.put("component_no", "CHILD-NEW");
         child2.put("composition_qty", new BigDecimal("2.0"));
         child2.put("issue_unit", "EA");
-        child2.put("seq_no", 1);
+        child2.put("seq_no", new java.math.BigDecimal("1"));
 
         String v1 = writer.writeVersionedMasterDetail(
             "material_bom", "bom_version", masterKey, masterFixed,

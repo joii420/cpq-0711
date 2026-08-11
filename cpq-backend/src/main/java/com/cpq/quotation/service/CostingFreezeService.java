@@ -163,8 +163,8 @@ public class CostingFreezeService {
             if (li == null) continue;
             total = total.add(CostingSubtotalUtil.lineCostingAmount(li.costingCardValues, li.annualVolume));
         }
-        // task-0801 B5：落库边界（写 costing_order.costing_total_amount）统一规整到 6 位。
-        return PrecisionPolicy.round(total);
+        // task-0810：落库工作值统一规整到 12 位。
+        return PrecisionPolicy.roundForCalculation(total);
     }
 
     /**

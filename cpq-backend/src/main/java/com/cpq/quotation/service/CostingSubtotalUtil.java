@@ -2,6 +2,7 @@ package com.cpq.quotation.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.cpq.common.DecimalJacksonCustomizer;
 
 import java.math.BigDecimal;
 
@@ -20,7 +21,7 @@ import java.math.BigDecimal;
 // 的 S0（L3 口径守卫）与 S6（写回行金额）跨包复用，不新写第二份提取逻辑（backtask B0 S6 明确指示）。
 public final class CostingSubtotalUtil {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = DecimalJacksonCustomizer.newMapper();
 
     private CostingSubtotalUtil() {}
 
@@ -60,7 +61,7 @@ public final class CostingSubtotalUtil {
                 if ("SUBTOTAL".equals(tab.path("componentType").asText(null))) {
                     JsonNode sub = tab.path("subtotal");
                     if (sub.isMissingNode() || sub.isNull()) return null;
-                    return BigDecimal.valueOf(sub.asDouble(0.0));
+                    return decimalNodeValue(sub);
                 }
             }
         } catch (Exception ignore) {
@@ -93,7 +94,8 @@ public final class CostingSubtotalUtil {
                 if (cid == null || cid.isBlank()) continue;
                 JsonNode sub = tab.path("subtotal");
                 if (sub.isMissingNode() || sub.isNull()) continue;
-                out.putIfAbsent(cid, BigDecimal.valueOf(sub.asDouble(0.0)));
+                BigDecimal subtotal = decimalNodeValue(sub);
+                if (subtotal != null) out.putIfAbsent(cid, subtotal);
             }
         } catch (Exception ignore) {
             // 解析失败 → 空 map，调用方一个页签都不覆盖（保留全部兜底值）
@@ -103,11 +105,21 @@ public final class CostingSubtotalUtil {
 
     /**
      * 单件核价成本 × 年用量（链路二起点：产品小计 × 年用量，可冲到亿级）。
-     * task-0801 B4：不再 setScale(4) 截断，全精度返回，呈现边界由调用方统一规整到 6 位。
+     * task-0810：不再经浮点或低位截断，全精度返回，调用方在计算落点规整到 12 位。
      */
     static BigDecimal lineCostingAmount(String costingCardValuesJson, Integer annualVolume) {
         BigDecimal unit = extractUnitSubtotal(costingCardValuesJson);
         int qty = annualVolume != null ? annualVolume : 0;
         return unit.multiply(BigDecimal.valueOf(qty));
+    }
+
+    private static BigDecimal decimalNodeValue(JsonNode node) {
+        if (node == null || node.isNull() || node.isMissingNode()) return null;
+        if (!node.isNumber() && !node.isTextual()) return null;
+        try {
+            return new BigDecimal(node.asText());
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 }

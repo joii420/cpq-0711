@@ -177,7 +177,7 @@ describe('repair-0805 T2 · resolveFormula 按 id 解析（AC-3，设计守卫�
     } as unknown as ComponentDataItem;
 
     const [cache] = computeRowsCachesForTest(comp, [{}]);
-    expect(cache['成本']).toBe(42);
+    expect(cache['成本']).toBe('42');
   });
 
   it('T2.2 字段绑 formula_id 但公式列表里没有该 id（公式被删）→ 该列整个不进结果，且不回落名字/位置', () => {
@@ -208,7 +208,7 @@ describe('repair-0805 T2 · resolveFormula 按 id 解析（AC-3，设计守卫�
     } as unknown as ComponentDataItem;
 
     const [cache] = computeRowsCachesForTest(comp, [{}]);
-    expect(cache['成本']).toBe(42);
+    expect(cache['成本']).toBe('42');
   });
 });
 

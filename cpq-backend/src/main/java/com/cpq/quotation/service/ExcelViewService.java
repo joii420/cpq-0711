@@ -33,7 +33,7 @@ import java.util.*;
 public class ExcelViewService {
 
     private static final Logger LOG = Logger.getLogger(ExcelViewService.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = com.cpq.common.DecimalJacksonCustomizer.newMapper();
 
     /**
      * Stage 2 集成：FORMULA 列 [名称] 引用先查模板公式，命中则走 TemplateFormulaService 求值。
@@ -733,6 +733,9 @@ public class ExcelViewService {
     private String toNumericStr(Object v) {
         if (v == null) return "0B";
         if (v instanceof java.math.BigDecimal bd) return bd.toPlainString() + "B";
+        if (v instanceof Double || v instanceof Float) {
+            throw new IllegalArgumentException("Precision-sensitive values must not use floating point");
+        }
         if (v instanceof Number n) return new java.math.BigDecimal(n.toString()).toPlainString() + "B";
         String s = v.toString().trim();
         try { new java.math.BigDecimal(s); return s + "B"; } catch (Exception e) { return "0B"; }
@@ -740,8 +743,9 @@ public class ExcelViewService {
 
     /** 规范化数值结果 */
     private Object normalizeNumeric(Object v) {
-        if (v instanceof Double d) return java.math.BigDecimal.valueOf(d);
-        if (v instanceof Float f) return new java.math.BigDecimal(f.toString());
+        if (v instanceof Double || v instanceof Float) {
+            throw new IllegalArgumentException("Formula result must not use floating point");
+        }
         if (v instanceof Long l) return java.math.BigDecimal.valueOf(l);
         if (v instanceof Integer i) return java.math.BigDecimal.valueOf(i);
         return v;
@@ -961,8 +965,8 @@ public class ExcelViewService {
 
     /**
      * 写一个非公式单元格，数值列统一接入显示口径（与前端 formatNumber / NumberFormatUtil 同口径）：
-     * - 数值（含数值字符串）→ 保持 NUMERIC + 附"至多 N 位"DataFormat 样式（# 而非 0，得到去末尾 0 语义），
-     *   并按解析出的小数位 HALF_UP 预舍入，使存储值与显示值一致；原始/取数列未配位数 → General（保留原精度）。
+     * - 计算值 → 最多 9 位、HALF_UP、去尾零的文本单元格；基础取数值 → 原精度文本。
+     *   两类都禁止 POI double 数值通道。
      * - 非数值 → 原样写字符串；Boolean → 写布尔。
      */
     private void writeFormattedCell(XSSFWorkbook workbook, DataFormat dataFormat,
@@ -973,10 +977,13 @@ public class ExcelViewService {
             String sourceType = (String) col.get("source_type");
             boolean isComputed = isComputedColumn(sourceType);
             Integer explicitDecimals = explicitDecimals(col);
-            // 解析有效位数：显式优先 → 计算列兜底 6 位（task-0801：呈现精度统一 PrecisionPolicy.DISPLAY_SCALE）
+            if (isComputed) {
+                cell.setCellValue(com.cpq.common.NumberFormatUtil.format(num, explicitDecimals, true));
+                return;
+            }
+            // 解析有效位数：显式优先 → 计算列兜底 9 位（呈现精度统一 PrecisionPolicy.DISPLAY_SCALE）
             // → 原始/取数列 null（保留原精度）
-            Integer scale = explicitDecimals != null ? explicitDecimals
-                    : (isComputed ? COMPUTED_FALLBACK_DECIMALS : null);
+            Integer scale = explicitDecimals;
             if (scale != null) {
                 num = num.setScale(scale, PrecisionPolicy.ROUNDING);
                 cell.setCellStyle(numberStyleFor(workbook, dataFormat, numberStyleCache, scale));
@@ -991,18 +998,9 @@ public class ExcelViewService {
         }
     }
 
-    /**
-     * task-0801 B6「已知限制」处理：POI NUMERIC 单元格底层是 IEEE754 double，Excel 只保证
-     * 15 位有效数字。有效数字（{@link BigDecimal#stripTrailingZeros()} 后 {@link BigDecimal#precision()}）
-     * ≤15 → 照常写数值（保留 Excel 可计算性）；>15 → 写字符串（{@link Cell#setCellValue(String)}），
-     * 不静默丢精度。集中一处，不散落各导出方法。
-     */
+    /** Raw/source decimals stay exact text; computed values are formatted in the branch above. */
     private void writeAmountCellValue(Cell cell, BigDecimal num) {
-        if (num.stripTrailingZeros().precision() > 15) {
-            cell.setCellValue(num.toPlainString());
-        } else {
-            cell.setCellValue(num.doubleValue());
-        }
+        cell.setCellValue(num.toPlainString());
     }
 
     // 导出走 POI DataFormat（需数值态+格式串）故未复用 NumberFormatUtil，单列一份兜底位数。

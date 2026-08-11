@@ -61,7 +61,7 @@ class FormulaCalculationServiceTreeTokenTest {
 
         List<Map<String, Object>> tokens = List.of(fieldTok, opTok, treeTok);
         Map<String, Object> rowData = new HashMap<>();
-        rowData.put("单价", 10);
+        rowData.put("单价", new java.math.BigDecimal("10"));
 
         String jexlExpr = svc.buildJexlExpression(tokens, rowData, new HashMap<>(), null);
         assertEquals("10B+0B", jexlExpr);

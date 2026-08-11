@@ -17,6 +17,7 @@ import type {
   UpdatePriceRequest,
   PriceHistoryDTO,
 } from '../types/element-price-strategy';
+import { isDecimalString, normalizeDecimalString, type DecimalString } from '../utils/precision';
 
 /**
  * 元素单价维护与价格策略（task-0722）— 服务层
@@ -33,6 +34,20 @@ const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 /** responseType:'blob' 时拦截器已返回 Blob 本体；兜底万一被序列化成非 Blob 时重新包一层 */
 function asBlob(data: unknown, mime: string): Blob {
   return data instanceof Blob ? data : new Blob([data as BlobPart], { type: mime });
+}
+
+function requestDecimal(value: unknown, field: string): DecimalString {
+  if (!isDecimalString(value)) {
+    throw new TypeError(`${field} must be a decimal string`);
+  }
+  return normalizeDecimalString(value);
+}
+
+function normalizeStrategyRequest(req: StrategyUpsertRequest): StrategyUpsertRequest {
+  const normalized = { ...req };
+  if (req.factor !== undefined) normalized.factor = requestDecimal(req.factor, 'factor');
+  if (req.premium !== undefined) normalized.premium = requestDecimal(req.premium, 'premium');
+  return normalized;
 }
 
 export const elementPriceStrategyService = {
@@ -112,12 +127,18 @@ export const elementPriceStrategyService = {
 
   /** POST /element-price/prices — 409 = 该元素在该源该日期已存在价格 */
   async createPrice(req: CreatePriceRequest): Promise<ElementPriceRowDTO> {
-    return (await api.post(`${BASE}/prices`, req)) as unknown as ElementPriceRowDTO;
+    return (await api.post(`${BASE}/prices`, {
+      ...req,
+      price: requestDecimal(req.price, 'price'),
+    })) as unknown as ElementPriceRowDTO;
   },
 
   /** PUT /element-price/prices/{id} — 请求体不含键字段，键锁定由后端硬保证 */
   async updatePrice(id: string, req: UpdatePriceRequest): Promise<ElementPriceRowDTO> {
-    return (await api.put(`${BASE}/prices/${encodeURIComponent(id)}`, req)) as unknown as ElementPriceRowDTO;
+    return (await api.put(`${BASE}/prices/${encodeURIComponent(id)}`, {
+      ...req,
+      price: requestDecimal(req.price, 'price'),
+    })) as unknown as ElementPriceRowDTO;
   },
 
   /** DELETE /element-price/prices/{id} — 204 No Content，无批量端点，前端逐条调用 + runBatch 聚合 */
@@ -146,15 +167,18 @@ export const elementPriceStrategyService = {
 
   /** 新建或覆盖客户级默认策略 */
   async saveDefaultStrategy(req: StrategyUpsertRequest): Promise<StrategyDTO> {
-    return (await api.put(`${BASE}/strategies/default`, req)) as unknown as StrategyDTO;
+    return (await api.put(`${BASE}/strategies/default`, normalizeStrategyRequest(req))) as unknown as StrategyDTO;
   },
 
   async createException(req: StrategyUpsertRequest): Promise<StrategyDTO> {
-    return (await api.post(`${BASE}/strategies/exceptions`, req)) as unknown as StrategyDTO;
+    return (await api.post(`${BASE}/strategies/exceptions`, normalizeStrategyRequest(req))) as unknown as StrategyDTO;
   },
 
   async updateException(id: string, req: StrategyUpsertRequest): Promise<StrategyDTO> {
-    return (await api.put(`${BASE}/strategies/exceptions/${encodeURIComponent(id)}`, req)) as unknown as StrategyDTO;
+    return (await api.put(
+      `${BASE}/strategies/exceptions/${encodeURIComponent(id)}`,
+      normalizeStrategyRequest(req),
+    )) as unknown as StrategyDTO;
   },
 
   async deleteException(id: string): Promise<void> {

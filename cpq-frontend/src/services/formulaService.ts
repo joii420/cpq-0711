@@ -1,10 +1,11 @@
 import api from './api';
+import type { DecimalString } from '../utils/precision';
 
 export interface EvaluateRequest {
   expression: string;
   customerId?: string;
   partNo?: string;
-  bindings?: Record<string, any>;
+  bindings?: Record<string, string | null>;
   /** template 实体 ID（新字段，供后端 SqlViewRuntimeContext 定位 template_sql_view） */
   templateId?: string | null;
   /** @deprecated 旧字段，保留向后兼容；新代码请用 templateId */
@@ -15,7 +16,7 @@ export interface EvaluateRequest {
 
 export interface EvaluateResponse {
   success: boolean;
-  result?: any;
+  result?: DecimalString | null;
   error?: string;
   errorType?: 'PARSE_ERROR' | 'EVAL_ERROR' | 'CONTEXT_MISSING';
 }
@@ -26,8 +27,8 @@ export interface BatchEvaluateTask {
   expression: string;
   customerId?: string | null;
   partNo?: string | null;
-  bindings?: Record<string, unknown> | null;
-  driverRow?: Record<string, unknown> | null;
+  bindings?: Record<string, string | null> | null;
+  driverRow?: Record<string, string | null> | null;
   /** template 实体 ID（新字段，供后端 SqlViewRuntimeContext 定位 template_sql_view） */
   templateId?: string | null;
   /** @deprecated 旧字段，保留向后兼容；新代码请用 templateId */

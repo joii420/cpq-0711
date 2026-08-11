@@ -9,6 +9,14 @@ import {
   type MaterialRecipeDetail,
   type MaterialRecipeUpsertRequest,
 } from '../../services/materialRecipeService';
+import Decimal from 'decimal.js';
+import {
+  formatDisplayDecimal,
+  normalizeDecimalString,
+  sumDecimal,
+  toDecimal,
+  type DecimalString,
+} from '../../utils/precision';
 // 关联料号 Tab 本期隐藏(task-0708)：MaterialRecipePartsTab 组件保留不删，仅不挂载
 
 interface Props {
@@ -23,9 +31,9 @@ interface Props {
 interface ElementRow {
   elementCode: string;
   elementName: string;
-  defaultPct: number;
-  minPct: number | null;
-  maxPct: number | null;
+  defaultPct: DecimalString;
+  minPct: DecimalString | null;
+  maxPct: DecimalString | null;
   isLocked: boolean;
   sortOrder: number;
 }
@@ -58,9 +66,9 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
       setElements(editingDetail.elements.map(e => ({
         elementCode: e.elementCode,
         elementName: e.elementName,
-        defaultPct: Number(e.defaultPct),
-        minPct: e.minPct == null ? null : Number(e.minPct),
-        maxPct: e.maxPct == null ? null : Number(e.maxPct),
+        defaultPct: normalizeDecimalString(e.defaultPct),
+        minPct: e.minPct == null ? null : normalizeDecimalString(e.minPct),
+        maxPct: e.maxPct == null ? null : normalizeDecimalString(e.maxPct),
         isLocked: e.isLocked,
         sortOrder: e.sortOrder,
       })));
@@ -70,7 +78,7 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
       form.setFieldsValue({ recipeType: 'locked', sortOrder: 100, status: 'ACTIVE' });
       setRecipeType('locked');
       setElements([{
-        elementCode: '', elementName: '', defaultPct: 100, minPct: null, maxPct: null,
+        elementCode: '', elementName: '', defaultPct: '100', minPct: null, maxPct: null,
         isLocked: true, sortOrder: 1,
       }]);
     }
@@ -83,8 +91,8 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
       if (t === 'editable') return {
         ...e,
         isLocked: false,
-        minPct: e.minPct ?? Math.max(0, e.defaultPct - 10),
-        maxPct: e.maxPct ?? Math.min(100, e.defaultPct + 10),
+        minPct: e.minPct ?? normalizeDecimalString(Decimal.max('0', toDecimal(e.defaultPct).minus('10'))),
+        maxPct: e.maxPct ?? normalizeDecimalString(Decimal.min('100', toDecimal(e.defaultPct).plus('10'))),
       };
       return e;
     }));
@@ -93,9 +101,9 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
   const addElement = () => setElements(prev => [...prev, {
     elementCode: '',
     elementName: '',
-    defaultPct: 0,
-    minPct: recipeType === 'editable' ? 0 : null,
-    maxPct: recipeType === 'editable' ? 100 : null,
+    defaultPct: '0',
+    minPct: recipeType === 'editable' ? '0' : null,
+    maxPct: recipeType === 'editable' ? '100' : null,
     isLocked: recipeType === 'locked',
     sortOrder: prev.length + 1,
   }]);
@@ -106,14 +114,15 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
     setElements(prev => prev.map((e, idx) => idx === i ? { ...e, ...patch } : e));
   };
 
-  const sumPct = elements.reduce((acc, e) => acc + (Number(e.defaultPct) || 0), 0);
-  const sumOk = Math.abs(sumPct - 100) < 0.01;
+  const sumPct = sumDecimal(elements.map(e => e.defaultPct));
+  const sumPctText = formatDisplayDecimal(sumPct, 2);
+  const sumOk = sumPct.minus('100').abs().lessThan('0.01');
 
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
       if (!sumOk) {
-        message.error(`默认含量之和必须 = 100，当前 ${sumPct.toFixed(2)}`);
+        message.error(`默认含量之和必须 = 100，当前 ${sumPctText}`);
         return;
       }
       if (recipeType === 'partial') {
@@ -192,12 +201,13 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
       key: 'defaultPct',
       width: 100,
       render: (_: unknown, r: ElementRow, i: number) => (
-        <InputNumber
+        <InputNumber<string>
+          stringMode
           value={r.defaultPct}
-          min={0}
-          max={100}
+          min="0"
+          max="100"
           step={0.1}
-          onChange={(v) => updateElement(i, { defaultPct: Number(v ?? 0) })}
+          onChange={(v) => updateElement(i, { defaultPct: normalizeDecimalString(v ?? '0') })}
         />
       ),
     },
@@ -206,13 +216,14 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
       key: 'minPct',
       width: 100,
       render: (_: unknown, r: ElementRow, i: number) => (
-        <InputNumber
+        <InputNumber<string>
+          stringMode
           value={r.minPct ?? undefined}
           disabled={r.isLocked}
-          min={0}
-          max={100}
+          min="0"
+          max="100"
           step={0.1}
-          onChange={(v) => updateElement(i, { minPct: v === null ? null : Number(v) })}
+          onChange={(v) => updateElement(i, { minPct: v === null ? null : normalizeDecimalString(v) })}
         />
       ),
     },
@@ -221,13 +232,14 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
       key: 'maxPct',
       width: 100,
       render: (_: unknown, r: ElementRow, i: number) => (
-        <InputNumber
+        <InputNumber<string>
+          stringMode
           value={r.maxPct ?? undefined}
           disabled={r.isLocked}
-          min={0}
-          max={100}
+          min="0"
+          max="100"
           step={0.1}
-          onChange={(v) => updateElement(i, { maxPct: v === null ? null : Number(v) })}
+          onChange={(v) => updateElement(i, { maxPct: v === null ? null : normalizeDecimalString(v) })}
         />
       ),
     },
@@ -241,8 +253,8 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
           disabled={recipeType === 'locked' || recipeType === 'editable'}
           onChange={(v) => updateElement(i, {
             isLocked: v,
-            minPct: v ? null : (r.minPct ?? 0),
-            maxPct: v ? null : (r.maxPct ?? 100),
+            minPct: v ? null : (r.minPct ?? '0'),
+            maxPct: v ? null : (r.maxPct ?? '100'),
           })}
         />
       ),
@@ -311,7 +323,7 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
           size="small"
         />
         <div style={{ marginTop: 8, color: sumOk ? '#52c41a' : '#ff7875' }}>
-          默认含量之和: <b>{sumPct.toFixed(2)}%</b> {sumOk ? '✓' : '(需 = 100)'}
+          默认含量之和: <b>{sumPctText}%</b> {sumOk ? '✓' : '(需 = 100)'}
         </div>
       </div>
     </div>

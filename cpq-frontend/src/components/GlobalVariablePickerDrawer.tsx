@@ -5,13 +5,8 @@ import {
   globalVariableService,
   compileGlobalVariableToPath,
   type GlobalVariableDefinition,
+  type GlobalVariableKeyOption,
 } from '../services/globalVariableService';
-
-interface KeyOption {
-  key_values: Record<string, any>;
-  value: number | string | null;
-  label: string;
-}
 
 interface GlobalVariablePickerDrawerProps {
   open: boolean;
@@ -45,7 +40,7 @@ const GlobalVariablePickerDrawer: React.FC<GlobalVariablePickerDrawerProps> = ({
   const [defs, setDefs] = useState<GlobalVariableDefinition[]>([]);
   const [defsLoading, setDefsLoading] = useState(false);
   const [selected, setSelected] = useState<GlobalVariableDefinition | null>(null);
-  const [keys, setKeys] = useState<KeyOption[]>([]);
+  const [keys, setKeys] = useState<GlobalVariableKeyOption[]>([]);
   const [keysLoading, setKeysLoading] = useState(false);
   const [filter, setFilter] = useState('');
 
@@ -66,7 +61,7 @@ const GlobalVariablePickerDrawer: React.FC<GlobalVariablePickerDrawerProps> = ({
     setKeysLoading(true);
     try {
       const res: any = await globalVariableService.listKeys(def.code, 1000);
-      const list: KeyOption[] = res?.data?.data || res?.data || [];
+      const list: GlobalVariableKeyOption[] = res?.data?.data || res?.data || [];
       setKeys(Array.isArray(list) ? list : []);
     } catch {
       message.error('加载候选 key 失败');
@@ -76,7 +71,7 @@ const GlobalVariablePickerDrawer: React.FC<GlobalVariablePickerDrawerProps> = ({
     }
   };
 
-  const pickStatic = (opt: KeyOption) => {
+  const pickStatic = (opt: GlobalVariableKeyOption) => {
     if (!selected) return;
     try {
       const bnfPath = compileGlobalVariableToPath(selected, opt.key_values);

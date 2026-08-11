@@ -6,6 +6,8 @@
  * 期望：计价单位 G 时的 来料材料费 = KG 时的 1/1000（净用量按 G 归一到 KG）。
  */
 import { describe, it, expect } from 'vitest';
+import type { DecimalContext } from '../../utils/formulaEngine';
+import type { DecimalString } from '../../utils/precision';
 import { buildCrossTabRows, computeAllFormulas } from './QuotationStep2';
 
 const 元素Id = 'ad99c10d';
@@ -13,7 +15,7 @@ const 元素Id = 'ad99c10d';
 function makeData(unit: string) {
   const ysExpansion = {
     rowCount: 1,
-    rows: [{ driverRow: { 料件: 'P1', 净用量: 100, 单价: 100, 计价单位: unit }, basicDataValues: {} }],
+    rows: [{ driverRow: { 料件: 'P1', 净用量: '100', 单价: '100', 计价单位: unit }, basicDataValues: {} }],
   } as any;
   const componentData = [
     {
@@ -25,8 +27,8 @@ function makeData(unit: string) {
         { name: '计价单位', field_type: 'INPUT_TEXT' },
       ],
       formulas: [],
-      rows: [{ 料件: 'P1', 净用量: 100, 单价: 100, 计价单位: unit }],
-      componentData: [], snapshotRows: 1, subtotal: 0,
+      rows: [{ 料件: 'P1', 净用量: '100', 单价: '100', 计价单位: unit }],
+      componentData: [], snapshotRows: 1, subtotal: '0',
     },
     {
       componentId: '来料', componentCode: '来料', tabName: '来料', componentType: 'NORMAL',
@@ -47,28 +49,28 @@ function makeData(unit: string) {
         }],
       }],
       rows: [{ 料件: 'P1' }],
-      componentData: [], snapshotRows: 1, subtotal: 0,
+      componentData: [], snapshotRows: 1, subtotal: '0',
     },
   ] as any;
   return componentData;
 }
 
-function compute来料材料费(unit: string): number {
+function compute来料材料费(unit: string): DecimalString {
   const data = makeData(unit);
-  const subs: Record<string, number> = {};
+  const subs: DecimalContext = {};
   const { store } = buildCrossTabRows(data, subs, undefined,
-    (c: any) => (c.componentId === 元素Id ? { rowCount: 1, rows: [{ driverRow: { 料件: 'P1', 净用量: 100, 单价: 100, 计价单位: unit }, basicDataValues: {} }] } as any : undefined));
+    (c: any) => (c.componentId === 元素Id ? { rowCount: 1, rows: [{ driverRow: { 料件: 'P1', 净用量: '100', 单价: '100', 计价单位: unit }, basicDataValues: {} }] } as any : undefined));
   const llComp = data[1];
   const res = computeAllFormulas(llComp, { 料件: 'P1' }, subs, undefined, undefined, undefined,
     undefined, undefined, undefined, store);
-  return res['来料材料费'] as number;
+  return res['来料材料费'] ?? '0';
 }
 
 describe('cross_tab E2E 纯材料成本(来料) 净用量 随计价单位换算', () => {
   it('KG → 净用量×单价 = 100×100 = 10000', () => {
-    expect(compute来料材料费('KG')).toBeCloseTo(10000, 4);
+    expect(compute来料材料费('KG')).toBe('10000');
   });
   it('G → 净用量(100g→0.1kg)×单价 = 0.1×100 = 10 (= KG 的 1/1000)', () => {
-    expect(compute来料材料费('G')).toBeCloseTo(10, 4);
+    expect(compute来料材料费('G')).toBe('10');
   });
 });

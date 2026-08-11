@@ -9,6 +9,16 @@ import type {
   ConfiguratorTemplate, ConfiguratorOption, ConfiguratorOptionValue,
 } from '../../types/configurator';
 import ConfiguratorPreview from '../../components/ConfiguratorPreview';
+import { formatDisplayDecimal, isDecimalString, toDecimal } from '../../utils/precision';
+
+const displayPrice = (value: unknown) => isDecimalString(value) ? formatDisplayDecimal(value) : '0';
+const displayDelta = (value: unknown) => {
+  if (!isDecimalString(value)) return '';
+  const decimal = toDecimal(value);
+  if (decimal.greaterThan(0)) return `+¥${formatDisplayDecimal(value)}`;
+  if (decimal.lessThan(0)) return `¥${formatDisplayDecimal(value)}`;
+  return '';
+};
 
 /**
  * v0.4 全屏 3D 选配页（Babylon 集成 = 期 3 大工程）
@@ -360,11 +370,11 @@ const ConfiguratorPage: React.FC = () => {
                                     {selected && !isMulti && <span style={{ color: '#1890ff' }}>✓</span>}
                                     <span style={{ fontSize: 13, fontWeight: selected ? 600 : 'normal' }}>{v.label}</span>
                                   </Space>
-                                  {showPrice && Number(v.priceDelta) > 0 && (
-                                    <div style={{ fontSize: 11, color: '#d48806', marginTop: 4 }}>+¥{v.priceDelta}</div>
+                                  {showPrice && toDecimal(v.priceDelta).greaterThan(0) && (
+                                    <div style={{ fontSize: 11, color: '#d48806', marginTop: 4 }}>+¥{formatDisplayDecimal(v.priceDelta)}</div>
                                   )}
-                                  {showPrice && Number(v.priceDelta) < 0 && (
-                                    <div style={{ fontSize: 11, color: '#52c41a', marginTop: 4 }}>¥{v.priceDelta}</div>
+                                  {showPrice && toDecimal(v.priceDelta).lessThan(0) && (
+                                    <div style={{ fontSize: 11, color: '#52c41a', marginTop: 4 }}>¥{formatDisplayDecimal(v.priceDelta)}</div>
                                   )}
                                 </Card>
                               </Col>
@@ -373,10 +383,10 @@ const ConfiguratorPage: React.FC = () => {
                         </Row>
                       ) : o.assignMode === 'MANUAL' ? (
                         o.dataType === 'NUMBER' ? (
-                          <InputNumber
-                            value={sel ? Number(sel) : undefined} placeholder={o.defaultValue}
-                            min={o.minValue ? Number(o.minValue) : undefined}
-                            max={o.maxValue ? Number(o.maxValue) : undefined}
+                          <InputNumber<string> stringMode
+                            value={sel || undefined} placeholder={o.defaultValue}
+                            min={o.minValue || undefined}
+                            max={o.maxValue || undefined}
                             onChange={v => setSelectedValues({ ...selectedValues, [o.code]: String(v ?? '') })}
                           />
                         ) : (
@@ -411,13 +421,13 @@ const ConfiguratorPage: React.FC = () => {
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 12, color: '#999' }}>当前估价</div>
               <div style={{ fontSize: 24, fontWeight: 600, color: '#cf1322' }}>
-                ¥{evalResult?.totalPrice ? Number(evalResult.totalPrice).toLocaleString() : '0'}
+                ¥{displayPrice(evalResult?.totalPrice)}
               </div>
               {evalResult?.priceBreakdown && evalResult.priceBreakdown.length > 0 && (
                 <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
-                  基础 ¥{evalResult.basePrice}
+                  基础 ¥{displayPrice(evalResult.basePrice)}
                   {evalResult.priceBreakdown.map((b: any, i: number) =>
-                    <span key={i}> + {b.value_label} {Number(b.delta) > 0 ? `+¥${b.delta}` : Number(b.delta) < 0 ? `¥${b.delta}` : ''}</span>
+                    <span key={i}> + {b.value_label} {displayDelta(b.delta)}</span>
                   )}
                 </div>
               )}
@@ -454,7 +464,7 @@ const ConfiguratorPage: React.FC = () => {
               <Descriptions.Item label="实例编号"><b>{createdInstance.instanceCode}</b></Descriptions.Item>
               <Descriptions.Item label="客户">{cust.name} ({cust.tier})</Descriptions.Item>
               <Descriptions.Item label="状态"><Tag color="blue">SUBMITTED</Tag></Descriptions.Item>
-              <Descriptions.Item label="总价">¥{evalResult?.totalPrice ? Number(evalResult.totalPrice).toLocaleString() : '0'}</Descriptions.Item>
+              <Descriptions.Item label="总价">¥{displayPrice(evalResult?.totalPrice)}</Descriptions.Item>
             </Descriptions>
             <div style={{ marginTop: 14, fontSize: 13 }}>请选择下一步：</div>
             <Space direction="vertical" style={{ width: '100%', marginTop: 10 }}>

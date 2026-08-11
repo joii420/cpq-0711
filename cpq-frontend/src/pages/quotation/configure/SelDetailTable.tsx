@@ -10,13 +10,15 @@ import { Table, Button, InputNumber, Empty } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { SelDetailRow } from '../../../types/configure';
+import { formatDisplayDecimal, normalizeDecimalString, type DecimalString } from '../../../utils/precision';
+import { normalizeQuantityInput, sumQuantity } from './configureRequest';
 
 interface Props {
   rows: SelDetailRow[];
   onAdd: () => void;
   onEdit: (rowId: string) => void;
   onDelete: (rowId: string) => void;
-  onQuantityChange: (rowId: string, qty: number) => void;
+  onQuantityChange: (rowId: string, qty: DecimalString) => void;
 }
 
 // 材质色块 — 后端无配色数据，按 code 做确定性哈希取色，纯展示用（对齐原型 `.mo-swatch`/`.mat-swatch-sm` 视觉语义，非逐值还原）。
@@ -31,14 +33,14 @@ function swatchColor(code: string | null): string {
   return SWATCH_COLORS[h % SWATCH_COLORS.length];
 }
 
-function summarizeElements(overrides: Record<string, number>): string {
+function summarizeElements(overrides: Record<string, DecimalString>): string {
   const entries = Object.entries(overrides);
   if (entries.length === 0) return '—';
-  return entries.map(([code, val]) => `${code}${Number(val).toFixed(2)}`).join('/');
+  return entries.map(([code, val]) => `${code}${formatDisplayDecimal(val, 2)}`).join('/');
 }
 
 const SelDetailTable: React.FC<Props> = ({ rows, onAdd, onEdit, onDelete, onQuantityChange }) => {
-  const qtySum = rows.reduce((s, r) => s + (r.quantity || 0), 0);
+  const qtySum = normalizeDecimalString(sumQuantity(rows));
 
   const columns: ColumnsType<SelDetailRow> = [
     {
@@ -85,14 +87,15 @@ const SelDetailTable: React.FC<Props> = ({ rows, onAdd, onEdit, onDelete, onQuan
       key: 'quantity',
       width: 90,
       render: (_v, r) => (
-        <InputNumber
+        <InputNumber<string>
           size="small"
-          min={1}
-          step={1}
+          stringMode
+          min="1"
+          step="1"
           precision={0}
           value={r.quantity}
           style={{ width: 68 }}
-          onChange={(v) => onQuantityChange(r.rowId, Math.max(1, Math.floor(Number(v) || 1)))}
+          onChange={(v) => onQuantityChange(r.rowId, normalizeQuantityInput(v))}
         />
       ),
     },

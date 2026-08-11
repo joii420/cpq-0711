@@ -3,6 +3,8 @@ package com.cpq.pricing.resource;
 import com.cpq.pricing.entity.PricingRule;
 import com.cpq.pricing.entity.PricingStrategy;
 import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.junit.QuarkusTestProfile;
+import io.quarkus.test.junit.TestProfile;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import jakarta.inject.Inject;
@@ -10,11 +12,22 @@ import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.*;
 
+import java.util.Map;
+
 import static org.hamcrest.Matchers.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @QuarkusTest
+@TestProfile(PricingStrategyResourceTest.RbacOffProfile.class)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class PricingStrategyResourceTest {
+
+    public static class RbacOffProfile implements QuarkusTestProfile {
+        @Override
+        public Map<String, String> getConfigOverrides() {
+            return Map.of("cpq.security.rbac.enabled", "false");
+        }
+    }
 
     @Inject
     EntityManager em;
@@ -79,22 +92,22 @@ class PricingStrategyResourceTest {
                   "customerId": "%s",
                   "name": "Test Gold Strategy",
                   "type": "DISCOUNT",
-                  "baseDiscount": 95.00,
-                  "minOrderAmount": 10000.00,
+                  "baseDiscount": "95.00",
+                  "minOrderAmount": "10000.00",
                   "effectiveDate": "2026-01-01",
                   "expirationDate": "2026-12-31",
                   "priority": 1,
                   "rules": [
                     {
                       "ruleType": "BULK_DISCOUNT",
-                      "thresholdAmount": 50000.00,
-                      "discountRate": 92.00,
+                      "thresholdAmount": "50000.00",
+                      "discountRate": "92.00",
                       "sortOrder": 1
                     },
                     {
                       "ruleType": "BULK_DISCOUNT",
-                      "thresholdAmount": 100000.00,
-                      "discountRate": 88.00,
+                      "thresholdAmount": "100000.00",
+                      "discountRate": "88.00",
                       "sortOrder": 2
                     }
                   ]
@@ -110,11 +123,11 @@ class PricingStrategyResourceTest {
                 .statusCode(200)
                 .body("code", equalTo(200))
                 .body("data.name", equalTo("Test Gold Strategy"))
-                .body("data.baseDiscount", equalTo(95.00f))
+                .body("data.baseDiscount", equalTo("95"))
                 .body("data.status", equalTo("ACTIVE"))
                 .body("data.rules", hasSize(2))
                 .body("data.rules[0].sortOrder", equalTo(1))
-                .body("data.rules[1].discountRate", equalTo(88.00f));
+                .body("data.rules[1].discountRate", equalTo("88"));
     }
 
     @Test
@@ -124,7 +137,7 @@ class PricingStrategyResourceTest {
                 {
                   "customerId": "%s",
                   "name": "Test List Strategy",
-                  "baseDiscount": 90.00,
+                  "baseDiscount": "90.00",
                   "priority": 2,
                   "rules": []
                 }
@@ -153,10 +166,10 @@ class PricingStrategyResourceTest {
                 {
                   "customerId": "%s",
                   "name": "Test Update Strategy",
-                  "baseDiscount": 95.00,
+                  "baseDiscount": "95.00",
                   "priority": 1,
                   "rules": [
-                    {"ruleType": "BULK_DISCOUNT", "thresholdAmount": 10000.00, "discountRate": 90.00, "sortOrder": 1}
+                    {"ruleType": "BULK_DISCOUNT", "thresholdAmount": "10000.00", "discountRate": "90.00", "sortOrder": 1}
                   ]
                 }
                 """.formatted(testCustomerId);
@@ -173,11 +186,11 @@ class PricingStrategyResourceTest {
                 {
                   "customerId": "%s",
                   "name": "Test Update Strategy Modified",
-                  "baseDiscount": 88.00,
+                  "baseDiscount": "88.00",
                   "priority": 1,
                   "rules": [
-                    {"ruleType": "BULK_DISCOUNT", "thresholdAmount": 20000.00, "discountRate": 85.00, "sortOrder": 1},
-                    {"ruleType": "BULK_DISCOUNT", "thresholdAmount": 50000.00, "discountRate": 80.00, "sortOrder": 2}
+                    {"ruleType": "BULK_DISCOUNT", "thresholdAmount": "20000.00", "discountRate": "85.00", "sortOrder": 1},
+                    {"ruleType": "BULK_DISCOUNT", "thresholdAmount": "50000.00", "discountRate": "80.00", "sortOrder": 2}
                   ]
                 }
                 """.formatted(testCustomerId);
@@ -191,7 +204,7 @@ class PricingStrategyResourceTest {
                 .statusCode(200)
                 .body("code", equalTo(200))
                 .body("data.name", equalTo("Test Update Strategy Modified"))
-                .body("data.baseDiscount", equalTo(88.00f))
+                .body("data.baseDiscount", equalTo("88"))
                 .body("data.rules", hasSize(2));
     }
 
@@ -202,7 +215,7 @@ class PricingStrategyResourceTest {
                 {
                   "customerId": "%s",
                   "name": "Test Status Strategy",
-                  "baseDiscount": 95.00,
+                  "baseDiscount": "95.00",
                   "priority": 1,
                   "rules": []
                 }
@@ -233,10 +246,10 @@ class PricingStrategyResourceTest {
                 {
                   "customerId": "%s",
                   "name": "Test Delete Strategy",
-                  "baseDiscount": 95.00,
+                  "baseDiscount": "95.00",
                   "priority": 1,
                   "rules": [
-                    {"ruleType": "BULK_DISCOUNT", "thresholdAmount": 10000.00, "discountRate": 90.00, "sortOrder": 1}
+                    {"ruleType": "BULK_DISCOUNT", "thresholdAmount": "10000.00", "discountRate": "90.00", "sortOrder": 1}
                   ]
                 }
                 """.formatted(testCustomerId);
@@ -269,7 +282,7 @@ class PricingStrategyResourceTest {
         String body = """
                 {
                   "name": "No Customer Strategy",
-                  "baseDiscount": 95.00
+                  "baseDiscount": "95.00"
                 }
                 """;
 
@@ -280,5 +293,48 @@ class PricingStrategyResourceTest {
                 .post("/api/cpq/pricing-strategies")
             .then()
                 .statusCode(400);
+    }
+
+    @Test
+    @Order(8)
+    void precisionJsonNumbersAreRejectedWithoutPartialWrites() {
+        String decimal = "98765431.123456789012";
+        Map<String, String> payloads = Map.of(
+                "baseDiscount", "\"baseDiscount\":" + decimal + ",\"rules\":[]",
+                "minOrderAmount", "\"baseDiscount\":\"95\",\"minOrderAmount\":"
+                        + decimal + ",\"rules\":[]",
+                "thresholdAmount", "\"baseDiscount\":\"95\",\"rules\":[{\"ruleType\":\"BULK_DISCOUNT\","
+                        + "\"thresholdAmount\":" + decimal + ",\"discountRate\":\"90\",\"sortOrder\":1}]",
+                "discountRate", "\"baseDiscount\":\"95\",\"rules\":[{\"ruleType\":\"BULK_DISCOUNT\","
+                        + "\"thresholdAmount\":\"10000\",\"discountRate\":" + decimal
+                        + ",\"sortOrder\":1}]");
+        Map<String, String> expectedPaths = Map.of(
+                "baseDiscount", "baseDiscount",
+                "minOrderAmount", "minOrderAmount",
+                "thresholdAmount", "rules[0].thresholdAmount",
+                "discountRate", "rules[0].discountRate");
+        long before = pricingStrategyCount();
+
+        payloads.forEach((field, precisionFields) -> {
+            String body = "{\"customerId\":\"" + testCustomerId
+                    + "\",\"name\":\"Reject " + field + "\"," + precisionFields + "}";
+            RestAssured.given()
+                    .contentType(ContentType.JSON)
+                    .body(body)
+                    .post("/api/cpq/pricing-strategies")
+                    .then()
+                    .statusCode(400)
+                    .body("attributeName", equalTo(expectedPaths.get(field)))
+                    .body("value", equalTo(decimal));
+            assertEquals(before, pricingStrategyCount(),
+                    field + " numeric token must not persist strategy or rules");
+        });
+    }
+
+    private long pricingStrategyCount() {
+        return ((Number) em.createNativeQuery(
+                "SELECT COUNT(*) FROM pricing_strategy WHERE customer_id = :customerId")
+                .setParameter("customerId", java.util.UUID.fromString(testCustomerId))
+                .getSingleResult()).longValue();
     }
 }

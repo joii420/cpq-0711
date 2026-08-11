@@ -6,6 +6,8 @@
  * 响应为裸 DTO，无 {code,data} 信封（api.md §0）。
  */
 
+import type { DecimalString } from '../utils/precision';
+
 // ── 枚举 ──
 
 export type PriceMethod = 'LATEST' | 'AVG' | 'MAX' | 'MIN';
@@ -58,7 +60,7 @@ export interface PriceSourceUpsertRequest {
 export interface PriceImportRowDTO {
   rowNo: number;
   elementCode: string;
-  price: number;
+  price: DecimalString;
   currency?: string;
   priceUnit?: string;
   result: ImportRowResult;
@@ -88,7 +90,7 @@ export interface ElementPriceRowDTO {
   sourceId: string;
   sourceName: string;
   sourceStatus: SourceStatus;
-  price: number;
+  price: DecimalString;
   currency: string;
   priceUnit: string;
   /** 数据来源（update-0724 · api.md §4 新增） */
@@ -111,14 +113,14 @@ export interface CreatePriceRequest {
   sourceId: string;
   /** yyyy-MM-dd */
   priceDate: string;
-  price: number;
+  price: DecimalString;
   currency: string;
   priceUnit: string;
 }
 
 /** 注意：故意不含 elementCode / sourceId / priceDate —— 键锁定由后端硬保证（api.md §2） */
 export interface UpdatePriceRequest {
-  price: number;
+  price: DecimalString;
   currency: string;
   priceUnit: string;
 }
@@ -150,7 +152,7 @@ export interface PriceMatrixRowDTO {
   elementCode: string;
   elementName: string;
   /** 与 dates 等长、按下标对齐；null = 当天该源无价格记录，前端渲染「—」，不补零 */
-  prices: (number | null)[];
+  prices: (DecimalString | null)[];
 }
 
 export interface PriceMatrixDTO {
@@ -166,7 +168,7 @@ export interface ElementLatestPriceDTO {
   sourceId: string;
   sourceName: string;
   sourceStatus: SourceStatus;
-  price: number;
+  price: DecimalString;
   currency: string;
   priceUnit: string;
   priceDate: string;
@@ -183,8 +185,8 @@ export interface StrategyDTO {
   method: PriceMethod;
   windowNum: number | null;
   windowUnit: WindowUnit | null;
-  factor: number;
-  premium: number;
+  factor: DecimalString;
+  premium: DecimalString;
   updatedAt: string;
   updatedByName: string;
 }
@@ -203,8 +205,8 @@ export interface StrategyUpsertRequest {
   windowNum?: number | null;
   /** method='LATEST' 时不要传本字段（传了后端返 400） */
   windowUnit?: WindowUnit | null;
-  factor?: number;
-  premium?: number;
+  factor?: DecimalString;
+  premium?: DecimalString;
   /** 仅元素级例外新建/修改必填 */
   elementCode?: string;
 }
@@ -217,8 +219,8 @@ export interface SimulateDraftStrategy {
   method: PriceMethod;
   windowNum?: number | null;
   windowUnit?: WindowUnit | null;
-  factor?: number;
-  premium?: number;
+  factor?: DecimalString;
+  premium?: DecimalString;
 }
 
 export interface SimulateDraftException extends SimulateDraftStrategy {
@@ -243,10 +245,10 @@ export interface SimulateRowDTO {
   hitRule: HitRule;
   sourceName: string;
   method: PriceMethod;
-  rawValue: number | null;
-  factor: number;
-  premium: number;
-  finalPrice: number | null;
+  rawValue: DecimalString | null;
+  factor: DecimalString;
+  premium: DecimalString;
+  finalPrice: DecimalString | null;
   sampleDays: number;
   hasPrice: boolean;
 }
@@ -266,8 +268,8 @@ export interface StrategyHistorySnapshot {
   method?: PriceMethod;
   windowNum?: number | null;
   windowUnit?: WindowUnit | null;
-  factor?: number;
-  premium?: number;
+  factor?: DecimalString;
+  premium?: DecimalString;
   [key: string]: unknown;
 }
 

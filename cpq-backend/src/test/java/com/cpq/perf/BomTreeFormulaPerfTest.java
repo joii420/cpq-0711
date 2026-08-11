@@ -41,7 +41,7 @@ class BomTreeFormulaPerfTest {
         ObjectNode root = rows.addObject();
         root.put("__nodeId", "n0");
         root.putNull("__parentId");
-        root.put("__lvl", 0);
+        root.put("__lvl", new java.math.BigDecimal("0"));
         root.putObject("driverRow");
         root.putObject("basicDataValues");
 
@@ -53,7 +53,7 @@ class BomTreeFormulaPerfTest {
             ObjectNode br = rows.addObject();
             br.put("__nodeId", bid);
             br.put("__parentId", "n0");
-            br.put("__lvl", 1);
+            br.put("__lvl", new java.math.BigDecimal("1"));
             br.putObject("driverRow");
             br.putObject("basicDataValues");
         }
@@ -64,7 +64,7 @@ class BomTreeFormulaPerfTest {
             ObjectNode lf = rows.addObject();
             lf.put("__nodeId", "l" + i);
             lf.put("__parentId", bid);
-            lf.put("__lvl", 2);
+            lf.put("__lvl", new java.math.BigDecimal("2"));
             ObjectNode dr = lf.putObject("driverRow");
             dr.put("取数值", (i % 17) + 1); // deterministic varied numeric value, never 0 (avoids masking 判据4 concerns)
             lf.putObject("basicDataValues");

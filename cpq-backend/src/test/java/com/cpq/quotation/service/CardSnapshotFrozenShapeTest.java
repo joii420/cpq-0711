@@ -76,12 +76,12 @@ class CardSnapshotFrozenShapeTest {
         var baseRows = M.createArrayNode();
 
         var rowAg = M.createObjectNode();
-        var drAg = M.createObjectNode(); drAg.put("元素", "Ag"); drAg.put("元素单价", 100);
+        var drAg = M.createObjectNode(); drAg.put("元素", "Ag"); drAg.put("元素单价", new java.math.BigDecimal("100"));
         rowAg.set("driverRow", drAg); rowAg.set("basicDataValues", M.createObjectNode());
         baseRows.add(rowAg);
 
         var rowCu = M.createObjectNode();
-        var drCu = M.createObjectNode(); drCu.put("元素", "Cu"); drCu.put("元素单价", 50);
+        var drCu = M.createObjectNode(); drCu.put("元素", "Cu"); drCu.put("元素单价", new java.math.BigDecimal("50"));
         rowCu.set("driverRow", drCu); rowCu.set("basicDataValues", M.createObjectNode());
         baseRows.add(rowCu);
 

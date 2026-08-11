@@ -1,4 +1,5 @@
 import api from './api';
+import { isDecimalString, normalizeDecimalString, type DecimalString } from '../utils/precision';
 
 /**
  * V6 料号主数据 API — material_master 表
@@ -18,7 +19,7 @@ export interface MaterialMaster {
   materialType?: string | null;
   /** 1.正常 / 2.回收料 */
   usageProperty?: string | null;
-  unitWeight?: number | null;
+  unitWeight?: DecimalString | null;
   standardUnit?: string | null;
   createdAt?: string;
   updatedAt?: string;
@@ -34,7 +35,7 @@ export interface MaterialMasterPayload {
   oldMaterialNo?: string | null;
   materialType?: string | null;
   usageProperty?: string | null;
-  unitWeight?: number | null;
+  unitWeight?: DecimalString | null;
   standardUnit?: string | null;
 }
 
@@ -46,11 +47,19 @@ export const materialMasterService = {
     api.get(`/material-masters/${id}`) as Promise<any>,
 
   create: (data: MaterialMasterPayload) =>
-    api.post('/material-masters', data) as Promise<any>,
+    api.post('/material-masters', normalizePayload(data)) as Promise<any>,
 
   update: (id: string, data: MaterialMasterPayload) =>
-    api.put(`/material-masters/${id}`, data) as Promise<any>,
+    api.put(`/material-masters/${id}`, normalizePayload(data)) as Promise<any>,
 
   delete: (id: string) =>
     api.delete(`/material-masters/${id}`) as Promise<any>,
 };
+
+function normalizePayload(data: MaterialMasterPayload): MaterialMasterPayload {
+  if (data.unitWeight == null) return data;
+  if (!isDecimalString(data.unitWeight)) {
+    throw new TypeError('unitWeight must be a decimal string');
+  }
+  return { ...data, unitWeight: normalizeDecimalString(data.unitWeight) };
+}

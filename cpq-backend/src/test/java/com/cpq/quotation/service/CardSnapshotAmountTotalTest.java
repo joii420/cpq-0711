@@ -6,6 +6,10 @@ import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
+import java.util.LinkedHashMap;
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -56,13 +60,13 @@ class CardSnapshotAmountTotalTest {
         // （见 FormulaCalculator#resolveRowByFieldName:1236-1268）；本测试字段未配 default_source，
         // 故值须放进 driverRow（而非 basicDataValues，那需要 default_source.path 才会被查到）。
         var r1 = M.createObjectNode();
-        var dr1 = M.createObjectNode(); dr1.put("金额", 10); dr1.put("数量", 3);
+        var dr1 = M.createObjectNode(); dr1.put("金额", new java.math.BigDecimal("10")); dr1.put("数量", new java.math.BigDecimal("3"));
         r1.set("driverRow", dr1);
         r1.set("basicDataValues", M.createObjectNode());
         baseRows.add(r1);
 
         var r2 = M.createObjectNode();
-        var dr2 = M.createObjectNode(); dr2.put("金额", 20); dr2.put("数量", 4);
+        var dr2 = M.createObjectNode(); dr2.put("金额", new java.math.BigDecimal("20")); dr2.put("数量", new java.math.BigDecimal("4"));
         r2.set("driverRow", dr2);
         r2.set("basicDataValues", M.createObjectNode());
         baseRows.add(r2);
@@ -98,6 +102,83 @@ class CardSnapshotAmountTotalTest {
         assertEquals(30.0, byCol.path("金额").asDouble(), 0.0001);
         assertEquals(7.0, byCol.path("数量").asDouble(), 0.0001);
     }
+
+    @Test
+    void amountTotalSentinelPreservesTwelveDigitsThroughPass1AndBackfill() throws Exception {
+        JsonNode snapshot = M.readTree(SNAPSHOT);
+        ((com.fasterxml.jackson.databind.node.ArrayNode) snapshot.get(0).path("fields")).add(
+            M.createObjectNode()
+                .put("name", "附加金额")
+                .put("field_type", "INPUT_NUMBER")
+                .put("is_amount", true)
+                .put("is_subtotal", true)
+                .put("sort_order", 3));
+        var baseRowsByComp = new java.util.LinkedHashMap<String, com.fasterxml.jackson.databind.node.ArrayNode>();
+        var baseRows = M.createArrayNode();
+
+        var row = M.createObjectNode();
+        var driverRow = M.createObjectNode();
+        driverRow.put("金额", new java.math.BigDecimal("0.040000000001"));
+        driverRow.put("附加金额", new java.math.BigDecimal("0.043825536788"));
+        driverRow.put("数量", new java.math.BigDecimal("7"));
+        row.set("driverRow", driverRow);
+        row.set("basicDataValues", M.createObjectNode());
+        baseRows.add(row);
+        baseRowsByComp.put("c1", baseRows);
+        baseRowsByComp.put("c2", M.createArrayNode());
+
+        JsonNode root = M.readTree(
+            svc.assembleTabsWithFormulaResultsForTest(snapshot, baseRowsByComp, null));
+        JsonNode subtotal = root.path("tabs").get(1).path("subtotal");
+
+        assertEquals("0.083825536789", subtotal.asText());
+        assertNotEquals("0.0838", subtotal.asText(),
+            "CardSnapshot PASS1/backfill must not restore the legacy four-decimal value");
+    }
+
+    @Test
+    void amountTotalEdgeMatrixPreservesExistingSemanticsThroughPass1AndBackfill() throws Exception {
+        String snapshotJson = """
+            [ { "componentId":"edge-detail", "componentCode":"EDGE", "tabName":"Edge detail",
+                "componentType":"NORMAL", "sortOrder":1,
+                "fields":[
+                  {"name":"amountA","field_type":"INPUT_NUMBER","is_amount":true,"is_subtotal":true},
+                  {"name":"amountB","field_type":"INPUT_NUMBER","is_amount":true,"is_subtotal":true}
+                ],
+                "formulas":[], "formula_assignments":[] },
+              { "componentId":"edge-subtotal", "componentCode":"EDGE-ST", "tabName":"Edge subtotal",
+                "componentType":"SUBTOTAL", "sortOrder":2, "fields":[], "formula_assignments":[],
+                "formulas":[ { "expression":[
+                  { "type":"component_subtotal", "component_code":"EDGE", "value":"__amount_total__" }
+                ] } ] } ]
+            """;
+        List<AmountEdgeCase> cases = List.of(
+            new AmountEdgeCase("empty", "[]", "0"),
+            new AmountEdgeCase("zero",
+                "[{\"driverRow\":{\"amountA\":\"0\",\"amountB\":\"0\"},\"basicDataValues\":{}}]", "0"),
+            new AmountEdgeCase("negative",
+                "[{\"driverRow\":{\"amountA\":\"-1.2345\",\"amountB\":\"0.2345\"},\"basicDataValues\":{}}]", "-1"),
+            new AmountEdgeCase("exact-four-decimals",
+                "[{\"driverRow\":{\"amountA\":\"1.2000\",\"amountB\":\"0.0345\"},\"basicDataValues\":{}}]", "1.2345"));
+
+        for (AmountEdgeCase edgeCase : cases) {
+            JsonNode snapshot = M.readTree(snapshotJson);
+            var rowsByComponent = new LinkedHashMap<String, com.fasterxml.jackson.databind.node.ArrayNode>();
+            rowsByComponent.put("edge-detail",
+                (com.fasterxml.jackson.databind.node.ArrayNode) M.readTree(edgeCase.rowsJson()));
+            rowsByComponent.put("edge-subtotal", M.createArrayNode());
+
+            JsonNode root = M.readTree(
+                svc.assembleTabsWithFormulaResultsForTest(snapshot, rowsByComponent, null));
+            JsonNode subtotal = root.path("tabs").get(1).path("subtotal");
+
+            assertTrue(subtotal.isTextual(), edgeCase.name() + ": subtotal must be a decimal string");
+            assertEquals(0, new BigDecimal(edgeCase.expected()).compareTo(new BigDecimal(subtotal.asText())),
+                edgeCase.name() + ": actual=" + subtotal);
+        }
+    }
+
+    private record AmountEdgeCase(String name, String rowsJson, String expected) {}
 
     /**
      * 回归：零 is_subtotal 列的普通页签（无金额列可言）不应因本次改动而报错或产生非零哨兵值——

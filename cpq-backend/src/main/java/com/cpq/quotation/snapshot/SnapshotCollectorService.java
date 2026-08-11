@@ -37,6 +37,7 @@ public class SnapshotCollectorService {
 
     private static final Logger LOG = Logger.getLogger(SnapshotCollectorService.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final String OPTIONAL_PLATING_PLAN_RELATION = "\"public\".\"plating_plan\"";
 
     @Inject
     EntityManager em;
@@ -243,7 +244,6 @@ public class SnapshotCollectorService {
     @SuppressWarnings("unchecked")
     private Map<String, Object> collectMasterDataSnapshot(UUID quotationId, UUID customerId) {
         Map<String, Object> snapshot = new LinkedHashMap<>();
-        try {
             // 收集涉及的 hf_part_no 列表
             List<String> partNos = collectPartNos(quotationId);
             if (partNos.isEmpty()) return snapshot;
@@ -289,21 +289,23 @@ public class SnapshotCollectorService {
             if (!matBomMap.isEmpty()) snapshot.put("mat_bom", matBomMap);
 
             // plating_plan — 按 hf_part_no 查询当前版本
-            Map<String, Object> platingMap = new LinkedHashMap<>();
-            List<Object[]> platingRows = em.createNativeQuery(
-                    "SELECT hf_part_no, plating_type, thickness, version FROM plating_plan" +
-                    " WHERE is_current = true AND hf_part_no = ANY(:partNos)")
-                    .setParameter("partNos", partNos.toArray(new String[0]))
-                    .getResultList();
-            for (Object[] row : platingRows) {
-                String key = (String) row[0];
-                Map<String, Object> fields = new LinkedHashMap<>();
-                fields.put("plating_type", row[1]);
-                fields.put("thickness", row[2]);
-                fields.put("version", row[3]);
-                platingMap.put(key, fields);
+            if (relationExists(OPTIONAL_PLATING_PLAN_RELATION)) {
+                Map<String, Object> platingMap = new LinkedHashMap<>();
+                List<Object[]> platingRows = em.createNativeQuery(
+                        "SELECT hf_part_no, plating_type, thickness, version FROM public.plating_plan" +
+                        " WHERE is_current = true AND hf_part_no = ANY(:partNos)")
+                        .setParameter("partNos", partNos.toArray(new String[0]))
+                        .getResultList();
+                for (Object[] row : platingRows) {
+                    String key = (String) row[0];
+                    Map<String, Object> fields = new LinkedHashMap<>();
+                    fields.put("plating_type", row[1]);
+                    fields.put("thickness", row[2]);
+                    fields.put("version", row[3]);
+                    platingMap.put(key, fields);
+                }
+                if (!platingMap.isEmpty()) snapshot.put("plating_plan", platingMap);
             }
-            if (!platingMap.isEmpty()) snapshot.put("plating_plan", platingMap);
 
             // task-0723 B4: mat_customer_part_mapping（冻结）→ material_customer_map（V6）。
             // 全键严格匹配 (customer.code, material_no)，不做仅料号降级（防跨客户串号，见 B2/需求说明 Q5）。
@@ -327,10 +329,19 @@ public class SnapshotCollectorService {
                 if (!mappingMap.isEmpty()) snapshot.put("mat_customer_part_mapping", mappingMap);
             }
 
-        } catch (Exception e) {
-            LOG.warnf("SnapshotCollectorService: collectMasterDataSnapshot failed: %s", e.getMessage());
-        }
         return snapshot;
+    }
+
+    /**
+     * Checks a static optional relation without interpolating an identifier into executable SQL.
+     * PostgreSQL {@code to_regclass} accepts schema-qualified and quoted relation names and returns
+     * {@code null} without aborting the transaction when the relation is absent.
+     */
+    private boolean relationExists(String qualifiedRelationName) {
+        Object relation = em.createNativeQuery("SELECT to_regclass(:relationName)")
+                .setParameter("relationName", qualifiedRelationName)
+                .getSingleResult();
+        return relation != null;
     }
 
     /**

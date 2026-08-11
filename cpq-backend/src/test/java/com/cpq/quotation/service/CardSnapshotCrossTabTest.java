@@ -8,6 +8,7 @@ import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -48,7 +49,7 @@ class CardSnapshotCrossTabTest {
         ObjectNode row = M.createObjectNode();
         ObjectNode dr = M.createObjectNode();
         for (var e : driver.entrySet()) {
-            if (e.getValue() instanceof Number n) dr.put(e.getKey(), n.doubleValue());
+            if (e.getValue() instanceof BigDecimal decimal) dr.put(e.getKey(), decimal);
             else dr.put(e.getKey(), String.valueOf(e.getValue()));
         }
         row.set("driverRow", dr);
@@ -123,9 +124,9 @@ class CardSnapshotCrossTabTest {
         // baseRows：WGJ 4 行费用值
         Map<String, ArrayNode> baseRowsByComp = new LinkedHashMap<>();
         ArrayNode wgjRows = M.createArrayNode();
-        for (double fee : new double[]{0.05, 0.2, 0.002, 0.007}) {
+        for (String fee : new String[]{"0.05", "0.2", "0.002", "0.007"}) {
             ObjectNode row = M.createObjectNode();
-            ObjectNode dr = M.createObjectNode(); dr.put("料件", "料9"); dr.put("费用", fee);
+            ObjectNode dr = M.createObjectNode(); dr.put("料件", "料9"); dr.put("费用", new BigDecimal(fee));
             row.set("driverRow", dr);
             row.set("basicDataValues", M.createObjectNode());
             wgjRows.add(row);
@@ -157,16 +158,16 @@ class CardSnapshotCrossTabTest {
         // 来料 formulaResults[0].values.材料费 应 ≈ 0.259（每行 cross_tab SUM）
         JsonNode liFormula = liTab.path("formulaResults");
         assertEquals(1, liFormula.size(), "来料应有 1 行 formulaResults");
-        double materialsPerRow = liFormula.get(0).path("values").path("材料费").asDouble(-1);
-        assertEquals(0.259, materialsPerRow, 1e-9,
+        BigDecimal materialsPerRow = new BigDecimal(liFormula.get(0).path("values").path("材料费").asText());
+        assertEquals(0, new BigDecimal("0.259").compareTo(materialsPerRow),
             "来料每行材料费应 = SUM(WGJ.费用) = 0.05+0.2+0.002+0.007=0.259");
 
         // ★ 核心断言：来料 subtotalByColumn["材料费"] 必须从 resolved 回填，不能是 PASS1 的 0
         JsonNode byCol = liTab.path("subtotalByColumn");
         assertTrue(byCol.has("材料费"),
             "来料 tab 应有 subtotalByColumn.材料费（is_subtotal 列）");
-        double colSubtotal = byCol.path("材料费").asDouble(-1);
-        assertEquals(0.259, colSubtotal, 1e-4,
+        BigDecimal colSubtotal = new BigDecimal(byCol.path("材料费").asText());
+        assertEquals(0, new BigDecimal("0.259").compareTo(colSubtotal),
             "来料 subtotalByColumn[材料费] 应 = 0.259（来自 PASS2 resolved 行之和，不能是 PASS1 的 0）");
     }
 
@@ -220,8 +221,8 @@ class CardSnapshotCrossTabTest {
         // baseRows
         Map<String, ArrayNode> baseRowsByComp = new LinkedHashMap<>();
         ArrayNode aRows = M.createArrayNode();
-        aRows.add(baseRow(Map.of("子件", "P1", "单重", 0.8)));
-        aRows.add(baseRow(Map.of("子件", "P2", "单重", 0.3)));
+        aRows.add(baseRow(Map.of("子件", "P1", "单重", new BigDecimal("0.8"))));
+        aRows.add(baseRow(Map.of("子件", "P2", "单重", new BigDecimal("0.3"))));
         baseRowsByComp.put("A", aRows);
         ArrayNode bRows = M.createArrayNode();
         bRows.add(baseRow(Map.of("子件", "P1")));
@@ -242,8 +243,8 @@ class CardSnapshotCrossTabTest {
         JsonNode bTab = tabs.get(0);
         JsonNode bFr = bTab.path("formulaResults");
         assertEquals(1, bFr.size(), "B 应有 1 行 formulaResults");
-        double weight = bFr.get(0).path("values").path("重量").asDouble(-1);
-        assertEquals(0.8, weight, 1e-9,
+        BigDecimal weight = new BigDecimal(bFr.get(0).path("values").path("重量").asText());
+        assertEquals(0, new BigDecimal("0.8").compareTo(weight),
             "B 行 重量 应等于 A 中 子件=P1 的 单重=0.8（证明 A 先于 B 计算且已算行可被引用）");
     }
 }

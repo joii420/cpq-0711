@@ -24,8 +24,7 @@ import { selTemplateService } from '../../services/selTemplateService';
 import { materialRecipeService, type MaterialRecipeLite } from '../../services/materialRecipeService';
 import { modelConfigService } from '../../services/modelConfigService';
 import type {
-  ProductType, PartRequest, CompositeProcessRequest,
-  EffectiveTemplateDTO, SelDetailRow, CompositeSelectionState,
+  PartRequest, EffectiveTemplateDTO, SelDetailRow, CompositeSelectionState,
 } from '../../types/configure';
 import type { ModelConfigDTO } from '../../types/modelConfig';
 import { genUUID } from '../../utils/uuid';
@@ -33,6 +32,12 @@ import SelDetailTable from './configure/SelDetailTable';
 import AddPartSubDrawer from './configure/AddPartSubDrawer';
 import CompositeProcessSection from './configure/CompositeProcessSection';
 import { Preview3DPanel, FingerprintStatus, type PreviewMode } from './configure/SummaryFingerprintPanel';
+import {
+  buildConfigurePartsRequest,
+  normalizeQuantityInput,
+  sumQuantity,
+} from './configure/configureRequest';
+import { normalizeDecimalString, type DecimalString } from '../../utils/precision';
 
 interface Props {
   open: boolean;
@@ -42,40 +47,6 @@ interface Props {
   customerNo: string | undefined;
   onCancel: () => void;
   onConfirm: (lineItems: any[]) => void;
-}
-
-/** 明细表 Σqty 判定 productType，与后端 `validateRequest`/`lookupFingerprint` 同口径（api.md §3.3）。 */
-function sumQty(rows: SelDetailRow[]): number {
-  return rows.reduce((s, r) => s + (r.quantity || 0), 0);
-}
-
-/** 组装 `parts` + `compositeProcesses`，提交请求（`configureProduct`）与预览请求（`lookupFingerprint`）
- * 共用同一份构造逻辑，保证两者形态一致（「预览命中」= 「提交命中」的前提）。 */
-function buildPartsReq(
-  rows: SelDetailRow[],
-  compositeSelections: CompositeSelectionState[],
-): { productType: ProductType; parts: PartRequest[]; compositeProcesses?: CompositeProcessRequest[] } {
-  const productType: ProductType = sumQty(rows) >= 2 ? 'COMPOSITE' : 'SIMPLE';
-  const parts: PartRequest[] = rows.map((r) => ({
-    name: r.recipeLabel || r.recipeCode || '',
-    partMode: 'custom',
-    recipeCode: r.recipeCode!,
-    elements: Object.entries(r.elementOverrides).map(([elementCode, pct]) => ({ elementCode, pct: Number(pct) })),
-    processNos: r.processNos.length > 0 ? r.processNos : undefined,
-    unitWeightGrams: r.unitWeightGrams ?? undefined,
-    quantity: r.quantity ?? 1,
-  }));
-  const allPartIdx = rows.map((_, i) => i);
-  const compositeProcesses: CompositeProcessRequest[] = compositeSelections.map((c) => ({
-    defCode: c.defCode,
-    participatingPartIndexes: allPartIdx,
-    params: {},
-  }));
-  return {
-    productType,
-    parts,
-    compositeProcesses: productType === 'COMPOSITE' ? compositeProcesses : undefined,
-  };
 }
 
 const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, customerNo, onCancel, onConfirm }) => {
@@ -103,7 +74,8 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, customerNo
 
   const [submitting, setSubmitting] = useState(false);
 
-  const qtySum = rows.reduce((s, r) => s + (r.quantity || 0), 0);
+  const qtySum = useMemo(() => sumQuantity(rows), [rows]);
+  const qtySumText = normalizeDecimalString(qtySum);
   const editingRow = editingRowId ? rows.find((r) => r.rowId === editingRowId) ?? null : null;
 
   const resetState = () => {
@@ -153,8 +125,8 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, customerNo
 
   // Σqty 跌破 2 时组合工艺不再适用，清空已选（对齐原型 renderComboSection 行为）。
   useEffect(() => {
-    if (qtySum < 2 && compositeSelections.length > 0) setCompositeSelections([]);
-  }, [qtySum, compositeSelections.length]);
+    if (qtySum.lessThan('2') && compositeSelections.length > 0) setCompositeSelections([]);
+  }, [qtySumText, compositeSelections.length]);
 
   // 指纹预览（task-0712 缺口2·3a，对齐原型 D3「确认前实时🆕新建/✅命中」）：明细表/组合工艺条件
   // 变化时防抖 500ms 调用 `/lookup-fingerprint`；fingerprintReqSeq 丢弃过期响应（连续编辑时旧请求
@@ -171,7 +143,7 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, customerNo
     const seq = ++fingerprintReqSeq.current;
     setFingerprintChecking(true);
     const timer = window.setTimeout(() => {
-      const { parts, compositeProcesses } = buildPartsReq(rows, compositeSelections);
+      const { parts, compositeProcesses } = buildConfigurePartsRequest(rows, compositeSelections);
       configureProductService
         .lookupFingerprint({ customerNo: custNo, parts, compositeProcesses })
         .then((res) => {
@@ -216,8 +188,10 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, customerNo
   const handleAddClick = () => { setEditingRowId(null); setSubOpen(true); };
   const handleEditClick = (rowId: string) => { setEditingRowId(rowId); setSubOpen(true); };
   const handleDeleteRow = (rowId: string) => setRows((prev) => prev.filter((r) => r.rowId !== rowId));
-  const handleQuantityChange = (rowId: string, qty: number) =>
-    setRows((prev) => prev.map((r) => (r.rowId === rowId ? { ...r, quantity: qty } : r)));
+  const handleQuantityChange = (rowId: string, qty: DecimalString) =>
+    setRows((prev) => prev.map((r) => (
+      r.rowId === rowId ? { ...r, quantity: normalizeQuantityInput(qty) } : r
+    )));
 
   const handleSubConfirm = (row: SelDetailRow) => {
     setRows((prev) => {
@@ -248,7 +222,7 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, customerNo
       // 提交后一律按响应值消费 lineItems。与 `/lookup-fingerprint` 预览共用 buildPartsReq，
       // 仅补提交独有的 quotationLineItemId（工序隔离键）。
       const { productType: requestProductType, parts: baseParts, compositeProcesses } =
-        buildPartsReq(rows, compositeSelections);
+        buildConfigurePartsRequest(rows, compositeSelections);
       const partsReq: PartRequest[] = baseParts.map((p) => ({
         ...p,
         quotationLineItemId: requestProductType === 'SIMPLE' ? tempId : genUUID(),
@@ -343,7 +317,7 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, customerNo
               onDelete={handleDeleteRow}
               onQuantityChange={handleQuantityChange}
             />
-            <CompositeProcessSection sumQty={qtySum} selections={compositeSelections} onChange={setCompositeSelections} />
+            <CompositeProcessSection sumQty={qtySumText} selections={compositeSelections} onChange={setCompositeSelections} />
             <AddPartSubDrawer
               open={subOpen}
               effective={effective!}

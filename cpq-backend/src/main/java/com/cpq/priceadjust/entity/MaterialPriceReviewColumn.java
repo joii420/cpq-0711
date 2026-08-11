@@ -42,22 +42,22 @@ public class MaterialPriceReviewColumn extends PanacheEntityBase {
     @Column(name = "sort_order", nullable = false)
     public Integer sortOrder = 0;
 
-    @Column(name = "quote_current", precision = 20, scale = 6)
+    @Column(name = "quote_current", precision = 26, scale = 12)
     public BigDecimal quoteCurrent;
 
-    @Column(name = "quote_adjusted", precision = 20, scale = 6)
+    @Column(name = "quote_adjusted", precision = 26, scale = 12)
     public BigDecimal quoteAdjusted;
 
-    @Column(name = "costing_current", precision = 20, scale = 6)
+    @Column(name = "costing_current", precision = 26, scale = 12)
     public BigDecimal costingCurrent;
 
-    @Column(name = "costing_adjusted", precision = 20, scale = 6)
+    @Column(name = "costing_adjusted", precision = 26, scale = 12)
     public BigDecimal costingAdjusted;
 
-    @Column(name = "diff_current", precision = 20, scale = 6)
+    @Column(name = "diff_current", precision = 26, scale = 12)
     public BigDecimal diffCurrent;
 
-    @Column(name = "diff_adjusted", precision = 20, scale = 6)
+    @Column(name = "diff_adjusted", precision = 26, scale = 12)
     public BigDecimal diffAdjusted;
 
     @Column(name = "status", nullable = false, length = 20)

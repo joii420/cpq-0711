@@ -1,10 +1,16 @@
 package com.cpq.quotation.service;
 
 import org.junit.jupiter.api.Test;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.DataFormat;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -38,6 +44,21 @@ class ExcelViewServicePrecisionTest {
         return m.invoke(svc, v);
     }
 
+    private void invokeWriteAmountCellValue(Cell cell, BigDecimal value) throws Exception {
+        Method m = ExcelViewService.class.getDeclaredMethod("writeAmountCellValue", Cell.class, BigDecimal.class);
+        m.setAccessible(true);
+        m.invoke(svc, cell, value);
+    }
+
+    private void invokeWriteFormattedCell(XSSFWorkbook workbook, Cell cell,
+                                          Map<String, Object> column, Object value) throws Exception {
+        Method m = ExcelViewService.class.getDeclaredMethod("writeFormattedCell",
+                XSSFWorkbook.class, DataFormat.class, Map.class, Cell.class, Map.class, Object.class);
+        m.setAccessible(true);
+        m.invoke(svc, workbook, workbook.createDataFormat(), new HashMap<String, CellStyle>(),
+                cell, column, value);
+    }
+
     /**
      * 0.1+0.2 必须十进制精确 = 0.3。走真实生产路径：[A]/[B] 引用经 resolveFormulaRef 从
      * cachedCells 取值 → toNumericStr 加 "B" 后缀 → DecimalJexl.newEngine() 求值。
@@ -56,5 +77,35 @@ class ExcelViewServicePrecisionTest {
     void t0801_toNumericStr_appendsBSuffix() throws Exception {
         assertEquals("0.1B", invokeToNumericStr(new BigDecimal("0.1")));
         assertEquals("0B", invokeToNumericStr(null));
+    }
+
+    @Test
+    void t0810_jexlPoint4_literalVariableDivisionAndLargeSignedMatrix() throws Exception {
+        assertDecimal("0.333333333333", invokeEvaluateFormulaColumn("[A]/[B]",
+                Map.of("A", BigDecimal.ONE, "B", new BigDecimal("3"))));
+        assertDecimal("98765431.123456789011", invokeEvaluateFormulaColumn("[A]+[B]",
+                Map.of("A", new BigDecimal("98765431.123456789012"),
+                        "B", new BigDecimal("-0.000000000001"))));
+    }
+
+    @Test
+    void rawValuesStayExactStringsAndComputedValuesUseNineDigitDisplayStrings() throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Cell raw = workbook.createSheet().createRow(0).createCell(0);
+            invokeWriteAmountCellValue(raw, new BigDecimal("98765431.123456789012"));
+            assertEquals(CellType.STRING, raw.getCellType());
+            assertEquals("98765431.123456789012", raw.getStringCellValue());
+
+            Cell computed = workbook.getSheetAt(0).getRow(0).createCell(1);
+            invokeWriteFormattedCell(workbook, computed, Map.of("source_type", "FORMULA"),
+                    new BigDecimal("1.2345678915"));
+            assertEquals(CellType.STRING, computed.getCellType());
+            assertEquals("1.234567892", computed.getStringCellValue());
+        }
+    }
+
+    private static void assertDecimal(String expected, Object actual) {
+        assertTrue(actual instanceof BigDecimal, "actual=" + actual);
+        assertEquals(0, new BigDecimal(expected).compareTo((BigDecimal) actual), "actual=" + actual);
     }
 }

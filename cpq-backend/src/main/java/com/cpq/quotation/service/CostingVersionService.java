@@ -49,6 +49,9 @@ public class CostingVersionService {
 
     private static final Logger LOG = Logger.getLogger(CostingVersionService.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final Set<String> PRECISION_RESPONSE_FIELDS = Set.of(
+            "totalAmount", "costingTotalAmount", "amount", "subtotal",
+            "unitPrice", "quantity", "rate");
 
     @Inject
     EntityManager em;
@@ -254,8 +257,8 @@ public class CostingVersionService {
 
             VersionSwitchResponseDTO resp = new VersionSwitchResponseDTO();
             resp.lineItemId = li.id.toString();
-            resp.costingCardValues = newCostingCardValues;
-            resp.costingExcelColumns = newCostingExcelValues;
+            resp.costingCardValues = precisionSafeResponseJson(newCostingCardValues);
+            resp.costingExcelColumns = precisionSafeResponseJson(newCostingExcelValues);
             resp.costingTotalAmount = co.costingTotalAmount;
             resp.affectedTabs = new ArrayList<>(affectedTabs);
             LOG.infof("[costing-version] switchVersion coid=%s line=%s comp=%s part=%s -> %s (tree=%s)",
@@ -263,6 +266,37 @@ public class CostingVersionService {
             return resp;
         } finally {
             TemplateRenderScope.restore(_tplPrev);
+        }
+    }
+
+    private String precisionSafeResponseJson(String json) {
+        if (json == null || json.isBlank()) return json;
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            normalizePrecisionResponseFields(root);
+            return MAPPER.writeValueAsString(root);
+        } catch (Exception e) {
+            throw new BusinessException(500, "核价版本切换响应序列化失败: " + e.getMessage());
+        }
+    }
+
+    private void normalizePrecisionResponseFields(JsonNode node) {
+        if (node == null || node.isNull()) return;
+        if (node.isArray()) {
+            node.forEach(this::normalizePrecisionResponseFields);
+            return;
+        }
+        if (!node.isObject()) return;
+        ObjectNode object = (ObjectNode) node;
+        List<String> names = new ArrayList<>();
+        object.fieldNames().forEachRemaining(names::add);
+        for (String name : names) {
+            JsonNode value = object.get(name);
+            if (PRECISION_RESPONSE_FIELDS.contains(name) && value != null && value.isNumber()) {
+                object.put(name, PrecisionPolicy.toPlainDecimalString(value.decimalValue()));
+            } else {
+                normalizePrecisionResponseFields(value);
+            }
         }
     }
 
@@ -470,7 +504,7 @@ public class CostingVersionService {
             String cardValues = entry != null ? entry.costingCardValues : null;
             total = total.add(CostingSubtotalUtil.lineCostingAmount(cardValues, li.annualVolume));
         }
-        // task-0801 B5：落库边界（写 costing_order.costing_total_amount）统一规整到 6 位。
-        return PrecisionPolicy.round(total);
+        // task-0810：落库工作值统一规整到 12 位。
+        return PrecisionPolicy.roundForCalculation(total);
     }
 }

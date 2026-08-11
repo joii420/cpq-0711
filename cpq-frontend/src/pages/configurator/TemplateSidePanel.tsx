@@ -3,6 +3,7 @@ import { Card, Button, Progress, Space, Tag } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import type { ConfiguratorTemplate, ConfiguratorOption, ConfiguratorOptionValue } from '../../types/configurator';
 import ConfiguratorPreview from '../../components/ConfiguratorPreview';
+import { toDecimal } from '../../utils/precision';
 
 interface Props {
   tpl: ConfiguratorTemplate;
@@ -40,7 +41,7 @@ const TemplateSidePanel: React.FC<Props> = ({
   );
   const selectOptions = options.filter(o => o.assignMode === 'SELECT');
   const ruleCoverPct = selectOptions.length === 0 ? 0 : Math.round((optionsWithValues / selectOptions.length) * 100);
-  const valuesWithDelta = Object.values(valuesByOpt).flat().filter(v => Number(v.priceDelta) !== 0).length;
+  const valuesWithDelta = Object.values(valuesByOpt).flat().filter(v => !toDecimal(v.priceDelta).isZero()).length;
   const priceFillPct = totalValues === 0 ? 0 : Math.round((valuesWithDelta / totalValues) * 100);
   const featureSourced = options.filter(o => o.sourceFeatureFieldId).length;
   const featureFillPct = options.length === 0 ? 0 : Math.round((featureSourced / options.length) * 100);

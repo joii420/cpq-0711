@@ -36,6 +36,8 @@ public final class NumberFormatUtil {
     public static String format(BigDecimal value, Integer decimals, boolean isComputed) {
         if (value == null) return "";
         Integer d = decimals != null ? decimals : (isComputed ? COMPUTED_FALLBACK : null);
+        // 计算列的显式位数不能突破统一 9 位显示上限；原始取数列仍保留自身配置。
+        if (isComputed && d != null) d = Math.min(d, PrecisionPolicy.DISPLAY_SCALE);
         BigDecimal r = (d == null) ? value : value.setScale(d, RoundingMode.HALF_UP);
         r = r.stripTrailingZeros();
         if (r.compareTo(BigDecimal.ZERO) == 0) return "0";

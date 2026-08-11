@@ -14,8 +14,10 @@
  *   ⑤ 配 unit_source_field 的列按 canonical 求和（非原值）
  */
 import { describe, it, expect } from 'vitest';
+import type { DecimalContext } from '../../utils/formulaEngine';
 import { buildCrossTabRows, computeTabSubtotalsByColumn } from './QuotationStep2';
 import { buildComponentDeps } from './crossTabOrder';
+import { sumDecimal, toCalculationString } from '../../utils/precision';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 断言 ①②: 非小计 FORMULA 列(cross_tab_ref)合计 == Σ行；is_subtotal 列两源同值
@@ -33,17 +35,17 @@ const compA_fields = [
 ] as any;
 
 const compA_rows = [
-  { 费用: 10 },
-  { 费用: 20 },
-  { 费用: 30 },
+  { 费用: '10' },
+  { 费用: '20' },
+  { 费用: '30' },
 ];
 
 const compA_exp = {
   rowCount: 3,
   rows: [
-    { driverRow: { 费用: 10 }, basicDataValues: {} },
-    { driverRow: { 费用: 20 }, basicDataValues: {} },
-    { driverRow: { 费用: 30 }, basicDataValues: {} },
+    { driverRow: { 费用: '10' }, basicDataValues: {} },
+    { driverRow: { 费用: '20' }, basicDataValues: {} },
+    { driverRow: { 费用: '30' }, basicDataValues: {} },
   ],
 } as any;
 
@@ -59,7 +61,7 @@ const compB_exp = {
 } as any;
 
 // 来料行：管理费固定输入 5
-const compB_rows = [{ 管理费: 5 }];
+const compB_rows = [{ 管理费: '5' }];
 
 const componentData_AB = [
   {
@@ -68,7 +70,7 @@ const componentData_AB = [
     fields: compA_fields,
     formulas: [],
     rows: compA_rows,
-    componentData: [], snapshotRows: 3, subtotal: 0,
+    componentData: [], snapshotRows: 3, subtotal: '0',
   },
   {
     componentId: 'B', componentCode: 'B', tabName: 'B',
@@ -89,7 +91,7 @@ const componentData_AB = [
       },
     ],
     rows: compB_rows,
-    componentData: [], snapshotRows: 1, subtotal: 0,
+    componentData: [], snapshotRows: 1, subtotal: '0',
   },
 ] as any;
 
@@ -101,7 +103,7 @@ const lookup_AB = (comp: any) => {
 
 describe('columnSumsByComp — 断言① 非小计 FORMULA 列合计 == Σ行', () => {
   it('① 非小计 cross_tab FORMULA 列(加工费) columnSumsByComp 等于行值之和且非 0', () => {
-    const allSubs: Record<string, number> = {};
+    const allSubs: DecimalContext = {};
     const { columnSumsByComp } = buildCrossTabRows(componentData_AB, allSubs, undefined, lookup_AB);
 
     // materialCost = 60 (cross_tab SUM of 10+20+30), 加工费 = field(materialCost) = 60
@@ -109,28 +111,28 @@ describe('columnSumsByComp — 断言① 非小计 FORMULA 列合计 == Σ行', 
     expect(columnSumsByComp).toBeDefined();
     const bSums = columnSumsByComp?.['B'];
     expect(bSums).toBeDefined();
-    expect(bSums?.['加工费']).toBeCloseTo(60, 4); // 非 0
+    expect(bSums?.['加工费']).toBe('60'); // 非 0
   });
 
   it('① INPUT_NUMBER 列(管理费=5) columnSumsByComp == 5', () => {
-    const allSubs: Record<string, number> = {};
+    const allSubs: DecimalContext = {};
     const { columnSumsByComp } = buildCrossTabRows(componentData_AB, allSubs, undefined, lookup_AB);
     // 管理费 = INPUT_NUMBER，行值 = 5，1 行 → sum = 5
-    expect(columnSumsByComp?.['B']?.['管理费']).toBeCloseTo(5, 4);
+    expect(columnSumsByComp?.['B']?.['管理费']).toBe('5');
   });
 });
 
 describe('columnSumsByComp — 断言② is_subtotal 列与 allComponentSubtotals 同源', () => {
   it('② is_subtotal 列 columnSumsByComp["B"]["materialCost"] == allComponentSubtotals["B#materialCost"]', () => {
-    const allSubs: Record<string, number> = {};
+    const allSubs: DecimalContext = {};
     const { columnSumsByComp } = buildCrossTabRows(componentData_AB, allSubs, undefined, lookup_AB);
 
     const fromColSums = columnSumsByComp?.['B']?.['materialCost'];
     const fromSubtotals = allSubs['B#materialCost'];
     expect(fromColSums).toBeDefined();
-    expect(fromColSums).toBeCloseTo(60, 4);
+    expect(fromColSums).toBe('60');
     // 两者数值相同（同一 resolvedRows 求和，不再是两个分叉算法）
-    expect(fromColSums).toBeCloseTo(fromSubtotals, 4);
+    expect(fromColSums).toBe(fromSubtotals);
   });
 });
 
@@ -154,13 +156,13 @@ const compC_fields = [
 const compC_exp = {
   rowCount: 3,
   rows: [
-    { driverRow: { val: 1 }, basicDataValues: {} },
-    { driverRow: { val: 2 }, basicDataValues: {} },
-    { driverRow: { val: 3 }, basicDataValues: {} },
+    { driverRow: { val: '1' }, basicDataValues: {} },
+    { driverRow: { val: '2' }, basicDataValues: {} },
+    { driverRow: { val: '3' }, basicDataValues: {} },
   ],
 } as any;
 
-const compC_rows = [{ val: 1 }, { val: 2 }, { val: 3 }];
+const compC_rows = [{ val: '1' }, { val: '2' }, { val: '3' }];
 
 const componentData_C = [
   {
@@ -178,7 +180,7 @@ const componentData_C = [
       },
     ],
     rows: compC_rows,
-    componentData: [], snapshotRows: 3, subtotal: 0,
+    componentData: [], snapshotRows: 3, subtotal: '0',
   },
 ] as any;
 
@@ -189,18 +191,18 @@ const lookup_C = (comp: any) => {
 
 describe('columnSumsByComp — 断言③ prevRowValues 串行（累加列）', () => {
   it('③ 累积列末行值=6时 columnSumsByComp["C"]["累计"]=10(Σ行=1+3+6)，非串则=6(1+2+3)', () => {
-    const allSubs: Record<string, number> = {};
+    const allSubs: DecimalContext = {};
     const { columnSumsByComp, store } = buildCrossTabRows(componentData_C, allSubs, undefined, lookup_C);
 
     // store['C'] 的 resolvedRows 应含正确累计值
     const rows = store['C'];
-    expect(rows?.[0]?.['累计']).toBeCloseTo(1, 4); // 0+1
-    expect(rows?.[1]?.['累计']).toBeCloseTo(3, 4); // 1+2
-    expect(rows?.[2]?.['累计']).toBeCloseTo(6, 4); // 3+3
+    expect(rows?.[0]?.['累计']).toBe('1'); // 0+1
+    expect(rows?.[1]?.['累计']).toBe('3'); // 1+2
+    expect(rows?.[2]?.['累计']).toBe('6'); // 3+3
 
     // columnSumsByComp['C']['累计'] = Σ行 = 1+3+6 = 10
     const cumSum = columnSumsByComp?.['C']?.['累计'];
-    expect(cumSum).toBeCloseTo(10, 4);
+    expect(cumSum).toBe('10');
   });
 });
 
@@ -216,14 +218,14 @@ describe('columnSumsByComp — 断言③ prevRowValues 串行（累加列）', (
 const b4_wgjFields = [
   { name: '费用', field_type: 'FIXED_VALUE', content: '' },
 ] as any;
-const b4_wgjRows = [{ 费用: 0.05 }, { 费用: 0.2 }, { 费用: 0.002 }, { 费用: 0.007 }];
+const b4_wgjRows = [{ 费用: '0.05' }, { 费用: '0.2' }, { 费用: '0.002' }, { 费用: '0.007' }];
 const b4_wgjExp = {
   rowCount: 4,
   rows: [
-    { driverRow: { 费用: 0.05 },  basicDataValues: {} },
-    { driverRow: { 费用: 0.2 },   basicDataValues: {} },
-    { driverRow: { 费用: 0.002 }, basicDataValues: {} },
-    { driverRow: { 费用: 0.007 }, basicDataValues: {} },
+    { driverRow: { 费用: '0.05' },  basicDataValues: {} },
+    { driverRow: { 费用: '0.2' },   basicDataValues: {} },
+    { driverRow: { 费用: '0.002' }, basicDataValues: {} },
+    { driverRow: { 费用: '0.007' }, basicDataValues: {} },
   ],
 } as any;
 
@@ -250,7 +252,7 @@ const componentData_B4 = [
     fields: b4_wgjFields,
     formulas: [],
     rows: b4_wgjRows,
-    componentData: [], snapshotRows: 4, subtotal: 0,
+    componentData: [], snapshotRows: 4, subtotal: '0',
   },
   {
     componentId: 'b4_ll', componentCode: 'b4_ll', tabName: 'b4_ll',
@@ -262,7 +264,7 @@ const componentData_B4 = [
       { name: 'total', expression: totalExpr_b4 },
     ],
     rows: [{}],
-    componentData: [], snapshotRows: 1, subtotal: 0,
+    componentData: [], snapshotRows: 1, subtotal: '0',
   },
 ] as any;
 
@@ -274,16 +276,16 @@ const lookup_B4 = (comp: any) => {
 
 describe('columnSumsByComp — 断言④ B2 二阶列取第二轮最终值', () => {
   it('④ 二阶列 total 的 columnSumsByComp ≈ 0.518（取第二轮完整 comp resolvedRows）', () => {
-    const allSubs: Record<string, number> = {};
+    const allSubs: DecimalContext = {};
     const { columnSumsByComp } = buildCrossTabRows(componentData_B4, allSubs, undefined, lookup_B4);
 
     // 第二轮 total 行值 = aCost小计(0.259) + bCost小计(0.259) = 0.518
     // 若取第一轮影子组件（无 total 列），columnSumsByComp['b4_ll']['total'] 为 undefined 或 0
     const b4llSums = columnSumsByComp?.['b4_ll'];
-    expect(b4llSums?.['total']).toBeCloseTo(0.518, 3);
+    expect(b4llSums?.['total']).toBe('0.518');
     // 同时验证 aCost/bCost 也正确
-    expect(b4llSums?.['aCost']).toBeCloseTo(0.259, 4);
-    expect(b4llSums?.['bCost']).toBeCloseTo(0.259, 4);
+    expect(b4llSums?.['aCost']).toBe('0.259');
+    expect(b4llSums?.['bCost']).toBe('0.259');
   });
 });
 
@@ -303,15 +305,15 @@ const compUnit_fields = [
 ] as any;
 
 const compUnit_rows = [
-  { 净用量: 100, 计价单位: 'G' },
-  { 净用量: 200, 计价单位: 'KG' },
+  { 净用量: '100', 计价单位: 'G' },
+  { 净用量: '200', 计价单位: 'KG' },
 ];
 
 const compUnit_exp = {
   rowCount: 2,
   rows: [
-    { driverRow: { 净用量: 100, 计价单位: 'G' },  basicDataValues: {} },
-    { driverRow: { 净用量: 200, 计价单位: 'KG' }, basicDataValues: {} },
+    { driverRow: { 净用量: '100', 计价单位: 'G' },  basicDataValues: {} },
+    { driverRow: { 净用量: '200', 计价单位: 'KG' }, basicDataValues: {} },
   ],
 } as any;
 
@@ -322,7 +324,7 @@ const componentData_Unit = [
     fields: compUnit_fields,
     formulas: [],
     rows: compUnit_rows,
-    componentData: [], snapshotRows: 2, subtotal: 0,
+    componentData: [], snapshotRows: 2, subtotal: '0',
   },
 ] as any;
 
@@ -333,15 +335,15 @@ const lookup_Unit = (comp: any) => {
 
 describe('columnSumsByComp — 断言⑤ unit_source_field 换算按 canonical 求和', () => {
   it('⑤ 净用量(G+KG 混) columnSumsByComp 按 canonical 求和 = 0.1+200=200.1，非原值 300', () => {
-    const allSubs: Record<string, number> = {};
+    const allSubs: DecimalContext = {};
     const { columnSumsByComp } = buildCrossTabRows(componentData_Unit, allSubs, undefined, lookup_Unit);
 
     const unitSums = columnSumsByComp?.['unit_comp'] ?? columnSumsByComp?.['元素'];
     // applyUnitConversion: G → KG = /1000；KG → KG = ×1
     // row0: 0.1, row1: 200 → sum = 200.1
-    expect(unitSums?.['净用量']).toBeCloseTo(200.1, 4);
+    expect(unitSums?.['净用量']).toBe('200.1');
     // 确保不是原值之和 300
-    expect(unitSums?.['净用量']).not.toBeCloseTo(300, 1);
+    expect(unitSums?.['净用量']).not.toBe('300');
   });
 });
 
@@ -359,19 +361,19 @@ describe('columnSumsByComp — 回归: INPUT_NUMBER 字符串值不得丢成 0',
     ],
     formulas: [{ name: 'f_m', expression: [
       { type: 'field', value: '材料管理费' }, { type: 'operator', value: '*' },
-      { type: 'field', value: '单重' }, { type: 'operator', value: '*' }, { type: 'number', value: 0.001 },
+      { type: 'field', value: '单重' }, { type: 'operator', value: '*' }, { type: 'number', value: '0.001' },
     ] }],
     formulaAssignments: { '2': 'f_m' },
     rows: [{ '材料管理费': '12', '单重': '32' }],  // 字符串，模拟输入框
-    subtotal: 0,
+    subtotal: '0',
   };
 
   it('字符串 "12"/"32" → 材料管理费=12, 单重=32（非 0）, 依赖输入的公式列=0.384', () => {
-    const acs: Record<string, number> = {};
+    const acs: DecimalContext = {};
     const { columnSumsByComp } = buildCrossTabRows([compStr], acs, 'PART', () => undefined);
-    expect(columnSumsByComp['PSTR']['材料管理费']).toBe(12);
-    expect(columnSumsByComp['PSTR']['单重']).toBe(32);
-    expect(columnSumsByComp['PSTR']['管理费']).toBeCloseTo(0.384, 4);
+    expect(columnSumsByComp['PSTR']['材料管理费']).toBe('12');
+    expect(columnSumsByComp['PSTR']['单重']).toBe('32');
+    expect(columnSumsByComp['PSTR']['管理费']).toBe('0.384');
   });
 });
 
@@ -395,16 +397,16 @@ describe('columnSumsByComp — 回归: INPUT_NUMBER 字符串值不得丢成 0',
 // ─────────────────────────────────────────────────────────────────────────────
 describe('columnSumsByComp — 回归: component_subtotal 跨组件依赖（QT-1743 不回归 + repair-0808 列粒度）', () => {
   /** 复刻生产 PASS1（ProductCard QuotationStep2.tsx:2976-3008 的核心：逐 NORMAL 组件登记三键 + 列键）。 */
-  function pass1(comps: any[]): Record<string, number> {
-    const acs: Record<string, number> = {};
+  function pass1(comps: any[]): DecimalContext {
+    const acs: DecimalContext = {};
     for (const c of comps) {
       if (c.componentType !== 'NORMAL') continue;
       const byCol = computeTabSubtotalsByColumn(c, acs, undefined, undefined, 'PART', undefined);
-      const tot = Object.values(byCol).reduce((a: number, b: number) => a + b, 0);
+      const tot = toCalculationString(sumDecimal(Object.values(byCol)));
       for (const k of [c.componentId, c.componentCode, c.tabName]) {
         if (!k) continue;
         acs[k] = tot;
-        for (const [col, v] of Object.entries(byCol)) acs[`${k}#${col}`] = v as number;
+        for (const [col, v] of Object.entries(byCol)) acs[`${k}#${col}`] = v;
       }
     }
     return acs;
@@ -414,16 +416,16 @@ describe('columnSumsByComp — 回归: component_subtotal 跨组件依赖（QT-1
   const A_input: any = {
     componentId: 'COMP-A', componentCode: 'COMP-A', tabName: 'TabA', componentType: 'NORMAL',
     fields: [{ name: 'cost', field_type: 'INPUT_NUMBER', is_subtotal: true }],
-    formulas: [], rows: [{ cost: '100' }], subtotal: 0,
+    formulas: [], rows: [{ cost: '100' }], subtotal: '0',
   };
   const C_refInput: any = {
     componentId: 'COMP-C', componentCode: 'COMP-C', tabName: 'TabC', componentType: 'NORMAL',
     fields: [{ name: 'mgmt', field_type: 'FORMULA', formula_name: 'f_mgmt', is_subtotal: true }],
     formulas: [{ name: 'f_mgmt', expression: [
       { type: 'component_subtotal', component_code: 'COMP-A', value: 'cost', tab_name: 'cost' },
-      { type: 'operator', value: '*' }, { type: 'number', value: 2 },
+      { type: 'operator', value: '*' }, { type: 'number', value: '2' },
     ] }],
-    formulaAssignments: { '0': 'f_mgmt' }, rows: [{}], subtotal: 0,
+    formulaAssignments: { '0': 'f_mgmt' }, rows: [{}], subtotal: '0',
   };
 
   it('buildComponentDeps: 被引用列 INPUT_NUMBER → deps[COMP-C] 不含 COMP-A（不建边）', () => {
@@ -437,9 +439,9 @@ describe('columnSumsByComp — 回归: component_subtotal 跨组件依赖（QT-1
   it('① 引用方(C)排在被引用方(A)之前（无边，声明序不变）：真实链路(PASS1+PASS2)下 mgmt 小计=200 非 0', () => {
     const acs = pass1([C_refInput, A_input]);
     const { columnSumsByComp } = buildCrossTabRows([C_refInput, A_input], acs, 'PART', () => undefined);
-    expect(columnSumsByComp['COMP-A']['cost']).toBe(100);
-    expect(columnSumsByComp['COMP-C']['mgmt']).toBe(200);
-    expect(acs['COMP-C#mgmt']).toBe(200);
+    expect(columnSumsByComp['COMP-A']['cost']).toBe('100');
+    expect(columnSumsByComp['COMP-C']['mgmt']).toBe('200');
+    expect(acs['COMP-C#mgmt']).toBe('200');
   });
 
   // ② 被引用列 FORMULA：QT-1743 的真实形状，repair-0808 后仍必须建边——
@@ -451,16 +453,16 @@ describe('columnSumsByComp — 回归: component_subtotal 跨组件依赖（QT-1
       { name: 'cost', field_type: 'FORMULA', formula_name: 'f_cost', is_subtotal: true },
     ],
     formulas: [{ name: 'f_cost', expression: [
-      { type: 'field', value: 'qty' }, { type: 'operator', value: '*' }, { type: 'number', value: 10 },
+      { type: 'field', value: 'qty' }, { type: 'operator', value: '*' }, { type: 'number', value: '10' },
     ] }],
     formulaAssignments: { '1': 'f_cost' },
-    rows: [{ qty: '10' }], subtotal: 0,
+    rows: [{ qty: '10' }], subtotal: '0',
   };
   const C_refFormula: any = {
     ...C_refInput,
     formulas: [{ name: 'f_mgmt', expression: [
       { type: 'component_subtotal', component_code: 'COMP-A', value: 'cost', tab_name: 'cost' },
-      { type: 'operator', value: '*' }, { type: 'number', value: 2 },
+      { type: 'operator', value: '*' }, { type: 'number', value: '2' },
     ] }],
   };
 
@@ -475,8 +477,8 @@ describe('columnSumsByComp — 回归: component_subtotal 跨组件依赖（QT-1
   it('② 引用方(C)排在被引用方(A)之前（建边，拓扑序纠正为 A→C）：mgmt 小计=200 非 0', () => {
     const acs = pass1([C_refFormula, A_formula]);
     const { columnSumsByComp } = buildCrossTabRows([C_refFormula, A_formula], acs, 'PART', () => undefined);
-    expect(columnSumsByComp['COMP-A']['cost']).toBe(100);
-    expect(columnSumsByComp['COMP-C']['mgmt']).toBe(200);
-    expect(acs['COMP-C#mgmt']).toBe(200);
+    expect(columnSumsByComp['COMP-A']['cost']).toBe('100');
+    expect(columnSumsByComp['COMP-C']['mgmt']).toBe('200');
+    expect(acs['COMP-C#mgmt']).toBe('200');
   });
 });

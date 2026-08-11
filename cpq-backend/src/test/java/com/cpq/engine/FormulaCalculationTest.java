@@ -38,10 +38,10 @@ class FormulaCalculationTest {
             """;
 
         Map<String, Object> rowData = new HashMap<>();
-        rowData.put("quantity", 10);
-        rowData.put("unit_price", 25.5);
+        rowData.put("quantity", new java.math.BigDecimal("10"));
+        rowData.put("unit_price", new java.math.BigDecimal("25.5"));
 
-        Map<String, BigDecimal> results = formulaService.calculateRowFormulas(
+        Map<String, java.math.BigDecimal> results = formulaService.calculateRowFormulas(
                 snapshot, "COMP1", rowData, null);
 
         assertTrue(results.containsKey("total"));
@@ -72,11 +72,11 @@ class FormulaCalculationTest {
             """;
 
         Map<String, Object> rowData = new HashMap<>();
-        rowData.put("a", 10);
-        rowData.put("b", 20);
-        rowData.put("c", 3);
+        rowData.put("a", new java.math.BigDecimal("10"));
+        rowData.put("b", new java.math.BigDecimal("20"));
+        rowData.put("c", new java.math.BigDecimal("3"));
 
-        Map<String, BigDecimal> results = formulaService.calculateRowFormulas(
+        Map<String, java.math.BigDecimal> results = formulaService.calculateRowFormulas(
                 snapshot, "COMP2", rowData, null);
 
         assertTrue(results.containsKey("result"));
@@ -97,7 +97,7 @@ class FormulaCalculationTest {
             ]
             """;
 
-        Map<String, BigDecimal> componentSubtotals = new HashMap<>();
+        Map<String, java.math.BigDecimal> componentSubtotals = new HashMap<>();
         componentSubtotals.put("FEEDING", new BigDecimal("500"));
         // MISSING_COMPONENT not in map, should default to 0
 
@@ -136,5 +136,32 @@ class FormulaCalculationTest {
         BigDecimal result = formulaService.calculateProductSubtotal(subtotalFormula, new HashMap<>(), null);
         assertEquals(0, new BigDecimal("0.3").compareTo(result),
             "0.1+0.2 必须精确等于 0.3，实际=" + result);
+    }
+
+    @Test
+    @Order(6)
+    void t0810_jexlPoint1_keepsTwelveDigitDivisionAndLargeSignedValues() {
+        String division = """
+            [
+                {"type": "number", "value": "1"},
+                {"type": "operator", "value": "/"},
+                {"type": "number", "value": "3"}
+            ]
+            """;
+        assertEquals(0, new BigDecimal("0.333333333333").compareTo(
+                formulaService.calculateProductSubtotal(division, Map.of(), null)));
+
+        String largeSigned = """
+            [
+                {"type": "product_attribute", "attribute_name": "amount"},
+                {"type": "operator", "value": "+"},
+                {"type": "product_attribute", "attribute_name": "adjustment"}
+            ]
+            """;
+        Map<String, Object> attributes = Map.of(
+                "amount", new BigDecimal("98765431.123456789012"),
+                "adjustment", new BigDecimal("-0.000000000001"));
+        assertEquals(0, new BigDecimal("98765431.123456789011").compareTo(
+                formulaService.calculateProductSubtotal(largeSigned, Map.of(), attributes)));
     }
 }

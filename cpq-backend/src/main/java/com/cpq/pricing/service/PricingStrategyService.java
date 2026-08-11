@@ -170,8 +170,8 @@ public class PricingStrategyService {
                 Row row = sheet.createRow(rowNum++);
                 row.createCell(0).setCellValue(s.name != null ? s.name : "");
                 row.createCell(1).setCellValue(s.type != null ? s.type : "");
-                row.createCell(2).setCellValue(s.baseDiscount != null ? s.baseDiscount.doubleValue() : 100.0);
-                row.createCell(3).setCellValue(s.minOrderAmount != null ? s.minOrderAmount.doubleValue() : 0.0);
+                row.createCell(2).setCellValue(s.baseDiscount != null ? s.baseDiscount.toPlainString() : "100");
+                row.createCell(3).setCellValue(s.minOrderAmount != null ? s.minOrderAmount.toPlainString() : "0");
                 row.createCell(4).setCellValue(s.priority != null ? s.priority : 1);
                 row.createCell(5).setCellValue(s.status != null ? s.status : "");
                 row.createCell(6).setCellValue(s.effectiveDate != null ? s.effectiveDate.toString() : "");

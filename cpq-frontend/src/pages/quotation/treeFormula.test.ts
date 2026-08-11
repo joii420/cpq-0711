@@ -41,12 +41,12 @@ function threeLevelComp(formulaFieldName: string, expr: any[]) {
   return comp;
 }
 
-function threeLevelRows(vals: { n1?: number; n2?: number; n3?: number; n4?: number } = {}): TreeFormulaRowInput[] {
+function threeLevelRows(vals: { n1?: string; n2?: string; n3?: string; n4?: string } = {}): TreeFormulaRowInput[] {
   return [
-    row({ 数值: vals.n1 ?? 100 }, 'n1', null, 0),
-    row({ 数值: vals.n2 ?? 10 }, 'n2', 'n1', 1),
-    row({ 数值: vals.n3 ?? 20 }, 'n3', 'n1', 1),
-    row({ 数值: vals.n4 ?? 5 }, 'n4', 'n2', 2),
+    row({ 数值: vals.n1 ?? '100' }, 'n1', null, 0),
+    row({ 数值: vals.n2 ?? '10' }, 'n2', 'n1', 1),
+    row({ 数值: vals.n3 ?? '20' }, 'n3', 'n1', 1),
+    row({ 数值: vals.n4 ?? '5' }, 'n4', 'n2', 2),
   ];
 }
 
@@ -62,10 +62,10 @@ describe('computeTabFormulasTree — CSUM 只算直接子（不含孙辈）', ()
     const comp = withFormulaFieldName(threeLevelComp('汇总', [treeRef('CHILD', '数值', 'SUM')]), '汇总');
     const rows = threeLevelRows();
     const out = computeTabFormulasTree(comp, rows);
-    expect(out[0]['汇总']).toBe(30); // n2(10) + n3(20)，不含 n4(5)
-    expect(out[1]['汇总']).toBe(5);  // n2 的直接子只有 n4
-    expect(out[2]['汇总']).toBe(0);  // n3 是叶子
-    expect(out[3]['汇总']).toBe(0);  // n4 是叶子
+    expect(out[0]['汇总']).toBe('30'); // n2(10) + n3(20)，不含 n4(5)
+    expect(out[1]['汇总']).toBe('5');  // n2 的直接子只有 n4
+    expect(out[2]['汇总']).toBe('0');  // n3 是叶子
+    expect(out[3]['汇总']).toBe('0');  // n4 是叶子
   });
 });
 
@@ -74,10 +74,10 @@ describe('computeTabFormulasTree — PGET 取父行值 / 根行返 0', () => {
     const comp = withFormulaFieldName(threeLevelComp('父值', [treeRef('PARENT', '数值')]), '父值');
     const rows = threeLevelRows();
     const out = computeTabFormulasTree(comp, rows);
-    expect(out[0]['父值']).toBe(0);   // 根行无父
-    expect(out[1]['父值']).toBe(100); // n2 的父是 n1(数值=100)
-    expect(out[2]['父值']).toBe(100); // n3 的父也是 n1
-    expect(out[3]['父值']).toBe(10);  // n4 的父是 n2(数值=10)
+    expect(out[0]['父值']).toBe('0');   // 根行无父
+    expect(out[1]['父值']).toBe('100'); // n2 的父是 n1(数值=100)
+    expect(out[2]['父值']).toBe('100'); // n3 的父也是 n1
+    expect(out[3]['父值']).toBe('10');  // n4 的父是 n2(数值=10)
   });
 });
 
@@ -87,8 +87,8 @@ describe('computeTabFormulasTree — 叶子行 C* 全部返 0', () => {
     for (const agg of ['SUM', 'AVG', 'MAX', 'MIN', 'COUNT'] as const) {
       const comp = withFormulaFieldName(threeLevelComp('聚合', [treeRef('CHILD', '数值', agg)]), '聚合');
       const out = computeTabFormulasTree(comp, rows);
-      expect(out[3]['聚合']).toBe(0); // n4 是叶子
-      expect(out[2]['聚合']).toBe(0); // n3 是叶子
+      expect(out[3]['聚合']).toBe('0'); // n4 是叶子
+      expect(out[2]['聚合']).toBe('0'); // n3 是叶子
     }
   });
 });
@@ -99,7 +99,7 @@ describe('computeTabFormulasTree — 「有值」判据（§4.3.4，最容易做
     return withFormulaFieldName(
       threeLevelComp('聚合', [treeRef('CHILD', '数值', agg)]), '聚合');
   }
-  function parentThreeChildren(vals: Array<number | null>): TreeFormulaRowInput[] {
+  function parentThreeChildren(vals: Array<string | null>): TreeFormulaRowInput[] {
     const out: TreeFormulaRowInput[] = [row({}, 'R', null, 0)];
     vals.forEach((v, i) => {
       out.push(row(v === null ? {} : { 数值: v }, `c${i}`, 'R', 1));
@@ -109,39 +109,39 @@ describe('computeTabFormulasTree — 「有值」判据（§4.3.4，最容易做
 
   it('CMIN 认 0 为有值：子行 0/5/8 → CMIN=0（不是 5）', () => {
     const comp = parentChildComp('MIN');
-    const rows = parentThreeChildren([0, 5, 8]);
+    const rows = parentThreeChildren(['0', '5', '8']);
     const out = computeTabFormulasTree(comp, rows);
-    expect(out[0]['聚合']).toBe(0);
+    expect(out[0]['聚合']).toBe('0');
   });
 
   it('CMIN 不被空行拉成 0：子行 5/空/8 → CMIN=5（不是 0）', () => {
     const comp = parentChildComp('MIN');
-    const rows = parentThreeChildren([5, null, 8]);
+    const rows = parentThreeChildren(['5', null, '8']);
     const out = computeTabFormulasTree(comp, rows);
-    expect(out[0]['聚合']).toBe(5);
+    expect(out[0]['聚合']).toBe('5');
   });
 
   it('CAVG 分母只数有值行：5/空/8 → 6.5（分母=2，不是 3）', () => {
     const comp = parentChildComp('AVG');
-    const rows = parentThreeChildren([5, null, 8]);
+    const rows = parentThreeChildren(['5', null, '8']);
     const out = computeTabFormulasTree(comp, rows);
-    expect(out[0]['聚合']).toBe(6.5);
+    expect(out[0]['聚合']).toBe('6.5');
   });
 
   it('CCOUNT 只数有值行：5/空/8 → 2', () => {
     const comp = parentChildComp('COUNT');
-    const rows = parentThreeChildren([5, null, 8]);
+    const rows = parentThreeChildren(['5', null, '8']);
     const out = computeTabFormulasTree(comp, rows);
-    expect(out[0]['聚合']).toBe(2);
+    expect(out[0]['聚合']).toBe('2');
   });
 
   it('判据 5：targetExpr 无 field token（纯常量）→ 所有未删除子行均视为有值，CSUM(1) = 子行数', () => {
     const comp = withFormulaFieldName(
       threeLevelComp('计数', [{ type: 'tree_ref', dir: 'CHILD', agg: 'SUM', targetExpr: [{ type: 'number', value: '1' }] }]),
       '计数');
-    const rows = parentThreeChildren([5, null, 8]); // 3 个子行，含 1 个"数值"列为空的
+    const rows = parentThreeChildren(['5', null, '8']); // 3 个子行，含 1 个"数值"列为空的
     const out = computeTabFormulasTree(comp, rows);
-    expect(out[0]['计数']).toBe(3); // CSUM(1) = 子行数，不受"数值"列是否有值影响
+    expect(out[0]['计数']).toBe('3'); // CSUM(1) = 子行数，不受"数值"列是否有值影响
   });
 
   it('判据 6：引用的列是公式列 → 恒有值（哪怕算出 0），CAVG 分母含它', () => {
@@ -165,13 +165,13 @@ describe('computeTabFormulasTree — 「有值」判据（§4.3.4，最容易做
     (comp.fields[2] as any).name = '均值';
     (comp.formulas[1] as any).name = '均值';
 
-    const rows = parentThreeChildren([10, null, 20]); // B 行"数值"为空 → 成本(公式列)算出 0，恒有值
+    const rows = parentThreeChildren(['10', null, '20']); // B 行"数值"为空 → 成本(公式列)算出 0，恒有值
     const out = computeTabFormulasTree(comp, rows);
     // A: 成本=10, B: 成本=0(公式列恒有值), C: 成本=20 → 均值 = (10+0+20)/3 = 10（分母含 B）
-    expect(out[1]['成本']).toBe(10);
-    expect(out[2]['成本']).toBe(0);
-    expect(out[3]['成本']).toBe(20);
-    expect(out[0]['均值']).toBe(10);
+    expect(out[1]['成本']).toBe('10');
+    expect(out[2]['成本']).toBe('0');
+    expect(out[3]['成本']).toBe('20');
+    expect(out[0]['均值']).toBe('10');
   });
 });
 
@@ -192,16 +192,16 @@ describe('computeTabFormulasTree — 双向混用（同页签一列 CSUM、一�
       subtotal: 0,
     } as any;
 
-    const rows = threeLevelRows({ n1: 100, n2: 10, n3: 20, n4: 5 });
+    const rows = threeLevelRows({ n1: '100', n2: '10', n3: '20', n4: '5' });
     const out = computeTabFormulasTree(comp, rows);
     // CSUM 方向：根汇总直接子(10+20=30，不含孙 n4=5)
-    expect(out[0]['子项汇总']).toBe(30);
-    expect(out[1]['子项汇总']).toBe(5); // n2 的直接子只有 n4=5
+    expect(out[0]['子项汇总']).toBe('30');
+    expect(out[1]['子项汇总']).toBe('5'); // n2 的直接子只有 n4=5
     // PGET 方向：n2/n3 的父项用量 = 根的数值(100)；n4 的父项用量 = n2 的数值(10)
-    expect(out[1]['父项用量']).toBe(100);
-    expect(out[2]['父项用量']).toBe(100);
-    expect(out[3]['父项用量']).toBe(10);
-    expect(out[0]['父项用量']).toBe(0); // 根无父
+    expect(out[1]['父项用量']).toBe('100');
+    expect(out[2]['父项用量']).toBe('100');
+    expect(out[3]['父项用量']).toBe('10');
+    expect(out[0]['父项用量']).toBe('0'); // 根无父
   });
 });
 
@@ -227,14 +227,14 @@ describe('computeTabFormulasTree — 成环：环上列置 0，其他列正常',
     const out = computeTabFormulasTree(comp, rows);
     // A/B 互相依赖对方在其他行的值 → 环，全部置 0
     for (let i = 0; i < rows.length; i++) {
-      expect(out[i]['A']).toBe(0);
-      expect(out[i]['B']).toBe(0);
+      expect(out[i]['A']).toBe('0');
+      expect(out[i]['B']).toBe('0');
     }
     // C 与环无依赖关系，正常求值
-    expect(out[0]['C']).toBe(100);
-    expect(out[1]['C']).toBe(10);
-    expect(out[2]['C']).toBe(20);
-    expect(out[3]['C']).toBe(5);
+    expect(out[0]['C']).toBe('100');
+    expect(out[1]['C']).toBe('10');
+    expect(out[2]['C']).toBe('20');
+    expect(out[3]['C']).toBe('5');
   });
 });
 
@@ -257,10 +257,10 @@ describe('computeTabFormulasTree — 树属性 tree_attr', () => {
     } as any;
     const rows = threeLevelRows();
     const out = computeTabFormulasTree(comp, rows);
-    expect(out[0]).toMatchObject({ 层级: 0, 是否叶子: 0, 是否根: 1 });
-    expect(out[1]).toMatchObject({ 层级: 1, 是否叶子: 0, 是否根: 0 }); // n2 有子 n4
-    expect(out[2]).toMatchObject({ 层级: 1, 是否叶子: 1, 是否根: 0 }); // n3 叶子
-    expect(out[3]).toMatchObject({ 层级: 2, 是否叶子: 1, 是否根: 0 }); // n4 叶子
+    expect(out[0]).toMatchObject({ 层级: '0', 是否叶子: '0', 是否根: '1' });
+    expect(out[1]).toMatchObject({ 层级: '1', 是否叶子: '0', 是否根: '0' }); // n2 有子 n4
+    expect(out[2]).toMatchObject({ 层级: '1', 是否叶子: '1', 是否根: '0' }); // n3 叶子
+    expect(out[3]).toMatchObject({ 层级: '2', 是否叶子: '1', 是否根: '0' }); // n4 叶子
   });
 });
 
@@ -277,10 +277,10 @@ describe('computeTabFormulasTree — 悬空父引用（父不存在 / 父被墓�
       subtotal: 0,
     } as any;
     // 单行，parentId 指向一个根本不存在的节点 'ghost'
-    const rows: TreeFormulaRowInput[] = [row({ 数值: 5 }, 'x1', 'ghost', 0)];
+    const rows: TreeFormulaRowInput[] = [row({ 数值: '5' }, 'x1', 'ghost', 0)];
     const out = computeTabFormulasTree(comp, rows);
-    expect(out[0]['父值']).toBe(0);
-    expect(out[0]['是否根']).toBe(1);
+    expect(out[0]['父值']).toBe('0');
+    expect(out[0]['是否根']).toBe('1');
   });
 });
 
@@ -296,12 +296,12 @@ describe('路由判据：usesTreeTokensTab / isBomTreeRowSet', () => {
     expect(usesTreeTokensTab(comp)).toBe(false);
 
     // 且改造前后 computeAllFormulas 本身结果不变（零回归门禁的直接证据）。
-    const result = computeAllFormulas(comp, { 单价: 100 });
-    expect(result['金额']).toBe(200);
+    const result = computeAllFormulas(comp, { 单价: '100' });
+    expect(result['金额']).toBe('200');
   });
 
   it('行集不带 nodeId → isBomTreeRowSet 返 false', () => {
-    expect(isBomTreeRowSet([{ row: { 单价: 1 } } as TreeFormulaRowInput])).toBe(false);
+    expect(isBomTreeRowSet([{ row: { 单价: '1' } } as TreeFormulaRowInput])).toBe(false);
   });
 
   it('行集带非空 nodeId → isBomTreeRowSet 返 true', () => {
@@ -342,9 +342,9 @@ describe('闸⑤求值期兜底：拿不到树上下文（走 computeAllFormulas
       rows: [],
       subtotal: 0,
     } as any;
-    const result = computeAllFormulas(comp, { 数值: 42 });
-    expect(result['父值']).toBe(0);
-    expect(result['子聚合']).toBe(0);
-    expect(result['层级']).toBe(0);
+    const result = computeAllFormulas(comp, { 数值: '42' });
+    expect(result['父值']).toBe('0');
+    expect(result['子聚合']).toBe('0');
+    expect(result['层级']).toBe('0');
   });
 });

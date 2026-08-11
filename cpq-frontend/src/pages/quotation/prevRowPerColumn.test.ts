@@ -22,9 +22,9 @@ const comp: any = {
 describe('previous_row_subtotal 上一行本列（Plan 2b）', () => {
   it('两个累计列各自独立累加', () => {
     const caches = computeRowsCachesForTest(comp, [
-      { a: 10, b: 1 }, { a: 20, b: 2 }, { a: 30, b: 3 },
+      { a: '10', b: '1' }, { a: '20', b: '2' }, { a: '30', b: '3' },
     ]);
-    expect(caches.map(c => c['累计A'])).toEqual([10, 30, 60]);
-    expect(caches.map(c => c['累计B'])).toEqual([1, 3, 6]);
+    expect(caches.map(c => c['累计A'])).toEqual(['10', '30', '60']);
+    expect(caches.map(c => c['累计B'])).toEqual(['1', '3', '6']);
   });
 });

@@ -68,7 +68,7 @@ class FormulaCalculatorGoldenCasesTest {
         assertEquals(0, raw.compareTo(new BigDecimal("9.999999999999")),
             "内部值应为 12 位精度的 9.999999999999，实际=" + raw);
         // 呈现边界规整到 6 位：HALF_UP 级联进位 → 10.000000
-        BigDecimal displayed = PrecisionPolicy.round(raw);
+        BigDecimal displayed = PrecisionPolicy.roundForDisplay(raw);
         assertEquals(0, displayed.compareTo(new BigDecimal("10")), "显示值应为 10，实际=" + displayed);
     }
 
@@ -81,7 +81,7 @@ class FormulaCalculatorGoldenCasesTest {
     void g3_oneThird() {
         BigDecimal raw = PrecisionPolicy.divide(BigDecimal.ONE, new BigDecimal("3"));
         assertEquals(0, raw.compareTo(new BigDecimal("0.333333333333")), "实际=" + raw);
-        assertEquals("0.333333", NumberFormatUtil.format(raw, null, true));
+        assertEquals("0.333333333", NumberFormatUtil.format(raw, null, true));
     }
 
     // ======================================================================
@@ -89,17 +89,17 @@ class FormulaCalculatorGoldenCasesTest {
     // ======================================================================
 
     @Test
-    @DisplayName("G-5: 0.0000004 规整到 6 位 = 0")
+    @DisplayName("G-5: 0.0000000004 规整到 9 位 = 0")
     void g5_roundsToZero() {
-        BigDecimal rounded = PrecisionPolicy.round(new BigDecimal("0.0000004"));
+        BigDecimal rounded = PrecisionPolicy.roundForDisplay(new BigDecimal("0.0000000004"));
         assertEquals(0, rounded.compareTo(BigDecimal.ZERO), "实际=" + rounded);
     }
 
     @Test
-    @DisplayName("G-6: 0.0000005 规整到 6 位 = 0.000001（HALF_UP 向上进位）")
+    @DisplayName("G-6: 0.0000000005 规整到 9 位 = 0.000000001（HALF_UP 向上进位）")
     void g6_halfUpRoundsUp() {
-        BigDecimal rounded = PrecisionPolicy.round(new BigDecimal("0.0000005"));
-        assertEquals(0, rounded.compareTo(new BigDecimal("0.000001")), "实际=" + rounded);
+        BigDecimal rounded = PrecisionPolicy.roundForDisplay(new BigDecimal("0.0000000005"));
+        assertEquals(0, rounded.compareTo(new BigDecimal("0.000000001")), "实际=" + rounded);
     }
 
     // ======================================================================
@@ -249,10 +249,10 @@ class FormulaCalculatorGoldenCasesTest {
             quotationTotal = quotationTotal.add(
                 CostingSubtotalUtil.lineCostingAmount(costingCardValuesJson, 500000));
         }
-        quotationTotal = PrecisionPolicy.round(quotationTotal);
+        quotationTotal = PrecisionPolicy.roundForCalculation(quotationTotal);
 
         // ── 一次性十进制精确计算（独立算法路径，验证与分层链路结果逐位相同）───────────────────
-        BigDecimal oneShot = PrecisionPolicy.round(
+        BigDecimal oneShot = PrecisionPolicy.roundForCalculation(
             productSubtotal.multiply(BigDecimal.valueOf(500000)).multiply(BigDecimal.valueOf(20)));
 
         assertEquals(0, quotationTotal.compareTo(oneShot),

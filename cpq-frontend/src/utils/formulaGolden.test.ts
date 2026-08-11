@@ -27,6 +27,8 @@ import { fileURLToPath } from 'node:url';
 import Decimal from 'decimal.js';
 import { evaluateExpression } from './formulaEngine';
 import type { ExpressionToken } from './formulaEngine';
+import type { DecimalString } from './precision';
+import { parseSnapshotJsonLossless } from './losslessJson';
 
 // ─── 定位仓库根 formula-golden/ 目录（不依赖 vitest 的 cwd，从本文件出发逐级向上找）───
 
@@ -48,15 +50,15 @@ function resolveGoldenDir(): string {
 // ─── 用例 shape（与 formula-golden/README.md 定义的 JSON schema 对齐）───
 
 interface GoldenCaseContext {
-  componentSubtotals?: Record<string, number>;
-  productAttributes?: Record<string, number>;
+  componentSubtotals?: Record<string, DecimalString>;
+  productAttributes?: Record<string, DecimalString>;
   basicDataValues?: Record<string, any>;
-  quotationFields?: Record<string, number>;
+  quotationFields?: Record<string, DecimalString>;
   crossTabRows?: Record<string, Array<Record<string, any>>>;
   currentRowRaw?: Record<string, any>;
-  previousRowSubtotal?: number | null;
+  previousRowSubtotal?: DecimalString | null;
   /** README 未文档化，但后端 FormulaGoldenTest.buildContext 有读取；本次 33 条用例均未使用，恒 {} */
-  fieldValues?: Record<string, number>;
+  fieldValues?: Record<string, DecimalString>;
 }
 
 interface GoldenCase {
@@ -100,7 +102,7 @@ const files = readdirSync(GOLDEN_DIR)
 describe('formula-golden · 双端公式一致性黄金用例（前端引擎侧）', () => {
   for (const file of files) {
     const raw = readFileSync(join(GOLDEN_DIR, file), 'utf-8');
-    const cases: GoldenCase[] = JSON.parse(raw);
+    const cases = parseSnapshotJsonLossless<GoldenCase[]>(raw);
 
     describe(file, () => {
       for (const c of cases) {

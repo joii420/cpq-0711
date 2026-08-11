@@ -55,7 +55,7 @@ class TreeFormulaEvalTest {
      */
     private FormulaCalculator.TreeEvalContext ctxOf(JsonNode rows,
                                                     List<Map<String, Object>> rawPerRow,
-                                                    List<Map<String, Double>> valuePerRow,
+                                                    List<Map<String, java.math.BigDecimal>> valuePerRow,
                                                     Set<String> formulaColumns) {
         TreeRelations rel = TreeRelations.of(rows, null);
         List<FormulaCalculator.RowContext> rcs = new ArrayList<>();
@@ -78,10 +78,10 @@ class TreeFormulaEvalTest {
         return m;
     }
 
-    private Map<String, Double> vals(Object... kv) {
-        Map<String, Double> m = new LinkedHashMap<>();
+    private Map<String, java.math.BigDecimal> vals(Object... kv) {
+        Map<String, java.math.BigDecimal> m = new LinkedHashMap<>();
         for (int i = 0; i + 1 < kv.length; i += 2) {
-            m.put(String.valueOf(kv[i]), kv[i + 1] == null ? null : ((Number) kv[i + 1]).doubleValue());
+            m.put(String.valueOf(kv[i]), kv[i + 1] == null ? null : new java.math.BigDecimal(kv[i + 1].toString()));
         }
         return m;
     }

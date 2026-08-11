@@ -1,4 +1,5 @@
 import api from './api';
+import type { DecimalString } from '../utils/precision';
 
 export interface TemplateFormula {
   name: string;
@@ -14,7 +15,7 @@ export interface EvaluateContext {
 }
 
 export interface EvaluateResult {
-  value: any;
+  value: DecimalString | boolean | null;
   trace?: Record<string, any>;
 }
 
@@ -84,7 +85,7 @@ export interface EvaluateError {
 }
 
 export interface EvaluateResultExtended {
-  value?: number | string | boolean | null;
+  value?: DecimalString | boolean | null;
   trace?: Record<string, any>;
   error?: EvaluateError;
 }

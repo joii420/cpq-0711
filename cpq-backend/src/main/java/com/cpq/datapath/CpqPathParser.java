@@ -204,9 +204,8 @@ public class CpqPathParser {
             return extractStringValue(ctx.stringLiteral().STRING().getText());
         } else if (ctx.numberLiteral() != null) {
             String numStr = ctx.numberLiteral().NUMBER().getText();
-            // 统一使用 Double 避免 Long vs Double 类型不一致问题；
-            // SQL 生成器绑定参数时 JDBC 会自动做类型转换
-            return Double.parseDouble(numStr);
+            // 数值谓词直接保留十进制字面量，避免公式/SQL 参数经过二进制浮点。
+            return new java.math.BigDecimal(numStr);
         } else if (ctx.booleanLiteral() != null) {
             return ctx.booleanLiteral().TRUE() != null;
         } else if (ctx.arrayLiteral() != null) {

@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Steps, Button, Card, Form, Input, Select, DatePicker, InputNumber,
   Space, Table, message, Descriptions, Tag, Divider, Row, Col,
-  Typography, Spin, Alert,
+  Typography, Alert,
 } from 'antd';
 import {
   SaveOutlined, SendOutlined,
@@ -36,37 +36,76 @@ import { splitRows, rowAt } from './manualRows';
 import { coerceInputNumber } from './inputDefaults';
 import type { CostingTemplateColumn } from '../../services/costingTemplateService';
 import { buildExcelSnapshot } from './buildExcelSnapshot';
+import { tryParseSnapshotJsonLossless } from '../../utils/losslessJson';
 // lazy-cardvalues：纯判定函数抽到小模块(便于单测,不拉本文件重依赖),运行时由此 import 复用。
-import { shouldWarmCardValues } from './cardValuesWarm';
+import { createAsyncActivityGate, shouldWarmCardValues } from './cardValuesWarm';
+import { CardValuesWarmBoundary } from './CardValuesWarmBoundary';
 import RowKeyConflictDrawer, { type RowKeyConflictDTO } from './RowKeyConflictDrawer';
 import ReconcilePendingDrawer, { type ReconcileConflictDTO } from './ReconcilePendingDrawer';
 import { waitForPendingEdits } from './pendingEditTracker';
 import QuotationPriceRevisionsDrawer from './QuotationPriceRevisionsDrawer';
-import { normalizeNumber, toDecimal, roundToDisplay } from '../../utils/precision';
+import {
+  isDecimalString,
+  normalizeDecimalString,
+  sumDecimal,
+  toCalculationString,
+  toDecimal,
+  type DecimalString,
+} from '../../utils/precision';
+import type { DecimalContext } from '../../utils/formulaEngine';
 import { formatNumber } from '../../utils/formatNumber';
 
 // antd 6.x: Steps uses `items` prop, not <Step> children
 const { TextArea } = Input;
 
 /**
- * 递归把 payload 里所有 number 按有效数字规范化（normalizeNumber，见 precision.ts），
- * 消除 live↔snap 求值浮点尾差,保证 payload 去重稳定。
- *
- * task-0801（2026-08-01，二次修订）：原实现 `Number(v.toFixed(4))` 按小数位数一刀切压所有数值，
- * 会把 8~12 位小数的取数列（工装单价、production_energy.unit_price 等）压坏，违反 AC-8。
- * 改为调用 `normalizeNumber`（按有效数字 15 位，而非小数位数）—— 详细原因（含反例）见
- * precision.ts 的 PAYLOAD_SIGNIFICANT_DIGITS 注释，**不要在此处改回 toFixed(N) 按小数位数规整**。
+ * 草稿精度字段只接受并规范化十进制字符串；结构整数保持原类型。
  */
-export function normalizeDraftPayloadNumbers<T>(payload: T): T {
-  const norm = (v: any): any => {
-    if (typeof v === 'number') return normalizeNumber(v);
-    if (Array.isArray(v)) return v.map(norm);
-    if (v && typeof v === 'object') {
-      const o: any = {};
-      for (const k of Object.keys(v)) o[k] = norm(v[k]);
-      return o;
+const DRAFT_DECIMAL_FIELDS = new Set([
+  'subtotal', 'discountBaseAmount', 'discountRateApplied',
+  'lineDiscountAmount', 'lineUnitPrice', 'lineFinalPrice', 'lineTotalAmount',
+  'finalDiscountRate', 'totalAmount', 'originalAmount',
+]);
+const DRAFT_STRUCTURAL_INTEGER_FIELDS = new Set(['annualVolume']);
+
+export function toStructuralIntegerNumber(value: unknown, field: string): number | null {
+  if (value == null || value === '') return null;
+  if (typeof value === 'number') {
+    if (Number.isSafeInteger(value)) return value;
+    throw new TypeError(`${field} must be a safe integer`);
+  }
+  if (!isDecimalString(value)) throw new TypeError(`${field} must be a safe integer`);
+  const decimal = toDecimal(value);
+  if (!decimal.isInteger()) throw new TypeError(`${field} must be an integer`);
+  // Structural API exception: annualVolume is explicitly a JSON integer, not a precision value.
+  const integer = Number(decimal.toFixed(0));
+  if (!Number.isSafeInteger(integer)) throw new TypeError(`${field} must be a safe integer`);
+  return integer;
+}
+
+function structuralIntegerStateString(value: unknown): DecimalString | undefined {
+  if (typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
+  if (!isDecimalString(value)) return undefined;
+  const decimal = toDecimal(value);
+  return decimal.isInteger() ? normalizeDecimalString(value) : undefined;
+}
+
+export function normalizeDraftPayloadDecimals<T>(payload: T): T {
+  const norm = (value: any, key?: string): any => {
+    if (key && DRAFT_STRUCTURAL_INTEGER_FIELDS.has(key)) {
+      return toStructuralIntegerNumber(value, key);
     }
-    return v;
+    if (key && DRAFT_DECIMAL_FIELDS.has(key)) {
+      if (value == null || value === '') return value;
+      return isDecimalString(value) ? normalizeDecimalString(value) : null;
+    }
+    if (Array.isArray(value)) return value.map(item => norm(item));
+    if (value && typeof value === 'object') {
+      const out: any = {};
+      for (const childKey of Object.keys(value)) out[childKey] = norm(value[childKey], childKey);
+      return out;
+    }
+    return value;
   };
   return norm(payload);
 }
@@ -89,8 +128,8 @@ function computeProductSubtotalSafe(
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
   // repair-0805：调用方若已构建完整口径上下文（buildLineItemEvalContext），把它的 subtotals 传进来，
   // computeProductSubtotal 直接复用、跳过内部再跑一遍 PASS1+PASS2（值等价，省一次整行重算）。
-  precomputedSubtotals?: Record<string, number>,
-): number {
+  precomputedSubtotals?: DecimalContext,
+): DecimalString {
   return computeProductSubtotal(li, driverExpansions, customerId, precomputedSubtotals, globalVariableDefs);
 }
 
@@ -101,6 +140,11 @@ const QuotationWizard: React.FC = () => {
   const [form] = Form.useForm();
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [cardValuesWarming, setCardValuesWarming] = useState(false);
+  const cardValuesWarmGateRef = useRef<ReturnType<typeof createAsyncActivityGate> | null>(null);
+  if (!cardValuesWarmGateRef.current) {
+    cardValuesWarmGateRef.current = createAsyncActivityGate(setCardValuesWarming);
+  }
   const [quotation, setQuotation] = useState<any>(null);
   const [quotationId, setQuotationId] = useState<string | null>(id || null);
   // task-0729 屏 7：价格版本抽屉，全角色可见只读（api.md §0.1）；未建单（quotationId 为空）时不显示入口
@@ -394,7 +438,7 @@ const QuotationWizard: React.FC = () => {
         // 是空但 customerDrawingNo 有值，自动填回——保持新建 / 旧单两种入口的展示一致。
         const rawAttrs = li.productAttributeValues
           ? (typeof li.productAttributeValues === 'string'
-              ? JSON.parse(li.productAttributeValues)
+              ? (tryParseSnapshotJsonLossless<Record<string, unknown>>(li.productAttributeValues) ?? {})
               : li.productAttributeValues)
           : {};
         if (li.customerDrawingNo
@@ -421,7 +465,7 @@ const QuotationWizard: React.FC = () => {
         templateName: li.templateName || '',
         productAttributeValues: rawAttrs,
         componentData: li.componentData || [],
-        subtotal: li.subtotal || 0,
+        subtotal: isDecimalString(li.subtotal) ? normalizeDecimalString(li.subtotal) : '0',
         // 工序回读:从 GET 的 processes 填 processNos,使 saveDraft 能回写 quotation_line_process
         // (选配/导入工序跨保存存活,刷新后不丢)。task-0712 缺口1 遗留涟漪修复:后端 ProcessDTO 已把
         // processId(UUID) 改 processNo(process_master.process_no 字符串),这里同步跟读。
@@ -436,14 +480,14 @@ const QuotationWizard: React.FC = () => {
         compositeType: li.compositeType,
         parentLineItemId: li.parentLineItemId,
         // Step3 新增 9 字段回读（AP-2：round-trip 不丢字段）
-        annualVolume: li.annualVolume ?? undefined,
+        annualVolume: structuralIntegerStateString(li.annualVolume),
         discountSource: li.discountSource ?? undefined,
-        discountBaseAmount: li.discountBaseAmount != null ? Number(li.discountBaseAmount) : undefined,
-        discountRateApplied: li.discountRateApplied != null ? Number(li.discountRateApplied) : undefined,
-        lineDiscountAmount: li.lineDiscountAmount != null ? Number(li.lineDiscountAmount) : undefined,
-        lineUnitPrice: li.lineUnitPrice != null ? Number(li.lineUnitPrice) : undefined,
-        lineFinalPrice: li.lineFinalPrice != null ? Number(li.lineFinalPrice) : undefined,
-        lineTotalAmount: li.lineTotalAmount != null ? Number(li.lineTotalAmount) : undefined,
+        discountBaseAmount: isDecimalString(li.discountBaseAmount) ? normalizeDecimalString(li.discountBaseAmount) : undefined,
+        discountRateApplied: isDecimalString(li.discountRateApplied) ? normalizeDecimalString(li.discountRateApplied) : undefined,
+        lineDiscountAmount: isDecimalString(li.lineDiscountAmount) ? normalizeDecimalString(li.lineDiscountAmount) : undefined,
+        lineUnitPrice: isDecimalString(li.lineUnitPrice) ? normalizeDecimalString(li.lineUnitPrice) : undefined,
+        lineFinalPrice: isDecimalString(li.lineFinalPrice) ? normalizeDecimalString(li.lineFinalPrice) : undefined,
+        lineTotalAmount: isDecimalString(li.lineTotalAmount) ? normalizeDecimalString(li.lineTotalAmount) : undefined,
         discountRuleCode: li.discountRuleCode ?? undefined,
         // 报价单整份快照 Phase2 Task8: 行级值快照(后端 JSON 字符串) → 渲染脱钩用
         quoteCardValues: li.quoteCardValues ?? undefined,
@@ -603,7 +647,8 @@ const QuotationWizard: React.FC = () => {
       const local = localStorage.getItem(`cpq-draft-${qId}`);
       if (local) {
         try {
-          const localData = JSON.parse(local);
+          const localData = tryParseSnapshotJsonLossless<any>(local);
+          if (!localData) throw new Error('invalid local draft');
           applyQuotationData(localData);
           message.warning('后端加载失败，已从本地缓存恢复');
         } catch {
@@ -764,17 +809,24 @@ const QuotationWizard: React.FC = () => {
   const warmCardValues = useCallback(async (qId: string, items: any[]) => {
     if (!shouldWarmCardValues(items)) return;
     try {
-      let r = await quotationService.ensureCardValues(qId);
-      let attempts = 0;
-      while (r?.data?.cardValuesWarming && attempts < 20) {
-        attempts++;
-        await new Promise(resolve => setTimeout(resolve, 800));
-        r = await quotationService.ensureCardValues(qId);
-      }
-      if (r?.data && !r.data.cardValuesWarming) {
-        syncLineItemsFromResponse(r.data);  // 回灌建好的 4 份卡片/Excel 值 → 单元格解析出真值
-      }
-    } catch { /* warm best-effort;打开守卫兜底 */ }
+      await cardValuesWarmGateRef.current!.run(async () => {
+        let r = await quotationService.ensureCardValues(qId);
+        let attempts = 0;
+        while (r?.data?.cardValuesWarming && attempts < 20) {
+          attempts++;
+          await new Promise(resolve => setTimeout(resolve, 800));
+          r = await quotationService.ensureCardValues(qId);
+        }
+        if (r?.data?.cardValuesWarming) {
+          throw new Error('card values warming timed out');
+        }
+        if (r?.data) {
+          syncLineItemsFromResponse(r.data);  // 回灌建好的 4 份卡片/Excel 值 → 单元格解析出真值
+        }
+      });
+    } catch {
+      message.warning('卡片数据准备失败，可再次保存重试');
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -786,7 +838,7 @@ const QuotationWizard: React.FC = () => {
     setSaving(true);
     try {
       const values = form.getFieldsValue();
-      const payload = normalizeDraftPayloadNumbers(buildDraftPayload(values));
+      const payload = normalizeDraftPayloadDecimals(buildDraftPayload(values));
       // P0(2026-06-26):去重只比用户输入,剔除随 driverExpansions live→snap 翻转而重算的派生字段
       //   (subtotal / quoteExcelValues / rowData)。否则首存后回填快照翻转模式 → payload 串变 → 去重失效
       //   → pendingSaveRef 补发 → 三连发。详见 draftPayloadDedup.ts。
@@ -1089,11 +1141,11 @@ const QuotationWizard: React.FC = () => {
     // 阶段一把公式解析修好后，0 就会真的被写进 row_data，把屏幕上非 0 的公式列清零落库。
     // 参见 QuotationStep2.tsx `getComponentSubtotals` 头注的「纯 PASS1 口径」警告。
     const crossTabRows = evalCtx.crossTabRows;
-    const componentSubtotals: Record<string, number> = { ...evalCtx.subtotals };
+    const componentSubtotals: DecimalContext = { ...evalCtx.subtotals };
     // 补缺不覆盖：PASS1/PASS2 只覆盖 NORMAL 组件，SUBTOTAL 等非 NORMAL 页签的裸键沿用行上
     // 持久化的 c.subtotal（= 本函数改造前的口径），保证这类键不因改造而消失。
     (li.componentData || []).forEach(c => {
-      if (c.tabName && !(c.tabName in componentSubtotals)) componentSubtotals[c.tabName] = c.subtotal || 0;
+      if (c.tabName && !(c.tabName in componentSubtotals)) componentSubtotals[c.tabName] = c.subtotal || '0';
     });
 
     // Phase 1 Task 8: 用 splitRows/rowAt 迭代 driver 行 + 手动新增行，
@@ -1160,7 +1212,7 @@ const QuotationWizard: React.FC = () => {
     // driverIdxToTreeIdx.get(i) = 原始行下标 i 对应的 treeRowInputs 下标（回填用，O(1) 查表）
     const driverIdxToTreeIdx = new Map<number, number>();
     const enrichedByDriverIdx = new Map<number, Record<string, any>>();
-    let treeResults: Record<number, Record<string, number | null>> | undefined;
+    let treeResults: Record<number, Record<string, DecimalString | null>> | undefined;
     if (useTree) {
       const treeRowInputs: TreeFormulaRowInput[] = [];
       for (let i = 0; i < s.totalRows; i++) {
@@ -1186,7 +1238,7 @@ const QuotationWizard: React.FC = () => {
     // 作为 previousRowSubtotal 传给下一行的 computeAllFormulas, 同 ProductCard 渲染逻辑一致.
     // Plan 2b：上一行全量公式值，previous_row_subtotal 按本列取。BOM 页签禁用 PREV（§4.3.7），
     // useTree 命中时该链不再串行（整页签批量算一次）。
-    let prevRowValues: Record<string, number | null> | undefined = undefined;
+    let prevRowValues: Record<string, DecimalString | null> | undefined = undefined;
     for (let i = 0; i < s.totalRows; i++) {
       const ra = rowAt(i, cd, s);
 
@@ -1290,7 +1342,7 @@ const QuotationWizard: React.FC = () => {
     try {
       const values = form.getFieldsValue();
       // 与 autoSaveDraft 同口径:规范化数值后再 PUT/落 localStorage,避免手动/自动保存写库精度不一致
-      const payload = normalizeDraftPayloadNumbers(buildDraftPayload(values));
+      const payload = normalizeDraftPayloadDecimals(buildDraftPayload(values));
       const res = await quotationService.saveDraft(quotationId, payload);
       // P0:与 autoSaveDraft 同口径登记去重键,使 finally 的 pendingSaveRef 补发(用户输入未变时)被去重,
       //   不再因首存回填快照翻转模式而多发一次 PUT。
@@ -1307,7 +1359,7 @@ const QuotationWizard: React.FC = () => {
     } catch (e: any) {
       try {
         const values2 = form.getFieldsValue();
-        const payload2 = normalizeDraftPayloadNumbers(buildDraftPayload(values2));
+        const payload2 = normalizeDraftPayloadDecimals(buildDraftPayload(values2));
         safeSetLocalDraft(`cpq-draft-${quotationId}`, JSON.stringify(payload2));
         if (!silent) message.warning('已保存到本地，网络恢复后将同步');
       } catch {
@@ -1417,13 +1469,10 @@ const QuotationWizard: React.FC = () => {
   const handleCalculateDiscount = async () => {
     if (!quotationId) return;
     // task-0801（链路二）：Σ 各行产品小计改十进制精确累加，不再 number `+=`。
-    const originalAmount = roundToDisplay(
-      lineItems.reduce(
-        (sum, li) => sum.plus(toDecimal(computeProductSubtotal(li, driverExpansions, customerIdValue))),
-        toDecimal(0),
-      ),
-    );
-    if (originalAmount <= 0) {
+    const originalAmount = toCalculationString(sumDecimal(
+      lineItems.map(li => computeProductSubtotal(li, driverExpansions, customerIdValue)),
+    ));
+    if (toDecimal(originalAmount).lessThanOrEqualTo(0)) {
       message.warning('没有可计算的金额');
       return;
     }
@@ -1477,7 +1526,7 @@ const QuotationWizard: React.FC = () => {
     const basicItems: LineItem[] = rawItems.map((li: any) => {
       const rawAttrs = li.productAttributeValues
         ? (typeof li.productAttributeValues === 'string'
-            ? (() => { try { return JSON.parse(li.productAttributeValues); } catch { return {}; } })()
+            ? (tryParseSnapshotJsonLossless<Record<string, unknown>>(li.productAttributeValues) ?? {})
             : li.productAttributeValues)
         : {};
       return ({
@@ -1691,7 +1740,7 @@ const QuotationWizard: React.FC = () => {
                 <Descriptions.Item label="区域">{selectedCustomer.region || '-'}</Descriptions.Item>
                 <Descriptions.Item label="累计金额">
                   {selectedCustomer.accumulatedAmount != null
-                    ? `¥${Number(selectedCustomer.accumulatedAmount).toLocaleString()}`
+                    ? `¥${formatNumber(isDecimalString(selectedCustomer.accumulatedAmount) ? selectedCustomer.accumulatedAmount : '0', { isComputed: true }) ?? '0'}`
                     : '-'}
                 </Descriptions.Item>
               </Descriptions>
@@ -1843,14 +1892,18 @@ const QuotationWizard: React.FC = () => {
   const renderStep5 = () => {
     // task-0801（链路二）：Σ 各行产品小计改十进制精确累加；折扣率相乘同样走 Decimal（下游是
     // 已聚合的大额合计，避免再引入 number 运算误差）。
-    const originalAmount = roundToDisplay(
-      lineItems.reduce(
-        (sum, li) => sum.plus(toDecimal(computeProductSubtotal(li, driverExpansions, customerIdValue))),
-        toDecimal(0),
-      ),
+    const originalAmount = toCalculationString(sumDecimal(
+      lineItems.map(li => computeProductSubtotal(li, driverExpansions, customerIdValue)),
+    ));
+    const formRate = form.getFieldValue('finalDiscountRate');
+    const discountRate = isDecimalString(formRate)
+      ? normalizeDecimalString(formRate)
+      : isDecimalString(quotation?.finalDiscountRate)
+        ? normalizeDecimalString(quotation.finalDiscountRate)
+        : '100';
+    const totalAmount = toCalculationString(
+      toDecimal(originalAmount).times(toDecimal(discountRate)).dividedBy('100'),
     );
-    const discountRate = form.getFieldValue('finalDiscountRate') || quotation?.finalDiscountRate || 100;
-    const totalAmount = roundToDisplay(toDecimal(originalAmount).times(toDecimal(discountRate)).dividedBy(100));
     const isDraft = !quotation || quotation.status === 'DRAFT';
 
     return (
@@ -1940,8 +1993,8 @@ const QuotationWizard: React.FC = () => {
               onClick={handleSubmit}
               // 方向3 T3-3：提交在飞时禁用 + loading，配合 handleSubmit 的 submittingRef
               //   同步守卫，杜绝双击并发提交（第二条必然撞后端单飞锁 → 409）。
-              loading={submitting}
-              disabled={submitting}
+              loading={submitting || cardValuesWarming}
+              disabled={submitting || cardValuesWarming}
             >
               提交审批
             </Button>
@@ -1960,7 +2013,7 @@ const QuotationWizard: React.FC = () => {
   ];
 
   return (
-    <Spin spinning={loading}>
+    <CardValuesWarmBoundary loading={loading} warming={cardValuesWarming}>
       <Card
         title={
           <Space>
@@ -1979,7 +2032,12 @@ const QuotationWizard: React.FC = () => {
               <Button onClick={() => setPriceRevisionsOpen(true)}>价格版本</Button>
             )}
             {quotationId && (
-              <Button icon={<SaveOutlined />} loading={saving} disabled={saving} onClick={() => handleSaveDraft()}>
+              <Button
+                icon={<SaveOutlined />}
+                loading={saving || cardValuesWarming}
+                disabled={saving || cardValuesWarming}
+                onClick={() => handleSaveDraft()}
+              >
                 保存草稿
               </Button>
             )}
@@ -2001,7 +2059,7 @@ const QuotationWizard: React.FC = () => {
             quoteType: 'STANDARD',
             priority: 'MEDIUM',
             stage: 'INITIAL_CONTACT',
-            finalDiscountRate: 100,
+            finalDiscountRate: '100',
           }}
         >
           <div style={{ minHeight: 400 }}>
@@ -2012,14 +2070,14 @@ const QuotationWizard: React.FC = () => {
         <Divider />
 
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <Button disabled={currentStep === 0 || saving} onClick={prev}>
+          <Button disabled={currentStep === 0 || saving || cardValuesWarming} onClick={prev}>
             上一步
           </Button>
           <Button
             type="primary"
-            loading={saving}
+            loading={saving || cardValuesWarming}
             onClick={next}
-            disabled={saving || currentStep === steps.length - 1 || (currentStep === 0 && !!selectedCustomer && !step1Valid)}
+            disabled={saving || cardValuesWarming || currentStep === steps.length - 1 || (currentStep === 0 && !!selectedCustomer && !step1Valid)}
             title={currentStep === 0 && !!selectedCustomer && !step1Valid ? '请先填写产品分类和报价模板' : undefined}
           >
             下一步
@@ -2043,7 +2101,7 @@ const QuotationWizard: React.FC = () => {
         quotationId={quotationId}
         onClose={() => setPriceRevisionsOpen(false)}
       />
-    </Spin>
+    </CardValuesWarmBoundary>
   );
 };
 

@@ -5,6 +5,7 @@ import com.cpq.component.entity.ComponentSqlView;
 import com.cpq.quotation.entity.QuotationLineItem;
 import com.cpq.template.entity.Template;
 import com.cpq.template.entity.TemplateComponent;
+import com.cpq.template.entity.TemplateComponentSnapshot;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.narayana.jta.QuarkusTransaction;
@@ -65,6 +66,7 @@ class RefreshQuoteCardValuesEmptyOverwriteGuardTest {
                 em.createNativeQuery("DELETE FROM quotation WHERE id = :id")
                         .setParameter("id", quotationId).executeUpdate();
             }
+            if (templateId != null) em.createNativeQuery("DELETE FROM template_component_snapshot WHERE template_id = :id").setParameter("id", templateId).executeUpdate();
             if (tcFlatId != null) em.createNativeQuery("DELETE FROM template_component WHERE id = :id").setParameter("id", tcFlatId).executeUpdate();
             if (templateId != null) em.createNativeQuery("DELETE FROM template WHERE id = :id").setParameter("id", templateId).executeUpdate();
             if (flatViewId != null) em.createNativeQuery("DELETE FROM component_sql_view WHERE id = :id").setParameter("id", flatViewId).executeUpdate();
@@ -107,7 +109,7 @@ class RefreshQuoteCardValuesEmptyOverwriteGuardTest {
             tpl.templateSeriesId = UUID.randomUUID();
             tpl.name = TAG + "-" + suffix + "-模板";
             tpl.templateKind = "QUOTATION";
-            tpl.status = "DRAFT";
+            tpl.status = "PUBLISHED";
             tpl.createdAt = OffsetDateTime.now();
             tpl.updatedAt = OffsetDateTime.now();
             tpl.persist();
@@ -121,6 +123,20 @@ class RefreshQuoteCardValuesEmptyOverwriteGuardTest {
             tcFlat.persist();
             tcFlatId = tcFlat.id;
 
+            TemplateComponentSnapshot flatSnapshot = new TemplateComponentSnapshot();
+            flatSnapshot.templateId = tpl.id;
+            flatSnapshot.templateComponentId = tcFlat.id;
+            flatSnapshot.componentId = flatComp.id;
+            flatSnapshot.sortOrder = 0;
+            flatSnapshot.tabName = "平铺页签";
+            flatSnapshot.componentName = flatComp.name;
+            flatSnapshot.componentCode = flatComp.code;
+            flatSnapshot.componentType = "NORMAL";
+            flatSnapshot.fields = flatComp.fields;
+            flatSnapshot.formulas = flatComp.formulas;
+            flatSnapshot.dataDriverPath = flatComp.dataDriverPath;
+            flatSnapshot.persist();
+
             try {
                 com.fasterxml.jackson.databind.node.ArrayNode snapshot = M.createArrayNode();
                 com.fasterxml.jackson.databind.node.ObjectNode flatEntry = snapshot.addObject();
@@ -130,12 +146,21 @@ class RefreshQuoteCardValuesEmptyOverwriteGuardTest {
                 flatEntry.put("componentCode", flatComp.code);
                 flatEntry.put("componentType", "NORMAL");
                 flatEntry.put("tabName", "平铺页签");
-                flatEntry.put("sortOrder", 0);
+                flatEntry.put("sortOrder", new java.math.BigDecimal("0"));
                 flatEntry.set("fields", M.readTree(flatComp.fields));
                 flatEntry.set("formulas", M.readTree(flatComp.formulas));
                 flatEntry.put("data_driver_path", flatComp.dataDriverPath);
 
                 tpl.componentsSnapshot = M.writeValueAsString(snapshot);
+                com.fasterxml.jackson.databind.node.ObjectNode frozenViews = M.createObjectNode();
+                com.fasterxml.jackson.databind.node.ObjectNode frozenView = frozenViews.putObject(
+                        flatComp.id + "::" + view.sqlViewName);
+                frozenView.put("sql_template", view.sqlTemplate);
+                frozenView.set("declared_columns", M.createArrayNode());
+                frozenView.set("required_variables", M.createArrayNode());
+                frozenView.put("scope", "COMPONENT");
+                tpl.sqlViewsSnapshot = M.writeValueAsString(frozenViews);
+                tpl.templateSqlViewsSnapshot = "{}";
                 tpl.persist();
             } catch (Exception e) {
                 throw new RuntimeException("构造 template.components_snapshot 失败", e);

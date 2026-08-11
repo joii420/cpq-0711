@@ -1,5 +1,7 @@
 package com.cpq.basicdata.v6.dto;
 
+import com.cpq.common.DecimalStringDeserializer;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import java.math.BigDecimal;
 
 /**
@@ -21,5 +23,6 @@ public class ProcessMasterUpsertRequest {
     /** 标准单位。 */
     public String standardUnit;
     /** 默认不良率。 */
+    @JsonDeserialize(using = DecimalStringDeserializer.class)
     public BigDecimal defaultDefectRate;
 }

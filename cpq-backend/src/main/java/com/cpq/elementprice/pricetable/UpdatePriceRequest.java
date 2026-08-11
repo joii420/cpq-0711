@@ -1,5 +1,7 @@
 package com.cpq.elementprice.pricetable;
 
+import com.cpq.common.DecimalStringDeserializer;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import java.math.BigDecimal;
 
 /**
@@ -9,6 +11,7 @@ import java.math.BigDecimal;
  * 不是"声明后忽略"，是根本不存在，前端多传时被 Jackson 直接丢弃，键锁定是后端硬保证（U4）。
  */
 public class UpdatePriceRequest {
+    @JsonDeserialize(using = DecimalStringDeserializer.class)
     public BigDecimal price;
     public String currency;
     public String priceUnit;

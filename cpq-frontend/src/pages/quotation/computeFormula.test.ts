@@ -5,14 +5,15 @@ import { describe, it, expect } from 'vitest';
 import type { ComponentDataItem } from './QuotationStep2';
 
 // Replicate the computeFormula logic (extracted for testability)
-import { evaluateExpression } from '../../utils/formulaEngine';
+import { evaluateExpression, type DecimalContext } from '../../utils/formulaEngine';
+import { isDecimalString, type DecimalString } from '../../utils/precision';
 
 function computeFormula(
   comp: ComponentDataItem,
   formulaFieldName: string,
   row: Record<string, any>,
-  allComponentSubtotals?: Record<string, number>,
-): number | null {
+  allComponentSubtotals?: DecimalContext,
+): DecimalString | null {
   // 1. Exact name match
   let formula = comp.formulas.find(f => f.name === formulaFieldName);
 
@@ -27,12 +28,12 @@ function computeFormula(
 
   if (!formula || !formula.expression || formula.expression.length === 0) return null;
 
-  const fieldValues: Record<string, number> = {};
+  const fieldValues: DecimalContext = {};
   for (const f of comp.fields) {
     if (f.field_type !== 'FORMULA') {
       const key = f.name || f.key || '';
-      const val = parseFloat(row[key]);
-      if (!isNaN(val)) fieldValues[key] = val;
+      const value = row[key];
+      if (isDecimalString(value)) fieldValues[key] = value;
     }
   }
 
@@ -66,7 +67,7 @@ const compExactMatch: ComponentDataItem = {
     },
   ],
   rows: [],
-  subtotal: 0,
+  subtotal: '0',
 };
 
 // Scenario: formula.name does NOT match (real bug: "物料公式" vs "金额")
@@ -90,7 +91,7 @@ const compNameMismatch: ComponentDataItem = {
     },
   ],
   rows: [],
-  subtotal: 0,
+  subtotal: '0',
 };
 
 // Scenario: multiple FORMULA fields, positional matching
@@ -126,7 +127,7 @@ const compMultiFormula: ComponentDataItem = {
     },
   ],
   rows: [],
-  subtotal: 0,
+  subtotal: '0',
 };
 
 // Scenario: no formulas defined
@@ -140,7 +141,7 @@ const compNoFormulas: ComponentDataItem = {
   ],
   formulas: [],
   rows: [],
-  subtotal: 0,
+  subtotal: '0',
 };
 
 // Scenario: formula references a FORMULA field (circular — should get 0 from fieldValues)
@@ -164,35 +165,35 @@ const compCircularRef: ComponentDataItem = {
     },
   ],
   rows: [],
-  subtotal: 0,
+  subtotal: '0',
 };
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 describe('computeFormula - exact name match', () => {
   it('formula.name === field.name → calculates correctly', () => {
-    const row = { 单价: 45, 数量: 5 };
-    expect(computeFormula(compExactMatch, '金额', row)).toBe(225);
+    const row = { 单价: '45', 数量: '5' };
+    expect(computeFormula(compExactMatch, '金额', row)).toBe('225');
   });
 });
 
 describe('computeFormula - positional fallback', () => {
   it('formula.name !== field.name → falls back to positional matching', () => {
-    const row = { 单价: 45, 数量: 5 };
+    const row = { 单价: '45', 数量: '5' };
     // Field "金额" is the 1st FORMULA field, matches formulas[0] "物料公式"
-    expect(computeFormula(compNameMismatch, '金额', row)).toBe(225);
+    expect(computeFormula(compNameMismatch, '金额', row)).toBe('225');
   });
 
   it('multiple mismatched formulas: 1st FORMULA field → formulas[0]', () => {
-    const row = { 工时: 8, 时薪: 50, 数量: 3 };
+    const row = { 工时: '8', 时薪: '50', 数量: '3' };
     // "工费" is 1st FORMULA field → formulas[0] "工费公式": 工时 × 时薪
-    expect(computeFormula(compMultiFormula, '工费', row)).toBe(400);
+    expect(computeFormula(compMultiFormula, '工费', row)).toBe('400');
   });
 
   it('multiple mismatched formulas: 2nd FORMULA field → formulas[1]', () => {
-    const row = { 工时: 8, 时薪: 50, 数量: 3 };
+    const row = { 工时: '8', 时薪: '50', 数量: '3' };
     // "总价" is 2nd FORMULA field → formulas[1] "总价公式": 工时 × 时薪 × 数量
-    expect(computeFormula(compMultiFormula, '总价', row)).toBe(1200);
+    expect(computeFormula(compMultiFormula, '总价', row)).toBe('1200');
   });
 });
 
@@ -205,22 +206,22 @@ describe('computeFormula - no formula defined', () => {
 
 describe('computeFormula - circular reference protection', () => {
   it('formula referencing own FORMULA field → FORMULA fields excluded from fieldValues → gets 0', () => {
-    const row = { 单价: 45, 数量: 5 };
+    const row = { 单价: '45', 数量: '5' };
     // Expression: 单价 × 金额, but "金额" is FORMULA field → excluded → value = 0
     // Result: 45 × 0 = 0
-    expect(computeFormula(compCircularRef, '金额', row)).toBe(0);
+    expect(computeFormula(compCircularRef, '金额', row)).toBe('0');
   });
 });
 
 describe('computeFormula - empty / edge cases', () => {
   it('empty row → all fields default to 0 → result is 0', () => {
-    expect(computeFormula(compExactMatch, '金额', {})).toBe(0);
+    expect(computeFormula(compExactMatch, '金额', {})).toBe('0');
   });
 
   it('non-numeric values in row → treated as 0', () => {
-    const row = { 单价: 'abc', 数量: 5 };
-    // parseFloat('abc') = NaN → excluded → 0
-    expect(computeFormula(compExactMatch, '金额', row)).toBe(0);
+    const row = { 单价: 'abc', 数量: '5' };
+    // Invalid decimal text is excluded from the Decimal context.
+    expect(computeFormula(compExactMatch, '金额', row)).toBe('0');
   });
 
   it('requesting unknown field name → returns null', () => {

@@ -137,7 +137,7 @@ public final class ComponentDataEffectiveRows {
             Map<UUID, Meta> metaById,
             Map<UUID, Meta> extraSubtotalMetas,
             FormulaCalculator fc) {
-        return computeScaled(cdList, metaById, extraSubtotalMetas, fc, null, 1.0);
+        return computeScaled(cdList, metaById, extraSubtotalMetas, fc, null, BigDecimal.ONE);
     }
 
     /**
@@ -151,7 +151,7 @@ public final class ComponentDataEffectiveRows {
             UUID subtotalComponentId,
             FormulaCalculator fc,
             String discountCode,
-            double discountScale) {
+            BigDecimal discountScale) {
         Map<String, CardEffectiveRows.TabRows> tabs =
             computeScaled(cdList, metaById, Map.of(), fc, discountCode, discountScale);
         CardEffectiveRows.TabRows tr = subtotalComponentId != null
@@ -172,7 +172,7 @@ public final class ComponentDataEffectiveRows {
             Map<UUID, Meta> extraSubtotalMetas,
             FormulaCalculator fc,
             String discountCode,
-            double discountScale) {
+            BigDecimal discountScale) {
         Map<String, CardEffectiveRows.TabRows> out = new LinkedHashMap<>();
         Map<UUID, Meta> extras = extraSubtotalMetas != null ? extraSubtotalMetas : Map.of();
         boolean noCd = cdList == null || cdList.isEmpty();
@@ -181,7 +181,7 @@ public final class ComponentDataEffectiveRows {
 
         // Pass 1：解析行 + 列求和；构建全局 componentSubtotals（code#col 与 name#col，避免同名列 费用 串值）
         List<TabAcc> accs = new ArrayList<>();
-        Map<String, Double> componentSubtotals = new HashMap<>();
+        Map<String, BigDecimal> componentSubtotals = new HashMap<>();
         Set<UUID> presentInCd = new HashSet<>();
         for (QuotationLineComponentData cd : (noCd ? List.<QuotationLineComponentData>of() : cdList)) {
             if (cd == null) continue;
@@ -192,11 +192,10 @@ public final class ComponentDataEffectiveRows {
             accs.add(new TabAcc(cd, rows, colSums, meta));
             if (meta != null) {
                 // BL-0017：累加金额列(is_amount)之和（用缩放后 v，与列键口径一致），登记哨兵键。
-                double amountTotal = 0.0;
+                BigDecimal amountTotal = BigDecimal.ZERO;
                 for (Map.Entry<String, BigDecimal> e : colSums.entrySet()) {
-                    // double 受限于 FormulaCalculator.RowContext.componentSubtotals 的 Map<String,Double> 契约；
-                    // 列和本身仍是 BigDecimal（见 subtotalByColumn），勿擅自改回 BigDecimal 破坏契约。
-                    double v = e.getValue().doubleValue();
+                    // 列和、折扣缩放和 componentSubtotals 全程使用 BigDecimal。
+                    BigDecimal v = e.getValue();
                     // 按列折扣：discountCode = `code#列名`（或 `name#列名`）→ 仅缩放该列；
                     // 兼容旧整组件格式（discountCode = code/name 无 #）→ 缩放该组件全部列。
                     boolean hit = discountCode != null && (
@@ -207,11 +206,11 @@ public final class ComponentDataEffectiveRows {
                     // task-0801 B4-2（审计追加发现）：原 `v * discountScale` 是裸 double 乘法，
                     // 3*0.8 这类值在 double 二进制下不精确（≈2.4000000000000004）；旧代码靠
                     // evaluateExpression 末尾 setScale(4) 掩盖，B2 去掉该截断后会原样冒出到结果里。
-                    // 单次求值须十进制精确（§1 链路一纪律）：改用 BigDecimal 乘法算完再转回 double。
-                    if (hit) v = e.getValue().multiply(java.math.BigDecimal.valueOf(discountScale)).doubleValue();
+                    // 单次求值须十进制精确：使用 BigDecimal 乘法并保持 BigDecimal 承载。
+                    if (hit) v = e.getValue().multiply(discountScale);
                     if (meta.code != null) componentSubtotals.put(meta.code + SUBTOTAL_KEY_SEP + e.getKey(), v);
                     if (meta.name != null) componentSubtotals.put(meta.name + SUBTOTAL_KEY_SEP + e.getKey(), v);
-                    if (meta.amountCols.contains(e.getKey())) amountTotal += v;
+                    if (meta.amountCols.contains(e.getKey())) amountTotal = amountTotal.add(v);
                 }
                 // BL-0017 哨兵键（加性，不动裸键）：`<code|name>#__amount_total__` = Σ金额列。
                 if (meta.code != null) componentSubtotals.put(meta.code + SUBTOTAL_KEY_SEP + AMOUNT_TOTAL_KEY, amountTotal);
@@ -261,7 +260,7 @@ public final class ComponentDataEffectiveRows {
      * SUBTOTAL 组件取首个公式为总计求值；无公式/空表达式 → null（调用方退回持久化值或 0）。
      */
     private static BigDecimal evaluateSubtotalFormula(
-            Meta meta, Map<String, Double> componentSubtotals, FormulaCalculator fc) {
+            Meta meta, Map<String, BigDecimal> componentSubtotals, FormulaCalculator fc) {
         if (meta.formulas == null || !meta.formulas.isArray() || meta.formulas.size() == 0) return null;
         JsonNode expr = meta.formulas.get(0).path(EXPR_KEY);
         if (!expr.isArray() || expr.size() == 0) return null;

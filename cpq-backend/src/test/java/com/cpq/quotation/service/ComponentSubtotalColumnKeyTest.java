@@ -52,8 +52,8 @@ class ComponentSubtotalColumnKeyTest {
 
         FormulaCalculator.RowContext ctx = new FormulaCalculator.RowContext();
         ctx.componentSubtotals = new HashMap<>();
-        ctx.componentSubtotals.put("SELF#aCost", 300.0);   // 列小计键（优先）
-        ctx.componentSubtotals.put("SELF", 999.0);          // 组件总小计（低优先，不应被取到）
+        ctx.componentSubtotals.put("SELF#aCost", new java.math.BigDecimal("300.0"));   // 列小计键（优先）
+        ctx.componentSubtotals.put("SELF", new java.math.BigDecimal("999.0"));          // 组件总小计（低优先，不应被取到）
 
         BigDecimal result = calc.evaluateExpression(j(tokens), ctx);
         assertEquals(0, result.compareTo(new BigDecimal("300.0000")),
@@ -73,7 +73,7 @@ class ComponentSubtotalColumnKeyTest {
 
         FormulaCalculator.RowContext ctx = new FormulaCalculator.RowContext();
         ctx.componentSubtotals = new HashMap<>();
-        ctx.componentSubtotals.put("SELF", 500.0);   // 只有组件总小计，无列小计键
+        ctx.componentSubtotals.put("SELF", new java.math.BigDecimal("500.0"));   // 只有组件总小计，无列小计键
 
         BigDecimal result = calc.evaluateExpression(j(tokens), ctx);
         assertEquals(0, result.compareTo(new BigDecimal("500.0000")),
@@ -107,8 +107,8 @@ class ComponentSubtotalColumnKeyTest {
 
         FormulaCalculator.RowContext ctx = new FormulaCalculator.RowContext();
         ctx.componentSubtotals = new HashMap<>();
-        ctx.componentSubtotals.put("来料#材料费", 1200.0);
-        ctx.componentSubtotals.put("来料", 9999.0);  // 组件总小计，不应被取到
+        ctx.componentSubtotals.put("来料#材料费", new java.math.BigDecimal("1200.0"));
+        ctx.componentSubtotals.put("来料", new java.math.BigDecimal("9999.0"));  // 组件总小计，不应被取到
 
         BigDecimal result = calc.evaluateExpression(j(tokens), ctx);
         assertEquals(0, result.compareTo(new BigDecimal("1200.0000")),

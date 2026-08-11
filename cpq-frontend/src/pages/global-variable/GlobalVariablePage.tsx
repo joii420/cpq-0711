@@ -27,6 +27,7 @@ import {
   HistoryOutlined,
   InfoCircleOutlined,
 } from '@ant-design/icons';
+import { isDecimalString, toDecimal } from '../../utils/precision';
 import type { ColumnsType } from 'antd/es/table';
 import {
   globalVariableService,
@@ -225,7 +226,10 @@ const GlobalVariablePage: React.FC = () => {
       }
       const oldVal = editMode === 'UPDATE' ? editingRow?.value : null;
       const newVal = values.value;
-      const noChange = editMode === 'UPDATE' && oldVal != null && Number(oldVal) === Number(newVal);
+      const noChange = editMode === 'UPDATE'
+        && isDecimalString(oldVal)
+        && isDecimalString(newVal)
+        && toDecimal(oldVal).equals(toDecimal(newVal));
       if (noChange) {
         message.info('值未变更, 已跳过');
         setEditOpen(false);
@@ -603,7 +607,7 @@ const GlobalVariablePage: React.FC = () => {
               name="value"
               rules={[{ required: true, message: '取值不能为空' }]}
             >
-              <InputNumber
+              <InputNumber<string>
                 style={{ width: '100%' }}
                 step="0.0001"
                 stringMode

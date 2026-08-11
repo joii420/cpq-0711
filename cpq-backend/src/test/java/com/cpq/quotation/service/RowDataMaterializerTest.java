@@ -83,7 +83,7 @@ class RowDataMaterializerTest {
         // FLAT top-level keys
         JsonNode r0 = out.get(0);
         assertTrue(r0.has("材料成本"), "FORMULA leaf must be present top-level");
-        assertEquals(0, new java.math.BigDecimal("20").compareTo(r0.get("材料成本").decimalValue()),
+        assertEquals(0, new java.math.BigDecimal("20").compareTo(decimalText(r0.get("材料成本"))),
                 "材料成本 = 10 × 2 = 20");
         // driver columns preserved (flat)
         assertEquals(0, new java.math.BigDecimal("10").compareTo(r0.get("单价").decimalValue()));
@@ -92,7 +92,7 @@ class RowDataMaterializerTest {
         assertEquals(0, r0.get("row_index").asInt());
 
         JsonNode r1 = out.get(1);
-        assertEquals(0, new java.math.BigDecimal("15").compareTo(r1.get("材料成本").decimalValue()),
+        assertEquals(0, new java.math.BigDecimal("15").compareTo(decimalText(r1.get("材料成本"))),
                 "材料成本 = 5 × 3 = 15");
         assertEquals(1, r1.get("row_index").asInt());
     }
@@ -155,13 +155,13 @@ class RowDataMaterializerTest {
         assertEquals("P-A", rA.get("料号").asText());
         assertEquals(0, new java.math.BigDecimal("99").compareTo(rA.get("单价").decimalValue()),
                 "INPUT 单价 must reflect the edited value (99), not driver 10");
-        assertEquals(0, new java.math.BigDecimal("198").compareTo(rA.get("材料成本").decimalValue()),
+        assertEquals(0, new java.math.BigDecimal("198").compareTo(decimalText(rA.get("材料成本"))),
                 "FORMULA 材料成本 must recompute from edited 单价: 99 × 2 = 198");
 
         // row P-B: untouched → driver values.
         JsonNode rB = out.get(1);
         assertEquals(0, new java.math.BigDecimal("5").compareTo(rB.get("单价").decimalValue()));
-        assertEquals(0, new java.math.BigDecimal("15").compareTo(rB.get("材料成本").decimalValue()),
+        assertEquals(0, new java.math.BigDecimal("15").compareTo(decimalText(rB.get("材料成本"))),
                 "untouched row: 5 × 3 = 15");
     }
 
@@ -213,14 +213,14 @@ class RowDataMaterializerTest {
             [ {"driverRow": {}, "basicDataValues": {}} ]
             """);
 
-        Map<String, Double> cross = new HashMap<>();
-        cross.put("FEEDING#材料成本", 500.0); // code#col convention
+        Map<String, java.math.BigDecimal> cross = new HashMap<>();
+        cross.put("FEEDING#材料成本", new java.math.BigDecimal("500.0")); // code#col convention
 
         JsonNode out = newMaterializer().materializeComponentRows(
                 componentsSnapshot, "MGMT", snapshotRows, cross);
 
         assertEquals(1, out.size());
-        assertEquals(0, new java.math.BigDecimal("600").compareTo(out.get(0).get("合计").decimalValue()),
+        assertEquals(0, new java.math.BigDecimal("600").compareTo(decimalText(out.get(0).get("合计"))),
                 "合计 = component_subtotal(FEEDING#材料成本=500) + 100 = 600");
     }
 
@@ -255,8 +255,8 @@ class RowDataMaterializerTest {
 
         // sibling SRC resolved rows: two rows of 金额, KSUM(match=[]) → 30 + 70 = 100
         List<Map<String, Object>> srcRows = new ArrayList<>();
-        Map<String, Object> r0 = new LinkedHashMap<>(); r0.put("金额", 30); srcRows.add(r0);
-        Map<String, Object> r1 = new LinkedHashMap<>(); r1.put("金额", 70); srcRows.add(r1);
+        Map<String, Object> r0 = new LinkedHashMap<>(); r0.put("金额", new java.math.BigDecimal("30")); srcRows.add(r0);
+        Map<String, Object> r1 = new LinkedHashMap<>(); r1.put("金额", new java.math.BigDecimal("70")); srcRows.add(r1);
         Map<String, List<Map<String, Object>>> crossTabRows = new HashMap<>();
         crossTabRows.put("SRC", srcRows);
 
@@ -264,7 +264,7 @@ class RowDataMaterializerTest {
                 componentsSnapshot, "TARGET", snapshotRows, null, crossTabRows);
 
         assertEquals(1, out.size());
-        assertEquals(0, new java.math.BigDecimal("100").compareTo(out.get(0).get("引用值").decimalValue()),
+        assertEquals(0, new java.math.BigDecimal("100").compareTo(decimalText(out.get(0).get("引用值"))),
                 "引用值 = KSUM over SRC.金额 = 30 + 70 = 100");
     }
 
@@ -355,7 +355,7 @@ class RowDataMaterializerTest {
 
         // ── single pass: materialize in topo order, accumulate subtotals + thread crossTabRows ──
         RowDataMaterializer mat = newMaterializer();
-        Map<String, Double> componentSubtotals = new HashMap<>();
+        Map<String, java.math.BigDecimal> componentSubtotals = new HashMap<>();
         Map<String, List<Map<String, Object>>> crossTabRows = new HashMap<>();
         Map<String, ArrayNode> outByCode = new LinkedHashMap<>();
         for (String code : order) {
@@ -368,26 +368,35 @@ class RowDataMaterializerTest {
             for (JsonNode r : flat) flatRows.add(MAPPER.convertValue(r, Map.class));
             crossTabRows.put(code, flatRows);
             // accumulate column subtotals (code#col convention) for downstream component_subtotal
-            Map<String, Double> colSums = new LinkedHashMap<>();
+            Map<String, java.math.BigDecimal> colSums = new LinkedHashMap<>();
             for (JsonNode r : flat) {
                 if (r == null || !r.isObject()) continue;
                 r.fields().forEachRemaining(en -> {
-                    if (en.getValue() != null && en.getValue().isNumber())
-                        colSums.merge(en.getKey(), en.getValue().doubleValue(), Double::sum);
+                    if (en.getValue() != null && (en.getValue().isNumber() || en.getValue().isTextual())) {
+                        try {
+                            colSums.merge(en.getKey(), decimalText(en.getValue()), java.math.BigDecimal::add);
+                        } catch (NumberFormatException ignored) {
+                            // Structural text columns do not participate in numeric subtotals.
+                        }
+                    }
                 });
             }
-            for (Map.Entry<String, Double> e : colSums.entrySet())
+            for (Map.Entry<String, java.math.BigDecimal> e : colSums.entrySet())
                 componentSubtotals.put(code + "#" + e.getKey(), e.getValue());
         }
 
         // A's 调整 corrected = CC#基数(200) + 10 = 210 (NOT the pre-subtotal 10)
         assertEquals(0, new java.math.BigDecimal("210").compareTo(
-                        outByCode.get("AA").get(0).get("调整").decimalValue()),
+                        decimalText(outByCode.get("AA").get(0).get("调整"))),
                 "A.调整 must use C's subtotal (200) → 210, not pre-subtotal 10");
 
         // B's 引用 reads A's CORRECTED value via cross_tab_ref → 210 (the regression assertion)
         assertEquals(0, new java.math.BigDecimal("210").compareTo(
-                        outByCode.get("BB").get(0).get("引用").decimalValue()),
+                        decimalText(outByCode.get("BB").get(0).get("引用"))),
                 "B.引用 must see A's corrected 调整 (210), not the stale pre-subtotal value (10)");
+    }
+
+    private static java.math.BigDecimal decimalText(JsonNode node) {
+        return new java.math.BigDecimal(node.asText());
     }
 }

@@ -26,6 +26,7 @@ import {
   buildTabPairColumns,
 } from './comparisonMapping';
 import type { ColumnDef, LinkPairInput } from './comparisonMapping';
+import type { DecimalString } from '../../utils/precision';
 import { ComparisonTable } from './ComparisonTable';
 import { ComparisonToolbar } from './ComparisonToolbar';
 import { LinkConfigDrawer } from './LinkConfigDrawer';
@@ -112,7 +113,7 @@ export const ComparisonBoard: React.FC<ComparisonBoardProps> = ({
     message.success('已删除比对列');
   }, [readonly, columns, persistColumns]);
 
-  const handleUpdateThreshold = useCallback((id: string, threshold: number) => {
+  const handleUpdateThreshold = useCallback((id: string, threshold: DecimalString) => {
     if (readonly) return;
     const next = columns.map((c) => (c.id === id ? { ...c, threshold } : c));
     persistColumns(next);

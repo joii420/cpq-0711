@@ -7,6 +7,7 @@ import { configuratorInstanceService, configuratorTemplateService } from '../../
 import type { ConfiguratorInstance, ConfiguratorTemplate, InstanceStatus } from '../../types/configurator';
 import StatCard from '../../components/StatCard';
 import ConfiguratorPreview from '../../components/ConfiguratorPreview';
+import { formatNumber } from '../../utils/formatNumber';
 
 const ConfiguratorInstanceDetail: React.FC = () => {
   const { id } = useParams();
@@ -90,8 +91,8 @@ const ConfiguratorInstanceDetail: React.FC = () => {
           </Col>
           <Col span={6}>
             <StatCard tone="purple" icon="💰" label="总价"
-              value={<span>¥{inst.computedTotalPrice ? Number(inst.computedTotalPrice).toLocaleString() : '0'}</span>}
-              sub={`base ¥${inst.basePrice || 0}`} />
+              value={<span>¥{inst.computedTotalPrice ? formatNumber(inst.computedTotalPrice, { isComputed: true }) : '0'}</span>}
+              sub={`base ¥${inst.basePrice ? formatNumber(inst.basePrice, { isComputed: true }) : '0'}`} />
           </Col>
           <Col span={6}>
             <StatCard tone={inst.status === 'LINKED' ? 'success' : inst.status === 'SUBMITTED' ? 'primary' : 'gray'}

@@ -10,6 +10,7 @@
  * (T5 对拍：与后端 FormulaCalculator 同 fixture 同值)
  */
 import { describe, it, expect } from 'vitest';
+import type { DecimalContext } from '../../utils/formulaEngine';
 import { buildCrossTabRows } from './QuotationStep2';
 
 // 外购件：4 行，每行一个「费用」字段（FIXED_VALUE，无公式）
@@ -19,19 +20,19 @@ const ygjFields = [
 
 // 外购件 4 行的数据（费用值写在 row 里）
 const ygjRows = [
-  { 费用: 0.05 },
-  { 费用: 0.2 },
-  { 费用: 0.002 },
-  { 费用: 0.007 },
+  { 费用: '0.05' },
+  { 费用: '0.2' },
+  { 费用: '0.002' },
+  { 费用: '0.007' },
 ];
 
 const ygjExpansion = {
   rowCount: 4,
   rows: [
-    { driverRow: { 费用: 0.05 },   basicDataValues: {} },
-    { driverRow: { 费用: 0.2 },    basicDataValues: {} },
-    { driverRow: { 费用: 0.002 },  basicDataValues: {} },
-    { driverRow: { 费用: 0.007 },  basicDataValues: {} },
+    { driverRow: { 费用: '0.05' },   basicDataValues: {} },
+    { driverRow: { 费用: '0.2' },    basicDataValues: {} },
+    { driverRow: { 费用: '0.002' },  basicDataValues: {} },
+    { driverRow: { 费用: '0.007' },  basicDataValues: {} },
   ],
 } as any;
 
@@ -55,7 +56,7 @@ const componentData = [
     fields: ygjFields,
     formulas: [],
     rows: ygjRows,
-    componentData: [], snapshotRows: 4, subtotal: 0,
+    componentData: [], snapshotRows: 4, subtotal: '0',
   },
   {
     componentId: '来料', componentCode: '来料', tabName: '来料',
@@ -77,7 +78,7 @@ const componentData = [
       },
     ],
     rows: [{}],
-    componentData: [], snapshotRows: 1, subtotal: 0,
+    componentData: [], snapshotRows: 1, subtotal: '0',
   },
 ] as any;
 
@@ -89,26 +90,26 @@ const lookupExpansion = (comp: any) => {
 
 describe('buildCrossTabRows 列小计回填', () => {
   it('T1/T5 — 外购件 4 行(费用: 0.05/0.2/0.002/0.007)，来料 cross_tab SUM → allComponentSubtotals["来料#材料费"] ≈ 0.259', () => {
-    const allComponentSubtotals: Record<string, number> = {};
+    const allComponentSubtotals: DecimalContext = {};
     buildCrossTabRows(componentData, allComponentSubtotals, undefined, lookupExpansion);
 
     // 来料组件的 is_subtotal 列「材料费」应被回填
     const colSubtotal = allComponentSubtotals['来料#材料费'];
-    expect(colSubtotal).toBeCloseTo(0.259, 4);
+    expect(colSubtotal).toBe('0.259');
   });
 
   it('回填同时写入 componentCode#列名 + tabName#列名（两键对齐）', () => {
-    const allComponentSubtotals: Record<string, number> = {};
+    const allComponentSubtotals: DecimalContext = {};
     buildCrossTabRows(componentData, allComponentSubtotals, undefined, lookupExpansion);
 
     // 按 componentCode 键
-    expect(allComponentSubtotals['来料#材料费']).toBeCloseTo(0.259, 4);
+    expect(allComponentSubtotals['来料#材料费']).toBe('0.259');
     // 总小计键（无列名，按 componentCode/tabName）
-    expect(allComponentSubtotals['来料']).toBeCloseTo(0.259, 4);
+    expect(allComponentSubtotals['来料']).toBe('0.259');
   });
 
   it('外购件（无 is_subtotal 列）不应影响回填结果', () => {
-    const allComponentSubtotals: Record<string, number> = {};
+    const allComponentSubtotals: DecimalContext = {};
     buildCrossTabRows(componentData, allComponentSubtotals, undefined, lookupExpansion);
 
     // 外购件没有 is_subtotal 列，不应有 "外购件#xxx" 键被写入
@@ -127,16 +128,16 @@ describe('buildCrossTabRows 列小计回填', () => {
       componentId: c.componentId,
       tabName: c.tabName,
       rowData: c.rows,
-      subtotal: 0,
+      subtotal: '0',
       sortOrder: 0,
       // 关键：无 fields、无 componentType、无 formulas（后端不持久化）
     }));
-    const allComponentSubtotals: Record<string, number> = {};
+    const allComponentSubtotals: DecimalContext = {};
     const { store } = buildCrossTabRows(rawComponentData as any, allComponentSubtotals, undefined, lookupExpansion);
 
     // 全被过滤 → store 空 → 来料材料费 cross_tab 列得不到回填（undefined/0）
     expect(Object.keys(store)).toHaveLength(0);
-    expect(allComponentSubtotals['来料#材料费'] ?? 0).toBe(0);
+    expect(allComponentSubtotals['来料#材料费'] ?? '0').toBe('0');
   });
 });
 
@@ -164,19 +165,19 @@ const wgjFields2 = [
 ] as any;
 
 const wgjRows2 = [
-  { 费用: 0.05 },
-  { 费用: 0.2 },
-  { 费用: 0.002 },
-  { 费用: 0.007 },
+  { 费用: '0.05' },
+  { 费用: '0.2' },
+  { 费用: '0.002' },
+  { 费用: '0.007' },
 ];
 
 const wgjExpansion2 = {
   rowCount: 4,
   rows: [
-    { driverRow: { 费用: 0.05 },   basicDataValues: {} },
-    { driverRow: { 费用: 0.2 },    basicDataValues: {} },
-    { driverRow: { 费用: 0.002 },  basicDataValues: {} },
-    { driverRow: { 费用: 0.007 },  basicDataValues: {} },
+    { driverRow: { 费用: '0.05' },   basicDataValues: {} },
+    { driverRow: { 费用: '0.2' },    basicDataValues: {} },
+    { driverRow: { 费用: '0.002' },  basicDataValues: {} },
+    { driverRow: { 费用: '0.007' },  basicDataValues: {} },
   ],
 } as any;
 
@@ -215,7 +216,7 @@ const componentData2 = [
     fields: wgjFields2,
     formulas: [],
     rows: wgjRows2,
-    componentData: [], snapshotRows: 4, subtotal: 0,
+    componentData: [], snapshotRows: 4, subtotal: '0',
   },
   {
     componentId: 'll', componentCode: 'll', tabName: 'll',
@@ -227,7 +228,7 @@ const componentData2 = [
       { name: 'total', expression: totalExpr },
     ],
     rows: [{}],
-    componentData: [], snapshotRows: 1, subtotal: 0,
+    componentData: [], snapshotRows: 1, subtotal: '0',
   },
 ] as any;
 
@@ -239,28 +240,28 @@ const lookupExpansion2 = (comp: any) => {
 
 describe('B1 (RED→GREEN) — 二阶列小计 = Σ行 (component_subtotal 引用本组件一阶列)', () => {
   it('B1-1 — 一阶列 aCost/bCost 列小计 ≈ 0.259（cross_tab SUM）', () => {
-    const allComponentSubtotals: Record<string, number> = {};
+    const allComponentSubtotals: DecimalContext = {};
     buildCrossTabRows(componentData2, allComponentSubtotals, undefined, lookupExpansion2);
 
-    expect(allComponentSubtotals['ll#aCost']).toBeCloseTo(0.259, 4);
-    expect(allComponentSubtotals['ll#bCost']).toBeCloseTo(0.259, 4);
+    expect(allComponentSubtotals['ll#aCost']).toBe('0.259');
+    expect(allComponentSubtotals['ll#bCost']).toBe('0.259');
   });
 
   it('B1-2 — 二阶列 total 列小计 ≈ 0.518 (aCost+bCost)，修复前为 0', () => {
-    const allComponentSubtotals: Record<string, number> = {};
+    const allComponentSubtotals: DecimalContext = {};
     buildCrossTabRows(componentData2, allComponentSubtotals, undefined, lookupExpansion2);
 
     // 修复前：来料总小计未在算 total 行时回填 → allComponentSubtotals['ll'] = 0
     // → total 行 = 0 + 0 = 0 → 列小计 = 0
     // 修复后：一阶列算完即回填，算 total 时 allComponentSubtotals['ll'] = 0.518 → total = 0.518
-    expect(allComponentSubtotals['ll#total']).toBeCloseTo(0.518, 3);
+    expect(allComponentSubtotals['ll#total']).toBe('0.518');
   });
 
   it('B1-3 — 来料总小计 = aCost + bCost + total = 1.036', () => {
-    const allComponentSubtotals: Record<string, number> = {};
+    const allComponentSubtotals: DecimalContext = {};
     buildCrossTabRows(componentData2, allComponentSubtotals, undefined, lookupExpansion2);
 
-    expect(allComponentSubtotals['ll']).toBeCloseTo(1.036, 3);
+    expect(allComponentSubtotals['ll']).toBe('1.036');
   });
 });
 
@@ -293,15 +294,15 @@ const e3MaterialCostExpr = [
 
 // 2 行数据：行1(来料材料费=5, 外购件材料费=2)，行2(来料材料费=0, 外购件材料费=3)
 const e3Rows = [
-  { 来料材料费: 5, 外购件材料费: 2 },
-  { 来料材料费: 0, 外购件材料费: 3 },
+  { 来料材料费: '5', 外购件材料费: '2' },
+  { 来料材料费: '0', 外购件材料费: '3' },
 ];
 
 const e3Expansion = {
   rowCount: 2,
   rows: [
-    { driverRow: { 来料材料费: 5, 外购件材料费: 2 }, basicDataValues: {} },
-    { driverRow: { 来料材料费: 0, 外购件材料费: 3 }, basicDataValues: {} },
+    { driverRow: { 来料材料费: '5', 外购件材料费: '2' }, basicDataValues: {} },
+    { driverRow: { 来料材料费: '0', 外购件材料费: '3' }, basicDataValues: {} },
   ],
 } as any;
 
@@ -318,7 +319,7 @@ const e3ComponentData = [
     rows: e3Rows,
     componentData: [],
     snapshotRows: 2,
-    subtotal: 0,
+    subtotal: '0',
   },
 ] as any;
 
@@ -329,35 +330,35 @@ const e3LookupExpansion = (comp: any) => {
 
 describe('E3 护栏 — 材料成本逐行 = 各列同行之和(field token)', () => {
   it('E3-1 — 行1: 材料成本 = 来料材料费(5) + 外购件材料费(2) = 7', () => {
-    const allComponentSubtotals: Record<string, number> = {};
+    const allComponentSubtotals: DecimalContext = {};
     const { store } = buildCrossTabRows(e3ComponentData, allComponentSubtotals, undefined, e3LookupExpansion);
 
     // store['ll_test'] 存各行已算公式值（含材料成本）
     // 行1：材料成本应为 7（同行相加）
     const row1 = store['ll_test']?.[0];
-    expect(row1?.['材料成本']).toBeCloseTo(7, 4);
+    expect(row1?.['材料成本']).toBe('7');
   });
 
   it('E3-2 — 行2: 材料成本 = 来料材料费(0) + 外购件材料费(3) = 3', () => {
-    const allComponentSubtotals: Record<string, number> = {};
+    const allComponentSubtotals: DecimalContext = {};
     const { store } = buildCrossTabRows(e3ComponentData, allComponentSubtotals, undefined, e3LookupExpansion);
 
     const row2 = store['ll_test']?.[1];
-    expect(row2?.['材料成本']).toBeCloseTo(3, 4);
+    expect(row2?.['材料成本']).toBe('3');
   });
 
   it('E3-3 — 列小计(is_subtotal=true): allComponentSubtotals["ll_test#材料成本"] = 10', () => {
-    const allComponentSubtotals: Record<string, number> = {};
+    const allComponentSubtotals: DecimalContext = {};
     buildCrossTabRows(e3ComponentData, allComponentSubtotals, undefined, e3LookupExpansion);
 
     // 列小计 = 行1(7) + 行2(3) = 10，不是整列标量×行数
-    expect(allComponentSubtotals['ll_test#材料成本']).toBeCloseTo(10, 4);
+    expect(allComponentSubtotals['ll_test#材料成本']).toBe('10');
   });
 
   it('E3-4 — 若回退到旧 component_subtotal 语义，材料成本行值应≠同行之和（回归检测）', () => {
     // 这个测试验证：field token 确实在逐行取行值，而非 component_subtotal 的全局标量。
     // 两行之和 7+3=10，若两行都等于某个标量 s，则 s≠7 且 s≠3 → 行间值不同 → 说明是同行取值
-    const allComponentSubtotals: Record<string, number> = {};
+    const allComponentSubtotals: DecimalContext = {};
     const { store } = buildCrossTabRows(e3ComponentData, allComponentSubtotals, undefined, e3LookupExpansion);
 
     const row1Val = store['ll_test']?.[0]?.['材料成本'];
@@ -366,7 +367,7 @@ describe('E3 护栏 — 材料成本逐行 = 各列同行之和(field token)', (
     // 行1≠行2（5+2=7 vs 0+3=3），若两行相等则是取了整列标量（旧 bug）
     expect(row1Val).not.toEqual(row2Val);
     // 且各行值与预期匹配
-    expect(row1Val).toBeCloseTo(7, 4);
-    expect(row2Val).toBeCloseTo(3, 4);
+    expect(row1Val).toBe('7');
+    expect(row2Val).toBe('3');
   });
 });

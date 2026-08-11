@@ -111,7 +111,7 @@ public class TemplateFormulaService {
             // P3(2026-06-26 perf):缓存已解析表达式。首存逐行 Excel 快照对同模板同公式重复 createExpression
             // (170 行 ×N 列),无 cache 时每次重新 parse JEXL → 占首存 S3 大头。cache 只缓存 AST,不改求值语义。
             .cache(512)
-            .arithmetic(new org.apache.commons.jexl3.JexlArithmetic(false, PrecisionPolicy.MC, PrecisionPolicy.DIVISION_SCALE))
+            .arithmetic(new com.cpq.common.DecimalJexlArithmetic())
             .create();
 
     @Inject
@@ -1019,13 +1019,55 @@ public class TemplateFormulaService {
             ctx.set("_fn", new RowFunctions());
 
             // 替换函数名
-            String jexl = rewriteRowFunctions(expression);
+            String jexl = decimalizeNumericLiterals(rewriteRowFunctions(expression));
             Object result = rowJexl.createExpression(jexl).evaluate(ctx);
             return normalizeResult(result);
         } catch (Exception e) {
             LOG.debugf("[Stage2] row expression eval failed: expr='%s', err=%s", expression, e.getMessage());
             return null;
         }
+    }
+
+    /** Add JEXL's BigDecimal suffix to numeric literals while preserving identifiers and quoted text. */
+    private static String decimalizeNumericLiterals(String expression) {
+        StringBuilder out = new StringBuilder(expression.length() + 8);
+        char quote = 0;
+        for (int i = 0; i < expression.length();) {
+            char ch = expression.charAt(i);
+            if (quote != 0) {
+                out.append(ch);
+                if (ch == quote && (i == 0 || expression.charAt(i - 1) != '\\')) quote = 0;
+                i++;
+                continue;
+            }
+            if (ch == '\'' || ch == '"') {
+                quote = ch;
+                out.append(ch);
+                i++;
+                continue;
+            }
+            boolean numberStart = Character.isDigit(ch)
+                    || (ch == '.' && i + 1 < expression.length()
+                    && Character.isDigit(expression.charAt(i + 1)));
+            if (numberStart && (i == 0 || !Character.isJavaIdentifierPart(expression.charAt(i - 1)))) {
+                int end = i + 1;
+                while (end < expression.length()) {
+                    char next = expression.charAt(end);
+                    if (!Character.isDigit(next) && next != '.') break;
+                    end++;
+                }
+                out.append(expression, i, end);
+                if (end >= expression.length()
+                        || (expression.charAt(end) != 'B' && expression.charAt(end) != 'b')) {
+                    out.append('B');
+                }
+                i = end;
+                continue;
+            }
+            out.append(ch);
+            i++;
+        }
+        return out.toString();
     }
 
     /** 重写行内函数：NULLIF → _fn.NULLIF, COALESCE → _fn.COALESCE, ABS → _fn.ABS, IF → _fn.IF */
@@ -1547,6 +1589,9 @@ public class TemplateFormulaService {
         if (v == null) return "0B";
         if (v instanceof FormulaError) return "0B";
         if (v instanceof BigDecimal bd) return bd.toPlainString() + "B";
+        if (v instanceof Double || v instanceof Float) {
+            throw new IllegalArgumentException("Precision-sensitive values must not use floating point");
+        }
         if (v instanceof Number n) return new BigDecimal(n.toString()).toPlainString() + "B";
         String s = v.toString().trim();
         try {
@@ -1560,6 +1605,9 @@ public class TemplateFormulaService {
     private BigDecimal toBigDecimal(Object v) {
         if (v == null) return null;
         if (v instanceof BigDecimal bd) return bd;
+        if (v instanceof Double || v instanceof Float) {
+            throw new IllegalArgumentException("Precision-sensitive values must not use floating point");
+        }
         if (v instanceof Number n) return new BigDecimal(n.toString());
         try { return new BigDecimal(v.toString().trim()); }
         catch (Exception e) { return null; }
@@ -1568,6 +1616,9 @@ public class TemplateFormulaService {
     private Object toJexlValue(Object v) {
         if (v == null) return null;
         if (v instanceof BigDecimal bd) return bd;
+        if (v instanceof Double || v instanceof Float) {
+            throw new IllegalArgumentException("Precision-sensitive values must not use floating point");
+        }
         if (v instanceof Number n) return new BigDecimal(n.toString());
         return v;
     }
@@ -1578,10 +1629,14 @@ public class TemplateFormulaService {
     }
 
     private static Object normalizeResult(Object v) {
-        if (v instanceof Double d) return BigDecimal.valueOf(d);
-        if (v instanceof Float f) return new BigDecimal(f.toString());
-        if (v instanceof Long l) return BigDecimal.valueOf(l);
-        if (v instanceof Integer i) return BigDecimal.valueOf(i);
+        if (v instanceof BigDecimal bd) {
+            return PrecisionPolicy.roundForCalculation(bd);
+        }
+        if (v instanceof Double || v instanceof Float) {
+            throw new IllegalArgumentException("Formula result must not use floating point");
+        }
+        if (v instanceof Long l) return PrecisionPolicy.roundForCalculation(BigDecimal.valueOf(l));
+        if (v instanceof Integer i) return PrecisionPolicy.roundForCalculation(BigDecimal.valueOf(i));
         return v;
     }
 
@@ -1598,8 +1653,8 @@ public class TemplateFormulaService {
     private boolean isTruthy(Object v) {
         if (v == null) return false;
         if (v instanceof Boolean b) return b;
-        if (v instanceof Number n) return n.doubleValue() != 0;
-        if (v instanceof BigDecimal bd) return bd.compareTo(BigDecimal.ZERO) != 0;
+        if (v instanceof BigDecimal bd) return bd.signum() != 0;
+        if (v instanceof Number n) return com.cpq.common.PrecisionPolicy.of(n).signum() != 0;
         String s = v.toString().trim();
         return !s.isEmpty() && !"0".equals(s) && !"false".equalsIgnoreCase(s);
     }
@@ -1750,8 +1805,8 @@ public class TemplateFormulaService {
         public Object IF(Object cond, Object thenVal, Object elseVal) {
             boolean c = false;
             if (cond instanceof Boolean b) c = b;
-            else if (cond instanceof Number n) c = n.doubleValue() != 0;
-            else if (cond instanceof BigDecimal bd) c = bd.compareTo(BigDecimal.ZERO) != 0;
+            else if (cond instanceof BigDecimal bd) c = bd.signum() != 0;
+            else if (cond instanceof Number n) c = new BigDecimal(n.toString()).signum() != 0;
             else if (cond != null) c = !"0".equals(cond.toString()) && !"false".equalsIgnoreCase(cond.toString());
             return c ? thenVal : elseVal;
         }

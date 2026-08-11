@@ -1,4 +1,5 @@
 import api from './api';
+import type { DecimalString } from '../utils/precision';
 
 export interface MaterialRecipeLite {
   id: string;
@@ -25,7 +26,7 @@ export interface MaterialRecipePart {
   sizeInfo?: string | null;
   productType?: string | null;          // SIMPLE / COMPOSITE
   statusCode?: string | null;           // Y / N
-  unitWeight?: number | null;
+  unitWeight?: DecimalString | null;
   materialRecipeId?: string | null;
   materialRecipeCode?: string | null;
   materialRecipeSymbol?: string | null;
@@ -62,9 +63,9 @@ export interface SuggestionCandidate {
 export interface MaterialRecipeElement {
   elementCode: string;
   elementName: string;
-  defaultPct: number;
-  minPct?: number;
-  maxPct?: number;
+  defaultPct: DecimalString;
+  minPct?: DecimalString;
+  maxPct?: DecimalString;
   isLocked: boolean;
   sortOrder: number;
 }
@@ -76,9 +77,9 @@ export interface MaterialRecipeDetail extends MaterialRecipeLite {
 export interface ExistingPartMaterialElement {
   elementCode: string;
   elementName: string;
-  pct: number;
-  minPct: number | null;
-  maxPct: number | null;
+  pct: DecimalString;
+  minPct: DecimalString | null;
+  maxPct: DecimalString | null;
   isLocked: boolean;
 }
 
@@ -105,9 +106,9 @@ export interface MaterialRecipeUpsertRequest {
   elements: Array<{
     elementCode: string;
     elementName: string;
-    defaultPct: number;
-    minPct?: number;
-    maxPct?: number;
+    defaultPct: DecimalString;
+    minPct?: DecimalString;
+    maxPct?: DecimalString;
     isLocked: boolean;
     sortOrder?: number;
   }>;

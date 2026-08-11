@@ -8,6 +8,7 @@ import { customerService } from '../../services/customerService';
 import { industryService } from '../../services/industryService';
 import { productCategoryService, type ProductCategory } from '../../services/productCategoryService';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
+import { formatDisplayDecimal, isDecimalString } from '../../utils/precision';
 
 const { Text } = Typography;
 
@@ -458,7 +459,7 @@ const CustomerManagement: React.FC = () => {
               <Text type="secondary" style={{ marginLeft: 16 }}>历史订单数：</Text>
               <Text strong>{editingCustomer.quotationCount ?? 'N/A'}</Text>
               <Text type="secondary" style={{ marginLeft: 16 }}>平均折扣率：</Text>
-              <Text strong>{editingCustomer.avgDiscountRate != null ? `${Number(editingCustomer.avgDiscountRate).toFixed(1)}%` : 'N/A'}</Text>
+              <Text strong>{isDecimalString(editingCustomer.avgDiscountRate) ? `${formatDisplayDecimal(editingCustomer.avgDiscountRate, 1)}%` : 'N/A'}</Text>
             </Space>
           )}
           <Form.Item name="creditLimit" label="信用额度">

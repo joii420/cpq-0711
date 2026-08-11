@@ -1,5 +1,7 @@
 // v0.4 3D 选配类型定义
 
+import type { DecimalString } from '../utils/precision';
+
 export type TemplateStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
 export type InstanceStatus = 'DRAFT' | 'SUBMITTED' | 'LINKED' | 'EXPIRED';
 export type OptionType = 'EXCLUSIVE' | 'MULTI_SELECT' | 'NUMERIC' | 'TEXT' | 'COLOR';
@@ -49,7 +51,7 @@ export interface ConfiguratorOptionValue {
   code: string;
   label: string;
   description?: string;
-  priceDelta: number;
+  priceDelta: DecimalString;
   sortOrder: number;
   partnoInclude: boolean;
   isActive: boolean;
@@ -76,8 +78,8 @@ export interface ConfiguratorInstance {
   shareToken?: string;
   selectedValues: Record<string, any>;
   configFingerprint?: string;
-  computedTotalPrice?: number;
-  basePrice?: number;
+  computedTotalPrice?: DecimalString;
+  basePrice?: DecimalString;
   status: InstanceStatus;
   linkedQuotationId?: string;
   linkedAt?: string;

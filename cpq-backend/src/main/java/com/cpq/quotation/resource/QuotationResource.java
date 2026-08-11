@@ -1,5 +1,6 @@
 package com.cpq.quotation.resource;
 
+import com.cpq.common.DecimalRequestValidator;
 import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.dto.PageResult;
 import com.cpq.common.exception.BusinessException;
@@ -123,6 +124,7 @@ public class QuotationResource {
     @PUT
     @Path("/{id}/draft")
     public ApiResponse<QuotationDTO> saveDraft(@PathParam("id") UUID id, SaveDraftRequest request) {
+        validateDraftDecimals(request);
         // [draft-profile] 分段埋点(2026-06-26):S1 saveDraft(全删全建+落库) / S2 snapshotQuotation(snapshot_rows)。
         //   卡片值不再在保存路径计算(已迁至 lazy ensureCardValues);重建行的旧卡片值由 saveDraft 内置 D-1 失效置 NULL,
         //   下次 ensureCardValues 的 IS NULL 谓词会重新选中并用最新 snapshot_rows 重算。日志前缀 [draft-profile] 便于过滤。
@@ -202,6 +204,7 @@ public class QuotationResource {
     @POST
     @Path("/{id}/ensure-card-values")
     public ApiResponse<QuotationDTO> ensureCardValues(@PathParam("id") UUID id) {
+        cardSnapshotService.ensureStructure(id);
         int r = cardSnapshotService.ensureCardValues(id);
         if (r == com.cpq.quotation.service.CardSnapshotService.WARMING_IN_PROGRESS) {
             // warm 在飞（未取到单飞锁）：返回轻量 warming 状态，不阻塞、不重算
@@ -223,6 +226,8 @@ public class QuotationResource {
     public ApiResponse<Map<String, Object>> editQuoteCardValue(
             @PathParam("lineItemId") UUID lineItemId, Map<String, Object> body) {
         if (body == null) throw new com.cpq.common.exception.BusinessException(400, "请求体不能为空");
+        DecimalRequestValidator.rejectNumericTokens(body.get("value"), "value");
+        DecimalRequestValidator.rejectNumericTokens(body.get("rowData"), "rowData");
         Object componentId = body.get("componentId");
         Object rowKey = body.get("rowKey");
         Object fieldName = body.get("fieldName");
@@ -253,6 +258,10 @@ public class QuotationResource {
         java.time.Instant reconciledAt = (body != null && body.reconciledAt != null)
                 ? body.reconciledAt : java.time.Instant.now();
         for (com.cpq.quotation.dto.ReconcileDiffEntry d : diffs) {
+            DecimalRequestValidator.rejectNumericTokens(d.frontendValue, "diffs.frontendValue");
+            DecimalRequestValidator.rejectNumericTokens(d.backendValue, "diffs.backendValue");
+            DecimalRequestValidator.rejectNumericTokens(d.frontendInputs, "diffs.frontendInputs");
+            DecimalRequestValidator.rejectNumericTokens(d.backendInputs, "diffs.backendInputs");
             LOG.warnf("[reconcile-diff] lineItemId=%s componentId=%s tabName=%s rowKey=%s fieldName=%s "
                     + "frontendValue=%s backendValue=%s frontendInputs=%s backendInputs=%s reconciledAt=%s",
                     lineItemId, d.componentId, d.tabName, d.rowKey, d.fieldName,
@@ -272,11 +281,25 @@ public class QuotationResource {
         if (body == null || body.get("originalAmount") == null) {
             throw new com.cpq.common.exception.BusinessException(400, "originalAmount is required");
         }
+        Object rawOriginalAmount = body.get("originalAmount");
+        if (!(rawOriginalAmount instanceof String)) {
+            DecimalRequestValidator.rejectNumericTokens(rawOriginalAmount, "originalAmount");
+            throw new com.cpq.common.exception.BusinessException(400,
+                    "originalAmount must be a decimal string; received " + rawOriginalAmount);
+        }
         BigDecimal originalAmount;
         try {
-            originalAmount = new BigDecimal(body.get("originalAmount").toString());
+            String raw = (String) rawOriginalAmount;
+            if (!raw.matches("[+-]?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?")) {
+                throw new NumberFormatException("non-plain decimal");
+            }
+            originalAmount = new BigDecimal(raw);
+            if (Math.max(originalAmount.scale(), 0) > com.cpq.common.PrecisionPolicy.CALCULATION_SCALE) {
+                throw new NumberFormatException("scale exceeds 12");
+            }
         } catch (NumberFormatException e) {
-            throw new com.cpq.common.exception.BusinessException(400, "originalAmount must be a number");
+            throw new com.cpq.common.exception.BusinessException(400,
+                    "originalAmount must be a plain decimal string with at most 12 fractional digits");
         }
         return ApiResponse.success(quotationService.calculateDiscount(id, originalAmount));
     }
@@ -643,6 +666,7 @@ public class QuotationResource {
     @Path("/{id}/excel-view/dry-run")
     public ApiResponse<Map<String, Object>> dryRunExcelView(@PathParam("id") UUID id,
                                                              ExcelDryRunRequest req) {
+        DecimalRequestValidator.rejectNumericTokens(req != null ? req.columns : null, "columns");
         return ApiResponse.success(excelViewService.dryRun(id,
                 req != null ? req.columns : null,
                 req != null ? req.templateId : null));
@@ -662,8 +686,44 @@ public class QuotationResource {
         }
         UUID lineItemId = UUID.fromString(lineItemIdObj.toString());
         String colKey = colKeyObj.toString();
+        DecimalRequestValidator.rejectNumericTokens(value, "value");
         excelViewService.updateExcelViewCell(id, lineItemId, colKey, value);
         return ApiResponse.success();
+    }
+
+    private static void validateDraftDecimals(SaveDraftRequest request) {
+        if (request == null || request.lineItems == null) {
+            return;
+        }
+        for (int lineIndex = 0; lineIndex < request.lineItems.size(); lineIndex++) {
+            SaveDraftRequest.LineItemDraft line = request.lineItems.get(lineIndex);
+            if (line == null) {
+                continue;
+            }
+            String linePath = "lineItems[" + lineIndex + "]";
+            DecimalRequestValidator.rejectNumericJsonTokens(
+                    line.productAttributeValues, linePath + ".productAttributeValues");
+            DecimalRequestValidator.rejectNumericJsonTokens(
+                    line.quoteExcelValues, linePath + ".quoteExcelValues");
+            if (line.componentData != null) {
+                for (int componentIndex = 0; componentIndex < line.componentData.size(); componentIndex++) {
+                    SaveDraftRequest.ComponentDataDraft component = line.componentData.get(componentIndex);
+                    if (component != null) {
+                        DecimalRequestValidator.rejectNumericJsonTokens(component.rowData,
+                                linePath + ".componentData[" + componentIndex + "].rowData");
+                    }
+                }
+            }
+            if (line.compositeProcesses != null) {
+                for (int processIndex = 0; processIndex < line.compositeProcesses.size(); processIndex++) {
+                    SaveDraftRequest.CompositeProcessDraft process = line.compositeProcesses.get(processIndex);
+                    if (process != null) {
+                        DecimalRequestValidator.rejectNumericTokens(process.paramValues,
+                                linePath + ".compositeProcesses[" + processIndex + "].paramValues");
+                    }
+                }
+            }
+        }
     }
 
     @GET

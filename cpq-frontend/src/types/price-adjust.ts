@@ -5,6 +5,8 @@
  * 屏 6~8 的类型待后续屏交付时再补。
  */
 
+import type { DecimalString } from '../utils/precision';
+
 export type CycleType = 'DAILY' | 'WEEKLY' | 'MONTHLY_DAY' | 'MONTHLY_NTH_WEEK';
 export type MaterialScopeMode = 'ALL' | 'SPECIFIED';
 /** 🔒 版本只有两态（§11.3.3）——不是原型早前的 4 态。 */
@@ -33,7 +35,7 @@ export interface PriceAdjustStrategyDTO {
   cycleNthWeek: number | null;
   executeTime: string; // HH:mm
   materialScopeMode: MaterialScopeMode;
-  costDiffThreshold: number;
+  costDiffThreshold: DecimalString;
   latestVersionNo: string | null;
   pendingVersionNo: string | null;
   materialCount: number;
@@ -51,7 +53,7 @@ export interface StrategySaveRequest {
   cycleNthWeek?: number | null;
   executeTime: string;
   materialScopeMode: MaterialScopeMode;
-  costDiffThreshold: number;
+  costDiffThreshold: DecimalString;
 }
 
 export interface BudgetRecomputeInfo {
@@ -104,8 +106,8 @@ export interface VersionColumnDTO {
 }
 
 export interface ElementPriceCellDTO {
-  unitPrice: number | null;
-  changeRate: number | null;
+  unitPrice: DecimalString | null;
+  changeRate: DecimalString | null;
   priceState: PriceCellState;
 }
 
@@ -182,7 +184,7 @@ export interface PriceAdjustColumnDef {
   id: string;
   kind: ColumnKind;
   sortOrder: number;
-  threshold: number;
+  threshold: DecimalString;
   quoteComponentId?: string;
   quoteMetric?: string;
   quoteLabel?: string;
@@ -251,9 +253,9 @@ export interface VersionDTO {
 export interface VersionItemDTO {
   elementCode: string;
   elementName: string;
-  currentPrice: number | null;
-  previousPrice: number | null;
-  changeRate: number | null;
+  currentPrice: DecimalString | null;
+  previousPrice: DecimalString | null;
+  changeRate: DecimalString | null;
   currency: string;
   priceUnit: string;
   noPrice: boolean;
@@ -279,11 +281,11 @@ export interface ReviewRowDTO {
   reviewStatus: ReviewStatus;
   basisQuotationNo: string | null;
   basisQuotationDate: string | null;
-  quoteCostCurrent: number | null;
-  quoteCostAdjusted: number | null;
-  costingCost: number | null;
-  diffCurrent: number | null;
-  diffAdjusted: number | null;
+  quoteCostCurrent: DecimalString | null;
+  quoteCostAdjusted: DecimalString | null;
+  costingCost: DecimalString | null;
+  diffCurrent: DecimalString | null;
+  diffAdjusted: DecimalString | null;
   /** 该料号所属模板系列的比对列总数 */
   columnCount: number;
   /** RED + MISSING 都计入 */
@@ -314,11 +316,11 @@ export interface ElementChangeDTO {
   elementCode: string;
   elementName: string;
   matchedRule: string;
-  previousPrice: number | null;
-  currentPrice: number | null;
-  changeRate: number | null;
-  usageQty: number | null;
-  unitPriceImpact: number | null;
+  previousPrice: DecimalString | null;
+  currentPrice: DecimalString | null;
+  changeRate: DecimalString | null;
+  usageQty: DecimalString | null;
+  unitPriceImpact: DecimalString | null;
   noPrice: boolean;
   inheritedFromPrevious: boolean;
 }
@@ -339,14 +341,14 @@ export type ComparisonMissingSide = 'QUOTE' | 'COSTING' | 'BOTH';
 export interface ComparisonColumnResultDTO {
   columnId: string;
   label: string;
-  threshold: number;
+  threshold: DecimalString;
   sortOrder: number;
-  quoteCurrent?: number | null;
-  quoteAdjusted?: number | null;
-  costingCurrent?: number | null;
-  costingAdjusted?: number | null;
-  diffCurrent?: number | null;
-  diffAdjusted?: number | null;
+  quoteCurrent?: DecimalString | null;
+  quoteAdjusted?: DecimalString | null;
+  costingCurrent?: DecimalString | null;
+  costingAdjusted?: DecimalString | null;
+  diffCurrent?: DecimalString | null;
+  diffAdjusted?: DecimalString | null;
   status: ComparisonCellStatus;
   /** status=MISSING 时标注缺失侧 */
   missingSide?: ComparisonMissingSide;
@@ -359,8 +361,8 @@ export interface ReviewQuotationDTO {
   status: string;
   /** 唯一一张判断依据单 */
   isBasis: boolean;
-  quoteSubtotalCurrent: number | null;
-  quoteSubtotalAdjusted: number | null;
+  quoteSubtotalCurrent: DecimalString | null;
+  quoteSubtotalAdjusted: DecimalString | null;
   /**
    * repair-0807 FR-5 新增：该行是否跑过试算。
    * false → 前端渲染「未试算」；true 且值为 null → 渲染「—」（试算跑了但拿不到值，属异常态）。
@@ -384,7 +386,7 @@ export interface ReviewDetailDTO {
   // 一、为什么变
   elementChanges: ElementChangeDTO[];
   /** 须与「调整后报价 − 现报价」对得上（财务自检位） */
-  elementImpactTotal: number;
+  elementImpactTotal: DecimalString;
 
   // 二、能不能接受
   templateSeriesId: string;
@@ -486,7 +488,7 @@ export interface UpdateJobItemDTO {
   errorCode?: string | null;
   errorMessage?: string | null;
   /** L3 升版口径守卫专用（errorCode=SUBTOTAL_MISMATCH 时有值） */
-  diffValue?: number | null;
+  diffValue?: DecimalString | null;
   retryCount: number;
   updatedAt: string;
 }
@@ -504,7 +506,7 @@ export interface PriceRevisionDTO {
   lastUpdatedAt: string;
   /** 同一 V 版内多次升版累积（裁决30：同期合并进同一个 R 版本） */
   upgradedMaterialNos: string[];
-  quoteTotalAmount: number;
+  quoteTotalAmount: DecimalString;
 }
 
 export type MaterialVersionState = 'UPGRADED' | 'REJECTED' | 'NOT_UPDATED' | 'NOT_PARTICIPATING';
@@ -536,5 +538,5 @@ export interface RevisionPreviewResponse {
   revisionNo: string;
   readonly: true;
   lineItems: RevisionPreviewLineItemDTO[];
-  quoteTotalAmount: number;
+  quoteTotalAmount: DecimalString;
 }

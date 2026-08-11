@@ -106,7 +106,7 @@ public class TabJoinPlanEvaluator {
             }
             total = t.sign >= 0 ? total.add(termVal) : total.subtract(termVal);
         }
-        return total;
+        return com.cpq.common.PrecisionPolicy.roundForCalculation(total);
     }
 
     private record Term(int sign, String text) {}
@@ -234,8 +234,12 @@ public class TabJoinPlanEvaluator {
 
     private java.math.BigDecimal toBig(Object v) {
         if (v == null) return java.math.BigDecimal.ZERO;
-        if (v instanceof java.math.BigDecimal b) return b;
-        try { return new java.math.BigDecimal(v.toString()); }
+        if (v instanceof java.math.BigDecimal b) {
+            return com.cpq.common.PrecisionPolicy.roundForCalculation(b);
+        }
+        try {
+            return com.cpq.common.PrecisionPolicy.roundForCalculation(new java.math.BigDecimal(v.toString()));
+        }
         catch (Exception e) { return java.math.BigDecimal.ZERO; }
     }
 

@@ -72,7 +72,7 @@ class UnitConversionTest {
     @Test
     void convertObjectRow_convertsConfiguredColumnByRowUnit() throws Exception {
         Map<String,Object> row = new HashMap<>();
-        row.put("重量", "500"); row.put("单位", "g"); row.put("数量", 3);
+        row.put("重量", "500"); row.put("单位", "g"); row.put("数量", new java.math.BigDecimal("3"));
         Map<String,Object> out = UnitConversion.convertObjectRow(fieldsJson(), row);
         assertEquals(0, new BigDecimal("0.5").compareTo(new BigDecimal(out.get("重量").toString())));
         assertEquals("g", out.get("单位"));

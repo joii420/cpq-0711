@@ -3,6 +3,8 @@ package com.cpq.quotation;
 import com.cpq.quotation.entity.Quotation;
 import com.cpq.quotation.snapshot.SnapshotCollectorService;
 import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.junit.QuarkusTestProfile;
+import io.quarkus.test.junit.TestProfile;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import jakarta.inject.Inject;
@@ -10,6 +12,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.*;
 
+import java.util.Map;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.*;
@@ -23,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>T1: submit DRAFT 报价单 → status=SUBMITTED, submission_snapshot 不为空</li>
  *   <li>T2: submit 后查 snapshot → 含 referencedVersions/elementActualPrices/formulaDefinitions/masterDataSnapshot</li>
  *   <li>T3: submit 后基础数据被改 → snapshot 内容不变（快照已冻结）</li>
- *   <li>T4: SUBMITTED 调 refreshVersions → 抛 409</li>
+ *   <li>T4: 已退役 refreshVersions 端点 → 404</li>
  *   <li>T5: DRAFT 调 submit 两次（submit 后撤回再提交） → 覆盖快照 OK</li>
  *   <li>T6: 已 SUBMITTED 状态直接调 submit 端点 → 抛 409</li>
  *   <li>T7: getFieldTrace path=lineItems[0].componentData[0].rowData.unit_price → 正确返回 fieldPath</li>
@@ -35,8 +38,16 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>测试环境：QuarkusTest（in-memory H2 + RBAC disabled）
  */
 @QuarkusTest
+@TestProfile(QuotationSnapshotTest.RbacOffProfile.class)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class QuotationSnapshotTest {
+
+    public static class RbacOffProfile implements QuarkusTestProfile {
+        @Override
+        public Map<String, String> getConfigOverrides() {
+            return Map.of("cpq.security.rbac.enabled", "false");
+        }
+    }
 
     @Inject
     EntityManager em;
@@ -135,14 +146,14 @@ class QuotationSnapshotTest {
 
     @Test
     @Order(4)
-    void T4_refreshVersions_onSubmitted_returns409() {
+    void T4_retiredRefreshVersionsEndpoint_returns404() {
         String quotationId = createAndSubmitQuotation();
 
         RestAssured.given()
                 .contentType(ContentType.JSON)
                 .post("/api/cpq/quotations/" + quotationId + "/refresh-versions")
                 .then()
-                .statusCode(anyOf(equalTo(409), equalTo(400)));
+                .statusCode(404);
     }
 
     // ── T5 ────────────────────────────────────────────────────────────────────

@@ -75,9 +75,12 @@ function buildComp(c: FixtureCase): ComponentDataItem {
 }
 
 function buildRows(c: FixtureCase): TreeFormulaRowInput[] {
+  const decimalize = (values?: Record<string, any>) => values && Object.fromEntries(
+    Object.entries(values).map(([key, value]) => [key, typeof value === 'number' ? String(value) : value]),
+  );
   return c.rows.map(r => ({
-    row: r.values ?? {},
-    basicDataValues: r.basicDataValues,
+    row: decimalize(r.values) ?? {},
+    basicDataValues: decimalize(r.basicDataValues),
     nodeId: r.nodeId,
     parentId: r.parentId ?? null,
     lvl: r.lvl,
@@ -102,7 +105,7 @@ describe('computeTabFormulasTree — 前后端共享夹具逐位比对（task-08
         const actualRow = out[rowIdx];
         expect(actualRow, `[${c.name}] 行 ${rowIdx} 在前端结果中缺失`).toBeDefined();
         for (const [field, expectedVal] of Object.entries(expectedRow)) {
-          expect(actualRow[field], `[${c.name}] 行 ${rowIdx} 列 [${field}]`).toBeCloseTo(expectedVal, 6);
+          expect(actualRow[field], `[${c.name}] 行 ${rowIdx} 列 [${field}]`).toBe(String(expectedVal));
         }
       }
     });

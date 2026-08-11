@@ -654,7 +654,9 @@ public class PriceAdjustReviewService {
         return em.createNativeQuery(
                 "SELECT q.id, li.id FROM quotation_line_item li JOIN quotation q ON q.id = li.quotation_id " +
                 "JOIN customer c ON c.id = q.customer_id " +
-                "WHERE c.code = :cno AND li.product_part_no_snapshot = :mno AND q.status = ANY(:statuses)")
+                "WHERE c.code = :cno AND li.product_part_no_snapshot = :mno " +
+                "AND (li.composite_type IS NULL OR li.composite_type <> 'PART') " +
+                "AND q.status = ANY(:statuses)")
             .setParameter("cno", customerNo).setParameter("mno", materialNo)
             .setParameter("statuses", ACTIVE_STATUSES.toArray(new String[0]))
             .getResultList();
@@ -665,7 +667,9 @@ public class PriceAdjustReviewService {
         return em.createNativeQuery(
                 "SELECT q.id, q.status FROM quotation_line_item li JOIN quotation q ON q.id = li.quotation_id " +
                 "JOIN customer c ON c.id = q.customer_id " +
-                "WHERE c.code = :cno AND li.product_part_no_snapshot = :mno AND NOT (q.status = ANY(:statuses))")
+                "WHERE c.code = :cno AND li.product_part_no_snapshot = :mno " +
+                "AND (li.composite_type IS NULL OR li.composite_type <> 'PART') " +
+                "AND NOT (q.status = ANY(:statuses))")
             .setParameter("cno", customerNo).setParameter("mno", materialNo)
             .setParameter("statuses", ACTIVE_STATUSES.toArray(new String[0]))
             .getResultList();

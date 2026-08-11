@@ -1,8 +1,37 @@
 import type { GlobalVariableDefinition } from '../services/globalVariableService';
 import { compileGlobalVariableTokenForRow } from '../services/globalVariableService';
-import { evaluateArithmetic } from './precision';
+import Decimal from 'decimal.js';
+import {
+  divideDecimal,
+  evaluateArithmetic,
+  isDecimalString,
+  normalizeDecimalString,
+  sumDecimal,
+  toCalculationString,
+  toDecimal,
+  type DecimalString,
+  type DecimalValue,
+  type PrecisionJsonValue,
+} from './precision';
 
 export type { GlobalVariableDefinition } from '../services/globalVariableService';
+
+export type DecimalContext = Record<string, DecimalValue>;
+export type PathFormulaContext = Record<string, PrecisionJsonValue | Decimal>;
+
+function decimalOrNull(value: unknown): Decimal | null {
+  if (value instanceof Decimal) return value.isFinite() ? value : null;
+  if (!isDecimalString(value)) return null;
+  const decimal = toDecimal(value);
+  return decimal.isFinite() ? decimal : null;
+}
+
+function numericToStr(value: unknown): DecimalString {
+  if (value == null || value === '') return '0';
+  if (typeof value === 'boolean') return value ? '1' : '0';
+  const decimal = decimalOrNull(value);
+  return decimal == null ? '0' : normalizeDecimalString(decimal);
+}
 
 export interface ExpressionToken {
   type: 'field' | 'operator' | 'bracket_open' | 'bracket_close' | 'number' | 'component_subtotal' | 'product_attribute' | 'quotation_field' | 'path' | 'global_variable' | 'previous_row_subtotal' | 'datasource_field' | 'cross_tab_ref' | 'b_field' | 'tree_ref' | 'tree_attr';
@@ -95,19 +124,18 @@ export function evalPredicate(
     : o.value;
   const lv = resolve(p.lhs), rv = resolve(p.rhs);
   const blank = (x: any) => x == null || String(x).trim() === '';
-  // 注：数字解析用 Number()，与后端 Double.valueOf 在 0x../类型后缀/"NaN" 等病态输入上口径略异；CPQ 业务数据(金额/数量/类型名)不会出现这些，沿用既有 keyEq/valEquals 容差，不额外收紧。
-  const num = (x: any) => { const n = Number(String(x).trim()); return isNaN(n) ? null : n; };
+  // 数值谓词统一经 Decimal 字符串入口解析，非法字面量按非数值处理。
   const eq = (): boolean => {
     if (blank(lv) || blank(rv)) return false;
-    const na = num(lv), nb = num(rv);
-    if (na !== null && nb !== null) return na === nb;
+    const na = decimalOrNull(lv), nb = decimalOrNull(rv);
+    if (na !== null && nb !== null) return na.equals(nb);
     return String(lv).trim() === String(rv).trim();
   };
   const cmp = (): number | null => {
     if (blank(lv) || blank(rv)) return null;
-    const na = num(lv), nb = num(rv);
+    const na = decimalOrNull(lv), nb = decimalOrNull(rv);
     if (na === null || nb === null) return null;
-    return na < nb ? -1 : na > nb ? 1 : 0;
+    return na.comparedTo(nb);
   };
   switch (p.op) {
     case '=': return eq();
@@ -139,7 +167,7 @@ export interface TreeEvalContext {
   isLeaf: (rowIndex: number) => boolean;
   /** 每行已解析的求值素材，供 targetExpr 在目标行（父/子）上下文求值。 */
   rowBundles: Array<{
-    fieldValues: Record<string, number>;
+    fieldValues: DecimalContext;
     basicDataValues?: Record<string, any>;
     currentRow?: Record<string, any>;
   }>;
@@ -150,7 +178,7 @@ export interface TreeEvalContext {
   rawPresent: Array<Record<string, boolean>>;
   /** 公式列名集合 —— 判据 6：被引用列若是公式列，恒视为有值。 */
   formulaColumns: Set<string>;
-  pathCache?: Record<string, number>;
+  pathCache?: PathFormulaContext;
   partNo?: string;
   globalVariableDefs?: Record<string, GlobalVariableDefinition>;
 }
@@ -185,16 +213,17 @@ function treeHasValue(ctx: TreeEvalContext, rowIdx: number, names: Set<string>):
   return false; // 判据 2：全部取不到值
 }
 
-/** C* 族聚合（SUM/AVG/MAX/MIN/COUNT）。与 cross_tab_ref 聚合口径一致（纯 JS number 精度，非 Decimal）。 */
-function aggregateTreeNums(agg: string, nums: number[]): number {
-  if (nums.length === 0) return 0;
+/** C* aggregate with the same Decimal contract as cross-tab aggregation. */
+function aggregateTreeNums(agg: string, values: DecimalValue[]): DecimalString {
+  if (values.length === 0) return '0';
+  const decimals = values.map(toDecimal);
   switch ((agg || 'SUM').toUpperCase()) {
-    case 'SUM': return nums.reduce((s, x) => s + x, 0);
-    case 'AVG': return nums.reduce((s, x) => s + x, 0) / nums.length;
-    case 'MAX': return Math.max(...nums);
-    case 'MIN': return Math.min(...nums);
-    case 'COUNT': return nums.length;
-    default: return 0;
+    case 'SUM': return toCalculationString(sumDecimal(decimals));
+    case 'AVG': return toCalculationString(divideDecimal(sumDecimal(decimals), String(decimals.length)));
+    case 'MAX': return toCalculationString(decimals.reduce((a, b) => Decimal.max(a, b)));
+    case 'MIN': return toCalculationString(decimals.reduce((a, b) => Decimal.min(a, b)));
+    case 'COUNT': return String(decimals.length);
+    default: return '0';
   }
 }
 
@@ -202,14 +231,14 @@ function aggregateTreeNums(agg: string, nums: number[]): number {
  * {@code tree_ref} 求值：dir=PARENT 取直接父行（PGET）；dir=CHILD 聚合直接子行（C* 族）。
  * 边界口径（需求 §4.3.3，全部返 0，无例外）：无树上下文 / 根行 PGET / 叶子行 C* / 子行全部无值 → 0。
  */
-function evalTreeRefToken(token: ExpressionToken, ctx: TreeEvalContext | undefined): number {
-  if (!ctx || ctx.rowIndex < 0 || ctx.rowIndex >= ctx.rowBundles.length) return 0;
+function evalTreeRefToken(token: ExpressionToken, ctx: TreeEvalContext | undefined): DecimalString {
+  if (!ctx || ctx.rowIndex < 0 || ctx.rowIndex >= ctx.rowBundles.length) return '0';
   const targetExpr = token.targetExpr;
-  if (!targetExpr || targetExpr.length === 0) return 0;
+  if (!targetExpr || targetExpr.length === 0) return '0';
 
   if (token.dir === 'PARENT') {
     const p = ctx.parentOf(ctx.rowIndex);
-    if (p < 0) return 0; // 根行（或父已墓碑/不在行集中）→ 0
+    if (p < 0) return '0'; // 根行（或父已墓碑/不在行集中）→ 0
     const pb = ctx.rowBundles[p];
     return evaluateExpression(
       targetExpr, pb.fieldValues, undefined, undefined, undefined,
@@ -217,13 +246,13 @@ function evalTreeRefToken(token: ExpressionToken, ctx: TreeEvalContext | undefin
       pb.currentRow, undefined, undefined, { ...ctx, rowIndex: p },
     );
   }
-  if (token.dir !== 'CHILD') return 0;
+  if (token.dir !== 'CHILD') return '0';
 
   const kids = ctx.childrenOf(ctx.rowIndex);
-  if (kids.length === 0) return 0; // 叶子行 → 0
+  if (kids.length === 0) return '0'; // 叶子行 → 0
 
   const names = collectTreeRefFieldNames(targetExpr);
-  const nums: number[] = [];
+  const nums: DecimalString[] = [];
   for (const c of kids) {
     if (!treeHasValue(ctx, c, names)) continue; // 空值不参与聚合
     const cb = ctx.rowBundles[c];
@@ -233,18 +262,18 @@ function evalTreeRefToken(token: ExpressionToken, ctx: TreeEvalContext | undefin
       cb.currentRow, undefined, undefined, { ...ctx, rowIndex: c },
     ));
   }
-  if (nums.length === 0) return 0; // 子行全部无值 → 0
+  if (nums.length === 0) return '0'; // 子行全部无值 → 0
   return aggregateTreeNums(token.agg ?? 'SUM', nums);
 }
 
 /** {@code tree_attr} 求值：层级 / 是否叶子 / 是否根。无树上下文 → 0。 */
-function evalTreeAttrToken(token: ExpressionToken, ctx: TreeEvalContext | undefined): number {
-  if (!ctx || ctx.rowIndex < 0) return 0;
+function evalTreeAttrToken(token: ExpressionToken, ctx: TreeEvalContext | undefined): DecimalString {
+  if (!ctx || ctx.rowIndex < 0) return '0';
   switch (token.attr) {
-    case 'LVL': return ctx.lvl(ctx.rowIndex);
-    case 'IS_LEAF': return ctx.isLeaf(ctx.rowIndex) ? 1 : 0;
-    case 'IS_ROOT': return ctx.isRoot(ctx.rowIndex) ? 1 : 0;
-    default: return 0;
+    case 'LVL': return String(ctx.lvl(ctx.rowIndex));
+    case 'IS_LEAF': return ctx.isLeaf(ctx.rowIndex) ? '1' : '0';
+    case 'IS_ROOT': return ctx.isRoot(ctx.rowIndex) ? '1' : '0';
+    default: return '0';
   }
 }
 
@@ -262,10 +291,10 @@ export function hasPathToken(tokens: ExpressionToken[]): boolean {
  * 这样设计是为了让所有现有 evaluateExpression 调用点不必改签名。
  * 缺点:跨页面切换需 hook 重写;实操中报价单是单页编辑,影响有限。
  */
-let _globalPathCache: Record<string, number> = {};
+let _globalPathCache: PathFormulaContext = {};
 let _globalPartNo: string | undefined = undefined;
 
-export function setGlobalPathCache(cache: Record<string, number>) {
+export function setGlobalPathCache(cache: PathFormulaContext) {
   _globalPathCache = cache;
 }
 
@@ -273,7 +302,7 @@ export function setGlobalPathPartNo(partNo: string | undefined) {
   _globalPartNo = partNo;
 }
 
-export function getGlobalPathCache(): Record<string, number> {
+export function getGlobalPathCache(): PathFormulaContext {
   return _globalPathCache;
 }
 
@@ -332,12 +361,12 @@ export function tokensToExpressionString(tokens: ExpressionToken[]): string {
 
 export function evaluateExpression(
   tokens: ExpressionToken[],
-  fieldValues: Record<string, number>,
-  componentSubtotals?: Record<string, number>,
-  productAttributes?: Record<string, number>,
-  quotationFields?: Record<string, number>,
+  fieldValues: DecimalContext,
+  componentSubtotals?: DecimalContext,
+  productAttributes?: DecimalContext,
+  quotationFields?: DecimalContext,
   /** path token 求值缓存,key = `${partNo}::${path}`(由 usePathFormulaCache 提供) */
-  pathCache?: Record<string, number>,
+  pathCache?: PathFormulaContext,
   /** 当前 LineItem 的料号(供 path token 拼 cache key 使用) */
   partNo?: string,
   /**
@@ -350,7 +379,7 @@ export function evaluateExpression(
    * ProductCard 按 row_index 顺序遍历求值时, 把上一行的 subtotal 结果传入.
    * 行 0 时未传入: token 走 fallback_component_code 取跨组件 subtotal, 或 0.
    */
-  previousRowSubtotal?: number,
+  previousRowSubtotal?: DecimalValue,
   /**
    * 动态 key 全局变量运行时 path 重写所需的 GV 定义字典 (code → def).
    * 向后兼容: 老调用点不传时动态 key token 兜底返 0 (旧行为).
@@ -393,14 +422,14 @@ export function evaluateExpression(
    * 原样透传（不并入 {@code aFieldValues}）。不传（老调用点）= undefined → 回落分支取不到值 → 行为
    * 与修复前一致（零破坏）。
    */
-  hostFieldValues?: Record<string, number>,
-): number {
+  hostFieldValues?: DecimalContext,
+): DecimalString {
   // Build expression string from tokens
   let expr = '';
   for (const token of tokens) {
     switch (token.type) {
       case 'field':
-        expr += (fieldValues[token.value!] ?? 0).toString();
+        expr += numericToStr(fieldValues[token.value!]);
         break;
       case 'b_field': {
         // repair-0803：宿主行原始值优先；键缺失时回落已算字段值（hostFieldValues）。
@@ -412,15 +441,11 @@ export function evaluateExpression(
         // 的宽松相等天然覆盖 undefined/null 两种"键缺失"形态）。
         const key = token.value ?? '';
         const raw = currentRow?.[key];
-        let bv: number;
         if (raw != null) {
-          const n = Number(raw);
-          bv = isNaN(n) ? 0 : n;
+          expr += numericToStr(raw);
         } else {
-          const hv = hostFieldValues?.[key];
-          bv = (typeof hv === 'number' && !isNaN(hv)) ? hv : 0;
+          expr += numericToStr(hostFieldValues?.[key]);
         }
-        expr += bv.toString();
         break;
       }
       case 'operator': {
@@ -441,59 +466,56 @@ export function evaluateExpression(
         // 优先查「组件#列名」列小计键（二阶列场景：token 引用本组件某 is_subtotal 列，
         // 而非整组件总小计）。value/tab_name 非空时才尝试列小计键，否则退回旧逻辑。
         // 旧逻辑：仅 component_code → 组件总小计（[alias(总计)] 无列名的整体引用仍走此路）。
-        const _colVal = token.value || token.tab_name;
-        const _colKey = token.component_code && _colVal
-          ? `${token.component_code}#${_colVal}`
-          : undefined;
-        const _resolvedSubtotal =
-          (_colKey !== undefined && componentSubtotals?.[_colKey] !== undefined
-            ? componentSubtotals[_colKey]
-            : undefined)
+        const column = token.value;
+        const candidateKeys = [
+          token.component_code && column ? `${token.component_code}#${column}` : undefined,
+          token.tab_name && column ? `${token.tab_name}#${column}` : undefined,
+          token.component_code && token.tab_name ? `${token.component_code}#${token.tab_name}` : undefined,
+        ].filter((key): key is string => Boolean(key));
+        const columnValue = candidateKeys
+          .map((key) => componentSubtotals?.[key])
+          .find((value) => value !== undefined);
+        const resolvedSubtotal = columnValue
           ?? componentSubtotals?.[token.component_code!]
           ?? componentSubtotals?.[token.tab_name!]
           ?? componentSubtotals?.[token.value!]
-          ?? 0;
-        expr += _resolvedSubtotal.toString();
+          ?? '0';
+        expr += numericToStr(resolvedSubtotal);
         break;
       }
       case 'previous_row_subtotal': {
         // 优先用调用方传入的上一行小计 (按 row_index 顺序累加场景);
         // 行 0 时未传入 → fallback_component_code 跨组件 subtotal 兜底.
-        let v: number = 0;
-        if (typeof previousRowSubtotal === 'number') {
-          v = previousRowSubtotal;
+        let value: DecimalValue = '0';
+        if (previousRowSubtotal !== undefined) {
+          value = previousRowSubtotal;
         } else if (token.fallback_component_code) {
-          v = componentSubtotals?.[token.fallback_component_code] ?? 0;
+          value = componentSubtotals?.[token.fallback_component_code] ?? '0';
         }
-        expr += v.toString();
+        expr += numericToStr(value);
         break;
       }
       case 'product_attribute':
-        expr += (productAttributes?.[token.attribute_name!] ?? 0).toString();
+        expr += numericToStr(productAttributes?.[token.attribute_name!]);
         break;
       case 'quotation_field':
-        expr += (quotationFields?.[token.value!] ?? 0).toString();
+        expr += numericToStr(quotationFields?.[token.value!]);
         break;
       case 'path': {
         // 优先级：driver 行级 basicDataValues > 显式 pathCache > 模块级 _globalPathCache。
         // basicDataValues 来自 useDriverExpansions 按行返回，确保多行 driver 展开时
         // 每行公式各自取自己那行的 BASIC_DATA 值（修复"所有行用第一行结果"）。
         const pathStr = token.path ?? token.value ?? '';
-        let resolved: number | undefined;
+        let resolved: DecimalValue | undefined;
         if (basicDataValues) {
           const lookup = pathStr.startsWith('{') && pathStr.endsWith('}')
             ? pathStr
             : `{${pathStr}}`;
           if (Object.prototype.hasOwnProperty.call(basicDataValues, lookup)) {
             const raw = basicDataValues[lookup];
-            if (typeof raw === 'number') {
-              resolved = raw;
-            } else if (raw != null) {
+            if (raw != null) {
               const first = Array.isArray(raw) ? raw[0] : raw;
-              const parsed = typeof first === 'string' ? parseFloat(first)
-                : typeof first === 'number' ? first
-                : NaN;
-              if (!isNaN(parsed)) resolved = parsed;
+              if (decimalOrNull(first) != null) resolved = first;
             }
           }
         }
@@ -502,16 +524,17 @@ export function evaluateExpression(
           const cache = pathCache ?? _globalPathCache;
           const key = `${usedPartNo}::${pathStr}`;
           const cached = cache?.[key];
-          if (typeof cached === 'number') resolved = cached;
+          const cachedDecimal = decimalOrNull(cached);
+          if (cachedDecimal != null) resolved = cachedDecimal;
         }
-        expr += (resolved ?? 0).toString();
+        expr += numericToStr(resolved);
         break;
       }
       case 'datasource_field': {
         // K1: 引用同行 DATA_SOURCE 字段的解析结果. token.name 字段名, 求值期 fieldValues[name]
         // 应已含 DATA_SOURCE 解析后的值 (computeAllFormulas 前置写入).
         const dsName = token.name ?? token.value ?? '';
-        expr += (fieldValues[dsName] ?? 0).toString();
+        expr += numericToStr(fieldValues[dsName]);
         break;
       }
       case 'cross_tab_ref': {
@@ -519,8 +542,8 @@ export function evaluateExpression(
         const keyEq = (av: any, bv: any): boolean => {
           const blank = (x: any) => x == null || String(x).trim() === '';
           if (blank(av) || blank(bv)) return false;
-          const na = Number(av), nb = Number(bv);
-          if (!isNaN(na) && !isNaN(nb)) return na === nb;
+          const na = decimalOrNull(av), nb = decimalOrNull(bv);
+          if (na !== null && nb !== null) return na.equals(nb);
           return String(av).trim() === String(bv).trim();
         };
 
@@ -539,13 +562,16 @@ export function evaluateExpression(
           agg: string,
           target: string | undefined,
           isProjectToHostKey: boolean,
-        ): { value: number | null; multiMatchErr: boolean } => {
+        ): { value: DecimalString | null; multiMatchErr: boolean } => {
           const hits = rows.filter((ar) =>
             matchPairs.every((p) => keyEq(ar[p.a], hostRow?.[p.b]))
             && evalPredicate(token.predicate, ar, hostRow ?? {})
           );
           const A = agg.toUpperCase();
-          const toNum = (v: any) => { const n = Number(v); return isNaN(n) ? null : n; };
+          const toValue = (value: unknown): DecimalString | null => {
+            const decimal = decimalOrNull(value);
+            return decimal == null ? null : normalizeDecimalString(decimal);
+          };
           const hasTE = !!(targetExpr && targetExpr.length > 0);
 
           // §4.3 多 source 广播: 粗 source >1 命中时的错误标志 (闭包)
@@ -555,8 +581,8 @@ export function evaluateExpression(
           // evalRowExpr: 对单驱动行 ar 求值 targetExpr，透传所有求值上下文。
           // currentRow 传 ar 使 KSUM 子 token(projectToHostKey) 按驱动行键塌缩；
           // b_field 取 ar[field] 等价于原宿主行（因 match key 字段值对齐）。
-          const evalRowExpr = (ar: Record<string, any>): number => {
-            const aFieldValues: Record<string, number> = {};
+          const evalRowExpr = (ar: Record<string, any>): DecimalString => {
+            const aFieldValues: DecimalContext = {};
 
             // §4.3 多 source 广播（仅当 token.sources 存在且含 ≥2 项时触发）:
             // N=1 / 无 sources / 纯 KSUM 容器路径 → 跳过，aFieldValues 完全同既有逻辑。
@@ -579,15 +605,21 @@ export function evaluateExpression(
                 }
                 // 恰好 1 命中 → 把该行所有数值列并入 aFieldValues（低优先级，后续被驱动行覆盖）
                 for (const k of Object.keys(hitRows[0])) {
-                  const n = Number(hitRows[0][k]);
-                  if (!isNaN(n)) aFieldValues[k] = n;
+                  const value = toValue(hitRows[0][k]);
+                  if (value != null) aFieldValues[k] = value;
                 }
               }
               // 步骤2: 放驱动行 ar 的列（高优先级，覆盖粗 source 同名列）
-              for (const k of Object.keys(ar)) { const n = Number(ar[k]); if (!isNaN(n)) aFieldValues[k] = n; }
+              for (const k of Object.keys(ar)) {
+                const value = toValue(ar[k]);
+                if (value != null) aFieldValues[k] = value;
+              }
             } else {
               // N=1 退化路径（无 sources / 纯 KSUM 容器）: 逐字保留旧逻辑，零变化
-              for (const k of Object.keys(ar)) { const n = Number(ar[k]); if (!isNaN(n)) aFieldValues[k] = n; }
+              for (const k of Object.keys(ar)) {
+                const value = toValue(ar[k]);
+                if (value != null) aFieldValues[k] = value;
+              }
             }
 
             // §4.3: 合并驱动行(ar)与宿主行(hostRow)作为递归的 currentRow。
@@ -608,13 +640,13 @@ export function evaluateExpression(
             );
           };
 
-          if (A === 'COUNT') return { value: hits.length, multiMatchErr: false };
+          if (A === 'COUNT') return { value: String(hits.length), multiMatchErr: false };
 
           if (A === 'NONE') {
             // ① NONE 旁路：保留原始"零变化"行为
-            if (hits.length === 0) return { value: 0, multiMatchErr: false };
-            if (hits.length > 1) return { value: 0, multiMatchErr: true };   // ERR 旁路
-            const v = hasTE ? evalRowExpr(hits[0]) : (toNum(hits[0][target ?? '']) ?? 0);
+            if (hits.length === 0) return { value: '0', multiMatchErr: false };
+            if (hits.length > 1) return { value: '0', multiMatchErr: true };   // ERR 旁路
+            const v = hasTE ? evalRowExpr(hits[0]) : (toValue(hits[0][target ?? '']) ?? '0');
             return { value: v, multiMatchErr: false };
           }
 
@@ -625,17 +657,18 @@ export function evaluateExpression(
               return { value: null, multiMatchErr: false };
             }
             // I-1: KSUM/KCOUNT 空集 → 0 (静默); 外层 SUM/AVG/... 空集 → 0 (旧行为不变)
-            return { value: 0, multiMatchErr: false };
+            return { value: '0', multiMatchErr: false };
           }
 
-          const nums = hasTE ? hits.map(evalRowExpr) : hits.map((h) => toNum(h[target ?? '']));
+          const nums = hasTE ? hits.map(evalRowExpr) : hits.map((h) => toValue(h[target ?? '']));
           // §4.3: 粗 source >1 命中时 multiSrcHitErr=true → 等价 multiMatchErr（整项塌 0 + crossTabError）
           if (multiSrcHitErr || nums.some((n) => n === null)) return { value: null, multiMatchErr: true };
-          const arr = nums as number[];
-          const v = A === 'SUM' ? arr.reduce((s, x) => s + x, 0)
-                  : A === 'AVG' ? arr.reduce((s, x) => s + x, 0) / arr.length
-                  : A === 'MAX' ? Math.max(...arr)
-                  : A === 'MIN' ? Math.min(...arr) : 0;
+          const values = (nums as DecimalString[]).map(toDecimal);
+          const total = sumDecimal(values);
+          const v = A === 'SUM' ? toCalculationString(total)
+                  : A === 'AVG' ? toCalculationString(divideDecimal(total, String(values.length)))
+                  : A === 'MAX' ? toCalculationString(values.reduce((a, b) => Decimal.max(a, b)))
+                  : A === 'MIN' ? toCalculationString(values.reduce((a, b) => Decimal.min(a, b))) : '0';
           return { value: v, multiMatchErr: false };
         };
 
@@ -677,7 +710,7 @@ export function evaluateExpression(
           const ref = src || tgt ? `[${src}${tgt ? '.' + tgt : ''}] ` : '';
           outDiag.crossTabError = `${ref}细项引用命中多行,请改用 SUM 等聚合(或引用「(总计)」)`;
         }
-        expr += crossTabError ? '(null.x)' : (r.value ?? 0).toString();
+        expr += crossTabError ? '(null.x)' : (r.value ?? '0');
         break;
       }
       case 'global_variable': {
@@ -694,9 +727,9 @@ export function evaluateExpression(
           if (gvCode && basicDataValues && Object.prototype.hasOwnProperty.call(basicDataValues, gvKey)) {
             const gvRaw = basicDataValues[gvKey];
             if (gvRaw != null && !(Array.isArray(gvRaw) && gvRaw.length === 0)) {
-              const gvNum = Number(Array.isArray(gvRaw) ? gvRaw[0] : gvRaw);
-              if (!isNaN(gvNum)) {
-                expr += String(gvNum);
+              const gvValue = Array.isArray(gvRaw) ? gvRaw[0] : gvRaw;
+              if (decimalOrNull(gvValue) != null) {
+                expr += numericToStr(gvValue);
                 break;
               }
             }
@@ -731,15 +764,13 @@ export function evaluateExpression(
           }
           expr += '0'; break;
         }
-        let resolved: number | undefined;
+        let resolved: DecimalValue | undefined;
         if (basicDataValues) {
           const lookup = pathStr.startsWith('{') && pathStr.endsWith('}') ? pathStr : `{${pathStr}}`;
           if (Object.prototype.hasOwnProperty.call(basicDataValues, lookup)) {
             const raw = basicDataValues[lookup];
             const first = Array.isArray(raw) ? raw[0] : raw;
-            const parsed = typeof first === 'number' ? first
-              : typeof first === 'string' ? parseFloat(first) : NaN;
-            if (!isNaN(parsed)) resolved = parsed;
+            if (decimalOrNull(first) != null) resolved = first;
           }
         }
         if (resolved === undefined) {
@@ -747,8 +778,9 @@ export function evaluateExpression(
           const cache = pathCache ?? _globalPathCache;
           const cacheKey = `${usedPartNo}::${pathStr}`;
           const cached = cache?.[cacheKey];
-          if (typeof cached === 'number') {
-            resolved = cached;
+          const cachedDecimal = decimalOrNull(cached);
+          if (cachedDecimal != null) {
+            resolved = cachedDecimal;
           } else {
             // 诊断: cache miss — 检查 key 格式是否正确、cache 是否已预热
             if (typeof window !== 'undefined' && (window as any).__GV_DEBUG__) {
@@ -761,7 +793,7 @@ export function evaluateExpression(
             }
           }
         }
-        expr += (resolved ?? 0).toString();
+        expr += numericToStr(resolved);
         break;
       }
       // task-0803：BOM 页签父子取值。求值结果当字面量追加（无树上下文 / 越界等一律 0，见 evalTreeRefToken/evalTreeAttrToken）。
@@ -779,7 +811,7 @@ export function evaluateExpression(
   // task-0801：十进制精确求值，替代 new Function（不再 eval 任意 JS，退化为纯算术解析器，
   // 更安全）。不再 toDecimalPlaces(4) 中途截断 —— 返回值可能带较长小数，这是预期行为
   // （中间不截断），由显示层 formatNumber（兜底 DISPLAY_SCALE=6）与 payload 规范化在边界处理。
-  // 本求值点对外承诺"始终返回 number"（不返回 null）：非法表达式沿用旧 catch→0 兜底语义。
+  // Formula nodes expose a canonical 12-place decimal string; invalid expressions remain zero.
   //
   // task-0729 B9 nz-001/nz-002（除零/0÷0 归零）merge master 时的处置（2026-08-03）：原来这里
   // 有一段独立的 !Number.isFinite(raw) 补丁，用于把 Infinity/NaN 归零。master 侧
@@ -789,11 +821,15 @@ export function evaluateExpression(
   // 5/0→0、0/0→0，两道防线完全覆盖原补丁的语义，故本次合并整体采用 master 一侧，原补丁作废
   // （见 merge-master-前端冲突预案.md §1 + formula-golden nz-001/nz-002 用例复测）。
   const result = evaluateArithmetic(expr);
-  return result === null ? 0 : result.toNumber();
+  return result === null ? '0' : toCalculationString(result);
 }
 
-export function isWithinTolerance(frontendValue: number, backendValue: number, tolerance = 0.01): boolean {
-  return Math.abs(frontendValue - backendValue) <= tolerance;
+export function isWithinTolerance(
+  frontendValue: DecimalValue,
+  backendValue: DecimalValue,
+  tolerance: DecimalValue = '0.000000000001',
+): boolean {
+  return toDecimal(frontendValue).minus(toDecimal(backendValue)).abs().lte(toDecimal(tolerance));
 }
 
 /**
@@ -830,7 +866,7 @@ export function evaluateListFormulaString(
   rowFieldValues: Record<string, any>,
   listItemColumns: Record<string, any>,
   sourceTable: string,
-  globalVarValues?: Record<string, number>,
+  globalVarValues?: DecimalContext,
   basicDataValues?: Record<string, any>,
   // 2026-05-20: LIST_FORMULA BNF path fallback partNo.
   // 含条件谓词的 BNF path (如 mat_bom[element_name='Sn'].net_qty) 在 driver expand 上下文
@@ -841,7 +877,7 @@ export function evaluateListFormulaString(
   // 2026-05-20: React state cache (来自 usePathFormulaCache 返值), 优先用于 fallback
   // 避免模块级 _globalPathCache 在 hook 还没 setGlobalPathCache 之前为空导致首渲染失败.
   pathCacheState?: Record<string, any>,
-): number | null {
+): DecimalString | null {
   if (!formula || !formula.trim()) return null;
   let expr = formula.trim();
 
@@ -870,7 +906,7 @@ export function evaluateListFormulaString(
     }
     // 全局变量 (老行为)
     const v = globalVarValues?.[trimmed];
-    return typeof v === 'number' ? String(v) : '0';
+    return numericToStr(v);
   });
 
   // 2. [token] → 数字字面量
@@ -902,13 +938,5 @@ export function evaluateListFormulaString(
   // task-0801：十进制精确求值，替代 new Function。不再 toDecimalPlaces(4) 中途截断
   // （中间不截断，由显示层/payload 规范化在边界处理）。非法表达式沿用既有约定返回 null。
   const result = evaluateArithmetic(expr);
-  return result === null ? null : result.toNumber();
-}
-
-function numericToStr(v: any): string {
-  if (v == null || v === '') return '0';
-  if (typeof v === 'number') return String(v);
-  if (typeof v === 'boolean') return v ? '1' : '0';
-  const n = parseFloat(String(v));
-  return isNaN(n) ? '0' : String(n);
+  return result === null ? null : toCalculationString(result);
 }

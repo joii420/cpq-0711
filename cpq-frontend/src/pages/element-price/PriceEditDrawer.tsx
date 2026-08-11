@@ -9,6 +9,7 @@ import type {
   CreatePriceRequest,
   UpdatePriceRequest,
 } from '../../types/element-price-strategy';
+import { normalizeDecimalString, toDecimal } from '../../utils/precision';
 
 /**
  * 价格编辑抽屉（480，二级） —— update-0724 · F3
@@ -68,7 +69,7 @@ const PriceEditDrawer: React.FC<Props> = ({ open, mode, editing, sources, onClos
     try {
       if (isEdit && editing) {
         const req: UpdatePriceRequest = {
-          price: values.price,
+          price: normalizeDecimalString(values.price),
           currency: values.currency,
           priceUnit: values.priceUnit,
         };
@@ -79,7 +80,7 @@ const PriceEditDrawer: React.FC<Props> = ({ open, mode, editing, sources, onClos
           elementCode: values.elementCode,
           sourceId: values.sourceId,
           priceDate: (values.priceDate as ReturnType<typeof dayjs>).format('YYYY-MM-DD'),
-          price: values.price,
+          price: normalizeDecimalString(values.price),
           currency: values.currency,
           priceUnit: values.priceUnit,
         };
@@ -163,13 +164,13 @@ const PriceEditDrawer: React.FC<Props> = ({ open, mode, editing, sources, onClos
           rules={[
             { required: true, message: '请输入单价' },
             {
-              validator: (_, v) => (v !== undefined && v !== null && Number(v) > 0)
+              validator: (_, v) => (v !== undefined && v !== null && toDecimal(v).greaterThan(0))
                 ? Promise.resolve()
                 : Promise.reject(new Error('单价必须大于 0')),
             },
           ]}
         >
-          <InputNumber style={{ width: '100%' }} min={0} precision={4} placeholder="请输入单价" />
+          <InputNumber<string> stringMode style={{ width: '100%' }} min="0" precision={4} placeholder="请输入单价" />
         </Form.Item>
         <Form.Item name="currency" label="货币" rules={[{ required: true, message: '请填写货币' }]}>
           <Input placeholder="如 CNY / USD" />

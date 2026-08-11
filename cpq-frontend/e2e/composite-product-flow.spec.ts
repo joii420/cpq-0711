@@ -45,6 +45,21 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { loginAsAdmin, isBackendUp } from './fixtures/auth';
+import {
+  PRECISION_PARTS,
+  assertAllTabsSettled,
+  assertFixtureQuotationLines,
+  assertPageLoadingSettled,
+  assertVisibleProductCards,
+  ensureCardValues,
+  findQuotationIdByNo,
+  getQuotation,
+  openQuotationStep2,
+  productCardByPartNo,
+  reloadQuotationStep2,
+} from './fixtures/precision';
+
+test.setTimeout(300_000);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirnameLocal = path.dirname(__filename);
@@ -103,7 +118,7 @@ test.beforeAll(async () => { backendUp = await isBackendUp(); });
 test('组合产品: 罗克韦尔 + v1.16 + 配件1(10110002 existing) + 配件2(custom AgCu90) + 组合工艺(铆接)', async ({ page }) => {
   // task-0712 F6：UI/数据契约已被 F5 明细表重构 + B6 组合工艺双轨收敛整体废弃，见文件头注释。
   // 待重写前统一 skip，避免在 CI/回归里长期显示为"失败"掩盖真正的新回归。
-  test.skip(true, 'task-0712 F5 明细表重构后本 spec 选择器/Tab 命名全部过时，待按文件头注释重写(见 dev-docs/task-0712-选配模板和报价单选配功能/)');
+  test.skip(true, 'LEGACY 固定跳过：task-0712 F5 已废弃本旧流程的选择器与 Tab 契约；仅保留历史行为，不属于 task-0810 TC-075 动态门禁');
   test.skip(!backendUp, '后端未启动');
 
   const consoleErrors: string[] = [];
@@ -351,4 +366,75 @@ test('组合产品: 罗克韦尔 + v1.16 + 配件1(10110002 existing) + 配件2(
   consoleErrors.slice(0, 10).forEach(e => console.log('  ERR: ' + e.slice(0, 200)));
 
   await shot(page, 'final');
+});
+
+test('TC-075 COMPOSITE · 确定性组合产品所有Tab无空白/清零/加载残留且往返行数稳定', async ({ page }) => {
+  if (!backendUp) throw new Error('后端未启动；TC-075 COMPOSITE 不允许跳过');
+  const quotationNo = process.env.PW_PRECISION_COMPOSITE_QUOTATION_NO;
+  if (!quotationNo) {
+    throw new Error('必须显式设置 PW_PRECISION_COMPOSITE_QUOTATION_NO，禁止随机选择组合产品业务单据');
+  }
+  await loginAsAdmin(page);
+  const quotationId = await findQuotationIdByNo(page, quotationNo);
+
+  const initialFingerprint = assertFixtureQuotationLines(await getQuotation(page, quotationId), true);
+  expect(initialFingerprint.map((line) => ({
+    partNo: line.partNo,
+    compositeType: line.compositeType,
+    sortOrder: line.sortOrder,
+    parentLineItemId: line.parentLineItemId,
+  })), 'COMPOSITE API 必须精确返回 parent + PART1 + PART2，且父子顺序稳定').toEqual([
+    { partNo: PRECISION_PARTS.composite, compositeType: 'COMPOSITE', sortOrder: 0, parentLineItemId: null },
+    { partNo: PRECISION_PARTS.partOne, compositeType: 'PART', sortOrder: 1, parentLineItemId: initialFingerprint[0].id },
+    { partNo: PRECISION_PARTS.partTwo, compositeType: 'PART', sortOrder: 2, parentLineItemId: initialFingerprint[0].id },
+  ]);
+
+  await openQuotationStep2(page, quotationId);
+  // 编辑 UI 按产品模型只渲染 COMPOSITE 父卡；PART1/PART2 由上面的真实 GET 精确验收，
+  // 禁止用全局 .first() 重复检查父卡来伪装三个产品卡均已覆盖。
+  await assertVisibleProductCards(page, [PRECISION_PARTS.composite]);
+  let parentCard = await productCardByPartNo(page, PRECISION_PARTS.composite);
+  const initialCardState = await assertAllTabsSettled(page, parentCard, {
+    exactRowsPerTab: 2,
+    verifyStableRows: true,
+  });
+
+  await reloadQuotationStep2(page);
+  await assertVisibleProductCards(page, [PRECISION_PARTS.composite]);
+  parentCard = await productCardByPartNo(page, PRECISION_PARTS.composite);
+  const refreshedCardState = await assertAllTabsSettled(page, parentCard, {
+    exactRowsPerTab: 2,
+    verifyStableRows: true,
+  });
+  expect(refreshedCardState, '刷新后父卡全部 Tab 行数、精度值、稳定值不得变化').toEqual(initialCardState);
+  await assertPageLoadingSettled(page, '刷新后的组合产品页面');
+  const refreshedQuotation = await ensureCardValues(page, quotationId, [
+    PRECISION_PARTS.composite,
+    PRECISION_PARTS.partOne,
+    PRECISION_PARTS.partTwo,
+  ]);
+  expect(
+    assertFixtureQuotationLines(refreshedQuotation, true),
+    '刷新后 parent/PART1/PART2 顺序、父子关系和全部报价/核价快照不得变化',
+  ).toEqual(initialFingerprint);
+
+  await page.goto('/quotations');
+  await openQuotationStep2(page, quotationId);
+  await assertVisibleProductCards(page, [PRECISION_PARTS.composite]);
+  parentCard = await productCardByPartNo(page, PRECISION_PARTS.composite);
+  const reopenedCardState = await assertAllTabsSettled(page, parentCard, {
+    exactRowsPerTab: 2,
+    verifyStableRows: true,
+  });
+  expect(reopenedCardState, '离开重开后父卡全部 Tab 行数、精度值、稳定值不得变化').toEqual(initialCardState);
+  await assertPageLoadingSettled(page, '离开重开后的组合产品页面');
+  const reopenedQuotation = await ensureCardValues(page, quotationId, [
+    PRECISION_PARTS.composite,
+    PRECISION_PARTS.partOne,
+    PRECISION_PARTS.partTwo,
+  ]);
+  expect(
+    assertFixtureQuotationLines(reopenedQuotation, true),
+    '离开重开后 parent/PART1/PART2 顺序、父子关系和全部报价/核价快照不得变化',
+  ).toEqual(initialFingerprint);
 });

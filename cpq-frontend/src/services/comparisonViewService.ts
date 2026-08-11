@@ -7,6 +7,7 @@
  * 组装/计算/着色由 ../pages/quotation/comparisonMapping.ts 纯函数完成。
  */
 import api from './api';
+import type { DecimalString } from '../utils/precision';
 
 export type ComparisonBucket = 'SALES' | 'FINANCE';
 export type MetricType = 'SUBTOTAL_FIELD' | 'TAB_TOTAL';
@@ -39,15 +40,15 @@ export interface ComparisonMetaDTO {
 /** api.md §2 — 单页签取值：页签合计 + 逐字段小计。 */
 export interface ComparisonTabValue {
   /** 页签合计（4 位口径）；缺失为 null/undefined。 */
-  tabTotal?: number | null;
+  tabTotal?: DecimalString | null;
   /** key = is_subtotal 字段名；缺失为 null/undefined。 */
-  subtotals?: Record<string, number | null> | null;
+  subtotals?: Record<string, DecimalString | null> | null;
 }
 
 /** api.md §2 — 单侧（报价/核价）取值。 */
 export interface ComparisonSideDTO {
   /** 产品卡片总计（2 位口径）。 */
-  productTotal?: number | null;
+  productTotal?: DecimalString | null;
   /** key = componentId（页签）。 */
   tabs?: Record<string, ComparisonTabValue> | null;
 }
@@ -76,7 +77,7 @@ export interface ColumnDef {
   /** 列顺序（追加到末尾 = 递增）。 */
   sortOrder: number;
   /** 差异阈值，默认 0。 */
-  threshold: number;
+  threshold: DecimalString;
 
   // kind=TAB_PAIR 时必填：
   quoteComponentId?: string;

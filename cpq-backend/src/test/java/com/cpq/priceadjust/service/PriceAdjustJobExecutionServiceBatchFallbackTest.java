@@ -64,7 +64,7 @@ class PriceAdjustJobExecutionServiceBatchFallbackTest {
     EntityManager em;
 
     private UUID templateAId, templateBId, templateCId;
-    private UUID componentAId, componentBId;
+    private UUID componentAId, componentBId, componentCId;
     private UUID quotationAId, quotationBId, quotationCId;
     private UUID lineItemAId, lineItemBId, lineItemCId;
     private UUID jobId;
@@ -85,10 +85,14 @@ class PriceAdjustJobExecutionServiceBatchFallbackTest {
                 .setParameter("id", qId).executeUpdate();
         }
         for (UUID tId : List.of(templateAId, templateBId, templateCId)) {
-            if (tId != null) em.createNativeQuery("DELETE FROM template WHERE id = :id")
-                .setParameter("id", tId).executeUpdate(); // cascades template_component
+            if (tId != null) {
+                em.createNativeQuery("DELETE FROM template_component_snapshot WHERE template_id = :id")
+                    .setParameter("id", tId).executeUpdate();
+                em.createNativeQuery("DELETE FROM template WHERE id = :id")
+                    .setParameter("id", tId).executeUpdate(); // cascades template_component
+            }
         }
-        for (UUID cId : List.of(componentAId, componentBId)) {
+        for (UUID cId : List.of(componentAId, componentBId, componentCId)) {
             if (cId != null) em.createNativeQuery("DELETE FROM component WHERE id = :id")
                 .setParameter("id", cId).executeUpdate(); // cascades component_sql_view
         }
@@ -125,7 +129,8 @@ class PriceAdjustJobExecutionServiceBatchFallbackTest {
 
         // ---- 模板 A（含树页签）：1 个必然失败的 driver 组件 ----
         templateAId = UUID.randomUUID();
-        em.createNativeQuery("INSERT INTO template (id, template_series_id, name) VALUES (:id, :sid, 'BF测试模板A')")
+        em.createNativeQuery("INSERT INTO template (id, template_series_id, name, status, components_snapshot, "
+                + "published_at) VALUES (:id, :sid, 'BF测试模板A', 'PUBLISHED', '[]', now())")
             .setParameter("id", templateAId).setParameter("sid", UUID.randomUUID()).executeUpdate();
         componentAId = UUID.randomUUID();
         String viewNameA = "bf_broken_view_" + componentAId.toString().replace("-", "");
@@ -140,14 +145,23 @@ class PriceAdjustJobExecutionServiceBatchFallbackTest {
             .setParameter("id", UUID.randomUUID()).setParameter("cid", componentAId).setParameter("vn", viewNameA)
             .setParameter("tpl", "SELECT * FROM this_table_definitely_does_not_exist_bf_test")
             .executeUpdate();
+        UUID templateComponentAId = UUID.randomUUID();
         em.createNativeQuery(
                 "INSERT INTO template_component (id, template_id, component_id, sort_order) VALUES (:id, :tid, :cid, 0)")
-            .setParameter("id", UUID.randomUUID()).setParameter("tid", templateAId).setParameter("cid", componentAId)
+            .setParameter("id", templateComponentAId).setParameter("tid", templateAId).setParameter("cid", componentAId)
             .executeUpdate();
+        insertTemplateComponentSnapshot(templateAId, templateComponentAId, componentAId,
+            "BF测试组件A", "TEST-BF-A-" + componentAId, "$" + viewNameA, true);
+        updateComponentsSnapshot(templateAId, componentAId, "BF测试组件A",
+            "TEST-BF-A-" + componentAId, "$" + viewNameA, true);
 
         // ---- 模板 B（含树页签）：1 个合法但恒 0 行的 driver 组件（render() 必然成功） ----
+        updateSqlViewSnapshot(templateAId, componentAId, viewNameA,
+            "SELECT * FROM this_table_definitely_does_not_exist_bf_test");
+
         templateBId = UUID.randomUUID();
-        em.createNativeQuery("INSERT INTO template (id, template_series_id, name) VALUES (:id, :sid, 'BF测试模板B')")
+        em.createNativeQuery("INSERT INTO template (id, template_series_id, name, status, components_snapshot, "
+                + "published_at) VALUES (:id, :sid, 'BF测试模板B', 'PUBLISHED', '[]', now())")
             .setParameter("id", templateBId).setParameter("sid", UUID.randomUUID()).executeUpdate();
         componentBId = UUID.randomUUID();
         String viewNameB = "bf_empty_view_" + componentBId.toString().replace("-", "");
@@ -162,15 +176,40 @@ class PriceAdjustJobExecutionServiceBatchFallbackTest {
             .setParameter("id", UUID.randomUUID()).setParameter("cid", componentBId).setParameter("vn", viewNameB)
             .setParameter("tpl", "SELECT 'x'::text AS material_no, NULL::text AS parent_no WHERE false")
             .executeUpdate();
+        UUID templateComponentBId = UUID.randomUUID();
         em.createNativeQuery(
                 "INSERT INTO template_component (id, template_id, component_id, sort_order) VALUES (:id, :tid, :cid, 0)")
-            .setParameter("id", UUID.randomUUID()).setParameter("tid", templateBId).setParameter("cid", componentBId)
+            .setParameter("id", templateComponentBId).setParameter("tid", templateBId).setParameter("cid", componentBId)
             .executeUpdate();
+        insertTemplateComponentSnapshot(templateBId, templateComponentBId, componentBId,
+            "BF测试组件B", "TEST-BF-B-" + componentBId, "$" + viewNameB, true);
+        updateComponentsSnapshot(templateBId, componentBId, "BF测试组件B",
+            "TEST-BF-B-" + componentBId, "$" + viewNameB, true);
 
         // ---- 模板 C（不含树页签）：无任何 driver 组件 ----
+        updateSqlViewSnapshot(templateBId, componentBId, viewNameB,
+            "SELECT 'x'::text AS material_no, NULL::text AS parent_no WHERE false");
+
         templateCId = UUID.randomUUID();
-        em.createNativeQuery("INSERT INTO template (id, template_series_id, name) VALUES (:id, :sid, 'BF测试模板C')")
+        em.createNativeQuery("INSERT INTO template (id, template_series_id, name, status, components_snapshot, "
+                + "published_at) VALUES (:id, :sid, 'BF测试模板C', 'PUBLISHED', '[]', now())")
             .setParameter("id", templateCId).setParameter("sid", UUID.randomUUID()).executeUpdate();
+        componentCId = UUID.randomUUID();
+        em.createNativeQuery(
+                "INSERT INTO component (id, name, code, fields, formulas, bom_recursive_expand) "
+                    + "VALUES (:id, 'BF测试组件C', :code, '[]', '[]', false)")
+            .setParameter("id", componentCId).setParameter("code", "TEST-BF-C-" + componentCId)
+            .executeUpdate();
+        UUID templateComponentCId = UUID.randomUUID();
+        em.createNativeQuery(
+                "INSERT INTO template_component (id, template_id, component_id, sort_order) "
+                    + "VALUES (:id, :tid, :cid, 0)")
+            .setParameter("id", templateComponentCId).setParameter("tid", templateCId)
+            .setParameter("cid", componentCId).executeUpdate();
+        insertTemplateComponentSnapshot(templateCId, templateComponentCId, componentCId,
+            "BF测试组件C", "TEST-BF-C-" + componentCId, null, false);
+        updateComponentsSnapshot(templateCId, componentCId, "BF测试组件C",
+            "TEST-BF-C-" + componentCId, null, false);
 
         // ---- 三张最小报价单 + 各一行，costing_card_template_id 分别指向 A / B / C ----
         quotationAId = UUID.randomUUID();
@@ -226,5 +265,50 @@ class PriceAdjustJobExecutionServiceBatchFallbackTest {
     private UUID firstExisting(String table) {
         Object id = em.createNativeQuery("SELECT id FROM " + table + " LIMIT 1").getSingleResult();
         return (UUID) id;
+    }
+
+    /** templateHasTreeTab 已收口到冻结读取器；fixture 同步写一份等价快照。 */
+    private void insertTemplateComponentSnapshot(UUID templateId, UUID templateComponentId,
+                                                 UUID componentId, String name, String code,
+                                                 String dataDriverPath, boolean recursive) {
+        em.createNativeQuery(
+                "INSERT INTO template_component_snapshot "
+                    + "(id, template_id, template_component_id, component_id, sort_order, component_name, "
+                    + "component_code, data_driver_path, bom_recursive_expand) "
+                    + "VALUES (:id, :tid, :tcid, :cid, 0, :name, :code, :path, :recursive)")
+            .setParameter("id", UUID.randomUUID())
+            .setParameter("tid", templateId)
+            .setParameter("tcid", templateComponentId)
+            .setParameter("cid", componentId)
+            .setParameter("name", name)
+            .setParameter("code", code)
+            .setParameter("path", dataDriverPath)
+            .setParameter("recursive", recursive)
+            .executeUpdate();
+    }
+
+    private void updateComponentsSnapshot(UUID templateId, UUID componentId, String name, String code,
+                                          String dataDriverPath, boolean recursive) {
+        String pathJson = dataDriverPath == null ? "null" : "\"" + dataDriverPath + "\"";
+        String snapshot = "[{\"componentId\":\"" + componentId + "\","
+            + "\"componentName\":\"" + name + "\",\"componentCode\":\"" + code + "\","
+            + "\"sortOrder\":0,\"dataDriverPath\":" + pathJson + ","
+            + "\"bomRecursiveExpand\":" + recursive + ",\"fields\":[],\"formulas\":[]}]";
+        em.createNativeQuery("UPDATE template SET components_snapshot=CAST(:snapshot AS jsonb) WHERE id=:id")
+            .setParameter("snapshot", snapshot).setParameter("id", templateId).executeUpdate();
+    }
+
+    private void updateSqlViewSnapshot(UUID templateId, UUID componentId,
+                                       String viewName, String sqlTemplate) {
+        em.createNativeQuery(
+                "UPDATE template SET sql_views_snapshot=jsonb_build_object("
+                    + "CAST(:viewKey AS text),jsonb_build_object("
+                    + "'sql_template',CAST(:sqlTemplate AS text),"
+                    + "'declared_columns','[]','required_variables',jsonb_build_array(),"
+                    + "'scope','COMPONENT')) WHERE id=:id")
+            .setParameter("viewKey", componentId + "::" + viewName)
+            .setParameter("sqlTemplate", sqlTemplate)
+            .setParameter("id", templateId)
+            .executeUpdate();
     }
 }

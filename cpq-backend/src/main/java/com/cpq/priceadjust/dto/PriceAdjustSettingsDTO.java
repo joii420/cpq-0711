@@ -1,5 +1,7 @@
 package com.cpq.priceadjust.dto;
 
+import com.cpq.common.DecimalStringDeserializer;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
@@ -15,6 +17,7 @@ import java.time.OffsetDateTime;
 public class PriceAdjustSettingsDTO {
 
     /** L3 升版口径守卫阈值（金额/元，E14-11）。PUT 请求体里 {@code null} = 不改动该项。 */
+    @JsonDeserialize(using = DecimalStringDeserializer.class)
     public BigDecimal subtotalGuardThreshold;
 
     /**

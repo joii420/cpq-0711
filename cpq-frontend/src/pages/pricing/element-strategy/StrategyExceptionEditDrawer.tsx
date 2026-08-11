@@ -6,6 +6,7 @@ import {
   METHOD_LABEL, UNIT_LABEL,
   type PriceSourceDTO, type StrategyDTO, type StrategyUpsertRequest, type PriceMethod, type WindowUnit,
 } from '../../../types/element-price-strategy';
+import { normalizeDecimalString } from '../../../utils/precision';
 
 /**
  * 元素级例外 新建/编辑抽屉（480） —— task-0722 · F6
@@ -37,12 +38,12 @@ const StrategyExceptionEditDrawer: React.FC<Props> = ({ open, customerNo, editin
         method: editing.method,
         windowNum: editing.windowNum,
         windowUnit: editing.windowUnit ?? 'DAY',
-        factor: editing.factor ?? 1,
-        premium: editing.premium ?? 0,
+        factor: editing.factor ?? '1',
+        premium: editing.premium ?? '0',
       });
     } else {
       form.resetFields();
-      form.setFieldsValue({ method: 'AVG', windowUnit: 'DAY', factor: 1, premium: 0 });
+      form.setFieldsValue({ method: 'AVG', windowUnit: 'DAY', factor: '1', premium: '0' });
     }
   }, [open, editing, form]);
 
@@ -61,8 +62,8 @@ const StrategyExceptionEditDrawer: React.FC<Props> = ({ open, customerNo, editin
         elementCode: editing ? editing.elementCode! : values.elementCode,
         sourceId: values.sourceId,
         method: values.method,
-        factor: values.factor ?? 1,
-        premium: values.premium ?? 0,
+        factor: normalizeDecimalString(values.factor ?? '1'),
+        premium: normalizeDecimalString(values.premium ?? '0'),
       };
       if (values.method !== 'LATEST') {
         req.windowNum = values.windowNum;
@@ -147,10 +148,10 @@ const StrategyExceptionEditDrawer: React.FC<Props> = ({ open, customerNo, editin
           </Space.Compact>
         </Form.Item>
         <Form.Item name="factor" label="系数" tooltip="默认 1">
-          <InputNumber style={{ width: '100%' }} min={0} />
+          <InputNumber<string> stringMode style={{ width: '100%' }} min="0" />
         </Form.Item>
         <Form.Item name="premium" label="加价" tooltip="默认 0">
-          <InputNumber style={{ width: '100%' }} />
+          <InputNumber<string> stringMode style={{ width: '100%' }} />
         </Form.Item>
       </Form>
     </Drawer>

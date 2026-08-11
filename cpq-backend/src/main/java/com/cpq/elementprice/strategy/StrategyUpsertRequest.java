@@ -1,5 +1,7 @@
 package com.cpq.elementprice.strategy;
 
+import com.cpq.common.DecimalStringDeserializer;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import java.math.BigDecimal;
 import java.util.UUID;
 
@@ -11,6 +13,8 @@ public class StrategyUpsertRequest {
     public String method;        // LATEST / AVG / MAX / MIN
     public Integer windowNum;
     public String windowUnit;    // DAY / WEEK / MONTH / YEAR
+    @JsonDeserialize(using = DecimalStringDeserializer.class)
     public BigDecimal factor;
+    @JsonDeserialize(using = DecimalStringDeserializer.class)
     public BigDecimal premium;
 }

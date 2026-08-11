@@ -241,7 +241,7 @@ class QuoteBomTreeEndToEndTest {
                 treeEntry.put("componentCode", treeComp.code);
                 treeEntry.put("componentType", "NORMAL");
                 treeEntry.put("tabName", "BOM树");
-                treeEntry.put("sortOrder", 0);
+                treeEntry.put("sortOrder", new java.math.BigDecimal("0"));
                 treeEntry.set("fields", M.readTree(treeComp.fields));
                 treeEntry.set("formulas", M.readTree(treeComp.formulas));
                 treeEntry.put("data_driver_path", treeComp.dataDriverPath);
@@ -253,7 +253,7 @@ class QuoteBomTreeEndToEndTest {
                 matEntry.put("componentCode", matComp.code);
                 matEntry.put("componentType", "NORMAL");
                 matEntry.put("tabName", "材质元素");
-                matEntry.put("sortOrder", 1);
+                matEntry.put("sortOrder", new java.math.BigDecimal("1"));
                 matEntry.set("fields", M.readTree(matComp.fields));
                 matEntry.set("formulas", M.readTree(matComp.formulas));
                 matEntry.put("data_driver_path", matComp.dataDriverPath);

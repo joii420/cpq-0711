@@ -157,6 +157,7 @@ public class GlobalVariableResource {
 
     public static class UpsertEntryRequest {
         public Map<String, Object> keyValues;
+        @com.fasterxml.jackson.databind.annotation.JsonDeserialize(using = com.cpq.common.DecimalStringDeserializer.class)
         public BigDecimal value;
         public String note;
     }

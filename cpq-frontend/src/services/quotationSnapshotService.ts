@@ -20,9 +20,9 @@ const MOCK_SNAPSHOT: SubmissionSnapshot = {
     { tableName: 'plating_fee', businessKey: 'HF001|CUST001', version: 'v1', displayName: 'HF001 电镀费 v1' },
   ],
   elementActualPrices: [
-    { elementName: '铜', price: 68.5, currency: 'CNY' },
-    { elementName: '铝', price: 22.3, currency: 'CNY' },
-    { elementName: '镍', price: 145.0, currency: 'CNY' },
+    { elementName: '铜', price: '68.5', currency: 'CNY' },
+    { elementName: '铝', price: '22.3', currency: 'CNY' },
+    { elementName: '镍', price: '145', currency: 'CNY' },
   ],
   formulaDefinitions: [
     {
@@ -45,10 +45,10 @@ const MOCK_SNAPSHOT: SubmissionSnapshot = {
     },
   ],
   masterDataSnapshot: [
-    { tableName: 'mat_process', fieldName: 'hourly_rate', value: 85, displayName: '加工工时费' },
-    { tableName: 'mat_fee', fieldName: 'scrap_rate', value: 0.05, displayName: '废品率' },
-    { tableName: 'plating_fee', fieldName: 'plating_rate', value: 12.5, displayName: '电镀费率' },
-    { tableName: 'element_price', fieldName: 'copper_price', value: 68.5, displayName: '铜价' },
+    { tableName: 'mat_process', fieldName: 'hourly_rate', value: '85', displayName: '加工工时费' },
+    { tableName: 'mat_fee', fieldName: 'scrap_rate', value: '0.05', displayName: '废品率' },
+    { tableName: 'plating_fee', fieldName: 'plating_rate', value: '12.5', displayName: '电镀费率' },
+    { tableName: 'element_price', fieldName: 'copper_price', value: '68.5', displayName: '铜价' },
   ],
 };
 
@@ -56,15 +56,15 @@ const MOCK_TRACE: Record<string, FieldTraceDTO> = {
   default: {
     fieldPath: 'lineItems[0].componentData[0].rowData.unit_price',
     fieldLabel: '综合单价',
-    currentValue: 125.6,
+    currentValue: '125.6',
     sourceType: 'FORMULA',
     referencedVersion: 'mat_process@v3',
     formula: 'mat_cost + process_cost + plating_cost + profit_margin',
     formulaInputs: {
-      mat_cost: 62.3,
-      process_cost: 28.5,
-      plating_cost: 12.5,
-      profit_margin: 22.3,
+      mat_cost: '62.3',
+      process_cost: '28.5',
+      plating_cost: '12.5',
+      profit_margin: '22.3',
     },
     lastModifiedBy: '张三',
     lastModifiedAt: '2026-04-28T10:30:00',

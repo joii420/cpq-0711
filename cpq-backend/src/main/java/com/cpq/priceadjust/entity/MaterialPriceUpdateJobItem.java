@@ -55,7 +55,7 @@ public class MaterialPriceUpdateJobItem extends PanacheEntityBase {
     @Column(name = "error_message", columnDefinition = "TEXT")
     public String errorMessage;
 
-    @Column(name = "diff_value", precision = 20, scale = 6)
+    @Column(name = "diff_value", precision = 26, scale = 12)
     public BigDecimal diffValue;
 
     /**

@@ -72,7 +72,7 @@ public class FormulaEngine {
                 .strict(false)
                 // P3(2026-06-26 perf):缓存已解析表达式(AST),避免逐行重复 parse;不改求值语义。
                 .cache(512)
-                .arithmetic(new JexlArithmetic(false, PrecisionPolicy.MC, PrecisionPolicy.DIVISION_SCALE))
+                .arithmetic(new com.cpq.common.DecimalJexlArithmetic())
                 .create();
     }
 
@@ -113,7 +113,7 @@ public class FormulaEngine {
         // Step 3: 走 JEXL 处理算术/逻辑运算
         //         函数调用通过 JEXL namespace 路由
         JexlContext jexlCtx = buildJexlContext(pathValues, ctx);
-        String jexlExpr = rewriteFunctionsForJexl(rewritten);
+        String jexlExpr = decimalizeNumericLiterals(rewriteFunctionsForJexl(rewritten));
 
         try {
             JexlExpression expr = jexl.createExpression(jexlExpr);
@@ -260,7 +260,7 @@ public class FormulaEngine {
         String argsStr = expr.substring(parenStart + 1, expr.lastIndexOf(')')).trim();
 
         List<Object> args = parseArgs(argsStr, pathValues, ctx);
-        return registry.invoke(funcName, args, ctx);
+        return normalizeResult(registry.invoke(funcName, args, ctx));
     }
 
     /**
@@ -292,7 +292,8 @@ public class FormulaEngine {
 
             // 子表达式：通过 JEXL 求值
             try {
-                JexlExpression argExpr = jexl.createExpression(rewriteFunctionsForJexl(trimPart));
+                JexlExpression argExpr = jexl.createExpression(
+                    decimalizeNumericLiterals(rewriteFunctionsForJexl(trimPart)));
                 Object val = argExpr.evaluate(jexlCtx);
                 result.add(normalizeResult(val));
             } catch (Exception e) {
@@ -320,12 +321,56 @@ public class FormulaEngine {
         return parts;
     }
 
+    /** Add the JEXL BigDecimal suffix to numeric literals while preserving quoted text. */
+    private static String decimalizeNumericLiterals(String expression) {
+        StringBuilder out = new StringBuilder(expression.length() + 8);
+        char quote = 0;
+        for (int i = 0; i < expression.length();) {
+            char ch = expression.charAt(i);
+            if (quote != 0) {
+                out.append(ch);
+                if (ch == quote && (i == 0 || expression.charAt(i - 1) != '\\')) quote = 0;
+                i++;
+                continue;
+            }
+            if (ch == '\'' || ch == '"') {
+                quote = ch;
+                out.append(ch);
+                i++;
+                continue;
+            }
+            boolean numberStart = Character.isDigit(ch)
+                || (ch == '.' && i + 1 < expression.length() && Character.isDigit(expression.charAt(i + 1)));
+            if (numberStart && (i == 0 || !Character.isJavaIdentifierPart(expression.charAt(i - 1)))) {
+                int end = i + 1;
+                while (end < expression.length()) {
+                    char n = expression.charAt(end);
+                    if (!Character.isDigit(n) && n != '.') break;
+                    end++;
+                }
+                out.append(expression, i, end);
+                if (end >= expression.length()
+                        || (expression.charAt(end) != 'B' && expression.charAt(end) != 'b')) {
+                    out.append('B');
+                }
+                i = end;
+                continue;
+            }
+            out.append(ch);
+            i++;
+        }
+        return out.toString();
+    }
+
     /** 将 JEXL 结果规范化（Number → BigDecimal）。 */
     private static Object normalizeResult(Object v) {
-        if (v instanceof Double d) return BigDecimal.valueOf(d);
-        if (v instanceof Float f) return new BigDecimal(f.toString());
-        if (v instanceof Long l) return BigDecimal.valueOf(l);
-        if (v instanceof Integer i) return BigDecimal.valueOf(i);
+        if (v instanceof BigDecimal bd) return PrecisionPolicy.roundForCalculation(bd);
+        if (v instanceof Double || v instanceof Float) {
+            throw new IllegalArgumentException("Formula values must not use floating point");
+        }
+        if (v instanceof Number n) {
+            return PrecisionPolicy.roundForCalculation(new BigDecimal(n.toString()));
+        }
         return v;
     }
 

@@ -5,6 +5,8 @@ import com.cpq.quotation.entity.QuotationViewStructure;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.junit.QuarkusTestProfile;
+import io.quarkus.test.junit.TestProfile;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import jakarta.inject.Inject;
@@ -15,6 +17,7 @@ import org.junit.jupiter.api.*;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.*;
@@ -40,8 +43,16 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * </ul>
  */
 @QuarkusTest
+@TestProfile(ComparisonViewResourceTest.RbacOffProfile.class)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class ComparisonViewResourceTest {
+
+    public static class RbacOffProfile implements QuarkusTestProfile {
+        @Override
+        public Map<String, String> getConfigOverrides() {
+            return Map.of("cpq.security.rbac.enabled", "false");
+        }
+    }
 
     @Inject
     EntityManager em;
@@ -373,11 +384,11 @@ class ComparisonViewResourceTest {
                 .then()
                 .statusCode(200)
                 .body("data.rows.find { it.partNo == 'CMPV-BOTH-1' }.presence", equalTo("BOTH"))
-                .body("data.rows.find { it.partNo == 'CMPV-BOTH-1' }.quote.productTotal", equalTo(150.50f))
-                .body("data.rows.find { it.partNo == 'CMPV-BOTH-1' }.quote.tabs['" + QUOTE_TAB_ID + "'].tabTotal", equalTo(100.1234f))
-                .body("data.rows.find { it.partNo == 'CMPV-BOTH-1' }.quote.tabs['" + QUOTE_TAB_ID + "'].subtotals['材料小计']", equalTo(100.1234f))
-                .body("data.rows.find { it.partNo == 'CMPV-BOTH-1' }.costing.productTotal", equalTo(90.0f))
-                .body("data.rows.find { it.partNo == 'CMPV-BOTH-1' }.costing.tabs['" + COSTING_TAB_ID + "'].subtotals['BOM成本']", equalTo(80.0f));
+                .body("data.rows.find { it.partNo == 'CMPV-BOTH-1' }.quote.productTotal", equalTo("150.5"))
+                .body("data.rows.find { it.partNo == 'CMPV-BOTH-1' }.quote.tabs['" + QUOTE_TAB_ID + "'].tabTotal", equalTo("100.1234"))
+                .body("data.rows.find { it.partNo == 'CMPV-BOTH-1' }.quote.tabs['" + QUOTE_TAB_ID + "'].subtotals['材料小计']", equalTo("100.1234"))
+                .body("data.rows.find { it.partNo == 'CMPV-BOTH-1' }.costing.productTotal", equalTo("90"))
+                .body("data.rows.find { it.partNo == 'CMPV-BOTH-1' }.costing.tabs['" + COSTING_TAB_ID + "'].subtotals['BOM成本']", equalTo("80"));
     }
 
     @Test
@@ -390,7 +401,7 @@ class ComparisonViewResourceTest {
                 .statusCode(200)
                 .body("data.rows.find { it.partNo == 'CMPV-QUOTE-ONLY-1' }.presence", equalTo("QUOTE_ONLY"))
                 .body("data.rows.find { it.partNo == 'CMPV-QUOTE-ONLY-1' }.costing", nullValue())
-                .body("data.rows.find { it.partNo == 'CMPV-QUOTE-ONLY-1' }.quote.productTotal", equalTo(60.0f));
+                .body("data.rows.find { it.partNo == 'CMPV-QUOTE-ONLY-1' }.quote.productTotal", equalTo("60"));
     }
 
     // ==========================================================================
@@ -407,42 +418,44 @@ class ComparisonViewResourceTest {
                 .statusCode(200)
                 // BOTH：核价侧应读 costingRender 覆盖值（88.8/99.9），而非 frozenDto 自带的（70.0/75.0）
                 .body("data.rows.find { it.partNo == 'CMPV-FZ-BOTH-1' }.presence", equalTo("BOTH"))
-                .body("data.rows.find { it.partNo == 'CMPV-FZ-BOTH-1' }.quote.productTotal", equalTo(130.0f))
-                .body("data.rows.find { it.partNo == 'CMPV-FZ-BOTH-1' }.costing.productTotal", equalTo(99.9f))
+                .body("data.rows.find { it.partNo == 'CMPV-FZ-BOTH-1' }.quote.productTotal", equalTo("130"))
+                .body("data.rows.find { it.partNo == 'CMPV-FZ-BOTH-1' }.costing.productTotal", equalTo("99.9"))
                 // QUOTE_ONLY
                 .body("data.rows.find { it.partNo == 'CMPV-FZ-QUOTE-ONLY-1' }.presence", equalTo("QUOTE_ONLY"))
                 .body("data.rows.find { it.partNo == 'CMPV-FZ-QUOTE-ONLY-1' }.costing", nullValue())
-                .body("data.rows.find { it.partNo == 'CMPV-FZ-QUOTE-ONLY-1' }.quote.productTotal", equalTo(25.0f))
+                .body("data.rows.find { it.partNo == 'CMPV-FZ-QUOTE-ONLY-1' }.quote.productTotal", equalTo("25"))
                 // COSTING_ONLY
                 .body("data.rows.find { it.partNo == 'CMPV-FZ-COSTING-ONLY-1' }.presence", equalTo("COSTING_ONLY"))
                 .body("data.rows.find { it.partNo == 'CMPV-FZ-COSTING-ONLY-1' }.quote", nullValue())
-                .body("data.rows.find { it.partNo == 'CMPV-FZ-COSTING-ONLY-1' }.costing.productTotal", equalTo(9.5f));
+                .body("data.rows.find { it.partNo == 'CMPV-FZ-COSTING-ONLY-1' }.costing.productTotal", equalTo("9.5"));
     }
 
     // ==========================================================================
-    // T_AC3_REAL: 真实共享 DB 数据核对（现读现算，不硬编码期望值）
+    // T_AC3_REAL: 本类确定性持久化数据核对（现读现算，不硬编码期望值）
     // ==========================================================================
 
     @Test
     @Order(9)
-    @DisplayName("AC-3(真实数据): 已提交报价单某产品行 productTotal 与库中 quote_card_values.tabs[SUBTOTAL].subtotal 逐值一致")
+    @DisplayName("AC-3(确定性持久化数据): productTotal 与库中 quote_card_values.tabs[SUBTOTAL].subtotal 逐值一致")
     void getData_live_realSubmittedQuotation_productTotalMatchesStoredJson() {
         @SuppressWarnings("unchecked")
         List<Object[]> rows = em.createNativeQuery(
                 "SELECT li.quotation_id, COALESCE((SELECT part_no FROM product WHERE id = li.product_id), " +
                 "li.product_part_no_snapshot) AS part_no, li.quote_card_values " +
                 "FROM quotation_line_item li " +
-                "WHERE li.quote_card_values IS NOT NULL AND li.costing_card_values IS NOT NULL " +
+                "WHERE li.quotation_id = :quotationId AND li.product_part_no_snapshot = 'CMPV-BOTH-1' " +
+                "  AND li.quote_card_values IS NOT NULL AND li.costing_card_values IS NOT NULL " +
                 "  AND jsonb_typeof(li.quote_card_values::jsonb->'tabs') = 'array' " +
                 "LIMIT 1")
+                .setParameter("quotationId", liveQuotationId)
                 .getResultList();
-        assumeTrue(!rows.isEmpty(), "需要共享 DB 中至少一条 quote_card_values/costing_card_values 均非空的真实产品行");
+        Assertions.assertFalse(rows.isEmpty(), "确定性 live fixture 必须包含 CMPV-BOTH-1");
 
         Object[] row = rows.get(0);
         UUID qId = (UUID) row[0];
         String partNo = (String) row[1];
         String quoteCardValuesJson = row[2].toString();
-        assumeTrue(partNo != null && !partNo.isBlank(), "该行需有可用料号");
+        Assertions.assertNotNull(partNo, "确定性行必须有料号");
 
         // 现算期望值：从库中原始 JSON 里找 componentType==SUBTOTAL 的 tab.subtotal（与
         // ComparisonViewService#extractSide 同一算法，独立实现校验，非直接复用被测代码）。
@@ -453,7 +466,7 @@ class ComparisonViewResourceTest {
                 if ("SUBTOTAL".equals(tab.path("componentType").asText(null))) {
                     JsonNode sub = tab.path("subtotal");
                     if (!sub.isMissingNode() && !sub.isNull()) {
-                        expectedProductTotal = BigDecimal.valueOf(sub.asDouble());
+                        expectedProductTotal = sub.decimalValue();
                     }
                     break;
                 }
@@ -461,12 +474,11 @@ class ComparisonViewResourceTest {
         } catch (Exception e) {
             Assertions.fail("解析真实 quote_card_values 失败: " + e.getMessage());
         }
-        assumeTrue(expectedProductTotal != null, "该行需有 SUBTOTAL tab 且带 subtotal");
+        Assertions.assertNotNull(expectedProductTotal, "确定性行必须有 SUBTOTAL tab 且带 subtotal");
 
         String body = RestAssured.given()
                 .when().get("/api/cpq/quotations/" + qId + "/comparison-view/data")
-                .then()
-                .statusCode(200)
+                .then().statusCode(200)
                 .extract().asString();
 
         JsonNode data;
@@ -486,7 +498,9 @@ class ComparisonViewResourceTest {
         JsonNode productTotalNode = matchedRow.path("quote").path("productTotal");
         Assertions.assertFalse(productTotalNode.isMissingNode() || productTotalNode.isNull(),
                 "AC-3: 真实料号 " + partNo + " 的 quote.productTotal 不应缺失");
-        BigDecimal actual = BigDecimal.valueOf(productTotalNode.asDouble());
+        Assertions.assertTrue(productTotalNode.isTextual(),
+                "AC-3: comparison-view precision values must be JSON strings");
+        BigDecimal actual = new BigDecimal(productTotalNode.textValue());
         Assertions.assertEquals(0, expectedProductTotal.compareTo(actual),
                 "AC-3 单源一致: data 端点 productTotal(" + actual + ") 应与库中 quote_card_values.tabs[SUBTOTAL].subtotal("
                         + expectedProductTotal + ") 逐值相等，料号=" + partNo);

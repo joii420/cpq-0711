@@ -21,23 +21,23 @@ const comp: any = {
     ] },
   ],
   rows: [
-    { 单价: 10, 数量: 2, 工时: 3, 费率: 5 },
-    { 单价: 4, 数量: 5, 工时: 1, 费率: 7 },
+    { 单价: '10', 数量: '2', 工时: '3', 费率: '5' },
+    { 单价: '4', 数量: '5', 工时: '1', 费率: '7' },
   ],
 };
 
 describe('computeTabSubtotalsByColumn', () => {
   it('每个小计列各自求和', () => {
     const byCol = computeTabSubtotalsByColumn(comp);
-    expect(byCol['材料费']).toBe(40); // 10*2 + 4*5
-    expect(byCol['加工费']).toBe(22); // 3*5 + 1*7
+    expect(byCol['材料费']).toBe('40'); // 10*2 + 4*5
+    expect(byCol['加工费']).toBe('22'); // 3*5 + 1*7
   });
 
   it('单小计列向后兼容', () => {
     const one = { ...comp, fields: comp.fields.filter((f: any) => f.name !== '加工费') };
     const byCol = computeTabSubtotalsByColumn(one);
     expect(Object.keys(byCol)).toEqual(['材料费']);
-    expect(byCol['材料费']).toBe(40);
+    expect(byCol['材料费']).toBe('40');
   });
 });
 
@@ -59,7 +59,7 @@ describe('computeProductSubtotal 多小计列', () => {
       productAttributes: [], productAttributeValues: {},
     };
     // 组件级小计 = 40 + 22 = 62（各小计列之和），经 SUBTOTAL 公式透传。
-    expect(computeProductSubtotal(item)).toBe(62);
+    expect(computeProductSubtotal(item)).toBe('62');
   });
 });
 
@@ -76,7 +76,7 @@ describe('computeProductSubtotal 无 SUBTOTAL 组件兜底', () => {
       formulas: [{ name: '元素小计', expression: [
         { type: 'field', value: '量' }, { type: 'operator', value: '*' }, { type: 'field', value: '价' },
       ] }],
-      rows: [{ 量: 3, 价: 10 }],  // 30
+      rows: [{ 量: '3', 价: '10' }],  // 30
     };
     const item: any = {
       productPartNo: 'P1',
@@ -87,7 +87,7 @@ describe('computeProductSubtotal 无 SUBTOTAL 组件兜底', () => {
       productAttributes: [], productAttributeValues: {},
     };
     // 期望 62 + 30 = 92（若三倍计会得 ~276）。
-    expect(computeProductSubtotal(item)).toBe(92);
+    expect(computeProductSubtotal(item)).toBe('92');
   });
 
   it('无任何小计列组件 → 0', () => {
@@ -99,6 +99,6 @@ describe('computeProductSubtotal 无 SUBTOTAL 组件兜底', () => {
       ],
       productAttributes: [], productAttributeValues: {},
     };
-    expect(computeProductSubtotal(item)).toBe(0);
+    expect(computeProductSubtotal(item)).toBe('0');
   });
 });

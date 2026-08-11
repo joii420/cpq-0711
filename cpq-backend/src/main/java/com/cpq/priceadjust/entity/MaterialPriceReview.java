@@ -63,7 +63,7 @@ public class MaterialPriceReview extends PanacheEntityBase {
     public String warnMessage;
 
     /** 守卫检出的差异绝对值 {@code |后端旧价重算 - li.subtotal|}。 */
-    @Column(name = "warn_diff", precision = 20, scale = 6)
+    @Column(name = "warn_diff", precision = 26, scale = 12)
     public java.math.BigDecimal warnDiff;
 
     @Column(name = "budget_error", columnDefinition = "TEXT")

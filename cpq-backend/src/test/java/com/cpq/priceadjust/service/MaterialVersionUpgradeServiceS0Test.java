@@ -120,6 +120,24 @@ class MaterialVersionUpgradeServiceS0Test {
 
     @Test
     @Transactional
+    void tc052_guardThreshold_usesExactBigDecimalBoundaryComparison() {
+        BigDecimal exactDiff = new BigDecimal("12345678901234.123456000000");
+        QuotationLineItem li = buildFixtureLi(exactDiff);
+
+        setEnabled(true, new BigDecimal("12345678901234.123456"));
+        assertNull(svc.evaluateSubtotalGuard(li),
+            "TC-052 diff equal to the six-decimal threshold must not breach");
+
+        setEnabled(true, new BigDecimal("12345678901234.123455"));
+        MaterialVersionUpgradeService.S0GuardOutcome breached = svc.evaluateSubtotalGuard(li);
+        assertNotNull(breached,
+            "TC-052 a 0.000001 boundary difference must breach without floating-point collapse");
+        assertEquals(0, exactDiff.compareTo(breached.diffValue),
+            "TC-052 guard must retain the exact BigDecimal diff");
+    }
+
+    @Test
+    @Transactional
     void guardEnabled_diffWithinThreshold_noWarn() {
         // 阈值调到极大，diff(=100) 落在阈值内 —— 验证打开状态下"未超阈值"分支仍不告警
         setEnabled(true, new BigDecimal("1000"));

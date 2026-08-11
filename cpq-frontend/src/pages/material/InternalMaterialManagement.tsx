@@ -5,6 +5,7 @@ import {
 import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import { materialMasterService, type MaterialMaster } from '../../services/materialMasterService';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
+import { formatDisplayDecimal, normalizeDecimalString, type DecimalString } from '../../utils/precision';
 
 const { Search } = Input;
 
@@ -61,12 +62,16 @@ const InternalMaterialManagement: React.FC = () => {
   };
 
   const handleSave = async (values: any) => {
+    const payload = {
+      ...values,
+      unitWeight: values.unitWeight == null ? null : normalizeDecimalString(values.unitWeight),
+    };
     try {
       if (editingRecord) {
-        await materialMasterService.update(editingRecord.id, values);
+        await materialMasterService.update(editingRecord.id, payload);
         message.success('更新成功');
       } else {
-        await materialMasterService.create(values);
+        await materialMasterService.create(payload);
         message.success('创建成功');
       }
       setDrawerOpen(false);
@@ -90,7 +95,7 @@ const InternalMaterialManagement: React.FC = () => {
     { title: '使用属性', dataIndex: 'usageProperty', key: 'usageProperty', width: 100 },
     {
       title: '单重', dataIndex: 'unitWeight', key: 'unitWeight', width: 100,
-      render: (v: number | null | undefined) => v != null ? Number(v).toString() : '—',
+      render: (v: DecimalString | null | undefined) => v != null ? formatDisplayDecimal(v, 6) : '—',
     },
     { title: '标准单位', dataIndex: 'standardUnit', key: 'standardUnit', width: 90 },
     { title: '老料号', dataIndex: 'oldMaterialNo', key: 'oldMaterialNo', width: 120, ellipsis: true },
@@ -175,7 +180,7 @@ const InternalMaterialManagement: React.FC = () => {
             <Select options={USAGE_PROPERTY_OPTIONS} allowClear placeholder="选择使用属性" />
           </Form.Item>
           <Form.Item name="unitWeight" label="单重">
-            <InputNumber style={{ width: '100%' }} precision={6} min={0} placeholder="数值, 6 位小数" />
+            <InputNumber<string> stringMode style={{ width: '100%' }} precision={6} min="0" placeholder="数值, 6 位小数" />
           </Form.Item>
           <Form.Item name="standardUnit" label="标准单位">
             <Input maxLength={20} placeholder="如 PCS / KG / 个" />

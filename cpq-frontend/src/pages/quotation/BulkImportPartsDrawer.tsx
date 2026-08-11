@@ -31,13 +31,17 @@ import { quotationService } from '../../services/quotationService';
 import { templateService } from '../../services/templateService';
 import type { LineItem, ComponentDataItem, ComponentField, ComponentFormula } from './QuotationStep2';
 import { genUUID } from '../../utils/uuid';
+import { formatNumber } from '../../utils/formatNumber';
+import type { DecimalString } from '../../utils/precision';
+import { tryParseSnapshotJsonLossless } from '../../utils/losslessJson';
+import { parseTemplateComponentsSnapshot } from './templateSnapshot';
 
 const { Text } = Typography;
 
 interface CustomerPartCandidate {
   partNo: string;
   partName?: string;
-  unitWeight?: number;
+  unitWeight?: DecimalString;
   weightUnit?: string;
   customerProductNo?: string;
   customerPartName?: string;
@@ -73,7 +77,7 @@ interface Props {
 function parseJsonSafe<T>(v: T | string | null | undefined, fallback: T): T {
   if (v == null) return fallback;
   if (typeof v === 'string') {
-    try { return JSON.parse(v) as T; } catch { return fallback; }
+    return tryParseSnapshotJsonLossless<T>(v) ?? fallback;
   }
   return v;
 }
@@ -120,7 +124,7 @@ function buildEmptyRow(fields: ComponentField[]): Record<string, any> {
  * @param tmpl 完整模板对象(GET /templates/{id} 返回的 data)
  */
 export function buildComponentDataFromTemplate(tmpl: any): ComponentDataItem[] {
-  const componentsSnapshot: any[] = parseJsonSafe(tmpl.componentsSnapshot, []);
+  const componentsSnapshot = parseTemplateComponentsSnapshot(tmpl.componentsSnapshot);
   return componentsSnapshot.map((comp: any) => {
     const fields: ComponentField[] = (comp.fields || []).map((f: any) => ({
       name: f.name || f.key || f.fieldKey || '',
@@ -170,7 +174,7 @@ export function buildComponentDataFromTemplate(tmpl: any): ComponentDataItem[] {
       formulaAssignments,
       dataDriverPath: comp.data_driver_path || comp.dataDriverPath || undefined,
       rows: compType !== 'NORMAL' ? [] : initialRows,
-      subtotal: 0,
+      subtotal: '0',
       // task-0721 F2：页签类型属性 + 料号列标识透传（新建产品首次加入报价单场景；
       // 后续保存/刷新会走 enrichComponentData，以 snapshot 为权威覆盖此处初值）
       tabType: comp.tab_type || comp.tabType || undefined,
@@ -237,7 +241,7 @@ export function buildLineItemFromTemplate(tmpl: any, part: CustomerPartCandidate
     productAttributeValues,
     productAttributes,
     componentData,
-    subtotal: 0,
+    subtotal: '0',
     subtotalFormula,
     // 导入来源标记:saveDraft 据此从该料号基础工序 seed 本行 quotation_line_process,
     // 使 [选配-工序列表] 与选配产品渲染一致(选配路径不设此标记,保持"没选工序=空")。
@@ -333,7 +337,7 @@ const BulkImportPartsDrawer: React.FC<Props> = ({
       dataIndex: 'unitWeight',
       key: 'unitWeight',
       width: 100,
-      render: (v, row) => v != null ? `${v} ${row.weightUnit ?? ''}` : '—',
+      render: (v, row) => v != null ? `${formatNumber(v) ?? '—'} ${row.weightUnit ?? ''}` : '—',
     },
     {
       title: '客户产品编号',

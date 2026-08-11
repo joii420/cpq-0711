@@ -1,5 +1,9 @@
 package com.cpq.costing.dto;
 
+import com.cpq.common.DecimalStringDeserializer;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -19,8 +23,12 @@ public class ComparisonExportRequest {
     }
 
     public static class Cell {
-        public Object quote;
-        public Object costing;
+        @JsonDeserialize(using = DecimalStringDeserializer.class)
+        public BigDecimal quote;
+
+        @JsonDeserialize(using = DecimalStringDeserializer.class)
+        public BigDecimal costing;
+
         public boolean highlighted;
     }
 

@@ -10,6 +10,7 @@ import {
 } from '../../services/v6MasterDataService';
 import type { MaterialBomItemDTO } from '../../services/v6MasterDataService';
 import V6BomItemDetailDrawer from './V6BomItemDetailDrawer';
+import { formatDisplayDecimal, type DecimalString } from '../../utils/precision';
 
 const { Text } = Typography;
 
@@ -125,7 +126,7 @@ const V6BomQueryTab: React.FC = () => {
       title: '序号',
       dataIndex: 'seqNo',
       width: 70,
-      render: (val: number) => val !== undefined && val !== null ? val : '—',
+      render: (val: DecimalString | null | undefined) => val != null ? formatDisplayDecimal(val) : '—',
     },
     {
       title: '系统类型',
@@ -178,7 +179,7 @@ const V6BomQueryTab: React.FC = () => {
       title: '组成数量',
       dataIndex: 'compositionQty',
       width: 90,
-      render: (val: number) => val !== undefined && val !== null ? val : '—',
+      render: (val: DecimalString | null | undefined) => val != null ? formatDisplayDecimal(val) : '—',
     },
     {
       title: '发料单位',

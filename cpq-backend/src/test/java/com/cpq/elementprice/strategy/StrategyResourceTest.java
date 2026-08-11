@@ -1,6 +1,8 @@
 package com.cpq.elementprice.strategy;
 
 import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.junit.QuarkusTestProfile;
+import io.quarkus.test.junit.TestProfile;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.UserTransaction;
@@ -9,6 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
+import java.util.Map;
 import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
@@ -21,8 +24,16 @@ import static org.hamcrest.Matchers.nullValue;
  * task-0722 · B8 策略 CRUD + 历史写入 / B9 历史查询与差异 / B10 试算。
  */
 @QuarkusTest
+@TestProfile(StrategyResourceTest.RbacOffProfile.class)
 @DisplayName("StrategyResource — task-0722 · B8/B9/B10")
 class StrategyResourceTest {
+
+    public static class RbacOffProfile implements QuarkusTestProfile {
+        @Override
+        public Map<String, String> getConfigOverrides() {
+            return Map.of("cpq.security.rbac.enabled", "false");
+        }
+    }
 
     private static final String BASE = "/api/cpq/element-price/strategies";
     private static final String CUSTOMER = "TEST-STRAT-CUST-1269";
@@ -42,15 +53,17 @@ class StrategyResourceTest {
         em.createNativeQuery("DELETE FROM element_daily_price WHERE element_name = :c").setParameter("c", ELEM).executeUpdate();
         em.createNativeQuery("DELETE FROM element_price_source WHERE source_name = 'TEST-STRAT-SRC'").executeUpdate();
         em.createNativeQuery("DELETE FROM element WHERE element_code = :c").setParameter("c", ELEM).executeUpdate();
-        em.createNativeQuery("DELETE FROM customer WHERE code = :c").setParameter("c", CUSTOMER).executeUpdate();
         em.createNativeQuery(
                 "INSERT INTO element (id, element_code, element_name, element_no, status, created_at, updated_at) " +
                 "VALUES (gen_random_uuid(), :c, '测试银3', 'TESTNO-ST', 'ACTIVE', NOW(), NOW())")
                 .setParameter("c", ELEM).executeUpdate();
-        em.createNativeQuery(
+        if (((Number) em.createNativeQuery("SELECT COUNT(*) FROM customer WHERE code = :code")
+                .setParameter("code", CUSTOMER).getSingleResult()).longValue() == 0) {
+            em.createNativeQuery(
                 "INSERT INTO customer (id, code, name, level, status, created_at, updated_at) " +
                 "VALUES (gen_random_uuid(), :code, 'B8策略测试客户', 'STANDARD', 'ACTIVE', NOW(), NOW())")
-                .setParameter("code", CUSTOMER).executeUpdate();
+                    .setParameter("code", CUSTOMER).executeUpdate();
+        }
         utx.commit();
 
         sourceId = UUID.fromString(given().contentType("application/json")
@@ -65,14 +78,14 @@ class StrategyResourceTest {
     @DisplayName("T1: 保存默认策略（新建）→ 200 + 同事务写 CREATE 历史")
     void saveDefaultCreatesAndLogs() {
         given().contentType("application/json").body("""
-                {"customerNo":"%s","sourceId":"%s","method":"AVG","windowNum":30,"windowUnit":"DAY","factor":1.05,"premium":2.00}
+                {"customerNo":"%s","sourceId":"%s","method":"AVG","windowNum":30,"windowUnit":"DAY","factor":"1.05","premium":"2.00"}
                 """.formatted(CUSTOMER, sourceId))
             .when().put(BASE + "/default")
             .then().statusCode(200)
                 .body("method", equalTo("AVG"))
                 .body("windowNum", equalTo(30))
-                .body("factor", equalTo(1.05f))
-                .body("premium", equalTo(2.00f));
+                .body("factor", equalTo("1.05"))
+                .body("premium", equalTo("2"));
 
         given().queryParam("customerNo", CUSTOMER).queryParam("elementCode", "__DEFAULT__")
             .when().get(BASE + "/history")
@@ -87,15 +100,15 @@ class StrategyResourceTest {
     @DisplayName("T2: 再次保存默认策略 → UPDATE + 历史只列变化项")
     void saveDefaultUpdatesAndDiffs() {
         given().contentType("application/json").body("""
-                {"customerNo":"%s","sourceId":"%s","method":"AVG","windowNum":30,"windowUnit":"DAY","factor":1.00,"premium":0.00}
+                {"customerNo":"%s","sourceId":"%s","method":"AVG","windowNum":30,"windowUnit":"DAY","factor":"1.00","premium":"0.00"}
                 """.formatted(CUSTOMER, sourceId))
             .when().put(BASE + "/default").then().statusCode(200);
 
         given().contentType("application/json").body("""
-                {"customerNo":"%s","sourceId":"%s","method":"AVG","windowNum":30,"windowUnit":"DAY","factor":1.05,"premium":0.00}
+                {"customerNo":"%s","sourceId":"%s","method":"AVG","windowNum":30,"windowUnit":"DAY","factor":"1.05","premium":"0.00"}
                 """.formatted(CUSTOMER, sourceId))
             .when().put(BASE + "/default").then().statusCode(200)
-                .body("factor", equalTo(1.05f));
+                .body("factor", equalTo("1.05"));
 
         given().queryParam("customerNo", CUSTOMER).queryParam("elementCode", "__DEFAULT__")
             .when().get(BASE + "/history")
@@ -132,6 +145,24 @@ class StrategyResourceTest {
             .then().statusCode(400);
     }
 
+    @Test
+    void numericFactorAndPremiumAreRejectedWithoutPartialWrites() {
+        long before = strategyCount();
+        for (String field : new String[]{"factor", "premium"}) {
+            String body = """
+                    {"customerNo":"%s","sourceId":"%s","method":"LATEST","%s":98765431.123456789012}
+                    """.formatted(CUSTOMER, sourceId, field);
+
+            given().contentType("application/json").body(body)
+                .when().put(BASE + "/default")
+                .then().statusCode(400)
+                    .body("attributeName", equalTo(field))
+                    .body("value", equalTo("98765431.123456789012"));
+            org.junit.jupiter.api.Assertions.assertEquals(before, strategyCount(),
+                    field + " numeric token must not persist a strategy");
+        }
+    }
+
     // ── B8: 例外 CRUD ──
 
     @Test
@@ -139,12 +170,12 @@ class StrategyResourceTest {
     void exceptionCrudAndConflict() {
         // 先建默认
         given().contentType("application/json").body("""
-                {"customerNo":"%s","sourceId":"%s","method":"AVG","windowNum":30,"windowUnit":"DAY","factor":1.05,"premium":2.00}
+                {"customerNo":"%s","sourceId":"%s","method":"AVG","windowNum":30,"windowUnit":"DAY","factor":"1.05","premium":"2.00"}
                 """.formatted(CUSTOMER, sourceId))
             .when().put(BASE + "/default").then().statusCode(200);
 
         String excId = given().contentType("application/json").body("""
-                {"customerNo":"%s","elementCode":"%s","sourceId":"%s","method":"LATEST","factor":1.00,"premium":0.00}
+                {"customerNo":"%s","elementCode":"%s","sourceId":"%s","method":"LATEST","factor":"1.00","premium":"0.00"}
                 """.formatted(CUSTOMER, ELEM, sourceId))
             .when().post(BASE + "/exceptions")
             .then().statusCode(200)
@@ -155,7 +186,7 @@ class StrategyResourceTest {
         given().queryParam("customerNo", CUSTOMER)
             .when().get(BASE)
             .then().statusCode(200)
-                .body("default.factor", equalTo(1.05f))
+                .body("default.factor", equalTo("1.05"))
                 .body("exceptions.elementCode", hasItem(ELEM));
 
         // 重复例外 → 409
@@ -243,7 +274,7 @@ class StrategyResourceTest {
     @DisplayName("T8: 试算（无 draft）留空兜底 — 窗口内无价 hasPrice=false, finalPrice=null")
     void simulateNoPriceLeavesBlank() {
         given().contentType("application/json").body("""
-                {"customerNo":"%s","sourceId":"%s","method":"AVG","windowNum":30,"windowUnit":"DAY","factor":1.05,"premium":2.00}
+                {"customerNo":"%s","sourceId":"%s","method":"AVG","windowNum":30,"windowUnit":"DAY","factor":"1.05","premium":"2.00"}
                 """.formatted(CUSTOMER, sourceId))
             .when().put(BASE + "/default").then().statusCode(200);
 
@@ -269,7 +300,7 @@ class StrategyResourceTest {
         utx.commit();
 
         given().contentType("application/json").body("""
-                {"customerNo":"%s","elementCode":"%s","sourceId":"%s","method":"LATEST","factor":1.10,"premium":5.00}
+                {"customerNo":"%s","elementCode":"%s","sourceId":"%s","method":"LATEST","factor":"1.10","premium":"5.00"}
                 """.formatted(CUSTOMER, ELEM, sourceId))
             .when().post(BASE + "/exceptions").then().statusCode(200);
 
@@ -280,21 +311,21 @@ class StrategyResourceTest {
             .then().statusCode(200)
                 .body("find { it.elementCode == '%s' }.hitRule".formatted(ELEM), equalTo("EXCEPTION"))
                 .body("find { it.elementCode == '%s' }.hasPrice".formatted(ELEM), equalTo(true))
-                .body("find { it.elementCode == '%s' }.rawValue".formatted(ELEM), equalTo(5820.0f))
+                .body("find { it.elementCode == '%s' }.rawValue".formatted(ELEM), equalTo("5820"))
                 // finalPrice = 5820 * 1.10 + 5.00 = 6407.0000
-                .body("find { it.elementCode == '%s' }.finalPrice".formatted(ELEM), equalTo(6407.0f));
+                .body("find { it.elementCode == '%s' }.finalPrice".formatted(ELEM), equalTo("6407"));
     }
 
     @Test
     @DisplayName("T10: 试算 draft（未保存草稿）不落库，读回策略仍是旧值")
     void simulateDraftDoesNotPersist() {
         given().contentType("application/json").body("""
-                {"customerNo":"%s","sourceId":"%s","method":"AVG","windowNum":30,"windowUnit":"DAY","factor":1.00,"premium":0.00}
+                {"customerNo":"%s","sourceId":"%s","method":"AVG","windowNum":30,"windowUnit":"DAY","factor":"1.00","premium":"0.00"}
                 """.formatted(CUSTOMER, sourceId))
             .when().put(BASE + "/default").then().statusCode(200);
 
         given().contentType("application/json").body("""
-                {"customerNo":"%s","baseDate":"%s","draft":{"default":{"customerNo":"%s","sourceId":"%s","method":"AVG","windowNum":30,"windowUnit":"DAY","factor":9.99,"premium":0}}}
+                {"customerNo":"%s","baseDate":"%s","draft":{"default":{"customerNo":"%s","sourceId":"%s","method":"AVG","windowNum":30,"windowUnit":"DAY","factor":"9.99","premium":"0"}}}
                 """.formatted(CUSTOMER, LocalDate.now(), CUSTOMER, sourceId))
             .when().post(BASE + "/simulate")
             .then().statusCode(200);
@@ -303,6 +334,13 @@ class StrategyResourceTest {
         given().queryParam("customerNo", CUSTOMER)
             .when().get(BASE)
             .then().statusCode(200)
-                .body("default.factor", equalTo(1.00f));
+                .body("default.factor", equalTo("1"));
+    }
+
+    private long strategyCount() {
+        return ((Number) em.createNativeQuery(
+                "SELECT COUNT(*) FROM element_price_strategy WHERE customer_no = :customerNo")
+                .setParameter("customerNo", CUSTOMER)
+                .getSingleResult()).longValue();
     }
 }

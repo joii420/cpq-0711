@@ -1,6 +1,7 @@
 import React from 'react';
 import { Drawer, Descriptions, Tag, Divider } from 'antd';
 import type { MaterialBomItemDTO } from '../../services/v6MasterDataService';
+import { formatDisplayDecimal, type DecimalString } from '../../utils/precision';
 
 interface Props {
   open: boolean;
@@ -17,8 +18,8 @@ const SYSTEM_TYPE_MAP: Record<string, { label: string; color: string }> = {
 const V6BomItemDetailDrawer: React.FC<Props> = ({ open, record, onClose }) => {
   const fmt = (val: any) =>
     val !== undefined && val !== null && val !== '' ? String(val) : '—';
-  const fmtNum = (val: number | undefined | null) =>
-    val !== undefined && val !== null ? val : '—';
+  const fmtNum = (val: DecimalString | undefined | null) =>
+    val != null ? formatDisplayDecimal(val) : '—';
   const fmtBool = (val: boolean | undefined | null) =>
     val === true ? (
       <Tag color="blue">是</Tag>
@@ -73,12 +74,12 @@ const V6BomItemDetailDrawer: React.FC<Props> = ({ open, record, onClose }) => {
             size="small"
             labelStyle={{ width: 120, fontWeight: 500 }}
           >
-            <Descriptions.Item label="序号">{fmtNum(record.seqNo)}</Descriptions.Item>
+            <Descriptions.Item label="序号">{fmt(record.seqNo)}</Descriptions.Item>
             <Descriptions.Item label="组件编号">{fmt(record.componentNo)}</Descriptions.Item>
             <Descriptions.Item label="零件号">{fmt(record.partNo)}</Descriptions.Item>
             <Descriptions.Item label="工序号">{fmt(record.operationNo)}</Descriptions.Item>
             <Descriptions.Item label="工序顺序">{fmt(record.operationSeq)}</Descriptions.Item>
-            <Descriptions.Item label="工序项次">{fmtNum(record.itemSeq)}</Descriptions.Item>
+            <Descriptions.Item label="工序项次">{fmt(record.itemSeq)}</Descriptions.Item>
             <Descriptions.Item label="生效日期">{fmt(record.effectiveDatetime)}</Descriptions.Item>
             <Descriptions.Item label="失效日期">{fmt(record.expireDatetime)}</Descriptions.Item>
           </Descriptions>
@@ -121,7 +122,7 @@ const V6BomItemDetailDrawer: React.FC<Props> = ({ open, record, onClose }) => {
             <Descriptions.Item label="是否可选">{fmtBool(record.isOptional)}</Descriptions.Item>
             <Descriptions.Item label="工单展开选项">{fmt(record.woExpandOption)}</Descriptions.Item>
             <Descriptions.Item label="是否采购替代">{fmtBool(record.isPurchaseReplace)}</Descriptions.Item>
-            <Descriptions.Item label="组件提前期">{fmtNum(record.componentLeadTime)}</Descriptions.Item>
+            <Descriptions.Item label="组件提前期">{fmt(record.componentLeadTime)}</Descriptions.Item>
             <Descriptions.Item label="主替代件">{fmt(record.mainSubstitute)}</Descriptions.Item>
             <Descriptions.Item label="附件件号">{fmt(record.attachedPart)}</Descriptions.Item>
             <Descriptions.Item label="ECN 号">{fmt(record.ecnNo)}</Descriptions.Item>

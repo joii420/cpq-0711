@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class NumberFormatUtilTest {
 
     @Test
-    void computedFallbackSix() {
+    void computedFallbackNine() {
         // task-0801：计算列未配兜底位数由 4 → 6（PrecisionPolicy.DISPLAY_SCALE）。
         // 2026-06-21 曾定为 4 位（本用例原名 computedFallbackFour），已被 task-0801 推翻作废，
         // 见 docs/RECORD.md 2026-08-01 记录 + 类注释。
@@ -19,10 +19,10 @@ class NumberFormatUtilTest {
         assertEquals("0.0774", NumberFormatUtil.format(new BigDecimal("0.07740"), null, true)); // 列小计真值，去尾零
         // 0.00005 只有 5 位小数，6 位兜底下不再被压缩（4 位兜底时曾 HALF_UP 成 0.0001）
         assertEquals("0.00005", NumberFormatUtil.format(new BigDecimal("0.00005"), null, true));
-        // G-6：第 7 位小数才触发 HALF_UP 向上进位（6 位边界）
-        assertEquals("0.000001", NumberFormatUtil.format(new BigDecimal("0.0000005"), null, true));
-        // G-5：规整到 6 位后为 0
-        assertEquals("0", NumberFormatUtil.format(new BigDecimal("0.0000004"), null, true));
+        assertEquals("1.234567891", NumberFormatUtil.format(new BigDecimal("1.2345678914"), null, true));
+        assertEquals("1.234567892", NumberFormatUtil.format(new BigDecimal("1.2345678915"), null, true));
+        assertEquals("0", NumberFormatUtil.format(new BigDecimal("0.0000000004"), null, true));
+        assertEquals("0.000000001", NumberFormatUtil.format(new BigDecimal("0.0000000005"), null, true));
     }
 
     @Test
@@ -40,6 +40,7 @@ class NumberFormatUtilTest {
     @Test
     void explicitOverrides() {
         assertEquals("6.98", NumberFormatUtil.format(new BigDecimal("6.9755"), 2, false));
+        assertEquals("1.234567891", NumberFormatUtil.format(new BigDecimal("1.234567891234"), 12, true));
     }
 
     @Test

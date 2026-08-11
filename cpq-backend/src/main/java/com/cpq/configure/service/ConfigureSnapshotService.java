@@ -22,6 +22,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -55,7 +56,7 @@ import java.util.UUID;
 public class ConfigureSnapshotService {
 
     private static final Logger LOG = Logger.getLogger(ConfigureSnapshotService.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = com.cpq.common.DecimalJacksonCustomizer.newMapper();
 
     @Inject
     EntityManager em;
@@ -766,17 +767,18 @@ public class ConfigureSnapshotService {
         if (a == null && b == null) return 0;
         if (a == null) return 1;   // null 排最后
         if (b == null) return -1;
-        Double da = tryNum(a), db = tryNum(b);
-        if (da != null && db != null) return Double.compare(da, db);
+        BigDecimal da = tryNum(a), db = tryNum(b);
+        if (da != null && db != null) return da.compareTo(db);
         return a.toString().compareTo(b.toString());
     }
 
-    private static Double tryNum(Object o) {
-        if (o instanceof Number n) return n.doubleValue();
+    private static BigDecimal tryNum(Object o) {
+        if (o instanceof BigDecimal bd) return bd;
+        if (o instanceof Number n) return new BigDecimal(n.toString());
         if (o == null) return null;
         String s = o.toString().trim();
         if (s.isEmpty()) return null;
-        try { return Double.parseDouble(s); } catch (Exception e) { return null; }
+        try { return new BigDecimal(s); } catch (Exception e) { return null; }
     }
 
     /**
@@ -1343,7 +1345,7 @@ public class ConfigureSnapshotService {
             order = compIds;
         }
 
-        Map<String, Double> componentSubtotals = new HashMap<>();
+        Map<String, BigDecimal> componentSubtotals = new HashMap<>();
         Map<String, List<Map<String, Object>>> crossTabRows = new HashMap<>();
 
         // ── 单趟拓扑序:依赖在前,引用在后 —— 引用方计算时其依赖小计 / cross-tab 行已就绪 ──
@@ -1450,13 +1452,11 @@ public class ConfigureSnapshotService {
      * 入参为换算后行(见 {@link #convertRowsForCrossTab}),与卡片 {@code backfillSubtotalsFromResolved} 求和用 canonical 一致。
      */
     private void accumulateColumnSubtotals(List<Map<String, Object>> rows, String code, String tabName,
-                                           Map<String, Double> componentSubtotals,
+                                           Map<String, BigDecimal> componentSubtotals,
                                            java.util.Set<String> amountCols) {
         if (rows == null) return;
         // task-0801 B4-2（审计发现，与 CardSnapshotService#backfillSubtotalsFromResolved 同一
-        // 根因的孪生方法）：累加过程改 BigDecimal 精确求和（原 double merge 几十行累加会有中间
-        // 误差），只在写回 componentSubtotals（Map<String,Double>，链路一约定承载类型不变）时才
-        // .doubleValue()。
+        // 根因的孪生方法）：累加过程和 componentSubtotals 均使用 BigDecimal，禁止浮点中转。
         Map<String, java.math.BigDecimal> colSums = new LinkedHashMap<>();
         for (Map<String, Object> row : rows) {
             if (row == null) continue;
@@ -1466,12 +1466,12 @@ public class ConfigureSnapshotService {
                 }
             }
         }
-        double amountTotal = 0.0;
+        BigDecimal amountTotal = BigDecimal.ZERO;
         for (Map.Entry<String, java.math.BigDecimal> e : colSums.entrySet()) {
-            double v = e.getValue().doubleValue();
+            BigDecimal v = e.getValue();
             if (code != null && !code.isBlank()) componentSubtotals.put(code + "#" + e.getKey(), v);
             if (tabName != null && !tabName.isBlank()) componentSubtotals.put(tabName + "#" + e.getKey(), v);
-            if (amountCols != null && amountCols.contains(e.getKey())) amountTotal += v;
+            if (amountCols != null && amountCols.contains(e.getKey())) amountTotal = amountTotal.add(v);
         }
         // BL-0017 哨兵键(加性,不动裸键):code#__amount_total__ / tabName#__amount_total__ = Σ金额列。
         String akey = com.cpq.quotation.service.card.ComponentDataEffectiveRows.AMOUNT_TOTAL_KEY;

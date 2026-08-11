@@ -4,6 +4,7 @@ import dayjs, { type Dayjs } from 'dayjs';
 import { elementPriceStrategyService } from '../../../services/elementPriceStrategyService';
 import { formatMethod, formatWindow } from './strategyFormat';
 import type { StrategyHistoryDTO, PageResult } from '../../../types/element-price-strategy';
+import { formatDisplayDecimal } from '../../../utils/precision';
 
 const { RangePicker } = DatePicker;
 const PAGE_SIZE = 20;
@@ -76,7 +77,7 @@ const StrategyHistoryDrawer: React.FC<Props> = ({ open, onClose, customerNo, cus
     <div style={{ lineHeight: 1.9 }}>
       价格源：<b>{String(snap.sourceName ?? '—')}</b><br />
       取值方式：<b>{formatMethod(snap.method as any)}</b>　窗口：<b>{formatWindow(snap.windowNum as any, snap.windowUnit as any)}</b><br />
-      系数：<b>{snap.factor !== undefined ? Number(snap.factor).toFixed(2) : '—'}</b>　加价：<b>{snap.premium !== undefined ? Number(snap.premium).toFixed(2) : '—'}</b>
+      系数：<b>{snap.factor !== undefined ? formatDisplayDecimal(snap.factor, 2) : '—'}</b>　加价：<b>{snap.premium !== undefined ? formatDisplayDecimal(snap.premium, 2) : '—'}</b>
     </div>
   );
 
@@ -99,7 +100,7 @@ const StrategyHistoryDrawer: React.FC<Props> = ({ open, onClose, customerNo, cus
     const snap = r.snapshot;
     return (
       <div style={{ fontSize: 12 }}>
-        删除前：{String(snap.sourceName ?? '—')} · {formatMethod(snap.method as any)} · {formatWindow(snap.windowNum as any, snap.windowUnit as any)} · ×{snap.factor !== undefined ? Number(snap.factor).toFixed(2) : '—'} +{snap.premium !== undefined ? Number(snap.premium).toFixed(2) : '—'}
+        删除前：{String(snap.sourceName ?? '—')} · {formatMethod(snap.method as any)} · {formatWindow(snap.windowNum as any, snap.windowUnit as any)} · ×{snap.factor !== undefined ? formatDisplayDecimal(snap.factor, 2) : '—'} +{snap.premium !== undefined ? formatDisplayDecimal(snap.premium, 2) : '—'}
       </div>
     );
   };

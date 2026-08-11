@@ -22,9 +22,10 @@ class PrecisionPolicyTest {
     // ======================================================================
 
     @Test
-    @DisplayName("T5: DISPLAY_SCALE == 6")
-    void displayScaleIsSix() {
-        assertEquals(6, PrecisionPolicy.DISPLAY_SCALE);
+    @DisplayName("CALCULATION_SCALE == 12, DISPLAY_SCALE == 9")
+    void calculationAndDisplayScales() {
+        assertEquals(12, PrecisionPolicy.CALCULATION_SCALE);
+        assertEquals(9, PrecisionPolicy.DISPLAY_SCALE);
     }
 
     @Test
@@ -41,24 +42,14 @@ class PrecisionPolicyTest {
     }
 
     // ======================================================================
-    // of(double) —— 唯一入口必须走 valueOf 语义（最短十进制还原）
+    // 浮点入口必须拒绝
     // ======================================================================
 
     @Test
-    @DisplayName("of(0.1) 精确等于 0.1（非 new BigDecimal(0.1) 的二进制展开误差）")
-    void of_double_zeroPointOne() {
-        BigDecimal v = PrecisionPolicy.of(0.1);
-        assertEquals(0, v.compareTo(new BigDecimal("0.1")));
-        // 关键：of(0.1) 绝不能等于 new BigDecimal(0.1) 的真实二进制展开值
-        assertNotEquals(new BigDecimal(0.1), v);
-    }
-
-    @Test
-    @DisplayName("of(NaN)/of(Infinity) 返回 ZERO（不抛异常）")
-    void of_double_nanAndInfinite() {
-        assertEquals(0, PrecisionPolicy.of(Double.NaN).compareTo(BigDecimal.ZERO));
-        assertEquals(0, PrecisionPolicy.of(Double.POSITIVE_INFINITY).compareTo(BigDecimal.ZERO));
-        assertEquals(0, PrecisionPolicy.of(Double.NEGATIVE_INFINITY).compareTo(BigDecimal.ZERO));
+    @DisplayName("Double/Float 输入被拒绝")
+    void floatingPointIsRejected() {
+        assertThrows(IllegalArgumentException.class, () -> PrecisionPolicy.of(0.1d));
+        assertThrows(IllegalArgumentException.class, () -> PrecisionPolicy.of(0.1f));
     }
 
     // ======================================================================
@@ -66,11 +57,10 @@ class PrecisionPolicyTest {
     // ======================================================================
 
     @Test
-    @DisplayName("of(Object) 处理 null / BigDecimal / Double / Long / String / 非法字符串")
+    @DisplayName("of(Object) 处理 null / BigDecimal / Long / String / 非法字符串")
     void of_object_variants() {
         assertEquals(0, PrecisionPolicy.of((Object) null).compareTo(BigDecimal.ZERO));
         assertEquals(0, PrecisionPolicy.of((Object) new BigDecimal("0.1")).compareTo(new BigDecimal("0.1")));
-        assertEquals(0, PrecisionPolicy.of((Object) 0.1).compareTo(new BigDecimal("0.1")));
         assertEquals(0, PrecisionPolicy.of((Object) 100L).compareTo(new BigDecimal("100")));
         assertEquals(0, PrecisionPolicy.of((Object) "0.1").compareTo(new BigDecimal("0.1")));
         assertEquals(0, PrecisionPolicy.of((Object) "  0.5  ").compareTo(new BigDecimal("0.5")));
@@ -79,14 +69,21 @@ class PrecisionPolicyTest {
     }
 
     // ======================================================================
-    // round —— 呈现边界规整（G-2/G-5/G-6）
+    // 计算/显示边界
     // ======================================================================
 
     @Test
-    @DisplayName("round(1.0000005) = 1.000001（HALF_UP 向上进位，B1 验收用例）")
-    void round_halfUpBoundary() {
-        BigDecimal r = PrecisionPolicy.round(new BigDecimal("1.0000005"));
-        assertEquals(0, r.compareTo(new BigDecimal("1.000001")), "实际=" + r);
+    @DisplayName("公式节点保留 12 位并 HALF_UP")
+    void roundForCalculation_halfUpBoundary() {
+        BigDecimal r = PrecisionPolicy.roundForCalculation(new BigDecimal("1.2345678912345"));
+        assertEquals("1.234567891235", r.toPlainString());
+    }
+
+    @Test
+    @DisplayName("最终显示保留 9 位并 HALF_UP")
+    void roundForDisplay_halfUpBoundary() {
+        assertEquals("1.234567892", PrecisionPolicy.roundForDisplay(new BigDecimal("1.2345678915")).toPlainString());
+        assertEquals("-1.234567892", PrecisionPolicy.roundForDisplay(new BigDecimal("-1.2345678915")).toPlainString());
     }
 
     @Test
@@ -99,7 +96,8 @@ class PrecisionPolicyTest {
     @Test
     @DisplayName("round(null) 返回 null（null 安全）")
     void round_nullSafe() {
-        assertNull(PrecisionPolicy.round(null));
+        assertNull(PrecisionPolicy.roundForCalculation(null));
+        assertNull(PrecisionPolicy.roundForDisplay(null));
     }
 
     // ======================================================================
@@ -151,17 +149,15 @@ class PrecisionPolicyTest {
     }
 
     // ======================================================================
-    // new BigDecimal(<double>) 禁用规约（B1 验收：全工程 grep 复核，此处补充单测层面的反例演示）
+    // decimal string 规范化
     // ======================================================================
 
     @Test
-    @DisplayName("演示: new BigDecimal(double) 是被禁止的反模式（对比 of(double) 的正确行为）")
-    void demonstrateWhyNewBigDecimalDoubleIsForbidden() {
-        // 0.1 的 IEEE754 二进制展开：new BigDecimal(0.1) 会得到一长串非 0.1 的尾数
-        BigDecimal wrong = new BigDecimal(0.1);
-        assertNotEquals(0, wrong.compareTo(new BigDecimal("0.1")));
-        // PrecisionPolicy.of(double) 走 valueOf，规避了这个陷阱
-        BigDecimal correct = PrecisionPolicy.of(0.1);
-        assertEquals(0, correct.compareTo(new BigDecimal("0.1")));
+    @DisplayName("输出普通十进制、去尾零且零归一")
+    void plainDecimalString() {
+        assertEquals("98765431.123456789012", PrecisionPolicy.toPlainDecimalString(
+                new BigDecimal("98765431.123456789012")));
+        assertEquals("5", PrecisionPolicy.toPlainDecimalString(new BigDecimal("5.000000000000")));
+        assertEquals("0", PrecisionPolicy.toPlainDecimalString(new BigDecimal("0E-12")));
     }
 }

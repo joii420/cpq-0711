@@ -108,10 +108,7 @@ public class MaterialVersionUpgradeService {
      * <p>🔒 <b>再出现第三个同构写点时，请把这三行原样抄过去</b>，不要只加第一项
      * （只加第一项会把"丢精度"换成"变形 2.2E+3"，更难发现）。
      */
-    private static final ObjectMapper MAPPER = new ObjectMapper()
-        .enable(com.fasterxml.jackson.databind.DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
-        .enable(com.fasterxml.jackson.core.JsonGenerator.Feature.WRITE_BIGDECIMAL_AS_PLAIN)
-        .setNodeFactory(com.fasterxml.jackson.databind.node.JsonNodeFactory.withExactBigDecimals(true));
+    private static final ObjectMapper MAPPER = com.cpq.common.DecimalJacksonCustomizer.newMapper();
 
     /**
      * 🔒 活单白名单（E14-2，唯一常量，禁止另起第二份定义）。同时服务三处：
@@ -385,7 +382,7 @@ public class MaterialVersionUpgradeService {
             if ("PART".equals(other.compositeType)) continue;
             if (other.lineTotalAmount != null) lineSum = lineSum.add(other.lineTotalAmount);
         }
-        q.totalAmount = lineSum.setScale(4, java.math.RoundingMode.HALF_UP);
+        q.totalAmount = com.cpq.common.PrecisionPolicy.roundForCalculation(lineSum);
         // taxAmount：全工程未发现任何"从行汇总推导税额"的既有公式（taxRate/taxAmount 全库零业务
         // 逻辑引用，纯手填字段），本次不新造算法，税额原样不动——如实说明，非遗漏。
 
@@ -506,7 +503,7 @@ public class MaterialVersionUpgradeService {
                 boolean changedThis;
                 if (ep != null && ep.price != null) {
                     // repair-0807 FR-2：命中且解出价 → 用本版价覆盖（不再删键）。
-                    values.put(pbc.elementPriceField, ep.price);
+                    values.put(pbc.elementPriceField, com.cpq.common.PrecisionPolicy.toPlainDecimalString(ep.price));
                     changedThis = true;
                     if (pbc.elementCurrencyField != null && !pbc.elementCurrencyField.isBlank() && ep.currency != null) {
                         values.put(pbc.elementCurrencyField, ep.currency);
@@ -697,7 +694,7 @@ public class MaterialVersionUpgradeService {
             // §11.15.3.4 纪律2），driverRow 直接以字段名为 key 持有该值，无需再经 default_source。
             ElementPrice ep = versionPrices.get(elementCodeVal);
             if (ep != null && ep.price != null) {
-                driverRow.put(pbc.elementPriceField, ep.price);
+                driverRow.put(pbc.elementPriceField, com.cpq.common.PrecisionPolicy.toPlainDecimalString(ep.price));
                 if (pbc.elementCurrencyField != null && !pbc.elementCurrencyField.isBlank() && ep.currency != null) {
                     driverRow.put(pbc.elementCurrencyField, ep.currency);
                 }
@@ -750,7 +747,7 @@ public class MaterialVersionUpgradeService {
                 // buildCardValues 重建 editRows 时是从 row_data 回种的（seedEditRowsFromRowData），
                 // 键缺失导致该格算不出值——元素报价整格丢失、产品小计塌陷（用户实测 18.00→15.109316）。
                 // 🔒 其余手改字段（毛重/损耗率等）原样保留；🔒 不得清元素字段（验收 #34）。
-                dataRow.put(pbc.elementPriceField, ep.price);
+                dataRow.put(pbc.elementPriceField, com.cpq.common.PrecisionPolicy.toPlainDecimalString(ep.price));
                 if (pbc.elementCurrencyField != null && !pbc.elementCurrencyField.isBlank() && ep.currency != null) {
                     dataRow.put(pbc.elementCurrencyField, ep.currency);
                 }

@@ -40,7 +40,7 @@ class CardSnapshotConditionalTest {
         var baseRows = M.createArrayNode();
         // 行：类型=车削、单价=100 → 加工费 = 120
         var r = M.createObjectNode();
-        var dr = M.createObjectNode(); dr.put("类型", "车削"); dr.put("单价", 100); r.set("driverRow", dr);
+        var dr = M.createObjectNode(); dr.put("类型", "车削"); dr.put("单价", new java.math.BigDecimal("100")); r.set("driverRow", dr);
         r.set("basicDataValues", M.createObjectNode());
         baseRows.add(r);
         baseRowsByComp.put("c1", baseRows);

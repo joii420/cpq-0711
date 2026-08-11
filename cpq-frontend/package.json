@@ -24,6 +24,7 @@
     "dayjs": "^1.11.20",
     "decimal.js": "^10.6.0",
     "handsontable": "^17.0.1",
+    "lossless-json": "^4.3.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router-dom": "^7.14.0",

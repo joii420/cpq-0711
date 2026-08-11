@@ -9,24 +9,20 @@ import java.math.RoundingMode;
  *
  * <p>把散落全工程的精度决策收敛到本类，杜绝"某处改了某处没改"。核心原则（详见
  * {@code dev-docs/task-0801-公式计算精度优化/需求说明.md} §4.3、{@code api.md} §1）：
- * <b>计算精度</b>与<b>呈现精度</b>分离 —— 计算过程中不做任何规整，只在四个边界
- * （落库 / API 返回 / 界面显示 / 导出）统一规整到 {@link #DISPLAY_SCALE} 位。
- *
- * <p><b>链路承载纪律</b>：
- * <ul>
- *   <li>链路一（公式内部，单元格级，金额 ≤10⁶）：单次运算/累加须十进制精确，跨层可继续用
- *       {@code Double}/{@code Map<String,Double>} 承载（余量充足，不强改承载类型）；</li>
- *   <li>链路二（产品小计 → ×年用量 → 行合计 → 整单总额 → 核价汇总，金额可达 10⁸~10⁹）：
- *       全程 {@link BigDecimal}，禁止任何 {@code .doubleValue()} 回落。</li>
- * </ul>
+ * <b>计算精度</b>与<b>呈现精度</b>分离。公式节点、跨节点缓存和持久化工作值统一保留
+ * {@link #CALCULATION_SCALE} 位；UI、HTML、PDF 和 Excel 最多显示 {@link #DISPLAY_SCALE} 位。
+ * 精度敏感链路只允许 {@link BigDecimal}，不得通过 {@code double}/{@code Double} 中转。
  */
 public final class PrecisionPolicy {
 
-    /** 呈现精度：落库 / API / 显示 / 导出四个边界统一规整到 6 位。 */
-    public static final int DISPLAY_SCALE = 6;
+    /** 公式节点、跨节点缓存和持久化工作值精度。 */
+    public static final int CALCULATION_SCALE = 12;
+
+    /** UI / HTML / PDF / Excel 的最大小数位数。 */
+    public static final int DISPLAY_SCALE = 9;
 
     /** 除法中间精度：无限小数（如 1/3）的落点，远高于呈现精度以避免中间损失。 */
-    public static final int DIVISION_SCALE = 12;
+    public static final int DIVISION_SCALE = CALCULATION_SCALE;
 
     /** 统一舍入方式。 */
     public static final RoundingMode ROUNDING = RoundingMode.HALF_UP;
@@ -37,8 +33,14 @@ public final class PrecisionPolicy {
     private PrecisionPolicy() {
     }
 
-    /** 规整到呈现精度（null 安全，null 原样返回）。计算过程中不得调用——只在呈现边界调用。 */
-    public static BigDecimal round(BigDecimal v) {
+    /** 规整公式节点和持久化工作值（null 安全）。 */
+    public static BigDecimal roundForCalculation(BigDecimal v) {
+        if (v == null) return null;
+        return v.setScale(CALCULATION_SCALE, ROUNDING);
+    }
+
+    /** 规整显示值（null 安全）。 */
+    public static BigDecimal roundForDisplay(BigDecimal v) {
         if (v == null) return null;
         return v.setScale(DISPLAY_SCALE, ROUNDING);
     }
@@ -56,28 +58,18 @@ public final class PrecisionPolicy {
     }
 
     /**
-     * double → BigDecimal 的唯一入口：走 {@link BigDecimal#valueOf(double)}（最短十进制还原，
-     * 与 {@code Double.toString(d)} 语义一致），绝不能用 {@code new BigDecimal(double)}
-     * （后者会把 0.1 变成 0.1000000000000000055511151231257827…，误差当场引入）。
-     */
-    public static BigDecimal of(double d) {
-        if (Double.isNaN(d) || Double.isInfinite(d)) return BigDecimal.ZERO;
-        return BigDecimal.valueOf(d);
-    }
-
-    /**
      * Number / String / null 统一转换为 BigDecimal，无法解析一律返回 {@link BigDecimal#ZERO}
      * （不抛异常，与既有"缺值按 0 参与运算"语义一致，见 api.md G-8）。
      *
-     * <p>已经是 {@link BigDecimal} 的直接返回（避免多余的字符串往返）；{@link Double}/{@link Float}
-     * 走 {@link #of(double)} 的安全路径；其它 {@link Number}（Long/Integer/BigInteger 等）用
-     * {@code toString()} 精确转换（整数类型无精度损失）；{@link String} trim 后直接 parse。
+     * <p>已经是 {@link BigDecimal} 的直接返回；浮点类型被拒绝，防止业务层把已经损坏的二进制
+     * 浮点值重新包装成十进制。整数类型和规范十进制字符串可精确转换。
      */
     public static BigDecimal of(Object v) {
         if (v == null) return BigDecimal.ZERO;
         if (v instanceof BigDecimal bd) return bd;
-        if (v instanceof Double d) return of(d.doubleValue());
-        if (v instanceof Float f) return of(f.doubleValue());
+        if (v instanceof Double || v instanceof Float) {
+            throw new IllegalArgumentException("Precision-sensitive values must not use floating point");
+        }
         if (v instanceof Number n) {
             try {
                 return new BigDecimal(n.toString());
@@ -95,6 +87,13 @@ public final class PrecisionPolicy {
             }
         }
         return BigDecimal.ZERO;
+    }
+
+    /** 规范 decimal string：普通十进制、去尾零、零统一为 {@code "0"}。 */
+    public static String toPlainDecimalString(BigDecimal value) {
+        if (value == null) return null;
+        BigDecimal normalized = value.stripTrailingZeros();
+        return normalized.signum() == 0 ? "0" : normalized.toPlainString();
     }
 
     /** BigDecimal 精确累加（null 安全：null 元素按 0 处理，与既有"缺值按 0"语义一致）。 */

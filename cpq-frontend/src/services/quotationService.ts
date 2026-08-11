@@ -1,4 +1,5 @@
 import api from './api';
+import type { DecimalString } from '../utils/precision';
 import type { ExistingProductDTO, ExistingProductQueryParams, PageResult } from '../types/existingProduct';
 
 // ─── 报价单整份快照类型（Phase 2）─────────────────────────────────────────────
@@ -140,6 +141,63 @@ export interface LineItemSnapshotValues {
   costingExcelValues?: string | null;
 }
 
+export type PrecisionFieldValue = DecimalString | boolean | null;
+
+export interface QuoteCardEditRequest {
+  componentId: string;
+  rowKey: string;
+  fieldName: string;
+  value: PrecisionFieldValue;
+}
+
+export interface ExcelViewCellUpdateRequest {
+  rowIndex: number;
+  colKey: string;
+  value: PrecisionFieldValue;
+}
+
+export interface ReconcileDiffRequest {
+  componentId: string;
+  tabName: string;
+  rowKey: string;
+  fieldName: string;
+  frontendValue: PrecisionFieldValue;
+  backendValue: PrecisionFieldValue;
+  frontendInputs: Record<string, PrecisionFieldValue>;
+  backendInputs: Record<string, PrecisionFieldValue>;
+}
+
+export interface ReconcileReportRequest {
+  reconciledAt: string;
+  diffs: ReconcileDiffRequest[];
+}
+
+const STRUCTURAL_INTEGER_REQUEST_KEYS = new Set([
+  'annualVolume', 'decimals', 'index', 'itemSeq', 'page', 'pageSize', 'partVersionLocked',
+  'rowIndex', 'row_index', 'seqNo', 'size', 'snapshotRows', 'sortOrder', 'sort_order', 'tempParentIndex', 'version',
+]);
+
+function assertNoPrecisionNumbers(value: unknown, key = '', path = 'payload'): void {
+  if (typeof value === 'number') {
+    if (STRUCTURAL_INTEGER_REQUEST_KEYS.has(key) && Number.isSafeInteger(value)) return;
+    throw new TypeError(`${path} must use decimal strings, not JS numbers`);
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertNoPrecisionNumbers(item, '', `${path}[${index}]`));
+    return;
+  }
+  if (value && typeof value === 'object') {
+    for (const [childKey, child] of Object.entries(value)) {
+      assertNoPrecisionNumbers(child, childKey, `${path}.${childKey}`);
+    }
+  }
+}
+
+function checkedPayload<T extends object>(payload: T): T {
+  assertNoPrecisionNumbers(payload);
+  return payload;
+}
+
 // ─── task-0721：报价侧 BOM 树上编辑（加叶子 / 删除预览+执行）── api.md §3-§5 ─────────────
 
 export interface TreeAddLeafResult {
@@ -194,7 +252,7 @@ export interface TreeDeleteExecResult {
     componentId: string;
     rowData: string;
     deletedRowKeys: string;
-    subtotal: number;
+    subtotal: DecimalString;
   }>;
 }
 
@@ -219,8 +277,9 @@ export const quotationService = {
     const res: any = await api.get(`/quotations/${quotationId}/existing-products`, { params });
     return (res && typeof res === 'object' && 'data' in res ? res.data : res) as PageResult<ExistingProductDTO>;
   },
-  create: (data: any) => api.post('/quotations', data) as Promise<any>,
-  saveDraft: (id: string, data: any) => api.put(`/quotations/${id}/draft`, data) as Promise<any>,
+  create: (data: Record<string, unknown>) => api.post('/quotations', checkedPayload(data)) as Promise<any>,
+  saveDraft: (id: string, data: Record<string, unknown>) =>
+    api.put(`/quotations/${id}/draft`, checkedPayload(data)) as Promise<any>,
   /** lazy-cardvalues：懒算并落库整单卡片值。warm 与打开兜底复用。返回 { data: QuotationDTO(含 cardValuesWarming) }。 */
   ensureCardValues: (id: string) => api.post(`/quotations/${id}/ensure-card-values`) as Promise<any>,
   /** 报价单整份快照 Phase2 §5: 草稿态重刷报价侧卡片值(按行键保编辑); 仅 DRAFT 生效, 非 DRAFT no-op 返 refreshed=0 */
@@ -233,9 +292,10 @@ export const quotationService = {
    * 仅 DRAFT; 返回 {quoteCardValues, quoteExcelValues, quoteValuesAt} 供前端就地刷新(AP-50)。
    * (前端单元格编辑改调此端点 + 渲染读快照在 Task 8 一起落地)
    */
-  editQuoteCardValue: (lineItemId: string, body: { componentId: string; rowKey: string; fieldName: string; value: any }) =>
-    api.put(`/quotations/line-items/${lineItemId}/quote-card-edit`, body) as Promise<any>,
-  calculateDiscount: (id: string, originalAmount: number) => api.post(`/quotations/${id}/calculate-discount`, { originalAmount }) as Promise<any>,
+  editQuoteCardValue: (lineItemId: string, body: QuoteCardEditRequest) =>
+    api.put(`/quotations/line-items/${lineItemId}/quote-card-edit`, checkedPayload(body)) as Promise<any>,
+  calculateDiscount: (id: string, originalAmount: DecimalString) =>
+    api.post(`/quotations/${id}/calculate-discount`, { originalAmount }) as Promise<any>,
   // submit 已统一迁移至 quotationSnapshotService.submit（含快照写入逻辑）
   approve: (id: string, comment?: string) => api.post(`/quotations/${id}/approve`, { comment }) as Promise<any>,
   reject: (id: string, comment: string) => api.post(`/quotations/${id}/reject`, { comment }) as Promise<any>,
@@ -255,13 +315,13 @@ export const quotationService = {
   rejectByCustomer: (id: string, comment?: string) =>
     api.post(`/quotations/${id}/reject-by-customer`, { comment }) as Promise<any>,
 
-  exportHtml: (id: string, options?: { showDiscount?: boolean; showProcesses?: boolean; showTabDetails?: boolean }) => {
-    const params = new URLSearchParams();
-    if (options?.showDiscount !== undefined) params.set('showDiscount', String(options.showDiscount));
-    if (options?.showProcesses !== undefined) params.set('showProcesses', String(options.showProcesses));
-    if (options?.showTabDetails !== undefined) params.set('showTabDetails', String(options.showTabDetails));
-    return `/api/cpq/quotations/${id}/export/html?${params.toString()}`;
-  },
+  exportHtml: (
+    id: string,
+    options?: { showDiscount?: boolean; showProcesses?: boolean; showTabDetails?: boolean },
+  ) => api.post(`/quotations/${id}/export/html`, null, {
+    params: options,
+    responseType: 'text',
+  }) as Promise<string>,
 
   exportExcel: (id: string, options?: { showDiscount?: boolean; includeRawData?: boolean }) =>
     api.post(`/quotations/${id}/export/excel`, options || {}, { responseType: 'blob' }) as Promise<any>,
@@ -269,9 +329,10 @@ export const quotationService = {
   // Excel view (Import v2)
   getExcelView: (id: string, templateId?: string) =>
     api.get(`/quotations/${id}/excel-view`, { params: templateId ? { templateId } : undefined }) as Promise<any>,
-  dryRunExcelView: (id: string, body: { templateId?: string; columns: any[] }) =>
+  dryRunExcelView: (id: string, body: { templateId?: string; columns: ExcelEffectiveColumn[] }) =>
     api.post(`/quotations/${id}/excel-view/dry-run`, body) as Promise<any>,
-  updateExcelViewCell: (id: string, data: any) => api.put(`/quotations/${id}/excel-view`, data) as Promise<any>,
+  updateExcelViewCell: (id: string, data: ExcelViewCellUpdateRequest) =>
+    api.put(`/quotations/${id}/excel-view`, checkedPayload(data)) as Promise<any>,
   exportExcelView: (id: string) => api.get(`/quotations/${id}/export-excel-view`, { responseType: 'blob' }) as Promise<any>,
 
   // Import v3
@@ -301,20 +362,11 @@ export const quotationService = {
    */
   reconcileReport: (
     lineItemId: string,
-    body: {
-      reconciledAt: string;
-      diffs: Array<{
-        componentId: string;
-        tabName: string;
-        rowKey: string;
-        fieldName: string;
-        frontendValue: any;
-        backendValue: any;
-        frontendInputs: Record<string, any>;
-        backendInputs: Record<string, any>;
-      }>;
-    },
-  ) => api.post(`/quotations/line-items/${lineItemId}/reconcile-report`, body) as Promise<any>,
+    body: ReconcileReportRequest,
+  ) => api.post(
+    `/quotations/line-items/${lineItemId}/reconcile-report`,
+    checkedPayload(body),
+  ) as Promise<any>,
   previewTreeDelete: (
     qid: string,
     lid: string,

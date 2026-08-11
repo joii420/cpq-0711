@@ -7,6 +7,8 @@ import { useNavigate } from 'react-router-dom';
 import { configuratorInstanceService } from '../../services/configuratorService';
 import type { ConfiguratorInstance, InstanceStatus } from '../../types/configurator';
 import StatCard from '../../components/StatCard';
+import { formatNumber } from '../../utils/formatNumber';
+import type { DecimalString } from '../../utils/precision';
 
 const ConfiguratorInstanceList: React.FC = () => {
   const navigate = useNavigate();
@@ -152,7 +154,7 @@ const ConfiguratorInstanceList: React.FC = () => {
                 );
               }},
             { title: '总价', dataIndex: 'computedTotalPrice', width: 110, align: 'right',
-              render: (v: number) => v ? <b style={{ color: '#cf1322' }}>¥{Number(v).toLocaleString()}</b> : '-' },
+              render: (v: DecimalString | undefined) => v ? <b style={{ color: '#cf1322' }}>¥{formatNumber(v, { isComputed: true })}</b> : '-' },
             { title: '状态', dataIndex: 'status', width: 140, render: (s: InstanceStatus) => {
               const color = s === 'LINKED' ? 'green' : s === 'SUBMITTED' ? 'blue' : s === 'EXPIRED' ? 'default' : 'gold';
               return <Tag color={color}>● {s}</Tag>;

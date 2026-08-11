@@ -1,4 +1,6 @@
 import api from './api';
+import type { DecimalString } from '../utils/precision';
+import type { CardValues, ExcelValues } from './quotationService';
 
 export interface CostingOrderListItem {
   costingOrderId: string;
@@ -32,8 +34,8 @@ export interface CostingOrderVersionOverride {
  * 里既有的 parseJson 兼容写法处理。
  */
 export interface CostingRenderEntry {
-  costingCardValues?: any;
-  costingExcelValues?: any;
+  costingCardValues?: string | CardValues | null;
+  costingExcelValues?: string | ExcelValues | null;
 }
 
 export interface CostingOrderDetail {
@@ -42,14 +44,14 @@ export interface CostingOrderDetail {
   costingOrderNumber: string;
   status: string;
   rejectReason?: string;
-  totalAmount?: number;
+  totalAmount?: DecimalString;
   frozenDto?: string;
   createdAt: string;
   reviewedAt?: string;
   /** task-0713（D1）：核价侧渲染缓存，keyed by lineItemId。报价侧仍读 frozenDto，两者物理隔离。 */
   costingRender?: Record<string, CostingRenderEntry>;
   /** task-0713（D1）：核价侧单据总价 = Σ核价成本 subtotal，不含 Step3 折扣。与 totalAmount（报价总额）是两列两值，不可混用。 */
-  costingTotalAmount?: number;
+  costingTotalAmount?: DecimalString;
   /** task-0713（api.md §4）：本单当前所有版本 override，标记"已切版本"用 */
   versionOverrides?: CostingOrderVersionOverride[];
   /** task-0713：= status==='PENDING' && role∈{PRICING_MANAGER,SYSTEM_ADMIN}，决定是否显示版本切换控件 */
@@ -69,12 +71,12 @@ export interface VersionOptionsResult {
 export interface VersionSwitchResult {
   lineItemId: string;
   /** 该卡片重算后的核价卡片值（行内含 view_version），形状同 CostingRenderEntry.costingCardValues */
-  costingCardValues: any;
+  costingCardValues: string | CardValues;
   /** 若受影响才带；命名沿用 api.md 原文（"columns"字样疑与"该卡片核价 Excel 值"语义对应，
    * 后端落地后需与实际返回结构核对，见前端 RECORD 备注） */
-  costingExcelColumns?: any;
+  costingExcelColumns?: string | ExcelValues;
   /** 更新后的单据总价（Σ核价成本 subtotal，不含 Step3 折扣） */
-  costingTotalAmount: number;
+  costingTotalAmount: DecimalString;
   /** 实际触发重查/重算的页签 componentId 列表，便于前端定向刷新提示 */
   affectedTabs: string[];
 }

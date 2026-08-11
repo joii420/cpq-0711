@@ -20,8 +20,10 @@
  * 🚨 请勿手工编辑本文件的数据体 —— 它是线上快照的逐字拷贝，改了就不再是对拍基准。
  */
 
+import { parseSnapshotJsonLossless } from '../../../../utils/losslessJson';
+
 /** `quotation_line_item.quote_card_values`（后端权威值快照：baseRows / editRows / formulaResults / subtotalByColumn）。 */
-export const QT0068_QUOTE_CARD_VALUES = {
+export const QT0068_QUOTE_CARD_VALUES = parseSnapshotJsonLossless<any>(String.raw`{
   "tabs": [
     {
       "tabName": "物料",
@@ -263,4 +265,4 @@ export const QT0068_QUOTE_CARD_VALUES = {
       ]
     }
   ]
-} as any;
+}`);

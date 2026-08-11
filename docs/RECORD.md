@@ -5461,3 +5461,15 @@ render() 用 lineItems.get(0).quotationId 设 QuotationIdContext，
 **教训**：
 1. ⚠️ **「状态字段写对了」≠「位置放对了」**。这 14 条的状态标注全都是准确的，问题出在没搬家 —— 于是任何按分区扫读或计数的人都会被误导。**带分区语义的清单，状态与位置必须同时维护。**
 2. ⚠️ **同一条目在两个文件里可以各自陈旧且互相矛盾**（BL-0097 在 BACKLOG 是 TODO、在 INDEX 是「状态存疑」）。INDEX 那句「二者不一致，动手前先核实」放了很久没人核 —— **标记存疑不等于解决存疑**，存疑项要么当场核实，要么就是债。
+
+---
+
+## [2026-08-11] 公式/报价 - task-0810 计算保留 12 位、最终显示最多 9 位完成验收
+
+**涉及文件**：后端精度基础设施、公式/JEXL/报价/核价/价格调整/导出链路、V385；前端 Decimal.js 精度边界、报价三视图、快照无损解析、HTML 打印；`dev-docs/task-0801-公式计算精度优化/task-0810-公式计算12位显示9位/`；`dev-docs/main-api.md`；`docs/PRD-v3.md`。
+
+**核心决策**：后端精度值只用 `BigDecimal`，前端只用 Decimal.js `Decimal` / decimal string；公式节点、快照、API 和持久化最多 12 位 `HALF_UP`，最终 UI/HTML/PDF 打印源/邮件/Excel 最多 9 位并去尾零。API 精度字段拒绝 JSON number；历史 numeric token 从原始字面量无损解析；非 DRAFT 读取零写。结构整数继续使用 JSON number。
+
+**交付证据**：V385 将 21 个计算金额列扩为 `numeric(26,12)`；任务关键后端 37/37、前端 1147/1147、四套 TypeScript、生产构建和 Playwright exact-5 全部通过且 0 skip；TC-078 N/2N SQL 均为 12，TC-079 字符串快照增量 388 bytes。仓库全量本身存在大规模 RBAC/事务/退役表红灯，已用 detached master 同轮基线做 testcase 差异，并修清 6 条 feature 独有的旧测试断言；不得对外表述为“全量测试通过”。TC-077 因缺固定双部署/同快照/五轮交替环境按规则保持 BLOCKED。
+
+**并发修复**：ensure 与 edit 使用同一 PostgreSQL advisory lock；edit 在取锁后清理 L1 并重读复核。新增自建 fixture 的并发测试证明 edit 会等待 ensure 事务，最终两行卡片值和 12 位字符串完整，无固定报价单、无 Assumptions、无新增 N+1。

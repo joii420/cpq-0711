@@ -2,6 +2,7 @@ package com.cpq.quotation.service;
 
 import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.service.ComponentDriverService;
+import com.cpq.common.exception.BusinessException;
 import com.cpq.configure.service.ConfigureSnapshotService;
 import com.cpq.datasource.sqlview.QuotePendingScope;
 import com.cpq.datasource.sqlview.TemplateRenderScope;
@@ -10,6 +11,7 @@ import com.cpq.quotation.entity.Quotation;
 import com.cpq.quotation.entity.QuotationLineItem;
 import com.cpq.quotation.entity.QuotationViewStructure;
 import com.cpq.quotation.rowkey.DeletedRowKeys;
+import com.cpq.template.exception.TemplateNotFrozenException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -18,9 +20,11 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -54,10 +58,43 @@ import java.util.UUID;
 public class CardSnapshotService {
 
     private static final Logger LOG = Logger.getLogger(CardSnapshotService.class);
-    static final ObjectMapper MAPPER = new ObjectMapper();
+    static final ObjectMapper MAPPER = com.cpq.common.DecimalJacksonCustomizer.newMapper();
+
+    private enum RefreshOutcome {
+        UPDATED,
+        NO_OP
+    }
+
+    private enum LineFailurePolicy {
+        BEST_EFFORT,
+        PROPAGATE_UNRECOVERABLE
+    }
+
+    private enum DraftRefreshPolicy {
+        HTTP_ATOMIC,
+        MIGRATION
+    }
+
+    private record ExistingQuoteCardState(
+            Map<String, ArrayNode> baseRowsByComp,
+            Map<String, ArrayNode> editRowsByComp) {
+    }
+
+    private static final class HistoricalCardValuesException extends RuntimeException {
+        private HistoricalCardValuesException(String message, Throwable cause) {
+            super(message, cause);
+        }
+
+        private HistoricalCardValuesException(String message) {
+            super(message);
+        }
+    }
 
     /** 卡片值 build 确定性失败时落库的非 NULL 哨兵（防前端「全有或全无」gate 把整侧打回实时风暴）。 */
     public static final String CARD_VALUE_FAILED_SENTINEL = "{\"tabs\":[],\"__cardValueFailed\":true}";
+
+    private static final String QUOTATION_CALCULATION_LOCK_KEY_SQL =
+        "('x'||substr(md5(:q),1,16))::bit(64)::bigint";
 
     private static String orSentinel(String built) {
         return (built == null || built.isBlank()) ? CARD_VALUE_FAILED_SENTINEL : built;
@@ -108,6 +145,9 @@ public class CardSnapshotService {
     @Inject
     CardSnapshotService self;
 
+    @Inject
+    CardSnapshotConcurrencyProbe concurrencyProbe;
+
     /**
      * task-0806 B8：渲染期「这个模板有哪些页签/driver 组件/树页签」的问题统一改问它——
      * 不再各自手写 {@code JOIN component} 直读活表。批量接口，SQL 条数与页签数无关。
@@ -132,6 +172,7 @@ public class CardSnapshotService {
                 LOG.warnf("[card-snapshot] ensureStructure: quotation not found id=%s", quotationId);
                 return;
             }
+            if (!"DRAFT".equals(q.status)) return;
 
             // 报价模板 → QUOTE_CARD + QUOTE_EXCEL
             if (q.customerTemplateId != null) {
@@ -681,7 +722,7 @@ public class CardSnapshotService {
 
         java.math.BigDecimal unit = CostingSubtotalUtil.extractUnitSubtotalOrNull(json);
         if (unit != null) {                              // 情况 2/3：取不到 → 不覆盖
-            java.math.BigDecimal rounded = com.cpq.common.PrecisionPolicy.round(unit);
+            java.math.BigDecimal rounded = com.cpq.common.PrecisionPolicy.roundForCalculation(unit);
             if (li.subtotal == null || li.subtotal.compareTo(rounded) != 0) counter.liChanged++;
             li.subtotal = rounded;
         }
@@ -695,7 +736,7 @@ public class CardSnapshotService {
             if (cd.componentId == null) continue;         // 历史脏数据 / 非组件页签 → 保留兜底值
             java.math.BigDecimal v = tabs.get(cd.componentId.toString());
             if (v == null) continue;                      // 该页签没算出 subtotal → 保留兜底值
-            java.math.BigDecimal rounded = com.cpq.common.PrecisionPolicy.round(v);
+            java.math.BigDecimal rounded = com.cpq.common.PrecisionPolicy.roundForCalculation(v);
             if (cd.subtotal == null || cd.subtotal.compareTo(rounded) != 0) counter.cdChanged++;
             cd.subtotal = rounded;
         }
@@ -781,13 +822,13 @@ public class CardSnapshotService {
         for (QuotationLineItem li : all) {                 // 草稿口径：不排除 PART，与 :667/:2055 一致
             if (li.subtotal != null) total = total.add(li.subtotal);
         }
-        q.originalAmount = com.cpq.common.PrecisionPolicy.round(total);
+        q.originalAmount = com.cpq.common.PrecisionPolicy.roundForCalculation(total);
         // finalDiscountRate 实体默认 100（非空），但 :2063 仍做了空防御，此处对齐更保守的那一处。
         q.totalAmount = (q.finalDiscountRate != null)
-            ? com.cpq.common.PrecisionPolicy.round(total.multiply(q.finalDiscountRate)
+            ? com.cpq.common.PrecisionPolicy.roundForCalculation(total.multiply(q.finalDiscountRate)
                 .divide(new java.math.BigDecimal("100"),
                         com.cpq.common.PrecisionPolicy.DIVISION_SCALE, java.math.RoundingMode.HALF_UP))
-            : com.cpq.common.PrecisionPolicy.round(total);
+            : com.cpq.common.PrecisionPolicy.roundForCalculation(total);
     }
 
     /** 方向 3 T1：整批一次 IN 预载 componentData（按 lineItemId 分组）；空输入返回空 map。 */
@@ -909,6 +950,7 @@ public class CardSnapshotService {
         if (quotationId == null) return 0;
         Quotation q = Quotation.findById(quotationId);
         if (q == null) return 0;
+        if (!"DRAFT".equals(q.status)) return 0;
         java.util.List<QuotationLineItem> lines =
             QuotationLineItem.list("quotationId", quotationId);
         if (lines.isEmpty()) return 0;
@@ -1014,13 +1056,11 @@ public class CardSnapshotService {
     public int ensureCardValues(UUID quotationId, boolean forceRecomputeAll) {
         if (quotationId == null) return 0;
         // 单飞:加锁必须早于缺失行 SELECT,否则两事务都读 NULL → 双重补算
-        Boolean locked = (Boolean) em.createNativeQuery(
-                "SELECT pg_try_advisory_xact_lock( ('x'||substr(md5(:q),1,16))::bit(64)::bigint )")
-            .setParameter("q", quotationId.toString()).getSingleResult();
-        if (locked == null || !locked) return WARMING_IN_PROGRESS;   // warm 在飞
+        if (!tryQuotationCalculationLock(quotationId)) return WARMING_IN_PROGRESS;   // warm 在飞
 
         Quotation q = Quotation.findById(quotationId);
         if (q == null) return 0;
+        if (!"DRAFT".equals(q.status)) return 0;
         boolean hasCostingTpl = q.costingCardTemplateId != null;
 
         String sql = forceRecomputeAll
@@ -1056,8 +1096,23 @@ public class CardSnapshotService {
         var union = precomputeCostingDriverUnion(quotationId);
         var prefetch = precomputeCardValuesPrefetch(quotationId, allIds);
         snapshotNewLinesCardValues(quotationId, missing, union, prefetch);
+        concurrencyProbe.afterEnsureValuesBuilt(quotationId);
         LOG.infof("[ensure-cardvalues] quotation=%s 补算 %d 行", quotationId, missing.size());
         return missing.size();
+    }
+
+    /** Same-quotation transaction lock shared by lazy ensure and interactive card edits. */
+    private boolean tryQuotationCalculationLock(UUID quotationId) {
+        Boolean locked = (Boolean) em.createNativeQuery(
+                "SELECT pg_try_advisory_xact_lock(" + QUOTATION_CALCULATION_LOCK_KEY_SQL + ")")
+            .setParameter("q", quotationId.toString()).getSingleResult();
+        return Boolean.TRUE.equals(locked);
+    }
+
+    /** Waits for the current ensure/edit transaction on this quotation to finish. */
+    private void awaitQuotationCalculationLock(UUID quotationId) {
+        em.createNativeQuery("SELECT pg_advisory_xact_lock(" + QUOTATION_CALCULATION_LOCK_KEY_SQL + ")")
+            .setParameter("q", quotationId.toString()).getSingleResult();
     }
 
     /** native SELECT 返回的 id 列(可能 UUID 或 String)归一化为 UUID;不可解析返 null。 */
@@ -1516,7 +1571,7 @@ public class CardSnapshotService {
                 java.math.BigDecimal computed = CostingSubtotalUtil.extractUnitSubtotal(cardJson);
                 row.put("computedSubtotal", computed);
                 java.math.BigDecimal base = liSubtotal != null ? liSubtotal : java.math.BigDecimal.ZERO;
-                row.put("diff", base.subtract(computed).setScale(4, java.math.RoundingMode.HALF_UP));
+                row.put("diff", com.cpq.common.PrecisionPolicy.roundForCalculation(base.subtract(computed)));
             } catch (Exception e) {
                 row.put("note", "重算异常: " + e.getMessage());
                 LOG.warnf("[b8-reconcile] li=%s quotation=%s failed: %s", liId, quotationNo, e.getMessage());
@@ -1679,6 +1734,51 @@ public class CardSnapshotService {
     private JsonNode loadQuoteTabsForValues(UUID quotationId, UUID templateId) {
         JsonNode frozen = loadFrozenQuoteTabs(quotationId);
         return frozen != null ? frozen : loadComponentsSnapshot(templateId);
+    }
+
+    /**
+     * 显式刷新专用配置读取：数据缺失返回 null，历史 JSON 形状/解析失败由调用方降级为 no-op；
+     * 数据库查询异常不捕获，确保原子刷新能定位到当前行并整单回滚。
+     */
+    private JsonNode loadQuoteTabsForRefresh(UUID quotationId, UUID templateId) {
+        if (quotationId != null) {
+            @SuppressWarnings("unchecked")
+            List<Object> frozenRows = em.createNativeQuery(
+                "SELECT structure FROM quotation_view_structure " +
+                "WHERE quotation_id = :qid AND view_kind = :kind")
+                .setParameter("qid", quotationId)
+                .setParameter("kind", "QUOTE_CARD")
+                .getResultList();
+            if (!frozenRows.isEmpty() && frozenRows.get(0) != null) {
+                try {
+                    JsonNode root = MAPPER.readTree(frozenRows.get(0).toString());
+                    JsonNode tabs = root == null ? null : root.get("tabs");
+                    if (root == null || !root.isObject() || tabs == null || !tabs.isArray()) {
+                        throw new HistoricalCardValuesException(
+                            "Frozen quote-card structure is not a normalized {tabs:[...]} object");
+                    }
+                    return tabs;
+                } catch (HistoricalCardValuesException e) {
+                    throw e;
+                } catch (Exception e) {
+                    throw new HistoricalCardValuesException("Unable to parse frozen quote-card structure", e);
+                }
+            }
+        }
+
+        if (templateId == null) return null;
+        @SuppressWarnings("unchecked")
+        List<Object> templateRows = em.createNativeQuery(
+            "SELECT components_snapshot FROM template WHERE id = :tid")
+            .setParameter("tid", templateId)
+            .getResultList();
+        if (templateRows.isEmpty() || templateRows.get(0) == null) return null;
+        try {
+            JsonNode snapshot = MAPPER.readTree(templateRows.get(0).toString());
+            return snapshot != null && snapshot.isArray() ? snapshot : null;
+        } catch (Exception e) {
+            throw new HistoricalCardValuesException("Unable to parse template components_snapshot", e);
+        }
     }
 
     private JsonNode loadFrozenQuoteTabs(UUID quotationId) {
@@ -2072,7 +2172,7 @@ public class CardSnapshotService {
                                                       Map<String, JsonNode> rkfOverride,
                                                       Map<String, List<DeletedRowKeys.Tombstone>> delByComp,
                                                       Map<String, JsonNode> rkfPrefetch,
-                                                      Map<String, Double> productAttributesCtx) {
+                                                      Map<String, BigDecimal> productAttributesCtx) {
         // 七参签名零破坏：delegate 到八参（rowDataByComp=null → 不回种，行为逐位不变）。
         return assembleTabsWithFormulaResults(snapshot, baseRowsByComp, editRowsByComp, rkfOverride, delByComp,
             rkfPrefetch, productAttributesCtx, null);
@@ -2099,9 +2199,9 @@ public class CardSnapshotService {
                                                       Map<String, JsonNode> rkfOverride,
                                                       Map<String, List<DeletedRowKeys.Tombstone>> delByComp,
                                                       Map<String, JsonNode> rkfPrefetch,
-                                                      Map<String, Double> productAttributesCtx,
+                                                      Map<String, BigDecimal> productAttributesCtx,
                                                       Map<String, String> rowDataByComp) {
-        final Map<String, Double> productAttrs =
+        final Map<String, BigDecimal> productAttrs =
             productAttributesCtx != null ? productAttributesCtx : java.util.Map.of();
         ObjectNode root = MAPPER.createObjectNode();
         ArrayNode tabs = root.putArray("tabs");
@@ -2150,7 +2250,7 @@ public class CardSnapshotService {
 
         // PASS 1: componentSubtotals（顺序累加，后 tab 可引用前 tab 小计；含保留的 editRows）
         // 报价侧：传入 deleted 以反映永久删除行后的正确小计基数（核价侧 delByComp=null → 不过滤）
-        Map<String, Double> componentSubtotals = new java.util.HashMap<>();
+        Map<String, BigDecimal> componentSubtotals = new java.util.HashMap<>();
         for (JsonNode tab : snapshot) {
             // 仅处理 NORMAL tab（跳过 SUBTOTAL 及 EXCEL —— EXCEL 非普通公式 tab，不参与小计累加）
             if (!"NORMAL".equals(tab.path("componentType").asText("NORMAL"))) continue;
@@ -2164,13 +2264,10 @@ public class CardSnapshotService {
                 tab.path("fields"), tab.path("formulas"), tab.path("formula_assignments"),
                 rkfByComp.get(cid), baseRows, editRows, componentSubtotals, deleted, rkfNames,
                 rowCache, cid.isBlank() ? null : cid);
-            // task-0801 B4-2（技术总监验收补漏）：累加过程必须 BigDecimal 精确，只在写回
-            // componentSubtotals（Map<String,Double>，链路一约定承载类型不变）时才 doubleValue()。
-            // 原写法 `double sub = 0.0; sub += v.doubleValue();` 是 double 累加，与本文件
-            // backfillSubtotalsFromResolved（:2996/3004）已改的写法不一致——同一语义两种实现。
+            // task-0810：累加和 componentSubtotals 全程 BigDecimal，节点出口统一 12 位。
             java.math.BigDecimal subBd = java.math.BigDecimal.ZERO;
             for (java.math.BigDecimal v : byCol.values()) subBd = subBd.add(v);
-            double sub = subBd.doubleValue();
+            BigDecimal sub = subBd;
             String code = tab.path("componentCode").asText(null);
             String tabName = tab.path("tabName").asText("");
             if (!cid.isBlank()) componentSubtotals.put(cid, sub);
@@ -2178,7 +2275,7 @@ public class CardSnapshotService {
             componentSubtotals.put(tabName, sub);
             // Plan 2-核心：per-column 键 `${key}#${列名}`，供按列引用/显示。
             for (java.util.Map.Entry<String, java.math.BigDecimal> e : byCol.entrySet()) {
-                double cv = e.getValue().doubleValue();
+                BigDecimal cv = e.getValue();
                 if (!cid.isBlank()) componentSubtotals.put(cid + "#" + e.getKey(), cv);
                 if (code != null && !code.isBlank()) componentSubtotals.put(code + "#" + e.getKey(), cv);
                 componentSubtotals.put(tabName + "#" + e.getKey(), cv);
@@ -2341,7 +2438,7 @@ public class CardSnapshotService {
                         // product_attribute token 最可能出现的位置，对齐前端 evalProductSubtotalFromSubtotals
                         java.math.BigDecimal evaluated = formulaCalculator.evaluateExpression(expr, subCtx);
                         if (evaluated != null) {
-                            double v = evaluated.doubleValue();
+                            BigDecimal v = com.cpq.common.PrecisionPolicy.roundForCalculation(evaluated);
                             String subCode = tab.path("componentCode").asText(null);
                             String subTabName = tab.path("tabName").asText("");
                             if (!cid.isBlank()) componentSubtotals.put(cid, v);
@@ -2380,7 +2477,7 @@ public class CardSnapshotService {
      * @param quotationId 用于查冻结结构（可空——materializeAndProject 等路径经 li.quotationId 传入）
      * @param templateId  回退查询用（报价侧传 customerTemplateId；核价侧传 costingTemplateId）
      */
-    private Map<String, Double> buildProductAttributesContext(
+    private Map<String, BigDecimal> buildProductAttributesContext(
             QuotationLineItem li, UUID quotationId, UUID templateId) {
         if (li == null || li.productAttributeValues == null) return java.util.Map.of();
         String valuesJson = li.productAttributeValues.trim();
@@ -2411,7 +2508,7 @@ public class CardSnapshotService {
             }
             if (schema == null) return java.util.Map.of();
 
-            Map<String, Double> out = new java.util.LinkedHashMap<>();
+            Map<String, BigDecimal> out = new java.util.LinkedHashMap<>();
             for (JsonNode attr : schema) {
                 if (!"NUMBER".equals(attr.path("field_type").asText(""))) continue;
                 String name = attr.path("name").asText("");
@@ -2419,7 +2516,7 @@ public class CardSnapshotService {
                 JsonNode v = valuesNode.get(name);
                 if (v == null || v.isNull()) continue;
                 try {
-                    out.put(name, Double.parseDouble(v.asText()));
+                    out.put(name, new BigDecimal(v.asText()));
                 } catch (NumberFormatException ignore) { /* 与前端 isNaN 跳过对齐，不参与求和 */ }
             }
             return out;
@@ -2432,7 +2529,7 @@ public class CardSnapshotService {
     /** 组装单个 tabNode（baseRows/editRows/formulaResults/subtotal/resolvedRows）。 */
     private ObjectNode buildTabNode(JsonNode tab, String cid, ArrayNode baseRows, ArrayNode editRows,
             ArrayNode formulaResults, List<Map<String, Object>> resolvedRows,
-            Map<String, Double> componentSubtotals) {
+            Map<String, BigDecimal> componentSubtotals) {
         ObjectNode tabNode = MAPPER.createObjectNode();
         tabNode.put("componentId", cid);
         tabNode.put("tabName", tab.path("tabName").asText(""));
@@ -2446,10 +2543,10 @@ public class CardSnapshotService {
         // 值快照带上本 tab 小计（供 Excel CARD_FORMULA 的 __subtotal__ 引用，见 CardEffectiveRows）
         String code = tab.path("componentCode").asText(null);
         String tabName = tab.path("tabName").asText("");
-        Double sub = componentSubtotals.get(cid);
+        BigDecimal sub = componentSubtotals.get(cid);
         if (sub == null && code != null) sub = componentSubtotals.get(code);
         if (sub == null) sub = componentSubtotals.get(tabName);
-        if (sub != null) tabNode.put("subtotal", sub);
+        if (sub != null) tabNode.put("subtotal", com.cpq.common.PrecisionPolicy.toPlainDecimalString(sub));
 
         // Plan 2c：per-column 小计（供 [页签.列名] 引用）。从 componentSubtotals 的
         // `${cid|code|tabName}#${列名}` 键提取（Plan 2 Task 3 已写入）。
@@ -2457,13 +2554,14 @@ public class CardSnapshotService {
         for (String prefix : new String[]{ cid, code, tabName }) {
             if (prefix == null || prefix.isBlank()) continue;
             String keyPrefix = prefix + "#";
-            for (Map.Entry<String, Double> en : componentSubtotals.entrySet()) {
+            for (Map.Entry<String, BigDecimal> en : componentSubtotals.entrySet()) {
                 if (en.getKey().startsWith(keyPrefix) && en.getValue() != null) {
                     String col = en.getKey().substring(keyPrefix.length());
                     // BL-0017：`__amount_total__` 是供 [页签(总计)] 公式求值的内部聚合键，
                     // 不是真实列；不得泄漏进 subtotalByColumn（否则污染快照 + golden 漂移）。
                     if (com.cpq.quotation.service.card.ComponentDataEffectiveRows.AMOUNT_TOTAL_KEY.equals(col)) continue;
-                    if (!byColNode.has(col)) byColNode.put(col, en.getValue());
+                    if (!byColNode.has(col)) byColNode.put(col,
+                        com.cpq.common.PrecisionPolicy.toPlainDecimalString(en.getValue()));
                 }
             }
         }
@@ -3089,6 +3187,41 @@ public class CardSnapshotService {
         return map;
     }
 
+    /**
+     * 显式刷新专用的历史卡片解析。已有值无法解析或不是标准 {@code {tabs:[...]}} 形状时，
+     * 调用方必须保留旧值并把该行记为 no-op，不能用空 map 继续覆盖。
+     */
+    private ExistingQuoteCardState parseExistingQuoteCardState(String cardValuesJson) {
+        Map<String, ArrayNode> baseRows = new LinkedHashMap<>();
+        Map<String, ArrayNode> editRows = new LinkedHashMap<>();
+        if (cardValuesJson == null || cardValuesJson.isBlank()) {
+            return new ExistingQuoteCardState(baseRows, editRows);
+        }
+        try {
+            JsonNode root = MAPPER.readTree(cardValuesJson);
+            JsonNode tabs = root == null ? null : root.get("tabs");
+            if (root == null || !root.isObject() || tabs == null || !tabs.isArray()) {
+                throw new HistoricalCardValuesException(
+                    "Existing quote_card_values is not a normalized {tabs:[...]} object");
+            }
+            for (JsonNode tab : tabs) {
+                String cid = tab.path("componentId").asText("");
+                if (cid.isBlank()) continue;
+                JsonNode base = tab.path("baseRows");
+                baseRows.put(cid, base.isArray() ? (ArrayNode) base : MAPPER.createArrayNode());
+                JsonNode edits = tab.path("editRows");
+                if (edits.isArray() && !edits.isEmpty()) {
+                    editRows.put(cid, (ArrayNode) edits);
+                }
+            }
+            return new ExistingQuoteCardState(baseRows, editRows);
+        } catch (HistoricalCardValuesException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new HistoricalCardValuesException("Unable to parse existing quote_card_values", e);
+        }
+    }
+
     private JsonNode loadComponentsSnapshot(UUID templateId) {
         try {
             @SuppressWarnings("unchecked")
@@ -3136,17 +3269,29 @@ public class CardSnapshotService {
      */
     @Transactional
     public void refreshQuoteCardValues(QuotationLineItem li, boolean force) {
-        if (li == null || li.id == null) return;
+        refreshQuoteCardValues(li, force, LineFailurePolicy.BEST_EFFORT);
+    }
+
+    private RefreshOutcome refreshQuoteCardValues(
+            QuotationLineItem li, boolean force, LineFailurePolicy failurePolicy) {
+        if (li == null || li.id == null) {
+            return RefreshOutcome.NO_OP;
+        }
         try {
             QuotationLineItem managed = QuotationLineItem.findById(li.id);
-            if (managed == null) return;
+            if (managed == null) {
+                return RefreshOutcome.NO_OP;
+            }
 
             // 草稿默认冻结（2026-06-18）：已首次 bake 的行非 force 调用直接 no-op，
             // 防 on-open / 误调覆盖冻结值。force=true（显式刷新/删恢复行）才重算。
-            if (!force && managed.cardSnapshotAt != null) return;
+            if (!force && managed.cardSnapshotAt != null) return RefreshOutcome.NO_OP;
 
             Quotation q = Quotation.findById(managed.quotationId);
-            if (q == null || q.customerTemplateId == null) return;
+            if (q == null || q.customerTemplateId == null) {
+                // 兼容存量过渡数据：缺报价/报价模板历来是 no-op，不视为刷新事务失败。
+                return RefreshOutcome.NO_OP;
+            }
 
             // task-0806 B19：模板渲染域，覆盖下方 mergeRowDataInputsIntoEdits / assembleTabsWithFormulaResults
             // 内部对 rowKeyFields 冻结快照的取值（rowKeyFieldsMapFromScope() 读 TemplateRenderScope.currentTemplateId()）。
@@ -3157,12 +3302,18 @@ public class CardSnapshotService {
             // status 从 q.status 取；open() 内建冻结判定，非 DRAFT 时 pendingOwner()=null（AC-10）。
             UUID _pqPrev = QuotePendingScope.open(q.id, q.status);
             try {
-                JsonNode snapshot = loadQuoteTabsForValues(q.id, q.customerTemplateId);
-                if (snapshot == null) return;
+                JsonNode snapshot = loadQuoteTabsForRefresh(q.id, q.customerTemplateId);
+                if (snapshot == null) {
+                    // 已发布但尚未冻结快照是受支持的过渡状态，保留旧值并 no-op。
+                    return RefreshOutcome.NO_OP;
+                }
+
+                ExistingQuoteCardState existing = parseExistingQuoteCardState(managed.quoteCardValues);
 
                 // 1. 重查基础值（报价模板 driver 组件 expand 种子；非树页签走平铺实时展开）
                 Map<String, ArrayNode> baseRowsByComp =
-                    expandFlatDriverBaseRows(q.customerTemplateId, managed, q.customerId, q.id, null, null);
+                    expandFlatDriverBaseRows(q.customerTemplateId, managed, q.customerId, q.id,
+                        null, null);
                 // 1.5 task-0721 收尾修复：树页签（tab_type='BOM'）不走实时展开——覆盖为该组件当前已冻结的
                 // snapshot_rows（见 overlayTreeTabsFromFrozenSnapshot 方法注释；无树页签的模板 no-op）。
                 overlayTreeTabsFromFrozenSnapshot(q.customerTemplateId, managed.id, baseRowsByComp);
@@ -3172,7 +3323,7 @@ public class CardSnapshotService {
                 // baseRows 非空 → 判定为「一次重查空结果」，不得覆盖已持久化的非空数据。命中时把旧
                 // baseRows 放回 baseRowsByComp，继续走正常组装（不改变后续流程结构）；新旧都空 / 新值
                 // 非空 → 不动，正常更新。
-                Map<String, ArrayNode> oldBaseRowsByComp = extractBaseRowsByComp(managed.quoteCardValues);
+                Map<String, ArrayNode> oldBaseRowsByComp = existing.baseRowsByComp();
                 for (Map.Entry<String, ArrayNode> oldEntry : oldBaseRowsByComp.entrySet()) {
                     String guardCid = oldEntry.getKey();
                     ArrayNode oldRows = oldEntry.getValue();
@@ -3190,7 +3341,7 @@ public class CardSnapshotService {
                 }
 
                 // 2. 旧 editRows（按 rowKey 对齐保留）
-                Map<String, ArrayNode> oldEdits = extractEditRowsByComp(managed.quoteCardValues);
+                Map<String, ArrayNode> oldEdits = existing.editRowsByComp();
 
                 // 2.5 (2026-06-02 修复 报价卡片 FORMULA 单元格读陈旧 formulaResults=0): 把 row_data
                 //     (autosave 持久化的当前 INPUT 值, 与前端渲染 comp.rows 同源) 按 rowKey 合并进 editRows，
@@ -3198,7 +3349,7 @@ public class CardSnapshotService {
                 //     进 editRows，autosave 写 row_data 但 editQuoteCardValue 漏的行 formulaResults 缺输入算 0，
                 //     单元格(快照优先)读 0 而列小计(前端实时)正确 → 不一致。详见 RECORD 2026-06-02。
                 Map<String, ArrayNode> mergedEdits =
-                    mergeRowDataInputsIntoEdits(snapshot, baseRowsByComp, oldEdits, managed.id);
+                    mergeRowDataInputsIntoEditsRequired(snapshot, baseRowsByComp, oldEdits, managed.id);
 
                 // 2.6. 查各组件 deleted_row_keys 墓碑（报价侧需过滤永久删除的 driver 默认行）
                 Map<String, List<DeletedRowKeys.Tombstone>> delByComp = loadTombstonesByComp(managed.id);
@@ -3217,14 +3368,24 @@ public class CardSnapshotService {
                 // 5. 更新报价侧时间戳
                 managed.quoteValuesAt = OffsetDateTime.now();
                 // 核价两列：物理不参与本次 UPDATE
+                return RefreshOutcome.UPDATED;
             } finally {
                 QuotePendingScope.restore(_pqPrev);
             }
             } finally {
                 TemplateRenderScope.restore(_tplPrev);
             }
+        } catch (TemplateNotFrozenException | HistoricalCardValuesException e) {
+            LOG.warnf("[card-snapshot] refreshQuoteCardValues compatibility no-op li=%s: %s",
+                li.id, e.getMessage());
+            return RefreshOutcome.NO_OP;
         } catch (Exception e) {
+            if (failurePolicy == LineFailurePolicy.PROPAGATE_UNRECOVERABLE) {
+                if (e instanceof RuntimeException runtime) throw runtime;
+                throw new IllegalStateException("Refresh failed for line=" + li.id, e);
+            }
             LOG.warnf("[card-snapshot] refreshQuoteCardValues failed li=%s: %s", li.id, e.getMessage());
+            return RefreshOutcome.NO_OP;
         }
     }
 
@@ -3232,8 +3393,8 @@ public class CardSnapshotService {
      * 草稿态<b>显式刷新</b>整单报价侧卡片值（R1：仅刷"值"，不重建结构）。
      * <ul>
      *   <li>仅 {@code status="DRAFT"} 执行；非 DRAFT（已提交/冻结）→ no-op 返 0。</li>
-     *   <li>遍历该报价单全部 lineItems，逐行 {@code self.refreshQuoteCardValues(li, true)}（force=true 强制重算，
-     *       走 self 代理保 {@code @Transactional} 生效；每行独立事务，单行失败不连坐）。</li>
+     *   <li>遍历该报价单全部 lineItems，逐行 force=true 强制重算；整单共用一个事务，
+     *       任一行失败则整单回滚，避免部分刷新。</li>
      * </ul>
      * <p><b>R1（2026-06-18 草稿默认冻结）</b>：显式刷新只刷"值"，不重建结构。
      * 原 {@code rebuildStructureForDraft} 调用已移除——结构创建即冻、永不变。
@@ -3241,13 +3402,25 @@ public class CardSnapshotService {
      *
      * @return 实际重刷的行数（非 DRAFT 返 0）。
      */
+    @Transactional
     public int refreshDraftQuoteCards(UUID quotationId) {
+        return refreshDraftQuoteCards(quotationId, DraftRefreshPolicy.HTTP_ATOMIC);
+    }
+
+    /** 迁移专用事务入口：与 HTTP 共用原子写入，但不把失败包装成 HTTP 409。 */
+    @Transactional
+    public int refreshDraftQuoteCardsForMigration(UUID quotationId) {
+        return refreshDraftQuoteCards(quotationId, DraftRefreshPolicy.MIGRATION);
+    }
+
+    private int refreshDraftQuoteCards(UUID quotationId, DraftRefreshPolicy policy) {
         if (quotationId == null) return 0;
-        Quotation q = Quotation.findById(quotationId);
+        Quotation q = Quotation.findById(quotationId, LockModeType.PESSIMISTIC_WRITE);
         if (q == null || !"DRAFT".equals(q.status)) return 0; // 非 DRAFT no-op
         // R1（2026-06-18 草稿默认冻结）：显式刷新只刷"值"，不重建结构。
         // 原 rebuildStructureForDraft 调用已移除——结构创建即冻、永不变。
-        List<QuotationLineItem> lines = QuotationLineItem.list("quotationId", quotationId);
+        List<QuotationLineItem> lines = QuotationLineItem.list(
+            "quotationId = ?1 ORDER BY sortOrder, id", quotationId);
         int n = 0;
         for (QuotationLineItem li : lines) {
             try {
@@ -3255,18 +3428,48 @@ public class CardSnapshotService {
                 //   先定向清掉本行 driver 展开缓存（30s TTL）。否则后台直接改库（未走 app 导入 → 未调 evictAll）
                 //   时缓存命中旧值，refreshQuoteCardValues 重 expand 仍拿陈旧数据 → baseRows/含量 刷不出新值。
                 if (li.id != null) componentDriverService.evictForLineItem(li.id);
-                // I-1（2026-06-18）：必须走 self 代理，保 @Transactional 生效（this.xxx 绕过 CDI 代理不持久化）。
-                // force=true：显式刷新路径强制重算，无论 cardSnapshotAt 是否已设。
-                self.refreshQuoteCardValues(li, true);
-                n++;
+                // 整单方法已经建立单一事务；不可恢复的解析/组装错误必须传播。
+                // 缺模板、未冻结快照、driver 降级/树快照回退仍按既有兼容契约处理。
+                // 每行 flush 只为把数据库错误精确归因到当前行，仍未提交；任一后续行失败会回滚前序 flush。
+                RefreshOutcome outcome = refreshQuoteCardValues(
+                    li, true, LineFailurePolicy.PROPAGATE_UNRECOVERABLE);
+                if (outcome == RefreshOutcome.UPDATED) {
+                    em.flush();
+                    n++;
+                }
             } catch (Exception e) {
-                LOG.warnf("[card-snapshot] refreshDraftQuoteCards line=%s failed: %s", li.id, e.getMessage());
+                LOG.errorf(e, "[card-snapshot] atomic refresh failed quotation=%s line=%s",
+                    quotationId, li.id);
+                throw draftRefreshFailure(policy, quotationId, li.id, e);
             }
         }
         // 方向3 T1：整单刷新改了每行 li.subtotal → 单头必须跟上，否则分叉只是从「行」搬到「单」。
         // 🔒 放在循环【外】：recomputeDraftHeaderTotals 内部要查本单全部行，放循环里就是 O(N²)。
-        self.recomputeDraftHeaderTotals(quotationId);
+        if (n > 0) {
+            self.recomputeDraftHeaderTotals(quotationId);
+            em.flush();
+        }
         return n;
+    }
+
+    private RuntimeException draftRefreshFailure(
+            DraftRefreshPolicy policy, UUID quotationId, UUID lineItemId, Exception cause) {
+        String detail = "Quotation refresh failed for line " + lineItemId + ": " + rootCauseMessage(cause);
+        if (policy == DraftRefreshPolicy.HTTP_ATOMIC) {
+            return new BusinessException(409, detail);
+        }
+        return new IllegalStateException(
+            "Migration refresh failed for quotation " + quotationId + ", line " + lineItemId
+                + ": " + rootCauseMessage(cause), cause);
+    }
+
+    private static String rootCauseMessage(Throwable error) {
+        Throwable current = error;
+        while (current.getCause() != null && current.getCause() != current) {
+            current = current.getCause();
+        }
+        String message = current.getMessage();
+        return message == null || message.isBlank() ? current.getClass().getSimpleName() : message;
     }
 
     // =========================================================================
@@ -3291,11 +3494,29 @@ public class CardSnapshotService {
                                              String fieldName, Object value) {
         if (lineItemId == null || componentId == null || rowKey == null || fieldName == null) return null;
         try {
+            // Resolve only the lock key first. Loading the line before the quotation lock would
+            // reverse ensure's lock order and could deadlock.
+            @SuppressWarnings("unchecked")
+            List<Object> quotationIds = em.createNativeQuery(
+                    "SELECT quotation_id FROM quotation_line_item WHERE id = :lineItemId")
+                .setParameter("lineItemId", lineItemId)
+                .setMaxResults(1)
+                .getResultList();
+            if (quotationIds.isEmpty()) return null;
+            UUID lockedQuotationId = asUuid(quotationIds.get(0));
+            if (lockedQuotationId == null) return null;
+
+            concurrencyProbe.beforeEditLockWait(lockedQuotationId);
+            awaitQuotationCalculationLock(lockedQuotationId);
+
+            // The wait may outlive any persistence-context state. Reload and validate under lock.
+            em.clear();
             QuotationLineItem li = QuotationLineItem.findById(lineItemId);
-            if (li == null) return null;
+            if (li == null || !lockedQuotationId.equals(li.quotationId)) return null;
             Quotation q = Quotation.findById(li.quotationId);
             if (q == null || q.customerTemplateId == null) return null;
             if (!"DRAFT".equals(q.status)) return null; // 仅草稿态可编辑
+            if (li.quoteCardValues == null || li.quoteCardValues.isBlank()) return null;
 
             // task-0806 B19：模板渲染域，覆盖下方 materializeWholeLineRowData / assembleTabsWithFormulaResults
             // 内部对 rowKeyFields 冻结快照的取值。
@@ -3767,6 +3988,18 @@ public class CardSnapshotService {
             JsonNode snapshot, Map<String, ArrayNode> baseRowsByComp,
             Map<String, ArrayNode> oldEdits, UUID lineItemId) {
         try {
+            return mergeRowDataInputsIntoEditsRequired(
+                snapshot, baseRowsByComp, oldEdits, lineItemId);
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] mergeRowDataInputsIntoEdits 降级 li=%s: %s", lineItemId, e.getMessage());
+            return oldEdits;
+        }
+    }
+
+    private Map<String, ArrayNode> mergeRowDataInputsIntoEditsRequired(
+            JsonNode snapshot, Map<String, ArrayNode> baseRowsByComp,
+            Map<String, ArrayNode> oldEdits, UUID lineItemId) {
+        try {
             // 基底：复制旧 editRows（不改原引用）
             Map<String, ArrayNode> merged = new LinkedHashMap<>();
             if (oldEdits != null) {
@@ -3801,8 +4034,8 @@ public class CardSnapshotService {
                 loadTombstonesByComp(lineItemId), merged);
             return merged;
         } catch (Exception e) {
-            LOG.warnf("[card-snapshot] mergeRowDataInputsIntoEdits 降级 li=%s: %s", lineItemId, e.getMessage());
-            return oldEdits; // 降级用原 editRows
+            throw new IllegalStateException(
+                "Unable to merge persisted row_data for line=" + lineItemId, e);
         }
     }
 
@@ -4016,7 +4249,7 @@ public class CardSnapshotService {
             String cid,
             String code,
             String tabName,
-            Map<String, Double> componentSubtotals) {
+            Map<String, BigDecimal> componentSubtotals) {
         // task-0729 B8.1（BL-0017 遗漏路径补齐）：金额列集合（is_amount && is_subtotal），
         // 照抄 ComponentDataEffectiveRows 的口径，不新写一套算法。amountCols ⊆ subtotalFields
         // （is_amount 列必先 is_subtotal=true 才会被 findSubtotalFieldNames 选中），
@@ -4026,7 +4259,7 @@ public class CardSnapshotService {
             com.cpq.quotation.service.card.ComponentDataEffectiveRows.amountColsFromFields(fields);
         List<String> subtotalFields = formulaCalculator.findSubtotalFieldNames(fields);
         if (subtotalFields.isEmpty()) {
-            putAmountTotalSentinel(cid, code, tabName, 0.0, componentSubtotals);
+            putAmountTotalSentinel(cid, code, tabName, BigDecimal.ZERO, componentSubtotals);
             return;
         }
 
@@ -4036,9 +4269,7 @@ public class CardSnapshotService {
             rowsForSum.add(com.cpq.engine.unit.UnitConversion.convertObjectRow(fields, r));
         }
 
-        // task-0801 B4-2：累加过程改 BigDecimal 精确求和（原 double += 几十行累加会有中间误差，
-        // 且中途 setScale(4) 截断），只在写回 componentSubtotals（Map<String,Double>，链路一约定
-        // 承载类型不变，见 dev-docs/task-0801-公式计算精度优化/backtask.md §1）时才 .doubleValue()。
+        // task-0810：累加、跨节点缓存和写回均为 BigDecimal，禁止 double 与 4 位中间截断。
         java.math.BigDecimal totalSum = java.math.BigDecimal.ZERO;
         // BL-0017（task-0729 B8.1）：Σ 金额列（is_amount && is_subtotal）。merge master 时同步改为
         // BigDecimal 精确求和（与 totalSum 同一处理），累加未四舍五入的原始 colSum，最后统一舍入
@@ -4057,16 +4288,16 @@ public class CardSnapshotService {
                 }
                 colSum = colSum.add(d);
             }
-            double colSumDouble = colSum.doubleValue();
+            BigDecimal colSumValue = com.cpq.common.PrecisionPolicy.roundForCalculation(colSum);
             // 写 per-column 键（三种 key 形式，与 PASS1 写法对称）
-            if (!cid.isBlank()) componentSubtotals.put(cid + "#" + col, colSumDouble);
-            if (code != null && !code.isBlank()) componentSubtotals.put(code + "#" + col, colSumDouble);
-            componentSubtotals.put(tabName + "#" + col, colSumDouble);
+            if (!cid.isBlank()) componentSubtotals.put(cid + "#" + col, colSumValue);
+            if (code != null && !code.isBlank()) componentSubtotals.put(code + "#" + col, colSumValue);
+            componentSubtotals.put(tabName + "#" + col, colSumValue);
             totalSum = totalSum.add(colSum);
             if (amountCols.contains(col)) amountTotal = amountTotal.add(colSum); // BL-0017：累加未舍入原值，最后统一舍入
         }
         // 回填总小计（= 所有 is_subtotal 列之和，与 PASS1 computeTabSubtotalsByColumn 逻辑对称）
-        double roundedTotal = totalSum.doubleValue();
+        BigDecimal roundedTotal = com.cpq.common.PrecisionPolicy.roundForCalculation(totalSum);
         if (!cid.isBlank()) componentSubtotals.put(cid, roundedTotal);
         if (code != null && !code.isBlank()) componentSubtotals.put(code, roundedTotal);
         componentSubtotals.put(tabName, roundedTotal);
@@ -4074,8 +4305,8 @@ public class CardSnapshotService {
         // BL-0017 哨兵键登记（task-0729 B8.1 补齐）：`${cid|code|tabName}#__amount_total__` = Σ金额列。
         // 🔒 buildTabNode:~1806 的排除逻辑必须保留 —— 登记后该键会真的出现在 componentSubtotals 里，
         // 若泄漏进 subtotalByColumn 会污染快照 + 造成 golden 漂移（本次未改动该排除逻辑）。
-        double roundedAmountTotal = amountTotal
-            .setScale(4, java.math.RoundingMode.HALF_UP).doubleValue();
+        BigDecimal roundedAmountTotal =
+            com.cpq.common.PrecisionPolicy.roundForCalculation(amountTotal);
         putAmountTotalSentinel(cid, code, tabName, roundedAmountTotal, componentSubtotals);
     }
 
@@ -4084,8 +4315,8 @@ public class CardSnapshotService {
      * 抽成小方法供 {@link #backfillSubtotalsFromResolved} 的空 subtotalFields 早退分支与正常分支复用。
      */
     private static void putAmountTotalSentinel(
-            String cid, String code, String tabName, double amountTotal,
-            Map<String, Double> componentSubtotals) {
+            String cid, String code, String tabName, BigDecimal amountTotal,
+            Map<String, BigDecimal> componentSubtotals) {
         String key = com.cpq.quotation.service.card.ComponentDataEffectiveRows.AMOUNT_TOTAL_KEY;
         if (cid != null && !cid.isBlank()) componentSubtotals.put(cid + "#" + key, amountTotal);
         if (code != null && !code.isBlank()) componentSubtotals.put(code + "#" + key, amountTotal);
@@ -4161,12 +4392,12 @@ public class CardSnapshotService {
      * <p><b>dryRun=true</b>（默认/安全）：只扫描——统计哪些草稿的 {@code quote_card_values}
      * 含 {@code #ERROR} 子串，返回清单，<b>不改任何数据</b>。
      *
-     * <p><b>dryRun=false</b>：对每个 DRAFT 报价单调 {@link #refreshDraftQuoteCards(UUID)}
-     * （内部逐行 force=true 干净重烤，走 self 代理保事务持久化）。重烤后再检查是否仍含 {@code #ERROR}，
-     * 记录每单结果。单单失败不中断整体（try-catch per quotation）。
+     * <p><b>dryRun=false</b>：对每个 DRAFT 报价单调 {@link #refreshDraftQuoteCardsForMigration(UUID)}
+     * （显式迁移策略；内部逐行 force=true 干净重烤，单报价整单事务；任一不可恢复失败则该报价整单回滚）。
+     * 重烤后再检查是否仍含 {@code #ERROR}，记录每单结果。不同报价间仍由 per-quotation try-catch 隔离。
      *
-     * <p><b>I-1 约束</b>：force=true 重算通过 {@link #refreshDraftQuoteCards} 复用，
-     * 其内部已走 {@code self.refreshQuoteCardValues(li, true)} CDI 代理，事务边界正确。
+     * <p><b>I-1 约束</b>：迁移必须经 {@code self} 调迁移专用入口，确保单报价事务边界生效，
+     * 且失败作为迁移结果记录，不继承 HTTP 409 语义。
      *
      * @param dryRun true=只扫描不改数据，false=触发重烤
      * @return 每个 DRAFT 报价单的扫描/迁移结果列表
@@ -4199,8 +4430,8 @@ public class CardSnapshotService {
                     entry.put("errorLineCount", errorLineCount);
                     entry.put("status", "DRY_RUN");
                 } else {
-                    // 3. 触发重烤（复用 A2：refreshDraftQuoteCards 内部逐行 force=true + self 代理）
-                    int refreshed = refreshDraftQuoteCards(quotationId);
+                    // 3. 触发重烤（迁移策略：单报价整单事务；经 self 代理触发事务拦截器）
+                    int refreshed = self.refreshDraftQuoteCardsForMigration(quotationId);
                     entry.put("refreshedLines", refreshed);
 
                     // 4. 重烤后再扫描是否仍含 #ERROR

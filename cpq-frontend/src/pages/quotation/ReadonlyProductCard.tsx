@@ -22,6 +22,20 @@ import { formatNumber } from '../../utils/formatNumber';
 import { resolveFieldWidth } from '../component/types';
 import VersionSelectDropdown from './VersionSelectDropdown';
 import type { VersionSwitchResult } from '../../services/costingOrderService';
+import type { DecimalContext } from '../../utils/formulaEngine';
+import {
+  sumDecimal,
+  toCalculationString,
+  toDecimal,
+  type DecimalString,
+  type DecimalValue,
+} from '../../utils/precision';
+import { parseSnapshotJsonLossless, tryParseSnapshotJsonLossless } from '../../utils/losslessJson';
+import {
+  assembleReadonlySnapshotRow,
+  buildReadonlySnapshotIndex,
+  materializeReadonlySnapshotInputs,
+} from './readonlySnapshotRows';
 import './quotation.css';
 
 /** Readonly product card for quotation detail page */
@@ -84,7 +98,7 @@ interface ReadonlyProductCardProps {
 function parseJson<T>(value: T | string | null | undefined, fallback: T): T {
   if (value == null) return fallback;
   if (typeof value === 'string') {
-    try { return JSON.parse(value) as T; } catch { return fallback; }
+    return tryParseSnapshotJsonLossless<T>(value) ?? fallback;
   }
   return value;
 }
@@ -100,7 +114,7 @@ function parseJson<T>(value: T | string | null | undefined, fallback: T): T {
 function buildFormulaCache(
   comp: ComponentDataItem,
   rows: Record<string, any>[],
-  compSubtotals: Record<string, number>,
+  compSubtotals: DecimalContext,
   partNo?: string,
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
   // 2026-05-31 修复（小计合计/产品小计 ¥∞）：必须按行喂 driver 展开的 basicDataValues，
@@ -110,18 +124,18 @@ function buildFormulaCache(
   // cross_tab_ref 三视图对齐 (Task 4.3): PASS1 小计循环不传（undefined），
   // 仅渲染层 PASS2 才传 crossTabRows，镜像后端两阶段。
   crossTabRows?: Record<string, Array<Record<string, any>>>,
-): Array<{ formulaCache: Record<string, number | null>; fieldValues: Record<string, number> }> {
+): Array<{ formulaCache: Record<string, DecimalString | null>; fieldValues: DecimalContext }> {
   const useDriver = !!(driverExpansion && driverExpansion.rowCount > 0);
   // AP-51 行数纪律：driver 权威优先，仅 rowCount=0 时退回持久化行数。
   const effectiveCount = useDriver ? driverExpansion!.rowCount : rows.length;
-  const caches: Array<{ formulaCache: Record<string, number | null>; fieldValues: Record<string, number> }> = [];
+  const caches: Array<{ formulaCache: Record<string, DecimalString | null>; fieldValues: DecimalContext }> = [];
 
   // task-0803 Task 7：BOM 树页签分流（AP-50：与编辑页 QuotationStep2 共用 computeTabFormulasTree 入口，
   // 不各写一份）。previous_row_subtotal 链在 BOM 页签禁用（§4.3.7），命中即整页签批量算一次。
   const hasBomSysRows = useDriver && !!driverExpansion!.rows.some((r) => r?.__sys?.nodeId !== undefined);
   const useTree = hasBomSysRows && usesTreeTokensTab(comp);
-  let treeResults: Record<number, Record<string, number | null>> | undefined;
-  let treeFieldValuesByRow: Array<Record<string, number>> | undefined;
+  let treeResults: Record<number, Record<string, DecimalString | null>> | undefined;
+  let treeFieldValuesByRow: DecimalContext[] | undefined;
   if (useTree) {
     const treeRowInputs: TreeFormulaRowInput[] = [];
     for (let ri = 0; ri < effectiveCount; ri++) {
@@ -140,7 +154,7 @@ function buildFormulaCache(
   }
 
   // Plan 2b：上一行全量公式值，previous_row_subtotal 按本列取。
-  let prevRowValues: Record<string, number | null> | undefined = undefined;
+  let prevRowValues: Record<string, DecimalString | null> | undefined = undefined;
   for (let ri = 0; ri < effectiveCount; ri++) {
     const row = rows[ri] ?? {};
     const bdv = useDriver ? driverExpansion!.rows[ri]?.basicDataValues : undefined;
@@ -150,7 +164,7 @@ function buildFormulaCache(
     }
     // AP-50 修复：传入 out.fieldValues 让 computeAllFormulas 回填所有字段（含输入型），
     // 用于列小计累加时对输入型小计列回退取值（与 computeTabSubtotalsByColumn 同口径）。
-    const fv: Record<string, number> = {};
+    const fv: DecimalContext = {};
     const formulaCache = computeAllFormulas(
       comp, row, compSubtotals,
       undefined, undefined, partNo, bdv,
@@ -165,19 +179,20 @@ function buildFormulaCache(
 
 // task-0801（AP-50：详情页须与编辑页 QuotationStep2.formatCurrency 同口径）：不再固定 2 位
 // toLocaleString，改走 formatNumber（DISPLAY_SCALE=6 兜底去尾零）。
-const formatCurrency = (val: number) =>
-  `¥ ${formatNumber(val || 0, { isComputed: true }) ?? '0'}`;
+const formatCurrency = (val: DecimalValue | null | undefined) =>
+  `¥ ${formatNumber(val ?? '0', { isComputed: true }) ?? '0'}`;
 
 /** 单元格值格式化 — V197 同 QuotationStep2.formatPathValue 同款逻辑, 支持 JSONB 包装对象 */
 const formatCellValue = (v: any): string => {
   if (v == null || v === '') return '—';
   if (typeof v === 'boolean') return v ? '是' : '否';
-  if (typeof v === 'number' || typeof v === 'string') return String(v);
+  if (typeof v === 'number') return '—';
+  if (typeof v === 'string') return v;
   // V197: PG JDBC jsonb 列读成 PGobject {type:'jsonb', value:'<json>'}, 单 cell 完整展开
   if (typeof v === 'object') {
     if (v.type === 'jsonb' && typeof v.value === 'string') {
       try {
-        const parsed = JSON.parse(v.value);
+        const parsed = parseSnapshotJsonLossless<any>(v.value);
         if (Array.isArray(parsed)) {
           if (parsed.length === 0) return '—';
           return parsed.map(it => formatCellValue(it)).filter(s => s && s !== '—').join(', ') || '—';
@@ -362,23 +377,18 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   const sideCardValues = useMemo<CardValues | null>(() => {
     const json = (isCosting ? lineItem.costingCardValues : lineItem.quoteCardValues) as string | undefined;
     if (!json) return null;
-    try { return typeof json === 'string' ? JSON.parse(json) as CardValues : (json as CardValues); } catch { return null; }
+    return typeof json === 'string'
+      ? tryParseSnapshotJsonLossless<CardValues>(json)
+      : (json as CardValues);
   }, [isCosting, lineItem.quoteCardValues, lineItem.costingCardValues]);
   // task-0712 展示修复：后端整单渲染失败会落 __cardValueFailed 哨兵（含 __errorMsg 原文）。
   // 只读面显式提示，不误导为「无组件数据」。
   const cardValueFailed = !!(sideCardValues as any)?.__cardValueFailed;
   const cardValueErrorMsg = (sideCardValues as any)?.__errorMsg as string | undefined;
-  const snapFormulaByComp = useMemo(() => {
-    const m = new Map<string, { formula: Map<string, Record<string, any>>; driverRows: Record<string, any>[] }>();
-    (sideCardValues?.tabs ?? []).forEach(vt => {
-      if (!vt.componentId) return;
-      const formula = new Map<string, Record<string, any>>();
-      (vt.formulaResults ?? []).forEach(r => { if (r?.rowKey != null) formula.set(r.rowKey, r.values ?? {}); });
-      const driverRows = (vt.baseRows ?? []).map(b => b?.driverRow ?? {});
-      m.set(vt.componentId, { formula, driverRows });
-    });
-    return m;
-  }, [sideCardValues]);
+  const snapFormulaByComp = useMemo(
+    () => buildReadonlySnapshotIndex(sideCardValues),
+    [sideCardValues],
+  );
 
   // 详情页 LIST_FORMULA 模板加载（与编辑页 useConfigTemplates 同款）
   const configTemplates = useConfigTemplates(lineItemsForDriver as any);
@@ -412,14 +422,14 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   // Compute subtotals using buildFormulaCache（支持 prev_row_subtotal 累加公式）
   // compSubtotals 先用空 map 初始化，按 component 顺序逐步填入，供后续组件引用前组件小计。
   const subtotalLineItemId = (lineItem as any).id || (lineItem as any).tempId || '';
-  const compSubtotals: Record<string, number> = {};
+  const compSubtotals: DecimalContext = {};
   for (const comp of components) {
     if (!comp.fields) continue;
     // Plan 2-核心：多小计列 —— 取所有 is_subtotal 字段。
     const subtotalFields = comp.fields.filter((f: any) => f.is_subtotal);
     if (subtotalFields.length === 0) {
-      compSubtotals[comp.tabName] = 0;
-      if (comp.componentCode) compSubtotals[comp.componentCode] = 0;
+      compSubtotals[comp.tabName] = '0';
+      if (comp.componentCode) compSubtotals[comp.componentCode] = '0';
       continue;
     }
     // 2026-05-31 修复（合计/产品小计 ¥∞）：取该组件 driver 展开（与渲染层同 key），
@@ -442,16 +452,18 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
     // Plan 2-核心：逐列求和 + per-column 键 `${code|tabName}#${列名}`，组件级 = 各列之和。
     // AP-50 修复：优先取 formulaCache（FORMULA 字段），回退取 fieldValues（输入型字段），
     // 与 computeTabSubtotalsByColumn (Task1) 和后端 (Task2) 口径一致（三视图对齐）。
-    let st = 0;
+    let st = toDecimal('0');
     for (const sf of subtotalFields) {
-      const colSum = formulaCaches.reduce((s, { formulaCache: fc, fieldValues: fv }) =>
-        s + ((fc[sf.name] as number) ?? fv[sf.name] ?? 0), 0);
+      const colSum = toCalculationString(sumDecimal(formulaCaches.map(
+        ({ formulaCache: fc, fieldValues: fv }) => fc[sf.name] ?? fv[sf.name] ?? '0',
+      )));
       compSubtotals[`${comp.tabName}#${sf.name}`] = colSum;
       if (comp.componentCode) compSubtotals[`${comp.componentCode}#${sf.name}`] = colSum;
-      st += colSum;
+      st = st.plus(colSum);
     }
-    compSubtotals[comp.tabName] = st;
-    if (comp.componentCode) compSubtotals[comp.componentCode] = st;
+    const componentSubtotal = toCalculationString(st);
+    compSubtotals[comp.tabName] = componentSubtotal;
+    if (comp.componentCode) compSubtotals[comp.componentCode] = componentSubtotal;
   }
   // cross_tab_ref 三视图对齐 (Task 4.3): PASS1（compSubtotals 循环）完成后构建 crossTabRows，
   // 镜像后端 CardSnapshotService PASS2。lookupExpansion 复用与 compSubtotals 循环相同的 key 构造。
@@ -642,7 +654,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                     // Phase4 Task4: 本组件快照 formula 映射 + rowKeyFields(报价侧 AP-50)
                     const activeSnap = useSnap ? snapFormulaByComp.get(activeComp.componentId) : undefined;
                     const activeRowKeyFields = rowKeyFieldsByComp.get(activeComp.componentId);
-                    const preComputedCaches: Array<Record<string, number | null>> = [];
+                    const preComputedCaches: Array<Record<string, DecimalString | null>> = [];
                     // 错误旁路(AP-50: 详情页与编辑页口径对齐) — cross_tab_ref 细项多命中等场景,
                     // 数值已静默归 0; 详情页同样显示 ⚠ 而非误导的 0。
                     const preComputedErrors: Array<Record<string, string>> = [];
@@ -667,7 +679,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                           )
                         : undefined;
                       // Plan 2b：上一行全量公式值，previous_row_subtotal 按本列取。
-                      let prevRowValues: Record<string, number | null> | undefined = undefined;
+                      let prevRowValues: Record<string, DecimalString | null> | undefined = undefined;
                       // 撞键消歧：详情/核价侧也按组件成批算唯一 rowKey（与编辑页 + 后端一致）。
                       // repair-0727 F0：QUOTE 侧（!isCosting）树行加 nodeId 前缀，对齐后端 B0
                       // buildRawRowKeys；roLegacyUniqRowKeys 并行算旧口径（无前缀），供下方 snapFormula
@@ -675,8 +687,16 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                       const roUniqRowKeyTuples = useSnap
                         ? Array.from({ length: effectiveCount }, (_, ri) => {
                             const ra = rowAt(ri, activeComp, s);
-                            const drv = (ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.driverRow : undefined) ?? activeSnap?.driverRows[ri] ?? ra.row;
-                            const bdv = ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
+                            const assembled = assembleReadonlySnapshotRow({
+                              persistedRow: ra.row,
+                              rowIndex: ri,
+                              expIndex: ra.expIndex,
+                              expandedRows: activeDriverExpansion?.rows,
+                              snapshotDriverRows: activeSnap?.driverRows,
+                              snapshotBasicDataRows: activeSnap?.basicDataRows,
+                            });
+                            const drv = assembled.driverRow;
+                            const bdv = assembled.basicDataValues;
                             const nodeId = ra.expIndex >= 0 ? (activeDriverExpansion!.rows[ra.expIndex] as any)?.__sys?.nodeId : undefined;
                             return { driverRow: drv, basicDataValues: bdv, __nodeId: nodeId };
                           })
@@ -690,8 +710,14 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         : { legacyPrefixed: [] as string[], legacyNoPrefix: [] as string[] };
                       for (let ri = 0; ri < effectiveCount; ri++) {
                         const ra = rowAt(ri, activeComp, s);
-                        const rawRow = ra.row;
-                        const rowBdv = ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
+                        const { rawRow, basicDataValues: rowBdv } = assembleReadonlySnapshotRow({
+                          persistedRow: ra.row,
+                          rowIndex: ri,
+                          expIndex: ra.expIndex,
+                          expandedRows: activeDriverExpansion?.rows,
+                          snapshotDriverRows: activeSnap?.driverRows,
+                          snapshotBasicDataRows: activeSnap?.basicDataRows,
+                        });
                         // Phase4 Task4: 优先读快照 formulaResults[rowKey](真零计算, 与编辑页 AP-50 同源), 缺时 computeAllFormulas 兜底。
                         const rowKey = useSnap ? (roUniqRowKeys[ri] ?? String(ri)) : String(ri);
                         // F0 + F6：新键未命中时按同一行位置的两档历史口径键依次回退（存量单据兼容）。
@@ -705,8 +731,8 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                           ? getByKeyWithLegacyFallback(activeSnap?.formula, rowKey, legacyRowKeyPrefixed, legacyRowKey)
                           : undefined;
                         const errForRow: Record<string, string> = {};
-                        const cache: Record<string, number | null> = (snapFormula && Object.keys(snapFormula).length > 0)
-                          ? (snapFormula as Record<string, number | null>)
+                        const cache: Record<string, DecimalString | null> = (snapFormula && Object.keys(snapFormula).length > 0)
+                          ? (snapFormula as Record<string, DecimalString | null>)
                           : treeResultsActive
                           ? (treeResultsActive[ri] ?? {})
                           : computeAllFormulas(
@@ -740,16 +766,25 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                             // task-0713（F2）：非树页签版本/料号——取本行驱动展开的原始 $view 行
                             // （driverRow，与 __sys 同一来源，早于 __ 前缀重打包），只在
                             // activeComponentVersionable 时有意义，其余场景恒 undefined、零影响。
-                            const driverRowRaw = ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.driverRow : undefined;
+                            const assembled = assembleReadonlySnapshotRow({
+                              persistedRow: ra.row,
+                              rowIndex: ri,
+                              expIndex: ra.expIndex,
+                              expandedRows: activeDriverExpansion?.rows,
+                              snapshotDriverRows: activeSnap?.driverRows,
+                              snapshotBasicDataRows: activeSnap?.basicDataRows,
+                            });
+                            const driverRowRaw = assembled.driverRow;
+                            const rowBdv = assembled.basicDataValues;
                             return {
                               ri,
-                              rawRow: ra.row,
+                              rawRow: materializeReadonlySnapshotInputs(activeComp.fields, assembled.rawRow, rowBdv),
                               // task-0729 联调修复（2026-08-02）：priceLocked/priceVersion 标记挂在
                               // driverRow 上（与 __viewVersion/__rowPartNo 同源），需透传给下游 ordered.map
                               // 消费；之前只在本闭包内部用 driverRowRaw 算 __viewVersion/__rowPartNo 就丢弃了，
                               // 未传出去导致下方 priceLocked 只能误读 rawRow（=row_data，不携带该标记）。
                               driverRow: driverRowRaw,
-                              rowBdv: ra.expIndex >= 0 ? activeDriverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined,
+                              rowBdv,
                               formulaCache: preComputedCaches[ri] ?? {},
                               formulaErrors: preComputedErrors[ri] ?? {},
                               // 核价 BOM 递归展开（task-0712）：spine 系统列（仅 COSTING 行有值），
@@ -990,11 +1025,11 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         // C1：小计行只对勾选了 is_subtotal 的列求和；非小计列一律留空。
                         const isNumericCol = !!field.is_subtotal;
                         if (isNumericCol && colName && colName in colSums) {
-                          const v = colSums[colName] ?? 0;
+                          const v = colSums[colName] ?? '0';
                           // ¥ 仅当 is_amount===true；其他数值列（含管理费/利润等 is_subtotal 但非金额列）纯数字
                           // C2：金额列 = ¥ + 通用精度（task-0801：改走 formatNumber DISPLAY_SCALE=6
                           // 去尾零兜底，与编辑页 QuotationStep2 同款同口径，AP-50）
-                          const plain = v === 0 ? '0' : (formatNumber(v, { isComputed: true }) ?? '0');
+                          const plain = toDecimal(v).isZero() ? '0' : (formatNumber(v, { isComputed: true }) ?? '0');
                           const text = field.is_amount === true ? `¥ ${plain}` : plain;
                           return (
                             <td key={colName || fi} className="qt-subtotal-cell" style={field.is_amount === true ? undefined : { color: '#595959' }}>
@@ -1035,7 +1070,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
       <div className="qt-subtotal-bar">
         <span className="qt-subtotal-label">产品小计</span>
         <span className="qt-subtotal-value">
-          {formatCurrency(productSubtotal || (isCosting ? 0 : (lineItem.subtotal || 0)))}
+          {formatCurrency(productSubtotal ?? (isCosting ? '0' : (lineItem.subtotal ?? '0')))}
         </span>
       </div>
     </div>

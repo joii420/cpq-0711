@@ -27,6 +27,7 @@ import {
   DEFAULT_PAGE_SIZE,
   commonPagination,
 } from './listConventions';
+import { formatDisplayDecimal, type DecimalString } from '../../utils/precision';
 
 const { Search } = Input;
 
@@ -281,7 +282,7 @@ const V6ProcessCrudTab: React.FC = () => {
       width: 100,
       sorter: true,
       sortOrder: orderOf('defaultDefectRate'),
-      render: (v: number) => (v !== undefined && v !== null ? v : '—'),
+      render: (v: DecimalString | null | undefined) => (v != null ? formatDisplayDecimal(v) : '—'),
     },
     {
       title: '更新时间',
@@ -447,7 +448,7 @@ const V6ProcessCrudTab: React.FC = () => {
             <Input placeholder="如 PCS / KG" />
           </Form.Item>
           <Form.Item label="默认不良率" name="defaultDefectRate">
-            <InputNumber min={0} step={0.01} style={{ width: '100%' }} placeholder="如 0.02 表示 2%" />
+            <InputNumber<string> stringMode min="0" step="0.01" style={{ width: '100%' }} placeholder="如 0.02 表示 2%" />
           </Form.Item>
         </Form>
       </Drawer>

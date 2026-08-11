@@ -1,6 +1,7 @@
 import { bnfDriverLookupKey } from './useDriverExpansions';
 import { formatPathValue } from './components/formatPathValue';
 import type { ComponentField } from './QuotationStep2';
+import { isDecimalString, normalizeDecimalString, type DecimalString } from '../../utils/precision';
 
 export interface InputDefaultCtx {
   basicDataValues?: Record<string, any>;
@@ -9,12 +10,8 @@ export interface InputDefaultCtx {
 }
 
 /** 与 ComponentCell.onChange 的 /^-?\d*\.?\d*$/ 同源：合法返回 number，否则 undefined。 */
-export function coerceInputNumber(v: unknown): number | undefined {
-  if (typeof v === 'number') return isNaN(v) ? undefined : v;
-  if (typeof v !== 'string') return undefined;
-  if (v === '' || !/^-?\d*\.?\d*$/.test(v)) return undefined;
-  const n = parseFloat(v);
-  return isNaN(n) ? undefined : n;
+export function coerceInputNumber(v: unknown): DecimalString | undefined {
+  return isDecimalString(v) ? normalizeDecimalString(v) : undefined;
 }
 
 /**
@@ -22,7 +19,7 @@ export function coerceInputNumber(v: unknown): number | undefined {
  * 源未命中（或字段非 INPUT*）返回 undefined。供"快照回填(bake)"等只应冻结真实源值的场景使用——
  * content 兜底归 snapshotRows(无源) + 实时渲染，不该被 bake 冻结锁死。
  */
-export function resolveInputDefaultSourceOnly(field: ComponentField, ctx: InputDefaultCtx): string | number | undefined {
+export function resolveInputDefaultSourceOnly(field: ComponentField, ctx: InputDefaultCtx): string | undefined {
   const ft = field.field_type;
   if (ft !== 'INPUT_TEXT' && ft !== 'INPUT_NUMBER' && ft !== 'INPUT') return undefined;
 
@@ -52,9 +49,9 @@ export function resolveInputDefaultSourceOnly(field: ComponentField, ctx: InputD
   }
 
   if (resolved != null) {
-    if (typeof resolved === 'number') return resolved;
+    if (typeof resolved === 'number') return undefined;
     const fmt = formatPathValue(resolved);
-    if (fmt != null) return fmt;
+    if (fmt != null) return ft === 'INPUT_NUMBER' ? coerceInputNumber(fmt) : fmt;
   }
   return undefined;
 }
@@ -66,7 +63,7 @@ export function resolveInputDefaultSourceOnly(field: ComponentField, ctx: InputD
  * - 字段无 default_source：直接烘静态 content。
  * 非 INPUT* / 无可烘值 → undefined。
  */
-export function resolveInputDefaultForBake(field: ComponentField, ctx: InputDefaultCtx): string | number | undefined {
+export function resolveInputDefaultForBake(field: ComponentField, ctx: InputDefaultCtx): string | undefined {
   const ft = field.field_type;
   if (ft !== 'INPUT_TEXT' && ft !== 'INPUT_NUMBER' && ft !== 'INPUT') return undefined;
   if (field.default_source) return resolveInputDefaultSourceOnly(field, ctx);
@@ -78,7 +75,7 @@ export function resolveInputDefaultForBake(field: ComponentField, ctx: InputDefa
  * 解析 INPUT_TEXT / INPUT_NUMBER 的有效默认值（不判 row[key]——调用方先判已有值）。
  * 优先级：default_source(GLOBAL_VARIABLE | BNF_PATH | BASIC_DATA，实时) > 静态 content > undefined。
  */
-export function resolveInputDefault(field: ComponentField, ctx: InputDefaultCtx): string | number | undefined {
+export function resolveInputDefault(field: ComponentField, ctx: InputDefaultCtx): string | undefined {
   const fromSource = resolveInputDefaultSourceOnly(field, ctx);
   if (fromSource !== undefined) return fromSource;
 

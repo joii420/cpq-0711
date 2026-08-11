@@ -61,7 +61,7 @@ public class QuotationPriceRevision extends PanacheEntityBase {
     @Column(name = "snapshot_rows", columnDefinition = "jsonb")
     public String snapshotRows;
 
-    @Column(name = "quote_total_amount", precision = 20, scale = 6)
+    @Column(name = "quote_total_amount", precision = 26, scale = 12)
     public BigDecimal quoteTotalAmount;
 
     @Column(name = "first_effective_at", nullable = false)

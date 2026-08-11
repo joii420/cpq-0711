@@ -32,8 +32,8 @@ const materialComp = {
     },
   ],
   formulas: [],
-  rows: [{ 材料成本: 10 }],
-  subtotal: 10,
+  rows: [{ 材料成本: '10' }],
+  subtotal: '10',
 };
 
 /** 报价小计组件: 公式 = [来料(总计)] = component_subtotal('来料') */
@@ -63,7 +63,7 @@ const subtotalComp = {
     },
   ],
   rows: [{}],
-  subtotal: 0,
+  subtotal: '0',
 };
 
 export const lineItem093: LineItem = {
@@ -75,7 +75,7 @@ export const lineItem093: LineItem = {
   productAttributeValues: {},
   productAttributes: [],
   componentData: [materialComp as any, subtotalComp as any],
-  subtotal: 0,
+  subtotal: '0',
   subtotalFormula: [
     {
       type: 'component_subtotal',
@@ -118,8 +118,8 @@ const materialCompWithFormula = {
       ],
     },
   ],
-  rows: [{ 材料成本: 30 }],
-  subtotal: 0,
+  rows: [{ 材料成本: '30' }],
+  subtotal: '0',
 };
 
 const subtotalComp2 = {
@@ -144,7 +144,7 @@ const subtotalComp2 = {
     },
   ],
   rows: [{}],
-  subtotal: 0,
+  subtotal: '0',
 };
 
 export const lineItemWithFormula: LineItem = {
@@ -156,7 +156,7 @@ export const lineItemWithFormula: LineItem = {
   productAttributeValues: { category: '普通件' },
   productAttributes: [{ name: 'category', field_type: 'TEXT', required: false }],
   componentData: [materialCompWithFormula as any, subtotalComp2 as any],
-  subtotal: 0,
+  subtotal: '0',
 };
 
 // ─── Driver 展开端到端夹具 ─────────────────────────────────────────────────────
@@ -212,8 +212,8 @@ const materialCompDriver = {
     },
   ],
   // comp.rows：1 行，用量=2，材料单价留 0（driver expansion 命中时会被 basicDataValues 覆盖）
-  rows: [{ 用量: 2, 材料单价: 0 }],
-  subtotal: 0,
+  rows: [{ 用量: '2', 材料单价: '0' }],
+  subtotal: '0',
 };
 
 const subtotalCompDriver = {
@@ -238,7 +238,7 @@ const subtotalCompDriver = {
     },
   ],
   rows: [{}],
-  subtotal: 0,
+  subtotal: '0',
 };
 
 export function makeLineItemWithDriver(): LineItem {
@@ -252,6 +252,6 @@ export function makeLineItemWithDriver(): LineItem {
     productAttributeValues: {},
     productAttributes: [],
     componentData: [materialCompDriver as any, subtotalCompDriver as any],
-    subtotal: 0,
+  subtotal: '0',
   } as LineItem;
 }

@@ -30,9 +30,20 @@ import type { GlobalVariableDefinition } from '../../../services/globalVariableS
 import type { ConfigTemplateMap } from '../useConfigTemplates';
 import { formatPathValue } from './formatPathValue';
 import { formatNumber } from '../../../utils/formatNumber';
+import type { DecimalString, DecimalValue } from '../../../utils/precision';
 
 // re-export 供已有 `import { formatPathValue } from '.../ComponentCell'` 的调用方使用
 export { formatPathValue } from './formatPathValue';
+
+/** Format precision-bearing input fields only at the readonly presentation boundary. */
+export function formatReadonlyInputValue(field: ComponentField, value: unknown): string | null {
+  const isPrecisionField = field.field_type === 'INPUT_NUMBER' || !!field.is_amount;
+  if (!isPrecisionField) return formatPathValue(value);
+  return formatNumber(value as DecimalValue, {
+    decimals: field.decimals ?? null,
+    isComputed: true,
+  });
+}
 
 // ─── 上下文接口 ──────────────────────────────────────────────────────────────
 
@@ -42,7 +53,7 @@ export interface CellContext {
   /** 模块级 globalPathCache 引用 (`pathCacheKey(partNo, path)` 格式) */
   pathCacheState: PathCache;
   /** 按行预计算的 FORMULA 值 map（computeAllFormulas 输出） */
-  formulaCache: Record<string, number | null>;
+  formulaCache: Record<string, DecimalString | null>;
   /**
    * 按行预计算的 FORMULA 错误旁路 map（computeAllFormulas out.errors 输出）。
    * 不传 = 旧行为。某字段有此条目 = cross_tab_ref 细项多命中等错误,数值已静默归 0,
@@ -76,7 +87,7 @@ export interface CellContext {
     code: string;
     name: string;
     sortOrder?: number;
-    defaultValue?: string | number | null;
+    defaultValue?: string | null;
   };
   /** 当前组件内的 LIST_FORMULA 字段（用于共存模式判断） */
   listFormulaField?: ComponentField;
@@ -624,7 +635,7 @@ export const ComponentCell: React.FC<ComponentCellProps> = ({
   // 损耗率等同行其它可编辑列会被误锁成只读文本（联调实测复现：驱动行 priceLocked=true 时
   // 整行 9 个字段全部长出 🔒 徽标，只有"元素单价"一列才应该锁）。
   if (priceLocked && isThisTheElementPriceField) {
-    const formatted = !isEmpty ? (formatPathValue(rawCell) ?? String(rawCell)) : '—';
+    const formatted = !isEmpty ? (formatReadonlyInputValue(field, rawCell) ?? String(rawCell)) : '—';
     return (
       <span className="qt-price-locked-cell">
         <span>{formatted}</span>
@@ -647,7 +658,7 @@ export const ComponentCell: React.FC<ComponentCellProps> = ({
   // 烘完即落进行数据，只读态自然读得到，无需在渲染层再补一次。
   if (readonly) {
     if (!isEmpty) {
-      const formatted = formatPathValue(rawCell);
+      const formatted = formatReadonlyInputValue(field, rawCell);
       return <span>{formatted ?? String(rawCell)}</span>;
     }
     return <span className="qt-ds-placeholder">—</span>;

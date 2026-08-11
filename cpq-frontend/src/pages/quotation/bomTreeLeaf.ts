@@ -9,6 +9,7 @@
 import type { LineItem, ComponentField } from './QuotationStep2';
 import { resolveTreeKey } from './treeTable';
 import { bnfDriverLookupKey } from './useDriverExpansions';
+import { tryParseSnapshotJsonLossless } from '../../utils/losslessJson';
 
 export interface BomLeafCandidate {
   partNo: string;
@@ -80,12 +81,8 @@ export function collectBomLeafCandidates(item: LineItem): BomLeafCandidate[] {
   const seen = new Set<string>();
   const out: BomLeafCandidate[] = [];
   if (!item.quoteCardValues) return out;
-  let parsed: any;
-  try {
-    parsed = JSON.parse(item.quoteCardValues);
-  } catch {
-    return out;
-  }
+  const parsed = tryParseSnapshotJsonLossless<any>(item.quoteCardValues);
+  if (!parsed) return out;
   const tabs = Array.isArray(parsed?.tabs) ? parsed.tabs : [];
   for (const vtab of tabs) {
     const cid = vtab?.componentId;

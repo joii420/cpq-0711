@@ -56,7 +56,7 @@ class VersionedBatchEquivTest {
             gk.put("finished_material_no", "F1");
             List<Map<String, Object>> rows = new ArrayList<>();
             Map<String, Object> r = new LinkedHashMap<>();
-            r.put("seq_no", 1);
+            r.put("seq_no", new java.math.BigDecimal("1"));
             r.put("pricing_price", new BigDecimal("3.00")); // NOT NULL
             r.put("base_value", new BigDecimal("1.50"));
             r.put("currency", "CNY");

@@ -10,7 +10,6 @@ import com.cpq.priceadjust.entity.QuotationPriceRevision;
 import com.cpq.quotation.entity.Quotation;
 import com.cpq.quotation.entity.QuotationLineItem;
 import com.cpq.quotation.service.FormulaCalculator;
-import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -92,10 +91,7 @@ public class PriceReconciler {
      * 把本不该动的兄弟行也卷进往返 —— {@link #unlockAllRows} 那句"值一个字节都不碰"
      * 在字面层原本并不成立，这行配置才让它成立。
      */
-    private static final ObjectMapper MAPPER = new ObjectMapper()
-        .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
-        .enable(com.fasterxml.jackson.core.JsonGenerator.Feature.WRITE_BIGDECIMAL_AS_PLAIN)
-        .setNodeFactory(com.fasterxml.jackson.databind.node.JsonNodeFactory.withExactBigDecimals(true));
+    private static final ObjectMapper MAPPER = com.cpq.common.DecimalJacksonCustomizer.newMapper();
 
     @Inject EntityManager em;
     @Inject FormulaCalculator formulaCalculator;
@@ -248,7 +244,7 @@ public class PriceReconciler {
                 : ctx.realtimePrices.get(elementCode);
             if (ep == null || ep.price == null) continue; // 解不出价 → driverRow 不动（S3a 同款精神）
 
-            driverRow.put(pbc.elementPriceField, ep.price);
+            driverRow.put(pbc.elementPriceField, com.cpq.common.PrecisionPolicy.toPlainDecimalString(ep.price));
             if (pbc.elementCurrencyField != null && !pbc.elementCurrencyField.isBlank() && ep.currency != null) {
                 driverRow.put(pbc.elementCurrencyField, ep.currency);
             }
@@ -275,7 +271,7 @@ public class PriceReconciler {
                 : ctx.realtimePrices.get(elementCode);
 
             if (ep != null && ep.price != null) {
-                dataRow.put(pbc.elementPriceField, ep.price);
+                dataRow.put(pbc.elementPriceField, com.cpq.common.PrecisionPolicy.toPlainDecimalString(ep.price));
                 if (pbc.elementCurrencyField != null && !pbc.elementCurrencyField.isBlank() && ep.currency != null) {
                     dataRow.put(pbc.elementCurrencyField, ep.currency);
                 }

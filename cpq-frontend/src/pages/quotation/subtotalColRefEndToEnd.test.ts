@@ -29,7 +29,7 @@ const componentData = [
       { name: '税率', field_type: 'INPUT_NUMBER', is_subtotal: true },
     ],
     formulas: [],
-    rows: [{ 销售料号: 'S-001', 税率: 1.13 }],
+    rows: [{ 销售料号: 'S-001', 税率: '1.13' }],
     componentData: [],
     snapshotRows: 1,
     subtotal: 0,
@@ -57,9 +57,9 @@ describe('列小计端到端：计算 → 键登记 → SUM 内引用取值', ()
   it('① 列小计真的被算出来，且三种键（componentId / componentCode / tabName）都登记', () => {
     const subs = getComponentSubtotals(lineItem);
     // 键格式必须与 formulaSerialize 产出的 component_code 对齐
-    expect(subs['COMP-0135#税率']).toBeCloseTo(1.13, 4);
-    expect(subs['cid-prod#税率']).toBeCloseTo(1.13, 4);
-    expect(subs['产品#税率']).toBeCloseTo(1.13, 4);
+    expect(subs['COMP-0135#税率']).toBe('1.13');
+    expect(subs['cid-prod#税率']).toBe('1.13');
+    expect(subs['产品#税率']).toBe('1.13');
   });
 
   it('② 序列化产出的 component_code 必须命中已登记的键（键口径对齐护栏）', () => {
@@ -74,7 +74,7 @@ describe('列小计端到端：计算 → 键登记 → SUM 内引用取值', ()
     // 求值端优先查 `${component_code}#${value}` —— 这个键必须真实存在于 subs 中
     const lookupKey = `${csToken.component_code}#${csToken.value}`;
     expect(lookupKey).toBe('COMP-0135#税率');
-    expect(subs[lookupKey]).toBeCloseTo(1.13, 4);
+    expect(subs[lookupKey]).toBe('1.13');
   });
 
   it('③ 端到端求值：SUM 内每行 × 列小计，取到的是 1.13 而非 0', () => {
@@ -84,8 +84,8 @@ describe('列小计端到端：计算 → 键登记 → SUM 内引用取值', ()
     );
     const crossTabRows = {
       'cid-mc': [
-        { 料件: 'P1', 元素单价: 2 },
-        { 料件: 'P1', 元素单价: 4 },
+        { 料件: 'P1', 元素单价: '2' },
+        { 料件: 'P1', 元素单价: '4' },
       ],
     };
     const v = evaluateExpression(
@@ -93,7 +93,7 @@ describe('列小计端到端：计算 → 键登记 → SUM 内引用取值', ()
       undefined, undefined, undefined, { 料件: 'P1' }, crossTabRows,
     );
     // (2 × 1.13) + (4 × 1.13) = 6.78；若键对不上则取 0 → 结果 0
-    expect(v).toBeCloseTo(6.78, 4);
+    expect(v).toBe('6.78');
   });
 
   it('④ 反向护栏：键对不上时结果塌成 0（证明上面的 6.78 确实来自列小计而非巧合）', () => {
@@ -102,25 +102,25 @@ describe('列小计端到端：计算 → 键登记 → SUM 内引用取值', ()
     );
     const crossTabRows = {
       'cid-mc': [
-        { 料件: 'P1', 元素单价: 2 },
-        { 料件: 'P1', 元素单价: 4 },
+        { 料件: 'P1', 元素单价: '2' },
+        { 料件: 'P1', 元素单价: '4' },
       ],
     };
     // 故意喂一个键名不匹配的小计表
     const v = evaluateExpression(
-      tokens as any, {}, { '错误键#税率': 1.13 }, undefined, undefined, undefined, 'S-001',
+      tokens as any, {}, { '错误键#税率': '1.13' }, undefined, undefined, undefined, 'S-001',
       undefined, undefined, undefined, { 料件: 'P1' }, crossTabRows,
     );
-    expect(v).toBeCloseTo(0, 6);
+    expect(v).toBe('0');
   });
 
   it('⑤ 多行时列小计是求和 —— 税率标 is_subtotal 的语义后果（配置警示）', () => {
     const twoRow = {
       ...lineItem,
-      componentData: [{ ...componentData[0], rows: [{ 税率: 1.13 }, { 税率: 1.13 }], snapshotRows: 2 }],
+      componentData: [{ ...componentData[0], rows: [{ 税率: '1.13' }, { 税率: '1.13' }], snapshotRows: 2 }],
     } as any;
     const subs = getComponentSubtotals(twoRow);
     // is_subtotal 列的语义就是「整列求和」：两行 1.13 → 2.26，不是 1.13
-    expect(subs['COMP-0135#税率']).toBeCloseTo(2.26, 4);
+    expect(subs['COMP-0135#税率']).toBe('2.26');
   });
 });

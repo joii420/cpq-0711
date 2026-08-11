@@ -1,7 +1,14 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Popover, Button, Segmented, Alert, Space, message, Dropdown, Modal } from 'antd';
 import { DatabaseOutlined, SettingOutlined, PlusOutlined, DownOutlined, ReloadOutlined } from '@ant-design/icons';
-import { evaluateExpression, getGlobalPathCache, evaluateListFormulaString, type TreeEvalContext } from '../../utils/formulaEngine';
+import {
+  evaluateExpression,
+  getGlobalPathCache,
+  evaluateListFormulaString,
+  isWithinTolerance,
+  type DecimalContext,
+  type TreeEvalContext,
+} from '../../utils/formulaEngine';
 import { buildTreeRelations, isTreeRows as isTreeRowsInput, type TreeRowRef } from './bomTreeRelations';
 import { CellGraph } from './cellGraph';
 import { evalCondTree, condTreeColumns, condTreeUsesTreeAttr, TREE_ATTR_COLS, type CondTree } from '../../utils/condTree';
@@ -26,7 +33,17 @@ import { applyUnitConversion, factorFor } from '../../utils/unitConversion';
 import { formatNumber } from '../../utils/formatNumber';
 import { findDuplicateRowKeys } from './rowDedup';
 import { sumTabColumns, sumAmountFromByCol, AMOUNT_TOTAL_KEY } from './tabTotalLines';
-import { sumDecimal, roundToDisplay, DISPLAY_SCALE } from '../../utils/precision';
+import {
+  isDecimalString,
+  normalizeDecimalString,
+  sumDecimal,
+  toCalculationString,
+  toDecimal,
+  type DecimalString,
+  type DecimalValue,
+} from '../../utils/precision';
+import { tryParseSnapshotJsonLossless } from '../../utils/losslessJson';
+import { parseTemplateComponentsSnapshot } from './templateSnapshot';
 import { isCardValueFailed, getCardValueError } from './cardValueFailed';
 import { templateService } from '../../services/templateService';
 import { layoutTreeRows, isTreeRowHidden, resolveTreeKey } from './treeTable';
@@ -152,7 +169,7 @@ export interface ComponentDataItem {
   formulas: ComponentFormula[];
   formulaAssignments?: Record<string, string>;  // fieldIndex -> formulaName, from template (legacy)
   rows: Record<string, any>[];
-  subtotal: number;
+  subtotal: DecimalString;
   /** Y1.5 行驱动 BNF 路径(从模板快照透传)— 非空时 Step2 按 expand-driver 返回的 N 行渲染 */
   dataDriverPath?: string;
   treeConfig?: import('../component/types').TreeConfig;
@@ -200,7 +217,7 @@ export interface LineItem {
   productAttributeValues: Record<string, any>;
   productAttributes?: { name: string; field_type: string; required: boolean; default_value?: string; source?: string }[];
   componentData: ComponentDataItem[];
-  subtotal: number;
+  subtotal: DecimalString;
   subtotalFormula?: any[];  // Token array from template.subtotal_formula
   /** 导入来源标记:从基础数据导入加入报价单的行设 true,后端 saveDraft 据此从基础工序 seed 本行 quotation_line_process */
   seedProcessesFromBase?: boolean;
@@ -246,21 +263,21 @@ export interface LineItem {
 
   // ★ Step3 新增 9 字段（spec §5.3，字段名严格按 camelCase 锁定）
   /** 年用量（用户输入，驱动阶梯折扣） */
-  annualVolume?: number;
+  annualVolume?: DecimalString;
   /** 优惠金额来源 metric_code（MATERIAL_COST/PROCESS_FEE/.../SUBTOTAL） */
   discountSource?: string;
   /** 可优惠金额基数 — commit 时快照 */
-  discountBaseAmount?: number;
+  discountBaseAmount?: DecimalString;
   /** 实际折扣率 % (0-100，V1 由阶梯引擎硬算) */
-  discountRateApplied?: number;
+  discountRateApplied?: DecimalString;
   /** 单件优惠金额（= base × rate / 100） */
-  lineDiscountAmount?: number;
+  lineDiscountAmount?: DecimalString;
   /** 单价 = subtotal 快照（防 Step2 后续被改） */
-  lineUnitPrice?: number;
+  lineUnitPrice?: DecimalString;
   /** 优惠后单价（= lineUnitPrice - lineDiscountAmount） */
-  lineFinalPrice?: number;
+  lineFinalPrice?: DecimalString;
   /** 行总金额（= annualVolume × lineFinalPrice；Σ 即整单 total_amount） */
-  lineTotalAmount?: number;
+  lineTotalAmount?: DecimalString;
   /** 命中的折扣规则编号（V1 = ANNUAL_VOLUME_STEP_V1） */
   discountRuleCode?: string;
 }
@@ -319,7 +336,7 @@ const ENUM_LABEL: Record<string, string> = {
 // 投影成显示字符串。null/empty → 返回 null(UI 显示 —);多值 → 第一个 + "(+N)"提示。
 function formatPathValue(v: any): string | null {
   if (v == null || v === '') return null;
-  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  if (typeof v === 'boolean') return String(v);
   if (typeof v === 'string') {
     // 已知 enum 值显示中文标签;陌生字符串原样返回
     return ENUM_LABEL[v] ?? v;
@@ -336,7 +353,7 @@ function formatPathValue(v: any): string | null {
     // (后者针对 driver expand 多行聚合). 单 cell jsonb 应完整展开 list / k=v 显示.
     if (v.type === 'jsonb' && typeof v.value === 'string') {
       try {
-        const parsed = JSON.parse(v.value);
+        const parsed = tryParseSnapshotJsonLossless<any>(v.value);
         if (Array.isArray(parsed)) {
           if (parsed.length === 0) return null;
           const items = parsed.map(it => formatPathValue(it) ?? '').filter(Boolean);
@@ -451,6 +468,14 @@ function getFormulaDeps(formula: ComponentFormula): string[] {
   return out;
 }
 
+function precisionValue(value: unknown): DecimalString | null {
+  const scalar = Array.isArray(value) ? value[0] : value;
+  if (isDecimalString(scalar)) return normalizeDecimalString(scalar);
+  if (typeof scalar === 'number') return null;
+  const formatted = scalar == null ? null : formatPathValue(scalar);
+  return isDecimalString(formatted) ? normalizeDecimalString(formatted) : null;
+}
+
 /**
  * Compute ALL formula fields for a single row in topological (dependency) order.
  * Returns a map of fieldName -> computed value.
@@ -458,9 +483,9 @@ function getFormulaDeps(formula: ComponentFormula): string[] {
 function computeAllFormulas(
   comp: ComponentDataItem,
   row: Record<string, any>,
-  allComponentSubtotals?: Record<string, number>,
-  quotationFields?: Record<string, number>,
-  pathCache?: Record<string, number>,
+  allComponentSubtotals?: DecimalContext,
+  quotationFields?: DecimalContext,
+  pathCache?: DecimalContext,
   partNo?: string,
   // Y1.5 driver 行级 BASIC_DATA 值：key = "{path}", value = 该行该路径的标量/列表。
   // 提供后，BASIC_DATA 字段优先按当前行取值；缺失再回退到 partNo 维度的 globalPathCache。
@@ -468,7 +493,7 @@ function computeAllFormulas(
   basicDataValues?: Record<string, any>,
   // 2026-05-17 累加公式: 上一行的 is_subtotal 字段值, 让 previous_row_subtotal token 求值.
   // 调用方按 row_index 顺序遍历, 行 0 不传或传 undefined 走 token 的 fallback_component_code.
-  previousRowSubtotal?: number,
+  previousRowSubtotal?: DecimalValue,
   // 动态 key 全局变量运行时 path 重写 (AP-bug 修复): 向后兼容, 老调用不传时动态 key 兜底 0
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
   // cross_tab_ref: 兄弟组件已算行 (componentId/componentCode → resolvedRows[])。
@@ -477,13 +502,13 @@ function computeAllFormulas(
   crossTabRows?: Record<string, Array<Record<string, any>>>,
   // Plan 2b：上一行全量公式值（按字段名）。提供后 previous_row_subtotal 按"当前列"取上一行本列值；
   // 不传则退回 previousRowSubtotal 标量（旧行为）。
-  previousRowValues?: Record<string, number | null>,
+  previousRowValues?: Record<string, DecimalString | null>,
   // 输出袋：调用方若传入 { fieldValues? } 则函数会将 fieldValues（非公式字段也含）写入其中，
   // 供 computeTabSubtotalsByColumn 等读取 INPUT_NUMBER 等纯输入列的行值。
   // errors?: 调用方传入则函数会把 cross_tab_ref 细项多命中等错误原因按字段名写入(数值仍归 0/null,
   //          仅旁路透出原因供渲染层显示 ⚠)。
-  out?: { fieldValues?: Record<string, number>; errors?: Record<string, string> },
-): Record<string, number | null> {
+  out?: { fieldValues?: DecimalContext; errors?: Record<string, string> },
+): Record<string, DecimalString | null> {
   if (!comp.fields || !comp.formulas) return {};
 
   // 单位换算见下方"值解析后换算"段：必须在 fieldValues / currentRowForEval 解析完之后做——
@@ -563,7 +588,7 @@ function computeAllFormulas(
   }
 
   // Evaluate in order, feeding results into fieldValues
-  const fieldValues: Record<string, number> = {};
+  const fieldValues: DecimalContext = {};
   for (const f of comp.fields) {
     if (f.field_type !== 'FORMULA') {
       const key = f.name || f.key || '';
@@ -584,18 +609,7 @@ function computeAllFormulas(
           const cache = pathCache ?? (getGlobalPathCache() as Record<string, any>);
           cached = cache[cacheKey];
         }
-        // 数值直接用；字符串/对象通过 formatPathValue 取首值再 parseFloat
-        let num: number | null = null;
-        if (typeof cached === 'number') {
-          num = cached;
-        } else if (cached != null) {
-          const formatted = formatPathValue(cached);
-          if (formatted != null) {
-            const parsed = parseFloat(formatted);
-            if (!isNaN(parsed)) num = parsed;
-          }
-        }
-        fieldValues[key] = num ?? 0;  // 未求值或非数值时占 0,UI 重渲染后刷新
+        fieldValues[key] = precisionValue(cached) ?? '0';
         continue;
       }
       // DATA_SOURCE 字段(Phase J 后 4 sub-type) — 把解析结果回填到 fieldValues,
@@ -630,17 +644,8 @@ function computeAllFormulas(
             && f.content != null && f.content !== '') {
           resolved = f.content;
         }
-        let num: number | null = null;
-        if (typeof resolved === 'number') {
-          num = resolved;
-        } else if (resolved != null) {
-          const formatted = formatPathValue(resolved);
-          if (formatted != null) {
-            const parsed = parseFloat(formatted);
-            if (!isNaN(parsed)) num = parsed;
-          }
-        }
-        if (num != null) fieldValues[key] = num;
+        const value = precisionValue(resolved);
+        if (value != null) fieldValues[key] = value;
         continue;
       }
       // FIXED_VALUE 字段如果当前行没值（driver 展开行 / 旧 row 回读未经 handleAddRow），
@@ -662,8 +667,8 @@ function computeAllFormulas(
         });
         if (def !== undefined) raw = def;
       }
-      const val = typeof raw === 'number' ? raw : parseFloat(raw);
-      if (!isNaN(val)) fieldValues[key] = val;
+      const value = precisionValue(raw);
+      if (value != null) fieldValues[key] = value;
     }
   }
 
@@ -700,27 +705,29 @@ function computeAllFormulas(
       if (!C) continue;
       const unitText = currentRowForEval[usf] ?? (row as any)[usf];
       const factor = factorFor(unitText == null ? '' : String(unitText));
-      if (factor === 1) continue;
-      if (typeof fieldValues[C] === 'number') fieldValues[C] = fieldValues[C] * factor;
+      if (factor === '1') continue;
+      if (fieldValues[C] != null) {
+        fieldValues[C] = normalizeDecimalString(toDecimal(fieldValues[C]).times(factor));
+      }
       const cv = currentRowForEval[C];
       if (cv != null && cv !== '') {
-        const n = typeof cv === 'number' ? cv : parseFloat(cv);
-        if (!isNaN(n)) {
+        const value = precisionValue(cv);
+        if (value != null) {
           // 克隆后再改，绝不 mutate 入参 row（渲染同对象）
           if (!ctClone && currentRowForEval === row) { currentRowForEval = { ...row }; ctClone = true; }
-          currentRowForEval[C] = n * factor;
+          currentRowForEval[C] = normalizeDecimalString(toDecimal(value).times(factor));
         }
       }
     }
   }
 
-  const results: Record<string, number | null> = {};
+  const results: Record<string, DecimalString | null> = {};
   for (const name of order) {
     const ff = formulaFields.find(f => f.name === name)!;
     try {
       // Plan 2b：previous_row_subtotal 按当前列取上一行本列值；无 map 时退回标量。
       const prevForField = previousRowValues
-        ? (typeof previousRowValues[name] === 'number' ? (previousRowValues[name] as number) : undefined)
+        ? (previousRowValues[name] ?? undefined)
         : previousRowSubtotal;
       // Plan 3a：条件字段按规则选表达式（lookup 原始行→BASIC_DATA按名→已算 fieldValues）。
       let expr: any[] | undefined;
@@ -911,9 +918,9 @@ function resolveRowForTree(
   row: Record<string, any>,
   basicDataValues: Record<string, any> | undefined,
   partNo: string | undefined,
-  pathCache: Record<string, number> | undefined,
-): { fieldValues: Record<string, number>; rawPresent: Record<string, boolean>; currentRowForEval: Record<string, any> } {
-  const fieldValues: Record<string, number> = {};
+  pathCache: DecimalContext | undefined,
+): { fieldValues: DecimalContext; rawPresent: Record<string, boolean>; currentRowForEval: Record<string, any> } {
+  const fieldValues: DecimalContext = {};
   const rawPresent: Record<string, boolean> = {};
   const isPresent = (v: any) => v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && v.length === 0);
 
@@ -942,17 +949,7 @@ function resolveRowForTree(
         const cache = pathCache ?? (getGlobalPathCache() as Record<string, any>);
         cached = cache[cacheKey];
       }
-      let num: number | null = null;
-      if (typeof cached === 'number') {
-        num = cached;
-      } else if (cached != null) {
-        const formatted = formatPathValue(cached);
-        if (formatted != null) {
-          const parsed = parseFloat(formatted);
-          if (!isNaN(parsed)) num = parsed;
-        }
-      }
-      fieldValues[key] = num ?? 0;
+      fieldValues[key] = precisionValue(cached) ?? '0';
       rawPresent[key] = isPresent(cached);
       continue;
     }
@@ -985,17 +982,8 @@ function resolveRowForTree(
           && f.content != null && f.content !== '') {
         resolved = f.content;
       }
-      let num: number | null = null;
-      if (typeof resolved === 'number') {
-        num = resolved;
-      } else if (resolved != null) {
-        const formatted = formatPathValue(resolved);
-        if (formatted != null) {
-          const parsed = parseFloat(formatted);
-          if (!isNaN(parsed)) num = parsed;
-        }
-      }
-      if (num != null) fieldValues[key] = num;
+      const value = precisionValue(resolved);
+      if (value != null) fieldValues[key] = value;
       rawPresent[key] = isPresent(resolved);
       continue;
     }
@@ -1015,8 +1003,8 @@ function resolveRowForTree(
       });
       if (def !== undefined) raw = def;
     }
-    const val = typeof raw === 'number' ? raw : parseFloat(raw);
-    if (!isNaN(val)) fieldValues[key] = val;
+    const value = precisionValue(raw);
+    if (value != null) fieldValues[key] = value;
     rawPresent[key] = isPresent(raw);
   }
 
@@ -1047,14 +1035,16 @@ function resolveRowForTree(
       if (!C) continue;
       const unitText = currentRowForEval[usf] ?? (row as any)[usf];
       const factor = factorFor(unitText == null ? '' : String(unitText));
-      if (factor === 1) continue;
-      if (typeof fieldValues[C] === 'number') fieldValues[C] = fieldValues[C] * factor;
+      if (factor === '1') continue;
+      if (fieldValues[C] != null) {
+        fieldValues[C] = normalizeDecimalString(toDecimal(fieldValues[C]).times(factor));
+      }
       const cv = currentRowForEval[C];
       if (cv != null && cv !== '') {
-        const n = typeof cv === 'number' ? cv : parseFloat(cv);
-        if (!isNaN(n)) {
+        const value = precisionValue(cv);
+        if (value != null) {
           if (!ctClone && currentRowForEval === row) { currentRowForEval = { ...row }; ctClone = true; }
-          currentRowForEval[C] = n * factor;
+          currentRowForEval[C] = normalizeDecimalString(toDecimal(value).times(factor));
         }
       }
     }
@@ -1074,9 +1064,9 @@ function resolveRowForTree(
 export function computeTabFormulasTree(
   comp: ComponentDataItem,
   rows: TreeFormulaRowInput[],
-  allComponentSubtotals?: Record<string, number>,
-  quotationFields?: Record<string, number>,
-  pathCache?: Record<string, number>,
+  allComponentSubtotals?: DecimalContext,
+  quotationFields?: DecimalContext,
+  pathCache?: DecimalContext,
   partNo?: string,
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
   crossTabRows?: Record<string, Array<Record<string, any>>>,
@@ -1085,10 +1075,10 @@ export function computeTabFormulasTree(
    * 语义对齐 computeAllFormulas 的 out.fieldValues —— 供 is_subtotal 但非 FORMULA 类型的列
    * （如 INPUT_NUMBER）在列小计累加时回退取值（AP-50：ReadonlyProductCard.buildFormulaCache 需要）。
    */
-  outBag?: { fieldValuesByRow?: Array<Record<string, number>> },
-): Record<number, Record<string, number | null>> {
+  outBag?: { fieldValuesByRow?: Array<DecimalContext> },
+): Record<number, Record<string, DecimalString | null>> {
   const n = rows.length;
-  const out: Record<number, Record<string, number | null>> = {};
+  const out: Record<number, Record<string, DecimalString | null>> = {};
   for (let i = 0; i < n; i++) out[i] = {};
   if (!comp.fields || !comp.formulas || n === 0) return out;
 
@@ -1157,7 +1147,7 @@ export function computeTabFormulasTree(
 
   // 4. 按 cell 拓扑序求值。
   const { order: topoCells, cycles } = g.topoOrder();
-  const resultsByRow: Array<Record<string, number | null>> = Array.from({ length: n }, () => ({}));
+  const resultsByRow: Array<Record<string, DecimalString | null>> = Array.from({ length: n }, () => ({}));
 
   for (const cell of topoCells) {
     const ff = formulaFields[cell.col];
@@ -1187,7 +1177,7 @@ export function computeTabFormulasTree(
       expr = ff.formula!.expression;
     }
     treeCtx.rowIndex = cell.row;
-    let val: number | null = null;
+    let val: DecimalString | null = null;
     try {
       val = expr ? evaluateExpression(
         expr, bundle.fieldValues, allComponentSubtotals || {}, undefined, quotationFields,
@@ -1207,8 +1197,8 @@ export function computeTabFormulasTree(
   // 5. 环上 cell（及其下游，拓扑上本就无法求值）→ 置 0；环外 cell 已在上面正常求值。
   for (const cell of cycles) {
     const ff = formulaFields[cell.col];
-    resultsByRow[cell.row][ff.name] = 0;
-    rowBundles[cell.row].fieldValues[ff.name] = 0;
+    resultsByRow[cell.row][ff.name] = '0';
+    rowBundles[cell.row].fieldValues[ff.name] = '0';
   }
 
   if (outBag?.fieldValuesByRow) {
@@ -1234,7 +1224,6 @@ function resolveBasicDataForRow(
   if (Object.prototype.hasOwnProperty.call(basicDataValues, lookupKey)) {
     const cached = basicDataValues[lookupKey];
     if (cached == null) return undefined;
-    if (typeof cached === 'number') return cached;
     // 字符串/对象/数组: 取格式化首值 (与 computeAllFormulas 同款 formatPathValue),
     // 文本保留为字符串 (不 parseFloat — cross_tab_ref 匹配键需原始文本)。
     return formatPathValue(cached) ?? undefined;
@@ -1275,7 +1264,6 @@ function resolveDataSourceForRow(
     resolved = f.content;
   }
   if (resolved == null) return undefined;
-  if (typeof resolved === 'number') return resolved;
   return formatPathValue(resolved) ?? undefined;  // 文本保留
 }
 
@@ -1306,7 +1294,7 @@ function buildResolvedRow(
   row: Record<string, any>,
   driverRow: Record<string, any> | undefined,
   basicDataValues: Record<string, any> | undefined,
-  formulaCache: Record<string, number | null>,
+  formulaCache: Record<string, DecimalString | null>,
 ): Record<string, any> {
   const out: Record<string, any> = { ...(driverRow ?? {}), ...row };  // raw first (text preserved)
   for (const f of fields) {
@@ -1398,26 +1386,25 @@ function sumColumnsCanonical(
   fields: ComponentField[],
   rows: Array<Record<string, any>>,
   colFilter: (f: ComponentField) => boolean,
-): Record<string, number> {
+): DecimalContext {
   const targetFields = fields.filter(colFilter);
-  const result: Record<string, number> = {};
+  const result: DecimalContext = {};
   if (targetFields.length === 0) return result;
 
   const convRows = rows.map((r) => applyUnitConversion(fields as any, r));
   for (const f of targetFields) {
     const colName: string = f.name || (f as any).key || '';
     if (!colName) continue;
-    const values: number[] = [];
+    const values: DecimalString[] = [];
     for (const row of convRows) {
       const v = row[colName];
       // INPUT_NUMBER 等输入列在 resolvedRow 里是原始字符串（输入框写 "12"），
-      // 必须 parseFloat 兜底（复刻旧 computeNonSubtotalColumnSums 的 parseFloat(raw) 行为，
-      // 否则字符串被 typeof==='number' 丢成 0 → 输入列小计恒 0、改输入不变）。
+      // 输入列保留原始十进制字符串，交给 Decimal 入口校验并参与列小计。
       // 公式/小计列已是数字，走 number 分支不变。空/非数字 → NaN → 跳过（计 0）。
-      const n = typeof v === 'number' ? v : parseFloat(v);
-      if (isFinite(n)) values.push(n);
+      const value = precisionValue(v);
+      if (value != null) values.push(value);
     }
-    result[colName] = sumDecimal(values).toNumber();
+    result[colName] = toCalculationString(sumDecimal(values));
   }
   return result;
 }
@@ -1440,11 +1427,11 @@ function sumColumnsCanonical(
  */
 export function buildCrossTabRows(
   componentData: ComponentDataItem[],
-  allComponentSubtotals: Record<string, number>,
+  allComponentSubtotals: DecimalContext,
   partNo: string | undefined,
   lookupExpansion: (comp: ComponentDataItem) => (import('./useDriverExpansions').DriverExpansion | undefined),
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
-): { store: Record<string, Array<Record<string, any>>>; columnSumsByComp: Record<string, Record<string, number>> } {
+): { store: Record<string, Array<Record<string, any>>>; columnSumsByComp: Record<string, DecimalContext> } {
   const normals = componentData.filter(c => c?.fields && c.componentType === 'NORMAL');
   const ids = normals.map(c => c.componentId || c.componentCode || c.tabName);
   // repair-0808：建图下沉到 crossTabOrder.buildComponentDeps（列粒度，镜像后端 CrossTabComponentOrder）。
@@ -1513,7 +1500,7 @@ export function buildCrossTabRows(
     }
 
     // 每组件独立 reset prevRowValues（不跨组件复用，与渲染层 effectiveRows 口径一致）
-    let prevRowValues: Record<string, number | null> | undefined = undefined;
+    let prevRowValues: Record<string, DecimalString | null> | undefined = undefined;
     for (let i = 0; i < s.totalRows; i++) {
       const ra = rowAt(i, comp, s);
       const row = fillFixedDefaults(comp.fields!, ra.row);
@@ -1536,7 +1523,7 @@ export function buildCrossTabRows(
   // 使用 canonical（applyUnitConversion）行值，4dp 舍入。
   // footer 单一来源：Task2 改用 columnSumsByComp 替代旧的二次重算（根治分叉）。
   // 注意：不回灌 allComponentSubtotals（is_subtotal 列已由 subtotalsFromResolvedRows 回填）。
-  const columnSumsByComp: Record<string, Record<string, number>> = {};
+  const columnSumsByComp: Record<string, DecimalContext> = {};
 
   // 单位换算（cross_tab 物化点）：cross_tab 消费的兄弟组件源行需 canonical（按同行单位列换算），
   // 否则跨页签引用配了 unit_source_field 的输入列读到原值（改单位无反应）。
@@ -1639,7 +1626,7 @@ export function buildCrossTabRows(
 export function subtotalsFromResolvedRows(
   comp: ComponentDataItem,
   rows: Array<Record<string, any>>,
-  allComponentSubtotals: Record<string, number>,
+  allComponentSubtotals: DecimalContext,
 ): void {
   // sumColumnsCanonical 内部已做 is_subtotal 过滤、applyUnitConversion canonical 换算，
   // 十进制精确累加（task-0801：不再中途 4dp 舍入）。
@@ -1656,7 +1643,7 @@ export function subtotalsFromResolvedRows(
       allComponentSubtotals[`${k}#${colName}`] = colVal;
     }
   }
-  const totalForComp = sumDecimal(Object.values(colSums)).toNumber();
+  const totalForComp = toCalculationString(sumDecimal(Object.values(colSums)));
   // 总小计键（与 PASS1 的 componentSubtotals[comp.tabName] 对齐）—— 裸键 = Σ所有 is_subtotal 列（不变）。
   for (const k of keys) {
     allComponentSubtotals[k] = totalForComp;
@@ -1674,12 +1661,12 @@ function computeFormula(
   comp: ComponentDataItem,
   formulaFieldName: string,
   row: Record<string, any>,
-  allComponentSubtotals?: Record<string, number>,
-  _formulaCache?: Record<string, number | null>,
-  quotationFields?: Record<string, number>,
-  pathCache?: Record<string, number>,
+  allComponentSubtotals?: DecimalContext,
+  _formulaCache?: Record<string, DecimalString | null>,
+  quotationFields?: DecimalContext,
+  pathCache?: DecimalContext,
   partNo?: string,
-): number | null {
+): DecimalString | null {
   // Use cache if provided (from computeAllFormulas)
   if (_formulaCache && formulaFieldName in _formulaCache) return _formulaCache[formulaFieldName];
 
@@ -1713,28 +1700,28 @@ function fillFixedDefaults(
  */
 export function computeTabSubtotalsByColumn(
   comp: ComponentDataItem,
-  allComponentSubtotals?: Record<string, number>,
-  quotationFields?: Record<string, number>,
-  pathCache?: Record<string, number>,
+  allComponentSubtotals?: DecimalContext,
+  quotationFields?: DecimalContext,
+  pathCache?: DecimalContext,
   partNo?: string,
   driverExpansion?: import('./useDriverExpansions').DriverExpansion,
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
-): Record<string, number> {
-  const out: Record<string, number> = {};
+): DecimalContext {
+  const out: DecimalContext = {};
   if (!comp?.fields || !comp?.rows) return out;
   const subtotalFields = comp.fields.filter(f => f.is_subtotal);
   if (subtotalFields.length === 0) return out;
-  for (const sf of subtotalFields) out[sf.name] = 0;
+  for (const sf of subtotalFields) out[sf.name] = '0';
   const s = splitRows(comp, driverExpansion as any);
 
   // task-0803 Task 7：BOM 树页签分流。判据分两层，非 BOM 页签只多付一次廉价 .some() 扫描
   // （usesTreeTokensTab 被 && 短路不执行），零额外 fillFixedDefaults/resolveRowForTree 开销。
   const hasBomSysRows = !!driverExpansion?.rows?.some((r: any) => r?.__sys?.nodeId !== undefined);
   const useTree = hasBomSysRows && usesTreeTokensTab(comp);
-  let treeResults: Record<number, Record<string, number | null>> | undefined;
+  let treeResults: Record<number, Record<string, DecimalString | null>> | undefined;
   // fv 回退（同下方非 BOM 分支的 out.fieldValues 语义）：is_subtotal 但非 FORMULA 类型的列
   // （如 INPUT_NUMBER）不进 treeResults（仅含 FORMULA 结果），需按行取 outBag.fieldValuesByRow 回退。
-  let treeFieldValuesByRow: Array<Record<string, number>> | undefined;
+  let treeFieldValuesByRow: Array<DecimalContext> | undefined;
   if (useTree) {
     const treeRowInputs: TreeFormulaRowInput[] = [];
     for (let i = 0; i < s.totalRows; i++) {
@@ -1757,40 +1744,48 @@ export function computeTabSubtotalsByColumn(
     if (treeResults) {
       const cache = treeResults[i] ?? {};
       const fv = treeFieldValuesByRow?.[i] ?? {};
-      for (const sf of subtotalFields) out[sf.name] += cache[sf.name] ?? fv[sf.name] ?? 0;
+      for (const sf of subtotalFields) {
+        out[sf.name] = toCalculationString(
+          toDecimal(out[sf.name]).plus(toDecimal(cache[sf.name] ?? fv[sf.name] ?? '0')),
+        );
+      }
       continue;
     }
     const ra = rowAt(i, comp, s);
     const row = fillFixedDefaults(comp.fields, ra.row);
     const basicDataValues = ra.expIndex >= 0 ? driverExpansion!.rows[ra.expIndex]?.basicDataValues : undefined;
-    const fv: Record<string, number> = {};
+    const fv: DecimalContext = {};
     const cache = computeAllFormulas(
       comp, row, allComponentSubtotals, quotationFields, pathCache, partNo, basicDataValues,
       undefined, globalVariableDefs,
       undefined /*crossTabRows*/, undefined /*previousRowValues*/, { fieldValues: fv },
     );
-    for (const sf of subtotalFields) out[sf.name] += cache[sf.name] ?? fv[sf.name] ?? 0;
+    for (const sf of subtotalFields) {
+      out[sf.name] = toCalculationString(
+        toDecimal(out[sf.name]).plus(toDecimal(cache[sf.name] ?? fv[sf.name] ?? '0')),
+      );
+    }
   }
   return out;
 }
 
 function computeTabSubtotal(
   comp: ComponentDataItem,
-  allComponentSubtotals?: Record<string, number>,
-  quotationFields?: Record<string, number>,
-  pathCache?: Record<string, number>,
+  allComponentSubtotals?: DecimalContext,
+  quotationFields?: DecimalContext,
+  pathCache?: DecimalContext,
   partNo?: string,
   // Y1.5：driver 行展开。提供后按 rowCount 迭代，每行用各自的 basicDataValues
   // —— 与 ProductCard 渲染层 effectiveRows 一致；不传则退化为按 comp.rows 迭代（旧行为）。
   driverExpansion?: import('./useDriverExpansions').DriverExpansion,
   // 动态 key 全局变量运行时 path 重写: 向后兼容, 老调用不传时动态 key 兜底 0
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
-): number {
+): DecimalString {
   // Plan 2-核心：委托按列求和后取所有小计列之和（单小计列时 = 原行为）。
   const byCol = computeTabSubtotalsByColumn(
     comp, allComponentSubtotals, quotationFields, pathCache, partNo, driverExpansion, globalVariableDefs);
   // task-0801：Σ 列小计改十进制精确累加（sumDecimal），不再 number `+=` 链式累加。
-  return sumDecimal(Object.values(byCol)).toNumber();
+  return toCalculationString(sumDecimal(Object.values(byCol)));
 }
 
 /**
@@ -1807,8 +1802,8 @@ export function getComponentSubtotals(
   driverExpansions?: import('./useDriverExpansions').DriverExpansionMap,
   customerId?: string,
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
-): Record<string, number> {
-  const componentSubtotals: Record<string, number> = {};
+): DecimalContext {
+  const componentSubtotals: DecimalContext = {};
   if (!item.componentData) return componentSubtotals;
   const partNo = item.productPartNo;
   // V203/Phase B: 必须传 comp.dataDriverPath 才能区分同 componentId 不同 driver 的两个组件实例
@@ -1837,7 +1832,7 @@ export function getComponentSubtotals(
       componentSubtotals[`${comp.tabName}#${colName}`] = colVal;
     }
     // task-0801：Σ 列小计改十进制精确累加（sumDecimal），不再 number `+=` 链式累加。
-    const subtotal = sumDecimal(Object.values(byCol)).toNumber();
+    const subtotal = toCalculationString(sumDecimal(Object.values(byCol)));
     // 裸键 = Σ所有 is_subtotal 列（不变，专供 previous_row_subtotal / 产品小计兜底 / 折扣）。
     if (comp.componentId) componentSubtotals[comp.componentId] = subtotal;
     if (comp.componentCode) componentSubtotals[comp.componentCode] = subtotal;
@@ -1868,14 +1863,14 @@ export function getComponentSubtotalsFull(
   driverExpansions?: import('./useDriverExpansions').DriverExpansionMap,
   customerId?: string,
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
-): Record<string, number> {
+): DecimalContext {
   return buildLineItemEvalContext(item, driverExpansions, customerId, globalVariableDefs).subtotals;
 }
 
 /** 报价行「完整口径」求值上下文：PASS1 组件小计 + PASS2 cross_tab 源行 store。 */
 export interface LineItemEvalContext {
   /** PASS1 → PASS2 回填后的组件/列小计 map（= getComponentSubtotalsFull 的返回值）。 */
-  subtotals: Record<string, number>;
+  subtotals: DecimalContext;
   /** buildCrossTabRows 产出的 cross_tab 源行 store（componentId/componentCode/tabName 三键）。 */
   crossTabRows: Record<string, Array<Record<string, any>>>;
 }
@@ -1923,14 +1918,14 @@ export function buildLineItemEvalContext(
  */
 export function evalProductSubtotalFromSubtotals(
   item: LineItem,
-  componentSubtotals: Record<string, number>,
-): number {
+  componentSubtotals: DecimalContext,
+): DecimalString {
   // Build NUMBER product attribute values
-  const productAttrs: Record<string, number> = {};
+  const productAttrs: DecimalContext = {};
   for (const attr of item.productAttributes || []) {
     if (attr.field_type === 'NUMBER') {
-      const val = parseFloat(item.productAttributeValues?.[attr.name]);
-      if (!isNaN(val)) productAttrs[attr.name] = val;
+      const value = precisionValue(item.productAttributeValues?.[attr.name]);
+      if (value != null) productAttrs[attr.name] = value;
     }
   }
 
@@ -1942,7 +1937,7 @@ export function evalProductSubtotalFromSubtotals(
       try {
         return evaluateExpression(formula.expression, {}, componentSubtotals, productAttrs);
       } catch {
-        return 0;
+        return '0';
       }
     }
   }
@@ -1952,20 +1947,20 @@ export function evalProductSubtotalFromSubtotals(
     try {
       return evaluateExpression(item.subtotalFormula, {}, componentSubtotals, productAttrs);
     } catch {
-      return 0;
+      return '0';
     }
   }
 
   // Final fallback（无 SUBTOTAL 组件/公式）：各页签总计之和 —— 逐组件按 componentId 取一次，
   // 避免 componentSubtotals 同值三键(componentId/componentCode/tabName)被 Object.values 重复累加。
-  let fallbackSum = 0;
+  let fallbackSum = toDecimal('0');
   for (const c of item.componentData || []) {
     if (!c?.fields || c.componentType !== 'NORMAL') continue;
     if (!c.fields.some((ff: any) => ff.is_subtotal)) continue;
     const key = c.componentId ?? c.componentCode ?? c.tabName;
-    fallbackSum += componentSubtotals[key] ?? 0;
+    fallbackSum = fallbackSum.plus(toDecimal(componentSubtotals[key] ?? '0'));
   }
-  return fallbackSum;
+  return toCalculationString(fallbackSum);
 }
 
 function computeProductSubtotal(
@@ -1975,11 +1970,11 @@ function computeProductSubtotal(
   customerId?: string,
   // B3: 调用方已完成 PASS1+PASS2(buildCrossTabRows 回填后)的 allComponentSubtotals。
   // 提供时直接用（跳过函数内重算），消除双口径（cross_tab 列/二阶列小计与渲染行同源）。
-  precomputedSubtotals?: Record<string, number>,
+  precomputedSubtotals?: DecimalContext,
   // 双口径修复(2026-07-17): 兜底路径改走完整口径, gvDefs 与渲染层同源传入（wizard 的 gvDefs）。
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
-): number {
-  if (!item.componentData || item.componentData.length === 0) return item.subtotal || 0;
+): DecimalString {
+  if (!item.componentData || item.componentData.length === 0) return item.subtotal || '0';
 
   if (precomputedSubtotals) {
     // B3: 用调用方传入的（buildCrossTabRows 回填后）已修正小计，跳过重算。
@@ -1997,9 +1992,9 @@ function computeProductSubtotal(
 export function computeRowsCachesForTest(
   comp: ComponentDataItem,
   rows: Record<string, any>[],
-): Array<Record<string, number | null>> {
-  const caches: Array<Record<string, number | null>> = [];
-  let prevRowValues: Record<string, number | null> | undefined = undefined;
+): Array<Record<string, DecimalString | null>> {
+  const caches: Array<Record<string, DecimalString | null>> = [];
+  let prevRowValues: Record<string, DecimalString | null> | undefined = undefined;
   for (const row of rows) {
     const cache = computeAllFormulas(
       comp, row, undefined, undefined, undefined, undefined, undefined,
@@ -2076,8 +2071,8 @@ export function buildSnapshotExpansions(
   for (const item of items) {
     const json = side === 'QUOTE' ? item.quoteCardValues : item.costingCardValues;
     if (!json) continue;
-    let parsed: any;
-    try { parsed = JSON.parse(json); } catch { continue; }
+    const parsed = tryParseSnapshotJsonLossless<any>(json);
+    if (!parsed) continue;
     const tabs = parsed?.tabs;
     if (!Array.isArray(tabs)) continue;
     const partNo = item.productPartNo;
@@ -2348,7 +2343,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
           const proj = c.componentId ? byId.get(String(c.componentId)) : undefined;
           if (!proj) return c;
           let rows = c.rows;
-          try { const parsed = JSON.parse(proj.rowData ?? '[]'); if (Array.isArray(parsed)) rows = parsed; } catch { /* 解析失败保留旧 rows */ }
+          const parsedRows = tryParseSnapshotJsonLossless<Record<string, any>[]>(proj.rowData ?? '[]');
+          if (Array.isArray(parsedRows)) rows = parsedRows;
           return { ...c, rows, deletedRowKeys: proj.deletedRowKeys ?? (c as any).deletedRowKeys };
         });
       }
@@ -2586,15 +2582,13 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     try {
       const res = await datasourceService.execute(binding.datasource_id, { testParams: params });
 
-      let result: string | number | null = null;
+      let result: string | null = null;
       const payload = res?.data;
       if (payload != null && typeof payload === 'object') {
-        result = payload.extractedValue ?? payload.rawResponse ?? null;
-      } else if (typeof payload === 'string' || typeof payload === 'number') {
+        const candidate = payload.extractedValue ?? payload.rawResponse ?? null;
+        result = typeof candidate === 'string' ? candidate : null;
+      } else if (typeof payload === 'string') {
         result = payload;
-      }
-      if (result != null && typeof result === 'object') {
-        result = String(result);
       }
 
       dsCache.current.set(cacheKey, { value: result, timestamp: Date.now() });
@@ -2656,7 +2650,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
   const quoteValuesJson = (item as any).quoteCardValues as string | undefined;
   const sideCardValues = React.useMemo<CardValues | null>(() => {
     if (cardSide !== 'QUOTE' || !quoteValuesJson) return null;
-    try { return JSON.parse(quoteValuesJson) as CardValues; } catch { return null; }
+    return tryParseSnapshotJsonLossless<CardValues>(quoteValuesJson);
   }, [cardSide, quoteValuesJson]);
   // Task6: 失败哨兵卡片值识别(本侧)。命中则该卡片以显式『数据待重算』占位替换
   // 正常 Tab/组件体, 防 AP-38 静默降级为"加载中"/AP-50 僵尸数据。
@@ -2720,7 +2714,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     tabName: string;
     rows: Array<{
       rowKey: string; expIndex: number; row: Record<string, any>; driverRow?: Record<string, any>;
-      formulaCache?: Record<string, number | null>;
+      formulaCache?: Record<string, DecimalString | null>;
     }>;
     formulaFieldNames: string[];
   } | null>(null);
@@ -2738,11 +2732,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     frontendValue: any; backendValue: any; frontendInputs: Record<string, any>; backendInputs: Record<string, any>;
   }>>({});
 
-  /** D4 判定：数字按 DISPLAY_SCALE 阈值比，非数字按字符串比，一边缺失算差异。 */
+  /** D4 判定：十进制值按 10^-12 工作精度比较，非数字按字符串比。 */
   const valuesReconcile = (a: any, b: any): boolean => {
-    const an = typeof a === 'number' ? a : (a != null && a !== '' && !isNaN(Number(a)) ? Number(a) : null);
-    const bn = typeof b === 'number' ? b : (b != null && b !== '' && !isNaN(Number(b)) ? Number(b) : null);
-    if (an != null && bn != null) return Math.abs(an - bn) < Math.pow(10, -DISPLAY_SCALE);
+    const an = precisionValue(a);
+    const bn = precisionValue(b);
+    if (an != null && bn != null) return isWithinTolerance(an, bn);
     if ((a == null || a === '') && (b == null || b === '')) return true;
     if ((a == null || a === '') !== (b == null || b === '')) return false; // 一边有值一边缺失
     return String(a) === String(b);
@@ -2766,8 +2760,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
   const reconcileTab = useCallback((qcvJson: string | undefined, lineItemId: string | undefined): Promise<void> => {
     const ctx = activeTabCtxRef.current;
     if (!qcvJson || !ctx || !lineItemId) return Promise.resolve();
-    let parsed: CardValues | null = null;
-    try { parsed = JSON.parse(qcvJson) as CardValues; } catch { return Promise.resolve(); }
+    const parsed = tryParseSnapshotJsonLossless<CardValues>(qcvJson);
+    if (!parsed) return Promise.resolve();
     const tab = parsed?.tabs?.find(t => t.componentId === ctx.componentId);
     if (!tab) return Promise.resolve();
     const formulaMap = new Map<string, Record<string, any>>();
@@ -2861,8 +2855,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
         // task-0806 FR-4：不管本轮编辑是否回灌成功，只要响应带回了 quoteCardValues 就对账一次
         // （D5：编辑防抖落定后对整卡[活动页签]比一次；阶段①未引入防抖，故每次响应各对账一次）。
         if (qcv) await reconcileTab(qcv, lineItemId);
-      } catch {
+      } catch (error) {
         // 网络失败保持旧 autosave 兜底(comp.rows 已被 handleRowChange 更新), 不阻塞用户
+        if (import.meta.env.DEV) {
+          console.warn('[quote-card-edit] snapshot edit or reconciliation failed', error);
+        }
       }
     })();
     trackPendingEdit(p);
@@ -2900,8 +2897,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
 
   // 金额显示：统一走 formatNumber（task-0801：不再固定 2 位，走 DISPLAY_SCALE=6 兜底去尾零），
   // 保留 ¥ 前缀与空值兜底 ¥0。
-  const formatCurrency = (val: number) =>
-    `¥ ${formatNumber(val || 0, { isComputed: true }) ?? '0'}`;
+  const formatCurrency = (val: DecimalValue | null | undefined) =>
+    `¥ ${formatNumber(val ?? '0', { isComputed: true }) ?? '0'}`;
 
   // 2026-05-17 WYSIWYG 原则: 模板配几个组件就显示几个 Tab.
   // 2026-05-19 (方案 A 用户决议, 推翻同日 QT-1409 的"自动隐藏空 Tab"策略):
@@ -2963,7 +2960,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
 
   // Compute cross-component subtotals for formula evaluation in the active tab
   // Key by componentId (UUID), componentCode, and tabName for maximum compatibility
-  const allComponentSubtotals: Record<string, number> = {};
+  const allComponentSubtotals: DecimalContext = {};
   for (const comp of item.componentData) {
     // partNo + driverExpansion 一起传给 computeTabSubtotal —— 让含 BASIC_DATA 字段的公式
     // 按 rowCount 迭代 driver 展开行，每行用各自的 basicDataValues。
@@ -2978,7 +2975,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
       comp, allComponentSubtotals, undefined, undefined, item.productPartNo, expansion,
       globalVariableDefs,
     );
-    const subtotal = Object.values(byCol).reduce((s, v) => s + v, 0);
+    const subtotal = toCalculationString(sumDecimal(Object.values(byCol)));
     if (comp.componentId) allComponentSubtotals[comp.componentId] = subtotal;
     if (comp.componentCode) allComponentSubtotals[comp.componentCode] = subtotal;
     allComponentSubtotals[comp.tabName] = subtotal;
@@ -3437,7 +3434,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     // 2026-05-17 累加公式: 预先按 row_index 顺序求值, 把上一行 is_subtotal 字段值
                     // 传给下一行作为 previous_row_subtotal token 的求值上下文.
                     // 单 row 场景(无累加 token)行为不变 — previousRowSubtotal 仅 token 命中时取.
-                    const preComputedCaches: Array<Record<string, number | null>> = [];
+                    const preComputedCaches: Array<Record<string, DecimalString | null>> = [];
                     // 错误旁路: 与 preComputedCaches 平行 — 每行 computeAllFormulas 的 out.errors
                     // (cross_tab_ref 细项多命中等; 数值已静默归 0)。渲染层据此显示 ⚠。
                     const preComputedErrors: Array<Record<string, string>> = [];
@@ -3461,7 +3458,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         )
                       : undefined;
                     // Plan 2b：上一行全量公式值，previous_row_subtotal 按本列取。
-                    let prevRowValues: Record<string, number | null> | undefined = undefined;
+                    let prevRowValues: Record<string, DecimalString | null> | undefined = undefined;
                     effectiveRows.forEach((r, __treeRowIdx) => {
                       // Phase4 Task3: 报价侧优先读快照 formulaResults[rowKey](真零计算);
                       // 缺(无快照/新行/LIST_FORMULA 字符串公式未进 formulaResults)时 computeAllFormulas 兜底(防漂移)。
@@ -3477,8 +3474,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           )
                         : undefined;
                       const errForRow: Record<string, string> = {};
-                      const cache: Record<string, number | null> = (snapFormula && Object.keys(snapFormula).length > 0)
-                        ? (snapFormula as Record<string, number | null>)
+                      const cache: Record<string, DecimalString | null> = (snapFormula && Object.keys(snapFormula).length > 0)
+                        ? (snapFormula as Record<string, DecimalString | null>)
                         : treeResultsActive
                         ? (treeResultsActive[__treeRowIdx] ?? {})
                         : computeAllFormulas(
@@ -3814,10 +3811,10 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         // C1：小计行只对勾选了 is_subtotal 的列求和；非小计列一律留空。
                         const isNumericCol = !!field.is_subtotal;
                         if (isNumericCol && colName && colName in colSums) {
-                          const v = colSums[colName] ?? 0;
+                          const v = colSums[colName] ?? '0';
                           // ¥ 仅当 is_amount===true；其他数值列（含管理费/利润等 is_subtotal 但非金额列）纯数字
                           // C2：小计为计算值 → formatNumber 计算口径（未配 decimals 兜底 6 位去尾零，task-0801），金额列加 ¥ 前缀
-                          const plain = v === 0 ? '0' : (formatNumber(v, { isComputed: true }) ?? '—');
+                          const plain = toDecimal(v).isZero() ? '0' : (formatNumber(v, { isComputed: true }) ?? '—');
                           const text = field.is_amount === true ? `¥ ${plain}` : plain;
                           return (
                             <td key={colName || fi} className="qt-subtotal-cell" style={field.is_amount === true ? undefined : { color: '#595959' }}>
@@ -4015,14 +4012,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
     templateService.getByIdCached(customerTemplateId)
       .then((res: any) => {
         const tmpl = res.data;
-        let snapshot: any[] = [];
-        try {
-          snapshot = tmpl?.componentsSnapshot
-            ? (typeof tmpl.componentsSnapshot === 'string'
-                ? JSON.parse(tmpl.componentsSnapshot)
-                : tmpl.componentsSnapshot)
-            : [];
-        } catch { snapshot = []; }
+        const snapshot = parseTemplateComponentsSnapshot(tmpl?.componentsSnapshot);
         const ids = new Set<string>();
         if (Array.isArray(snapshot)) {
           for (const sc of snapshot) {
@@ -4068,14 +4058,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
     templateService.getByIdCached(costingCardTemplateId)
       .then((res: any) => {
         const tmpl = res.data;
-        let snapshot: any[] = [];
-        try {
-          snapshot = tmpl?.componentsSnapshot
-            ? (typeof tmpl.componentsSnapshot === 'string'
-                ? JSON.parse(tmpl.componentsSnapshot)
-                : tmpl.componentsSnapshot)
-            : [];
-        } catch { snapshot = []; }
+        const snapshot = parseTemplateComponentsSnapshot(tmpl?.componentsSnapshot);
         setCostingTemplateSnapshot(Array.isArray(snapshot) ? snapshot : []);
         setCostingTemplateProductAttrs(Array.isArray(tmpl?.productAttributes) ? tmpl.productAttributes : []);
       })
@@ -4134,7 +4117,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
           fields,
           formulas,
           rows,
-          subtotal: matched?.subtotal || 0,
+          subtotal: matched?.subtotal || '0',
           dataDriverPath: sc.data_driver_path || sc.dataDriverPath || matched?.dataDriverPath,
         } as ComponentDataItem;
       });
@@ -4162,7 +4145,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
       const json = (li as any).costingCardValues;
       if (!json) continue;
       try {
-        const parsed = JSON.parse(json);
+        const parsed = tryParseSnapshotJsonLossless<any>(json);
         const cyc = parsed?.cyclePartNos;
         if (Array.isArray(cyc)) cyc.forEach((p: any) => { if (p) allCycles.add(String(p)); });
       } catch { /* ignore */ }

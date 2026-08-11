@@ -15,6 +15,8 @@ import { buildSnapshotExpansions, buildCrossTabRows, computeTabSubtotalsByColumn
 import { driverExpansionKey, fieldsOverrideHash } from '../../useDriverExpansions';
 import { buildComponentDataFromStructure } from '../../enrichComponentData';
 import type { ComponentDataItem, LineItem } from '../../QuotationStep2';
+import type { DecimalContext } from '../../../../utils/formulaEngine';
+import { sumDecimal, toCalculationString, type DecimalValue } from '../../../../utils/precision';
 // GlobalVariableDefinition 的原产地是 services —— QuotationStep2 只是 import 它自用，并未再导出
 import type { GlobalVariableDefinition } from '../../../../services/globalVariableService';
 
@@ -134,15 +136,15 @@ export function buildQt0146AllComponentSubtotals(
   lookupExpansion: (comp: ComponentDataItem) => any,
   partNo: string = QT0146.productPartNo,
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
-): Record<string, number> {
+): DecimalContext {
   const AMOUNT_TOTAL_KEY = '__amount_total__';
-  const allComponentSubtotals: Record<string, number> = {};
+  const allComponentSubtotals: DecimalContext = {};
   for (const comp of componentData) {
     const expansion = (partNo && comp.componentId) ? lookupExpansion(comp) : undefined;
     const byCol = computeTabSubtotalsByColumn(
       comp, allComponentSubtotals, undefined, undefined, partNo, expansion, globalVariableDefs,
     );
-    const subtotal = Object.values(byCol).reduce((s, v) => s + v, 0);
+    const subtotal = toCalculationString(sumDecimal(Object.values(byCol)));
     if (comp.componentId) allComponentSubtotals[comp.componentId] = subtotal;
     if (comp.componentCode) allComponentSubtotals[comp.componentCode] = subtotal;
     allComponentSubtotals[comp.tabName] = subtotal;
@@ -151,9 +153,9 @@ export function buildQt0146AllComponentSubtotals(
       if (comp.componentCode) allComponentSubtotals[`${comp.componentCode}#${colName}`] = colVal;
       allComponentSubtotals[`${comp.tabName}#${colName}`] = colVal;
     }
-    const amountTotalP1 = Object.entries(byCol)
+    const amountTotalP1 = toCalculationString(sumDecimal(Object.entries(byCol)
       .filter(([colName]) => (comp.fields ?? []).find((f: any) => (f.name ?? f.key) === colName)?.is_amount)
-      .reduce((s, [, v]) => s + v, 0);
+      .map(([, value]) => value)));
     if (comp.componentId) allComponentSubtotals[`${comp.componentId}#${AMOUNT_TOTAL_KEY}`] = amountTotalP1;
     if (comp.componentCode) allComponentSubtotals[`${comp.componentCode}#${AMOUNT_TOTAL_KEY}`] = amountTotalP1;
     allComponentSubtotals[`${comp.tabName}#${AMOUNT_TOTAL_KEY}`] = amountTotalP1;
@@ -183,7 +185,7 @@ export function runQt0146Pipeline(
     store,
     columnSumsByComp,
     wuliaoRows: (store[QT0146.wuliaoComponentId] ?? []) as Array<Record<string, any>>,
-    wuliaoColumnSums: (columnSumsByComp[QT0146.wuliaoComponentId] ?? {}) as Record<string, number>,
+    wuliaoColumnSums: (columnSumsByComp[QT0146.wuliaoComponentId] ?? {}) as Record<string, DecimalValue>,
   };
 }
 

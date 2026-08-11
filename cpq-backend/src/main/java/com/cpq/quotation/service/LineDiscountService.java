@@ -44,8 +44,8 @@ public class LineDiscountService {
      *   <li>source=页签code → S1 = S0 × (引擎折后/引擎折前)（比例映射），base=该页签列和</li>
      *   <li>lineUnitPrice=S0，lineFinalPrice=S1，discountBaseAmount=base</li>
      *   <li>lineDiscountAmount=(S0-S1)*annualVolume，lineTotalAmount=S1*annualVolume</li>
-     *   <li>中间过程（S0/S1/base）全程 BigDecimal 不截断；落库前统一 {@code PrecisionPolicy.round()}
-     *       规整到 6 位（task-0801 B4/B5：链路二 lineDiscountAmount/lineTotalAmount 禁止中间截断）</li>
+     *   <li>中间过程（S0/S1/base）全程 BigDecimal 不截断；落库前统一 {@code PrecisionPolicy.roundForCalculation()}
+     *       规整到 12 位（lineDiscountAmount/lineTotalAmount 禁止浮点中转）</li>
      * </ul>
      *
      * <p><b>双口径修复（2026-07-17，QT-20260716-2033 提交口径 67.16 vs 卡片 122.16）</b>：
@@ -71,7 +71,7 @@ public class LineDiscountService {
             s0 = li.subtotal;
         } else if (subtotalCid != null) {
             s0 = ComponentDataEffectiveRows.subtotalWithDiscount(
-                cdList, metaById, subtotalCid, formulaCalculator, null, 1.0);
+                cdList, metaById, subtotalCid, formulaCalculator, null, BigDecimal.ONE);
         } else {
             s0 = BigDecimal.ZERO;
         }
@@ -95,9 +95,9 @@ public class LineDiscountService {
             // ⚠️已知限制（BL-0059）：cross_tab 公式列在 row_data 无真值 → 该列比例=1（折扣不生效），
             // 与修复前行为一致不更糟；S0/行合计已是正确口径。
             BigDecimal e0 = ComponentDataEffectiveRows.subtotalWithDiscount(
-                cdList, metaById, subtotalCid, formulaCalculator, null, 1.0);
+                cdList, metaById, subtotalCid, formulaCalculator, null, BigDecimal.ONE);
             BigDecimal e1 = ComponentDataEffectiveRows.subtotalWithDiscount(
-                cdList, metaById, subtotalCid, formulaCalculator, source, scale.doubleValue());
+                cdList, metaById, subtotalCid, formulaCalculator, source, scale);
             s1 = e0.signum() != 0
                 // task-0801 B4：除法中间精度 8→12（PrecisionPolicy.DIVISION_SCALE），不再是落库边界。
                 ? s0.multiply(e1).divide(e0, PrecisionPolicy.DIVISION_SCALE, RoundingMode.HALF_UP)
@@ -113,12 +113,12 @@ public class LineDiscountService {
         int qty = li.annualVolume != null ? li.annualVolume : 0;
         BigDecimal q = BigDecimal.valueOf(qty);
 
-        // task-0801 B5：落库边界 —— 5 个金额字段赋值前统一 PrecisionPolicy.round()（规整到 6 位）。
-        li.lineUnitPrice      = PrecisionPolicy.round(s0);
-        li.discountBaseAmount = PrecisionPolicy.round(base);
-        li.lineFinalPrice     = PrecisionPolicy.round(s1);
-        li.lineDiscountAmount = PrecisionPolicy.round(s0.subtract(s1).multiply(q));
-        li.lineTotalAmount    = PrecisionPolicy.round(s1.multiply(q));
+        // task-0810：5 个金额字段赋值前统一规整到 12 位。
+        li.lineUnitPrice      = PrecisionPolicy.roundForCalculation(s0);
+        li.discountBaseAmount = PrecisionPolicy.roundForCalculation(base);
+        li.lineFinalPrice     = PrecisionPolicy.roundForCalculation(s1);
+        li.lineDiscountAmount = PrecisionPolicy.roundForCalculation(s0.subtract(s1).multiply(q));
+        li.lineTotalAmount    = PrecisionPolicy.roundForCalculation(s1.multiply(q));
     }
 
     // -------------------------------------------------------------------------

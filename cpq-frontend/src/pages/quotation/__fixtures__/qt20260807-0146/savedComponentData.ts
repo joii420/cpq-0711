@@ -36,7 +36,9 @@
  * `if (key in formulaCache)`），所以这里保留原始 0 不影响断言——测的是前端重新计算的结果，
  * 不是这些陈旧的 0 本身。
  */
-export const QT0146_SAVED_COMPONENT_DATA = [
+import { parseSnapshotJsonLossless } from '../../../../utils/losslessJson';
+
+export const QT0146_SAVED_COMPONENT_DATA = parseSnapshotJsonLossless<any[]>(String.raw`[
   {
     "rows": [
       {
@@ -387,4 +389,4 @@ export const QT0146_SAVED_COMPONENT_DATA = [
     "componentId": "fedc4207-ca54-4989-9f5e-c7fe494f3059",
     "deletedRowKeys": []
   }
-];
+]`);

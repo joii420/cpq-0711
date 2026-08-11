@@ -218,6 +218,19 @@ class FormulaEngineTest {
             "0.1+0.2 必须精确等于 0.3，实际=" + result);
     }
 
+    @Test
+    void t0810_jexlPoint2_literalVariableFunctionDivisionAndLargeSignedMatrix() {
+        assertDecimal("0.333333333333", engine.evaluate("1 / 3", baseCtx));
+        assertDecimal("1.234567891235", engine.evaluate("ROUND(1.2345678912345, 12)", baseCtx));
+
+        EvaluationContext ctx = EvaluationContext.builder()
+                .dataLoader(mockDataLoader)
+                .binding("amount", new BigDecimal("98765431.123456789012"))
+                .binding("adjustment", new BigDecimal("-0.000000000001"))
+                .build();
+        assertDecimal("98765431.123456789011", engine.evaluate("amount + adjustment", ctx));
+    }
+
     // ── 工具方法 ─────────────────────────────────────────────────────────────
 
     /** 通过反射注入私有字段（CDI 注入在非容器测试中不可用）。 */
@@ -233,5 +246,10 @@ class FormulaEngineTest {
             catch (NoSuchFieldException e) { clazz = clazz.getSuperclass(); }
         }
         throw new NoSuchFieldException(name);
+    }
+
+    private static void assertDecimal(String expected, Object actual) {
+        assertInstanceOf(BigDecimal.class, actual);
+        assertEquals(0, new BigDecimal(expected).compareTo((BigDecimal) actual), "actual=" + actual);
     }
 }

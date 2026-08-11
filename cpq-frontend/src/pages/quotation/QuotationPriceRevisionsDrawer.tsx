@@ -7,6 +7,8 @@ import type {
   PriceRevisionDTO, MaterialVersionRowDTO,
   RevisionPreviewResponse, RevisionPreviewLineItemDTO,
 } from '../../types/price-adjust';
+import { formatNumber } from '../../utils/formatNumber';
+import type { DecimalString } from '../../utils/precision';
 
 export interface QuotationPriceRevisionsDrawerProps {
   open: boolean;
@@ -14,9 +16,8 @@ export interface QuotationPriceRevisionsDrawerProps {
   onClose: () => void;
 }
 
-function fmtMoney(v: number | null | undefined): string {
-  if (v == null) return '—';
-  return v.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function fmtMoney(v: DecimalString | null | undefined): string {
+  return formatNumber(v, { isComputed: true, decimals: 2 }) ?? '—';
 }
 
 /**
@@ -93,7 +94,7 @@ const QuotationPriceRevisionsDrawer: React.FC<QuotationPriceRevisionsDrawerProps
     },
     { title: '首次生效', dataIndex: 'firstEffectiveAt', render: (v: string) => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '—' },
     { title: '最后更新', dataIndex: 'lastUpdatedAt', render: (v: string) => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '—' },
-    { title: '报价总额', dataIndex: 'quoteTotalAmount', align: 'right' as const, render: (v: number) => fmtMoney(v) },
+    { title: '报价总额', dataIndex: 'quoteTotalAmount', align: 'right' as const, render: (v: DecimalString) => fmtMoney(v) },
     {
       title: '操作', render: (_: unknown, r: PriceRevisionDTO) => <a onClick={() => openPreview(r)}>切版预览</a>,
     },

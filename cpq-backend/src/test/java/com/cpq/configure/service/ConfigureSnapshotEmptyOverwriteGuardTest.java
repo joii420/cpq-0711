@@ -163,7 +163,7 @@ class ConfigureSnapshotEmptyOverwriteGuardTest {
                 nullEntry.put("componentCode", compNull.code);
                 nullEntry.put("componentType", "NORMAL");
                 nullEntry.put("tabName", "空快照页签");
-                nullEntry.put("sortOrder", 0);
+                nullEntry.put("sortOrder", new java.math.BigDecimal("0"));
                 nullEntry.set("fields", M.readTree(compNull.fields));
                 nullEntry.set("formulas", M.readTree(compNull.formulas));
                 nullEntry.put("data_driver_path", compNull.dataDriverPath);
@@ -175,7 +175,7 @@ class ConfigureSnapshotEmptyOverwriteGuardTest {
                 goodEntry.put("componentCode", compGood.code);
                 goodEntry.put("componentType", "NORMAL");
                 goodEntry.put("tabName", "已继承页签");
-                goodEntry.put("sortOrder", 1);
+                goodEntry.put("sortOrder", new java.math.BigDecimal("1"));
                 goodEntry.set("fields", M.readTree(compGood.fields));
                 goodEntry.set("formulas", M.readTree(compGood.formulas));
                 goodEntry.put("data_driver_path", compGood.dataDriverPath);

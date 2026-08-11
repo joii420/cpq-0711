@@ -60,6 +60,26 @@ class FormulaGoldenTest {
         return tests.stream();
     }
 
+    @org.junit.jupiter.api.Test
+    void componentSubtotalUsesDocumentedPriorityWhenAllKeysCoexist() throws Exception {
+        JsonNode tokens = MAPPER.readTree("""
+            [{"type":"component_subtotal","component_code":"COMP-A",
+              "tab_name":"Input","value":"__amount_total__"}]
+            """);
+        FormulaCalculator.RowContext ctx = new FormulaCalculator.RowContext();
+        ctx.componentSubtotals = new LinkedHashMap<>();
+        ctx.componentSubtotals.put("COMP-A#__amount_total__", new BigDecimal("11.000000000001"));
+        ctx.componentSubtotals.put("Input#__amount_total__", new BigDecimal("22.000000000002"));
+        ctx.componentSubtotals.put("COMP-A", new BigDecimal("33.000000000003"));
+        ctx.componentSubtotals.put("Input", new BigDecimal("44.000000000004"));
+        ctx.componentSubtotals.put("__amount_total__", new BigDecimal("55.000000000005"));
+
+        BigDecimal actual = calc.evaluateExpression(tokens, ctx);
+
+        assertEquals(0, new BigDecimal("11.000000000001").compareTo(actual),
+            "component_code#value must win over tab_name#value and all fallback keys");
+    }
+
     private void runCase(JsonNode caseNode) {
         String expectedSource = caseNode.path("expectedSource").asText("pending");
         assumeTrue(!"pending".equals(expectedSource),
@@ -92,7 +112,7 @@ class FormulaGoldenTest {
         ctx.currentRowRaw = currentRowRaw;
 
         JsonNode prs = ctxNode.path("previousRowSubtotal");
-        ctx.previousRowSubtotal = (prs != null && prs.isNumber()) ? prs.asDouble() : null;
+        ctx.previousRowSubtotal = (prs != null && prs.isNumber()) ? prs.decimalValue() : null;
 
         Map<String, List<Map<String, Object>>> crossTabRows = new LinkedHashMap<>();
         ctxNode.path("crossTabRows").fields().forEachRemaining(e -> {
@@ -109,17 +129,17 @@ class FormulaGoldenTest {
         return ctx;
     }
 
-    private Map<String, Double> readDoubleMap(JsonNode node) {
-        Map<String, Double> out = new HashMap<>();
+    private Map<String, java.math.BigDecimal> readDoubleMap(JsonNode node) {
+        Map<String, java.math.BigDecimal> out = new HashMap<>();
         if (node == null || node.isMissingNode()) return out;
         node.fields().forEachRemaining(e -> {
-            if (e.getValue().isNumber()) out.put(e.getKey(), e.getValue().asDouble());
+            if (e.getValue().isNumber()) out.put(e.getKey(), e.getValue().decimalValue());
         });
         return out;
     }
 
     private Object rawValue(JsonNode v) {
-        if (v.isNumber()) return v.asDouble();
+        if (v.isNumber()) return v.decimalValue();
         if (v.isTextual()) return v.asText();
         if (v.isBoolean()) return v.asBoolean();
         return null;

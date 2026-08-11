@@ -50,26 +50,27 @@ public final class CondTreeEvaluator {
             for (String s : String.valueOf(R == null ? "" : R).split(",")) set.add(s.trim());
             return set.contains(String.valueOf(L).trim());
         }
-        Double ln = toNum(L), rn = toNum(R);
+        java.math.BigDecimal ln = toNum(L), rn = toNum(R);
         switch (op) {
             case "gt": case "gte": case "lt": case "lte":
                 if (ln == null || rn == null) return false;
-                if ("gt".equals(op)) return ln > rn;
-                if ("gte".equals(op)) return ln >= rn;
-                if ("lt".equals(op)) return ln < rn;
-                return ln <= rn;
+                int c = ln.compareTo(rn);
+                if ("gt".equals(op)) return c > 0;
+                if ("gte".equals(op)) return c >= 0;
+                if ("lt".equals(op)) return c < 0;
+                return c <= 0;
             default: // eq / ne
                 boolean eq = (ln != null && rn != null)
-                    ? ln.doubleValue() == rn.doubleValue()
+                    ? ln.compareTo(rn) == 0
                     : String.valueOf(L == null ? "" : L).equals(String.valueOf(R == null ? "" : R));
                 return "eq".equals(op) ? eq : !eq;
         }
     }
 
-    private static Double toNum(Object v) {
+    private static java.math.BigDecimal toNum(Object v) {
         if (v == null) return null;
-        if (v instanceof Number) return ((Number) v).doubleValue();
-        try { return Double.parseDouble(String.valueOf(v)); } catch (Exception e) { return null; }
+        if (v instanceof java.math.BigDecimal bd) return bd;
+        try { return new java.math.BigDecimal(String.valueOf(v)); } catch (Exception e) { return null; }
     }
 
     /** 收集条件树引用列名（leaf.left + column 型 rhs）。 */

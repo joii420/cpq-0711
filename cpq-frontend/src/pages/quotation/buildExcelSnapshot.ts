@@ -36,7 +36,7 @@ import {
   buildCrossTabRows,
   evalProductSubtotalFromSubtotals,
 } from './QuotationStep2';
-import { evaluateExpression } from '../../utils/formulaEngine';
+import { evaluateExpression, type DecimalContext } from '../../utils/formulaEngine';
 import type { GlobalVariableDefinition } from '../../utils/formulaEngine';
 import { expressionToTokens } from '../component/formulaSerialize';
 import type { CostingTemplateColumn } from '../../services/costingTemplateService';
@@ -49,6 +49,11 @@ import {
   formatPathValue,
   pathCacheKey,
 } from './useLinkedExcelRows';
+import {
+  isDecimalString,
+  normalizeDecimalString,
+  type DecimalString,
+} from '../../utils/precision';
 
 // ─── 类型扩展 ──────────────────────────────────────────────────────────────────
 
@@ -75,7 +80,7 @@ export interface BuildExcelSnapshotCtx {
   pathCache?: Record<string, any>;
   basicDataValues?: Record<string, any>;
   globalVariableDefs?: Record<string, GlobalVariableDefinition>;
-  quotationFields?: Record<string, number>;
+  quotationFields?: DecimalContext;
   lookupExpansion?: (comp: import('./QuotationStep2').ComponentDataItem) => import('./useDriverExpansions').DriverExpansion | undefined;
 }
 
@@ -143,11 +148,11 @@ export function buildExcelSnapshot(
   }
 
   // ── Step 4: 构建 productAttributeValues（数值型 → number） ─────────────────
-  const productAttrs: Record<string, number> = {};
+  const productAttrs: DecimalContext = {};
   for (const attr of item.productAttributes ?? []) {
     if (attr.field_type === 'NUMBER') {
-      const v = parseFloat(item.productAttributeValues?.[attr.name]);
-      if (!isNaN(v)) productAttrs[attr.name] = v;
+      const value = item.productAttributeValues?.[attr.name];
+      if (isDecimalString(value)) productAttrs[attr.name] = normalizeDecimalString(value);
     }
   }
 
@@ -193,8 +198,8 @@ function evalColumn(
   col: CostingTemplateColumn,
   item: LineItem,
   partNo: string,
-  productAttrs: Record<string, number>,
-  componentSubtotals: Record<string, number>,
+  productAttrs: DecimalContext,
+  componentSubtotals: DecimalContext,
   crossTabRows: Record<string, Array<Record<string, any>>>,
   ctx: BuildExcelSnapshotCtx,
   varValues: Record<string, any>,
@@ -209,16 +214,14 @@ function evalColumn(
       // 优先解析为数字，失败则返回原始字符串
       const fv = col.fixed_value;
       if (fv == null || fv === '') return null;
-      const n = Number(fv);
-      return isNaN(n) ? fv : n;
+      return isDecimalString(fv) ? normalizeDecimalString(fv) : fv;
     }
 
     case 'PRODUCT_ATTRIBUTE': {
       const fk = col.field_key ?? '';
       const raw = item.productAttributeValues?.[fk];
       if (raw == null) return null;
-      const n = Number(raw);
-      return isNaN(n) ? raw : n;
+      return isDecimalString(raw) ? normalizeDecimalString(raw) : raw;
     }
 
     case 'COMPONENT_FIELD': {
@@ -229,8 +232,7 @@ function evalColumn(
         const row = comp.rows?.[0];
         if (row && Object.prototype.hasOwnProperty.call(row, fk)) {
           const v = row[fk];
-          const n = Number(v);
-          return isNaN(n) ? v : n;
+          return isDecimalString(v) ? normalizeDecimalString(v) : v;
         }
       }
       return null;
@@ -289,14 +291,14 @@ function evalTabJoinOrCard(
   col: CostingTemplateColumn,
   componentData: import('./QuotationStep2').ComponentDataItem[],
   partNo: string,
-  productAttrs: Record<string, number>,
-  componentSubtotals: Record<string, number>,
+  productAttrs: DecimalContext,
+  componentSubtotals: DecimalContext,
   crossTabRows: Record<string, Array<Record<string, any>>>,
   ctx: BuildExcelSnapshotCtx,
-): number {
+): DecimalString {
   const colAny = col as any as TabJoinFormulaColumn;
   const exprStr: string | undefined = colAny.expression;
-  if (!exprStr) return 0;
+  if (!exprStr) return '0';
 
   // expressionToTokens 需要**完整** TabDef[]（含 componentId + subtotalCols + detailFields），
   // 否则 `[别名.小计列]` 无法判为 component_subtotal（缺 subtotalCols → 误当 cross_tab 明细 → 读空），
@@ -325,7 +327,7 @@ function evalTabJoinOrCard(
     tokens = expressionToTokens(exprStr, tabDefs as any);
   } catch (e) {
     console.warn('[buildExcelSnapshot] TAB_JOIN/CARD eval failed for col', col.col_key, e);
-    return 0;
+    return '0';
   }
 
   try {
@@ -345,6 +347,6 @@ function evalTabJoinOrCard(
     );
   } catch (e) {
     console.warn('[buildExcelSnapshot] TAB_JOIN/CARD eval failed for col', col.col_key, e);
-    return 0;
+    return '0';
   }
 }

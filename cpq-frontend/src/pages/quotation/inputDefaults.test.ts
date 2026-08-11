@@ -21,11 +21,11 @@ describe('resolveInputDefault', () => {
   });
   it('GLOBAL_VARIABLE 命中 @gvar', () => {
     const field = f({ field_type: 'INPUT_NUMBER', default_source: { type: 'GLOBAL_VARIABLE', code: 'TAX' } });
-    expect(resolveInputDefault(field, { basicDataValues: { '@gvar:TAX': 13 } })).toBe(13);
+    expect(resolveInputDefault(field, { basicDataValues: { '@gvar:TAX': '13' } })).toBe('13');
   });
   it('BNF_PATH basicDataValues 缺 → pathCache 兜底', () => {
     const field = f({ field_type: 'INPUT_NUMBER', default_source: { type: 'BNF_PATH', path: '$v.a' } });
-    expect(resolveInputDefault(field, { basicDataValues: {}, partNo: 'P1', pathCache: { 'P1::$v.a': 9 } })).toBe(9);
+    expect(resolveInputDefault(field, { basicDataValues: {}, partNo: 'P1', pathCache: { 'P1::$v.a': '9' } })).toBe('9');
   });
   it('BASIC_DATA 不走 pathCache(单列ASCII失败) → 仅行级, 缺则 content/undefined', () => {
     const field = f({ field_type: 'INPUT_TEXT', default_source: { type: 'BASIC_DATA', path: '$v.b' } });
@@ -74,9 +74,10 @@ describe('resolveInputDefaultForBake（导入带出一次性烘焙：源命中�
 
 describe('coerceInputNumber', () => {
   it('合法转数、非法 undefined', () => {
-    expect(coerceInputNumber('100')).toBe(100);
-    expect(coerceInputNumber('-1.5')).toBe(-1.5);
-    expect(coerceInputNumber(42)).toBe(42);
+    expect(coerceInputNumber('100')).toBe('100');
+    expect(coerceInputNumber('-1.5')).toBe('-1.5');
+    expect(coerceInputNumber('98765431.123456789012')).toBe('98765431.123456789012');
+    expect(coerceInputNumber(42)).toBeUndefined();
     expect(coerceInputNumber('abc')).toBeUndefined();
     expect(coerceInputNumber('1e3')).toBeUndefined();
     expect(coerceInputNumber('')).toBeUndefined();

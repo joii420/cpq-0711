@@ -1,4 +1,5 @@
 import api from './api';
+import type { DecimalString } from '../utils/precision';
 
 export interface CompositeProcessParamDef {
   id: string;
@@ -48,7 +49,7 @@ export interface CompositeProcessCandidateDTO {
   name: string;
   currency?: string | null;
   unit?: string | null;
-  defectRate?: number | null;
+  defectRate?: DecimalString | null;
 }
 
 export const compositeProcessService = {

@@ -1,18 +1,26 @@
 package com.cpq.quotation;
 
+import com.cpq.component.entity.Component;
+import com.cpq.quotation.entity.Quotation;
 import com.cpq.quotation.entity.QuotationLineItem;
 import com.cpq.quotation.service.CardSnapshotService;
 import com.cpq.quotation.service.FormulaCalculator;
+import com.cpq.template.entity.Template;
+import com.cpq.template.entity.TemplateComponent;
+import com.cpq.template.entity.TemplateComponentSnapshot;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.*;
 
+import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -161,7 +169,7 @@ public class RefreshCardSnapshotTest {
                 editRows.add(er);
                 ObjectNode ghost = MAPPER.createObjectNode();
                 ghost.put("rowKey", BOGUS_KEY);
-                ghost.putObject("values").put("__bogus__", 1);
+                ghost.putObject("values").put("__bogus__", new java.math.BigDecimal("1"));
                 editRows.add(ghost);
                 ((ObjectNode) tab).set("editRows", editRows);
                 break;
@@ -219,36 +227,168 @@ public class RefreshCardSnapshotTest {
 
     @Test
     @Order(2)
-    @DisplayName("T2: refreshDraftQuoteCards — DRAFT 返回重刷行数>0；非 DRAFT/不存在 → no-op 返 0")
+    @DisplayName("T2: refreshDraftQuoteCards — 可渲染 DRAFT 返回实际 UPDATED 数；非 DRAFT/不存在 → no-op 返 0")
     void refreshDraftQuoteCards_draftGate() {
-        // DRAFT(行数最少, 避免太慢) → refreshed = 行数 > 0
-        @SuppressWarnings("unchecked")
-        var draftRows = em.createNativeQuery(
-            "SELECT q.id, count(li.id) c FROM quotation q JOIN quotation_line_item li ON li.quotation_id=q.id " +
-            "WHERE q.status='DRAFT' GROUP BY q.id ORDER BY c ASC LIMIT 1").getResultList();
-        Assumptions.assumeFalse(draftRows.isEmpty(), "无 DRAFT 带行报价单");
-        Object[] dr = (Object[]) draftRows.get(0);
-        UUID draftId = UUID.fromString(dr[0].toString());
-        int expectedLines = Integer.parseInt(dr[1].toString());
+        DraftGateFixture fixture = createDraftGateFixture(true);
+        try {
+            int refreshed = svc.refreshDraftQuoteCards(fixture.quotationId());
+            assertEquals(1, refreshed, "fixture 只有一条可渲染行，实际 UPDATED 数必须为 1");
+            assertNotNull(readQuoteValuesAt(fixture.lineItemId()),
+                "UPDATED 行必须真实写入 quote_values_at，不能只返回扫描行数");
 
-        int refreshed = svc.refreshDraftQuoteCards(draftId);
-        assertEquals(expectedLines, refreshed,
-            "DRAFT 应重刷全部报价行(行数=" + expectedLines + ")");
-        assertTrue(refreshed > 0, "DRAFT 重刷行数必须 > 0");
-
-        // 非 DRAFT(SUBMITTED/APPROVED) → no-op 返 0
-        @SuppressWarnings("unchecked")
-        var nonDraft = em.createNativeQuery(
-            "SELECT id FROM quotation WHERE status <> 'DRAFT' LIMIT 1").getResultList();
-        if (!nonDraft.isEmpty()) {
-            UUID nonDraftId = UUID.fromString(nonDraft.get(0).toString());
-            assertEquals(0, svc.refreshDraftQuoteCards(nonDraftId),
+            QuarkusTransaction.requiringNew().run(() -> em.createNativeQuery(
+                    "UPDATE quotation SET status='SUBMITTED' WHERE id=:id")
+                .setParameter("id", fixture.quotationId()).executeUpdate());
+            String nonDraftBefore = draftGateFingerprint(fixture.quotationId());
+            assertEquals(0, svc.refreshDraftQuoteCards(fixture.quotationId()),
                 "非 DRAFT 报价单必须 no-op 返 0");
+            assertEquals(nonDraftBefore, draftGateFingerprint(fixture.quotationId()),
+                "非 DRAFT no-op 不得改动报价头、行、组件数据或结构");
+        } finally {
+            cleanupDraftGateFixture(fixture);
         }
 
         // 不存在 → 0
         assertEquals(0, svc.refreshDraftQuoteCards(UUID.randomUUID()), "不存在报价单返 0");
     }
+
+    @Test
+    @Order(4)
+    @DisplayName("T4: PUBLISHED 未冻结兼容态 → 返回 0 且全持久化指纹不变")
+    void refreshDraftQuoteCards_unfrozenPublishedTemplate_isCompatibleNoOp() {
+        DraftGateFixture fixture = createDraftGateFixture(false);
+        try {
+            String before = draftGateFingerprint(fixture.quotationId());
+            assertEquals(0, svc.refreshDraftQuoteCards(fixture.quotationId()),
+                "历史 PUBLISHED 未冻结模板应兼容 no-op，UPDATED 数必须为 0");
+            assertEquals(before, draftGateFingerprint(fixture.quotationId()),
+                "未冻结兼容 no-op 必须保持报价头、全部行、组件数据和结构全指纹不变");
+        } finally {
+            cleanupDraftGateFixture(fixture);
+        }
+    }
+
+    private DraftGateFixture createDraftGateFixture(boolean frozen) {
+        return QuarkusTransaction.requiringNew().call(() -> {
+            Component component = new Component();
+            component.name = "Refresh draft gate deterministic component";
+            component.code = "RCSDG-" + UUID.randomUUID().toString().substring(0, 8);
+            component.fields = "[]";
+            component.formulas = "[]";
+            component.persist();
+
+            Template template = new Template();
+            template.templateSeriesId = UUID.randomUUID();
+            template.name = "Refresh draft gate " + (frozen ? "frozen" : "unfrozen");
+            template.templateKind = "QUOTATION";
+            template.status = "PUBLISHED";
+            template.componentsSnapshot = frozen
+                ? "[{\"id\":\"" + UUID.randomUUID()
+                    + "\",\"componentId\":\"" + component.id + "\",\"componentName\":\""
+                    + component.name + "\",\"componentCode\":\"" + component.code
+                    + "\",\"componentType\":\"NORMAL\",\"tabName\":\"报价\","
+                    + "\"sortOrder\":0,\"fields\":[],\"formulas\":[],\"formula_assignments\":{}}]"
+                : "[]";
+            template.sqlViewsSnapshot = "{}";
+            template.templateSqlViewsSnapshot = "{}";
+            template.excelViewConfig = "[]";
+            template.persist();
+
+            TemplateComponent mounted = new TemplateComponent();
+            mounted.templateId = template.id;
+            mounted.componentId = component.id;
+            mounted.tabName = "报价";
+            mounted.sortOrder = 0;
+            mounted.persist();
+
+            if (frozen) {
+                TemplateComponentSnapshot snapshot = new TemplateComponentSnapshot();
+                snapshot.templateId = template.id;
+                snapshot.templateComponentId = mounted.id;
+                snapshot.componentId = component.id;
+                snapshot.sortOrder = 0;
+                snapshot.tabName = "报价";
+                snapshot.componentName = component.name;
+                snapshot.componentCode = component.code;
+                snapshot.componentType = "NORMAL";
+                snapshot.fields = "[]";
+                snapshot.formulas = "[]";
+                snapshot.persist();
+            }
+
+            Object customerId = em.createNativeQuery("SELECT id FROM customer ORDER BY id LIMIT 1").getSingleResult();
+            Object salesRepId = em.createNativeQuery("SELECT id FROM \"user\" ORDER BY id LIMIT 1").getSingleResult();
+            Quotation quotation = new Quotation();
+            quotation.quotationNumber = "RCSDG-" + UUID.randomUUID();
+            quotation.customerId = customerId instanceof UUID id ? id : UUID.fromString(customerId.toString());
+            quotation.name = "Refresh draft gate deterministic quotation";
+            quotation.salesRepId = salesRepId instanceof UUID id ? id : UUID.fromString(salesRepId.toString());
+            quotation.status = "DRAFT";
+            quotation.customerTemplateId = template.id;
+            quotation.persist();
+
+            QuotationLineItem line = new QuotationLineItem();
+            line.quotationId = quotation.id;
+            line.templateId = template.id;
+            line.productNameSnapshot = "Refresh draft gate product";
+            line.productPartNoSnapshot = "RCSDG-P1";
+            line.sortOrder = 0;
+            line.cardSnapshotAt = OffsetDateTime.now().minusHours(1);
+            line.quoteCardValues = "{\"tabs\":[],\"marker\":\"before-refresh\"}";
+            line.persist();
+            return new DraftGateFixture(quotation.id, line.id, template.id, mounted.id, component.id);
+        });
+    }
+
+    private void cleanupDraftGateFixture(DraftGateFixture fixture) {
+        QuarkusTransaction.requiringNew().run(() -> {
+            em.createNativeQuery("DELETE FROM quotation WHERE id=:id")
+                .setParameter("id", fixture.quotationId()).executeUpdate();
+            em.createNativeQuery("DELETE FROM template_component_snapshot WHERE template_id=:id")
+                .setParameter("id", fixture.templateId()).executeUpdate();
+            em.createNativeQuery("DELETE FROM template_component WHERE id=:id")
+                .setParameter("id", fixture.templateComponentId()).executeUpdate();
+            em.createNativeQuery("DELETE FROM template WHERE id=:id")
+                .setParameter("id", fixture.templateId()).executeUpdate();
+            em.createNativeQuery("DELETE FROM component WHERE id=:id")
+                .setParameter("id", fixture.componentId()).executeUpdate();
+        });
+    }
+
+    private OffsetDateTime readQuoteValuesAt(UUID lineItemId) {
+        return QuarkusTransaction.requiringNew().call(() -> {
+            Object value = em.createNativeQuery(
+                    "SELECT quote_values_at FROM quotation_line_item WHERE id=:id")
+                .setParameter("id", lineItemId).getSingleResult();
+            if (value == null) return null;
+            if (value instanceof OffsetDateTime odt) return odt;
+            if (value instanceof java.time.Instant instant) return instant.atOffset(java.time.ZoneOffset.UTC);
+            if (value instanceof java.sql.Timestamp timestamp) {
+                return timestamp.toInstant().atOffset(java.time.ZoneOffset.UTC);
+            }
+            return OffsetDateTime.parse(value.toString().replace(" ", "T"));
+        });
+    }
+
+    private String draftGateFingerprint(UUID quotationId) {
+        return QuarkusTransaction.requiringNew().call(() -> String.join("|",
+            tableFingerprint("quotation", "id=:id", quotationId),
+            tableFingerprint("quotation_line_item", "quotation_id=:id", quotationId),
+            tableFingerprint("quotation_line_component_data",
+                "line_item_id IN (SELECT id FROM quotation_line_item WHERE quotation_id=:id)", quotationId),
+            tableFingerprint("quotation_view_structure", "quotation_id=:id", quotationId)));
+    }
+
+    private String tableFingerprint(String table, String predicate, UUID quotationId) {
+        Object[] row = (Object[]) em.createNativeQuery(
+                "SELECT count(*),COALESCE(md5(string_agg(xmin::text || ':' || md5(to_jsonb(t)::text),"
+                    + "'|' ORDER BY to_jsonb(t)::text)),'none') FROM " + table + " t WHERE " + predicate)
+            .setParameter("id", quotationId).getSingleResult();
+        return row[0] + ":" + row[1];
+    }
+
+    private record DraftGateFixture(UUID quotationId, UUID lineItemId, UUID templateId,
+                                    UUID templateComponentId, UUID componentId) {}
 
     /** DRAFT 态 + 报价模板含 driver 组件 + snapshot_rows 非空 的产品行（editCardValue 需 DRAFT）。 */
     private UUID resolveDraftLineItemId() {

@@ -24,8 +24,8 @@ const comp: any = {
 describe('条件公式逐行选公式（Plan 3a）', () => {
   it('车削*1.2 / 铣削*1.5 / 默认*1', () => {
     const caches = computeRowsCachesForTest(comp, [
-      { 类型: '车削', 单价: 100 }, { 类型: '铣削', 单价: 100 }, { 类型: '钻孔', 单价: 100 },
+      { 类型: '车削', 单价: '100' }, { 类型: '铣削', 单价: '100' }, { 类型: '钻孔', 单价: '100' },
     ]);
-    expect(caches.map(c => c['加工费'])).toEqual([120, 150, 100]);
+    expect(caches.map(c => c['加工费'])).toEqual(['120', '150', '100']);
   });
 });

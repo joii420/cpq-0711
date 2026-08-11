@@ -160,7 +160,7 @@ const MOCK_TABLE_DATA: Record<string, PagedTableDataDTO> = {
     rows: Array.from({ length: 20 }, (_, i) => ({
       part_no: `PN-${String(1001 + i).padStart(5, '0')}`,
       part_name: `零件名称-${i + 1}`,
-      unit_weight: (Math.random() * 100).toFixed(2),
+      unit_weight: `${i + 1}.25`,
       material_type: ['钢', '铝', '铜', '塑料'][i % 4],
       supplier_code: `SUP-${String(i + 1).padStart(3, '0')}`,
       created_at: '2026-01-15T08:00:00Z',

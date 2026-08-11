@@ -1,5 +1,7 @@
 package com.cpq.elementprice.pricetable;
 
+import com.cpq.common.DecimalStringDeserializer;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -9,6 +11,7 @@ public class CreatePriceRequest {
     public String elementCode;
     public UUID sourceId;
     public LocalDate priceDate;
+    @JsonDeserialize(using = DecimalStringDeserializer.class)
     public BigDecimal price;
     public String currency;
     public String priceUnit;

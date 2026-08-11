@@ -228,7 +228,7 @@ public class PriceTableService {
                 row.createCell(1).setCellValue(nvl(d.elementName));
                 row.createCell(2).setCellValue(d.priceDate != null ? d.priceDate.toString() : "");
                 row.createCell(3).setCellValue(nvl(d.sourceName));
-                if (d.price != null) row.createCell(4).setCellValue(d.price.doubleValue());
+                if (d.price != null) row.createCell(4).setCellValue(d.price.toPlainString());
                 row.createCell(5).setCellValue(nvl(d.currency));
                 row.createCell(6).setCellValue(nvl(d.priceUnit));
                 row.createCell(7).setCellValue(nvl(d.operatorName));
@@ -260,7 +260,7 @@ public class PriceTableService {
                 xr.createCell(1).setCellValue(nvl(row.elementName));
                 for (int i = 0; i < row.prices.size(); i++) {
                     BigDecimal p = row.prices.get(i);
-                    if (p != null) xr.createCell(2 + i).setCellValue(p.doubleValue());
+                    if (p != null) xr.createCell(2 + i).setCellValue(p.toPlainString());
                 }
             }
             sheet.setColumnWidth(0, 3000);

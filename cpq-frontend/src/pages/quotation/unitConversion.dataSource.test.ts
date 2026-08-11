@@ -23,18 +23,18 @@ const comp = {
   rows: [], componentData: [], snapshotRows: 0, subtotal: 0,
 } as any;
 
-const bdv = (qty: number, unit: string) => ({
+const bdv = (qty: string, unit: string) => ({
   [bnfDriverLookupKey('$ll_view._组成用量')]: qty,
   [bnfDriverLookupKey('$ll_view._单位')]: unit,
 });
 
 describe('单位换算 同页签 + 数据源列 (default_source)', () => {
   it('组成用量 来自 $ll_view, 单位=G → 材料费(=组成用量) = 0.5 (而非原值 500)', () => {
-    const res = computeAllFormulas(comp, {}, undefined, undefined, undefined, '料8', bdv(500, 'G'));
-    expect(res['材料费']).toBeCloseTo(0.5, 6);
+    const res = computeAllFormulas(comp, {}, undefined, undefined, undefined, '料8', bdv('500', 'G'));
+    expect(res['材料费']).toBe('0.5');
   });
   it('单位=KG → ×1 → 材料费 = 500', () => {
-    const res = computeAllFormulas(comp, {}, undefined, undefined, undefined, '料8', bdv(500, 'KG'));
-    expect(res['材料费']).toBeCloseTo(500, 6);
+    const res = computeAllFormulas(comp, {}, undefined, undefined, undefined, '料8', bdv('500', 'KG'));
+    expect(res['材料费']).toBe('500');
   });
 });

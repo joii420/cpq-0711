@@ -133,7 +133,7 @@ class FormulaCalculatorCrossTabTest {
         var aRows = List.<Map<String, Object>>of(Map.of("子件", "P1", "单价", "2"));
         FormulaCalculator.RowContext c = new FormulaCalculator.RowContext();
         c.currentRowRaw.put("子件", "P1");
-        c.currentRowRaw.put("数量", 3);
+        c.currentRowRaw.put("数量", new java.math.BigDecimal("3"));
         c.crossTabRows.put("A", aRows);
         var tok = om.readTree("[{\"type\":\"cross_tab_ref\",\"source\":\"A\",\"agg\":\"NONE\","
             + "\"match\":[{\"a\":\"子件\",\"b\":\"子件\"}],"
@@ -173,7 +173,7 @@ class FormulaCalculatorCrossTabTest {
         c.currentRowRaw.put("料件", "P1");
         c.crossTabRows.put("MC", aRows);
         // 列小计键口径 "${component_code}#${value}"（与前端 formulaSerialize 产出的 token 对齐）
-        c.componentSubtotals.put("COMP-0135#税率", 1.13);
+        c.componentSubtotals.put("COMP-0135#税率", new java.math.BigDecimal("1.13"));
         var tok = om.readTree("[{\"type\":\"cross_tab_ref\",\"source\":\"MC\",\"agg\":\"SUM\","
             + "\"match\":[{\"a\":\"料件\",\"b\":\"料件\"}],"
             + "\"targetExpr\":[{\"type\":\"field\",\"value\":\"元素单价\"},"

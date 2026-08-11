@@ -9,6 +9,7 @@ import dayjs, { type Dayjs } from 'dayjs';
 import CompactUploadDragger from '../../components/CompactUploadDragger';
 import { elementPriceStrategyService } from '../../services/elementPriceStrategyService';
 import type { PriceSourceDTO, PriceImportResultDTO, PriceImportRowDTO } from '../../types/element-price-strategy';
+import { formatDisplayDecimal, type DecimalString } from '../../utils/precision';
 
 const { Text, Paragraph } = Typography;
 
@@ -206,7 +207,7 @@ const PriceImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) => {
             columns={[
               { title: '行号', dataIndex: 'rowNo', width: 60 },
               { title: '元素符号', dataIndex: 'elementCode', width: 90 },
-              { title: '单价', dataIndex: 'price', align: 'right' as const, render: (v: number) => v.toFixed(4) },
+              { title: '单价', dataIndex: 'price', align: 'right' as const, render: (v: DecimalString) => formatDisplayDecimal(v, 4) },
               { title: '货币', dataIndex: 'currency' },
               { title: '计价单位', dataIndex: 'priceUnit' },
               {

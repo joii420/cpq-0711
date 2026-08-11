@@ -36,23 +36,20 @@ function cmp(op: CondOp, L: any, R: any): boolean {
   const ln = toNum(L), rn = toNum(R);
   if (op === 'gt' || op === 'gte' || op === 'lt' || op === 'lte') {
     if (ln == null || rn == null) return false;
-    if (op === 'gt') return ln > rn;
-    if (op === 'gte') return ln >= rn;
-    if (op === 'lt') return ln < rn;
-    return ln <= rn;
+    if (op === 'gt') return ln.greaterThan(rn);
+    if (op === 'gte') return ln.greaterThanOrEqualTo(rn);
+    if (op === 'lt') return ln.lessThan(rn);
+    return ln.lessThanOrEqualTo(rn);
   }
   // eq / ne：数值优先，否则字符串
   let eq: boolean;
-  if (ln != null && rn != null) eq = ln === rn;
+  if (ln != null && rn != null) eq = ln.equals(rn);
   else eq = String(L ?? '') === String(R ?? '');
   return op === 'eq' ? eq : !eq;
 }
 
-function toNum(v: any): number | null {
-  if (typeof v === 'number') return isNaN(v) ? null : v;
-  if (v == null) return null;
-  const n = parseFloat(String(v));
-  return isNaN(n) ? null : n;
+function toNum(v: any): Decimal | null {
+  return isDecimalString(v) ? toDecimal(v) : null;
 }
 
 /**
@@ -82,3 +79,5 @@ export function condTreeColumns(tree: CondTree | null | undefined): string[] {
   if (tree) walk(tree);
   return out;
 }
+import Decimal from 'decimal.js';
+import { isDecimalString, toDecimal } from './precision';

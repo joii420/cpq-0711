@@ -167,6 +167,74 @@ class ComponentDataEffectiveRowsTest {
             "[来料(总计)] 应=金额列之和 10，非含非金额列的 17；实际=" + out.get(ST).subtotal);
     }
 
+    @Test
+    void amountTotalSentinelPreservesTwelveDigitsInEffectiveRowsPath() {
+        String detailId = "11111111-1111-1111-1111-111111111111";
+        String subtotalId = "44444444-4444-4444-4444-444444444444";
+        var cdList = List.of(cd(detailId, 1,
+            "[{\"amountA\":\"0.040000000001\",\"amountB\":\"0.043825536788\","
+                + "\"quantity\":\"7\"}]"));
+
+        Map<UUID, ComponentDataEffectiveRows.Meta> meta = new HashMap<>();
+        meta.put(UUID.fromString(detailId), new ComponentDataEffectiveRows.Meta(
+            "DETAIL", "Detail", "DETAIL", null, Set.of("amountA", "amountB")));
+
+        String subtotalFormulas = "[{\"name\":\"total\",\"expression\":["
+            + "{\"type\":\"component_subtotal\",\"value\":\"__amount_total__\","
+            + "\"tab_name\":\"__amount_total__\",\"component_code\":\"DETAIL\"}]}]";
+        Map<UUID, ComponentDataEffectiveRows.Meta> extra = new HashMap<>();
+        extra.put(UUID.fromString(subtotalId), new ComponentDataEffectiveRows.Meta(
+            "SUBTOTAL", "Subtotal", "SUBTOTAL", formulas(subtotalFormulas)));
+
+        BigDecimal actual = ComponentDataEffectiveRows
+            .compute(cdList, meta, extra, new FormulaCalculator())
+            .get(subtotalId).subtotal;
+
+        assertEquals(0, new BigDecimal("0.083825536789").compareTo(actual));
+        assertNotEquals(0, new BigDecimal("0.0838").compareTo(actual),
+            "effective rows must not restore the legacy four-decimal value");
+    }
+
+    @Test
+    void amountTotalEdgeMatrixPreservesExistingSemanticsInEffectiveRowsPath() {
+        List<AmountEdgeCase> cases = List.of(
+            new AmountEdgeCase("empty", "[]", "0"),
+            new AmountEdgeCase("zero", "[{\"amountA\":\"0\",\"amountB\":\"0\"}]", "0"),
+            new AmountEdgeCase("negative",
+                "[{\"amountA\":\"-1.2345\",\"amountB\":\"0.2345\"}]", "-1"),
+            new AmountEdgeCase("exact-four-decimals",
+                "[{\"amountA\":\"1.2000\",\"amountB\":\"0.0345\"}]", "1.2345"));
+
+        for (AmountEdgeCase edgeCase : cases) {
+            BigDecimal actual = computeAmountTotal(edgeCase.rowDataJson());
+            assertEquals(0, new BigDecimal(edgeCase.expected()).compareTo(actual),
+                edgeCase.name() + ": actual=" + actual);
+        }
+    }
+
+    private BigDecimal computeAmountTotal(String rowDataJson) {
+        String detailId = "11111111-1111-1111-1111-111111111111";
+        String subtotalId = "44444444-4444-4444-4444-444444444444";
+        List<QuotationLineComponentData> componentData = "[]".equals(rowDataJson)
+            ? List.of()
+            : List.of(cd(detailId, 1, rowDataJson));
+
+        Map<UUID, ComponentDataEffectiveRows.Meta> meta = new HashMap<>();
+        meta.put(UUID.fromString(detailId), new ComponentDataEffectiveRows.Meta(
+            "DETAIL", "Detail", "DETAIL", null, Set.of("amountA", "amountB")));
+        String subtotalFormulas = "[{\"name\":\"total\",\"expression\":["
+            + "{\"type\":\"component_subtotal\",\"value\":\"__amount_total__\","
+            + "\"component_code\":\"DETAIL\"}]}]";
+        Map<UUID, ComponentDataEffectiveRows.Meta> extra = new HashMap<>();
+        extra.put(UUID.fromString(subtotalId), new ComponentDataEffectiveRows.Meta(
+            "SUBTOTAL", "Subtotal", "SUBTOTAL", formulas(subtotalFormulas)));
+
+        return ComponentDataEffectiveRows.compute(componentData, meta, extra, new FormulaCalculator())
+            .get(subtotalId).subtotal;
+    }
+
+    private record AmountEdgeCase(String name, String rowDataJson, String expected) {}
+
     /**
      * BL-0017 + 折扣重算：`subtotalWithDiscount`（LineDiscountService 路径）按列折扣缩放后，
      * `[页签(总计)]` 哨兵键 = 缩放后 Σ金额列（仅金额列参与，非金额小计列不受影响）。
@@ -196,12 +264,12 @@ class ComponentDataEffectiveRowsTest {
 
         // 无折扣：[来料(总计)] = Σ金额列 = 10
         BigDecimal s0 = ComponentDataEffectiveRows.subtotalWithDiscount(
-            cdList, meta, UUID.fromString(ST), fc, null, 1.0);
+            cdList, meta, UUID.fromString(ST), fc, null, BigDecimal.ONE);
         assertEquals(0, new BigDecimal("10").compareTo(s0), "无折扣应=金额列 10，实际=" + s0);
 
         // 按列折扣：材料成本 ×0.5 → 哨兵键 = 5（非金额的 汇率 不参与，原本也不在金额总计里）
         BigDecimal sD = ComponentDataEffectiveRows.subtotalWithDiscount(
-            cdList, meta, UUID.fromString(ST), fc, "COMP-0028__imp1#材料成本", 0.5);
+            cdList, meta, UUID.fromString(ST), fc, "COMP-0028__imp1#材料成本", new BigDecimal("0.5"));
         assertEquals(0, new BigDecimal("5").compareTo(sD),
             "材料成本×0.5 后 [来料(总计)] 应=5（缩放后 Σ金额列），实际=" + sD);
     }

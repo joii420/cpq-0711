@@ -88,9 +88,13 @@ class EffKeyNodeIdAlignmentTest {
         assertTrue(r1.has("材料成本"),
             "行1（节点 S-80011/992）的 FORMULA 叶子列必须算出并写入 row_data（同上）");
 
-        assertEquals(0, new java.math.BigDecimal("20").compareTo(r0.get("材料成本").decimalValue()),
+        assertTrue(r0.get("材料成本").isTextual(), "公式结果按精度契约输出十进制字符串");
+        assertEquals(0, new java.math.BigDecimal("20").compareTo(
+                new java.math.BigDecimal(r0.get("材料成本").asText())),
             "材料成本 = 10 × 2 = 20");
-        assertEquals(0, new java.math.BigDecimal("20").compareTo(r1.get("材料成本").decimalValue()),
+        assertTrue(r1.get("材料成本").isTextual(), "公式结果按精度契约输出十进制字符串");
+        assertEquals(0, new java.math.BigDecimal("20").compareTo(
+                new java.math.BigDecimal(r1.get("材料成本").asText())),
             "材料成本 = 10 × 2 = 20（两节点内容相同，值也应相同）");
     }
 
@@ -146,7 +150,9 @@ class EffKeyNodeIdAlignmentTest {
             /* deleted */ List.of(), /* rowKeyFieldNames */ List.of("料号"));
         assertTrue(out.get(0).has("材料成本"),
             "materialize 必须用与 calculate 逐字节相同的 effKey(" + rowKeyFromCalculate + ") 命中 frByKey");
-        assertEquals(0, new java.math.BigDecimal("21").compareTo(out.get(0).get("材料成本").decimalValue()),
+        assertTrue(out.get(0).get("材料成本").isTextual(), "公式结果按精度契约输出十进制字符串");
+        assertEquals(0, new java.math.BigDecimal("21").compareTo(
+                new java.math.BigDecimal(out.get(0).get("材料成本").asText())),
             "材料成本 = 7 × 3 = 21");
     }
 
@@ -190,7 +196,9 @@ class EffKeyNodeIdAlignmentTest {
         // 三者同时成立时才会显形——技术总监裁决 10.1 已确认全库 3 个 BOM 树组件的 FORMULA 字段数
         // 均为 0，故当前无实例受影响；若后续给树页签配 FORMULA 列，需要另开 backtask 把同款回退
         // 补进 computeRows 内部的 editByKey 查找。
-        assertEquals(0, new java.math.BigDecimal("20").compareTo(r0.get("材料成本").decimalValue()),
+        assertTrue(r0.get("材料成本").isTextual(), "公式结果按精度契约输出十进制字符串");
+        assertEquals(0, new java.math.BigDecimal("20").compareTo(
+                new java.math.BigDecimal(r0.get("材料成本").asText())),
             "已知边界：FORMULA 叶子当前仍按未编辑的原始单价(10)算出 20，不反映旧格式编辑值——"
             + "见上方注释，非本次 B0 授权修复范围，当前全库 0 实例受影响");
     }

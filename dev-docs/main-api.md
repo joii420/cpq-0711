@@ -1,7 +1,7 @@
 # CPQ 系统接口总览文档（main-api.md）
 
 > 本文件由技术总监扫描 `cpq-backend` 全部 JAX-RS Resource 自动生成，覆盖 **87 个 Resource 类、约 413 个 HTTP 端点**，按业务模块分为 12 大类。
-> 生成日期：2026-07-08 ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
+> 生成日期：2026-07-08 ｜ 最近契约更新：2026-08-11（task-0810 十进制精度升级） ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
 > 用途：前后端接口契约基线、联调对照、新接口设计参照。字段说明取自源码 javadoc / 注释，无注释处据字段名与类型推断。
 
 ---
@@ -61,7 +61,17 @@
 - 产品配置 / 物料配方（第十一章）、部分选配器实体、`PartVersionResource` —— 直返实体 / DTO / 手工构造 `Response`；
 - 部分 `create` 返 **201 Created**、`delete` 返 **204 No Content**（无响应体）。
 
-### 5. 分页约定
+### 5. 十进制精度契约（task-0810）
+
+- 金额、单价、数量、费率、公式变量/结果、小计、合计、差异及动态卡片/Excel 数值均使用 canonical decimal string；禁止科学计数法，去无意义尾零，零统一为 `"0"`，null 保持 JSON null。
+- 精度请求字段只接受 JSON string；JSON number 返回 400，错误信息包含字段路径和原值。后端直接构造 `BigDecimal`，前端直接构造 Decimal.js `Decimal`，不得经过 Java `Double` 或 JS `number`。
+- 公式节点、快照和持久化最多保留 12 位小数，`HALF_UP`；UI、HTML、PDF 打印源、邮件正文和 Excel 最多显示 9 位并去尾零。Excel 精度计算值写 STRING 单元格。
+- 分页、页码、行数、排序值、HTTP 状态和明确的结构整数继续使用 JSON number。
+- 历史 JSON numeric token 必须从原始字面量无损解析；非 DRAFT 单据读取不重算、不回写。
+
+完整逐端点覆盖见本文末尾「task-0810 精度契约覆盖矩阵」及任务目录 `api.md`。
+
+### 6. 分页约定
 
 分页端点响应 `data` 多为分页壳（不同模块命名有 `PageResult` / `PageResult<T>` 两种，字段一致）：
 
@@ -74,7 +84,7 @@
 
 分页请求通用查询参数：`page`（页码，默认 0）、`size`（每页条数，默认 20）。
 
-### 6. 常见状态码
+### 7. 常见状态码
 
 | HTTP | 语义 |
 |------|------|
@@ -3406,15 +3416,7 @@
 - **路径参数**: `id` UUID — 报价单 ID
 - **响应内容**: `ApiResponse<QuotationDTO>`
 
-#### 4.1.35 接受漂移并刷新版本
-- **功能**: DRAFT 漂移检测：用户接受漂移后重算公式 + 更新 referenced_versions
-- **方法**: POST
-- **路径**: `/api/cpq/quotations/{id}/refresh-versions`
-- **鉴权**: 需登录（仅 SALES_REP 或 SYSTEM_ADMIN 有实际操作权，SALES_MANAGER 无权）
-- **路径参数**: `id` UUID — 报价单 ID
-- **响应内容**: `ApiResponse<QuotationDTO>`
-
-#### 4.1.36 客户拒绝报价
+#### 4.1.35 客户拒绝报价
 - **功能**: 标记报价单被客户拒绝
 - **方法**: POST
 - **路径**: `/api/cpq/quotations/{id}/reject-by-customer`
@@ -3423,7 +3425,7 @@
 - **请求体**: `{ comment: String }`（可选，拒绝原因）
 - **响应内容**: `ApiResponse<QuotationDTO>`
 
-#### 4.1.37 重新导入基础数据
+#### 4.1.36 重新导入基础数据
 - **功能**: 重新导入报价单基础数据（仅 DRAFT 可用），上传新 Excel 覆盖
 - **方法**: POST
 - **路径**: `/api/cpq/quotations/{id}/reimport-basic-data`
@@ -3438,7 +3440,7 @@
 
 - **响应内容**: `ApiResponse<ImportResultDTO>`（含 importRecordId、status、totalRows 等导入结果；失败抛 400）
 
-#### 4.1.38 删除 driver 默认行（墓碑）
+#### 4.1.37 删除 driver 默认行（墓碑）
 - **功能**: 将指定 driver 行追加到 deletedRowKeys 墓碑列表并立即重刷报价快照
 - **方法**: POST
 - **路径**: `/api/cpq/quotations/{qid}/line-items/{lid}/delete-driver-row`
@@ -3460,7 +3462,7 @@
 
 - **响应内容**: `ApiResponse<Void>`
 
-#### 4.1.39 恢复所有 driver 默认行
+#### 4.1.38 恢复所有 driver 默认行
 - **功能**: 清空某组件的 deletedRowKeys 墓碑列表并立即重刷报价快照
 - **方法**: POST
 - **路径**: `/api/cpq/quotations/{qid}/line-items/{lid}/restore-driver-rows`
@@ -9614,3 +9616,24 @@ Cell：`quote`(Object 报价值)、`costing`(Object 核价值)、`highlighted`(b
 - **`MaterialPriceUpdateJobItem.status`**：`WAITING → RUNNING → {SUCCESS｜CONFLICT｜FAILED｜STALE}`。`CONFLICT`=写回期间 `row_version` 冲突，可直接重试；`FAILED`=数据问题（含 S0 `SUBTOTAL_MISMATCH` 口径守卫、S5 核价树渲染异常等），需人工处理后重试；`STALE`=所属版本已被新版取代（生成新版时把未完成 job_item 提前置 STALE），终态不可重试。
 - **单一升版通道**：`MaterialVersionUpgradeService.upgrade(lineItemId, targetVersionId, dryRun)` 是全系统唯一升版入口，S0~S9 顺序执行（L3 口径守卫 → 读版本价 → 定位价格字段 → 字段级写回 → 重算双侧卡片 → 写回行金额 → 失效导出快照 → 聚合单据 → 写本期价格版本快照 R）。`dryRun=true` 用于 B4 审核页试算预算（事务内真实执行后整体回滚，DB 无痕迹）。
 - **异步派发规则**：`PriceAdjustReviewService.approve()` 严格两段式——同步事务提交后才在事务外调 `managedExecutor.runAsync`，若在事务内部派发会导致异步线程抢跑读不到刚插入的 job/job_item 行（真实联调复现过一次 HTTP 500）。
+
+---
+
+## task-0810 精度契约覆盖矩阵
+
+> 来源：task-0810 `api.md`，核对日期 2026-08-11。以下端点不改变方法、路径、鉴权和既有错误码，只升级精度字段类型与数值边界。
+
+| 分组 | 方法与路径 | task-0810 契约 |
+|---|---|---|
+| P1 报价读取 | `GET /api/cpq/quotations`；`GET /api/cpq/quotations/{id}`；`GET /api/cpq/quotations/{id}/snapshot`；`GET /api/cpq/quotations/{id}/field-trace`；`GET /api/cpq/quotations/{id}/costing-approve/preview` | 单头、行、组件、trace、预览和四份值快照中的精度值均为 decimal string；冻结读取零写 |
+| P1 报价写入 | `POST /api/cpq/quotations`；`PUT /api/cpq/quotations/{id}/draft`；`POST /api/cpq/quotations/{id}/refresh-card-snapshot`；`POST /api/cpq/quotations/{id}/ensure-card-values`；`POST /api/cpq/quotations/{id}/ensure-excel-values`；`PUT /api/cpq/quotations/line-items/{lineItemId}/quote-card-edit`；`POST /api/cpq/quotations/{id}/calculate-discount`；`POST /api/cpq/quotations/{id}/recalculate`；`POST /api/cpq/quotations/{id}/submit`；`POST /api/cpq/quotations/{id}/copy`；`POST /api/cpq/quotations/{id}/costing-approve`；`POST /api/cpq/quotations/line-items/{lineItemId}/reconcile-report` | 精度请求字段仅 decimal string；number=400；新计算、快照、响应最多 12 位；对账比较第 10～12 位差异 |
+| P1-18a | `POST /api/cpq/quotations/{quotationId}/line-items/{lineItemId}/tree/add-leaf` | 结构请求不变；返回 `quoteCardValues` 精度节点为 decimal string |
+| P1-18b | `POST /api/cpq/quotations/{quotationId}/line-items/{lineItemId}/tree/delete-preview` | 请求/响应仅结构字段，无精度类型变化 |
+| P1-18c | `POST /api/cpq/quotations/{quotationId}/line-items/{lineItemId}/tree/delete` | 结构请求不变；返回投影快照中的精度节点为 decimal string |
+| P1-18d | `POST /api/cpq/quotations/{qid}/line-items/{lid}/delete-driver-row` | 结构请求不变；返回投影快照中的精度节点为 decimal string |
+| P1-18e | `POST /api/cpq/quotations/{qid}/line-items/{lid}/restore-driver-rows` | 结构请求不变；返回投影快照中的精度节点为 decimal string |
+| P2 公式 | `POST /api/cpq/formulas/evaluate`；`POST /api/cpq/formulas/batch-evaluate` | bindings/context 精度值仅 decimal string；结果为最多 12 位 decimal string；批量顺序与单项错误隔离不变 |
+| P3 Excel/导出 | `GET /api/cpq/quotations/{id}/excel-view`；`POST /api/cpq/quotations/{id}/excel-view/dry-run`；`PUT /api/cpq/quotations/{id}/excel-view`；`POST /api/cpq/quotations/{id}/export/html`；`POST /api/cpq/quotations/{id}/export/pdf`；`POST /api/cpq/quotations/{id}/export/excel`；`GET /api/cpq/quotations/{id}/export-excel-view`；`POST /api/cpq/quotations/{id}/send` | API 值为 decimal string；输出最多 9 位；Excel 精度计算值为 STRING 单元格 |
+| P4 核价 | `GET /api/cpq/costing-orders`；`GET /api/cpq/costing-orders/{coid}`；`GET /api/cpq/costing-orders/{coid}/version-options`；`POST /api/cpq/costing-orders/{coid}/version-switch` | 总额、明细、版本金额为 decimal string |
+| P4 比较 | `GET /api/cpq/quotations/{id}/comparison`；`POST /api/cpq/quotations/{id}/comparison/export`；`GET /api/cpq/quotations/{id}/comparison-view/data` | 报价、核价和差异为 decimal string；导出最多 9 位 |
+| P4 价格版本/审核/任务 | `GET /api/cpq/quotations/{quotationId}/price-revisions`；`GET /api/cpq/quotations/{quotationId}/price-revisions/{revisionId}/preview`；`GET /api/cpq/price-adjust/reviews`；`GET /api/cpq/price-adjust/reviews/{reviewId}`；`POST /api/cpq/price-adjust/reviews/impact`；`POST /api/cpq/price-adjust/reviews/approve`；`POST /api/cpq/price-adjust/reviews/{reviewId}/recompute-budget`；`GET /api/cpq/price-adjust/jobs`；`GET /api/cpq/price-adjust/jobs/{jobId}`；`GET /api/cpq/price-adjust/jobs/{jobId}/items` | 总额、current/adjusted/diff/warn 和任务差异均为 decimal string；阈值写入同样拒绝 JSON number |

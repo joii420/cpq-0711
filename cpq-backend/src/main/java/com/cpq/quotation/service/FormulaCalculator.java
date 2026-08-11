@@ -39,8 +39,8 @@ import java.util.Map;
 @ApplicationScoped
 public class FormulaCalculator {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-    // task-0801 B2：十进制化 —— 不再带 scale(4)，避免把 4 位截断传染给整条求值链（呈现边界由 B5 统一规整到 6 位）。
+    private static final ObjectMapper MAPPER = com.cpq.common.DecimalJacksonCustomizer.newMapper();
+    // task-0810：公式工作值使用 12 位 BigDecimal；显示边界最多 9 位。
     private static final BigDecimal ZERO = BigDecimal.ZERO;
 
     private final com.cpq.formula.predicate.ConditionPredicateEvaluator predicateEval =
@@ -49,23 +49,23 @@ public class FormulaCalculator {
     /** 单行公式求值上下文（对齐 formulaEngine.ts evaluateExpression 的多个参数）。 */
     public static class RowContext {
         /** field / datasource_field token 取值：字段名 → 数值 */
-        public Map<String, Double> fieldValues = new HashMap<>();
+        public Map<String, BigDecimal> fieldValues = new HashMap<>();
         /**
          * per-field source 分桶（D3 加固）：source componentId → {列名 → 数值}。
          * 在多源 cross_tab_ref 的 targetRowValue 中填充，供 field token 带 source 时优先取值，
          * 防止不同 source 同名列按名合并后串值。field token 无 source 时回退 fieldValues。
          */
-        public Map<String, Map<String, Double>> bySource = new HashMap<>();
+        public Map<String, Map<String, BigDecimal>> bySource = new HashMap<>();
         /** component_subtotal token 取值：component_code / tab_name / value → 跨 tab 小计 */
-        public Map<String, Double> componentSubtotals = new HashMap<>();
+        public Map<String, BigDecimal> componentSubtotals = new HashMap<>();
         /** quotation_field token 取值 */
-        public Map<String, Double> quotationFields = new HashMap<>();
+        public Map<String, BigDecimal> quotationFields = new HashMap<>();
         /** product_attribute token 取值 */
-        public Map<String, Double> productAttributes = new HashMap<>();
+        public Map<String, BigDecimal> productAttributes = new HashMap<>();
         /** path / global_variable token 取值：{@code "{path}"} / {@code "@gvar:CODE"} → 已解析值 */
         public Map<String, Object> basicDataValues = new HashMap<>();
         /** previous_row_subtotal token：上一行 is_subtotal 值；行 0 为 null → token 走 fallback。 */
-        public Double previousRowSubtotal = null;
+        public BigDecimal previousRowSubtotal = null;
         /** cross_tab_ref：B 当前行原始值（字段名→原始值，含文本），供匹配键 b 取值。 */
         public Map<String, Object> currentRowRaw = new HashMap<>();
         /**
@@ -80,7 +80,7 @@ public class FormulaCalculator {
          * 故 b_field 能取到刚算出的宿主公式值）；targetRowValue 构造子上下文时原样透传本字段。
          * 未设置（默认空 map）→ b_field 回落取不到 → 行为与修复前一致（零破坏）。
          */
-        public Map<String, Double> hostFieldValues = new HashMap<>();
+        public Map<String, BigDecimal> hostFieldValues = new HashMap<>();
         /** cross_tab_ref：同卡片已算行存储（组件标识→行表，行=字段名→已算值）。 */
         public Map<String, List<Map<String, Object>>> crossTabRows = new HashMap<>();
 
@@ -123,10 +123,10 @@ public class FormulaCalculator {
                 appendToken(expr, token, c);
             }
             // task-0801 B2：ArithParser 全程 BigDecimal 精确运算，此处不再 setScale(4) 截断
-            // （呈现边界由调用方 / B5 统一规整到 6 位）。除零语义由 ArithParser 内部经
+            // （呈现边界最多 9 位）。除零语义由 ArithParser 内部经
             // PrecisionPolicy.divide() 兜底为 ZERO（不抛异常，api.md G-9），故此处不再需要
-            // Double.isNaN/isInfinite 判断。
-            return new ArithParser(expr.toString()).parse();
+            // BigDecimal.isNaN/isInfinite 判断。
+            return PrecisionPolicy.roundForCalculation(new ArithParser(expr.toString()).parse());
         } catch (Exception e) {
             return ZERO; // 解析异常 → 0（对齐前端 try/catch）
         }
@@ -138,18 +138,18 @@ public class FormulaCalculator {
             case "field": {
                 String fieldName = token.path("value").asText("");
                 String fieldSource = token.path("source").asText(null);
-                double fieldVal = 0.0;
+                BigDecimal fieldVal = ZERO;
                 // D3 per-field source：token 带 source 时优先从 bySource 分桶取值（防同名串值）；
                 // source 缺失或桶里找不到时回退 fieldValues（兼容无 source 的存量 token）。
                 if (fieldSource != null && !fieldSource.isEmpty()) {
-                    Map<String, Double> bucket = ctx.bySource.get(fieldSource);
+                    Map<String, BigDecimal> bucket = ctx.bySource.get(fieldSource);
                     if (bucket != null && bucket.containsKey(fieldName)) {
                         fieldVal = bucket.get(fieldName);
                     } else {
-                        fieldVal = ctx.fieldValues.getOrDefault(fieldName, 0.0);
+                        fieldVal = ctx.fieldValues.getOrDefault(fieldName, ZERO);
                     }
                 } else {
-                    fieldVal = ctx.fieldValues.getOrDefault(fieldName, 0.0);
+                    fieldVal = ctx.fieldValues.getOrDefault(fieldName, ZERO);
                 }
                 expr.append(numStr(fieldVal));
                 break;
@@ -182,7 +182,7 @@ public class FormulaCalculator {
                 String colName = asTextOrNull(token, "value");
                 String compCode = asTextOrNull(token, "component_code");
                 String tabName  = asTextOrNull(token, "tab_name");
-                Double v = firstNonNull(
+                BigDecimal v = firstNonNull(
                     // 列小计键（优先）
                     (compCode != null && colName != null)
                         ? ctx.componentSubtotals.get(compCode + "#" + colName) : null,
@@ -192,17 +192,17 @@ public class FormulaCalculator {
                     ctx.componentSubtotals.get(compCode),
                     ctx.componentSubtotals.get(tabName),
                     ctx.componentSubtotals.get(colName));
-                expr.append(numStr(v != null ? v : 0.0));
+                expr.append(numStr(v != null ? v : ZERO));
                 break;
             }
             case "previous_row_subtotal": {
-                double v = 0.0;
+                BigDecimal v = ZERO;
                 if (ctx.previousRowSubtotal != null) {
                     v = ctx.previousRowSubtotal;
                 } else {
                     String fb = asTextOrNull(token, "fallback_component_code");
                     if (fb != null) {
-                        Double cs = ctx.componentSubtotals.get(fb);
+                        BigDecimal cs = ctx.componentSubtotals.get(fb);
                         if (cs != null) v = cs;
                     }
                 }
@@ -210,25 +210,25 @@ public class FormulaCalculator {
                 break;
             }
             case "product_attribute": {
-                Double v = ctx.productAttributes.get(token.path("attribute_name").asText(""));
-                expr.append(numStr(v != null ? v : 0.0));
+                BigDecimal v = ctx.productAttributes.get(token.path("attribute_name").asText(""));
+                expr.append(numStr(v != null ? v : ZERO));
                 break;
             }
             case "quotation_field": {
-                Double v = ctx.quotationFields.get(token.path("value").asText(""));
-                expr.append(numStr(v != null ? v : 0.0));
+                BigDecimal v = ctx.quotationFields.get(token.path("value").asText(""));
+                expr.append(numStr(v != null ? v : ZERO));
                 break;
             }
             case "path": {
                 String p = token.has("path") ? token.path("path").asText("") : token.path("value").asText("");
-                Double v = resolvePath(p, ctx);
-                expr.append(numStr(v != null ? v : 0.0));
+                BigDecimal v = resolvePath(p, ctx);
+                expr.append(numStr(v != null ? v : ZERO));
                 break;
             }
             case "datasource_field": {
                 String n = token.has("name") ? token.path("name").asText("") : token.path("value").asText("");
-                Double v = ctx.fieldValues.get(n);
-                expr.append(numStr(v != null ? v : 0.0));
+                BigDecimal v = ctx.fieldValues.get(n);
+                expr.append(numStr(v != null ? v : ZERO));
                 break;
             }
             case "b_field": {
@@ -240,13 +240,13 @@ public class FormulaCalculator {
                 // 键存在但为空串 = 用户显式置空 → 尊重置空、不回落（与 fillInputDefaultSourceByFieldName
                 // 的「仅键缺失才补」口径对称）。
                 Object raw = ctx.currentRowRaw.get(n);
-                Double v = (raw != null) ? toNumber(raw) : ctx.hostFieldValues.get(n);
-                expr.append(numStr(v != null ? v : 0.0));
+                BigDecimal v = (raw != null) ? toNumber(raw) : ctx.hostFieldValues.get(n);
+                expr.append(numStr(v != null ? v : ZERO));
                 break;
             }
             case "global_variable": {
-                Double v = resolveGvar(token, ctx);
-                expr.append(numStr(v != null ? v : 0.0));
+                BigDecimal v = resolveGvar(token, ctx);
+                expr.append(numStr(v != null ? v : ZERO));
                 break;
             }
             case "cross_tab_ref": {
@@ -255,7 +255,7 @@ public class FormulaCalculator {
                     // I-2: KAVG/KMAX/KMIN 空集 → null → 直接抛异常 → 外层 try/catch → 整表达式塌 0
                     // 对齐前端 `expr += '(null.x)'` 行为。
                     // task-0801 B2 十进制化后注意：原实现注入字面量 "(0/0)"，依赖 double 除零产生
-                    // NaN 再由 evaluateExpression 的 Double.isNaN 检测触发降级；BigDecimal 化后
+                    // NaN 再由 evaluateExpression 的 BigDecimal.isNaN 检测触发降级；BigDecimal 化后
                     // 除零改由 PrecisionPolicy.divide() 优雅返回 ZERO（不抛异常，api.md G-9），
                     // "(0/0)" 这条路已不再能触发降级 —— 故直接 throw，与下面 FormulaErrorMarker
                     // 分支手法一致，语义（整表达式塌 0）完全不变。
@@ -264,8 +264,8 @@ public class FormulaCalculator {
                 if (v instanceof FormulaErrorMarker) {
                     throw new IllegalStateException("cross_tab_ref multi/non-numeric");
                 }
-                Double n = (v instanceof Number num) ? num.doubleValue() : toNumber(v);
-                expr.append(numStr(n != null ? n : 0.0));
+                BigDecimal n = toNumber(v);
+                expr.append(numStr(n != null ? n : ZERO));
                 break;
             }
             // task-0803：BOM 页签父子取值。求值结果当字面量追加（带括号防负数与前一个运算符粘连）。
@@ -466,18 +466,18 @@ public class FormulaCalculator {
     }
 
     /** path token 取值：basicDataValues["{path}"] → toNumber；缺失 → null（后端无 pathCache，basicDataValues 已解析）。 */
-    private Double resolvePath(String pathStr, RowContext ctx) {
+    private BigDecimal resolvePath(String pathStr, RowContext ctx) {
         if (pathStr == null || pathStr.isEmpty()) return null;
         String lookup = (pathStr.startsWith("{") && pathStr.endsWith("}")) ? pathStr : "{" + pathStr + "}";
         return toNumber(ctx.basicDataValues.get(lookup));
     }
 
     /** global_variable token：优先 @gvar:CODE（AP-49 方向 A），再退到 {path}。 */
-    private Double resolveGvar(JsonNode token, RowContext ctx) {
+    private BigDecimal resolveGvar(JsonNode token, RowContext ctx) {
         String code = token.has("code") ? token.path("code").asText("") : token.path("value").asText("");
         if (code != null && !code.isEmpty()) {
             Object gv = ctx.basicDataValues.get("@gvar:" + code);
-            Double n = toNumber(gv);
+            BigDecimal n = toNumber(gv);
             if (n != null) return n;
         }
         String pathStr = token.path("path").asText("");
@@ -564,8 +564,8 @@ public class FormulaCalculator {
             return java.math.BigDecimal.ZERO;
         }
 
-        // task-0801 B4-2（审计追加发现）：原实现 toNumber()（→Double）逐项收集后再
-        // nums.stream().mapToDouble().sum()/average()/max()/min() 是双重转换 + double 累加
+        // task-0801 B4-2（审计追加发现）：原实现 toNumber()（→BigDecimal）逐项收集后再
+        // nums.stream().mapToBigDecimal().sum()/average()/max()/min() 是双重转换 + double 累加
         // （BigDecimal targetRowValue → double → 再累加 → BigDecimal.valueOf 包回），SUM 多项时
         // 会在 double 二进制精度上产生可见误差（如 2.26+4.52 不精确等于 6.78）。旧代码靠
         // evaluateExpression 顶层 setScale(4) 掩盖，B2 去掉该截断后原样冒出。改走 BigDecimal
@@ -612,7 +612,7 @@ public class FormulaCalculator {
             if (sourcesNode.isArray() && sourcesNode.size() >= 2) {
                 // D3 per-field source 分桶：source componentId → {列名 → 数值}
                 // 各 source 的数值列独立存桶，供 field token 带 source 时精确取值，防同名串值。
-                Map<String, Map<String, Double>> bySource = new HashMap<>();
+                Map<String, Map<String, BigDecimal>> bySource = new HashMap<>();
 
                 // 步骤1: 先放更粗 source 的列（低优先级，进 fieldValues 也进 bySource 桶）
                 for (int si = 1; si < sourcesNode.size(); si++) {
@@ -646,9 +646,9 @@ public class FormulaCalculator {
                         continue;
                     }
                     // 恰好 1 命中 → 把该行所有数值列并入 sub.fieldValues（低优先级）并填充 bySource 桶
-                    Map<String, Double> coarseBucket = bySource.computeIfAbsent(coarseSource, k -> new HashMap<>());
+                    Map<String, BigDecimal> coarseBucket = bySource.computeIfAbsent(coarseSource, k -> new HashMap<>());
                     for (Map.Entry<String, Object> e : coarseHits.get(0).entrySet()) {
-                        Double n = toNumber(e.getValue());
+                        BigDecimal n = toNumber(e.getValue());
                         if (n != null) {
                             sub.fieldValues.put(e.getKey(), n);
                             coarseBucket.put(e.getKey(), n);
@@ -658,9 +658,9 @@ public class FormulaCalculator {
                 // 步骤2: 放驱动行 arow 的列（高优先级，覆盖粗 source 同名列的 fieldValues，
                 //        但 bySource[sources[0]] 独立保存驱动行真实值，不被覆盖）
                 String primarySource = sourcesNode.get(0).path("source").asText("");
-                Map<String, Double> primaryBucket = bySource.computeIfAbsent(primarySource, k -> new HashMap<>());
+                Map<String, BigDecimal> primaryBucket = bySource.computeIfAbsent(primarySource, k -> new HashMap<>());
                 for (Map.Entry<String, Object> e : arow.entrySet()) {
-                    Double n = toNumber(e.getValue());
+                    BigDecimal n = toNumber(e.getValue());
                     if (n != null) {
                         sub.fieldValues.put(e.getKey(), n);   // 高优先级覆盖（现有逻辑不变）
                         primaryBucket.put(e.getKey(), n);     // D3: 驱动行进 primary source 桶
@@ -671,7 +671,7 @@ public class FormulaCalculator {
             } else {
                 // N=1 退化路径（无 sources / 纯 KSUM 容器）: 零变化旧逻辑
                 for (Map.Entry<String, Object> e : arow.entrySet()) {
-                    Double n = toNumber(e.getValue());
+                    BigDecimal n = toNumber(e.getValue());
                     if (n != null) sub.fieldValues.put(e.getKey(), n);
                 }
             }
@@ -712,8 +712,8 @@ public class FormulaCalculator {
      * 注意：依赖实例方法 toNumber，故声明为实例方法（非 static）。
      */
     private boolean valEquals(Object a, Object b) {
-        Double na = toNumber(a), nb = toNumber(b);
-        if (na != null && nb != null) return na.doubleValue() == nb.doubleValue();
+        BigDecimal na = toNumber(a), nb = toNumber(b);
+        if (na != null && nb != null) return na.compareTo(nb) == 0;
         return String.valueOf(a).trim().equals(String.valueOf(b).trim());
     }
 
@@ -730,9 +730,9 @@ public class FormulaCalculator {
     public ArrayNode calculate(JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
                                JsonNode rowKeyFields,
                                JsonNode baseRows, JsonNode editRows,
-                               Map<String, Double> componentSubtotals,
-                               Map<String, Double> quotationFields,
-                               Map<String, Double> productAttributes) {
+                               Map<String, BigDecimal> componentSubtotals,
+                               Map<String, BigDecimal> quotationFields,
+                               Map<String, BigDecimal> productAttributes) {
         return calculate(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
             componentSubtotals, quotationFields, productAttributes, Map.of());
     }
@@ -749,9 +749,9 @@ public class FormulaCalculator {
     public ArrayNode calculate(JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
                                JsonNode rowKeyFields,
                                JsonNode baseRows, JsonNode editRows,
-                               Map<String, Double> componentSubtotals,
-                               Map<String, Double> quotationFields,
-                               Map<String, Double> productAttributes,
+                               Map<String, BigDecimal> componentSubtotals,
+                               Map<String, BigDecimal> quotationFields,
+                               Map<String, BigDecimal> productAttributes,
                                Map<String, List<Map<String, Object>>> crossTabRows) {
         // 零破坏：旧 10 参调用 → 不过滤（deleted=null，rowKeyFieldNames=null）
         return calculate(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
@@ -771,9 +771,9 @@ public class FormulaCalculator {
     public ArrayNode calculate(JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
                                JsonNode rowKeyFields,
                                JsonNode baseRows, JsonNode editRows,
-                               Map<String, Double> componentSubtotals,
-                               Map<String, Double> quotationFields,
-                               Map<String, Double> productAttributes,
+                               Map<String, BigDecimal> componentSubtotals,
+                               Map<String, BigDecimal> quotationFields,
+                               Map<String, BigDecimal> productAttributes,
                                Map<String, List<Map<String, Object>>> crossTabRows,
                                List<DeletedRowKeys.Tombstone> deleted,
                                List<String> rowKeyFieldNames) {
@@ -790,9 +790,9 @@ public class FormulaCalculator {
     public ArrayNode calculate(JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
                                JsonNode rowKeyFields,
                                JsonNode baseRows, JsonNode editRows,
-                               Map<String, Double> componentSubtotals,
-                               Map<String, Double> quotationFields,
-                               Map<String, Double> productAttributes,
+                               Map<String, BigDecimal> componentSubtotals,
+                               Map<String, BigDecimal> quotationFields,
+                               Map<String, BigDecimal> productAttributes,
                                Map<String, List<Map<String, Object>>> crossTabRows,
                                List<DeletedRowKeys.Tombstone> deleted,
                                List<String> rowKeyFieldNames,
@@ -805,8 +805,8 @@ public class FormulaCalculator {
             ObjectNode node = MAPPER.createObjectNode();
             node.put("rowKey", rr.rowKey);
             ObjectNode values = node.putObject("values");
-            for (Map.Entry<String, Double> e : rr.formulaValues.entrySet()) {
-                values.put(e.getKey(), e.getValue());
+            for (Map.Entry<String, BigDecimal> e : rr.formulaValues.entrySet()) {
+                values.put(e.getKey(), PrecisionPolicy.toPlainDecimalString(e.getValue()));
             }
             out.add(node);
         }
@@ -817,7 +817,7 @@ public class FormulaCalculator {
     public BigDecimal computeTabSubtotal(JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
                                          JsonNode rowKeyFields,
                                          JsonNode baseRows, JsonNode editRows,
-                                         Map<String, Double> componentSubtotals) {
+                                         Map<String, BigDecimal> componentSubtotals) {
         // Plan 2-核心：委托按列计算后求所有小计列之和（单小计列时 = 原行为）。
         Map<String, BigDecimal> byCol = computeTabSubtotalsByColumn(
             fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows, componentSubtotals);
@@ -829,7 +829,7 @@ public class FormulaCalculator {
     public Map<String, BigDecimal> computeTabSubtotalsByColumn(
             JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
             JsonNode rowKeyFields, JsonNode baseRows, JsonNode editRows,
-            Map<String, Double> componentSubtotals) {
+            Map<String, BigDecimal> componentSubtotals) {
         return computeTabSubtotalsByColumn(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
             componentSubtotals, null, null);
     }
@@ -844,7 +844,7 @@ public class FormulaCalculator {
     public Map<String, BigDecimal> computeTabSubtotalsByColumn(
             JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
             JsonNode rowKeyFields, JsonNode baseRows, JsonNode editRows,
-            Map<String, Double> componentSubtotals,
+            Map<String, BigDecimal> componentSubtotals,
             List<DeletedRowKeys.Tombstone> deleted, List<String> rowKeyFieldNames) {
         return computeTabSubtotalsByColumn(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
             componentSubtotals, deleted, rowKeyFieldNames, null, null);
@@ -857,7 +857,7 @@ public class FormulaCalculator {
     public Map<String, BigDecimal> computeTabSubtotalsByColumn(
             JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
             JsonNode rowKeyFields, JsonNode baseRows, JsonNode editRows,
-            Map<String, Double> componentSubtotals,
+            Map<String, BigDecimal> componentSubtotals,
             List<DeletedRowKeys.Tombstone> deleted, List<String> rowKeyFieldNames,
             RowCache cache, String cacheKey) {
         Map<String, BigDecimal> out = new LinkedHashMap<>();
@@ -874,10 +874,10 @@ public class FormulaCalculator {
             for (RowResult rr : rows) {
                 // FORMULA 字段优先取 formulaValues；INPUT_NUMBER/FIXED_VALUE/BASIC_DATA 等
                 // 输入型字段的值在 fieldValues 里，formulaValues 中无此键，回退读 fieldValues。
-                Double v = rr.formulaValues.containsKey(sf)
+                BigDecimal v = rr.formulaValues.containsKey(sf)
                     ? rr.formulaValues.get(sf)
                     : rr.fieldValues.get(sf);
-                if (v != null) sum = sum.add(PrecisionPolicy.of(v.doubleValue()));
+                if (v != null) sum = sum.add(v);
             }
             out.put(sf, sum);
         }
@@ -886,11 +886,11 @@ public class FormulaCalculator {
 
     private static class RowResult {
         final String rowKey;
-        final Map<String, Double> formulaValues;
+        final Map<String, BigDecimal> formulaValues;
         /** 非 FORMULA 字段（INPUT_NUMBER/FIXED_VALUE/BASIC_DATA/DATA_SOURCE 等）的收集值，
          *  用于 computeTabSubtotalsByColumn 对输入型 is_subtotal 列的累加。 */
-        final Map<String, Double> fieldValues;
-        RowResult(String rowKey, Map<String, Double> formulaValues, Map<String, Double> fieldValues) {
+        final Map<String, BigDecimal> fieldValues;
+        RowResult(String rowKey, Map<String, BigDecimal> formulaValues, Map<String, BigDecimal> fieldValues) {
             this.rowKey = rowKey;
             this.formulaValues = formulaValues;
             this.fieldValues = fieldValues != null ? fieldValues : Map.of();
@@ -967,9 +967,9 @@ public class FormulaCalculator {
     private List<RowResult> computeRowsCached(JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
                                               JsonNode rowKeyFields,
                                               JsonNode baseRows, JsonNode editRows,
-                                              Map<String, Double> componentSubtotals,
-                                              Map<String, Double> quotationFields,
-                                              Map<String, Double> productAttributes,
+                                              Map<String, BigDecimal> componentSubtotals,
+                                              Map<String, BigDecimal> quotationFields,
+                                              Map<String, BigDecimal> productAttributes,
                                               Map<String, List<Map<String, Object>>> crossTabRows,
                                               List<DeletedRowKeys.Tombstone> deleted,
                                               List<String> rowKeyFieldNames,
@@ -1004,9 +1004,9 @@ public class FormulaCalculator {
     private List<RowResult> computeRows(JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
                                         JsonNode rowKeyFields,
                                         JsonNode baseRows, JsonNode editRows,
-                                        Map<String, Double> componentSubtotals,
-                                        Map<String, Double> quotationFields,
-                                        Map<String, Double> productAttributes,
+                                        Map<String, BigDecimal> componentSubtotals,
+                                        Map<String, BigDecimal> quotationFields,
+                                        Map<String, BigDecimal> productAttributes,
                                         Map<String, List<Map<String, Object>>> crossTabRows) {
         return computeRows(fields, formulas, formulaAssignments, rowKeyFields, baseRows, editRows,
             componentSubtotals, quotationFields, productAttributes, crossTabRows, null, null);
@@ -1025,9 +1025,9 @@ public class FormulaCalculator {
     private List<RowResult> computeRows(JsonNode fields, JsonNode formulas, JsonNode formulaAssignments,
                                         JsonNode rowKeyFields,
                                         JsonNode baseRows, JsonNode editRows,
-                                        Map<String, Double> componentSubtotals,
-                                        Map<String, Double> quotationFields,
-                                        Map<String, Double> productAttributes,
+                                        Map<String, BigDecimal> componentSubtotals,
+                                        Map<String, BigDecimal> quotationFields,
+                                        Map<String, BigDecimal> productAttributes,
                                         Map<String, List<Map<String, Object>>> crossTabRows,
                                         List<DeletedRowKeys.Tombstone> deleted,
                                         List<String> rowKeyFieldNames) {
@@ -1082,7 +1082,7 @@ public class FormulaCalculator {
                 order, componentSubtotals, quotationFields, productAttributes, crossTabRows);
         }
 
-        Map<String, Double> prevRowValues = null;  // Plan 2b：上一行全量公式值（按字段名）
+        Map<String, BigDecimal> prevRowValues = null;  // Plan 2b：上一行全量公式值（按字段名）
         int idx = 0;
         for (JsonNode baseRow : baseRows) {
             // driver 默认行永久删除：idx 仍随完整集递增（effKeys.get(idx) 对齐完整集），命中则 continue（不重排）
@@ -1095,10 +1095,10 @@ public class FormulaCalculator {
             RowEvalCtx re = buildRowEvalCtx(fields, baseRow, effKey, editByKey,
                 componentSubtotals, quotationFields, productAttributes, crossTabRows);
             RowContext ctx = re.ctx();
-            Map<String, Double> fieldValues = re.fieldValues();
+            Map<String, BigDecimal> fieldValues = re.fieldValues();
 
             // 按拓扑序求值，结果回填 fieldValues 供下游公式引用
-            Map<String, Double> results = new LinkedHashMap<>();
+            Map<String, BigDecimal> results = new LinkedHashMap<>();
             for (String name : order) {
                 FormulaField ff = findByName(formulaFields, name);
                 if (ff == null) continue;
@@ -1106,7 +1106,8 @@ public class FormulaCalculator {
                 ctx.previousRowSubtotal = (prevRowValues == null) ? null : prevRowValues.get(name);
                 // Plan 3a：条件字段先按规则选表达式。
                 JsonNode expr = ff.isConditional() ? selectConditionalExpr(ff, ctx, fields, basicDataValues) : ff.expression;
-                double val = expr != null ? evaluateExpression(expr, ctx).doubleValue() : 0.0;
+                BigDecimal val = expr != null
+                    ? PrecisionPolicy.roundForCalculation(evaluateExpression(expr, ctx)) : ZERO;
                 results.put(name, val);
                 ctx.fieldValues.put(name, val);
             }
@@ -1141,8 +1142,8 @@ public class FormulaCalculator {
     private List<RowResult> computeRowsCellTopo(JsonNode fields, JsonNode baseRows,
             List<String> effKeys, boolean[] keep, Map<String, JsonNode> editByKey,
             List<FormulaField> formulaFields, List<String> order,
-            Map<String, Double> componentSubtotals, Map<String, Double> quotationFields,
-            Map<String, Double> productAttributes,
+            Map<String, BigDecimal> componentSubtotals, Map<String, BigDecimal> quotationFields,
+            Map<String, BigDecimal> productAttributes,
             Map<String, List<Map<String, Object>>> crossTabRows) {
 
         int n = baseRows.size();
@@ -1151,7 +1152,7 @@ public class FormulaCalculator {
         // 1. 全量建行上下文（含被墓碑过滤的行，保持下标一一对应）
         List<RowContext> ctxs = new ArrayList<>(n);
         List<Map<String, Object>> resolvedRaw = new ArrayList<>(n);
-        List<Map<String, Double>> fieldValuesByRow = new ArrayList<>(n);
+        List<Map<String, BigDecimal>> fieldValuesByRow = new ArrayList<>(n);
         List<JsonNode> bdvByRow = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
             RowEvalCtx re = buildRowEvalCtx(fields, baseRows.get(i), effKeys.get(i), editByKey,
@@ -1224,7 +1225,7 @@ public class FormulaCalculator {
 
         // 5. 按 cell 拓扑序求值
         com.cpq.quotation.service.formula.CellGraph.Result topo = g.topoOrder();
-        List<Map<String, Double>> resultsByRow = new ArrayList<>(n);
+        List<Map<String, BigDecimal>> resultsByRow = new ArrayList<>(n);
         for (int i = 0; i < n; i++) resultsByRow.add(new LinkedHashMap<>());
 
         for (com.cpq.quotation.service.formula.CellGraph.Cell cell : topo.order()) {
@@ -1236,7 +1237,8 @@ public class FormulaCalculator {
             JsonNode expr = ff.isConditional()
                 ? selectConditionalExpr(ff, ctx, fields, bdvByRow.get(cell.row()))
                 : ff.expression;
-            double val = expr != null ? evaluateExpression(expr, ctx).doubleValue() : 0.0;
+            BigDecimal val = expr != null
+                ? PrecisionPolicy.roundForCalculation(evaluateExpression(expr, ctx)) : ZERO;
             resultsByRow.get(cell.row()).put(col, val);
             ctx.fieldValues.put(col, val);
         }
@@ -1244,17 +1246,17 @@ public class FormulaCalculator {
         // 6. 环上（及其下游）cell → 0，环外照常求值（不是整页签炸）
         for (com.cpq.quotation.service.formula.CellGraph.Cell cell : topo.cycles()) {
             String col = order.get(cell.col());
-            resultsByRow.get(cell.row()).put(col, 0.0);
-            ctxs.get(cell.row()).fieldValues.put(col, 0.0);
+            resultsByRow.get(cell.row()).put(col, ZERO);
+            ctxs.get(cell.row()).fieldValues.put(col, ZERO);
         }
 
         // 7. 产出：只对未被墓碑过滤的行；列序按 order 保持稳定（与原路径一致）
         List<RowResult> out = new ArrayList<>();
         for (int i = 0; i < n; i++) {
             if (keep != null && !keep[i]) continue;
-            Map<String, Double> ordered = new LinkedHashMap<>();
+            Map<String, BigDecimal> ordered = new LinkedHashMap<>();
             for (String col : order) {
-                Double v = resultsByRow.get(i).get(col);
+                BigDecimal v = resultsByRow.get(i).get(col);
                 if (v != null) ordered.put(col, v);
             }
             out.add(new RowResult(effKeys.get(i), ordered, fieldValuesByRow.get(i)));
@@ -1263,7 +1265,7 @@ public class FormulaCalculator {
     }
 
     /** 单行求值上下文的构建产物。 */
-    private record RowEvalCtx(RowContext ctx, Map<String, Double> fieldValues, JsonNode basicDataValues) {}
+    private record RowEvalCtx(RowContext ctx, Map<String, BigDecimal> fieldValues, JsonNode basicDataValues) {}
 
     /** task-0803：一处 {@code tree_ref} 引用（方向 + 它引用的列名集合），用于建跨行依赖边。 */
     private record TreeDep(String dir, java.util.Set<String> cols) {}
@@ -1336,9 +1338,9 @@ public class FormulaCalculator {
      */
     private RowEvalCtx buildRowEvalCtx(JsonNode fields, JsonNode baseRow, String effKey,
                                        Map<String, JsonNode> editByKey,
-                                       Map<String, Double> componentSubtotals,
-                                       Map<String, Double> quotationFields,
-                                       Map<String, Double> productAttributes,
+                                       Map<String, BigDecimal> componentSubtotals,
+                                       Map<String, BigDecimal> quotationFields,
+                                       Map<String, BigDecimal> productAttributes,
                                        Map<String, List<Map<String, Object>>> crossTabRows) {
         JsonNode driverRow = baseRow.path("driverRow");
         JsonNode basicDataValues = baseRow.path("basicDataValues");
@@ -1350,7 +1352,7 @@ public class FormulaCalculator {
         Map<String, JsonNode> mergedRow = mergeRow(driverRow, editValues);
 
         // Layer 2: 字段值收集（AP-37 每 field_type）
-        Map<String, Double> fieldValues = collectFieldValues(fields, mergedRow, basicDataValues);
+        Map<String, BigDecimal> fieldValues = collectFieldValues(fields, mergedRow, basicDataValues);
 
         RowContext ctx = new RowContext();
         ctx.fieldValues = fieldValues;
@@ -1603,9 +1605,9 @@ public class FormulaCalculator {
     // Layer 2 — 字段值收集（AP-37 每 field_type，port computeAllFormulas:420-548）
     // ======================================================================
 
-    private Map<String, Double> collectFieldValues(JsonNode fields, Map<String, JsonNode> mergedRow,
+    private Map<String, BigDecimal> collectFieldValues(JsonNode fields, Map<String, JsonNode> mergedRow,
                                                     JsonNode basicDataValues) {
-        Map<String, Double> fieldValues = new HashMap<>();
+        Map<String, BigDecimal> fieldValues = new HashMap<>();
         if (fields == null || !fields.isArray()) return fieldValues;
 
         for (JsonNode f : fields) {
@@ -1617,8 +1619,8 @@ public class FormulaCalculator {
             if ("BASIC_DATA".equals(fieldType)) {
                 String path = basicDataPath(f);
                 if (path != null && !path.isEmpty()) {
-                    Double num = toNumber(lookupBdv(basicDataValues, bnfDriverLookupKey(path)));
-                    fieldValues.put(key, num != null ? num : 0.0); // 未求值占 0
+                    BigDecimal num = toNumber(lookupBdv(basicDataValues, bnfDriverLookupKey(path)));
+                    fieldValues.put(key, num != null ? num : ZERO); // 未求值占 0
                 }
                 continue;
             }
@@ -1644,7 +1646,7 @@ public class FormulaCalculator {
                     String content = content(f);
                     if (content != null && !content.isEmpty()) resolved = content;
                 }
-                Double num = toNumber(resolved);
+                BigDecimal num = toNumber(resolved);
                 if (num != null) fieldValues.put(key, num);
                 continue;
             }
@@ -1685,7 +1687,7 @@ public class FormulaCalculator {
                 }
             }
 
-            Double val = toNumber(raw);
+            BigDecimal val = toNumber(raw);
             if (val != null) fieldValues.put(key, val);
         }
         return fieldValues;
@@ -2725,15 +2727,15 @@ public class FormulaCalculator {
         return (v.isMissingNode() || v.isNull()) ? null : v.asText(null);
     }
 
-    private static Double firstNonNull(Double... vals) {
-        for (Double v : vals) if (v != null) return v;
+    private static BigDecimal firstNonNull(BigDecimal... vals) {
+        for (BigDecimal v : vals) if (v != null) return v;
         return null;
     }
 
     /**
      * Object/JsonNode → BigDecimal（数字直取精确转换；字符串走 BigDecimal 精确解析；数组/列表取
      * 首值递归；否则 null）。task-0801 B4-2：供 evalCrossTab 聚合（SUM/AVG/MAX/MIN）使用，
-     * 避免先转 Double 再做 double 累加的双重转换损耗（见 evalCrossTab 聚合分支注释）。
+     * 避免先转 BigDecimal 再做 double 累加的双重转换损耗（见 evalCrossTab 聚合分支注释）。
      */
     private BigDecimal toBigNumber(Object o) {
         if (o == null) return null;
@@ -2760,19 +2762,25 @@ public class FormulaCalculator {
         return null;
     }
 
-    /** Object/JsonNode → Double（数字直取；字符串 parseFloat；数组/列表取首值递归；否则 null）。 */
-    private Double toNumber(Object o) {
+    /** Object/JsonNode → BigDecimal；历史 JSON numeric token 直接走 decimalValue，无浮点中转。 */
+    private BigDecimal toNumber(Object o) {
         if (o == null) return null;
-        if (o instanceof Number) return ((Number) o).doubleValue();
-        if (o instanceof String) {
-            try { return Double.parseDouble(((String) o).trim()); } catch (Exception e) { return null; }
+        if (o instanceof BigDecimal bd) return bd;
+        if (o instanceof java.math.BigInteger bi) return new BigDecimal(bi);
+        if (o instanceof Byte || o instanceof Short || o instanceof Integer || o instanceof Long) {
+            return new BigDecimal(o.toString());
         }
-        if (o instanceof JsonNode) {
-            JsonNode n = (JsonNode) o;
+        if (o instanceof Float || o instanceof Double) {
+            throw new IllegalArgumentException("Precision-sensitive formula value must not use floating point");
+        }
+        if (o instanceof String s) {
+            try { return new BigDecimal(s.trim()); } catch (Exception e) { return null; }
+        }
+        if (o instanceof JsonNode n) {
             if (n.isNull() || n.isMissingNode()) return null;
-            if (n.isNumber()) return n.doubleValue();
+            if (n.isNumber()) return n.decimalValue();
             if (n.isTextual()) {
-                try { return Double.parseDouble(n.textValue().trim()); } catch (Exception e) { return null; }
+                try { return new BigDecimal(n.textValue().trim()); } catch (Exception e) { return null; }
             }
             if (n.isArray()) return n.size() == 0 ? null : toNumber(n.get(0));
             return null;
@@ -2809,9 +2817,8 @@ public class FormulaCalculator {
         return "{" + p + "}";
     }
 
-    private static String numStr(double d) {
-        // 避免科学计数法（如 1.0E-7），用 BigDecimal toPlainString，供 ArithParser 解析
-        return new BigDecimal(Double.toString(d)).toPlainString();
+    private static String numStr(BigDecimal value) {
+        return value == null ? "0" : value.toPlainString();
     }
 
     // ======================================================================

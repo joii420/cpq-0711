@@ -4,6 +4,7 @@ import com.cpq.component.entity.Component;
 import com.cpq.component.entity.ComponentSqlView;
 import com.cpq.template.entity.Template;
 import com.cpq.template.entity.TemplateComponent;
+import com.cpq.template.entity.TemplateComponentSnapshot;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.narayana.jta.QuarkusTransaction;
@@ -74,6 +75,7 @@ class RefreshQuoteCardValuesTreeResilienceTest {
                 em.createNativeQuery("DELETE FROM quotation WHERE id = :id")
                         .setParameter("id", quotationId).executeUpdate();
             }
+            if (templateId != null) em.createNativeQuery("DELETE FROM template_component_snapshot WHERE template_id = :id").setParameter("id", templateId).executeUpdate();
             if (tcTreeId != null) em.createNativeQuery("DELETE FROM template_component WHERE id = :id").setParameter("id", tcTreeId).executeUpdate();
             if (tcFlatId != null) em.createNativeQuery("DELETE FROM template_component WHERE id = :id").setParameter("id", tcFlatId).executeUpdate();
             if (templateId != null) em.createNativeQuery("DELETE FROM template WHERE id = :id").setParameter("id", templateId).executeUpdate();
@@ -135,7 +137,7 @@ class RefreshQuoteCardValuesTreeResilienceTest {
             tpl.templateSeriesId = UUID.randomUUID();
             tpl.name = TAG + "-模板";
             tpl.templateKind = "QUOTATION";
-            tpl.status = "DRAFT";
+            tpl.status = "PUBLISHED";
             tpl.createdAt = OffsetDateTime.now();
             tpl.updatedAt = OffsetDateTime.now();
             tpl.persist();
@@ -157,6 +159,36 @@ class RefreshQuoteCardValuesTreeResilienceTest {
             tcFlat.persist();
             tcFlatId = tcFlat.id;
 
+            TemplateComponentSnapshot treeSnapshot = new TemplateComponentSnapshot();
+            treeSnapshot.templateId = tpl.id;
+            treeSnapshot.templateComponentId = tcTree.id;
+            treeSnapshot.componentId = treeComp.id;
+            treeSnapshot.sortOrder = 0;
+            treeSnapshot.tabName = "BOM树";
+            treeSnapshot.componentName = treeComp.name;
+            treeSnapshot.componentCode = treeComp.code;
+            treeSnapshot.componentType = "NORMAL";
+            treeSnapshot.fields = treeComp.fields;
+            treeSnapshot.formulas = treeComp.formulas;
+            treeSnapshot.dataDriverPath = treeComp.dataDriverPath;
+            treeSnapshot.tabType = "BOM";
+            treeSnapshot.bomRecursiveExpand = true;
+            treeSnapshot.persist();
+
+            TemplateComponentSnapshot flatSnapshot = new TemplateComponentSnapshot();
+            flatSnapshot.templateId = tpl.id;
+            flatSnapshot.templateComponentId = tcFlat.id;
+            flatSnapshot.componentId = flatComp.id;
+            flatSnapshot.sortOrder = 1;
+            flatSnapshot.tabName = "平铺页签";
+            flatSnapshot.componentName = flatComp.name;
+            flatSnapshot.componentCode = flatComp.code;
+            flatSnapshot.componentType = "NORMAL";
+            flatSnapshot.fields = flatComp.fields;
+            flatSnapshot.formulas = flatComp.formulas;
+            flatSnapshot.dataDriverPath = flatComp.dataDriverPath;
+            flatSnapshot.persist();
+
             // 冻结 template.components_snapshot（buildCardValues/assembleTabsWithFormulaResults 读这个）
             try {
                 com.fasterxml.jackson.databind.node.ArrayNode snapshot = M.createArrayNode();
@@ -167,7 +199,7 @@ class RefreshQuoteCardValuesTreeResilienceTest {
                 treeEntry.put("componentCode", treeComp.code);
                 treeEntry.put("componentType", "NORMAL");
                 treeEntry.put("tabName", "BOM树");
-                treeEntry.put("sortOrder", 0);
+                treeEntry.put("sortOrder", new java.math.BigDecimal("0"));
                 treeEntry.set("fields", M.readTree(treeComp.fields));
                 treeEntry.set("formulas", M.readTree(treeComp.formulas));
                 treeEntry.put("data_driver_path", treeComp.dataDriverPath);
@@ -180,13 +212,31 @@ class RefreshQuoteCardValuesTreeResilienceTest {
                 flatEntry.put("componentCode", flatComp.code);
                 flatEntry.put("componentType", "NORMAL");
                 flatEntry.put("tabName", "平铺页签");
-                flatEntry.put("sortOrder", 1);
+                flatEntry.put("sortOrder", new java.math.BigDecimal("1"));
                 flatEntry.set("fields", M.readTree(flatComp.fields));
                 flatEntry.set("formulas", M.readTree(flatComp.formulas));
                 flatEntry.put("data_driver_path", flatComp.dataDriverPath);
 
                 em.createNativeQuery("UPDATE template SET components_snapshot = CAST(:snap AS jsonb) WHERE id = :id")
                         .setParameter("snap", M.writeValueAsString(snapshot))
+                        .setParameter("id", tpl.id)
+                        .executeUpdate();
+
+                com.fasterxml.jackson.databind.node.ObjectNode frozenViews = M.createObjectNode();
+                com.fasterxml.jackson.databind.node.ObjectNode frozenTreeView = frozenViews.putObject(
+                        treeComp.id + "::" + treeView.sqlViewName);
+                frozenTreeView.put("sql_template", treeView.sqlTemplate);
+                frozenTreeView.set("declared_columns", M.createArrayNode());
+                frozenTreeView.set("required_variables", M.createArrayNode());
+                frozenTreeView.put("scope", "COMPONENT");
+                com.fasterxml.jackson.databind.node.ObjectNode frozenFlatView = frozenViews.putObject(
+                        flatComp.id + "::" + flatView.sqlViewName);
+                frozenFlatView.put("sql_template", flatView.sqlTemplate);
+                frozenFlatView.set("declared_columns", M.createArrayNode());
+                frozenFlatView.set("required_variables", M.createArrayNode());
+                frozenFlatView.put("scope", "COMPONENT");
+                em.createNativeQuery("UPDATE template SET sql_views_snapshot = CAST(:snap AS jsonb) WHERE id = :id")
+                        .setParameter("snap", M.writeValueAsString(frozenViews))
                         .setParameter("id", tpl.id)
                         .executeUpdate();
             } catch (Exception e) {

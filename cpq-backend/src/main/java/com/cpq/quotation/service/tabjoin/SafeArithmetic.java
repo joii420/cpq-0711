@@ -20,10 +20,11 @@ public class SafeArithmetic extends JexlArithmetic {
 
     @Override
     public Object divide(Object left, Object right) {
+        java.math.BigDecimal dividend = PrecisionPolicy.of(left);
         if (right == null || isZero(right)) {
-            return super.divide(left == null ? 0 : left, 1);
+            return PrecisionPolicy.roundForCalculation(dividend);
         }
-        return super.divide(left == null ? 0 : left, right);
+        return PrecisionPolicy.divide(dividend, PrecisionPolicy.of(right));
     }
 
     private boolean isZero(Object v) {

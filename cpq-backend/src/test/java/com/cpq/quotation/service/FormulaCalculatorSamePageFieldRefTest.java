@@ -118,7 +118,7 @@ class FormulaCalculatorSamePageFieldRefTest {
     @Test
     @DisplayName("T2: 列小计 = Σ行材料成本 = 7+3 = 10")
     void t2_subtotalColumnSum_is10() {
-        Map<String, BigDecimal> byCol = calc.computeTabSubtotalsByColumn(
+        Map<String, java.math.BigDecimal> byCol = calc.computeTabSubtotalsByColumn(
             j(FIELDS), j(FORMULAS), null, j(RKF),
             j(BASEROWS), j("[]"), Map.of()
         );

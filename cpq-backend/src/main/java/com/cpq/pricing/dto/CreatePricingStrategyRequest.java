@@ -1,5 +1,7 @@
 package com.cpq.pricing.dto;
 
+import com.cpq.common.DecimalStringDeserializer;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
@@ -18,8 +20,10 @@ public class CreatePricingStrategyRequest {
 
     public String type;
 
+    @JsonDeserialize(using = DecimalStringDeserializer.class)
     public BigDecimal baseDiscount;
 
+    @JsonDeserialize(using = DecimalStringDeserializer.class)
     public BigDecimal minOrderAmount;
 
     public LocalDate effectiveDate;
@@ -32,7 +36,9 @@ public class CreatePricingStrategyRequest {
 
     public static class RuleRequest {
         public String ruleType;
+        @JsonDeserialize(using = DecimalStringDeserializer.class)
         public BigDecimal thresholdAmount;
+        @JsonDeserialize(using = DecimalStringDeserializer.class)
         public BigDecimal discountRate;
         public Integer sortOrder;
     }

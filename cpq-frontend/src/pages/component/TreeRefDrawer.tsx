@@ -19,6 +19,8 @@
 import React, { useEffect, useState } from 'react';
 import { Drawer, Select, Button, Space, InputNumber, Tag, message } from 'antd';
 import type { FormulaToken } from './types';
+import type { DecimalString } from '../../utils/precision';
+import { createFormulaNumberToken } from './formulaNumberToken';
 import { validateTreeRefWhitelist } from './formulaSerialize';
 import { TREE_REF_FUNC_LABELS, treeAttrChipLabel, treeRefChipLabel, treeRefFuncKey } from './crossTabText';
 
@@ -106,7 +108,7 @@ const TreeRefDrawer: React.FC<Props> = ({
 }) => {
   const [targetExpr, setTargetExpr] = useState<FormulaToken[]>(initialTargetExpr ?? []);
   const [fieldSel, setFieldSel] = useState<string | undefined>(undefined);
-  const [numInput, setNumInput] = useState<number | null>(null);
+  const [numInput, setNumInput] = useState<DecimalString | null>(null);
 
   // 每次打开（或切换到编辑另一个 chip）都用 initialTargetExpr 重置草稿状态。
   useEffect(() => {
@@ -258,7 +260,7 @@ const TreeRefDrawer: React.FC<Props> = ({
               </Button>
             ))}
             <span style={{ fontSize: 12, color: '#595959', whiteSpace: 'nowrap', marginLeft: 8 }}>数字：</span>
-            <InputNumber
+            <InputNumber<DecimalString> stringMode
               size="small"
               style={{ width: 90 }}
               value={numInput}
@@ -269,8 +271,9 @@ const TreeRefDrawer: React.FC<Props> = ({
               size="small"
               disabled={numInput === null || numInput === undefined}
               onClick={() => {
-                if (numInput !== null && numInput !== undefined) {
-                  appendToken({ type: 'number', value: String(numInput) });
+                const token = createFormulaNumberToken(numInput);
+                if (token) {
+                  appendToken(token);
                   setNumInput(null);
                 }
               }}

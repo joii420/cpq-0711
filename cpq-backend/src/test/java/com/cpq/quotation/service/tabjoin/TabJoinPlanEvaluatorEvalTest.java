@@ -74,4 +74,14 @@ class TabJoinPlanEvaluatorEvalTest {
         var rows = List.of(w("t.x", new BigDecimal("0.1"), "t.y", new BigDecimal("0.2")));
         bd("0.3", ev.evalExpression("[t.x]+[t.y]", rows, Map.of()));
     }
+
+    @Test void t0810_jexlPoint5_literalVariableAggregateDivisionAndLargeSignedMatrix() {
+        bd("0.333333333333", ev.evalExpression("[t.a]/[t.b]",
+                List.of(w("t.a", BigDecimal.ONE, "t.b", new BigDecimal("3"))), Map.of()));
+        bd("3", ev.evalExpression("SUM([t.a])",
+                List.of(w("t.a", new BigDecimal("1")), w("t.a", new BigDecimal("2"))), Map.of()));
+        bd("98765431.123456789011", ev.evalExpression("[t.a]+[t.b]",
+                List.of(w("t.a", new BigDecimal("98765431.123456789012"),
+                        "t.b", new BigDecimal("-0.000000000001"))), Map.of()));
+    }
 }

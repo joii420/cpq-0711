@@ -11,6 +11,7 @@
  * 同时断言：输入 rows 未被 mutate（rows[0].重量 === 500）
  */
 import { describe, it, expect } from 'vitest';
+import type { DecimalContext } from '../../utils/formulaEngine';
 import { subtotalsFromResolvedRows } from './QuotationStep2';
 
 describe('subtotalsFromResolvedRows — 物化点5 前端对齐', () => {
@@ -32,19 +33,19 @@ describe('subtotalsFromResolvedRows — 物化点5 前端对齐', () => {
     };
 
     const rows = [
-      { 重量: 500, 单位: 'g' },
-      { 重量: 1000, 单位: 'g' },
+      { 重量: '500', 单位: 'g' },
+      { 重量: '1000', 单位: 'g' },
     ];
 
-    const out: Record<string, number> = {};
+    const out: DecimalContext = {};
     subtotalsFromResolvedRows(comp, rows, out);
 
     // 换算后：0.5 + 1.0 = 1.5（g → kg，系数 0.001）
-    expect(out['tab1#重量']).toBeCloseTo(1.5, 4);
+    expect(out['tab1#重量']).toBe('1.5');
 
     // 输入 rows 不得被 mutate
-    expect(rows[0]['重量']).toBe(500);
-    expect(rows[1]['重量']).toBe(1000);
+    expect(rows[0]['重量']).toBe('500');
+    expect(rows[1]['重量']).toBe('1000');
   });
 
   it('未配置 unit_source_field 时行为不变（原值累加 1500）', () => {
@@ -61,15 +62,15 @@ describe('subtotalsFromResolvedRows — 物化点5 前端对齐', () => {
     };
 
     const rows = [
-      { 重量: 500 },
-      { 重量: 1000 },
+      { 重量: '500' },
+      { 重量: '1000' },
     ];
 
-    const out: Record<string, number> = {};
+    const out: DecimalContext = {};
     subtotalsFromResolvedRows(comp, rows, out);
 
     // 无换算，原值累加
-    expect(out['tab1#重量']).toBeCloseTo(1500, 4);
+    expect(out['tab1#重量']).toBe('1500');
   });
 });
 
@@ -85,23 +86,23 @@ describe('BL-0017 — subtotalsFromResolvedRows 登记金额哨兵键 + 裸键�
       ],
     };
     const rows = [
-      { 金额: 100, 汇率: 7 },
-      { 金额: 200, 汇率: 7 },
+      { 金额: '100', 汇率: '7' },
+      { 金额: '200', 汇率: '7' },
     ];
-    const out: Record<string, number> = {};
+    const out: DecimalContext = {};
     subtotalsFromResolvedRows(comp, rows, out);
 
     // 列键：全部 is_subtotal 列照常登记
-    expect(out['COMP_X#金额']).toBeCloseTo(300, 4);
-    expect(out['COMP_X#汇率']).toBeCloseTo(14, 4);
+    expect(out['COMP_X#金额']).toBe('300');
+    expect(out['COMP_X#汇率']).toBe('14');
     // 裸键 = Σ所有 is_subtotal 列（300+14=314），未变 —— 专供 previous_row_subtotal/产品兜底/折扣
-    expect(out['COMP_X']).toBeCloseTo(314, 4);
-    expect(out['cid1']).toBeCloseTo(314, 4);
-    expect(out['tabX']).toBeCloseTo(314, 4);
+    expect(out['COMP_X']).toBe('314');
+    expect(out['cid1']).toBe('314');
+    expect(out['tabX']).toBe('314');
     // BL-0017 哨兵键 = Σ金额列（仅 金额=300，不含非金额的 汇率）
-    expect(out['COMP_X#__amount_total__']).toBeCloseTo(300, 4);
-    expect(out['cid1#__amount_total__']).toBeCloseTo(300, 4);
-    expect(out['tabX#__amount_total__']).toBeCloseTo(300, 4);
+    expect(out['COMP_X#__amount_total__']).toBe('300');
+    expect(out['cid1#__amount_total__']).toBe('300');
+    expect(out['tabX#__amount_total__']).toBe('300');
   });
 
   it('零金额列：哨兵键=0，裸键仍=Σ小计列', () => {
@@ -112,10 +113,10 @@ describe('BL-0017 — subtotalsFromResolvedRows 登记金额哨兵键 + 裸键�
         { name: '汇率', field_type: 'INPUT_NUMBER', is_subtotal: true, is_amount: false },
       ],
     };
-    const rows = [{ 汇率: 7 }, { 汇率: 8 }];
-    const out: Record<string, number> = {};
+    const rows = [{ 汇率: '7' }, { 汇率: '8' }];
+    const out: DecimalContext = {};
     subtotalsFromResolvedRows(comp, rows, out);
-    expect(out['COMP_Y']).toBeCloseTo(15, 4);                     // 裸键不变
-    expect(out['COMP_Y#__amount_total__']).toBeCloseTo(0, 4);     // 无金额列 → 0
+    expect(out['COMP_Y']).toBe('15');                     // 裸键不变
+    expect(out['COMP_Y#__amount_total__']).toBe('0');     // 无金额列 → 0
   });
 });

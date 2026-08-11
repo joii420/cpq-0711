@@ -31,6 +31,12 @@ import {
 } from '../../../services/materialRecipeService';
 import type { EffectiveTemplateDTO, SelDetailRow } from '../../../types/configure';
 import { genUUID } from '../../../utils/uuid';
+import {
+  formatDisplayDecimal,
+  normalizeDecimalString,
+  sumDecimal,
+  type DecimalString,
+} from '../../../utils/precision';
 
 interface Props {
   open: boolean;
@@ -62,7 +68,7 @@ const AddPartSubDrawer: React.FC<Props> = ({
   const [materialCode, setMaterialCode] = useState<string | null>(null);
   const [materialLabel, setMaterialLabel] = useState('');
   const [elementDefs, setElementDefs] = useState<MaterialRecipeElement[]>([]);
-  const [elementValues, setElementValues] = useState<Record<string, number>>({});
+  const [elementValues, setElementValues] = useState<Record<string, DecimalString>>({});
   const [elementLoading, setElementLoading] = useState(false);
   const [selectedProcesses, setSelectedProcesses] = useState<Array<{ id: string; label: string }>>([]);
   const [materialFilter, setMaterialFilter] = useState('');
@@ -107,8 +113,8 @@ const AddPartSubDrawer: React.FC<Props> = ({
         setElementDefs(d.elements);
         setElementValues((prev) => {
           if (Object.keys(prev).length > 0) return prev; // 已有值(编辑态/已微调过)不覆盖
-          const init: Record<string, number> = {};
-          d.elements.forEach((e) => { init[e.elementCode] = Number(e.defaultPct); });
+          const init: Record<string, DecimalString> = {};
+          d.elements.forEach((e) => { init[e.elementCode] = normalizeDecimalString(e.defaultPct); });
           return init;
         });
       })
@@ -148,7 +154,7 @@ const AddPartSubDrawer: React.FC<Props> = ({
     onMaterialPreview(code, label);
   };
 
-  const setElem = (code: string, v: number) => {
+  const setElem = (code: string, v: DecimalString) => {
     setElementValues((prev) => ({ ...prev, [code]: v }));
   };
 
@@ -159,8 +165,9 @@ const AddPartSubDrawer: React.FC<Props> = ({
   };
   const removeProcess = (id: string) => setSelectedProcesses((prev) => prev.filter((p) => p.id !== id));
 
-  const sumPct = Object.values(elementValues).reduce((a, b) => a + (Number(b) || 0), 0);
-  const sumOk = Math.abs(sumPct - 100) < 0.01;
+  const sumPct = sumDecimal(Object.values(elementValues));
+  const sumPctText = formatDisplayDecimal(sumPct, 2);
+  const sumOk = sumPct.minus('100').abs().lessThan('0.01');
 
   const goNext = () => {
     if (step === 1) {
@@ -182,7 +189,7 @@ const AddPartSubDrawer: React.FC<Props> = ({
 
   const confirmAdd = () => {
     if (!materialCode) { message.warning('请先选择材质'); return; }
-    if (!sumOk) { message.warning(`元素含量之和 ${sumPct.toFixed(2)}%，必须 = 100%`); return; }
+    if (!sumOk) { message.warning(`元素含量之和 ${sumPctText}%，必须 = 100%`); return; }
     const row: SelDetailRow = {
       rowId: editingRow?.rowId ?? genUUID(),
       recipeCode: materialCode,
@@ -190,7 +197,7 @@ const AddPartSubDrawer: React.FC<Props> = ({
       elementOverrides: { ...elementValues },
       processNos: selectedProcesses.map((p) => p.id),
       processLabels: selectedProcesses.map((p) => p.label),
-      quantity: editingRow?.quantity ?? 1,
+      quantity: editingRow?.quantity ?? '1',
       unitWeightGrams: editingRow?.unitWeightGrams ?? null,
     };
     onConfirm(row);
@@ -289,11 +296,12 @@ const AddPartSubDrawer: React.FC<Props> = ({
                       </span>
                       {e.elementName || e.elementCode}
                     </div>
-                    <InputNumber
-                      value={elementValues[e.elementCode] ?? Number((e as MaterialRecipeElement).defaultPct ?? 0)}
+                    <InputNumber<string>
+                      stringMode
+                      value={elementValues[e.elementCode] ?? (e as MaterialRecipeElement).defaultPct ?? '0'}
                       step={0.1}
                       addonAfter="%"
-                      onChange={(v) => setElem(e.elementCode, Number(v ?? 0))}
+                      onChange={(v) => setElem(e.elementCode, normalizeDecimalString(v ?? '0'))}
                     />
                   </div>
                 ))}
@@ -301,7 +309,7 @@ const AddPartSubDrawer: React.FC<Props> = ({
                   style={{ marginTop: 12 }}
                   type={sumOk ? 'success' : 'warning'}
                   showIcon
-                  message={sumOk ? `含量之和 ${sumPct.toFixed(2)}%，配比正确` : `含量之和 ${sumPct.toFixed(2)}%，必须调整至 100%`}
+                  message={sumOk ? `含量之和 ${sumPctText}%，配比正确` : `含量之和 ${sumPctText}%，必须调整至 100%`}
                 />
               </>
             )}

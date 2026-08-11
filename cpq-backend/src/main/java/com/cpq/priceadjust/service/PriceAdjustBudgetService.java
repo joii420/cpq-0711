@@ -318,7 +318,9 @@ public class PriceAdjustBudgetService {
                 "SELECT q.id, li.id, q.customer_template_id " +
                 "FROM quotation_line_item li JOIN quotation q ON q.id = li.quotation_id " +
                 "JOIN customer c ON c.id = q.customer_id " +
-                "WHERE c.code = :cno AND li.product_part_no_snapshot = :mno AND q.status = ANY(:statuses) " +
+                "WHERE c.code = :cno AND li.product_part_no_snapshot = :mno " +
+                "AND (li.composite_type IS NULL OR li.composite_type <> 'PART') " +
+                "AND q.status = ANY(:statuses) " +
                 "ORDER BY q.created_at DESC LIMIT 1")
             .setParameter("cno", customerNo)
             .setParameter("mno", materialNo)

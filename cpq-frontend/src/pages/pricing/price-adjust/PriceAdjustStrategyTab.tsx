@@ -87,7 +87,7 @@ const PriceAdjustStrategyTab: React.FC<PriceAdjustStrategyTabProps> = ({ custome
         cycleNthWeek: s.cycleNthWeek ?? undefined,
         executeTime: (s.executeTime as any) ?? '18:00',
         materialScopeMode: s.exists ? s.materialScopeMode : 'ALL',
-        costDiffThreshold: s.exists ? s.costDiffThreshold : 0,
+        costDiffThreshold: s.exists ? s.costDiffThreshold : '0',
       } as any);
     } catch (e: any) {
       message.error(e?.message || '加载调价策略失败');
@@ -145,7 +145,7 @@ const PriceAdjustStrategyTab: React.FC<PriceAdjustStrategyTabProps> = ({ custome
     cycleNthWeek: values.cycleType === 'MONTHLY_NTH_WEEK' ? values.cycleNthWeek : null,
     executeTime: typeof values.executeTime === 'string' ? values.executeTime : values.executeTime?.format?.('HH:mm'),
     materialScopeMode: values.materialScopeMode,
-    costDiffThreshold: values.costDiffThreshold ?? 0,
+    costDiffThreshold: values.costDiffThreshold ?? '0',
   });
 
   const runSave = async (confirm: { materials?: boolean; elements?: boolean } = {}) => {
@@ -251,7 +251,7 @@ const PriceAdjustStrategyTab: React.FC<PriceAdjustStrategyTabProps> = ({ custome
         {/* enabled 默认 false：与上方 load() 的"不存在分支"是同一个默认值的两个落点
             （initialValues 管首帧、load 管拉到策略后的回填），两处必须一致，否则会出现
             "刚打开是关的、请求回来跳成开的"这种闪烁。业务方要求默认关闭。 */}
-        <Form form={form} layout="vertical" initialValues={{ enabled: false, cycleType: 'MONTHLY_DAY', materialScopeMode: 'ALL', costDiffThreshold: 0 }}>
+        <Form form={form} layout="vertical" initialValues={{ enabled: false, cycleType: 'MONTHLY_DAY', materialScopeMode: 'ALL', costDiffThreshold: '0' }}>
           <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
             <Form.Item name="enabled" label="启用状态" valuePropName="checked" style={{ minWidth: 320 }}
               extra="停用后不再自动生成版本；已生成版本与已生效价格不受影响。">
@@ -264,7 +264,7 @@ const PriceAdjustStrategyTab: React.FC<PriceAdjustStrategyTabProps> = ({ custome
             </Form.Item>
             <Form.Item name="costDiffThreshold" label="成本差额预警线" rules={[{ required: true, message: '请输入成本差额预警线' }]}
               style={{ minWidth: 260 }} extra="报价侧成本 − 核价侧成本 < 该值即标红。金额（元），默认 0，只提醒不阻断。">
-              <InputNumber precision={2} style={{ width: 160 }} addonAfter="元" />
+              <InputNumber<string> stringMode precision={2} style={{ width: 160 }} addonAfter="元" />
             </Form.Item>
           </div>
 

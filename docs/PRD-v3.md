@@ -255,6 +255,14 @@
 - 每组件有"小计"(`is_subtotal=true` 字段)
 - 卡片底部:产品小计 = `subtotal_formula` 汇总各组件
 
+**公式与金额精度契约（2026-08-11 task-0810）**:
+
+- 后端精度敏感值全链路使用 Java `BigDecimal`，前端使用 Decimal.js `Decimal` / decimal string；金额、数量、费率、公式变量/结果不得经过 Java `Double` 或 JS `number`。明确的分页、行数、排序值、年用量等结构整数不在此列。
+- 加减乘保持十进制精确运算；除法、公式节点、跨节点缓存、快照与持久化按 `HALF_UP` 保留最多 12 位小数。21 个权威或派生计算金额列使用 `numeric(26,12)`。
+- 精度 API 字段使用 canonical decimal string：普通十进制、禁止科学计数法、去无意义尾零、零为 `"0"`；JSON number 请求返回 400。历史 numeric 快照必须从原始字面量无损解析。
+- UI、HTML、PDF 打印源、邮件正文和 Excel 最终最多显示 9 位小数，`HALF_UP` 并去尾零；显示格式化不得覆盖 12 位工作值。Excel 精度计算值写文本单元格。
+- 非 DRAFT 报价/核价是历史事实，读取时禁止重算和回写；DRAFT 只在用户显式保存、重算或刷新时升级为新格式。前后端对账使用 12 位工作值，第 10～12 位不一致仍阻止提交。
+
 **手动新增行(Phase 1,2026-06-08)**:
 
 - 每个组件 Tab 表格底部有"+ 添加行"入口,点击在该 Tab 末尾追加一行**手动行**(标记 `_origin='manual'`),用于补录 driver 未覆盖的临时/特殊条目。
@@ -2434,6 +2442,16 @@ v_costing_exchange_rate[from_currency='CNY' AND to_currency='USD'].costing_rate
 
 精炼自旧 PRD 80+ 条变更日志,以**决策点**形式保留(便于追溯"为什么这么做")。完整日志见 `docs/PRD.md` 变更记录章节。
 
+### 9.24 v4.6(2026-08-11)— 公式工作精度升级为 12 位，显示边界统一为最多 9 位
+
+**决策点**：精度优先于浮点性能便利。公式节点、跨页签、小计、折扣、总额、快照和持久化统一使用十进制精确类型；后端为 `BigDecimal`，前端为 Decimal.js `Decimal` / decimal string，精度链禁止 Java `Double` 与 JS `number`。
+
+工作值最多保留 12 位小数并按 `HALF_UP` 规整，最终 UI、HTML、PDF 打印源、邮件和 Excel 最多显示 9 位并去尾零。API 精度字段统一为 canonical decimal string，JSON number 请求返回 400；历史 numeric token 只允许从原始字面量无损解析。21 个计算金额列扩为 `numeric(26,12)`，非 DRAFT 读取保持零写。
+
+本次同时收口 `BL-0159` 的 `__amount_total__` 4 位截断残留和 `BL-0160` 的 `tab_name#__amount_total__` 前端取值缺口。前后端共享黄金用例并以 12 位对账；显示到 9 位相同不再掩盖第 10～12 位差异。
+
+**关联**：`dev-docs/task-0801-公式计算精度优化/task-0810-公式计算12位显示9位/`、V385、`BL-0159`、`BL-0160`、`BL-0161`。
+
 ### 9.23 v4.5(2026-08-07)— 模板发布后全量冻结，配置变更改为严格版本化生效
 
 **决策点**：把「模板发布 = 快照冻结」从**名义**变成**事实**。
@@ -2958,6 +2976,7 @@ number_literal := -?\d+(\.\d+)?
 | V160/V161 | merged 视图加 part_version |
 | V249 | DROP costing_template_sql_view CASCADE；新建 template_sql_view（FK → template.id） |
 | V250 | DROP costing_template.sql_views_snapshot；template 加 template_sql_views_snapshot JSONB |
+| V385 | task-0810：21 个权威或派生计算金额列扩为 `numeric(26,12)`，仅扩容、不重算历史值 |
 
 完整迁移记录见 `cpq-backend/src/main/resources/db/migration/`。
 

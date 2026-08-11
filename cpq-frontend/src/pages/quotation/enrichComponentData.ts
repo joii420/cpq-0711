@@ -11,11 +11,12 @@
 import { templateService } from '../../services/templateService';
 import { buildComponentDataFromTemplate } from './BulkImportPartsDrawer';
 import type { ComponentDataItem, ComponentField, ComponentFormula } from './QuotationStep2';
+import { tryParseSnapshotJsonLossless } from '../../utils/losslessJson';
 
 function parseJson<T>(value: T | string | null | undefined, fallback: T): T {
   if (value == null) return fallback;
   if (typeof value === 'string') {
-    try { return JSON.parse(value) as T; } catch { return fallback; }
+    return tryParseSnapshotJsonLossless<T>(value) ?? fallback;
   }
   return value;
 }
@@ -200,7 +201,7 @@ export async function enrichComponentData(
         fields,
         formulas,
         rows,
-        subtotal: saved.subtotal || 0,
+        subtotal: saved.subtotal || '0',
         dataDriverPath,
         treeConfig: normalizeTreeConfig(snapshotComp),
         // AP-54 Fix C2: 透传后端 deletedRowKeys（墓碑数组）；
@@ -319,7 +320,7 @@ export function buildComponentDataFromStructure(
       fields,
       formulas,
       rows,
-      subtotal: saved.subtotal || 0,
+      subtotal: saved.subtotal || '0',
       dataDriverPath: tab.dataDriverPath || saved.dataDriverPath || undefined,
       treeConfig: normalizeTreeConfig(tab),
       // AP-54 Fix C2: 透传后端 deletedRowKeys（墓碑数组）；

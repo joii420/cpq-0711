@@ -9,3 +9,30 @@ export function shouldWarmCardValues(
   if (!items || items.length === 0) return false;
   return items.some(li => !li?.quoteCardValues || !li?.costingCardValues);
 }
+
+export interface AsyncActivityGate {
+  readonly activeCount: number;
+  run<T>(task: () => Promise<T>): Promise<T>;
+}
+
+/** Keeps the UI locked until every overlapping background activity settles. */
+export function createAsyncActivityGate(
+  onActiveChange: (active: boolean) => void,
+): AsyncActivityGate {
+  let activeCount = 0;
+  return {
+    get activeCount() {
+      return activeCount;
+    },
+    async run<T>(task: () => Promise<T>): Promise<T> {
+      activeCount += 1;
+      if (activeCount === 1) onActiveChange(true);
+      try {
+        return await task();
+      } finally {
+        activeCount = Math.max(0, activeCount - 1);
+        if (activeCount === 0) onActiveChange(false);
+      }
+    },
+  };
+}

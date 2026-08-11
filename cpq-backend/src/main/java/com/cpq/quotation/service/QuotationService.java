@@ -22,7 +22,10 @@ import com.cpq.quotation.snapshot.SnapshotCollectorService;
 import com.cpq.quotation.snapshot.SnapshotCollectorService.SubmissionSnapshot;
 import com.cpq.system.entity.User;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.TextNode;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -66,6 +69,9 @@ public class QuotationService {
 
     @Inject
     EntityManager em;
+
+    @Inject
+    ObjectMapper objectMapper;
 
     @Inject
     ExcelViewService excelViewService;
@@ -201,14 +207,6 @@ public class QuotationService {
         var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
         java.util.List<com.cpq.quotation.entity.QuotationViewStructure> rows =
                 com.cpq.quotation.entity.QuotationViewStructure.list("quotationId", quotationId);
-        // 自愈(2026-07-16 QT-2024):选配加产品(configureProduct)时若报价单模板尚未绑定,ensureStructure
-        // 建了空 → quotation_view_structure 4 份结构缺失 → 详情页 COSTING(依赖冻结 COSTING_CARD 结构)
-        // 显示"暂无组件数据",而编辑页(走实时 componentData)正常。此处按需补建(ensureStructure 幂等,
-        // 仅在完全缺失时触发一次;此时模板已绑),自愈存量脏单 + 未来选配单。
-        if (rows.isEmpty()) {
-            try { cardSnapshotService.ensureStructure(quotationId); } catch (Exception ignore) { /* best-effort,不阻断详情 */ }
-            rows = com.cpq.quotation.entity.QuotationViewStructure.list("quotationId", quotationId);
-        }
         for (com.cpq.quotation.entity.QuotationViewStructure s : rows) {
             if (s.structure == null) continue;
             try {
@@ -666,9 +664,9 @@ public class QuotationService {
                 }
 
                 // task-0801 B4/B5：除法中间精度 4→12（PrecisionPolicy.DIVISION_SCALE），
-                // 落库边界（originalAmount/totalAmount）统一 PrecisionPolicy.round() 规整到 6 位。
-                q.originalAmount = PrecisionPolicy.round(total);
-                q.totalAmount = PrecisionPolicy.round(total.multiply(q.finalDiscountRate)
+                // 落库边界（originalAmount/totalAmount）统一规整到 12 位。
+                q.originalAmount = PrecisionPolicy.roundForCalculation(total);
+                q.totalAmount = PrecisionPolicy.roundForCalculation(total.multiply(q.finalDiscountRate)
                         .divide(new BigDecimal("100"), PrecisionPolicy.DIVISION_SCALE, RoundingMode.HALF_UP));
 
                 // V169 二阶段父子关系重建: 按 tempParentIndex 把 PART 子件 UPDATE 指向新父 UUID
@@ -706,14 +704,14 @@ public class QuotationService {
         }
 
         DiscountResult result = discountCalculationService.calculate(q.customerId, originalAmount);
-        // task-0801 B5：落库边界统一 PrecisionPolicy.round() 规整到 6 位。
-        q.originalAmount = PrecisionPolicy.round(originalAmount);
+        // task-0810：落库工作值统一规整到 12 位。
+        q.originalAmount = PrecisionPolicy.roundForCalculation(originalAmount);
         q.systemDiscountRate = result.discountRate;
         if (!Boolean.TRUE.equals(q.isManuallyAdjusted)) {
             q.finalDiscountRate = result.discountRate;
         }
         // task-0801 B4：除法中间精度 4→12（PrecisionPolicy.DIVISION_SCALE）。
-        q.totalAmount = PrecisionPolicy.round(originalAmount.multiply(q.finalDiscountRate)
+        q.totalAmount = PrecisionPolicy.roundForCalculation(originalAmount.multiply(q.finalDiscountRate)
                 .divide(new BigDecimal("100"), PrecisionPolicy.DIVISION_SCALE, RoundingMode.HALF_UP));
 
         LOG.infof("Calculated discount for quotation id=%s rate=%s rule=%s", id, result.discountRate, result.matchedRuleName);
@@ -739,7 +737,9 @@ public class QuotationService {
      */
     @Transactional
     public QuotationDTO submit(UUID id, UUID userId) {
-        Quotation q = Quotation.findById(id);
+        // Serialize the DRAFT status gate. The later advisory lock remains a non-blocking try-lock,
+        // so a concurrent warm cannot form an advisory->row / row->advisory wait cycle.
+        Quotation q = Quotation.findById(id, LockModeType.PESSIMISTIC_WRITE);
         if (q == null) {
             throw new BusinessException(404, "Quotation not found: " + id);
         }
@@ -891,8 +891,8 @@ public class QuotationService {
             lineDiscountService.recompute(li);
             if (li.lineTotalAmount != null) lineSum = lineSum.add(li.lineTotalAmount);
         }
-        // task-0801 B5：落库边界 —— PrecisionPolicy.round() 规整到 6 位（原 setScale(4)）。
-        q.totalAmount = PrecisionPolicy.round(lineSum);
+        // task-0810：落库工作值统一规整到 12 位。
+        q.totalAmount = PrecisionPolicy.roundForCalculation(lineSum);
 
         // 进入财务核价: 每次提交都建新核价单（累积模式），冻结 DTO+gvDefs，并发时 409。
         costingFreezeService.createForSubmission(id, userId);
@@ -2095,13 +2095,13 @@ public class QuotationService {
 
         // Refresh totalAmount based on current line item subtotals and discount
         // task-0801 B4/B5：除法中间精度 4→12（PrecisionPolicy.DIVISION_SCALE），落库边界统一
-        // PrecisionPolicy.round() 规整到 6 位。
-        q.originalAmount = PrecisionPolicy.round(total);
+        // PrecisionPolicy.roundForCalculation() 规整到 12 位。
+        q.originalAmount = PrecisionPolicy.roundForCalculation(total);
         if (q.finalDiscountRate != null) {
-            q.totalAmount = PrecisionPolicy.round(total.multiply(q.finalDiscountRate)
+            q.totalAmount = PrecisionPolicy.roundForCalculation(total.multiply(q.finalDiscountRate)
                     .divide(new BigDecimal("100"), PrecisionPolicy.DIVISION_SCALE, RoundingMode.HALF_UP));
         } else {
-            q.totalAmount = PrecisionPolicy.round(total);
+            q.totalAmount = PrecisionPolicy.roundForCalculation(total);
         }
         em.flush();
 
@@ -2149,35 +2149,86 @@ public class QuotationService {
      * FormulaError 值序列化为 "__error:<message>" 占位符（前端识别后展示红色单元格）。
      */
     private String mergeFormulaResults(String existing, Map<String, Object> calcResults) {
-        Map<String, Object> merged = new LinkedHashMap<>();
-
-        // 先解析现有值
+        ObjectNode merged;
         if (existing != null && !existing.isBlank()) {
             try {
-                Map<String, Object> existingMap = MAPPER.readValue(existing,
-                        new TypeReference<Map<String, Object>>() {});
-                merged.putAll(existingMap);
+                JsonNode parsed = objectMapper.readTree(existing);
+                if (parsed == null || !parsed.isObject()) {
+                    LOG.warn("mergeFormulaResults: existing productAttributeValues is not a JSON object");
+                    return existing;
+                }
+                merged = ((ObjectNode) parsed).deepCopy();
             } catch (Exception e) {
-                LOG.debugf("mergeFormulaResults: failed to parse existing productAttributeValues: %s", e.getMessage());
+                LOG.warnf("mergeFormulaResults: failed to parse existing productAttributeValues: %s", e.getMessage());
+                return existing;
             }
+        } else {
+            merged = objectMapper.createObjectNode();
         }
 
-        // 合并计算结果
         for (Map.Entry<String, Object> entry : calcResults.entrySet()) {
+            String key = entry.getKey();
             Object val = entry.getValue();
             if (val instanceof FormulaError err) {
-                merged.put(entry.getKey(), "__error:" + err.getMessage());
+                merged.set(key, TextNode.valueOf("__error:" + err.getMessage()));
+            } else if (val instanceof Double || val instanceof Float) {
+                throw new IllegalArgumentException(
+                        "Formula result must not use floating point: " + key);
+            } else if (val instanceof Number number) {
+                merged.set(key, canonicalFormulaNumber(key, number.toString()));
+            } else if (val == null) {
+                merged.putNull(key);
+            } else if (val instanceof JsonNode node) {
+                if (node.isNumber()) {
+                    merged.set(key, canonicalFormulaNumber(key, node.asText()));
+                } else if (node.isContainerNode()) {
+                    if (containsNumericLeaf(node)) {
+                        throw new IllegalArgumentException(
+                                "Formula result container must not contain numeric values: " + key);
+                    }
+                    merged.set(key, node.deepCopy());
+                } else if (node.isNull() || node.isBoolean() || node.isTextual()) {
+                    merged.set(key, node.deepCopy());
+                } else {
+                    throw new IllegalArgumentException(
+                            "Unsupported formula result JSON node: " + key);
+                }
+            } else if (val instanceof Boolean bool) {
+                merged.put(key, bool);
+            } else if (val instanceof CharSequence text) {
+                merged.put(key, text.toString());
             } else {
-                merged.put(entry.getKey(), val);
+                throw new IllegalArgumentException(
+                        "Unsupported formula result type for " + key + ": "
+                                + val.getClass().getName());
             }
         }
 
         try {
-            return MAPPER.writeValueAsString(merged);
+            return objectMapper.writeValueAsString(merged);
         } catch (Exception e) {
             LOG.warnf("mergeFormulaResults: serialization failed: %s", e.getMessage());
             return existing;
         }
+    }
+
+    private TextNode canonicalFormulaNumber(String key, String rawValue) {
+        try {
+            BigDecimal rounded = PrecisionPolicy.roundForCalculation(new BigDecimal(rawValue));
+            return TextNode.valueOf(PrecisionPolicy.toPlainDecimalString(rounded));
+        } catch (NumberFormatException | ArithmeticException e) {
+            throw new IllegalArgumentException(
+                    "Formula result is not a supported decimal: " + key, e);
+        }
+    }
+
+    private boolean containsNumericLeaf(JsonNode node) {
+        if (node.isNumber()) return true;
+        if (!node.isContainerNode()) return false;
+        for (JsonNode child : node) {
+            if (containsNumericLeaf(child)) return true;
+        }
+        return false;
     }
 
     /**
@@ -2540,9 +2591,9 @@ public class QuotationService {
 
         // ── 更新总额 ───────────────────────────────────────────────────────────────────────────
         // task-0801 B4/B5：除法中间精度 4→12（PrecisionPolicy.DIVISION_SCALE），
-        // 落库边界（originalAmount/totalAmount）统一 PrecisionPolicy.round() 规整到 6 位。
-        q.originalAmount = PrecisionPolicy.round(total);
-        q.totalAmount = PrecisionPolicy.round(total.multiply(q.finalDiscountRate)
+        // 落库边界（originalAmount/totalAmount）统一规整到 12 位。
+        q.originalAmount = PrecisionPolicy.roundForCalculation(total);
+        q.totalAmount = PrecisionPolicy.roundForCalculation(total.multiply(q.finalDiscountRate)
                 .divide(new BigDecimal("100"), PrecisionPolicy.DIVISION_SCALE, RoundingMode.HALF_UP));
 
         // ── E5 V169 父子关系批量 UPDATE ────────────────────────────────────────────────────────
@@ -3037,7 +3088,7 @@ public class QuotationService {
         // Step 1: 标量投影取 CostingOrder（排除 frozen_dto），默认按 enteredCostingAt DESC
         java.util.List<Object[]> rows = em.createQuery(
                 "SELECT co.id, co.quotationId, co.costingOrderNumber, co.status, co.rejectReason, " +
-                "co.submittedBy, co.enteredCostingAt, co.updatedAt " +
+                "co.submittedBy, co.enteredCostingAt, co.updatedAt, co.totalAmount, co.costingTotalAmount " +
                 "FROM CostingOrder co ORDER BY co.enteredCostingAt DESC", Object[].class)
                 .getResultList();
 
@@ -3107,6 +3158,8 @@ public class QuotationService {
             d.currency           = "CNY"; // 当前系统统一人民币，per-part 多币种待后续演进
             d.status             = status;
             d.rejectReason       = rejectReason;
+            d.totalAmount        = (java.math.BigDecimal) r[8];
+            d.costingTotalAmount = (java.math.BigDecimal) r[9];
             d.createdAt          = enteredCostingAt;
             d.updatedAt          = updatedAt;
             out.add(d);

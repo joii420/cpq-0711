@@ -7,13 +7,14 @@ import { buildTabPairColumns, nextSortOrder } from '../../quotation/comparisonMa
 import type { LinkPairInput } from '../../quotation/comparisonMapping';
 import type { ComparisonMetaDTO } from '../../../services/comparisonViewService';
 import type { PriceAdjustColumnDef, TemplateSeriesDTO } from '../../../types/price-adjust';
+import { isDecimalString, normalizeDecimalString, type DecimalString } from '../../../utils/precision';
 
 export interface ComparisonColumnPanelProps {
   customerNo: string;
 }
 
 const makeDefaultColumn = (): PriceAdjustColumnDef => ({
-  id: 'col-default', kind: 'PRODUCT_TOTAL', sortOrder: 0, threshold: 0,
+  id: 'col-default', kind: 'PRODUCT_TOTAL', sortOrder: 0, threshold: '0',
   quoteLabel: '产品总价', costingLabel: '产品总价', removable: false,
 });
 
@@ -105,7 +106,7 @@ const ComparisonColumnPanel: React.FC<ComparisonColumnPanelProps> = ({ customerN
     persist(columns.filter((c) => c.id !== id));
   };
 
-  const handleThresholdChange = (id: string, threshold: number) => {
+  const handleThresholdChange = (id: string, threshold: DecimalString) => {
     persist(columns.map((c) => (c.id === id ? { ...c, threshold } : c)));
   };
 
@@ -150,8 +151,11 @@ const ComparisonColumnPanel: React.FC<ComparisonColumnPanelProps> = ({ customerN
     {
       title: '阈值', width: 100, align: 'right' as const,
       render: (_: unknown, r: PriceAdjustColumnDef) => (
-        <InputNumber size="small" min={0} precision={2} value={r.threshold} style={{ width: 80 }}
-          onChange={(v) => handleThresholdChange(r.id, v ?? 0)} />
+        <InputNumber<string> stringMode size="small" min="0" precision={2} value={r.threshold} style={{ width: 80 }}
+          onChange={(v) => handleThresholdChange(
+            r.id,
+            typeof v === 'string' && isDecimalString(v) ? normalizeDecimalString(v) : '0',
+          )} />
       ),
     },
     {

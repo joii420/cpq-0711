@@ -32,7 +32,9 @@
  * 保留的都是**输入列**（料件 / 产出类型 / 单位 / 材料毛重 / 材料净重 / 组成数量 / 材料占比 / 损耗率），
  * 它们是条件公式 when 判据与各公式的取数来源，缺了就不是线上那条链路。
  */
-export const QT0068_SAVED_COMPONENT_DATA = [
+import { parseSnapshotJsonLossless } from '../../../../utils/losslessJson';
+
+export const QT0068_SAVED_COMPONENT_DATA = parseSnapshotJsonLossless<any[]>(String.raw`[
   {
     "componentId": "2db185d6-2b5f-4617-bbc5-6957d6b735e2",
     "tabName": "物料",
@@ -245,4 +247,4 @@ export const QT0068_SAVED_COMPONENT_DATA = [
     "deletedRowKeys": "[]",
     "subtotal": 0
   }
-] as any;
+]`);

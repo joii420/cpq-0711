@@ -1,5 +1,7 @@
 package com.cpq.configure.dto;
 
+import com.cpq.common.DecimalStringDeserializer;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -16,6 +18,7 @@ public class PartRequest {
      * 指纹 PRC / unit_price.operation_no / quotation_line_process.process_no 全链同一标识。
      */
     public List<String> processNos;
+    @JsonDeserialize(using = DecimalStringDeserializer.class)
     public BigDecimal unitWeightGrams;     // 仅未命中指纹时填(命中复用时忽略)
     /**
      * Bug B 修复: 前端在创建 lineItem 时生成的 tempId (crypto.randomUUID)。

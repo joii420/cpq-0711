@@ -9,7 +9,12 @@
  * task-0801：本文件两处累加改十进制精确（sumDecimal），不再 number `+=` 链式累加 —— 链路一
  * （单页签金额合计，量级 ≤10⁶）内部精确算，结果仍以 number 承载，呈现精度由显示层负责。
  */
-import { sumDecimal } from '../../utils/precision';
+import {
+  sumDecimal,
+  toCalculationString,
+  type DecimalString,
+  type DecimalValue,
+} from '../../utils/precision';
 
 /** BL-0017 哨兵列键：`${componentId|code|tabName}#__amount_total__` = 该页签金额列小计之和。 */
 export const AMOUNT_TOTAL_KEY = '__amount_total__';
@@ -29,17 +34,17 @@ interface CompLike {
  */
 export function sumAmountFromByCol(
   fields: Array<{ name: string; is_subtotal?: boolean; is_amount?: boolean }> | undefined,
-  byCol: Record<string, number>,
-): number {
-  if (!fields) return 0;
+  byCol: Record<string, DecimalValue>,
+): DecimalString {
+  if (!fields) return '0';
   const amountCols = new Set(
     fields.filter((f) => f.is_amount && f.is_subtotal).map((f) => f.name),
   );
-  const values: number[] = [];
+  const values: DecimalValue[] = [];
   for (const [col, val] of Object.entries(byCol)) {
     if (amountCols.has(col)) values.push(val);
   }
-  return sumDecimal(values).toNumber();
+  return toCalculationString(sumDecimal(values));
 }
 
 /**
@@ -49,18 +54,17 @@ export function sumAmountFromByCol(
  */
 export function sumTabColumns(
   comp: CompLike | undefined,
-  subtotalMap: Record<string, number>,
-): number {
-  if (!comp?.fields) return 0;
-  const values: number[] = [];
+  subtotalMap: Record<string, DecimalValue>,
+): DecimalString {
+  if (!comp?.fields) return '0';
+  const values: DecimalValue[] = [];
   for (const f of comp.fields) {
     // M1 保险：金额合计只认「既是金额、又有真实小计值」的列（per-column 小计仅为 is_subtotal 列写入）
     if (!(f.is_amount && f.is_subtotal)) continue;
     values.push(
       subtotalMap[`${comp.componentCode}#${f.name}`]
-      ?? subtotalMap[`${comp.tabName}#${f.name}`] ?? 0,
+      ?? subtotalMap[`${comp.tabName}#${f.name}`] ?? '0',
     );
   }
-  const total = sumDecimal(values).toNumber();
-  return total;
+  return toCalculationString(sumDecimal(values));
 }

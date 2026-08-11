@@ -87,7 +87,7 @@ class MaterialMasterWeightBatchUpsertEquivTest {
 
         // --- 去重批量路径(末值非空胜 + 仅 null 也建行,与 Q18 handler 累积同规则)---
         seedExisting(BAT);
-        Map<String, BigDecimal> acc = new LinkedHashMap<>();
+        Map<String, java.math.BigDecimal> acc = new LinkedHashMap<>();
         for (Op op : OPS) {
             if (!acc.containsKey(op.no()) || op.w() != null) acc.put(op.no(), op.w());
         }

@@ -7,6 +7,13 @@ import type {
   ReviewDetailDTO, ElementChangeDTO, ComparisonColumnResultDTO, ReviewQuotationDTO,
   ComparisonMissingSide,
 } from '../../../types/price-adjust';
+import { formatNumber } from '../../../utils/formatNumber';
+import {
+  formatDisplayDecimal,
+  normalizeDecimalString,
+  toDecimal,
+  type DecimalString,
+} from '../../../utils/precision';
 
 const { Text } = Typography;
 
@@ -16,15 +23,15 @@ export interface ReviewDetailDrawerProps {
   onClose: () => void;
 }
 
-function fmt(v: number | null | undefined, digits = 2): string {
-  if (v == null) return '—';
-  return v.toLocaleString('zh-CN', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+function fmt(v: DecimalString | null | undefined, digits = 2): string {
+  return formatNumber(v, { isComputed: true, decimals: digits }) ?? '—';
 }
-function fmtRate(v: number | null | undefined): { text: string; color?: string } {
+function fmtRate(v: DecimalString | null | undefined): { text: string; color?: string } {
   if (v == null) return { text: '—' };
-  const pct = (v * 100).toFixed(1);
-  if (v > 0) return { text: `+${pct}%`, color: '#cf1322' };
-  if (v < 0) return { text: `${pct}%`, color: '#389e0d' };
+  const rate = toDecimal(v);
+  const pct = formatDisplayDecimal(rate.times('100'), 1);
+  if (rate.isPositive()) return { text: `+${pct}%`, color: '#cf1322' };
+  if (rate.isNegative()) return { text: `${pct}%`, color: '#389e0d' };
   return { text: `${pct}%` };
 }
 
@@ -73,14 +80,14 @@ const ReviewDetailDrawer: React.FC<ReviewDetailDrawerProps> = ({ open, reviewId,
   const elementColumns = [
     { title: '元素', render: (_: unknown, r: ElementChangeDTO) => <span><b>{r.elementCode}</b> {r.elementName}</span> },
     { title: '命中规则', dataIndex: 'matchedRule' },
-    { title: '上版价', dataIndex: 'previousPrice', align: 'right' as const, render: (v: number | null) => fmt(v) },
-    { title: '本版价', dataIndex: 'currentPrice', align: 'right' as const, render: (v: number | null) => fmt(v) },
+    { title: '上版价', dataIndex: 'previousPrice', align: 'right' as const, render: (v: DecimalString | null) => fmt(v) },
+    { title: '本版价', dataIndex: 'currentPrice', align: 'right' as const, render: (v: DecimalString | null) => fmt(v) },
     {
       title: '涨跌', dataIndex: 'changeRate', align: 'right' as const,
-      render: (v: number | null) => { const r = fmtRate(v); return <span style={{ color: r.color }}>{r.text}</span>; },
+      render: (v: DecimalString | null) => { const r = fmtRate(v); return <span style={{ color: r.color }}>{r.text}</span>; },
     },
-    { title: '该料号用量', dataIndex: 'usageQty', align: 'right' as const, render: (v: number | null) => v == null ? '—' : v },
-    { title: '对单价影响', dataIndex: 'unitPriceImpact', align: 'right' as const, render: (v: number | null) => fmt(v) },
+    { title: '该料号用量', dataIndex: 'usageQty', align: 'right' as const, render: (v: DecimalString | null) => v ?? '—' },
+    { title: '对单价影响', dataIndex: 'unitPriceImpact', align: 'right' as const, render: (v: DecimalString | null) => fmt(v) },
     {
       title: '标记', render: (_: unknown, r: ElementChangeDTO) => (
         <>
@@ -94,14 +101,14 @@ const ReviewDetailDrawer: React.FC<ReviewDetailDrawerProps> = ({ open, reviewId,
   const comparisonColumns = [
     { title: '#', width: 40, render: (_: unknown, __: ComparisonColumnResultDTO, i: number) => i + 1 },
     { title: '比对列', dataIndex: 'label' },
-    { title: '阈值', dataIndex: 'threshold', align: 'right' as const, render: (v: number) => fmt(v) },
-    { title: '报价·现', dataIndex: 'quoteCurrent', align: 'right' as const, render: (v: number | null) => fmt(v) },
-    { title: '报价·调整后', dataIndex: 'quoteAdjusted', align: 'right' as const, render: (v: number | null) => fmt(v) },
-    { title: '核价·现', dataIndex: 'costingCurrent', align: 'right' as const, render: (v: number | null) => fmt(v) },
-    { title: '核价·调整后', dataIndex: 'costingAdjusted', align: 'right' as const, render: (v: number | null) => fmt(v) },
+    { title: '阈值', dataIndex: 'threshold', align: 'right' as const, render: (v: DecimalString) => fmt(v) },
+    { title: '报价·现', dataIndex: 'quoteCurrent', align: 'right' as const, render: (v: DecimalString | null) => fmt(v) },
+    { title: '报价·调整后', dataIndex: 'quoteAdjusted', align: 'right' as const, render: (v: DecimalString | null) => fmt(v) },
+    { title: '核价·现', dataIndex: 'costingCurrent', align: 'right' as const, render: (v: DecimalString | null) => fmt(v) },
+    { title: '核价·调整后', dataIndex: 'costingAdjusted', align: 'right' as const, render: (v: DecimalString | null) => fmt(v) },
     {
       title: '差异', dataIndex: 'diffAdjusted', align: 'right' as const,
-      render: (v: number | null, r: ComparisonColumnResultDTO) => {
+      render: (v: DecimalString | null, r: ComparisonColumnResultDTO) => {
         // 主干用中性「缺数据」：原文案「缺核价数据」在 missingSide=QUOTE 时自相矛盾
         // （说缺核价数据、又说缺在报价侧），BOTH 同样别扭。改后三态都读得通：
         // 缺数据：报价侧 / 核价侧 / 两侧；missingSide 为空时退化为「—（缺数据）」。
@@ -120,7 +127,7 @@ const ReviewDetailDrawer: React.FC<ReviewDetailDrawerProps> = ({ open, reviewId,
     },
     { title: '创建日期', dataIndex: 'createdAt', render: (v: string) => v ? dayjs(v).format('YYYY-MM-DD') : '—' },
     { title: '状态', dataIndex: 'status' },
-    { title: '现小计', dataIndex: 'quoteSubtotalCurrent', align: 'right' as const, render: (v: number | null) => fmt(v) },
+    { title: '现小计', dataIndex: 'quoteSubtotalCurrent', align: 'right' as const, render: (v: DecimalString | null) => fmt(v) },
     {
       title: '调整后小计', dataIndex: 'quoteSubtotalAdjusted', align: 'right' as const,
       // repair-0807 FR-5：三态，不能塌成两态。
@@ -129,7 +136,7 @@ const ReviewDetailDrawer: React.FC<ReviewDetailDrawerProps> = ({ open, reviewId,
       //   adjustedComputed=true 但值为 null → 「—」（试算跑了却没拿到值 = 异常态，必须与"未试算"区分开）
       // 🚨 判据必须是 adjustedComputed 这个显式布尔，不能用 v == null 顶替——那会把
       // "试算失败"也说成"未试算"，混淆两种完全不同的状态。
-      render: (v: number | null, r: ReviewQuotationDTO) => {
+      render: (v: DecimalString | null, r: ReviewQuotationDTO) => {
         if (!r.adjustedComputed) {
           return <Tooltip title="仅对判断依据单试算，其余单据仅作参考"><span style={{ color: 'rgba(0,0,0,.35)' }}>未试算</span></Tooltip>;
         }
@@ -148,12 +155,13 @@ const ReviewDetailDrawer: React.FC<ReviewDetailDrawerProps> = ({ open, reviewId,
     },
   ];
 
-  const impactCheck = detail
-    ? (detail.quotations.find((q) => q.isBasis)?.quoteSubtotalAdjusted ?? null) != null
-      && (detail.quotations.find((q) => q.isBasis)?.quoteSubtotalCurrent ?? null) != null
-      ? (detail.quotations.find((q) => q.isBasis)!.quoteSubtotalAdjusted! - detail.quotations.find((q) => q.isBasis)!.quoteSubtotalCurrent!)
-      : null
+  const basisQuotation = detail?.quotations.find((q) => q.isBasis);
+  const impactCheck = basisQuotation?.quoteSubtotalAdjusted != null && basisQuotation.quoteSubtotalCurrent != null
+    ? normalizeDecimalString(toDecimal(basisQuotation.quoteSubtotalAdjusted).minus(basisQuotation.quoteSubtotalCurrent))
     : null;
+  const impactMatches = impactCheck != null && detail != null
+    ? toDecimal(impactCheck).minus(detail.elementImpactTotal).abs().lessThan('0.01')
+    : false;
 
   return (
     <Drawer
@@ -180,9 +188,9 @@ const ReviewDetailDrawer: React.FC<ReviewDetailDrawerProps> = ({ open, reviewId,
             <div style={{ marginTop: 8, fontSize: 12.5, color: 'rgba(0,0,0,.65)' }}>
               合计对单价影响：<b>{fmt(detail.elementImpactTotal)}</b>
               {impactCheck != null && (
-                <span style={{ marginLeft: 12, color: Math.abs(impactCheck - detail.elementImpactTotal) < 0.01 ? '#389e0d' : '#cf1322' }}>
+                <span style={{ marginLeft: 12, color: impactMatches ? '#389e0d' : '#cf1322' }}>
                   （财务自检：调整后报价 − 现报价 = {fmt(impactCheck)}
-                  {Math.abs(impactCheck - detail.elementImpactTotal) < 0.01 ? '，对得上 ✓' : '，⚠️ 对不上'}）
+                  {impactMatches ? '，对得上 ✓' : '，⚠️ 对不上'}）
                 </span>
               )}
             </div>

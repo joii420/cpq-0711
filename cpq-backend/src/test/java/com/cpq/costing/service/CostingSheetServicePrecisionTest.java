@@ -47,4 +47,18 @@ class CostingSheetServicePrecisionTest {
         assertTrue(result instanceof BigDecimal, "结果应为 BigDecimal（未被安全正则挡回 null），实际=" + result);
         assertEquals(0, new BigDecimal("10").compareTo((BigDecimal) result));
     }
+
+    @Test
+    void t0810_jexlPoint6_literalVariableDivisionAndLargeSignedMatrix() throws Exception {
+        assertDecimal("0.333333333333", invokeEvaluateInlineFormula("=[A]/[B]",
+                Map.of("A", BigDecimal.ONE, "B", new BigDecimal("3"))));
+        assertDecimal("98765431.123456789011", invokeEvaluateInlineFormula("=[A]+[B]",
+                Map.of("A", new BigDecimal("98765431.123456789012"),
+                        "B", new BigDecimal("-0.000000000001"))));
+    }
+
+    private static void assertDecimal(String expected, Object actual) {
+        assertTrue(actual instanceof BigDecimal, "actual=" + actual);
+        assertEquals(0, new BigDecimal(expected).compareTo((BigDecimal) actual), "actual=" + actual);
+    }
 }

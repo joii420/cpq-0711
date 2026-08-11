@@ -22,6 +22,7 @@ import SnapshotTab from './components/SnapshotTab';
 import BoundGlobalVariablesTab from './components/BoundGlobalVariablesTab';
 import type { SubmissionSnapshot } from '../../types/quotation-snapshot';
 import dayjs from 'dayjs';
+import { openHtmlDocument } from '../../utils/htmlDocument';
 
 const { Title } = Typography;
 
@@ -244,9 +245,20 @@ const QuotationDetail: React.FC = () => {
   };
 
   const handleExportHtml = async (values: any) => {
-    const fullUrl = `${window.location.origin}/api/cpq/quotations/${id}/export/html?showDiscount=${!!values.showDiscount}&showProcesses=${!!values.showProcesses}&showTabDetails=${!!values.showTabDetails}`;
-    window.open(fullUrl, '_blank');
-    setPdfDrawerOpen(false);
+    setActionLoading(true);
+    try {
+      const html = await quotationService.exportHtml(id!, {
+        showDiscount: !!values.showDiscount,
+        showProcesses: !!values.showProcesses,
+        showTabDetails: !!values.showTabDetails,
+      });
+      openHtmlDocument(html);
+      setPdfDrawerOpen(false);
+    } catch (e: any) {
+      message.error(e.message || '导出失败');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const handleExportExcel = async (values: any) => {
@@ -268,11 +280,19 @@ const QuotationDetail: React.FC = () => {
     }
   };
 
-  const handlePrint = () => {
-    const printUrl = `${window.location.origin}/api/cpq/quotations/${id}/export/html?showDiscount=true&showProcesses=true&showTabDetails=false`;
-    const win = window.open(printUrl, '_blank');
-    if (win) {
-      win.onload = () => win.print();
+  const handlePrint = async () => {
+    setActionLoading(true);
+    try {
+      const html = await quotationService.exportHtml(id!, {
+        showDiscount: true,
+        showProcesses: true,
+        showTabDetails: false,
+      });
+      openHtmlDocument(html, true);
+    } catch (e: any) {
+      message.error(e.message || '打印失败');
+    } finally {
+      setActionLoading(false);
     }
   };
 

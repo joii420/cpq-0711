@@ -14,6 +14,7 @@ import StatCard from '../../components/StatCard';
 import TemplateSidePanel from './TemplateSidePanel';
 import ConfiguratorPreview from '../../components/ConfiguratorPreview';
 import ValueEditDrawer from './ValueEditDrawer';
+import { formatDisplayDecimal, toDecimal, type DecimalString } from '../../utils/precision';
 
 type DrawerMode =
   | { type: 'editTemplate' }
@@ -462,8 +463,8 @@ const ConfiguratorTemplateEditor: React.FC = () => {
                         { title: '编号', dataIndex: 'code', width: 130, render: v => <code>{v}</code> },
                         { title: '显示名称', dataIndex: 'label' },
                         { title: '差价', dataIndex: 'priceDelta', width: 100,
-                          render: (v: number) => Number(v) > 0 ? <Tag color="orange">+¥{v}</Tag>
-                            : Number(v) < 0 ? <Tag color="green">¥{v}</Tag>
+                          render: (v: DecimalString) => toDecimal(v).greaterThan(0) ? <Tag color="orange">+¥{formatDisplayDecimal(v)}</Tag>
+                            : toDecimal(v).lessThan(0) ? <Tag color="green">¥{formatDisplayDecimal(v)}</Tag>
                             : <span style={{ color: '#999' }}>¥0</span> },
                         { title: '标签', width: 200, render: (_, v) => (
                           <Space size={[2, 2]} wrap>

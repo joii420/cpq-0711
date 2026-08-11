@@ -41,24 +41,24 @@ public class ConditionPredicateEvaluator {
                 || (!(o instanceof String) && String.valueOf(o).isBlank());
     }
 
-    private static Double num(Object o) {
+    private static java.math.BigDecimal num(Object o) {
         if (o == null) return null;
-        try { return Double.valueOf(String.valueOf(o).trim()); } catch (Exception e) { return null; }
+        try { return new java.math.BigDecimal(String.valueOf(o).trim()); } catch (Exception e) { return null; }
     }
 
     /** 相等口径：任一 blank → false（见 spec 求值语义）；两边可解析为数 → 数值比较；否则 trim 文本比较。 */
     private boolean valEquals(Object a, Object b) {
         if (isBlank(a) || isBlank(b)) return false;
-        Double na = num(a), nb = num(b);
-        if (na != null && nb != null) return na.doubleValue() == nb.doubleValue();
+        java.math.BigDecimal na = num(a), nb = num(b);
+        if (na != null && nb != null) return na.compareTo(nb) == 0;
         return String.valueOf(a).trim().equals(String.valueOf(b).trim());
     }
 
     /** 数值比较；任一不可解析/blank → null（调用方据此判 false）。 */
     private Integer cmp(Object a, Object b) {
         if (isBlank(a) || isBlank(b)) return null;
-        Double na = num(a), nb = num(b);
+        java.math.BigDecimal na = num(a), nb = num(b);
         if (na == null || nb == null) return null;
-        return Double.compare(na, nb);
+        return na.compareTo(nb);
     }
 }

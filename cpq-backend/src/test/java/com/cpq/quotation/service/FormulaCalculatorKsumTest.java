@@ -104,8 +104,8 @@ class FormulaCalculatorKsumTest {
             Map.of("料件", "Cu", "单价", 2),
             Map.of("料件", "Ni", "单价", 3));
         List<Map<String, Object>> wgjRows = List.of(
-            Map.of("来料", "X", "费用", 1.0),
-            Map.of("来料", "X", "费用", 0.5));
+            Map.of("来料", "X", "费用", new BigDecimal("1.0")),
+            Map.of("来料", "X", "费用", new BigDecimal("0.5")));
 
         Map<String, List<Map<String, Object>>> crossTabRows = new HashMap<>();
         crossTabRows.put(ELEM_ID, elemRows);
@@ -179,7 +179,7 @@ class FormulaCalculatorKsumTest {
     void targetRowValue_sub_propagates_componentSubtotals() throws Exception {
         String wgjSource = "wgj-source";
         List<Map<String, Object>> wgjRows = List.of(
-            Map.of("费用", 3.0));
+            Map.of("费用", new BigDecimal("3.0")));
 
         Map<String, List<Map<String, Object>>> crossTabRows = new HashMap<>();
         crossTabRows.put(wgjSource, wgjRows);
@@ -188,7 +188,7 @@ class FormulaCalculatorKsumTest {
         ctx.crossTabRows = crossTabRows;
         ctx.currentRowRaw = new HashMap<>();
         ctx.componentSubtotals = new HashMap<>();
-        ctx.componentSubtotals.put("COMP_A", 10.0);
+        ctx.componentSubtotals.put("COMP_A", new java.math.BigDecimal("10.0"));
 
         // token: SUM(wgjSource, match=[], targetExpr=[field(费用) + component_subtotal(COMP_A)])
         JsonNode tokens = om.readTree("[{"

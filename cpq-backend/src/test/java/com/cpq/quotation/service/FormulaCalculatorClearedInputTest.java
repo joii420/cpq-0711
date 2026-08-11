@@ -42,7 +42,7 @@ class FormulaCalculatorClearedInputTest {
     @DisplayName("T1: 显式清空 汇率='' → 金额小计 = 0（不回落 content=6.9755）")
     void t1_clearedInput_subtotalZero() {
         JsonNode editRows = j("[{\"rowKey\":\"0\",\"values\":{\"汇率\":\"\"}}]");
-        Map<String, BigDecimal> byCol = calc.computeTabSubtotalsByColumn(
+        Map<String, java.math.BigDecimal> byCol = calc.computeTabSubtotalsByColumn(
             j(FIELDS), j(FORMULAS), null, j(RKF), j(BASEROWS), editRows, Map.of()
         );
         assertEquals(0, byCol.getOrDefault("金额", BigDecimal.ZERO).compareTo(BigDecimal.ZERO),
@@ -52,7 +52,7 @@ class FormulaCalculatorClearedInputTest {
     @Test
     @DisplayName("T2: 键缺失（无 editRows）→ 金额小计 = content 兜底 6.9755")
     void t2_absentKey_usesContentDefault() {
-        Map<String, BigDecimal> byCol = calc.computeTabSubtotalsByColumn(
+        Map<String, java.math.BigDecimal> byCol = calc.computeTabSubtotalsByColumn(
             j(FIELDS), j(FORMULAS), null, j(RKF), j(BASEROWS), j("[]"), Map.of()
         );
         assertEquals(0, byCol.getOrDefault("金额", BigDecimal.ZERO).compareTo(new BigDecimal("6.9755")),

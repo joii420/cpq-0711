@@ -8,6 +8,19 @@ import { templateService } from '../../services/templateService';
 import type { CostingTemplateColumn } from '../../services/costingTemplateService';
 import { batchEvaluate, buildEvalKey } from '../../services/formulaService';
 import type { LineItem } from './QuotationStep2';
+import {
+  evaluateArithmetic,
+  isDecimalString,
+  normalizeDecimalString,
+  toCalculationString,
+  type DecimalString,
+} from '../../utils/precision';
+import { tryParseSnapshotJsonLossless } from '../../utils/losslessJson';
+import {
+  normalizePathFormulaResult,
+  PrecisionIngressError,
+  type PathFormulaResult,
+} from './pathFormulaResult';
 
 /**
  * task-0723：旧「核价模板」CRUD 类型 CostingTemplate 已随 costingTemplateService 下线。
@@ -127,30 +140,25 @@ export function evaluateFormula(
   formula: string | undefined,
   rowCellValues: Record<string, any>,
   rowVariableValues: Record<string, any>,
-): number | string {
+): DecimalString | string {
   if (!formula) return '';
   let expr = formula.trim();
   if (expr.startsWith('=')) expr = expr.slice(1);
   expr = expr.replace(/\[([A-Za-z][A-Za-z0-9_]*)\]/g, (_, k) => {
     const v = rowCellValues[k];
-    if (typeof v === 'number') return String(v);
-    const n = parseFloat(v as any);
-    return isNaN(n) ? '0' : String(n);
+    return isDecimalString(v) ? normalizeDecimalString(v) : '0';
   });
   expr = expr.replace(/\{([^}]+)\}/g, (_, k) => {
     const code = (k as string).trim().toLowerCase();
     const v = rowVariableValues[code];
-    if (typeof v === 'number') return String(v);
-    const n = parseFloat(v as any);
-    return isNaN(n) ? '0' : String(n);
+    return isDecimalString(v) ? normalizeDecimalString(v) : '0';
   });
   try {
     if (!/^[\d+\-*/().,\s%<>=!&|?:]*$/.test(expr)) {
       return '—';
     }
-    // eslint-disable-next-line no-new-func
-    const v = Function(`"use strict"; return (${expr});`)();
-    return typeof v === 'number' && Number.isFinite(v) ? v : '—';
+    const value = evaluateArithmetic(expr);
+    return value ? toCalculationString(value) : '—';
   } catch {
     return '—';
   }
@@ -158,7 +166,8 @@ export function evaluateFormula(
 
 export function formatPathValue(v: any): any {
   if (v == null) return null;
-  if (typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean') return v;
+  if (typeof v === 'number') return null;
+  if (typeof v === 'string' || typeof v === 'boolean') return v;
   if (Array.isArray(v)) {
     if (v.length === 0) return null;
     return v.length === 1 ? formatPathValue(v[0]) : `${formatPathValue(v[0])}（共${v.length}项）`;
@@ -166,7 +175,7 @@ export function formatPathValue(v: any): any {
   if (typeof v === 'object') {
     if (v.type === 'jsonb' && typeof v.value === 'string') {
       try {
-        const parsed = JSON.parse(v.value);
+        const parsed = tryParseSnapshotJsonLossless<any>(v.value);
         if (Array.isArray(parsed)) {
           if (parsed.length === 0) return null;
           return parsed.map((it: any) => formatPathValue(it) ?? '').filter(Boolean).join(', ');
@@ -195,7 +204,7 @@ export function useLinkedExcelRows(params: UseLinkedExcelRowsParams): UseLinkedE
   const [configShape, setConfigShape] = useState<'v2' | 'legacy' | 'empty'>('empty');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [pathCache, setPathCache] = useState<Record<string, any>>({});
+  const [pathCache, setPathCache] = useState<Record<string, PathFormulaResult>>({});
 
   useEffect(() => {
     if (!linkedTemplateId) {
@@ -289,7 +298,10 @@ export function useLinkedExcelRows(params: UseLinkedExcelRowsParams): UseLinkedE
             const item = itemByKey[reqKey];
             const cacheK = pathCacheKey(t.partNo, t.path);
             if (item && item.status === 'OK' && item.data?.success) {
-              next[cacheK] = item.data.result ?? null;
+              next[cacheK] = normalizePathFormulaResult(
+                item.data.result,
+                `batchEvaluate(${cacheK})`,
+              );
             } else {
               next[cacheK] = null;
             }
@@ -299,6 +311,10 @@ export function useLinkedExcelRows(params: UseLinkedExcelRowsParams): UseLinkedE
       })
       .catch((err) => {
         if (controller.signal.aborted || (err && (err as any).code === 'ERR_CANCELED')) return;
+        if (err instanceof PrecisionIngressError) {
+          setError(err.message);
+          return;
+        }
         setPathCache((prev) => {
           const next = { ...prev };
           for (const t of missing) {

@@ -15,7 +15,15 @@ import type { ColumnsType } from 'antd/es/table';
 import type { LineItem } from './QuotationStep2';
 import type { DriverExpansionMap } from './useDriverExpansions';
 import { computeLineDiscount, extractDiscountSources, patchVisibleLineItem } from './lineDiscount';
-import { toDecimal, roundToDisplay } from '../../utils/precision';
+import {
+  isDecimalString,
+  normalizeDecimalString,
+  sumDecimal,
+  toCalculationString,
+  toDecimal,
+  type DecimalString,
+  type DecimalValue,
+} from '../../utils/precision';
 import { formatNumber } from '../../utils/formatNumber';
 
 const { Text } = Typography;
@@ -52,8 +60,8 @@ const QuotationStep3: React.FC<Props> = ({
   // 单行重算：折扣来源 / 折扣率 / 年用量任一变化时调用
   const recomputeRow = (li: LineItem): Partial<LineItem> => {
     const source = li.discountSource ?? 'SUBTOTAL';
-    const rate = li.discountRateApplied ?? 0;
-    const qty = li.annualVolume ?? 0;
+    const rate = li.discountRateApplied ?? '0';
+    const qty = li.annualVolume ?? '0';
     const d = computeLineDiscount(li, driverExpansions, customerId, source, rate, qty, globalVariableDefs);
     return {
       lineUnitPrice: d.original,
@@ -89,7 +97,7 @@ const QuotationStep3: React.FC<Props> = ({
       const next = prev.map(li => {
         if (li.compositeType === 'PART') return li;
         try {
-          const seeded = li.annualVolume == null ? { ...li, annualVolume: 1 } : li;
+          const seeded = li.annualVolume == null ? { ...li, annualVolume: '1' } : li;
           const patch = recomputeRow(seeded);
           const dirty =
             seeded !== li ||
@@ -129,18 +137,23 @@ const QuotationStep3: React.FC<Props> = ({
       key: 'unitPrice',
       width: 130,
       align: 'right',
-      render: (_v, li) => formatCurrency(li.lineUnitPrice ?? li.subtotal ?? 0, baseCurrency),
+      render: (_v, li) => formatCurrency(li.lineUnitPrice ?? li.subtotal ?? '0', baseCurrency),
     },
     {
       title: '年用量',
       key: 'annualVolume',
       width: 130,
       render: (_v, li, idx) => (
-        <InputNumber
+        <InputNumber<string>
           value={li.annualVolume}
-          min={0}
+          stringMode
+          min="0"
           style={{ width: '100%' }}
-          onChange={v => patchRow(idx, { annualVolume: v ?? 0 })}
+          onChange={v => patchRow(idx, {
+            annualVolume: typeof v === 'string' && isDecimalString(v)
+              ? normalizeDecimalString(v)
+              : '0',
+          })}
           placeholder="0"
         />
       ),
@@ -164,13 +177,18 @@ const QuotationStep3: React.FC<Props> = ({
       key: 'discountRate',
       width: 110,
       render: (_v, li, idx) => (
-        <InputNumber
+        <InputNumber<string>
           value={li.discountRateApplied}
-          min={0}
-          max={100}
-          step={0.5}
+          stringMode
+          min="0"
+          max="100"
+          step="0.5"
           style={{ width: '100%' }}
-          onChange={v => patchRow(idx, { discountRateApplied: v ?? 0 })}
+          onChange={v => patchRow(idx, {
+            discountRateApplied: typeof v === 'string' && isDecimalString(v)
+              ? normalizeDecimalString(v)
+              : '0',
+          })}
           placeholder="0"
         />
       ),
@@ -181,7 +199,7 @@ const QuotationStep3: React.FC<Props> = ({
       width: 110,
       align: 'right',
       render: (_v, li) => (
-        <Text type="warning">{formatCurrency(li.lineDiscountAmount ?? 0, baseCurrency)}</Text>
+        <Text type="warning">{formatCurrency(li.lineDiscountAmount ?? '0', baseCurrency)}</Text>
       ),
     },
     {
@@ -190,7 +208,7 @@ const QuotationStep3: React.FC<Props> = ({
       width: 130,
       align: 'right',
       render: (_v, li) => (
-        <Text strong>{formatCurrency(li.lineFinalPrice ?? li.lineUnitPrice ?? li.subtotal ?? 0, baseCurrency)}</Text>
+        <Text strong>{formatCurrency(li.lineFinalPrice ?? li.lineUnitPrice ?? li.subtotal ?? '0', baseCurrency)}</Text>
       ),
     },
     {
@@ -199,7 +217,7 @@ const QuotationStep3: React.FC<Props> = ({
       width: 140,
       align: 'right',
       render: (_v, li) => (
-        <Text strong style={{ color: '#0958d9' }}>{formatCurrency(li.lineTotalAmount ?? 0, baseCurrency)}</Text>
+        <Text strong style={{ color: '#0958d9' }}>{formatCurrency(li.lineTotalAmount ?? '0', baseCurrency)}</Text>
       ),
     },
     // 「规则」列暂时移除（2026-07-16 需求）：折扣规则引擎未接通，列里恒显示「未匹配」无信息量。
@@ -209,20 +227,19 @@ const QuotationStep3: React.FC<Props> = ({
   // task-0801（链路二，最高优先级）：单价 × 年用量（可达几十万件）再跨行累加 = 亿级金额，
   // 15 位有效数字已达 double 极限 —— 全程 Decimal，禁止中途 .toNumber()/隐式 number 运算，
   // 只在最终展示时 roundToDisplay（DISPLAY_SCALE=6）。禁止参照旧写法用 number `*`/`+=`。
-  const grandOriginal = roundToDisplay(
-    visibleItems.reduce(
-      (sum, li) => sum.plus(
-        toDecimal(li.lineUnitPrice ?? li.subtotal ?? 0).times(toDecimal(li.annualVolume ?? 0)),
+  const grandOriginal = toCalculationString(
+    sumDecimal(visibleItems.map(li =>
+      toDecimal(li.lineUnitPrice ?? li.subtotal ?? '0').times(
+        toDecimal(li.annualVolume ?? '0'),
       ),
-      toDecimal(0),
-    ),
+    )),
   );
   // computeLineDiscount 返回的 lineDiscountAmount 已含 ×年用量，直接求和（仍需全程 Decimal）
-  const grandDiscount = roundToDisplay(
-    visibleItems.reduce((sum, li) => sum.plus(toDecimal(li.lineDiscountAmount ?? 0)), toDecimal(0)),
+  const grandDiscount = toCalculationString(
+    sumDecimal(visibleItems.map(li => li.lineDiscountAmount ?? '0')),
   );
-  const grandTotal = roundToDisplay(
-    visibleItems.reduce((sum, li) => sum.plus(toDecimal(li.lineTotalAmount ?? 0)), toDecimal(0)),
+  const grandTotal = toCalculationString(
+    sumDecimal(visibleItems.map(li => li.lineTotalAmount ?? '0')),
   );
 
   return (
@@ -291,9 +308,9 @@ const QuotationStep3: React.FC<Props> = ({
 
 // task-0801：不再固定 2 位 toLocaleString，改走 formatNumber（DISPLAY_SCALE=6 兜底去尾零），
 // 保留原有货币符号选择逻辑（CNY ¥ / USD $ / 其它币种代码前缀）。
-function formatCurrency(value: number, currency: string): string {
+function formatCurrency(value: DecimalValue, currency: string): string {
   const symbol = currency === 'CNY' ? '¥' : currency === 'USD' ? '$' : `${currency} `;
-  return `${symbol}${formatNumber(value || 0, { isComputed: true }) ?? '0'}`;
+  return `${symbol}${formatNumber(value, { isComputed: true }) ?? '0'}`;
 }
 
 export default QuotationStep3;

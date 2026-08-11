@@ -292,7 +292,9 @@ public class PriceAdjustStrategyService {
         return ((Number) em.createNativeQuery(
                 "SELECT count(DISTINCT q.id) FROM quotation q JOIN customer c ON c.id = q.customer_id " +
                 "JOIN quotation_line_item li ON li.quotation_id = q.id " +
-                "WHERE c.code = :cno AND q.status = ANY(:statuses) AND li.product_part_no_snapshot = ANY(:mnos)")
+                "WHERE c.code = :cno AND q.status = ANY(:statuses) " +
+                "AND li.product_part_no_snapshot = ANY(:mnos) " +
+                "AND (li.composite_type IS NULL OR li.composite_type <> 'PART')")
             .setParameter("cno", customerNo)
             .setParameter("statuses", MaterialVersionUpgradeService.ACTIVE_STATUSES.toArray(new String[0]))
             .setParameter("mnos", materialNos.toArray(new String[0]))

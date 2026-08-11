@@ -1,5 +1,7 @@
 package com.cpq.customer.dto;
 
+import com.cpq.common.DecimalStringDeserializer;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import jakarta.validation.constraints.NotBlank;
 
 import java.math.BigDecimal;
@@ -19,6 +21,7 @@ public class CreateCustomerRequest {
     public UUID productCategoryId;
     public String region;
     public String address;
+    @JsonDeserialize(using = DecimalStringDeserializer.class)
     public BigDecimal creditLimit;
     public String paymentMethod;
     public String remarks;

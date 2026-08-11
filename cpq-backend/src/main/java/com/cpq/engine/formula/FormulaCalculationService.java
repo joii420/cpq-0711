@@ -237,10 +237,10 @@ public class FormulaCalculationService {
             // task-0801 B3 Step3：引擎已配 BigDecimal 算术，result 通常直接是 BigDecimal；
             // 优先直接强转，避免多一次字符串往返；不再 setScale(4) 截断（呈现边界由 B5 统一规整）。
             if (result instanceof BigDecimal bd) {
-                return bd;
+                return PrecisionPolicy.roundForCalculation(bd);
             }
             if (result instanceof Number) {
-                return PrecisionPolicy.of(result);
+                return PrecisionPolicy.roundForCalculation(PrecisionPolicy.of(result));
             }
             return BigDecimal.ZERO;
         } catch (Exception e) {

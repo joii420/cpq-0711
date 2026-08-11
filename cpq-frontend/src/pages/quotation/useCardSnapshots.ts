@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { bnfDriverLookupKey } from './useDriverExpansions';
+import { tryParseSnapshotJsonLossless } from '../../utils/losslessJson';
 import type {
   CardStructure,
   CardStructureTab,
@@ -402,12 +403,7 @@ export function getByKeyWithLegacyFallback<T>(
 }
 
 function safeParse<T>(json: string | null | undefined): T | null {
-  if (!json || typeof json !== 'string' || !json.trim()) return null;
-  try {
-    return JSON.parse(json) as T;
-  } catch {
-    return null;
-  }
+  return tryParseSnapshotJsonLossless<T>(json);
 }
 
 function findKeyedValues(

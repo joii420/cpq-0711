@@ -28,7 +28,7 @@ class CardSnapshotSubtotalTest {
         var baseRows = M.createArrayNode();
         var r = M.createObjectNode();
         r.set("driverRow", M.createObjectNode());
-        var bdv = M.createObjectNode(); bdv.put("金额", 7); r.set("basicDataValues", bdv);
+        var bdv = M.createObjectNode(); bdv.put("金额", new java.math.BigDecimal("7")); r.set("basicDataValues", bdv);
         baseRows.add(r);
         baseRowsByComp.put("c1", baseRows);
 

@@ -17,6 +17,18 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { loginAsAdmin, isBackendUp } from './fixtures/auth';
+import {
+  PRECISION_PARTS,
+  assertAllTabsSettled,
+  assertFixtureQuotationLines,
+  assertVisibleProductCards,
+  copyPrecisionSeed,
+  ensureCardValues,
+  getQuotation,
+  openQuotationStep2,
+  productCardByPartNo,
+  saveDraft,
+} from './fixtures/precision';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirnameLocal = path.dirname(__filename);
@@ -129,8 +141,8 @@ test.beforeAll(async () => { backendUp = await isBackendUp(); });
 // 2026-06-18 Task F 更新：在此用例内额外监听 POST refresh-card-snapshot，
 // 断言整个新建+添加产品流程中不应触发自动重刷（B1 删除后的回归保障）。
 // ═══════════════════════════════════════════════════════════════════════
-test('报价单流程: 苏州西门子 + 报价模板0608 v1.10 + 10110002(渲染层无回归)', async ({ page }) => {
-  test.skip(!backendUp, '后端未启动');
+test('LEGACY SIMPLE smoke · 报价单流程: 苏州西门子 + 报价模板0608 v1.10 + 10110002(渲染层无回归)', async ({ page }) => {
+  if (!backendUp) throw new Error('后端未启动；TC-075 SIMPLE 不允许跳过');
 
   // 控制台错误监控
   const consoleErrors: string[] = [];
@@ -345,19 +357,20 @@ test('报价单流程: 苏州西门子 + 报价模板0608 v1.10 + 10110002(渲�
     // 精确匹配文本 (避免 "选配-工序列表" 包含 "工序" 的子串误命中)
     const tab = tabs.filter({ hasText: new RegExp(`^${tabName}$`) }).first();
     const visible = await tab.isVisible().catch(() => false);
-    if (!visible) {
-      console.log(`  [Tab '${tabName}'] ❌ 不可见 — 跳过`);
-      continue;
-    }
+    expect(visible, `TC-075 SIMPLE: 页签「${tabName}」必须可见`).toBe(true);
     await tab.click();
     await page.waitForTimeout(2200);  // 等数据加载
     await shot(page, `tab-${tabName}`);
     const loadCount = await countLoading(page, `tab-${tabName}`);
+    expect(loadCount, `TC-075 SIMPLE: 页签「${tabName}」加载中必须为0`).toBe(0);
 
     // 抓表格行 + 单元格内容
     const rows = page.locator('.ant-table-row');
     const rowCount = await rows.count();
     console.log(`  [Tab '${tabName}'] rows=${rowCount}, '加载中'=${loadCount}`);
+    expect(rowCount, `TC-075 SIMPLE: 页签「${tabName}」不应空白`).toBeGreaterThan(0);
+    const tabText = (await rows.first().innerText()).replace(/\s+/g, ' ').trim();
+    expect(tabText, `TC-075 SIMPLE: 页签「${tabName}」首行不应清零或只剩占位`).not.toMatch(/^(?:—|-|0|加载中|\s)+$/);
     for (let i = 0; i < Math.min(rowCount, 3); i++) {
       const cells = await rows.nth(i).locator('td').allInnerTexts();
       console.log(`    row[${i}]: ${cells.map(c => `"${c.trim().slice(0, 30)}"`).join(' | ')}`);
@@ -421,6 +434,7 @@ test('报价单流程: 苏州西门子 + 报价模板0608 v1.10 + 10110002(渲�
       .waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
     const reopenLoading = await countLoading(page, 'reopen-settled');
     console.log(`[lazy-card] reopen '加载中' count = ${reopenLoading} (期望 0)`);
+    expect(reopenLoading, 'TC-075 SIMPLE: 重开后加载中必须为0').toBe(0);
 
     // 核心断言: 打开阶段对 batch-expand / batch-evaluate 的请求数 = 0(风暴已消失)
     await expect
@@ -440,6 +454,7 @@ test('报价单流程: 苏州西门子 + 报价模板0608 v1.10 + 10110002(渲�
 
   await shot(page, 'final');
   console.log(`\n=== '加载中' final count: ${loadingFinal} (期望 0) ===`);
+  expect(loadingFinal, 'TC-075 SIMPLE: 最终加载中必须为0').toBe(0);
 });
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -604,4 +619,48 @@ test('TC-F2: 显式刷新才触发 refresh-card-snapshot', async ({ page }) => {
 
   await shot(page, 'tc-f2-final');
   console.log('\n[TC-F2] ✅ 通过: 显式刷新触发 1 次 refresh-card-snapshot，后端返回 2xx');
+});
+
+test('TC-075 SIMPLE · Stage H 确定性精度单保存/刷新/重开后所有 Tab 稳定', async ({ page }) => {
+  if (!backendUp) throw new Error('后端未启动；TC-075 SIMPLE 不允许跳过');
+  await loginAsAdmin(page);
+  const quotationId = await copyPrecisionSeed(page);
+
+  await openQuotationStep2(page, quotationId);
+  await assertVisibleProductCards(page, [PRECISION_PARTS.simple]);
+  let card = await productCardByPartNo(page, PRECISION_PARTS.simple);
+  const initialCardState = await assertAllTabsSettled(page, card, {
+    exactRowsPerTab: 2,
+    verifyStableRows: true,
+  });
+  const initialFingerprint = assertFixtureQuotationLines(await getQuotation(page, quotationId), false);
+
+  await saveDraft(page);
+  await ensureCardValues(page, quotationId);
+  expect(
+    assertFixtureQuotationLines(await getQuotation(page, quotationId), false),
+    '保存并物化后 line 顺序、父子关系及报价/核价 12 位快照不得变化',
+  ).toEqual(initialFingerprint);
+
+  await page.reload();
+  await openQuotationStep2(page, quotationId);
+  await assertVisibleProductCards(page, [PRECISION_PARTS.simple]);
+  card = await productCardByPartNo(page, PRECISION_PARTS.simple);
+  const refreshedCardState = await assertAllTabsSettled(page, card, {
+    exactRowsPerTab: 2,
+    verifyStableRows: true,
+  });
+  expect(refreshedCardState, '刷新后两个 Tab 的行数、精度值和稳定值必须逐项不变').toEqual(initialCardState);
+  expect(assertFixtureQuotationLines(await getQuotation(page, quotationId), false)).toEqual(initialFingerprint);
+
+  await page.goto('/quotations');
+  await openQuotationStep2(page, quotationId);
+  await assertVisibleProductCards(page, [PRECISION_PARTS.simple]);
+  card = await productCardByPartNo(page, PRECISION_PARTS.simple);
+  const reopenedCardState = await assertAllTabsSettled(page, card, {
+    exactRowsPerTab: 2,
+    verifyStableRows: true,
+  });
+  expect(reopenedCardState, '离开重开后两个 Tab 的行数、精度值和稳定值必须逐项不变').toEqual(initialCardState);
+  expect(assertFixtureQuotationLines(await getQuotation(page, quotationId), false)).toEqual(initialFingerprint);
 });

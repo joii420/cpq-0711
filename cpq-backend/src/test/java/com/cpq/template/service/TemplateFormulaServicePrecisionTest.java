@@ -51,4 +51,25 @@ class TemplateFormulaServicePrecisionTest {
         Object nullLiteral = invokePrivate("toNumericLiteral", new Class<?>[]{Object.class}, new Object[]{null});
         assertEquals("0B", nullLiteral);
     }
+
+    @Test
+    void t0810_jexlPoint3_literalVariableFunctionDivisionAndLargeSignedMatrix() throws Exception {
+        assertDecimal("0.3", invokePrivate("evalRowExpression",
+                new Class<?>[]{String.class, Map.class}, "0.1+0.2", Map.of()));
+        assertDecimal("0.333333333333", invokePrivate("evalRowExpression",
+                new Class<?>[]{String.class, Map.class}, "a/b",
+                Map.of("a", BigDecimal.ONE, "b", new BigDecimal("3"))));
+        assertDecimal("1.234567891235", invokePrivate("evalRowExpression",
+                new Class<?>[]{String.class, Map.class}, "ABS(value)",
+                Map.of("value", new BigDecimal("-1.234567891235"))));
+        assertDecimal("98765431.123456789011", invokePrivate("evalRowExpression",
+                new Class<?>[]{String.class, Map.class}, "a+b",
+                Map.of("a", new BigDecimal("98765431.123456789012"),
+                        "b", new BigDecimal("-0.000000000001"))));
+    }
+
+    private static void assertDecimal(String expected, Object actual) {
+        assertTrue(actual instanceof BigDecimal, "actual=" + actual);
+        assertEquals(0, new BigDecimal(expected).compareTo((BigDecimal) actual), "actual=" + actual);
+    }
 }

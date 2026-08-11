@@ -1,5 +1,6 @@
 package com.cpq.formula.resource;
 
+import com.cpq.common.DecimalRequestValidator;
 import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.common.security.RoleAllowed;
@@ -98,6 +99,8 @@ public class FormulaEvaluateResource {
         if (req == null || req.expression == null || req.expression.isBlank()) {
             return ApiResponse.success(EvaluateResponse.error("PARSE_ERROR", "expression 不能为空"));
         }
+        DecimalRequestValidator.rejectNumericTokens(req.bindings, "bindings");
+        DecimalRequestValidator.rejectNumericTokens(req.driverRow, "driverRow");
         if (httpReq != null) {
             String referer = httpReq.getHeader("Referer");
             String ua = httpReq.getHeader("User-Agent");
@@ -196,13 +199,21 @@ public class FormulaEvaluateResource {
     // -------------------------------------------------------------------------
 
     private EvaluateResponse doEvaluate(EvaluateRequest req) {
+        var normalizedBindings = DecimalRequestValidator.normalizeDecimalStrings(
+                req.bindings, "bindings");
+        var normalizedDriverRow = DecimalRequestValidator.normalizeDecimalStrings(
+                req.driverRow, "driverRow");
         try {
             EvaluationContext.Builder builder = EvaluationContext.builder()
                     .dataLoader(dataLoader);
             if (req.customerId != null) builder.customerId(req.customerId);
             if (req.partNo != null && !req.partNo.isBlank()) builder.partNo(req.partNo);
-            if (req.bindings != null) builder.bindings(req.bindings);
-            if (req.driverRow != null && !req.driverRow.isEmpty()) builder.driverRow(req.driverRow);
+            if (normalizedBindings != null) {
+                builder.bindings(normalizedBindings);
+            }
+            if (normalizedDriverRow != null && !normalizedDriverRow.isEmpty()) {
+                builder.driverRow(normalizedDriverRow);
+            }
 
             Object result = formulaEngine.evaluate(req.expression, builder.build());
 

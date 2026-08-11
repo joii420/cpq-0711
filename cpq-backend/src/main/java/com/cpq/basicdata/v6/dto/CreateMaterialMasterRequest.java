@@ -1,5 +1,7 @@
 package com.cpq.basicdata.v6.dto;
 
+import com.cpq.common.DecimalStringDeserializer;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -37,6 +39,7 @@ public class CreateMaterialMasterRequest {
     @Size(max = 50)
     public String usageProperty;
 
+    @JsonDeserialize(using = DecimalStringDeserializer.class)
     public BigDecimal unitWeight;
 
     @Size(max = 20)

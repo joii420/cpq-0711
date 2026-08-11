@@ -1,4 +1,5 @@
 import api from './api';
+import type { DecimalString } from '../utils/precision';
 
 export interface GlobalVariableDefinition {
   code: string;
@@ -20,7 +21,7 @@ export interface GlobalVariableDefinition {
 
 export interface GlobalVariableKeyOption {
   key_values: Record<string, any>;
-  value: number | string | null;
+  value: DecimalString | null;
   label: string;
 }
 
@@ -29,8 +30,8 @@ export interface ChangeLogEntry {
   varCode: string;
   keyId: string;
   action: 'INSERT' | 'UPDATE' | 'DELETE';
-  oldValue: number | null;
-  newValue: number | null;
+  oldValue: DecimalString | null;
+  newValue: DecimalString | null;
   changedBy: string | null;
   changedByName: string | null;
   note: string | null;
@@ -52,7 +53,7 @@ export const globalVariableService = {
   getValue: (code: string, keyParams: Record<string, string>) =>
     api.get(`/global-variables/${code}/value`, { params: keyParams }) as Promise<any>,
   /** V106: Upsert 一条明细 (写入物理表当前默认 PUBLISHED 版本). 二次确认应在 UI 层做 */
-  upsertEntry: (code: string, body: { keyValues: Record<string, any>; value: number; note?: string }) =>
+  upsertEntry: (code: string, body: { keyValues: Record<string, any>; value: DecimalString; note?: string }) =>
     api.post(`/global-variables/${code}/entries`, body) as Promise<any>,
   /** V106: 删除明细行 */
   deleteEntry: (code: string, body: { keyValues: Record<string, any>; note?: string }) =>

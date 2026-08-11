@@ -24,7 +24,7 @@ export interface CostingSummaryOverride {
   targetKind: 'ELEMENT' | 'MATERIAL' | 'EXCHANGE';
   targetKey: string;
   fieldName: string;
-  overrideValue: number;
+  overrideValue: string;
   notes?: string;
 }
 
@@ -33,7 +33,7 @@ export interface CostingSummaryResult {
   summaryId?: string;
   metricCode: string;
   metricLabel?: string;
-  value?: number;
+  value?: string;
   currency?: string;
   formulaUsed?: string;
   sortOrder?: number;

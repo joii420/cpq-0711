@@ -1,12 +1,14 @@
 // Configure Product types (matches backend DTOs in com.cpq.configure.dto)
 
+import type { DecimalString } from '../utils/precision';
+
 export type ProductType = 'SIMPLE' | 'COMPOSITE';
 export type PartMode = 'existing' | 'custom';
 export type CompositeType = 'SIMPLE' | 'COMPOSITE' | 'PART';
 
 export interface ElementOverride {
   elementCode: string;
-  pct: number;
+  pct: DecimalString;
 }
 
 export interface PartRequest {
@@ -21,11 +23,11 @@ export interface PartRequest {
    * 不再是 `process`(V4 表) 的 UUID。
    */
   processNos?: string[];
-  unitWeightGrams?: number;
+  unitWeightGrams?: DecimalString;
   /** 工序隔离键：SIMPLE 场景与顶层 tempId 同值，COMPOSITE 场景每个子件独立 UUID */
   quotationLineItemId?: string;
   /** 配件组成用量（仅 COMPOSITE 子件用），写入 material_bom_item.composition_qty。正整数，默认 1。 */
-  quantity?: number;
+  quantity?: DecimalString;
 }
 
 export interface CompositeProcessRequest {
@@ -70,7 +72,7 @@ export interface LookupFingerprintRequest {
 }
 
 export interface LookupFingerprintSnapshot {
-  unitWeightGrams?: number;
+  unitWeightGrams?: DecimalString;
   processes: Array<{ processCode: string; seqNo: number; name?: string }>;
   compositeProcesses: Array<{
     defCode: string;
@@ -149,14 +151,14 @@ export interface SelDetailRow {
   /** 材质中文名，明细表列表展示用。 */
   recipeLabel: string;
   /** 元素含量覆盖值（elementCode → pct）。 */
-  elementOverrides: Record<string, number>;
+  elementOverrides: Record<string, DecimalString>;
   /** 值 = `process_master.process_no`（选配候选 key 原样存储，见 `PartRequest.processNos`）。 */
   processNos: string[];
   /** 工序中文名，明细表列表展示用（与 processNos 同序）。 */
   processLabels: string[];
   /** 默认 1。 */
-  quantity: number;
-  unitWeightGrams: number | null;
+  quantity: DecimalString;
+  unitWeightGrams: DecimalString | null;
 }
 
 /** 组合工艺条件区块 · 单条选择的 UI 状态（明细表 Σqty≥2 时可选）。 */

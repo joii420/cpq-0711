@@ -2285,18 +2285,18 @@ describe('WYSIWYG: 整页签总计 [页签(总计)] 与小计列 [页签.列] �
     // 各装配点登记 code#__amount_total__ = Σ金额列(=10)；裸键 COMP_RL = Σ所有小计列(=99)；
     // 首列 COMP_RL#金额(=1)。求值应取哨兵键 10。
     const subtotals = {
-      'COMP_RL#__amount_total__': 10,
-      'COMP_RL#金额': 1,
-      COMP_RL: 99,
+      'COMP_RL#__amount_total__': '10',
+      'COMP_RL#金额': '1',
+      COMP_RL: '99',
     };
-    expect(evaluateExpression(tok as any, {}, subtotals)).toBe(10);
+    expect(evaluateExpression(tok as any, {}, subtotals)).toBe('10');
   });
 
   it('BL-0017 裸键不变：previous_row_subtotal/裸键消费者读到的 COMP_RL 仍是 Σ小计列', () => {
     // 哨兵方案不动裸键 —— 直接断言裸键引用（component_code 无 value）仍取裸键值，与修复前一致。
     const bareRef: FormulaToken[] = [{ type: 'component_subtotal', component_code: 'COMP_RL' }];
-    const subtotals = { 'COMP_RL#__amount_total__': 10, COMP_RL: 99 };
-    expect(evaluateExpression(bareRef as any, {}, subtotals)).toBe(99);
+    const subtotals = { 'COMP_RL#__amount_total__': '10', COMP_RL: '99' };
+    expect(evaluateExpression(bareRef as any, {}, subtotals)).toBe('99');
   });
 
   it('整页签总计往返 [COMP_RL(总计)] → [回料(总计)]；小计列往返 [COMP_RL.金额] → [回料.金额]', () => {
@@ -2318,11 +2318,11 @@ describe('WYSIWYG: 整页签总计 [页签(总计)] 与小计列 [页签.列] �
     const without: FormulaToken[] = [
       { type: 'component_subtotal', component_code: 'COMP_RL', value: '金额', tab_name: '金额' },
     ];
-    const subtotals = { 'COMP_RL#金额': 5, COMP_RL: 99 };
+    const subtotals = { 'COMP_RL#金额': '5', COMP_RL: '99' };
     const r1 = evaluateExpression(withMark as any, {}, subtotals);
     const r2 = evaluateExpression(without as any, {}, subtotals);
     expect(r1).toBe(r2);
-    expect(r1).toBe(5); // 命中列键，而非裸键 99 —— 求值逐字节与修复前一致
+    expect(r1).toBe('5'); // 命中列键，而非裸键 99 —— 求值逐字节与修复前一致
   });
 
   it('tabDefs 缺失时带标记 token 序列化兜底为 [<component_code>(总计)]', () => {

@@ -8,8 +8,23 @@ import { extractErrorPayload } from './errorPayload';
 import type {
   VersionDTO, VersionItemDTO, PendingVersionExistsPayload, StrategyNoElementsPayload,
 } from '../../../types/price-adjust';
+import { formatNumber } from '../../../utils/formatNumber';
+import { formatDisplayDecimal, toDecimal, type DecimalString } from '../../../utils/precision';
 
 const PAGE_SIZE = 10;
+
+const formatPrice = (value: DecimalString | null): string =>
+  formatNumber(value, { isComputed: true, decimals: 2 }) ?? '—';
+
+function formatRate(value: DecimalString | null): { text: string; color?: string } {
+  if (value == null) return { text: '—' };
+  const rate = toDecimal(value);
+  const pct = formatDisplayDecimal(rate.times('100'), 1);
+  return {
+    text: `${rate.isPositive() ? '+' : ''}${pct}%`,
+    color: rate.isPositive() ? '#cf1322' : rate.isNegative() ? '#389e0d' : undefined,
+  };
+}
 
 export interface VersionTrailPanelHandle {
   /** 供父层在保存策略/元素清单成功后调用，让「最新已生成版本」等联动刷新。 */
@@ -204,15 +219,13 @@ const VersionTrailPanel = forwardRef<VersionTrailPanelHandle, VersionTrailPanelP
             pagination={false}
             columns={[
               { title: '元素', render: (_: unknown, r: VersionItemDTO) => <span><b>{r.elementCode}</b> {r.elementName}</span> },
-              { title: '本期价', dataIndex: 'currentPrice', align: 'right' as const, render: (v: number | null) => v == null ? '—' : v.toFixed(2) },
-              { title: '上期价', dataIndex: 'previousPrice', align: 'right' as const, render: (v: number | null) => v == null ? '—' : v.toFixed(2) },
+              { title: '本期价', dataIndex: 'currentPrice', align: 'right' as const, render: (v: DecimalString | null) => formatPrice(v) },
+              { title: '上期价', dataIndex: 'previousPrice', align: 'right' as const, render: (v: DecimalString | null) => formatPrice(v) },
               {
                 title: '涨跌', dataIndex: 'changeRate', align: 'right' as const,
-                render: (v: number | null) => {
-                  if (v == null) return '—';
-                  const pct = (v * 100).toFixed(1);
-                  const color = v > 0 ? '#cf1322' : v < 0 ? '#389e0d' : undefined;
-                  return <span style={{ color }}>{v > 0 ? '+' : ''}{pct}%</span>;
+                render: (v: DecimalString | null) => {
+                  const rate = formatRate(v);
+                  return <span style={{ color: rate.color }}>{rate.text}</span>;
                 },
               },
               {

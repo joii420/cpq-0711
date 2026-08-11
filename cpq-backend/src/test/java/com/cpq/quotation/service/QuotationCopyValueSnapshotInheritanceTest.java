@@ -186,7 +186,7 @@ class QuotationCopyValueSnapshotInheritanceTest {
                 aEntry.put("componentCode", compA.code);
                 aEntry.put("componentType", "NORMAL");
                 aEntry.put("tabName", "投料");
-                aEntry.put("sortOrder", 0);
+                aEntry.put("sortOrder", new java.math.BigDecimal("0"));
                 aEntry.set("fields", M.readTree(compA.fields));
                 aEntry.set("formulas", M.readTree(compA.formulas));
 
@@ -197,7 +197,7 @@ class QuotationCopyValueSnapshotInheritanceTest {
                 treeEntry.put("componentCode", compTree.code);
                 treeEntry.put("componentType", "NORMAL");
                 treeEntry.put("tabName", "BOM树");
-                treeEntry.put("sortOrder", 1);
+                treeEntry.put("sortOrder", new java.math.BigDecimal("1"));
                 treeEntry.set("fields", M.readTree(compTree.fields));
                 treeEntry.set("formulas", M.readTree(compTree.formulas));
                 treeEntry.put("tab_type", "BOM");
@@ -608,7 +608,7 @@ class QuotationCopyValueSnapshotInheritanceTest {
                 aEntry.put("componentCode", compA.code);
                 aEntry.put("componentType", "NORMAL");
                 aEntry.put("tabName", "投料");
-                aEntry.put("sortOrder", 0);
+                aEntry.put("sortOrder", new java.math.BigDecimal("0"));
                 aEntry.set("fields", M.readTree(compA.fields));
                 aEntry.set("formulas", M.readTree(compA.formulas));
 
@@ -619,7 +619,7 @@ class QuotationCopyValueSnapshotInheritanceTest {
                 treeEntry.put("componentCode", compTree.code);
                 treeEntry.put("componentType", "NORMAL");
                 treeEntry.put("tabName", "BOM树");
-                treeEntry.put("sortOrder", 1);
+                treeEntry.put("sortOrder", new java.math.BigDecimal("1"));
                 treeEntry.set("fields", M.readTree(compTree.fields));
                 treeEntry.set("formulas", M.readTree(compTree.formulas));
                 treeEntry.put("tab_type", "BOM");
@@ -635,7 +635,7 @@ class QuotationCopyValueSnapshotInheritanceTest {
                 bEntry.put("componentCode", compA.code);
                 bEntry.put("componentType", "NORMAL");
                 bEntry.put("tabName", "投料");
-                bEntry.put("sortOrder", 0);
+                bEntry.put("sortOrder", new java.math.BigDecimal("0"));
                 // 目标模板只声明"数量"为 INPUT 字段（不含"备注"）—— 换模板迁移必须按此过滤
                 bEntry.set("fields", M.readTree("[{\"name\":\"数量\",\"field_type\":\"INPUT_NUMBER\"}]"));
                 bEntry.set("formulas", M.readTree("[]"));

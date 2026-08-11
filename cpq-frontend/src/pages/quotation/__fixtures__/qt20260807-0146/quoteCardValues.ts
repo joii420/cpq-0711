@@ -27,7 +27,9 @@
  */
 
 /** `quotation_line_item.quote_card_values`（后端权威值快照：baseRows / formulaResults / subtotalByColumn）。 */
-export const QT0146_QUOTE_CARD_VALUES = {
+import { parseSnapshotJsonLossless } from '../../../../utils/losslessJson';
+
+export const QT0146_QUOTE_CARD_VALUES = parseSnapshotJsonLossless<any>(String.raw`{
   "tabs": [
     {
       "tabName": "产品",
@@ -1500,4 +1502,4 @@ export const QT0146_QUOTE_CARD_VALUES = {
       "formulaResults": []
     }
   ]
-};
+}`);

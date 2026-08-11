@@ -7,6 +7,8 @@
  */
 import { genUUID } from '../../utils/uuid';
 import type { ColumnDef, ComparisonRowDTO, ComparisonBucket } from '../../services/comparisonViewService';
+import { formatNumber } from '../../utils/formatNumber';
+import { isDecimalString, toCalculationString, toDecimal, type DecimalString } from '../../utils/precision';
 
 export type { ColumnDef } from '../../services/comparisonViewService';
 
@@ -22,7 +24,7 @@ export type DiffColor = 'red' | 'orange' | 'none';
 
 /** api.md §5.1 — 默认列「产品卡片总计」：不可删、阈值可改（默认 0）。 */
 export function makeDefaultColumn(): ColumnDef {
-  return { id: PRODUCT_TOTAL_COLUMN_ID, kind: 'PRODUCT_TOTAL', sortOrder: 0, threshold: 0 };
+  return { id: PRODUCT_TOTAL_COLUMN_ID, kind: 'PRODUCT_TOTAL', sortOrder: 0, threshold: '0' };
 }
 
 /**
@@ -54,23 +56,20 @@ export function buildTabPairLabel(tabName: string, metricLabel: string): string 
 }
 
 /** 列的数值展示精度：产品总计列 2 位，页签列（字段小计/页签合计）4 位（docs/小数显示口径）。 */
-export function columnDecimals(col: ColumnDef): number {
-  return col.kind === 'PRODUCT_TOTAL' ? 2 : 4;
+export function columnDecimals(_col: ColumnDef): number {
+  return 9;
 }
 
 /** 数值展示：固定小数位 + 千分位；空值 "—"。 */
-export function formatComparisonNumber(value: number | null | undefined, decimals: number): string {
-  if (value == null || Number.isNaN(value)) return '—';
-  return value.toLocaleString('zh-CN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+export function formatComparisonNumber(value: DecimalString | null | undefined, decimals: number): string {
+  return value == null ? '—' : (formatNumber(value, { decimals, isComputed: true }) ?? '—');
 }
 
 /** 差异值展示：固定小数位 + 千分位 + 正数带 "+" 号；空值 "—"。 */
-export function formatDiffNumber(diff: number | null | undefined, decimals: number): string {
-  if (diff == null || Number.isNaN(diff)) return '—';
-  const factor = Math.pow(10, decimals);
-  const rounded = Math.round(diff * factor) / factor;
-  const sign = rounded > 0 ? '+' : '';
-  return sign + rounded.toLocaleString('zh-CN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+export function formatDiffNumber(diff: DecimalString | null | undefined, decimals: number): string {
+  if (diff == null) return '—';
+  const formatted = formatNumber(diff, { decimals, isComputed: true }) ?? '—';
+  return toDecimal(diff).greaterThan(0) ? `+${formatted}` : formatted;
 }
 
 // ───────────────────────── 取值 / 差异 / 着色 ─────────────────────────
@@ -81,7 +80,7 @@ export function formatDiffNumber(diff: number | null | undefined, decimals: numb
  * - TAB_PAIR → side.tabs[componentId].tabTotal（metric===__TAB_TOTAL__）或 .subtotals[metric]
  * 取不到任一层级 → undefined（前端显示 "—"）。
  */
-export function getColumnValue(row: ComparisonRowDTO, col: ColumnDef, side: Side): number | undefined {
+export function getColumnValue(row: ComparisonRowDTO, col: ColumnDef, side: Side): DecimalString | undefined {
   const sideData = side === 'quote' ? row.quote : row.costing;
   if (!sideData) return undefined;
 
@@ -101,16 +100,17 @@ export function getColumnValue(row: ComparisonRowDTO, col: ColumnDef, side: Side
 }
 
 /** 差异值 = 报价值 − 核价值；任一侧取不到 → undefined（不参与着色判定）。 */
-export function computeDiff(quoteVal: number | undefined, costingVal: number | undefined): number | undefined {
+export function computeDiff(quoteVal: DecimalString | undefined, costingVal: DecimalString | undefined): DecimalString | undefined {
   if (quoteVal == null || costingVal == null) return undefined;
-  return quoteVal - costingVal;
+  if (!isDecimalString(quoteVal) || !isDecimalString(costingVal)) return undefined;
+  return toCalculationString(toDecimal(quoteVal).minus(costingVal));
 }
 
 /** 着色判定：diff<0 红（固定红线，优先）；否则 diff<threshold 橙；否则无色。 */
-export function classifyDiff(diff: number | undefined, threshold: number): DiffColor {
+export function classifyDiff(diff: DecimalString | undefined, threshold: DecimalString): DiffColor {
   if (diff == null) return 'none';
-  if (diff < 0) return 'red';
-  if (diff < threshold) return 'orange';
+  if (toDecimal(diff).lessThan(0)) return 'red';
+  if (toDecimal(diff).lessThan(threshold)) return 'orange';
   return 'none';
 }
 
@@ -170,7 +170,7 @@ export interface LinkPairInput {
   costingMetric: string;
   costingTabName: string;
   costingMetricLabel: string;
-  threshold: number;
+  threshold: DecimalString;
 }
 
 /**

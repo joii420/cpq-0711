@@ -264,7 +264,7 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
                 原价合计：
                 <Text strong>
                   {/* task-0801：不再固定 2 位 toLocaleString，改走 formatNumber（6 位去尾零兜底） */}
-                  ¥{formatNumber(quotation.originalAmount || 0, { isComputed: true }) ?? '0'}
+                  ¥{formatNumber(quotation.originalAmount ?? '0', { isComputed: true }) ?? '0'}
                 </Text>
               </Text>
               <Text>
@@ -273,7 +273,7 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
               <Text style={{ fontSize: 16 }}>
                 报价总金额：
                 <Text strong style={{ fontSize: 18, color: '#c00' }}>
-                  ¥{formatNumber(quotation.totalAmount || 0, { isComputed: true }) ?? '0'}
+                  ¥{formatNumber(quotation.totalAmount ?? '0', { isComputed: true }) ?? '0'}
                 </Text>
               </Text>
             </Space>
@@ -296,7 +296,7 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
               <Text style={{ fontSize: 16 }}>
                 核价单据总价：
                 <Text strong style={{ fontSize: 18, color: '#c00' }}>
-                  ¥{formatNumber(quotation.costingTotalAmount || 0, { isComputed: true }) ?? '0'}
+                  ¥{formatNumber(quotation.costingTotalAmount ?? '0', { isComputed: true }) ?? '0'}
                 </Text>
               </Text>
             </Space>

@@ -35,7 +35,7 @@ interface AtomNode {
 
 /** 比较操作数: 数字 / 字符串字面量 / 字段引用 */
 type Operand =
-  | { kind: 'number'; value: number }
+  | { kind: 'number'; value: string }
   | { kind: 'string'; value: string }
   | { kind: 'field';  field: string };
 
@@ -155,8 +155,7 @@ function parseOperand(s: string): Operand {
     return { kind: 'string', value: t.substring(1, end) };
   }
   // number
-  const n = parseFloat(t);
-  if (!isNaN(n)) return { kind: 'number', value: n };
+  if (isDecimalString(t)) return { kind: 'number', value: normalizeDecimalString(t) };
   throw new Error(`invalid operand: ${t}`);
 }
 
@@ -199,21 +198,21 @@ function compare(l: any, op: CompOp, r: any): boolean {
     if (lNull && rNull) return true;
     if (lNull || rNull) return false;
     // 优先数字相等
-    const ln = toNumber(l); const rn = toNumber(r);
-    if (ln != null && rn != null) return ln === rn;
+    const ln = toDecimalCandidate(l); const rn = toDecimalCandidate(r);
+    if (ln != null && rn != null) return ln.equals(rn);
     return String(l) === String(r);
   }
   if (op === '!=') {
     if (lNull && rNull) return false;
     if (lNull || rNull) return true;
-    const ln = toNumber(l); const rn = toNumber(r);
-    if (ln != null && rn != null) return ln !== rn;
+    const ln = toDecimalCandidate(l); const rn = toDecimalCandidate(r);
+    if (ln != null && rn != null) return !ln.equals(rn);
     return String(l) !== String(r);
   }
 
   // 大小比较: 仅在两边都能转数字时才比较, 否则 false
   if (lNull || rNull) return false;
-  const ln = toNumber(l); const rn = toNumber(r);
+  const ln = toDecimalCandidate(l); const rn = toDecimalCandidate(r);
   if (ln == null || rn == null) {
     // 字符串字典序比较
     const ls = String(l); const rs = String(r);
@@ -223,21 +222,16 @@ function compare(l: any, op: CompOp, r: any): boolean {
     if (op === '<=') return ls <= rs;
     return false;
   }
-  if (op === '>')  return ln > rn;
-  if (op === '<')  return ln < rn;
-  if (op === '>=') return ln >= rn;
-  if (op === '<=') return ln <= rn;
+  if (op === '>')  return ln.greaterThan(rn);
+  if (op === '<')  return ln.lessThan(rn);
+  if (op === '>=') return ln.greaterThanOrEqualTo(rn);
+  if (op === '<=') return ln.lessThanOrEqualTo(rn);
   return false;
 }
 
-function toNumber(v: any): number | null {
-  if (typeof v === 'number') return isFinite(v) ? v : null;
-  if (typeof v === 'boolean') return v ? 1 : 0;
-  if (typeof v === 'string') {
-    const t = v.trim();
-    if (t === '') return null;
-    const n = parseFloat(t);
-    return isNaN(n) ? null : n;
-  }
-  return null;
+function toDecimalCandidate(v: any): Decimal | null {
+  if (typeof v === 'boolean') return toDecimal(v ? '1' : '0');
+  return isDecimalString(v) ? toDecimal(v) : null;
 }
+import Decimal from 'decimal.js';
+import { isDecimalString, normalizeDecimalString, toDecimal } from './precision';

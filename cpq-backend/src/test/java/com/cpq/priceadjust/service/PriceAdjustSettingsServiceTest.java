@@ -1,9 +1,21 @@
 package com.cpq.priceadjust.service;
 
+import com.cpq.common.PrecisionHttpContractSupport;
+import com.cpq.common.security.SessionHelper;
 import com.cpq.priceadjust.dto.PriceAdjustSettingsDTO;
 import com.cpq.priceadjust.entity.PriceAdjustSettings;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.quarkus.narayana.jta.QuarkusTransaction;
+import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.junit.QuarkusTestProfile;
+import io.quarkus.test.junit.TestProfile;
+import io.restassured.RestAssured;
+import io.restassured.http.ContentType;
+import io.restassured.response.Response;
 import jakarta.inject.Inject;
+import jakarta.persistence.Column;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import org.junit.jupiter.api.AfterEach;
@@ -11,6 +23,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -26,12 +39,24 @@ import static org.junit.jupiter.api.Assertions.*;
  * 不是"置默认值"。只提交阈值不应把开关冲掉，反之亦然。
  */
 @QuarkusTest
+@TestProfile(PriceAdjustSettingsServiceTest.RbacOffProfile.class)
 class PriceAdjustSettingsServiceTest {
+
+    public static class RbacOffProfile implements QuarkusTestProfile {
+        @Override
+        public Map<String, String> getConfigOverrides() {
+            return Map.of("cpq.security.rbac.enabled", "false");
+        }
+    }
 
     @Inject
     PriceAdjustSettingsService service;
     @Inject
     EntityManager em;
+    @Inject
+    ObjectMapper mapper;
+    @InjectMock
+    SessionHelper sessionHelper;
 
     private BigDecimal originalThreshold;
     private boolean originalEnabled;
@@ -39,6 +64,8 @@ class PriceAdjustSettingsServiceTest {
     @BeforeEach
     @Transactional
     void snapshot() {
+        org.mockito.Mockito.when(sessionHelper.getCurrentUserId(org.mockito.ArgumentMatchers.any()))
+            .thenReturn(UUID.fromString("00000000-0000-0000-0000-000000000001"));
         PriceAdjustSettings s = PriceAdjustSettings.findSingleton();
         assertNotNull(s, "V378 已种子化单行配置，理论上恒非 null");
         originalThreshold = s.subtotalGuardThreshold;
@@ -122,6 +149,76 @@ class PriceAdjustSettingsServiceTest {
         service.put(off, UUID.randomUUID());
         assertEquals(Boolean.FALSE, service.get().subtotalGuardEnabled);
         assertFalse(service.isSubtotalGuardEnabled());
+    }
+
+    @Test
+    void tc052_thresholdDecimalString_roundTripsAtExistingSixDigitScale() throws Exception {
+        String expectedText = "12345678901234.123456";
+        Response saved = RestAssured.given()
+            .contentType(ContentType.JSON)
+            .body("{\"subtotalGuardThreshold\":\"" + expectedText + "\"}")
+            .put("/api/cpq/price-adjust/settings");
+        assertEquals(200, saved.statusCode(), saved.asString());
+        JsonNode savedJson = mapper.readTree(saved.asString());
+        assertTrue(savedJson.path("subtotalGuardThreshold").isTextual(), saved.asString());
+        assertEquals(expectedText, savedJson.path("subtotalGuardThreshold").asText());
+
+        SettingsFingerprint stored = readSettingsFingerprint();
+        assertEquals(0, new BigDecimal(expectedText).compareTo(stored.threshold()),
+            "TC-052 threshold persistence must preserve all six business decimals");
+        assertEquals(6, stored.threshold().scale(),
+            "TC-052 stored threshold keeps the existing scale=6 contract");
+
+        Response reopened = RestAssured.given().get("/api/cpq/price-adjust/settings");
+        assertEquals(200, reopened.statusCode(), reopened.asString());
+        JsonNode reopenedJson = mapper.readTree(reopened.asString());
+        assertTrue(reopenedJson.path("subtotalGuardThreshold").isTextual(), reopened.asString());
+        assertEquals(expectedText, reopenedJson.path("subtotalGuardThreshold").asText());
+
+        Object[] schema = QuarkusTransaction.requiringNew().call(() -> (Object[]) em.createNativeQuery(
+            "SELECT numeric_precision,numeric_scale FROM information_schema.columns "
+                + "WHERE table_schema=current_schema() AND table_name='price_adjust_settings' "
+                + "AND column_name='subtotal_guard_threshold'").getSingleResult());
+        assertEquals(20, ((Number) schema[0]).intValue(), "TC-052 existing DB precision");
+        assertEquals(6, ((Number) schema[1]).intValue(), "TC-052 existing DB scale");
+
+        Column mapping = PriceAdjustSettings.class.getDeclaredField("subtotalGuardThreshold")
+            .getAnnotation(Column.class);
+        assertNotNull(mapping);
+        assertEquals(20, mapping.precision(), "TC-052 existing JPA precision");
+        assertEquals(6, mapping.scale(), "TC-052 existing JPA scale");
+
+        String rejectedNumeric = "12345678901234.123455";
+        SettingsFingerprint beforeRejected = readSettingsFingerprint();
+        Response rejected = RestAssured.given()
+            .contentType(ContentType.JSON)
+            .body("{\"subtotalGuardThreshold\":" + rejectedNumeric + "}")
+            .put("/api/cpq/price-adjust/settings");
+        SettingsFingerprint afterRejected = readSettingsFingerprint();
+
+        assertAll(
+            () -> PrecisionHttpContractSupport.assertBadRequest(
+                rejected, "subtotalGuardThreshold", rejectedNumeric),
+            () -> assertEquals(beforeRejected.xmin(), afterRejected.xmin(),
+                "TC-052 rejected number must not update the singleton row"),
+            () -> assertEquals(beforeRejected.updatedAt(), afterRejected.updatedAt(),
+                "TC-052 rejected number must not change updated_at"),
+            () -> assertEquals(0, beforeRejected.threshold().compareTo(afterRejected.threshold()),
+                "TC-052 rejected number must not change the threshold value"));
+    }
+
+    private SettingsFingerprint readSettingsFingerprint() {
+        return QuarkusTransaction.requiringNew().call(() -> {
+            Object[] row = (Object[]) em.createNativeQuery(
+                "SELECT subtotal_guard_threshold,xmin::text,updated_at::text "
+                    + "FROM price_adjust_settings WHERE id=1")
+                .getSingleResult();
+            return new SettingsFingerprint(
+                (BigDecimal) row[0], String.valueOf(row[1]), String.valueOf(row[2]));
+        });
+    }
+
+    private record SettingsFingerprint(BigDecimal threshold, String xmin, String updatedAt) {
     }
 
     @Test

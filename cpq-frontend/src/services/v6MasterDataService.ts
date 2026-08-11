@@ -1,4 +1,5 @@
 import api from './api';
+import { isDecimalString, normalizeDecimalString, type DecimalString } from '../utils/precision';
 
 // ─── 通用分页结果 ───────────────────────────────────────────────────────────
 export interface PageResult<T> {
@@ -19,7 +20,7 @@ export interface ProcessMasterDTO {
   isOutsource?: boolean;
   standardCurrency?: string;
   standardUnit?: string;
-  defaultDefectRate?: number;
+  defaultDefectRate?: DecimalString;
   createdAt?: string;
   updatedAt?: string;
   createdBy?: string;
@@ -55,17 +56,17 @@ export interface MaterialBomItemDTO {
 
   // 用量
   issueUnit?: string;
-  compositionQty?: number;
-  baseQty?: number;
+  compositionQty?: DecimalString;
+  baseQty?: DecimalString;
   componentUsageType?: string;
   featureMgmt?: string;
-  upperLimitPct?: number;
-  lowerLimitPct?: number;
+  upperLimitPct?: DecimalString;
+  lowerLimitPct?: DecimalString;
 
   // 损耗
-  scrapBatch?: number;
-  scrapRate?: number;
-  fixedScrap?: number;
+  scrapBatch?: DecimalString;
+  scrapRate?: DecimalString;
+  fixedScrap?: DecimalString;
   scrapRateType?: string;
 
   // 仓位
@@ -93,11 +94,11 @@ export interface MaterialBomItemDTO {
   // 倒冲 / 客供
   isBackflush?: boolean;
   isCustomerSupply?: boolean;
-  defectRate?: number;
+  defectRate?: DecimalString;
   calcType?: string;
 
   // 回收
-  recoveryDiscount?: number;
+  recoveryDiscount?: DecimalString;
   recoveryCurrency?: string;
   recoveryUnit?: string;
 }
@@ -157,18 +158,29 @@ export interface ProcessMasterUpsert {
   isOutsource?: boolean | null;
   standardCurrency?: string | null;
   standardUnit?: string | null;
-  defaultDefectRate?: number | null;
+  defaultDefectRate?: DecimalString | null;
+}
+
+function normalizeProcessRequest(req: ProcessMasterUpsert): ProcessMasterUpsert {
+  if (req.defaultDefectRate == null) return req;
+  if (!isDecimalString(req.defaultDefectRate)) {
+    throw new TypeError('defaultDefectRate must be a decimal string');
+  }
+  return {
+    ...req,
+    defaultDefectRate: normalizeDecimalString(req.defaultDefectRate),
+  };
 }
 
 /** 新建工序 */
 export async function createProcess(req: ProcessMasterUpsert): Promise<ProcessMasterDTO> {
-  const res = await api.post('/v6/process-master', req);
+  const res = await api.post('/v6/process-master', normalizeProcessRequest(req));
   return unwrap<ProcessMasterDTO>(res);
 }
 
 /** 编辑工序(processNo 锁定) */
 export async function updateProcess(id: string, req: ProcessMasterUpsert): Promise<ProcessMasterDTO> {
-  const res = await api.put(`/v6/process-master/${id}`, req);
+  const res = await api.put(`/v6/process-master/${id}`, normalizeProcessRequest(req));
   return unwrap<ProcessMasterDTO>(res);
 }
 

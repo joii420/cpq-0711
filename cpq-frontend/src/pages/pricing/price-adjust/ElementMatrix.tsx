@@ -3,20 +3,22 @@ import { Table, Input, Checkbox, Button, Space, Tag, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { priceAdjustService } from '../../../services/priceAdjustService';
 import type { ElementRowDTO, VersionColumnDTO } from '../../../types/price-adjust';
+import { formatNumber } from '../../../utils/formatNumber';
+import { formatDisplayDecimal, toDecimal, type DecimalString } from '../../../utils/precision';
 
 const PAGE_SIZE = 20;
 
-function formatPrice(v: number | null | undefined): string {
-  if (v == null) return '—';
-  return v.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function formatPrice(v: DecimalString | null | undefined): string {
+  return formatNumber(v, { isComputed: true, decimals: 2 }) ?? '—';
 }
 
-function formatRate(v: number | null | undefined): { text: string; color?: string } {
+function formatRate(v: DecimalString | null | undefined): { text: string; color?: string } {
   if (v == null) return { text: '—' };
-  const pct = (v * 100).toFixed(1);
+  const rate = toDecimal(v);
+  const pct = formatDisplayDecimal(rate.times('100'), 1);
   // 🔒 涨红跌绿（fronttask §1.3），不是股市反方向的西式配色
-  if (v > 0) return { text: `+${pct}%`, color: '#cf1322' };
-  if (v < 0) return { text: `${pct}%`, color: '#389e0d' };
+  if (rate.isPositive()) return { text: `+${pct}%`, color: '#cf1322' };
+  if (rate.isNegative()) return { text: `${pct}%`, color: '#389e0d' };
   return { text: `${pct}%` };
 }
 

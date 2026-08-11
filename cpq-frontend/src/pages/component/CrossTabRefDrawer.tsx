@@ -3,6 +3,8 @@ import { Drawer, Select, Button, Space, Switch, InputNumber, Tag, message, Segme
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { FormulaToken } from './types';
 import { OPERATIONS, operationToAgg, serializeCrossTab, parseCrossTab, aggToOperation } from './crossTabText';
+import type { DecimalString } from '../../utils/precision';
+import { createFormulaNumberToken } from './formulaNumberToken';
 
 export interface SiblingComponent {
   id: string;
@@ -103,7 +105,7 @@ const CrossTabRefDrawer: React.FC<Props> = ({
   const [useFormula, setUseFormula] = useState<boolean>(false);
   const [targetExpr, setTargetExpr] = useState<FormulaToken[]>([]);
   // For inserting a number
-  const [numInput, setNumInput] = useState<number | null>(null);
+  const [numInput, setNumInput] = useState<DecimalString | null>(null);
   // Controlled select values (reset after appending)
   const [aFieldSel, setAFieldSel] = useState<string | undefined>(undefined);
   const [bFieldSel, setBFieldSel] = useState<string | undefined>(undefined);
@@ -560,7 +562,7 @@ const CrossTabRefDrawer: React.FC<Props> = ({
                       );
                     })}
                     <span style={{ fontSize: 12, color: '#595959', whiteSpace: 'nowrap', marginLeft: 8 }}>数字：</span>
-                    <InputNumber
+                    <InputNumber<DecimalString> stringMode
                       size="small"
                       style={{ width: 90 }}
                       value={numInput}
@@ -571,8 +573,9 @@ const CrossTabRefDrawer: React.FC<Props> = ({
                       size="small"
                       disabled={numInput === null || numInput === undefined}
                       onClick={() => {
-                        if (numInput !== null && numInput !== undefined) {
-                          appendToken({ type: 'number', value: String(numInput) });
+                        const token = createFormulaNumberToken(numInput);
+                        if (token) {
+                          appendToken(token);
                           setNumInput(null);
                         }
                       }}

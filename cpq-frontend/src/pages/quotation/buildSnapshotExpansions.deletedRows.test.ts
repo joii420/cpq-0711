@@ -9,6 +9,7 @@
  *   5. deletedRowKeys 不进 driverExpansionKey
  */
 import { describe, it, expect } from 'vitest';
+import Decimal from 'decimal.js';
 import { buildSnapshotExpansions } from './QuotationStep2';
 import { rowFingerprint } from './deletedRows';
 import { driverExpansionKey } from './useDriverExpansions';
@@ -16,15 +17,15 @@ import { driverExpansionKey } from './useDriverExpansions';
 // ── 测试夹具构造器 ─────────────────────────────────────────────────────────────
 
 /** 构造一个最小 driverRow（使 rowFingerprint 可计算） */
-function makeDriverRow(partNo: string, qty: number) {
+function makeDriverRow(partNo: string, qty: string) {
   return { 料件: partNo, 数量: qty };
 }
 
 /** 构造 baseRow（快照 vtab.baseRows 中的单行） */
-function makeBaseRow(partNo: string, qty: number) {
+function makeBaseRow(partNo: string, qty: string) {
   return {
     driverRow: makeDriverRow(partNo, qty),
-    basicDataValues: { price: qty * 10 },
+    basicDataValues: { price: new Decimal(qty).times('10').toString() },
   };
 }
 
@@ -73,9 +74,9 @@ function makeLineItem(baseRows: ReturnType<typeof makeBaseRow>[], deletedRowKeys
 // ── 测试用例 ──────────────────────────────────────────────────────────────────
 
 describe('buildSnapshotExpansions 墓碑过滤', () => {
-  const rowA = makeBaseRow('P1', 1);  // effKey='P1', fp 由 rowFingerprint 算
-  const rowB = makeBaseRow('P2', 2);  // effKey='P2'
-  const rowC = makeBaseRow('P3', 3);  // effKey='P3'
+  const rowA = makeBaseRow('P1', '1');  // effKey='P1', fp 由 rowFingerprint 算
+  const rowB = makeBaseRow('P2', '2');  // effKey='P2'
+  const rowC = makeBaseRow('P3', '3');  // effKey='P3'
 
   const fpA = rowFingerprint(ROW_KEY_FIELDS, rowA.driverRow);
   const fpB = rowFingerprint(ROW_KEY_FIELDS, rowB.driverRow);
@@ -177,8 +178,8 @@ describe('buildSnapshotExpansions 墓碑过滤', () => {
 
   it('两行同 fp 不同 __nodeId + 带 nodeId 的墓碑 → 只过滤 1 行（另一行同料号挂另一父仍保留）', () => {
     // 模拟 992 挂两父场景：driverRow 内容完全相同（同 fp），仅树结构位置（__nodeId）不同。
-    const rowP = { ...makeBaseRow('992', 1), __nodeId: 'S-3120014539/992' };
-    const rowQ = { ...makeBaseRow('992', 1), __nodeId: 'S-80011/992' };
+    const rowP = { ...makeBaseRow('992', '1'), __nodeId: 'S-3120014539/992' };
+    const rowQ = { ...makeBaseRow('992', '1'), __nodeId: 'S-80011/992' };
     const fpShared = rowFingerprint(ROW_KEY_FIELDS, rowP.driverRow);
 
     // 墓碑：nodeId 精确指向 rowP 那一次 occurrence
@@ -195,8 +196,8 @@ describe('buildSnapshotExpansions 墓碑过滤', () => {
   });
 
   it('旧墓碑（无 nodeId）× 两行同 fp 不同 __nodeId → 退化 fp 单键，两行都删（存量兼容，AP-54 已知边界）', () => {
-    const rowP = { ...makeBaseRow('992', 1), __nodeId: 'S-3120014539/992' };
-    const rowQ = { ...makeBaseRow('992', 1), __nodeId: 'S-80011/992' };
+    const rowP = { ...makeBaseRow('992', '1'), __nodeId: 'S-3120014539/992' };
+    const rowQ = { ...makeBaseRow('992', '1'), __nodeId: 'S-80011/992' };
     const fpShared = rowFingerprint(ROW_KEY_FIELDS, rowP.driverRow);
 
     // 旧墓碑：无 nodeId 字段
@@ -249,9 +250,9 @@ describe('buildSnapshotExpansions 墓碑过滤', () => {
 
 describe('buildSnapshotExpansions 撞键 __effKey 不变量 (AP-54 C3)', () => {
   // 3 行全部 rowKeyFields 值相同（料件='P1'），qty 不同只为区分 fp
-  const rowX0 = { driverRow: { 料件: 'P1', 数量: 1 }, basicDataValues: { price: 10 } };
-  const rowX1 = { driverRow: { 料件: 'P1', 数量: 2 }, basicDataValues: { price: 20 } };
-  const rowX2 = { driverRow: { 料件: 'P1', 数量: 3 }, basicDataValues: { price: 30 } };
+  const rowX0 = { driverRow: { 料件: 'P1', 数量: '1' }, basicDataValues: { price: '10' } };
+  const rowX1 = { driverRow: { 料件: 'P1', 数量: '2' }, basicDataValues: { price: '20' } };
+  const rowX2 = { driverRow: { 料件: 'P1', 数量: '3' }, basicDataValues: { price: '30' } };
 
   const fpX0 = rowFingerprint(ROW_KEY_FIELDS, rowX0.driverRow);
   const fpX1 = rowFingerprint(ROW_KEY_FIELDS, rowX1.driverRow);
@@ -284,8 +285,8 @@ describe('buildSnapshotExpansions 撞键 __effKey 不变量 (AP-54 C3)', () => {
     expect((expansion.rows[0] as any).__effKey).toBe('P1#0');
     expect((expansion.rows[1] as any).__effKey).toBe('P1#2');  // 不是 P1#1！
     // 并且剩余行的 driverRow 确实是 P1#0（数量=1）和 P1#2（数量=3）
-    expect(expansion.rows[0].driverRow['数量']).toBe(1);
-    expect(expansion.rows[1].driverRow['数量']).toBe(3);
+    expect(expansion.rows[0].driverRow['数量']).toBe('1');
+    expect(expansion.rows[1].driverRow['数量']).toBe('3');
   });
 
   it('断言③：对剩余的 P1#2 行再删，能命中过滤（第二次删撞键行生效，rowCount 再 −1）', () => {
@@ -302,6 +303,6 @@ describe('buildSnapshotExpansions 撞键 __effKey 不变量 (AP-54 C3)', () => {
     expect(expansion.rowCount).toBe(1);
     expect(expansion.rows).toHaveLength(1);
     expect((expansion.rows[0] as any).__effKey).toBe('P1#0');
-    expect(expansion.rows[0].driverRow['数量']).toBe(1);
+    expect(expansion.rows[0].driverRow['数量']).toBe('1');
   });
 });

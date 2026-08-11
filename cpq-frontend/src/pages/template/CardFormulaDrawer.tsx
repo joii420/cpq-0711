@@ -23,6 +23,7 @@ import { genAlias, expandIn, validateCardFormula, buildCondRows, parseCondToRows
 // CardRefSpec 是纯类型，必须 import type（否则 Vite/esbuild 运行时 ESM 链接报错 → 整个 SPA 白屏）
 import type { CardRefSpec, CondRhsType, CondRowSpec } from './cardFormula';
 import { CARD_OPERATIONS, opToRefType, refTypeToOp } from './cardFormulaOps';
+import { isDecimalString } from '../../utils/precision';
 
 const { Text, Paragraph } = Typography;
 
@@ -112,7 +113,7 @@ function buildCondJexl(conds: CondRow[], fieldToAlias: Record<string, string>): 
       const vals = c.value.split(',').map(v => v.trim()).filter(Boolean);
       expr = vals.length ? expandIn(alias, vals) : `${alias}=='__IN_EMPTY__'`;
     } else {
-      const valLiteral = isNaN(Number(c.value)) ? `'${c.value}'` : c.value;
+      const valLiteral = isDecimalString(c.value) ? c.value : `'${c.value}'`;
       expr = `${alias}${opToJexl(c.op)}${valLiteral}`;
     }
     if (i < conds.length - 1) {
@@ -518,7 +519,7 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
     }
     setTrial({ loading: true });
     try {
-      const col = { col_key: value.col_key, title: value.title, source_type: 'CARD_FORMULA', formula, refs };
+      const col = { col_key: value.col_key, title: value.title, source_type: 'CARD_FORMULA' as const, formula, refs };
       const resp: any = await quotationService.dryRunExcelView(dryRunQuotationId, { templateId, columns: [col] });
       const body = resp?.data ?? resp;
       setTrial({ rows: Array.isArray(body?.rows) ? body.rows : [] });
@@ -1024,7 +1025,7 @@ const CardFormulaDrawer: React.FC<CardFormulaDrawerProps> = ({
                       if (!preview) return null;
                       if (mode === 'simple') {
                         const simpleText = valid
-                          .map((c, idx) => `${idx > 0 ? (valid[idx - 1].logic === 'or' ? '或 ' : '且 ') : ''}${c.field} ${opLabel(c.op)} ${isNaN(Number(c.value)) ? `'${c.value}'` : c.value}`)
+                          .map((c, idx) => `${idx > 0 ? (valid[idx - 1].logic === 'or' ? '或 ' : '且 ') : ''}${c.field} ${opLabel(c.op)} ${isDecimalString(c.value) ? c.value : `'${c.value}'`}`)
                           .join('  ');
                         return (
                           <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>

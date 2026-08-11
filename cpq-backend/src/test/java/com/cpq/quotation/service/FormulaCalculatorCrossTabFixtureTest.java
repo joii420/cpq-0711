@@ -104,14 +104,14 @@ class FormulaCalculatorCrossTabFixtureTest {
                 FormulaCalculator.RowContext ctx = new FormulaCalculator.RowContext();
                 // Populate currentRowRaw from fixture's currentRow map
                 if (currentRow != null) {
-                    ctx.currentRowRaw.putAll(currentRow);
+                    ctx.currentRowRaw.putAll(decimalMap(currentRow));
                 }
                 // Resolve crossTabRows
                 if (crossTabRowsFixture != null) {
-                    ctx.crossTabRows = new HashMap<>(crossTabRowsFixture);
+                    ctx.crossTabRows = decimalCrossTabs(crossTabRowsFixture);
                 } else {
                     Map<String, List<Map<String, Object>>> crossTabRows = new HashMap<>();
-                    crossTabRows.put("A", aRows != null ? aRows : List.of());
+                    crossTabRows.put("A", aRows != null ? decimalRows(aRows) : List.of());
                     ctx.crossTabRows = crossTabRows;
                 }
                 // repair-0803：宿主已算字段值（b_field 在 currentRow 键缺失时的回落来源）。
@@ -120,18 +120,18 @@ class FormulaCalculatorCrossTabFixtureTest {
                 Map<String, Object> hostFieldValuesRaw = (Map<String, Object>) c.get("hostFieldValues");
                 if (hostFieldValuesRaw != null) {
                     for (Map.Entry<String, Object> e : hostFieldValuesRaw.entrySet()) {
-                        if (e.getValue() instanceof Number n) ctx.hostFieldValues.put(e.getKey(), n.doubleValue());
+                        if (e.getValue() instanceof Number n) ctx.hostFieldValues.put(e.getKey(), new BigDecimal(n.toString()));
                     }
                 }
                 // Optional context extras
                 if (quotationFieldsRaw != null) {
                     for (Map.Entry<String, Object> e : quotationFieldsRaw.entrySet()) {
-                        if (e.getValue() instanceof Number n) ctx.quotationFields.put(e.getKey(), n.doubleValue());
+                        if (e.getValue() instanceof Number n) ctx.quotationFields.put(e.getKey(), new BigDecimal(n.toString()));
                     }
                 }
                 if (componentSubtotalsRaw != null) {
                     for (Map.Entry<String, Object> e : componentSubtotalsRaw.entrySet()) {
-                        if (e.getValue() instanceof Number n) ctx.componentSubtotals.put(e.getKey(), n.doubleValue());
+                        if (e.getValue() instanceof Number n) ctx.componentSubtotals.put(e.getKey(), new BigDecimal(n.toString()));
                     }
                 }
 
@@ -150,5 +150,23 @@ class FormulaCalculatorCrossTabFixtureTest {
             }));
         }
         return tests;
+    }
+
+    private static Map<String, List<Map<String, Object>>> decimalCrossTabs(
+            Map<String, List<Map<String, Object>>> source) {
+        Map<String, List<Map<String, Object>>> out = new HashMap<>();
+        source.forEach((key, rows) -> out.put(key, decimalRows(rows)));
+        return out;
+    }
+
+    private static List<Map<String, Object>> decimalRows(List<Map<String, Object>> rows) {
+        return rows.stream().map(FormulaCalculatorCrossTabFixtureTest::decimalMap).toList();
+    }
+
+    private static Map<String, Object> decimalMap(Map<String, Object> row) {
+        Map<String, Object> out = new HashMap<>();
+        if (row != null) row.forEach((key, value) -> out.put(key,
+            value instanceof Double || value instanceof Float ? new BigDecimal(value.toString()) : value));
+        return out;
     }
 }

@@ -34,7 +34,7 @@ public final class DecimalJexl {
                 .strict(false)
                 .silent(true)
                 .cache(512)
-                .arithmetic(new JexlArithmetic(false, PrecisionPolicy.MC, PrecisionPolicy.DIVISION_SCALE))
+                .arithmetic(new DecimalJexlArithmetic())
                 .create();
     }
 }

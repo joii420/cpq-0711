@@ -2,7 +2,12 @@ import type { LineItem } from './QuotationStep2';
 import { getComponentSubtotalsFull, evalProductSubtotalFromSubtotals } from './QuotationStep2';
 import type { DriverExpansionMap } from './useDriverExpansions';
 import type { GlobalVariableDefinition } from '../../services/globalVariableService';
-import { toDecimal, roundToDisplay } from '../../utils/precision';
+import {
+  toCalculationString,
+  toDecimal,
+  type DecimalString,
+  type DecimalValue,
+} from '../../utils/precision';
 
 export interface DiscountSourceOption {
   value: string;
@@ -40,17 +45,17 @@ export function extractDiscountSources(item: LineItem): DiscountSourceOption[] {
 
 export interface LineDiscountResult {
   /** 折前产品单价 */
-  original: number;
+  original: DecimalString;
   /** 折后产品单价 */
-  discounted: number;
+  discounted: DecimalString;
   /** 折扣基数（所选来源的页签小计，SUBTOTAL 时等于 original） */
-  discountBaseAmount: number;
+  discountBaseAmount: DecimalString;
   /** 行级折扣金额 = (original - discounted) * annualVolume */
-  lineDiscountAmount: number;
+  lineDiscountAmount: DecimalString;
   /** 折后产品单价（与 discounted 相同，给 UI 字段映射用） */
-  lineFinalPrice: number;
+  lineFinalPrice: DecimalString;
   /** 行级总金额 = discounted * annualVolume */
-  lineTotalAmount: number;
+  lineTotalAmount: DecimalString;
 }
 
 /**
@@ -71,27 +76,32 @@ export function computeLineDiscount(
   driverExpansions: DriverExpansionMap | undefined,
   customerId: string | undefined,
   source: string,
-  ratePct: number,
-  annualVolume: number,
+  ratePct: DecimalValue,
+  annualVolume: DecimalValue,
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
 ): LineDiscountResult {
   const subs = getComponentSubtotalsFull(item, driverExpansions, customerId, globalVariableDefs);
   const s0 = evalProductSubtotalFromSubtotals(item, subs);
-  const r = Math.max(0, Math.min(100, ratePct || 0));
-  const scale = 1 - r / 100;
-  const qty = annualVolume || 0;
+  const requestedRate = toDecimal(ratePct);
+  const rate = requestedRate.lessThan(0)
+    ? toDecimal('0')
+    : requestedRate.greaterThan(100) ? toDecimal('100') : requestedRate;
+  const scale = toDecimal('1').minus(rate.dividedBy('100'));
+  const qty = toDecimal(annualVolume);
 
-  let s1: number;
-  let base: number;
+  let s1: DecimalValue;
+  let base: DecimalValue;
 
   if (!source || source === 'SUBTOTAL') {
-    s1 = s0 * scale;
+    s1 = toDecimal(s0).times(scale);
     base = s0;
   } else {
     // source = `component_code#列名`（按列折扣）：缩放该列键后代回公式重算。
-    base = subs[source] ?? 0;
+    base = subs[source] ?? '0';
     const scaled = { ...subs };
-    if (scaled[source] !== undefined) scaled[source] = scaled[source] * scale;
+    if (scaled[source] !== undefined) {
+      scaled[source] = toCalculationString(toDecimal(scaled[source]).times(scale));
+    }
     s1 = evalProductSubtotalFromSubtotals(item, scaled);
   }
 
@@ -103,17 +113,17 @@ export function computeLineDiscount(
   // ——与本任务全局精度口径对齐（旧 4 位口径已作废，见 formatNumber.ts 头部注释）。
   // s0/base/s1（原始与折后产品小计，单件级）本身量级 ≤10⁶ 属链路一，来自
   // evalProductSubtotalFromSubtotals（未改动），此处仅对 ×qty 这一危险步骤做 Decimal 化。
-  const qtyDec = toDecimal(qty);
+  const qtyDec = qty;
   const s0Dec = toDecimal(s0);
   const s1Dec = toDecimal(s1);
   const baseDec = toDecimal(base);
   return {
-    original: roundToDisplay(s0Dec),
-    discounted: roundToDisplay(s1Dec),
-    discountBaseAmount: roundToDisplay(baseDec),
-    lineDiscountAmount: roundToDisplay(s0Dec.minus(s1Dec).times(qtyDec)),
-    lineFinalPrice: roundToDisplay(s1Dec),
-    lineTotalAmount: roundToDisplay(s1Dec.times(qtyDec)),
+    original: toCalculationString(s0Dec),
+    discounted: toCalculationString(s1Dec),
+    discountBaseAmount: toCalculationString(baseDec),
+    lineDiscountAmount: toCalculationString(s0Dec.minus(s1Dec).times(qtyDec)),
+    lineFinalPrice: toCalculationString(s1Dec),
+    lineTotalAmount: toCalculationString(s1Dec.times(qtyDec)),
   };
 }
 

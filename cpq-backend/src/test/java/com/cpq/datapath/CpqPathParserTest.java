@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -152,7 +153,16 @@ class CpqPathParserTest {
                     ast.getPrimarySegment().getPredicate());
             assertEquals("seq_no", pred.getField());
             assertInstanceOf(Number.class, pred.getValue());
-            assertEquals(1, ((Number) pred.getValue()).intValue());
+            assertEquals(new BigDecimal("1"), pred.getValue());
+        }
+
+        @Test
+        @DisplayName("EQ-03: 小数字面量保持 BigDecimal 精度")
+        void eq03_decimalLiteralIsBigDecimal() {
+            PathExpression ast = parser.parse("mat_bom[ratio=0.123456789012].input_material_no");
+            EqPredicate pred = assertInstanceOf(EqPredicate.class,
+                    ast.getPrimarySegment().getPredicate());
+            assertEquals(new BigDecimal("0.123456789012"), pred.getValue());
         }
     }
 

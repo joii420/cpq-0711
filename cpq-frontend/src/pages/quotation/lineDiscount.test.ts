@@ -19,7 +19,7 @@ function tok(component_code: string, col: string, label: string) {
 }
 
 function normalComp(componentId: string, componentCode: string, tabName: string,
-                    cols: Record<string, number>): any {
+                    cols: Record<string, string>): any {
   return {
     componentId,
     componentCode,
@@ -34,9 +34,9 @@ function normalComp(componentId: string, componentCode: string, tabName: string,
 const mockExpansions = undefined;
 
 function makeItem(): LineItem {
-  const ll = normalComp('c-ll', 'LL', '来料', { 材料成本: 5, 材料损耗成本: 3 });
-  const asm = normalComp('c-asm', 'ASM', '组装加工费', { 费用: 8 });
-  const oth = normalComp('c-oth', 'OTH', '其他费用', { 费用: 2 });
+  const ll = normalComp('c-ll', 'LL', '来料', { 材料成本: '5', 材料损耗成本: '3' });
+  const asm = normalComp('c-asm', 'ASM', '组装加工费', { 费用: '8' });
+  const oth = normalComp('c-oth', 'OTH', '其他费用', { 费用: '2' });
   const sub: any = {
     componentId: 'c-sub',
     componentCode: 'SUBTOTAL',
@@ -61,7 +61,7 @@ function makeItem(): LineItem {
     componentData: [ll, asm, oth, sub],
     productAttributes: [],
     productAttributeValues: {},
-    subtotal: 0,
+    subtotal: '0',
   } as unknown as LineItem;
 }
 
@@ -89,66 +89,66 @@ describe('extractDiscountSources（按字段，每项一个，标签用 token.la
 
 describe('computeLineDiscount', () => {
   it('source=SUBTOTAL 整单价打折：率20/量100 => S0=18, 折后=14.4, 折扣=360, 行合计=1440', () => {
-    const r = computeLineDiscount(makeItem(), mockExpansions, undefined, 'SUBTOTAL', 20, 100);
-    expect(r.original).toBeCloseTo(18, 2);
-    expect(r.discounted).toBeCloseTo(14.4, 2);
-    expect(r.lineDiscountAmount).toBeCloseTo(360, 2);
-    expect(r.lineTotalAmount).toBeCloseTo(1440, 2);
+    const r = computeLineDiscount(makeItem(), mockExpansions, undefined, 'SUBTOTAL', '20', '100');
+    expect(r.original).toBe('18');
+    expect(r.discounted).toBe('14.4');
+    expect(r.lineDiscountAmount).toBe('360');
+    expect(r.lineTotalAmount).toBe('1440');
   });
 
   it('source=LL#材料成本 只折该列(同组件另一列不动)：率20/量100 => 折后=17, 折扣=100, 基数=5', () => {
     // 材料成本 5*0.8=4，材料损耗成本 3 不动，+8+2 => 17
-    const r = computeLineDiscount(makeItem(), mockExpansions, undefined, 'LL#材料成本', 20, 100);
-    expect(r.original).toBeCloseTo(18, 2);
-    expect(r.discountBaseAmount).toBeCloseTo(5, 2);
-    expect(r.discounted).toBeCloseTo(17, 2);
-    expect(r.lineDiscountAmount).toBeCloseTo(100, 2);   // (18-17)*100
-    expect(r.lineTotalAmount).toBeCloseTo(1700, 2);     // 17*100
+    const r = computeLineDiscount(makeItem(), mockExpansions, undefined, 'LL#材料成本', '20', '100');
+    expect(r.original).toBe('18');
+    expect(r.discountBaseAmount).toBe('5');
+    expect(r.discounted).toBe('17');
+    expect(r.lineDiscountAmount).toBe('100');
+    expect(r.lineTotalAmount).toBe('1700');
   });
 
   it('source=ASM#费用 只折组装加工费：率20/量100 => 折后=16.4, 基数=8', () => {
-    const r = computeLineDiscount(makeItem(), mockExpansions, undefined, 'ASM#费用', 20, 100);
-    expect(r.discountBaseAmount).toBeCloseTo(8, 2);
-    expect(r.discounted).toBeCloseTo(16.4, 2);          // 5+3+6.4+2
-    expect(r.lineDiscountAmount).toBeCloseTo(160, 2);
+    const r = computeLineDiscount(makeItem(), mockExpansions, undefined, 'ASM#费用', '20', '100');
+    expect(r.discountBaseAmount).toBe('8');
+    expect(r.discounted).toBe('16.4');
+    expect(r.lineDiscountAmount).toBe('160');
   });
 
   it('率0 不打折', () => {
-    const r = computeLineDiscount(makeItem(), mockExpansions, undefined, 'LL#材料成本', 0, 100);
-    expect(r.lineDiscountAmount).toBeCloseTo(0, 4);
-    expect(r.discounted).toBeCloseTo(r.original, 4);
+    const r = computeLineDiscount(makeItem(), mockExpansions, undefined, 'LL#材料成本', '0', '100');
+    expect(r.lineDiscountAmount).toBe('0');
+    expect(r.discounted).toBe(r.original);
   });
 });
 
 describe('patchVisibleLineItem（行级编辑：只改命中的可见行，不污染后续料号）', () => {
   // 用最小桩，只关心 compositeType 过滤与 discountRateApplied 标记
   const simpleItem = (partNo: string, compositeType?: 'PART' | 'COMPOSITE'): LineItem =>
-    ({ productPartNo: partNo, compositeType, discountRateApplied: 0 } as unknown as LineItem);
-  const mark = (li: LineItem): LineItem => ({ ...li, discountRateApplied: 99 } as LineItem);
+    ({ productPartNo: partNo, compositeType, discountRateApplied: '0' } as unknown as LineItem);
+  const mark = (li: LineItem): LineItem => ({ ...li, discountRateApplied: '99' } as LineItem);
 
   it('编辑第 0 行只改第 0 行，第 1、2 行不动（回归：修复前编辑首行会全改）', () => {
     const prev = [simpleItem('A'), simpleItem('B'), simpleItem('C')];
     const next = patchVisibleLineItem(prev, 0, mark);
-    expect(next.map(li => li.discountRateApplied)).toEqual([99, 0, 0]);
+    expect(next.map(li => li.discountRateApplied)).toEqual(['99', '0', '0']);
   });
 
   it('编辑中间行只改该行', () => {
     const prev = [simpleItem('A'), simpleItem('B'), simpleItem('C')];
     const next = patchVisibleLineItem(prev, 1, mark);
-    expect(next.map(li => li.discountRateApplied)).toEqual([0, 99, 0]);
+    expect(next.map(li => li.discountRateApplied)).toEqual(['0', '99', '0']);
   });
 
   it('编辑最后一行只改最后一行', () => {
     const prev = [simpleItem('A'), simpleItem('B'), simpleItem('C')];
     const next = patchVisibleLineItem(prev, 2, mark);
-    expect(next.map(li => li.discountRateApplied)).toEqual([0, 0, 99]);
+    expect(next.map(li => li.discountRateApplied)).toEqual(['0', '0', '99']);
   });
 
   it('PART 子件不计入可见下标，且永不被改', () => {
     // 可见序: [A=可见0, C=可见1]，B 是 PART 跳过
     const prev = [simpleItem('A'), simpleItem('B', 'PART'), simpleItem('C')];
     const next = patchVisibleLineItem(prev, 1, mark);   // 改可见第 1 行 = C
-    expect(next.map(li => li.discountRateApplied)).toEqual([0, 0, 99]);
+    expect(next.map(li => li.discountRateApplied)).toEqual(['0', '0', '99']);
     expect(next[1].compositeType).toBe('PART');          // PART 原样
   });
 

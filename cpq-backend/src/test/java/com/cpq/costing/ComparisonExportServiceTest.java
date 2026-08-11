@@ -7,6 +7,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -22,7 +23,9 @@ class ComparisonExportServiceTest {
         req.columns = List.of(c);
 
         ComparisonExportRequest.Cell cell = new ComparisonExportRequest.Cell();
-        cell.quote = 10; cell.costing = 11; cell.highlighted = true;
+        cell.quote = new BigDecimal("98765431.123456789012");
+        cell.costing = new BigDecimal("-0.000000000500");
+        cell.highlighted = true;
 
         ComparisonExportRequest.Row row = new ComparisonExportRequest.Row();
         row.partNo = "P1"; row.presence = "BOTH";
@@ -41,8 +44,10 @@ class ComparisonExportServiceTest {
             Row costingRow = sheet.getRow(2);
             assertEquals("报价", reportRow.getCell(1).getStringCellValue());
             assertEquals("核价", costingRow.getCell(1).getStringCellValue());
-            assertEquals(10.0, reportRow.getCell(2).getNumericCellValue(), 1e-9);
-            assertEquals(11.0, costingRow.getCell(2).getNumericCellValue(), 1e-9);
+            assertEquals(CellType.STRING, reportRow.getCell(2).getCellType());
+            assertEquals("98765431.123456789", reportRow.getCell(2).getStringCellValue());
+            assertEquals(CellType.STRING, costingRow.getCell(2).getCellType());
+            assertEquals("-0.000000001", costingRow.getCell(2).getStringCellValue());
         }
     }
 

@@ -62,10 +62,10 @@ public class FormulaCalculatorTest {
             + "{\"type\":\"field\",\"value\":\"数量\"}"
             + "]";
         RowContext ctx = new RowContext();
-        ctx.fieldValues.put("含量", 80.0);
-        ctx.fieldValues.put("单价", 5000.0);
-        ctx.fieldValues.put("损耗", 3.0);
-        ctx.fieldValues.put("数量", 2.0);
+        ctx.fieldValues.put("含量", new java.math.BigDecimal("80.0"));
+        ctx.fieldValues.put("单价", new java.math.BigDecimal("5000.0"));
+        ctx.fieldValues.put("损耗", new java.math.BigDecimal("3.0"));
+        ctx.fieldValues.put("数量", new java.math.BigDecimal("2.0"));
         // 80/100*5000*(1+3/100)*2 = 0.8*5000*1.03*2 = 8240
         assertEquals(8240.0, eval(tokens, ctx), 1e-9);
     }
@@ -74,8 +74,8 @@ public class FormulaCalculatorTest {
     @DisplayName("T2: 运算符 — value 已是 */ 直接用；value 为 ×/÷ Unicode 时映射为 */")
     void t2_operatorMapping() {
         RowContext ctx = new RowContext();
-        ctx.fieldValues.put("a", 3.0);
-        ctx.fieldValues.put("b", 4.0);
+        ctx.fieldValues.put("a", new java.math.BigDecimal("3.0"));
+        ctx.fieldValues.put("b", new java.math.BigDecimal("4.0"));
         // value 为 Unicode × → 映射 *
         String mul = "[{\"type\":\"field\",\"value\":\"a\"},"
             + "{\"type\":\"operator\",\"value\":\"\\u00d7\"},"
@@ -104,13 +104,13 @@ public class FormulaCalculatorTest {
         String tokens = "[{\"type\":\"component_subtotal\",\"component_code\":\"C1\","
             + "\"tab_name\":\"小计\",\"value\":\"小计\"}]";
         RowContext ctx = new RowContext();
-        ctx.componentSubtotals.put("小计", 7.0);
+        ctx.componentSubtotals.put("小计", new java.math.BigDecimal("7.0"));
         assertEquals(7.0, eval(tokens, ctx), 1e-9);
 
         // component_code 优先
         RowContext ctx2 = new RowContext();
-        ctx2.componentSubtotals.put("C1", 11.0);
-        ctx2.componentSubtotals.put("小计", 7.0);
+        ctx2.componentSubtotals.put("C1", new java.math.BigDecimal("11.0"));
+        ctx2.componentSubtotals.put("小计", new java.math.BigDecimal("7.0"));
         assertEquals(11.0, eval(tokens, ctx2), 1e-9);
 
         // 都没命中 → 0
@@ -128,22 +128,22 @@ public class FormulaCalculatorTest {
             + "{\"type\":\"field\",\"value\":\"单价\"}]";
         // 传入上一行小计 200 → 200/2+5 = 105
         RowContext ctx = new RowContext();
-        ctx.previousRowSubtotal = 200.0;
-        ctx.fieldValues.put("成材率", 2.0);
-        ctx.fieldValues.put("单价", 5.0);
+        ctx.previousRowSubtotal = new java.math.BigDecimal("200.0");
+        ctx.fieldValues.put("成材率", new java.math.BigDecimal("2.0"));
+        ctx.fieldValues.put("单价", new java.math.BigDecimal("5.0"));
         assertEquals(105.0, eval(tokens, ctx), 1e-9);
 
         // 行 0 未传 → fallback ELE=100 → 100/2+5 = 55
         RowContext ctx0 = new RowContext();
-        ctx0.componentSubtotals.put("ELE", 100.0);
-        ctx0.fieldValues.put("成材率", 2.0);
-        ctx0.fieldValues.put("单价", 5.0);
+        ctx0.componentSubtotals.put("ELE", new java.math.BigDecimal("100.0"));
+        ctx0.fieldValues.put("成材率", new java.math.BigDecimal("2.0"));
+        ctx0.fieldValues.put("单价", new java.math.BigDecimal("5.0"));
         assertEquals(55.0, eval(tokens, ctx0), 1e-9);
 
         // 行 0 且无 fallback 命中 → previous=0 → 0/2+5 = 5
         RowContext ctxNone = new RowContext();
-        ctxNone.fieldValues.put("成材率", 2.0);
-        ctxNone.fieldValues.put("单价", 5.0);
+        ctxNone.fieldValues.put("成材率", new java.math.BigDecimal("2.0"));
+        ctxNone.fieldValues.put("单价", new java.math.BigDecimal("5.0"));
         assertEquals(5.0, eval(tokens, ctxNone), 1e-9);
     }
 
@@ -155,10 +155,10 @@ public class FormulaCalculatorTest {
             + "{\"type\":\"operator\",\"value\":\"/\"},"
             + "{\"type\":\"number\",\"value\":\"3\"}]";
         assertEquals(0.666666666667, eval(t, new RowContext()), 1e-9);
-        // 呈现边界规整到 6 位（PrecisionPolicy.DISPLAY_SCALE）：0.666667
-        java.math.BigDecimal displayed = com.cpq.common.PrecisionPolicy.round(
+        // 呈现边界规整到 9 位（PrecisionPolicy.DISPLAY_SCALE）：0.666666667
+        java.math.BigDecimal displayed = com.cpq.common.PrecisionPolicy.roundForDisplay(
             calc.evaluateExpression(json(t), new RowContext()));
-        assertEquals(0, displayed.compareTo(new java.math.BigDecimal("0.666667")), "实际=" + displayed);
+        assertEquals(0, displayed.compareTo(new java.math.BigDecimal("0.666666667")), "实际=" + displayed);
     }
 
     @Test
@@ -186,14 +186,14 @@ public class FormulaCalculatorTest {
             + "{\"type\":\"operator\",\"value\":\"*\"},"
             + "{\"type\":\"number\",\"value\":\"2\"}]";
         RowContext ctx = new RowContext();
-        ctx.basicDataValues.put("{mat_part.unit_weight}", 12.5);
+        ctx.basicDataValues.put("{mat_part.unit_weight}", new java.math.BigDecimal("12.5"));
         assertEquals(25.0, eval(pathTok, ctx), 1e-9);
 
         // global_variable token: 优先 @gvar:CODE
         String gvTok = "[{\"type\":\"global_variable\",\"code\":\"EXCHANGE_RATE\","
             + "\"path\":\"v_x[a='b'].rate\"}]";
         RowContext ctx2 = new RowContext();
-        ctx2.basicDataValues.put("@gvar:EXCHANGE_RATE", 6.8);
+        ctx2.basicDataValues.put("@gvar:EXCHANGE_RATE", new java.math.BigDecimal("6.8"));
         assertEquals(6.8, eval(gvTok, ctx2), 1e-9);
     }
 
@@ -287,8 +287,8 @@ public class FormulaCalculatorTest {
             + "{\"driverRow\":{\"process_code\":\"P0\"},\"basicDataValues\":{\"{v.up}\":10}},"
             + "{\"driverRow\":{\"process_code\":\"P1\"},\"basicDataValues\":{\"{v.up}\":20}}"
             + "]");
-        Map<String, Double> compSub = new HashMap<>();
-        compSub.put("ELE", 100.0);
+        Map<String, java.math.BigDecimal> compSub = new HashMap<>();
+        compSub.put("ELE", new java.math.BigDecimal("100.0"));
 
         JsonNode fr = calc.calculate(fields, formulas, null, rkf, baseRows, json("[]"),
             compSub, new HashMap<>(), new HashMap<>());
@@ -317,8 +317,8 @@ public class FormulaCalculatorTest {
             + "{\"driverRow\":{\"process_code\":\"P0\"},\"basicDataValues\":{\"{v.up}\":10}},"
             + "{\"driverRow\":{\"process_code\":\"P1\"},\"basicDataValues\":{\"{v.up}\":20}}"
             + "]");
-        Map<String, Double> compSub = new HashMap<>();
-        compSub.put("ELE", 100.0);
+        Map<String, java.math.BigDecimal> compSub = new HashMap<>();
+        compSub.put("ELE", new java.math.BigDecimal("100.0"));
         // 60 + 50 = 110
         assertEquals(110.0,
             calc.computeTabSubtotal(fields, formulas, null, rkf, baseRows, json("[]"), compSub).doubleValue(),
@@ -408,7 +408,7 @@ public class FormulaCalculatorTest {
                 ctx.basicDataValues.put(e.getKey(),
                     e.getValue().isNumber() ? e.getValue().numberValue() : e.getValue().asText()));
             JsonNode prev = cse.path("previousRowSubtotal");
-            ctx.previousRowSubtotal = (prev.isNull() || prev.isMissingNode()) ? null : prev.asDouble();
+            ctx.previousRowSubtotal = (prev.isNull() || prev.isMissingNode()) ? null : prev.decimalValue();
 
             double actual = calc.evaluateExpression(cse.path("tokens"), ctx).doubleValue();
             double expected = cse.path("expected").asDouble();
@@ -461,9 +461,9 @@ public class FormulaCalculatorTest {
         assertNull(key, "全部 key 字段解析为空时应返回 null，让调用方按行号兜底");
     }
 
-    private void putDoubles(Map<String, Double> target, JsonNode node) {
+    private void putDoubles(Map<String, java.math.BigDecimal> target, JsonNode node) {
         if (node != null && node.isObject()) {
-            node.fields().forEachRemaining(e -> target.put(e.getKey(), e.getValue().asDouble()));
+            node.fields().forEachRemaining(e -> target.put(e.getKey(), e.getValue().decimalValue()));
         }
     }
 }

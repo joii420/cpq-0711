@@ -4,6 +4,7 @@ import dayjs, { type Dayjs } from 'dayjs';
 import { elementPriceStrategyService } from '../../../services/elementPriceStrategyService';
 import { formatMethod } from './strategyFormat';
 import type { SimulateDraft, SimulateRowDTO } from '../../../types/element-price-strategy';
+import { formatDisplayDecimal, type DecimalString } from '../../../utils/precision';
 
 /**
  * 策略试算抽屉（720） —— task-0722 · F7
@@ -48,7 +49,7 @@ const StrategySimulateDrawer: React.FC<Props> = ({ open, onClose, customerNo, cu
     }
   };
 
-  const num = (v: number | null) => (v === null || v === undefined ? '—' : v.toFixed(4));
+  const num = (v: DecimalString | null) => (v === null || v === undefined ? '—' : formatDisplayDecimal(v, 4));
 
   return (
     <Drawer
@@ -97,19 +98,19 @@ const StrategySimulateDrawer: React.FC<Props> = ({ open, onClose, customerNo, cu
           { title: '取值方式', dataIndex: 'method', render: (v: SimulateRowDTO['method']) => formatMethod(v) },
           {
             title: '取值结果', dataIndex: 'rawValue', align: 'right' as const,
-            render: (v: number | null, r) => r.hasPrice ? num(v) : <span style={{ color: 'rgba(0,0,0,.45)' }}>—</span>,
+            render: (v: DecimalString | null, r) => r.hasPrice ? num(v) : <span style={{ color: 'rgba(0,0,0,.45)' }}>—</span>,
           },
           {
             title: '× 系数', dataIndex: 'factor', align: 'right' as const,
-            render: (v: number, r) => r.hasPrice ? v.toFixed(2) : <span style={{ color: 'rgba(0,0,0,.45)' }}>—</span>,
+            render: (v: DecimalString, r) => r.hasPrice ? formatDisplayDecimal(v, 2) : <span style={{ color: 'rgba(0,0,0,.45)' }}>—</span>,
           },
           {
             title: '+ 加价', dataIndex: 'premium', align: 'right' as const,
-            render: (v: number, r) => r.hasPrice ? v.toFixed(2) : <span style={{ color: 'rgba(0,0,0,.45)' }}>—</span>,
+            render: (v: DecimalString, r) => r.hasPrice ? formatDisplayDecimal(v, 2) : <span style={{ color: 'rgba(0,0,0,.45)' }}>—</span>,
           },
           {
             title: '最终单价', dataIndex: 'finalPrice', align: 'right' as const,
-            render: (v: number | null, r) => r.hasPrice
+            render: (v: DecimalString | null, r) => r.hasPrice
               ? <b>{num(v)}</b>
               : <b style={{ color: '#d46b08' }}>无价</b>,
           },

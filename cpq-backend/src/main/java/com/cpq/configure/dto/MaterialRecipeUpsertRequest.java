@@ -1,5 +1,7 @@
 package com.cpq.configure.dto;
 
+import com.cpq.common.DecimalStringDeserializer;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -16,8 +18,11 @@ public class MaterialRecipeUpsertRequest {
     public static class ElementUpsert {
         public String elementCode;
         public String elementName;
+        @JsonDeserialize(using = DecimalStringDeserializer.class)
         public BigDecimal defaultPct;
+        @JsonDeserialize(using = DecimalStringDeserializer.class)
         public BigDecimal minPct;
+        @JsonDeserialize(using = DecimalStringDeserializer.class)
         public BigDecimal maxPct;
         public Boolean isLocked;
         public Integer sortOrder;
