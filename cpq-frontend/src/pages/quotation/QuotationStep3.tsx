@@ -17,9 +17,9 @@ import type { DriverExpansionMap } from './useDriverExpansions';
 import { computeLineDiscount, extractDiscountSources, patchVisibleLineItem } from './lineDiscount';
 import {
   isDecimalString,
+  formatQuotationTotal,
   normalizeDecimalString,
   sumDecimal,
-  toCalculationString,
   toDecimal,
   type DecimalString,
   type DecimalValue,
@@ -226,8 +226,8 @@ const QuotationStep3: React.FC<Props> = ({
 
   // task-0801（链路二，最高优先级）：单价 × 年用量（可达几十万件）再跨行累加 = 亿级金额，
   // 15 位有效数字已达 double 极限 —— 全程 Decimal，禁止中途 .toNumber()/隐式 number 运算，
-  // 只在最终展示时 roundToDisplay（DISPLAY_SCALE=6）。禁止参照旧写法用 number `*`/`+=`。
-  const grandOriginal = toCalculationString(
+  // Quotation totals use their dedicated result boundary. The working values remain at 12 places.
+  const grandOriginal = formatQuotationTotal(
     sumDecimal(visibleItems.map(li =>
       toDecimal(li.lineUnitPrice ?? li.subtotal ?? '0').times(
         toDecimal(li.annualVolume ?? '0'),
@@ -235,10 +235,10 @@ const QuotationStep3: React.FC<Props> = ({
     )),
   );
   // computeLineDiscount 返回的 lineDiscountAmount 已含 ×年用量，直接求和（仍需全程 Decimal）
-  const grandDiscount = toCalculationString(
+  const grandDiscount = formatQuotationTotal(
     sumDecimal(visibleItems.map(li => li.lineDiscountAmount ?? '0')),
   );
-  const grandTotal = toCalculationString(
+  const grandTotal = formatQuotationTotal(
     sumDecimal(visibleItems.map(li => li.lineTotalAmount ?? '0')),
   );
 

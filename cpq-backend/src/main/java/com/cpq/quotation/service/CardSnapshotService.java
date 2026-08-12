@@ -822,13 +822,13 @@ public class CardSnapshotService {
         for (QuotationLineItem li : all) {                 // 草稿口径：不排除 PART，与 :667/:2055 一致
             if (li.subtotal != null) total = total.add(li.subtotal);
         }
-        q.originalAmount = com.cpq.common.PrecisionPolicy.roundForCalculation(total);
+        q.originalAmount = com.cpq.common.PrecisionPolicy.roundQuotationTotal(total);
         // finalDiscountRate 实体默认 100（非空），但 :2063 仍做了空防御，此处对齐更保守的那一处。
         q.totalAmount = (q.finalDiscountRate != null)
-            ? com.cpq.common.PrecisionPolicy.roundForCalculation(total.multiply(q.finalDiscountRate)
+            ? com.cpq.common.PrecisionPolicy.roundQuotationTotal(total.multiply(q.finalDiscountRate)
                 .divide(new java.math.BigDecimal("100"),
                         com.cpq.common.PrecisionPolicy.DIVISION_SCALE, java.math.RoundingMode.HALF_UP))
-            : com.cpq.common.PrecisionPolicy.roundForCalculation(total);
+            : com.cpq.common.PrecisionPolicy.roundQuotationTotal(total);
     }
 
     /** 方向 3 T1：整批一次 IN 预载 componentData（按 lineItemId 分组）；空输入返回空 map。 */
@@ -2438,7 +2438,7 @@ public class CardSnapshotService {
                         // product_attribute token 最可能出现的位置，对齐前端 evalProductSubtotalFromSubtotals
                         java.math.BigDecimal evaluated = formulaCalculator.evaluateExpression(expr, subCtx);
                         if (evaluated != null) {
-                            BigDecimal v = com.cpq.common.PrecisionPolicy.roundForCalculation(evaluated);
+                            BigDecimal v = productCardSubtotalResult(evaluated);
                             String subCode = tab.path("componentCode").asText(null);
                             String subTabName = tab.path("tabName").asText("");
                             if (!cid.isBlank()) componentSubtotals.put(cid, v);
@@ -4321,6 +4321,14 @@ public class CardSnapshotService {
         if (cid != null && !cid.isBlank()) componentSubtotals.put(cid + "#" + key, amountTotal);
         if (code != null && !code.isBlank()) componentSubtotals.put(code + "#" + key, amountTotal);
         if (tabName != null && !tabName.isBlank()) componentSubtotals.put(tabName + "#" + key, amountTotal);
+    }
+
+    static BigDecimal productCardSubtotalResult(BigDecimal value) {
+        return com.cpq.common.PrecisionPolicy.roundProductCardSubtotal(value);
+    }
+
+    static BigDecimal productCardSubtotalResult(BigDecimal value, int scale) {
+        return com.cpq.common.PrecisionPolicy.roundForResultScale(value, scale);
     }
 
     /**

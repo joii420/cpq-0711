@@ -17,6 +17,7 @@ const STRUCTURAL_INTEGER_KEYS = new Set([
   'width',
   '项次',
   '_项次',
+  '序号',
 ]);
 
 /**

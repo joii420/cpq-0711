@@ -21,6 +21,15 @@ public final class PrecisionPolicy {
     /** UI / HTML / PDF / Excel 的最大小数位数。 */
     public static final int DISPLAY_SCALE = 9;
 
+    /** 单元格公式最终结果精度。未来由系统参数覆盖；当前值是默认值。 */
+    public static final int FORMULA_RESULT_SCALE = 9;
+
+    /** 产品卡片小计结果精度。未来由系统参数覆盖；当前值是默认值。 */
+    public static final int PRODUCT_CARD_SUBTOTAL_SCALE = 9;
+
+    /** 报价单总金额结果精度。未来由系统参数覆盖；当前值是默认值。 */
+    public static final int QUOTATION_TOTAL_SCALE = 9;
+
     /** 除法中间精度：无限小数（如 1/3）的落点，远高于呈现精度以避免中间损失。 */
     public static final int DIVISION_SCALE = CALCULATION_SCALE;
 
@@ -43,6 +52,29 @@ public final class PrecisionPolicy {
     public static BigDecimal roundForDisplay(BigDecimal v) {
         if (v == null) return null;
         return v.setScale(DISPLAY_SCALE, ROUNDING);
+    }
+
+    public static BigDecimal roundFormulaResult(BigDecimal v) {
+        return round(v, FORMULA_RESULT_SCALE);
+    }
+
+    public static BigDecimal roundProductCardSubtotal(BigDecimal v) {
+        return round(v, PRODUCT_CARD_SUBTOTAL_SCALE);
+    }
+
+    public static BigDecimal roundQuotationTotal(BigDecimal v) {
+        return round(v, QUOTATION_TOTAL_SCALE);
+    }
+
+    private static BigDecimal round(BigDecimal value, int scale) {
+        return value == null ? null : value.setScale(scale, ROUNDING);
+    }
+
+    public static BigDecimal roundForResultScale(BigDecimal value, int scale) {
+        if (scale < 0 || scale > CALCULATION_SCALE) {
+            throw new IllegalArgumentException("Result scale must be between 0 and " + CALCULATION_SCALE);
+        }
+        return round(value, scale);
     }
 
     /**

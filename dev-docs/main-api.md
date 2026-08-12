@@ -1,7 +1,7 @@
 # CPQ 系统接口总览文档（main-api.md）
 
 > 本文件由技术总监扫描 `cpq-backend` 全部 JAX-RS Resource 自动生成，覆盖 **87 个 Resource 类、约 413 个 HTTP 端点**，按业务模块分为 12 大类。
-> 生成日期：2026-07-08 ｜ 最近契约更新：2026-08-11（task-0810 十进制精度升级） ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
+> 生成日期：2026-07-08 ｜ 最近契约更新：2026-08-11（repair-0811 输入值与结果精度分层） ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
 > 用途：前后端接口契约基线、联调对照、新接口设计参照。字段说明取自源码 javadoc / 注释，无注释处据字段名与类型推断。
 
 ---
@@ -9626,7 +9626,7 @@ Cell：`quote`(Object 报价值)、`costing`(Object 核价值)、`highlighted`(b
 | 分组 | 方法与路径 | task-0810 契约 |
 |---|---|---|
 | P1 报价读取 | `GET /api/cpq/quotations`；`GET /api/cpq/quotations/{id}`；`GET /api/cpq/quotations/{id}/snapshot`；`GET /api/cpq/quotations/{id}/field-trace`；`GET /api/cpq/quotations/{id}/costing-approve/preview` | 单头、行、组件、trace、预览和四份值快照中的精度值均为 decimal string；冻结读取零写 |
-| P1 报价写入 | `POST /api/cpq/quotations`；`PUT /api/cpq/quotations/{id}/draft`；`POST /api/cpq/quotations/{id}/refresh-card-snapshot`；`POST /api/cpq/quotations/{id}/ensure-card-values`；`POST /api/cpq/quotations/{id}/ensure-excel-values`；`PUT /api/cpq/quotations/line-items/{lineItemId}/quote-card-edit`；`POST /api/cpq/quotations/{id}/calculate-discount`；`POST /api/cpq/quotations/{id}/recalculate`；`POST /api/cpq/quotations/{id}/submit`；`POST /api/cpq/quotations/{id}/copy`；`POST /api/cpq/quotations/{id}/costing-approve`；`POST /api/cpq/quotations/line-items/{lineItemId}/reconcile-report` | 精度请求字段仅 decimal string；number=400；新计算、快照、响应最多 12 位；对账比较第 10～12 位差异 |
+| P1 报价写入 | `POST /api/cpq/quotations`；`PUT /api/cpq/quotations/{id}/draft`；`POST /api/cpq/quotations/{id}/refresh-card-snapshot`；`POST /api/cpq/quotations/{id}/ensure-card-values`；`POST /api/cpq/quotations/{id}/ensure-excel-values`；`PUT /api/cpq/quotations/line-items/{lineItemId}/quote-card-edit`；`POST /api/cpq/quotations/{id}/calculate-discount`；`POST /api/cpq/quotations/{id}/recalculate`；`POST /api/cpq/quotations/{id}/submit`；`POST /api/cpq/quotations/{id}/copy`；`POST /api/cpq/quotations/{id}/costing-approve`；`POST /api/cpq/quotations/line-items/{lineItemId}/reconcile-report` | `rowData` 按冻结字段元数据分类：INPUT_TEXT 原文；INPUT_NUMBER/基础数据接受 decimal string，结构整数（如 `项次`）可用安全 JSON number；FORMULA/`*_FORMULA` 仅 decimal string/null 且最多 9 位。公式工作值 12 位；产品小计与报价总额分别走独立 9 位结果边界。非法公式 number 返回 400 且事务零写。其余精度请求字段仍仅 decimal string。 |
 | P1-18a | `POST /api/cpq/quotations/{quotationId}/line-items/{lineItemId}/tree/add-leaf` | 结构请求不变；返回 `quoteCardValues` 精度节点为 decimal string |
 | P1-18b | `POST /api/cpq/quotations/{quotationId}/line-items/{lineItemId}/tree/delete-preview` | 请求/响应仅结构字段，无精度类型变化 |
 | P1-18c | `POST /api/cpq/quotations/{quotationId}/line-items/{lineItemId}/tree/delete` | 结构请求不变；返回投影快照中的精度节点为 decimal string |

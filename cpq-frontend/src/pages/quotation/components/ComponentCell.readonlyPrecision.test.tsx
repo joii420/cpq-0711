@@ -43,18 +43,17 @@ function renderCell(
 }
 
 describe('ReadonlyProductCard shared INPUT precision presentation', () => {
-  it.each([
-    ['1.234567890499', '1.23456789'],
-    ['-1.2345678905', '-1.234567891'],
-  ])('formats a readonly INPUT_NUMBER with 9-place HALF_UP: %s', (workValue, displayValue) => {
+  it.each(['1.2300', '1.234567890499', '-1.2345678905'])(
+    'preserves a readonly INPUT_NUMBER exactly: %s',
+    (workValue) => {
     const html = renderCell({ name: '精度输入', field_type: 'INPUT_NUMBER' }, workValue);
-    expect(html).toBe(`<span>${displayValue}</span>`);
-    expect(html).not.toContain(workValue);
-  });
+    expect(html).toBe(`<span>${workValue}</span>`);
+    },
+  );
 
-  it('honors an explicit precision below the 9-place display ceiling', () => {
+  it('does not apply a configured display precision to INPUT_NUMBER source text', () => {
     const html = renderCell({ name: '精度输入', field_type: 'INPUT_NUMBER', decimals: 4 }, '1.234567890499');
-    expect(html).toBe('<span>1.2346</span>');
+    expect(html).toBe('<span>1.234567890499</span>');
   });
 
   it('formats an explicitly amount-bearing INPUT field without changing plain INPUT_TEXT', () => {
@@ -82,11 +81,10 @@ describe('ReadonlyProductCard shared INPUT precision presentation', () => {
     expect(html).not.toContain('value="1.23456789"');
   });
 
-  it('applies the same display boundary to a version-locked amount cell', () => {
+  it('preserves the source text in a version-locked INPUT_NUMBER amount cell', () => {
     const workValue = '1.234567890499';
     const html = renderCell({ name: '元素单价', field_type: 'INPUT_NUMBER', is_amount: true }, workValue, true, true);
-    expect(html).toContain('<span>1.23456789</span>');
+    expect(html).toContain(`<span>${workValue}</span>`);
     expect(html).toContain('🔒PV-1');
-    expect(html).not.toContain(workValue);
   });
 });

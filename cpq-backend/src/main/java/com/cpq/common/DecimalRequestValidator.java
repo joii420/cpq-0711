@@ -69,6 +69,72 @@ public final class DecimalRequestValidator {
     }
 
     /**
+     * Validates persisted component rows using the frozen field definitions. The JSON is only
+     * inspected and is never normalized, so input text such as {@code "1.2300"} remains intact.
+     */
+    public static void validateRowData(String json, String path, Map<String, String> fieldTypes) {
+        if (json == null || json.isBlank()) return;
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            if (!root.isArray()) {
+                throw new BusinessException(400, path + " must be a JSON array");
+            }
+            for (int row = 0; row < root.size(); row++) {
+                JsonNode rowNode = root.get(row);
+                if (!rowNode.isObject()) {
+                    throw new BusinessException(400, path + "[" + row + "] must be a JSON object");
+                }
+                var fields = rowNode.fields();
+                while (fields.hasNext()) {
+                    var entry = fields.next();
+                    validateFieldValue(entry.getValue(), path + "[" + row + "]." + entry.getKey(),
+                            entry.getKey(), fieldTypes != null ? fieldTypes.get(entry.getKey()) : null);
+                }
+            }
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BusinessException(400, path + " must contain valid JSON: " + e.getMessage());
+        }
+    }
+
+    private static void validateFieldValue(JsonNode value, String path, String fieldName, String fieldType) {
+        if (value == null || value.isNull()) return;
+        if (fieldType == null || fieldType.isBlank()) {
+            if (value.isNumber()) {
+                throw new BusinessException(400, path + " has no frozen field metadata; received numeric token "
+                        + value.asText());
+            }
+            return;
+        }
+        String type = fieldType.toUpperCase(java.util.Locale.ROOT);
+        if ("INPUT_TEXT".equals(type)) return;
+        if ("INPUT_NUMBER".equals(type) || "BASIC_DATA".equals(type)
+                || "DATA_SOURCE".equals(type) || "FIXED_VALUE".equals(type)) {
+            if (value.isNumber()) return; // Jackson retains the original decimal token as BigDecimal.
+            if (value.isTextual() && isPlainDecimal(value.textValue())) return;
+            if (value.isTextual() && value.textValue().isBlank()) return;
+            throw new BusinessException(400, path + " must be a decimal string or numeric token; received "
+                    + value.toString());
+        }
+        if (type.equals("FORMULA") || type.endsWith("_FORMULA")) {
+            if (value.isNumber()) throw numericToken(path, value.asText());
+            if (!value.isTextual() || !isPlainDecimal(value.textValue())) {
+                throw new BusinessException(400, path + " must be a decimal string; received " + value);
+            }
+            BigDecimal decimal = new BigDecimal(value.textValue());
+            if (Math.max(decimal.scale(), 0) > PrecisionPolicy.FORMULA_RESULT_SCALE) {
+                throw new BusinessException(400, path + " must have at most "
+                        + PrecisionPolicy.FORMULA_RESULT_SCALE + " decimal places; received " + value.textValue());
+            }
+        }
+    }
+
+    private static boolean isPlainDecimal(String value) {
+        return value != null && PLAIN_DECIMAL.matcher(value).matches();
+    }
+
+    /**
      * Converts canonical plain-decimal strings in a request map to {@link BigDecimal} without
      * mutating the caller's map. Nested maps and lists are copied recursively; non-decimal text,
      * booleans, nulls and structural integers retain their original types. Numeric scientific

@@ -4,10 +4,17 @@ import {
   CALCULATION_SCALE,
   DISPLAY_SCALE,
   DIVISION_SCALE,
+  FORMULA_RESULT_SCALE,
+  PRODUCT_CARD_SUBTOTAL_SCALE,
+  QUOTATION_TOTAL_SCALE,
   ROUNDING,
   divideDecimal,
   evaluateArithmetic,
   formatDisplayDecimal,
+  formatFormulaResult,
+  formatProductCardSubtotal,
+  formatQuotationTotal,
+  isFormulaFieldType,
   isDecimalString,
   normalizeDecimalString,
   roundToCalculation,
@@ -22,6 +29,22 @@ describe('precision policy', () => {
     expect(DISPLAY_SCALE).toBe(9);
     expect(DIVISION_SCALE).toBe(CALCULATION_SCALE);
     expect(ROUNDING).toBe(Decimal.ROUND_HALF_UP);
+  });
+
+  it('keeps formula, product subtotal and quotation total result scales independent', () => {
+    expect(FORMULA_RESULT_SCALE).toBe(9);
+    expect(PRODUCT_CARD_SUBTOTAL_SCALE).toBe(9);
+    expect(QUOTATION_TOTAL_SCALE).toBe(9);
+    expect(formatFormulaResult('1.2345678905')).toBe('1.234567891');
+    expect(formatProductCardSubtotal('1.2345678905', 7)).toBe('1.2345679');
+    expect(formatQuotationTotal('1.2345678905', 8)).toBe('1.23456789');
+  });
+
+  it('recognizes formula field types without classifying input fields', () => {
+    expect(isFormulaFieldType('FORMULA')).toBe(true);
+    expect(isFormulaFieldType('LIST_FORMULA')).toBe(true);
+    expect(isFormulaFieldType('INPUT_NUMBER')).toBe(false);
+    expect(isFormulaFieldType(undefined)).toBe(false);
   });
 
   it('accepts plain decimal strings and rejects scientific API strings', () => {

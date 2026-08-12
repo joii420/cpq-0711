@@ -35,6 +35,7 @@ import { findDuplicateRowKeys } from './rowDedup';
 import { sumTabColumns, sumAmountFromByCol, AMOUNT_TOTAL_KEY } from './tabTotalLines';
 import {
   isDecimalString,
+  formatProductCardSubtotal,
   normalizeDecimalString,
   sumDecimal,
   toCalculationString,
@@ -1935,7 +1936,9 @@ export function evalProductSubtotalFromSubtotals(
     const formula = subtotalComp.formulas[0];
     if (formula.expression && formula.expression.length > 0) {
       try {
-        return evaluateExpression(formula.expression, {}, componentSubtotals, productAttrs);
+        return formatProductCardSubtotal(
+          evaluateExpression(formula.expression, {}, componentSubtotals, productAttrs),
+        );
       } catch {
         return '0';
       }
@@ -1945,7 +1948,9 @@ export function evalProductSubtotalFromSubtotals(
   // Fallback: use legacy subtotalFormula if present
   if (item.subtotalFormula && item.subtotalFormula.length > 0) {
     try {
-      return evaluateExpression(item.subtotalFormula, {}, componentSubtotals, productAttrs);
+      return formatProductCardSubtotal(
+        evaluateExpression(item.subtotalFormula, {}, componentSubtotals, productAttrs),
+      );
     } catch {
       return '0';
     }
@@ -1960,7 +1965,7 @@ export function evalProductSubtotalFromSubtotals(
     const key = c.componentId ?? c.componentCode ?? c.tabName;
     fallbackSum = fallbackSum.plus(toDecimal(componentSubtotals[key] ?? '0'));
   }
-  return toCalculationString(fallbackSum);
+  return formatProductCardSubtotal(fallbackSum);
 }
 
 function computeProductSubtotal(
@@ -1974,7 +1979,9 @@ function computeProductSubtotal(
   // 双口径修复(2026-07-17): 兜底路径改走完整口径, gvDefs 与渲染层同源传入（wizard 的 gvDefs）。
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
 ): DecimalString {
-  if (!item.componentData || item.componentData.length === 0) return item.subtotal || '0';
+  if (!item.componentData || item.componentData.length === 0) {
+    return formatProductCardSubtotal(item.subtotal || '0');
+  }
 
   if (precomputedSubtotals) {
     // B3: 用调用方传入的（buildCrossTabRows 回填后）已修正小计，跳过重算。

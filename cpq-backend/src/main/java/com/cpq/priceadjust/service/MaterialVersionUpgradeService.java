@@ -382,7 +382,7 @@ public class MaterialVersionUpgradeService {
             if ("PART".equals(other.compositeType)) continue;
             if (other.lineTotalAmount != null) lineSum = lineSum.add(other.lineTotalAmount);
         }
-        q.totalAmount = com.cpq.common.PrecisionPolicy.roundForCalculation(lineSum);
+        q.totalAmount = com.cpq.common.PrecisionPolicy.roundQuotationTotal(lineSum);
         // taxAmount：全工程未发现任何"从行汇总推导税额"的既有公式（taxRate/taxAmount 全库零业务
         // 逻辑引用，纯手填字段），本次不新造算法，税额原样不动——如实说明，非遗漏。
 

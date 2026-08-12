@@ -77,6 +77,7 @@ describe('coerceInputNumber', () => {
     expect(coerceInputNumber('100')).toBe('100');
     expect(coerceInputNumber('-1.5')).toBe('-1.5');
     expect(coerceInputNumber('98765431.123456789012')).toBe('98765431.123456789012');
+    expect(coerceInputNumber('1.2300')).toBe('1.2300');
     expect(coerceInputNumber(42)).toBeUndefined();
     expect(coerceInputNumber('abc')).toBeUndefined();
     expect(coerceInputNumber('1e3')).toBeUndefined();

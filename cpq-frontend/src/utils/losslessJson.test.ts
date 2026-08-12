@@ -27,6 +27,13 @@ describe('lossless snapshot JSON', () => {
     expect(result).toEqual({ rowCount: 2, row_index: 1, annualVolume: 800000, subtotal: '2' });
   });
 
+  it('keeps Chinese row-order keys as safe integers', () => {
+    const result = parseSnapshotJsonLossless<Record<string, unknown>>(
+      '{"项次":1,"_项次":2,"序号":3,"输入数量":1.2300}',
+    );
+    expect(result).toEqual({ 项次: 1, _项次: 2, 序号: 3, 输入数量: '1.23' });
+  });
+
   it('returns null for invalid historical JSON', () => {
     expect(tryParseSnapshotJsonLossless('{invalid')).toBeNull();
   });

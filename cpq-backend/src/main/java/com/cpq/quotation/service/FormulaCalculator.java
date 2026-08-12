@@ -1099,6 +1099,7 @@ public class FormulaCalculator {
 
             // 按拓扑序求值，结果回填 fieldValues 供下游公式引用
             Map<String, BigDecimal> results = new LinkedHashMap<>();
+            Map<String, BigDecimal> workingResults = new LinkedHashMap<>();
             for (String name : order) {
                 FormulaField ff = findByName(formulaFields, name);
                 if (ff == null) continue;
@@ -1106,16 +1107,17 @@ public class FormulaCalculator {
                 ctx.previousRowSubtotal = (prevRowValues == null) ? null : prevRowValues.get(name);
                 // Plan 3a：条件字段先按规则选表达式。
                 JsonNode expr = ff.isConditional() ? selectConditionalExpr(ff, ctx, fields, basicDataValues) : ff.expression;
-                BigDecimal val = expr != null
+                BigDecimal working = expr != null
                     ? PrecisionPolicy.roundForCalculation(evaluateExpression(expr, ctx)) : ZERO;
-                results.put(name, val);
-                ctx.fieldValues.put(name, val);
+                workingResults.put(name, working);
+                results.put(name, PrecisionPolicy.roundFormulaResult(working));
+                ctx.fieldValues.put(name, working);
             }
 
             out.add(new RowResult(effKey, results, fieldValues));
 
             // Plan 2b：本行全量公式值传下行，各列下一行按本列取 prev。
-            prevRowValues = results;
+            prevRowValues = workingResults;
             idx++;
         }
         return out;
@@ -1237,10 +1239,10 @@ public class FormulaCalculator {
             JsonNode expr = ff.isConditional()
                 ? selectConditionalExpr(ff, ctx, fields, bdvByRow.get(cell.row()))
                 : ff.expression;
-            BigDecimal val = expr != null
+            BigDecimal working = expr != null
                 ? PrecisionPolicy.roundForCalculation(evaluateExpression(expr, ctx)) : ZERO;
-            resultsByRow.get(cell.row()).put(col, val);
-            ctx.fieldValues.put(col, val);
+            resultsByRow.get(cell.row()).put(col, PrecisionPolicy.roundFormulaResult(working));
+            ctx.fieldValues.put(col, working);
         }
 
         // 6. 环上（及其下游）cell → 0，环外照常求值（不是整页签炸）

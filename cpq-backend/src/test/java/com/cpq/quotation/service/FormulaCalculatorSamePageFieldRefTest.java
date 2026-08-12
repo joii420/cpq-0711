@@ -155,4 +155,26 @@ class FormulaCalculatorSamePageFieldRefTest {
         assertEquals(3.0, row1.path("材料成本").asDouble(), 1e-9,
             "行2 第二跳：材料成本=colA+colB=0+3=3");
     }
+
+    @Test
+    @DisplayName("链式公式下游使用12位工作值，单元格输出仅在最终边界保留9位")
+    void chainedFormulaUsesTwelveDigitWorkingValue() {
+        JsonNode fields = j("["
+            + "{\"name\":\"third\",\"fieldType\":\"FORMULA\"},"
+            + "{\"name\":\"restored\",\"fieldType\":\"FORMULA\"}]");
+        JsonNode formulas = j("["
+            + "{\"name\":\"third\",\"expression\":[{\"type\":\"number\",\"value\":\"1.2345678905\"}]},"
+            + "{\"name\":\"restored\",\"expression\":[{\"type\":\"field\",\"value\":\"third\"},"
+            + "{\"type\":\"operator\",\"value\":\"*\"},{\"type\":\"number\",\"value\":\"10\"}]}]");
+        JsonNode rows = j("[{\"driverRow\":{\"__seq_no__\":1},\"basicDataValues\":{}}]");
+
+        JsonNode result = calc.calculate(fields, formulas, null, j(RKF), rows, j("[]"),
+                Map.of(), Map.of(), Map.of());
+        assertEquals(1, result.size());
+        JsonNode values = result.get(0).path("values");
+
+        assertEquals("1.234567891", values.path("third").asText());
+        assertEquals("12.345678905", values.path("restored").asText(),
+                "若下游误用9位输出值会得到12.345678910；工作上下文必须保留12位");
+    }
 }

@@ -105,7 +105,7 @@ describe.each(['QUOTE', 'COSTING'] as const)('%s readonly snapshot driver-row as
     expect(typeof formulaCache.precision_result).toBe('string');
 
     expect(renderCell(fields[2], row, formulaCache)).toBe(`<span>${rawText}</span>`);
-    expect(renderCell(fields[3], row, formulaCache)).toBe('<span>1.23456789</span>');
+    expect(renderCell(fields[3], row, formulaCache)).toBe(`<span>${inputWork}</span>`);
     expect(renderCell(fields[4], row, formulaCache)).toBe('<span class="qt-formula-cell-value">2.469135781</span>');
   });
 });
@@ -161,7 +161,7 @@ it('uses snapshot driverRows when Stage H has no matching expansion key', () => 
   expect(displayRow['精度输入']).toBe(inputWork);
   expect(typeof displayRow['精度输入']).toBe('string');
   expect(renderCell(stageHFields[0], displayRow, {}, stageHFields, basicDataValues)).toBe('<span>01</span>');
-  expect(renderCell(stageHFields[1], displayRow, {}, stageHFields, basicDataValues)).toBe('<span>1.23456789</span>');
+  expect(renderCell(stageHFields[1], displayRow, {}, stageHFields, basicDataValues)).toBe(`<span>${inputWork}</span>`);
 
   const persisted = { '精度输入': '' };
   const persistedAssembly = assembleReadonlySnapshotRow({

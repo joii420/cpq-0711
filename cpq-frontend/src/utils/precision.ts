@@ -2,6 +2,10 @@ import Decimal from 'decimal.js';
 
 export const CALCULATION_SCALE = 12;
 export const DISPLAY_SCALE = 9;
+// Future system parameters will override these result-boundary defaults independently.
+export const FORMULA_RESULT_SCALE = 9;
+export const PRODUCT_CARD_SUBTOTAL_SCALE = 9;
+export const QUOTATION_TOTAL_SCALE = 9;
 export const DIVISION_SCALE = CALCULATION_SCALE;
 export const ROUNDING = Decimal.ROUND_HALF_UP;
 
@@ -65,6 +69,36 @@ export function formatDisplayDecimal(
 ): DecimalString {
   const boundedScale = Math.max(0, Math.min(DISPLAY_SCALE, Math.trunc(scale)));
   return trimFixed(toDecimal(value).toDecimalPlaces(boundedScale, ROUNDING).toFixed(boundedScale));
+}
+
+function formatResultDecimal(value: DecimalValue, scale: number): DecimalString {
+  const boundedScale = Math.max(0, Math.min(CALCULATION_SCALE, Math.trunc(scale)));
+  return trimFixed(toDecimal(value).toDecimalPlaces(boundedScale, ROUNDING).toFixed(boundedScale));
+}
+
+export function formatFormulaResult(
+  value: DecimalValue,
+  scale: number = FORMULA_RESULT_SCALE,
+): DecimalString {
+  return formatResultDecimal(value, scale);
+}
+
+export function formatProductCardSubtotal(
+  value: DecimalValue,
+  scale: number = PRODUCT_CARD_SUBTOTAL_SCALE,
+): DecimalString {
+  return formatResultDecimal(value, scale);
+}
+
+export function formatQuotationTotal(
+  value: DecimalValue,
+  scale: number = QUOTATION_TOTAL_SCALE,
+): DecimalString {
+  return formatResultDecimal(value, scale);
+}
+
+export function isFormulaFieldType(fieldType: string | null | undefined): boolean {
+  return fieldType === 'FORMULA' || fieldType?.endsWith('_FORMULA') === true;
 }
 
 /** Compatibility name for UI call sites. It returns display text, never a JS number. */

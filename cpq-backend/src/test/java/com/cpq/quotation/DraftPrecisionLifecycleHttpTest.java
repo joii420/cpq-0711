@@ -58,7 +58,7 @@ class DraftPrecisionLifecycleHttpTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String VALUE_A = "100.123456789012";
     private static final String VALUE_B = "200.000000000001";
-    private static final String HEADER_TOTAL = "300.123456789013";
+    private static final String HEADER_TOTAL = "300.123456789000";
     private static final String PRECISION_SENTINEL = "98765431.123456789012";
     private static final String TAB_NAME = "TC-058 Precision";
 
@@ -102,6 +102,9 @@ class DraftPrecisionLifecycleHttpTest {
                 em.createNativeQuery("DELETE FROM component WHERE id IN (:normal,:excel)")
                     .setParameter("normal", fixture.componentId())
                     .setParameter("excel", fixture.costingExcelComponentId()).executeUpdate();
+                em.createNativeQuery("DELETE FROM component WHERE id IN (:c2,:c3)")
+                    .setParameter("c2", fixture.secondaryInputComponentId())
+                    .setParameter("c3", fixture.secondaryFormulaComponentId()).executeUpdate();
                 em.createNativeQuery("DELETE FROM product WHERE id IN (:a,:b)")
                     .setParameter("a", fixture.productIds().get(0))
                     .setParameter("b", fixture.productIds().get(1)).executeUpdate();
@@ -333,6 +336,63 @@ class DraftPrecisionLifecycleHttpTest {
         assertPrecisionSentinelIsTextual(returnedSnapshot);
     }
 
+    @Test
+    @Order(5)
+    void inputNumberRoundTripsVerbatimAndFormulaNumericTokenIsAtomic400() throws Exception {
+        Fixture fixture = createFixture();
+        String rowData = "[{\"rowKey\":\"R0\",\"项次\":1,\"输入单价\":\"1.2300\","
+                + "\"公式金额\":\"0.410000001\",\"amount\":\"" + VALUE_A + "\"}]";
+        String body = singleLineDraft(fixture, rowData);
+
+        Response saved = RestAssured.given().contentType(ContentType.JSON).body(body)
+                .put("/api/cpq/quotations/" + fixture.quotationId() + "/draft");
+        assertEquals(200, saved.statusCode(), saved.asString());
+        String stored = componentRowData(fixture.quotationId());
+        assertTrue(stored.contains("\"项次\": 1") || stored.contains("\"项次\":1"), stored);
+        assertTrue(stored.contains("\"输入单价\": \"1.2300\"")
+                || stored.contains("\"输入单价\":\"1.2300\""), stored);
+        Response reopened = RestAssured.given().get("/api/cpq/quotations/" + fixture.quotationId());
+        assertEquals(200, reopened.statusCode(), reopened.asString());
+        assertTrue(reopened.asString().contains("1.2300"), reopened.asString());
+
+        String before = componentFingerprint(fixture.quotationId());
+        String invalid = singleLineDraft(fixture, rowData.replace(
+                "\"公式金额\":\"0.410000001\"", "\"公式金额\":0.410000001"));
+        Response rejected = RestAssured.given().contentType(ContentType.JSON).body(invalid)
+                .put("/api/cpq/quotations/" + fixture.quotationId() + "/draft");
+        assertEquals(400, rejected.statusCode(), rejected.asString());
+        assertTrue(rejected.asString().contains("公式金额"), rejected.asString());
+        assertEquals(before, componentFingerprint(fixture.quotationId()));
+    }
+
+    @Test
+    @Order(6)
+    void frozenMetadataSqlIsConstantForT1T2C1C2C3WhenLineCountDoubles() {
+        Fixture fixture = createFixture();
+        Statistics statistics = em.getEntityManagerFactory().unwrap(SessionFactory.class).getStatistics();
+        statistics.setStatisticsEnabled(true);
+
+        statistics.clear();
+        Response n = RestAssured.given().contentType(ContentType.JSON)
+                .body(classificationDraft(fixture, 2))
+                .put("/api/cpq/quotations/" + fixture.quotationId() + "/draft");
+        long nSql = statistics.getPrepareStatementCount();
+        assertEquals(400, n.statusCode(), n.asString());
+        assertTrue(n.asString().contains("lineItems[1].componentData[1].rowData[0].公式值"), n.asString());
+
+        statistics.clear();
+        Response twiceN = RestAssured.given().contentType(ContentType.JSON)
+                .body(classificationDraft(fixture, 4))
+                .put("/api/cpq/quotations/" + fixture.quotationId() + "/draft");
+        long twiceNSql = statistics.getPrepareStatementCount();
+        assertEquals(400, twiceN.statusCode(), twiceN.asString());
+        assertTrue(twiceN.asString().contains("lineItems[1].componentData[1].rowData[0].公式值"), twiceN.asString());
+
+        System.out.printf("[TC-0811-META] T1/T2 C1/C2/C3 N=2 sql=%d 2N=4 sql=%d%n", nSql, twiceNSql);
+        assertTrue(nSql > 0);
+        assertEquals(nSql, twiceNSql, "批量冻结元数据 SQL 不得随产品行/组件引用数增长");
+    }
+
     private void replaceSnapshotRows(UUID lineItemId, String rowsJson) {
         em.createNativeQuery("UPDATE quotation_line_component_data SET snapshot_rows=CAST(:rows AS jsonb) "
                 + "WHERE line_item_id=:lineId")
@@ -490,8 +550,24 @@ class DraftPrecisionLifecycleHttpTest {
                 + "\"source_type\":\"PRODUCT_ATTRIBUTE\",\"field_key\":\"amount\",\"hidden\":false}]";
             costingExcelComponent.persist();
 
+            Component secondaryInput = new Component();
+            secondaryInput.name = "TC-0811 secondary input";
+            secondaryInput.code = "TC0811-C2-" + UUID.randomUUID().toString().substring(0, 8);
+            secondaryInput.fields = "[{\"name\":\"输入值\",\"field_type\":\"INPUT_NUMBER\"}]";
+            secondaryInput.formulas = "[]";
+            secondaryInput.persist();
+
+            Component secondaryFormula = new Component();
+            secondaryFormula.name = "TC-0811 secondary formula";
+            secondaryFormula.code = "TC0811-C3-" + UUID.randomUUID().toString().substring(0, 8);
+            secondaryFormula.fields = "[{\"name\":\"公式值\",\"field_type\":\"FORMULA\"}]";
+            secondaryFormula.formulas = "[]";
+            secondaryFormula.persist();
+
             Template quoteTemplate = createTemplate("QUOTATION", component, null);
             Template costingTemplate = createTemplate("COSTING", component, costingExcelComponent);
+            addFrozenTab(costingTemplate, secondaryInput, 2);
+            addFrozenTab(costingTemplate, secondaryFormula, 3);
 
             List<UUID> productIds = new ArrayList<>();
             for (int i = 0; i < 2; i++) {
@@ -542,6 +618,7 @@ class DraftPrecisionLifecycleHttpTest {
             }
 
             return new Fixture(quotation.id, customerId, component.id, costingExcelComponent.id,
+                secondaryInput.id, secondaryFormula.id,
                 quoteTemplate.id, costingTemplate.id, productIds, lineIds);
         });
         fixtures.add(fixture);
@@ -608,6 +685,44 @@ class DraftPrecisionLifecycleHttpTest {
             excelSnapshot.persist();
         }
         return template;
+    }
+
+    private void addFrozenTab(Template template, Component component, int sortOrder) {
+        TemplateComponent mounted = new TemplateComponent();
+        mounted.templateId = template.id;
+        mounted.componentId = component.id;
+        mounted.tabName = component.name;
+        mounted.sortOrder = sortOrder;
+        mounted.persist();
+        TemplateComponentSnapshot snapshot = new TemplateComponentSnapshot();
+        snapshot.templateId = template.id;
+        snapshot.templateComponentId = mounted.id;
+        snapshot.componentId = component.id;
+        snapshot.sortOrder = sortOrder;
+        snapshot.tabName = component.name;
+        snapshot.componentName = component.name;
+        snapshot.componentCode = component.code;
+        snapshot.componentType = "NORMAL";
+        snapshot.fields = component.fields;
+        snapshot.formulas = component.formulas;
+        snapshot.persist();
+        try {
+            ArrayNode components = (ArrayNode) MAPPER.readTree(template.componentsSnapshot);
+            ObjectNode json = components.addObject();
+            json.put("id", UUID.randomUUID().toString());
+            json.put("componentId", component.id.toString());
+            json.put("componentName", component.name);
+            json.put("componentCode", component.code);
+            json.put("componentType", "NORMAL");
+            json.put("tabName", component.name);
+            json.put("sortOrder", sortOrder);
+            json.set("fields", MAPPER.readTree(component.fields));
+            json.set("formulas", MAPPER.readTree(component.formulas));
+            json.set("formula_assignments", MAPPER.createObjectNode());
+            template.componentsSnapshot = MAPPER.writeValueAsString(components);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private Response putCanonicalDraft(Fixture fixture) {
@@ -879,7 +994,63 @@ class DraftPrecisionLifecycleHttpTest {
     private static String fieldsJson() {
         return "[{\"name\":\"rowKey\",\"field_type\":\"INPUT_TEXT\",\"sort_order\":0},"
             + "{\"name\":\"amount\",\"field_type\":\"INPUT_NUMBER\",\"sort_order\":1,"
-            + "\"is_amount\":true,\"is_subtotal\":true}]";
+            + "\"is_amount\":true,\"is_subtotal\":true},"
+            + "{\"name\":\"项次\",\"field_type\":\"INPUT_NUMBER\"},"
+            + "{\"name\":\"输入单价\",\"field_type\":\"INPUT_NUMBER\"},"
+            + "{\"name\":\"公式金额\",\"field_type\":\"FORMULA\"}]";
+    }
+
+    private String singleLineDraft(Fixture fixture, String rowData) {
+        return "{\"name\":\"TC-0811 input precision\",\"finalDiscountRate\":\"100.00\","
+            + "\"lineItems\":[{\"id\":\"" + fixture.lineIds().get(0) + "\","
+            + "\"productId\":\"" + fixture.productIds().get(0) + "\",\"templateId\":\""
+            + fixture.quoteTemplateId() + "\",\"productName\":\"TC-058 product 0\","
+            + "\"subtotal\":\"" + VALUE_A + "\",\"sortOrder\":0,\"componentData\":[{"
+            + "\"componentId\":\"" + fixture.componentId() + "\",\"tabName\":\"" + TAB_NAME
+            + "\",\"rowData\":" + jsonString(rowData) + ",\"subtotal\":\"" + VALUE_A
+            + "\",\"sortOrder\":0}]}]}";
+    }
+
+    private String componentRowData(UUID quotationId) {
+        return QuarkusTransaction.requiringNew().call(() -> String.valueOf(em.createNativeQuery(
+            "SELECT cd.row_data::text FROM quotation_line_component_data cd JOIN quotation_line_item li "
+                + "ON li.id=cd.line_item_id WHERE li.quotation_id=:qid ORDER BY li.sort_order,cd.sort_order LIMIT 1")
+            .setParameter("qid", quotationId).getSingleResult()));
+    }
+
+    private String componentFingerprint(UUID quotationId) {
+        return QuarkusTransaction.requiringNew().call(() -> String.valueOf(em.createNativeQuery(
+            "SELECT md5(string_agg(cd.id::text||':'||cd.row_data::text,'|' ORDER BY cd.id)) "
+                + "FROM quotation_line_component_data cd JOIN quotation_line_item li ON li.id=cd.line_item_id "
+                + "WHERE li.quotation_id=:qid")
+            .setParameter("qid", quotationId).getSingleResult()));
+    }
+
+    private String classificationDraft(Fixture fixture, int lineCount) {
+        StringBuilder lines = new StringBuilder();
+        for (int i = 0; i < lineCount; i++) {
+            if (i > 0) lines.append(',');
+            boolean firstTemplate = i % 2 == 0;
+            UUID templateId = firstTemplate ? fixture.quoteTemplateId() : fixture.costingTemplateId();
+            lines.append("{\"productId\":\"").append(fixture.productIds().get(i % 2))
+                .append("\",\"templateId\":\"").append(templateId)
+                .append("\",\"productName\":\"classification\",\"subtotal\":\"1\",\"sortOrder\":")
+                .append(i).append(",\"componentData\":[");
+            if (firstTemplate) {
+                lines.append("{\"componentId\":\"").append(fixture.componentId())
+                    .append("\",\"tabName\":\"").append(TAB_NAME)
+                    .append("\",\"rowData\":\"[{\\\"rowKey\\\":\\\"R").append(i)
+                    .append("\\\",\\\"amount\\\":\\\"1.2300\\\"}]\",\"subtotal\":\"1\"}");
+            } else {
+                lines.append("{\"componentId\":\"").append(fixture.secondaryInputComponentId())
+                    .append("\",\"tabName\":\"C2\",\"rowData\":\"[{\\\"输入值\\\":\\\"1.2300\\\"}]\",\"subtotal\":\"1\"},")
+                    .append("{\"componentId\":\"").append(fixture.secondaryFormulaComponentId())
+                    .append("\",\"tabName\":\"C3\",\"rowData\":\"[{\\\"公式值\\\":1.25}]\",\"subtotal\":\"1\"}");
+            }
+            lines.append("]}");
+        }
+        return "{\"name\":\"classification\",\"finalDiscountRate\":\"100\",\"lineItems\":["
+                + lines + "]}";
     }
 
     private static String componentSnapshotJson(Component component, Component excelComponent) {
@@ -950,6 +1121,7 @@ class DraftPrecisionLifecycleHttpTest {
 
     private record Fixture(
             UUID quotationId, UUID customerId, UUID componentId, UUID costingExcelComponentId,
+            UUID secondaryInputComponentId, UUID secondaryFormulaComponentId,
             UUID quoteTemplateId, UUID costingTemplateId,
             List<UUID> productIds, List<UUID> lineIds) {
     }

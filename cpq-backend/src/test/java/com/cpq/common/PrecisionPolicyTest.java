@@ -26,6 +26,9 @@ class PrecisionPolicyTest {
     void calculationAndDisplayScales() {
         assertEquals(12, PrecisionPolicy.CALCULATION_SCALE);
         assertEquals(9, PrecisionPolicy.DISPLAY_SCALE);
+        assertEquals(9, PrecisionPolicy.FORMULA_RESULT_SCALE);
+        assertEquals(9, PrecisionPolicy.PRODUCT_CARD_SUBTOTAL_SCALE);
+        assertEquals(9, PrecisionPolicy.QUOTATION_TOTAL_SCALE);
     }
 
     @Test
@@ -85,6 +88,16 @@ class PrecisionPolicyTest {
         assertEquals("1.234567892", PrecisionPolicy.roundForDisplay(new BigDecimal("1.2345678915")).toPlainString());
         assertEquals("-1.234567892", PrecisionPolicy.roundForDisplay(new BigDecimal("-1.2345678915")).toPlainString());
     }
+
+    @Test
+    @DisplayName("公式结果、产品卡片小计、报价总额使用各自结果边界")
+    void independentResultBoundaries() {
+        BigDecimal value = new BigDecimal("1.2345678905");
+        assertEquals("1.234567891", PrecisionPolicy.roundFormulaResult(value).toPlainString());
+        assertEquals("1.234567891", PrecisionPolicy.roundProductCardSubtotal(value).toPlainString());
+        assertEquals("1.234567891", PrecisionPolicy.roundQuotationTotal(value).toPlainString());
+    }
+
 
     @Test
     @DisplayName("G-2: 1.005 规整到 2 位 = 1.01（HALF_UP 舍入边界，非 double 的 1.00）")

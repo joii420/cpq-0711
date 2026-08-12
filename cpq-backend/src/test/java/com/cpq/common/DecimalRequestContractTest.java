@@ -179,6 +179,31 @@ class DecimalRequestContractTest {
     }
 
     @Test
+    void fieldAwareRowValidatorSeparatesInputFormulaAndUnknownFields() {
+        Map<String, String> fieldTypes = Map.of(
+                "项次", "INPUT_NUMBER",
+                "输入单价", "INPUT_NUMBER",
+                "说明", "INPUT_TEXT",
+                "公式金额", "FORMULA");
+
+        DecimalRequestValidator.validateRowData(
+                "[{\"项次\":1,\"输入单价\":\"1.2300\",\"说明\":\"原样\",\"公式金额\":\"0.410000001\"}]",
+                "lineItems[0].componentData[0].rowData", fieldTypes);
+
+        var formulaNumber = assertThrows(RuntimeException.class, () ->
+                DecimalRequestValidator.validateRowData(
+                        "[{\"公式金额\":0.410000001}]",
+                        "lineItems[0].componentData[0].rowData", fieldTypes));
+        assertTrue(formulaNumber.getMessage().contains("rowData[0].公式金额"));
+
+        var unknownNumber = assertThrows(RuntimeException.class, () ->
+                DecimalRequestValidator.validateRowData(
+                        "[{\"未知字段\":1}]",
+                        "lineItems[0].componentData[0].rowData", fieldTypes));
+        assertTrue(unknownNumber.getMessage().contains("未知字段"));
+    }
+
+    @Test
     void p1ToP4MapEntryPointsHaveExplicitValidationInventory() throws Exception {
         String formula = Files.readString(Path.of(
                 "src/main/java/com/cpq/formula/resource/FormulaEvaluateResource.java"));
@@ -195,7 +220,7 @@ class DecimalRequestContractTest {
                 "rejectNumericTokens(d.frontendInputs",
                 "rejectNumericTokens(d.backendInputs",
                 "rejectNumericTokens(req != null ? req.columns",
-                "rejectNumericJsonTokens(component.rowData",
+                "validateRowData(component.rowData",
                 "rejectNumericTokens(process.paramValues")) {
             assertTrue(quotation.contains(marker), marker);
         }

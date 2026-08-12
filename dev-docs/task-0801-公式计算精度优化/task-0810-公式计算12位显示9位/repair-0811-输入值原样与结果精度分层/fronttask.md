@@ -25,12 +25,12 @@
 
 ## 4. 任务清单
 
-- [ ] F1 定义四层精度常量并补注释
-- [ ] F2 建立字段语义分类 helper
-- [ ] F3 修复 lossless JSON 中文键乱码
-- [ ] F4 输入字段原值贯穿编辑、保存、重开
-- [ ] F5 公式最终结果收口 9 位
-- [ ] F6 产品卡片小计接独立变量
-- [ ] F7 报价单总额接独立变量
-- [ ] F8 三视图与导出回归
-- [ ] F9 TypeScript/Vitest/Vite/Playwright 自检
+- [x] F1 定义四层精度常量并补注释
+- [x] F2 建立字段语义分类 helper
+- [x] F3 修复 lossless JSON 中文键乱码
+- [x] F4 输入字段原值贯穿编辑、保存、重开
+- [x] F5 公式最终结果收口 9 位
+- [x] F6 产品卡片小计接独立变量
+- [x] F7 报价单总额接独立变量
+- [x] F8 三视图与导出回归
+- [x] F9 TypeScript/Vitest/Vite/Playwright 自检（旧“西门子”fixture 无数据，真实 Playwright 环境阻塞；自动化与 HTTP 生命周期准入）

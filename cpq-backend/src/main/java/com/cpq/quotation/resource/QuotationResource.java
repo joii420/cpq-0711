@@ -19,6 +19,10 @@ import com.cpq.quotation.dto.CustomerPartCandidateDTO;
 import java.util.HashMap;
 import java.util.List;
 import com.cpq.quotation.snapshot.FieldTraceDTO;
+import com.cpq.template.entity.TemplateComponentSnapshot;
+import com.cpq.template.service.PublishedTemplateReader;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.cpq.system.entity.User;
 import io.vertx.core.http.HttpServerRequest;
 import jakarta.inject.Inject;
@@ -32,6 +36,9 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Map;
 import java.util.UUID;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Path("/api/cpq/quotations")
 @Produces(MediaType.APPLICATION_JSON)
@@ -59,6 +66,11 @@ public class QuotationResource {
 
     @Inject
     CustomerPartCandidateService candidateService;
+
+    @Inject
+    PublishedTemplateReader publishedTemplateReader;
+
+    private static final ObjectMapper DECIMAL_MAPPER = com.cpq.common.DecimalJacksonCustomizer.newMapper();
 
     /** task-0806 阶段① B1-2/B1-3：对账差异埋点落点（API-5 写入、submit 闸门 B1-1 读取）。 */
     @Inject
@@ -691,10 +703,20 @@ public class QuotationResource {
         return ApiResponse.success();
     }
 
-    private static void validateDraftDecimals(SaveDraftRequest request) {
+    private void validateDraftDecimals(SaveDraftRequest request) {
         if (request == null || request.lineItems == null) {
             return;
         }
+        Set<UUID> templateIds = new LinkedHashSet<>();
+        for (SaveDraftRequest.LineItemDraft line : request.lineItems) {
+            if (line != null && line.templateId != null && line.componentData != null && !line.componentData.isEmpty()) {
+                templateIds.add(line.templateId);
+            }
+        }
+        Map<UUID, List<TemplateComponentSnapshot>> tabsByTemplate =
+                publishedTemplateReader.allTabsOfMany(templateIds);
+        Map<TemplateComponentKey, Map<String, String>> fieldsByComponent =
+                indexFrozenFields(tabsByTemplate);
         for (int lineIndex = 0; lineIndex < request.lineItems.size(); lineIndex++) {
             SaveDraftRequest.LineItemDraft line = request.lineItems.get(lineIndex);
             if (line == null) {
@@ -709,8 +731,25 @@ public class QuotationResource {
                 for (int componentIndex = 0; componentIndex < line.componentData.size(); componentIndex++) {
                     SaveDraftRequest.ComponentDataDraft component = line.componentData.get(componentIndex);
                     if (component != null) {
-                        DecimalRequestValidator.rejectNumericJsonTokens(component.rowData,
-                                linePath + ".componentData[" + componentIndex + "].rowData");
+                        String componentPath = linePath + ".componentData[" + componentIndex + "]";
+                        // Excel import creates a synthetic tab (componentId=null, tabName=Import).
+                        // It has no component metadata by design; retain the legacy strict numeric-token
+                        // validation so historical imported quotations remain saveable without silently
+                        // relaxing precision checks for real components.
+                        if (component.componentId == null && "Import".equals(component.tabName)) {
+                            DecimalRequestValidator.rejectNumericJsonTokens(
+                                    component.rowData, componentPath + ".rowData");
+                            continue;
+                        }
+                        Map<String, String> fieldTypes = fieldsByComponent.get(
+                                new TemplateComponentKey(line.templateId, component.componentId));
+                        if (fieldTypes == null) {
+                            throw new BusinessException(400, componentPath
+                                    + " has no frozen field metadata for templateId=" + line.templateId
+                                    + ", componentId=" + component.componentId);
+                        }
+                        DecimalRequestValidator.validateRowData(component.rowData,
+                                componentPath + ".rowData", fieldTypes);
                     }
                 }
             }
@@ -725,6 +764,35 @@ public class QuotationResource {
             }
         }
     }
+
+    private static Map<TemplateComponentKey, Map<String, String>> indexFrozenFields(
+            Map<UUID, List<TemplateComponentSnapshot>> tabsByTemplate) {
+        Map<TemplateComponentKey, Map<String, String>> result = new HashMap<>();
+        for (Map.Entry<UUID, List<TemplateComponentSnapshot>> template : tabsByTemplate.entrySet()) {
+            for (TemplateComponentSnapshot tab : template.getValue()) {
+                Map<String, String> fields = new LinkedHashMap<>();
+                try {
+                    JsonNode definitions = DECIMAL_MAPPER.readTree(tab.fields);
+                    if (definitions.isArray()) {
+                        for (JsonNode definition : definitions) {
+                            String name = definition.path("name").asText(null);
+                            String type = definition.hasNonNull("field_type")
+                                    ? definition.path("field_type").asText()
+                                    : definition.path("fieldType").asText(null);
+                            if (name != null && type != null) fields.put(name, type);
+                        }
+                    }
+                } catch (Exception e) {
+                    throw new BusinessException(400, "Invalid frozen field metadata: templateId="
+                            + template.getKey() + ", componentId=" + tab.componentId);
+                }
+                result.put(new TemplateComponentKey(template.getKey(), tab.componentId), Map.copyOf(fields));
+            }
+        }
+        return result;
+    }
+
+    private record TemplateComponentKey(UUID templateId, UUID componentId) {}
 
     @GET
     @Path("/{id}/export-excel-view")

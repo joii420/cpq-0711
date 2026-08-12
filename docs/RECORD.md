@@ -5487,3 +5487,15 @@ render() 用 lineItems.get(0).quotationId 设 QuotationIdContext，
 **增量脚本约束**：`0811-dbupdate.sql` 适用于已执行 `0809-dbupdate.sql`、结构停在 V384 的内网库。21 列 DDL 放在同一事务中，任一失败整体回滚；DDL 可重复执行。已有 `BASELINE` 行只在版本低于 385 时上调，完整 Flyway 迁移库没有 baseline 行时不伪造迁移历史。脚本注明表级锁、低峰/停写窗口、备份和前后自检要求。
 
 **亲验证据**：新初始化脚本完整导入隔离库后得到 baseline=385、业务/历史表共 144 张、21/21 目标列均为 `numeric(26,12)`；6 个非目标 `numeric(20,6)` 字段保持不变。另以 Git 原始 V384 初始化脚本建立升级库，写入 `99999999999999.123456`、`0.000001`、`123456789.123456` 三个边界样本后执行 0811：21/21 列升级成功、baseline=385，三个样本数值比较均为 true；第二次执行仍 exit 0，baseline UPDATE 影响 0 行。两条路径字段集合与 `V385__task0810_formula_scale12.sql` 比对均为 21 项、零差异。
+
+---
+
+## [2026-08-11] 公式/报价 - repair-0811 输入值原样与结果精度分层
+
+**涉及文件**：`DecimalRequestValidator.java`、`PrecisionPolicy.java`、`QuotationResource.java`、`FormulaCalculator.java`、`CardSnapshotService.java`、`QuotationService.java`、`precision.ts`、`losslessJson.ts`、`draftPrecision.ts`、报价 Wizard/Step2/Step3 及对应测试；任务目录 `repair-0811-输入值原样与结果精度分层/`。
+
+**核心决策**：草稿 `rowData` 按已发布模板冻结字段元数据的 `(templateId, componentId)` 复合键分类；INPUT_TEXT/INPUT_NUMBER/基础数据保持当前单元格原值，`"1.2300"` 不规整，结构整数可保留 JSON number；FORMULA/`*_FORMULA` 只接受最多 9 位 decimal string。公式依赖上下文和跨节点工作值保留 12 位，只有对外单元格结果收口 9 位。产品卡片最终小计和报价单总金额分别使用独立默认 scale=9 的入口，注释预留未来系统参数替换点。
+
+**验收证据**：真实 `PUT /draft` 接受 `项次:1`，DB/GET 逐字保持 `"1.2300"`；公式 number 返回 400 且 DB MD5 指纹不变。冻结元数据校验查询在 N=2/2N=4 时均为 1 条 SQL；生产入口按 7/8、8/7 双向验证无串用。后端指定复验 22/22、前端全量 95 文件/1151 用例、TypeScript、前后端生产构建、V385 21/21 `numeric(26,12)` 均通过；无新增迁移。
+
+**残余风险**：仓库 Playwright `quotation-flow.spec.ts` 的旧“西门子”客户 fixture 返回 No data，真实三视图用例环境阻塞；登录、新建报价页与控制台无运行时错误，三视图/快照自动化通过。闭合 `BL-0162`。

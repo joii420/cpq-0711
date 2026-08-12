@@ -663,10 +663,9 @@ public class QuotationService {
                     ex.delete();
                 }
 
-                // task-0801 B4/B5：除法中间精度 4→12（PrecisionPolicy.DIVISION_SCALE），
-                // 落库边界（originalAmount/totalAmount）统一规整到 12 位。
-                q.originalAmount = PrecisionPolicy.roundForCalculation(total);
-                q.totalAmount = PrecisionPolicy.roundForCalculation(total.multiply(q.finalDiscountRate)
+                // 除法过程保留 12 位；报价总额在独立 QUOTATION_TOTAL_SCALE 结果边界落库。
+                q.originalAmount = quotationTotalResult(total);
+                q.totalAmount = quotationTotalResult(total.multiply(q.finalDiscountRate)
                         .divide(new BigDecimal("100"), PrecisionPolicy.DIVISION_SCALE, RoundingMode.HALF_UP));
 
                 // V169 二阶段父子关系重建: 按 tempParentIndex 把 PART 子件 UPDATE 指向新父 UUID
@@ -704,14 +703,14 @@ public class QuotationService {
         }
 
         DiscountResult result = discountCalculationService.calculate(q.customerId, originalAmount);
-        // task-0810：落库工作值统一规整到 12 位。
-        q.originalAmount = PrecisionPolicy.roundForCalculation(originalAmount);
+        // repair-0811：报价总额使用独立结果精度边界。
+        q.originalAmount = quotationTotalResult(originalAmount);
         q.systemDiscountRate = result.discountRate;
         if (!Boolean.TRUE.equals(q.isManuallyAdjusted)) {
             q.finalDiscountRate = result.discountRate;
         }
         // task-0801 B4：除法中间精度 4→12（PrecisionPolicy.DIVISION_SCALE）。
-        q.totalAmount = PrecisionPolicy.roundForCalculation(originalAmount.multiply(q.finalDiscountRate)
+        q.totalAmount = quotationTotalResult(originalAmount.multiply(q.finalDiscountRate)
                 .divide(new BigDecimal("100"), PrecisionPolicy.DIVISION_SCALE, RoundingMode.HALF_UP));
 
         LOG.infof("Calculated discount for quotation id=%s rate=%s rule=%s", id, result.discountRate, result.matchedRuleName);
@@ -891,8 +890,8 @@ public class QuotationService {
             lineDiscountService.recompute(li);
             if (li.lineTotalAmount != null) lineSum = lineSum.add(li.lineTotalAmount);
         }
-        // task-0810：落库工作值统一规整到 12 位。
-        q.totalAmount = PrecisionPolicy.roundForCalculation(lineSum);
+        // repair-0811：报价总额使用独立结果精度边界。
+        q.totalAmount = quotationTotalResult(lineSum);
 
         // 进入财务核价: 每次提交都建新核价单（累积模式），冻结 DTO+gvDefs，并发时 409。
         costingFreezeService.createForSubmission(id, userId);
@@ -2093,15 +2092,14 @@ public class QuotationService {
             }
         }
 
-        // Refresh totalAmount based on current line item subtotals and discount
-        // task-0801 B4/B5：除法中间精度 4→12（PrecisionPolicy.DIVISION_SCALE），落库边界统一
-        // PrecisionPolicy.roundForCalculation() 规整到 12 位。
-        q.originalAmount = PrecisionPolicy.roundForCalculation(total);
+        // Refresh totalAmount based on current line item subtotals and discount.
+        // 除法过程保留 12 位；报价总额按独立结果精度边界落库。
+        q.originalAmount = quotationTotalResult(total);
         if (q.finalDiscountRate != null) {
-            q.totalAmount = PrecisionPolicy.roundForCalculation(total.multiply(q.finalDiscountRate)
+            q.totalAmount = quotationTotalResult(total.multiply(q.finalDiscountRate)
                     .divide(new BigDecimal("100"), PrecisionPolicy.DIVISION_SCALE, RoundingMode.HALF_UP));
         } else {
-            q.totalAmount = PrecisionPolicy.roundForCalculation(total);
+            q.totalAmount = quotationTotalResult(total);
         }
         em.flush();
 
@@ -2590,10 +2588,9 @@ public class QuotationService {
         }
 
         // ── 更新总额 ───────────────────────────────────────────────────────────────────────────
-        // task-0801 B4/B5：除法中间精度 4→12（PrecisionPolicy.DIVISION_SCALE），
-        // 落库边界（originalAmount/totalAmount）统一规整到 12 位。
-        q.originalAmount = PrecisionPolicy.roundForCalculation(total);
-        q.totalAmount = PrecisionPolicy.roundForCalculation(total.multiply(q.finalDiscountRate)
+        // 除法过程保留 12 位；报价总额在独立 QUOTATION_TOTAL_SCALE 结果边界落库。
+        q.originalAmount = quotationTotalResult(total);
+        q.totalAmount = quotationTotalResult(total.multiply(q.finalDiscountRate)
                 .divide(new BigDecimal("100"), PrecisionPolicy.DIVISION_SCALE, RoundingMode.HALF_UP));
 
         // ── E5 V169 父子关系批量 UPDATE ────────────────────────────────────────────────────────
@@ -2638,6 +2635,14 @@ public class QuotationService {
             }
         }
 
+    }
+
+    static BigDecimal quotationTotalResult(BigDecimal value) {
+        return PrecisionPolicy.roundQuotationTotal(value);
+    }
+
+    static BigDecimal quotationTotalResult(BigDecimal value, int scale) {
+        return PrecisionPolicy.roundForResultScale(value, scale);
     }
 
     private void deleteLineItems(UUID quotationId) {

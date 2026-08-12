@@ -1,7 +1,7 @@
 import { bnfDriverLookupKey } from './useDriverExpansions';
 import { formatPathValue } from './components/formatPathValue';
 import type { ComponentField } from './QuotationStep2';
-import { isDecimalString, normalizeDecimalString, type DecimalString } from '../../utils/precision';
+import { isDecimalString, type DecimalString } from '../../utils/precision';
 
 export interface InputDefaultCtx {
   basicDataValues?: Record<string, any>;
@@ -9,9 +9,9 @@ export interface InputDefaultCtx {
   pathCache?: Record<string, any>;
 }
 
-/** 与 ComponentCell.onChange 的 /^-?\d*\.?\d*$/ 同源：合法返回 number，否则 undefined。 */
+/** Validate decimal text without changing its spelling (for example, keep `1.2300`). */
 export function coerceInputNumber(v: unknown): DecimalString | undefined {
-  return isDecimalString(v) ? normalizeDecimalString(v) : undefined;
+  return isDecimalString(v) ? v : undefined;
 }
 
 /**

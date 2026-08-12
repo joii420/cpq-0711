@@ -46,14 +46,15 @@ import { waitForPendingEdits } from './pendingEditTracker';
 import QuotationPriceRevisionsDrawer from './QuotationPriceRevisionsDrawer';
 import {
   isDecimalString,
+  formatQuotationTotal,
   normalizeDecimalString,
   sumDecimal,
-  toCalculationString,
   toDecimal,
   type DecimalString,
 } from '../../utils/precision';
 import type { DecimalContext } from '../../utils/formulaEngine';
 import { formatNumber } from '../../utils/formatNumber';
+import { applyFormulaResultsToDraftRow, toDraftComponentSubtotal } from './draftPrecision';
 
 // antd 6.x: Steps uses `items` prop, not <Step> children
 const { TextArea } = Input;
@@ -1103,7 +1104,7 @@ const QuotationWizard: React.FC = () => {
           // WYSIWYG 快照：保存前把 BASIC_DATA（driver 展开行级值）
           // 与 FORMULA（公式引擎计算结果）一并写入 rowData，让"屏幕看到的数据 == DB 存的数据"。
           rowData: JSON.stringify(snapshotRows(li, cd, ci, evalCtxOf(li))),
-          subtotal: cd.subtotal || 0,
+          subtotal: toDraftComponentSubtotal(cd.subtotal),
           sortOrder: ci,
         })),
       })),
@@ -1255,15 +1256,7 @@ const QuotationWizard: React.FC = () => {
         const enriched = enrichedByDriverIdx.get(i) ?? bakeNonFormulaDefaults(ra.row, basicDataValues);
         const treeRowIdx = driverIdxToTreeIdx.get(i);
         const formulaCache = treeRowIdx !== undefined ? (treeResults[treeRowIdx] ?? {}) : {};
-        for (const f of fields) {
-          if (f.field_type !== 'FORMULA') continue;
-          const fieldKey = f.name || f.key || '';
-          if (!fieldKey) continue;
-          if (formulaCache[fieldKey] != null) {
-            enriched[fieldKey] = formulaCache[fieldKey];
-          }
-        }
-        out.push(enriched);
+        out.push(applyFormulaResultsToDraftRow(enriched, fields, formulaCache));
         continue;
       }
 
@@ -1278,14 +1271,7 @@ const QuotationWizard: React.FC = () => {
           // 与 buildCrossTabRows.computeRows 的非树分支逐参对齐（QuotationStep2:1533）。
           gvDefs, crossTabRows, prevRowValues,
         );
-        for (const f of fields) {
-          if (f.field_type !== 'FORMULA') continue;
-          const fieldKey = f.name || f.key || '';
-          if (!fieldKey) continue;
-          if (formulaCache[fieldKey] != null) {
-            enriched[fieldKey] = formulaCache[fieldKey];
-          }
-        }
+        Object.assign(enriched, applyFormulaResultsToDraftRow(enriched, fields, formulaCache));
         // Plan 2b：本行全量公式值留给下一行，各列下一行按本列取 prev。
         prevRowValues = formulaCache;
       } catch {
@@ -1469,7 +1455,7 @@ const QuotationWizard: React.FC = () => {
   const handleCalculateDiscount = async () => {
     if (!quotationId) return;
     // task-0801（链路二）：Σ 各行产品小计改十进制精确累加，不再 number `+=`。
-    const originalAmount = toCalculationString(sumDecimal(
+    const originalAmount = formatQuotationTotal(sumDecimal(
       lineItems.map(li => computeProductSubtotal(li, driverExpansions, customerIdValue)),
     ));
     if (toDecimal(originalAmount).lessThanOrEqualTo(0)) {
@@ -1892,7 +1878,7 @@ const QuotationWizard: React.FC = () => {
   const renderStep5 = () => {
     // task-0801（链路二）：Σ 各行产品小计改十进制精确累加；折扣率相乘同样走 Decimal（下游是
     // 已聚合的大额合计，避免再引入 number 运算误差）。
-    const originalAmount = toCalculationString(sumDecimal(
+    const originalAmount = formatQuotationTotal(sumDecimal(
       lineItems.map(li => computeProductSubtotal(li, driverExpansions, customerIdValue)),
     ));
     const formRate = form.getFieldValue('finalDiscountRate');
@@ -1901,7 +1887,7 @@ const QuotationWizard: React.FC = () => {
       : isDecimalString(quotation?.finalDiscountRate)
         ? normalizeDecimalString(quotation.finalDiscountRate)
         : '100';
-    const totalAmount = toCalculationString(
+    const totalAmount = formatQuotationTotal(
       toDecimal(originalAmount).times(toDecimal(discountRate)).dividedBy('100'),
     );
     const isDraft = !quotation || quotation.status === 'DRAFT';

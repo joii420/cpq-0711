@@ -37,7 +37,10 @@ export { formatPathValue } from './formatPathValue';
 
 /** Format precision-bearing input fields only at the readonly presentation boundary. */
 export function formatReadonlyInputValue(field: ComponentField, value: unknown): string | null {
-  const isPrecisionField = field.field_type === 'INPUT_NUMBER' || !!field.is_amount;
+  if (field.field_type === 'INPUT_NUMBER') {
+    return typeof value === 'string' ? value : formatPathValue(value);
+  }
+  const isPrecisionField = !!field.is_amount;
   if (!isPrecisionField) return formatPathValue(value);
   return formatNumber(value as DecimalValue, {
     decimals: field.decimals ?? null,
