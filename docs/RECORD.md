@@ -5475,3 +5475,15 @@ render() 用 lineItems.get(0).quotationId 设 QuotationIdContext，
 **并发修复**：ensure 与 edit 使用同一 PostgreSQL advisory lock；edit 在取锁后清理 L1 并重读复核。新增自建 fixture 的并发测试证明 edit 会等待 ensure 事务，最终两行卡片值和 12 位字符串完整，无固定报价单、无 Assumptions、无新增 N+1。
 
 **交付状态**：2026-08-11 已快进合并至 master，交付提交 `df592eab72cbf27cfdd025add93a9f103d916f52`；TC-077 仍按测试规则保持环境 BLOCKED，不影响其余 AC-1~AC-20 的验收结论。
+
+---
+
+## [2026-08-11] 部署 - 初始化 SQL 同步 V385 + 新增 0811 增量升级脚本
+
+**涉及文件**：`deploy/cpq-init-empty-navicat.sql`（更新）· `deploy/0811-dbupdate.sql`（新增）。
+
+**变更范围**：将 task-0810 的 V385 终态同步到新库初始化路径和 V384 存量库升级路径。仅把 8 张表的 21 个计算金额/结果列由 `numeric(20,6)` 扩为 `numeric(26,12)`，保持 14 位整数容量；不新增或删除表、列、索引、外键、检查约束，不重算业务数据。初始化脚本的 Flyway baseline 同步由 384 上调到 385，避免新库再次重放 V385。
+
+**增量脚本约束**：`0811-dbupdate.sql` 适用于已执行 `0809-dbupdate.sql`、结构停在 V384 的内网库。21 列 DDL 放在同一事务中，任一失败整体回滚；DDL 可重复执行。已有 `BASELINE` 行只在版本低于 385 时上调，完整 Flyway 迁移库没有 baseline 行时不伪造迁移历史。脚本注明表级锁、低峰/停写窗口、备份和前后自检要求。
+
+**亲验证据**：新初始化脚本完整导入隔离库后得到 baseline=385、业务/历史表共 144 张、21/21 目标列均为 `numeric(26,12)`；6 个非目标 `numeric(20,6)` 字段保持不变。另以 Git 原始 V384 初始化脚本建立升级库，写入 `99999999999999.123456`、`0.000001`、`123456789.123456` 三个边界样本后执行 0811：21/21 列升级成功、baseline=385，三个样本数值比较均为 true；第二次执行仍 exit 0，baseline UPDATE 影响 0 行。两条路径字段集合与 `V385__task0810_formula_scale12.sql` 比对均为 21 项、零差异。

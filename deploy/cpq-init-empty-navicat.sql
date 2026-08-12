@@ -57,6 +57,13 @@
 --          已建库的内网环境如需从 V378 补到 V384, 用等价增量脚本 deploy/0809-dbupdate.sql
 --       · 说明: 本脚本全文不带 COMMENT ON(与 pg_dump 源一致的既有风格), 故 V381~V384 的
 --          列注释一并省略 —— 注释无运行时语义, 不影响结构等价性
+-- 同步: 2026-08-11  已增量同步 V385 的全部结构变更, 基线号 384 -> 385。
+--       · V385: quotation / quotation_line_item / quotation_line_component_data / costing_order /
+--                material_price_review / material_price_review_column / quotation_price_revision /
+--                material_price_update_job_item 共 8 张表、21 个计算金额列
+--                numeric(20,6) -> numeric(26,12), 保持 14 位整数容量不变。
+--       · 仅放大精度, 不重算、不截断历史值, 不新增表/列/索引/约束。
+--          已建库的内网环境如需从 V384 补到 V385, 用等价增量脚本 deploy/0811-dbupdate.sql
 -- 内容: 143 业务活表 + flyway_schema_history + 3 活视图 + 5 函数 + 1 个 admin 用户
 --       + 2 条 BOM 树递归 SQL 配置(唯一的业务配置种子, 见文件末尾)
 --       + 1 条 price_adjust_settings 系统参数种子行(id=1, 阈值 0.01, 守卫开关 false)
@@ -566,12 +573,12 @@ CREATE TABLE public.costing_order (
     status character varying(32) DEFAULT 'PENDING'::character varying NOT NULL,
     reject_reason text,
     frozen_dto jsonb,
-    total_amount numeric(20,6),
+    total_amount numeric(26,12),
     reviewed_by uuid,
     reviewed_at timestamp with time zone,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     costing_render jsonb,
-    costing_total_amount numeric(20,6),
+    costing_total_amount numeric(26,12),
     CONSTRAINT chk_co_status CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'APPROVED'::character varying, 'REJECTED'::character varying, 'WITHDRAWN'::character varying])::text[])))
 );
 
@@ -1892,7 +1899,7 @@ CREATE TABLE public.material_price_review (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     warn_code character varying(50),
     warn_message text,
-    warn_diff numeric(20,6),
+    warn_diff numeric(26,12),
     CONSTRAINT chk_mpr_budget_status CHECK (((budget_status)::text = ANY ((ARRAY['QUEUED'::character varying, 'COMPUTING'::character varying, 'READY'::character varying, 'FAILED'::character varying])::text[]))),
     CONSTRAINT chk_mpr_status CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'APPROVED'::character varying, 'REJECTED'::character varying, 'VOIDED'::character varying])::text[])))
 );
@@ -1909,12 +1916,12 @@ CREATE TABLE public.material_price_review_column (
     column_label character varying(200),
     threshold numeric(20,6),
     sort_order integer DEFAULT 0 NOT NULL,
-    quote_current numeric(20,6),
-    quote_adjusted numeric(20,6),
-    costing_current numeric(20,6),
-    costing_adjusted numeric(20,6),
-    diff_current numeric(20,6),
-    diff_adjusted numeric(20,6),
+    quote_current numeric(26,12),
+    quote_adjusted numeric(26,12),
+    costing_current numeric(26,12),
+    costing_adjusted numeric(26,12),
+    diff_current numeric(26,12),
+    diff_adjusted numeric(26,12),
     status character varying(20) NOT NULL,
     missing_side character varying(20),
     created_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -1960,7 +1967,7 @@ CREATE TABLE public.material_price_update_job_item (
     status character varying(20) DEFAULT 'WAITING'::character varying NOT NULL,
     error_code character varying(50),
     error_message text,
-    diff_value numeric(20,6),
+    diff_value numeric(26,12),
     retry_count integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -2766,11 +2773,11 @@ CREATE TABLE public.quotation (
     stage character varying(30) DEFAULT 'INITIAL_CONTACT'::character varying,
     expected_close_date date,
     status character varying(20) DEFAULT 'DRAFT'::character varying NOT NULL,
-    total_amount numeric(20,6) DEFAULT 0,
+    total_amount numeric(26,12) DEFAULT 0,
     expiry_date date,
     payment_terms text,
     delivery_cycle integer,
-    original_amount numeric(20,6) DEFAULT 0,
+    original_amount numeric(26,12) DEFAULT 0,
     system_discount_rate numeric(5,2) DEFAULT 100,
     final_discount_rate numeric(5,2) DEFAULT 100,
     discount_adjustment_reason text,
@@ -2786,7 +2793,7 @@ CREATE TABLE public.quotation (
     updated_at timestamp(6) with time zone DEFAULT now() NOT NULL,
     remarks text,
     tax_rate numeric(5,2) DEFAULT 0 NOT NULL,
-    tax_amount numeric(20,6) DEFAULT 0 NOT NULL,
+    tax_amount numeric(26,12) DEFAULT 0 NOT NULL,
     customer_template_id uuid,
     import_batch_id uuid,
     referenced_versions jsonb,
@@ -2855,7 +2862,7 @@ CREATE TABLE public.quotation_line_component_data (
     component_id uuid,
     tab_name character varying(200),
     row_data jsonb DEFAULT '[]'::jsonb,
-    subtotal numeric(20,6) DEFAULT 0,
+    subtotal numeric(26,12) DEFAULT 0,
     sort_order integer DEFAULT 0,
     created_at timestamp(6) with time zone DEFAULT now() NOT NULL,
     snapshot_rows jsonb,
@@ -2890,7 +2897,7 @@ CREATE TABLE public.quotation_line_item (
     product_id uuid,
     template_id uuid,
     product_attribute_values jsonb DEFAULT '{}'::jsonb,
-    subtotal numeric(20,6) DEFAULT 0,
+    subtotal numeric(26,12) DEFAULT 0,
     system_discount_rate numeric(5,2) DEFAULT 100,
     final_discount_rate numeric(5,2) DEFAULT 100,
     discount_adjustment_reason text,
@@ -2905,12 +2912,12 @@ CREATE TABLE public.quotation_line_item (
     part_version_locked integer DEFAULT 2000 NOT NULL,
     annual_volume integer,
     discount_source character varying(32),
-    discount_base_amount numeric(20,6),
+    discount_base_amount numeric(26,12),
     discount_rate_applied numeric(8,4),
-    line_discount_amount numeric(20,6),
-    line_unit_price numeric(20,6),
-    line_final_price numeric(20,6),
-    line_total_amount numeric(20,6),
+    line_discount_amount numeric(26,12),
+    line_unit_price numeric(26,12),
+    line_final_price numeric(26,12),
+    line_total_amount numeric(26,12),
     discount_rule_code character varying(64),
     parent_line_item_id uuid,
     composite_type character varying(16) DEFAULT 'SIMPLE'::character varying NOT NULL,
@@ -2978,7 +2985,7 @@ CREATE TABLE public.quotation_price_revision (
     quote_card_values jsonb,
     costing_card_values jsonb,
     snapshot_rows jsonb,
-    quote_total_amount numeric(20,6),
+    quote_total_amount numeric(26,12),
     first_effective_at timestamp with time zone DEFAULT now() NOT NULL,
     last_updated_at timestamp with time zone DEFAULT now() NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
@@ -8376,9 +8383,9 @@ ON CONFLICT (id) DO NOTHING;
 
 
 -- ============================================================
--- Flyway 基线记录 (V384)
--- 新库带此 baseline: 连 Quarkus 时 flyway 跳过 V1~V384 历史重放, 只跑 V385+ 新迁移
--- ⚠️ 本脚本的表结构已含 V384, 基线号必须 >= 384。
+-- Flyway 基线记录 (V385)
+-- 新库带此 baseline: 连 Quarkus 时 flyway 跳过 V1~V385 历史重放, 只跑 V386+ 新迁移
+-- ⚠️ 本脚本的表结构已含 V385, 基线号必须 >= 385。
 --    与 V363~V365 那批"幂等可重放、基线仍停 362"的处理**不同**: V368 含 CREATE TABLE
 --    (无 IF NOT EXISTS)、V377 含 RENAME COLUMN、V382 含 CREATE TABLE(无 IF NOT EXISTS)、
 --    V384 含 DROP CONSTRAINT(无 IF EXISTS), 均非幂等 —— 基线若低于 384, Quarkus 启动
@@ -8400,7 +8407,7 @@ CREATE TABLE public.flyway_schema_history (
 CREATE INDEX flyway_schema_history_s_idx ON public.flyway_schema_history USING btree (success);
 INSERT INTO public.flyway_schema_history
   (installed_rank, version, description, type, script, checksum, installed_by, installed_on, execution_time, success)
-VALUES (1, '384', '<< Flyway Baseline >>', 'BASELINE', '<< Flyway Baseline >>', NULL, 'baseline', now(), 0, true);
+VALUES (1, '385', '<< Flyway Baseline >>', 'BASELINE', '<< Flyway Baseline >>', NULL, 'baseline', now(), 0, true);
 
 
 -- ============================================================
@@ -8409,7 +8416,16 @@ VALUES (1, '384', '<< Flyway Baseline >>', 'BASELINE', '<< Flyway Baseline >>', 
 -- SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';  -- 期望 144
 -- SELECT count(*) FROM information_schema.views  WHERE table_schema='public';                              -- 期望 3
 -- SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public';     -- 期望 5
--- SELECT version FROM flyway_schema_history;                                                               -- 期望 384
+-- SELECT version FROM flyway_schema_history;                                                               -- 期望 385
+-- SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND numeric_precision=26
+--   AND numeric_scale=12 AND ((table_name='quotation' AND column_name IN ('total_amount','original_amount','tax_amount'))
+--    OR (table_name='quotation_line_item' AND column_name IN ('subtotal','discount_base_amount','line_unit_price','line_final_price','line_discount_amount','line_total_amount'))
+--    OR (table_name='quotation_line_component_data' AND column_name='subtotal')
+--    OR (table_name='costing_order' AND column_name IN ('total_amount','costing_total_amount'))
+--    OR (table_name='material_price_review' AND column_name='warn_diff')
+--    OR (table_name='material_price_review_column' AND column_name IN ('quote_current','quote_adjusted','costing_current','costing_adjusted','diff_current','diff_adjusted'))
+--    OR (table_name='quotation_price_revision' AND column_name='quote_total_amount')
+--    OR (table_name='material_price_update_job_item' AND column_name='diff_value'));                        -- 期望 21
 -- SELECT id, subtotal_guard_threshold, subtotal_guard_enabled FROM price_adjust_settings;                  -- 期望 1 行, 1 / 0.010000 / f
 -- SELECT count(*) FROM template_component_snapshot;                                                        -- 期望 0(空表, 首次 publish 模板时才写入)
 -- SELECT username, role FROM "user";                                                                       -- 期望仅 admin / SYSTEM_ADMIN
