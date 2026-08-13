@@ -231,16 +231,19 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
         message.error('元素字典加载失败，无法校验元素，请关闭抽屉重新打开后再保存');
         return;
       }
-      // task-0812 FR-9：未选元素
-      const emptyIdx = elements.findIndex(e => !e.elementNo);
-      if (emptyIdx >= 0) {
-        message.error(`请为第 ${emptyIdx + 1} 行选择元素`);
-        return;
-      }
+      // task-0812 BUG-0812-01：脏值检查必须先于「未选元素」检查——
+      // unmatched 行的 elementNo 恒为 null（回显时就是这么置的），若 emptyIdx 先判，
+      // 脏值行会先被判定为「未选元素」，导致 FR-7 专属提示成为永远到不了的死代码。
       // task-0812 FR-7 / D4：字典外脏值阻断保存
       const badIdx = elements.findIndex(e => e.unmatched);
       if (badIdx >= 0) {
         message.error(`第 ${badIdx + 1} 行的元素不在元素字典中，请重新选择`);
+        return;
+      }
+      // task-0812 FR-9：未选元素（此时已排除脏值行，命中的必然是「本来就没选」的行）
+      const emptyIdx = elements.findIndex(e => !e.elementNo);
+      if (emptyIdx >= 0) {
+        message.error(`请为第 ${emptyIdx + 1} 行选择元素`);
         return;
       }
       if (!sumOk) {
