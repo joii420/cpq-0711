@@ -5505,3 +5505,19 @@ render() 用 lineItems.get(0).quotationId 设 QuotationIdContext，
 **涉及文件**：`DecimalRequestValidator.java`、`DecimalRequestContractTest.java`、`DraftPrecisionLifecycleHttpTest.java`。
 **根因与修复**：`row_index` 是系统行定位结构字段，按设计不进入组件冻结 `fields`；repair-0811 新增的字段感知校验未复用既有结构整数白名单，导致 `row_index:0` 被当成未知业务 numeric token 拒绝。字段感知校验现于冻结元数据判断前复用结构整数规则：整数放行，小数仍拒绝；未知业务数字与公式 numeric token 的严格校验不变。
 **验证证据**：指定后端 4 类测试共 29 项通过。真实 HTTP 草稿 PUT 携带 `row_index:0` 返回 200，DB `row_data` 保持数字 0；`row_index:0.5`、未知业务数字及公式 numeric token 仍返回错误，公式失败请求保持原子零写入。无 DDL、无新增查询、无 N+1。
+
+## [2026-08-12] 主数据维护 - 材质元素改字典下拉选择（task-0812）
+
+**涉及文件**：`cpq-frontend/src/pages/config/MaterialRecipeEditDrawer.tsx`（唯一代码改动）；文档 `dev-docs/task-0812-材质元素改下拉选择/`（需求/前端/后端/接口/原型/用例/报告/主线亲验记录）。合并 `92d09aa4`。
+
+**背景**：材质抽屉「元素组成」表的「元素 code」「元素名」两列是自由文本输入，用户手打。实测现网 `material_recipe_element` 621 行里已有 2 行把「元素编号」当符号填进 code 列（`992`→`10001`、`00262`→`10004`），无任何校验拦截。
+
+**改法**：两列合并为单列「元素」下拉，选项与选中态统一显示 `元素编号 / 符号 / 中文名`；数据源复用既有 `GET /api/cpq/elements`（现网 37 条，抽屉打开时一次性全量拉取、前端本地过滤），**后端零改动、零新增端点、零 Flyway**。候选只列 ACTIVE；已引用但停用的元素保留回显并打「已停用」标记；跨行已选元素置灰；字典外脏值清空+标红+阻断保存（fix-on-touch）。
+
+**关键决策**：Select 的 `value` 用 `elementNo`（稳定标识，不用可变的 `elementCode`、更不用数组下标，规避 AP-54）；提交体字段集合一字不改（明确不加 `elementNo`，用户决策 D9）；搜不到元素只给文案提示不跳转（元素 Tab 与材质 Tab 同属 `MasterDataHubPage`，跳转会丢弃抽屉内未保存内容）。
+
+**开发期抓到的两个缺陷（均已修复复验）**：① 字典加载失败时 `dictLoading` 仍置 false，回显逻辑把空 `byCode` 当成「查无此元素」，**把所有正常行诬告为脏数据并阻断保存** —— 修法是 `dictError` 分支在查找前短路，`unmatched` 语义收紧为「字典确实加载成功且确实查不到」；② `emptyIdx` 检查排在 `badIdx` 之前，而脏值行的 `elementNo` 恒为 null，导致 FR-7 专属提示是**不可达代码**（BUG-0812-01）—— 修法是调换两条校验顺序。
+
+**注意事项（下一个动这块的人必读）**：`MaterialRecipeService.update()` 是「全删元素行再重建」且 `insertElement()` 不写 `element_no`，**任何材质被 UI 编辑保存一次，其所有元素行的 `element_no` 就被抹成 NULL** —— 本次测试期实测 619→614。这不是本次引入的回归，但会被本功能加速侵蚀，已登记 `BL-0163`（含存量回填与 `00262` 脏行清理）。比对材质元素落库时**不要**把 `element_no` 纳入「保存前后应一致」的字段清单，否则必然误报。
+
+**验收证据**：测试 32 用例 29 PASS / 3 部分 FAIL（同一根因，即 BUG-0812-01，已修）/ 0 BLOCKED；主线亲验自写 Playwright 脚本跑 worktree 临时前端（5199）18 项断言全 PASS，SQL 实证 `992` 已纠正为 `Ag/银`、`00262` 样本保留、临时数据 0 条、flyway 385 不变；主仓合并后复跑 `tsc --noEmit` 0 错误、5174 transform 200。本次无契约变更，无需回写 `main-api.md`。

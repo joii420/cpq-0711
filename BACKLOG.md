@@ -1025,6 +1025,22 @@
 
 ## P2
 
+### [BL-0163] 材质元素行 `element_no` 不落库 —— 编辑一次即抹空，元素主表引用计数长期失真
+- **优先级**：P2
+- **来源**：`dev-docs/task-0812-材质元素改下拉选择/`（决策 D9 / D10，用户拍板本期只改 UI 不动后端存储）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-12
+- **背景（全部为实测，非推断）**：
+  - `MaterialRecipeService.insertElement()` 从不给 `el.elementNo` 赋值，而 `update()` 是「**全删 `material_recipe_element` 再逐行重建**」 —— 因此**任何材质只要在 UI 上被编辑保存一次，它所有元素行的 `element_no` 就被抹成 NULL**
+  - task-0812 测试期实测兑现：`element_no` 非空行数 **619 → 614**（`00005` 3 行 + `00158` 2 行，各被保存过一次）
+  - 连带影响：`ElementService.list()` 按 `LEFT JOIN material_recipe_element ON mre.element_no = e.element_no` 聚合 `referencedCount`，被抹空的行不再计入 → 元素主表列表的「被引用数」偏低、「符号锁」（`codeLocked = referencedCount > 0`）可能**该锁未锁**（符号被改会打断已有材质的价格/渲染链路）
+  - task-0812 让下拉选择成为常规操作，会**加速**这一侵蚀
+- **另一半遗留（同源，一并处理）**：现网 `00262` 保留着 1 行脏数据（`element_code='10004'`，正确值应为 `Sn`）。task-0812 决策 D10 不做数据迁移，靠「打开即强制重选」fix-on-touch 收敛；`992` 已在测试期被正向修正为 `Ag`。该行同时也是 fix-on-touch 逻辑的复测样本，处理前请确认不再需要
+- **范围**：① `MaterialRecipeUpsertRequest.ElementUpsert` 增加 `elementNo` 字段（前端下拉已持有该值，传回即可，`api.md` API-2 需同步改）② `insertElement()` 落 `element_no`（找不到时的行为要定：报错 or 置空）③ 存量回填迁移：按 `element_code` 反查 `element` 主表补齐 NULL 行（可参考 V320 的写法）④ 顺带清掉 `00262` 那行脏数据
+- **前置条件**：无（task-0812 已交付，前端已持有 `elementNo`）
+- **预估规模**：S（1-2 天，含一条 Flyway 与回归）
+- **验收要点**：UI 新建/编辑材质后 `element_no` 非空；反复编辑同一材质 `element_no` 不丢；`ElementService.list()` 的 `referencedCount` 与按 `element_code` 口径统计一致；`00262` 不再有脏值
+
 ### [BL-0158] E2E `quotation-flow.spec.ts` 硬编码的夹具在库里已不存在 —— 全 spec 不可执行
 - **优先级**：P2（**但它锁死了 CLAUDE.md 的 E2E 强制门槛，实际影响所有协议级改动的验收**）
 - **来源**：2026-08-09 task-0806 收尾跑 AC-18 时实证

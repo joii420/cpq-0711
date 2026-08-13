@@ -160,7 +160,8 @@ done | sort | cut -d'|' -f1 | uniq -c | sort -rn | awk '$1>=4'
 | `task-0712-主数据维护-核价基础数据维护/` | 主数据维护第 5 页签「料号核价」：16 tab 版本组 + 历史版本只读查看 | ✅ 已交付 | `PricingMaintenanceService.java` `V6ProcessCrudTab.tsx` |
 | └ `childtask-1/` | 核价维护四码名称补齐（BL-0045，方案 B+(ii)） | ✅ 合 master `efa5224` | — |
 | `task-0728-主数据维护版式优化/` | 6 个拼装页签的版式/搜索/分页拉齐统一 | ✅ 已澄清定稿→已交付 | `MasterDataHubPage.tsx` `ConfigTemplateManagement.tsx` |
-| `task-0812-材质元素改下拉选择/` | 材质抽屉「元素 code + 元素名」两列合并为单列下拉（编号/符号/中文名三段可搜）；后端零改动复用 `GET /elements`；现网已有 2 行把元素编号错填进 code 列 | 🚧 闸门 A 已过，分支 `feat/task-0812-材质元素改下拉选择` 开发中 | `MaterialRecipeEditDrawer.tsx` |
+| `task-0812-材质元素改下拉选择/` | 材质抽屉「元素 code + 元素名」两列合并为单列字典下拉（编号/符号/中文名三段可搜、跨行去重置灰、字典外脏值阻断保存）；后端零改动复用 `GET /elements` | ✅ **合 master `92d09aa4`**（32 用例 + 主线亲验 18 断言全 PASS；遗留 [[BL-0163]]） | `MaterialRecipeEditDrawer.tsx` |
+| `task-0812-核价导入停用四个Sheet/` | 核价导入 24 → 20 Sheet（摘 P01/P02/P04/P05 调用点，Handler 代码保留）；元素/材料核价价格表、核价版本已实测无读者 | ⏸️ 文档已出，**等用户过闸门 A**（未建分支） | `PricingImportService.java` `PricingHandlerCatalog.java` |
 | `task-0717-报价占号表只存销售料号/` | 🛑 **已作废**——与 repair-2 重叠，改走 repair-2 路径。保留作决策追溯 | ❌ 废弃 | — |
 
 ---
