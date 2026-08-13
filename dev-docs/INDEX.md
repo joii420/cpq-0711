@@ -161,7 +161,7 @@ done | sort | cut -d'|' -f1 | uniq -c | sort -rn | awk '$1>=4'
 | └ `childtask-1/` | 核价维护四码名称补齐（BL-0045，方案 B+(ii)） | ✅ 合 master `efa5224` | — |
 | `task-0728-主数据维护版式优化/` | 6 个拼装页签的版式/搜索/分页拉齐统一 | ✅ 已澄清定稿→已交付 | `MasterDataHubPage.tsx` `ConfigTemplateManagement.tsx` |
 | `task-0812-材质元素改下拉选择/` | 材质抽屉「元素 code + 元素名」两列合并为单列字典下拉（编号/符号/中文名三段可搜、跨行去重置灰、字典外脏值阻断保存）；后端零改动复用 `GET /elements` | ✅ **合 master `92d09aa4`**（32 用例 + 主线亲验 18 断言全 PASS；遗留 [[BL-0163]]） | `MaterialRecipeEditDrawer.tsx` |
-| `task-0812-核价导入停用四个Sheet/` | 核价导入 24 → 20 Sheet（摘 P01/P02/P04/P05 调用点，Handler 代码保留）；元素/材料核价价格表、核价版本已实测无读者 | ⏸️ 文档已出，**等用户过闸门 A**（未建分支） | `PricingImportService.java` `PricingHandlerCatalog.java` |
+| `task-0812-核价导入停用四个Sheet/` | 核价导入 24 → 20 Sheet（摘 P01/P02/P04/P05 调用点，Handler 代码与落库逻辑原样保留，恢复=加回两个 List）；元素/材料核价价格表、核价版本实测无读者，客户料号对应关系改由报价侧单入口 | ✅ **合 master `9477223b`**（48 用例；AC-1~12 全达成；全量 2473 项 A/B **用例名级** diff：只在 B 侧失败 = 0 条） | `PricingImportService.java` `PricingHandlerCatalog.java` `PricingBasicDataImportDrawer.tsx` |
 | `task-0717-报价占号表只存销售料号/` | 🛑 **已作废**——与 repair-2 重叠，改走 repair-2 路径。保留作决策追溯 | ❌ 废弃 | — |
 
 ---
