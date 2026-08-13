@@ -49,7 +49,7 @@ export default function PricingBasicDataImportDrawer({ open, onClose }: Props) {
     onRemove: () => setFileList([]),
   };
 
-  /** 下载 24 Sheet 空模板（task-0728 · A4）。 */
+  /** 下载 20 Sheet 空模板（task-0728 · A4；task-0812 停用 4 个 Sheet 后由 24 收敛为 20）。 */
   const handleDownloadTemplate = async () => {
     setDownloading(true);
     try {
@@ -113,7 +113,7 @@ export default function PricingBasicDataImportDrawer({ open, onClose }: Props) {
 
   return (
     <Drawer
-      title="核价基础数据导入 (V6 · 24 Sheet)"
+      title="核价基础数据导入 (V6 · 20 Sheet)"
       width={840}
       placement="right"
       open={open}
@@ -139,7 +139,7 @@ export default function PricingBasicDataImportDrawer({ open, onClose }: Props) {
           description={
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
               <div>
-                核价基础数据为全局数据，无客户上下文。`宏丰-客户料号对应关系` Sheet 的 customer_no 从 Excel 行读取。
+                核价基础数据为全局数据，无客户上下文。请使用下载的最新模板（20 Sheet）导入。
               </div>
               <Button
                 icon={<DownloadOutlined />}
@@ -156,7 +156,7 @@ export default function PricingBasicDataImportDrawer({ open, onClose }: Props) {
         <CompactUploadDragger
           {...draggerProps}
           text="点击或拖拽 .xlsx 文件到此区域"
-          hint="24 Sheet 核价基础数据 / 单文件"
+          hint="20 Sheet 核价基础数据 / 单文件"
         />
 
         {result && (
