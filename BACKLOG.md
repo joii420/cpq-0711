@@ -154,7 +154,14 @@
 - **登记日期**：2026-08-13　**来源**：`repair-0812` 交付期发现（非本次引入）
 - **背景**：`cpq-frontend/e2e/precision-flow.spec.ts`（task-0810 的精度验收套件，含 P0 用例 TC-073/074/076）依赖环境变量
   **`PW_PRECISION_SEED_QUOTATION_NO`**，指向所谓「Stage H 已加载的确定性 SIMPLE 精度种子」。
-  该变量**全仓 `dev-docs/` + `docs/` 零处记载**（已 grep 确认），种子单如何构造、含哪些料号/公式/取值，无任何记录。
+  该变量**全仓 `dev-docs/` + `docs/` 零处记载**（已 grep 确认）。
+  ⚠️ **2026-08-13 订正**（原条目写「种子如何构造无任何记录」，**不准确**）：种子**有**脚本化构造器 ——
+  `cpq-backend/src/test/java/com/cpq/quotation/service/Task0810PersistentFixtureBuilder.java`（默认禁用的 one-shot JUnit builder，
+  料号 `TASK0810-SIMPLE` / `TASK0810-COMPOSITE`）。真正的缺口是三条：
+  ① **零文档** —— 该 builder 的存在与用法在 `dev-docs/` / `docs/` 里一个字都没有；
+  ② **拒绝共享库** —— `FORBIDDEN_DATABASES` 硬编码含 `cpq_db_0724` / `cpq_db`（`:104-105`），只接受 `task0810_*` / `e2e_*` 命名的一次性隔离库；
+  ③ **现存隔离库与迁移头脱节** —— 实例上仅有的两个候选库中，`cpq_task0810_e2e_20260810` 是空库，
+  `cpq_task0810_e2e_v385_20260810` 的 Flyway 头停在 **V385**，而当前代码已到 **V387**（task-0813），存在 schema drift。
 - **后果**：
   1. `task-0810/test-report.md` 写着「Playwright PASS exact-5：5/5、12 位对账阻断与恢复均通过」，
      但**今天没有任何人能复现那次验证** —— 该结论已退化为不可审计的账面数字；
@@ -162,7 +169,9 @@
   3. 后续任何精度类改动都无法用这套 P0 套件把关。
 - **定性**：`AP-64`（取样代表性反模式）的变体 —— **不可复现的证据等于没有证据**；
   且按 `AP-65` 规范 5，长期不可执行的 P0 用例对现行需求的约束力已归零。
-- **建议做法**：把种子构造脚本化（造数 SQL 或 API 序列）并纳入仓库，或改成 spec 自建自毁夹具，去掉对外部环境变量的隐式依赖。
+- **建议做法**：脚本已存在，缺的是**可用性** —— ① 把 builder 的用法写进 `docs/E2E测试方法.md`；
+  ② 提供一条"新建隔离库 → 迁移到当前头 → 跑 builder → 导出 `PW_PRECISION_SEED_QUOTATION_NO`"的一键流程；
+  ③ 或改成 spec 自建自毁夹具，彻底去掉对外部环境变量与长寿命隔离库的隐式依赖。
 - **前置条件**：无
 - **预估规模**：S（0.5~1 天）
 
