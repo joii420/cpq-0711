@@ -1807,7 +1807,7 @@ CREATE TABLE public.material_bom_item (
     is_optional boolean,
     wo_expand_option character varying(20),
     is_purchase_replace boolean,
-    component_lead_time numeric(18,6),
+    component_lead_time numeric(24,12),
     main_substitute character varying(20),
     attached_part character varying(20),
     ecn_no character varying(30),

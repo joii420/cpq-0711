@@ -5580,3 +5580,7 @@ DB 扩到 12 位后，即便 handler 完全不归一，12 位 Excel 导入查库
 **前端**：`EditableSheetTable.tsx` 直接 `String(value)` 渲染后端定标字符串，扩容后会显示 12 位尾随零。改用 **`normalizeDecimalString`（纯去尾零、不截位）而非 `formatDisplayDecimal`（截 9 位）** —— 截位后的文本是受控输入框里用户下次编辑的起点，局部编辑会把刚扩的 12 位精度改回 9 位，属**用观感牺牲核心目标**。全局 `DISPLAY_SCALE` 仍为 9，报价/核价/导出侧未受影响。
 
 **遗留**：`BL-0165`（22 个零归一 handler 系统审计，P2）；`capacity.annual_discount_factor` 等 5 个边界列待用户裁决；前端「局部编辑往返」待真机验收。
+
+**[2026-08-13 补] task-0813 交付后自检抓到建库脚本漏改一列**：用户要求复核 `deploy/` 两个脚本时，做了「建库脚本 vs 真实 DB」的**逐列交叉校验**（比对 `numeric(x,12)` 列名与出现次数），发现 `cpq-init-empty-navicat.sql` 里 **`material_bom_item.component_lead_time` 仍是 `numeric(18,6)`**（同名列在 `element_bom_item` 那处是对的，`0813-dbupdate.sql` 两处也都对）。
+**后果**：用该脚本建的新库会有一列精度不足，与 dev/测试库不一致，且成为下一次 DDL 勘察的新漂移点（正是 `AP-64` 说的那类隐形地雷）。已修，修后逐列 diff 完全一致（109 = 109）。
+**方法论**：`grep` 关键列抽查会漏掉这种"同名列多表出现、只改对其中一处"的缺陷——**必须做全量列名+计数的交叉校验**，抽查不够。
