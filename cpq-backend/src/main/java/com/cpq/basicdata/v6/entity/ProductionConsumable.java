@@ -41,7 +41,7 @@ public class ProductionConsumable extends V6BaseEntity {
     @Column(name = "consumable_name", length = 100)
     public String consumableName;
 
-    @Column(name = "usage_qty", precision = 18, scale = 6)
+    @Column(name = "usage_qty", precision = 24, scale = 12)
     public BigDecimal usageQty;
 
     @Column(name = "life_qty")

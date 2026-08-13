@@ -11,6 +11,7 @@ import com.cpq.basicdata.v6.service.PartTypeInferenceService;
 import com.cpq.basicdata.v6.service.PartTypeInferenceService.InferResult;
 import com.cpq.basicdata.v6.service.PartTypeInferenceService.TypeIndex;
 import com.cpq.basicdata.v6.service.QuoteMaterialNoAllocator;
+import com.cpq.basicdata.v6.util.DecimalScale;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -163,18 +164,18 @@ public class MaterialBomMergeHandler implements SheetHandler {
             c.put("seq_no", row.getInt("项次"));
             c.put("component_no", componentNo);
             c.put("component_usage_type", labelOnly(row.getStr(USAGE_TYPE_HEADERS)));
-            c.put("composition_qty", row.getDecimal("组成数量"));
-            c.put("rough_weight", row.getDecimal("材料毛重", "毛重"));
-            c.put("net_weight",   row.getDecimal("材料净重", "净重"));
+            c.put("composition_qty", DecimalScale.at(row.getDecimal("组成数量"), 12));
+            c.put("rough_weight", DecimalScale.at(row.getDecimal("材料毛重", "毛重"), 12));
+            c.put("net_weight",   DecimalScale.at(row.getDecimal("材料净重", "净重"), 12));
             c.put("weight_unit",  weightUnit);
             // issue_unit（U5）：材质沿用重量单位；零件/外购件兜底 PCS（「组成单位」列已删除）。
             c.put("issue_unit", PartTypeInferenceService.RECIPE.equals(characteristic) ? weightUnit : "PCS");
-            c.put("scrap_rate", row.getDecimal("损耗率"));
-            c.put("defect_rate", row.getDecimal("不良率"));
+            c.put("scrap_rate", DecimalScale.at(row.getDecimal("损耗率"), 12));
+            c.put("defect_rate", DecimalScale.at(row.getDecimal("不良率"), 12));
             // 材质占比（可选列，小数口径 0.3=30%）：仅材质行有业务含义，零件/外购件行显式置 NULL，
             // 防止业务在非材质行误填污染数据。表头两种写法都认，见 MATERIAL_RATIO_HEADERS。
             c.put("material_ratio", PartTypeInferenceService.RECIPE.equals(characteristic)
-                ? row.getDecimal(MATERIAL_RATIO_HEADERS) : null);
+                ? DecimalScale.at(row.getDecimal(MATERIAL_RATIO_HEADERS), 12) : null);
             c.put("operation_no", operationNo);
             c.put("characteristic", characteristic);
             childByMat.computeIfAbsent(materialNo, k -> new LinkedHashMap<>())

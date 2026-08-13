@@ -42,7 +42,7 @@ public class MaterialCustomerMap extends V6BaseEntity {
     @Column(name = "quote_currency", length = 10)
     public String quoteCurrency;
 
-    @Column(name = "exchange_rate", precision = 18, scale = 8)
+    @Column(name = "exchange_rate", precision = 22, scale = 12)
     public BigDecimal exchangeRate;
 
     /** task-0721 B1：本行(占号)归属的未审核报价单（NULL=已审核通过；非 NULL=该报价单私有 pending 占号）。 */

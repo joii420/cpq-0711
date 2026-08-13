@@ -35,13 +35,14 @@ public class P09EquipmentDepreciationHandler implements SheetHandler {
 
     /**
      * tesk-0709 Task 11 E2E 修复（2026-07-11）：真实核价 6.0 测试文件里"折旧单价"列存在超出
-     * production_energy.unit_price(numeric(18,6)) 精度的字面量（如 2.5000000000000002E-6，
-     * POI 按 double 全精度解析出 17~18 位有效数字），DB 落库会被 Postgres 静默四舍五入到 6 位小数。
-     * 解析时不同步舍入 → "新解析值(全精度)" 与 "重导时从库里读回的 existing(已截断至 6 位)" 在
-     * VersionedV6Writer 内容比对里恒不相等 → 同文件重导也会误判"内容变化"而升版（违反§7.4"重导不升版"）。
+     * production_energy.unit_price(numeric(24,12)，task-0813 前为 numeric(18,6)) 精度的字面量
+     * （如 2.5000000000000002E-6，POI 按 double 全精度解析出 17~18 位有效数字），DB 落库会被
+     * Postgres 静默四舍五入到列 scale。解析时不同步舍入 → "新解析值(全精度)" 与 "重导时从库里
+     * 读回的 existing(已截断)" 在 VersionedV6Writer 内容比对里恒不相等 → 同文件重导也会误判
+     * "内容变化"而升版（违反§7.4"重导不升版"）。task-0813：随列扩容同步抬高舍入阈值到 12 位。
      */
     private static BigDecimal roundToColumnScale(BigDecimal v) {
-        return v == null ? null : v.setScale(6, RoundingMode.HALF_UP);
+        return v == null ? null : v.setScale(12, RoundingMode.HALF_UP);
     }
 
     @Override

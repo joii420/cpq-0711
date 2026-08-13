@@ -27,7 +27,7 @@ public class LaborRate extends V6BaseEntity {
     @Column(name = "labor_grade", length = 30)
     public String laborGrade;
 
-    @Column(name = "standard_labor_rate", nullable = false, precision = 18, scale = 6)
+    @Column(name = "standard_labor_rate", nullable = false, precision = 24, scale = 12)
     public BigDecimal standardLaborRate;
 
     @Column(name = "currency", length = 10)

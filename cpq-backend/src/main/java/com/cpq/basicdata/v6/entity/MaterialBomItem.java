@@ -54,23 +54,23 @@ public class MaterialBomItem extends V6BaseEntity {
     @Column(name = "issue_unit", length = 20)
     public String issueUnit;
 
-    @Column(name = "composition_qty", precision = 18, scale = 6)
+    @Column(name = "composition_qty", precision = 24, scale = 12)
     public BigDecimal compositionQty;
 
-    @Column(name = "base_qty", precision = 18, scale = 6)
+    @Column(name = "base_qty", precision = 24, scale = 12)
     public BigDecimal baseQty;
 
-    @Column(name = "rough_weight", precision = 18, scale = 6)
+    @Column(name = "rough_weight", precision = 26, scale = 12)
     public BigDecimal roughWeight;
 
-    @Column(name = "net_weight", precision = 18, scale = 6)
+    @Column(name = "net_weight", precision = 26, scale = 12)
     public BigDecimal netWeight;
 
     @Column(name = "weight_unit", length = 20)
     public String weightUnit;
 
     /** 材质占比(小数口径，0.3=30%)；报价侧物料BOM 材质行(characteristic=RECIPE)可选填。 */
-    @Column(name = "material_ratio", precision = 18, scale = 6)
+    @Column(name = "material_ratio", precision = 24, scale = 12)
     public BigDecimal materialRatio;
 
     @Column(name = "component_usage_type", length = 100)
@@ -79,19 +79,19 @@ public class MaterialBomItem extends V6BaseEntity {
     @Column(name = "feature_mgmt", length = 20)
     public String featureMgmt;
 
-    @Column(name = "upper_limit_pct", precision = 10, scale = 4)
+    @Column(name = "upper_limit_pct", precision = 18, scale = 12)
     public BigDecimal upperLimitPct;
 
-    @Column(name = "lower_limit_pct", precision = 10, scale = 4)
+    @Column(name = "lower_limit_pct", precision = 18, scale = 12)
     public BigDecimal lowerLimitPct;
 
-    @Column(name = "scrap_batch", precision = 18, scale = 6)
+    @Column(name = "scrap_batch", precision = 24, scale = 12)
     public BigDecimal scrapBatch;
 
-    @Column(name = "scrap_rate", precision = 10, scale = 4)
+    @Column(name = "scrap_rate", precision = 18, scale = 12)
     public BigDecimal scrapRate;
 
-    @Column(name = "fixed_scrap", precision = 18, scale = 6)
+    @Column(name = "fixed_scrap", precision = 24, scale = 12)
     public BigDecimal fixedScrap;
 
     @Column(name = "issue_location", length = 50)
@@ -118,7 +118,7 @@ public class MaterialBomItem extends V6BaseEntity {
     @Column(name = "is_purchase_replace")
     public Boolean isPurchaseReplace;
 
-    @Column(name = "component_lead_time", precision = 18, scale = 6)
+    @Column(name = "component_lead_time", precision = 24, scale = 12)
     public BigDecimal componentLeadTime;
 
     @Column(name = "main_substitute", length = 20)
@@ -145,13 +145,13 @@ public class MaterialBomItem extends V6BaseEntity {
     @Column(name = "is_customer_supply")
     public Boolean isCustomerSupply;
 
-    @Column(name = "defect_rate", precision = 10, scale = 4)
+    @Column(name = "defect_rate", precision = 18, scale = 12)
     public BigDecimal defectRate;
 
     @Column(name = "calc_type", length = 20)
     public String calcType;
 
-    @Column(name = "recovery_discount", precision = 10, scale = 4)
+    @Column(name = "recovery_discount", precision = 18, scale = 12)
     public BigDecimal recoveryDiscount;
 
     @Column(name = "recovery_currency", length = 10)

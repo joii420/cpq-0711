@@ -23,13 +23,13 @@ public class ElementPriceVersionItem extends PanacheEntityBase {
     @Column(name = "element_code", nullable = false, length = 32)
     public String elementCode;
 
-    @Column(name = "current_price", precision = 20, scale = 6)
+    @Column(name = "current_price", precision = 26, scale = 12)
     public BigDecimal currentPrice;
 
-    @Column(name = "previous_price", precision = 20, scale = 6)
+    @Column(name = "previous_price", precision = 26, scale = 12)
     public BigDecimal previousPrice;
 
-    @Column(name = "change_rate", precision = 12, scale = 6)
+    @Column(name = "change_rate", precision = 18, scale = 12)
     public BigDecimal changeRate;
 
     @Column(name = "currency", length = 10)

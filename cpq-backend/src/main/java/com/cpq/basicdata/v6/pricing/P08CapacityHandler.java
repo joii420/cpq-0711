@@ -82,7 +82,7 @@ public class P08CapacityHandler implements SheetHandler {
             capByMat.computeIfAbsent(materialNo, k -> new ArrayList<>()).add(c);
             prodNoByMat.putIfAbsent(materialNo, productionNo);
 
-            BigDecimal laborRate = DecimalScale.at(row.getDecimal("人工标准单价"), 6);
+            BigDecimal laborRate = DecimalScale.at(row.getDecimal("人工标准单价"), 12);
             if (laborRate != null) {
                 laborByMat.computeIfAbsent(materialNo, k -> new ArrayList<>())
                           .add(new LaborRow(processNo, laborRate, row.getStr("币种"), row.getStr("计量单位")));

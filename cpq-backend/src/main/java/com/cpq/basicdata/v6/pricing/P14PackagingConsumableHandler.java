@@ -47,7 +47,7 @@ public class P14PackagingConsumableHandler implements SheetHandler {
             }
             Map<String, Object> c = new LinkedHashMap<>();
             c.put("operation_no", operationNo);
-            BigDecimal price = DecimalScale.at(row.getDecimal("包装成本单价"), 6);
+            BigDecimal price = DecimalScale.at(row.getDecimal("包装成本单价"), 12);
             c.put("pricing_price", price == null ? BigDecimal.ZERO : price);
             c.put("currency", row.getStr("币种"));
             c.put("unit", row.getStr("计量单位"));

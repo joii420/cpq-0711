@@ -35,7 +35,7 @@ public class MaterialMaster extends V6BaseEntity {
     @Column(name = "usage_property", length = 50)
     public String usageProperty;
 
-    @Column(name = "unit_weight", precision = 18, scale = 6)
+    @Column(name = "unit_weight", precision = 24, scale = 12)
     public BigDecimal unitWeight;
 
     @Column(name = "standard_unit", length = 20)

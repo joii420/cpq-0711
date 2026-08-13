@@ -99,7 +99,7 @@ git branch --no-merged master                                                   
 > 这些文件是全仓协议最密的地方，多数「改 A 坏 B」都源于不知道 A 背后压着哪几条历史契约。
 > 数据来源：各任务 md 里对该文件的提及（**改动面的代理指标，非 ground truth**）；已剔除 `spec.ts`/`config.ts`/`types.ts`/`index.tsx` 等泛名。
 > 精确影响面请配合 `codegraph_impact` / `codegraph_callers`。
-> **计数口径提醒（2026-08-12 重跑，分母 = 39 个顶层任务目录）**：本表统计的是「任务 md 里提到该文件」，
+> **计数口径提醒（2026-08-13 重跑，分母 = 40 个顶层任务目录）**：本表统计的是「任务 md 里提到该文件」，
 > **包含「声明本任务不触碰该文件」这类反向提及** —— 例如 `task-0812-材质元素改下拉选择` 因在需求文档里声明
 > 「不触发 E2E 强制清单」而被计入 `QuotationStep2.tsx` / `ReadonlyProductCard.tsx` / `useDriverExpansions.ts` /
 > `ComponentDriverService.java` 四行，它**实际一行都没改**。所以下表只用来「找该读哪几个历史任务」，不要当改动统计。
@@ -116,7 +116,9 @@ git branch --no-merged master                                                   
 | `ComponentService.java` | 10 | 0721树 · 0723清洗 · 0729客户价格 · 0803父子公式 · **0806编辑链路对账** · **0806模板冻结** · repair-0803BL0098 · repair-0803SUM · repair-0803公式BUG |
 | `ComponentCell.tsx` | 7 | 0729客户价格 · 0801精度 · 0803父子公式 · 删除行重构 · repair-0803BL0098 · **repair-0808算序假环** · rule-0724 |
 | `formulaEngine.ts` | 7 | 0729客户价格 · 0801精度 · 0803父子公式 · **0806编辑链路对账** · **0806模板冻结** · repair-0803SUM · rule-0724 |
-| `SqlViewExecutor.java` | 4 | 0722元素价格 · 0725空白 · 0729客户价格 · repair-0727回填 |
+| `SqlViewExecutor.java` | 5 | 0722元素价格 · 0725空白 · 0729客户价格 · repair-0727回填 |
+| `MaterialBomMergeHandler.java` | 5 | 0709导入 · 0720三态 · 0721树 · repair-0727回填 · **0813数值列扩12位**（补 `DecimalScale.at(...,12)` 归一，修「重导虚假升版」缺陷 D-1） |
+| `precision.ts` | 6 | 0801精度 · 0801连表 · 0806编辑链路对账 · repair-0811输入值分层 · repair-0812对账阈值 · **0813数值列扩12位**（维护页接 `formatDisplayDecimal`；⚠️ `DISPLAY_SCALE` 近期改过三轮 4/2→6→9，引用前必 grep 勿信记忆） |
 
 ⚠️ **`QuotationStep2.tsx` 是全仓最危险的文件**：25 个任务在它身上叠了协议。它同时受 AP-31 / AP-37 / AP-38 / AP-44 / AP-50 / AP-51 / AP-54 约束，且属 `CLAUDE.md`「修改后强制自检」第 5 条的 **E2E 强制清单**。改它之前请连读：`task-0721树` + `task-删除行删错架构重构` + `repair-0727-报价单报价侧删除行BUG`（行身份四套口径）。
 
@@ -162,6 +164,7 @@ done | sort | cut -d'|' -f1 | uniq -c | sort -rn | awk '$1>=4'
 | `task-0728-主数据维护版式优化/` | 6 个拼装页签的版式/搜索/分页拉齐统一 | ✅ 已澄清定稿→已交付 | `MasterDataHubPage.tsx` `ConfigTemplateManagement.tsx` |
 | `task-0812-材质元素改下拉选择/` | 材质抽屉「元素 code + 元素名」两列合并为单列字典下拉（编号/符号/中文名三段可搜、跨行去重置灰、字典外脏值阻断保存）；后端零改动复用 `GET /elements` | ✅ **合 master `92d09aa4`**（32 用例 + 主线亲验 18 断言全 PASS；遗留 [[BL-0163]]） | `MaterialRecipeEditDrawer.tsx` |
 | `task-0812-核价导入停用四个Sheet/` | 核价导入 24 → 20 Sheet（摘 P01/P02/P04/P05 调用点，Handler 代码与落库逻辑原样保留，恢复=加回两个 List）；元素/材料核价价格表、核价版本实测无读者，客户料号对应关系改由报价侧单入口 | ✅ **合 master `9477223b`**（48 用例；AC-1~12 全达成；全量 2473 项 A/B **用例名级** diff：只在 B 侧失败 = 0 条） | `PricingImportService.java` `PricingHandlerCatalog.java` `PricingBasicDataImportDrawer.tsx` |
+| `task-0813-基础资料数值列扩至12位小数/` | 补齐 `task-0810` 漏掉的**另一半**：0810 的 `V385` 只扩了 21 个**计算金额列**，**基础资料侧一列没动**，致 0810 需求文档 §119「基础取数值不按 9 位显示规则压缩」这条契约**落空**——基础值在落库时就被列 scale 截到 4~6 位。实证：`material_bom_item.net_weight` = `numeric(20,6)`，库内 68 行有值记录**小数位全部恰好 = 6**（`91.768628` 末位非零＝截断痕迹）。范围 **86 列**（重量 3 / 含量·占比 24 / 单价·价格·汇率 31 / 用量·工时 28），目标 `precision = 原 p − 原 s + 12`（整数容量不缩水）。**难点＝ scale 常量有四份独立副本**（DB 列 / JPA `@Column` / 导入 handler 硬编码 `DecimalScale.at(x,6)` 约 28 处 / `PricingSheetRegistry.scale()` 16 处），漏一处**静默失效**；后两者分管「Excel 导入」与「维护页手工保存」两条写路径，只改一边另一边照样截断。顺带修 `MaterialBomMergeHandler` 缺归一致**重导虚假升版**（D-1）＋ `ProductionEnergy.unit_price` 实体↔DB scale 差一倍（D-2）。⚠️ **前端非零改动**：`EditableSheetTable.tsx` 用 `String(value)` 原样渲染定标字符串，会显示 12 位尾随零 | 🚧 **开发中** 分支 `feat/task-0813-basicdata-scale12`（立项文档五件齐 `ab9cf74d`；`BL-0164`；闸门 A 已过） | `V386`（待建）· `PricingSheetRegistry.java` · `MaterialBomMergeHandler.java` · `v6/entity/*.java` · `EditableSheetTable.tsx` |
 | `task-0717-报价占号表只存销售料号/` | 🛑 **已作废**——与 repair-2 重叠，改走 repair-2 路径。保留作决策追溯 | ❌ 废弃 | — |
 
 ---

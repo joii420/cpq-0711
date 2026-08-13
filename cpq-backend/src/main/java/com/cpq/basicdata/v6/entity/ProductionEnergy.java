@@ -32,13 +32,13 @@ public class ProductionEnergy extends V6BaseEntity {
     @Column(name = "equipment_no", length = 30)
     public String equipmentNo;
 
-    @Column(name = "batch_size", precision = 18, scale = 6)
+    @Column(name = "batch_size", precision = 24, scale = 12)
     public BigDecimal batchSize;
 
-    @Column(name = "round_step", precision = 18, scale = 6)
+    @Column(name = "round_step", precision = 24, scale = 12)
     public BigDecimal roundStep;
 
-    @Column(name = "working_hours", precision = 18, scale = 6)
+    @Column(name = "working_hours", precision = 24, scale = 12)
     public BigDecimal workingHours;
 
     @Column(name = "currency", length = 10)
@@ -47,7 +47,7 @@ public class ProductionEnergy extends V6BaseEntity {
     @Column(name = "unit", length = 20)
     public String unit;
 
-    @Column(name = "conversion_rate", precision = 18, scale = 6)
+    @Column(name = "conversion_rate", precision = 24, scale = 12)
     public BigDecimal conversionRate;
 
     @Column(name = "calc_version", length = 20)
@@ -61,8 +61,9 @@ public class ProductionEnergy extends V6BaseEntity {
     @Column(name = "system_type", length = 16)
     public String systemType;
 
-    /** 单价（按 priceType 区分类型；替代原 energyUnitPrice / depreciationUnitPrice 两列）。 */
-    @Column(name = "unit_price", precision = 18, scale = 6)
+    /** 单价（按 priceType 区分类型；替代原 energyUnitPrice / depreciationUnitPrice 两列）。
+     *  task-0813 §6.2：DB 早已是 (24,12)，此处修正此前落后的实体声明（scale 6→12 漂移）。 */
+    @Column(name = "unit_price", precision = 24, scale = 12)
     public BigDecimal unitPrice;
 
     @Column(name = "is_current")

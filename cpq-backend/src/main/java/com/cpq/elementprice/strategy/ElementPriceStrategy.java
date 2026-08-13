@@ -41,8 +41,13 @@ public class ElementPriceStrategy extends PanacheEntityBase {
     @Column(name = "window_unit")
     public String windowUnit;
 
+    /** task-0813：定价乘数系数（原始价 × factor + premium），归入族 B(含量·占比·比率)扩容为 12 位小数。 */
+    @Column(precision = 18, scale = 12)
     public BigDecimal factor;
 
+    /** task-0813：此前 @Column 未声明 precision/scale（对应 DB 列 element_price_strategy.premium）；
+     *  本次按目标类型补齐声明，使 T6 反射一致性测试可覆盖该列。 */
+    @Column(name = "premium", precision = 26, scale = 12)
     public BigDecimal premium;
 
     public String status;
