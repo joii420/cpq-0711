@@ -55,10 +55,10 @@ public class ElementBomItem extends V6BaseEntity {
     @Column(name = "issue_unit", length = 20)
     public String issueUnit;
 
-    @Column(name = "composition_qty", precision = 18, scale = 6)
+    @Column(name = "composition_qty", precision = 24, scale = 12)
     public BigDecimal compositionQty;
 
-    @Column(name = "base_qty", precision = 18, scale = 6)
+    @Column(name = "base_qty", precision = 24, scale = 12)
     public BigDecimal baseQty;
 
     @Column(name = "component_usage_type", length = 100)
@@ -67,25 +67,25 @@ public class ElementBomItem extends V6BaseEntity {
     @Column(name = "feature_mgmt", length = 20)
     public String featureMgmt;
 
-    @Column(name = "content", precision = 18, scale = 6)
+    @Column(name = "content", precision = 24, scale = 12)
     public BigDecimal content;
 
-    @Column(name = "upper_limit_pct", precision = 10, scale = 4)
+    @Column(name = "upper_limit_pct", precision = 18, scale = 12)
     public BigDecimal upperLimitPct;
 
-    @Column(name = "lower_limit_pct", precision = 10, scale = 4)
+    @Column(name = "lower_limit_pct", precision = 18, scale = 12)
     public BigDecimal lowerLimitPct;
 
-    @Column(name = "scrap_batch", precision = 18, scale = 6)
+    @Column(name = "scrap_batch", precision = 24, scale = 12)
     public BigDecimal scrapBatch;
 
-    @Column(name = "scrap_rate", precision = 10, scale = 4)
+    @Column(name = "scrap_rate", precision = 18, scale = 12)
     public BigDecimal scrapRate;
 
-    @Column(name = "defect_rate", precision = 10, scale = 4)
+    @Column(name = "defect_rate", precision = 18, scale = 12)
     public BigDecimal defectRate;
 
-    @Column(name = "fixed_scrap", precision = 18, scale = 6)
+    @Column(name = "fixed_scrap", precision = 24, scale = 12)
     public BigDecimal fixedScrap;
 
     @Column(name = "issue_location", length = 50)
@@ -112,7 +112,7 @@ public class ElementBomItem extends V6BaseEntity {
     @Column(name = "is_purchase_replace")
     public Boolean isPurchaseReplace;
 
-    @Column(name = "component_lead_time", precision = 18, scale = 6)
+    @Column(name = "component_lead_time", precision = 24, scale = 12)
     public BigDecimal componentLeadTime;
 
     @Column(name = "main_substitute", length = 20)
@@ -139,7 +139,7 @@ public class ElementBomItem extends V6BaseEntity {
     @Column(name = "is_customer_supply")
     public Boolean isCustomerSupply;
 
-    @Column(name = "recovery_discount", precision = 10, scale = 4)
+    @Column(name = "recovery_discount", precision = 18, scale = 12)
     public BigDecimal recoveryDiscount;
 
     @Column(name = "recovery_currency", length = 10)

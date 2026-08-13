@@ -4,6 +4,7 @@ import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
+import com.cpq.basicdata.v6.util.DecimalScale;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -106,15 +107,19 @@ public class P12ToolingCostHandler implements SheetHandler {
                 // tesk-0709 Task 11 E2E 修复（2026-07-11）：tooling_unit_price 常来自 Excel 公式
                 // （如"单个模具/寿命/单循环产量"），POI 读取的 cached 值是 IEEE-754 double 全精度
                 // （可达 17~18 位有效数字，如 0.013333333333333334），而 DB 列 tooling_cost.tooling_unit_price
-                // 是 numeric(18,8)，落库时会被 Postgres 静默四舍五入到 8 位小数。若不在解析时同步舍入，
-                // "新解析值(全精度)" 与 "重导时从库里读回的 existing(已截断至 8 位)" 在 VersionedV6Writer
-                // 内容比对(norm()/multisetEqual)里恒不相等 → 同文件重导也会误判"内容变化"而升版
-                // （违反§7.4"重导不升版"）。按列的实际精度舍入，让"新解析值"与"落库后重读值"从一开始就一致。
-                if (unitPrice != null) unitPrice = unitPrice.setScale(8, java.math.RoundingMode.HALF_UP);
+                // 是 numeric(22,12)（task-0813 前为 numeric(18,8)），落库时会被 Postgres 静默四舍五入
+                // 到列 scale。若不在解析时同步舍入，"新解析值(全精度)" 与 "重导时从库里读回的
+                // existing(已截断)" 在 VersionedV6Writer 内容比对(norm()/multisetEqual)里恒不相等 →
+                // 同文件重导也会误判"内容变化"而升版（违反§7.4"重导不升版"）。按列的实际精度舍入，
+                // 让"新解析值"与"落库后重读值"从一开始就一致。task-0813：随列扩容同步抬高舍入阈值到 12 位。
+                if (unitPrice != null) unitPrice = unitPrice.setScale(12, java.math.RoundingMode.HALF_UP);
                 // tooling_unit_price 为 NOT NULL 列：解析不到时兜底 ZERO，保持原裸 SQL 逻辑不变。
+                // task-0813：tooling_unit_cost/cycle_output 此前完全没有归一（与 tooling_unit_price
+                // 不同），同样存在"新解析值(全精度) vs 重导时读回的 existing(已截断至列 scale)"恒不
+                // 相等的虚假升版风险，一并补齐 DecimalScale.at(..., 12)。
                 Row r = new Row(processNo, seqNo, toolingNo,
-                    row.getDecimal("单个模具", "工装成本"), row.getLong("寿命"),
-                    row.getDecimal("单循环产量"), unitPrice != null ? unitPrice : BigDecimal.ZERO,
+                    DecimalScale.at(row.getDecimal("单个模具", "工装成本"), 12), row.getLong("寿命"),
+                    DecimalScale.at(row.getDecimal("单循环产量"), 12), unitPrice != null ? unitPrice : BigDecimal.ZERO,
                     row.getStr("币种"), row.getStr("计量单位"), row.getBool("是否有效"),
                     row.getStr("生产料号"));
                 List<String> key = List.of(nz(processNo), String.valueOf(seqNo), nz(toolingNo));

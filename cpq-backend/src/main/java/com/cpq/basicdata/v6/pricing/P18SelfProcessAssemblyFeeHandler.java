@@ -47,11 +47,11 @@ public class P18SelfProcessAssemblyFeeHandler implements SheetHandler {
             }
             Map<String, Object> c = new LinkedHashMap<>();
             c.put("operation_no", operationNo);
-            BigDecimal price = DecimalScale.at(row.getDecimal("加工费"), 6);
+            BigDecimal price = DecimalScale.at(row.getDecimal("加工费"), 12);
             c.put("pricing_price", price == null ? BigDecimal.ZERO : price);
             c.put("currency", row.getStr("币种"));
             c.put("unit", row.getStr("计量单位"));
-            c.put("defect_rate", DecimalScale.at(row.getDecimal("不良率", "拒收率"), 4));
+            c.put("defect_rate", DecimalScale.at(row.getDecimal("不良率", "拒收率"), 12));
             c.put("production_no", row.getStr("生产料号"));
             byCode.computeIfAbsent(code, k -> new LinkedHashMap<>()).put(nz(operationNo), c);
             result.successRows++;

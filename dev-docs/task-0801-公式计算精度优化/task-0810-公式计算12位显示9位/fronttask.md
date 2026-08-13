@@ -66,7 +66,8 @@ export type DecimalValue = DecimalString | Decimal;
 - `QuotationStep2` 的 fieldValues、componentSubtotals、columnSums、resolvedRows 由 `DecimalValue` 承载，类型定义中不得出现 `| number`。
 - `tabTotalLines.ts` 返回规范字符串或 Decimal，不得 `.toNumber()`。
 - `sumColumnsCanonical`、`subtotalsFromResolvedRows`、`computeTabSubtotal`、`getComponentSubtotals` 复用同一 Decimal helper。
-- 对账比较按 Decimal 差值，不用 `Math.abs(number)`；阈值为 `10^-12` 的工作值比较，不以 9 位显示相同作为相等。
+- 对账比较按 Decimal 差值，不用 `Math.abs(number)`；**比较前两侧先归一到结果精度 `FORMULA_RESULT_SCALE`（9 位），再以 `10^-12` 容差比较**。
+  > ⚠️ **2026-08-13 由 `repair-0812` 改写**。原文为「阈值为 `10^-12` 的工作值比较，不以 9 位显示相同作为相等」——该口径不可执行（后端 `formulaResults` 恒为 9 位，无 12 位基准），实际后果是结构性恒误报 + 提交闸门卡死。作废依据见 `需求文档.md` FR-12 的批注。
 
 ### 3.3 产品小计以上链路
 

@@ -47,7 +47,7 @@ public class P23OutsourceProcessFeeHandler implements SheetHandler {
             }
             Map<String, Object> c = new LinkedHashMap<>();
             c.put("operation_no", operationNo);
-            BigDecimal price = DecimalScale.at(row.getDecimal("外加工费用"), 6);
+            BigDecimal price = DecimalScale.at(row.getDecimal("外加工费用"), 12);
             c.put("pricing_price", price == null ? BigDecimal.ZERO : price);
             c.put("currency", row.getStr("币种"));
             c.put("unit", row.getStr("单位"));

@@ -32,7 +32,7 @@ public class PackagingConsumable extends V6BaseEntity {
     @Column(name = "consumable_name", length = 100)
     public String consumableName;
 
-    @Column(name = "usage_qty", nullable = false, precision = 18, scale = 6)
+    @Column(name = "usage_qty", nullable = false, precision = 24, scale = 12)
     public BigDecimal usageQty;
 
     @Column(name = "usage_unit", length = 20)

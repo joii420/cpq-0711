@@ -33,13 +33,13 @@ public class AuxiliaryEnergy extends V6BaseEntity {
     @Column(name = "amortize_basis", length = 20)
     public String amortizeBasis;
 
-    @Column(name = "working_hours", precision = 18, scale = 6)
+    @Column(name = "working_hours", precision = 24, scale = 12)
     public BigDecimal workingHours;
 
-    @Column(name = "total_hours", precision = 18, scale = 6)
+    @Column(name = "total_hours", precision = 24, scale = 12)
     public BigDecimal totalHours;
 
-    @Column(name = "non_production_energy_price", precision = 18, scale = 6)
+    @Column(name = "non_production_energy_price", precision = 24, scale = 12)
     public BigDecimal nonProductionEnergyPrice;
 
     @Column(name = "currency", length = 10)
@@ -48,7 +48,7 @@ public class AuxiliaryEnergy extends V6BaseEntity {
     @Column(name = "unit", length = 20)
     public String unit;
 
-    @Column(name = "conversion_rate", precision = 18, scale = 6)
+    @Column(name = "conversion_rate", precision = 24, scale = 12)
     public BigDecimal conversionRate;
 
     @Column(name = "calc_version", length = 20)

@@ -35,16 +35,16 @@ public class ToolingCost extends V6BaseEntity {
     @Column(name = "tooling_no", nullable = false, length = 30)
     public String toolingNo;
 
-    @Column(name = "tooling_unit_cost", precision = 18, scale = 6)
+    @Column(name = "tooling_unit_cost", precision = 24, scale = 12)
     public BigDecimal toolingUnitCost;
 
     @Column(name = "tool_life")
     public Long toolLife;
 
-    @Column(name = "cycle_output", precision = 18, scale = 6)
+    @Column(name = "cycle_output", precision = 24, scale = 12)
     public BigDecimal cycleOutput;
 
-    @Column(name = "tooling_unit_price", nullable = false, precision = 18, scale = 8)
+    @Column(name = "tooling_unit_price", nullable = false, precision = 22, scale = 12)
     public BigDecimal toolingUnitPrice;
 
     @Column(name = "currency", length = 10)
@@ -56,6 +56,6 @@ public class ToolingCost extends V6BaseEntity {
     @Column(name = "is_effective")
     public Boolean isEffective;
 
-    @Column(name = "conversion_rate", precision = 18, scale = 6)
+    @Column(name = "conversion_rate", precision = 24, scale = 12)
     public BigDecimal conversionRate;
 }

@@ -47,7 +47,7 @@ public class P11AuxiliaryEnergyHandler implements SheetHandler {
             }
             Map<String, Object> c = new LinkedHashMap<>();
             c.put("process_no", processNo);
-            c.put("non_production_energy_price", DecimalScale.at(row.getDecimal("非生产能耗单价"), 6));
+            c.put("non_production_energy_price", DecimalScale.at(row.getDecimal("非生产能耗单价"), 12));
             c.put("currency", row.getStr("币种"));
             c.put("unit", row.getStr("计量单位"));
             c.put("production_no", row.getStr("生产料号"));   // 描述列

@@ -4,6 +4,7 @@ import com.cpq.basicdata.v6.parser.ImportContext;
 import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
+import com.cpq.basicdata.v6.util.DecimalScale;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -64,8 +65,8 @@ public class P07ElementBomHandler implements SheetHandler {
             Map<String, Object> c = new LinkedHashMap<>();
             c.put("seq_no", seq);
             c.put("component_no", componentNo);
-            c.put("content", row.getDecimal("组成含量"));
-            c.put("scrap_rate", row.getDecimal("损耗率"));
+            c.put("content", DecimalScale.at(row.getDecimal("组成含量"), 12));
+            c.put("scrap_rate", DecimalScale.at(row.getDecimal("损耗率"), 12));
             List<String> gkey = Arrays.asList(materialNo, materialPartNo == null ? "" : materialPartNo);
             keyMeta.putIfAbsent(gkey, new String[]{materialNo, materialPartNo});
             childByKey.computeIfAbsent(gkey, k -> new LinkedHashMap<>())

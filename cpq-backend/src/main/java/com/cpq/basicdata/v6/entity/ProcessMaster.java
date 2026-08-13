@@ -30,6 +30,6 @@ public class ProcessMaster extends V6BaseEntity {
     @Column(name = "standard_unit", length = 20)
     public String standardUnit;
 
-    @Column(name = "default_defect_rate", precision = 10, scale = 4)
+    @Column(name = "default_defect_rate", precision = 18, scale = 12)
     public BigDecimal defaultDefectRate;
 }

@@ -75,11 +75,11 @@ public class P22PlatingCostHandler implements SheetHandler {
             String rawInputNo = row.exact("投入料号");
             String code = (rawInputNo != null && !rawInputNo.isBlank()) ? rawInputNo : finishedMaterialNo;
 
-            BigDecimal processFee = DecimalScale.at(row.getDecimal("电镀加工费"), 6);
-            BigDecimal materialFee = DecimalScale.at(row.getDecimal("电镀材料费"), 6);
+            BigDecimal processFee = DecimalScale.at(row.getDecimal("电镀加工费"), 12);
+            BigDecimal materialFee = DecimalScale.at(row.getDecimal("电镀材料费"), 12);
             String currency = row.getStr("货币");
             String unit = row.getStr("计价单位");
-            BigDecimal defectRate = DecimalScale.at(row.getDecimal("不良率"), 4);
+            BigDecimal defectRate = DecimalScale.at(row.getDecimal("不良率"), 12);
             String productionNo = row.getStr("生产料号");
 
             LinkedHashMap<String, Map<String, Object>> group =

@@ -6,6 +6,7 @@ import com.cpq.basicdata.v6.parser.SheetHandler;
 import com.cpq.basicdata.v6.parser.SheetImportResult;
 import com.cpq.basicdata.v6.parser.SheetRow;
 import com.cpq.basicdata.v6.repository.MaterialMasterRepository;
+import com.cpq.basicdata.v6.util.DecimalScale;
 import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -93,12 +94,12 @@ public class P06MaterialBomHandler implements SheetHandler {
             c.put("component_no", componentNo);
             c.put("operation_no", row.getStr("工序编号"));
             c.put("component_usage_type", row.getStr("使用特性"));
-            c.put("composition_qty", row.getDecimal("组成用量"));
+            c.put("composition_qty", DecimalScale.at(row.getDecimal("组成用量"), 12));
             c.put("issue_unit", row.getStr("组成用量单位"));
-            c.put("base_qty", row.getDecimal("底数"));
-            c.put("scrap_rate", row.getDecimal("材料损耗率", "损耗率"));
-            c.put("fixed_scrap", row.getDecimal("材料固定损耗量", "固定损耗"));
-            c.put("defect_rate", row.getDecimal("不良率"));
+            c.put("base_qty", DecimalScale.at(row.getDecimal("底数"), 12));
+            c.put("scrap_rate", DecimalScale.at(row.getDecimal("材料损耗率", "损耗率"), 12));
+            c.put("fixed_scrap", DecimalScale.at(row.getDecimal("材料固定损耗量", "固定损耗"), 12));
+            c.put("defect_rate", DecimalScale.at(row.getDecimal("不良率"), 12));
             c.put("calc_type", calcType);        // 决策B: 语义靠 calc_type 区分(材料=销售料号 / 元素=材质编号), component_no 存原值
             c.put("production_no", prodNo);       // 描述列; material_bom_item 携带 + master 主行也写(见下)
             // 三态统一：核价侧判别列由 calc_type 收敛到 characteristic。

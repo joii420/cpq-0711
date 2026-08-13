@@ -25,7 +25,7 @@ public class ElectricityPrice extends V6BaseEntity {
     @Column(name = "time_range", length = 50)
     public String timeRange;
 
-    @Column(name = "price", nullable = false, precision = 18, scale = 6)
+    @Column(name = "price", nullable = false, precision = 24, scale = 12)
     public BigDecimal price;
 
     @Column(name = "unit", length = 20)
