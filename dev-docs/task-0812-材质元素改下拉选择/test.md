@@ -37,7 +37,7 @@
   2. 不存在「元素 code」「元素名」两列
   3. 「元素」列渲染为下拉框（antd `Select`，点击后出现候选浮层），不是文本输入框
   4. 全表任意行都不存在可编辑「元素名称」的 `Input` 输入框（AC-9）
-- 实际结果：
+- 实际结果：**PASS**（Playwright 自动化，5199）。新建入口：headers=["元素","默认 %","最小 %","最大 %","锁定","操作"]，isSelect=1，plainInputs=0。编辑入口（材质 00005）：headers 一致，rows=3，全部为 Select，无 plain input。证据：`tc01-new-headers.png` / `tc01-edit-headers.png`
 - 优先级：P0
 
 ### TC-02　选中元素后收起态文本
@@ -47,7 +47,7 @@
   1. 点击「元素」下拉，输入 `10001`
   2. 点击唯一候选项
 - 期望结果：下拉收起，框内文本精确为 `10001 / Ag / 银`（无多余空格/换行）
-- 实际结果：
+- 实际结果：**PASS**。收起态文本="10001 / Ag / 银"，与期望逐字符一致。证据：`tc02-collapsed.png`
 - 优先级：P0
 
 ### TC-03　编辑正例材质原样保存（幂等性）
@@ -63,7 +63,7 @@
   1. 保存请求返回 200
   2. 步骤 4 的查询结果与步骤 1 逐字段（`element_code`/`element_name`/`default_pct`/`min_pct`/`max_pct`/`is_locked`/`sort_order`）完全一致，3 行行序不变
   3. ⚠️ **`element_no` 列不在上述断言字段清单内，允许从有值变为 NULL，不得据此判本用例失败**。原因：`MaterialRecipeService.update()` 是「全删旧行再插新行」，`insertElement()` 从不写 `element_no`（`backtask.md` §4 既有缺口，`element_no` 是否变化与本次改造无关，AC-7 的字段清单本来就不含它）。执行前可先 `SELECT element_no FROM material_recipe_element WHERE recipe_id='d6e44a1e-8cae-4fba-8582-17d2a28408ca';` 留痕（预期保存前 3 行均非空、保存后 3 行均为 NULL），仅作观察记录，不计入通过/失败判定
-- 实际结果：
+- 实际结果：**PASS**。回显 row0="10012 / C / 碳" row1="10005 / Ni / 镍" row2="10001 / Ag / 银"（与 sort_order 一致）；保存返回 message="材质已更新"；SQL 逐字段比对 `element_code`/`element_name`/`default_pct`/`min_pct`/`max_pct`/`is_locked`/`sort_order` 保存前后完全一致（C/碳/1.0000、Ni/镍/23.0000、Ag/银/76.0000，均 is_locked=t）；`element_no` 按预期从有值变 NULL（不计入判定）。证据：`tc01-edit-headers.png` / `tc03-saved.png` + SQL 输出
 - 优先级：P0
 
 ### TC-04　编辑脏数据材质 992：阻断→重选→保存成功
@@ -81,7 +81,12 @@
   2. 步骤 3：保存被拦截，未发出 `PUT` 请求（F12 Network 确认），`message.error` 提示文案含「不在元素字典中，请重新选择」字样
   3. 步骤 5：保存成功，返回 200
   4. 步骤 6：`element_code='Ag'`，`element_name='银'`
-- 实际结果：
+- 实际结果：**部分 FAIL（缺陷 BUG-0812-01，见 test-report.md）**。
+  - 步骤 2（打开阻断态）PASS：元素框显示占位符（未选中，非 " / " 格式），红字精确为 `原值「10001」不在元素字典中，请重新选择`
+  - 步骤 3（保存被拦截）PASS：确实未放行保存（无 "已更新" 消息）
+  - **但实际拦截文案是 `请为第 1 行选择元素`（FR-9），不是期望的 `不在元素字典中，请重新选择`（FR-7/D4）—— FAIL**。根因：`unmatched` 行的 `elementNo` 恒为 `null`（回显逻辑决定），`handleSubmit` 里 FR-9「未选元素」检查（`!e.elementNo`）排在 FR-7「字典外脏值」检查之前，永远先命中，导致 FR-7 专属提示成为不可达代码
+  - 步骤 5（重选后保存成功）PASS：message="材质已更新"；SQL 验证 `element_code='Ag'`、`element_name='银'`
+  - 证据：`tc04-open-blocked.png` / `tc04-save-blocked-msg.png` / `tc04-save-success.png`
 - 优先级：P0
 
 ### TC-05　编辑脏数据材质 00262：同类场景交叉验证（仅验阻断态，不消耗样本）
@@ -97,7 +102,7 @@
   1. 步骤 2：元素框为空 + 红字 `原值「10004」不在元素字典中，请重新选择`
   2. 步骤 3：保存被拦截，未发出 `PUT` 请求（F12 Network 确认），`message.error` 含「不在元素字典中，请重新选择」
   3. 步骤 4 后 `SELECT element_code FROM material_recipe_element WHERE recipe_id='c7dba513-5419-4269-9d2c-981258564bdd';` 仍为 `10004`（样本未被消耗，可供后续复测复用）
-- 实际结果：
+- 实际结果：**部分 FAIL（同 BUG-0812-01）**。打开阻断态 PASS（占位符 + 红字 `原值「10004」不在元素字典中，请重新选择`）；保存未被放行 PASS；但拦截 toast 文案同样是 `请为第 1 行选择元素` 而非期望的「不在元素字典中」文案 —— FAIL，与 TC-04 同一缺陷。样本未消耗：保存后 SQL 复查 `element_code` 仍为 `10004` PASS。证据：`tc05-open-blocked.png` / `tc05-save-blocked-msg.png`
 - 优先级：P1
 - 如需重建脏数据样本（例如 `992` 已被 TC-04 纠正，需要新造一条脏数据用于其他轮复测）：
   ```sql
@@ -116,7 +121,7 @@
 - 前置数据：新建材质，任一空行
 - 步骤：打开元素下拉，输入 `10001`
 - 期望结果：候选恰筛出 1 项，文本为 `10001 / Ag / 银`
-- 实际结果：
+- 实际结果：**PASS**。opts=["10001 / Ag / 银"]，恰 1 项。证据：`tc06-filter-10001.png`
 - 优先级：P0
 
 ### TC-07　按元素符号过滤（小写，验证大小写不敏感）
@@ -124,7 +129,7 @@
 - 前置数据：同上
 - 步骤：打开元素下拉，输入 `ag`（全小写）
 - 期望结果：候选筛出的项中包含 `10001 / Ag / 银`（大小写不敏感命中 `elementCode='Ag'`）
-- 实际结果：
+- 实际结果：**PASS**。输入 `ag`（小写）候选包含 "10001 / Ag / 银"。证据：`tc07-filter-ag-lowercase.png`
 - 优先级：P0
 
 ### TC-08　按中文名过滤
@@ -132,7 +137,7 @@
 - 前置数据：同上
 - 步骤：打开元素下拉，输入 `银`
 - 期望结果：候选筛出的项中包含 `10001 / Ag / 银`
-- 实际结果：
+- 实际结果：**PASS**。输入 `银` 候选包含 "10001 / Ag / 银"。证据：`tc08-filter-cn.png`
 - 优先级：P0
 
 ### TC-09　输入前后带空格
@@ -140,7 +145,7 @@
 - 前置数据：同上
 - 步骤：打开元素下拉，输入 `" ag "`（前后各一个空格）
 - 期望结果：候选中仍包含 `10001 / Ag / 银`（`filterOption` 内部 `trim()` 后匹配，不因空格导致 0 命中）
-- 实际结果：
+- 实际结果：**PASS**。输入 " ag "（前后空格）候选仍包含 "10001 / Ag / 银"。证据：`tc09-filter-spaces.png`
 - 优先级：P1
 
 ### TC-10　过滤无命中空态
@@ -150,7 +155,7 @@
 - 期望结果：
   1. 下拉候选区文案精确为 `未找到该元素，请先到「主数据维护 → 元素」维护后再选择`
   2. 该文案区域内**不存在**任何可点击的跳转链接或按钮（无「刷新」按钮、无「去新建」链接）
-- 实际结果：
+- 实际结果：**PASS**。输入 `zzz` 空态文案精确匹配 `未找到该元素，请先到「主数据维护 → 元素」维护后再选择`；linkCount=0（下拉区域内无 a/button）。证据：`tc10-no-match.png`
 - 优先级：P0
 
 ---
@@ -167,7 +172,7 @@
 - 期望结果：
   1. B 行下拉中 `10001 / Ag / 银` 呈禁用态（灰色不可点，`aria-disabled="true"` 或 antd `disabled` class）
   2. A 行下拉中 `10001 / Ag / 银` 仍可点击且显示为当前选中项（不置灰）
-- 实际结果：
+- 实际结果：**PASS**。B 行(row1)展开搜 Ag，选项 class 含 `ant-select-item-option-disabled`（置灰）；A 行(row0)展开，选项 class 含 `ant-select-item-option-selected` 无 `disabled`（可点/已选中）。证据：`tc11-row1-ag-disabled.png` / `tc11-row0-ag-not-disabled.png`
 - 优先级：P0
 
 > ⚠️ **TC-12 与 TC-13 共用同一个停用目标 `10009/Be/铍`，必须按固定顺序连续执行、只停用一次、最后统一还原一次**，避免两条用例各自还原互相打架（例如 TC-12 先还原成 ACTIVE，TC-13 又要求已停用，导致状态对不上）。执行顺序：**先做 TC-12 步骤 1~2 → 紧接着做 TC-13 步骤 2~3（不要在中间恢复启用）→ 都做完后再统一执行一次「元素」Tab 编辑抽屉把 `10009` 改回 ACTIVE → 最后做 TC-12 步骤 4 验证恢复后重新出现**。
@@ -184,9 +189,9 @@
 - 期望结果：
   1. 步骤 2：候选中**不出现** `10009 / Be / 铍`（`notFoundContent` 空态或候选为空，视是否有其他匹配项）
   2. 步骤 5：候选中**重新出现** `10009 / Be / 铍`
-- 实际结果：
+- 实际结果：**PASS**。停用后（走「元素」Tab 编辑抽屉 status→INACTIVE）新建材质抽屉搜 Be：候选 opts=[]（不出现）；恢复启用（编辑抽屉 status→ACTIVE）后再次搜 Be：候选 opts=["10009 / Be / 铍"]（重新出现）。证据：`tc12-be-stopped.png` / `tc12-be-not-in-dropdown.png` / `tc12-be-restored.png` / `tc12-be-back-in-dropdown.png`
 - 优先级：P0
-- 还原：确保测试结束时 `10009` 恢复为 ACTIVE：`SELECT status FROM element WHERE element_no='10009';` 必须为 `ACTIVE`
+- 还原：**已验证**。`SELECT status FROM element WHERE element_no='10009';` → `ACTIVE`（测试结束时复核）
 
 ### TC-13　已引用但被停用的元素：只读回显 + 已停用标记，允许保存
 - 对应：D3、FR-7 第二分支
@@ -199,9 +204,9 @@
 - 期望结果：
   1. 步骤 2：该行元素正常回显选中态 `10009 / Be / 铍`（不清空、不标红），且选中态右侧出现灰色 `已停用` Tag
   2. 步骤 3：保存不被拦截，返回 200（D3：停用元素不阻断已引用行的保存）
-- 实际结果：
+- 实际结果：**PASS**（附执行修正：材质 `00158` 实际含 2 行元素 `Cu/铜`(row0,sort_order1) + `Be/铍`(row1,sort_order2)，Be 在 **row1** 非 row0，本条按 row1 验证，与 AC/需求语义不冲突）。row1 回显 "10009 / Be / 铍"（未清空未标红）+ 右侧灰色 `已停用` Tag（count=1）；点保存返回 message="材质已更新"（200，未被拦截）。证据：`tc13-inactive-tag.png` / `tc13-save-allowed.png`
 - 优先级：P0
-- 还原：本用例不单独还原，统一见 TC-12 步骤 4 及其「还原」行
+- 还原：本用例不单独还原，统一见 TC-12 步骤 4 及其「还原」行（已确认 `10009` 最终 ACTIVE；`00158` 两行内容保存前后一致，SQL 复核 Cu/98%/1、Be/2%/2 未变）
 
 ### TC-14　字典为空（0 条）
 - 对应：FR-6、fronttask.md §5「字典为空」
@@ -210,9 +215,9 @@
   1. F12 打开 Network 面板，找到 `GET /api/cpq/elements` 请求，右键 → `Override content`（或等效的响应体覆盖手段），把响应体替换为 `[]`
   2. 打开材质抽屉（新建或编辑均可），展开任一行元素下拉
 - 期望结果：下拉候选区文案为 `未找到该元素，请先到「主数据维护 → 元素」维护后再选择`（与 TC-10 同一空态文案，FR-6 未区分「过滤无果」与「字典本身为空」两种情况）
-- 实际结果：
+- 实际结果：**PASS**（用 Playwright `page.route()` 拦截 `GET /api/cpq/elements` 返回 `[]`，等效 DevTools Override）。展开元素下拉，空态文案精确匹配期望文案。证据：`tc14-empty-dict.png`
 - 优先级：P1
-- 还原：清除 DevTools Override，恢复真实响应
+- 还原：**已验证**。测试脚本内 `page.unroute()` 解除拦截，之后请求恢复真实响应（后续用例正常拿到 37 条）
 
 ### TC-15　字典接口 5xx / 网络失败（含「不得误判正常行为脏数据」回归断言）
 - 对应：AC-10（错误处理）、FR-10、api.md 错误码表
@@ -228,9 +233,15 @@
   2. 元素下拉的 `notFoundContent` 显示 `元素字典加载失败`，**不得**表现为「未找到该元素，请先到…」（区分「本来没数据」与「加载失败」两种空态，FR-10 明确要求）
   3. **（核心断言，缺陷验收点）** 3 行**均不得**出现红色「原值「C」/「Ni」/「Ag」不在元素字典中」提示 —— 字典加载失败 ≠ 数据本身是脏数据，不得对正常行发起「诬告」
   4. 步骤 4 若被拦截，`message.error` 的拦截文案**不得**使用「不在元素字典中，请重新选择」这套 FR-7/D4 脏值文案（那套文案专属「字典已就绪但查无此码」的场景，与「字典压根没加载成功」是两种不同错误，用户看到的提示必须能区分成因；具体应表现为「字典未加载完成，无法保存」一类提示，或禁用保存按钮，以实际返修实现为准，但**红字「原值…」误报与「不在元素字典中」误导文案这两条硬性不得出现**）
-- 实际结果：
+- 实际结果：**PASS（全部 4 项，缺陷 5534e47f 已修好）**。
+  1. 用 `page.route()` 拦截 `GET /api/cpq/elements` 返回 500，打开材质 00005：顶部 toast="元素字典加载失败，请刷新重试" PASS
+  2. 展开元素下拉，`notFoundContent`="元素字典加载失败"（不含"未找到该元素"字样）PASS
+  3. **核心断言**：逐行检查 3 行（C/Ni/Ag），均**未出现**红色「原值「X」不在元素字典中」文案，`anyRedOriginal=false` PASS —— 确认代码评审必修项（"字典加载失败不再误判为字典外脏值"）已生效
+  4. 点保存，拦截 toast="元素字典加载失败，无法校验元素，请关闭抽屉重新打开后再保存"；不含"不在元素字典中，请重新选择"字样 PASS
+  - 证据：`tc15-load-failed-msg.png` / `tc15-notfound-content.png` / `tc15-rows-no-red.png` / `tc15-save-blocked.png`
+  - 备注：已知文案瑕疵（新建场景下若字典失败，行内提示误写"暂无法显示**原选择**"，新建场景本无原选择）不影响本用例判定，主线已裁定不返工
 - 优先级：P0
-- 还原：解除 Block/Override
+- 还原：**已验证**。测试脚本内 `page.unroute()` 解除拦截
 
 ### TC-16　全部 ACTIVE 元素已被选完，剩余行全部置灰
 - 对应：FR-5 边界、fronttask.md §5「全部元素都已被其他行选完」
@@ -242,9 +253,9 @@
   3. 第 1 行选 `10009 / Be / 铍`，第 2 行选 `10014 / Cr / 铬`
   4. 点「+ 添加元素」新增第 3 行，展开第 3 行下拉
 - 期望结果：第 3 行下拉两个候选项 `10009 / Be / 铍`、`10014 / Cr / 铬` 均呈禁用置灰态，无可选项
-- 实际结果：
+- 实际结果：**PASS**（`page.route()` 拦截字典为仅 2 条）。第 1/2 行分别选中 Be / Cr 后，展开第 3 行下拉：候选 optCount=2，两项 class 均含 `ant-select-item-option-disabled`。证据：`tc16-all-selected-disabled.png`
 - 优先级：P1
-- 还原：清除 DevTools Override
+- 还原：**已验证**。测试脚本内 `page.unroute()` 解除拦截
 
 ### TC-17　编辑入口回显：老数据 element_code 为空串
 - 对应：fronttask.md §5「老数据 `element_code` 为空串」
@@ -266,9 +277,9 @@
      DELETE FROM material_recipe WHERE id='<tc17_id>';
      ```
 - 期望结果：该行「元素」列表现为**未选择态**（空下拉，无红色 `unmatched` 提示），点「保存」被 FR-9 校验拦截，提示 `请为第 1 行选择元素`（不是 FR-7 的「不在字典中」提示，因为空串不进入 `unmatched` 分支，走「未选择」分支，见需求文档 §5 边界表最后一行）
-- 实际结果：
+- 实际结果：**PASS**。打开 TC17-TEMP：元素框显示占位符（未选中态），无红色提示（hasRedCount=0）；点保存 toast="请为第 1 行选择元素"，精确匹配期望（FR-9 分支，非 FR-7）。证据：`tc17-empty-code-row.png` / `tc17-save-blocked.png`
 - 优先级：P2
-- 还原：确认 `TC17-TEMP` 相关行已从两张表清理干净
+- 还原：**已验证**。测试结束后 `DELETE FROM material_recipe_element/material_recipe WHERE ...`，复查 `SELECT count(*) FROM material_recipe WHERE code='TC17-TEMP';` = 0
 
 ---
 
@@ -279,7 +290,7 @@
 - 前置数据：新建材质抽屉（默认第 1 行元素为空）
 - 步骤：不选任何元素，直接点「保存」
 - 期望结果：`message.error` 提示精确为 `请为第 1 行选择元素`，保存请求未发出（F12 Network 确认无新 `POST`）
-- 实际结果：
+- 实际结果：**PASS**（执行注记：需先填「材质编号/化学式」两个必填项，否则会被 antd `Form.validateFields()` 通用校验拦在更前面、直接静默 return，走不到元素校验分支——本条按此前置条件执行）。toast="请为第 1 行选择元素"，精确匹配。证据：`tc18-empty-row1.png`
 - 优先级：P0
 
 ### TC-19　多行时未选元素定位到具体行号
@@ -290,7 +301,7 @@
   2. 点「+ 添加元素」新增第 2 行，不选元素
   3. 点「保存」
 - 期望结果：提示精确为 `请为第 2 行选择元素`（行号从 1 开始且定位到真实空行，不是恒定第 1 行）
-- 实际结果：
+- 实际结果：**PASS**。第 1 行选 Ag 后，第 2 行留空点保存，toast="请为第 2 行选择元素"，行号正确定位到第 2 行（非恒定第 1 行）。证据：`tc19-empty-row2.png`
 - 优先级：P1
 
 ### TC-20　字典外脏值点保存被拦截（见 TC-04 步骤 3，此处补充多行场景）
@@ -301,7 +312,7 @@
   2. 添加第 2 行，选中 `10005 / Ni / 镍`
   3. 点「保存」
 - 期望结果：保存仍被拦截（第 1 行 unmatched 未处理），`message.error` 文案含「不在元素字典中，请重新选择」；不会因为第 2 行合法就放行
-- 实际结果：
+- 实际结果：**部分 FAIL（同 BUG-0812-01）**。"不会因为第 2 行合法就放行" PASS：保存确实未放行（用 `00262` 添加第 2 行选 Ni 后保存，无"已更新"消息）。但拦截文案是 `请为第 1 行选择元素`，不含「不在元素字典中，请重新选择」—— FAIL，与 TC-04/05 同一缺陷（unmatched 行 elementNo 恒为 null，FR-9 检查抢在 FR-7 之前命中）。证据：`tc20-multirow-still-blocked.png`
 - 优先级：P0
 
 ---
@@ -316,7 +327,9 @@
   2. 添加第 2 行，选 `10005 / Ni / 镍`，默认 % 改为 `40`
   3. 点「保存」
 - 期望结果：请求返回 HTTP 400，响应体错误信息精确为 `元素 default_pct 之和必须 = 100, 当前: 90`（`MaterialRecipeService.validateUpsert` 未被前端改动绕过）
-- 实际结果：
+- 实际结果：**PASS（分两层验证，执行方式需补充说明）**。
+  - **UI 层观察**：填 Ag=50/Ni=40 点保存，实际弹出的是**前端自身**既有校验 `默认含量之和必须 = 100，当前 90`（`handleSubmit` 里 `sumOk` 检查，pre-existing、非本次改造）——请求根本**没有发到后端**，因此 UI 路径看不到题目描述的后端原始错误文案。这不是缺陷（前端提前拦截优于等后端报错，属既有行为），但说明"仅凭 UI 操作"无法验证"后端既有校验仍生效"这条 backtask.md §6 的诉求
+  - **直接 API 层验证（真正验证的是这条）**：用 admin session `curl -X POST /api/cpq/material-recipes` 直接发送 `elements:[{Ag,50},{Ni,40}]`（绕开前端），返回 **HTTP 400**，响应体精确为 `{"code":400,"message":"元素 default_pct 之和必须 = 100, 当前: 90"}`，与期望文案逐字符一致。确认 `MaterialRecipeService.validateUpsert` 未被本次改动影响，且该请求**未在库中留下残留记录**（`SELECT count(*) FROM material_recipe WHERE code='TC21API'` = 0）
 - 优先级：P0
 
 ### TC-22　`recipeType` 切换（locked→editable→partial）后元素选中态不丢
@@ -329,9 +342,9 @@
   4. 「类型」切回 `locked`
   5. 每次切换后检查 3 行「元素」列
 - 期望结果：每次切换后 3 行元素下拉选中态始终保持 `10012 / C / 碳`、`10005 / Ni / 镍`、`10001 / Ag / 银`，不出现清空/错位/`unmatched` 误报（`onRecipeTypeChange` 必须用展开语法透传 `elementNo`/`elementCode`/`elementName`/`unmatched`）
-- 实际结果：
+- 实际结果：**PASS**。切换前及 locked→editable→partial→locked 每一步后读取 3 行文本，均恒为 `["10012 / C / 碳","10005 / Ni / 镍","10001 / Ag / 银"]`，无丢失/错位。未点保存。证据：`tc22-after-cycle.png`
 - 优先级：P0
-- 提醒：本用例**不要点保存**，仅验证前端内存态；若误保存需用 TC-03 的 SQL 校验并按需修复数据
+- 提醒：本用例**不要点保存**，仅验证前端内存态；若误保存需用 TC-03 的 SQL 校验并按需修复数据（本次执行未保存）
 
 ### TC-23　材质库 Excel 导入路径不受影响
 - 对应：backtask.md §6 第 5 条
@@ -344,9 +357,9 @@
 - 期望结果：
   1. 导入返回 200，报告显示成功
   2. 步骤 4 查得该行 `element_no` **正常写入非空值**（导入路径走 `MaterialRecipeImportService`，不经过本次改造的 UI 保存路径，`element_no` 应仍按原逻辑回填，不受「UI 保存不写 element_no」的影响）
-- 实际结果：
+- 实际结果：**PASS**（用 xlsx 库构造模板同结构文件，`curl -F file=@... /material-recipes/import` 上传，因浏览器手工操作构造 xlsx 较繁琐改走接口层等效验证，导入逻辑与页面入口一致）。响应 `{"totalRows":1,"materialsUpserted":1,"elementRowsInserted":1,...}` HTTP 200；SQL 复查 `TC23-TEMP`：`element_code='Ag'`、`element_name='银'`、`default_pct=100.0000`、**`element_no='10001'`（非空）**，与期望一致。证据：curl 响应 JSON + SQL 输出（详见 test-report.md）
 - 优先级：P1
-- 还原：`DELETE FROM material_recipe_element WHERE recipe_id IN (SELECT id FROM material_recipe WHERE code='TC23-TEMP'); DELETE FROM material_recipe WHERE code='TC23-TEMP';`
+- 还原：**已执行**。`DELETE FROM material_recipe_element/material_recipe WHERE code='TC23-TEMP'`，复查 count=0
 
 ### TC-24　`flyway_schema_history` 无新增行
 - 对应：backtask.md §6 第 4 条
@@ -355,7 +368,7 @@
   1. 用例执行前：`SELECT max(version::int) FROM flyway_schema_history WHERE version ~ '^[0-9]+$';`（基线 = `385`）
   2. 完成本文档全部用例后再次执行同一 SQL
 - 期望结果：两次结果一致（= `385`），本任务全程无 Flyway 迁移产生
-- 实际结果：
+- 实际结果：**PASS**。执行前 `max(version::int)=385`；全部 32 条用例跑完后再次查询仍为 `385`，一致。
 - 优先级：P0
 
 ### TC-25　`GET /api/cpq/elements` 返回条数与库一致
@@ -365,7 +378,7 @@
   1. 登录后 `curl` 调 `GET /api/cpq/elements`（带 session cookie）或直接在已登录浏览器 F12 Network 里看响应体
   2. `SELECT count(*) FROM element;`
 - 期望结果：接口返回 200，响应数组长度 = SQL 查询数（当前 = 37）
-- 实际结果：
+- 实际结果：**PASS**。Playwright 拦截打开抽屉时的响应：status=200，`body.length=37`，与 `SELECT count(*) FROM element` = 37 一致。
 - 优先级：P1
 
 ---
@@ -380,7 +393,7 @@
   2. 打开「主数据维护 → 材质」→ 新建或编辑材质抽屉
   3. 展开任一行元素下拉
 - 期望结果：`GET /api/cpq/elements` 返回 200，下拉候选正常展示 37 条 ACTIVE 元素（与 SYSTEM_ADMIN 登录时看到的候选一致）
-- 实际结果：
+- 实际结果：**PASS**（账号替代说明：`test_finance_c87a27ab` 密码不可得，改用 admin API `POST /api/cpq/users` 临时新建 `tc0812_sales`/`SALES_REP`/ACTIVE，测完立即 `PATCH status=INACTIVE` 停用，见 test-report.md 权限验证方法）。`GET /elements` 返回 status=200，响应体 `body.length=37`；下拉展开可见候选（DOM 因 antd Select 虚拟滚动只渲染约 10 个可视节点，属正常表现，不作判定依据——判定以 API 响应长度为准，同 TC-25 口径）。证据：`tc26-nonadmin-dropdown.png`
 - 优先级：P1
 
 ### TC-27　非 SYSTEM_ADMIN 角色保存材质被拒绝
@@ -390,7 +403,7 @@
   1. 同 TC-26 账号登录，打开新建材质抽屉，正常选好元素
   2. 点「保存」
 - 期望结果：`POST /api/cpq/material-recipes` 返回 HTTP 403，响应体含 `无权限访问`；前端展示保存失败提示；本次改造**未放宽**写权限
-- 实际结果：
+- 实际结果：**PASS**（账号同 TC-26 说明，用 `tc0812_sales`/SALES_REP）。选好元素+填好编号后点保存，`POST /api/cpq/material-recipes` 返回 **403**，`message.error`="无权限访问"；未创建材质（该请求从未落库）。证据：`tc27-save-403.png`
 - 优先级：P0
 
 ---
@@ -405,7 +418,7 @@
   2. 打开材质抽屉
   3. 统计 `GET /api/cpq/elements` 的请求条数
 - 期望结果：恰好 1 条
-- 实际结果：
+- 实际结果：**PASS**。打开抽屉后统计 `GET /api/cpq/elements` 请求数=1，恰好 1 次。证据：`tc28-29-network.png`
 - 优先级：P0
 
 ### TC-29　下拉连续过滤不产生新请求
@@ -414,7 +427,7 @@
 - 步骤：
   1. 展开任一行元素下拉，依次输入 `1`、`10`、`100`、`1000`、`10001`（5 次不同输入，每次间隔清空 Network 计数基线不变）
 - 期望结果：全程 Network 面板中除 TC-28 打开时的那 1 条 `GET /api/cpq/elements` 外，**不产生任何新请求**（过滤在前端本地完成，不打 `keyword` 参数）
-- 实际结果：
+- 实际结果：**PASS**。连续输入 `1`/`10`/`100`/`1000`/`10001` 共 5 次后，`GET /api/cpq/elements` 请求计数仍为 1（afterOpen=1, afterFilter=1），未新增请求。证据：`tc28-29-network.png`
 - 优先级：P0
 
 ### TC-30　保存只发 1 次请求，请求体字段集合与改造前一致
@@ -427,7 +440,7 @@
 - 期望结果：
   1. 恰好 1 次 `POST`（或编辑场景下 1 次 `PUT`），无重复提交
   2. `elements[]` 每项字段集合 **⊆** `elementCode`、`elementName`、`defaultPct`、`minPct`、`maxPct`、`isLocked`、`sortOrder` 这 7 个键（`isLocked=true` 时 `minPct`/`maxPct` 传 `undefined` 会被 `JSON.stringify` 丢键，此时该项只会有 5 个键，键数量不是断言点）；**硬断言只有一条：不包含 `elementNo` 键**（D9：本期不落 `elementNo` 到提交体，这条键缺席才是本用例的判定依据）
-- 实际结果：
+- 实际结果：**PASS**。postCount=1（恰 1 次 POST）；实际捕获请求体 `elements=[{"elementCode":"Ag","elementName":"银","defaultPct":"100","isLocked":true,"sortOrder":1}]`（`isLocked=true` 场景 minPct/maxPct 确实被 JSON.stringify 丢键，5 个键，属预期）；键集合 ⊆ 7 键白名单 PASS；**不含 `elementNo`** PASS。证据：`tc30-request-body.png`
 - 优先级：P0
 
 ---
@@ -451,14 +464,9 @@
   3. 步骤 7 查到 2 行，**逐字段**：
      - 第 1 行：`element_code='Ag'`、`element_name='银'`（**是字典值，不是用户没输入过的编号 `10001`**）、`default_pct=60.0000`、`is_locked=true`、`sort_order=1`
      - 第 2 行：`element_code='Ni'`、`element_name='镍'`、`default_pct=40.0000`、`is_locked=true`、`sort_order=2`
-- 实际结果：
+- 实际结果：**PASS**。保存 message="材质已创建"（200）；`SELECT id FROM material_recipe WHERE code='TC32-TEMP'` 唯一 1 条；元素行逐字段核对：row1 `Ag/银/60.0000/is_locked=t/sort_order=1`，row2 `Ni/镍/40.0000/is_locked=t/sort_order=2`，与期望完全一致（落库值是字典的 `Ag`/`银`，不是用户输入过的编号 `10001`）。证据：`tc32-saved.png` + SQL 输出
 - 优先级：P0
-- 清理：
-  ```sql
-  DELETE FROM material_recipe_element WHERE recipe_id IN (SELECT id FROM material_recipe WHERE code='TC32-TEMP');
-  DELETE FROM material_recipe WHERE code='TC32-TEMP';
-  ```
-  执行后重跑步骤 6 确认返回 0 行
+- 清理：**已执行**。测试完成后 `DELETE FROM material_recipe_element/material_recipe WHERE code='TC32-TEMP'`，复查 `SELECT count(*) FROM material_recipe WHERE code='TC32-TEMP'` = 0
 
 ---
 
@@ -484,7 +492,7 @@
        期望 `200`
      - **方案 B（标注延后）**：本步骤标注「延后到合并 master 后于 5174 复验」，在 `test-report.md` 里注明执行时机是合并后而非本轮，不得在合并前用 5174 的 200 当证据
 - 期望结果：步骤 1 输出 0 个 error；步骤 2（方案 A 或方案 B 复验时）输出 `200`
-- 实际结果：
+- 实际结果：**PASS（方案 A 执行）**。`cd .../worktrees/.../cpq-frontend && npx tsc --noEmit -p tsconfig.json` → 输出为空，**0 error**；worktree 内软链 `node_modules` 起临时 vite（`--port 5199 --host 0.0.0.0`）：`curl http://localhost:5199/` → **200**，`curl http://localhost:5199/src/pages/config/MaterialRecipeEditDrawer.tsx` → **200**。全部 32 条用例均在此 5199 临时前端 + 真实后端 8081 + 真实库 `cpq_db_0724` 环境下执行。测试结束后已 `pkill` 该临时 vite 进程，`ps aux | grep 5199` 确认无残留。
 - 优先级：P0
 
 ---
