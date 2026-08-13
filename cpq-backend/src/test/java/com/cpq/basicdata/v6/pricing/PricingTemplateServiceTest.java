@@ -24,7 +24,10 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * task-0728 · B4：核价基础数据 24 Sheet 空模板生成 + <b>闭环导入</b>自检。
+ * task-0728 · B4：核价基础数据 20 Sheet 空模板生成 + <b>闭环导入</b>自检
+ * （task-0812：元素核价价格表(P01)/材料核价价格表(P02)/核价版本(P04)/宏丰-客户料号对应关系(P05)
+ * 4 个 Sheet 已停用，由 24 收敛为 20；本类的所有断言随 {@link PricingHandlerCatalog#all()} 自动收敛，
+ * 无需手写停用清单）。
  *
  * <p>三层验收：
  * <ol>
@@ -65,7 +68,7 @@ class PricingTemplateServiceTest {
 
     // ------------------------------------------------------------------ ①
 
-    /** ① sheet 数 == handler 数（24），② 逐个对齐 sheetName() 与顺序。 */
+    /** ① sheet 数 == handler 数（20），② 逐个对齐 sheetName() 与顺序。 */
     @Test
     void sheetsMatchHandlerRegistry() throws Exception {
         byte[] xlsx = templateService.generateTemplate();
@@ -74,7 +77,7 @@ class PricingTemplateServiceTest {
         assertEquals('K', xlsx[1]);
 
         List<SheetHandler> handlers = catalog.all();
-        assertEquals(24, handlers.size(), "核价 handler 应为 24 个（P01~P24）");
+        assertEquals(20, handlers.size(), "核价 handler 应为 20 个（P01~P24 中 P01/P02/P04/P05 已于 task-0812 停用）");
 
         try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(xlsx))) {
             assertEquals(handlers.size(), wb.getNumberOfSheets(), "sheet 数与 handler 数不符");
@@ -86,8 +89,18 @@ class PricingTemplateServiceTest {
     }
 
     /**
+     * task-0812 已停用的 4 个 Sheet Handler 类名（不进 {@link PricingHandlerCatalog#all()}，
+     * 但类本身作为 CDI bean 仍然部署——见需求文档 D-2「Handler 类保留，仅摘除调用点」）。
+     * 本测试据此清单把它们从「未登记」误判中排除，不降低其余 handler 的漏登记守卫效力。
+     */
+    private static final java.util.Set<String> DISABLED_HANDLERS = java.util.Set.of(
+        "P01ElementPricingPriceHandler", "P02MaterialPricingPriceHandler",
+        "P04PricingVersionHandler", "P05CustomerMapHandler");
+
+    /**
      * 登记表完备性：{@code com.cpq.basicdata.v6.pricing} 包下<b>所有</b> {@link SheetHandler} CDI bean
-     * 都必须在 {@link PricingHandlerCatalog} 里 —— 防止将来加 P25 只接了导入、漏了模板（模板静默少一个 sheet）。
+     * 都必须在 {@link PricingHandlerCatalog} 里（{@link #DISABLED_HANDLERS} 除外）—— 防止将来加 P25
+     * 只接了导入、漏了模板（模板静默少一个 sheet）。
      */
     @Test
     void catalogCoversEveryPricingHandlerBean() {
@@ -98,11 +111,13 @@ class PricingTemplateServiceTest {
         }
         List<String> registered = catalog.all().stream().map(h -> h.getClass().getSimpleName()).toList();
         List<String> missing = beans.stream()
+            .filter(b -> !DISABLED_HANDLERS.contains(b))
             // CDI 代理类名形如 P01XxxHandler_ClientProxy / _Subclass，按前缀匹配
             .filter(b -> registered.stream().noneMatch(r -> r.startsWith(b)))
             .toList();
         assertTrue(missing.isEmpty(), "以下核价 handler 未登记进 PricingHandlerCatalog（模板会少 sheet）: " + missing);
-        assertEquals(24, beans.size(), "核价 handler bean 数变了，请同步 catalog 与本测试: " + beans);
+        // bean 数仍是 24：task-0812 只摘除了 catalog 里的调用点，4 个 handler 类作为 CDI bean 依然部署。
+        assertEquals(24, beans.size(), "核价 handler bean 数变了，请同步 DISABLED_HANDLERS 与本测试: " + beans);
     }
 
     /** 表头写第 1 行、内容 == templateHeaders()、无重复列、无数据行。 */
@@ -134,12 +149,10 @@ class PricingTemplateServiceTest {
      */
     @Test
     void requiredKeyColumnsAreResolvable() {
+        // task-0812：元素核价价格表(P01)/材料核价价格表(P02)/核价版本(P04)/宏丰-客户料号对应关系(P05)
+        // 4 个 Sheet 已停用，不再进 catalog.all()，故对应必填键清单一并删除。
         Map<String, List<String>> required = new LinkedHashMap<>();
-        required.put("元素核价价格表", List.of("元素代码"));
-        required.put("材料核价价格表", List.of("材料料号"));
         required.put("汇率管理表", List.of("基础货币", "核价货币", "核价汇率"));
-        required.put("核价版本", List.of("销售料号", "核价版本编号"));
-        required.put("宏丰-客户料号对应关系", List.of("销售料号", "客户编号", "客户产品编号"));
         required.put("物料BOM", List.of("销售料号", "组成料号", "计算类型"));
         required.put("物料与元素BOM", List.of("销售料号", "材质料号", "元素代码"));
         required.put("产能", List.of("销售料号", "工序编号", "人工标准单价"));

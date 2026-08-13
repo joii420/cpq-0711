@@ -23,25 +23,30 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * 核价基础数据导入服务（24 Sheet）。
+ * 核价基础数据导入服务（20 Sheet；task-0812 由 24 收敛为 20）。
  *
  * <p>调度：每个 SheetHandler 在 REQUIRES_NEW 事务里独立跑。
  * customer_no 在 BOM 表用 "_GLOBAL_" 哨兵；客户料号关系 Sheet 从 Excel 行读取 customer_no。
+ *
+ * <p><b>task-0812 停用</b>：元素核价价格表(P01) / 材料核价价格表(P02) / 核价版本(P04) /
+ * 宏丰-客户料号对应关系(P05) 已从 {@link #orderedHandlers()} 摘除，处理 Sheet 数 = 16（循环）
+ * + 4（P16/P17、P19/P20 两个合并 bean）= 20。4 个 Handler 类保留，恢复只需把对应字段重新
+ * 加回 {@link #orderedHandlers()} 的 {@code List.of(...)}（顺序按 §3 依赖序插回原相对位置）。
  */
 @ApplicationScoped
 public class PricingImportService {
 
     @Inject ExcelParserService parser;
 
-    // 24 个 Handler 按方案"多表写入顺序"排列：料号 → 关系 → 汇率 → BOM主 → BOM子 → 单价 → 其余
+    // 20 个 Handler 按方案"多表写入顺序"排列：料号 → 关系 → 汇率 → BOM主 → BOM子 → 单价 → 其余
     @Inject P24UnitWeightHandler p24;
-    @Inject P05CustomerMapHandler p05;
+    @Inject P05CustomerMapHandler p05;   // task-0812 停用：宏丰-客户料号对应关系（不进 orderedHandlers()，恢复=加回原位置）
     @Inject P03ExchangeRateHandler p03;
-    @Inject P04PricingVersionHandler p04;
+    @Inject P04PricingVersionHandler p04;   // task-0812 停用：核价版本（不进 orderedHandlers()，恢复=加回原位置）
     @Inject P06MaterialBomHandler p06;
     @Inject P07ElementBomHandler p07;
-    @Inject P01ElementPricingPriceHandler p01;
-    @Inject P02MaterialPricingPriceHandler p02;
+    @Inject P01ElementPricingPriceHandler p01;   // task-0812 停用：元素核价价格表（不进 orderedHandlers()，恢复=加回原位置）
+    @Inject P02MaterialPricingPriceHandler p02;  // task-0812 停用：材料核价价格表（不进 orderedHandlers()，恢复=加回原位置）
     @Inject P08CapacityHandler p08;
     @Inject P09EquipmentDepreciationHandler p09;
     @Inject P10ProductionEnergyHandler p10;
@@ -62,8 +67,9 @@ public class PricingImportService {
     @Inject IncomingOtherMergeHandler incomingOtherMerge;   // 合并 P16(比例)+P17(固定)
     @Inject FinishedOtherMergeHandler finishedOtherMerge;   // 合并 P19(比例)+P20(固定)
 
+    /** 处理 Sheet 数 = 16（本循环）+ 4（P16/P17、P19/P20 两个合并 bean，循环外接线）= 20。 */
     private List<SheetHandler> orderedHandlers() {
-        return List.of(p24, p05, p03, p04, p06, p07, p01, p02, p08, p09, p10, p11, p12,
+        return List.of(p24, p03, p06, p07, p08, p09, p10, p11, p12,
                        p13, p14, p15, p18, p21, p22, p23);
     }
 
