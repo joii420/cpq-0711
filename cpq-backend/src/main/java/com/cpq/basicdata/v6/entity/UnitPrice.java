@@ -67,13 +67,13 @@ public class UnitPrice extends V6BaseEntity {
     public String platingSchemeNo;
 
     /** D1：固定金额费用写值、比例费用留 NULL（以是否为空区分费用类型）。 */
-    @Column(name = "pricing_price", precision = 18, scale = 6)
+    @Column(name = "pricing_price", precision = 24, scale = 12)
     public BigDecimal pricingPrice;
 
-    @Column(name = "cost_ratio", precision = 10, scale = 4)
+    @Column(name = "cost_ratio", precision = 18, scale = 12)
     public BigDecimal costRatio;
 
-    @Column(name = "market_ref_price", precision = 18, scale = 6)
+    @Column(name = "market_ref_price", precision = 24, scale = 12)
     public BigDecimal marketRefPrice;
 
     @Column(name = "currency", length = 10)
@@ -82,10 +82,10 @@ public class UnitPrice extends V6BaseEntity {
     @Column(name = "unit", length = 20)
     public String unit;
 
-    @Column(name = "conversion_rate", precision = 18, scale = 6)
+    @Column(name = "conversion_rate", precision = 24, scale = 12)
     public BigDecimal conversionRate;
 
-    @Column(name = "recovery_discount", precision = 10, scale = 4)
+    @Column(name = "recovery_discount", precision = 18, scale = 12)
     public BigDecimal recoveryDiscount;
 
     @Column(name = "life_qty")
@@ -119,10 +119,10 @@ public class UnitPrice extends V6BaseEntity {
     @Column(name = "fetch_rule", length = 200)
     public String fetchRule;
 
-    @Column(name = "premium_fee", precision = 18, scale = 6)
+    @Column(name = "premium_fee", precision = 24, scale = 12)
     public BigDecimal premiumFee;
 
-    @Column(name = "fetched_price", precision = 18, scale = 6)
+    @Column(name = "fetched_price", precision = 24, scale = 12)
     public BigDecimal fetchedPrice;
 
     @Column(name = "fetch_time")
@@ -134,19 +134,19 @@ public class UnitPrice extends V6BaseEntity {
     @Column(name = "expire_date")
     public LocalDate expireDate;
 
-    @Column(name = "base_value", precision = 18, scale = 6)
+    @Column(name = "base_value", precision = 24, scale = 12)
     public BigDecimal baseValue;
 
     @Column(name = "is_fluctuate_with_material")
     public Boolean isFluctuateWithMaterial;
 
-    @Column(name = "material_increase_ratio", precision = 10, scale = 4)
+    @Column(name = "material_increase_ratio", precision = 18, scale = 12)
     public BigDecimal materialIncreaseRatio;
 
-    @Column(name = "material_fixed_increase", precision = 18, scale = 6)
+    @Column(name = "material_fixed_increase", precision = 24, scale = 12)
     public BigDecimal materialFixedIncrease;
 
-    @Column(name = "defect_rate", precision = 10, scale = 4)
+    @Column(name = "defect_rate", precision = 18, scale = 12)
     public BigDecimal defectRate;
 
     /** task-0721 B1：本行归属的未审核报价单（NULL=正式/历史；非 NULL=该报价单私有 pending 草稿）。 */

@@ -32,13 +32,15 @@ public class MaterialRecipeElement extends PanacheEntityBase {
     @Column(name = "element_name")
     public String elementName;
 
-    @Column(name = "default_pct")
+    /** task-0813：此前 @Column 未声明 precision/scale；本次按目标类型 (16,12) 补齐声明，
+     *  使 T6 反射一致性测试可覆盖该列。 */
+    @Column(name = "default_pct", precision = 16, scale = 12)
     public BigDecimal defaultPct;
 
-    @Column(name = "min_pct")
+    @Column(name = "min_pct", precision = 16, scale = 12)
     public BigDecimal minPct;
 
-    @Column(name = "max_pct")
+    @Column(name = "max_pct", precision = 16, scale = 12)
     public BigDecimal maxPct;
 
     @Column(name = "is_locked")

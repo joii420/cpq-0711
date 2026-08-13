@@ -42,30 +42,31 @@ public class Capacity extends V6BaseEntity {
     @Column(name = "production_type", nullable = false, length = 20)
     public String productionType;
 
-    @Column(name = "fixed_lead_time", precision = 18, scale = 6)
+    @Column(name = "fixed_lead_time", precision = 24, scale = 12)
     public BigDecimal fixedLeadTime;
 
-    @Column(name = "variable_time", precision = 18, scale = 6)
+    @Column(name = "variable_time", precision = 24, scale = 12)
     public BigDecimal variableTime;
 
-    @Column(name = "variable_time_batch", precision = 18, scale = 6)
+    @Column(name = "variable_time_batch", precision = 24, scale = 12)
     public BigDecimal variableTimeBatch;
 
     @Column(name = "capacity_unit", length = 20)
     public String capacityUnit;
 
-    @Column(name = "default_defect_rate", precision = 10, scale = 4)
+    @Column(name = "default_defect_rate", precision = 18, scale = 12)
     public BigDecimal defaultDefectRate;
 
     @Column(name = "cost_type", length = 20)
     public String costType;
 
-    @Column(name = "fixed_cost", precision = 18, scale = 6)
+    @Column(name = "fixed_cost", precision = 24, scale = 12)
     public BigDecimal fixedCost;
 
-    @Column(name = "cost_ratio", precision = 10, scale = 4)
+    @Column(name = "cost_ratio", precision = 18, scale = 12)
     public BigDecimal costRatio;
 
+    /** task-0813 §3.6 边界项：未裁决是否随本族扩容，本次不改（保留 (10,4)）。 */
     @Column(name = "annual_discount_factor", precision = 10, scale = 4)
     public BigDecimal annualDiscountFactor;
 

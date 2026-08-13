@@ -30,22 +30,22 @@ public class PlatingScheme extends V6BaseEntity {
     @Column(name = "plating_method", nullable = false, length = 30)
     public String platingMethod;
 
-    @Column(name = "surface_area", nullable = false, precision = 18, scale = 6)
+    @Column(name = "surface_area", nullable = false, precision = 24, scale = 12)
     public BigDecimal surfaceArea;
 
-    @Column(name = "plating_area", precision = 18, scale = 6)
+    @Column(name = "plating_area", precision = 24, scale = 12)
     public BigDecimal platingArea;
 
-    @Column(name = "plating_thickness", nullable = false, precision = 18, scale = 6)
+    @Column(name = "plating_thickness", nullable = false, precision = 24, scale = 12)
     public BigDecimal platingThickness;
 
     @Column(name = "plating_requirement", length = 200)
     public String platingRequirement;
 
-    @Column(name = "density", precision = 18, scale = 6)
+    @Column(name = "density", precision = 24, scale = 12)
     public BigDecimal density;
 
-    @Column(name = "element_usage", nullable = false, precision = 18, scale = 6)
+    @Column(name = "element_usage", nullable = false, precision = 24, scale = 12)
     public BigDecimal elementUsage;
 
     @Column(name = "element_usage_unit", length = 20)

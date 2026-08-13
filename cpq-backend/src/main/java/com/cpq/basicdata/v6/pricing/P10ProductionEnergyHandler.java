@@ -35,12 +35,13 @@ public class P10ProductionEnergyHandler implements SheetHandler {
 
     /**
      * tesk-0709 Task 11 E2E 修复（2026-07-11）：同 {@code P09EquipmentDepreciationHandler} 注释——
-     * "生产能耗单价"列存在超出 production_energy.unit_price(numeric(18,6)) 精度的字面量
-     * （如 1.1999999999999999E-3 / 1.4000000000000001E-7），解析时需按列 scale 舍入，避免同文件
-     * 重导被误判"内容变化"而升版（违反§7.4"重导不升版"）。
+     * "生产能耗单价"列存在超出 production_energy.unit_price(numeric(24,12)，task-0813 前为
+     * numeric(18,6)) 精度的字面量（如 1.1999999999999999E-3 / 1.4000000000000001E-7），解析时
+     * 需按列 scale 舍入，避免同文件重导被误判"内容变化"而升版（违反§7.4"重导不升版"）。
+     * task-0813：随列扩容同步抬高舍入阈值到 12 位。
      */
     private static BigDecimal roundToColumnScale(BigDecimal v) {
-        return v == null ? null : v.setScale(6, RoundingMode.HALF_UP);
+        return v == null ? null : v.setScale(12, RoundingMode.HALF_UP);
     }
 
     @Override

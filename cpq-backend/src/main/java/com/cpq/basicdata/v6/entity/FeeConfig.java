@@ -38,10 +38,10 @@ public class FeeConfig extends V6BaseEntity {
     @Column(name = "charge_basis", length = 20)
     public String chargeBasis;
 
-    @Column(name = "value", precision = 18, scale = 6)
+    @Column(name = "value", precision = 24, scale = 12)
     public BigDecimal value;
 
-    @Column(name = "ratio", precision = 10, scale = 4)
+    @Column(name = "ratio", precision = 18, scale = 12)
     public BigDecimal ratio;
 
     @Column(name = "currency", length = 10)

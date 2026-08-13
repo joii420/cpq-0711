@@ -21,10 +21,10 @@ public class ExchangeRateV6 extends V6BaseEntity {
     @Column(name = "target_currency", nullable = false, length = 10)
     public String targetCurrency;
 
-    @Column(name = "rate", nullable = false, precision = 18, scale = 8)
+    @Column(name = "rate", nullable = false, precision = 22, scale = 12)
     public BigDecimal rate;
 
-    @Column(name = "ref_rate", precision = 18, scale = 8)
+    @Column(name = "ref_rate", precision = 22, scale = 12)
     public BigDecimal refRate;
 
     @Column(name = "ref_fetch_rule", length = 200)

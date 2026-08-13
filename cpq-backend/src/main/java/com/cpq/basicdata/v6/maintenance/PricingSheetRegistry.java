@@ -42,7 +42,7 @@ public class PricingSheetRegistry {
             .table("unit_price", "version_no", "code")
             .priceType("CONSUMABLE").fixedGk("cost_type", "耗材")   // P13 用字面量 "CONSUMABLE"（PricingPriceType 保留未登记）
             .content("operation_no", "pricing_price", "currency", "unit")
-            .rowKeys("operation_no").scale("pricing_price", 6)
+            .rowKeys("operation_no").scale("pricing_price", 12)
             .columns(
                 ColumnDef.subDimMaster("operation_no", "工序号", "process", "operation_name"),
                 ColumnDef.nameCol("operation_name", "工序名"),
@@ -56,7 +56,7 @@ public class PricingSheetRegistry {
             .table("unit_price", "version_no", "code")
             .priceType(PricingPriceType.PACKAGING).fixedGk("cost_type", "包装")
             .content("operation_no", "pricing_price", "currency", "unit")
-            .rowKeys("operation_no").scale("pricing_price", 6)
+            .rowKeys("operation_no").scale("pricing_price", 12)
             .columns(
                 ColumnDef.subDimMaster("operation_no", "工序号", "process", "operation_name"),
                 ColumnDef.nameCol("operation_name", "工序名"),
@@ -70,7 +70,7 @@ public class PricingSheetRegistry {
             .table("unit_price", "version_no", "finished_material_no")
             .priceType(PricingPriceType.INCOMING_PROCESS).fixedGk("cost_type", "来料加工费")
             .content("code", "pricing_price", "currency", "unit", "defect_rate")
-            .rowKeys("code").scale("pricing_price", 6).scale("defect_rate", 4)
+            .rowKeys("code").scale("pricing_price", 12).scale("defect_rate", 12)
             .columns(
                 ColumnDef.subDimMaster("code", "来料料号", "material", "code_name"),
                 ColumnDef.nameCol("code_name", "来料品名"),
@@ -85,7 +85,7 @@ public class PricingSheetRegistry {
             .table("unit_price", "version_no", "finished_material_no")
             .priceType(PricingPriceType.INCOMING_OTHER)
             .content("code", "cost_type", "seq_no", "cost_ratio", "pricing_price", "currency", "unit")
-            .rowKeys("code", "cost_type", "seq_no").scale("cost_ratio", 4).scale("pricing_price", 6)
+            .rowKeys("code", "cost_type", "seq_no").scale("cost_ratio", 12).scale("pricing_price", 12)
             .columns(
                 ColumnDef.subDimMaster("code", "来料料号", "material", "code_name"),
                 ColumnDef.nameCol("code_name", "来料品名"),
@@ -102,7 +102,7 @@ public class PricingSheetRegistry {
             .table("unit_price", "version_no", "code")
             .priceType(PricingPriceType.SELF_PROCESS).fixedGk("cost_type", "自制加工费")
             .content("operation_no", "pricing_price", "currency", "unit", "defect_rate")
-            .rowKeys("operation_no").scale("pricing_price", 6).scale("defect_rate", 4)
+            .rowKeys("operation_no").scale("pricing_price", 12).scale("defect_rate", 12)
             .columns(
                 ColumnDef.subDimMaster("operation_no", "工序号", "process", "operation_name"),
                 ColumnDef.nameCol("operation_name", "工序名"),
@@ -117,7 +117,7 @@ public class PricingSheetRegistry {
             .table("unit_price", "version_no", "code")
             .priceType(PricingPriceType.FINISHED_OTHER)
             .content("cost_type", "seq_no", "cost_ratio", "pricing_price", "currency", "unit")
-            .rowKeys("cost_type", "seq_no").scale("cost_ratio", 4).scale("pricing_price", 6)
+            .rowKeys("cost_type", "seq_no").scale("cost_ratio", 12).scale("pricing_price", 12)
             .columns(
                 ColumnDef.subDimFree("cost_type", "要素名称", "STRING"),
                 ColumnDef.value("seq_no", "项次", "NUMBER"),
@@ -132,7 +132,7 @@ public class PricingSheetRegistry {
             .table("unit_price", "version_no", "code")
             .priceType(PricingPriceType.PLATING)
             .content("cost_type", "pricing_price", "currency", "unit", "defect_rate")
-            .rowKeys("cost_type").scale("pricing_price", 6).scale("defect_rate", 4)
+            .rowKeys("cost_type").scale("pricing_price", 12).scale("defect_rate", 12)
             .columns(
                 ColumnDef.valueEnum("cost_type", "费用类型", List.of("电镀加工费", "电镀材料费")),
                 ColumnDef.value("pricing_price", "单价", "DECIMAL"),
@@ -146,7 +146,7 @@ public class PricingSheetRegistry {
             .table("unit_price", "version_no", "code")
             .priceType(PricingPriceType.OUTSOURCE_PROCESS).fixedGk("cost_type", "其他加工费")
             .content("operation_no", "pricing_price", "currency", "unit")
-            .rowKeys("operation_no").scale("pricing_price", 6)
+            .rowKeys("operation_no").scale("pricing_price", 12)
             .columns(
                 ColumnDef.subDimMaster("operation_no", "工序号", "process", "operation_name"),
                 ColumnDef.nameCol("operation_name", "工序名"),
@@ -172,8 +172,8 @@ public class PricingSheetRegistry {
                      // (saveMaterialBom 内)，不是用户输入列，故无对应 ColumnDef。
                      "characteristic")
             .rowKeys("seq_no", "component_no")
-            .scale("composition_qty", 6).scale("base_qty", 6).scale("scrap_rate", 4)
-            .scale("fixed_scrap", 6).scale("defect_rate", 4)
+            .scale("composition_qty", 12).scale("base_qty", 12).scale("scrap_rate", 12)
+            .scale("fixed_scrap", 12).scale("defect_rate", 12)
             .columns(
                 ColumnDef.value("seq_no", "项次", "NUMBER"),
                 ColumnDef.subDimFree("component_no", "组成件", "STRING"),
@@ -201,7 +201,7 @@ public class PricingSheetRegistry {
             .descriptors()                          // 无 production_no
             .content("seq_no", "component_no", "content", "scrap_rate")
             .rowKeys("seq_no", "component_no")
-            .scale("content", 6).scale("scrap_rate", 4)
+            .scale("content", 12).scale("scrap_rate", 12)
             .columns(
                 // 材质名两跳 join（task-0712 · childtask-1 · B2）：
                 // material_part_no → material_master.material_recipe_id → material_recipe.name；未绑定→null（前端显示"未绑定"）。
@@ -235,7 +235,7 @@ public class PricingSheetRegistry {
         reg(PricingSheetDef.builder("LABOR_RATE", "工时单价", "CAPACITY_ENERGY", 12)
             .table("labor_rate", "version_no", "material_no")
             .content("process_no", "standard_labor_rate", "currency", "unit")
-            .rowKeys("process_no").scale("standard_labor_rate", 6)
+            .rowKeys("process_no").scale("standard_labor_rate", 12)
             .columns(
                 ColumnDef.subDimMaster("process_no", "工序号", "process", "process_name"),
                 ColumnDef.nameCol("process_name", "工序名"),
@@ -249,7 +249,7 @@ public class PricingSheetRegistry {
             .table("production_energy", "calc_version", "material_no")
             .priceType("DEPRECIATION")
             .content("process_no", "unit_price", "currency", "unit")
-            .rowKeys("process_no").scale("unit_price", 6)
+            .rowKeys("process_no").scale("unit_price", 12)
             .columns(
                 ColumnDef.subDimMaster("process_no", "工序号", "process", "process_name"),
                 ColumnDef.nameCol("process_name", "工序名"),
@@ -263,7 +263,7 @@ public class PricingSheetRegistry {
             .table("production_energy", "calc_version", "material_no")
             .priceType("ENERGY")
             .content("process_no", "unit_price", "currency", "unit")
-            .rowKeys("process_no").scale("unit_price", 6)
+            .rowKeys("process_no").scale("unit_price", 12)
             .columns(
                 ColumnDef.subDimMaster("process_no", "工序号", "process", "process_name"),
                 ColumnDef.nameCol("process_name", "工序名"),
@@ -276,7 +276,7 @@ public class PricingSheetRegistry {
         reg(PricingSheetDef.builder("AUX_ENERGY", "辅助能耗", "CAPACITY_ENERGY", 15)
             .table("auxiliary_energy", "calc_version", "material_no")
             .content("process_no", "non_production_energy_price", "currency", "unit")
-            .rowKeys("process_no").scale("non_production_energy_price", 6)
+            .rowKeys("process_no").scale("non_production_energy_price", 12)
             .columns(
                 ColumnDef.subDimMaster("process_no", "工序号", "process", "process_name"),
                 ColumnDef.nameCol("process_name", "工序名"),
@@ -287,13 +287,13 @@ public class PricingSheetRegistry {
 
         // ============ TOOLING 组（1 组）============
 
-        // 16) 模具工装成本 — 对应 P12ToolingCostHandler（CONTENT 行28-30 / groupKey 行120-122；tooling_unit_price scale 8）
+        // 16) 模具工装成本 — 对应 P12ToolingCostHandler（CONTENT 行28-30 / groupKey 行120-122；tooling_unit_price scale 12，task-0813 前为 8）
         reg(PricingSheetDef.builder("TOOLING", "模具工装成本", "TOOLING", 16)
             .table("tooling_cost", "calc_version", "material_no")
             .content("process_no", "seq_no", "tooling_no", "tooling_unit_cost", "tool_life",
                      "cycle_output", "tooling_unit_price", "currency", "unit", "is_effective")
             .rowKeys("process_no", "seq_no", "tooling_no")
-            .scale("tooling_unit_cost", 6).scale("cycle_output", 6).scale("tooling_unit_price", 8)
+            .scale("tooling_unit_cost", 12).scale("cycle_output", 12).scale("tooling_unit_price", 12)
             .columns(
                 ColumnDef.subDimMaster("process_no", "工序号", "process", "process_name"),
                 ColumnDef.nameCol("process_name", "工序名"),
