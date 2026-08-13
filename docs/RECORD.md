@@ -5505,3 +5505,15 @@ render() 用 lineItems.get(0).quotationId 设 QuotationIdContext，
 **涉及文件**：`DecimalRequestValidator.java`、`DecimalRequestContractTest.java`、`DraftPrecisionLifecycleHttpTest.java`。
 **根因与修复**：`row_index` 是系统行定位结构字段，按设计不进入组件冻结 `fields`；repair-0811 新增的字段感知校验未复用既有结构整数白名单，导致 `row_index:0` 被当成未知业务 numeric token 拒绝。字段感知校验现于冻结元数据判断前复用结构整数规则：整数放行，小数仍拒绝；未知业务数字与公式 numeric token 的严格校验不变。
 **验证证据**：指定后端 4 类测试共 29 项通过。真实 HTTP 草稿 PUT 携带 `row_index:0` 返回 200，DB `row_data` 保持数字 0；`row_index:0.5`、未知业务数字及公式 numeric token 仍返回错误，公式失败请求保持原子零写入。无 DDL、无新增查询、无 N+1。
+
+---
+
+## [2026-08-12] 核价导入 - 停用四个 Sheet（P01/P02/P04/P05，后端部分）
+
+**涉及文件**：`PricingHandlerCatalog.java`（`all()` 摘除 4 项，20→20 保序）、`PricingImportService.java`（`orderedHandlers()` 摘除 4 项，20→16 保序）、`PricingTemplateServiceTest.java`（24→20 收敛，含 `DISABLED_HANDLERS` 常量避免「未登记进 catalog」守卫误判）；任务目录 `dev-docs/task-0812-核价导入停用四个Sheet/`。
+
+**核心决策**：4 个 Handler 类（P01 元素核价价格表 / P02 材料核价价格表 / P04 核价版本 / P05 宏丰-客户料号对应关系）代码零改动，只摘除两个静态 `List.of(...)` 里的调用点；`@Inject` 字段保留并加 `// task-0812 停用：<Sheet名>` 注释注明恢复方式。`orderedHandlers()` 是多表写入依赖序，只删不排；`git diff --stat` 确认 4 个 Handler 文件未被触碰。
+
+**验收证据**：编译 0 错误；模板端点程序化验证生成 xlsx 恰好 20 Sheet，名称/顺序逐字匹配 `api.md` 给定序列。用自建含全部 24 Sheet 且 4 停用页有数据的合成 workbook 做 A/B 对照（真实测试 fixture `docs/table/核价测试数据/…6.0版….xlsx` 在 git HEAD 本身已损坏，与本任务无关，前后 SHA256 一致）：停用前 `unit_price[ELEMENT/MATERIAL_PRICE]`/`material_version_mgmt`/`material_customer_map`/`material_master` 对应测试料号均写入 1 行，停用后全部为 0，同批次内活跃 Sheet（单重、汇率管理表）仍正常写入；2 次连续导入 `exchange_rate_v6.version_no` 保持 2000（无升版）。`PricingTemplateServiceTest` 反向验证：临时注释掉在用 handler `p13` 后测试正确变红（2 个断言失败），证明「未登记进 catalog 必红」守卫未被降级，随后已还原。完整 pricing 测试族（77 项）改前改后失败/错误数逐项相同（1F/2E，均为上述损坏 fixture 导致，非本次引入）。
+
+**已知偏差（文档记录 vs 实测）**：需求文档 AC-3/api.md 称 `sheetResults` 长度 24→20，但 P16+P17、P19+P20 合并 bean 各产出 1 条合并结果，实测 `sheetResults.length` 停用前为 22、停用后为 18（Δ=-4，与 4 个停用 Sheet 数量精确对应）——此计数口径偏差在 task-0812 之前就已存在，非本次改动引入，已如实记录不强行凑数。
