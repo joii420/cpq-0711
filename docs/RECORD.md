@@ -5517,3 +5517,13 @@ render() 用 lineItems.get(0).quotationId 设 QuotationIdContext，
 **验收证据**：编译 0 错误；模板端点程序化验证生成 xlsx 恰好 20 Sheet，名称/顺序逐字匹配 `api.md` 给定序列。用自建含全部 24 Sheet 且 4 停用页有数据的合成 workbook 做 A/B 对照（真实测试 fixture `docs/table/核价测试数据/…6.0版….xlsx` 在 git HEAD 本身已损坏，与本任务无关，前后 SHA256 一致）：停用前 `unit_price[ELEMENT/MATERIAL_PRICE]`/`material_version_mgmt`/`material_customer_map`/`material_master` 对应测试料号均写入 1 行，停用后全部为 0，同批次内活跃 Sheet（单重、汇率管理表）仍正常写入；2 次连续导入 `exchange_rate_v6.version_no` 保持 2000（无升版）。`PricingTemplateServiceTest` 反向验证：临时注释掉在用 handler `p13` 后测试正确变红（2 个断言失败），证明「未登记进 catalog 必红」守卫未被降级，随后已还原。完整 pricing 测试族（77 项）改前改后失败/错误数逐项相同（1F/2E，均为上述损坏 fixture 导致，非本次引入）。
 
 **已知偏差（文档记录 vs 实测）**：需求文档 AC-3/api.md 称 `sheetResults` 长度 24→20，但 P16+P17、P19+P20 合并 bean 各产出 1 条合并结果，实测 `sheetResults.length` 停用前为 22、停用后为 18（Δ=-4，与 4 个停用 Sheet 数量精确对应）——此计数口径偏差在 task-0812 之前就已存在，非本次改动引入，已如实记录不强行凑数。
+
+---
+
+## [2026-08-12] 核价导入 - 停用四个 Sheet（P01/P02/P04/P05，测试执行部分）
+
+**独立复核**：测试工程师独立执行，未采信后端自报数字。新建 `Task0812DisabledSheetsTest.java`（507 行，7 方法，B 侧 7/7 绿），程序化拼 24-Sheet 夹具（20 保留页仅表头/1 页 P03 塞真实数据、4 停用页各塞 1 行真实数据），同一测试代码分别跑 A 侧（隔离 worktree at `f551f37e`）与 B 侧，独立复算全量 `mvn test`：A 侧 2473/177F/158E/70S、B 侧 2473/171F/158E/70S，**用例名级 diff（非仅数字对比）：只在 B 侧失败=0 条，只在 A 侧失败=6 条**（5 条是新测试的正反对照证明有鉴别力、1 条 `ConfigureProductPrecisionHttpContractTest` 断言 `335 vs 334` 疑似 A/B 全量套件意外并发共享 test 库 `cpq_db` 导致的争用抖动，已在 `test-report.md` §6 记录方法论局限）。IMP-05b 用同一冲突键 `(system_type,material_no,customer_no,customer_product_no)` 在 A 侧证实"会被覆盖"、B 侧证实"不会"，双向对照比单侧断言更强。补验证据：`git diff f551f37e --stat` 4 个 Handler 文件 + `db/migration` 均空输出（AC-12/D-8）；反射 unwrap CDI client proxy 后验证 `orderedHandlers()`/`catalog.all()` 顺序逐位未被重排（CODE-02，堵住"REG-01 抓不住顺序错乱"的漏洞）。
+
+**xlsx 损坏根因定位**：非沙箱读取限制，是 git HEAD 里这批文件本身就是非 zip 字节（疑似 WPS/Excel 加密导出），全仓 76 个 xlsx/xls 中 38 个非法；B 侧真实复现 POI 报错 `Cannot find zip signature within the first 4096 bytes`。是否登记 BL 立项修复，留待主线裁定。
+
+**详见**：`dev-docs/task-0812-核价导入停用四个Sheet/test.md`（48 条用例）+ `test-report.md`（AC-1~12 逐条对照表 + 证据原文）。
