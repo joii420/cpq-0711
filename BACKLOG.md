@@ -1043,6 +1043,46 @@
 
 ## P2
 
+### [BL-0165] V6 导入 handler「零归一」系统性审计 —— 22 个 handler 写 decimal 列却无任何 scale 归一
+- **优先级**：P2
+- **来源**：2026-08-13 [[BL-0164]]（task-0813）实施期，技术总监对 `v6/pricing/` + `v6/quote/` 全部 40 个使用 `getDecimal` 的 handler 做完整扫描
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-13
+- **背景**：扫描发现 **22 个 handler 完全没有 `DecimalScale.at` / `setScale` 调用**（零归一），远多于需求文档原先识别的 P06/P07。名单：`P03` `P16` `P17` `P19` `P20` `P21` `P24` · `Q02` `Q05` `Q06` `Q07` `Q09` `Q10` `Q11` `Q13` `Q14` `Q16` `Q17` `Q18` · `AnnualDiscountWriter` · `QuoteImportValidator`（`Q04` 已在 task-0813 修复，不在遗留范围）。
+- **⚠️ 关键区分（避免误判严重性）**：**零归一 ≠ 丢精度**。零归一 = 全精度 `BigDecimal` 直接进 content，[[BL-0164]] 把列扩到 12 位后这些值**反而能完整落库**——例如 `P24UnitWeightHandler` 写 `material_master.unit_weight`，扩容前 `numeric(18,6)` 存 6 位（真丢），扩容后 `numeric(24,12)` 直接存 12 位，**不改一行代码就治好了**。真正会丢精度的是「有归一、但归一到 6/4/8 位」那批（已在 task-0813 修复）。
+- **残留问题**：唯一后果是 **Excel 给 >12 位小数时「重导虚假升版」**（`norm()` 比对时 content 全精度 ≠ 库内已截断的 existing），违反 `VersionedV6Writer` §7.4「重导不升版」不变量。属边际情况。
+- **分类维度（缩小实际范围，交付期由后端工程师补充）**：只有走 `VersionedV6Writer.writeVersionedMasterDetail(s)` / `writeVersionedGroup(s)`（**有内容比对升版**）的才有此风险。走 `UnitPriceWriter` 原生 `INSERT...ON CONFLICT` 或非版本化 upsert 的（`P16/P17/P19/P20/P24/Q02/Q18` 等）**本质无虚假升版风险**，只是"扩容前丢精度、扩容后不丢"。**实际待修的是 `P21`/`Q16`/`Q06`/`Q07`/`Q09`/`Q10`/`Q11`/`Q13`/`Q14`/`Q17` 这批走版本化写入的。**
+- **为什么 task-0813 不一并修**：本期已修「BOM 四件套」+ `P12`（重导最频繁、D-1 暴露点）。其余扩容后行为**改善而非恶化**，不构成阻塞，故划线封口防范围失控。
+- **范围**：对走版本化写入的 handler 补 `DecimalScale.at(v, 12)`。**建议同时做结构性收敛**——scale 常量以字面量散落 15+ 文件、且与 `PricingSheetRegistry.scale()` 重复维护，是本类缺陷的根源；可抽常量类或让 handler 统一读 `PricingSheetDef.decimalScales`。
+- **依赖**：[[BL-0164]] 已交付（列 scale 已定型）✅ 已就绪
+- **预估规模**：M（含收敛重构则 L）
+- **验收要点**：对每个 handler 用「>12 位小数的 Excel 连导两次，版本号不变」验证（手法见 task-0813 `testcase.md` TC-BD.1b）。
+
+---
+
+### [BL-0166] dev 库与测试库 schema 漂移 41 个对象 —— DDL 勘察的隐形地雷（`AP-64` 实例来源）
+- **优先级**：P2（不影响业务功能，但**会让任何 DDL 类任务的影响面勘察失真**）
+- **来源**：2026-08-13 [[BL-0164]] 实施期实测；由 `repair-0812` 会话反向提问「你只在测试库删，两库会不会朝相反方向漂移」触发的复核
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-13
+- **实测现状**：
+
+  | 对象 | dev `cpq_db_0724` | 测试 `cpq_db` |
+  |---|---|---|
+  | `_drop` 后缀视图 | **0** | **5**（`v_c_summary_agg_drop` / `v_costing_element_price_drop` / `v_costing_exchange_rate_drop` / `v_costing_material_price_drop` / `v_part_material_recipe_drop`） |
+  | `_drop` 后缀表 | **0** | **36** |
+
+- **成因**：dev 库 `cpq_db_0724` 是 2026-07 用 `deploy/cpq-init-empty-navicat.sql` **新建**的（该脚本明确"不含 task-0723 的 `_drop` 废弃表/视图"）；测试库 `cpq_db` 是**老库**，`V360`/`V361` 的改名迁移逐版本演进至今，`_drop` 对象原样留存。**两库不是同一演进路径的产物。**
+- **已发生的实际损害**：[[BL-0164]] 的 `pg_depend` 依赖扫描只在 dev 库做，得出「视图依赖只有 1 处」，V386 迁移在测试库直接 `cannot alter type of a column used by a view or rule` 失败，阻塞全部 `mvnw test`。已沉淀为 `docs/反模式.md` **`AP-64` 取样代表性反模式**。
+- **task-0813 期间的处置（造成的中间态，本条要消解的就是它）**：为解除阻塞，在**测试库**删除了 `v_q_part_info_merged_drop` / `v_costing_summary_full_drop` 两个视图（定义已备份、全工程 grep 确认无业务代码引用）。**dev 库本就没有，故未反向漂移**，但测试库仍余 5 视图 + 36 表。
+- **范围**：与 [[BL-0069]] / `task-0723-废弃业务与表清洗` 同源，建议合并推进 —— 要么两库都清干净，要么在 `task-0723` 里显式登记「哪些对象在哪个库还活着」的对照表，**不要让它继续以无记录状态存在**。
+- **⚠️ 在此之前的强制纪律**：任何 `ALTER TYPE` / `DROP` / 视图重建类 DDL，**依赖扫描必须在 dev + test 两库各跑一遍取并集**（`AP-64` 规范 1）。只扫一个库的结论一律不可采信。
+- **依赖**：无（登记即生效，纪律部分立即适用）
+- **预估规模**：S（仅登记对照表）/ M（两库清理对齐）
+- **验收要点**：①两库 `_drop` 对象数量一致（或差异有显式登记）；②后续 DDL 任务的需求文档里能看到「两库并集扫描」的证据。
+
+---
+
 ### [BL-0163] 材质元素行 `element_no` 不落库 —— 编辑一次即抹空，元素主表引用计数长期失真
 - **优先级**：P2
 - **来源**：`dev-docs/task-0812-材质元素改下拉选择/`（决策 D9 / D10，用户拍板本期只改 UI 不动后端存储）
