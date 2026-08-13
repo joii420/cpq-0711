@@ -5542,3 +5542,41 @@ render() 用 lineItems.get(0).quotationId 设 QuotationIdContext，
 **xlsx 损坏根因定位**：非沙箱读取限制，是 git HEAD 里这批文件本身就是非 zip 字节（疑似 WPS/Excel 加密导出），全仓 76 个 xlsx/xls 中 38 个非法；B 侧真实复现 POI 报错 `Cannot find zip signature within the first 4096 bytes`。是否登记 BL 立项修复，留待主线裁定。
 
 **详见**：`dev-docs/task-0812-核价导入停用四个Sheet/test.md`（48 条用例）+ `test-report.md`（AC-1~12 逐条对照表 + 证据原文）。
+
+---
+
+## [2026-08-13] 基础资料 - 数值列扩至 12 位小数（task-0813）
+
+**触发**：用户报「导入 Excel 里物料BOM 材料净重是 12 位小数，导入后变短」。
+
+**根因**：精度丢在**存储层**，不是显示层。解析层 `SheetRow.getDecimal` 不截断、组装层不截断，落到 `material_bom_item.net_weight = numeric(20,6)` 时被 PG 静默 HALF_UP。库内 68 行有值记录小数位**全部恰好 = 6**（`91.768628` 末位非零＝截断痕迹）。
+
+**定位**：这是 `task-0810` 的另一半 —— 0810 确立「计算 12 位 / 显示最多 9 位」，但 `V385` 只扩了 **21 个计算金额列**，基础资料侧一列没动，导致 0810 需求文档 §119「基础取数值不按 9 位显示规则压缩」这条契约**落空**（基础值在落库时就只剩 4~6 位）。
+
+**交付**：86 列扩容（重量 3 / 含量占比 24 / 单价价格汇率 31 / 用量工时 28），目标 `precision = 原 p − 原 s + 12`（整数容量不缩水）。
+
+**关键：scale 常量有四份独立副本，漏一处静默失效**（不报错、不失败，只是精度悄悄没了）：
+| # | 同步点 | 规模 |
+|---|---|---|
+| 1 | DB 列（`V386`/`V387`） | 86 列 ALTER + `v_composite_child_elements` 重建 |
+| 2 | JPA `@Column(precision,scale)` | 77 处（**10 列无实体**，只走原生 SQL） |
+| 3 | 导入 handler 硬编码 `DecimalScale.at`/`setScale` | 25 处 + P12 补 2 处 |
+| 4 | `PricingSheetRegistry.scale()` | 27 个调用 / 16 行（**维护页保存路径**，与 ③ 是同一 scale 的两份副本） |
+
+**涉及文件**：`V386`/`V387` · `v6/entity/*.java`(17) · `v6/pricing/P0x*.java`(15) · `PricingSheetRegistry.java` · `MaterialBomMergeHandler.java` · `P06`/`P07`/`Q04`/`P12` · `EditableSheetTable.tsx` · `PrecisionScaleConsistencyTest.java`(新) · `deploy/{cpq-init-empty-navicat,0813-dbupdate}.sql`
+
+### 三条值得记住的结论
+
+**1. 零归一 ≠ 丢精度（避免了一次过度反应）**
+全量扫描 40 个用 `getDecimal` 的 handler，发现 **22 个零归一**。但零归一 = 全精度值直接进 content，扩容后 DB 存得下 12 位 → **精度反而完好**（如 `P24UnitWeightHandler` 写 `unit_weight`，扩容前存 6 位真丢，扩容后不改代码就治好）。真正必须改的是「**有归一但归一到 6/4/8 位**」那批。零归一唯一残留问题是 Excel >12 位时虚假升版，属边际情况 → `BL-0165`。本期只补 **BOM 四件套 + P12**（重导最频繁）。
+
+**2. AC-5（导入端到端）测不出「handler 缺归一」，只有超 12 位输入的重导才能**
+DB 扩到 12 位后，即便 handler 完全不归一，12 位 Excel 导入查库也「恰好」是 12 位。**12 位输入下连 AC-7 都测不出**（content 12 位 = existing 12 位）。只有 **13 位输入**能区分：归一到位 → 恒 12 位 → 不升版；零归一 → 13 位 ≠ 12 位 → 升版。故 `testcase.md` TC-BD.1b 提为 P0，是验证同步点 ③ 的唯一手段。
+
+**3. 两条被实测推翻的自己的判断（诚实记录）**
+- **视图依赖勘察不完整**：`pg_depend` 只扫 dev 库得「只有 1 处」，测试库还有 7 个 `_drop` 遗留视图（dev 库 0 个）→ 迁移在测试库失败。教训已沉淀为 **`AP-64` 取样代表性反模式**（与 repair-0812 同日同类错误合并成条）。
+- **D-1 因果归错**：原判「12 位 Excel 每重导一次就虚假升版」归因于精度缺失，**不成立**。QUOTE 侧走 `task-0721 B2` pending 草稿模式（`is_current=false` 实测 206/208 行），版本比对只认 `is_current=TRUE` 作基线 → **基线不存在，必然升版，与归一无关**，非本任务引入。归一价值由 PRICING 侧独立证实（5 表含 13 位输入连导两次版本恒 `2000`）。
+
+**前端**：`EditableSheetTable.tsx` 直接 `String(value)` 渲染后端定标字符串，扩容后会显示 12 位尾随零。改用 **`normalizeDecimalString`（纯去尾零、不截位）而非 `formatDisplayDecimal`（截 9 位）** —— 截位后的文本是受控输入框里用户下次编辑的起点，局部编辑会把刚扩的 12 位精度改回 9 位，属**用观感牺牲核心目标**。全局 `DISPLAY_SCALE` 仍为 9，报价/核价/导出侧未受影响。
+
+**遗留**：`BL-0165`（22 个零归一 handler 系统审计，P2）；`capacity.annual_discount_factor` 等 5 个边界列待用户裁决；前端「局部编辑往返」待真机验收。
