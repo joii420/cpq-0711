@@ -73,6 +73,7 @@ git branch --no-merged master                                                   
 | 公式 `SUM()` 里引用本页签 FORMULA 字段**恒取 0** | `repair-0803-公式SUM内引用宿主页签字段` |
 | **行内公式值正常、页签小计列却是 `¥ 0`** / 产品小计比后端存的小一大截 | `repair-0803-公式计算BUG修复/repair-0808-前端页签算序假环致列小计归零`（前端页签算序假环 → cross_tab 源页签还没算就取 → 整列归零；`BL-0101`。**行读后端快照、小计读前端实时重算**，所以看着像"只有小计错"） |
 | 精度不对 / 卡片小计与列表总计不一致 | `task-0801-公式计算精度优化`（统一 6 位，见记忆 `cpq-decimal-display-policy`） |
+| 编辑单元格失焦后 **⚠「前后端算值不一致」**（两个数四舍五入到 9 位其实一模一样） / **提交被 409 `RECONCILE_PENDING` 卡死且怎么改都消解不掉** | `task-0801-公式计算精度优化/repair-0812-对账阈值与结果尺度不对称致误报`（前端 12 位 vs 后端 9 位，容差 `1e-12` 比结构性差距小 500 倍 → 结构性误报；2026-08-11 `fd83cac1` 引入；**临时规避 = 重启后端且不再编辑**） |
 | **删除行删错行** / 删不掉 / 删完数据乱 | `task-删除行删错架构重构` → `task-0721-.../repair-0727-报价单报价侧删除行BUG`（4 套行身份） |
 | 复制报价单后数据丢失 | `repair-0729-copy报价单数据丢失的问题` |
 | 核价通过后基础数据**被抹平** | `repair-0727-回填语义与预览重做`（整组权威 → 改 patch 语义，AP-60） |
@@ -99,24 +100,25 @@ git branch --no-merged master                                                   
 > 这些文件是全仓协议最密的地方，多数「改 A 坏 B」都源于不知道 A 背后压着哪几条历史契约。
 > 数据来源：各任务 md 里对该文件的提及（**改动面的代理指标，非 ground truth**）；已剔除 `spec.ts`/`config.ts`/`types.ts`/`index.tsx` 等泛名。
 > 精确影响面请配合 `codegraph_impact` / `codegraph_callers`。
-> **计数口径提醒（2026-08-12 重跑，分母 = 39 个顶层任务目录）**：本表统计的是「任务 md 里提到该文件」，
+> **计数口径提醒（2026-08-13 重跑，分母 = 41 个顶层任务目录）**：本表统计的是「任务 md 里提到该文件」，
 > **包含「声明本任务不触碰该文件」这类反向提及** —— 例如 `task-0812-材质元素改下拉选择` 因在需求文档里声明
 > 「不触发 E2E 强制清单」而被计入 `QuotationStep2.tsx` / `ReadonlyProductCard.tsx` / `useDriverExpansions.ts` /
 > `ComponentDriverService.java` 四行，它**实际一行都没改**。所以下表只用来「找该读哪几个历史任务」，不要当改动统计。
 
 | 文件 | 命中任务数 | 历史任务 |
 |---|---|---|
-| **`QuotationStep2.tsx`** | **27 / 39** 🔥 | 0708导入 · 0712核价展示 · 0712选配 · 0713版本选择 · 0715UI · 0717比对 · 0721树 · 0721升版 · 0722元素价格 · 0723清洗 · 0725空白 · 0728版式 · 0729客户价格 · 0801精度 · 0801连表 · 0803父子公式 · **0806编辑链路对账** · **0806模板冻结** · **0806价格任务性能** · 删除行重构 · repair-0727回填 · repair-0729copy · repair-0803BL0098 · repair-0803SUM · **repair-0803公式BUG/repair-0808算序假环** · rule-0724 |
-| `ReadonlyProductCard.tsx` | 18 | 0712核价展示 · 0713版本选择 · 0721树 · 0722元素价格 · 0725空白 · 0728版式 · 0729客户价格 · 0801精度 · 0801连表 · 0803父子公式 · **0806编辑链路对账** · **0806模板冻结** · **0806价格任务性能** · 删除行重构 · repair-0727回填 · repair-0803BL0098 · **repair-0808算序假环** |
+| **`QuotationStep2.tsx`** | **28 / 41** 🔥 | 0708导入 · 0712核价展示 · 0712选配 · 0713版本选择 · 0715UI · 0717比对 · 0721树 · 0721升版 · 0722元素价格 · 0723清洗 · 0725空白 · 0728版式 · 0729客户价格 · 0801精度 · 0801连表 · 0803父子公式 · **0806编辑链路对账** · **0806模板冻结** · **0806价格任务性能** · 删除行重构 · repair-0727回填 · repair-0729copy · repair-0803BL0098 · repair-0803SUM · **repair-0803公式BUG/repair-0808算序假环** · rule-0724 |
+| `ReadonlyProductCard.tsx` | 19 | 0712核价展示 · 0713版本选择 · 0721树 · 0722元素价格 · 0725空白 · 0728版式 · 0729客户价格 · 0801精度 · 0801连表 · 0803父子公式 · **0806编辑链路对账** · **0806模板冻结** · **0806价格任务性能** · 删除行重构 · repair-0727回填 · repair-0803BL0098 · **repair-0808算序假环** |
 | `CardSnapshotService.java` | 15 | 0712核价展示 · 0721树 · 0725空白 · 0728版式 · 0729客户价格 · 0801精度 · 0803父子公式 · **0806编辑链路对账** · **0806模板冻结** · **0806价格任务性能** · 删除行重构 · repair-0729copy · repair-0803BL0098 · repair-0803SUM · repair-0803公式BUG |
-| `QuotationWizard.tsx` | 12 | 0712核价展示 · 0712选配 · 0722元素价格 · 0723清洗 · 0725空白 · 0729客户价格 · 0729分类 · 0801精度 · 0801连表 · **0806编辑链路对账** · repair-0729copy · rule-0724 |
-| `useDriverExpansions.ts` | 13 | 0713版本选择 · 0722元素价格 · 0725空白 · 0728版式 · 0729客户价格 · 0801连表 · **0806模板冻结** · **0806价格任务性能** · 删除行重构 · repair-0727回填 · repair-0803BL0098 · rule-0724 |
+| `QuotationWizard.tsx` | 13 | 0712核价展示 · 0712选配 · 0722元素价格 · 0723清洗 · 0725空白 · 0729客户价格 · 0729分类 · 0801精度 · 0801连表 · **0806编辑链路对账** · **0812停用四Sheet** · repair-0729copy · rule-0724 |
+| `useDriverExpansions.ts` | 14 | 0713版本选择 · 0722元素价格 · 0725空白 · 0728版式 · 0729客户价格 · 0801连表 · **0806模板冻结** · **0806价格任务性能** · 删除行重构 · repair-0727回填 · repair-0803BL0098 · rule-0724 |
 | `FormulaCalculator.java` | 8 | 0721树 · 0729客户价格 · 0801精度 · 0803父子公式 · 0805导入导出 · 删除行重构 · repair-0803BL0098 · repair-0803SUM |
 | `QuotationService.java` | 9 | 0708导入 · 0729客户价格 · 0729模板校验 · 0801精度 · 删除行重构 · repair-0729copy · repair-0803BL0098 · **repair-0808算序假环** |
 | `ComponentService.java` | 10 | 0721树 · 0723清洗 · 0729客户价格 · 0803父子公式 · **0806编辑链路对账** · **0806模板冻结** · repair-0803BL0098 · repair-0803SUM · repair-0803公式BUG |
 | `ComponentCell.tsx` | 7 | 0729客户价格 · 0801精度 · 0803父子公式 · 删除行重构 · repair-0803BL0098 · **repair-0808算序假环** · rule-0724 |
 | `formulaEngine.ts` | 7 | 0729客户价格 · 0801精度 · 0803父子公式 · **0806编辑链路对账** · **0806模板冻结** · repair-0803SUM · rule-0724 |
 | `SqlViewExecutor.java` | 4 | 0722元素价格 · 0725空白 · 0729客户价格 · repair-0727回填 |
+| `PricingBasicDataImportDrawer.tsx` | 5 | 0708落库规则 · 0709版本升级 · 0728取数配置器 · **0812停用四Sheet** · **0812停用汇率表**（后两个是实改：抽屉文案 24→20→19 Sheet） |
 
 ⚠️ **`QuotationStep2.tsx` 是全仓最危险的文件**：25 个任务在它身上叠了协议。它同时受 AP-31 / AP-37 / AP-38 / AP-44 / AP-50 / AP-51 / AP-54 约束，且属 `CLAUDE.md`「修改后强制自检」第 5 条的 **E2E 强制清单**。改它之前请连读：`task-0721树` + `task-删除行删错架构重构` + `repair-0727-报价单报价侧删除行BUG`（行身份四套口径）。
 
@@ -162,6 +164,8 @@ done | sort | cut -d'|' -f1 | uniq -c | sort -rn | awk '$1>=4'
 | `task-0728-主数据维护版式优化/` | 6 个拼装页签的版式/搜索/分页拉齐统一 | ✅ 已澄清定稿→已交付 | `MasterDataHubPage.tsx` `ConfigTemplateManagement.tsx` |
 | `task-0812-材质元素改下拉选择/` | 材质抽屉「元素 code + 元素名」两列合并为单列字典下拉（编号/符号/中文名三段可搜、跨行去重置灰、字典外脏值阻断保存）；后端零改动复用 `GET /elements` | ✅ **合 master `92d09aa4`**（32 用例 + 主线亲验 18 断言全 PASS；遗留 [[BL-0163]]） | `MaterialRecipeEditDrawer.tsx` |
 | `task-0812-核价导入停用四个Sheet/` | 核价导入 24 → 20 Sheet（摘 P01/P02/P04/P05 调用点，Handler 代码与落库逻辑原样保留，恢复=加回两个 List）；元素/材料核价价格表、核价版本实测无读者，客户料号对应关系改由报价侧单入口 | ✅ **合 master `9477223b`**（48 用例；AC-1~12 全达成；全量 2473 项 A/B **用例名级** diff：只在 B 侧失败 = 0 条） | `PricingImportService.java` `PricingHandlerCatalog.java` `PricingBasicDataImportDrawer.tsx` |
+| `task-0812-核价导入停用汇率管理表/` | ↑ 同型追加：再停用 P03 汇率管理表，20 → **19 Sheet**（父任务为上一行）。`exchange_rate_v6` 实测零消费方（代码/视图/组件字段全 0 命中）。**难点＝该表是父任务回归测试里唯一的正对照，必须换成 P24 单重而非删除**，否则用例退化为"什么都没写也全绿"的假测试 | 🚧 分支 `feat/task-0812-停用汇率管理表` 开发中（前端已提交 `09612950`，后端在途） | `PricingImportService.java` `PricingHandlerCatalog.java` `Task0812DisabledSheetsTest.java` |
+| `task-0813-基础资料数值列扩至12位小数/` | 补齐 `task-0810` 漏掉的**另一半**：0810 的 `V385` 只扩了 21 个**计算金额列**，**基础资料侧一列没动**，导致 0810 需求文档 §119「基础取数值不按 9 位显示规则压缩」这条契约**落空**——基础值在落库时就被列 scale 截到 4~6 位。实证：`material_bom_item.net_weight` = `numeric(20,6)`，库内 68 行有值记录**小数位全部恰好 = 6**。范围 **86 列**（重量 3 / 含量·占比 24 / 单价·价格·汇率 31 / 用量·工时 28），目标 `precision = 原 p − 原 s + 12`。**难点＝ scale 常量有四份独立副本**（DB 列 / JPA `@Column` / handler 硬编码 `DecimalScale.at(x,6)` 约 28 处 / `PricingSheetRegistry.scale()` 16 处），漏一处**静默失效**；③④ 分管"导入"与"维护页保存"两条写路径。顺带修 `MaterialBomMergeHandler` 缺归一致**重导虚假升版**（D-1）+ `ProductionEnergy.unit_price` 实体↔DB scale 差一倍（D-2）。⚠️ **前端非零改动**：`EditableSheetTable.tsx` 用 `String(value)` 原样渲染定标字符串，会显示 12 位尾随零 | 🟡 **已立项，文档五件齐，等闸门 A**（`BL-0164`；无分支、未开工） | `V386`（待建）· `PricingSheetRegistry.java` · `MaterialBomMergeHandler.java` · `v6/entity/*.java` · `EditableSheetTable.tsx` |
 | `task-0717-报价占号表只存销售料号/` | 🛑 **已作废**——与 repair-2 重叠，改走 repair-2 路径。保留作决策追溯 | ❌ 废弃 | — |
 
 ---
@@ -194,8 +198,9 @@ done | sort | cut -d'|' -f1 | uniq -c | sort -rn | awk '$1>=4'
 | `task-0803-BOM页签增加父子取值公式/` | BOM 树页签新增 `PGET`（子取父）/ `CSUM/CAVG/CMAX/CMIN/CCOUNT`（父取子）；求值器从「逐行单遍」下沉到**单元格级拓扑排序**；非树页签四道闸拦截 | ✅ 已交付 | `FormulaCalculator.java` `FormulaBuilder.tsx` `TreeRefDrawer.tsx` |
 | `task-0801-公式计算精度优化/` | 全链路统一 6 位小数（引擎 + 小计 + 总计 + 列表一致） | ✅ 已交付 | `PrecisionPolicy.java` `NumberFormatUtil.java` |
 | ├ `repair-0809-4位截断残留两处/` | 上条清扫的**漏网点**（由 repair-0808 对拍暴露，`BL-0159`）：①`CardSnapshotService:4078` 给 `__amount_total__` 中间键做 `setScale(4)` —— 同语义的另两个登记点（`ConfigureSnapshotService:1477` / `ComponentDataEffectiveRows:216`）和前端都不截断；②`MaterialVersionUpgradeService:388` 写 `q.totalAmount` 用 `setScale(4)`，同字段另一写点 `QuotationService:894` 已是 `PrecisionPolicy.round()`（6 位）。**同一语义后端内部就三分之二实现是对的 → 漏改而非设计** | ⏸️ **被 task-0810 吸收，旧 6 位目标不再单独进场** | `CardSnapshotService.java:4078` `MaterialVersionUpgradeService.java:388` |
-| └ `task-0810-公式计算12位显示9位/` | 精度契约升级：后端 BigDecimal、前端 Decimal.js Decimal，精度链禁止 Double/JS number；公式节点/快照/持久化保留 12 位，最终显示最多 9 位；decimal string 无损传输；扩 21 个计算金额列；吸收 `BL-0159/0160` | ✅ **已交付 master `df592eab`**（2026-08-11；exact-5 5/5；任务关键 37/37；TC-077 环境 BLOCKED） | `PrecisionPolicy.java` `FormulaCalculator.java` `precision.ts` `formulaEngine.ts` |
-| 　 └ `repair-0811-输入值原样与结果精度分层/` | 修正 task-0810 动态数值分类：INPUT_TEXT/INPUT_NUMBER 保留当前单元格原值；公式过程 12 位、结果 9 位；产品卡片小计与报价总额拆为独立精度变量，预留系统参数入口；闭合 `BL-0162` | ✅ **已交付，AC-1~AC-12 准入**（2026-08-11；真实 PUT/DB/GET；N=2/2N=4 元数据 SQL 均 1；Playwright 旧客户 fixture 环境阻塞） | `DecimalRequestValidator.java` `PrecisionPolicy.java` `losslessJson.ts` `precision.ts` |
+| ├ `task-0810-公式计算12位显示9位/` | 精度契约升级：后端 BigDecimal、前端 Decimal.js Decimal，精度链禁止 Double/JS number；公式节点/快照/持久化保留 12 位，最终显示最多 9 位；decimal string 无损传输；扩 21 个计算金额列；吸收 `BL-0159/0160` | ✅ **已交付 master `df592eab`**（2026-08-11；exact-5 5/5；任务关键 37/37；TC-077 环境 BLOCKED） | `PrecisionPolicy.java` `FormulaCalculator.java` `precision.ts` `formulaEngine.ts` |
+| ├ `repair-0811-输入值原样与结果精度分层/` | **由子任务 `task-0810` 引入**（2026-08-13 按「两层上限」规则从 `task-0810/` 下平铺至此）。修正 task-0810 动态数值分类：INPUT_TEXT/INPUT_NUMBER 保留当前单元格原值；公式过程 12 位、结果 9 位；产品卡片小计与报价总额拆为独立精度变量，预留系统参数入口；闭合 `BL-0162` | ✅ **已交付，AC-1~AC-12 准入**（2026-08-11；真实 PUT/DB/GET；N=2/2N=4 元数据 SQL 均 1；Playwright 旧客户 fixture 环境阻塞） | `DecimalRequestValidator.java` `PrecisionPolicy.java` `losslessJson.ts` `precision.ts` |
+| └ `repair-0812-对账阈值与结果尺度不对称致误报/` | **由子任务 `task-0810` 引入**（目录按「主任务下只挂一层子目录」规则平铺在 `task-0801/` 下，不嵌进 task-0810）。**回归**：前端拿 12 位工作值（`toCalculationString`）去比后端 9 位结果值（`roundFormulaResult`），容差却写死 `1e-12` —— 比两侧结构性差距上界 `5e-10` **小 500 倍** ⇒ 凡第 10~12 位非零的公式列**必然**报「前后端算值不一致」，且**永不消解**（改多少次还是 12 位 vs 9 位）→ 提交闸门 409 卡死，只能重启后端绕过。病根是 **FR-12 规格自相矛盾**（要求按 12 位判定，而后端从不产出 12 位 `formulaResults`）。**数据/显示/导出全对，纯判定层缺陷** | 🟢 **闸门 A 已过、待进场**（2026-08-13 裁决：比较入口按 `FORMULA_RESULT_SCALE` 归一后再比，容差仍 1e-12；`task-0810` FR-12 改写为"按结果精度判定"；不登记 BACKLOG；真差异普查另立任务） | `QuotationStep2.tsx:2744`（`valuesReconcile`） `formulaEngine.ts:827`（容差） `FormulaCalculator.java:1113,1244` |
 | `task-0801-页签连表公式配置优化/` | 连表公式抽屉改版（左右分栏 / 括号配对可视化 / 试算） | ✅ 已交付 | `TabJoinFormulaDrawer.tsx` `TabFieldMatrix.tsx` |
 | `repair-0803-公式计算BUG修复/` | 「待重算」根因 = `$view` 报错毒化 PG 事务；顺带挖出 BL-0097/0098/0099 三条独立缺陷 | ✅ 已交付 | `CardSnapshotService.java:2245` |
 | └ `repair-0808-前端页签算序假环致列小计归零/` | 上条**未做完的另一半**（`BL-0101`）：后端 repair-0803 已改列粒度建图，**前端仍是页签粒度** → `component_subtotal` 引用零依赖 INPUT 列（产品·税率）也建边 → 与真实的 `产品→物料` cross_tab 边撞成**假环** → `topoOrderComponents` 抛错 → `catch` **静默**退回声明序 → 物料先于其 cross_tab 源页签求值 → 11 个 FORMULA 列整齐归零。表象是「行内值对、小计 ¥0」（行读后端快照 / 小计读前端实时重算，双源） | ✅ **已交付合 master `e9c8d9ed`**（闭合 `BL-0101`；AC-8 E2E 因 `BL-0158` 夹具枯竭**阻塞不可执行**，已改用 `e2e/repair0808-verify.spec.ts` 真机验收 AC-1/AC-2） | `crossTabOrder.ts#buildComponentDeps` `QuotationStep2.tsx:1447-1466`（对拍基准 `CrossTabComponentOrder.java#buildComponentDeps`） |
