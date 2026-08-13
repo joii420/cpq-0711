@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>原型 — 材质抽屉「元素」列改下拉（task-0812）</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 0; padding: 24px; background: #f5f5f5; color: #262626; }
+  h2 { margin: 0 0 4px; font-size: 18px; }
+  p.sub { margin: 0 0 20px; color: #8c8c8c; font-size: 13px; }
+  .panel { background: #fff; border-radius: 8px; padding: 16px 20px; margin-bottom: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+  .panel h3 { margin: 0 0 12px; font-size: 14px; }
+  .tag-before { display:inline-block; background:#fff1f0; color:#cf1322; border:1px solid #ffa39e; border-radius:4px; padding:1px 8px; font-size:12px; margin-left:8px; }
+  .tag-after  { display:inline-block; background:#f6ffed; color:#389e0d; border:1px solid #b7eb8f; border-radius:4px; padding:1px 8px; font-size:12px; margin-left:8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-weight: 500; color: #595959; background: #fafafa; padding: 8px 10px; border-bottom: 1px solid #f0f0f0; }
+  td { padding: 8px 10px; border-bottom: 1px solid #f5f5f5; vertical-align: top; }
+  input[type=text], input[type=number] { width: 100%; padding: 4px 8px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 13px; }
+  .cell-el { position: relative; width: 260px; }
+  .sel { border: 1px solid #d9d9d9; border-radius: 4px; padding: 4px 8px; background: #fff; cursor: pointer; min-height: 30px; display:flex; align-items:center; justify-content:space-between; }
+  .sel.err { border-color: #ff4d4f; }
+  .sel .ph { color: #bfbfbf; }
+  .caret { color:#bfbfbf; font-size:11px; }
+  .dd { position: absolute; z-index: 10; left: 0; right: 0; top: 34px; background:#fff; border:1px solid #f0f0f0; border-radius:4px; box-shadow:0 3px 12px rgba(0,0,0,.12); display:none; }
+  .dd.open { display: block; }
+  .dd input { border:none; border-bottom:1px solid #f0f0f0; border-radius:0; padding:6px 10px; }
+  .dd input:focus { outline: none; }
+  .opts { max-height: 190px; overflow: auto; }
+  .opt { padding: 6px 10px; cursor: pointer; }
+  .opt:hover { background:#f5f5f5; }
+  .opt.disabled { color:#bfbfbf; cursor:not-allowed; background:#fafafa; }
+  .opt.sel-now { background:#e6f4ff; font-weight:500; }
+  .empty { padding: 12px 10px; color:#8c8c8c; font-size:12px; line-height:1.6; }
+  .err-msg { color:#ff4d4f; font-size:12px; margin-top:4px; line-height:1.5; }
+  .tag-off { display:inline-block; background:#fafafa; color:#8c8c8c; border:1px solid #d9d9d9; border-radius:3px; padding:0 6px; font-size:11px; margin-left:6px; }
+  .note { font-size:12px; color:#8c8c8c; margin-top:12px; line-height:1.8; }
+  .note b { color:#595959; }
+  button.add { border:1px solid #d9d9d9; background:#fff; border-radius:4px; padding:4px 12px; font-size:13px; cursor:pointer; }
+</style>
+</head>
+<body>
+
+<h2>材质抽屉 →「元素组成」表</h2>
+<p class="sub">task-0812 原型 · 上=改造前（两列手填）· 下=改造后（合并为「元素」下拉，可交互试用）</p>
+
+<div class="panel">
+  <h3>改造前<span class="tag-before">元素 code / 元素名 两列自由输入 → 已产生 2 行错填</span></h3>
+  <table>
+    <thead><tr><th style="width:110px">元素 code</th><th style="width:130px">元素名</th><th style="width:100px">默认 %</th><th style="width:90px">最小 %</th><th style="width:90px">最大 %</th><th style="width:70px">锁定</th><th style="width:60px">操作</th></tr></thead>
+    <tbody>
+      <tr><td><input type="text" value="10001"></td><td><input type="text" value="Ag"></td><td><input type="number" value="100"></td><td><input type="number" disabled></td><td><input type="number" disabled></td><td>✔</td><td>🗑</td></tr>
+    </tbody>
+  </table>
+  <div class="note">↑ 现网材质 <b>992（AgNi11#-Ⅰ）</b> 的真实数据：把「元素编号 10001」填进了 code 列，正确值应是符号 <b>Ag</b>。同类还有材质 <b>00262</b>（填了 10004，应为 Sn）。</div>
+</div>
+
+<div class="panel">
+  <h3>改造后<span class="tag-after">单列「元素」下拉 · 编号 / 符号 / 中文名 三合一</span></h3>
+  <table>
+    <thead><tr><th style="width:260px">元素</th><th style="width:100px">默认 %</th><th style="width:90px">最小 %</th><th style="width:90px">最大 %</th><th style="width:70px">锁定</th><th style="width:60px">操作</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div style="margin-top:10px"><button class="add" onclick="addRow()">+ 添加元素</button></div>
+  <div class="note">
+    <b>试一下：</b>点元素框展开 → 输入 <code>10001</code> / <code>ag</code> / <code>银</code> 三者任一都能筛出同一项（AC-2）；
+    第 1 行选中 Ag 后，第 2 行下拉里 Ag 变灰不可选（AC-5）；输入 <code>zzz</code> 看空态文案（AC-6）。<br>
+    <b>第 3 行</b>演示打开老材质 992 的表现：字典里匹配不到 → 框内清空 + 红字提示 + 保存被拦（AC-8）。<br>
+    <b>第 4 行</b>演示已停用元素：老数据仍可正常显示并保存，只打「已停用」标记（决策 D3）。
+  </div>
+</div>
+
+<script>
+const DICT = [
+  { no:'10001', code:'Ag',  name:'银',   status:'ACTIVE' },
+  { no:'10002', code:'Cu',  name:'铜',   status:'ACTIVE' },
+  { no:'10003', code:'Zn',  name:'锌',   status:'ACTIVE' },
+  { no:'10004', code:'Sn',  name:'锡',   status:'ACTIVE' },
+  { no:'10005', code:'Ni',  name:'镍',   status:'ACTIVE' },
+  { no:'10012', code:'C',   name:'碳',   status:'ACTIVE' },
+  { no:'10024', code:'WC',  name:'碳化钨', status:'ACTIVE' },
+  { no:'10017', code:'Cd',  name:'镉',   status:'INACTIVE' },
+];
+const label = e => `${e.no} / ${e.code} / ${e.name}`;
+const byNo  = Object.fromEntries(DICT.map(e => [e.no, e]));
+
+let rows = [
+  { no:'10001', pct:60,  locked:true },
+  { no:null,    pct:40,  locked:true },
+  { no:null,    pct:0,   locked:true, unmatched:'10001' },
+  { no:'10017', pct:0,   locked:true },
+];
+let openIdx = -1, kw = '';
+
+function addRow() { rows.push({ no:null, pct:0, locked:true }); render(); }
+function toggle(i) { openIdx = openIdx === i ? -1 : i; kw = ''; render(); }
+function pick(i, no) { rows[i].no = no; delete rows[i].unmatched; openIdx = -1; kw = ''; render(); }
+function onKw(v) { kw = v; render(true); }
+
+function render(keepFocus) {
+  const used = new Set(rows.map(r => r.no).filter(Boolean));
+  document.getElementById('rows').innerHTML = rows.map((r, i) => {
+    const cur = r.no ? byNo[r.no] : null;
+    const k = kw.trim().toLowerCase();
+    const opts = DICT
+      .filter(e => e.status === 'ACTIVE' || e.no === r.no)
+      .filter(e => !k || e.no.toLowerCase().includes(k) || e.code.toLowerCase().includes(k) || e.name.toLowerCase().includes(k));
+    const optHtml = opts.length ? opts.map(e => {
+      const dis = used.has(e.no) && e.no !== r.no;
+      const cls = 'opt' + (dis ? ' disabled' : '') + (e.no === r.no ? ' sel-now' : '');
+      const off = e.status === 'INACTIVE' ? '<span class="tag-off">已停用</span>' : '';
+      return `<div class="${cls}" ${dis ? '' : `onclick="pick(${i},'${e.no}')"`}>${label(e)}${off}</div>`;
+    }).join('') : `<div class="empty">未找到该元素，请先到「主数据维护 → 元素」维护后再选择</div>`;
+
+    return `<tr>
+      <td><div class="cell-el">
+        <div class="sel ${r.unmatched ? 'err' : ''}" onclick="toggle(${i})">
+          <span>${cur ? label(cur) : '<span class="ph">请选择元素</span>'}${cur && cur.status === 'INACTIVE' ? '<span class="tag-off">已停用</span>' : ''}</span>
+          <span class="caret">▾</span>
+        </div>
+        <div class="dd ${openIdx === i ? 'open' : ''}">
+          <input type="text" id="kw${i}" placeholder="输入编号 / 符号 / 中文名过滤" value="${kw}" oninput="onKw(this.value)">
+          <div class="opts">${optHtml}</div>
+        </div>
+        ${r.unmatched ? `<div class="err-msg">原值「${r.unmatched}」不在元素字典中，请重新选择</div>` : ''}
+      </div></td>
+      <td><input type="number" value="${r.pct}"></td>
+      <td><input type="number" disabled></td>
+      <td><input type="number" disabled></td>
+      <td>${r.locked ? '✔' : ''}</td>
+      <td style="cursor:pointer">🗑</td>
+    </tr>`;
+  }).join('');
+  if (keepFocus && openIdx >= 0) {
+    const el = document.getElementById('kw' + openIdx);
+    if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  }
+}
+render();
+</script>
+</body>
+</html>

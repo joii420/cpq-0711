@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Drawer, Form, Input, Select, InputNumber, Switch, Button,
-  Space, Table, Tabs, Empty, Alert, message,
+  Space, Table, Tabs, Empty, Alert, message, Tag,
 } from 'antd';
 import { PlusOutlined, DeleteOutlined, AppstoreOutlined, HistoryOutlined } from '@ant-design/icons';
 import {
@@ -9,6 +9,7 @@ import {
   type MaterialRecipeDetail,
   type MaterialRecipeUpsertRequest,
 } from '../../services/materialRecipeService';
+import { elementService, type ElementItem } from '../../services/elementService';
 import Decimal from 'decimal.js';
 import {
   formatDisplayDecimal,
@@ -18,6 +19,26 @@ import {
   type DecimalString,
 } from '../../utils/precision';
 // 关联料号 Tab 本期隐藏(task-0708)：MaterialRecipePartsTab 组件保留不删，仅不挂载
+
+// task-0812：元素下拉 filterOption —— 对 elementNo / elementCode / elementName 三字段做不区分大小写包含匹配（FR-3）
+interface ElementOption {
+  value: string;
+  label: string;
+  disabled: boolean;
+  elementNo: string;
+  elementCode: string;
+  elementName: string;
+}
+const filterElementOption = (input: string, option?: ElementOption): boolean => {
+  if (!option) return false;
+  const kw = input.trim().toLowerCase();
+  if (!kw) return true;
+  return (
+    option.elementNo.toLowerCase().includes(kw) ||
+    option.elementCode.toLowerCase().includes(kw) ||
+    option.elementName.toLowerCase().includes(kw)
+  );
+};
 
 interface Props {
   open: boolean;
@@ -29,8 +50,10 @@ interface Props {
 }
 
 interface ElementRow {
+  elementNo: string | null;   // task-0812：Select 的 value（稳定标识，不用 elementCode/下标）
   elementCode: string;
   elementName: string;
+  unmatched?: boolean;        // task-0812：老数据 elementCode 在字典中未命中（FR-7 第三分支）
   defaultPct: DecimalString;
   minPct: DecimalString | null;
   maxPct: DecimalString | null;
@@ -45,12 +68,35 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<'detail' | 'log'>('detail');
 
+  // task-0812：元素字典（D11 抽屉打开时一次性全量拉取，前端本地过滤）
+  const [elementDict, setElementDict] = useState<ElementItem[]>([]);
+  const [dictLoading, setDictLoading] = useState(false);
+  const [dictError, setDictError] = useState(false);
+
   const isCreating = !editingDetail;
 
   useEffect(() => {
     if (open) setActiveTab('detail');
   }, [open]);
 
+  // task-0812：字典加载（AC-10 恰好 1 次；destroyOnClose 已保证关闭即卸载，不做跨抽屉缓存）
+  useEffect(() => {
+    if (!open) return;
+    setDictLoading(true);
+    setDictError(false);
+    elementService.list()
+      .then(setElementDict)
+      .catch(() => {
+        setDictError(true);
+        message.error('元素字典加载失败，请刷新重试');
+      })
+      .finally(() => setDictLoading(false));
+  }, [open]);
+
+  const byNo = useMemo(() => new Map(elementDict.map(e => [e.elementNo, e])), [elementDict]);
+  const byCode = useMemo(() => new Map(elementDict.map(e => [e.elementCode, e])), [elementDict]);
+
+  // 表单基础字段（与字典无关，独立于元素行回显）
   useEffect(() => {
     if (!open) return;
     if (editingDetail) {
@@ -63,26 +109,75 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
         status: editingDetail.status ?? 'ACTIVE',
       });
       setRecipeType(editingDetail.recipeType);
-      setElements(editingDetail.elements.map(e => ({
-        elementCode: e.elementCode,
-        elementName: e.elementName,
-        defaultPct: normalizeDecimalString(e.defaultPct),
-        minPct: e.minPct == null ? null : normalizeDecimalString(e.minPct),
-        maxPct: e.maxPct == null ? null : normalizeDecimalString(e.maxPct),
-        isLocked: e.isLocked,
-        sortOrder: e.sortOrder,
-      })));
     } else {
       form.resetFields();
       // task-0708：新建默认「标准锁定」，元素全 isLocked、无 min/max
       form.setFieldsValue({ recipeType: 'locked', sortOrder: 100, status: 'ACTIVE' });
       setRecipeType('locked');
+    }
+  }, [open, editingDetail, form]);
+
+  // task-0812：元素行回显 —— 必须等字典就绪（dictLoading=false）才能做「字典外脏值」判定（FR-7），
+  // 否则字典未到时会把所有行误判为 unmatched。
+  // 【必修】dictError=true 时（字典加载失败）同样不得判定 unmatched：byCode 此时是空 Map，
+  // 若不特判会把「网络故障」诬告成「字典外脏值」，把正常材质的每一行都判成脏数据并阻断保存。
+  // unmatched 语义收紧为「字典确实加载成功、且确实查不到这个 elementCode」，仅在 dictError=false 时才可能为 true。
+  useEffect(() => {
+    if (!open) return;
+    if (editingDetail) {
+      if (dictLoading) return;
+      setElements(editingDetail.elements.map(e => {
+        if (dictError) {
+          // 字典加载失败：无法判定是否在字典中，保留原始值但不置为 unmatched（断言①）；
+          // elementNo 置空是因为没有字典可反查稳定标识，Select 暂无法回显选中态。
+          return {
+            elementNo: null,
+            elementCode: e.elementCode,
+            elementName: e.elementName,
+            unmatched: false,
+            defaultPct: normalizeDecimalString(e.defaultPct),
+            minPct: e.minPct == null ? null : normalizeDecimalString(e.minPct),
+            maxPct: e.maxPct == null ? null : normalizeDecimalString(e.maxPct),
+            isLocked: e.isLocked,
+            sortOrder: e.sortOrder,
+          };
+        }
+        // 空字符串视为「未选择」而非「字典外脏值」，走 FR-9 空值拦截，避免红字提示「原值「(空)」…」造成误导（可选项，一并处理）
+        const hit = e.elementCode ? byCode.get(e.elementCode) : undefined;
+        if (hit) {
+          // D8：符号/中文名完全跟随字典当前值，不回显历史手填值
+          return {
+            elementNo: hit.elementNo,
+            elementCode: hit.elementCode,
+            elementName: hit.elementName,
+            unmatched: false,
+            defaultPct: normalizeDecimalString(e.defaultPct),
+            minPct: e.minPct == null ? null : normalizeDecimalString(e.minPct),
+            maxPct: e.maxPct == null ? null : normalizeDecimalString(e.maxPct),
+            isLocked: e.isLocked,
+            sortOrder: e.sortOrder,
+          };
+        }
+        return {
+          elementNo: null,
+          elementCode: e.elementCode,   // 保留原文，供红字提示「原值「X」」展示
+          elementName: e.elementName,
+          unmatched: !!e.elementCode,   // 空字符串不判脏值，交给 FR-9「请选择元素」兜底
+          defaultPct: normalizeDecimalString(e.defaultPct),
+          minPct: e.minPct == null ? null : normalizeDecimalString(e.minPct),
+          maxPct: e.maxPct == null ? null : normalizeDecimalString(e.maxPct),
+          isLocked: e.isLocked,
+          sortOrder: e.sortOrder,
+        };
+      }));
+    } else {
       setElements([{
-        elementCode: '', elementName: '', defaultPct: '100', minPct: null, maxPct: null,
+        elementNo: null, elementCode: '', elementName: '', unmatched: false,
+        defaultPct: '100', minPct: null, maxPct: null,
         isLocked: true, sortOrder: 1,
       }]);
     }
-  }, [open, editingDetail, form]);
+  }, [open, editingDetail, dictLoading, dictError, byCode]);
 
   const onRecipeTypeChange = (t: 'locked' | 'editable' | 'partial') => {
     setRecipeType(t);
@@ -99,8 +194,10 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
   };
 
   const addElement = () => setElements(prev => [...prev, {
+    elementNo: null,
     elementCode: '',
     elementName: '',
+    unmatched: false,
     defaultPct: '0',
     minPct: recipeType === 'editable' ? '0' : null,
     maxPct: recipeType === 'editable' ? '100' : null,
@@ -114,6 +211,13 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
     setElements(prev => prev.map((e, idx) => idx === i ? { ...e, ...patch } : e));
   };
 
+  // task-0812：下拉选中后按 elementNo 查字典写回 elementCode/elementName（FR-8）
+  const handleElementChange = (i: number, no: string) => {
+    const hit = byNo.get(no);
+    if (!hit) return;
+    updateElement(i, { elementNo: hit.elementNo, elementCode: hit.elementCode, elementName: hit.elementName, unmatched: false });
+  };
+
   const sumPct = sumDecimal(elements.map(e => e.defaultPct));
   const sumPctText = formatDisplayDecimal(sumPct, 2);
   const sumOk = sumPct.minus('100').abs().lessThan('0.01');
@@ -121,6 +225,27 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
+      // task-0812【必修·顺带确认】字典加载失败时，所有行 elementNo 均为 null，
+      // 若继续走下面的「请为第 N 行选择元素」会误导用户以为是自己漏选，实际是加载故障，需给更准确的提示并整体拦截。
+      if (dictError) {
+        message.error('元素字典加载失败，无法校验元素，请关闭抽屉重新打开后再保存');
+        return;
+      }
+      // task-0812 BUG-0812-01：脏值检查必须先于「未选元素」检查——
+      // unmatched 行的 elementNo 恒为 null（回显时就是这么置的），若 emptyIdx 先判，
+      // 脏值行会先被判定为「未选元素」，导致 FR-7 专属提示成为永远到不了的死代码。
+      // task-0812 FR-7 / D4：字典外脏值阻断保存
+      const badIdx = elements.findIndex(e => e.unmatched);
+      if (badIdx >= 0) {
+        message.error(`第 ${badIdx + 1} 行的元素不在元素字典中，请重新选择`);
+        return;
+      }
+      // task-0812 FR-9：未选元素（此时已排除脏值行，命中的必然是「本来就没选」的行）
+      const emptyIdx = elements.findIndex(e => !e.elementNo);
+      if (emptyIdx >= 0) {
+        message.error(`请为第 ${emptyIdx + 1} 行选择元素`);
+        return;
+      }
       if (!sumOk) {
         message.error(`默认含量之和必须 = 100，当前 ${sumPctText}`);
         return;
@@ -173,28 +298,52 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
 
   const elementCols = [
     {
-      title: '元素 code',
-      key: 'elementCode',
-      width: 100,
-      render: (_: unknown, r: ElementRow, i: number) => (
-        <Input
-          value={r.elementCode}
-          onChange={(e) => updateElement(i, { elementCode: e.target.value })}
-          placeholder="Ag/Cu/Ni"
-        />
-      ),
-    },
-    {
-      title: '元素名',
-      key: 'elementName',
-      width: 120,
-      render: (_: unknown, r: ElementRow, i: number) => (
-        <Input
-          value={r.elementName}
-          onChange={(e) => updateElement(i, { elementName: e.target.value })}
-          placeholder="银/铜/镍"
-        />
-      ),
+      title: '元素',
+      key: 'element',
+      width: 260,
+      render: (_: unknown, r: ElementRow, i: number) => {
+        const selectedItem = r.elementNo ? byNo.get(r.elementNo) : undefined;
+        const selectedNos = new Set(elements.map(e => e.elementNo).filter((v): v is string => !!v));
+        const options: ElementOption[] = elementDict
+          .filter(e => e.status === 'ACTIVE' || e.elementNo === r.elementNo)
+          .map(e => ({
+            value: e.elementNo,
+            label: `${e.elementNo} / ${e.elementCode} / ${e.elementName}`,
+            disabled: selectedNos.has(e.elementNo) && e.elementNo !== r.elementNo,
+            elementNo: e.elementNo,
+            elementCode: e.elementCode,
+            elementName: e.elementName,
+          }));
+        return (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Select
+                showSearch
+                style={{ flex: 1, minWidth: 0 }}
+                value={r.elementNo ?? undefined}
+                placeholder="请选择元素"
+                loading={dictLoading}
+                status={r.unmatched ? 'error' : (dictError ? 'warning' : undefined)}
+                options={options}
+                filterOption={filterElementOption as any}
+                notFoundContent={dictError ? '元素字典加载失败' : '未找到该元素，请先到「主数据维护 → 元素」维护后再选择'}
+                onChange={(no: string) => handleElementChange(i, no)}
+              />
+              {selectedItem?.status === 'INACTIVE' && <Tag color="default">已停用</Tag>}
+            </div>
+            {dictError ? (
+              // 【必修·断言②】字典加载失败：不诬告为脏数据，明确提示是网络/加载问题而非用户数据坏了
+              <div style={{ color: '#faad14', fontSize: 12, marginTop: 4 }}>
+                元素字典加载失败，暂无法显示原选择，请关闭抽屉重新打开重试
+              </div>
+            ) : r.unmatched && (
+              <div style={{ color: '#ff4d4f', fontSize: 12, marginTop: 4 }}>
+                原值「{r.elementCode || '(空)'}」不在元素字典中，请重新选择
+              </div>
+            )}
+          </div>
+        );
+      },
     },
     {
       title: '默认 %',
