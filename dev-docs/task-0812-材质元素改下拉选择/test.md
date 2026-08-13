@@ -17,9 +17,10 @@
 | 脏数据材质①（AC-8） | `992`（symbol `AgNi11#-Ⅰ`），1 行 `element_code='10001'`（应为 Ag），recipe_id=`38218ebe-cc36-493e-83cc-42508e18734e` |
 | 脏数据材质②（回归） | `00262`（symbol `Sn02`），1 行 `element_code='10004'`（应为 Sn），recipe_id=`c7dba513-5419-4269-9d2c-981258564bdd` |
 | 元素字典 | `element` 表 37 条，**全部 ACTIVE**；`10001/Ag/银`、`10005/Ni/镍`、`10012/C/碳`、`10004/Sn/锡` |
-| 停用测试用元素 | `10009/Be/铍`，referencedCount=1，被材质 `00158`（symbol `C17200`）唯一引用 |
+| 停用测试用元素 | `10009/Be/铍`，referencedCount=1（现网 37 条元素**没有一条 referencedCount=0**，AC-4「未被引用的元素」用引用数最小的这条替代，语义等价：停用/恢复的下拉可见性行为与是否被引用无关，主线已确认接受，不算偏离 AC）；被材质 `00158`（symbol `C17200`）唯一引用 |
 | flyway 基线 | `SELECT max(version::int) FROM flyway_schema_history WHERE version ~ '^[0-9]+$'` = `385`（用例执行前后必须一致） |
 | 非管理员账号 | `test_finance_c87a27ab`（`PRICING_MANAGER`，ACTIVE）用于权限用例；若密码不可得，改用新建一个 ACTIVE 的 `SALES_REP`/`PRICING_MANAGER` 测试账号 |
+| 元素停用/启用的唯一入口 | `DELETE /api/cpq/elements/{elementNo}` 只能**停用**（软删，204）；**恢复启用没有对应的"反 DELETE"接口**，必须走「主数据维护 → 元素」Tab 找到该行点「编辑」，在编辑抽屉里把状态改回「启用」提交（`PUT /elements/{elementNo}` body 带 `status:'ACTIVE'`）。TC-12/TC-13 的还原步骤按此执行，不要以为再 DELETE 一次能切回来 |
 
 ---
 
@@ -61,6 +62,7 @@
 - 期望结果：
   1. 保存请求返回 200
   2. 步骤 4 的查询结果与步骤 1 逐字段（`element_code`/`element_name`/`default_pct`/`min_pct`/`max_pct`/`is_locked`/`sort_order`）完全一致，3 行行序不变
+  3. ⚠️ **`element_no` 列不在上述断言字段清单内，允许从有值变为 NULL，不得据此判本用例失败**。原因：`MaterialRecipeService.update()` 是「全删旧行再插新行」，`insertElement()` 从不写 `element_no`（`backtask.md` §4 既有缺口，`element_no` 是否变化与本次改造无关，AC-7 的字段清单本来就不含它）。执行前可先 `SELECT element_no FROM material_recipe_element WHERE recipe_id='d6e44a1e-8cae-4fba-8582-17d2a28408ca';` 留痕（预期保存前 3 行均非空、保存后 3 行均为 NULL），仅作观察记录，不计入通过/失败判定
 - 实际结果：
 - 优先级：P0
 
@@ -82,20 +84,28 @@
 - 实际结果：
 - 优先级：P0
 
-### TC-05　编辑脏数据材质 00262：同类场景交叉验证
+### TC-05　编辑脏数据材质 00262：同类场景交叉验证（仅验阻断态，不消耗样本）
 - 对应：AC-8（回归覆盖第二条脏数据）
+- ⚠️ **数据风险提示**：现网仅有 `992`/`00262` 两条脏数据样本。TC-04 已完整跑通「阻断→重选→保存」并会真实纠正 `992` 那 1 行，此后 `992` 不再是脏数据。为保留至少一条脏数据样本供复测/回归使用，**本用例只验证打开时的阻断表现，不执行重选保存**，把 `00262` 保留为脏数据活样本
 - 前置数据：材质 `00262`（`element_code='10004'`）
 - 步骤：
   1. 打开材质 `00262` 编辑抽屉
-  2. 在该行下拉输入 `10004`，选中 `10004 / Sn / 锡`
-  3. 点「保存」
-  4. `SELECT element_code, element_name FROM material_recipe_element WHERE recipe_id='c7dba513-5419-4269-9d2c-981258564bdd';`
+  2. 观察该行「元素」列
+  3. 不做任何修改，直接点「保存」
+  4. 关闭抽屉（不提交任何改动）
 - 期望结果：
-  1. 打开时元素框为空 + 红字 `原值「10004」不在元素字典中，请重新选择`
-  2. 保存成功 200
-  3. 步骤 4：`element_code='Sn'`，`element_name='锡'`
+  1. 步骤 2：元素框为空 + 红字 `原值「10004」不在元素字典中，请重新选择`
+  2. 步骤 3：保存被拦截，未发出 `PUT` 请求（F12 Network 确认），`message.error` 含「不在元素字典中，请重新选择」
+  3. 步骤 4 后 `SELECT element_code FROM material_recipe_element WHERE recipe_id='c7dba513-5419-4269-9d2c-981258564bdd';` 仍为 `10004`（样本未被消耗，可供后续复测复用）
 - 实际结果：
 - 优先级：P1
+- 如需重建脏数据样本（例如 `992` 已被 TC-04 纠正，需要新造一条脏数据用于其他轮复测）：
+  ```sql
+  UPDATE material_recipe_element
+  SET element_code='10001', element_name='Ag', element_no=NULL
+  WHERE recipe_id='38218ebe-cc36-493e-83cc-42508e18734e';
+  ```
+  （把 992 的行改回脏值 `10001`/`Ag` 且清空 `element_no`，还原成 TC-04 执行前的状态；执行前确认没有其他会话正在用这条数据）
 
 ---
 
@@ -160,35 +170,38 @@
 - 实际结果：
 - 优先级：P0
 
+> ⚠️ **TC-12 与 TC-13 共用同一个停用目标 `10009/Be/铍`，必须按固定顺序连续执行、只停用一次、最后统一还原一次**，避免两条用例各自还原互相打架（例如 TC-12 先还原成 ACTIVE，TC-13 又要求已停用，导致状态对不上）。执行顺序：**先做 TC-12 步骤 1~2 → 紧接着做 TC-13 步骤 2~3（不要在中间恢复启用）→ 都做完后再统一执行一次「元素」Tab 编辑抽屉把 `10009` 改回 ACTIVE → 最后做 TC-12 步骤 4 验证恢复后重新出现**。
+
 ### TC-12　停用元素从下拉候选消失，恢复后重新出现
 - 对应：AC-4、FR-4、D2
 - 前置数据：元素 `10009/Be/铍`（当前 ACTIVE）
 - 步骤：
-  1. 打开「主数据维护 → 元素」Tab，把 `Be`（`10009`）状态改为「停用」（`DELETE /api/cpq/elements/10009`，需 SYSTEM_ADMIN）
+  1. 打开「主数据维护 → 元素」Tab，把 `Be`（`10009`）状态改为「停用」（`DELETE /api/cpq/elements/10009`，需 SYSTEM_ADMIN；该接口只能停用，见「固定测试数据」表最后一行）
   2. 打开任一材质（新建或编辑）抽屉，元素组成表任一行展开下拉，输入 `Be`
-  3. 回到「元素」Tab 把 `10009` 恢复为「启用」
-  4. 重新打开材质抽屉，元素下拉再次输入 `Be`
+  3. **不要在此处恢复启用**，直接接续执行 TC-13（见上方顺序说明）
+  4. TC-13 全部做完后，回到「主数据维护 → 元素」Tab，找到 `Be`（`10009`）行点「编辑」，在编辑抽屉里把状态改回「启用」并保存（`PUT /elements/10009` body 含 `status:'ACTIVE'`）——**不是再 DELETE 一次**
+  5. 重新打开材质抽屉，元素下拉再次输入 `Be`
 - 期望结果：
   1. 步骤 2：候选中**不出现** `10009 / Be / 铍`（`notFoundContent` 空态或候选为空，视是否有其他匹配项）
-  2. 步骤 4：候选中**重新出现** `10009 / Be / 铍`
+  2. 步骤 5：候选中**重新出现** `10009 / Be / 铍`
 - 实际结果：
 - 优先级：P0
 - 还原：确保测试结束时 `10009` 恢复为 ACTIVE：`SELECT status FROM element WHERE element_no='10009';` 必须为 `ACTIVE`
 
 ### TC-13　已引用但被停用的元素：只读回显 + 已停用标记，允许保存
 - 对应：D3、FR-7 第二分支
-- 前置数据：材质 `00158`（symbol `C17200`，唯一引用 `Be/10009`）
+- 前置数据：材质 `00158`（symbol `C17200`，唯一引用 `Be/10009`）；**紧接 TC-12 步骤 2 之后执行，`10009` 此时应已处于停用态，不要重复停用**
 - 步骤：
-  1. 把元素 `10009`（Be）状态改为「停用」（同 TC-12 步骤 1，若 TC-12 已执行可复用停用态，勿重复停用后忘记还原）
+  1. 确认 `10009` 当前为 INACTIVE（`SELECT status FROM element WHERE element_no='10009';`），若 TC-12 未先执行则先做 TC-12 步骤 1
   2. 打开材质 `00158` 编辑抽屉
   3. 不改任何字段，直接点「保存」
-  4. 保存后把 `10009` 恢复为「启用」
+  4. 保存完成后，**不要在这里单独还原**，按上方顺序说明统一在 TC-12 步骤 4 一次性把 `10009` 改回 ACTIVE
 - 期望结果：
   1. 步骤 2：该行元素正常回显选中态 `10009 / Be / 铍`（不清空、不标红），且选中态右侧出现灰色 `已停用` Tag
   2. 步骤 3：保存不被拦截，返回 200（D3：停用元素不阻断已引用行的保存）
 - 实际结果：
 - 优先级：P0
-- 还原：确保 `10009` 恢复为 ACTIVE
+- 还原：本用例不单独还原，统一见 TC-12 步骤 4 及其「还原」行
 
 ### TC-14　字典为空（0 条）
 - 对应：FR-6、fronttask.md §5「字典为空」
@@ -201,15 +214,20 @@
 - 优先级：P1
 - 还原：清除 DevTools Override，恢复真实响应
 
-### TC-15　字典接口 5xx / 网络失败
+### TC-15　字典接口 5xx / 网络失败（含「不得误判正常行为脏数据」回归断言）
 - 对应：AC-10（错误处理）、FR-10、api.md 错误码表
-- 前置数据：Chrome DevTools
+- ⚠️ **本用例针对一个已发现并已让前端返修的缺陷设计，是该缺陷的验收用例，缺一不可**：字典加载失败时若 `dictLoading` 仍被置为 `false`，回显逻辑会把「字典未就绪」误判成「字典里真的没有这个 elementCode」，导致**所有正常行**被误标为字典外脏值（每行飘红「原值「X」不在元素字典中」）且阻断保存。因此本用例**必须打开有正常数据的材质 `00005`**，不能用新建抽屉（新建抽屉的行本来就是空的，测不出这个误判）
+- 前置数据：Chrome DevTools；材质 `00005`（3 行正常数据：`C/碳`、`Ni/镍`、`Ag/银`）
 - 步骤：
   1. F12 Network 面板，对 `GET /api/cpq/elements` 设置「Block request URL」（或 Override 为 500 状态码空响应）
-  2. 打开材质抽屉
+  2. 打开材质 `00005` 编辑抽屉
+  3. 逐行检查 3 行「元素」列的表现
+  4. 尝试点「保存」
 - 期望结果：
   1. 页面顶部出现 `message.error`，文案含「元素字典加载失败」字样（`元素字典加载失败，请刷新重试`）
   2. 元素下拉的 `notFoundContent` 显示 `元素字典加载失败`，**不得**表现为「未找到该元素，请先到…」（区分「本来没数据」与「加载失败」两种空态，FR-10 明确要求）
+  3. **（核心断言，缺陷验收点）** 3 行**均不得**出现红色「原值「C」/「Ni」/「Ag」不在元素字典中」提示 —— 字典加载失败 ≠ 数据本身是脏数据，不得对正常行发起「诬告」
+  4. 步骤 4 若被拦截，`message.error` 的拦截文案**不得**使用「不在元素字典中，请重新选择」这套 FR-7/D4 脏值文案（那套文案专属「字典已就绪但查无此码」的场景，与「字典压根没加载成功」是两种不同错误，用户看到的提示必须能区分成因；具体应表现为「字典未加载完成，无法保存」一类提示，或禁用保存按钮，以实际返修实现为准，但**红字「原值…」误报与「不在元素字典中」误导文案这两条硬性不得出现**）
 - 实际结果：
 - 优先级：P0
 - 还原：解除 Block/Override
@@ -408,21 +426,64 @@
   3. 查看发出的 `POST /api/cpq/material-recipes` 请求体 `elements[]` 数组
 - 期望结果：
   1. 恰好 1 次 `POST`（或编辑场景下 1 次 `PUT`），无重复提交
-  2. `elements[]` 每项字段集合精确为 `elementCode`、`elementName`、`defaultPct`、`minPct`、`maxPct`、`isLocked`、`sortOrder` 共 7 个键，**不包含** `elementNo` 键（D9：本期不落 `elementNo` 到提交体）
+  2. `elements[]` 每项字段集合 **⊆** `elementCode`、`elementName`、`defaultPct`、`minPct`、`maxPct`、`isLocked`、`sortOrder` 这 7 个键（`isLocked=true` 时 `minPct`/`maxPct` 传 `undefined` 会被 `JSON.stringify` 丢键，此时该项只会有 5 个键，键数量不是断言点）；**硬断言只有一条：不包含 `elementNo` 键**（D9：本期不落 `elementNo` 到提交体，这条键缺席才是本用例的判定依据）
 - 实际结果：
 - 优先级：P0
 
 ---
 
-## 八、工程自检（AC-12）
+## 八、新建入口端到端落库（补）
+
+### TC-32　新建材质 → 选元素 → 保存 → DB 落库正确（P0，主路径）
+- 对应：需求文档主流程（新建入口此前只有 TC-30 验请求体，没有端到端落库断言，本条补齐）
+- 前置数据：无（用例内建一次性测试材质，结束后清理）
+- 步骤：
+  1. 打开「主数据维护 → 材质」，点「新建材质」
+  2. 材质编号填 `TC32-TEMP`，符号填 `TC32-TEMP`，类型选 `locked`
+  3. 第 1 行元素下拉选 `10001 / Ag / 银`，默认 % 改为 `60`
+  4. 点「+ 添加元素」新增第 2 行，选 `10005 / Ni / 镍`，默认 % 改为 `40`
+  5. 点「保存」
+  6. `SELECT id FROM material_recipe WHERE code='TC32-TEMP';`（记为 `<tc32_id>`）
+  7. `SELECT element_code, element_name, default_pct, is_locked, sort_order FROM material_recipe_element WHERE recipe_id='<tc32_id>' ORDER BY sort_order;`
+- 期望结果：
+  1. 保存返回 200，抽屉关闭，材质列表出现 `TC32-TEMP`
+  2. 步骤 6 查到唯一 1 条 `material_recipe` 记录
+  3. 步骤 7 查到 2 行，**逐字段**：
+     - 第 1 行：`element_code='Ag'`、`element_name='银'`（**是字典值，不是用户没输入过的编号 `10001`**）、`default_pct=60.0000`、`is_locked=true`、`sort_order=1`
+     - 第 2 行：`element_code='Ni'`、`element_name='镍'`、`default_pct=40.0000`、`is_locked=true`、`sort_order=2`
+- 实际结果：
+- 优先级：P0
+- 清理：
+  ```sql
+  DELETE FROM material_recipe_element WHERE recipe_id IN (SELECT id FROM material_recipe WHERE code='TC32-TEMP');
+  DELETE FROM material_recipe WHERE code='TC32-TEMP';
+  ```
+  执行后重跑步骤 6 确认返回 0 行
+
+---
+
+## 九、工程自检（AC-12）
 
 ### TC-31　前端编译与静态自检
 - 对应：AC-12
 - 前置数据：worktree `/home/joii/project/cpq/.claude/worktrees/task-0812-material-element-select`
 - 步骤：
-  1. `cd cpq-frontend && npx tsc --noEmit -p tsconfig.json`
-  2. `curl -s --noproxy '*' -o /dev/null -w '%{http_code}' http://localhost:5174/src/pages/config/MaterialRecipeEditDrawer.tsx`
-- 期望结果：步骤 1 输出 0 个 error；步骤 2 输出 `200`
+  1. `tsc` 检查**必须在 worktree 内的 `cpq-frontend/` 下跑**（不是主仓 `/home/joii/project/cpq/cpq-frontend`）：
+     `cd /home/joii/project/cpq/.claude/worktrees/task-0812-material-element-select/cpq-frontend && npx tsc --noEmit -p tsconfig.json`
+     跑到主仓 = 测的是未包含本次改动的代码树 = 假绿，见 `任务平台规则.md` §6「后端测试」同款陷阱在前端同样适用
+  2. Vite 200 验证：共享的 `5174` dev server 跑的是**主工作区已合并代码**，此刻特性分支尚未合并，直接 `curl localhost:5174` 验的是旧文件，验完也是假绿。**二选一**：
+     - **方案 A（合并前验证，推荐）**：在 worktree 内起临时 vite（不装依赖，软链复用主仓 `node_modules`）：
+       ```bash
+       cd /home/joii/project/cpq/.claude/worktrees/task-0812-material-element-select/cpq-frontend
+       ln -sfn /home/joii/project/cpq/cpq-frontend/node_modules node_modules
+       npx vite --port 5199 &
+       sleep 3
+       curl -s --noproxy '*' -o /dev/null -w '%{http_code}\n' http://localhost:5199/src/pages/config/MaterialRecipeEditDrawer.tsx
+       kill %1   # 验完关掉临时进程，不留后台残留
+       ```
+       期望 `200`
+     - **方案 B（标注延后）**：本步骤标注「延后到合并 master 后于 5174 复验」，在 `test-report.md` 里注明执行时机是合并后而非本轮，不得在合并前用 5174 的 200 当证据
+- 期望结果：步骤 1 输出 0 个 error；步骤 2（方案 A 或方案 B 复验时）输出 `200`
 - 实际结果：
 - 优先级：P0
 
@@ -441,10 +502,22 @@
 | AC-7 | TC-03 |
 | AC-8 | TC-04、TC-05 |
 | AC-9 | TC-01、TC-18（间接） |
-| AC-10 | TC-15（错误提示）、TC-28、TC-29、TC-30 |
+| AC-10 | TC-15（错误提示 + 误报防护）、TC-28、TC-29、TC-30 |
 | AC-11 | TC-30 |
 | AC-12 | TC-31 |
+| 主流程新建端到端落库（补） | TC-32 |
 
-FR 补充覆盖（未被 AC 直接点名但需求文档 §4 列出）：FR-5/D7→TC-11、TC-16；FR-6→TC-10、TC-14；FR-7→TC-04/05/13/17/20；FR-9→TC-18/19；FR-10→TC-15；D3→TC-13；D12/权限→TC-26/27；backtask §6 回归→TC-21/22/23/24/25。
+FR 补充覆盖（未被 AC 直接点名但需求文档 §4 列出）：FR-5/D7→TC-11、TC-16；FR-6→TC-10、TC-14；FR-7→TC-04/05/13/17/20；FR-9→TC-18/19；FR-10→TC-15；D3→TC-13；D12/权限→TC-26/27；backtask §6 回归→TC-21/22/23/24/25；新建端到端落库→TC-32。
 
-共 **31 条**用例（TC-01 ~ TC-31）。
+共 **32 条**用例（TC-01 ~ TC-32）。
+
+## 返修记录（主线首轮审核，2026-08-12）
+
+| # | 问题 | 处理 |
+|---|---|---|
+| 硬错误 1 | TC-31 用共享 5174 验未合并代码，假绿 | 改为 worktree 内临时 vite（端口 5199）方案 A / 合并后复验方案 B 二选一；`tsc` 明确要求在 worktree `cpq-frontend/` 下跑 |
+| 硬错误 2 | TC-15 未断言「加载失败不得误判正常行为脏数据」 | 补 3 条断言：00005 三行不得飘红「原值…」、拦截文案不得用「不在元素字典中」这套脏值文案；改用 `00005` 而非新建抽屉执行 |
+| 缺失 3 | 新建入口缺端到端落库用例 | 新增 TC-32，`TC32-TEMP` 材质 2 行元素落库 SQL 断言 + 清理 |
+| 数据风险 4 | TC-03 未声明 `element_no` 变 NULL 是既有行为；TC-04/05 会耗尽仅有的 2 条脏数据样本 | TC-03 加说明；TC-05 改为只验阻断态不重选保存，保留 `00262` 为活样本，并给 992 的脏数据重建 SQL |
+| 裁决 5 | TC-17 空串行期望 | 维持不变（主线已裁决：空串按「未选择」处理） |
+| 小改 6 | TC-12/13 停用元素的恢复方式与执行顺序不明确 | 明确恢复只能走「元素」Tab 编辑抽屉 PUT，不是再 DELETE 一次；固定「先 12 后 13、统一还原一次」的执行顺序 |
