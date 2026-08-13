@@ -119,12 +119,31 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
 
   // task-0812：元素行回显 —— 必须等字典就绪（dictLoading=false）才能做「字典外脏值」判定（FR-7），
   // 否则字典未到时会把所有行误判为 unmatched。
+  // 【必修】dictError=true 时（字典加载失败）同样不得判定 unmatched：byCode 此时是空 Map，
+  // 若不特判会把「网络故障」诬告成「字典外脏值」，把正常材质的每一行都判成脏数据并阻断保存。
+  // unmatched 语义收紧为「字典确实加载成功、且确实查不到这个 elementCode」，仅在 dictError=false 时才可能为 true。
   useEffect(() => {
     if (!open) return;
     if (editingDetail) {
       if (dictLoading) return;
       setElements(editingDetail.elements.map(e => {
-        const hit = byCode.get(e.elementCode);
+        if (dictError) {
+          // 字典加载失败：无法判定是否在字典中，保留原始值但不置为 unmatched（断言①）；
+          // elementNo 置空是因为没有字典可反查稳定标识，Select 暂无法回显选中态。
+          return {
+            elementNo: null,
+            elementCode: e.elementCode,
+            elementName: e.elementName,
+            unmatched: false,
+            defaultPct: normalizeDecimalString(e.defaultPct),
+            minPct: e.minPct == null ? null : normalizeDecimalString(e.minPct),
+            maxPct: e.maxPct == null ? null : normalizeDecimalString(e.maxPct),
+            isLocked: e.isLocked,
+            sortOrder: e.sortOrder,
+          };
+        }
+        // 空字符串视为「未选择」而非「字典外脏值」，走 FR-9 空值拦截，避免红字提示「原值「(空)」…」造成误导（可选项，一并处理）
+        const hit = e.elementCode ? byCode.get(e.elementCode) : undefined;
         if (hit) {
           // D8：符号/中文名完全跟随字典当前值，不回显历史手填值
           return {
@@ -143,7 +162,7 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
           elementNo: null,
           elementCode: e.elementCode,   // 保留原文，供红字提示「原值「X」」展示
           elementName: e.elementName,
-          unmatched: true,
+          unmatched: !!e.elementCode,   // 空字符串不判脏值，交给 FR-9「请选择元素」兜底
           defaultPct: normalizeDecimalString(e.defaultPct),
           minPct: e.minPct == null ? null : normalizeDecimalString(e.minPct),
           maxPct: e.maxPct == null ? null : normalizeDecimalString(e.maxPct),
@@ -158,7 +177,7 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
         isLocked: true, sortOrder: 1,
       }]);
     }
-  }, [open, editingDetail, dictLoading, byCode]);
+  }, [open, editingDetail, dictLoading, dictError, byCode]);
 
   const onRecipeTypeChange = (t: 'locked' | 'editable' | 'partial') => {
     setRecipeType(t);
@@ -206,6 +225,12 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
+      // task-0812【必修·顺带确认】字典加载失败时，所有行 elementNo 均为 null，
+      // 若继续走下面的「请为第 N 行选择元素」会误导用户以为是自己漏选，实际是加载故障，需给更准确的提示并整体拦截。
+      if (dictError) {
+        message.error('元素字典加载失败，无法校验元素，请关闭抽屉重新打开后再保存');
+        return;
+      }
       // task-0812 FR-9：未选元素
       const emptyIdx = elements.findIndex(e => !e.elementNo);
       if (emptyIdx >= 0) {
@@ -295,7 +320,7 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
                 value={r.elementNo ?? undefined}
                 placeholder="请选择元素"
                 loading={dictLoading}
-                status={r.unmatched ? 'error' : undefined}
+                status={r.unmatched ? 'error' : (dictError ? 'warning' : undefined)}
                 options={options}
                 filterOption={filterElementOption as any}
                 notFoundContent={dictError ? '元素字典加载失败' : '未找到该元素，请先到「主数据维护 → 元素」维护后再选择'}
@@ -303,7 +328,12 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, editingDetail, onClos
               />
               {selectedItem?.status === 'INACTIVE' && <Tag color="default">已停用</Tag>}
             </div>
-            {r.unmatched && (
+            {dictError ? (
+              // 【必修·断言②】字典加载失败：不诬告为脏数据，明确提示是网络/加载问题而非用户数据坏了
+              <div style={{ color: '#faad14', fontSize: 12, marginTop: 4 }}>
+                元素字典加载失败，暂无法显示原选择，请关闭抽屉重新打开重试
+              </div>
+            ) : r.unmatched && (
               <div style={{ color: '#ff4d4f', fontSize: 12, marginTop: 4 }}>
                 原值「{r.elementCode || '(空)'}」不在元素字典中，请重新选择
               </div>
