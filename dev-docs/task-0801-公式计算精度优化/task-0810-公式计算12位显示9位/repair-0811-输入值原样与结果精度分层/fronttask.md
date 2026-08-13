@@ -2,7 +2,7 @@
 
 ## 1. 改动范围
 
-- `src/utils/precision.ts`：新增 `FORMULA_RESULT_SCALE`、`PRODUCT_CARD_SUBTOTAL_SCALE`、`QUOTATION_TOTAL_SCALE`；保留 `CALCULATION_SCALE=12`。三个结果常量当前均为 9，但不得互相引用；注释标明未来从系统参数覆盖。
+- `src/utils/precision.ts`：新增 `FORMULA_RESULT_SCALE=9`、`PRODUCT_CARD_SUBTOTAL_SCALE=9`、`QUOTATION_TOTAL_SCALE=9`；保留 `CALCULATION_SCALE=12`。三个结果常量不得互相引用；注释标明未来从系统参数覆盖。
 - `src/utils/losslessJson.ts`：修正 `项次/_项次` 乱码；输入数值按字段语义保留原十进制文本，结构整数保持 number。
 - `QuotationWizard.tsx` 与 draft payload builder：不对 `componentData.rowData` 中的输入字段做统一 decimal 规整；公式结果按 9 位生成。
 - `QuotationStep2.tsx`、`tabTotalLines.ts`、Step3/总额相关 helper：产品卡片小计和报价总金额分别调用独立结果精度函数。

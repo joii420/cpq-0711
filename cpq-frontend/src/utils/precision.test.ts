@@ -35,6 +35,8 @@ describe('precision policy', () => {
     expect(FORMULA_RESULT_SCALE).toBe(9);
     expect(PRODUCT_CARD_SUBTOTAL_SCALE).toBe(9);
     expect(QUOTATION_TOTAL_SCALE).toBe(9);
+    expect(formatProductCardSubtotal('1.2345678905')).toBe('1.234567891');
+    expect(formatQuotationTotal('1.2345678905')).toBe('1.234567891');
     expect(formatFormulaResult('1.2345678905')).toBe('1.234567891');
     expect(formatProductCardSubtotal('1.2345678905', 7)).toBe('1.2345679');
     expect(formatQuotationTotal('1.2345678905', 8)).toBe('1.23456789');

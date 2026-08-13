@@ -340,7 +340,7 @@ class DraftPrecisionLifecycleHttpTest {
     @Order(5)
     void inputNumberRoundTripsVerbatimAndFormulaNumericTokenIsAtomic400() throws Exception {
         Fixture fixture = createFixture();
-        String rowData = "[{\"rowKey\":\"R0\",\"项次\":1,\"输入单价\":\"1.2300\","
+        String rowData = "[{\"rowKey\":\"R0\",\"row_index\":0,\"项次\":1,\"输入单价\":\"1.2300\","
                 + "\"公式金额\":\"0.410000001\",\"amount\":\"" + VALUE_A + "\"}]";
         String body = singleLineDraft(fixture, rowData);
 
@@ -348,6 +348,7 @@ class DraftPrecisionLifecycleHttpTest {
                 .put("/api/cpq/quotations/" + fixture.quotationId() + "/draft");
         assertEquals(200, saved.statusCode(), saved.asString());
         String stored = componentRowData(fixture.quotationId());
+        assertTrue(stored.contains("\"row_index\": 0") || stored.contains("\"row_index\":0"), stored);
         assertTrue(stored.contains("\"项次\": 1") || stored.contains("\"项次\":1"), stored);
         assertTrue(stored.contains("\"输入单价\": \"1.2300\"")
                 || stored.contains("\"输入单价\":\"1.2300\""), stored);

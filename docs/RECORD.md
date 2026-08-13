@@ -5499,3 +5499,9 @@ render() 用 lineItems.get(0).quotationId 设 QuotationIdContext，
 **验收证据**：真实 `PUT /draft` 接受 `项次:1`，DB/GET 逐字保持 `"1.2300"`；公式 number 返回 400 且 DB MD5 指纹不变。冻结元数据校验查询在 N=2/2N=4 时均为 1 条 SQL；生产入口按 7/8、8/7 双向验证无串用。后端指定复验 22/22、前端全量 95 文件/1151 用例、TypeScript、前后端生产构建、V385 21/21 `numeric(26,12)` 均通过；无新增迁移。
 
 **残余风险**：仓库 Playwright `quotation-flow.spec.ts` 的旧“西门子”客户 fixture 返回 No data，真实三视图用例环境阻塞；登录、新建报价页与控制台无运行时错误，三视图/快照自动化通过。闭合 `BL-0162`。
+
+## [2026-08-11] 报价草稿 - 修复 row_index 被误判为无冻结字段元数据
+
+**涉及文件**：`DecimalRequestValidator.java`、`DecimalRequestContractTest.java`、`DraftPrecisionLifecycleHttpTest.java`。
+**根因与修复**：`row_index` 是系统行定位结构字段，按设计不进入组件冻结 `fields`；repair-0811 新增的字段感知校验未复用既有结构整数白名单，导致 `row_index:0` 被当成未知业务 numeric token 拒绝。字段感知校验现于冻结元数据判断前复用结构整数规则：整数放行，小数仍拒绝；未知业务数字与公式 numeric token 的严格校验不变。
+**验证证据**：指定后端 4 类测试共 29 项通过。真实 HTTP 草稿 PUT 携带 `row_index:0` 返回 200，DB `row_data` 保持数字 0；`row_index:0.5`、未知业务数字及公式 numeric token 仍返回错误，公式失败请求保持原子零写入。无 DDL、无新增查询、无 N+1。

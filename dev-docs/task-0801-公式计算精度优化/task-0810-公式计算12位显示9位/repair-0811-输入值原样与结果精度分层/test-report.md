@@ -66,3 +66,10 @@ subtotal: isDecimalString(cd.subtotal) ? normalizeDecimalString(cd.subtotal) : '
 原 QA-P0-01、QA-P0-02、QA-P0-03 均已关闭。指定后端复验结果：PrecisionPolicy 15/15、IndependentResultScaleProductionEntry 1/1、DraftPrecisionLifecycleHttp 6/6，0 failure/error/skip。结合前轮前端全量 95 files/1151 tests、TypeScript、数据库 V385/21 列证据，AC-1~AC-12 准入。
 
 唯一残余风险：真实三视图 Playwright 使用的旧“西门子”fixture 当前无数据，无法完成同一真实 DRAFT 的浏览器三视图观察；已有三视图/快照自动化通过，此环境数据问题不记为本次缺陷。
+
+## 5. 2026-08-11 row_index 回归复验
+
+- 修复项：字段感知 `rowData` 校验复用结构整数白名单，`row_index` 无需也不得伪装成冻结业务字段。
+- 正向：真实草稿 PUT 携带 `row_index:0` 返回 200，数据库 JSON 保持数字 0。
+- 反向：`row_index:0.5` 仍拒绝；未知业务 numeric token 仍拒绝；公式 numeric token 仍返回 400 且数据库指纹不变。
+- 回归：`DecimalRequestContractTest`、`DraftPrecisionLifecycleHttpTest`、`PrecisionPolicyTest`、`IndependentResultScaleProductionEntryTest` 共 29 项通过，0 failure/error/skip。

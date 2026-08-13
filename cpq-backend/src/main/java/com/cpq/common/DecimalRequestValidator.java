@@ -100,6 +100,10 @@ public final class DecimalRequestValidator {
 
     private static void validateFieldValue(JsonNode value, String path, String fieldName, String fieldType) {
         if (value == null || value.isNull()) return;
+        if (value.isNumber() && STRUCTURAL_INTEGER_KEYS.contains(fieldName)) {
+            if (isAllowedStructuralInteger(fieldName, value.decimalValue())) return;
+            throw numericToken(path, value.asText());
+        }
         if (fieldType == null || fieldType.isBlank()) {
             if (value.isNumber()) {
                 throw new BusinessException(400, path + " has no frozen field metadata; received numeric token "

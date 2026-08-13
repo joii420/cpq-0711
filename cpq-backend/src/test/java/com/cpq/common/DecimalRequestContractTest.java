@@ -187,8 +187,14 @@ class DecimalRequestContractTest {
                 "公式金额", "FORMULA");
 
         DecimalRequestValidator.validateRowData(
-                "[{\"项次\":1,\"输入单价\":\"1.2300\",\"说明\":\"原样\",\"公式金额\":\"0.410000001\"}]",
+                "[{\"row_index\":0,\"项次\":1,\"输入单价\":\"1.2300\",\"说明\":\"原样\",\"公式金额\":\"0.410000001\"}]",
                 "lineItems[0].componentData[0].rowData", fieldTypes);
+
+        var fractionalRowIndex = assertThrows(RuntimeException.class, () ->
+                DecimalRequestValidator.validateRowData(
+                        "[{\"row_index\":0.5}]",
+                        "lineItems[0].componentData[0].rowData", fieldTypes));
+        assertTrue(fractionalRowIndex.getMessage().contains("rowData[0].row_index"));
 
         var formulaNumber = assertThrows(RuntimeException.class, () ->
                 DecimalRequestValidator.validateRowData(
