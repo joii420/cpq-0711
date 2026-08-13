@@ -824,6 +824,14 @@ export function evaluateExpression(
   return result === null ? '0' : toCalculationString(result);
 }
 
+/**
+ * 数值一致性判定。
+ *
+ * 🚨 默认容差 1e-12 是「**同尺度**末位噪声容差」（两侧都在 CALCULATION_SCALE=12 上时）。
+ * **跨尺度比较必须先把两侧归一到同一尺度再调本函数**（如前端 12 位工作值 vs 后端 9 位
+ * 结果值，须先 formatFormulaResult 归一）——否则结构性尺度差恒 > 容差，判定必然恒 false。
+ * 反例见 repair-0812：不归一直接吃默认容差 ⇒ 报价编辑全屏误报 + 提交闸门 409 卡死。
+ */
 export function isWithinTolerance(
   frontendValue: DecimalValue,
   backendValue: DecimalValue,

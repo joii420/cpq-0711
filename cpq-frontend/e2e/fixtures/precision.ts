@@ -42,10 +42,19 @@ export const PRECISION_CASES = {
   negativeDisplay: '-1.234567891',
   largeWork: '98765431.123456789012',
   largeDisplay: '98765431.123456789',
+  // TC-076（阻断组）：FR-12 已由 repair-0812 作废改写（问题说明.md §5/§7）——对账不再按 12 位
+  // 工作值比，而是先把两侧归一到 FORMULA_RESULT_SCALE(9) 再比。这对哨兵的差异精确落在归一后的
+  // 第 9 位（frontendFraction 第 9 位 '9' vs backendFraction 第 9 位 '8'），归一后仍不同，
+  // 必须继续阻断提交——对应 repair-0812 test.md TC-09 / 单测 TC-02b 的"最小真差异边界"。
   reconcileFrontend: '7.123456789111',
-  reconcileBackend: '7.123456789499',
+  reconcileBackend: '7.123456788499',
   reconcileDisplay: '7.123456789',
   recoveredWork: '7.123456789112',
+  // TC-076b（放行组）：差异只落在第 10~12 位（前 9 位完全相同），归一后两侧相等 —— 这正是
+  // 被作废的旧 FR-12 曾要求阻断、repair-0812 裁决改为必须放行的那对值。
+  reconcileSubScaleFrontend: '7.123456789111',
+  reconcileSubScaleBackend: '7.123456789499',
+  reconcileSubScaleDisplay: '7.123456789',
 } as const satisfies Record<string, DecimalString>;
 
 const BACKEND_URL = process.env.PW_BACKEND_URL || 'http://localhost:8081';

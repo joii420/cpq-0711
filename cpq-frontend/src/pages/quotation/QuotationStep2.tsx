@@ -35,6 +35,7 @@ import { findDuplicateRowKeys } from './rowDedup';
 import { sumTabColumns, sumAmountFromByCol, AMOUNT_TOTAL_KEY } from './tabTotalLines';
 import {
   isDecimalString,
+  formatFormulaResult,
   formatProductCardSubtotal,
   normalizeDecimalString,
   sumDecimal,
@@ -475,6 +476,35 @@ function precisionValue(value: unknown): DecimalString | null {
   if (typeof scalar === 'number') return null;
   const formatted = scalar == null ? null : formatPathValue(scalar);
   return isDecimalString(formatted) ? normalizeDecimalString(formatted) : null;
+}
+
+/**
+ * D4 判定（repair-0812 改）：**先把两侧归一到结果精度（FORMULA_RESULT_SCALE = 9），再比**。
+ *
+ * 为什么必须归一：前端 formulaCache 是 12 位工作值（toCalculationString），后端快照
+ * formulaResults 是 9 位结果值（PrecisionPolicy.roundFormulaResult）——两侧尺度天然差 3 位，
+ * 差值上界 5e-10，而默认容差 1e-12 比它小 500 倍 ⇒ 不归一就恒告警且永不消解。
+ * 非数字按字符串比、一边缺失算差异 —— 与改动前一致。
+ *
+ * ⚠️ 注意：归一之后两侧都是精确的 9 位小数，最小非零差是 1e-9，恒 > 默认容差 1e-12 ——
+ * 也就是说 `isWithinTolerance` 的容差在**本调用点**永远不会生效，判定实际等价于
+ * 「9 位上的精确相等」。保留它是为了与其它调用点保持同一入口，不要误以为它还在吸收噪声。
+ * 已知限制（repair-0812 §5.1 L-2）：若前后端各自的 12 位工作值有 1 ulp 级差异、且恰好
+ * 落在 9 位舍入的中点附近，会一个进位一个不进位 → 归一后差 1e-9 → 仍误报且不可消解。
+ * 前端单侧堵不上（我们手上没有后端的 12 位工作值），只有方案 C 能闭合。
+ *
+ * 挪到模块作用域（repair-0812）：原为组件内局部闭包，不依赖任何组件 state/props，
+ * 提到模块级后可像 `computeAllFormulas` 一样被单测直接 import 校验真实生产逻辑。
+ */
+function valuesReconcile(a: any, b: any): boolean {
+  const an = precisionValue(a);
+  const bn = precisionValue(b);
+  if (an != null && bn != null) {
+    return isWithinTolerance(formatFormulaResult(an), formatFormulaResult(bn));
+  }
+  if ((a == null || a === '') && (b == null || b === '')) return true;
+  if ((a == null || a === '') !== (b == null || b === '')) return false; // 一边有值一边缺失
+  return String(a) === String(b);
 }
 
 /**
@@ -2739,15 +2769,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     frontendValue: any; backendValue: any; frontendInputs: Record<string, any>; backendInputs: Record<string, any>;
   }>>({});
 
-  /** D4 判定：十进制值按 10^-12 工作精度比较，非数字按字符串比。 */
-  const valuesReconcile = (a: any, b: any): boolean => {
-    const an = precisionValue(a);
-    const bn = precisionValue(b);
-    if (an != null && bn != null) return isWithinTolerance(an, bn);
-    if ((a == null || a === '') && (b == null || b === '')) return true;
-    if ((a == null || a === '') !== (b == null || b === '')) return false; // 一边有值一边缺失
-    return String(a) === String(b);
-  };
+  // valuesReconcile 已提到模块作用域（repair-0812，见 precisionValue 定义之后），
+  // 组件内直接引用该模块级函数，逻辑不再是局部闭包。
 
   /** 行输入摘要：行键字段 + 该公式引用到的字段的近似——取本行全部非 FORMULA/LIST_FORMULA 字段值。 */
   const buildRowInputs = (row: Record<string, any> | undefined, driverRow: Record<string, any> | undefined): Record<string, any> => {
@@ -4598,4 +4621,5 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
 
 export { computeProductSubtotal, computeAllFormulas };
 export { isCardValueFailed };
+export { valuesReconcile }; // repair-0812: 对账口径归一判定，供单测直接校验生产逻辑
 export default QuotationStep2;

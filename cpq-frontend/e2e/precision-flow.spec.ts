@@ -1,11 +1,14 @@
 /**
- * task-0810 TC-073~076: 真实前后端精度联调。
+ * task-0810 TC-073~076 + repair-0812 TC-076b: 真实前后端精度联调。
  *
  * 运行前置：Stage H 必须加载确定性 SIMPLE 种子，并通过
  * PW_PRECISION_SEED_QUOTATION_NO 明确指定 quotationNo；种子契约见 fixtures/precision.ts。
  * 本文件只 copy 种子，不修改或删除 seed。copy 留在隔离库中，由协调者在整轮结束后
- * drop/restore 隔离库；测试内不得 DELETE 已提交报价/核价。除 TC-076 按需求篡改后端返回的
- * 第 10~12 位外，所有 API 都连真实后端；提交阻断和恢复均由真实 reconcile/submit 完成。
+ * drop/restore 隔离库；测试内不得 DELETE 已提交报价/核价。除 TC-076/TC-076b 按需求篡改后端返回的
+ * 小数位外，所有 API 都连真实后端；提交阻断/放行和恢复均由真实 reconcile/submit 完成。
+ *
+ * TC-076 的 FR-12 语义已由 repair-0812 作废改写（归一到 9 位结果精度再比较，而非按 12 位工作值
+ * 判定），详见 dev-docs/task-0801-公式计算精度优化/repair-0812-对账阈值与结果尺度不对称致误报/问题说明.md。
  */
 import { expect, test, type Route } from '@playwright/test';
 import Decimal from 'decimal.js';
@@ -272,7 +275,15 @@ test('TC-074 三视图: 报价编辑/详情报价逐值一致，详情核价独�
   )).toEqual(canonicalExpected(PRECISION_SENTINELS));
 });
 
-test('TC-076 第10~12位差异: route篡改进入真实reconcile，真实submit阻断；unroute后恢复提交', async ({ page }) => {
+/**
+ * FR-12 已由 repair-0812 作废改写（见
+ * dev-docs/task-0801-公式计算精度优化/repair-0812-对账阈值与结果尺度不对称致误报/问题说明.md §5/§7）：
+ * 对账不再按 12 位工作值直接比较双方，而是先把两侧归一到 FORMULA_RESULT_SCALE(9) 再比
+ * （`QuotationStep2.tsx#valuesReconcile`）。原 FR-12「不因显示同为 9 位而放过第 10~12 位差异」
+ * 因后端从不产出 12 位对比基准而**不可执行**，已被推翻。TC-076 按新语义重写：
+ * 差异必须落在归一后仍然存在的第 9 位才会阻断；差异只落在第 10~12 位（TC-076b）则必须放行。
+ */
+test('TC-076 第9位差异（归一后仍不同）: route篡改进入真实reconcile，真实submit阻断；unroute后恢复提交', async ({ page }) => {
   const quotationId = requireCreatedQuotation();
   await loginAsAdmin(page);
   await openQuotationStep2(page, quotationId);
@@ -292,8 +303,10 @@ test('TC-076 第10~12位差异: route篡改进入真实reconcile，真实submit�
   expect(frontendInteger, 'route 篡改不得改变整数部分').toBe(backendInteger);
   expect(frontendFraction, 'route 前端 sentinel 必须精确 12 位').toHaveLength(12);
   expect(backendFraction, 'route 后端 sentinel 必须精确 12 位').toHaveLength(12);
-  expect(frontendFraction.slice(0, 9), 'route 篡改不得改变前 9 位小数').toBe(backendFraction.slice(0, 9));
-  expect(frontendFraction.slice(9), 'route 必须只让第 10~12 位产生差异').not.toBe(backendFraction.slice(9));
+  // 新语义：差异必须落在归一比较窗口（前 9 位）之内才会被阻断——前 8 位相同，第 9 位精确不同。
+  expect(frontendFraction.slice(0, 8), 'route 篡改前 8 位小数必须保持不变').toBe(backendFraction.slice(0, 8));
+  expect(frontendFraction.slice(8, 9), 'route 差异必须精确落在第 9 位（归一后仍不同才会阻断）')
+    .not.toBe(backendFraction.slice(8, 9));
 
   let routeMutationCount = 0;
   const mutationHandler = async (route: Route) => {
@@ -327,7 +340,7 @@ test('TC-076 第10~12位差异: route篡改进入真实reconcile，真实submit�
   const report = reportResponse.request().postDataJSON();
   expect(routeMutationCount, 'page.route 必须实际篡改一次真实响应').toBe(1);
   const diff = (report?.diffs ?? []).find((item: any) => item?.fieldName === PRECISION_FIXTURE.resultField);
-  expect(diff, '篡改后的第10~12位差异必须进入 reconcile-report').toBeDefined();
+  expect(diff, '篡改后归一仍不同的第9位差异必须进入 reconcile-report').toBeDefined();
   expect(diff.tabName).toBe(PRECISION_FIXTURE.tabName);
   expect(diff.rowKey).toBe(PRECISION_ROW_KEYS[0]);
   expect(diff.fieldName).toBe(PRECISION_FIXTURE.resultField);
@@ -335,12 +348,14 @@ test('TC-076 第10~12位差异: route篡改进入真实reconcile，真实submit�
   expect(diff.backendValue).toBe(PRECISION_CASES.reconcileBackend);
   expect(typeof diff.frontendValue).toBe('string');
   expect(typeof diff.backendValue).toBe('string');
-  // 既有 S2 契约：差异态以警告替代数值，并在 tooltip 保留两端完整工作值。
+  // 既有 S2 契约：差异态以警告替代数值，并在 tooltip 保留两端完整 12 位工作值——
+  // 这条不因 FR-12 改写而变化：repair-0812 只改判定用的比较值（归一到 9 位），
+  // 展示/上报用的仍是原始 12 位工作值（api.md §1.2）。
   const mismatchIndicator = card
     .locator('table.qt-cost-table:visible tbody tr')
     .nth(PRECISION_FIXTURE.positiveRowIndex)
     .locator('.qt-formula-cell-error');
-  await expect(mismatchIndicator, '第10~12位差异必须显示既有 S2 警告标记').toHaveText('⚠');
+  await expect(mismatchIndicator, '第9位真实差异必须显示既有 S2 警告标记').toHaveText('⚠');
   const mismatchTooltip = await mismatchIndicator.getAttribute('title');
   expect(mismatchTooltip, 'S2 tooltip 必须保留前端完整12位工作值').toContain(
     `前端 ${PRECISION_CASES.reconcileFrontend}`,
@@ -348,14 +363,16 @@ test('TC-076 第10~12位差异: route篡改进入真实reconcile，真实submit�
   expect(mismatchTooltip, 'S2 tooltip 必须保留后端完整12位工作值').toContain(
     `后端 ${PRECISION_CASES.reconcileBackend}`,
   );
+  // 新语义：两端工作值归一到 9 位结果精度后，第 9 位仍然不同——两侧的 9 位显示必须不同，
+  // 这正是"归一后仍是真差异，必须阻断提交"的判定依据（旧断言曾要求两者相同，已随 FR-12 推翻）。
   const reconciledDisplays = [
     PRECISION_CASES.reconcileFrontend,
     PRECISION_CASES.reconcileBackend,
   ].map(value => new Decimal(value).toDecimalPlaces(9, Decimal.ROUND_HALF_UP).toFixed());
-  expect(reconciledDisplays, '两端工作值虽第10~12位不同，HALF_UP 9位显示必须相同').toEqual([
-    PRECISION_CASES.reconcileDisplay,
-    PRECISION_CASES.reconcileDisplay,
-  ]);
+  expect(reconciledDisplays[0], '前端工作值归一到 9 位结果精度').toBe(PRECISION_CASES.reconcileDisplay);
+  expect(reconciledDisplays[1], '后端工作值归一到 9 位结果精度').not.toBe(PRECISION_CASES.reconcileDisplay);
+  expect(reconciledDisplays[0], '归一后两端 9 位显示必须不同——这是必须阻断提交的理由')
+    .not.toBe(reconciledDisplays[1]);
 
   await advanceToSubmit(page);
   const blockedSubmitPromise = page.waitForResponse((response) =>
@@ -363,7 +380,7 @@ test('TC-076 第10~12位差异: route篡改进入真实reconcile，真实submit�
   );
   await page.getByRole('button', { name: /提交审批$/ }).click();
   const blockedSubmit = await blockedSubmitPromise;
-  expect(blockedSubmit.status(), '真实 submit 应按12位对账返回409').toBe(409);
+  expect(blockedSubmit.status(), '真实 submit 应按 9 位结果精度归一对账返回409').toBe(409);
   const blockedBody = await blockedSubmit.json();
   expect(blockedBody?.code, '阻断 submit API code').toBe(409);
   const blockedPayload = blockedBody?.data;
@@ -461,4 +478,94 @@ test('TC-076 第10~12位差异: route篡改进入真实reconcile，真实submit�
     submittedLines[0].costingValues,
     '提交后核价精度快照',
   ), '提交后核价精度快照不得变化').toEqual(canonicalExpected(PRECISION_SENTINELS));
+});
+
+/**
+ * repair-0812 新增负例，守的是本次 repair 的核心行为：第 10~12 位差异（归一到 9 位结果精度后
+ * 完全相等）不再阻断提交。这正是被作废的旧 FR-12 曾要求"仍阻断"、repair-0812 裁决改为"必须放行"
+ * 的那对哨兵值（问题说明.md §5 选定方案 + §7 裁决记录）。
+ * 与 TC-076 共享 fixture 里的篡改工具但使用独立 copy 的种子单据（不复用 TC-076 已提交为
+ * SUBMITTED 的那份），避免对已提交单据做二次提交这种无效状态迁移。
+ */
+test('TC-076b 第10~12位差异（归一后相等）: 不再阻断提交，真实submit直接放行', async ({ page }) => {
+  await loginAsAdmin(page);
+  const quotationId = await copyPrecisionSeed(page);
+  await openQuotationStep2(page, quotationId);
+  await assertVisibleProductCards(page, [PRECISION_PARTS.simple]);
+  const card = await productCardByPartNo(page, PRECISION_PARTS.simple);
+  await openCardTab(page, card);
+
+  const [frontendInteger, frontendFraction = ''] = PRECISION_CASES.reconcileSubScaleFrontend.split('.');
+  const [backendInteger, backendFraction = ''] = PRECISION_CASES.reconcileSubScaleBackend.split('.');
+  expect(frontendInteger, 'route 篡改不得改变整数部分').toBe(backendInteger);
+  expect(frontendFraction, '放行组前端 sentinel 必须精确 12 位').toHaveLength(12);
+  expect(backendFraction, '放行组后端 sentinel 必须精确 12 位').toHaveLength(12);
+  expect(frontendFraction.slice(0, 9), '放行组前 9 位小数必须相同（归一到结果精度后应判一致）')
+    .toBe(backendFraction.slice(0, 9));
+  expect(frontendFraction.slice(9), '放行组差异必须只落在第 10~12 位').not.toBe(backendFraction.slice(9));
+
+  let routeMutationCount = 0;
+  const mutationHandler = async (route: Route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    rewriteQuoteCardEditResponse(body, PRECISION_CASES.reconcileSubScaleFrontend, PRECISION_CASES.reconcileSubScaleBackend);
+    routeMutationCount += 1;
+    await route.fulfill({
+      response,
+      contentType: 'application/json; charset=utf-8',
+      body: JSON.stringify(body),
+    });
+  };
+  await page.route('**/api/cpq/quotations/line-items/*/quote-card-edit', mutationHandler);
+
+  const reportPromise = page.waitForResponse((response) =>
+    response.request().method() === 'POST' && response.url().includes('/reconcile-report'),
+  );
+  await editPrecisionValue(
+    page,
+    card,
+    PRECISION_FIXTURE.positiveRowIndex,
+    PRECISION_CASES.reconcileSubScaleFrontend,
+  );
+  const reportResponse = await reportPromise;
+  expect(reportResponse.status(), 'reconcile-report HTTP status').toBe(202);
+  const reportBody = await reportResponse.json();
+  expect(reportBody?.code, 'reconcile-report API code').toBe(202);
+  expect(reportBody?.message, 'reconcile-report API message').toBe('accepted');
+  expect(routeMutationCount, 'page.route 必须实际篡改一次真实响应').toBe(1);
+  // 核心断言：归一到 9 位结果精度后两端相等 —— 本轮不得记录任何精度差异。
+  expect(reportBody?.data?.recorded, '归一后相等，本轮 pending 差异数必须为 0').toBe(0);
+  const report = reportResponse.request().postDataJSON();
+  expect(report?.diffs ?? [], '第10~12位差异归一后相等，上报的 diffs 必须为空').toEqual([]);
+
+  // 核心断言：不得出现既有 S2 警告标记（该单元格没有真实分歧）。
+  const mismatchIndicator = card
+    .locator('table.qt-cost-table:visible tbody tr')
+    .nth(PRECISION_FIXTURE.positiveRowIndex)
+    .locator('.qt-formula-cell-error');
+  await expect(mismatchIndicator, '归一后相等不得显示 S2 警告标记').toHaveCount(0);
+  assertExactDisplay(
+    await readFieldText(card, PRECISION_FIXTURE.positiveRowIndex),
+    PRECISION_CASES.reconcileSubScaleDisplay,
+  );
+
+  await page.unroute('**/api/cpq/quotations/line-items/*/quote-card-edit', mutationHandler);
+
+  // 核心断言：真实 submit 必须直接放行（200），不得返回 409 RECONCILE_PENDING。
+  await advanceToSubmit(page);
+  const submitPromise = page.waitForResponse((response) =>
+    response.request().method() === 'POST' && /\/quotations\/[^/]+\/submit(?:\?|$)/.test(response.url()),
+  );
+  await page.getByRole('button', { name: /提交审批$/ }).click();
+  const submitResponse = await submitPromise;
+  expect(submitResponse.status(), '第10~12位差异归一后相等，真实 submit 不得阻断，必须直接放行').toBe(200);
+  const submitBody = await submitResponse.json();
+  expect(submitBody?.code, '成功 submit API code').toBe(200);
+  expect(submitBody?.data?.status, '成功 submit 响应状态').toBe('SUBMITTED');
+  await expect(page.locator('.ant-message-notice-content').filter({ hasText: '报价单已提交审批' })).toBeVisible();
+
+  await expect.poll(async () => (await getQuotation(page, quotationId))?.status, {
+    timeout: 30_000,
+    message: '提交成功后真实 GET 必须返回 SUBMITTED',
+  }).toBe('SUBMITTED');
 });
