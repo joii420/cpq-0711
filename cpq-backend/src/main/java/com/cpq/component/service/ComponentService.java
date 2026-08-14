@@ -8,6 +8,8 @@ import com.cpq.component.entity.ComponentSqlView;
 import com.cpq.component.formula.TokenMappabilityValidator;
 import com.cpq.component.repository.ComponentSqlViewRepository;
 import com.cpq.quotation.service.BomTreeRenderService;
+import com.cpq.template.entity.Template;
+import com.cpq.template.service.PublishedTemplateReader;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -403,23 +405,55 @@ public class ComponentService {
      * 同一组件被多模板共用时一开全生效。现网实查：3 个开启该开关的组件
      * （COMP-0021__imp1__imp1 / COMP-0039 / COMP-0042）共 34 处模板引用，<b>全部在 COSTING 模板</b>。
      *
-     * <p>若该组件已被<b>任一</b> COSTING（{@code template.templateKind='COSTING'}）模板引用，
-     * 禁止把 {@code tabType} 改为 {@code BOM}（树渲染）——否则会把这些核价模板一并改成树渲染，
-     * 直接违反 AC-10 核价零回归门禁。报价侧树页签应<b>新建专用组件</b>，不复用核价侧已有树组件。
+     * <p><b>⚠️ 2026-08-14 repair-0814 收窄（重要，别改回去）</b>：原判据是「被<b>任一</b> COSTING 模板引用即拒绝」，
+     * 不过滤 {@code template.status}、不看是否已冻结。该判断在 task-0721（2026-07-21）成立——当时已发布模板
+     * 的渲染配置实时读活表 {@code component}。但 task-0806「模板发布全量冻结」（{@code 8d04336a}）把
+     * {@code tab_type} / {@code bom_recursive_expand} 双双冻进 {@code template_component_snapshot}，
+     * 读取收口到 {@link PublishedTemplateReader}，{@code refreshSnapshotsByComponent}（H1）整体退役
+     * ——<b>前提消失，老判据退化为纯误拦</b>（当时实测：61 条 COSTING 引用全已冻结、22 个组件被无谓锁死）。
+     *
+     * <p>现判据：<b>只有【尚未冻结】的 COSTING 引用才拦</b>，即
+     * {@code status ∉ {PUBLISHED, ARCHIVED}}（DRAFT，渲染期直读活表）
+     * 或 {@code status ∈ {PUBLISHED, ARCHIVED}} 但快照零行（D17 未冻结过渡态）。
+     * 判定委托 {@link PublishedTemplateReader#unfrozenAmong}，<b>不得</b>在此另写一份「什么叫已冻结」（AP-52）。
+     *
+     * <p>已冻结的核价模板放行，是因为改活表组件影响不到它们；下次<b>重新发布</b>时新配置才会生效，
+     * 而那一刻由 {@code TemplateService.publish()} 的树页签不变量断言把关（同期加入，见 repair-0814 D-2）。
      */
+    @SuppressWarnings("unchecked")
     private void assertNotReferencedByCostingTemplate(UUID componentId) {
         if (componentId == null) return; // 新建流程尚无 id，不存在既有模板引用，护栏天然不触发
-        Number count = (Number) em.createNativeQuery(
-                "SELECT count(*) FROM template_component tc " +
+
+        // ① 该组件的全部 COSTING 引用（SQL #1）。故意不在 SQL 里判冻结——「什么叫已冻结」
+        //    的唯一定义在 PublishedTemplateReader，散第二份必漂移（AP-52）。
+        List<UUID> costingTemplateIds = ((List<Object>) em.createNativeQuery(
+                "SELECT DISTINCT tc.template_id FROM template_component tc " +
                 "JOIN template t ON t.id = tc.template_id " +
                 "WHERE tc.component_id = :cid AND t.template_kind = 'COSTING'")
             .setParameter("cid", componentId)
-            .getSingleResult();
-        if (count != null && count.longValue() > 0) {
-            throw new BusinessException(400, "该组件已被 " + count.longValue() +
-                " 处核价(COSTING)模板引用，不能设为 BOM 树页签——会把这些核价模板一并改成树渲染，" +
-                "破坏核价侧零回归。报价侧树页签请新建专用组件。");
+            .getResultList()).stream()
+            .filter(Objects::nonNull)
+            .map(o -> o instanceof UUID u ? u : UUID.fromString(o.toString()))
+            .collect(Collectors.toList());
+        if (costingTemplateIds.isEmpty()) return;
+
+        // ② 只有【尚未冻结】的引用才算数（SQL #2、#3，与引用数 N 无关）。
+        List<Template> blocking = publishedTemplateReader.unfrozenAmong(costingTemplateIds);
+        if (blocking.isEmpty()) return;
+
+        // ③ 文案：点名具体模板 + 状态，且【多行】——前端 ComponentManagement#showSaveError 按
+        //    是否含 '\n' 分流，多行走常驻 notification（duration:0 + pre-wrap），单行走 3s toast。
+        //    这条提示要求用户去处理具体模板，必须常驻可读。见 api.md A-1。
+        StringBuilder sb = new StringBuilder();
+        sb.append("该组件被以下尚未冻结的核价(COSTING)模板引用，不能设为 BOM 树页签：");
+        for (Template t : blocking) {
+            sb.append("\n  · ").append(t.name)
+              .append(t.version == null || t.version.isBlank() ? "" : " " + t.version)
+              .append("（").append(t.status).append("）");
         }
+        sb.append("\n这些模板渲染时直接读取组件活配置，改为树页签会立即改变它们的渲染方式。");
+        sb.append("\n（已发布并已冻结的核价模板不受影响，故不在此列。）");
+        throw new BusinessException(400, sb.toString());
     }
 
     /**
@@ -450,6 +484,11 @@ public class ComponentService {
 
     // task-0806 B6：TemplateService 注入随 refreshSnapshotsByComponent（H1）整体退役一并移除
     // ——ComponentService 不再触碰任何模板 snapshot。
+
+    // repair-0814：只读地【问】某批模板是否已冻结，用于 tabType=BOM 护栏的判定收窄。
+    // 仍不写、不刷新任何 snapshot，B6 的边界未被破坏。
+    @Inject
+    PublishedTemplateReader publishedTemplateReader;
 
     @Inject
     ComponentSqlViewRepository sqlViewRepository;

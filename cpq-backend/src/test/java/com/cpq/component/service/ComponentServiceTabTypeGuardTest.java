@@ -6,6 +6,7 @@ import com.cpq.component.dto.CreateComponentRequest;
 import com.cpq.component.entity.Component;
 import com.cpq.template.entity.Template;
 import com.cpq.template.entity.TemplateComponent;
+import com.cpq.template.entity.TemplateComponentSnapshot;
 import io.quarkus.test.TestTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -238,5 +239,134 @@ class ComponentServiceTabTypeGuardTest {
         upd.tabType = "BOM";
         ComponentDTO updated = svc.update(dto.id, upd);
         assertEquals("BOM", updated.tabType);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // repair-0814（2026-08-14）：护栏判定收窄到「未冻结的引用」
+    //
+    // 背景：上面那条核心护栏用例 componentReferencedByCostingTemplate_cannotBecomeBomTab
+    // 构造的 COSTING 模板是 status="DRAFT" —— 恰好是「至今仍该拦」的那一档，因此它在本次
+    // 改造后【语义不变、仍然全绿】，一个字符都没改。这也正是本缺陷长期不被发现的原因：
+    // 「已冻结 PUBLISHED 引用 → 应放行」这条语义从来没有测试覆盖过。
+    //
+    // 下面 5 条补齐两个方向。测试目录：dev-docs/task-0806-模板发布全量冻结/
+    //   repair-0814-发布冻结后tabType护栏误拦/{问题说明.md, test.md}
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /** 建一张 COSTING 模板并把 component 绑上去，返回 (template, tc)。 */
+    private Object[] costingTemplateReferencing(UUID componentId, String status, String name) {
+        Template tpl = new Template();
+        tpl.templateSeriesId = UUID.randomUUID();
+        tpl.name = name;
+        tpl.version = "v1.0";
+        tpl.templateKind = "COSTING";
+        tpl.status = status;
+        tpl.createdAt = OffsetDateTime.now();
+        tpl.updatedAt = OffsetDateTime.now();
+        tpl.persist();
+
+        TemplateComponent tc = new TemplateComponent();
+        tc.templateId = tpl.id;
+        tc.componentId = componentId;
+        tc.tabName = "工序";
+        tc.sortOrder = 0;
+        tc.createdAt = OffsetDateTime.now();
+        tc.persist();
+        return new Object[]{tpl, tc};
+    }
+
+    /** 给某个 tc 落一行冻结快照（内容不重要，本护栏只关心「有没有行」）。 */
+    private void freeze(Template tpl, TemplateComponent tc, UUID componentId) {
+        TemplateComponentSnapshot s = new TemplateComponentSnapshot();
+        s.templateId = tpl.id;
+        s.templateComponentId = tc.id;
+        s.componentId = componentId;
+        s.sortOrder = 0;
+        s.tabName = tc.tabName;
+        s.persist();
+    }
+
+    /**
+     * TC-01（AC-1，本次修复的核心阴性用例）：引用来自**已冻结**的 PUBLISHED 核价模板 → 放行。
+     *
+     * <p>这就是 2026-08-14 用户撞到的场景（COMP-0233 被「核价模板-简易 v1.1(PUBLISHED)」引用）。
+     * 冻结后该模板渲染读 template_component_snapshot，改活表组件影响不到它 → 没有理由拦。
+     */
+    @Test
+    @TestTransaction
+    void referencedByFrozenPublishedCosting_canBecomeBomTab() {
+        ComponentDTO dto = svc.create(minimalRequest("测试组件-已冻结PUBLISHED引用"));
+        Object[] pair = costingTemplateReferencing(dto.id, "PUBLISHED", "核价模板-已冻结");
+        freeze((Template) pair[0], (TemplateComponent) pair[1], dto.id);
+
+        CreateComponentRequest upd = minimalRequest("测试组件-已冻结PUBLISHED引用");
+        upd.tabType = "BOM";
+        ComponentDTO updated = svc.update(dto.id, upd);
+
+        assertEquals("BOM", updated.tabType, "引用全部已冻结时应放行");
+        assertTrue(updated.bomRecursiveExpand, "放行后仍须自动同步 bomRecursiveExpand=true");
+    }
+
+    /** TC-04（AC-2）：ARCHIVED + 有快照，同样是已冻结 → 放行。 */
+    @Test
+    @TestTransaction
+    void referencedByFrozenArchivedCosting_canBecomeBomTab() {
+        ComponentDTO dto = svc.create(minimalRequest("测试组件-已冻结ARCHIVED引用"));
+        Object[] pair = costingTemplateReferencing(dto.id, "ARCHIVED", "核价模板-已归档");
+        freeze((Template) pair[0], (TemplateComponent) pair[1], dto.id);
+
+        CreateComponentRequest upd = minimalRequest("测试组件-已冻结ARCHIVED引用");
+        upd.tabType = "BOM";
+        assertEquals("BOM", svc.update(dto.id, upd).tabType);
+    }
+
+    /**
+     * TC-03（AC-3，阳性）：PUBLISHED 但**快照零行** = D17「未冻结」过渡态 → 仍须拦。
+     *
+     * <p>这一档最容易在实现时漏掉：只按 status 过滤就会错误放行，而这类模板渲染期
+     * 并不走冻结快照（PublishedTemplateReader 会识别为未冻结），配置外溢风险真实存在。
+     */
+    @Test
+    @TestTransaction
+    void referencedByPublishedButUnfrozenCosting_cannotBecomeBomTab() {
+        ComponentDTO dto = svc.create(minimalRequest("测试组件-PUBLISHED未冻结引用"));
+        costingTemplateReferencing(dto.id, "PUBLISHED", "核价模板-未冻结");
+        // 刻意不落快照
+
+        CreateComponentRequest upd = minimalRequest("测试组件-PUBLISHED未冻结引用");
+        upd.tabType = "BOM";
+        BusinessException ex = assertThrows(BusinessException.class, () -> svc.update(dto.id, upd));
+        assertEquals(400, ex.getCode());
+
+        Component reloaded = Component.findById(dto.id);
+        assertNull(reloaded.tabType, "被拦后 tabType 不应被改动");
+        assertFalse(reloaded.bomRecursiveExpand, "被拦后 bomRecursiveExpand 不应被改动");
+    }
+
+    /**
+     * TC-05 + TC-06（AC-2 / AC-6）：混合引用 —— 一张已冻结 PUBLISHED + 一张 DRAFT。
+     * 必须拦（因为有未冻结的那张），且文案**只点名未冻结的那张**，不把已冻结的算进去。
+     */
+    @Test
+    @TestTransaction
+    void mixedReferences_blocksAndNamesOnlyUnfrozenTemplate() {
+        ComponentDTO dto = svc.create(minimalRequest("测试组件-混合引用"));
+        Object[] frozenPair = costingTemplateReferencing(dto.id, "PUBLISHED", "核价模板-已冻结的那张");
+        freeze((Template) frozenPair[0], (TemplateComponent) frozenPair[1], dto.id);
+        costingTemplateReferencing(dto.id, "DRAFT", "核价模板-草稿的那张");
+
+        CreateComponentRequest upd = minimalRequest("测试组件-混合引用");
+        upd.tabType = "BOM";
+        BusinessException ex = assertThrows(BusinessException.class, () -> svc.update(dto.id, upd));
+
+        assertEquals(400, ex.getCode());
+        String msg = ex.getMessage();
+        assertTrue(msg.contains("核价模板-草稿的那张"), "文案须点名未冻结的模板: " + msg);
+        assertFalse(msg.contains("核价模板-已冻结的那张"), "文案不得点名已冻结的模板: " + msg);
+        assertTrue(msg.contains("DRAFT"), "文案须带模板状态: " + msg);
+        // AC-6：旧文案（冻结后已成错误陈述）必须消失
+        assertFalse(msg.contains("一并改成树渲染"), "旧的错误因果陈述必须删除: " + msg);
+        // 多行 → 前端 ComponentManagement#showSaveError 走常驻 notification 而非 3s toast
+        assertTrue(msg.contains("\n"), "文案须多行，否则前端只弹 3s toast 看不清: " + msg);
     }
 }
