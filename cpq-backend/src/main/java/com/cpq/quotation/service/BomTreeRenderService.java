@@ -347,12 +347,18 @@ public class BomTreeRenderService {
                                             + "（可能未输出 material_no 列），该页签数据全部落选",
                                     cidStr, total);
                         }
-                        if (recursive && kept > 0 && missingParent == kept) {
-                            LOG.warnf("[costing-tree] 树页签组件 %s 的 $view 未输出 parent_no（%d 行全无父件列）,"
-                                            + "边匹配退化为只命中根层空父 → 业务数据可能全落空;"
-                                            + "请让树页签 $view 同时输出 parent_no 与 material_no 两列",
-                                    cidStr, kept);
-                        }
+                        // repair-0814 D-3（原 BL-0169）：原先这里只 LOG.warnf，渲染照常返回 200，
+                        // 该页签渲染成满屏空行而用户侧零提示。改为显式失败——与本方法下方
+                        // failedComponents 块「不能带着残缺数据静默"成功"」的既定口径统一。
+                        //
+                        // 触发条件保持不变，不得放宽：kept > 0 且【全部】行都没有父件列 = 配置错误
+                        // （树页签 $view 漏输出 parent_no 列）。部分行缺 parent_no 不在此拦——那是
+                        // 数据问题不是配置问题，原样放行以免误伤。
+                        //
+                        // 强度依据（2026-08-14 全库扫描 cpq_db_0724）：18 个 bom_recursive_expand=true
+                        // 的组件，其 component_sql_view.sql_template 全部含 parent_no（18/18），
+                        // 零合法反例，故硬拦不误伤存量。
+                        assertParentNoPresent(cidStr, recursive, kept, missingParent);
                     }
                 } catch (Exception e) {
                     LOG.errorf(e, "[costing-tree-render] expand comp=%s failed: %s", cidStr, e.getMessage());
@@ -415,6 +421,41 @@ public class BomTreeRenderService {
             }
         }
         return out;
+    }
+
+    /**
+     * repair-0814 D-3（原 {@code BL-0169}）：树页签 {@code $view} 必须输出 {@code parent_no} 列。
+     *
+     * <p><b>改动前是一行 {@code LOG.warnf}</b>：渲染照常返回 200、该页签渲染成<b>满屏空行</b>，
+     * 用户侧零提示，只能靠翻日志才知道是配置漏了列。现改为显式失败——与本类
+     * {@code render()} 里 {@code failedComponents} 块「不能带着残缺数据静默"成功"」的既定口径统一
+     * （该块注释记载的真实事故：272 次异常全被吞、17 个 tab 清零、job 却全报 SUCCESS）。
+     *
+     * <p><b>触发条件不得放宽</b>：{@code recursive} 且 {@code kept > 0} 且 <b>全部</b>行都没有父件列。
+     * <ul>
+     *   <li>{@code kept == 0}（一行都没留下）→ 不判，那是"无数据"不是"缺列"；</li>
+     *   <li>{@code missingParent < kept}（只有部分行缺）→ 不判，那是<b>数据</b>问题不是<b>配置</b>问题；</li>
+     *   <li>{@code !recursive}（普通页签按 material_no 分桶）→ 与 parent_no 无关，不判。</li>
+     * </ul>
+     *
+     * <p><b>硬拦而非告警的依据</b>（2026-08-14 全库扫描 {@code cpq_db_0724}）：18 个
+     * {@code bom_recursive_expand=true} 的组件，其 {@code component_sql_view.sql_template}
+     * <b>全部</b>含 {@code parent_no}（18/18），零合法反例，故硬拦不误伤存量。
+     *
+     * <p>抽成独立方法是为了让这条判据可被单测直接覆盖（{@code BomTreeParentNoGuardTest}）——
+     * 原先内联在 {@code render()} 的深层循环里，要测它得搭一整套 driver/$view 夹具。
+     *
+     * @param componentId   组件 id（仅用于错误文案）
+     * @param recursive     该页签是否树页签（{@code bom_recursive_expand}）
+     * @param kept          有效行数（有 {@code material_no} 的行）
+     * @param missingParent 其中缺 {@code parent_no} 的行数
+     */
+    static void assertParentNoPresent(String componentId, boolean recursive, int kept, int missingParent) {
+        if (!recursive || kept <= 0 || missingParent != kept) return;
+        throw new BusinessException(400, "树页签组件 " + componentId + " 的 $view 未输出 parent_no 列（"
+                + kept + " 行全无父件列）：树页签按 (parent_no, material_no) 边键匹配，"
+                + "缺该列会退化为只命中根层空父 → 该页签业务数据全部落空（渲染成满屏空行）。"
+                + "请让树页签 $view 同时输出 parent_no 与 material_no 两列。");
     }
 
     /** 树页签边键分隔符（U+0001，料号里不会出现，避免拼接歧义）。 */

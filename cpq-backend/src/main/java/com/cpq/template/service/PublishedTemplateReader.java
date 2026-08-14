@@ -10,10 +10,12 @@ import jakarta.enterprise.context.ApplicationScoped;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -80,6 +82,51 @@ public class PublishedTemplateReader {
     public boolean isFrozen(UUID templateId) {
         if (templateId == null) return false;
         return TemplateComponentSnapshot.count("templateId", templateId) > 0;
+    }
+
+    /**
+     * repair-0814：这批模板里<b>尚未冻结</b>的那些（{@link #isFrozen} 的批量版，判定口径逐字相同）。
+     *
+     * <p>「未冻结」= {@code status ∉ {PUBLISHED, ARCHIVED}}（DRAFT 等，渲染期直读活表配置）
+     * <b>或</b> {@code status ∈ {PUBLISHED, ARCHIVED}} 但快照零行（D17 过渡态）。
+     * 换个说法：<b>返回的这些模板，其渲染仍会受活表 component 配置影响</b>——这正是调用方关心的事。
+     *
+     * <p><b>为什么需要批量版</b>：调用方（{@code ComponentService.assertNotReferencedByCostingTemplate}）
+     * 面对的是「一个组件被 N 张模板引用」，逐张调 {@link #isFrozen} 就是 {@code CLAUDE.md} 明令禁止的
+     * N+1。本方法 <b>SQL 条数恒为 2（与 N 无关）</b>：一次 {@code IN} 查 template，一次 {@code IN}
+     * 查快照行；配对在内存里做。
+     *
+     * <p><b>为什么口径必须共用本类而不是调用方自己写 SQL</b>：AP-52「契约不对齐」——
+     * 「什么叫已冻结」在全仓必须只有一个定义（{@link #isFrozenStatus} + 快照非空），
+     * 散落第二份必然随时间漂移。
+     *
+     * <p>找不到的 templateId（模板已删除等脏引用）直接跳过，不计入结果——它既不会渲染，
+     * 也就谈不上「受活配置影响」。
+     *
+     * @param templateIds 待判定的模板 id（允许含重复 / null 集合）
+     * @return 其中尚未冻结的模板实体（含 name/version/status，供调用方组织错误文案）；顺序与入参一致
+     */
+    public List<Template> unfrozenAmong(Collection<UUID> templateIds) {
+        if (templateIds == null || templateIds.isEmpty()) return List.of();
+        List<UUID> ids = templateIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) return List.of();
+
+        Map<UUID, Template> byId = loadTemplatesByIds(ids);                       // SQL #1
+        // SQL #2：一次 IN 取回这批模板的快照行，内存归并出「哪些模板有快照」。
+        // 只关心「有没有」，故不做 COUNT 分组——行数是每模板页签数量级（十几行），
+        // 与「查询条数与 N 无关」这条硬指标无关。
+        List<TemplateComponentSnapshot> snapshotRows =
+                TemplateComponentSnapshot.list("templateId in ?1", ids);
+        Set<UUID> withSnapshot = new HashSet<>();
+        for (TemplateComponentSnapshot s : snapshotRows) withSnapshot.add(s.templateId);
+
+        List<Template> out = new ArrayList<>();
+        for (UUID id : ids) {
+            Template t = byId.get(id);
+            if (t == null) continue;                                             // 脏引用：模板不存在
+            if (!isFrozenStatus(t.status) || !withSnapshot.contains(id)) out.add(t);
+        }
+        return out;
     }
 
     /** driver 组件（data_driver_path 非空）。委派 {@link #allTabsOf}，不新增查询。 */

@@ -226,6 +226,8 @@ public class TemplateService {
         // 未用 sort_order 是因为实测存量数据里同模板内 sort_order 并非天然唯一）。
         // 重发布场景防脏行：先清掉该模板旧快照行（正常首次 publish 时应为空，防御性操作）。
         List<TemplateComponentSnapshot> snapshotRows = persistSnapshotRows(id, tcs, compById);
+        // repair-0814 D-2：树页签不变量——冻结前把关，见下方方法注释。抛出即回滚同事务的 persist。
+        assertAtMostOneTreeTab(template, snapshotRows);
         // components_snapshot jsonb 从①派生（不再各自拼装）——两份数据同源同事务生成，
         // 结构上不可能不一致（AC-2：键集合/键顺序/值与改造前逐字段一致）。
         template.componentsSnapshot = deriveComponentsSnapshotJson(snapshotRows);
@@ -346,6 +348,8 @@ public class TemplateService {
             List<TemplateComponentSnapshot> freezeRows =
                     persistSnapshotRows(id, tcsForFreeze, compByIdForFreeze);
             template.componentsSnapshot = deriveComponentsSnapshotJson(freezeRows);
+            // repair-0814 D-2：救援路径只记 WARN 不阻断（硬拦会把存量模板砖化，见 assertAtMostOneTreeTab 末段）
+            warnIfMultipleTreeTabs(template, freezeRows, "archive()自动补冻");
             LOG.infof("[task-0806 B20] archive() 自动补冻：templateId=%s 此前未按新语义重新发布过，"
                     + "补 %d 行快照后再归档", id, freezeRows.size());
         }
@@ -575,6 +579,8 @@ public class TemplateService {
                 tcs.stream().map(tc -> tc.componentId).distinct().collect(Collectors.toList()));
         List<TemplateComponentSnapshot> rows = persistSnapshotRows(tpl.id, tcs, compById);
         tpl.componentsSnapshot = deriveComponentsSnapshotJson(rows);
+        // repair-0814 D-2：救援路径（首次冻结 / 重建）只记 WARN 不阻断，理由同 archive() 补冻。
+        warnIfMultipleTreeTabs(tpl, rows, "rebuildSnapshotForTemplate()");
     }
 
     /**
@@ -927,6 +933,70 @@ public class TemplateService {
      *
      * @return 已持久化的快照行，顺序与 {@code tcs}（已按 sortOrder 升序）一致
      */
+    /**
+     * repair-0814 D-2：<b>核价模板最多一个 BOM 树页签</b>——冻结前的状态不变量断言。
+     *
+     * <p><b>判据是状态，不是变化量。</b>断言对象是「本次要冻的这批 {@code snapshotRows} 里
+     * {@code bomRecursiveExpand=true} 的数量」，🚫 <b>严禁</b>改成「与上一版快照 diff、找出
+     * {@code tab_type} 从非 BOM 变成 BOM 的页签」。用 delta 做判据两头都错：
+     * <ul>
+     *   <li><b>假阳性</b>：A 页签 非BOM→BOM 同时 B 页签 BOM→非BOM，净结果仍是 1 个树页签、完全合法，delta 却报警；</li>
+     *   <li><b>假阴性</b>：上一版本来就有 2 个树页签（{@code TemplateComponentService.validateAtMostOneTreeTab}
+     *       明写「存量模板若已违反该约束不回补校验」），本次谁都没动 → delta=0 放行，而这恰是最该拦的。</li>
+     * </ul>
+     * 对应用例 {@code TemplateServiceTreeTabInvariantTest} 里的「净数量不变应放行」——delta 式实现必在该用例上翻车。
+     *
+     * <p><b>为什么违反了会静默算错</b>：{@code BomTreeRenderService} 选主树组件是
+     * {@code for (…) { if (bre) { treeComponentId = …; break; } }}——<b>取第一个就 break</b>，
+     * 第二个树页签被静默忽略，且递归 SQL 用的 {@code treeOverrides} 取自"第一个"那个组件。
+     * 不报错、不告警，只是算错。
+     *
+     * <p><b>本约束不是新规则</b>：{@code TemplateComponentService.addComponent} 早已有同款校验
+     * （「一个核价模板最多一个核价树页签」），本方法只是把它补到 publish 这个漏掉的入口。
+     *
+     * <p><b>为什么只在 publish 硬拦，archive 补冻 / freeze 首次冻结只记 WARN</b>：publish 时模板是 DRAFT，
+     * 用户<b>能回去改</b>（解绑一个树页签再发），拦得起；后两条是<b>救援路径</b>，违规模板若在那里被拦，
+     * 将既无法冻结（不能渲染）又无法编辑（非 DRAFT 不允许改 template_component）= 彻底砖化。
+     * 实测立项时 {@code cpq_db_0724} 5 张 COSTING 模板均恰好 1 个树页签、零违规，故该不对称当前无实际差异，
+     * 它是为将来真出现违规存量时不砖化而设。
+     *
+     * @param template     待发布模板（只读 templateKind）
+     * @param snapshotRows 本次 {@link #persistSnapshotRows} 刚落的那批行 —— 即"将要被冻结的配置"
+     */
+    private void assertAtMostOneTreeTab(Template template, List<TemplateComponentSnapshot> snapshotRows) {
+        if (template == null || !"COSTING".equals(template.templateKind)) return;
+        // 纯内存遍历，零查库（N+1 自检：本循环内无 repository 调用、无懒加载 getter）
+        List<String> treeTabs = new ArrayList<>();
+        for (TemplateComponentSnapshot s : snapshotRows) {
+            if (Boolean.TRUE.equals(s.bomRecursiveExpand)) {
+                treeTabs.add(s.tabName != null && !s.tabName.isBlank() ? s.tabName : s.componentName);
+            }
+        }
+        if (treeTabs.size() > 1) {
+            throw new BusinessException(400, "核价模板最多只能有一个 BOM 树页签，当前有 "
+                    + treeTabs.size() + " 个：" + String.join("、", treeTabs)
+                    + "。请先把其中一个改为非树页签再发布。");
+        }
+    }
+
+    /**
+     * repair-0814 D-2 救援路径版：只记 WARN 不抛异常。理由见 {@link #assertAtMostOneTreeTab} 末段
+     * （archive 补冻 / freeze 首次冻结若硬拦会把存量模板砖化）。
+     */
+    private void warnIfMultipleTreeTabs(Template template, List<TemplateComponentSnapshot> snapshotRows, String path) {
+        if (template == null || !"COSTING".equals(template.templateKind)) return;
+        int treeCount = 0;
+        for (TemplateComponentSnapshot s : snapshotRows) {
+            if (Boolean.TRUE.equals(s.bomRecursiveExpand)) treeCount++;
+        }
+        if (treeCount > 1) {
+            LOG.warnf("[repair-0814] 模板 %s（%s）经 %s 冻结时含 %d 个 BOM 树页签，违反「核价模板最多一个树页签」；"
+                            + "救援路径不阻断（避免砖化），但渲染期 BomTreeRenderService 只会取第一个，其余静默忽略。"
+                            + "请尽快改配置后重新发布。",
+                    template.id, template.name, path, treeCount);
+        }
+    }
+
     private List<TemplateComponentSnapshot> persistSnapshotRows(UUID templateId, List<TemplateComponent> tcs,
                                                                   Map<UUID, Component> compById) {
         TemplateComponentSnapshot.delete("templateId", templateId);
