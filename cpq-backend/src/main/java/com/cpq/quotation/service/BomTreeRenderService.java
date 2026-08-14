@@ -347,7 +347,7 @@ public class BomTreeRenderService {
                                             + "（可能未输出 material_no 列），该页签数据全部落选",
                                     cidStr, total);
                         }
-                        // repair-0814 D-3（原 BL-0169）：原先这里只 LOG.warnf，渲染照常返回 200，
+                        // repair-0814 D-3（原 BL-0172）：原先这里只 LOG.warnf，渲染照常返回 200，
                         // 该页签渲染成满屏空行而用户侧零提示。改为显式失败——与本方法下方
                         // failedComponents 块「不能带着残缺数据静默"成功"」的既定口径统一。
                         //
@@ -424,7 +424,7 @@ public class BomTreeRenderService {
     }
 
     /**
-     * repair-0814 D-3（原 {@code BL-0169}）：树页签 {@code $view} 必须输出 {@code parent_no} 列。
+     * repair-0814 D-3（原 {@code BL-0172}）：树页签 {@code $view} 必须输出 {@code parent_no} 列。
      *
      * <p><b>改动前是一行 {@code LOG.warnf}</b>：渲染照常返回 200、该页签渲染成<b>满屏空行</b>，
      * 用户侧零提示，只能靠翻日志才知道是配置漏了列。现改为显式失败——与本类

@@ -1,6 +1,6 @@
 # backtask · repair-0814 发布冻结后 tabType 护栏误拦
 
-> 依据：本目录 `问题说明.md`（六段齐全，闸门 A 已过，⑤ = 方案 D 修订版 + `BL-0169` 并入本期）
+> 依据：本目录 `问题说明.md`（六段齐全，闸门 A 已过，⑤ = 方案 D 修订版 + `BL-0172` 并入本期）
 > 分支：`fix/repair-0814-tabtype-guard`（worktree `.claude/worktrees/repair-0814-tabtype-guard`，基于 `44d67f10`）
 > **本任务纯后端**：无 Flyway 迁移、无表结构变更、无前端改动。
 
@@ -95,7 +95,7 @@ if (template.templateKind == "COSTING")
 > 存量安全性已实测：`cpq_db_0724` 的 5 张 COSTING 模板（活表侧 + 快照侧）**均恰好 1 个树页签，零违规**，
 > 故上述不对称当前不产生实际差异；它是为**未来出现违规存量时不砖化**而设的防线。
 
-### D-3 · 树页签 `$view` 缺 `parent_no` 的显式检出（原 `BL-0169`）
+### D-3 · 树页签 `$view` 缺 `parent_no` 的显式检出（原 `BL-0172`）
 
 **位置**：`BomTreeRenderService.java:349-354`，现状：
 
