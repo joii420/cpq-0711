@@ -614,15 +614,17 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
               <table className="qt-cost-table">
                 <thead>
                   <tr>
-                    {/* 核价 BOM 递归展开：固定列仅"勾选递归"组件出（数据驱动 activeComponentBomTree），
-                        与编辑页 QuotationStep2.tsx 表头列一致：料号 + 版本。 */}
+                    {/* BOM 递归展开：固定列仅"勾选递归"组件出（数据驱动 activeComponentBomTree），
+                        与编辑页 QuotationStep2.tsx 表头列一致：核价侧「料号 + 版本」，报价侧仅「料号」。
+                        repair-0814：报价树无版本切换语义，不出版本列（业务裁决 2026-07-22，提交 7fadf5e8
+                        当时只改了编辑页，本只读页漏改 → 详情页多出一列，AP-50 同族）。 */}
                     {activeComponentBomTree && (
                       <>
                         {/* repair-071501（Bug1 版本列过宽）：系统列必须给显式 width，否则在
                             table-layout:auto + width:100% 下会独吞全部剩余水平空间被撑爆
                             （字段列都有显式 width，无 width 列成唯一 slack 吸收者）。 */}
                         <th style={{ width: 130, minWidth: 120 }}>料号</th>
-                        <th style={{ width: 100, minWidth: 90 }}>版本</th>
+                        {isCosting && <th style={{ width: 100, minWidth: 90 }}>版本</th>}
                       </>
                     )}
                     {/* task-0713（F2）：非树页签版本系统列，仅该组件驱动行含 view_version 时出现 */}
@@ -752,8 +754,9 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         {/* 2026-05-19 (方案 A): 模板配了组件但当前料号未匹配数据 → 显示 "暂无数据" 占位行 */}
                         {effectiveCount === 0 && (
                           <tr>
+                            {/* repair-0814：BOM 树系统列数 = 核价 2（料号+版本）/ 报价 1（仅料号） */}
                             <td
-                              colSpan={(activeComp.fields.length || 1) + (activeComponentBomTree ? 2 : 0) + (activeComponentVersionable ? 1 : 0)}
+                              colSpan={(activeComp.fields.length || 1) + (activeComponentBomTree ? (isCosting ? 2 : 1) : 0) + (activeComponentVersionable ? 1 : 0)}
                               style={{ textAlign: 'center', color: '#999', padding: '16px 0' }}
                             >
                               暂无数据
@@ -858,8 +861,9 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                           const canSwitchTreeVersion = isCosting && !!coid && !!bomSys?.hfPartNo;
                           return (
                           <tr key={ri}>
-                            {/* 核价 BOM 递归展开（task-0712，只读版）：2 系统固定列，料号列承载树缩进/折叠箭头；
-                                只读页无编辑交互，版本列直接文本展示（不用编辑页的 disabled <select>）。 */}
+                            {/* BOM 递归展开（task-0712，只读版）：系统固定列，料号列承载树缩进/折叠箭头；
+                                只读页无编辑交互，版本列直接文本展示（不用编辑页的 disabled <select>）。
+                                repair-0814：版本列仅核价侧出，与表头/表尾占位同一 isCosting 闸门。 */}
                             {activeComponentBomTree && (
                               <>
                                 <td style={bomSys?.isCycle ? { color: '#cf1322' } : undefined}
@@ -875,21 +879,23 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                                     <span>{bomSys?.hfPartNo ?? '—'}</span>
                                   </span>
                                 </td>
-                                <td style={{ width: 100 }}>
-                                  {/* task-0713（F2/F3/F4）：主树版本切换——editable 时下拉，否则纯文本 */}
-                                  {canSwitchTreeVersion && editable ? (
-                                    <VersionSelectDropdown
-                                      coid={coid!}
-                                      lineItemId={activeLineItemId}
-                                      componentId={activeComp.componentId}
-                                      partNo={bomSys!.hfPartNo!}
-                                      currentVersion={bomSys?.bomVersion ?? null}
-                                      onSwitched={onVersionSwitched}
-                                    />
-                                  ) : (
-                                    bomSys?.bomVersion ?? '—'
-                                  )}
-                                </td>
+                                {isCosting && (
+                                  <td style={{ width: 100 }}>
+                                    {/* task-0713（F2/F3/F4）：主树版本切换——editable 时下拉，否则纯文本 */}
+                                    {canSwitchTreeVersion && editable ? (
+                                      <VersionSelectDropdown
+                                        coid={coid!}
+                                        lineItemId={activeLineItemId}
+                                        componentId={activeComp.componentId}
+                                        partNo={bomSys!.hfPartNo!}
+                                        currentVersion={bomSys?.bomVersion ?? null}
+                                        onSwitched={onVersionSwitched}
+                                      />
+                                    ) : (
+                                      bomSys?.bomVersion ?? '—'
+                                    )}
+                                  </td>
+                                )}
                               </>
                             )}
                             {/* task-0713（F2 非树页签）：组内首行渲染共享下拉，rowSpan 覆盖整组；组内其余行不渲染此列 */}
@@ -1013,8 +1019,8 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                 {activeComp.fields.some(f => f.is_subtotal) && (
                   <tfoot>
                     <tr className="qt-subtotal-row">
-                      {/* 核价 BOM 递归展开：与 2 个系统固定列对齐的占位单元格（仅"勾选递归"组件） */}
-                      {activeComponentBomTree && (<><td /><td /></>)}
+                      {/* BOM 递归展开：与系统固定列对齐的占位单元格（核价=料号+版本 2 格；报价=仅料号 1 格，repair-0814） */}
+                      {activeComponentBomTree && (<><td />{isCosting && <td />}</>)}
                       {/* task-0713：与非树版本系统列对齐的占位单元格 */}
                       {activeComponentVersionable && <td />}
                       {activeComp.fields.map((field, fi) => {
@@ -1046,7 +1052,8 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                     {/* 本页签金额合计 = 该页签所有金额列(is_amount&&is_subtotal)之和；无金额列整行隐藏 */}
                     {activeComp.fields.some(f => f.is_amount) && (
                       <tr className="qt-subtotal-row qt-tab-total-row">
-                        {activeComponentBomTree && (<><td /><td /></>)}
+                        {/* repair-0814：占位格数同上——核价 2 / 报价 1 */}
+                        {activeComponentBomTree && (<><td />{isCosting && <td />}</>)}
                         {activeComponentVersionable && <td />}
                         <td className="qt-subtotal-label-cell">合计</td>
                         <td colSpan={Math.max(1, activeComp.fields.length - 1)} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>

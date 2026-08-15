@@ -177,6 +177,69 @@ test('报价侧 BOM 树渲染：固定列 + 17 行 + 缩进 + 折叠 + DAG + 加
   }
 });
 
+/**
+ * repair-0814（AC-1/AC-3/AC-8）：报价单**详情页**（只读 ReadonlyProductCard）BOM 树页签
+ * 同样不得出现「版本」列 —— 2026-07-22 裁决（7fadf5e8）当时只落地了编辑页，
+ * 本 spec 也只断言编辑页，故详情页多出一列的回归无人拦截。此 test 即补上那道断言。
+ *
+ * ⚠️ 夹具独立：本 test **不用**文件顶部的 QUOTATION_ID —— 那张单（QT-20260721-2067）
+ * 在 cpq_db_0724 已不存在（实测 `select ... where id=...` 返 0 行），是既有的夹具漂移
+ * （与本次改动无关，上面两个 test 因此恒失败）。本 test 自带一张现存的报价单：
+ * QT-20260814-0179，QUOTE_CARD 含 BOM 组件 COMP-0202「物料」，且 quote_card_values
+ * 内含 nodeId（= 后端确实下发了 spine 系统列，报价侧会走树渲染分支）。
+ */
+const DETAIL_QUOTATION_ID = '6a6df891-5192-4fa2-a33c-3f39442529e6';  // QT-20260814-0179
+const DETAIL_TREE_TAB_NAME = '物料';                                  // COMP-0202，tab_type='BOM'
+
+test('报价侧详情页 BOM 树：表头不含「版本」列 + 表体/表尾与表头列数对齐（repair-0814 AC-1/AC-3/AC-8）', async ({ page }) => {
+  test.skip(!backendUp, '临时后端未启动');
+
+  await loginAsAdmin(page);
+  expect(page.url()).not.toContain('/login');
+
+  // 详情页（只读）：默认 mainTab='quote' + viewType='card'，直接渲染 ReadonlyProductCard
+  await page.goto(`/quotations/${DETAIL_QUOTATION_ID}`);
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(2000);
+
+  const treeTab = page.locator('.qt-tab-btn', { hasText: DETAIL_TREE_TAB_NAME }).first();
+  expect(await treeTab.count(), '详情页应有 BOM 树页签').toBeGreaterThan(0);
+  await treeTab.click();
+  await page.waitForTimeout(1200);
+  await shot(page, 'detail-tree-tab');
+
+  // AC-1：表头第 1 列 = 料号，且全表头不含「版本」
+  const headers = await tableHeaders(page);
+  console.log('[QBT] 详情页 BOM树表头:', JSON.stringify(headers));
+  expect(headers[0], '详情页第1列=料号').toBe('料号');
+  expect(headers, '详情页报价树表头不含「版本」列').not.toContain('版本');
+
+  // AC-3：表体每行单元格数 = 表头列数（去掉版本列后不得错位）
+  const bodyRows = page.locator('.qt-cost-table tbody tr');
+  const brc = await bodyRows.count();
+  expect(brc, '详情页 BOM 树应有数据行').toBeGreaterThan(0);
+  for (let i = 0; i < brc; i++) {
+    const cells = await bodyRows.nth(i).locator('td').count();
+    expect(cells, `详情页第 ${i + 1} 行单元格数应等于表头列数 ${headers.length}`).toBe(headers.length);
+  }
+
+  // AC-3：tfoot 小计/合计行占位格数同样按「报价=1 格系统列」对齐 —— 用总列跨度校验
+  const footRows = page.locator('.qt-cost-table tfoot tr');
+  const frc = await footRows.count();
+  console.log(`[QBT] 详情页 tfoot 行数 = ${frc}`);
+  for (let i = 0; i < frc; i++) {
+    const span = await footRows.nth(i).locator('td').evaluateAll(
+      (tds) => tds.reduce((s, td) => s + ((td as HTMLTableCellElement).colSpan || 1), 0),
+    );
+    expect(span, `详情页 tfoot 第 ${i + 1} 行总列跨度应等于表头列数 ${headers.length}`).toBe(headers.length);
+  }
+
+  // 无残留「加载中」
+  const lc = await page.locator('text=加载中').count();
+  console.log('[QBT] 详情页 BOM树 加载中 =', lc);
+  expect(lc, '详情页加载中应为 0').toBe(0);
+});
+
 test('加叶子：零件节点「+」可用 + 候选来自本单各页签；材质节点「+」置灰（AC-3/AC-5）', async ({ page }) => {
   test.skip(!backendUp, '临时后端未启动');
 

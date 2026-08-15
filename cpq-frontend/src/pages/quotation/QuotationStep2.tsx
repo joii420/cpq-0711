@@ -3862,7 +3862,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                     {/* 本页签金额合计 = 该页签所有金额列(is_amount&&is_subtotal)之和；无金额列整行隐藏 */}
                     {activeComponent.fields.some(f => f.is_amount) && (
                       <tr className="qt-subtotal-row qt-tab-total-row">
-                        {activeComponentBomTree && (<><td /><td /></>)}
+                        {/* repair-0814：与系统固定列对齐（核价=料号+版本 2 格；报价=仅料号 1 格）——
+                            7fadf5e8 落「报价侧不出版本列」裁决时只改了上面小计行，这一行漏改。 */}
+                        {activeComponentBomTree && (<><td />{cardSide === 'COSTING' && <td />}</>)}
                         <td className="qt-subtotal-label-cell">合计</td>
                         <td colSpan={activeComponent.fields.length} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
                           {/* task-0801：全口径统一 6 位去尾零（formatNumber 兜底），产品小计/页签合计不再分叉 2 位 vs 4 位 */}
