@@ -1032,8 +1032,19 @@ const MasterList: React.FC<MasterListProps> = ({
 // Main Container
 // ─────────────────────────────────────────────────────────────
 /**
- * 最终行键字段 = 当前勾选 ∪ 存量锚定列（候选反查不到 resolvedColumn 的存量行键列）。
- * 勾选只覆盖"有字段可代表"的行键列，不能因勾选覆盖把无字段代表的锚定列丢掉。
+ * 最终行键字段 = 当前勾选（**字段名**口径）∪ 存量锚定项。
+ *
+ * <p>「锚定项」= 存量里**没有字段可代表**的行键项（如字段已被删除/改名后遗留的项）——
+ * 勾选只覆盖"有字段可代表"的部分，不能因勾选覆盖把这类项丢掉。
+ *
+ * <p><b>repair-0814</b>：判据由「不在 resolvedColumn 集合里」改为
+ * 「既不是当前字段名、也不是任何候选的 resolvedColumn」。两点效果：
+ * <ul>
+ *   <li>中文字段名项不再被误判成"锚定项"而永久保留 → 取消勾选能真正取消；</li>
+ *   <li>历史遗留的 driver 列名项（旧版复选框写入的 material_no/parent_no…）在下次保存时被自然清除，
+ *       同时真正无字段代表的锚定项仍保留。</li>
+ * </ul>
+ *
  * handleSave（单组件）与草稿 snapshot（供批量保存同源使用）共用此函数，避免批量落库截断 rowKeyFields。
  */
 function computeFinalRowKeyFields(
@@ -1041,11 +1052,19 @@ function computeFinalRowKeyFields(
   serverRowKeyFields: string[] | undefined,
   candidates: Record<string, import('./types').RowKeyCandidate>,
 ): string[] {
-  const reachableCols = new Set(
-    (Object.values(candidates).map((c) => c.resolvedColumn).filter(Boolean) as string[]),
+  const fieldNames = new Set(Object.keys(candidates ?? {}));
+  const resolvedCols = new Set(
+    (Object.values(candidates ?? {}).map((c) => c.resolvedColumn).filter(Boolean) as string[]),
   );
-  const preservedAnchors = (serverRowKeyFields ?? []).filter((c) => !reachableCols.has(c));
-  return Array.from(new Set([...(checked ?? []), ...preservedAnchors]));
+  // 历史污染项 = 「不是字段名、但正是某个字段反查出的 driver 列名」——旧版复选框写入的产物。
+  // 它会随组件加载进 rowKeyFields state（即 checked），若不剔除会被原样写回，永远洗不掉。
+  const isLegacyColumn = (k: string) => !fieldNames.has(k) && resolvedCols.has(k);
+  const kept = (checked ?? []).filter((k) => !isLegacyColumn(k));
+  // 真锚定项 = 既没有字段代表、也不是任何字段的 driver 列（如字段被删/改名后遗留）——必须保留。
+  const preservedAnchors = (serverRowKeyFields ?? []).filter(
+    (k) => !fieldNames.has(k) && !resolvedCols.has(k),
+  );
+  return Array.from(new Set([...kept, ...preservedAnchors]));
 }
 
 const ComponentManagement: React.FC = () => {
@@ -1674,10 +1693,11 @@ const ComponentManagement: React.FC = () => {
                 onConfigDatasource={handleOpenDsModal}
                 rowKeyFields={rowKeyFields}
                 candidatesByField={rowKeyCandidates}
-                onToggleRowKey={(col, checked) => {
+                onToggleRowKey={(fieldName, checked) => {
+                  // repair-0814：写入**字段名**（存库口径），不再写 driver 列名。
                   setRowKeyFields((prev) => {
                     const set = new Set(prev);
-                    if (checked) set.add(col); else set.delete(col);
+                    if (checked) set.add(fieldName); else set.delete(fieldName);
                     return Array.from(set);
                   });
                 }}

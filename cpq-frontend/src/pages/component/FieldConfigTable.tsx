@@ -39,12 +39,18 @@ interface FieldConfigTableProps {
   onConfigDatasource: (fieldIndex: number) => void;
   /** 可选：当前组件 ID，传入后 PathPickerDrawer 会显示"SQL 视图"Tab */
   componentId?: string;
-  /** 当前 rowKeyFields（真实列名数组）。传入即渲染"行键"勾选列。 */
+  /**
+   * 当前 rowKeyFields（**字段名**数组，`fields[].name` 口径 —— `rule-0724/2-组件与字段.md §2.4 C3`）。
+   * 传入即渲染"行键"勾选列。
+   *
+   * <p>repair-0814：本 prop 曾被当作「真实列名数组」使用（勾选写 `resolvedColumn`），与存库口径
+   * 不一致 → 已配好的中文行键一律显示未勾选 → 用户去点 → 追加一份英文列名且删不掉。已改为字段名口径。
+   */
   rowKeyFields?: string[];
-  /** 按字段名索引的行键候选（来自 row-key-candidates 端点）。 */
+  /** 按字段名索引的行键候选（来自 row-key-candidates 端点）。仅用于 eligible 判定与 tooltip 展示。 */
   candidatesByField?: Record<string, import('./types').RowKeyCandidate>;
-  /** 勾选/取消某字段作行键：传该字段反查出的真实列名 + 选中态。 */
-  onToggleRowKey?: (resolvedColumn: string, checked: boolean) => void;
+  /** 勾选/取消某字段作行键：传**字段名**（`fields[].name`）+ 选中态（repair-0814 由 resolvedColumn 改为 fieldName）。 */
+  onToggleRowKey?: (fieldName: string, checked: boolean) => void;
   /** 组件 driver 路径（$视图…）；用于行键判定 + 字段路径选择器只列 driver 视图列。 */
   dataDriverPath?: string;
   /**
@@ -529,16 +535,21 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
         const cand = candidatesByField?.[record.name];
         const eligible = !!cand?.eligible;
         const col = cand?.resolvedColumn ?? null;
-        const checked = !!(col && (rowKeyFields ?? []).includes(col));
+        // repair-0814：勾选态与写入统一走**字段名**（存库口径，rule-0724 §2.4 C3）。
+        // eligible 仍由 resolvedColumn 是否反查得到决定（无 driver 列支撑的字段不能作行键，口径不放宽）；
+        // resolvedColumn 只用于 tooltip 展示，不再进入 rowKeyFields。
+        const checked = (rowKeyFields ?? []).includes(record.name);
         const tip = eligible
-          ? (cand?.source === 'input' ? `行键列（手填）：${col}` : `行键列（driver）：${col}`)
+          ? (cand?.source === 'input'
+              ? `行键字段：${record.name}（手填列 ${col}）`
+              : `行键字段：${record.name}（driver 列 ${col}）`)
           : (cand?.reason ?? '该字段无 driver 列，不能作行键');
         return (
           <Tooltip title={tip}>
             <Checkbox
               checked={checked}
               disabled={!eligible}
-              onChange={(e) => { if (col) onToggleRowKey(col, e.target.checked); }}
+              onChange={(e) => onToggleRowKey(record.name, e.target.checked)}
             />
           </Tooltip>
         );

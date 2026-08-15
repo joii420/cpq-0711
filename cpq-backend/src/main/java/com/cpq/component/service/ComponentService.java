@@ -943,15 +943,40 @@ public class ComponentService {
         // 哨兵 ["__seq_no__"] → 显式豁免
         if (keys.size() == 1 && "__seq_no__".equals(keys.get(0).asText())) return;
 
-        // 方案 A: rowKeyFields 引用的是 driverRow 的底层列(运行期 expand 才有), 与 fields 中文展示名
-        // 属不同命名空间 → 配置期无法对 fields 校验存在性。仅校验每个 key 为非空字符串;
-        // driverRow 列名的正确性由配置者/迁移负责(详见 V279 + spec §5.1)。
+        // repair-0814（2026-08-14）注释更正 —— 原文写「rowKeyFields 引用的是 driverRow 的底层列」，
+        // 那是 2026-06-13 口径收敛**之前**的说法（V279 时代）。现行口径：
+        //   rowKeyFields 存**字段名**（fields[].name），见 rule-0724/2-组件与字段.md §2.4 C3；
+        //   运行期 FormulaCalculator.computeRowKey(4-arg) 先直读 driverRow[名]，取不到再按字段定义
+        //   (default_source / basic_data_path) 解析 —— 两种写法都能求值，但**字段名是唯一正确口径**
+        //   （全库现状 139/139）。
+        // 仍不做硬存在性校验：新建路径此刻 fields 可能尚未最终形态，且哨兵/存量需放行。
         for (com.fasterxml.jackson.databind.JsonNode k : keys) {
             String keyName = k.asText(null);
             if (keyName == null || keyName.isBlank()) {
-                failRowKey(hard, "rowKeyFields 含空 key（应为 driverRow 的底层列名，如 child_hf_part_no）");
+                failRowKey(hard, "rowKeyFields 含空 key（应为组件字段名，如「销售料号」）");
                 return;
             }
+        }
+
+        // repair-0814 软告警：同一组件混用「字段名」与「driver 列名」两套命名空间。
+        // 不阻断（存量/哨兵/尚未定型的新建都要放行），只留可检索的日志线索。
+        int named = 0, alien = 0;
+        StringBuilder alienKeys = new StringBuilder();
+        for (com.fasterxml.jackson.databind.JsonNode k : keys) {
+            String keyName = k.asText("");
+            if (fieldNames.contains(keyName)) {
+                named++;
+            } else {
+                alien++;
+                if (alienKeys.length() > 0) alienKeys.append(", ");
+                alienKeys.append(keyName);
+            }
+        }
+        if (named > 0 && alien > 0) {
+            LOG.warnf("[rowKey] 疑似混用两套命名空间（driverPath=%s）：%d 项是字段名，%d 项不是（%s）。"
+                    + "行键应统一存字段名（rule-0724 §2.4 C3）；非字段名项多为旧版行键复选框写入的 driver 列名，"
+                    + "见 dev-docs/task-0801-页签连表公式配置优化/repair-0814-行键复选框写列名致口径污染/",
+                    dataDriverPath, named, alien, alienKeys);
         }
     }
 
