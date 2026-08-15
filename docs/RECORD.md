@@ -5603,3 +5603,101 @@ DB 扩到 12 位后，即便 handler 完全不归一，12 位 Excel 导入查库
 5. **AP-64 教训**：`问题说明.md` 原证据是 **n=1 外推成全称判断**，扩样 200 单后实测 `max_dp=17`、421 个值中 50 个 >9 位（`a3285cc0` 之前的存量遗留，靠下次编辑全量重建自愈）。
 6. **假绿自查**：主线 Playwright harness 首次跑出 ⚠=0 看似通过，**A/B 还原修复后 ⚠ 仍为 0** → 两臂空绿、该 PASS 不成立（根因：harness 未切到「物料」页签，编辑的是文本列）。该 harness 已删除未入库——会给假绿的验证脚本比没有更危险。
 7. **遗留**：`BL-0167`（P1，`precision-flow.spec.ts` 种子零文档，task-0810 的「5/5 通过」今天无人能复现）；AC-3 阳性能力**无运行级证据**，仅代码推理 + 单测支撑。
+
+---
+
+## [2026-08-14] 组件管理 / 页签连表公式 - repair-0814 行键中英口径混存致连表可比判定失真（BL-0169 已交付）
+
+**现象**：「配置页签连表公式」抽屉里，核价简易模板三个组件的行键徽标显示成中英混合 —— `物料BOM = 销售料号 + 组成料号 + material_no + parent_no` 等。用户质疑「英文项是系统自动加的还是配错了」。真实后果不在显示：可比判定按行键**集合包含**判 ⊆/⊇，集合虚胖 ⇒ `物料BOM ↔ 物料与元素BOM` 被判不可比、明细 chip 全置灰，只能引「(总计)」。
+
+**口径演进（本次理清，之前散在 4 处从未汇总）**：2026-06-01 报价单整份快照 Phase1 §5.1 引入 `rowKeyFields`，`computeRowKey(rkf, driverRow)` 直读 ⇒ 事实口径 = **driver 列名** → V278 预填误用中文致 rowKey 全空（事故）→ **V279** 逐条改列名（`material_no` 这套的出处）→ **2026-06-13 `plans/rowkey-field-driver-col-resolution`** 认定「存字段名」才是正确模型、加二级解析（`default_source`/`basic_data_path`）⇒ **双口径兼容、字段名成主口径** → 2026-07-24 `rule-0724 §2.4 C3` 固化「存字段名」→ 2026-08-01 task-0801 `TabFieldMatrix` 新增可比判定消费者 ⇒ **口径不一致第一次有了可见后果**。**结论：约定不矛盾，是 UI 实现与旧注释没跟上 06-13 的收敛。**
+
+**根因**：R1 数据层混存；**R2 使能层** = 组件管理「行键」复选框只读写 `resolvedColumn`（`FieldConfigTable.tsx:532/541`），中文项在 UI 上显示为未勾选，一勾即**追加**列名，而 `computeFinalRowKeyFields`（`ComponentManagement.tsx:1039`）的「锚定列保留」又让中文项**删不掉**；R3 校验层 `validateRowKeyConfig` 只校非空字符串，其注释（`:907-909`）仍是 06-13 前旧口径。
+
+**修法（用户裁决）**：统一到字段名口径，**只清数据、零代码改动** —— `COMP-0232 ["销售料号","料号"]` / `COMP-0233 ["销售料号","料号","元素代码"]` / `COMP-0234 ["销售料号","工序编号"]`；不动 `comparable()`/`computeRowKey()`；PUBLISHED 快照按裁决不同步（待下次发版）；删 2 张测试 DRAFT 单。
+
+**涉及文件**：`component.row_key_fields`（数据，3 行 UPDATE）｜`客户组件模板/核价组件/核价组件模板-简易.json`（按当前库整体重导，3→5 组件 + `⚠️行键口径` 警告段）｜`核价组件模板-简易-组件.sql`（注释）｜`dev-docs/task-0801-页签连表公式配置优化/repair-0814-行键中英口径混存致连表可比判定失真/`（问题说明 + test-report）｜`BACKLOG.md`（BL-0169/BL-0170）
+
+**关键决策与注意事项**：
+1. **英文 key 不是系统生成的** —— 后端 `ComponentTabDefService` 纯读、`ComponentService` 纯透传。取证还原到点击级：`Set.add` 保插入序 ⇒ 尾部英文项顺序 = 点击顺序，`COMP-0234` **只勾了一半**（漏「工序编号」），反证人工逐个点击。时间窗 = bundle 落盘后 8~20 分钟（本地 08-13 23:11~23:23，截图 23:35）。
+2. **「bundle 配错了」是错判，执行期推翻** —— 初版 bundle 内部自洽（字段名与行键同为「组成料号」），是库里后来被用户改名为「料号」才分叉。改法从「手工改 bundle」改成「按当前库整体重导」，避免制造第二套命名。
+3. **强旁证**：同一次改名，`part_no_field`/`part_name_field`/`sort_field`/`element_*_field` **全部跟上、零断链**（它们在 UI 上是下拉选字段名），**唯独行键没跟上** —— 因为行键是按列名的复选框，中文项界面上根本不显示。
+4. **全库口径分布必查**：135 个有行键组件里**仅这 3 个**含非字段名 key，V279 那批列名（`hf_part_no`/`material_code`）已 **0 处** ⇒ 字段名是事实标准，切勿反向统一到列名（跨口径集合永远不可比，会把问题扩散到整库）。
+5. **AC-3/AC-4 用自写脚本判定，必须做还原实验** —— 把 `COMP-0232` 临时改回故障值 → 判定复现「不可比」→ 改回修复值 → 回到「可比」。脚本随输入变红才可采信（记忆 `cpq-agent-tests-stale-server-false-positive`）。
+6. **反向期望写进 AC** —— `加工费&组装费` 与另两者修复后**仍须判不可比、仍置灰**，防止把问题「修」成放宽判定。
+7. **遗留 `BL-0170`（P1）**：UI 复选框口径失配不修则会反复被污染；改完后这三个组件的复选框显示为未勾选，谁再勾一下又混。bundle `__delivery` 已写显式警告。
+8. **组件变更无审计**：`component` 无 `updated_by`，`operation_log` 只覆盖 TEMPLATE/CUSTOMER，`COMPONENT` 0 条 ⇒ 只能定位时间窗、定位不到操作人。是否补审计待裁决，未登 BACKLOG。
+
+---
+
+## [2026-08-14] repair-0814 · 发布冻结落地后 `tabType=BOM` 护栏变成纯误拦（+ publish 树页签不变量 + `parent_no` 显式检出）
+
+**归属**：`dev-docs/task-0806-模板发布全量冻结/repair-0814-发布冻结后tabType护栏误拦/`｜`BL-0168`｜合 master `c2f485d5`（当日立项当日交付，⏳ 闸门 B 待用户真机）
+
+**现象**：用户配「核价模板-简易」组件时，把 `COMP-0233`「物料与元素BOM」页签类型改为 `BOM` 被 400 拒绝：「该组件已被 1 处核价(COSTING)模板引用……会把这些核价模板一并改成树渲染」。用户当场质疑「task-0806 不是全量冻结了吗？组件不该再影响已发布模板」——**质疑成立**。
+
+**根因（三层）**：① `ComponentService.assertNotReferencedByCostingTemplate` 只按 `template_kind='COSTING'` 计数，**不过滤 `t.status`、不看是否已冻结**；② 该判据在 task-0721（`001b1fe6`，2026-07-21）**是对的**——当时已发布模板实时读活表，但 task-0806（`8d04336a`）把 `tab_type`/`bom_recursive_expand` 冻进 `template_component_snapshot`、读取收口 `PublishedTemplateReader`、`refreshSnapshotsByComponent`（H1）退役后，**前提消失而护栏一字未改**（`git log -L` 只有引入那一个提交）；③ 该护栏还是**单向**的——绑定侧 `addComponent` 不拦、新建组件路径 `id==null` 豁免，活证据 `COMP-0232` 就是 `tab_type=BOM` 且在核价模板里正常工作。实测 `cpq_db_0724`：COSTING 侧 DRAFT **0 张**、61 条引用**全部已冻结**、**22 个组件被无谓锁死 ⇒ 100% 误拦**。
+
+**修法（用户裁决方案 D 修订版，纯后端）**：D-1 判定收窄到「**未冻结**的引用」（`status ∉ {PUBLISHED,ARCHIVED}` 或是但快照零行=D17 过渡态），委托新增的 `PublishedTemplateReader.unfrozenAmong`（批量、2 条 SQL）+ 文案重写（点名模板+状态、**多行**）；D-2 `publish()` 补树页签不变量 ≤1（COSTING）；D-3（`BL-0172`，原定二期经裁决并入）`parent_no` 缺失从 `LOG.warnf` 升级为抛错。
+
+**涉及文件**：`ComponentService.java`（护栏 + javadoc）｜`PublishedTemplateReader.java`（`unfrozenAmong`）｜`TemplateService.java`（`assertAtMostOneTreeTab` / `warnIfMultipleTreeTabs`）｜`BomTreeRenderService.java`（`assertParentNoPresent`）｜3 个测试类（+27 项）｜**零 Flyway / 零 DDL / 零前端 / 零接口结构变更**
+
+**关键决策与注意事项**：
+1. 🔑 **用户当场纠正了我的方案框架，这是本次最有价值的一处**：我原提「publish 时 diff 上一版、发现 `tab_type` 非BOM→BOM 就二次确认」。用户反问「问题是**出现两个树页签**的检查，我把另一个 BOM→非BOM，结果还是一个 BOM，没问题啊」——一句话点破**参照系选错**。delta 判据两头都错：**假阳性**（两页签互换树身份、净数不变却报警）、**假阴性**（上一版本来就有 2 个、本次没动就放行，而这恰是最该拦的）。正解 = **对「本次要冻的这批行」做状态断言**，不比对上一版。连带塌掉了「与上一版 diff」和「前端二次确认 Drawer」两块最贵的工作，规模 M~L → S。**教训：先问「该断言的是状态还是变化量」，再动手。**
+2. **「二次确认」多半是设计没想清的信号**：拆开后发现三档——非法状态（2 个树页签）该**硬拦**、配置错误（缺 `parent_no`）该**检出**、行主轴变化是**用户主动改类型的预期后果、不需要任何处置**。原设想的确认框恰好落在最不需要的那一档。
+3. **救援路径不硬拦（不对称是刻意的）**：只有 `publish()` 硬拦（此时模板是 DRAFT，用户回得去改）；`archive()` 补冻 / `rebuildSnapshotForTemplate` 只记 WARN —— 硬拦会让违规存量模板**既不能冻结（不能渲染）又不能编辑（非 DRAFT 不许改 tc）= 彻底砖化**。
+4. **口径同源、禁止第二份定义**（AP-52）：「什么叫已冻结」只在 `PublishedTemplateReader` 定义一处。既有 `isFrozen(UUID)` 是单张的，护栏里循环调 = N+1，故新增**批量**版而非在护栏里手写 SQL。
+5. **为什么测试没拦住**：`ComponentServiceTabTypeGuardTest` 的核心护栏用例构造的是 `status="DRAFT"` 的 COSTING 模板——恰是「至今仍该拦」那一档，故**永不变红**；「已冻结 PUBLISHED → 应放行」这条语义**从无覆盖**。本次 `git diff --numstat` = **130 增 / 0 删**，原 12 个用例语义一字未改。
+6. **还原实验是硬要求，做了 2 次**：撤 D-1 → 新增 3 条按预测变红且报**旧文案**；撤 D-2 → **只有** TC-09 变红、TC-10（"净数不变应放行"）保持绿。不做这步，新用例是不是空验证根本无从判断。
+7. **自己也踩了「陈旧报告」坑**：`-Dtest='A+B+C'`（加号）Maven 不识别 → 构建失败、surefire **不重新生成报告**，我先读到的是上一轮还原实验留下的红色旧报告，差点误判「修复把测试搞红了」。处置 = 删目标报告 + 改逗号分隔重跑。
+8. **`@TestTransaction` 下测不出回滚**：TC-09 断言「被拦后快照回滚为 0 行」失败（实际 2 行）——**测试假象非产品缺陷**：测试方法拥有事务、`publish()` 只是加入、`assertThrows` 又把异常吞在测试内。生产环境 `TemplateResource.publish` 不带 `@Transactional`、`BusinessException extends RuntimeException` ⇒ 真回滚。改断言为 `txManager.getStatus() == STATUS_MARKED_ROLLBACK`。
+9. **AC-7 同类排查产出 `BL-0171`**：`DriverBatchSafetyAuditor:100` javadoc 自称与 `renderInternal` §②-pre「同款、保证审计对象与实际渲染对象一致」，但后者 B18 后已改成冻结分支、它仍无条件读活表 ⇒ 对已冻结模板那句「一致」**已不成立**。按既定口径**只登记不顺手改**。已排除的同形命中：`BomTreeRenderService:239` / `ConfigureSnapshotService:903`（均已有分支）、`TemplateService:1131/:1362`（admin 后门，设计如此）。
+10. **通用教训（已写进 INDEX §0 反查表）**：**凡以「活表配置会外溢到已发布模板」为前提写下的旧校验，前提都已被 task-0806 抽掉，需重新判定。** 本条是发现的第一个，`BL-0171` 是第二个。
+11. **编号撞车**：本任务的 `parent_no` 条目立项时取号 `BL-0169`，同日并发会话已占用 `BL-0169`/`BL-0170`，改号 **`BL-0172`**；代码注释与文档已统一改写，BACKLOG 留了编号说明。
+
+---
+
+## [2026-08-14] 组件管理 - repair-0814 行键复选框写 driver 列名致口径污染（BL-0170 根因修复，已合 master `33deb4a7`）
+
+**现象**：用户 bundle 里 `rowKeyFields` 只有中文字段名，导入生成的组件却多出 `material_no` / `parent_no` / `component_no`；清理后**再次复发**（两次共 7 个组件）。用户连问三轮「为什么」。
+
+**根因**：组件管理「字段配置 → 行键」列的复选框按 driver 视图真实列名（`resolvedColumn`）读写（`FieldConfigTable.tsx:532/541`），而 `row_key_fields` 存字段名（`rule-0724 §2.4 C3`）。两个命名空间不一致 ⇒ ①已配好的行键**一律显示未勾选**（看起来像没配）→ ②谁点一下就**追加**一份英文列名（勾「销售料号」写入 `parent_no`）→ ③`computeFinalRowKeyFields` 的「锚定列保留」又让中文项**删不掉**。
+
+**定位手法（本次关键）**：代码走查在「只有点击才会产生」上打转、与用户陈述冲突，最后用**真实浏览器实测**一锤定音 —— 同一 spec 内阴性（打开不改任何东西保存 → PUT payload 逐字不变）+ 阳性对照（点一下第一行复选框 → payload 立刻多出 `parent_no`）。**归因表述也要修正**：从用户视角这就是"系统自动写成了英文"，不该说成"人工勾选造成"。
+
+**修法（用户裁决：「勾选 销售料号 不需要为我写成 material_no，行键遵循规则与字段名称一致」）**：
+- `FieldConfigTable`：`checked` / `onToggleRowKey` 统一按 `record.name`；`eligible` 判据不放宽（仍要求能反查到 driver 列）；`resolvedColumn` 降级为 tooltip 展示。
+- `ComponentManagement#computeFinalRowKeyFields`：剔除「不是字段名、但正是某字段 `resolvedColumn`」的历史污染项——**它会随组件加载进 state 被原样写回，不剔除则永远洗不掉**（这条是实测 S4 红了才发现的，第一版修复漏了）；真锚定项（无字段代表且非任何 driver 列）仍保留。
+- `ComponentService.validateRowKeyConfig`：更正 `:907-909` 的过期注释（V279 时代「driverRow 底层列」说法）+ 新增混用两套命名空间的软告警（不阻断）。
+
+**涉及文件**：`FieldConfigTable.tsx` ｜ `ComponentManagement.tsx` ｜ `ComponentService.java` ｜ 新增 `cpq-frontend/e2e/rowkey-fieldname-contract.spec.ts`（S1 阴性 / S2 勾选态 / S3 写入与取消 / S4 存量清除）｜ `dev-docs/task-0801-页签连表公式配置优化/repair-0814-行键复选框写列名致口径污染/`
+
+**关键决策与注意事项**：
+1. **口径事实**：全库 139 个有行键组件**全部**是字段名口径，V279 时代的列名（`hf_part_no`/`material_code`）已 0 处。反向统一到列名会与 `computeRowKey` 二级解析主路径、与 `TabFieldMatrix` 可比判定全面冲突。
+2. **存量自愈**：修复后历史列名残留在下次保存时被自然清除，无需数据迁移；但**真锚定项必须保留**（字段被删/改名后的遗留），两者判据不同，别写成一个。
+3. **还原实验是必须的**：stash 掉前端改动重跑 → S2 勾选态从 `["销售料号","料号"]` 退回 `[]` 并报错，故障态精确复现，才敢采信四段全绿。
+4. **E2E 写法坑**：字段名列是 `<Input>`，`innerText` 取不到，必须读 `input.value`；左侧组件卡片在滚动区外，`click()` 会 not visible，需 `evaluate` 直接派发点击。
+5. **遗留待确认**：`COMP-0241` 的「销售料号」「生产料号」两个字段在 08-14 09:03 被删除，行键仍留「销售料号」→ 该段恒空、实际行键退化成只有「料号」（BOM 同子件挂不同父会撞键）。已在 test-report §4 列出，未擅自处理。
+
+---
+
+## [2026-08-14] 报价单渲染 - repair-0814 详情页 BOM 树多出「版本」列（BL-0173，已合 master `ada23fd0`）
+
+**现象**：报价单**详情页预览**时，报价侧 BOM 类型页签表头多出一列「版本」；同一张单在**编辑页**是正确的（只有「料号」一列）。
+
+**根因（一句话）**：2026-07-22 的业务裁决「报价树无版本切换语义 → 报价侧不出版本列」（提交 `7fadf5e8`）**只落地了编辑页** `QuotationStep2.tsx` 三处（表头/行内/tfoot 小计占位），只读页 `ReadonlyProductCard.tsx` **一行未动**。前一天 `60406f11`（task-0721 F1）刚把两个文件的 `isCosting` 闸门同步拆成纯数据驱动（只看 `__sys.nodeId`），报价侧详情页从此恒定渲染「料号 + 版本」两列。典型 **AP-50**（详情页/编辑页各存一份渲染副本）。
+
+**修法（用户裁决方案 A：就地补闸门，镜像编辑页写法）**：
+- `ReadonlyProductCard.tsx` **5 处**补 `isCosting`：表头 `<th>版本</th>` / 行内版本 `<td>`（含 `VersionSelectDropdown` 分支整块）/ 空数据 `colSpan` `2 → (isCosting ? 2 : 1)` / tfoot 小计与合计两处占位格。
+- `QuotationStep2.tsx` tfoot **合计**行占位补 `cardSide === 'COSTING'` —— `7fadf5e8` 漏改的**第 4 处**（报价侧树页签含金额列时，合计行比表头多一格）。用户同批裁决一并修。
+- `e2e/quotation-bom-tree.spec.ts` 新增详情页表头断言（AC-8），**自带独立现存夹具**。
+
+**涉及文件**：`ReadonlyProductCard.tsx` ｜ `QuotationStep2.tsx` ｜ `e2e/quotation-bom-tree.spec.ts` ｜ `dev-docs/task-0721-报价侧树状结构与页签类型属性/repair-0814-详情页报价树多出版本列/`
+
+**关键决策与注意事项**：
+1. **被否方案 C（改按 `bomVersion` 有无出列）**：那是把「按侧的业务裁决」换成「按数据有无」的**不等价判据** —— 后端一旦给报价树带上版本号就复发。判据必须与裁决同源。
+2. **后端不裁剪载荷**：`__sys.bomVersion` 与 `nodeId`/`parentId` 同属一组 spine 系统列，报价侧仍依赖后者建树/剪枝（repair-0727 行身份）。为藏一列改后端 = 动 task-0721/repair-0727 核心契约，收益为负。修复面全在前端。
+3. **核价侧不变是可证明的**，不必再跑数值 A/B：所有改动形如 `X → {isCosting && X}` / `2 → (isCosting ? 2 : 1)`，`isCosting=true` 时求值逐字相同；取值链路（`columnSumsByComp`/`sumTabColumns`/`computeProductSubtotal`）一行未动。
+4. **还原实验（必做）**：把 `ReadonlyProductCard.tsx` 回滚到 HEAD 重跑同一 test → 表头输出 `["料号","版本",…]` 断言变红，既机器复现了用户所报现象，也证明新断言不是空验证。
+5. **`quotation-bom-tree.spec.ts` 既有 2 个 test 恒失败 = 夹具漂移，与本次无关**：`QUOTATION_ID`（QT-20260721-2067）在 `cpq_db_0724` 已 0 行（SQL 直接证否，比 A/B 更强）。新增 test 因此自带现存夹具 **QT-20260814-0179 / COMP-0202「物料」**（`quote_card_values` 含 `nodeId`，确认走树渲染分支）。既有夹具重建归 `BL-0158` 家族。
+6. **遗留 `BL-0174`**：BOM 树「系统固定列」口径散在两文件 × 4 个渲染点 = 8 份副本，`7fadf5e8` 与本次两次都因此只改到一半。抽 `bomSysColumns(side, isBomTree)` 共享 helper 的结构性收敛已登记，本次未做（要动 `QuotationStep2.tsx` 这个最热文件，回归面与返修不成比例）。
