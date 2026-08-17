@@ -42,10 +42,10 @@
 | `task-260723-废弃业务与表清洗` P2 | 🟡 分阶段未完 | `mat_*` 整族退役是多周工程，与 BL-0069 同源 |
 | `task-260715-UI排版审查` | 📋 报告已出，整改未启动 | 180+ 条 / 11 个系统性主题（36 处 Modal 违规、1272 处硬编码 hex、Dashboard 是调试残留） |
 
-### 未合并分支（1 条，详见 §8）
-**2026-08-17 全量清理**：14 个 worktree + 6 个残壳目录已清空（`.claude/worktrees/` 现为空）；原 5 条悬挂分支经取证后由用户裁决**全部废弃**（依据见 §8.1，逐条写明"为什么废"，别再重查）。
+### 未合并分支（0 条 —— 已清零，详见 §8）
+**2026-08-17 全量清理**：14 个 worktree + 6 个残壳目录已清空（`.claude/worktrees/` 现为空）；6 条悬挂分支经逐条取证后由用户裁决**全部废弃**，`git branch` 现只剩 `master`（依据见 §8.1/§8.3，逐条写明"为什么废"，别再重查）。
 ⚠️ 其中 `task-0712` 的**两个已定位缺陷在 master 上仍未修**，随分支一并弃 —— 根因已存 §8.2，重做时直接用，不必重新排查。
-剩余：`feat/quote-material-no`（待确认，本次未取证）
+✅ `feat/quote-material-no` 的技术债内容已转为 [[BL-0175]]（**P1**，含活的 N+1 违规）落 `BACKLOG.md`，未随分支丢失。
 
 ### BACKLOG 概况
 **2026-08-09 重数并做了一次归档**（此前有 14 条状态已是「已完成」却一直留在未完成区，使计数虚高、扫读误导，已按 BACKLOG 自身规则统一移入文末「已完成」区）。
@@ -285,11 +285,13 @@ done | sort | cut -d'|' -f1 | uniq -c | sort -rn | awk '$1>=4'
 > 迁移撞号提示（若重做）：原分支带 `V337__fix_composite_child_materials_selfrow_antijoin.sql`，
 > 而 master 的 V337 已是 `V337__customer_add_product_category.sql`，需另取号。
 
-### 8.3 仍存在的悬挂分支
+### 8.3 悬挂分支：已全部清零
 
-| 分支 | 对应任务 | 备注 |
+| 分支 | 对应任务 | 处置 |
 |---|---|---|
-| `feat/quote-material-no` | — | 待确认（ahead=1，无 worktree，本次未取证） |
+| ~~`feat/quote-material-no`~~ | 报价料号 Spec 1 收尾 | ❌ **2026-08-17 废弃**（落后 master 922 提交；独有 diff 仅 `BACKLOG.md` +15 行、**零代码**）。内容**未丢**：其 `BL-0020`（7 项技术债）经实测复核后以 **[[BL-0175]]** 转录进 master 的 `BACKLOG.md`（原编号已被占用故改号）。**Major-2 按 P1 定级** —— 实测 `MaterialNoResolver.java:71` 的 `ensureRegistered` 位于 per-row 的 `resolve()` 内，被 8 个 handler 在行循环体内调用 = 活的 N+1 违规；Minor-6 的迁移编号洞（V308→V310 缺 V309）亦仍成立 |
+
+> ✅ 至此 `git branch` 只剩 `master`，`git worktree list` 只剩主工作区。
 
 ---
 

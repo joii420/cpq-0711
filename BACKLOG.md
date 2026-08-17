@@ -1187,6 +1187,51 @@
 - **详情**：`dev-docs/task-260729-客户价格调整策略和价格版本/repair-260803-报价单删除阻塞外键/`
   「续集」章节（需求文档 + test-report 同一目录延续记录）
 
+### [BL-0175] 报价料号发号链 follow-up（Major-2 N+1 + 4 项 Minor + 2 项复核）
+- **优先级**：**P1**（由 Major-2 的 N+1 定级；其余 6 项本身为 P2，合并登记不拆条）
+- **来源**：报价料号 Spec 1 终审（`cpq-architect`）Major-2 + Minor-4/6/7 + 复核 Minor-A/B。
+  **原登记于 `feat/quote-material-no` 分支的 `BL-0020`**；该分支 2026-08-17 清理时废弃
+  （落后 master 922 个提交、独有 diff 仅此 15 行文档、零代码），内容转录至此。
+  ⚠️ **改号原因**：master 的 `BL-0020` 已被「config 路径 `[页签.列]` 经 FormulaCalculationService
+  只读裸 code 的粗化」占用，沿用会造成第三个同号条目。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-17（原始提出日 2026-07-07）
+- **✅ 2026-08-17 实测复核（转录时逐项验过，不是照搬旧结论）**：
+  - **Major-2 仍成立且是活的 N+1 违规**：`MaterialNoResolver.java:71` 的
+    `allocator.ensureRegistered(...)` 位于 per-row 方法 `resolve()` 内，而 `resolve()`
+    被至少 **8 个 handler 在行循环体内**调用（`MaterialBomMergeHandler:142` · `Q06:88` ·
+    `Q07:83` · `Q09:108` · `Q13:76` · `Q17:97` 等）→ 数百~千行的 sheet 产生同量级
+    `INSERT ON CONFLICT` 往返。直接违反 `docs/rules/backend.md` N+1 硬指标
+    （「循环体里出现查询 = 违规」），且回退了此前 §P1-A 的批量化成果。
+  - **Minor-6 的迁移编号洞仍在**：目录实为 `V307` / `V308` / **（缺 V309）** / `V310`。
+  - 其余 4 项未逐行验证代码，仅确认 **master BACKLOG 中一条都没有登记**
+    （`ensureRegistered` / `Q02CustomerMapHandler` / `getOrAllocateCustomerCode` /
+    `QuoteMaterialNoIntegrationTest` 全部 0 命中；`MaterialNoResolver` 的 2 处命中属
+    [[BL-0074]] 与 [[BL-0019]]，`mintAndRegister` 的 1 处属 [[BL-0017]]，**均非本条内容**）。
+- **条目**：
+  - **Major-2（性能 · P1）**：`MaterialNoResolver.resolve()` 对每个「料号有值」行同步跑一次
+    `ensureRegistered`（`INSERT ON CONFLICT DO NOTHING` + 潜在 SELECT）→ 大 BOM/费用 sheet
+    N+1 DB 往返。**修法**：攒本 sheet 已见料号，一次 `upsertBatch`（与「导入&首存性能」主线同源）。
+  - **Minor-4**：`Q02CustomerMapHandler` 内存去重只按 `customer_product_no` 分组；同
+    `material_no` 映射两个不同 `customer_product_no` 时 `upsertQuote` 后静默 last-wins、
+    前者无声丢失、无 `recordError`。畸形输入静默部分接受，宜补 `recordError`。
+  - **Minor-6**：迁移编号 `V308→V310` 缺 `V309`（共享 dev DB 已开 `outOfOrder` 故不致校验
+    失败，但编号有洞）。确认 `V309` 未被别的会话占用后决定是否补号或立碑说明。
+  - **Minor-7**：`getOrAllocateCustomerCode` 的 `seq>9999` 与 `mintAndRegister` 的
+    `serial>999999` 两条溢出 `IllegalStateException` 分支无测试覆盖。
+  - **复核 Minor-A**：`QuoteMaterialNoIntegrationTest` 的
+    `materialBomMerge_crossCustomerComponentNo_recordsErrorAndSkipsRowOnly`（2 行 sheet）是
+    「跨客户异常触发 silent-rollback」回归的**唯一守卫**（改写后的 `Q06...crossCustomer_isolated`
+    单行场景测不到这层）→ 宜在该测试加注释标明它守的是 silent-rollback，防日后被当普通用例删掉。
+  - **复核 Minor-B**：`Q10SelfProcessFeeHandler` 的跨客户 catch 分支（与其
+    `MaterialNoUnresolvableException→code=finishedMaterialNo` 落穿逻辑并存）无直接用例覆盖
+    （9 处 catch 同构，低风险）。
+- **前置条件**：✅ Spec 1 已落地
+- **预估规模**：S（1-2 天）
+- **验收要点**：①Major-2 —— 导入一个数百行 sheet，SQL 条数与行数**解耦**（常数级，按
+  `backend.md` N+1 硬指标验）；②Minor-4 —— 同 `material_no` 映射两个不同 `customer_product_no`
+  的畸形输入产生 `recordError` 而非静默 last-wins；③Minor-7 两条溢出分支有测试覆盖。
+
 ## P2
 
 ### [BL-0173] 报价单**详情页**BOM 树页签多出「版本」列（编辑页正常）
