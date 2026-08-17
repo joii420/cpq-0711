@@ -1,9 +1,53 @@
 {
-  "enabledPlugins": {
-    "superpowers@claude-plugins-official": true
-  },
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/session-brief.sh\"",
+            "timeout": 10,
+            "statusMessage": "读取当前项目态势…"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/inject-rules.sh\"",
+            "timeout": 10,
+            "statusMessage": "调取对应规则分册…"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-redline.sh\"",
+            "timeout": 10,
+            "statusMessage": "核对 §3.2 红线…"
+          }
+        ]
+      }
+    ],
     "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/check-selfcheck.sh\"",
+            "timeout": 15,
+            "statusMessage": "核对自检声明行…"
+          }
+        ]
+      },
       {
         "matcher": "*",
         "hooks": [
@@ -13,6 +57,21 @@
           }
         ]
       }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/post-compact.sh\"",
+            "timeout": 10,
+            "statusMessage": "压缩后重锚：指回 AC 原文与分册…"
+          }
+        ]
+      }
     ]
+  },
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true
   }
 }

@@ -10,7 +10,7 @@
 
 **上游文档：**
 - 方案定稿 `docs/superpowers/specs/2026-08-03-annual-discount-unify-design.md`
-- 需求立项 `dev-docs/task-0708-导入报价单和导入核价单的数据落库规则澄清/repair-0804-年降三sheet的入库规则/需求文档.md`（AC-1~AC-17）
+- 需求立项 `dev-docs/task-260708-导入报价单和导入核价单的数据落库规则澄清/repair-260804-年降三sheet的入库规则/需求文档.md`（AC-1~AC-17）
 
 ---
 
@@ -1787,7 +1787,7 @@ npx playwright test --config=e2e/playwright.config.ts e2e/quotation-flow.spec.ts
 - [ ] **Step 4: 在文档顶部版本注记加一条**
 
 ```markdown
-> **V3.6（2026-08-03，repair-0804）· 年降三 Sheet 落库统一**：§8「来料年降」、§15「组装加工费年降」原落 `unit_price`（`price_type=INCOMING_MATERIAL_REDUCTION` / `COMPONENT_REDUCTION`），§19「年降系数」原落 `annual_discount` 且无版本化/无 pending 隔离/无客户维度。本次三者收敛到单表 `annual_discount`，用 `discount_type`（`INCOMING_MATERIAL` / `ASSEMBLY_PROCESS` / `FINISHED`）区分，`target_no` 为泛化挂载目标（材质料号 / 工序编号 / NULL），统一走组级版本化 + pending 隔离，并补齐 `customer_no`、补回 `seq_no`「项次」与 `discount_times`「降价次数」。`unit_price` 两个退役 `price_type` 的存量已清除，CHECK 约束保留不动。详见 `dev-docs/task-0708-导入报价单和导入核价单的数据落库规则澄清/repair-0804-年降三sheet的入库规则/需求文档.md`。
+> **V3.6（2026-08-03，repair-0804）· 年降三 Sheet 落库统一**：§8「来料年降」、§15「组装加工费年降」原落 `unit_price`（`price_type=INCOMING_MATERIAL_REDUCTION` / `COMPONENT_REDUCTION`），§19「年降系数」原落 `annual_discount` 且无版本化/无 pending 隔离/无客户维度。本次三者收敛到单表 `annual_discount`，用 `discount_type`（`INCOMING_MATERIAL` / `ASSEMBLY_PROCESS` / `FINISHED`）区分，`target_no` 为泛化挂载目标（材质料号 / 工序编号 / NULL），统一走组级版本化 + pending 隔离，并补齐 `customer_no`、补回 `seq_no`「项次」与 `discount_times`「降价次数」。`unit_price` 两个退役 `price_type` 的存量已清除，CHECK 约束保留不动。详见 `dev-docs/task-260708-导入报价单和导入核价单的数据落库规则澄清/repair-260804-年降三sheet的入库规则/需求文档.md`。
 ```
 
 - [ ] **Step 5: 追加 RECORD.md 开发记录**
