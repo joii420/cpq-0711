@@ -8,7 +8,7 @@
 
 **Tech Stack:** Java 17 / Quarkus 3.34 / Hibernate Panache / Flyway / PostgreSQL 16 / JUnit5 + `@QuarkusTest`
 
-**需求文档:** `dev-docs/task-0708-导入报价单和导入核价单的数据落库规则澄清/repair-0802-电镀费用投入料号/需求文档.md`
+**需求文档:** `dev-docs/task-260708-导入报价单和导入核价单的数据落库规则澄清/repair-260802-电镀费用投入料号/需求文档.md`
 
 ---
 
@@ -220,7 +220,7 @@ import java.util.Map;
  *   <li>决策⑨：**忽略 Excel「版本编号」列**，version_no 由 writeVersionedGroup 系统生成。</li>
  *   <li>repair-0802：{@code code} = 投入料号(零件料号)、{@code finished_material_no} = 销售料号(成品)，
  *       与 Q06/Q07/Q13 及 unit_price 全表口径一致（见
- *       {@code dev-docs/rule-0724-组件模板配置/4-页签属性与树.md} §零件）。
+ *       {@code dev-docs/rule-260724-组件模板配置/4-页签属性与树.md} §零件）。
  *       「投入料号」「投入料号名称」**均非必填**：有码沿用原始码（不 resolve/不铸号）；
  *       只有名称则按 {@link TypeIndex} 推断类型后反查/铸号；**两者皆空回退为销售料号**
  *       （语义=电镀针对成品自身，与 Q15 组装加工费年降的退化范式一致），此时不得报错。</li>
@@ -885,7 +885,7 @@ PGPASSWORD=joii5231 psql -h 10.177.152.12 -U postgres -d cpq_db -At -c \
 -- repair-0802：电镀费用/电镀成本增加「投入料号」「投入料号名称」列后的配套迁移。
 --
 -- 背景：unit_price 的两列语义是 code=零件料号(该费用项针对的零件)、finished_material_no=成品料号
--- （见 dev-docs/rule-0724-组件模板配置/4-页签属性与树.md §零件，2026-07-23 用户澄清）。电镀两个
+-- （见 dev-docs/rule-260724-组件模板配置/4-页签属性与树.md §零件，2026-07-23 用户澄清）。电镀两个
 -- handler 此前把销售料号写进 code 且不写 finished_material_no，与全表其余 14 个 handler 口径不一致。
 --
 -- 本迁移做三件事：①清理旧语义存量；②dj_view 改按新口径取数并暴露投入料号/名称；③COMP-0063 加两列。
@@ -1060,7 +1060,7 @@ git show --stat HEAD
 
 ## [2026-08-02] 基础数据导入(repair-0802) - 电镀费用/电镀成本增加「投入料号」，unit_price 两列语义归队
 
-**问题**：电镀两个 sheet 把销售料号写进 `unit_price.code` 且 `finished_material_no` 恒空，与该表其余 14 个 handler 的口径相反（`code`=零件料号、`finished_material_no`=成品料号，见 `dev-docs/rule-0724-组件模板配置/4-页签属性与树.md` §零件）。实测佐证：现役 18 行 `QUOTE/PLATING` 的 `code` 全是 `S-80011`，而该料号在 `material_master` 里 `material_name='投入零件1'`、`material_type='零件'`——**业务本就按零件维度记电镀费用，只是 sheet 没有对应的列**。后果：费用无法上卷成品、BOM 闭包类视图取不到数；若把该列绑给零件页签的 `partNoField`，`BomNodeTypeResolver` 会把成品误判成零件节点。
+**问题**：电镀两个 sheet 把销售料号写进 `unit_price.code` 且 `finished_material_no` 恒空，与该表其余 14 个 handler 的口径相反（`code`=零件料号、`finished_material_no`=成品料号，见 `dev-docs/rule-260724-组件模板配置/4-页签属性与树.md` §零件）。实测佐证：现役 18 行 `QUOTE/PLATING` 的 `code` 全是 `S-80011`，而该料号在 `material_master` 里 `material_name='投入零件1'`、`material_type='零件'`——**业务本就按零件维度记电镀费用，只是 sheet 没有对应的列**。后果：费用无法上卷成品、BOM 闭包类视图取不到数；若把该列绑给零件页签的 `partNoField`，`BomNodeTypeResolver` 会把成品误判成零件节点。
 
 **改动**：两个 sheet 增加**非必填**的【投入料号】【投入料号名称】列。`Q17PlatingCostHandler` 照 Q06/Q07 三分支解析（有码沿用 / 仅名称反查铸号 + `material_master` upsert / 皆空回退销售料号），groupKey 加 `finished_material_no`；`P22PlatingCostHandler` 照 P15 范式把分组锚点从 `code` 切到 `finished_material_no`、`code` 进 content（核价侧不做名称反查，与 P15/P16/P17「品名」列一致）；`QuoteImportValidator` 新增 `validatePlatingCost` 把名称反查失败提前到 Phase 1 零写库阶段拦截；`V371` 清理 18 行旧语义存量 + `dj_view` 改绑成品轴并暴露 `input_part_no`/`input_part_name` + COMP-0063 加两个字段。
 

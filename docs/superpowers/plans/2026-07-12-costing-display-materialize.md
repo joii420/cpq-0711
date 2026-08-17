@@ -4,7 +4,7 @@
 
 **Goal:** 把「导入建单」时的明细行创建 + 4 份卡片值计算从「前端事后补算(autoPopulate + saveDraft + warm)」上移到后端 `create-quotation` 服务端同步完成并落库，使编辑页/报价详情页/核价管理三面开箱即用（首屏即树、无「加载中」、无「无组件数据」）。
 
-**Architecture（已用代码证据坐实，见 `dev-docs/task-0712-报价单中的核价单数据展示问题修复/`）：**
+**Architecture（已用代码证据坐实，见 `dev-docs/task-260712-报价单中的核价单数据展示问题修复/`）：**
 后端在 `create-quotation` 走「建行事务提交 → 服务端展开写 snapshot_rows → 建结构快照 → 整单批量算卡片值/Excel 值」四步，**100% 照搬仓库唯一验证过的范例** `ConfigureProductResource.configureProduct`。关键事实：
 1. 服务端建行**只需 INSERT `quotation_line_item`**；`quotation_line_component_data`(componentData 骨架 + snapshot_rows)由 `ConfigureSnapshotService.snapshotQuotation` 的 `writeSnapshot`(手写 UPSERT，UPDATE 未命中自建 INSERT)负责，无需 Task 手写子表 INSERT。
 2. `snapshotQuotation`/`snapshotLines` 内部是 `REQUIRES_NEW`，**必须在建行事务提交之后调用**（否则看不见未提交的新行）——所以编排落在 Resource 层，不塞进 `createQuotation` 同一 `@Transactional` 方法体。

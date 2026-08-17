@@ -142,7 +142,7 @@
    - 影响: **17 个协议检查点跨约 13 个独立文件** — 前端 enrich / normalizeFieldType / cache key / 渲染分支 / computeAllFormulas 字段值循环 / 所有 ProductCard callsite prop / 详情页 ReadonlyProductCard 同步 + 后端 校验 / 路径采集 / 公式 token / refreshSnapshotsByComponent + (新增) useDriverExpansions tasks 切换 + QuotationStep2 渲染层 isCompositeItem 参数
    - 漏一处必有静默失败（不报编译错也没运行时错，只是 UI 渲染不对）
    - **强制 SOP**:
-     - 写代码前 grep 全工程列清单（详见 `dev-docs/rule-0724-组件模板配置/5-公式与Excel列.md §5.2 字段类型联动协议（AP-44 核心规范）`）
+     - 写代码前 grep 全工程列清单（详见 `dev-docs/rule-260724-组件模板配置/5-公式与Excel列.md §5.2 字段类型联动协议（AP-44 核心规范）`）
      - 写代码中对照 15 项 checklist 勾掉每格
      - 写完**跑 E2E + 复测报价单 + 核价单 + 详情页三个视图** + admin 端点验证 snapshot 各 Tab fields_override 独立保留
    - **PR 必含**:

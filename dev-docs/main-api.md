@@ -1332,7 +1332,7 @@
 - 原语义（把组件配置推给所有已发布模板）与「模板发布即冻结」直接冲突 —— 它正是「改一个组件静默改写整条版本历史」的入口之一。其实现 `TemplateService.refreshSnapshotsByComponent` 亦已整体退役。
 - 替代路径：想让新组件配置生效 → `createNewDraft` → 改 → `publish` 出新版本；给从未冻结过的模板补快照 → `POST /templates/{id}/freeze`。
 
-> 来源任务：`task-0806-模板发布全量冻结`｜回写日期：2026-08-08
+> 来源任务：`task-260806-模板发布全量冻结`｜回写日期：2026-08-08
 
 #### 行驱动展开（Y1.5）
 - **功能**: 按组件 dataDriverPath 取 N 行，每行隐式 JOIN 求值所有 BASIC_DATA 字段。无 dataDriverPath 则返回 rowCount=0（前端按单行渲染兜底）。
@@ -2039,7 +2039,7 @@
 #### ~~【管理员】迁移到统一智能视图~~ ❌ 已删除
 - **`POST /api/cpq/templates/admin/migrate-to-unified-view` 于 task-0806 删除，现返回 404。** 一次性历史迁移（`_composite` 字段上升），早已跑过，留着只是「可改写已发布快照」的风险面。
 
-> 来源任务：`task-0806-模板发布全量冻结`｜回写日期：2026-08-08
+> 来源任务：`task-260806-模板发布全量冻结`｜回写日期：2026-08-08
 
 #### 【模板】首次冻结（task-0806 新增）
 - **功能**: 给**从未冻结过**的已发布/已归档模板，按当前活配置就地生成渲染配置冻结快照。**不改 version / status / publishedAt**。
@@ -2049,7 +2049,7 @@
 - 审计：写 `operation_log`，`operation_type='TEMPLATE_INITIAL_FREEZE'`
 - **响应内容**: `ApiResponse<TemplateDTO>`
 
-> 来源任务：`task-0806-模板发布全量冻结`｜回写日期：2026-08-08
+> 来源任务：`task-260806-模板发布全量冻结`｜回写日期：2026-08-08
 
 #### 【管理员】批量首次冻结（task-0806 新增）
 - **功能**: 一次冻结所有零快照的 PUBLISHED/ARCHIVED 模板（过渡期一次性操作）
@@ -2057,7 +2057,7 @@
 - **请求体**: `{ "confirm": false }` —— 缺省 `false` = **仅预览、零写入**并列出待冻清单；`true` 才执行
 - **响应内容**: `ApiResponse<Map<String,Object>>`
 
-> 来源任务：`task-0806-模板发布全量冻结`｜回写日期：2026-08-08
+> 来源任务：`task-260806-模板发布全量冻结`｜回写日期：2026-08-08
 
 #### 【模板】冻结差异视图（task-0806 新增）
 - **功能**: 对比该已发布模板的冻结快照 vs 当前活组件配置，输出逐字段差异
@@ -2067,7 +2067,7 @@
 - 语义：差异随组件迭代自然增长是**严格版本化下的正常状态**，不是告警；它回答「这个已发布版本比当前配置落后多少，值不值得发新版」
 - 批量版：`GET /api/cpq/templates/admin/frozen-drift`（增 `unfrozen` 计数；`onlyDrift=true` 时未冻结模板仍会列出）
 
-> 来源任务：`task-0806-模板发布全量冻结`｜回写日期：2026-08-08
+> 来源任务：`task-260806-模板发布全量冻结`｜回写日期：2026-08-08
 
 #### 【管理员】SQL 视图闭包体检（task-0806 新增）
 - **功能**: 验证每个已发布模板引用到的 SQL 视图都在 `sql_views_snapshot` 闭包内
@@ -2075,7 +2075,7 @@
 - **响应关键字段**：`scanned` / `checked`（真正参与体检的，即已冻结的）/ `unfrozenTemplateIds`（被跳过的）/ `totalRefs` / `missCount` / `misses[]`
 - ⚠️ `checked + unfrozenTemplateIds.length == scanned`；**不能把未冻结模板的「零引用」误读成「没有缺口」**
 
-> 来源任务：`task-0806-模板发布全量冻结`｜回写日期：2026-08-08
+> 来源任务：`task-260806-模板发布全量冻结`｜回写日期：2026-08-08
 
 #### 【管理员】删除模板指定页签
 - **功能**: 一次性数据修复——按 sortOrder 删除 PUBLISHED 模板的某些 Tab（绕过组件管理 UI）
@@ -9545,7 +9545,7 @@ Cell：`quote`(Object 报价值)、`costing`(Object 核价值)、`highlighted`(b
 ### 12.X 客户价格调整策略与价格版本（task-0729，5 个 Resource 类）
 
 > **最后来源：task-0729**（2026-08-01~08-03 交付）。
-> 🔒 **本节以实际交付代码为准回写，不是照抄 `dev-docs/task-0729-客户价格调整策略和价格版本/api.md` 初稿**——两者存在以下已知出入：
+> 🔒 **本节以实际交付代码为准回写，不是照抄 `dev-docs/task-260729-客户价格调整策略和价格版本/api.md` 初稿**——两者存在以下已知出入：
 > 1. **响应体信封**：api.md 初稿沿用全局 `ApiResponse<T>{code,message,data}` 约定，但**实际交付改为裸 DTO / 裸数组**（2026-08-03 修正，5 个 Resource 类统一生效）——前端 `priceAdjustService.ts`/`api.ts` 拦截器只做一层 `response.data` 解包，套 `ApiResponse` 会导致前端读到 `undefined`。**本节所有端点均为裸 DTO，不套信封**，与本文件开头「全局约定 §4」及本类目其余小节（12.1~12.W）的 `ApiResponse<T>` 约定**不同**，调用方须注意。
 > 2. **策略 CRUD（§1.1~§1.7 对应下方 12.X.1）是后补交付**——原始 backtask 分工遗漏了这部分 Resource 层，本次一并补齐。
 > 3. 部分 api.md 草案端点未实现或路径/参数与草案有出入，均以下方实际签名为准。

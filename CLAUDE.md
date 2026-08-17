@@ -169,14 +169,14 @@ Templates and components use JSONB storage for flexible field/formula configurat
 - 🔒 **`docs/三大核心模块基线.md` - 组件管理 / 模板管理 / 报价单渲染 三大核心架构基线（2026-05-21 终态锁定，后续不轻易修改；任何破坏性改动前必读 + 评估 + 走 architect）**
 - `docs/统一智能视图路径方案.md` - 配置驱动方案。**当前版本采用 §2 核心方案（已随 V202 智能视图落地）**；§13（RuntimeContext 上下文字典 + 显式谓词 path + Tab visibleWhen 表达式）为**未来演进方向的备选设计，尚未实施**，不要当成现行终态
 - `docs/反模式.md` - 反模式速查（PR 自检用，新增功能前必读）
-- 🆕 **`dev-docs/rule-0724-组件模板配置/` — 组件模板配置规则的唯一权威文档集**（2026-07-24 由 `docs/配置方法论-合并版.md` + 报价/核价配置文档合并迁移，原件已归档 `docs/archive/`）。**配置任意客户报价/核价组件模板前必读**：起点 `AGENT-配置入口.md`（Agent Runbook：模板→配置全流程 + 数据来源映射 + 料号列绑定铁律 + 元素单价接价格策略 + SQL 契约 + 自检）+ 自描述模板 `组件模板.xlsx`（用户只填字段名 + 页签类型，其余按规则推导）；深度规则 `1-总则与工作流` / `2-组件与字段` / `3-SQL视图` / `4-页签属性与树` / `5-公式与Excel列`（含 §5.2 字段类型联动协议 AP-44）/ `报价侧` / `核价侧` / `附录-速查`（6 维度对照 + 常见坑 + V6 表映射）
+- 🆕 **`dev-docs/rule-260724-组件模板配置/` — 组件模板配置规则的唯一权威文档集**（2026-07-24 由 `docs/配置方法论-合并版.md` + 报价/核价配置文档合并迁移，原件已归档 `docs/archive/`）。**配置任意客户报价/核价组件模板前必读**：起点 `AGENT-配置入口.md`（Agent Runbook：模板→配置全流程 + 数据来源映射 + 料号列绑定铁律 + 元素单价接价格策略 + SQL 契约 + 自检）+ 自描述模板 `组件模板.xlsx`（用户只填字段名 + 页签类型，其余按规则推导）；深度规则 `1-总则与工作流` / `2-组件与字段` / `3-SQL视图` / `4-页签属性与树` / `5-公式与Excel列`（含 §5.2 字段类型联动协议 AP-44）/ `报价侧` / `核价侧` / `附录-速查`（6 维度对照 + 常见坑 + V6 表映射）
 - `docs/配置中心架构.md` - 三层模型 + snapshot 同步 + 管理端点 + datasource_field token（架构基线）
 - `docs/全局变量使用指南.md` - 单表 schema + 新建/维护/引用 SOP
 - `docs/数据源类型扩展指南.md` - 加 Resolver SPI（DATABASE_QUERY / GLOBAL_VARIABLE / BNF_PATH / HTTP_API）
 - `docs/HTTP_API_安全配置.md` - HTTP_API 启用步骤 + 安全不变量
 - `docs/列表操作规范.md` - 列表页面的工具栏动作规范（**所有列表页面必须按此规范实现**，详见下方"UI 交互规范"）
 - `docs/报价单核价单功能总结.md` - 报价单与核价单两条主线的功能、流程、视图、状态机、模板体系、数据库主表的整合视图（PRD 没回写核价系统，以本文 + RECORD.md 为准）
-- ~~`docs/组件管理字段配置指南.md`~~ / ~~`docs/Excel模板配置指南.md`~~ / ~~`docs/配置方法论.md`~~ / ~~`docs/配置方法论-合并版.md`~~ / ~~`docs/rule/报价模板生成规则.md`~~ / ~~`docs/核价树页签组件配置指南.md`~~ / ~~`docs/核价SQL配置手册.md`~~ - ⚠️ **已合并 + 已归档**（2026-06-12 前三份合并为 `配置方法论-合并版.md`；2026-07-24 该合并版连同报价/核价配置文档进一步迁移至 `dev-docs/rule-0724-组件模板配置/`，原件全部移入 `docs/archive/`，仅作历史追溯；新引用一律指向 rule-0724 对应文件）
+- ~~`docs/组件管理字段配置指南.md`~~ / ~~`docs/Excel模板配置指南.md`~~ / ~~`docs/配置方法论.md`~~ / ~~`docs/配置方法论-合并版.md`~~ / ~~`docs/rule/报价模板生成规则.md`~~ / ~~`docs/核价树页签组件配置指南.md`~~ / ~~`docs/核价SQL配置手册.md`~~ - ⚠️ **已合并 + 已归档**（2026-06-12 前三份合并为 `配置方法论-合并版.md`；2026-07-24 该合并版连同报价/核价配置文档进一步迁移至 `dev-docs/rule-260724-组件模板配置/`，原件全部移入 `docs/archive/`，仅作历史追溯；新引用一律指向 rule-0724 对应文件）
 - `docs/反模式.md` AP-22 - **多行数据 "X (共N项)" 显示族**（4 类共因：SQL 隐式 JOIN 失效 / 渲染层漏读 row / 视图 COALESCE 遮蔽 NULL / comparison_tag 未注册）
 - `docs/反模式.md` AP-31 - **"加载中…" 永久占位族**（修 `useDriverExpansions.ts` / `QuotationStep2.tsx` / `QuotationWizard.tsx` / `ConfigureProductService` 等写后端 `mat_*` 流程**必读**；4 类共因：fingerprint 漏维度 / pre-enrich 缓存 EMPTY_EXPANSION / invalidate 漏调 / DATA_SOURCE 渲染缺 fallback；含 PR 专项自检清单 + F12 Network 验证步骤）
 - `docs/反模式.md` AP-37 - **新字段类型 / 同 componentId 多实例 cache 冲突**（AP-31 续集；加新 `field_type` (如 LIST_FORMULA) 必须同步改 **9 处协议传播点** — enrich mapper / normalize / cache key / 渲染 case / 后端白名单 / computeAllFormulas 字段值循环 / parseBasicDataPaths+usePathFormulaCache 路径采集 / **driverExpansionKey 含 fields hash 维度**；模板里同 componentId 多次出现时 cache key 必须含 `dataDriverPath + fieldsHash`；batchExpand 结果配对必须用 task index 而非 backend r.key；含 6 个独立根因诊断 + PR 协议清单 + DATA_SOURCE 4 子类型解析协议对照表）
@@ -187,7 +187,7 @@ Templates and components use JSONB storage for flexible field/formula configurat
   - AP-41 prop drilling 漏传（报价单 vs 核价单 ProductCard 不对齐 → 一个视图功能正常另一个失效）
   - AP-42 `{...lfItem, ...rawRow}` 用 null 字段反向覆盖 lfItem 自动映射（V207 前端修；用 `rawRowNonEmpty` filter）
   - AP-43 Vite ESM 项目残留 `require()` 抛 ReferenceError → catch 吞错误 → 渲染 "—"
-- `docs/反模式.md` AP-44 - **字段类型变动 / 新增 = 组件管理 + 报价渲染 强联动协议（核心规范）**：任何 `field_type` 改动跨 **17 个检查点 (约 13 个独立文件，部分文件含多子项, 2026-05-20 双轨方案后从 15 处扩到 17 处)** 协议变换 — 写代码前 grep 全工程 / 写代码中按矩阵勾掉 / 写完跑 E2E `quotation-flow.spec.ts` + `composite-product-flow.spec.ts` 双 spec 三步走；详见 `dev-docs/rule-0724-组件模板配置/5-公式与Excel列.md §5.2 字段类型联动协议（AP-44 核心规范）`
+- `docs/反模式.md` AP-44 - **字段类型变动 / 新增 = 组件管理 + 报价渲染 强联动协议（核心规范）**：任何 `field_type` 改动跨 **17 个检查点 (约 13 个独立文件，部分文件含多子项, 2026-05-20 双轨方案后从 15 处扩到 17 处)** 协议变换 — 写代码前 grep 全工程 / 写代码中按矩阵勾掉 / 写完跑 E2E `quotation-flow.spec.ts` + `composite-product-flow.spec.ts` 双 spec 三步走；详见 `dev-docs/rule-260724-组件模板配置/5-公式与Excel列.md §5.2 字段类型联动协议（AP-44 核心规范）`
 - `docs/反模式.md` AP-50 - **详情页/编辑页渲染层 single-source 反模式**（2026-05-22；ReadonlyProductCard 缺 DATA_SOURCE/LIST_FORMULA 分支致僵尸数据掩盖；抽 ComponentCell 共享解决；AP-44 矩阵 #14/#15 合一）
 - `docs/反模式.md` AP-51 - **`snapshotRows` Math.max 持久化累加死锁**（2026-05-22；driver 行数权威纪律；写 snapshotRows / computeTabSubtotal 必读）
 - `docs/反模式.md` AP-52 - **全局变量绑定的"语义错配 + 契约不对齐"双重隐患**（2026-05-22；QT-1590~1604 连环 bug 综合教训；含 4 类独立根因 + 4 条强制规范）
