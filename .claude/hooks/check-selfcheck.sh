@@ -51,7 +51,8 @@ fi
 last=$(tail -n 2000 "$tp" 2>/dev/null \
   | jq -R 'fromjson? // empty' 2>/dev/null \
   | jq -rs '
-      reverse
+      map(select(.type=="user" or .type=="assistant"))   # 滤掉 mode/permission-mode/bridge-session 等非对话条目
+      | reverse
       | (map(.type=="user" and ((.message.content // []) | if type=="string" then (.|length>0)
              else (any(.[]?; .type=="text")) end)) | index(true)) as $i
       | (if $i == null then . else .[0:$i] end)
@@ -72,7 +73,8 @@ fi
 #    措辞是无穷的，**改动是客观的**。分母换成「触碰实现代码的轮次」，与说法无关。
 CODE_TOUCHED=$(tail -n 2000 "$tp" 2>/dev/null | jq -R 'fromjson? // empty' 2>/dev/null \
   | jq -rs '
-      reverse
+      map(select(.type=="user" or .type=="assistant"))   # 滤掉 mode/permission-mode/bridge-session 等非对话条目
+      | reverse
       | (map(.type=="user" and ((.message.content // []) | if type=="string" then (.|length>0)
              else (any(.[]?; .type=="text")) end)) | index(true)) as $i
       | (if $i == null then . else .[0:$i] end)
@@ -87,8 +89,13 @@ CODE_FLAG=n; [ -n "$CODE_TOUCHED" ] && CODE_FLAG=y
 HAS_CLAIM=no
 printf '%s' "$last" | grep -qE '已完成|完成了|改完了|全部完成|已修复|修复完成|已实现|实现完毕|已交付|已结案|结案完毕|交付完成|验收通过|搞定|可以用了|没问题了|全部通过|全绿' && HAS_CLAIM=yes
 
-# 既没动代码、也没宣告完成 → 与本 hook 无关
-if [ -z "$CODE_TOUCHED" ] && [ "$HAS_CLAIM" = no ]; then log no-code; exit 0; fi
+# 🚨 只看「动没动实现代码」，**不看它说了什么词**。
+#    实测教训：这里原本写的是 `-z CODE_TOUCHED && HAS_CLAIM=no` 才放行，
+#    于是「没碰代码但说了『完成了』」（改文档、改 .claude/ 配置的轮次）也被要求写自检行 ——
+#    而 §6.1 的自检回答的是「**代码能跑吗**」（tsc / 模块 200 / endpoint 401 / 迁移 success）。
+#    没碰代码却要求这些，它只能编，或者卡在这里反复重发。
+#    HAS_CLAIM 从此只用于记录分布，不参与判定。
+[ -z "$CODE_TOUCHED" ] && { log no-code "claim=$HAS_CLAIM"; exit 0; }
 
 # —— 自检证据（任一命中即放行）——
 if printf '%s' "$last" | grep -qE '已自检|自检[：:]|自检声明|tsc --noEmit|--noEmit|N\+1 自检|http_code|返回 ?(200|401)|success ?= ?t|迁移历史表'; then
