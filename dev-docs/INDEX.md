@@ -42,8 +42,10 @@
 | `task-260723-废弃业务与表清洗` P2 | 🟡 分阶段未完 | `mat_*` 整族退役是多周工程，与 BL-0069 同源 |
 | `task-260715-UI排版审查` | 📋 报告已出，整改未启动 | 180+ 条 / 11 个系统性主题（36 处 Modal 违规、1272 处硬编码 hex、Dashboard 是调试残留） |
 
-### 未合并分支（5 条，详见 §8）
-`feat/task-0712-selection-config`（剩 F6 E2E）· `feat/tesk-0709-pricing-import-versioning`（未进场）· `feat/pricing-sales-part-no`（架构冲突暂搁）· `feat/sel-plan3c-sales-landing`（hold 等 V311）· `feat/quote-material-no`（待确认）
+### 未合并分支（1 条，详见 §8）
+**2026-08-17 全量清理**：14 个 worktree + 6 个残壳目录已清空（`.claude/worktrees/` 现为空）；原 5 条悬挂分支经取证后由用户裁决**全部废弃**（依据见 §8.1，逐条写明"为什么废"，别再重查）。
+⚠️ 其中 `task-0712` 的**两个已定位缺陷在 master 上仍未修**，随分支一并弃 —— 根因已存 §8.2，重做时直接用，不必重新排查。
+剩余：`feat/quote-material-no`（待确认，本次未取证）
 
 ### BACKLOG 概况
 **2026-08-09 重数并做了一次归档**（此前有 14 条状态已是「已完成」却一直留在未完成区，使计数虚高、扫读误导，已按 BACKLOG 自身规则统一移入文末「已完成」区）。
@@ -256,15 +258,38 @@ done | sort | cut -d'|' -f1 | uniq -c | sort -rn | awk '$1>=4'
 
 ## 8. 未合并分支 / 悬挂工作（`git branch --no-merged master`）
 
+> **2026-08-17 全量清理**：14 个存量 worktree + 6 个残壳目录已全部删除，`.claude/worktrees/` 现为空，
+> `git worktree list` 只剩主工作区。下表 5 条悬挂分支经取证后由用户裁决**全部废弃**。
+
+### 8.1 已废弃分支（2026-08-17 裁决，留碑备查——别再去 reflog 里捞）
+
+| 分支 | 对应任务 | 废弃依据（取证结论，非猜测） |
+|---|---|---|
+| ~~`feat/pricing-sales-part-no`~~ | 核价侧销售料号 | ❌ **方向被 master 明确反做**：`V315__unify_partno_semantics.sql` 开头写明「反做 V311 的 sales_part_no 反向设计」并逐表 `DROP COLUMN sales_part_no`。该分支 22 commits 全是给 11 张表加此维度，合并 = 把已撤销的列加回去 |
+| ~~`feat/tesk-0709-pricing-import-versioning`~~ | task-0709 版本升级主线 | ❌ **任务已在 master 重做交付**（`bd52d633` / `92b0ce5f` / `5aabe1dd` / `4ec9b64f` / `3e8d0d0d`）。master 的 `VersionedV6Writer` 1140 行 > 分支 884 行；V323/V324 与 master 同号不同文件（撞车）。`5aabe1dd` 标题即「落库方案**纠正**（去 sales_part_no）」——分支是纠正前那版 |
+| ~~`feat/sel-plan3c-sales-landing`~~ | 选配 Plan3c | ❌ 同上游作废：`ConfigureProductService` 里 34 处 `salesPartNo` 随 V315 反做失效；T1 的 `enabledParams` 分发 master 已有（`ConfigureProductService.java:214/338`） |
+| ~~`feat/task-0812-停用汇率管理表`~~ | task-0812 | ❌ 孤立文案改动（20→19 Sheet）与后端矛盾：`PricingImportService` 实登记 **20** 个 handler，master 文案 20 与之一致。要停第 5 个 Sheet 应重新立项 |
+| ~~`feat/task-0712-selection-config`~~ | task-0712 选配 | ⚠️ **有效修复被一并废弃**（用户裁决：分支版本日期过久）。详见 8.2 —— 两个 bug 在 master 上**至今未修** |
+
+### 8.2 ⚠️ 随 task-0712 分支废弃而丢失的两个已定位缺陷（master 上仍未修）
+
+分支删除前 diff 已存 patch（会话 scratchpad，非持久）。两处根因**已定位到行**，重做时不必再查：
+
+1. **`ConfigureProductService.insertMaterialBomItemV6`**：`component_no` 应写材质料号 `recipe.code`（如 991/992），
+   master 现写自指销售料号 `hfPartNo` → 视图 `v_composite_child_materials` 的 `mr.code = asy.component_no`
+   **关联恒 miss**，`recipe_id` / `chemical_symbol` 恒 NULL，靠 `component_usage_type` 兜底渲染材质名（非设计原意）。
+2. **`ExistingProductService`**：`WHERE customer_product_no IS NOT NULL`（原按 F005 加的过滤）把选配新建料号
+   挡在「从已有产品添加」列表外，用户无法重新选中。选配行 `customer_product_no` 为空是**正常阶段状态不是脏数据**，
+   应仅按 `customer_no + system_type='QUOTE'` 过滤。
+
+> 迁移撞号提示（若重做）：原分支带 `V337__fix_composite_child_materials_selfrow_antijoin.sql`，
+> 而 master 的 V337 已是 `V337__customer_add_product_category.sql`，需另取号。
+
+### 8.3 仍存在的悬挂分支
+
 | 分支 | 对应任务 | 备注 |
 |---|---|---|
-| `feat/task-0712-selection-config` | task-0712 选配 | 20 commits，剩 F6 E2E + 合并前置对齐 |
-| `feat/tesk-0709-pricing-import-versioning` | task-0709 版本升级主线 | 文档就绪，工程师未进场 |
-| `feat/pricing-sales-part-no` | 核价侧销售料号 | 疑与 task-0708 架构冲突，用户暂搁 |
-| `feat/sel-plan3c-sales-landing` | 选配 Plan3c | 后端 20 测试全绿，hold 等 V311 落 master |
-| `feat/quote-material-no` | — | 待确认 |
-
-> 另有 14 个存量 worktree（`git worktree list`），多数已合并未清理，收尾时按 `superpowers:finishing-a-development-branch` 清。
+| `feat/quote-material-no` | — | 待确认（ahead=1，无 worktree，本次未取证） |
 
 ---
 
