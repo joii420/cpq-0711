@@ -78,6 +78,13 @@ const EDGES=[
    tabs:['BOM 树'],card:'MANY_TO_ONE',fb:null,assert:'thin',src:'bom_view',
    note:'匹配维度 = 投入料号 + **直接父件**（code=本行子件, finished=本行父件）。unit_price 是版本化表，禁写进带 is_current 的 LEFT JOIN → 必须编译成相关标量子查询。已知取舍：三层以上 BOM 中孙件那行取不到值（它的父不是成品）。'}];
 const TABS=['主件','材质元素','零件','外购件','费用类','BOM 树'];
+/* D-34 分立建模：费用类一个页签类型对应 **2 个视图声明**（来料固定加工费 / 来料其他费用），
+   各自单一 price_type、各自一套查名 —— 与现网 ll_view / lqt_view 逐一对应。
+   故「页签类型」6 类，而 semantic_tab_view 表里是 7 行。 */
+const TABVIEWS=[{tab:'主件'},{tab:'材质元素'},{tab:'零件'},{tab:'外购件'},
+  {tab:'费用类',variant:'来料固定加工费',view:'ll_view · 13 个组件'},
+  {tab:'费用类',variant:'来料其他费用',view:'lqt_view · 6 个组件'},
+  {tab:'BOM 树'}];
 const KINDLABEL={GRAIN:['一对多','p-info','JOIN，页签按目标 grain 展开行'],SUB:['多对一','p-grey','粒度更粗 → 相关标量子查询'],
   SAME:['同粒度','p-grey','同表同粒度，直接并列'],JOIN:['多对一','p-grey','收窄用 JOIN（客户料号关系）'],
   LOOKUP:['多对一','p-lk','查名 LEFT JOIN，多源按 fallbackOrder 生成 COALESCE'],PRICE:['多对一','p-fn','表函数，原子组']};

@@ -79,7 +79,7 @@ function renderStat(){
      <div><b>${LOOKUPS.filter(l=>l.kind==='LOOKUP').length}</b><span>查名维表 + ${LOOKUPS.filter(l=>l.kind==='FUNCTION').length} 表函数</span></div>
      <div><b>${logicalEdges()}</b><span>边（展开 ${EDGES.length} 条连接）</span></div>
      <div><b style="color:${orphan?'var(--warn)':'var(--ok)'}">${orphan}</b><span>孤儿 Sheet</span></div>
-     <div><b>${TABS.length}</b><span>页签视图</span></div>
+     <div><b>${TABVIEWS.length}</b><span>页签视图（${TABS.length} 类页签）</span></div>
      <div><b>v15</b><span>图版本 · 2026-08-20 14:22 张工</span></div>`;
 }
 function render(){

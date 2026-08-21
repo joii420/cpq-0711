@@ -246,6 +246,8 @@ input.fname:focus{border-color:var(--blue);outline:none;background:rgba(255,255,
 
     <div class="recipe-bar">
       <div class="rb-line"><label class="lbl">页签类型</label><select id="tabSel"></select>
+        <span id="varWrap" style="display:none;margin-left:14px"><label class="lbl">数据来源</label><select id="varSel"></select>
+        <span id="varHint" style="font-size:11px;color:var(--sub);margin-left:8px"></span></span>
 </div>
       <div class="rb-line"><span id="anchorInfo"></span></div>
       <div class="rb-line" id="optLine"><label class="lbl">选项</label>
@@ -446,8 +448,16 @@ const TABDEF={
      joins:['LEFT JOIN process_master pm ON pm.process_no = mbi.operation_no']}]}],
   aux:[{key:'COMPONENT_OTHER',kind:'SUB',addDims:['要素'],where:"co.finished_material_no = mbi.material_no AND co.code = mbi.component_no\n       AND co.price_type = 'COMPONENT_OTHER' AND co.system_type = 'QUOTE' AND co.is_current\n       AND co.customer_no = :customerCode"}],
   opts:['includeChildParts']},
-'费用类':{main:'INCOMING_FIXED',main2:'INCOMING_OTHER',tbl:'unit_price',al:'up',anchor:{col:'up.finished_material_no',desc:'来料费用 按成品料号收窄'},
-  where:["up.system_type = 'QUOTE'","up.price_type IN ('INCOMING_MATERIAL_PROCESS','INCOMING_MATERIAL_OTHER')","up.is_current"],
+/* 🔄 2026-08-20 D-34：费用类由「合并建模」改为「分立建模」（用户裁决）。
+   合并版（price_type IN + main2）会让一个视图同时返回两种 price_type 的行（实测 4+6=10 行），
+   与现网任一视图都不等值 → AC-38 费用类 golden 必然不过。
+   分立版 = 页签类型仍是 6 类不变，选中费用类后再选一个「数据来源」，各自编译成单一 price_type 的视图，
+   与现网 ll_view（13 个组件）/ lqt_view（6 个组件）逐一对应。 */
+'费用类':{main:'INCOMING_FIXED',tbl:'unit_price',al:'up',anchor:{col:'up.finished_material_no',desc:'来料费用 按成品料号收窄'},
+  variants:[{key:'INCOMING_FIXED',label:'来料固定加工费',priceType:'INCOMING_MATERIAL_PROCESS',view:'ll_view · 现网 13 个组件'},
+            {key:'INCOMING_OTHER',label:'来料其他费用',priceType:'INCOMING_MATERIAL_OTHER',view:'lqt_view · 现网 6 个组件'}],
+  whereBase:["up.system_type = 'QUOTE'","up.is_current"],
+  where:["up.system_type = 'QUOTE'","up.price_type = 'INCOMING_MATERIAL_PROCESS'","up.is_current"],
   custMode:'DIRECT',note:'行身份 = 投入料号 up.code（可能是材质 / 零件 / 外购件，类型不定）',
   codeCols:[
    {k:'F_C',l:'投入料号',e:'up.code',t:X,r:['PART_NO','ROW_KEY'],lookup:[{k:'F_CN',l:'投入料号名称',e:'COALESCE(mm.material_name, mr.name)',t:X,r:['PART_NAME','ROW_KEY'],lib:'MM',
@@ -455,7 +465,9 @@ const TABDEF={
    /* 2026-08-20 补（D-32）：现网 ll_view 实测输出 COALESCE(pm.process_name, up.operation_no) AS _工序，
       原型此前无工序列 —— 照原型配出的费用类视图会比现网少一列，golden 逐行等值必然不过（AC-38）。
       写法与零件页签的 S_OP/S_ON 同构。 */
-   {k:'F_OP',l:'工序号',e:'up.operation_no',t:X,r:['ROW_KEY'],lookup:[{k:'F_ON',l:'工序',e:'COALESCE(pm.process_name, up.operation_no)',t:X,r:['ROW_KEY'],lib:'PR',
+   /* onlyVariant：实测 ll_view 有 process_master JOIN 与 _工序 列，lqt_view 两者都没有 →
+      工序列只属于「来料固定加工费」这一个数据来源（D-34 分立建模才表达得出这种差异）。 */
+   {k:'F_OP',onlyVariant:'INCOMING_FIXED',l:'工序号',e:'up.operation_no',t:X,r:['ROW_KEY'],lookup:[{k:'F_ON',l:'工序',e:'COALESCE(pm.process_name, up.operation_no)',t:X,r:['ROW_KEY'],lib:'PR',
      joins:['LEFT JOIN process_master pm ON pm.process_no = up.operation_no']}]}],
   aux:[],opts:['includeChildParts']},
 'BOM 树':{main:'MATERIAL_BOM',tbl:'material_bom_item',al:'mbi',tree:true,
@@ -480,11 +492,23 @@ let curTab='主件',opts={includeChildParts:false},sel=[],previewOpen=true,previ
 /* v8：价格策略 = 原子组。拖其列自动带出元素列（JOIN 左键）；删组核心列整组删。 */
 function priceGroupOn(){return sel.some(x=>x.raw);}
 function elemKeyCol(){return sel.find(x=>x.elemKey||x.autoElem);}
-const D=()=>TABDEF[curTab];
+let curVariant={};                       /* {页签类型: variant.key}，仅费用类用 */
+function curVar(){const d=TABDEF[curTab];
+  if(!d.variants)return null;
+  return d.variants.find(v=>v.key===curVariant[curTab])||d.variants[0];}
+/* D-34 分立建模的唯一入口：main / where / codeCols 全部跟着所选数据来源走。
+   D() 与 deriveModel() 共用本函数 —— 两处各写一份必然漂移。 */
+function applyVariant(d,v){
+  if(!v)return d;
+  return {...d, main:v.key,
+    where:[...d.whereBase,`up.price_type = '${v.priceType}'`],
+    codeCols:(d.codeCols||[]).filter(c=>!c.onlyVariant||c.onlyVariant===v.key),
+    _v:v};}
+const D=()=>applyVariant(TABDEF[curTab],curVar());
 function mainGroups(){const d=D(),g=[];
   const mk=(key,al)=>({key,n:SHEETS[key].n,note:SHEETS[key].note,kind:'MAIN',dims:SHEETS[key].dims||[],
     cols:SHEETS[key].cols.map(([c,l,t,rr])=>({k:'M_'+c,l,t,e:`${al}.${c}`,src:SHEETS[key].sn,r:rr?[rr]:[],dims:SHEETS[key].dims||[]}))});
-  g.push(mk(d.main,d.al)); if(d.main2) g.push(mk(d.main2,d.al));
+  g.push(mk(d.main,d.al));   /* D-34：分立后不再有 main2 —— 一次只出一个主源 */
   return g;}
 function auxGroups(){const d=D();return (d.aux||[]).map((a,i)=>{const sh=SHEETS[a.key],al=a.dimAlias||a.al2||sh.al;
   const label=a.label||sh.n;
@@ -861,19 +885,22 @@ function deriveModel(){
   Object.entries(SHEETS).forEach(([k,sh])=>{
     const usedBy=[];
     Object.entries(TABDEF).forEach(([tn,d])=>{
-      if(d.main===k)usedBy.push(tn+' · 主源');
-      /* 🐛 2026-08-20 修：原先只看 main 与 aux，漏了 main2 —— 费用类用
-         main2:'INCOMING_OTHER' 把来料其他费用并进同一视图（price_type IN），
-         漏统计导致它被误报成「孤儿 Sheet」，图谱页少报用途、多报孤儿。 */
-      else if(d.main2===k)usedBy.push(tn+' · 主源(合并)');
-      else if((d.aux||[]).some(a=>a.key===k))usedBy.push(tn);});
+      /* D-34 分立建模：有 variants 的页签，每个 variant 各是一个独立主源。
+         （原先此处只看 main 与 aux、漏看 main2，致来料其他费用被误报为孤儿 —— D-33） */
+      if(d.variants){ if(d.variants.some(v=>v.key===k)) usedBy.push(tn+' · 主源'); }
+      else if(d.main===k)usedBy.push(tn+' · 主源');
+      if((d.aux||[]).some(a=>a.key===k))usedBy.push(tn);});
     nodes.push({k,n:sh.n,tbl:sh.tbl,dims:sh.dims||[],cols:sh.cols.length,note:sh.note,usedBy});
   });
   const push=(from,to,kind,on,tab)=>{
     const id=from+'|'+to+'|'+kind;
     if(seen[id]){if(!seen[id].tabs.includes(tab))seen[id].tabs.push(tab);return;}
     seen[id]={from,to,kind,on,tabs:[tab]};edges.push(seen[id]);};
-  Object.entries(TABDEF).forEach(([tn,d])=>{
+  Object.entries(TABDEF).forEach(([tn,d0])=>{
+   /* D-34：分立建模下，费用类的每个 variant 各生成一套边（各自一份查名 JOIN），
+      这正是边数 19（分立）vs 18（合并）的差异来源。 */
+   (d0.variants||[null]).forEach(v=>{
+    const d = applyVariant(d0,v);
     const mainName=SHEETS[d.main]?SHEETS[d.main].n:d.main;
     (d.aux||[]).forEach(a=>push(mainName,SHEETS[a.key].n,a.kind,(a.join||a.where||'—').split('\n')[0],tn));
     (d.codeCols||[]).forEach(cc=>{
@@ -881,6 +908,7 @@ function deriveModel(){
         if(l.lib)push(mainName,LIB[l.lib].lib,'LOOKUP',cc.e+' = '+LIB[l.lib].lib+'.主键',tn);});});
     (d.price||[]).length&&push(mainName,'价格策略 f_material_element_price','PRICE',
       'cep.element_code = ebi.component_no  AND  cep.material_no = <hf_part_no 表达式>',tn);
+   });
   });
   return {nodes,edges};
 }
@@ -932,12 +960,25 @@ function renderGraphPage(){
   document.getElementById('graphPane').innerHTML=h;
 }
 function renderLiveSql(){const el=document.getElementById('liveSql');if(el)el.innerHTML=buildSql();}
-function render(){renderAvail();renderSel();healthCheck();renderPreview();renderBar();renderLiveSql();}
+/* D-34：数据来源下拉 —— 只有声明了 variants 的页签才出现（当前仅费用类） */
+function renderVariant(){
+  const d=TABDEF[curTab],wrap=document.getElementById('varWrap'),selEl=document.getElementById('varSel');
+  if(!d.variants){wrap.style.display='none';return;}
+  wrap.style.display='';
+  const cur=curVar();
+  selEl.innerHTML=d.variants.map(v=>`<option value="${v.key}" ${v.key===cur.key?'selected':''}>${v.label}</option>`).join('');
+  document.getElementById('varHint').textContent=`→ ${cur.view}`;
+}
+function render(){renderVariant();renderAvail();renderSel();healthCheck();renderPreview();renderBar();renderLiveSql();}
 const tabSel=document.getElementById('tabSel');
 tabSel.innerHTML=TABS.map(t=>`<option value="${t}">${t}</option>`).join('');
 tabSel.value=curTab;
 tabSel.onchange=()=>{if(sel.length&&!confirm('切换页签类型会清空已选输出列。继续？')){tabSel.value=curTab;return;}
   curTab=tabSel.value;opts={includeChildParts:false};seed();render();};
+document.getElementById('varSel').onchange=function(){
+  /* 换数据来源 = 换主源 Sheet，已选列全部失效（它们取自上一个 Sheet） */
+  if(sel.length&&!confirm('切换数据来源会清空已选输出列。继续？')){this.value=curVar().key;return;}
+  curVariant[curTab]=this.value;opts={includeChildParts:false};seed();render();};
 document.querySelectorAll('.sw').forEach(el=>{el.onclick=()=>{const k=el.dataset.opt;opts[k]=!opts[k];
   if(!opts.includeChildParts)sel=sel.filter(x=>!/归属料号/.test(x.label));
   /* v8：价格策略不再是开关，此处不得再按 opts 清理 raw 列（否则点闭包开关会误删整组） */
