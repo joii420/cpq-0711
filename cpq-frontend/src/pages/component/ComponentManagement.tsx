@@ -1081,12 +1081,14 @@ const ComponentManagement: React.FC = () => {
   // 前端不再展示该开关、也不再随保存提交它——此状态仅供 buildDraftSnapshot 保持类型兼容
   // (草稿快照结构/既有单测未变)，只读镜像加载值，不接受用户输入，不影响任何渲染判断。
   const [bomRecursiveExpand, setBomRecursiveExpand] = useState<boolean>(false);
-  // task-0721 F2：页签类型属性(可空;5 类值域 BOM/材质元素/零件/外购件/主件)。
+  // task-0721 F2：页签类型属性(可空;6 类值域 BOM/材质元素/零件/外购件/主件/费用类，
+  // 「费用类」于 task-260819 F-15/D-36 补入)。
   // 2026-07-21 起与 bomRecursiveExpand 后端联动派生(选 BOM → true；其余 → false)，
   // 前端只维护这一个字段，不再单独暴露渲染开关。
   const [tabType, setTabType] = useState<string | undefined>(undefined);
-  // task-0721 F2（2026-07-21 补充，需求说明 §4.3 规则一）：料号列/料号名称列字段名。
-  // 从该组件已有字段(fields state)中选，不是自由输入；非树页签(tabType∈{材质元素,零件,外购件,主件})必填。
+  // task-0721 F2（2026-07-23 补充，需求说明 §4.3 规则一）：料号列/料号名称列字段名。
+  // 从该组件已有字段(fields state)中选，不是自由输入；非树页签(tabType∈{材质元素,零件,外购件,主件,费用类}，
+  // D-37 已把「费用类」纳入同一约束)必配料号列或名称列至少一个。
   const [partNoField, setPartNoField] = useState<string | undefined>(undefined);
   const [partNameField, setPartNameField] = useState<string | undefined>(undefined);
   // task-0729 屏 8：元素列/元素单价列/货币列（组件级，与 partNoField 平级，见 types.ts 注释）
@@ -1427,6 +1429,9 @@ const ComponentManagement: React.FC = () => {
     // 页签用"料件名称=组成件1"而无料号列）——放宽为 partNoField 或 partNameField 至少配一个，
     // 否则该页签既标了类型却无任何可匹配标识，等于白标。后端保存期也会校验(400)，
     // 这里做前端先行校验只为更快反馈，不替代后端权威判定。
+    // task-260819 F-15（D-37）：判据是 `tabType !== 'BOM'`（非枚举白名单），「费用类」自动落进
+    // 同一约束，不需要为它单独加分支——已按此核对过一遍，行为符合 D-37「费用类必配料号列或名称列
+    // 至少一个」的裁决。
     if (
       selectedComponent.componentType === 'NORMAL'
       && tabType
@@ -1844,7 +1849,11 @@ const ComponentManagement: React.FC = () => {
                         选 BOM 时后端自动置 bomRecursiveExpand=true，改为其他值/清空自动置 false。
                         前端不再单独暴露 bomRecursiveExpand 开关（用户不需要理解两个字段的关系），
                         也不再随保存请求提交该字段，避免用陈旧本地态覆盖后端的自动派生结果。 */}
-                    <Tooltip title="页签类型：BOM = 树状页签(选中后核价/报价按 BOM 树渲染)；材质元素/零件/外购件 = 该页签料号的业务语义(供树上加叶子类型判定用)；主件 = 成品/树根。可空(存量组件无此属性)。若组件已被核价模板引用，改为 BOM 可能返回 400（该组件已被核价模板引用，无法设为 BOM 类型）。">
+                    {/* F-15（D-36 裁决，task-260819 第二轮）：5→6 项，新增「费用类」。
+                        📌 D-39（存储值与显示名故意不同，与 D-12「列名=来源、字段名=显示」同源）：
+                        第 5 类 value 必须是 'BOM'（与 SqlViewBuilderTab.tsx 的 TAB_TYPES、后端
+                        VALID_TAB_TYPES 三处逐字一致，现网已有该值数据不可改），label 显示「BOM 树」。 */}
+                    <Tooltip title="页签类型：BOM = 树状页签(选中后核价/报价按 BOM 树渲染)；材质元素/零件/外购件/费用类 = 该页签料号的业务语义(供树上加叶子类型判定用)；主件 = 成品/树根。可空(存量组件无此属性)。若组件已被核价模板引用，改为 BOM 可能返回 400（该组件已被核价模板引用，无法设为 BOM 类型）。">
                       <Select
                         allowClear
                         placeholder="页签类型"
@@ -1852,11 +1861,12 @@ const ComponentManagement: React.FC = () => {
                         value={tabType}
                         onChange={(v) => setTabType(v)}
                         options={[
-                          { value: 'BOM', label: 'BOM' },
+                          { value: 'BOM', label: 'BOM 树' },
                           { value: '材质元素', label: '材质元素' },
                           { value: '零件', label: '零件' },
                           { value: '外购件', label: '外购件' },
                           { value: '主件', label: '主件' },
+                          { value: '费用类', label: '费用类' },
                         ]}
                       />
                     </Tooltip>

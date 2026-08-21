@@ -20,7 +20,50 @@
 //   · GET /builder 直接给 isLegacyHandwritten / isStale / currentCompilerVersion 三个布尔/数字，
 //     不需要前端自己比较版本号推导
 // ⚠️ 仍然只是「目前证据所支持的最佳猜测」——B-5~B-16 尚未实现，联调前请求主线与后端对齐一次。
-import api from './api';
+//
+// F-16（2026-08-21，api.md §1.5③）：本文件的请求**不走** services/api.ts 的全局 `api` 单例。
+// 原因：全局 `buildApiError` 假设错误体套了 `{code,message,data}` 信封，读 `error.response.data.data`；
+// 但本任务后端错误体一律「裸体」——`code`/`failedCheck`/`detail`/`paths`/`suggestion` 直接在响应根，
+// 没有 `.data` 这层。套用全局函数会让 `err.payload` 恒为 null，SqlViewBuilderTab.tsx 里
+// `e.payload.code` / `e.payload.paths` / `e.payload.suggestion` / `e.payload.detail.affectedTemplates`
+// 全部读不到值，结构化错误（COMPILE_PATH_AMBIGUOUS 的候选路径、IMPACT_CONFIRM_REQUIRED 的模板名单）
+// 静默降级成只显示一句 message。
+// 🚫 不改全站公共的 api.ts（会改变其它模块的信封语义，越界）——本文件建一个平行的、不挂全局
+// 拦截器的 axios 客户端，`payload` 直接取 `error.response.data`（裸体响应本身）。401 重定向登录页
+// 的副作用与全局口径保持一致（手动补一份，避免 builder 页面在会话过期时退化成看不懂的报错）。
+import axios from 'axios';
+
+const builderHttp = axios.create({
+  baseURL: '/api/cpq',
+  timeout: 30000,
+  withCredentials: true,
+  headers: { 'Content-Type': 'application/json' },
+});
+
+export interface BuilderApiError extends Error {
+  /** 裸体响应体本身（api.md §1.5③）——不是 `.data.data`。COMPILE_PATH_AMBIGUOUS 的 code/paths/suggestion、
+   *  IMPACT_CONFIRM_REQUIRED 的 code/detail 等结构化字段都在这一层，直接 `payload.xxx` 取。 */
+  payload: unknown;
+  httpStatus?: number;
+}
+
+function buildBuilderApiError(error: any): BuilderApiError {
+  const body = error?.response?.data;
+  const err = new Error(body?.message || error?.message || 'Network error') as BuilderApiError;
+  err.payload = body ?? null;
+  err.httpStatus = error?.response?.status;
+  return err;
+}
+
+builderHttp.interceptors.response.use(
+  (response) => response.data,
+  (error) => {
+    if (error?.response?.status === 401) {
+      window.location.href = '/login';
+    }
+    return Promise.reject(buildBuilderApiError(error));
+  },
+);
 
 // ── 字段树（GET /config/semantic-graph/field-tree）────────────────────────
 
@@ -86,7 +129,7 @@ export const fetchFieldTree = (
   variantKey?: string | null,
   selectedConfig?: unknown,
 ): Promise<FieldTreeResponse> =>
-  api.get('/config/semantic-graph/field-tree', {
+  builderHttp.get('/config/semantic-graph/field-tree', {
     params: {
       tabType,
       variantKey: variantKey || undefined,
@@ -149,7 +192,7 @@ export interface GetBuilderResponse {
 }
 
 export const getBuilder = (componentId: string): Promise<GetBuilderResponse> =>
-  api.get(`/components/${componentId}/builder`) as Promise<any>;
+  builderHttp.get(`/components/${componentId}/builder`) as Promise<any>;
 
 export interface CompileResponse {
   sql: string;
@@ -168,7 +211,7 @@ export interface CompileErrorBody {
 }
 
 export const compileBuilder = (componentId: string, req: BuilderConfigPayload): Promise<CompileResponse> =>
-  api.post(`/components/${componentId}/builder/compile`, req) as Promise<any>;
+  builderHttp.post(`/components/${componentId}/builder/compile`, req) as Promise<any>;
 
 export interface PreviewRequest extends BuilderConfigPayload {
   customerCode: string;
@@ -191,7 +234,7 @@ export interface PreviewResponse {
 }
 
 export const previewBuilder = (componentId: string, req: PreviewRequest): Promise<PreviewResponse> =>
-  api.post(`/components/${componentId}/builder/preview`, req) as Promise<any>;
+  builderHttp.post(`/components/${componentId}/builder/preview`, req) as Promise<any>;
 
 export interface InspectCheck {
   /** 后端用大写 'ERR'/'WARN'（Sec33 测试逐字确认），非小写。 */
@@ -205,7 +248,7 @@ export interface InspectResponse {
 }
 
 export const inspectBuilder = (componentId: string, req: BuilderConfigPayload): Promise<InspectResponse> =>
-  api.post(`/components/${componentId}/builder/inspect`, req) as Promise<any>;
+  builderHttp.post(`/components/${componentId}/builder/inspect`, req) as Promise<any>;
 
 export interface SaveBuilderRequest {
   builderConfig: BuilderConfigPayload;
@@ -224,7 +267,7 @@ export interface ImpactConfirmBody {
 }
 
 export const saveBuilder = (componentId: string, req: SaveBuilderRequest): Promise<SaveBuilderResponse> =>
-  api.put(`/components/${componentId}/builder`, req) as Promise<any>;
+  builderHttp.put(`/components/${componentId}/builder`, req) as Promise<any>;
 
 export const detachBuilder = (componentId: string): Promise<{ success?: boolean }> =>
-  api.post(`/components/${componentId}/builder/detach`, {}) as Promise<any>;
+  builderHttp.post(`/components/${componentId}/builder/detach`, {}) as Promise<any>;

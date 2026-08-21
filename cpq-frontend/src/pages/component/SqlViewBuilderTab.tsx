@@ -19,8 +19,18 @@ import { customerService } from '../../services/customerService';
 
 // ── 常量 ────────────────────────────────────────────────────────────────
 
-/** AC-25：页签类型下拉含 6 项（新增「费用类」，D-34 分立建模）。字段树 availableTabTypes 缺失时的兜底常量。 */
-const TAB_TYPES = ['主件', '材质元素', '零件', '外购件', '费用类', 'BOM 树'] as const;
+/**
+ * AC-25：页签类型下拉含 6 项（新增「费用类」，D-34 分立建模）。字段树 availableTabTypes 缺失时的兜底常量。
+ * 📌 D-39（存储值与显示名故意不同，与 D-12「列名=来源、字段名=显示」同源）：
+ *    `TAB_TYPES` 装的是**存储值**（提交给后端 / 写进 builder_config.tabType 的那个字符串，
+ *    与组件详情头部 Select 的 value、后端 VALID_TAB_TYPES 三处口径必须逐字一致），第 6 项是 `'BOM'`。
+ *    渲染给用户看的显示名走 `TAB_TYPE_LABEL`——BOM 显示为「BOM 树」，其余 5 类显示名与存储值相同。
+ *    🚫 `includes()` / 默认值 / 回填匹配一律用 `TAB_TYPES`（值），不要错拿 label 去比对，
+ *    否则会复现「BOM 组件首次打开被误判成主件」那个 bug（F-15 修过一次）。
+ */
+const TAB_TYPES = ['主件', '材质元素', '零件', '外购件', '费用类', 'BOM'] as const;
+/** D-39：仅 BOM 的显示名与存储值不同；其余 5 类未列出时 Select 渲染逻辑回退用存储值本身当显示名。 */
+const TAB_TYPE_LABEL: Record<string, string> = { BOM: 'BOM 树' };
 const ROLE_LABEL: Record<FieldRole, string> = { PART_NO: '料号', PART_NAME: '名称', ROW_KEY: '行键', SORT: '排序' };
 const DATA_TYPE_LABEL: Record<string, string> = { TEXT: '文本', NUMBER: '数字', MONEY: '金额' };
 const SWITCH_LABEL: Record<string, string> = { includeChildParts: '子件数据也要' };
@@ -852,7 +862,7 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
       <div className="svb-recipe-bar">
         <div className="svb-rb-line">
           <span className="svb-lbl">页签类型</span>
-          <Select size="small" style={{ width: 140 }} value={tabType} onChange={handleTabTypeChange} options={(fieldTree?.availableTabTypes ?? TAB_TYPES as unknown as string[]).map((t) => ({ value: t, label: t }))} />
+          <Select size="small" style={{ width: 140 }} value={tabType} onChange={handleTabTypeChange} options={(fieldTree?.availableTabTypes ?? TAB_TYPES as unknown as string[]).map((t) => ({ value: t, label: TAB_TYPE_LABEL[t] ?? t }))} />
           {fieldTree?.variants && fieldTree.variants.length > 0 && (
             <>
               <span className="svb-lbl" style={{ marginLeft: 14 }}>数据来源</span>
