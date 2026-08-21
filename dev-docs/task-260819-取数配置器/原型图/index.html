@@ -109,8 +109,12 @@
 <div class="gnote" style="margin-top:20px">
   <b>共享资源</b>：<code>语义图管理页/proto.css</code>（视觉语汇）· <code>语义图管理页/data.js</code>（真实数据 —— 13 节点 / 16 边 / 6 页签，
   取自 <code>原型-取数配置器.html</code> 的 <code>deriveModel()</code> 实际输出，两个形态的页面读同一份，避免漂移）。
-  <br>⚠️ <b>与需求文档的数字待对齐</b>：需求文档写「17 张 Sheet / 19 条边」，定稿原型实际是 <b>13 / 16</b>（年降三张已按 N-7 移出）。
-  开工前须核实以哪个为准 —— 它是 <b>AC-51 的断言数字</b>。
+  <br>✅ <b>数字已对齐</b>（2026-08-20 · D-31，用户裁决「差异按最新的文档为准」）：<b>17 节点 / 19 边 / 孤儿 4 张</b>，与 AC-43 断言逐字一致。
+  <br>17 = 16 个 <code>Q*Handler</code> + <code>MaterialBomMergeHandler</code>，逐个读 <code>sheetName()</code> 核对得出。
+  🐛 顺带查出定稿原型漏了 <code>Q09 来料回收折扣</code>（不在 N-7 / N-8 任何移出清单上）。
+  <br>⚠️ <b>两侧口径暂不一致</b>：语义图侧费用类页签有 3 个节点（主源 + 来料其他费用 + 来料回收折扣），
+  而定稿的 <code>原型-取数配置器.html</code> 仍只挂 1 个主源 —— 它是<b>已定稿的还原基准</b>，改动须走 <code>task-docs.md §4</code> 四步，
+  <b>待裁决</b>（需求文档 §6 遗留 6）。
 </div>
 
 </div>

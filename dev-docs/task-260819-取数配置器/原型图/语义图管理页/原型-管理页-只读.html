@@ -24,14 +24,7 @@
     <br>D-12 之后字段名与视图列名可以不同 —— <b>「这一列取自哪」就在这里查</b>，这是本页对全部配置角色开放的原因。
   </div>
 
-  <div class="stat">
-    <div><b>13</b><span>Sheet 节点</span></div>
-    <div><b>5</b><span>查名维表 + 1 表函数</span></div>
-    <div><b>16</b><span>边</span></div>
-    <div><b style="color:var(--warn)">2</b><span>孤儿 Sheet</span></div>
-    <div><b>6</b><span>页签视图</span></div>
-    <div><b>v15</b><span>图版本 · 2026-08-20 14:22 张工</span></div>
-  </div>
+  <div class="stat" id="stat"></div>
 
   <div class="mtabs" id="tabs"></div>
   <div id="pane"></div>
@@ -73,24 +66,34 @@ function toolbar(){
     <span style="font-size:12px;color:var(--sub)">只读视图 · 修改请联系系统管理员</span>
   </div>`;
 }
+function renderStat(){
+  const orphan=NODES.filter(n=>!n.usedBy.length).length;
+  document.getElementById('stat').innerHTML=
+    `<div><b>${NODES.length}</b><span>Sheet 节点</span></div>
+     <div><b>${LOOKUPS.filter(l=>l.kind==='LOOKUP').length}</b><span>查名维表 + ${LOOKUPS.filter(l=>l.kind==='FUNCTION').length} 表函数</span></div>
+     <div><b>${EDGES.length}</b><span>边</span></div>
+     <div><b style="color:${orphan?'var(--warn)':'var(--ok)'}">${orphan}</b><span>孤儿 Sheet</span></div>
+     <div><b>${TABS.length}</b><span>页签视图</span></div>
+     <div><b>v15</b><span>图版本 · 2026-08-20 14:22 张工</span></div>`;
+}
 function render(){
-  renderTabs();
+  renderTabs(); renderStat();
   let h=toolbar();
   if(view==='edge'){
     h+=`<table class="gtable"><thead><tr><th>从</th><th>到</th><th>基数</th><th>连接键</th><th>fallback</th><th>用在哪些页签</th><th>基数断言</th></tr></thead><tbody>`;
     EDGES.forEach(e=>{const k=KINDLABEL[e.kind];
       h+=`<tr><td><span class="lnk" onclick="showEdge('${e.id}')">${e.from}</span></td><td>${e.to}</td>
         <td><span class="pill ${k[1]}">${k[0]}</span></td>
-        <td class="mono" style="max-width:320px;word-break:break-all">${e.on.replace(/</g,'&lt;')}</td>
+        <td class="mono" style="max-width:320px;word-break:break-all">${e.on.replace(/</g,'&lt;')}${e.todo?'<div><span class="pill p-warn">连接键待实测核实</span></div>':''}</td>
         <td>${e.fb===null?'<span style="color:#bfbfbf">—</span>':e.fb}</td>
         <td>${e.tabs.map(t=>`<span class="pill p-grey">${t}</span>`).join(' ')}</td>
         <td>${e.assert==='ok'?'<span class="pill p-ok">✓ 通过</span>':(e.assert==='na'?'<span class="pill p-grey">一对多不适用</span>':'<span class="pill p-warn">待跑</span>')}</td></tr>`;});
     h+=`</tbody></table>`;
   } else if(view==='node'){
-    h+=`<table class="gtable"><thead><tr><th>导入 Sheet（节点）</th><th>落表</th><th>附加维度</th><th>列数</th><th>被哪些页签用</th></tr></thead><tbody>`;
+    h+=`<table class="gtable"><thead><tr><th>导入 Sheet（节点）</th><th>落表</th><th>判别式</th><th>附加维度</th><th>列数</th><th>被哪些页签用</th></tr></thead><tbody>`;
     NODES.forEach((n,i)=>h+=`<tr><td><span class="lnk" onclick="showNode(${i})">${n.n}</span>
       ${n.orphan?'<br><span class="pill p-warn">孤儿 Sheet</span>':''}</td>
-      <td><code>${n.tbl}</code></td><td>${n.dims.length?n.dims.join(' + '):'<span style="color:#bfbfbf">（无）</span>'}</td>
+      <td><code>${n.tbl}</code></td><td>${n.pt?`<code>${n.pt}</code>`:'<span style="color:#bfbfbf">（无）</span>'}</td><td>${n.dims.length?n.dims.join(' + '):'<span style="color:#bfbfbf">（无）</span>'}</td>
       <td>${n.cols}</td>
       <td>${n.usedBy.length?n.usedBy.map(x=>`<span class="pill p-info">${x}</span>`).join(' '):`<span class="pill p-bad">未被任何页签使用</span><div style="font-size:11px;color:var(--sub);margin-top:3px">${n.orphan}</div>`}</td></tr>`);
     h+=`</tbody></table><h3 class="gh">查名维表 / 表函数</h3><table class="gtable"><thead><tr><th>节点</th><th>类型</th><th>连接键</th></tr></thead><tbody>`;
@@ -102,7 +105,7 @@ function render(){
     NODES.forEach(n=>h+=`<tr><td>${n.n}</td>${TABS.map(t=>{const m=n.usedBy.includes(t+' · 主源'),a=n.usedBy.includes(t);
       return `<td style="text-align:center;color:${m?'#52c41a':(a?'#1677ff':'#e5e7eb')}">${m?'●':(a?'○':'·')}</td>`;}).join('')}</tr>`);
     h+=`</tbody></table><div class="gnote" style="margin-top:12px">● = 主源　○ = 附属源　
-      <b>2 张 Sheet 未被任何页签使用</b>：电镀方案、来料其他费用。</div>`;
+      <b>${NODES.filter(n=>!n.usedBy.length).length} 张 Sheet 未被任何页签使用</b>：${NODES.filter(n=>!n.usedBy.length).map(n=>n.n).join('、')}。<br><em>年降三张为用户第四轮明确移出本期（N-7）；电镀方案为现网数据孤立（N-8），非配置器可解。</em></div>`;
   } else {
     /* 页签类型切换：按钮组，不是 <select> —— AC-44 要求 DOM 无可写控件 */
     h+=`<div class="tbar" style="padding-top:0"><span style="font-size:12px;color:var(--sub);margin-right:4px">页签类型</span>
