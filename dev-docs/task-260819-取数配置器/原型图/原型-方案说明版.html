@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>取数配置器 v8</title>
+<style>
+  .topnav{position:sticky;top:0;z-index:8;background:#1f2329;color:#fff;display:flex;align-items:center;gap:18px;padding:0 20px;height:46px;flex-wrap:wrap}
+.tn-brand{font-weight:600;font-size:14px}
+.tn-ver{font-weight:400;font-size:11px;color:#9aa4b2;margin-left:6px}
+.tn-tabs{display:flex;gap:2px}
+.tn-tab{padding:0 14px;height:46px;line-height:46px;font-size:13px;color:#c3cad4;cursor:pointer;border-bottom:2px solid transparent}
+.tn-tab:hover{color:#fff}
+.tn-tab.active{color:#fff;border-bottom-color:#1677ff;font-weight:600}
+.tn-note{margin-left:auto;font-size:11px;color:#8a929e}
+.page{max-width:1180px;margin:0 auto;background:#fff;min-height:calc(100vh - 46px);padding:18px 20px;box-shadow:0 0 24px rgba(0,0,0,.06)}
+.mtabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:14px}
+.mtab{padding:9px 14px;font-size:13px;color:var(--sub);cursor:pointer;border-bottom:2px solid transparent}
+.mtab:hover{color:var(--blue)}
+.mtab.active{color:var(--blue);border-bottom-color:var(--blue);font-weight:600}
+.gtable{width:100%;border-collapse:collapse;font-size:12px}
+.gtable th{text-align:left;color:var(--sub);font-weight:500;padding:7px 8px;border-bottom:1px solid var(--border);white-space:nowrap;background:#fafbfc}
+.gtable td{padding:6px 8px;border-bottom:1px solid #f2f3f5;vertical-align:top}
+.gtable code{background:#f0f1f3;border-radius:4px;padding:1px 5px;font-size:11px}
+.pill{display:inline-block;border-radius:4px;padding:1px 7px;font-size:11px;white-space:nowrap}
+.p-ok{background:#f6ffed;color:#52c41a} .p-warn{background:#fffbe6;color:#d48806}
+.p-bad{background:#fff2f0;color:#ff4d4f} .p-info{background:#e6f0ff;color:#1677ff}
+.p-grey{background:#f0f1f3;color:#8a909a} .p-fn{background:#fff0f6;color:#eb2f96}
+.p-lk{background:#e6fffb;color:#13c2c2}
+h3.gh{font-size:13px;margin:20px 0 8px} h3.gh:first-child{margin-top:0}
+.gnote{background:#e6f0ff;border:1px solid #bcd8ff;border-radius:8px;padding:10px 13px;font-size:12px;margin-bottom:14px}
+:root{
+    --blue:#1677ff; --blue-bg:#e6f0ff; --green:#52c41a; --green-bg:#f6ffed; --orange:#fa8c16;
+    --border:#e5e7eb; --bg:#f5f6f8; --text:#1f2329; --sub:#8a909a; --danger:#ff4d4f;
+    --key:#722ed1; --key-bg:#f9f0ff; --grey:#bfbfbf; --gold:#d48806; --gold-bg:#fffbe6;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);font-size:13px;}
+  .drawer{max-width:1180px;margin:0 auto;background:#fff;min-height:100vh;display:flex;flex-direction:column;box-shadow:0 0 24px rgba(0,0,0,.06);}
+  .drawer-head{padding:14px 20px;border-bottom:1px solid var(--border);}
+  .drawer-head h2{margin:0;font-size:16px;}
+  .drawer-head .meta{color:var(--sub);font-size:12px;margin-top:3px;}
+  .tabs{display:flex;gap:2px;padding:0 20px;border-bottom:1px solid var(--border);background:#fff;}
+  .tab{padding:10px 14px;font-size:13px;color:var(--sub);cursor:pointer;border-bottom:2px solid transparent;}
+  .tab.active{color:var(--blue);border-bottom-color:var(--blue);font-weight:600;}
+  .tab.locked{color:var(--grey);cursor:not-allowed;}
+  .drawer-body{flex:1;padding:16px 20px;overflow:auto;}
+  .drawer-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 20px;border-top:1px solid var(--border);background:#fff;}
+  .btn{border:1px solid var(--border);background:#fff;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:13px;}
+  .btn:hover{border-color:var(--blue);color:var(--blue);}
+  .btn.primary{background:var(--blue);color:#fff;border-color:var(--blue);}
+  .btn.primary:hover{opacity:.9;color:#fff;}
+  .btn.ghost-danger:hover{border-color:var(--danger);color:var(--danger);}
+  .btn.sm{padding:3px 9px;font-size:12px;}
+  .btn:disabled{opacity:.45;cursor:not-allowed;}
+
+  /* 顶部配方条 */
+  .recipe-bar{background:#fafbfc;border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:14px;}
+  .rb-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .rb-line + .rb-line{margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);}
+  .rb-line label.lbl{color:var(--sub);font-size:12px;}
+  select,input[type=text]{border:1px solid var(--border);border-radius:6px;padding:5px 9px;font-size:13px;background:#fff;}
+  select:focus{outline:none;border-color:var(--blue);}
+  .src-pill{background:var(--blue-bg);color:var(--blue);border-radius:5px;padding:3px 10px;font-size:12px;}
+  .sw{display:inline-flex;align-items:center;gap:5px;cursor:pointer;user-select:none;padding:3px 9px;border:1px solid var(--border);border-radius:6px;background:#fff;font-size:12px;}
+  .sw:hover{border-color:var(--blue);}
+  .sw.on{border-color:var(--blue);background:var(--blue-bg);color:var(--blue);font-weight:600;}
+  .sw.hidden{display:none;}
+  .hint-i{color:var(--sub);font-size:11px;}
+
+  /* 主体两栏 */
+  .cols{display:flex;gap:14px;align-items:stretch;}
+  .pane{border:1px solid var(--border);border-radius:8px;display:flex;flex-direction:column;background:#fff;}
+  .pane-h{padding:9px 12px;border-bottom:1px solid var(--border);font-size:12px;color:var(--sub);display:flex;justify-content:space-between;align-items:center;background:#fafbfc;border-radius:8px 8px 0 0;}
+  .pane-h b{color:var(--text);font-size:13px;}
+  .pane-b{padding:8px;overflow:auto;flex:1;}
+  .pane.left{width:300px;flex:none;}
+  .pane.right{flex:1;}
+
+  /* 可用字段树 */
+  .grp{margin-bottom:8px;}
+  .grp-h{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--sub);padding:4px 6px;cursor:pointer;user-select:none;}
+  .grp-h:hover{color:var(--blue);}
+  .caret{display:inline-block;width:10px;transition:transform .15s;}
+  .grp.collapsed .caret{transform:rotate(-90deg);}
+  .grp.collapsed .grp-b{display:none;}
+  .fld{display:flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid transparent;border-radius:6px;cursor:grab;font-size:13px;}
+  .fld:hover{background:var(--blue-bg);border-color:#bcd8ff;}
+  .fld.used{opacity:.4;cursor:not-allowed;background:#fafafa;}
+  .fld.used:hover{background:#fafafa;border-color:transparent;}
+  .fld .t{color:var(--sub);font-size:11px;margin-left:auto;}
+  .fld .drag{color:var(--grey);font-size:11px;}
+  /* 码列 → 属性展开（本方案关键概念） */
+  .codecol{margin:2px 0 4px;}
+  .codecol > .fld{font-weight:600;}
+  .lookup{margin-left:16px;border-left:2px solid #efdbff;padding-left:8px;}
+  .lookup .fld{color:var(--key);}
+  .lookup .fld:hover{background:var(--key-bg);border-color:#efdbff;}
+  .lookup-tag{font-size:10px;color:var(--key);background:var(--key-bg);border:1px solid #efdbff;border-radius:3px;padding:0 4px;}
+
+  /* 已选输出列 */
+  .sel-head{display:flex;justify-content:space-between;gap:6px;align-items:center;padding:6px 8px;font-size:12px;}
+  .sel-row{display:block;padding:6px 8px;font-size:12px;}
+  .sel-head{color:var(--sub);border-bottom:1px solid var(--border);position:sticky;top:0;background:#fff;z-index:2;}
+  .sel-row{border:1px solid transparent;border-radius:6px;}
+  .sel-row:hover{background:#fafbfc;border-color:var(--border);}
+  .sel-row.dragging{opacity:.4;}
+  .sel-row.over{border-top:2px solid var(--blue);}
+  .sel-row .hd{cursor:grab;color:var(--grey);text-align:center;}
+  .sel-row .nm{font-size:13px;display:flex;align-items:center;gap:5px;}
+  .sel-row .nm input{border:1px solid transparent;background:transparent;border-radius:4px;padding:2px 4px;width:100%;font-size:13px;}
+  .sel-row .nm input:hover{border-color:var(--border);}
+  .sel-row .nm input:focus{outline:none;border-color:var(--blue);background:#fff;}
+  .cbx{text-align:center;}
+  .cbx input{cursor:pointer;}
+  .colname{margin-left:4px;color:var(--sub);font-style:italic;border-style:dashed!important;}
+.colname.custom{color:var(--text);font-style:normal;background:#f9f0ff;border-color:#d3adf7!important;}
+.rm{color:var(--grey);cursor:pointer;text-align:center;}
+  .rm:hover{color:var(--danger);}
+  .badge{font-size:10px;border-radius:3px;padding:0 4px;white-space:nowrap;}
+  .badge.price{color:var(--green);background:var(--green-bg);border:1px solid #b7eb8f;}
+  .badge.join{color:var(--key);background:var(--key-bg);border:1px solid #efdbff;}
+  .badge.aux{color:var(--gold);background:var(--gold-bg);border:1px solid #ffe58f;}
+  .aux-tag{font-size:10px;color:var(--gold);background:var(--gold-bg);border:1px solid #ffe58f;border-radius:3px;padding:0 4px;margin-left:4px;}
+  .tag-main{font-size:10px;color:var(--blue);background:var(--blue-bg);border:1px solid #bcd8ff;border-radius:3px;padding:0 4px;margin-left:4px;}
+  .dim-tag{font-size:10px;color:#237804;background:var(--green-bg);border:1px solid #b7eb8f;border-radius:3px;padding:0 4px;margin-left:4px;}
+  .sheet-note{font-size:11px;color:#874d00;background:var(--gold-bg);border:1px solid #ffe58f;border-radius:4px;padding:4px 7px;margin:2px 4px 6px;line-height:1.6;}
+  .empty{padding:34px 10px;text-align:center;color:var(--sub);font-size:12px;border:2px dashed var(--border);border-radius:8px;margin:8px;}
+  .drop-hot{background:var(--blue-bg);border-color:var(--blue);}
+
+  /* 体检 */
+  .health{margin-top:12px;border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+  .health-h{padding:8px 12px;background:#fafbfc;border-bottom:1px solid var(--border);font-size:12px;color:var(--sub);display:flex;justify-content:space-between;}
+  .hitem{display:flex;gap:8px;align-items:flex-start;padding:7px 12px;font-size:12px;border-bottom:1px solid #f2f3f5;}
+  .hitem:last-child{border-bottom:none;}
+  .hitem .ic{flex:none;width:14px;text-align:center;}
+  .hitem.ok{color:var(--sub);} .hitem.ok .ic{color:var(--green);}
+  .hitem.warn{background:var(--gold-bg);color:#874d00;} .hitem.warn .ic{color:var(--gold);}
+  .hitem.err{background:#fff2f0;color:#a8071a;} .hitem.err .ic{color:var(--danger);}
+
+  /* 预览 */
+  .preview{margin-top:12px;border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+  .pv-h{padding:9px 12px;background:var(--green-bg);border-bottom:1px solid #b7eb8f;display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+  .pv-h .rescount{font-weight:700;color:#237804;}
+  table.pv{width:100%;border-collapse:collapse;font-size:12px;}
+  table.pv th,table.pv td{border-bottom:1px solid #f2f3f5;padding:6px 10px;text-align:left;white-space:nowrap;}
+  table.pv th{background:#fafbfc;color:var(--sub);font-weight:600;}
+  table.pv td.null{color:var(--grey);font-style:italic;background:#fffdf5;}
+  .diag{padding:12px 14px;background:var(--gold-bg);font-size:12px;color:#874d00;line-height:1.9;}
+  .diag b{display:block;margin-bottom:4px;color:#a8071a;}
+  .diag .fix{display:inline-block;margin-top:6px;}
+
+  /* SQL 弹层 */
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:50;}
+  .mask.show{display:flex;}
+  .modal{background:#fff;border-radius:10px;width:min(860px,92vw);max-height:86vh;display:flex;flex-direction:column;}
+  .modal-h{padding:13px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
+  .modal-h b{font-size:15px;}
+  .modal-b{padding:14px 18px;overflow:auto;}
+  .modal-f{padding:11px 18px;border-top:1px solid var(--border);text-align:right;}
+  pre.sql{background:#0f1720;color:#d6e2f0;border-radius:8px;padding:14px 16px;font-family:"SF Mono",Consolas,monospace;font-size:12.5px;line-height:1.75;overflow:auto;margin:0;white-space:pre-wrap;}
+  pre.sql .k{color:#79b8ff;} pre.sql .a{color:#ffab70;} pre.sql .c{color:#6a737d;font-style:italic;} pre.sql .s{color:#9ecbff;}
+  .ro-note{background:var(--gold-bg);border:1px solid #ffe58f;border-radius:6px;padding:8px 12px;font-size:12px;color:#874d00;margin-bottom:10px;}
+  .note{background:#f0f5ff;border:1px solid #adc6ff;border-radius:6px;padding:8px 12px;font-size:12px;color:#1d39c4;margin-bottom:12px;line-height:1.8;}
+  .kbd{background:#fff;border:1px solid var(--border);border-radius:3px;padding:0 5px;font-family:monospace;font-size:11px;}
+.fld.blocked{opacity:.42;cursor:not-allowed;background:repeating-linear-gradient(135deg,transparent,transparent 6px,rgba(255,255,255,.045) 6px,rgba(255,255,255,.045) 12px)}
+.fld.blocked:hover{border-color:var(--gold)}
+code.viewcol{font-size:11px;color:var(--sub);background:rgba(255,255,255,.06);border:1px solid var(--line);
+  border-radius:4px;padding:1px 6px;margin-left:6px;white-space:nowrap;font-family:ui-monospace,Menlo,Consolas,monospace}
+.pgrp{border:1px solid var(--gold);border-radius:8px;margin:6px 0;background:rgba(224,168,74,.06)}
+.pgrp-h{display:flex;align-items:center;gap:8px;padding:6px 10px;font-size:12px;font-weight:600;
+  color:var(--gold);border-bottom:1px dashed rgba(224,168,74,.4)}
+.pgrp-note{font-weight:400;color:var(--sub);font-size:11px}
+.pgrp-h .rm{margin-left:auto;cursor:pointer;color:var(--sub)}
+.pgrp-h .rm:hover{color:var(--danger)}
+.sel-row.in-pg{border:none;background:transparent}
+.stale-bar{display:flex;align-items:center;gap:10px;margin-bottom:8px;padding:6px 10px;border-radius:6px;
+  background:rgba(90,150,240,.12);border:1px solid rgba(90,150,240,.45);font-size:12px}
+.stale-bar a{color:var(--blue)}
+.stale-bar .x{margin-left:auto;cursor:pointer;color:var(--sub)}
+.pane.sqlpane{flex:0 0 34%;min-width:320px;display:flex;flex-direction:column}
+.pane.sqlpane .pane-b{overflow:auto}
+.livesql{margin:0;padding:10px 12px;font-size:11px;line-height:1.6;white-space:pre;overflow-x:auto;
+  font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--text)}
+.sr-1{display:flex;align-items:center;gap:6px}
+.sr-2{display:flex;align-items:center;gap:8px;padding:4px 0 0 28px}
+input.fname{flex:0 0 auto;width:130px;background:transparent;border:1px solid transparent;border-radius:4px;
+  color:var(--text);font-size:12px;padding:2px 5px}
+input.fname:hover{border-color:var(--line)}
+input.fname:focus{border-color:var(--blue);outline:none;background:rgba(255,255,255,.05)}
+.t2{color:var(--sub);font-size:11px;margin-left:2px}
+.badges{display:flex;gap:4px}
+.rbadge{font-size:10.5px;padding:1px 7px;border-radius:9px;cursor:pointer;user-select:none;
+  border:1px solid var(--line);color:var(--sub);background:transparent;position:relative}
+.rbadge:hover{border-color:var(--blue)}
+.rbadge.on{background:rgba(90,150,240,.18);border-color:rgba(90,150,240,.6);color:#cfe0ff;font-weight:600}
+.rbadge.manual::after{content:'';position:absolute;top:-2px;right:-2px;width:5px;height:5px;border-radius:50%;background:var(--gold)}
+.rbadge.demo{cursor:default;pointer-events:none}
+.amt{display:flex;gap:10px;color:var(--sub);font-size:11px;margin-left:auto}
+.amt label{display:flex;align-items:center;gap:3px;cursor:pointer}
+.role-note{padding:5px 8px;font-size:11px;color:var(--sub);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.okfold{margin-top:4px}
+.okfold summary{cursor:pointer;font-size:11.5px;color:var(--sub);padding:4px 2px}
+.okfold summary:hover{color:var(--text)}
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <div class="tn-brand">取数配置器 <span class="tn-ver">v8 · 语义图模型</span></div>
+  <div class="tn-tabs">
+    <div class="tn-tab active" id="nv-cfg" onclick="nav('cfg')">配置器</div>
+    <div class="tn-tab" id="nv-graph" onclick="nav('graph')">语义图谱</div>
+    <div class="tn-tab" id="nv-src" onclick="nav('src')">声明源码</div>
+  </div>
+  <div class="tn-note">语义模型对使用者不可见；后两屏是<b>只读</b>的排障 / 审计视图</div>
+</div>
+
+<div id="view-cfg">
+<div class="drawer">
+  <div class="drawer-head">
+    <h2>编辑组件 — 材料成本</h2>
+    <div class="meta">目录：罗克韦尔 / 报价系统模板0723　·　组件编码 COMP-0027　·　状态 ACTIVE</div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab">基本信息</div>
+    <div class="tab active">取数配置 <span style="color:var(--danger);font-size:10px;">新</span></div>
+    <div class="tab">字段配置</div>
+    <div class="tab">公式</div>
+    <div class="tab">Excel 列</div>
+    <div class="tab">SQL 视图</div>
+  </div>
+
+  <div class="drawer-body">
+
+    <div class="note">
+      <b>原型说明</b>：这是「取数配置」Tab。左侧拖字段到右侧即完成配置，<b>SQL 由系统生成</b>。
+      重点看三处：① 可用字段<b>按导入 Sheet 分组</b>，每组标注它<b>按什么维度展开</b>；② 选不同 Sheet 的字段会<b>改变页签行粒度</b>（顶部实时显示），选两个互不包含的维度会被<b>阻断</b>；③ 底部
+      <span class="kbd">真实预览</span> 与 <span class="kbd">查看生成的 SQL</span>。
+    </div>
+
+    <div class="recipe-bar">
+      <div class="rb-line"><label class="lbl">页签类型</label><select id="tabSel"></select>
+        <span class="hint-i">（唯一需要选择的项）</span></div>
+      <div class="rb-line"><span id="anchorInfo"></span></div>
+      <div class="rb-line" id="optLine"><label class="lbl">可选行为</label>
+        <div class="sw" data-opt="includeChildParts"><span>☐</span> 子件数据也要</div>
+        <span class="hint-i">（<b>v8</b>：「元素单价接价格策略」开关已取消 —— 在左侧拖「价格策略」组的列即自动接）</span></div>
+    </div>
+
+    <!-- 两栏 -->
+    <div class="cols">
+      <div class="pane left">
+        <div class="pane-h"><b>可用字段</b><span id="availCount"></span></div>
+        <div class="pane-b" id="availBody"></div>
+      </div>
+
+      <div class="pane right">
+        <div class="pane-h">
+          <b>已选输出列</b>
+          <span>拖动 <span class="kbd">⋮⋮</span> 排序　·　列名可直接改</span>
+        </div>
+        <div class="pane-b">
+          <div class="sel-head">
+            <span>字段名 <span class="hint-i">（用户可改 = 模板上显示的名）</span></span>
+            <span class="hint-i">视图列名（系统按来源生成，只读）</span>
+          </div>
+          <div class="role-note">角色由系统按语义图<b>自动推导</b>，无需勾选 —— <span class="rbadge on demo">料号</span><span class="rbadge on demo">名称</span><span class="rbadge on demo">行键</span><span class="rbadge demo">排序</span> 点一下可改；<span class="rbadge on manual demo">带点</span>= 你手动改过</div>
+          <div id="selBody"></div>
+        </div>
+      </div>
+
+      <div class="pane sqlpane">
+        <div class="pane-h"><b>生成的 SQL</b><span class="hint-i">实时 · 只读</span></div>
+        <div class="pane-b"><pre id="liveSql" class="livesql"></pre></div>
+      </div>
+    </div>
+
+    <!-- 体检 -->
+    <div class="health">
+      <div class="health-h"><b style="color:var(--text)">保存前体检</b><span id="healthSum"></span></div>
+      <div id="healthBody"></div>
+    </div>
+
+    <!-- 预览 -->
+    <div id="previewWrap"></div>
+
+  </div>
+
+  <div class="drawer-foot">
+    <div style="display:flex;gap:8px;">
+      <button class="btn" onclick="openPreview()">真实预览</button>
+      <button class="btn" onclick="showSql()">查看生成的 SQL</button>
+      <button class="btn ghost-danger" onclick="alert('二次确认：转为手写 SQL 后不可恢复为可视化配置。\\n确认后 builder_config 清空，本视图变为普通手写视图。')">转为手写 SQL</button>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <span class="hint-i" id="footHint"></span>
+      <button class="btn">取消</button>
+      <button class="btn primary" id="saveBtn" onclick="doSave()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- SQL 弹层 -->
+<div class="mask" id="sqlMask" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal">
+    <div class="modal-h"><b>生成的 SQL（只读）</b><span class="hint-i">由取数配置编译产出 · builder_version 1</span></div>
+    <div class="modal-b">
+      <div class="ro-note">⚠ 本视图由取数配置生成，SQL <b>不可直接编辑</b>。需要手改请先「转为手写 SQL」（不可逆）。</div>
+      <pre class="sql" id="sqlBox"></pre>
+    </div>
+    <div class="modal-f"><button class="btn" onclick="document.getElementById('sqlMask').classList.remove('show')">关闭</button></div>
+  </div>
+</div>
+</div>
+
+<div id="view-graph" style="display:none"><div class="page"><div id="graphPane"></div></div></div>
+<div id="view-src" style="display:none"><div class="page"><div id="srcPane"></div></div></div>
+
+<script>
+function nav(k){['cfg','graph','src'].forEach(x=>{
+  document.getElementById('view-'+x).style.display = x===k?'':'none';
+  document.getElementById('nv-'+x).className='tn-tab'+(x===k?' active':'');});
+  if(k==='graph')renderGraphPage(); if(k==='src')renderSrcPage();
+}
+/* ===================== 查名库 ===================== */
+const LIB={MM:{lib:'物料主档',sn:'主档'},RC:{lib:'材质库',sn:'材质库'},PR:{lib:'工序库',sn:'工序库'},EL:{lib:'元素库',sn:'元素库'},CM:{lib:'客户料号关系',sn:'客户料号'}};
+const T={TEXT:'文本',NUM:'数字',MONEY:'金额'};
+const N=T.NUM,X=T.TEXT,M=T.MONEY;
+
+/* ===================== QuoteSheetRegistry（声明式登记 · 原型初稿） =====================
+   每个 sheet 只登记它**真实导入的列**；中文名 = 用户 Excel 里的原列名。
+   来源：17 个 Q*Handler 的 put(DB列, row.get*("Excel列名")) 配对提取 + 实测数据校正。   */
+const SHEETS={
+ PRODUCT_MASTER:{n:'物料主档 / 单重',sn:'主档',tbl:'material_master',al:'mm',dims:[],cols:[
+   ['material_name','物料名称',X],['specification','规格',X],['dimension','尺寸',X],
+   ['standard_unit','标准单位',X],['unit_weight','单重',N],['material_type','物料类型',X]]},
+ CUSTOMER_MAP:{n:'客户料号与宏丰料号的关系',sn:'客户料号',tbl:'material_customer_map',al:'mcm',dims:[],cols:[
+   ['customer_material_name','客户料号名称',X],['customer_product_no','客户产品编号',X],
+   ['customer_drawing_no','客户图号',X],['quote_currency','报价货币',X],['base_currency','基准货币',X],
+   ['exchange_rate','汇率',N],['payment_method','付款方式',X],['seq_no','项次',N]]},
+ ELEMENT_BOM:{n:'物料与元素BOM',sn:'元素BOM',tbl:'element_bom_item',al:'ebi',dims:['材质料号','元素'],cols:[
+   ['seq_no','项次',N],['content','组成含量',N],['scrap_rate','损耗率',N],
+   ['composition_qty','毛用量',N],['issue_unit','毛用量单位',X],['base_qty','净用量',N]]},
+ ELEMENT_RECOVERY:{n:'元素回收折扣',sn:'回收折扣',tbl:'element_bom_item',al:'ebi',same:true,dims:['材质料号','元素'],cols:[
+   ['recovery_discount','回收折扣',N],['recovery_currency','回收币种',X],['recovery_unit','回收单位',X]]},
+ MATERIAL_BOM:{n:'物料BOM',sn:'物料BOM',tbl:'material_bom_item',al:'mbi',dims:['组成件料号'],cols:[
+   ['seq_no','项次',N],['composition_qty','组成数量',N],['issue_unit','组成单位',X],
+   ['rough_weight','材料毛重',N],['net_weight','材料净重',N],['weight_unit','重量单位',X],
+   ['scrap_rate','损耗率',N],['defect_rate','不良率',N],['component_usage_type','产出料号类型',X]]},
+ SELF_PROCESS:{n:'自制加工费',sn:'自制加工',tbl:'unit_price',al:'up',dims:['零件料号'],cols:[
+   ['seq_no','项次（一级）',N],['pricing_price','值',M],['cost_ratio','比例',N],
+   ['currency','货币',X],['unit','计价单位',X]]},
+ FINISHED_OTHER:{n:'成品其他费用',sn:'成品其他',tbl:'unit_price',al:'fo',dims:['要素'],dimCol:'cost_type',dimLabel:{'要素':'要素'},dimVals:['利润','外购件管理费','材料管理费','税率'],cols:[
+   ['seq_no','项次',N],['cost_type','要素',X],['cost_ratio','比例',N],
+   ['currency','货币',X],['unit','计价单位',X]],
+   note:'⚠ 实测：本 sheet 4/4 行的值在「比例」，pricing_price 全空 —— 利润/税率/管理费均为比例制'},
+ COMPONENT_OTHER:{n:'组成件其他费用',sn:'组件其他',tbl:'unit_price',al:'co',dims:['组成件料号'],cols:[
+   ['item_seq','项次',N],['cost_type','要素',X],['pricing_price','值',M],
+   ['currency','货币',X],['unit','计价单位',X]]},
+ PLATING_COST:{n:'电镀费用',sn:'电镀费',tbl:'unit_price',al:'pl',dims:['零件料号','费用类型'],dimCol:'cost_type',dimLabel:{'费用类型':'要素'},dimVals:['电镀加工费','电镀材料费'],cols:[
+   ['cost_type','要素',X],['pricing_price','值',M],['currency','货币',X],
+   ['unit','计价单位',X],['defect_rate','损耗',N]]},
+ PLATING_SCHEME:{n:'电镀方案',sn:'电镀方案',tbl:'plating_scheme',al:'ps',cols:[
+   ['seq_no','项次',N],['plating_element','电镀元素',X],['plating_method','电镀方式',X],
+   ['plating_thickness','镀层厚度',N],['plating_area','电镀面积',N],['surface_area','表面积',N],
+   ['element_usage','元素用量',N],['plating_requirement','电镀要求',X]]},
+ ASSEMBLY_FEE:{n:'组装加工费',sn:'组装加工',tbl:'capacity',al:'ca',dims:['工序号'],dimCol:'process_no',dimLabel:{'工序号':'工序名'},cols:[
+   ['seq_no','项次',N],['fixed_cost','组装加工费',M],['capacity_unit','计价单位',X],
+   ['currency','货币',X],['default_defect_rate','拒收率',N],['process_name','工序名',X],
+   ['production_type','生产类型',X]]},
+ INCOMING_FIXED:{n:'来料固定加工费',sn:'来料加工',tbl:'unit_price',al:'if',dims:['投入料号'],cols:[
+   ['seq_no','项次',N],['cost_type','要素',X],['base_value','基准值',M],['cost_ratio','比例',N],
+   ['currency','货币',X],['unit','计价单位',X],['is_fluctuate_with_material','是否随材料价格波动',X],
+   ['material_increase_ratio','材料结算涨幅比例',N],['material_fixed_increase','材料固定的涨幅值',M]],
+   note:'⚠ 实测：本 sheet 2/2 行的值在「基准值」，pricing_price 全空'},
+ INCOMING_OTHER:{n:'来料其他费用',sn:'来料其他',tbl:'unit_price',al:'io',dims:['投入料号'],cols:[
+   ['seq_no','项次（一级）',N],['cost_type','要素',X],['pricing_price','值',M],
+   ['cost_ratio','比例',N],['currency','货币',X],['unit','计价单位',X]]},
+};
+function sheetCols(key,prefix,mk){return SHEETS[key].cols.map(([c,l,t])=>mk(c,l,t,prefix));}
+
+/* ===================== 页签定义 ===================== */
+const TABDEF={
+'主件':{main:'PRODUCT_MASTER',tbl:'material_master',al:'mm',anchor:{col:'mm.material_no',desc:'物料主档 按成品料号收窄'},
+  where:[],custMode:'VIA_MCM',
+  extra:[{k:'P_NO',l:'销售料号',e:'mm.material_no',t:X}],
+  codeCols:[{k:'P_C',l:'销售料号',e:'mm.material_no',t:X,lookup:'CUSTOMER_MAP_JOIN'}],
+  aux:[{key:'CUSTOMER_MAP',kind:'JOIN'},
+       {key:'FINISHED_OTHER',kind:'GRAIN',join:"fo.code = mm.material_no",
+        where:["fo.price_type = 'FINISHED_MATERIAL_OTHER'","fo.system_type = 'QUOTE'","fo.is_current","fo.customer_no = :customerCode"],
+        dimAlias:'fo'},
+       {key:'ASSEMBLY_FEE',kind:'GRAIN',join:"ca.material_no = mm.material_no",
+        where:["ca.system_type = 'QUOTE'","ca.is_current"],dimAlias:'ca'}],
+  opts:[]},
+'材质元素':{main:'ELEMENT_BOM',tbl:'element_bom_item',al:'ebi',anchor:{col:'ebi.material_no',desc:'物料与元素BOM 按成品料号收窄'},
+  where:["ebi.system_type = 'QUOTE'","ebi.is_current"],custMode:'DIRECT',
+  extra:[{k:'E_OW',l:'归属料号',e:'ebi.material_no',t:X,closureOnly:true}],
+  codeCols:[
+   {k:'E_MPN',l:'材质料号',e:'ebi.material_part_no',t:X,lookup:[{k:'E_MN',l:'材质名称',e:'COALESCE(mr.name, mm2.material_name)',t:X,lib:'RC',
+     joins:['LEFT JOIN material_recipe mr ON mr.code = ebi.material_part_no','LEFT JOIN material_master mm2 ON mm2.material_no = ebi.material_part_no']}]},
+   {k:'E_SYM',l:'元素',e:'ebi.component_no',t:X,elemKey:true,lookup:[{k:'E_EN',l:'元素名称',e:'COALESCE(el.element_name, ebi.component_no)',t:X,lib:'EL',
+     joins:['LEFT JOIN element el ON el.element_code = ebi.component_no']}]}],
+  aux:[{key:'ELEMENT_RECOVERY',kind:'SAME'},
+       {key:'MATERIAL_BOM',kind:'SUB',label:'物料BOM（材质边）',al2:'rb',
+        where:"rb.material_no = ebi.material_no AND rb.component_no = ebi.material_part_no\n       AND rb.characteristic = 'RECIPE' AND rb.system_type = 'QUOTE' AND rb.is_current\n       AND rb.customer_no = :customerCode"}],
+  price:[{k:'E_PR',l:'元素单价',e:'cep.unit_price',t:M,raw:true},{k:'E_PC',l:'货币',e:'cep.currency',t:X,raw:true}],
+  opts:['includeChildParts']},
+'零件':{main:'SELF_PROCESS',tbl:'unit_price',al:'up',anchor:{col:'up.finished_material_no',desc:'自制加工费 按成品料号收窄'},
+  where:["up.system_type = 'QUOTE'","up.price_type = 'PROCESS'","up.is_current"],custMode:'DIRECT',
+  codeCols:[
+   {k:'S_C',l:'零件料号',e:'up.code',t:X,lookup:[{k:'S_PN',l:'零件名称',e:'COALESCE(mm.material_name, mr.name)',t:X,lib:'MM',
+     joins:['LEFT JOIN material_master mm ON mm.material_no = up.code','LEFT JOIN material_recipe mr ON mr.code = up.code']}]},
+   {k:'S_OP',l:'工序号',e:'up.operation_no',t:X,lookup:[{k:'S_ON',l:'工序名',e:'COALESCE(pm.process_name, up.operation_no)',t:X,lib:'PR',
+     joins:['LEFT JOIN process_master pm ON pm.process_no = up.operation_no']}]}],
+  aux:[{key:'PLATING_COST',kind:'SUB',where:"pl.code = up.code AND pl.price_type = 'PLATING'\n       AND pl.system_type = 'QUOTE' AND pl.is_current AND pl.customer_no = :customerCode"},
+       {key:'MATERIAL_BOM',kind:'SUB',label:'物料BOM（装配边）',al2:'ab',
+        where:"ab.material_no = up.finished_material_no AND ab.component_no = up.code\n       AND ab.characteristic = 'ASSEMBLY' AND ab.system_type = 'QUOTE' AND ab.is_current\n       AND ab.customer_no = :customerCode"}],
+  opts:['includeChildParts']},
+'外购件':{main:'MATERIAL_BOM',tbl:'material_bom_item',al:'mbi',anchor:{col:'mbi.material_no',desc:'物料BOM 按成品料号收窄'},
+  where:["mbi.system_type = 'QUOTE'","mbi.is_current","mbi.characteristic = 'OUTSOURCED'"],custMode:'DIRECT',
+  charNote:'characteristic = OUTSOURCED 由页签类型自动推导（实测 RECIPE 78 / OUTSOURCED 34 / ASSEMBLY 33）',
+  extra:[{k:'O_OW',l:'归属料号',e:'mbi.material_no',t:X,closureOnly:true}],
+  codeCols:[
+   {k:'O_C',l:'组成件料号',e:'mbi.component_no',t:X,lookup:[{k:'O_CN',l:'组成件名称',e:'COALESCE(mm.material_name, mr.name)',t:X,lib:'MM',
+     joins:['LEFT JOIN material_master mm ON mm.material_no = mbi.component_no','LEFT JOIN material_recipe mr ON mr.code = mbi.component_no']}]},
+   {k:'O_OP',l:'工序号',e:'mbi.operation_no',t:X,lookup:[{k:'O_ON',l:'工序名',e:'COALESCE(pm.process_name, mbi.operation_no)',t:X,lib:'PR',
+     joins:['LEFT JOIN process_master pm ON pm.process_no = mbi.operation_no']}]}],
+  aux:[{key:'COMPONENT_OTHER',kind:'SUB',where:"co.finished_material_no = mbi.material_no AND co.code = mbi.component_no\n       AND co.price_type = 'COMPONENT_OTHER' AND co.system_type = 'QUOTE' AND co.is_current\n       AND co.customer_no = :customerCode"}],
+  opts:['includeChildParts']},
+'费用类':{main:'INCOMING_FIXED',main2:'INCOMING_OTHER',tbl:'unit_price',al:'up',anchor:{col:'up.finished_material_no',desc:'来料费用 按成品料号收窄'},
+  where:["up.system_type = 'QUOTE'","up.price_type IN ('INCOMING_MATERIAL_PROCESS','INCOMING_MATERIAL_OTHER')","up.is_current"],
+  custMode:'DIRECT',note:'行身份 = 投入料号 up.code（可能是材质 / 零件 / 外购件，类型不定）',
+  codeCols:[
+   {k:'F_C',l:'投入料号',e:'up.code',t:X,lookup:[{k:'F_CN',l:'投入料号名称',e:'COALESCE(mm.material_name, mr.name)',t:X,lib:'MM',
+     joins:['LEFT JOIN material_master mm ON mm.material_no = up.code','LEFT JOIN material_recipe mr ON mr.code = up.code']}]}],
+  aux:[],opts:['includeChildParts']},
+'BOM 树':{main:'MATERIAL_BOM',tbl:'material_bom_item',al:'mbi',tree:true,
+  anchor:{col:'mbi.component_no',desc:'树契约：不输出 hf_part_no，按 :total_material_no 收窄'},
+  where:["mbi.system_type = 'QUOTE'","mbi.is_current"],custMode:'NONE',
+  charNote:'不过滤 characteristic —— 边式全子件（RECIPE + OUTSOURCED + ASSEMBLY 全要），与现网 bom_view 一致',
+  codeCols:[{k:'B_C',l:'组成件料号',e:'mbi.component_no',t:X,lookup:[{k:'B_CN',l:'料件名称',e:'COALESCE(mm.material_name, mr.name)',t:X,lib:'MM',
+    joins:['LEFT JOIN material_master mm ON mm.material_no = mbi.component_no','LEFT JOIN material_recipe mr ON mr.code = mbi.component_no']}]}],
+  aux:[],opts:[]},
+};
+const TABS=Object.keys(TABDEF);
+
+/* ===================== 字段展开 ===================== */
+let curTab='主件',opts={includeChildParts:false},sel=[],previewOpen=false,previewCustomer='ROCKWELL';
+/* v8：价格策略 = 原子组。拖其列自动带出元素列（JOIN 左键）；删组核心列整组删。 */
+function priceGroupOn(){return sel.some(x=>x.raw);}
+function elemKeyCol(){return sel.find(x=>x.elemKey||x.autoElem);}
+const D=()=>TABDEF[curTab];
+function mainGroups(){const d=D(),g=[];
+  const mk=(key,al)=>({key,n:SHEETS[key].n,note:SHEETS[key].note,kind:'MAIN',dims:SHEETS[key].dims||[],
+    cols:SHEETS[key].cols.map(([c,l,t])=>({k:'M_'+c,l,t,e:`${al}.${c}`,src:SHEETS[key].sn,dims:SHEETS[key].dims||[]}))});
+  g.push(mk(d.main,d.al)); if(d.main2) g.push(mk(d.main2,d.al));
+  return g;}
+function auxGroups(){const d=D();return (d.aux||[]).map((a,i)=>{const sh=SHEETS[a.key],al=a.dimAlias||a.al2||sh.al;
+  const label=a.label||sh.n;
+  return{key:a.key,n:label,note:sh.note,kind:a.kind,dims:sh.dims||[],a,
+    cols:sh.cols.map(([c,l,t])=>{
+      if(a.kind==='SAME') return{k:'X'+i+'_'+c,l,t,e:`${d.al}.${c}`,auxSrc:label,src:sh.sn,dims:sh.dims||[]};
+      if(a.kind==='JOIN') return{k:'X'+i+'_'+c,l,t,e:`${al}.${c}`,auxSrc:label,src:sh.sn,dims:sh.dims||[]};
+      if(a.kind==='GRAIN')return{k:'X'+i+'_'+c,l,t,e:`${al}.${c}`,auxSrc:label,src:sh.sn,dims:sh.dims||[],grain:i};
+      return{k:'X'+i+'_'+c,l,t,auxSrc:label,src:sh.sn,dims:sh.dims||[],
+        sub:`(SELECT ${al}.${c} FROM ${sh.tbl} ${al}\n     WHERE ${a.where}\n     LIMIT 1)`};})};});}
+/* 页签当前粒度 = 已选字段涉及的各源 dims 并集 */
+/* ===== D-12 / D-13：视图列名由系统按【来源】自动生成，用户不可改 =====
+   规则：一律带来源前缀 `_<Sheet简称>_<Excel原列名>`，是 (Sheet, 列) 的纯函数 ——
+   与选了哪些列、以什么顺序选的完全无关，删掉别的列也不会改变本列别名。
+   唯一例外：价格策略列不带 `_` 前缀（AGENT §3.6 铁律，取价函数三项绑定依赖它）。 */
+function srcOf(def){
+  if(def.raw)return null;                 /* 价格策略：铁律，无前缀 */
+  if(def.lib)return LIB[def.lib].sn;      /* 查名列 → 维表简称 */
+  if(def.src)return def.src;              /* 主源 / 附属源列 */
+  return SHEETS[D().main].sn;             /* 码列 / 归属料号等 → 主源简称 */
+}
+function viewColOf(def){const s2=srcOf(def);return s2?`_${s2}_${def.l}`:def.l;}
+
+function grainOf(){const set=[];sel.forEach(c=>(c.dims||[]).forEach(x=>{if(!set.includes(x))set.push(x);}));return set;}
+/* 冲突：两组非空 dims 互不为前缀 */
+function grainConflict(){const gs=[];sel.forEach(c=>{if((c.dims||[]).length&&!gs.some(g=>g.join()===c.dims.join()))gs.push(c.dims);});
+  for(let i=0;i<gs.length;i++)for(let j=i+1;j<gs.length;j++){
+    const a=gs[i].join('>'),b=gs[j].join('>');
+    if(!a.startsWith(b)&&!b.startsWith(a))return[gs[i],gs[j]];}
+  return null;}
+/* D-08：某组列的展开维度与当前已选是否打架 —— 打架就在拖拽期置灰，不等到保存 */
+function conflictWith(dims){
+  if(!dims||!dims.length)return null;
+  const gs=[];sel.forEach(c=>{if((c.dims||[]).length&&!gs.some(g=>g.join()===c.dims.join()))gs.push(c.dims);});
+  const b=dims.join('>');
+  for(const g of gs){const a=g.join('>');if(!a.startsWith(b)&&!b.startsWith(a))return g;}
+  return null;}
+/* ===== 角色自动推导（用户免勾）：全部依据语义图已有的声明，不引入新配置 =====
+   料号列 = 本页签的「行身份码列」（TABDEF.codeCols[0]）
+   名称列 = 该码列的查名列
+   行键   = 当前粒度各维度对应的列（码列优先，未选中则用其查名列）；粒度为空时取标识列；勾了闭包再加「归属料号」
+   排序列 = 已选列中的「项次」
+   —— 三者都允许用户点击覆盖（见 effRole）。*/
+function dimRepDef(dim){
+  const d=D();
+  const cc=(d.codeCols||[]).find(c=>c.l===dim); if(cc)return cc;
+  for(const g of mainGroups().concat(auxGroups())){
+    const sh=SHEETS[g.key];
+    const lb=sh&&sh.dimLabel&&sh.dimLabel[dim];
+    if(lb){const c=g.cols.find(x=>x.l===lb);if(c)return c;}
+    const c2=g.cols.find(x=>x.l===dim); if(c2)return c2;}
+  return null;}
+function autoRoles(){
+  const d=D(),res={partNo:null,partName:null,rowKey:[],sort:null,why:{}};
+  const has=k=>sel.some(x=>x.k===k);
+  const idCode=(d.codeCols||[])[0];
+  const idLk=idCode&&Array.isArray(idCode.lookup)?idCode.lookup[0]:null;
+  if(idCode&&has(idCode.k)){res.partNo=idCode.k;res.why.partNo=`行身份料号：本页签每一行代表一个「${idCode.l}」`;}
+  if(!res.partNo&&(d.extra||[]).length){const p=(d.extra||[]).find(c=>/料号/.test(c.l)&&!c.closureOnly);
+    if(p&&has(p.k)){res.partNo=p.k;res.why.partNo=`行身份料号：本页签每一行代表一个「${p.l}」`;}}
+  if(idLk&&has(idLk.k)){res.partName=idLk.k;res.why.partName=`名称列：「${idCode.l}」的查名结果`;}
+  /* 兜底：行身份码列没有数组式查名列时（如主件的销售料号），取已选列中第一个「名称类」列 —— 查名库来的优先 */
+  if(!res.partName){
+    const cand=sel.filter(x=>/名称|品名|料件/.test(x.origLabel)&&x.k!==res.partNo);
+    const pick=cand.find(x=>x.lib)||cand[0];
+    if(pick){res.partName=pick.k;res.why.partName=`名称列：本页签的行身份码列无查名列，取已选列中的名称类列「${pick.origLabel}」`;}}
+  const gr=grainOf();
+  gr.forEach(dim=>{const rep=dimRepDef(dim); if(!rep)return;
+    if(has(rep.k)){res.rowKey.push(rep.k);return;}
+    (Array.isArray(rep.lookup)?rep.lookup:[]).forEach(l=>{if(has(l.k)&&!res.rowKey.includes(l.k))res.rowKey.push(l.k);});});
+  if(!res.rowKey.length){const k=res.partNo||res.partName; if(k)res.rowKey.push(k);}
+  if(opts.includeChildParts){const ow=sel.find(x=>/归属料号/.test(x.origLabel));
+    if(ow&&!res.rowKey.includes(ow.k))res.rowKey.unshift(ow.k);}
+  res.why.rowKey=gr.length?`行键：本页签按 ${gr.join(' + ')} 展开，故取这几个维度对应的列`
+                          :'行键：本页签每个成品 1 行，取标识列';
+  if(opts.includeChildParts)res.why.rowKey+='；已勾子件闭包，另加「归属料号」区分不同父件下的同名行';
+  const sq=sel.find(x=>/项次/.test(x.origLabel)); if(sq){res.sort=sq.k;res.why.sort='排序列：约定取「项次」';}
+  return res;}
+let _AR=null;
+/* 生效值 = 用户显式覆盖优先，否则用推导值 */
+function effRole(s2,r){
+  const a = r==='rowKey' ? _AR.rowKey.includes(s2.k) : _AR[r]===s2.k;
+  if(s2.ov&&Object.prototype.hasOwnProperty.call(s2.ov,r))return{on:s2.ov[r],manual:true,auto:a};
+  return{on:a,manual:false,auto:a};}
+function flipRole(i,r){
+  const s2=sel[i],cur=effRole(s2,r);
+  const nv=!cur.on;
+  s2.ov=s2.ov||{};
+  /* 单选语义：料号/名称/排序 打开时先清掉别人的 */
+  if(nv&&r!=='rowKey')sel.forEach((x,j)=>{if(j!==i){x.ov=x.ov||{};if(effRole(x,r).on)x.ov[r]=false;}});
+  if(nv===cur.auto)delete s2.ov[r]; else s2.ov[r]=nv;
+  render();}
+function roleBadges(s2,i){
+  const defs=[['partNo','料号'],['partName','名称'],['rowKey','行键'],['sort','排序']];
+  return defs.map(([r,lb])=>{const e=effRole(s2,r);
+    const why=e.manual?(e.on?'手动指定为'+lb+'（点击取消）':'手动取消了'+lb+'（点击恢复）'):(_AR.why[r]||'')+'（自动推导，点击可改）';
+    return `<span class="rbadge ${e.on?'on':''} ${e.manual?'manual':''}" onclick="flipRole(${i},'${r}')" title="${why}">${lb}</span>`;}).join('');}
+function allDefs(){const d=D(),o=[];
+  mainGroups().forEach(g=>g.cols.forEach(c=>o.push(c)));
+  (d.extra||[]).forEach(c=>o.push(c));
+  (d.codeCols||[]).forEach(cc=>{o.push(cc);(Array.isArray(cc.lookup)?cc.lookup:[]).forEach(l=>o.push(l));});
+  auxGroups().forEach(g=>g.cols.forEach(c=>o.push(c)));
+  (d.price||[]).forEach(c=>o.push(c));return o;}
+function findCol(k){return allDefs().find(c=>c.k===k);}
+function isUsed(k){return sel.some(x=>x.k===k);}
+function addCol(def,roles){if(!def||isUsed(def.k))return;
+  /* v8 原子组：拖价格策略列 → 若无元素列则自动带出（取价函数 JOIN 左键，缺它接不上） */
+  if(def.raw&&!elemKeyCol()){
+    const ec=allDefs().find(c=>c.elemKey);
+    if(ec&&!isUsed(ec.k))sel.push({...ec,label:ec.l,origLabel:ec.l,viewCol:viewColOf(ec),roles:{},autoElem:true});
+  }
+  const money=def.t===M,unitLike=/单价|汇率|费率|比例|系数|基准值/.test(def.l);
+  const c={k:def.k,label:def.l,origLabel:def.l,viewCol:viewColOf(def),t:def.t,e:def.e,sub:def.sub||null,auxSrc:def.auxSrc||null,raw:!!def.raw,dims:def.dims||[],grain:def.grain,
+    joins:def.joins||null,lib:def.lib||null,amount:money,subtotal:money&&!unitLike&&!def.sub,
+    roles:{partNo:false,partName:false,rowKey:false,sort:false}};
+  if(roles)Object.assign(c.roles,roles);sel.push(c);render();}
+function seed(){sel=[];
+  const p={'主件':['P_NO','M_material_name'],'材质元素':['E_MN','E_EN','M_content'],
+    '零件':['S_PN','S_ON','M_pricing_price'],'外购件':['O_CN','M_composition_qty','M_issue_unit'],
+    '费用类':['F_CN','M_base_value','M_unit'],'BOM 树':['B_CN','M_composition_qty']}[curTab]||[];
+  p.forEach(k=>addCol(findCol(k)));}   /* 角色不再预设：全部交给 autoRoles() 推导 */
+
+/* ===================== 左侧：按 Sheet 分组（不再有「全部列」） ===================== */
+function renderAvail(){
+  const d=D(),box=document.getElementById('availBody');let h='';
+  const fld=c=>{const u=isUsed(c.k);
+    /* D-08：与已选的展开维度打架 → 拖拽期直接置灰，并给出可读原因 */
+    const cf=u?null:conflictWith(c.dims);
+    const why=cf?`与已选的「按 ${cf.join('+')} 展开」冲突 —— 两者只能选一类。要改用本组，请先移除那一组的列`:'';
+    const dis=!!cf;
+    return `<div class="fld ${u?'used':''} ${dis?'blocked':''}" draggable="${(!u&&!dis)?'true':'false'}" ondragstart="dragStart(event,'${c.k}')"
+      ${dis?'':`ondblclick="addCol(findCol('${c.k}'))"`} title="${u?'已在输出列中':(dis?why:'拖到右侧，或双击添加')}">
+      <span class="drag">${dis?'🚫':'⋮⋮'}</span><span>${c.l}</span>
+      ${c.lib?`<span class="lookup-tag">${LIB[c.lib].lib}</span>`:''}<span class="t">${c.t}</span></div>`;};
+  const grp=(title,tag,cols,note,codeCols,extra)=>{
+    let s=`<div class="grp collapsed"><div class="grp-h" onclick="this.parentNode.classList.toggle('collapsed')"><span class="caret">▾</span> ${title} ${tag}</div><div class="grp-b">`;
+    if(note)s+=`<div class="sheet-note">${note}</div>`;
+    (extra||[]).forEach(c=>{if(c.closureOnly&&!opts.includeChildParts)return;s+=fld(c);});
+    cols.forEach(c=>s+=fld(c));
+    (codeCols||[]).forEach(cc=>{s+=`<div class="codecol">${fld(cc)}`;
+      const lk=Array.isArray(cc.lookup)?cc.lookup:[];
+      if(lk.length){s+=`<div class="lookup">`;lk.forEach(l=>s+=fld(l));s+=`</div>`;}s+=`</div>`;});
+    return s+`</div></div>`;};
+  mainGroups().forEach((g,i)=>{const dimTxt=g.dims.length?`<span class="dim-tag">按 ${g.dims.join('+')} 展开</span>`:'<span class="dim-tag">每成品 1 行</span>';
+    h+=grp(g.n,'<span class="tag-main">主源</span>'+dimTxt,g.cols,g.note,i===0?d.codeCols:null,i===0?d.extra:null);});
+  if((d.price||[]).length){
+    const ek=elemKeyCol();
+    h+=grp('价格策略 <span class="lookup-tag">f_material_element_price</span>',
+      '<span class="tag-main">表函数</span><span class="dim-tag">'+(ek?'元素键取自：'+ek.label:'拖入时自动带出元素列')+'</span>',
+      d.price,'原子组：拖「元素单价」自动带出元素列并回填三项绑定；删「元素单价」或「元素」列 → 整组移除；删「货币」只删自己。');}
+  auxGroups().forEach(g=>{const dimTxt=g.dims.length?`<span class="dim-tag">按 ${g.dims.join('+')} 展开</span>`:'';
+    const tag=(g.kind==='SAME'?'<span class="aux-tag">同表同行</span>':g.kind==='JOIN'?'<span class="aux-tag">已连表</span>'
+      :g.kind==='GRAIN'?'<span class="tag-main">主源</span>':'<span class="aux-tag">附属源</span>')+dimTxt;
+    h+=grp(g.n,tag,g.cols,g.note);});
+  box.innerHTML=h;
+  document.getElementById('availCount').textContent=`共 ${allDefs().length} 个字段（= 各 Sheet 真实导入列）`;}
+
+/* ===================== 右侧 ===================== */
+function renderSel(){
+  _AR=autoRoles();
+  const box=document.getElementById('selBody');
+  if(!sel.length){box.innerHTML=`<div class="empty" ondragover="event.preventDefault();this.classList.add('drop-hot')" ondragleave="this.classList.remove('drop-hot')" ondrop="dropTo(event,0)">把左侧字段拖到这里</div>`;return;}
+  /* D-09：价格策略三列渲染为【一个整体块】，不是三个散列 */
+  const pg=sel.map((s2,i)=>({s:s2,i})).filter(o=>o.s.raw||o.s.autoElem);
+  const pgHead=pg.length?pg[0].i:-1;
+  const row=(s2,i)=>`
+      <div class="sr-1">
+        <span class="hd">⋮⋮</span>
+        <input class="fname" value="${s2.label}" onchange="rename(${i},this.value)"
+               title="字段名 = 模板/报价单上这一列显示的名字。改它同步 4 处引用，但不动 SQL、不重编译视图">
+        <code class="viewcol" title="视图列名 = 系统按【数据来源】自动生成，用户不可改。绑定路径 $view.${s2.viewCol} 跟着它，永远逐字对齐">${s2.viewCol}</code>
+        <span class="t2">${s2.t}</span>
+        ${s2.sub?`<span class="badge aux" title="来自「${s2.auxSrc}」，编译为相关标量子查询">⚠${s2.auxSrc}</span>`:(s2.auxSrc?`<span class="badge join" title="来自「${s2.auxSrc}」，同表同行/已连表，直接取列">${s2.auxSrc}</span>`:'')}
+        ${s2.lib?`<span class="badge join">${LIB[s2.lib].lib}</span>`:''}
+      </div>
+      <div class="sr-2">
+        <span class="badges">${roleBadges(s2,i)}</span>
+        <span class="amt" title="金额 / 小计">
+          <label><input type="checkbox" ${s2.amount?'checked':''} onclick="sel[${i}].amount=this.checked;render()">金额</label>
+          <label><input type="checkbox" ${s2.subtotal?'checked':''} onclick="sel[${i}].subtotal=this.checked;render()">小计</label></span>
+        <span class="rm" onclick="removeCol(${i})" title="移除">✕</span>
+      </div>`;
+  let h='';
+  sel.forEach((s2,i)=>{
+    const inPg=s2.raw||s2.autoElem;
+    if(inPg&&i!==pgHead)return;                       /* 组内其余成员在块里画 */
+    if(inPg){
+      h+=`<div class="pgrp" draggable="true" ondragstart="rowDragStart(event,${i})" ondragover="rowOver(event,${i})"
+             ondragleave="this.classList.remove('over')" ondrop="dropTo(event,${i})">
+            <div class="pgrp-h">⋮⋮ 元素单价（接价格策略）
+              <span class="lookup-tag">f_material_element_price</span>
+              <span class="pgrp-note">整块移动 · 删块 = 三列同走 · 「货币」可单独删</span>
+              <span class="rm" onclick="removeCol(${pg.find(o=>o.s.raw&&/单价/.test(o.s.label))?pg.find(o=>o.s.raw&&/单价/.test(o.s.label)).i:i})" title="移除整组">✕</span></div>`;
+      pg.forEach(o=>{h+=`<div class="sel-row in-pg">${row(o.s,o.i)}</div>`;});
+      h+=`</div>`;return;}
+    h+=`<div class="sel-row" draggable="true" ondragstart="rowDragStart(event,${i})" ondragover="rowOver(event,${i})"
+           ondragleave="this.classList.remove('over')" ondrop="dropTo(event,${i})">${row(s2,i)}</div>`;});
+  box.innerHTML=h;}
+/* D-12：字段名 = 显示名，用户改；改动同步 4 处，不动 SQL、不受任何单据限制 */
+function rename(i,v){const nv=v.trim();if(!nv)return render();sel[i].label=nv;render();}
+/* 模拟：哪些列被引用（真实实现由后端扫描公式 / 跨页签引用 / 组件级属性）
+   D-10 实测更正：报价单（含冻结单）结构与值都是自己那份冻结副本，改字段名对任何已存在单据零影响，
+   故此处不再有 frozen 维度。 */
+const REFS={'材质名称':{formula:1,crossTab:1,rowKey:true},
+            '销售料号':{formula:0,crossTab:2,rowKey:true},
+            '组成含量':{formula:2,crossTab:0,rowKey:false}};
+function renameImpact(){return sel.filter(c=>c.label!==c.origLabel).map(c=>({c,r:REFS[c.origLabel]||{formula:0,crossTab:0,rowKey:effRole(c,'rowKey').on}}));}
+/* setRole / toggleRole 已退役 —— 角色改由 autoRoles() 推导 + flipRole() 覆盖 */
+function removeCol(i){
+  const c=sel[i];
+  const killsGroup=(c.raw&&/单价/.test(c.label))||c.autoElem;
+  const extra=killsGroup?'\n\n⚠ 这是价格策略原子组的核心列，将<同时>移除整组（元素列 + 元素单价 + 货币）。':'';
+  if(!confirm(`移除「${c.label}」（视图列 ${c.viewCol}）？\n\n将同时删除：视图输出列 + 组件字段 + 绑定路径（三件套同步）。`+extra))return;
+  sel.splice(i,1);
+  if(killsGroup)sel=sel.filter(x=>!x.raw&&!x.autoElem);
+  render();}
+let dragKey=null,dragIdx=null;
+function dragStart(e,k){dragKey=k;dragIdx=null;e.dataTransfer.effectAllowed='copy';}
+function rowDragStart(e,i){dragIdx=i;dragKey=null;}
+function rowOver(e,i){e.preventDefault();e.currentTarget.classList.add('over');}
+function dropTo(e,i){e.preventDefault();
+  document.querySelectorAll('.sel-row,.empty').forEach(el=>el.classList.remove('over','drop-hot'));
+  if(dragKey){const d=findCol(dragKey);if(d&&!isUsed(dragKey)){addCol(d);const m=sel.pop();sel.splice(i,0,m);}}
+  else if(dragIdx!==null&&dragIdx!==i){const m=sel.splice(dragIdx,1)[0];sel.splice(i,0,m);}
+  dragKey=dragIdx=null;render();}
+
+/* ===================== SQL ===================== */
+const K=s=>`<span class="k">${s}</span>`,A=s=>`<span class="a">${s}</span>`,C=s=>`<span class="c">${s}</span>`;
+function hl(x){return x.replace(/\b(SELECT|FROM|WHERE|AND|OR|LEFT JOIN|JOIN|LIMIT|UNION ALL|UNION|NOT EXISTS|AS|DISTINCT|GROUP BY|MIN|COALESCE|ANY|IN)\b/g,'<span class="k">$1</span>').replace(/'([^']*)'/g,`<span class="s">'$1'</span>`);}
+function buildSql(){
+  const d=D(),joins=[],grainJoins=[];
+  sel.forEach(c=>(c.joins||[]).forEach(j=>{if(!joins.includes(j))joins.push(j);}));
+  /* 提供粒度的源 → JOIN 展开多行；其 is_current/判别式放顶层 WHERE（§3.6 铁律：不得进 JOIN ON） */
+  auxGroups().forEach(g=>{if(g.kind==='GRAIN'&&sel.some(c=>g.cols.some(x=>x.k===c.k))&&!grainJoins.includes(g))grainJoins.push(g);});
+  grainJoins.forEach(g=>joins.push(`JOIN ${SHEETS[g.key].tbl} ${g.a.dimAlias} ON ${g.a.join}`));
+  if(d.custMode==='VIA_MCM')joins.unshift(`JOIN material_customer_map mcm ON mcm.material_no = ${d.al}.material_no AND mcm.customer_no = :customerCode AND mcm.system_type = 'QUOTE'`);
+  if(sel.some(c=>c.raw)){
+    const anchorExpr=opts.includeChildParts?'COALESCE(cl.root_no, ebi.material_no)':'ebi.material_no';
+    joins.push('LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep ON cep.element_code = ebi.component_no');
+    joins.push('       AND cep.material_no  = '+anchorExpr+'   -- 必与 hf_part_no 表达式逐字一致');
+  }
+  if(d.tree){
+    let q=C('-- BOM 树页签（树契约）：输出 material_no(子)/parent_no(父)，走 Pass2 树渲染')+'\n'
+     +C('-- 边分支：每条 BOM 边（不过滤 characteristic = 边式全子件）')+'\n'+K('SELECT')
+     +'\n  mbi.component_no '+K('AS')+' '+A('material_no')+',      '+C('-- 子件')
+     +'\n  mbi.material_no  '+K('AS')+' '+A('parent_no')+',        '+C('-- 父件')+'\n'
+     +sel.map(c=>`  ${c.e} ${K('AS')} ${A(c.viewCol)}`).join(',\n')
+     +'\n'+K('FROM')+' material_bom_item mbi';
+    joins.forEach(j=>q+='\n  '+hl(j));
+    q+='\n'+K('WHERE')+' '+d.where.map(hl).join('\n  '+K('AND')+' ')
+     +'\n  '+K('AND')+' mbi.component_no = '+K('ANY')+'(:total_material_no)'
+     +'\n'+K('UNION ALL')+'\n'+C('-- 根分支（编译器自动生成）：无父边的成品自身；列数/类型逐列对齐')+'\n'
+     +K('SELECT')+'\n  mm.material_no, '+K('NULL')+'::text,\n'
+     +sel.map(c=>`  ${c.k==='B_CN'?'mm.material_name':(c.t===N?K('NULL')+'::numeric':K('NULL')+'::varchar')}`).join(',\n')
+     +'\n'+K('FROM')+' material_master mm\n'+K('WHERE')+' mm.material_no = '+K('ANY')+'(:total_material_no)'
+     +'\n  '+K('AND')+' '+K('NOT EXISTS')+' ('+K('SELECT')+' 1 '+K('FROM')+' material_bom_item x\n'
+     +'                  '+K('WHERE')+" x.component_no = mm.material_no\n                    "+K('AND')+" x.system_type = <span class='s'>'QUOTE'</span> "+K('AND')+' x.is_current)'
+     +'\n\n'+C('-- 编译器另会写入一条 costing_bom_tree_config(usage=QUOTE)')+'\n'
+     +C('-- ⚠ 顶层 UNION ALL → anchorInjected=false → 本页签只读，不参与 B5 回填');
+    return q;}
+  const cl=opts.includeChildParts;let q='';
+  if(cl){q+=C('-- 子件闭包（铁律 1/2/3 已内建）')+'\n'+K('WITH RECURSIVE')+' bom_closure '+K('AS')+' (\n  '
+    +hl("SELECT DISTINCT b.material_no AS root_no, b.material_no AS node_no, 0 AS lvl")+'\n  '+hl("FROM material_bom_item b")
+    +'\n  '+hl("WHERE b.system_type = 'QUOTE' AND b.is_current AND b.customer_no = :customerCode")+'\n  '+K('UNION')
+    +'                              '+C('-- 铁律3：非 ALL')+'\n  '+hl("SELECT c.root_no, b.component_no, c.lvl + 1")
+    +'\n  '+hl("FROM bom_closure c JOIN material_bom_item b ON b.material_no = c.node_no")
+    +'\n  '+hl("WHERE b.system_type = 'QUOTE' AND b.is_current AND b.customer_no = :customerCode AND c.lvl &lt; 10")
+    +'\n), bom_closure_d '+K('AS')+' (            '+C('-- (root,node) 唯一化（铁律3）')+'\n  '
+    +hl("SELECT root_no, node_no, MIN(lvl) AS lvl FROM bom_closure GROUP BY root_no, node_no")+'\n)\n';}
+  const drv=cl?K('COALESCE')+`(cl.root_no, ${d.anchor.col})`:d.anchor.col;
+  q+=K('SELECT')+'\n  '+drv+' '+K('AS')+' '+A('hf_part_no')+',';
+  q+=cl?'   '+C('-- 闭包根料号兜底（铁律2）')+'\n':'      '+C('-- 锚点：'+d.anchor.desc)+'\n';
+  q+=sel.map(c=>{const al=K('AS')+' '+A(c.viewCol);
+    if(c.sub)return '  '+C(`-- 「${c.auxSrc}」附属源：标量子查询，结构上不可能让行数翻倍`)+'\n  '+hl(c.sub)+' '+al;
+    return `  ${c.e} ${al}`;}).join(',\n');
+  q+='\n'+K('FROM')+` ${d.tbl} ${d.al}`;
+  if(cl)q+='\n  '+K('LEFT JOIN')+` bom_closure_d cl ${K('ON')} cl.node_no = ${d.anchor.col}`;
+  joins.forEach(j=>q+='\n  '+hl(j));
+  const wh=d.where.slice(); if(d.custMode==='DIRECT')wh.push(`${d.al}.customer_no = :customerCode`);
+  grainJoins.forEach(g=>{(g.a.where||[]).forEach(w=>wh.push(w));});
+  if(wh.length)q+='\n'+K('WHERE')+' '+wh.map(hl).join('\n  '+K('AND')+' ');   /* 修：条件为空时不吐裸 WHERE（主件页签全部收窄都在 JOIN 里）*/
+  if(d.custMode==='VIA_MCM')q+='\n'+C('-- 客户收窄靠上面的 JOIN material_customer_map（本表无 customer_no / is_current 列）');
+  q+='\n'+C('-- 不生成 ORDER BY：DRAFT 下不保证透传，改由组件 sort_field 排序');
+  return q;}
+function showSql(){document.getElementById('sqlBox').innerHTML=buildSql();document.getElementById('sqlMask').classList.add('show');}
+
+/* ===================== 体检 ===================== */
+function healthCheck(){
+  _AR=_AR||autoRoles();
+  const out=[],hasNo=sel.some(x=>effRole(x,'partNo').on),hasNm=sel.some(x=>effRole(x,'partName').on);
+  if(!hasNo&&!hasNm)out.push({lv:'err',txt:'<b>料号列与名称列至少配一个</b>——两者皆空后端返 400。'});
+  else out.push({lv:'ok',txt:`标识列已配：${hasNo?'料号列':''}${hasNo&&hasNm?' + ':''}${hasNm?'名称列':''}`});
+  renameImpact().forEach(({c,r})=>{
+    const parts=[];
+    if(r.rowKey||effRole(c,'rowKey').on)parts.push('行键 rowKeyFields');
+    parts.push('料号列 / 名称列 / 排序列');
+    if(r.formula)parts.push(`本组件公式 ${r.formula} 处`);
+    if(r.crossTab)parts.push(`其他组件跨页签引用 ${r.crossTab} 处`);
+    out.push({lv:'warn',txt:`<b>「${c.origLabel}」→「${c.label}」</b>：保存时同步 <b>${parts.length}</b> 处引用（${parts.join('、')}）。<br>
+      <span class="hint-i">视图列名 <code>${c.viewCol}</code> 与绑定路径<b>不变</b>，SQL 不重新编译；已存在的报价单（含冻结单）各自冻着自己的结构与值，<b>零影响</b>。</span>`});});
+  /* v8：价格策略三项绑定（elementCodeField / elementPriceField / elementCurrencyField） */
+  if(priceGroupOn()){
+    const ek=elemKeyCol(), pc=sel.find(x=>x.raw&&/单价/.test(x.label)), cc=sel.find(x=>x.raw&&/货币|币种/.test(x.label));
+    if(!ek)out.push({lv:'err',txt:'<b>接了价格策略但没有元素列</b>——取价函数靠元素符号（Ag/Cu）匹配，缺 <code>elementCodeField</code> 后端将返回 400 COMPONENT_ELEMENT_BINDING_REQUIRED。'});
+    else out.push({lv:'ok',txt:`<b>三项绑定已自动确定</b>（无需勾选）：<code>elementCodeField=${ek.label}</code> · <code>elementPriceField=${pc?pc.label:'—'}</code> · <code>elementCurrencyField=${cc?cc.label:'空'}</code>。由原子组结构确定，不靠列名匹配 —— 改名后仍正确。`});
+  }
+  /* D-12 / D-13：视图列名由系统生成、永远与绑定路径对齐 —— 结构上不可能失配 */
+  out.push({lv:'ok',txt:`<b>视图列名与绑定路径由系统同源产出</b>——${sel.length} 列的别名均为 <code>_&lt;来源简称&gt;_&lt;原列名&gt;</code>，是 (Sheet, 列) 的纯函数；<b>「列名与绑定路径差一个字」这类静默故障在结构上不可能发生</b>。`});
+  const gc=grainConflict();
+  if(gc)out.push({lv:'err',txt:`<b>粒度冲突（兜底拦截）：同时选了「按 ${gc[0].join('+')} 展开」与「按 ${gc[1].join('+')} 展开」的字段</b>——两者互不包含，会产生笛卡尔积（行数虚增、金额全错）。<br><span class="hint-i">正常路径下拖拽期就已置灰、不会走到这里；出现本项说明是切换页签类型等路径产生的残留态。</span>`});
+  const gr=grainOf();
+  if(!gc)out.push({lv:'ok',txt:gr.length?`本页签行粒度：<b>成品 + ${gr.join(' + ')}</b>（由所选字段决定）`:'本页签行粒度：<b>每个成品 1 行</b>'});
+  const coarse=sel.filter(x=>x.amount&&x.subtotal&&gr.length&&(x.dims||[]).length<gr.length);
+  if(coarse.length)out.push({lv:'err',txt:`<b>「${coarse.map(x=>x.label).join('、')}」粒度比本页签粗却勾了小计</b>——该值会在每一行上重复出现，累加即<b>重复计算</b>。`});
+  const auxSub=sel.filter(x=>x.sub&&x.subtotal);
+  if(auxSub.length)out.push({lv:'err',txt:`<b>「${auxSub.map(x=>x.label).join('、')}」来自附属源却勾了小计</b>——该值按主源粒度重复出现，累加将<b>重复计算</b>。`});
+  const bad=sel.filter(x=>x.subtotal&&/单价|汇率|费率|比例|系数|基准值/.test(x.label));
+  if(bad.length)out.push({lv:'warn',txt:`<b>「${bad.map(x=>x.label).join('、')}」勾了小计</b>——单位量纲/比例类累加无业务含义（R7）。`});
+  if(!auxSub.length&&!bad.length&&sel.some(x=>x.amount))out.push({lv:'ok',txt:'金额列与小计成对关系正确（R7）。'});
+  const manual=sel.filter(x=>x.ov&&Object.keys(x.ov).length);
+  if(manual.length)out.push({lv:'warn',txt:`<b>${manual.length} 列的角色被手动改过</b>（${manual.map(x=>x.label).join('、')}）——系统按语义图推导的结果已被覆盖，保存后以手动值为准。`});
+  const rk=sel.filter(x=>effRole(x,'rowKey').on);
+  if(sel.length&&!rk.length)out.push({lv:'warn',txt:'未配行键——多行页签重刷草稿时无法保留用户编辑值。'});
+  else if(rk.length){const risky=opts.includeChildParts&&!sel.some(x=>/归属料号/.test(x.label))&&rk.length===1;
+    if(risky)out.push({lv:'warn',txt:'<b>开了子件闭包但行键只有 1 列</b>——建议把「归属料号」加入输出列并勾为行键。'});
+    else out.push({lv:'ok',txt:`行键：${rk.map(x=>x.label).join(' + ')}`});}
+  if(sel.length&&!D().tree&&!sel.some(x=>effRole(x,'sort').on))out.push({lv:'warn',txt:'未配排序列——本页签所选列中没有「项次」，推导不出排序列；草稿态会按 driver 返回序显示。'});
+  const nm=sel.map(x=>x.label),dup=nm.filter((n2,i)=>nm.indexOf(n2)!==i);
+  if(dup.length)out.push({lv:'warn',txt:`<b>字段名重复：${[...new Set(dup)].join('、')}</b>——视图别名仍唯一（系统按来源生成），技术上无害；但表头会出现同名列，且公式引用该名时有歧义。`});
+  if(D().tree)out.push({lv:'warn',txt:'<b>BOM 树页签只读</b>：顶层 UNION ALL 使锚点注入降级，不参与 B5 回填。'});
+  mainGroups().concat(auxGroups()).forEach(g=>{if(g.note&&sel.some(c=>g.cols.some(x=>x.k===c.k)))
+    out.push({lv:'warn',txt:`<b>${g.n}</b>：${g.note.replace('⚠ ','')}`});});
+  const e=out.filter(o=>o.lv==='err').length,w=out.filter(o=>o.lv==='warn').length;
+  /* 真实页面纪律：默认只展示阻断与告警；通过项折叠成一行，点开才看（避免把用户该看的淹掉） */
+  const item=o=>`<div class="hitem ${o.lv}"><span class="ic">${o.lv==='ok'?'✓':o.lv==='warn'?'!':'✕'}</span><span>${o.txt}</span></div>`;
+  const blocking=out.filter(o=>o.lv!=='ok'),passed=out.filter(o=>o.lv==='ok');
+  document.getElementById('healthBody').innerHTML=blocking.map(item).join('')
+    +(passed.length?`<details class="okfold"><summary>其余 ${passed.length} 项检查通过</summary>${passed.map(item).join('')}</details>`:'');
+  document.getElementById('healthSum').innerHTML=e?`<span style="color:var(--danger)">${e} 项阻断</span>`:(w?`<span style="color:var(--gold)">${w} 项告警（可保存）</span>`:`<span style="color:var(--green)">全部通过</span>`);
+  document.getElementById('saveBtn').disabled=e>0;
+  document.getElementById('footHint').textContent=e>0?'存在阻断项，无法保存':'';}
+
+/* ===================== 预览 ===================== */
+const PV={'材质元素':{base:[{E_MN:'H65',E_EN:'铜',M_content:'62',M_scrap_rate:'0.02',M_composition_qty:'1.35',E_PR:'1850',E_OW:'S-3120014539',X1_composition_qty:'1',X1_issue_unit:'KG',X0_recovery_discount:'0.85'},
+  {E_MN:'AgNi11#-Ⅰ',E_EN:'银',M_content:'89',M_scrap_rate:'0.03',M_composition_qty:'0.42',E_PR:'118478',E_OW:'S-3120014539',X1_composition_qty:'1',X1_issue_unit:'KG',X0_recovery_discount:'0.90'}],
+ child:[{E_MN:'AgC3',E_EN:'银',M_content:'97',M_scrap_rate:'0.03',M_composition_qty:'0.18',E_PR:'118478',E_OW:'S-80011',X1_composition_qty:'1',X1_issue_unit:'KG',X0_recovery_discount:null},
+  {E_MN:'AgC3',E_EN:'碳',M_content:'3',M_scrap_rate:'0.03',M_composition_qty:'0.18',E_PR:null,E_OW:'S-80011',X1_composition_qty:'1',X1_issue_unit:'KG',X0_recovery_discount:null}]},
+'费用类':{base:[{F_CN:'H65',M_base_value:'0.034140',M_unit:'KG',M_currency:'CNY',M_cost_type:'来料加工费',M_seq_no:'1'},
+  {F_CN:'AgNi11#-Ⅰ',M_base_value:'0.052300',M_unit:'KG',M_currency:'CNY',M_cost_type:'来料加工费',M_seq_no:'2'}],child:[]},
+'主件':{base:[{P_NO:'S-3120014539',M_material_name:'接触组件',M_standard_unit:'PCS',M_unit_weight:'1.77',
+  X0_customer_material_name:'ROCKWELL-A1',X0_quote_currency:'USD',X0_exchange_rate:'7.15'}],child:[],
+ byGrain:{'工序号':[
+   {P_NO:'S-3120014539',M_material_name:'接触组件',M_standard_unit:'PCS',M_unit_weight:'1.77',X0_customer_material_name:'ROCKWELL-A1',X2_process_no:'焊接',X2_process_name:null,X2_fixed_cost:'0.080000',X2_capacity_unit:'PCS',X2_production_type:'BATCH_FIXED'},
+   {P_NO:'S-3120014539',M_material_name:'接触组件',M_standard_unit:'PCS',M_unit_weight:'1.77',X0_customer_material_name:'ROCKWELL-A1',X2_process_no:'铆接',X2_process_name:null,X2_fixed_cost:'12.000000',X2_capacity_unit:'PCS',X2_production_type:'BATCH_FIXED'}],
+  '要素':[
+   {P_NO:'S-3120014539',M_material_name:'接触组件',X0_customer_material_name:'ROCKWELL-A1',X1_cost_type:'利润',X1_cost_ratio:'0.120000',X1_unit:'PCS',X1_currency:'CNY'},
+   {P_NO:'S-3120014539',M_material_name:'接触组件',X0_customer_material_name:'ROCKWELL-A1',X1_cost_type:'外购件管理费',X1_cost_ratio:'0.050000',X1_unit:'PCS',X1_currency:'CNY'},
+   {P_NO:'S-3120014539',M_material_name:'接触组件',X0_customer_material_name:'ROCKWELL-A1',X1_cost_type:'材料管理费',X1_cost_ratio:'0.030000',X1_unit:'PCS',X1_currency:'CNY'},
+   {P_NO:'S-3120014539',M_material_name:'接触组件',X0_customer_material_name:'ROCKWELL-A1',X1_cost_type:'税率',X1_cost_ratio:'0.130000',X1_unit:'PCS',X1_currency:'CNY'}]}},
+'零件':{base:[{S_PN:'零件A',S_ON:'冲压',M_pricing_price:'14.00',M_unit:null,M_currency:'CNY',X0_pricing_price:'1.396',X1_plating_element:'Ag'}],child:[]},
+'外购件':{base:[{O_CN:'组成件1',M_composition_qty:'2',M_issue_unit:'PCS',M_rough_weight:null,X0_pricing_price:'55.00'}],child:[]},
+'BOM 树':{base:[{B_CN:'零件A',B_C:'S-80011',M_composition_qty:'1',M_rough_weight:'0.60',__p:'S-3120014539'},
+  {B_CN:'AgC3',B_C:'00002',M_composition_qty:'1',M_rough_weight:'0.18',__p:'S-80011'},
+  {B_CN:'组成件1',B_C:'W-1001',M_composition_qty:'2',M_rough_weight:null,__p:'S-3120014539'}],child:[]}};
+function openPreview(){previewOpen=true;render();}
+function renderPreview(){
+  const box=document.getElementById('previewWrap');
+  if(!previewOpen){box.innerHTML='';return;}
+  const dd=previewCustomer==='EMPTY'?{base:[],child:[]}:(PV[curTab]||{base:[],child:[]});
+  const gr=grainOf(); let base=dd.base;
+  if(dd.byGrain){for(const k in dd.byGrain){if(gr.includes(k)){base=dd.byGrain[k];break;}}}
+  const rows=opts.includeChildParts?base.concat(dd.child||[]):base,tree=D().tree;
+  let h=`<div class="preview"><div class="pv-h">
+    <span>客户</span><select onchange="previewCustomer=this.value;render()">
+      <option value="ROCKWELL" ${previewCustomer==='ROCKWELL'?'selected':''}>罗克韦尔（CUST-1269）</option>
+      <option value="EMPTY" ${previewCustomer==='EMPTY'?'selected':''}>西安中熔（无本类数据）</option></select>
+    <span>料号</span><input type="text" value="S-3120014539" style="width:150px">
+    <button class="btn sm" onclick="render()">重新执行</button>
+    <span class="rescount">返回 ${rows.length} 行</span>
+    <span class="hint-i">只读连接 · LIMIT 50 · 超时 5s${tree?' · 走树渲染链路':''}</span>
+    <span style="margin-left:auto;cursor:pointer;color:var(--sub)" onclick="previewOpen=false;render()">收起 ✕</span></div>`;
+  if(!rows.length){h+=`<div class="diag"><b>返回 0 行 —— 可能的原因</b><br>· 该客户下没有导入本页签所需的基础数据（最常见）<br>· 料号在该客户下不存在
+    ${(D().opts||[]).includes('includeChildParts')?`<br>· <b>数据挂在子件上</b><span class="fix"><button class="btn sm" onclick="opts.includeChildParts=true;render()">试试勾选「子件数据也要」</button></span>`:''}</div>`;}
+  else{const head=tree?`<th>material_no（子）</th><th>parent_no（父）</th>`:`<th>hf_part_no</th>`;
+    h+=`<div style="overflow:auto"><table class="pv"><thead><tr>${head}${sel.map(c=>`<th>${c.raw?c.label:'_'+c.label}${c.sub?' ⚠':''}</th>`).join('')}</tr></thead><tbody>`;
+    rows.forEach(r=>{const lead=tree?`<td>${r.B_C}</td><td>${r.__p}</td>`:`<td>S-3120014539</td>`;
+      h+=`<tr>${lead}`+sel.map(c=>{const v=r[c.k];return v==null?`<td class="null">NULL</td>`:`<td>${v}</td>`;}).join('')+`</tr>`;});
+    h+=`</tbody></table></div>`;
+    if(rows.some(r=>sel.some(c=>r[c.k]==null)))h+=`<div class="diag"><b>出现 NULL —— 逐列确认是否预期</b>
+      预期的：元素单价未配价格策略 / 该行确实没有对应费用记录。<br>
+      <b>不预期的：整列全 NULL</b> —— 多半是绑错了列（如成品其他费用绑 <code>值</code> 而实际值在 <code>比例</code>）。这正是本预览要挡的错误。</div>`;}
+  h+=`</div>`;box.innerHTML=h;}
+
+function doSave(){alert(`保存成功（原型模拟）\n\n① 编译 SQL → dry-run 通过\n② 写 component_sql_view.sql_template + builder_config\n`
+  +`③ 同步组件字段 ${sel.length} 个（含血统 columnKey → QuoteSheetRegistry 的 sheet+列）\n④ 写 default_source.path\n`
+  +`⑤ 回填 tabType=${curTab} / rowKeyFields=[${sel.filter(x=>effRole(x,'rowKey').on).map(x=>x.label).join(', ')}]\n`
+  +(D().tree?`⑥ 写入 costing_bom_tree_config(usage=QUOTE)\n⑦ `:`⑥ `)+`刷新引用模板的 snapshot`);}
+
+/* ===================== 顶部 + 渲染 ===================== */
+let staleDemo=true;   /* D-14 演示：模拟「本视图由旧版编译器生成」 */
+function dismissStale(){staleDemo=false;render();}
+function renderBar(){
+  const d=D(),auxN=(d.aux||[]).length;
+  const cust=d.custMode==='DIRECT'?'<span class="hint-i">客户过滤 customer_no=:customerCode</span>'
+    :d.custMode==='VIA_MCM'?'<span style="color:var(--gold)">客户过滤靠 JOIN material_customer_map（本表无 customer_no）</span>'
+    :'<span style="color:var(--blue)">树契约禁用客户过滤，按 :total_material_no 收窄</span>';
+  const stale=staleDemo?`<div class="stale-bar">⏱ <b>本视图由旧版规则生成</b>（编译器 v1 · 当前 v2）——重新保存即可按新规则重编译。
+      <a href="javascript:void(0)" onclick="showSql()">查看新旧 SQL 差异</a>
+      <span class="x" onclick="dismissStale()">✕</span></div>`:'';
+  document.getElementById('anchorInfo').innerHTML=stale+`取数：<b>${d.anchor.desc}</b> · ${cust}`
+    +(auxN?` · <b>${auxN}</b> <span class="hint-i">个附属 Sheet</span>`:'')
+    +(d.note?`<br><span class="hint-i">↳ ${d.note}</span>`:'')+(d.charNote?`<br><span class="hint-i">↳ ${d.charNote}</span>`:'')
+    +`<br><span class="hint-i">当前行粒度：</span><b>${grainOf().length?'成品 + '+grainOf().join(' + '):'每个成品 1 行'}</b><span class="hint-i">（由所选字段动态决定）</span>`;
+  document.querySelectorAll('.sw').forEach(el=>{const k=el.dataset.opt,sup=(d.opts||[]).includes(k);
+    el.classList.toggle('hidden',!sup);el.classList.toggle('on',!!opts[k]);
+    el.querySelector('span').textContent=opts[k]?'☑':'☐';});}
+
+/* ===================== v8 · 语义图谱（只读）=====================
+   ⚠️ 本页数据全部由 SHEETS / TABDEF / LIB **自动推导**，不另维护一份 —— 
+   这正是「单一声明」的价值：配置器与图谱永不漂移。 */
+const CARD={GRAIN:['ONE_TO_MANY','一对多','p-info','JOIN，页签按目标 grain 展开行'],
+            SUB:['MANY_TO_ONE','多对一','p-grey','粒度更粗 → 相关标量子查询'],
+            JOIN:['MANY_TO_ONE','多对一','p-grey','收窄用 JOIN（客户料号关系）'],
+            SAME:['ONE_TO_ONE','同表同行','p-grey','同一行的另一批列，直接取'],
+            LOOKUP:['MANY_TO_ONE','多对一','p-lk','查名 LEFT JOIN，多源按 fallbackOrder 生成 COALESCE'],
+            PRICE:['MANY_TO_ONE','多对一','p-fn','表函数，原子组']};
+function deriveModel(){
+  const nodes=[],edges=[],seen={};
+  Object.entries(SHEETS).forEach(([k,sh])=>{
+    const usedBy=[];
+    Object.entries(TABDEF).forEach(([tn,d])=>{
+      if(d.main===k)usedBy.push(tn+' · 主源');
+      else if((d.aux||[]).some(a=>a.key===k))usedBy.push(tn);});
+    nodes.push({k,n:sh.n,tbl:sh.tbl,dims:sh.dims||[],cols:sh.cols.length,note:sh.note,usedBy});
+  });
+  const push=(from,to,kind,on,tab)=>{
+    const id=from+'|'+to+'|'+kind;
+    if(seen[id]){if(!seen[id].tabs.includes(tab))seen[id].tabs.push(tab);return;}
+    seen[id]={from,to,kind,on,tabs:[tab]};edges.push(seen[id]);};
+  Object.entries(TABDEF).forEach(([tn,d])=>{
+    const mainName=SHEETS[d.main]?SHEETS[d.main].n:d.main;
+    (d.aux||[]).forEach(a=>push(mainName,SHEETS[a.key].n,a.kind,(a.join||a.where||'—').split('\n')[0],tn));
+    (d.codeCols||[]).forEach(cc=>{
+      (Array.isArray(cc.lookup)?cc.lookup:[]).forEach(l=>{
+        if(l.lib)push(mainName,LIB[l.lib].lib,'LOOKUP',cc.e+' = '+LIB[l.lib].lib+'.主键',tn);});});
+    (d.price||[]).length&&push(mainName,'价格策略 f_material_element_price','PRICE',
+      'cep.element_code = ebi.component_no  AND  cep.material_no = <hf_part_no 表达式>',tn);
+  });
+  return {nodes,edges};
+}
+let gtab='node';
+function renderGraphPage(){
+  const M=deriveModel(),orphan=M.nodes.filter(n=>!n.usedBy.length);
+  const tabs=[['node','全部节点'],['edge','全部边'],['cover','页签覆盖']];
+  let h=`<div class="gnote"><b>只读图谱</b> —— 节点 / 边 / 页签视图是<b>开发态资产</b>（<code>QuoteSemanticGraph.java</code>，随代码走 git、由 CI 断言锁），本页只呈现、不提供任何编辑入口。
+    <br>本页数据由左侧配置器所用的同一份 <code>SHEETS</code> / <code>TABDEF</code> <b>自动推导</b>，二者永不漂移。
+    <br><b>${M.nodes.length}</b> 个 Sheet 节点 · <b>${Object.keys(LIB).length}</b> 张查名维表 · <b>${M.edges.length}</b> 条边 · <b>${orphan.length}</b> 张孤儿 Sheet</div>
+    <div class="mtabs">${tabs.map(([k,l])=>`<div class="mtab ${gtab===k?'active':''}" onclick="gtab='${k}';renderGraphPage()">${l}</div>`).join('')}</div>`;
+  if(gtab==='node'){
+    h+=`<table class="gtable"><thead><tr><th>导入 Sheet（节点）</th><th>落表</th><th>附加维度</th><th>列数</th><th>被哪些页签用</th></tr></thead><tbody>`;
+    M.nodes.forEach(n=>h+=`<tr><td><b>${n.n}</b>${n.note?`<br><span class="pill p-warn">${n.note}</span>`:''}</td>
+      <td><code>${n.tbl}</code></td><td>${n.dims.length?n.dims.join(' + '):'<span style="color:#bfbfbf">（无）</span>'}</td>
+      <td>${n.cols}</td><td>${n.usedBy.length?n.usedBy.map(x=>`<span class="pill p-info">${x}</span>`).join(' '):'<span class="pill p-bad">未被任何页签使用</span>'}</td></tr>`);
+    h+=`</tbody></table><h3 class="gh">查名维表（LOOKUP 节点）</h3><table class="gtable"><thead><tr><th>维表</th><th>连接键（右侧恒为主键）</th></tr></thead><tbody>`;
+    h+=`<tr><td><b>物料主档</b></td><td><code>material_no</code></td></tr>
+        <tr><td><b>材质库</b></td><td><code>code</code></td></tr>
+        <tr><td><b>工序库</b></td><td><code>process_no</code></td></tr>
+        <tr><td><b>元素库</b></td><td><code>element_code</code>（= 元素符号 Ag/Cu，<b>不是</b> element_no）</td></tr>
+        <tr><td><b>客户料号关系</b></td><td><code>material_no</code> + 固定谓词 <code>customer_no = :customerCode</code></td></tr>
+        <tr><td><b>价格策略</b> <span class="pill p-fn">表函数</span></td><td><code>f_material_element_price(:customerCode, :priceBaseDate) cep</code></td></tr>`;
+    h+=`</tbody></table>`;
+  } else if(gtab==='edge'){
+    h+=`<table class="gtable"><thead><tr><th>从</th><th>到</th><th>基数</th><th>连接键</th><th>用在哪些页签</th><th>SQL 形态</th></tr></thead><tbody>`;
+    M.edges.forEach(e=>{const c=CARD[e.kind]||['?','?','p-grey',''];
+      h+=`<tr><td>${e.from}</td><td>${e.to}</td><td><span class="pill ${c[2]}">${c[1]}</span></td>
+        <td><code>${String(e.on).replace(/</g,'&lt;')}</code></td>
+        <td>${e.tabs.map(t=>`<span class="pill p-grey">${t}</span>`).join(' ')}</td><td>${c[3]}</td></tr>`;});
+    h+=`</tbody></table>
+      <div class="gnote" style="margin-top:12px"><b>基数断言（CI）</b>：每条「多对一」边跑
+      <code>SELECT &lt;右键&gt;, count(*) FROM &lt;目标表&gt; GROUP BY 1 HAVING count(*) &gt; 1</code> —— 期望 0 行。
+      非空 = 声明写错（实际是一对多）→ 生成 LEFT JOIN 会让行数翻倍、勾小计即<b>算错钱</b>。
+      这是 v7「配方与文档漂移」风险第一次有了可执行判据。</div>`;
+  } else {
+    const tn=Object.keys(TABDEF);
+    h+=`<table class="gtable"><thead><tr><th>导入 Sheet</th>${tn.map(t=>`<th style="text-align:center">${t}</th>`).join('')}</tr></thead><tbody>`;
+    M.nodes.forEach(n=>{h+=`<tr><td>${n.n}</td>${tn.map(t=>{
+      const d=TABDEF[t],hit=d.main===n.k?'●':((d.aux||[]).some(a=>a.key===n.k)?'○':'');
+      return `<td style="text-align:center;color:${hit==='●'?'#52c41a':hit?'#1677ff':'#e5e7eb'}">${hit||'·'}</td>`;}).join('')}</tr>`;});
+    h+=`</tbody></table><div class="gnote" style="margin-top:12px">● = 主源　○ = 附属源<br>
+      <b>${orphan.length} 张 Sheet 未被任何页签使用</b>：${orphan.map(o=>o.n).join('、')||'无'}。
+      <em>年降三张为用户第四轮明确移出本期；电镀方案为现网数据孤立（hf_part_no 与 plating_scheme_no 双向全空），非配置器可解。</em>
+      上线后新增 Sheet 若忘记挂到页签，此处立刻可见。</div>`;
+  }
+  document.getElementById('graphPane').innerHTML=h;
+}
+function renderSrcPage(){
+  document.getElementById('srcPane').innerHTML=`
+  <div class="gnote"><b>这就是「边怎么配置」的答案</b> —— 节点 / 边 / 页签视图全部写在 <code>QuoteSemanticGraph.java</code> 一个类里。
+    <b>没有配置页面，也不需要</b>：一条边 3~4 行；加一张 Sheet 的成本大头在导入 handler，不在这几行声明。</div>
+  <h3 class="gh">① 节点：一张导入 Sheet</h3>
+  <pre>${hl(`node("物料与元素BOM").table("element_bom_item")
+    .scope(FULL)                         -- customer_no + is_current + system_type
+    .grain("material_part_no", "component_no")
+    .anchor("ebi.material_no")           -- → hf_part_no
+    .col("seq_no",       "项次",     TEXT)
+    .col("component_no", "元素",     TEXT).asCode()
+    .col("content",      "组成含量", NUMBER);`)}</pre>
+  <h3 class="gh">② 边：三种基数 —— <b>本期唯一需要人判断的东西</b></h3>
+  <pre>${hl(`edge("物料与元素BOM").to("材质库")
+    .on("material_part_no", "code").cardinality(MANY_TO_ONE).fallbackOrder(0);
+edge("物料与元素BOM").to("物料主档")
+    .on("material_part_no", "material_no").cardinality(MANY_TO_ONE).fallbackOrder(1);
+
+edge("单重 / 物料主档").to("组装加工费")
+    .on("material_no", "material_no").cardinality(ONE_TO_MANY);
+
+edge("物料与元素BOM").to("来料固定加工费")
+    .on("material_no", "finished_material_no")
+    .and("material_part_no", "code").cardinality(MANY_TO_ONE);`)}</pre>
+  <h3 class="gh">③ 页签视图：加一个页签类型 = 加一条声明</h3>
+  <pre>${hl(`view("材质元素").anchor("物料与元素BOM")
+    .nodes("物料BOM", "来料固定加工费", "价格策略")
+    .switches(CLOSURE);`)}</pre>
+  <h3 class="gh">④ 写错了会怎样 —— CI 三道断言</h3>
+  <pre>${hl(`-- 断言 1：每条 MANY_TO_ONE 边，右侧必须唯一
+SELECT code, count(*) FROM material_recipe GROUP BY 1 HAVING count(*) > 1;   -- 期望 0 行
+
+-- 断言 2：节点登记的列 ⇄ Q*Handler 实际 put 的列，双向包含
+-- 断言 3：每个 view 的每个可用节点，从 anchor 可达且路径唯一`)}</pre>
+  <div class="gnote"><b>全部内容就这些</b>：17 个节点 + ~19 条边 + 6 条 view 声明 ≈ <b>300 行 Java</b>，一次写完，只在导入侧加 Sheet 时才动。
+    <em>对比 v7：同样的知识散在 6 段页签配方里，同一张表在多段重复描述。</em></div>`;
+}
+
+function renderLiveSql(){const el=document.getElementById('liveSql');if(el)el.innerHTML=buildSql();}
+function render(){renderAvail();renderSel();healthCheck();renderPreview();renderBar();renderLiveSql();}
+const tabSel=document.getElementById('tabSel');
+tabSel.innerHTML=TABS.map(t=>`<option value="${t}">${t}</option>`).join('');
+tabSel.value=curTab;
+tabSel.onchange=()=>{if(sel.length&&!confirm('切换页签类型会清空已选输出列。继续？')){tabSel.value=curTab;return;}
+  curTab=tabSel.value;opts={includeChildParts:false};previewOpen=false;seed();render();};
+document.querySelectorAll('.sw').forEach(el=>{el.onclick=()=>{const k=el.dataset.opt;opts[k]=!opts[k];
+  if(!opts.includeChildParts)sel=sel.filter(x=>!/归属料号/.test(x.label));
+  /* v8：价格策略不再是开关，此处不得再按 opts 清理 raw 列（否则点闭包开关会误删整组） */
+  render();};});
+/* 供验证/调试：模拟点开关（与上面 onclick 同一逻辑） */
+function toggleOpt(k){opts[k]=!opts[k];
+  if(!opts.includeChildParts)sel=sel.filter(x=>!/归属料号/.test(x.label));
+  render();}
+seed();render();
+</script>
+</body>
+</html>
