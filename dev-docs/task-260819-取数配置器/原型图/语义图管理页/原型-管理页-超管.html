@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>语义图管理页 · SYSTEM_ADMIN</title>
+<link rel="stylesheet" href="proto.css">
+</head>
+<body>
+
+<div class="topnav">
+  <div class="tn-brand">CPQ 配置中心<span class="tn-ver">v8 · 取数配置器</span></div>
+  <div class="tn-tabs">
+    <div class="tn-tab">组件管理</div>
+    <div class="tn-tab active">语义图谱</div>
+  </div>
+  <div class="tn-role">当前角色 <b>SYSTEM_ADMIN</b> · 张工</div>
+</div>
+
+<div class="page">
+  <div class="gnote">
+    <b>语义图谱</b> —— 节点 / 边 / 页签视图存放在 <code>semantic_*</code> 6 张表里（<b>DB 唯一真源</b>，代码里不再有声明），本页读表呈现。
+    <br>你是 <code>SYSTEM_ADMIN</code>，可以改。改动须过<b>四道保存期校验</b>：边基数在线断言 · 路径可达且唯一 · 表与列物理存在 · 与导入 handler 双向对账。
+    <br>⚠️ 语义图改动<b>不触达任何存量视图</b> —— 已生成的 SQL 逐字不变；要同步就去那个组件重新过一遍配置器。
+  </div>
+
+  <div class="stat">
+    <div><b>13</b><span>Sheet 节点</span></div>
+    <div><b>5</b><span>查名维表 + 1 表函数</span></div>
+    <div><b>16</b><span>边</span></div>
+    <div><b style="color:var(--warn)">2</b><span>孤儿 Sheet</span></div>
+    <div><b>6</b><span>页签视图</span></div>
+    <div><b>v15</b><span>图版本 · 2026-08-20 14:22 张工</span></div>
+  </div>
+
+  <div class="mtabs" id="tabs"></div>
+  <div id="pane"></div>
+</div>
+
+<div class="protofoot">
+  <b>原型说明（非产品内容）</b>：本页是<b>超管形态</b>。同一页面的<b>只读形态</b>见 <code>原型-管理页-只读.html</code>；
+  编辑抽屉与四道校验见 <code>原型-边编辑抽屉与校验.html</code>；删除二次确认与空态见 <code>原型-危险动作与空态.html</code>。
+  <br>数据取自定稿原型 <code>原型-取数配置器.html</code> 的 <code>deriveModel()</code> 真实输出（13 节点 / 16 边 / 6 页签），非编造。
+</div>
+
+<div class="mask" id="mask" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-head"><b id="dTitle">编辑边</b><span class="x" onclick="closeDrawer()">✕</span></div>
+  <div class="drawer-body" id="dBody"></div>
+  <div class="drawer-foot">
+    <button class="btn" onclick="closeDrawer()">取消</button>
+    <button class="btn btn-primary" onclick="alert('原型：保存会先跑四道校验，见 原型-边编辑抽屉与校验.html')">校验并保存</button>
+  </div>
+</div>
+
+<script src="data.js"></script>
+<script>
+let view='edge', selected=[], curTab='材质元素';
+const $=s=>document.querySelector(s);
+
+function renderTabs(){
+  const t=[['tabview','本页签用到的'],['node','全部节点'],['edge','全部边'],['cover','页签覆盖']];
+  $('#tabs').innerHTML=t.map(([k,l])=>`<div class="mtab ${view===k?'active':''}" onclick="switchView('${k}')">${l}</div>`).join('');
+}
+function switchView(k){view=k;selected=[];render();}
+function toggle(id){const i=selected.indexOf(id);i<0?selected.push(id):selected.splice(i,1);render();}
+function toggleAll(){const all=curRows().map(r=>r.id);selected=selected.length===all.length?[]:all;render();}
+function curRows(){return view==='edge'?EDGES:(view==='node'?NODES.map((n,i)=>({...n,id:'N'+i})):[]);}
+
+/* ===== 工具栏：§1.2 动作一律上提；禁用但可见 + hover 说明原因 ===== */
+function toolbar(){
+  if(view==='cover'||view==='tabview') return `<div class="tbar"><span style="font-size:12px;color:var(--sub)">本视图为纯查看（列表操作规范的「纯查看页」例外），不提供动作。</span></div>`;
+  const isEdge=view==='edge', unit=isEdge?'边':'节点', n=selected.length;
+  const editWhy = n===0?`请先选择 1 ${unit==='边'?'条边':'个节点'}`:(n>1?`只能编辑 1 ${unit==='边'?'条':'个'}，当前选了 ${n} ${unit==='边'?'条':'个'}`:'');
+  const delWhy  = n===0?`请先选择要删除的${unit}`:'';
+  const offWhy  = n===0?`请先选择要停用的${unit}`:'';
+  const btn=(label,why,cls,onclick)=>`<span class="tip" ${why?`data-tip="${why}"`:''}>
+      <button class="btn ${cls||''}" ${why?'disabled':''} ${why?'':`onclick="${onclick}"`}>${label}</button></span>`;
+  return `<div class="tbar">
+    ${btn(isEdge?'+ 新增边':'+ 新增节点','','btn-primary',`openDrawer('new')`)}
+    ${btn('编辑',editWhy,'',`openDrawer('edit')`)}
+    ${btn('停用',offWhy,'',`alert('原型：停用 ${n} ${unit}（status=INACTIVE），不物理删除')`)}
+    ${btn('删除',delWhy,'btn-danger',`location.href='原型-危险动作与空态.html'`)}
+    <span class="sp"></span>
+    <input class="search" placeholder="搜索${unit}名 / 表名 / 连接键">
+  </div>`;
+}
+
+function render(){
+  renderTabs();
+  let h=toolbar();
+  if(view==='edge'){
+    h+=`<table class="gtable"><thead><tr>
+      <th class="ck"><input type="checkbox" ${selected.length===EDGES.length?'checked':''} onclick="toggleAll()"></th>
+      <th>从</th><th>到</th><th>基数</th><th>连接键</th><th>fallback</th><th>用在哪些页签</th><th>基数断言</th></tr></thead><tbody>`;
+    EDGES.forEach(e=>{const k=KINDLABEL[e.kind];
+      h+=`<tr class="${selected.includes(e.id)?'sel':''}">
+        <td class="ck"><input type="checkbox" ${selected.includes(e.id)?'checked':''} onclick="toggle('${e.id}')"></td>
+        <td><span class="lnk" onclick="openDrawer('edit','${e.id}')">${e.from}</span></td>
+        <td>${e.to}</td>
+        <td><span class="pill ${k[1]}">${k[0]}</span></td>
+        <td class="mono" style="max-width:300px;word-break:break-all">${e.on.replace(/</g,'&lt;')}</td>
+        <td>${e.fb===null?'<span style="color:#bfbfbf">—</span>':e.fb}</td>
+        <td>${e.tabs.map(t=>`<span class="pill p-grey">${t}</span>`).join(' ')}</td>
+        <td>${e.assert==='ok'?'<span class="pill p-ok">✓ 通过</span>':(e.assert==='na'?'<span class="pill p-grey">一对多不适用</span>':'<span class="pill p-warn">待跑</span>')}</td></tr>`;});
+    h+=`</tbody></table>
+      <div class="gnote" style="margin-top:12px"><b>基数断言（保存期拦截 + CI 兜底，两层都有）</b>：每条「多对一」边跑
+      <code>SELECT &lt;右键&gt;, count(*) FROM &lt;目标表&gt; GROUP BY 1 HAVING count(*) &gt; 1</code> —— 期望 0 行。
+      非空 = 声明写错（实际是一对多）→ 生成 LEFT JOIN 会让行数翻倍、勾小计即<b>算错钱</b>。
+      <br>真源进库之后 CI 不再是最后一道闸（图随时可改、不发版），所以这道断言<b>在保存时就对着真库跑一遍，不过直接拒绝保存</b>；CI 保留同一断言作兜底。</div>`;
+  }
+  else if(view==='node'){
+    h+=`<table class="gtable"><thead><tr>
+      <th class="ck"><input type="checkbox" onclick="toggleAll()"></th>
+      <th>导入 Sheet（节点）</th><th>落表</th><th>附加维度</th><th>列数</th><th>被哪些页签用</th></tr></thead><tbody>`;
+    NODES.forEach((n,i)=>{const id='N'+i;
+      h+=`<tr class="${selected.includes(id)?'sel':''}">
+        <td class="ck"><input type="checkbox" ${selected.includes(id)?'checked':''} onclick="toggle('${id}')"></td>
+        <td><span class="lnk" onclick="openDrawer('editNode','${id}')">${n.n}</span>
+            ${n.orphan?`<br><span class="pill p-warn" title="${n.orphan}">孤儿 Sheet</span>`:''}</td>
+        <td><code>${n.tbl}</code></td>
+        <td>${n.dims.length?n.dims.join(' + '):'<span style="color:#bfbfbf">（无）</span>'}</td>
+        <td>${n.cols}</td>
+        <td>${n.usedBy.length?n.usedBy.map(x=>`<span class="pill p-info">${x}</span>`).join(' '):`<span class="pill p-bad">未被任何页签使用</span><div style="font-size:11px;color:var(--sub);margin-top:3px">${n.orphan}</div>`}</td></tr>`;});
+    h+=`</tbody></table><h3 class="gh">查名维表 / 表函数（LOOKUP · FUNCTION 节点）</h3>
+      <table class="gtable"><thead><tr><th>节点</th><th>类型</th><th>连接键（右侧恒为主键）</th></tr></thead><tbody>`;
+    LOOKUPS.forEach(l=>h+=`<tr><td>${l.n}</td><td><span class="pill ${l.kind==='FUNCTION'?'p-fn':'p-lk'}">${l.kind}</span></td>
+      <td class="mono">${l.key}${l.note?`<div style="font-size:11px;color:var(--sub);font-family:inherit">${l.note}</div>`:''}</td></tr>`);
+    h+=`</tbody></table>`;
+  }
+  else if(view==='cover'){
+    h+=`<table class="gtable"><thead><tr><th>导入 Sheet</th>${TABS.map(t=>`<th style="text-align:center">${t}</th>`).join('')}</tr></thead><tbody>`;
+    NODES.forEach(n=>{h+=`<tr><td>${n.n}</td>${TABS.map(t=>{
+      const main=n.usedBy.includes(t+' · 主源'), aux=n.usedBy.includes(t);
+      return `<td style="text-align:center;color:${main?'#52c41a':(aux?'#1677ff':'#e5e7eb')}">${main?'●':(aux?'○':'·')}</td>`;}).join('')}</tr>`;});
+    h+=`</tbody></table><div class="gnote" style="margin-top:12px">● = 主源　○ = 附属源
+      <br><b>2 张 Sheet 未被任何页签使用</b>：电镀方案、来料其他费用。
+      <br>上线后新增 Sheet 若忘记挂到页签，此处立刻可见。</div>`;
+  }
+  else {
+    h+=`<div class="tbar" style="padding-top:0"><label style="font-size:12px;color:var(--sub)">页签类型</label>
+      <select style="width:160px" onchange="curTab=this.value;render()">${TABS.map(t=>`<option ${t===curTab?'selected':''}>${t}</option>`).join('')}</select></div>`;
+    const used=NODES.filter(n=>n.usedBy.some(u=>u===curTab||u===curTab+' · 主源'));
+    const es=EDGES.filter(e=>e.tabs.includes(curTab));
+    h+=`<h3 class="gh">「${curTab}」用到的节点（${used.length}）</h3>
+      <table class="gtable"><thead><tr><th>节点</th><th>落表</th><th>角色</th><th>附加维度</th></tr></thead><tbody>`;
+    used.forEach(n=>h+=`<tr><td>${n.n}</td><td><code>${n.tbl}</code></td>
+      <td>${n.usedBy.includes(curTab+' · 主源')?'<span class="pill p-ok">主源</span>':'<span class="pill p-grey">附属源</span>'}</td>
+      <td>${n.dims.length?n.dims.join(' + '):'<span style="color:#bfbfbf">（无）</span>'}</td></tr>`);
+    h+=`</tbody></table><h3 class="gh">「${curTab}」用到的边（${es.length}）</h3>
+      <table class="gtable"><thead><tr><th>从</th><th>到</th><th>基数</th><th>连接键</th></tr></thead><tbody>`;
+    es.forEach(e=>h+=`<tr><td>${e.from}</td><td>${e.to}</td><td><span class="pill ${KINDLABEL[e.kind][1]}">${KINDLABEL[e.kind][0]}</span></td>
+      <td class="mono" style="max-width:340px;word-break:break-all">${e.on.replace(/</g,'&lt;')}</td></tr>`);
+    h+=`</tbody></table><div class="gnote" style="margin-top:12px">D-12 之后字段名与视图列名可以不同，<b>「这列取自哪」就在这里查</b> —— 这也是本页对全部配置角色开放「看」的原因。</div>`;
+  }
+  $('#pane').innerHTML=h;
+}
+
+function openDrawer(mode,id){
+  const e=EDGES.find(x=>x.id===(id||selected[0]))||EDGES[4];
+  $('#dTitle').textContent = mode==='new'?'新增边':(mode==='editNode'?'编辑节点':'编辑边 '+e.id);
+  $('#dBody').innerHTML = mode==='editNode' ? nodeForm() : edgeForm(mode==='new'?null:e);
+  $('#mask').classList.add('show'); $('#drawer').classList.add('show');
+}
+function closeDrawer(){$('#mask').classList.remove('show');$('#drawer').classList.remove('show');}
+const allNodeNames=()=>[...NODES.map(n=>n.n),...LOOKUPS.map(l=>l.n)];
+function edgeForm(e){
+  const sel=(v,opts)=>`<select>${opts.map(o=>`<option ${o===v?'selected':''}>${o}</option>`).join('')}</select>`;
+  return `
+  <div class="frow"><label><span class="req">*</span>从（源节点）</label><div class="fctl">${sel(e?e.from:'',allNodeNames())}</div></div>
+  <div class="frow"><label><span class="req">*</span>到（目标节点）</label><div class="fctl">${sel(e?e.to:'',allNodeNames())}
+    <div class="fhint">目标是查名维表或表函数时，边类型自动为 LOOKUP / PRICE。</div></div></div>
+  <div class="frow"><label><span class="req">*</span>边类型</label><div class="fctl">${sel(e?e.kind:'SUB',['GRAIN','SUB','SAME','JOIN','LOOKUP','PRICE'])}</div></div>
+  <div class="frow"><label><span class="req">*</span>基数</label><div class="fctl">${sel(e?e.card:'MANY_TO_ONE',['MANY_TO_ONE','ONE_TO_MANY'])}
+    <div class="fhint">选 <code>MANY_TO_ONE</code> 时，保存会对着真库跑唯一性断言 —— 右侧键有重复就<b>拒绝保存</b>。</div></div></div>
+  <div class="frow"><label><span class="req">*</span>连接键</label><div class="fctl">
+    <div class="keyrow"><span class="seq">seq 0</span><input type="text" value="material_no"><span class="eq">=</span><input type="text" value="component_no"><button class="btn" style="flex:none">删</button></div>
+    <div class="keyrow"><span class="seq">seq 1</span><input type="text" value="material_part_no"><span class="eq">=</span><input type="text" value="code"><button class="btn" style="flex:none">删</button></div>
+    <button class="btn">+ 再加一组（对应 .and(...)）</button>
+    <div class="fhint">左列取自「从」节点的落表，右列取自「到」节点的落表；保存时校验两边的<b>表与列都真实存在</b>。</div></div></div>
+  <div class="frow"><label>fallback 顺序</label><div class="fctl"><input type="number" value="${e&&e.fb!==null?e.fb:''}" placeholder="仅 LOOKUP 多源时填，0 优先">
+    <div class="fhint">同一「从」节点下不可重复 —— 多个查名源按此顺序生成 <code>COALESCE</code>。</div></div></div>
+  <div class="frow"><label>方言</label><div class="fctl">${sel('QUOTE',['QUOTE','COSTING','BOTH'])}
+    <div class="fhint">二期填核价侧 17 页签声明时用它区分，不必改表结构。</div></div></div>
+  <div class="frow"><label>备注</label><div class="fctl"><input type="text" placeholder="选填"></div></div>
+  <div class="gnote" style="margin-top:18px">保存前会跑四道校验，任一不过都不写库。校验的呈现见 <code>原型-边编辑抽屉与校验.html</code>。</div>`;
+}
+function nodeForm(){
+  return `<div class="frow"><label><span class="req">*</span>节点标识</label><div class="fctl"><input type="text" value="ELEMENT_BOM_ITEM"></div></div>
+  <div class="frow"><label><span class="req">*</span>显示名</label><div class="fctl"><input type="text" value="物料与元素BOM"></div></div>
+  <div class="frow"><label><span class="req">*</span>落表</label><div class="fctl"><input type="text" value="element_bom_item">
+    <div class="fhint">保存时对 <code>information_schema</code> 校验该表真实存在。</div></div></div>
+  <div class="frow"><label>收窄范围</label><div class="fctl"><select><option selected>FULL（customer_no + is_current + system_type）</option><option>NONE</option></select></div></div>
+  <div class="frow"><label>锚点表达式</label><div class="fctl"><input type="text" value="ebi.material_no"><div class="fhint">编译为 <code>hf_part_no</code> 输出列。</div></div></div>
+  <div class="frow"><label>粒度列</label><div class="fctl"><input type="text" value="material_part_no, component_no"></div></div>
+  <div class="gnote" style="margin-top:18px">节点的<b>列清单</b>（含角色 <code>PART_NO / PART_NAME / ROW_KEY / SORT</code>）在下方子表维护，此原型从略。</div>`;
+}
+render();
+</script>
+</body>
+</html>

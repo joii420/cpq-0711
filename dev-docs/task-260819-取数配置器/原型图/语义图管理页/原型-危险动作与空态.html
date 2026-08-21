@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>语义图管理页 · 危险动作与空态</title>
+<link rel="stylesheet" href="proto.css">
+<style>
+  .cmodal{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:560px;max-width:94vw;background:#fff;
+    border-radius:8px;z-index:31;box-shadow:0 8px 32px rgba(0,0,0,.18);display:none}
+  .cmodal.show{display:block}
+  .cmodal .h{padding:14px 20px;border-bottom:1px solid var(--border);font-size:15px;font-weight:600;display:flex;gap:8px;align-items:center}
+  .cmodal .b{padding:16px 20px;font-size:12px;line-height:1.8;max-height:56vh;overflow:auto}
+  .cmodal .f{padding:12px 20px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;background:#fafbfc}
+  .lst{border:1px solid var(--border);border-radius:6px;margin:8px 0}
+  .lst div{padding:6px 10px;border-bottom:1px solid #f2f3f5}
+  .lst div:last-child{border-bottom:0}
+  .sec{margin-bottom:34px}
+  .sec>h2{font-size:14px;margin:0 0 4px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+  .sec>.why{font-size:12px;color:var(--sub);margin:0 0 12px}
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <div class="tn-brand">CPQ 配置中心<span class="tn-ver">v8 · 取数配置器</span></div>
+  <div class="tn-tabs"><div class="tn-tab">组件管理</div><div class="tn-tab active">语义图谱</div></div>
+  <div class="tn-role">当前角色 <b>SYSTEM_ADMIN</b> · 张工</div>
+</div>
+
+<div class="page">
+
+<div class="sec">
+  <h2>① 删除节点 · 二次确认（可以删的情况）</h2>
+  <p class="why">frontend.md §1.2：危险动作走弹层列出所选项二次确认，不用零散的行内确认。<b>必须逐个列出要删什么</b>，不能只说「确定删除 2 项？」</p>
+  <button class="btn btn-danger" onclick="show('ok')">演示：删除「电镀方案」「来料其他费用」</button>
+  <div class="gnote" style="margin-top:10px">这两张正是当前的<b>孤儿 Sheet</b>（没有任何页签视图和边引用），所以删得掉。</div>
+</div>
+
+<div class="sec">
+  <h2>② 删除节点被拒 · 库层外键（AC-54）</h2>
+  <p class="why">删一个仍被边或页签视图引用的节点，<b>必须在数据库层就崩</b>（外键 RESTRICT），不能只做应用层拦截 —— 应用层拦截绕过 UI 直接 <code>psql</code> 就失效了。</p>
+  <button class="btn btn-danger" onclick="show('ref')">演示：删除「物料BOM」（被 4 个页签 + 5 条边引用）</button>
+</div>
+
+<div class="sec">
+  <h2>③ 空态 A · 页签视图还没挂任何节点</h2>
+  <p class="why">新建一个页签视图、还没挂节点时的样子。<b>不要留白，要说清下一步做什么</b>。</p>
+  <div style="border:1px solid var(--border);border-radius:6px">
+    <div class="tbar" style="padding:8px 12px;border-bottom:1px solid var(--border)">
+      <span class="tip" data-tip=""><button class="btn btn-primary">+ 挂载节点</button></span>
+      <span class="tip" data-tip="请先选择 1 个节点"><button class="btn" disabled>编辑</button></span>
+      <span class="tip" data-tip="请先选择要移除的节点"><button class="btn btn-danger" disabled>移除</button></span>
+    </div>
+    <div class="empty">
+      <div class="big">⬚</div>
+      <div class="t">页签视图「工装夹具」还没挂任何节点</div>
+      <div class="d">页签视图至少要有一个<b>主源节点</b>（它决定这个页签出几行、锚点取哪一列）。<br>挂上主源之后才谈得上附属源与边。</div>
+      <button class="btn btn-primary">+ 挂载主源节点</button>
+    </div>
+  </div>
+</div>
+
+<div class="sec">
+  <h2>④ 空态 B · 搜索无结果</h2>
+  <p class="why">搜索空态与「一条数据都没有」是<b>两回事</b>，文案不能共用 —— 前者要给「清空搜索」的出口。</p>
+  <div style="border:1px solid var(--border);border-radius:6px">
+    <div class="tbar" style="padding:8px 12px;border-bottom:1px solid var(--border)">
+      <button class="btn btn-primary">+ 新增边</button>
+      <span class="tip" data-tip="请先选择 1 条边"><button class="btn" disabled>编辑</button></span>
+      <span class="sp"></span>
+      <input class="search" value="年降" readonly>
+    </div>
+    <div class="empty">
+      <div class="big">🔍</div>
+      <div class="t">没有匹配「年降」的边</div>
+      <div class="d">年降三张 Sheet 已<b>移出本期范围</b>（需求文档 N-7），因此图里没有它们的节点与边。</div>
+      <button class="btn">清空搜索</button>
+    </div>
+  </div>
+</div>
+
+<div class="sec">
+  <h2>⑤ 空态 C · 整张图是空的（种子迁移未执行）</h2>
+  <p class="why">最危险的一个空态：图空了，<b>所有配置器视图都编译不出来</b>。这时候不能只显示「暂无数据」，必须点明后果和排查方向。</p>
+  <div style="border:1px solid var(--border);border-radius:6px">
+    <div class="empty">
+      <div class="big">⚠️</div>
+      <div class="t" style="color:var(--danger)">语义图是空的 —— 取数配置器当前不可用</div>
+      <div class="d">
+        <code>semantic_node</code> 表中 0 行。这通常意味着<b>种子迁移 V388 没有执行成功</b>。
+        <br>此时任何组件都无法用配置器新建或重新保存视图；<b>存量已生成的视图不受影响</b>（它们读的是自己的 <code>sql_template</code>，不经过语义图）。
+        <br><span class="mono">SELECT success FROM flyway_schema_history WHERE version = '388';</span>
+      </div>
+      <button class="btn">查看迁移执行记录</button>
+    </div>
+  </div>
+</div>
+
+<div class="sec">
+  <h2>⑥ 极值 · 一条边挂 3 组连接键 + 超长表达式</h2>
+  <p class="why">最长文案要画出来，否则上线才发现撑破布局。连接键列用等宽字体 + <code>word-break</code>，不省略号截断 —— 截断了就没法核对。</p>
+  <table class="gtable">
+    <thead><tr><th>从</th><th>到</th><th>基数</th><th>连接键</th><th>用在哪些页签</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>物料与元素BOM</td>
+        <td>价格策略 f_material_element_price</td>
+        <td><span class="pill p-fn">多对一</span></td>
+        <td class="mono" style="max-width:330px;word-break:break-all">cep.element_code = ebi.component_no AND cep.material_no = COALESCE(mcm.material_no, ebi.material_no) AND cep.effective_date &lt;= :priceBaseDate</td>
+        <td><span class="pill p-grey">材质元素</span></td>
+      </tr>
+      <tr>
+        <td>物料与元素BOM</td>
+        <td>物料BOM</td>
+        <td><span class="pill p-grey">多对一</span></td>
+        <td class="mono" style="max-width:330px;word-break:break-all">rb.material_no = ebi.material_no AND rb.component_no = ebi.material_part_no</td>
+        <td><span class="pill p-grey">材质元素</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+</div>
+
+<div class="protofoot">
+  <b>原型说明（非产品内容）</b>：本页把<b>危险动作与四种空态</b>并排画在一起便于比对，产品里它们各自出现在对应场景。
+  <br>二次确认用<b>居中弹层</b>而非抽屉 —— frontend.md §1.1 明确把「简单二次确认」列为抽屉规则的例外，§1.2 则明文要求危险动作走弹层并列出所选项。
+</div>
+
+<div class="mask" id="mask" onclick="hide()"></div>
+
+<div class="cmodal" id="m-ok">
+  <div class="h"><span style="color:var(--warn)">⚠️</span> 确认删除 2 个节点？</div>
+  <div class="b">
+    将要删除：
+    <div class="lst">
+      <div><b>电镀方案</b> <code>plating_scheme</code> · 8 列 · <span class="pill p-warn">孤儿 Sheet</span></div>
+      <div><b>来料其他费用</b> <code>unit_price</code> · 6 列 · <span class="pill p-warn">孤儿 Sheet</span></div>
+    </div>
+    引用检查：<b style="color:var(--ok)">两个节点均未被任何边或页签视图引用</b>，可以删除。
+    <br><br>⚠️ 删除后，<b>存量已生成的组件视图不受影响</b>（其 <code>sql_template</code> 逐字不变）；
+    但此后<b>新建或重新保存</b>用到它们的视图会失败。
+    <br>本操作记入 <code>OperationLog</code>，可追溯到人与时间。
+  </div>
+  <div class="f"><button class="btn" onclick="hide()">取消</button><button class="btn btn-danger" onclick="hide()">确认删除</button></div>
+</div>
+
+<div class="cmodal" id="m-ref">
+  <div class="h"><span style="color:var(--danger)">✕</span> 无法删除「物料BOM」</div>
+  <div class="b">
+    <div class="errbox">数据库拒绝了本次删除：<span class="mono">ERROR: update or delete on table "semantic_node" violates foreign key constraint "semantic_edge_to_node_id_fkey"</span></div>
+    该节点仍被引用：
+    <div class="lst">
+      <div><b>4 个页签视图</b> —— 材质元素（附属源）· 零件（附属源）· 外购件（<b>主源</b>）· BOM 树（<b>主源</b>）</div>
+      <div><b>5 条边</b> —— E05 物料与元素BOM→物料BOM · E11 自制加工费→物料BOM · E14 物料BOM→组成件其他费用 · E15 物料BOM→物料主档 · E16 物料BOM→工序库</div>
+    </div>
+    <b>怎么办</b>：先把这 5 条边和 4 处挂载解除，再删节点；<b>更常见的做法是「停用」而不是删除</b>（<code>status=INACTIVE</code>，保留历史可追溯）。
+    <br><br>⚠️ 它是「外购件」和「BOM 树」两个页签的<b>主源</b> —— 解除挂载等于让这两个页签失去行主轴，请先确认这是你要的。
+  </div>
+  <div class="f"><button class="btn" onclick="hide()">知道了</button><button class="btn" onclick="hide()">改为停用</button></div>
+</div>
+
+<script>
+function show(k){document.getElementById('mask').classList.add('show');document.getElementById('m-'+k).classList.add('show');}
+function hide(){document.getElementById('mask').classList.remove('show');
+  document.querySelectorAll('.cmodal').forEach(m=>m.classList.remove('show'));}
+</script>
+</body>
+</html>

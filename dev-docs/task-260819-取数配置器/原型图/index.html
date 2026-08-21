@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>原型导航 · 取数配置器（task-260819）</title>
+<link rel="stylesheet" href="语义图管理页/proto.css">
+<style>
+  .wrap{max-width:1000px;margin:0 auto;padding:24px 20px 60px}
+  .card{border:1px solid var(--border);border-radius:8px;background:#fff;padding:16px 18px;margin-bottom:14px}
+  .card h3{margin:0 0 4px;font-size:15px}
+  .card h3 a{color:var(--blue);text-decoration:none}
+  .card h3 a:hover{text-decoration:underline}
+  .card .meta{font-size:12px;color:var(--sub);margin-bottom:10px}
+  .card ul{margin:8px 0 0;padding-left:20px;font-size:12px;line-height:1.9}
+  .badge{display:inline-block;border-radius:4px;padding:2px 9px;font-size:12px;font-weight:600;margin-right:8px}
+  .b-base{background:#e6f0ff;color:var(--blue)}
+  .b-hist{background:#f0f1f3;color:#8a909a}
+  h1{font-size:20px;margin:0 0 6px}
+  .sub{font-size:12px;color:var(--sub);margin-bottom:20px}
+  h2.grp{font-size:14px;margin:26px 0 10px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+</style>
+</head>
+<body style="background:var(--bg)">
+<div class="wrap">
+
+<h1>原型图 · 取数配置器（<code>task-260819</code>）</h1>
+<div class="sub">全部为静态 HTML，双击即可打开，无外部依赖。样式与视觉语汇同项目 AntD 语汇对齐。</div>
+
+<div class="gnote">
+  <b>身份标记（frontend.md §1.3 要求）</b>：全项目同一页面<b>只能有一份</b>带 📌 当前基准。
+  照 📌 做；🕰️ 只用于追溯，<b>不要照它实现</b>。
+  <br>本目录当前<b>没有</b> 🕰️ 历史快照 —— 取数配置器与语义图管理页都是第一版，尚无被取代的前作。
+  上一代 v8 原型在 <code>../素材/原型-v8语义模型.html</code>，它是<b>输入素材</b>不是本任务基准。
+</div>
+
+<h2 class="grp">一期 · 取数配置器</h2>
+
+<div class="card">
+  <h3><span class="badge b-base">📌 当前基准</span><a href="原型-取数配置器.html">原型-取数配置器.html</a></h3>
+  <div class="meta">组件管理 → 打开组件 → 「取数配置」Tab · 1:1 还原基准 · 已按 24 条裁决改造，经 Playwright 实跑回归</div>
+  <ul>
+    <li>6 类页签的字段面板 / 拖拽输出列 / 角色徽章（只读，来自字段树声明）</li>
+    <li>右侧常驻「生成的 SQL（实时·只读）」面板 · 保存前体检 · 真实预览常驻</li>
+    <li>顶栏「语义图谱」入口 —— <b>只读的三视图</b>（全部节点 / 全部边 / 页签覆盖）</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3><span class="badge b-hist">🕰️ 仅供追溯</span><a href="原型-方案说明版.html">原型-方案说明版.html</a></h3>
+  <div class="meta">带讲解注释的方案评审版（D-24 拆分产物）</div>
+  <ul>
+    <li>只用来回答「某个交互当初<b>为什么</b>这么设计」，<b>不要照它实现</b> —— 它满页都是给评审看的解释</li>
+    <li>⚠️ 内容停留在 <b>D-26 之前</b>：其「声明源码」页仍主张「语义图写在 <code>QuoteSemanticGraph.java</code>、没有配置页面也不需要」，
+        该主张已被 <b>D-27 推翻</b>。作为历史评审记录保留原样，不回改</li>
+  </ul>
+</div>
+
+<h2 class="grp">二期 · 语义图管理页（D-27 ~ D-30 新增）</h2>
+
+<div class="gnote warn">
+  <b>为什么是四份</b>：frontend.md §1.3 —— 「本任务动到几个页面，就要有几份原型；一个页面 / 一个关键状态一个 <code>.html</code>」。
+  语义图管理页有<b>两种形态</b>（超管 / 非超管）＋<b>两组关键状态</b>（编辑与校验、危险动作与空态），四者缺一，1:1 还原就无从谈起。
+</div>
+
+<div class="card">
+  <h3><span class="badge b-base">📌 当前基准</span><a href="语义图管理页/原型-管理页-超管.html">语义图管理页/原型-管理页-超管.html</a></h3>
+  <div class="meta">配置中心 → 语义图谱 · <code>SYSTEM_ADMIN</code> 形态 · 对应 AC-43 / AC-44②</div>
+  <ul>
+    <li><b>四视图</b>：本页签用到的 / 全部节点 / 全部边 / 页签覆盖（AC-43 断言的那四个）</li>
+    <li><b>工具栏动作</b>（§1.2：一律上提，行内不放按钮）：新增 / 编辑 / 停用 / 删除，各带 <code>enabledWhen</code> 与禁用原因 tooltip</li>
+    <li><b>编辑抽屉</b>（§1.1：抽屉不用 Modal）：表单式编边 —— 下拉选 from/to → 填左右列 → 选基数；不做拖拽画布</li>
+    <li>孤儿 Sheet 标记 · 基数断言状态 · 图版本与最近改动人</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3><span class="badge b-base">📌 当前基准</span><a href="语义图管理页/原型-管理页-只读.html">语义图管理页/原型-管理页-只读.html</a></h3>
+  <div class="meta">同一页面的<b>非超管形态</b>（<code>PRICING_MANAGER</code>）· 对应 AC-44①③</div>
+  <ul>
+    <li>四个动作按钮<b>禁用但可见</b>，hover 给原因 —— §1.2 明令禁止 <code>if(...) return null</code> 式隐藏</li>
+    <li>DOM 中<b>无任何</b> <code>&lt;input&gt;</code> / <code>&lt;select&gt;</code> / <code>&lt;textarea&gt;</code>（AC-44 的机械判据）</li>
+    <li>为此做的两处设计让步：<b>去掉搜索框</b>、<b>页签类型改按钮组而非下拉</b></li>
+    <li>节点/边名仍可点，开的是<b>只读详情抽屉</b>（零表单控件）—— 「看」的价值在能查细节</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3><span class="badge b-base">📌 当前基准</span><a href="语义图管理页/原型-边编辑抽屉与校验.html">语义图管理页/原型-边编辑抽屉与校验.html</a></h3>
+  <div class="meta">边编辑抽屉 + <b>四道保存期校验的五种结果</b> · 对应 AC-52 / AC-53 / AC-55</div>
+  <ul>
+    <li>校验次序固定：<b>③ 物理存在性 → ① 边基数 → ② 路径唯一 → ④ handler 对账</b>；前三道任一不过即拒绝保存、不写库</li>
+    <li>五种结果各一屏：全部通过 / 边基数不过 / 物理存在性不过 / 路径歧义 / 对账告警（不阻断）</li>
+    <li>每种错误都给<b>具体数据</b>（哪个键重复几次、该表实有哪些列、两条路径各是什么）与<b>可操作建议</b> —— 用户是不写 SQL 的实施顾问</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3><span class="badge b-base">📌 当前基准</span><a href="语义图管理页/原型-危险动作与空态.html">语义图管理页/原型-危险动作与空态.html</a></h3>
+  <div class="meta">删除二次确认 · 四种空态 · 极值文案 · 对应 AC-54</div>
+  <ul>
+    <li>删除二次确认<b>逐个列出所选项</b>（§1.2），不是「确定删除 2 项？」</li>
+    <li>删被引用节点 → <b>库层外键报错原文</b>（AC-54 要求库层拦，不是应用层）＋ 引用清单 ＋ 「改为停用」出口</li>
+    <li>三种空态文案<b>各不相同</b>：页签未挂节点 / 搜索无结果 / <b>整张图为空（种子迁移未执行）</b></li>
+    <li>极值：一条边 3 组连接键 + 超长表达式，等宽字体换行不截断</li>
+  </ul>
+</div>
+
+<div class="gnote" style="margin-top:20px">
+  <b>共享资源</b>：<code>语义图管理页/proto.css</code>（视觉语汇）· <code>语义图管理页/data.js</code>（真实数据 —— 13 节点 / 16 边 / 6 页签，
+  取自 <code>原型-取数配置器.html</code> 的 <code>deriveModel()</code> 实际输出，两个形态的页面读同一份，避免漂移）。
+  <br>⚠️ <b>与需求文档的数字待对齐</b>：需求文档写「17 张 Sheet / 19 条边」，定稿原型实际是 <b>13 / 16</b>（年降三张已按 N-7 移出）。
+  开工前须核实以哪个为准 —— 它是 <b>AC-51 的断言数字</b>。
+</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>语义图管理页 · 只读形态（非超管）</title>
+<link rel="stylesheet" href="proto.css">
+</head>
+<body>
+
+<div class="topnav">
+  <div class="tn-brand">CPQ 配置中心<span class="tn-ver">v8 · 取数配置器</span></div>
+  <div class="tn-tabs">
+    <div class="tn-tab">组件管理</div>
+    <div class="tn-tab active">语义图谱</div>
+  </div>
+  <div class="tn-role">当前角色 <b>PRICING_MANAGER</b> · 李工</div>
+</div>
+
+<div class="page">
+  <div class="gnote">
+    <b>语义图谱</b> —— 节点 / 边 / 页签视图存放在 <code>semantic_*</code> 6 张表里（<b>DB 唯一真源</b>），本页读表呈现。
+    <br>你的角色是 <code>PRICING_MANAGER</code>，<b>可以看，不能改</b>。修改语义图需要 <code>SYSTEM_ADMIN</code>。
+    <br>D-12 之后字段名与视图列名可以不同 —— <b>「这一列取自哪」就在这里查</b>，这是本页对全部配置角色开放的原因。
+  </div>
+
+  <div class="stat">
+    <div><b>13</b><span>Sheet 节点</span></div>
+    <div><b>5</b><span>查名维表 + 1 表函数</span></div>
+    <div><b>16</b><span>边</span></div>
+    <div><b style="color:var(--warn)">2</b><span>孤儿 Sheet</span></div>
+    <div><b>6</b><span>页签视图</span></div>
+    <div><b>v15</b><span>图版本 · 2026-08-20 14:22 张工</span></div>
+  </div>
+
+  <div class="mtabs" id="tabs"></div>
+  <div id="pane"></div>
+</div>
+
+<div class="protofoot">
+  <b>原型说明（非产品内容）· 本页是 AC-44「看/改两级」里「看」那一半的视觉基准</b>
+  <br>① <b>动作禁用但可见，不隐藏</b>（frontend.md §1.2 明令禁止 <code>if(...) return null</code>）：四个动作按钮都在，全 disabled，hover 给出原因「需要 SYSTEM_ADMIN 角色」。用户得知道这个能力存在、以及为什么用不了。
+  <br>② <b>DOM 里没有任何 <code>&lt;input&gt;</code> / <code>&lt;select&gt;</code> / <code>&lt;textarea&gt;</code></b> —— AC-44 的机械判据。为此本页做了两处让步（超管页有、只读页没有）：
+  <b>去掉搜索框</b>（改用浏览器 Ctrl+F），<b>页签类型改用按钮组而非下拉</b>。两者都是可写控件，留着就过不了断言。
+  <br>③ 节点名仍可点，打开的是<b>只读详情抽屉</b>（纯展示、零表单控件）—— 「看」的价值在能查细节，不是把页面做成死表格。
+  <br>④ 两个形态<b>看到的图内容完全相同</b>（AC-44 断言③）：本页与 <code>原型-管理页-超管.html</code> 读的是同一份 <code>data.js</code>。
+</div>
+
+<div class="mask" id="mask" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-head"><b id="dTitle">边详情</b><span class="pill p-grey">只读</span><span class="x" onclick="closeDrawer()">✕</span></div>
+  <div class="drawer-body" id="dBody"></div>
+  <div class="drawer-foot"><button class="btn" onclick="closeDrawer()">关闭</button></div>
+</div>
+
+<script src="data.js"></script>
+<script>
+let view='edge', curTab='材质元素';
+const $=s=>document.querySelector(s);
+function renderTabs(){
+  const t=[['tabview','本页签用到的'],['node','全部节点'],['edge','全部边'],['cover','页签覆盖']];
+  $('#tabs').innerHTML=t.map(([k,l])=>`<div class="mtab ${view===k?'active':''}" onclick="view='${k}';render()">${l}</div>`).join('');
+}
+/* 工具栏：动作全部禁用但可见（§1.2）；无搜索框（AC-44：DOM 不得有 input） */
+function toolbar(){
+  if(view==='cover'||view==='tabview') return '';
+  const isEdge=view==='edge', why='需要 SYSTEM_ADMIN 角色才能修改语义图';
+  const btn=(l,cls)=>`<span class="tip" data-tip="${why}"><button class="btn ${cls||''}" disabled>${l}</button></span>`;
+  return `<div class="tbar">
+    ${btn(isEdge?'+ 新增边':'+ 新增节点','btn-primary')}
+    ${btn('编辑')}${btn('停用')}${btn('删除','btn-danger')}
+    <span class="sp"></span>
+    <span style="font-size:12px;color:var(--sub)">只读视图 · 修改请联系系统管理员</span>
+  </div>`;
+}
+function render(){
+  renderTabs();
+  let h=toolbar();
+  if(view==='edge'){
+    h+=`<table class="gtable"><thead><tr><th>从</th><th>到</th><th>基数</th><th>连接键</th><th>fallback</th><th>用在哪些页签</th><th>基数断言</th></tr></thead><tbody>`;
+    EDGES.forEach(e=>{const k=KINDLABEL[e.kind];
+      h+=`<tr><td><span class="lnk" onclick="showEdge('${e.id}')">${e.from}</span></td><td>${e.to}</td>
+        <td><span class="pill ${k[1]}">${k[0]}</span></td>
+        <td class="mono" style="max-width:320px;word-break:break-all">${e.on.replace(/</g,'&lt;')}</td>
+        <td>${e.fb===null?'<span style="color:#bfbfbf">—</span>':e.fb}</td>
+        <td>${e.tabs.map(t=>`<span class="pill p-grey">${t}</span>`).join(' ')}</td>
+        <td>${e.assert==='ok'?'<span class="pill p-ok">✓ 通过</span>':(e.assert==='na'?'<span class="pill p-grey">一对多不适用</span>':'<span class="pill p-warn">待跑</span>')}</td></tr>`;});
+    h+=`</tbody></table>`;
+  } else if(view==='node'){
+    h+=`<table class="gtable"><thead><tr><th>导入 Sheet（节点）</th><th>落表</th><th>附加维度</th><th>列数</th><th>被哪些页签用</th></tr></thead><tbody>`;
+    NODES.forEach((n,i)=>h+=`<tr><td><span class="lnk" onclick="showNode(${i})">${n.n}</span>
+      ${n.orphan?'<br><span class="pill p-warn">孤儿 Sheet</span>':''}</td>
+      <td><code>${n.tbl}</code></td><td>${n.dims.length?n.dims.join(' + '):'<span style="color:#bfbfbf">（无）</span>'}</td>
+      <td>${n.cols}</td>
+      <td>${n.usedBy.length?n.usedBy.map(x=>`<span class="pill p-info">${x}</span>`).join(' '):`<span class="pill p-bad">未被任何页签使用</span><div style="font-size:11px;color:var(--sub);margin-top:3px">${n.orphan}</div>`}</td></tr>`);
+    h+=`</tbody></table><h3 class="gh">查名维表 / 表函数</h3><table class="gtable"><thead><tr><th>节点</th><th>类型</th><th>连接键</th></tr></thead><tbody>`;
+    LOOKUPS.forEach(l=>h+=`<tr><td>${l.n}</td><td><span class="pill ${l.kind==='FUNCTION'?'p-fn':'p-lk'}">${l.kind}</span></td>
+      <td class="mono">${l.key}${l.note?`<div style="font-size:11px;color:var(--sub);font-family:inherit">${l.note}</div>`:''}</td></tr>`);
+    h+=`</tbody></table>`;
+  } else if(view==='cover'){
+    h+=`<table class="gtable"><thead><tr><th>导入 Sheet</th>${TABS.map(t=>`<th style="text-align:center">${t}</th>`).join('')}</tr></thead><tbody>`;
+    NODES.forEach(n=>h+=`<tr><td>${n.n}</td>${TABS.map(t=>{const m=n.usedBy.includes(t+' · 主源'),a=n.usedBy.includes(t);
+      return `<td style="text-align:center;color:${m?'#52c41a':(a?'#1677ff':'#e5e7eb')}">${m?'●':(a?'○':'·')}</td>`;}).join('')}</tr>`);
+    h+=`</tbody></table><div class="gnote" style="margin-top:12px">● = 主源　○ = 附属源　
+      <b>2 张 Sheet 未被任何页签使用</b>：电镀方案、来料其他费用。</div>`;
+  } else {
+    /* 页签类型切换：按钮组，不是 <select> —— AC-44 要求 DOM 无可写控件 */
+    h+=`<div class="tbar" style="padding-top:0"><span style="font-size:12px;color:var(--sub);margin-right:4px">页签类型</span>
+      ${TABS.map(t=>`<span class="pill ${t===curTab?'p-info':'p-grey'}" style="cursor:pointer;padding:4px 10px" onclick="curTab='${t}';render()">${t}</span>`).join('')}</div>`;
+    const used=NODES.filter(n=>n.usedBy.some(u=>u===curTab||u===curTab+' · 主源'));
+    const es=EDGES.filter(e=>e.tabs.includes(curTab));
+    h+=`<h3 class="gh">「${curTab}」用到的节点（${used.length}）</h3><table class="gtable"><thead><tr><th>节点</th><th>落表</th><th>角色</th><th>附加维度</th></tr></thead><tbody>`;
+    used.forEach(n=>h+=`<tr><td>${n.n}</td><td><code>${n.tbl}</code></td>
+      <td>${n.usedBy.includes(curTab+' · 主源')?'<span class="pill p-ok">主源</span>':'<span class="pill p-grey">附属源</span>'}</td>
+      <td>${n.dims.length?n.dims.join(' + '):'<span style="color:#bfbfbf">（无）</span>'}</td></tr>`);
+    h+=`</tbody></table><h3 class="gh">「${curTab}」用到的边（${es.length}）</h3><table class="gtable"><thead><tr><th>从</th><th>到</th><th>基数</th><th>连接键</th></tr></thead><tbody>`;
+    es.forEach(e=>h+=`<tr><td>${e.from}</td><td>${e.to}</td><td><span class="pill ${KINDLABEL[e.kind][1]}">${KINDLABEL[e.kind][0]}</span></td>
+      <td class="mono" style="max-width:340px;word-break:break-all">${e.on.replace(/</g,'&lt;')}</td></tr>`);
+    h+=`</tbody></table>`;
+  }
+  $('#pane').innerHTML=h;
+}
+/* 只读详情抽屉：纯展示，零表单控件 */
+function row(k,v){return `<div class="frow"><label style="text-align:right">${k}</label><div class="fctl" style="padding-top:6px">${v}</div></div>`;}
+function showEdge(id){const e=EDGES.find(x=>x.id===id),k=KINDLABEL[e.kind];
+  $('#dTitle').textContent='边详情 '+e.id;
+  $('#dBody').innerHTML=row('从',e.from)+row('到',e.to)+row('边类型',`<span class="pill ${k[1]}">${e.kind}</span> ${k[2]}`)
+    +row('基数',`<span class="pill ${k[1]}">${k[0]}</span> <code>${e.card}</code>`)
+    +row('连接键',`<div class="mono">${e.on.replace(/</g,'&lt;')}</div>`)
+    +row('fallback 顺序',e.fb===null?'—':e.fb)
+    +row('用在哪些页签',e.tabs.map(t=>`<span class="pill p-grey">${t}</span>`).join(' '))
+    +row('基数断言',e.assert==='ok'?'<span class="pill p-ok">✓ 通过</span>（最近一次：2026-08-20 14:22）':(e.assert==='na'?'<span class="pill p-grey">一对多，不适用</span>':'<span class="pill p-warn">待跑</span>'))
+    +`<div class="gnote" style="margin-top:16px">要改这条边需要 <code>SYSTEM_ADMIN</code>。本抽屉<b>不含任何表单控件</b>。</div>`;
+  open_();}
+function showNode(i){const n=NODES[i];
+  $('#dTitle').textContent='节点详情';
+  $('#dBody').innerHTML=row('显示名',n.n)+row('落表',`<code>${n.tbl}</code>`)
+    +row('附加维度',n.dims.length?n.dims.join(' + '):'（无）')+row('列数',n.cols)
+    +row('被哪些页签用',n.usedBy.length?n.usedBy.map(x=>`<span class="pill p-info">${x}</span>`).join(' '):`<span class="pill p-bad">未被任何页签使用</span>`)
+    +(n.orphan?`<div class="gnote warn" style="margin-top:16px"><b>孤儿 Sheet</b>：${n.orphan}</div>`:'')
+    +`<div class="gnote" style="margin-top:16px">节点的列清单与角色（<code>PART_NO / PART_NAME / ROW_KEY / SORT</code>）在此展开，此原型从略。</div>`;
+  open_();}
+function open_(){$('#mask').classList.add('show');$('#drawer').classList.add('show');}
+function closeDrawer(){$('#mask').classList.remove('show');$('#drawer').classList.remove('show');}
+render();
+</script>
+</body>
+</html>

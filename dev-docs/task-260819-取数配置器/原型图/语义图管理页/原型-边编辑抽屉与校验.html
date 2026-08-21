@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>边编辑抽屉 · 四道保存期校验</title>
+<link rel="stylesheet" href="proto.css">
+<style>
+  /* z-index 必须高于 .mask(30) 与 .drawer(31)，否则场景切换器被遮罩挡住点不到 */
+  .scn{position:fixed;left:0;right:720px;top:46px;padding:14px 20px;z-index:40}
+  /* 本页抽屉是常开演示，遮罩只作视觉背景，不该拦截点击 */
+  .mask{pointer-events:none}
+  @media(max-width:1100px){.scn{right:0}}
+  .scnbar{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .scnbar .btn.on{background:var(--blue);border-color:var(--blue);color:#fff}
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <div class="tn-brand">CPQ 配置中心<span class="tn-ver">v8 · 取数配置器</span></div>
+  <div class="tn-tabs"><div class="tn-tab">组件管理</div><div class="tn-tab active">语义图谱</div></div>
+  <div class="tn-role">当前角色 <b>SYSTEM_ADMIN</b> · 张工</div>
+</div>
+
+<div class="scn">
+  <div class="protofoot" style="margin:0">
+    <b>原型说明（非产品内容）</b>：右侧抽屉是产品本体。下面这排按钮是<b>原型自带的场景切换器</b>，用来把「校验并保存」的
+    <b>五种结果</b>一次看全 —— 产品里没有这排按钮。
+    <div class="scnbar" id="scn"></div>
+    <div style="margin-top:10px">四道校验的次序是固定的：<b>③ 物理存在性 → ① 边基数 → ② 路径唯一 → ④ handler 对账</b>。
+    前三道任一不过就<b>拒绝保存、不写库</b>；第四道只告警。<b>先跑物理存在性</b>是因为表/列都不存在时，后面三道跑不动也没意义。</div>
+  </div>
+</div>
+
+<div class="mask show"></div>
+<div class="drawer show">
+  <div class="drawer-head"><b>新增边</b><span class="x">✕</span></div>
+  <div class="drawer-body" id="body"></div>
+  <div class="drawer-foot">
+    <button class="btn">取消</button>
+    <button class="btn btn-primary">校验并保存</button>
+  </div>
+</div>
+
+<script>
+const SCN=[
+ ['ok','全部通过'],
+ ['card','① 边基数不过'],
+ ['phys','③ 物理存在性不过'],
+ ['path','② 路径歧义'],
+ ['warn','④ 对账告警（不阻断）']];
+let cur='card';
+const form=(o={})=>`
+  <div class="frow"><label><span class="req">*</span>从（源节点）</label><div class="fctl">
+    <select><option selected>物料与元素BOM</option><option>物料BOM</option><option>自制加工费</option></select></div></div>
+  <div class="frow"><label><span class="req">*</span>到（目标节点）</label><div class="fctl">
+    <select><option selected>${o.to||'材质库'}</option><option>物料主档</option><option>元素库</option></select></div></div>
+  <div class="frow"><label><span class="req">*</span>边类型</label><div class="fctl">
+    <select><option selected>LOOKUP</option><option>GRAIN</option><option>SUB</option><option>SAME</option><option>JOIN</option><option>PRICE</option></select></div></div>
+  <div class="frow"><label><span class="req">*</span>基数</label><div class="fctl">
+    <select><option ${o.card!=='ONE_TO_MANY'?'selected':''}>MANY_TO_ONE</option><option ${o.card==='ONE_TO_MANY'?'selected':''}>ONE_TO_MANY</option></select>
+    <div class="fhint">选 <code>MANY_TO_ONE</code> 时，保存会对着真库跑唯一性断言 —— 右侧键有重复就<b>拒绝保存</b>。</div></div></div>
+  <div class="frow"><label><span class="req">*</span>连接键</label><div class="fctl">
+    <div class="keyrow"><span class="seq">seq 0</span><input type="text" value="${o.left||'material_part_no'}"><span class="eq">=</span><input type="text" value="${o.right||'code'}"><button class="btn" style="flex:none">删</button></div>
+    <button class="btn">+ 再加一组（对应 .and(...)）</button>
+    <div class="fhint">左列取自「从」节点的落表 <code>element_bom_item</code>，右列取自「到」节点的落表。</div></div></div>
+  <div class="frow"><label>fallback 顺序</label><div class="fctl"><input type="number" value="0">
+    <div class="fhint">同一「从」节点下不可重复 —— 多个查名源按此顺序生成 <code>COALESCE</code>。</div></div></div>
+  <div class="frow"><label>方言</label><div class="fctl"><select><option selected>QUOTE</option><option>COSTING</option><option>BOTH</option></select></div></div>`;
+
+const chk=(ic,t,sub)=>`<div class="chk"><div class="ic">${ic}</div><div class="body">${t}${sub?`<div class="sub">${sub}</div>`:''}</div></div>`;
+const PASS='<span style="color:var(--ok)">✓</span>', FAIL='<span style="color:var(--danger)">✕</span>',
+      WARN='<span style="color:var(--warn)">!</span>', SKIP='<span style="color:#bfbfbf">–</span>';
+
+const RESULT={
+ ok:()=>`<div class="okbox"><b style="color:var(--ok)">✓ 四道校验全部通过</b> —— 保存后<b>立即生效</b>，无需重启；已记入操作日志（<code>OperationLog</code>）。
+   <br>⚠️ 存量已生成的组件视图<b>不受影响</b>，其 <code>sql_template</code> 逐字不变。要同步请去对应组件重新过一遍配置器。</div>
+   ${chk(PASS,'③ 物理存在性','element_bom_item.material_part_no ✓ · material_recipe.code ✓')}
+   ${chk(PASS,'① 边基数断言（MANY_TO_ONE）','material_recipe.code 唯一性通过，0 行重复 · 耗时 34ms')}
+   ${chk(PASS,'② 路径可达且唯一','从「材质元素」锚点到本节点唯一路径：物料与元素BOM → 材质库')}
+   ${chk(PASS,'④ 与导入 handler 双向对账','Q06ElementBomHandler 的 6 列与节点登记双向一致')}`,
+
+ card:()=>`<div class="errbox"><b>✕ 保存被拒绝 —— 边基数断言未通过（第 ① 道）</b>
+   <br>你把这条边声明成 <code>MANY_TO_ONE</code>，但目标表的右侧键<b>不唯一</b>：<code>material_recipe.code</code> 有 <b>3 个值重复</b>。
+   <br><span class="mono">AgNi11#-Ⅰ ×2 · CuW70 ×2 · AgSnO2 ×3</span>
+   <br><br><b>为什么必须拦</b>：声明多对一、实际一对多 → 编译出的 <code>LEFT JOIN</code> 会让行数翻倍，勾了小计就是<b>算错钱</b>，且不报错。
+   <br><b>怎么办</b>：改成 <code>ONE_TO_MANY</code>（该边会编译成展开行），或补一组连接键把粒度收窄到唯一。
+   <br><br>实际执行的断言：
+   <div class="mono" style="background:#fff;border:1px solid #ffccc7;border-radius:4px;padding:8px;margin-top:6px">SELECT code, count(*) FROM material_recipe GROUP BY 1 HAVING count(*) &gt; 1;　-- 期望 0 行，实得 3 行</div></div>
+   ${chk(PASS,'③ 物理存在性','element_bom_item.material_part_no ✓ · material_recipe.code ✓')}
+   ${chk(FAIL,'① 边基数断言（MANY_TO_ONE）','material_recipe.code 有 3 个值重复 —— 见上方明细')}
+   ${chk(SKIP,'② 路径可达且唯一','前序校验未通过，跳过')}
+   ${chk(SKIP,'④ 与导入 handler 双向对账','前序校验未通过，跳过')}
+   <div class="gnote" style="margin-top:14px"><b>库里什么都没写</b>：四道校验在同一个事务里跑，任一不过整体回滚（AC-52 断言②）。</div>`,
+
+ phys:()=>`<div class="errbox"><b>✕ 保存被拒绝 —— 物理存在性校验未通过（第 ③ 道）</b>
+   <br>表 <code>element_bom_item</code> 里<b>不存在列</b> <code>material_part_nox</code>。
+   <br><br>该表实有列：<span class="mono">material_no · material_part_no · component_no · seq_no · content · scrap_rate · composition_qty · issue_unit · base_qty · recovery_discount · recovery_currency · recovery_unit</span>
+   <br><br><b>看起来你想填的是</b> <code>material_part_no</code>。
+   <br><br><em>这道校验是语义图落库<b>新欠下的债</b>：声明写在代码里时，表名列名写错编译期就崩；进了库之后没人管，所以必须在保存时挡住。</em></div>
+   ${chk(FAIL,'③ 物理存在性','element_bom_item 无此列：material_part_nox')}
+   ${chk(SKIP,'① 边基数断言','前序校验未通过，跳过 —— 列都不存在，断言 SQL 跑不起来')}
+   ${chk(SKIP,'② 路径可达且唯一','前序校验未通过，跳过')}
+   ${chk(SKIP,'④ 与导入 handler 双向对账','前序校验未通过，跳过')}`,
+
+ path:()=>`<div class="errbox"><b>✕ 保存被拒绝 —— 路径不唯一（第 ② 道）</b>
+   <br>加上这条边之后，页签「材质元素」从锚点 <b>物料与元素BOM</b> 到 <b>物料主档</b> 会出现<b>两条都走得通的路径</b>：
+   <br><br><b>路径 1</b>　<span class="mono">物料与元素BOM →(LOOKUP, fallback 1) 物料主档</span>
+   <br><b>路径 2</b>　<span class="mono">物料与元素BOM →(SUB) 物料BOM →(LOOKUP) 物料主档</span>
+   <br><br><b>编译器不猜</b> —— 两条路取到的值可能完全不同（路径 2 取的是组成件的主档，不是材质本身的）。
+   <br><b>怎么办</b>：在页签视图上显式指定 <code>preferredPath</code>，或删掉其中一条边。</div>
+   ${chk(PASS,'③ 物理存在性','两侧表与列均存在')}
+   ${chk(PASS,'① 边基数断言（MANY_TO_ONE）','material_master.material_no 唯一性通过')}
+   ${chk(FAIL,'② 路径可达且唯一','「材质元素」页签下存在 2 条路径 —— 见上方明细')}
+   ${chk(SKIP,'④ 与导入 handler 双向对账','前序校验未通过，跳过')}
+   <div class="gnote" style="margin-top:14px">与配置器里的 <b>AC-10</b> 成对：那条验的是<b>编译期</b>（拖列时报错），这里验的是<b>保存期</b> —— 错误的图根本进不了库。</div>`,
+
+ warn:()=>`<div class="gnote warn"><b>! 三道阻断校验通过，第 ④ 道有告警 —— 可以保存</b>
+   <br>节点「物料与元素BOM」的列登记与导入 handler <b>对不齐</b>：
+   <br><br>· <code>Q06ElementBomHandler</code> 里 <code>put("recovery_currency", …)</code>，但节点登记里<b>没有这一列</b>
+   <br>　→ 后果：用户在配置器的字段面板里<b>选不到「回收币种」</b>，而且不会有任何报错（静默）。
+   <br><br>· 节点登记了 <code>base_qty</code>（净用量），但 handler 从未 put 过
+   <br>　→ 后果：用户能选到这一列，取出来<b>恒为 NULL</b>。
+   <br><br><b>为什么只告警不阻断</b>：对账的另一侧是代码，改代码要发版；此刻拦住你，等于让语义图被一个待发版的 handler 卡死。
+   CI 保留同一断言 —— 发版时会红。</div>
+   ${chk(PASS,'③ 物理存在性','两侧表与列均存在')}
+   ${chk(PASS,'① 边基数断言（MANY_TO_ONE）','material_recipe.code 唯一性通过')}
+   ${chk(PASS,'② 路径可达且唯一','唯一路径：物料与元素BOM → 材质库')}
+   ${chk(WARN,'④ 与导入 handler 双向对账','2 处不一致（1 处漏登记 / 1 处多登记）—— 不阻断')}`
+};
+
+function render(){
+  document.getElementById('scn').innerHTML=SCN.map(([k,l])=>
+    `<button class="btn ${cur===k?'on':''}" onclick="cur='${k}';render()">${l}</button>`).join('');
+  const o = cur==='phys' ? {left:'material_part_nox'} : (cur==='path'? {to:'物料主档'} : {});
+  document.getElementById('body').innerHTML = RESULT[cur]() + '<h3 class="gh" style="margin-top:22px">边定义</h3>' + form(o);
+}
+render();
+</script>
+</body>
+</html>
