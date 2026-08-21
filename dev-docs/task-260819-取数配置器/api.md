@@ -32,7 +32,7 @@ D-21 要求「生成的 SQL」右侧常驻、随拖拽实时刷新。这看起�
 | 方法 | 路径 | 角色 | 说明 |
 |---|---|---|---|
 | `GET` | `/` | **全部 4 角色** | 读全图。`SALES_REP` / `SALES_MANAGER` / `PRICING_MANAGER` / `SYSTEM_ADMIN` 返回**内容完全相同**（AC-56 断言③） |
-| `GET` | `/field-tree?tabType=&variantKey=` | 全部 4 角色 | 配置器左侧字段面板的数据源（含**两层 roles** 合并结果） |
+| `GET` | `/field-tree?tabType=&variantKey=&selectedConfig=` | 全部 4 角色 | 配置器左侧字段面板的数据源（含**两层 roles** 合并结果）。响应形状见 §1.4 —— 🔴 **不是扁平节点数组** |
 | `POST` | `/nodes` `/edges` `/tab-views` | `SYSTEM_ADMIN` | 新增。非超管一律 **403**，且库中数据逐行不变（AC-56 断言①） |
 | `PUT` | `/nodes/{id}` `/edges/{id}` `/tab-views/{id}` | `SYSTEM_ADMIN` | 修改 |
 | `DELETE` | `/nodes/{id}` `/edges/{id}` `/tab-views/{id}` | `SYSTEM_ADMIN` | 删除。被引用时由**库层外键**拒绝（AC-54） |
@@ -122,6 +122,58 @@ D-21 要求「生成的 SQL」右侧常驻、随拖拽实时刷新。这看起�
 🚨 **② 的固有盲区必须显式处理**（D-32 实测）：样本量过小时基数断言**必然通过**。
 实测 `INCOMING_MATERIAL_RECYCLE` 全库仅 1 行，任何基数声明都能过 —— 而写 `bom_view` 的人显然不放心，他加了 `ORDER BY seq_no LIMIT 1`。
 **规定**：目标表在当前收窄条件下行数 `< 30` 时，`assertStatus` 返回 **`THIN`**（不是 `PASS`），响应 `200` 但带 `warnings`，管理页显示「证据不足：样本仅 N 行，该断言不构成保证」。
+
+### 1.4 `GET /field-tree` 响应（🔴 2026-08-21 补 · 三方形状不一致，此处裁决）
+
+**背景**：后端首版返回扁平 `List<NodeDTO>`，而前端与测试都按 `{groups:[...]}` 实现 —— 形状完全不同，联调必炸。
+
+**裁决：采用 `{groups:[...]}`**。判据：① 字段面板 UI 本身就是**按 Sheet 分组折叠**的（原型即如此）；② `conflict` 是**组级**标记（D-08 要求「与已选冲突的整组置灰」），挂在扁平列上表达不出来；③ 本端点的定位是「配置器字段面板的数据源」，不是通用图查询 —— 通用查询用 `GET /`。
+
+```jsonc
+{
+  "tabType": "费用类", "variantKey": "INCOMING_FIXED",
+  "anchorDesc": "来料费用 按成品料号收窄",     // 配方条的锚点说明行
+  "availableTabTypes": ["主件","材质元素","零件","外购件","费用类","BOM"],
+  "variants": [{"key":"INCOMING_FIXED","label":"来料固定加工费","view":"ll_view · 现网 13 个组件"}],
+  "switches": ["CLOSURE"],
+  "groups": [{
+    "groupKey": "INCOMING_FIXED",
+    "groupName": "来料固定加工费",
+    "groupKind": "MAIN",              // MAIN | GRAIN | SUB | SAME | JOIN | LOOKUP | PRICE
+    "dims": ["投入料号"],              // 该组的展开维度，纯展示
+    "conflict": false,                // ← 组级：true = 与已选列冲突，整组置灰（AC-16）
+    "conflictReason": null,           // conflict=true 时必须给可读原因（用户不写 SQL）
+    "fields": [{
+      "sourceNodeKey": "INCOMING_FIXED", "sourceColumn": "base_value",
+      "displayName": "基准值", "dataType": "MONEY",
+      "roles": ["ROW_KEY"],           // 两层 roles 合并后的结果（节点级默认 + 页签级覆盖，D-35）
+      "viewColumn": "_来料加工_基准值", // (Sheet,列) 纯函数，前端只读展示不得自行拼接（AC-11）
+      "lookupLib": null,              // 查名库名，如「物料主档」；非查名列为 null
+      "isCore": false                 // 价格策略原子组的核心列标记（删它整组走，AC-21）
+    }]
+  }]
+}
+```
+
+🚦 **`conflict` 只有带 `selectedConfig`（当前已选列的 JSON）查询参数时才计算**；不带时恒 `false`。
+🚦 **`isCore` 后端必须给** —— 前端据此区分「删元素单价整组走」与「删货币仅自身走」。缺了它前端会退化成按字段名正则猜（原型里的脆弱写法），已明确废弃。
+
+### 1.5 请求体与错误信封的统一口径（🔴 2026-08-21 补）
+
+**① `POST /compile` 与 `POST /inspect` 的请求体 = `builder_config` 对象本身**（§2.1 的结构，不再外套一层）。
+**② `POST /preview` 的请求体 = `builder_config` + 预览参数**：
+
+```jsonc
+{ /* ...§2.1 builder_config 全部字段... */,
+  "customerCode": "罗克韦尔", "partNo": "S-3120014539", "includeChildParts": false }
+```
+
+**③ 🚨 响应一律「裸体」，不套 `ApiResponse{code,message,data}` 信封。**
+
+成功响应的字段直接在根（`sql` / `rowCount` / `groups`…），错误响应的 `code`/`failedCheck`/`detail` 也直接在根（§1.2、§2.5 的示例即为准）。
+
+> **为什么单独写这一条**：后端首版套了项目惯用的 `ApiResponse` 信封，靠读测试文件才发现不一致并改正；而前端的 `buildApiError` 目前读的是 `error.response.data.data`（假设有信封）—— **两边正好相反**，不统一就会出现「后端返回了结构化错误、前端只显示一句 message」的静默降级。
+> 📌 **前端需据此改 `buildApiError` 的读取路径**（`error.response.data` 而非 `.data.data`）。🚫 不要去改全站公共的 `api.ts`，只在本任务的 service 层处理。
 
 ---
 
