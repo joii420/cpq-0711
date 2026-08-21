@@ -60,7 +60,7 @@ async function createComponentAndOpenBuilderTab(page: Page, tabTypeLabel?: strin
 // ---------------------------------------------------------------------
 // AC-25①：页签类型下拉含6项
 // ---------------------------------------------------------------------
-test('AC-25①: 页签类型下拉含6项（主件/材质元素/零件/外购件/费用类/BOM树）', async ({ page }) => {
+test('AC-25①: 页签类型下拉含6项（主件/材质元素/零件/外购件/费用类/BOM 树）', async ({ page }) => {
   await createComponentAndOpenBuilderTab(page);
   await page.getByText('页签类型').locator('..').getByRole('combobox').click();
   await page.waitForTimeout(300);
@@ -68,7 +68,7 @@ test('AC-25①: 页签类型下拉含6项（主件/材质元素/零件/外购件
   const count = await options.count();
   expect(count, '下拉不应为空——若为0说明前端骨架未渲染，非通过条件').toBeGreaterThan(0);
   expect(count, `页签类型下拉应恰好6项，实际=${count}`).toBe(6);
-  for (const label of ['主件', '材质元素', '零件', '外购件', '费用类', 'BOM树']) {
+  for (const label of ['主件', '材质元素', '零件', '外购件', '费用类', 'BOM 树']) {
     await expect(page.locator('.ant-select-item-option', { hasText: label }), `下拉应含『${label}』`).toBeVisible();
   }
 });

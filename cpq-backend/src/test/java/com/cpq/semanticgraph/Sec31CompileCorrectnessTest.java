@@ -292,8 +292,10 @@ class Sec31CompileCorrectnessTest {
         assertTrue(sql1.contains("mbi.characteristic = 'OUTSOURCED'"),
                 "① 外购件应含 mbi.characteristic = 'OUTSOURCED'，实际:\n" + sql1);
 
+        // D-39 裁决：tabType 请求体是存储值口径，BOM 树的存储值='BOM'（无"树"字），
+        // 与显示名「BOM 树」故意不同（同 D-12 列名=来源/字段名=显示 一个道理），此处发请求必须用存储值。
         String bomTree = """
-                { "tabType": "BOM树", "columns": [
+                { "tabType": "BOM", "columns": [
                   {"sourceNodeKey":"MATERIAL_BOM_ITEM","sourceColumn":"component_name","fieldName":"料件名称","isRowKey":true}
                 ]}
                 """;
