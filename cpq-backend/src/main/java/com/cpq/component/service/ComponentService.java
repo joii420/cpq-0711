@@ -48,11 +48,16 @@ public class ComponentService {
         java.util.Set.of("NORMAL", "SUBTOTAL", "EXCEL");
 
     /**
-     * task-0721 B4：页签类型属性值域（5 类，需求说明 §4.3 规则一）。
+     * task-0721 B4：页签类型属性值域（原 5 类，需求说明 §4.3 规则一）。
      * BOM=树状页签(结构角色)；材质元素/零件/外购件=对应 characteristic 三态；主件=成品/树根。
+     *
+     * <p>task-260819 B-16（D-07）：扩到 6 类，新增「费用类」（来料固定加工费/来料其他费用取数配置器
+     * 的页签类型，行身份 = 投入料号，类型不定——可能是材质/零件/外购件）。⚠️ 存量 19 个来料费用组件
+     * （{@code $ll_view} 13 个 + {@code $lqt_view} 6 个）{@code tab_type} 一律保持留空，本次未改动
+     * 任何一行现网数据（D-07 明示裁决）。
      */
     public static final java.util.Set<String> VALID_TAB_TYPES =
-        java.util.Set.of("BOM", "材质元素", "零件", "外购件", "主件");
+        java.util.Set.of("BOM", "材质元素", "零件", "外购件", "主件", "费用类");
 
     /** tabType 非法值 → 400；null/blank 视为未配置，放行。 */
     public static void assertValidTabType(String tabType) {
@@ -71,6 +76,9 @@ public class ComponentService {
      *
      * <p>**2026-07-23 修订背景**：部分页签（如「外购件/费用」类）没有料号列，只用「料件名称」
      * （如「组成件1」）做标识，此前"必须配 part_no_field"过严会把这类页签堵死。
+     *
+     * <p>task-260819 B-16（D-07 开发期裁决①）：**「费用类」是否加入本集合尚未裁决**，
+     * 已回报主线待拍板，本集合暂不改动（沿用原 4 类）。裁决落地后按结论调整。
      */
     private static final java.util.Set<String> TAB_TYPES_REQUIRE_PART_NO_FIELD =
         java.util.Set.of("材质元素", "零件", "外购件", "主件");

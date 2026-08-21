@@ -33,6 +33,7 @@ import FormulaBindingConsolidateDrawer from './FormulaBindingConsolidateDrawer';
 import ConfigGuideDrawer from './ConfigGuideDrawer';
 import FormulaCycleDrawer, { type FormulaCycle } from './FormulaCycleDrawer';
 import SqlViewListPanel from './SqlViewListPanel';
+import SqlViewBuilderTab from './SqlViewBuilderTab';
 import TabJoinFormulaDrawer, { type TabJoinFormulaSavePayload } from '../template/TabJoinFormulaDrawer';
 import { tokensToDrawerExpression } from './formulaSerialize';
 import { SortableTable, DragHandle } from '../../components/SortableTable';
@@ -1704,6 +1705,35 @@ const ComponentManagement: React.FC = () => {
                 dataDriverPath={dataDriverPath}
               />
             ),
+          },
+          {
+            key: 'sql-view-builder', label: '取数配置',
+            children: selectedComponent ? (
+              <SqlViewBuilderTab
+                componentId={selectedComponent.id}
+                initialTabType={tabType}
+                manualFieldOptions={fieldNameOptions}
+                onSaved={async () => {
+                  if (!selectedComponent) return;
+                  try {
+                    const fresh = (await componentService.getById(selectedComponent.id)).data as ComponentItem;
+                    setTabType(fresh.tabType as any);
+                    setPartNoField(fresh.partNoField);
+                    setPartNameField(fresh.partNameField);
+                    setElementCodeField(fresh.elementCodeField);
+                    setElementPriceField(fresh.elementPriceField);
+                    setElementCurrencyField(fresh.elementCurrencyField);
+                    setRowKeyFields(fresh.rowKeyFields ?? []);
+                    setDataDriverPath(fresh.dataDriverPath ?? '');
+                    setFields(fresh.fields ?? []);
+                    setSelectedComponent(prev => (prev && prev.id === fresh.id ? { ...prev, ...fresh } : prev));
+                    void refreshRowKeyCandidates(fresh.id, fresh.dataDriverPath ?? '', fresh.fields ?? []);
+                  } catch (e: any) {
+                    message.error('刷新组件失败: ' + (e?.message ?? ''));
+                  }
+                }}
+              />
+            ) : null,
           },
           {
             key: 'formulas', label: '公式',

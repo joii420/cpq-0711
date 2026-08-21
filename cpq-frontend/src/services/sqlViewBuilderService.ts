@@ -1,0 +1,230 @@
+// 取数配置器（task-260819）· 前端 API 客户端
+//
+// 契约来源：dev-docs/task-260819-取数配置器/api.md（前后端唯一协调物）§0/§1/§2。
+// 🚨 api.md §0：编译器只在后端，本文件不实现任何一份 SQL 生成/粒度判定/冲突判定逻辑，
+//    全部字段/冲突标记/SQL 文本均来自后端响应，前端只读展示。
+//
+// 2026-08-20 22:xx 补充核对：api.md 本身未给出 field-tree / compile / preview / inspect / save 的精确
+// JSON 形状（只给了「有这几个概念」），写到一半时发现后端在本 worktree 已落地 B-1~B-4（语义图 CRUD）+
+// 一批 Sec3x 集成测试（`cpq-backend/src/test/java/com/cpq/semanticgraph/Sec31~Sec36*.java`，
+// TDD 先行、B-5~B-16 编译器/builder 端点尚未实现，测试当前为红）。这些测试用 RestAssured 对着
+// 具体 JSON path 断言，是目前能拿到的最接近「真源」的证据，本文件已按它们逐字段核对对齐：
+//   · GET /field-tree 响应 = { groups: [{ groupName, conflict?, fields: [{ displayName, ... }] }] }
+//     （不是 api.md 字面暗示的扁平 nodes 数组；旧版 SemanticGraphResource.fieldTree() 返回的
+//       `ApiResponse<List<NodeDTO>>` 是 B-4 阶段的过渡实现，B-7 落地后预期会替换/包一层）
+//   · compile/preview/inspect/save 的请求体一律是 { tabType, variantKey?, switches?, columns: [...] }
+//     包在顶层，**不带 envelope**（不是 { data: ... }，是响应体本身）；列用扁平角色布尔位
+//     isPartNo/isPartName/isRowKey/isSort/isAmount/inSubtotal，不是 roles 数组；不传 viewColumn/fieldType
+//     （后端算，AC-11）；priceStrategy 只在「形态 B 手填字段覆盖」时才需要显式传
+//     { elementCodeSource:'MANUAL_FIELD', elementCodeField }，正常路径完全由 columns 内容反推，不传此键
+//   · GET /builder 直接给 isLegacyHandwritten / isStale / currentCompilerVersion 三个布尔/数字，
+//     不需要前端自己比较版本号推导
+// ⚠️ 仍然只是「目前证据所支持的最佳猜测」——B-5~B-16 尚未实现，联调前请求主线与后端对齐一次。
+import api from './api';
+
+// ── 字段树（GET /config/semantic-graph/field-tree）────────────────────────
+
+export type FieldRole = 'PART_NO' | 'PART_NAME' | 'ROW_KEY' | 'SORT';
+export type FieldDataType = 'TEXT' | 'NUMBER' | 'MONEY';
+
+/** 单个可用字段（叶子）。roles 为空数组 = 该列无声明角色。 */
+export interface FieldTreeColumn {
+  sourceNodeKey: string;
+  sourceColumn: string;
+  displayName: string;
+  dataType?: FieldDataType;
+  /** D-25：角色来自字段树声明，配置器只读展示，不提供任何修改入口（AC-47/AC-48）。 */
+  roles?: FieldRole[];
+  /**
+   * 视图列名（若后端在字段树阶段即预算好，会带上；未带则等 /compile 的 declaredColumns 里再对号入座）。
+   * (Sheet,列) 纯函数，前端只读展示，不得自行拼接（AC-11）。
+   */
+  viewColumn?: string;
+  /** 该列所属的展开维度，纯展示（真正的粒度/冲突判定权威在服务端）。 */
+  dims?: string[];
+  /** 非空 = 查名列，值为维表简称，UI 显示 lookup-tag（字段是否天然带此标记待联调确认，缺失时按普通列渲染）。 */
+  lookupOf?: string | null;
+  /** 非空 = 仅在指定 variant 下出现（D-34）。 */
+  onlyVariant?: string | null;
+  /** true = 价格策略元素符号列（左键）。 */
+  elemKey?: boolean;
+  /** PRICE 分组内核心列（删除即整组消失）。 */
+  isCore?: boolean;
+  /** true = 仅子件闭包开启时才出现。 */
+  closureOnly?: boolean;
+}
+
+/** 一个 Sheet/附属源/价格策略分组。 */
+export interface FieldTreeGroup {
+  groupName: string;
+  /** true = 与当前已选列冲突（拖拽期整组置灰，AC-16）；需要带 selectedConfig 查询参数才会算出。 */
+  conflict?: boolean;
+  dims?: string[];
+  note?: string | null;
+  fields: FieldTreeColumn[];
+  /** PRICE / SUB / GRAIN / JOIN / SAME / MAIN，用于渲染徽章与冲突提示文案；不影响是否可拖。 */
+  kind?: string;
+}
+
+export interface FieldTreeResponse {
+  groups: FieldTreeGroup[];
+  /** 6 个页签类型的完整清单；未提供时前端用本地常量兜底（AC-25 已知固定 6 值）。 */
+  availableTabTypes?: string[];
+  /** 费用类等有 variants 的页签，可选数据来源列表；未提供时「数据来源」下拉不出现。 */
+  variants?: Array<{ key: string; label: string; hint?: string }> | null;
+  /** 该页签支持的开关（如 includeChildParts）；未提供时不出现「选项」行。 */
+  switches?: string[];
+  anchorDesc?: string | null;
+}
+
+/**
+ * @param selectedConfig 当前已选列（同 compile 的 builderConfig.columns 形状），JSON 字符串。
+ *   带上后 groups[].conflict 才会被服务端算出（AC-16 拖拽期置灰的数据依据，Sec33 测试已验证）。
+ */
+export const fetchFieldTree = (
+  tabType: string,
+  variantKey?: string | null,
+  selectedConfig?: unknown,
+): Promise<FieldTreeResponse> =>
+  api.get('/config/semantic-graph/field-tree', {
+    params: {
+      tabType,
+      variantKey: variantKey || undefined,
+      selectedConfig: selectedConfig ? JSON.stringify(selectedConfig) : undefined,
+    },
+  }) as Promise<any>;
+
+// ── 取数配置（builder）────────────────────────────────────────────────────
+
+/** 已选输出列——写请求体（compile/preview/inspect/save 共用），角色用扁平布尔位而非 roles 数组。 */
+export interface BuilderColumnInput {
+  sourceNodeKey: string;
+  sourceColumn: string;
+  fieldName: string;
+  isPartNo?: boolean;
+  isPartName?: boolean;
+  isRowKey?: boolean;
+  isSort?: boolean;
+  isAmount?: boolean;
+  inSubtotal?: boolean;
+  /** AC-24：true = 用户手动拖入（非价格策略自动带出）——删除元素单价时不回收该列。 */
+  userAdded?: boolean;
+}
+
+/** 形态 B（AC-23）：元素键改绑手填字段时才需要显式传本结构；正常路径完全不传（省略整个 priceStrategy 键）。 */
+export interface PriceStrategyOverride {
+  elementCodeSource: 'MANUAL_FIELD';
+  elementCodeField: string;
+}
+
+export interface BuilderConfigPayload {
+  tabType: string;
+  variantKey?: string | null;
+  switches?: Record<string, boolean>;
+  columns: BuilderColumnInput[];
+  priceStrategy?: PriceStrategyOverride | null;
+}
+
+/** GET /builder 返回的已保存列（多了后端生成的 viewColumn/fieldType，供 AC-39 刷新后原样回填）。 */
+export interface SavedBuilderColumn extends BuilderColumnInput {
+  viewColumn: string;
+  fieldType?: string;
+}
+export interface SavedBuilderConfig extends Omit<BuilderConfigPayload, 'columns'> {
+  builderVersion: number;
+  columns: SavedBuilderColumn[];
+}
+
+export interface GetBuilderResponse {
+  /** null = 未保存过 builder 配置（全新组件，或已转手写）。 */
+  builderConfig: SavedBuilderConfig | null;
+  /** 与 builderConfig.builderVersion 同值的顶层冗余字段（api.md §2.1a 2026-08-20 固化）。 */
+  builderVersion: number | null;
+  /** true = 存量手写视图——Tab 显示引导页，不进拖拽态（AC-32）。后端直接给出，前端不用自己猜。 */
+  isLegacyHandwritten: boolean;
+  /** true = builderConfig.builderVersion 低于当前编译器版本（AC-34）。后端直接给出，不用前端比较版本号。 */
+  isStale: boolean;
+  currentCompilerVersion: number;
+  sqlTemplate?: string | null;
+}
+
+export const getBuilder = (componentId: string): Promise<GetBuilderResponse> =>
+  api.get(`/components/${componentId}/builder`) as Promise<any>;
+
+export interface CompileResponse {
+  sql: string;
+  declaredColumns: string[];
+  requiredVariables: string[];
+  grain: string[];
+  rewriterCompatible: boolean;
+  warnings: string[];
+}
+
+export interface CompileErrorBody {
+  code: string;
+  message: string;
+  paths?: string[][];
+  suggestion?: string;
+}
+
+export const compileBuilder = (componentId: string, req: BuilderConfigPayload): Promise<CompileResponse> =>
+  api.post(`/components/${componentId}/builder/compile`, req) as Promise<any>;
+
+export interface PreviewRequest extends BuilderConfigPayload {
+  customerCode: string;
+  partNo?: string;
+}
+
+export interface PreviewDiagnostic {
+  level: 'WARN' | 'ERROR';
+  code?: string;
+  column?: string;
+  message: string;
+}
+
+export interface PreviewResponse {
+  rowCount: number;
+  columns: string[];
+  rows: Array<Record<string, unknown>>;
+  elapsedMs: number;
+  diagnostics: PreviewDiagnostic[];
+}
+
+export const previewBuilder = (componentId: string, req: PreviewRequest): Promise<PreviewResponse> =>
+  api.post(`/components/${componentId}/builder/preview`, req) as Promise<any>;
+
+export interface InspectCheck {
+  /** 后端用大写 'ERR'/'WARN'（Sec33 测试逐字确认），非小写。 */
+  level: 'ERR' | 'WARN' | 'INFO';
+  code?: string;
+  message: string;
+}
+
+export interface InspectResponse {
+  checks: InspectCheck[];
+}
+
+export const inspectBuilder = (componentId: string, req: BuilderConfigPayload): Promise<InspectResponse> =>
+  api.post(`/components/${componentId}/builder/inspect`, req) as Promise<any>;
+
+export interface SaveBuilderRequest {
+  builderConfig: BuilderConfigPayload;
+  confirmedImpact?: boolean;
+}
+
+export interface SaveBuilderResponse {
+  builderVersion?: number;
+  affectedTemplateCount?: number;
+}
+
+export interface ImpactConfirmBody {
+  code: 'IMPACT_CONFIRM_REQUIRED';
+  message: string;
+  detail?: { affectedTemplates?: Array<{ id: string; name: string }> };
+}
+
+export const saveBuilder = (componentId: string, req: SaveBuilderRequest): Promise<SaveBuilderResponse> =>
+  api.put(`/components/${componentId}/builder`, req) as Promise<any>;
+
+export const detachBuilder = (componentId: string): Promise<{ success?: boolean }> =>
+  api.post(`/components/${componentId}/builder/detach`, {}) as Promise<any>;

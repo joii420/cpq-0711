@@ -47,6 +47,8 @@ D-21 要求「生成的 SQL」右侧常驻、随拖拽实时刷新。这看起�
   "updatedBy": "张工",
   "nodes": [{
     "id": "uuid", "nodeKey": "ELEMENT_BOM_ITEM", "displayName": "物料与元素BOM",
+    "shortName": "元素BOM",                // Sheet 简称，视图列名 _<简称>_<列名> 的构成部分（D-13）
+                                          // ⚠️ 取法开工前定死、定后不可改（改了等于改全部绑定路径）
     "nodeKind": "SHEET",                  // SHEET | LOOKUP | FUNCTION
     "physicalTable": "element_bom_item",
     "scope": "FULL",                      // FULL = customer_no + is_current + system_type
@@ -129,7 +131,7 @@ D-21 要求「生成的 SQL」右侧常驻、随拖拽实时刷新。这看起�
 
 | 方法 | 路径 | 说明 | 服务的 AC |
 |---|---|---|---|
-| `GET` | `/` | 读 `builder_config` + `builder_version` + 过期标记 | AC-34 |
+| `GET` | `/` | 读 `builder_config` + `builder_version` + 过期标记（响应体见 §2.1a） | AC-34 |
 | `POST` | `/compile` | 由 `builder_config` 编译出 SQL，**不落库**。右侧实时面板用 | AC-49、AC-9、AC-11 |
 | `POST` | `/preview` | 真实预览：执行编译产物，只读连接 + `LIMIT 50` + 5s 超时 | AC-26 ~ AC-28 |
 | `POST` | `/inspect` | 保存前体检（阻断项 + 告警项） | AC-13、AC-17 ~ AC-19、AC-29、AC-30 |
@@ -157,6 +159,20 @@ D-21 要求「生成的 SQL」右侧常驻、随拖拽实时刷新。这看起�
 ```
 
 🚫 `viewColumn` **由后端按 `(Sheet简称, 列名)` 纯函数生成**，前端只读显示、不得自行拼接（AC-11 断言：改字段名后 `viewColumn` 与 SQL 别名**纹丝不动**）。
+
+### 2.1a `GET /` 响应（🔴 2026-08-20 补：原文只写「+ 过期标记」没定字段名 —— 留白处三方各填一套，是并行开发的典型裂缝）
+
+```jsonc
+{
+  "builderConfig": { /* §2.1 的结构 */ } | null,   // null = 手写模式（存量视图）
+  "builderVersion": 1 | null,
+  "isLegacyHandwritten": false,      // == (builderConfig === null)，冗余给前端省一次判断
+  "isStale": false,                  // == (builderVersion < currentCompilerVersion)
+  "currentCompilerVersion": 3        // 当前编译器版本，前端据此渲染过期提醒条（AC-34）
+}
+```
+
+🚦 **字段名以本节为准。** 三方（前端 F-12 / 后端 B-14 / 测试 `Sec32`）在留白期各自约定过，经主线核对**命名一致**，此处只是把它固化成契约 —— **无人需要返工**。
 
 ### 2.2 `POST /compile` 响应
 

@@ -66,7 +66,7 @@ export interface ComponentItem {
    * 2026-07-21 契约变更：与 bomRecursiveExpand 后端联动派生(选 BOM → bomRecursiveExpand 自动置 true；
    * 其余值/清空 → 自动置 false)，前端只维护 tabType 一个字段，不再单独暴露 bomRecursiveExpand 开关。
    */
-  tabType?: 'BOM' | '材质元素' | '零件' | '外购件' | '主件';
+  tabType?: 'BOM' | '材质元素' | '零件' | '外购件' | '主件' | '费用类';
   /**
    * task-0721 F2（2026-07-23 修订，需求说明 §4.3 规则一「匹配标识放宽」）：该页签哪个字段是料号列。
    * 从该组件已有字段中选（取字段 name，不是自由输入）。类型判定与加叶子候选采集

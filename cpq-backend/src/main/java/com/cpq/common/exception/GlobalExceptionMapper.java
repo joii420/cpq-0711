@@ -2,6 +2,7 @@ package com.cpq.common.exception;
 
 import com.cpq.common.dto.ApiResponse;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import java.util.List;
 import java.util.Map;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.ws.rs.NotAcceptableException;
@@ -97,6 +98,34 @@ public class GlobalExceptionMapper {
                             "code", com.cpq.template.exception.TemplateNotFrozenException.CODE,
                             "templateId", String.valueOf(tnfe.getTemplateId()),
                             "templateStatus", String.valueOf(tnfe.getTemplateStatus()))))
+                    .build();
+        }
+        // task-260819 B-3：语义图四道保存期校验未通过（api.md §1.2）。
+        // ⚠️ 本端点族的错误响应**不套** ApiResponse{code:int,message,data} 信封——api.md §1.2 的
+        // 示例与 code/failedCheck/message/detail/checks 全部是**响应体顶层字段**（code 是字符串
+        // 枚举值如 "SEMANTIC_VALIDATION_FAILED"，不是 HTTP 状态码），与本文件其余分支的约定不同，
+        // 是这个新端点族自己的显式契约（前端与测试代理都按此契约读取，不能悄悄改回信封）。
+        if (e instanceof com.cpq.semanticgraph.exception.SemanticValidationException sve) {
+            return Response.status(e.getCode())
+                    .entity(Map.of(
+                            "code", "SEMANTIC_VALIDATION_FAILED",
+                            "failedCheck", sve.getFailedCheck() == null ? "" : sve.getFailedCheck(),
+                            "message", sve.getMessage() == null ? "" : sve.getMessage(),
+                            "detail", sve.getDetail() == null ? Map.of() : sve.getDetail(),
+                            "checks", sve.getChecks() == null ? List.of() : sve.getChecks()))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        // task-260819 B-3：走写端点删除仍被引用的节点（AC-54②，与库层 FK 兜底是两条独立防线）。
+        if (e instanceof com.cpq.semanticgraph.exception.SemanticNodeReferencedException snre) {
+            return Response.status(e.getCode())
+                    .entity(Map.of(
+                            "code", "FK_STILL_REFERENCED",
+                            "message", snre.getMessage() == null ? "" : snre.getMessage(),
+                            "detail", Map.of(
+                                    "referencingEdges", snre.getReferencingEdges() == null ? List.of() : snre.getReferencingEdges(),
+                                    "referencingTabViews", snre.getReferencingTabViews() == null ? List.of() : snre.getReferencingTabViews())))
+                    .type(MediaType.APPLICATION_JSON)
                     .build();
         }
         if (e instanceof com.cpq.component.exception.ComponentElementBindingRequiredException cebre) {
