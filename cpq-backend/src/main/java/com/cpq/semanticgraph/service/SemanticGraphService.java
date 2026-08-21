@@ -1,5 +1,7 @@
 package com.cpq.semanticgraph.service;
 
+import com.cpq.builder.compiler.BuilderConfig;
+import com.cpq.builder.compiler.FieldTreeBuilder;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.semanticgraph.dto.SemanticGraphDTOs.*;
 import com.cpq.semanticgraph.entity.*;
@@ -25,6 +27,7 @@ public class SemanticGraphService {
     @Inject SemanticGraphLoader loader;
     @Inject SemanticGraphValidator validator;
     @Inject OperationLogService operationLogService;
+    @Inject FieldTreeBuilder fieldTreeBuilder;
 
     // ---------------- 读 ----------------
 
@@ -34,38 +37,17 @@ public class SemanticGraphService {
     }
 
     /**
-     * 字段树接口（B-7 的读取部分，一期先给最基础的数据）：按 tabType/variantKey 找到对应
-     * {@code semantic_tab_view}，返回其主源+附属源节点的列（roles 已按两层合并——页签级覆盖优先，
-     * 否则退回节点级默认，D-35）。
+     * 字段树接口（task-260819 B-7）：按 tabType/variantKey 找到对应 {@code semantic_tab_view}，
+     * 返回 {@code {groups:[...]}} 形状（2026-08-21 裁决，api.md §1.4；原扁平 {@code List<NodeDTO>}
+     * 实现已废弃——前端与测试都按分组形状实现，扁平结构联调必炸）。
+     *
+     * @param selectedConfigJson 当前已选列（JSON 数组，与 builder_config.columns 同形），
+     *                           null/空 = 不计算 conflict（api.md §1.4 之"只有带 selectedConfig 才算 conflict"）
      */
-    public List<NodeDTO> getFieldTree(String tabType, String variantKey) {
+    public FieldTreeBuilder.FieldTreeResponse getFieldTree(String tabType, String variantKey,
+                                                            List<BuilderConfig.ColumnConfig> selectedConfigJson) {
         SemanticGraphSnapshot snap = loader.get();
-        String vk = variantKey == null ? "" : variantKey;
-        SemanticTabView tv = snap.tabViews.stream()
-                .filter(t -> t.tabType.equals(tabType) && t.variantKey.equals(vk))
-                .findFirst()
-                .orElseThrow(() -> new BusinessException(404, "未找到页签视图: " + tabType + "/" + vk));
-
-        List<SemanticTabViewNode> tvns = snap.tabViewNodesByView.getOrDefault(tv.id, List.of());
-        Map<UUID, List<SemanticTabViewColumn>> overrideByColumn = snap.tabViewColumnsByView
-                .getOrDefault(tv.id, List.of()).stream()
-                .collect(Collectors.groupingBy(c -> c.columnId));
-
-        List<NodeDTO> result = new ArrayList<>();
-        for (SemanticTabViewNode tvn : tvns) {
-            SemanticNode node = snap.nodeById.get(tvn.nodeId);
-            if (node == null) continue;
-            NodeDTO dto = SemanticGraphMapper.toNodeDTO(snap, node, Map.of());
-            // 两层 roles 合并：页签级覆盖优先，否则用节点级默认（D-35）
-            for (ColumnDTO col : dto.columns) {
-                List<SemanticTabViewColumn> overrides = overrideByColumn.get(col.id);
-                if (overrides != null && !overrides.isEmpty()) {
-                    col.roles = List.of(overrides.get(0).roles);
-                }
-            }
-            result.add(dto);
-        }
-        return result;
+        return fieldTreeBuilder.build(snap, tabType, variantKey, selectedConfigJson);
     }
 
     // ---------------- 写：节点 ----------------
@@ -220,21 +202,10 @@ public class SemanticGraphService {
         return newVersion;
     }
 
-    @Transactional
-    public int deleteEdgeByNodes(UUID fromNodeId, UUID toNodeId, String operatorId) {
-        if (fromNodeId == null || toNodeId == null) throw new BusinessException(400, "fromNodeId/toNodeId 必填");
-        List<SemanticEdge> matches = SemanticEdge.list("fromNodeId = ?1 and toNodeId = ?2", fromNodeId, toNodeId);
-        for (SemanticEdge e : matches) {
-            SemanticEdgeKey.delete("edgeId", e.id);
-            e.delete();
-        }
-        int newVersion = loader.reload().version;
-        if (!matches.isEmpty()) {
-            auditLog(operatorId, "SEMANTIC_EDGE_DELETE", "semantic_edge", fromNodeId,
-                    "按 from/to 节点删除语义图边（" + matches.size() + " 条）");
-        }
-        return newVersion;
-    }
+    // task-260819 D-40（2026-08-21 主线裁决）：deleteEdgeByNodes 已下线并连带端点一起删除——
+    // 按 (fromNodeId,toNodeId) 业务键批量删边，不区分 edge_kind、不区分种子边/测试临时边，
+    // 实测已把种子里真实存在的 E02 GRAIN 边连带删掉（V390 补回）。清理测试边一律用 deleteEdge(id)
+    // （按创建时返回的主键删，不按"造它时用的那对参数"反查）。
 
     /**
      * 边的部分更新（AC-57①：只改 {@code fallbackOrder} 这类单字段场景）。未出现在 {@code partial}
@@ -377,8 +348,8 @@ public class SemanticGraphService {
     /**
      * 审计写入按 best-effort：{@code operation_log.operator_id} 是 NOT NULL 列，若拿不到合法
      * operatorId（理论上不该发生——写端点都经 {@code @RoleAllowed} 强制登录）宁可跳过这一行审计，
-     * 也不能让审计失败连带把本该成功的业务写入一起回滚（曾在 {@code deleteEdgeByNodes} 上实测
-     * 复现：传 {@code null} 直接触发 {@code operation_log} 的 NOT NULL 违反，整个事务 500）。
+     * 也不能让审计失败连带把本该成功的业务写入一起回滚（曾在已下线的按业务键批量删边路径上
+     * 实测复现：传 {@code null} 直接触发 {@code operation_log} 的 NOT NULL 违反，整个事务 500）。
      */
     private void auditLog(String operatorId, String operationType, String targetType, UUID targetId, String summary) {
         UUID uid = toUuid(operatorId);

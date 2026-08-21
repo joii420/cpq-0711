@@ -70,6 +70,18 @@ public class ComponentSqlView extends PanacheEntityBase {
     @Column(name = "description", columnDefinition = "TEXT")
     public String description;
 
+    /**
+     * task-260819 B-14（V388 已加列，均 nullable）：取数配置器的 builder_config JSONB + 编译器版本。
+     * {@code builderConfig IS NULL} = 手写模式（存量视图），行为逐字不变（AC-32）。本轮 B-13/B-20
+     * 补上实体映射——V388 只加了 DB 列，之前一直没有 Java 字段，读写都要靠这两个属性。
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "builder_config", columnDefinition = "jsonb")
+    public String builderConfig;
+
+    @Column(name = "builder_version")
+    public Integer builderVersion;
+
     @Column(name = "created_by")
     public UUID createdBy;
 

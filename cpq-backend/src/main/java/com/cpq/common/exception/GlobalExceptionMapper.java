@@ -128,6 +128,18 @@ public class GlobalExceptionMapper {
                     .type(MediaType.APPLICATION_JSON)
                     .build();
         }
+        // task-260819 B-11/12/13：取数配置器 builder 端点族——响应裸体，不套 ApiResponse 信封
+        // （api.md §1.5③），字段直接平铺进 body。
+        if (e instanceof com.cpq.builder.exception.BuilderApiException bae) {
+            java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+            body.put("code", bae.getErrorCode());
+            body.put("message", bae.getMessage() == null ? "" : bae.getMessage());
+            body.putAll(bae.getExtra());
+            return Response.status(e.getCode())
+                    .entity(body)
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
         if (e instanceof com.cpq.component.exception.ComponentElementBindingRequiredException cebre) {
             return Response.status(e.getCode())
                     .entity(ApiResponse.error(e.getCode(), e.getMessage(), Map.of(

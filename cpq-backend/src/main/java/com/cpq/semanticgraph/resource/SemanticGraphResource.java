@@ -1,10 +1,12 @@
 package com.cpq.semanticgraph.resource;
 
+import com.cpq.builder.compiler.BuilderConfig;
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.common.security.SessionHelper;
 import com.cpq.semanticgraph.dto.SemanticGraphDTOs.*;
 import com.cpq.semanticgraph.service.SemanticGraphService;
 import com.cpq.semanticgraph.service.SemanticGraphValidator;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.vertx.core.http.HttpServerRequest;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
@@ -42,11 +44,24 @@ public class SemanticGraphResource {
         return service.getGraph();
     }
 
+    private static final ObjectMapper FIELD_TREE_MAPPER = new ObjectMapper();
+
     @GET
     @Path("/field-tree")
-    public List<NodeDTO> fieldTree(@QueryParam("tabType") String tabType,
-                                    @QueryParam("variantKey") String variantKey) {
-        return service.getFieldTree(tabType, variantKey);
+    public com.cpq.builder.compiler.FieldTreeBuilder.FieldTreeResponse fieldTree(
+            @QueryParam("tabType") String tabType,
+            @QueryParam("variantKey") String variantKey,
+            @QueryParam("selectedConfig") String selectedConfigJson) {
+        List<BuilderConfig.ColumnConfig> selected = null;
+        if (selectedConfigJson != null && !selectedConfigJson.isBlank()) {
+            try {
+                selected = FIELD_TREE_MAPPER.readValue(selectedConfigJson,
+                        FIELD_TREE_MAPPER.getTypeFactory().constructCollectionType(List.class, BuilderConfig.ColumnConfig.class));
+            } catch (Exception ignored) {
+                // 解析失败按"未带 selectedConfig"处理——conflict 恒 false，不 500
+            }
+        }
+        return service.getFieldTree(tabType, variantKey, selected);
     }
 
     // ---------------- 节点 ----------------
@@ -111,15 +126,11 @@ public class SemanticGraphResource {
         return Map.of("graphVersion", v);
     }
 
-    /** 按 (fromNodeId,toNodeId) 删边——供管理页/测试清理用，不强依赖先查出 edgeId。 */
-    @DELETE
-    @Path("/edges/by-nodes")
-    @RoleAllowed({"SYSTEM_ADMIN"})
-    public Map<String, Object> deleteEdgeByNodes(@QueryParam("fromNodeId") UUID fromNodeId,
-                                                  @QueryParam("toNodeId") UUID toNodeId) {
-        int v = service.deleteEdgeByNodes(fromNodeId, toNodeId, currentOperator());
-        return Map.of("graphVersion", v);
-    }
+    // task-260819 D-40（2026-08-21 主线裁决）：DELETE /edges/by-nodes 端点已下线——
+    // 它按 (fromNodeId,toNodeId) 业务键全删，不区分 edge_kind、不区分"种子边"还是"临时造的
+    // 测试边"，实测已造成一次真实数据丢失（E02 GRAIN 边被连带删掉，V390 补回）。且该端点从未
+    // 进入 api.md 契约，属超范围新增。清理测试边一律改用 DELETE /edges/{id}（按创建时返回的
+    // 主键删，不按"造它时用的那对参数"反查）。
 
     // ---------------- 页签视图 ----------------
 
