@@ -38,7 +38,7 @@
 | `repair-260803-公式SUM内引用宿主页签字段` | 🔴 **静默少算，文档标「待确认」** | `SUM()` 内引用本页签 FORMULA 字段恒取 0，不报错只算少。文档点名现网 `COMP-0157「物料」` 正踩着。**未见对应 BACKLOG 条目** |
 | `BL-0069` `mat_*` 废弃表断供故障族 | 🔴 **P0 · TODO 未排期** | 5 条实证失效路径，其中「漂移检测假阴性」破坏安全属性（13/13 报价单 `referenced_versions` 全 NULL → 恒 `hasDrift=false`，主动骗用户"数据未变"）。#5 已随 task-0722 闭合，其余未修 |
 | `BL-0097` `$view` 报错毒化事务 | 🟡 **部分交付，根因未解**（2026-08-09 已核实，存疑解除） | ✅ 错误可见性已修（`2d12bde2`，前端不再只显示「待重算」）；❌ **事务毒化根因未解且 Savepoint 方案已证否**（同提交含 `SavepointIsolationFeasibilityTest`）。**别据「有修复提交」判本条已完成**，需另找方案（独立事务/预校验/连接隔离） |
-| `task-260728-组件SQL视图的用户便捷化配置功能` | ⏸️ **暂停** | 七轮澄清 33 决策，尚有 3 项待你拍板，未拆任务文档 |
+| `task-260819-取数配置器` | 🟢 **开发中**（2026-08-20 过闸门 A 开工） | 分支 `feat/task-260819-sql-view-builder` · worktree `.claude/worktrees/task-260819-sql-view-builder` · 三类子代理并行（后端 B-1~B-18 / 前端 F-1~F-14 / 测试 T-1~T-7）。<br>**35 条裁决 · 57 条 AC（一期 51 / 二期 6）· 六件套齐全 · 闸门 A 自检四项全过**。🚨 **D-27 推翻 D-06：语义图改为落 DB 不落代码**（7 张 `semantic_*` 表 + 四道保存期校验，因 CI 不再是最后一道闸）；D-34 费用类改**分立建模**（合并建模会让一个视图返回两种 `price_type`，golden 必不过）。逐条依据见 `需求文档.md` §8 |
 | `task-260723-废弃业务与表清洗` P2 | 🟡 分阶段未完 | `mat_*` 整族退役是多周工程，与 BL-0069 同源 |
 | `task-260715-UI排版审查` | 📋 报告已出，整改未启动 | 180+ 条 / 11 个系统性主题（36 处 Modal 违规、1272 处硬编码 hex、Dashboard 是调试残留） |
 
@@ -252,7 +252,8 @@ done | sort | cut -d'|' -f1 | uniq -c | sort -rn | awk '$1>=4'
 |---|---|---|---|
 | `task-260723-废弃业务与表清洗/` | V44 `mat_*` 整族退役盘点：**废弃表 + 活功能引用 = bug**（P0 僵尸按钮 / P1 BL-0069 热路径读冻结表 / P2 整族退役） | 🟡 分阶段，P2 未完 | `ImportHistoryList.tsx` `BasicDataImportV5ToQuotation.tsx` |
 | `task-260715-UI排版审查/` | 全站 UI 挑刺报告：180+ 条带行号条目 + 11 个系统性主题（36 处 Modal 违规 / 1272 处硬编码 hex / Dashboard 是调试残留） | 📋 报告，整改未完 | `MainLayout.tsx` `Dashboard.tsx` |
-| `task-260728-组件SQL视图的用户便捷化配置功能/` | 取数配置器：让实施人员不写裸 SQL 也能配视图（七轮澄清 33 决策） | ⏸️ **暂停**，3 项待拍板 | `SqlViewConfigDrawer.tsx` |
+| `task-260819-取数配置器/` | 取数配置器：让实施人员不写裸 SQL 也能配视图。方案 = 语义图（节点+边+页签视图，**落 DB** —— 7 张 `semantic_*` 表）+ 编译期路径求解 → 生成 `sql_template`，**渲染链路零改动**。语义图实数 **17 节点 / 19 边 / 孤儿 4 张**（口径：17 = 16 个 `Q*Handler` + `MaterialBomMergeHandler`；边按多源 COALESCE 合并计数） | 🟢 **开发中**（35 条裁决 / 57 条 AC / 六件套齐全 / 原型 6 份实跑验证） | `SqlViewConfigDrawer.tsx` `component/` `CardSnapshotService.java` `ComponentService.java:55` |
+| ~~`task-260728-组件SQL视图的用户便捷化配置功能/`~~ | ⛔ **已迁移至 `task-260819-取数配置器/`**（2026-08-19，见其 `README.md`）。仅作历史追溯：v8 全文 + **§11~§11.5 八轮 45 个决策记录** + PG19/Cube 评估过程稿 | ⛔ 冻结 | — |
 
 ---
 
