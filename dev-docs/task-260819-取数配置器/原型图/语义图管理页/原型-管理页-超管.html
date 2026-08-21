@@ -79,12 +79,18 @@ function toolbar(){
   </div>`;
 }
 
+function logicalEdges(){
+  /* 边数口径：多源 COALESCE 算一条边（与需求文档「19 条边」同口径）。
+     cg 字段标出同属一组 COALESCE 的连接，每组计 1 条。 */
+  const g=new Set(); EDGES.filter(e=>e.cg).forEach(e=>g.add(e.cg));
+  return EDGES.filter(e=>!e.cg).length + g.size;
+}
 function renderStat(){
   const orphan=NODES.filter(n=>!n.usedBy.length).length;
   document.getElementById('stat').innerHTML=
     `<div><b>${NODES.length}</b><span>Sheet 节点</span></div>
      <div><b>${LOOKUPS.filter(l=>l.kind==='LOOKUP').length}</b><span>查名维表 + ${LOOKUPS.filter(l=>l.kind==='FUNCTION').length} 表函数</span></div>
-     <div><b>${EDGES.length}</b><span>边</span></div>
+     <div><b>${logicalEdges()}</b><span>边（展开 ${EDGES.length} 条连接）</span></div>
      <div><b style="color:${orphan?'var(--warn)':'var(--ok)'}">${orphan}</b><span>孤儿 Sheet</span></div>
      <div><b>${TABS.length}</b><span>页签视图</span></div>
      <div><b>v15</b><span>图版本 · 2026-08-20 14:22 张工</span></div>`;
@@ -103,7 +109,7 @@ function render(){
         <td>${e.to}</td>
         <td><span class="pill ${k[1]}">${k[0]}</span></td>
         <td class="mono" style="max-width:300px;word-break:break-all">${e.on.replace(/</g,'&lt;')}${e.todo?'<div><span class="pill p-warn">连接键待实测核实</span></div>':''}</td>
-        <td>${e.fb===null?'<span style="color:#bfbfbf">—</span>':e.fb}</td>
+        <td>${e.fb===null?'<span style="color:#bfbfbf">—</span>':e.fb}${e.cg?`<div><span class="pill p-lk" title="与同组边合并计为 1 条逻辑边">多源</span></div>`:''}</td>
         <td>${e.tabs.map(t=>`<span class="pill p-grey">${t}</span>`).join(' ')}</td>
         <td>${e.assert==='ok'?'<span class="pill p-ok">✓ 通过</span>':(e.assert==='na'?'<span class="pill p-grey">一对多不适用</span>':'<span class="pill p-warn">待跑</span>')}</td></tr>`;});
     h+=`</tbody></table>

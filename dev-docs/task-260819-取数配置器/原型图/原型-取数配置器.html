@@ -374,6 +374,24 @@ const SHEETS={
    ['currency','货币',X],['unit','计价单位',X],['is_fluctuate_with_material','是否随材料价格波动',X],
    ['material_increase_ratio','材料结算涨幅比例',N],['material_fixed_increase','材料固定的涨幅值',M]],
    note:'⚠ 实测：本 sheet 2/2 行的值在「基准值」，pricing_price 全空'},
+ /* ↓ 2026-08-20 补 4 张（D-31/D-32）：口径 = 17 个导入 handler，逐个读 sheetName() 核对。
+    年降三张按 N-7 不挂任何 TABDEF → 语义图谱页显示为孤儿（正确），配置器字段面板不受影响。 */
+ INCOMING_RECYCLE:{n:'来料回收折扣',sn:'来料回收',tbl:'unit_price',al:'ir',dims:['投入料号','直接父件'],cols:[
+   ['seq_no','项次',N,'SORT'],['cost_ratio','回收折扣%',N],['pricing_price','值',M],
+   ['currency','货币',X],['unit','计价单位',X]],
+   note:'⚠ 实测 bom_view：以相关标量子查询接入 BOM 树页签，匹配维度 = 投入料号 + 直接父件（r.code=本行子件 AND r.finished_material_no=本行父件）。全库仅 1 行数据'},
+ INCOMING_ANNUAL:{n:'来料年降',sn:'来料年降',tbl:'annual_discount',al:'ad1',dims:['投入料号','年降顺序'],cols:[
+   ['seq_no','项次',N,'SORT'],['discount_order','年降顺序',N],['discount_ratio','年降比例',N],
+   ['discount_times','年降次数',N],['fixed_discount_value','固定年降值',M],['currency','货币',X],['unit','计价单位',X]],
+   note:'⚠ 已按 N-7 移出本期 —— 登记在图里但不挂任何页签（孤儿）。discount_type=INCOMING_MATERIAL'},
+ ASSEMBLY_ANNUAL:{n:'组装加工费年降',sn:'组装年降',tbl:'annual_discount',al:'ad2',dims:['工序号','年降顺序'],cols:[
+   ['seq_no','项次',N,'SORT'],['discount_order','年降顺序',N],['discount_ratio','年降比例',N],
+   ['discount_times','年降次数',N],['fixed_discount_value','固定年降值',M],['currency','货币',X],['unit','计价单位',X]],
+   note:'⚠ 已按 N-7 移出本期（孤儿）。discount_type=ASSEMBLY_PROCESS'},
+ FINISHED_ANNUAL:{n:'年降系数',sn:'年降系数',tbl:'annual_discount',al:'ad3',dims:['年降顺序'],cols:[
+   ['seq_no','项次',N,'SORT'],['discount_order','年降顺序',N],['discount_ratio','年降比例',N],
+   ['discount_times','年降次数',N],['fixed_discount_value','固定年降值',M],['currency','货币',X],['unit','计价单位',X]],
+   note:'⚠ 已按 N-7 移出本期（孤儿）。discount_type=FINISHED'},
  INCOMING_OTHER:{n:'来料其他费用',sn:'来料其他',tbl:'unit_price',al:'io',dims:['投入料号'],cols:[
    ['seq_no','项次（一级）',N,'SORT'],['cost_type','要素',X,'ROW_KEY'],['pricing_price','值',M],
    ['cost_ratio','比例',N],['currency','货币',X],['unit','计价单位',X]]},
@@ -433,7 +451,12 @@ const TABDEF={
   custMode:'DIRECT',note:'行身份 = 投入料号 up.code（可能是材质 / 零件 / 外购件，类型不定）',
   codeCols:[
    {k:'F_C',l:'投入料号',e:'up.code',t:X,r:['PART_NO','ROW_KEY'],lookup:[{k:'F_CN',l:'投入料号名称',e:'COALESCE(mm.material_name, mr.name)',t:X,r:['PART_NAME','ROW_KEY'],lib:'MM',
-     joins:['LEFT JOIN material_master mm ON mm.material_no = up.code','LEFT JOIN material_recipe mr ON mr.code = up.code']}]}],
+     joins:['LEFT JOIN material_master mm ON mm.material_no = up.code','LEFT JOIN material_recipe mr ON mr.code = up.code']}]},
+   /* 2026-08-20 补（D-32）：现网 ll_view 实测输出 COALESCE(pm.process_name, up.operation_no) AS _工序，
+      原型此前无工序列 —— 照原型配出的费用类视图会比现网少一列，golden 逐行等值必然不过（AC-38）。
+      写法与零件页签的 S_OP/S_ON 同构。 */
+   {k:'F_OP',l:'工序号',e:'up.operation_no',t:X,r:['ROW_KEY'],lookup:[{k:'F_ON',l:'工序',e:'COALESCE(pm.process_name, up.operation_no)',t:X,r:['ROW_KEY'],lib:'PR',
+     joins:['LEFT JOIN process_master pm ON pm.process_no = up.operation_no']}]}],
   aux:[],opts:['includeChildParts']},
 'BOM 树':{main:'MATERIAL_BOM',tbl:'material_bom_item',al:'mbi',tree:true,
   anchor:{col:'mbi.component_no',desc:'树契约：不输出 hf_part_no，按 :total_material_no 收窄'},
@@ -441,7 +464,14 @@ const TABDEF={
   charNote:'不过滤 characteristic —— 边式全子件（RECIPE + OUTSOURCED + ASSEMBLY 全要），与现网 bom_view 一致',
   codeCols:[{k:'B_C',l:'组成件料号',e:'mbi.component_no',t:X,r:['PART_NO','ROW_KEY'],lookup:[{k:'B_CN',l:'料件名称',e:'COALESCE(mm.material_name, mr.name)',t:X,r:['PART_NAME','ROW_KEY'],lib:'MM',
     joins:['LEFT JOIN material_master mm ON mm.material_no = mbi.component_no','LEFT JOIN material_recipe mr ON mr.code = mbi.component_no']}]}],
-  aux:[],opts:[]},
+  /* 2026-08-20 补（D-32）：实测现网 bom_view 以相关标量子查询接入来料回收折扣，输出 _回收价格 / _回收比例。
+     用 SUB 而非 LEFT JOIN 是硬约束 —— unit_price 是版本化表，写进带 is_current 的 LEFT JOIN 会参数错位，
+     dry-run 照过、只在真实渲染炸（bom_view 注释原文）。 */
+  aux:[{key:'INCOMING_RECYCLE',kind:'SUB',
+        join:"r.code = mbi.component_no AND r.finished_material_no = mbi.material_no",
+        where:["r.system_type = 'QUOTE'","r.price_type = 'INCOMING_MATERIAL_RECYCLE'","r.is_current"],
+        dimAlias:'r'}],
+  opts:[]},
 };
 const TABS=Object.keys(TABDEF);
 
@@ -832,6 +862,10 @@ function deriveModel(){
     const usedBy=[];
     Object.entries(TABDEF).forEach(([tn,d])=>{
       if(d.main===k)usedBy.push(tn+' · 主源');
+      /* 🐛 2026-08-20 修：原先只看 main 与 aux，漏了 main2 —— 费用类用
+         main2:'INCOMING_OTHER' 把来料其他费用并进同一视图（price_type IN），
+         漏统计导致它被误报成「孤儿 Sheet」，图谱页少报用途、多报孤儿。 */
+      else if(d.main2===k)usedBy.push(tn+' · 主源(合并)');
       else if((d.aux||[]).some(a=>a.key===k))usedBy.push(tn);});
     nodes.push({k,n:sh.n,tbl:sh.tbl,dims:sh.dims||[],cols:sh.cols.length,note:sh.note,usedBy});
   });
