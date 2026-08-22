@@ -20,7 +20,11 @@ public final class BuilderDTOs {
     public static class PreviewRequest extends BuilderConfig {
         public String customerCode;
         public String partNo;
-        public Boolean includeChildParts;
+        // D-43（2026-08-21 主线裁决）：闭包开关的唯一位置是 builder_config.switches.includeChildParts
+        // （BuilderConfig#includeChildParts()，SemanticCompiler 只读这一处）——这里原来重复声明过
+        // 一个顶层 includeChildParts 字段，Jackson 会把它填进来但没有任何代码消费，谁按旧版
+        // api.md §1.5②示例传顶层字段，闭包就静默失效（不报错、无 WITH RECURSIVE）。已删除，
+        // 不要在这里重新加同名字段。
     }
 
     /** PUT / 的请求体 = builder_config + confirmedImpact（api.md §2.4）。 */
