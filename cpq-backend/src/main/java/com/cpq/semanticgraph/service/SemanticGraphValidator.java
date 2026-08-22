@@ -1,5 +1,6 @@
 package com.cpq.semanticgraph.service;
 
+import com.cpq.builder.compiler.PhysicalColumnCatalog;
 import com.cpq.semanticgraph.entity.SemanticEdge;
 import com.cpq.semanticgraph.entity.SemanticNode;
 import com.cpq.semanticgraph.exception.SemanticValidationException;
@@ -28,6 +29,9 @@ public class SemanticGraphValidator {
 
     @Inject
     EntityManager em;
+
+    @Inject
+    PhysicalColumnCatalog catalog;
 
     public static final class CheckResult {
         public final String check;
@@ -82,18 +86,35 @@ public class SemanticGraphValidator {
 
     // ---------------- ② EDGE_CARDINALITY ----------------
 
+    /** 不带目标节点自身判别式的重载（standalone 场景，如 CI 反证测试直接喂表名+列名）。 */
+    public CheckResult checkEdgeCardinality(String targetTable, List<String> rightColumns) {
+        return checkEdgeCardinality(targetTable, rightColumns, null);
+    }
+
     /**
      * @param targetTable 目标表物理名
      * @param rightColumns 右侧连接键列（&ge;1，多列取组合唯一性）
+     * @param targetDiscriminator 目标节点自身的判别式（{@code semantic_node.discriminator}，如
+     *   {@code price_type = 'COMPONENT_OTHER'}），非 null 时并入收窄条件。
+     *   2026-08-21 实测发现：SUB 边指向的 {@code unit_price} 系节点若不带这条，同一右键组合会
+     *   跨 price_type 撞出"重复"——那是不同判别式分支的行混在一起比对，不是真基数违反，
+     *   会把 3 条本来合法的 SUB 边误判成 FAIL。这条判别式是节点自身已声明的结构性收窄
+     *   （不因客户而变），与 is_current/system_type 同一类，不是新引入的客户维度。
      */
-    public CheckResult checkEdgeCardinality(String targetTable, List<String> rightColumns) {
+    public CheckResult checkEdgeCardinality(String targetTable, List<String> rightColumns, String targetDiscriminator) {
         String colsCsv = String.join(",", rightColumns);
+        List<String> where = new ArrayList<>();
+        String narrowWhere = narrowingWhere(targetTable);
+        if (!narrowWhere.isEmpty()) where.add(narrowWhere);
+        if (targetDiscriminator != null && !targetDiscriminator.isBlank()) where.add(targetDiscriminator);
+        String whereClause = where.isEmpty() ? "" : " WHERE " + String.join(" AND ", where);
+
         long total = ((Number) em.createNativeQuery(
-                "SELECT count(*) FROM " + quoteIdent(targetTable)).getSingleResult()).longValue();
+                "SELECT count(*) FROM " + quoteIdent(targetTable) + whereClause).getSingleResult()).longValue();
 
         @SuppressWarnings("unchecked")
         List<Object[]> dups = em.createNativeQuery(
-                "SELECT " + colsCsv + ", count(*) c FROM " + quoteIdent(targetTable) +
+                "SELECT " + colsCsv + ", count(*) c FROM " + quoteIdent(targetTable) + whereClause +
                 " GROUP BY " + colsCsv + " HAVING count(*) > 1 ORDER BY c DESC LIMIT 5")
                 .getResultList();
 
@@ -106,7 +127,7 @@ public class SemanticGraphValidator {
                     "边基数断言未通过：" + targetTable + "." + colsCsv + " 有重复值",
                     Map.of("targetTable", targetTable, "rightColumns", rightColumns,
                             "duplicates", duplicates,
-                            "assertionSql", "SELECT " + colsCsv + ", count(*) FROM " + targetTable +
+                            "assertionSql", "SELECT " + colsCsv + ", count(*) FROM " + targetTable + whereClause +
                                     " GROUP BY " + colsCsv + " HAVING count(*) > 1",
                             "suggestion", "改成 ONE_TO_MANY，或补一组连接键把粒度收窄到唯一"));
         }
@@ -116,6 +137,22 @@ public class SemanticGraphValidator {
                     Map.of("targetTable", targetTable, "sampleRows", total));
         }
         return new CheckResult("EDGE_CARDINALITY", "PASS", null, Map.of("sampleRows", total));
+    }
+
+    /**
+     * 断言 SQL 的收窄条件（2026-08-21 主线裁决，D-44）：只带 {@code is_current}/{@code system_type}
+     * （表若存在这两列），**不带 customer_no**——边基数是图级别的结构声明，对全体客户都成立，
+     * 掺进某个客户会把"结构性唯一"降级成"该客户下唯一"，语义变了。
+     *
+     * <p>实测教训：不带收窄时 {@code unit_price.code} 在全表范围重复 40 组（历史失效版本行都在内），
+     * 带上 is_current + system_type 后只剩 5 组——版本化表不带收窄的"重复"是误报，不是真违反。
+     */
+    private String narrowingWhere(String table) {
+        Set<String> cols = catalog.columnsOf(List.of(table)).getOrDefault(table, Set.of());
+        List<String> parts = new ArrayList<>();
+        if (cols.contains("is_current")) parts.add("is_current");
+        if (cols.contains("system_type")) parts.add("system_type = 'QUOTE'");
+        return String.join(" AND ", parts);
     }
 
     private static String arraysToString(Object[] row) {

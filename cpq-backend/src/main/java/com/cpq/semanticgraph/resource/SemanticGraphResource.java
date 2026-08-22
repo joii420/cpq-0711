@@ -174,6 +174,19 @@ public class SemanticGraphResource {
         return Map.of("pass", pass, "checks", summary);
     }
 
+    /**
+     * 全量重算边基数断言（task-260819 D-44，主线 2026-08-21 裁决）：种子数据里的 {@code assert_status}
+     * 是写死的装饰值，从没真的跑过校验；本端点对全部 {@code MANY_TO_ONE} 边补跑一次并写回，
+     * 不必等 {@code GET /} 实时算（那正是当初落库 assert_status 这一列的理由——只是欠了这个
+     * 写回入口）。
+     */
+    @POST
+    @Path("/revalidate")
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public Map<String, Object> revalidate() {
+        return service.revalidateAllEdges(currentOperator());
+    }
+
     private String currentOperator() {
         try {
             return sessionHelper.getCurrentUserIdOrFallback(vertxRequest).toString();

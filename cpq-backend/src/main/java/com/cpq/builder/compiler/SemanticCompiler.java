@@ -453,16 +453,19 @@ public class SemanticCompiler {
 
     // ---------------- 判别式（AC-6：MATERIAL_BOM 的 characteristic 由页签类型/来向边动态推导） ----------------
 
+    /**
+     * "来向边"分支委托给 {@link com.cpq.semanticgraph.service.DiscriminatorResolver}（2026-08-21
+     * 抽取共享，原因见该类注释：{@link com.cpq.semanticgraph.service.SemanticGraphService} 的边
+     * 基数校验也需要同一条规则，此前两处独立实现过一次并因此漏过一次真实 bug）。"作为锚点"分支
+     * （tabType 相关）是编译期特有语境，边基数校验用不到，留在本类。
+     */
     private String resolveDiscriminator(Ctx c, SemanticNode node, SemanticEdge viaEdge) {
-        if (node.discriminator != null) return node.discriminator;
-        if (!"MATERIAL_BOM".equals(node.nodeKey)) return null;
         if (viaEdge != null) {
             SemanticNode from = c.snap.nodeById.get(viaEdge.fromNodeId);
-            if (from == null) return null;
-            if ("ELEMENT_BOM_ITEM".equals(from.nodeKey)) return "characteristic = 'RECIPE'";
-            if ("SELF_PROCESS".equals(from.nodeKey)) return "characteristic = 'ASSEMBLY'";
-            return null;
+            return com.cpq.semanticgraph.service.DiscriminatorResolver.resolve(from, node);
         }
+        if (node.discriminator != null) return node.discriminator;
+        if (!"MATERIAL_BOM".equals(node.nodeKey)) return null;
         // 作为锚点直接使用（外购件 / BOM 树两个页签都以 MATERIAL_BOM 为锚点）
         if ("外购件".equals(c.tabView.tabType)) return "characteristic = 'OUTSOURCED'";
         return null; // BOM 树：不过滤（AC-6②）

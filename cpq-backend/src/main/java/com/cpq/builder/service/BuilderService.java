@@ -285,7 +285,16 @@ public class BuilderService {
         ComponentSqlView persisted = sqlViewRepository.findByComponentAndName(componentId, viewName)
                 .orElseThrow(() -> new BuilderApiException(500, "BUILDER_SAVE_VIEW_LOST", "视图保存后查不到", Map.of()));
         try {
-            persisted.builderConfig = MAPPER.writeValueAsString(req);
+            // D-42 扁平化的副作用（2026-08-21 主线裁决）：req 是 SaveRequest（BuilderConfig 的
+            // 子类，多带一个 confirmedImpact），Jackson 按运行时实际类型序列化，直接存进 JSONB
+            // 会把 confirmedImpact 也写进 builder_config——下次 GET / 拿纯 BuilderConfig 反序列化
+            // 就撞 Unrecognized field 500。这里先转成 JsonNode 剥掉多余字段，再落库，保证 JSONB
+            // 里只有 builder_config 自己的字段（兜底见 get() 的 @JsonIgnoreProperties，但兜底
+            // 不能替代这一步剥离——已经写脏的存量数据兜底也救不回来，见 V391）。
+            com.fasterxml.jackson.databind.node.ObjectNode node =
+                    (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.valueToTree(req);
+            node.remove("confirmedImpact");
+            persisted.builderConfig = MAPPER.writeValueAsString(node);
         } catch (Exception e) {
             throw new BuilderApiException(500, "BUILDER_CONFIG_SERIALIZE_FAILED", e.getMessage(), Map.of());
         }

@@ -3,6 +3,7 @@ package com.cpq.semanticgraph;
 import com.cpq.semanticgraph.entity.SemanticEdge;
 import com.cpq.semanticgraph.entity.SemanticEdgeKey;
 import com.cpq.semanticgraph.entity.SemanticNode;
+import com.cpq.semanticgraph.service.DiscriminatorResolver;
 import com.cpq.semanticgraph.service.SemanticGraphValidator;
 import io.quarkus.test.TestTransaction;
 import io.quarkus.test.junit.QuarkusTest;
@@ -50,7 +51,11 @@ public class SemanticEdgeCardinalityReconcileTest {
             if (keys.isEmpty()) continue; // SAME/PRICE 等无独立右键的边不适用本断言
 
             List<String> rightCols = keys.stream().map(k -> k.rightColumn).sorted().toList();
-            SemanticGraphValidator.CheckResult r = validator.checkEdgeCardinality(to.physicalTable, rightCols);
+            SemanticNode from = SemanticNode.findById(e.fromNodeId);
+            // MATERIAL_BOM 的判别式按来向边动态推导（AC-6），不能只看 to.discriminator（NULL）——
+            // 见 DiscriminatorResolver 类注释，与 SemanticGraphService 生产路径用同一份解析逻辑。
+            SemanticGraphValidator.CheckResult r =
+                    validator.checkEdgeCardinality(to.physicalTable, rightCols, DiscriminatorResolver.resolve(from, to));
             assertNotEquals("FAIL", r.status,
                     "边 " + e.id + " (" + to.physicalTable + "." + String.join(",", rightCols) + ") 基数断言失败: " + r.message);
         }

@@ -1,6 +1,7 @@
 package com.cpq.semanticgraph;
 
 import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.junit.TestProfile;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
@@ -21,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * 本类只验证 field-tree 接口是否带出冲突标记数据（为 E2E 断言提供后端契约证据）。
  */
 @QuarkusTest
+@TestProfile(SemanticGraphTestSupport.RbacOffProfile.class)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class Sec33FieldPanelGrainTest {
 
@@ -29,30 +31,32 @@ class Sec33FieldPanelGrainTest {
     @Inject
     UserTransaction utx;
 
-    private String adminCookie;
     private UUID componentId;
 
     @BeforeEach
     void setUp() throws Exception {
-        adminCookie = SemanticGraphTestSupport.createUserAndLogin(em, utx, "SYSTEM_ADMIN");
         componentId = createBlankComponent();
     }
 
-    @AfterEach
-    void tearDown() throws Exception {
-        SemanticGraphTestSupport.cleanupUsers(em, utx);
-    }
 
     private UUID createBlankComponent() {
-        Response resp = RestAssured.given().cookie("CPQ_SESSION", adminCookie).contentType(ContentType.JSON)
+        Response resp = RestAssured.given().contentType(ContentType.JSON)
                 .body("{\"name\":\"" + SemanticGraphTestSupport.TAG + "grain-" + UUID.randomUUID() + "\"}")
                 .post("/api/cpq/components");
         assertEquals(200, resp.statusCode(), resp.getBody().asString());
         return UUID.fromString(resp.jsonPath().getString("data.id"));
     }
 
+
+    /** 见 Sec35FeeTabPreviewInspectTest 同名方法的教训说明：/builder(PUT)、/inspect、/preview 都不吃
+     *  {"builderConfig": {...}} 包装，要把额外字段合并进 builder_config 对象本身的顶层。 */
+    private static String withExtraFields(String configJson, String extraFieldsJson) {
+        int idx = configJson.indexOf('{');
+        return configJson.substring(0, idx + 1) + extraFieldsJson + "," + configJson.substring(idx + 1);
+    }
+
     private Response compile(String config) {
-        return RestAssured.given().cookie("CPQ_SESSION", adminCookie).contentType(ContentType.JSON)
+        return RestAssured.given().contentType(ContentType.JSON)
                 .body(config).post("/api/cpq/components/" + componentId + "/builder/compile");
     }
 
@@ -64,7 +68,7 @@ class Sec33FieldPanelGrainTest {
     @DisplayName("AC-14: 字段面板逐 Sheet 分组字段数与登记相等，无『全部列』折叠，中文名与导入模板逐字一致")
     void ac14_fieldPanelEqualsSheetRealImportColumns() {
         for (String tabType : List.of("材质元素", "外购件", "主件")) {
-            Response resp = RestAssured.given().cookie("CPQ_SESSION", adminCookie)
+            Response resp = RestAssured.given()
                     .queryParam("tabType", tabType)
                     .get("/api/cpq/config/semantic-graph/field-tree");
             assertEquals(200, resp.statusCode(), tabType + " field-tree 应返回 200: " + resp.getBody().asString());
@@ -84,7 +88,7 @@ class Sec33FieldPanelGrainTest {
         }
 
         // ③ 抽查四列中文名与导入模板 Excel 表头逐字一致
-        Response resp = RestAssured.given().cookie("CPQ_SESSION", adminCookie)
+        Response resp = RestAssured.given()
                 .queryParam("tabType", "主件").get("/api/cpq/config/semantic-graph/field-tree");
         List<String> names = resp.jsonPath().getList("groups.fields.displayName.flatten()");
         assertNotNull(names);
@@ -98,7 +102,7 @@ class Sec33FieldPanelGrainTest {
         StringBuilder missingReport = new StringBuilder();
         List<String> unionNames = new java.util.ArrayList<>();
         for (String tabType : List.of("材质元素", "外购件", "主件", "费用类", "零件")) {
-            Response r = RestAssured.given().cookie("CPQ_SESSION", adminCookie)
+            Response r = RestAssured.given()
                     .queryParam("tabType", tabType).get("/api/cpq/config/semantic-graph/field-tree");
             if (r.statusCode() == 200) {
                 List<String> n = r.jsonPath().getList("groups.fields.displayName.flatten()");
@@ -124,7 +128,7 @@ class Sec33FieldPanelGrainTest {
         // 步骤①：只拖物料主档字段 → 预览 1 行，粒度条「每个成品 1 行」
         String step1 = """
                 { "tabType": "主件", "columns": [
-                  {"sourceNodeKey":"MATERIAL_MASTER","sourceColumn":"material_no","fieldName":"销售料号","isRowKey":true,"isPartNo":true}
+                  {"sourceNodeKey":"PRODUCT_MASTER","sourceColumn":"material_no","fieldName":"销售料号","isRowKey":true,"isPartNo":true}
                 ]}
                 """;
         Response r1 = compile(step1);
@@ -134,8 +138,8 @@ class Sec33FieldPanelGrainTest {
         assertFalse(grain1.isEmpty(), "① grain 不应为空列表");
         assertEquals(1, grain1.size(), "① 粒度条应显示『每个成品1行』（单维度），实际 grain=" + grain1);
 
-        Response preview1 = RestAssured.given().cookie("CPQ_SESSION", adminCookie).contentType(ContentType.JSON)
-                .body("{\"builderConfig\":" + step1 + ",\"customerCode\":\"ROCKWELL\"}")
+        Response preview1 = RestAssured.given().contentType(ContentType.JSON)
+                .body(withExtraFields(step1, "\"customerCode\":\"ROCKWELL\""))
                 .post("/api/cpq/components/" + componentId + "/builder/preview");
         assertEquals(200, preview1.statusCode(), preview1.getBody().asString());
         Integer rowCount1 = preview1.jsonPath().getInt("rowCount");
@@ -145,8 +149,8 @@ class Sec33FieldPanelGrainTest {
         // 步骤②：加拖组装加工费列 → 粒度变为「成品+工序号」，预览 2 行，SQL 含 capacity JOIN 且 is_current 在 WHERE
         String step2 = """
                 { "tabType": "主件", "columns": [
-                  {"sourceNodeKey":"MATERIAL_MASTER","sourceColumn":"material_no","fieldName":"销售料号","isRowKey":true,"isPartNo":true},
-                  {"sourceNodeKey":"ASSEMBLY_PROCESS_FEE","sourceColumn":"assembly_process_fee","fieldName":"组装加工费","isAmount":true}
+                  {"sourceNodeKey":"PRODUCT_MASTER","sourceColumn":"material_no","fieldName":"销售料号","isRowKey":true,"isPartNo":true},
+                  {"sourceNodeKey":"ASSEMBLY_FEE","sourceColumn":"fixed_cost","fieldName":"组装加工费","isAmount":true}
                 ]}
                 """;
         Response r2 = compile(step2);
@@ -169,8 +173,8 @@ class Sec33FieldPanelGrainTest {
         assertTrue(sql2.matches("(?is).*\\bWHERE\\b.*ca\\.is_current.*"),
                 "② ca.is_current 应出现在顶层 WHERE，实际:\n" + sql2);
 
-        Response preview2 = RestAssured.given().cookie("CPQ_SESSION", adminCookie).contentType(ContentType.JSON)
-                .body("{\"builderConfig\":" + step2 + ",\"customerCode\":\"ROCKWELL\"}")
+        Response preview2 = RestAssured.given().contentType(ContentType.JSON)
+                .body(withExtraFields(step2, "\"customerCode\":\"ROCKWELL\""))
                 .post("/api/cpq/components/" + componentId + "/builder/preview");
         assertEquals(200, preview2.statusCode(), preview2.getBody().asString());
         Integer rowCount2 = preview2.jsonPath().getInt("rowCount");
@@ -180,8 +184,8 @@ class Sec33FieldPanelGrainTest {
         // 步骤③：移除组装加工费，改拖成品其他费用的『比例』列 → 粒度变为「成品+要素」，预览 4 行
         String step3 = """
                 { "tabType": "主件", "columns": [
-                  {"sourceNodeKey":"MATERIAL_MASTER","sourceColumn":"material_no","fieldName":"销售料号","isRowKey":true,"isPartNo":true},
-                  {"sourceNodeKey":"FINISHED_OTHER_FEE","sourceColumn":"cost_ratio","fieldName":"比例"}
+                  {"sourceNodeKey":"PRODUCT_MASTER","sourceColumn":"material_no","fieldName":"销售料号","isRowKey":true,"isPartNo":true},
+                  {"sourceNodeKey":"FINISHED_OTHER","sourceColumn":"cost_ratio","fieldName":"比例"}
                 ]}
                 """;
         Response r3 = compile(step3);
@@ -191,8 +195,8 @@ class Sec33FieldPanelGrainTest {
         assertFalse(grain3.isEmpty());
         assertEquals(2, grain3.size(), "③ 粒度条应变为『成品+要素』(两维度)，实际 grain=" + grain3);
 
-        Response preview3 = RestAssured.given().cookie("CPQ_SESSION", adminCookie).contentType(ContentType.JSON)
-                .body("{\"builderConfig\":" + step3 + ",\"customerCode\":\"ROCKWELL\"}")
+        Response preview3 = RestAssured.given().contentType(ContentType.JSON)
+                .body(withExtraFields(step3, "\"customerCode\":\"ROCKWELL\""))
                 .post("/api/cpq/components/" + componentId + "/builder/preview");
         assertEquals(200, preview3.statusCode(), preview3.getBody().asString());
         Integer rowCount3 = preview3.jsonPath().getInt("rowCount");
@@ -209,11 +213,11 @@ class Sec33FieldPanelGrainTest {
     void ac16_backendMustExposeConflictMarkersForFrontendGreying() {
         String selected = """
                 { "tabType": "主件", "columns": [
-                  {"sourceNodeKey":"MATERIAL_MASTER","sourceColumn":"material_no","fieldName":"销售料号","isRowKey":true,"isPartNo":true},
-                  {"sourceNodeKey":"ASSEMBLY_PROCESS_FEE","sourceColumn":"assembly_process_fee","fieldName":"组装加工费","isAmount":true}
+                  {"sourceNodeKey":"PRODUCT_MASTER","sourceColumn":"material_no","fieldName":"销售料号","isRowKey":true,"isPartNo":true},
+                  {"sourceNodeKey":"ASSEMBLY_FEE","sourceColumn":"fixed_cost","fieldName":"组装加工费","isAmount":true}
                 ]}
                 """;
-        Response resp = RestAssured.given().cookie("CPQ_SESSION", adminCookie)
+        Response resp = RestAssured.given()
                 .queryParam("tabType", "主件")
                 .queryParam("selectedConfig", selected)
                 .get("/api/cpq/config/semantic-graph/field-tree");
@@ -221,10 +225,12 @@ class Sec33FieldPanelGrainTest {
         List<Object> groups = resp.jsonPath().getList("groups");
         assertNotNull(groups, "groups 不应为空");
         assertFalse(groups.isEmpty(), "groups 不应为空列表");
-        List<Boolean> conflictFlags = resp.jsonPath().getList(
+        // .find{}.conflict 在 GPath 里落到单个对象的字段，是标量不是列表——原来用 getList 会
+        // ClassCastException（Boolean 转 List 失败），真跑第一时间就暴露了，改用 getBoolean。
+        Boolean conflictFlag = resp.jsonPath().getBoolean(
                 "groups.find { it.groupName == '成品其他费用' }.conflict");
         // 若接口尚未实现按组返回 conflict 标记，上面路径会取到 null——显式失败并报告，而非静默通过。
-        assertNotNull(conflictFlags, "field-tree 应对『成品其他费用』分组返回 conflict 标记（供前端拖拽期置灰），"
+        assertNotNull(conflictFlag, "field-tree 应对『成品其他费用』分组返回 conflict 标记（供前端拖拽期置灰），"
                 + "接口未提供则视为 AC-16 前端置灰逻辑缺少数据依据");
     }
 
@@ -238,13 +244,13 @@ class Sec33FieldPanelGrainTest {
         // 人为构造一个正常拖拽路径拖不出来的冲突集合（跨维度混拖）
         String conflicting = """
                 { "tabType": "主件", "columns": [
-                  {"sourceNodeKey":"MATERIAL_MASTER","sourceColumn":"material_no","fieldName":"销售料号","isRowKey":true,"isPartNo":true},
-                  {"sourceNodeKey":"ASSEMBLY_PROCESS_FEE","sourceColumn":"assembly_process_fee","fieldName":"组装加工费","isAmount":true},
-                  {"sourceNodeKey":"FINISHED_OTHER_FEE","sourceColumn":"cost_ratio","fieldName":"比例","isAmount":true}
+                  {"sourceNodeKey":"PRODUCT_MASTER","sourceColumn":"material_no","fieldName":"销售料号","isRowKey":true,"isPartNo":true},
+                  {"sourceNodeKey":"ASSEMBLY_FEE","sourceColumn":"fixed_cost","fieldName":"组装加工费","isAmount":true},
+                  {"sourceNodeKey":"FINISHED_OTHER","sourceColumn":"cost_ratio","fieldName":"比例","isAmount":true}
                 ]}
                 """;
-        Response inspectResp = RestAssured.given().cookie("CPQ_SESSION", adminCookie).contentType(ContentType.JSON)
-                .body("{\"builderConfig\":" + conflicting + "}")
+        Response inspectResp = RestAssured.given().contentType(ContentType.JSON)
+                .body(conflicting)
                 .post("/api/cpq/components/" + componentId + "/builder/inspect");
         assertEquals(200, inspectResp.statusCode(), inspectResp.getBody().asString());
         List<java.util.Map<String, Object>> checks = inspectResp.jsonPath().getList("checks");
@@ -255,8 +261,8 @@ class Sec33FieldPanelGrainTest {
                         && String.valueOf(c.get("message")).contains("粒度冲突"));
         assertTrue(hasGrainConflictErr, "应出现『粒度冲突（兜底拦截）』err 级提示，实际 checks=" + checks);
 
-        Response saveResp = RestAssured.given().cookie("CPQ_SESSION", adminCookie).contentType(ContentType.JSON)
-                .body("{\"builderConfig\":" + conflicting + "}")
+        Response saveResp = RestAssured.given().contentType(ContentType.JSON)
+                .body(conflicting)
                 .put("/api/cpq/components/" + componentId + "/builder");
         assertEquals(400, saveResp.statusCode(), "粒度冲突应阻断保存(400 COMPILE_GRAIN_CONFLICT)，"
                 + "实际=" + saveResp.statusCode() + " body=" + saveResp.getBody().asString());
@@ -271,13 +277,13 @@ class Sec33FieldPanelGrainTest {
     void ac18_coarseGrainColumnCheckedSubtotalBlocks() {
         String config = """
                 { "tabType": "主件", "columns": [
-                  {"sourceNodeKey":"MATERIAL_MASTER","sourceColumn":"material_no","fieldName":"销售料号","isRowKey":true,"isPartNo":true},
-                  {"sourceNodeKey":"ASSEMBLY_PROCESS_FEE","sourceColumn":"assembly_process_fee","fieldName":"组装加工费","isAmount":true},
-                  {"sourceNodeKey":"MATERIAL_MASTER","sourceColumn":"unit_weight","fieldName":"单重","isAmount":true,"inSubtotal":true}
+                  {"sourceNodeKey":"PRODUCT_MASTER","sourceColumn":"material_no","fieldName":"销售料号","isRowKey":true,"isPartNo":true},
+                  {"sourceNodeKey":"ASSEMBLY_FEE","sourceColumn":"fixed_cost","fieldName":"组装加工费","isAmount":true},
+                  {"sourceNodeKey":"PRODUCT_MASTER","sourceColumn":"unit_weight","fieldName":"单重","isAmount":true,"inSubtotal":true}
                 ]}
                 """;
-        Response inspectResp = RestAssured.given().cookie("CPQ_SESSION", adminCookie).contentType(ContentType.JSON)
-                .body("{\"builderConfig\":" + config + "}")
+        Response inspectResp = RestAssured.given().contentType(ContentType.JSON)
+                .body(config)
                 .post("/api/cpq/components/" + componentId + "/builder/inspect");
         assertEquals(200, inspectResp.statusCode(), inspectResp.getBody().asString());
         List<java.util.Map<String, Object>> checks = inspectResp.jsonPath().getList("checks");
@@ -287,8 +293,8 @@ class Sec33FieldPanelGrainTest {
                 && String.valueOf(c.get("message")).contains("重复"));
         assertTrue(hasErr, "应有 err 级提示说明该值会重复出现/累加即重复计算，实际=" + checks);
 
-        Response saveResp = RestAssured.given().cookie("CPQ_SESSION", adminCookie).contentType(ContentType.JSON)
-                .body("{\"builderConfig\":" + config + "}")
+        Response saveResp = RestAssured.given().contentType(ContentType.JSON)
+                .body(config)
                 .put("/api/cpq/components/" + componentId + "/builder");
         assertEquals(400, saveResp.statusCode(), "保存按钮应禁用/保存应被拒绝: " + saveResp.getBody().asString());
     }
@@ -302,12 +308,12 @@ class Sec33FieldPanelGrainTest {
     void ac19_auxSourceColumnCheckedSubtotalBlocks() {
         String config = """
                 { "tabType": "材质元素", "columns": [
-                  {"sourceNodeKey":"MATERIAL_RECIPE","sourceColumn":"name","fieldName":"材质名称","isRowKey":true},
+                  {"sourceNodeKey":"LOOKUP_MATERIAL_RECIPE","sourceColumn":"name","fieldName":"材质名称","isRowKey":true},
                   {"sourceNodeKey":"INCOMING_FIXED","sourceColumn":"base_value","fieldName":"来料加工费","isAmount":true,"inSubtotal":true}
                 ]}
                 """;
-        Response inspectResp = RestAssured.given().cookie("CPQ_SESSION", adminCookie).contentType(ContentType.JSON)
-                .body("{\"builderConfig\":" + config + "}")
+        Response inspectResp = RestAssured.given().contentType(ContentType.JSON)
+                .body(config)
                 .post("/api/cpq/components/" + componentId + "/builder/inspect");
         assertEquals(200, inspectResp.statusCode(), inspectResp.getBody().asString());
         List<java.util.Map<String, Object>> checks = inspectResp.jsonPath().getList("checks");
@@ -317,8 +323,8 @@ class Sec33FieldPanelGrainTest {
                 && String.valueOf(c.get("message")).contains("按主源粒度重复"));
         assertTrue(hasErr, "应有 err 级提示说明该值按主源粒度重复出现，实际=" + checks);
 
-        Response saveResp = RestAssured.given().cookie("CPQ_SESSION", adminCookie).contentType(ContentType.JSON)
-                .body("{\"builderConfig\":" + config + "}")
+        Response saveResp = RestAssured.given().contentType(ContentType.JSON)
+                .body(config)
                 .put("/api/cpq/components/" + componentId + "/builder");
         assertEquals(400, saveResp.statusCode(), "保存按钮应被禁用: " + saveResp.getBody().asString());
     }

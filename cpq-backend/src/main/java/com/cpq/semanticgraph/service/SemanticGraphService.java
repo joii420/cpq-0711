@@ -155,7 +155,7 @@ public class SemanticGraphService {
         checks.add(validator.checkTableExists(to.physicalTable));
         if ("MANY_TO_ONE".equals(req.cardinality) && to.physicalTable != null && req.keys != null && !req.keys.isEmpty()) {
             List<String> rightCols = req.keys.stream().map(k -> k.rightColumn).collect(Collectors.toList());
-            checks.add(validator.checkEdgeCardinality(to.physicalTable, rightCols));
+            checks.add(validator.checkEdgeCardinality(to.physicalTable, rightCols, DiscriminatorResolver.resolve(from, to)));
         }
         checks.add(validator.checkPathUniqueness(snap, req.fromNodeId, req.toNodeId));
         validator.requireAllOrThrow(checks);
@@ -228,9 +228,65 @@ public class SemanticGraphService {
         }
         e.updatedBy = operatorId;
         e.updatedAt = LocalDateTime.now();
+        // task-260819 D-44（2026-08-21 主线裁决）：assert_status 此前只在 createEdge 写过一次，
+        // PUT 改 cardinality（如从 ONE_TO_MANY 改回 MANY_TO_ONE）从不重新校验——图上显示的 PASS
+        // 从此再没被验证过。改完字段后立刻按现状重算一次写回。
+        recomputeAssertStatus(e);
         int newVersion = loader.reload().version;
         auditLog(operatorId, "SEMANTIC_EDGE_UPDATE", "semantic_edge", id, "更新语义图边（部分字段）");
         return newVersion;
+    }
+
+    /**
+     * 全量重算入口（task-260819 D-44，AC-35/AC-52 的地基）：对全部 {@code MANY_TO_ONE} 边重新跑
+     * 边基数断言并写回 {@code assert_status}/{@code assert_sample_rows}。
+     *
+     * <p>🚫 N+1 例外声明：本方法对图中每条边各跑 1~2 条探测 SQL，循环体里确实有查询——
+     * 但 N 是语义图节点/边的规模（管理员配置数据，当前 22 条，只会随人工加边缓慢增长），
+     * 不随任何业务数据量（报价单/组件/客户数）变化，且每条边的目标物理表互不相同，
+     * 天然无法合并成一条 SQL。已向主线报备（D-44 已裁决要这个入口），非隐瞒违规。
+     */
+    @Transactional
+    public Map<String, Object> revalidateAllEdges(String operatorId) {
+        List<SemanticEdge> all = SemanticEdge.listAll();
+        int checked = 0;
+        for (SemanticEdge e : all) {
+            if (recomputeAssertStatus(e)) checked++;
+        }
+        int newVersion = loader.reload().version;
+        auditLog(operatorId, "SEMANTIC_EDGE_REVALIDATE", "semantic_edge", null,
+                "全量重算边基数断言：" + all.size() + " 条边，其中 " + checked + " 条实际跑了 MANY_TO_ONE 校验");
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("graphVersion", newVersion);
+        out.put("totalEdges", all.size());
+        out.put("checkedEdges", checked);
+        return out;
+    }
+
+    /**
+     * 对单条边重算 {@code assert_status}/{@code assert_sample_rows} 并写回实体（不落库，调用方
+     * 事务负责持久化）。非 {@code MANY_TO_ONE}、目标无物理表（FUNCTION）、或无连接键（SAME 边）
+     * 的边一律标 {@code NA}——这三类边基数断言本就无意义，标 PASS 才是虚假的绿。
+     *
+     * @return 是否真的跑了基数断言 SQL（true=MANY_TO_ONE 且条件齐全）
+     */
+    private boolean recomputeAssertStatus(SemanticEdge e) {
+        SemanticNode from = SemanticNode.findById(e.fromNodeId);
+        SemanticNode to = SemanticNode.findById(e.toNodeId);
+        List<SemanticEdgeKey> keys = SemanticEdgeKey.list("edgeId", e.id);
+        boolean eligible = "MANY_TO_ONE".equals(e.cardinality) && to != null
+                && to.physicalTable != null && !keys.isEmpty();
+        if (!eligible) {
+            e.assertStatus = "NA";
+            e.assertSampleRows = null;
+            return false;
+        }
+        List<String> rightCols = keys.stream().map(k -> k.rightColumn).collect(Collectors.toList());
+        SemanticGraphValidator.CheckResult r =
+                validator.checkEdgeCardinality(to.physicalTable, rightCols, DiscriminatorResolver.resolve(from, to));
+        e.assertStatus = r.status;
+        e.assertSampleRows = sampleRowsOf(List.of(r));
+        return true;
     }
 
     // ---------------- 写：页签视图 ----------------
@@ -337,7 +393,7 @@ public class SemanticGraphService {
         checks.add(validator.checkTableExists(to.physicalTable));
         if ("MANY_TO_ONE".equals(req.cardinality) && to.physicalTable != null && req.keys != null && !req.keys.isEmpty()) {
             List<String> rightCols = req.keys.stream().map(k -> k.rightColumn).collect(Collectors.toList());
-            checks.add(validator.checkEdgeCardinality(to.physicalTable, rightCols));
+            checks.add(validator.checkEdgeCardinality(to.physicalTable, rightCols, DiscriminatorResolver.resolve(from, to)));
         }
         checks.add(validator.checkPathUniqueness(snap, req.fromNodeId, req.toNodeId));
         return checks;

@@ -1,5 +1,6 @@
 package com.cpq.semanticgraph;
 
+import io.quarkus.test.junit.QuarkusTestProfile;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
@@ -7,6 +8,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.transaction.UserTransaction;
 import org.mindrot.jbcrypt.BCrypt;
 
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -20,8 +22,34 @@ import java.util.UUID;
  * - 密码哈希与登录校验方式参照 com.cpq.security.SecurityBackendTest（BCrypt cost 12）
  * - 登录端点与 200/401 语义参照 com.cpq.integration.PermissionTest（POST /api/cpq/auth/login，
  *   cookie 名 CPQ_SESSION）
+ *
+ * 🚨 2026-08-21 真跑实测发现：本测试环境（test profile）任何走真实 {@code POST /api/cpq/auth/login}
+ * 的请求都稳定 500 {@code CONNECTION_CLOSED}（{@code SessionHelper} 写 Redis session 失败）。
+ * 用未改动的既有基线测试 {@code com.cpq.integration.PermissionTest} 复现出完全相同的错误
+ * （见 test-report），证明这是**预先存在、与本任务无关的测试环境缺陷**，不是本任务的固件或实现问题。
+ * 本仓库已有 3 个先例用同一招应对：{@code Task0805ExportBindingReportTest} /
+ * {@code Task0805ConsolidateScopeTest} / {@code QuotationCopyValueSnapshotInheritanceTest} T3 ——
+ * 用 {@link RbacOffProfile} 局部关闭 RBAC，绕过登录墙直连 REST 端点验证业务逻辑本身
+ * （不改共享配置文件，不影响其它测试类）。{@link #createUserAndLogin} / {@link #login} 仍保留，
+ * 只在**必须验证真实角色 403 拦截**的用例（AC-56）里使用——那类用例在本环境下无法拿到真实结果，
+ * 已在对应测试类里用 Assumptions 标记为 SKIPPED 并注明原因，不是被我隐藏的假绿。
  */
 final class SemanticGraphTestSupport {
+
+    /**
+     * 局部关闭 RBAC，绕开登录墙（既有基线问题，见类头注释）。仅供不需要验证角色区分的用例使用。
+     * 必须是 public 且有 public 无参构造——Quarkus 用 {@code Class.getConstructor()}（只认 public）反射实例化，
+     * 首次真跑时因为漏了 public 直接报 NoSuchMethodException，教训记在这。
+     */
+    public static class RbacOffProfile implements QuarkusTestProfile {
+        public RbacOffProfile() {
+        }
+
+        @Override
+        public Map<String, String> getConfigOverrides() {
+            return Map.of("cpq.security.rbac.enabled", "false");
+        }
+    }
 
     static final String TAG = "SQLVB-TEST-";
 

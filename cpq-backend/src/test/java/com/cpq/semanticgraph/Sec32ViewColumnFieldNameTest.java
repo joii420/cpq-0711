@@ -1,6 +1,7 @@
 package com.cpq.semanticgraph;
 
 import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.junit.TestProfile;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
@@ -18,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * 层级 = T-1（AC-11 别名纯函数）/ T-3（AC-12 序列：改名同步 + 冻结单零回归 / AC-13 边界：字段名重复只告警）。
  */
 @QuarkusTest
+@TestProfile(SemanticGraphTestSupport.RbacOffProfile.class)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class Sec32ViewColumnFieldNameTest {
 
@@ -26,23 +28,17 @@ class Sec32ViewColumnFieldNameTest {
     @Inject
     UserTransaction utx;
 
-    private String adminCookie;
     private UUID componentId;
 
     @BeforeEach
     void setUp() throws Exception {
-        adminCookie = SemanticGraphTestSupport.createUserAndLogin(em, utx, "SYSTEM_ADMIN");
         componentId = createBlankComponent();
     }
 
-    @AfterEach
-    void tearDown() throws Exception {
-        SemanticGraphTestSupport.cleanupUsers(em, utx);
-    }
 
     private UUID createBlankComponent() {
         Response resp = RestAssured.given()
-                .cookie("CPQ_SESSION", adminCookie).contentType(ContentType.JSON)
+                .contentType(ContentType.JSON)
                 .body("{\"name\":\"" + SemanticGraphTestSupport.TAG + "viewcol-" + UUID.randomUUID() + "\"}")
                 .post("/api/cpq/components");
         assertEquals(200, resp.statusCode(), resp.getBody().asString());
@@ -50,7 +46,7 @@ class Sec32ViewColumnFieldNameTest {
     }
 
     private Response compile(String builderConfigJson) {
-        return RestAssured.given().cookie("CPQ_SESSION", adminCookie).contentType(ContentType.JSON)
+        return RestAssured.given().contentType(ContentType.JSON)
                 .body(builderConfigJson).post("/api/cpq/components/" + componentId + "/builder/compile");
     }
 
@@ -63,9 +59,9 @@ class Sec32ViewColumnFieldNameTest {
     void ac11_viewColumnNameIsPureFunctionOfSheetAndColumn() {
         String fourCols = """
                 { "tabType": "材质元素", "columns": [
-                  {"sourceNodeKey":"MATERIAL_RECIPE","sourceColumn":"name","fieldName":"材质名称","isRowKey":true},
-                  {"sourceNodeKey":"ELEMENT","sourceColumn":"name","fieldName":"元素名称"},
-                  {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"content_pct","fieldName":"组成含量"},
+                  {"sourceNodeKey":"LOOKUP_MATERIAL_RECIPE","sourceColumn":"name","fieldName":"材质名称","isRowKey":true},
+                  {"sourceNodeKey":"LOOKUP_ELEMENT","sourceColumn":"element_name","fieldName":"元素名称"},
+                  {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"content","fieldName":"组成含量"},
                   {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"seq_no","fieldName":"项次"}
                 ]}
                 """;
@@ -83,8 +79,8 @@ class Sec32ViewColumnFieldNameTest {
         // ② 删除"材质名称"后，其余三列视图列名逐字不变
         String threeCols = """
                 { "tabType": "材质元素", "columns": [
-                  {"sourceNodeKey":"ELEMENT","sourceColumn":"name","fieldName":"元素名称"},
-                  {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"content_pct","fieldName":"组成含量"},
+                  {"sourceNodeKey":"LOOKUP_ELEMENT","sourceColumn":"element_name","fieldName":"元素名称"},
+                  {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"content","fieldName":"组成含量"},
                   {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"seq_no","fieldName":"项次"}
                 ]}
                 """;
@@ -98,10 +94,14 @@ class Sec32ViewColumnFieldNameTest {
         assertTrue(declared2.contains("_元素BOM_项次"), "② 删除材质名称后项次列名应不变，实际=" + declared2);
 
         // ③ 同一页签同时选中两张 Sheet 的"项次"，二者互不相同
+        // 原用 FINISHED_OTHER 搭配 ASSEMBLY_FEE，两者在"主件"下各自展开不同维度（工序号 vs 要素），
+        // 真跑实测触发了合理的 COMPILE_GRAIN_CONFLICT（粒度冲突拦截生效，不是bug）——
+        // 换成 CUSTOMER_MAP（dims=[]，不额外展开维度），只为验证"跨Sheet同名列别名不冲突"这件事本身，
+        // 不引入无关的粒度冲突干扰。
         String crossSheetSeqNo = """
                 { "tabType": "主件", "columns": [
-                  {"sourceNodeKey":"ASSEMBLY_PROCESS_FEE","sourceColumn":"seq_no","fieldName":"项次A"},
-                  {"sourceNodeKey":"FINISHED_OTHER_FEE","sourceColumn":"seq_no","fieldName":"项次B"}
+                  {"sourceNodeKey":"ASSEMBLY_FEE","sourceColumn":"seq_no","fieldName":"项次A"},
+                  {"sourceNodeKey":"CUSTOMER_MAP","sourceColumn":"seq_no","fieldName":"项次B"}
                 ]}
                 """;
         Response r3 = compile(crossSheetSeqNo);
@@ -129,7 +129,7 @@ class Sec32ViewColumnFieldNameTest {
         // 额外的报价单夹具，标记为待补，在 test-report.md 中显式登记而非静默跳过。
         String initial = """
                 { "tabType": "材质元素", "columns": [
-                  {"sourceNodeKey":"MATERIAL_RECIPE","sourceColumn":"name","fieldName":"材质名称","isRowKey":true}
+                  {"sourceNodeKey":"LOOKUP_MATERIAL_RECIPE","sourceColumn":"name","fieldName":"材质名称","isRowKey":true}
                 ]}
                 """;
         Response compiled = compile(initial);
@@ -138,22 +138,25 @@ class Sec32ViewColumnFieldNameTest {
         assertNotNull(sqlBefore);
         assertFalse(sqlBefore.isBlank());
 
+        // 2026-08-21 真跑教训：原来包了一层 {"builderConfig": {...}}，PUT/inspect端点读到的
+        // tabType/variantKey 都是 null（报 COMPILE_TABVIEW_NOT_FOUND）——这两个端点跟 /compile 一样，
+        // 期望 builder_config 对象直接作为请求体，不额外包一层。
         String saveBody = """
-                { "builderConfig": { "tabType": "材质元素", "columns": [
-                    {"sourceNodeKey":"MATERIAL_RECIPE","sourceColumn":"name","fieldName":"材质名称","isRowKey":true}
-                  ]}}
+                { "tabType": "材质元素", "columns": [
+                    {"sourceNodeKey":"LOOKUP_MATERIAL_RECIPE","sourceColumn":"name","fieldName":"材质名称","isRowKey":true}
+                  ]}
                 """;
-        Response saveResp = RestAssured.given().cookie("CPQ_SESSION", adminCookie).contentType(ContentType.JSON)
+        Response saveResp = RestAssured.given().contentType(ContentType.JSON)
                 .body(saveBody).put("/api/cpq/components/" + componentId + "/builder");
         assertEquals(200, saveResp.statusCode(), "首次保存应成功: " + saveResp.getBody().asString());
 
         // 体检：改名
         String inspectBody = """
-                { "builderConfig": { "tabType": "材质元素", "columns": [
-                    {"sourceNodeKey":"MATERIAL_RECIPE","sourceColumn":"name","fieldName":"材质","isRowKey":true}
-                  ]}}
+                { "tabType": "材质元素", "columns": [
+                    {"sourceNodeKey":"LOOKUP_MATERIAL_RECIPE","sourceColumn":"name","fieldName":"材质","isRowKey":true}
+                  ]}
                 """;
-        Response inspectResp = RestAssured.given().cookie("CPQ_SESSION", adminCookie).contentType(ContentType.JSON)
+        Response inspectResp = RestAssured.given().contentType(ContentType.JSON)
                 .body(inspectBody).post("/api/cpq/components/" + componentId + "/builder/inspect");
         assertEquals(200, inspectResp.statusCode(), inspectResp.getBody().asString());
         // ① 体检区应提示"同步 N 处引用"，② 且不阻断（不含 err 级 BLOCK）
@@ -165,7 +168,7 @@ class Sec32ViewColumnFieldNameTest {
         assertFalse(hasBlockingErr, "② 改字段名不应产生阻断级(ERR)提示，实际 checks=" + checks);
 
         // 保存改名
-        Response renameSaveResp = RestAssured.given().cookie("CPQ_SESSION", adminCookie).contentType(ContentType.JSON)
+        Response renameSaveResp = RestAssured.given().contentType(ContentType.JSON)
                 .body(inspectBody).put("/api/cpq/components/" + componentId + "/builder");
         assertEquals(200, renameSaveResp.statusCode(), "② 保存按钮不应被禁用/阻断: " + renameSaveResp.getBody().asString());
 
@@ -173,7 +176,7 @@ class Sec32ViewColumnFieldNameTest {
         // compile 端点期望的是 builderConfig 内层结构，直接构造内层结构调用：
         String recompileConfig = """
                 { "tabType": "材质元素", "columns": [
-                  {"sourceNodeKey":"MATERIAL_RECIPE","sourceColumn":"name","fieldName":"材质","isRowKey":true}
+                  {"sourceNodeKey":"LOOKUP_MATERIAL_RECIPE","sourceColumn":"name","fieldName":"材质","isRowKey":true}
                 ]}
                 """;
         Response recompiled2 = compile(recompileConfig);
@@ -184,7 +187,7 @@ class Sec32ViewColumnFieldNameTest {
         assertEquals(sqlBefore, sqlAfter, "③ 改名后 sql_template 应逐字未变（diff 应为空）");
 
         // ④ 重新打开该组件的 builder 配置，字段名应显示为新名
-        Response reload = RestAssured.given().cookie("CPQ_SESSION", adminCookie)
+        Response reload = RestAssured.given()
                 .get("/api/cpq/components/" + componentId + "/builder");
         assertEquals(200, reload.statusCode(), reload.getBody().asString());
         java.util.List<String> fieldNames = reload.jsonPath().getList("builderConfig.columns.fieldName");
@@ -202,14 +205,15 @@ class Sec32ViewColumnFieldNameTest {
     @Order(3)
     @DisplayName("AC-13: 两列字段名同为『项次』只 warn 不 err，保存按钮仍可用")
     void ac13_duplicateFieldNameWarnsButDoesNotBlock() {
+        // 同 ac11③ 教训，换 CUSTOMER_MAP 避免与 ASSEMBLY_FEE 产生无关的粒度冲突。
         String duplicateNames = """
                 { "tabType": "主件", "columns": [
-                  {"sourceNodeKey":"ASSEMBLY_PROCESS_FEE","sourceColumn":"seq_no","fieldName":"项次"},
-                  {"sourceNodeKey":"FINISHED_OTHER_FEE","sourceColumn":"seq_no","fieldName":"项次"}
+                  {"sourceNodeKey":"ASSEMBLY_FEE","sourceColumn":"seq_no","fieldName":"项次"},
+                  {"sourceNodeKey":"CUSTOMER_MAP","sourceColumn":"seq_no","fieldName":"项次"}
                 ]}
                 """;
-        Response inspectResp = RestAssured.given().cookie("CPQ_SESSION", adminCookie).contentType(ContentType.JSON)
-                .body("{\"builderConfig\":" + duplicateNames + "}")
+        Response inspectResp = RestAssured.given().contentType(ContentType.JSON)
+                .body(duplicateNames)
                 .post("/api/cpq/components/" + componentId + "/builder/inspect");
         assertEquals(200, inspectResp.statusCode(), inspectResp.getBody().asString());
         java.util.List<java.util.Map<String, Object>> checks = inspectResp.jsonPath().getList("checks");
@@ -229,8 +233,8 @@ class Sec32ViewColumnFieldNameTest {
             assertFalse(blocked, "字段名重复不应使 inspect 整体判定为 blocked=true");
         }
 
-        Response saveResp = RestAssured.given().cookie("CPQ_SESSION", adminCookie).contentType(ContentType.JSON)
-                .body("{\"builderConfig\":" + duplicateNames + "}")
+        Response saveResp = RestAssured.given().contentType(ContentType.JSON)
+                .body(duplicateNames)
                 .put("/api/cpq/components/" + componentId + "/builder");
         assertEquals(200, saveResp.statusCode(), "字段名重复不应阻断保存: " + saveResp.getBody().asString());
     }

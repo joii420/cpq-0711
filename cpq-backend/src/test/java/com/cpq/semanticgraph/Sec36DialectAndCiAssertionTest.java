@@ -1,6 +1,7 @@
 package com.cpq.semanticgraph;
 
 import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.junit.TestProfile;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
@@ -10,6 +11,7 @@ import jakarta.transaction.UserTransaction;
 import org.junit.jupiter.api.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -33,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * "必须同时证明人为改错后测试确实失败"）。这是信息不足，已按规则停下报告，不在此臆测具体反射方式。
  */
 @QuarkusTest
+@TestProfile(SemanticGraphTestSupport.RbacOffProfile.class)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class Sec36DialectAndCiAssertionTest {
 
@@ -41,17 +44,11 @@ class Sec36DialectAndCiAssertionTest {
     @Inject
     UserTransaction utx;
 
-    private String adminCookie;
 
     @BeforeEach
     void setUp() throws Exception {
-        adminCookie = SemanticGraphTestSupport.createUserAndLogin(em, utx, "SYSTEM_ADMIN");
     }
 
-    @AfterEach
-    void tearDown() throws Exception {
-        SemanticGraphTestSupport.cleanupUsers(em, utx);
-    }
 
     // -------------------------------------------------------------------
     // AC-35（边界·反证）边基数断言能抓到写错的声明 —— 从表读取边定义
@@ -162,8 +159,28 @@ class Sec36DialectAndCiAssertionTest {
     @Order(2)
     @DisplayName("AC-36【部分覆盖，另见类头信息缺口】: HANDLER_RECONCILE 校验分项存在且正常路径下不告警")
     void ac36_handlerReconcileCheckExistsAndPassesNormally() {
-        Response validateResp = RestAssured.given().cookie("CPQ_SESSION", adminCookie).contentType(ContentType.JSON)
-                .body("{}").post("/api/cpq/config/semantic-graph/validate");
+        // 2026-08-21 真跑教训：发空对象 {} 会被当成"新增一个节点"来校验，PHYSICAL_EXISTENCE 第一步就
+        // 报"节点不存在"直接短路，后面的 EDGE_CARDINALITY/PATH_UNIQUENESS/HANDLER_RECONCILE 全部
+        // status=SKIPPED（api.md §1.3：四道校验固定次序，前一道不过后面不跑）。/validate 是"干跑你
+        // 即将保存的这一条声明"，不是"扫全图"——发一个真实存在的节点（原样重新提交）才能让四道校验
+        // 全部真正跑到，包括我们要看的 HANDLER_RECONCILE。
+        Response graphResp = RestAssured.given().get("/api/cpq/config/semantic-graph");
+        assertEquals(200, graphResp.statusCode(), graphResp.getBody().asString());
+        List<Map<String, Object>> nodes = graphResp.jsonPath().getList("nodes");
+        assertNotNull(nodes, "nodes不应为空");
+        assertFalse(nodes.isEmpty(), "nodes不应为空列表");
+        Map<String, Object> aRealNode = nodes.stream()
+                .filter(n -> n.get("sourceHandler") != null).findFirst().orElse(nodes.get(0));
+
+        String validatePayloadJson;
+        try {
+            validatePayloadJson = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(aRealNode);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        Response validateResp = RestAssured.given().contentType(ContentType.JSON)
+                .body(validatePayloadJson)
+                .post("/api/cpq/config/semantic-graph/validate");
         assertEquals(200, validateResp.statusCode(), validateResp.getBody().asString());
         List<java.util.Map<String, Object>> checks = validateResp.jsonPath().getList("checks");
         assertNotNull(checks, "checks不应为空");
@@ -182,17 +199,17 @@ class Sec36DialectAndCiAssertionTest {
     @Order(3)
     @DisplayName("AC-37: 同一节点声明分别以报价侧/核价侧参数编译，产物八项方言差异逐一核对")
     void ac37_dialectParameterizationProducesTwoForms() {
-        UUID componentId = UUID.fromString(RestAssured.given().cookie("CPQ_SESSION", adminCookie)
+        UUID componentId = UUID.fromString(RestAssured.given()
                 .contentType(ContentType.JSON)
                 .body("{\"name\":\"" + SemanticGraphTestSupport.TAG + "dialect-" + UUID.randomUUID() + "\"}")
                 .post("/api/cpq/components").jsonPath().getString("data.id"));
 
         String quoteConfig = """
                 { "tabType": "材质元素", "dialect": "QUOTE", "columns": [
-                  {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"content_pct","fieldName":"组成含量"}
+                  {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"content","fieldName":"组成含量"}
                 ]}
                 """;
-        Response quoteResp = RestAssured.given().cookie("CPQ_SESSION", adminCookie).contentType(ContentType.JSON)
+        Response quoteResp = RestAssured.given().contentType(ContentType.JSON)
                 .body(quoteConfig).post("/api/cpq/components/" + componentId + "/builder/compile");
         assertEquals(200, quoteResp.statusCode(), quoteResp.getBody().asString());
         String quoteSql = quoteResp.jsonPath().getString("sql");
@@ -207,10 +224,10 @@ class Sec36DialectAndCiAssertionTest {
 
         String costingConfig = """
                 { "tabType": "材质元素", "dialect": "COSTING", "columns": [
-                  {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"content_pct","fieldName":"组成含量"}
+                  {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"content","fieldName":"组成含量"}
                 ]}
                 """;
-        Response costingResp = RestAssured.given().cookie("CPQ_SESSION", adminCookie).contentType(ContentType.JSON)
+        Response costingResp = RestAssured.given().contentType(ContentType.JSON)
                 .body(costingConfig).post("/api/cpq/components/" + componentId + "/builder/compile");
         assertEquals(200, costingResp.statusCode(), costingResp.getBody().asString());
         String costingSql = costingResp.jsonPath().getString("sql");

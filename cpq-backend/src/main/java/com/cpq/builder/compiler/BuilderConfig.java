@@ -1,5 +1,7 @@
 package com.cpq.builder.compiler;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import java.util.List;
 import java.util.Map;
 
@@ -13,6 +15,7 @@ import java.util.Map;
  * （D-35 coalesce_group）——此时 sourceNodeKey/sourceColumn 指向 fallback_order=0 的那个目标
  * 节点及其列，编译器据此反查 {@code coalesce_group} 自动展开整组 LEFT JOIN + COALESCE。
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class BuilderConfig {
     public Integer builderVersion;
     public String tabType;
