@@ -1187,6 +1187,45 @@
 - **详情**：`dev-docs/task-260729-客户价格调整策略和价格版本/repair-260803-报价单删除阻塞外键/`
   「续集」章节（需求文档 + test-report 同一目录延续记录）
 
+### [BL-0176] `Q06FixedProcessFeeHandler` 未写 `operation_no` —— 费用类页签的「工序」列是空壳
+- **优先级**：**P2**（不影响金额，只是该列恒空）
+- **来源**：`task-260819-取数配置器` 的 AC-36 handler 双向对账（这条断言的第 2 个真实产出）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-21
+- **实证**（主线亲验，`cpq_db_0724`）：
+  - `SELECT count(operation_no) FROM unit_price WHERE price_type='INCOMING_MATERIAL_PROCESS' AND is_current AND system_type='QUOTE'` → 总行数 4、**非空 0**
+  - `Q06FixedProcessFeeHandler.java` 里 grep 不到任何 `operation_no` / `operationNo`
+- **后果**：现网 `ll_view` 输出的 `COALESCE(pm.process_name, up.operation_no) AS _工序` **取出来恒为空**（`up.operation_no` 全空 → `process_master` 也 JOIN 不上）。费用类页签的工序列从上线起就没有数据。
+- **不影响 golden**：配置器产物与手写基准两边都是空，逐行等值仍成立。
+- **修法方向**：导入侧补写 `operation_no`（属 V6 导入 handler 范畴，非取数配置器）。
+
+### [BL-0177] `material_bom_item.characteristic='OUTSOURCED'` 全库 0 行 —— 外购件页签的 golden 永远验不了
+- **优先级**：**P2**（现网功能不受影响，但削弱验证能力）
+- **来源**：`task-260819` 的 AC-38 golden 首跑，外购件那一类被迫 SKIPPED
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-21
+- **实证**：`SELECT count(*) FROM material_bom_item WHERE characteristic='OUTSOURCED'` → **0**（不分客户、不分料号）
+- **后果**：外购件基准组件 `COMP-0022` / `wg_view` 自己也只能返 0 行，配置器产物同样 0 行 —— **0 = 0 的「通过」没有任何验证力**，故如实标 SKIPPED 而非伪造通过。
+- **影响面**：AC-38 五类里的外购件那一类**在当前数据下无法验证**；`characteristic` 三态（RECIPE/ASSEMBLY/OUTSOURCED）中的 OUTSOURCED 分支在报价侧全链路都缺真实样本。
+- **修法方向**：造一批 OUTSOURCED 的 BOM 测试数据，或确认业务上该三态是否已停用 OUTSOURCED。
+
+### [BL-0178] test 库 `cpq_db` 夹具存在真实基数违反（`SELF_PROCESS→MATERIAL_BOM` ASSEMBLY 分支）
+- **优先级**：**P2**（夹具数据问题，不影响 dev 库与生产）
+- **来源**：`task-260819` 的边基数断言（`SemanticEdgeCardinalityReconcileTest`）在 test 库跑出的唯一真实 FAIL
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-21
+- **实证**：test 库里 `material_no=3120012530` 的多个 `component_no`（`10003` / `10001` / `0317-2607000004`）在 `characteristic='ASSEMBLY' AND is_current AND system_type='QUOTE'` 收窄后**各有 2 行**；**同一查询在 dev 库 `cpq_db_0724` 结果为空**。
+- **判定**：`assert_status=FAIL` 是**正确的**，不是收窄逻辑误报 —— 是 test 库夹具本身脏。
+- **修法方向**：清理 test 库该料号的重复 BOM 行，或确认夹具构造脚本为何产生重复。
+
+### [BL-0179] `PLATING_SCHEME` 识别列与 handler 不同步（`plating_scheme_no` vs `scheme_no`）
+- **优先级**：**P2**（N-8 已认定该 Sheet 现网数据双向全空）
+- **来源**：`task-260819` 的 AC-36 handler 双向对账（这条断言的第 1 个真实产出）
+- **状态**：TODO（未排期）；**对账测试里已加已知豁免**（`KNOWN_NAMING_MISMATCH_EXEMPT`，单独计 `exempted=1`，不并入 `checked`/`skipped`，不让 CI 恒红）
+- **登记日期**：2026-08-21
+- **根因**：语义图登记的识别列是 `plating_scheme_no`，而 `Q16PlatingSchemeHandler` 的组键写的是 `scheme_no`。
+- **修法方向**：统一二者命名（改 handler 或改登记），属导入侧；本任务不改。
+
 ### [BL-0175] 报价料号发号链 follow-up（Major-2 N+1 + 4 项 Minor + 2 项复核）
 - **优先级**：**P1**（由 Major-2 的 N+1 定级；其余 6 项本身为 P2，合并登记不拆条）
 - **来源**：报价料号 Spec 1 终审（`cpq-architect`）Major-2 + Minor-4/6/7 + 复核 Minor-A/B。
