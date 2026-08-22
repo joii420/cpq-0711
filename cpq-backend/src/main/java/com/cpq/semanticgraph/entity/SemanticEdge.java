@@ -42,6 +42,14 @@ public class SemanticEdge extends PanacheEntityBase {
     @Column(name = "coalesce_group", length = 40)
     public String coalesceGroup;
 
+    /**
+     * task-260819 D-45③（V393）：查名 LOOKUP 边专用开关——为 true 时编译器在 COALESCE 末尾追加
+     * 连接键左列（原始编码列）作为最终兜底，查不到名称时退回显示编码而不是留空。默认 false——
+     * 是否退回是每条边的业务选择（mc_view 的材质名称查名就没有退回），不能当默认行为。
+     */
+    @Column(name = "fallback_to_join_key", nullable = false)
+    public boolean fallbackToJoinKey = false;
+
     /** PASS | FAIL | THIN | NA。仅在 POST /validate 或写端点在线校验时更新，GET / 不做实时探测。 */
     @Column(name = "assert_status", nullable = false, length = 10)
     public String assertStatus = "NA";

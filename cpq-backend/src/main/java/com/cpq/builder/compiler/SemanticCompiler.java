@@ -181,10 +181,20 @@ public class SemanticCompiler {
         if (!c.anchorWhere.isEmpty()) {
             sql.append("WHERE ").append(String.join(" AND ", c.anchorWhere)).append("\n");
         }
-        String orderCol = c.closure ? "COALESCE(" + CLOSURE_ALIAS + ".lvl, 0)" : null;
-        if (orderCol != null) {
-            sql.append("ORDER BY ").append(orderCol).append(", ").append(anchorColumnOnly(c));
+        // D-45①（2026-08-21 主线裁决）：PG 没有 ORDER BY 的行序是未定义的——不能只在闭包分支排序，
+        // 非闭包也必须排。判据是"golden 行序与基准一致"，不是"加了 ORDER BY 就算数"（golden 实测
+        // 见 backtask 回报）。键的构成参照基准 mc_view：ORDER BY ebi.material_no, ebi.material_part_no,
+        // ebi.seq_no —— 锚点列打头，闭包开启时前面再加 COALESCE(cl.lvl,0)（层级优先，原逻辑保留），
+        // 随后接锚点节点自身 grain_columns（逐列，按声明顺序），最后接该节点带 SORT 角色的列（如有）。
+        List<String> orderCols = new ArrayList<>();
+        if (c.closure) orderCols.add("COALESCE(" + CLOSURE_ALIAS + ".lvl, 0)");
+        orderCols.add(anchorColumnOnly(c));
+        for (String grainCol : c.anchor.grainColumns) {
+            orderCols.add(c.anchorAlias + "." + grainCol);
         }
+        String sortCol = findSortColumn(c);
+        if (sortCol != null) orderCols.add(sortCol);
+        sql.append("ORDER BY ").append(String.join(", ", orderCols));
 
         String finalSql = sql.toString();
 
@@ -358,13 +368,28 @@ public class SemanticCompiler {
                 SemanticNodeColumn sibCol = pickColumnByRole(c, sibNode, roles, col);
                 branches.add(alias + "." + sibCol.dbColumn);
             }
+            if (edge.fallbackToJoinKey) branches.add(joinKeyFallbackExpr(c, edge));
             rc.expr = branches.size() == 1 ? branches.get(0) : "COALESCE(" + String.join(", ", branches) + ")";
             return rc;
         }
 
         String alias = ensureLeftJoin(c, edge, target);
-        rc.expr = alias + "." + col.dbColumn;
+        String expr = alias + "." + col.dbColumn;
+        // D-45③（V393 fallback_to_join_key）：查不到名称时退回连接键左列（原始编码），如
+        // jg_view/ll_view 的 COALESCE(pm.process_name, up.operation_no)——是否退回是每条边的
+        // 业务选择（mc_view 的材质名称查名就没有），只在该边显式置 true 时才追加。
+        rc.expr = edge.fallbackToJoinKey ? "COALESCE(" + expr + ", " + joinKeyFallbackExpr(c, edge) + ")" : expr;
         return rc;
+    }
+
+    /** {@code fallback_to_join_key} 用：该 LOOKUP 边自身连接键的左列（锚点侧原始编码列）。 */
+    private String joinKeyFallbackExpr(Ctx c, SemanticEdge edge) {
+        List<SemanticEdgeKey> keys = c.snap.keysOf(edge.id);
+        if (keys.isEmpty()) {
+            throw new BuilderApiException(500, "COMPILE_FALLBACK_KEY_MISSING",
+                    "边 " + edge.id + " 声明了 fallback_to_join_key 但没有连接键", Map.of());
+        }
+        return c.anchorAlias + "." + keys.get(0).leftColumn;
     }
 
     private SemanticNodeColumn pickColumnByRole(Ctx c, SemanticNode node, List<String> roles, SemanticNodeColumn fallback) {
@@ -389,6 +414,16 @@ public class SemanticCompiler {
         List<String> on = new ArrayList<>();
         for (SemanticEdgeKey k : c.snap.keysOf(edge.id)) {
             on.add(alias + "." + k.rightColumn + " = " + c.anchorAlias + "." + k.leftColumn);
+        }
+        // 2026-08-21 实测发现（D-45②验证时撞见）：目标节点若声明了 fixed_predicate（如
+        // LOOKUP_CUSTOMER_MAP 的 customer_no=:customerCode），此前只有 emitMandatoryJoin
+        // （edge_kind=JOIN）会应用它，LOOKUP 边完全没管——LEFT JOIN 会不分客户地捞出该料号
+        // 在"任意客户"下的映射行，是真实的跨客户串号风险，不是理论问题（本项目 RECORD.md
+        // 明确记录过跨客户串号类 bug 的历史教训）。LOOKUP/SUB 共用的查名 JOIN 必须同样限定。
+        if (target.fixedPredicate != null && !target.fixedPredicate.isBlank()) {
+            String qualified = qualify(alias, target.fixedPredicate);
+            on.add(qualified);
+            if (qualified.contains(":customerCode")) c.requiredVars.add("customerCode");
         }
         c.joinClauses.add("LEFT JOIN " + target.physicalTable + " " + alias + " ON " + String.join(" AND ", on));
         return alias;
@@ -587,6 +622,16 @@ public class SemanticCompiler {
                     "锚点别名与声明不一致：声明=" + declaredAlias + " 实算=" + c.anchorAlias, Map.of());
         }
         return c.anchor.anchorExpr;
+    }
+
+    /** 锚点节点自身列里第一个带 SORT 角色（两层合并后）的列，取不到返回 null（不强行拼接）。 */
+    private String findSortColumn(Ctx c) {
+        for (SemanticNodeColumn col : c.snap.columnsOf(c.anchor.id)) {
+            if (mergedRoles(c, col).contains("SORT")) {
+                return c.anchorAlias + "." + col.dbColumn;
+            }
+        }
+        return null;
     }
 
     private String anchorColumnOnly(Ctx c) {
