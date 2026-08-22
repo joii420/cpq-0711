@@ -268,6 +268,32 @@ D-21 要求「生成的 SQL」右侧常驻、随拖拽实时刷新。这看起�
 
 任一步失败整体回滚。响应 `200` 返回新的 `builderVersion` 与受影响的模板数。
 
+**请求体（🔴 2026-08-21 补完整示例 —— 原文只说「需带 `confirmedImpact`」，没写清是扁平还是嵌套，实测三方填了两套）**：
+
+```jsonc
+// ✅ 正确：扁平 —— builder_config 的字段与 confirmedImpact **平级**
+{
+  "builderVersion": 1,
+  "tabType": "费用类",
+  "variantKey": "INCOMING_FIXED",
+  "switches": { "includeChildParts": false },
+  "columns": [ /* ... */ ],
+  "priceStrategy": null,
+  "confirmedImpact": false        // ← 与上面这些字段同层，不是另一个对象
+}
+
+// ❌ 错误：不要包一层
+{ "builderConfig": { "tabType": "...", ... }, "confirmedImpact": false }
+```
+
+🚦 **三个写端点的请求体形状一致**，都是「裸 `builder_config`」：
+`POST /compile` 与 `POST /inspect` = 纯 config；`PUT /` = config **+ 平级的 `confirmedImpact`**；
+`POST /preview` = config **+ 平级的 `customerCode` / `partNo` / `includeChildParts``（§1.5 ②）。
+后端对应 `SaveRequest extends BuilderConfig`（继承，不是持有），所以 JSON 一定是扁平的。
+
+⚠️ **包成 `{"builderConfig":{...}}` 的后果很隐蔽**：后端会把 `tabType` / `variantKey` 读成 `null`，
+然后报一个与真因毫不相干的错（比如「页签视图不存在」），排查时很容易往错误方向走。
+
 **删除列**时请求需带 `confirmedImpact: true`，否则返回 `409 + 影响面清单`（AC-31）。
 
 ### 2.5 错误码总表
