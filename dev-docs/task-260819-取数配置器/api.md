@@ -164,9 +164,16 @@ D-21 要求「生成的 SQL」右侧常驻、随拖拽实时刷新。这看起�
 **② `POST /preview` 的请求体 = `builder_config` + 预览参数**：
 
 ```jsonc
-{ /* ...§2.1 builder_config 全部字段... */,
-  "customerCode": "罗克韦尔", "partNo": "S-3120014539", "includeChildParts": false }
+{ /* ...§2.1 builder_config 全部字段（含 switches.includeChildParts）... */,
+  "customerCode": "罗克韦尔",
+  "partNo": "S-3120014539"
+}
 ```
+
+🚫 **不要传顶层 `includeChildParts`** —— 闭包开关的唯一位置是 **`switches.includeChildParts`**（在 config 里面）。
+> 🔴 **2026-08-21 更正**：本节原示例里列了一个顶层 `includeChildParts`，那是**我写错的**。后端 `PreviewRequest`
+> 虽然声明了同名字段，但编译器实际读的是 `BuilderConfig.includeChildParts()` → `switches.get(...)`，
+> **顶层那个从未被读取**。按原示例传的人，闭包开关会**静默失效**（预览结果不含子件，且不报任何错）。
 
 **③ 🚨 响应一律「裸体」，不套 `ApiResponse{code,message,data}` 信封。**
 

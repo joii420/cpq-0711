@@ -563,10 +563,13 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
   useEffect(() => { searchCustomers(''); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   // ── 保存 ──────────────────────────────────────────────────────────────
+  // D-42：PUT / 请求体是「config 本身 + 平级 confirmedImpact」，不是 { builderConfig, confirmedImpact }
+  // 嵌套一层（后端 SaveRequest extends BuilderConfig 是继承不是持有；包一层会让 tabType/variantKey
+  // 在后端读成 null，报出与真因无关的错）。
   async function doSave(confirmedImpact?: boolean) {
     setSaving(true);
     try {
-      const res = await saveBuilder(componentId, { builderConfig: buildConfigPayload(), confirmedImpact });
+      const res = await saveBuilder(componentId, { ...buildConfigPayload(), confirmedImpact });
       message.success(`保存成功，共 ${sel.length} 列${res.affectedTemplateCount != null ? `，影响 ${res.affectedTemplateCount} 个模板` : ''}`);
       setSel((prev) => prev.map((s) => ({ ...s, origFieldName: s.fieldName })));
       setStaleDismissed(true);

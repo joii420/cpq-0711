@@ -250,10 +250,16 @@ export interface InspectResponse {
 export const inspectBuilder = (componentId: string, req: BuilderConfigPayload): Promise<InspectResponse> =>
   builderHttp.post(`/components/${componentId}/builder/inspect`, req) as Promise<any>;
 
-export interface SaveBuilderRequest {
-  builderConfig: BuilderConfigPayload;
+/**
+ * D-42（2026-08-21 主线裁决，api.md §2.4）：`PUT /` 请求体是「config 本身 + 平级 confirmedImpact」，
+ * 不是 `{ builderConfig, confirmedImpact }` 嵌套一层——后端 `SaveRequest extends BuilderConfig`
+ * 是**继承**不是**持有**，包一层会让后端把 tabType/variantKey 读成 null，报出一个跟真因无关的错
+ * （如「页签视图不存在」）。三个写端点（compile/inspect 纯 config；PUT / 与 POST /preview 都是
+ * config + 平级附加字段）形状必须对齐，不要在这里加嵌套层。
+ */
+export type SaveBuilderRequest = BuilderConfigPayload & {
   confirmedImpact?: boolean;
-}
+};
 
 export interface SaveBuilderResponse {
   builderVersion?: number;
