@@ -80,9 +80,16 @@ public final class BuilderDTOs {
     public static class GetBuilderResponse {
         public BuilderConfig builderConfig;
         public Integer builderVersion;
+        /**
+         * D-46（2026-08-21 主线裁决）：三态收窄——{@code viewState=="LEGACY_HANDWRITTEN"} 的语法糖，
+         * 不再等价于 {@code builderConfig==null}（原契约把"全新组件"和"存量手写"两态压成了一态，
+         * 导致新建组件也被误判成手写引导页）。保留字段名兼容前端旧代码。
+         */
         public boolean isLegacyHandwritten;
         public boolean isStale;
         public int currentCompilerVersion;
+        /** NEW（无任何 sql_view 行）| LEGACY_HANDWRITTEN（有行但 builder_config 为空）| BUILDER（builder_config 非空）。 */
+        public String viewState;
     }
 
     public static class SaveResponse {

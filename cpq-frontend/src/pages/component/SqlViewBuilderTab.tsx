@@ -151,7 +151,7 @@ export interface SqlViewBuilderTabProps {
 
 const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, initialTabType, manualFieldOptions, onSaved }) => {
   const [initLoading, setInitLoading] = useState(true);
-  /** AC-32：true = 存量手写视图——显示引导页，不进拖拽态。直接取自 GET /builder 的 isLegacyHandwritten（api.md §2.1a）。 */
+  /** AC-32：true = 存量手写视图——显示引导页，不进拖拽态。D-43 后由 GET /builder 的 viewState==='LEGACY_HANDWRITTEN' 推导（不再直接等同 isLegacyHandwritten，那正是本次误判的根因）。 */
   const [guideMode, setGuideMode] = useState(false);
   const [hasDriver, setHasDriver] = useState(false);
 
@@ -211,19 +211,23 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
     try {
       const res = await getBuilder(componentId);
       if (signal?.cancelled) return;
-      const { builderConfig, isLegacyHandwritten, isStale, currentCompilerVersion, builderVersion, sqlTemplate } = res || ({} as any);
-      if (isLegacyHandwritten || !builderConfig) {
-        if (isLegacyHandwritten) {
-          setGuideMode(true);
-          setHasDriver(true);
-        } else {
-          // 全新组件，尚无任何视图：直接进入拖拽态
-          const initT = initialTabType && (TAB_TYPES as readonly string[]).includes(initialTabType) ? initialTabType : TAB_TYPES[0];
-          setTabType(initT);
-          setVariantKey(null);
-          setSwitchesState({});
-        }
+      const { builderConfig, isLegacyHandwritten, isStale, currentCompilerVersion, builderVersion, sqlTemplate, viewState: viewStateRaw } = res || ({} as any);
+      // D-43（紧急修复）：三态判据，不能再用 `isLegacyHandwritten || !builderConfig`（那正是
+      // 「全新组件被误判成存量手写、配置器打不开」的根因——它把 NEW 和 LEGACY_HANDWRITTEN 压成了
+      // 同一个 truthy 分支）。`viewState` 缺失（后端热重载还没跟上）时按旧字段退化推导，不崩不误判。
+      const viewState: 'NEW' | 'LEGACY_HANDWRITTEN' | 'BUILDER' =
+        viewStateRaw ?? (isLegacyHandwritten ? 'LEGACY_HANDWRITTEN' : (builderConfig ? 'BUILDER' : 'NEW'));
+      if (viewState === 'LEGACY_HANDWRITTEN') {
+        setGuideMode(true);
+        setHasDriver(true);
+      } else if (viewState === 'NEW') {
+        // 全新组件，尚无任何 SQL 视图：直接进入空白拖拽态（页签类型可选、字段面板可用、已选列为空）
+        const initT = initialTabType && (TAB_TYPES as readonly string[]).includes(initialTabType) ? initialTabType : TAB_TYPES[0];
+        setTabType(initT);
+        setVariantKey(null);
+        setSwitchesState({});
       } else {
+        // BUILDER：回填已有配置
         setHasDriver(true);
         setTabType(builderConfig.tabType);
         setVariantKey(builderConfig.variantKey ?? null);

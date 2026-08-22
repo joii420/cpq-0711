@@ -223,15 +223,28 @@ D-21 要求「生成的 SQL」右侧常驻、随拖拽实时刷新。这看起�
 
 ```jsonc
 {
-  "builderConfig": { /* §2.1 的结构 */ } | null,   // null = 手写模式（存量视图）
+  "builderConfig": { /* §2.1 的结构 */ } | null,   // null = 尚未用配置器配过（NEW 或 LEGACY 两种情况）
   "builderVersion": 1 | null,
-  "isLegacyHandwritten": false,      // == (builderConfig === null)，冗余给前端省一次判断
+  "viewState": "NEW",                // 🔴 2026-08-21 新增，三态见下表
+  "isLegacyHandwritten": false,      // == (viewState === 'LEGACY_HANDWRITTEN')，保留兼容
   "isStale": false,                  // == (builderVersion < currentCompilerVersion)
   "currentCompilerVersion": 3        // 当前编译器版本，前端据此渲染过期提醒条（AC-34）
 }
 ```
 
-🚦 **字段名以本节为准。** 三方（前端 F-12 / 后端 B-14 / 测试 `Sec32`）在留白期各自约定过，经主线核对**命名一致**，此处只是把它固化成契约 —— **无人需要返工**。
+🚦 **字段名以本节为准。**
+
+### 🔴 `viewState` 三态（2026-08-21 修正 —— 原定义把三态压成两态，导致配置器对所有组件都进不去）
+
+| viewState | 判据 | 前端该显示 |
+|---|---|---|
+| **`NEW`** | 该组件**没有任何 `component_sql_view` 行** | ✅ **空白配置器，可直接开始配** |
+| **`LEGACY_HANDWRITTEN`** | 有 `sql_view` 行、但 `builder_config` 为 NULL | 引导页「存量手写视图，不支持接管」（N-3 / AC-32） |
+| **`BUILDER`** | `builder_config` 非空 | 回填已有配置 |
+
+🚨 **原定义 `isLegacyHandwritten == (builderConfig === null)` 是错的** —— 它让 `NEW` 与 `LEGACY_HANDWRITTEN` 无从区分。
+后端严格照此实现（`if (view == null || view.builderConfig == null) isLegacyHandwritten = true`），于是**全新组件也被判成存量手写**、前端弹引导页 → **配置器对任何组件都进不去**。
+这是主线的契约定义错误，不是实现错误。
 
 ### 2.2 `POST /compile` 响应
 

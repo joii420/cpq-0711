@@ -55,15 +55,40 @@ public class BuilderService {
 
     // ---------------- GET / (B-20, AC-34) ----------------
 
+    /**
+     * D-46（2026-08-21 主线裁决，紧急修复）：三态判定——原契约把"全新组件"（无任何
+     * component_sql_view 行）与"存量手写"（有行但 builder_config 为空）都判成
+     * {@code isLegacyHandwritten=true}，导致新建组件也弹手写引导页，用户真机撞到。
+     *
+     * <p>⚠️ 多行边界（主线要求"有歧义就报，不要自己假定"）：一个组件理论上可能有多条
+     * {@code component_sql_view} 行（如历史遗留的多个 GLOBAL/COMPONENT 视图）。本方法判定
+     * "是否 NEW"用 {@code listByComponent}（是否存在任意 ACTIVE 行，不看具体是哪条）；判定
+     * LEGACY_HANDWRITTEN vs BUILDER 用"当前驱动视图"（{@code component.dataDriverPath} 指向
+     * 的那一条）——这是本组件实际渲染用的那条，语义上最贴近"这个组件现在处于什么配置状态"。
+     * <b>唯一未覆盖的边界</b>：驱动视图解析不出来（{@code dataDriverPath} 为空或指向的行不存在）
+     * 但确实存在其它 ACTIVE 行——这种"有行但没有驱动"的组合目前保守按 LEGACY_HANDWRITTEN 处理
+     * （视为需要人工确认，不当 BUILDER 处理），已在回报里向主线标出，未自行拍板为最终口径。
+     */
     public GetBuilderResponse get(UUID componentId) {
         Component component = requireComponent(componentId);
         GetBuilderResponse resp = new GetBuilderResponse();
         resp.currentCompilerVersion = SemanticCompiler.CURRENT_VERSION;
 
+        boolean hasAnySqlView = !sqlViewRepository.listByComponent(componentId).isEmpty();
+        if (!hasAnySqlView) {
+            resp.builderConfig = null;
+            resp.builderVersion = null;
+            resp.viewState = "NEW";
+            resp.isLegacyHandwritten = false;
+            resp.isStale = false;
+            return resp;
+        }
+
         ComponentSqlView view = resolveDrivingView(component);
         if (view == null || view.builderConfig == null) {
             resp.builderConfig = null;
             resp.builderVersion = null;
+            resp.viewState = "LEGACY_HANDWRITTEN";
             resp.isLegacyHandwritten = true;
             resp.isStale = false;
             return resp;
@@ -74,6 +99,7 @@ public class BuilderService {
             throw new BuilderApiException(500, "BUILDER_CONFIG_CORRUPT", "builder_config 解析失败: " + e.getMessage(), Map.of());
         }
         resp.builderVersion = view.builderVersion;
+        resp.viewState = "BUILDER";
         resp.isLegacyHandwritten = false;
         resp.isStale = view.builderVersion == null || view.builderVersion < SemanticCompiler.CURRENT_VERSION;
         return resp;

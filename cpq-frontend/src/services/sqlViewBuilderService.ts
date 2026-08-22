@@ -178,12 +178,29 @@ export interface SavedBuilderConfig extends Omit<BuilderConfigPayload, 'columns'
   columns: SavedBuilderColumn[];
 }
 
+/**
+ * D-43（2026-08-21 主线裁决，紧急修复：`isLegacyHandwritten === (builderConfig === null)` 曾把三态
+ * 压成两态，导致全新组件也被误判成「存量手写」进引导页、配置器打不开）。
+ * - `NEW`：组件没有任何 component_sql_view 行 —— 前端应进空白配置器（可直接开始配）
+ * - `LEGACY_HANDWRITTEN`：有 sql_view 行但 builder_config 为 NULL —— 前端显示引导页
+ * - `BUILDER`：builder_config 非空 —— 前端回填已有配置
+ */
+export type BuilderViewState = 'NEW' | 'LEGACY_HANDWRITTEN' | 'BUILDER';
+
 export interface GetBuilderResponse {
   /** null = 未保存过 builder 配置（全新组件，或已转手写）。 */
   builderConfig: SavedBuilderConfig | null;
   /** 与 builderConfig.builderVersion 同值的顶层冗余字段（api.md §2.1a 2026-08-20 固化）。 */
   builderVersion: number | null;
-  /** true = 存量手写视图——Tab 显示引导页，不进拖拽态（AC-32）。后端直接给出，前端不用自己猜。 */
+  /**
+   * D-43：权威判据，三态，取代下面 `isLegacyHandwritten` 的两态语义。
+   * 🚫 后端热重载可能滞后于本次前端改动——字段缺失时前端按旧判据兜底推导，不崩不误判。
+   */
+  viewState?: BuilderViewState;
+  /**
+   * 🚫 D-43 后语义收窄为 `viewState === 'LEGACY_HANDWRITTEN'`——不再是「非 BUILDER 即 true」。
+   * 三态判断一律用 `viewState`，这个字段只在 `viewState` 缺失时的兜底路径里参与推导。
+   */
   isLegacyHandwritten: boolean;
   /** true = builderConfig.builderVersion 低于当前编译器版本（AC-34）。后端直接给出，不用前端比较版本号。 */
   isStale: boolean;
