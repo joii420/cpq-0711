@@ -774,10 +774,12 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
   const grainText = compileResult ? (compileResult.grain.length ? `成品 + ${compileResult.grain.join(' + ')}` : '每个成品 1 行') : (sel.length ? '（拖拽后重新计算…）' : '每个成品 1 行');
 
   // ── 渲染：体检区（F-8：只显示阻断/告警，全通过时一行「检查通过」）──────
+  // D-49（紧急修复）：字段名是 `items` 不是 `checks`（api.md §2.3a 补），且双重可选链保护到字段本身——
+  // 契约缺字段时降级成空数组，不再硬抛 `Cannot read properties of undefined (reading 'filter')`。
   function renderHealth() {
     if (!sel.length) return <div className="svb-hitem ok"><span className="ic">✓</span><span>尚未选择输出列</span></div>;
     if (!inspectResult) return <div className="svb-hitem ok"><span className="ic">…</span><span>体检中</span></div>;
-    const blocking = inspectResult.checks.filter((it) => it.level !== 'INFO');
+    const blocking = (inspectResult.items ?? []).filter((it) => it.level !== 'INFO');
     if (!blocking.length) return <div className="svb-hitem ok"><span className="ic">✓</span><span>检查通过</span></div>;
     return blocking.map((it, i) => (
       <div key={i} className={`svb-hitem ${it.level === 'ERR' ? 'err' : 'warn'}`}>
@@ -786,8 +788,8 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
       </div>
     ));
   }
-  const errCount = inspectResult?.checks.filter((i) => i.level === 'ERR').length ?? 0;
-  const warnCount = inspectResult?.checks.filter((i) => i.level === 'WARN').length ?? 0;
+  const errCount = inspectResult?.items?.filter((i) => i.level === 'ERR').length ?? 0;
+  const warnCount = inspectResult?.items?.filter((i) => i.level === 'WARN').length ?? 0;
   const canSave = sel.length > 0 && errCount === 0 && !!compileResult && !compileError;
 
   // ── 渲染：真实预览（F-9）─────────────────────────────────────────────

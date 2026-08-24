@@ -280,6 +280,20 @@ D-21 要求「生成的 SQL」右侧常驻、随拖拽实时刷新。这看起�
 
 **0 行时** `rowCount: 0` + `diagnostics` 必须给**可操作**诊断（哪一层收窄把行滤没了），🚫 不许只返回空表格。
 
+### 2.3a `POST /inspect` 响应（🔴 2026-08-21 补 —— 原文只有请求体和一句文字说明，**响应体从未定义**，导致前后端各填一套、前端运行时白屏）
+
+```jsonc
+{
+  "blocked": false,          // true = 有 ERR 项，保存会被拒
+  "items": [                 // ⚠️ 字段名是 items 不是 checks
+    { "level": "ERR",  "code": "MISSING_IDENTITY_COLUMN", "message": "料号列与名称列至少配一个" },
+    { "level": "WARN", "code": "DUPLICATE_FIELD_NAME",    "message": "字段名「项次」重复，不阻断保存" }
+  ]
+}
+```
+
+`level` 取值：`ERR`（阻断）/ `WARN`（告警）。前端只渲染这两类，全通过时显示一行「检查通过」（F-8 / D-22）。
+
 ### 2.4 `PUT /` 一体化保存（AC-2：三件套由**同一次**保存原子产出）
 
 单事务内完成：① `component_sql_view`（`sql_template` / `declared_columns` / `builder_config` / `builder_version`）

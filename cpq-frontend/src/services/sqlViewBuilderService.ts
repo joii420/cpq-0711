@@ -253,15 +253,23 @@ export interface PreviewResponse {
 export const previewBuilder = (componentId: string, req: PreviewRequest): Promise<PreviewResponse> =>
   builderHttp.post(`/components/${componentId}/builder/preview`, req) as Promise<any>;
 
-export interface InspectCheck {
+/**
+ * D-49（2026-08-21 主线裁决，紧急修复：api.md 此前从未定义 /inspect 响应体，前后端各填一套——
+ * 后端实际字段名是 `items` 不是 `checks`，且顶层带一个 `blocked` 布尔标志。已补进 api.md §2.3a。
+ */
+export interface InspectItem {
   /** 后端用大写 'ERR'/'WARN'（Sec33 测试逐字确认），非小写。 */
   level: 'ERR' | 'WARN' | 'INFO';
   code?: string;
   message: string;
 }
+/** @deprecated D-49：字段名已改为 InspectItem，仅保留别名防止漏改的引用炸掉编译。 */
+export type InspectCheck = InspectItem;
 
 export interface InspectResponse {
-  checks: InspectCheck[];
+  /** true = 存在 ERR 级项，保存会被后端拒绝——比前端自己数 level==='ERR' 的条数更权威，直接用它判保存按钮禁用态。 */
+  blocked: boolean;
+  items: InspectItem[];
 }
 
 export const inspectBuilder = (componentId: string, req: BuilderConfigPayload): Promise<InspectResponse> =>
