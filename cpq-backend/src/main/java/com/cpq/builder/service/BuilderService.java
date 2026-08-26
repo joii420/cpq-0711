@@ -159,7 +159,7 @@ public class BuilderService {
         // 与 customerCode/priceBaseDate 同款字面量替换风格，注入"该料号自己的 BOM 闭包"（成品+
         // 全部后代，D-58「传几行算几行」口径）——复用 BomTreeRenderService.collectTotalMaterialNoUnion，
         // 不另写第二套闭包算法（D-50 要收敛的正是这个）。
-        bound = bindTotalMaterialNo(bound, req.partNo);
+        bound = bindTotalMaterialNo(bound, req.partNo, req.customerCode);
 
         String wrapped = "SELECT * FROM (" + bound + ") __preview";
         List<String> conditions = new ArrayList<>();
@@ -250,18 +250,45 @@ public class BuilderService {
      * 预览页面「未选料号时不该看到任何具体料号的数据行」的直觉一致，且不会把 AC-27/AC-28 那类
      * 「本该 0 行给诊断」的用例升级成一个新的必答问题（保持零回归）。
      */
-    private String bindTotalMaterialNo(String sql, String partNo) {
+    private String bindTotalMaterialNo(String sql, String partNo, String customerCode) {
         if (!TOTAL_MATERIAL_NO_TOKEN.matcher(sql).find()) return sql; // 该 SQL 不含此占位符，零开销跳过
 
         List<String> closure;
-        if (partNo == null || partNo.isBlank()) {
-            closure = List.of();
-        } else {
+        if (partNo != null && !partNo.isBlank()) {
             QuotationLineItem lite = new QuotationLineItem();
             lite.productPartNoSnapshot = partNo;
             BomTreeRenderService.MaterialUnionResult union =
                     bomTreeRenderService.collectTotalMaterialNoUnion(List.of(lite), "QUOTE");
             closure = union.totalMaterialNo;
+        } else if (customerCode != null && !customerCode.isBlank()) {
+            // task-260819 B-28（D-70，主线裁决）：无 partNo = 主件页签"按客户预览、不针对具体料号"
+            // 场景（AC-15），语义即"不限料号"——注入该客户下的全部料号，而不是空闭包（空闭包会让
+            // = ANY(ARRAY[]::text[]) 恒假，AC-15①的预览恒 0 行）。
+            // 🚫 不许因此破坏 AC-27/AC-28：客户确实无基础数据时，下面 roots 查询本就返回空列表，
+            // 结果与原先的空闭包完全一致（仍是 0 行 + zeroRowsHint 可操作诊断，不是报错）。
+            // 「全部料号」的口径 = 该客户 QUOTE 侧全部 BOM 根（与 AC-26 的闭包口径同源：
+            // system_type='QUOTE' AND is_current AND customer_no=:customerCode），
+            // 再套同一条 collectTotalMaterialNoUnion 把各根的子件闭包一并纳入——复用既有算法，
+            // 不另写第二套闭包逻辑（D-50 要收敛的正是这个）。
+            // N+1 自检：本方法固定 1 条根查询 SQL（常数，与客户下料号数无关）+
+            // collectTotalMaterialNoUnion 内部固定 1 条递归 CTE（对整批根一次算完）——
+            // 与料号数无关，恒为 2 条 SQL。
+            List<String> roots = queryCustomerRootMaterialNos(customerCode);
+            if (roots.isEmpty()) {
+                closure = List.of();
+            } else {
+                List<QuotationLineItem> seeds = new ArrayList<>();
+                for (String root : roots) {
+                    QuotationLineItem lite = new QuotationLineItem();
+                    lite.productPartNoSnapshot = root;
+                    seeds.add(lite);
+                }
+                BomTreeRenderService.MaterialUnionResult union =
+                        bomTreeRenderService.collectTotalMaterialNoUnion(seeds, "QUOTE");
+                closure = union.totalMaterialNo;
+            }
+        } else {
+            closure = List.of();
         }
         String arrayLiteral = closure.isEmpty()
                 ? "ARRAY[]::text[]"
@@ -269,6 +296,33 @@ public class BuilderService {
                         .map(s -> "'" + s.replace("'", "''") + "'")
                         .reduce((a, b) -> a + "," + b).orElse("") + "]::text[]";
         return TOTAL_MATERIAL_NO_TOKEN.matcher(sql).replaceAll(Matcher.quoteReplacement(arrayLiteral));
+    }
+
+    /**
+     * task-260819 B-28（D-70）：该客户 QUOTE 侧全部 BOM 根料号（{@code system_type='QUOTE' AND
+     * is_current AND customer_no=:customerCode}），口径与 AC-26 的闭包定义同源（见
+     * {@code SemanticCompiler.closureCte()} 的注释）。固定 1 条 SQL，返回条数与结果集无关
+     * （N+1 约束②：单次业务操作 SQL 条数是常数）。客户确实无任何 QUOTE 侧料号时返回空列表
+     * （不是异常）——由调用方按"空闭包"兜底，保住 AC-27/AC-28 的 0 行 + 诊断路径。
+     */
+    private List<String> queryCustomerRootMaterialNos(String customerCode) {
+        List<String> roots = new ArrayList<>();
+        String q = "SELECT DISTINCT material_no FROM material_bom_item "
+                + "WHERE system_type = 'QUOTE' AND is_current AND customer_no = ?";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(q)) {
+            ps.setString(1, customerCode);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String materialNo = rs.getString(1);
+                    if (materialNo != null && !materialNo.isBlank()) roots.add(materialNo);
+                }
+            }
+        } catch (Exception e) {
+            throw new BuilderApiException(500, "PREVIEW_CUSTOMER_ROOTS_QUERY_FAILED",
+                    "查询客户全部料号失败: " + e.getMessage(), Map.of());
+        }
+        return roots;
     }
 
     // ---------------- POST /inspect (B-12, AC-13/16-19/29/30) ----------------
