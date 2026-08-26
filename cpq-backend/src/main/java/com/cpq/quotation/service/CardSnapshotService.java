@@ -567,8 +567,15 @@ public class CardSnapshotService {
      * <p>等价:buildCardValues/buildCostingCardValues 逐行输入与逐行路径完全相同 → 落库卡片值逐位等价
      * (CardValuesBatchPersistEquivTest + GoldenCardValuesEquivTest 守)。时间戳整批同一 now(不入 md5)。
      * 只算卡片值(Excel 仍懒算,见 ensureExcelValues)。
+     *
+     * <p><b>task-260825 D-4（B-11）</b>：注解从默认 {@code @Transactional}(REQUIRED) 改为
+     * {@code REQUIRES_NEW}——本方法是 {@link #ensureCardValues} 唯一的调用点（已 grep 确认无其它
+     * 生产调用方），{@link #ensureCardValues} 按 chunk 把 {@code newLineIds} 切成若干批、每批调一次
+     * 本方法；{@code REQUIRES_NEW} 让每批各自独立提交，批间不共享事务，解除「单事务包住全部 N 行」
+     * 撑向 Narayana 60s 上限的隐患。调用方必须经 {@code self.} 代理调用（直接 {@code this.} 调用会
+     * 绕开 CDI 拦截器，注解失效，退回原「并入外层事务」行为）。
      */
-    @Transactional
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void snapshotNewLinesCardValues(UUID quotationId, List<UUID> newLineIds,
                                            Map<UUID, Map<String, ExpandDriverResponse>> union,
                                            CardValuesPrefetch prefetch) {
@@ -578,23 +585,76 @@ public class CardSnapshotService {
         // 1 次 IN 装载全部新行(托管实体,赋字段即脏;省现状逐行 findById 重载)
         List<QuotationLineItem> lines = QuotationLineItem.list("id IN ?1", newLineIds);
         if (lines.isEmpty()) return;
+        // task-260825 B-16：4 参重载保留老行为——本方法体内部整单渲染一次（未接
+        // ensureCardValues 批量分层的调用方，如 CardValuesBatchPersistEquivTest，零改动、
+        // 逐位不变）。ensureCardValues 的批循环改走下方 6 参 snapshotNewLinesCardValuesBatch，
+        // 由调用方在循环外整单渲染一次后按批切片传入，避免 render 随 chunk 数重复执行。
+        Map<UUID, Map<String, ArrayNode>> treeBaseRowsByLine = java.util.Collections.emptyMap();
+        String costingRenderError = null;   // BL-0030:整单核价树渲染失败原文 → 落带消息失败哨兵,前端显式提示
+        if (q.costingCardTemplateId != null && templateHasTreeTab(q.costingCardTemplateId)) {
+            try {
+                treeBaseRowsByLine = bomTreeRenderService.render(q.costingCardTemplateId, lines);
+            } catch (Exception e) {
+                // 不上抛(否则整单快照 500 + 全 NULL → 前端无限「加载中…」);逐 li 落带原文的失败哨兵。
+                costingRenderError = "核价渲染失败: " + e.getMessage();
+                LOG.errorf("[costing-tree-render] 整单渲染失败 quotation=%s → 落错误哨兵透出前端: %s",
+                        quotationId, e.getMessage());
+            }
+        }
+        snapshotNewLinesCardValuesCore(q, lines, newLineIds, union, prefetch, treeBaseRowsByLine, costingRenderError);
+    }
+
+    /**
+     * task-260825 B-16（D-4 追加返修，2026-08-25 A/B 实测驱动，用户裁决）：
+     * {@link #snapshotNewLinesCardValues} 4 参重载的批量分层版——{@code treeBaseRowsByLine} /
+     * {@code costingRenderError} 由调用方（{@link #ensureCardValues}）传入，不在本方法内部
+     * 再调 {@code bomTreeRenderService.render}。
+     *
+     * <p><b>为什么需要这个重载</b>：D-4（B-11~B-14）把 {@code ensureCardValues} 从「单事务包住
+     * 全部 N 行」改成按 chunk 分批、每批调一次 {@code snapshotNewLinesCardValues}。但树页签渲染
+     * {@code bomTreeRenderService.render} 原先<b>藏在</b> {@code snapshotNewLinesCardValues}
+     * 方法体内部——4 参重载每次被调都会重新 render 一次，于是 chunk 越小、批数越多，render 就被
+     * 重复执行越多次。A/B 实测：chunk=2000（1 批）③ 总耗时 51,250ms；chunk=300（7 批）③ 总耗时
+     * 92,376ms（+80%），核心原因就是 render 被多算了 6 次。这与 B-12（prefetch/union 必须留在
+     * 分批循环外）是<b>同一个模式</b>——只是这次「整单级工作」藏在被调方内部，而不是摆在调用方的
+     * 局部变量里，排查时容易漏。
+     *
+     * <p><b>失败语义对所有批次一致生效</b>：{@code costingRenderError} 由 {@link #ensureCardValues}
+     * 整单渲染一次后<b>原样透传</b>给每一批调用——它是<b>同一个字符串值</b>（渲染失败时非 null，
+     * 成功时恒 null），不是每批各自判定，因此不会出现"前几批命中错误哨兵、后几批又重试一次拿到
+     * 不同结果"的分叉；下方 Pass2 落哨兵的逻辑与 4 参重载完全一致，只是取值来源从「本方法内部算的
+     * 局部变量」换成了「入参」。
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public void snapshotNewLinesCardValuesBatch(UUID quotationId, List<UUID> newLineIds,
+                                           Map<UUID, Map<String, ExpandDriverResponse>> union,
+                                           CardValuesPrefetch prefetch,
+                                           Map<UUID, Map<String, ArrayNode>> treeBaseRowsByLine,
+                                           String costingRenderError) {
+        if (quotationId == null || newLineIds == null || newLineIds.isEmpty()) return;
+        Quotation q = Quotation.findById(quotationId);
+        if (q == null) return;
+        List<QuotationLineItem> lines = QuotationLineItem.list("id IN ?1", newLineIds);
+        if (lines.isEmpty()) return;
+        snapshotNewLinesCardValuesCore(q, lines, newLineIds, union, prefetch,
+            treeBaseRowsByLine != null ? treeBaseRowsByLine : java.util.Collections.emptyMap(),
+            costingRenderError);
+    }
+
+    /**
+     * {@link #snapshotNewLinesCardValues} / {@link #snapshotNewLinesCardValuesBatch} 共享核心：
+     * Pass1 build → Pass1.5 预载 componentData → Pass2 赋值落库 → Pass2c 单头总额跟随。
+     * 与改动前逐位相同，只是 {@code treeBaseRowsByLine}/{@code costingRenderError} 从「方法体内部
+     * 现算」变成「入参」——两个公开入口各自负责把这两样东西准备好再传进来（B-16）。
+     */
+    private void snapshotNewLinesCardValuesCore(Quotation q, List<QuotationLineItem> lines, List<UUID> newLineIds,
+                                           Map<UUID, Map<String, ExpandDriverResponse>> union,
+                                           CardValuesPrefetch prefetch,
+                                           Map<UUID, Map<String, ArrayNode>> treeBaseRowsByLine,
+                                           String costingRenderError) {
+        UUID quotationId = q.id;
         com.cpq.formula.dataloader.QuotationIdContext.set(quotationId);
         try {
-            // Task 3.1 事项B：核价模板含树页签 → 整单一次调 BomTreeRenderService.render，
-            // 逐 li 复用其结果（buildCostingCardValues 内部按 precomputedBaseRows!=null 跳过旧引擎 closure+expand）；
-            // 不含树页签 → treeBaseRowsByLine 恒空 map，下方 getOrDefault 恒 null → 逐 li 走老路径，零破坏。
-            Map<UUID, Map<String, ArrayNode>> treeBaseRowsByLine = java.util.Collections.emptyMap();
-            String costingRenderError = null;   // BL-0030:整单核价树渲染失败原文 → 落带消息失败哨兵,前端显式提示
-            if (q.costingCardTemplateId != null && templateHasTreeTab(q.costingCardTemplateId)) {
-                try {
-                    treeBaseRowsByLine = bomTreeRenderService.render(q.costingCardTemplateId, lines);
-                } catch (Exception e) {
-                    // 不上抛(否则整单快照 500 + 全 NULL → 前端无限「加载中…」);逐 li 落带原文的失败哨兵。
-                    costingRenderError = "核价渲染失败: " + e.getMessage();
-                    LOG.errorf("[costing-tree-render] 整单渲染失败 quotation=%s → 落错误哨兵透出前端: %s",
-                            quotationId, e.getMessage());
-                }
-            }
             // ── Pass1:只 build 字符串到内存(只读 li,不赋字段 → 脏窗口为空,任何 fallback em 查此刻 flush 空)──
             Map<UUID, String> quoteVals = new HashMap<>();
             Map<UUID, String> costingVals = new HashMap<>();
@@ -1051,6 +1111,18 @@ public class CardSnapshotService {
      * <p>⚠️ <b>本方法只治提交金额，不治别的列</b>。根因是 Hibernate 全列 UPDATE 把 warm 的陈旧
      * 内存快照整行写回（{@code annual_volume} / {@code discount_*} 等同样被覆盖），那条由
      * {@code QuotationLineItem} 上的 {@code @DynamicUpdate} 治（修法②）。两者治不同的面，缺一不可。
+     *
+     * <p><b>task-260825 B-15 教训（曾短暂在此加过 {@code @TransactionConfiguration(timeout=600)}，
+     * 已撤销）</b>：本方法有 6 个生产调用点，其中 {@code QuotationService#submit} 内两处调用发生在
+     * {@code submit} 自身已开启的事务<b>内部</b>（并入外层事务，非事务根）。Quarkus 对「方法已处于
+     * 外层活跃事务中、又声明了 {@code @TransactionConfiguration}」的组合<b>直接抛异常</b>
+     * （{@code TransactionalInterceptorBase.checkConfiguration}），而非静默不生效——
+     * 若在此加超时配置注解会让任何需要补算卡片值的报价单<b>提交时抛 RuntimeException</b>。
+     * 大单量建单场景下延长外层事务超时的真实需求，改在唯一目标调用点
+     * （{@link com.cpq.basicdata.v6.service.CreateQuotationMaterializer#materialize}）用
+     * {@code io.quarkus.narayana.jta.QuarkusTransaction.run(...)} 显式包一层事务解决——
+     * 这样「例外只用于建单物化路径」是结构上的事实，不会牵连本方法的其它 5 个调用点。
+     * 本方法自身<b>不再</b>携带任何事务超时配置注解。
      */
     @Transactional
     public int ensureCardValues(UUID quotationId, boolean forceRecomputeAll) {
@@ -1093,12 +1165,102 @@ public class CardSnapshotService {
 
         java.util.List<UUID> allIds = QuotationLineItem.<QuotationLineItem>list("quotationId", quotationId)
             .stream().map(li -> li.id).collect(java.util.stream.Collectors.toList());
+        // task-260825 D-4（B-12）：union/prefetch 在分批循环之外算一次——两者都是只读预取的纯内存
+        // 数据（Map/DTO，不含托管实体引用），REQUIRES_NEW 批事务只是各自开关一次持久化上下文，
+        // 不影响这两份数据的可用性，可安全跨批复用。⚠️ 不要把这两行挪进下面的分批循环：那样会把
+        // D-3 刚修好的「整单查一次」（尤其 prefetch.frozenQuoteTabs）重新打回「每批查一次」。
         var union = precomputeCostingDriverUnion(quotationId);
         var prefetch = precomputeCardValuesPrefetch(quotationId, allIds);
-        snapshotNewLinesCardValues(quotationId, missing, union, prefetch);
+
+        // task-260825 B-16（2026-08-25 A/B 实测驱动，用户裁决）：核价树页签渲染
+        // bomTreeRenderService.render 原先藏在 snapshotNewLinesCardValues 方法体内部——D-4 分批后
+        // 每批都会调一次该方法，于是 render 也被重复执行 chunk 次。A/B 实测：chunk=2000(1 批)
+        // ③=51,250ms；chunk=300(7 批) ③=92,376ms（+80%）。与 B-12（prefetch/union 必须留在循环外）
+        // 是同一个模式：整单级工作不能留在被多次调用的方法体内部。改法：对全部 missing 行整单
+        // render 一次，批循环内按本批行 id 切片后传入 snapshotNewLinesCardValuesBatch（新方法）。
+        List<QuotationLineItem> missingLines = QuotationLineItem.list("id IN ?1", missing);
+        Map<UUID, Map<String, ArrayNode>> treeBaseRowsByLine = java.util.Collections.emptyMap();
+        String costingRenderError = null;   // BL-0030：渲染失败原文，下方原样透传给每一批
+        if (hasCostingTpl && templateHasTreeTab(q.costingCardTemplateId)) {
+            try {
+                treeBaseRowsByLine = bomTreeRenderService.render(q.costingCardTemplateId, missingLines);
+            } catch (Exception e) {
+                // 不上抛(否则整单快照失败 → 前端无限"加载中…")；costingRenderError 是同一个
+                // 字符串值，下方每一批都原样传入 → 失败语义对全部批次一致生效，不会出现
+                // "前几批命中错误哨兵、后几批又重试一次拿到不同结果"的分叉（B-16 要求）。
+                costingRenderError = "核价渲染失败: " + e.getMessage();
+                LOG.errorf("[costing-tree-render] 整单渲染失败 quotation=%s → 落错误哨兵透出前端: %s",
+                        quotationId, e.getMessage());
+            }
+        }
+
+        // task-260825 D-4（B-11/B-13）：按 chunk 分批、每批走 self.snapshotNewLinesCardValuesBatch 的
+        // REQUIRES_NEW 独立事务，解除「单事务包住全部 N 行」撑向 Narayana 60s 上限的隐患。
+        // 实测基线（1845 行改动前 ③=58679ms，每行 31.8ms）：chunk=300 → 单批 ≈9.5s，余量 84%。
+        int chunkSize = ensureCardValuesChunkSize();
+        int totalBatches = (int) Math.ceil(missing.size() / (double) chunkSize);
+        long allBatchesStart = System.currentTimeMillis();
+        int batchNo = 0;
+        for (int start = 0; start < missing.size(); start += chunkSize) {
+            int end = Math.min(start + chunkSize, missing.size());
+            List<UUID> batch = missing.subList(start, end);
+            batchNo++;
+            long batchStart = System.currentTimeMillis();
+            // B-16：按本批行 id 切片 treeBaseRowsByLine，不把整单 Map 原样传全量进每批。
+            Map<UUID, Map<String, ArrayNode>> batchTreeBaseRowsByLine =
+                sliceTreeBaseRowsByLine(treeBaseRowsByLine, batch);
+            // B-12：self. 调用——REQUIRES_NEW 注解只在经 CDI 代理调用时生效，直接 this. 调用会
+            // 绕开拦截器退化为并入外层事务（与改动前同一个坑，本方法内其它 self. 调用同款纪律）。
+            self.snapshotNewLinesCardValuesBatch(quotationId, batch, union, prefetch,
+                batchTreeBaseRowsByLine, costingRenderError);
+            long batchElapsed = System.currentTimeMillis() - batchStart;
+            // B-14：本方法不 catch——某一批若抛异常，异常原样冒泡给 CreateQuotationMaterializer 的
+            // 既有 catch（置 cardValuesReady=false + warnings），循环在此中止，后续批次不再执行。
+            // 已提交的前 batchNo-1 批因走独立 REQUIRES_NEW 事务、早已各自 commit，不受外层
+            // ensureCardValues 事务回滚影响（REQUIRES_NEW 的语义保证）——未处理行仍为 NULL，
+            // 靠本方法开头的 IS NULL 谓词下次重跑自愈，不会因为「大部分批已成功」而虚报 true。
+            LOG.infof("[ensure-cardvalues-batch] quotation=%s batch=%d/%d rows=%d elapsed=%dms chunkSize=%d",
+                quotationId, batchNo, totalBatches, batch.size(), batchElapsed, chunkSize);
+        }
         concurrencyProbe.afterEnsureValuesBuilt(quotationId);
-        LOG.infof("[ensure-cardvalues] quotation=%s 补算 %d 行", quotationId, missing.size());
+        LOG.infof("[ensure-cardvalues] quotation=%s 补算 %d 行（分 %d 批，chunk=%d，总耗时=%dms）",
+            quotationId, missing.size(), totalBatches, chunkSize,
+            System.currentTimeMillis() - allBatchesStart);
         return missing.size();
+    }
+
+    /**
+     * task-260825 D-4（B-11）：{@link #ensureCardValues} 分批 chunk 大小，默认 300
+     * （按实测 31.8ms/行 → 单批 ≈9.5s，距 Narayana 60s 上限余量 84%）。
+     * 可配：{@code -Dcpq.ensure-card-values-chunk-size=N} 或环境变量
+     * {@code CPQ_ENSURE_CARD_VALUES_CHUNK_SIZE}。非法值（非数字 / ≤0）静默回退默认值。
+     */
+    private static int ensureCardValuesChunkSize() {
+        String v = System.getProperty("cpq.ensure-card-values-chunk-size",
+            System.getenv().getOrDefault("CPQ_ENSURE_CARD_VALUES_CHUNK_SIZE", "300"));
+        try {
+            int n = Integer.parseInt(v.trim());
+            return n > 0 ? n : 300;
+        } catch (Exception e) {
+            return 300;
+        }
+    }
+
+    /**
+     * task-260825 B-16：把整单一次 render 出的 {@code treeBaseRowsByLine} 按本批行 id 切片，
+     * 供 {@link #snapshotNewLinesCardValuesBatch} 使用——不把整单 Map 原样传给每一批（虽然
+     * {@code Map.get(li.id)} 命中逻辑本身对多余 key 无害，但显式切片让每批的输入边界清晰，
+     * 避免日后有人在 core 方法里误遍历这个 Map 而不是遍历 {@code lines}）。
+     */
+    private static Map<UUID, Map<String, ArrayNode>> sliceTreeBaseRowsByLine(
+            Map<UUID, Map<String, ArrayNode>> whole, List<UUID> batchIds) {
+        if (whole == null || whole.isEmpty()) return java.util.Collections.emptyMap();
+        Map<UUID, Map<String, ArrayNode>> out = new HashMap<>();
+        for (UUID id : batchIds) {
+            Map<String, ArrayNode> v = whole.get(id);
+            if (v != null) out.put(id, v);
+        }
+        return out;
     }
 
     /** Same-quotation transaction lock shared by lazy ensure and interactive card edits. */
@@ -1369,12 +1531,21 @@ public class CardSnapshotService {
          * （仅依赖 templateId，跨行同值）。key 缺失=未预取→回落逐行查。
          */
         final Map<UUID, List<Object[]>> driverCompsByTemplate;
+        /**
+         * task-260825 D-3：建单时冻结的报价卡结构（{@code quotation_view_structure.kind=QUOTE_CARD}
+         * 的 {@code tabs} 数组）。按 quotationId 整单一次查（{@link #loadFrozenQuoteTabs}），取代
+         * {@link #buildCardValues} 原先每行一次的逐行查询——该查询的入参是 quotationId，整单恒定。
+         * {@code null} 合法：表示该单没有冻结结构（首次组装尚未 ensureStructure / 历史单），
+         * 调用方按原三级降级链继续回退 {@link #templateSnapshotById} → 模板表查询。
+         */
+        final JsonNode frozenQuoteTabs;
         CardValuesPrefetch(Map<UUID, JsonNode> t, Map<UUID, List<Object[]>> c, Map<String, JsonNode> rkf,
-                           Map<UUID, List<Object[]>> dc) {
+                           Map<UUID, List<Object[]>> dc, JsonNode frozenQuoteTabs) {
             this.templateSnapshotById = t;
             this.compDataByLine = c;
             this.rowKeyFieldsByComp = rkf;
             this.driverCompsByTemplate = dc;
+            this.frozenQuoteTabs = frozenQuoteTabs;
         }
     }
 
@@ -1388,6 +1559,9 @@ public class CardSnapshotService {
         Map<UUID, List<Object[]>> byLine = new HashMap<>();
         Map<String, JsonNode> rkfByComp = new HashMap<>();
         Map<UUID, List<Object[]>> driverCompsByTpl = new HashMap<>();
+        // task-260825 D-3：冻结报价卡结构整单一次查（quotationId 恒定，取代 buildCardValues 逐行查）。
+        // loadFrozenQuoteTabs 内部已捕获异常返回 null，本处不需要再包 try。
+        JsonNode frozenQuoteTabs = loadFrozenQuoteTabs(quotationId);
         try {
             Quotation q = Quotation.findById(quotationId);
             if (q != null) {
@@ -1419,7 +1593,7 @@ public class CardSnapshotService {
         } catch (Exception e) {
             LOG.warnf("[card-snapshot] precomputeCardValuesPrefetch failed quotation=%s: %s", quotationId, e.getMessage());
         }
-        return new CardValuesPrefetch(tplById, byLine, rkfByComp, driverCompsByTpl);
+        return new CardValuesPrefetch(tplById, byLine, rkfByComp, driverCompsByTpl, frozenQuoteTabs);
     }
 
     /**
@@ -1631,7 +1805,12 @@ public class CardSnapshotService {
             //    总额 14」这种同卡双值。配置源归一到冻结结构后，两侧恒等。
             //
             //    冻结结构缺失（首次组装尚未 ensureStructure / 历史单）→ 回退模板快照（旧行为，零破坏）。
-            JsonNode snapshot = loadFrozenQuoteTabs(li.quotationId);
+            //
+            //    task-260825 D-3：该查询入参是 quotationId，整单恒定 —— prefetch 命中时直接复用
+            //    prefetch.frozenQuoteTabs（已在 precomputeCardValuesPrefetch 里整单查一次），
+            //    取代原先每行一次的 loadFrozenQuoteTabs 调用（1845 行 → 1845 次往返 ≈31s，撑爆
+            //    Narayana 60s 事务预算）。prefetch 缺失（非批量路径）→ 逐行查，行为与改动前一致。
+            JsonNode snapshot = (prefetch != null) ? prefetch.frozenQuoteTabs : loadFrozenQuoteTabs(li.quotationId);
             if (snapshot == null) {
                 snapshot = (prefetch != null) ? prefetch.templateSnapshotById.get(templateId) : null;
                 if (snapshot == null) {
