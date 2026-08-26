@@ -1,6 +1,6 @@
 # testcase.md · 取数配置器（task-260819）· 用例清单 + AC 追溯矩阵
 
-> 依据 `test.md`（方案）+ `需求文档.md §3`（AC 原文，一期 51 条：AC-1~40、AC-47~57）编写。
+> 依据 `test.md`（方案）+ `需求文档.md §3`（AC 原文，一期 55 条：AC-1~40、AC-47~57、🆕AC-58~61，2026-08-24 由 51 条增至 55 条）编写。
 > **不读实现代码**（`cpq-backend/src/main/**`、`cpq-frontend/src/**` 均未读）。
 > 二期 AC-41~46 本期不测，不在下表出现。
 >
@@ -22,7 +22,7 @@
 
 ---
 
-## 2. AC 可追溯矩阵（一期 51 条，逐条到方法名）
+## 2. AC 可追溯矩阵（一期 55 条，逐条到方法名）
 
 > 格式：`类名::方法名`。凡带【反证】标记的是 10 条反证型 AC 之一，详细破坏方式见 §3。
 
@@ -30,7 +30,7 @@
 |---|---|---|---|
 | AC-1 | T-1 | `Sec31CompileCorrectnessTest::ac1_materialElementBaseRecipeAndPriceStrategy` | 七项断言全覆盖 |
 | AC-2 | T-1(③④)+T-3(①②⑤) | `Sec31CompileCorrectnessTest::ac1_*`(③④,间接) / `Sec32ViewColumnFieldNameTest::ac12_*`(⑤保存路径) | ⚠️ 见 §4 缺口①：①②两项(fields[]恰7项/builder_config非空)缺独立用例，见下 |
-| AC-3 | T-1 | `Sec31CompileCorrectnessTest::ac3_childClosureThreeIronRules` | 六项断言全覆盖 |
+| AC-3 | T-1 | `Sec31CompileCorrectnessTest::ac3_childDataNarrowedByTotalMaterialNoArray` | 🔄 2026-08-24 D-50改写：原「闭包三铁律六项」整条作废，改断言`= ANY(:total_material_no)`/不含WITH RECURSIVE/hf_part_no不改写等五项，见方法头注释 |
 | AC-4 | T-1(①②③④)+T-5(⑤) | `Sec31CompileCorrectnessTest::ac4_autoLookupJoinNoDuplication` + `sql-view-builder.spec.ts::AC-4④⑤` | |
 | AC-5 | T-1 | `Sec31CompileCorrectnessTest::ac5_auxSourceAsScalarSubquery` | ④(预览行数)缺，见 §4 缺口② |
 | AC-6 | T-1(①②)+T-5(③) | `Sec31CompileCorrectnessTest::ac6_bomDiscriminatorDerivedFromTabType` | ③(界面无控件)未独立建E2E，见 §4 缺口③ |
@@ -53,7 +53,7 @@
 | AC-23 | T-2 | `Sec34PriceStrategyTest::ac23_formB_elementKeyPointsToManualField` | 前置依赖组件字段写接口，见方法内注释 |
 | AC-24 | T-2 | `Sec34PriceStrategyTest::ac24_userManuallyDraggedElementColumnNotRecycled` | |
 | AC-25 | T-2(②③)+T-5(①) | `Sec35FeeTabPreviewInspectTest::ac25_expenseTabAsSixthType` + `sql-view-builder.spec.ts::AC-25①` | |
-| AC-26 | T-3【dev库限定】 | `Sec35FeeTabPreviewInspectTest::ac26_realPreviewReturnsRealRows_devDbOnly` | test库大概率无该数据，方法内已做"数据缺失则跳过并打印"处理，须在 dev 库补跑一次才算验证完成 |
+| AC-26 | T-3【dev库限定】 | `Sec35FeeTabPreviewInspectTest::ac26_realPreviewReturnsRealRows_devDbOnly` | 🔄 2026-08-24 D-50改写：甲组(仅自身)2行/乙组(自身+全部后代)16行，已用psql独立验证(见test.md §3b)；⚠️已知缺口——/preview端点甲/乙分组的确切请求契约未在api.md/backtask.md明确，本方法沿用既有`includeChildParts`参数位，见test.md §6①② |
 | AC-27 | T-3 | `Sec35FeeTabPreviewInspectTest::ac27_zeroRowsGivesActionableDiagnostics` | |
 | AC-28 | T-3 | `Sec35FeeTabPreviewInspectTest::ac28_allNullColumnVsIndividualRowMissingDistinguished` | |
 | AC-29 | T-2 | `Sec35FeeTabPreviewInspectTest::ac29_defaultBindingsAreCorrect` | ②(主件成品其他费用默认绑cost_ratio)缺，见 §4 缺口⑦ |
@@ -64,7 +64,11 @@
 | AC-34 | T-3(①④)+T-5(②③) | `Sec35FeeTabPreviewInspectTest::ac34_openingOldVersionShowsStaleWarning` | ②③(差异入口/可关闭)是前端项，见 §4 缺口⑨ |
 | AC-35 | T-6【反证】 | `Sec36DialectAndCiAssertionTest::ac35_edgeCardinalityCiAssertion_negativeCase` | 详见 §3-4 |
 | AC-36 | T-6【反证·部分覆盖】 | `Sec36DialectAndCiAssertionTest::ac36_handlerReconcileCheckExistsAndPassesNormally` + `SemanticHandlerReconcileTest`（B-17 提供，测试侧复核） | 详见 §3-5；裁决见 §4 缺口⑩ |
-| AC-37 | T-1 | `Sec36DialectAndCiAssertionTest::ac37_dialectParameterizationProducesTwoForms` | |
+| AC-37 | T-1 | `Sec36DialectAndCiAssertionTest::ac37_dialectParameterizationProducesTwoForms` | 🔄 2026-08-24 D-50/D-54改写：方言由三处减为两处，别名规则(_Sheet简称_列名)与子件收窄(=ANY(:total_material_no))两侧统一，旧"核价侧无前缀英文列名"断言反转；新增④绑定键跟field_type走不跟侧走的正反例(报价侧BASIC_DATA也写basic_data_path) |
+| AC-58 🆕 | T-5 | `golden/ac58-context-injection-verify.sh`（脚本，非JUnit） | 黑盒下无法直接读`BomTreeVarsContext.get()`，改用下游可观测效应(渲染行数覆盖乙组基准16)间接验证，见test.md §3b/§6④ |
+| AC-59 🆕 | T-2【反证】 | `Sec36bClosureUnificationTest::ac59_missingContextMustErrorNotSilentlyReturnZeroRows` | ⚠️已知缺口——用"只给customerCode不给partNo"黑盒构造上下文缺失，不保证命中`SqlViewExecutor:626`具体分支，见test.md §2/§6③ |
+| AC-60 🆕 | T-5 | `sql-view-builder.spec.ts::AC-60①③` | 运行时可观测部分(6类页签无闭包勾选框+全文无CLOSURE字样)；②(builder_config.switches不写CLOSURE)与源码级`grep -c CLOSURE`须待F-16落地后另跑，见test.md §6 |
+| AC-61 🆕 | golden/dev库限定 | `golden/ac61-legacy-baseline.sh capture`已捕获基线(2026-08-24) | 66/26/1183三个总数已独立psql复核吻合；细分口径(791+30/267)复核不上，见test.md §3c；⚠️矩阵层级由T-3更正为dev库限定脚本，见test.md §6⑥ |
 | AC-38 | T-4★ | `golden/golden-verify.sh`（脚本，非JUnit，理由见脚本头） | 5类各跑一次：主件COMP-0019/材质元素COMP-0027/零件COMP-0023/外购件COMP-0022/费用类`$ll_view`系一个（D-34分立建模后取FIXED变体） |
 | AC-39 | T-5(序列) | `sql-view-builder.spec.ts::AC-39` | |
 | AC-40 | 自检声明 | §5 本文件 shell checklist | 不建代码文件，AC本身即是命令清单 |
@@ -80,7 +84,7 @@
 | AC-56 | T-3【反证】 | `Sec36aSemanticGraphDbTest::ac56_writeEndpointRolePermission_negativeCase` | 详见 §3-10 |
 | AC-57 | T-3 | `Sec36aSemanticGraphDbTest::ac57_hotReloadAndConcurrencySafety` | |
 
-**正向覆盖核对**：51 条一期 AC 逐条有对应用例，**无缺行**。
+**正向覆盖核对**：55 条一期 AC 逐条有对应用例，**无缺行**（含 2026-08-24 新增 AC-58~61 与改写的 AC-3/26/37）。
 
 ---
 
@@ -212,21 +216,24 @@ PGPASSWORD=joii5231 psql -h 10.177.152.12 -U postgres -d cpq_db_0724 \
 
 ---
 
-## 6. 三类覆盖核对（本清单自查，按一期51条口径重新统计，非需求文档 §3.8 表格的直接复制）
+## 6. 三类覆盖核对（本清单自查，按一期55条口径重新统计，非需求文档 §3.8 表格的直接复制）
 
 > ⚠️ **勘误**：需求文档 §3.8 的表格统计的是**全部57条**（一期+二期未分开），直接照抄会把二期 AC 混进一期统计。
-> 一期51条 = 27单点 + 5序列 + 18边界 + 1自检，逐条重新核对如下（二期 AC-41~46 已从对应类别里剔除）。
+> 一期55条 = 30单点 + 5序列 + 19边界 + 1自检，逐条重新核对如下（二期 AC-41~46 已从对应类别里剔除；2026-08-24 新增 AC-58~61）。
 
 | 类型 | 一期数量 | 一期清单 |
 |---|---|---|
-| 单点 | **27条**（原表32条含5条二期AC-41/42/43/45/46，已剔除） | AC-1,2,3,4,5,6,8,11,14,16,18,19,20,22,24,25,26,28,29,34,37,38,47,49,50,51,57 |
-| 序列 | 5条（无二期项，与原表一致） | AC-12,15,21,31,39 |
-| 边界 | **18条**（原表19条含1条二期AC-44，已剔除） | AC-7,9,10,13,17,23,27,30,32,33,35,36,48,52,53,54,55,56 |
-| 自检 | 1条（AC-40，本身即一期专属） | AC-40 |
+| 单点 | **30条**（27条基线 + 🆕AC-58/60/61，见下方2026-08-24更新说明） | AC-1,2,3,4,5,6,8,11,14,16,18,19,20,22,24,25,26,28,29,34,37,38,47,49,50,51,57,**58,60,61** |
+| 序列 | 5条（无变化） | AC-12,15,21,31,39 |
+| 边界 | **19条**（18条基线 + 🆕AC-59） | AC-7,9,10,13,17,23,27,30,32,33,35,36,48,52,53,54,55,56,**59** |
+| 自检 | 1条（AC-40） | AC-40 |
 
-**10条反证型 AC 是横跨上表的正交标签，不是第四类**：AC-9/10/35/36/52/53/54/55/56 落在「边界」里，**AC-22 落在「单点」里**（它的主断言是单点正确性，反证只是叠加校验，参见需求文档 §3.8 原文脚注对反证型 AC 的单独列举方式，本清单沿用同一口径，不把反证单独立为第四类）。
+**11条反证型 AC 是横跨上表的正交标签，不是第四类**：AC-9/10/35/36/52/53/54/55/56/**59** 落在「边界」里，**AC-22 落在「单点」里**（它的主断言是单点正确性，反证只是叠加校验，参见需求文档 §3.8 原文脚注对反证型 AC 的单独列举方式，本清单沿用同一口径，不把反证单独立为第四类）。
 
-27+5+18+1 = 51，与一期 AC 总数吻合。
+30+5+19+1 = 55，与一期 AC 总数（2026-08-24 由 51 增至 55）吻合。
+
+> 🔄 **2026-08-24 更新说明**：D-50~D-53 新增 AC-58~AC-61（需求文档.md §3.6b「单点」标注 AC-58/60/61、「边界·反证型」标注 AC-59），
+> AC-3/AC-26/AC-37 三条改写但类型标注不变（仍是单点）。本表已按此更新，一期总数由 51 增至 55。
 
 ---
 
