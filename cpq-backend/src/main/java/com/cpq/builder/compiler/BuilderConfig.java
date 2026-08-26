@@ -23,6 +23,12 @@ public class BuilderConfig {
     public Map<String, Object> switches;
     public List<ColumnConfig> columns;
     public PriceStrategyConfig priceStrategy;
+    /**
+     * task-260819 B-22（D-59）：编译方言（"QUOTE"/"COSTING"），仅 {@code POST /compile} 消费
+     * （{@code BuilderService#doCompile}），不是 {@code builder_config} JSONB 的持久化字段——
+     * api.md §2.1 的落库示例没有它。缺省/无法识别时按 QUOTE 处理（与改动前行为一致，零回归）。
+     */
+    public String dialect;
 
     public boolean includeChildParts() {
         if (switches == null) return false;

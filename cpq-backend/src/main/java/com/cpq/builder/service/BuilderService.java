@@ -13,6 +13,8 @@ import com.cpq.component.repository.ComponentSqlViewRepository;
 import com.cpq.component.service.ComponentService;
 import com.cpq.component.service.ComponentSqlViewService;
 import com.cpq.builder.compiler.SemanticCompiler;
+import com.cpq.quotation.entity.QuotationLineItem;
+import com.cpq.quotation.service.BomTreeRenderService;
 import com.cpq.semanticgraph.service.SemanticGraphLoader;
 import com.cpq.semanticgraph.service.SemanticGraphSnapshot;
 import com.cpq.template.entity.Template;
@@ -52,6 +54,7 @@ public class BuilderService {
     @Inject ComponentService componentService;
     @Inject TemplateService templateService;
     @Inject DataSource dataSource;
+    @Inject BomTreeRenderService bomTreeRenderService;
 
     // ---------------- GET / (B-20, AC-34) ----------------
 
@@ -122,7 +125,20 @@ public class BuilderService {
 
     private CompileResult doCompile(BuilderConfig cfg) {
         SemanticGraphSnapshot snap = loader.get();
-        return compiler.compile(snap, cfg, CompileDialect.QUOTE);
+        // task-260819 B-22（D-59）：改读请求体 cfg.dialect，不再硬编码 QUOTE——硬编码会让
+        // AC-37 的核价侧编译路径根本走不到（一期 B-10「方言参数化」因此无法验收）。
+        // 只改取值来源，编译器内部按 dialect 分支的逻辑（B-10 已交付部分）不动。
+        return compiler.compile(snap, cfg, resolveDialect(cfg));
+    }
+
+    /** task-260819 B-22：缺省/无法识别的 dialect 值一律按 QUOTE 处理（与改动前行为一致，零回归）。 */
+    private static CompileDialect resolveDialect(BuilderConfig cfg) {
+        if (cfg == null || cfg.dialect == null || cfg.dialect.isBlank()) return CompileDialect.QUOTE;
+        try {
+            return CompileDialect.valueOf(cfg.dialect.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return CompileDialect.QUOTE;
+        }
     }
 
     // ---------------- POST /preview (B-11, AC-26~28) ----------------
@@ -133,6 +149,14 @@ public class BuilderService {
 
         String bound = bindLiterals(r.sql, req.customerCode,
                 req.customerCode != null ? LocalDate.now().toString() : null);
+
+        // task-260819 B-23（D-63）：D-50 后编译产物一律带 = ANY(:total_material_no)，但 /preview
+        // 走裸 JDBC 直接拼 SQL 执行、不经 SqlViewExecutor/BomTreeVarsContext，该占位符无人绑定会
+        // 原样进入发给 PG 的 SQL 文本，PG 不认识 ":xxx" 语法 → syntax error（A/B 对照实证的真回归）。
+        // 与 customerCode/priceBaseDate 同款字面量替换风格，注入"该料号自己的 BOM 闭包"（成品+
+        // 全部后代，D-58「传几行算几行」口径）——复用 BomTreeRenderService.collectTotalMaterialNoUnion，
+        // 不另写第二套闭包算法（D-50 要收敛的正是这个）。
+        bound = bindTotalMaterialNo(bound, req.partNo);
 
         String wrapped = "SELECT * FROM (" + bound + ") __preview";
         List<String> conditions = new ArrayList<>();
@@ -204,6 +228,44 @@ public class BuilderService {
             result = result.replaceAll("(?<!:):priceBaseDate\\b", Matcher.quoteReplacement("'" + priceBaseDate + "'"));
         }
         return result;
+    }
+
+    private static final Pattern TOTAL_MATERIAL_NO_TOKEN = Pattern.compile("(?<!:):total_material_no\\b");
+
+    /**
+     * task-260819 B-23（D-63）：把编译产物里的 {@code :total_material_no} 占位符替换成一个
+     * 字面量 PG 数组——预览走裸 JDBC，没有 {@code SqlViewExecutor} 的命名参数绑定管线可用，
+     * 只能沿用本类既有的 {@link #bindLiterals} 字面量替换风格。
+     *
+     * <p>注入内容 = 预览料号自己的 BOM 闭包（成品 + 全部后代），与 AC-26 乙组、与单卡路径
+     * 「传几行算几行」口径一致（D-58）——🚫 不是只注入料号自身，那样闭包收窄的存在毫无意义，
+     * 预览永远看不到子件行，与 AC-26 断言直接冲突。
+     *
+     * <p>{@code partNo} 为空（如 AC-28 misbound 场景，只用 customerCode 探测整表）时，SQL 里的
+     * {@code :total_material_no} 仍需要一个合法值才能过 PG 语法检查——绑定「空数组」而非报错：
+     * 语义上「没有选定料号」= 没有可收窄的种子，`= ANY(ARRAY[]::text[])` 恒为 FALSE，与
+     * 预览页面「未选料号时不该看到任何具体料号的数据行」的直觉一致，且不会把 AC-27/AC-28 那类
+     * 「本该 0 行给诊断」的用例升级成一个新的必答问题（保持零回归）。
+     */
+    private String bindTotalMaterialNo(String sql, String partNo) {
+        if (!TOTAL_MATERIAL_NO_TOKEN.matcher(sql).find()) return sql; // 该 SQL 不含此占位符，零开销跳过
+
+        List<String> closure;
+        if (partNo == null || partNo.isBlank()) {
+            closure = List.of();
+        } else {
+            QuotationLineItem lite = new QuotationLineItem();
+            lite.productPartNoSnapshot = partNo;
+            BomTreeRenderService.MaterialUnionResult union =
+                    bomTreeRenderService.collectTotalMaterialNoUnion(List.of(lite), "QUOTE");
+            closure = union.totalMaterialNo;
+        }
+        String arrayLiteral = closure.isEmpty()
+                ? "ARRAY[]::text[]"
+                : "ARRAY[" + closure.stream()
+                        .map(s -> "'" + s.replace("'", "''") + "'")
+                        .reduce((a, b) -> a + "," + b).orElse("") + "]::text[]";
+        return TOTAL_MATERIAL_NO_TOKEN.matcher(sql).replaceAll(Matcher.quoteReplacement(arrayLiteral));
     }
 
     // ---------------- POST /inspect (B-12, AC-13/16-19/29/30) ----------------

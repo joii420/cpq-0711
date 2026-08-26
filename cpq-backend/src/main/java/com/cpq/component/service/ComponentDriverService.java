@@ -414,6 +414,19 @@ public class ComponentDriverService {
             throw new BusinessException(404, "Component not found: " + componentId);
         }
 
+        // task-260819 D-58（B+ wrap 修法·单料号路径）：这一个成品自己的 BOM 闭包（含自身），供
+        // 下方 5 处 dataLoader.loadByPath(...) 调用点加宽 outer hfPartNos 过滤器用——只查一次
+        // BomTreeVarsContext.get()，5 处复用同一个值（不重复取，不是各自现查）。
+        // 🚨 只能用 materialsByRoot（这一个成品自己的闭包），绝不能用 totalMaterialNo（整单料号池）
+        // ——单料号路径没有 rootsByMaterial 那样的回分步骤，加宽到整单池会把别的成品的行带进这一卡
+        // （D-58 明令）。未提供该映射（如未接线本链路的旧调用点）时为 null，5 处调用点各自退化为
+        // List.of(partNo)，与改动前逐位相同（AC-10 零回归）。
+        com.cpq.datasource.sqlview.BomTreeVarsContext.Vars _singlePartWrapVars =
+                com.cpq.datasource.sqlview.BomTreeVarsContext.get();
+        List<String> _widenedHfPartNos = (_singlePartWrapVars != null && _singlePartWrapVars.materialsByRoot != null)
+                ? _singlePartWrapVars.materialsByRoot.get(partNo)
+                : null;
+
         // EXCEL 组件不参与 driver expand：它无 dataDriverPath，但仍可能含 BASIC_DATA 字段，
         // 若不显式拦截会落入下方「产品级单行虚拟 driver」分支被误展开。Excel 视图渲染走独立通道(Phase 3)。
         if ("EXCEL".equals(component.componentType)) {
@@ -467,7 +480,7 @@ public class ComponentDriverService {
             // 使下方 evaluatePath 短路命中 driverRow.get(中文列), 绕开 $view 单列路径的 ASCII 校验。
             for (String viewBase : parseBasicDataDefaultViewBases(effectiveFieldsJson)) {
                 try {
-                    List<Map<String, Object>> vrows = dataLoader.loadByPath(viewBase, null, partNo, customerId).get();
+                    List<Map<String, Object>> vrows = dataLoader.loadByPath(viewBase, null, partNo, _widenedHfPartNos, customerId).get();
                     if (vrows != null && !vrows.isEmpty() && vrows.get(0) != null) {
                         for (Map.Entry<String, Object> e : vrows.get(0).entrySet()) {
                             // putIfAbsent: 不覆盖已注入的 hf_part_no/part_no/customer_id; 多视图同名列时先列出的视图先赢(实际极少冲突)。
@@ -533,7 +546,7 @@ public class ComponentDriverService {
                     Map<String, Object> lineItemHint = new LinkedHashMap<>();
                     lineItemHint.put("quotation_line_item_id", lineItemId);
                     List<Map<String, Object>> lineItemRows =
-                        dataLoader.loadByPath(effectiveDriverPath, lineItemHint, partNo, customerId).get();
+                        dataLoader.loadByPath(effectiveDriverPath, lineItemHint, partNo, _widenedHfPartNos, customerId).get();
                     if (lineItemRows != null && !lineItemRows.isEmpty()) {
                         // 专属行存在 → 使用
                         driverRows = lineItemRows;
@@ -570,14 +583,14 @@ public class ComponentDriverService {
                     LOG.infof("[COMPOSITE-child expand] path=%s partNo=%s childIds=%d -> IN-filtered path=%s",
                             effectiveDriverPath, partNo, childLineItemIds.size(), inPath);
                     List<Map<String, Object>> childRows =
-                        dataLoader.loadByPath(inPath, null, partNo, customerId).get();
+                        dataLoader.loadByPath(inPath, null, partNo, _widenedHfPartNos, customerId).get();
                     // 同时查主数据行 (quotation_line_item_id IS NULL 的标准化行)
                     // appendNullLineItemPredicate 返回不带额外谓词的 path (全量行),
                     // 从结果中过滤 quotation_line_item_id == null 的行作为主数据补充.
                     // 注: CpqPathParser 不支持 IS NULL 语法, 只能查全量再内存过滤.
                     String mainDataPath = appendNullLineItemPredicate(effectiveDriverPath);
                     List<Map<String, Object>> allRowsForMainData =
-                        dataLoader.loadByPath(mainDataPath, null, partNo, customerId).get();
+                        dataLoader.loadByPath(mainDataPath, null, partNo, _widenedHfPartNos, customerId).get();
                     // 过滤出 quotation_line_item_id IS NULL 的主数据行
                     List<Map<String, Object>> mainRows = new ArrayList<>();
                     if (allRowsForMainData != null) {
@@ -616,7 +629,7 @@ public class ComponentDriverService {
                         LOG.debugf("[expand-driver] lineItemId=null, no lineItem injection for path=%s",
                                 effectiveDriverPath);
                     }
-                    driverRows = dataLoader.loadByPath(effectiveDriverPath, null, partNo, customerId).get();
+                    driverRows = dataLoader.loadByPath(effectiveDriverPath, null, partNo, _widenedHfPartNos, customerId).get();
                 }
             } catch (InterruptedException | ExecutionException e) {
                 LOG.warnf("Driver path resolve failed: path=%s, err=%s",
@@ -717,9 +730,26 @@ public class ComponentDriverService {
 
             PartVersionContext.set(partVersion);
             try {
+                // task-260819 B+（D-58，wrap 修法·合桶路径）：SqlViewExecutor.executeAllRows 会用
+                // outer `hf_part_no = ANY(:hfPartNos)` 包住内层 SQL（:hfPartNos 就是这里传给
+                // dataLoader.loadByPath 的 partNos）。D-50 后 B 机制视图的 hf_part_no 已是锚点自身
+                // 料号（子件自己），不再是根成品——outer 过滤器若只用调用方传入的根成品列表筛，
+                // 子件行在下面 §按 hf_part_no 回分§ 逻辑跑到之前就已经被这层 SQL 滤掉（B-21 自测
+                // 实测复现：设好 rootsByMaterial 后两个桶仍是 0 行，见 D-58）。
+                // 加宽到「整单料号池」（partNos ∪ totalMaterialNo）：合桶路径后面有 rootsByMaterial
+                // fan-out 回分兜底，加宽不会串单——这一点与单料号路径（不能这样加宽）不同，见
+                // BomTreeVarsContext.Vars#materialsByRoot 的类注释。
+                com.cpq.datasource.sqlview.BomTreeVarsContext.Vars _wrapVars =
+                        com.cpq.datasource.sqlview.BomTreeVarsContext.get();
+                List<String> widenedPartNos = partNos;
+                if (_wrapVars != null && _wrapVars.totalMaterialNo != null && !_wrapVars.totalMaterialNo.isEmpty()) {
+                    java.util.LinkedHashSet<String> widened = new java.util.LinkedHashSet<>(partNos);
+                    widened.addAll(_wrapVars.totalMaterialNo);
+                    widenedPartNos = new ArrayList<>(widened);
+                }
                 List<Map<String, Object>> mergedRows;
                 try {
-                    mergedRows = dataLoader.loadByPath(effectiveDriverPath, null, partNos, customerId).get();
+                    mergedRows = dataLoader.loadByPath(effectiveDriverPath, null, widenedPartNos, customerId).get();
                 } catch (InterruptedException | ExecutionException e) {
                     throw new BusinessException("driver 多值路径查询失败: " + e.getMessage());
                 }
@@ -731,26 +761,57 @@ public class ComponentDriverService {
                 // gvar P1-C3: 跨行批量预解析（按 mergedRows 同序对齐 index），逐位等价逐行
                 List<Map<String, Object>> gvarPerRow =
                         gvarTasks.isEmpty() ? null : resolveGvarsBatched(gvarTasks, mergedRows);
-                // 按行 hf_part_no 分发回各 partNo 的响应
+                // task-260819 B-21（D-56/AC-62）：按行 hf_part_no 回分——D-50/D-56 后 hf_part_no
+                // 恒为锚点(行)自身列，不再经 SQL 侧改写为根成品料号，归属关系改由
+                // BomTreeVarsContext.Vars.rootsByMaterial（「后代→根」映射，与整单料号并集同一次
+                // 树遍历产出，见 BomTreeRenderService#collectTotalMaterialNoUnion）承担。
+                // 未提供该映射的调用方（如未接线本链路的旧调用点）保留原始精确匹配行为，逐位不变。
+                com.cpq.datasource.sqlview.BomTreeVarsContext.Vars _bomVars =
+                        com.cpq.datasource.sqlview.BomTreeVarsContext.get();
+                Map<String, List<String>> rootsByMaterial =
+                        (_bomVars != null) ? _bomVars.rootsByMaterial : null;
                 for (int mi = 0; mi < mergedRows.size(); mi++) {
                     Map<String, Object> driverRow = mergedRows.get(mi);
                     Object hf = driverRow.get("hf_part_no");
                     String rowPart = hf == null ? null : hf.toString();
-                    ExpandDriverResponse target = rowPart == null ? null : resultByPart.get(rowPart);
-                    if (target == null) {
-                        // 视图返了一行 hf_part_no 不在 partNos 列表里(异常,跳过不报错)
-                        continue;
+                    if (rowPart == null) continue; // 无法归属任何桶，行为不变
+
+                    List<String> targetRoots;
+                    if (rootsByMaterial != null) {
+                        List<String> mapped = rootsByMaterial.get(rowPart);
+                        // B-21 硬约束③：查不到映射的料号按其自身入桶（兜底不丢行，等价原
+                        // COALESCE(cl.root_no, ...) 的兜底语义——不属于任何 BOM 闭包的料号不消失）。
+                        targetRoots = (mapped != null && !mapped.isEmpty()) ? mapped : List.of(rowPart);
+                    } else {
+                        targetRoots = List.of(rowPart);
                     }
-                    ExpandDriverResponse.Row row = new ExpandDriverResponse.Row();
-                    row.driverRow = driverRow;
-                    row.basicDataValues = new LinkedHashMap<>();
-                    for (String fieldPath : basicDataPaths) {
-                        Object value = evaluatePath(fieldPath, driverRow, customerId, rowPart);
-                        row.basicDataValues.put(fieldPath, value);
+
+                    // AC-62③ 不串单：一个子件被两个成品共用时，该行必须同时、独立地出现在两个
+                    // 成品各自的桶里，不互相吞掉——故按 targetRoots 逐个落桶，而不是只落第一个。
+                    for (String root : targetRoots) {
+                        ExpandDriverResponse target = resultByPart.get(root);
+                        if (target == null) {
+                            // 该根不在本次 partNos 列表里(异常/不属于本批次)，跳过不报错
+                            continue;
+                        }
+                        ExpandDriverResponse.Row row = new ExpandDriverResponse.Row();
+                        // 多根共享同一行时，driverRow 各桶独立浅拷贝，避免跨桶共享可变引用
+                        // （AP-37 同类风险：下游若原地改写其中一份，不能连带污染另一份）。
+                        row.driverRow = (targetRoots.size() > 1) ? new LinkedHashMap<>(driverRow) : driverRow;
+                        row.basicDataValues = new LinkedHashMap<>();
+                        for (String fieldPath : basicDataPaths) {
+                            // partNo 传 root（该行此刻所属的根成品标识），与历史语义一致——
+                            // expand()/expandMulti 传给 evaluatePath 的 partNo 恒是"产品身份"
+                            // 而非行自身料号；D-56 前靠 hf_part_no 的 COALESCE 改写间接做到这点，
+                            // 现在职责移交这里显式传参，逐语义还原（非逐字节，因为一行现在可能
+                            // 属于多个根，需要按各自根分别求值）。
+                            Object value = evaluatePath(fieldPath, driverRow, customerId, root);
+                            row.basicDataValues.put(fieldPath, value);
+                        }
+                        if (gvarPerRow != null) row.basicDataValues.putAll(gvarPerRow.get(mi));
+                        target.rows.add(row);
+                        target.rowCount++;
                     }
-                    if (gvarPerRow != null) row.basicDataValues.putAll(gvarPerRow.get(mi));
-                    target.rows.add(row);
-                    target.rowCount++;
                 }
             } finally {
                 PartVersionContext.clear();

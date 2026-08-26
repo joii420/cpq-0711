@@ -97,6 +97,15 @@ public class SqlViewExecutor {
     /** SQL 标识符白名单（列名 / 别名 / 视图名）：字母数字下划线，长度限制 80。 */
     private static final Pattern SQL_IDENT = Pattern.compile("^[A-Za-z_][A-Za-z0-9_]{0,79}$");
 
+    /**
+     * task-260819 B-20（D-53/AC-59）：D-50 统一到「主树供数组」机制后，配置器新产物的锚点收窄
+     * 全部依赖 {@code :total_material_no}——该参数一旦缺失绝不能走下面 {@link #rewriteNamedParams}
+     * 对其余参数通用的「未绑定 → 字面量 NULL」安全降级。见该方法内的专项分支与类注释引用的实测：
+     * {@code x = ANY(NULL)} 与 {@code x = ANY(ARRAY[]::text[])} 都返回 0 行、不报错，会把
+     * 「调用方忘了 open BomTreeVarsContext」伪装成「这个客户/料号没有数据」（AP-31/37/53 同类故障）。
+     */
+    private static final String TOTAL_MATERIAL_NO_PARAM = "total_material_no";
+
     @Inject
     DataSource dataSource;
 
@@ -624,6 +633,15 @@ public class SqlViewExecutor {
             String name = m.group(1);
             Object value = namedParams.get(name);
             if (value == null) {
+                // task-260819 B-20（D-53/AC-59）：仅收窄 :total_material_no 这一个参数的降级行为——
+                // 其余占位符（:versionFilter 相关的 __vfPart/__vfVer 之外，如 :customerCode/:hfPartNos
+                // 等）继续沿用下面的「未绑定 → 字面量 NULL」既有约定，不在此一并改掉。
+                if (TOTAL_MATERIAL_NO_PARAM.equals(name)) {
+                    throw new BusinessException(400,
+                        "SQL 视图引用了 :total_material_no 但当前渲染上下文未提供该参数"
+                        + "（BomTreeVarsContext 未 open 或 totalMaterialNo 为空）——已阻断执行，"
+                        + "避免 x = ANY(NULL) 静默返回 0 行伪装成\"无数据\"");
+                }
                 // 安全降级：未绑定的占位符替换为 NULL
                 out.append("NULL");
             } else {

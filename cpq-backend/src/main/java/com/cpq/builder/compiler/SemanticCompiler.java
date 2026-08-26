@@ -19,12 +19,16 @@ import java.util.regex.Pattern;
  * SQL 文本——同一份 {@code builder_config} 任何时候编译结果都相同（AC-49①「实时面板」与
  * 保存落库 {@code sql_template} 必须逐字一致的前提）。
  *
- * <p>三条闭包铁律（照抄 {@code ll_view}/{@code mc_view} 现网注释，见 backtask.md B-5）：
- * ① 白名单表必须在顶层 FROM；② 必须 {@code LEFT JOIN bom_closure_d} + {@code COALESCE} 兜底；
- * ③ 闭包 CTE 用 {@code UNION} 去重（不能 {@code UNION ALL}），且 {@code (root,node)} 用
- * {@code MIN(lvl)} 唯一化。版本化表（{@code unit_price} 等）禁止 {@code LEFT JOIN} 直连
- * ——图声明已经把这类关系登记成 {@code SUB}（相关标量子查询）而不是 {@code LOOKUP}，编译器
- * 只需老实按 {@code edge_kind} 分支，不需要另行猜哪张表"危险"。
+ * <p>🔄 2026-08-24（D-50/D-56，AC-3 整条改写）：原「三条闭包铁律」（各页签自建
+ * {@code WITH RECURSIVE bom_closure}）已整体作废——{@link #closureCte} 停用、不再被任何调用路径
+ * 引用（保留方法体，删除与否由主线收尾裁决）。子件收窄统一为「主树供数组」：锚点料号列上生成
+ * {@code = ANY(:total_material_no)}（无任何用户开关，AC-60），{@code hf_part_no} 恒保持锚点自身列
+ * 不再按闭包改写——「子件行归属哪个成品」这层职责整体移交 Java 侧（B-19/B-21，
+ * {@code BomTreeRenderService#collectTotalMaterialNoUnion} 顺带产出「后代→根」映射 +
+ * {@code ConfigureSnapshotService} 的 {@code expandMulti} 回分，见 AC-62）。版本化表
+ * （{@code unit_price} 等）仍然禁止 {@code LEFT JOIN} 直连——图声明已经把这类关系登记成
+ * {@code SUB}（相关标量子查询）而不是 {@code LOOKUP}，编译器只需老实按 {@code edge_kind} 分支，
+ * 不需要另行猜哪张表"危险"。
  *
  * <p>N+1 自检：单次 compile() 调用只有一条 {@link PhysicalColumnCatalog#columnsOf} SQL
  * （一次性查完本次涉及的全部物理表列名），其余全是内存图遍历（{@link SemanticGraphSnapshot}
@@ -35,7 +39,6 @@ public class SemanticCompiler {
 
     public static final int CURRENT_VERSION = 1;
 
-    private static final String CLOSURE_ALIAS = "cl";
     private static final String PRICE_FUNC_ALIAS = "cep";
     private static final String PRICE_FUNC_NODE_KEY = "FUNC_ELEMENT_PRICE";
 
@@ -51,7 +54,6 @@ public class SemanticCompiler {
         SemanticTabView tabView;
         SemanticNode anchor;
         String anchorAlias;
-        boolean closure;
         Map<String, Set<String>> columnCatalog;
         Map<String, Integer> aliasSeq = new HashMap<>();
         Map<UUID, String> aliasByNode = new LinkedHashMap<>(); // node.id -> allocated alias (JOIN/GRAIN/PRICE targets)
@@ -75,7 +77,9 @@ public class SemanticCompiler {
         if (c.anchor == null) {
             throw new BuilderApiException(400, "COMPILE_ANCHOR_MISSING", "页签视图的锚点节点不存在", Map.of());
         }
-        c.closure = containsSwitch(c.tabView.switches, "CLOSURE") && cfg.includeChildParts();
+        // D-50/D-56（AC-3/AC-60）：闭包开关已整体取消，"子件数据带出与否"不再由任何用户开关
+        // 或 tabView.switches 决定——统一改为在锚点料号列上生成 = ANY(:total_material_no) 收窄
+        // （见下方 anchorWhere 追加处），SQL 侧不再区分"闭包/非闭包"两态。
 
         // 收集本次涉及的全部物理表（anchor + 直接边目标 + 价格函数节点忽略，函数无物理表）
         Set<String> tables = new LinkedHashSet<>();
@@ -131,14 +135,23 @@ public class SemanticCompiler {
             }
         }
 
-        // hf_part_no 表达式（闭包感知）
+        // hf_part_no 表达式（D-50/D-56：始终保持锚点自身列，不再按闭包改写为 COALESCE(cl.root_no,...)——
+        // "子件行归属哪个成品"这层职责已整体移交 Java 侧，见 BomTreeRenderService#collectTotalMaterialNoUnion
+        // 顺带产出的「后代→根」映射与 B-21 的 expandMulti 回分，AC-3③/AC-62）。
         String anchorExpr = requalifyAnchorExpr(c);
-        String hfExpr = c.closure ? "COALESCE(" + CLOSURE_ALIAS + ".root_no, " + anchorExpr + ")" : anchorExpr;
+        String hfExpr = anchorExpr;
         selectExprs.add(0, hfExpr + " AS hf_part_no");
         declaredColumns.add(0, "hf_part_no");
 
         // 锚点自身三件套 + 判别式
         applyFullScope(c, c.anchor, c.anchorAlias, c.anchorWhere);
+        // D-50（AC-3①/AC-37①）：QUOTE 方言的子件收窄统一为「主树供数组」—— 锚点料号列上生成
+        // = ANY(:total_material_no)，无任何用户开关（AC-60）。COSTING 方言的同款收窄已在
+        // applyFullScope 的 else 分支按 code 列实现（AC-37①同一收窄口径，不在此重复）。
+        if (c.dialect == CompileDialect.QUOTE) {
+            c.anchorWhere.add(anchorColumnOnly(c) + " = ANY(:total_material_no)");
+            c.requiredVars.add("total_material_no");
+        }
         String anchorDiscriminator = resolveDiscriminator(c, c.anchor, null);
         if (anchorDiscriminator != null) {
             c.anchorWhere.add(qualify(c.anchorAlias, anchorDiscriminator));
@@ -166,28 +179,20 @@ public class SemanticCompiler {
             c.requiredVars.add("priceBaseDate");
         }
 
-        // FROM / closure CTE
+        // FROM（D-50：闭包 CTE 已停用，顶层 FROM 恒为裸表——AC-3④，closureCte() 不再被调用）
         StringBuilder sql = new StringBuilder();
-        if (c.closure) {
-            sql.append(closureCte(c.anchor.physicalTable));
-        }
         sql.append("SELECT\n  ").append(String.join(",\n  ", selectExprs)).append("\n");
         sql.append("FROM ").append(c.anchor.physicalTable).append(" ").append(c.anchorAlias).append("\n");
-        if (c.closure) {
-            sql.append("  LEFT JOIN bom_closure_d ").append(CLOSURE_ALIAS)
-               .append(" ON ").append(CLOSURE_ALIAS).append(".node_no = ").append(anchorColumnOnly(c)).append("\n");
-        }
         for (String j : c.joinClauses) sql.append("  ").append(j).append("\n");
         if (!c.anchorWhere.isEmpty()) {
             sql.append("WHERE ").append(String.join(" AND ", c.anchorWhere)).append("\n");
         }
-        // D-45①（2026-08-21 主线裁决）：PG 没有 ORDER BY 的行序是未定义的——不能只在闭包分支排序，
-        // 非闭包也必须排。判据是"golden 行序与基准一致"，不是"加了 ORDER BY 就算数"（golden 实测
-        // 见 backtask 回报）。键的构成参照基准 mc_view：ORDER BY ebi.material_no, ebi.material_part_no,
-        // ebi.seq_no —— 锚点列打头，闭包开启时前面再加 COALESCE(cl.lvl,0)（层级优先，原逻辑保留），
-        // 随后接锚点节点自身 grain_columns（逐列，按声明顺序），最后接该节点带 SORT 角色的列（如有）。
+        // D-45①（2026-08-21 主线裁决）：PG 没有 ORDER BY 的行序是未定义的——必须排序。判据是
+        // "golden 行序与基准一致"，不是"加了 ORDER BY 就算数"（golden 实测见 backtask 回报）。键的
+        // 构成参照基准 mc_view：ORDER BY ebi.material_no, ebi.material_part_no, ebi.seq_no —— 锚点列
+        // 打头（D-50 后闭包层级列已随 A 机制一并停用），随后接锚点节点自身 grain_columns（逐列，按
+        // 声明顺序），最后接该节点带 SORT 角色的列（如有）。
         List<String> orderCols = new ArrayList<>();
-        if (c.closure) orderCols.add("COALESCE(" + CLOSURE_ALIAS + ".lvl, 0)");
         orderCols.add(anchorColumnOnly(c));
         for (String grainCol : c.anchor.grainColumns) {
             orderCols.add(c.anchorAlias + "." + grainCol);
@@ -223,11 +228,8 @@ public class SemanticCompiler {
                         "未找到页签视图: " + cfg.tabType + "/" + vk, Map.of()));
     }
 
-    private boolean containsSwitch(String[] switches, String name) {
-        if (switches == null) return false;
-        for (String s : switches) if (name.equals(s)) return true;
-        return false;
-    }
+    // D-51/AC-60：containsSwitch() 曾用于读 tabView.switches 里的 CLOSURE 标记，随闭包开关整体
+    // 取消一并停用移除（唯一调用点已随 c.closure 字段一起删除）。
 
     // ---------------- 别名分配（(shortName 无关) 纯按物理表推导，复现现网 ebi/mm/mr/up/ca 等约定） ----------------
 
@@ -578,13 +580,12 @@ public class SemanticCompiler {
         }
 
         PricePlan plan = new PricePlan();
-        // key[0]：编码键，字面量列引用；key[1..]：与 hf_part_no 表达式逐字一致（AC-1⑤/AC-3⑥）
+        // key[0]：编码键，字面量列引用；key[1..]：与 hf_part_no 表达式逐字一致（AC-1⑤/AC-3⑤）——
+        // D-50/D-56 后 hf_part_no 恒为锚点自身列，不再有闭包分支。
         SemanticEdgeKey codeKey = keys.get(0);
         plan.elementCodeSourceColumn = codeKey.leftColumn;
         String codeExpr = c.anchorAlias + "." + codeKey.leftColumn;
-        String hfExprForJoin = c.closure
-                ? "COALESCE(" + CLOSURE_ALIAS + ".root_no, " + requalifyAnchorExpr(c) + ")"
-                : requalifyAnchorExpr(c);
+        String hfExprForJoin = requalifyAnchorExpr(c);
 
         List<String> on = new ArrayList<>();
         on.add(PRICE_FUNC_ALIAS + "." + codeKey.rightColumn + " = " + codeExpr);
@@ -639,6 +640,11 @@ public class SemanticCompiler {
         return c.anchorAlias + "." + parts[parts.length - 1];
     }
 
+    /**
+     * 🛑 停用（task-260819 B-5，D-50）：A 机制（各页签自建递归闭包）已被 B 机制
+     * （{@code = ANY(:total_material_no)}，主树供数组）统一取代，本方法不再被 {@link #compile}
+     * 的任何路径调用。保留方法体不删——是否物理删除由主线在收尾时裁决。
+     */
     private String closureCte(String whitelistTable) {
         return "WITH RECURSIVE bom_closure AS (\n" +
                 "  SELECT DISTINCT b.material_no AS root_no, b.material_no AS node_no, 0 AS lvl\n" +

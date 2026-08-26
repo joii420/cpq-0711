@@ -349,12 +349,50 @@ public class ConfigureSnapshotService {
                 // 清 driver 进程缓存(30s TTL),保冷跑语义——仅在确需 expand 时(否则跳过这次 evict)。
                 if (anyNeedsExpand) componentDriverService.evictAll();
 
+                // task-260819 B-19/B-21（D-52/D-56/AC-58/AC-62）：整单一次算好 BomTreeVarsContext
+                // 所需的两样东西——供下方「合桶预取」与「Pass1 逐行 fallback expand」两段各自局部
+                // 注入。提前到此处（而不是留在原 :376-389 只在 treeComps 非空时才建的分支里）：
+                //   ① liteLines 无条件构造，treeComps 分支复用同一份（原地各建一次的重复消除）；
+                //   ② collectTotalMaterialNoUnion 只在 anyNeedsExpand 时算——不需要 expand 就不必
+                //      为它多发一次递归 SQL（与 buckets/evictAll 同一懒触发闸门，N+1 约束①：
+                //      本次快照操作整单只发这一次递归 SQL，与行数/组件数无关）。
+                // ⚠️ 两段局部作用域各自 set/finally-clear，不与中间 :372-401 bomTreeRenderService.render()
+                //   的内部 set/clear 共享一个 try 块——BomTreeVarsContext.clear() 是无条件 TL.remove()，
+                //   一个大 try 会被 render() 内部提前清空（详见 B-19 方案报告）。
+                List<QuotationLineItem> liteLines = new ArrayList<>();
+                for (Map<String, Object> li : lineItems) {
+                    UUID lid = asUuid(li.get("id"));
+                    Object pnObj = li.get("productPartNo");
+                    String pn = pnObj != null ? pnObj.toString() : null;
+                    if (lid == null || pn == null || pn.isBlank()) continue;
+                    QuotationLineItem lite = new QuotationLineItem();
+                    lite.id = lid;
+                    lite.productPartNoSnapshot = pn;
+                    liteLines.add(lite);
+                }
+                BomTreeRenderService.MaterialUnionResult quoteUnion = null;
+                if (anyNeedsExpand && !liteLines.isEmpty()) {
+                    quoteUnion = bomTreeRenderService.collectTotalMaterialNoUnion(liteLines, "QUOTE");
+                }
+
                 // Phase 2 改造点：整单合桶预取（evictAll 之后,保冷跑语义）。仅 anyNeedsExpand 时算。
                 // buckets: componentId → (partNo → ExpandDriverResponse)；不 eligible 组件不进(逐行回落)。
-                Map<UUID, Map<String, ExpandDriverResponse>> buckets =
-                        (quoteBucketEnabled && anyNeedsExpand)
-                                ? precomputeQuoteDriverBuckets(quotationId, customerId, comps, lineItems)
-                                : Map.of();
+                Map<UUID, Map<String, ExpandDriverResponse>> buckets;
+                if (quoteBucketEnabled && anyNeedsExpand) {
+                    if (quoteUnion != null) {
+                        com.cpq.datasource.sqlview.BomTreeVarsContext.set(new com.cpq.datasource.sqlview.BomTreeVarsContext.Vars(
+                                null, quoteUnion.totalMaterialNo, null,
+                                com.cpq.datasource.sqlview.BomTreeVarsContext.Mode.RENDER, quoteUnion.rootsByMaterial,
+                                quoteUnion.materialsByRoot));
+                    }
+                    try {
+                        buckets = precomputeQuoteDriverBuckets(quotationId, customerId, comps, lineItems);
+                    } finally {
+                        if (quoteUnion != null) com.cpq.datasource.sqlview.BomTreeVarsContext.clear();
+                    }
+                } else {
+                    buckets = Map.of();
+                }
 
                 // task-0721 B3：树页签(tab_type='BOM') → 整单一次调 BomTreeRenderService.render(usage=QUOTE)，
                 // 逐 line 复用其 spine + 系统列结果（treeBaseRowsByLine.get(lineItemId).get(compIdStr)）。
@@ -374,19 +412,8 @@ public class ConfigureSnapshotService {
                     // （原为独立 self.loadCustomerTemplateId(quotationId) 调用，同一值，改为直接引用）。
                     UUID customerTemplateId = _customerTemplateId;
                     if (customerTemplateId != null) {
-                        List<QuotationLineItem> liteLines = new ArrayList<>();
-                        for (Map<String, Object> li : lineItems) {
-                            UUID lid = asUuid(li.get("id"));
-                            Object pnObj = li.get("productPartNo");
-                            String pn = pnObj != null ? pnObj.toString() : null;
-                            if (lid == null || pn == null || pn.isBlank()) continue;
-                            // 轻量携带体：BomTreeRenderService.render 只读 id/productPartNoSnapshot 两个字段，
-                            // 不需要托管实体/持久化上下文。
-                            QuotationLineItem lite = new QuotationLineItem();
-                            lite.id = lid;
-                            lite.productPartNoSnapshot = pn;
-                            liteLines.add(lite);
-                        }
+                        // task-260819 B-19：liteLines 已在上方（buckets 计算前）无条件构造一份，
+                        // 此处直接复用，不再重复构造（原地各建一次的重复消除）。
                         if (!liteLines.isEmpty()) {
                             try {
                                 treeBaseRowsByLine = bomTreeRenderService.render(
@@ -400,6 +427,17 @@ public class ConfigureSnapshotService {
                     }
                 }
 
+                // task-260819 B-19：Pass1 逐行 fallback expand（下方 componentDriverService.expand，
+                // buckets 未命中时的回落路径）同样依赖 :total_material_no——独立于上面「合桶预取」
+                // 那段作用域（中间隔着 :396-427 的 bomTreeRenderService.render() 调用，其内部会
+                // 无条件 clear() 掉线程上的 BomTreeVarsContext，不能跨它共用一个 try 块，见上方注释）。
+                if (quoteUnion != null) {
+                    com.cpq.datasource.sqlview.BomTreeVarsContext.set(new com.cpq.datasource.sqlview.BomTreeVarsContext.Vars(
+                            null, quoteUnion.totalMaterialNo, null,
+                            com.cpq.datasource.sqlview.BomTreeVarsContext.Mode.RENDER, quoteUnion.rootsByMaterial,
+                            quoteUnion.materialsByRoot));
+                }
+                try {
                 for (Map<String, Object> li : lineItems) {
                     UUID lineItemId = asUuid(li.get("id"));
                     String partNo = li.get("productPartNo") != null ? li.get("productPartNo").toString() : null;
@@ -578,6 +616,12 @@ public class ConfigureSnapshotService {
                         LOG.warnf("[add-snapshot] line=%s 物化 row_data 失败(已降级,仍可编辑后修正): %s",
                                 lineItemId, e.getMessage());
                     }
+                }
+                } finally {
+                    // task-260819 B-19：与本段开头的 set 成对——BomTreeVarsContext.clear() 是无条件
+                    // TL.remove()，渲染结束必须 remove，防串单（ThreadLocal 泄漏会把本单的料号并集
+                    // 漏给下一次复用同线程的操作）。
+                    if (quoteUnion != null) com.cpq.datasource.sqlview.BomTreeVarsContext.clear();
                 }
                 // Phase 2 落库批量: 整单一次写全部行 snapshot_rows(替代每行 writeSnapshotBatch)。
                 // 顺序:先 snapshot(建行 + snapshot_rows),后 row_data(UPDATE 命中);最终

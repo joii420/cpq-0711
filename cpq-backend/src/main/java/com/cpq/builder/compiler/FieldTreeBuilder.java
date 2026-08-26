@@ -28,6 +28,8 @@ public class FieldTreeBuilder {
         public String viewColumn;
         public String lookupLib;
         public boolean isCore;
+        /** true = 价格策略元素符号列（左键，B-24/D-65）——前端据此在拖入价格策略列时自动带出本列。 */
+        public boolean elemKey;
     }
 
     public static final class Group {
@@ -89,6 +91,16 @@ public class FieldTreeBuilder {
         Map<UUID, List<SemanticTabViewColumn>> overrideByColumn = snap.tabViewColumnsByView
                 .getOrDefault(tv.id, List.of()).stream().collect(Collectors.groupingBy(c -> c.columnId));
 
+        // 价格策略边（若锚点声明了一条）：key[0].leftColumn 是锚点自己的"元素符号"列（B-24/D-65）。
+        SemanticEdge priceEdge = snap.edgesFrom(anchor.id).stream()
+                .filter(e -> "PRICE".equals(e.edgeKind)).findFirst().orElse(null);
+        String elemKeySourceColumn = null;
+        if (priceEdge != null) {
+            List<SemanticEdgeKey> priceKeys = snap.keysOf(priceEdge.id).stream()
+                    .sorted(Comparator.comparingInt(k -> k.seq)).toList();
+            if (!priceKeys.isEmpty()) elemKeySourceColumn = priceKeys.get(0).leftColumn;
+        }
+
         List<Group> groups = new ArrayList<>();
         List<SemanticTabViewNode> tvns = snap.tabViewNodesByView.getOrDefault(tv.id, List.of());
         for (SemanticTabViewNode tvn : tvns) {
@@ -129,6 +141,7 @@ public class FieldTreeBuilder {
                 f.viewColumn = AliasGenerator.quoteViewColumn(node.shortName, col.displayName);
                 f.lookupLib = null;
                 f.isCore = false;
+                f.elemKey = isMain && elemKeySourceColumn != null && elemKeySourceColumn.equals(col.dbColumn);
                 fields.add(f);
             }
 
@@ -137,6 +150,37 @@ public class FieldTreeBuilder {
             }
             g.fields = fields;
             groups.add(g);
+        }
+
+        // 价格策略原子组（B-24/D-65）：单独成组返回，groupKind='PRICE' —— 前端靠它渲染成带框块
+        // 并在拖入时自动带出上面标了 elemKey 的元素符号列。元素键列本身仍留在 MAIN 组（不移动）。
+        if (priceEdge != null) {
+            SemanticNode funcNode = snap.nodeById.get(priceEdge.toNodeId);
+            if (funcNode != null) {
+                Group priceGroup = new Group();
+                priceGroup.groupKey = funcNode.nodeKey;
+                priceGroup.groupName = "价格策略";
+                priceGroup.groupKind = "PRICE";
+                priceGroup.dims = new ArrayList<>();
+                priceGroup.conflict = false;
+                priceGroup.conflictReason = null;
+                List<Field> priceFields = new ArrayList<>();
+                for (SemanticNodeColumn col : snap.columnsOf(funcNode.id)) {
+                    Field f = new Field();
+                    f.sourceNodeKey = funcNode.nodeKey;
+                    f.sourceColumn = col.dbColumn;
+                    f.displayName = col.displayName;
+                    f.dataType = col.dataType;
+                    f.roles = List.of(col.roles);
+                    f.viewColumn = AliasGenerator.bareColumn(col.displayName);
+                    f.lookupLib = "价格策略";
+                    f.isCore = "unit_price".equals(col.dbColumn);
+                    f.elemKey = false;
+                    priceFields.add(f);
+                }
+                priceGroup.fields = priceFields;
+                groups.add(priceGroup);
+            }
         }
         resp.groups = groups;
         return resp;
@@ -147,7 +191,11 @@ public class FieldTreeBuilder {
         return List.of(col.roles);
     }
 
-    /** 经 LOOKUP/PRICE 边到达的"虚拟字段"（查名结果 / 价格策略原子组），挂在锚点自己的组下展示。 */
+    /**
+     * 经 LOOKUP 边到达的"虚拟字段"（查名结果），挂在锚点自己的组下展示。
+     * 🔴 B-24/D-65：PRICE 边不再在这里合并进 MAIN 组——已改为在 {@link #build} 里单独成
+     * {@code groupKind='PRICE'} 的组返回，避免与新逻辑重复输出「元素单价/货币」两份。
+     */
     private List<Field> syntheticLookupFields(SemanticGraphSnapshot snap, SemanticNode anchor) {
         List<Field> out = new ArrayList<>();
         Set<String> handledGroups = new HashSet<>();
@@ -169,19 +217,6 @@ public class FieldTreeBuilder {
                     for (SemanticNodeColumn col : snap.columnsOf(target.id)) {
                         if (!col.isCode) out.add(lookupField(target, col));
                     }
-                }
-            } else if ("PRICE".equals(e.edgeKind)) {
-                for (SemanticNodeColumn col : snap.columnsOf(target.id)) {
-                    Field f = new Field();
-                    f.sourceNodeKey = target.nodeKey;
-                    f.sourceColumn = col.dbColumn;
-                    f.displayName = col.displayName;
-                    f.dataType = col.dataType;
-                    f.roles = List.of(col.roles);
-                    f.viewColumn = AliasGenerator.bareColumn(col.displayName);
-                    f.lookupLib = "价格策略";
-                    f.isCore = "unit_price".equals(col.dbColumn);
-                    out.add(f);
                 }
             }
         }
