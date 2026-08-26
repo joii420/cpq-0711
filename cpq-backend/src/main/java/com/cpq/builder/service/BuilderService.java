@@ -15,6 +15,9 @@ import com.cpq.component.service.ComponentSqlViewService;
 import com.cpq.builder.compiler.SemanticCompiler;
 import com.cpq.quotation.entity.QuotationLineItem;
 import com.cpq.quotation.service.BomTreeRenderService;
+import com.cpq.semanticgraph.entity.SemanticEdge;
+import com.cpq.semanticgraph.entity.SemanticNode;
+import com.cpq.semanticgraph.entity.SemanticTabView;
 import com.cpq.semanticgraph.service.SemanticGraphLoader;
 import com.cpq.semanticgraph.service.SemanticGraphSnapshot;
 import com.cpq.template.entity.Template;
@@ -301,8 +304,8 @@ public class BuilderService {
                     "缺少标识列：料号列与名称列至少要配一个"));
         }
 
-        // AC-18/19：粗粒度列 / 附属源列勾小计应阻断——本轮未实现（需要区分"列来自哪条边"，
-        // 时间预算优先给了 B-5/6/7/11/12/13 主干，如实标注未做，不写假通过的检查项）。
+        // AC-18/19（B-27，D-68）：粗粒度列 / 附属源列勾小计应阻断。
+        checkSubtotalGrainMismatch(cfg, r, resp);
 
         // AC-13：字段名重复只告警不阻断
         Map<String, Long> nameCounts = new LinkedHashMap<>();
@@ -319,6 +322,69 @@ public class BuilderService {
 
         if (r.warnings != null) {
             for (String w : r.warnings) resp.items.add(new InspectItem("WARN", "COMPILER_WARNING", w));
+        }
+    }
+
+    /**
+     * AC-18/19（B-27，D-68）：粗粒度列 / 附属源列勾小计一律阻断——两条 AC 的诱因不同，文案也
+     * 分别写死（D-22：体检文案要让用户知道该改什么，不能一句通用话糊弄），判据各自独立：
+     *
+     * <p>· AC-18「粗粒度列」：列直接来自锚点自身（{@code source.id == anchor.id}）。锚点行本身
+     * 不会因为别的 GRAIN 目标被选中而增多，但一旦有 GRAIN 目标把行粒度撑宽（{@code r.grain.size()>1}，
+     * B-26 保证 baseline 恒占 1 维），锚点列在被撑宽出的新增行之间取值不变——勾小计会把同一个
+     * 值按新增维度的行数重复累加。
+     *
+     * <p>· AC-19「附属源列」：列经某条 {@code GRAIN} 边到达。触发条件是 {@code anchor.grainColumns}
+     * 非空——即锚点自身还有"物理连接键之外"的额外身份维度（如材质元素锚点的
+     * {@code material_part_no}/{@code component_no}，物理连接键只用了 {@code material_no}）。
+     * 这类 GRAIN 边的连接键天生够不到锚点的完整身份，同一个附属源行会被"借"给锚点侧多个不同
+     * 明细行使用，值按锚点自己更粗的那层（如"归属料号"）重复出现，不是"新增维度"而是"借来的
+     * 维度"，同样不能直接累加。反例是「主件」锚点（{@code grainColumns=[]}，物理连接键本身就是
+     * 锚点唯一的身份列，如 {@code ASSEMBLY_FEE}/{@code FINISHED_OTHER}）——那类 GRAIN 目标的值
+     * 是货真价实的按新维度展开，逐行求和是合法小计，不在本检查拦截范围内。
+     *
+     * <p>N+1 自检：{@code cols} 上的一次遍历，图查找全部落在 {@link SemanticGraphSnapshot} 的
+     * 内存索引（{@code nodeByKeyDialect}/{@code edgesFrom}）上，零 SQL。
+     */
+    private void checkSubtotalGrainMismatch(BuilderConfig cfg, CompileResult r, InspectResponse resp) {
+        List<BuilderConfig.ColumnConfig> cols = cfg.columns == null ? List.of() : cfg.columns;
+        if (cols.isEmpty()) return;
+
+        SemanticGraphSnapshot snap = loader.get();
+        String variantKey = cfg.variantKey == null ? "" : cfg.variantKey;
+        SemanticTabView tabView = snap.tabViews.stream()
+                .filter(t -> t.tabType.equals(cfg.tabType) && t.variantKey.equals(variantKey))
+                .findFirst().orElse(null);
+        if (tabView == null) return; // compile() 早已对页签视图缺失报过错，这里不会真的走到
+        SemanticNode anchor = snap.nodeById.get(tabView.anchorNodeId);
+        if (anchor == null) return;
+
+        boolean grainWidened = r.grain != null && r.grain.size() > 1;
+        boolean anchorHasOwnSubIdentity = anchor.grainColumns != null && anchor.grainColumns.length > 0;
+
+        for (BuilderConfig.ColumnConfig col : cols) {
+            if (!Boolean.TRUE.equals(col.inSubtotal)) continue;
+            SemanticNode source = snap.nodeByKeyDialect.get(col.sourceNodeKey + "|QUOTE");
+            if (source == null) continue;
+            String fieldName = (col.fieldName != null && !col.fieldName.isBlank()) ? col.fieldName : source.displayName;
+
+            if (source.id.equals(anchor.id)) {
+                if (grainWidened) {
+                    resp.items.add(new InspectItem("ERR", "SUBTOTAL_COARSE_GRAIN_COLUMN",
+                            "字段「" + fieldName + "」来自「" + anchor.displayName + "」自身，当前行粒度已按 "
+                                    + String.join("+", r.grain) + " 展开：该值会在每一行重复出现、累加即重复计算，不能勾为小计"));
+                }
+                continue;
+            }
+
+            SemanticEdge edge = snap.edgesFrom(anchor.id).stream()
+                    .filter(e -> e.toNodeId.equals(source.id)).findFirst().orElse(null);
+            if (edge != null && "GRAIN".equals(edge.edgeKind) && anchorHasOwnSubIdentity) {
+                resp.items.add(new InspectItem("ERR", "SUBTOTAL_AUX_SOURCE_COLUMN",
+                        "字段「" + fieldName + "」来自附属源「" + source.displayName + "」：该值按主源粒度重复出现"
+                                + "（主源「" + anchor.displayName + "」自身还有 " + String.join("/", anchor.grainColumns)
+                                + " 维度未参与该附属源的连接键），不能直接累加为小计"));
+            }
         }
     }
 

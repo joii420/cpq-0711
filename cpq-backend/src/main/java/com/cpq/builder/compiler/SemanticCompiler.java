@@ -92,6 +92,13 @@ public class SemanticCompiler {
 
         c.anchorAlias = allocAlias(c, c.anchor.physicalTable);
 
+        // B-26（AC-15①，D-45同类跟进）：锚点自身的基线粒度此前从未写进 c.grainDims——只有
+        // resolveGrain() 命中某个 GRAIN 目标时才会追加一维，导致"只选主档列（不涉及任何 GRAIN
+        // 边）"时 grain=[]，与 AC-15①「粒度条显示『每个成品1行』」（非空、单维度）矛盾。
+        // 取值口径（主线认可）：基线维度用锚点的 displayName 表示——与 resolveGrain 里
+        // "target.displayName + '.' + dim" 的展示粒度保持同一语义层级（"这一维度是谁的"）。
+        c.grainDims.add(c.anchor.displayName);
+
         // 有效列 = 用户已选列 + 价格策略自动带出的成员
         List<BuilderConfig.ColumnConfig> effectiveColumns = new ArrayList<>(
                 cfg.columns == null ? List.of() : cfg.columns);
@@ -307,6 +314,14 @@ public class SemanticCompiler {
 
         return switch (edge.edgeKind) {
             case "LOOKUP" -> resolveLookup(c, edge, target, col);
+            // B-25（AC-11③/AC-13，D-45②同类跟进）：edge_kind=JOIN 的边（如「主件」页签的
+            // CUSTOMER_MAP，客户维度收窄用的强制 JOIN）此前逐列编译完全没有分支，任意选它的列都
+            // 报 COMPILE_EDGE_KIND_UNSUPPORTED。JOIN 与 LOOKUP 在"取列"这一步是同一件事——
+            // 都是"目标节点已经/将要被 JOIN 进来，取它自己的物理列"，唯一差异是 emitMandatoryJoin
+            // 已经把该边的 JOIN 无条件建好并把 alias 记入 c.aliasByNode，resolveLookup 内部
+            // ensureLeftJoin() 命中 existing alias 时直接复用、不会重复建 JOIN 子句，也不会把
+            // 强制 JOIN 降级成 LEFT JOIN（JOIN 子句本身在 emitMandatoryJoin 里已经生成过）。
+            case "JOIN" -> resolveLookup(c, edge, target, col);
             case "SUB" -> resolveSub(c, edge, target, col);
             case "GRAIN" -> resolveGrain(c, edge, target, col);
             default -> throw new BuilderApiException(400, "COMPILE_EDGE_KIND_UNSUPPORTED",
