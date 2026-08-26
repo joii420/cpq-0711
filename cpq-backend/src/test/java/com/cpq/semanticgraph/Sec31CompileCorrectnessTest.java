@@ -27,6 +27,10 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * 覆盖：AC-1, AC-2(仅③④两项由本类验，①②在 Sec32/BuilderSave 覆盖), AC-3, AC-4, AC-5, AC-6, AC-7,
  * AC-8, AC-9(反证), AC-10(反证)。
+ *
+ * 🔄 2026-08-24（D-50~D-53）：AC-3 整条改写——子件闭包由「各页签自建 WITH RECURSIVE」（A 机制）
+ * 统一为「主树供 `= ANY(:total_material_no)` 数组，页签消费」（B 机制），旧的「闭包三铁律」断言
+ * 全部作废，详见 ac3_childDataNarrowedByTotalMaterialNoArray() 方法头注释。
  */
 @QuarkusTest
 @TestProfile(SemanticGraphTestSupport.RbacOffProfile.class)
@@ -139,16 +143,23 @@ class Sec31CompileCorrectnessTest {
     }
 
     // -------------------------------------------------------------------
-    // AC-3（单点）子件闭包三条铁律
+    // AC-3（单点）子件数据经主树料号数组收窄（🔄 D-50 改写，原「闭包三铁律」整条作废）
     // -------------------------------------------------------------------
+    // 2026-08-24 改写说明：D-50 裁决子件闭包统一到 B 机制——递归只发生在 BOM 类型组件一处，
+    // 其余页签一律消费主树算好的 `:total_material_no` 数组，编译产物里**不再有任何用户开关**
+    // 可以左右这段 SQL（AC-60）。本方法验的是 AC-3 原文①~⑤，旧的「闭包三铁律六项」
+    // （WITH RECURSIVE / UNION / GROUP BY root_no,node_no / COALESCE(cl.root_no,...)）全部作废，
+    // 不得沿用旧断言（旧字面量与旧字段 `switches.includeChildParts` 已随 D-51/AC-60 删除，
+    // 继续传它不会报错但也不会再被消费——本用例干脆不传，与 AC-3 原文「无任何用户开关可勾」的
+    // 前置一致）。
     @Test
     @Order(3)
-    @DisplayName("AC-3: 勾『子件数据也要』SQL 含闭包铁律六项")
-    void ac3_childClosureThreeIronRules() {
+    @DisplayName("AC-3: 编译产物用 = ANY(:total_material_no) 收窄，无任何开关、不含 WITH RECURSIVE/bom_closure")
+    void ac3_childDataNarrowedByTotalMaterialNoArray() {
+        // 前置：AC-1 的配置，不带任何 switches 字段。
         String config = """
                 {
                   "tabType": "材质元素",
-                  "switches": {"includeChildParts": true},
                   "columns": [
                     {"sourceNodeKey":"LOOKUP_MATERIAL_RECIPE","sourceColumn":"name","fieldName":"材质名称","isRowKey":true},
                     {"sourceNodeKey":"LOOKUP_ELEMENT","sourceColumn":"element_name","fieldName":"元素名称"},
@@ -162,24 +173,29 @@ class Sec31CompileCorrectnessTest {
         assertNotNull(sql);
         assertFalse(sql.isBlank());
 
-        assertTrue(sql.contains("WITH RECURSIVE"), "① 应含 WITH RECURSIVE，实际:\n" + sql);
-        // ② 递归项用 UNION 而非 UNION ALL —— 注意 UNION ALL 也会字面命中 "UNION"，需精确排除
-        assertTrue(sql.replaceAll("UNION\\s+ALL", "").contains("UNION"),
-                "② 应存在非 ALL 的 UNION 递归项，实际:\n" + sql);
-        // ③ 按 (root_no, node_no) 二次去重 CTE
-        assertTrue(sql.matches("(?is).*GROUP BY\\s+root_no,\\s*node_no.*")
-                        || sql.matches("(?is).*GROUP BY\\s+.*root_no.*node_no.*"),
-                "③ 应含按 (root_no, node_no) 分组去重的 CTE，实际:\n" + sql);
-        // ④ hf_part_no 变为 COALESCE(cl.root_no, ebi.material_no)
-        assertTrue(sql.contains("COALESCE(cl.root_no, ebi.material_no)"),
-                "④ hf_part_no 表达式应变为 COALESCE(cl.root_no, ebi.material_no)，实际:\n" + sql);
-        assertTrue(sql.matches("(?s).*LEFT JOIN\\b.*\\bcl\\b.*"), "④ 应通过 LEFT JOIN 接闭包，实际:\n" + sql);
-        // ⑤ 顶层 FROM 仍是裸表 element_bom_item
+        // ① 锚点表(element_bom_item，别名ebi)的料号列上生成 = ANY(:total_material_no)，
+        //   逐字包含该参数名——允许 ANY(:x) 与 ANY( :x ) 两种空白写法，不允许参数名被换掉。
+        assertTrue(sql.matches("(?is).*\\bebi\\.material_no\\s*=\\s*ANY\\(\\s*:total_material_no\\s*\\).*"),
+                "① 锚点料号列应生成 ebi.material_no = ANY(:total_material_no) 收窄谓词，实际:\n" + sql);
+
+        // ② 全文不含 WITH RECURSIVE、不含 bom_closure（A 机制已停用，closureCte() 不应再被调用）
+        assertFalse(sql.toUpperCase().contains("WITH RECURSIVE"),
+                "② 不应再含 WITH RECURSIVE（A机制已停用），实际:\n" + sql);
+        assertFalse(sql.contains("bom_closure"), "② 不应再含 bom_closure，实际:\n" + sql);
+
+        // ③ hf_part_no 表达式保持锚点自身列(ebi.material_no)，不再改写为 COALESCE(cl.root_no, ...)
+        assertTrue(sql.matches("(?s).*\\bebi\\.material_no\\s+AS\\s+hf_part_no\\b.*"),
+                "③ hf_part_no 应仍为 ebi.material_no（锚点自身列），实际:\n" + sql);
+        assertFalse(sql.contains("COALESCE(cl.root_no"),
+                "③ 不应再出现 COALESCE(cl.root_no, ...) 改写，实际:\n" + sql);
+
+        // ④ 顶层 FROM 仍是裸表 element_bom_item
         assertTrue(sql.matches("(?is).*\\bFROM\\s+element_bom_item\\s+ebi\\b.*"),
-                "⑤ 顶层 FROM 应仍是裸表 element_bom_item，实际:\n" + sql);
-        // ⑥ 价格策略 cep.material_no 同步变化
-        assertTrue(sql.contains("cep.material_no = COALESCE(cl.root_no, ebi.material_no)"),
-                "⑥ 价格策略 JOIN 的 cep.material_no 应同步变为 COALESCE(cl.root_no, ebi.material_no)，实际:\n" + sql);
+                "④ 顶层 FROM 应仍是裸表 element_bom_item，实际:\n" + sql);
+
+        // ⑤ 价格策略的 cep.material_no 同样保持锚点自身列，与③一致(逐字 ebi.material_no)
+        assertTrue(sql.contains("cep.material_no = ebi.material_no"),
+                "⑤ 价格策略 cep.material_no 应与 hf_part_no 表达式一致(ebi.material_no)，实际:\n" + sql);
     }
 
     // -------------------------------------------------------------------

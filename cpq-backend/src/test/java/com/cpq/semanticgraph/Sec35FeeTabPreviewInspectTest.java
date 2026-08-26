@@ -141,11 +141,37 @@ class Sec35FeeTabPreviewInspectTest {
     }
 
     // -------------------------------------------------------------------
-    // AC-26（单点）真实预览返回真实行 —— ⚠️ 必须在 dev 库 cpq_db_0724 跑，本方法仅给出调用骨架
+    // AC-26（单点）真实预览返回真实行（🔄 D-50 改写：基准随机制变更重新锁定）
+    // ⚠️ 必须在 dev 库 cpq_db_0724 跑，本方法仅给出调用骨架
     // -------------------------------------------------------------------
+    // 2026-08-24 基准重锁说明：
+    //   D-50 后闭包由 A 机制（各页签自建 WITH RECURSIVE）改为 B 机制（主树供 :total_material_no
+    //   数组，页签消费）。AC-26 原文的"甲/乙"改为——甲=只含料号自身；乙=料号自身+其 BOM 展开后的
+    //   全部后代料号，两组的具体行数在 T-4 开工期用 psql 独立实测锁定：
+    //     · 甲（仅 S-3120014539 自身）：element_bom_item 2 行
+    //       （SQL: SELECT count(*) FROM element_bom_item WHERE material_no='S-3120014539'
+    //              AND is_current=true → 2）
+    //     · 乙（S-3120014539 + material_bom_item 递归展开的全部后代料号，customer_no 取
+    //       CUST-0001 或 _GLOBAL_）：element_bom_item 16 行（递归展开出 16 个料号，其中仅
+    //       根料号自身 2 行是 CUST-0001 专属，其余 14 行全部挂在 _GLOBAL_ 兜底数据上——
+    //       实测无论闭包递归是否按 characteristic='ASSEMBLY' 收窄，两种口径殊途同归都是 16
+    //       行，因为差集的 5 个 RECIPE-only 料号在 element_bom_item 里 0 条记录，见
+    //       test-report.md 附验证 SQL）。旧基准"不勾闭包2行/勾闭包4行"（A 机制下测得）作废，
+    //       不得沿用；甲组的"2"是巧合地与旧基准的"不勾闭包2行"一致（甲组本就等价于原来"不闭包"
+    //       的语义），但乙组的"16"与旧基准"4"完全不同，必须重新记入 test.md。
+    //   ⚠️ 【已知信息缺口，需backend/主线确认】：api.md §1.5② 关于 /preview 的
+    //   customerCode/partNo/includeChildParts 契约写于 2026-08-21（D-50~D-53 之前），尚未随
+    //   本轮方言/闭包改写同步更新。backtask.md 的 B-19（报价侧非BOM页签上下文注入）明确只覆盖
+    //   "报价侧渲染链路"（ConfigureSnapshotService/CardSnapshotService），未提及 /preview 端点；
+    //   B-11（预览执行）的任务描述也未随 D-50~D-53 更新为"预览时算出总料号数组"。也就是说，
+    //   /preview 端点在 AC-26 新口径下如何取得"甲/乙"两组 :total_material_no 数组，
+    //   backtask.md 里没有一条任务明确认领这件事——本方法暂时沿用既有 preview() 帮助方法的
+    //   布尔参数位（历史上叫 includeChildParts，语义现改为"是否含子件(乙组)"），若后端最终改用
+    //   完全不同的请求契约（例如显式的 totalMaterialNo 数组），本方法需要跟着改——这不是本测试
+    //   工程师可以单方面拍板的事，已在回报里向主线登记为待确认事项，不代表实现一定如此。
     @Test
     @Order(2)
-    @DisplayName("AC-26 [仅限dev库 cpq_db_0724]: 罗克韦尔+S-3120014539 不勾闭包2行/勾闭包4行（开工前须复核基准值）")
+    @DisplayName("AC-26 [仅限dev库 cpq_db_0724]: 罗克韦尔+S-3120014539 甲组(仅自身)2行/乙组(自身+全部后代)16行（D-50后重锁基准）")
     void ac26_realPreviewReturnsRealRows_devDbOnly() {
         // 环境铁律：test profile 指向 cpq_db，与 dev 库不是同一个库，S-3120014539 的基础数据大概率
         // 不在 test 库中——本方法保持"数据不存在则跳过并显式打印原因"，不伪造通过。
@@ -155,26 +181,32 @@ class Sec35FeeTabPreviewInspectTest {
                   {"sourceNodeKey":"LOOKUP_ELEMENT","sourceColumn":"element_name","fieldName":"元素名称"}
                 ]}
                 """;
-        Response noClosure = preview(config, "罗克韦尔", "S-3120014539", false);
+        Response groupA = preview(config, "罗克韦尔", "S-3120014539", false);
         // 真跑教训：test库确实没有这条基础数据——200但rowCount=0会滑过"status!=200才跳过"的旧判据，
-        // 一路跑到硬断言炸掉。把"200但0行"也纳入跳过条件，跟②的处理口径保持一致。
-        Integer rowCountNoClosureProbe = noClosure.statusCode() == 200
-                ? noClosure.jsonPath().getInt("rowCount") : null;
-        Assumptions.assumeTrue(noClosure.statusCode() == 200 && rowCountNoClosureProbe != null && rowCountNoClosureProbe > 0,
-                "[AC-26] test 库无该客户/料号基础数据（或预览端点未就绪），status="
-                        + noClosure.statusCode() + " rowCount=" + rowCountNoClosureProbe
-                        + " body=" + noClosure.getBody().asString()
+        // 一路跑到硬断言炸掉。把"200但0行"也纳入跳过条件。
+        Integer rowCountAProbe = groupA.statusCode() == 200 ? groupA.jsonPath().getInt("rowCount") : null;
+        Assumptions.assumeTrue(groupA.statusCode() == 200 && rowCountAProbe != null && rowCountAProbe > 0,
+                "[AC-26] test 库无该客户/料号基础数据（或预览端点未就绪，或 /preview 契约已变更导致本方法的调用方式过期），status="
+                        + groupA.statusCode() + " rowCount=" + rowCountAProbe
+                        + " body=" + groupA.getBody().asString()
                         + "——本用例须在 dev 库 cpq_db_0724 复核，标记为 SKIPPED 而非通过");
-        Integer rowCountNoClosure = noClosure.jsonPath().getInt("rowCount");
-        assertNotNull(rowCountNoClosure, "rowCount 不应为空");
-        assertEquals(2, rowCountNoClosure, "不勾闭包应返回2行（若开工期复核基准值已变，须在 test.md 记明变更后更新本断言），实际="
-                + rowCountNoClosure);
+        Integer rowCountA = groupA.jsonPath().getInt("rowCount");
+        assertNotNull(rowCountA, "① 甲组 rowCount 不应为空");
+        assertTrue(rowCountA > 0, "① 甲组应 > 0 行（0 行一律不算通过），实际=" + rowCountA);
+        assertEquals(2, rowCountA, "① 甲组（仅料号自身）应返回2行，与 psql 独立实测一致，实际=" + rowCountA);
 
-        Response withClosure = preview(config, "罗克韦尔", "S-3120014539", true);
-        assertEquals(200, withClosure.statusCode(), withClosure.getBody().asString());
-        Integer rowCountWithClosure = withClosure.jsonPath().getInt("rowCount");
-        assertNotNull(rowCountWithClosure);
-        assertEquals(4, rowCountWithClosure, "勾闭包应返回4行，实际=" + rowCountWithClosure);
+        Response groupB = preview(config, "罗克韦尔", "S-3120014539", true);
+        assertEquals(200, groupB.statusCode(), groupB.getBody().asString());
+        Integer rowCountB = groupB.jsonPath().getInt("rowCount");
+        assertNotNull(rowCountB, "① 乙组 rowCount 不应为空");
+        assertTrue(rowCountB > 0, "① 乙组应 > 0 行（0 行一律不算通过），实际=" + rowCountB);
+        assertEquals(16, rowCountB, "① 乙组（自身+全部后代）应返回16行，与 psql 独立实测一致，实际=" + rowCountB);
+
+        // ② 乙的行数 > 甲的行数，且差额(16-2=14)等于后代料号在锚点表中的实际行数
+        assertTrue(rowCountB > rowCountA,
+                "② 乙组行数应严格大于甲组，实际甲=" + rowCountA + " 乙=" + rowCountB);
+        assertEquals(14, rowCountB - rowCountA,
+                "② 差额应等于后代料号在element_bom_item的实际行数(14，psql独立验证)，实际差额=" + (rowCountB - rowCountA));
     }
 
     // -------------------------------------------------------------------

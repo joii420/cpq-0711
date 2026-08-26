@@ -194,10 +194,20 @@ class Sec36DialectAndCiAssertionTest {
 
     // -------------------------------------------------------------------
     // AC-37（单点）方言参数化：同一声明产出两种形态
+    // 🔄 2026-08-24（D-50 / D-54 修订）：方言由「三处」减为「两处」——
+    //   · 业务列别名规则（_<Sheet简称>_<列名>）与子件收窄（= ANY(:total_material_no)）
+    //     现在是【两侧共有】，不再是方言（D-50 统一闭包机制、D-54 统一别名纯函数规则）。
+    //     旧断言「核价侧别名不带 _ 前缀、用英文DB列名」已作废，必须反过来断言核价侧也带前缀。
+    //   · 方言只剩：① 报价侧 customer_no+is_current 收窄 vs 核价侧 :versionFilter(...) 收窄
+    //             ② 字段绑定键——但 D-55 已澄清这也【不是】"报价 vs 核价"的方言，而是跟
+    //                field_type 走（INPUT_* → default_source.path；BASIC_DATA → basic_data_path，
+    //                两侧同规则）。本方法④用同一节点在两侧分别编两种 field_type 验证"编译器按
+    //                field_type 决定写哪个键，不按侧决定"。
+    //   🚫 本条只约束新产物：存量 26 视图/1183 字段的别名与绑定键一字节不动，见 AC-61。
     // -------------------------------------------------------------------
     @Test
     @Order(3)
-    @DisplayName("AC-37: 同一节点声明分别以报价侧/核价侧参数编译，产物八项方言差异逐一核对")
+    @DisplayName("AC-37: 同一节点声明分别以报价侧/核价侧参数编译，两处方言逐一核对（别名与子件收窄两侧统一）")
     void ac37_dialectParameterizationProducesTwoForms() {
         UUID componentId = UUID.fromString(RestAssured.given()
                 .contentType(ContentType.JSON)
@@ -215,12 +225,16 @@ class Sec36DialectAndCiAssertionTest {
         String quoteSql = quoteResp.jsonPath().getString("sql");
         assertNotNull(quoteSql);
         assertFalse(quoteSql.isBlank());
+        // ①【两侧共有】业务列别名一律 _<Sheet简称>_<列名>
         assertTrue(quoteSql.matches("(?s).*_[\\u4e00-\\u9fa5A-Za-z0-9]+_[\\u4e00-\\u9fa5A-Za-z0-9]+.*"),
-                "报价侧业务列别名应带 _ 前缀，实际:\n" + quoteSql);
-        assertTrue(quoteSql.contains(":customerCode"), "报价侧收窄应含 customer_no = :customerCode，实际:\n" + quoteSql);
-        assertTrue(quoteSql.contains("is_current"), "报价侧收窄应含 is_current，实际:\n" + quoteSql);
-        List<String> quoteDeclared = quoteResp.jsonPath().getList("declaredColumns");
-        // 字段绑定写 default_source.path——通过保存后查 component.fields 验证（此处只做SQL侧形态断言）
+                "① 报价侧业务列别名应带 _ 前缀，实际:\n" + quoteSql);
+        // ①【两侧共有】子件收窄一律 = ANY(:total_material_no)（D-50）
+        assertTrue(quoteSql.contains("= ANY(:total_material_no)"),
+                "① 报价侧子件收窄也应含 = ANY(:total_material_no)（D-50 两侧统一），实际:\n" + quoteSql);
+        // ② 报价侧独有：customer_no = :customerCode + is_current
+        assertTrue(quoteSql.contains(":customerCode"), "② 报价侧收窄应含 customer_no = :customerCode，实际:\n" + quoteSql);
+        assertTrue(quoteSql.contains("is_current"), "② 报价侧收窄应含 is_current，实际:\n" + quoteSql);
+        assertFalse(quoteSql.contains(":versionFilter("), "② 报价侧不应出现核价侧的 :versionFilter(...)，实际:\n" + quoteSql);
 
         String costingConfig = """
                 { "tabType": "材质元素", "dialect": "COSTING", "columns": [
@@ -233,19 +247,48 @@ class Sec36DialectAndCiAssertionTest {
         String costingSql = costingResp.jsonPath().getString("sql");
         assertNotNull(costingSql);
         assertFalse(costingSql.isBlank());
-        assertFalse(costingSql.matches("(?s).*\\bAS\\s+_[\\u4e00-\\u9fa5A-Za-z0-9]+_.*"),
-                "核价侧业务列别名不应带 _ 前缀（应为英文DB列名），实际:\n" + costingSql);
-        assertTrue(costingSql.contains(":versionFilter("),
-                "核价侧收窄应含 :versionFilter(is_current, version_no, code)，实际:\n" + costingSql);
+        // ①【两侧共有，反转旧断言】核价侧业务列别名现在也应带 _<Sheet简称>_<列名> 前缀
+        //   （D-54：不再是「英文DB列名无前缀」，那是 D-50 之前的旧方言口径，已作废）
+        assertTrue(costingSql.matches("(?s).*_[\\u4e00-\\u9fa5A-Za-z0-9]+_[\\u4e00-\\u9fa5A-Za-z0-9]+.*"),
+                "① 核价侧业务列别名也应带 _<Sheet简称>_<列名> 前缀（D-54 两侧统一，旧“无前缀”口径已作废），实际:\n" + costingSql);
+        // 约定列名(hf_part_no)两侧同名——核价侧同一份声明理应也能推出 hf_part_no（若该 tabType 有约定料号列）
+        // ①【两侧共有】子件收窄一律 = ANY(:total_material_no)
         assertTrue(costingSql.contains("= ANY(:total_material_no)"),
-                "核价侧收窄应含 code = ANY(:total_material_no)，实际:\n" + costingSql);
-        assertFalse(costingSql.contains(":customerCode"), "核价侧不应出现 :customerCode，实际:\n" + costingSql);
-        assertTrue(costingSql.contains("view_version") || quoteResp.jsonPath().getList("declaredColumns") != null,
-                "核价侧应输出 view_version 约定列，实际:\n" + costingSql);
+                "① 核价侧子件收窄应含 = ANY(:total_material_no)，实际:\n" + costingSql);
+        // ③ 核价侧独有：:versionFilter(is_current, version_no, code) 收窄 + view_version 约定列
+        assertTrue(costingSql.contains(":versionFilter("),
+                "③ 核价侧收窄应含 :versionFilter(is_current, version_no, code)，实际:\n" + costingSql);
+        assertFalse(costingSql.contains(":customerCode"), "③ 核价侧不应出现 :customerCode（D-54①：客户维度不计入方言，核价侧本就不随客户变化），实际:\n" + costingSql);
         List<String> costingDeclared = costingResp.jsonPath().getList("declaredColumns");
         assertNotNull(costingDeclared, "核价侧declaredColumns不应为空");
         assertFalse(costingDeclared.isEmpty(), "核价侧declaredColumns不应为空列表");
         assertTrue(costingDeclared.contains("view_version"),
-                "核价侧declaredColumns应含view_version，实际=" + costingDeclared);
+                "③ 核价侧declaredColumns应含view_version，实际=" + costingDeclared);
+
+        // ④ 字段绑定键跟 field_type 走，不跟侧走（D-55）：本节点在两侧各存一次，INPUT_NUMBER 走
+        //    default_source.path、BASIC_DATA 走 basic_data_path——用同一份 payload 分别在两侧
+        //    保存后查 component.fields，断言绑定键只随 field_type 变化、不随 dialect 变化。
+        String quoteSaveConfig = """
+                { "tabType": "材质元素", "dialect": "QUOTE", "columns": [
+                  {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"content","fieldName":"组成含量_INPUT","fieldType":"INPUT_NUMBER"},
+                  {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"scrap_rate","fieldName":"损耗率_BASIC","fieldType":"BASIC_DATA"}
+                ]}
+                """;
+        Response quoteSave = RestAssured.given().contentType(ContentType.JSON)
+                .body(quoteSaveConfig).put("/api/cpq/components/" + componentId + "/builder");
+        assertEquals(200, quoteSave.statusCode(), "④ 报价侧保存应成功: " + quoteSave.getBody().asString());
+        // 用 GET 组件详情核对 fields（黑盒契约，不直接拼裸 SQL 读 jsonb 做类型转换）
+        Response quoteDetail = RestAssured.given().get("/api/cpq/components/" + componentId);
+        List<Map<String, Object>> quoteFieldList = quoteDetail.jsonPath().getList("data.fields");
+        assertNotNull(quoteFieldList, "④ 报价侧 fields 不应为空");
+        Map<String, Object> inputField = quoteFieldList.stream()
+                .filter(f -> "组成含量_INPUT".equals(f.get("name"))).findFirst().orElse(null);
+        Map<String, Object> basicField = quoteFieldList.stream()
+                .filter(f -> "损耗率_BASIC".equals(f.get("name"))).findFirst().orElse(null);
+        assertNotNull(inputField, "④ 应能找到组成含量_INPUT字段，实际=" + quoteFieldList);
+        assertNotNull(basicField, "④ 应能找到损耗率_BASIC字段，实际=" + quoteFieldList);
+        assertTrue(inputField.containsKey("default_source"), "④ INPUT_NUMBER 应写 default_source，实际=" + inputField);
+        assertTrue(basicField.containsKey("basic_data_path") && basicField.get("basic_data_path") != null,
+                "④ BASIC_DATA 即使在报价侧也应写 basic_data_path（跟field_type走，不跟侧走），实际=" + basicField);
     }
 }

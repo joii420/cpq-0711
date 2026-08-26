@@ -2,7 +2,8 @@
  * E2E · 取数配置器（task-260819）
  *
  * 层级 = T-5。覆盖前端可观测断言：AC-4(部分④⑤) / AC-16(①②③④) / AC-25(①下拉) / AC-32(①)
- * / AC-33(①③) / AC-34(①②③) / AC-39(全部) / AC-47(全部) / AC-48(全部) / AC-49(全部) / AC-50(全部)。
+ * / AC-33(①③) / AC-34(①②③) / AC-39(全部) / AC-47(全部) / AC-48(全部) / AC-49(全部) / AC-50(全部)
+ * / AC-60(①③，2026-08-24 D-50~D-53 新增，闭包开关移除的运行时可观测部分)。
  *
  * 入口约定（需求文档.md §3 环境统一约定）：库=cpq_db_0724；客户=罗克韦尔；角色=SYSTEM_ADMIN；
  * 入口=组件管理 → 打开组件 → 「取数配置」Tab。
@@ -293,4 +294,35 @@ test('AC-39: 新建→选类型→拖5列→勾行键/料号→预览→保存�
   expect(selectedColumnsAfterReload, '③ 刷新后重新打开，列数应与保存前完全一致').toBe(selectedColumnsBeforeSwitch);
 
   expect(jsErrors, `④ 全程浏览器控制台应0个JS错误，实际=${jsErrors.length}: ${jsErrors.join(' | ')}`).toHaveLength(0);
+});
+
+// ---------------------------------------------------------------------
+// 🆕 AC-60（单点）用户可见的闭包开关消失（D-50~D-53，2026-08-24 新增）
+// ---------------------------------------------------------------------
+// ⚠️ 本用例只覆盖 AC-60①③ 的运行时可观测部分：界面不出现闭包相关勾选框、全文不出现 CLOSURE 字样。
+//   AC-60② "builder_config.switches 不再写入 CLOSURE/includeChildParts" 是保存后的库内断言，
+//   不适合浏览器侧验证——由 golden/ac61-legacy-baseline.sh 同源的 SQL 查询在 test-report.md 里
+//   单独核对（保存一个新组件后查 component_sql_view.builder_config->'switches'）。
+//   AC-60 原文里"grep -c CLOSURE 前端为0"是源码级检查，不是运行时检查，不适合写进 Playwright，
+//   已作为独立命令登记在 test.md §5 自检命令清单，须在 F-16 落地后单独跑。
+test('AC-60①③: 6类页签「选项」行均无子件闭包相关勾选框，页面全文不出现CLOSURE字样', async ({ page }) => {
+  const tabTypes = ['主件', '材质元素', '零件', '外购件', '费用类', 'BOM 树'];
+  for (const tabType of tabTypes) {
+    await createComponentAndOpenBuilderTab(page, tabType);
+
+    // ① 页面全文不应出现内部枚举名 CLOSURE（区分大小写，避免误判英文单词里含 closure 子串的巧合）
+    const bodyText = await page.locator('body').innerText();
+    expect(bodyText, `① [${tabType}] 页面全文不应出现内部枚举名 CLOSURE`).not.toMatch(/\bCLOSURE\b/);
+
+    // ① 不应存在任何与"子件数据/子件闭包/闭包"相关的复选框控件
+    const closureCheckboxCandidates = await page
+      .locator('input[type="checkbox"]')
+      .filter({ hasText: /子件|闭包/ })
+      .count();
+    expect(closureCheckboxCandidates, `① [${tabType}] 不应存在子件闭包相关的复选框`).toBe(0);
+
+    // 用文案兜底再查一遍（复选框未必用<label>包住文案，双重保险）
+    const closureLabelText = await page.getByText(/子件数据也要|勾闭包|子件闭包/).count();
+    expect(closureLabelText, `① [${tabType}] 不应出现"子件数据也要"等旧闭包开关文案`).toBe(0);
+  }
 });
