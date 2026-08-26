@@ -2230,6 +2230,60 @@
 
 ---
 
+### [BL-0180] 核价侧 `precomputeCostingDriverUnion` 缺 `BomTreeVarsContext` 注入（与 task-260819 B-19 同类缺口）
+- **优先级**：**P2**
+- **来源**：`task-260819-取数配置器` 开发期，后端子代理主动报告 + 主线核实（裁决 `D-62`）。
+  用户裁决**本期不修**，登记二期核价侧统一时一并做。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-24
+- **缺口**：`CardSnapshotService:1188` 的 `precomputeCostingDriverUnion()` → `expandForPartSet`
+  这条路径**从不 open `BomTreeVarsContext`**，与 task-260819 `B-19` 修的是同一类缺口
+  （`B-19` 修的是报价侧非 BOM 页签的 4 个注入点）。
+- **触发条件（两个同时满足才发作）**：① **非树核价模板**（`templateHasTreeTab` 为真时整个方法直接跳过）；
+  ② 该组件的 `$view` 引用了 `:total_material_no`。
+- **后果**：参数未注入 → `SqlViewExecutor:626` 「安全降级」为字面量 `NULL` → `x = ANY(NULL)`
+  求值为 NULL → **视图恒 0 行且不报错**（实测：`ANY(NULL)`=0 行 / `ANY(ARRAY[]::text[])`=0 行 /
+  `ANY(ARRAY['X'])`=1 行）。即配置错误被伪装成「这个客户没数据」。
+  ⚠️ task-260819 的 `B-20` 已把**报价侧**这条降级路径改成显式报错（`BusinessException 400`，
+  文案点名 `total_material_no`）；本条修复时应确认该保护是否覆盖到核价侧这条路径。
+- **为什么本期不做**（用户裁决理由）：本期核价侧**没有 golden、没有节点边声明**，修了也验不了 ——
+  会变成「改了但没人验证过」的代码，正是 `AC-59` 那类静默故障的温床。
+- **修复提示**：`B-19` 已在 `BomTreeRenderService` 抽出 `collectTotalMaterialNoUnion(lineItems, usage)`
+  （复用 `renderInternal()` 原算法，不另写第二套），核价侧直接复用该方法即可，传 `usage="COSTING"`。
+
+### [BL-0181] 组件 `50c646cb`「元素单价」违反可编辑性通则（核价组件配成 `INPUT_NUMBER`）
+- **优先级**：**P1**（金额字段 + 影响 3 个核价模板下的已有核价单编辑行为）
+- **来源**：`task-260819-取数配置器` 开发期，用户裁决第 3 条时给出通则（`D-60`）后，主线按该通则实测判定。
+  用户裁决**本期不修、单独任务做**。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-24
+- **🆕 判定通则（`D-60`，用户原话）**：「要看类型，如果是核价用的组件，就是 basic_data，
+  报价用的类型就是 INPUT_NUMBER，靠策略规则收敛编辑权限」
+  → **核价组件的取数字段用 `BASIC_DATA`（只读）；报价组件用 `INPUT_NUMBER`（可编辑）**。
+  ⚠️ **这条通则的适用范围远大于本条目** —— 它是判定任意组件配置合规性的判据，
+  配组件 / 审配置时可直接拿来判对错，不限于「元素单价」这一个字段。
+- **实测（`cpq_db_0724`，2026-08-24；判侧依据 = `template_kind`，不是 SQL 文本特征）**：
+  库中有 **4 个各自独立、同名「物料与元素BOM」**的组件，**全部只被 COSTING 模板引用**：
+
+  | 组件 id | 引用模板数 | 字段数 | 「元素单价」`field_type` | 绑定键 | 取价函数（notes） | 判定 |
+  |---|---|---|---|---|---|---|
+  | `9cab340e` | 1 | 7 | `BASIC_DATA` | `basic_data_path` | `f_material_element_price` | ✅ 合规 |
+  | `4560fc33` | 2 | 7 | `BASIC_DATA` | **两键都写** | `f_material_element_price` | ✅ 合规（含无害冗余） |
+  | **`50c646cb`** | **3** | 11 | **`INPUT_NUMBER`** | `default_source` | **`f_customer_element_price`** | ❌ **违规** |
+  | `e4dcfed7` | 1 | 7 | `BASIC_DATA` | `basic_data_path` | `f_material_element_price` | ✅ 合规 |
+
+- **要做的**：① `50c646cb` 的「元素单价」由 `INPUT_NUMBER` + `default_source` 改为
+  `BASIC_DATA` + `basic_data_path`；② 顺带清掉 `4560fc33` 的双绑定键冗余（两者路径相同，无行为差异）。
+- **🚨 为什么必须单独立项、不能顺手改**：
+  - 改 `field_type` 触发 **`AP-44`**（字段类型联动协议：17 个检查点 / 约 13 个文件 /
+    强制跑 `quotation-flow.spec.ts` + `composite-product-flow.spec.ts` 双 spec E2E），
+    是本项目最重的一类改动；
+  - 会**改变 3 个核价模板下已有核价单的编辑行为** —— 原本能手填单价的格子变只读，
+    需要先做存量评估（有多少张单实际手填过该列、改后这些值如何处理）;
+  - 取价函数也与另外三个不同（`f_customer_element_price` vs `f_material_element_price`，
+    notes 提到 task-0729 E12「两侧同一套客户价」）—— **需业务确认这是有意还是漂移**，
+    不要在没搞清前一并改掉。
+
 ## 已完成
 
 ### [DONE 2026-08-07] BL-0133 模板发布后「内容层」仍是活的 —— 改一个组件静默改写已发布模板
