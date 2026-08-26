@@ -45,8 +45,16 @@
 | `task-260715-UI排版审查` | 📋 报告已出，整改未启动 | 180+ 条 / 11 个系统性主题（36 处 Modal 违规、1272 处硬编码 hex、Dashboard 是调试残留） |
 | **D-2** 导入 sheet `客户料号与宏丰料号的关系` 27.2s | 🟡 **根因未定位 · 本次不修** | `[v6import] QUOTE sheet=客户料号与宏丰料号的关系 rows=1845 handle=**27200ms** writer{dbCalls=**0**}` —— **一次库都没打，纯 Java CPU**。同批对照：`物料BOM` 1845 行 833ms / `物料与元素BOM` 4153 行 1132ms / `成品其他费用` 1845 行 305ms，量级差 **30~90 倍**，高度疑似该 handler 含 O(N²)。属**导入步骤**（`QuoteImportService`），与 `task-260825` 的建单物化是两条独立链路。按 `task-docs.md §5`「根因未定位不许进 A0」不进本次实现范围 |
 
-### 未合并分支（0 条 —— 已清零，详见 §8）
-**2026-08-17 全量清理**：14 个 worktree + 6 个残壳目录已清空（`.claude/worktrees/` 现为空）；6 条悬挂分支经逐条取证后由用户裁决**全部废弃**，`git branch` 现只剩 `master`（依据见 §8.1/§8.3，逐条写明"为什么废"，别再重查）。
+### 未合并分支（2 条）
+
+| 分支 | worktree | 建于 | 状态 |
+|---|---|---|---|
+| `feat/task-260819-sql-view-builder` | `.claude/worktrees/task-260819-sql-view-builder` | 2026-08-20 | 🟢 开发中（见上方活跃主线 `task-260819`） |
+| **`fix/task-260825-materialize-n1`** | `.claude/worktrees/task-260825-materialize-n1` | **2026-08-25** | 🟢 **开发中** —— 基于 `6629675f`。修 D-3（`CardSnapshotService.loadFrozenQuoteTabs` 事务内逐行查整单恒定值，真凶）+ D-1（`ConfigureSnapshotService.loadRowDataByComp` 逐行查）。B-1~B-10 / T-1~T-7，前端零改动 |
+
+> ⚠️ 下面这段是 **2026-08-17 的历史快照**，当时确为 0 条；上表是当前实际状态。
+
+**2026-08-17 全量清理（历史）**：14 个 worktree + 6 个残壳目录已清空（`.claude/worktrees/` 现为空）；6 条悬挂分支经逐条取证后由用户裁决**全部废弃**，`git branch` 现只剩 `master`（依据见 §8.1/§8.3，逐条写明"为什么废"，别再重查）。
 ⚠️ 其中 `task-0712` 的**两个已定位缺陷在 master 上仍未修**，随分支一并弃 —— 根因已存 §8.2，重做时直接用，不必重新排查。
 ✅ `feat/quote-material-no` 的技术债内容已转为 [[BL-0175]]（**P1**，含活的 N+1 违规）落 `BACKLOG.md`，未随分支丢失。
 
