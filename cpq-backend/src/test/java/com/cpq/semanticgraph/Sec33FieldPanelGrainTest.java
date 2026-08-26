@@ -102,12 +102,16 @@ class Sec33FieldPanelGrainTest {
         StringBuilder missingReport = new StringBuilder();
         List<String> unionNames = new java.util.ArrayList<>();
         for (String tabType : List.of("材质元素", "外购件", "主件", "费用类", "零件")) {
-            Response r = RestAssured.given()
-                    .queryParam("tabType", tabType).get("/api/cpq/config/semantic-graph/field-tree");
-            if (r.statusCode() == 200) {
-                List<String> n = r.jsonPath().getList("groups.fields.displayName.flatten()");
-                if (n != null) unionNames.addAll(n);
+            // 费用类是 D-34 分立建模的 variant 页签——种子里没有空 variantKey 的默认行，
+            // 不带 variantKey 会 404（『未找到页签视图: 费用类/』），api.md §1.4 示例也明确要带。
+            io.restassured.specification.RequestSpecification req = RestAssured.given().queryParam("tabType", tabType);
+            if ("费用类".equals(tabType)) {
+                req = req.queryParam("variantKey", "INCOMING_FIXED");
             }
+            Response r = req.get("/api/cpq/config/semantic-graph/field-tree");
+            assertEquals(200, r.statusCode(), tabType + " field-tree 应返回 200: " + r.getBody().asString());
+            List<String> n = r.jsonPath().getList("groups.fields.displayName.flatten()");
+            if (n != null) unionNames.addAll(n);
         }
         for (String expected : List.of("计价单位", "比例", "基准值", "毛用量")) {
             if (!unionNames.contains(expected)) {
@@ -253,13 +257,14 @@ class Sec33FieldPanelGrainTest {
                 .body(conflicting)
                 .post("/api/cpq/components/" + componentId + "/builder/inspect");
         assertEquals(200, inspectResp.statusCode(), inspectResp.getBody().asString());
-        List<java.util.Map<String, Object>> checks = inspectResp.jsonPath().getList("checks");
-        assertNotNull(checks, "checks 不应为空");
-        assertFalse(checks.isEmpty(), "checks 不应为空——冲突集合必须触发至少一条提示");
+        // api.md §2.3a / D-49: /inspect 响应体字段名是 items 不是 checks
+        List<java.util.Map<String, Object>> checks = inspectResp.jsonPath().getList("items");
+        assertNotNull(checks, "items 不应为空，原始响应=" + inspectResp.getBody().asString());
+        assertFalse(checks.isEmpty(), "items 不应为空——冲突集合必须触发至少一条提示");
         boolean hasGrainConflictErr = checks.stream().anyMatch(c ->
                 "ERR".equalsIgnoreCase(String.valueOf(c.get("level")))
                         && String.valueOf(c.get("message")).contains("粒度冲突"));
-        assertTrue(hasGrainConflictErr, "应出现『粒度冲突（兜底拦截）』err 级提示，实际 checks=" + checks);
+        assertTrue(hasGrainConflictErr, "应出现『粒度冲突（兜底拦截）』err 级提示，实际 items=" + checks);
 
         Response saveResp = RestAssured.given().contentType(ContentType.JSON)
                 .body(conflicting)
@@ -286,9 +291,10 @@ class Sec33FieldPanelGrainTest {
                 .body(config)
                 .post("/api/cpq/components/" + componentId + "/builder/inspect");
         assertEquals(200, inspectResp.statusCode(), inspectResp.getBody().asString());
-        List<java.util.Map<String, Object>> checks = inspectResp.jsonPath().getList("checks");
-        assertNotNull(checks);
-        assertFalse(checks.isEmpty(), "checks 不应为空");
+        // api.md §2.3a / D-49: /inspect 响应体字段名是 items 不是 checks
+        List<java.util.Map<String, Object>> checks = inspectResp.jsonPath().getList("items");
+        assertNotNull(checks, "原始响应=" + inspectResp.getBody().asString());
+        assertFalse(checks.isEmpty(), "items 不应为空，原始响应=" + inspectResp.getBody().asString());
         boolean hasErr = checks.stream().anyMatch(c -> "ERR".equalsIgnoreCase(String.valueOf(c.get("level")))
                 && String.valueOf(c.get("message")).contains("重复"));
         assertTrue(hasErr, "应有 err 级提示说明该值会重复出现/累加即重复计算，实际=" + checks);
@@ -316,9 +322,9 @@ class Sec33FieldPanelGrainTest {
                 .body(config)
                 .post("/api/cpq/components/" + componentId + "/builder/inspect");
         assertEquals(200, inspectResp.statusCode(), inspectResp.getBody().asString());
-        List<java.util.Map<String, Object>> checks = inspectResp.jsonPath().getList("checks");
-        assertNotNull(checks);
-        assertFalse(checks.isEmpty(), "checks 不应为空");
+        List<java.util.Map<String, Object>> checks = inspectResp.jsonPath().getList("items");
+        assertNotNull(checks, "原始响应=" + inspectResp.getBody().asString());
+        assertFalse(checks.isEmpty(), "items 不应为空——附属源列勾小计必须产生提示，原始响应=" + inspectResp.getBody().asString());
         boolean hasErr = checks.stream().anyMatch(c -> "ERR".equalsIgnoreCase(String.valueOf(c.get("level")))
                 && String.valueOf(c.get("message")).contains("按主源粒度重复"));
         assertTrue(hasErr, "应有 err 级提示说明该值按主源粒度重复出现，实际=" + checks);

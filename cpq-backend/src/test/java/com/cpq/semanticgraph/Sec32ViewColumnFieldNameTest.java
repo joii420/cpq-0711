@@ -160,12 +160,13 @@ class Sec32ViewColumnFieldNameTest {
                 .body(inspectBody).post("/api/cpq/components/" + componentId + "/builder/inspect");
         assertEquals(200, inspectResp.statusCode(), inspectResp.getBody().asString());
         // ① 体检区应提示"同步 N 处引用"，② 且不阻断（不含 err 级 BLOCK）
-        java.util.List<java.util.Map<String, Object>> checks = inspectResp.jsonPath().getList("checks");
-        assertNotNull(checks, "inspect 应返回 checks 列表");
+        // api.md §2.3a / D-49: /inspect 响应体字段名是 items 不是 checks
+        java.util.List<java.util.Map<String, Object>> checks = inspectResp.jsonPath().getList("items");
+        assertNotNull(checks, "inspect 应返回 items 列表，原始响应=" + inspectResp.getBody().asString());
         boolean hasBlockingErr = checks.stream()
                 .anyMatch(c -> "ERR".equalsIgnoreCase(String.valueOf(c.get("level")))
                         && String.valueOf(c.get("code")).toLowerCase().contains("rename"));
-        assertFalse(hasBlockingErr, "② 改字段名不应产生阻断级(ERR)提示，实际 checks=" + checks);
+        assertFalse(hasBlockingErr, "② 改字段名不应产生阻断级(ERR)提示，实际 items=" + checks);
 
         // 保存改名
         Response renameSaveResp = RestAssured.given().contentType(ContentType.JSON)
@@ -206,8 +207,12 @@ class Sec32ViewColumnFieldNameTest {
     @DisplayName("AC-13: 两列字段名同为『项次』只 warn 不 err，保存按钮仍可用")
     void ac13_duplicateFieldNameWarnsButDoesNotBlock() {
         // 同 ac11③ 教训，换 CUSTOMER_MAP 避免与 ASSEMBLY_FEE 产生无关的粒度冲突。
+        // 本轮补：B-27（AC-30 标识列缺失阻断）实现后，缺料号/名称列会额外触发一条 ERR 级
+        // INSPECT_BLOCKED，与本用例要验的"字段名重复"完全无关的检查项串在一起会污染 blocked 断言——
+        // 按 Sec33 同款前置（PRODUCT_MASTER.material_no 打 isPartNo）补一列满足标识列要求。
         String duplicateNames = """
                 { "tabType": "主件", "columns": [
+                  {"sourceNodeKey":"PRODUCT_MASTER","sourceColumn":"material_no","fieldName":"销售料号","isRowKey":true,"isPartNo":true},
                   {"sourceNodeKey":"ASSEMBLY_FEE","sourceColumn":"seq_no","fieldName":"项次"},
                   {"sourceNodeKey":"CUSTOMER_MAP","sourceColumn":"seq_no","fieldName":"项次"}
                 ]}
@@ -216,9 +221,9 @@ class Sec32ViewColumnFieldNameTest {
                 .body(duplicateNames)
                 .post("/api/cpq/components/" + componentId + "/builder/inspect");
         assertEquals(200, inspectResp.statusCode(), inspectResp.getBody().asString());
-        java.util.List<java.util.Map<String, Object>> checks = inspectResp.jsonPath().getList("checks");
-        assertNotNull(checks, "checks 不应为空");
-        assertFalse(checks.isEmpty(), "checks 不应为空列表——字段名重复必须产生至少一条提示");
+        java.util.List<java.util.Map<String, Object>> checks = inspectResp.jsonPath().getList("items");
+        assertNotNull(checks, "items 不应为空");
+        assertFalse(checks.isEmpty(), "items 不应为空列表——字段名重复必须产生至少一条提示");
         boolean hasWarnDup = checks.stream().anyMatch(c ->
                 "WARN".equalsIgnoreCase(String.valueOf(c.get("level")))
                         && String.valueOf(c.get("message")).contains("项次"));
@@ -230,7 +235,7 @@ class Sec32ViewColumnFieldNameTest {
 
         Boolean blocked = inspectResp.jsonPath().getBoolean("blocked");
         if (blocked != null) {
-            assertFalse(blocked, "字段名重复不应使 inspect 整体判定为 blocked=true");
+            assertFalse(blocked, "字段名重复不应使 inspect 整体判定为 blocked=true，原始响应=" + inspectResp.getBody().asString());
         }
 
         Response saveResp = RestAssured.given().contentType(ContentType.JSON)
