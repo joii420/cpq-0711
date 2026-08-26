@@ -5707,3 +5707,31 @@ DB 扩到 12 位后，即便 handler 完全不归一，12 位 Excel 导入查库
 [2026-08-17] 工作区卫生 - 存量 worktree / 分支全量清理（14 worktree + 6 残壳目录 + 5 条悬挂分支废弃裁决） | 涉及文件：`dev-docs/INDEX.md`（§0.0 态势 + §8 重写为「已废弃分支留碑 + 8.2 未修缺陷转录」）；无代码改动 | **背景**：`.claude/worktrees/` 积压 14 个 worktree（1.73 GB）+ 6 个 worktree 已删但残留的 vite 缓存空壳。**判据**：`git branch --merged master` + `git diff master...<br>` 为空 → 废弃；有独有 diff → 逐条取证再由用户裁决。**结果**：10 个已合并 worktree + 6 残壳直接清（释放 ~1.02 GB）；5 条悬挂分支取证后用户裁决全弃（再释放 714 MB），`.claude/worktrees/` 清空。 | 🔑 **取证结论（写进 INDEX §8.1，避免后人重查）**：① `feat/pricing-sales-part-no` 的整个 sales_part_no 方向已被 `V315__unify_partno_semantics.sql` **明文反做**（首行注释「反做 V311 的 sales_part_no 反向设计」+ 逐表 `DROP COLUMN`）——合并会把 master 已撤销的列加回去；② `feat/tesk-0709-pricing-import-versioning` 的任务**已在 master 重做交付**（`bd52d633`/`92b0ce5f`/`5aabe1dd`/`4ec9b64f`/`3e8d0d0d`），master `VersionedV6Writer` 1140 行 > 分支 884 行，且 V323/V324 同号不同文件；③ `feat/sel-plan3c-sales-landing` 随 ① 作废，T1 的 `enabledParams` 分发 master 已有；④ `feat/task-0812-*` 的 19 Sheet 文案与后端实登记 20 个 handler 矛盾。 | ⚠️ **遗留（重要）**：`feat/task-0712-selection-config` 的**两个已定位缺陷随分支一并弃，master 上至今未修** —— (a) `ConfigureProductService.insertMaterialBomItemV6` 的 `component_no` 写自指销售料号而非材质料号 `recipe.code`，致 `v_composite_child_materials` 的 `mr.code = asy.component_no` **关联恒 miss**（`recipe_id`/`chemical_symbol` 恒 NULL，靠 `component_usage_type` 兜底渲染）；(b) `ExistingProductService` 的 `WHERE customer_product_no IS NOT NULL` 把选配新建料号挡在「从已有产品添加」列表外。根因已转录 `INDEX.md §8.2`，重做时直接取用。 | 🔑 **操作教训**：worktree 内的 `node_modules` 多为指向主仓的**软链**，`git worktree remove` 前必须先 `rm` 掉软链本身，否则有穿透删除主仓 396 MB 依赖的风险（本次 7 条软链均已提前断链，删后主仓依赖复核完好）。
 
 [2026-08-17] 工作区卫生（续） - `feat/quote-material-no` 取证与废弃 + 技术债转录 `BL-0175` | 涉及文件：`BACKLOG.md`（P1 区新增 BL-0175）/ `dev-docs/INDEX.md`（§0.0 + §8.3）；无代码改动 | **判据**：该分支 ahead=1 / behind=**922**，独有 diff 仅 `BACKLOG.md` **+15 行零代码** → 分支本身合并无意义；但其登记的 `BL-0020`（报价料号发号链 follow-up 7 项）**在 master 的 BACKLOG 里按内容逐项核查全部 0 命中**（`ensureRegistered` / `Q02CustomerMapHandler` / `getOrAllocateCustomerCode` / `QuoteMaterialNoIntegrationTest`；`MaterialNoResolver` 的 2 处命中属 BL-0074/BL-0019，`mintAndRegister` 的 1 处属 BL-0017，**均非同一件事**）→ 内容有价值，转录而非丢弃。 | ⚠️ **编号撞车**：master 的 `BL-0020` 已被「config 路径 `[页签.列]` 只读裸 code 的粗化」占用（该文件另有 10 组标题级重复编号的历史遗留），故改号 **BL-0175**（当时最大 BL-0174）。 | 🔑 **转录时实测复核了两项（没照搬旧结论）**：① **Major-2 仍是活的 N+1 违规**——`MaterialNoResolver.java:71` 的 `allocator.ensureRegistered(...)` 位于 per-row 方法 `resolve()` 内，而 `resolve()` 被至少 8 个 handler 在**行循环体内**调用（`MaterialBomMergeHandler:142` / `Q06:88` / `Q07:83` / `Q09:108` / `Q13:76` / `Q17:97` …），数百~千行 sheet 产生同量级 `INSERT ON CONFLICT` 往返，直接违反 `backend.md` N+1 硬指标 → **按用户裁决定级 P1**（原提案 P2）；② Minor-6 的迁移编号洞仍在（目录实为 V307/V308/**缺 V309**/V310）。其余 4 项仅确认未登记，未逐行验代码（已在条目内标明）。 | **结果**：`git branch` 只剩 `master`，`git worktree list` 只剩主工作区，悬挂分支清零。
+
+[2026-08-25] 取数配置器（task-260819） - 子件闭包统一 B 机制 + 配置器交付 + 10 条红着的一期 AC 归因修复 | 涉及文件：后端 `SemanticCompiler` / `BuilderService` / `BuilderConfig` / `FieldTreeBuilder` / `ComponentDriverService` / `DataLoader` / `SqlViewExecutor` / `BomTreeVarsContext` / `BomTreeRenderService` / `CardSnapshotService` / `ConfigureSnapshotService` / `QuotationService` + `V395` 迁移；前端 `SqlViewBuilderTab` / `ComponentManagement` / `sqlViewBuilderService` / `styles.css`；测试 `Sec31`~`Sec36b` | 合 master `06d0e1a7` + `fa854563`
+
+**核心改动**：D-50 裁决「子件闭包统一为主树供数组」——报价侧向核价侧看齐，取消各页签自建递归闭包，统一 `= ANY(:total_material_no)`（核价侧本就是纯 B 机制）。
+
+🔑 **同一根因逐层暴露三层，每层都是「改了 A 的语义，但 A 的消费方分散在别处」**：
+1. **SQL 归属列**（AC-3）：`hf_part_no` 不再改写为根成品
+2. **Java 回分**（D-56）：`expandMulti` 按 `hf_part_no` 回分 → 子件行落进够不着的桶 → 成品行取不到子件数据且不报错。修法：`collectTotalMaterialNoUnion` 同一次树遍历顺带产出 `rootsByMaterial`（后代→根）映射，回分改 fan-out
+3. **SQL outer wrap**（D-58）：`SqlViewExecutor:287/:355` 的 outer `hf_part_no = ANY(:hfPartNos)` 用根成品列表筛，B 机制下内层是子件自身料号 → **子件行在 Java 回分之前就被 SQL 滤光**（实测两个桶都 0 行）。修法：`DataLoader` 纯加法重载（107 insertions / **0 deletions**），`ComponentDriverService` 6 处 `loadByPath` 全走加宽入口，`resultCache` key 加 `_wideTag` 维度防串数据
+
+🐛 **四个静默故障（都不报错、不崩、测试也不红，只是值不对）**：
+- `CLOSURE` 开关勾了不生效：前端写 `{"CLOSURE":true}`、后端只认 `switches.get("includeChildParts")` → 功能 100% 不可用（D-51，开关整体取消）
+- `/preview` 裸 `:` 进 SQL → PG 语法错、预览完全不可用（D-63，本轮引入的真回归，A/B 实证）
+- 字段名串改：取数配置保存后刷新走 `setFields(fresh.fields)` 漏 `rebuildFieldKeys` → 后端返回的 fields 无 key → `updateField` 按 key 匹配时 `undefined === undefined` 恒真 → **改一个字段名全部跟着改**（用户真机发现）
+- 报价侧 `BASIC_DATA` 字段绑定键写错 → 格子恒取不到值、回退静态默认值（D-73）
+
+🚨 **两个功能级缺陷全部由用户真机发现，无一由自动化捕获**（字段名串改、价格策略不成块）——共同点是 `tsc`/编译/后端用例/SQL 产物检查**全部无感**，因为 SQL 是对的、类型是对的，坏的是别处。
+
+🔑 **闸门 B 前发现 10 条一期 AC 的自动化验证一直红着**（AC-11~15/17~19/22/23），主线差点登记成「技术债」——实为本任务自己的验收项。派后端+测试并行归因后拆成三类：**真功能缺口 4 条**（含 B-27 那条校验**从来没实现过**，原作者在 `BuilderService:299-300` 注释里自曝「本轮未实现」，但该标注只留在代码里、**从未回流到 AC 状态**）／**用例写错 AC 的意思 7 条**／**AC 自身写错 2 条**。
+
+⚠️ **主线自己在本任务里出错 6 次**，逐条记入 §8 裁决台账：D-48（契约把三态压成两态）、D-56（定契约只验自洽性、不反向查消费方）、D-57（拿「看起来能区分」的特征当权威判据，被测试子代理复核推翻）、D-63（AC 写了要求、任务分解没接住）、D-64（AC 未写明闭包口径致两个子代理各按一套算）、D-73（`D-55④` 写对了但实现按侧决定，一直没人验）。
+
+| 遗留 | 说明 |
+|---|---|
+| `Sec36.ac35`/`ac36` | A/B 对照证实为共享库数据漂移的**既有失败**，与本任务无关 |
+| `Sec35.ac29` | 归因完成：用例发明了 AC 原文里没有的 `isDefaultForAmount` 字段（后端全工程零命中），属第 7 条「用例写错 AC 的意思」，**修法明确、待裁决** |
+| `BL-0180` / `BL-0181` | 核价侧 `precomputeCostingDriverUnion` 同类缺口（P2）／组件 `50c646cb` 元素单价违反可编辑性通则（P1，触发 AP-44） |
+| D-58 的性能代价 | outer 过滤器加宽后取回行数变多，**1845 行极端单量不在当时评估视野内**；已主动告知并发会话，若 profile 指向 `DataLoader.loadByPath` 返回行数则开返修 |
