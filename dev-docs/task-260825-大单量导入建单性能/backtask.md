@@ -193,3 +193,54 @@ SELECT，否则两事务都读 NULL → 双重补算」）；② 缺失行 SELEC
 - 外层事务会占住一个池连接约 **77s**（`quarkus.datasource.jdbc.max-size=20`）
 - **行数再涨会线性变长**（5000 行 ≈ 200s）—— 这不是悬崖但也不优雅。
   彻底解法是方案 D（`ensureCardValues` 每次只算一批、调用方循环），已记入 `BL-0183` 复评项
+
+### ⚠️ B-15 规格更正（2026-08-25，实现期被测试实证推翻）
+
+🚨 **上面 B-15 的原字面做法（给 `ensureCardValues` 加 `@TransactionConfiguration`）是错的，会造成 P0 功能阻断。**
+
+**实证**：`SqlCountNPlusOneGuardTest` 当场炸出
+
+```
+java.lang.RuntimeException: Changing timeout via @TransactionConfiguration
+                            can only be done at the entry level of a transaction
+  at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.checkConfiguration(:352)
+  → TransactionalInterceptorBase.invokeInCallerTx(:334)
+```
+
+**根因**：Quarkus 在「方法已处于外层活跃事务中」且「该方法自己声明了 `@TransactionConfiguration`」时
+**直接抛异常中止调用**，而**不是**主线原先以为的「静默不生效」。
+
+**影响面（已核实）**：`QuotationService.submit(UUID)` 于 `:725` 带 `@Transactional`，
+`:881` 的 `cardValuesReady = ensureCardValues(id, true)` 在其方法体内 →
+**任何需要补算卡片值的报价单提交都会直接抛 `RuntimeException`，提交功能被打断**。
+这比 D-4 返修前的「报 false 但数据是好的」严重得多 —— 那是状态位说谎，这是**功能性阻断**。
+
+**6 个生产调用点的事务上下文（实现方已逐一核实）**：
+
+| 调用点 | 调用时已在事务中？ |
+|---|---|
+| `CreateQuotationMaterializer.materialize`（本次目标路径） | 否 —— 事务根 |
+| `QuotationResource#ensureCardValues` | 否 —— 事务根 |
+| `QuotationResource#awaitWarmBeforeSubmit` | 否 —— 事务根 |
+| `ComparisonViewService#getData` | 否 —— 事务根 |
+| **`QuotationService#submit` :881 直接调用** | **是** ← 会炸 |
+| **`QuotationService#submit` :897 经 `CostingFreezeService#createForSubmission` 间接调用** | **是** ← 会炸 |
+
+### ✅ B-15 更正后的做法（主线裁决，仍在用户批准的方案 E 之内）
+
+**不碰 `ensureCardValues` 自身的任何注解。** 改为在**唯一目标调用点**包一层显式事务：
+
+在 `CreateQuotationMaterializer.materialize` 里，把 `cardSnapshotService.ensureCardValues(qid)`
+这一句改为用 `io.quarkus.narayana.jta.QuarkusTransaction` 显式开一个带扩展超时的事务包住它，
+例如 `QuarkusTransaction.run(QuarkusTransaction.RunOptions.options().timeout(600), () -> ...)`
+（具体 API 形态以实现方核实为准）。
+
+**为什么选它而不是「拆成两个方法」**：
+- 改动面 **1 个文件**（vs 拆方法要改 `CardSnapshotService` + 4 个调用方 = 5 个文件，且每个调用点的事务上下文都要重新核实一遍）
+- **从机制上不可能再影响 `submit()` 或任何其它调用点** —— 超时设置压根不在 `ensureCardValues` 里，
+  而在建单物化这一条路径的显式事务块里
+- 把「本次例外只用于建单物化路径」这句话，**从注释里的承诺变成了结构上的事实**
+
+🔑 **教训（值得进 `docs/反模式.md`）**：`@TransactionConfiguration` 在已有事务中**抛异常而非静默降级**。
+给一个**被多处调用**的方法加事务配置注解，等于给它的**所有**调用点加了「必须是事务根」的隐式前置条件 ——
+而这个条件的违反是**运行时爆炸**，编译期毫无提示。**要改事务配置，改调用点、别改被调方。**
