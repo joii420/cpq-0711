@@ -85,15 +85,23 @@ export interface FieldTreeColumn {
   viewColumn?: string;
   /** 该列所属的展开维度，纯展示（真正的粒度/冲突判定权威在服务端）。 */
   dims?: string[];
-  /** 非空 = 查名列，值为维表简称，UI 显示 lookup-tag（字段是否天然带此标记待联调确认，缺失时按普通列渲染）。 */
-  lookupOf?: string | null;
+  /**
+   * 非空 = 查名列，值为维表简称，UI 显示 lookup-tag（字段是否天然带此标记待联调确认，缺失时按普通列渲染）。
+   * F-18（api.md §1.4 三方形状裁决）：后端实际返回字段名为 `lookupLib`，不是 `lookupOf`——
+   * 此前按 `lookupOf` 声明会导致本字段恒为 undefined，此处以 api.md 为准更正类型名。
+   */
+  lookupLib?: string | null;
   /** 非空 = 仅在指定 variant 下出现（D-34）。 */
   onlyVariant?: string | null;
   /** true = 价格策略元素符号列（左键）。 */
   elemKey?: boolean;
   /** PRICE 分组内核心列（删除即整组消失）。 */
   isCore?: boolean;
-  /** true = 仅子件闭包开启时才出现。 */
+  /**
+   * F-16（AC-60，D-51，2026-08-24）：旧语义"仅子件闭包开启时才出现"已废弃——后端 FieldTreeBuilder.Field
+   * 目前未声明此属性、从未把它置为 true（改动前已是死代码）；子件闭包开关整体从界面移除后，前端不再
+   * 对本字段做任何过滤判断。保留该字段声明仅为兼容可能残留的旧响应/旧类型引用，不建议新写代码消费它。
+   */
   closureOnly?: boolean;
 }
 
@@ -105,8 +113,13 @@ export interface FieldTreeGroup {
   dims?: string[];
   note?: string | null;
   fields: FieldTreeColumn[];
-  /** PRICE / SUB / GRAIN / JOIN / SAME / MAIN，用于渲染徽章与冲突提示文案；不影响是否可拖。 */
-  kind?: string;
+  /**
+   * PRICE / SUB / GRAIN / JOIN / SAME / MAIN，用于渲染徽章与冲突提示文案；不影响是否可拖。
+   * F-18（api.md §1.4 三方形状裁决）：后端实际返回字段名为 `groupKind`，不是 `kind`——
+   * 此前按 `kind` 声明会导致本字段恒为 undefined，`group.kind === 'PRICE'` 恒 false，
+   * 价格策略分组永不成块、元素列不会自动带出（AC-20/AC-21 失效）。此处以 api.md 为准更正类型名。
+   */
+  groupKind?: string;
 }
 
 export interface FieldTreeResponse {
@@ -115,7 +128,11 @@ export interface FieldTreeResponse {
   availableTabTypes?: string[];
   /** 费用类等有 variants 的页签，可选数据来源列表；未提供时「数据来源」下拉不出现。 */
   variants?: Array<{ key: string; label: string; hint?: string }> | null;
-  /** 该页签支持的开关（如 includeChildParts）；未提供时不出现「选项」行。 */
+  /**
+   * F-16（AC-60，D-51，2026-08-24）：前端不再渲染「选项」行，本字段即使后端仍返回也不消费——
+   * 子件闭包开关已整体从界面移除（含内部枚举名不再出现在界面上）。保留字段声明仅为兼容
+   * 可能仍带此键的旧响应。
+   */
   switches?: string[];
   anchorDesc?: string | null;
 }
@@ -163,6 +180,12 @@ export interface PriceStrategyOverride {
 export interface BuilderConfigPayload {
   tabType: string;
   variantKey?: string | null;
+  /**
+   * F-16（AC-60，D-51，2026-08-24）：SqlViewBuilderTab.tsx 不再写这个键（子件闭包开关整体移除，
+   * `builder_config.switches` 中不应再出现内部枚举名或 includeChildParts 这一类键）。字段留作可选，
+   * 只是为了兼容 `GetBuilderResponse.builderConfig` 里可能仍带旧值的既有已保存行——不代表还有
+   * 写路径会用到它。
+   */
   switches?: Record<string, boolean>;
   columns: BuilderColumnInput[];
   priceStrategy?: PriceStrategyOverride | null;

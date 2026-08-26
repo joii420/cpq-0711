@@ -744,10 +744,18 @@
 .svb-sheet-note { font-size:11px; color:#874d00; background:var(--svb-gold-bg); border:1px solid #ffe58f; border-radius:4px; padding:4px 7px; margin:2px 4px 6px; line-height:1.6; }
 .svb-empty { padding:34px 10px; text-align:center; color:var(--svb-sub); font-size:12px; border:2px dashed var(--svb-border); border-radius:8px; margin:8px; }
 .svb-drop-hot { background:var(--svb-blue-bg); border-color:var(--svb-blue); }
-.svb-sel-row { border:1px solid transparent; border-radius:6px; padding:6px 8px; }
+/* 用户问题 1 修复：drop 区从"仅已有行"扩到整个列表容器——填满 .svb-pane-b 的可用高度，
+   行与行之间、末尾的空白都能落点，不再是只有拖到第一行才能成功。 */
+.svb-sel-list { min-height:100%; }
+.svb-sel-list.drop-end-hot { box-shadow:inset 0 -2px 0 0 var(--svb-blue); border-radius:6px; }
+.svb-sel-row { border:1px solid transparent; border-radius:6px; padding:6px 8px; position:relative; }
 .svb-sel-row:hover { background:#fafbfc; border-color:var(--svb-border); }
 .svb-sel-row.dragging { opacity:.4; }
-.svb-sel-row.over { border-top:2px solid var(--svb-blue); }
+/* 插入位置指示线：drop-before/drop-after 由拖拽悬浮时鼠标 Y 相对目标行的上下半决定（见 computeDropPos）。 */
+.svb-sel-row.drop-before { box-shadow:0 -2px 0 0 var(--svb-blue); }
+.svb-sel-row.drop-after { box-shadow:0 2px 0 0 var(--svb-blue); }
+.svb-pgrp.drop-before { box-shadow:0 -2px 0 0 var(--svb-blue); }
+.svb-pgrp.drop-after { box-shadow:0 2px 0 0 var(--svb-blue); }
 .svb-sr-1 { display:flex; align-items:center; gap:6px; }
 .svb-sr-2 { display:flex; align-items:center; gap:8px; padding:4px 0 0 22px; }
 .svb-hd { cursor:grab; color:var(--svb-grey); }
@@ -774,6 +782,9 @@
 .svb-livesql .k { color:#0958d9; font-weight:600; } .svb-livesql .s { color:#08979c; }
 .svb-zoom { margin-left:auto; cursor:pointer; color:var(--svb-sub); font-size:14px; }
 .svb-zoom:hover { color:var(--svb-blue); }
+/* 用户问题「保存按钮要更显眼」：吸附在滚动容器底部，不用滚到最下面才找得到保存按钮。
+   sticky 会自动找最近的可滚动祖先——不管那是 .svb-pane-b 还是整页，都能生效，不需要改 ComponentManagement.tsx 的布局。 */
+.builder-footer { position:sticky; bottom:0; background:#fff; z-index:5; padding:10px 0; border-top:1px solid var(--svb-border); }
 .svb-health { margin-top:12px; border:1px solid var(--svb-border); border-radius:8px; overflow:hidden; }
 .svb-health-h { padding:8px 12px; background:#fafbfc; border-bottom:1px solid var(--svb-border); font-size:12px; color:var(--svb-sub); display:flex; justify-content:space-between; }
 .svb-hitem { display:flex; gap:8px; align-items:flex-start; padding:7px 12px; font-size:12px; border-bottom:1px solid #f2f3f5; }

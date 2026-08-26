@@ -33,7 +33,7 @@ import FormulaBindingConsolidateDrawer from './FormulaBindingConsolidateDrawer';
 import ConfigGuideDrawer from './ConfigGuideDrawer';
 import FormulaCycleDrawer, { type FormulaCycle } from './FormulaCycleDrawer';
 import SqlViewListPanel from './SqlViewListPanel';
-import SqlViewBuilderTab from './SqlViewBuilderTab';
+import SqlViewBuilderTab, { type SqlViewBuilderTabHandle } from './SqlViewBuilderTab';
 import TabJoinFormulaDrawer, { type TabJoinFormulaSavePayload } from '../template/TabJoinFormulaDrawer';
 import { tokensToDrawerExpression } from './formulaSerialize';
 import { SortableTable, DragHandle } from '../../components/SortableTable';
@@ -1086,6 +1086,15 @@ const ComponentManagement: React.FC = () => {
   // 2026-07-21 起与 bomRecursiveExpand 后端联动派生(选 BOM → true；其余 → false)，
   // 前端只维护这一个字段，不再单独暴露渲染开关。
   const [tabType, setTabType] = useState<string | undefined>(undefined);
+  // 双保存按钮问题修复（2026-08-22 紧急，主线方案 2）：详情页有「取数配置」Tab 自己的保存按钮，也有
+  // 外层这个「保存」——真实事故是用户点了外层、看到"保存成功"，以为取数配置也存了，实际外层保存
+  // 走的是 PUT /components/{id}（只存组件基本信息），取数配置一个字节都没落库。
+  // activeDetailTabKey 追踪当前详情页哪个 Tab 在前台；builderTabDirty 由 SqlViewBuilderTab 的
+  // onDirtyChange 上抛（判据 = sel.length>0，与它自己 handleCancel() 的"未保存修改"同一口径）；
+  // builderTabRef 供外层保存拦截后直接调用该 Tab 的保存动作，不用另写一套。
+  const [activeDetailTabKey, setActiveDetailTabKey] = useState('fields');
+  const [builderTabDirty, setBuilderTabDirty] = useState(false);
+  const builderTabRef = useRef<SqlViewBuilderTabHandle | null>(null);
   // task-0721 F2（2026-07-23 补充，需求说明 §4.3 规则一）：料号列/料号名称列字段名。
   // 从该组件已有字段(fields state)中选，不是自由输入；非树页签(tabType∈{材质元素,零件,外购件,主件,费用类}，
   // D-37 已把「费用类」纳入同一约束)必配料号列或名称列至少一个。
@@ -1424,6 +1433,22 @@ const ComponentManagement: React.FC = () => {
   // Save component
   const handleSave = async () => {
     if (!selectedComponent) return;
+    // 双保存按钮问题修复（2026-08-22 紧急，主线方案 2）：早期 guard clause，不改动下面任何既有逻辑
+    // （partNoField/elementCodeField 等一片校验原样保留，见下方注释——那片逻辑本轮不碰）。
+    // 用户真实事故：在「取数配置」Tab 里改了列，点了这个外层「保存」（走 PUT /components/{id}，
+    // 只存组件基本信息），看到"保存成功"提示，以为取数配置也存了——实际它一个字节都没落库，刷新就没了。
+    // 判据：当前详情页停在「取数配置」Tab 且该 Tab 有未保存编辑（SqlViewBuilderTab 通过
+    // onDirtyChange 精确上抛，见该文件 hasUnsavedEdits）——拦下这次点击，弹窗说明并直接触发 Tab 自己
+    // 的保存（builderTabRef.current.save()），不在这里悄悄替用户决定"到底保存哪个"。
+    if (activeDetailTabKey === 'sql-view-builder' && builderTabDirty) {
+      Modal.confirm({
+        title: '取数配置有未保存的改动',
+        content: '这个「保存」按钮只保存组件基本信息，不包含「取数配置」页签里的改动。请先保存取数配置，否则这部分改动刷新后会丢失。',
+        okText: '去保存取数配置', cancelText: '我知道了，稍后处理',
+        onOk: () => { builderTabRef.current?.save(); },
+      });
+      return;
+    }
     // task-0721 F2（2026-07-23 修订，需求说明 §4.3 规则一「匹配标识放宽」）：非树页签
     // (材质元素/零件/外购件/主件) 的匹配标识不一定是料号，也可能是名称（如「外购件/费用」类
     // 页签用"料件名称=组成件1"而无料号列）——放宽为 partNoField 或 partNameField 至少配一个，
@@ -1668,6 +1693,8 @@ const ComponentManagement: React.FC = () => {
     <>
       <Tabs
         size="small"
+        activeKey={activeDetailTabKey}
+        onChange={setActiveDetailTabKey}
         items={[
           {
             key: 'fields', label: '字段配置',
@@ -1715,9 +1742,11 @@ const ComponentManagement: React.FC = () => {
             key: 'sql-view-builder', label: '取数配置',
             children: selectedComponent ? (
               <SqlViewBuilderTab
+                ref={builderTabRef}
                 componentId={selectedComponent.id}
                 initialTabType={tabType}
                 manualFieldOptions={fieldNameOptions}
+                onDirtyChange={setBuilderTabDirty}
                 onSaved={async () => {
                   if (!selectedComponent) return;
                   try {
@@ -1730,7 +1759,11 @@ const ComponentManagement: React.FC = () => {
                     setElementCurrencyField(fresh.elementCurrencyField);
                     setRowKeyFields(fresh.rowKeyFields ?? []);
                     setDataDriverPath(fresh.dataDriverPath ?? '');
-                    setFields(fresh.fields ?? []);
+                    // 后端返回的 fields 不带前端本地 key（提交前已被 stripFieldKeys 剥掉），
+                    // 若直接 setFields 会导致所有行的 key 都是 undefined ——
+                    // FieldConfigTable.updateField 按 key 匹配行，undefined === undefined 恒真，
+                    // 改一个字段名会把全部字段一起改掉。这里是「取数配置」保存后刷新字段配置的路径，必须重建 key。
+                    setFields(rebuildFieldKeys(fresh.fields ?? []));
                     setSelectedComponent(prev => (prev && prev.id === fresh.id ? { ...prev, ...fresh } : prev));
                     void refreshRowKeyCandidates(fresh.id, fresh.dataDriverPath ?? '', fresh.fields ?? []);
                   } catch (e: any) {

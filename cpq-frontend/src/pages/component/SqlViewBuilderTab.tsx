@@ -7,8 +7,8 @@
 //    右侧 SQL 面板的文本、粒度条的文案、体检结论、AC-16 拖拽期置灰的冲突标记全部原样取自后端响应
 //    （GET /field-tree 带 selectedConfig 时返回 groups[].conflict），前端只读展示、不自行判定。
 //    详见 sqlViewBuilderService.ts 顶部注释（含与 api.md §2.1a 的对齐记录）。
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Checkbox, Drawer, Dropdown, Input, Select, Space, message, Modal } from 'antd';
+import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { Alert, Button, Checkbox, Drawer, Dropdown, Input, Select, Space, message, Modal, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   fetchFieldTree, getBuilder, compileBuilder, previewBuilder, inspectBuilder, saveBuilder, detachBuilder,
@@ -33,7 +33,6 @@ const TAB_TYPES = ['主件', '材质元素', '零件', '外购件', '费用类',
 const TAB_TYPE_LABEL: Record<string, string> = { BOM: 'BOM 树' };
 const ROLE_LABEL: Record<FieldRole, string> = { PART_NO: '料号', PART_NAME: '名称', ROW_KEY: '行键', SORT: '排序' };
 const DATA_TYPE_LABEL: Record<string, string> = { TEXT: '文本', NUMBER: '数字', MONEY: '金额' };
-const SWITCH_LABEL: Record<string, string> = { includeChildParts: '子件数据也要' };
 
 const colKey = (sourceNodeKey: string, sourceColumn: string) => `${sourceNodeKey}::${sourceColumn}`;
 
@@ -60,7 +59,7 @@ interface SelColumn {
   roles: FieldRole[];
   groupLabel?: string | null;
   groupKind?: string;
-  lookupOf?: string | null;
+  lookupLib?: string | null;
   /** 价格策略原子组核心/外围列（元素单价=core、货币=非core），无 _ 前缀。 */
   raw?: boolean;
   isCore?: boolean;
@@ -90,11 +89,11 @@ function toSelColumn(col: FieldTreeColumn, group: FieldTreeGroup, opts?: { autoE
     // 真正的阻断/告警判定仍由后端 /inspect 给出，这里不新增任何业务规则。
     inSubtotal: money && !unitLike,
     roles: col.roles || [],
-    lookupOf: col.lookupOf ?? null,
+    lookupLib: col.lookupLib ?? null,
     groupLabel: group.groupName,
-    groupKind: group.kind,
-    raw: group.kind === 'PRICE',
-    isCore: group.kind === 'PRICE' ? !!col.isCore : undefined,
+    groupKind: group.groupKind,
+    raw: group.groupKind === 'PRICE',
+    isCore: group.groupKind === 'PRICE' ? !!col.isCore : undefined,
     elemKey: !!col.elemKey,
     autoElem: !!opts?.autoElem,
   };
@@ -145,11 +144,25 @@ export interface SqlViewBuilderTabProps {
   manualFieldOptions: { value: string; label: string }[];
   /** 保存成功后回调：通知父组件重新拉取组件详情——tabType / rowKeyFields / 三项绑定等组件级属性由保存事务原子回填（AC-2/AC-22）。 */
   onSaved?: () => void;
+  /**
+   * 双保存按钮问题修复（2026-08-22 紧急，主线方案；D-55① 后改为快照比对判据）：本 Tab 是否存在
+   * 「未通过本 Tab 保存按钮落库」的编辑——供组件详情外层判断"用户点外层保存时要不要弹提示"。
+   * 定义 = 当前配置（tabType/variantKey/columns/priceStrategy）与上一次成功 GET/PUT 时的快照是否
+   * 一致，不一致即 true。
+   */
+  onDirtyChange?: (dirty: boolean) => void;
+}
+
+/** 供外层（ComponentManagement.tsx）通过 ref 触发本 Tab 的保存——外层保存按钮点击时，若本 Tab 有未保存编辑，直接调用它。 */
+export interface SqlViewBuilderTabHandle {
+  save: () => void;
 }
 
 // ── 主组件 ──────────────────────────────────────────────────────────────
 
-const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, initialTabType, manualFieldOptions, onSaved }) => {
+const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabProps>(function SqlViewBuilderTab(
+  { componentId, initialTabType, manualFieldOptions, onSaved, onDirtyChange }, ref,
+) {
   const [initLoading, setInitLoading] = useState(true);
   /** AC-32：true = 存量手写视图——显示引导页，不进拖拽态。D-43 后由 GET /builder 的 viewState==='LEGACY_HANDWRITTEN' 推导（不再直接等同 isLegacyHandwritten，那正是本次误判的根因）。 */
   const [guideMode, setGuideMode] = useState(false);
@@ -157,7 +170,6 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
 
   const [tabType, setTabType] = useState<string>(TAB_TYPES[0]);
   const [variantKey, setVariantKey] = useState<string | null>(null);
-  const [switches, setSwitchesState] = useState<Record<string, boolean>>({});
   const [sel, setSel] = useState<SelColumn[]>([]);
   const [elemKeyOverrideField, setElemKeyOverrideField] = useState<string | null>(null);
 
@@ -172,6 +184,8 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
 
   const [sqlZoomOpen, setSqlZoomOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  /** 用户问题 2 修复：保存失败要有「非控制台」的可见反馈——常驻 Alert，不只是 3 秒自动消失的 toast。 */
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // AC-34：过期提醒——isStale/currentCompilerVersion 直接取自 GET /builder（api.md §2.1a），不本地比较版本号。
   const [staleInfo, setStaleInfo] = useState<{ builderVersion: number; currentVersion: number } | null>(null);
@@ -195,6 +209,29 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
     | { type: 'group'; headUid: string }
     | null
   >(null);
+  /**
+   * 拖拽插入位置指示（用户问题 1 修复）：`uid === null` = 悬浮在列表容器空白处 → 放到整个已选列表末尾；
+   * 否则 `uid` 是被悬浮的「可视块」代表 uid（普通行=自身 _uid，价格策略组=组内首个成员 uid，
+   * 与 renderSelected() 的分组渲染口径一致），`pos` 是相对该块插入到上方还是下方。
+   */
+  const [dropIndicator, setDropIndicator] = useState<{ uid: string | null; pos: 'before' | 'after' } | null>(null);
+  /**
+   * D-55①（2026-08-24 主线裁决）：dirty 判据从"每个改列表入口手动标记 flag"改为"整份配置快照比对"。
+   * 旧方案（hasUnsavedEdits + setSelEdited 包装器）要求逐个入口记得调用带标记的 setter，实测已漏两处
+   * ——① 勾闭包开关（已随 F-16 删除该开关，问题随之消失）；② 元素键切回取数列时的 early return
+   * （原 :831 `if (isColDriven) { setElemKeyOverrideField(null); return; }`，改的是
+   * elemKeyOverrideField 而不是 sel，根本不会经过 setSelEdited）。两处改动都会进 buildConfigPayload()
+   * 却不置位 → 外层保存不拦截 → 配置静默丢失。
+   * 快照比对是单一判据、覆盖全部配置项（新增配置项自动纳入，不需要逐个入口记得标记）：
+   * dirty = 当前 `buildConfigPayload()` 序列化 ≠ `savedSnapshot`（上次 load/save 成功时留存的序列化快照）。
+   * ⚠️ buildConfigPayload() 的 columns 映射本就不含 viewColumn（那是编译回填产物，非用户编辑，
+   * 见 configPayloadFor 内 columns 映射——只取 sourceNodeKey/sourceColumn/fieldName/角色位/isAmount/
+   * inSubtotal/userAdded），所以"编译回填 viewColumn 误报 dirty"这个已知坑天然被排除在快照口径外，
+   * 不需要额外过滤逻辑。
+   * 快照刷新点（=「与服务端一致」的三个时刻）：loadBuilderState 的 NEW 分支 / rehydrate 完成后 /
+   * doSave 成功后——「取消」按钮复跑 loadBuilderState，天然复用同一套刷新点。
+   */
+  const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
 
   // ── 初始读取 / 「取消」复用的同一份状态装配逻辑（GET /builder）─────────────
   // 抽成函数是为了「取消」按钮能原样复跑一遍——丢弃本地未保存编辑、回到上次持久化状态，
@@ -205,6 +242,7 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
     setHasDriver(false);
     pendingRehydrateRef.current = null;
     setSel([]);
+    setSavedSnapshot(null); // D-55①：基线未知（NEW/BUILDER 分支各自补上；BUILDER 要等 rehydrate 完成 sel 才算数）
     setElemKeyOverrideField(null);
     setStaleInfo(null);
     setStaleDismissed(false);
@@ -225,13 +263,12 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
         const initT = initialTabType && (TAB_TYPES as readonly string[]).includes(initialTabType) ? initialTabType : TAB_TYPES[0];
         setTabType(initT);
         setVariantKey(null);
-        setSwitchesState({});
+        setSavedSnapshot(JSON.stringify(configPayloadFor(initT, null, [], null))); // D-55①：新组件的基线 = 空配置
       } else {
-        // BUILDER：回填已有配置
+        // BUILDER：回填已有配置（savedSnapshot 留到下面的 rehydrate useEffect 里补——那时 sel 才真正建好）
         setHasDriver(true);
         setTabType(builderConfig.tabType);
         setVariantKey(builderConfig.variantKey ?? null);
-        setSwitchesState(builderConfig.switches || {});
         setOldSqlTemplate(sqlTemplate ?? null);
         pendingRehydrateRef.current = builderConfig;
         if (isStale) {
@@ -251,7 +288,7 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [componentId]);
   function handleCancel() {
-    if (!sel.length) return; // 没有未保存的编辑，无需二次确认
+    if (!dirty) return; // 没有未保存的编辑，无需二次确认（D-55①：快照比对判据）
     Modal.confirm({
       title: '放弃未保存的修改？', content: '将丢弃本次编辑，恢复为上次保存的状态。', okText: '放弃修改', okButtonProps: { danger: true }, cancelText: '继续编辑',
       onOk: () => { void loadBuilderState(); },
@@ -263,12 +300,16 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
   const isUsed = (sourceNodeKey: string, sourceColumn: string) => sel.some((s) => s.sourceNodeKey === sourceNodeKey && s.sourceColumn === sourceColumn);
 
   // ── 编译请求体（BuilderConfigPayload：扁平角色布尔位，见 sqlViewBuilderService.ts 头注） ──
-  function buildConfigPayload(): BuilderConfigPayload {
+  // D-51：不再写 switches 字段（子件闭包开关整体移除，AC-60——builder_config.switches 中不再写入
+  // 内部枚举名或 includeChildParts 这一类键）。
+  // 拆成纯函数 configPayloadFor + 薄封装 buildConfigPayload：D-55① 的快照比对需要在"值刚被算出、
+  // 尚未等一轮 re-render 提交进 state"的时刻（loadBuilderState 的 NEW 分支、rehydrate 完成后）就地
+  // 算一次等价 payload 当基线，不依赖组件 state 闭包此刻是否已提交完成。
+  function configPayloadFor(t: string, vk: string | null, selCols: SelColumn[], override: string | null): BuilderConfigPayload {
     const payload: BuilderConfigPayload = {
-      tabType,
-      variantKey,
-      switches,
-      columns: sel.map((s) => ({
+      tabType: t,
+      variantKey: vk,
+      columns: selCols.map((s) => ({
         sourceNodeKey: s.sourceNodeKey,
         sourceColumn: s.sourceColumn,
         fieldName: s.fieldName,
@@ -283,11 +324,17 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
       })),
     };
     // 形态 B（AC-23）：只有真的改绑了手填字段才带 priceStrategy；正常路径完全不传该键（省略优于传 null，贴合 Sec34 用例字面）
-    if (elemKeyOverrideField) {
-      payload.priceStrategy = { elementCodeSource: 'MANUAL_FIELD', elementCodeField: elemKeyOverrideField };
+    if (override) {
+      payload.priceStrategy = { elementCodeSource: 'MANUAL_FIELD', elementCodeField: override };
     }
     return payload;
   }
+  function buildConfigPayload(): BuilderConfigPayload {
+    return configPayloadFor(tabType, variantKey, sel, elemKeyOverrideField);
+  }
+  // D-55①：单一快照判据，天然覆盖 tabType/variantKey/columns/priceStrategy 全部配置项——
+  // savedSnapshot === null（尚未确立基线，如 initLoading/guideMode 期间）时一律判定不 dirty。
+  const dirty = savedSnapshot !== null && JSON.stringify(buildConfigPayload()) !== savedSnapshot;
 
   // ── 字段树：随 tabType / variantKey / 当前已选列变化重新拉取（AC-14 + AC-16 冲突标记）───
   useEffect(() => {
@@ -344,15 +391,28 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
       return fromSavedColumn(bc);
     });
     setSel(rebuilt);
+    // F-17（D-61 / AC-23 形态 B）：elemKeyOverrideField 随 builderConfig.priceStrategy 回填——
+    // 没有该配置（正常路径 / 未手填覆盖）时保持 null。必须先算出 override 局部量，
+    // 再用它（而不是闭包里恒为 null 的 state 变量 elemKeyOverrideField）去建快照——
+    // setState 是异步的，此刻读 state 仍是回填前的旧值，直接用会把"回填后的真值"漏出快照之外，
+    // 导致下一次 dirty 比对（用户还没碰过）就与刚回填的 elemKeyOverrideField 产生分歧而误报未保存改动。
+    const override = pending.priceStrategy?.elementCodeField ?? null;
+    setElemKeyOverrideField(override);
+    // D-55①：这一刻 sel（+ 上面回填的 override）才真正等于"服务端已保存的样子"——用 pending 自带的
+    // tabType/variantKey（不依赖 tabType/variantKey state 此刻是否已提交完成的时序假设）。
+    setSavedSnapshot(JSON.stringify(configPayloadFor(pending.tabType, pending.variantKey ?? null, rebuilt, override)));
     pendingRehydrateRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fieldTree]);
 
   // ── 增删列 ──────────────────────────────────────────────────────────────
-  function addColumn(col: FieldTreeColumn, group: FieldTreeGroup) {
-    if (isUsed(col.sourceNodeKey, col.sourceColumn)) return;
+  // 用户问题 1 修复：返回新增的 SelColumn[]（含它们的 _uid），供拖拽落点逻辑把「刚追加到末尾的新行」
+  // 再挪到用户实际悬浮的插入位置——价格策略列可能一次带出 2 行（自动元素列 + 元素单价列），
+  // 之前的实现只挪「最后一行」，第二行会被落下（AP-54 同类下标错位）。
+  function addColumn(col: FieldTreeColumn, group: FieldTreeGroup): SelColumn[] {
+    if (isUsed(col.sourceNodeKey, col.sourceColumn)) return [];
     const additions: SelColumn[] = [];
-    if (group.kind === 'PRICE' && !elemKeyCol) {
+    if (group.groupKind === 'PRICE' && !elemKeyCol) {
       // AC-20：拖价格策略列时若无元素列，自动带出元素符号列（取价函数 JOIN 左键，缺它接不上）
       let ek: { col: FieldTreeColumn; group: FieldTreeGroup } | null = null;
       for (const g of fieldTree?.groups || []) {
@@ -363,6 +423,7 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
     }
     additions.push(toSelColumn(col, group));
     setSel((prev) => [...prev, ...additions]);
+    return additions;
   }
 
   function removeColumn(uid: string) {
@@ -393,6 +454,11 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
   }
 
   // ── 拖拽重排（原生 HTML5 DnD，与项目内既有页面同款手法）───────────────────
+  // 用户问题 1 修复（2026-08-22 紧急）：原实现的 drop 目标只有「已有行自身」，行与行之间/末尾的空白
+  // 完全没有 drop handler——拖到第二行往后必然落空。改成：① 列表容器本身也是 drop 区（覆盖空白），
+  // ② 每个可视块（普通行 / 价格策略组）按鼠标 Y 相对该块的位置分「插到上方」还是「插到下方」并画指示线，
+  // ③ 所有移动（新增字段落位 / 单行重排 / 整组重排）统一走 moveItemsToTarget，按 _uid 集合定位、
+  //    不依赖裸下标（AP-54 教训——价格策略组是「一块占多行」的结构，裸下标最容易算错）。
   function handleFieldDragStart(e: React.DragEvent, col: FieldTreeColumn, group: FieldTreeGroup) {
     dragRef.current = { type: 'new', col, group };
     e.dataTransfer.effectAllowed = 'copy';
@@ -403,65 +469,85 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
   function handleGroupDragStart(e: React.DragEvent, headUid: string) {
     dragRef.current = { type: 'group', headUid };
   }
-  function handleRowDragOver(e: React.DragEvent) {
-    e.preventDefault();
-    e.currentTarget.classList.add('over');
+  /** 鼠标 Y 落在该块上半/下半 → 插到它上方还是下方；dragover 和 drop 共用同一份计算，drop 不依赖 state 时序。 */
+  function computeDropPos(e: React.DragEvent): 'before' | 'after' {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return e.clientY - rect.top < rect.height / 2 ? 'before' : 'after';
   }
-  function handleRowDragLeave(e: React.DragEvent) {
-    e.currentTarget.classList.remove('over');
-  }
-  function handleDropAtUid(e: React.DragEvent, overUid: string | null) {
+  /** 悬浮在某个可视块（行/组）上：更新指示线状态（纯展示用，落点判定见 handleBlockDrop）。 */
+  function handleBlockDragOver(e: React.DragEvent, blockUid: string) {
     e.preventDefault();
-    e.currentTarget.classList.remove('over', 'svb-drop-hot');
+    e.stopPropagation(); // 不让事件再冒泡到列表容器，避免容器的「末尾」指示把这里的精确指示线覆盖掉
+    const pos = computeDropPos(e);
+    setDropIndicator((cur) => (cur && cur.uid === blockUid && cur.pos === pos ? cur : { uid: blockUid, pos }));
+  }
+  /** 落到某个可视块（行/组）上：当场按事件自身的 clientY 重算 before/after，不读 dropIndicator state
+   *  （dragover 是连续事件，state 更新与 drop 触发之间理论上仍有一帧竞态窗口——直接算，零依赖更稳）。 */
+  function handleBlockDrop(e: React.DragEvent, blockUid: string) {
+    handleDrop(e, { uid: blockUid, pos: computeDropPos(e) });
+  }
+  /** 悬浮在列表容器空白处（现有行下方的空档）：等价于「插到列表末尾」。 */
+  function handleListDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    setDropIndicator((cur) => (cur && cur.uid === null ? cur : { uid: null, pos: 'after' }));
+  }
+  function handleListDragLeave(e: React.DragEvent) {
+    // relatedTarget 仍在容器内（比如移到某一行上）不算真正离开——那会被该行自己的 dragover 接管，
+    // 这里清空只处理「彻底移出整个已选列区域」的情况，避免指示线在行与行之间来回闪烁。
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropIndicator(null);
+  }
+  /**
+   * 把 `movingUids` 这一批行（可能是新增列，也可能是被拖动的既有行/整组）挪到 `target` 指定的插入位置。
+   * AP-54 铁律：全程按 `_uid` 定位，不用裸下标；目标若落在价格策略组内，组内其它成员的边界一并纳入
+   * 计算（组必须整体挪动，不能被插入操作拆散）。找不到落点时兜底放到末尾——不丢数据。
+   */
+  function moveItemsToTarget(movingUids: string[], target: { uid: string | null; pos: 'before' | 'after' } | null) {
+    if (!movingUids.length) return;
+    setSel((prev) => {
+      const movingSet = new Set(movingUids);
+      const moving = prev.filter((x) => movingSet.has(x._uid));
+      if (!moving.length) return prev;
+      // 目标就是自己（重排/整组重排时，鼠标悬浮回自己身上）：真正的原地不动，不能默认落进「末尾」分支。
+      if (target && target.uid !== null && movingSet.has(target.uid)) return prev;
+      const rest = prev.filter((x) => !movingSet.has(x._uid));
+      let insertIdx = rest.length; // 默认插到末尾：target 为空 / 目标在 rest 里找不到时的兜底，不丢数据
+      if (target && target.uid !== null) {
+        const pgMembersInRest = rest.filter((s) => s.raw || s.autoElem);
+        const inGroup = pgMembersInRest.some((m) => m._uid === target.uid);
+        const targetMemberUids = inGroup ? new Set(pgMembersInRest.map((m) => m._uid)) : new Set([target.uid]);
+        const idxs: number[] = [];
+        rest.forEach((x, i) => { if (targetMemberUids.has(x._uid)) idxs.push(i); });
+        if (idxs.length) insertIdx = target.pos === 'before' ? Math.min(...idxs) : Math.max(...idxs) + 1;
+      }
+      return [...rest.slice(0, insertIdx), ...moving, ...rest.slice(insertIdx)];
+    });
+  }
+  function handleDrop(e: React.DragEvent, target: { uid: string | null; pos: 'before' | 'after' } | null) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropIndicator(null);
     const drag = dragRef.current;
     dragRef.current = null;
     if (!drag) return;
     if (drag.type === 'new') {
       if (isUsed(drag.col.sourceNodeKey, drag.col.sourceColumn)) return;
-      addColumn(drag.col, drag.group);
-      if (overUid) {
-        setSel((prev) => {
-          const idx = prev.length - 1;
-          const item = prev[idx];
-          const target = prev.findIndex((x) => x._uid === overUid);
-          if (target < 0 || target === idx) return prev;
-          const next = prev.slice(0, idx);
-          next.splice(target, 0, item);
-          return next;
-        });
-      }
-    } else if (drag.type === 'reorder' && overUid && drag.uid !== overUid) {
-      setSel((prev) => {
-        const from = prev.findIndex((x) => x._uid === drag.uid);
-        const to = prev.findIndex((x) => x._uid === overUid);
-        if (from < 0 || to < 0) return prev;
-        const next = prev.slice();
-        const [item] = next.splice(from, 1);
-        next.splice(to, 0, item);
-        return next;
-      });
-    } else if (drag.type === 'group' && overUid) {
-      setSel((prev) => {
-        const groupUids = new Set(prev.filter((s) => s.raw || s.autoElem).map((s) => s._uid));
-        if (groupUids.has(overUid)) return prev;
-        const groupItems = prev.filter((s) => groupUids.has(s._uid));
-        const rest = prev.filter((s) => !groupUids.has(s._uid));
-        const overIdx = rest.findIndex((x) => x._uid === overUid);
-        if (overIdx < 0) return prev;
-        const next = rest.slice();
-        next.splice(overIdx, 0, ...groupItems);
-        return next;
-      });
+      const additions = addColumn(drag.col, drag.group); // 先原样追加到末尾（可能 1~2 行）
+      if (additions.length) moveItemsToTarget(additions.map((a) => a._uid), target); // 再整体挪到落点
+    } else if (drag.type === 'reorder') {
+      moveItemsToTarget([drag.uid], target);
+    } else if (drag.type === 'group') {
+      const groupUids = sel.filter((s) => s.raw || s.autoElem).map((s) => s._uid);
+      moveItemsToTarget(groupUids, target);
     }
   }
 
-  // ── tabType / variant / switch 切换：换主源 Sheet → 已选列全部失效 → 二次确认后清空（F-1）───
+  // ── tabType / variant 切换：换主源 Sheet → 已选列全部失效 → 二次确认后清空（F-1）───
+  // D-51：不再有「switch 切换」这回事——子件闭包开关整体移除（AC-60），toggleSwitch 已删除。
   function handleTabTypeChange(v: string) {
     if (v === tabType) return;
     const doSwitch = () => {
       setTabType(v);
       setVariantKey(null);
-      setSwitchesState({});
       setSel([]);
       setElemKeyOverrideField(null);
       setFieldTree(null);
@@ -475,7 +561,6 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
     if (v === variantKey) return;
     const doSwitch = () => {
       setVariantKey(v);
-      setSwitchesState({});
       setSel([]);
       setElemKeyOverrideField(null);
       setFieldTree(null);
@@ -484,16 +569,6 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
     if (sel.length) {
       Modal.confirm({ title: '切换数据来源会清空已选输出列', content: '继续？', okText: '继续切换', cancelText: '取消', onOk: doSwitch });
     } else doSwitch();
-  }
-  function toggleSwitch(key: string) {
-    setSwitchesState((prev) => {
-      const next = { ...prev, [key]: !prev[key] };
-      if (key === 'includeChildParts' && !next[key]) {
-        // 关闭子件闭包时，closureOnly 列（如「归属料号」）随之失效
-        setSel((s) => s.filter((c) => !fieldTree?.groups.some((g) => g.fields.some((fc) => fc.closureOnly && fc.sourceColumn === c.sourceColumn && fc.sourceNodeKey === c.sourceNodeKey))));
-      }
-      return next;
-    });
   }
 
   // ── debounce 300ms：拖拽变化 → 重新编译 + 体检（api.md §3：不得每帧发请求）──────
@@ -528,7 +603,7 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
     }, 300);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [componentId, tabType, variantKey, JSON.stringify(switches), elemKeyOverrideField, initLoading, guideMode,
+  }, [componentId, tabType, variantKey, elemKeyOverrideField, initLoading, guideMode,
     sel.map((s) => `${s.sourceNodeKey}.${s.sourceColumn}:${s.fieldName}:${s.isAmount ? 1 : 0}:${s.inSubtotal ? 1 : 0}`).join('|')]);
 
   // ── 预览 ──────────────────────────────────────────────────────────────
@@ -572,10 +647,16 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
   // 在后端读成 null，报出与真因无关的错）。
   async function doSave(confirmedImpact?: boolean) {
     setSaving(true);
+    setSaveError(null); // 用户问题 2：每次重新保存先清掉上一轮的错误横幅，不留过期提示
+    // D-55①：先固定住"本次实际发出去的 payload"，成功后原样拿它当新快照——不要等 await 回来后再重新调
+    // buildConfigPayload()，那样读到的是网络请求这段时间里可能已被用户改动过的、更新的 state，
+    // 会让快照与"服务端真正落库的内容"不一致。
+    const payload = buildConfigPayload();
     try {
-      const res = await saveBuilder(componentId, { ...buildConfigPayload(), confirmedImpact });
+      const res = await saveBuilder(componentId, { ...payload, confirmedImpact });
       message.success(`保存成功，共 ${sel.length} 列${res.affectedTemplateCount != null ? `，影响 ${res.affectedTemplateCount} 个模板` : ''}`);
       setSel((prev) => prev.map((s) => ({ ...s, origFieldName: s.fieldName })));
+      setSavedSnapshot(JSON.stringify(payload)); // D-55①：保存成功 = 新基线
       setStaleDismissed(true);
       setStaleInfo(null);
       onSaved?.();
@@ -597,12 +678,30 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
           onOk: () => doSave(true),
         });
       } else {
-        message.error('保存失败：' + (e?.message ?? '未知错误'));
+        // 用户问题 2 修复：400 INSPECT_BLOCKED / 其它保存失败——除了 toast，再加一条常驻 Alert
+        // （toast 3 秒自动消失，用户离开鼠标/切走视线就可能真的没看见；这是本次 COMP-0311 配置
+        // 完全没落库、但不确定用户是没点保存还是点了没看到反馈的直接应对）。
+        const msg = e?.message || '未知错误';
+        message.error('保存失败：' + msg);
+        setSaveError(msg);
       }
     } finally {
       setSaving(false);
     }
   }
+
+  // 双保存按钮问题修复（2026-08-22 紧急，主线方案 2）：组件详情外层也有一个「保存」按钮（走
+  // PUT /components/{id}，只存组件基本信息，完全不覆盖本 Tab 的取数配置）。真实事故：用户点了外层
+  // 保存、看到"保存成功"提示，以为取数配置也存了，实际上取数配置一个字节都没落库，刷新就没了。
+  // ① dirty 是精确判据（D-55①：快照比对，见 savedSnapshot 声明处的完整说明）——不用 sel.length>0，
+  //   否则只要配过列就永远 true，哪怕早已保存过，外层每次保存都会被拦，那是另一种"狼来了"式的伤害。
+  // ② 通过 onDirtyChange 把这个判据上抛给 ComponentManagement.tsx，供它决定外层保存按钮点击时要不要拦截。
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty]);
+  // ③ 通过 ref 把本 Tab 的保存动作暴露给外层——外层拦截后弹出的提示可以直接调这个，不用重新实现一遍保存逻辑。
+  useImperativeHandle(ref, () => ({ save: () => { void doSave(false); } }));
 
   // ── 转为手写 SQL（AC-33：不可逆）─────────────────────────────────────────
   function handleDetach() {
@@ -616,6 +715,7 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
           message.success('已转为手写 SQL');
           setGuideMode(true);
           setSel([]);
+          setSavedSnapshot(null); // 转手写后本 Tab 不再有可编辑的取数配置态，dirty 判据回到"基线未知"
           onSaved?.();
         } catch (e: any) {
           message.error('转为手写失败：' + (e?.message ?? '未知错误'));
@@ -633,7 +733,12 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
     setCollapsed((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   }
   function renderFld(col: FieldTreeColumn, group: FieldTreeGroup) {
-    if (col.closureOnly && !switches.includeChildParts) return null;
+    // F-16（AC-60，D-51）：原判据 `col.closureOnly && !switches.includeChildParts` 依赖已删除的
+    // switches state，不能照搬。核实后未替换为新判据——见本文件改动的回报说明：
+    // ① FieldTreeBuilder.Field（cpq-backend）当前没有 closureOnly 属性，后端从未把它置为 true，
+    //    这个门在改动前就是死代码（col.closureOnly 恒 falsy，不影响任何已渲染的列）；
+    // ② D-50 之后子件带出完全由页签类型自动决定，不再存在"某些列只在用户勾了某开关时才出现"的场景，
+    //    该字段树画像已经不成立。因此直接不再做这层过滤，而不是发明一个新的门槛条件。
     if ((col.onlyVariant ?? null) && col.onlyVariant !== variantKey) return null;
     const used = isUsed(col.sourceNodeKey, col.sourceColumn);
     // AC-16：置灰判据 = 该列所属分组的 conflict 标记，来自 GET /field-tree?...&selectedConfig=（服务端算好，前端只读）。
@@ -646,13 +751,14 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
         className={`svb-fld${used ? ' used' : ''}${blocked ? ' blocked' : ''}`}
         draggable={draggableAllowed}
         onDragStart={draggableAllowed ? (e) => handleFieldDragStart(e, col, group) : undefined}
+        onDragEnd={() => setDropIndicator(null)}
         onDoubleClick={draggableAllowed ? () => addColumn(col, group) : undefined}
         title={used ? '已在输出列中' : blocked ? reason : '拖到右侧，或双击添加'}
       >
         <span className="svb-drag">{blocked ? '🚫' : '⋮⋮'}</span>
         <span>{col.displayName}</span>
         {(col.roles || []).map((r) => <span key={r} className="svb-rmark">{ROLE_LABEL[r]}</span>)}
-        {col.lookupOf && <span className="svb-lookup-tag">{col.lookupOf}</span>}
+        {col.lookupLib && <span className="svb-lookup-tag">{col.lookupLib}</span>}
         {col.dataType && <span className="svb-t">{DATA_TYPE_LABEL[col.dataType]}</span>}
       </div>
     );
@@ -665,7 +771,7 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
         <div className="svb-grp-h" onClick={() => toggleGroupCollapse(g.groupName)}>
           <span className="svb-caret">▾</span> {g.groupName}
           {dimTxt && <span className="svb-dim-tag">{dimTxt}</span>}
-          {g.kind === 'PRICE' && elemKeyCol && <span className="svb-dim-tag">元素键：{elemKeyCol.fieldName}</span>}
+          {g.groupKind === 'PRICE' && elemKeyCol && <span className="svb-dim-tag">元素键：{elemKeyCol.fieldName}</span>}
         </div>
         <div className="svb-grp-b">
           {g.note && <div className="svb-sheet-note">{g.note}</div>}
@@ -700,7 +806,7 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
           <span className="svb-t2">{DATA_TYPE_LABEL[s.dataType]}</span>
           {s.groupLabel && s.groupKind === 'SUB' && <span className="svb-badge-aux" title={`来自「${s.groupLabel}」，编译为相关标量子查询`}>⚠{s.groupLabel}</span>}
           {s.groupLabel && ['GRAIN', 'JOIN', 'SAME'].includes(s.groupKind || '') && <span className="svb-badge-join" title={`来自「${s.groupLabel}」`}>{s.groupLabel}</span>}
-          {s.lookupOf && <span className="svb-badge-join">{s.lookupOf}</span>}
+          {s.lookupLib && <span className="svb-badge-join">{s.lookupLib}</span>}
         </div>
         <div className="svb-sr-2">
           {renderRoleBadges(s)}
@@ -719,7 +825,7 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
         <div className="svb-empty"
           onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('svb-drop-hot'); }}
           onDragLeave={(e) => e.currentTarget.classList.remove('svb-drop-hot')}
-          onDrop={(e) => handleDropAtUid(e, null)}
+          onDrop={(e) => handleDrop(e, null)}
         >把左侧字段拖到这里</div>
       );
     }
@@ -731,8 +837,9 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
       if (inPg && s._uid !== pgHeadUid) return;
       if (inPg) {
         const priceCol = pgMembers.find((m) => m.raw && m.isCore);
+        const dropCls = dropIndicator?.uid === s._uid ? ` drop-${dropIndicator.pos}` : '';
         nodes.push(
-          <div key={s._uid} className="svb-pgrp" draggable onDragStart={(e) => handleGroupDragStart(e, s._uid)} onDragOver={handleRowDragOver} onDragLeave={handleRowDragLeave} onDrop={(e) => handleDropAtUid(e, s._uid)}>
+          <div key={s._uid} className={`svb-pgrp${dropCls}`} draggable onDragStart={(e) => handleGroupDragStart(e, s._uid)} onDragEnd={() => setDropIndicator(null)} onDragOver={(e) => handleBlockDragOver(e, s._uid)} onDrop={(e) => handleBlockDrop(e, s._uid)}>
             <div className="svb-pgrp-h">⋮⋮ 元素单价（接价格策略） <span className="svb-pgrp-note">f_material_element_price</span>
               {manualFieldOptions.length > 0 && (
                 <span style={{ marginLeft: 8, display: 'flex', alignItems: 'center', gap: 4, fontWeight: 400 }} onClick={(e) => e.stopPropagation()}>
@@ -761,13 +868,26 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
         );
         return;
       }
+      const dropCls = dropIndicator?.uid === s._uid ? ` drop-${dropIndicator.pos}` : '';
       nodes.push(
-        <div key={s._uid} className="svb-sel-row" data-role="selected-column" draggable onDragStart={(e) => handleRowDragStart(e, s._uid)} onDragOver={handleRowDragOver} onDragLeave={handleRowDragLeave} onDrop={(e) => handleDropAtUid(e, s._uid)}>
+        <div key={s._uid} className={`svb-sel-row${dropCls}`} data-role="selected-column" draggable onDragStart={(e) => handleRowDragStart(e, s._uid)} onDragEnd={() => setDropIndicator(null)} onDragOver={(e) => handleBlockDragOver(e, s._uid)} onDrop={(e) => handleBlockDrop(e, s._uid)}>
           {renderSelRowBody(s)}
         </div>,
       );
     });
-    return nodes;
+    // 用户问题 1 修复：整个列表再包一层 drop 区——覆盖行与行之间、末尾的全部空白，不再只有「行自身」能接收
+    // drop；容器自己的 dragover/drop 等价于「插到列表末尾」，且行级 handler 已 stopPropagation，
+    // 悬浮在具体行上时不会被容器的「末尾」指示打架。
+    return (
+      <div
+        className={`svb-sel-list${dropIndicator?.uid === null ? ' drop-end-hot' : ''}`}
+        onDragOver={handleListDragOver}
+        onDragLeave={handleListDragLeave}
+        onDrop={(e) => handleDrop(e, { uid: null, pos: 'after' })}
+      >
+        {nodes}
+      </div>
+    );
   }
 
   // ── 渲染：粒度条（F-4，纯取自 /compile 的 grain，不本地推导）────────────
@@ -790,7 +910,18 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
   }
   const errCount = inspectResult?.items?.filter((i) => i.level === 'ERR').length ?? 0;
   const warnCount = inspectResult?.items?.filter((i) => i.level === 'WARN').length ?? 0;
-  const canSave = sel.length > 0 && errCount === 0 && !!compileResult && !compileError;
+  // D-49 顺带：后端 `blocked` 是权威标志（有 ERR 项就是 true），比前端自己数 errCount 更可靠；
+  // `blocked` 本身缺失时（契约过渡期）才退化用 errCount>0 兜底，不再只认自己数出来的那一份。
+  const inspectBlocked = inspectResult ? (inspectResult.blocked ?? errCount > 0) : false;
+  // 用户问题 2 修复：canSave 从「几个条件与出来的布尔值」改成从统一的 saveDisabledReason 推导——
+  // 灰按钮旁边/悬浮必须能看出具体是哪一条不满足，不能只知道"不能点"却不知道为什么。
+  const saveDisabledReason: string | null =
+    !sel.length ? '尚未选择任何输出列，请从左侧拖入字段'
+      : compileError ? `SQL 编译失败：${compileError.message}`
+      : !compileResult ? '正在编译，请稍候'
+      : inspectBlocked ? `保存前体检存在 ${errCount} 项阻断，需先解决（见下方"保存前体检"红色项）`
+      : null;
+  const canSave = !saveDisabledReason;
 
   // ── 渲染：真实预览（F-9）─────────────────────────────────────────────
   function renderPreview() {
@@ -883,16 +1014,8 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
         <div className="svb-rb-line">
           <span>取数：<b>{fieldTree?.anchorDesc ?? (treeLoading ? '加载中…' : '—')}</b>　·　行粒度：<b>{grainText}</b></span>
         </div>
-        {fieldTree?.switches && fieldTree.switches.length > 0 && (
-          <div className="svb-rb-line">
-            <span className="svb-lbl">选项</span>
-            {fieldTree.switches.map((k) => (
-              <label key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer' }} onClick={() => toggleSwitch(k)}>
-                <Checkbox checked={!!switches[k]} /> {SWITCH_LABEL[k] ?? k}
-              </label>
-            ))}
-          </div>
-        )}
+        {/* F-16（AC-60，D-51）：「选项」行整体删除——不再渲染任何开关（此前把内部枚举名直接
+            印在界面上，且勾了不生效）；子件数据带出与否由页签类型自动决定，用户无入口。 */}
       </div>
 
       <div className="svb-cols">
@@ -922,14 +1045,29 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
 
       {previewOpen && renderPreview()}
 
+      {/* 用户问题 2 修复：保存失败常驻 Alert——不依赖 3 秒自动消失的 toast，closable 由用户自己收起。 */}
+      {saveError && (
+        <Alert
+          type="error" showIcon closable style={{ marginTop: 10 }}
+          message="保存失败" description={saveError}
+          onClose={() => setSaveError(null)}
+        />
+      )}
+
       <div className="builder-footer" data-role="builder-actions" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 }}>
         <Dropdown menu={{ items: moreMenuItems, onClick: handleMoreMenuClick }} trigger={['click']}>
           <Button>⋯</Button>
         </Dropdown>
         <Space align="center">
-          {!canSave && sel.length > 0 && <span className="svb-hint-i">{errCount > 0 ? '存在阻断项，无法保存' : ''}</span>}
+          {/* 用户问题 2 修复：常驻显示禁用原因（不只是 hover 才看得到），Tooltip 再给一遍同样的文案兜底
+              （disabled 按钮本身不总能可靠触发 hover 事件，外面包一层 span 承接）。 */}
+          {saveDisabledReason && <span className="svb-hint-i">{saveDisabledReason}</span>}
           <Button onClick={handleCancel}>取消</Button>
-          <Button type="primary" disabled={!canSave} loading={saving} onClick={() => doSave(false)}>保存</Button>
+          <Tooltip title={saveDisabledReason ?? undefined}>
+            <span>
+              <Button type="primary" disabled={!canSave} loading={saving} onClick={() => doSave(false)}>保存</Button>
+            </span>
+          </Tooltip>
         </Space>
       </div>
 
@@ -956,6 +1094,6 @@ const SqlViewBuilderTab: React.FC<SqlViewBuilderTabProps> = ({ componentId, init
       </Drawer>
     </div>
   );
-};
+});
 
 export default SqlViewBuilderTab;
