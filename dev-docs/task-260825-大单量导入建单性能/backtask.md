@@ -84,7 +84,7 @@
 
 | 不做 | 原因 |
 |---|---|
-| 不改 `overlayExistingInputKeys` 的签名与实现 | 静态纯函数，`OverlayExistingInputKeysTest` 7 例守着，是 AC-4 的守卫 |
+| 不改 `overlayExistingInputKeys` 的签名与实现 | 静态纯函数，`OverlayExistingInputKeysTest` 6 例守着，是 AC-4 的守卫 |
 | 不改 `loadSnapshotRowsByLines` 签名 | `LoadSnapshotRowsByLinesEquivTest` 守着 |
 | 不改 `materializeRowData` 非批量分支（`snapshotLines:613`） | 该分支不调 `overlayExistingInputKeys`，与本缺陷无关 |
 | 不改 `cpq-frontend/src/services/api.ts` 的 `timeout: 30000` | 见 `问题说明.md §④ 证据 7`：只放宽前端超时是无效修法 |
@@ -98,10 +98,49 @@
 ## 自检要求（`backend.md`）
 
 - `./mvnw test` 全绿，**必须在汇报中点名**以下的通过数：
-  `OverlayExistingInputKeysTest`（7 例）/ `GoldenCardValuesEquivTest` / `CardValuesBatchPersistEquivTest` /
+  `OverlayExistingInputKeysTest`（**6 例**）/ `GoldenCardValuesEquivTest` / `CardValuesBatchPersistEquivTest` /
   `LoadSnapshotRowsByLinesEquivTest` / **`LazyQuoteBucketEquivTest`**（`:52` 有往返数上限断言 `rt < 30`，
   改完盯着这个数**不要涨**）/ **`ConfigureSnapshotEmptyOverwriteGuardTest`**（`:266` 真调 `snapshotQuotation(id,true)` 打真库）
 - 后端存活自检：`curl -s --noproxy '*' -o /dev/null -w '%{http_code}' http://localhost:8081/api/cpq/components` → **401**
 - ⚠️ 探本机服务一律加 `--noproxy '*'`；`/q/health` 返 404 不是健康探针
 - **N+1 硬指标自检**：改完后自述两句 —— 「`quotation_line_component_data` 读取条数 = ⌈N/200⌉，与 N 不成正比」
   「`quotation_view_structure` 读取条数 ≤ 4，与 N 无关」
+
+---
+
+## 🔴 第二次扩范围任务项 · D-4（2026-08-25 亲验后，用户裁决）
+
+**背景**：D-1+D-3 修完后实测 AC-1①②/AC-2 全绿，**但四步埋点显示**：
+
+```
+①snapshotQuotation=16758ms ②ensureStructure=290ms ③ensureCardValues=58679ms ④ensureExcelValues=10931ms 总计=86658ms
+```
+
+**③ 距 Narayana 60s 硬上限只剩 1.3s（余量 2%）**。评审预估的「阈值 ≈3700 行」被实测证伪 ——
+③ 每行 **31.8ms**（58679÷1845），真实阈值 ≈**1887 行**，本单已用掉 **97.7%**。
+再多 40 行就可能重新撞穿，失败模式是**静默数据损坏**。
+
+> ⚠️ **这 58 秒不是 N+1**。T-1 的 SQL 条数护栏已证明查询次数与行数无关。
+> 它是 `buildCardValues` / `buildCostingCardValues` / `BomTreeRenderService.render`
+> 在 1845 行 × 1845 distinct 料号下的**真实计算量**。所以不要再去找 N+1，要去**拆事务**。
+
+| 编号 | 服务的 AC | 任务内容 |
+|---|---|---|
+| **B-11** | AC-11 | `ensureCardValues` 从「单事务包住全部 N 行」改为**按行分批、每批独立事务**。chunk 默认 **300**（按 31.8ms/行 → 单批 ≈9.5s，余量 84%），**chunk 值须可配**以便调优。每批调 `snapshotNewLinesCardValues` 走 `REQUIRES_NEW`，批内提交、批间不共享事务 |
+| **B-12** | AC-11 | 🔒 **`prefetch` 必须留在分批之外**，保持整单一次。⚠️ **拆错位置会把 D-3 刚修好的「整单查一次」打回「每批查一次」** —— 这是本项最大的自伤风险，实现后必须用 T-1 的 `quotation_view_structure` 计数复核（应仍 ≤4，**不是** ≤4×批数） |
+| **B-13** | AC-11 | 新增分批埋点：批次序号 / 每批行数 / **每批耗时**。AC-11 的断言全靠它，不打点就没法验收 |
+| **B-14** | AC-12 | 部分失败语义：中途失败时已提交批**保留**、未完成行留 NULL；接口仍按既有降级语义返回 `cardValuesReady=false` + `warnings`（🚫 **不许因为「大部分成功」就报 true**）。确认 `ensureCardValues` 的 `IS NULL` 选行谓词使重跑天然只补未完成行（自愈） |
+
+### 🚫 D-4 明确不做
+
+| 不做 | 原因 |
+|---|---|
+| 不改接口契约、不转异步轮询 | 那是 `BL-0183` 完整方案丙的**后一半**，本次只取「拆批事务」这一半 |
+| 不加大 Narayana 事务超时 | 靠**拆小事务**回到预算内，不靠放大预算 |
+| 不去 profile / 优化 ③ 的 58s CPU 本身 | 本次目标是**拆掉 60s 悬崖**，不是把计算变快。真要提速另立任务 |
+
+### D-4 自检要求
+
+- 报出**分批后的四步埋点** + **每批耗时**，与改动前的 `③=58679ms` 直接对照
+- 用 T-1 复核 `quotation_view_structure` 计数**仍 ≤4**（防 B-12 的自伤）
+- ⚠️ **worktree 内不要与其它进程并发跑 mvn** —— 上一轮并发踩 `target/` 造出过 399 个假失败
