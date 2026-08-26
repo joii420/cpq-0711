@@ -1,0 +1,32 @@
+# B-16 A/B 复测（render 提出批循环外）2026-08-25
+环境：worktree 代码 × 8099 × cpq_db_0724 × 真实 1845 行
+
+## 三组对照（均为同一 build 系列、同一份数据）
+
+组                          ③ensureCardValues 批处理和 单批最长  总墙钟
+B-16前 chunk=300 (7批)           92,376ms     87,716ms     15,691ms     123.1s
+B-16前 chunk=2000(1批)           51,250ms     47,179ms     47,179ms      80.5s
+B-16后 chunk=300 (7批)           65,569ms     60,326ms     10,523ms      99.8s
+
+分批开销：B-16 前 92,376-51,250 = 41,126ms → B-16 后 65,569-51,250 = 14,319ms
+→ 消除了 65% 的分批开销
+
+## AC-11 判据
+单批最长 10,523ms ≤ 20,000ms ✅  （余量 82%；对比 D-4 前的单事务 58,679ms / 余量 2%）
+
+## AC-1 / AC-2
+cardValuesReady = True | costingTreeRows = 1845 | warnings = []
+ARJUNA / 后置物化失败 出现次数：0
+库内：报价空 0 / 核价空 0 / 总 1845
+
+## 本轮四步埋点
+2026-08-25 23:11:48.684 INFO  [com.cpq.bas.v6.ser.CreateQuotationMaterializer] (executor-thread-1) [create-quotation-timing] quotation=1ed36b62-cb35-4f88-82e8-9456e496544d ①snapshotQuotation=21807ms ②ensureStructure=440ms ③ensureCardValues=65569ms ④ensureExcelValues=6665ms 总计=94481ms
+
+## 本轮分批埋点
+ batch=1/7 rows=300 elapsed=7733ms chunkSize=300
+ batch=2/7 rows=300 elapsed=9038ms chunkSize=300
+ batch=3/7 rows=300 elapsed=8761ms chunkSize=300
+ batch=4/7 rows=300 elapsed=9925ms chunkSize=300
+ batch=5/7 rows=300 elapsed=9903ms chunkSize=300
+ batch=6/7 rows=300 elapsed=10523ms chunkSize=300
+ batch=7/7 rows=45 elapsed=4443ms chunkSize=300

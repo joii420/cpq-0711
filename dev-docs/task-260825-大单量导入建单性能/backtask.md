@@ -290,3 +290,32 @@ java.lang.RuntimeException: Changing timeout via @TransactionConfiguration
 - **判据**：`chunk=300` 的 ③ 应显著向 `chunk=2000` 的 51,250ms 靠拢（消除大部分 +80%）
 - **同时**单批耗时仍须 ≤20,000ms（AC-11 不许因为提速而回退）
 - 用 T-1 复核 `quotation_view_structure` 计数仍 ≤4（防再次自伤）
+
+---
+
+## 🔴 D-5：建单异步化（2026-08-26 第三次扩范围，用户真机测试后裁决）
+
+**起因**：后端已修好（1845 行跑通、卡片值 1845/1845 全落库、ARJUNA 0 次），
+**但用户实测体感毫无改善** —— 前端 axios 在 **30.01s** cancel 请求，整单需 **132s**。
+用户原话「创建报价单依然 30 秒超时失败」，**这个判断是对的**。
+
+| 编号 | 服务的 AC | 任务内容 |
+|---|---|---|
+| **B-17** | AC-13 | `BasicDataImportV6Resource.createQuotation` 拆两段：**同步段**只做 `commitService.createQuotation`（建单+建行，实测很快）并**立即返回**；`materializer.materialize(r)` **转后台执行**。响应体加 `materializing: true` 让前端显式知道要轮询（🚫 别让前端靠 `cardValuesReady=false` 猜） |
+| **B-18** | AC-13, AC-14 | 后台执行用**受管线程池**（`ManagedExecutor` / Quarkus 官方方式，**实现方自行核实并说明选型依据**）。🔒 必须确认：① 后台线程有正确的 CDI/事务上下文（`materialize` 内部各步自己开事务）；② **`QuarkusTransaction.run(...timeout(600))` 那层 B-15 的包装要跟着搬到后台**，别丢 |
+| **B-19** | AC-14 | 后台失败时：**不能只吞进日志**。轮询端点要能让前端拿到失败态（沿用既有 `warnings`/异常语义即可），🚫 不许让前端无限转圈 |
+| **B-20** | AC-14 | 服务端**中途重启**导致后台任务丢失 → 下一次轮询自动重新触发补算。**这条大概率天然成立**（`ensureCardValues` 按 `IS NULL` 选行 + 单飞锁），但**必须实测验证并给证据**，不许只写「理论上成立」 |
+
+### 🚫 D-5 明确不做
+
+| 不做 | 原因 |
+|---|---|
+| **不新增轮询端点** | `POST /quotations/{id}/ensure-card-values`（`QuotationResource:217`）已存在且语义正好：**409=在飞，200=完成** |
+| 不改 `api.ts` 的全局 30s | 异步后建单 POST <5s、轮询是一串独立快请求，都不撞 30s |
+| 不做进度百分比 | 分批埋点只在日志里，没有可暴露的进度模型。硬做要新增状态存储，超出本次范围 |
+| 不动幂等语义 | 同 `importRecordId` 重入仍返回既有 quotation |
+
+### ⚠️ 实现方注意
+
+`ensure-card-values` **不是纯只读探针，它会触发计算**。这正是 B-20 自愈能力的来源，
+但别误以为在做无副作用的状态查询 —— 并发轮询靠单飞锁挡住，不是靠"读不会有副作用"。
