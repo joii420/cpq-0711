@@ -310,7 +310,7 @@ java.lang.RuntimeException: Changing timeout via @TransactionConfiguration
 
 | 不做 | 原因 |
 |---|---|
-| **不新增轮询端点** | `POST /quotations/{id}/ensure-card-values`（`QuotationResource:217`）已存在且语义正好：**409=在飞，200=完成** |
+| **不新增轮询端点，也不改它的语义** | `POST /quotations/{id}/ensure-card-values`（`QuotationResource:217`）已存在。<br>🔴 **2026-08-26 更正**：初稿写「409=在飞」**是错的**（主线把 `:345` 那条讲 submit 路径的注释误当成本端点语义）。**实际是 200 + `data.cardValuesWarming=true`**（`:221-226`）。<br>🚫 **不许改成抛 409** —— `QuotationWizard.tsx:628/:633` 两处既有代码依赖该 flag，改了会抛未捕获异常，打破范围外的既有功能。 |
 | 不改 `api.ts` 的全局 30s | 异步后建单 POST <5s、轮询是一串独立快请求，都不撞 30s |
 | 不做进度百分比 | 分批埋点只在日志里，没有可暴露的进度模型。硬做要新增状态存储，超出本次范围 |
 | 不动幂等语义 | 同 `importRecordId` 重入仍返回既有 quotation |

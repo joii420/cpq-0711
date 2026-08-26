@@ -70,11 +70,20 @@
 
 `POST /api/cpq/quotations/{id}/ensure-card-values`（`QuotationResource:217`，**已存在**）
 
+> 🔴 **2026-08-26 更正**：初稿在此写「**409=在飞，200=完成**」，**该说法是错的**，
+> 由前端 agent 读实际代码发现。主线复核 `QuotationResource.java:221-226` 确认真实语义如下。
+> 错误来源：主线把 `QuotationResource:345` 那条**讲 submit 路径**（`awaitWarmBeforeSubmit`）的
+> 注释「取不到锁 → 409」误当成了本端点的语义 —— **看了一半就下结论**。
+
 | 响应 | 含义 | 前端动作 |
 |---|---|---|
-| **409** | `WARMING_IN_PROGRESS` —— 单飞锁被占，物化在飞 | 继续轮询 |
-| **200** | 补算完成（返回补算行数；0 = 本来就齐） | 停止轮询，进编辑页 |
+| **200 + `data.cardValuesWarming === true`** | `WARMING_IN_PROGRESS` —— 单飞锁被占，物化在飞 | 继续轮询 |
+| **200 + 正常 `QuotationDTO`**（无 warming 标记） | 补算完成 | 停止轮询，进编辑页 |
 | 其它错误 | 物化失败 | **显式提示，不许无限转圈**（AC-14①） |
+
+🚫 **不许把该端点改成抛 409。** `QuotationWizard.tsx` 已有**两处**既有代码依赖这个 flag
+（`:628` `while (r?.data?.cardValuesWarming && ...)`、`:633` `if (r?.data && !r.data.cardValuesWarming)`）——
+改成 409 会让它们抛未捕获异常，**打破本任务范围外的既有功能**。
 
 ✅ **为什么这样最省**：① 端点、前端封装（`quotationService.ensureCardValues`）都已存在；
 ② 单飞锁天然保证并发轮询安全；③ **后台任务若丢失（如服务重启），轮询会自动重新触发补算** ——
