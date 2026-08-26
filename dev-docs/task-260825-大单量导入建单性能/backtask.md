@@ -244,3 +244,49 @@ java.lang.RuntimeException: Changing timeout via @TransactionConfiguration
 🔑 **教训（值得进 `docs/反模式.md`）**：`@TransactionConfiguration` 在已有事务中**抛异常而非静默降级**。
 给一个**被多处调用**的方法加事务配置注解，等于给它的**所有**调用点加了「必须是事务根」的隐式前置条件 ——
 而这个条件的违反是**运行时爆炸**，编译期毫无提示。**要改事务配置，改调用点、别改被调方。**
+
+---
+
+## 🔴 B-16：把 `BomTreeRenderService.render` 提出批循环（2026-08-25 A/B 实测驱动，用户裁决）
+
+### 实测：分批带来了 +86% 的开销，元凶是整单级工作被重复做
+
+**同一个 build、同一份数据、背靠背两轮 A/B**（chunk 可配，故无需改代码即可对照）：
+
+| 组 | chunk | ③ `ensureCardValues` | 批处理耗时 | 总墙钟 | 单批最长 |
+|---|---|---|---|---|---|
+| **A** | 2000（退化为单批） | **51,250ms** | 47,179ms（1 批 × 1845 行） | 80.5s | 47,179ms（余量仅 **21%**） |
+| **C** | 300（7 批） | **92,376ms** | 87,716ms（7 批） | 123.1s | 15,691ms（余量 **74%**） |
+| 差 | | **+80%** | **+86%** | +42.6s | |
+
+**+86% 不可能只是 7 次 begin/commit 的成本** → 必有整单级工作被重复。
+
+### 元凶
+
+`bomTreeRenderService.render(q.costingCardTemplateId, lines)` 位于
+**`CardSnapshotService:597`，在 `snapshotNewLinesCardValues` 方法体内部**。
+而 D-4 的分批是**在外面循环调用 `snapshotNewLinesCardValues`** →
+**chunk=2000 时 render 跑 1 次；chunk=300 时 render 跑 7 次。**
+
+> 🔑 **这与 B-12 是同一个模式**：整单级的东西必须留在循环外。
+> 上一轮把 `prefetch` / `union` 提出去了，**漏了 `render`** —— 因为它藏在**被调方内部**，
+> 不像 prefetch/union 那样摆在调用方眼前。
+> **教训：拆循环时，"整单级工作"的排查必须往被调方内部再挖一层，不能只看调用方的局部变量。**
+
+### 两头不理想，且同源
+
+- 不分批：快，但**内层单事务 47,179ms / 60,000ms，余量仅 21%** —— 悬崖没真正拆掉
+- 分 7 批：余量 74%，但**慢 86%**
+
+**把 render 提出去，两个问题一起解决。**
+
+| 编号 | 服务的 AC | 任务内容 |
+|---|---|---|
+| **B-16** | AC-1, AC-9, AC-11 | 把 `bomTreeRenderService.render` 从 `snapshotNewLinesCardValues`（`:595-597` 那段 `templateHasTreeTab` 判断 + render 调用）**提到 `ensureCardValues` 的批循环之外**：对**全部** `missing` 行整单渲染一次，得到 `Map<UUID, Map<String, ArrayNode>>`；批循环内按本批行 id **切片**后传入 `snapshotNewLinesCardValues`（新增入参）。<br>✅ **下游管道已存在**：`buildCostingCardValues` 已有 `precomputedBaseRows` 参数（注释原文「按 `precomputedBaseRows!=null` 跳过旧引擎 closure+expand」），直接复用即可。<br>🔒 **必须保留** `costingRenderError` 的失败语义：render 抛错时**不上抛**，逐 li 落带原文的失败哨兵（现注释：「不上抛(否则整单快照 500 + 全 NULL → 前端无限「加载中…」)」）。提出循环后，该错误应对**所有批次**一致生效 |
+
+### B-16 验收（必须做 A/B，不许只跑一次）
+
+改完后用同样手法再跑一次 A/B（`-Dcpq.ensure-card-values-chunk-size=`）：
+- **判据**：`chunk=300` 的 ③ 应显著向 `chunk=2000` 的 51,250ms 靠拢（消除大部分 +80%）
+- **同时**单批耗时仍须 ≤20,000ms（AC-11 不许因为提速而回退）
+- 用 T-1 复核 `quotation_view_structure` 计数仍 ≤4（防再次自伤）
