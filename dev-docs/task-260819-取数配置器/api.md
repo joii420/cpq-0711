@@ -32,7 +32,7 @@ D-21 要求「生成的 SQL」右侧常驻、随拖拽实时刷新。这看起�
 | 方法 | 路径 | 角色 | 说明 |
 |---|---|---|---|
 | `GET` | `/` | **全部 4 角色** | 读全图。`SALES_REP` / `SALES_MANAGER` / `PRICING_MANAGER` / `SYSTEM_ADMIN` 返回**内容完全相同**（AC-56 断言③） |
-| `GET` | `/field-tree?tabType=&variantKey=` | 全部 4 角色 | 配置器左侧字段面板的数据源（含**两层 roles** 合并结果） |
+| `GET` | `/field-tree?tabType=&variantKey=&selectedConfig=` | 全部 4 角色 | 配置器左侧字段面板的数据源（含**两层 roles** 合并结果）。响应形状见 §1.4 —— 🔴 **不是扁平节点数组** |
 | `POST` | `/nodes` `/edges` `/tab-views` | `SYSTEM_ADMIN` | 新增。非超管一律 **403**，且库中数据逐行不变（AC-56 断言①） |
 | `PUT` | `/nodes/{id}` `/edges/{id}` `/tab-views/{id}` | `SYSTEM_ADMIN` | 修改 |
 | `DELETE` | `/nodes/{id}` `/edges/{id}` `/tab-views/{id}` | `SYSTEM_ADMIN` | 删除。被引用时由**库层外键**拒绝（AC-54） |
@@ -47,6 +47,8 @@ D-21 要求「生成的 SQL」右侧常驻、随拖拽实时刷新。这看起�
   "updatedBy": "张工",
   "nodes": [{
     "id": "uuid", "nodeKey": "ELEMENT_BOM_ITEM", "displayName": "物料与元素BOM",
+    "shortName": "元素BOM",                // Sheet 简称，视图列名 _<简称>_<列名> 的构成部分（D-13）
+                                          // ⚠️ 取法开工前定死、定后不可改（改了等于改全部绑定路径）
     "nodeKind": "SHEET",                  // SHEET | LOOKUP | FUNCTION
     "physicalTable": "element_bom_item",
     "scope": "FULL",                      // FULL = customer_no + is_current + system_type
@@ -121,6 +123,65 @@ D-21 要求「生成的 SQL」右侧常驻、随拖拽实时刷新。这看起�
 实测 `INCOMING_MATERIAL_RECYCLE` 全库仅 1 行，任何基数声明都能过 —— 而写 `bom_view` 的人显然不放心，他加了 `ORDER BY seq_no LIMIT 1`。
 **规定**：目标表在当前收窄条件下行数 `< 30` 时，`assertStatus` 返回 **`THIN`**（不是 `PASS`），响应 `200` 但带 `warnings`，管理页显示「证据不足：样本仅 N 行，该断言不构成保证」。
 
+### 1.4 `GET /field-tree` 响应（🔴 2026-08-21 补 · 三方形状不一致，此处裁决）
+
+**背景**：后端首版返回扁平 `List<NodeDTO>`，而前端与测试都按 `{groups:[...]}` 实现 —— 形状完全不同，联调必炸。
+
+**裁决：采用 `{groups:[...]}`**。判据：① 字段面板 UI 本身就是**按 Sheet 分组折叠**的（原型即如此）；② `conflict` 是**组级**标记（D-08 要求「与已选冲突的整组置灰」），挂在扁平列上表达不出来；③ 本端点的定位是「配置器字段面板的数据源」，不是通用图查询 —— 通用查询用 `GET /`。
+
+```jsonc
+{
+  "tabType": "费用类", "variantKey": "INCOMING_FIXED",
+  "anchorDesc": "来料费用 按成品料号收窄",     // 配方条的锚点说明行
+  "availableTabTypes": ["主件","材质元素","零件","外购件","费用类","BOM"],
+  "variants": [{"key":"INCOMING_FIXED","label":"来料固定加工费","view":"ll_view · 现网 13 个组件"}],
+  "switches": ["CLOSURE"],
+  "groups": [{
+    "groupKey": "INCOMING_FIXED",
+    "groupName": "来料固定加工费",
+    "groupKind": "MAIN",              // MAIN | GRAIN | SUB | SAME | JOIN | LOOKUP | PRICE
+    "dims": ["投入料号"],              // 该组的展开维度，纯展示
+    "conflict": false,                // ← 组级：true = 与已选列冲突，整组置灰（AC-16）
+    "conflictReason": null,           // conflict=true 时必须给可读原因（用户不写 SQL）
+    "fields": [{
+      "sourceNodeKey": "INCOMING_FIXED", "sourceColumn": "base_value",
+      "displayName": "基准值", "dataType": "MONEY",
+      "roles": ["ROW_KEY"],           // 两层 roles 合并后的结果（节点级默认 + 页签级覆盖，D-35）
+      "viewColumn": "_来料加工_基准值", // (Sheet,列) 纯函数，前端只读展示不得自行拼接（AC-11）
+      "lookupLib": null,              // 查名库名，如「物料主档」；非查名列为 null
+      "isCore": false                 // 价格策略原子组的核心列标记（删它整组走，AC-21）
+    }]
+  }]
+}
+```
+
+🚦 **`conflict` 只有带 `selectedConfig`（当前已选列的 JSON）查询参数时才计算**；不带时恒 `false`。
+🚦 **`isCore` 后端必须给** —— 前端据此区分「删元素单价整组走」与「删货币仅自身走」。缺了它前端会退化成按字段名正则猜（原型里的脆弱写法），已明确废弃。
+
+### 1.5 请求体与错误信封的统一口径（🔴 2026-08-21 补）
+
+**① `POST /compile` 与 `POST /inspect` 的请求体 = `builder_config` 对象本身**（§2.1 的结构，不再外套一层）。
+**② `POST /preview` 的请求体 = `builder_config` + 预览参数**：
+
+```jsonc
+{ /* ...§2.1 builder_config 全部字段（含 switches.includeChildParts）... */,
+  "customerCode": "罗克韦尔",
+  "partNo": "S-3120014539"
+}
+```
+
+🚫 **不要传顶层 `includeChildParts`** —— 闭包开关的唯一位置是 **`switches.includeChildParts`**（在 config 里面）。
+> 🔴 **2026-08-21 更正**：本节原示例里列了一个顶层 `includeChildParts`，那是**我写错的**。后端 `PreviewRequest`
+> 虽然声明了同名字段，但编译器实际读的是 `BuilderConfig.includeChildParts()` → `switches.get(...)`，
+> **顶层那个从未被读取**。按原示例传的人，闭包开关会**静默失效**（预览结果不含子件，且不报任何错）。
+
+**③ 🚨 响应一律「裸体」，不套 `ApiResponse{code,message,data}` 信封。**
+
+成功响应的字段直接在根（`sql` / `rowCount` / `groups`…），错误响应的 `code`/`failedCheck`/`detail` 也直接在根（§1.2、§2.5 的示例即为准）。
+
+> **为什么单独写这一条**：后端首版套了项目惯用的 `ApiResponse` 信封，靠读测试文件才发现不一致并改正；而前端的 `buildApiError` 目前读的是 `error.response.data.data`（假设有信封）—— **两边正好相反**，不统一就会出现「后端返回了结构化错误、前端只显示一句 message」的静默降级。
+> 📌 **前端需据此改 `buildApiError` 的读取路径**（`error.response.data` 而非 `.data.data`）。🚫 不要去改全站公共的 `api.ts`，只在本任务的 service 层处理。
+
 ---
 
 ## 2. 取数配置器（builder）
@@ -129,7 +190,7 @@ D-21 要求「生成的 SQL」右侧常驻、随拖拽实时刷新。这看起�
 
 | 方法 | 路径 | 说明 | 服务的 AC |
 |---|---|---|---|
-| `GET` | `/` | 读 `builder_config` + `builder_version` + 过期标记 | AC-34 |
+| `GET` | `/` | 读 `builder_config` + `builder_version` + 过期标记（响应体见 §2.1a） | AC-34 |
 | `POST` | `/compile` | 由 `builder_config` 编译出 SQL，**不落库**。右侧实时面板用 | AC-49、AC-9、AC-11 |
 | `POST` | `/preview` | 真实预览：执行编译产物，只读连接 + `LIMIT 50` + 5s 超时 | AC-26 ~ AC-28 |
 | `POST` | `/inspect` | 保存前体检（阻断项 + 告警项） | AC-13、AC-17 ~ AC-19、AC-29、AC-30 |
@@ -157,6 +218,33 @@ D-21 要求「生成的 SQL」右侧常驻、随拖拽实时刷新。这看起�
 ```
 
 🚫 `viewColumn` **由后端按 `(Sheet简称, 列名)` 纯函数生成**，前端只读显示、不得自行拼接（AC-11 断言：改字段名后 `viewColumn` 与 SQL 别名**纹丝不动**）。
+
+### 2.1a `GET /` 响应（🔴 2026-08-20 补：原文只写「+ 过期标记」没定字段名 —— 留白处三方各填一套，是并行开发的典型裂缝）
+
+```jsonc
+{
+  "builderConfig": { /* §2.1 的结构 */ } | null,   // null = 尚未用配置器配过（NEW 或 LEGACY 两种情况）
+  "builderVersion": 1 | null,
+  "viewState": "NEW",                // 🔴 2026-08-21 新增，三态见下表
+  "isLegacyHandwritten": false,      // == (viewState === 'LEGACY_HANDWRITTEN')，保留兼容
+  "isStale": false,                  // == (builderVersion < currentCompilerVersion)
+  "currentCompilerVersion": 3        // 当前编译器版本，前端据此渲染过期提醒条（AC-34）
+}
+```
+
+🚦 **字段名以本节为准。**
+
+### 🔴 `viewState` 三态（2026-08-21 修正 —— 原定义把三态压成两态，导致配置器对所有组件都进不去）
+
+| viewState | 判据 | 前端该显示 |
+|---|---|---|
+| **`NEW`** | 该组件**没有任何 `component_sql_view` 行** | ✅ **空白配置器，可直接开始配** |
+| **`LEGACY_HANDWRITTEN`** | 有 `sql_view` 行、但 `builder_config` 为 NULL | 引导页「存量手写视图，不支持接管」（N-3 / AC-32） |
+| **`BUILDER`** | `builder_config` 非空 | 回填已有配置 |
+
+🚨 **原定义 `isLegacyHandwritten == (builderConfig === null)` 是错的** —— 它让 `NEW` 与 `LEGACY_HANDWRITTEN` 无从区分。
+后端严格照此实现（`if (view == null || view.builderConfig == null) isLegacyHandwritten = true`），于是**全新组件也被判成存量手写**、前端弹引导页 → **配置器对任何组件都进不去**。
+这是主线的契约定义错误，不是实现错误。
 
 ### 2.2 `POST /compile` 响应
 
@@ -192,6 +280,20 @@ D-21 要求「生成的 SQL」右侧常驻、随拖拽实时刷新。这看起�
 
 **0 行时** `rowCount: 0` + `diagnostics` 必须给**可操作**诊断（哪一层收窄把行滤没了），🚫 不许只返回空表格。
 
+### 2.3a `POST /inspect` 响应（🔴 2026-08-21 补 —— 原文只有请求体和一句文字说明，**响应体从未定义**，导致前后端各填一套、前端运行时白屏）
+
+```jsonc
+{
+  "blocked": false,          // true = 有 ERR 项，保存会被拒
+  "items": [                 // ⚠️ 字段名是 items 不是 checks
+    { "level": "ERR",  "code": "MISSING_IDENTITY_COLUMN", "message": "料号列与名称列至少配一个" },
+    { "level": "WARN", "code": "DUPLICATE_FIELD_NAME",    "message": "字段名「项次」重复，不阻断保存" }
+  ]
+}
+```
+
+`level` 取值：`ERR`（阻断）/ `WARN`（告警）。前端只渲染这两类，全通过时显示一行「检查通过」（F-8 / D-22）。
+
 ### 2.4 `PUT /` 一体化保存（AC-2：三件套由**同一次**保存原子产出）
 
 单事务内完成：① `component_sql_view`（`sql_template` / `declared_columns` / `builder_config` / `builder_version`）
@@ -199,6 +301,32 @@ D-21 要求「生成的 SQL」右侧常驻、随拖拽实时刷新。这看起�
 ④ 价格策略三项绑定回填 ⑤ `refreshSnapshotsByComponent` 刷模板 snapshot（**必须按 `sortOrder` 精确匹配** —— AP-40）。
 
 任一步失败整体回滚。响应 `200` 返回新的 `builderVersion` 与受影响的模板数。
+
+**请求体（🔴 2026-08-21 补完整示例 —— 原文只说「需带 `confirmedImpact`」，没写清是扁平还是嵌套，实测三方填了两套）**：
+
+```jsonc
+// ✅ 正确：扁平 —— builder_config 的字段与 confirmedImpact **平级**
+{
+  "builderVersion": 1,
+  "tabType": "费用类",
+  "variantKey": "INCOMING_FIXED",
+  "switches": { "includeChildParts": false },
+  "columns": [ /* ... */ ],
+  "priceStrategy": null,
+  "confirmedImpact": false        // ← 与上面这些字段同层，不是另一个对象
+}
+
+// ❌ 错误：不要包一层
+{ "builderConfig": { "tabType": "...", ... }, "confirmedImpact": false }
+```
+
+🚦 **三个写端点的请求体形状一致**，都是「裸 `builder_config`」：
+`POST /compile` 与 `POST /inspect` = 纯 config；`PUT /` = config **+ 平级的 `confirmedImpact`**；
+`POST /preview` = config **+ 平级的 `customerCode` / `partNo` / `includeChildParts``（§1.5 ②）。
+后端对应 `SaveRequest extends BuilderConfig`（继承，不是持有），所以 JSON 一定是扁平的。
+
+⚠️ **包成 `{"builderConfig":{...}}` 的后果很隐蔽**：后端会把 `tabType` / `variantKey` 读成 `null`，
+然后报一个与真因毫不相干的错（比如「页签视图不存在」），排查时很容易往错误方向走。
 
 **删除列**时请求需带 `confirmedImpact: true`，否则返回 `409 + 影响面清单`（AC-31）。
 

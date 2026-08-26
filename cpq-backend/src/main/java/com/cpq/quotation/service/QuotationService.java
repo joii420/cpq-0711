@@ -1632,8 +1632,15 @@ public class QuotationService {
         //    不依赖 refreshQuoteCardValues 内部 force=false + cardSnapshotAt!=null 的短路 no-op，
         //    显式跳过避免后人改动短路条件时静默回归。
         if (!sameTemplate) {
+            // task-260819 B-19（N+1 硬约束）：循环前整单算一次料号并集，循环内各行复用，
+            // 不为每行各发一次递归 SQL（详见 CardSnapshotService#collectTotalMaterialNoUnionForLines）。
+            // task-260819 D-58（B+）：类型改为完整 MaterialUnionResult——单纯 totalMaterialNo
+            // 不够，单料号 expand 路径加宽只能用 materialsByRoot（这一个成品自己的闭包），
+            // 不能用整单料号池。
+            com.cpq.quotation.service.BomTreeRenderService.MaterialUnionResult _precomputedUnion =
+                    cardSnapshotService.collectTotalMaterialNoUnionForLines(newItems);
             for (QuotationLineItem newLi : newItems) {
-                cardSnapshotService.refreshQuoteCardValues(newLi);
+                cardSnapshotService.refreshQuoteCardValues(newLi, false, _precomputedUnion);
             }
             if (copy.costingCardTemplateId != null) {
                 cardSnapshotService.refreshCostingCardValues(copy.id);

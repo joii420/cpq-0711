@@ -699,3 +699,109 @@
 .cm-fwp-size {
   color: #8c8c8c;
 }
+
+/* ===== task-260819 取数配置器（SqlViewBuilderTab）===== 移植自原型 原型-取数配置器.html，
+   scope 前缀 svb- 避免与既有 cm-/cmm- 命名冲突。CSS 变量沿用原型语汇（配色/圆角/字号）以保证 1:1 还原。 */
+.svb-root { --svb-blue:#1677ff; --svb-blue-bg:#e6f0ff; --svb-green:#52c41a; --svb-green-bg:#f6ffed;
+  --svb-border:#e5e7eb; --svb-sub:#8a909a; --svb-danger:#ff4d4f; --svb-key:#722ed1; --svb-key-bg:#f9f0ff;
+  --svb-grey:#bfbfbf; --svb-gold:#d48806; --svb-gold-bg:#fffbe6; font-size:13px; }
+.svb-recipe-bar { background:#fafbfc; border:1px solid var(--svb-border); border-radius:8px; padding:12px 14px; margin-bottom:14px; }
+.svb-rb-line { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.svb-rb-line + .svb-rb-line { margin-top:10px; padding-top:10px; border-top:1px dashed var(--svb-border); }
+.svb-lbl { color:var(--svb-sub); font-size:12px; }
+.svb-hint-i { color:var(--svb-sub); font-size:11px; }
+.svb-cols { display:flex; gap:14px; align-items:stretch; }
+.svb-pane { border:1px solid var(--svb-border); border-radius:8px; display:flex; flex-direction:column; background:#fff; min-width:0; }
+.svb-pane-h { padding:9px 12px; border-bottom:1px solid var(--svb-border); font-size:12px; color:var(--svb-sub);
+  display:flex; justify-content:space-between; align-items:center; background:#fafbfc; border-radius:8px 8px 0 0; }
+.svb-pane-h b { color:#1f2329; font-size:13px; }
+.svb-pane-b { padding:8px; overflow:auto; flex:1; }
+.svb-pane.left { width:300px; flex:none; max-height:560px; }
+.svb-pane.right { flex:1; max-height:560px; }
+.svb-pane.sql { flex:0 0 34%; min-width:280px; max-height:560px; }
+.svb-grp { margin-bottom:8px; }
+.svb-grp-h { display:flex; align-items:center; gap:5px; font-size:12px; color:var(--svb-sub); padding:4px 6px; cursor:pointer; user-select:none; }
+.svb-grp-h:hover { color:var(--svb-blue); }
+.svb-caret { display:inline-block; width:10px; transition:transform .15s; }
+.svb-grp.collapsed .svb-caret { transform:rotate(-90deg); }
+.svb-grp.collapsed .svb-grp-b { display:none; }
+.svb-fld { display:flex; align-items:center; gap:6px; padding:5px 8px; border:1px solid transparent; border-radius:6px; cursor:grab; font-size:13px; }
+.svb-fld:hover { background:var(--svb-blue-bg); border-color:#bcd8ff; }
+.svb-fld.used { opacity:.4; cursor:not-allowed; background:#fafafa; }
+.svb-fld.used:hover { background:#fafafa; border-color:transparent; }
+.svb-fld.blocked { opacity:.5; cursor:not-allowed; background:repeating-linear-gradient(135deg,transparent,transparent 6px,rgba(0,0,0,.03) 6px,rgba(0,0,0,.03) 12px); }
+.svb-fld.blocked:hover { border-color:var(--svb-gold); background:none; }
+.svb-fld .svb-t { color:var(--svb-sub); font-size:11px; margin-left:auto; }
+.svb-fld .svb-drag { color:var(--svb-grey); font-size:11px; }
+.svb-codecol { margin:2px 0 4px; }
+.svb-codecol > .svb-fld { font-weight:600; }
+.svb-lookup { margin-left:16px; border-left:2px solid #efdbff; padding-left:8px; }
+.svb-lookup .svb-fld { color:var(--svb-key); }
+.svb-lookup .svb-fld:hover { background:var(--svb-key-bg); border-color:#efdbff; }
+.svb-lookup-tag { font-size:10px; color:var(--svb-key); background:var(--svb-key-bg); border:1px solid #efdbff; border-radius:3px; padding:0 4px; }
+.svb-rmark { font-size:10px; padding:0 5px; border-radius:8px; color:var(--svb-sub); background:#f0f1f3; border:1px solid var(--svb-border); white-space:nowrap; }
+.svb-dim-tag { font-size:10px; color:#237804; background:var(--svb-green-bg); border:1px solid #b7eb8f; border-radius:3px; padding:0 4px; margin-left:4px; }
+.svb-sheet-note { font-size:11px; color:#874d00; background:var(--svb-gold-bg); border:1px solid #ffe58f; border-radius:4px; padding:4px 7px; margin:2px 4px 6px; line-height:1.6; }
+.svb-empty { padding:34px 10px; text-align:center; color:var(--svb-sub); font-size:12px; border:2px dashed var(--svb-border); border-radius:8px; margin:8px; }
+.svb-drop-hot { background:var(--svb-blue-bg); border-color:var(--svb-blue); }
+/* 用户问题 1 修复：drop 区从"仅已有行"扩到整个列表容器——填满 .svb-pane-b 的可用高度，
+   行与行之间、末尾的空白都能落点，不再是只有拖到第一行才能成功。 */
+.svb-sel-list { min-height:100%; }
+.svb-sel-list.drop-end-hot { box-shadow:inset 0 -2px 0 0 var(--svb-blue); border-radius:6px; }
+.svb-sel-row { border:1px solid transparent; border-radius:6px; padding:6px 8px; position:relative; }
+.svb-sel-row:hover { background:#fafbfc; border-color:var(--svb-border); }
+.svb-sel-row.dragging { opacity:.4; }
+/* 插入位置指示线：drop-before/drop-after 由拖拽悬浮时鼠标 Y 相对目标行的上下半决定（见 computeDropPos）。 */
+.svb-sel-row.drop-before { box-shadow:0 -2px 0 0 var(--svb-blue); }
+.svb-sel-row.drop-after { box-shadow:0 2px 0 0 var(--svb-blue); }
+.svb-pgrp.drop-before { box-shadow:0 -2px 0 0 var(--svb-blue); }
+.svb-pgrp.drop-after { box-shadow:0 2px 0 0 var(--svb-blue); }
+.svb-sr-1 { display:flex; align-items:center; gap:6px; }
+.svb-sr-2 { display:flex; align-items:center; gap:8px; padding:4px 0 0 22px; }
+.svb-hd { cursor:grab; color:var(--svb-grey); }
+.svb-fname { flex:0 0 auto; width:130px; }
+.svb-viewcol { font-size:11px; color:var(--svb-sub); background:#f0f1f3; border:1px dashed var(--svb-border);
+  border-radius:4px; padding:1px 6px; white-space:nowrap; font-family:ui-monospace,Menlo,Consolas,monospace; }
+.svb-t2 { color:var(--svb-sub); font-size:11px; margin-left:2px; }
+.svb-badges { display:flex; gap:4px; }
+.svb-rbadge { font-size:10.5px; padding:1px 7px; border-radius:9px; cursor:default; user-select:none;
+  border:1px solid var(--svb-border); color:var(--svb-blue); background:var(--svb-blue-bg); font-weight:600; }
+.svb-amt { display:flex; gap:10px; color:var(--svb-sub); font-size:11px; margin-left:auto; }
+.svb-amt label { display:flex; align-items:center; gap:3px; cursor:pointer; }
+.svb-rm { color:var(--svb-grey); cursor:pointer; }
+.svb-rm:hover { color:var(--svb-danger); }
+.svb-badge-aux { font-size:10px; color:var(--svb-gold); background:var(--svb-gold-bg); border:1px solid #ffe58f; border-radius:3px; padding:0 4px; }
+.svb-badge-join { font-size:10px; color:var(--svb-key); background:var(--svb-key-bg); border:1px solid #efdbff; border-radius:3px; padding:0 4px; }
+.svb-pgrp { border:1px solid var(--svb-gold); border-radius:8px; margin:6px 0; background:rgba(212,136,6,.06); }
+.svb-pgrp-h { display:flex; align-items:center; gap:8px; padding:6px 10px; font-size:12px; font-weight:600; color:var(--svb-gold); border-bottom:1px dashed rgba(212,136,6,.35); }
+.svb-pgrp-note { font-weight:400; color:var(--svb-sub); font-size:11px; }
+.svb-pgrp-h .svb-rm { margin-left:auto; }
+.svb-sel-row.in-pg { border:none; background:transparent; padding:4px 8px; }
+.svb-livesql { margin:0; padding:10px 12px; font-size:11px; line-height:1.6; white-space:pre; overflow-x:auto;
+  font-family:ui-monospace,Menlo,Consolas,monospace; color:#1f2329; }
+.svb-livesql .k { color:#0958d9; font-weight:600; } .svb-livesql .s { color:#08979c; }
+.svb-zoom { margin-left:auto; cursor:pointer; color:var(--svb-sub); font-size:14px; }
+.svb-zoom:hover { color:var(--svb-blue); }
+/* 用户问题「保存按钮要更显眼」：吸附在滚动容器底部，不用滚到最下面才找得到保存按钮。
+   sticky 会自动找最近的可滚动祖先——不管那是 .svb-pane-b 还是整页，都能生效，不需要改 ComponentManagement.tsx 的布局。 */
+.builder-footer { position:sticky; bottom:0; background:#fff; z-index:5; padding:10px 0; border-top:1px solid var(--svb-border); }
+.svb-health { margin-top:12px; border:1px solid var(--svb-border); border-radius:8px; overflow:hidden; }
+.svb-health-h { padding:8px 12px; background:#fafbfc; border-bottom:1px solid var(--svb-border); font-size:12px; color:var(--svb-sub); display:flex; justify-content:space-between; }
+.svb-hitem { display:flex; gap:8px; align-items:flex-start; padding:7px 12px; font-size:12px; border-bottom:1px solid #f2f3f5; }
+.svb-hitem:last-child { border-bottom:none; }
+.svb-hitem .ic { flex:none; width:14px; text-align:center; }
+.svb-hitem.ok { color:var(--svb-sub); } .svb-hitem.ok .ic { color:var(--svb-green); }
+.svb-hitem.warn { background:var(--svb-gold-bg); color:#874d00; } .svb-hitem.warn .ic { color:var(--svb-gold); }
+.svb-hitem.err { background:#fff2f0; color:#a8071a; } .svb-hitem.err .ic { color:var(--svb-danger); }
+.svb-preview { margin-top:12px; border:1px solid var(--svb-border); border-radius:8px; overflow:hidden; }
+.svb-pv-h { padding:9px 12px; background:var(--svb-green-bg); border-bottom:1px solid #b7eb8f; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.svb-pv-h .rescount { font-weight:700; color:#237804; }
+.svb-pv-table { width:100%; border-collapse:collapse; font-size:12px; }
+.svb-pv-table th, .svb-pv-table td { border-bottom:1px solid #f2f3f5; padding:6px 10px; text-align:left; white-space:nowrap; }
+.svb-pv-table th { background:#fafbfc; color:var(--svb-sub); font-weight:600; }
+.svb-pv-table td.null { color:var(--svb-grey); font-style:italic; background:#fffdf5; }
+.svb-diag { padding:12px 14px; background:var(--svb-gold-bg); font-size:12px; color:#874d00; line-height:1.9; }
+.svb-diag b { display:block; margin-bottom:4px; color:#a8071a; }
+.svb-stale-bar { display:flex; align-items:center; gap:10px; margin-bottom:8px; padding:6px 10px; border-radius:6px;
+  background:rgba(90,150,240,.12); border:1px solid rgba(90,150,240,.45); font-size:12px; }
+.svb-guide { padding:40px 24px; text-align:center; color:var(--svb-sub); }

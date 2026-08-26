@@ -3272,8 +3272,47 @@ public class CardSnapshotService {
         refreshQuoteCardValues(li, force, LineFailurePolicy.BEST_EFFORT);
     }
 
+    /**
+     * task-260819 B-19（N+1 硬约束）：批量循环调用方（如 {@code QuotationService} 复制报价单时
+     * 逐行 {@code refreshQuoteCardValues}）用这个重载，传入循环外已整单算好的 {@code precomputedUnion}
+     * （见 {@link #collectTotalMaterialNoUnionForLines}），避免每行各发一次递归 SQL。
+     *
+     * <p>task-260819 D-58（B+）：参数类型由 {@code List<String>} 改为完整的
+     * {@link BomTreeRenderService.MaterialUnionResult}——单纯只传 {@code totalMaterialNo} 不够，
+     * 单料号 expand 路径（{@code expandFlatDriverBaseRows} 内部）加宽 outer {@code hfPartNos} 时
+     * 只能用「这一个成品自己的闭包」（{@code materialsByRoot}），绝不能用整单料号池
+     * （{@code totalMaterialNo}）——批量场景下两者是不同的集合，混用会把别的成品的行带进这一卡。
+     */
+    @Transactional
+    public void refreshQuoteCardValues(QuotationLineItem li, boolean force,
+                                       BomTreeRenderService.MaterialUnionResult precomputedUnion) {
+        refreshQuoteCardValues(li, force, LineFailurePolicy.BEST_EFFORT, precomputedUnion);
+    }
+
+    /**
+     * task-260819 B-19：供批量循环调用方（跨类，如 {@code QuotationService}）在循环外整单算一次
+     * 料号并集，循环内配合 {@link #refreshQuoteCardValues(QuotationLineItem, boolean,
+     * BomTreeRenderService.MaterialUnionResult)} 复用。
+     */
+    public BomTreeRenderService.MaterialUnionResult collectTotalMaterialNoUnionForLines(List<QuotationLineItem> lines) {
+        return bomTreeRenderService.collectTotalMaterialNoUnion(lines, "QUOTE");
+    }
+
     private RefreshOutcome refreshQuoteCardValues(
             QuotationLineItem li, boolean force, LineFailurePolicy failurePolicy) {
+        return refreshQuoteCardValues(li, force, failurePolicy, null);
+    }
+
+    /**
+     * task-260819 B-19（D-52/AC-58）：{@code precomputedUnion} 非 {@code null} = 调用方
+     * （批量循环，如 {@link #refreshDraftQuoteCards}）已整单一次算好料号并集，直接复用，避免每行
+     * 各发一次递归 SQL（N+1 硬约束）；{@code null} = 单行独立调用（如 {@link QuotationService}
+     * 新建行后的单次刷新），本方法按这一行自己的 BOM 闭包现算——与 {@code BomTreeRenderService#render}
+     * 既有的「传几行算几行」惯例一致（每次调用仍恒为 1 次递归 SQL，只是这一次只覆盖 1 行）。
+     */
+    private RefreshOutcome refreshQuoteCardValues(
+            QuotationLineItem li, boolean force, LineFailurePolicy failurePolicy,
+            BomTreeRenderService.MaterialUnionResult precomputedUnion) {
         if (li == null || li.id == null) {
             return RefreshOutcome.NO_OP;
         }
@@ -3311,9 +3350,27 @@ public class CardSnapshotService {
                 ExistingQuoteCardState existing = parseExistingQuoteCardState(managed.quoteCardValues);
 
                 // 1. 重查基础值（报价模板 driver 组件 expand 种子；非树页签走平铺实时展开）
-                Map<String, ArrayNode> baseRowsByComp =
-                    expandFlatDriverBaseRows(q.customerTemplateId, managed, q.customerId, q.id,
+                // task-260819 B-19（AC-58）：expandFlatDriverBaseRows 内部经 componentDriverService.expand
+                // 走到可能含 :total_material_no 的 $view，此处局部注入——precomputedUnion 非空则复用
+                // 批量调用方整单算好的值（避免逐行重发递归 SQL）；为空则按本行自己的 BOM 闭包现算一次
+                // （与 render() 单行调用的既有惯例一致）。
+                // task-260819 D-58（B+）：一并透传 materialsByRoot——单料号 expand 路径加宽 outer
+                // hfPartNos 时只能用「这一个成品自己的闭包」，批量场景下不能拿整单料号池顶替
+                // （precomputedUnion 的 materialsByRoot 天然是 root→自身闭包 的形状，逐根独立，
+                // 直接透传即可，不会把批量里其它成品的行带进来）。
+                BomTreeRenderService.MaterialUnionResult _effUnion = (precomputedUnion != null)
+                        ? precomputedUnion
+                        : bomTreeRenderService.collectTotalMaterialNoUnion(java.util.List.of(managed), "QUOTE");
+                com.cpq.datasource.sqlview.BomTreeVarsContext.set(new com.cpq.datasource.sqlview.BomTreeVarsContext.Vars(
+                        null, _effUnion.totalMaterialNo, null,
+                        com.cpq.datasource.sqlview.BomTreeVarsContext.Mode.RENDER, null, _effUnion.materialsByRoot));
+                Map<String, ArrayNode> baseRowsByComp;
+                try {
+                    baseRowsByComp = expandFlatDriverBaseRows(q.customerTemplateId, managed, q.customerId, q.id,
                         null, null);
+                } finally {
+                    com.cpq.datasource.sqlview.BomTreeVarsContext.clear();
+                }
                 // 1.5 task-0721 收尾修复：树页签（tab_type='BOM'）不走实时展开——覆盖为该组件当前已冻结的
                 // snapshot_rows（见 overlayTreeTabsFromFrozenSnapshot 方法注释；无树页签的模板 no-op）。
                 overlayTreeTabsFromFrozenSnapshot(q.customerTemplateId, managed.id, baseRowsByComp);
@@ -3421,6 +3478,10 @@ public class CardSnapshotService {
         // 原 rebuildStructureForDraft 调用已移除——结构创建即冻、永不变。
         List<QuotationLineItem> lines = QuotationLineItem.list(
             "quotationId = ?1 ORDER BY sortOrder, id", quotationId);
+        // task-260819 B-19（N+1 硬约束）：整单只在循环外算一次料号并集，循环内各行复用同一份值，
+        // 不为每行各发一次递归 SQL（本方法是「批量刷新整单」这一个业务操作，SQL 条数必须与行数无关）。
+        BomTreeRenderService.MaterialUnionResult _precomputedUnion =
+                bomTreeRenderService.collectTotalMaterialNoUnion(lines, "QUOTE");
         int n = 0;
         for (QuotationLineItem li : lines) {
             try {
@@ -3432,7 +3493,7 @@ public class CardSnapshotService {
                 // 缺模板、未冻结快照、driver 降级/树快照回退仍按既有兼容契约处理。
                 // 每行 flush 只为把数据库错误精确归因到当前行，仍未提交；任一后续行失败会回滚前序 flush。
                 RefreshOutcome outcome = refreshQuoteCardValues(
-                    li, true, LineFailurePolicy.PROPAGATE_UNRECOVERABLE);
+                    li, true, LineFailurePolicy.PROPAGATE_UNRECOVERABLE, _precomputedUnion);
                 if (outcome == RefreshOutcome.UPDATED) {
                     em.flush();
                     n++;
@@ -4108,8 +4169,20 @@ public class CardSnapshotService {
             }
 
             // 1. baseRows 展开 + editRows 合并（与 refreshQuoteCardValues 同源）
-            Map<String, ArrayNode> baseRowsByComp =
-                expandFlatDriverBaseRows(q.customerTemplateId, li, q.customerId, q.id, null, null);
+            // task-260819 B-19（AC-58）：单行调用，按这一行自己的 BOM 闭包现算一次（非批量循环，
+            // 不涉及 N+1）。
+            // task-260819 D-58（B+）：一并透传 materialsByRoot 供单料号 expand 路径加宽用。
+            BomTreeRenderService.MaterialUnionResult _dryRunUnion =
+                    bomTreeRenderService.collectTotalMaterialNoUnion(java.util.List.of(li), "QUOTE");
+            com.cpq.datasource.sqlview.BomTreeVarsContext.set(new com.cpq.datasource.sqlview.BomTreeVarsContext.Vars(
+                    null, _dryRunUnion.totalMaterialNo, null,
+                    com.cpq.datasource.sqlview.BomTreeVarsContext.Mode.RENDER, null, _dryRunUnion.materialsByRoot));
+            Map<String, ArrayNode> baseRowsByComp;
+            try {
+                baseRowsByComp = expandFlatDriverBaseRows(q.customerTemplateId, li, q.customerId, q.id, null, null);
+            } finally {
+                com.cpq.datasource.sqlview.BomTreeVarsContext.clear();
+            }
             // task-0721 收尾修复：树页签（tab_type='BOM'）不走实时展开，覆盖为已冻结 snapshot_rows
             // （与 refreshQuoteCardValues 同一处理，见 overlayTreeTabsFromFrozenSnapshot 方法注释）。
             overlayTreeTabsFromFrozenSnapshot(q.customerTemplateId, li.id, baseRowsByComp);

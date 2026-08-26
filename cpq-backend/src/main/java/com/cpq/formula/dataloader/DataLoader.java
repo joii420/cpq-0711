@@ -259,6 +259,113 @@ public class DataLoader {
     }
 
     /**
+     * task-260819 D-58（B+ wrap 修法·单料号路径专用，纯加法重载）：outer {@code hf_part_no =
+     * ANY(:hfPartNos)} 过滤器改用调用方传入的 {@code widenedHfPartNos}（该成品自己的 BOM 闭包，
+     * 含自身），而不是内部拿 {@code partNo} 现包的 {@code List.of(partNo)}——除此之外，与
+     * {@link #loadByPath(String, Map, String, UUID)} 逐位相同（含 resultCache 复用、
+     * {@code ctx.lineItem.partNo} 绑定语义）。
+     *
+     * <p>🔒 <b>不改既有方法一行代码</b>：本方法与下面的 6-arg 核心方法都是独立维护的完整拷贝，
+     * 故意不与 5-arg {@link #loadByPath(String, Map, String, UUID, Integer)} 共用代码（哪怕看起来
+     * 高度重复）——用户裁决原文：「宁可有一点重复代码，也不要为了 DRY 去改既有方法体，那会立刻把
+     * 零影响变成有影响」。谁想"顺手合并重构"这两个方法前，请先重读 D-58。
+     *
+     * <p>背景：D-50 统一「主树供数组」机制后，B 机制视图的 {@code hf_part_no} 恒为锚点自身料号
+     * （不再是根成品），若 outer 过滤器仍只用单个 {@code partNo} 收窄，会把这个成品自己的子件行
+     * 一并滤掉（{@code ComponentDriverService} 单料号 expand 系调用点 :470/:536/:573/:580/:619
+     * 实测复现）。🚨 只能加宽到「这一个成品自己的闭包」，绝不能传整单料号池——单料号路径没有像
+     * {@code expandMulti} 那样的 {@code rootsByMaterial} fan-out 回分步骤，加宽到整单池会把别的
+     * 成品的行错误地带进这一张卡（D-58 明令，见 {@code BomTreeVarsContext.Vars#materialsByRoot}）。
+     *
+     * @param widenedHfPartNos 该成品自己的 BOM 闭包（含自身）；{@code null}/空 = 退化为
+     *                         {@code List.of(partNo)}，与未加宽时逐位等价（AC-10 零回归）。
+     */
+    public CompletableFuture<List<Map<String, Object>>> loadByPath(String path,
+                                                                    Map<String, Object> driverRow,
+                                                                    String partNo,
+                                                                    List<String> widenedHfPartNos,
+                                                                    UUID customerId) {
+        Integer ctxVersion = PartVersionContext.get();
+        return loadByPath(path, driverRow, partNo, widenedHfPartNos, customerId, ctxVersion);
+    }
+
+    /**
+     * task-260819 D-58：{@link #loadByPath(String, Map, String, List, UUID)} 的 6-arg 核心方法
+     * （对应既有 5-arg {@link #loadByPath(String, Map, String, UUID, Integer)}）。整段方法体是该
+     * 5-arg 方法的独立拷贝，唯一差异是 {@code partNos} 变量的来源与 cache key 多带一维——见方法体
+     * 内联注释标注的两处改动点，其余逐行相同。
+     */
+    public CompletableFuture<List<Map<String, Object>>> loadByPath(String path,
+                                                                    Map<String, Object> driverRow,
+                                                                    String partNo,
+                                                                    List<String> widenedHfPartNos,
+                                                                    UUID customerId,
+                                                                    Integer partVersion) {
+        if (path == null || path.isBlank()) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+
+        String normalizedPath = normalizePath(path);
+        if (sqlViewExecutor.isSqlViewPath(normalizedPath)) {
+            Object _lineIdObj = (driverRow != null) ? driverRow.get("quotation_line_item_id") : null;
+            final UUID viewLineItemId = (_lineIdObj instanceof UUID u) ? u
+                    : (_lineIdObj != null ? UUID.fromString(_lineIdObj.toString()) : null);
+            com.cpq.datasource.sqlview.SqlViewRuntimeContext.Snapshot _own =
+                    com.cpq.datasource.sqlview.SqlViewRuntimeContext.get();
+            final String _ownerTag = (_own != null ? _own.componentId : null) + "/"
+                    + (_own != null ? _own.templateId : null);
+            final UUID _quotIdForKey = QuotationIdContext.get();
+            // task-260819 D-58 改动点①：cache key 必须含加宽列表本身（或其 hash）——结果随
+            // widenedHfPartNos 变化，不含这一维会让同一 (path,partNo,customerId) 在不同 BOM 闭包下
+            // 复用同一份缓存、串数据（用户裁决第 2 条要求）。
+            final String _wideTag = (widenedHfPartNos != null && !widenedHfPartNos.isEmpty())
+                    ? ":w" + Integer.toHexString(widenedHfPartNos.hashCode()) : "";
+            return resultCache.computeIfAbsent(
+                    scopedCacheKey(normalizedPath + "::" + partNo + "::" + customerId + "::" + viewLineItemId
+                            + "::" + _ownerTag + "::" + _quotIdForKey + _wideTag), key -> {
+                try {
+                    RuntimeContext ctx = new RuntimeContext();
+                    UUID quotIdSv = _quotIdForKey;
+                    if (customerId != null || quotIdSv != null) {
+                        ctx.quotation = new RuntimeContext.QuotationContext(quotIdSv, customerId);
+                    }
+                    if (viewLineItemId != null) {
+                        ctx.lineItem = new RuntimeContext.LineItemContext(partNo, null, viewLineItemId);
+                    }
+                    // task-260819 D-58 改动点②：outer hfPartNos 过滤器用调用方传入的加宽闭包，
+                    // 而不是内部现包的 List.of(partNo)——这是本重载与既有 5-arg 方法唯一的语义差异。
+                    List<String> partNos = (widenedHfPartNos != null && !widenedHfPartNos.isEmpty())
+                            ? widenedHfPartNos
+                            : ((partNo != null && !partNo.isBlank()) ? List.of(partNo) : null);
+                    List<Map<String, Object>> rows;
+                    if (sqlViewExecutor.isDriverViewPath(normalizedPath)) {
+                        rows = sqlViewExecutor.executeAllRows(normalizedPath, ctx, partNos);
+                    } else {
+                        rows = sqlViewExecutor.execute(normalizedPath, ctx, partNos);
+                    }
+                    return CompletableFuture.completedFuture(stableSort(rows));
+                } catch (Exception e) {
+                    LOG.warnf("DataLoader sql-view-ctx(widened) failed for path='%s': %s", normalizedPath, e.getMessage());
+                    CompletableFuture<List<Map<String, Object>>> failed = new CompletableFuture<>();
+                    failed.completeExceptionally(e);
+                    return failed;
+                }
+            });
+        }
+
+        boolean noDriver = (driverRow == null || driverRow.isEmpty());
+        boolean noPartNo = (partNo == null || partNo.isBlank());
+        boolean noCustomer = (customerId == null);
+        boolean noVersion = (partVersion == null);
+        if (noDriver && noPartNo && noCustomer && noVersion) {
+            return loadByPath(path);
+        }
+        String rewritten = implicitJoinRewriter.rewriteWithContext(path, driverRow, partNo, customerId, partVersion,
+                com.cpq.datapath.sql.SchemaContext.defaultContext());
+        return loadByPath(rewritten);
+    }
+
+    /**
      * 多值入口 — 批量合桶专用:一次执行 SQL 视图,返回 :hfPartNos = ANY(partNos) 命中的所有行。
      *
      * <p>用途:`ComponentResource.batchExpand` 的"产品卡片维度合桶"使用。多个 task(同 componentId/

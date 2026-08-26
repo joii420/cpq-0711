@@ -99,6 +99,97 @@ public class BomTreeRenderService {
     }
 
     /**
+     * task-260819 B-19/B-21（D-52/D-56）产物：整单 BOM 料号并集 + 「后代→根」映射，同一次树遍历
+     * 产出，不为映射再查一次（B-21 硬约束②）。
+     */
+    public static final class MaterialUnionResult {
+        /** 整单 BOM 料号并集（含各根自身），供 {@code :total_material_no} 绑定（AC-58）。 */
+        public final List<String> totalMaterialNo;
+        /**
+         * 料号 → 归属的根成品料号列表。一个子件可能同时属于多个根（两个成品共用同一子件时，
+         * AC-62③ 要求该子件行必须同时出现在各自根的桶里，各自独立、不互相吞掉）——因此每个
+         * 料号对应的是 {@code List<String>} 而非单值。查不到的料号（不属于本次任何根的 BOM
+         * 闭包）不会出现在本 map 里，消费方按 B-21 约定的兜底语义自行处理（按其自身入桶）。
+         */
+        public final Map<String, List<String>> rootsByMaterial;
+        /**
+         * task-260819 B+（D-58）：根成品料号 → 它自己的 BOM 闭包（含自身）。{@code g.cardMaterialNo}
+         * 原样带出（已是 root→该根下全部料号 的形状），供 {@code ComponentDriverService} 单料号
+         * {@code loadByPath} 调用点加宽 outer {@code hfPartNos} 用——🚨 只能用这个，不能用
+         * {@code totalMaterialNo}（那是整单池，单卡路径没有回分步骤，会把别的成品的行带进来）。
+         */
+        public final Map<String, List<String>> materialsByRoot;
+
+        MaterialUnionResult(List<String> totalMaterialNo, Map<String, List<String>> rootsByMaterial,
+                             Map<String, List<String>> materialsByRoot) {
+            this.totalMaterialNo = totalMaterialNo;
+            this.rootsByMaterial = rootsByMaterial;
+            this.materialsByRoot = materialsByRoot;
+        }
+    }
+
+    /**
+     * task-260819 B-19/B-21：整单（或调用方传入的这几行）BOM 料号并集，复用与 {@link #renderInternal}
+     * 完全相同的口径（seed 去重 → {@link CostingBomTreeConfig#findActive(String)} 生效配置 → 递归
+     * CTE {@link #queryRecursive} → {@link CostingTreeGrouping#group}），不另写第二套算法（D-50 要
+     * 收敛的正是这个）。
+     *
+     * <p>调用惯例延续 {@link #render}：传几行就按这几行算——单行调用（{@code List.of(li)}）算的是
+     * 「这一行自己的 BOM 闭包」，批量调用（整单 {@code lines}）算的是整单并集；本方法与 {@code render}
+     * 一样，每次调用只发一次递归 SQL（N+1 约束②：SQL 条数是常数，与传入的行数无关）。
+     *
+     * @param lineItems 本次要算并集的报价行（只读 {@code productPartNoSnapshot} 字段，轻量携带体亦可）
+     * @param usage     {@code CostingBomTreeConfig} 的 usage 维度（报价侧固定传 {@code "QUOTE"}）
+     * @return 种子为空时两个字段均为空集合（非 null）
+     */
+    public MaterialUnionResult collectTotalMaterialNoUnion(List<QuotationLineItem> lineItems, String usage) {
+        LinkedHashSet<String> seed = new LinkedHashSet<>();
+        if (lineItems != null) {
+            for (QuotationLineItem li : lineItems) {
+                if (li == null) continue;
+                String root = li.productPartNoSnapshot;
+                if (root == null || root.isBlank()) continue;
+                seed.add(root);
+            }
+        }
+        if (seed.isEmpty()) {
+            return new MaterialUnionResult(new ArrayList<>(), new LinkedHashMap<>(), new LinkedHashMap<>());
+        }
+        String effUsage = (usage == null || usage.isBlank()) ? "COSTING" : usage;
+        CostingBomTreeConfig cfg = CostingBomTreeConfig.findActive(effUsage);
+        if (cfg == null) {
+            throw new BusinessException(400, "未配置生效的" + ("QUOTE".equals(effUsage) ? "报价" : "核价")
+                    + "树递归 SQL（costing_bom_tree_config 无 usage=" + effUsage + " 且 isActive=true 记录）");
+        }
+        List<CostingTreeNode> rows;
+        BomTreeVarsContext.set(new BomTreeVarsContext.Vars(new ArrayList<>(seed), null));
+        try {
+            rows = queryRecursive(cfg.sqlTemplate, new ArrayList<>(seed), java.util.Collections.emptyMap());
+        } finally {
+            BomTreeVarsContext.clear();
+        }
+        CostingTreeGrouping.Result g = CostingTreeGrouping.group(rows);
+
+        // 「后代→根」映射：g.cardMaterialNo 是 root -> 该根下全部料号（含根自身）的集合，
+        // 本处反向展开——同一料号出现在多个根的集合里时，rootsByMaterial 里就是多值 List
+        // （AC-62③ 不串单的数据结构基础）。纯内存反转，不触发任何额外查询（N+1 约束②）。
+        Map<String, List<String>> rootsByMaterial = new LinkedHashMap<>();
+        for (Map.Entry<String, LinkedHashSet<String>> e : g.cardMaterialNo.entrySet()) {
+            String root = e.getKey();
+            for (String mat : e.getValue()) {
+                rootsByMaterial.computeIfAbsent(mat, k -> new ArrayList<>()).add(root);
+            }
+        }
+        // 「根→自身闭包」：g.cardMaterialNo 本身就是这个形状(root -> LinkedHashSet<material>)，
+        // 转成 List<String> 即可直接用，不需要再遍历一次树（同一次 group() 结果两处消费，N+1 约束②）。
+        Map<String, List<String>> materialsByRoot = new LinkedHashMap<>();
+        for (Map.Entry<String, LinkedHashSet<String>> e : g.cardMaterialNo.entrySet()) {
+            materialsByRoot.put(e.getKey(), new ArrayList<>(e.getValue()));
+        }
+        return new MaterialUnionResult(new ArrayList<>(g.totalMaterialNo), rootsByMaterial, materialsByRoot);
+    }
+
+    /**
      * 整单渲染入口。
      *
      * @param templateId 本组 line items 共用的模板 ID（见类注释「单模板假设」）

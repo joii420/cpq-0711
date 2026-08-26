@@ -33,6 +33,7 @@ import FormulaBindingConsolidateDrawer from './FormulaBindingConsolidateDrawer';
 import ConfigGuideDrawer from './ConfigGuideDrawer';
 import FormulaCycleDrawer, { type FormulaCycle } from './FormulaCycleDrawer';
 import SqlViewListPanel from './SqlViewListPanel';
+import SqlViewBuilderTab, { type SqlViewBuilderTabHandle } from './SqlViewBuilderTab';
 import TabJoinFormulaDrawer, { type TabJoinFormulaSavePayload } from '../template/TabJoinFormulaDrawer';
 import { tokensToDrawerExpression } from './formulaSerialize';
 import { SortableTable, DragHandle } from '../../components/SortableTable';
@@ -1080,12 +1081,23 @@ const ComponentManagement: React.FC = () => {
   // 前端不再展示该开关、也不再随保存提交它——此状态仅供 buildDraftSnapshot 保持类型兼容
   // (草稿快照结构/既有单测未变)，只读镜像加载值，不接受用户输入，不影响任何渲染判断。
   const [bomRecursiveExpand, setBomRecursiveExpand] = useState<boolean>(false);
-  // task-0721 F2：页签类型属性(可空;5 类值域 BOM/材质元素/零件/外购件/主件)。
+  // task-0721 F2：页签类型属性(可空;6 类值域 BOM/材质元素/零件/外购件/主件/费用类，
+  // 「费用类」于 task-260819 F-15/D-36 补入)。
   // 2026-07-21 起与 bomRecursiveExpand 后端联动派生(选 BOM → true；其余 → false)，
   // 前端只维护这一个字段，不再单独暴露渲染开关。
   const [tabType, setTabType] = useState<string | undefined>(undefined);
-  // task-0721 F2（2026-07-21 补充，需求说明 §4.3 规则一）：料号列/料号名称列字段名。
-  // 从该组件已有字段(fields state)中选，不是自由输入；非树页签(tabType∈{材质元素,零件,外购件,主件})必填。
+  // 双保存按钮问题修复（2026-08-22 紧急，主线方案 2）：详情页有「取数配置」Tab 自己的保存按钮，也有
+  // 外层这个「保存」——真实事故是用户点了外层、看到"保存成功"，以为取数配置也存了，实际外层保存
+  // 走的是 PUT /components/{id}（只存组件基本信息），取数配置一个字节都没落库。
+  // activeDetailTabKey 追踪当前详情页哪个 Tab 在前台；builderTabDirty 由 SqlViewBuilderTab 的
+  // onDirtyChange 上抛（判据 = sel.length>0，与它自己 handleCancel() 的"未保存修改"同一口径）；
+  // builderTabRef 供外层保存拦截后直接调用该 Tab 的保存动作，不用另写一套。
+  const [activeDetailTabKey, setActiveDetailTabKey] = useState('fields');
+  const [builderTabDirty, setBuilderTabDirty] = useState(false);
+  const builderTabRef = useRef<SqlViewBuilderTabHandle | null>(null);
+  // task-0721 F2（2026-07-23 补充，需求说明 §4.3 规则一）：料号列/料号名称列字段名。
+  // 从该组件已有字段(fields state)中选，不是自由输入；非树页签(tabType∈{材质元素,零件,外购件,主件,费用类}，
+  // D-37 已把「费用类」纳入同一约束)必配料号列或名称列至少一个。
   const [partNoField, setPartNoField] = useState<string | undefined>(undefined);
   const [partNameField, setPartNameField] = useState<string | undefined>(undefined);
   // task-0729 屏 8：元素列/元素单价列/货币列（组件级，与 partNoField 平级，见 types.ts 注释）
@@ -1421,11 +1433,30 @@ const ComponentManagement: React.FC = () => {
   // Save component
   const handleSave = async () => {
     if (!selectedComponent) return;
+    // 双保存按钮问题修复（2026-08-22 紧急，主线方案 2）：早期 guard clause，不改动下面任何既有逻辑
+    // （partNoField/elementCodeField 等一片校验原样保留，见下方注释——那片逻辑本轮不碰）。
+    // 用户真实事故：在「取数配置」Tab 里改了列，点了这个外层「保存」（走 PUT /components/{id}，
+    // 只存组件基本信息），看到"保存成功"提示，以为取数配置也存了——实际它一个字节都没落库，刷新就没了。
+    // 判据：当前详情页停在「取数配置」Tab 且该 Tab 有未保存编辑（SqlViewBuilderTab 通过
+    // onDirtyChange 精确上抛，见该文件 hasUnsavedEdits）——拦下这次点击，弹窗说明并直接触发 Tab 自己
+    // 的保存（builderTabRef.current.save()），不在这里悄悄替用户决定"到底保存哪个"。
+    if (activeDetailTabKey === 'sql-view-builder' && builderTabDirty) {
+      Modal.confirm({
+        title: '取数配置有未保存的改动',
+        content: '这个「保存」按钮只保存组件基本信息，不包含「取数配置」页签里的改动。请先保存取数配置，否则这部分改动刷新后会丢失。',
+        okText: '去保存取数配置', cancelText: '我知道了，稍后处理',
+        onOk: () => { builderTabRef.current?.save(); },
+      });
+      return;
+    }
     // task-0721 F2（2026-07-23 修订，需求说明 §4.3 规则一「匹配标识放宽」）：非树页签
     // (材质元素/零件/外购件/主件) 的匹配标识不一定是料号，也可能是名称（如「外购件/费用」类
     // 页签用"料件名称=组成件1"而无料号列）——放宽为 partNoField 或 partNameField 至少配一个，
     // 否则该页签既标了类型却无任何可匹配标识，等于白标。后端保存期也会校验(400)，
     // 这里做前端先行校验只为更快反馈，不替代后端权威判定。
+    // task-260819 F-15（D-37）：判据是 `tabType !== 'BOM'`（非枚举白名单），「费用类」自动落进
+    // 同一约束，不需要为它单独加分支——已按此核对过一遍，行为符合 D-37「费用类必配料号列或名称列
+    // 至少一个」的裁决。
     if (
       selectedComponent.componentType === 'NORMAL'
       && tabType
@@ -1662,6 +1693,8 @@ const ComponentManagement: React.FC = () => {
     <>
       <Tabs
         size="small"
+        activeKey={activeDetailTabKey}
+        onChange={setActiveDetailTabKey}
         items={[
           {
             key: 'fields', label: '字段配置',
@@ -1704,6 +1737,41 @@ const ComponentManagement: React.FC = () => {
                 dataDriverPath={dataDriverPath}
               />
             ),
+          },
+          {
+            key: 'sql-view-builder', label: '取数配置',
+            children: selectedComponent ? (
+              <SqlViewBuilderTab
+                ref={builderTabRef}
+                componentId={selectedComponent.id}
+                initialTabType={tabType}
+                manualFieldOptions={fieldNameOptions}
+                onDirtyChange={setBuilderTabDirty}
+                onSaved={async () => {
+                  if (!selectedComponent) return;
+                  try {
+                    const fresh = (await componentService.getById(selectedComponent.id)).data as ComponentItem;
+                    setTabType(fresh.tabType as any);
+                    setPartNoField(fresh.partNoField);
+                    setPartNameField(fresh.partNameField);
+                    setElementCodeField(fresh.elementCodeField);
+                    setElementPriceField(fresh.elementPriceField);
+                    setElementCurrencyField(fresh.elementCurrencyField);
+                    setRowKeyFields(fresh.rowKeyFields ?? []);
+                    setDataDriverPath(fresh.dataDriverPath ?? '');
+                    // 后端返回的 fields 不带前端本地 key（提交前已被 stripFieldKeys 剥掉），
+                    // 若直接 setFields 会导致所有行的 key 都是 undefined ——
+                    // FieldConfigTable.updateField 按 key 匹配行，undefined === undefined 恒真，
+                    // 改一个字段名会把全部字段一起改掉。这里是「取数配置」保存后刷新字段配置的路径，必须重建 key。
+                    setFields(rebuildFieldKeys(fresh.fields ?? []));
+                    setSelectedComponent(prev => (prev && prev.id === fresh.id ? { ...prev, ...fresh } : prev));
+                    void refreshRowKeyCandidates(fresh.id, fresh.dataDriverPath ?? '', fresh.fields ?? []);
+                  } catch (e: any) {
+                    message.error('刷新组件失败: ' + (e?.message ?? ''));
+                  }
+                }}
+              />
+            ) : null,
           },
           {
             key: 'formulas', label: '公式',
@@ -1814,7 +1882,11 @@ const ComponentManagement: React.FC = () => {
                         选 BOM 时后端自动置 bomRecursiveExpand=true，改为其他值/清空自动置 false。
                         前端不再单独暴露 bomRecursiveExpand 开关（用户不需要理解两个字段的关系），
                         也不再随保存请求提交该字段，避免用陈旧本地态覆盖后端的自动派生结果。 */}
-                    <Tooltip title="页签类型：BOM = 树状页签(选中后核价/报价按 BOM 树渲染)；材质元素/零件/外购件 = 该页签料号的业务语义(供树上加叶子类型判定用)；主件 = 成品/树根。可空(存量组件无此属性)。若组件已被核价模板引用，改为 BOM 可能返回 400（该组件已被核价模板引用，无法设为 BOM 类型）。">
+                    {/* F-15（D-36 裁决，task-260819 第二轮）：5→6 项，新增「费用类」。
+                        📌 D-39（存储值与显示名故意不同，与 D-12「列名=来源、字段名=显示」同源）：
+                        第 5 类 value 必须是 'BOM'（与 SqlViewBuilderTab.tsx 的 TAB_TYPES、后端
+                        VALID_TAB_TYPES 三处逐字一致，现网已有该值数据不可改），label 显示「BOM 树」。 */}
+                    <Tooltip title="页签类型：BOM = 树状页签(选中后核价/报价按 BOM 树渲染)；材质元素/零件/外购件/费用类 = 该页签料号的业务语义(供树上加叶子类型判定用)；主件 = 成品/树根。可空(存量组件无此属性)。若组件已被核价模板引用，改为 BOM 可能返回 400（该组件已被核价模板引用，无法设为 BOM 类型）。">
                       <Select
                         allowClear
                         placeholder="页签类型"
@@ -1822,11 +1894,12 @@ const ComponentManagement: React.FC = () => {
                         value={tabType}
                         onChange={(v) => setTabType(v)}
                         options={[
-                          { value: 'BOM', label: 'BOM' },
+                          { value: 'BOM', label: 'BOM 树' },
                           { value: '材质元素', label: '材质元素' },
                           { value: '零件', label: '零件' },
                           { value: '外购件', label: '外购件' },
                           { value: '主件', label: '主件' },
+                          { value: '费用类', label: '费用类' },
                         ]}
                       />
                     </Tooltip>

@@ -1,0 +1,580 @@
+{
+  "_meta": {
+    "source": "原型图/语义图管理页/data.js（定稿基线，D-31~D-35）",
+    "generatedBy": "主线",
+    "nodeCount": 17,
+    "lookupCount": 6,
+    "logicalEdgeCount": 19,
+    "connectionCount": 22,
+    "tabViewCount": 7,
+    "tabTypeCount": 6,
+    "orphanCount": 4
+  },
+  "nodes": [
+    {
+      "name": "物料主档 / 单重",
+      "table": "material_master",
+      "dims": [],
+      "cols": 6,
+      "usedBy": [
+        "主件 · 主源"
+      ],
+      "discriminator": null,
+      "orphan": false
+    },
+    {
+      "name": "客户料号与宏丰料号的关系",
+      "table": "material_customer_map",
+      "dims": [],
+      "cols": 8,
+      "usedBy": [
+        "主件"
+      ],
+      "discriminator": null,
+      "orphan": false
+    },
+    {
+      "name": "物料与元素BOM",
+      "table": "element_bom_item",
+      "dims": [
+        "材质料号",
+        "元素"
+      ],
+      "cols": 6,
+      "usedBy": [
+        "材质元素 · 主源"
+      ],
+      "discriminator": null,
+      "orphan": false
+    },
+    {
+      "name": "元素回收折扣",
+      "table": "element_bom_item",
+      "dims": [
+        "材质料号",
+        "元素"
+      ],
+      "cols": 3,
+      "usedBy": [
+        "材质元素"
+      ],
+      "discriminator": null,
+      "orphan": false
+    },
+    {
+      "name": "物料BOM",
+      "table": "material_bom_item",
+      "dims": [
+        "组成件料号"
+      ],
+      "cols": 9,
+      "usedBy": [
+        "材质元素",
+        "零件",
+        "外购件 · 主源",
+        "BOM 树 · 主源"
+      ],
+      "discriminator": null,
+      "orphan": false
+    },
+    {
+      "name": "自制加工费",
+      "table": "unit_price",
+      "dims": [
+        "零件料号"
+      ],
+      "cols": 5,
+      "usedBy": [
+        "零件 · 主源"
+      ],
+      "discriminator": null,
+      "orphan": false
+    },
+    {
+      "name": "成品其他费用",
+      "table": "unit_price",
+      "dims": [
+        "要素"
+      ],
+      "cols": 5,
+      "usedBy": [
+        "主件"
+      ],
+      "discriminator": null,
+      "orphan": false
+    },
+    {
+      "name": "组成件其他费用",
+      "table": "unit_price",
+      "dims": [
+        "组成件料号"
+      ],
+      "cols": 5,
+      "usedBy": [
+        "外购件"
+      ],
+      "discriminator": null,
+      "orphan": false
+    },
+    {
+      "name": "电镀费用",
+      "table": "unit_price",
+      "dims": [
+        "零件料号",
+        "费用类型"
+      ],
+      "cols": 5,
+      "usedBy": [
+        "零件"
+      ],
+      "discriminator": null,
+      "orphan": false
+    },
+    {
+      "name": "电镀方案",
+      "table": "plating_scheme",
+      "dims": [],
+      "cols": 8,
+      "usedBy": [],
+      "discriminator": null,
+      "orphan": true
+    },
+    {
+      "name": "组装加工费",
+      "table": "capacity",
+      "dims": [
+        "工序号"
+      ],
+      "cols": 7,
+      "usedBy": [
+        "主件"
+      ],
+      "discriminator": null,
+      "orphan": false
+    },
+    {
+      "name": "来料固定加工费",
+      "table": "unit_price",
+      "dims": [
+        "投入料号"
+      ],
+      "cols": 9,
+      "usedBy": [
+        "费用类 · 主源"
+      ],
+      "discriminator": "price_type='INCOMING_MATERIAL_PROCESS'",
+      "orphan": false
+    },
+    {
+      "name": "来料其他费用",
+      "table": "unit_price",
+      "dims": [
+        "投入料号",
+        "要素"
+      ],
+      "cols": 6,
+      "usedBy": [
+        "费用类 · 主源"
+      ],
+      "discriminator": "price_type='INCOMING_MATERIAL_OTHER'",
+      "orphan": false
+    },
+    {
+      "name": "来料回收折扣",
+      "table": "unit_price",
+      "dims": [
+        "投入料号",
+        "直接父件"
+      ],
+      "cols": 7,
+      "usedBy": [
+        "BOM 树"
+      ],
+      "discriminator": "price_type='INCOMING_MATERIAL_RECYCLE'",
+      "orphan": false
+    },
+    {
+      "name": "来料年降",
+      "table": "annual_discount",
+      "dims": [
+        "投入料号",
+        "年降顺序"
+      ],
+      "cols": 7,
+      "usedBy": [],
+      "discriminator": "discount_type='INCOMING_MATERIAL'",
+      "orphan": true
+    },
+    {
+      "name": "组装加工费年降",
+      "table": "annual_discount",
+      "dims": [
+        "工序号",
+        "年降顺序"
+      ],
+      "cols": 7,
+      "usedBy": [],
+      "discriminator": "discount_type='ASSEMBLY_PROCESS'",
+      "orphan": true
+    },
+    {
+      "name": "年降系数",
+      "table": "annual_discount",
+      "dims": [
+        "年降顺序"
+      ],
+      "cols": 7,
+      "usedBy": [],
+      "discriminator": "discount_type='FINISHED'",
+      "orphan": true
+    }
+  ],
+  "lookups": [
+    {
+      "name": "物料主档",
+      "kind": "LOOKUP",
+      "key": "material_no"
+    },
+    {
+      "name": "材质库",
+      "kind": "LOOKUP",
+      "key": "code"
+    },
+    {
+      "name": "工序库",
+      "kind": "LOOKUP",
+      "key": "process_no"
+    },
+    {
+      "name": "元素库",
+      "kind": "LOOKUP",
+      "key": "element_code"
+    },
+    {
+      "name": "客户料号关系",
+      "kind": "LOOKUP",
+      "key": "material_no"
+    },
+    {
+      "name": "价格策略 f_material_element_price",
+      "kind": "FUNCTION",
+      "key": "f_material_element_price(:customerCode, :priceBaseDate) cep"
+    }
+  ],
+  "edges": [
+    {
+      "id": "E01",
+      "from": "物料主档 / 单重",
+      "to": "客户料号与宏丰料号的关系",
+      "kind": "JOIN",
+      "cardinality": "MANY_TO_ONE",
+      "on": "mm.material_no = mcm.material_no",
+      "fallbackOrder": null,
+      "coalesceGroup": null,
+      "tabs": [
+        "主件"
+      ]
+    },
+    {
+      "id": "E02",
+      "from": "物料主档 / 单重",
+      "to": "成品其他费用",
+      "kind": "GRAIN",
+      "cardinality": "ONE_TO_MANY",
+      "on": "fo.code = mm.material_no",
+      "fallbackOrder": null,
+      "coalesceGroup": null,
+      "tabs": [
+        "主件"
+      ]
+    },
+    {
+      "id": "E03",
+      "from": "物料主档 / 单重",
+      "to": "组装加工费",
+      "kind": "GRAIN",
+      "cardinality": "ONE_TO_MANY",
+      "on": "ca.material_no = mm.material_no",
+      "fallbackOrder": null,
+      "coalesceGroup": null,
+      "tabs": [
+        "主件"
+      ]
+    },
+    {
+      "id": "E04",
+      "from": "物料与元素BOM",
+      "to": "元素回收折扣",
+      "kind": "SAME",
+      "cardinality": "MANY_TO_ONE",
+      "on": "（同表同粒度，无连接键）",
+      "fallbackOrder": null,
+      "coalesceGroup": null,
+      "tabs": [
+        "材质元素"
+      ]
+    },
+    {
+      "id": "E05",
+      "from": "物料与元素BOM",
+      "to": "物料BOM",
+      "kind": "SUB",
+      "cardinality": "MANY_TO_ONE",
+      "on": "rb.material_no = ebi.material_no AND rb.component_no = ebi.material_part_no",
+      "fallbackOrder": null,
+      "coalesceGroup": null,
+      "tabs": [
+        "材质元素"
+      ]
+    },
+    {
+      "id": "E06",
+      "from": "物料与元素BOM",
+      "to": "材质库",
+      "kind": "LOOKUP",
+      "cardinality": "MANY_TO_ONE",
+      "on": "ebi.material_part_no = mr.code",
+      "fallbackOrder": 0,
+      "coalesceGroup": "ebi_name",
+      "tabs": [
+        "材质元素"
+      ]
+    },
+    {
+      "id": "E07",
+      "from": "物料与元素BOM",
+      "to": "物料主档",
+      "kind": "LOOKUP",
+      "cardinality": "MANY_TO_ONE",
+      "on": "ebi.material_part_no = mm2.material_no",
+      "fallbackOrder": 1,
+      "coalesceGroup": "ebi_name",
+      "tabs": [
+        "材质元素"
+      ]
+    },
+    {
+      "id": "E08",
+      "from": "物料与元素BOM",
+      "to": "元素库",
+      "kind": "LOOKUP",
+      "cardinality": "MANY_TO_ONE",
+      "on": "ebi.component_no = el.element_code",
+      "fallbackOrder": 0,
+      "coalesceGroup": null,
+      "tabs": [
+        "材质元素"
+      ]
+    },
+    {
+      "id": "E09",
+      "from": "物料与元素BOM",
+      "to": "价格策略 f_material_element_price",
+      "kind": "PRICE",
+      "cardinality": "MANY_TO_ONE",
+      "on": "cep.element_code = ebi.component_no AND cep.material_no = <hf_part_no 表达式>",
+      "fallbackOrder": null,
+      "coalesceGroup": null,
+      "tabs": [
+        "材质元素"
+      ]
+    },
+    {
+      "id": "E10",
+      "from": "自制加工费",
+      "to": "电镀费用",
+      "kind": "SUB",
+      "cardinality": "MANY_TO_ONE",
+      "on": "pl.code = up.code AND pl.price_type = 'PLATING'",
+      "fallbackOrder": null,
+      "coalesceGroup": null,
+      "tabs": [
+        "零件"
+      ]
+    },
+    {
+      "id": "E11",
+      "from": "自制加工费",
+      "to": "物料BOM",
+      "kind": "SUB",
+      "cardinality": "MANY_TO_ONE",
+      "on": "ab.material_no = up.finished_material_no AND ab.component_no = up.code",
+      "fallbackOrder": null,
+      "coalesceGroup": null,
+      "tabs": [
+        "零件"
+      ]
+    },
+    {
+      "id": "E12",
+      "from": "自制加工费",
+      "to": "物料主档",
+      "kind": "LOOKUP",
+      "cardinality": "MANY_TO_ONE",
+      "on": "up.code = mm.material_no",
+      "fallbackOrder": 0,
+      "coalesceGroup": null,
+      "tabs": [
+        "零件"
+      ]
+    },
+    {
+      "id": "E13",
+      "from": "自制加工费",
+      "to": "工序库",
+      "kind": "LOOKUP",
+      "cardinality": "MANY_TO_ONE",
+      "on": "up.operation_no = pm.process_no",
+      "fallbackOrder": 0,
+      "coalesceGroup": null,
+      "tabs": [
+        "零件"
+      ]
+    },
+    {
+      "id": "E14",
+      "from": "物料BOM",
+      "to": "组成件其他费用",
+      "kind": "SUB",
+      "cardinality": "MANY_TO_ONE",
+      "on": "co.finished_material_no = mbi.material_no AND co.code = mbi.component_no",
+      "fallbackOrder": null,
+      "coalesceGroup": null,
+      "tabs": [
+        "外购件"
+      ]
+    },
+    {
+      "id": "E15",
+      "from": "物料BOM",
+      "to": "物料主档",
+      "kind": "LOOKUP",
+      "cardinality": "MANY_TO_ONE",
+      "on": "mbi.component_no = mm.material_no",
+      "fallbackOrder": 0,
+      "coalesceGroup": null,
+      "tabs": [
+        "外购件",
+        "BOM 树"
+      ]
+    },
+    {
+      "id": "E16",
+      "from": "物料BOM",
+      "to": "工序库",
+      "kind": "LOOKUP",
+      "cardinality": "MANY_TO_ONE",
+      "on": "mbi.operation_no = pm.process_no",
+      "fallbackOrder": 0,
+      "coalesceGroup": null,
+      "tabs": [
+        "外购件"
+      ]
+    },
+    {
+      "id": "E17",
+      "from": "来料固定加工费",
+      "to": "物料主档",
+      "kind": "LOOKUP",
+      "cardinality": "MANY_TO_ONE",
+      "on": "up.code = mm.material_no",
+      "fallbackOrder": 0,
+      "coalesceGroup": "ll_name",
+      "tabs": [
+        "费用类"
+      ]
+    },
+    {
+      "id": "E18",
+      "from": "来料固定加工费",
+      "to": "材质库",
+      "kind": "LOOKUP",
+      "cardinality": "MANY_TO_ONE",
+      "on": "mr.code = up.code",
+      "fallbackOrder": 1,
+      "coalesceGroup": "ll_name",
+      "tabs": [
+        "费用类"
+      ]
+    },
+    {
+      "id": "E19",
+      "from": "来料固定加工费",
+      "to": "工序库",
+      "kind": "LOOKUP",
+      "cardinality": "MANY_TO_ONE",
+      "on": "pm.process_no = up.operation_no",
+      "fallbackOrder": 0,
+      "coalesceGroup": null,
+      "tabs": [
+        "费用类"
+      ]
+    },
+    {
+      "id": "E20",
+      "from": "来料其他费用",
+      "to": "物料主档",
+      "kind": "LOOKUP",
+      "cardinality": "MANY_TO_ONE",
+      "on": "mm.material_no = up.code",
+      "fallbackOrder": 0,
+      "coalesceGroup": "lqt_name",
+      "tabs": [
+        "费用类"
+      ]
+    },
+    {
+      "id": "E21",
+      "from": "来料其他费用",
+      "to": "材质库",
+      "kind": "LOOKUP",
+      "cardinality": "MANY_TO_ONE",
+      "on": "mr.code = up.code",
+      "fallbackOrder": 1,
+      "coalesceGroup": "lqt_name",
+      "tabs": [
+        "费用类"
+      ]
+    },
+    {
+      "id": "E22",
+      "from": "物料BOM",
+      "to": "来料回收折扣",
+      "kind": "SUB",
+      "cardinality": "MANY_TO_ONE",
+      "on": "r.code = mbi.component_no AND r.finished_material_no = mbi.material_no",
+      "fallbackOrder": null,
+      "coalesceGroup": null,
+      "tabs": [
+        "BOM 树"
+      ]
+    }
+  ],
+  "tabViews": [
+    {
+      "tab": "主件"
+    },
+    {
+      "tab": "材质元素"
+    },
+    {
+      "tab": "零件"
+    },
+    {
+      "tab": "外购件"
+    },
+    {
+      "tab": "费用类",
+      "variant": "来料固定加工费",
+      "view": "ll_view · 13 个组件"
+    },
+    {
+      "tab": "费用类",
+      "variant": "来料其他费用",
+      "view": "lqt_view · 6 个组件"
+    },
+    {
+      "tab": "BOM 树"
+    }
+  ]
+}
