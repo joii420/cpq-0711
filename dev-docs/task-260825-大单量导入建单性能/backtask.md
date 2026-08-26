@@ -144,3 +144,52 @@
 - 报出**分批后的四步埋点** + **每批耗时**，与改动前的 `③=58679ms` 直接对照
 - 用 T-1 复核 `quotation_view_structure` 计数**仍 ≤4**（防 B-12 的自伤）
 - ⚠️ **worktree 内不要与其它进程并发跑 mvn** —— 上一轮并发踩 `target/` 造出过 399 个假失败
+
+---
+
+## 🔴 D-4 返修 · B-15（2026-08-25 亲验暴露，用户裁决方案 E）
+
+### 亲验实测：分批本身成功，外层事务失败
+
+```
+batch=1/7 rows=300 elapsed=8976ms      batch=5/7 rows=300 elapsed=13181ms
+batch=2/7 rows=300 elapsed=9631ms      batch=6/7 rows=300 elapsed=14501ms
+batch=3/7 rows=300 elapsed=11300ms     batch=7/7 rows=45  elapsed=7464ms
+batch=4/7 rows=300 elapsed=12500ms     补算 1845 行（分 7 批，chunk=300）
+```
+
+**7 批全部成功提交，单批最长 14.5s（AC-11 的「单批 ≤20s」已达标）。**
+**库内实测卡片值 `报价空 0 / 核价空 0 / 总 1845` —— 数据完全正确。**
+
+但接口返回 `cardValuesReady:false` + `warnings:["卡片值物化失败…"]` + `costingTreeRows:0`，
+日志 `RollbackException: ARJUNA016102`。
+
+**根因**：`ensureCardValues` 自身仍带 `@Transactional`，**外层事务横跨整个 77.5s 批循环** →
+它自己超 60s 被 reaper 杀 → commit 抛 `RollbackException` → `materialize` 捕获置 `cardValuesReady=false`。
+
+> 🚨 **这个状态比修复前更危险**：修复前是「报失败 + 数据真丢」，现在是「**报失败 + 数据其实是好的**」。
+> 一个说谎的状态位会让用户以为需要重试，实际不用；也会让后续排查从错误的前提出发。
+
+### 为什么选方案 E
+
+外层事务**不持有那 1845 行的任何写锁**（写全在内层 `REQUIRES_NEW` 里），它只护两样：
+① `tryQuotationCalculationLock` 的 `pg_try_advisory_xact_lock`（单飞锁，注释明写「加锁必须早于缺失行
+SELECT，否则两事务都读 NULL → 双重补算」）；② 缺失行 SELECT + `publishedTemplateReader` 门禁校验。
+
+**它是个锁架子，不是干活的事务。** 故给它单独放宽超时，语义完全不变。
+
+| 编号 | 服务的 AC | 任务内容 |
+|---|---|---|
+| **B-15** | AC-1, AC-2, AC-11, AC-12 | 给 `ensureCardValues(UUID, boolean)` 加 **`@io.quarkus.narayana.jta.runtime.TransactionConfiguration(timeout = 600)`**（与既有 `@Transactional` 并存）。⚠️ `TransactionConfiguration` 只在**由该方法开启事务**时生效，须确认它确实是事务起点（`materialize` 不带事务、`BasicDataImportV6Resource` 也不带 → 是起点）。在注释里写明：**放宽的是「锁架子」事务，不是干活的事务；干活的内层批事务仍受默认 60s 约束，单批实测 ≤14.5s** |
+
+### ⚠️ 这是对「明确不做」清单的一次**例外**，已获用户批准
+
+本文件 D-4 小节的「🚫 不加大 Narayana 事务超时」原文仍然有效 —— 它针对的是**干活的事务**
+（③ 那 58.7s 的计算）。B-15 放宽的是**不干活的外层锁架子**，两者性质不同。
+**该例外由用户于 2026-08-25 明确裁决，不得据此推广到其它事务。**
+
+### B-15 已知代价（如实记录，不粉饰）
+
+- 外层事务会占住一个池连接约 **77s**（`quarkus.datasource.jdbc.max-size=20`）
+- **行数再涨会线性变长**（5000 行 ≈ 200s）—— 这不是悬崖但也不优雅。
+  彻底解法是方案 D（`ensureCardValues` 每次只算一批、调用方循环），已记入 `BL-0183` 复评项
