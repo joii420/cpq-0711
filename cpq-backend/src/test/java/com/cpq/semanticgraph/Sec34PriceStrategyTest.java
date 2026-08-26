@@ -194,14 +194,18 @@ class Sec34PriceStrategyTest {
         assertEquals("元素单价", row[1], "① element_price_field 应与所选『元素单价』列逐字一致，实际=" + row[1]);
         assertNull(row[2], "① 未拖货币列时 element_currency_field 应为空，实际=" + row[2]);
 
-        // ②【破坏方式】绕过配置器直接调 PUT /components/{id}，不带 elementCodeField/elementPriceField
+        // ②【破坏方式】绕过配置器直接调 PUT /components/{id}，显式清空 elementCodeField/elementPriceField。
+        // 注：该端点是 PATCH 语义（`if (request.xxx != null)` 才覆盖），裸传 {"name":...} 不带这两个 key
+        // 只会保持原值不变、天然不会触发清空校验，误判为"后端不校验"。必须显式传空字符串才能真正触发清空路径。
         Response bypassResp = RestAssured.given().contentType(ContentType.JSON)
-                .body("{\"name\":\"" + SemanticGraphTestSupport.TAG + "price-bypass-" + UUID.randomUUID() + "\"}")
+                .body("{\"elementCodeField\":\"\",\"elementPriceField\":\"\"}")
                 .put("/api/cpq/components/" + componentId);
         assertEquals(400, bypassResp.statusCode(),
-                "② 直接 PUT 不带元素绑定字段应被拒绝（证明配置器在回填而非后端根本不校验），"
+                "② 直接 PUT 显式清空元素绑定字段应被拒绝（证明配置器在回填而非后端根本不校验），"
                         + "实际=" + bypassResp.statusCode() + " body=" + bypassResp.getBody().asString());
-        assertEquals("COMPONENT_ELEMENT_BINDING_REQUIRED", bypassResp.jsonPath().getString("code"),
+        // 实测响应体错误码嵌在 data.code 而非顶层 code（顶层 code=400 是 HTTP 状态回声）：
+        // {"code":400,"message":"...","data":{"code":"COMPONENT_ELEMENT_BINDING_REQUIRED","missingFields":[...]}}
+        assertEquals("COMPONENT_ELEMENT_BINDING_REQUIRED", bypassResp.jsonPath().getString("data.code"),
                 "② 错误码应为 COMPONENT_ELEMENT_BINDING_REQUIRED，实际=" + bypassResp.getBody().asString());
     }
 
@@ -210,23 +214,24 @@ class Sec34PriceStrategyTest {
     // -------------------------------------------------------------------
     @Test
     @Order(4)
-    @DisplayName("AC-23: 元素键改绑手填字段『元素代码』→ 保存成功，SQL不再输出元素业务列但JOIN仍在")
+    @DisplayName("AC-23: 元素键改绑手填字段『元素代码』→ 保存成功，SQL不再输出元素业务列且编译期不生成价格策略JOIN（D-69）")
     void ac23_formB_elementKeyPointsToManualField() {
-        // 前置：组件中存在一个无取数来源的手填字段「元素代码」——用现有组件字段更新接口手动加一个。
+        // 前置：组件中存在一个无取数来源的手填字段「元素代码」——PUT /components/{id} 带完整 fields 数组
+        // （该端点未注册 PATCH，405；且是整体覆盖 fields 的写法，赤手空拳的组件此时无其它字段冲突）。
         Response addManualField = RestAssured.given().contentType(ContentType.JSON)
                 .body("{\"fields\":[{\"name\":\"元素代码\",\"field_type\":\"INPUT_TEXT\"}]}")
-                .patch("/api/cpq/components/" + componentId);
-        // 该接口不属于本任务范围，仅用于搭前置；若失败也不阻塞其余用例，故此处只记录不强断言。
-        if (addManualField.statusCode() != 200) {
-            System.out.println("[AC-23] 添加手填字段『元素代码』前置失败，status=" + addManualField.statusCode()
-                    + " body=" + addManualField.getBody().asString() + "——本用例前置未就绪，需人工核实组件字段写接口契约");
-        }
+                .put("/api/cpq/components/" + componentId);
+        assertEquals(200, addManualField.statusCode(),
+                "前置：添加手填字段『元素代码』应成功，实际=" + addManualField.statusCode()
+                        + " body=" + addManualField.getBody().asString());
 
+        // priceStrategy DTO（BuilderConfig.PriceStrategyConfig）只有 elementCodeManualField 一个字段——
+        // 用 elementCodeSource/elementCodeField 会被 Jackson 静默丢弃，覆盖从未生效（本轮修正的用例错误）。
         String config = """
                 { "tabType": "材质元素", "columns": [
                   {"sourceNodeKey":"LOOKUP_MATERIAL_RECIPE","sourceColumn":"name","fieldName":"材质名称","isRowKey":true},
                   {"sourceNodeKey":"FUNC_ELEMENT_PRICE","sourceColumn":"unit_price","fieldName":"元素单价"}
-                ], "priceStrategy": {"elementCodeSource": "MANUAL_FIELD", "elementCodeField": "元素代码"} }
+                ], "priceStrategy": {"elementCodeManualField": "元素代码"} }
                 """;
         Response saveResp = save(config);
         assertEquals(200, saveResp.statusCode(), "① 保存应成功: " + saveResp.getBody().asString());
@@ -242,7 +247,10 @@ class Sec34PriceStrategyTest {
         assertNotNull(sql);
         assertFalse(sql.isBlank());
         assertFalse(sql.contains("el.element_code"), "③ 不应再输出元素业务列(el.element_code)，实际:\n" + sql);
-        assertTrue(sql.contains("f_material_element_price("), "③ 价格策略 JOIN 仍应在，实际:\n" + sql);
+        // D-69 改写：手填字段的值在编译期并不存在，无法作为 JOIN 左键；resolvePricePlan() 在形态 B 下
+        // 整组移除价格策略列并返回 null，编译期不追加 pricePlan.joinClause——原断言「JOIN 仍在」已作废。
+        assertFalse(sql.contains("f_material_element_price("),
+                "③ 形态B下编译期不应再生成 f_material_element_price JOIN（D-69：定价改由运行时机制接管），实际:\n" + sql);
     }
 
     // -------------------------------------------------------------------

@@ -15,6 +15,9 @@ import com.cpq.component.service.ComponentSqlViewService;
 import com.cpq.builder.compiler.SemanticCompiler;
 import com.cpq.quotation.entity.QuotationLineItem;
 import com.cpq.quotation.service.BomTreeRenderService;
+import com.cpq.semanticgraph.entity.SemanticEdge;
+import com.cpq.semanticgraph.entity.SemanticNode;
+import com.cpq.semanticgraph.entity.SemanticTabView;
 import com.cpq.semanticgraph.service.SemanticGraphLoader;
 import com.cpq.semanticgraph.service.SemanticGraphSnapshot;
 import com.cpq.template.entity.Template;
@@ -156,7 +159,7 @@ public class BuilderService {
         // 与 customerCode/priceBaseDate 同款字面量替换风格，注入"该料号自己的 BOM 闭包"（成品+
         // 全部后代，D-58「传几行算几行」口径）——复用 BomTreeRenderService.collectTotalMaterialNoUnion，
         // 不另写第二套闭包算法（D-50 要收敛的正是这个）。
-        bound = bindTotalMaterialNo(bound, req.partNo);
+        bound = bindTotalMaterialNo(bound, req.partNo, req.customerCode);
 
         String wrapped = "SELECT * FROM (" + bound + ") __preview";
         List<String> conditions = new ArrayList<>();
@@ -247,18 +250,45 @@ public class BuilderService {
      * 预览页面「未选料号时不该看到任何具体料号的数据行」的直觉一致，且不会把 AC-27/AC-28 那类
      * 「本该 0 行给诊断」的用例升级成一个新的必答问题（保持零回归）。
      */
-    private String bindTotalMaterialNo(String sql, String partNo) {
+    private String bindTotalMaterialNo(String sql, String partNo, String customerCode) {
         if (!TOTAL_MATERIAL_NO_TOKEN.matcher(sql).find()) return sql; // 该 SQL 不含此占位符，零开销跳过
 
         List<String> closure;
-        if (partNo == null || partNo.isBlank()) {
-            closure = List.of();
-        } else {
+        if (partNo != null && !partNo.isBlank()) {
             QuotationLineItem lite = new QuotationLineItem();
             lite.productPartNoSnapshot = partNo;
             BomTreeRenderService.MaterialUnionResult union =
                     bomTreeRenderService.collectTotalMaterialNoUnion(List.of(lite), "QUOTE");
             closure = union.totalMaterialNo;
+        } else if (customerCode != null && !customerCode.isBlank()) {
+            // task-260819 B-28（D-70，主线裁决）：无 partNo = 主件页签"按客户预览、不针对具体料号"
+            // 场景（AC-15），语义即"不限料号"——注入该客户下的全部料号，而不是空闭包（空闭包会让
+            // = ANY(ARRAY[]::text[]) 恒假，AC-15①的预览恒 0 行）。
+            // 🚫 不许因此破坏 AC-27/AC-28：客户确实无基础数据时，下面 roots 查询本就返回空列表，
+            // 结果与原先的空闭包完全一致（仍是 0 行 + zeroRowsHint 可操作诊断，不是报错）。
+            // 「全部料号」的口径 = 该客户 QUOTE 侧全部 BOM 根（与 AC-26 的闭包口径同源：
+            // system_type='QUOTE' AND is_current AND customer_no=:customerCode），
+            // 再套同一条 collectTotalMaterialNoUnion 把各根的子件闭包一并纳入——复用既有算法，
+            // 不另写第二套闭包逻辑（D-50 要收敛的正是这个）。
+            // N+1 自检：本方法固定 1 条根查询 SQL（常数，与客户下料号数无关）+
+            // collectTotalMaterialNoUnion 内部固定 1 条递归 CTE（对整批根一次算完）——
+            // 与料号数无关，恒为 2 条 SQL。
+            List<String> roots = queryCustomerRootMaterialNos(customerCode);
+            if (roots.isEmpty()) {
+                closure = List.of();
+            } else {
+                List<QuotationLineItem> seeds = new ArrayList<>();
+                for (String root : roots) {
+                    QuotationLineItem lite = new QuotationLineItem();
+                    lite.productPartNoSnapshot = root;
+                    seeds.add(lite);
+                }
+                BomTreeRenderService.MaterialUnionResult union =
+                        bomTreeRenderService.collectTotalMaterialNoUnion(seeds, "QUOTE");
+                closure = union.totalMaterialNo;
+            }
+        } else {
+            closure = List.of();
         }
         String arrayLiteral = closure.isEmpty()
                 ? "ARRAY[]::text[]"
@@ -266,6 +296,33 @@ public class BuilderService {
                         .map(s -> "'" + s.replace("'", "''") + "'")
                         .reduce((a, b) -> a + "," + b).orElse("") + "]::text[]";
         return TOTAL_MATERIAL_NO_TOKEN.matcher(sql).replaceAll(Matcher.quoteReplacement(arrayLiteral));
+    }
+
+    /**
+     * task-260819 B-28（D-70）：该客户 QUOTE 侧全部 BOM 根料号（{@code system_type='QUOTE' AND
+     * is_current AND customer_no=:customerCode}），口径与 AC-26 的闭包定义同源（见
+     * {@code SemanticCompiler.closureCte()} 的注释）。固定 1 条 SQL，返回条数与结果集无关
+     * （N+1 约束②：单次业务操作 SQL 条数是常数）。客户确实无任何 QUOTE 侧料号时返回空列表
+     * （不是异常）——由调用方按"空闭包"兜底，保住 AC-27/AC-28 的 0 行 + 诊断路径。
+     */
+    private List<String> queryCustomerRootMaterialNos(String customerCode) {
+        List<String> roots = new ArrayList<>();
+        String q = "SELECT DISTINCT material_no FROM material_bom_item "
+                + "WHERE system_type = 'QUOTE' AND is_current AND customer_no = ?";
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(q)) {
+            ps.setString(1, customerCode);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String materialNo = rs.getString(1);
+                    if (materialNo != null && !materialNo.isBlank()) roots.add(materialNo);
+                }
+            }
+        } catch (Exception e) {
+            throw new BuilderApiException(500, "PREVIEW_CUSTOMER_ROOTS_QUERY_FAILED",
+                    "查询客户全部料号失败: " + e.getMessage(), Map.of());
+        }
+        return roots;
     }
 
     // ---------------- POST /inspect (B-12, AC-13/16-19/29/30) ----------------
@@ -301,8 +358,8 @@ public class BuilderService {
                     "缺少标识列：料号列与名称列至少要配一个"));
         }
 
-        // AC-18/19：粗粒度列 / 附属源列勾小计应阻断——本轮未实现（需要区分"列来自哪条边"，
-        // 时间预算优先给了 B-5/6/7/11/12/13 主干，如实标注未做，不写假通过的检查项）。
+        // AC-18/19（B-27，D-68）：粗粒度列 / 附属源列勾小计应阻断。
+        checkSubtotalGrainMismatch(cfg, r, resp);
 
         // AC-13：字段名重复只告警不阻断
         Map<String, Long> nameCounts = new LinkedHashMap<>();
@@ -319,6 +376,69 @@ public class BuilderService {
 
         if (r.warnings != null) {
             for (String w : r.warnings) resp.items.add(new InspectItem("WARN", "COMPILER_WARNING", w));
+        }
+    }
+
+    /**
+     * AC-18/19（B-27，D-68）：粗粒度列 / 附属源列勾小计一律阻断——两条 AC 的诱因不同，文案也
+     * 分别写死（D-22：体检文案要让用户知道该改什么，不能一句通用话糊弄），判据各自独立：
+     *
+     * <p>· AC-18「粗粒度列」：列直接来自锚点自身（{@code source.id == anchor.id}）。锚点行本身
+     * 不会因为别的 GRAIN 目标被选中而增多，但一旦有 GRAIN 目标把行粒度撑宽（{@code r.grain.size()>1}，
+     * B-26 保证 baseline 恒占 1 维），锚点列在被撑宽出的新增行之间取值不变——勾小计会把同一个
+     * 值按新增维度的行数重复累加。
+     *
+     * <p>· AC-19「附属源列」：列经某条 {@code GRAIN} 边到达。触发条件是 {@code anchor.grainColumns}
+     * 非空——即锚点自身还有"物理连接键之外"的额外身份维度（如材质元素锚点的
+     * {@code material_part_no}/{@code component_no}，物理连接键只用了 {@code material_no}）。
+     * 这类 GRAIN 边的连接键天生够不到锚点的完整身份，同一个附属源行会被"借"给锚点侧多个不同
+     * 明细行使用，值按锚点自己更粗的那层（如"归属料号"）重复出现，不是"新增维度"而是"借来的
+     * 维度"，同样不能直接累加。反例是「主件」锚点（{@code grainColumns=[]}，物理连接键本身就是
+     * 锚点唯一的身份列，如 {@code ASSEMBLY_FEE}/{@code FINISHED_OTHER}）——那类 GRAIN 目标的值
+     * 是货真价实的按新维度展开，逐行求和是合法小计，不在本检查拦截范围内。
+     *
+     * <p>N+1 自检：{@code cols} 上的一次遍历，图查找全部落在 {@link SemanticGraphSnapshot} 的
+     * 内存索引（{@code nodeByKeyDialect}/{@code edgesFrom}）上，零 SQL。
+     */
+    private void checkSubtotalGrainMismatch(BuilderConfig cfg, CompileResult r, InspectResponse resp) {
+        List<BuilderConfig.ColumnConfig> cols = cfg.columns == null ? List.of() : cfg.columns;
+        if (cols.isEmpty()) return;
+
+        SemanticGraphSnapshot snap = loader.get();
+        String variantKey = cfg.variantKey == null ? "" : cfg.variantKey;
+        SemanticTabView tabView = snap.tabViews.stream()
+                .filter(t -> t.tabType.equals(cfg.tabType) && t.variantKey.equals(variantKey))
+                .findFirst().orElse(null);
+        if (tabView == null) return; // compile() 早已对页签视图缺失报过错，这里不会真的走到
+        SemanticNode anchor = snap.nodeById.get(tabView.anchorNodeId);
+        if (anchor == null) return;
+
+        boolean grainWidened = r.grain != null && r.grain.size() > 1;
+        boolean anchorHasOwnSubIdentity = anchor.grainColumns != null && anchor.grainColumns.length > 0;
+
+        for (BuilderConfig.ColumnConfig col : cols) {
+            if (!Boolean.TRUE.equals(col.inSubtotal)) continue;
+            SemanticNode source = snap.nodeByKeyDialect.get(col.sourceNodeKey + "|QUOTE");
+            if (source == null) continue;
+            String fieldName = (col.fieldName != null && !col.fieldName.isBlank()) ? col.fieldName : source.displayName;
+
+            if (source.id.equals(anchor.id)) {
+                if (grainWidened) {
+                    resp.items.add(new InspectItem("ERR", "SUBTOTAL_COARSE_GRAIN_COLUMN",
+                            "字段「" + fieldName + "」来自「" + anchor.displayName + "」自身，当前行粒度已按 "
+                                    + String.join("+", r.grain) + " 展开：该值会在每一行重复出现、累加即重复计算，不能勾为小计"));
+                }
+                continue;
+            }
+
+            SemanticEdge edge = snap.edgesFrom(anchor.id).stream()
+                    .filter(e -> e.toNodeId.equals(source.id)).findFirst().orElse(null);
+            if (edge != null && "GRAIN".equals(edge.edgeKind) && anchorHasOwnSubIdentity) {
+                resp.items.add(new InspectItem("ERR", "SUBTOTAL_AUX_SOURCE_COLUMN",
+                        "字段「" + fieldName + "」来自附属源「" + source.displayName + "」：该值按主源粒度重复出现"
+                                + "（主源「" + anchor.displayName + "」自身还有 " + String.join("/", anchor.grainColumns)
+                                + " 维度未参与该附属源的连接键），不能直接累加为小计"));
+            }
         }
     }
 
@@ -428,9 +548,20 @@ public class BuilderService {
             f.put("is_amount", isAmount);
             f.put("is_subtotal", inSubtotal);
             String fieldType = "TEXT".equals(col.resolvedDataType) ? "INPUT_TEXT" : "INPUT_NUMBER";
-            f.put("field_type", col.fieldType != null ? col.fieldType : fieldType);
+            String effectiveFieldType = col.fieldType != null ? col.fieldType : fieldType;
+            f.put("field_type", effectiveFieldType);
             f.put("sort_order", fields.size());
-            f.put("default_source", Map.of("type", "BASIC_DATA", "path", "$" + viewName + "." + col.viewColumn));
+            // B-30 (D-73, task-260819)：绑定键跟 field_type 走，不跟报价/核价侧走——
+            // BASIC_DATA 写顶层 basic_data_path（平铺字符串，前端 useCardSnapshots.ts:99/:201
+            // 的 BASIC_DATA 渲染分支只读这个键）；INPUT_TEXT/INPUT_NUMBER 仍写 default_source.path
+            // （嵌套对象）。此前无条件写 default_source 致报价侧 BASIC_DATA 字段恒取不到值、
+            // 静默回退 content()，不报错。
+            String basicPath = "$" + viewName + "." + col.viewColumn;
+            if ("BASIC_DATA".equals(effectiveFieldType)) {
+                f.put("basic_data_path", basicPath);
+            } else {
+                f.put("default_source", Map.of("type", "BASIC_DATA", "path", basicPath));
+            }
             fields.add(f);
         }
         compReq.fields = fields;

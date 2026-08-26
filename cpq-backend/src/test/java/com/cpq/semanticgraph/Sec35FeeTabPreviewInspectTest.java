@@ -321,12 +321,17 @@ class Sec35FeeTabPreviewInspectTest {
                 .body(noIdentifier)
                 .post("/api/cpq/components/" + componentId + "/builder/inspect");
         assertEquals(200, inspectResp.statusCode(), inspectResp.getBody().asString());
-        List<Map<String, Object>> checks = inspectResp.jsonPath().getList("checks");
-        assertNotNull(checks, "checks不应为空");
-        assertFalse(checks.isEmpty(), "checks不应为空——缺标识列必须产生提示");
+        // api.md §2.3a / D-49: /inspect 响应体字段名是 items 不是 checks
+        List<Map<String, Object>> checks = inspectResp.jsonPath().getList("items");
+        assertNotNull(checks, "原始响应=" + inspectResp.getBody().asString());
+        assertFalse(checks.isEmpty(), "items不应为空——缺标识列必须产生提示，原始响应=" + inspectResp.getBody().asString());
+        // 用例匹配放宽：AC 原文措辞「两者至少配一个」不是逐字契约，只要求「至少」+「配一个」两个语义片段
+        // 同时出现即可（主线裁决，见本轮 Sec35.ac30 归因——此前 .contains("至少配一个") 因实际文案是
+        // 「至少要配一个」而假失败）。
         boolean hasErr = checks.stream().anyMatch(c -> "ERR".equalsIgnoreCase(String.valueOf(c.get("level")))
-                && String.valueOf(c.get("message")).contains("至少配一个"));
-        assertTrue(hasErr, "应有err级『两者至少配一个』提示，实际=" + checks);
+                && String.valueOf(c.get("message")).contains("至少")
+                && String.valueOf(c.get("message")).contains("配一个"));
+        assertTrue(hasErr, "应有err级『(两者)至少(要)配一个』提示，实际=" + checks);
 
         Response saveResp = save(noIdentifier);
         assertEquals(400, saveResp.statusCode(), "保存应被拒绝(INSPECT_BLOCKED): " + saveResp.getBody().asString());

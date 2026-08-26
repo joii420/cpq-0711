@@ -268,8 +268,13 @@ class Sec36DialectAndCiAssertionTest {
         // ④ 字段绑定键跟 field_type 走，不跟侧走（D-55）：本节点在两侧各存一次，INPUT_NUMBER 走
         //    default_source.path、BASIC_DATA 走 basic_data_path——用同一份 payload 分别在两侧
         //    保存后查 component.fields，断言绑定键只随 field_type 变化、不随 dialect 变化。
+        // 与 ac13 同源问题（B-27 新增「缺标识列阻断」校验）：本 payload 原本两列都没有
+        // isPartNo/isRowKey 标记，B-27 之前写的老 payload 保存不了。照 ac13 的做法补一列
+        // 标识列（ELEMENT_BOM_ITEM.material_part_no 本就在 semantic_node_column 里注册了
+        // PART_NO 角色），不改动原有两列的字段名/字段类型，不放宽 B-27 的校验断言。
         String quoteSaveConfig = """
                 { "tabType": "材质元素", "dialect": "QUOTE", "columns": [
+                  {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"material_part_no","fieldName":"料件号","isRowKey":true,"isPartNo":true},
                   {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"content","fieldName":"组成含量_INPUT","fieldType":"INPUT_NUMBER"},
                   {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"scrap_rate","fieldName":"损耗率_BASIC","fieldType":"BASIC_DATA"}
                 ]}

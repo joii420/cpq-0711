@@ -1,5 +1,6 @@
 package com.cpq.semanticgraph;
 
+import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.TestProfile;
 import io.restassured.RestAssured;
@@ -32,6 +33,89 @@ class Sec33FieldPanelGrainTest {
     UserTransaction utx;
 
     private UUID componentId;
+
+    // -------------------------------------------------------------------
+    // AC-15 合成数据坐标（D-72：AC-15 的 1/2/4 行基准在任何库都凑不齐，
+    // 改为自建合成数据，AC 原文的 1/2/4 断言保持不变）。
+    // 五张表的必需链：material_master(锚点物理表) -> material_customer_map
+    // (customerCode 收窄 JOIN 键) -> material_bom_item(QUOTE 闭包递归起点，
+    // 缺它闭包为空恒 0 行) -> capacity(2 个 process_no，AC-15② 焊接/铆接)
+    // -> unit_price(4 个 cost_type，AC-15③ 利润/外购件管理费/材料管理费/税率)。
+    // 经 semantic_node/semantic_edge_key 实查确认：ASSEMBLY_FEE 与 PRODUCT_MASTER
+    // 的 JOIN 键都是 material_no；FINISHED_OTHER 与 PRODUCT_MASTER 的 JOIN 键左
+    // 边是 material_no，右边是 unit_price.code（不是 finished_material_no——现网
+    // 数据也证实 FINISHED_OTHER 行一律把料号存在 code 列，finished_material_no
+    // 恒为空）。为稳妥起见，两列都写成料号，不依赖对哪一列生效的假设。
+    // -------------------------------------------------------------------
+    private static final String AC15_CUSTOMER_NO = "AC15SYN-CUST";
+    private static final String AC15_ROOT_MATERIAL_NO = "AC15SYN-ROOT";
+    private static final String AC15_PROCESS_1 = "AC15-WELD";
+    private static final String AC15_PROCESS_2 = "AC15-RIVET";
+
+    @AfterEach
+    void cleanupAc15SyntheticData() {
+        QuarkusTransaction.requiringNew().run(() -> {
+            em.createNativeQuery("DELETE FROM unit_price WHERE code = :m OR finished_material_no = :m")
+                    .setParameter("m", AC15_ROOT_MATERIAL_NO).executeUpdate();
+            em.createNativeQuery("DELETE FROM capacity WHERE material_no = :m")
+                    .setParameter("m", AC15_ROOT_MATERIAL_NO).executeUpdate();
+            em.createNativeQuery("DELETE FROM material_bom_item WHERE customer_no = :c")
+                    .setParameter("c", AC15_CUSTOMER_NO).executeUpdate();
+            em.createNativeQuery("DELETE FROM material_customer_map WHERE customer_no = :c")
+                    .setParameter("c", AC15_CUSTOMER_NO).executeUpdate();
+            em.createNativeQuery("DELETE FROM material_master WHERE material_no = :m")
+                    .setParameter("m", AC15_ROOT_MATERIAL_NO).executeUpdate();
+        });
+    }
+
+    /**
+     * AC-15 合成数据种子。capacityRows 参数用于反证实验（把 2 行改成 1 行，
+     * 验证 AC-15② 会真的失败——见 D-72 回报中的对比）。
+     */
+    private void seedAc15SyntheticData(int capacityRows) {
+        QuarkusTransaction.requiringNew().run(() -> {
+            em.createNativeQuery("INSERT INTO material_master (material_no) VALUES (:m)")
+                    .setParameter("m", AC15_ROOT_MATERIAL_NO).executeUpdate();
+            em.createNativeQuery(
+                    "INSERT INTO material_customer_map (material_no, customer_no, system_type) " +
+                            "VALUES (:m, :c, 'QUOTE')")
+                    .setParameter("m", AC15_ROOT_MATERIAL_NO).setParameter("c", AC15_CUSTOMER_NO)
+                    .executeUpdate();
+            em.createNativeQuery(
+                    "INSERT INTO material_bom_item (system_type, customer_no, material_no, seq_no, is_current) " +
+                            "VALUES ('QUOTE', :c, :m, 1, true)")
+                    .setParameter("c", AC15_CUSTOMER_NO).setParameter("m", AC15_ROOT_MATERIAL_NO)
+                    .executeUpdate();
+            if (capacityRows >= 1) {
+                em.createNativeQuery(
+                        "INSERT INTO capacity (material_no, process_no, process_name, resource_group_no, " +
+                                "production_type, system_type, is_current, fixed_cost) " +
+                                "VALUES (:m, :p, '焊接', 'AC15-RG', 'UNIT', 'QUOTE', true, 100)")
+                        .setParameter("m", AC15_ROOT_MATERIAL_NO).setParameter("p", AC15_PROCESS_1)
+                        .executeUpdate();
+            }
+            if (capacityRows >= 2) {
+                em.createNativeQuery(
+                        "INSERT INTO capacity (material_no, process_no, process_name, resource_group_no, " +
+                                "production_type, system_type, is_current, fixed_cost) " +
+                                "VALUES (:m, :p, '铆接', 'AC15-RG', 'UNIT', 'QUOTE', true, 200)")
+                        .setParameter("m", AC15_ROOT_MATERIAL_NO).setParameter("p", AC15_PROCESS_2)
+                        .executeUpdate();
+            }
+            // 节点 FINISHED_OTHER 的 discriminator 是 price_type = 'FINISHED_MATERIAL_OTHER'
+            // （不是节点键本身的字面量），且 scope=FULL 会额外要求 up.customer_no = :customerCode
+            // ——两者都由实测 /builder/compile 返回的 SQL 反查确认，而非读实现代码。
+            for (String costType : List.of("利润", "外购件管理费", "材料管理费", "税率")) {
+                em.createNativeQuery(
+                        "INSERT INTO unit_price (system_type, price_type, version_no, code, " +
+                                "finished_material_no, cost_type, cost_ratio, customer_no, is_current) " +
+                                "VALUES ('QUOTE', 'FINISHED_MATERIAL_OTHER', 'V1', :m, :m, :ct, 1.5, :c, true)")
+                        .setParameter("m", AC15_ROOT_MATERIAL_NO).setParameter("ct", costType)
+                        .setParameter("c", AC15_CUSTOMER_NO)
+                        .executeUpdate();
+            }
+        });
+    }
 
     @BeforeEach
     void setUp() throws Exception {
@@ -102,12 +186,16 @@ class Sec33FieldPanelGrainTest {
         StringBuilder missingReport = new StringBuilder();
         List<String> unionNames = new java.util.ArrayList<>();
         for (String tabType : List.of("材质元素", "外购件", "主件", "费用类", "零件")) {
-            Response r = RestAssured.given()
-                    .queryParam("tabType", tabType).get("/api/cpq/config/semantic-graph/field-tree");
-            if (r.statusCode() == 200) {
-                List<String> n = r.jsonPath().getList("groups.fields.displayName.flatten()");
-                if (n != null) unionNames.addAll(n);
+            // 费用类是 D-34 分立建模的 variant 页签——种子里没有空 variantKey 的默认行，
+            // 不带 variantKey 会 404（『未找到页签视图: 费用类/』），api.md §1.4 示例也明确要带。
+            io.restassured.specification.RequestSpecification req = RestAssured.given().queryParam("tabType", tabType);
+            if ("费用类".equals(tabType)) {
+                req = req.queryParam("variantKey", "INCOMING_FIXED");
             }
+            Response r = req.get("/api/cpq/config/semantic-graph/field-tree");
+            assertEquals(200, r.statusCode(), tabType + " field-tree 应返回 200: " + r.getBody().asString());
+            List<String> n = r.jsonPath().getList("groups.fields.displayName.flatten()");
+            if (n != null) unionNames.addAll(n);
         }
         for (String expected : List.of("计价单位", "比例", "基准值", "毛用量")) {
             if (!unionNames.contains(expected)) {
@@ -125,6 +213,11 @@ class Sec33FieldPanelGrainTest {
     @Order(2)
     @DisplayName("AC-15【序列】: 只拖主档1行→加拖组装加工费2行(粒度=成品+工序号)→改拖成品其他费用4行(粒度=成品+要素)")
     void ac15_grainDynamicallyDerivedAsColumnsSelected() {
+        // D-72：AC 原文的 1/2/4 行基准在测试库/dev 库均凑不齐，改为自建合成数据
+        // （5 张表完整链：material_master/material_customer_map/material_bom_item/
+        // capacity(2 行)/unit_price(4 行)），AC 的 1/2/4 断言原文不变。
+        seedAc15SyntheticData(2);
+
         // 步骤①：只拖物料主档字段 → 预览 1 行，粒度条「每个成品 1 行」
         String step1 = """
                 { "tabType": "主件", "columns": [
@@ -139,7 +232,7 @@ class Sec33FieldPanelGrainTest {
         assertEquals(1, grain1.size(), "① 粒度条应显示『每个成品1行』（单维度），实际 grain=" + grain1);
 
         Response preview1 = RestAssured.given().contentType(ContentType.JSON)
-                .body(withExtraFields(step1, "\"customerCode\":\"ROCKWELL\""))
+                .body(withExtraFields(step1, "\"customerCode\":\"" + AC15_CUSTOMER_NO + "\""))
                 .post("/api/cpq/components/" + componentId + "/builder/preview");
         assertEquals(200, preview1.statusCode(), preview1.getBody().asString());
         Integer rowCount1 = preview1.jsonPath().getInt("rowCount");
@@ -174,7 +267,7 @@ class Sec33FieldPanelGrainTest {
                 "② ca.is_current 应出现在顶层 WHERE，实际:\n" + sql2);
 
         Response preview2 = RestAssured.given().contentType(ContentType.JSON)
-                .body(withExtraFields(step2, "\"customerCode\":\"ROCKWELL\""))
+                .body(withExtraFields(step2, "\"customerCode\":\"" + AC15_CUSTOMER_NO + "\""))
                 .post("/api/cpq/components/" + componentId + "/builder/preview");
         assertEquals(200, preview2.statusCode(), preview2.getBody().asString());
         Integer rowCount2 = preview2.jsonPath().getInt("rowCount");
@@ -196,7 +289,7 @@ class Sec33FieldPanelGrainTest {
         assertEquals(2, grain3.size(), "③ 粒度条应变为『成品+要素』(两维度)，实际 grain=" + grain3);
 
         Response preview3 = RestAssured.given().contentType(ContentType.JSON)
-                .body(withExtraFields(step3, "\"customerCode\":\"ROCKWELL\""))
+                .body(withExtraFields(step3, "\"customerCode\":\"" + AC15_CUSTOMER_NO + "\""))
                 .post("/api/cpq/components/" + componentId + "/builder/preview");
         assertEquals(200, preview3.statusCode(), preview3.getBody().asString());
         Integer rowCount3 = preview3.jsonPath().getInt("rowCount");
@@ -253,13 +346,14 @@ class Sec33FieldPanelGrainTest {
                 .body(conflicting)
                 .post("/api/cpq/components/" + componentId + "/builder/inspect");
         assertEquals(200, inspectResp.statusCode(), inspectResp.getBody().asString());
-        List<java.util.Map<String, Object>> checks = inspectResp.jsonPath().getList("checks");
-        assertNotNull(checks, "checks 不应为空");
-        assertFalse(checks.isEmpty(), "checks 不应为空——冲突集合必须触发至少一条提示");
+        // api.md §2.3a / D-49: /inspect 响应体字段名是 items 不是 checks
+        List<java.util.Map<String, Object>> checks = inspectResp.jsonPath().getList("items");
+        assertNotNull(checks, "items 不应为空，原始响应=" + inspectResp.getBody().asString());
+        assertFalse(checks.isEmpty(), "items 不应为空——冲突集合必须触发至少一条提示");
         boolean hasGrainConflictErr = checks.stream().anyMatch(c ->
                 "ERR".equalsIgnoreCase(String.valueOf(c.get("level")))
                         && String.valueOf(c.get("message")).contains("粒度冲突"));
-        assertTrue(hasGrainConflictErr, "应出现『粒度冲突（兜底拦截）』err 级提示，实际 checks=" + checks);
+        assertTrue(hasGrainConflictErr, "应出现『粒度冲突（兜底拦截）』err 级提示，实际 items=" + checks);
 
         Response saveResp = RestAssured.given().contentType(ContentType.JSON)
                 .body(conflicting)
@@ -286,9 +380,10 @@ class Sec33FieldPanelGrainTest {
                 .body(config)
                 .post("/api/cpq/components/" + componentId + "/builder/inspect");
         assertEquals(200, inspectResp.statusCode(), inspectResp.getBody().asString());
-        List<java.util.Map<String, Object>> checks = inspectResp.jsonPath().getList("checks");
-        assertNotNull(checks);
-        assertFalse(checks.isEmpty(), "checks 不应为空");
+        // api.md §2.3a / D-49: /inspect 响应体字段名是 items 不是 checks
+        List<java.util.Map<String, Object>> checks = inspectResp.jsonPath().getList("items");
+        assertNotNull(checks, "原始响应=" + inspectResp.getBody().asString());
+        assertFalse(checks.isEmpty(), "items 不应为空，原始响应=" + inspectResp.getBody().asString());
         boolean hasErr = checks.stream().anyMatch(c -> "ERR".equalsIgnoreCase(String.valueOf(c.get("level")))
                 && String.valueOf(c.get("message")).contains("重复"));
         assertTrue(hasErr, "应有 err 级提示说明该值会重复出现/累加即重复计算，实际=" + checks);
@@ -316,9 +411,9 @@ class Sec33FieldPanelGrainTest {
                 .body(config)
                 .post("/api/cpq/components/" + componentId + "/builder/inspect");
         assertEquals(200, inspectResp.statusCode(), inspectResp.getBody().asString());
-        List<java.util.Map<String, Object>> checks = inspectResp.jsonPath().getList("checks");
-        assertNotNull(checks);
-        assertFalse(checks.isEmpty(), "checks 不应为空");
+        List<java.util.Map<String, Object>> checks = inspectResp.jsonPath().getList("items");
+        assertNotNull(checks, "原始响应=" + inspectResp.getBody().asString());
+        assertFalse(checks.isEmpty(), "items 不应为空——附属源列勾小计必须产生提示，原始响应=" + inspectResp.getBody().asString());
         boolean hasErr = checks.stream().anyMatch(c -> "ERR".equalsIgnoreCase(String.valueOf(c.get("level")))
                 && String.valueOf(c.get("message")).contains("按主源粒度重复"));
         assertTrue(hasErr, "应有 err 级提示说明该值按主源粒度重复出现，实际=" + checks);

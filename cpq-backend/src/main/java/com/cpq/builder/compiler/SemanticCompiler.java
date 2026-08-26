@@ -92,6 +92,13 @@ public class SemanticCompiler {
 
         c.anchorAlias = allocAlias(c, c.anchor.physicalTable);
 
+        // B-26（AC-15①，D-45同类跟进）：锚点自身的基线粒度此前从未写进 c.grainDims——只有
+        // resolveGrain() 命中某个 GRAIN 目标时才会追加一维，导致"只选主档列（不涉及任何 GRAIN
+        // 边）"时 grain=[]，与 AC-15①「粒度条显示『每个成品1行』」（非空、单维度）矛盾。
+        // 取值口径（主线认可）：基线维度用锚点的 displayName 表示——与 resolveGrain 里
+        // "target.displayName + '.' + dim" 的展示粒度保持同一语义层级（"这一维度是谁的"）。
+        c.grainDims.add(c.anchor.displayName);
+
         // 有效列 = 用户已选列 + 价格策略自动带出的成员
         List<BuilderConfig.ColumnConfig> effectiveColumns = new ArrayList<>(
                 cfg.columns == null ? List.of() : cfg.columns);
@@ -145,6 +152,19 @@ public class SemanticCompiler {
 
         // 锚点自身三件套 + 判别式
         applyFullScope(c, c.anchor, c.anchorAlias, c.anchorWhere);
+        // AC-37③（D-71 跟进）：核价侧输出 view_version 约定列——versionFilter 宏真正生效
+        // （即 applyFullScope 判定该锚点 is_current + 收窄列都存在）时才输出，避免给不支持
+        // 版本切换的锚点也硬造一列。取值列同 versionFilter 宏的第二实参（有 version_no 用
+        // version_no，没有则退回 is_current，与 applyFullScope 内部口径保持一致，不重复分叉）。
+        if (c.dialect == CompileDialect.COSTING) {
+            Set<String> anchorCols = c.columnCatalog.getOrDefault(c.anchor.physicalTable, Set.of());
+            String anchorClosureCol = closureColumnName(c.anchor);
+            if (anchorCols.contains("is_current") && anchorCols.contains(anchorClosureCol)) {
+                String versionCol = anchorCols.contains("version_no") ? "version_no" : "is_current";
+                selectExprs.add(c.anchorAlias + "." + versionCol + " AS view_version");
+                declaredColumns.add("view_version");
+            }
+        }
         // D-50（AC-3①/AC-37①）：QUOTE 方言的子件收窄统一为「主树供数组」—— 锚点料号列上生成
         // = ANY(:total_material_no)，无任何用户开关（AC-60）。COSTING 方言的同款收窄已在
         // applyFullScope 的 else 分支按 code 列实现（AC-37①同一收窄口径，不在此重复）。
@@ -307,6 +327,14 @@ public class SemanticCompiler {
 
         return switch (edge.edgeKind) {
             case "LOOKUP" -> resolveLookup(c, edge, target, col);
+            // B-25（AC-11③/AC-13，D-45②同类跟进）：edge_kind=JOIN 的边（如「主件」页签的
+            // CUSTOMER_MAP，客户维度收窄用的强制 JOIN）此前逐列编译完全没有分支，任意选它的列都
+            // 报 COMPILE_EDGE_KIND_UNSUPPORTED。JOIN 与 LOOKUP 在"取列"这一步是同一件事——
+            // 都是"目标节点已经/将要被 JOIN 进来，取它自己的物理列"，唯一差异是 emitMandatoryJoin
+            // 已经把该边的 JOIN 无条件建好并把 alias 记入 c.aliasByNode，resolveLookup 内部
+            // ensureLeftJoin() 命中 existing alias 时直接复用、不会重复建 JOIN 子句，也不会把
+            // 强制 JOIN 降级成 LEFT JOIN（JOIN 子句本身在 emitMandatoryJoin 里已经生成过）。
+            case "JOIN" -> resolveLookup(c, edge, target, col);
             case "SUB" -> resolveSub(c, edge, target, col);
             case "GRAIN" -> resolveGrain(c, edge, target, col);
             default -> throw new BuilderApiException(400, "COMPILE_EDGE_KIND_UNSUPPORTED",
@@ -520,15 +548,42 @@ public class SemanticCompiler {
                 c.requiredVars.add("customerCode");
             }
         } else {
-            // COSTING（AC-37）：:versionFilter(...) 宏收窄 + code = ANY(:total_material_no)
-            if (cols.contains("is_current") && cols.contains("version_no") && cols.contains("code")) {
-                where.add(":versionFilter(" + alias + ".is_current, " + alias + ".version_no, " + alias + ".code)");
+            // COSTING（AC-37，D-71）：:versionFilter(...) 宏收窄 + <业务键列> = ANY(:total_material_no)。
+            // 🚫 D-71 修复：业务键列名不再硬编码 "code"——element_bom_item 等 QUOTE 侧老命名表
+            // （只有 material_no，没有 code/version_no）用这个硬编码编不出任何 WHERE，SQL 全表扫。
+            // 改按节点声明取（node.anchor_expr 的列部分，与 QUOTE 方言/hf_part_no 用的是同一列，
+            // 语义天然一致）；节点从未声明过 anchor_expr（只是 JOIN/GRAIN/SUB 目标，如
+            // unit_price 系节点）时退回 "code"，与改动前行为逐字一致——不改变其它已交付节点
+            // （V6 命名表）的产物，只解决本节点没被覆盖到的场景（不顺手重构本分支其余部分）。
+            String closureCol = closureColumnName(node);
+            boolean hasVersionNo = cols.contains("version_no");
+            if (cols.contains("is_current") && cols.contains(closureCol)) {
+                // version_no 列缺失（如 element_bom_item 只有 is_current，没有真正的版本列）时
+                // 退回用 is_current 本身占位——VersionFilterMacro 的三个实参只要求"列引用/
+                // 表达式"，不要求语义上必须是独立的版本列；没有版本概念的表，宏展开后（无 override）
+                // 恒退化为 is_current 分支，行为等价于"这张表不支持按版本切换，永远取当前值"。
+                String versionCol = hasVersionNo ? "version_no" : "is_current";
+                where.add(":versionFilter(" + alias + ".is_current, " + alias + "." + versionCol + ", "
+                        + alias + "." + closureCol + ")");
             }
-            if (cols.contains("code")) {
-                where.add(alias + ".code = ANY(:total_material_no)");
+            if (cols.contains(closureCol)) {
+                where.add(alias + "." + closureCol + " = ANY(:total_material_no)");
                 c.requiredVars.add("total_material_no");
             }
         }
+    }
+
+    /**
+     * COSTING 方言收窄用的业务键列名（D-71）：优先取节点自身 {@code anchor_expr} 声明的列
+     * （如 {@code ebi.material_no} → {@code material_no}），未声明该节点从未作为任何页签锚点
+     * 时退回 {@code "code"}（V6 命名表既有行为，逐字不变）。
+     */
+    private static String closureColumnName(SemanticNode node) {
+        if (node.anchorExpr != null && !node.anchorExpr.isBlank()) {
+            String[] parts = node.anchorExpr.split("\\.", 2);
+            return parts[parts.length - 1];
+        }
+        return "code";
     }
 
     /** 客户维度已经由强制 JOIN（edge_kind=JOIN 的 fixedPredicate）覆盖时，锚点自己不再重复加 WHERE。 */
