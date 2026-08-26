@@ -548,9 +548,20 @@ public class BuilderService {
             f.put("is_amount", isAmount);
             f.put("is_subtotal", inSubtotal);
             String fieldType = "TEXT".equals(col.resolvedDataType) ? "INPUT_TEXT" : "INPUT_NUMBER";
-            f.put("field_type", col.fieldType != null ? col.fieldType : fieldType);
+            String effectiveFieldType = col.fieldType != null ? col.fieldType : fieldType;
+            f.put("field_type", effectiveFieldType);
             f.put("sort_order", fields.size());
-            f.put("default_source", Map.of("type", "BASIC_DATA", "path", "$" + viewName + "." + col.viewColumn));
+            // B-30 (D-73, task-260819)：绑定键跟 field_type 走，不跟报价/核价侧走——
+            // BASIC_DATA 写顶层 basic_data_path（平铺字符串，前端 useCardSnapshots.ts:99/:201
+            // 的 BASIC_DATA 渲染分支只读这个键）；INPUT_TEXT/INPUT_NUMBER 仍写 default_source.path
+            // （嵌套对象）。此前无条件写 default_source 致报价侧 BASIC_DATA 字段恒取不到值、
+            // 静默回退 content()，不报错。
+            String basicPath = "$" + viewName + "." + col.viewColumn;
+            if ("BASIC_DATA".equals(effectiveFieldType)) {
+                f.put("basic_data_path", basicPath);
+            } else {
+                f.put("default_source", Map.of("type", "BASIC_DATA", "path", basicPath));
+            }
             fields.add(f);
         }
         compReq.fields = fields;
