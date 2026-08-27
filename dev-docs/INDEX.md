@@ -46,6 +46,8 @@
 | `task-260715-UI排版审查` | 📋 报告已出，整改未启动 | 180+ 条 / 11 个系统性主题（36 处 Modal 违规、1272 处硬编码 hex、Dashboard 是调试残留） |
 | **D-2** 导入 sheet `客户料号与宏丰料号的关系` 27.2s | 🟡 **根因未定位 · 本次不修** | `[v6import] QUOTE sheet=客户料号与宏丰料号的关系 rows=1845 handle=**27200ms** writer{dbCalls=**0**}` —— **一次库都没打，纯 Java CPU**。同批对照：`物料BOM` 1845 行 833ms / `物料与元素BOM` 4153 行 1132ms / `成品其他费用` 1845 行 305ms，量级差 **30~90 倍**，高度疑似该 handler 含 O(N²)。属**导入步骤**（`QuoteImportService`），与 `task-260825` 的建单物化是两条独立链路。按 `task-docs.md §5`「根因未定位不许进 A0」不进本次实现范围 |
 
+| **BL-0184** 大单量报价单打开后 `batch-evaluate` 风暴 | 🔴 **P0 · 另立任务待查** | 1845 行的单打不开：`POST /formulas/batch-evaluate` **517 次 / 40.3MB / 29.2 分钟不收敛**，「下一步」同时卡死。**不是分块**（前端 `BATCH_EVALUATE_CHUNK=5000`，注释称「正常报价单 1 个 HTTP 搞定」）、**不是实例爆炸**（`LinkedExcelView` 仅渲染 2 处）→ 是 `useLinkedExcelRows.ts:274` 的 effect 反复重入。**`task-260825` 未改过这三个文件**（`git diff master` 为空），属既有代码、只是从未在 1845 行量级跑过。疑与「打开触发 autosave 风暴」同族 |
+
 ### 未合并分支（2 条）
 
 | 分支 | worktree | 建于 | 状态 |

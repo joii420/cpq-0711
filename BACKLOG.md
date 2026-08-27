@@ -145,6 +145,37 @@
 
 ---
 
+
+### [BL-0184] 大单量报价单打开后 `batch-evaluate` 风暴：517 次请求 / 29 分钟不收敛，页面卡死
+- **优先级**：🔴 **P0**（1845 行的单**打不开**，「下一步」按钮同时卡住；建单再快也交付不了）
+- **来源**：`task-260825` 用户真机测试（2026-08-26）旁证发现。**与该任务修的四处 N+1 不是同一处**——
+  建单链路已验证正常（`6e74f0ef` 明细 1845 / 卡片值 1845 全落库），卡的是**打开报价单之后的编辑页渲染**。
+- **状态**：TODO。用户裁决**另立任务专查**，不并入 `task-260825`（那边已扩范围 4 次，且这是另一个子系统）。
+- **登记日期**：2026-08-26
+- **现象（F12 Network 实测）**：
+  - `POST /api/cpq/formulas/batch-evaluate` **517 个请求**，每个 200 / ≈620~720ms
+  - 累计 **40.3 MB** 传输、**29.2 分钟**仍未收敛，末尾请求持续「待处理」
+  - 页面「下一步」按钮同时卡死
+- **关键反证：不是分块分出来的**。
+  `cpq-frontend/src/services/formulaService.ts:73` `BATCH_EVALUATE_CHUNK = 5000`，
+  注释原文「实质"一次性"，**正常报价单 1 个 HTTP 搞定**；后端 BATCH_MAX 同步从 200 提到 5000」。
+  → 517 次只能是**调用方的 `useEffect` 被反复重发**，不是一次调用被切成 517 片。
+- **也不是组件实例爆炸**：`LinkedExcelView` 在 `QuotationStep2.tsx` 仅渲染 **2 处**（`:4501` / `:4564`），非 per line item。
+- **嫌疑点（未定位，留给专项任务）**：
+  `cpq-frontend/src/pages/quotation/useLinkedExcelRows.ts:274-330` 的 `useEffect` ——
+  依赖数组是 `[pathTasks, customerId, templateId, linkedTemplateId, quotationId, quotationStatus]`
+  （**显式 eslint-disable 排除了 `pathCache`**），而 `pathTasks` 是
+  `useMemo(..., [lineItems, parsedColumns])`。
+  待查方向：① `lineItems` 是否每次渲染换新引用 → `pathTasks` 抖动 → effect 反复重入；
+  ② 与后台物化并发时 `lineItems` 持续变化是否放大该抖动；
+  ③ `setPathCache` 异步提交与 effect 重入的时序（清理函数 `controller.abort()` 是否真的截住了前一发）。
+  ⚠️ 失败项已写 `next[cacheK] = null`（`:305`），**所以不是「失败项永不入缓存导致死循环」那种模式**——该假设已排除。
+- **归属确认**：`useLinkedExcelRows.ts` / `LinkedExcelView.tsx` / `formulaService.ts`
+  三个文件在 `task-260825` 分支上 **`git diff --stat master` 为空**，**本次任务一行未改**，属既有代码。
+  它只是**从未在 1845 行的单上跑过**——与该任务修的四处 N+1 同一个暴露模式：小单量看不出、大单量必现。
+- **同族线索**：`docs/RECORD.md` / 记忆中的「打开报价单空白 BUG —— 打开触发 autosave 风暴占满线程致 getById 超时」，
+  本条疑似同一族（打开期请求风暴）的 `batch-evaluate` 版本，排查时应一并对照。
+
 ## P1
 
 ### [BL-0182] V6 导入 sheet「客户料号与宏丰料号的关系」逐行 upsert 致 Phase2 事务超时、随机整单回滚
