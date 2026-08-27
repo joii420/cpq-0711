@@ -1353,6 +1353,38 @@
   `backend.md` N+1 硬指标验）；②Minor-4 —— 同 `material_no` 映射两个不同 `customer_product_no`
   的畸形输入产生 `recordError` 而非静默 last-wins；③Minor-7 两条溢出分支有测试覆盖。
 
+### [BL-0185] `saveDraft` 行 id 白名单（`partial`）+ 分批提交 —— 解「首存超时」
+- **优先级**：**P1**
+- **来源**：`task-260825-报价单大单量分页与料号查询` 立项讨论。用户 2026-08-26 裁决「服务端不变」，本条**整条转二期**。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-26
+- **问题**：批量导入 2000 个料号后首存，前端全量 `PUT /quotations/{id}/draft` → 撞前端 axios 30s（`api.ts:5`）
+  + Narayana 60s 事务 reaper（`QuotationService.saveDraft:315` 整个方法一个 `@Transactional`，全删全建）。
+- **方案**：`SaveDraftRequest` 增 `scope: {partial:true, lineItemIds:[...]}`；前端按批（默认 100）串行提交，
+  每批一个后端事务；失败**就地断点续传**，幂等靠前端 `tempId`（`QuotationWizard.tsx:273` 既有映射表）。
+- 🔴 **开工前必须先修的两个既有缺陷**（现在被「全量提交」这个巧合掩盖，一上 `partial` 立刻发作）：
+  - **B-1** `QuotationService.java:2379/2442/2599`：`q.originalAmount` 由 **payload 求和**写入。partial 送 100 行 →
+    整单原价被写成这 100 行之和（真值 1/20）。自愈不可靠：`recomputeDraftHeaderTotals` 只在 `snapshotNewLinesCardValues`
+    内被调，而 `ensureCardValues:1076` 有 `if (missing.isEmpty()) return 0;` 早退 → **总额永久停在错值**。
+  - **B-2** `QuotationResource.java:167-169` 的 `PriceReconciler.reconcileQuotation(id)` 在 saveDraft **之后**按整单
+    重写 `snapshot_rows`/`row_data`（`PriceReconciler.java:439/345`）→ 白名单做在 `saveDraft` 内部**覆盖不到它**。
+- ⚠️ 另：`PUT /draft` 还挂着三个整单 O(N) 后置步骤（`QuotationResource.java:150/153/167-169`），
+  分 20 批 = **各跑 20 次**，不一并改则分批是**负优化**。
+- **完整设计与评审结论**：`dev-docs/task-260825-报价单大单量分页与料号查询/需求文档-v1-服务端分页-已撤回.md`（勿重新推导）
+
+### [BL-0186] `QuotationDTO.LineItemDTO.from()` 每行 `Product.findById` —— 活的 N+1
+- **优先级**：**P1**
+- **来源**：`task-260825` 立项期独立评审（`cpq-architect`）查出。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-26
+- **缺口**：`cpq-backend/src/main/java/com/cpq/quotation/dto/QuotationDTO.java:226`
+  在 per-row 的 `from(li)` 里调 `Product.findById(li.productId)` → **1845 行 = 1845 次查询**，
+  直接违反 `docs/rules/backend.md` 的 N+1 硬指标（单个业务操作的 SQL 条数必须是常数）。
+- **影响面**：`loadLineItems` 被 `getById` / `saveDraft` / `submit` / `copy` 等 8+ 处调用，
+  即每次打开、每次保存大单都付这笔代价。
+- **修法方向**：与同方法内已有的 `material_customer_map` / `mat_part` 批量预取（`task-0723 B2`）合并，
+  一次 `IN` 查回 `product`，按 id 分组注入。
+
 ## P2
 
 ### [BL-0183] 建单后置物化拆批事务 / 移出请求线程（`task-260825` 已否决备选丙）
@@ -2393,6 +2425,42 @@
   - 取价函数也与另外三个不同（`f_customer_element_price` vs `f_material_element_price`，
     notes 提到 task-0729 E12「两侧同一套客户价」）—— **需业务确认这是有意还是漂移**，
     不要在没搞清前一并改掉。
+
+### [BL-0187] 报价单读侧服务端分页（GET 23 MB / 9.98 s / 数据常驻 101 MB）
+- **优先级**：**P2**
+- **来源**：`task-260825` 用户 2026-08-26 裁决撤回，转二期。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-26
+- **背景（实测）**：`GET /api/cpq/quotations/{id}` 在 1845 行单上 **23.04 MB / 9.98 s**
+  （`quoteCardValues` 65.0% / `componentData` 14.7% / `costingCardValues` 11.4%）；
+  前端数据常驻 **101 MB**。一期的前端分页只砍「渲染」那 426 MB，**这两项砍不到**。
+- **触发条件（任一成立才启动）**：① 一期 AC-19 达标但用户仍反馈慢（瓶颈在 Step1 的 22.2 s 取数+解析）；
+  ② 单据规模再上一量级（5000+ 行），101 MB 常驻逼近地板。
+- 🔴 **启动时必须重新处理的 4 项 P0**（独立评审已查实，勿重新推导）：
+  **A-2** COMPOSITE 父卡与 PART 子件跨页即断链（`useDriverExpansions.ts:258-267/302-305` 遍历全量数组建父子映射；
+  `QuotationWizard.tsx:1069-1071` `findIndex` 返 -1 → 后端 `QuotationService.java:2611` 静默 `continue` →
+  **PART 子件永久变孤儿，无日志**）→ 分页单元须改为「**卡片族**」，属方案级扩范围；
+  **D-3** `GET /quotations/{id}/excel-view`（`ExcelViewService.java:133`）是第三个读入口，全量无分页；
+  **Q2-a** `syncLineItemsFromResponse` 长度守卫（`QuotationWizard.tsx:776`）致回填静默 no-op → 插重复行；
+  **Q2-b** `ensure-card-values` 返回全量 DTO 会把分页数组打回全量。
+- **完整设计**：`dev-docs/task-260825-.../需求文档-v1-服务端分页-已撤回.md`
+
+### [BL-0188] 打开报价单编辑页会自发一次整单 `PUT /draft`（用户未点保存）
+- **优先级**：**P2**（建议另立 `repair-` 而非在此排期）
+- **来源**：`task-260825` 立项期主线**网络层拦截实测**。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-26
+- **实证**：Playwright + `page.route('**/api/**')` 拦截，打开编辑页并切到 Step2 的全过程，
+  捕获到 **1 次** `PUT /api/cpq/quotations/{id}/draft`，**无任何用户编辑动作**；
+  **1 行单与 1845 行单都会触发**；详情页对照组 **0 次**。（测量全程零写入落库）
+- **意义**：`QuotationWizard.tsx:314` 记录的「打开 → autosave 风暴」问题，`:317` 的修复**未覆盖此触发路径**。
+  该 PUT 走 `QuotationService.saveDraft`（单 `@Transactional`、全删全建）→
+  **这是「首次 draft 接口超时」的真实触发点：用户根本没点保存**。
+- **待取证**：触发源是哪个 effect、是否每次打开都发、与 `EDIT_AUTOSAVE_ENABLED=false`（`:355`，编辑失焦 autosave
+  已关闭）如何共存。
+- **关联**：疑与 `task-260825` 证据文件中「同一张单首次 GET 卡片值全 NULL、二次全有」的异常同源
+  （`saveDraft` 会按 D-1 失效把卡片值置 NULL，`QuotationService.java:507/2425`），**因果链未取证，不作结论**。
+- **证据**：`dev-docs/task-260825-报价单大单量分页与料号查询/证据/开工前基线-读侧.md`
 
 ## 已完成
 

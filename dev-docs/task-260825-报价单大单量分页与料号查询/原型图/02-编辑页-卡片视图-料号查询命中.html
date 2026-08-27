@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>编辑页·料号查询·命中态</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;
+ background:#f5f5f5;color:rgba(0,0,0,.88);font-size:14px;line-height:1.5715;padding:16px}
+.note{background:#fffbe6;border:1px solid #ffe58f;border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#614700}
+.note b{color:#874d00}
+.wrap{background:#fff;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,.06);padding:16px;max-width:1360px;margin:0 auto}
+.bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.seg{display:inline-flex;background:#f5f5f5;border-radius:6px;padding:2px}
+.seg span{padding:3px 12px;border-radius:4px;font-size:13px;color:rgba(0,0,0,.65);cursor:default;white-space:nowrap}
+.seg span.on{background:#fff;color:rgba(0,0,0,.88);box-shadow:0 1px 2px rgba(0,0,0,.1);font-weight:500}
+.seg span.dis{color:rgba(0,0,0,.25)}
+.spacer{flex:1}
+.pgbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 10px;background:#fafafa;
+ border:1px solid #f0f0f0;border-radius:6px;margin-bottom:12px}
+.search{display:flex;align-items:center;gap:6px;border:1px solid #d9d9d9;border-radius:6px;padding:3px 10px;background:#fff;min-width:280px}
+.search input{border:0;outline:0;font-size:13px;flex:1;background:transparent;color:rgba(0,0,0,.88)}
+.search .ic{color:rgba(0,0,0,.45)}
+.search .clr{color:rgba(0,0,0,.25);cursor:default}
+.total{color:rgba(0,0,0,.65);font-size:13px;white-space:nowrap}
+.total b{color:rgba(0,0,0,.88)}
+.pg{display:flex;align-items:center;gap:4px}
+.pg i{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:28px;padding:0 6px;
+ border:1px solid #d9d9d9;border-radius:6px;background:#fff;font-style:normal;font-size:13px;color:rgba(0,0,0,.88)}
+.pg i.on{border-color:#1677ff;color:#1677ff;font-weight:500}
+.pg i.dis{color:rgba(0,0,0,.25);background:#f5f5f5;border-color:#d9d9d9}
+.pg i.gap{border:0;background:transparent}
+.sel{display:inline-flex;align-items:center;gap:6px;border:1px solid #d9d9d9;border-radius:6px;padding:3px 10px;background:#fff;font-size:13px}
+.jump{font-size:13px;color:rgba(0,0,0,.65);display:flex;align-items:center;gap:6px}
+.jump em{display:inline-block;width:44px;height:28px;border:1px solid #d9d9d9;border-radius:6px;background:#fff}
+.card{border:1px solid #f0f0f0;border-radius:8px;margin-bottom:10px;overflow:hidden}
+.card>.hd{display:flex;align-items:center;gap:10px;padding:9px 14px;background:#fafafa;border-bottom:1px solid #f0f0f0}
+.card>.hd .no{font-weight:600;color:rgba(0,0,0,.88)}
+.card>.hd .nm{color:rgba(0,0,0,.65);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
+.tag{display:inline-block;padding:0 7px;height:20px;line-height:20px;border-radius:4px;font-size:12px}
+.tag.blue{background:#e6f4ff;color:#0958d9;border:1px solid #91caff}
+.tag.gray{background:#fafafa;color:rgba(0,0,0,.65);border:1px solid #d9d9d9}
+.tabs{display:flex;gap:2px;padding:6px 14px 0;border-bottom:1px solid #f0f0f0;background:#fff;flex-wrap:wrap}
+.tabs span{padding:5px 12px;font-size:13px;color:rgba(0,0,0,.65);border-bottom:2px solid transparent}
+.tabs span.on{color:#1677ff;border-bottom-color:#1677ff;font-weight:500}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{border-bottom:1px solid #f0f0f0;padding:8px 12px;text-align:left}
+th{background:#fafafa;color:rgba(0,0,0,.88);font-weight:600;white-space:nowrap}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tfoot td{background:#fafafa;font-weight:600}
+.empty{padding:56px 20px;text-align:center}
+.empty .big{font-size:44px;line-height:1;opacity:.25}
+.empty .t1{margin-top:14px;color:rgba(0,0,0,.88);font-size:15px}
+.empty .t2{margin-top:6px;color:rgba(0,0,0,.45);font-size:13px}
+.btn{display:inline-block;margin-top:14px;padding:5px 16px;border-radius:6px;background:#1677ff;color:#fff;font-size:13px}
+.btn.ghost{background:#fff;color:rgba(0,0,0,.88);border:1px solid #d9d9d9}
+.card.stub{border:1px dashed #ffa940;position:relative;background:#fffdf7}
+.card.stub>.hd{background:#fff7e6;border-bottom:1px dashed #ffd591}
+.stubtag{position:absolute;top:-1px;right:-1px;background:#fa8c16;color:#fff;font-size:11px;
+ padding:2px 8px;border-radius:0 6px 0 6px;z-index:2;letter-spacing:.3px}
+.bd{background:#f6ffed;border:1px solid #b7eb8f;border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#237804}
+.bd b{color:#135200}
+.bd table{margin-top:8px;font-size:12.5px;background:#fff;border-radius:4px;overflow:hidden}
+.bd th,.bd td{padding:6px 10px;border-bottom:1px solid #f0f0f0}
+.cap{margin:18px 0 8px;font-size:13px;font-weight:600;color:rgba(0,0,0,.88);border-left:3px solid #1677ff;padding-left:8px}
+.hint{font-size:12px;color:rgba(0,0,0,.45);margin-top:6px}
+.mark{background:#ffe58f;padding:0 2px;border-radius:2px}
+</style>
+</head>
+<body>
+<div class="note">本图是 <b>task-260825 报价单大单量前端分页</b> 的视觉基准（📌 当前基准）。数据取自现网报价单 <b>QT-20260825-0180</b>（1845 行）真实料号。<b>服务端零改动</b>：全量数据仍一次性返回并常驻前端内存，分页只切「渲染」。<br>查询是<b>对全量 1845 条做前端过滤</b>，命中集合再分页——不是只在当前页里找。匹配字段：<b>生产料号 productPartNo</b>、<b>客户产品编号 customerProductNo</b>（现网各 1845/1845 有值）；customerPartName 也纳入匹配逻辑，但现网 0/1845 全空，不作验收判据。</div>
+<div class="bd"><b>🚧 还原边界 —— 先读这段再照着做</b><br>本原型<b>只定义「分页」相关的新增 / 改动部分</b>。橙色虚线框住的产品卡片是<b>占位示意</b>，不是视觉基准 —— 真实产品卡片就是<b>当前系统里那一张</b>（完整页签集、BOM 树、公式列、footer 列小计、受控输入…），本次<b>一个像素都不改</b>。<table><thead><tr><th style="width:52%">📌 本原型<b>定义</b>的（照此还原）</th><th>🚫 本原型<b>不定义</b>的（现状 1:1 保留，改了即违规）</th></tr></thead><tbody><tr><td>分页栏位置（两级 Segmented 之下、独立一行）</td><td>产品卡片的整体结构与样式</td></tr><tr><td>顶部 + 底部双分页器</td><td>卡片内页签条的页签集合与顺序</td></tr><tr><td>页大小选择器（100/200/500）与文案</td><td>页签内表格的列定义、列宽、对齐</td></tr><tr><td>料号查询框位置、placeholder、命中高亮</td><td>footer 列小计的取值与展示（基线 §4.6）</td></tr><tr><td>空态的标题 / 副文案 / 按钮文案</td><td>公式列、BOM 树缩进、单元格编辑交互</td></tr><tr><td>翻页箭头禁用态、分页栏不渲染态</td><td>卡片头部已有的料号 / 版本 / 客户信息展示</td></tr><tr><td>序号列用<b>全局序号</b>（第 2 页从 101 起）</td><td>Excel 视图的列结构与取值</td></tr></tbody></table></div>
+<div class="wrap">
+<div class="bar"><div class="seg "><span class="on">📝 报价单</span><span class="">📊 核价单</span><span class="">📈 比对视图</span></div><div class="spacer"></div><div class="seg "><span class="on">📋 产品卡片</span><span class="">📑 Excel 视图</span></div></div><div class="pgbar"><div class="search"><span class="ic">🔍</span><input value="A14" readonly placeholder="料号 / 客户产品编号，支持模糊匹配"><span class="clr">✕</span></div><span class="total">匹配 <b>37</b> 条 / 共 1845 条</span><div class="spacer"></div><div class="pg"><i class="dis">‹</i><i class="on">1</i><i class="dis">›</i></div><span class="sel">100 条/页 ▾</span><span class="jump">跳至 <em></em> 页</span></div><div class="card stub"><span class="stubtag">占位示意 · 真实卡片见当前系统，本次不改</span><div class="hd"><span class="no">202601010001</span><span class="tag blue">客户产品编号 <span class="mark">A14</span>09</span><span class="nm">银点复合触头 AgNi11 φ4.0×1.2</span></div><div class="tabs"><span class="on">产品</span><span>物料</span><span>物料与元素BOM</span><span>成品其他费用</span><span>工序</span><span>小计</span></div><table><thead><tr><th>料件</th><th class="num">用量</th><th class="num">单价</th><th class="num">损耗率</th><th class="num">金额</th></tr></thead><tbody><tr><td>AgNi11#-Ⅰ</td><td class="num">1.000000</td><td class="num">￥4.283000</td><td class="num">3.00%</td><td class="num">￥4.411490</td></tr><tr><td>紫铜带 T2Y</td><td class="num">2.400000</td><td class="num">￥0.912000</td><td class="num">1.50%</td><td class="num">￥2.221632</td></tr></tbody><tfoot><tr><td>本页签小计</td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num">￥6.633122</td></tr></tfoot></table></div><div class="card stub"><span class="stubtag">占位示意 · 真实卡片见当前系统，本次不改</span><div class="hd"><span class="no">202601010002</span><span class="tag blue">客户产品编号 <span class="mark">A14</span>10</span><span class="nm">银点复合触头 AgNi11 φ4.5×1.2</span></div><div class="tabs"><span class="on">产品</span><span>物料</span><span>物料与元素BOM</span><span>成品其他费用</span><span>工序</span><span>小计</span></div><table><thead><tr><th>料件</th><th class="num">用量</th><th class="num">单价</th><th class="num">损耗率</th><th class="num">金额</th></tr></thead><tbody><tr><td>AgNi11#-Ⅰ</td><td class="num">1.000000</td><td class="num">￥4.283000</td><td class="num">3.00%</td><td class="num">￥4.411490</td></tr><tr><td>紫铜带 T2Y</td><td class="num">2.400000</td><td class="num">￥0.912000</td><td class="num">1.50%</td><td class="num">￥2.221632</td></tr></tbody><tfoot><tr><td>本页签小计</td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num">￥6.633122</td></tr></tfoot></table></div><div class="hint">↑ 匹配 37 条，一页装得下 → 分页器只剩 1 页。命中的字符片段高亮。</div>
+</div>
+</body>
+</html>
