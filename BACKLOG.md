@@ -147,8 +147,9 @@
 
 ## P1
 
-### [BL-0182] V6 导入 sheet「客户料号与宏丰料号的关系」27.2s 纯 CPU 热点（疑 O(N²)）
-- **优先级**：**P1**（单 sheet 占该次导入绝大部分耗时；行数再涨会线性以上恶化）
+### [BL-0182] V6 导入 sheet「客户料号与宏丰料号的关系」逐行 upsert 致 Phase2 事务超时、随机整单回滚
+- **优先级**：🔴 **P0**（2026-08-26 由 P1 提级：实测失败率 1/4，用户当天撞上；原以为只是慢）
+- **状态更新（2026-08-26）**：根因已定位（见下），**已纳入 `task-260825` 一并修**（用户裁决）
 - **来源**：`task-260825-大单量导入建单性能` 排查期旁证发现（监控 tail 后端日志捞出），
   **与该任务的建单物化 N+1 是两条独立链路**，故不并入该任务范围。
 - **状态**：TODO（未排期）。⚠️ **根因未定位** —— 按 `docs/rules/task-docs.md §5`
@@ -158,7 +159,15 @@
   ```
   [v6import] QUOTE sheet=客户料号与宏丰料号的关系 rows=1845 handle=27200ms writer{groups=0 dbCalls=0 | lock=0x/0ms load=0x/0ms ver=0x/0ms flip=0x/0ms ins=0x/0ms}
   ```
-  **27.2 秒，且 `dbCalls=0`（一次库都没打）** → 耗时 100% 在 Java 侧 CPU，不是 DB、不是 N+1 往返。
+  **27.2 秒**。
+  🔴 **2026-08-26 更正 —— 原判断「`dbCalls=0`（一次库都没打）→ 耗时 100% 在 Java 侧 CPU，疑 O(N²)」是错的。**
+  `dbCalls` 只统计 `writer{}` 的调用，**看不见 handler 自身的 repo 调用** —— 与「日志里没看到就说不存在」同属仪器盲区。
+  **真实根因 = 又一处 N+1**：`Q02CustomerMapHandler.writeRow` 对 `finalRows` 逐行调
+  `MaterialCustomerMapRepository.upsertQuote`（`:119-121` 循环 → `writeRow` 内）。
+  1845 行 × ≈16.6ms RTT ≈ **30.6s**，与实测 30,678ms / 32,207ms 吻合。
+  ⚠️ **批量方法本来就存在**（`MaterialCustomerMapRepository:125 upsertBatch`），是该 handler **主动放弃**的——
+  代码注释原文：「setBased 分支不再走批量 upsertBatch（本 spec 不需要 QUOTE 批量；**正确性优先**），两分支收敛到同一逐行 writeRow」。
+  放弃的理由可考：`writeRow` 的 catch 要 `result.recordError(row.rowNo, ..., "跨客户串号")` —— **逐行才能把错误精确归到行**。
 - **同批对照（证明这是该 sheet 独有，不是普遍现象）**：
   | sheet | 行数 | handle |
   |---|---|---|
@@ -171,9 +180,22 @@
   高度疑似该 handler 内含 O(N²)（如逐行对全量列表做线性查找 / 嵌套遍历）。
 - **定位方向**：目标类在 `com.cpq.basicdata.v6.quote.QuoteImportService` 及其对应 handler。
   建议手法同 `task-260825` 的取证方式 —— 重放导入 + `jstack` 多次采样取交集，热点会自己浮出来。
-- **影响面**：导入步骤（Step 1）。该步已是异步 + 轮询（`pollImportResult`，20 分钟兜底），
-  **不会像建单那样撞 HTTP/事务超时**，故表现为「导入很慢」而非「导入失败」——
-  ⚠️ 正因如此它容易被长期容忍，但 27s/1845 行的成本会随单量线性以上增长。
+- 🔴 **严重度更正（2026-08-26，用户真机实测暴露）：它不是「慢」，是「会随机整单回滚」。**
+  原登记写「该步已是异步 + 轮询，**不会像建单那样撞 HTTP/事务超时**，故表现为导入很慢而非失败」——
+  **该判断错误**。它撞的不是 HTTP 超时，是 **Phase2 的 Narayana 60s 事务超时**：
+
+  ```
+  sheet handle = 30,678ms / 32,207ms（本 sheet 独占 Phase2 一半以上预算）
+    → ARJUNA "successfully canceled TX"（reaper 强杀）
+    → 之后 EntityManager 不可用 → ContextNotActiveException
+       (TransactionScopedSession.acquireSession:125 ← MaterialMasterRepository.upsertBatchNameType:216
+        ← Q02CustomerMapHandler.handle:131)
+    → 「Phase2 写入失败，整单回滚」
+  ```
+
+  **实测失败率 1/4**（2026-08-26 同文件同客户连跑 4 次：`13d9d634` SUCCESS / `0182b3fa` SUCCESS /
+  **`fb919f40` FAILED（3690/3691）** / `dd240112` SUCCESS）。用户当天即撞上。
+- **影响面**：导入步骤（Step 1）**会随机整单回滚**，用户需重试。行数越多失败率越高。
 
 
 ### [BL-0169] 核价简易模板 3 个组件的行键中英口径混存 → 连表公式跨页签「可比判定」失真

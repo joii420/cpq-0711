@@ -409,3 +409,63 @@ for (CustomerPartCandidateDTO c : candidates) {          // 1845 次
 ### 预期
 
 30.6s → **约 1 秒**，AC-13②（POST <5s）达成。
+
+---
+
+## 🔴 B-26：导入侧 Q02 逐行 upsert（第四处 N+1，原 BL-0182，用户裁决纳入本任务）
+
+### 它不是「慢」，是「会随机整单回滚」
+
+用户 2026-08-26 真机实测：**同文件同客户连跑 4 次，失败 1 次**
+（`13d9d634` SUCCESS / `0182b3fa` SUCCESS / **`fb919f40` FAILED 3690/3691** / `dd240112` SUCCESS）。
+
+**因果链（方向与直觉相反）**：
+
+```
+sheet「客户料号与宏丰料号的关系」handle = 30,678ms / 32,207ms
+  → Phase2 的 Narayana 60s 事务预算被单个 sheet 吃掉一半以上
+  → ARJUNA "successfully canceled TX"（reaper 强杀）
+  → 之后 EntityManager 不可用 → ContextNotActiveException
+     (TransactionScopedSession.acquireSession:125
+      ← MaterialMasterRepository.upsertBatchNameType:216
+      ← Q02CustomerMapHandler.handle:131)
+  → 「Phase2 写入失败，整单回滚」
+```
+
+🚨 **不是 context 丢了导致失败，是事务被杀了导致 context 不可用。**
+
+### 根因：又一处 N+1（第四处）
+
+`Q02CustomerMapHandler`（`:119-121`）：
+```java
+for (ParsedRow pr : finalRows) {   // 1845 次
+    writeRow(pr, ctx, result, mmAcc);
+}
+```
+`writeRow` 内：`affected = repo.upsertQuote(mapRow, ctx.importedBy, ctx.pendingQuotationId);` —— **每行一次往返**。
+1845 × ≈16.6ms = **30.6s**，与实测吻合。
+
+### ⚠️ 主线原判断错误（留痕）
+
+`BL-0182` 原登记写「**`dbCalls=0`（一次库都没打）→ 耗时 100% 在 Java 侧 CPU，疑 O(N²)**」。
+**错的** —— `dbCalls` 只统计 `writer{}` 的调用，**看不见 handler 自身的 repo 调用**。
+🔑 与「日志里没看到就说不存在」同属**仪器盲区**：用一个不覆盖目标的计数器下全称结论。
+
+### 🔒 为什么不能粗暴改批量
+
+批量方法**本来就存在**（`MaterialCustomerMapRepository:125 upsertBatch`），是该 handler **主动放弃**的：
+
+> 代码注释原文：「setBased 分支不再走批量 upsertBatch（本 spec 不需要 QUOTE 批量；**正确性优先**），
+> 两分支收敛到同一逐行 writeRow」
+
+**放弃的理由可考**：`writeRow` 的 catch 要 `result.recordError(row.rowNo, "报价料号", "跨客户串号")` ——
+**逐行才能把错误精确归到具体行号**。批量失败只知道「这批挂了」，不知道是哪一行。
+
+| 编号 | 服务的 AC | 任务内容 |
+|---|---|---|
+| **B-26** | AC-13, AC-3 | 改**「批量 + 失败回落逐行」**：按 chunk（建议 200）走 `upsertBatch` 快路径；**某块抛异常时，把该块重放为逐行 `upsertQuote`**，以保留精确到 `row.rowNo` 的错误归因（`跨客户串号` / `Q02 内存去重遗漏冲突` 两条现有错误路径**都要保留**）。<br>🔒 **快路径与慢路径的最终落库结果必须等价**；`result.successRows` / `result.recordWrite("material_customer_map", n)` 的计数口径不许变 |
+| **B-27** | AC-3 | 纳入 T-1 的 SQL 条数护栏：`material_customer_map` 的 upsert 语句数在**无冲突**时应 = ⌈N/chunk⌉。🚨 **还原实验**（改回逐行 → 必须变红）。<br>⚠️ 该断言归 `cpq-tester` 写（见 B-25 同样的分工界线） |
+
+### 预期
+
+30.6s → 约 1~2s，Phase2 事务不再逼近 60s，**随机整单回滚消失**。
