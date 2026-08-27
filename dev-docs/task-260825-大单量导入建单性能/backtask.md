@@ -356,3 +356,56 @@ java.lang.RuntimeException: Changing timeout via @TransactionConfiguration
 
 > 🔑 **教训**：主线在 D-5 规格里把「`ensure-card-values` 会触发计算」写成了**优点**（B-20 自愈的来源），
 > 却没想透它当轮询主循环时的后果。**「读操作有副作用」这件事，在并发下永远要按副作用来设计，不能按读来设计。**
+
+---
+
+## 🔴 B-24：建行逐行 INSERT（第三处 N+1，2026-08-26 用户真机测试暴露）
+
+### 不是扩范围，是 AC-13② 一直没达成
+
+AC-13② 原文：「建单 POST 在 **5 秒内**返回（**只做建单+建行**，不等物化）」。
+D-5 把物化转了后台，但**建行本身就要 30 秒**，这条 AC 从未达成。
+
+### 用户实测日志
+
+```
+19:21:19.960  Created quotation id=804a1400...
+19:21:20.175  V6 commit: hfPairs = 1845
+19:21:50.827  V6 commit: 服务端建明细行 1845 条     ← 30.65 秒
+```
+
+历史对照（2026-08-25）：`17:44:17.832 Created` → `17:44:46.473 建明细行` = **28.6 秒**。稳定复现。
+
+### 🚨 主线的验证方法错误（必须记下来）
+
+**主线此前所有 D-5 亲验都用同一个 `importRecordId`**，那条路径走
+「**V6 commit: 幂等重入，返回既有 quotation**」—— **直接跳过建单和建行**，所以 POST 才 0.2 秒。
+
+**验的是一条结构上不可能暴露该 bug 的路径。跑两轮、三轮都没用 —— 每轮都在跑同一条错的路径。**
+这与 `testing.md` 警告的「断言从未执行」是同一族假绿，只不过发生在主线的亲验里而不是子代理的测试里。
+
+🔑 **规则建议（结案时提议升格）**：**幂等端点的性能亲验，必须至少跑一次「非幂等的首次路径」。**
+用重入路径测出来的耗时，对首次调用没有任何代表性。
+
+### 根因
+
+`QuotationLineItemMaterializeService.materializeLinesFromCandidates`（`:44-66`）：
+
+```java
+for (CustomerPartCandidateDTO c : candidates) {          // 1845 次
+    em.createNativeQuery("INSERT INTO quotation_line_item (...) VALUES (...)")
+      .setParameter(...)....executeUpdate();             // 每行一次往返
+}
+```
+
+1845 × ≈16.6ms = **30.6s**，与本环境 DB RTT（实测 15.76ms）吻合。
+直接违反 `backend.md` N+1 硬指标：**「循环体里出现查询 = 违规」**。
+
+| 编号 | 服务的 AC | 任务内容 |
+|---|---|---|
+| **B-24** | AC-13, AC-3 | 改**批量 INSERT**：多行 `VALUES (...),(...),...` 或等价批量手法，**分块**（建议 200~500/条，与同工程 `writeRowDataBatchAllLines` 的 CHUNK 范式一致）。<br>🔒 **必须保持**：`sort_order` 从 0 严格递增且与 `candidates` 顺序一致（下游按 sort_order 定位行）；`partNo` 空白行的跳过逻辑；`pname`/`ver` 的三级兜底取值；返回的 `ids` 顺序与插入顺序一致 |
+| **B-25** | AC-3 | 把这处纳入 **T-1 的 SQL 条数护栏**：`quotation_line_item` 的 INSERT 条数应 = ⌈N/chunk⌉，**与 N 不成正比**。🚨 **必须做还原实验**（改回逐行 → 必须变红） |
+
+### 预期
+
+30.6s → **约 1 秒**，AC-13②（POST <5s）达成。
