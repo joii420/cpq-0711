@@ -1437,6 +1437,43 @@
   是否在全量 `lineItems` 上跑，而非仅当前页。
 - ⚠️ **与 [[BL-0184]]（大单量报价单打开后 batch-evaluate 风暴）疑似同源**，接手时先合并看。
 
+### [BL-0192] 删除 1845 行报价单撞 Narayana 60s reaper（DELETE 路径未被 task-260825 覆盖）
+- **优先级**：**P1**
+- **来源**：`task-260825-报价单大单量分页与料号查询` 亲验期，主线实测。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-28
+- **实证**：对一张 1845 行 DRAFT 单调 `DELETE /api/cpq/quotations/{id}` →
+  **HTTP 500，耗时 60.17 秒**（Narayana 60s 事务 reaper 阈值），事务完整回滚，单据未删除。
+- **根因同族**：`QuotationService.delete()`（`:1805`）→ `deleteLineItems(id)` 把 1845 行放在**单个事务**内，
+  与建单物化、`ensureCardValues` 是同一个「单事务包全部行」架构问题。
+- ⚠️ **`task-260825-大单量导入建单性能` 的修复（merge `76c4b0ab`）覆盖了建单与物化路径，但 AC 里没有 DELETE**，
+  故本路径至今未修。
+- **人工处置记录**：本次为清理测试数据，主线按 `QuotationService.delete()` 的**同一顺序**手工执行 SQL
+  （`import_record` 置 NULL → 9 张 pending 表 → 3 张 NO ACTION 表 → 主表级联），共 13,381 行，成功。
+  ⚠️ 该序列**不可省略 pending 表清理** —— 直接 `DELETE FROM quotation` 会留下约 11,535 行
+  `pending_quotation_id` 指向已删单据的孤儿（`element_bom_item` 4153 / `unit_price` 1847 /
+  `material_bom`·`material_bom_item`·`element_bom` 各 1845）。
+
+### [BL-0193] `ensure-card-values` 物化成功但 HTTP 返回 500（用户视角仍是失败）
+- **优先级**：**P1**
+- **来源**：`task-260825-报价单大单量分页与料号查询` 亲验期，主线实测（在 `76c4b0ab` 修复**之后**）。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-28
+- **实证对比**（同一张 1845 行单 `QT-20260825-0180`）：
+
+  | | 修复前 | 修复后（master `0b084007`） |
+  |---|---|---|
+  | 耗时 | **60.5 s**（被 reaper 精准掐断） | **83.6 s**（未被掐断，拆批生效） |
+  | 数据结果 | **0 行物化** | ✅ **1845/1845 全部物化**（报价 13 MB + 核价 2425 kB，`original_amount` 恢复为 `-82729.665597520000`） |
+  | HTTP | 500 | **仍然 500** |
+
+- **意义**：**数据层已修好，接口响应层仍报错**。用户点一次会看到「失败」，但实际数据已经好了 ——
+  重刷一次才发现成功。这种「报错但其实成了」比单纯失败更容易误导（用户会重试，而重试要再等 83 秒）。
+- **疑似位置**：`QuotationResource.ensureCardValues`（`:218`）在 `ensureCardValues()` 之后
+  `return ApiResponse.success(quotationService.getById(id))` —— 该 `getById` 在 1845 行单上返回 **23.04 MB** DTO，
+  疑为超时/序列化失败点。**未取证，不作结论。**
+- ⚠️ **若 `task-260825` 的 AC 判据只看「无 reaper + 卡片值已物化」，会判通过，但用户仍看到 500。**
+
 ## P2
 
 ### [BL-0183] 建单后置物化拆批事务 / 移出请求线程（`task-260825` 已否决备选丙）
