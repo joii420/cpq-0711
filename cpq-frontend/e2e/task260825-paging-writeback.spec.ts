@@ -24,6 +24,7 @@ import {
   LARGE_QUOTATION_ID,
   loginAdmin,
   openEditStep2,
+  switchPageSize,
   cardByPartNo,
   queryOrderedLineItems,
   queryLineItemCount,
@@ -69,7 +70,7 @@ test.describe('AP-54 复发风险：第 3 页编辑单元格，写回目标必�
   test('翻到第 3 页，编辑第 6 行（页内 index=5，全局 index=205）的单元格，拦截 quote-card-edit 请求，断言 lineItemId 命中该行而非第 3 页首行', async ({ page }) => {
     test.skip(!backendUp, '后端未启动');
 
-    // 页大小按默认 100：第 3 页 = 全局下标 [200, 299]
+    // 页大小已在 openEditStep2 之后显式切到 100（2026-08-28 默认值改为 10，不能再依赖默认）：第 3 页 = 全局下标 [200, 299]
     const decoyRow = expectedOrder[200]; // 第 3 页首行（AP-54 若复发，写入会错落到这里）
     const targetRow = expectedOrder[205]; // 第 3 页第 6 行（本次实际要编辑的行）
     expect(decoyRow.id, '诱饵行(第3页首行) id 应存在').toBeTruthy();
@@ -96,6 +97,9 @@ test.describe('AP-54 复发风险：第 3 页编辑单元格，写回目标必�
     await loginAdmin(page);
     await openEditStep2(page, LARGE_QUOTATION_ID);
     await page.waitForTimeout(1200);
+    // 2026-08-28 默认页大小改为 10，本用例的诱饵行/目标行取自 SQL 全局下标 200/205
+    //（"第 3 页 = 全局第 200~299 条"），必须显式切到 100 条/页才成立。
+    await switchPageSize(page, 100);
     await jumpToPage(page, 3);
     await page.waitForTimeout(1000);
     await shot(page, 'page3-before-edit');

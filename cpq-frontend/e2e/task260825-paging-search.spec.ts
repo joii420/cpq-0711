@@ -150,11 +150,11 @@ test.describe('AC-11: 查询空态', () => {
   });
 });
 
-test.describe('AC-12: 查询状态下翻页正确', () => {
-  test('T-12 命中 300 行时（用共同前缀构造），第 2 页是命中集合第 101-200 条', async ({ page }) => {
+test.describe('AC-12: 查询状态下翻页正确（2026-08-28 裁决：默认页大小 100→10）', () => {
+  test('T-12 命中数跨页时，第 2 页是命中集合第 11-20 条（按新默认页大小 10 算）', async ({ page }) => {
     test.skip(!backendUp, '后端未启动');
-    // 用真实数据构造一个命中数可控的查询词：找一个使命中数 >100（跨页）的前缀
-    // 生产料号全部形如 202601xxxxxx，先用 SQL 侧统计不同前缀长度下的命中分布，选一个命中数在 [101,1844] 区间的前缀
+    // 用真实数据构造一个命中数可控的查询词：找一个使命中数 >10（跨页，按新默认页大小 10）的前缀
+    // 生产料号全部形如 202601xxxxxx，先用 SQL 侧统计不同前缀长度下的命中分布，选一个命中数在 [11,1844] 区间的前缀
     let candidatePrefix = '';
     let candidateCount = 0;
     for (let len = 10; len <= 12; len++) {
@@ -164,11 +164,11 @@ test.describe('AC-12: 查询状态下翻页正确', () => {
         counts.set(p, (counts.get(p) || 0) + 1);
       }
       for (const [p, c] of counts) {
-        if (c > 100 && c < 1845) { candidatePrefix = p; candidateCount = c; break; }
+        if (c > 10 && c < 1845) { candidatePrefix = p; candidateCount = c; break; }
       }
       if (candidatePrefix) break;
     }
-    test.skip(!candidatePrefix, '未能从现网数据构造出命中数跨页（>100 且 <1845）的查询前缀，需要主线协助确认是否要专门造数');
+    test.skip(!candidatePrefix, '未能从现网数据构造出命中数跨页（>10 且 <1845）的查询前缀，需要主线协助确认是否要专门造数');
     console.log(`[T-12] 选用前缀="${candidatePrefix}" 期望命中数=${candidateCount}`);
 
     await loginAdmin(page);
@@ -182,7 +182,7 @@ test.describe('AC-12: 查询状态下翻页正确', () => {
     console.log(`[T-12] 分页栏="${pgbarText.replace(/\n/g, ' ')}"`);
 
     const matchedInOrder = expectedOrder.filter((r) => r.productPartNo.startsWith(candidatePrefix)).map((r) => r.productPartNo);
-    const expectedPage2 = matchedInOrder.slice(100, 200);
+    const expectedPage2 = matchedInOrder.slice(10, 20); // 新默认页大小 10：第 2 页 = 第 11~20 条
 
     const jumper = page.locator('.ant-pagination-options-quick-jumper input').first();
     if (await jumper.count() > 0) {
@@ -197,7 +197,7 @@ test.describe('AC-12: 查询状态下翻页正确', () => {
     const setPage2 = await extractVisiblePartNoSet(page, '.qt-products-list, body');
     const diff = expectedPage2.filter((x) => !setPage2.has(x));
     console.log(`[T-12] 查询态第2页 与期望差异(应为空)=${JSON.stringify(diff.slice(0, 10))}`);
-    expect(diff, 'AC-12: 查询状态下第 2 页应恰好是命中集合第 101-200 条').toEqual([]);
+    expect(diff, 'AC-12: 查询状态下第 2 页应恰好是命中集合第 11-20 条（新默认页大小 10）').toEqual([]);
   });
 });
 
@@ -219,7 +219,7 @@ test.describe('AC-13: 清空查询回到全量分页', () => {
     console.log(`[T-13] 清空后分页栏="${pgbarText.replace(/\n/g, ' ')}"`);
     expect(pgbarText, 'AC-13: 清空查询后计数应回到 1845').toContain('1845');
     const cardCount = await countRenderedCards(page);
-    expect(cardCount, 'AC-13: 清空查询后应恢复分页渲染（<=100）').toBeLessThanOrEqual(100);
+    expect(cardCount, 'AC-13: 清空查询后应恢复分页渲染（<=10，新默认页大小）').toBeLessThanOrEqual(10);
     expect(cardCount, 'AC-13: 清空查询后应有卡片渲染').toBeGreaterThan(0);
   });
 });

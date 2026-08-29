@@ -16,6 +16,7 @@ import {
   openEditStep2,
   switchMainTab,
   switchViewType,
+  switchPageSize,
   extractVisiblePartNoSet,
   countRenderedCards,
   queryOrderedLineItems,
@@ -65,6 +66,9 @@ test.describe('AC-5 / AC-6: 三视图料号集合逐一相同', () => {
     await loginAdmin(page);
     await openEditStep2(page, LARGE_QUOTATION_ID);
     await page.waitForTimeout(1200);
+    // 2026-08-28 默认页大小改为 10，本用例要测的是"第 3 页 = 全局第 200~299 条"这个深页场景，
+    // 必须显式切到 100 条/页（不再是默认值），否则第 3 页在新默认值下只是第 20~29 条。
+    await switchPageSize(page, 100);
     await jumpToPage(page, 3);
     await shot(page, 'page3-quote-card');
 
@@ -111,6 +115,7 @@ test.describe('AC-5 / AC-6: 三视图料号集合逐一相同', () => {
     await loginAdmin(page);
     await openEditStep2(page, LARGE_QUOTATION_ID);
     await page.waitForTimeout(1200);
+    await switchPageSize(page, 100); // 同 T-05：显式切到 100 条/页再测"第 3 页"
     await jumpToPage(page, 3);
     await page.waitForTimeout(800);
 
@@ -132,6 +137,8 @@ test.describe('AC-7: Excel 视图必须前端切片', () => {
     await loginAdmin(page);
     await openEditStep2(page, LARGE_QUOTATION_ID);
     await page.waitForTimeout(1200);
+    // 2026-08-28 默认页大小改为 10，本用例断言的是"100 行"，必须显式切到 100 条/页。
+    await switchPageSize(page, 100);
     await switchViewType(page, 'Excel 视图');
     await page.waitForTimeout(2000);
     await shot(page, 'excel-page1-rowcount');
@@ -150,6 +157,8 @@ test.describe('AC-8: Excel 行配对不错行', () => {
     await loginAdmin(page);
     await openEditStep2(page, LARGE_QUOTATION_ID);
     await page.waitForTimeout(1200);
+    // 2026-08-28 默认页大小改为 10，本用例要测"第 2 页 = 全局第 100~199 条"，需显式切到 100 条/页。
+    await switchPageSize(page, 100);
     await jumpToPage(page, 2);
     await page.waitForTimeout(800);
 
