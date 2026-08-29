@@ -108,7 +108,7 @@ UNION ALL SELECT 'material_bom', … （其余四张同构）
 **断言**：改动值持久；其余行不变；总价按改动值重算；全程 comp_data 行数恒为 7380。
 
 ### T-13　存量修复（AC-10，2026-08-29 修正）
-**21 张单**（19 张原空单 + `0203`/`0199` 半修复单），每张先 `UPDATE ... SET quote_card_values=NULL, costing_card_values=NULL`，再重跑 `ensure-card-values`，
+**19 张单**（17 张全空 + 2 张半修复 `0199`/`0203`；主线实测核定，曾误记 21），每张先 `UPDATE ... SET quote_card_values=NULL, costing_card_values=NULL`，再重跑 `ensure-card-values`，
 逐单断言 comp_data == 明细行数 × driver 组件数、**且 `total_amount ≠ 0`、`li.subtotal` 非零行数 > 0**。
 🔧 **金额断言不可省**——只断言 comp_data 非空会让半修复态（`0203`/`0199` 的原始症状）误判通过。
 🚨 **执行脚本必须在网络层 abort 一切非 GET**（`RECORD.md` 2026-08-28 事故：诊断脚本触发自发 `PUT /draft` 清空 1845 行卡片值，恢复时还撞了 60s reaper）。
