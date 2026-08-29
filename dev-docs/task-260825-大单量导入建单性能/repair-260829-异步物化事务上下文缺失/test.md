@@ -78,6 +78,29 @@ SELECT count(*) FROM quotation_line_component_data d
 **断言**：总计 ∈ [BASE×0.5, BASE×1.5]。
 > 🚫 **`BASE` 不得取 `6689ms`** —— 那是 ① 空转（447ms 什么都没做）的耗时。实测 `S2.snapshotRows=14114ms`（增量路径），修好后总耗时**必然上升**。拿 6689ms 设阈值 = 写一条从第一天就不可达的 AC。
 
+**B-6 实测基线（2026-08-29，backend-engineer 在 8099 独立测试环境实测）**：
+
+用修复后的 `materializeExecutor`（`cleared(CDI)`）对 4 张 1845 行单**逐一单独**（无并发干扰）跑 fire-and-forget，
+`[create-quotation-timing]` 总计：
+
+| quotation | 总计 |
+|---|---|
+| QT-20260828-0200 | 13049ms |
+| QT-20260829-0204 | 13222ms |
+| QT-20260826-0183 | 15227ms |
+| QT-20260826-0184 | 12519ms |
+
+平均 `BASE ≈ 13504ms`（区间 12519~15227ms）。**方法论说明**：这不是字面意义的"请求线程同步调用"，
+而是"单独一发、无并发干扰"的 `materializeExecutor` 异步调用——B-2 修复的本质就是让异步线程与请求线程
+在 CDI/EntityManager 可用性上等价，两者跑的是同一段代码、同一批 DB 操作，耗时特征应当一致，
+故可作为 AC-5 的有效比较基线。若后续需要字面意义的同步基线，可另补一次直接调用 `materializer.materialize()`
+（不经 `runAsync`）的计时，预期与上表同量级。
+
+⚠️ 另有 5 张（`0185`~`0189`）**并发 5 发**跑出 21375~29466ms（含一次 `ensureExcelValues` 单跳 7219ms/5808ms 的锁等待），
+这是人为并发造成的资源争用，**不计入 BASE**，仅供参考"高并发下降级但仍成功"。
+
+**AC-5 判定区间**：`[BASE×0.5, BASE×1.5]` ≈ **[6752ms, 20256ms]**。
+
 ### T-07　其它路径逐位不变（AC-6）
 对同一张已物化的单依次跑 `saveDraft` / 加产品 / 从基础刷新 / `ensure-card-values` / 核价侧渲染，
 比对 `quote_card_values`、`costing_card_values`、`subtotal`、`total_amount` 的 md5 与改动前相同。

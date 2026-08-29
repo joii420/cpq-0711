@@ -1,0 +1,34 @@
+# E9 · 三条失败测试的 A/B 归因（主线亲跑，worktree，2026-08-29）
+
+结论：三条均为【既有失败】，非 repair-260829 引入。
+
+方法：git stash push 仅暂藏本次两个 tracked 改动
+      （BasicDataImportV6Resource.java / CreateQuotationMaterializer.java），
+      保留 untracked 文件（含 V396 迁移，避免 Flyway 校验挂），背靠背重跑同三个测试。
+
+┌─────────────────────────────────┬──────────────┬──────────────┐
+│ 测试                            │ A 组(有改动) │ B 组(无改动) │
+├─────────────────────────────────┼──────────────┼──────────────┤
+│ CardSnapshotFreezeTest          │ 3run 1fail   │ 3run 1fail   │
+│ CardSnapshotAmountTotalTest     │ 4run 1fail   │ 4run 1fail   │
+│ CardSnapshotDryRunParityTest    │ 1run 1error  │ 1run 1error  │
+└─────────────────────────────────┴──────────────┴──────────────┘
+→ 逐条一致，本次改动对这三条无影响。
+
+失败内容（供后续另立任务追）：
+1. CardSnapshotFreezeTest.refreshQuoteCardValues_force_recomputesBakedRow
+   AssertionFailedError: force=true 时 refreshQuoteCardValues 必须更新 quoteValuesAt（不得 no-op）
+   ==> expected: not <null>
+2. CardSnapshotAmountTotalTest.amountTotalSentinelPreservesTwelveDigitsThroughPass1AndBackfill
+   expected: <0.083825536789> but was: <0.083825537>
+   （12 位 vs 9 位小数——疑与「小数口径三层」历史变更相关）
+3. CardSnapshotDryRunParityTest.dryRunTokenRowsEqualsRenderRowByRow
+   ClassCastException: String cannot be cast to Number（CardSnapshotDryRunParityTest.java:169）
+
+本次改动相关测试全绿：
+  CreateQuotationEmptyGuardBoundaryTest         4run 0fail  （B-4/B-5 三元判据守卫）
+  CreateQuotationMaterializeWarningsPropagationTest 2run 0fail
+  SqlCountNPlusOneGuardTest                     6run 0fail  （N+1 硬指标未破）
+  CardSnapshotBatchWriteRoundTripTest           2run 0fail
+  CardSnapshotComponentDataPreloadNPlusOneTest  1run 0fail
+  其余 CardSnapshot* / Materializ* 系列全部 0 fail
