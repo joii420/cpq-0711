@@ -20,6 +20,7 @@ import QuotationStep2, {
 import QuotationStep3 from './QuotationStep3';
 import type { LineItem, ComponentDataItem } from './QuotationStep2';
 import { ZH_PAGINATION_LOCALE } from './PagingBar';
+import { PAGE_SIZE_OPTIONS, DEFAULT_PAGE_SIZE } from './usePagedSearch';
 import { useDriverExpansions, driverExpansionKey, bnfDriverLookupKey, fieldsOverrideHash } from './useDriverExpansions';
 import { safeSetLocalDraft } from './draftCache';
 import { stableDraftDedupKey } from './draftPayloadDedup';
@@ -1920,9 +1921,12 @@ const QuotationWizard: React.FC = () => {
             dataSource={lineItems}
             // task-260825（F-7/AC-16）：1845 行一次性铺开会卡顿，改用 AntD Table 自带分页。
             // dataSource 仍是全量 lineItems（AC-21：总额继续在全量上求和，与本分页互不影响）。
+            // 2026-08-28 跟进：页大小档位/默认值与 usePagedSearch 共用同一常量，保持全应用一致
+            // （编辑页/详情页/核价工作台都改了，Step5 若还留 100/200/500 会显得不一致——本文件不在
+            // 协调者列出的三处改动点里，是我主动补的一致性改动，如不需要可回退）。
             pagination={{
-              defaultPageSize: 100,
-              pageSizeOptions: [100, 200, 500],
+              defaultPageSize: DEFAULT_PAGE_SIZE,
+              pageSizeOptions: PAGE_SIZE_OPTIONS as unknown as number[],
               showSizeChanger: true,
               showQuickJumper: true,
               showTotal: (t) => `共 ${t} 条`,
