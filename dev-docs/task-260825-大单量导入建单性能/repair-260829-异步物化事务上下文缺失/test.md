@@ -107,10 +107,12 @@ UNION ALL SELECT 'material_bom', … （其余四张同构）
 建单 → 打开（确认非空）→ 改一个数值失焦 → 保存草稿 → 切走再切回 → 刷新页面。
 **断言**：改动值持久；其余行不变；总价按改动值重算；全程 comp_data 行数恒为 7380。
 
-### T-13　存量修复（AC-10，2026-08-29 修正）
-**19 张单**（17 张全空 + 2 张半修复 `0199`/`0203`；主线实测核定，曾误记 21），每张先 `UPDATE ... SET quote_card_values=NULL, costing_card_values=NULL`，再重跑 `ensure-card-values`，
+### T-13　存量修复（AC-10，2026-08-29 二次修正）
+**19 张单**（数量固定；全空/半修复的具体构成随实验推进而变，**执行前用 `backtask.md` B-7 的 SQL 重新查一次，不要照抄任何时点的快照数字**——曾先后误记为 21、又误记死"17+2"），
+半修复态（`cd>0 且 sub_nz=0`）先 `UPDATE ... SET quote_card_values=NULL, costing_card_values=NULL` 再重跑 `ensure-card-values`；全空态（`cd=0`）可跳过 UPDATE 直接重跑。
 逐单断言 comp_data == 明细行数 × driver 组件数、**且 `total_amount ≠ 0`、`li.subtotal` 非零行数 > 0**。
-🔧 **金额断言不可省**——只断言 comp_data 非空会让半修复态（`0203`/`0199` 的原始症状）误判通过。
+🔧 **金额断言不可省**——只断言 comp_data 非空会让半修复态误判通过。
+🚫 `quotation.updated_at` 不可作判据（写 comp_data 不更新主表时间戳，会得出"谁动过"的错误结论）。
 🚨 **执行脚本必须在网络层 abort 一切非 GET**（`RECORD.md` 2026-08-28 事故：诊断脚本触发自发 `PUT /draft` 清空 1845 行卡片值，恢复时还撞了 60s reaper）。
 🚨 步骤①是写操作，执行前先报影响面数字给主线（`CLAUDE.md §3.2`）。
 
