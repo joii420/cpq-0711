@@ -107,14 +107,18 @@ UNION ALL SELECT 'material_bom', … （其余四张同构）
 建单 → 打开（确认非空）→ 改一个数值失焦 → 保存草稿 → 切走再切回 → 刷新页面。
 **断言**：改动值持久；其余行不变；总价按改动值重算；全程 comp_data 行数恒为 7380。
 
-### T-13　存量修复（AC-10，2026-08-29 二次修正）
-**19 张单**（数量固定；全空/半修复的具体构成随实验推进而变，**执行前用 `backtask.md` B-7 的 SQL 重新查一次，不要照抄任何时点的快照数字**——曾先后误记为 21、又误记死"17+2"），
-半修复态（`cd>0 且 sub_nz=0`）先 `UPDATE ... SET quote_card_values=NULL, costing_card_values=NULL` 再重跑 `ensure-card-values`；全空态（`cd=0`）可跳过 UPDATE 直接重跑。
+### T-13　存量修复（AC-10，2026-08-29 三次修正）
+**19 张单**（数量固定；A/B 两类构成随实验推进而变，**执行前用 `backtask.md` B-7 的 SQL 重新查一次，不要照抄任何时点的快照数字**——曾先后误记为 21、"17+2"、且漏想 B 类步骤），按 `cd`/`sub_nz` 分两类：
+- **A 类·半修复**（`cd>0 且 sub_nz=0`）：先 `UPDATE ... SET quote_card_values=NULL, costing_card_values=NULL` 再重跑 `ensure-card-values`
+- **B 类·全空**（`cd=0`）：先 `POST /configure-product/quotations/{id}/refresh-snapshot`（驱动①步展开），**再**重跑 `ensure-card-values`
+  > 🔧 **不可只做 `ensure-card-values`**——它只渲染"已有"的 snapshot_rows，B 类从未展开过，跳过 `refresh-snapshot` 会空转、原样返回 200 但状态不变（此为本任务开发期实测发现，非猜测）
+
 逐单断言 comp_data == 明细行数 × driver 组件数、**且 `total_amount ≠ 0`、`li.subtotal` 非零行数 > 0**。
 🔧 **金额断言不可省**——只断言 comp_data 非空会让半修复态误判通过。
+🔧 **B 类必须同时断言 comp_data 从 0 变为非 0**——只断言"HTTP 200"或"无异常"通不过，`ensure-card-values` 空转同样返回 200。
 🚫 `quotation.updated_at` 不可作判据（写 comp_data 不更新主表时间戳，会得出"谁动过"的错误结论）。
 🚨 **执行脚本必须在网络层 abort 一切非 GET**（`RECORD.md` 2026-08-28 事故：诊断脚本触发自发 `PUT /draft` 清空 1845 行卡片值，恢复时还撞了 60s reaper）。
-🚨 步骤①是写操作，执行前先报影响面数字给主线（`CLAUDE.md §3.2`）。
+🚨 A 类步骤①是写操作，执行前先报影响面数字给主线（`CLAUDE.md §3.2`）。
 
 ### T-14　自检证据（AC-11）
 后端编译 0 错误 + 相关用例全绿 + `/api/cpq/components` 返 401；
