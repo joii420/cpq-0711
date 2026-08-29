@@ -93,6 +93,7 @@ FROM material_bom_item
 UNION ALL SELECT 'material_bom', … （其余四张同构）
 ```
 **断言**：逐表三元组完全一致。基线值见 `证据/E2-pending行全时间线.txt`。
+⚠️ T-13 新增的步骤①（`UPDATE ... SET quote_card_values=NULL`）只碰 `quotation_line_item` 的两个 JSONB 列，与本条比对的五张 V6 基础资料表无关，互不影响。
 
 ### T-09 / T-10 / T-11　边界不误报（AC-8）
 - T-09：明细行 0 条的单 → 不写 warnings
@@ -106,10 +107,12 @@ UNION ALL SELECT 'material_bom', … （其余四张同构）
 建单 → 打开（确认非空）→ 改一个数值失焦 → 保存草稿 → 切走再切回 → 刷新页面。
 **断言**：改动值持久；其余行不变；总价按改动值重算；全程 comp_data 行数恒为 7380。
 
-### T-13　存量修复（AC-10）
-19 张空单分批重跑 `ensure-card-values`，逐单断言 comp_data == 明细行数 × driver 组件数、总价 ≠ 0。
+### T-13　存量修复（AC-10，2026-08-29 修正）
+**21 张单**（19 张原空单 + `0203`/`0199` 半修复单），每张先 `UPDATE ... SET quote_card_values=NULL, costing_card_values=NULL`，再重跑 `ensure-card-values`，
+逐单断言 comp_data == 明细行数 × driver 组件数、**且 `total_amount ≠ 0`、`li.subtotal` 非零行数 > 0**。
+🔧 **金额断言不可省**——只断言 comp_data 非空会让半修复态（`0203`/`0199` 的原始症状）误判通过。
 🚨 **执行脚本必须在网络层 abort 一切非 GET**（`RECORD.md` 2026-08-28 事故：诊断脚本触发自发 `PUT /draft` 清空 1845 行卡片值，恢复时还撞了 60s reaper）。
-🚨 执行前先报影响面数字给主线（`CLAUDE.md §3.2`）。
+🚨 步骤①是写操作，执行前先报影响面数字给主线（`CLAUDE.md §3.2`）。
 
 ### T-14　自检证据（AC-11）
 后端编译 0 错误 + 相关用例全绿 + `/api/cpq/components` 返 401；
