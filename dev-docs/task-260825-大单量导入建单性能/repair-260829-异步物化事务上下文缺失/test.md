@@ -55,11 +55,12 @@ SELECT count(*) FROM quotation_line_component_data d
 ```
 > 零改动基线此值为 0，判据有区分度（非恒真）。
 
-### T-03　还原实验（AC-3）🚨 **不可省、不可委托**
-把修复改回去（丙：换回默认 executor / 甲：去掉 `QuarkusTransaction.run`），重跑 T-02。
-**断言**：comp_data **回到 0**，且日志重现 `Cannot use the EntityManager/Session because neither a transaction nor a CDI request context is active`。
-**证据**：修复前后两次日志与 SQL 输出对照。
-> 不做这条，"修复后通过"可能只是环境变了。参见 `RECORD.md`「自己写的验证脚本首次 PASS 也可能是空验证」。
+### T-03　还原实验（AC-3）🚨 **不可省、不可委托** —— 2026-08-29 形态修正
+**改为探针层并发多发对照**（原「端到端单发把修复改回去」已实测证伪三次，见 `问题说明.md` AC-3 修正说明）：
+一次投递 ≥8 发 fire-and-forget 探针，对比默认 executor 与 `cleared(ThreadContext.CDI)`。
+**断言**：默认组出现大量 `componentsSnapshot=NULL`；cleared 组零 NULL。
+**已完成**（主线亲跑 8081，各 4 轮 × 10 发）：默认 **37 NULL / 3 present**；cleared **0 NULL / 40 present**。证据 `证据/E6`。
+> 端到端单发**不能**用作还原实验：竞态下任务几乎总在原请求结束前被调度到，两组都会成功。
 
 ### T-04　① 步空转发出信号（AC-4）
 构造「明细行 > 0 **且** driver 组件数 > 0 **且** `comp_data == 0`」的状态，执行物化。
