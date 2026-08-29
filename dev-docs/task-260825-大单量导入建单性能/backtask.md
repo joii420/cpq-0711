@@ -469,3 +469,251 @@ for (ParsedRow pr : finalRows) {   // 1845 次
 ### 预期
 
 30.6s → 约 1~2s，Phase2 事务不再逼近 60s，**随机整单回滚消失**。
+
+---
+
+## 🔴 B-28：批被堵时快速让路，且不再一荣俱荣一损俱损（方案甲，用户 2026-08-28 裁决）
+
+### 依据：受控实验证实的根因（详见 `问题说明.md §⑧`）
+
+用户在编辑页 saveDraft（按 id UPSERT 全部 1845 行）持有 `quotation_line_item` 行锁 →
+物化的批事务 UPDATE 同一批行被堵 → 内层 `REQUIRES_NEW` 默认 **60s** → reaper 强杀 →
+**整个 `materialize()` 失败**，停在批次边界（实测 900 / 1200 / 1500）。
+
+实验实测阻塞链：
+```
+🔒 pid=2186708（物化批 4）被阻塞于 pid=2186840（人为持锁）
+   update quotation_line_item set card_snapshot_at=$1, costing_card_values=$2,
+   quote_card_values=$3, quote_values_at=$4 where id=$5
+批 1/2/3 正常(13.9/12.2/13.6s)；批 4 被堵 51s+ → ARJUNA012117 → 停在 900/1845
+```
+
+### 两个要修的缺陷
+
+| # | 缺陷 | 现状代价 |
+|---|---|---|
+| 1 | **一个批被堵 → 整个 materialize 死** | 但批与批是**独立 `REQUIRES_NEW` 事务**，前面成功的批本该保住、后面的本该继续。现在白丢 |
+| 2 | **堵满 60 秒才死** | 这 60 秒纯属白等。不如几秒拿不到锁就让路，留给自愈 |
+
+| 编号 | 服务的 AC | 任务内容 |
+|---|---|---|
+| **B-28** | AC-1, AC-2, AC-12 | ① 给**批事务**设较短的**锁等待上限**（建议 10s 量级）：拿不到行锁就**快速失败**，不再挂到 60s 被 reaper 杀。<br>**具体机制你核实并说明依据** —— 我的方向是批事务开头执行 `SET LOCAL lock_timeout = '10s'`（本项目只用 PG），但**请你确认它在 `REQUIRES_NEW` + Agroal/Hibernate 下真的生效**，不生效就换法子并说明。<br>② **单批失败不中止整体**：捕获该批异常 → 记日志（含批次号 + 行区间 + 失败原因）→ **继续下一批**。<br>③ 全部批次跑完后：若有失败批次，`warnings` 里明确写出「N 批（共 M 行）未完成，将在下次打开/轮询时自动补算」，`cardValuesReady=false`。 |
+
+### 🔒 硬约束
+
+- 🚫 **不许把失败藏起来** —— 这是本任务反复强调的：`cardValuesReady` / `warnings` 的降级语义必须保留。
+  我们要的是「部分成功不再变成全盘失败」，**不是「失败不可见」**。
+- 🚫 **不许放宽 Narayana 的 60s 事务超时**来解决 —— 那是把墙推远，且长事务持锁更久、更容易堵别人。
+- ✅ **自愈已验证可用**：实验中释放锁后触发一次 `ensure-card-values`，**945 行 39 秒补齐**，1845/1845、哨兵 0。
+  `ensureCardValues` 的 `IS NULL` 选行谓词保证重试只补未完成行，**不重算已完成行**。
+- 🔒 **不许动** `Q02CustomerMapHandler` / `MaterialCustomerMapRepository` / D-5 异步化 / B-15 的
+  `QuarkusTransaction` 包装 / `renderCostingTreeBaseRows` / 投影查询那两处。
+
+### 验收判据（主线亲验会照此跑）
+
+复现实验的干预条件下（人为持有某批目标行的写锁 130 秒）：
+1. **被堵的那一批快速失败**（远早于 60s），日志写明批次号与行区间
+2. **其余批次照常完成** —— 最终已算行数应为 `1845 − 被堵批次的行数`，**不是停在被堵批之前**
+3. `ARJUNA012117` **不再出现**
+4. 接口返回 `cardValuesReady=false` + `warnings` 说明有几批待补
+5. 释放锁后触发一次 `ensure-card-values` → 补齐至 1845/1845、哨兵 0
+
+---
+
+## ✅ B-28 验收结果（2026-08-28 主线真机受控实验，**通过**）
+
+### 装置
+
+在 8099 起 worktree 后端，走完整链路（上传 1800 笔 xlsx → 导入 → `create-quotation`），得到
+`quotation=e41a2d24-cadc-4668-bfd0-ba5a1dfb2337`（1845 行）。
+
+随即用**独立连接**人为持有第 4 批的行锁 130 秒：
+
+```sql
+BEGIN;
+SELECT id FROM quotation_line_item
+ WHERE quotation_id='e41a2d24-…' AND sort_order>=900 AND sort_order<1200 FOR UPDATE;
+SELECT pg_sleep(130);
+ROLLBACK;
+```
+
+⚠️ **先验证干预真的生效**（吸取 §⑧ 里 4 次装置失误的教训，不再拿阴性结果当结论）：
+`pg_locks ⋈ pg_stat_activity` 确认 `pid=2243135 持有 1 个锁` 后才继续。
+
+### 实测日志（原文）
+
+```
+[ensure-cardvalues-batch]        batch=1/7 rows=300 elapsed=12293ms chunkSize=300
+[ensure-cardvalues-batch]        batch=2/7 rows=300 elapsed=12386ms chunkSize=300
+[ensure-cardvalues-batch]        batch=3/7 rows=300 elapsed=11479ms chunkSize=300
+[ensure-cardvalues-batch-failed] batch=4/7 rows=300 idxRange=[900,1200) elapsed=14942ms chunkSize=300
+                                 原因=could not execute statement [ERROR: canceling statement due to lock timeout …
+[ensure-cardvalues-batch]        batch=5/7 rows=300 elapsed=12727ms chunkSize=300
+[ensure-cardvalues-batch]        batch=6/7 rows=300 elapsed=14145ms chunkSize=300
+[ensure-cardvalues-batch]        batch=7/7 rows=45  elapsed=5728ms  chunkSize=300
+[ensure-cardvalues] 补算 1845 行（分 7 批，chunk=300，总耗时=83706ms，失败 1 批/300 行）
+```
+
+终局 DB 状态：
+```
+总行数=1845  报价卡片值=1545  核价卡片值=1545  哨兵=0
+```
+
+### 判据逐条核对
+
+| # | 判据 | 结果 |
+|---|---|---|
+| 1 | 被堵那批**快速失败**，远早于 60s，日志含批号 + 行区间 | ✅ 14.9s，`batch=4/7 idxRange=[900,1200)` |
+| 2 | **其余批照常完成**，最终 = `1845 − 被堵批行数`，而非停在被堵批之前 | ✅ **1545 = 1845 − 300**；批 5/6/7 全部正常 |
+| 3 | `ARJUNA012117` 不再出现（③ 链路） | ✅ ③ 链路 0 次 |
+| 4 | 汇总日志准确报出失败批数/行数 | ✅ 「失败 1 批/300 行」 |
+| 5 | 哨兵 `__cardValueFailed` = 0 | ✅ 0 |
+| 6 | `RequestScoped` 报错 | ✅ 0 |
+
+**对照修复前**（§⑧ 实验）：同样装置下会**停在 900/1845**、整条链路被 reaper 砍、后续批一个不做。
+
+### ⚠️ 一条给测试的坑（已同步 tester）
+
+失败批 `elapsed=14942ms` **不是 10000ms**。`lock_timeout=10s` 只从「语句开始等锁」起算，该批前面还有约 5s 计算。
+**断言不许写 `elapsed ≈ 10000`**，要写宽松上界（如 `< 30000`），否则是一条脆弱假红。
+
+---
+
+## 🔴 B-29：④ `ensureExcelValues` 同构拆批（2026-08-28 第五次扩范围，用户裁决纳入）
+
+### 怎么发现的
+
+**不是复查发现的，是 B-28 的验收实验顺带打出来的。**
+同一把锁在砍掉批 4 之后，继续堵住了 `pid=2243097` 的
+`update quotation_line_item set costing_excel_values=$1, quote_excel_values=$2 where id=$3`，
+35s 后连同整个 ④ 一起被 reaper 砍，栈为：
+
+```
+com.cpq.quotation.service.CardSnapshotService_Subclass.ensureExcelValues
+  ← CreateQuotationMaterializer.materialize(CreateQuotationMaterializer.java:127)
+ARJUNA012117: TransactionReaper::check processing TX 0:ffff7f000101:b5c5:6a922b59:d1 in state RUN
+```
+结果：**Excel 值 0/1845 —— 整步回滚**。
+
+### 根因：与 ③ 修复前完全同构
+
+`CardSnapshotService.ensureExcelValues`（`:1022`）是**单个 `@Transactional` 包住全部 1845 行**的循环，
+无分批、无 `lock_timeout`、任一行被堵即全步回滚。这正是 B-28 给 ③ 治好的那个病。
+
+实测无争用时 33~41s，Narayana 60s 预算下**余量仅 31~44%** —— 这个余量撑不住任何真实争用。
+
+### 但严重性低于 ③，必须说清楚（不要过度定级）
+
+- ④ 的 NULL 是**设计上的正常态**：`QuotationResource:206` 注释明写「首存只算卡片值、Excel 值留 NULL；
+  前端开 Excel 视图/导出前调本端点补算（幂等，已算的零开销）」。
+- 所以 ④ 失败**不会导致页面空白**（那是 ③ 的病，已治好），只影响 Excel 视图 / 导出。
+
+### ⚠️ 真正的隐患在提交路径
+
+`QuotationResource:362`：
+```java
+try { cardSnapshotService.ensureExcelValues(id); em.clear(); } catch (Exception ignore) { /* 尽力,不阻断提交 */ }
+```
+1845 行单事务被堵穿 → 异常被 `ignore` **静默吞掉** → 冻结出**缺 Excel 快照的报价单，且不报警**。
+
+### 要做的（B-29-1 ~ B-29-4）
+
+| 编号 | 内容 |
+|---|---|
+| **B-29-1** | 拆批，每批独立 `REQUIRES_NEW`，批内首条 `SET LOCAL lock_timeout='10s'`；chunk 可配 `cpq.ensure-excel-values-chunk-size` / `CPQ_ENSURE_EXCEL_VALUES_CHUNK_SIZE`，默认 **300**（与 ③ 对齐） |
+| **B-29-2** | 失败批不阻断后续批；日志 `[ensure-excel-values-batch]` / `[ensure-excel-values-batch-failed]`（含 `batch=%d/%d rows=%d idxRange=[%d,%d)`），收尾在 `[lazy-excel]` 补失败统计 |
+| **B-29-3** | 三层结构：保留 `ensureExcelValues(UUID)` 薄包装（返回值语义**不变**），新增 `ensureExcelValuesDetailed(UUID)`；**复用**既有 `EnsureResult`，不新造同形状类 |
+| **B-29-4** | 提交路径不再静默：`QuotationResource:362` 改为**仍不阻断提交、但 `LOG.errorf` 记录失败批数/行数**。🚫 不改成抛异常阻断提交（未批准的行为变更） |
+
+### 🔒 硬约束（C-1 ~ C-7，派工时已下达）
+
+| 编号 | 约束 | 为什么 |
+|---|---|---|
+| **C-1** | 🚫 禁用 `@TransactionConfiguration` | 实测：已有活动事务内调用会抛 `RuntimeException: Changing timeout … only be done at the entry level`。④ 有 3 个调用方，submit 路径外层可能已有事务。要加超时只能在**调用点**包 `QuarkusTransaction.run(...)` |
+| **C-2** | `REQUIRES_NEW` 必须走 CDI 代理 | `this.xxx()` 自调用不生效；照抄 ③ 的 `self.` 写法（`renderCostingTreeBaseRows`） |
+| **C-3** | ThreadLocal 每批重设 | `ExcelCompDataContext` / `QuotationIdContext` 拆批后每批事务内都要 set/clear。⚠️ 且**必须保住** `QuotePendingScope.open/restore` 的既有不变式 —— 原注释明写「只在报价分支内 open/restore，**不得整方法/整循环包裹**，否则核价分支被污染（破 AC-17）」 |
+| **C-4** | 预取按批做，**不许退化成逐行查** | 现有 `cdByLine` 是整单一次 IN 预取。拆批后改成**按批 IN 预取**，既保批量化又不让驻留峰值失控。循环体内出现查询 = 违反 `backend.md` N+1 硬指标 |
+| **C-5** | 保持幂等 | 靠 `quoteExcelValues == null` / `costingExcelValues == null` 跳过。前端依赖「已算的零开销」 |
+| **C-6** | 红线停手 | 子代理无批准权。本任务不需要任何迁移 |
+| **C-7** | 不碰 worktree 里 untracked 的 `V395` 副本 | 合并前由主线删除 |
+
+### 验收判据（主线亲验会照此跑）
+
+复用 B-28 的同一套受控实验装置（持锁 130s），判据同构：
+1. 被堵批**快速失败**，日志含批号 + 行区间
+2. **其余批照常完成** —— 最终 Excel 值应为 `1845 − 被堵批行数`，**而不是 0/1845**
+3. ④ 链路 `ARJUNA012117` **不再出现**
+4. 提交路径失败时**有 ERROR 日志**（不再静默）
+5. 释放锁后再调一次 `POST /{id}/ensure-excel-values` 能自愈补齐至 1845/1845
+
+---
+
+## 🔴 B-29-5：提交 / 冻结两条金额路径必须响亮失败（**B-28 引入的行为回退**，2026-08-28）
+
+### 怎么发现的
+
+**是测试 agent 的一条 RED 顺出来的，不是复查发现的。**
+
+它写 T-9 时按 javadoc 断言 `computed == 9 - failedRows`，红了；报告给我时它猜的两个根因（`computed` 在内存 set 时就 +1 / `recomputeDraftHeaderTotals` 批尾 auto-flush 的边界效应）**都不对**。
+我读代码定位到真正的一行：
+
+```java
+return new EnsureResult(missing.size(), failedBatches, failedRows);
+```
+
+`computed` **恒等于尝试数**，从不扣减失败行 —— 这是既有语义，B-28 未改，且已在 `EnsureResult` javadoc 写明。
+**所以它报的那件事不是 bug。但顺着它我看到了下面这件是的。**
+
+### 真问题
+
+B-28 把批循环从「**本方法不 catch**」（旧注释原文）改成「按批 try/catch、不 rethrow」。
+`EnsureResult` javadoc 声称「其余 5 个既有调用点不受影响」——
+
+> 🚨 **这句话在签名上成立，在行为上不成立。**
+> 那 5 个调用点拿到的仍是 `int`，但它们原来能靠**异常**知道「补算没做完」；现在异常被吞，它们**再也无从得知**。
+
+其中两条是**金额路径**：
+
+| 调用点 | 后果 |
+|---|---|
+| `QuotationService.submit:881`<br>`int warmedLines = cardSnapshotService.ensureCardValues(id, true);` | 只跟 `WARMING_IN_PROGRESS`(-1) 比大小。部分批失败 → `warmedLines` 是个正常正数 → 提交照常往下走 → `lineDiscountService.recompute(li)` 逐行汇总出 `q.totalAmount` → **用陈旧卡片值算出的金额被冻结，且无任何报错** |
+| `CostingFreezeService:82`<br>`cardSnapshotService.ensureCardValues(quotationId);` | 同型，冻结核价快照 |
+
+⚠️ **为什么下游看不出异常**：submit 走 `force=true`，批失败时那些行**不会变 NULL，而是保留上一次的旧值**。
+「NULL 会被发现，旧值不会」—— 这正是它比一般静默失败更危险的地方。
+
+| | 批失败时 |
+|---|---|
+| **B-28 之前** | 异常冒泡 → submit 500 → 用户重试。**响亮** |
+| **B-28 之后** | 静默冻结错价 |
+
+### 修法
+
+让这两条路径重新能察觉部分失败并**响亮失败**（恢复 B-28 之前的语义），
+但 **`materialize` 的容错不改回去** —— 那是 B-28 的目的本身。
+
+1. `QuotationService.submit:881` 改调 `ensureCardValuesDetailed(id, true)`；`failedBatches > 0` → 抛 `BusinessException(409)`，
+   文案要让用户知道该重试。⚠️ 与既有 `WARMING_IN_PROGRESS → 409` 分支**并列**，不合并 —— 两者原因不同
+   （一个是「别人在算」，一个是「算失败了」）。
+2. `CostingFreezeService:82` 同样改用 Detailed，`failedBatches > 0` 不静默继续（具体处置由实现方读上下文后判断并说明依据）。
+
+🚫 **不改** `ensureCardValues(UUID)` / `ensureCardValues(UUID, boolean)` 两个薄包装的签名与返回值语义 —— 另有 3 个调用点在用，动它们会扩大影响面。**只改这两个调用点。**
+
+---
+
+## 🔴 B-29-6：修掉 javadoc 自相矛盾
+
+`CardSnapshotService` 两处 `@return`（约 `:1020` / `:1093`）：
+```
+@return 实际补算(落库)的行数;0=全部已就绪(无需算)。
+```
+与 `EnsureResult` 的注释**直接打架**，后者明写 `computed`「不是"成功补算"行数」。
+**以 `EnsureResult` 为准**（实现即 `missing.size()`），把两处 `@return` 改准，并点明「判成败要看 `failedBatches`/`failedRows`」。
+
+> 📌 **这条不是润色**：测试 agent 正是按这份说谎的 javadoc 写出了一条假红。**文档说谎会直接制造假红。**
+
+### ⚠️ 主线的一处信息错误（留痕）
+
+我在 B-29 派工 prompt 里告诉后端「③ 的 `EnsureResult.computed` 是实际落库行数」——
+**那是我从 DB 计数 1545 反推的推断，不是实测，是错的**（实际 `computed`=1845）。已向后端与测试双方更正。
+**B-29 的 `computed` 须与 ③ 保持一致（同为尝试数）**，不许"顺手改好"，否则两方法语义不一致更坑人。

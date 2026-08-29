@@ -1,0 +1,42 @@
+既有红测试 A/B 归因（主线亲验，2026-08-28）
+
+【为什么做这个】后端 B-29 跑回归后出现 8 failures + 1 error。
+  «CLAUDE.md 教训»：报「非本次引入」可能是真回归，必须 A/B，不许靠阅读判断。
+
+【装置】
+  A 组 = 干净 master 的临时 detached worktree（.claude/worktrees/ab-master-260825），不含本任务任何改动
+  B 组 = 本任务分支 fix/task-260825-materialize-n1（含 B-22~B-29）
+  同一测试库 cpq_db（test profile），同一组 5 个测试类，同一命令
+
+【结果对照】
+  测试类                                      A组(master)                 B组(本分支)
+  resource.QuotationResourceTest                 run=4 F=4 E=0                run=4 F=4 E=0
+  CardSnapshotFreezeTest                         run=3 F=1 E=0                run=3 F=1 E=0
+  service.CardSnapshotAmountTotalTest            run=4 F=1 E=0                run=4 F=1 E=0
+  service.CardSnapshotDryRunParityTest           run=1 F=0 E=1                run=1 F=0 E=1
+  Tc059ConcurrentSubmitHttpTest                  run=2 F=2 E=0                run=2 F=2 E=0
+
+  合计：A 组 8 failures + 1 error   B 组 8 failures + 1 error
+
+【判定】
+  ✅ 九个失败【全部在干净 master 上就红着】，无一由本任务引入。
+
+【⚠️ 唯一一处「两边都红但原因变了」——必须单独说明，不许含糊带过】
+  Tc059ConcurrentSubmitHttpTest：
+    A 组(master) 失败原因 = 精度漂移：
+      org.opentest4j.AssertionFailedError: quotation.original_amount ==> expected: <98765431.123456789012> but was: <98765431.123456789000>
+    B 组(本分支) 失败原因 = B-29-5 新加的 409 守卫先一步拦下：
+      org.opentest4j.AssertionFailedError: {"code":409,"message":"部分行的金额重算未完成（1 批/1 行），为避免冻结错误金额，�
+
+  伴随 suppressed 异常：LockTimeoutException on «update quotation set ...»
+  → 该测试本就在制造并发提交，真的撞出了行锁超时；新守卫据此拒绝冻结，属【预期行为】。
+  → 行为变更（需向用户交代）：并发争用下提交现在以 409「请稍后重新提交」浮现，
+     而不是静默冻结一份用陈旧卡片值算出的金额。这正是 B-29-5 的目的。
+
+【顺带查证】cpq_db 的 admin 状态 = ACTIVE
+  → 那 4 个 401 【不是】既往「E2E 反复跑把 admin 置 INACTIVE」那个已知坑，另有原因，不在本任务范围。
+
+【精度族（A 组即红，master 侧问题，非本任务）】
+  CardSnapshotAmountTotalTest : expected 0.083825536789  actual 0.083825537      （12 位 → 9 位）
+  Tc059 ×2                    : expected …123456789012   actual …123456789/…789000
+  现行策略 PrecisionPolicy: CALCULATION_SCALE=12 / DISPLAY_SCALE=9 / FORMULA_RESULT_SCALE=9

@@ -5735,3 +5735,36 @@ DB 扩到 12 位后，即便 handler 完全不归一，12 位 Excel 导入查库
 | `Sec35.ac29` | 归因完成：用例发明了 AC 原文里没有的 `isDefaultForAmount` 字段（后端全工程零命中），属第 7 条「用例写错 AC 的意思」，**修法明确、待裁决** |
 | `BL-0180` / `BL-0181` | 核价侧 `precomputeCostingDriverUnion` 同类缺口（P2）／组件 `50c646cb` 元素单价违反可编辑性通则（P1，触发 AP-44） |
 | D-58 的性能代价 | outer 过滤器加宽后取回行数变多，**1845 行极端单量不在当时评估视野内**；已主动告知并发会话，若 profile 指向 `DataLoader.loadByPath` 返回行数则开返修 |
+
+[2026-08-28] 建单物化 / 导入（task-260825-大单量导入建单性能） - 大单量导入建单 30s 超时：四处 N+1 + 两处「一荣俱荣一损俱损」单事务 | 涉及文件：后端 `CardSnapshotService`（分批三层 + lock_timeout + 确定性排序）/ `ConfigureSnapshotService`（D-1）/ `CreateQuotationMaterializer`（异步化 + 四步埋点 + warnings）/ `QuotationLineItemMaterializeService`（B-24）/ `Q02CustomerMapHandler` + `MaterialCustomerMapRepository`（B-26 批量 upsert）/ `QuotationService` + `CostingFreezeService`（B-29-5 金额路径守卫）/ `QuotationResource` + `V6QuotationCommitService` + `BasicDataImportV6Resource`；前端 `QuoteBasicDataImportV6Drawer` + `quotationService`；测试 7 文件 14 例 | 合 master merge `76c4b0ab` |
+
+**根因（四处 N+1，逐一实测）**：
+- **D-3（真凶，在事务内）** `CardSnapshotService.loadFrozenQuoteTabs` 在 `ensureCardValues` 的逐行 Pass1 里查一个**整单恒定值**（`SELECT structure FROM quotation_view_structure WHERE quotation_id=?`）。1845 行 ≈31s。由 `b6e86a18` 引入，**该提交把既有整单 prefetch 直接换成了逐行查库**。
+- **D-1** `ConfigureSnapshotService.loadRowDataByComp` 在 `snapshotLines` 逐行循环内 ≈27s。⚠️ 但 `snapshotLines` **不带事务**，只烧墙钟、不占事务预算。
+- **B-24** 建行逐行 INSERT → 分块多值 VALUES：**30.65s → 1.05s**。
+- **B-26** 导入侧 Q02 逐行 upsert → `upsertQuoteBatch` 内存折叠批量：**30678ms → 490ms（62×）**。
+
+**结构性修复（比 N+1 更要紧的那一半）**：③`ensureCardValues` / ④`ensureExcelValues` 原本各用**一个事务包住全部 1845 行**，任一行被并发行锁堵住 → 整步回滚 + Narayana 60s reaper 强杀 → 卡片值/Excel 值全量作废。改为**分批独立 `REQUIRES_NEW` + 批内 `SET LOCAL lock_timeout='10s'` + 单批失败不阻断其余批**。
+
+🔑 **两天的谜团由受控实验解开（`问题说明.md §⑧`）**：`saveDraft` 持有行锁 → 物化批 UPDATE 被堵 → 内层 `REQUIRES_NEW` 撞 60s reaper → 整个 materialize 失败，且**总停在 chunk 的整数倍边界**（900/1200/1500）。**前 4 次实验装置都失败了**（空变量致死循环、`SELECT count(*) … FOR UPDATE` 报错「FOR UPDATE is not allowed with aggregate functions」致事务退出零持锁、锁了一张已算完的单、只造了读负载而**读不锁行**），第 5 次才做成。
+
+🔑 **实测结果**：导入 36s/四分之一概率整单回滚 → **5~7s/无失败**；`create-quotation` 30.65s（浏览器 30.01s 掐断）→ **1.22~1.54s**；核价哨兵 1845 → **0**；`RequestScoped` 报错 24 → **0**。受控实验（持 300 行锁 300 秒）终态：③④ **各只废被堵的那一批**（`batch=4/7 [900,1200)`），其余批照常完成 → 各 1545 行；`ARJUNA012117` **0 次**；释放锁后各调一次端点自愈 → **1845/1845 四列全满、哨兵 0**。
+
+⚠️ **行为变更（需向使用方交代）**：B-29-5 之后，并发争用下提交以 **409「部分行的金额重算未完成，请稍后重新提交」** 浮现，而不是静默冻结一份用**陈旧卡片值**算出的金额。起因是 B-28 把批失败从「异常冒泡」改成「按批 catch 不 rethrow」后，`QuotationService.submit`（`:881`）与 `CostingFreezeService`（`:82`）用的是只返回 `int` 的薄包装、**看不到 `failedBatches`**；而 submit 走 `force=true` 时失败批的行**保留旧值而非 NULL**，下游照常汇总 → 静默冻结错价。
+
+🔑 **主线的五类同型验证失误（全部自查发现并留痕，最值得记）**：
+1. **用日志条数下全称否定** —— 据「窗口内 23 行日志、`SqlViewExecutor` 仅 4 次」推出「该链路无其它 N+1」。**裸 `em.createNativeQuery` 完全不打日志**，D-1/D-3 都在这台仪器的盲区。证明无 N+1 要用 **SQL 条数断言**（`Statistics.setStatisticsEnabled(true)`）。
+2. **`dbCalls=0` 的盲区** —— 据此写下「27.2 秒且零 DB 调用 → 100% Java CPU，疑 O(N²)」，实为逐行 `upsertQuote`。
+3. **幂等路径掩盖了 bug** —— 所有 D-5 验证复用同一个 `importRecordId` → 走「幂等重入」跳过建行 → 实测 0.2s；用户走真实首次路径撞的是 30.65s。**幂等端点的性能验证必须走非幂等的首次路径。**
+4. **`IS NOT NULL` 被哨兵击穿** —— 「核价卡片值 1845」宣布通过，实际 1845 行全是 `__cardValueFailed`。
+5. **只验 API 不开 UI** —— `batch-expand` 的守卫失败只在页面渲染时发生，纯 API 跑法恒为 0。
+
+🔑 **jstack 找的是「时间花在哪」，失败原因要看「哪个事务超了预算」，二者可落在完全不同的步骤**（6 次采样 5 次落在 D-1，据此把根因归给 D-1 —— 错，真凶是事务内的 D-3）。
+
+🔑 **文档说谎会直接制造假红**：`ensureCardValues` 的 `@return` 写「实际补算(落库)的行数」，实现却是 `missing.size()`（尝试数，批失败不扣减）。测试 agent 照 javadoc 写断言 → 红。主线亦曾由 DB 计数 **反推** `computed`（未实测）并把错的说法转给测试方。已修 javadoc（B-29-6）。
+
+🔑 **批边界不能靠物理堆顺序**（B-30）：两处「挑待补算行」的 `SELECT id` 都无 `ORDER BY`。③ 跑时物理序≈插入序，被锁 300 行整齐落一批；但 ③ 刚 UPDATE 过这些行 → 堆位置变动 → ④ 再查时物理序已变 → 被锁行散落两批、**连带 600 行而非 300 行**。统一改 `ORDER BY sort_order NULLS LAST, id`（`sort_order` 可空且默认 0 会重复，必须用主键兜底成全序）。
+
+**A/B 归因**：合并前既有 9 个红（`QuotationResourceTest` 4×401 / 精度 12→9 位族 / `CardSnapshotDryRunParityTest` ClassCastException 等）经 **干净 master 临时 worktree 对照**确认逐项相同，**无一由本任务引入**（证据 `证据/既有红测试-AB归因.txt`）。
+
+**自检**：主仓合并后 8081 热重载 60s 后返 401 ✅；5174 → 200 ✅；前端 `tsc` 0 错误 ✅；主仓真机 E2E：导入 6s、`create-quotation` POST **1.22s**、物化 108s 达 1845/1845/1845、哨兵 0 ✅。
