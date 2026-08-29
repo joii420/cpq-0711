@@ -146,9 +146,9 @@ git branch --no-merged master                                                   
 | `ReadonlyProductCard.tsx` | 20 | 0712核价展示 · 0713版本选择 · 0721树 · 0722元素价格 · 0725空白 · 0728版式 · 0729客户价格 · 0801精度 · 0801连表 · 0803父子公式 · **0806编辑链路对账** · **0806模板冻结** · **0806价格任务性能** · 删除行重构 · repair-0727回填 · repair-0803BL0098 · **repair-0808算序假环** |
 | `CardSnapshotService.java` | 18 | 0712核价展示 · 0721树 · 0725空白 · 0728版式 · 0729客户价格 · 0801精度 · 0803父子公式 · **0806编辑链路对账** · **0806模板冻结** · **0806价格任务性能** · 删除行重构 · repair-0729copy · repair-0803BL0098 · repair-0803SUM · repair-0803公式BUG |
 | `QuotationWizard.tsx` | 15 | 0712核价展示 · 0712选配 · 0722元素价格 · 0723清洗 · 0725空白 · 0729客户价格 · 0729分类 · 0801精度 · 0801连表 · **0806编辑链路对账** · **0812停用四Sheet** · repair-0729copy · rule-0724 |
-| `useDriverExpansions.ts` | 15 | 0713版本选择 · 0722元素价格 · 0725空白 · 0728版式 · 0729客户价格 · 0801连表 · **0806模板冻结** · **0806价格任务性能** · 删除行重构 · repair-0727回填 · repair-0803BL0098 · rule-0724 |
+| `useDriverExpansions.ts` | **16**（2026-08-29 重跑） | 0713版本选择 · 0722元素价格 · 0725空白 · 0728版式 · 0729客户价格 · 0801连表 · **0806模板冻结** · **0806价格任务性能** · **0812材质元素下拉** · **0812停用四Sheet** · **0813扩12位小数** · **0825分页与料号查询** · 删除行重构 · repair-0727回填 · repair-0803BL0098 · rule-0724 |
 | `FormulaCalculator.java` | 8 | 0721树 · 0729客户价格 · 0801精度 · 0803父子公式 · 0805导入导出 · 删除行重构 · repair-0803BL0098 · repair-0803SUM |
-| `QuotationService.java` | 9 | 0708导入 · 0729客户价格 · 0729模板校验 · 0801精度 · 删除行重构 · repair-0729copy · repair-0803BL0098 · **repair-0808算序假环** |
+| `QuotationService.java` | **11**（2026-08-29 重跑） | 0708导入 · **0721树** · 0729客户价格 · 0729模板校验 · 0801精度 · **0806编辑链路对账** · **0806模板冻结** · **0825分页与料号查询** · 删除行重构 · repair-0729copy · repair-0803BL0098 · **repair-0808算序假环** |
 | `ComponentService.java` | 12 | 0721树 · 0723清洗 · 0729客户价格 · 0803父子公式 · **0806编辑链路对账** · **0806模板冻结** · repair-0803BL0098 · repair-0803SUM · repair-0803公式BUG |
 | `ComponentCell.tsx` | 7 | 0729客户价格 · 0801精度 · 0803父子公式 · 删除行重构 · repair-0803BL0098 · **repair-0808算序假环** · rule-0724 |
 | `formulaEngine.ts` | 7 | 0729客户价格 · 0801精度 · 0803父子公式 · **0806编辑链路对账** · **0806模板冻结** · repair-0803SUM · rule-0724 |
@@ -219,6 +219,7 @@ done | sort | cut -d'|' -f1 | uniq -c | sort -rn | awk '$1>=4'
 | `task-260721-报价侧树状结构与页签类型属性/` | 报价卡片按 BOM 树渲染（复用核价 spine 引擎）+ 页签类型属性（BOM/材质元素/零件/组成件/外购件/主件） | ✅ 已交付 | `QuotationStep2.tsx` `QuotationTreeService.java` |
 | └ `repair-260814-详情页报价树多出版本列/` | 「报价侧不出版本列」裁决（`7fadf5e8`）**只落地了编辑页**，只读页 `ReadonlyProductCard.tsx` 一行未动 → 详情页恒多一列（AP-50 同族）。修法＝5 处补 `isCosting` 闸门 + 顺带补 `QuotationStep2` tfoot 合计行占位（`7fadf5e8` 漏改的第 4 处）。**核价侧不变由等价性证明**（`X → {isCosting && X}`），不必跑数值 A/B | ✅ **已交付合 master `ada23fd0`**（`BL-0173`；AC-1~8 全达成；还原实验复现故障态；遗留 [[BL-0174]] 系统列口径抽共享） | `ReadonlyProductCard.tsx` `QuotationStep2.tsx` `quotation-bom-tree.spec.ts` |
 | └ `repair-260727-报价单报价侧删除行BUG/` | **一行有 4 套身份**（`__effKey`/fp 墓碑/rowKey/`__nodeId`），删除与校验都没用 `__nodeId` | ✅ 合 master `bf3822a3` | `DeletedRowKeys.java` `BomTreeDeleteConfirmDrawer.tsx` |
+| └ `repair-260829-保存草稿树页签校验N+1/` | 保存草稿时树页签校验的 N+1（目录名语义；**文档尚未落笔，内容以其作者后续补充为准**） | 🆕 **仅建目录**（2026-08-29 00:41，当前只有一个空 `证据/` 子目录，无任何 md、git 未跟踪） | — |
 | `task-删除行架构重构/` | 架构师设计稿：driver 行两份平行存储 → 内容指纹身份 `uniqFp` 统一（Phase1 止血 / Phase2 根治） | 📐 设计定稿 | `QuotationStep2.tsx` `useCardSnapshots.ts` |
 | `task-260721-报价升版逻辑/` | 导入不再全局升版，改为**核价通过时**把报价单当刻有效数据回填 + 升版落地 | ✅ 已交付 | `QuotePendingRewriter.java` |
 | `repair-260727-回填语义与预览重做/` | 上条的返修：页签投影当整组权威 → **改 patch 语义**（AP-60）+ 核价通过预览重做 | ✅ 合 master `25687548` | `QuoteBackfillService.java` `CostingApprovePreviewDrawer.tsx` |
