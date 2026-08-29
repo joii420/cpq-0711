@@ -7,13 +7,26 @@ import { useExcelSnapshotRows } from './useExcelSnapshotRows';
 import { useBackendExcelRows } from './useBackendExcelRows';
 import { buildExcelSnapshot } from './buildExcelSnapshot';
 import { renderCellValue } from './excelCellFormat';
+import { highlightText } from './highlightText';
 import type { DriverExpansionMap } from './useDriverExpansions';
 import type { PathCache } from './usePathFormulaCache';
 import type { GlobalVariableDefinition } from '../../utils/formulaEngine';
 
 interface Props {
   linkedTemplateId?: string;
+  /**
+   * 全量行（task-260825 起）：始终传完整数据集，供 legacyResult/backendResult 的
+   * refreshSignal / 路径求值任务保持稳定 —— 翻页不得触发它们重取（AC-3）。
+   * 实际渲染窗口由 renderLineItems 决定。
+   */
   lineItems: LineItem[];
+  /**
+   * task-260825：当前页窗口（全量 lineItems 按分页/查询过滤后的子集，对象引用取自 lineItems）。
+   * 缺省时等价于未分页（渲染 lineItems 全量），供未接入分页的调用方（如尚未迁移的场景）保持原行为。
+   */
+  renderLineItems?: LineItem[];
+  /** 当前页在全量中的起始偏移（0-based），供 # 列渲染全局序号（第 2 页从 101 起，AC-8 相关）。 */
+  pageOffset?: number;
   quotationContext?: Record<string, any>;
   viewLabel?: string;
   customerId?: string;
@@ -33,6 +46,8 @@ interface Props {
   pathCache?: PathCache;
   /** 全局变量定义字典（code → def），供动态 key GV 路径重写 */
   globalVariableDefs?: Record<string, GlobalVariableDefinition>;
+  /** task-260825（F-5）：料号查询命中高亮词（防抖后的 searchTerm），高亮「料号」列命中片段。 */
+  highlightTerm?: string;
 }
 
 /**
@@ -49,6 +64,8 @@ const EMPTY_LINE_ITEMS: LineItem[] = [];
 const LinkedExcelView: React.FC<Props> = ({
   linkedTemplateId,
   lineItems,
+  renderLineItems,
+  pageOffset,
   quotationContext,
   viewLabel,
   customerId,
@@ -60,6 +77,7 @@ const LinkedExcelView: React.FC<Props> = ({
   driverExpansions,
   pathCache,
   globalVariableDefs,
+  highlightTerm,
 }) => {
   // ---- 旧模型 hook（始终调用，用 enabled 控制是否真正运行）----
   // useLinkedExcelRows 内部用 linkedTemplateId 有无控制；直接传完整参数，
@@ -90,8 +108,10 @@ const LinkedExcelView: React.FC<Props> = ({
   const isV2 = legacyResult.configShape === 'v2';
   const useSnapshot = isNewModel(legacyColumns);
 
+  // task-260825：useExcelSnapshotRows 是纯客户端计算（无网络副作用），直接喂当前页窗口即可（AC-7），
+  // 无需再走下方 windowedRows 的兜底切片。
   const snapshotResult = useExcelSnapshotRows({
-    lineItems,
+    lineItems: renderLineItems ?? lineItems,
     side: side ?? 'QUOTE',
     parsedColumns: legacyColumns,
   });
@@ -112,9 +132,12 @@ const LinkedExcelView: React.FC<Props> = ({
   // ---- Phase 2/2.5：报价侧(side=QUOTE) Excel 用前端 buildExcelSnapshot 即时算值 ----
   // 列定义来自后端解析(reportColumns)，值与卡片同引擎(恒等卡片)；核价侧(COSTING)不动，走原 v2/snapshot/legacy。
   // __key 仅作 React key，不参与 driverExpansionKey 计算；报价行恒有产品结构，__noData 恒 false。
+  // task-260825：报价侧渲染只喂当前页窗口（renderLineItems），避免对未渲染的 1745 行做无谓的
+  // buildExcelSnapshot 计算（AC-19 性能）；未传时回退全量，保持未接入分页的调用方行为不变。
+  const frontendRenderItems = renderLineItems ?? lineItems;
   const frontendRows = React.useMemo(() => {
     if (side === 'COSTING' || !reportColumns?.length) return null;
-    return lineItems.flatMap((li, i) => {
+    return frontendRenderItems.flatMap((li, i) => {
       const snap = buildExcelSnapshot(
         li,
         reportColumns,
@@ -130,7 +153,36 @@ const LinkedExcelView: React.FC<Props> = ({
         ...r,
       }));
     });
-  }, [side, lineItems, reportColumns, driverExpansions, customerId, pathCache, globalVariableDefs]);
+  }, [side, frontendRenderItems, reportColumns, driverExpansions, customerId, pathCache, globalVariableDefs]);
+
+  // task-260825（AC-7/AC-8）：backendResult/legacyResult 两条链路的输入保持全量（避免翻页触发
+  // refetch，AC-3），故其原始 rows 仍是全量 1845 条 —— 在选用前按 renderLineItems 的顺序/成员做窗口切片。
+  // 用 __hfPartNo（=productPartNo，现网 1845 条料号互不重复，S-5 实证）而非下标配对，规避 AP-54 家族的
+  // 按下标兜底配对风险。
+  // 🚫 不对 frontendRows / snapshotResult 应用同一逻辑：它们已经直接喂 renderLineItems 产出（含 COSTING
+  // BOM 树的子节点行，子节点 __hfPartNo 是子件料号而非本行 productPartNo，按 partNo 分组会把子节点误判为
+  // "不属于任何 renderLineItems" 而丢弃）——那两条链路的窗口天然正确，不需要、也不能套用本切片。
+  const windowByRenderItems = React.useCallback(<R extends { __hfPartNo?: string }>(sourceRows: R[]): R[] => {
+    if (!renderLineItems) return sourceRows;
+    const order = new Set<string>();
+    renderLineItems.forEach(li => { if (li.productPartNo) order.add(li.productPartNo); });
+    const grouped = new Map<string, R[]>();
+    for (const r of sourceRows) {
+      const pn = r.__hfPartNo;
+      if (pn == null || !order.has(pn)) continue;
+      const g = grouped.get(pn);
+      if (g) g.push(r); else grouped.set(pn, [r]);
+    }
+    const out: R[] = [];
+    for (const li of renderLineItems) {
+      if (!li.productPartNo) continue;
+      const g = grouped.get(li.productPartNo);
+      if (g) out.push(...g);
+    }
+    return out;
+  }, [renderLineItems]);
+  const windowedBackendRows = React.useMemo(() => windowByRenderItems(backendResult.rows), [windowByRenderItems, backendResult.rows]);
+  const windowedLegacyRows = React.useMemo(() => windowByRenderItems(legacyResult.rows), [windowByRenderItems, legacyResult.rows]);
 
   // ---- 按模型选用最终结果：报价侧前端算值优先(列后端解析+值前端)；核价侧 v2(后端) > 快照 > 老内联 ----
   const {
@@ -147,7 +199,7 @@ const LinkedExcelView: React.FC<Props> = ({
       }
     : isV2
     ? {
-        rows: backendResult.rows,
+        rows: windowedBackendRows,
         parsedColumns: backendResult.parsedColumns,
         loading: backendResult.loading,
         error: backendResult.error,
@@ -160,7 +212,7 @@ const LinkedExcelView: React.FC<Props> = ({
         error: legacyResult.error,
       }
     : {
-        rows: legacyResult.rows,
+        rows: windowedLegacyRows,
         parsedColumns: legacyColumns,
         loading: legacyResult.loading,
         error: legacyResult.error,
@@ -206,11 +258,18 @@ const LinkedExcelView: React.FC<Props> = ({
   // 按约定「父料号」不单独成列(仅用于建层级),2026-07-03 隐藏——与产品卡片树页签一致。
   const isCosting = side === 'COSTING';
   const tableColumns = [
+    // task-260825（F-6）：全局序号列——第 2 页从 101 起，不用页内序号（原型 04-...Excel视图.html）
+    ...(pageOffset != null ? [{
+      title: '#', dataIndex: '__seq', key: '__seq', width: 60, fixed: 'left' as const,
+      render: (_: any, __: any, idx: number) => pageOffset + idx + 1,
+    }] : []),
     {
       title: '料号', dataIndex: '__hfPartNo', key: '__hfPartNo',
       fixed: 'left' as const, width: 220,
       render: (v: string, rec: any) => (
-        <span style={{ fontFamily: 'monospace', paddingLeft: isCosting ? ((rec.__lvl ?? 1) - 1) * 16 : 0 }}>{v}</span>
+        <span style={{ fontFamily: 'monospace', paddingLeft: isCosting ? ((rec.__lvl ?? 1) - 1) * 16 : 0 }}>
+          {highlightText(v, highlightTerm)}
+        </span>
       ),
     },
     ...(isCosting ? [

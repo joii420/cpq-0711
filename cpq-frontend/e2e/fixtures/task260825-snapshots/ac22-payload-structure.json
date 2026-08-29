@@ -1,0 +1,27 @@
+{
+  "structureKeys": [
+    "annualVolume",
+    "componentData",
+    "compositeProcesses",
+    "compositeType",
+    "customerPartNo",
+    "discountBaseAmount",
+    "discountRateApplied",
+    "discountRuleCode",
+    "discountSource",
+    "id",
+    "lineDiscountAmount",
+    "lineFinalPrice",
+    "lineTotalAmount",
+    "lineUnitPrice",
+    "processNos",
+    "productAttributeValues",
+    "productId",
+    "productName",
+    "productPartNo",
+    "sortOrder",
+    "subtotal",
+    "tempParentIndex",
+    "templateId"
+  ]
+}

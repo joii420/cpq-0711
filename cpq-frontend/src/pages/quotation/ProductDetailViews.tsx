@@ -14,7 +14,7 @@
  * 不向外暴露这些状态，调用方只需传入 quotation。
  */
 import React, { useEffect, useState } from 'react';
-import { Card, Col, Row, Segmented, Space } from 'antd';
+import { Button, Card, Col, Row, Segmented, Space } from 'antd';
 import { Typography } from 'antd';
 import { globalVariableService } from '../../services/globalVariableService';
 import type { GlobalVariableDefinition } from '../../services/globalVariableService';
@@ -26,6 +26,8 @@ import { usePathFormulaCache } from './usePathFormulaCache';
 import { enrichComponentData } from './enrichComponentData';
 import type { LineItem } from './QuotationStep2';
 import type { VersionSwitchResult } from '../../services/costingOrderService';
+import { usePagedSearch } from './usePagedSearch';
+import PagingBar from './PagingBar';
 
 const { Text } = Typography;
 
@@ -151,6 +153,35 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
     (li: any) => li.compositeType !== 'PART',
   );
 
+  // task-260825（F-3）：详情页前端分页 + 料号查询，独立于编辑页 QuotationStep2 的分页状态（各页面各自独立）。
+  const paging = usePagedSearch<any>({
+    items: visible,
+    getSearchFields: (li) => [li.productPartNo, li.customerProductNo, li.customerPartName],
+  });
+  const {
+    page: pgPage, setPage: pgSetPage, pageSize: pgPageSize, setPageSize: pgSetPageSize,
+    searchInput: pgSearchInput, setSearchInput: pgSetSearchInput,
+    total: pgTotal, matchedTotal: pgMatchedTotal, isSearching: pgIsSearching,
+    pagedItems: pagedVisible, showPager, pageSizeOptions: pgPageSizeOptions,
+  } = paging;
+  const handlePagerChange = (p: number, ps: number) => {
+    pgSetPage(p);
+    if (ps !== pgPageSize) pgSetPageSize(ps);
+  };
+  const renderPagingBar = () => (
+    <PagingBar
+      total={pgTotal}
+      matchedTotal={pgMatchedTotal}
+      isSearching={pgIsSearching}
+      page={pgPage}
+      pageSize={pgPageSize}
+      pageSizeOptions={pgPageSizeOptions}
+      onPageChange={handlePagerChange}
+      searchValue={pgSearchInput}
+      onSearchChange={pgSetSearchInput}
+    />
+  );
+
   useEffect(() => {
     if (!locateTarget) return;
     setMainTab('quote');     // 后端只校验报价卡，定位恒落报价卡片视图
@@ -163,11 +194,26 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
       cardId = visible.find((li: any) => li.productPartNo === locateTarget.productPartNo)?.id;  // 兜底(PART 不走)
     }
     setLocateResolved({ cardId, componentId: locateTarget.componentId, seq: locateTarget.seq });
-    if (cardId && cardRefs.current[cardId]) {
-      cardRefs.current[cardId]!.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (cardId) {
+      const pos = visible.findIndex((li: any) => li.id === cardId);
+      if (pos >= 0) paging.locateToPosition(pos);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locateTarget?.seq]);
+
+  // 页码切好、目标卡片在新页重新挂载后再滚动（双 rAF 确保切页渲染已提交）
+  useEffect(() => {
+    if (!locateResolved?.cardId) return;
+    const id = locateResolved.cardId;
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        cardRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+    return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locateResolved?.cardId, pgPage]);
 
   // ----------------------------------------------------------------
   // 渲染
@@ -218,23 +264,42 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
           readonly={comparisonReadonly}
           frozen
         />
+      ) : pgIsSearching && pgMatchedTotal === 0 ? (
+        <div className="qt-empty-state" style={{ padding: '56px 20px', textAlign: 'center' }}>
+          <div style={{ fontSize: 44, lineHeight: 1, opacity: .25 }}>🔍</div>
+          <div style={{ marginTop: 14, color: 'rgba(0,0,0,.88)', fontSize: 15 }}>未找到匹配的料号</div>
+          <div style={{ marginTop: 6, color: 'rgba(0,0,0,.45)', fontSize: 13 }}>
+            「{pgSearchInput}」在本报价单的 {pgTotal} 个料号中无匹配。请换一个料号片段，或清空查询查看全部。
+          </div>
+          <div style={{ marginTop: 14 }}>
+            <Button onClick={paging.clearSearch}>清空查询</Button>
+          </div>
+        </div>
       ) : viewType === 'excel' ? (
-        <ReadonlyExcelView
-          lineItems={visible}
-          side={mainTab === 'costing' ? 'COSTING' : 'QUOTE'}
-          columns={
-            mainTab === 'costing' ? quotation.costingExcelColumns : quotation.quoteExcelColumns
-          }
-        />
+        <div>
+          {showPager && renderPagingBar()}
+          {/* task-260825（F-3/AC-7）：ReadonlyExcelView 纯客户端计算（useExcelSnapshotRows 无网络副作用），
+              直接喂当前页窗口即可，不需要 LinkedExcelView 那套 renderLineItems 兜底切片。 */}
+          <ReadonlyExcelView
+            lineItems={pagedVisible}
+            side={mainTab === 'costing' ? 'COSTING' : 'QUOTE'}
+            columns={
+              mainTab === 'costing' ? quotation.costingExcelColumns : quotation.quoteExcelColumns
+            }
+          />
+          {showPager && renderPagingBar()}
+        </div>
       ) : (
         <div className="qt-products-list">
-          {visible.map((li: any, idx: number) => {
+          {showPager && renderPagingBar()}
+          {paging.pagedPositions.map((pos) => {
+            const li = visible[pos];
             const isLocateTarget = locateResolved?.cardId != null && locateResolved.cardId === li.id;
             return (
-              <div key={li.id || idx} ref={el => { if (li.id) cardRefs.current[li.id] = el; }}>
+              <div key={li.id || pos} ref={el => { if (li.id) cardRefs.current[li.id] = el; }}>
                 <ReadonlyProductCard
                   lineItem={li}
-                  index={idx}
+                  index={pos}
                   quotationId={quotation.id}
                   quotationStatus={quotation.status}
                   customerId={quotation.customerId}
@@ -252,6 +317,7 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
               </div>
             );
           })}
+          {showPager && renderPagingBar()}
         </div>
       )}
 

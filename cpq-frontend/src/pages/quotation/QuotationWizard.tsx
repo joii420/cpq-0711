@@ -19,6 +19,7 @@ import QuotationStep2, {
 } from './QuotationStep2';
 import QuotationStep3 from './QuotationStep3';
 import type { LineItem, ComponentDataItem } from './QuotationStep2';
+import { ZH_PAGINATION_LOCALE } from './PagingBar';
 import { useDriverExpansions, driverExpansionKey, bnfDriverLookupKey, fieldsOverrideHash } from './useDriverExpansions';
 import { safeSetLocalDraft } from './draftCache';
 import { stableDraftDedupKey } from './draftPayloadDedup';
@@ -1917,7 +1918,16 @@ const QuotationWizard: React.FC = () => {
           <Table
             rowKey="key"
             dataSource={lineItems}
-            pagination={false}
+            // task-260825（F-7/AC-16）：1845 行一次性铺开会卡顿，改用 AntD Table 自带分页。
+            // dataSource 仍是全量 lineItems（AC-21：总额继续在全量上求和，与本分页互不影响）。
+            pagination={{
+              defaultPageSize: 100,
+              pageSizeOptions: [100, 200, 500],
+              showSizeChanger: true,
+              showQuickJumper: true,
+              showTotal: (t) => `共 ${t} 条`,
+              locale: ZH_PAGINATION_LOCALE,
+            }}
             size="small"
             columns={[
               { title: '产品名称', dataIndex: 'productName' },

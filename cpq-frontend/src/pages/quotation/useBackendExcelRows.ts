@@ -112,10 +112,12 @@ export function useBackendExcelRows(params: UseBackendExcelRowsParams): UseBacke
       const lineItemId: string | undefined = rawRow._lineItemId;
       const matchedLi = lineItemId ? lineItemById.get(lineItemId) : undefined;
 
-      // __hfPartNo: 优先按 _lineItemId 匹配，取不到则按顺序用 lineItems[i]
+      // __hfPartNo: 优先按 _lineItemId 精确匹配；task-260825（AC-8）收紧下标兜底——
+      // 只在两数组等长（大概率同序）时才允许按位置兜底，避免调用方传入切片/重排后的子集时
+      // 静默按错误位置配对（AP-54 家族风险）。
       const hfPartNo =
         matchedLi?.productPartNo ??
-        (lineItems[i]?.productPartNo) ??
+        (lineItems.length === rawRows.length ? lineItems[i]?.productPartNo : undefined) ??
         undefined;
 
       // __key: 优先 lineItemId，其次顺序 index
