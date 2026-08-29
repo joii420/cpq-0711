@@ -832,10 +832,23 @@ public class QuotationTreeService {
      * {@code component} 表（原 {@code SELECT tab_type, part_no_field, part_name_field FROM component
      * WHERE id = :cid}）。
      */
+    // [meta-profile] 临时诊断埋点(2026-08-29)：拆分 loadSingleComponentTabMeta 的两段查询成本。
+    private static final long[] _mp = new long[2];   // 0=resolveCustomerTemplateId 1=allTabsOf
+    private static long _mpN = 0;
+
     private Object[] loadSingleComponentTabMeta(UUID componentId, UUID lineItemId) {
+        final long _m0 = System.nanoTime();
         UUID templateId = resolveCustomerTemplateId(lineItemId);
+        final long _m1 = System.nanoTime(); _mp[0] += _m1 - _m0;
         if (templateId == null) return null;
-        for (com.cpq.template.entity.TemplateComponentSnapshot s : publishedTemplateReader.allTabsOf(templateId)) {
+        java.util.List<com.cpq.template.entity.TemplateComponentSnapshot> _tabs = publishedTemplateReader.allTabsOf(templateId);
+        _mp[1] += System.nanoTime() - _m1;
+        if (++_mpN % 250 == 0) {
+            LOG.infof("[meta-profile] calls=%d | resolveTemplateId=%dms(avg %.1fms) allTabsOf=%dms(avg %.1fms)",
+                    _mpN, _mp[0] / 1_000_000, _mp[0] / 1_000_000.0 / _mpN,
+                    _mp[1] / 1_000_000, _mp[1] / 1_000_000.0 / _mpN);
+        }
+        for (com.cpq.template.entity.TemplateComponentSnapshot s : _tabs) {
             if (componentId.equals(s.componentId)) {
                 return new Object[]{ s.tabType, s.partNoField, s.partNameField };
             }

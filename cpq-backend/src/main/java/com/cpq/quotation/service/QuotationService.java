@@ -2324,6 +2324,10 @@ public class QuotationService {
      */
     @SuppressWarnings("unchecked")
     private void processBatchStage1(UUID quotationId, Quotation q, SaveDraftRequest request) {
+        // [stage1-profile] 临时诊断埋点(2026-08-29)：定位大单量 saveDraft 60s reaper 超时的耗时归属。纯日志，零行为改动。
+        final long _pfStart = System.nanoTime();
+        final long[] _pf = new long[9];   // 0=预处理 1=行实体 2=Product查询 3=子表persist 4=flush 5=assert 6=主循环合计 7=derivedAttr 8=尾段
+        final int[] _pfN = new int[3];    // 0=assert次数 1=flush次数 2=componentData条数
         java.util.List<QuotationLineItem> existingLines = QuotationLineItem.list("quotationId = ?1", quotationId);
         java.util.Map<java.util.UUID, QuotationLineItem> existingById = new java.util.HashMap<>();
         for (QuotationLineItem ex : existingLines) existingById.put(ex.id, ex);
@@ -2380,6 +2384,8 @@ public class QuotationService {
             }
         }
 
+        _pf[0] = System.nanoTime() - _pfStart;   // [stage1-profile] 预处理段
+
         // ── 主循环：persist 行实体 + 子表 ────────────────────────────────────────────────────
         // E3 收集：需要 seed 工序的 (lineItemId → partNo) 对
         java.util.Map<java.util.UUID, String> seedProcLines = new java.util.LinkedHashMap<>();
@@ -2394,6 +2400,7 @@ public class QuotationService {
         com.fasterxml.jackson.databind.ObjectMapper cpOm = new com.fasterxml.jackson.databind.ObjectMapper();
 
         for (int i = 0; i < request.lineItems.size(); i++) {
+            final long _l0 = System.nanoTime();   // [stage1-profile]
             SaveDraftRequest.LineItemDraft liDraft = request.lineItems.get(i);
             QuotationLineItem li;
             if (liDraft.id != null && existingById.containsKey(liDraft.id)) {
@@ -2439,6 +2446,8 @@ public class QuotationService {
             li.costingCardValues = null;
             newIdsByIndex[i] = li.id;
 
+            final long _l1 = System.nanoTime(); _pf[1] += _l1 - _l0;   // [stage1-profile] 行实体赋值+persist
+
             // Product 查询：填充 productPartNoSnapshot / productNameSnapshot，收集 partNo
             if (liDraft.productId != null) {
                 Product product = Product.findById(liDraft.productId);
@@ -2451,6 +2460,7 @@ public class QuotationService {
                     derivedAttrPartNos.add(product.partNo);
                 }
             }
+            final long _l2 = System.nanoTime(); _pf[2] += _l2 - _l1;   // [stage1-profile] Product.findById
 
             if (liDraft.subtotal != null) total = total.add(liDraft.subtotal);
 
@@ -2522,13 +2532,26 @@ public class QuotationService {
                     if (preservedSr != null) cd.snapshotRows = preservedSr;
                     cd.persist();
                 }
+                _pfN[2] += liDraft.componentData.size();                                  // [stage1-profile]
+                final long _l3 = System.nanoTime(); _pf[3] += _l3 - _l2;                   // [stage1-profile] 子表 persist
                 if (!pendingRestrictedChecks.isEmpty()) {
                     em.flush();
+                    final long _l4 = System.nanoTime(); _pf[4] += _l4 - _l3; _pfN[1]++;    // [stage1-profile] em.flush
                     for (Object[] pending : pendingRestrictedChecks) {
                         quotationTreeService.assertCanAddRowsToRestrictedTab(
                                 (UUID) pending[0], (String) pending[1], li.id);
                     }
+                    _pf[5] += System.nanoTime() - _l4; _pfN[0] += pendingRestrictedChecks.size();  // [stage1-profile] assert
                 }
+            }
+            _pf[6] += System.nanoTime() - _l0;   // [stage1-profile] 主循环合计
+            if ((i + 1) % 25 == 0 || i + 1 == request.lineItems.size()) {
+                LOG.infof("[stage1-profile] q=%s 进度 %d/%d elapsed=%dms | prep=%d line=%d product=%d cdPersist=%d flush=%d(x%d) assert=%d(x%d) loopSum=%d cdRows=%d",
+                        quotationId, i + 1, request.lineItems.size(),
+                        (System.nanoTime() - _pfStart) / 1_000_000,
+                        _pf[0] / 1_000_000, _pf[1] / 1_000_000, _pf[2] / 1_000_000, _pf[3] / 1_000_000,
+                        _pf[4] / 1_000_000, _pfN[1], _pf[5] / 1_000_000, _pfN[0],
+                        _pf[6] / 1_000_000, _pfN[2]);
             }
         } // end main loop
 
@@ -2557,6 +2580,10 @@ public class QuotationService {
         if (anyDerivedChanged) {
             em.flush();  // 统一一次 flush，等价于逐行 flush（公式纯函数，顺序无关）
         }
+        _pf[7] = System.nanoTime() - _pfStart - _pf[6] - _pf[0];   // [stage1-profile] E4 derivedAttr 段
+        LOG.infof("[stage1-profile] q=%s E4 derivedAttr 完成 lines=%d elapsed=%dms | E4段=%dms",
+                quotationId, derivedAttrLines.size(),
+                (System.nanoTime() - _pfStart) / 1_000_000, _pf[7] / 1_000_000);
 
         // ── E3 seedProcessesFromBase 整单批量 INSERT ───────────────────────────────────────────
         // 原逐行：每行各自按 partNo 查 material_bom_item + INSERT quotation_line_process。
@@ -2655,6 +2682,12 @@ public class QuotationService {
             }
         }
 
+        _pf[8] = System.nanoTime() - _pfStart - _pf[0] - _pf[6] - _pf[7];   // [stage1-profile] E3/总额/E5 尾段
+        LOG.infof("[stage1-profile] q=%s ★总结 total=%dms | prep=%d loop=%d(line=%d product=%d cdPersist=%d flush=%d(x%d) assert=%d(x%d)) derivedAttr=%d tail=%d | lines=%d cdRows=%d",
+                quotationId, (System.nanoTime() - _pfStart) / 1_000_000,
+                _pf[0] / 1_000_000, _pf[6] / 1_000_000, _pf[1] / 1_000_000, _pf[2] / 1_000_000,
+                _pf[3] / 1_000_000, _pf[4] / 1_000_000, _pfN[1], _pf[5] / 1_000_000, _pfN[0],
+                _pf[7] / 1_000_000, _pf[8] / 1_000_000, request.lineItems.size(), _pfN[2]);
     }
 
     static BigDecimal quotationTotalResult(BigDecimal value) {
