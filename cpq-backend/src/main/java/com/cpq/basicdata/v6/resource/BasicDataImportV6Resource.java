@@ -7,6 +7,7 @@ import com.cpq.basicdata.v6.pricing.PricingImportService;
 import com.cpq.basicdata.v6.pricing.PricingTemplateService;
 import com.cpq.basicdata.v6.quote.QuoteImportService;
 import com.cpq.basicdata.v6.service.CreateQuotationMaterializer;
+import com.cpq.basicdata.v6.service.MaterializeExecutor;
 import com.cpq.basicdata.v6.service.V6QuotationCommitService;
 import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.exception.BusinessException;
@@ -50,6 +51,11 @@ public class BasicDataImportV6Resource {
     @Inject CreateQuotationMaterializer materializer;
     @Inject SessionHelper sessionHelper;
     @Inject org.eclipse.microprofile.context.ManagedExecutor managedExecutor;
+    // repair-260829 B-2（方案丙）：专供 :177 的 materializer.materialize(bg) 派发使用，
+    // cleared(ThreadContext.CDI) 避免 fire-and-forget 场景下误判「传播进来的（已销毁的）
+    // request context 已激活」。不影响本类 :87（Step 1 导入）与 priceadjust 6 处注入点
+    // 仍使用的全局默认 managedExecutor——两个 executor 各司其职，见 MaterializeExecutor 的 javadoc。
+    @Inject @MaterializeExecutor org.eclipse.microprofile.context.ManagedExecutor materializeExecutor;
 
     @Context HttpServerRequest httpRequest;
 
@@ -174,7 +180,11 @@ public class BasicDataImportV6Resource {
             // managedExecutor.runAsync：受管线程池，与本类 :87 既有的 Step 1 导入异步化同一模式，
             // 非本次新发明；materialize() 自身带 @ActivateRequestContext（见其 javadoc），
             // 后台线程可正常使用 request-scoped EntityManager。
-            managedExecutor.runAsync(() -> materializer.materialize(bg));
+            // repair-260829 B-2：改用 materializeExecutor（cleared CDI），不再用全局默认
+            // managedExecutor——后者在 fire-and-forget 下会把即将销毁的请求 context 传播进
+            // 后台线程，致 @ActivateRequestContext 误判已激活而不新建，下游 SUPPORTS 事务的
+            // EntityManager 不可用（见 CreateQuotationMaterializer 与 MaterializeExecutor 的 javadoc）。
+            materializeExecutor.runAsync(() -> materializer.materialize(bg));
             return ApiResponse.success(r);
         } catch (BusinessException be) {
             throw be;
