@@ -878,9 +878,22 @@ public class QuotationService {
         //    紧邻的 saveDraft(skipWarm) 刚把全单卡片值置 NULL，此刻还非 NULL 只可能是被在飞 warm
         //    用【编辑前】的数据填回来的（实测 4/4）；沿用 IS NULL 会跳过重算 → 提交旧价且无报错。
         //    详见 CardSnapshotService#ensureCardValues(UUID, boolean) 的注释。
-        int warmedLines = cardSnapshotService.ensureCardValues(id, true);
-        if (warmedLines == CardSnapshotService.WARMING_IN_PROGRESS) {
+        // task-260825 B-29-5：改调 Detailed 版，拿到 failedBatches/failedRows——B-28 把
+        // ensureCardValues 内部批循环从"整体不 catch"改成"按批 try/catch 不 rethrow"后，
+        // 原有 int 返回值（missing.size()，见 EnsureResult 类注释）已经反映不出"部分批失败"
+        // 这件事：只跟 WARMING_IN_PROGRESS 比较，会让部分批失败时的正常正数被当成"补算完成"，
+        // 放行到下面 lineDiscountService.recompute 用陈旧卡片值算出金额并冻结，且无任何报错
+        // ——这是金额路径，必须响亮失败，不能像 materialize 那样容错静默。
+        CardSnapshotService.EnsureResult warmResult = cardSnapshotService.ensureCardValuesDetailed(id, true);
+        if (warmResult.computed == CardSnapshotService.WARMING_IN_PROGRESS) {
             throw new BusinessException(409, "系统正在重算该报价单的金额，请稍候几秒后重新提交");
+        }
+        if (warmResult.failedBatches > 0) {
+            // 与上面 409 同码：语义同样是"稍后重试"，只是原因不同（一个是别人在算，一个是算失败了），
+            // 两分支并列判断，不合并。
+            throw new BusinessException(409, String.format(
+                "部分行的金额重算未完成（%d 批/%d 行），为避免冻结错误金额，请稍后重新提交",
+                warmResult.failedBatches, warmResult.failedRows));
         }
 
         // Step3：提交时权威重算每行折后小计（防前端篡改），整单总额 = Σ行合计。

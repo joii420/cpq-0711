@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Q02 客户料号与宏丰料号的关系 → material_customer_map。
@@ -113,11 +114,14 @@ public class Q02CustomerMapHandler implements SheetHandler {
             finalRows.add(pr); // 原顺序遍历 parsed 天然保持原 sheet 顺序，无需额外排序
         }
 
-        // Task 5：Q02 是报价客户料号登记，写路径统一改走 QUOTE（upsertQuote，冲突键=material_no 部分索引
-        // + 客户守卫 + customer_product_no 直接 SET）。setBased 分支不再走批量 upsertBatch（本 spec 不需要
-        // QUOTE 批量；正确性优先），两分支收敛到同一逐行 writeRow。
-        for (ParsedRow pr : finalRows) {
-            writeRow(pr, ctx, result, mmAcc);
+        // Task 5 → task-260825 B-26：Q02 是报价客户料号登记，写路径统一走 QUOTE（upsertQuote 语义，
+        // 冲突键=material_no 部分索引 + 客户守卫 + customer_product_no 直接 SET）。原先逐行 writeRow
+        // 每行一次 DB 往返（N+1，1845 行 ≈ 30s，曾把 Phase2 60s 事务预算吃掉一半以上致 Narayana 强杀
+        // 整单回滚），现改按 CHUNK=200 走 MaterialCustomerMapRepository#upsertQuoteBatch 批量。
+        final int CHUNK = 200;
+        for (int off = 0; off < finalRows.size(); off += CHUNK) {
+            List<ParsedRow> chunk = finalRows.subList(off, Math.min(off + CHUNK, finalRows.size()));
+            writeChunk(chunk, ctx, result, mmAcc);
         }
         if (!mmAcc.isEmpty()) {
             // repair-0726 B5：销售料号(成品/主件)按 PartTypeInferenceService 权威口径存储类型=「零件」
@@ -144,66 +148,90 @@ public class Q02CustomerMapHandler implements SheetHandler {
     }
 
     /**
-     * 单行 QUOTE 客户料号登记：组装 MapRow → 外层单事务直接 upsertQuote → per-row 异常处理
-     * （spec §3 Chain-4）：单行失败（跨客户串号）只 {@code recordError}，不影响 sheet 其余行——
-     * 跨客户串号靠 {@link MaterialCustomerMapRepository#upsertQuote} 的 WHERE 客户守卫返回
-     * 0 行判定，不是异常，单事务内天然安全，不需要子事务隔离。
+     * task-260825 B-26：一个 chunk（≤200 行）的 QUOTE 客户料号登记 —— 批量快路径。
      *
-     * <p>{@code uq_mcm_quote_cust_prod} 的冲突源已在 {@link #handle} 的 ②-a 内存去重阶段消灭
-     * （{@code uq_mcm_quote_no} 本身就是 upsertQuote 的 ON CONFLICT target，天然不会抛异常），
-     * 正常路径下 upsertQuote 不应再抛 unique_violation。若仍然抛出，说明去重逻辑有遗漏——
-     * 见下方 catch 块。
+     * <p>原 per-row {@code writeRow} 每行一次 {@code repo.upsertQuote} DB 往返，1845 行 ≈ 30s，
+     * 把 Phase2 60s 事务预算吃掉一半以上，被 Narayana reaper 强杀导致整单随机回滚（N+1，非 O(N²)，
+     * 详见类改动记录）。现改一条多值 INSERT（{@link MaterialCustomerMapRepository#upsertQuoteBatch}）
+     * 处理整个 chunk，DB 往返从 N 次降到 ⌈N/200⌉ 次。
+     *
+     * <p><b>错误归因两条路径均保留，语义与原 per-row {@code writeRow} 逐位等价</b>：
+     * <ul>
+     *   <li><b>跨客户串号</b>：{@code upsertQuoteBatch} 的客户守卫 WHERE 失败时该 material_no
+     *       不出现在返回集合里，不是异常——按"折叠后的 material_no 是否在返回集合里"逐行
+     *       {@code recordError}。同一 material_no 在同一次 {@code handle()} 调用内的多次出现
+     *       结果必然一致（ctx.customerNo 全程不变：要么全部因新插入/同客户覆盖而成功，要么因
+     *       已被其它客户占用而全部失败），故可安全地把折叠后的单一结果套用到每一条原始行，
+     *       不改变 {@code successRows}/{@code recordWrite} 的按原始行计数口径。</li>
+     *   <li><b>Q02 内存去重遗漏冲突</b>：{@code uq_mcm_quote_cust_prod} 的冲突源已在 {@link #handle}
+     *       ②-a 阶段按 customer_product_no 消灭，传入本方法的 chunk 内 customer_product_no
+     *       两两不同，正常路径不会撞该约束。若仍然撞了 —— <b>不能沿用"捕获后逐行重放"</b>：
+     *       本项目 {@code SavepointIsolationFeasibilityTest} 已证伪 Quarkus/Agroal 在 JTA 事务下
+     *       {@code rollback(Savepoint)} 不可用，且同一事务内任一 SQL 报错后所有后续 SQL
+     *       （包括重放的逐行 upsert）都会连锁失败——因此本方法让异常穿透（按 chunk 而非精确到单行
+     *       归因 rowNo 区间），使整个 handle() 失败、事务完整回滚，与原设计"从根上预防、不事后
+     *       补救"的哲学一致（见类注释）。此分支在真实调用路径下不可达（②-a 已消灭前提条件）。</li>
+     * </ul>
      */
-    private void writeRow(ParsedRow pr, ImportContext ctx, SheetImportResult result, LinkedHashSet<String> mmAcc) {
-        SheetRow row = pr.row;
-        try {
-            MaterialCustomerMapRepository.MapRow mapRow = new MaterialCustomerMapRepository.MapRow(
-                pr.materialNo,
-                ctx.customerNo,
-                row.getStr("客户名称"),
-                row.getStr("客户料号名称"),
-                pr.customerProductNo,
-                row.getStr("客户图号"),
-                null,                            // seq_no 报价表无项次列
-                row.getStr("付款方式"),
-                row.getStr("基础货币"),
-                row.getStr("报价货币"),
-                row.getDecimal("汇率"),
-                "QUOTE",
-                null);
-            int affected;
+    private void writeChunk(List<ParsedRow> chunk, ImportContext ctx, SheetImportResult result, LinkedHashSet<String> mmAcc) {
+        List<MaterialCustomerMapRepository.MapRow> mapRows = new ArrayList<>(chunk.size());
+        List<ParsedRow> valid = new ArrayList<>(chunk.size());
+        for (ParsedRow pr : chunk) {
             try {
-                affected = repo.upsertQuote(mapRow, ctx.importedBy, ctx.pendingQuotationId);
-            } catch (RuntimeException e) {
-                if (isUniqueViolation(e)) {
-                    // 不应发生：见类注释 + 本方法 javadoc。这里不能 recordError 后静默继续——
-                    // Postgres 单事务内一旦有语句抛错，整个事务已被标记 aborted，后续所有行的
-                    // 写入（包括本行之前已"成功"的行）在 commit 时会被静默转成 ROLLBACK，
-                    // 若此处吞掉异常继续跑，会产生"部分行假成功、commit 后全部丢失"的更隐蔽
-                    // 数据丢失（正是引入 per-row 子事务、进而导致死锁的历史原因）。因此让异常
-                    // 穿透，使整个 handle() 失败、事务完整回滚，同时暴露去重逻辑的遗漏。
-                    throw new IllegalStateException(
-                        "Q02 内存去重遗漏冲突（rowNo=" + row.rowNo + "）：materialNo=" + pr.materialNo
-                            + ", customerProductNo=" + pr.customerProductNo, e);
-                }
-                throw e;
+                mapRows.add(toMapRow(pr, ctx));
+                valid.add(pr);
+            } catch (Exception e) {
+                // 与原 writeRow 语义一致：单行数据解析异常（如"汇率"列非法数字）只记该行错误，
+                // 不影响同 chunk 其余行——这一步在批量 SQL 之前、纯内存操作，天然行级隔离。
+                result.recordError(pr.row.rowNo, "_row_", e.getMessage());
             }
-            if (affected == 0) {
-                result.recordError(row.rowNo, "报价料号", "跨客户串号");
-                return;
-            }
-            result.successRows++;
-            result.recordWrite("material_customer_map", 1);
-            // 方案 §2「→ 料号表（material_master）同步」: 报价料号(成品)按 upsert 写入料号主数据表。
-            // 仅同步 material_no（本 sheet 无宏丰料号本身的名称列，客户料号名称属客户维度，不写主数据），
-            // preserveDescriptive=true 避免覆盖已有成品/BOM 父件的名称等描述字段。
-            mmAcc.add(pr.materialNo);
-            result.recordWrite("material_master", 1);
-        } catch (IllegalStateException e) {
-            throw e; // 去重遗漏的诊断性异常：穿透，不当作 per-row 错误吞掉（见上）。
-        } catch (Exception e) {
-            result.recordError(row.rowNo, "_row_", e.getMessage());
         }
+        if (mapRows.isEmpty()) return;
+
+        Set<String> succeeded;
+        try {
+            succeeded = repo.upsertQuoteBatch(mapRows, ctx.importedBy, ctx.pendingQuotationId);
+        } catch (RuntimeException e) {
+            if (isUniqueViolation(e)) {
+                int firstRowNo = valid.get(0).row.rowNo;
+                int lastRowNo = valid.get(valid.size() - 1).row.rowNo;
+                throw new IllegalStateException(
+                    "Q02 内存去重遗漏冲突（chunk rowNo=" + firstRowNo + "~" + lastRowNo + "）：批量 upsert 撞 "
+                        + "uq_mcm_quote_cust_prod，②-a 内存去重存在遗漏", e);
+            }
+            throw e;
+        }
+        for (ParsedRow pr : valid) {
+            if (succeeded.contains(pr.materialNo)) {
+                result.successRows++;
+                result.recordWrite("material_customer_map", 1);
+                // 方案 §2「→ 料号表（material_master）同步」: 报价料号(成品)按 upsert 写入料号主数据表。
+                // 仅同步 material_no（本 sheet 无宏丰料号本身的名称列，客户料号名称属客户维度，不写主数据），
+                // preserveDescriptive=true 避免覆盖已有成品/BOM 父件的名称等描述字段。
+                mmAcc.add(pr.materialNo);
+                result.recordWrite("material_master", 1);
+            } else {
+                result.recordError(pr.row.rowNo, "报价料号", "跨客户串号");
+            }
+        }
+    }
+
+    private MaterialCustomerMapRepository.MapRow toMapRow(ParsedRow pr, ImportContext ctx) {
+        SheetRow row = pr.row;
+        return new MaterialCustomerMapRepository.MapRow(
+            pr.materialNo,
+            ctx.customerNo,
+            row.getStr("客户名称"),
+            row.getStr("客户料号名称"),
+            pr.customerProductNo,
+            row.getStr("客户图号"),
+            null,                            // seq_no 报价表无项次列
+            row.getStr("付款方式"),
+            row.getStr("基础货币"),
+            row.getStr("报价货币"),
+            row.getDecimal("汇率"),
+            "QUOTE",
+            null);
     }
 
     /** 沿 cause 链找 {@link java.sql.SQLException} sqlState=23505（unique_violation），不依赖具体驱动/ORM 包装类型。 */

@@ -282,6 +282,65 @@ export const quotationService = {
     api.put(`/quotations/${id}/draft`, checkedPayload(data)) as Promise<any>,
   /** lazy-cardvalues：懒算并落库整单卡片值。warm 与打开兜底复用。返回 { data: QuotationDTO(含 cardValuesWarming) }。 */
   ensureCardValues: (id: string) => api.post(`/quotations/${id}/ensure-card-values`) as Promise<any>,
+  /**
+   * task-260825 B-22：纯只读物化状态统计——不拿单飞锁、不触发任何计算、毫秒级返回，可安全高频轮询。
+   * 返回 { data: { quotationId, total, ready, pending, done, inFlight } }。
+   */
+  materializeStatus: (id: string) => api.get(`/quotations/${id}/materialize-status`) as Promise<any>,
+  /**
+   * task-260825 F-10/F-11（D-5 竞态返修）：轮询主循环改用只读状态端点（B-22）。
+   *
+   * 🚫 **不再把 `ensureCardValues` 当主循环反复调**——那正是 2026-08-26 亲验抓到的竞态根因：
+   * `ensure-card-values` 不是纯只读探针，抢到单飞锁就会自己变成几十秒的计算工人，而轮询这条请求路径
+   * 只有默认 60s 事务墙（不像 `materialize` 后台路径包了 600s），一旦被 Reaper 杀掉就会永久丢行
+   * （实测丢过 345/1845 行，见 backtask.md B-22）。
+   *
+   * 主循环：每 intervalMs 查一次 `materializeStatus`；`status.done===true` → 完成，返回 status。
+   * 自愈（F-11）：`status.pending>0 且 status.inFlight===false`（后台任务死了/从没起过）→ 调一次
+   * `ensureCardValues` 重新触发，然后照常回到轮询只读端点；用 healCooldownMs 节流，🚫 不许每轮都调。
+   *
+   * 总等待上限 timeoutMs（默认 20 分钟兜底，同 `basicDataImportV6Service.pollImportResult` 惯例）。
+   */
+  async pollMaterializeStatus(
+    id: string,
+    opts?: {
+      intervalMs?: number;
+      timeoutMs?: number;
+      healCooldownMs?: number;
+      onTick?: (status: { total: number; ready: number; pending: number; done: boolean; inFlight: boolean }) => void;
+    },
+  ): Promise<any> {
+    const intervalMs = opts?.intervalMs ?? 1500;
+    const timeoutMs = opts?.timeoutMs ?? 20 * 60 * 1000;
+    const healCooldownMs = opts?.healCooldownMs ?? 30 * 1000; // 自愈节流：至少间隔 30s 才允许再触发一次
+    const start = Date.now();
+    let lastHealAt = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const resp: any = await this.materializeStatus(id);
+      const status = resp?.data ?? resp;
+      opts?.onTick?.(status);
+      if (status?.done) return status;
+      if (Date.now() - start > timeoutMs) {
+        const err = new Error('后台可能仍在处理，请稍后在报价单列表查看') as Error & { isPollTimeout?: boolean };
+        err.isPollTimeout = true;
+        throw err;
+      }
+      if (status && status.pending > 0 && status.inFlight === false && Date.now() - lastHealAt > healCooldownMs) {
+        lastHealAt = Date.now();
+        try {
+          await this.ensureCardValues(id);
+        } catch (e: any) {
+          // 自愈这一次调用本质仍是那个「会干活」的端点，耗时较长时可能撞上 api.ts 的全局 30s 客户端
+          // 超时被 axios 中止——那只是「前端等不到响应」，后端事务由它自己的墙控制，与客户端连接是否
+          // 被中止无关，不代表任务失败。只有明确的后端错误响应（有 httpStatus，且不是兼容保留的 409）
+          // 才算真失败，其余（客户端超时/网络中断，无 httpStatus）吞掉，交回只读端点继续观察。
+          if (e?.httpStatus != null && e.httpStatus !== 409) throw e;
+        }
+      }
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+  },
   /** 报价单整份快照 Phase2 §5: 草稿态重刷报价侧卡片值(按行键保编辑); 仅 DRAFT 生效, 非 DRAFT no-op 返 refreshed=0 */
   refreshCardSnapshot: (id: string) => api.post(`/quotations/${id}/refresh-card-snapshot`) as Promise<any>,
   /** P3 lazy-excel: 懒算并落库整单 Excel 值(首存只算卡片、Excel 留空); 开 Excel 视图/导出前调, 幂等; 返回含 Excel 值的最新 DTO */

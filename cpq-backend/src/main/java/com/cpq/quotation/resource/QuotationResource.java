@@ -229,6 +229,38 @@ public class QuotationResource {
     }
 
     /**
+     * task-260825 B-22/B-23（D-5 再返修，2026-08-26 亲验抓到竞态后用户裁决）：<b>纯只读</b>物化状态
+     * 探针，供 D-5 异步建单的前端轮询主循环使用——取代直接轮询 {@link #ensureCardValues}。
+     *
+     * <p><b>为什么必须新增这个端点，不能继续用 {@code ensure-card-values} 当轮询主循环</b>：
+     * 该端点<b>不是纯状态查询，它会触发计算</b>（内部调 {@code cardSnapshotService.ensureCardValues}）。
+     * 亲验实测到的竞态：一旦轮询请求先于后台物化任务抢到单飞锁，轮询请求自己就变成了一个可能耗时
+     * 数十秒的计算工人；而它所在的"锁架子"事务只有 Narayana 默认 60s（不像
+     * {@code CreateQuotationMaterializer#materialize} 路径那样被 {@code QuarkusTransaction.run}
+     * 包了 600s）——超时会把正在进行的分批计算从中腰斩，导致部分行永久卡在 NULL（实测丢过 345 行）。
+     *
+     * <p>本端点<b>不拿单飞锁、不触发任何计算、不写任何数据</b>——只读两条聚合查询（行数统计 +
+     * {@code pg_locks} 只读探测），前端可以任意频率安全轮询。
+     *
+     * <p>🚫 <b>不改、不废弃 {@code ensure-card-values}</b>——它继续作为触发/自愈入口存在
+     * （{@code QuotationWizard.tsx:628/:633} 依赖它），只是不应该再被当作轮询主循环反复调用。
+     */
+    @GET
+    @Path("/{id}/materialize-status")
+    public ApiResponse<Map<String, Object>> materializeStatus(@PathParam("id") UUID id) {
+        var status = cardSnapshotService.materializeStatus(id);
+        boolean inFlight = cardSnapshotService.isMaterializeInFlight(id);
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("quotationId", id);
+        resp.put("total", status.total);
+        resp.put("ready", status.ready);
+        resp.put("pending", status.getPending());
+        resp.put("done", status.isDone());
+        resp.put("inFlight", inFlight);
+        return ApiResponse.success(resp);
+    }
+
+    /**
      * 编辑回写报价卡片单元格（报价单整份快照 Phase 2 §6，替代旧 autosave 写 row_data）。
      * body: {componentId, rowKey, fieldName, value}。写 editRows + 重算 formulaResults/报价 Excel；核价不动。
      * 仅 DRAFT 可编辑；非 DRAFT → 400。返回更新后的 quoteCardValues/quoteExcelValues 供前端就地刷新（AP-50）。
@@ -327,7 +359,22 @@ public class QuotationResource {
                                              @Context HttpServerRequest request) {
         UUID currentUserId = sessionHelper.getCurrentUserIdOrFallback(request);
         // P3 lazy-excel:提交冻结前确保 Excel 值已补算(首存懒算留 NULL),否则冻结/导出会缺 Excel 快照。
-        try { cardSnapshotService.ensureExcelValues(id); em.clear(); } catch (Exception ignore) { /* 尽力,不阻断提交 */ }
+        // task-260825 B-29-4：仍不阻断提交(catch 吞异常不上抛)，但失败不再静默——批失败/整体
+        // 异常都显式 errorf 记下 quotation id，供排障定位；未完成行靠 ensureExcelValues 内部
+        // 的 IS NULL 谓词下次打开/导出时自愈补算。
+        try {
+            com.cpq.quotation.service.CardSnapshotService.EnsureResult excelResult =
+                cardSnapshotService.ensureExcelValuesDetailed(id);
+            em.clear();
+            if (excelResult != null && excelResult.failedBatches > 0) {
+                LOG.errorf("[submit-ensure-excel-values] quotation=%s 部分批次未完成：%d 批（共 %d 行）失败，" +
+                        "不阻断提交，未完成行靠 IS NULL 谓词下次访问时自愈补算",
+                    id, excelResult.failedBatches, excelResult.failedRows);
+            }
+        } catch (Exception e) {
+            LOG.errorf(e, "[submit-ensure-excel-values] quotation=%s ensureExcelValues 整体失败：%s，不阻断提交",
+                id, e.getMessage());
+        }
         awaitWarmBeforeSubmit(id);
         return ApiResponse.success(quotationService.submit(id, currentUserId));
     }

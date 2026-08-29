@@ -437,6 +437,52 @@ public class ConfigureSnapshotService {
                             com.cpq.datasource.sqlview.BomTreeVarsContext.Mode.RENDER, quoteUnion.rootsByMaterial,
                             quoteUnion.materialsByRoot));
                 }
+                // task-260825 D-1（C-1）：批量预载 row_data，取代 computeRowDataFromSnap 循环内的逐行
+                // loadRowDataByComp 查询。只在 wholeBatchEnabled 时需要（下方循环仅该分支调用
+                // computeRowDataFromSnap，见 :610 一带）；且收窄到「本次实际会走到 computeRowDataFromSnap」
+                // 的行 —— saveDraft 增量热路径下绝大多数行会被下方主循环的 continue 跳过，逐行懒查时
+                // 这些行成本为 0，不收窄会给热路径凭空加一次全量预载。
+                //
+                // 🔒 主线 code review（2026-08-25）纠偏：本段与下方主循环的 skipRowsWithSnapshot 跳过判定
+                // 曾是「同一逻辑独立写两遍」——今天两处输入相同（都读 byLine + lineNeedsExpand）结果一致，
+                // 但这是双写，日后任一处被单独改动都会无声漂移；而漂移方向不对称——「预载少载」会让
+                // computeRowDataFromSnap 收到空 existingRowDataRawByComp，overlayExistingInputKeys
+                // 直接 no-op，用户手填的 INPUT 值被新算值静默覆盖（正是 repair-0803-snapshot / AC-4 要守
+                // 的那个面），比「预载多载」危险得多。
+                //
+                // 修法：不做「运行时探测漂移再单行回退查询」——那样在首次建单场景（全部行 row_data 还
+                // 未写入，见下方「已否决备选：乙」的时点更正说明）会让 100% 的行落入回退分支，等价于把
+                // 刚消除的 N+1 重新引入。改为**消除双写本身**：跳过判定只在此处算一次
+                // （lineSkipDecision：lineItemId → 是否会被下游 continue 跳过），下方主循环与本段
+                // 预载过滤共享同一份判定结果——结构上不可能再漂移（只有一处代码在算这个判定）。
+                // 仅当 skipRowsWithSnapshot && byLine != null 时可零成本预算；byLine == null
+                // （kill switch off）该判定本就依赖逐行查询，下方主循环保留原地查询，本处保守纳入预载。
+                Map<UUID, Boolean> lineSkipDecision = null;
+                if (skipRowsWithSnapshot && byLine != null) {
+                    lineSkipDecision = new HashMap<>();
+                    for (Map<String, Object> li : lineItems) {
+                        UUID lid = asUuid(li.get("id"));
+                        if (lid == null) continue;
+                        boolean needsExpand = lineNeedsExpand(driverCompIds, byLine.getOrDefault(lid, Map.of()));
+                        lineSkipDecision.put(lid, !needsExpand);   // true = 会被下游 continue 跳过
+                    }
+                }
+                Map<UUID, Map<UUID, String>> rowDataPreload = Map.of();
+                if (wholeBatchEnabled) {
+                    List<UUID> preloadIds = new ArrayList<>();
+                    for (Map<String, Object> li : lineItems) {
+                        UUID lid = asUuid(li.get("id"));
+                        Object pnObj = li.get("productPartNo");
+                        String pn = pnObj != null ? pnObj.toString() : null;
+                        if (lid == null || pn == null || pn.isBlank()) continue;   // 同下方主循环的过滤
+                        if (lineSkipDecision != null && Boolean.TRUE.equals(lineSkipDecision.get(lid))) {
+                            continue;   // 会被下方主循环 continue 掉，不会走到 computeRowDataFromSnap
+                        }
+                        // lineSkipDecision == null（byLine==null，kill switch off）→ 无法零成本判定，保守纳入
+                        preloadIds.add(lid);
+                    }
+                    rowDataPreload = loadRowDataByLineComp(preloadIds);
+                }
                 try {
                 for (Map<String, Object> li : lineItems) {
                     UUID lineItemId = asUuid(li.get("id"));
@@ -445,11 +491,16 @@ public class ConfigureSnapshotService {
                     if (lineItemId == null || partNo == null || partNo.isBlank()) continue;
                     // Part B: 复用行所有 driver 组件已有 snapshot_rows → 整行跳过 expand + materialize（增量）
                     if (skipRowsWithSnapshot) {
-                        // 读内存 map（整单已预取，kill switch on）或逐行 DB 查（kill switch off）
-                        Map<UUID, String> snapshotByComp = (byLine != null)
-                                ? byLine.getOrDefault(lineItemId, Map.of())
-                                : self.loadSnapshotRowsByComp(lineItemId);
-                        if (!lineNeedsExpand(driverCompIds, snapshotByComp)) {
+                        // 与上方预载过滤共享同一份判定（lineSkipDecision），避免独立复算致漂移；
+                        // byLine==null（kill switch off）时该判定不可预算，回退原逐行查询（改动前既有行为）。
+                        boolean skip;
+                        if (lineSkipDecision != null) {
+                            skip = Boolean.TRUE.equals(lineSkipDecision.get(lineItemId));
+                        } else {
+                            Map<UUID, String> snapshotByComp = self.loadSnapshotRowsByComp(lineItemId);
+                            skip = !lineNeedsExpand(driverCompIds, snapshotByComp);
+                        }
+                        if (skip) {
                             LOG.debugf("[add-snapshot] line=%s 已有完整 snapshot_rows, 跳过重 expand(增量)", lineItemId);
                             continue;
                         }
@@ -607,7 +658,8 @@ public class ConfigureSnapshotService {
                     // #2 物化批量: wholeBatchEnabled 时只算不写,循环末整单一次 writeRowDataBatchAllLines。
                     try {
                         if (wholeBatchEnabled) {
-                            Map<UUID, ArrayNode> rd = computeRowDataFromSnap(lineItemId, componentsSnapshot, snapByComp);
+                            Map<UUID, ArrayNode> rd = computeRowDataFromSnap(lineItemId, componentsSnapshot, snapByComp,
+                                    rowDataPreload.getOrDefault(lineItemId, Map.of()));
                             if (rd != null && !rd.isEmpty()) allRowData.put(lineItemId, rd);
                         } else {
                             materializeRowData(lineItemId, componentsSnapshot, snapByComp, batchWriteEnabled);
@@ -1140,22 +1192,65 @@ public class ConfigureSnapshotService {
         }
     }
 
-    /** 读本行各组件既有 row_data（componentId → 数组），供 {@link #overlayExistingInputKeys} 用。 */
-    private Map<UUID, JsonNode> loadRowDataByComp(UUID lineItemId) {
-        Map<UUID, JsonNode> out = new LinkedHashMap<>();
-        if (lineItemId == null) return out;
-        @SuppressWarnings("unchecked")
-        List<Object[]> rows = em.createNativeQuery(
-                "SELECT component_id, row_data FROM quotation_line_component_data " +
-                "WHERE line_item_id = :lid AND row_data IS NOT NULL")
-            .setParameter("lid", lineItemId)
-            .getResultList();
-        for (Object[] r : rows) {
-            if (r[0] == null || r[1] == null) continue;
-            try {
-                JsonNode arr = MAPPER.readTree(r[1].toString());
-                if (arr.isArray()) out.put((UUID) r[0], arr);
-            } catch (Exception ignore) { /* 单组件解析失败不影响其它组件 */ }
+    /**
+     * task-260825 D-1（B-1，问题说明.md §⑤ 修复二 + backtask.md C-1~C-6）：批量加载多行既有
+     * {@code row_data}，取代原 {@code loadRowDataByComp} 在 {@link #computeRowDataFromSnap}
+     * 循环里的逐行查询（1845 行 ≈14.6ms/次 → 外推 ≈27~29s 墙钟）。
+     *
+     * <p>语义与被替代的逐行版本严格等价：同样 {@code row_data IS NOT NULL} 过滤；键存在=有值，
+     * 键缺失=无值（不补空对象——「键存在即权威」语义的直接守卫，见 {@link #overlayExistingInputKeys}）；
+     * 解析失败的单组件跳过、不影响其它组件（解析动作挪到 {@link #computeRowDataFromSnap} 消费时，
+     * 见 C-4）。
+     *
+     * <p>C-1：调用方须自行收窄 {@code lineItemIds} 到本次实际会走到 {@code computeRowDataFromSnap}
+     * 的行（saveDraft 增量热路径下大多数行会被上游 {@code continue} 跳过，逐行懒查时这些行成本为
+     * 0，本方法不做二次收窄）。<br>
+     * C-2：过滤 {@code null} 元素（原版靠 {@code lineItemId==null} 提前返空兜住，批量版无此保护）。<br>
+     * C-3：{@code ORDER BY line_item_id, component_id, id} —— 表上无
+     * {@code (line_item_id, component_id)} 唯一约束（全库实测存在 6 组重复键），钉死
+     * 「同键取物理最后一行」的确定性选择，与逐行版本（单条 SELECT 天然只返一行，不存在歧义）对齐。<br>
+     * C-4：只存原始 {@code String}，不在此处 {@code readTree}——分块累积的 Map 要活到整个循环结束，
+     * 存 {@code JsonNode} 全量驻留约 15~40MB（Jackson 8~20× 膨胀），存 {@code String} 约 3.8MB。<br>
+     * 分块 200（同文件 {@link #writeRowDataBatchAllLines} 的 {@code CHUNK} 范式）。
+     *
+     * <p>C-6（有意识的选择，非复制粘贴副产品）：本方法<b>不加</b> {@code @Transactional}——被替代的
+     * {@code loadRowDataByComp} 原本无事务注解，直接调用（不经 {@code self} 代理），外层
+     * {@link #snapshotLines} 本就不带事务（类 javadoc 明写）。照抄
+     * {@link #loadSnapshotRowsByLines} 的 {@code @Transactional(REQUIRES_NEW)} 会把一次原本
+     * 无事务的读变成真开事务——多借一次连接 + 多一次 begin/commit，此处外层无事务、行为无害，
+     * 但没有必要，故不加。
+     *
+     * @param lineItemIds 已收窄（C-1）的行 id 集合
+     * @return lineItemId → (componentId → row_data 原始 JSON 字符串)；空/null 入参返回空 Map（B-5）
+     */
+    private Map<UUID, Map<UUID, String>> loadRowDataByLineComp(java.util.Collection<UUID> lineItemIds) {
+        if (lineItemIds == null || lineItemIds.isEmpty()) return Map.of();
+        // C-2：过滤 null 元素
+        List<UUID> ids = new ArrayList<>();
+        for (UUID id : lineItemIds) if (id != null) ids.add(id);
+        if (ids.isEmpty()) return Map.of();
+
+        Map<UUID, Map<UUID, String>> out = new HashMap<>();
+        final int CHUNK = 200;
+        for (int start = 0; start < ids.size(); start += CHUNK) {
+            int end = Math.min(start + CHUNK, ids.size());
+            List<UUID> slice = ids.subList(start, end);
+            @SuppressWarnings("unchecked")
+            List<Object[]> rows = em.createNativeQuery(
+                    "SELECT line_item_id, component_id, row_data " +
+                    "FROM quotation_line_component_data " +
+                    "WHERE line_item_id IN (:ids) AND row_data IS NOT NULL " +
+                    "ORDER BY line_item_id, component_id, id")
+                    .setParameter("ids", slice)
+                    .getResultList();
+            for (Object[] r : rows) {
+                if (r[0] == null || r[1] == null || r[2] == null) continue;
+                UUID lid = UUID.fromString(r[0].toString());
+                UUID cid = UUID.fromString(r[1].toString());
+                // C-3：ORDER BY 已钉死物理返回序 → 本 Map.put「最后一行赢」是确定性选择，
+                // 与逐行版本对同一 (line,component) 若有重复键时的行为对齐。
+                out.computeIfAbsent(lid, k -> new HashMap<>()).put(cid, r[2].toString());
+            }
         }
         return out;
     }
@@ -1164,9 +1259,14 @@ public class ConfigureSnapshotService {
      * #2 物化批量:纯计算本行 row_data(componentId→ArrayNode),<b>不落库</b>,供整单收集后
      * 一次 {@link #writeRowDataBatchAllLines}。计算与 {@link #materializeRowData} 同款
      * (parse snapByComp → baseRows → {@link #computeLineRowData}),仅去掉 per-line 写。
+     *
+     * @param existingRowDataRawByComp task-260825 D-1（B-3/C-4）：本行既有 row_data 预载结果
+     *        （componentId → 原始 JSON 字符串，来自 {@link #loadRowDataByLineComp}）；不再在本方法
+     *        内部逐行查库。此处 {@code readTree} 一次即弃——解析结果只在本次调用内使用，不跨行驻留。
      */
     private Map<UUID, ArrayNode> computeRowDataFromSnap(UUID lineItemId, JsonNode componentsSnapshot,
-                                                        Map<UUID, String> snapByComp) {
+                                                        Map<UUID, String> snapByComp,
+                                                        Map<UUID, String> existingRowDataRawByComp) {
         if (componentsSnapshot == null || snapByComp == null || snapByComp.isEmpty()) return Map.of();
         Map<UUID, JsonNode> baseRowsByComp = new LinkedHashMap<>();
         for (Map.Entry<UUID, String> e : snapByComp.entrySet()) {
@@ -1176,9 +1276,20 @@ public class ConfigureSnapshotService {
                 baseRowsByComp, Map.of(), Map.of(), Map.of());
         // spec 2026-08-03：上面是「纯按 snapshot 重物化」(editRows 恒空)，会冲掉用户手填/清空的
         // INPUT 值。落库前把库内既有 row_data 的 INPUT 键盖回（含显式清空 ""），
-        // BASIC_DATA/DATA_SOURCE/FORMULA 仍用新算值。降级：查库失败只记 warn，不中止整份快照。
+        // BASIC_DATA/DATA_SOURCE/FORMULA 仍用新算值。降级：解析失败只记 warn，不中止整份快照。
         try {
-            overlayExistingInputKeys(componentsSnapshot, freshRowData, loadRowDataByComp(lineItemId));
+            // C-4：readTree 一次即弃——existingByComp 是本次调用的局部变量，用完即可回收，
+            // 不会像存 JsonNode 的预载 Map 那样跨整个循环驻留。
+            Map<UUID, JsonNode> existingByComp = new LinkedHashMap<>();
+            if (existingRowDataRawByComp != null) {
+                for (Map.Entry<UUID, String> e : existingRowDataRawByComp.entrySet()) {
+                    try {
+                        JsonNode arr = MAPPER.readTree(e.getValue());
+                        if (arr.isArray()) existingByComp.put(e.getKey(), arr);
+                    } catch (Exception ignore) { /* 单组件解析失败不影响其它组件，同原 loadRowDataByComp 降级语义 */ }
+                }
+            }
+            overlayExistingInputKeys(componentsSnapshot, freshRowData, existingByComp);
         } catch (Exception e) {
             LOG.warnf("[materialize-line] line=%s 既有 INPUT 键盖回失败(已降级，本次按重物化值落库): %s",
                     lineItemId, e.getMessage());
