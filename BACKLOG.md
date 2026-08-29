@@ -180,6 +180,13 @@
 
 ### [BL-0182] V6 导入 sheet「客户料号与宏丰料号的关系」逐行 upsert 致 Phase2 事务超时、随机整单回滚
 - **优先级**：🔴 **P0**（2026-08-26 由 P1 提级：实测失败率 1/4，用户当天撞上；原以为只是慢）
+- **状态：✅ DONE（2026-08-28，合 master merge `76c4b0ab`）** —— 由 `task-260825` 的 **B-26** 做掉：
+  `Q02CustomerMapHandler` 逐行 `upsertQuote` → 新增 `MaterialCustomerMapRepository.upsertQuoteBatch`
+  （内存按 `material_no` 折叠 + 分块多值写，CHUNK=200）。**实测 30678ms → 490ms（62×）**。
+  🔒 未走「先试批量、报错再逐行补救」路径：`SavepointIsolationFeasibilityTest` 已证伪
+  ——Quarkus/Agroal 在连接 enlist 进 JTA 后拒绝 `Connection.rollback(Savepoint)`，
+  该错误后同事务内任何后续 SQL 连锁失败。故改为**写库前折叠**消灭批内冲突。
+  测试：`MaterialCustomerMapUpsertBatchSqlCountTest`（条数不随 N 增长 + 证伪控制组）。
 - **状态更新（2026-08-26）**：根因已定位（见下），**已纳入 `task-260825` 一并修**（用户裁决）
 - **来源**：`task-260825-大单量导入建单性能` 排查期旁证发现（监控 tail 后端日志捞出），
   **与该任务的建单物化 N+1 是两条独立链路**，故不并入该任务范围。
@@ -1433,6 +1440,15 @@
 ## P2
 
 ### [BL-0183] 建单后置物化拆批事务 / 移出请求线程（`task-260825` 已否决备选丙）
+- **状态：✅ DONE（2026-08-28，合 master merge `76c4b0ab`）** —— 复评触发条件在 `task-260825`
+  实施期即被实测触发（③ `ensureCardValues` 实测 58,679ms / 60s 预算余量仅 2%，真实阈值 ≈1887 行），
+  故**两条可选做法最终都做了**，不再留待另立项：
+  ① 按行分批 + 每批独立 `REQUIRES_NEW`（D-4/B-28 治 ③、B-29 治 ④），批内加
+     `SET LOCAL lock_timeout='10s'`、单批失败不阻断其余批、批边界用
+     `ORDER BY sort_order NULLS LAST, id` 钉死（B-30）；
+  ② 整体移出请求线程，`POST` 立即返回 + 前端轮询只读状态端点（D-5 + B-22/B-23 + F-6~F-11）。
+  受控实验（持 300 行锁 300 秒）实测终态：③④ 各只废被堵的那一批，其余批照常完成，
+  `ARJUNA012117` 0 次，释放锁后自愈至 1845/1845、哨兵 0。
 - **优先级**：**P2**（`task-260825` 方案甲落地后复评；见下方「复评触发条件」）
 - **来源**：`task-260825-大单量导入建单性能` 闸门 A0（2026-08-25），用户裁决**本次不做、转 backlog**。
 - **状态**：TODO（未排期）
