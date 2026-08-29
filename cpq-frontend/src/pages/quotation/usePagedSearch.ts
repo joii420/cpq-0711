@@ -11,11 +11,13 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-export const PAGE_SIZE_OPTIONS = [100, 200, 500] as const;
-export const DEFAULT_PAGE_SIZE = 100;
+// 2026-08-28 用户参数变更（合并后跟进）：默认页大小 100→10，档位新增 10/30/50。
+// 分页栏隐藏阈值规则不变——始终跟着"最小可选页大小"走，改档位后阈值自动同步为 10。
+export const PAGE_SIZE_OPTIONS = [10, 30, 50, 100, 200, 500] as const;
+export const DEFAULT_PAGE_SIZE = 10;
 /** AC-2b：总行数低于该阈值（即最小可选页大小）时，分页栏整体不渲染。 */
-export const MIN_PAGE_SIZE_FOR_BAR = 100;
-/** 料号查询防抖：1845 条纯内存过滤很快，防抖只为避免逐字符重渲染 100 张卡片。 */
+export const MIN_PAGE_SIZE_FOR_BAR = 10;
+/** 料号查询防抖：1845 条纯内存过滤很快，防抖只为避免逐字符重渲染卡片。 */
 const SEARCH_DEBOUNCE_MS = 200;
 
 function norm(v: unknown): string {
