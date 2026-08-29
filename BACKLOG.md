@@ -1385,6 +1385,51 @@
 - **修法方向**：与同方法内已有的 `material_customer_map` / `mat_part` 批量预取（`task-0723 B2`）合并，
   一次 `IN` 查回 `product`，按 id 分组注入。
 
+### [BL-0190] `CostingFreezeService.createForSubmission` 从不检查 `ensureCardValues` 的返回值 —— `WARMING_IN_PROGRESS` 被当成正常值
+- **优先级**：**P2**
+- **来源**：`task-260825-大单量导入建单性能` 的 B-29-5 改动期，由**后端 agent 主动指出**（它按范围纪律没有顺手改，只报告 —— 处理正确）。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-28
+- **现状**：`CostingFreezeService.createForSubmission` 原代码是
+  ```java
+  cardSnapshotService.ensureCardValues(quotationId);   // 返回值被完全丢弃
+  ```
+  该方法可能返回 `WARMING_IN_PROGRESS`(-1)，表示**另一并发 warm 正持有单飞锁、本次一行都没算**。
+  丢弃返回值 = 在「卡片值可能压根没算」的状态下继续冻结核价单。
+- **与 B-29-5 的关系**：B-29-5 已在此处补了 `failedBatches > 0 → BusinessException(409)`，
+  但**没有**补 `WARMING_IN_PROGRESS` 判断 —— 那是本方法**既存**的缺口，与 B-28/B-29 无关，
+  故按 `CLAUDE.md §4.3`「不自行扩范围」留到这里，不塞进那次改动。
+- **对照**：同一条提交链路上的 `QuotationService.submit`（`:881` 附近）**有**这道守卫：
+  `warmResult.computed == WARMING_IN_PROGRESS → BusinessException(409, "系统正在重算…")`。
+  两处紧邻（`createForSubmission` 就在 submit 的 409 守卫之后被调用），**一处有守卫一处没有**。
+- **为什么不是 P1**：`createForSubmission` 的调用点紧跟在 submit 那道守卫之后，
+  正常路径下 submit 已先行 409 拦截，此处再撞 `WARMING_IN_PROGRESS` 需要**两次调用之间锁被别人抢走**这个窄窗口。
+  未实测复现，故 P2 而非 P1。
+- **修法建议**：改用 `ensureCardValuesDetailed` 并补 `computed == WARMING_IN_PROGRESS → 409`，与 submit 侧措辞对齐。
+
+### [BL-0189] 报价单编辑页 Step2 首次挂载有约 9.2s 固定成本（与渲染卡片数无关）
+- **优先级**：**P1**
+- **来源**：`task-260825-报价单大单量分页与料号查询` 亲验期，主线**线性度实验**实测发现。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-27
+- **实测三点**（1845 行单 `QT-20260825-0180`，headless Chrome，worktree 分页版）：
+  | 动作 | 耗时 | 渲染卡片数 |
+  |---|---|---|
+  | 首次进 Step2 | **9,811 ms** | 100 |
+  | Step2 内翻一页 | **581 ms** | 100 |
+  | 切页大小 → 500 | **2,620 ms** | 500 |
+- **推论**：`581 : 2,620 ≈ 1 : 5` → **纯渲染完美线性，约 5.2 ms/卡片**。
+  故首次进 Step2 的 9,811 ms 中仅约 581 ms 是渲染，**另约 9,230 ms 是一次性固定成本**。
+- **性质**：该成本作用在**全量 1845 行**数据集上（疑为公式引擎预热 / driver 展开 / path cache /
+  `buildExcelSnapshot` 等首次挂载开销），**与渲染窗口大小无关** →
+  **前端分页按设计消除不了它**（全量数据本就不切，本任务服务端零改动）。
+- **对照**：master 首次进 Step2 **32.0 s**，分页后 **9.8 s**（3.3× 改善）——
+  即固定成本在 master 上更高，说明它**部分**随渲染量变化，但存在很大的与渲染量无关的基底。
+- **排查方向（未验证，供接手者起步）**：用 Chrome Performance 火焰图定位 Step2 首次挂载的热点；
+  重点看 `computeAllFormulas` / `useDriverExpansions` / `usePathFormulaCache` / `buildExcelSnapshot`
+  是否在全量 `lineItems` 上跑，而非仅当前页。
+- ⚠️ **与 [[BL-0184]]（大单量报价单打开后 batch-evaluate 风暴）疑似同源**，接手时先合并看。
+
 ## P2
 
 ### [BL-0183] 建单后置物化拆批事务 / 移出请求线程（`task-260825` 已否决备选丙）
