@@ -1061,7 +1061,11 @@ public class CardSnapshotService {
             if (cond.length() > 0) cond.append(" OR ");
             cond.append("costing_excel_values IS NULL");
         }
-        String sql = "SELECT id FROM quotation_line_item WHERE quotation_id = :q AND (" + cond + ")";
+        // task-260825 B-30：加确定性排序（与 ensureCardValuesDetailed 同一套 ORDER BY sort_order
+        // NULLS LAST, id），理由见该方法同款注释——批边界必须在 ③/④ 之间保持一致，否则受控实验
+        // 持锁时两者废掉的批不对齐（B-29 受控验收实测：③ 只连带 300 行，④ 却连带 600 行）。
+        String sql = "SELECT id FROM quotation_line_item WHERE quotation_id = :q AND (" + cond + ")"
+            + " ORDER BY sort_order NULLS LAST, id";
         @SuppressWarnings("unchecked")
         java.util.List<Object> rawIds = em.createNativeQuery(sql)
             .setParameter("q", quotationId).getResultList();
@@ -1309,11 +1313,20 @@ public class CardSnapshotService {
         if (!"DRAFT".equals(q.status)) return new EnsureResult(0, 0, 0);
         boolean hasCostingTpl = q.costingCardTemplateId != null;
 
+        // task-260825 B-30（2026-08-28，用户受控验收实测驱动）：加确定性排序——原写法两处
+        // （本处 missing 查询 + ensureExcelValuesDetailed 的 missing 查询）都没有 ORDER BY，行序
+        // 由 PG 物理堆顺序决定，且③会先 UPDATE 这批行（改变其堆位置）再轮到④重新 SELECT，
+        // 于是同样锁住的行在③、④两处被切进不同批（实测③只废 300 行，④却废 600 行）——不是
+        // 正确性 bug（IS NULL 谓词保证重跑自愈），但批边界不确定导致连带损失不可预测、故障
+        // 难复现。用 sort_order（业务行序）NULLS LAST + id（唯一列兜底，防 sort_order 重复/为空
+        // 时并列顺序仍不确定）做全序，③④两处必须用同一套排序，否则批边界依旧对不上。
         String sql = forceRecomputeAll
-            ? "SELECT id FROM quotation_line_item WHERE quotation_id = :q"
+            ? "SELECT id FROM quotation_line_item WHERE quotation_id = :q" +
+              " ORDER BY sort_order NULLS LAST, id"
             : "SELECT id FROM quotation_line_item WHERE quotation_id = :q " +
               "AND ( quote_card_values IS NULL" +
-              (hasCostingTpl ? " OR costing_card_values IS NULL" : "") + " )";
+              (hasCostingTpl ? " OR costing_card_values IS NULL" : "") + " )" +
+              " ORDER BY sort_order NULLS LAST, id";
         @SuppressWarnings("unchecked")
         java.util.List<Object> rawIds = em.createNativeQuery(sql)
             .setParameter("q", quotationId).getResultList();
