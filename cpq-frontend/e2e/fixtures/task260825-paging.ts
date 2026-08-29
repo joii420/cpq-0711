@@ -159,6 +159,23 @@ export async function countRenderedCards(page: Page): Promise<number> {
   return page.locator('.qt-product-card').count();
 }
 
+/**
+ * 显式切页大小（2026-08-28 用户裁决：默认页大小 100→10，可选档位 [10,30,50,100,200,500]）。
+ * 一些用例（如三视图切片/配对、AP-54 写回下标专项）为了测到"深页/大页"的边界，需要显式切到
+ * 100 条/页而不是依赖默认值 —— 默认值已从 100 改成 10，不再天然满足这些用例原有的 SQL 期望值
+ * （如"第 3 页 = 全局下标 200~299"）。调用方无需自己重算这些偏移量，只要先调本函数切到 100。
+ */
+export async function switchPageSize(page: Page, size: 10 | 30 | 50 | 100 | 200 | 500) {
+  const sizeChanger = page.locator('.ant-pagination-options-size-changer').first();
+  await expect(sizeChanger, `页大小切换器应可见（切到 ${size} 前）`).toBeVisible({ timeout: 10000 });
+  await sizeChanger.click();
+  await page.waitForTimeout(300);
+  const opt = page.locator('.ant-select-item-option', { hasText: `${size} 条/页` }).first();
+  await expect(opt, `下拉应有 "${size} 条/页" 选项`).toBeVisible({ timeout: 5000 });
+  await opt.click();
+  await page.waitForTimeout(1000);
+}
+
 /** 阻断除 GET 外的一切 /api 请求（性能测量 / 只读浏览类用例的红线要求）。返回被拦截请求数的引用计数器。 */
 export async function blockNonGetApi(page: Page): Promise<{ blocked: number; requests: string[] }> {
   const counter = { blocked: 0, requests: [] as string[] };

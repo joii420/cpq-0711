@@ -79,7 +79,7 @@ test.describe('AC-17: 详情页翻页零写接口', () => {
     const cardCount = await countRenderedCards(page);
     console.log(`[T-17] 详情页首屏卡片数 = ${cardCount}`);
     expect(cardCount, '详情页应渲染出卡片（结果非空守卫）').toBeGreaterThan(0);
-    expect(cardCount, 'AC-17 连带：详情页首屏也应受分页限制 <= 100').toBeLessThanOrEqual(100);
+    expect(cardCount, 'AC-17 连带：详情页首屏也应受分页限制 <= 10（2026-08-28 裁决新默认页大小）').toBeLessThanOrEqual(10);
 
     for (let i = 2; i <= 6; i++) {
       const pageItem = page.locator(`.ant-pagination-item-${i}`).first();
@@ -100,7 +100,7 @@ test.describe('AC-17: 详情页翻页零写接口', () => {
 });
 
 test.describe('AC-18: 核价工作台分页（🚧 需 1845 行大单挂 costing_order，主线批准前 skip）', () => {
-  test('T-18 核价工作台渲染卡片数 == 100', async ({ page }) => {
+  test('T-18 核价工作台渲染卡片数 == 10（2026-08-28 裁决新默认页大小）', async ({ page }) => {
     test.skip(!backendUp, '后端未启动');
     test.skip(!largeCostingOrderId, '现网无挂在 1845 行大单上的 costing_order，需主线批准造数方案（详见回报"造数需求"一节）');
 
@@ -113,7 +113,7 @@ test.describe('AC-18: 核价工作台分页（🚧 需 1845 行大单挂 costing
     const cardCount = await countRenderedCards(page);
     console.log(`[T-18] 核价工作台渲染卡片数 = ${cardCount}`);
     expect(cardCount, '核价工作台应渲染出卡片（结果非空守卫）').toBeGreaterThan(0);
-    expect(cardCount, 'AC-18: 核价工作台渲染卡片数应 == 100（默认页大小）').toBe(100);
+    expect(cardCount, 'AC-18: 核价工作台渲染卡片数应 == 10（2026-08-28 裁决新默认页大小）').toBe(10);
 
     const sizeChanger = page.locator('.ant-pagination-options-size-changer').first();
     const sizeChangerVisible = await sizeChanger.isVisible().catch(() => false);

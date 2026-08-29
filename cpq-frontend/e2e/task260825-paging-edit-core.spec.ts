@@ -46,8 +46,8 @@ test.beforeAll(async () => {
   }
 });
 
-test.describe('AC-1: 默认渲染 100 张卡片', () => {
-  test('T-01 打开 1845 行单 Step2，DOM 中卡片数 <= 100，分页栏文案含"共 1845 条 / 每页 100 条"', async ({ page }) => {
+test.describe('AC-1: 默认渲染 10 张卡片（2026-08-28 用户裁决：默认页大小 100→10）', () => {
+  test('T-01 打开 1845 行单 Step2，DOM 中卡片数 <= 10，分页栏文案含"共 1845 条"', async ({ page }) => {
     test.skip(!backendUp, '后端未启动');
     await loginAdmin(page);
     await openEditStep2(page, LARGE_QUOTATION_ID);
@@ -57,7 +57,7 @@ test.describe('AC-1: 默认渲染 100 张卡片', () => {
     const cardCount = await countRenderedCards(page);
     console.log(`[T-01] 渲染卡片数 = ${cardCount}`);
     expect(cardCount, '渲染卡片数应非零（结果非空守卫，避免空数据空跑断言）').toBeGreaterThan(0);
-    expect(cardCount, 'AC-1: 默认渲染卡片数 <= 100').toBeLessThanOrEqual(100);
+    expect(cardCount, 'AC-1: 默认渲染卡片数 <= 10（2026-08-28 裁决新默认值）').toBeLessThanOrEqual(10);
 
     const pgbarText = await page.locator('.ant-pagination').first().innerText().catch(() => '');
     console.log(`[T-01] 分页栏文案 = "${pgbarText.replace(/\n/g, ' ')}"`);
@@ -66,13 +66,13 @@ test.describe('AC-1: 默认渲染 100 张卡片', () => {
 });
 
 test.describe('AC-2 / AC-2b: 页大小切换 + 禁用态', () => {
-  test('T-02 页大小切 100/200/500，切换后回到第 1 页且卡片数受限', async ({ page }) => {
+  test('T-02 页大小切 10/30/50/100/200/500，切换后回到第 1 页且卡片数受限', async ({ page }) => {
     test.skip(!backendUp, '后端未启动');
     await loginAdmin(page);
     await openEditStep2(page, LARGE_QUOTATION_ID);
     await page.waitForTimeout(1200);
 
-    for (const size of [100, 200, 500]) {
+    for (const size of [10, 30, 50, 100, 200, 500]) { // 2026-08-28 裁决：可选档位由 3 档扩到 6 档
       const sizeChanger = page.locator('.ant-pagination-options-size-changer').first();
       await expect(sizeChanger, `页大小切换器应可见（切到 ${size} 前）`).toBeVisible({ timeout: 10000 });
       await sizeChanger.click();
@@ -192,8 +192,8 @@ test.describe('AC-3: 翻页零网络请求', () => {
   });
 });
 
-test.describe('AC-4: 小单行为与改动前一致', () => {
-  test('T-04 小单（1 行）不渲染分页栏', async ({ page }) => {
+test.describe('AC-4: 小单行为与改动前一致（2026-08-28 裁决：隐藏阈值 <100 行 → <10 行）', () => {
+  test('T-04a 小单（1 行）不渲染分页栏', async ({ page }) => {
     test.skip(!backendUp, '后端未启动');
     await loginAdmin(page);
     await openEditStep2(page, SMALL_QUOTATION_ID);
@@ -206,7 +206,17 @@ test.describe('AC-4: 小单行为与改动前一致', () => {
     // 前端已按约定给本任务新增的分页栏（顶部+底部）挂 data-testid="task260825-paging-bar"，
     // 直接断言数量为 0 —— 比 isVisible()===false（找不到元素时同样返回 false，判据偏弱）更硬。
     const pagingBarCount = await page.locator('[data-testid="task260825-paging-bar"]').count();
-    console.log(`[T-04] 小单 task260825-paging-bar 数量 = ${pagingBarCount}, 卡片数 = ${cardCount}`);
-    expect(pagingBarCount, 'AC-4: 小单（< 100 行）分页栏整体不应渲染').toBe(0);
+    console.log(`[T-04a] 小单 task260825-paging-bar 数量 = ${pagingBarCount}, 卡片数 = ${cardCount}`);
+    expect(pagingBarCount, 'AC-4: 小单（< 10 行，2026-08-28 裁决新阈值）分页栏整体不应渲染').toBe(0);
+  });
+
+  // 🚧 需造数：现网所有报价单行数要么 1~2 行、要么 1845 行，没有 10~99 行区间的样本
+  // （只读 SQL 已确认：GROUP BY quotation_id HAVING count(*) BETWEEN 10 AND 99 → 0 行）。
+  // 这条是本次阈值改动（<100→<10）后最容易被忽略的行为变化：原来 10~99 行的单不出现分页栏，
+  // 现在应该出现。造一张这样的单需要往共享库写业务数据，未经批准不动手（同 T-15/T-18/T-25 的纪律）。
+  test.skip('T-04b 10~99 行的单（阈值改动后应出现分页栏，改动前不出现）', async () => {
+    // 造数方案草案（未执行，待主线批准）：
+    //   通过前端 UI 新建一张报价单，添加 10~30 个产品（不直接写库），
+    //   断言 [data-testid="task260825-paging-bar"] 数量 > 0。
   });
 });

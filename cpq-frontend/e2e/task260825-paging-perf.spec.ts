@@ -57,6 +57,21 @@ async function forceGCAndMeasure(session: CDPSession, page: Page): Promise<Metri
   };
 }
 
+/**
+ * 2026-08-28 用户裁决：默认页大小 100→10。AC-19/AC-20 的判据口径不变（仍按每页 100 测，
+ * "100 是最差常用档"），所以不能再依赖默认值，必须显式切到 100 条/页再测。
+ */
+async function switchTo100PerPage(page: Page) {
+  const sizeChanger = page.locator('.ant-pagination-options-size-changer').first();
+  await sizeChanger.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
+  await sizeChanger.click().catch(() => {});
+  await page.waitForTimeout(300);
+  const opt = page.locator('.ant-select-item-option', { hasText: '100 条/页' }).first();
+  await opt.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+  await opt.click().catch(() => {});
+  await page.waitForTimeout(500);
+}
+
 let backendUp = false;
 test.beforeAll(async () => {
   backendUp = await isBackendUp();
@@ -96,7 +111,7 @@ test.describe('AC-19: 五项性能指标（可脚本化的四项）', () => {
     const session = await ctx.newCDPSession(page);
     await session.send('Performance.enable');
 
-    const t0 = Date.now();
+    // 打开页面（默认页大小已是 10，先等它就绪，这段耗时不计入 AC-19 判据）
     await page.goto(`/quotations/${LARGE_QUOTATION_ID}/edit`);
     await page.waitForLoadState('networkidle', { timeout: 45000 }).catch(() => {}); // 大单持续有后台请求，networkidle 可能等不到，不中断流程
     const nextBtn = page.getByRole('button', { name: /下一步/ }).first();
@@ -105,13 +120,30 @@ test.describe('AC-19: 五项性能指标（可脚本化的四项）', () => {
       await page.waitForLoadState('networkidle', { timeout: 45000 }).catch(() => {}); // 大单持续有后台请求，networkidle 可能等不到，不中断流程
     }
     await page.locator('.qt-product-card').first().waitFor({ state: 'visible', timeout: 30000 }).catch(() => {});
+
+    // 🚨 AC-19 判据口径仍是"每页 100"（用户裁决，100 是最差常用档），显式切一次，
+    // 从"点击切换"到"100 张卡片渲染完成"计时——这与改动前"渲染耗时"的语义一致
+    // （老口径下默认值本来就是 100，这里等于把"切到 100"这一步单独计时出来）。
+    // ⚠️ t0 必须打在点击之前、且轮询条件必须是"达到 100"而不是">0"——本单第 1 页原本
+    // 默认已渲染 10 张卡片，若轮询条件写成 >0 会立刻为真，把 renderMs 测成 ~0ms（假绿）。
+    const sizeChanger = page.locator('.ant-pagination-options-size-changer').first();
+    await sizeChanger.waitFor({ state: 'visible', timeout: 15000 });
+    const t0 = Date.now();
+    await sizeChanger.click();
+    await page.waitForTimeout(300);
+    const opt100 = page.locator('.ant-select-item-option', { hasText: '100 条/页' }).first();
+    await opt100.waitFor({ state: 'visible', timeout: 5000 });
+    await opt100.click();
+    await expect.poll(async () => page.locator('.qt-product-card').count(), { timeout: 15000 }).toBe(100);
     const renderMs = Date.now() - t0;
 
     const m = await forceGCAndMeasure(session, page);
-    console.log(`[T-19] 渲染耗时=${renderMs}ms JS堆=${m.jsHeapUsedMB.toFixed(1)}MB DOM节点=${m.domNodes} 事件监听器=${m.jsEventListeners} LayoutObjects=${m.layoutObjects} 拦截写请求数=${blockedWrites}`);
+    const cardCountAt100 = await page.locator('.qt-product-card').count();
+    console.log(`[T-19] 页大小=100 渲染卡片数=${cardCountAt100} 渲染耗时=${renderMs}ms JS堆=${m.jsHeapUsedMB.toFixed(1)}MB DOM节点=${m.domNodes} 事件监听器=${m.jsEventListeners} LayoutObjects=${m.layoutObjects} 拦截写请求数=${blockedWrites}`);
 
-    fs.writeFileSync(path.join(OUT_DIR, 'ac19-metrics.json'), JSON.stringify({ renderMs, ...m, blockedWrites }, null, 2));
+    fs.writeFileSync(path.join(OUT_DIR, 'ac19-metrics.json'), JSON.stringify({ renderMs, cardCountAt100, ...m, blockedWrites }, null, 2));
 
+    expect(cardCountAt100, 'AC-19 前置：切到 100 条/页后应恰好渲染 100 张卡片（判据口径校验，不是就测错了）').toBe(100);
     expect(m.domNodes, 'AC-19 前置：DOM 节点数应非零').toBeGreaterThan(0);
     expect(renderMs, 'AC-19: Step2 渲染耗时 < 5000ms').toBeLessThan(5000);
     expect(m.jsHeapUsedMB, 'AC-19: JS 堆 used < 250 MB').toBeLessThan(250);
@@ -159,6 +191,12 @@ test.describe('AC-20: 泄漏护栏（🚨 最容易被跳过的一条）', () =>
       await page.waitForLoadState('networkidle', { timeout: 45000 }).catch(() => {}); // 大单持续有后台请求，networkidle 可能等不到，不中断流程
     }
     await page.locator('.qt-product-card').first().waitFor({ state: 'visible', timeout: 30000 }).catch(() => {});
+
+    // 🚨 2026-08-28 默认页大小改为 10，AC-20 判据口径仍按每页 100（用户裁决），显式切一次。
+    await switchTo100PerPage(page);
+    const cardCountAfterSwitch = await page.locator('.qt-product-card').count();
+    console.log(`[T-20] 切到 100 条/页后卡片数 = ${cardCountAfterSwitch}`);
+    expect(cardCountAfterSwitch, 'AC-20 前置：切到 100 条/页后应恰好渲染 100 张卡片').toBe(100);
 
     const series: Array<{ page: number; m: Metrics }> = [];
     const m0 = await forceGCAndMeasure(session, page);
