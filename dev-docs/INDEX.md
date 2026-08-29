@@ -31,7 +31,7 @@
 | `repair-260808-前端页签算序假环致列小计归零` | ✅ **已交付合 master `e9c8d9ed`** | 前端建图停在页签粒度 → 与后端 repair-0803 的列粒度分叉 → 假环 → `catch` 静默退回声明序 → 11 个 FORMULA 列整齐归零。**表象是「行内值对、小计 ¥0」看着像显示 bug，实为整页签算错**（行内读后端快照 vs 小计读前端实时重算 = 双源）。遗留 [[BL-0159]]/[[BL-0160]] |
 | **文档/部署基建同步**（2026-08-09） | ✅ 已交付 `b3cf4872` 等 4 笔 | ① `deploy/cpq-init-empty-navicat.sql` 同步至 Flyway **V384** + 新增 `deploy/0809-dbupdate.sql`（V378→V384 内网增量，含 V382 存量清空与 `freeze` 补冻指引）；② `rule-0724` 规则集同步 **8 处规则漂移**（H1 退役 / `DATA_SOURCE` 退役 / `tree_ref` / `formula_id` / 导入导出校验 …）；③ `客户组件模板/报价通用组件` 材料成本切 `f_material_element_price`（实证旧配置在静默取错价） |
 
-| `task-260825-报价单大单量分页与料号查询` | 🟡 **待验收**（已合并，等用户真机验收）<br>合并链：`bef24579`（主体）→ `a4410b09`（页大小改默认 10/六档）→ `8b15e806`（测试同步）<br>⚠️ **亲验未完成即合并**（用户 2026-08-28 指示「合并代码我来测试」）：已独立实测 AC-19 四项 + AC-1 + AC-2b；未复验 AC-5/6/9~14/17/18/20；环境无法验 AC-4b/7/8/15/25；AC-3 存疑（前端报 100 次请求 / 主线实测 0~2 次）；T-01~T-25 **一条未执行** | 分支 `feat/task-260825-quote-frontend-paging` · worktree `.claude/worktrees/task-260825-quote-frontend-paging`。<br>**🚫 服务端零改动，纯前端分页**（用户 2026-08-26 裁决）。26 条 AC · F-1~F-8 · T-01~T-25 · **7 份原型图**（📌 当前基准）· 六件套齐全 · 闸门 A 自检三项全过。<br>**实测基线**：编辑页 Step2 渲染 1845 行 = JS 堆 **601.6 MB** / DOM **146,231** 节点 / LayoutObjects **138,686** / 事件监听器 **24,626** / 渲染 **32.0 s**；用户实拍标签页 **5.2 GB**。内存构成 = 基座 58 + 数据常驻 101 + **渲染 426（73%）** → 分页只砍渲染那部分，`159 MB` 是踩不穿的地板。<br>🔴 **v1（服务端分页）方案已撤回**：独立评审查出 **6 项 P0**，其中 5 项根因都是「前端只剩当前页」；且查实 `li.subtotal` 由卡片值 JSON 抽取（`CardSnapshotService.java:723`）、总价 = 全单 Σ（`:820-822`）→ **建单必须全算，读侧分页对两个超时零贡献**。v1 全文存档于任务目录，勿重新推导。<br>遗留 [[BL-0185]]~[[BL-0188]] |
+| `task-260825-报价单大单量分页与料号查询` | 🟡 **待验收**（已合并，等用户真机验收）<br>合并链：`bef24579`（主体）→ `a4410b09`（页大小改默认 10/六档）→ `8b15e806`（测试同步）<br>⚠️ **亲验未完成即合并**（用户 2026-08-28 指示「合并代码我来测试」）：已独立实测 AC-19 四项 + AC-1 + AC-2b；未复验 AC-5/6/9~14/17/18/20；环境无法验 AC-4b/7/8/15/25；AC-3 存疑（前端报 100 次请求 / 主线实测 0~2 次）；T-01~T-25 **一条未执行** | 分支与 worktree 待清理（已全部并入 master，领先 0 笔）。<br>**🚫 服务端零改动，纯前端分页**（用户 2026-08-26 裁决）。26 条 AC · F-1~F-8 · T-01~T-25 · **7 份原型图**（📌 当前基准）· 六件套齐全 · 闸门 A 自检三项全过。<br>**实测基线**：编辑页 Step2 渲染 1845 行 = JS 堆 **601.6 MB** / DOM **146,231** 节点 / LayoutObjects **138,686** / 事件监听器 **24,626** / 渲染 **32.0 s**；用户实拍标签页 **5.2 GB**。内存构成 = 基座 58 + 数据常驻 101 + **渲染 426（73%）** → 分页只砍渲染那部分，`159 MB` 是踩不穿的地板。<br>🔴 **v1（服务端分页）方案已撤回**：独立评审查出 **6 项 P0**，其中 5 项根因都是「前端只剩当前页」；且查实 `li.subtotal` 由卡片值 JSON 抽取（`CardSnapshotService.java:723`）、总价 = 全单 Σ（`:820-822`）→ **建单必须全算，读侧分页对两个超时零贡献**。v1 全文存档于任务目录，勿重新推导。<br>遗留 [[BL-0185]]~[[BL-0188]] |
 | `task-260825-大单量导入建单性能` | 🟣 **已合并 `76c4b0ab`，待闸门 B 验收**（2026-08-28） | 大单量建单 `POST /v6/quote/create-quotation` 30s 超时。**双层墙**：前端 axios 30s（`api.ts:5`）+ **Narayana 60s 事务 reaper 强杀**（`ARJUNA012117`）→ 1845 行报价/核价卡片值**两侧同时**全 NULL 且不自愈（不丢单）。🔴 **根因经独立评审更正为两处 N+1**：**D-3（真凶）** `CardSnapshotService.loadFrozenQuoteTabs` 在 `ensureCardValues` 的**事务内**逐行查一个**整单恒定值**（≈31s，`b6e86a18` 引入，且它直接替换掉了既有整单 prefetch）；**D-1** `ConfigureSnapshotService.loadRowDataByComp` 逐行查（≈27s，`daa95eaf` 引入）—— 但 `snapshotLines` **不带事务**，D-1 只烧墙钟、不占事务预算。⚠️ **初稿曾把根因单独归给 D-1 并称其「吃掉 60s 预算」，已证伪** —— jstack 找的是「时间花在哪」，而失败原因要看「哪个事务超预算」，二者可落在不同步骤。两处同族：**都是正确性修复把 per-row 读加进已批量化的循环**。方案 = 各自提出循环，零契约变更 |
 | └ `repair-260828-建单物化逐行DB往返/` | 🔵 **开发中**（闸门 A 已过 2026-08-28）· **未合并分支** `fix/repair-260828-materialize-row-roundtrip` · worktree `.claude/worktrees/repair-260828-materialize-row-roundtrip` · 立项提交 `30ec248c` · 六件套齐 · AC-1~AC-14 · B-1~B-7 / T-1~T-9 双向覆盖已过自检 | **建单物化仍需 106 秒 —— 逐行 DB 往返三根因**。现象：导入建单 1845 行，抽屉「正在计算卡片值…」卡 100 秒+（**无报错 / 不丢单 / 无失败批，纯慢**）。✅ **归属已确认并移正**（2026-08-28）：原误建在 `task-260825-报价单大单量分页与料号查询` 下，主线自查后已移到本任务，前一版本条目的「归属存疑」标注**就此消解**。<br>🔑 **主任务修的是编排层、埋点证明编排层现在只花 1.2s——已修干净；剩下 104s 是逐行成本，编排层优化够不着**。三根因（埋点 + jstack 实测）：**A** `assignQuoteCardValues:808` 逐行回查 componentData（`preloadComponentDataByLine` 的 `groupingBy` 不为无数据行建 key → `get()` 返 null → 三元静默降级；本单 1845/1845 行 **100% miss**）；**B** `recomputeDraftHeaderTotals:894` 每批全量加载整单 **2912 kB** 完整实体只为累加 `subtotal`（**7 批 = 7 次**，与已修的 B-24 完全同型的漏网）；**C** `@DynamicUpdate`（全工程唯一，`3a69ca97`/2026-08-06 引入）使 `statement-batch-size=100`（`ba702814`/2026-06-26）对该表**静默失效** → `MutationExecutorSingleNonBatched` → **1845 次 UPDATE 往返**（③ 的 Pass2 注释所称「P1 batch 合并 N 条 UPDATE」的前提也一并被破坏）。<br>③ 95% + ④ 97% 的采样栈顶是 `sun.nio.ch.Net.poll` = **等 DB，不是 CPU**。<br>🚦 A0 已裁决 **B-丙 + C-丙**：`@DynamicUpdate` **保留不动**（它治的是 A/B 实测 0/8→8/8 的数据丢失事故），改由物化路径走 detach + 原生批量 UPDATE 绕开。**B-丙 是 C-丙 的前置**（它解除对一级缓存脏值的依赖，detach 才安全）。 |
 
@@ -49,12 +49,26 @@
 
 | **BL-0184** 大单量报价单打开后 `batch-evaluate` 风暴 | 🔴 **P0 · 另立任务待查** | 1845 行的单打不开：`POST /formulas/batch-evaluate` **517 次 / 40.3MB / 29.2 分钟不收敛**，「下一步」同时卡死。**不是分块**（前端 `BATCH_EVALUATE_CHUNK=5000`，注释称「正常报价单 1 个 HTTP 搞定」）、**不是实例爆炸**（`LinkedExcelView` 仅渲染 2 处）→ 是 `useLinkedExcelRows.ts:274` 的 effect 反复重入。**`task-260825` 未改过这三个文件**（`git diff master` 为空），属既有代码、只是从未在 1845 行量级跑过。疑与「打开触发 autosave 风暴」同族 |
 
-### 未合并分支（2 条）
+### 未合并分支（1 条）· 快照 2026-08-28
 
-| 分支 | worktree | 建于 | 状态 |
+> 判据：`git log master..<branch> --oneline | wc -l`（**领先 master 的提交数**），不是凭印象。
+
+| 分支 | worktree | 领先 master | 状态 |
 |---|---|---|---|
-| `feat/task-260819-sql-view-builder` | `.claude/worktrees/task-260819-sql-view-builder` | 2026-08-20 | 🟢 开发中（见上方活跃主线 `task-260819`） |
-| **`fix/task-260825-materialize-n1`** | `.claude/worktrees/task-260825-materialize-n1` | **2026-08-25** | 🟢 **开发中** —— 基于 `6629675f`。修 D-3（`CardSnapshotService.loadFrozenQuoteTabs` 事务内逐行查整单恒定值，真凶）+ D-1（`ConfigureSnapshotService.loadRowDataByComp` 逐行查）。B-1~B-10 / T-1~T-7，前端零改动 |
+| `feat/quote-material-no` | 无 | **1 笔** | 🟡 悬挂（内容仅 `BACKLOG.md` +15 行零代码，技术债已转 [[BL-0175]]，见 §8.3） |
+
+**已全部并入 master、仅剩分支指针与 worktree 的（4 条，可清理）**：
+
+| 分支 | worktree | 领先 master |
+|---|---|---|
+| `fix/task-260825-materialize-n1` | `.claude/worktrees/task-260825-materialize-n1`（已不在列表） | 0 笔（merge `76c4b0ab`） |
+| `feat/task-260825-quote-frontend-paging` | `.claude/worktrees/task-260825-quote-frontend-paging` | 0 笔（merge `bef24579` / `a4410b09` / `8b15e806`） |
+| `feat/task-260819-sql-view-builder` | `.claude/worktrees/task-260819-sql-view-builder` | 0 笔 |
+| `fix/repair-260828-materialize-row-roundtrip` | `.claude/worktrees/repair-260828-materialize-row-roundtrip` | 0 笔 |
+
+> ⚠️ **清理前先断 `node_modules` 软链**：worktree 里的 `node_modules` 多为指向主仓的软链，
+> `git worktree remove` 前必须先 `rm` 掉软链本身，否则有穿透删除主仓依赖的风险（2026-08-17 教训）。
+> ⚠️ 后三条属**在途会话**，删除前须各自会话确认，不要代删。
 
 > ⚠️ 下面这段是 **2026-08-17 的历史快照**，当时确为 0 条；上表是当前实际状态。
 
