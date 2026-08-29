@@ -162,6 +162,11 @@ public class V6QuotationCommitService {
         public boolean cardValuesReady = false;         // 卡片值全部落库=true；降级=false（Resource 回填）
         public int costingTreeRows = 0;                 // 本单核价树总节点数（Resource 回填，可选）
         public java.util.List<String> warnings = new java.util.ArrayList<>();
+        /** task-260825 B-17（D-5，2026-08-26）：物化已转后台异步执行，本次响应里 cardValuesReady/
+         * costingTreeRows 恒为构造时的默认值（false/0），不代表真实物化结果——前端须据本字段显式
+         * 判断"要不要轮询"，不许再靠 cardValuesReady==false 去猜（那样区分不了"真失败"与"还没算"）。
+         * 默认 false：兼容其它任何未来可能仍同步调用 materialize() 的路径（如果有）。 */
+        public boolean materializing = false;
 
         public CommitResult(UUID quotationId, UUID importRecordId, int hfPairsCount) {
             this.quotationId = quotationId;

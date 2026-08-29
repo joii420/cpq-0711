@@ -134,6 +134,16 @@ public class BasicDataImportV6Resource {
 
     /**
      * V6 commit Step 2：导入完成后建报价单（不填 LineItem，由编辑页 autoPopulate 自动生成）。
+     *
+     * <p><b>task-260825 B-17（D-5，2026-08-26 用户真机测试后裁决，第三次扩范围）</b>：
+     * 本端点原先同步做完"建单+建行+四步物化"全部工作才返回（1845 行实测 132s）——后端数据
+     * 是好的，但前端 axios 全局 30s 超时会先把请求 cancel 掉，用户体感是"依然超时失败"。
+     * 现拆两段：同步段只做 {@code commitService.createQuotation}（建单+建行，实测很快）并
+     * 立即返回；{@code materializer.materialize(...)} 转后台执行（{@link #managedExecutor}，
+     * 与既有 Step 1 导入异步化 {@code QuoteImportService#processImport} 同一模式）。
+     * 响应体新增 {@code materializing=true}，让前端<b>显式</b>知道要去轮询既有的
+     * {@code POST /quotations/{id}/ensure-card-values} 端点，而不是靠
+     * {@code cardValuesReady==false} 去猜（那样区分不了"真的算失败了"和"根本还没开始算"）。
      */
     @POST
     @Path("/quote/create-quotation")
@@ -148,8 +158,23 @@ public class BasicDataImportV6Resource {
         if (userId == null) throw new BusinessException(401, "未登录");
         try {
             V6QuotationCommitService.CommitResult r = commitService.createQuotation(req, userId);
-            // createQuotation @Transactional 已提交 → 明细行对新事务可见。后置物化 REQUIRES_NEW 必须在此之后。
-            materializer.materialize(r);
+            // B-17：同步段到此为止；cardValuesReady/costingTreeRows 维持构造默认值(false/0)，
+            // 不代表真实物化结果——materializing=true 是本次响应唯一的、显式的"要去轮询"信号。
+            r.materializing = true;
+            // B-18：不把 r 本身交给后台任务持有——r 马上要被框架序列化进本次 HTTP 响应，
+            // materialize() 内部会写 cardValuesReady/costingTreeRows/warnings 三个字段，
+            // 若后台线程与序列化线程并发读写同一个对象存在数据竞争（轻则响应体不确定，
+            // 重则序列化期间遇到可变 List 被并发 add 抛 ConcurrentModificationException）。
+            // 后台任务另建一份局部 CommitResult，只做后台自身的降级记录（写日志用），
+            // 不影响已经交给框架序列化的这一份、也没有第三方读取它。
+            V6QuotationCommitService.CommitResult bg = new V6QuotationCommitService.CommitResult(
+                r.quotationId, r.importRecordId, r.hfPairsCount);
+            bg.lineItemsCount = r.lineItemsCount;
+            // createQuotation @Transactional 已提交 → 明细行对新事务可见。后置物化必须在此之后。
+            // managedExecutor.runAsync：受管线程池，与本类 :87 既有的 Step 1 导入异步化同一模式，
+            // 非本次新发明；materialize() 自身带 @ActivateRequestContext（见其 javadoc），
+            // 后台线程可正常使用 request-scoped EntityManager。
+            managedExecutor.runAsync(() -> materializer.materialize(bg));
             return ApiResponse.success(r);
         } catch (BusinessException be) {
             throw be;
