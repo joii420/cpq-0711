@@ -62,7 +62,10 @@ SELECT count(*) FROM quotation_line_component_data d
 > 不做这条，"修复后通过"可能只是环境变了。参见 `RECORD.md`「自己写的验证脚本首次 PASS 也可能是空验证」。
 
 ### T-04　① 步空转发出信号（AC-4）
-人为使 ① 步空转（临时令 `loadDriverComponents` 返空），fire-and-forget 建单。
+构造「明细行 > 0 **且** driver 组件数 > 0 **且** `comp_data == 0`」的状态，执行物化。
+**推荐做法**：直接构造 DB 状态 + 调用 B-4 抽出的守卫方法（独立可测），**不必**依赖 fire-and-forget 复现，也**不必** mock `loadDriverComponents`。
+⚠️ **不要用「SQL 视图引用不存在的表」当 fixture** —— 那条路径下 comp_data 行可能仍被创建（只是 `snapshot_rows` 为空），
+终态与 T-11 相同而与真实缺陷不同，会让 T-04 与 T-11 互相矛盾。
 **断言**：`CommitResult.warnings` 含明确指出「组件数据 0 行」的文案；日志出现 **ERROR** 级记录。
 > 零改动基线上 `warnings` 为空、无 ERROR、埋点四步全绿 → **本条在基线上必然失败**，符合阳性判据。
 
@@ -95,7 +98,9 @@ UNION ALL SELECT 'material_bom', … （其余四张同构）
 - T-09：明细行 0 条的单 → 不写 warnings
 - T-10：模板 driver 组件 0 个 → 不写 warnings
 - T-11：某组件视图合法返 0 行 → 该组件 comp_data 行**存在**且 `snapshot_rows='[]'`，**不**触发告警
-> 判据必须是「明细行 > 0 **且** comp_data == 0」，写成「comp_data == 0」会让 T-09/T-10 红。
+> 🔧 **判据是三元的**（2026-08-29 修正）：`明细行数 > 0` **且** `driver 组件数 > 0` **且** `comp_data == 0`。
+> `driver 组件数 > 0` 这一维专为 T-10 而加 —— 少了它，「① 步炸了」（T-04，要报）和「模板挂 0 个 driver 组件」（T-10，不报）
+> **终态都是 `comp_data == 0`**，二元判据下 T-10 必然误报。
 
 ### T-12　序列（AC-9）
 建单 → 打开（确认非空）→ 改一个数值失焦 → 保存草稿 → 切走再切回 → 刷新页面。
