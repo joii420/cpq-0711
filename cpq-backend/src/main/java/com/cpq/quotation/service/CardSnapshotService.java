@@ -603,6 +603,11 @@ public class CardSnapshotService {
             }
         }
         snapshotNewLinesCardValuesCore(q, lines, newLineIds, union, prefetch, treeBaseRowsByLine, costingRenderError);
+        // B-2（repair-260828）：Core 不再承担 Pass2c 整单级工作——本方法是"单行入口"（无分批循环），
+        // 调完 Core 后自己负责收一次尾。直接调用（非 self.）：此刻仍在本方法自身的 REQUIRES_NEW
+        // 事务内，recomputeDraftHeaderTotals 声明 @Transactional(REQUIRED) 直接加入当前活跃事务
+        // 即可，不需要新开事务；直接调用可读到 Core 刚写入的最新 subtotal（同一事务、同一连接）。
+        recomputeDraftHeaderTotals(quotationId);
     }
 
     /**
@@ -696,7 +701,21 @@ public class CardSnapshotService {
             //    就会把 li 的脏值提前 flush 掉,拆成两批)。
             Map<UUID, List<com.cpq.quotation.entity.QuotationLineComponentData>> cdByLine =
                 preloadComponentDataByLine(newLineIds);
-            // ── Pass2:一次性赋托管实体 4 字段(中间零查询)→ commit 单次 flush,P1 batch 合并 N 条 UPDATE ──
+            // 🔒 B-4（repair-260828，根因 C 修复）detach 纪律——必须在下方 Pass2 赋值【之前】把
+            // 本批全部 QuotationLineItem + QuotationLineComponentData 实体 em.detach()：赋值随后
+            // 落在游离对象上，不触发 Hibernate 脏检查，commit 时 Hibernate 对这些实体零 UPDATE，
+            // 落库完全交给 Pass2 之后的 writeCardValuesBatchNative 原生批量 UPDATE 负责。
+            // 🚫 不许改成"先赋托管实体、写完再 em.clear()"——clear 之前任何查询触发
+            // flush-before-query，就会先发出 N 条 UPDATE，本改动完全失效且不报错。
+            for (QuotationLineItem li0 : lines) {
+                em.detach(li0);
+            }
+            for (List<com.cpq.quotation.entity.QuotationLineComponentData> cds0 : cdByLine.values()) {
+                for (com.cpq.quotation.entity.QuotationLineComponentData cd0 : cds0) {
+                    em.detach(cd0);
+                }
+            }
+            // ── Pass2:一次性赋游离实体 4 字段(中间零查询)→ 随后 writeCardValuesBatchNative 原生批量落库 ──
             OffsetDateTime now = OffsetDateTime.now();
             SubtotalOverrideCounter counter = new SubtotalOverrideCounter();
             for (QuotationLineItem li : lines) {
@@ -724,13 +743,109 @@ public class CardSnapshotService {
                         : orSentinel(costingVals.get(li.id));
                 li.cardSnapshotAt = now;
             }
-            // ── Pass2c(方向3 T1):单头总额跟随行总价 ──
-            recomputeDraftHeaderTotals(q.id);
+            // ── Pass2d(B-4,repair-260828):原生批量 UPDATE 落库(游离实体不触发脏检查) ──
+            writeCardValuesBatchNative(quotationId, lines, cdByLine);
+            // B-2（repair-260828，根因 B 修复）：Pass2c「单头总额跟随行总价」不再留在本方法内部
+            // 调用——本方法(Core)会被 D-4 的分批循环每批调一次，`recomputeDraftHeaderTotals`
+            // 每次都要额外聚合/加载一次，chunk 越小、批数越多，这份「整单级工作」就被重复得越多次
+            // （与 B-16 处理 bomTreeRenderService.render 是同一个模式）。改由两个公开入口各自负责
+            // 在自己的调用粒度上只收一次尾：{@link #snapshotNewLinesCardValues}（单行入口）调完
+            // 本方法后自己调一次；{@link #ensureCardValuesDetailed}（批量入口）在分批循环【结束后】
+            // 才调一次。Core 本身不再承担这份整单级工作。
             counter.log(quotationId);
         } finally {
             com.cpq.formula.dataloader.QuotationIdContext.clear();
         }
         LOG.debugf("[cardvalues-batch] quotation=%s 集合化落库 %d 行(单事务)", quotationId, lines.size());
+    }
+
+    /**
+     * B-4（repair-260828，根因 C 修复）：③ 段落库改原生批量 UPDATE，替代 Hibernate 脏检查落库。
+     *
+     * <p><b>前置条件（调用方必须已满足）</b>：本方法入参 {@code lines}/{@code cdByLine} 涉及的全部
+     * 实体在调用前已 {@code em.detach(...)}，随后在游离态上完成字段赋值——本方法只负责把内存里
+     * 算好的值原样写回 DB，不依赖、也不会触发 Hibernate flush。
+     *
+     * <p><b>固定列集</b>（问题说明 §5.3，语义与 Hibernate 全列/动态列 UPDATE 逐位等价，只是从
+     * "运行时按脏位推断"换成"写死一份固定列集"——未被业务改动的列会被写回其读入时的原值，
+     * 是值不变的空操作 UPDATE，不产生任何数据差异，AC-8 逐位比对覆盖此点）：
+     * <ul>
+     *   <li>{@code quotation_line_item}：quote_card_values(jsonb) / costing_card_values(jsonb) /
+     *       subtotal / quote_values_at / card_snapshot_at</li>
+     *   <li>{@code quotation_line_component_data}：subtotal（第二条批量语句，本批全部行都没有
+     *       componentData 时 —— 即 {@code allCds} 为空 —— 不发这条语句，省一次 JDBC 往返）</li>
+     * </ul>
+     *
+     * <p>JSONB 用 {@code ?::jsonb} 参数化绑定（{@code setString}），不拼字符串，无注入面。
+     *
+     * <p><b>B-6 埋点</b>：{@code rows}=本批行数；{@code batches}=两条语句 {@code addBatch()} 调用
+     * 总次数（≈行数 + cd 行数，代表"排进 JDBC 批的语句总数"）；{@code updates}={@code executeBatch()}
+     * 调用次数（1=只写了 quotation_line_item，2=还写了 quotation_line_component_data）——这是
+     * AC-5「UPDATE 语句往返次数」的唯一可复核依据（{@code pg_stat_statements} 未装，已实测确认）。
+     */
+    private void writeCardValuesBatchNative(UUID quotationId, List<QuotationLineItem> lines,
+            Map<UUID, List<com.cpq.quotation.entity.QuotationLineComponentData>> cdByLine) {
+        if (lines == null || lines.isEmpty()) return;
+        List<com.cpq.quotation.entity.QuotationLineComponentData> allCds = new ArrayList<>();
+        if (cdByLine != null) {
+            for (QuotationLineItem li : lines) {
+                List<com.cpq.quotation.entity.QuotationLineComponentData> cds = cdByLine.get(li.id);
+                if (cds != null && !cds.isEmpty()) allCds.addAll(cds);
+            }
+        }
+        int[] addBatchCount = {0};
+        int[] executeBatchCalls = {0};
+        org.hibernate.Session session = em.unwrap(org.hibernate.Session.class);
+        session.doWork(conn -> {
+            try (java.sql.PreparedStatement liStmt = conn.prepareStatement(
+                    "UPDATE quotation_line_item SET quote_card_values = ?::jsonb, " +
+                    "costing_card_values = ?::jsonb, subtotal = ?, quote_values_at = ?, " +
+                    "card_snapshot_at = ? WHERE id = ?")) {
+                for (QuotationLineItem li : lines) {
+                    liStmt.setString(1, li.quoteCardValues);
+                    liStmt.setString(2, li.costingCardValues);
+                    if (li.subtotal != null) {
+                        liStmt.setBigDecimal(3, li.subtotal);
+                    } else {
+                        liStmt.setNull(3, java.sql.Types.NUMERIC);
+                    }
+                    if (li.quoteValuesAt != null) {
+                        liStmt.setObject(4, li.quoteValuesAt);
+                    } else {
+                        liStmt.setNull(4, java.sql.Types.TIMESTAMP_WITH_TIMEZONE);
+                    }
+                    if (li.cardSnapshotAt != null) {
+                        liStmt.setObject(5, li.cardSnapshotAt);
+                    } else {
+                        liStmt.setNull(5, java.sql.Types.TIMESTAMP_WITH_TIMEZONE);
+                    }
+                    liStmt.setObject(6, li.id);
+                    liStmt.addBatch();
+                    addBatchCount[0]++;
+                }
+                liStmt.executeBatch();
+                executeBatchCalls[0]++;
+            }
+            if (!allCds.isEmpty()) {
+                try (java.sql.PreparedStatement cdStmt = conn.prepareStatement(
+                        "UPDATE quotation_line_component_data SET subtotal = ? WHERE id = ?")) {
+                    for (com.cpq.quotation.entity.QuotationLineComponentData cd : allCds) {
+                        if (cd.subtotal != null) {
+                            cdStmt.setBigDecimal(1, cd.subtotal);
+                        } else {
+                            cdStmt.setNull(1, java.sql.Types.NUMERIC);
+                        }
+                        cdStmt.setObject(2, cd.id);
+                        cdStmt.addBatch();
+                        addBatchCount[0]++;
+                    }
+                    cdStmt.executeBatch();
+                    executeBatchCalls[0]++;
+                }
+            }
+        });
+        LOG.infof("[perf] ensure-cardvalues-write quotation=%s rows=%d batches=%d updates=%d",
+            quotationId, lines.size(), addBatchCount[0], executeBatchCalls[0]);
     }
 
     // =========================================================================
@@ -877,10 +992,20 @@ public class CardSnapshotService {
      * {@code derivedAttributeCalculatorV5.calculate} 逐行派生属性重算 —— 另一件事，而且很贵，
      * 不能顺带跑。这里只抽那 6 行。
      *
-     * <p><b>为什么能读到新值</b>：{@code QuotationLineItem.list()} 对本批次内的行，Hibernate 按
-     * 一级缓存<b>身份</b>返回的就是上面刚被改脏的同一个实例 → 天然读到覆盖后的 {@code subtotal}，
-     * 不需要 flush/clear。（改用 JPQL {@code SELECT sum(subtotal)} 聚合就会绕开一级缓存踩坑，
-     * 故意不那么写。）
+     * <p><b>B-3（repair-260828，根因 B 修复）：为什么现在可以改聚合</b>——本段原注释描述的是
+     * 旧调用位置（{@code snapshotNewLinesCardValuesCore} 的 Pass2c，<b>批循环内部</b>，每批调一次）
+     * 下的约束：那时必须靠 {@code QuotationLineItem.list()} 对本批次内的行按 Hibernate 一级缓存
+     * <b>身份</b>返回刚被本批 Pass2 改脏的同一实例，才能不 flush 就读到覆盖后的 {@code subtotal}——
+     * 改聚合会绕开一级缓存踩坑读到旧值。<b>该前提在新调用位置已不成立</b>：B-2 把调用位置挪到了
+     * 批循环【结束后】（{@link #ensureCardValuesDetailed} 分批循环结束后一次 / 单行入口
+     * {@link #snapshotNewLinesCardValues} 调完 Core 后一次）——此时各批均已通过各自独立的
+     * {@code REQUIRES_NEW} 事务提交，DB 里已是权威新值；PostgreSQL 默认 READ COMMITTED，本方法
+     * 此刻执行的聚合查询能看到所有已提交的写入，不再依赖一级缓存身份，可以安全改用
+     * {@code SELECT sum(subtotal)} 聚合。原写法「整单加载全部行完整实体（含
+     * {@code quote_card_values}/{@code costing_card_values} 两个大 JSONB 列，1845 行实测
+     * ≈2912 kB）只为把 {@code subtotal} 相加求和」的开销随之消除——这与 B-24 已经修过的
+     * {@link #ensureCardValuesDetailed} 内那处同型（同一个类、同一个反模式的第二个实例）。
+     * ⚠️ <b>不要把这处聚合改回逐行加载再累加</b>：那就是把 B-3 刚修掉的开销原样加回来。
      */
     @Transactional
     public void recomputeDraftHeaderTotals(UUID quotationId) {
@@ -891,11 +1016,15 @@ public class CardSnapshotService {
         //    调用方已在事务内时，这次 findById 命中一级缓存，零额外查询。
         Quotation q = Quotation.findById(quotationId);
         if (q == null || !"DRAFT".equals(q.status)) return;
-        List<QuotationLineItem> all = QuotationLineItem.list("quotationId", q.id);
-        java.math.BigDecimal total = java.math.BigDecimal.ZERO;
-        for (QuotationLineItem li : all) {                 // 草稿口径：不排除 PART，与 :667/:2055 一致
-            if (li.subtotal != null) total = total.add(li.subtotal);
-        }
+        // B-3：聚合查询取代「整单加载完整实体 + 内存累加」。草稿口径：不排除 PART，与 :667/:2055
+        // 一致——同一张表、同一个 WHERE quotation_id 谓词，只是不再 SELECT * 再实例化整行实体。
+        Object rawSum = em.createNativeQuery(
+                "SELECT COALESCE(SUM(subtotal), 0) FROM quotation_line_item WHERE quotation_id = :q")
+            .setParameter("q", quotationId)
+            .getSingleResult();
+        java.math.BigDecimal total = rawSum instanceof java.math.BigDecimal
+            ? (java.math.BigDecimal) rawSum
+            : new java.math.BigDecimal(rawSum.toString());
         q.originalAmount = com.cpq.common.PrecisionPolicy.roundQuotationTotal(total);
         // finalDiscountRate 实体默认 100（非空），但 :2063 仍做了空防御，此处对齐更保守的那一处。
         q.totalAmount = (q.finalDiscountRate != null)
@@ -905,13 +1034,30 @@ public class CardSnapshotService {
             : com.cpq.common.PrecisionPolicy.roundQuotationTotal(total);
     }
 
-    /** 方向 3 T1：整批一次 IN 预载 componentData（按 lineItemId 分组）；空输入返回空 map。 */
+    /**
+     * 方向 3 T1：整批一次 IN 预载 componentData（按 lineItemId 分组）；空输入返回空 map。
+     *
+     * <p><b>B-1（repair-260828，根因 A 修复）</b>：{@code groupingBy} 只为「有 componentData 的行」
+     * 建 key —— 对没有任何 componentData 的行（本单实测 1845/1845 都属此类），返回的 Map 里
+     * <b>不存在</b>该行的 key，调用方 {@code cdByLine.get(li.id)} 拿到的是 {@code null}，被
+     * {@link #assignQuoteCardValues} 的 {@code preloadedCd != null ? … : …list(…)} 三元
+     * 误判成「没预载过」，退化成每行一条必定查回空结果的 SQL（教科书 N+1）。修法：对入参
+     * {@code lineIds} 里未出现在 {@code groupingBy} 结果中的每个 id，补一个空列表——
+     * 「预载过但没有 componentData」与「查回空结果」在下游 {@code for (cd : cds)} 里逐位等价
+     * （空列表直接跳过循环体，语义不变），但把契约（javadoc 早已写明「批量路径务必预载后
+     * 传入，否则会退化成逐行查库」）在源头兑现，而不是指望每个调用方自己记得 getOrDefault。
+     */
     private Map<UUID, List<com.cpq.quotation.entity.QuotationLineComponentData>>
             preloadComponentDataByLine(java.util.Collection<UUID> lineIds) {
         if (lineIds == null || lineIds.isEmpty()) return Map.of();
-        return com.cpq.quotation.entity.QuotationLineComponentData
-            .<com.cpq.quotation.entity.QuotationLineComponentData>list("lineItemId IN ?1", new ArrayList<>(lineIds))
-            .stream().collect(java.util.stream.Collectors.groupingBy(cd -> cd.lineItemId));
+        Map<UUID, List<com.cpq.quotation.entity.QuotationLineComponentData>> byLine =
+            com.cpq.quotation.entity.QuotationLineComponentData
+                .<com.cpq.quotation.entity.QuotationLineComponentData>list("lineItemId IN ?1", new ArrayList<>(lineIds))
+                .stream().collect(java.util.stream.Collectors.groupingBy(cd -> cd.lineItemId));
+        for (UUID id : lineIds) {
+            byLine.putIfAbsent(id, List.of());
+        }
+        return byLine;
     }
 
     /**
@@ -1155,6 +1301,14 @@ public class CardSnapshotService {
         // 外层设一次——批方法在新事务里拿不到外层设的上下文。
         com.cpq.formula.dataloader.ExcelCompDataContext.set(cdByLine);
         com.cpq.formula.dataloader.QuotationIdContext.set(quotationId);
+        // 🔒 B-5（repair-260828，根因 C 修复）detach 纪律：赋值【之前】把本批 QuotationLineItem
+        // 全部 em.detach()，随后的字段赋值落在游离对象上，不触发 Hibernate 脏检查，落库改由下方
+        // writeExcelValuesBatchNative 原生批量 UPDATE 负责。cdByLine 里的 componentData 只作为
+        // ExcelCompDataContext 供 buildExcelValues 只读查表，本方法不写它们，不需要 detach。
+        for (QuotationLineItem li0 : lines) {
+            em.detach(li0);
+        }
+        List<QuotationLineItem> changedLines = new ArrayList<>();
         try {
             for (QuotationLineItem managed : lines) {
                 boolean changed = false;
@@ -1176,12 +1330,55 @@ public class CardSnapshotService {
                         buildExcelValues(managed, costingCardTemplateId, customerId, managed.costingCardValues, true));
                     changed = true;
                 }
-                if (changed) { managed.persist(); }
+                if (changed) { changedLines.add(managed); }
             }
         } finally {
             com.cpq.formula.dataloader.ExcelCompDataContext.clear();
             com.cpq.formula.dataloader.QuotationIdContext.clear();
         }
+        writeExcelValuesBatchNative(quotationId, changedLines);
+    }
+
+    /**
+     * B-5（repair-260828，根因 C 修复）：④ 段落库改原生批量 UPDATE，与 {@link #writeCardValuesBatchNative}
+     * 同款手法。调用前 {@code changedLines} 里的实体已 {@code em.detach(...)}，字段赋值发生在游离态上，
+     * 本方法只负责把内存里算好的值原样写回 DB。
+     *
+     * <p>固定列集：{@code quotation_line_item} 的 {@code quote_excel_values}(jsonb) /
+     * {@code costing_excel_values}(jsonb)。只针对<b>本批实际发生计算</b>的行（{@code changedLines}，
+     * 与改动前 {@code if (changed) managed.persist();} 同一判据）——两侧都已算好、幂等跳过的行
+     * 不在其中，零 UPDATE，保住 {@link #ensureExcelValuesDetailed} javadoc 描述的幂等契约。
+     *
+     * <p>B-6 埋点：{@code rows}={@code updates}=本次实际写入的行数（一条 UPDATE 语句、一次
+     * {@code executeBatch()}，两者对 ④ 恒相等，与 ③ 因存在第二条 cd 语句而可能不同一致地各自
+     * 反映自己的真实语义）；{@code batches}={@code addBatch()} 调用次数。
+     */
+    private void writeExcelValuesBatchNative(UUID quotationId, List<QuotationLineItem> changedLines) {
+        if (changedLines == null || changedLines.isEmpty()) {
+            LOG.infof("[perf] ensure-excel-write quotation=%s rows=%d batches=%d updates=%d",
+                quotationId, 0, 0, 0);
+            return;
+        }
+        int[] addBatchCount = {0};
+        int[] executeBatchCalls = {0};
+        org.hibernate.Session session = em.unwrap(org.hibernate.Session.class);
+        session.doWork(conn -> {
+            try (java.sql.PreparedStatement stmt = conn.prepareStatement(
+                    "UPDATE quotation_line_item SET quote_excel_values = ?::jsonb, " +
+                    "costing_excel_values = ?::jsonb WHERE id = ?")) {
+                for (QuotationLineItem li : changedLines) {
+                    stmt.setString(1, li.quoteExcelValues);
+                    stmt.setString(2, li.costingExcelValues);
+                    stmt.setObject(3, li.id);
+                    stmt.addBatch();
+                    addBatchCount[0]++;
+                }
+                stmt.executeBatch();
+                executeBatchCalls[0]++;
+            }
+        });
+        LOG.infof("[perf] ensure-excel-write quotation=%s rows=%d batches=%d updates=%d",
+            quotationId, changedLines.size(), addBatchCount[0], executeBatchCalls[0]);
     }
 
     /**
@@ -1439,6 +1636,12 @@ public class CardSnapshotService {
                     chunkSize, e.getMessage());
             }
         }
+        // B-2（repair-260828，根因 B 修复）：Core 不再在每批内部调 recomputeDraftHeaderTotals——
+        // 本方法（批量入口）在分批循环【结束后】只收一次尾。此刻各批均已通过各自的 REQUIRES_NEW
+        // 事务独立提交，DB 里的 subtotal 已是权威新值；直接调用（非 self.）即可加入本方法自身
+        // 活跃的外层事务，聚合读到的就是这份权威值（PostgreSQL 默认 READ COMMITTED，本事务在
+        // 此刻执行的语句总能看到此前已提交的数据，不依赖一级缓存身份）。
+        recomputeDraftHeaderTotals(quotationId);
         concurrencyProbe.afterEnsureValuesBuilt(quotationId);
         LOG.infof("[ensure-cardvalues] quotation=%s 补算 %d 行（分 %d 批，chunk=%d，总耗时=%dms，失败 %d 批/%d 行）",
             quotationId, missing.size(), totalBatches, chunkSize,
