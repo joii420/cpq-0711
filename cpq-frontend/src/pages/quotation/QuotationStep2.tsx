@@ -57,6 +57,9 @@ import { resolveFieldWidth } from '../component/types';
 import BomTreeAddLeafDrawer from './BomTreeAddLeafDrawer';
 import BomTreeDeleteConfirmDrawer from './BomTreeDeleteConfirmDrawer';
 import { trackPendingEdit } from './pendingEditTracker';
+import { usePagedSearch } from './usePagedSearch';
+import { highlightText } from './highlightText';
+import PagingBar from './PagingBar';
 import './quotation.css';
 
 // 与 QuotationWizard / BulkImportPartsDrawer / ReadonlyProductCard 中的同名函数保持完全对齐。
@@ -2234,9 +2237,12 @@ interface ProductCardProps {
    * （与 ReadonlyProductCard 同一判定口径：`!quotationStatus || quotationStatus === 'DRAFT'`）。
    */
   quotationStatus?: string;
+  /** task-260825（F-5）：料号查询命中高亮词（防抖后的 searchTerm，大小写不敏感），
+   *  用于卡片头部「客户产品编号/料号」徽标的黄底高亮；空值即不高亮，不产生额外 DOM。 */
+  highlightTerm?: string;
 }
 
-const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpdate, customerId, driverExpansions, configTemplates, quotationId, pathCacheState, globalVariableDefs, cardSide, cardStructure, onReloadQuotation, locateComponentId, locateSeq, quotationStatus }) => {
+const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpdate, customerId, driverExpansions, configTemplates, quotationId, pathCacheState, globalVariableDefs, cardSide, cardStructure, onReloadQuotation, locateComponentId, locateSeq, quotationStatus, highlightTerm }) => {
   const [activeTab, setActiveTab] = useState(0);
   const [dsLoading, setDsLoading] = useState<Record<string, boolean>>({});
   const [dsErrors, setDsErrors] = useState<Record<string, string>>({});
@@ -3070,7 +3076,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
           </span>
           {(item.customerProductNo || item.productPartNo) && (
             <span className="qt-sku-badge">
-              {item.customerProductNo ? `客户产品编号: ${item.customerProductNo}` : `料号: ${item.productPartNo}`}
+              {item.customerProductNo
+                ? <>客户产品编号: {highlightText(item.customerProductNo, highlightTerm)}</>
+                : <>料号: {highlightText(item.productPartNo, highlightTerm)}</>}
             </span>
           )}
           {item.templateName && (
@@ -3132,7 +3140,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                 }}
                 title="点击查看生产料号详情"
               >
-                料号: {item.productPartNo}
+                料号: {highlightText(item.productPartNo, highlightTerm)}
               </span>
             </Popover>
           )}
@@ -3979,9 +3987,12 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
       cardId = quoteLineItems.find(li => li.productPartNo === locateTarget.productPartNo)?.id;
     }
     setLocateResolved({ cardId, componentId: locateTarget.componentId, seq: locateTarget.seq });
-    if (cardId && cardRefs.current[cardId]) {
-      cardRefs.current[cardId]!.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } else if (!cardId) {
+    if (cardId) {
+      // AC-15：目标卡片可能不在当前渲染页 —— 先按其在 quoteLineItems 中的位置切页（并清空查询保证可见），
+      // 再由下方 effect 等本次切页触发的重渲染完成后滚动进入视口（cardRefs 要等新页卡片挂载才有值）。
+      const pos = quoteLineItems.findIndex(li => li.id === cardId);
+      if (pos >= 0) paging.locateToPosition(pos);
+    } else {
       message.warning('未能定位到该冲突所在卡片，请在产品卡片中手动查找');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4168,6 +4179,81 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
       };
     });
   }, [lineItems, costingTemplateSnapshot, costingTemplateProductAttrs]);
+
+  // ============================================================================
+  // task-260825：前端分页 + 料号模糊查询。服务端零改动，lineItems 保持全量不变，
+  // 本节只产出「渲染窗口」的下标（AP-54 纪律：下标指向 quoteLineItems/costingLineItems 本身，
+  // 不指向任何过滤后的子集）。quoteLineItems 与 costingLineItems 长度/顺序恒一致
+  // （同源于 lineItems.filter(compositeType!=='PART')），故两侧共用同一份 page/pageSize/search 状态与
+  // 同一组 pagedPositions（AC-5/AC-6：报价侧/核价侧/Excel 三视图料号集合逐一相同）。
+  // ============================================================================
+  const paging = usePagedSearch<LineItem>({
+    items: quoteLineItems,
+    getSearchFields: (li) => [li.productPartNo, li.customerProductNo, li.customerPartName],
+  });
+  const {
+    page: pgPage, setPage: pgSetPage, pageSize: pgPageSize, setPageSize: pgSetPageSize,
+    searchInput: pgSearchInput, setSearchInput: pgSetSearchInput,
+    total: pgTotal, matchedTotal: pgMatchedTotal, isSearching: pgIsSearching,
+    pagedPositions, showPager, pageSizeOptions: pgPageSizeOptions,
+  } = paging;
+  // 报价侧渲染用的当前页窗口（quoteLineItems 子集，供 ProductCard 列表与两个 Excel 视图共享）
+  const pagedQuoteItems = React.useMemo(
+    () => pagedPositions.map(pos => quoteLineItems[pos]),
+    [pagedPositions, quoteLineItems],
+  );
+  const pagedCostingItems = React.useMemo(
+    () => pagedPositions.map(pos => costingLineItems[pos]),
+    [pagedPositions, costingLineItems],
+  );
+  // 翻页/切页大小/跳页前先 blur，把正在编辑、尚未 onBlur 回写的输入值落回 lineItems（F-1 纪律）
+  const blurActiveInput = () => { (document.activeElement as HTMLElement | null)?.blur?.(); };
+  const handlePagerChange = (p: number, ps: number) => {
+    pgSetPage(p);
+    if (ps !== pgPageSize) pgSetPageSize(ps);
+  };
+  const renderPagingBar = () => (
+    <PagingBar
+      total={pgTotal}
+      matchedTotal={pgMatchedTotal}
+      isSearching={pgIsSearching}
+      page={pgPage}
+      pageSize={pgPageSize}
+      pageSizeOptions={pgPageSizeOptions}
+      onPageChange={handlePagerChange}
+      searchValue={pgSearchInput}
+      onSearchChange={pgSetSearchInput}
+      onBeforeChange={blurActiveInput}
+    />
+  );
+  // AC-11：查询命中 0 行的空态，文案逐字照原型 `03-...空态与禁用态.html`
+  const renderSearchEmptyState = () => (
+    <div className="qt-empty-state" style={{ padding: '56px 20px', textAlign: 'center' }}>
+      <div style={{ fontSize: 44, lineHeight: 1, opacity: .25 }}>🔍</div>
+      <div style={{ marginTop: 14, color: 'rgba(0,0,0,.88)', fontSize: 15 }}>未找到匹配的料号</div>
+      <div style={{ marginTop: 6, color: 'rgba(0,0,0,.45)', fontSize: 13 }}>
+        「{pgSearchInput}」在本报价单的 {pgTotal} 个料号中无匹配。请换一个料号片段，或清空查询查看全部。
+      </div>
+      <div style={{ marginTop: 14 }}>
+        <Button onClick={paging.clearSearch}>清空查询</Button>
+      </div>
+    </div>
+  );
+
+  // AC-15 续：页码切好、目标卡片在新页重新挂载后再滚动（双 rAF 确保切页渲染已提交）。
+  // 必须在 pgPage 声明之后才能安全引用（deps 数组是立即求值，不像回调体那样延迟到 effect 执行时才读取）。
+  useEffect(() => {
+    if (!locateResolved?.cardId) return;
+    const id = locateResolved.cardId;
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        cardRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+    return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locateResolved?.cardId, pgPage]);
 
   // 核价 BOM 递归展开（P1）：扫描核价快照根节点 cyclePartNos，成环 → 告警一次（避免重复弹窗）。
   const warnedCyclesRef = useRef<Set<string>>(new Set());
@@ -4498,15 +4584,24 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
       ) : mainTab === 'costing' && viewType === 'excel' && quotationId ? (
         // 核价单 — Excel 视图（V73/V74 起按 linkedTemplateId 反查 costing_template 渲染）：
         // 入口 = 报价单的 costingCardTemplateId（核价模板）→ 反查 linked_template_id 命中的 Excel 模板
-        <LinkedExcelView
-          linkedTemplateId={costingCardTemplateId}
-          lineItems={costingLineItems}
-          customerId={customerId}
-          viewLabel="核价单 Excel 视图"
-          templateId={costingCardTemplateId || null}
-          quotationId={quotationId}
-          side="COSTING"
-        />
+        // task-260825：Excel 视图必须与卡片视图同步切片（AC-5/AC-7）——传 renderLineItems=当前页窗口，
+        // lineItems 仍传全量 costingLineItems（供 refreshSignal/legacy 求值稳定，避免翻页触发重取，AC-3）。
+        <div>
+          {showPager && renderPagingBar()}
+          <LinkedExcelView
+            linkedTemplateId={costingCardTemplateId}
+            lineItems={costingLineItems}
+            renderLineItems={pagedCostingItems}
+            customerId={customerId}
+            viewLabel="核价单 Excel 视图"
+            templateId={costingCardTemplateId || null}
+            quotationId={quotationId}
+            side="COSTING"
+            pageOffset={(pgPage - 1) * pgPageSize}
+            highlightTerm={paging.searchTerm}
+          />
+          {showPager && renderPagingBar()}
+        </div>
       ) : mainTab === 'costing' && viewType === 'card' && quotationId ? (
         // 核价单 — 产品卡片视图(V72)：与"报价单卡片视图"产品数量/排序一致，
         // 但卡片内部组件按"核价模板(template_kind='COSTING')"重建。
@@ -4535,44 +4630,60 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
             <div style={{ fontSize: 16 }}>暂无产品</div>
             <div style={{ marginTop: 8 }}>请先在「报价单」视图中添加产品</div>
           </div>
+        ) : pgIsSearching && pgMatchedTotal === 0 ? (
+          renderSearchEmptyState()
         ) : (
           <div className="qt-products-list">
-            {costingLineItems.map((item, index) => (
-              <ProductCard
-                key={item.productId ? `costing-${item.productId}-${index}` : `costing-item-${index}`}
-                item={item}
-                index={index}
-                onRemove={() => onRemoveProduct(index)}
-                onUpdate={(data) => handleUpdateCostingLineItem(index, data)}
-                customerId={customerId}
-                quotationId={quotationId}
-                driverExpansions={driverExpansions}
-                configTemplates={configTemplates}
-                pathCacheState={quotationPathCache}
-                globalVariableDefs={gvDefs}
-                cardSide="COSTING"
-                cardStructure={costingCardStructure}
-                onReloadQuotation={onReloadQuotation}
-                quotationStatus={quotationStatus}
-              />
-            ))}
+            {showPager && renderPagingBar()}
+            {pagedPositions.map((pos) => {
+              const item = costingLineItems[pos];
+              return (
+                <ProductCard
+                  key={item.id ? `costing-${item.id}` : (item.productId ? `costing-${item.productId}-${pos}` : `costing-item-${pos}`)}
+                  item={item}
+                  index={pos}
+                  onRemove={() => onRemoveProduct(pos)}
+                  onUpdate={(data) => handleUpdateCostingLineItem(pos, data)}
+                  customerId={customerId}
+                  quotationId={quotationId}
+                  driverExpansions={driverExpansions}
+                  configTemplates={configTemplates}
+                  pathCacheState={quotationPathCache}
+                  globalVariableDefs={gvDefs}
+                  cardSide="COSTING"
+                  cardStructure={costingCardStructure}
+                  onReloadQuotation={onReloadQuotation}
+                  quotationStatus={quotationStatus}
+                  highlightTerm={paging.searchTerm}
+                />
+              );
+            })}
+            {showPager && renderPagingBar()}
           </div>
         )
       ) : mainTab === 'quote' && viewType === 'excel' ? (
         // 报价单 — Excel 视图（V73/V74 起同样按 linkedTemplateId 反查 costing_template 渲染）：
         // 入口 = 报价单的 customerTemplateId（报价模板）→ 反查 linked_template_id 命中的 Excel 模板
-        <LinkedExcelView
-          linkedTemplateId={customerTemplateId}
-          lineItems={quoteLineItems}
-          customerId={customerId}
-          viewLabel="报价单 Excel 视图"
-          templateId={customerTemplateId || null}
-          quotationId={quotationId}
-          side="QUOTE"
-          driverExpansions={driverExpansions}
-          pathCache={quotationPathCache}
-          globalVariableDefs={gvDefs}
-        />
+        // task-260825：同上，renderLineItems=当前页窗口，lineItems 保持全量（AC-3/AC-5/AC-7）。
+        <div>
+          {showPager && renderPagingBar()}
+          <LinkedExcelView
+            linkedTemplateId={customerTemplateId}
+            lineItems={quoteLineItems}
+            renderLineItems={pagedQuoteItems}
+            customerId={customerId}
+            viewLabel="报价单 Excel 视图"
+            templateId={customerTemplateId || null}
+            quotationId={quotationId}
+            side="QUOTE"
+            driverExpansions={driverExpansions}
+            pathCache={quotationPathCache}
+            globalVariableDefs={gvDefs}
+            pageOffset={(pgPage - 1) * pgPageSize}
+            highlightTerm={paging.searchTerm}
+          />
+          {showPager && renderPagingBar()}
+        </div>
       ) : lineItems.length === 0 ? (
         <div className="qt-empty-state">
           <div className="qt-empty-icon">{autoPopulating ? '⏳' : '📦'}</div>
@@ -4585,20 +4696,24 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
             </div>
           )}
         </div>
+      ) : pgIsSearching && pgMatchedTotal === 0 ? (
+        renderSearchEmptyState()
       ) : (
         <div className="qt-products-list">
-          {quoteLineItems.map((item, index) => {
+          {showPager && renderPagingBar()}
+          {pagedPositions.map((pos) => {
+            const item = quoteLineItems[pos];
             const isLocateTarget = locateResolved?.cardId != null && locateResolved.cardId === item.id;
             return (
               <div
-                key={item.id ?? (item.productId ? `${item.productId}-${index}` : `item-${index}`)}
+                key={item.id ?? (item.productId ? `${item.productId}-${pos}` : `item-${pos}`)}
                 ref={el => { if (item.id) cardRefs.current[item.id] = el; }}
               >
                 <ProductCard
                   item={item}
-                  index={index}
-                  onRemove={() => onRemoveProduct(index)}
-                  onUpdate={(data) => handleUpdateQuoteLineItem(index, data)}
+                  index={pos}
+                  onRemove={() => onRemoveProduct(pos)}
+                  onUpdate={(data) => handleUpdateQuoteLineItem(pos, data)}
                   customerId={customerId}
                   quotationId={quotationId}
                   driverExpansions={driverExpansions}
@@ -4611,10 +4726,12 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
                   locateComponentId={isLocateTarget ? locateResolved!.componentId : undefined}
                   locateSeq={isLocateTarget ? locateResolved!.seq : undefined}
                   quotationStatus={quotationStatus}
+                  highlightTerm={paging.searchTerm}
                 />
               </div>
             );
           })}
+          {showPager && renderPagingBar()}
         </div>
       )}
     </div>
