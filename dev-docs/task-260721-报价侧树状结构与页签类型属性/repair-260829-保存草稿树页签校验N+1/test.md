@@ -43,6 +43,10 @@
 | AC-24 | B-8·端到端 | B-8 | T-19 |
 | AC-25 | B-8·栈不再出现 | B-8 | T-19 |
 | AC-26 | B-8·反向不影响他处 | B-8 | T-20 |
+| AC-34 | B-11·排队后成功 | B-11 | T-24 |
+| AC-35 | B-11·零延迟 | B-11 | T-24 |
+| AC-36 | B-11·超时可理解 | B-11 | T-24 |
+| AC-37 | B-11·等待在事务外 | B-11 | T-24 |
 | AC-15 | 前端 | F-1,F-2,F-3 | T-12 |
 | AC-16 | 自检 | B-4,B-5 | T-13 |
 | AC-17 | 还原实验 | B-5 | T-14 |
@@ -78,6 +82,8 @@ T-01→AC-1,2 ｜ T-02→AC-3,4 ｜ T-03→AC-5 ｜ T-04→AC-6 ｜ T-05→AC-7 
 
 | **T-19** | 手工·端到端+jstack | 续存态真实 payload 打 `PUT /draft`，期间 jstack 采样 ≥4 次 | 200；无 `ARJUNA012108/012121`；`[draft-profile] total < 30s`；采样中**不再**出现 `loadComponentDataByLineItem ← buildHitContext` 栈 |
 | **T-20** | 集成测试 | 走 `buildHitContext` 另外三个调用点（`:234`/`:356`/`:461`）的既有功能 | 行为与修复前完全一致 |
+
+| **T-24** | 集成测试 | `SaveDraftMaterializeWaitTest`：`@Inject MaterializeRegistry` 手动 `begin(qid)` → 另起线程延时 `end(qid)` → 主线程调 saveDraft | ① 等待后成功、总耗时含等待；② 不 `begin` 时零延迟；③ 超时抛 409 + 含秒数文案；④ 等待窗口内另一连接 `SELECT ... FOR UPDATE NOWAIT` 不被阻塞、`[draft-profile]` 的 `S1` 不含等待 |
 
 ## 四、回归范围
 

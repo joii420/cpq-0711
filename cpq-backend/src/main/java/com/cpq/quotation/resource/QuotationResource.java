@@ -95,6 +95,14 @@ public class QuotationResource {
     @Inject
     com.cpq.quotation.service.backfill.QuoteBackfillPreviewService quoteBackfillPreviewService;
 
+    /**
+     * repair-260829 B-11：建单后置物化进行中标志（"卡片值算早了骨架值锁死"并发会话提供，已合 master 5cade217）。
+     * 用于 saveDraft 入口排队等待，避免与建单物化并发写 {@code quotation_line_component_data} 撞
+     * {@code uq_qlcd_line_component}（B-7 引入的唯一约束）。
+     */
+    @Inject
+    com.cpq.basicdata.v6.service.MaterializeRegistry materializeRegistry;
+
     @GET
     public ApiResponse<PageResult<QuotationDTO>> list(
             @QueryParam("page") @DefaultValue("0") int page,
@@ -137,6 +145,11 @@ public class QuotationResource {
     @Path("/{id}/draft")
     public ApiResponse<QuotationDTO> saveDraft(@PathParam("id") UUID id, SaveDraftRequest request) {
         validateDraftDecimals(request);
+        // repair-260829 B-11：saveDraft 入口(事务外)排队等待建单后置物化跑完，避免与物化并发写
+        //   quotation_line_component_data 撞 uq_qlcd_line_component(409)。🔒 必须放在这里(调
+        //   quotationService.saveDraft 之前、无 @Transactional)——放进 service 方法内会让事务凭空
+        //   多持有等待时长，直接吃掉 60s Narayana 预算(问题说明.md ⑤ B-11 段)。
+        awaitMaterializeIdle(id);
         // [draft-profile] 分段埋点(2026-06-26):S1 saveDraft(全删全建+落库) / S2 snapshotQuotation(snapshot_rows)。
         //   卡片值不再在保存路径计算(已迁至 lazy ensureCardValues);重建行的旧卡片值由 saveDraft 内置 D-1 失效置 NULL,
         //   下次 ensureCardValues 的 IS NULL 谓词会重新选中并用最新 snapshot_rows 重算。日志前缀 [draft-profile] 便于过滤。
@@ -748,6 +761,50 @@ public class QuotationResource {
         DecimalRequestValidator.rejectNumericTokens(value, "value");
         excelViewService.updateExcelViewCell(id, lineItemId, colKey, value);
         return ApiResponse.success();
+    }
+
+    /** repair-260829 B-11：saveDraft 排队等待超时上限(ms)，默认 40000。
+     *  逃生阀同 cpq.savedraft-batch-stage1 写法：-Dcpq.savedraft-materialize-wait-timeout-ms=xxx
+     *  或环境变量 CPQ_SAVEDRAFT_MATERIALIZE_WAIT_TIMEOUT_MS。
+     *  ⚠️ 别调大：物化四步实测 29.5s + saveDraft 自身约 16s = 45.5s，前端 axios 上限 60s，
+     *  等待上限超过 ~40s 会让总时长突破前端超时(问题说明.md ⑤ B-11 段)。 */
+    private static long materializeWaitTimeoutMs() {
+        String v = System.getProperty("cpq.savedraft-materialize-wait-timeout-ms",
+                System.getenv().getOrDefault("CPQ_SAVEDRAFT_MATERIALIZE_WAIT_TIMEOUT_MS", "40000"));
+        try {
+            return Long.parseLong(v.trim());
+        } catch (NumberFormatException e) {
+            return 40000L;
+        }
+    }
+
+    /** repair-260829 B-11：saveDraft 轮询等待建单后置物化任务结束，间隔 500ms，事务外执行(AC-37)。
+     *  isInProgress 为假时零延迟放行(AC-35)；超时抛 409 + 可理解中文文案(AC-36)。 */
+    private void awaitMaterializeIdle(UUID quotationId) {
+        if (!materializeRegistry.isInProgress(quotationId)) {
+            return; // 零延迟：老单/物化已完成场景，不进入轮询，不产生任何额外查询或 sleep
+        }
+        long timeoutMs = materializeWaitTimeoutMs();
+        long start = System.currentTimeMillis();
+        LOG.infof("[savedraft-materialize-wait] id=%s 检测到建单后置物化正在进行，开始排队等待（超时上限=%dms）",
+                quotationId, timeoutMs);
+        while (materializeRegistry.isInProgress(quotationId)) {
+            long elapsed = System.currentTimeMillis() - start;
+            if (elapsed >= timeoutMs) {
+                long waitedSec = elapsed / 1000;
+                LOG.warnf("[savedraft-materialize-wait] id=%s 等待超时（已等待约 %d 秒），拒绝本次保存", quotationId, waitedSec);
+                throw new BusinessException(409,
+                        "基础数据正在准备中，已等待 " + waitedSec + " 秒仍未完成，请稍后重试");
+            }
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw new BusinessException(409, "保存请求被中断，请重试");
+            }
+        }
+        long waitedMs = System.currentTimeMillis() - start;
+        LOG.infof("[savedraft-materialize-wait] id=%s 物化已结束，排队等待 %dms 后继续保存", quotationId, waitedMs);
     }
 
     private void validateDraftDecimals(SaveDraftRequest request) {
