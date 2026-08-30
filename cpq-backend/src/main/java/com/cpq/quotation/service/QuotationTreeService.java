@@ -76,14 +76,41 @@ public class QuotationTreeService {
      * <p>task-0806 B19：原一次 JOIN 直读活 {@code component}/{@code template_component} 表——
      * 改走 {@link #resolveCustomerTemplateId} 解出该行所属模板 id 后经
      * {@link com.cpq.template.service.PublishedTemplateReader#allTabsOf} 取冻结快照（PUBLISHED
-     * 报价单必然绑定 PUBLISHED/ARCHIVED 模板，见该 reader 类注释）。调用方
-     * {@link #buildHitContext} 每次外部请求只调一次，非行/组件数量级循环，SQL 条数仍为 O(1)。
+     * 报价单必然绑定 PUBLISHED/ARCHIVED 模板，见该 reader 类注释）。
+     *
+     * <p>⚠️ repair-260829 B-8（2026-08-29 据实改写）：下面这句话曾经成立——「调用方
+     * {@link #buildHitContext} 每次外部请求只调一次，非行/组件数量级循环，SQL 条数仍为 O(1)」——
+     * 但 {@code task-0721} B8 把 {@link #assertCanAddToRestrictedTab} 接进 saveDraft 的行循环后，
+     * 这条不变量就被破坏了（注释没跟着改，是本类第二个 N+1 潜伏至今的原因之一，同型于
+     * {@link com.cpq.template.service.PublishedTemplateReader} 类注释「禁止新增单条查询方法被调用方
+     * 放进循环」被同一次改动违反）。<b>现状</b>：{@code addLeaf}/{@code previewDelete}/
+     * {@code executeDelete}（调用点 :234/:356/:461）确实每请求只调一次 {@link #buildHitContext}，
+     * 该不变量对它们仍成立；但 saveDraft 批量路径经 {@link #assertCanAddToRestrictedTab}
+     * （调用点 :767 附近）已改走本方法与 {@link #loadComponentDataByLineItem} 的批量预取重载
+     * （{@link #loadTemplateComponentsForTemplate} + {@link #buildHitContext(List, Map)}），
+     * 该路径的 SQL 条数与行数无关，但走的已经不是本方法本身。
      */
     private List<CompMeta> loadTemplateComponents(UUID lineItemId) {
         UUID templateId = resolveCustomerTemplateId(lineItemId);
         if (templateId == null) return List.of();
+        return loadTemplateComponentsForTemplate(templateId);
+    }
+
+    /**
+     * repair-260829 B-8：{@link #loadTemplateComponents(UUID)} 的 template 级批量入口——供
+     * {@code QuotationService.processBatchStage1} 整单只调一次（{@code templateId} 已在调用方内存里，
+     * 跳过 {@link #resolveCustomerTemplateId}），避免主循环里逐行重复解模板 id + 查快照。包内可见
+     * （同包 {@code QuotationService} 直接调用），与 {@link #loadTemplateComponents(UUID)} 共用同一份
+     * {@link #mapToCompMeta} 映射逻辑，两者产出的 {@link CompMeta} 语义逐字一致。
+     */
+    List<CompMeta> loadTemplateComponentsForTemplate(UUID templateId) {
+        if (templateId == null) return List.of();
+        return mapToCompMeta(publishedTemplateReader.allTabsOf(templateId));
+    }
+
+    private static List<CompMeta> mapToCompMeta(List<com.cpq.template.entity.TemplateComponentSnapshot> tabs) {
         List<CompMeta> out = new ArrayList<>();
-        for (com.cpq.template.entity.TemplateComponentSnapshot s : publishedTemplateReader.allTabsOf(templateId)) {
+        for (com.cpq.template.entity.TemplateComponentSnapshot s : tabs) {
             CompMeta m = new CompMeta();
             m.id = s.componentId;
             m.tabType = s.tabType;
@@ -188,9 +215,26 @@ public class QuotationTreeService {
     }
 
     private HitContextBundle buildHitContext(UUID lineItemId) {
+        return buildHitContext(loadTemplateComponents(lineItemId), loadComponentDataByLineItem(lineItemId));
+    }
+
+    /**
+     * repair-260829 B-8：{@link #buildHitContext(UUID)} 的数据源可预取核心版本——装配逻辑与原方法
+     * 逐字一致（不改「怎么判」），唯一差别是 {@code comps}/{@code compData} 由调用方传入而非本方法
+     * 内部现查。saveDraft 批量路径专用（经 {@link #assertCanAddToRestrictedTab(String, List, UUID,
+     * List, Map)}）；{@code addLeaf}/{@code previewDelete}/{@code executeDelete} 仍走上面的
+     * {@link #buildHitContext(UUID)}，该不变量对它们不受影响。
+     *
+     * @param comps    该 lineItem 所属模板的全部组件元数据（{@link #loadTemplateComponents} 或
+     *                 {@link #loadTemplateComponentsForTemplate} 的产出，模板级，调用方可整单只查一次）
+     * @param compData 该 lineItem 的 {@code componentId → [snapshot_rows, deleted_row_keys]}（
+     *                 {@link #loadComponentDataByLineItem} 的产出形状；调用方可从已有的批量数据
+     *                 在内存里现拼，不必现查）
+     */
+    private HitContextBundle buildHitContext(List<CompMeta> comps, Map<UUID, Object[]> compData) {
         HitContextBundle b = new HitContextBundle();
-        b.comps = loadTemplateComponents(lineItemId);
-        b.compData = loadComponentDataByLineItem(lineItemId);
+        b.comps = comps != null ? comps : List.of();
+        b.compData = compData != null ? compData : Map.of();
         for (CompMeta cm : b.comps) {
             Object[] data = b.compData.get(cm.id);
             String rowsJson = data != null ? (String) data[0] : null;
@@ -763,8 +807,34 @@ public class QuotationTreeService {
     public void assertCanAddToRestrictedTab(String targetTabType, List<String> partNos, UUID lineItemId) {
         if (!"材质元素".equals(targetTabType) && !"外购件".equals(targetTabType)) return; // 只约束这两类
         if (partNos == null || partNos.isEmpty() || lineItemId == null) return;
+        assertNoChildrenInRestrictedTab(targetTabType, partNos, buildHitContext(lineItemId));
+    }
 
-        HitContextBundle b = buildHitContext(lineItemId);
+    /**
+     * repair-260829 B-8：saveDraft 批量路径专用重载——{@code comps}/{@code compData} 由调用方整单/
+     * 该行预取好（见 {@link #buildHitContext(List, Map)}），{@link #buildHitContext(UUID)} 的两条
+     * per-lineItem 查询（{@code loadTemplateComponents} + {@code loadComponentDataByLineItem}）
+     * 在这条路径上不再触发。判定逻辑（{@link #assertNoChildrenInRestrictedTab}）与三参版本共用
+     * 同一份代码，逐字不变——只改「数据从哪来」，不改「怎么判」。
+     */
+    private void assertCanAddToRestrictedTab(String targetTabType, List<String> partNos, UUID lineItemId,
+                                              List<CompMeta> comps, Map<UUID, Object[]> compData) {
+        if (!"材质元素".equals(targetTabType) && !"外购件".equals(targetTabType)) return; // 只约束这两类
+        if (partNos == null || partNos.isEmpty() || lineItemId == null) return;
+        assertNoChildrenInRestrictedTab(targetTabType, partNos, buildHitContext(comps, compData));
+    }
+
+    /**
+     * 批量版本共用的判定体（task-0721 B8 原逻辑，repair-260829 B-8 从
+     * {@link #assertCanAddToRestrictedTab(String, List, UUID)} 抽出，供三参版本与新增的预取版本
+     * 共享同一份代码，避免两处判定逻辑各写一份而彼此漂移）。命中任一料号即抛异常（文案含具体是哪个
+     * 料号），不逐个收集"全部违规清单"（保持与既有加叶子/反向校验同款"第一个错误即拦"语义）。
+     *
+     * @param targetTabType 目标页签的 tabType（调用方已确认属于「材质元素」「外购件」两类之一）
+     * @param partNos       待添加/待保留的料号集合（saveDraft 场景 = 该 tab 本次保存的全部行的料号）
+     * @param b             该 lineItem 的树上下文（来源不限——现查或预取，本方法不关心）
+     */
+    private void assertNoChildrenInRestrictedTab(String targetTabType, List<String> partNos, HitContextBundle b) {
         if (b.treeRowsByComp.isEmpty()) return; // 该行尚无树结构(如首次物化前的新行)，无从校验，放行
 
         // 预先收集"有子节点的料号"集合(跨全部树页签合并)，一次遍历树行，避免对每个 partNo 各扫一遍树。
@@ -826,6 +896,96 @@ public class QuotationTreeService {
     }
 
     /**
+     * repair-260829 B-1：{@link #assertCanAddRowsToRestrictedTab(UUID, String, UUID)} 的批量重载
+     * 用元数据类型——调用方（{@code QuotationService.processBatchStage1}）在主循环之前整单只调一次
+     * {@link com.cpq.template.service.PublishedTemplateReader#allTabsOf} 拿到 {@code componentId →
+     * (tabType, partNoField, partNameField)} 的映射，循环内不再逐行重查。不可变值类型，字段语义与
+     * {@link #loadSingleComponentTabMeta} 返回的三元素数组逐一对应。
+     */
+    public record TabMeta(String tabType, String partNoField, String partNameField) {}
+
+    /**
+     * repair-260829 B-1（saveDraft 批量路径 N+1 修复）：{@link #assertCanAddRowsToRestrictedTab(UUID,
+     * String, UUID)} 的批量重载——元数据由调用方预取整单一次的 {@code metaByComponent} 传入，本方法
+     * 不再触发任何查询。内部逻辑与三参方法逐字一致，唯一差别是 meta 从入参取而非现查
+     * {@link #loadSingleComponentTabMeta}。
+     *
+     * <p>🚫 不替代三参方法——{@code QuotationService.java:653} 的逐行逃生路径
+     * （{@code -Dcpq.savedraft-batch-stage1=false}）继续调三参方法，两者校验语义必须逐字相同
+     * （问题说明.md AC-7）。
+     *
+     * @param componentId      该 tab 的组件 id
+     * @param flatRowsJson     {@code row_data} 原始 JSON 字符串
+     * @param lineItemId       所属报价行
+     * @param metaByComponent  调用方整单预取好的 {@code componentId → TabMeta} 映射（当次保存要绑定的
+     *                         模板——见 B-1 口径变化说明：调用方应取 {@code q.customerTemplateId}，非
+     *                         逐行现查 {@code resolveCustomerTemplateId}）
+     */
+    public void assertCanAddRowsToRestrictedTab(UUID componentId, String flatRowsJson, UUID lineItemId,
+                                                 Map<UUID, TabMeta> metaByComponent) {
+        if (componentId == null || flatRowsJson == null || flatRowsJson.isBlank() || lineItemId == null) return;
+        TabMeta meta = metaByComponent == null ? null : metaByComponent.get(componentId);
+        if (meta == null) return;
+        String tabType = meta.tabType();
+        if (!"材质元素".equals(tabType) && !"外购件".equals(tabType)) return; // 快速放行,避免无谓解析
+        List<String> partNos = extractRestrictedTabPartNos(flatRowsJson, meta.partNoField(), meta.partNameField());
+        assertCanAddToRestrictedTab(tabType, partNos, lineItemId);
+    }
+
+    /**
+     * repair-260829 B-8：{@link #assertCanAddRowsToRestrictedTab(UUID, String, UUID, Map)} 的再扩展
+     * ——额外接收该 saveDraft 请求整单预取好的树上下文数据（{@code treeComps} 模板级、调用方整单只算
+     * 一次；{@code treeCompData} 该 lineItem 的 {@code componentId → [snapshot_rows, deleted_row_keys]}，
+     * 调用方优先从已加载的 componentData 在内存里现拼，避免为每行重新触发
+     * {@code loadComponentDataByLineItem} 的跨网查询——这正是本次 B-8 要消灭的第二个 N+1，见
+     * 问题说明.md ⑤ B-8 段）。判定与取「本次待校验 partNos」的逻辑与四参版本共用同一份代码
+     * （{@link #extractRestrictedTabPartNos} / {@link #assertNoChildrenInRestrictedTab}），
+     * 只是最终校验调用改走预取重载 {@link #assertCanAddToRestrictedTab(String, List, UUID, List, Map)}。
+     *
+     * @param treeComps    该 lineItem 所属模板的全部组件元数据（{@link #loadTemplateComponentsForTemplate}
+     *                     的产出，模板级，调用方整单只查一次）
+     * @param treeCompData 该 lineItem 的 {@code componentId → [snapshot_rows, deleted_row_keys]}
+     *                     （{@link #loadComponentDataByLineItem} 的产出形状；找不到该 lineItem 时传空
+     *                     Map 语义等价——新行此刻在 DB 里也确实没有非 null 的 snapshot_rows）
+     */
+    public void assertCanAddRowsToRestrictedTab(UUID componentId, String flatRowsJson, UUID lineItemId,
+                                                 Map<UUID, TabMeta> metaByComponent,
+                                                 List<CompMeta> treeComps, Map<UUID, Object[]> treeCompData) {
+        if (componentId == null || flatRowsJson == null || flatRowsJson.isBlank() || lineItemId == null) return;
+        TabMeta meta = metaByComponent == null ? null : metaByComponent.get(componentId);
+        if (meta == null) return;
+        String tabType = meta.tabType();
+        if (!"材质元素".equals(tabType) && !"外购件".equals(tabType)) return; // 快速放行,避免无谓解析
+        List<String> partNos = extractRestrictedTabPartNos(flatRowsJson, meta.partNoField(), meta.partNameField());
+        assertCanAddToRestrictedTab(tabType, partNos, lineItemId, treeComps, treeCompData);
+    }
+
+    /**
+     * {@code row_data}（扁平行 JSON）→ 待校验料号列表的抽取逻辑，供 4 参与 6 参
+     * {@code assertCanAddRowsToRestrictedTab} 共用（repair-260829 B-8 抽出，避免两处各写一份彼此漂移）。
+     * 料号列优先、名称列兜底；两者皆缺失返回空列表（task-0721 2026-07-23 放宽的口径，逐字保留）。
+     */
+    private List<String> extractRestrictedTabPartNos(String flatRowsJson, String partNoField, String partNameField) {
+        boolean noField = partNoField == null || partNoField.isBlank();
+        boolean noNameField = partNameField == null || partNameField.isBlank();
+        if (noField && noNameField) return List.of();
+
+        ArrayNode rows = parseRows(flatRowsJson);
+        List<String> partNos = new ArrayList<>();
+        for (JsonNode row : rows) {
+            JsonNode v = noField ? row.path(partNameField) : row.path(partNoField);
+            if ((v.isMissingNode() || v.isNull()) && !noField && !noNameField) {
+                // 配了料号列但本行料号列缺值 → 回落名称列取值(与 extractMaterialNoByField 同一优先级)
+                v = row.path(partNameField);
+            }
+            if (v.isMissingNode() || v.isNull()) continue;
+            String mn = v.asText(null);
+            if (mn != null && !mn.isBlank()) partNos.add(mn);
+        }
+        return partNos;
+    }
+
+    /**
      * componentId 在该 lineItem 所属模板冻结快照里的 {@code [tab_type, part_no_field, part_name_field]}；
      * 不存在 → null。task-0806 B19：改经 {@link #resolveCustomerTemplateId} 解模板 id 后走
      * {@link com.cpq.template.service.PublishedTemplateReader#allTabsOf} 内存挑单条，不再直读活
@@ -835,7 +995,8 @@ public class QuotationTreeService {
     private Object[] loadSingleComponentTabMeta(UUID componentId, UUID lineItemId) {
         UUID templateId = resolveCustomerTemplateId(lineItemId);
         if (templateId == null) return null;
-        for (com.cpq.template.entity.TemplateComponentSnapshot s : publishedTemplateReader.allTabsOf(templateId)) {
+        java.util.List<com.cpq.template.entity.TemplateComponentSnapshot> tabs = publishedTemplateReader.allTabsOf(templateId);
+        for (com.cpq.template.entity.TemplateComponentSnapshot s : tabs) {
             if (componentId.equals(s.componentId)) {
                 return new Object[]{ s.tabType, s.partNoField, s.partNameField };
             }

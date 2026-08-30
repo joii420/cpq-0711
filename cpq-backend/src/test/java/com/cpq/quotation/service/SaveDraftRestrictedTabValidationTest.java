@@ -6,6 +6,7 @@ import com.cpq.quotation.dto.SaveDraftRequest;
 import com.cpq.quotation.entity.Quotation;
 import com.cpq.template.entity.Template;
 import com.cpq.template.entity.TemplateComponent;
+import com.cpq.template.entity.TemplateComponentSnapshot;
 import io.quarkus.test.TestTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -29,6 +30,11 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * <p>策略（沿用 {@code SaveDraftCardValuesInvalidationTest} 的取舍：复用共享库里已有一条 DRAFT
  * 报价单以满足外键，自建最小 Template/Component/LineItem 挂在其下，@TestTransaction 保证回滚清理）。
+ *
+ * <p><b>repair-260829（2026-08-29 扩充，T-03/T-05 · AC-5/AC-7）</b>：B-1 把
+ * {@code loadSingleComponentTabMeta} 的整单元数据查询从"每行每页签一次"改为"整单取一次"，
+ * 是纯性能重构、不改变校验语义。为证明重构后错误文案仍然<b>逐字</b>不变（而不仅仅是"包含关键词"），
+ * 把原先的 {@code .contains("已有下级")} 收紧为对 {@code api.md} 契约文案的逐字 {@code assertEquals}。
  */
 @QuarkusTest
 @DisplayName("SaveDraftRestrictedTabValidationTest — B8 反向校验真落库集成测试")
@@ -85,11 +91,19 @@ class SaveDraftRestrictedTabValidationTest {
         materialComp.persist();
         f.materialComponentId = materialComp.id;
 
+        // repair-260829 B-5 修复（既有测试基线已红，见 test-report.md「过程中规避掉的坑」）：
+        // task-0806 B19 起，assertCanAddRowsToRestrictedTab/loadTemplateComponents 已改经
+        // PublishedTemplateReader.allTabsOf 读 template_component_snapshot 冻结快照，不再直读
+        // 活表 template_component/component。本 fixture 此前只插了 TemplateComponent 且模板状态
+        // 是 DRAFT，allTabsOf 对 DRAFT 恒返回空列表 → 校验方法拿不到 meta 直接放行，B8 从未真正
+        // 执行过。改为 PUBLISHED + 同步写 template_component_snapshot（照 TemplateService.publish()
+        // 的产出形状），让 fixture 真正落在生产读取路径上。
         Template tpl = new Template();
         tpl.templateSeriesId = UUID.randomUUID();
         tpl.name = "B8测试-模板";
         tpl.templateKind = "QUOTATION";
-        tpl.status = "DRAFT";
+        tpl.status = "PUBLISHED";
+        tpl.componentsSnapshot = "[{},{}]"; // PublishedTemplateReader.verifyConsistentWithJsonb 一致性校验：长度须=2
         tpl.createdAt = OffsetDateTime.now();
         tpl.updatedAt = OffsetDateTime.now();
         tpl.persist();
@@ -99,6 +113,7 @@ class SaveDraftRestrictedTabValidationTest {
         tcTree.templateId = tpl.id;
         tcTree.componentId = treeComp.id;
         tcTree.tabName = "BOM树";
+        tcTree.sortOrder = 0;
         tcTree.createdAt = OffsetDateTime.now();
         tcTree.persist();
 
@@ -106,8 +121,37 @@ class SaveDraftRestrictedTabValidationTest {
         tcMat.templateId = tpl.id;
         tcMat.componentId = materialComp.id;
         tcMat.tabName = "材质元素";
+        tcMat.sortOrder = 1;
         tcMat.createdAt = OffsetDateTime.now();
         tcMat.persist();
+
+        TemplateComponentSnapshot scTree = new TemplateComponentSnapshot();
+        scTree.templateId = tpl.id;
+        scTree.templateComponentId = tcTree.id;
+        scTree.componentId = treeComp.id;
+        scTree.sortOrder = 0;
+        scTree.tabName = "BOM树";
+        scTree.componentName = treeComp.name;
+        scTree.componentCode = treeComp.code;
+        scTree.fields = "[]";
+        scTree.formulas = "[]";
+        scTree.tabType = "BOM";
+        scTree.bomRecursiveExpand = true;
+        scTree.persist();
+
+        TemplateComponentSnapshot scMat = new TemplateComponentSnapshot();
+        scMat.templateId = tpl.id;
+        scMat.templateComponentId = tcMat.id;
+        scMat.componentId = materialComp.id;
+        scMat.sortOrder = 1;
+        scMat.tabName = "材质元素";
+        scMat.componentName = materialComp.name;
+        scMat.componentCode = materialComp.code;
+        scMat.fields = materialComp.fields;
+        scMat.formulas = "[]";
+        scMat.tabType = "材质元素";
+        scMat.partNoField = "料号";
+        scMat.persist();
 
         // 把目标 quotation 的报价模板指向本测试模板(B8 校验读 quotation.customer_template_id)
         Quotation q = Quotation.findById(quotationId);
@@ -186,7 +230,11 @@ class SaveDraftRestrictedTabValidationTest {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> quotationService.saveDraft(quotationId, req));
         assertEquals(400, ex.getCode());
-        assertTrue(ex.getMessage().contains("已有下级"), "错误文案应说明已有下级原因: " + ex.getMessage());
+        // repair-260829 T-03(AC-5)：api.md 契约文案逐字比对，不是宽松的 contains 关键词匹配 ——
+        // B-1 把 loadSingleComponentTabMeta 从"每行每页签查一次"改成"整单取一次"是纯性能重构，
+        // 文案必须在重构前后逐字不变，用 assertEquals 才能拦住"重构顺手把文案也改了"这类回归。
+        assertEquals("该料号在 BOM 树上已有下级，不能添加到「材质元素」页签", ex.getMessage(),
+                "错误文案应与 api.md 契约逐字一致: " + ex.getMessage());
     }
 
     @Test
@@ -238,7 +286,9 @@ class SaveDraftRestrictedTabValidationTest {
             BusinessException ex = assertThrows(BusinessException.class,
                     () -> quotationService.saveDraft(quotationId, req));
             assertEquals(400, ex.getCode());
-            assertTrue(ex.getMessage().contains("已有下级"), "错误文案应说明已有下级原因: " + ex.getMessage());
+            // repair-260829 T-05(AC-7)：逃生路径与批量路径必须逐字相同，同样收紧为精确匹配。
+            assertEquals("该料号在 BOM 树上已有下级，不能添加到「材质元素」页签", ex.getMessage(),
+                    "逃生路径(kill switch off)错误文案应与批量路径逐字相同: " + ex.getMessage());
         } finally {
             System.clearProperty("cpq.savedraft-batch-stage1");
         }

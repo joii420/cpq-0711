@@ -89,6 +89,12 @@ public class QuotationService {
     @Inject
     QuotationTreeService quotationTreeService;
 
+    /** repair-260829 B-1/B-2：processBatchStage1 主循环之前整单预取一次模板页签元数据
+     *（componentId → tabType/partNoField/partNameField），避免 assertCanAddRowsToRestrictedTab
+     *（B8 反向校验）在循环内逐行重查（N+1，见问题说明.md ④）。 */
+    @Inject
+    com.cpq.template.service.PublishedTemplateReader publishedTemplateReader;
+
     /** task-0721 报价升版逻辑 B8（repair-0726 B3 迁移为带引用守卫的 pending 料号回收）：
      *  报价单删除时清理本单 pending 料号（{@link #cleanupPendingV6Data}）。 */
     @Inject
@@ -2287,13 +2293,20 @@ public class QuotationService {
      */
     private void batchDeleteChildrenByIds(String[] idsAsText) {
         if (idsAsText == null || idsAsText.length == 0) return;
+        batchDeleteChildrenExceptComponentDataByIds(idsAsText);
+        batchDeleteComponentDataByIds(idsAsText);
+    }
+
+    /**
+     * repair-260829 B-6：{@link #batchDeleteChildrenByIds} 拆出的子集——只删 componentData 之外的
+     * 三张子表（line_process / line_item_snapshot / composite_process，行为不变，仍全删全建）。
+     * componentData 单独由 {@link #batchDeleteComponentDataByIds} 处理，使 UPSERT 路径下可以跳过它。
+     */
+    private void batchDeleteChildrenExceptComponentDataByIds(String[] idsAsText) {
+        if (idsAsText == null || idsAsText.length == 0) return;
         // PostgreSQL: unnest(CAST(:ids AS text[]))::uuid 展开文本数组并转型 uuid
         em.createNativeQuery(
             "DELETE FROM quotation_line_process " +
-            "WHERE line_item_id IN (SELECT unnest(CAST(:ids AS text[]))::uuid)")
-            .setParameter("ids", idsAsText).executeUpdate();
-        em.createNativeQuery(
-            "DELETE FROM quotation_line_component_data " +
             "WHERE line_item_id IN (SELECT unnest(CAST(:ids AS text[]))::uuid)")
             .setParameter("ids", idsAsText).executeUpdate();
         em.createNativeQuery(
@@ -2304,6 +2317,53 @@ public class QuotationService {
             "DELETE FROM quotation_line_composite_process " +
             "WHERE line_item_id IN (SELECT unnest(CAST(:ids AS text[]))::uuid)")
             .setParameter("ids", idsAsText).executeUpdate();
+    }
+
+    /** repair-260829 B-6：{@link #batchDeleteChildrenByIds} 拆出的子集——只删 componentData。 */
+    private void batchDeleteComponentDataByIds(String[] idsAsText) {
+        if (idsAsText == null || idsAsText.length == 0) return;
+        em.createNativeQuery(
+            "DELETE FROM quotation_line_component_data " +
+            "WHERE line_item_id IN (SELECT unnest(CAST(:ids AS text[]))::uuid)")
+            .setParameter("ids", idsAsText).executeUpdate();
+    }
+
+    /**
+     * repair-260829 B-6 结构判定辅助：本次 payload 里该行 componentData 的 componentId 集合。
+     * 纯内存运算（不查库）。任一 componentId 为 null，或同一行出现重复 componentId（正常模板不会
+     * 出现——task-260829 立项期已实测 template_component_snapshot / template_component 里同模板
+     * 引用同组件多次恒为 0 组——出现即视为异常 payload），一律返回 {@code null} 表示「判不准」，
+     * 调用方据此回落全删全建（宁严勿宽，见 backtask.md 硬约束 5）。componentData 为空 → 返回空集合
+     * （与「库里也是空集合」比较时视为不 UPSERT——UPSERT 对空集合没有意义，交给下面全删全建的
+     * 空操作路径，行为等价且更简单）。
+     */
+    /**
+     * repair-260829 B-8：把 prep 段已加载的 {@code Map<componentId, QuotationLineComponentData>}
+     * 转成 {@link com.cpq.quotation.service.QuotationTreeService#loadComponentDataByLineItem} 同形状
+     * 的 {@code Map<componentId, Object[]{snapshotRows, deletedRowKeys}>}，供
+     * {@code QuotationTreeService.buildHitContext(comps, compData)} 直接消费——纯内存转换，不触发
+     * 任何查询。{@code byComp} 为 null/空（全新行，prep 段的 {@code oldCdByLineAndComp} 里没有它）
+     * 时返回空 Map，语义等价于该行此刻在 DB 里确实还没有 componentData。
+     */
+    private static java.util.Map<java.util.UUID, Object[]> toTreeCompData(
+            java.util.Map<java.util.UUID, QuotationLineComponentData> byComp) {
+        if (byComp == null || byComp.isEmpty()) return java.util.Map.of();
+        java.util.Map<java.util.UUID, Object[]> out = new java.util.HashMap<>();
+        for (java.util.Map.Entry<java.util.UUID, QuotationLineComponentData> e : byComp.entrySet()) {
+            QuotationLineComponentData cd = e.getValue();
+            out.put(e.getKey(), new Object[]{ cd.snapshotRows, cd.deletedRowKeys });
+        }
+        return out;
+    }
+
+    private static java.util.Set<java.util.UUID> payloadComponentIdSet(SaveDraftRequest.LineItemDraft d) {
+        if (d.componentData == null || d.componentData.isEmpty()) return java.util.Set.of();
+        java.util.Set<java.util.UUID> out = new java.util.LinkedHashSet<>();
+        for (SaveDraftRequest.ComponentDataDraft cd : d.componentData) {
+            if (cd.componentId == null) return null;
+            if (!out.add(cd.componentId)) return null; // 重复 componentId → 判不准
+        }
+        return out;
     }
 
     /**
@@ -2347,6 +2407,10 @@ public class QuotationService {
         // Map: lineItemId → (componentId → tombstoneJson)
         java.util.Map<java.util.UUID, java.util.Map<java.util.UUID, String>> allTombstones = new java.util.HashMap<>();
         java.util.Map<java.util.UUID, java.util.Map<java.util.UUID, String>> allSnapshots = new java.util.HashMap<>();
+        // repair-260829 B-6：componentId → 旧实体（UPSERT 路径直接复用这些托管实体做 UPDATE，
+        // 不再新建/persist；同时按 lineItemId 分组出「库里现有的 componentId 集合」供结构判定）。
+        java.util.Map<java.util.UUID, java.util.Map<java.util.UUID, QuotationLineComponentData>> oldCdByLineAndComp =
+                new java.util.HashMap<>();
         if (!keptIds.isEmpty()) {
             // 批量查所有复用行的 component data（一次 IN）
             List<QuotationLineComponentData> oldCds = QuotationLineComponentData.list(
@@ -2361,14 +2425,42 @@ public class QuotationService {
                     allSnapshots.computeIfAbsent(old.lineItemId, k -> new java.util.HashMap<>())
                             .put(old.componentId, old.snapshotRows);
                 }
+                oldCdByLineAndComp.computeIfAbsent(old.lineItemId, k -> new java.util.LinkedHashMap<>())
+                        .put(old.componentId, old);
             }
         }
 
-        // §2.1 整单一次 DELETE ANY：复用行子表（4 个子表）
+        // repair-260829 B-6：结构判定——「payload 本次 componentId 集合」vs「库里该行现有 componentId
+        // 集合」相同才走 UPSERT，否则回落全删全建（宁严勿宽：判不准就当作不同）。
+        // ⚠️ 只在 keptIds（复用行）范围内判定：全新行(不在 keptIds)没有旧数据可 UPSERT，天然走原逻辑。
+        java.util.Set<java.util.UUID> upsertEligibleLineIds = new java.util.HashSet<>();
+        if (!keptIds.isEmpty()) {
+            for (SaveDraftRequest.LineItemDraft d : request.lineItems) {
+                if (d.id == null || !keptIds.contains(d.id)) continue;
+                java.util.Set<java.util.UUID> payloadCompIds = payloadComponentIdSet(d);
+                if (payloadCompIds == null) continue; // 含 null/重复 componentId → 判不准，回落
+                java.util.Map<java.util.UUID, QuotationLineComponentData> dbCds = oldCdByLineAndComp.get(d.id);
+                java.util.Set<java.util.UUID> dbCompIds = dbCds == null
+                        ? java.util.Set.of() : dbCds.keySet();
+                if (!payloadCompIds.isEmpty() && payloadCompIds.equals(dbCompIds)) {
+                    upsertEligibleLineIds.add(d.id);
+                }
+            }
+        }
+
+        // §2.1 整单一次 DELETE ANY：复用行子表。componentData 之外的三张子表行为不变，仍对全部
+        // keptIds 全删全建；componentData 只对「非 UPSERT」的复用行删（B-6：UPSERT 行原样保留旧记录，
+        // 稍后在主循环里就地 UPDATE，不经过 DELETE+INSERT）。
         // 用 unnest(CAST(:ids AS text[]))::uuid 方式传 UUID 集合（Hibernate native query 无法直接传 uuid[]）
         if (!keptIds.isEmpty()) {
             String[] keptStrArr = keptIds.stream().map(UUID::toString).toArray(String[]::new);
-            batchDeleteChildrenByIds(keptStrArr);
+            batchDeleteChildrenExceptComponentDataByIds(keptStrArr);
+            java.util.Set<java.util.UUID> keptNonUpsertIds = new java.util.HashSet<>(keptIds);
+            keptNonUpsertIds.removeAll(upsertEligibleLineIds);
+            if (!keptNonUpsertIds.isEmpty()) {
+                String[] nonUpsertStrArr = keptNonUpsertIds.stream().map(UUID::toString).toArray(String[]::new);
+                batchDeleteComponentDataByIds(nonUpsertStrArr);
+            }
         }
 
         // §2.1 被删行子表 + 行实体
@@ -2379,6 +2471,25 @@ public class QuotationService {
                 if (removedIds.contains(ex.id)) ex.delete();
             }
         }
+
+        // repair-260829 B-1/B-2：整单一次预取模板页签元数据（B8 反向校验用），避免主循环内逐行重查
+        // resolveCustomerTemplateId + allTabsOf（问题说明.md ④，9,225 次调用 → 1 次）。templateId 直接
+        // 取 q.customerTemplateId（内存值，本次保存要绑定的模板——若本次同时切换模板，saveDraft 顶部
+        // 已把 request.customerTemplateId 写入 q.customerTemplateId，此处天然拿到新模板，AC-6 覆盖）。
+        //
+        // repair-260829 B-8：改经 quotationTreeService.loadTemplateComponentsForTemplate 一次性拿
+        // List<CompMeta>（内含 allTabsOf 唯一一次查询），metaByComponent 与下面 B-8 用的 treeComps
+        // 共用同一份结果，不重复查询——原先这里直接调 publishedTemplateReader.allTabsOf 只喂了
+        // metaByComponent 一份数据，现在同一次查询的产出同时喂给 B-1 的 meta 与 B-8 的树上下文。
+        java.util.List<QuotationTreeService.CompMeta> treeComps =
+                quotationTreeService.loadTemplateComponentsForTemplate(q.customerTemplateId);
+        java.util.Map<java.util.UUID, QuotationTreeService.TabMeta> metaByComponent = new java.util.HashMap<>();
+        for (QuotationTreeService.CompMeta cm : treeComps) {
+            metaByComponent.put(cm.id, new QuotationTreeService.TabMeta(cm.tabType, cm.partNoField, cm.partNameField));
+        }
+        // repair-260829 B-2：待校验三元组整单收集，循环外统一 flush 一次后再校验（原逐行 flush+assert
+        // 占该请求 82.6% 耗时，见问题说明.md 4.2）。Object[] = {componentId, rowData, lineItemId}
+        java.util.List<Object[]> allPendingRestrictedChecks = new java.util.ArrayList<>();
 
         // ── 主循环：persist 行实体 + 子表 ────────────────────────────────────────────────────
         // E3 收集：需要 seed 工序的 (lineItemId → partNo) 对
@@ -2493,44 +2604,81 @@ public class QuotationService {
                 }
             }
 
-            // componentData：逐行 persist（批量 INSERT 收益低，且需要正确回填 tombstones/snapshots）
+            // componentData：repair-260829 B-6 —— 结构未变的复用行走 UPSERT（就地 UPDATE 复用旧实体，
+            // 🔒 snapshot_rows / deleted_row_keys 一律不碰，AC-19/AC-21）；新行 / 结构变化的复用行仍走
+            // 原「新建实体 + persist」全删全建路径（componentData 已在 prep 段按同一判定被删过）。
+            // repair-260829 B-2：本行待校验三元组只收集进整单级别的 allPendingRestrictedChecks，不再
+            // 在此处 flush+assert（原逐行 flush 占该请求 82.6% 耗时，见问题说明.md 4.2）。
             if (liDraft.componentData != null) {
+                boolean upsertLine = upsertEligibleLineIds.contains(li.id);
+                java.util.Map<java.util.UUID, QuotationLineComponentData> oldCdForLine = upsertLine
+                        ? oldCdByLineAndComp.getOrDefault(li.id, java.util.Collections.emptyMap())
+                        : java.util.Collections.emptyMap();
                 java.util.Map<java.util.UUID, String> tombstonesForLine =
                         allTombstones.getOrDefault(li.id, java.util.Collections.emptyMap());
                 java.util.Map<java.util.UUID, String> snapshotsForLine =
                         allSnapshots.getOrDefault(li.id, java.util.Collections.emptyMap());
-                // task-0721 B8（2026-07-21 补录）：同款"先收集、本行落库+flush 后再校验"纪律（见 §2.0 段落
-                // 逐行路径同名注释）——避免树页签 snapshot_rows 尚未回填时原生查询读到中间态。
-                List<Object[]> pendingRestrictedChecks = new ArrayList<>();
                 for (int j = 0; j < liDraft.componentData.size(); j++) {
                     SaveDraftRequest.ComponentDataDraft cdDraft = liDraft.componentData.get(j);
-                    QuotationLineComponentData cd = new QuotationLineComponentData();
-                    cd.lineItemId = li.id;
-                    cd.componentId = cdDraft.componentId;
-                    cd.tabName = cdDraft.tabName;
                     if (cdDraft.rowData != null && cdDraft.componentId != null) {
-                        pendingRestrictedChecks.add(new Object[]{ cdDraft.componentId, cdDraft.rowData });
+                        allPendingRestrictedChecks.add(new Object[]{ cdDraft.componentId, cdDraft.rowData, li.id });
                     }
-                    if (cdDraft.rowData != null) cd.rowData = cdDraft.rowData;
-                    if (cdDraft.subtotal != null) cd.subtotal = cdDraft.subtotal;
-                    cd.sortOrder = cdDraft.sortOrder != null ? cdDraft.sortOrder : j;
-                    String preserved = (cdDraft.componentId != null)
-                            ? tombstonesForLine.get(cdDraft.componentId) : null;
-                    cd.deletedRowKeys = (preserved != null) ? preserved : "[]";
-                    String preservedSr = (cdDraft.componentId != null)
-                            ? snapshotsForLine.get(cdDraft.componentId) : null;
-                    if (preservedSr != null) cd.snapshotRows = preservedSr;
-                    cd.persist();
-                }
-                if (!pendingRestrictedChecks.isEmpty()) {
-                    em.flush();
-                    for (Object[] pending : pendingRestrictedChecks) {
-                        quotationTreeService.assertCanAddRowsToRestrictedTab(
-                                (UUID) pending[0], (String) pending[1], li.id);
+                    QuotationLineComponentData reused = (cdDraft.componentId != null)
+                            ? oldCdForLine.get(cdDraft.componentId) : null;
+                    if (upsertLine && reused != null) {
+                        // B-6 UPSERT：托管实体，只改这 4 列；不 touch snapshotRows/deletedRowKeys，
+                        // Hibernate dirty checking 在 flush 时自动生成 UPDATE，不需要 persist()。
+                        reused.tabName = cdDraft.tabName;
+                        if (cdDraft.rowData != null) reused.rowData = cdDraft.rowData;
+                        if (cdDraft.subtotal != null) reused.subtotal = cdDraft.subtotal;
+                        reused.sortOrder = cdDraft.sortOrder != null ? cdDraft.sortOrder : j;
+                    } else {
+                        // 全删全建路径（新行 / 结构变化的复用行；upsertLine=true 但 reused==null 理论
+                        // 不可达——payloadCompIds.equals(dbCompIds) 已在 prep 段验证过，此处防御）。
+                        QuotationLineComponentData cd = new QuotationLineComponentData();
+                        cd.lineItemId = li.id;
+                        cd.componentId = cdDraft.componentId;
+                        cd.tabName = cdDraft.tabName;
+                        if (cdDraft.rowData != null) cd.rowData = cdDraft.rowData;
+                        if (cdDraft.subtotal != null) cd.subtotal = cdDraft.subtotal;
+                        cd.sortOrder = cdDraft.sortOrder != null ? cdDraft.sortOrder : j;
+                        String preserved = (cdDraft.componentId != null)
+                                ? tombstonesForLine.get(cdDraft.componentId) : null;
+                        cd.deletedRowKeys = (preserved != null) ? preserved : "[]";
+                        String preservedSr = (cdDraft.componentId != null)
+                                ? snapshotsForLine.get(cdDraft.componentId) : null;
+                        if (preservedSr != null) cd.snapshotRows = preservedSr;
+                        cd.persist();
                     }
                 }
             }
         } // end main loop
+
+        // ── repair-260829 B-2：循环外统一 flush 一次 + 遍历整单收集到的三元组做 B8 反向校验 ──────
+        // 等价性论证（问题说明.md ⑤ B-2 段）：原设计"本行落库+flush 后再校验本行"是为了避免读到
+        // snapshot_rows 中间态；改为"全部落库+flush 一次后校验全部"，校验时看到的状态更完整而非更
+        // 弱。违规时同样在事务内抛 BusinessException(400) → 事务整体回滚，最终持久化结果一致；遍历
+        // 顺序不变（仍按 request.lineItems 原序），故"第一个错误即拦"报出的料号不变。
+        if (!allPendingRestrictedChecks.isEmpty()) {
+            em.flush();
+            // repair-260829 B-8：第二个 N+1——assertCanAddToRestrictedTab 内部的 buildHitContext
+            // 原每次都现查 loadTemplateComponents + loadComponentDataByLineItem（各 1 条 SQL），
+            // 1845 行 × 1 个材质元素页签 × 2 条查询 ≈ 3,690 条跨网 SQL ≈ 55s（问题说明.md ④ B-8 段）。
+            // 改走 6 参重载：treeComps 已在上面整单查过一次（与 metaByComponent 同源）；
+            // treeCompData 优先复用 prep 段已加载的 oldCdByLineAndComp（零新增查询）——snapshot_rows/
+            // deleted_row_keys 这两列在 saveDraft 全程不会被本次请求自己改写（B-6 UPSERT 不碰它们，
+            // 全删全建路径也只是把旧值原样搬回，见 preservedSnapshots/preservedTombstones），所以
+            // prep 段读到的“旧”值与此刻查库能读到的值逐字相同，用它不会读到过期数据。keptIds 之外的
+            // 全新行找不到对应 entry 时传空 Map——这与"该行此刻在 DB 里确实还没有非 null 的
+            // snapshot_rows"（新建 componentData 的 snapshotRows 字段默认就是 null）语义等价。
+            for (Object[] pending : allPendingRestrictedChecks) {
+                UUID lineId = (UUID) pending[2];
+                Map<UUID, Object[]> treeCompDataForLine = toTreeCompData(oldCdByLineAndComp.get(lineId));
+                quotationTreeService.assertCanAddRowsToRestrictedTab(
+                        (UUID) pending[0], (String) pending[1], lineId, metaByComponent,
+                        treeComps, treeCompDataForLine);
+            }
+        }
 
         // ── E4 derivedAttr 批量计算 + 末尾统一 flush ─────────────────────────────────────────
         // 公式纯函数；去掉 per-row flush，循环结束后统一一次 flush。
@@ -2654,7 +2802,6 @@ public class QuotationService {
                 upd.executeUpdate();
             }
         }
-
     }
 
     static BigDecimal quotationTotalResult(BigDecimal value) {
