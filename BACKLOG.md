@@ -1565,6 +1565,28 @@
 - ⚠️ 需要前端脏标记机制，改造面大于收益；**除非 BL-0196/0198 都做完后传输才成为瓶颈，否则不要启动本条**。
 - **预估规模**：L
 
+
+### [BL-0200] `BigDecimal.scale` 不匹配致无谓 UPDATE —— 同族字段排查
+- **优先级**：**P1**
+- **来源**：`repair-260829-保存草稿树页签校验N+1` 的 B-9（2026-08-29），用户裁决本期只修 `subtotal`，同族转本条。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-29
+- **内容**：B-9 已证实并修复 `subtotal` 一处：库列 `numeric(26,12)` 存 12 位小数、前端发 6 位，
+  Hibernate dirty check 用 `BigDecimal.equals()`（**比较 scale**）判定为脏 ⇒ 1,845 行全部无谓 UPDATE
+  ⇒ `QuotationLineItem` 带 `@DynamicUpdate`（全工程唯一）使其**无法合批** ⇒ 逐条跨网往返 **≈27 秒**。
+- 🔬 **实验证据（勿重做）**：唯一变量=payload 小数位数 ⇒ scale=6 → 1845 条 UPDATE / 43~52s；
+  scale=12 → **0 条** / 16.1s。修复后主仓实测 `line_item UPDATE=0`、端到端 **15.7~16.3s**。
+- ⚠️ **同族字段尚未排查**：`lineTotalAmount` / `lineUnitPrice` / `lineDiscountAmount` /
+  `discountRateApplied` / `finalDiscountRate` 等。本单这些值为 NULL 故未触发，
+  **换一张有优惠策略的单就会重现**。
+- ⚠️ **不止 `quotation_line_item`**：任何「`numeric(n,m)` 列 + 前端传更少小数位」的组合都会中招；
+  `quotation_line_component_data.subtotal` 同样是 `numeric(26,12)`。
+- **建议做法**：① 排查所有 `BigDecimal` 实体字段的赋值点，统一改 `compareTo` 判等；
+  ② 或在 DTO 反序列化层统一 `setScale` 到列定义的 scale（更根治，但要评估精度口径影响，
+  见 `docs/` 的「计算 12 位 / 显示 9 位 / 存储看列 scale」三层约定）。
+- **前置条件**：无。
+- **预估规模**：M
+
 ### [BL-0183] 建单后置物化拆批事务 / 移出请求线程（`task-260825` 已否决备选丙）
 - **状态：✅ DONE（2026-08-28，合 master merge `76c4b0ab`）** —— 复评触发条件在 `task-260825`
   实施期即被实测触发（③ `ensureCardValues` 实测 58,679ms / 60s 预算余量仅 2%，真实阈值 ≈1887 行），
