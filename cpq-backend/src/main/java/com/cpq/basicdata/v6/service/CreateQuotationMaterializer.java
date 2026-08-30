@@ -41,6 +41,7 @@ public class CreateQuotationMaterializer {
 
     @Inject ConfigureSnapshotService snapshotService;
     @Inject CardSnapshotService cardSnapshotService;
+    @Inject MaterializeRegistry materializeRegistry;
 
     /**
      * 对已建行、已提交的报价单做整单物化，并回填 result 状态字段。
@@ -88,6 +89,8 @@ public class CreateQuotationMaterializer {
     public void materialize(V6QuotationCommitService.CommitResult r) {
         if (r == null || r.quotationId == null) return;
         UUID qid = r.quotationId;
+        // repair-260829 B-4：进入即登记"物化进行中"，覆盖①~④全程（见 MaterializeRegistry 类注释）。
+        materializeRegistry.begin(qid);
         long t0 = System.currentTimeMillis();
         try {
             snapshotService.snapshotQuotation(qid);          // ① 展开 driver → UPSERT 自建 componentData 行 + snapshot_rows
@@ -113,8 +116,11 @@ public class CreateQuotationMaterializer {
             // 循环体内 try/catch）。
             var ensureResultRef =
                 new java.util.concurrent.atomic.AtomicReference<CardSnapshotService.EnsureResult>();
+            // repair-260829 B-1b：本调用是"建单后置物化"自身，MaterializeRegistry 的 in-progress
+            // 标志就是本方法开头自己打上的——skipInProgressGuard=true 绕过该守卫，否则会把自己
+            // 拦死（守卫是为了拦"外部在物化进行中提前触发计算"，不是拦物化任务本身）。
             QuarkusTransaction.run(QuarkusTransaction.runOptions().timeout(600),
-                () -> ensureResultRef.set(cardSnapshotService.ensureCardValuesDetailed(qid, false)));
+                () -> ensureResultRef.set(cardSnapshotService.ensureCardValuesDetailed(qid, false, true)));
             CardSnapshotService.EnsureResult ensureResult = ensureResultRef.get();
             if (ensureResult != null && ensureResult.failedBatches > 0) {
                 // 硬约束：不许把失败藏起来——显式写清楚"N 批（共 M 行）未完成"，而不是让
@@ -155,6 +161,10 @@ public class CreateQuotationMaterializer {
             r.warnings.add("卡片值物化失败: " + e.getMessage());
             LOG.errorf(e, "[create-quotation] 后置物化失败 quotation=%s 耗时=%dms（不丢单，前端 warm 兜底）",
                 qid, (tErr - t0));
+        } finally {
+            // repair-260829 B-4：无论正常完成还是异常终止都必须清标志——顶层 catch 吞掉所有异常
+            // 不上抛，本 finally 必然执行，不会泄漏 in-progress 状态（见 MaterializeRegistry 类注释）。
+            materializeRegistry.end(qid);
         }
     }
 

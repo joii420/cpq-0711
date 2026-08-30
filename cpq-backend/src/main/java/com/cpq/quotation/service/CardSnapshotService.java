@@ -156,6 +156,17 @@ public class CardSnapshotService {
     @Inject
     com.cpq.template.service.PublishedTemplateReader publishedTemplateReader;
 
+    /**
+     * repair-260829 B-1b：③步进入计算前的第二层防线（第一层是 B-1 的落库前产物自检，见
+     * {@link #isEarlySkeletonRender}）。{@link #isEarlySkeletonRender} 只能兜住"①步写了一部分"
+     * 的时序窗口（此时 comp_data 已有部分行、条件②能命中）；兜不住"①步一行都还没写"的窗口——
+     * 此时 comp_data 整体为空，条件②天然为 false，判据不拦，会把全空骨架值当"合法空结果"放行
+     * 落库。本字段用于在 {@link #ensureCardValuesDetailed} 真正开始计算前先问一句"这个报价单
+     * 的建单后置物化是否还在飞"，命中则直接不算，把这个窗口也堵上。
+     */
+    @Inject
+    com.cpq.basicdata.v6.service.MaterializeRegistry materializeRegistry;
+
     // =========================================================================
     // ensureStructure — 4 份结构快照（创建即冻）
     // =========================================================================
@@ -731,12 +742,29 @@ public class CardSnapshotService {
                 //    预载的整批结果 → 本循环仍是「中间零查询」,批处理不变量不破。
                 // 🔒 同事务是硬要求(设计点 1):分开事务会留下「卡片值已更新、总价还没跟上」的窗口,
                 //    那正是本次故障(QT-20260806-0082,前端 59.58 vs 后端 37.33)的成因形态。
-                assignQuoteCardValues(li,
-                    quoteErrors.containsKey(li.id)
-                        ? failedSentinelWithError(quoteErrors.get(li.id))
-                        : orSentinel(quoteVals.get(li.id)),
-                    cdByLine.get(li.id), counter);
-                li.quoteValuesAt = now;
+                //
+                // repair-260829 B-1：落库前产物自检——只在 build 未抛异常(quoteVals 非 null 且不在
+                // quoteErrors 里)时才可能判定"算早了"，与既有失败哨兵语义(上两行 warn)互不重叠(E-7)。
+                // 命中 isEarlySkeletonRender 则跳过本次 assignQuoteCardValues：li.quoteCardValues
+                // 保持其从 DB 读入时的原值(本方法只处理 IS NULL 谓词选中的行，通常即为 NULL)，
+                // 不落一次性写死的骨架值——留给下次 ensureCardValues 的 IS NULL 判据重算自愈(AC-3)。
+                List<com.cpq.quotation.entity.QuotationLineComponentData> cdsForLine = cdByLine.get(li.id);
+                boolean quoteBuiltOk = !quoteErrors.containsKey(li.id) && quoteVals.get(li.id) != null;
+                boolean earlySkeleton = quoteBuiltOk && isEarlySkeletonRender(quoteVals.get(li.id), cdsForLine);
+                if (earlySkeleton) {
+                    LOG.warnf("[cardvalues-early-skeleton] quotation=%s line=%s 算早了：所有页签 baseRows " +
+                            "合计为0但 snapshot_rows 非空，判定为①步(driver展开)未写完时被提前渲染，" +
+                            "跳过本次落库、quote_card_values 保持原值不变，留给下次 ensureCardValues 的 " +
+                            "IS NULL 判据自愈",
+                        quotationId, li.id);
+                } else {
+                    assignQuoteCardValues(li,
+                        quoteErrors.containsKey(li.id)
+                            ? failedSentinelWithError(quoteErrors.get(li.id))
+                            : orSentinel(quoteVals.get(li.id)),
+                        cdsForLine, counter);
+                    li.quoteValuesAt = now;
+                }
                 if (costingVals.containsKey(li.id))
                     li.costingCardValues = costingRenderError != null
                         ? failedSentinelWithError(costingRenderError)   // BL-0030:带原文,前端显式提示
@@ -1501,7 +1529,54 @@ public class CardSnapshotService {
      */
     @Transactional
     public EnsureResult ensureCardValuesDetailed(UUID quotationId, boolean forceRecomputeAll) {
+        return ensureCardValuesDetailed(quotationId, forceRecomputeAll, false);
+    }
+
+    /**
+     * repair-260829 B-1b：3 参重载——{@code skipInProgressGuard=true} 专供
+     * {@link com.cpq.basicdata.v6.service.CreateQuotationMaterializer#materialize} 自身③步调用。
+     *
+     * <p><b>为什么需要这个开关</b>：{@code MaterializeRegistry} 的 in-progress 标志覆盖①~④全程
+     * （{@code materialize} 方法开头 {@code begin}、finally {@code end}）——若不加区分地一律
+     * 拦截，③步调用本方法时标志必然是 {@code true}（就是它自己打上的），会把自己拦死、
+     * 物化永远算不出东西。本重载让"物化任务自身"绕过这层守卫，其余 4 个生产调用点
+     * （{@link #ensureCardValues(UUID)} / {@link #ensureCardValues(UUID, boolean)} /
+     * {@code CostingFreezeService} / {@code QuotationService#submit}）一律走 2 参重载，
+     * {@code skipInProgressGuard} 恒为 {@code false}，守卫正常生效。
+     *
+     * <p>两个重载都标 {@code @Transactional}（默认 REQUIRED）：2 参重载被外部经 CDI 代理调用时
+     * 由拦截器开启事务，其内部对 3 参重载的调用是同类内 {@code this.} 直调（不经代理、不重复
+     * 触发拦截器），但此时事务已经活跃，3 参重载的方法体在这个已活跃的事务里执行，语义与
+     * "两次都触发拦截器"逐位等价（REQUIRED 语义本就是"有就加入、没有就开"，不依赖拦截器
+     * 触发次数）。{@code CreateQuotationMaterializer} 经注入的 {@code cardSnapshotService} 代理
+     * 直接调 3 参重载，走的是真实代理调用，拦截器正常触发。
+     */
+    @Transactional
+    public EnsureResult ensureCardValuesDetailed(UUID quotationId, boolean forceRecomputeAll,
+                                                  boolean skipInProgressGuard) {
         if (quotationId == null) return new EnsureResult(0, 0, 0);
+        // repair-260829 B-1b：真正开始算之前先问一句"建单后置物化是否还在飞"——命中则本次
+        // 直接不算、不落库(不改变任何行现状)，留给下次调用重试(IS NULL 判据保证会重跑，
+        // MaterializeRegistry 是内存态且 begin/end 在 finally 里保证不会永久悬挂，见其类注释)。
+        // 🚨 与 B-1 的落库前产物自检是两层独立防线：B-1 兜"①步写了一部分"(comp_data 已有部分
+        // 行，B-1 条件②能命中)；本检查兜"①步一行都还没写"(comp_data 整体为空，B-1 条件②
+        // 天然为 false、不拦，会把全空骨架值当"合法空结果"放行落库)——见问题说明.md ⑤ B-1b。
+        // 放在单飞锁之前：不在意此刻是否已有别的 warm 在飞，只要物化任务本身还在跑就直接
+        // 让路，不占用/不判断单飞锁状态，语义更单纯。
+        //
+        // 🔴 返回值必须复用 WARMING_IN_PROGRESS（主线 2026-08-29 复审抓到）：本条件与下面
+        // tryQuotationCalculationLock 失败是同一种语义（"有人在算，本次让路，稍后重试"），
+        // 但若返回 computed=0/failedBatches=0，QuotationService:900 submit 前置的两个 409
+        // 判断（warmResult.computed == WARMING_IN_PROGRESS ／ warmResult.failedBatches > 0）
+        // 都不会触发 —— 会被误判成"补算完成、无失败"而放行到 lineDiscountService.recompute
+        // 用陈旧/缺失的卡片值算金额并冻结，且没有任何报错。这是金额路径，必须响亮失败，
+        // 不能像 materialize 本身那样容错静默——同一个返回值经三个消费方（本端点/submit
+        // 前重试循环/submit 本身）复用，全部按"在算中，重试"处理，契约不变（AC-9）。
+        if (!skipInProgressGuard && materializeRegistry.isInProgress(quotationId)) {
+            LOG.warnf("[ensure-cardvalues-materializing] quotation=%s 建单后置物化仍在进行中，" +
+                    "本次计算请求跳过(不落库、不改变现状)，留给下次调用重试", quotationId);
+            return new EnsureResult(WARMING_IN_PROGRESS, 0, 0);
+        }
         // 单飞:加锁必须早于缺失行 SELECT,否则两事务都读 NULL → 双重补算
         if (!tryQuotationCalculationLock(quotationId)) return new EnsureResult(WARMING_IN_PROGRESS, 0, 0);   // warm 在飞
 
@@ -3894,6 +3969,67 @@ public class CardSnapshotService {
             LOG.warnf("[card-snapshot] extractBaseRowsByComp failed: %s", e.getMessage());
         }
         return map;
+    }
+
+    /**
+     * repair-260829（卡片值算早了骨架值锁死）B-1：③步落库前的产物自检——
+     * 两个条件<b>同时成立</b>才判定"算早了"（数据源未就绪时被提前渲染出的骨架值）：
+     * <ol>
+     *   <li>{@code builtQuoteJson} 算出的<b>所有</b>页签 {@code baseRows} 合计 == 0</li>
+     *   <li>{@code cds} 里<b>本次渲染涉及的组件</b>（{@code componentId} 出现在 {@code builtQuoteJson}
+     *       的 {@code tabs} 内）中，至少一条 {@code snapshot_rows} 非空
+     *       （即 Pass1.5 已预载的 {@code cds}，零额外查询——见 {@link #snapshotNewLinesCardValuesCore}
+     *       调用处注释：这正是本判据能捕捉"算早了"的关键，Pass1 的 build 早于 Pass1.5 的
+     *       componentData 预载，中间若恰逢 ①步提交，两次读到的数据新鲜度不同）</li>
+     * </ol>
+     *
+     * <p>🚨 条件②不可省：只有条件①会把"组件视图合法返 0 行"的正常空结果（{@code snapshot_rows}
+     * 本身就是 {@code '[]'} 或 {@code null}）误判成"算早了"，导致合法空结果永远写不进库
+     * （对应 {@code AC-6}）。条件①用"**所有**页签合计"而非"任一页签"，是为了不误伤
+     * {@code SUBTOTAL} 类型页签（{@code baseRows} 恒为 0 属正常，见 {@code AC-10}-③）。
+     *
+     * <p>🔒 <b>条件②必须按 {@code builtQuoteJson} 的 {@code tabs} 集合筛过 {@code cds}，不能看
+     * {@code cds} 的全部行</b>（2026-08-29 用户实测发现并纠正）——{@code cds = cdByLine.get(li.id)}
+     * 是该行<b>全部</b> {@code quotation_line_component_data}，可能含 {@code component_id} 不在
+     * 当前模板 {@code tabs} 里的历史残留 orphan 行（dev 库实测存在）。若不筛，"orphan 行
+     * {@code snapshot_rows} 非空 + 模板内组件合法返 0 行"这一组合会被误判成"算早了"——
+     * 而误判的后果不是"多算一次"，是<b>死循环</b>：不落库 → {@code quote_card_values} 保持
+     * {@code NULL} → 下次 {@code IS NULL} 判据又选中 → 又命中误判 → 永远写不进库，比原缺陷
+     * （至少写进去了、只是内容空）更糟。筛过之后，本判据命中的语义收窄为"这个正在渲染的组件
+     * 有源数据、却渲染出 0 行"——这正是"build 读到旧快照、cds 预载读到新数据"那个时序差的
+     * 精确特征，不会误伤"组件本来就没数据"的合法场景，也天然不会自然出现在健康单里
+     * （有数据就该渲染出行），因此可安全地直接传参构造这个组合做纯逻辑单测。
+     *
+     * <p>只在 {@code builtQuoteJson} 非 null 时才可能判定——build 抛异常已有独立的失败哨兵路径
+     * （{@code failedSentinelWithError}/{@code CARD_VALUE_FAILED_SENTINEL}），不归本判据管，
+     * 避免与既有失败语义（{@code E-7}）重叠改动。
+     */
+    boolean isEarlySkeletonRender(String builtQuoteJson,
+            List<com.cpq.quotation.entity.QuotationLineComponentData> cds) {
+        if (builtQuoteJson == null || builtQuoteJson.isBlank()) return false;
+        // 条件①：算出的所有页签 baseRows 合计 == 0（顺带拿到本次渲染涉及的 componentId 集合，
+        // 供下方条件②筛 orphan comp_data 用——同一次 JSON 解析，不重复解析）
+        Map<String, ArrayNode> baseRowsByComp = extractBaseRowsByComp(builtQuoteJson);
+        if (baseRowsByComp.isEmpty()) return false;   // 无页签(如模板 0 driver 组件)不归本判据管
+        for (ArrayNode rows : baseRowsByComp.values()) {
+            if (rows != null && rows.size() > 0) return false;   // 有任一页签非空 → 不是"算早了"
+        }
+        // 条件②：仅认"本次渲染涉及的组件"(componentId 出现在 baseRowsByComp/tabs 内)的
+        // snapshot_rows —— 排除 orphan comp_data(component_id 不在当前模板/渲染范围内的历史
+        // 残留行)干扰判据（见上方类注释）。源本来就没数据时不拦（合法空结果，E-4）。
+        if (cds != null) {
+            for (com.cpq.quotation.entity.QuotationLineComponentData cd : cds) {
+                if (cd == null || cd.componentId == null) continue;
+                if (!baseRowsByComp.containsKey(cd.componentId.toString())) continue;   // orphan，不归本次渲染
+                String sr = cd.snapshotRows;
+                if (sr == null) continue;
+                String trimmed = sr.trim();
+                if (!trimmed.isEmpty() && !"[]".equals(trimmed) && !"null".equals(trimmed)) {
+                    return true;   // 条件①②同时成立
+                }
+            }
+        }
+        return false;
     }
 
     /** 从 quote_card_values JSON 提取各组件的旧 editRows（componentId → editRows 数组）。 */
