@@ -1327,6 +1327,10 @@ const QuotationWizard: React.FC = () => {
     }
     savingRef.current = true;
     setSaving(true);
+    // repair-260829 F-3（AC-15）：大单量(如 1845 行)保存草稿端到端实测可达 ~50s，仅按钮 loading
+    // 不足以让用户确信"没卡死"——给一条持久 loading 提示，成功/失败都会在 finally 里关掉。
+    // 仅非静默(用户可见)保存才提示；autoSaveDraft 的静默保存不打扰用户。
+    const hideSavingHint = !silent ? message.loading('正在保存草稿，大单量保存较慢，请勿关闭页面…', 0) : undefined;
     try {
       const values = form.getFieldsValue();
       // 与 autoSaveDraft 同口径:规范化数值后再 PUT/落 localStorage,避免手动/自动保存写库精度不一致
@@ -1354,6 +1358,7 @@ const QuotationWizard: React.FC = () => {
         if (!silent) message.error(e.message);
       }
     } finally {
+      hideSavingHint?.();
       savingRef.current = false;
       setSaving(false);
       // 飞行期间合并的保存请求,落地后补跑一次(取最新 payload),与 autoSaveDraft 同款。

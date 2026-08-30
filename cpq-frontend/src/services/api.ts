@@ -2,7 +2,10 @@ import axios from 'axios';
 
 const api = axios.create({
   baseURL: '/api/cpq',
-  timeout: 30000,
+  // repair-260829 F-1（AC-15）：30s → 60s。大单量（如 1845 行）保存草稿端到端实测 21~35s，
+  // 原 30s 客户端超时与后端事务墙不匹配，会造成「后端已存成功，前端却报 net::ERR_ABORTED」的
+  // 不稳定假失败。上调为 60s 与后端事务预算对齐。见 dev-docs/task-260721-.../repair-260829-.../问题说明.md AC-15。
+  timeout: 60000,
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
