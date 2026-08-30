@@ -55,11 +55,12 @@ SELECT count(*) FROM quotation_line_component_data d
 ```
 > 零改动基线此值为 0，判据有区分度（非恒真）。
 
-### T-03　还原实验（AC-3）🚨 **不可省、不可委托**
-把修复改回去（丙：换回默认 executor / 甲：去掉 `QuarkusTransaction.run`），重跑 T-02。
-**断言**：comp_data **回到 0**，且日志重现 `Cannot use the EntityManager/Session because neither a transaction nor a CDI request context is active`。
-**证据**：修复前后两次日志与 SQL 输出对照。
-> 不做这条，"修复后通过"可能只是环境变了。参见 `RECORD.md`「自己写的验证脚本首次 PASS 也可能是空验证」。
+### T-03　还原实验（AC-3）🚨 **不可省、不可委托** —— 2026-08-29 形态修正
+**改为探针层并发多发对照**（原「端到端单发把修复改回去」已实测证伪三次，见 `问题说明.md` AC-3 修正说明）：
+一次投递 ≥8 发 fire-and-forget 探针，对比默认 executor 与 `cleared(ThreadContext.CDI)`。
+**断言**：默认组出现大量 `componentsSnapshot=NULL`；cleared 组零 NULL。
+**已完成**（主线亲跑 8081，各 4 轮 × 10 发）：默认 **37 NULL / 3 present**；cleared **0 NULL / 40 present**。证据 `证据/E6`。
+> 端到端单发**不能**用作还原实验：竞态下任务几乎总在原请求结束前被调度到，两组都会成功。
 
 ### T-04　① 步空转发出信号（AC-4）
 构造「明细行 > 0 **且** driver 组件数 > 0 **且** `comp_data == 0`」的状态，执行物化。
@@ -76,6 +77,29 @@ SELECT count(*) FROM quotation_line_component_data d
 先由 B-6 用请求线程对同规模单跑一次**成功**物化，实测值记为 `BASE`；再跑修复后的建单，记 `[create-quotation-timing]` 总计。
 **断言**：总计 ∈ [BASE×0.5, BASE×1.5]。
 > 🚫 **`BASE` 不得取 `6689ms`** —— 那是 ① 空转（447ms 什么都没做）的耗时。实测 `S2.snapshotRows=14114ms`（增量路径），修好后总耗时**必然上升**。拿 6689ms 设阈值 = 写一条从第一天就不可达的 AC。
+
+**B-6 实测基线（2026-08-29，backend-engineer 在 8099 独立测试环境实测）**：
+
+用修复后的 `materializeExecutor`（`cleared(CDI)`）对 4 张 1845 行单**逐一单独**（无并发干扰）跑 fire-and-forget，
+`[create-quotation-timing]` 总计：
+
+| quotation | 总计 |
+|---|---|
+| QT-20260828-0200 | 13049ms |
+| QT-20260829-0204 | 13222ms |
+| QT-20260826-0183 | 15227ms |
+| QT-20260826-0184 | 12519ms |
+
+平均 `BASE ≈ 13504ms`（区间 12519~15227ms）。**方法论说明**：这不是字面意义的"请求线程同步调用"，
+而是"单独一发、无并发干扰"的 `materializeExecutor` 异步调用——B-2 修复的本质就是让异步线程与请求线程
+在 CDI/EntityManager 可用性上等价，两者跑的是同一段代码、同一批 DB 操作，耗时特征应当一致，
+故可作为 AC-5 的有效比较基线。若后续需要字面意义的同步基线，可另补一次直接调用 `materializer.materialize()`
+（不经 `runAsync`）的计时，预期与上表同量级。
+
+⚠️ 另有 5 张（`0185`~`0189`）**并发 5 发**跑出 21375~29466ms（含一次 `ensureExcelValues` 单跳 7219ms/5808ms 的锁等待），
+这是人为并发造成的资源争用，**不计入 BASE**，仅供参考"高并发下降级但仍成功"。
+
+**AC-5 判定区间**：`[BASE×0.5, BASE×1.5]` ≈ **[6752ms, 20256ms]**。
 
 ### T-07　其它路径逐位不变（AC-6）
 对同一张已物化的单依次跑 `saveDraft` / 加产品 / 从基础刷新 / `ensure-card-values` / 核价侧渲染，
@@ -107,12 +131,18 @@ UNION ALL SELECT 'material_bom', … （其余四张同构）
 建单 → 打开（确认非空）→ 改一个数值失焦 → 保存草稿 → 切走再切回 → 刷新页面。
 **断言**：改动值持久；其余行不变；总价按改动值重算；全程 comp_data 行数恒为 7380。
 
-### T-13　存量修复（AC-10，2026-08-29 修正）
-**19 张单**（17 张全空 + 2 张半修复 `0199`/`0203`；主线实测核定，曾误记 21），每张先 `UPDATE ... SET quote_card_values=NULL, costing_card_values=NULL`，再重跑 `ensure-card-values`，
+### T-13　存量修复（AC-10，2026-08-29 三次修正）
+**19 张单**（数量固定；A/B 两类构成随实验推进而变，**执行前用 `backtask.md` B-7 的 SQL 重新查一次，不要照抄任何时点的快照数字**——曾先后误记为 21、"17+2"、且漏想 B 类步骤），按 `cd`/`sub_nz` 分两类：
+- **A 类·半修复**（`cd>0 且 sub_nz=0`）：先 `UPDATE ... SET quote_card_values=NULL, costing_card_values=NULL` 再重跑 `ensure-card-values`
+- **B 类·全空**（`cd=0`）：先 `POST /configure-product/quotations/{id}/refresh-snapshot`（驱动①步展开），**再**重跑 `ensure-card-values`
+  > 🔧 **不可只做 `ensure-card-values`**——它只渲染"已有"的 snapshot_rows，B 类从未展开过，跳过 `refresh-snapshot` 会空转、原样返回 200 但状态不变（此为本任务开发期实测发现，非猜测）
+
 逐单断言 comp_data == 明细行数 × driver 组件数、**且 `total_amount ≠ 0`、`li.subtotal` 非零行数 > 0**。
-🔧 **金额断言不可省**——只断言 comp_data 非空会让半修复态（`0203`/`0199` 的原始症状）误判通过。
+🔧 **金额断言不可省**——只断言 comp_data 非空会让半修复态误判通过。
+🔧 **B 类必须同时断言 comp_data 从 0 变为非 0**——只断言"HTTP 200"或"无异常"通不过，`ensure-card-values` 空转同样返回 200。
+🚫 `quotation.updated_at` 不可作判据（写 comp_data 不更新主表时间戳，会得出"谁动过"的错误结论）。
 🚨 **执行脚本必须在网络层 abort 一切非 GET**（`RECORD.md` 2026-08-28 事故：诊断脚本触发自发 `PUT /draft` 清空 1845 行卡片值，恢复时还撞了 60s reaper）。
-🚨 步骤①是写操作，执行前先报影响面数字给主线（`CLAUDE.md §3.2`）。
+🚨 A 类步骤①是写操作，执行前先报影响面数字给主线（`CLAUDE.md §3.2`）。
 
 ### T-14　自检证据（AC-11）
 后端编译 0 错误 + 相关用例全绿 + `/api/cpq/components` 返 401；

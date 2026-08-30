@@ -92,6 +92,11 @@ public class CreateQuotationMaterializer {
         try {
             snapshotService.snapshotQuotation(qid);          // ① 展开 driver → UPSERT 自建 componentData 行 + snapshot_rows
             long t1 = System.currentTimeMillis();
+            // repair-260829 B-4：① 步空转的结果校验——异步上下文异常等原因导致①步实际空转时
+            // （典型症状：本次缺陷本身），此前没有任何信号，②③④在空数据上"成功"跑完、
+            // [create-quotation-timing] 四步全绿掩盖了故障。命中三元判据则往 warnings 追加
+            // 明确文案 + 打 ERROR 日志，不改变既有"不丢单"降级纪律（不上抛、不回滚）。
+            checkMaterializeOutcome(r, qid);
             cardSnapshotService.ensureStructure(qid);        // ② 4 份结构快照（幂等）
             long t2 = System.currentTimeMillis();
             // ③ 整单批量算 quote/costing 卡片值（核价树 render 一次批量，无 N+1；D-4 内部按 chunk
@@ -151,6 +156,65 @@ public class CreateQuotationMaterializer {
             LOG.errorf(e, "[create-quotation] 后置物化失败 quotation=%s 耗时=%dms（不丢单，前端 warm 兜底）",
                 qid, (tErr - t0));
         }
+    }
+
+    /**
+     * ① 步空转的结果校验（B-4，repair-260829）：满足三元判据 —— {@code 明细行数>0 且
+     * driver 组件数>0 且 comp_data 行数==0} —— 时判定为"①步空转"，往 {@code r.warnings}
+     * 追加明确文案并打 **ERROR** 级日志（区别于既有 WARN 级降级日志，便于监控告警区分）。
+     *
+     * <p>🚨 {@code driver 组件数>0} 这一维不可省：少了它无法区分「① 步炸了」（故障，要报）
+     * 与「模板本来就挂 0 个 driver 组件」（合法，两者终态都是 {@code comp_data==0}）。
+     * 三种合法边界（AC-8）都不会命中本判据：明细行 0 条 / driver 组件 0 个 / 组件视图合法
+     * 返 0 行（此时 comp_data **行存在**，只是 {@code snapshot_rows='[]'}，行数≠0）。
+     *
+     * <p>不改 {@link ConfigureSnapshotService#snapshotQuotation} 的签名（5 个调用点）——
+     * 本方法是纯粹的**结果校验**（跑完之后查一次库比对三个数字），不关心①步内部是抛异常
+     * 还是静默降级，覆盖面比"改签名往外抛异常"更全（问题说明.md ⑤ 改动 2 的对比表）。
+     *
+     * <p>抽成独立方法（未与 {@link #materialize} 的 fire-and-forget 耦合），供直接传入
+     * 已知三个数字单测判据本身（{@link #isEmptyOutcome}），或直接构造 DB 状态调用本方法
+     * 验证查库 + 副作用（不必依赖真实驱动展开产出数据，那条路径在测试 fixture 下会撞
+     * {@code TemplateNotFrozenException}，见 test-report.md 记录）。
+     *
+     * <p>N+1 自检：三条 {@code count(*)} 各一次（明细行数 / driver 组件数 / comp_data 行数），
+     * SQL 条数恒为 3，与明细行数、组件数无关。
+     */
+    void checkMaterializeOutcome(V6QuotationCommitService.CommitResult r, UUID qid) {
+        long[] counts = new long[3];
+        QuarkusTransaction.run(() -> {
+            counts[0] = countLineItems(qid);
+            counts[1] = snapshotService.loadDriverComponents(qid).size();
+            counts[2] = countCompData(qid);
+        });
+        if (isEmptyOutcome(counts[0], counts[1], counts[2])) {
+            String msg = String.format(
+                "组件数据 0 行：明细行数=%d、driver 组件数=%d，但 quotation_line_component_data 为空 —— " +
+                "① 步物化疑似空转（如异步上下文异常），请人工核查或重跑 ensure-card-values",
+                counts[0], counts[1]);
+            r.warnings.add(msg);
+            LOG.errorf("[create-quotation] quotation=%s %s", qid, msg);
+        }
+    }
+
+    /** 纯逻辑判据（无副作用、无查库），便于直接传入已知数字单测。 */
+    static boolean isEmptyOutcome(long lineItemCount, long driverComponentCount, long compDataCount) {
+        return lineItemCount > 0 && driverComponentCount > 0 && compDataCount == 0;
+    }
+
+    private long countLineItems(UUID qid) {
+        Number n = (Number) QuotationLineItem.getEntityManager().createNativeQuery(
+                "SELECT count(*) FROM quotation_line_item WHERE quotation_id = :q")
+                .setParameter("q", qid).getSingleResult();
+        return n.longValue();
+    }
+
+    private long countCompData(UUID qid) {
+        Number n = (Number) QuotationLineItem.getEntityManager().createNativeQuery(
+                "SELECT count(*) FROM quotation_line_component_data d " +
+                "JOIN quotation_line_item li ON li.id = d.line_item_id WHERE li.quotation_id = :q")
+                .setParameter("q", qid).getSingleResult();
+        return n.longValue();
     }
 
     /**
