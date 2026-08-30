@@ -469,7 +469,14 @@ public class QuotationService {
                     // dataDriverPath → 全空。兜底为报价单模板,保证每行都有模板 id、刷新必能 enrich。
                     li.templateId = liDraft.templateId != null ? liDraft.templateId : q.customerTemplateId;
                     if (liDraft.productAttributeValues != null) li.productAttributeValues = liDraft.productAttributeValues;
-                    if (liDraft.subtotal != null) li.subtotal = liDraft.subtotal;
+                    // repair-260829 B-9：数值相同就不赋值——库列 numeric(26,12)，前端发送 scale=6，
+                    // BigDecimal.equals() 比较 scale 会把数值相同但 scale 不同的值判脏，致
+                    // @DynamicUpdate 实体无法合批、逐行往返（问题说明.md ⑤ B-9 段）。写与不写落库
+                    // 结果一致，语义不变；liDraft.subtotal == null 时仍不动库里的值（AC-29）。
+                    if (liDraft.subtotal != null
+                            && (li.subtotal == null || li.subtotal.compareTo(liDraft.subtotal) != 0)) {
+                        li.subtotal = liDraft.subtotal;
+                    }
                     li.sortOrder = liDraft.sortOrder != null ? liDraft.sortOrder : i;
                     // V5 批量导入：productId 为空时，把前端送来的 partNo / name 直接写入 snapshot 列，
                     // 否则刷新后前端 li.productPartNo 永远为空，driver 展开失败 → BASIC_DATA 列全空。
@@ -2517,7 +2524,14 @@ public class QuotationService {
             li.productId = liDraft.productId;
             li.templateId = liDraft.templateId != null ? liDraft.templateId : q.customerTemplateId;
             if (liDraft.productAttributeValues != null) li.productAttributeValues = liDraft.productAttributeValues;
-            if (liDraft.subtotal != null) li.subtotal = liDraft.subtotal;
+            // repair-260829 B-9：数值相同就不赋值——库列 numeric(26,12)，前端发送 scale=6，
+            // BigDecimal.equals() 比较 scale 会把数值相同但 scale 不同的值判脏，致 @DynamicUpdate
+            // 实体（QuotationLineItem）无法合批、逐行往返（问题说明.md ⑤ B-9 段，1845 行 UPDATE ≈27s）。
+            // 写与不写落库结果一致，语义不变；liDraft.subtotal == null 时仍不动库里的值（AC-29）。
+            if (liDraft.subtotal != null
+                    && (li.subtotal == null || li.subtotal.compareTo(liDraft.subtotal) != 0)) {
+                li.subtotal = liDraft.subtotal;
+            }
             li.sortOrder = liDraft.sortOrder != null ? liDraft.sortOrder : i;
             if (liDraft.productPartNo != null && !liDraft.productPartNo.isBlank()) {
                 li.productPartNoSnapshot = liDraft.productPartNo;
