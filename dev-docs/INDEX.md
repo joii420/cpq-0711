@@ -62,10 +62,11 @@
 | `feat/quote-material-no` | 无 | **1 笔** | 🟡 悬挂（内容仅 `BACKLOG.md` +15 行零代码，技术债已转 [[BL-0175]]，见 §8.3） |
 | `fix/repair-260829-skeleton-lock` | `.claude/worktrees/repair-260829-skeleton-lock` | **0 笔**（建于 `cf76bb8e`） | 🔵 **开发中** —— `repair-260829-卡片值算早了骨架值锁死`，闸门 A 已放行（2026-08-29）。B-1 产物自检为主体，B-4 `MaterializeRegistry` 供并发会话消费 |
 
-**已全部并入 master、仅剩分支指针与 worktree 的（4 条，可清理）**：
+**已全部并入 master、仅剩分支指针与 worktree 的（5 条，可清理）**：
 
 | 分支 | worktree | 领先 master |
 |---|---|---|
+| `fix/repair-260830-element-price-pending` | ✅ **worktree 已移除**（2026-08-30） | 0 笔（merge `06d9182c`）· 分支指针待删 |
 | `fix/task-260825-materialize-n1` | `.claude/worktrees/task-260825-materialize-n1`（已不在列表） | 0 笔（merge `76c4b0ab`） |
 | `feat/task-260825-quote-frontend-paging` | `.claude/worktrees/task-260825-quote-frontend-paging` | 0 笔（merge `bef24579` / `a4410b09` / `8b15e806`） |
 | `feat/task-260819-sql-view-builder` | `.claude/worktrees/task-260819-sql-view-builder` | 0 笔 |
