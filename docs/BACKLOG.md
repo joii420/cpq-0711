@@ -19,9 +19,9 @@
 
 ### 基础资料导入 / pending 生命周期
 
-- [~] **报价单元素单价整列取不到（pending BOM 对取价函数不可见）**
+- [x] **报价单元素单价整列取不到（pending BOM 对取价函数不可见）**
   - 来源：`dev-docs/task-260729-客户价格调整策略和价格版本/repair-260830-元素单价pending不可见/问题说明.md`
-  - 状态：**立项中（2026-08-30）**，闸门 A0 已裁决方案乙，待闸门 A 放行
+  - 状态：**已交付合 master `06d9182c`（2026-08-30）**，待闸门 B 用户验收。方案乙（三参重载 + 改写器补参），15 个视图零改动、前端零改动、无 DROP FUNCTION
   - 根因：`f_material_element_price` 是数据库函数，`QuotePendingRewriter` 文本改写够不到其内部；函数内 `candidate_materials` 写死 `is_current = true` ⇒ pending 影子行的料号不进候选集
   - 影响：报价侧**所有核价未通过**（pending）报价单的元素单价。核价侧 / 已转正数据 / 老客户不受影响
   - 优先级：P0（现网 `QT-20260830-0211` 等单据金额缺失）
