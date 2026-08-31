@@ -1,0 +1,36 @@
+# B-2 探针：dev 库全部 15 个引用 f_material_element_price 的 ACTIVE 模板改写核对
+#
+# 方法：临时 @QuarkusTest 探针 TmpRealTemplateProbeTest（跑完已删除，不留在代码库里）。
+#       15 份 sql_template 从 dev 库 cpq_db_0724 只读导出（SELECT sql_template ...），
+#       逐个过 QuotePendingRewriter.rewrite() 后做文本断言：
+#         ① 正文（非注释行）里的 f_material_element_price( 调用数 == 补参后 (:customerCode, :priceBaseDate, :pq) 数
+#         ② 含 element_price 字样的注释行逐字未被改写
+#         ③ f_customer_element_price 未被误补参
+#
+# 执行时间：2026-08-30 18:35（worktree 内，cpq-backend/）
+# 结果：15/15 全部通过
+
+### 3b5ef529-e047-43bb-84a2-ac95805dc78d.sql 正文调用=1 补参后三参=1
+### 438baa89-f567-4502-9f9b-75be2ebb19fa.sql 正文调用=1 补参后三参=1
+### 6380735d-b826-4220-b113-4f1b5a079f59.sql 正文调用=1 补参后三参=1
+### 75809025-f83c-409e-bc04-9e83c3a36a17.sql 正文调用=1 补参后三参=1
+### 7de3a374-c4ab-4409-b37d-252b8147eb59.sql 正文调用=1 补参后三参=1
+### 83daf105-565d-40ff-bee3-fd028e4976ba.sql 正文调用=1 补参后三参=1
+### 8d7a7e81-de85-455b-b65b-49e12eaa1039.sql 正文调用=1 补参后三参=1
+### 8fb00326-8ee2-4731-beae-8a3c051341cf.sql 正文调用=1 补参后三参=1
+### a15f4d77-1bd7-4baf-b50a-8c707f269604.sql 正文调用=1 补参后三参=1
+### acad5ea4-a882-4698-83b4-10a3e1097f3e.sql 正文调用=1 补参后三参=1
+### c4b32561-aff7-480f-b62a-44ad2406996a.sql 正文调用=1 补参后三参=1
+### d9ef6fe1-7d18-4fe0-bc78-e2b880d49f0a.sql 正文调用=1 补参后三参=1
+### f271737b-e313-456e-ab29-41d48797337f.sql 正文调用=1 补参后三参=1
+### fbcbd795-fd29-4e2c-92e7-6d36456594ed.sql 正文调用=1 补参后三参=1   ← 正泰本单「材料成本」组件用的就是这张
+### fcfd825c-7d28-4213-a702-4dac38507882.sql 正文调用=1 补参后三参=1
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 9.048 s -- in com.cpq.datasource.sqlview.TmpRealTemplateProbeTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+
+# 补充：正泰 mc_view（fbcbd795）改写后的三行 element_price 相关文本实录 ——
+#   >>   -- 🔴 task-0729 / V369 起：料号级取价函数（报价侧.md §5.2.2）。旧的 f_customer_element_price
+#   >>   --    继续存在、但已降级为本函数内部的 fallback —— 新配/改配一律用 f_material_element_price，
+#   >>   LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate, :pq) cep
+#   两行注释里的函数名逐字未动（AC-10 ②），正文调用被补成三参（AC-10 ①）。

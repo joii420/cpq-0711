@@ -1,0 +1,27 @@
+### BL-11  AC-4 基线: 两张正泰单的 costing_card_values 整体 md5 (核价侧不注入 pending, 应逐字不变)
+QT-20260830-0210 | li=1845 | md5=2dfb9d8189ec3512c3b71b874a91b344
+QT-20260830-0211 | li=1845 | md5=97fcb03f7316c5fa8ed248ecbed15962
+
+### BL-12  AC-3 基线: 本单材料成本页签 按元素分布 (改动前)
+    elem     | rows | ?column? | ?column? 
+-------------+------+----------+----------
+ 白银        | 1713 | t        | f
+ 电解铜      |  903 | t        | f
+ 钨          |  449 | t        | f
+ 锌锭        |  428 | t        | f
+ 钢板        |  294 | t        | f
+ 镍          |  182 | t        | f
+ 线材        |  117 | t        | f
+ 锰          |   42 | t        | f
+ 铝锭        |   13 | t        | f
+ 锡          |    6 | t        | f
+ 坡莫合金-镍 |    4 | t        | f
+ 聚乙烯回料  |    2 | t        | f
+(12 rows)
+
+
+### BL-13  AC-12 基线: element 主表建档 + 行情覆盖情况
+ERROR:  column p.element_id does not exist
+LINE 3: ...FROM element_daily_price p JOIN element m ON m.id=p.element_...
+                                                             ^
+HINT:  Perhaps you meant to reference the column "m.element_no".
