@@ -1,0 +1,34 @@
+############ POST-FIX 测试库验证 (V397 已应用) ############
+
+===== T-2' (AC-2 等价): 三参传 Q1 → pending 料号必须取到价 =====
+ material_no  | element_code | unit_price 
+--------------+--------------+------------
+ ZZT-OFFICIAL | ZZT260830-AG | 12345.0000
+ ZZT-ONLY-Q1  | ZZT260830-AG | 12345.0000
+ ZZT-SHARED   | ZZT260830-AG | 12345.0000
+(3 rows)
+
+===== T-8 (AC-8): 跨单隔离 — Q1 视角 不得含 ZZT-ONLY-Q2 =====
+ has_own_pending_expect1 | has_shared_expect1 | has_official_expect1 | has_other_order_expect0 
+-------------------------+--------------------+----------------------+-------------------------
+                       1 |                  1 |                    1 |                       0
+(1 row)
+
+===== T-8 (AC-8): 跨单隔离 — Q2 视角 不得含 ZZT-ONLY-Q1 =====
+ has_own_pending_expect1 | has_shared_expect1 | has_official_expect1 | has_other_order_expect0 
+-------------------------+--------------------+----------------------+-------------------------
+                       1 |                  1 |                    1 |                       0
+(1 row)
+
+===== T-7 (AC-7): p_pq=NULL 退化 — 三参NULL ≡ 两参 =====
+ two_arg_rows | three_arg_null_rows | only_in_two_arg_expect0 | only_in_three_arg_expect0 
+--------------+---------------------+-------------------------+---------------------------
+           10 |                  10 |                       0 |                         0
+(1 row)
+
+===== T-7b (AC-7 非重言式): 三参NULL 的候选集 ≡ is_current-only 候选集 (口径出自 问题说明 4.2) =====
+ fn_materials | old_candidates | fn_extra_expect0 
+--------------+----------------+------------------
+           10 |             10 |                0
+(1 row)
+

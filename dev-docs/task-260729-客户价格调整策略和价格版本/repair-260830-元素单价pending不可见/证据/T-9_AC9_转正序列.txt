@@ -1,0 +1,40 @@
+############ T-9 (AC-9 序列AC): 转正前后元素单价 ############
+===== 步骤1  中间态: ZZT-ONLY-Q1 处于 pending，以 p_pq=Q1 调用 → 必须有价 =====
+ material_no | is_curr |                 pend                 
+-------------+---------+--------------------------------------
+ ZZT-ONLY-Q1 | f       | bbbbbbbb-0830-4830-8830-bbbbbbbb0830
+(1 row)
+
+ material_no | element_code | unit_price 
+-------------+--------------+------------
+ ZZT-ONLY-Q1 | ZZT260830-AG | 12345.0000
+(1 row)
+
+===== 步骤2  执行转正 (等同 QuoteBackfillService:116) — 仅测试库，命中 1+1 行 =====
+UPDATE 1
+UPDATE 1
+ material_no | is_current | pending_quotation_id 
+-------------+------------+----------------------
+ ZZT-ONLY-Q1 | t          | 
+(1 row)
+
+===== 步骤3  最终态A: 转正后仍以 p_pq=Q1 调用 → 必须仍有价 =====
+ material_no | element_code | unit_price 
+-------------+--------------+------------
+ ZZT-ONLY-Q1 | ZZT260830-AG | 12345.0000
+(1 row)
+
+===== 步骤4  最终态B: 以 p_pq=NULL 调用(模拟核价侧/冻结态) → 必须也有价 =====
+ material_no | element_code | unit_price 
+-------------+--------------+------------
+ ZZT-ONLY-Q1 | ZZT260830-AG | 12345.0000
+(1 row)
+
+===== 步骤5  还原为 pending (夹具复位) =====
+UPDATE 1
+UPDATE 1
+ material_no | is_current |         pending_quotation_id         
+-------------+------------+--------------------------------------
+ ZZT-ONLY-Q1 | f          | bbbbbbbb-0830-4830-8830-bbbbbbbb0830
+(1 row)
+
