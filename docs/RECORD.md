@@ -4,6 +4,25 @@
 
 ---
 
+[2026-08-31] 报价单编辑向导（repair-260830，路径 B 直接修复） - **「下一步」不再无条件整单回写草稿** | 涉及文件：`QuotationWizard.tsx`（两层保存闸 + 两个持久脏标记 + onSilentUpdate 置脏）、`draftPayloadDedup.ts`（新增 `headerDedupKey` / `lineItemsDedupKey` / `headerOnlyDraftPayload`）、新增 `draftPayloadDedup.headerLines.test.ts`（11 例）与 E2E `repair260830-next-no-redundant-draft.spec.ts`（TC-1/TC-2 成对）
+
+🔑 **根因**：`next()`（含 `prev()`）无条件 `handleSaveDraft(true)`，不判断数据有没有变。导入建单场景下后端已服务端建好 1845 行并花 97.5s 算完所有值（`[create-quotation-timing] ①snapshotQuotation=22676ms ②ensureStructure=399ms ③ensureCardValues=27257ms ④ensureExcelValues=47152ms 总计=97484ms`），用户点一下「下一步」就把它删掉重建：`[draft-profile] total=61184ms | S1.saveDraft=55530ms S2.snapshotRows=4913ms S3.priceReconcile=741ms`。**61.2s > `api.ts` 的 60s 超时 ⇒ 后端 22:41:30 其实存成功了、前端已掉头**，用户看到的是「保存失败」。且该 61s 不含 `QuotationResource:152` `awaitMaterializeIdle` 的排队时长。
+
+🛠 **修法（用户裁决：路径 B + 方案甲 + 单头单独轻量保存）**：`handleSaveDraft` 前置两层闸 —— ①脏标记：`dirtyLinesRef`/`dirtyHeaderRef`，只在保存成功后复位（🚫 不能复用 `userEditedRef`，它是**一次性消费**语义，`:382` autosave effect 读到即复位）；②内容去重：复用既有 `stableDraftDedupKey` 口径。只有单头变 ⇒ 发 `lineItems:null` 的轻量 payload。**后端零改动** —— `QuotationService.java:420` 本就是 `if (request.lineItems != null)`（块止于 `:701`），`validateDraftDecimals` 亦在 null 时直接 return。
+
+⚠️ **一个差点造成丢数据的连带**：Step3 的 `onSilentUpdate`（初始物化：给未设置的年用量落默认值 1 + `recomputeRow` 算原小计）走**程序化**通道不置脏，今天正是靠 `next()` 的无条件回写才落的库。加闸后必须让它置 `dirtyLinesRef`（**不**置 `userEditedRef`，保持不触发 autosave 的 Plan A 纪律）—— 否则用户在 Step3 什么都不改往下走，这些值永久不落库。两个 ref 语义本就不同：`userEditedRef` 答「该不该 autosave」，`dirtyLinesRef` 答「该不该保存」。
+
+🔬 **实测数据（本会话，8081 + `cpq_db_0724`）**：`getById` 单次 22s / 24.6MB，其中 **DB→后端传输 19.4s（86%）** —— `COPY BINARY` 搬同样两批数据 11.6s+7.7s，链路裸带宽仅 **1.74MB/s**、`ping` 32ms；`time_starttransfer` 22.5s vs 传输段 0.065s ⇒ 全在后端组装。**一个大请求会拖垮全站**：4 个并发大请求期间，0 行空单从 0.18s 劣化到 7.6~9.8s，20 次 SQL 往返 0.43s→26.0s，`ping` 32ms→878ms（缓冲区膨胀）。
+
+🚫 **两条被自己的实验证伪**：① 「`ensureCardValues` 的 22s 叠加造成 60s 超时」——**假**，实测该单 `quoteCardValues`/`costingCardValues` DTO 侧空值各 0，`shouldWarmCardValues` 恒 false，根本不走那条路；② 「前端 `JSON.parse` 24.6MB 是瓶颈」——**假**，实测 55ms。
+
+✅ **验证**：`tsc` 0 错误；单测 11/11；`quotation` 目录 501/501（`treeFormulaParityFixture.test.ts` 文件级失败系**夹具 `dev-docs/task-0803-.../fixtures/tree-formula-parity-cases.json` 从未提交**，`git ls-files` 为空、目录不存在，任何干净检出同此，非本次引入）；E2E `quotation-flow.spec.ts` **A/B 同型对比：改动前后同为 4 failed（144/463/522/624 同一批）⇒ 零回归**；专项 E2E TC-1（1845 行真实大单，零编辑点下一步）+ TC-2（只改单头 ⇒ 照发且 `lineItems===null`）双绿；**证伪实验**：闸改 `if (false && ...)` ⇒ TC-1 立刻变红「实际 1 条」。
+
+🤝 **并发协调**：`fix/repair-260829-f4` worktree 有裸奔 28 小时的未提交改动（101 行，物化期间禁用保存，防撞 `uq_qlcd_line_component` 409）。原会话已结束（`ListAgents` 无 CPQ 会话、文件 mtime 2026-08-29 18:45）。经用户裁决**代其提交到该分支保住工作**（`32213c15`，仅该一个文件，未跑自检、未合并）。它与本次是互补而非重复：F-4 解 409 冲突、本次解 61s 冗余；**合并 f4 时需人工收敛两套「何时不该发 saveDraft」的门控**。
+
+⚠️ **遗留（未做，建议登记 BACKLOG）**：① `ensure-card-values` 端点内部整跑一次 `getById` 返回 24.6MB（`QuotationResource.java:241`），实测 21.85s —— 卡片值缺失的单会踩；② `saveDraft` 返回完整 DTO ⇒ 即便走 `lineItems:null` 轻量路径仍要 37.7s（S1 18.8s 几乎全是组装返回体）；③ `treeFormulaParityFixture` 夹具缺失。
+
+
 [2026-08-07] task-0806 阶段⓪① test.md 60 条用例执行 + test-report.md 交付（cpq-tester，master 分支主工作区，不建 worktree）| 无代码改动，纯测试 | 46 PASS（直接执行+代码验证+逻辑推断三类方法学）/ 9 未执行(如实标注)/ 1 FAIL(判定文档缺陷非代码回归)/ 0 阻塞；后端全量 `2329 run/159F/403E/39Skip`（Failures 与基线 159 完全持平；Errors +10 逐条核查全部可归因于共享测试环境既有问题：246 个方法因大范围 401 失败且 `AuthResourceTest.loginWithValidCredentials` 自身都失败——证明是环境登录/会话问题非代码回归；其余为 `element_price_version` 既有脏数据毒化级联，与 K1 吻合）| **执行期二次夹具漂移**：技术总监在验证阶段又对本轮 DRAFT 夹具（`QT-20260806-0120`/lineItem `5aae535e-...`）追加 6 次编辑，全程按「动态取基线+自洽性断言」应对，未受影响（如 TC-210 用「手算各行材料成本之和=响应 subtotalByColumn」而非写死数值）| **新发现 3 个缺陷**：①**D-01（一般）** 非DRAFT 报价单编辑区 `<input>` 未 disabled/readOnly，用户可打字，PUT 被 400 拒绝后前端 `handleSnapshotCellEdit` 的 `catch{}` 静默吞错既不回滚显示值也不提示只读，与 `api.md`「显示只读提示」承诺不符（经 `git diff 286def1c^..286def1c` 核实该 catch{} 吞错语义阶段①之前就存在，非本次回归，是文档契约描述超前于实现）；②**D-02（一般，当前被掩盖）** 阶段⓪ D13"三载体审计=0风险"漏了第4类消费者——`ComponentResourceTest.java` 5 处 fixture 用了裸 `"field_type":"INPUT"`（第53/54/84/86/87/144行），白名单收窄后本应 400，本次因前述大范围 401 环境问题被提前拦截而暂不可见，环境问题解除后会现出 4 个"看似新增实则阶段⓪遗留"的假回归，建议尽快把 fixture 改成 `INPUT_TEXT`/`INPUT_NUMBER`；③**D-03（轻微，文档缺陷）** `api.md` API-1 错误码表声称 lineItem 不存在返回 404，实测统一走 400（`QuotationResource.editQuoteCardValue` 从未做 404/400 区分，属既有行为，api.md 本身也自述该端点"后端零改动"，纯粹是文档写超前于实现）| **正向验证要点**：AC-1 DOM 更新 10ms 远早于人为延迟 2500ms 的 PUT 响应（真验证"前端引擎优先"非"网络快的错觉"）；AC-3 对账 tooltip 含前后端值+双方输入摘要，reconcile-report 请求体 8 字段齐全；AC-4 409 Drawer（非 Modal，class=`.ant-drawer`）截图证据完整，D15 last-write-wins 两变体（先报后提交=409 / 先提交后报=200）均验证通过；TC-210 (BL-0127 不复发) 行内值与列小计同一响应同步、数值自洽 | 用完的测试数据：7 份 DRAFT 报价单克隆已 DELETE，5 份因业务规则"仅 DRAFT 可删"无法清理（`QT-20260807-0129/0130/0133/0135/0136`，均 SUBMITTED，已登记非隐藏遗留）；7 个白名单测试组件 + 1 个 SQL 直接构造的非法 fixture 已全部清理，三载体计数回归 0；临时 SALES_REP 账号 `tmp_task0806_sales` 已置 INACTIVE（无 DELETE 端点，遵循库内既有 `fv0729_*` 惯例）；临时 E2E spec `tmp-task0806-edit-reconcile.spec.ts` 交付后删除（tmp- 前缀不作回归资产，验证内容已固化进 test-report.md 证据章节）| 涉及文件：仅 `dev-docs/task-260806-报价编辑链路优化与前后端对账/{test.md,test-report.md}` + 本条记录，零业务代码改动 | 详见 `dev-docs/task-260806-报价编辑链路优化与前后端对账/test-report.md`
 
 ---

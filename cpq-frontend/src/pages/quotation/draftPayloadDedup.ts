@@ -15,6 +15,40 @@
  * 注:编辑失焦 autosave 已关闭(EDIT_AUTOSAVE_ENABLED=false),autoSaveDraft 仅由导入首存触发,
  * 故剔除 rowData(含用户编辑值)用于去重不会漏存用户编辑——手动「保存草稿」走 handleSaveDraft 全量发。
  */
+/**
+ * repair-260830：把 payload 降级成「只改单头、不动明细行」的轻量版本。
+ *
+ * 后端 `QuotationService.saveDraft` 对单头字段是 patch 语义（逐个 `!= null` 才覆盖），
+ * 而明细行整块包在 `if (request.lineItems != null)` 里（:420，块止于 :701）——
+ * 传 `lineItems: null` 即整块跳过，`validateDraftDecimals` 也在 `lineItems == null` 时直接 return。
+ * 已实测：对 1845 行的单发 `{}`，行 id 指纹与 componentData 指纹逐字节不变。
+ *
+ * 用途：用户只改了单头（客户 / 项目名 / 有效期…）就切步骤时，不该把 1845 行明细全删全建一遍。
+ */
+export function headerOnlyDraftPayload(payload: any): any {
+  if (!payload) return payload;
+  return { ...payload, lineItems: null };
+}
+
+/**
+ * 只反映「单头字段」的去重键 —— 剔除 lineItems 后的稳定序列化。
+ * 与 {@link lineItemsDedupKey} 配对使用，用来区分「改了单头」和「改了明细」两种脏。
+ */
+export function headerDedupKey(payload: any): string {
+  if (!payload) return '';
+  const { lineItems: _omit, ...header } = payload;
+  return JSON.stringify(header);
+}
+
+/**
+ * 只反映「明细行」的去重键 —— 复用 {@link stableDraftDedupKey} 的派生字段剔除口径
+ * （id / subtotal / quoteExcelValues / rowData 都不算用户输入），只是丢掉单头部分。
+ */
+export function lineItemsDedupKey(payload: any): string {
+  if (!payload || !Array.isArray(payload.lineItems)) return '';
+  return stableDraftDedupKey({ lineItems: payload.lineItems });
+}
+
 export function stableDraftDedupKey(payload: any): string {
   if (!payload) return '';
   const stable = {

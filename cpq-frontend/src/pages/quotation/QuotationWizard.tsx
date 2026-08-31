@@ -23,7 +23,12 @@ import { ZH_PAGINATION_LOCALE } from './PagingBar';
 import { PAGE_SIZE_OPTIONS, DEFAULT_PAGE_SIZE } from './usePagedSearch';
 import { useDriverExpansions, driverExpansionKey, bnfDriverLookupKey, fieldsOverrideHash } from './useDriverExpansions';
 import { safeSetLocalDraft } from './draftCache';
-import { stableDraftDedupKey } from './draftPayloadDedup';
+import {
+  stableDraftDedupKey,
+  headerDedupKey,
+  lineItemsDedupKey,
+  headerOnlyDraftPayload,
+} from './draftPayloadDedup';
 import { isKeyUnset, rowsHaveUserData } from './keyPresenceAuthority';
 import AddProductModal from './AddProductModal';
 import ConfigureProductDrawer from './ConfigureProductDrawer';
@@ -267,6 +272,11 @@ const QuotationWizard: React.FC = () => {
   //   ③ 手动「保存草稿」按钮 / 步骤切换 / 提交。
   // 保留 autoSaveDraft 函数 + ref 供 ①/手动复用；仅删除定时器。
   const lastSaveRef = useRef<string>('');
+  // repair-260830:上次成功保存时的「明细」/「单头」两条内容基线,配合 dirtyLinesRef/dirtyHeaderRef
+  //   构成 handleSaveDraft 的两层闸(见其内注释)。与 lastSaveRef 并存而不替代它 —— 后者是
+  //   autoSaveDraft 的整体去重键,口径不同,混用会让两条路径互相顶掉对方的基线。
+  const lastLinesKeyRef = useRef<string>('');
+  const lastHeaderKeyRef = useRef<string>('');
   // 自动保存死循环修复(方案 B):syncingRef 切断 saveDraft 回填 → lineItems effect → 再次调度保存的反馈环。
   //   syncLineItemsFromResponse 调用前置位 true;监听 lineItems 的 effect 读到 true 即消费复位并 return,
   //   不再调度保存。用户真实编辑直接调 scheduleAutoSave 或走不同路径,syncingRef 始终为 false,不受影响。
@@ -319,10 +329,18 @@ const QuotationWizard: React.FC = () => {
   //   打开 / enrich / saveDraft 响应回填等所有程序化 setLineItems 走原始 setLineItems,不置位 → 不 autosave。
   //   表单头部字段编辑走独立的 onValuesChange→scheduleAutoSave 路径(不经此 effect),不受影响。
   const userEditedRef = useRef(false);
+  // repair-260830:「自上次成功保存以来有没有用户编辑」的持久脏标记。
+  //   🚫 不能复用 userEditedRef —— 它是**一次性消费**语义(:382 autosave effect 读到即复位),
+  //   读完就没了,问不出「这一整段时间里用户到底改没改」。故另立两个只在保存成功后才复位的 ref。
+  //   分明细 / 单头两路,是因为后端 saveDraft 对二者的代价差了两个数量级:
+  //     单头 = 逐字段 patch;明细 = 子表全删全建(1845 行实测 55.5s,QuotationService.java:2289-2291)。
+  const dirtyLinesRef = useRef(false);
+  const dirtyHeaderRef = useRef(false);
   // 用户编辑专用 setter:置位 userEditedRef 后再改 lineItems,使 autosave effect 放行本次变化。
   // 子组件(Step2/Step3/各 Drawer)的 lineItems 写入一律走它;程序化写入仍用原始 setLineItems。
   const setLineItemsByUser = useCallback((update: Parameters<typeof setLineItems>[0]) => {
     userEditedRef.current = true;
+    dirtyLinesRef.current = true;
     setLineItems(update);
   }, []);
 
@@ -393,6 +411,10 @@ const QuotationWizard: React.FC = () => {
   const applyQuotationData = (q: any) => {
     // Plan A:打开/加载一律从"默认拒绝"起步,清掉可能残留的用户编辑标记(防跨报价单泄漏 → 打开误存)。
     userEditedRef.current = false;
+    // repair-260830:同理复位两个持久脏标记 —— 刚从后端读回来的数据,前端手上这份就是库里那份,
+    //   此刻回写它没有任何意义(这正是「导入后点下一步白等 61 秒」的成因)。跨单切换也靠这里防串。
+    dirtyLinesRef.current = false;
+    dirtyHeaderRef.current = false;
     setQuotation(q);
     setQuotationId(q.id);
     form.setFieldsValue({
@@ -849,6 +871,12 @@ const QuotationWizard: React.FC = () => {
       if (dedupKey === lastSaveRef.current) return;
       lastSaveRef.current = dedupKey;
       const res = await quotationService.saveDraft(quotationId, payload);
+      // repair-260830:本路径整单发出后,两条基线与脏标记一并归零 —— 否则紧随其后的
+      //   handleSaveDraft(如导入首存后用户马上点「下一步」)会拿着过期基线判"变了"而再发一次。
+      dirtyLinesRef.current = false;
+      dirtyHeaderRef.current = false;
+      lastLinesKeyRef.current = lineItemsDedupKey(payload);
+      lastHeaderKeyRef.current = headerDedupKey(payload);
       // BUMP 后端把新 partVersionLocked 写入 DB，前端本地 state 需同步回填，
       // 避免「卡片版本号停在旧值直到强刷」的 UX 漂移；同时回填重建后的新行 id，
       // 触发 driver 展开按新 id 重拉 → 导入工序等按行快照无需刷新即出现。
@@ -1335,7 +1363,33 @@ const QuotationWizard: React.FC = () => {
       const values = form.getFieldsValue();
       // 与 autoSaveDraft 同口径:规范化数值后再 PUT/落 localStorage,避免手动/自动保存写库精度不一致
       const payload = normalizeDraftPayloadDecimals(buildDraftPayload(values));
-      const res = await quotationService.saveDraft(quotationId, payload);
+      // ── repair-260830:两层「不该发就别发」闸 ────────────────────────────────
+      // 病灶:next()/prev() 无条件整单回写。导入建单场景下后端刚服务端建好 1845 行并花 97s
+      //   算完所有值,用户点一下「下一步」就把它删掉重建一遍(实测 total=61184ms > 前端 60s
+      //   超时 ⇒ 数据其实存成功了但前端已掉头,用户看到的是"保存失败")。
+      // 第一层(脏标记):没有任何用户编辑 ⇒ 前端这份就是刚从后端读回来的那份,回写是纯冗余。
+      //   为什么不能只靠第二层:打开后的 enrich 是**程序化**改 lineItems(不置脏),但它确实会
+      //   改变 payload 的字节 ⇒ 纯内容比对会判"变了"而照发,恰好在本次要修的场景下失效。
+      // 第二层(内容去重):有编辑但内容与上次保存完全相同(改了又改回去)⇒ 同样不必发。
+      //   复用 autoSaveDraft 既有的 stableDraftDedupKey 口径(剔除 id/subtotal/rowData 等派生字段)。
+      const linesKey = lineItemsDedupKey(payload);
+      const headerKey = headerDedupKey(payload);
+      const linesDirty = dirtyLinesRef.current && linesKey !== lastLinesKeyRef.current;
+      const headerDirty = dirtyHeaderRef.current && headerKey !== lastHeaderKeyRef.current;
+      if (!linesDirty && !headerDirty) {
+        if (!silent) message.success('无改动，无需保存');
+        return;   // finally 里照常复位 savingRef / 关提示
+      }
+      // 只有单头变了 ⇒ 传 lineItems:null,后端整块跳过明细行(QuotationService.java:420,
+      //   块止于 :701;validateDraftDecimals 亦在 null 时直接 return)。已实测:对 1845 行的单
+      //   发该形状,行 id 指纹与 componentData 指纹逐字节不变。
+      const effectivePayload = linesDirty ? payload : headerOnlyDraftPayload(payload);
+      const res = await quotationService.saveDraft(quotationId, effectivePayload);
+      // 保存成功 ⇒ 脏标记归零 + 登记两条基线,供下次比对。
+      dirtyLinesRef.current = false;
+      dirtyHeaderRef.current = false;
+      lastLinesKeyRef.current = linesKey;
+      lastHeaderKeyRef.current = headerKey;
       // P0:与 autoSaveDraft 同口径登记去重键,使 finally 的 pendingSaveRef 补发(用户输入未变时)被去重,
       //   不再因首存回填快照翻转模式而多发一次 PUT。
       lastSaveRef.current = stableDraftDedupKey(payload);
@@ -1856,7 +1910,15 @@ const QuotationWizard: React.FC = () => {
       customerId={customerIdValue}
       onUpdate={(updater) => setLineItemsByUser(prev => updater(prev))}
       // 初始物化专用通道：程序化 setLineItems（不置 userEditedRef → 不触发 autosave，Plan A）
-      onSilentUpdate={(updater) => setLineItems(prev => updater(prev))}
+      // repair-260830:但**要置 dirtyLinesRef** —— 这里写的是真数据(未设置的年用量落默认值 1、
+      //   recomputeRow 算出的原小计),今天靠 next()/提交的无条件回写才落的库。加了保存闸之后,
+      //   不置脏 = 用户在 Step3 什么都不改就往下走 ⇒ 这些值永久不落库(真丢数据)。
+      //   两个 ref 语义本就不同:userEditedRef 答「该不该 autosave」,dirtyLinesRef 答「该不该保存」。
+      //   重复进入 Step3 时 updater 多半算出同样的值 ⇒ 由第二层内容去重兜住,不会白发一次。
+      onSilentUpdate={(updater) => {
+        dirtyLinesRef.current = true;
+        setLineItems(prev => updater(prev));
+      }}
       globalVariableDefs={gvDefs}
     />
   );
@@ -2059,7 +2121,12 @@ const QuotationWizard: React.FC = () => {
         <Form
           form={form}
           layout="vertical"
-          onValuesChange={() => scheduleAutoSave()}
+          onValuesChange={() => {
+            // repair-260830:单头脏标记。antd 的 onValuesChange 只在**用户交互**时触发,
+            //   applyQuotationData 里的 form.setFieldsValue 不触发 → 打开单据不会误置脏。
+            dirtyHeaderRef.current = true;
+            scheduleAutoSave();
+          }}
           initialValues={{
             quoteType: 'STANDARD',
             priority: 'MEDIUM',
