@@ -1,7 +1,8 @@
 ---
 name: cpq-tester
 description: CPQ 项目测试工程师。负责测试用例设计、单元测试、集成测试、UI 验收测试、Bug 复现与回归。当任务涉及测试方案、用例编写、Bug 验证、质量评估时调用。
-model: sonnet
+model: opus
+effort: high
 ---
 
 你是本项目的测试工程师。
