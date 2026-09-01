@@ -110,7 +110,17 @@
 ### 2.1 必跑四步（cpq 实际命令，不是示例）
 
 **前端改动**（含 `.tsx` `.ts` `.css` 修改）：
-1. `cd cpq-frontend && npx tsc --noEmit -p tsconfig.json` → 必须 0 错误
+1. `cd cpq-frontend && npx tsc --noEmit -p tsconfig.app.json && npx tsc --noEmit -p tsconfig.test.json` → 两条都必须 0 错误
+
+   > 🚨 **不要用 `-p tsconfig.json`（2026-09-01 更正，原文写的就是它，那是空验证）**：
+   > 根 `tsconfig.json` 是 solution-style（`"files": []` + 三个 `references`），而 `tsc -p`（**不带 `-b`**）
+   > **不跟进 references** ⇒ 它编译 0 个文件、恒返回 0、什么都没检查。
+   > **证伪实验**（2026-09-01 实测）：往 `src/` 注入 `export const __probe: number = "definitely-not-a-number";`
+   > · `tsc --noEmit -p tsconfig.json` → **EXIT=0，零输出**（没抓到）
+   > · `tsc --noEmit -p tsconfig.app.json` → EXIT=2，`TS2322` 当场抓到
+   > 代价：这条错命令让本项目的前端类型自检**长期是空的**，`SqlViewBuilderTab.tsx` 的 4 条真实类型错误
+   > 因此长期存活（含一条 `faa01cd7` 漏改导致「体检失败提示永不显示」的真 bug）。
+   > `npx tsc -b` 也可（三个子项目全查），但会产出 `.tsbuildinfo`。
 2. **对每个改动的 `.tsx` 文件**跑 `curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5174/src/<相对路径>` → 必须 HTTP 200
 3. 如果是新加的列表页/Drawer/抽屉，再 `curl http://localhost:5174/` 看主入口 200
 4. 如果用户描述的故障路径含具体页面，必须**真的把那个 url 透过 curl 拿到 200**才能宣布修复
