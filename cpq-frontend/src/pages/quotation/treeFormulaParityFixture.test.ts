@@ -16,7 +16,7 @@ import {
  * "同一份输入，两套独立实现算出的数是否逐位相同"。
  *
  * 本测试与后端 TreeFormulaParityFixtureTest 读取**同一个物理文件**（不复制）：
- *   dev-docs/task-0803-BOM页签增加父子取值公式/fixtures/tree-formula-parity-cases.json
+ *   dev-docs/task-260803-BOM页签增加父子取值公式/fixtures/tree-formula-parity-cases.json
  * 改一处夹具，两端测试同步生效；找不到文件直接抛错（fail-fast，不静默跳过）。
  */
 
@@ -56,7 +56,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = findRepoRoot(__dirname);
 const fixturePath = path.join(
-  repoRoot, 'dev-docs', 'task-0803-BOM页签增加父子取值公式', 'fixtures', 'tree-formula-parity-cases.json',
+  repoRoot, 'dev-docs', 'task-260803-BOM页签增加父子取值公式', 'fixtures', 'tree-formula-parity-cases.json',
 );
 
 if (!fs.existsSync(fixturePath)) {
