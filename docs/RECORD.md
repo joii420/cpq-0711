@@ -4,6 +4,20 @@
 
 ---
 
+[2026-09-01] 组件管理 · 字段配置表格（路径 B 直接修复） - **移除 [小数位数] [宽度] [排序] 三列 + 加宽 [字段名]** | 涉及文件：`cpq-frontend/src/pages/component/FieldConfigTable.tsx`（唯一改动文件，7 增 92 删）
+
+🎯 **用户诉求**：「只是从页面上先移除列，宽度功能保留」—— 收掉 UI 编辑入口，**不动数据层**。
+
+🔑 **三列各自的性质不同，不能一把梭**：①「排序」是 ↑↓ 按钮，属**冗余入口** —— 第一列的 `DragHandle` + `SortableTable.onReorder` 已提供拖拽排序，删掉零功能损失，连带删除仅它使用的 `moveField()`；②「宽度」「小数位数」是**真实功能入口**，`width` 仍被 `QuotationStep2.tsx:3283` / `ReadonlyProductCard.tsx:635` 经 `resolveFieldWidth` 消费，`decimals` 仍被 `ComponentCell.tsx` / `enrichComponentData.ts` 消费 ⇒ 删的只是编辑能力，存量值照常渲染。
+
+✅ **「宽度功能保留」的验证依据**（不是推断，是查过链路）：`ComponentManagement.tsx:1165` 保存走 `fields: s.fields` **整体透传、无白名单裁剪**，`width`/`decimals` 仍在 `FieldItem`（`types.ts:187/189`）上原样往返；`newFieldRow()` 本来就不设这两个字段 ⇒ 新建字段落 `DEFAULT_FIELD_WIDTH=120`，**与改动前"不填"的行为逐字一致**。宽度预览区块按用户裁定保留。
+
+⚠️ **「加宽」踩到的真坑（值得记住）**：只给列对象加 `width: 220` **完全无效** —— `SortableTable` 未设 `scroll.x`，antd 走 `table-layout:auto`，列上的 `width` 只是建议，空间被内容最长的「内容/配置」列吃掉。真机实测字段名列**反而被压到 32px、表头竖排成「字/段/名」，比改动前更糟**。修法：在单元格 `Input` 上加 `style={{ minWidth: 190 }}`（内容撑列才是这张表里唯一生效的手段），实测 **32px → 206px**。🚫 只跑 `tsc` 不做真机亲验的话，这条会被当成"已完成"报出去。
+
+🧪 **验证**：`tsc --noEmit -p tsconfig.app.json` / `tsconfig.test.json` 双 0 错误；`vitest src/pages/component` 14 文件 298 例全绿；Playwright 真机亲验列头实测 `["","字段名","字段类型","内容/配置","金额","小计","行键","单位换算来源","备注",""]`。`FieldConfigTable.tsx` 在 `frontend.md §2.1-5` 的 E2E 强制名单内，**已 A/B 同型对照**：改动前后 `quotation-flow.spec.ts` 失败集合**逐条一致**（`:144` / `:463` / `:522` / `:624`）⇒ 非本次引入（`:624` 系 `PW_PRECISION_SEED_QUOTATION_NO` 未设）。
+
+🚨 **顺带发现的环境缺陷（未修，待裁决）**：`e2e/global-setup.ts:63` 注释写「与 playwright.config 的 `channel:'chrome'` 一致」，但 `playwright.config.ts` 里**根本没有 `channel`**。本机 Ubuntu 26.04 下 `npx playwright install chromium` 直接报 `Playwright does not support chromium on ubuntu26.04-x64` ⇒ **默认配置跑任何 E2E 都是空验证**：首轮 quotation-flow 报「4 failed」，实际 4 条全倒在 `browserType.launch: Executable doesn't exist`，**一个断言都没执行**，极易被误读成回归。本次靠临时 config 加 `use.channel='chrome'` 才拿到真结果（临时文件已删）。修法是给 `playwright.config.ts` 的 `use` 补一行 `channel: 'chrome'`，超出本次请求范围故未动。
+
 [2026-08-31] 报价单编辑向导（repair-260830，路径 B 直接修复） - **「下一步」不再无条件整单回写草稿** | 涉及文件：`QuotationWizard.tsx`（两层保存闸 + 两个持久脏标记 + onSilentUpdate 置脏）、`draftPayloadDedup.ts`（新增 `headerDedupKey` / `lineItemsDedupKey` / `headerOnlyDraftPayload`）、新增 `draftPayloadDedup.headerLines.test.ts`（11 例）与 E2E `repair260830-next-no-redundant-draft.spec.ts`（TC-1/TC-2 成对）
 
 🔑 **根因**：`next()`（含 `prev()`）无条件 `handleSaveDraft(true)`，不判断数据有没有变。导入建单场景下后端已服务端建好 1845 行并花 97.5s 算完所有值（`[create-quotation-timing] ①snapshotQuotation=22676ms ②ensureStructure=399ms ③ensureCardValues=27257ms ④ensureExcelValues=47152ms 总计=97484ms`），用户点一下「下一步」就把它删掉重建：`[draft-profile] total=61184ms | S1.saveDraft=55530ms S2.snapshotRows=4913ms S3.priceReconcile=741ms`。**61.2s > `api.ts` 的 60s 超时 ⇒ 后端 22:41:30 其实存成功了、前端已掉头**，用户看到的是「保存失败」。且该 61s 不含 `QuotationResource:152` `awaitMaterializeIdle` 的排队时长。
