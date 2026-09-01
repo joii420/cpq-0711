@@ -12,6 +12,16 @@ export default defineConfig({
   use: {
     baseURL,
     trace: 'retain-on-failure',
+    // 🚨 必须走系统 google-chrome，不能用 Playwright 自带 chromium。
+    // 本项目开发机是 Ubuntu 26.04，`npx playwright install chromium` 直接拒绝：
+    //   "Playwright does not support chromium on ubuntu26.04-x64"
+    // ⇒ 自带的 chrome-headless-shell 根本装不上，不设 channel 时每个用例都倒在
+    //   "browserType.launch: Executable doesn't exist at .../chrome-headless-shell"。
+    // 那种失败**长得和业务回归一模一样**（报 N failed），但一个断言都没执行 ——
+    // 属于四类假绿里最隐蔽的一种：整套 E2E 是空验证，却看着像"跑过了"。
+    // `e2e/global-setup.ts` 的 chromium.launch 早已硬编码 channel:'chrome'，
+    // 这里补齐是与它对齐（2026-09-01 之前此处缺失，注释与实际不符）。
+    channel: 'chrome',
   },
   // 🚨 5174 是全会话共享的 dev server，测试绝不能重启或抢占它。
   // 仅在未显式指定 PW_BASE_URL（即目标就是默认共享的 5174）时才让 Playwright

@@ -16,7 +16,11 @@
 
 🧪 **验证**：`tsc --noEmit -p tsconfig.app.json` / `tsconfig.test.json` 双 0 错误；`vitest src/pages/component` 14 文件 298 例全绿；Playwright 真机亲验列头实测 `["","字段名","字段类型","内容/配置","金额","小计","行键","单位换算来源","备注",""]`。`FieldConfigTable.tsx` 在 `frontend.md §2.1-5` 的 E2E 强制名单内，**已 A/B 同型对照**：改动前后 `quotation-flow.spec.ts` 失败集合**逐条一致**（`:144` / `:463` / `:522` / `:624`）⇒ 非本次引入（`:624` 系 `PW_PRECISION_SEED_QUOTATION_NO` 未设）。
 
-🚨 **顺带发现的环境缺陷（未修，待裁决）**：`e2e/global-setup.ts:63` 注释写「与 playwright.config 的 `channel:'chrome'` 一致」，但 `playwright.config.ts` 里**根本没有 `channel`**。本机 Ubuntu 26.04 下 `npx playwright install chromium` 直接报 `Playwright does not support chromium on ubuntu26.04-x64` ⇒ **默认配置跑任何 E2E 都是空验证**：首轮 quotation-flow 报「4 failed」，实际 4 条全倒在 `browserType.launch: Executable doesn't exist`，**一个断言都没执行**，极易被误读成回归。本次靠临时 config 加 `use.channel='chrome'` 才拿到真结果（临时文件已删）。修法是给 `playwright.config.ts` 的 `use` 补一行 `channel: 'chrome'`，超出本次请求范围故未动。
+🚨 **顺带修掉的环境缺陷（用户裁决「加」，同批提交）**：`e2e/global-setup.ts:63` 注释写「与 playwright.config 的 `channel:'chrome'` 一致」，但 `playwright.config.ts` 的 `use` 里**根本没有 `channel`**。本项目开发机 Ubuntu 26.04 下 `npx playwright install chromium` 直接拒绝（`Playwright does not support chromium on ubuntu26.04-x64`），自带 chrome-headless-shell 装不上 ⇒ **默认配置跑任何 E2E 都是空验证**：本次首轮 quotation-flow 报「4 failed」，实际 4 条全倒在 `browserType.launch: Executable doesn't exist`，**一个断言都没执行**，长得和业务回归一模一样。修法 = `use` 补 `channel: 'chrome'`（与 global-setup 硬编码对齐）。
+
+🔬 **该修复的还原实验（证明干预真的生效，而非「改了没生效但恰好看着对」）**：同一条命令、同一套用例，唯一变量是这一行配置 —— **改前** `Executable doesn't exist` 命中 **4 次**（每个用例一次，零断言执行）；**改后**命中 **0 次**，失败集合仍是 `:144`/`:463`/`:522`/`:624` 但性质全变成业务断言（如 `必须显式设置 PW_PRECISION_SEED_QUOTATION_NO`）。⚠️ **影响面**：此后本仓 E2E 一律依赖系统 `/usr/bin/google-chrome`；没装 chrome 的环境需自行覆盖 channel。
+
+---
 
 [2026-08-31] 报价单编辑向导（repair-260830，路径 B 直接修复） - **「下一步」不再无条件整单回写草稿** | 涉及文件：`QuotationWizard.tsx`（两层保存闸 + 两个持久脏标记 + onSilentUpdate 置脏）、`draftPayloadDedup.ts`（新增 `headerDedupKey` / `lineItemsDedupKey` / `headerOnlyDraftPayload`）、新增 `draftPayloadDedup.headerLines.test.ts`（11 例）与 E2E `repair260830-next-no-redundant-draft.spec.ts`（TC-1/TC-2 成对）
 
