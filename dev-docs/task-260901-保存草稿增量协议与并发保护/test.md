@@ -15,6 +15,8 @@
 | 账号 | `admin` / `Admin@2026` |
 | 基准单 | 1845 行 DRAFT 单（如 `QT-20260901-0218`）。**用例执行前须确认其 `status='DRAFT'`、行数 1845** |
 
+🚨 **两张表在 dev 库全库 0 行（2026-09-01 SQL 实测）**：`quotation_line_process` / `quotation_line_composite_process` / `quotation_line_item_snapshot`。因此 AC-3 / AC-20 在 E2E 层的断言是 `0==0` 空跑，**权威判据已移到后端自建夹具测试**（用户 2026-09-01 裁决）。E2E 层保留观察但必须显式打印「本轮无分辨力」，不得让它冒充绿。
+
 🚨 **性能类用例（T-18）的执行前提**：确认**无其他大请求在跑**。实测证据（`证据/E4`）：4 个并发大请求期间，同一个 0 行空单的响应从 0.18 s 劣化到 9.8 s，`ping` 从 32 ms 涨到 878 ms。同码同数据曾测出 16 s 与 43 s 两种结果。**不满足该前提时测得的数字一律作废**。
 
 ---
@@ -25,12 +27,12 @@
 |---|---|---|---|
 | AC-1 | T-1 | E2E | Network 请求体 JSON（存档到 `证据/`） |
 | AC-2 | T-2 | E2E | 请求体 JSON + 库查询结果 |
-| AC-3 | T-3 | E2E + SQL | 四张表 count=0 的 SQL 输出 |
+| AC-3 | T-3 | **后端夹具**（权威）+ E2E（观察） | 后端：自建工序/组合工艺/快照数据后验删除；E2E：`quotation_line_item` + `quotation_line_component_data` count=0 且其它行未少 |
 | AC-4 | T-4 | E2E + SQL | 请求体三数组为空 + `n_tup_upd` 差值为 0 |
 | AC-5 | T-5 | E2E | 无 PUT 请求 + toast 文案截图 |
 | AC-6 | T-6 | SQL | 保存前后整表 md5 指纹对比 |
 | AC-7 | T-7 | SQL | `count(*) WHERE quote_card_values IS NULL` = 1 |
-| AC-8 | T-8 | 日志 | `[ensure-cardvalues] 补算 1 行` 日志原文 |
+| AC-8 | T-8 | SQL（可留存）+ 日志（可选第二路） | 保存后轮询 `quote_card_values IS NULL` 计数，**峰值为 1**（不是 1845）；日志 `[ensure-cardvalues] 补算 N 行` 仅作旁证。<br>📌 2026-09-01 改：原判据是共享 dev server 终端日志，不是可留存的证据形式 |
 | AC-9 | T-9 | 单元 | 断言输出 |
 | AC-10 | T-10 | 单元 | 断言输出 |
 | AC-11 | T-11 | 接口 | 两次响应的 `userDataVersion` |
@@ -38,11 +40,11 @@
 | AC-13 | T-13 | 集成 | 调用前后 `user_data_version` 相等 |
 | AC-14 | T-14 | 接口 | `quote-card-edit` 响应含 `userDataVersion` |
 | AC-15 | T-15 | E2E | Network 响应体大小 |
-| AC-16 | T-16 | 接口 | 响应 JSON 键集合 |
+| AC-16 | T-16 | 接口 | 响应 JSON 键集合。⚠️ **断言对象必须是 `modified` 行**（恰好 6 键）；`added` 行按 `api.md §1.3` 收敛表**带第 7 个键 `tempId`**，那是新行认领 id 的唯一手段，不得因本用例而删 |
 | AC-17 | T-17 | E2E + SQL | 第二次请求体的 id + 库中行数=1 |
 | AC-18 | T-18 | E2E | 三次计时，取最大值 |
 | AC-19 | T-19 | SQL + E2E | 核价空值行数对比 + 详情页截图 |
-| AC-20 | T-20 | SQL | 两张子表 count + 内容 md5 |
+| AC-20 | T-20 | **后端夹具**（权威）+ E2E（观察） | 后端：为若干行插入工序/组合工艺后保存，逐字节比对未改动行；E2E 层须显式打印「本轮无分辨力」（这两张表 dev 库全库 0 行） |
 | AC-21 | T-21 | E2E + SQL | `annual_volume=100` |
 | AC-22 | T-22 | E2E | 状态变更 + 总价一致 |
 | AC-23 | T-23 | E2E | 刷新后两处值截图 |
@@ -136,6 +138,6 @@ WHERE li.quotation_id = :qid;
 | 套件 | 已知既有失败（**非本次引入，判回归须 A/B 同型对比**） |
 |---|---|
 | `quotation-flow.spec.ts` | **恒 4 条失败**：`:144` LEGACY smoke、`:463` TC-F1、`:522` TC-F2、`:624` TC-075（缺 `PW_PRECISION_SEED_QUOTATION_NO` 环境变量）。2026-08-31 在干净 master 上 `git stash` 后实测同为这 4 条 |
-| `vitest src/pages/quotation/` | `treeFormulaParityFixture.test.ts` **文件级失败**：夹具 `dev-docs/task-0803-BOM页签增加父子取值公式/fixtures/tree-formula-parity-cases.json` 从未提交进 git（`git ls-files` 为空、目录不存在），任何干净检出同此 |
+| `vitest src/pages/quotation/` | ~~`treeFormulaParityFixture.test.ts` 文件级失败~~ **已于 2026-09-01 修复**（`a7e75820`）。<br>📌 **更正一条错误判断**：此前记为「夹具从未提交进 git」是**错的** —— 我当时用旧路径跑 `git ls-files`，路径本身就是旧的。真因是 commit `c1a1ecc1`（任务目录 4 位 MMDD → 6 位 YYMMDD，58 目录 + 447 处引用）漏改了该文件 `:59` 的硬编码路径，夹具文件一直在新路径下。修后该 suite **22 passed**，全量 `vitest run src` **98 files / 1180 tests 全绿**。<br>⇒ **本任务的前端单测基线是「全绿」**，出现任何红都要当成本次引入来查。 |
 
 🚫 **不许把这些既有失败当成本次引入**，也不许因为"反正本来就红"而跳过对比 —— 每次都要跑 A/B 确认失败**条目与数量**都没变化。

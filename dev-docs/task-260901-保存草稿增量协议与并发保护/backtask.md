@@ -72,7 +72,7 @@
 |---|---|---|
 | **B-4a** | AC-15, AC-16 | 新增 `SaveDraftResponse` DTO（**不复用 `QuotationDTO`**）：单头字段 + `userDataVersion` + `lineItems[]`，每个 line 只含 6 个字段（`id` / `partVersionLocked` / 4 份值快照）+ `tempId` 回传。**不含 `componentData`**。 |
 | **B-4b** | AC-15 | `saveDraft` 末尾的 `dto.lineItems = loadLineItems(id)` 替换为只查变化行的 6 个字段的轻量查询。<br>🔑 **这是那 18.8 秒的来源**：`loadLineItems` 要把 9225 条 componentData（9.3 MB）经 1.74 MB/s 的链路搬回、实体化、再序列化（证据 `E1` 场景 3）。 |
-| **B-4c** | AC-2, AC-17 | `added` 行的新 id 按 `tempId` 配对回传，**不按数组顺序**（避免重蹈下标耦合）。 |
+| **B-4c** | AC-2, AC-17 | `added` 行的新 id 按 `tempId` 配对回传，**不按数组顺序**（避免重蹈下标耦合）。<br>🚨 **`tempId` 只带在 `added` 行上**（7 键），`modified` 行**恰好 6 键、不带 `tempId`` —— 见 `api.md §1.3` 的收敛表。测试 T-16 断言的正是 `modified` 行的 6 键。两者原本冲突，2026-09-01 已按作用域收敛。 |
 
 ---
 

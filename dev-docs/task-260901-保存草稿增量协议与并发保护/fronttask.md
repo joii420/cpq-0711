@@ -10,7 +10,7 @@
 
 | 编号 | 服务的 AC | 内容 |
 |---|---|---|
-| **F-1a** | AC-1~AC-4 | 在 `QuotationWizard.tsx` 新增行级基线：保存成功后，为每一行记录一份内容指纹（`stableDraftDedupKey` 的单行版本，口径必须与它一致——剔除 `id`/`subtotal`/`quoteExcelValues`/`componentData[].rowData`/`componentData[].subtotal` 等派生字段）。 |
+| **F-1a** | AC-1~AC-4 | 在 `QuotationWizard.tsx` 新增行级基线：保存成功后，为每一行记录一份内容指纹。<br>🚨 **口径已于 2026-09-01 修正，不要照抄 `stableDraftDedupKey`**：<br>· `stableDraftDedupKey` 剔除 `componentData[].rowData` 是为了判断「**要不要发**」；行级 diff 要判断「**哪一行变了**」，目的不同、口径不能照搬。剔掉之后 componentData 只剩 `{componentId, tabName, sortOrder}`，**对单元格编辑完全盲** ⇒ AC-1 与 AC-10 双双**静默**失败（请求照发，只是那行永远不进 `modified`）。<br>· 但 `rowData` 也不能直接进指纹：它由 `snapshotRows()` 从 `driverExpansions` 重算，而 `useSnapAll` 在每次保存前后 live↔snapshot 翻转（`draftPayloadDedup.ts` 头注的三连发教训），同一份用户数据能算出不同字符串 ⇒ 1845 行整体涌进 `modified`。<br>· **正解**：指纹算在 **LineItem（React state）** 上，取两者的共同上游 `componentData[].rows` ＋ `deletedRowKeys`（删行墓碑）。<br>· **指纹不含 `sortOrder`** —— 含了则「删中间一行」会让其后 1844 行下标整体前移全判 modified，AC-3 要求此时 `modified` 为空。当前报价单无拖拽排序入口（只能追加/删除），删行后相对顺序不变，故安全；**将来若加「上移/下移产品」，此条必须重新评估**。 |
 | **F-1b** | AC-1~AC-3 | `buildDraftPayload` 产出改为三数组：<br>· `added` = 当前有、基线无（无 `id` 的行）<br>· `modified` = 基线有且指纹变了<br>· `removed` = 基线有、当前无（按 `id`）<br>三者皆空且单头未变 → 不发请求（沿用 `repair-260830` 已交付的两层闸，AC-5）。 |
 | **F-1c** | AC-1 | `sortOrder` 改为**显式传全局序号**（不再依赖数组下标，后端 B-2e 会校验缺失→400）。 |
 | **F-1d** | AC-2 | 组合产品父子：`tempParentIndex`（数组下标）→ `tempParentKey`（父行 `tempId`）或 `parentLineItemId`。二选一，与 `api.md §1.2` 一致。 |
