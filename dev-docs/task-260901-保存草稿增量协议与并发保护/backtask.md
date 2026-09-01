@@ -13,13 +13,31 @@
 
 ---
 
+## 🚨 总则：saveDraft 有两条路径，实跑的是 batch 那条 —— 每处都要改两遍
+
+`saveDraft` 顶部按 kill switch `cpq.savedraft-batch-stage1` 分流（`QuotationService.java:413`，**2026-06-26 起默认 `true`**）：
+
+- `true`（**实际运行的路径**）→ `processBatchStage1(...)`（`:2393~2828`）
+- `false`（逃生回落，`-Dcpq.savedraft-batch-stage1=false`）→ 原逐行路径（`:420~701`）
+
+**两条路径各有一份等价代码。只改一条 = 改了等于没改**，且单测若不显式切开关也测不出来。行号对照：
+
+| 关键点 | 逐行路径 | **batch 路径（实跑）** |
+|---|---|---|
+| 置 NULL 卡片值（B-1c） | `:520-521` | **`:2563-2564`** |
+| `cd.subtotal` 赋值（B-1b） | `:648` | **`:2647`（UPSERT 分支）/ `:2657`（新建分支）** |
+| `rowData` 赋值（B-1a） | `:647` 附近 | **`:2646`（UPSERT 分支）/ `:2656`（新建分支）** |
+| 删除未保留行（B-2b） | `:672-677` | **`:2474-2480`** |
+
+> 📌 本表由 B-0 调研发现主线原文档只标了逐行路径行号后补入（2026-09-01）。**以本表为准。**
+
 ## B-1 · 后端识别未变的行（①）
 
 | 编号 | 服务的 AC | 内容 |
 |---|---|---|
-| **B-1a** | AC-6, AC-9, AC-10 | `QuotationService.processBatchStage1` 的 componentData 循环（`:2637~2666`）：`reused.rowData = cdDraft.rowData` 改为**语义比对后再赋值** —— 用 `MAPPER.readTree(a).equals(MAPPER.readTree(b))` 判等，相等则不赋值。<br>🚨 **禁止用字符串比对**：库列是 jsonb，读回的是 PG 规范化文本（键按字节长度重排），与前端 `JSON.stringify` 必然不等 ⇒ 字符串比对会永远判「变了」，改了等于没改（证据 `E2`）。<br>解析失败 / 任一侧为 null → **按「已变」处理**（失败方向必须安全）。 |
-| **B-1b** | AC-6 | 同一处 `reused.subtotal = cdDraft.subtotal` 加 `compareTo` 保护，与 `QuotationService:477`/`:2532` 对 `li.subtotal` 的既有写法**保持一致**（`repair-260829 B-9` 漏修的同款）。 |
-| **B-1c** | AC-7, AC-8, AC-19, AC-21 | `QuotationService:520-521` 的 `li.quoteCardValues = null; li.costingCardValues = null;` 从**无条件**改为**有条件**：仅当该行满足下列任一才置 NULL —— ① 该行任一 componentData 的 `rowData` 经 B-1a 判定为已变；② `productAttributeValues` 变化；③ 该行走的是全删全建路径（非 B-6 UPSERT，即 `snapshot_rows` 确实被重建）；④ 该行是 `added` 新行。<br>🚨 **卡片值的完整依赖输入**（查实结果，判定条件不得少于此集合）：冻结结构 `quotation_view_structure` / `snapshot_rows` / `deleted_row_keys` / `row_data` / `deleted_tree_nodes` / `productAttributeValues`。其中 `saveDraft` 会改的只有 `row_data` 与 `productAttributeValues`（`deleted_tree_nodes` 经 grep 确认 saveDraft 主路径不写）。<br>⚠️ **核价侧不对称**：`buildCostingCardValues` **不读 `snapshot_rows`**，而是重新执行 SQL 视图展开（依赖外部 V6 基础数据），不幂等。跳过置 NULL 不会让它比现状更陈旧（现状也只在 saveDraft 时重算），但实施时须确认。 |
+| **B-1a** | AC-6, AC-9, AC-10 | `processBatchStage1` 的 componentData 循环（`:2637~2666`，UPSERT 分支 `:2646`／新建分支 `:2656`）**以及**逐行路径的等价位置：`reused.rowData = cdDraft.rowData` 改为**语义比对后再赋值** —— 用 `MAPPER.readTree(a).equals(MAPPER.readTree(b))` 判等，相等则不赋值。<br>🚨 **禁止用字符串比对**：库列是 jsonb，读回的是 PG 规范化文本（键按字节长度重排），与前端 `JSON.stringify` 必然不等 ⇒ 字符串比对会永远判「变了」，改了等于没改（证据 `E2`）。<br>解析失败 / 任一侧为 null → **按「已变」处理**（失败方向必须安全）。 |
+| **B-1b** | AC-6 | 同一处 `reused.subtotal = cdDraft.subtotal`（`:2647`／`:2657`／逐行 `:648`）加 `compareTo` 保护，与 `QuotationService:477`/`:2532` 对 `li.subtotal` 的既有写法**保持一致**（`repair-260829 B-9` 漏修的同款）。 |
+| **B-1c** | AC-7, AC-8, AC-19, AC-21 | `li.quoteCardValues = null; li.costingCardValues = null;`（**batch `:2563-2564`** + 逐行 `:520-521`，两处都改）从**无条件**改为**有条件**：仅当该行满足下列任一才置 NULL —— ① 该行任一 componentData 的 `rowData` 经 B-1a 判定为已变；② `productAttributeValues` 变化；③ 该行走的是全删全建路径（非 B-6 UPSERT，即 `snapshot_rows` 确实被重建）；④ 该行是 `added` 新行。<br>🚨 **卡片值的完整依赖输入**（查实结果，判定条件不得少于此集合）：冻结结构 `quotation_view_structure` / `snapshot_rows` / `deleted_row_keys` / `row_data` / `deleted_tree_nodes` / `productAttributeValues`。其中 `saveDraft` 会改的只有 `row_data` 与 `productAttributeValues`（`deleted_tree_nodes` 经 grep 确认 saveDraft 主路径不写）。<br>⚠️ **核价侧不对称**：`buildCostingCardValues` **不读 `snapshot_rows`**，而是重新执行 SQL 视图展开（依赖外部 V6 基础数据），不幂等。跳过置 NULL 不会让它比现状更陈旧（现状也只在 saveDraft 时重算），但实施时须确认。 |
 
 ---
 
@@ -28,7 +46,7 @@
 | 编号 | 服务的 AC | 内容 |
 |---|---|---|
 | **B-2a** | AC-1~AC-4 | `SaveDraftRequest` 改造：`lineItems` → `added[]` / `modified[]` / `removed[]` + `baseVersion`。`LineItemDraft` 内部字段不增删（见 `api.md §1.2`）。**保留 `lineItems` 字段一个版本周期做兼容**：非 null 时按旧全量语义处理并打 WARN，便于回滚。 |
-| **B-2b** | AC-3 | 删除语义从隐式改显式：`processBatchStage1` 中「删除 payload 未保留的旧行」（`:673`）改为**只删 `removed` 数组里的 id**。<br>🚨 这是本任务风险最高的一处：失败方向从「误删」反转为「删不掉」（静默残留）。必须有日志记录每次实际删除的 id 列表。 |
+| **B-2b** | AC-3 | 删除语义从隐式改显式：「删除 payload 未保留的旧行」（**batch `:2474-2480`** + 逐行 `:672-677`，两处都改）改为**只删 `removed` 数组里的 id**。<br>🚨 这是本任务风险最高的一处：失败方向从「误删」反转为「删不掉」（静默残留）。必须有日志记录每次实际删除的 id 列表。 |
 | **B-2c** | AC-1, AC-4 | 主循环只遍历 `added` + `modified`，不再遍历全量。`removed` 单独走批量删除。 |
 | **B-2d** | AC-4 | 总价改为从库聚合：原 `total = total.add(liDraft.subtotal)` 逐行累加 → 改为写入完成后 `SELECT sum(subtotal) FROM quotation_line_item WHERE quotation_id = ?`。 |
 | **B-2e** | AC-1 | `sortOrder` 不再回退 payload 下标（`:480` / `:2535` 的 `: i` 分支删除），改为必填校验：缺失 → 400。 |
@@ -40,7 +58,7 @@
 
 | 编号 | 服务的 AC | 内容 |
 |---|---|---|
-| **B-3a** | AC-11 | Flyway 迁移：`quotation` 加列 `user_data_version integer NOT NULL DEFAULT 0`。<br>⚠️ 迁移版本号是**移动靶**（多会话并发），建号前先 `ls cpq-backend/src/main/resources/db/migration/ \| tail`，且**已应用到共享库的迁移禁止改名改号**。 |
+| **B-3a** | AC-11 | Flyway 迁移：`quotation` 加列 `user_data_version integer NOT NULL DEFAULT 0`。<br>⚠️ **不要与既有 `row_version` 混淆**：`quotation_line_item` / `quotation_line_component_data` 已各有一列 `row_version bigint NOT NULL DEFAULT 0`（`V368__task0729_price_adjust_schema.sql:307-308`），那是 price-adjust 的**原生 SQL 乐观锁**，Hibernate 不映射它、也无触发器。🚫 **不许顺手把它改成 JPA `@Version`**——会让 price-adjust 既有写点全部失效。本期新增的是 `quotation.user_data_version`，与之无关。<br>⚠️ 迁移版本号是**移动靶**（多会话并发），建号前先 `ls cpq-backend/src/main/resources/db/migration/ \| tail`，且**已应用到共享库的迁移禁止改名改号**。 |
 | **B-3b** | AC-11, AC-12 | `saveDraft` 入口在悲观锁内校验 `baseVersion`：不等 → 抛 409 `STALE_VERSION` + `currentVersion`（响应体见 `api.md §1.4`）。校验必须在**任何写入之前**。 |
 | **B-3c** | AC-11 | 本次有实际写入时 `user_data_version = user_data_version + 1`，新值随响应返回。 |
 | **B-3d** | AC-14 | `CardSnapshotService.editCardValue`（`quote-card-edit`）同样递增版本号并在响应中回传。 |
