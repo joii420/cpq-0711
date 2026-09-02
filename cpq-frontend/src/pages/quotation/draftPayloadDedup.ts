@@ -24,6 +24,10 @@
  * 已实测：对 1845 行的单发 `{}`，行 id 指纹与 componentData 指纹逐字节不变。
  *
  * 用途：用户只改了单头（客户 / 项目名 / 有效期…）就切步骤时，不该把 1845 行明细全删全建一遍。
+ *
+ * ⚠️ task-260901 起 `QuotationWizard` **不再调用本函数**：增量协议下「只改单头」表达为
+ *   `added/modified/removed` 三个空数组（`api.md §1.2` / AC-4），不再靠 `lineItems: null`。
+ *   函数与其单测保留，作为后端兼容期（`backtask.md B-2a` 保留 `lineItems` 字段一个版本周期）的回滚手段。
  */
 export function headerOnlyDraftPayload(payload: any): any {
   if (!payload) return payload;

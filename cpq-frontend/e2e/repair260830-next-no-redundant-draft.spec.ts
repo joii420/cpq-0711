@@ -108,8 +108,14 @@ test('TC-2 只改单头再点「下一步」：照发，且必须是 lineItems=n
   expect(puts.length, '改了单头就必须发保存，否则是丢数据').toBeGreaterThan(0);
   const body = puts[0].postDataJSON();
   expect(body, 'PUT /draft 应带 JSON body').toBeTruthy();
-  // 核心：单头改动不得携带明细行。后端 QuotationService.java:420 判的是 `!= null`，
-  // 传 [] 会被当成「用户删光了所有行」，传整份则退回全删全建（1845 行实测 55.5s）。
-  expect(body.lineItems, '只改单头时 lineItems 必须是 null，不能是数组').toBeNull();
+  // 核心：单头改动不得携带明细行。
+  // ⚠️ 2026-09-01（task-260901）契约变更：请求体由「全量 lineItems」改为三数组
+  //    { baseVersion, added[], modified[], removed[] }，`lineItems` 字段已不存在。
+  //    本用例原断言 `body.lineItems === null`，在新协议下恒为 undefined 而必红 —— 那不是
+  //    行为退化，是断言过期。改为断言三数组皆空，语义与原来一致（且与 AC-4 同口径）。
+  //    🚫 不要为了让这条过而要求后端保留一个已废弃的 `lineItems: null` 字段。
+  expect(body.added, '只改单头时 added 必须为空数组').toEqual([]);
+  expect(body.modified, '只改单头时 modified 必须为空数组').toEqual([]);
+  expect(body.removed, '只改单头时 removed 必须为空数组').toEqual([]);
   expect(body.projectName, '单头字段本身要发出去').toContain('r260830-');
 });

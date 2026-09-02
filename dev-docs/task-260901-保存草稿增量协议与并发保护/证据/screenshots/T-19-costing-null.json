@@ -1,0 +1,12 @@
+{
+  "before": {
+    "quoteNull": 0,
+    "costingNull": 0,
+    "total": 1845
+  },
+  "after": {
+    "quoteNull": 1,
+    "costingNull": 1,
+    "total": 1845
+  }
+}

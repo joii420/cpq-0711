@@ -165,7 +165,7 @@ class SaveDraftMaterializeWaitTest {
         bg.start();
 
         long t0 = System.currentTimeMillis();
-        ApiResponse<QuotationDTO> resp = resource.saveDraft(qid, emptyDraftRequest());
+        ApiResponse<com.cpq.quotation.dto.SaveDraftResponse> resp = resource.saveDraft(qid, emptyDraftRequest());
         long elapsed = System.currentTimeMillis() - t0;
         bg.join();
 
@@ -185,7 +185,7 @@ class SaveDraftMaterializeWaitTest {
         assertFalse(registry.isInProgress(qid), "前置条件确认: registry 未标记进行中");
 
         long t0 = System.currentTimeMillis();
-        ApiResponse<QuotationDTO> resp = resource.saveDraft(qid, emptyDraftRequest());
+        ApiResponse<com.cpq.quotation.dto.SaveDraftResponse> resp = resource.saveDraft(qid, emptyDraftRequest());
         long elapsed = System.currentTimeMillis() - t0;
 
         assertEquals(200, resp.getCode());
@@ -264,7 +264,7 @@ class SaveDraftMaterializeWaitTest {
         AtomicReference<Long> s1Ms = new AtomicReference<>();
         Pattern s1Pattern = Pattern.compile("S1\\.saveDraft=(\\d+)ms");
         List<String> logs = captureDraftProfileLogs(() -> {
-            ApiResponse<QuotationDTO> resp = resource.saveDraft(qid, emptyDraftRequest());
+            ApiResponse<com.cpq.quotation.dto.SaveDraftResponse> resp = resource.saveDraft(qid, emptyDraftRequest());
             assertEquals(200, resp.getCode());
         });
         bg.join();

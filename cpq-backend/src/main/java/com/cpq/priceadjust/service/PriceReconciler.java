@@ -151,6 +151,16 @@ public class PriceReconciler {
     public static class ReconcileResult {
         public int lineItemsInScope;
         public int rowsChanged;
+        /**
+         * task-260901 B-1c 配套：本次归位<b>真的改写过 snapshot_rows / row_data</b> 的 line item id。
+         *
+         * <p>为什么需要它：归位跑在 {@code saveDraft} 之后，会改卡片值的输入（snapshot_rows / row_data）。
+         * 在 B-1c 之前，{@code saveDraft} 对每一行无条件把卡片值置 NULL，归位改了谁都会被后面的
+         * {@code ensureCardValues} 重算，所以这个洞被盖住了。B-1c 改成「只失效真变了的行」之后，
+         * 归位改过的行如果不失效，卡片值就会永久停留在归位前的旧价上。
+         * 调用方（{@code QuotationResource#saveDraft}）据此对这批行补一次失效。
+         */
+        public final java.util.Set<UUID> changedLineItemIds = new java.util.LinkedHashSet<>();
     }
 
     @Transactional
@@ -167,8 +177,8 @@ public class PriceReconciler {
         //    （本任务已三次栽在注释与实现不符上，顺手更正，不改行为。）
         if (ctx == null) return result;
 
-        for (QuotationLineItem li : ctx.lines) {
-            String materialNo = li.productPartNoSnapshot;
+        for (LineRef li : ctx.lines) {
+            String materialNo = li.materialNo();
             if (materialNo == null || materialNo.isBlank()) continue;
             // 🔒 料号∉范围：**值一个字节都不碰**（裁决 5：范围不影响取价），但只读三条件已破 →
             //    必须撤锁，否则该单价列永久锁死（需求说明 §11.2.3 补充「移出范围的料号，其单价列
@@ -179,16 +189,18 @@ public class PriceReconciler {
             if (inScope) result.lineItemsInScope++;
 
             for (UpgradeResult.PriceBearingComponent pbc : ctx.priceBearingComponents) {
-                RowGroup rg = ctx.rowGroups.get(li.id + "|" + pbc.componentId);
+                RowGroup rg = ctx.rowGroups.get(li.id() + "|" + pbc.componentId);
                 if (rg == null) continue;
                 int changed = inScope
                     ? reconcileRows(rg, pbc, materialNo, ctx)
                     : unlockAllRows(rg);
                 result.rowsChanged += changed;
+                // task-260901 B-1c 配套：记下真被改写的行，供调用方失效其卡片值。
+                if (changed > 0) result.changedLineItemIds.add(li.id());
             }
         }
-        LOG.infof("[price-reconcile] quotation=%s linesInScope=%d rowsChanged=%d",
-            quotationId, result.lineItemsInScope, result.rowsChanged);
+        LOG.infof("[price-reconcile] quotation=%s linesInScope=%d rowsChanged=%d changedLines=%d",
+            quotationId, result.lineItemsInScope, result.rowsChanged, result.changedLineItemIds.size());
         return result;
     }
 
@@ -366,6 +378,14 @@ public class PriceReconciler {
     // 整单一次预取（E14-7：策略/元素清单/料号范围/指针/版本明细/冻结结构/component_data 各查一次）
     // -------------------------------------------------------------------------
 
+    /**
+     * task-260901 B-6：产品行的最小投影 —— 归位链路对 {@code quotation_line_item} 的<b>全部</b>需求。
+     *
+     * @param id         行 id（拼 {@code component_data} 的 IN 列表 + 记 {@code changedLineItemIds}）
+     * @param materialNo {@code product_part_no_snapshot}（判料号是否在调价范围内）
+     */
+    record LineRef(UUID id, String materialNo) {}
+
     static final class BatchContext {
         /**
          * 整单「只撤锁」模式（验收 #59⑤）：作用域三条件里与料号无关的两条整体不成立 ——
@@ -380,7 +400,20 @@ public class PriceReconciler {
         boolean allMode;
         Set<String> elementCodesInList = new HashSet<>();
         Set<String> specifiedMaterials = new HashSet<>();
-        List<QuotationLineItem> lines = new ArrayList<>();
+        /**
+         * task-260901 B-6：产品行的<b>投影</b>（只有 id + 料号），不再是完整实体。
+         *
+         * <p>本类对产品行只用这两个字段（{@code reconcileQuotation} 取料号判作用域、
+         * {@code prefetchRowGroups} 取 id 拼 IN 列表），一个字节都不碰卡片值。
+         * 而 {@code QuotationLineItem} 挂着 {@code quote_card_values} / {@code costing_card_values}
+         * 两个大 jsonb 列：1845 行的单整实体加载要搬 16 MB（压缩后 7.8 MB），经实测 1.74 MB/s 的
+         * 链路 ≈ 4.5 s —— 与实测 {@code S3.priceReconcile=3447~4711ms} 吻合。
+         *
+         * <p>⚠️ 这笔成本<b>一直存在</b>，只是改造前 saveDraft 会在归位之前把整单卡片值置成 NULL，
+         * 行变得很小，于是显示为 {@code S3=526ms} 的假象。task-260901 B-1c 把那个无谓清空修掉之后
+         * 它才浮出水面。所以这不是新增开销，是<b>被暴露出来的旧开销</b>。
+         */
+        List<LineRef> lines = new ArrayList<>();
         Map<String, UUID> pointerByMaterial = new HashMap<>();
         Map<UUID, Map<String, ElementPrice>> versionPricesByVersionId = new HashMap<>();
         Map<UUID, String> versionNoById = new HashMap<>();
@@ -436,12 +469,20 @@ public class PriceReconciler {
             }
         }
 
-        ctx.lines = QuotationLineItem.list("quotationId", q.id);
+        // task-260901 B-6：投影查询取代整实体加载（见 BatchContext.lines 注释）。
+        // 🔒 只换取数方式，不动任何业务逻辑：行集合与原 Panache list 完全一致（同一 WHERE、
+        //    同样不带 ORDER BY），后续判据/乐观锁/changedLineItemIds 收集一律照旧。
+        @SuppressWarnings("unchecked")
+        List<Object[]> lineRows = em.createNativeQuery(
+                "SELECT id, product_part_no_snapshot FROM quotation_line_item WHERE quotation_id = :q")
+            .setParameter("q", q.id).getResultList();
+        ctx.lines = new ArrayList<>(lineRows.size());
         Set<String> materialNos = new LinkedHashSet<>();
-        for (QuotationLineItem li : ctx.lines) {
-            if (li.productPartNoSnapshot != null && !li.productPartNoSnapshot.isBlank()) {
-                materialNos.add(li.productPartNoSnapshot);
-            }
+        for (Object[] r : lineRows) {
+            UUID lineId = (r[0] instanceof UUID u) ? u : UUID.fromString(String.valueOf(r[0]));
+            String materialNo = r[1] == null ? null : r[1].toString();
+            ctx.lines.add(new LineRef(lineId, materialNo));
+            if (materialNo != null && !materialNo.isBlank()) materialNos.add(materialNo);
         }
         if (materialNos.isEmpty()) return ctx;
 
@@ -543,7 +584,7 @@ public class PriceReconciler {
     /** component_data（一次批量，覆盖全部产品行 × 全部价格承载组件）。两种模式都要。 */
     private void prefetchRowGroups(BatchContext ctx, List<UUID> componentIds) {
         List<UUID> lineIds = new ArrayList<>();
-        for (QuotationLineItem li : ctx.lines) lineIds.add(li.id);
+        for (LineRef li : ctx.lines) lineIds.add(li.id());
         @SuppressWarnings("unchecked")
         List<Object[]> cdRows = em.createNativeQuery(
                 "SELECT id, line_item_id, component_id, snapshot_rows, row_data, row_version " +

@@ -57,6 +57,8 @@ import { resolveFieldWidth } from '../component/types';
 import BomTreeAddLeafDrawer from './BomTreeAddLeafDrawer';
 import BomTreeDeleteConfirmDrawer from './BomTreeDeleteConfirmDrawer';
 import { trackPendingEdit } from './pendingEditTracker';
+// task-260901 ③：quote-card-edit 写的是用户数据，响应回传的新版本号必须跟进本地基线（AC-14）
+import { noteUserDataVersion } from './userDataVersion';
 import { usePagedSearch } from './usePagedSearch';
 import { highlightText } from './highlightText';
 import PagingBar from './PagingBar';
@@ -2876,6 +2878,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     const p = (async () => {
       try {
         const res = await quotationService.editQuoteCardValue(lineItemId, { componentId, rowKey, fieldName, value });
+        // task-260901 F-2c(AC-14):本端点写 row_data,属**用户数据**写入,后端会递增
+        //   quotation.user_data_version(api.md §2)。不把新版本号跟进本地基线的话,
+        //   「改一个格子 → 点保存草稿」必然携带过期 baseVersion ⇒ 必报 409、弹"已被他人修改"。
+        //   ⚠️ 这是本次前端最容易漏、且症状最像"后端 bug"的一处。
+        noteUserDataVersion(quotationId, (res?.data as any)?.userDataVersion);
         const qcv = res?.data?.quoteCardValues;
         const qev = res?.data?.quoteExcelValues;
         // quoteValuesAt：编辑落库时间戳，作为 Excel 视图取数刷新信号(excelRefreshSignal)，
@@ -2899,7 +2906,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
       }
     })();
     trackPendingEdit(p);
-  }, [item, onUpdate, reconcileTab]);
+  }, [item, onUpdate, reconcileTab, quotationId]);
 
   // Auto-trigger parameterless DATA_SOURCE queries when rows exist
   // H2/K hotfix: 仅 DATABASE_QUERY type 走老 datasourceService.execute 路径;

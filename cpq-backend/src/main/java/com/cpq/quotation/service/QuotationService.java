@@ -48,6 +48,25 @@ public class QuotationService {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    /**
+     * task-260901 B-1c 逃生阀：{@code cpq.savedraft-conditional-invalidate}（默认 {@code true}）。
+     *
+     * <p>{@code true}  → 只失效「真的变了」的行（本任务的目标行为）。<br>
+     * {@code false} → 回到改造前的<b>无条件</b>置 NULL（每行每次保存都失效卡片值）。
+     *
+     * <p>为什么留这个阀：卡片值失效判据一旦漏判，症状是<b>页面显示旧值且永不自愈</b>——不报错、
+     * 不红、只有肉眼能看出来。真出这种事时，把它设成 false 就能立刻回到「慢但一定对」的老行为，
+     * 不必回滚整个分支。与 {@code cpq.savedraft-batch-stage1} / {@code cpq.savedraft-serialize-lock}
+     * 同一套逃生阀写法。
+     *
+     * <p>关闭：{@code -Dcpq.savedraft-conditional-invalidate=false} 或
+     * {@code export CPQ_SAVEDRAFT_CONDITIONAL_INVALIDATE=false}
+     */
+    private static boolean conditionalInvalidateEnabled() {
+        return "true".equalsIgnoreCase(System.getProperty("cpq.savedraft-conditional-invalidate",
+                System.getenv().getOrDefault("CPQ_SAVEDRAFT_CONDITIONAL_INVALIDATE", "true")));
+    }
+
     @Inject
     DiscountCalculationService discountCalculationService;
 
@@ -319,7 +338,7 @@ public class QuotationService {
     }
 
     @Transactional
-    public QuotationDTO saveDraft(UUID id, SaveDraftRequest request) {
+    public com.cpq.quotation.dto.SaveDraftResponse saveDraft(UUID id, SaveDraftRequest request) {
         // Phase 2-0 数据安全闸: 对 quotation 行加悲观写锁，串行化同单并发 saveDraft。
         //
         // 背景: saveDraft 对每个复用行执行 clearLineItemChildren(全删子表) + persist(重建)。
@@ -358,6 +377,25 @@ public class QuotationService {
         }
         if (!"DRAFT".equals(q.status)) {
             throw new BusinessException(400, "Only DRAFT quotations can be edited");
+        }
+
+        // ── task-260901 B-3b：乐观并发校验 ────────────────────────────────────────────────────
+        // 🔒 位置不可变通：必须在悲观写锁<b>之内</b>、任何字段赋值<b>之前</b>。
+        //   在锁内 → 校验和后面的 +1 之间没有别的事务能挤进来；
+        //   在写入前 → 冲突时一个字节都没落库，事务回滚干净（否则 409 之后还留下半截脏数据）。
+        // 兼容：只有走新三数组协议才要求 baseVersion；旧 lineItems 全量协议（回滚兜底）不校验。
+        int currentVersion = q.userDataVersion == null ? 0 : q.userDataVersion;
+        boolean incrementalProtocol =
+                request.added != null || request.modified != null || request.removed != null;
+        if (incrementalProtocol) {
+            if (request.baseVersion == null) {
+                throw new BusinessException(400, "baseVersion 必填（增量协议的乐观并发基线）");
+            }
+            if (request.baseVersion != currentVersion) {
+                LOG.warnf("[saveDraft-stale] id=%s baseVersion=%d 但库中 user_data_version=%d → 409 STALE_VERSION",
+                        id, request.baseVersion, currentVersion);
+                throw new com.cpq.common.exception.StaleVersionException(currentVersion);
+            }
         }
 
         // Update header fields
@@ -414,53 +452,87 @@ public class QuotationService {
                 System.getProperty("cpq.savedraft-batch-stage1",
                     System.getenv().getOrDefault("CPQ_SAVEDRAFT_BATCH_STAGE1", "true")));
 
-        LOG.infof("[saveDraft-diag] id=%s received lineItems=%s batchStage1=%b", id,
-            request.lineItems == null ? "null" : String.valueOf(request.lineItems.size()),
-            batchStage1Enabled);
-        if (request.lineItems != null) {
+        DraftDelta delta = resolveDelta(request);
+        LOG.infof("[saveDraft-diag] id=%s protocol=%s lines=%d removed=%d batchStage1=%b", id,
+            delta.hasLinePayload ? (delta.incremental ? "incremental" : "legacy-full") : "header-only",
+            delta.lines.size(), delta.removedIds.size(), batchStage1Enabled);
+        if (delta.hasLinePayload) {
             if (batchStage1Enabled) {
                 // ── Phase 2-1 批量集合化路径 ──────────────────────────────────────────────
                 // E2/E3/E4/E5/§2.1：把阶段①里的 per-row SQL 合成整单集合 SQL，单线程批量。
                 // 产出与逐行路径逐位等价（详见 docs/superpowers/plans/2026-06-25-savedraft-setbased-rearchitecture.md §3 表）。
-                processBatchStage1(id, q, request);
+                processBatchStage1(id, q, request, delta);
             } else {
                 // ── 原逐行路径（Phase 2-0 基线，默认） ────────────────────────────────────
                 java.util.List<QuotationLineItem> existingLines = QuotationLineItem.list("quotationId = ?1", id);
                 java.util.Map<java.util.UUID, QuotationLineItem> existingById = new java.util.HashMap<>();
                 for (QuotationLineItem ex : existingLines) existingById.put(ex.id, ex);
                 java.util.Set<java.util.UUID> keptIds = new java.util.HashSet<>();
-                BigDecimal total = BigDecimal.ZERO;
                 // V169 二阶段 parent_line_item_id 重建用: index → 行 UUID 的映射(复用行=原 id, 新行=新 id)
-                java.util.UUID[] newIdsByIndex = new java.util.UUID[request.lineItems.size()];
+                java.util.UUID[] newIdsByIndex = new java.util.UUID[delta.lines.size()];
 
                 // FixC1: 复用行 clearLineItemChildren 前先保存各 component 的 deletedRowKeys,
                 // 重建时按 componentId 回填; saveDraft 请求不携带 deletedRowKeys(由专用端点管)
                 java.util.Map<java.util.UUID, String> preservedTombstones = new java.util.HashMap<>();
                 // Part A: 复用行 snapshot_rows 保留 —— 全量重建会清子表, 重建时回写避免 snapshotQuotation 全量重 expand
                 java.util.Map<java.util.UUID, String> preservedSnapshots = new java.util.HashMap<>();
+                // task-260901 B-1a/B-1c（逐行路径同款）：老 rowData 留档，用来判「这一行到底变没变」。
+                // 逐行路径是全删全建，componentData 行会换新 id、必然 INSERT（省不掉写），但卡片值
+                // 该不该失效仍然取决于内容有没有变——这一份留档就是为了回答那个问题。
+                java.util.Map<java.util.UUID, String> preservedRowData = new java.util.HashMap<>();
+                // task-260901 B-1c 条件③'：与 batch 路径同一口径（见 processBatchStage1 内同名变量注释）。
+                java.util.Set<java.util.UUID> driverCompIds = new java.util.HashSet<>();
+                if (q.customerTemplateId != null) {
+                    for (com.cpq.template.entity.TemplateComponentSnapshot tab
+                            : publishedTemplateReader.driverCompsOf(q.customerTemplateId)) {
+                        if (tab.componentId != null) driverCompIds.add(tab.componentId);
+                    }
+                }
+                int cardValuesInvalidated = 0;
+                final boolean conditionalInvalidate = conditionalInvalidateEnabled();
 
-                for (int i = 0; i < request.lineItems.size(); i++) {
-                    SaveDraftRequest.LineItemDraft liDraft = request.lineItems.get(i);
+                for (int i = 0; i < delta.lines.size(); i++) {
+                    SaveDraftRequest.LineItemDraft liDraft = delta.lines.get(i);
                     QuotationLineItem li;
-                    if (liDraft.id != null && existingById.containsKey(liDraft.id)) {
+                    boolean isNewLine = !(liDraft.id != null && existingById.containsKey(liDraft.id));
+                    if (delta.incremental && isNewLine && liDraft.id != null) {
+                        // modified[] 点名了一个不属于本单的 id → 400（不能默默新建，见 batch 路径同款校验）
+                        throw new BusinessException(400,
+                                "modified[] 中的 line item id 不属于本报价单：" + liDraft.id);
+                    }
+                    // task-260901 B-1c：新行一律失效；复用行看内容有没有真变（下面按 ②/① 逐步判定）。
+                    boolean invalidateCardValues = !conditionalInvalidate || isNewLine;
+                    if (!isNewLine) {
                         li = existingById.get(liDraft.id);   // 复用 → 就地 UPDATE, id 不变
                         keptIds.add(li.id);
                         // FixC1: clear 前先存现有墓碑,重建时按 componentId 回填(saveDraft 请求不带 deletedRowKeys)
                         preservedTombstones.clear();
                         preservedSnapshots.clear();          // Part A
+                        preservedRowData.clear();            // task-260901 B-1a
                         for (QuotationLineComponentData old :
                                 QuotationLineComponentData.<QuotationLineComponentData>list("lineItemId = ?1", li.id)) {
                             if (old.componentId != null && old.deletedRowKeys != null)
                                 preservedTombstones.put(old.componentId, old.deletedRowKeys);
                             if (old.componentId != null && old.snapshotRows != null)   // Part A
                                 preservedSnapshots.put(old.componentId, old.snapshotRows);
+                            if (old.componentId != null)                               // task-260901 B-1a
+                                preservedRowData.put(old.componentId, old.rowData);
+                        }
+                        // ③' 随后的 snapshotQuotation(id,true) 会重 expand 缺 driver snapshot_rows 的行
+                        if (com.cpq.configure.service.ConfigureSnapshotService.lineNeedsExpand(
+                                driverCompIds, preservedSnapshots)) {
+                            invalidateCardValues = true;
                         }
                         clearLineItemChildren(li.id);        // 旧子表清掉, 下面按 draft 重建
-                        li.parentLineItemId = null;          // 父子关系清空, 待二阶段重链
+                        // task-260901 B-2f：增量协议下不清空（父行可能不在本次 payload 里），见 batch 路径注释
+                        if (!delta.incremental) {
+                            li.parentLineItemId = null;      // 父子关系清空, 待二阶段重链
+                        }
                     } else {
                         li = new QuotationLineItem();
                         preservedTombstones.clear();         // 新行无墓碑
                         preservedSnapshots.clear();          // Part A: 新行无快照
+                        preservedRowData.clear();            // task-260901 B-1a: 新行无旧值
                     }
                     li.quotationId = id;
                     li.productId = liDraft.productId;
@@ -468,7 +540,13 @@ public class QuotationService {
                     // 持久化成 NULL → 刷新时 enrichComponentData 在 if(!templateId) 处跳过 → 所有页签拿不到
                     // dataDriverPath → 全空。兜底为报价单模板,保证每行都有模板 id、刷新必能 enrich。
                     li.templateId = liDraft.templateId != null ? liDraft.templateId : q.customerTemplateId;
-                    if (liDraft.productAttributeValues != null) li.productAttributeValues = liDraft.productAttributeValues;
+                    // task-260901 B-1c 条件②（与 batch 路径同口径，见 processBatchStage1）
+                    if (liDraft.productAttributeValues != null
+                            && !com.cpq.common.JsonSemanticEquality.equal(
+                                    li.productAttributeValues, liDraft.productAttributeValues)) {
+                        li.productAttributeValues = liDraft.productAttributeValues;
+                        invalidateCardValues = true;
+                    }
                     // repair-260829 B-9：数值相同就不赋值——库列 numeric(26,12)，前端发送 scale=6，
                     // BigDecimal.equals() 比较 scale 会把数值相同但 scale 不同的值判脏，致
                     // @DynamicUpdate 实体无法合批、逐行往返（问题说明.md ⑤ B-9 段）。写与不写落库
@@ -477,7 +555,16 @@ public class QuotationService {
                             && (li.subtotal == null || li.subtotal.compareTo(liDraft.subtotal) != 0)) {
                         li.subtotal = liDraft.subtotal;
                     }
-                    li.sortOrder = liDraft.sortOrder != null ? liDraft.sortOrder : i;
+                    // task-260901 B-2e（逐行路径，与 batch 路径同口径）
+                    if (liDraft.sortOrder == null) {
+                        if (delta.incremental) {
+                            throw new BusinessException(400,
+                                    "sortOrder 必填（增量协议下 payload 下标不再代表行序）；缺失的行 id=" + liDraft.id);
+                        }
+                        li.sortOrder = i;
+                    } else {
+                        li.sortOrder = liDraft.sortOrder;
+                    }
                     // V5 批量导入：productId 为空时，把前端送来的 partNo / name 直接写入 snapshot 列，
                     // 否则刷新后前端 li.productPartNo 永远为空，driver 展开失败 → BASIC_DATA 列全空。
                     if (liDraft.productPartNo != null && !liDraft.productPartNo.isBlank()) {
@@ -515,10 +602,7 @@ public class QuotationService {
                     // 后端 snapshotLineValues 守卫：仅当 li.quoteExcelValues==null 时才 buildExcelValues 兜底。
                     if (liDraft.quoteExcelValues != null) li.quoteExcelValues = liDraft.quoteExcelValues;
                     li.persist();
-                    // D-1 失效(lazy-cardvalues):本行子表(snapshot_rows)被重建 → 旧卡片值过期,置 NULL,
-                    // 使 ensureCardValues 的 IS NULL 谓词下次重新选中、用最新 snapshot_rows 重算。
-                    li.quoteCardValues = null;
-                    li.costingCardValues = null;
+                    // task-260901 B-1c：D-1 失效挪到本轮迭代末尾（要等 componentData 判完 rowData）。
                     newIdsByIndex[i] = li.id;  // V169 二阶段父子关系重建用
 
                     // task-0723 B3: 料号版本族整族下线 — 原 S5 块拷贝 mat_customer_part_mapping.current_version
@@ -543,10 +627,15 @@ public class QuotationService {
                                             q.customerId, product.partNo, derivedAttrs);
                                     // 将计算结果合并到 productAttributeValues（JSON 字符串）
                                     if (!calcResults.isEmpty()) {
-                                        li.productAttributeValues = mergeFormulaResults(
-                                                li.productAttributeValues, calcResults);
-                                        // flush 已 persist 的 li，更新 productAttributeValues
-                                        em.flush();
+                                        // task-260901 B-1c 条件②的第二个写点（逐行路径）
+                                        String beforeMerge = li.productAttributeValues;
+                                        String merged = mergeFormulaResults(beforeMerge, calcResults);
+                                        if (!com.cpq.common.JsonSemanticEquality.equal(beforeMerge, merged)) {
+                                            li.productAttributeValues = merged;
+                                            invalidateCardValues = true;
+                                            // flush 已 persist 的 li，更新 productAttributeValues
+                                            em.flush();
+                                        }
                                     }
                                     logFormulaErrors(calcResults, q.id, product.partNo);
                                 }
@@ -558,9 +647,7 @@ public class QuotationService {
                         }
                     }
 
-                    if (liDraft.subtotal != null) {
-                        total = total.add(liDraft.subtotal);
-                    }
+                    // （task-260901 B-2d：原先这里累加求总额，已改为末尾一次 SELECT sum）
 
                     // Save processes
                     // task-0712 缺口1 遗留涟漪修复: process_no 全链贯通(与 ConfigureProductService.
@@ -644,7 +731,18 @@ public class QuotationService {
                             if (cdDraft.rowData != null && cdDraft.componentId != null) {
                                 pendingRestrictedChecks.add(new Object[]{ cdDraft.componentId, cdDraft.rowData });
                             }
-                            if (cdDraft.rowData != null) cd.rowData = cdDraft.rowData;
+                            if (cdDraft.rowData != null) {
+                                // task-260901 B-1a/B-1c 条件①（逐行路径）：这里是新实体、必然 INSERT，
+                                // 省不掉写；但要判「内容变没变」来决定卡片值该不该失效。
+                                // 🚨 同样禁止 String.equals —— 老值来自 jsonb（PG 规范化文本），
+                                //    新值来自前端 JSON.stringify，必然不等。
+                                String oldRd = (cdDraft.componentId != null)
+                                        ? preservedRowData.get(cdDraft.componentId) : null;
+                                if (!com.cpq.common.JsonSemanticEquality.equal(oldRd, cdDraft.rowData)) {
+                                    invalidateCardValues = true;
+                                }
+                                cd.rowData = cdDraft.rowData;
+                            }
                             if (cdDraft.subtotal != null) cd.subtotal = cdDraft.subtotal;
                             cd.sortOrder = cdDraft.sortOrder != null ? cdDraft.sortOrder : j;
                             // FixC1: 回填墓碑(同模板复用行,源集/effKey 不变,墓碑仍匹配);新行/无记录 → "[]"
@@ -667,45 +765,188 @@ public class QuotationService {
                                     (UUID) pending[0], (String) pending[1], li.id);
                         }
                     }
+
+                    // task-260901 B-1c：本行真的变了才失效卡片值（与 batch 路径同口径）。
+                    if (invalidateCardValues) {
+                        li.quoteCardValues = null;
+                        li.costingCardValues = null;
+                        cardValuesInvalidated++;
+                    }
                 }
 
-                // 删除本次 payload 未保留的旧行(用户删除的产品行) + 其子表
+                LOG.infof("[savedraft-invalidate] quotation=%s payloadLines=%d cardValuesInvalidated=%d (per-row path)",
+                        id, delta.lines.size(), cardValuesInvalidated);
+
+                // ── task-260901 B-2b（逐行路径）：删除语义随协议切换 ────────────────────────
+                // 新协议只删 removed[] 点名的；旧协议保留「payload 未出现即删除」。
+                java.util.Set<java.util.UUID> toRemove = new java.util.LinkedHashSet<>();
+                if (delta.incremental) {
+                    for (java.util.UUID rid : delta.removedIds) {
+                        if (existingById.containsKey(rid)) toRemove.add(rid);
+                        else LOG.warnf("[saveDraft-remove] quotation=%s removed[] 里的 id=%s 不在本单，跳过", id, rid);
+                    }
+                } else {
+                    for (QuotationLineItem ex : existingLines) {
+                        if (!keptIds.contains(ex.id)) toRemove.add(ex.id);
+                    }
+                }
+                if (!toRemove.isEmpty()) {
+                    LOG.infof("[saveDraft-remove] quotation=%s 本次实际删除 %d 行：%s (per-row path)",
+                            id, toRemove.size(), toRemove);
+                }
                 for (QuotationLineItem ex : existingLines) {
-                    if (keptIds.contains(ex.id)) continue;
+                    if (!toRemove.contains(ex.id)) continue;
                     clearLineItemChildren(ex.id);
                     ex.delete();
                 }
 
+                // task-260901 B-2d（逐行路径，与 batch 路径同口径）：总额从库聚合
+                em.flush();
+                BigDecimal dbTotal = (BigDecimal) em.createNativeQuery(
+                        "SELECT COALESCE(sum(subtotal), 0) FROM quotation_line_item WHERE quotation_id = :q")
+                    .setParameter("q", id).getSingleResult();
+                if (dbTotal == null) dbTotal = BigDecimal.ZERO;
                 // 除法过程保留 12 位；报价总额在独立 QUOTATION_TOTAL_SCALE 结果边界落库。
-                q.originalAmount = quotationTotalResult(total);
-                q.totalAmount = quotationTotalResult(total.multiply(q.finalDiscountRate)
+                q.originalAmount = quotationTotalResult(dbTotal);
+                q.totalAmount = quotationTotalResult(dbTotal.multiply(q.finalDiscountRate)
                         .divide(new BigDecimal("100"), PrecisionPolicy.DIVISION_SCALE, RoundingMode.HALF_UP));
 
-                // V169 二阶段父子关系重建: 按 tempParentIndex 把 PART 子件 UPDATE 指向新父 UUID
-                for (int i = 0; i < request.lineItems.size(); i++) {
-                    SaveDraftRequest.LineItemDraft draft = request.lineItems.get(i);
-                    if (draft.tempParentIndex == null) continue;
-                    int parentIdx = draft.tempParentIndex;
-                    if (parentIdx < 0 || parentIdx >= newIdsByIndex.length) continue;
+                // task-260901 B-2f（逐行路径，与 batch 路径同口径）：父子关系按 tempParentKey /
+                // parentLineItemId 重链；旧全量协议下仍解释 tempParentIndex。
+                java.util.Map<String, java.util.UUID> idByTempId = new java.util.HashMap<>();
+                for (int i = 0; i < delta.lines.size(); i++) {
+                    SaveDraftRequest.LineItemDraft d = delta.lines.get(i);
+                    if (d.tempId != null && !d.tempId.isBlank() && newIdsByIndex[i] != null) {
+                        idByTempId.put(d.tempId, newIdsByIndex[i]);
+                    }
+                }
+                for (int i = 0; i < delta.lines.size(); i++) {
+                    SaveDraftRequest.LineItemDraft draft = delta.lines.get(i);
                     java.util.UUID childId = newIdsByIndex[i];
-                    java.util.UUID parentId = newIdsByIndex[parentIdx];
-                    if (childId == null || parentId == null) continue;
+                    if (childId == null) continue;
+                    java.util.UUID parentId = null;
+                    if (draft.parentLineItemId != null) {
+                        parentId = draft.parentLineItemId;
+                    } else if (draft.tempParentKey != null && !draft.tempParentKey.isBlank()) {
+                        parentId = idByTempId.get(draft.tempParentKey);
+                        if (parentId == null) {
+                            throw new BusinessException(400,
+                                    "tempParentKey=" + draft.tempParentKey + " 在本次 added[] 中找不到对应的 tempId");
+                        }
+                    } else if (!delta.incremental && draft.tempParentIndex != null) {
+                        int parentIdx = draft.tempParentIndex;
+                        if (parentIdx < 0 || parentIdx >= newIdsByIndex.length) continue;
+                        parentId = newIdsByIndex[parentIdx];
+                    }
+                    if (parentId == null) continue;
                     em.createNativeQuery(
                             "UPDATE quotation_line_item SET parent_line_item_id = :pid WHERE id = :cid")
                         .setParameter("pid", parentId)
                         .setParameter("cid", childId)
                         .executeUpdate();
                 }
+                delta.writtenIds = newIdsByIndex;   // task-260901 B-4b
 
             } // end per-row path
         }
 
+        // ── task-260901 B-3c：本次确有用户写入 → user_data_version + 1 ─────────────────────────
+        // 「有实际写入」的判据：请求带了明细（哪怕三数组都是空，那也是用户点了保存）或带了任何单头
+        // 字段。空 body（`{}`）这种纯探活/兼容调用不递增——它什么都没改，不该让别的会话被迫刷新。
+        // 🚫 反过来说：ensureCardValues / ensureExcelValues / snapshotQuotation / 建单物化 /
+        //    priceReconcile 这些派生数据写入路径一律不碰本列（AC-13、api.md §4.2）——本方法是
+        //    saveDraft，它们都不经过这里，天然满足；改动它们时也不要顺手加上。
+        int newVersion = currentVersion;
+        if (delta.hasLinePayload || requestTouchesHeader(request)) {
+            newVersion = bumpUserDataVersion(id);
+        }
         q.persist();
-        LOG.infof("Saved draft for quotation id=%s", id);
-        QuotationDTO dto = QuotationDTO.from(q);
-        dto.lineItems = loadLineItems(id);
+        LOG.infof("Saved draft for quotation id=%s userDataVersion=%d", id, newVersion);
 
-        return dto;
+        // ── task-260901 B-4：轻量响应（AC-15 / AC-16）────────────────────────────────────────
+        // 原来是 QuotationDTO + loadLineItems(id)（整单 24.6 MB）。现在只回传单头 + 本次变化行的
+        // 6 个字段；未变行不回传（前端本来就只按 id 认领这 6 个字段，见 证据/E3）。
+        com.cpq.quotation.dto.SaveDraftResponse resp =
+                com.cpq.quotation.dto.SaveDraftResponse.fromHeader(q);
+        // 🔒 用原生自增的返回值，不能用 q.userDataVersion——实体是只读映射，此刻还是自增前的旧值。
+        resp.userDataVersion = newVersion;
+        if (delta.writtenIds != null) {
+            java.util.List<UUID> changedIds = new java.util.ArrayList<>();
+            java.util.Map<UUID, String> tempIdById = new java.util.HashMap<>();
+            for (int i = 0; i < delta.writtenIds.length && i < delta.lines.size(); i++) {
+                UUID wid = delta.writtenIds[i];
+                if (wid == null) continue;
+                changedIds.add(wid);
+                // 🔒 只有 added 行（请求侧 id 为 null）才回传 tempId —— api.md §1.3 的作用域表：
+                //    modified 行必须恰好 6 个键（T-16），多回一个 tempId 就违约；
+                //    而 added 行少回这一个键，新行就永远拿不到 DB id、下次保存重复插入（AC-17）。
+                SaveDraftRequest.LineItemDraft d = delta.lines.get(i);
+                if (d.id == null && d.tempId != null && !d.tempId.isBlank()) {
+                    tempIdById.put(wid, d.tempId);
+                }
+            }
+            // 🔒 必须 flush：本次的写还在持久化上下文里，下面走的是原生查询。
+            em.flush();
+            resp.lineItems = loadChangedLinesLight(changedIds, tempIdById);
+        }
+        return resp;
+    }
+
+    /**
+     * task-260901 B-3c：{@code quotation.user_data_version} 的<b>唯一</b>写入口。
+     *
+     * <p>用原生 {@code SET user_data_version = user_data_version + 1} 自增（不是「读出来 +1 再写回」），
+     * 所以即使没拿到行锁也不会丢更新。随后回读一次拿到权威新值返回给前端做基线。
+     *
+     * <p>🚫 派生数据写入路径（ensureCardValues / ensureExcelValues / snapshotQuotation /
+     * CreateQuotationMaterializer 建单物化四步 / priceReconcile）<b>一律不得调用本方法</b>（AC-13）。
+     * 实体侧已用 {@code insertable=false, updatable=false} 把 Hibernate 的路堵死，本方法是仅剩的门。
+     *
+     * <p>SQL：2 条常数，与行数无关。
+     */
+    @Transactional(Transactional.TxType.MANDATORY)
+    public int bumpUserDataVersion(UUID quotationId) {
+        em.createNativeQuery(
+                "UPDATE quotation SET user_data_version = user_data_version + 1 WHERE id = :id")
+            .setParameter("id", quotationId).executeUpdate();
+        Object v = em.createNativeQuery(
+                "SELECT user_data_version FROM quotation WHERE id = :id")
+            .setParameter("id", quotationId).getSingleResult();
+        return v == null ? 0 : ((Number) v).intValue();
+    }
+
+    /** task-260901 B-3c：本次请求是否携带了任何单头字段（patch 语义，null = 不改）。纯内存判断。 */
+    private static boolean requestTouchesHeader(SaveDraftRequest r) {
+        return r.name != null || r.contactId != null || r.contactName != null || r.contactPhone != null
+                || r.contactEmail != null || r.projectName != null || r.opportunityId != null
+                || r.quoteType != null || r.priority != null || r.stage != null
+                || r.expectedCloseDate != null || r.paymentTerms != null || r.deliveryCycle != null
+                || r.expiryDate != null || r.remarks != null || r.finalDiscountRate != null
+                || r.customerTemplateId != null || r.costingCardTemplateId != null || r.categoryId != null;
+    }
+
+    /**
+     * task-260901 B-1c 配套：对指定的一批 line item 失效卡片值（置 NULL）。
+     *
+     * <p>用途：{@code saveDraft} 提交之后，{@code QuotationResource} 还会跑
+     * {@code priceReconciler.reconcileQuotation}，它会改写 {@code snapshot_rows}/{@code row_data}
+     * ——那是卡片值的输入。B-1c 把 saveDraft 的失效从「整单无条件」收成「只失效真变了的行」之后，
+     * 归位改过的行必须由调用方在这里补一次失效，否则卡片值会永久停在归位前的旧价上。
+     *
+     * <p>🚫 N+1 纪律：一条 {@code IN} 更新，SQL 条数与行数无关。
+     *
+     * @return 实际被置 NULL 的行数
+     */
+    @Transactional
+    public int invalidateCardValues(java.util.Collection<UUID> lineItemIds) {
+        if (lineItemIds == null || lineItemIds.isEmpty()) return 0;
+        String[] idsAsText = lineItemIds.stream().filter(java.util.Objects::nonNull)
+                .map(UUID::toString).toArray(String[]::new);
+        if (idsAsText.length == 0) return 0;
+        return em.createNativeQuery(
+                "UPDATE quotation_line_item SET quote_card_values = NULL, costing_card_values = NULL " +
+                "WHERE id IN (SELECT unnest(CAST(:ids AS text[]))::uuid)")
+            .setParameter("ids", idsAsText).executeUpdate();
     }
 
     @Transactional
@@ -2389,9 +2630,102 @@ public class QuotationService {
      *
      * <p>纪律：单线程批量 SQL，严禁并行（[[cpq-expand-layer-not-threadsafe]]）。
      */
+    /**
+     * task-260901 B-2：把请求体里的明细部分归一成后端内部的「本次要动哪些行」。
+     *
+     * <p>两种协议共存一个版本周期：
+     * <ul>
+     *   <li><b>新（三数组）</b> {@code added/modified/removed}：删除是<b>显式</b>的——只删
+     *       {@code removed} 里点名的 id，payload 里没出现的行一律不动。</li>
+     *   <li><b>旧（全量 lineItems）</b>：删除是<b>隐式</b>的——payload 里没出现 = 用户删了。
+     *       保留仅为回滚兜底，命中即打 WARN。</li>
+     * </ul>
+     *
+     * <p>🚨 这是本任务风险最高的一处：失败方向从「误删」反转成「删不掉」（静默残留）。
+     * 所以 {@link #processBatchStage1} 里对实际删除的 id 列表做了 INFO 日志。
+     */
+    static final class DraftDelta {
+        /** 本次要写的行 = added + modified（新协议）或 lineItems 全量（旧协议）。 */
+        final java.util.List<SaveDraftRequest.LineItemDraft> lines = new java.util.ArrayList<>();
+        /** 显式删除的行 id（仅新协议非空）。 */
+        final java.util.Set<java.util.UUID> removedIds = new java.util.LinkedHashSet<>();
+        /**
+         * task-260901 B-4b/B-4c：本次实际落库的行 id，下标与 {@link #lines} 对齐（新行在这里拿到
+         * 后端生成的 id）。saveDraft 末尾据此只查这几行的 6 个字段回传，不再整单 loadLineItems。
+         */
+        java.util.UUID[] writtenIds;
+        /** true = 新三数组协议（显式删除 + 只加载被点名的行）。 */
+        boolean incremental;
+        /** 本次请求是否携带明细部分（false = 纯单头 patch，明细整块跳过，行为与改造前 lineItems==null 一致）。 */
+        boolean hasLinePayload;
+    }
+
+    static DraftDelta resolveDelta(SaveDraftRequest request) {
+        DraftDelta delta = new DraftDelta();
+        boolean hasIncremental = request.added != null || request.modified != null || request.removed != null;
+        if (request.lineItems != null) {
+            if (hasIncremental) {
+                throw new BusinessException(400,
+                        "lineItems 与 added/modified/removed 不能同时出现（前者是待下线的旧全量协议）");
+            }
+            LOG.warnf("[saveDraft-compat] 收到旧全量协议 lineItems（%d 行）——删除语义仍为「payload 未出现即删除」。"
+                    + " 该字段为 task-260901 的回滚兜底，将在下个版本周期移除。", request.lineItems.size());
+            delta.lines.addAll(request.lineItems);
+            delta.hasLinePayload = true;
+            return delta;
+        }
+        if (!hasIncremental) {
+            return delta;   // 纯单头 patch：明细整块跳过
+        }
+        delta.incremental = true;
+        delta.hasLinePayload = true;
+        if (request.added != null) {
+            for (SaveDraftRequest.LineItemDraft d : request.added) {
+                if (d == null) continue;
+                if (d.id != null) {
+                    throw new BusinessException(400, "added[] 中的行 id 必须为 null，收到 " + d.id);
+                }
+                delta.lines.add(d);
+            }
+        }
+        if (request.modified != null) {
+            for (SaveDraftRequest.LineItemDraft d : request.modified) {
+                if (d == null) continue;
+                if (d.id == null) {
+                    throw new BusinessException(400, "modified[] 中的行必须带 id（新增行请放 added[]）");
+                }
+                delta.lines.add(d);
+            }
+        }
+        if (request.removed != null) {
+            for (java.util.UUID rid : request.removed) {
+                if (rid != null) delta.removedIds.add(rid);
+            }
+        }
+        return delta;
+    }
+
     @SuppressWarnings("unchecked")
-    private void processBatchStage1(UUID quotationId, Quotation q, SaveDraftRequest request) {
-        java.util.List<QuotationLineItem> existingLines = QuotationLineItem.list("quotationId = ?1", quotationId);
+    private void processBatchStage1(UUID quotationId, Quotation q, SaveDraftRequest request, DraftDelta delta) {
+        // ── task-260901 B-2c：只加载本次真正会用到的行实体 ─────────────────────────────────────
+        // 旧协议：仍整单加载（隐式删除语义要求知道「库里还有哪些行没出现在 payload 里」）。
+        // 新协议：只加载 modified + removed 点名的行。1845 行的单里改一个格子，这里从
+        //   「1845 个实体（含 quote_card_values / costing_card_values 两个大 jsonb 列）」
+        //   降到「1 个实体」——E1 场景 3 实测的那 18.8s 有很大一块在这里。
+        // 🔒 仍是 1 条 SQL，与行数无关（IN 列表，不是逐行查）。
+        java.util.List<QuotationLineItem> existingLines;
+        if (delta.incremental) {
+            java.util.Set<java.util.UUID> referenced = new java.util.LinkedHashSet<>(delta.removedIds);
+            for (SaveDraftRequest.LineItemDraft d : delta.lines) {
+                if (d.id != null) referenced.add(d.id);
+            }
+            existingLines = referenced.isEmpty()
+                    ? java.util.List.of()
+                    : QuotationLineItem.list("quotationId = ?1 and id in ?2",
+                            quotationId, new ArrayList<>(referenced));
+        } else {
+            existingLines = QuotationLineItem.list("quotationId = ?1", quotationId);
+        }
         java.util.Map<java.util.UUID, QuotationLineItem> existingById = new java.util.HashMap<>();
         for (QuotationLineItem ex : existingLines) existingById.put(ex.id, ex);
 
@@ -2400,14 +2734,39 @@ public class QuotationService {
 
         // ── §2.1 预处理：批量读旧 componentData（tombstones + snapshotRows），然后整单一次 DELETE ──
         // 先确定复用行集合 & 被删行集合
-        for (int i = 0; i < request.lineItems.size(); i++) {
-            SaveDraftRequest.LineItemDraft d = request.lineItems.get(i);
+        for (int i = 0; i < delta.lines.size(); i++) {
+            SaveDraftRequest.LineItemDraft d = delta.lines.get(i);
             if (d.id != null && existingById.containsKey(d.id)) {
                 keptIds.add(d.id);
+            } else if (d.id != null) {
+                // modified 里点名的 id 不在本单（或压根不存在）→ 400。绝不能默默新建一行：
+                // 那会让「改 A 单的行」变成「往 B 单里插一行」。
+                throw new BusinessException(400,
+                        "modified[] 中的 line item id 不属于本报价单：" + d.id);
             }
         }
-        for (QuotationLineItem ex : existingLines) {
-            if (!keptIds.contains(ex.id)) removedIds.add(ex.id);
+        // ── task-260901 B-2b：删除语义从隐式改显式 ─────────────────────────────────────────────
+        // 🚨 失败方向在这里发生了反转：改造前是「漏发一行 = 那行被删」（误删），改造后是
+        //    「漏进 removed = 那行删不掉」（静默残留）。所以下面对实际删除的 id 做 INFO 日志，
+        //    出问题时能从日志直接对账「用户点了删除、后端到底删没删」。
+        if (delta.incremental) {
+            for (java.util.UUID rid : delta.removedIds) {
+                if (existingById.containsKey(rid)) {
+                    removedIds.add(rid);
+                } else {
+                    // 幂等：重复删除 / 已被别处删掉 → 跳过而不是 400（前端重试不该报错）。
+                    LOG.warnf("[saveDraft-remove] quotation=%s removed[] 里的 id=%s 不在本单（已删或不存在），跳过",
+                            quotationId, rid);
+                }
+            }
+        } else {
+            for (QuotationLineItem ex : existingLines) {
+                if (!keptIds.contains(ex.id)) removedIds.add(ex.id);
+            }
+        }
+        if (!removedIds.isEmpty()) {
+            LOG.infof("[saveDraft-remove] quotation=%s 本次实际删除 %d 行：%s",
+                    quotationId, removedIds.size(), removedIds);
         }
 
         // 整单一次读取所有复用行的旧 componentData（FixC1 + Part A）
@@ -2442,7 +2801,7 @@ public class QuotationService {
         // ⚠️ 只在 keptIds（复用行）范围内判定：全新行(不在 keptIds)没有旧数据可 UPSERT，天然走原逻辑。
         java.util.Set<java.util.UUID> upsertEligibleLineIds = new java.util.HashSet<>();
         if (!keptIds.isEmpty()) {
-            for (SaveDraftRequest.LineItemDraft d : request.lineItems) {
+            for (SaveDraftRequest.LineItemDraft d : delta.lines) {
                 if (d.id == null || !keptIds.contains(d.id)) continue;
                 java.util.Set<java.util.UUID> payloadCompIds = payloadComponentIdSet(d);
                 if (payloadCompIds == null) continue; // 含 null/重复 componentId → 判不准，回落
@@ -2494,9 +2853,27 @@ public class QuotationService {
         for (QuotationTreeService.CompMeta cm : treeComps) {
             metaByComponent.put(cm.id, new QuotationTreeService.TabMeta(cm.tabType, cm.partNoField, cm.partNameField));
         }
+        // task-260901 B-1c 条件③'：本模板的 driver 组件 id 集合（data_driver_path 非空）。
+        // 用途——saveDraft 提交之后 QuotationResource 会调 snapshotQuotation(id, true)，它对「任一
+        // driver 组件缺 snapshot_rows」的行重 expand（ConfigureSnapshotService#lineNeedsExpand）。
+        // 那种行的 snapshot_rows 会在本次请求内被改写，卡片值必须跟着失效——否则改成有条件置 NULL
+        // 之后，这类行会永久停留在旧卡片值上（原先无条件置 NULL 把这个洞盖住了）。
+        // 🔒 复用 ConfigureSnapshotService.lineNeedsExpand 同一个判定函数，不另写一份，避免两处漂移。
+        // SQL 成本：allTabsOf 整单一次（与上面 treeComps 同源、模板级），与行数无关。
+        java.util.Set<java.util.UUID> driverCompIds = new java.util.HashSet<>();
+        if (q.customerTemplateId != null) {
+            for (com.cpq.template.entity.TemplateComponentSnapshot tab
+                    : publishedTemplateReader.driverCompsOf(q.customerTemplateId)) {
+                if (tab.componentId != null) driverCompIds.add(tab.componentId);
+            }
+        }
+
         // repair-260829 B-2：待校验三元组整单收集，循环外统一 flush 一次后再校验（原逐行 flush+assert
         // 占该请求 82.6% 耗时，见问题说明.md 4.2）。Object[] = {componentId, rowData, lineItemId}
         java.util.List<Object[]> allPendingRestrictedChecks = new java.util.ArrayList<>();
+        // task-260901 B-1c：本次实际失效了卡片值的行数（诊断用，AC-7/AC-8 靠它一眼看出是 1 行还是全单）。
+        int cardValuesInvalidated = 0;
+        final boolean conditionalInvalidate = conditionalInvalidateEnabled();
 
         // ── 主循环：persist 行实体 + 子表 ────────────────────────────────────────────────────
         // E3 收集：需要 seed 工序的 (lineItemId → partNo) 对
@@ -2507,23 +2884,49 @@ public class QuotationService {
         java.util.List<QuotationLineItem> derivedAttrLines = new java.util.ArrayList<>();
         java.util.List<String> derivedAttrPartNos = new java.util.ArrayList<>();
 
-        BigDecimal total = BigDecimal.ZERO;
-        java.util.UUID[] newIdsByIndex = new java.util.UUID[request.lineItems.size()];
+        java.util.UUID[] newIdsByIndex = new java.util.UUID[delta.lines.size()];
         com.fasterxml.jackson.databind.ObjectMapper cpOm = new com.fasterxml.jackson.databind.ObjectMapper();
 
-        for (int i = 0; i < request.lineItems.size(); i++) {
-            SaveDraftRequest.LineItemDraft liDraft = request.lineItems.get(i);
+        for (int i = 0; i < delta.lines.size(); i++) {
+            SaveDraftRequest.LineItemDraft liDraft = delta.lines.get(i);
             QuotationLineItem li;
-            if (liDraft.id != null && existingById.containsKey(liDraft.id)) {
+            boolean isNewLine = !(liDraft.id != null && existingById.containsKey(liDraft.id));
+            if (!isNewLine) {
                 li = existingById.get(liDraft.id);
-                li.parentLineItemId = null;  // 父子关系清空，待二阶段重链
+                // task-260901 B-2f：只有旧全量协议才「先清空、再按下标全量重链」——那时 payload
+                // 装着整单，清空后一定会被重链回去。增量协议下 payload 只有被改的几行，父行很可能
+                // 不在里面，清空 = 把组合产品的父子关系静默打断，且不会有任何报错。
+                // 增量协议改为：显式给了 parentLineItemId / tempParentKey 才改，没给就原样不动。
+                if (!delta.incremental) {
+                    li.parentLineItemId = null;  // 父子关系清空，待二阶段重链
+                }
             } else {
                 li = new QuotationLineItem();
+            }
+            // ── task-260901 B-1c：卡片值失效判定（原先无条件置 NULL，见本方法末尾的赋值点）──────
+            // 满足任一即失效：④ 新行；③ 走全删全建（componentData 结构变了 → snapshot_rows 被重建）；
+            // ③' 随后的 snapshotQuotation 会重 expand 本行；② productAttributeValues 变；
+            // ① 任一 componentData 的 rowData 变（在下面的 componentData 循环里判）。
+            // 🔒 ③ 必须复用 B-6 的同一个 upsertEligibleLineIds 集合，不能另算一遍——两处判据一旦漂移
+            //    就是静默 bug：结构被重建了却没失效卡片值 = 页面显示旧值且永不自愈。
+            boolean upsertLine = !isNewLine && upsertEligibleLineIds.contains(liDraft.id);
+            // 逃生阀关闭时退回改造前的无条件失效（见 conditionalInvalidateEnabled 注释）
+            boolean invalidateCardValues = !conditionalInvalidate || !upsertLine;
+            if (!invalidateCardValues && com.cpq.configure.service.ConfigureSnapshotService.lineNeedsExpand(
+                    driverCompIds, allSnapshots.getOrDefault(li.id, java.util.Collections.emptyMap()))) {
+                invalidateCardValues = true;   // ③'
             }
             li.quotationId = quotationId;
             li.productId = liDraft.productId;
             li.templateId = liDraft.templateId != null ? liDraft.templateId : q.customerTemplateId;
-            if (liDraft.productAttributeValues != null) li.productAttributeValues = liDraft.productAttributeValues;
+            // task-260901 B-1c 条件②：productAttributeValues 是卡片值的输入之一（jsonb 列，同样受
+            // PG 规范化影响，必须语义比对而不是 String.equals）。真变了才赋值 + 失效卡片值。
+            if (liDraft.productAttributeValues != null
+                    && !com.cpq.common.JsonSemanticEquality.equal(
+                            li.productAttributeValues, liDraft.productAttributeValues)) {
+                li.productAttributeValues = liDraft.productAttributeValues;
+                invalidateCardValues = true;
+            }
             // repair-260829 B-9：数值相同就不赋值——库列 numeric(26,12)，前端发送 scale=6，
             // BigDecimal.equals() 比较 scale 会把数值相同但 scale 不同的值判脏，致 @DynamicUpdate
             // 实体（QuotationLineItem）无法合批、逐行往返（问题说明.md ⑤ B-9 段，1845 行 UPDATE ≈27s）。
@@ -2532,7 +2935,18 @@ public class QuotationService {
                     && (li.subtotal == null || li.subtotal.compareTo(liDraft.subtotal) != 0)) {
                 li.subtotal = liDraft.subtotal;
             }
-            li.sortOrder = liDraft.sortOrder != null ? liDraft.sortOrder : i;
+            // ── task-260901 B-2e：sortOrder 不再回退 payload 下标 ────────────────────────────
+            // 增量协议下 payload 只装被改的行，下标 i 是「本次数组里的第几个」，与整单行序毫无关系。
+            // 沿用 `: i` 会把「第 3 行」写成 sort_order=0，静默打乱行序。改为必填。
+            if (liDraft.sortOrder == null) {
+                if (delta.incremental) {
+                    throw new BusinessException(400,
+                            "sortOrder 必填（增量协议下 payload 下标不再代表行序）；缺失的行 id=" + liDraft.id);
+                }
+                li.sortOrder = i;   // 旧全量协议：payload 即整单全序，保留原回退行为
+            } else {
+                li.sortOrder = liDraft.sortOrder;
+            }
             if (liDraft.productPartNo != null && !liDraft.productPartNo.isBlank()) {
                 li.productPartNoSnapshot = liDraft.productPartNo;
             }
@@ -2558,10 +2972,10 @@ public class QuotationService {
             li.discountRuleCode = liDraft.discountRuleCode;
             if (liDraft.quoteExcelValues != null) li.quoteExcelValues = liDraft.quoteExcelValues;
             li.persist();
-            // D-1 失效(lazy-cardvalues):本行子表(snapshot_rows)被重建 → 旧卡片值过期,置 NULL,
-            // 使 ensureCardValues 的 IS NULL 谓词下次重新选中、用最新 snapshot_rows 重算。
-            li.quoteCardValues = null;
-            li.costingCardValues = null;
+            // task-260901 B-1c：D-1 失效(lazy-cardvalues) 挪到本轮迭代末尾——必须等 componentData
+            // 循环判完 rowData 有没有真变，才知道该不该置 NULL。原先在这里无条件置 NULL，实测
+            // (B-0 Exp-1/Exp-3b) 使「payload 与库逐字节相同」的保存也产生 1845 条 line_item UPDATE，
+            // 并让 ensureCardValues 的 IS NULL 谓词选中全单 → 54s 全量重算。
             newIdsByIndex[i] = li.id;
 
             // Product 查询：填充 productPartNoSnapshot / productNameSnapshot，收集 partNo
@@ -2577,7 +2991,7 @@ public class QuotationService {
                 }
             }
 
-            if (liDraft.subtotal != null) total = total.add(liDraft.subtotal);
+            // （task-260901 B-2d：原先这里累加 liDraft.subtotal 求总额，已改为末尾一次 SELECT sum）
 
             // processNos（低频，逐行 persist，无性能收益集合化）
             // task-0712 缺口1 遗留涟漪修复: process_no 全链贯通, 取代旧 process_id(process V4 UUID)。
@@ -2624,7 +3038,6 @@ public class QuotationService {
             // repair-260829 B-2：本行待校验三元组只收集进整单级别的 allPendingRestrictedChecks，不再
             // 在此处 flush+assert（原逐行 flush 占该请求 82.6% 耗时，见问题说明.md 4.2）。
             if (liDraft.componentData != null) {
-                boolean upsertLine = upsertEligibleLineIds.contains(li.id);
                 java.util.Map<java.util.UUID, QuotationLineComponentData> oldCdForLine = upsertLine
                         ? oldCdByLineAndComp.getOrDefault(li.id, java.util.Collections.emptyMap())
                         : java.util.Collections.emptyMap();
@@ -2643,8 +3056,27 @@ public class QuotationService {
                         // B-6 UPSERT：托管实体，只改这 4 列；不 touch snapshotRows/deletedRowKeys，
                         // Hibernate dirty checking 在 flush 时自动生成 UPDATE，不需要 persist()。
                         reused.tabName = cdDraft.tabName;
-                        if (cdDraft.rowData != null) reused.rowData = cdDraft.rowData;
-                        if (cdDraft.subtotal != null) reused.subtotal = cdDraft.subtotal;
+                        // ── task-260901 B-1a：rowData 语义比对后再赋值 ─────────────────────────
+                        // 🚨 这里绝不能用 String.equals：row_data 是 jsonb，库里读回的是 PG 规范化文本
+                        //    （键按 UTF-8 字节长度重排 + ": " / ", " 空格），前端来的是 JSON.stringify
+                        //    的插入序无空格串，两者必然不等 ⇒ 字符串比对会永远判「变了」，等于没改。
+                        //    实测（B-0 Exp-2）：只把键序换一下重发，7380 条文本不同的全部产生 UPDATE，
+                        //    1845 条文本相同的一条都没有。
+                        //    JsonSemanticEquality 对 null / 非法 JSON 返回 false ＝ 按「已变」处理，
+                        //    失败方向必须是「多写一次」而不是「漏写用户的编辑」。
+                        if (cdDraft.rowData != null
+                                && !com.cpq.common.JsonSemanticEquality.equal(reused.rowData, cdDraft.rowData)) {
+                            reused.rowData = cdDraft.rowData;
+                            invalidateCardValues = true;   // B-1c 条件①
+                        }
+                        // ── task-260901 B-1b：subtotal 用 compareTo，与 li.subtotal 的既有写法同口径 ──
+                        // （repair-260829 B-9 只修了 li.subtotal，漏了 cd.subtotal：库列 numeric(26,12)
+                        //   而前端发 scale=6，BigDecimal.equals 比较 scale ⇒ 数值相同也判脏。）
+                        if (cdDraft.subtotal != null
+                                && (reused.subtotal == null || reused.subtotal.compareTo(cdDraft.subtotal) != 0)) {
+                            reused.subtotal = cdDraft.subtotal;
+                            invalidateCardValues = true;   // 页签小计是卡片值的组成部分，真变了就得重算
+                        }
                         reused.sortOrder = cdDraft.sortOrder != null ? cdDraft.sortOrder : j;
                     } else {
                         // 全删全建路径（新行 / 结构变化的复用行；upsertLine=true 但 reused==null 理论
@@ -2665,6 +3097,15 @@ public class QuotationService {
                         cd.persist();
                     }
                 }
+            }
+
+            // ── task-260901 B-1c：本行真的变了才失效卡片值（AC-7 / AC-8 / AC-19 / AC-21）──────────
+            // 置 NULL = 让 CardSnapshotService#ensureCardValues 的「... IS NULL」谓词下次选中本行重算。
+            // 不置 NULL 的行保持旧值 ⇒ 报价侧与核价侧都不重算，也就不会被 54s 全量补算拖住。
+            if (invalidateCardValues) {
+                li.quoteCardValues = null;
+                li.costingCardValues = null;
+                cardValuesInvalidated++;
             }
         } // end main loop
 
@@ -2706,8 +3147,19 @@ public class QuotationService {
                     Map<String, Object> calcResults = derivedAttributeCalculatorV5.calculate(
                             q.customerId, partNo, derivedAttrs);
                     if (!calcResults.isEmpty()) {
-                        li.productAttributeValues = mergeFormulaResults(li.productAttributeValues, calcResults);
-                        anyDerivedChanged = true;
+                        // task-260901 B-1c 条件②的第二个写点：衍生属性回写也会改
+                        // productAttributeValues ⇒ 卡片值的输入变了，本行必须失效。
+                        // 只有「合并后真的不一样」才算变（公式是纯函数，同样的输入每次算出同样的值，
+                        // 原代码 calcResults 非空就置 anyDerivedChanged=true 会让每次保存都白 flush）。
+                        String beforeMerge = li.productAttributeValues;
+                        String merged = mergeFormulaResults(beforeMerge, calcResults);
+                        if (!com.cpq.common.JsonSemanticEquality.equal(beforeMerge, merged)) {
+                            li.productAttributeValues = merged;
+                            li.quoteCardValues = null;
+                            li.costingCardValues = null;
+                            cardValuesInvalidated++;
+                            anyDerivedChanged = true;
+                        }
                     }
                     logFormulaErrors(calcResults, quotationId, partNo);
                 }
@@ -2719,6 +3171,12 @@ public class QuotationService {
         if (anyDerivedChanged) {
             em.flush();  // 统一一次 flush，等价于逐行 flush（公式纯函数，顺序无关）
         }
+
+        // task-260901 B-1c 诊断：本次收到多少行、其中多少行真的被判定为「变了」而失效了卡片值。
+        // AC-7/AC-8 验收时直接看这一行——正常「改一个格子」应当是 invalidated=1。
+        LOG.infof("[savedraft-invalidate] quotation=%s payloadLines=%d upsertEligible=%d cardValuesInvalidated=%d conditional=%b",
+                quotationId, delta.lines.size(), upsertEligibleLineIds.size(), cardValuesInvalidated,
+                conditionalInvalidate);
 
         // ── E3 seedProcessesFromBase 整单批量 INSERT ───────────────────────────────────────────
         // 原逐行：每行各自按 partNo 查 material_bom_item + INSERT quotation_line_process。
@@ -2769,7 +3227,17 @@ public class QuotationService {
             }
         }
 
-        // ── 更新总额 ───────────────────────────────────────────────────────────────────────────
+        // ── task-260901 B-2d：总额改为从库聚合 ─────────────────────────────────────────────────
+        // 原来是「遍历 payload 累加 liDraft.subtotal」。增量协议下 payload 只装被改的那几行，
+        // 继续累加会把整单总价打成「只有这几行的和」——AC-4（只改单头）更是会直接归零。
+        // 改为写入落库后 SELECT sum(subtotal)：1 条 SQL，与行数无关，且顺带修掉旧口径的一个缺陷
+        // （payload 里 subtotal==null 的行原先被排除在总额之外，但它在库里的值是保留的）。
+        // 🔒 必须先 flush：本次的 INSERT/UPDATE/DELETE 还在持久化上下文里，原生查询看不到。
+        em.flush();
+        BigDecimal total = (BigDecimal) em.createNativeQuery(
+                "SELECT COALESCE(sum(subtotal), 0) FROM quotation_line_item WHERE quotation_id = :q")
+            .setParameter("q", quotationId).getSingleResult();
+        if (total == null) total = BigDecimal.ZERO;
         // 除法过程保留 12 位；报价总额在独立 QUOTATION_TOTAL_SCALE 结果边界落库。
         q.originalAmount = quotationTotalResult(total);
         q.totalAmount = quotationTotalResult(total.multiply(q.finalDiscountRate)
@@ -2779,15 +3247,41 @@ public class QuotationService {
         // 原逐行：per-child UPDATE quotation_line_item SET parent_line_item_id = :pid WHERE id = :cid。
         // 集合化：批量 UPDATE...FROM (VALUES (...)) AS v(cid, pid)。
         // 等价论证：同 (childId, parentId) 对，UPDATE 结果逐行相同。
+        //
+        // ── task-260901 B-2f：父子关系不再靠 payload 下标 ──────────────────────────────────────
+        // 增量协议下 tempParentIndex（父行在 payload 数组里的下标）已无意义：payload 里可能根本
+        // 没有父行。改用 tempParentKey（父行的 tempId，父子同在 added 里）或 parentLineItemId
+        // （父行已持久化，直接给 DB id）。两者互斥，见 api.md §1.2。
         java.util.List<java.util.UUID[]> parentChildPairs = new java.util.ArrayList<>();
-        for (int i = 0; i < request.lineItems.size(); i++) {
-            SaveDraftRequest.LineItemDraft draft = request.lineItems.get(i);
-            if (draft.tempParentIndex == null) continue;
-            int parentIdx = draft.tempParentIndex;
-            if (parentIdx < 0 || parentIdx >= newIdsByIndex.length) continue;
+        java.util.Map<String, java.util.UUID> idByTempId = new java.util.HashMap<>();
+        for (int i = 0; i < delta.lines.size(); i++) {
+            SaveDraftRequest.LineItemDraft d = delta.lines.get(i);
+            if (d.tempId != null && !d.tempId.isBlank() && newIdsByIndex[i] != null) {
+                idByTempId.put(d.tempId, newIdsByIndex[i]);
+            }
+        }
+        for (int i = 0; i < delta.lines.size(); i++) {
+            SaveDraftRequest.LineItemDraft draft = delta.lines.get(i);
             java.util.UUID childId = newIdsByIndex[i];
-            java.util.UUID parentId = newIdsByIndex[parentIdx];
-            if (childId == null || parentId == null) continue;
+            if (childId == null) continue;
+            java.util.UUID parentId = null;
+            if (draft.parentLineItemId != null) {
+                parentId = draft.parentLineItemId;
+            } else if (draft.tempParentKey != null && !draft.tempParentKey.isBlank()) {
+                parentId = idByTempId.get(draft.tempParentKey);
+                if (parentId == null) {
+                    // 父行既不在本次 payload 里、也没给 parentLineItemId → 认不出父亲。宁可 400
+                    // 也不要静默落成孤儿行（组合产品父子错乱是静默 bug，页面上看不出来）。
+                    throw new BusinessException(400,
+                            "tempParentKey=" + draft.tempParentKey + " 在本次 added[] 中找不到对应的 tempId");
+                }
+            } else if (!delta.incremental && draft.tempParentIndex != null) {
+                // 旧全量协议：保留原来的下标语义（payload 即整单全序）
+                int parentIdx = draft.tempParentIndex;
+                if (parentIdx < 0 || parentIdx >= newIdsByIndex.length) continue;
+                parentId = newIdsByIndex[parentIdx];
+            }
+            if (parentId == null) continue;
             parentChildPairs.add(new java.util.UUID[]{childId, parentId});
         }
         if (!parentChildPairs.isEmpty()) {
@@ -2816,6 +3310,43 @@ public class QuotationService {
                 upd.executeUpdate();
             }
         }
+        delta.writtenIds = newIdsByIndex;   // task-260901 B-4b
+    }
+
+    /**
+     * task-260901 B-4b：只查<b>本次变化行</b>的 6 个回传字段。
+     *
+     * <p>🔑 这是那 18.8 秒的来源被拆掉的地方：原来是 {@code loadLineItems(id)}——整单 1845 行
+     * 实体化 + 9225 条 componentData（9.3 MB）搬回来再序列化，而前端一个字节都不读。
+     *
+     * <p>🚫 N+1 纪律：一条 {@code IN} 查询，SQL 条数与行数无关，绝不逐行查。
+     */
+    @SuppressWarnings("unchecked")
+    private java.util.List<com.cpq.quotation.dto.SaveDraftResponse.Line> loadChangedLinesLight(
+            java.util.List<java.util.UUID> ids, java.util.Map<java.util.UUID, String> tempIdById) {
+        java.util.List<com.cpq.quotation.dto.SaveDraftResponse.Line> out = new java.util.ArrayList<>();
+        if (ids == null || ids.isEmpty()) return out;
+        String[] idsAsText = ids.stream().map(UUID::toString).toArray(String[]::new);
+        List<Object[]> rows = em.createNativeQuery(
+                "SELECT id, part_version_locked, quote_card_values::text, costing_card_values::text, " +
+                "       quote_excel_values::text, costing_excel_values::text " +
+                "FROM quotation_line_item " +
+                "WHERE id IN (SELECT unnest(CAST(:ids AS text[]))::uuid) " +
+                "ORDER BY sort_order NULLS LAST, id")
+            .setParameter("ids", idsAsText).getResultList();
+        for (Object[] r : rows) {
+            com.cpq.quotation.dto.SaveDraftResponse.Line line =
+                    new com.cpq.quotation.dto.SaveDraftResponse.Line();
+            line.id = (r[0] instanceof UUID u) ? u : UUID.fromString(String.valueOf(r[0]));
+            line.partVersionLocked = r[1] == null ? null : ((Number) r[1]).intValue();
+            line.quoteCardValues = r[2] == null ? null : r[2].toString();
+            line.costingCardValues = r[3] == null ? null : r[3].toString();
+            line.quoteExcelValues = r[4] == null ? null : r[4].toString();
+            line.costingExcelValues = r[5] == null ? null : r[5].toString();
+            line.tempId = tempIdById.get(line.id);   // B-4c：按 tempId 回传，不按数组顺序
+            out.add(line);
+        }
+        return out;
     }
 
     static BigDecimal quotationTotalResult(BigDecimal value) {
