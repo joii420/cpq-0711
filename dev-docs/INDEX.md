@@ -62,6 +62,7 @@
 
 | 分支 | worktree | 领先 master | 状态 |
 |---|---|---|---|
+| **`feat/task-260901-材质管理模块定义规则更新`** | `.claude/worktrees/task-260901-材质` | **0 笔**（建于 `146f43f5`） | 🔵 **开发中** —— 材质管理模块定义规则更新，闸门 A 已放行（2026-09-01，经五轮反馈定稿）。材质模型加「元素组成」+「含量配置」两层；导入改单表 4 列、只增不改。AC 35 条 / B-1~B-20 / F-1~F-13。⚠️ **B-3 含 `DROP CONSTRAINT` + `DROP COLUMN`，属 §3.2 红线，未批准前不得 apply** |
 | `feat/quote-material-no` | 无 | **1 笔** | 🟡 悬挂（内容仅 `BACKLOG.md` +15 行零代码，技术债已转 [[BL-0175]]，见 §8.3） |
 | `fix/repair-260829-skeleton-lock` | `.claude/worktrees/repair-260829-skeleton-lock` | **0 笔**（建于 `cf76bb8e`） | 🔵 **开发中** —— `repair-260829-卡片值算早了骨架值锁死`，闸门 A 已放行（2026-08-29）。B-1 产物自检为主体，B-4 `MaterializeRegistry` 供并发会话消费 |
 
