@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>原型导航 · 材质管理模块定义规则更新（task-260901）</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;margin:0;padding:24px;background:#f0f2f5;color:rgba(0,0,0,.88);font-size:14px;line-height:1.5714}
+.wrap{max-width:1200px;margin:0 auto}
+h1{font-size:20px;margin:0 0 4px;font-weight:600}
+.sub{color:rgba(0,0,0,.45);font-size:13px;margin:0 0 8px}
+.navback{display:inline-block;margin-bottom:20px;color:#1677ff;text-decoration:none;font-size:13px}
+.navback:hover{text-decoration:underline}
+.card{background:#fff;border-radius:8px;padding:20px 24px;margin-bottom:20px;box-shadow:0 1px 2px rgba(0,0,0,.03),0 1px 6px -1px rgba(0,0,0,.02)}
+.card>h2{font-size:15px;margin:0 0 4px;font-weight:600;display:flex;align-items:center;gap:8px}
+.card>.hint{color:rgba(0,0,0,.45);font-size:12px;margin:0 0 16px}
+.state{display:inline-block;background:#f0f5ff;color:#1677ff;border:1px solid #adc6ff;border-radius:4px;padding:0 7px;font-size:12px;font-weight:400}
+.state.warn{background:#fffbe6;color:#d48806;border-color:#ffe58f}
+.state.err{background:#fff2f0;color:#cf1322;border-color:#ffccc7}
+.state.ok{background:#f6ffed;color:#389e0d;border-color:#b7eb8f}
+.toolbar{display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap;padding-bottom:16px;border-bottom:1px solid #f0f0f0}
+.toolbar .spacer{flex:1}
+.btn{border:1px solid #d9d9d9;background:#fff;border-radius:6px;padding:4px 15px;font-size:14px;cursor:pointer;color:rgba(0,0,0,.88);height:32px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn.primary{background:#1677ff;border-color:#1677ff;color:#fff}
+.btn.danger{color:#ff4d4f;border-color:#ffccc7}
+.btn.sm{height:24px;padding:0 8px;font-size:12px;border-radius:4px}
+.btn.link{border:none;background:none;color:#1677ff;padding:0 4px;height:auto}
+.dis{position:relative;display:inline-block}
+.dis>.btn{background:rgba(0,0,0,.04)!important;border-color:#d9d9d9!important;color:rgba(0,0,0,.25)!important;cursor:not-allowed}
+.dis>.tip{visibility:hidden;opacity:0;transition:.15s;position:absolute;left:50%;transform:translateX(-50%);bottom:calc(100% + 8px);background:rgba(0,0,0,.85);color:#fff;font-size:12px;line-height:1.5;padding:6px 8px;border-radius:6px;white-space:nowrap;z-index:20}
+.dis>.tip:after{content:"";position:absolute;top:100%;left:50%;margin-left:-5px;border:5px solid transparent;border-top-color:rgba(0,0,0,.85)}
+.dis:hover>.tip{visibility:visible;opacity:1}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-weight:600;color:rgba(0,0,0,.88);background:#fafafa;padding:12px 12px;border-bottom:1px solid #f0f0f0;white-space:nowrap}
+td{padding:12px 12px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+tr.sel td{background:#e6f4ff}
+tbody tr:hover td{background:#fafafa}
+tbody tr.sel:hover td{background:#e6f4ff}
+.mono{font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;font-size:13px}
+.muted{color:rgba(0,0,0,.45)}
+.tag{display:inline-block;border-radius:4px;padding:0 7px;font-size:12px;line-height:20px;border:1px solid;background:#fafafa;border-color:#d9d9d9;color:rgba(0,0,0,.88)}
+.tag.blue{background:#e6f4ff;border-color:#91caff;color:#0958d9}
+.tag.green{background:#f6ffed;border-color:#b7eb8f;color:#389e0d}
+.tag.grey{background:#fafafa;border-color:#d9d9d9;color:rgba(0,0,0,.45)}
+.tag.red{background:#fff2f0;border-color:#ffccc7;color:#cf1322}
+.tag.gold{background:#fffbe6;border-color:#ffe58f;color:#d48806}
+.exp{background:#fafafa;padding:0}
+.exp-inner{padding:16px 16px 16px 48px}
+.exp-inner .exp-title{font-size:13px;font-weight:600;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+.exp table{background:#fff;border:1px solid #f0f0f0;border-radius:6px;overflow:hidden}
+.exp th{background:#fff;font-size:12px;color:rgba(0,0,0,.45);font-weight:400;padding:8px 12px}
+.exp td{padding:8px 12px;font-size:13px}
+.empty{padding:40px 0;text-align:center;color:rgba(0,0,0,.25)}
+.empty .ico{font-size:40px;display:block;margin-bottom:8px;opacity:.35}
+.empty .act{margin-top:12px}
+.ckbox{width:16px;height:16px;border:1px solid #d9d9d9;border-radius:4px;display:inline-block;vertical-align:-3px;background:#fff}
+.ckbox.on{background:#1677ff;border-color:#1677ff;position:relative}
+.ckbox.on:after{content:"";position:absolute;left:5px;top:1.5px;width:4px;height:9px;border:2px solid #fff;border-top:0;border-left:0;transform:rotate(45deg)}
+.drawer{border:1px solid #f0f0f0;border-radius:8px;overflow:hidden;box-shadow:0 6px 16px rgba(0,0,0,.08);background:#fff;max-width:760px}
+.drawer.wide{max-width:1000px}
+.drawer-hd{padding:16px 24px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between}
+.drawer-hd .t{font-size:16px;font-weight:600}
+.drawer-bd{padding:24px}
+.drawer-ft{padding:12px 24px;border-top:1px solid #f0f0f0;display:flex;justify-content:flex-end;gap:8px;background:#fff}
+.frow{display:flex;gap:12px;align-items:flex-start;margin-bottom:20px}
+.flab{width:132px;flex:none;text-align:right;padding-top:5px;color:rgba(0,0,0,.88);font-size:14px}
+.flab .req:before{content:"*";color:#ff4d4f;margin-right:4px;font-family:SimSun,sans-serif}
+.fval{flex:1;min-width:0}
+.inp{border:1px solid #d9d9d9;border-radius:6px;padding:4px 11px;height:32px;display:flex;align-items:center;background:#fff;font-size:14px}
+.inp.ro{background:rgba(0,0,0,.04);color:rgba(0,0,0,.45)}
+.inp.err{border-color:#ff4d4f}
+.inp.sel-like{justify-content:space-between;cursor:pointer}
+.inp .arw{color:rgba(0,0,0,.25);font-size:11px}
+.fhint{font-size:12px;color:rgba(0,0,0,.45);margin-top:4px}
+.ferr{font-size:12px;color:#ff4d4f;margin-top:4px}
+.sw{width:44px;height:22px;border-radius:11px;background:rgba(0,0,0,.25);position:relative;display:inline-block;vertical-align:middle;cursor:pointer;transition:.2s}
+.sw:after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.2s;box-shadow:0 2px 4px rgba(0,0,0,.2)}
+.sw.on{background:#1677ff}
+.sw.on:after{left:24px}
+.sw.dis{opacity:.4;cursor:not-allowed}
+.swlab{margin-left:10px;font-size:13px;color:rgba(0,0,0,.65)}
+.alert{border-radius:8px;padding:12px 16px;font-size:13px;margin-bottom:16px;border:1px solid;display:flex;gap:10px;align-items:flex-start}
+.alert.info{background:#e6f4ff;border-color:#91caff}
+.alert.warn{background:#fffbe6;border-color:#ffe58f}
+.alert.err{background:#fff2f0;border-color:#ffccc7}
+.alert.ok{background:#f6ffed;border-color:#b7eb8f}
+.alert .ico{font-size:15px;line-height:1.4}
+.alert b{font-weight:600}
+.stats{display:flex;gap:0;border:1px solid #f0f0f0;border-radius:8px;overflow:hidden;margin-bottom:16px}
+.stat{flex:1;padding:14px 16px;border-right:1px solid #f0f0f0}
+.stat:last-child{border-right:none}
+.stat .k{font-size:12px;color:rgba(0,0,0,.45);margin-bottom:4px}
+.stat .v{font-size:22px;font-weight:600;line-height:1.2}
+.stat .v.warn{color:#d48806}
+.stat .v.err{color:#cf1322}
+.dropdown{border:1px solid #f0f0f0;border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.08);background:#fff;padding:4px;max-width:460px;margin-top:4px}
+.dropdown .opt{padding:8px 12px;border-radius:4px;cursor:pointer;font-size:14px;display:flex;justify-content:space-between;gap:12px;align-items:center}
+.dropdown .opt:hover{background:rgba(0,0,0,.04)}
+.dropdown .opt.on{background:#e6f4ff;font-weight:600}
+.dropdown .opt .r{font-size:12px;color:rgba(0,0,0,.45);font-weight:400}
+.note{border-left:3px solid #1677ff;background:#f0f5ff;padding:10px 14px;font-size:12px;color:rgba(0,0,0,.65);border-radius:0 6px 6px 0;margin-top:16px}
+.note b{color:rgba(0,0,0,.88)}
+.note code{background:rgba(0,0,0,.06);padding:1px 5px;border-radius:3px;font-family:Consolas,monospace}
+.acref{display:inline-block;background:#f9f0ff;color:#531dab;border:1px solid #d3adf7;border-radius:4px;padding:0 6px;font-size:11px;line-height:18px;margin-left:6px;font-weight:400}
+
+.mx{overflow-x:auto;border:1px solid #f0f0f0;border-radius:6px}
+.mx table{min-width:100%;width:auto}
+.mx th{white-space:nowrap;background:#fafafa;font-size:13px}
+.mx th.el{text-align:right;min-width:110px}
+.mx th.tot{text-align:right;min-width:90px;background:#f6ffed}
+.mx td{white-space:nowrap;font-size:13px}
+.mx td.num{text-align:right;font-family:"SFMono-Regular",Consolas,monospace}
+.mx td.tot{text-align:right;font-family:"SFMono-Regular",Consolas,monospace;background:#f6ffed;font-weight:600}
+.mx td.cfg{font-family:"SFMono-Regular",Consolas,monospace;font-weight:600}
+.mx tr.sel td{background:#e6f4ff}
+.mx tr.sel td.tot{background:#d9f7be}
+.l2{position:relative;margin-left:24px;border-left:3px solid #1677ff}
+.l2tag{position:absolute;left:-3px;top:-1px;background:#1677ff;color:#fff;font-size:11px;padding:2px 8px;border-radius:0 0 6px 0}
+
+</style>
+</head>
+<body>
+<div class="wrap">
+
+
+<div style="background:#f6ffed;border:1px solid #b7eb8f;border-radius:8px;padding:16px 20px;margin-bottom:24px">
+  <div style="font-size:16px;font-weight:600;margin-bottom:6px">&#128204; 当前基准 &nbsp;<span class="muted" style="font-size:13px;font-weight:400">task-260901-材质管理模块定义规则更新 &nbsp;|&nbsp; 2026-09-01</span></div>
+  <div style="font-size:13px;color:rgba(0,0,0,.65)">
+    本目录下的 5 份原型是<b>材质管理与选配材质环节此刻的视觉标准</b>，开发按这几张 1:1 还原。<br>
+    定稿时点：随整套任务文档在<b>闸门 A</b> 一并定稿（原型本身不新增闸门）。<br>
+    <b>v2（2026-09-01，闸门 A 第一轮反馈）：</b>① 材质管理页<b>取消行展开</b>，含量配置统一进抽屉；② 材质编辑抽屉 <b>760 &rarr; 1200 宽</b>，配置改<b>矩阵渲染</b>（行=配置、列=元素）；③ 所有含量数字<b>去掉小数点后多余的 0</b>。<br>
+    <b>v3（2026-09-01，闸门 A 第二轮：「材质的元素组成是怎么定的」）：</b>④ <b>元素组成改为材质的显式属性</b>（裁决 D10，新表 <code>material_recipe_composition</code>）—— 材质抽屉里新增独立的「元素组成」区，矩阵的列与列序取自它；无配置时可改、有配置后只读；⑤ 导入时新材质各组元素组成不一致 &rArr; <b>整个材质跳过</b>（裁决 D11），入库结果<b>不依赖文件行序</b>。<br>
+    <b>v4（2026-09-01，闸门 A 第四轮）：</b>⑥ <b>新建材质独立成一份原型</b>（原型 6）—— 新建态用<b>配方卡片</b>，元素组成由各卡片推导（保存时校验卡片间元素种类一致），与编辑态的矩阵形态<b>不是同一个界面</b>；⑦ 新增含量配置时<b>不再选元素</b> —— 元素行按材质元素组成预填且整列只读，用户只填含量。<br>
+    <b>v5（2026-09-01，闸门 A 第五轮：「选择框都是支持过滤的吗」）：</b>⑧ <b>选择框过滤规则补齐</b>（AC-35 + <code>fronttask.md §0</code> 对照表）—— 候选来自数据字典/主数据的一律开过滤且<b>显示了几段就能搜几段</b>；固定枚举（类型 / 状态）一律不开。原型 6 新增「状态 E · 元素框过滤」，原型 2 元素组成区与原型 5 两个下拉都补了搜索框，原型 3 那句已失效的过滤措辞已更正。
+  </div>
+</div>
+
+<h1>原型导航 · 材质管理模块定义规则更新</h1>
+<p class="sub">全部为静态 HTML，双击即可在浏览器打开，不依赖构建 / dev server / 网络。</p>
+
+<div class="card">
+  <h2>覆盖面对照（本任务动到 5 个页面，就有 5 份原型）</h2>
+  <p class="hint">按 <b>frontend.md &sect;1.3</b>：<code>fronttask.md</code> 里每个 <code>F-x</code> 涉及的页面 / 弹层都必须有对应 <code>.html</code>，只出一份不算完成。</p>
+  <table>
+    <thead><tr><th style="width:230px">原型</th><th>覆盖的页面 / 弹层</th><th style="width:300px">已画的状态</th></tr></thead>
+    <tbody>
+      <tr><td><a href="./1-材质管理页.html"><b>1 · 材质管理页</b></a></td>
+          <td><code>MaterialRecipeManagement.tsx</code><br><span class="muted">列表 + 工具栏动作，<b>无行展开</b></span></td>
+          <td>默认（选中 1 行）· 极值/最长文案 · 空数据（未配置含量）· 全禁用态（含 tooltip）</td></tr>
+      <tr><td><a href="./2-材质编辑抽屉.html"><b>2 · 材质编辑抽屉</b></a></td>
+          <td><code>MaterialRecipeEditDrawer.tsx</code>（<b>1200 宽</b>）<br><span class="muted"><b>只管编辑既有材质</b>：基本信息 + 元素组成区 + 自定义含量开关 + 含量配置矩阵 + 配置区工具栏</span></td>
+          <td>编辑既有（组成只读）· <b>极值（4 元素 + 12 位小数去零）</b> · <b>0 配置（组成可改 + 矩阵只剩表头）</b> · 错误态（超长/重名/组成锁定）</td></tr>
+      <tr><td><a href="./3-含量配置抽屉.html"><b>3 · 含量配置抽屉</b></a></td>
+          <td><b>本次新增页面（二级抽屉）</b><br><span class="muted">从材质抽屉的配置区打开；<b>元素只读预填、只填含量</b> + 删除二次确认</span></td>
+          <td>默认（合计符合）· 错误态 · 与已有配置重复 · 删除二次确认</td></tr>
+      <tr><td><a href="./6-新建材质抽屉.html"><b>6 · 新建材质抽屉</b></a></td>
+          <td><b>本次新增页面</b><br><span class="muted">与编辑态不同形态：材质名 + 自定义开关 + <b>配方卡片列表</b></span></td>
+          <td>默认（两张配方元素一致）· <b>各配方元素种类不一致（核心错误态）</b> · 刚打开（空配方）· 单卡内错误 + 预填便利</td></tr>
+      <tr><td><a href="./4-导入抽屉与报告.html"><b>4 · 导入抽屉与报告</b></a></td>
+          <td>导入入口 + 导入报告<br><span class="muted">4 列新模板 + 自动新建元素清单</span></td>
+          <td>上传前 · 导入报告（有新增有跳过）· 旧模板错误态 · 空数据</td></tr>
+      <tr><td><a href="./5-选配含量配置选择.html"><b>5 · 选配含量配置选择</b></a></td>
+          <td>选配步骤 2「材质」环节<br><span class="muted">含量配置下拉 + 自定义含量开关控制</span></td>
+          <td>不支持自定义（禁用+tooltip）· 支持并切到自定义 · 合计校验错误 · 材质无配置</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>两条 UI 规范的自检（原型自己也要守）</h2>
+  <table>
+    <thead><tr><th style="width:230px">规范</th><th>本组原型的落实</th></tr></thead>
+    <tbody>
+      <tr><td><b>&sect;1.1 抽屉替代弹窗</b></td>
+          <td>材质编辑、含量配置编辑、导入、删除二次确认 <b>全部用 Drawer</b>，无一处 Modal。宽度按内容取 520 / 760 / 1000。</td></tr>
+      <tr><td><b>&sect;1.2 工具栏动作 + enabledWhen</b></td>
+          <td>材质列表的动作在<b>页面顶部工具栏</b>，配置的动作在<b>材质抽屉内的配置区工具栏</b>，行内无动作按钮。禁用态一律<b>可见 + hover 给原因</b>，无一处 <code>return null</code> 隐藏。危险动作（停用材质 / 删除配置）走弹层并<b>逐条列出所选项</b>。</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>&#128336; 被本组原型取代的历史快照</h2>
+  <table>
+    <thead><tr><th style="width:300px">历史原型</th><th>偏差清单（它当时是对的，之后被本任务改了什么）</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>dev-docs/task-260812-材质元素改下拉选择/<br>原型-元素列.html</code><br><span class="muted">2026-08-12 交付，已合 master 92d09aa4</span></td>
+        <td>
+          <b>① 元素编辑的位置变了</b> —— 原本在<b>材质编辑抽屉</b>内直接编辑元素行；本次下沉到新增的<b>含量配置抽屉</b>（原型 3），材质抽屉里只剩只读概览。<br>
+          <b>② 元素行的归属变了</b> —— 原本一个材质一组元素；本次一个材质可有多组含量配置，元素行挂在配置下。<br>
+          <b>③ 材质抽屉多了一个开关</b> —— 新增「支持自定义含量」。<br>
+          <b>④ 未变（原样继承，不得回退）</b> —— 元素列<b>仍是元素字典下拉</b>，可按元素编号 / 符号 / 中文名过滤，选中后显示 <code>编号 / 符号 / 中文名</code>；<b>不得改回自由文本输入</b>。
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="note">按 <b>frontend.md &sect;1.3</b>：不回改历史快照的内容（它是那次交付的验收记录），只在其文件头加标记并在此处列偏差。</div>
+</div>
+
+<div class="card">
+  <h2>原型与验收标准的对应</h2>
+  <p class="hint">原型里带 <span class="acref">AC-x</span> 标记的地方，就是 <code>需求文档.md</code> &sect;&#9315; 对应 AC 的可观测断言来源。</p>
+  <table>
+    <thead><tr><th style="width:120px">原型</th><th>引用到的 AC</th></tr></thead>
+    <tbody>
+      <tr><td>1 · 材质管理页</td><td>AC-17（未配置含量 tag）· AC-26（配置编号扩位）· AC-29（工具栏禁用态，且<b>无「新增含量配置」按钮</b>）</td></tr>
+      <tr><td>2 · 材质编辑抽屉</td><td><b>AC-13（1200 宽 + 元素组成区 + 配置矩阵 + 无行展开）</b>· <b>AC-31（元素组成可改性两态 + 后端 409 守卫）</b>· <b>AC-30（含量去尾随零）</b>· AC-3（编号自增）· AC-16（自定义含量开关）· AC-17（0 配置时组成仍在、矩阵表头仍在）· AC-24（材质名超长）· AC-28 / M-6（材质名重复）</td></tr>
+      <tr><td>3 · 含量配置抽屉</td><td><b>AC-14（元素预填只读、只填含量）</b>· AC-10（元素集合一致，防绕过接口）· AC-15 / M-2（删除与编号不回收）· AC-22（删除不影响已有报价单）· AC-30（输入框也去零）· M-3 / M-4（比对判据）</td></tr>
+      <tr><td>6 · 新建材质抽屉</td><td><b>AC-33（配方卡片 → 一次建材质+组成+配置）</b>· <b>AC-34（各配方元素种类不一致 → 整体拒绝、不消耗编号）</b>· AC-3（编号自增）· AC-16（自定义含量开关）· X-6（预填便利，待确认）</td></tr>
+      <tr><td>4 · 导入抽屉与报告</td><td>AC-3 / AC-4（发号连续、跳过不消耗编号）· <b>AC-32（新材质组间不一致 → 整材质跳过，结果不依赖行序）</b>· AC-11（旧模板报错）· AC-12（新模板 4 列）· AC-20 / AC-21（幂等与只增不改）· AC-23（空文件）· X-2（自动新建元素清单）</td></tr>
+      <tr><td>5 · 选配含量配置选择</td><td>AC-17（材质无配置不可选）· AC-18（配置下拉 + 自定义禁用）· AC-19（自定义不回流 + 合计校验）· AC-30（下拉文案与输入框去零）</td></tr>
+    </tbody>
+  </table>
+</div>
+
+</div>
+</body>
+</html>

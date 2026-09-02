@@ -39,6 +39,8 @@
 </style>
 </head>
 <body>
+<div style="background:#fffbe6;border:1px solid #ffe58f;border-radius:8px;padding:14px 18px;margin:0 0 20px;font-family:-apple-system,'Segoe UI','Microsoft YaHei',sans-serif;font-size:13px;color:#613400;line-height:1.7"><div style="font-size:15px;font-weight:600;margin-bottom:6px">&#128336; 历史快照 &nbsp;<span style="font-weight:400;color:#8c6d1f">task-260812-材质元素改下拉选择 &nbsp;|&nbsp; 交付于 2026-08-12（合 master 92d09aa4）</span></div>本图<b>交付当时是对的</b>，之后实现被 <code>task-260901-材质管理模块定义规则更新</code> 演进过。当前基准见 <code>dev-docs/task-260901-材质管理模块定义规则更新/原型图/index.html</code>。<div style="margin-top:8px"><b>偏差清单（本图与当前实现的差别）：</b><br>&#9312; <b>元素编辑的位置变了</b> —— 本图画的是在<b>材质编辑抽屉</b>内直接编辑元素行；现已下沉到新增的<b>含量配置抽屉</b>，材质抽屉里只剩只读概览。<br>&#9313; <b>元素行的归属变了</b> —— 本图假设一个材质一组元素；现在一个材质可有多组含量配置，元素行挂在配置下。<br>&#9314; <b>材质抽屉多了「支持自定义含量」开关</b>，本图没有。<br>&#9315; <b>未变、且不得回退</b> —— 元素列<b>仍是元素字典下拉</b>（可按元素编号 / 符号 / 中文名过滤，选中后显示 <code>编号 / 符号 / 中文名</code>）。本图这部分仍是有效基准。</div></div>
+
 
 <h2>材质抽屉 →「元素组成」表</h2>
 <p class="sub">task-0812 原型 · 上=改造前（两列手填）· 下=改造后（合并为「元素」下拉，可交互试用）</p>

@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>原型 · 选配含量配置选择（task-260901）</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;margin:0;padding:24px;background:#f0f2f5;color:rgba(0,0,0,.88);font-size:14px;line-height:1.5714}
+.wrap{max-width:1200px;margin:0 auto}
+h1{font-size:20px;margin:0 0 4px;font-weight:600}
+.sub{color:rgba(0,0,0,.45);font-size:13px;margin:0 0 8px}
+.navback{display:inline-block;margin-bottom:20px;color:#1677ff;text-decoration:none;font-size:13px}
+.navback:hover{text-decoration:underline}
+.card{background:#fff;border-radius:8px;padding:20px 24px;margin-bottom:20px;box-shadow:0 1px 2px rgba(0,0,0,.03),0 1px 6px -1px rgba(0,0,0,.02)}
+.card>h2{font-size:15px;margin:0 0 4px;font-weight:600;display:flex;align-items:center;gap:8px}
+.card>.hint{color:rgba(0,0,0,.45);font-size:12px;margin:0 0 16px}
+.state{display:inline-block;background:#f0f5ff;color:#1677ff;border:1px solid #adc6ff;border-radius:4px;padding:0 7px;font-size:12px;font-weight:400}
+.state.warn{background:#fffbe6;color:#d48806;border-color:#ffe58f}
+.state.err{background:#fff2f0;color:#cf1322;border-color:#ffccc7}
+.state.ok{background:#f6ffed;color:#389e0d;border-color:#b7eb8f}
+.toolbar{display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap;padding-bottom:16px;border-bottom:1px solid #f0f0f0}
+.toolbar .spacer{flex:1}
+.btn{border:1px solid #d9d9d9;background:#fff;border-radius:6px;padding:4px 15px;font-size:14px;cursor:pointer;color:rgba(0,0,0,.88);height:32px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn.primary{background:#1677ff;border-color:#1677ff;color:#fff}
+.btn.danger{color:#ff4d4f;border-color:#ffccc7}
+.btn.sm{height:24px;padding:0 8px;font-size:12px;border-radius:4px}
+.btn.link{border:none;background:none;color:#1677ff;padding:0 4px;height:auto}
+.dis{position:relative;display:inline-block}
+.dis>.btn{background:rgba(0,0,0,.04)!important;border-color:#d9d9d9!important;color:rgba(0,0,0,.25)!important;cursor:not-allowed}
+.dis>.tip{visibility:hidden;opacity:0;transition:.15s;position:absolute;left:50%;transform:translateX(-50%);bottom:calc(100% + 8px);background:rgba(0,0,0,.85);color:#fff;font-size:12px;line-height:1.5;padding:6px 8px;border-radius:6px;white-space:nowrap;z-index:20}
+.dis>.tip:after{content:"";position:absolute;top:100%;left:50%;margin-left:-5px;border:5px solid transparent;border-top-color:rgba(0,0,0,.85)}
+.dis:hover>.tip{visibility:visible;opacity:1}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-weight:600;color:rgba(0,0,0,.88);background:#fafafa;padding:12px 12px;border-bottom:1px solid #f0f0f0;white-space:nowrap}
+td{padding:12px 12px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+tr.sel td{background:#e6f4ff}
+tbody tr:hover td{background:#fafafa}
+tbody tr.sel:hover td{background:#e6f4ff}
+.mono{font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;font-size:13px}
+.muted{color:rgba(0,0,0,.45)}
+.tag{display:inline-block;border-radius:4px;padding:0 7px;font-size:12px;line-height:20px;border:1px solid;background:#fafafa;border-color:#d9d9d9;color:rgba(0,0,0,.88)}
+.tag.blue{background:#e6f4ff;border-color:#91caff;color:#0958d9}
+.tag.green{background:#f6ffed;border-color:#b7eb8f;color:#389e0d}
+.tag.grey{background:#fafafa;border-color:#d9d9d9;color:rgba(0,0,0,.45)}
+.tag.red{background:#fff2f0;border-color:#ffccc7;color:#cf1322}
+.tag.gold{background:#fffbe6;border-color:#ffe58f;color:#d48806}
+.exp{background:#fafafa;padding:0}
+.exp-inner{padding:16px 16px 16px 48px}
+.exp-inner .exp-title{font-size:13px;font-weight:600;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+.exp table{background:#fff;border:1px solid #f0f0f0;border-radius:6px;overflow:hidden}
+.exp th{background:#fff;font-size:12px;color:rgba(0,0,0,.45);font-weight:400;padding:8px 12px}
+.exp td{padding:8px 12px;font-size:13px}
+.empty{padding:40px 0;text-align:center;color:rgba(0,0,0,.25)}
+.empty .ico{font-size:40px;display:block;margin-bottom:8px;opacity:.35}
+.empty .act{margin-top:12px}
+.ckbox{width:16px;height:16px;border:1px solid #d9d9d9;border-radius:4px;display:inline-block;vertical-align:-3px;background:#fff}
+.ckbox.on{background:#1677ff;border-color:#1677ff;position:relative}
+.ckbox.on:after{content:"";position:absolute;left:5px;top:1.5px;width:4px;height:9px;border:2px solid #fff;border-top:0;border-left:0;transform:rotate(45deg)}
+.drawer{border:1px solid #f0f0f0;border-radius:8px;overflow:hidden;box-shadow:0 6px 16px rgba(0,0,0,.08);background:#fff;max-width:760px}
+.drawer.wide{max-width:1000px}
+.drawer-hd{padding:16px 24px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between}
+.drawer-hd .t{font-size:16px;font-weight:600}
+.drawer-bd{padding:24px}
+.drawer-ft{padding:12px 24px;border-top:1px solid #f0f0f0;display:flex;justify-content:flex-end;gap:8px;background:#fff}
+.frow{display:flex;gap:12px;align-items:flex-start;margin-bottom:20px}
+.flab{width:132px;flex:none;text-align:right;padding-top:5px;color:rgba(0,0,0,.88);font-size:14px}
+.flab .req:before{content:"*";color:#ff4d4f;margin-right:4px;font-family:SimSun,sans-serif}
+.fval{flex:1;min-width:0}
+.inp{border:1px solid #d9d9d9;border-radius:6px;padding:4px 11px;height:32px;display:flex;align-items:center;background:#fff;font-size:14px}
+.inp.ro{background:rgba(0,0,0,.04);color:rgba(0,0,0,.45)}
+.inp.err{border-color:#ff4d4f}
+.inp.sel-like{justify-content:space-between;cursor:pointer}
+.inp .arw{color:rgba(0,0,0,.25);font-size:11px}
+.fhint{font-size:12px;color:rgba(0,0,0,.45);margin-top:4px}
+.ferr{font-size:12px;color:#ff4d4f;margin-top:4px}
+.sw{width:44px;height:22px;border-radius:11px;background:rgba(0,0,0,.25);position:relative;display:inline-block;vertical-align:middle;cursor:pointer;transition:.2s}
+.sw:after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.2s;box-shadow:0 2px 4px rgba(0,0,0,.2)}
+.sw.on{background:#1677ff}
+.sw.on:after{left:24px}
+.sw.dis{opacity:.4;cursor:not-allowed}
+.swlab{margin-left:10px;font-size:13px;color:rgba(0,0,0,.65)}
+.alert{border-radius:8px;padding:12px 16px;font-size:13px;margin-bottom:16px;border:1px solid;display:flex;gap:10px;align-items:flex-start}
+.alert.info{background:#e6f4ff;border-color:#91caff}
+.alert.warn{background:#fffbe6;border-color:#ffe58f}
+.alert.err{background:#fff2f0;border-color:#ffccc7}
+.alert.ok{background:#f6ffed;border-color:#b7eb8f}
+.alert .ico{font-size:15px;line-height:1.4}
+.alert b{font-weight:600}
+.stats{display:flex;gap:0;border:1px solid #f0f0f0;border-radius:8px;overflow:hidden;margin-bottom:16px}
+.stat{flex:1;padding:14px 16px;border-right:1px solid #f0f0f0}
+.stat:last-child{border-right:none}
+.stat .k{font-size:12px;color:rgba(0,0,0,.45);margin-bottom:4px}
+.stat .v{font-size:22px;font-weight:600;line-height:1.2}
+.stat .v.warn{color:#d48806}
+.stat .v.err{color:#cf1322}
+.dropdown{border:1px solid #f0f0f0;border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.08);background:#fff;padding:4px;max-width:460px;margin-top:4px}
+.dropdown .opt{padding:8px 12px;border-radius:4px;cursor:pointer;font-size:14px;display:flex;justify-content:space-between;gap:12px;align-items:center}
+.dropdown .opt:hover{background:rgba(0,0,0,.04)}
+.dropdown .opt.on{background:#e6f4ff;font-weight:600}
+.dropdown .opt .r{font-size:12px;color:rgba(0,0,0,.45);font-weight:400}
+.note{border-left:3px solid #1677ff;background:#f0f5ff;padding:10px 14px;font-size:12px;color:rgba(0,0,0,.65);border-radius:0 6px 6px 0;margin-top:16px}
+.note b{color:rgba(0,0,0,.88)}
+.note code{background:rgba(0,0,0,.06);padding:1px 5px;border-radius:3px;font-family:Consolas,monospace}
+.acref{display:inline-block;background:#f9f0ff;color:#531dab;border:1px solid #d3adf7;border-radius:4px;padding:0 6px;font-size:11px;line-height:18px;margin-left:6px;font-weight:400}
+
+.mx{overflow-x:auto;border:1px solid #f0f0f0;border-radius:6px}
+.mx table{min-width:100%;width:auto}
+.mx th{white-space:nowrap;background:#fafafa;font-size:13px}
+.mx th.el{text-align:right;min-width:110px}
+.mx th.tot{text-align:right;min-width:90px;background:#f6ffed}
+.mx td{white-space:nowrap;font-size:13px}
+.mx td.num{text-align:right;font-family:"SFMono-Regular",Consolas,monospace}
+.mx td.tot{text-align:right;font-family:"SFMono-Regular",Consolas,monospace;background:#f6ffed;font-weight:600}
+.mx td.cfg{font-family:"SFMono-Regular",Consolas,monospace;font-weight:600}
+.mx tr.sel td{background:#e6f4ff}
+.mx tr.sel td.tot{background:#d9f7be}
+.l2{position:relative;margin-left:24px;border-left:3px solid #1677ff}
+.l2tag{position:absolute;left:-3px;top:-1px;background:#1677ff;color:#fff;font-size:11px;padding:2px 8px;border-radius:0 0 6px 0}
+
+
+.ddw{border:1px solid #f0f0f0;border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.08);background:#fff;max-width:460px;margin-top:4px;overflow:hidden}
+.ddw .sbox{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid #f0f0f0;background:#fafafa}
+.ddw .sbox .q{flex:1;font-family:Consolas,monospace;font-size:13px;color:rgba(0,0,0,.88)}
+.ddw .sbox .ic{color:rgba(0,0,0,.25)}
+.ddw .lst{padding:4px}
+.ddw .opt{padding:7px 12px;border-radius:4px;font-size:14px;display:flex;justify-content:space-between;gap:12px;align-items:center}
+.ddw .opt.hit{background:#e6f4ff}
+.ddw .opt em{font-style:normal;background:#ffe58f;border-radius:2px;padding:0 1px}
+.ddw .opt .r{font-size:12px;color:rgba(0,0,0,.45)}
+.ddw .none{padding:22px;text-align:center;color:rgba(0,0,0,.25);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<a class="navback" href="./index.html">&larr; 返回原型导航</a>
+
+<h1>选配 · 材质与含量配置的选择</h1>
+<p class="sub">选配流程中「选配-材质」环节。本次新增「含量配置」下拉与「自定义含量」入口的开关控制。</p>
+
+<div class="card">
+  <h2>状态 A · 材质不支持自定义含量（<code>allow_custom_content = false</code>）<span class="state">默认</span></h2>
+  <p class="hint">258 条存量材质全部是这一态。「自定义含量」<b>可见但禁用</b>，hover 说明原因 —— 不隐藏。</p>
+  <div class="drawer">
+    <div class="drawer-hd"><span class="t">配置产品 &nbsp;<span class="muted" style="font-size:13px;font-weight:400">步骤 2 / 材质</span></span><span class="muted" style="cursor:pointer">&#10005;</span></div>
+    <div class="drawer-bd">
+      <div class="frow"><div class="flab"><span class="req">材质</span></div><div class="fval">
+        <div class="inp sel-like">00006 / AgNi10<span class="arw">&#9662;</span></div></div></div>
+      <div class="frow"><div class="flab"><span class="req">含量配置</span></div><div class="fval">
+        <div class="inp sel-like">00006-01（Ag 90% / Ni 10%）<span class="arw">&#9662;</span></div>
+        <div class="ddw" style="max-width:420px"><div class="sbox"><span class="ic">&#128269;</span><span class="q">-0</span></div>
+          <div class="lst">
+            <div class="opt hit"><span><b class="mono">00006-<em>0</em>1</b> &nbsp; Ag 90% / Ni 10%</span><span class="r">已选</span></div>
+            <div class="opt hit"><span><b class="mono">00006-<em>0</em>3</b> &nbsp; Ag 75% / Ni 25%</span><span class="r"></span></div>
+          </div></div>
+        <div class="fhint">只列该材质<b>启用中</b>的配置，<b>可按配置编号搜索</b>。已停用的配置不出现在这里。</div><span class="acref">AC-18 · AC-35</span></div></div>
+      <div class="frow"><div class="flab">自定义含量</div><div class="fval">
+        <span class="dis"><button class="btn">切换到自定义含量</button><span class="tip">该材质不支持自定义含量</span></span>
+        <div class="fhint">是否允许自定义由材质属性决定，可在「主数据维护 &rarr; 材质」中开启。</div></div></div>
+    </div>
+    <div class="drawer-ft"><button class="btn">上一步</button><button class="btn primary">下一步</button></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>状态 B · 材质支持自定义含量，用户切到自定义<span class="state">默认</span></h2>
+  <div class="drawer">
+    <div class="drawer-hd"><span class="t">配置产品 &nbsp;<span class="muted" style="font-size:13px;font-weight:400">步骤 2 / 材质</span></span><span class="muted" style="cursor:pointer">&#10005;</span></div>
+    <div class="drawer-bd">
+      <div class="frow"><div class="flab"><span class="req">材质</span></div><div class="fval">
+        <div class="inp sel-like">00006 / AgNi10 &nbsp;<span class="tag blue">支持自定义含量</span><span class="arw">&#9662;</span></div></div></div>
+      <div class="frow"><div class="flab"><span class="req">含量来源</span></div><div class="fval">
+        <div style="display:flex;gap:8px">
+          <button class="btn">选标准配置</button><button class="btn primary">自定义含量</button>
+        </div></div></div>
+      <div class="frow" style="align-items:flex-start"><div class="flab"><span class="req">元素含量</span></div><div class="fval">
+        <table style="border:1px solid #f0f0f0;border-radius:6px;overflow:hidden">
+          <thead><tr><th style="width:240px">元素</th><th>含量（%）</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">10001 / Ag / 银</td><td><div class="inp mono">88</div></td></tr>
+            <tr><td class="mono">10005 / Ni / 镍</td><td><div class="inp mono">12</div></td></tr>
+          </tbody>
+        </table>
+        <div style="margin-top:8px">合计 <b class="mono">100%</b> <span class="tag green">符合</span></div>
+        <div class="fhint">元素组成来自材质本身，<b>不能增删</b>，只能改含量。</div></div></div>
+      <div class="alert info"><span class="ico">&#9432;</span><div>自定义含量<b>不会写回材质库</b> —— 它只作用于本次配置出来的料号，材质库仍只保留标准配置。<span class="acref">AC-19 · 用户裁决 D5</span></div></div>
+    </div>
+    <div class="drawer-ft"><button class="btn">上一步</button><button class="btn primary">下一步</button></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>状态 C · 自定义含量合计不为 100%<span class="state err">错误态</span></h2>
+  <div class="drawer">
+    <div class="drawer-hd"><span class="t">配置产品 &nbsp;<span class="muted" style="font-size:13px;font-weight:400">步骤 2 / 材质</span></span><span class="muted" style="cursor:pointer">&#10005;</span></div>
+    <div class="drawer-bd">
+      <div class="frow" style="align-items:flex-start"><div class="flab"><span class="req">元素含量</span></div><div class="fval">
+        <table style="border:1px solid #f0f0f0;border-radius:6px;overflow:hidden">
+          <thead><tr><th style="width:240px">元素</th><th>含量（%）</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">10001 / Ag / 银</td><td><div class="inp mono">88</div></td></tr>
+            <tr><td class="mono">10005 / Ni / 镍</td><td><div class="inp err mono">20</div></td></tr>
+          </tbody>
+        </table>
+        <div style="margin-top:8px">合计 <b class="mono">108%</b> <span class="tag red">应为 100%</span></div>
+        <div class="ferr">含量合计必须为 1，实际 1.08</div></div></div>
+    </div>
+    <div class="drawer-ft"><button class="btn">上一步</button><span class="dis"><button class="btn primary">下一步</button><span class="tip">含量合计必须为 1，实际 1.08</span></span></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>状态 D · 材质一条含量配置都没有<span class="state warn">空数据</span></h2>
+  <div class="drawer">
+    <div class="drawer-hd"><span class="t">配置产品 &nbsp;<span class="muted" style="font-size:13px;font-weight:400">步骤 2 / 材质</span></span><span class="muted" style="cursor:pointer">&#10005;</span></div>
+    <div class="drawer-bd">
+      <div class="frow"><div class="flab"><span class="req">材质</span></div><div class="fval">
+        <div class="inp sel-like">请选择材质<span class="arw">&#9662;</span></div>
+        <div class="ddw" style="max-width:460px"><div class="sbox"><span class="ic">&#128269;</span><span class="q">Ag</span></div>
+          <div class="lst">
+            <div class="opt hit"><span><b class="mono">00006</b> &nbsp; <em>Ag</em>Ni10</span><span class="r">2 组配置</span></div>
+            <div class="opt hit"><span><b class="mono">00021</b> &nbsp; <em>Ag</em>Ni20</span><span class="r">1 组配置</span></div>
+            <div class="opt hit" style="opacity:.45;cursor:not-allowed"><span><b class="mono">00265</b> &nbsp; <em>Ag</em>CuNi-试制</span><span class="r">该材质尚未配置含量</span></div>
+          </div></div>
+        <div class="fhint">🚨 <b>材质候选实测 258 条，AntD Select 走虚拟滚动</b> —— 没渲染的选项在 DOM 里不存在，用户滚不到就会以为没有。<b>必须支持按材质编号 / 材质名搜索</b>（E2E 也必须先输入过滤再点选，靠滚动找会随机挂）。<br>未配置含量的材质<b>灰显不可选</b>并直接写出原因 —— 不从列表里消失，否则用户会以为材质丢了。</div><span class="acref">AC-17 · AC-35</span></div></div>
+      <div class="frow"><div class="flab"><span class="req">含量配置</span></div><div class="fval">
+        <div class="inp ro muted">请先选择材质</div></div></div>
+    </div>
+    <div class="drawer-ft"><button class="btn">上一步</button><span class="dis"><button class="btn primary">下一步</button><span class="tip">请先选择材质与含量配置</span></span></div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>原型 · 材质编辑抽屉（task-260901）</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;margin:0;padding:24px;background:#f0f2f5;color:rgba(0,0,0,.88);font-size:14px;line-height:1.5714}
+.wrap{max-width:1200px;margin:0 auto}
+h1{font-size:20px;margin:0 0 4px;font-weight:600}
+.sub{color:rgba(0,0,0,.45);font-size:13px;margin:0 0 8px}
+.navback{display:inline-block;margin-bottom:20px;color:#1677ff;text-decoration:none;font-size:13px}
+.navback:hover{text-decoration:underline}
+.card{background:#fff;border-radius:8px;padding:20px 24px;margin-bottom:20px;box-shadow:0 1px 2px rgba(0,0,0,.03),0 1px 6px -1px rgba(0,0,0,.02)}
+.card>h2{font-size:15px;margin:0 0 4px;font-weight:600;display:flex;align-items:center;gap:8px}
+.card>.hint{color:rgba(0,0,0,.45);font-size:12px;margin:0 0 16px}
+.state{display:inline-block;background:#f0f5ff;color:#1677ff;border:1px solid #adc6ff;border-radius:4px;padding:0 7px;font-size:12px;font-weight:400}
+.state.warn{background:#fffbe6;color:#d48806;border-color:#ffe58f}
+.state.err{background:#fff2f0;color:#cf1322;border-color:#ffccc7}
+.state.ok{background:#f6ffed;color:#389e0d;border-color:#b7eb8f}
+.toolbar{display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap;padding-bottom:16px;border-bottom:1px solid #f0f0f0}
+.toolbar .spacer{flex:1}
+.btn{border:1px solid #d9d9d9;background:#fff;border-radius:6px;padding:4px 15px;font-size:14px;cursor:pointer;color:rgba(0,0,0,.88);height:32px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn.primary{background:#1677ff;border-color:#1677ff;color:#fff}
+.btn.danger{color:#ff4d4f;border-color:#ffccc7}
+.btn.sm{height:24px;padding:0 8px;font-size:12px;border-radius:4px}
+.btn.link{border:none;background:none;color:#1677ff;padding:0 4px;height:auto}
+.dis{position:relative;display:inline-block}
+.dis>.btn{background:rgba(0,0,0,.04)!important;border-color:#d9d9d9!important;color:rgba(0,0,0,.25)!important;cursor:not-allowed}
+.dis>.tip{visibility:hidden;opacity:0;transition:.15s;position:absolute;left:50%;transform:translateX(-50%);bottom:calc(100% + 8px);background:rgba(0,0,0,.85);color:#fff;font-size:12px;line-height:1.5;padding:6px 8px;border-radius:6px;white-space:nowrap;z-index:20}
+.dis>.tip:after{content:"";position:absolute;top:100%;left:50%;margin-left:-5px;border:5px solid transparent;border-top-color:rgba(0,0,0,.85)}
+.dis:hover>.tip{visibility:visible;opacity:1}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-weight:600;color:rgba(0,0,0,.88);background:#fafafa;padding:12px 12px;border-bottom:1px solid #f0f0f0;white-space:nowrap}
+td{padding:12px 12px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+tr.sel td{background:#e6f4ff}
+tbody tr:hover td{background:#fafafa}
+tbody tr.sel:hover td{background:#e6f4ff}
+.mono{font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;font-size:13px}
+.muted{color:rgba(0,0,0,.45)}
+.tag{display:inline-block;border-radius:4px;padding:0 7px;font-size:12px;line-height:20px;border:1px solid;background:#fafafa;border-color:#d9d9d9;color:rgba(0,0,0,.88)}
+.tag.blue{background:#e6f4ff;border-color:#91caff;color:#0958d9}
+.tag.green{background:#f6ffed;border-color:#b7eb8f;color:#389e0d}
+.tag.grey{background:#fafafa;border-color:#d9d9d9;color:rgba(0,0,0,.45)}
+.tag.red{background:#fff2f0;border-color:#ffccc7;color:#cf1322}
+.tag.gold{background:#fffbe6;border-color:#ffe58f;color:#d48806}
+.exp{background:#fafafa;padding:0}
+.exp-inner{padding:16px 16px 16px 48px}
+.exp-inner .exp-title{font-size:13px;font-weight:600;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+.exp table{background:#fff;border:1px solid #f0f0f0;border-radius:6px;overflow:hidden}
+.exp th{background:#fff;font-size:12px;color:rgba(0,0,0,.45);font-weight:400;padding:8px 12px}
+.exp td{padding:8px 12px;font-size:13px}
+.empty{padding:40px 0;text-align:center;color:rgba(0,0,0,.25)}
+.empty .ico{font-size:40px;display:block;margin-bottom:8px;opacity:.35}
+.empty .act{margin-top:12px}
+.ckbox{width:16px;height:16px;border:1px solid #d9d9d9;border-radius:4px;display:inline-block;vertical-align:-3px;background:#fff}
+.ckbox.on{background:#1677ff;border-color:#1677ff;position:relative}
+.ckbox.on:after{content:"";position:absolute;left:5px;top:1.5px;width:4px;height:9px;border:2px solid #fff;border-top:0;border-left:0;transform:rotate(45deg)}
+.drawer{border:1px solid #f0f0f0;border-radius:8px;overflow:hidden;box-shadow:0 6px 16px rgba(0,0,0,.08);background:#fff;max-width:760px}
+.drawer.wide{max-width:1000px}
+.drawer-hd{padding:16px 24px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between}
+.drawer-hd .t{font-size:16px;font-weight:600}
+.drawer-bd{padding:24px}
+.drawer-ft{padding:12px 24px;border-top:1px solid #f0f0f0;display:flex;justify-content:flex-end;gap:8px;background:#fff}
+.frow{display:flex;gap:12px;align-items:flex-start;margin-bottom:20px}
+.flab{width:132px;flex:none;text-align:right;padding-top:5px;color:rgba(0,0,0,.88);font-size:14px}
+.flab .req:before{content:"*";color:#ff4d4f;margin-right:4px;font-family:SimSun,sans-serif}
+.fval{flex:1;min-width:0}
+.inp{border:1px solid #d9d9d9;border-radius:6px;padding:4px 11px;height:32px;display:flex;align-items:center;background:#fff;font-size:14px}
+.inp.ro{background:rgba(0,0,0,.04);color:rgba(0,0,0,.45)}
+.inp.err{border-color:#ff4d4f}
+.inp.sel-like{justify-content:space-between;cursor:pointer}
+.inp .arw{color:rgba(0,0,0,.25);font-size:11px}
+.fhint{font-size:12px;color:rgba(0,0,0,.45);margin-top:4px}
+.ferr{font-size:12px;color:#ff4d4f;margin-top:4px}
+.sw{width:44px;height:22px;border-radius:11px;background:rgba(0,0,0,.25);position:relative;display:inline-block;vertical-align:middle;cursor:pointer;transition:.2s}
+.sw:after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.2s;box-shadow:0 2px 4px rgba(0,0,0,.2)}
+.sw.on{background:#1677ff}
+.sw.on:after{left:24px}
+.sw.dis{opacity:.4;cursor:not-allowed}
+.swlab{margin-left:10px;font-size:13px;color:rgba(0,0,0,.65)}
+.alert{border-radius:8px;padding:12px 16px;font-size:13px;margin-bottom:16px;border:1px solid;display:flex;gap:10px;align-items:flex-start}
+.alert.info{background:#e6f4ff;border-color:#91caff}
+.alert.warn{background:#fffbe6;border-color:#ffe58f}
+.alert.err{background:#fff2f0;border-color:#ffccc7}
+.alert.ok{background:#f6ffed;border-color:#b7eb8f}
+.alert .ico{font-size:15px;line-height:1.4}
+.alert b{font-weight:600}
+.stats{display:flex;gap:0;border:1px solid #f0f0f0;border-radius:8px;overflow:hidden;margin-bottom:16px}
+.stat{flex:1;padding:14px 16px;border-right:1px solid #f0f0f0}
+.stat:last-child{border-right:none}
+.stat .k{font-size:12px;color:rgba(0,0,0,.45);margin-bottom:4px}
+.stat .v{font-size:22px;font-weight:600;line-height:1.2}
+.stat .v.warn{color:#d48806}
+.stat .v.err{color:#cf1322}
+.dropdown{border:1px solid #f0f0f0;border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.08);background:#fff;padding:4px;max-width:460px;margin-top:4px}
+.dropdown .opt{padding:8px 12px;border-radius:4px;cursor:pointer;font-size:14px;display:flex;justify-content:space-between;gap:12px;align-items:center}
+.dropdown .opt:hover{background:rgba(0,0,0,.04)}
+.dropdown .opt.on{background:#e6f4ff;font-weight:600}
+.dropdown .opt .r{font-size:12px;color:rgba(0,0,0,.45);font-weight:400}
+.note{border-left:3px solid #1677ff;background:#f0f5ff;padding:10px 14px;font-size:12px;color:rgba(0,0,0,.65);border-radius:0 6px 6px 0;margin-top:16px}
+.note b{color:rgba(0,0,0,.88)}
+.note code{background:rgba(0,0,0,.06);padding:1px 5px;border-radius:3px;font-family:Consolas,monospace}
+.acref{display:inline-block;background:#f9f0ff;color:#531dab;border:1px solid #d3adf7;border-radius:4px;padding:0 6px;font-size:11px;line-height:18px;margin-left:6px;font-weight:400}
+
+.mx{overflow-x:auto;border:1px solid #f0f0f0;border-radius:6px}
+.mx table{min-width:100%;width:auto}
+.mx th{white-space:nowrap;background:#fafafa;font-size:13px}
+.mx th.el{text-align:right;min-width:110px}
+.mx th.tot{text-align:right;min-width:90px;background:#f6ffed}
+.mx td{white-space:nowrap;font-size:13px}
+.mx td.num{text-align:right;font-family:"SFMono-Regular",Consolas,monospace}
+.mx td.tot{text-align:right;font-family:"SFMono-Regular",Consolas,monospace;background:#f6ffed;font-weight:600}
+.mx td.cfg{font-family:"SFMono-Regular",Consolas,monospace;font-weight:600}
+.mx tr.sel td{background:#e6f4ff}
+.mx tr.sel td.tot{background:#d9f7be}
+.l2{position:relative;margin-left:24px;border-left:3px solid #1677ff}
+.l2tag{position:absolute;left:-3px;top:-1px;background:#1677ff;color:#fff;font-size:11px;padding:2px 8px;border-radius:0 0 6px 0}
+
+
+.comp{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid #91caff;background:#e6f4ff;color:#0958d9;border-radius:6px;padding:3px 10px;font-size:13px}
+.chip .x{color:#0958d9;opacity:.55;cursor:pointer;font-size:12px}
+.chip.ro{border-color:#d9d9d9;background:#fafafa;color:rgba(0,0,0,.65)}
+.chip .no{font-family:Consolas,monospace;font-size:12px;opacity:.7}
+.lockbar{display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.02);border:1px dashed #d9d9d9;border-radius:6px;padding:8px 12px;font-size:12px;color:rgba(0,0,0,.45);margin-top:8px}
+
+.ddw{border:1px solid #f0f0f0;border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.08);background:#fff;max-width:460px;margin-top:4px;overflow:hidden}
+.ddw .sbox{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid #f0f0f0;background:#fafafa}
+.ddw .sbox .q{flex:1;font-family:Consolas,monospace;font-size:13px;color:rgba(0,0,0,.88)}
+.ddw .sbox .ic{color:rgba(0,0,0,.25)}
+.ddw .lst{padding:4px}
+.ddw .opt{padding:7px 12px;border-radius:4px;font-size:14px;display:flex;justify-content:space-between;gap:12px;align-items:center}
+.ddw .opt.hit{background:#e6f4ff}
+.ddw .opt em{font-style:normal;background:#ffe58f;border-radius:2px;padding:0 1px}
+.ddw .opt .r{font-size:12px;color:rgba(0,0,0,.45)}
+.ddw .none{padding:22px;text-align:center;color:rgba(0,0,0,.25);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<a class="navback" href="./index.html">&larr; 返回原型导航</a>
+
+<h1>材质编辑抽屉 · 1200 宽 · 元素组成 + 含量配置矩阵</h1>
+<div class="alert warn" style="max-width:none"><span class="ico">&#9888;</span><div><b>本抽屉只管「编辑既有材质」。</b>「新建材质」是<b>另一种形态</b>（配方卡片，元素组成由卡片推导），见 <a href="./6-新建材质抽屉.html">原型 6 · 新建材质抽屉</a>。</div></div>
+<p class="sub">从材质管理页工具栏「新建材质 / 编辑」打开，右侧滑出（<b>frontend.md &sect;1.1</b>：一律用 Drawer）。对应 <code>MaterialRecipeEditDrawer.tsx</code>。</p>
+
+<div class="alert info" style="max-width:none"><span class="ico">&#9432;</span><div>
+<b>闸门 A 两轮裁决累计三条：</b>① 抽屉 <b>760 &rarr; 1200</b>；② 含量配置改<b>矩阵</b>（行=配置、列=元素），<b>小数点后多余的 0 不展示</b>；
+③ <b>元素组成是材质的显式属性</b>（D10）—— 它在这里有独立的一区，<b>不是从配置推出来的</b>。矩阵的列与列序完全取自它。
+</div></div>
+
+<div class="card">
+  <h2>状态 A · 编辑既有材质（已有 2 条配置 &rArr; 元素组成只读）<span class="state">默认</span></h2>
+  <div class="drawer wide" style="max-width:1200px">
+    <div class="drawer-hd"><span class="t">编辑材质 &nbsp;<span class="muted" style="font-size:13px;font-weight:400">00006 / AgNi10</span></span><span class="muted" style="cursor:pointer">&#10005;</span></div>
+    <div class="drawer-bd">
+      <div class="frow"><div class="flab">材质编号</div><div class="fval">
+        <div class="inp ro mono" style="max-width:280px">00006</div>
+        <div class="fhint">材质编号创建后不可修改（既有约束，本次不变）。</div></div></div>
+      <div class="frow"><div class="flab"><span class="req">材质名 / 化学式</span></div><div class="fval">
+        <div class="inp" style="max-width:420px">AgNi10</div>
+        <div class="fhint">最多 32 字符。<b>材质名即材质身份</b> —— 导入时按它匹配材质，改名等于改身份，请谨慎。</div></div></div>
+      <div class="frow"><div class="flab">名称</div><div class="fval"><div class="inp" style="max-width:420px">AgNi10</div></div></div>
+
+      <div class="frow" style="align-items:flex-start"><div class="flab" style="padding-top:4px"><span class="req">元素组成</span></div><div class="fval">
+        <div class="comp"><span class="chip ro"><span class="no">10001</span> Ag / 银</span>
+<span class="chip ro"><span class="no">10005</span> Ni / 镍</span></div>
+        <div class="lockbar"><span>&#128274;</span><span>该材质已有 <b>2</b> 条含量配置，元素组成不可修改。换元素组成请新建材质，或先删除全部含量配置。</span></div>
+        <div class="fhint">元素组成决定下方矩阵的<b>列与列序</b>。它是材质的属性，<b>与有没有配置无关</b>。<span class="acref">AC-13 · AC-31 · M-0b</span></div>
+      </div></div>
+
+      <div class="frow"><div class="flab">支持自定义含量</div><div class="fval">
+        <span class="sw"></span><span class="swlab">关 —— 选配时只能从下方配置中选择</span>
+        <div class="fhint">打开后，选配可让用户自行输入各元素含量（仍强制合计 = 100%，且<b>只能改含量不能改元素</b>）。新建材质与导入自动创建的材质一律默认关。</div>
+        <span class="acref">AC-16 · M-5</span></div></div>
+
+      <div class="frow" style="align-items:flex-start"><div class="flab" style="padding-top:8px">含量配置</div><div class="fval">
+        <div class="toolbar" style="margin:0 0 10px;padding:0;border:none">
+          <button class="btn sm primary">+ 新建配置</button><button class="btn sm">编辑</button><button class="btn sm danger">删除</button>
+          <span class="spacer"></span><span class="muted" style="font-size:12px">共 2 组</span>
+        </div>
+        <div class="mx"><table>
+          <thead><tr><th style="width:36px"></th><th style="width:120px">配置编号</th>
+            <th class="el">Ag</th><th class="el">Ni</th><th class="tot">合计</th>
+            <th style="width:150px">创建时间</th><th>备注</th></tr></thead>
+          <tbody>
+            <tr class="sel"><td><span class="ckbox on"></span></td><td class="cfg">00006-01</td>
+                <td class="num">90%</td><td class="num">10%</td><td class="tot">100%</td>
+                <td class="muted mono">2026-07-09 10:22</td><td class="muted">存量迁移</td></tr>
+            <tr><td><span class="ckbox"></span></td><td class="cfg">00006-02</td>
+                <td class="num">85%</td><td class="num">15%</td><td class="tot">100%</td>
+                <td class="muted mono">2026-09-01 14:05</td><td class="muted">&mdash;</td></tr>
+          </tbody></table></div>
+        <div class="fhint">含量<b>去掉小数点后多余的 0</b>：库里存的是 <code>90.000000000000</code>，这里显示 <code>90%</code>。<span class="acref">AC-13 · AC-30</span></div>
+      </div></div>
+    </div>
+    <div class="drawer-ft"><button class="btn">取消</button><button class="btn primary">保存</button></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>状态 A2 · 元素多 + 12 位小数<span class="state warn">极值</span></h2>
+  <p class="hint">存量元素最多的材质（<code>00098 / AgCd10/Cu/Fe</code>，4 个元素，全库 19 条）。矩阵超宽时<b>矩阵自身横向滚动</b>，页面 body 不滚。</p>
+  <div class="drawer wide" style="max-width:1200px">
+    <div class="drawer-hd"><span class="t">编辑材质 &nbsp;<span class="muted" style="font-size:13px;font-weight:400">00098 / AgCd10/Cu/Fe</span></span><span class="muted" style="cursor:pointer">&#10005;</span></div>
+    <div class="drawer-bd">
+      <div class="frow" style="align-items:flex-start"><div class="flab" style="padding-top:4px"><span class="req">元素组成</span></div><div class="fval">
+        <div class="comp"><span class="chip ro"><span class="no">10001</span> Ag / 银</span>
+<span class="chip ro"><span class="no">10002</span> Cu / 铜</span>
+<span class="chip ro"><span class="no">10006</span> Fe / 铁</span>
+<span class="chip ro"><span class="no">10017</span> Cd / 镉</span></div>
+        <div class="lockbar"><span>&#128274;</span><span>该材质已有 <b>3</b> 条含量配置，元素组成不可修改。</span></div></div></div>
+      <div class="frow" style="align-items:flex-start"><div class="flab" style="padding-top:8px">含量配置</div><div class="fval">
+        <div class="toolbar" style="margin:0 0 10px;padding:0;border:none">
+          <button class="btn sm primary">+ 新建配置</button>
+          <span class="dis"><button class="btn sm">编辑</button><span class="tip">请先勾选一条配置</span></span>
+          <span class="dis"><button class="btn sm danger">删除</button><span class="tip">请先勾选一条配置</span></span>
+          <span class="spacer"></span><span class="muted" style="font-size:12px">共 3 组</span>
+        </div>
+        <div class="mx"><table>
+          <thead><tr><th style="width:36px"></th><th style="width:120px">配置编号</th>
+            <th class="el">Ag</th><th class="el">Cu</th><th class="el">Fe</th><th class="el">Cd</th>
+            <th class="tot">合计</th><th style="width:150px">创建时间</th></tr></thead>
+          <tbody>
+            <tr><td><span class="ckbox"></span></td><td class="cfg">00098-01</td>
+                <td class="num">88.5%</td><td class="num">1.2554%</td><td class="num">0.2446%</td><td class="num">10%</td>
+                <td class="tot">100%</td><td class="muted mono">2026-07-09 10:22</td></tr>
+            <tr><td><span class="ckbox"></span></td><td class="cfg">00098-02</td>
+                <td class="num">12.3456789012%</td><td class="num">27.7105%</td><td class="num">34.8864%</td><td class="num">25.0574210988%</td>
+                <td class="tot">100%</td><td class="muted mono">2026-09-01 15:40</td></tr>
+            <tr><td><span class="ckbox"></span></td><td class="cfg">00098-03</td>
+                <td class="num">90%</td><td class="num">5%</td><td class="num">2.5%</td><td class="num">2.5%</td>
+                <td class="tot">100%</td><td class="muted mono">2026-09-01 15:42</td></tr>
+          </tbody></table></div>
+        <div class="fhint">去零示例（左=库内值，右=显示）：<code>90.000000000000 &rarr; 90</code> · <code>12.345678901200 &rarr; 12.3456789012</code> · <code>0.244600000000 &rarr; 0.2446</code> · <code>100.000000000000 &rarr; 100</code>。<span class="acref">AC-30</span></div>
+      </div></div>
+    </div>
+    <div class="drawer-ft"><button class="btn">取消</button><button class="btn primary">保存</button></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>状态 B · 材质有元素组成但 0 条配置 &rArr; 元素组成可改、矩阵只剩表头<span class="state warn">空数据</span></h2>
+  <p class="hint">这是 <b>D10 显式元素组成</b> 最直接的收益：配置删光了，元素组成还在，矩阵的列照样画得出来。</p>
+  <div class="drawer wide" style="max-width:1200px">
+    <div class="drawer-hd"><span class="t">编辑材质 &nbsp;<span class="muted" style="font-size:13px;font-weight:400">00263 / AC测新材</span></span><span class="muted" style="cursor:pointer">&#10005;</span></div>
+    <div class="drawer-bd">
+      <div class="frow" style="align-items:flex-start"><div class="flab" style="padding-top:4px"><span class="req">元素组成</span></div><div class="fval">
+        <div class="comp"><span class="chip"><span class="no">10001</span> Ag / 银 <span class="x">&#10005;</span></span>
+<span class="chip"><span class="no">10002</span> Cu / 铜 <span class="x">&#10005;</span></span><button class="btn sm">+ 添加元素</button></div>
+        <div class="fhint">该材质<b>没有含量配置，元素组成可自由增删改</b>（拖动可调整顺序 = 矩阵列序）。一旦新建了配置，本区即转为只读。<span class="acref">AC-31 · M-0b</span></div><div style="margin-top:10px"><div class="muted" style="font-size:12px;margin-bottom:6px">点「+ 添加元素」后：候选来自元素字典，<b>编号 / 符号 / 中文名都能搜</b></div><div class="ddw"><div class="sbox"><span class="ic">&#128269;</span><span class="q">镍</span></div><div class="lst"><div class="opt hit">10005 / Ni / <em>镍</em><span class="r"></span></div></div></div><span class="acref">AC-35</span></div>
+      </div></div>
+      <div class="frow"><div class="flab">支持自定义含量</div><div class="fval">
+        <span class="sw dis"></span><span class="swlab muted">该材质尚未配置任何含量，开关不可用</span></div></div>
+      <div class="frow" style="align-items:flex-start"><div class="flab" style="padding-top:8px">含量配置</div><div class="fval">
+        <div class="toolbar" style="margin:0 0 10px;padding:0;border:none">
+          <button class="btn sm primary">+ 新建配置</button>
+          <span class="dis"><button class="btn sm">编辑</button><span class="tip">请先勾选一条配置</span></span>
+          <span class="dis"><button class="btn sm danger">删除</button><span class="tip">请先勾选一条配置</span></span>
+          <span class="spacer"></span><span class="muted" style="font-size:12px">共 0 组</span>
+        </div>
+        <div class="mx"><table>
+          <thead><tr><th style="width:36px"></th><th style="width:120px">配置编号</th>
+            <th class="el">Ag</th><th class="el">Cu</th><th class="tot">合计</th><th style="width:150px">创建时间</th></tr></thead>
+          <tbody><tr><td colspan="6">
+            <div class="empty" style="padding:28px 0">
+              <span class="ico">&#9634;</span>该材质尚未配置含量
+              <div class="muted" style="font-size:12px;margin-top:6px">未配置含量的材质在选配时不可选。点上方「新建配置」补一组，或通过导入材质库批量补齐。</div>
+            </div></td></tr></tbody></table></div>
+        <div class="fhint">🚫 <b>表头不要因为没数据就藏掉</b> —— 元素列来自元素组成，与配置有没有无关。<span class="acref">AC-17</span></div>
+      </div></div>
+    </div>
+    <div class="drawer-ft"><button class="btn">取消</button><button class="btn primary">保存</button></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>状态 C · 校验错误<span class="state err">错误态</span></h2>
+  <div class="drawer wide" style="max-width:1200px">
+    <div class="drawer-hd"><span class="t">编辑材质</span><span class="muted" style="cursor:pointer">&#10005;</span></div>
+    <div class="drawer-bd">
+      <div class="frow"><div class="flab"><span class="req">材质名 / 化学式</span></div><div class="fval">
+        <div class="inp err" style="max-width:560px">AIMgSi05(EN 6101-B T6) 超长示例文本再加一截凑满三十三个字</div>
+        <div class="ferr">材质名最多 32 字符，当前 33 字符</div><span class="acref">AC-24</span></div></div>
+      <div class="frow"><div class="flab"><span class="req">材质名 / 化学式</span></div><div class="fval">
+        <div class="inp err" style="max-width:560px">AgNi20</div>
+        <div class="ferr">材质名已被材质 00021 使用。材质名即材质身份，不允许重名</div>
+        <div class="fhint">对应导入侧的 M-6 防御分支：库里若已存在同名的多条材质，导入会整体跳过并提示到本页处理。</div><span class="acref">AC-28 · M-6</span></div></div>
+      <div class="frow" style="align-items:flex-start"><div class="flab" style="padding-top:4px"><span class="req">元素组成</span></div><div class="fval">
+        <div class="comp"><span class="chip ro"><span class="no">10001</span> Ag / 银</span>
+<span class="chip ro"><span class="no">10005</span> Ni / 镍</span></div>
+        <div class="ferr">该材质已有 2 条含量配置，元素组成不可修改（后端返 409 COMPOSITION_LOCKED）</div>
+        <div class="fhint">前端置灰只是体验，<b>后端同样会拦</b> —— 直接打接口绕过前端也改不了。<span class="acref">AC-31</span></div></div></div>
+    </div>
+    <div class="drawer-ft"><button class="btn">取消</button><span class="dis"><button class="btn primary">保存</button><span class="tip">请先修正表单中的 3 处错误</span></span></div>
+  </div>
+</div>
+
+<div class="note"><b>与 <code>task-260812</code> 原型的关系：</b>那份 <code>原型-元素列.html</code> 画的是本抽屉里「元素」列改字典下拉。本次把它<b>拆成了两处</b>：选哪些元素 &rarr; 本页的「元素组成」区；每个元素填多少 &rarr; <a href="./3-含量配置抽屉.html">二级的含量配置抽屉</a>。元素字典下拉的形态两处都原样继承、不回退成自由文本。偏差清单见 <a href="./index.html">导航页</a>。</div>
+
+</div>
+</body>
+</html>
