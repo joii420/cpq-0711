@@ -4,6 +4,18 @@
 
 ---
 
+[2026-09-02] 报价单建单（路径 B 直接修复） - **新建报价单选了模板，重新打开却回落「请选择模板」** | 涉及文件：`cpq-frontend/src/pages/quotation/QuotationWizard.tsx`（`handleCreateQuotation` 的 `POST /quotations` payload 补 `customerTemplateId` / `costingTemplateId` 两个字段）| 用户裁决：走路径 B，**存量单不回填**。
+
+🔑 **根因：建单接口漏发模板字段，模板从来没进过库**（不是渲染丢失）。`handleCreateQuotation` 构造 payload 时只带 `customerId / name / quoteType / priority / stage / projectName / expectedCloseDate / categoryId`，**两个模板字段一个都没发**；后端两端都是好的（`CreateQuotationRequest` 有字段、`QuotationService.create:303/331` 有写入 + `validateTemplateBinding` 校验），只是 `if (request.customerTemplateId != null)` 恒不成立 ⇒ `quotation.customer_template_id` / `costing_card_template_id` 建单当时恒为 NULL。同文件的 `buildDraftPayload`（saveDraft 路径）**一直有发**，所以事后编辑过的单会被顺手补上 —— 这正是它长期只对一部分单发作的原因。
+
+⚠️ **为什么现在才暴露（时间线可查）**：`next()` 从前无条件 `handleSaveDraft(true)`，建单后立刻补写；`repair-260830`（`17857239`，2026-08-31 00:49）加了「零编辑不发 draft」的闸之后，**建单后什么都不改就退出的单再也没人补**，这个 2026-05-18 就埋下的漏发才显形。⇒ **一个性能优化把某条兜底路径关掉时，要问一句「有谁在靠这条兜底活着」** —— 兜底被当成了主路径，主路径的缺陷就一直没人发现。
+
+🔬 **A/B 实证（同库同客户同路径，唯一变量=那两行）**：`QT-20260902-0269` 带修复 → `customer_template_id=99ff6aa4` + `costing_card_template_id=cb492889` 双双落库；`QT-20260902-0270` 把两行注释掉 → 两列均 NULL 且 `POST` body 只剩 `{categoryId}`（**还原实验按预测变红**，证明亲验脚本有分辨力）。亲验三层：L1 网络 payload · L2 后端回读 DTO · L3 **重新打开编辑页 Step1 模板下拉显示「正泰模板1 v1.0」而非 placeholder**（L3 才是用户症状本身）。回归：`quotation-flow.spec.ts` 改动前后**同样 4 失败、同名同行号**（既有夹具漂移，非本次引入）。
+
+📌 **发现但未修（超出本次授权范围，待用户裁决）**：`QuotationCreateForm.tsx` 的「匹配报价模板」与「拉取核价模板」两个 effect **deps 完全相同**（`[value.categoryId, customerId]`）、各自异步返回后都用**闭包里的 stale `value`** 整对象展开 `onChange` ⇒ 后返回的那个把先返回的那个刚设的字段抹掉。实测新建态选客户后：**核价模板自动选中、报价模板被抹成空**（探针截图 `请选择模板` + 红字「请选择报价模板」）。讽刺的是该文件顶部 `valueRef` 的注释写的就是这个坑，但只有「分类反查」那个 effect 用了 `valueRef`，这两个没用。⇒ 用户被迫每次手选模板，且**一旦没注意就会带着空模板走完 Step1**。
+
+⚠️ **测试副作用（共享 dev 库）**：本次亲验/还原实验在 `cpq_db_0724` 新建了 3 张正泰 DRAFT 空单（`QT-20260902-0269` / `0270` / `4fe22d8e…`）+ A/B 跑 `quotation-flow` 产生的 `0273` / `0274`，**未删除**（删数据属 §3.2 红线，需用户批准）。
+
 [2026-09-02] **task-260901 材质管理模块定义规则更新 —— 闸门 B 验收通过，已交付结案** - 用户在已合并环境真机验收通过 | 合并链：`f5adfccc`（主体 150 文件）→ `179c7345`（元素下拉精确匹配置顶，路径 B）→ `82cbb0a0`（补 AC-36/37 追溯矩阵 + 改写 AC-22 验法 + 登记 BL-0202）→ `7e73ebc3`（删 INDEX 陈旧重复态势行）| **交付口径**：AC 37 条全达成（双向覆盖实跑校验：需求文档 1~37 共 37 条，矩阵未覆盖 0 / 多出 0 / 编号断档 0）· 接口层 33/33 · 证伪实验 6/6（含收尾新增的 filterSort 摘除实验）· 后端 70 例全绿 · 主线亲验 13 条 + 原型逐屏比对。**遗留**：BL-0201（材质名唯一约束，P1，test 库 3 组重名须先清）· BL-0202（选配 `template_id`，P2，归 task-260902）· **B-3 / `待批-V401` 未批**（前置闸实测不通过，见下）· 分支指针与 worktree 待用户本机清理。
 
 🚨 **`CLAUDE.md` 的 profile 表被实证更正（本次结案顺带，影响全项目）**：原写「`test` → `10.177.152.12:5432/cpq_db`，**与 dev 库不同**——写集成测试时注意」，**说反了**。实证 `application-test.properties:24` 默认值就是 **`cpq_db_0724`**，即 **`mvnw test` 直接写共享开发库**。两条直接后果：① 测试夹具残留会进 dev 库 —— 实证仓库挂着 8 个 worktree、**其中 6 个仍带旧 `DemoMaterialRecipeFixture`**（只写 `recipe_id` 不写 `config_id`），任一跑一次 `mvnw test` 就重新长出 `material_recipe_element.config_id IS NULL` 孤儿行（我清过一次，`created_at` 09-02 12:04 UTC 又长回来，**晚于清理**）；② **任何清库型测试都会打掉正在用的开发数据**（§3.2「测试也算」）。⚠️ **这直接卡住 B-3**：`V401` 的前置硬闸要求 `config_id IS NULL = 0`，实测为 **8** 且在再生 —— **旧 worktree 清干净之前，清孤儿是打移动靶**。另记：`cpq_db` 停在 V398、无 `config_id` 列（V400 从未在该库应用），它已不是任何 profile 的目标库。

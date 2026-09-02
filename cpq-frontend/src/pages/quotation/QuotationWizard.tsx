@@ -1497,6 +1497,23 @@ const QuotationWizard: React.FC = () => {
         // task-0729: 建单时把当前产品分类落库（此前压根没发，编辑页只能靠模板反查，
         // 模板未绑定/分类为空时永久空白）。
         categoryId: step1FormValue.categoryId,
+        // 2026-09-02 修复:建单 payload 此前漏发这两个字段 ⇒ quotation.customer_template_id /
+        //   costing_card_template_id 建单当时恒为 NULL。只有事后走过 saveDraft 的单才被
+        //   buildDraftPayload(见下方,它一直有发)补写回去;用户「选客户 → 选模板 → 下一步 →
+        //   重新打开报价单」路径中途不触发任何 saveDraft ⇒ 模板永久丢失,Step1 回落「请选择模板」。
+        //   实证(2026-09-02 同库同客户同路径 A/B,唯一变量=下面两行):
+        //     QT-20260902-0269 带这两行 → 两列均落库;QT-20260902-0270 注释掉 → 两列均 NULL,
+        //     且 POST body 只剩 {categoryId}。⚠️ 此前一直没暴露,是因为 next() 从前无条件
+        //     handleSaveDraft 会顺手补写;repair-260830(17857239,2026-08-31)加了「零编辑不发
+        //     draft」的闸之后,建单后什么都不改就退出的单再也没人补,漏发才显形。
+        //   ⚠️ 后端字段名是 costingTemplateId(CreateQuotationRequest),与 saveDraft 的
+        //      costingCardTemplateId(SaveDraftRequest)不同名 —— 不要照抄 buildDraftPayload。
+        //   口径:优先 step1FormValue(用户在 Step1 当下看到的值,受控组件的唯一真相源),
+        //      回退 wizard 层 state;两者不一致只发生在「匹配结果变化把选择清空」时,那时
+        //      step1FormValue 才是对的(QuotationCreateForm 的 onChange 对 undefined 不回写 state)。
+        //   AP-1:UUID 字段一律 `|| null`,禁止把 '' / undefined 传给后端(Jackson 反序列化直接 400)。
+        customerTemplateId: step1FormValue.customerTemplateId || customerTemplateId || null,
+        costingTemplateId: step1FormValue.costingTemplateId || costingCardTemplateId || null,
       });
       const newId = res.data.id;
       setQuotationId(newId);
