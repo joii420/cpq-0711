@@ -148,6 +148,14 @@ public class GlobalExceptionMapper {
                     .type(MediaType.APPLICATION_JSON)
                     .build();
         }
+        // task-260901：材质模块错误码（api.md §2）。errorCode 放 data.code，前端按它判定，
+        // 禁止按 message 文本匹配。
+        if (e instanceof com.cpq.configure.exception.MaterialRecipeApiException mrae) {
+            return Response.status(e.getCode())
+                    .entity(ApiResponse.error(e.getCode(), e.getMessage(),
+                            Map.of("code", mrae.getErrorCode())))
+                    .build();
+        }
         if (e instanceof com.cpq.component.exception.ComponentElementBindingRequiredException cebre) {
             return Response.status(e.getCode())
                     .entity(ApiResponse.error(e.getCode(), e.getMessage(), Map.of(

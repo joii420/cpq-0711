@@ -84,8 +84,8 @@ interface MaterialRecipeDetail extends MaterialRecipeLite {
 |---|---|---|
 | `GET` | `/material-recipes?keyword=&status=&page=&size=` | 响应项加 `allowCustomContent` / `elementCodes` / `configCount` |
 | `GET` | `/material-recipes/{id}?includeInactiveConfigs=false` | ★ 响应 `elements` → `configs`；新增查询参数（默认 `false` 只返 ACTIVE 配置） |
-| `POST` | `/material-recipes` | ★**建材质与建配置合成一次调用**：请求移除 `elements`，改为 `configs: [{remark?, elements:[{elementNo, pct}]}]`（**必填，至少 1 组**）+ `allowCustomContent`（可选，默认 `false`）。<br>🚫 **请求体不含 `composition`** —— 元素组成由服务端从 `configs` 推导（各组元素种类须相同，取第 1 组的元素与顺序），这与导入侧 M-5b 是同一条规则。<br>整个请求**要么全成要么全不成**（一个事务）：任一组不合法则材质、组成、配置都不落库，**且不消耗材质编号** |
-| `PUT` | `/material-recipes/{id}` | 编辑态**不带配置**：只接 `symbol` / `name` / `specLabel` / `recipeType` / `allowCustomContent` / `composition`。`code` 仍只读。`composition` **仅当该材质无 ACTIVE 配置时可变更**；有配置时传了与现值不同的 `composition` → 409 `COMPOSITION_LOCKED`（传相同值视为未改，放行）。配置的增删改一律走 §2.2 的配置端点 |
+| `POST` | `/material-recipes` | ★**建材质与建配置合成一次调用**：请求移除 `elements`，改为 `configs: [{remark?, elements:[{elementNo, defaultPct}]}]`（**必填，至少 1 组**）<br>⚠️ **字段名统一为 `defaultPct`**（与 §2.2 的配置端点一致）—— 初稿这里误写成 `pct`，2026-09-02 更正。🚫 **`pct` 只在 §2.4 的选配请求里使用**（那是既有代码的字段名，不动），材质与配置两侧的写入一律 `defaultPct`+ `allowCustomContent`（可选，默认 `false`）。<br>🚫 **请求体不含 `composition`** —— 元素组成由服务端从 `configs` 推导（各组元素种类须相同，取第 1 组的元素与顺序），这与导入侧 M-5b 是同一条规则。<br>整个请求**要么全成要么全不成**（一个事务）：任一组不合法则材质、组成、配置都不落库，**且不消耗材质编号** |
+| `PUT` | `/material-recipes/{id}` | 编辑态**不带配置**：接 `symbol` / `name` / `specLabel` / `recipeType` / `allowCustomContent` / `composition` / **`sortOrder` / `status`**。<br>⚠️ **`sortOrder` 与 `status` 是 2026-09-02 补上的**：材质编辑抽屉自 `task-0708` 起一直在编辑这两项，**`status` 更是把材质改回「启用」的唯一入口**。初稿的字段清单漏了它们，后端若不接收会让「改状态」**静默失效**（前端发了、没报错、也没生效）。`code` 仍只读。`composition` **仅当该材质无 ACTIVE 配置时可变更**；有配置时传了与现值不同的 `composition` → 409 `COMPOSITION_LOCKED`（传相同值视为未改，放行）。配置的增删改一律走 §2.2 的配置端点 |
 | `DELETE` | `/material-recipes/{id}` | 不变（软删材质） |
 
 **新增错误码**
@@ -216,6 +216,33 @@ interface MaterialImportReport {
 | 409 | `RECIPE_HAS_NO_CONFIG` | 材质无任何 ACTIVE 配置 | `该材质尚未配置含量` |
 
 **选配的材质候选**（既有端点，响应加字段）：`configCount` 与 `allowCustomContent` 随候选项一起返回，前端据此灰显与禁用（AC-17 / AC-18）。
+
+---
+
+## 2.5 错误码怎么传、前端怎么拿（2026-09-02 实证更正）
+
+> ⚠️ **本节初稿写反了。** 我当时据前端「`ApiResponse.code` 是 int，`buildApiError` 只取 message」的观察，
+> 写成「前端拿不到字符串码、只能按文案分支」。**那个观察只对了一半** —— 顶层 `code` 确实是 int，
+> 但 `buildApiError` 同时把**信封的 `data` 整个**传了出去（`cpq-frontend/src/services/api.ts:32`）：
+>
+> ```ts
+> err.payload = error?.response?.data?.data ?? null;   // 信封.data，与成功侧 response.data 同层级
+> ```
+
+**约定的错误响应形状**（沿用 `ComponentElementBindingRequiredException` 的既有惯例）：
+
+```json
+{
+  "code": 400,
+  "message": "配方1 与 配方2 的元素种类不同（…）。同一材质下各配方必须使用相同的元素",
+  "data": { "code": "COMPOSITION_INCONSISTENT_ACROSS_CONFIGS" }
+}
+```
+
+⇒ **前端可以按码分支**：`err.payload?.code === 'COMPOSITION_LOCKED'`，不必匹配文案。
+⇒ **接口层测试**直接读响应原文，字符串码在 body 里。
+⇒ 🚨 **但文案仍是契约的一部分，后端不得自行润色措辞**：多条 AC（AC-9 / AC-10 / AC-31 / AC-34）的可观测断言就是那句文案的逐字内容；
+> 且导入报告的 `skipped[].reason` **只有文案、没有码**，前端展示与测试断言都只能靠它。
 
 ---
 

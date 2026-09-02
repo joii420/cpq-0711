@@ -6,9 +6,12 @@ import com.cpq.configure.dto.BindPartsRequest;
 import com.cpq.configure.dto.BindingSuggestionDTO;
 import com.cpq.configure.dto.ConfirmBindingsRequest;
 import com.cpq.configure.dto.MaterialImportReportDTO;
+import com.cpq.configure.dto.MaterialRecipeConfigDTO;
+import com.cpq.configure.dto.MaterialRecipeConfigUpsertRequest;
 import com.cpq.configure.dto.MaterialRecipeDTO;
 import com.cpq.configure.dto.MaterialRecipePartDTO;
 import com.cpq.configure.dto.MaterialRecipeUpsertRequest;
+import com.cpq.configure.service.MaterialRecipeConfigService;
 import com.cpq.configure.service.MaterialRecipeImportService;
 import com.cpq.configure.service.MaterialRecipeService;
 import jakarta.inject.Inject;
@@ -44,9 +47,13 @@ public class MaterialRecipeResource {
     @Inject
     MaterialRecipeImportService importService;
 
+    @Inject
+    MaterialRecipeConfigService configService;
+
     /**
-     * POST /material-recipes/import — 上传 xlsx 导入材质库（task-0708 · B5）。
-     * 只读 材质编号 + 材质对应元素 两 sheet；脏数据走 200 + 报告，不报 400。
+     * POST /material-recipes/import — 上传 xlsx 导入材质库。
+     * task-260901：只接<b>新 4 列单表模板</b>（材质 / 组号 / 元素符号 / 含量），旧两 sheet 模板返 400；
+     * 脏数据仍走 200 + 报告，不报 400。
      */
     @POST
     @Path("/import")
@@ -63,7 +70,7 @@ public class MaterialRecipeResource {
         return importService.importLibrary(bytes);
     }
 
-    /** GET /material-recipes/import/template — 下载干净两 sheet 导入模板（task-0708 · B5）。 */
+    /** GET /material-recipes/import/template — 下载干净的单 sheet 4 列导入模板（task-260901 · B-13）。 */
     @GET
     @Path("/import/template")
     @Produces("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -86,10 +93,59 @@ public class MaterialRecipeResource {
         return service.list(keyword, withCount);
     }
 
+    /**
+     * GET /material-recipes/{id}?includeInactiveConfigs=false — 详情。
+     * task-260901（BC-1）：响应 {@code elements} → {@code configs}，另带 composition / compositionEditable。
+     */
     @GET
     @Path("/{id}")
-    public MaterialRecipeDTO detail(@PathParam("id") UUID id) {
-        return service.getDetail(id);
+    public MaterialRecipeDTO detail(@PathParam("id") UUID id,
+                                    @QueryParam("includeInactiveConfigs") @DefaultValue("false")
+                                    boolean includeInactiveConfigs) {
+        return service.getDetail(id, includeInactiveConfigs);
+    }
+
+    // ── 含量配置（task-260901 · B-14，api.md §2.2）──
+
+    /** GET /material-recipes/{id}/configs?includeInactive=false — 列该材质的配置，按 seq 升序。 */
+    @GET
+    @Path("/{id}/configs")
+    public List<MaterialRecipeConfigDTO> listConfigs(
+            @PathParam("id") UUID id,
+            @QueryParam("includeInactive") @DefaultValue("false") boolean includeInactive) {
+        configService.requireRecipe(id);
+        return configService.listConfigDTOs(id, includeInactive);
+    }
+
+    /** POST /material-recipes/{id}/configs — 新建配置。configNo 由服务端生成，请求体不得携带。 */
+    @POST
+    @Path("/{id}/configs")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public MaterialRecipeConfigDTO createConfig(@PathParam("id") UUID id,
+                                                MaterialRecipeConfigUpsertRequest req) {
+        return configService.createConfig(id, req);
+    }
+
+    /** PUT /material-recipes/{id}/configs/{configId} — 改 remark 与 elements；configNo / seq 不可改。 */
+    @PUT
+    @Path("/{id}/configs/{configId}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public MaterialRecipeConfigDTO updateConfig(@PathParam("id") UUID id,
+                                                @PathParam("configId") UUID configId,
+                                                MaterialRecipeConfigUpsertRequest req) {
+        return configService.updateConfig(id, configId, req);
+    }
+
+    /** DELETE /material-recipes/{id}/configs/{configId} — 软删（status→INACTIVE），幂等。 */
+    @DELETE
+    @Path("/{id}/configs/{configId}")
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public Response deleteConfig(@PathParam("id") UUID id, @PathParam("configId") UUID configId) {
+        configService.deleteConfig(id, configId);
+        // api.md §2.2：软删且幂等，已 INACTIVE 再删仍返 200（不是 204 —— 前端按 200 判成功）
+        return Response.ok(Map.of("deleted", true)).build();
     }
 
     // ── 材质-料号 绑定关系管理(Phase 1 新增)──

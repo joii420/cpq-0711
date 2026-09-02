@@ -1,0 +1,5 @@
+material_master=["0028-2609000005|528a0bf0-3957-4cc4-99f0-d779f518f093|<NULL>"]
+material_bom_item=["00006|RECIPE"]
+element_bom_item=["Ag=88.000000000000","Ni=12.000000000000"]
+material_recipe 258→258
+material_recipe_config 258→258
