@@ -32,6 +32,8 @@
 
 ⚠️ **测试污染共享 dev 库（已报用户）**：`SaveDraftSerializeLockTest` 因需真并发**不能用 `@TestTransaction`**，每跑一轮在 `cpq_db_0724` 留 4 张 `TEST-LOCK-*` 报价单。已报红线待批清理。
 
+🧹 **收尾清理（2026-09-01，用户逐项批准）**：① 删除 `cpq_db_0724` 里 `SaveDraftSerializeLockTest` 累积的 **20 张 `Lock Test - N lines` 残单 + 46 行明细**（删前占该库报价单总数 35 张里的 57%，业务真单仅 15 张）；事务内前后计数核对：`DELETE 20`、残单归 0、孤儿行 0、**业务真单前后均为 15 张**。② worktree 已移除；分支指针 `feat/task-260901-incremental-draft` 因 hook 红线拦截未删（用户已批准，待本机执行）。
+
 **AC 台账**：24 条中 **20 条达成**；**AC-18 未达标**（端到端第三次 10.27s > 10s，用户裁定「接受」）；**AC-22 未跑**（用户裁定「T-22 不跑」）；AC-5 未验证；AC-23 UI 半侧未验证（补跑后 SQL 侧通过）。**9 条 E2E 用例未执行** —— 这一条必须写进闸门 B 汇报，不能只报绿的部分。
 
 [2026-09-01] 组件管理 · 字段配置表格（路径 B 直接修复） - **移除 [小数位数] [宽度] [排序] 三列 + 加宽 [字段名]** | 涉及文件：`cpq-frontend/src/pages/component/FieldConfigTable.tsx`（唯一改动文件，7 增 92 删）
