@@ -10,7 +10,20 @@ public class PartRequest {
     public String partMode;                // 'existing' | 'custom'
     public String existingHfPartNo;        // existing 时必填
     public String recipeCode;              // custom 时必填
-    public List<ElementOverride> elements; // custom 时必填
+    /**
+     * ★task-260901（api.md §2.4）：选中的<b>标准含量配置</b>编号（如 '00006-01'）。
+     * 与 {@link #elements} <b>必须恰好给一个</b>，两个都给或都不给 → 400 MATERIAL_SOURCE_AMBIGUOUS。
+     */
+    public String configNo;
+    /** custom 模式的自定义含量；给了它就要求材质 allowCustomContent=true（M-5） */
+    public List<ElementOverride> elements;
+    /**
+     * 内部标记：材质来源已解析（configNo → elements 已物化 / 自定义含量已校验并归一到 100 制）。
+     * 解析必须发生在指纹计算之前，且要幂等 —— 物化之后 configNo 与 elements 会同时非空，
+     * 再跑一次互斥校验就会误报 MATERIAL_SOURCE_AMBIGUOUS。
+     */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    public boolean materialResolved;
     /**
      * task-0712 缺口1(工序 id 契约修复, 方案A): 工序编号顺序数组(命中复用时忽略)。
      * 值 = {@code process_master.process_no}(如 "MRO-LP-0001" / 孤儿 "TP10")，

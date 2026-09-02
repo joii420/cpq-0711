@@ -96,6 +96,10 @@ public class ConfigureProductService {
     @Inject
     com.cpq.configure.service.SalesSignatureRepository sigRepo;
 
+    /** task-260901 · B-17：材质含量配置的读取底座（发号/校验/元素行读写都在它那儿）。 */
+    @Inject
+    MaterialRecipeConfigService materialRecipeConfigService;
+
     // ───────────────────────────────────────────────────────────────────────
     // T19 → task-0712 缺口2(3a): lookup-fingerprint 端点
     // ───────────────────────────────────────────────────────────────────────
@@ -144,6 +148,12 @@ public class ConfigureProductService {
         }
         if (req.parts == null || req.parts.isEmpty()) {
             throw new IllegalArgumentException("lookup-fingerprint: parts 必填");
+        }
+
+        // task-260901 · B-17：预览端与提交端必须用同一份已解析的 elements 算指纹，
+        // 否则「预览命中」≠「提交命中」，回到 3a 之前那种误导性的恒 false。
+        for (PartRequest pr : req.parts) {
+            prepareMaterialSelection(pr);
         }
 
         int totalQty = req.parts.stream()
@@ -508,46 +518,138 @@ public class ConfigureProductService {
     }
 
     void validateCustomPart(PartRequest pr) {
-        if (pr.recipeCode == null) {
+        prepareMaterialSelection(pr);
+    }
+
+    /**
+     * task-260901 · B-17：解析并校验「这个配件的材质含量从哪来」。
+     *
+     * <p><b>必须跑在指纹计算之前</b>（{@code configure()} 与 {@code lookupFingerprint()} 都在最开头调），
+     * 因为标准配置要在这里物化成 {@code pr.elements}；否则「预览命中」与「提交命中」会算出两个指纹。
+     *
+     * <p>规则（api.md §2.4 + M-5）：
+     * <ol>
+     *   <li>{@code configNo} 与 {@code elements} <b>恰好给一个</b> —— 否则 400 {@code MATERIAL_SOURCE_AMBIGUOUS}；</li>
+     *   <li>材质无任何 ACTIVE 配置 → 409 {@code RECIPE_HAS_NO_CONFIG}（前端灰显是体验，后端拦是正确性）；</li>
+     *   <li>给 {@code configNo}：按编号取该配置的元素，物化进 {@code pr.elements}；</li>
+     *   <li>给 {@code elements}（自定义含量）：<b>先看材质级开关</b> ——
+     *       {@code allowCustomContent=false} 直接 403，<b>不进元素级 is_locked 判断</b>（M-5：
+     *       材质级开关优先于元素级锁）；为 true 时 {@code is_locked} 不再单独生效，
+     *       只校验 Σ=1 与 min/max（若有）。</li>
+     * </ol>
+     *
+     * <p>⚠️ <b>含量刻度的双口径兼容</b>：AC-19 用 0~1 制描述（「填 Ag 0.88 / Ni 0.12」，落库 88 / 12），
+     * 而既有前端与 {@code element_bom_item} 用的是 100 制（Ag 存 90）。api.md §2.4 只说了
+     * {@code pct} 由 number 改 string，<b>没有钉死刻度</b>。这里按 Σ 判刻度：
+     * Σ ≤ 10 视为 0~1 制（×100 归一），否则视为 100 制。两种合法输入的 Σ 相距 100 倍，
+     * 不存在歧义区；错误文案一律用 0~1 制报（「实际 1.08」），两种输入下文案相同。
+     * 归一发生在指纹计算之前，故同一份配比无论用哪种刻度提交，指纹与落库结果都一致。
+     * <b>该歧义已上报主线，契约定稿后应删掉其中一支。</b>
+     */
+    void prepareMaterialSelection(PartRequest pr) {
+        if (pr == null || !"custom".equals(pr.partMode)) return;
+        if (pr.materialResolved) return;                    // 幂等：物化后再调不重复校验
+        if (pr.recipeCode == null || pr.recipeCode.isBlank()) {
             throw new IllegalArgumentException("custom 模式 recipeCode 必填");
         }
-        if (pr.elements == null || pr.elements.isEmpty()) {
-            throw new IllegalArgumentException("custom 模式 elements 必填");
-        }
-        // 元素含量和校验 (±0.01% 容差)
-        BigDecimal sum = pr.elements.stream()
-            .map(e -> e.pct == null ? BigDecimal.ZERO : e.pct)
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
-        if (sum.subtract(new BigDecimal("100")).abs().compareTo(new BigDecimal("0.01")) > 0) {
-            throw new IllegalArgumentException("元素含量之和必须 = 100, 当前: " + sum);
+
+        boolean hasConfigNo = pr.configNo != null && !pr.configNo.isBlank();
+        boolean hasElements = pr.elements != null && !pr.elements.isEmpty();
+        if (hasConfigNo == hasElements) {
+            throw com.cpq.configure.exception.MaterialRecipeApiException.badRequest(
+                "MATERIAL_SOURCE_AMBIGUOUS", "请选择标准配置或自定义含量之一");
         }
 
-        // locked / range 校验
         com.cpq.configure.entity.MaterialRecipe recipe =
             com.cpq.configure.entity.MaterialRecipe.findByCodeOrThrow(pr.recipeCode);
-        List<com.cpq.configure.entity.MaterialRecipeElement> defs =
-            com.cpq.configure.entity.MaterialRecipeElement.list("recipeId", recipe.id);
-        Map<String, com.cpq.configure.entity.MaterialRecipeElement> defByCode = defs.stream()
-            .collect(Collectors.toMap(e -> e.elementCode, e -> e));
-
-        for (ElementOverride eo : pr.elements) {
-            com.cpq.configure.entity.MaterialRecipeElement def = defByCode.get(eo.elementCode);
-            if (def == null) {
-                throw new IllegalArgumentException("元素未在 recipe 定义: " + eo.elementCode);
-            }
-            if (def.isLocked) {
-                if (eo.pct.compareTo(def.defaultPct) != 0) {
-                    throw new IllegalArgumentException(
-                        "元素已锁定,不可修改: " + eo.elementCode);
-                }
-            } else {
-                if (eo.pct.compareTo(def.minPct) < 0 || eo.pct.compareTo(def.maxPct) > 0) {
-                    throw new IllegalArgumentException(
-                        "元素含量超出范围 [" + def.minPct + ", " + def.maxPct + "]: "
-                        + eo.elementCode);
-                }
-            }
+        List<com.cpq.configure.entity.MaterialRecipeConfig> actives =
+            materialRecipeConfigService.listConfigs(recipe.id, false);
+        if (actives.isEmpty()) {
+            throw com.cpq.configure.exception.MaterialRecipeApiException.conflict(
+                "RECIPE_HAS_NO_CONFIG", "该材质尚未配置含量");
         }
+
+        // ── ③ 标准配置：物化成 elements ──
+        if (hasConfigNo) {
+            String wanted = pr.configNo.trim();
+            com.cpq.configure.entity.MaterialRecipeConfig picked = null;
+            for (com.cpq.configure.entity.MaterialRecipeConfig c : actives) {
+                if (wanted.equals(c.configNo)) { picked = c; break; }
+            }
+            if (picked == null) {
+                throw com.cpq.configure.exception.MaterialRecipeApiException.notFound(
+                    "CONFIG_NOT_FOUND", "含量配置不存在或已停用：" + wanted);
+            }
+            List<com.cpq.configure.entity.MaterialRecipeElement> els =
+                com.cpq.configure.entity.MaterialRecipeElement
+                    .<com.cpq.configure.entity.MaterialRecipeElement>find(
+                        "configId = ?1 ORDER BY sortOrder", picked.id).list();
+            List<ElementOverride> out = new ArrayList<>(els.size());
+            for (com.cpq.configure.entity.MaterialRecipeElement e : els) {
+                out.add(new ElementOverride(e.elementCode, e.defaultPct));   // 库内即 100 制
+            }
+            pr.elements = out;
+            pr.materialResolved = true;
+            return;
+        }
+
+        // ── ④ 自定义含量：材质级开关优先（M-5）──
+        if (!recipe.allowCustomContent) {
+            throw com.cpq.configure.exception.MaterialRecipeApiException.forbidden(
+                "CUSTOM_CONTENT_NOT_ALLOWED", "该材质不支持自定义含量");
+        }
+
+        BigDecimal raw = BigDecimal.ZERO;
+        for (ElementOverride eo : pr.elements) {
+            if (eo == null || eo.elementCode == null || eo.elementCode.isBlank()) {
+                throw new IllegalArgumentException(
+                    "custom 配件元素项非法(null 或 elementCode 空): recipeCode=" + pr.recipeCode);
+            }
+            raw = raw.add(eo.pct == null ? BigDecimal.ZERO : eo.pct);
+        }
+        boolean ratioScale = raw.compareTo(new BigDecimal("10")) <= 0;    // 见上方刻度说明
+        BigDecimal ratioSum = ratioScale ? raw
+            : raw.divide(new BigDecimal("100"), 12, java.math.RoundingMode.HALF_UP);
+        if (ratioSum.subtract(BigDecimal.ONE).abs().compareTo(new BigDecimal("0.0001")) > 0) {
+            throw com.cpq.configure.exception.MaterialRecipeApiException.badRequest(
+                "CUSTOM_CONTENT_SUM_NOT_ONE",
+                "含量合计必须为 1，实际 " + com.cpq.configure.rules.MaterialRecipeRules.formatRatioSum(ratioSum));
+        }
+
+        // 元素必须在材质的<b>元素组成</b>里（M-0：组成是材质的显式属性）
+        Set<String> compCodes = new java.util.LinkedHashSet<>();
+        for (com.cpq.configure.entity.MaterialRecipeComposition c
+                : materialRecipeConfigService.listComposition(recipe.id)) {
+            compCodes.add(c.elementCode);
+        }
+        // min/max 参考取该材质第一条 ACTIVE 配置的元素定义（元素级限值挂在元素行上；
+        // 自定义含量不绑定某条配置，故取 seq 最小的那条作参考。实测存量 min/max 全为 NULL，此分支当前不生效）。
+        Map<String, com.cpq.configure.entity.MaterialRecipeElement> defByCode =
+            com.cpq.configure.entity.MaterialRecipeElement
+                .<com.cpq.configure.entity.MaterialRecipeElement>find("configId", actives.get(0).id)
+                .list().stream()
+                .collect(Collectors.toMap(e -> e.elementCode, e -> e, (a, b) -> a));
+
+        List<ElementOverride> normalized = new ArrayList<>(pr.elements.size());
+        for (ElementOverride eo : pr.elements) {
+            if (!compCodes.contains(eo.elementCode)) {
+                throw com.cpq.configure.exception.MaterialRecipeApiException.badRequest(
+                    "CUSTOM_CONTENT_ELEMENT_UNKNOWN", "元素未在材质中定义：" + eo.elementCode);
+            }
+            BigDecimal pct100 = eo.pct == null ? BigDecimal.ZERO
+                : (ratioScale ? eo.pct.multiply(new BigDecimal("100")) : eo.pct);
+            com.cpq.configure.entity.MaterialRecipeElement def = defByCode.get(eo.elementCode);
+            // M-5：allowCustomContent=true 时 is_locked 不再单独生效，只看 min/max（若有）。
+            if (def != null && def.minPct != null && def.maxPct != null) {
+                if (pct100.compareTo(def.minPct) < 0 || pct100.compareTo(def.maxPct) > 0) {
+                    throw new IllegalArgumentException(
+                        "元素含量超出范围 [" + def.minPct + ", " + def.maxPct + "]: " + eo.elementCode);
+                }
+            }
+            normalized.add(new ElementOverride(eo.elementCode, pct100));
+        }
+        pr.elements = normalized;
+        pr.materialResolved = true;
     }
 
     // insertMatPart 已在 Phase 3 移除（V44 mat_part 写入停用）
@@ -1094,6 +1196,12 @@ public class ConfigureProductService {
                                               UUID operatorId) {
         // B2.3: 后端裁决的有效 productType（Σqty 兜底），全程用它分发，不再信 req.productType。
         String effectiveType = validateRequest(req);
+
+        // task-260901 · B-17：材质来源（标准配置 configNo / 自定义 elements）必须在<b>指纹计算之前</b>解析，
+        // 否则 buildSalesConfigContext 会拿着空的 elements 算指纹 → 不同配置坍缩成同一个报价料号。
+        for (PartRequest pr : req.parts) {
+            prepareMaterialSelection(pr);
+        }
 
         // P4 批2 补丁: 从 quotation 拉 customer_id，传给 resolvePart → insertProcesses
         UUID customerId = getCustomerIdFromQuotation(quotationId);

@@ -204,3 +204,33 @@ export function evaluateArithmetic(expression: string | null | undefined): Decim
     return null;
   }
 }
+
+/**
+ * 去掉小数点后多余的尾随 0 —— **纯字符串处理，绝不经过 JS `number`**（task-260901 · F-12 / AC-30）。
+ *
+ *   '90.000000000000'   → '90'
+ *   '12.345678901200'   → '12.3456789012'
+ *   '0.150000000000'    → '0.15'
+ *   '100.000000000000'  → '100'
+ *   '100'               → '100'（无小数点原样返回）
+ *
+ * 🚨 禁止改成 `Number(s).toString()`：`numeric(16,12)` 的 12 位小数过 JS `number` 会丢尾数，
+ * 且 `12.345678901200` 与 `12.3456789012` 在 double 下无法区分。
+ * 🚨 本函数只作用于**渲染层与输入框回填**，不改变存储 / 接口 / 比较的精度：
+ * `'88'` 与 `'88.000000000000'` 在 `numeric(16,12)` 与 `BigDecimal.compareTo` 下同值。
+ */
+export function trimTrailingZeros(value: string | null | undefined): string {
+  if (value == null) return '';
+  const text = String(value).trim();
+  if (!text) return '';
+  return text.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+}
+
+/**
+ * 含量的显示文本（不带 % 号）。空值回退 '—'。
+ * 与 `trimTrailingZeros` 的区别只在空值处理，供表格单元格直接使用。
+ */
+export function formatPctText(value: string | null | undefined, fallback = '—'): string {
+  const trimmed = trimTrailingZeros(value);
+  return trimmed === '' ? fallback : trimmed;
+}

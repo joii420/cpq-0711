@@ -6,11 +6,11 @@
  * 一行 = 一个材质料号（`SelDetailRow`），数量行内可编辑（默认 1）。
  */
 import React from 'react';
-import { Table, Button, InputNumber, Empty } from 'antd';
+import { Table, Button, InputNumber, Empty, Tag } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { SelDetailRow } from '../../../types/configure';
-import { formatDisplayDecimal, normalizeDecimalString, type DecimalString } from '../../../utils/precision';
+import { formatPctText, normalizeDecimalString, type DecimalString } from '../../../utils/precision';
 import { normalizeQuantityInput, sumQuantity } from './configureRequest';
 
 interface Props {
@@ -33,10 +33,11 @@ function swatchColor(code: string | null): string {
   return SWATCH_COLORS[h % SWATCH_COLORS.length];
 }
 
+// task-260901 · AC-30：给人看的含量一律**去掉小数点后多余的 0**（字符串处理，不过 JS number）
 function summarizeElements(overrides: Record<string, DecimalString>): string {
   const entries = Object.entries(overrides);
   if (entries.length === 0) return '—';
-  return entries.map(([code, val]) => `${code}${formatDisplayDecimal(val, 2)}`).join('/');
+  return entries.map(([code, val]) => `${code} ${formatPctText(val)}%`).join(' / ');
 }
 
 const SelDetailTable: React.FC<Props> = ({ rows, onAdd, onEdit, onDelete, onQuantityChange }) => {
@@ -73,9 +74,34 @@ const SelDetailTable: React.FC<Props> = ({ rows, onAdd, onEdit, onDelete, onQuan
       ),
     },
     {
-      title: '元素含量',
-      key: 'elements',
-      render: (_v, r) => summarizeElements(r.elementOverrides),
+      // task-260901 · F-8/F-9：含量来源二选一 —— 标准配置（configNo）或自定义含量（elementOverrides）
+      title: '含量',
+      key: 'content',
+      render: (_v, r) => {
+        const mode = r.contentMode ?? (Object.keys(r.elementOverrides).length > 0 ? 'custom' : undefined);
+        if (mode === 'config') {
+          return (
+            <span>
+              <Tag color="blue">标准配置</Tag>
+              <span style={{ fontFamily: 'Consolas, monospace' }}>{r.configNo ?? '—'}</span>
+              {r.configLabel && (
+                <span style={{ color: '#909399', fontSize: 11, marginLeft: 6 }}>
+                  {r.configLabel.replace(/^[^（(]*/, '')}
+                </span>
+              )}
+            </span>
+          );
+        }
+        if (mode === 'custom') {
+          return (
+            <span>
+              <Tag color="gold">自定义</Tag>
+              {summarizeElements(r.elementOverrides)}
+            </span>
+          );
+        }
+        return '—';
+      },
     },
     {
       title: '工序',

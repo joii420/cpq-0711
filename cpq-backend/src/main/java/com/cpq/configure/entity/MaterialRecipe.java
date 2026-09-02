@@ -31,6 +31,14 @@ public class MaterialRecipe extends PanacheEntityBase {
     @Column(name = "sort_order")
     public int sortOrder;
 
+    /**
+     * task-260901（M-5）：选配是否允许自定义含量。<b>优先于元素级 is_locked</b> ——
+     * false 直接拒绝任何自定义含量、不进元素级校验；true 时 is_locked 不再单独生效。
+     * 新建材质（含导入自动创建的）一律默认 false。
+     */
+    @Column(name = "allow_custom_content")
+    public boolean allowCustomContent;
+
     public String status;
 
     @Column(name = "created_at")

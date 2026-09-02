@@ -49,9 +49,10 @@
 | 编号 | 服务的 AC | 任务内容 |
 |---|---|---|
 | **B-14** | AC-14, AC-15, AC-17 | 配置四个端点（`api.md` §2.2）。`POST`/`PUT` 的 `elements` 元素集合必须与材质 `composition` **逐个相等**（多了少了都 400）—— 前端已按组成预填只读，这条防的是绕过前端。`DELETE` 是**软删且幂等**；`POST`/`PUT` 走与导入同一套校验（Σ / 逐值范围 / 元素集合一致 / 与 ACTIVE 配置重复），**校验逻辑抽成共享方法，不许导入与 CRUD 各写一份** |
+| **B-21** | AC-36 | **`elementCodes` 与组成明细改走权威元素链**（2026-09-02 用户裁决）：现实现直接返回 `material_recipe_composition.element_code`（快照列），导致材质 `00262` 的元素组成显示成 `10004`（业务当年整行串位：编号填进符号列）。<br>改为 **`LEFT JOIN element e ON e.element_no = comp.element_no`**，`elementCodes` 取 `e.element_code`、组成明细的 `elementCode`/`elementName` 取 `e.element_code`/`e.element_name`；**`e` 为 NULL 时回退用 `comp` 的快照值**，不得返回空。<br>🚫 **只改读，不改写**：`material_recipe_composition` 的存量数据一个字节不动（AC-36 有反向断言盯着）。<br>📌 判据来源：`task-0709 · B2` 已定「权威元素链是 `element_no`，`element_code`/`element_name` 只是快照」—— 现实现没走权威链，属既有缺陷。<br>⚠️ **别只改列表**：详情的 `composition[]` 与配置矩阵的元素列头同源，一并改，否则列表显示 `Sn`、抽屉显示 `10004`，比不改更糟 |
 | **B-15** | AC-13, AC-16, AC-17 | 列表与详情响应：加 `allowCustomContent` / `elementCodes` / `configCount`；详情加 `composition[]` 与 `compositionEditable`，`elements` 换成 `configs[]`（BC-1）。⚠️ **列表页 N+1 高风险** —— `configCount` 与 `elementCodes` 必须一条聚合 SQL 取全，不许逐材质查。⚠️ **`elementCodes` 必须查 `material_recipe_composition`，不许从配置推导**（BC-2b）：0 配置的材质也要有值，否则 AC-17 的列表 tag 会空 |
 | **B-16** | AC-16, AC-24, AC-28, AC-31 | **`PUT` 材质（编辑态）**：① 加 `allowCustomContent`；② `elements` 换成 `composition[]`（BC-2），落 `material_recipe_composition`，`elementCode`/`elementName` 由服务端从 `element` 主表回填；③ **元素组成只读守卫（M-0b）**：该材质存在 ACTIVE 配置且提交的 `composition` 与现值不同 → 409 `COMPOSITION_LOCKED`；**传相同值视为未改、放行**（否则前端每次保存材质名都会被拒）。比较按 `(elementNo, sortOrder)` 的有序列表判等；④ 材质名长度与重名校验 |
-| **B-20** | AC-33, AC-34 | **`POST` 材质（新建态）—— 建材质 + 推导元素组成 + 建配置，一个事务**：请求体是 `configs: [{remark?, elements:[{elementNo, pct}]}]`（`api.md` §2.1）。步骤：① 逐组校验 Σ≈1 与单值范围；② **各组元素种类集合互相比对**，不全相同 → 400 `COMPOSITION_INCONSISTENT_ACROSS_CONFIGS`，报文指名是哪两组、各是什么集合；③ 组间内容逐值判重（M-4）→ 409 `CONFIG_DUPLICATED_IN_REQUEST`；④ 全过才发材质编号（B-6）、写 `composition`（取第 1 组的元素与顺序）、按 B-5 逐组发配置编号。<br>🚨 **②③ 的判据必须与导入侧 B-10 第④级复用同一份代码**（M-0a：UI 与导入是同一条规则的两个入口）—— 🚫 不许两边各写一套，那是下一个「两处口径分叉」的种子。<br>🚨 **失败必须整体回滚且不消耗编号** —— 发号动作要排在全部校验之后 |
+| **B-20** | AC-33, AC-34 | **`POST` 材质（新建态）—— 建材质 + 推导元素组成 + 建配置，一个事务**：请求体是 `configs: [{remark?, elements:[{elementNo, defaultPct}]}]`（`api.md` §2.1）⚠️ **字段名是 `defaultPct` 不是 `pct`**（2026-09-02 更正，测试代理发现契约内部不一致）。步骤：① 逐组校验 Σ≈1 与单值范围；② **各组元素种类集合互相比对**，不全相同 → 400 `COMPOSITION_INCONSISTENT_ACROSS_CONFIGS`，报文指名是哪两组、各是什么集合；③ 组间内容逐值判重（M-4）→ 409 `CONFIG_DUPLICATED_IN_REQUEST`；④ 全过才发材质编号（B-6）、写 `composition`（取第 1 组的元素与顺序）、按 B-5 逐组发配置编号。<br>🚨 **②③ 的判据必须与导入侧 B-10 第④级复用同一份代码**（M-0a：UI 与导入是同一条规则的两个入口）—— 🚫 不许两边各写一套，那是下一个「两处口径分叉」的种子。<br>🚨 **失败必须整体回滚且不消耗编号** —— 发号动作要排在全部校验之后 |
 
 ## E · 选配链路
 
@@ -84,12 +85,14 @@
 | AC-13 | B-1, B-4, B-15 | AC-28 | B-10, B-16 |
 | AC-14 | B-1, B-3, B-5, B-14 | AC-29 | 纯前端（F-2） |
 | AC-15 | B-5, B-14 | AC-30 | 纯前端（F-12） |
+| | | **AC-36** | **B-21** |
+| | | **AC-37** | 纯前端（F-14） |
 | | | **AC-33** | **B-6, B-20** |
 | | | **AC-34** | **B-20** |
 | | | **AC-31** | **B-1, B-2, B-15, B-16** |
 | | | **AC-32** | **B-10, B-11** |
 
-**反向**：B-1~B-20 每项在上表都至少出现一次 ✅ —— 无「没人要的功能」。
+**反向**：B-1~B-21 每项在上表都至少出现一次 ✅ —— 无「没人要的功能」。
 
 > ⚠️ **AC-30（含量去尾随零）与 AC-29（工具栏禁用态）是纯前端断言**，后端不认领；但 AC-30 有一条**反向的后端断言**（库内仍是 `90.000000000000`），由 `B-19` 的回归用例一并锁住 —— 防止前端为了显示好看而把去零做到了存储层。
 

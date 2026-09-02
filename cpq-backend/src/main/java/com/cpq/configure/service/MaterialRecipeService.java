@@ -5,12 +5,19 @@ import com.cpq.common.dto.Pagination;
 import com.cpq.configure.dto.BindingSuggestionDTO;
 import com.cpq.configure.dto.ConfirmBindingsRequest;
 import com.cpq.configure.dto.ExistingPartMaterialDTO;
+import com.cpq.configure.dto.CompositionItemDTO;
+import com.cpq.configure.dto.MaterialRecipeConfigDTO;
 import com.cpq.configure.dto.MaterialRecipeDTO;
 import com.cpq.configure.dto.MaterialRecipeElementDTO;
 import com.cpq.configure.dto.MaterialRecipePartDTO;
 import com.cpq.configure.dto.MaterialRecipeUpsertRequest;
 import com.cpq.configure.entity.MaterialRecipe;
+import com.cpq.configure.entity.MaterialRecipeComposition;
+import com.cpq.configure.entity.MaterialRecipeConfig;
 import com.cpq.configure.entity.MaterialRecipeElement;
+import com.cpq.configure.exception.MaterialRecipeApiException;
+import com.cpq.configure.rules.MaterialRecipeNumbering;
+import com.cpq.configure.rules.MaterialRecipeRules;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -27,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.LinkedHashSet;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -54,6 +62,10 @@ public class MaterialRecipeService {
     @Inject
     EntityManager em;
 
+    /** 配置层的读写底座（发号 / 校验 / 灌元素行）——导入侧与 UI 侧共用，见 M-0a。 */
+    @Inject
+    MaterialRecipeConfigService configService;
+
     /**
      * 仅 ACTIVE 材质列表（不带 elements、不带 count）——供选配候选（SelParamCandidateService）等
      * 只需启用项的场景使用。管理端列表请用 {@link #list(String, boolean)}（全状态 + 搜索 + 排序）。
@@ -77,15 +89,33 @@ public class MaterialRecipeService {
     @SuppressWarnings("unchecked")
     public List<MaterialRecipeDTO> list(String keyword, boolean withCount) {
         boolean hasKw = keyword != null && !keyword.isBlank();
+        // task-260901 · B-15：elementCodes 与 configCount 用<b>同一条 SQL 的标量子查询</b>取全，
+        // 🚫 不许按材质逐条查（列表页 N+1 高风险点）。SQL 条数与材质数无关，恒为 1（withCount 时 2）。
+        // ⚠️ elementCodes 查的是 material_recipe_composition（BC-2b）——0 配置的材质也要有值，
+        //    否则 AC-17 的列表 tag 会空。
         StringBuilder sql = new StringBuilder(
             "SELECT mr.id, mr.code, mr.symbol, mr.name, mr.spec_label, mr.recipe_type, " +
-            "       mr.status, mr.sort_order, mr.created_at, mr.updated_at " +
+            "       mr.status, mr.sort_order, mr.created_at, mr.updated_at, " +
+            "       mr.allow_custom_content, " +
+            // B-21 / AC-36：元素符号取<b>权威链</b> element_no → element 主表，
+            //   material_recipe_composition.element_code 只是快照（材质 00262 那行整行串位，
+            //   快照里存的是编号 10004）。主表查无时 COALESCE 回退快照，绝不返回空。
+            "       (SELECT array_agg(COALESCE(el.element_code, mc.element_code) " +
+            "                         ORDER BY mc.sort_order, mc.element_code) " +
+            "          FROM material_recipe_composition mc " +
+            "          LEFT JOIN element el ON el.element_no = mc.element_no " +
+            "         WHERE mc.recipe_id = mr.id) AS element_codes, " +
+            "       (SELECT count(*) FROM material_recipe_config cfg " +
+            "         WHERE cfg.recipe_id = mr.id AND cfg.status = 'ACTIVE') AS config_count " +
             "FROM material_recipe mr ");
         if (hasKw) {
             sql.append("WHERE (mr.code ILIKE :kw OR mr.symbol ILIKE :kw OR mr.name ILIKE :kw " +
-                "OR EXISTS (SELECT 1 FROM material_recipe_element e " +
-                "           WHERE e.recipe_id = mr.id " +
-                "             AND (e.element_code ILIKE :kw OR e.element_name ILIKE :kw))) ");
+                "OR EXISTS (SELECT 1 FROM material_recipe_composition mc2 " +
+                "           LEFT JOIN element el2 ON el2.element_no = mc2.element_no " +
+                "           WHERE mc2.recipe_id = mr.id " +
+                // 快照与权威值都参与匹配：搜 'Sn' 能搜到 00262（权威），搜 '10004' 也仍能搜到（快照）
+                "             AND (mc2.element_code ILIKE :kw OR mc2.element_name ILIKE :kw " +
+                "               OR el2.element_code ILIKE :kw OR el2.element_name ILIKE :kw))) ");
         }
         sql.append("ORDER BY (mr.status = 'ACTIVE') DESC, mr.updated_at DESC, mr.created_at DESC");
 
@@ -106,6 +136,9 @@ public class MaterialRecipeService {
             d.sortOrder = r[7] == null ? null : ((Number) r[7]).intValue();
             d.createdAt = toOffsetDateTime(r[8]);
             d.updatedAt = toOffsetDateTime(r[9]);
+            d.allowCustomContent = r[10] != null && (Boolean) r[10];
+            d.elementCodes = toStringList(r[11]);
+            d.configCount = r[12] == null ? 0L : ((Number) r[12]).longValue();
             dtos.add(d);
         }
 
@@ -296,16 +329,46 @@ public class MaterialRecipeService {
         return out;
     }
 
-    /** GET /material-recipes/{id} — 详情(带 elements). */
+    /** GET /material-recipes/{id} — 详情（默认只返 ACTIVE 配置）。 */
     public MaterialRecipeDTO getDetail(UUID id) {
+        return getDetail(id, false);
+    }
+
+    /**
+     * GET /material-recipes/{id}?includeInactiveConfigs= — 详情（task-260901 · B-15）。
+     *
+     * <p>响应 {@code elements} → {@code configs}（BC-1），另加：
+     * <ul>
+     *   <li>{@code composition[]} —— 材质的元素组成，<b>配置矩阵列的权威来源</b>（M-0）；</li>
+     *   <li>{@code compositionEditable} —— 无 ACTIVE 配置时 true，有配置即 false（M-0b）。</li>
+     * </ul>
+     * SQL 条数固定 4（材质 / 组成 / 配置 / 配置元素），与配置数无关。
+     */
+    public MaterialRecipeDTO getDetail(UUID id, boolean includeInactiveConfigs) {
         MaterialRecipe r = MaterialRecipe.findById(id);
         if (r == null) {
             throw new NotFoundException("material_recipe 不存在: " + id);
         }
         MaterialRecipeDTO dto = toDTOLite(r);
-        dto.elements = MaterialRecipeElement.<MaterialRecipeElement>find(
-                "recipeId = ?1 ORDER BY sortOrder", r.id).list()
-            .stream().map(this::toElemDTO).collect(Collectors.toList());
+        List<MaterialRecipeComposition> comp = configService.listComposition(r.id);
+        // B-21 / AC-36：组成的三段展示值全部取自 element 主表（权威链 element_no），
+        // 主表查无时回退快照。🚫 只改读，不回写 material_recipe_composition。
+        var index = configService.loadElementIndexByNo(
+            comp.stream().map(c -> c.elementNo).filter(java.util.Objects::nonNull).toList());
+        dto.composition = comp.stream()
+            .map(c -> new CompositionItemDTO(
+                c.elementNo,
+                MaterialRecipeConfigService.authoritative(c.elementNo, index, c.elementCode, false),
+                MaterialRecipeConfigService.authoritative(c.elementNo, index, c.elementName, true),
+                c.sortOrder))
+            .collect(Collectors.toList());
+        dto.elementCodes = dto.composition.stream()
+            .map(c -> c.elementCode).collect(Collectors.toList());
+        dto.configs = configService.listConfigDTOs(r.id, includeInactiveConfigs);
+        long activeCount = dto.configs.stream()
+            .filter(c -> MaterialRecipeConfig.ACTIVE.equals(c.status)).count();
+        dto.configCount = activeCount;
+        dto.compositionEditable = activeCount == 0;
         return dto;
     }
 
@@ -358,11 +421,19 @@ public class MaterialRecipeService {
                 dto.recipeName = mr.name;
                 dto.recipeSpec = mr.specLabel;
                 dto.recipeType = mr.recipeType;  // locked / editable / partial
-                List<MaterialRecipeElement> els = MaterialRecipeElement
-                    .<MaterialRecipeElement>find("recipeId = ?1 ORDER BY sortOrder", recipeId).list();
-                for (MaterialRecipeElement e : els) {
-                    dto.elements.add(new ExistingPartMaterialDTO.Element(
-                        e.elementCode, e.elementName, e.defaultPct, e.minPct, e.maxPct, e.isLocked));
+                // task-260901（BC-3）：元素行已下沉到配置层。料号绑定仍挂在<b>材质</b>层
+                // （material_master 无配置维度，§2.2 明确本期不引入），故这里取该材质
+                // <b>第一条 ACTIVE 配置</b>（按 seq）作为回显来源，并把它的 configNo 一并返回。
+                List<MaterialRecipeConfig> cfgs = configService.listConfigs(recipeId, false);
+                if (!cfgs.isEmpty()) {
+                    MaterialRecipeConfig first = cfgs.get(0);
+                    dto.configNo = first.configNo;
+                    List<MaterialRecipeElement> els = MaterialRecipeElement
+                        .<MaterialRecipeElement>find("configId = ?1 ORDER BY sortOrder", first.id).list();
+                    for (MaterialRecipeElement e : els) {
+                        dto.elements.add(new ExistingPartMaterialDTO.Element(
+                            e.elementCode, e.elementName, e.defaultPct, e.minPct, e.maxPct, e.isLocked));
+                    }
                 }
                 return dto;
             }
@@ -600,59 +671,219 @@ public class MaterialRecipeService {
 
     // ── CRUD methods ──
 
+    /** 材质名上限（material_recipe.symbol 是 varchar(32)，超长必须在应用层拦，不能让 PG 抛 value too long）。 */
+    public static final int SYMBOL_MAX_LEN = 32;
+
+    /**
+     * POST /material-recipes —— 新建材质（task-260901 · B-20，服务 AC-33 / AC-34）。
+     *
+     * <p><b>建材质 + 推导元素组成 + 建配置，一个事务，要么全成要么全不成。</b>步骤：
+     * <ol>
+     *   <li>逐组校验 Σ≈1 与单值范围；</li>
+     *   <li><b>各组元素种类集合互相比对</b>，不全相同 → 400 {@code COMPOSITION_INCONSISTENT_ACROSS_CONFIGS}；</li>
+     *   <li>组间内容逐值判重（M-4）→ 409 {@code CONFIG_DUPLICATED_IN_REQUEST}；</li>
+     *   <li><b>全过才发材质编号</b>（B-6）、写 composition（取第 1 组的元素与顺序）、逐组发配置编号（B-5）。</li>
+     * </ol>
+     * 🚨 第 2 步的判据来自 {@link MaterialRecipeRules#findFirstElementSetMismatch} ——
+     * 与导入侧 M-5b <b>同一份代码</b>（M-0a），🚫 不许另写一套。
+     * 🚨 发号排在全部校验之后 ⇒ 失败不消耗材质编号（AC-34）。
+     */
     @Transactional
     public MaterialRecipeDTO create(MaterialRecipeUpsertRequest req) {
-        validateUpsert(req, null);
+        if (req == null) throw new IllegalArgumentException("request body 必填");
+        String symbol = normalizeSymbol(req.symbol);
+        validateTypeAndStatus(req);
+        assertSymbolNotDuplicated(symbol, null);
+
+        if (req.configs == null || req.configs.isEmpty()) {
+            throw MaterialRecipeApiException.badRequest("COMPOSITION_EMPTY", "材质必须至少有一个元素");
+        }
+
+        // ── 元素解析：把所有组的 elementNo / elementCode 一次性查出来（无 N+1）──
+        List<String> allNos = new ArrayList<>();
+        List<String> allCodes = new ArrayList<>();
+        for (MaterialRecipeUpsertRequest.ConfigUpsert g : req.configs) {
+            if (g == null || g.elements == null || g.elements.isEmpty()) {
+                throw MaterialRecipeApiException.badRequest("COMPOSITION_EMPTY", "材质必须至少有一个元素");
+            }
+            for (MaterialRecipeUpsertRequest.ElementUpsert e : g.elements) {
+                if (e == null) {
+                    throw MaterialRecipeApiException.badRequest("COMPOSITION_EMPTY", "材质必须至少有一个元素");
+                }
+                if (e.elementNo != null && !e.elementNo.isBlank()) allNos.add(e.elementNo.trim());
+                if (e.elementCode != null && !e.elementCode.isBlank()) allCodes.add(e.elementCode.trim());
+            }
+        }
+        Map<String, MaterialRecipeConfigService.ElementRef> index =
+            configService.loadElementIndex(allNos, allCodes);
+
+        // ── ① 逐组：解析 + 单值范围 + 组内元素重复 + Σ ──
+        List<List<MaterialRecipeConfigService.ResolvedPct>> groups = new ArrayList<>();
+        List<Set<String>> keySets = new ArrayList<>();          // 键 = elementNo（UI 侧键域）
+        List<List<String>> codeSets = new ArrayList<>();        // 报文展示用（符号）
+        for (MaterialRecipeUpsertRequest.ConfigUpsert g : req.configs) {
+            List<MaterialRecipeConfigService.ResolvedPct> resolved = new ArrayList<>();
+            Set<String> keys = new LinkedHashSet<>();
+            List<String> codes = new ArrayList<>();
+            BigDecimal sum = BigDecimal.ZERO;
+            int so = 1;
+            for (MaterialRecipeUpsertRequest.ElementUpsert e : g.elements) {
+                String key = (e.elementNo != null && !e.elementNo.isBlank())
+                    ? e.elementNo.trim() : (e.elementCode == null ? null : e.elementCode.trim());
+                MaterialRecipeConfigService.ElementRef ref = key == null ? null : index.get(key);
+                if (ref == null) {
+                    throw MaterialRecipeApiException.notFound("ELEMENT_NOT_FOUND", "元素编号不存在：" + key);
+                }
+                if (!keys.add(ref.elementNo)) {
+                    throw MaterialRecipeApiException.badRequest("COMPOSITION_ELEMENT_DUPLICATED",
+                        "元素重复：" + ref.elementNo);
+                }
+                BigDecimal pct = e.effectivePct();
+                if (!MaterialRecipeRules.pctInRange(pct, MaterialRecipeRules.HUNDRED)) {
+                    throw MaterialRecipeApiException.badRequest("CONFIG_PCT_ILLEGAL",
+                        "含量必须大于 0 且不超过 100：" + ref.elementCode);
+                }
+                sum = sum.add(pct);
+                codes.add(ref.elementCode);
+                resolved.add(new MaterialRecipeConfigService.ResolvedPct(
+                    ref.elementNo, ref.elementCode, ref.elementName, pct, so++));
+            }
+            if (!MaterialRecipeRules.sumIsOnePct(sum)) {
+                throw MaterialRecipeApiException.badRequest("CONFIG_SUM_NOT_ONE",
+                    "含量合计必须为 1，实际 " + MaterialRecipeRules.formatRatioSum(
+                        sum.divide(MaterialRecipeRules.HUNDRED, 12, java.math.RoundingMode.HALF_UP)));
+            }
+            groups.add(resolved);
+            keySets.add(keys);
+            codeSets.add(codes);
+        }
+
+        // ── ② 各组元素种类集合互比（M-0a 共享判据，与导入侧同源）──
+        int[] mismatch = MaterialRecipeRules.findFirstElementSetMismatch(keySets);
+        if (mismatch != null) {
+            int i = mismatch[0], j = mismatch[1];
+            throw MaterialRecipeApiException.badRequest("COMPOSITION_INCONSISTENT_ACROSS_CONFIGS",
+                "配方" + (i + 1) + " 与 配方" + (j + 1) + " 的元素种类不同（配方" + (i + 1) + "="
+                    + MaterialRecipeRules.formatSet(codeSets.get(i), ", ") + "，配方" + (j + 1) + "="
+                    + MaterialRecipeRules.formatSet(codeSets.get(j), ", ")
+                    + "）。同一材质下各配方必须使用相同的元素");
+        }
+
+        // ── ③ 组间逐值判重（M-4）──
+        for (int i = 0; i < groups.size(); i++) {
+            for (int j = i + 1; j < groups.size(); j++) {
+                if (MaterialRecipeRules.sameContent(
+                        MaterialRecipeConfigService.contentByCodeResolved(groups.get(i)),
+                        MaterialRecipeConfigService.contentByCodeResolved(groups.get(j)))) {
+                    throw MaterialRecipeApiException.conflict("CONFIG_DUPLICATED_IN_REQUEST",
+                        "配方" + (i + 1) + " 与 配方" + (j + 1) + " 的含量完全相同，请删除其中一组");
+                }
+            }
+        }
+
+        // ── ④ 全部校验通过，才发号落库 ──
         MaterialRecipe r = new MaterialRecipe();
-        r.code = req.code.trim();
-        r.symbol = req.symbol.trim();
-        // repair-1：名称为空则默认=化学式(symbol)；填了则用填入值（名称可编辑）
-        r.name = (req.name == null || req.name.isBlank()) ? req.symbol.trim() : req.name.trim();
+        r.code = nextRecipeCode();
+        r.symbol = symbol;
+        r.name = (req.name == null || req.name.isBlank()) ? symbol : req.name.trim();
         r.specLabel = req.specLabel;
-        r.recipeType = req.recipeType;
+        r.recipeType = req.recipeType == null ? "locked" : req.recipeType;
         r.sortOrder = req.sortOrder == null ? 0 : req.sortOrder;
         r.status = req.status == null ? "ACTIVE" : req.status;
+        r.allowCustomContent = req.allowCustomContent != null && req.allowCustomContent;
         r.createdAt = OffsetDateTime.now();
         r.updatedAt = OffsetDateTime.now();
         r.persist();
 
-        if (req.elements != null) {
-            int seq = 1;
-            for (MaterialRecipeUpsertRequest.ElementUpsert e : req.elements) {
-                insertElement(r.id, e, seq++);
-            }
+        // 元素组成 = 第 1 组的元素及其顺序（M-0a ①）
+        List<MaterialRecipeConfigService.ResolvedPct> first = groups.get(0);
+        int so = 1;
+        for (MaterialRecipeConfigService.ResolvedPct e : first) {
+            persistComposition(r.id, e.elementNo, e.elementCode, e.elementName, so++);
         }
+        Map<String, Integer> orderByNo = new LinkedHashMap<>();
+        int oi = 1;
+        for (MaterialRecipeConfigService.ResolvedPct e : first) orderByNo.put(e.elementNo, oi++);
+
+        // 逐组发配置号（水位只查一次，之后内存递增 —— 新材质水位必为 0，这里直接从 1 起）
+        int seq = 0;
+        for (List<MaterialRecipeConfigService.ResolvedPct> g : groups) {
+            MaterialRecipeConfig cfg = configService.newConfigWithSeq(r, ++seq, null);
+            List<MaterialRecipeConfigService.ResolvedPct> ordered = new ArrayList<>();
+            for (MaterialRecipeConfigService.ResolvedPct e : g) {
+                ordered.add(new MaterialRecipeConfigService.ResolvedPct(
+                    e.elementNo, e.elementCode, e.elementName, e.pct,
+                    orderByNo.getOrDefault(e.elementNo, e.sortOrder)));
+            }
+            ordered.sort((a, b) -> Integer.compare(a.sortOrder, b.sortOrder));
+            configService.insertElements(cfg.id, ordered);
+        }
+        em.flush();
         return getDetail(r.id);
     }
 
+    /**
+     * PUT /material-recipes/{id} —— 编辑材质（task-260901 · B-16，服务 AC-16 / AC-24 / AC-28 / AC-31）。
+     *
+     * <p>编辑态<b>不带配置</b>；配置的增删改一律走配置端点。要点：
+     * <ul>
+     *   <li>{@code code} 只读（既有契约，TC-E3）；</li>
+     *   <li>{@code composition} <b>仅当该材质无 ACTIVE 配置时可变更</b>（M-0b）——有配置时提交了
+     *       与现值不同的组成 → 409 {@code COMPOSITION_LOCKED}；<b>传相同值视为未改、放行</b>
+     *       （否则前端每次保存材质名都会被拒）。比较按 {@code (elementNo, sortOrder)} 的有序列表判等；</li>
+     *   <li>{@code allowCustomContent} 置 true 但材质无 ACTIVE 配置 → 409 {@code CUSTOM_CONTENT_NEEDS_CONFIG}。</li>
+     * </ul>
+     */
     @Transactional
     public MaterialRecipeDTO update(UUID id, MaterialRecipeUpsertRequest req) {
         MaterialRecipe r = MaterialRecipe.findById(id);
         if (r == null) throw new NotFoundException("material_recipe 不存在: " + id);
-        // 材质编号只读（TC-E3 / api.md §五）：强制用既有 code、忽略入参，防直连 API 篡改主键+搜索键+下游 join 键；
-        // 同时让 validateUpsert 的编号查重针对真实 code，避免客户端传脏 code 触发误报 400。
-        if (req != null) req.code = r.code;
-        validateUpsert(req, id);
+        if (req == null) throw new IllegalArgumentException("request body 必填");
+        // 材质编号只读（TC-E3 / api.md）：强制沿用既有 code、忽略入参。
+        req.code = r.code;
 
-        // code 保持不变（只读）—— 不从 req 回写
-        r.symbol = req.symbol.trim();
-        // repair-1：名称为空则默认=化学式(symbol)；填了则用填入值（名称可编辑）
-        r.name = (req.name == null || req.name.isBlank()) ? req.symbol.trim() : req.name.trim();
-        r.specLabel = req.specLabel;
-        r.recipeType = req.recipeType;
-        r.sortOrder = req.sortOrder == null ? r.sortOrder : req.sortOrder;
-        r.status = req.status == null ? r.status : req.status;
-        r.updatedAt = OffsetDateTime.now();
-        r.persist();
+        String symbol = normalizeSymbol(req.symbol);
+        validateTypeAndStatus(req);
+        assertSymbolNotDuplicated(symbol, id);
 
-        // 完全替换 elements (简单可靠;副作用:配过的 element id 会变 — 业务上 element 是 immutable 子项)
-        MaterialRecipeElement.delete("recipeId", id);
-        if (req.elements != null) {
-            int seq = 1;
-            for (MaterialRecipeUpsertRequest.ElementUpsert e : req.elements) {
-                insertElement(id, e, seq++);
+        long activeConfigs = configService.countActiveConfigs(id);
+
+        // ① 元素组成（M-0b 两段式）
+        if (req.composition != null) {
+            List<MaterialRecipeConfigService.ResolvedPct> wanted = resolveComposition(req.composition);
+            List<MaterialRecipeComposition> current = configService.listComposition(id);
+            if (!compositionEquals(current, wanted)) {
+                if (activeConfigs > 0) {
+                    throw MaterialRecipeApiException.conflict("COMPOSITION_LOCKED",
+                        "该材质已有 " + activeConfigs + " 条含量配置，元素组成不可修改。"
+                            + "换元素组成请新建材质，或先删除全部含量配置");
+                }
+                MaterialRecipeComposition.delete("recipeId", id);
+                em.flush();
+                int so = 1;
+                for (MaterialRecipeConfigService.ResolvedPct e : wanted) {
+                    persistComposition(id, e.elementNo, e.elementCode, e.elementName, so++);
+                }
             }
         }
+
+        // ② 自定义含量开关
+        boolean allowCustom = req.allowCustomContent != null ? req.allowCustomContent : r.allowCustomContent;
+        if (allowCustom && activeConfigs == 0) {
+            throw MaterialRecipeApiException.conflict("CUSTOM_CONTENT_NEEDS_CONFIG",
+                "该材质尚未配置任何含量，无法开启自定义含量");
+        }
+
+        r.symbol = symbol;
+        r.name = (req.name == null || req.name.isBlank()) ? symbol : req.name.trim();
+        r.specLabel = req.specLabel;
+        r.recipeType = req.recipeType == null ? r.recipeType : req.recipeType;
+        r.sortOrder = req.sortOrder == null ? r.sortOrder : req.sortOrder;
+        r.status = req.status == null ? r.status : req.status;
+        r.allowCustomContent = allowCustom;
+        r.updatedAt = OffsetDateTime.now();
+        r.persist();
+        em.flush();
         return getDetail(id);
     }
 
@@ -665,96 +896,142 @@ public class MaterialRecipeService {
         r.persist();
     }
 
-    private void insertElement(UUID recipeId,
-                               MaterialRecipeUpsertRequest.ElementUpsert e,
-                               int seq) {
-        MaterialRecipeElement el = new MaterialRecipeElement();
-        el.recipeId = recipeId;
-        el.elementCode = e.elementCode.trim();
-        el.elementName = e.elementName == null ? e.elementCode.trim() : e.elementName.trim();
-        el.defaultPct = e.defaultPct;
-        el.minPct = e.minPct;
-        el.maxPct = e.maxPct;
-        el.isLocked = e.isLocked != null && e.isLocked;
-        el.sortOrder = e.sortOrder == null ? seq : e.sortOrder;
-        el.createdAt = OffsetDateTime.now();
-        el.persist();
+    // ── task-260901 helpers ──
+
+    /**
+     * B-6 材质编号自增：只统计 {@code ^[0-9]{5}$} 的 code 求 max + 1（一次查询 + 纯函数）。
+     * 脏值 '992' 不是五位 ⇒ 天然排除，'00993' 与 '992' 永不撞键。
+     */
+    @SuppressWarnings("unchecked")
+    public String nextRecipeCode() {
+        List<String> codes = em.createNativeQuery(
+                "SELECT code FROM material_recipe WHERE code ~ '^[0-9]{5}$'").getResultList();
+        return MaterialRecipeNumbering.nextRecipeCode(codes);
     }
 
-    private void validateUpsert(MaterialRecipeUpsertRequest req, UUID idForUpdate) {
-        if (req == null) throw new IllegalArgumentException("request body 必填");
-        if (req.code == null || req.code.isBlank()) throw new IllegalArgumentException("code 必填");
-        if (req.symbol == null || req.symbol.isBlank()) throw new IllegalArgumentException("symbol 必填");
-        // name 本期改为可空（决策#2：导入/新建置 NULL、UI 隐藏、DB 列保留供下游 COALESCE 引用）。
-        if (req.recipeType == null
-            || !List.of("locked", "editable", "partial").contains(req.recipeType)) {
+    private void persistComposition(UUID recipeId, String elementNo, String elementCode,
+                                    String elementName, int sortOrder) {
+        MaterialRecipeComposition c = new MaterialRecipeComposition();
+        c.recipeId = recipeId;
+        c.elementNo = elementNo;
+        c.elementCode = elementCode;
+        c.elementName = elementName;
+        c.sortOrder = sortOrder;
+        c.createdAt = OffsetDateTime.now();
+        c.persist();
+    }
+
+    /** 把请求里的 composition 解析成 element 主表口径（一次查库）。 */
+    private List<MaterialRecipeConfigService.ResolvedPct> resolveComposition(
+            List<MaterialRecipeUpsertRequest.CompositionUpsert> input) {
+        if (input == null || input.isEmpty()) {
+            throw MaterialRecipeApiException.badRequest("COMPOSITION_EMPTY", "材质必须至少有一个元素");
+        }
+        List<String> nos = new ArrayList<>();
+        List<String> codes = new ArrayList<>();
+        for (MaterialRecipeUpsertRequest.CompositionUpsert c : input) {
+            if (c == null) {
+                throw MaterialRecipeApiException.badRequest("COMPOSITION_EMPTY", "材质必须至少有一个元素");
+            }
+            if (c.elementNo != null && !c.elementNo.isBlank()) nos.add(c.elementNo.trim());
+            if (c.elementCode != null && !c.elementCode.isBlank()) codes.add(c.elementCode.trim());
+        }
+        Map<String, MaterialRecipeConfigService.ElementRef> index = configService.loadElementIndex(nos, codes);
+
+        List<MaterialRecipeConfigService.ResolvedPct> out = new ArrayList<>(input.size());
+        Set<String> seen = new LinkedHashSet<>();
+        int so = 1;
+        for (MaterialRecipeUpsertRequest.CompositionUpsert c : input) {
+            String key = (c.elementNo != null && !c.elementNo.isBlank())
+                ? c.elementNo.trim() : (c.elementCode == null ? null : c.elementCode.trim());
+            MaterialRecipeConfigService.ElementRef ref = key == null ? null : index.get(key);
+            if (ref == null) {
+                throw MaterialRecipeApiException.notFound("ELEMENT_NOT_FOUND", "元素编号不存在：" + key);
+            }
+            if (!seen.add(ref.elementNo)) {
+                throw MaterialRecipeApiException.badRequest("COMPOSITION_ELEMENT_DUPLICATED",
+                    "元素重复：" + ref.elementNo);
+            }
+            int order = c.sortOrder == null ? so : c.sortOrder;
+            so++;
+            out.add(new MaterialRecipeConfigService.ResolvedPct(
+                ref.elementNo, ref.elementCode, ref.elementName, null, order));
+        }
+        out.sort((a, b) -> Integer.compare(a.sortOrder, b.sortOrder));
+        // 归一 sortOrder 为 1..n，保证「传相同值视为未改」的比较不受客户端序号写法影响
+        List<MaterialRecipeConfigService.ResolvedPct> normalized = new ArrayList<>(out.size());
+        int i = 1;
+        for (MaterialRecipeConfigService.ResolvedPct e : out) {
+            normalized.add(new MaterialRecipeConfigService.ResolvedPct(
+                e.elementNo, e.elementCode, e.elementName, null, i++));
+        }
+        return normalized;
+    }
+
+    /** 元素组成判等：按 {@code (elementNo, sortOrder)} 的<b>有序列表</b>比对（M-0b）。 */
+    private boolean compositionEquals(List<MaterialRecipeComposition> current,
+                                      List<MaterialRecipeConfigService.ResolvedPct> wanted) {
+        if (current.size() != wanted.size()) return false;
+        List<MaterialRecipeComposition> sorted = new ArrayList<>(current);
+        sorted.sort((a, b) -> Integer.compare(a.sortOrder, b.sortOrder));
+        for (int i = 0; i < sorted.size(); i++) {
+            if (!sorted.get(i).elementNo.equals(wanted.get(i).elementNo)) return false;
+        }
+        return true;
+    }
+
+    private String normalizeSymbol(String symbol) {
+        if (symbol == null || symbol.isBlank()) {
+            throw new IllegalArgumentException("symbol 必填");
+        }
+        String t = symbol.trim();
+        if (t.length() > SYMBOL_MAX_LEN) {
+            throw MaterialRecipeApiException.badRequest("RECIPE_SYMBOL_TOO_LONG",
+                "材质名最多 " + SYMBOL_MAX_LEN + " 字符，当前 " + t.length() + " 字符");
+        }
+        return t;
+    }
+
+    /** 材质名即材质身份（D2）：ACTIVE 材质之间不许重名。 */
+    private void assertSymbolNotDuplicated(String symbol, UUID selfId) {
+        List<MaterialRecipe> dups = MaterialRecipe.<MaterialRecipe>find(
+            "symbol = ?1 AND status = 'ACTIVE'", symbol).list();
+        for (MaterialRecipe d : dups) {
+            if (selfId == null || !d.id.equals(selfId)) {
+                throw MaterialRecipeApiException.conflict("RECIPE_SYMBOL_DUPLICATED",
+                    "材质名已被材质 " + d.code + " 使用。材质名即材质身份，不允许重名");
+            }
+        }
+    }
+
+    private void validateTypeAndStatus(MaterialRecipeUpsertRequest req) {
+        if (req.recipeType != null
+            && !List.of("locked", "editable", "partial").contains(req.recipeType)) {
             throw new IllegalArgumentException("recipeType 必须为 locked/editable/partial");
         }
-        if (req.status != null
-            && !List.of("ACTIVE", "INACTIVE").contains(req.status)) {
+        if (req.status != null && !List.of("ACTIVE", "INACTIVE").contains(req.status)) {
             throw new IllegalArgumentException("status 必须为 ACTIVE/INACTIVE");
         }
+    }
 
-        // code 唯一性
-        String trimmed = req.code.trim();
-        MaterialRecipe dup = MaterialRecipe.find("code = ?1", trimmed).firstResult();
-        if (dup != null && (idForUpdate == null || !dup.id.equals(idForUpdate))) {
-            throw new IllegalArgumentException("code 已存在: " + trimmed);
+    @SuppressWarnings("unchecked")
+    private static List<String> toStringList(Object sqlArray) {
+        if (sqlArray == null) return new ArrayList<>();
+        if (sqlArray instanceof String[] arr) return new ArrayList<>(List.of(arr));
+        if (sqlArray instanceof Object[] arr) {
+            List<String> out = new ArrayList<>(arr.length);
+            for (Object o : arr) if (o != null) out.add(o.toString());
+            return out;
         }
-
-        // 校验 elements
-        if (req.elements == null || req.elements.isEmpty()) {
-            throw new IllegalArgumentException("elements 至少 1 项");
-        }
-        Set<String> codes = new HashSet<>();
-        BigDecimal sum = BigDecimal.ZERO;
-        for (MaterialRecipeUpsertRequest.ElementUpsert e : req.elements) {
-            if (e.elementCode == null || e.elementCode.isBlank()) {
-                throw new IllegalArgumentException("element.elementCode 必填");
-            }
-            if (e.defaultPct == null) {
-                throw new IllegalArgumentException("element.defaultPct 必填: " + e.elementCode);
-            }
-            if (!codes.add(e.elementCode.trim())) {
-                throw new IllegalArgumentException("element.elementCode 重复: " + e.elementCode);
-            }
-            sum = sum.add(e.defaultPct);
-
-            boolean locked = e.isLocked != null && e.isLocked;
-            // recipeType=locked: 所有元素必须 is_locked=true, min/max 必须 NULL
-            if ("locked".equals(req.recipeType)) {
-                if (!locked) throw new IllegalArgumentException(
-                    "recipeType=locked 时所有元素必须 isLocked=true: " + e.elementCode);
-                if (e.minPct != null || e.maxPct != null) throw new IllegalArgumentException(
-                    "locked 元素 min/max 必须为 NULL: " + e.elementCode);
-            }
-            // recipeType=editable: 所有元素必须 is_locked=false, min/max 必须有
-            if ("editable".equals(req.recipeType)) {
-                if (locked) throw new IllegalArgumentException(
-                    "recipeType=editable 时所有元素必须 isLocked=false: " + e.elementCode);
-                if (e.minPct == null || e.maxPct == null) throw new IllegalArgumentException(
-                    "editable 元素必须填 min/max: " + e.elementCode);
-                if (e.minPct.compareTo(e.maxPct) > 0) throw new IllegalArgumentException(
-                    "min > max: " + e.elementCode);
-            }
-            // recipeType=partial: 每个元素分别 — locked 元素 min/max=NULL, unlocked 元素 min/max 必填
-            if ("partial".equals(req.recipeType)) {
-                if (locked) {
-                    if (e.minPct != null || e.maxPct != null) throw new IllegalArgumentException(
-                        "partial 中 locked 元素 min/max 必须为 NULL: " + e.elementCode);
-                } else {
-                    if (e.minPct == null || e.maxPct == null) throw new IllegalArgumentException(
-                        "partial 中 unlocked 元素必须填 min/max: " + e.elementCode);
-                    if (e.minPct.compareTo(e.maxPct) > 0) throw new IllegalArgumentException(
-                        "min > max: " + e.elementCode);
-                }
+        if (sqlArray instanceof java.sql.Array a) {
+            try {
+                Object inner = a.getArray();
+                return toStringList(inner);
+            } catch (Exception e) {
+                return new ArrayList<>();
             }
         }
-        // 默认含量之和必须为 100(±0.01)
-        if (sum.subtract(new BigDecimal("100")).abs().compareTo(new BigDecimal("0.01")) > 0) {
-            throw new IllegalArgumentException(
-                "元素 default_pct 之和必须 = 100, 当前: " + sum);
-        }
+        return new ArrayList<>();
     }
 
     private MaterialRecipeDTO toDTOLite(MaterialRecipe r) {
@@ -769,16 +1046,18 @@ public class MaterialRecipeService {
         d.sortOrder = r.sortOrder;
         d.createdAt = r.createdAt;
         d.updatedAt = r.updatedAt;
+        d.allowCustomContent = r.allowCustomContent;
         return d;
     }
 
     private MaterialRecipeElementDTO toElemDTO(MaterialRecipeElement e) {
         MaterialRecipeElementDTO d = new MaterialRecipeElementDTO();
+        d.elementNo = e.elementNo;
         d.elementCode = e.elementCode;
         d.elementName = e.elementName;
-        d.defaultPct = e.defaultPct;
-        d.minPct = e.minPct;
-        d.maxPct = e.maxPct;
+        d.defaultPct = MaterialRecipeConfigService.pctString(e.defaultPct);
+        d.minPct = MaterialRecipeConfigService.pctString(e.minPct);
+        d.maxPct = MaterialRecipeConfigService.pctString(e.maxPct);
         d.isLocked = e.isLocked;
         d.sortOrder = e.sortOrder;
         return d;

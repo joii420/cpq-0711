@@ -340,30 +340,51 @@ class ConfigureProductServiceTest {
             elem("Ag", "80.0"), elem("Ni", "10.0")  // sum = 90, not 100
         ), null);
 
-        assertThrows(IllegalArgumentException.class,
+        // task-260901（B-17）：Σ 校验的异常类型由 IllegalArgumentException 换成带错误码的
+        // MaterialRecipeApiException（api.md §2.4 CUSTOM_CONTENT_SUM_NOT_ONE，仍是 400）。
+        // 断言意图不变：Σ≠1 必须被拦。
+        com.cpq.configure.exception.MaterialRecipeApiException ex = assertThrows(
+            com.cpq.configure.exception.MaterialRecipeApiException.class,
             () -> service.configure(quotationId, req, operatorId()),
-            "元素含量和 = 90 应抛 IllegalArgumentException");
+            "元素含量和 = 90 应被拦下");
+        assertEquals("CUSTOM_CONTENT_SUM_NOT_ONE", ex.getErrorCode());
+        assertEquals(400, ex.getCode());
+        assertTrue(ex.getMessage().contains("含量合计必须为 1"), "实际=" + ex.getMessage());
     }
 
-    // ── case 5: locked 元素被改 → IllegalArgumentException ───────────────────
+    // ── case 5: 自定义含量的准入由「材质级开关」裁决（task-260901 · M-5 推翻旧的元素级锁）──
 
     /**
-     * case 5: AgCu85 的 Ag is_locked=true, default_pct=85.0。
-     * 传 Ag=90.0 (≠ 85) → validateCustomPart 抛 "元素已锁定，不可修改"。
-     * Cu=10 使 sum=100，让含量和校验通过，仅锁定校验触发。
+     * case 5（<b>task-260901 改写</b>）：原断言是「改 locked 元素 → 抛 元素已锁定,不可修改」。
+     *
+     * <p>M-5 明确把这条规则<b>上移一层</b>：{@code allow_custom_content} 优先于元素级
+     * {@code is_locked} —— 开关为 false 时<b>直接拒绝任何自定义含量，根本不进元素级判断</b>；
+     * 开关为 true 时 {@code is_locked} 不再单独生效。
+     * 所以这里验的是新规则：关着开关 ⇒ 403 {@code CUSTOM_CONTENT_NOT_ALLOWED}，
+     * 且报错<b>不再是</b>「元素已锁定」（那正是「不进元素级判断」的可观测证据）。
      */
     @Test
     @TestTransaction
-    void custom_lockedElementModified_throws() {
+    void custom_lockedElement_nowGovernedByAllowCustomContentSwitch() {
         UUID quotationId = seedQuotationId();
+        // 本用例要的是「开关关着」，夹具默认把 demo 材质开到了 true —— 在本事务内关回去（跑完回滚）
+        em.createNativeQuery(
+            "UPDATE material_recipe SET allow_custom_content = false WHERE code = 'AgCu85'")
+          .executeUpdate();
+        em.flush();
 
         ConfigureProductRequest req = simpleCustomReq("AgCu85", List.of(
-            elem("Ag", "90.0"), elem("Cu", "10.0")  // Ag should be locked at 85.0
+            elem("Ag", "90.0"), elem("Cu", "10.0")  // Ag 在 AgCu85 里 is_locked=true, default 85.0
         ), null);
 
-        assertThrows(IllegalArgumentException.class,
+        com.cpq.configure.exception.MaterialRecipeApiException ex = assertThrows(
+            com.cpq.configure.exception.MaterialRecipeApiException.class,
             () -> service.configure(quotationId, req, operatorId()),
-            "修改 locked 元素应抛 IllegalArgumentException");
+            "M-5：开关关着时任何自定义含量都应被拒");
+        assertEquals("CUSTOM_CONTENT_NOT_ALLOWED", ex.getErrorCode());
+        assertEquals(403, ex.getCode());
+        assertFalse(ex.getMessage().contains("元素已锁定"),
+            "M-5：开关关着时不进元素级 is_locked 判断 —— 报错不该是「元素已锁定」，实际=" + ex.getMessage());
     }
 
     // ── case 6: 组合产品全新 ─────────────────────────────────────────────────

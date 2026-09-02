@@ -19,8 +19,13 @@ public class MaterialRecipeElement extends PanacheEntityBase {
     @GeneratedValue
     public UUID id;
 
-    @Column(name = "recipe_id")
-    public UUID recipeId;
+    /**
+     * task-260901（M-0）：元素行归属由「材质」下沉到「含量配置」。
+     * 材质维度经 {@code config_id → material_recipe_config.recipe_id} 两跳获得。
+     * <p>旧列 {@code recipe_id} 已于 V399 改为可空、新行不再写入，待 V401（红线，需用户批准）删除。
+     */
+    @Column(name = "config_id")
+    public UUID configId;
 
     /** 权威元素链 → element.element_no（task-0709 · B2）；element_code/name 为符号锁保证恒一致的快照 */
     @Column(name = "element_no")

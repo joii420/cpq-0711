@@ -16,6 +16,12 @@ export interface PartRequest {
   partMode: PartMode;
   existingHfPartNo?: string;
   recipeCode?: string;
+  /**
+   * 含量配置编号（task-260901 · api.md §2.4 新增），如 '00006-01'。
+   * 🚨 **与 `elements` 互斥，必须恰好给一个**：两个都给或都不给 → 400 `MATERIAL_SOURCE_AMBIGUOUS`。
+   */
+  configNo?: string;
+  /** 自定义含量（材质 `allowCustomContent=false` 时给了它 → 403 `CUSTOM_CONTENT_NOT_ALLOWED`） */
   elements?: ElementOverride[];
   /**
    * 工序编号数组（task-0712 缺口1 修复后）：值 = `process_master.process_no`
@@ -150,7 +156,18 @@ export interface SelDetailRow {
   recipeCode: string | null;
   /** 材质中文名，明细表列表展示用。 */
   recipeLabel: string;
-  /** 元素含量覆盖值（elementCode → pct）。 */
+  /**
+   * 含量来源（task-260901 · F-8/F-9）：
+   *   'config' = 选材质库的标准配置（走 `configNo`）
+   *   'custom' = 自定义含量（走 `elementOverrides`，仅材质 allowCustomContent=true 时可选）
+   * 未定义时按历史行为兜底：有 elementOverrides 就当 custom（老草稿回填友好）。
+   */
+  contentMode?: 'config' | 'custom';
+  /** 选中的含量配置编号，如 '00006-01'。contentMode='config' 时必填。 */
+  configNo?: string | null;
+  /** 含量配置的展示文案，如 '00006-01（Ag 90% / Ni 10%）'。 */
+  configLabel?: string;
+  /** 元素含量覆盖值（elementCode → pct）。contentMode='custom' 时使用。 */
   elementOverrides: Record<string, DecimalString>;
   /** 值 = `process_master.process_no`（选配候选 key 原样存储，见 `PartRequest.processNos`）。 */
   processNos: string[];

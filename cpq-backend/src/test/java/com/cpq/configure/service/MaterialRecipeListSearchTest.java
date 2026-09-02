@@ -2,6 +2,8 @@ package com.cpq.configure.service;
 
 import com.cpq.configure.dto.MaterialRecipeDTO;
 import com.cpq.configure.entity.MaterialRecipe;
+import com.cpq.configure.entity.MaterialRecipeComposition;
+import com.cpq.configure.entity.MaterialRecipeConfig;
 import com.cpq.configure.entity.MaterialRecipeElement;
 import io.quarkus.test.TestTransaction;
 import io.quarkus.test.junit.QuarkusTest;
@@ -39,9 +41,25 @@ public class MaterialRecipeListSearchTest {
         return r.id;
     }
 
+    /**
+     * task-260901：元素行归属改成「配置」，材质的元素<b>组成</b>另有一张表。
+     * 列表搜索按元素符号/中文名命中的来源已从 material_recipe_element 换成
+     * material_recipe_composition（BC-2b：0 配置的材质也要能搜到），故这里两张表都种。
+     */
     private void seedElement(UUID recipeId, String code, String name, String pct) {
+        MaterialRecipeConfig cfg = new MaterialRecipeConfig();
+        cfg.recipeId = recipeId;
+        cfg.seq = 1;
+        cfg.configNo = "LT-" + recipeId.toString().substring(0, 8) + "-01";
+        cfg.status = "ACTIVE";
+        cfg.sortOrder = 1;
+        cfg.createdAt = OffsetDateTime.now();
+        cfg.updatedAt = OffsetDateTime.now();
+        cfg.persist();
+
         MaterialRecipeElement e = new MaterialRecipeElement();
-        e.recipeId = recipeId;
+        e.configId = cfg.id;
+        e.elementNo = code;
         e.elementCode = code;
         e.elementName = name;
         e.defaultPct = new BigDecimal(pct);
@@ -49,6 +67,15 @@ public class MaterialRecipeListSearchTest {
         e.sortOrder = 1;
         e.createdAt = OffsetDateTime.now();
         e.persist();
+
+        MaterialRecipeComposition c = new MaterialRecipeComposition();
+        c.recipeId = recipeId;
+        c.elementNo = code;
+        c.elementCode = code;
+        c.elementName = name;
+        c.sortOrder = 1;
+        c.createdAt = OffsetDateTime.now();
+        c.persist();
     }
 
     @Test
