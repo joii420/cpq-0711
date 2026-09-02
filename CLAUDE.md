@@ -89,7 +89,7 @@ cd cpq-backend && ./mvnw quarkus:dev
   |---------|----------|------|
   | **默认（不带 `-Dquarkus.profile`）** | **`10.177.152.12:5432/cpq_db_0724`** | ✅ **当前开发环境，日常开发用这个** |
   | `jh` | `localhost:5432/cpq_db`（本机 docker PG16） | 备用本地库，当前不使用 |
-  | `test` | `10.177.152.12:5432/cpq_db` | 后端自动化测试（`mvnw test` 走这个，与 dev 库不同——写集成测试时注意） |
+  | `test` | 🚨 **`10.177.152.12:5432/cpq_db_0724` —— 就是 dev 库本身** | 后端自动化测试（`mvnw test` 走这个）。**2026-09-02 实证更正**：本行原写 `cpq_db` 且注「与 dev 库不同」，**说反了** —— `application-test.properties:24` 的默认值就是 `cpq_db_0724`。⇒ **`mvnw test` 直接写共享开发库**：① 夹具会在 dev 库留残留（实证：陈旧 worktree 的旧 `DemoMaterialRecipeFixture` 持续生成 `material_recipe_element.config_id IS NULL` 孤儿行，清掉还会再生）；② **任何清库型测试都会打掉正在用的开发数据**（§3.2「测试也算」）|
 
 - 凭据 `${DB_USERNAME:postgres}` / `${DB_PASSWORD:joii5231}`，可用环境变量覆盖；各 profile 配置见 `cpq-backend/src/main/resources/application-<profile>.properties`。
 - 连库自检：`PGPASSWORD=joii5231 psql -h 10.177.152.12 -U postgres -d cpq_db_0724 -c '\conninfo'`

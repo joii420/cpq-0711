@@ -1,0 +1,4 @@
+报价单 QT-20260901-0234 的 customer_template_id = 99ff6aa4-450c-49b8-aade-5704692baeb8
+加入后页面空态「请通过添加产品选择模板…」= true
+新增行项（id / 料号 / template_id）：
+2260e83a-0f5d-4ac4-b02f-15d6519199b2	0028-2609000008	<NULL>
