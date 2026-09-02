@@ -76,6 +76,51 @@
 
 ---
 
+## B-6 · `PriceReconciler.prefetch` 投影查询（2026-09-01 追加，用户裁决）
+
+| 编号 | 服务的 AC | 内容 |
+|---|---|---|
+| **B-6** | **AC-18** | `PriceReconciler.prefetch`（`:451`）的 `ctx.lines = QuotationLineItem.list("quotationId", q.id)` 改为**只查所需两列的投影**（`id` + `product_part_no_snapshot`），不再加载完整实体。 |
+
+### 为什么这条是 AC-18 的必要条件，不是顺手优化
+
+T-18 实测端到端 **12312 ms**，超出 AC-18 的 ≤10 s 预算。后端分解：
+
+```
+[draft-profile] total=8015ms | S1.saveDraft=1201ms S2.snapshotRows=2103ms S3.priceReconcile=4711ms
+```
+
+**S1（本期主攻的部分）已降到 1.2 s，最大的一块是 S3 的 4.7 s。**
+
+根因（主线实测闭合）：`prefetch` 加载 1845 行**完整实体**，而 `QuotationLineItem` 挂着两个大 jsonb 列。
+
+| | 现状（master） | 本期改造后 |
+|---|---|---|
+| saveDraft 对卡片值 | **1845 行全置 NULL** | 只置 NULL **1 行**（B-1c） |
+| S3 `prefetch` 加载时 | 卡片值已空 → 行很小 | 1844 行卡片值**还在** → 要搬 **16 MB**（压缩后 7.8 MB） |
+| `S3.priceReconcile` | **526 ms** | **3447~4711 ms**（震荡，非 JIT 预热） |
+
+**推算验证**：`7.8 MB ÷ 1.74 MB/s（实测链路带宽）≈ 4.5 s`，与实测 3.4~4.7 s 吻合。
+
+⚠️ **现状的 526 ms 是假象** —— 它快只因为前一步刚把 16 MB 清成了 NULL。这笔成本一直存在，只是被另一个更大的浪费（无谓清空 + 全量重算 54 s）遮住了。B-1c 修好那个浪费后，它才浮出水面。
+
+### 修法与安全性
+
+`ctx.lines` 的**全部消费点已穷举**（`grep` 确认），只用两个字段：
+
+| 行 | 用法 |
+|---|---|
+| `:181` / `:454` / `:455` | `li.productPartNoSnapshot` |
+| `:192` / `:199` / `:558` | `li.id` |
+
+**完全不碰 `quote_card_values` / `costing_card_values`。** 故投影查询是安全的。
+
+🚫 **不要改 `PriceReconciler` 的任何业务逻辑** —— 只换取数方式。对账判据、`row_version` 乐观锁、`changedLineItemIds` 收集（B-1c 配套）一律不动。
+
+⚠️ **本项动的是 `task-260729`（价格调整）的模块**，属跨模块改动。用户 2026-09-01 明确裁决「本期修」，理由是它是达成 AC-18 的必要路径。**改完必须跑 price-adjust 相关的既有测试确认无回归。**
+
+---
+
 ## B-5 · 回归保障
 
 | 编号 | 服务的 AC | 内容 |
@@ -89,7 +134,7 @@
 
 ## 双向覆盖自检
 
-**正向**（每条 AC 有人认领）：AC-1→B-2a/c/e；AC-2→B-2f,B-4c；AC-3→B-2b；AC-4→B-2a,B-2d；AC-5→前端；AC-6→B-1a/b；AC-7,8→B-1c；AC-9,10→B-1a,B-5b；AC-11→B-3a/b/c；AC-12→B-3b,B-5c；AC-13→B-3e,B-5d；AC-14→B-3d；AC-15,16→B-4a/b；AC-17→B-4c；AC-18→全体；AC-19,20→B-1c,B-5a；AC-21→前端+B-1c；AC-22,23,24→回归。
+**正向**（每条 AC 有人认领）：**AC-18→B-6（+全体）**；AC-1→B-2a/c/e；AC-2→B-2f,B-4c；AC-3→B-2b；AC-4→B-2a,B-2d；AC-5→前端；AC-6→B-1a/b；AC-7,8→B-1c；AC-9,10→B-1a,B-5b；AC-11→B-3a/b/c；AC-12→B-3b,B-5c；AC-13→B-3e,B-5d；AC-14→B-3d；AC-15,16→B-4a/b；AC-17→B-4c；AC-18→全体；AC-19,20→B-1c,B-5a；AC-21→前端+B-1c；AC-22,23,24→回归。
 
 **反向**（每项指回 AC）：B-0 为调研（无 AC，结论驱动 B-1）；其余 B-x 均已在表中标注所服务的 AC。
 

@@ -25,7 +25,7 @@
 | **F-2a** | AC-11 | 打开单据时从 `GET /quotations/{id}` 响应取 `userDataVersion` 存入本地 ref；保存/单元格编辑的响应回传新值时更新它。 |
 | **F-2b** | AC-1~AC-4 | 每次 `PUT /draft` 请求体带上 `baseVersion`。 |
 | **F-2c** | AC-14 | `quote-card-edit` 的响应新增 `userDataVersion`，收到后更新本地 ref。**漏这一步会导致改完格子再保存必报 409。** |
-| **F-2d** | AC-12 | 409 且 `reason === 'STALE_VERSION'` → 弹对话框，**1:1 还原 `原型图/冲突提示.html`**：标题「保存失败」、正文含「这张报价单已被他人修改」、**只有一个「刷新页面」按钮**（不加「强制覆盖」「忽略」等任何其他按钮——用户 2026-09-01 明确裁决强制刷新）。点击后 `window.location.reload()`。 |
+| **F-2d** | AC-12 | 409 且 `reason === 'STALE_VERSION'` → 弹对话框，**1:1 还原 `原型图/冲突提示.html`**：标题「保存失败」、正文含「这张报价单已被他人修改」、**只有一个「刷新页面」按钮**（不加「强制覆盖」「忽略」等任何其他按钮——用户 2026-09-01 明确裁决强制刷新）。点击后 `window.location.reload()`。<br>🚨 **同族补充（2026-09-01 主线裁决，前端子代理实现）**：本地版本基线**未知（null）时拦下不发**，提示「页面数据不完整，请刷新页面后再保存」，**不落 localStorage 兜底**。理由：后端凭 `added/modified/removed` 任一非 null 判定走增量协议（`QuotationService.java:369-370`），而前端恒发三数组 ⇒ `baseVersion == null` 必然 400（`:372-374`）；而 `handleSaveDraft` 的 catch 只特判 409 `STALE_VERSION`，其余一律吞成「已保存到本地，网络恢复后将同步」—— **失败被伪装成成功**，与 `checkedPayload` 吞 TypeError 同族。可达路径：`getById` 超时 → localStorage 恢复的是 draft payload（无 `userDataVersion`）→ 基线为 null。落点：`QuotationWizard#requireVersionBaseline`，`handleSaveDraft` / `autoSaveDraft` 两条发送路径各一道；`toIncrementalPayload` 的 `baseVersion` 同步收紧为 `number`（非 `number \| null`），让「忘了拦」变编译错误。 |
 
 ---
 

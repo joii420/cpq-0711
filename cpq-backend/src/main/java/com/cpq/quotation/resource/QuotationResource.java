@@ -143,7 +143,8 @@ public class QuotationResource {
 
     @PUT
     @Path("/{id}/draft")
-    public ApiResponse<QuotationDTO> saveDraft(@PathParam("id") UUID id, SaveDraftRequest request) {
+    public ApiResponse<com.cpq.quotation.dto.SaveDraftResponse> saveDraft(
+            @PathParam("id") UUID id, SaveDraftRequest request) {
         validateDraftDecimals(request);
         // repair-260829 B-11：saveDraft 入口(事务外)排队等待建单后置物化跑完，避免与物化并发写
         //   quotation_line_component_data 撞 uq_qlcd_line_component(409)。🔒 必须放在这里(调
@@ -154,7 +155,7 @@ public class QuotationResource {
         //   卡片值不再在保存路径计算(已迁至 lazy ensureCardValues);重建行的旧卡片值由 saveDraft 内置 D-1 失效置 NULL,
         //   下次 ensureCardValues 的 IS NULL 谓词会重新选中并用最新 snapshot_rows 重算。日志前缀 [draft-profile] 便于过滤。
         long _p0 = System.nanoTime();
-        QuotationDTO dto = quotationService.saveDraft(id, request);
+        com.cpq.quotation.dto.SaveDraftResponse dto = quotationService.saveDraft(id, request);
         long _s1 = (System.nanoTime() - _p0) / 1_000_000;
         // 自愈根治(2026-07-16 QT-2024):saveDraft 已绑定报价单模板(customer/costing_card_template_id)并提交。
         // 选配加产品(configureProduct)时其 ensureStructure 可能早于模板绑定(三模板按产品分类轴自动匹配) → 建了空;
@@ -178,7 +179,16 @@ public class QuotationResource {
         long _p2 = System.nanoTime();
         try {
             priceReconciler.ensureInitialRevisionPlaceholder(id); // §11.10.6：建单(首次保存且已有产品行)懒建未定型初版
-            priceReconciler.reconcileQuotation(id);
+            com.cpq.priceadjust.service.PriceReconciler.ReconcileResult rr = priceReconciler.reconcileQuotation(id);
+            // task-260901 B-1c 配套：归位改写了 snapshot_rows/row_data 的行，卡片值必须跟着失效。
+            // 在 B-1c 之前 saveDraft 无条件把整单卡片值置 NULL，把这个洞盖住了；现在 saveDraft 只失效
+            // 「真变了的行」，归位是它之后的独立写点，必须自己补失效，否则那些行永远显示归位前的旧价。
+            // 一条 IN 更新，SQL 条数与行数无关。
+            if (!rr.changedLineItemIds.isEmpty()) {
+                int n = quotationService.invalidateCardValues(rr.changedLineItemIds);
+                LOG.infof("[price-reconcile] id=%s 归位改写 %d 行 → 补失效卡片值 %d 行", id,
+                        rr.changedLineItemIds.size(), n);
+            }
         } catch (Exception e) {
             // 归位尽力而为，不阻断保存（同 snapshotService 的既定容错纪律）；失败下次 saveDraft 仍会重试，幂等。
             LOG.warnf("[price-reconcile] saveDraft id=%s 归位失败（不阻断保存）: %s", id, e.getMessage());

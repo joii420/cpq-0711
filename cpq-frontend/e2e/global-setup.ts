@@ -39,7 +39,7 @@ async function isBackendAvailable(): Promise<boolean> {
 async function unlockAccounts() {
   try {
     execSync(
-      `PGPASSWORD=joii5231 psql -h 10.177.152.12 -p 5432 -U postgres -d cpq_db -c "UPDATE \\"user\\" SET locked_until=NULL, failed_login_attempts=0, is_first_login=false WHERE username IN ('admin','alice','bob');"`,
+      `PGPASSWORD=joii5231 psql -h 10.177.152.12 -p 5432 -U postgres -d cpq_db_0724 -c "UPDATE \\"user\\" SET locked_until=NULL, failed_login_attempts=0, is_first_login=false WHERE username IN ('admin','alice','bob');"`,
       { stdio: 'pipe', shell: '/bin/bash' }
     );
   } catch (e) {

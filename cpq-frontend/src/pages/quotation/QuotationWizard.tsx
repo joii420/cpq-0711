@@ -27,8 +27,19 @@ import {
   stableDraftDedupKey,
   headerDedupKey,
   lineItemsDedupKey,
-  headerOnlyDraftPayload,
 } from './draftPayloadDedup';
+// task-260901 ②：保存草稿行级增量 diff（三数组协议）
+import {
+  buildLineFingerprintMap,
+  diffLineItems,
+  toIncrementalPayload,
+  EMPTY_LINE_DIFF,
+  type LineFingerprintMap,
+} from './draftLineDiff';
+// task-260901 ③：整单级乐观并发版本号（本地基线）
+import { initUserDataVersion, noteUserDataVersion, getUserDataVersion } from './userDataVersion';
+// task-260901 F-2d：409 STALE_VERSION 的强制刷新对话框
+import { showStaleVersionDialog } from './staleVersionDialog';
 import { isKeyUnset, rowsHaveUserData } from './keyPresenceAuthority';
 import AddProductModal from './AddProductModal';
 import ConfigureProductDrawer from './ConfigureProductDrawer';
@@ -336,12 +347,78 @@ const QuotationWizard: React.FC = () => {
   //     单头 = 逐字段 patch;明细 = 子表全删全建(1845 行实测 55.5s,QuotationService.java:2289-2291)。
   const dirtyLinesRef = useRef(false);
   const dirtyHeaderRef = useRef(false);
+  // task-260901:脏标记的**递增序号**。用途只有一个 —— 判断「保存在飞期间用户又改了没有」。
+  //   老写法是保存成功后无条件 `dirtyLinesRef.current = false`,飞行期间(大单可达数十秒)进来的
+  //   编辑会被这一下抹平:标记归零 + 基线已推进到"发出去的那份" ⇒ 那次编辑再也进不了 modified,
+  //   静默丢数据。改成:发请求前记下序号,成功后只有序号没动过才清脏。
+  const linesDirtySeqRef = useRef(0);
+  const headerDirtySeqRef = useRef(0);
+  const markLinesDirty = useCallback(() => {
+    dirtyLinesRef.current = true;
+    linesDirtySeqRef.current += 1;
+  }, []);
+  const markHeaderDirty = useCallback(() => {
+    dirtyHeaderRef.current = true;
+    headerDirtySeqRef.current += 1;
+  }, []);
+  // task-260901 ②:上一次「前端 == 库」时刻的行级内容指纹表(键 = DB id 或 `t:<tempId>`)。
+  //   由下方 baseline effect 在「未脏」时刷新 + 每次保存成功后置为本次发出的那份。
+  const lineBaselineRef = useRef<LineFingerprintMap>(new Map());
+  // task-260901 F-2d:撞了 STALE_VERSION 之后本页面已经不可信,提交流程必须中止(等用户刷新)。
+  const staleVersionRef = useRef(false);
+  // 只提示一次,防止连点保存 / pendingSaveRef 补跑刷屏;基线一旦补上就复位。
+  const missingVersionWarnedRef = useRef(false);
+
+  /**
+   * task-260901（主线 2026-09-01 裁决，F-2d 同族）：取本次保存要携带的 `baseVersion`。
+   * **基线未知（null）时拦下不发**，给一条可操作提示，且**不落 localStorage 兜底**。
+   *
+   * ── 为什么必须拦，而不是照发让它 400 ──────────────────────────────────────
+   * 后端判定「走不走增量协议」的条件是 `added/modified/removed` 任一非 null
+   * （`QuotationService.java:369-370`），而本文件**恒发三个数组** ⇒ 恒走增量协议 ⇒
+   * `baseVersion == null` 必然 400（`:372-374`「baseVersion 必填」）。
+   * 而 `handleSaveDraft` 的 catch 只特判 409 `STALE_VERSION`，其余一律落进 localStorage 兜底、
+   * 提示「已保存到本地，网络恢复后将同步」——**用户以为存上了，其实一个字节都没写进库**。
+   * 这与 `checkedPayload` 把 TypeError 吞成同一句提示是同一族缺陷：**失败被伪装成成功**。
+   *
+   * ── 这条路径真的可达，不是理论 ────────────────────────────────────────────
+   * `getById` 超时（本项目有实证的「打开报价单空白 BUG」就是这条）→ `loadQuotation` 的 catch
+   * 走 localStorage 恢复 → 存的那份是 **draft payload 不是 DTO**、压根没有 `userDataVersion`
+   * → `initUserDataVersion(qid, undefined)` → 基线为 null → 用户接着编辑 → 保存 → 400 → 被吞。
+   *
+   * 失败方向：拦下不发不会丢数据（用户的编辑还在页面上，刷新后重来即可）；
+   * 吞成「已保存」才会丢——用户会关掉页面。
+   */
+  const requireVersionBaseline = useCallback((): number | null => {
+    const v = getUserDataVersion(quotationId);
+    if (v != null) {
+      missingVersionWarnedRef.current = false;
+      return v;
+    }
+    if (!missingVersionWarnedRef.current) {
+      missingVersionWarnedRef.current = true;
+      message.error('页面数据不完整，请刷新页面后再保存', 6);
+    }
+    return null;
+  }, [quotationId]);
   // 用户编辑专用 setter:置位 userEditedRef 后再改 lineItems,使 autosave effect 放行本次变化。
   // 子组件(Step2/Step3/各 Drawer)的 lineItems 写入一律走它;程序化写入仍用原始 setLineItems。
   const setLineItemsByUser = useCallback((update: Parameters<typeof setLineItems>[0]) => {
     userEditedRef.current = true;
-    dirtyLinesRef.current = true;
+    markLinesDirty();
     setLineItems(update);
+  }, [markLinesDirty]);
+
+  /**
+   * task-260901:行「发往后端的 id」的唯一口径 —— 必须与 buildDraftPayload 里那行一模一样。
+   * 两处不同步的后果:diff 把行分进 added、payload 却带着 id 送出去(或反过来)⇒ 后端 400,
+   * 或者更糟 —— 新行被当成 modified、库里查无此 id。
+   */
+  const persistedIdOf = useCallback((li: any): string | null => {
+    if (li?.id != null && String(li.id) !== '') return String(li.id);
+    const tempId = li?.tempId;
+    if (tempId == null || String(tempId) === '') return null;
+    return dbIdByTempId.current.get(String(tempId)) ?? null;
   }, []);
 
   // Load existing quotation
@@ -403,6 +480,18 @@ const QuotationWizard: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lineItems, quotationId]);
 
+  // ── task-260901 ②:行级 diff 的基线维护 ──────────────────────────────────────
+  // 不变式(repair-260830 在 applyQuotationData 里写明的那条):**dirtyLinesRef === false ⟺
+  //   前端这份就是库里那份**。所以只要没脏,当前 lineItems 就是合法基线,直接重算指纹表。
+  // 这样打开单据 → applyQuotationData 落 basicItems → 异步 enrich 合回结构(**程序化写入,不置脏**)
+  //   这两拍都会被吸收进基线;用户随后改一个格子,diff 就只剩那一行(AC-1)。
+  // 🚫 不能只在"保存成功后"建基线 —— 那样打开单据后的第一次保存会把 1845 行全判成 modified,
+  //   AC-1(modified 长度 1)必挂。
+  useEffect(() => {
+    if (dirtyLinesRef.current) return;
+    lineBaselineRef.current = buildLineFingerprintMap(lineItems);
+  }, [lineItems]);
+
   // Step3 初始化（初始物化 recomputeRow + 年用量默认 1）由 QuotationStep3 内部 effect 完成，
   // 经 onSilentUpdate（下方 renderStep3 接线到程序化 setLineItems）写入——不置 userEditedRef，
   // 不触发 autosave（Plan A 纪律：程序化写入不算用户编辑）。
@@ -415,6 +504,13 @@ const QuotationWizard: React.FC = () => {
     //   此刻回写它没有任何意义(这正是「导入后点下一步白等 61 秒」的成因)。跨单切换也靠这里防串。
     dirtyLinesRef.current = false;
     dirtyHeaderRef.current = false;
+    // task-260901 ③(F-2a):以 GET 响应根部的 userDataVersion 初始化本地乐观并发基线。
+    //   后端尚未上线该字段时为 undefined ⇒ 基线保持"未知",请求体照契约送 null,不猜 0
+    //   (猜 0 会在真实版本 >0 时误弹"已被他人修改",比报错更难排查)。
+    initUserDataVersion(q?.id ?? quotationId, (q as any)?.userDataVersion);
+    // task-260901 ②:跨单切换必须先清空行基线,否则上一张单的 id 会被当成"本单已删的行"送进 removed。
+    //   清空后由上面的 baseline effect 依当前 lineItems 重建(未脏时)。
+    lineBaselineRef.current = new Map();
     setQuotation(q);
     setQuotationId(q.id);
     form.setFieldsValue({
@@ -769,22 +865,34 @@ const QuotationWizard: React.FC = () => {
   // SaveDraft 成功后用响应回填 lineItem.partVersionLocked
   // 仅按 id 匹配后只更新版本字段，不动 productAttributeValues / componentData 等用户可能正在编辑的字段
   // 无变更时返回原 state 引用，跳过 re-render
-  // 保存后回填:saveDraft 全量重建会把每行 id 换成新 UUID,响应按 sortOrder ASC 返回
-  // (buildDraftPayload 发送 sortOrder=数组下标)→ 按 index 对齐回填新 id + partVersionLocked。
-  // 关键:行 id 同步后 useDriverExpansions 的 fingerprint(含 li.id)变化 → 自动用新 id 重拉展开,
+  // 保存后回填:行 id 同步后 useDriverExpansions 的 fingerprint(含 li.id)变化 → 自动用新 id 重拉展开,
   // 命中保存时刚写好的快照(snapshotQuotation 在响应返回前已落库)→ 工序等"按行(quotation_line_process)
   // 存储"的快照数据无需手动刷新即出现(修:导入产品工序加入时空、刷新才有)。
-  // 不能按 id 匹配:新行 id 恰恰是变化的那一维,按 id 必匹配不上(旧实现对新行/导入行回填失效)。
-  // buildDraftPayload 不发送 line id → 回填 id 不改变下次 payload → 无再保存死循环。
+  // ⚠️ 历史注释曾写「不能按 id 匹配」——那是 saveDraft **全删全建**时代的结论(新行 id 恰恰是变化的
+  //   那一维)。2026-06-01 改按 id UPSERT 后 id 已稳定,task-260901 进一步把响应瘦身成"只回变化行",
+  //   下标对齐从此彻底失效,回填改为按 id / tempId 认领(见 syncLineItemsFromResponse)。
   // Phase4 Task5: saveDraft/create 响应 DTO 不含 4 份结构快照(仅 getById 暴露)。
   // 直接 setQuotation(res.data) 会把 quoteCardStructure 等抹成 undefined → Step2 结构脱钩逻辑
   // (quoteTemplateComponentIds / componentData 组装)瞬时回退 enrich → 触发一次 GET /templates。
   // 故保存后合并时保留上一份 quotation 的结构快照(响应缺失才回填)。
   const setQuotationPreservingStructures = (resData: any) => {
     if (!resData) return;
+    // task-260901 ③:所有带单头的响应(saveDraft / ensureCardValues / create …)都在这里
+    //   顺手推进本地版本基线。派生数据端点不递增版本号(api.md §4.2),回传的是同一个值,
+    //   noteUserDataVersion 单调不回退,重复喂同值无副作用。
+    noteUserDataVersion(resData?.id ?? quotationId, resData?.userDataVersion);
     setQuotation((prev: any) => {
       const merged: any = { ...resData };
       for (const k of ['quoteCardStructure', 'costingCardStructure', 'quoteExcelStructure', 'costingExcelStructure']) {
+        if (merged[k] == null && prev?.[k] != null) merged[k] = prev[k];
+      }
+      // task-260901 ④ 防御:saveDraft 响应从 QuotationDTO 换成瘦身版 SaveDraftResponse 后,
+      //   万一某个**身份/状态类**字段没被带上,这里整块覆盖就会把它抹成 undefined ——
+      //   症状是保存一下单号变空、Step2 的「DRAFT 才显示」按钮组整排消失,而且不报错。
+      //   这几个字段 saveDraft 本来就不会改,响应缺失即沿用上一份(与上面 4 份结构快照同款守卫)。
+      //   🚫 不含 expiryDate / finalDiscountRate 等**用户可编辑**字段 —— 它们清空成 null 是合法操作,
+      //      沿用旧值会让页面显示一个用户刚删掉的值。
+      for (const k of ['status', 'quotationNumber', 'baseCurrency', 'snapshotCustomerName', 'customer']) {
         if (merged[k] == null && prev?.[k] != null) merged[k] = prev[k];
       }
       return merged;
@@ -796,16 +904,30 @@ const QuotationWizard: React.FC = () => {
     if (!Array.isArray(respLines)) return;
     // 方案 B:置位 syncingRef,让 lineItems effect 跳过本次回填引发的调度,切断死循环。
     syncingRef.current = true;
+    // ── task-260901 F-3a(AC-17):按 id / tempId 认领,不再按数组下标对齐 ────────────
+    // 老实现开头有 `if (respLines.length !== prev.length) return prev;` + 按 index 取 respLines[i]。
+    // 响应改成「只回本次 added + modified 的行」之后,长度必然不等 ⇒ **整个回填被静默跳过**:
+    //   · 新增行拿不到 DB id ⇒ 下次保存它仍然 id=null ⇒ 后端再插一遍 ⇒ 重复产品行;
+    //   · partVersionLocked / 四份值快照也都补不上,卡片停在「加载中…」直到手刷。
+    // 现在先按 DB id 认领,`added` 行没有 id 就按响应原样回传的 tempId 认领(api.md §1.3 约定)。
+    const respById = new Map<string, any>();
+    const respByTempId = new Map<string, any>();
+    for (const r of respLines) {
+      if (r?.id != null && String(r.id) !== '') respById.set(String(r.id), r);
+      if (r?.tempId != null && String(r.tempId) !== '') respByTempId.set(String(r.tempId), r);
+    }
+    // tempId → DB id 先落表:buildDraftPayload / persistedIdOf 都靠它在 li.id 缺失时兜底,
+    // 且必须在 setLineItems 之前完成(diff 与 payload 是同一拍读它)。
+    for (const [tempId, r] of respByTempId) {
+      if (r?.id != null && String(r.id) !== '') dbIdByTempId.current.set(tempId, String(r.id));
+    }
     setLineItems(prev => {
-      // 数量不一致(理论不会)时不冒险按 index 错位回填,退化为依赖手动刷新。
-      if (respLines.length !== prev.length) return prev;
       let changed = false;
-      const next = prev.map((item, i) => {
-        const r = respLines[i];
+      const next = prev.map((item) => {
+        const itemId = (item as any).id != null ? String((item as any).id) : '';
+        const tempId = (item as any).tempId != null ? String((item as any).tempId) : '';
+        const r = (itemId && respById.get(itemId)) || (tempId && respByTempId.get(tempId)) || undefined;
         if (!r) return item;
-        // 方案 A:按 index 对齐记下 tempId → DB id,供 buildDraftPayload 在 li.id 被重建抹掉时兜底回填
-        const tempId = (item as any).tempId;
-        if (r.id != null && tempId) dbIdByTempId.current.set(String(tempId), String(r.id));
         const patch: any = {};
         if (r.id != null && String(r.id) !== String((item as any).id)) patch.id = r.id;
         if (r.partVersionLocked != null && r.partVersionLocked !== item.partVersionLocked) {
@@ -869,14 +991,34 @@ const QuotationWizard: React.FC = () => {
       //   → pendingSaveRef 补发 → 三连发。详见 draftPayloadDedup.ts。
       const dedupKey = stableDraftDedupKey(payload);
       if (dedupKey === lastSaveRef.current) return;
+      // task-260901 ②:与 handleSaveDraft 同一套行级 diff。
+      //   导入首存场景下客户端建的行都没有 DB id ⇒ 全部落进 added,与改造前"整单发出"等效。
+      const currentFps = buildLineFingerprintMap(lineItems);
+      const diff = diffLineItems(lineBaselineRef.current, lineItems, persistedIdOf);
+      const headerKey = headerDedupKey(payload);
+      const hasLineChange = diff.addedIndexes.length > 0
+        || diff.modifiedIndexes.length > 0
+        || diff.removedIds.length > 0;
+      if (!hasLineChange && headerKey === lastHeaderKeyRef.current) return;
+      // 同 handleSaveDraft:基线未知必然 400,拦下不发。
+      //   🔑 必须在 lastSaveRef 登记**之前** —— 登记了就等于宣告"这份内容已经存过",
+      //   等用户刷新把基线补上之后,同一份 payload 会被去重命中而永远不再发出去(真丢数据)。
+      //   静默路径也照样提示:silent 的语义是"成功不打扰",不是"失败也不吭声"。
+      const baseVersion = requireVersionBaseline();
+      if (baseVersion == null) return;
       lastSaveRef.current = dedupKey;
-      const res = await quotationService.saveDraft(quotationId, payload);
-      // repair-260830:本路径整单发出后,两条基线与脏标记一并归零 —— 否则紧随其后的
+      const wirePayload = toIncrementalPayload(payload, diff, baseVersion);
+      const linesSeqAtSend = linesDirtySeqRef.current;
+      const headerSeqAtSend = headerDirtySeqRef.current;
+      const res = await quotationService.saveDraft(quotationId, wirePayload);
+      // repair-260830:本路径发出后,两条基线与脏标记一并归零 —— 否则紧随其后的
       //   handleSaveDraft(如导入首存后用户马上点「下一步」)会拿着过期基线判"变了"而再发一次。
-      dirtyLinesRef.current = false;
-      dirtyHeaderRef.current = false;
+      // task-260901:飞行期间又被改脏的话就不清 —— 与 handleSaveDraft 同款序号守卫。
+      if (linesDirtySeqRef.current === linesSeqAtSend) dirtyLinesRef.current = false;
+      if (headerDirtySeqRef.current === headerSeqAtSend) dirtyHeaderRef.current = false;
+      lineBaselineRef.current = currentFps;
       lastLinesKeyRef.current = lineItemsDedupKey(payload);
-      lastHeaderKeyRef.current = headerDedupKey(payload);
+      lastHeaderKeyRef.current = headerKey;
       // BUMP 后端把新 partVersionLocked 写入 DB，前端本地 state 需同步回填，
       // 避免「卡片版本号停在旧值直到强刷」的 UX 漂移；同时回填重建后的新行 id，
       // 触发 driver 展开按新 id 重拉 → 导入工序等按行快照无需刷新即出现。
@@ -886,7 +1028,14 @@ const QuotationWizard: React.FC = () => {
       warmCardValues(quotationId, (res?.data?.lineItems ?? lineItems) as any[]);
       // P2-9: backup to localStorage on success
       safeSetLocalDraft(`cpq-draft-${quotationId}`, JSON.stringify(payload));
-    } catch {
+    } catch (e: any) {
+      // task-260901 F-2d:静默保存同样要拦 STALE_VERSION,否则用户只看到「网络异常，已保存到本地缓存」,
+      //   而实际上是并发冲突、本地那份永远同步不上去。
+      if (e?.payload?.reason === 'STALE_VERSION') {
+        staleVersionRef.current = true;
+        showStaleVersionDialog();
+        return;
+      }
       // P2-9: fallback to localStorage on failure
       try {
         const values = form.getFieldsValue();
@@ -910,7 +1059,7 @@ const QuotationWizard: React.FC = () => {
     // 内部访问的是最新的 expansion 缓存。否则 useCallback 会缓存空 expansion 的旧闭包：
     // 导入流自动保存即便等到 expansion ready 才触发，autoSaveDraft 内部仍会读到空 driverExpansions
     // → snapshotRows 落 1 行而不是展开后的 N 行（明细页只看到 1 行 — 数据的根因）。
-  }, [quotationId, form, lineItems, driverExpansions, customerIdValue, warmCardValues]);
+  }, [quotationId, form, lineItems, driverExpansions, customerIdValue, warmCardValues, requireVersionBaseline]);
 
   // 让 setInterval 总是调用最新的 autoSaveDraft（避开闭包陷阱）
   useEffect(() => {
@@ -1044,7 +1193,11 @@ const QuotationWizard: React.FC = () => {
         // 2026-06-01: 回传已存在行的 line id → 后端按 id UPSERT(就地更新, 不换 UUID)。
         //   id 稳定后 payload 含 id 也不会 churn(去重正常), 且 editQuoteCardValue 不再撞已删 id。
         //   新增/未持久化行无 id → 送 null, 后端新建。
-        id: (li as any).id || dbIdByTempId.current.get(String((li as any).tempId)) || null,
+        id: persistedIdOf(li),
+        // task-260901 §1.3:`added` 行的新 id 靠 tempId 认领回来(响应原样回传本字段),
+        //   不再用「按数组顺序对应」—— 那会重蹈下标耦合。所有客户端建的行都带稳定 tempId
+        //   (buildLineItemFromTemplate / ConfigureProductDrawer 都 genUUID())。
+        tempId: (li as any).tempId ?? null,
         // 后端 SaveDraftRequest.LineItemDraft.productId 是 UUID，Jackson 无法把
         // 空字符串反序列化成 UUID（整次保存直接 400）。批量导入分支会把
         // productId 置成 ''；这里统一空串归零为 null，避免静默保存失败。
@@ -1081,6 +1234,9 @@ const QuotationWizard: React.FC = () => {
         //   （本段刻意用中文描述后端字段与方法，不写它们的完整标识符 ——
         //     那些符号正被 grep 审计，写进注释会变成噪音命中。）
         subtotal: computeProductSubtotalSafe(li, driverExpansions, customerIdValue, gvDefs, evalCtxOf(li).subtotals),
+        // task-260901 F-1c(AC-1):**显式全局序号**。增量协议下后端只收到变化行,
+        //   payload 下标不再等于行序,后端已删掉「缺失则回退下标 i」的分支并改为缺失即 400。
+        //   这里的 idx 取自 lineItems.map 的全局下标 —— 与页面顺序一致。
         sortOrder: idx,
         // 选配/回读的工序回传:后端 saveDraft 据此回写 quotation_line_process(工序跨保存存活)。
         // 导入行此处为空(不携带 processNos),改由 seedProcessesFromBase 让后端从基础工序 seed。
@@ -1091,14 +1247,28 @@ const QuotationWizard: React.FC = () => {
         compositeProcesses: Array.isArray((li as any).compositeProcesses) ? (li as any).compositeProcesses : [],
         // 导入来源标记透传:后端 saveDraft 据此从基础工序 seed 本行 quotation_line_process
         seedProcessesFromBase: (li as any).seedProcessesFromBase ?? undefined,
-        // V169 选配组合产品父子关系 — saveDraft 全量重建时必须透传:
-        //   compositeType 直接透传 (SIMPLE/COMPOSITE/PART)
-        //   parentLineItemId 旧 UUID 已被 CASCADE 删, 不能传; 改传 tempParentIndex (父在 list 的位置)
-        //   后端 saveDraft 二阶段 UPDATE: newIds[tempParentIndex] 作新 parent_line_item_id
+        // V169 选配组合产品父子关系必须透传:compositeType 直接给 (SIMPLE/COMPOSITE/PART)。
+        //   ⚠️ 历史写法是 tempParentIndex(父行在 payload 数组里的下标)—— 那是 saveDraft 全量重建
+        //   时代的产物(旧 parentLineItemId 已被 CASCADE 删,只能用下标指路)。2026-06-01 改按 id
+        //   UPSERT 后 id 已稳定,task-260901 又把 payload 削成"只含变化行",下标坐标系彻底不存在。
         compositeType: li.compositeType ?? null,
-        tempParentIndex: li.parentLineItemId
-          ? lineItems.findIndex(p => p.id === li.parentLineItemId)
-          : null,
+        // task-260901 F-1d(AC-2):tempParentIndex(payload 下标)→ parentLineItemId / tempParentKey。
+        //   增量协议下 payload 只含变化行,「父行在数组里的第几个」这个坐标系已经不存在了。
+        //   api.md §1.2:两者互斥,二选一 —— 父行已持久化给 id;父行本身也是 added 时给它的 tempId。
+        ...(() => {
+          const rawParent = (li as any).parentLineItemId;
+          if (!rawParent) return { parentLineItemId: null, tempParentKey: null };
+          const parent = lineItems.find(p =>
+            String((p as any).id ?? '') === String(rawParent)
+            || String((p as any).tempId ?? '') === String(rawParent));
+          const parentPersistedId = parent ? persistedIdOf(parent) : String(rawParent);
+          if (parentPersistedId) return { parentLineItemId: parentPersistedId, tempParentKey: null };
+          const parentTempId = (parent as any)?.tempId;
+          return {
+            parentLineItemId: null,
+            tempParentKey: parentTempId != null ? String(parentTempId) : null,
+          };
+        })(),
         // Step3 新增 9 字段透传（AP-2：round-trip 不丢字段，字段名严格对齐 spec §5.3）
         annualVolume: li.annualVolume ?? null,
         discountSource: li.discountSource ?? null,
@@ -1330,6 +1500,10 @@ const QuotationWizard: React.FC = () => {
       });
       const newId = res.data.id;
       setQuotationId(newId);
+      // task-260901 ③:新建单的版本基线从 0 起(api.md §5「建单后 user_data_version = 0」)。
+      //   必须先 init 再 setQuotationPreservingStructures —— 后者内部的 noteUserDataVersion
+      //   会校验 quotationId 归属,没 init 过就整条丢弃。
+      initUserDataVersion(newId, (res.data as any)?.userDataVersion ?? 0);
       setQuotationPreservingStructures(res.data);
       message.success('报价单已创建');
       // Update URL without full reload
@@ -1374,20 +1548,39 @@ const QuotationWizard: React.FC = () => {
       //   复用 autoSaveDraft 既有的 stableDraftDedupKey 口径(剔除 id/subtotal/rowData 等派生字段)。
       const linesKey = lineItemsDedupKey(payload);
       const headerKey = headerDedupKey(payload);
-      const linesDirty = dirtyLinesRef.current && linesKey !== lastLinesKeyRef.current;
+      // ── task-260901 ②:第二层从「整块内容去重」细化到**行级 diff** ──────────────
+      // 为什么不能沿用 linesKey(= lineItemsDedupKey,剔除了 rowData):它对单元格编辑完全盲,
+      //   只能回答"明细整体动没动",答不出"动的是哪几行"。行级判据见 draftLineDiff.ts 头注。
+      const currentFps = buildLineFingerprintMap(lineItems);
+      const diff = diffLineItems(lineBaselineRef.current, lineItems, persistedIdOf);
+      const hasLineChange = diff.addedIndexes.length > 0
+        || diff.modifiedIndexes.length > 0
+        || diff.removedIds.length > 0;
+      const linesDirty = dirtyLinesRef.current && hasLineChange;
       const headerDirty = dirtyHeaderRef.current && headerKey !== lastHeaderKeyRef.current;
       if (!linesDirty && !headerDirty) {
         if (!silent) message.success('无改动，无需保存');
         return;   // finally 里照常复位 savingRef / 关提示
       }
-      // 只有单头变了 ⇒ 传 lineItems:null,后端整块跳过明细行(QuotationService.java:420,
-      //   块止于 :701;validateDraftDecimals 亦在 null 时直接 return)。已实测:对 1845 行的单
-      //   发该形状,行 id 指纹与 componentData 指纹逐字节不变。
-      const effectivePayload = linesDirty ? payload : headerOnlyDraftPayload(payload);
-      const res = await quotationService.saveDraft(quotationId, effectivePayload);
+      // 版本基线未知 ⇒ 这一发必然 400 且会被 catch 吞成「已保存到本地」,直接拦下(见 requireVersionBaseline)。
+      //   🔑 位置不可变通:必须在**上面那道「无改动」闸之后**——否则用户什么都没改点一下保存,
+      //   会拿到「页面数据不完整」而不是「无改动，无需保存」,反而更吓人;
+      //   也必须在**任何基线推进 / localStorage 写入之前**——此刻一个字节都还没发出去。
+      const baseVersion = requireVersionBaseline();
+      if (baseVersion == null) return;   // finally 里照常复位 savingRef / 关提示
+      // 只改单头 ⇒ 三数组全空(AC-4)。后端主循环只遍历 added + modified,一行明细都不会被触碰。
+      const effectiveDiff = linesDirty ? diff : EMPTY_LINE_DIFF;
+      const wirePayload = toIncrementalPayload(payload, effectiveDiff, baseVersion);
+      // 飞行前记下脏序号:飞行期间(大单数十秒)若用户又改了东西,成功后**不清脏**,
+      //   否则那次编辑会连同基线一起被抹平(见 linesDirtySeqRef 声明处)。
+      const linesSeqAtSend = linesDirtySeqRef.current;
+      const headerSeqAtSend = headerDirtySeqRef.current;
+      const res = await quotationService.saveDraft(quotationId, wirePayload);
       // 保存成功 ⇒ 脏标记归零 + 登记两条基线,供下次比对。
-      dirtyLinesRef.current = false;
-      dirtyHeaderRef.current = false;
+      if (linesDirtySeqRef.current === linesSeqAtSend) dirtyLinesRef.current = false;
+      if (headerDirtySeqRef.current === headerSeqAtSend) dirtyHeaderRef.current = false;
+      // 行级基线推进到"本次发出去的那一份"。飞行期间的编辑不在 currentFps 里 ⇒ 下次 diff 仍能捞到它。
+      if (linesDirty) lineBaselineRef.current = currentFps;
       lastLinesKeyRef.current = linesKey;
       lastHeaderKeyRef.current = headerKey;
       // P0:与 autoSaveDraft 同口径登记去重键,使 finally 的 pendingSaveRef 补发(用户输入未变时)被去重,
@@ -1403,6 +1596,16 @@ const QuotationWizard: React.FC = () => {
       if (!silent) message.success('草稿已保存');
       safeSetLocalDraft(`cpq-draft-${quotationId}`, JSON.stringify(payload));
     } catch (e: any) {
+      // ── task-260901 F-2d(AC-12):版本冲突必须在既有兜底之前拦截 ──────────────────
+      // 判据是 reason,不是 httpStatus —— 同为 409 的 RECONCILE_PENDING / WRITE_IN_FLIGHT
+      //   是既有行为(handleSubmit 里各有各的处理),不能被这个弹层顶掉。
+      // 也不能落到下面那段 localStorage 兜底里:那会提示「已保存到本地，网络恢复后将同步」——
+      //   而这次根本不是网络问题,数据也永远同步不上去(版本对不上,再发还是 409),纯误导。
+      if (e?.payload?.reason === 'STALE_VERSION') {
+        staleVersionRef.current = true;   // 本页面已不可信,提交流程据此中止
+        showStaleVersionDialog();
+        return;   // finally 里照常复位 savingRef / 关提示
+      }
       try {
         const values2 = form.getFieldsValue();
         const payload2 = normalizeDraftPayloadDecimals(buildDraftPayload(values2));
@@ -1447,6 +1650,9 @@ const QuotationWizard: React.FC = () => {
       //   ⚠️ 改这行前先看：dev-docs/task-0729-客户价格调整策略和价格版本/
       //      方向3-总价单一来源改造-开发计划.md §四 T1 实施结果 C（提交时序 / 拿不到锁改抛 409）。
       await handleSaveDraft(false, { skipWarm: true });
+      // task-260901:上一步撞了 STALE_VERSION(弹层已在等用户点「刷新页面」)⇒ 本页面数据已过期,
+      //   继续提交等于拿陈旧快照闯闸门。这里直接中止,不再发 submit。
+      if (staleVersionRef.current) return;
       // task-0806 D15：前端提交前必须先完成一次对账上报再发 submit（前端串行保证）——
       // 阶段① 后端 assertLineSettled 的 WRITE_IN_FLIGHT 判据恒 false，唯一生效的
       // RECONCILE_PENDING 以"该行最近一次对账上报"为准；此处排空在飞的编辑链
@@ -1915,8 +2121,13 @@ const QuotationWizard: React.FC = () => {
       //   不置脏 = 用户在 Step3 什么都不改就往下走 ⇒ 这些值永久不落库(真丢数据)。
       //   两个 ref 语义本就不同:userEditedRef 答「该不该 autosave」,dirtyLinesRef 答「该不该保存」。
       //   重复进入 Step3 时 updater 多半算出同样的值 ⇒ 由第二层内容去重兜住,不会白发一次。
+      // task-260901 F-1e(AC-21):行级 diff 之后这条更要紧 —— 置脏只解开第一层闸,还要能进 modified。
+      //   能进,是因为行指纹收了 annualVolume / lineTotalAmount / discount* 这一组
+      //   (draftLineDiff.ts fingerprintSource),recomputeRow 一改这些字段,那几行的指纹立刻变。
+      //   反过来:若 Step3 这轮算出的值与库里完全相同(重复进入 Step3),指纹不变 ⇒ 不进 modified ⇒
+      //   不白发一次,这正是我们要的。
       onSilentUpdate={(updater) => {
-        dirtyLinesRef.current = true;
+        markLinesDirty();
         setLineItems(prev => updater(prev));
       }}
       globalVariableDefs={gvDefs}
@@ -2124,7 +2335,7 @@ const QuotationWizard: React.FC = () => {
           onValuesChange={() => {
             // repair-260830:单头脏标记。antd 的 onValuesChange 只在**用户交互**时触发,
             //   applyQuotationData 里的 form.setFieldsValue 不触发 → 打开单据不会误置脏。
-            dirtyHeaderRef.current = true;
+            markHeaderDirty();
             scheduleAutoSave();
           }}
           initialValues={{

@@ -94,6 +94,12 @@ public class QuotationDTO {
     public boolean cardValuesWarming = false;
 
     /**
+     * task-260901 B-3（api.md §3）：用户数据版本号。前端打开单据时以此初始化本地并发基线，
+     * 保存时原样回传为 {@code baseVersion}。
+     */
+    public Integer userDataVersion;
+
+    /**
      * task-0721 报价升版逻辑 B5：核价通过回填摘要（api.md §1.2 响应体 {@code backfill} 字段）。
      * 仅 {@code costingApprove} 端点响应时非 null，其余端点/场景恒 null（Jackson 默认序列化为
      * 不出现，不影响其它读接口契约）。
@@ -142,6 +148,7 @@ public class QuotationDTO {
         dto.snapshotCustomerAddress = q.snapshotCustomerAddress;
         dto.createdAt = q.createdAt;
         dto.updatedAt = q.updatedAt;
+        dto.userDataVersion = q.userDataVersion;   // task-260901 B-3
         return dto;
     }
 

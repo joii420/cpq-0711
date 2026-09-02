@@ -175,6 +175,10 @@ export interface ReconcileReportRequest {
 const STRUCTURAL_INTEGER_REQUEST_KEYS = new Set([
   'annualVolume', 'decimals', 'index', 'itemSeq', 'page', 'pageSize', 'partVersionLocked',
   'rowIndex', 'row_index', 'seqNo', 'size', 'snapshotRows', 'sortOrder', 'sort_order', 'tempParentIndex', 'version',
+  // task-260901 ③：乐观并发基线。是结构整数（版本序号），不是精度值。
+  // 漏登记的后果很隐蔽：checkedPayload 会抛 TypeError，而 handleSaveDraft 的 catch 会把它
+  // 当成网络异常吞成「已保存到本地，网络恢复后将同步」—— 用户以为存上了，其实一个请求都没发出去。
+  'baseVersion', 'userDataVersion',
 ]);
 
 function assertNoPrecisionNumbers(value: unknown, key = '', path = 'payload'): void {

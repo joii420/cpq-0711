@@ -28,6 +28,14 @@ public class GlobalExceptionMapper {
                             Map.of("conflicts", rce.getConflicts())))
                     .build();
         }
+        // task-260901 B-3b：保存草稿乐观并发冲突 —— 前端据 reason=STALE_VERSION 弹「刷新页面」。
+        if (e instanceof StaleVersionException sve) {
+            return Response.status(e.getCode())
+                    .entity(ApiResponse.error(e.getCode(), e.getMessage(), Map.of(
+                            "reason", StaleVersionException.REASON,
+                            "currentVersion", sve.getCurrentVersion())))
+                    .build();
+        }
         // task-0806 阶段① API-3：提交闸门 —— 未落定对账差异 / 在飞写，见 ReconcilePendingException。
         if (e instanceof ReconcilePendingException rpe) {
             return Response.status(e.getCode())

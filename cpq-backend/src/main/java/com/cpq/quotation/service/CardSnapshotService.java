@@ -4514,10 +4514,25 @@ public class CardSnapshotService {
             applySubtotalsFromCardValues(liManaged, liManaged.quotationId);
             recomputeDraftHeaderTotals(liManaged.quotationId);
 
+            // ── task-260901 B-3d：本端点写的是 row_data（materializeWholeLineRowData）＝用户数据 ──
+            // 必须递增 user_data_version，否则前端本地基线立刻过期、下一次「保存草稿」必然误报 409。
+            // 🔒 与之相对：同一次调用里被顺带刷新的 quote_card_values / quote_excel_values /
+            //    quote_values_at 是<b>派生</b>数据，它们本身不构成递增理由（api.md §4.2）——这里递增
+            //    是因为 row_data 变了，不是因为卡片值变了。
+            // 🔒 原生自增：Quotation.userDataVersion 是只读映射（见实体注释），Hibernate 写不了它。
+            em.createNativeQuery(
+                    "UPDATE quotation SET user_data_version = user_data_version + 1 WHERE id = :id")
+                .setParameter("id", liManaged.quotationId).executeUpdate();
+            Object _v = em.createNativeQuery(
+                    "SELECT user_data_version FROM quotation WHERE id = :id")
+                .setParameter("id", liManaged.quotationId).getSingleResult();
+            Integer newVersion = _v == null ? null : ((Number) _v).intValue();
+
             Map<String, Object> resp = new LinkedHashMap<>();
             resp.put("quoteCardValues", liManaged.quoteCardValues);
             resp.put("quoteExcelValues", liManaged.quoteExcelValues);
             resp.put("quoteValuesAt", liManaged.quoteValuesAt != null ? liManaged.quoteValuesAt.toString() : null);
+            resp.put("userDataVersion", newVersion);   // task-260901 B-3d（api.md §2）
             return resp;
             } finally {
                 TemplateRenderScope.restore(_tplPrev);
