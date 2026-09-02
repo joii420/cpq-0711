@@ -4,6 +4,36 @@
 
 ---
 
+[2026-09-01] 报价单保存草稿（task-260901 · 路径 A 完整流程） - **1845 行单改一个格子，端到端 97.6s → 8.1~10.3s**：全量协议改增量三数组 + 乐观锁 | 涉及文件：后端新增 `JsonSemanticEquality.java` / `StaleVersionException.java` / `SaveDraftResponse.java` / 迁移 `V398`，改 `QuotationService.java`（三数组协议 + 有条件置 NULL + sum() 总价 + sortOrder 必填 + tempParentKey）、`PriceReconciler.java`（整实体加载改投影查询）、`Quotation.java`（`user_data_version` + `insertable=false,updatable=false`）、`QuotationResource.java`；前端新增 `draftLineDiff.ts` / `userDataVersion.ts` / `staleVersionDialog.tsx`，改 `QuotationWizard.tsx` / `QuotationStep2.tsx` / `quotationService.ts` / `draftPayloadDedup.ts` | 合 master merge `dc2e2370`（58 文件 +6639/-141），前置 `d561963d`（V398 入版控）、`f2f4cc4b`（测试库 `cpq_db` → `cpq_db_0724`） |
+
+🔑 **四条根因全部实测闭合，逐条对应一个修法**：
+① **删除语义隐式** —— `QuotationService`「payload 没出现的行 = 删」⇒ 前端**被迫全量发** 9.3MB。改增量三数组 `{baseVersion, added[], modified[], removed[]}`，删除转为显式声明。**请求体 9.3MB → 2310B**。
+② **`row_data` 是 jsonb 列但 Java 侧映射成 `String`** —— 库里存的是 **PG 规范化文本**（键按字节长度重排），与前端 `JSON.stringify` 的键序必然不等 ⇒ Hibernate 判脏 ⇒ 9225 条 componentData 全量 UPDATE。改用 `JsonSemanticEquality` 语义比对（fail-closed：解析失败按「已变」处理，宁可多写不可漏写）。
+③ **无条件置空两侧卡片值** —— 其注释前提「snapshot_rows 会被重建」在 `repair-260829 B-6`（UPSERT 明确不 touch snapshotRows）之后**已不成立**，于是前端 `shouldWarmCardValues` 恒真 ⇒ 全量重算 **1845 行 / 54444ms**，自制闭环。改为**只对语义真变的行**置 NULL ⇒ **1 行 / 90~187ms**。
+④ **返回整单 24.6MB 而前端只读 6 个字段**（`componentData` 那 9.3MB 一字节未读）。改轻量响应 ⇒ **响应体 24.6MB → 1339~1562B**。
+
+📊 **实测（同库同单，主线亲验）**：`S1.saveDraft` 40056ms → **81~1201ms**；`S3.priceReconcile` 3302~6071ms → **172~260ms**；端到端三次 **8129 / 9381 / 10270ms**（目标 ≤10s，第三次 10.27s 略超，用户裁定接受）。
+
+🔒 **乐观锁的结构性保证（AC-13 / B-3e，本任务最大设计陷阱）**：`user_data_version` **绝不能**被后端自算的派生数据递增（`ensureCardValues`/`ensureExcelValues`/`snapshotQuotation`/建单物化/`priceReconcile`），否则「保存 → 后端重算 → 版本变 → 必冲突 → 要求刷新」死循环。做法不是靠调用方自觉，而是**结构上做不到**：实体字段标 `insertable=false, updatable=false`（JPA 永远写不了它），只在 saveDraft 里走一条 native SQL 显式自增。⚠️ 这个写法同时挡住了**递增**和**回退**两个方向 —— 后者是更隐蔽的风险（派生流程若用旧实体 flush，会把版本号写回小值，冲突检测静默失效）。
+
+⚠️ **jsonb 判等踩坑**：`xmin` 系统列是判断「这行到底有没有被写过」的唯一可靠手段。「内容不同」不等于「发生了 UPDATE」，反之亦然 —— 只比内容会被 PG 规范化误导。
+
+🧪 **证伪实验（`test.md §4`，5 项全做）**：其中 B-1c「有条件置 NULL」一项的**期望值在闸门 A 时写错了** —— 原写「破坏后 T-7 变红（空值行数变 1845）」是**全量协议时代**的推断：那时 payload 装整单，无条件置 NULL 才会波及 1845 行。**增量协议下 payload 只含变化行，无条件置 NULL 也只波及那一行**，T-7 的「恰好 1 行」照样成立、根本测不出来。真正守住 B-1c 的是 **T-9**（发语义未变的行，本该保住卡片值）。**教训：证伪清单是在协议尚未实现时写的，协议落地后某些期望值必须按实际协议重新校准 —— 否则「破坏了却没变红」会被误判成用例无分辨力，而实际是期望值指错了对象。**
+
+🚨 **发现并已修：`tsc --noEmit -p tsconfig.json` 是空跑** —— 该配置是 solution-style（只有 `references`、没有 `files`/`include`），`tsc -p` **不跟随 references**，所以它既不报错也不检查任何文件。用注入语法错误的探针实测：改前 `EXIT=0`（错误没被发现），改后 `EXIT=2`。⇒ **本任务此前所有「tsc 0 错误」的自检声明一律作废**，`docs/rules/frontend.md §2.1` 的命令已更正（`da947d97`）。顺带修掉 `SqlViewBuilderTab.tsx` 4 条存量类型错误，其中 1 条是**真 bug**：`setInspectResult({ checks: [...] })` 而渲染层读的是 `items`，⇒ 那条体检警告**永远不会显示**。
+
+🔧 **`treeFormulaParityFixture.test.ts` 文件级失败的真因（更正一条我自己的错误判断）**：我此前记为「夹具从未提交进 git」是**错的** —— 当时用旧路径跑 `git ls-files`，路径本身就是旧的。真因是 commit `c1a1ecc1`（任务目录 4 位 MMDD → 6 位 YYMMDD，58 目录 + 447 处引用）**漏改了该文件 `:59` 的硬编码路径**。修后该 suite 22 passed（`a7e75820`）。⇒ 前端单测基线自此是**全绿**（98 files / 1180 tests），后续出现任何红都要当本次引入来查。
+
+⚠️ **AC 判据的两次自我纠错（写 AC 时的通病）**：
+- **AC-3 / AC-20 无分辨力** —— 判据写的是「删除后子表行数为 0」，但 `quotation_line_process` / `quotation_line_composite_process` / `quotation_line_item_snapshot` 三张表**在 dev 库全库 0 行**，且外键本来就是 `ON DELETE CASCADE` ⇒ 「删完是 0」是 schema 保证的**恒真命题**，测了等于没测。权威判据已移到后端自建夹具测试，E2E 层保留观察但必须显式打印「本轮无分辨力」。
+- **AC-8 判据落在共享 dev server 终端日志上**，那不是可留存的证据形式 —— 改为轮询库里 `quote_card_values IS NULL` 的**峰值计数**（应为 1 而非 1845），日志仅作旁证。
+
+📌 **测试库统一**：`application-test.properties` 由 `cpq_db` 改指 `cpq_db_0724`（用户裁决「都是开发测试库，保持一致」）。切换后 12 个测试报错，原因是夹具硬编码了 3 个只存在于 `cpq_db` 的 UUID；按用户授权补造了 3 行最小数据（带冲突预检）后归零。**遗留技术债**：夹具硬编码跨库 UUID（转 BACKLOG）。
+
+⚠️ **测试污染共享 dev 库（已报用户）**：`SaveDraftSerializeLockTest` 因需真并发**不能用 `@TestTransaction`**，每跑一轮在 `cpq_db_0724` 留 4 张 `TEST-LOCK-*` 报价单。已报红线待批清理。
+
+**AC 台账**：24 条中 **20 条达成**；**AC-18 未达标**（端到端第三次 10.27s > 10s，用户裁定「接受」）；**AC-22 未跑**（用户裁定「T-22 不跑」）；AC-5 未验证；AC-23 UI 半侧未验证（补跑后 SQL 侧通过）。**9 条 E2E 用例未执行** —— 这一条必须写进闸门 B 汇报，不能只报绿的部分。
+
 [2026-09-01] 组件管理 · 字段配置表格（路径 B 直接修复） - **移除 [小数位数] [宽度] [排序] 三列 + 加宽 [字段名]** | 涉及文件：`cpq-frontend/src/pages/component/FieldConfigTable.tsx`（唯一改动文件，7 增 92 删）
 
 🎯 **用户诉求**：「只是从页面上先移除列，宽度功能保留」—— 收掉 UI 编辑入口，**不动数据层**。
