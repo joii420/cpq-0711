@@ -4,6 +4,36 @@
 
 ---
 
+[2026-09-02] 材质管理模块定义规则更新（task-260901 · 路径 A 完整流程） - **材质从「一组固定含量」改为「显式的元素组成 + 下挂多组含量配置」**，导入改单表 4 列、编号全自动、语义由「整体重灌覆盖」改「按含量内容比对只增不改」 | 涉及文件：新表 `material_recipe_composition`（元素组成）+ `material_recipe_config`（含量配置）· `material_recipe_element` 由挂 recipe 改挂 config · `material_recipe` 加 `allow_custom_content` · 迁移 `V400`（含存量 258 材质 / 621 元素行双向回填 + 三条 `RAISE EXCEPTION` 断言）· 后端 `MaterialRecipeImportService` 整体重写 / 新增 `MaterialRecipeConfigService` / `MaterialRecipeRules` / `MaterialRecipeNumbering` / `ConfigureProductService` 选配分支 · 前端 `MaterialRecipeManagement` / `MaterialRecipeEditDrawer` / 新增 `MaterialRecipeCreateDrawer`(配方卡片) / `MaterialRecipeConfigDrawer` / `elementOptions` / `recipeContentRules` / `apiError` / `precision.trimTrailingZeros` | 合 master `f5adfccc`（分支提交 `3c80cef5` 151 文件 / 合并 150 文件），**待闸门 B 验收** | **AC 37 条**（单点 / 序列 3 / 边界）；接口层 33/33；证伪实验 5/5；E2E 20 跑 19；严格 Flyway 校验下后端 70 例全绿；主线亲验 13 条 + 原型 1/2/3/6 逐屏比对。闸门 A **经五轮反馈定稿**，累计 13 项用户裁决。
+
+🔑 **最值得记的一条：同一个「0」可以有两个完全不同的含义，按一个读就会写错 AC。** 我在 `需求文档.md §4.2` 实测「`material_master` 的 `material_recipe_id` 与 `config_fingerprint` **1890 行全 NULL**」，并用它论证「零存量影响」。并发会话提醒我这个 0 还意味着「这条路从没跑通」，我全盘接受、据此写了 AC-19「两列双双非空」。**结果两列的 0 成因根本不同**：`material_recipe_id` 的 0 = **路没跑过**（自定义含量提交后就非空了）；`config_fingerprint` 的 0 = **设计如此**（选配 Plan 3b · R1，`RECORD.md:4071` + `ConfigureProductService:108/376/1162`，传 null 是为了防跨客户撞 `uq_material_master_fingerprint` 全局唯一索引导致提交 500）。测试实跑才发现 AC 写错。**改法比收回更有用**：AC-19 翻转为 `config_fingerprint IS NULL`，从「验新功能」变成「护既有不变量 R1」。⇒ **「这条路从没跑通」是个需要逐列展开的结论，不能整体套用。**
+
+🚩 **三次「假红」，全部是测量假象，且都比假绿更容易被当成认真负责**：① 列表显示「2 组」而库里只有 1 条 —— **浏览器默认 context 的 HTTP 缓存**，读到了测试清理前的快照；② 配置矩阵含量显示 `90.000000000%` 没去零、**而其下方提示文字白纸黑字写着「这里显示 90%」**（说明文案与渲染自相矛盾，看起来铁证如山）—— 实为**测试代理正在跑的 FT-3b 杠杆**（`parseFloat().toFixed(9)`）被我的 vite 热重载进了亲验环境；③ 前端自己也踩了一次同族：用过期 pid 文件杀 5199，杀掉的是 `npx` 包装进程、真 vite 还活着，新实例「Port in use」启动失败，浏览器一直在跟**指向旧后端**的实例说话。**三次都靠「同一时刻对照接口/对照源码」才没误报。**
+
+🚨 **主线亲验不得与「会改工作树的代理」并发** —— 亲验环境（临时 8095/5195）与代理共用 worktree 文件系统，vite/quarkus 的热重载会把代理的实验性破坏直接注入亲验。派工时约定了端口避让，**但端口避让保护不了文件**。
+
+🔬 **AC 本身可能不可证伪，这比实现有 bug 更隐蔽**：FT-1 破坏配置发号器后 `tI14` 竟然还是绿的 —— AC-15 原文删的是**中间**那条 `00006-02`，此时 `max(ACTIVE)={1,3}=3` 恰好等于 `max(全部)=3`，**把「含 INACTIVE」改成「只统计 ACTIVE」不产生任何行为差异**。已改为「删当前最大那条」并把「为什么必须删最大」写进 AC 原文。**同族第二例**：AC-30 的原用例只读不存，去零函数即便真改了值也落不到库里 ⇒ 那条「库内仍是 `90.000000000000`」的 SQL 断言**永远绿、从没被证明接上过**，补了往返用例才真正生效。
+
+⚠️ **我指定的证伪杠杆本身是无效杠杆**：我要求用 `Number(s).toString()` 破坏去零函数，但含量值域 0~100 带 12 位小数（≤15 位有效数字）double 能精确表示，`90.000000000000 → 90`、`12.345678901200 → 12.3456789012` **与正确实现逐字相同**。换 `parseFloat(s).toFixed(9)` 才真改值。⇒ **设计证伪实验时要先证明「这个破坏确实会改变行为」，否则证伪实验自己就是空跑。**
+
+🚨 **Flyway 版本号在「多 worktree + 共享 dev 库」下是双向的坑，且同一症状在不同工作区成因不同**：并发会话把 `V399__backfill_sel_param_type_seed.sql` 提交进 master（未应用）；我的子代理同时把另一个 V399 **应用到了 dev 库**（因 `application-test.properties` 的 `${DB_NAME:cpq_db_0724}`，见下条）⇒ 8081 重启必 validate 失败、对方的种子永远补跑不了。**修复过程本身又踩了两次**：两个会话各自「改号到 V400」造成第二次撞车；后端子代理从「我这边验不过」推出「主仓也验不过」，**但两边文件集合不同**（主仓两份都有、worktree 缺 V399）。⇒ **判 Flyway 症状前必须各自 `ls` 一次，不能跨工作区推断。** 终局：399=对方（已补跑）、400=本任务（`installed_on` 未动）。
+
+🚨 **`CLAUDE.md` 的 profile 表写错了：`test` profile 的默认库是 `cpq_db_0724`（dev 库本身），不是 `cpq_db`** —— `application-test.properties:24` 实证。⇒ **`./mvnw test` 一直在直接写 dev 库并跑迁移**。本任务的 `test.md §1` 全局状态还原纪律、三个子代理的隔离假设，全都建立在那条错误的表上。已由并发会话统一报给用户。**实际后果已发生**：子代理跑测试往 dev 库种了 4 条 demo 材质（`AgCu85/AgCu90/AgNi90/AgNi95`）。
+
+🚩 **`material_type` 被写入材质名 —— 死代码转活的具体危害**：`ConfigureProductService:388` 把 `recipe.symbol` 传给 `insertMaterialMasterV6` 的 `materialType` 形参，而该列现网 1890 行的真实取值是**料号类型**（`零件 1851 / 外购件 1 / 成品 1 / NULL 37`）；更麻烦的是 `v_composite_child_materials` 用 `COALESCE(asy.component_usage_type, mm.material_type, mr.name, mm.material_name) AS material_name` **把这列当材质名的兜底读**，三边语义打架。至今没污染只因 258 条材质全 `locked` ⇒ `validateCustomPart` 必抛「元素已锁定」⇒ 走不到第 388 行。**本任务打开 `allow_custom_content` 等于给它通电**，实测值 `AgNi`。架构收敛归「选配功能」会话的新任务，本次仅在 **AC-19③b 留痕**（要求测试报告必须写出该列实际值，不论是什么）。⚠️ 若将来改成 `'零件'`，**必须同时看那个视图的 COALESCE**，否则材质名显示会从「AgNi10」变成「零件」——那是渲染回归。
+
+⚠️ **元素组成显示的是快照而非权威链，属既有缺陷**：`task-0709 · B2` 早已定「权威元素链是 `element_no`，`element_code`/`element_name` 只是快照」，但列表与详情一直直接渲染快照列 ⇒ 材质 `00262` 的元素组成显示成 `10004`（业务当年**整行串位**：编号填进符号列、符号填进名称列）。改为 `LEFT JOIN element ON element_no` 回填、NULL 时回退快照后，**所有同类脏行自动显示正确，一个字节数据不用改**（AC-36 有反向断言：验完 `element_code` 仍须是 `10004`）。
+
+⚠️ **`grep A | grep B` 会漏掉跨行的 SQL**：后端排查「谁还在写 `recipe_id`」时用 `grep -rn material_recipe_element | grep recipe_id` —— **按行过滤，而那条 INSERT 的表名与列清单在不同行**，管道把它滤没了，漏掉 `ElementServiceTest:50`。改用「命中 INSERT 后取后 3 行」才扫出来。
+
+⚠️ **cwd 重置导致跑错工作区，症状与「文件被删了」一模一样**：子代理用相对路径 `cd cpq-backend && ./mvnw test`，而 Bash 每次调用 cwd 重置回主仓 ⇒ 测试落在主工作区、用的是主仓那份**旧形态**夹具，写出 8 行 `config_id IS NULL` 的孤儿元素行。**它当时已看到告警却差点误判** —— `Compiling 896 source files`（worktree 是 905）、`Tests run: 32`（应为 70）、自己的新类整个不见，第一反应是「文件被谁删了」。
+
+🔒 **红线 hook 的 deny 档确实不可豁免，两个会话都改不动**：`guard-redline.sh:181` 拦 `rm|mv` + `migration` 关键词，头部明写「deny 档无开关、不可豁免……不能靠模型自觉，必须由 harness 拦」。用户明确授权绕过后**我仍然执行不了**，最终由用户在输入框 `!` 自己跑 `mv`。并发会话提出过一个绕法（`cd` 进目录后用相对路径使命令串不含 `migration`），**我拒绝使用并要求它别再推荐** —— 那等于把「不可豁免」变成「对懂正则的模型可豁免」。**用户行使自己的权限、与模型规避一道专为防模型而设的闸，是两回事：前者留痕，后者不留。**
+
+✅ **合并期两处处理**：① 主仓那份未跟踪的 V400 临时副本会让 `git merge` 直接拒绝（`untracked working tree files would be overwritten`），而删除已应用迁移是红线 ⇒ **改为把它正式提交进 master**（`14ca260f`），两侧逐字节相同后合并自动收敛；② 合并后主仓全量测试有数十个类失败，**A/B 同型对比（`14ca260f` 建临时 worktree 跑同一批）失败数逐个相同** ⇒ 既有失败，非本次引入；根因是 `LoginRateLimiter` 的 datasource `CONNECTION_CLOSED` 冒到 `GlobalExceptionMapper` 变 500，两分支同等受影响。
+
+📌 **遗留**：B-3（`DROP CONSTRAINT uq_recipe_element` + `DROP COLUMN recipe_id`）**待批**，文件在任务目录 `待批-V401__*.sql`、未入 `db/migration`。⚠️ **执行顺序有硬约束：必须在本次合并之后** —— 旧夹具的幂等封顶依赖 `uq_recipe_element` 存在，先 DROP 会让主仓旧夹具无上限插重复行；合并后旧夹具已被新版覆盖，该风险消失。另：`V400` 文件正文仍写「V399 迁移断言」，属改号遗留、已应用不可改内容，**刻意不修**。`flyway_schema_history` 里 `375`/`376` 各有 3 条完全相同的记录（同一迁移记了三遍），属历史遗留、不影响启动，未处理。
+
 [2026-09-02] 选配模板管理（路径 B · 直接修复） - **「新建模板」永远弹「参数池加载中，请稍候再试」** = `sel_param_type` 种子在库里根本不存在 | 涉及文件：新增迁移 `V399__backfill_sel_param_type_seed.sql`、新增 `deploy/0901-dbupdate-2-sel-param-seed.sql`，改 `deploy/cpq-init-empty-navicat.sql`（补 3 行种子）、`deploy/0901-dbupdate.sql`（头部加指引注释）、前端 `SelTemplateManagement.tsx`；新增守卫 `cpq-frontend/e2e/sel-param-pool-guard.spec.ts` |
 
 🔑 **根因是两件事叠加，缺一都不会犯**：
