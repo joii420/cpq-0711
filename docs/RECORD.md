@@ -4,6 +4,22 @@
 
 ---
 
+[2026-09-02] 选配模板管理（路径 B · 直接修复） - **「新建模板」永远弹「参数池加载中，请稍候再试」** = `sel_param_type` 种子在库里根本不存在 | 涉及文件：新增迁移 `V399__backfill_sel_param_type_seed.sql`、新增 `deploy/0901-dbupdate-2-sel-param-seed.sql`，改 `deploy/cpq-init-empty-navicat.sql`（补 3 行种子）、`deploy/0901-dbupdate.sql`（头部加指引注释）、前端 `SelTemplateManagement.tsx`；新增守卫 `cpq-frontend/e2e/sel-param-pool-guard.spec.ts` |
+
+🔑 **根因是两件事叠加，缺一都不会犯**：
+① **种子随迁移交付，但迁移不重放** —— 那 3 行（MATERIAL / ELEMENT / PROCESS）写在 `V313__sel_template_tables.sql` 的 `INSERT` 里。dev 库 `cpq_db_0724` 的 Flyway **基线是 V361**（共 42 条历史，最早一条就是 `<< Flyway Baseline >>` 361），V313 从来没跑过；用 `deploy/cpq-init-empty-navicat.sql` 新建的库基线更是 398。**基线晚于种子所在迁移号 ⇒ 种子永远不会到位。**
+② **空库版建库脚本只建表不带种子** —— 该脚本刻意保留了 `costing_bom_tree_config` / `price_adjust_settings` / `semantic_*` 等配置型种子，**唯独漏了 `sel_param_type`**，而 `cpq-init.sql`（带数据版）自己的注释里就写着「`sel_param_type` 3 行 选配参数类型，**与 Java handler key 强耦合**」。两条合起来 ⇒ 表恒 0 行。
+
+⚠️ **这不是「用户还没配」，是缺陷** —— `data_source_key` / `persist_handler_key` 的取值与 Java 侧 handler key 强耦合（`SelParamCandidateService` 用 `switch (pt.dataSourceKey)` 直接匹配 `MATERIAL_RECIPE` / `V6_PROCESS_MASTER`），系统未提供也不应提供维护界面。**它是代码依赖的封闭枚举，不属于可随业务数据一起清空的表。** 判定「某张表能不能进空库脚本的清空清单」，标准是「值是否被代码 switch/if 直接消费」，不是「它看起来像不像业务数据」。
+
+🐛 **附带修掉一个误导性文案**：`openCreate()` 用 `sortedParamTypes.length === 0` 同时表示「还在加载」和「加载完是空的」，于是**永久缺数据被显示成临时加载中**，用户只会一直等。改为引入 `paramTypesLoading` 显式加载态，两种情况分开提示（空态改 `message.error` 并点名 `sel_param_type`，指向找管理员而不是再等）。
+
+✅ **验证（主线亲验，非子代理汇报）**：库 0 行 → 3 行且与老库 `cpq_db` 逐字段一致；`GET /api/cpq/sel-param-types` `data:[]` → 3 项；候选值端点 MATERIAL 258 / PROCESS 2 / ELEMENT 0(adjust 类按设计为空)；补种脚本**重跑一次 `INSERT 0 0`** 验幂等；前端 `tsc -p tsconfig.app.json` 0 错误；E2E 三条真实浏览器全绿（V1 真实数据开抽屉且列出三类参数 / V2 拦截返回空数组 → 弹「参数池为空」/ V3 拦截悬挂 → 仍弹「加载中」）。
+🔬 **还原实验（防空验证）**：把 `SelTemplateManagement.tsx` `git checkout` 回原状重跑 —— **V2 精确变红、V1+V3 仍绿**，证明 V2 验的确实是本次改动，不是恒真断言。
+⚠️ **过程中真踩到一次空验证**：初版断言用 `.ant-drawer-content` 判「抽屉未打开」，而本项目 antd 抽屉根节点**不带这个类** ⇒ `toHaveCount(0)` 恒真。是从失败用例的 page snapshot 里看到 `dialog "新建选配模板"` 才发现抽屉其实开着、选择器是错的。已统一改用 `getByRole('dialog', { name: ... })`。
+
+📌 **内网/客户环境处置**：更新后端到含 V399 的版本并重启即自动补齐，无需人工跑 SQL；只有「不想等发版」时才手工跑 `deploy/0901-dbupdate-2-sel-param-seed.sql`（纯幂等 INSERT，不写 `flyway_schema_history`，故后续发版时 V399 仍正常执行、版本账目不错位）。
+
 [2026-09-01] 报价单保存草稿（task-260901 · 路径 A 完整流程） - **1845 行单改一个格子，端到端 97.6s → 8.1~10.3s**：全量协议改增量三数组 + 乐观锁 | 涉及文件：后端新增 `JsonSemanticEquality.java` / `StaleVersionException.java` / `SaveDraftResponse.java` / 迁移 `V398`，改 `QuotationService.java`（三数组协议 + 有条件置 NULL + sum() 总价 + sortOrder 必填 + tempParentKey）、`PriceReconciler.java`（整实体加载改投影查询）、`Quotation.java`（`user_data_version` + `insertable=false,updatable=false`）、`QuotationResource.java`；前端新增 `draftLineDiff.ts` / `userDataVersion.ts` / `staleVersionDialog.tsx`，改 `QuotationWizard.tsx` / `QuotationStep2.tsx` / `quotationService.ts` / `draftPayloadDedup.ts` | 合 master merge `dc2e2370`（58 文件 +6639/-141），前置 `d561963d`（V398 入版控）、`f2f4cc4b`（测试库 `cpq_db` → `cpq_db_0724`） |
 
 🔑 **四条根因全部实测闭合，逐条对应一个修法**：

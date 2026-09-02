@@ -8817,6 +8817,27 @@ ON CONFLICT (id) DO NOTHING;
 
 
 -- ============================================================
+-- sel_param_type 选配参数池种子 (3 行, 封闭枚举)
+-- ------------------------------------------------------------
+-- 【为什么"空库版"也必须带这 3 行】
+-- data_source_key / persist_handler_key 的取值与 Java 侧 handler key 强耦合 ——
+-- SelParamCandidateService 用 switch (pt.dataSourceKey) 直接匹配 MATERIAL_RECIPE /
+-- V6_PROCESS_MASTER。它是代码依赖的封闭枚举, 系统未提供也不应提供维护界面,
+-- **不是可以随业务数据一起清空的表**。
+-- 【缺此 3 行的症状】选配模板管理 → 新建模板, 弹「参数池加载中，请稍候再试」且永不恢复
+-- (GET /api/cpq/sel-param-types 返回 200 + data:[], 前端把"空"当成"还在加载")。
+-- 2026-09-01 dev 库 cpq_db_0724 实际踩到: 该库基线 V361 > V313, 种子所在的 V313 不重放,
+-- 而本脚本当时未带种子 ⇒ 表恒 0 行。
+-- 幂等: ON CONFLICT DO NOTHING, 与迁移 V399(同内容补种)互不冲突, 重复应用安全。
+-- ============================================================
+INSERT INTO public.sel_param_type (code, name, value_mode, data_source_key, persist_handler_key, sort_order) VALUES
+  ('MATERIAL', '材质',    'single', 'MATERIAL_RECIPE',   'MATERIAL_RECIPE_BIND', 1),
+  ('ELEMENT',  '元素含量', 'adjust', NULL,                'ELEMENT_OVERRIDE',     2),
+  ('PROCESS',  '工序',    'multi',  'V6_PROCESS_MASTER', 'PROCESS_LIST',         3)
+ON CONFLICT (code) DO NOTHING;
+
+
+-- ============================================================
 -- Flyway 基线记录 (V387)
 -- 新库带此 baseline: 连 Quarkus 时 flyway 跳过 V1~V387 历史重放, 只跑 V388+ 新迁移
 -- ⚠️ 本脚本的表结构已含 V387, 基线号必须 >= 387。

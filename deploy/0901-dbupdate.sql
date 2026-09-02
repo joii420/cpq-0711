@@ -6,6 +6,11 @@
 --           若数据库由 2026-09-01 之后版本的 deploy/cpq-init-empty-navicat.sql 新建
 --           (基线已是 398), 不需要跑本脚本。
 --
+-- ⚠️ 补充(同日追加): 本脚本只覆盖到 V398。V399(sel_param_type 3 行种子补齐)另见
+--    deploy/0901-dbupdate-2-sel-param-seed.sql —— 纯幂等 INSERT, 且更新后端重启后
+--    Flyway 会自动补, 多数情况无需手工执行。缺那 3 行的症状是「选配模板管理 → 新建模板」
+--    永远弹「参数池加载中，请稍候再试」。
+--
 -- 覆盖范围(11 个迁移, 按 Flyway 原始顺序原样收录, 未做任何逻辑改写):
 --   V388 取数配置器·语义图落库 —— 新建 7 张表 + 种子数据 + component_sql_view 加 2 列
 --        新表: semantic_node / semantic_node_column / semantic_edge / semantic_edge_key /

@@ -77,6 +77,8 @@ const SelTemplateManagement: React.FC = () => {
   const [paramTypes, setParamTypes] = useState<ParamTypeRow[]>([]);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [loading, setLoading] = useState(false);
+  // 参数池首帧加载态：与「参数池为空」是两回事，必须分开——见 openCreate 的两段判断
+  const [paramTypesLoading, setParamTypesLoading] = useState(true);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editing, setEditing] = useState<TemplateRow | null>(null);
@@ -126,11 +128,14 @@ const SelTemplateManagement: React.FC = () => {
   };
 
   const fetchParamTypes = async () => {
+    setParamTypesLoading(true);
     try {
       const res = await selTemplateService.listParamTypes();
       setParamTypes(res?.data ?? []);
     } catch (err: any) {
       message.error(err.message);
+    } finally {
+      setParamTypesLoading(false);
     }
   };
 
@@ -163,8 +168,15 @@ const SelTemplateManagement: React.FC = () => {
   };
 
   const openCreate = () => {
-    if (sortedParamTypes.length === 0) {
+    if (paramTypesLoading) {
       message.warning('参数池加载中，请稍候再试');
+      return;
+    }
+    if (sortedParamTypes.length === 0) {
+      // 参数池(sel_param_type)是随库交付的封闭枚举——其 data_source_key / persist_handler_key
+      // 与后端 handler key 强耦合，系统不提供维护界面。所以「空」只可能是库里缺种子，
+      // 再等下去也不会变好，必须提示去补数据，而不是让用户误以为还在加载。
+      message.error('参数池为空：系统未初始化选配参数类型（sel_param_type），请联系管理员补充基础数据');
       return;
     }
     setEditing(null);
