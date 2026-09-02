@@ -31,7 +31,8 @@ import { elementService, type ElementItem } from '../../services/elementService'
 import { genUUID } from '../../utils/uuid';
 import { apiErrorCode, apiErrorMessage } from '../../utils/apiError';
 import {
-  buildElementOptions, filterElementOption, ELEMENT_NOT_FOUND_TEXT, type ElementOption,
+  buildElementOptions, filterElementOption, sortElementOption,
+  ELEMENT_NOT_FOUND_TEXT, type ElementOption,
 } from './elementOptions';
 import {
   compositionInconsistentText,
@@ -295,6 +296,7 @@ const MaterialRecipeCreateDrawer: React.FC<Props> = ({ open, onClose, onCreated 
               loading={dictLoading}
               options={options}
               filterOption={filterElementOption as any}
+              filterSort={sortElementOption as any}
               notFoundContent={dictError ? '元素字典加载失败' : ELEMENT_NOT_FOUND_TEXT}
               onChange={(no) => setRowElement(card.id, r.key, no)}
             />

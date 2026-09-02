@@ -41,7 +41,10 @@ import {
 import { elementService, type ElementItem } from '../../services/elementService';
 import { formatPctText } from '../../utils/precision';
 import { apiErrorCode, apiErrorMessage } from '../../utils/apiError';
-import { buildElementOptions, filterElementOption, ELEMENT_NOT_FOUND_TEXT, type ElementOption } from './elementOptions';
+import {
+  buildElementOptions, filterElementOption, sortElementOption,
+  ELEMENT_NOT_FOUND_TEXT, type ElementOption,
+} from './elementOptions';
 import MaterialRecipeConfigDrawer from './MaterialRecipeConfigDrawer';
 import MaterialRecipeConfigDeleteDrawer from './MaterialRecipeConfigDeleteDrawer';
 
@@ -506,6 +509,7 @@ const MaterialRecipeEditDrawer: React.FC<Props> = ({ open, recipeId, onClose, on
                         loading={dictLoading}
                         options={addOptions}
                         filterOption={filterElementOption as any}
+                        filterSort={sortElementOption as any}
                         notFoundContent={dictError ? '元素字典加载失败' : ELEMENT_NOT_FOUND_TEXT}
                         onChange={handleAddElement}
                         onBlur={() => setAddingElement(false)}

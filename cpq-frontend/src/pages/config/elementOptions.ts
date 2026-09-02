@@ -40,6 +40,49 @@ export const filterElementOption = (input: string, option?: ElementOption): bool
   );
 };
 
+/** 单个候选相对搜索词的匹配档位：0 全等 / 1 前缀 / 2 仅包含。数字越小越靠前。 */
+function rankElementOption(kw: string, o: ElementOption): number {
+  const no = o.elementNo.toLowerCase();
+  const code = o.elementCode.toLowerCase();
+  const name = o.elementName.toLowerCase();
+  if (code === kw || no === kw || name === kw) return 0;
+  if (code.startsWith(kw) || no.startsWith(kw) || name.startsWith(kw)) return 1;
+  return 2;
+}
+
+/**
+ * `filterSort` —— 精确匹配置顶（2026-09-02 路径 B 修复）。
+ *
+ * 🐛 **修的是什么**：候选原本直接用接口返回序，而 `ElementService.list` 是
+ * `ORDER BY (status='ACTIVE') DESC, GREATEST(updated_at, MAX(价格.updated_at)) DESC`
+ * —— **最近更新时间倒序**，不是语义序。叠加化学符号天然互为前缀
+ * （`C ⊂ Cu / Cr / Cd / Ce / WC / DC04`），实测输入 `C` 想选「碳」时它排在**第 5 位**，
+ * 前四位是 测试铜 / 铜 / 碳化钨 / 铈。且这个顺序会随「谁最近被改过」漂移，
+ * 用户记住的位置某天会**静默失效**。
+ *
+ * 🚨 **为什么这里选错不是小事**：新建材质时选中的元素**直接成为该材质的元素组成**
+ * （服务端从 `configs` 第 1 组推导，请求体不含 composition），而元素组成一旦有 ACTIVE 配置
+ * 就整区只读（M-0b, `MaterialRecipeService#compositionEditable`）—— **保存那一刻就锁死**，
+ * 纠错只能删光全部含量配置或废掉材质重建。
+ *
+ * 排序规则：**全等 → 前缀 → 仅包含**，同档内按 `elementNo` 升序。
+ * 编号升序是**稳定序**（不随更新时间漂移），且纯数字编号天然排在 `TESTNO-*` 之前。
+ * 搜索词为空时只剩编号升序 —— 未搜索时的默认顺序同样不再是「最近更新」。
+ */
+export const sortElementOption = (
+  a: ElementOption,
+  b: ElementOption,
+  info?: { searchValue?: string },
+): number => {
+  const kw = (info?.searchValue ?? '').trim().toLowerCase();
+  if (kw) {
+    const diff = rankElementOption(kw, a) - rankElementOption(kw, b);
+    if (diff !== 0) return diff;
+  }
+  if (a.elementNo === b.elementNo) return 0;
+  return a.elementNo < b.elementNo ? -1 : 1;
+};
+
 /**
  * 按字典构造下拉选项。
  * @param dict        元素主表全量
