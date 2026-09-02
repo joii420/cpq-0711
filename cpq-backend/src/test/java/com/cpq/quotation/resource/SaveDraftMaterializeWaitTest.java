@@ -58,6 +58,8 @@ class SaveDraftMaterializeWaitTest {
 
     private static final UUID TEST_USER_ID = UUID.fromString("896ed7d9-bf12-4ea7-9ff1-09cb14496311");
     private static final String TIMEOUT_PROP = "cpq.savedraft-materialize-wait-timeout-ms";
+    /** `awaitMaterializeIdle` 进入排队等待分支时无条件打印的入口标记。 */
+    private static final String WAIT_LOG_MARKER = "[savedraft-materialize-wait]";
 
     private final List<UUID> createdQuotationIds = new ArrayList<>();
     private final List<UUID> beganRegistryIds = new ArrayList<>();
@@ -119,6 +121,32 @@ class SaveDraftMaterializeWaitTest {
             }
         }
         createdQuotationIds.clear();
+    }
+
+    /**
+     * 捕获任意标记的日志行。AC-35 用它断言「轮询分支从未进入」——
+     * 这是**状态判据**（那条分支入口日志无条件打印），不受远端库 RTT 波动影响。
+     */
+    private List<String> captureLogsWithMarker(String marker, Runnable action) {
+        List<String> captured = new CopyOnWriteArrayList<>();
+        Handler handler = new Handler() {
+            @Override public void publish(LogRecord record) {
+                String msg = record.getMessage();
+                if (msg != null && msg.contains(marker)) {
+                    captured.add(msg);
+                }
+            }
+            @Override public void flush() {}
+            @Override public void close() {}
+        };
+        Logger root = Logger.getLogger("");
+        root.addHandler(handler);
+        try {
+            action.run();
+        } finally {
+            root.removeHandler(handler);
+        }
+        return captured;
     }
 
     /** 捕获 [draft-profile] 埋点,用于 AC-37 校验 S1.saveDraft 不含等待时长(存量埋点,不在 AC-16 移除范围)。 */
@@ -184,16 +212,20 @@ class SaveDraftMaterializeWaitTest {
         UUID qid = buildZeroLineDraftQuotation("AC35");
         assertFalse(registry.isInProgress(qid), "前置条件确认: registry 未标记进行中");
 
+        AtomicReference<ApiResponse<com.cpq.quotation.dto.SaveDraftResponse>> respRef = new AtomicReference<>();
         long t0 = System.currentTimeMillis();
-        ApiResponse<com.cpq.quotation.dto.SaveDraftResponse> resp = resource.saveDraft(qid, emptyDraftRequest());
+        // 🔑 判据是「轮询分支的入口日志有没有出现」,不是耗时。
+        //    `awaitMaterializeIdle` 在 isInProgress=false 时直接 return,一行日志都不打;
+        //    一旦进入等待分支,入口处的 LOG.infof 无条件先打印,再进 while。
+        List<String> waitLogs = captureLogsWithMarker(WAIT_LOG_MARKER,
+                () -> respRef.set(resource.saveDraft(qid, emptyDraftRequest())));
         long elapsed = System.currentTimeMillis() - t0;
 
-        assertEquals(200, resp.getCode());
-        // 轮询间隔是 500ms;若误入轮询分支,耗时至少多出一个 500ms 台阶。零延迟路径下
-        // 0 行单的 saveDraft 本身应在几十~几百 ms 内完成,留足余量断言 < 500ms 证明未轮询。
-        assertTrue(elapsed < 500, "isInProgress=false 应零延迟放行,不应有 500ms 级轮询开销,实际=" + elapsed + "ms");
+        assertEquals(200, respRef.get().getCode());
+        assertTrue(waitLogs.isEmpty(),
+                "isInProgress=false 应零延迟放行,不应进入排队等待分支;实际捕获到等待日志=" + waitLogs);
 
-        System.out.printf("[AC-35] zero-delay path elapsed=%dms%n", elapsed);
+        System.out.printf("[AC-35] zero-delay path elapsed=%dms, waitLogs=%d%n", elapsed, waitLogs.size());
     }
 
     @Test
