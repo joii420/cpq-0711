@@ -65,11 +65,10 @@
 | `feat/quote-material-no` | 无 | **1 笔** | 🟡 悬挂（内容仅 `BACKLOG.md` +15 行零代码，技术债已转 [[BL-0175]]，见 §8.3） |
 | `fix/repair-260829-skeleton-lock` | `.claude/worktrees/repair-260829-skeleton-lock` | **0 笔**（建于 `cf76bb8e`） | 🔵 **开发中** —— `repair-260829-卡片值算早了骨架值锁死`，闸门 A 已放行（2026-08-29）。B-1 产物自检为主体，B-4 `MaterializeRegistry` 供并发会话消费 |
 
-**已全部并入 master、仅剩分支指针与 worktree 的（7 条，可清理）**：
+**已全部并入 master、仅剩分支指针与 worktree 的（6 条，可清理）**：
 
 | 分支 | worktree | 领先 master |
 |---|---|---|
-| **`feat/task-260901-材质管理模块定义规则更新`** | `.claude/worktrees/task-260901-材质` | 0 笔（merge `f5adfccc`）· ✅ **已交付结案 2026-09-02**，分支指针与 worktree 均待清理（hook 拦 `git branch -d` / `worktree remove`，需本机 `!` 执行）|
 | `feat/task-260901-incremental-draft` | ✅ **worktree 已移除**（2026-09-01） | 0 笔（merge `dc2e2370`）· 分支指针待删 —— 用户已批准，hook 仍拦截，待本机 `git branch -d` |
 | `fix/repair-260830-element-price-pending` | ✅ **worktree 已移除**（2026-08-30） | 0 笔（merge `06d9182c`）· 分支指针待删 |
 | `fix/task-260825-materialize-n1` | `.claude/worktrees/task-260825-materialize-n1`（已不在列表） | 0 笔（merge `76c4b0ab`） |
