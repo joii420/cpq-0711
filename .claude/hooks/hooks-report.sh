@@ -46,8 +46,23 @@ echo
 echo "── 2. §3.2 红线（guard-redline）──"
 d=$(awk -F'\t' '$2=="guard-redline" && $3=="deny"' "$LOG" | wc -l)
 a=$(awk -F'\t' '$2=="guard-redline" && $3=="ask"'  "$LOG" | wc -l)
-echo "deny $d 次 / ask $a 次"
-if [ $((d+a)) -gt 0 ]; then
+sk=$(awk -F'\t' '$2=="guard-redline" && $3 ~ /^skip-ask/' "$LOG" | wc -l)
+echo "deny $d 次 / ask $a 次 / 豁免放行 $sk 次"
+if [ "$sk" -gt 0 ]; then
+  echo "⚠️ 有 $sk 次本该弹 ask 的操作被豁免开关放行了（CLAUDE_SKIP_ADDALL_ASK）："
+  awk -F'\t' '$2=="guard-redline" && $3 ~ /^skip-ask/{printf "%s → %s\n",$3,($5==""?"（旧格式）":$5)}' "$LOG" | sort | uniq -c | sed 's/^/  /'
+  echo "   豁免的是「弹不弹窗」，不是「夹带风险」—— 这些提交仍需 \`git show --stat\` 自查。"
+fi
+if [ $((d+a+sk)) -gt 0 ]; then
+  echo "按规则（审计行第 5 列）："
+  # 🚨 2026-09-01 之前的行没有第 5 列 —— 归入「未记录」而不是丢掉，
+  #    否则历史区间会显示成「一条规则都没触发过」，比没有统计更误导。
+  awk -F'\t' '$2=="guard-redline"{r=$5; if(r=="")r="（旧格式·未记录规则名）"; printf "  [%s] %s\n",$3,r}' "$LOG" \
+    | sort | uniq -c | sort -rn | sed 's/^/  /'
+  echo
+  echo "📌 这张表回答的是「**是哪条**拦的」。没有它，日志只剩裁决 + 截断到 120 字节的命令，"
+  echo "   中文命令被截得更短，事后归因不到规则 —— 实测 64 条 ask 里 50 条无法归因。"
+  echo
   echo "被拦的命令："
   awk -F'\t' '$2=="guard-redline"{printf "  [%s] %s\n",$3,$4}' "$LOG" | sort | uniq -c | sort -rn | head -20
   echo
