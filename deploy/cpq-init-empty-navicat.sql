@@ -83,7 +83,27 @@
 --                capacity.cost_ratio 同族(族 B 含量·占比·比率), numeric(10,4) -> numeric(18,12)。
 --          已建库的内网环境如需从 V386 补到 V387, 用等价增量脚本 deploy/0813-dbupdate.sql
 --                (该脚本已把 V386+V387 合并为一份增量, 见脚本内第 2 节)
--- 内容: 143 业务活表 + flyway_schema_history + 3 活视图 + 5 函数 + 1 个 admin 用户
+-- 同步: 2026-09-01  已增量同步 V388~V398 的全部结构变更 + 语义图配置种子, 基线号 387 -> 398。
+--       · V388: 新增 7 张语义图表(semantic_node / semantic_node_column / semantic_edge /
+--                semantic_edge_key / semantic_tab_view / semantic_tab_view_node /
+--                semantic_tab_view_column), 取数配置器的模型底座;
+--                component_sql_view 加 builder_config jsonb + builder_version integer
+--                (均 nullable, 存量 NULL = 手写模式, 行为逐字不变)
+--       · V389~V395: 语义图种子的 7 笔修正(判别式纠错 / 补 3 条边 / 重置假 assert_status /
+--                补 2 个镜像列 / 补页签挂载); semantic_edge 加 fallback_to_join_key boolean
+--       · V396: quotation_line_component_data 加唯一约束 uq_qlcd_line_component
+--                (line_item_id, component_id)。⚠️ 该迁移在**已有数据的库**上还含一段去重
+--                DELETE —— 空库无行, 本脚本不含; 已建库的内网环境走 deploy/0901-dbupdate.sql
+--       · V397: f_material_element_price 新增三参重载(text, date, uuid)(pending 感知取价);
+--                两参版改为委托三参并传 NULL, 签名与返回列逐字不变, 老调用方零改动
+--       · V398: quotation 加 user_data_version integer NOT NULL DEFAULT 0(保存草稿乐观锁)
+--       · 🆕 **本次首次纳入语义图配置种子**(269 行, 7 张表): 与 costing_bom_tree_config
+--          同性质 —— 是系统配置不是业务数据。不带它, 新建库的取数配置器无节点无边、
+--          什么都配不出, 与走 0901-dbupdate.sql 升级上来的库行为不一致。
+--       · 基线号上调理由同 V368/V382: V388 含 CREATE TABLE 无 IF NOT EXISTS, 非幂等,
+--          基线不上调则连 Quarkus 时重放会因"表已存在"启动失败。
+--       · 已建库的内网环境如需从 V387 补到 V398, 用等价增量脚本 deploy/0901-dbupdate.sql
+-- 内容: 150 业务活表 + flyway_schema_history + 3 活视图 + 6 函数 + 1 个 admin 用户 + 语义图种子 269 行
 --       + 2 条 BOM 树递归 SQL 配置(唯一的业务配置种子, 见文件末尾)
 --       + 1 条 price_adjust_settings 系统参数种子行(id=1, 阈值 0.01, 守卫开关 false)
 -- 不含: task-0723 的 _drop 废弃表/视图、Flyway 历史迁移记录(仅留 1 行 baseline)、业务数据
@@ -487,6 +507,8 @@ CREATE TABLE public.component_sql_view (
     created_by uuid,
     created_at timestamp(6) without time zone DEFAULT now() NOT NULL,
     updated_at timestamp(6) without time zone DEFAULT now() NOT NULL,
+    builder_config jsonb,
+    builder_version integer,
     CONSTRAINT chk_csv_scope CHECK (((scope)::text = ANY (ARRAY[('COMPONENT'::character varying)::text, ('GLOBAL'::character varying)::text]))),
     CONSTRAINT chk_csv_status CHECK (((status)::text = ANY (ARRAY[('ACTIVE'::character varying)::text, ('INACTIVE'::character varying)::text])))
 );
@@ -2823,7 +2845,8 @@ CREATE TABLE public.quotation (
     CONSTRAINT chk_q_priority CHECK (((priority)::text = ANY (ARRAY[('HIGH'::character varying)::text, ('MEDIUM'::character varying)::text, ('LOW'::character varying)::text]))),
     CONSTRAINT chk_q_stage CHECK (((stage)::text = ANY (ARRAY[('INITIAL_CONTACT'::character varying)::text, ('REQUIREMENT_CONFIRMATION'::character varying)::text, ('QUOTING'::character varying)::text, ('NEGOTIATION'::character varying)::text]))),
     CONSTRAINT chk_q_status CHECK (((status)::text = ANY ((ARRAY['DRAFT'::character varying, 'SUBMITTED'::character varying, 'APPROVED'::character varying, 'SENT'::character varying, 'ACCEPTED'::character varying, 'REJECTED'::character varying, 'EXPIRED'::character varying, 'CANCELLED'::character varying, 'COSTING_REJECTED'::character varying])::text[]))),
-    CONSTRAINT chk_q_type CHECK (((quote_type)::text = ANY (ARRAY[('STANDARD'::character varying)::text, ('DISCOUNT'::character varying)::text, ('BULK'::character varying)::text])))
+    CONSTRAINT chk_q_type CHECK (((quote_type)::text = ANY (ARRAY[('STANDARD'::character varying)::text, ('DISCOUNT'::character varying)::text, ('BULK'::character varying)::text]))),
+    user_data_version integer DEFAULT 0 NOT NULL
 );
 
 
@@ -3183,6 +3206,151 @@ CREATE TABLE public.sel_template_item_value (
     id uuid NOT NULL,
     item_id uuid NOT NULL,
     allowed_value_key character varying(100) NOT NULL
+);
+
+
+--
+-- Name: semantic_edge; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.semantic_edge (
+    id uuid NOT NULL,
+    from_node_id uuid NOT NULL,
+    to_node_id uuid NOT NULL,
+    edge_kind character varying(20) NOT NULL,
+    cardinality character varying(20) NOT NULL,
+    fallback_order integer,
+    coalesce_group character varying(40),
+    assert_status character varying(10) DEFAULT 'NA'::character varying NOT NULL,
+    assert_sample_rows bigint,
+    note text,
+    created_by character varying(80),
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_by character varying(80),
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    status character varying(20) DEFAULT 'ACTIVE'::character varying NOT NULL,
+    fallback_to_join_key boolean DEFAULT false NOT NULL,
+    CONSTRAINT chk_card CHECK (cardinality IN ('MANY_TO_ONE','ONE_TO_MANY'))
+);
+
+
+--
+-- Name: semantic_edge_key; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.semantic_edge_key (
+    id uuid NOT NULL,
+    edge_id uuid NOT NULL,
+    left_column character varying(120) NOT NULL,
+    right_column character varying(120) NOT NULL,
+    seq integer DEFAULT 0 NOT NULL
+);
+
+
+--
+-- Name: semantic_node; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.semantic_node (
+    id uuid NOT NULL,
+    node_key character varying(80) NOT NULL,
+    display_name character varying(200) NOT NULL,
+    short_name character varying(40) NOT NULL,
+    node_kind character varying(20) NOT NULL,
+    physical_table character varying(120),
+    scope character varying(20) DEFAULT 'NONE'::character varying NOT NULL,
+    anchor_expr character varying(200),
+    grain_columns text[] DEFAULT '{}'::text[] NOT NULL,
+    fixed_predicate text,
+    func_signature text,
+    discriminator text,
+    source_handler character varying(120),
+    dialect character varying(20) DEFAULT 'QUOTE'::character varying NOT NULL,
+    note text,
+    created_by character varying(80),
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_by character varying(80),
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    status character varying(20) DEFAULT 'ACTIVE'::character varying NOT NULL
+);
+
+
+--
+-- Name: semantic_node_column; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.semantic_node_column (
+    id uuid NOT NULL,
+    node_id uuid NOT NULL,
+    db_column character varying(120) NOT NULL,
+    display_name character varying(200) NOT NULL,
+    data_type character varying(20) NOT NULL,
+    is_code boolean DEFAULT false NOT NULL,
+    roles text[] DEFAULT '{}'::text[] NOT NULL,
+    sort_order integer DEFAULT 0 NOT NULL,
+    created_by character varying(80),
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_by character varying(80),
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    status character varying(20) DEFAULT 'ACTIVE'::character varying NOT NULL
+);
+
+
+--
+-- Name: semantic_tab_view; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.semantic_tab_view (
+    id uuid NOT NULL,
+    tab_type character varying(40) NOT NULL,
+    variant_key character varying(40) DEFAULT ''::character varying NOT NULL,
+    variant_label character varying(80),
+    anchor_node_id uuid NOT NULL,
+    switches text[] DEFAULT '{}'::text[] NOT NULL,
+    dialect character varying(20) DEFAULT 'QUOTE'::character varying NOT NULL,
+    created_by character varying(80),
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_by character varying(80),
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    status character varying(20) DEFAULT 'ACTIVE'::character varying NOT NULL
+);
+
+
+--
+-- Name: semantic_tab_view_column; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.semantic_tab_view_column (
+    id uuid NOT NULL,
+    view_id uuid NOT NULL,
+    column_id uuid NOT NULL,
+    roles text[] DEFAULT '{}'::text[] NOT NULL,
+    sort_order integer DEFAULT 0 NOT NULL,
+    created_by character varying(80),
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_by character varying(80),
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    status character varying(20) DEFAULT 'ACTIVE'::character varying NOT NULL
+);
+
+
+--
+-- Name: semantic_tab_view_node; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.semantic_tab_view_node (
+    id uuid NOT NULL,
+    view_id uuid NOT NULL,
+    node_id uuid NOT NULL,
+    role character varying(10) NOT NULL,
+    add_dims text[] DEFAULT '{}'::text[] NOT NULL,
+    sort_order integer DEFAULT 0 NOT NULL,
+    created_by character varying(80),
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_by character varying(80),
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    status character varying(20) DEFAULT 'ACTIVE'::character varying NOT NULL,
+    CONSTRAINT chk_role CHECK (role IN ('MAIN','AUX'))
 );
 
 
@@ -4806,6 +4974,14 @@ ALTER TABLE ONLY public.quotation_line_component_data
 
 
 --
+-- Name: quotation_line_component_data uq_qlcd_line_component; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quotation_line_component_data
+    ADD CONSTRAINT uq_qlcd_line_component UNIQUE (line_item_id, component_id);
+
+
+--
 -- Name: quotation_line_composite_process quotation_line_composite_process_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4987,6 +5163,118 @@ ALTER TABLE ONLY public.sel_template
 
 ALTER TABLE ONLY public.sel_template
     ADD CONSTRAINT sel_template_product_category_uk UNIQUE (product_category_id);
+
+
+--
+-- Name: semantic_edge semantic_edge_from_node_id_to_node_id_edge_kind_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.semantic_edge
+    ADD CONSTRAINT semantic_edge_from_node_id_to_node_id_edge_kind_key UNIQUE (from_node_id, to_node_id, edge_kind);
+
+
+--
+-- Name: semantic_edge semantic_edge_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.semantic_edge
+    ADD CONSTRAINT semantic_edge_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: semantic_edge_key semantic_edge_key_edge_id_seq_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.semantic_edge_key
+    ADD CONSTRAINT semantic_edge_key_edge_id_seq_key UNIQUE (edge_id, seq);
+
+
+--
+-- Name: semantic_edge_key semantic_edge_key_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.semantic_edge_key
+    ADD CONSTRAINT semantic_edge_key_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: semantic_node semantic_node_node_key_dialect_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.semantic_node
+    ADD CONSTRAINT semantic_node_node_key_dialect_key UNIQUE (node_key, dialect);
+
+
+--
+-- Name: semantic_node semantic_node_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.semantic_node
+    ADD CONSTRAINT semantic_node_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: semantic_node_column semantic_node_column_node_id_db_column_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.semantic_node_column
+    ADD CONSTRAINT semantic_node_column_node_id_db_column_key UNIQUE (node_id, db_column);
+
+
+--
+-- Name: semantic_node_column semantic_node_column_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.semantic_node_column
+    ADD CONSTRAINT semantic_node_column_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: semantic_tab_view semantic_tab_view_tab_type_variant_key_dialect_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.semantic_tab_view
+    ADD CONSTRAINT semantic_tab_view_tab_type_variant_key_dialect_key UNIQUE (tab_type, variant_key, dialect);
+
+
+--
+-- Name: semantic_tab_view semantic_tab_view_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.semantic_tab_view
+    ADD CONSTRAINT semantic_tab_view_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: semantic_tab_view_column semantic_tab_view_column_view_id_column_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.semantic_tab_view_column
+    ADD CONSTRAINT semantic_tab_view_column_view_id_column_id_key UNIQUE (view_id, column_id);
+
+
+--
+-- Name: semantic_tab_view_column semantic_tab_view_column_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.semantic_tab_view_column
+    ADD CONSTRAINT semantic_tab_view_column_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: semantic_tab_view_node semantic_tab_view_node_view_id_node_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.semantic_tab_view_node
+    ADD CONSTRAINT semantic_tab_view_node_view_id_node_id_key UNIQUE (view_id, node_id);
+
+
+--
+-- Name: semantic_tab_view_node semantic_tab_view_node_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.semantic_tab_view_node
+    ADD CONSTRAINT semantic_tab_view_node_pkey PRIMARY KEY (id);
 
 
 --
@@ -6581,6 +6869,41 @@ CREATE INDEX idx_resource_group_type ON public.resource_group USING btree (group
 
 
 --
+-- Name: idx_semantic_edge_from; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_semantic_edge_from ON public.semantic_edge USING btree (from_node_id);
+
+
+--
+-- Name: idx_semantic_edge_to; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_semantic_edge_to ON public.semantic_edge USING btree (to_node_id);
+
+
+--
+-- Name: idx_semantic_tvc_view; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_semantic_tvc_view ON public.semantic_tab_view_column USING btree (view_id);
+
+
+--
+-- Name: idx_semantic_tvn_view; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_semantic_tvn_view ON public.semantic_tab_view_node USING btree (view_id);
+
+
+--
+-- Name: uq_edge_fallback; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_edge_fallback ON public.semantic_edge USING btree (from_node_id, coalesce_group, fallback_order) WHERE ((fallback_order IS NOT NULL) AND (coalesce_group IS NOT NULL) AND ((status)::text = 'ACTIVE'::text));
+
+
+--
 -- Name: idx_sel_part_signature_quote; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8034,6 +8357,78 @@ ALTER TABLE ONLY public.sel_template_item_value
 
 
 --
+-- Name: semantic_edge semantic_edge_from_node_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.semantic_edge
+    ADD CONSTRAINT semantic_edge_from_node_id_fkey FOREIGN KEY (from_node_id) REFERENCES public.semantic_node(id);
+
+
+--
+-- Name: semantic_edge semantic_edge_to_node_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.semantic_edge
+    ADD CONSTRAINT semantic_edge_to_node_id_fkey FOREIGN KEY (to_node_id) REFERENCES public.semantic_node(id);
+
+
+--
+-- Name: semantic_edge_key semantic_edge_key_edge_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.semantic_edge_key
+    ADD CONSTRAINT semantic_edge_key_edge_id_fkey FOREIGN KEY (edge_id) REFERENCES public.semantic_edge(id) ON DELETE CASCADE;
+
+
+--
+-- Name: semantic_node_column semantic_node_column_node_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.semantic_node_column
+    ADD CONSTRAINT semantic_node_column_node_id_fkey FOREIGN KEY (node_id) REFERENCES public.semantic_node(id) ON DELETE CASCADE;
+
+
+--
+-- Name: semantic_tab_view semantic_tab_view_anchor_node_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.semantic_tab_view
+    ADD CONSTRAINT semantic_tab_view_anchor_node_id_fkey FOREIGN KEY (anchor_node_id) REFERENCES public.semantic_node(id);
+
+
+--
+-- Name: semantic_tab_view_column semantic_tab_view_column_column_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.semantic_tab_view_column
+    ADD CONSTRAINT semantic_tab_view_column_column_id_fkey FOREIGN KEY (column_id) REFERENCES public.semantic_node_column(id) ON DELETE CASCADE;
+
+
+--
+-- Name: semantic_tab_view_column semantic_tab_view_column_view_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.semantic_tab_view_column
+    ADD CONSTRAINT semantic_tab_view_column_view_id_fkey FOREIGN KEY (view_id) REFERENCES public.semantic_tab_view(id) ON DELETE CASCADE;
+
+
+--
+-- Name: semantic_tab_view_node semantic_tab_view_node_node_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.semantic_tab_view_node
+    ADD CONSTRAINT semantic_tab_view_node_node_id_fkey FOREIGN KEY (node_id) REFERENCES public.semantic_node(id);
+
+
+--
+-- Name: semantic_tab_view_node semantic_tab_view_node_view_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.semantic_tab_view_node
+    ADD CONSTRAINT semantic_tab_view_node_view_id_fkey FOREIGN KEY (view_id) REFERENCES public.semantic_tab_view(id) ON DELETE CASCADE;
+
+
+--
 -- Name: template template_category_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8226,29 +8621,42 @@ SELECT w.element_code,
  WHERE agg.raw_value IS NOT NULL;
 $$;
 
-CREATE FUNCTION public.f_material_element_price(p_customer_no text, p_base_date date) RETURNS TABLE(material_no character varying, element_code character varying, unit_price numeric, currency character varying, price_unit character varying)
+--
+-- Name: f_material_element_price(text, date, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.f_material_element_price(p_customer_no text, p_base_date date, p_pending_quotation_id uuid) RETURNS TABLE(material_no character varying, element_code character varying, unit_price numeric, currency character varying, price_unit character varying)
     LANGUAGE sql STABLE
     AS $$
-WITH pointers AS (
+WITH pointers AS (              -- 该客户已升版的料号 -> 当前指针指向的版本
     SELECT material_no, version_id
       FROM material_price_version_ref
      WHERE customer_no = p_customer_no
 ),
-versioned AS (
+versioned AS (                  -- 有指针的料号：直接读版本明细（权威快照，不重算）。
+                                 -- current_price IS NULL 的行（该元素本期彻底无价且从无历史价）
+                                 -- 不出现在这里，下面 realtime 分支会按元素级兜底补上（§11.3.2.1 第三行）。
     SELECT p.material_no, i.element_code, i.current_price AS unit_price,
            i.currency, i.price_unit
       FROM pointers p
       JOIN element_price_version_item i ON i.version_id = p.version_id
      WHERE i.current_price IS NOT NULL
 ),
-candidate_materials AS (
+candidate_materials AS (        -- 候选 material_no 全集：覆盖真实客户（报价侧 BOM/元素挂真实
+                                 -- customer_no）与 '_GLOBAL_'（核价侧 BOM/元素主档全局共享，
+                                 -- 客户维度只体现在元素价格策略上，不体现在 BOM 结构上）。
+                                 -- repair-260830：is_current 半边管正式行（核价侧 / 老客户 / 已转正），
+                                 -- pending_quotation_id 半边管本单 pending 影子行，两个分支各管一半、
+                                 -- 缺一不可，与 QuotePendingRewriter 的表改写口径对齐。
     SELECT material_no FROM material_bom_item
-     WHERE customer_no IN (p_customer_no, '_GLOBAL_') AND is_current = true
+     WHERE customer_no IN (p_customer_no, '_GLOBAL_')
+       AND (is_current = true OR pending_quotation_id = p_pending_quotation_id)
     UNION
     SELECT material_no FROM element_bom_item
-     WHERE customer_no IN (p_customer_no, '_GLOBAL_') AND is_current = true
+     WHERE customer_no IN (p_customer_no, '_GLOBAL_')
+       AND (is_current = true OR pending_quotation_id = p_pending_quotation_id)
 ),
-realtime AS (
+realtime AS (                   -- fallback：候选料号 × 全部实时算价元素（不改 f_customer_element_price 签名）
     SELECT cm.material_no, f.element_code, f.unit_price, f.currency, f.price_unit
       FROM candidate_materials cm
       CROSS JOIN f_customer_element_price(p_customer_no, p_base_date) f
@@ -8260,7 +8668,14 @@ SELECT r.material_no, r.element_code, r.unit_price, r.currency, r.price_unit
   FROM realtime r
   LEFT JOIN versioned v2
     ON v2.material_no = r.material_no AND v2.element_code = r.element_code
- WHERE v2.material_no IS NULL;
+ WHERE v2.material_no IS NULL;   -- 该 (料号,元素) 已由版本明细给出的不重复给实时价
+$$;
+
+
+CREATE FUNCTION public.f_material_element_price(p_customer_no text, p_base_date date) RETURNS TABLE(material_no character varying, element_code character varying, unit_price numeric, currency character varying, price_unit character varying)
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT * FROM f_material_element_price(p_customer_no, p_base_date, NULL::uuid);
 $$;
 
 CREATE FUNCTION public.get_bom_components(p_material_no text) RETURNS TABLE(js integer, hf_part_no text, material_no text, component_no text)
@@ -8425,18 +8840,311 @@ CREATE TABLE public.flyway_schema_history (
     CONSTRAINT flyway_schema_history_pk PRIMARY KEY (installed_rank)
 );
 CREATE INDEX flyway_schema_history_s_idx ON public.flyway_schema_history USING btree (success);
+
+-- ============================================================
+-- 取数配置器·语义图种子 (Flyway V388 种子 + V389~V395 修正后的终态)
+-- ------------------------------------------------------------
+-- 23 节点 / 145 节点列 / 25 边 / 29 连接键 / 7 页签视图 / 17 视图节点 / 23 列角色。
+-- 与 costing_bom_tree_config 同性质: 是系统配置而非业务数据 —— 不带它, 新建库的
+-- 取数配置器是空的(无节点无边, 什么都配不出), 与走 deploy/0901-dbupdate.sql 升级
+-- 上来的库行为不一致。这正是「新装环境功能缺失」类问题的来源, 故随建库脚本带上。
+--
+-- ⚠️ assert_status 全部为 'NA'(未校验)是**正确的初始状态**, 不是漏跑: V392 明确
+--    重置为 NA 不留假绿, 真值由运行时两条路径产出 —— ① 保存边时自动重算;
+--    ② 管理员调 POST /config/semantic-graph/revalidate 全量重算。
+--
+-- created_at / updated_at 刻意不写入, 走列默认 now() = 装机时间。
+-- ============================================================
+
+INSERT INTO public.semantic_node (id, node_key, display_name, short_name, node_kind, physical_table, scope, anchor_expr, grain_columns, fixed_predicate, func_signature, discriminator, source_handler, dialect, note, created_by, updated_by, status) VALUES
+    ('09d4b14c-3dfe-5618-adb1-a22ed10d43d8','FUNC_ELEMENT_PRICE','价格策略 f_material_element_price','价格策略','FUNCTION',NULL,'NONE',NULL,'{}',NULL,'f_material_element_price(:customerCode, :priceBaseDate)',NULL,NULL,'QUOTE','别名固定为 cep（AC-1 铁律）；不是 f_customer_element_price','seed',NULL,'ACTIVE'),
+    ('339b23d8-0ae8-5c0b-912b-b0a8a521d1ee','SELF_PROCESS','自制加工费','自制加工','SHEET','unit_price','FULL','up.finished_material_no','{code}',NULL,NULL,'price_type = ''PROCESS''','Q10SelfProcessFeeHandler','QUOTE',NULL,'seed',NULL,'ACTIVE'),
+    ('3dc89f8b-bd2f-5436-8a7e-54876e96341e','COMPONENT_OTHER','组成件其他费用','组件其他','SHEET','unit_price','FULL',NULL,'{code,cost_type}',NULL,NULL,'price_type = ''COMPONENT_OTHER''','Q13ComponentOtherFeeHandler','QUOTE',NULL,'seed',NULL,'ACTIVE'),
+    ('3fa2be85-aa65-5f24-bfc6-8a772f30b3f3','LOOKUP_MATERIAL_RECIPE','材质库','材质库','LOOKUP','material_recipe','NONE',NULL,'{}',NULL,NULL,NULL,NULL,'QUOTE',NULL,'seed',NULL,'ACTIVE'),
+    ('45d8b491-1f36-5bbf-b310-f104e744d4f5','INCOMING_OTHER','来料其他费用','来料其他','SHEET','unit_price','FULL','up.finished_material_no','{code,cost_type}',NULL,NULL,'price_type = ''INCOMING_MATERIAL_OTHER''','Q07IncomingOtherFeeHandler','QUOTE','实测：(code, finished_material_no) 6 行/4 键有 2 组重复，必须再带一维（要素）才唯一；对应现网 lqt_view（6 个组件）','seed',NULL,'ACTIVE'),
+    ('546538fb-d097-5f89-b027-b3e786f75930','INCOMING_FIXED','来料固定加工费','来料加工','SHEET','unit_price','FULL','up.finished_material_no','{code}',NULL,NULL,'price_type = ''INCOMING_MATERIAL_PROCESS''','Q06FixedProcessFeeHandler','QUOTE','实测：2/2 行的值在「基准值」，pricing_price 全空；对应现网 ll_view（13 个组件）','seed',NULL,'ACTIVE'),
+    ('616cbe9d-80c4-5137-a517-2b51500b2b75','CUSTOMER_MAP','客户料号与宏丰料号的关系','客户料号','SHEET','material_customer_map','NONE',NULL,'{}','customer_no = :customerCode',NULL,NULL,'Q02CustomerMapHandler','QUOTE',NULL,'seed',NULL,'ACTIVE'),
+    ('6a745bc9-f61a-5e97-a38c-e914d8475e2e','INCOMING_ANNUAL','来料年降','来料年降','SHEET','annual_discount','FULL',NULL,'{code,discount_order}',NULL,NULL,'discount_type = ''INCOMING_MATERIAL''','Q08IncomingAnnualDiscountHandler','QUOTE','孤儿 Sheet：按 N-7 移出本期范围，登记在图里但不挂任何页签','seed',NULL,'ACTIVE'),
+    ('6bfd2a0c-0cda-5c99-acd0-a14aefe10b46','ELEMENT_BOM_ITEM','物料与元素BOM','元素BOM','SHEET','element_bom_item','FULL','ebi.material_no','{material_part_no,component_no}',NULL,NULL,NULL,'Q04ElementBomHandler','QUOTE',NULL,'seed',NULL,'ACTIVE'),
+    ('705d08e8-0869-5989-a4bc-8855b56d0d15','ASSEMBLY_ANNUAL','组装加工费年降','组装年降','SHEET','annual_discount','FULL',NULL,'{process_no,discount_order}',NULL,NULL,'discount_type = ''ASSEMBLY_PROCESS''','Q15AssemblyAnnualDiscountHandler','QUOTE','孤儿 Sheet：按 N-7 移出本期范围，登记在图里但不挂任何页签','seed',NULL,'ACTIVE'),
+    ('71e481c2-8049-50f0-b3b7-b0d253f7ca8c','FINISHED_OTHER','成品其他费用','成品其他','SHEET','unit_price','FULL',NULL,'{cost_type}',NULL,NULL,'price_type = ''FINISHED_MATERIAL_OTHER''','Q11FinishedOtherFeeHandler','QUOTE','实测：4/4 行的值在「比例」，pricing_price 全空','seed',NULL,'ACTIVE'),
+    ('7307ccc7-06b3-5e3c-9beb-82aef17f0a73','MATERIAL_BOM','物料BOM','物料BOM','SHEET','material_bom_item','FULL','mbi.material_no','{component_no}',NULL,NULL,NULL,'MaterialBomMergeHandler','QUOTE','characteristic 由页签类型推导：RECIPE(材质元素边)/ASSEMBLY(零件边)/OUTSOURCED(外购件)，BOM 树不过滤','seed',NULL,'ACTIVE'),
+    ('73f1dd06-dd79-5c87-a2b3-7adcfe3412d0','LOOKUP_CUSTOMER_MAP','客户料号关系','客户料号关系','LOOKUP','material_customer_map','NONE',NULL,'{}','customer_no = :customerCode',NULL,NULL,NULL,'QUOTE','当前 19/22 条连接均未直连本节点（客户收窄改由「客户料号与宏丰料号的关系」SHEET 节点承担，见 AC-7）；按 AC-51① 的「5 张查名维表」口径登记保留','seed',NULL,'ACTIVE'),
+    ('96a33c62-4134-59de-8acb-f1306363c150','FINISHED_ANNUAL','年降系数','年降系数','SHEET','annual_discount','FULL',NULL,'{discount_order}',NULL,NULL,'discount_type = ''FINISHED''','Q19AnnualDiscountHandler','QUOTE','孤儿 Sheet：按 N-7 移出本期范围，登记在图里但不挂任何页签','seed',NULL,'ACTIVE'),
+    ('99fe2b0a-5e25-5c83-8708-4423a21bd7c1','INCOMING_RECYCLE','来料回收折扣','来料回收','SHEET','unit_price','FULL',NULL,'{code,finished_material_no}',NULL,NULL,'price_type = ''INCOMING_MATERIAL_RECYCLE''','Q09IncomingRecoveryHandler','QUOTE','THIN：全库仅 1 行数据，基数断言在此样本量下必然通过（D-32）；用于 BOM 树页签相关标量子查询','seed',NULL,'ACTIVE'),
+    ('a4d7ef7a-6a44-5b04-a63e-e1f3579a66fc','PLATING_COST','电镀费用','电镀费','SHEET','unit_price','FULL',NULL,'{code,cost_type}',NULL,NULL,'price_type = ''PLATING''','Q17PlatingCostHandler','QUOTE',NULL,'seed',NULL,'ACTIVE'),
+    ('aa084d67-9972-5824-b64b-09430339cc5f','PRODUCT_MASTER','物料主档 / 单重','主档','SHEET','material_master','FULL','mm.material_no','{}',NULL,NULL,NULL,'Q18UnitWeightHandler','QUOTE',NULL,'seed',NULL,'ACTIVE'),
+    ('ab66377c-a275-58f3-b6bc-ab2510ad4631','ELEMENT_RECOVERY','元素回收折扣','回收折扣','SHEET','element_bom_item','FULL',NULL,'{material_part_no,component_no}',NULL,NULL,NULL,'Q05ElementRecoveryHandler','QUOTE','与「物料与元素BOM」同表同粒度（SAME 边），无独立连接键','seed',NULL,'ACTIVE'),
+    ('acca66a6-1a1e-50b2-81e3-9b16b1015ad3','PLATING_SCHEME','电镀方案','电镀方案','SHEET','plating_scheme','NONE',NULL,'{}',NULL,NULL,NULL,'Q16PlatingSchemeHandler','QUOTE','孤儿 Sheet：现网数据完全孤立（hf_part_no 与 plating_scheme_no 双向全空），属导入侧问题（N-8）','seed',NULL,'ACTIVE'),
+    ('c45591e9-8f53-529e-b80f-22657967256b','LOOKUP_ELEMENT','元素库','元素库','LOOKUP','element','NONE',NULL,'{}',NULL,NULL,NULL,NULL,'QUOTE','= 元素符号 Ag/Cu，不是 element_no','seed',NULL,'ACTIVE'),
+    ('ce7cfb81-6f2b-5334-9e56-81ad1ed5e69d','LOOKUP_PROCESS_MASTER','工序库','工序库','LOOKUP','process_master','NONE',NULL,'{}',NULL,NULL,NULL,NULL,'QUOTE',NULL,'seed',NULL,'ACTIVE'),
+    ('d11dc5dd-3354-5076-9254-f8c5d0e4d8db','ASSEMBLY_FEE','组装加工费','组装加工','SHEET','capacity','NONE','ca.material_no','{process_no}',NULL,NULL,NULL,'Q14AssemblyProcessFeeHandler','QUOTE','收窄：system_type=''QUOTE'' AND is_current（无 customer_no 维度）','seed',NULL,'ACTIVE'),
+    ('d9e9192b-068f-523b-a4d9-3ec30ea500ab','LOOKUP_MATERIAL_MASTER','物料主档','主档','LOOKUP','material_master','NONE',NULL,'{}',NULL,NULL,NULL,NULL,'QUOTE',NULL,'seed',NULL,'ACTIVE');
+INSERT INTO public.semantic_node_column (id, node_id, db_column, display_name, data_type, is_code, roles, sort_order, created_by, updated_by, status) VALUES
+    ('03aed6a4-4a0f-5a01-891b-f162bcf7edc4','45d8b491-1f36-5bbf-b310-f104e744d4f5','currency','货币','TEXT','false','{}','5','seed',NULL,'ACTIVE'),
+    ('0556162b-d7a3-50e5-83bf-8edd229e9f06','acca66a6-1a1e-50b2-81e3-9b16b1015ad3','plating_area','电镀面积','NUMBER','false','{}','5','seed',NULL,'ACTIVE'),
+    ('06cbb3ff-2581-510b-9b54-3d684afbaf9c','96a33c62-4134-59de-8acb-f1306363c150','discount_times','年降次数','NUMBER','false','{}','3','seed',NULL,'ACTIVE'),
+    ('06eddf60-eb67-5ba7-aff8-f20735435c80','3dc89f8b-bd2f-5436-8a7e-54876e96341e','pricing_price','值','MONEY','false','{}','4','seed',NULL,'ACTIVE'),
+    ('08981be6-f3af-50d3-baf7-622f10d5cbbe','c45591e9-8f53-529e-b80f-22657967256b','element_name','元素名称','TEXT','false','{ROW_KEY}','1','seed',NULL,'ACTIVE'),
+    ('0a4d0595-1dae-5974-afe9-e5ac18b7343b','705d08e8-0869-5989-a4bc-8855b56d0d15','currency','货币','TEXT','false','{}','5','seed',NULL,'ACTIVE'),
+    ('0ca2adb3-d85c-5c70-9153-dd87311c7c7f','6bfd2a0c-0cda-5c99-acd0-a14aefe10b46','content','组成含量','NUMBER','false','{}','4','seed',NULL,'ACTIVE'),
+    ('0da8b84c-0366-57c4-9ad8-098cb1bdfb25','ab66377c-a275-58f3-b6bc-ab2510ad4631','recovery_currency','回收币种','TEXT','false','{}','1','seed',NULL,'ACTIVE'),
+    ('109d2815-3137-58df-8f39-a3572df263fa','546538fb-d097-5f89-b027-b3e786f75930','material_increase_ratio','材料结算涨幅比例','NUMBER','false','{}','9','seed',NULL,'ACTIVE'),
+    ('111ca028-7963-5209-bb02-c23af126a2e6','705d08e8-0869-5989-a4bc-8855b56d0d15','seq_no','项次','NUMBER','false','{SORT}','0','seed',NULL,'ACTIVE'),
+    ('12c8d185-5027-5312-b91e-516c0ce13c65','339b23d8-0ae8-5c0b-912b-b0a8a521d1ee','operation_no','工序号','TEXT','true','{ROW_KEY}','1','seed',NULL,'ACTIVE'),
+    ('13619cab-8063-5155-b325-8827adbda535','3dc89f8b-bd2f-5436-8a7e-54876e96341e','item_seq','项次','NUMBER','false','{SORT}','2','seed',NULL,'ACTIVE'),
+    ('15018717-3e57-57d5-bc27-b971070d0a49','546538fb-d097-5f89-b027-b3e786f75930','currency','货币','TEXT','false','{}','6','seed',NULL,'ACTIVE'),
+    ('1511d801-6d08-564b-ab4f-aa4464da1376','d11dc5dd-3354-5076-9254-f8c5d0e4d8db','process_name','工序名','TEXT','false','{ROW_KEY}','7','seed',NULL,'ACTIVE'),
+    ('167283cc-9ea0-5d20-b430-693ea52a2fd9','339b23d8-0ae8-5c0b-912b-b0a8a521d1ee','unit','计价单位','TEXT','false','{}','6','seed',NULL,'ACTIVE'),
+    ('19bdc243-4f82-50f3-b6e6-a82a3b030fa3','6bfd2a0c-0cda-5c99-acd0-a14aefe10b46','scrap_rate','损耗率','NUMBER','false','{}','5','seed',NULL,'ACTIVE'),
+    ('1aaa2bba-1e09-565c-8e25-4c303f7642e9','09d4b14c-3dfe-5618-adb1-a22ed10d43d8','currency','货币','TEXT','false','{}','1','seed',NULL,'ACTIVE'),
+    ('1b0a51d6-8697-5e82-96a5-c0b37be0c084','acca66a6-1a1e-50b2-81e3-9b16b1015ad3','surface_area','表面积','NUMBER','false','{}','6','seed',NULL,'ACTIVE'),
+    ('1bd92639-37d7-542e-a7ac-afc2f1d8331c','339b23d8-0ae8-5c0b-912b-b0a8a521d1ee','cost_ratio','比例','NUMBER','false','{}','4','seed',NULL,'ACTIVE'),
+    ('1f763f73-844c-5e1c-a6d6-5f721fa4777a','339b23d8-0ae8-5c0b-912b-b0a8a521d1ee','currency','货币','TEXT','false','{}','5','seed',NULL,'ACTIVE'),
+    ('1fb7039a-066c-5978-9804-0d8e3ccb50f0','6a745bc9-f61a-5e97-a38c-e914d8475e2e','fixed_discount_value','固定年降值','MONEY','false','{}','4','seed',NULL,'ACTIVE'),
+    ('200c60d8-d6e1-5b93-92a8-0520b02e5db1','45d8b491-1f36-5bbf-b310-f104e744d4f5','cost_ratio','比例','NUMBER','false','{}','4','seed',NULL,'ACTIVE'),
+    ('210017b4-7813-5b77-8c5e-cf7ee126f2c1','3dc89f8b-bd2f-5436-8a7e-54876e96341e','code','组成件料号','TEXT','true','{}','0','seed',NULL,'ACTIVE'),
+    ('23614d7b-4c0b-544e-8357-05b6862deca4','6bfd2a0c-0cda-5c99-acd0-a14aefe10b46','component_no','元素','TEXT','true','{ROW_KEY}','2','seed',NULL,'ACTIVE'),
+    ('23baa9fa-5272-5602-b646-e9f27b888cf9','6bfd2a0c-0cda-5c99-acd0-a14aefe10b46','issue_unit','毛用量单位','TEXT','false','{}','7','seed',NULL,'ACTIVE'),
+    ('24880657-c812-5895-aa61-c29c188e0953','6a745bc9-f61a-5e97-a38c-e914d8475e2e','seq_no','项次','NUMBER','false','{SORT}','0','seed',NULL,'ACTIVE'),
+    ('258a0191-8db6-591d-a3d9-cbdd96189f01','6bfd2a0c-0cda-5c99-acd0-a14aefe10b46','material_no','归属料号','TEXT','true','{ROW_KEY}','0','seed',NULL,'ACTIVE'),
+    ('269c043f-58c5-5609-af7a-fb660d566238','acca66a6-1a1e-50b2-81e3-9b16b1015ad3','seq_no','项次','NUMBER','false','{SORT}','1','seed',NULL,'ACTIVE'),
+    ('275632d8-7ab8-5384-adb0-8e5290a57d7b','99fe2b0a-5e25-5c83-8708-4423a21bd7c1','currency','货币','TEXT','false','{}','5','seed',NULL,'ACTIVE'),
+    ('2b6e6a1a-2f7a-4e4a-9a1a-9c9a1a2b6e6a','73f1dd06-dd79-5c87-a2b3-7adcfe3412d0','customer_product_no','客户产品编号','TEXT','false','{}','2','seed',NULL,'ACTIVE'),
+    ('2e260079-177c-50a8-8482-ea9e8ecb16d2','546538fb-d097-5f89-b027-b3e786f75930','is_fluctuate_with_material','是否随材料价格波动','TEXT','false','{}','8','seed',NULL,'ACTIVE'),
+    ('316fe5e5-4ae0-5386-aeb3-99b3bb1e1f37','616cbe9d-80c4-5137-a517-2b51500b2b75','customer_product_no','客户产品编号','TEXT','false','{}','2','seed',NULL,'ACTIVE'),
+    ('33927666-78ce-5027-b0ee-be471857f532','acca66a6-1a1e-50b2-81e3-9b16b1015ad3','plating_element','电镀元素','TEXT','false','{}','2','seed',NULL,'ACTIVE'),
+    ('358c03da-f87f-5f60-b3b5-52c5cac2126a','6bfd2a0c-0cda-5c99-acd0-a14aefe10b46','base_qty','净用量','NUMBER','false','{}','8','seed',NULL,'ACTIVE'),
+    ('36127c91-513c-5e65-8eff-a6fbcde6e410','aa084d67-9972-5824-b64b-09430339cc5f','material_no','销售料号','TEXT','true','{PART_NO,ROW_KEY}','0','seed',NULL,'ACTIVE'),
+    ('369e3b59-9dcd-55bb-8433-f08b00f74eb8','546538fb-d097-5f89-b027-b3e786f75930','unit','计价单位','TEXT','false','{}','7','seed',NULL,'ACTIVE'),
+    ('3742737b-cb8f-5573-8856-1a46cd582a64','6bfd2a0c-0cda-5c99-acd0-a14aefe10b46','seq_no','项次','NUMBER','false','{SORT}','3','seed',NULL,'ACTIVE'),
+    ('37a47c89-0c79-59f8-ae47-0e612bb5bb36','aa084d67-9972-5824-b64b-09430339cc5f','specification','规格','TEXT','false','{}','2','seed',NULL,'ACTIVE'),
+    ('3c5548ba-f74e-58e3-9b5a-aa81be37a36c','3dc89f8b-bd2f-5436-8a7e-54876e96341e','finished_material_no','归属成品料号','TEXT','true','{}','1','seed',NULL,'ACTIVE'),
+    ('3c7f7b2b-3a8b-4f5b-8b2b-8d8b2b3c7f7b','73f1dd06-dd79-5c87-a2b3-7adcfe3412d0','exchange_rate','汇率','NUMBER','false','{}','3','seed',NULL,'ACTIVE'),
+    ('3dfb0137-9a97-5cc7-bca3-09afc2a69cdb','71e481c2-8049-50f0-b3b7-b0d253f7ca8c','currency','货币','TEXT','false','{}','5','seed',NULL,'ACTIVE'),
+    ('3e2eb047-48b5-5bb8-b99b-c983c32a9758','3dc89f8b-bd2f-5436-8a7e-54876e96341e','currency','货币','TEXT','false','{}','5','seed',NULL,'ACTIVE'),
+    ('3e3b6f04-3a61-51dd-8092-8037a79fa539','705d08e8-0869-5989-a4bc-8855b56d0d15','fixed_discount_value','固定年降值','MONEY','false','{}','4','seed',NULL,'ACTIVE'),
+    ('3f20ffb5-6d9d-583c-a59f-989d267ef944','616cbe9d-80c4-5137-a517-2b51500b2b75','quote_currency','报价货币','TEXT','false','{}','4','seed',NULL,'ACTIVE'),
+    ('425e6ef5-ac0a-57b1-b8a6-67f34d439420','6bfd2a0c-0cda-5c99-acd0-a14aefe10b46','material_part_no','材质料号','TEXT','true','{PART_NO,ROW_KEY}','1','seed',NULL,'ACTIVE'),
+    ('45605504-bbcc-5b0d-bc30-075cd3a07f1d','616cbe9d-80c4-5137-a517-2b51500b2b75','customer_material_name','客户料号名称','TEXT','false','{PART_NAME}','1','seed',NULL,'ACTIVE'),
+    ('46840fcf-2ea4-5d72-8f9d-3b98f50cdad6','616cbe9d-80c4-5137-a517-2b51500b2b75','base_currency','基准货币','TEXT','false','{}','5','seed',NULL,'ACTIVE'),
+    ('48ddf797-7c2a-5ac4-9a35-05d6d84ae322','339b23d8-0ae8-5c0b-912b-b0a8a521d1ee','code','零件料号','TEXT','true','{PART_NO,ROW_KEY}','0','seed',NULL,'ACTIVE'),
+    ('49406b83-fa57-56f6-a734-58bc1b44f2cd','45d8b491-1f36-5bbf-b310-f104e744d4f5','seq_no','项次（一级）','NUMBER','false','{SORT}','1','seed',NULL,'ACTIVE'),
+    ('4a77d873-2127-556c-94c6-6d5a042598a7','71e481c2-8049-50f0-b3b7-b0d253f7ca8c','pricing_price','值','MONEY','false','{}','3','seed',NULL,'ACTIVE'),
+    ('4ffb50a8-5e24-5bca-b3bb-1326b646d5de','616cbe9d-80c4-5137-a517-2b51500b2b75','payment_method','付款方式','TEXT','false','{}','7','seed',NULL,'ACTIVE'),
+    ('5437a896-1b5f-54ac-a2f4-695dcdc97355','616cbe9d-80c4-5137-a517-2b51500b2b75','seq_no','项次','NUMBER','false','{SORT}','8','seed',NULL,'ACTIVE'),
+    ('54bb0f42-cc32-5e47-8ad7-a834fee8fa5e','d11dc5dd-3354-5076-9254-f8c5d0e4d8db','seq_no','项次','NUMBER','false','{SORT}','2','seed',NULL,'ACTIVE'),
+    ('5a9a5309-c533-56ee-9886-ccaa7ac874dc','71e481c2-8049-50f0-b3b7-b0d253f7ca8c','code','成品料号','TEXT','true','{}','0','seed',NULL,'ACTIVE'),
+    ('5c37f754-c051-58dc-a39a-b132a103903d','45d8b491-1f36-5bbf-b310-f104e744d4f5','cost_type','要素','TEXT','true','{ROW_KEY}','2','seed',NULL,'ACTIVE'),
+    ('5c40f113-cec1-5863-8a89-02bc1bc7e928','7307ccc7-06b3-5e3c-9beb-82aef17f0a73','scrap_rate','损耗率','NUMBER','false','{}','9','seed',NULL,'ACTIVE'),
+    ('664425d4-26af-52f5-9811-36c6fded33eb','d11dc5dd-3354-5076-9254-f8c5d0e4d8db','currency','货币','TEXT','false','{}','5','seed',NULL,'ACTIVE'),
+    ('677b7f72-7dd3-56b8-a7a0-ec1006d6d569','96a33c62-4134-59de-8acb-f1306363c150','fixed_discount_value','固定年降值','MONEY','false','{}','4','seed',NULL,'ACTIVE'),
+    ('67e981a6-0787-54e7-848c-5a9108a2f4f7','a4d7ef7a-6a44-5b04-a63e-e1f3579a66fc','cost_type','要素','TEXT','true','{ROW_KEY}','1','seed',NULL,'ACTIVE'),
+    ('6961a330-5d21-5acf-badd-68c1a12ec0d6','705d08e8-0869-5989-a4bc-8855b56d0d15','discount_order','年降顺序','NUMBER','true','{}','1','seed',NULL,'ACTIVE'),
+    ('6acca680-ef04-5fd4-9c0d-d4863a80d496','7307ccc7-06b3-5e3c-9beb-82aef17f0a73','seq_no','项次','NUMBER','false','{SORT}','3','seed',NULL,'ACTIVE'),
+    ('6cbc0337-acbd-54c9-b557-0ca2acb06b9f','acca66a6-1a1e-50b2-81e3-9b16b1015ad3','plating_requirement','电镀要求','TEXT','false','{}','8','seed',NULL,'ACTIVE'),
+    ('6d0bf9e2-edb3-5758-8580-2470da251c60','99fe2b0a-5e25-5c83-8708-4423a21bd7c1','unit','计价单位','TEXT','false','{}','6','seed',NULL,'ACTIVE'),
+    ('6f4f9626-2d97-5731-bf16-aa194d5413f2','339b23d8-0ae8-5c0b-912b-b0a8a521d1ee','seq_no','项次（一级）','NUMBER','false','{SORT}','2','seed',NULL,'ACTIVE'),
+    ('6fc2e38d-5aad-5008-a3e3-f6e0550431cb','d11dc5dd-3354-5076-9254-f8c5d0e4d8db','process_no','工序号','TEXT','true','{ROW_KEY}','1','seed',NULL,'ACTIVE'),
+    ('706ee002-ce3a-5c57-8d75-1cd502e47914','d11dc5dd-3354-5076-9254-f8c5d0e4d8db','production_type','生产类型','TEXT','false','{}','8','seed',NULL,'ACTIVE'),
+    ('736b7aec-0563-51c2-8a6e-74cb1c50ea3c','546538fb-d097-5f89-b027-b3e786f75930','operation_no','工序号','TEXT','true','{ROW_KEY}','1','seed',NULL,'ACTIVE'),
+    ('7468cc22-2cb8-58bb-b9bb-a0abcc312d6a','ab66377c-a275-58f3-b6bc-ab2510ad4631','recovery_discount','回收折扣','NUMBER','false','{}','0','seed',NULL,'ACTIVE'),
+    ('757778c1-88f6-59a8-847a-644526b7b8df','acca66a6-1a1e-50b2-81e3-9b16b1015ad3','plating_scheme_no','电镀方案号','TEXT','true','{}','0','seed',NULL,'ACTIVE'),
+    ('7672aaa3-fb7c-5056-8d39-9b8448f0e19d','d9e9192b-068f-523b-a4d9-3ec30ea500ab','material_name','物料名称','TEXT','false','{PART_NAME}','1','seed',NULL,'ACTIVE'),
+    ('7957b092-e981-5b79-b385-7ff1cbdbd797','96a33c62-4134-59de-8acb-f1306363c150','currency','货币','TEXT','false','{}','5','seed',NULL,'ACTIVE'),
+    ('7b7f6d93-4a0a-5029-a400-05f6b8e0fdf0','d11dc5dd-3354-5076-9254-f8c5d0e4d8db','fixed_cost','组装加工费','MONEY','false','{}','3','seed',NULL,'ACTIVE'),
+    ('7bcbb17c-ffce-506e-9210-8e91d766862f','7307ccc7-06b3-5e3c-9beb-82aef17f0a73','component_usage_type','产出料号类型','TEXT','false','{}','11','seed',NULL,'ACTIVE'),
+    ('7c0cc7e4-7c93-528b-b672-7b4a1c1a631d','c45591e9-8f53-529e-b80f-22657967256b','element_code','元素符号','TEXT','true','{}','0','seed',NULL,'ACTIVE'),
+    ('7c65a24e-3931-5602-9ce7-ed10f3a47cb6','45d8b491-1f36-5bbf-b310-f104e744d4f5','code','投入料号','TEXT','true','{PART_NO,ROW_KEY}','0','seed',NULL,'ACTIVE'),
+    ('7cb2a675-3683-5ecc-bc42-f3eb1ede4780','6a745bc9-f61a-5e97-a38c-e914d8475e2e','unit','计价单位','TEXT','false','{}','6','seed',NULL,'ACTIVE'),
+    ('7e6c5a60-41e2-551d-9d1c-15cb3a7b00f7','99fe2b0a-5e25-5c83-8708-4423a21bd7c1','finished_material_no','直接父件','TEXT','true','{}','1','seed',NULL,'ACTIVE'),
+    ('800f1399-2bea-53b9-9f4c-859022e48872','acca66a6-1a1e-50b2-81e3-9b16b1015ad3','plating_thickness','镀层厚度','NUMBER','false','{}','4','seed',NULL,'ACTIVE'),
+    ('8170b788-e172-53c4-b661-d187d9a44b62','99fe2b0a-5e25-5c83-8708-4423a21bd7c1','code','投入料号','TEXT','true','{}','0','seed',NULL,'ACTIVE'),
+    ('81a76b8c-5e65-5f83-82a7-4c3a5a4010c7','6bfd2a0c-0cda-5c99-acd0-a14aefe10b46','composition_qty','毛用量','NUMBER','false','{}','6','seed',NULL,'ACTIVE'),
+    ('837b2999-2bf2-5cdf-890b-5bff15c5a594','3dc89f8b-bd2f-5436-8a7e-54876e96341e','cost_type','要素','TEXT','true','{ROW_KEY}','3','seed',NULL,'ACTIVE'),
+    ('84877843-5331-5ff8-8bc2-70cd12db7d1e','7307ccc7-06b3-5e3c-9beb-82aef17f0a73','operation_no','工序号','TEXT','true','{ROW_KEY}','2','seed',NULL,'ACTIVE'),
+    ('848ef8a9-1860-51f1-b20a-90ad55789bed','6a745bc9-f61a-5e97-a38c-e914d8475e2e','discount_times','年降次数','NUMBER','false','{}','3','seed',NULL,'ACTIVE'),
+    ('87e67663-6945-5fe4-8188-7517a1986dc0','339b23d8-0ae8-5c0b-912b-b0a8a521d1ee','pricing_price','值','MONEY','false','{}','3','seed',NULL,'ACTIVE'),
+    ('8874ea6b-b1a3-5370-9754-bb3e0fe703e0','ce7cfb81-6f2b-5334-9e56-81ad1ed5e69d','process_no','工序号','TEXT','true','{}','0','seed',NULL,'ACTIVE'),
+    ('89b2c9a1-86d3-5148-8706-0f6ec104deaa','6a745bc9-f61a-5e97-a38c-e914d8475e2e','discount_order','年降顺序','NUMBER','true','{}','1','seed',NULL,'ACTIVE'),
+    ('8b523062-4175-566d-970d-a3b486ae305d','616cbe9d-80c4-5137-a517-2b51500b2b75','customer_drawing_no','客户图号','TEXT','false','{}','3','seed',NULL,'ACTIVE'),
+    ('8ce3ec7d-f01d-545f-968c-b8f266ff3c3e','546538fb-d097-5f89-b027-b3e786f75930','material_fixed_increase','材料固定的涨幅值','MONEY','false','{}','10','seed',NULL,'ACTIVE'),
+    ('8f14e674-9bf5-5fe9-8902-ee46a8110709','a4d7ef7a-6a44-5b04-a63e-e1f3579a66fc','currency','货币','TEXT','false','{}','3','seed',NULL,'ACTIVE'),
+    ('8fcdf3a8-9663-523c-83de-49acdef4124c','546538fb-d097-5f89-b027-b3e786f75930','code','投入料号','TEXT','true','{PART_NO,ROW_KEY}','0','seed',NULL,'ACTIVE'),
+    ('93e8bf83-7b60-5e23-ae13-fe2abf9bbc61','99fe2b0a-5e25-5c83-8708-4423a21bd7c1','pricing_price','值','MONEY','false','{}','4','seed',NULL,'ACTIVE'),
+    ('969e3809-c534-5076-bc3d-aa3ff3db9574','7307ccc7-06b3-5e3c-9beb-82aef17f0a73','weight_unit','重量单位','TEXT','false','{}','8','seed',NULL,'ACTIVE'),
+    ('9d2c167b-bd2b-507e-9aae-d5ee8364fa35','aa084d67-9972-5824-b64b-09430339cc5f','material_type','物料类型','TEXT','false','{}','6','seed',NULL,'ACTIVE'),
+    ('9daae3d2-0e58-524d-aad9-4264122258b2','7307ccc7-06b3-5e3c-9beb-82aef17f0a73','composition_qty','组成数量','NUMBER','false','{}','4','seed',NULL,'ACTIVE'),
+    ('9dd87aa0-0eb9-5709-8425-2c9ec0828cb9','ab66377c-a275-58f3-b6bc-ab2510ad4631','recovery_unit','回收单位','TEXT','false','{}','2','seed',NULL,'ACTIVE'),
+    ('9de117db-507f-5241-9040-3ee57f667e4e','acca66a6-1a1e-50b2-81e3-9b16b1015ad3','element_usage','元素用量','NUMBER','false','{}','7','seed',NULL,'ACTIVE'),
+    ('a2a40326-0674-5f67-b66f-bbabfe26c6d3','a4d7ef7a-6a44-5b04-a63e-e1f3579a66fc','pricing_price','值','MONEY','false','{}','2','seed',NULL,'ACTIVE'),
+    ('a7dd7def-955e-557b-9a56-59e9a0d75ec3','6a745bc9-f61a-5e97-a38c-e914d8475e2e','currency','货币','TEXT','false','{}','5','seed',NULL,'ACTIVE'),
+    ('aab8b6d0-add2-51f7-a18b-ceacdee0205e','71e481c2-8049-50f0-b3b7-b0d253f7ca8c','seq_no','项次','NUMBER','false','{SORT}','1','seed',NULL,'ACTIVE'),
+    ('ad543700-a2fe-5865-a2c0-f6162a5b5daa','99fe2b0a-5e25-5c83-8708-4423a21bd7c1','cost_ratio','回收折扣%','NUMBER','false','{}','3','seed',NULL,'ACTIVE'),
+    ('ae85a60e-11b8-5a64-9660-cc0df1aa68b8','96a33c62-4134-59de-8acb-f1306363c150','discount_order','年降顺序','NUMBER','true','{}','1','seed',NULL,'ACTIVE'),
+    ('ae9ef636-7ee4-5324-a168-0b59596ecb55','6a745bc9-f61a-5e97-a38c-e914d8475e2e','discount_ratio','年降比例','NUMBER','false','{}','2','seed',NULL,'ACTIVE'),
+    ('b10d0fa7-e206-5441-a0a0-620aa622d165','546538fb-d097-5f89-b027-b3e786f75930','cost_ratio','比例','NUMBER','false','{}','5','seed',NULL,'ACTIVE'),
+    ('b19cc50b-3bb1-576d-9145-6be73513bbf2','705d08e8-0869-5989-a4bc-8855b56d0d15','discount_times','年降次数','NUMBER','false','{}','3','seed',NULL,'ACTIVE'),
+    ('b53a2d6a-e62b-59c0-b364-592fc2058de5','7307ccc7-06b3-5e3c-9beb-82aef17f0a73','component_no','组成件料号','TEXT','true','{PART_NO,ROW_KEY}','1','seed',NULL,'ACTIVE'),
+    ('b673d069-6c11-50f3-90bd-cceace563a48','546538fb-d097-5f89-b027-b3e786f75930','seq_no','项次','NUMBER','false','{SORT}','2','seed',NULL,'ACTIVE'),
+    ('b85aa7c9-ba54-5eef-a8a4-46086c070d89','7307ccc7-06b3-5e3c-9beb-82aef17f0a73','rough_weight','材料毛重','NUMBER','false','{}','6','seed',NULL,'ACTIVE'),
+    ('bf43a68a-f54e-5323-aebc-8b43292d67cc','71e481c2-8049-50f0-b3b7-b0d253f7ca8c','unit','计价单位','TEXT','false','{}','6','seed',NULL,'ACTIVE'),
+    ('c305412c-7f55-5a4b-beff-bac35af039d6','71e481c2-8049-50f0-b3b7-b0d253f7ca8c','cost_ratio','比例','NUMBER','false','{}','4','seed',NULL,'ACTIVE'),
+    ('c4aa9e61-2899-5897-8c83-4bad07327bfe','96a33c62-4134-59de-8acb-f1306363c150','unit','计价单位','TEXT','false','{}','6','seed',NULL,'ACTIVE'),
+    ('c5e58925-2424-592f-ad23-96c256e9f870','7307ccc7-06b3-5e3c-9beb-82aef17f0a73','material_no','归属料号','TEXT','true','{ROW_KEY}','0','seed',NULL,'ACTIVE'),
+    ('c67b2126-525f-59b2-b65e-b277ce01ac39','96a33c62-4134-59de-8acb-f1306363c150','seq_no','项次','NUMBER','false','{SORT}','0','seed',NULL,'ACTIVE'),
+    ('c789b55b-fd65-5a9f-9fe3-acd9ee226771','aa084d67-9972-5824-b64b-09430339cc5f','material_name','物料名称','TEXT','false','{PART_NAME}','1','seed',NULL,'ACTIVE'),
+    ('c964a445-1f1e-578d-948e-da2f8aa19718','99fe2b0a-5e25-5c83-8708-4423a21bd7c1','seq_no','项次','NUMBER','false','{SORT}','2','seed',NULL,'ACTIVE'),
+    ('cbb725f1-f7c6-54af-b169-a4ae4a9055f5','546538fb-d097-5f89-b027-b3e786f75930','base_value','基准值','MONEY','false','{}','4','seed',NULL,'ACTIVE'),
+    ('cbc89f92-6b6b-50bb-80a4-a07c6ef6d180','616cbe9d-80c4-5137-a517-2b51500b2b75','material_no','料号','TEXT','true','{}','0','seed',NULL,'ACTIVE'),
+    ('d0735f4c-340f-5f08-941c-3df7dc510358','45d8b491-1f36-5bbf-b310-f104e744d4f5','unit','计价单位','TEXT','false','{}','6','seed',NULL,'ACTIVE'),
+    ('d1fcc8f5-ea01-5060-bed9-081c5676a306','aa084d67-9972-5824-b64b-09430339cc5f','standard_unit','标准单位','TEXT','false','{}','4','seed',NULL,'ACTIVE'),
+    ('d2512279-2ad6-5e06-bc8e-54c3535fdf0b','45d8b491-1f36-5bbf-b310-f104e744d4f5','pricing_price','值','MONEY','false','{}','3','seed',NULL,'ACTIVE'),
+    ('d4fc5231-bced-5a49-9cbb-24c2f5fcedd4','73f1dd06-dd79-5c87-a2b3-7adcfe3412d0','material_no','料号','TEXT','true','{}','0','seed',NULL,'ACTIVE'),
+    ('d518fcee-138d-5144-8568-9c233341e26c','d11dc5dd-3354-5076-9254-f8c5d0e4d8db','default_defect_rate','拒收率','NUMBER','false','{}','6','seed',NULL,'ACTIVE'),
+    ('d53ce7b8-9748-5077-8d2b-dfb4f6b02eb8','aa084d67-9972-5824-b64b-09430339cc5f','unit_weight','单重','NUMBER','false','{}','5','seed',NULL,'ACTIVE'),
+    ('da0e871a-95a2-5b36-8b25-18cfef8d705b','7307ccc7-06b3-5e3c-9beb-82aef17f0a73','issue_unit','组成单位','TEXT','false','{}','5','seed',NULL,'ACTIVE'),
+    ('db7b6982-da94-5d0b-905d-e5d9fe407105','a4d7ef7a-6a44-5b04-a63e-e1f3579a66fc','code','零件料号','TEXT','true','{}','0','seed',NULL,'ACTIVE'),
+    ('dc4fe6d5-135e-5363-bc01-9cdc2cb58d39','7307ccc7-06b3-5e3c-9beb-82aef17f0a73','net_weight','材料净重','NUMBER','false','{}','7','seed',NULL,'ACTIVE'),
+    ('e0cfa015-cddb-5d15-b66f-4acd0241523c','616cbe9d-80c4-5137-a517-2b51500b2b75','exchange_rate','汇率','NUMBER','false','{}','6','seed',NULL,'ACTIVE'),
+    ('e1bcc481-9c83-5f6d-a467-c2d673416912','a4d7ef7a-6a44-5b04-a63e-e1f3579a66fc','defect_rate','损耗','NUMBER','false','{}','5','seed',NULL,'ACTIVE'),
+    ('e20c3270-81c8-5618-bf22-49b4d6a30d94','aa084d67-9972-5824-b64b-09430339cc5f','dimension','尺寸','TEXT','false','{}','3','seed',NULL,'ACTIVE'),
+    ('e3036069-0452-5600-8abe-6e4c814837cc','d9e9192b-068f-523b-a4d9-3ec30ea500ab','material_no','物料料号','TEXT','true','{}','0','seed',NULL,'ACTIVE'),
+    ('e6878f3a-7e74-5b02-abfb-a09a770df566','a4d7ef7a-6a44-5b04-a63e-e1f3579a66fc','unit','计价单位','TEXT','false','{}','4','seed',NULL,'ACTIVE'),
+    ('e76fc04e-2a20-5e00-a6cd-b5b97d787263','3fa2be85-aa65-5f24-bfc6-8a772f30b3f3','code','材质代码','TEXT','true','{}','0','seed',NULL,'ACTIVE'),
+    ('e8351dac-7f22-512e-a694-254284a8ab87','705d08e8-0869-5989-a4bc-8855b56d0d15','unit','计价单位','TEXT','false','{}','6','seed',NULL,'ACTIVE'),
+    ('eb13e3fa-4de7-57c2-99f2-4309be99925e','3dc89f8b-bd2f-5436-8a7e-54876e96341e','unit','计价单位','TEXT','false','{}','6','seed',NULL,'ACTIVE'),
+    ('ec0f82d8-c7b2-509d-9757-8f0e5822216b','546538fb-d097-5f89-b027-b3e786f75930','cost_type','要素','TEXT','true','{ROW_KEY}','3','seed',NULL,'ACTIVE'),
+    ('ecd1db0b-f010-56b3-8f07-ccf0faee6da1','705d08e8-0869-5989-a4bc-8855b56d0d15','discount_ratio','年降比例','NUMBER','false','{}','2','seed',NULL,'ACTIVE'),
+    ('ecdd8794-ad25-5bfd-b5d4-5ba3af825355','ce7cfb81-6f2b-5334-9e56-81ad1ed5e69d','process_name','工序名','TEXT','false','{ROW_KEY}','1','seed',NULL,'ACTIVE'),
+    ('f07a69ce-5a6f-59c9-9eef-f7706c882604','7307ccc7-06b3-5e3c-9beb-82aef17f0a73','defect_rate','不良率','NUMBER','false','{}','10','seed',NULL,'ACTIVE'),
+    ('f100e280-a298-5f18-94ce-a144a242af5e','09d4b14c-3dfe-5618-adb1-a22ed10d43d8','unit_price','元素单价','MONEY','false','{}','0','seed',NULL,'ACTIVE'),
+    ('f2336c4a-3b9f-5da6-b7db-c61752061050','96a33c62-4134-59de-8acb-f1306363c150','discount_ratio','年降比例','NUMBER','false','{}','2','seed',NULL,'ACTIVE'),
+    ('f25e7e2c-c60f-5916-99c9-89862a2a0c13','d11dc5dd-3354-5076-9254-f8c5d0e4d8db','material_no','成品料号','TEXT','true','{}','0','seed',NULL,'ACTIVE'),
+    ('f3990a89-717a-59c2-a9d9-030399071aaf','73f1dd06-dd79-5c87-a2b3-7adcfe3412d0','customer_material_name','客户料号名称','TEXT','false','{PART_NAME}','1','seed',NULL,'ACTIVE'),
+    ('f52a3a92-a938-532b-9e62-d02bad51e5cb','acca66a6-1a1e-50b2-81e3-9b16b1015ad3','plating_method','电镀方式','TEXT','false','{}','3','seed',NULL,'ACTIVE'),
+    ('f5bd1440-1a8f-50fb-b320-a4c8532532bc','71e481c2-8049-50f0-b3b7-b0d253f7ca8c','cost_type','要素','TEXT','true','{ROW_KEY}','2','seed',NULL,'ACTIVE'),
+    ('f6d365ed-1e3a-5b48-8970-a2b19a4fb97e','d11dc5dd-3354-5076-9254-f8c5d0e4d8db','capacity_unit','计价单位','TEXT','false','{}','4','seed',NULL,'ACTIVE'),
+    ('fa70008a-ef75-5cde-8a65-ea68bab77c87','3fa2be85-aa65-5f24-bfc6-8a772f30b3f3','name','材质名称','TEXT','false','{PART_NAME}','1','seed',NULL,'ACTIVE');
+INSERT INTO public.semantic_edge (id, from_node_id, to_node_id, edge_kind, cardinality, fallback_order, coalesce_group, assert_status, assert_sample_rows, note, created_by, updated_by, status, fallback_to_join_key) VALUES
+    ('0b7e9ac0-6df1-537f-b5a7-4139f9841e82','aa084d67-9972-5824-b64b-09430339cc5f','d11dc5dd-3354-5076-9254-f8c5d0e4d8db','GRAIN','ONE_TO_MANY',NULL,NULL,'NA',NULL,NULL,'seed',NULL,'ACTIVE','false'),
+    ('2a9aad2d-5692-5e73-a647-37c48b436a3a','45d8b491-1f36-5bbf-b310-f104e744d4f5','d9e9192b-068f-523b-a4d9-3ec30ea500ab','LOOKUP','MANY_TO_ONE','0','lqt_name','NA',NULL,'src=lqt_view 实测确认','seed',NULL,'ACTIVE','false'),
+    ('35545ae1-a771-560f-aadd-a43046c160d2','546538fb-d097-5f89-b027-b3e786f75930','d9e9192b-068f-523b-a4d9-3ec30ea500ab','LOOKUP','MANY_TO_ONE','0','ll_name','NA',NULL,NULL,'seed',NULL,'ACTIVE','false'),
+    ('4e40e2d9-e1b6-5f91-a53b-cc2c9c5ca6f5','7307ccc7-06b3-5e3c-9beb-82aef17f0a73','ce7cfb81-6f2b-5334-9e56-81ad1ed5e69d','LOOKUP','MANY_TO_ONE','0',NULL,'NA',NULL,NULL,'seed',NULL,'ACTIVE','false'),
+    ('583aa9e5-a9f6-5a7a-b580-d1e93efc0bcd','546538fb-d097-5f89-b027-b3e786f75930','ce7cfb81-6f2b-5334-9e56-81ad1ed5e69d','LOOKUP','MANY_TO_ONE','0',NULL,'NA',NULL,'src=ll_view 实测确认；仅「来料固定加工费」variant 有此列，lqt_view 无','seed',NULL,'ACTIVE','true'),
+    ('6355d369-7719-568b-8017-72091d93e8c8','7307ccc7-06b3-5e3c-9beb-82aef17f0a73','99fe2b0a-5e25-5c83-8708-4423a21bd7c1','SUB','MANY_TO_ONE',NULL,NULL,'NA',NULL,'src=bom_view 实测确认；THIN（全库仅 1 行，D-32 已知假阴性盲区）；三层以上 BOM 孙件行取不到值（现网既有取舍）','seed',NULL,'ACTIVE','false'),
+    ('6f5509b4-2739-56d9-b546-778cbb6017a2','339b23d8-0ae8-5c0b-912b-b0a8a521d1ee','d9e9192b-068f-523b-a4d9-3ec30ea500ab','LOOKUP','MANY_TO_ONE','0','jg_name','NA',NULL,NULL,'seed',NULL,'ACTIVE','false'),
+    ('777b091b-91de-5b0c-b0a9-14071a119d6b','7307ccc7-06b3-5e3c-9beb-82aef17f0a73','d9e9192b-068f-523b-a4d9-3ec30ea500ab','LOOKUP','MANY_TO_ONE','0',NULL,'NA',NULL,'外购件与 BOM 树两页签共用','seed',NULL,'ACTIVE','false'),
+    ('7bf7a949-d4f1-58e0-976c-5579022221d7','339b23d8-0ae8-5c0b-912b-b0a8a521d1ee','a4d7ef7a-6a44-5b04-a63e-e1f3579a66fc','SUB','MANY_TO_ONE',NULL,NULL,'NA',NULL,'附加谓词 pl.price_type=''PLATING''','seed',NULL,'ACTIVE','false'),
+    ('8b59a665-58dc-5ea0-9342-e01b491ef7cb','6bfd2a0c-0cda-5c99-acd0-a14aefe10b46','3fa2be85-aa65-5f24-bfc6-8a772f30b3f3','LOOKUP','MANY_TO_ONE','0','ebi_name','NA',NULL,NULL,'seed',NULL,'ACTIVE','false'),
+    ('9dbb189b-acf0-58c5-957c-da6f6732aa82','6bfd2a0c-0cda-5c99-acd0-a14aefe10b46','d9e9192b-068f-523b-a4d9-3ec30ea500ab','LOOKUP','MANY_TO_ONE','1','ebi_name','NA',NULL,NULL,'seed',NULL,'ACTIVE','false'),
+    ('a4e7dd72-cd7a-463e-abdc-944c0c700f3d','aa084d67-9972-5824-b64b-09430339cc5f','73f1dd06-dd79-5c87-a2b3-7adcfe3412d0','LOOKUP','MANY_TO_ONE',NULL,NULL,'NA',NULL,'D-45②：补种子遗漏——对照 cp_view 实际 SQL（LEFT JOIN material_customer_map mcm ON mcm.material_no=mm.material_no AND mcm.customer_no=:customerCode）','seed',NULL,'ACTIVE','false'),
+    ('b14346b2-62df-46f9-8be9-1b12ea12553c','339b23d8-0ae8-5c0b-912b-b0a8a521d1ee','3fa2be85-aa65-5f24-bfc6-8a772f30b3f3','LOOKUP','MANY_TO_ONE','1','jg_name','NA',NULL,'D-45 复验②：补种子遗漏——对照 jg_view 实际 SQL（LEFT JOIN material_recipe mr ON mr.code=up.code），与→物料主档边同组 jg_name，fallback_order=1（物料主档 fb=0 在前，材质库 fb=1 兜底在后，顺序对照 COALESCE(mm.material_name, mr.name)，与材质元素 ebi_name 组的顺序相反，不可颠倒）','seed',NULL,'ACTIVE','false'),
+    ('b67fe927-ae72-5795-b944-691d0c794420','aa084d67-9972-5824-b64b-09430339cc5f','616cbe9d-80c4-5137-a517-2b51500b2b75','JOIN','MANY_TO_ONE',NULL,NULL,'NA',NULL,'收窄：mcm.customer_no = :customerCode（客户维度收窄）','seed',NULL,'ACTIVE','false'),
+    ('b8a895bb-c2a1-58f5-911e-894ccdabcdc1','45d8b491-1f36-5bbf-b310-f104e744d4f5','3fa2be85-aa65-5f24-bfc6-8a772f30b3f3','LOOKUP','MANY_TO_ONE','1','lqt_name','NA',NULL,'src=lqt_view 实测确认','seed',NULL,'ACTIVE','false'),
+    ('c1a9e2b4-7f3d-5a6e-9c8b-2d4e6f8a0b1c','6bfd2a0c-0cda-5c99-acd0-a14aefe10b46','546538fb-d097-5f89-b027-b3e786f75930','GRAIN','ONE_TO_MANY',NULL,NULL,'NA',NULL,'D-68：材质元素页签补挂附属源『来料加工费』——AC-19 校验需要先能编译通过，才谈得上校验小计阻断','seed',NULL,'ACTIVE','false'),
+    ('c5c92eee-bf7d-57b9-9ba0-40e69cdcfa85','7307ccc7-06b3-5e3c-9beb-82aef17f0a73','3dc89f8b-bd2f-5436-8a7e-54876e96341e','SUB','MANY_TO_ONE',NULL,NULL,'NA',NULL,'附加谓词 co.price_type=''COMPONENT_OTHER''','seed',NULL,'ACTIVE','false'),
+    ('c66f52be-6860-55ed-9913-9efe8ddd1e6e','6bfd2a0c-0cda-5c99-acd0-a14aefe10b46','c45591e9-8f53-529e-b80f-22657967256b','LOOKUP','MANY_TO_ONE','0',NULL,'NA',NULL,NULL,'seed',NULL,'ACTIVE','false'),
+    ('cfb155f4-dd5b-5514-be10-a2a5c326ef7a','546538fb-d097-5f89-b027-b3e786f75930','3fa2be85-aa65-5f24-bfc6-8a772f30b3f3','LOOKUP','MANY_TO_ONE','1','ll_name','NA',NULL,'src=ll_view 实测确认','seed',NULL,'ACTIVE','false'),
+    ('e58ef8c1-68ec-5a1c-b213-b4265a8c40f1','6bfd2a0c-0cda-5c99-acd0-a14aefe10b46','7307ccc7-06b3-5e3c-9beb-82aef17f0a73','SUB','MANY_TO_ONE',NULL,NULL,'NA',NULL,'相关标量子查询，非 LEFT JOIN；characteristic=RECIPE 边','seed',NULL,'ACTIVE','false'),
+    ('e7fb81ad-61d2-553b-8ffb-49a965db80b6','aa084d67-9972-5824-b64b-09430339cc5f','71e481c2-8049-50f0-b3b7-b0d253f7ca8c','GRAIN','ONE_TO_MANY',NULL,NULL,'NA',NULL,NULL,'seed',NULL,'ACTIVE','false'),
+    ('e8502423-fb83-5af1-a2f3-f6eeb6fc1462','6bfd2a0c-0cda-5c99-acd0-a14aefe10b46','09d4b14c-3dfe-5618-adb1-a22ed10d43d8','PRICE','MANY_TO_ONE',NULL,NULL,'NA',NULL,'双条件 JOIN；cep.material_no 必须与 hf_part_no 表达式逐字一致（AC-1⑤）','seed',NULL,'ACTIVE','false'),
+    ('e8f70040-5d6c-5394-a9f7-e17ad58541ca','339b23d8-0ae8-5c0b-912b-b0a8a521d1ee','ce7cfb81-6f2b-5334-9e56-81ad1ed5e69d','LOOKUP','MANY_TO_ONE','0',NULL,'NA',NULL,NULL,'seed',NULL,'ACTIVE','true'),
+    ('e9034a58-ee53-52c0-bed8-7fdf40e213a9','339b23d8-0ae8-5c0b-912b-b0a8a521d1ee','7307ccc7-06b3-5e3c-9beb-82aef17f0a73','SUB','MANY_TO_ONE',NULL,NULL,'NA',NULL,'characteristic=ASSEMBLY 边','seed',NULL,'ACTIVE','false'),
+    ('fe1ec0c2-f011-592e-b040-df84c0c76f10','6bfd2a0c-0cda-5c99-acd0-a14aefe10b46','ab66377c-a275-58f3-b6bc-ab2510ad4631','SAME','MANY_TO_ONE',NULL,NULL,'NA',NULL,'同表同粒度，无连接键','seed',NULL,'ACTIVE','false');
+INSERT INTO public.semantic_edge_key (id, edge_id, left_column, right_column, seq) VALUES
+    ('06181181-ee4c-5995-b52f-e19fec1724a0','c66f52be-6860-55ed-9913-9efe8ddd1e6e','component_no','element_code','0'),
+    ('0a0a2e5a-3936-5a64-a8e6-b8fc33fcf35a','583aa9e5-a9f6-5a7a-b580-d1e93efc0bcd','operation_no','process_no','0'),
+    ('0c7d4624-c196-5d8a-9e05-d48567bec516','e8502423-fb83-5af1-a2f3-f6eeb6fc1462','component_no','element_code','0'),
+    ('2f780864-9e3a-52f4-ac44-ffdfb759b667','e9034a58-ee53-52c0-bed8-7fdf40e213a9','code','component_no','1'),
+    ('53503a9e-f60a-4674-b299-f2e599359d62','b14346b2-62df-46f9-8be9-1b12ea12553c','code','code','0'),
+    ('668b97b4-889a-5085-b47f-64b16bdf85b7','8b59a665-58dc-5ea0-9342-e01b491ef7cb','material_part_no','code','0'),
+    ('6aaeed73-8ae3-5816-9711-164a53ccb2f4','c5c92eee-bf7d-57b9-9ba0-40e69cdcfa85','component_no','code','1'),
+    ('78c7d2d3-b7a6-50dc-8250-21a05676286a','6355d369-7719-568b-8017-72091d93e8c8','material_no','finished_material_no','1'),
+    ('7cc28f43-b28b-5952-9ee7-d24422298011','0b7e9ac0-6df1-537f-b5a7-4139f9841e82','material_no','material_no','0'),
+    ('8479de47-1bad-59e4-962e-99f8957d0447','e8f70040-5d6c-5394-a9f7-e17ad58541ca','operation_no','process_no','0'),
+    ('85153d24-fe55-5620-84e1-62feecee730b','e7fb81ad-61d2-553b-8ffb-49a965db80b6','material_no','code','0'),
+    ('8c2fbdd7-b1c2-5ab8-b8f5-af4173c7af2c','9dbb189b-acf0-58c5-957c-da6f6732aa82','material_part_no','material_no','0'),
+    ('8d9987c1-b1b0-5f4a-ada6-7317d052003d','b8a895bb-c2a1-58f5-911e-894ccdabcdc1','code','code','0'),
+    ('8faec084-cca6-58d7-abc0-0acce3109f68','e8502423-fb83-5af1-a2f3-f6eeb6fc1462','material_no','material_no','1'),
+    ('984464a7-2b17-5d3d-97ba-5773ddc3ba8f','7bf7a949-d4f1-58e0-976c-5579022221d7','code','code','0'),
+    ('a214388f-27d6-5a21-8516-f093c43fd2be','e58ef8c1-68ec-5a1c-b213-b4265a8c40f1','material_part_no','component_no','1'),
+    ('b4277efd-7d63-5b00-af7d-f89123c293a1','2a9aad2d-5692-5e73-a647-37c48b436a3a','code','material_no','0'),
+    ('b4b1e2b0-53b2-5a14-8d25-3c2560a3d6ca','6f5509b4-2739-56d9-b546-778cbb6017a2','code','material_no','0'),
+    ('b6e914ce-02e5-5ba9-bfde-9673876cba3b','c5c92eee-bf7d-57b9-9ba0-40e69cdcfa85','material_no','finished_material_no','0'),
+    ('bb08da21-6416-58e4-b1bf-2ea55cf20aa7','e9034a58-ee53-52c0-bed8-7fdf40e213a9','finished_material_no','material_no','0'),
+    ('bf4ee885-95ce-54bd-b4bd-a20b8448ef74','4e40e2d9-e1b6-5f91-a53b-cc2c9c5ca6f5','operation_no','process_no','0'),
+    ('c432ee19-41df-5d32-8093-ea4e70fa7b26','35545ae1-a771-560f-aadd-a43046c160d2','code','material_no','0'),
+    ('c63a7c2b-5971-5db5-b237-f2f9e7269ba3','b67fe927-ae72-5795-b944-691d0c794420','material_no','material_no','0'),
+    ('cf4fc3e4-cf97-5ce9-bab4-778662da5b31','777b091b-91de-5b0c-b0a9-14071a119d6b','component_no','material_no','0'),
+    ('d2b0f3c5-8e4f-5b7f-0d9c-3e5f7a9b1c2d','c1a9e2b4-7f3d-5a6e-9c8b-2d4e6f8a0b1c','material_no','finished_material_no','0'),
+    ('de85e4a4-779d-5d9f-bda7-d80fe831afd8','6355d369-7719-568b-8017-72091d93e8c8','component_no','code','0'),
+    ('dfdf22f8-b031-5153-8e68-306896c033ea','e58ef8c1-68ec-5a1c-b213-b4265a8c40f1','material_no','material_no','0'),
+    ('fa32f00c-8804-525c-9bdb-24fc3b47fce2','cfb155f4-dd5b-5514-be10-a2a5c326ef7a','code','code','0'),
+    ('ff3b4bae-ecfe-4a2e-af59-c9a87782aed3','a4e7dd72-cd7a-463e-abdc-944c0c700f3d','material_no','material_no','0');
+INSERT INTO public.semantic_tab_view (id, tab_type, variant_key, variant_label, anchor_node_id, switches, dialect, created_by, updated_by, status) VALUES
+    ('27209cf2-a305-5eb6-af87-cc2581448917','零件','',NULL,'339b23d8-0ae8-5c0b-912b-b0a8a521d1ee','{CLOSURE}','QUOTE','seed',NULL,'ACTIVE'),
+    ('3f29e1a9-a990-51e4-a97e-9b2a0c455841','外购件','',NULL,'7307ccc7-06b3-5e3c-9beb-82aef17f0a73','{CLOSURE}','QUOTE','seed',NULL,'ACTIVE'),
+    ('c808e618-b6f2-5bb0-974d-fc563c6417e4','费用类','INCOMING_FIXED','来料固定加工费','546538fb-d097-5f89-b027-b3e786f75930','{CLOSURE}','QUOTE','seed',NULL,'ACTIVE'),
+    ('d3bac52f-64fe-5439-8078-1328e1516375','材质元素','',NULL,'6bfd2a0c-0cda-5c99-acd0-a14aefe10b46','{CLOSURE}','QUOTE','seed',NULL,'ACTIVE'),
+    ('d5d7917f-2270-5184-a049-677135e30023','费用类','INCOMING_OTHER','来料其他费用','45d8b491-1f36-5bbf-b310-f104e744d4f5','{CLOSURE}','QUOTE','seed',NULL,'ACTIVE'),
+    ('e522602c-938a-5e69-b4fb-ab8fc0312a99','BOM 树','',NULL,'7307ccc7-06b3-5e3c-9beb-82aef17f0a73','{}','QUOTE','seed',NULL,'ACTIVE'),
+    ('ecf9683b-b8da-50c2-816c-9c9b9587def8','主件','',NULL,'aa084d67-9972-5824-b64b-09430339cc5f','{}','QUOTE','seed',NULL,'ACTIVE');
+INSERT INTO public.semantic_tab_view_node (id, view_id, node_id, role, add_dims, sort_order, created_by, updated_by, status) VALUES
+    ('1973983f-fafd-5066-abfc-006b79a0bc69','ecf9683b-b8da-50c2-816c-9c9b9587def8','71e481c2-8049-50f0-b3b7-b0d253f7ca8c','AUX','{}','2','seed',NULL,'ACTIVE'),
+    ('20ab4c0d-6179-5ebe-b2b9-5986d2cdbd4f','ecf9683b-b8da-50c2-816c-9c9b9587def8','d11dc5dd-3354-5076-9254-f8c5d0e4d8db','AUX','{}','3','seed',NULL,'ACTIVE'),
+    ('2190d22a-6352-59b9-a74f-686cf0b15fff','ecf9683b-b8da-50c2-816c-9c9b9587def8','aa084d67-9972-5824-b64b-09430339cc5f','MAIN','{}','0','seed',NULL,'ACTIVE'),
+    ('35954f6b-f162-53d5-bd91-c0c77ff174e1','27209cf2-a305-5eb6-af87-cc2581448917','7307ccc7-06b3-5e3c-9beb-82aef17f0a73','AUX','{}','2','seed',NULL,'ACTIVE'),
+    ('3f14a367-27a8-582b-a0db-38a765f13828','d3bac52f-64fe-5439-8078-1328e1516375','7307ccc7-06b3-5e3c-9beb-82aef17f0a73','AUX','{}','2','seed',NULL,'ACTIVE'),
+    ('51bcda61-7350-5e3a-8052-27dcd9fa5767','27209cf2-a305-5eb6-af87-cc2581448917','339b23d8-0ae8-5c0b-912b-b0a8a521d1ee','MAIN','{}','0','seed',NULL,'ACTIVE'),
+    ('5d82c85e-aa53-51f3-ad50-8b6e323f90a8','d3bac52f-64fe-5439-8078-1328e1516375','ab66377c-a275-58f3-b6bc-ab2510ad4631','AUX','{}','1','seed',NULL,'ACTIVE'),
+    ('834c8450-cb77-5b82-a315-26a4c72f6d90','e522602c-938a-5e69-b4fb-ab8fc0312a99','99fe2b0a-5e25-5c83-8708-4423a21bd7c1','AUX','{}','1','seed',NULL,'ACTIVE'),
+    ('8421dae5-572a-5029-bcd0-975733b6624e','e522602c-938a-5e69-b4fb-ab8fc0312a99','7307ccc7-06b3-5e3c-9beb-82aef17f0a73','MAIN','{}','0','seed',NULL,'ACTIVE'),
+    ('8c5116bb-ee59-509e-81ec-7bb4218414fe','c808e618-b6f2-5bb0-974d-fc563c6417e4','546538fb-d097-5f89-b027-b3e786f75930','MAIN','{}','0','seed',NULL,'ACTIVE'),
+    ('99b2776a-7843-5e50-b550-a6233b3df049','27209cf2-a305-5eb6-af87-cc2581448917','a4d7ef7a-6a44-5b04-a63e-e1f3579a66fc','AUX','{费用类型}','1','seed',NULL,'ACTIVE'),
+    ('b4dcc434-2cf7-504d-830c-b21397a48621','ecf9683b-b8da-50c2-816c-9c9b9587def8','616cbe9d-80c4-5137-a517-2b51500b2b75','AUX','{}','1','seed',NULL,'ACTIVE'),
+    ('cb2b87bd-fea4-554c-befa-35f2c946dff6','d3bac52f-64fe-5439-8078-1328e1516375','6bfd2a0c-0cda-5c99-acd0-a14aefe10b46','MAIN','{}','0','seed',NULL,'ACTIVE'),
+    ('e24db5a1-e038-519c-9250-796a74942550','d5d7917f-2270-5184-a049-677135e30023','45d8b491-1f36-5bbf-b310-f104e744d4f5','MAIN','{}','0','seed',NULL,'ACTIVE'),
+    ('e282fd8a-9097-5ddf-9500-3fc576e9a315','3f29e1a9-a990-51e4-a97e-9b2a0c455841','3dc89f8b-bd2f-5436-8a7e-54876e96341e','AUX','{要素}','1','seed',NULL,'ACTIVE'),
+    ('e3c1a4d6-9f5a-5c8a-1e0d-4f6a8b0c2d3e','d3bac52f-64fe-5439-8078-1328e1516375','546538fb-d097-5f89-b027-b3e786f75930','AUX','{}','3','seed',NULL,'ACTIVE'),
+    ('f30b5fd9-025d-5e23-b4a3-b21b93c3fe4c','3f29e1a9-a990-51e4-a97e-9b2a0c455841','7307ccc7-06b3-5e3c-9beb-82aef17f0a73','MAIN','{}','0','seed',NULL,'ACTIVE');
+INSERT INTO public.semantic_tab_view_column (id, view_id, column_id, roles, sort_order, created_by, updated_by, status) VALUES
+    ('00d95d3e-fadd-5480-88c3-45d14e80a4b5','d3bac52f-64fe-5439-8078-1328e1516375','7672aaa3-fb7c-5056-8d39-9b8448f0e19d','{PART_NAME,ROW_KEY}','6','seed',NULL,'ACTIVE'),
+    ('049caecb-0bea-5bed-8716-c27e3a18ebfa','d3bac52f-64fe-5439-8078-1328e1516375','425e6ef5-ac0a-57b1-b8a6-67f34d439420','{PART_NO,ROW_KEY}','2','seed',NULL,'ACTIVE'),
+    ('1b85debe-713d-5b1c-ad9a-6c2f8acad66c','3f29e1a9-a990-51e4-a97e-9b2a0c455841','b53a2d6a-e62b-59c0-b364-592fc2058de5','{PART_NO,ROW_KEY}','12','seed',NULL,'ACTIVE'),
+    ('2597c2b0-1dc8-50ca-9945-3c6401361e46','27209cf2-a305-5eb6-af87-cc2581448917','ecdd8794-ad25-5bfd-b5d4-5ba3af825355','{ROW_KEY}','11','seed',NULL,'ACTIVE'),
+    ('4dcba019-d2fa-501a-9d6b-786c1469edd2','ecf9683b-b8da-50c2-816c-9c9b9587def8','c789b55b-fd65-5a9f-9fe3-acd9ee226771','{PART_NAME}','1','seed',NULL,'ACTIVE'),
+    ('620e14e2-2698-55f1-bffd-08e45fa64848','27209cf2-a305-5eb6-af87-cc2581448917','48ddf797-7c2a-5ac4-9a35-05d6d84ae322','{PART_NO,ROW_KEY}','8','seed',NULL,'ACTIVE'),
+    ('6ea92dbe-2032-5512-87aa-58ead7e4eb36','d3bac52f-64fe-5439-8078-1328e1516375','08981be6-f3af-50d3-baf7-622f10d5cbbe','{ROW_KEY}','7','seed',NULL,'ACTIVE'),
+    ('718fd71d-0c73-5da7-86ef-8ab58b6a1754','c808e618-b6f2-5bb0-974d-fc563c6417e4','ecdd8794-ad25-5bfd-b5d4-5ba3af825355','{ROW_KEY}','18','seed',NULL,'ACTIVE'),
+    ('78db6e38-8187-5a19-bb88-20f751a526a2','d3bac52f-64fe-5439-8078-1328e1516375','23614d7b-4c0b-544e-8357-05b6862deca4','{ROW_KEY}','3','seed',NULL,'ACTIVE'),
+    ('7e7b6156-75bb-5333-9fa9-77c32f0f1af4','3f29e1a9-a990-51e4-a97e-9b2a0c455841','c5e58925-2424-592f-ad23-96c256e9f870','{ROW_KEY}','13','seed',NULL,'ACTIVE'),
+    ('820663ca-5cc2-5c1f-9012-521678a4cfb9','d5d7917f-2270-5184-a049-677135e30023','7672aaa3-fb7c-5056-8d39-9b8448f0e19d','{PART_NAME,ROW_KEY}','20','seed',NULL,'ACTIVE'),
+    ('9147c236-401b-5dfa-86b8-2e3f7628f111','d3bac52f-64fe-5439-8078-1328e1516375','258a0191-8db6-591d-a3d9-cbdd96189f01','{ROW_KEY}','4','seed',NULL,'ACTIVE'),
+    ('afebc781-9753-52cb-b7de-20310069b372','ecf9683b-b8da-50c2-816c-9c9b9587def8','36127c91-513c-5e65-8eff-a6fbcde6e410','{PART_NO,ROW_KEY}','0','seed',NULL,'ACTIVE'),
+    ('b6d74c59-4e46-5e2e-88f0-c96a64e34732','e522602c-938a-5e69-b4fb-ab8fc0312a99','7672aaa3-fb7c-5056-8d39-9b8448f0e19d','{PART_NAME,ROW_KEY}','22','seed',NULL,'ACTIVE'),
+    ('b780577f-bc0c-57a2-bee6-42d559f74f1d','e522602c-938a-5e69-b4fb-ab8fc0312a99','b53a2d6a-e62b-59c0-b364-592fc2058de5','{PART_NO,ROW_KEY}','21','seed',NULL,'ACTIVE'),
+    ('b89f91ac-5f79-5ae6-8c82-10d7ec78222a','c808e618-b6f2-5bb0-974d-fc563c6417e4','7672aaa3-fb7c-5056-8d39-9b8448f0e19d','{PART_NAME,ROW_KEY}','17','seed',NULL,'ACTIVE'),
+    ('c69b1030-a918-52db-a48b-e0b96168f5ef','c808e618-b6f2-5bb0-974d-fc563c6417e4','736b7aec-0563-51c2-8a6e-74cb1c50ea3c','{ROW_KEY}','16','seed',NULL,'ACTIVE'),
+    ('cc256f9c-e3df-546a-b0d0-6049a897d00e','d3bac52f-64fe-5439-8078-1328e1516375','fa70008a-ef75-5cde-8a65-ea68bab77c87','{PART_NAME,ROW_KEY}','5','seed',NULL,'ACTIVE'),
+    ('cff084e4-e5a0-54f3-90c6-a11e7bc32f01','27209cf2-a305-5eb6-af87-cc2581448917','12c8d185-5027-5312-b91e-516c0ce13c65','{ROW_KEY}','9','seed',NULL,'ACTIVE'),
+    ('dfa9e902-24b8-574c-a470-a8aa2fa83033','3f29e1a9-a990-51e4-a97e-9b2a0c455841','7672aaa3-fb7c-5056-8d39-9b8448f0e19d','{PART_NAME,ROW_KEY}','14','seed',NULL,'ACTIVE'),
+    ('ed6fdeb4-1402-5700-b38e-a0acf18f06a1','c808e618-b6f2-5bb0-974d-fc563c6417e4','8fcdf3a8-9663-523c-83de-49acdef4124c','{PART_NO,ROW_KEY}','15','seed',NULL,'ACTIVE'),
+    ('ee50e127-be2f-5d37-aac3-f86c5a6ad9b3','d5d7917f-2270-5184-a049-677135e30023','7c65a24e-3931-5602-9ce7-ed10f3a47cb6','{PART_NO,ROW_KEY}','19','seed',NULL,'ACTIVE'),
+    ('f2530960-46f9-573f-a34e-591e893a868c','27209cf2-a305-5eb6-af87-cc2581448917','7672aaa3-fb7c-5056-8d39-9b8448f0e19d','{PART_NAME,ROW_KEY}','10','seed',NULL,'ACTIVE');
+
 INSERT INTO public.flyway_schema_history
   (installed_rank, version, description, type, script, checksum, installed_by, installed_on, execution_time, success)
-VALUES (1, '387', '<< Flyway Baseline >>', 'BASELINE', '<< Flyway Baseline >>', NULL, 'baseline', now(), 0, true);
+VALUES (1, '398', '<< Flyway Baseline >>', 'BASELINE', '<< Flyway Baseline >>', NULL, 'baseline', now(), 0, true);
 
 
 -- ============================================================
 -- 导入后自检(逐条核对期望值)
 -- ============================================================
--- SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';  -- 期望 144
+-- SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';  -- 期望 151
 -- SELECT count(*) FROM information_schema.views  WHERE table_schema='public';                              -- 期望 3
--- SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public';     -- 期望 5
--- SELECT version FROM flyway_schema_history;                                                               -- 期望 387
+-- SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public';     -- 期望 6
+-- SELECT version FROM flyway_schema_history;                                                               -- 期望 398
 -- SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND numeric_precision=26
 --   AND numeric_scale=12 AND ((table_name='quotation' AND column_name IN ('total_amount','original_amount','tax_amount'))
 --    OR (table_name='quotation_line_item' AND column_name IN ('subtotal','discount_base_amount','line_unit_price','line_final_price','line_discount_amount','line_total_amount'))
@@ -8453,3 +9161,19 @@ VALUES (1, '387', '<< Flyway Baseline >>', 'BASELINE', '<< Flyway Baseline >>', 
 -- SELECT "usage", is_active, length(sql_template) FROM costing_bom_tree_config ORDER BY "usage";           -- 期望 COSTING/QUOTE 各 1 行 t，长度 1586/1063
 -- SELECT md5(sql_template) FROM costing_bom_tree_config WHERE "usage"='COSTING' AND is_active;             -- 期望 784e51ed0f9584261d97b388924b2f2c
 -- SELECT md5(sql_template) FROM costing_bom_tree_config WHERE "usage"='QUOTE'   AND is_active;             -- 期望 0b8e458ad3a4ce544c78020e03ba850b
+--
+-- ---- 2026-09-01 新增(V388~V398) ----
+-- SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name LIKE 'semantic\\_%';  -- 期望 7
+-- SELECT 'node',count(*) FROM semantic_node UNION ALL SELECT 'col',count(*) FROM semantic_node_column
+--   UNION ALL SELECT 'edge',count(*) FROM semantic_edge UNION ALL SELECT 'key',count(*) FROM semantic_edge_key
+--   UNION ALL SELECT 'view',count(*) FROM semantic_tab_view UNION ALL SELECT 'vnode',count(*) FROM semantic_tab_view_node
+--   UNION ALL SELECT 'vcol',count(*) FROM semantic_tab_view_column;   -- 期望 23 / 145 / 25 / 29 / 7 / 17 / 23
+-- SELECT count(*) FROM semantic_edge WHERE assert_status <> 'NA';     -- 期望 0(未校验是正确初值, 见种子段注释)
+-- SELECT count(*) FROM semantic_edge WHERE fallback_to_join_key;      -- 期望 2
+-- SELECT column_name FROM information_schema.columns WHERE table_name='component_sql_view'
+--   AND column_name IN ('builder_config','builder_version');          -- 期望 2 行
+-- SELECT column_default, is_nullable FROM information_schema.columns
+--   WHERE table_name='quotation' AND column_name='user_data_version'; -- 期望 0 / NO
+-- SELECT conname FROM pg_constraint WHERE conname='uq_qlcd_line_component';  -- 期望 1 行
+-- SELECT pg_get_function_identity_arguments(oid) FROM pg_proc
+--   WHERE proname='f_material_element_price' ORDER BY 1;              -- 期望 2 行(两参 / 三参)
