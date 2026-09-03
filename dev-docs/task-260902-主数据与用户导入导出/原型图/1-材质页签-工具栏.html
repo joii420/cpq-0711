@@ -111,6 +111,31 @@
   <b>组号：</b>取 <code>material_recipe_config.seq</code>。它在导入侧只是「文件内给同一材质分组」的标签、不落库，所以导出时用 seq 填回去即可，回导后仍是同一组。
   </div>
 </div>
+
+<div class="card">
+  <h2>状态 E · 「导入材质库」抽屉里要加的一句提醒<span class="state warn">2026-09-02 追加</span></h2>
+  <p class="hint">⚠️ 这句加在<b>既有的「导入材质库」抽屉</b>说明区（其基准原型是 <code>task-260901/原型图/4-导入抽屉与报告.html</code>，本次不改那份，只在这里登记文案）。<span class="acref">AC-19</span></p>
+  <div class="drawer">
+    <div class="drawer-hd"><span class="t">导入材质库</span><span class="muted" style="cursor:pointer">&#10005;</span></div>
+    <div class="drawer-bd">
+      <div class="alert"><span class="ico">&#9432;</span><div>
+        <b>模板格式（4 列，单个工作表）：</b>材质 &nbsp;|&nbsp; 组号 &nbsp;|&nbsp; 元素符号 &nbsp;|&nbsp; 含量<br>
+        <span class="muted">（原有 4 条 bullet 不变，此处省略）</span>
+      </div></div>
+      <div class="alert warn new" style="margin-top:12px"><span class="ico">&#9888;</span><div>
+        <b>若导入的是「未筛选状态」导出的文件，其中已停用的材质会被新建为一条同名的启用材质。</b><br>
+        需要原样回导时，请先在列表把「状态」筛为「启用」再导出。
+      </div></div>
+    </div>
+    <div class="drawer-ft"><button class="btn">取消</button><button class="btn primary">开始导入</button></div>
+  </div>
+  <div class="note">
+  <b>为什么会这样：</b>材质导入按 <code>symbol AND status='ACTIVE'</code> 匹配既有材质（task-260901 既有语义）。
+  停用材质（实测 <code>SnO2-del</code> / <code>00263</code>）匹配不上 &rarr; 被当成新材质创建。<br>
+  <b>用户裁决（2026-09-02）</b>：导出保持「所见即所得」不做过滤，<b>也不改导入逻辑</b>，改为在这里加提醒。
+  用户若不筛选就回导，导入报告的「新增材质」计数会显示出来，不是完全静默。
+  </div>
+</div>
 </div>
 </body>
 </html>

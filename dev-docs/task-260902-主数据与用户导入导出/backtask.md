@@ -85,7 +85,7 @@ SELECT r.symbol, c.seq, e.element_code, e.default_pct,
 
 ---
 
-## B-5 · 用户导入 服务的 AC：AC-15、AC-16、AC-17、AC-18、AC-21、AC-24、AC-25、AC-26
+## B-5 · 用户导入 服务的 AC：AC-15、AC-16、AC-17、AC-18、AC-21、AC-24、AC-25、AC-26、**AC-26b**
 
 | 项 | 内容 |
 |---|---|
@@ -101,7 +101,8 @@ SELECT r.symbol, c.seq, e.element_code, e.default_pct,
 4. **部分成功**：某行失败不影响其它行。🚫 不要把整个导入包在一个"全成功才提交"的事务里。
 5. **区域/部门匹配不上 ⇒ 软提示，行照常创建**（AC-18）。两表现在都是 0 条，做成硬校验 = 功能不可用。
 6. **文件内重复**：同一 `username` 出现多次 ⇒ 取首行，其余跳过并注明（AC-25）。
-7. 🚫 **N+1**：一次批量查重（`username in (?)`），批量插入。SQL 条数与行数无关。
+7. 🚫 **N+1**：一次批量查重（`username in (?)`、`email in (?)`），批量插入。SQL 条数与行数无关。
+8. 🚨 **AC-26b（2026-09-02 追加，用户已追认）**：`"user".email` 是 `varchar(200)` **NOT NULL + UNIQUE(`user_email_key`)**，`username` 是 `varchar(100)`。**不在应用层拦就是 INSERT 撞 DB 约束 ⇒ 整批 500**，与 AC-26「不抛 500」直接冲突。跳过原因文案见 `api.md B-5` 的表，**测试会逐字断言，差一个字就红**。
 
 ---
 

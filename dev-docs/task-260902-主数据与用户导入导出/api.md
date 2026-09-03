@@ -32,7 +32,11 @@ public Response export(@QueryParam("keyword") String keyword,
 |---|---|---|
 | `keyword` | string, 可空 | 与 `GET /material-recipes` 的 keyword **同一套匹配规则**（材质编号/材质名称/元素符号/元素中文名），**必须复用同一个查询方法**，不许另写一套 SQL |
 | `recipeType` | string, 可空 | `locked` / `editable` / `partial`，对应 `material_recipe.recipe_type` **精确相等** |
-| `status` | string, 可空 | `ACTIVE` / `INACTIVE`。⚠️ 口径必须与前端 `isActive()` 一致：**仅 `'ACTIVE'` 算启用，其余（含 NULL）都算停用** |
+| `status` | string, 可空 | `ACTIVE` / `INACTIVE`。**不传 = 不过滤（全状态）**，与页面列表口径一致。⚠️ 口径必须与前端 `isActive()` 一致：**仅 `'ACTIVE'` 算启用，其余（含 NULL）都算停用** |
+
+> 🚨 **不传 `status` 时导出会包含停用材质，而这些行回导时会被新建为同名启用材质**（导入按 `symbol AND status='ACTIVE'` 匹配，停用的匹配不上）。
+> **2026-09-02 用户裁决：保持导出「所见即所得」，不在导出侧过滤，也不改导入逻辑**；改为在**导入抽屉的说明区加一句提醒**（见 `fronttask.md` F-4）。
+> 对应 **AC-19**（该条已限定为「先筛启用再导出再回导」）。
 
 **为什么要新增后两个参数**：`recipeType`/`status` 过滤当前**只在前端做**（`MaterialRecipeManagement.tsx:196-200` 的 `filteredList`），后端 `list()` 只认 `keyword`。导出走后端 ⇒ 后端必须能复刻这两个条件，否则「导出跟随筛选」做不到。
 🚫 **不要顺手把列表接口也改成后端过滤** —— 那是改既有行为，属超范围。
@@ -152,10 +156,20 @@ public ApiResponse<UserImportReportDTO> importUsers(@RestForm("file") FileUpload
 | 用户名为空 | `用户名为空` |
 | 用户名在**库中**已存在 | `用户名已存在` |
 | 用户名在**本文件内**重复 | `文件内用户名重复，已取首行` |
-| 用户名长度 > DB 列长 | `用户名超长（最多 N 字符）` |
+| 用户名长度 > DB 列长（实测 `varchar(100)`） | `用户名超长（最多 100 字符）` |
 | 姓名为空 | `姓名为空` |
+| 姓名长度 > `varchar(200)` | `姓名超长（最多 200 字符）` |
 | 邮箱格式非法 | `邮箱格式不合法：<原值>` |
+| **邮箱为空** | `邮箱为空` |
+| **邮箱长度 > `varchar(200)`** | `邮箱超长（最多 200 字符）` |
+| **邮箱在库中已存在** | `邮箱已存在：<原值>` |
+| **邮箱在本文件内重复** | `文件内邮箱重复，已取首行` |
 | 角色不在 4 个合法值内 | `角色不合法：<原值>` |
+
+> 🚨 **加粗那 4 条是 2026-09-02 追加的**（立项时漏写，由后端实现时发现、用户追认）。
+> 依据：实测 `"user".email` 是 `varchar(200)` **NOT NULL + UNIQUE（`user_email_key`）**、`username` 是 `varchar(100)`。
+> **不拦就是 INSERT 撞 DB 约束 → 整批 500**，与 AC-26「不抛 500」直接冲突 ⇒ 属实现 AC-26 所必需，不是新功能。
+> 对应 **AC-26b**。前端结果页只是照原样显示 `reason`，不受影响。
 
 **软提示（行**照常创建**，写进该行的 `hint`）**
 

@@ -46,6 +46,7 @@
 ### ⚠️ 未闭合 / 需要注意
 | 项 | 性质 | 说明 |
 |---|---|---|
+| **测试 profile 的 RBAC 开关自相矛盾 ⇒ 一批 HTTP 层测试恒红 401** | 🟠 **既有环境缺陷 · 2026-09-02 由 task-260902 撞见并实证，未修** | 两处开关值相反：`cpq-backend/src/test/resources/application.properties:5` = `false`（**被覆盖**）vs `src/main/resources/application-test.properties:86` = **`true`**（profile-specific 优先，**实际生效**）。⇒ `@QuarkusTest` 里任何走 RestAssured 且**不带 session** 的请求一律 401。🔬 **实证**：在 `task-260902` worktree（基于 HEAD，该文件一行未动）跑 `./mvnw test -Dtest='DepartmentResourceTest'` → **4/4 全红**，全是 `Expected <200\|400> but was <401>`；`IndustryResourceTest` 5/5 同型。⚠️ **两个危害**：① 新写的接口测试会以「401 假红」的形态失败，容易被误判成「端点没做/权限判错」；② 反过来若有人图省事用 `@TestProfile` 把 RBAC 关掉绕过，则「非管理员 403」恒红、「管理员 200」**恒绿——哪怕 `@RoleAllowed` 一个字都没标**，权限测试彻底失效。📌 task-260901 的 `test-report.md` 记录 `MaterialImportAcceptanceTest` 当时 19/19 绿 ⇒ 是**之后漂移的**，值得单独查是哪一笔改的。**task-260902 不修，只在自己的用例里带 session 规避**（`test.md §0.5`）|
 | `repair-260807-更正任务价格丢失与版本错乱` | ✅ **已交付合 master**（`24b68b20`） | 价格更正任务跑完后，被调价元素的单价是"丢的"、行小计与单据总额偏低，靠"有人打开并保存"才自愈 —— DRAFT 单还有人开，`SUBMITTED` 单没人开就一直挂错金额。另有一类单（缺 `QUOTE_CARD` 冻结结构，现网 33 张活跃 DRAFT）被静默跳过却计入 SUCCESS。存量污染另立 `BL-0148` |
 | `repair-260803-公式SUM内引用宿主页签字段` | 🔴 **静默少算，文档标「待确认」** | `SUM()` 内引用本页签 FORMULA 字段恒取 0，不报错只算少。文档点名现网 `COMP-0157「物料」` 正踩着。**未见对应 BACKLOG 条目** |
 | `BL-0069` `mat_*` 废弃表断供故障族 | 🔴 **P0 · TODO 未排期** | 5 条实证失效路径，其中「漂移检测假阴性」破坏安全属性（13/13 报价单 `referenced_versions` 全 NULL → 恒 `hasDrift=false`，主动骗用户"数据未变"）。#5 已随 task-0722 闭合，其余未修 |
@@ -307,6 +308,10 @@ done | sort | cut -d'|' -f1 | uniq -c | sort -rn | awk '$1>=4'
 ---
 
 | `task-260902-主数据与用户导入导出/` | 主数据（材质/工序）加导出（**按钮仅 `SYSTEM_ADMIN` 可见**）+ 用户列表加导入导出。三张表现状「只进不出」，导入模板下得下来但内容为空 ⇒ 要改存量必须先能导出。**导出=当前筛选结果全量（不受分页限制）+ 与导入模板同构可回导**；用户导入**只新增、重复跳过并报告**，密码系统生成、报告里**只回显一次** | 🟢 **闸门 A 已放行**（2026-09-02）· AC 27 条 · 原型 5 份 · api/backtask/fronttask/test 齐 · 待建分支开工 | `MaterialRecipeManagement.tsx` `V6ProcessCrudTab.tsx` `UserManagement.tsx` `MaterialRecipeResource.java` `ProcessMasterResource.java` `UserResource.java` |
+
+| `task-260902-报价与核价建表与导入方案新规范/` | 报价 / 核价的建表与导入方案新规范 —— **目前仅素材，无任何 `.md` 文档** | ⚪ **素材收集中**（2026-09-02 22:16）· 目录内只有 `新报价数据导入与表格建表.xlsx` 与 `新核价数据导入与表格建表.xlsx`，且存在 `~$` 临时锁文件 ⇒ **有人正在编辑**，尚未立项 | —（未确定） |
+
+> 📌 上行由 `task-260902-选配流程重构` 会话**代登记占位**（Stop hook 要求收录）。该目录**只有 Excel 素材、没有需求文档**，故仅记录客观状态，**未代其判断范围、状态与归属** —— 请负责方立项后按最终口径重写本行。
 
 ## 7. 清理 / 工具 / UI
 
