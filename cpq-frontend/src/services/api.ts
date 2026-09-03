@@ -25,12 +25,25 @@ api.interceptors.request.use((config) => {
 export interface ApiError extends Error {
   payload: unknown;
   httpStatus?: number;
+  /**
+   * 错误信封的业务错误码（如 `RECIPE_HAS_NO_CONFIG` / `MATERIAL_RATIO_SUM_INVALID`）。
+   * task-260902 · F-9 新增：确认页要按错误码给不同的指路按钮，只有 message 做不到
+   * （文案会被后端改，错误码不会）。取自 `response.data.code`。
+   */
+  code?: string;
+  /**
+   * 错误信封的 `detail` 附加载荷（**与 `payload` 不同层**：`payload` 取的是 `data.data`）。
+   * 例：`MATERIAL_RATIO_SUM_INVALID` 的 `{ actualSum, expected }`（api.md §1.2）。
+   */
+  detail?: unknown;
 }
 
 export function buildApiError(error: any): ApiError {
   const err = new Error(error?.response?.data?.message || 'Network error') as ApiError;
   err.payload = error?.response?.data?.data ?? null;   // 信封.data，与成功侧 response.data 同层级
   err.httpStatus = error?.response?.status;
+  err.code = error?.response?.data?.code ?? undefined;
+  err.detail = error?.response?.data?.detail ?? undefined;
   return err;
 }
 
