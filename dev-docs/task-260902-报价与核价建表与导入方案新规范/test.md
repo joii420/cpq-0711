@@ -23,6 +23,31 @@
 - **本任务不修该缺陷**，用例一律自带 session。
 - 🚩 看到 `Expected <200> but was <401>` **先怀疑这个坑**，不要误判成「端点没做 / 权限判错」。
 
+### 0.2b 🚩 `test` profile 的 Redis 指向连不上的实例 —— RBAC-401 的同族第二例
+
+**2026-09-03 由测试代理实证发现。** 与 §0.2 是同一种覆盖机制（profile-specific 压过 `src/test/resources`）：
+
+```
+src/test/resources/application.properties:11      redis://:joii5231@10.177.152.12:6379/0      ← 可用
+src/main/resources/application-test.properties:68  redis://:WzHf20230610@172.16.18.56:6380/0   ← 覆盖它，AUTH 失败
+```
+
+**症状**：登录返 **500**，`GlobalExceptionMapper: CompletionException: CONNECTION_CLOSED at BlockingHashCommandsImpl.hset`
+⇒ **`@QuarkusTest` 里每一条带 session 的用例全倒**，而 8081 上同样的登录返 **200**。
+🚩 **极易误判成「鉴权坏了」或「端点没做」** —— 和 §0.2 的 401 假红是同一族陷阱，但表现为 500。
+
+**绕法（不改任何文件）**：
+
+```bash
+export QUARKUS_REDIS_HOSTS="redis://:joii5231@10.177.152.12:6379/0"
+```
+
+环境变量的 MicroProfile Config ordinal 是 300，压过 properties 文件。**本任务所有带 session 的测试结果都是这么跑出来的。**
+
+⚠️ **本任务不修这个缺陷**（同 §0.2 的处置），只规避 + 记录。
+
+---
+
 ### 0.3 ⚠️ 共享库数据在漂移
 
 实测同一条 `count(*)` 几分钟内会变（其他会话在写）。
@@ -96,6 +121,9 @@
 | AC-37 | L2 | `TQ-03` 报价重导 | 全 `UNCHANGED`，13 张 `_history` 全 0 行 |
 | AC-38 | L4 | `TQ-04` 无报价维护页 | 主数据维护无「报价数据」页签 |
 | AC-52 | L2 | `TI-07` 轴值未登记 | 400 + `轴值未在物料表登记`；补进物料 sheet 后重导 200 |
+| AC-53 | L4 | `TI-01p` 前导零 | 材质料号显示 `00168` / `00006`，非 `168` / `6` |
+| AC-54 | L4 | `TI-02p` 数值列不受影响 | 组成含量 `22.000000000000` 仍显示 `22` |
+| AC-55 | L4 | `TI-03p` AC-42 重验 | 现有页签除前导零列由错变对外，其余逐项不变 |
 | AC-48 | L4 | `TH-01` 第 7 个页签 | 页签共 7 个，「电镀方案」在最后 |
 | AC-49 | L2+L4 | `TH-02` 数据集切换 | 报价 10 列 / 详细核价 8 列，列名逐字一致 |
 | AC-50 | L2+L4 | `TH-03` 数据一致 | 含 A0001/2000/Ni 行；总数 = 同刻 `count(*)` |

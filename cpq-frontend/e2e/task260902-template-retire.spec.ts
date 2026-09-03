@@ -6,7 +6,7 @@
  * 🚨 AC-26 是**带反向断言**的用例：菜单要藏起来，但**路由/页面/表/数据一个都不许删**。
  * 反向断言就是防「实现时顺手清理」的守卫 —— 少了它，把功能删干净也能让正向断言全绿。
  */
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 import { loginAsAdmin, isBackendUp } from './fixtures/auth';
 import {
   shot, query, drawer, openSelConfigDrawer, fillStep1, startNewPart, addMaterial, nextStep,
@@ -109,25 +109,30 @@ test.describe('task-260902 选配模板下线', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1200);
 
-    // 展开所有可折叠菜单，确保不是「藏在折叠项里没找到」造成的假绿
-    const submenus = page.locator('.ant-menu-submenu-title');
-    const n = await submenus.count();
-    for (let i = 0; i < n; i++) {
-      await submenus.nth(i).click({ timeout: 3000 }).catch(() => {});
-      await page.waitForTimeout(250);
-    }
-    await shot(page, 'AC-26-菜单已全部展开');
+    // 🚨 必须先把「配置中心」子菜单真的展开 ——「选配模板管理」本来就挂在它下面，
+    //    一级菜单里当然没有。不展开就断言「没找到」= 假绿（主线实测踩过这个坑）。
+    const expanded = await expandConfigCenter(page);
+    await shot(page, 'AC-26-配置中心子菜单已展开');
 
-    // 阳性对照：证明观察手段确实能在菜单里抓到条目（否则「没找到」可能只是没看对地方）
-    const menu = page.locator('.ant-menu');
-    await expect(menu, 'AC-26 阳性对照：菜单里应能看到别的配置项（证明选择器有效）')
-      .toContainText(/系统|配置|管理/, { timeout: 8000 });
+    // 🚨 硬阳性对照：看得见两个兄弟项，才证明「观察手段能抓到该子菜单里的条目」。
+    //    抓不到就直接 fail 并说明结论无效，🚫 绝不让它静默通过。
+    expect(expanded,
+      'AC-26 阳性对照失败：「配置中心」子菜单没有展开成功（看不到「组件管理」/「3D 模型配置」）⇒ '
+      + '本条关于「选配模板管理不在菜单里」的结论**无效**，不是产品通过。'
+      + '请检查 antd 菜单是 inline 还是 popup 模式后重跑'
+    ).toBeTruthy();
+    const sibling = page.locator('.ant-menu-sub, .ant-layout-sider').filter({ hasText: '组件管理' }).first();
+    await expect(sibling, 'AC-26 阳性对照：配置中心子菜单里应能看到「组件管理」').toBeVisible();
+    await expect(sibling, 'AC-26 阳性对照：配置中心子菜单里应能看到「3D 模型配置」')
+      .toContainText('3D');
 
-    await expect(page.locator('.ant-menu').getByText('选配模板管理'),
-      'AC-26：「选配模板管理」不得出现在左侧菜单'
+    // 正式断言：整页范围内都不许出现该菜单项（子菜单是挂到 body 的浮层，不在 sider 里，
+    // 🚫 因此不能只在 .ant-layout-sider 内找；也不能用裸 .ant-menu —— 它会匹配到 6 个而 strict 违规）
+    await expect(page.getByText('选配模板管理', { exact: true }),
+      'AC-26：「选配模板管理」不得出现在菜单中'
     ).toHaveCount(0);
-    await expect(page.locator(`.ant-menu a[href*="/config/sel-templates"]`),
-      'AC-26：菜单里不得有指向 /config/sel-templates 的链接'
+    await expect(page.locator('a[href*="/config/sel-templates"]'),
+      'AC-26：页面上不得有指向 /config/sel-templates 的菜单链接'
     ).toHaveCount(0);
 
     // 🚫 反向断言 ①：直接访问 URL 仍能打开页面
@@ -149,3 +154,38 @@ test.describe('task-260902 选配模板下线', () => {
     expect(Number(item), 'AC-26 反向：sel_template_item 的存量数据不得被删').toBeGreaterThanOrEqual(3);
   });
 });
+
+/**
+ * 展开左侧「配置中心」子菜单，并返回**是否真的展开了**。
+ *
+ * 🚨 为什么要返回布尔而不是直接断言：调用方要把它做成<b>阳性对照</b> ——
+ * 展不开时必须让用例以「结论无效」的名义失败，而不是让「没找到选配模板管理」静默通过。
+ *
+ * ⚠️ antd 菜单两种形态都要覆盖（`cpq-playwright-selector-pitfalls`：这类坑全表现为 timeout）：
+ *   · inline 模式：子项渲染在 `.ant-layout-sider` 内，点击标题展开（有动画 + DOM 重排，需重试）
+ *   · popup 模式：子项渲染成挂在 body 上的 `.ant-menu-sub` 浮层（id 形如 `rc-menu-uuid-/config-popup`），
+ *     要 hover 才出来 —— 主线实测抓到的正是这一种
+ */
+async function expandConfigCenter(page: Page): Promise<boolean> {
+  const visible = async () =>
+    (await page.getByText('组件管理', { exact: true }).first().isVisible().catch(() => false));
+
+  const title = page.locator('.ant-menu-submenu-title').filter({ hasText: '配置中心' }).first();
+  if (await title.count() === 0) {
+    console.log('[AC-26] 找不到「配置中心」子菜单标题');
+    return false;
+  }
+
+  for (let i = 1; i <= 4; i++) {
+    if (await visible()) { console.log(`[AC-26] 子菜单已展开（第 ${i} 轮前）`); return true; }
+    // 先试 hover（popup 模式），再试 click（inline 模式）
+    await title.hover({ force: true }).catch(() => {});
+    await page.waitForTimeout(600);
+    if (await visible()) { console.log(`[AC-26] hover 展开成功（第 ${i} 轮）`); return true; }
+    await title.click({ force: true, timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(700);
+  }
+  const ok = await visible();
+  console.log(`[AC-26] 展开结果=${ok}`);
+  return ok;
+}

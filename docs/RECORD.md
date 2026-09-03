@@ -4,6 +4,22 @@
 
 ---
 
+[2026-09-03] 主数据导出 + 用户导入导出（task-260902-主数据与用户导入导出） - **材质/工序页签加「导出」（仅 `SYSTEM_ADMIN` 可见）+ 用户列表加「导入/导出」**，合 master `fba93b92` | 涉及文件：后端 `MaterialRecipeExportService`（新）/ `ProcessMasterExportService`（新）/ `UserExportImportService`（新）/ `UserImportReportDTO`（新）/ `UserApiException`（新）+ `MaterialRecipeResource`·`ProcessMasterResource`·`UserResource`（各加端点）+ `MaterialRecipeService`（抽 `keywordPredicate` 供导出复用）+ `UserService`（`generatePassword` 放宽包可见，新建/重置/导入三处共用）+ `GlobalExceptionMapper`（加 1 分支）；前端 `exportDownload.ts`（新，三页共用下载底座）/ `UserImportDrawer.tsx`（新）+ 材质·工序·用户三页与三个 service + `MaterialImportDrawer`（加停用材质提醒）；文档 `main-api.md` 回写 5 端点 | 关键决策：用户裁决 4 条 —— 导出=**当前筛选结果全量（不受分页限制）** · 导出文件**与导入模板同构可回导** · 用户导入**只新增、重复跳过并报告** · 初始密码**系统生成、报告里只回显一次**。
+
+🔑 **根因级发现（三条，都改变了做法）**：
+① **材质含量存在两套口径** —— 导入模板填 **0–1 小数**（模板示例 `Ag=0.9`），落库 `×100` 存 `default_pct`（`301/Cu/301` = 84/16）。**导出必须 ÷100 写回小数**，否则回导时 `pctInRange(v, BigDecimal.ONE)` 只收 `(0,1]`，**每一行**都被判「含量非法」，用户要的「可回导」直接落空。除法必须用**无 scale** 的 `BigDecimal.divide`：指定 `scale 12` 会把 `numeric(16,12)` 尾部两位舍掉 ⇒ 回导 `sameContent` 判不等 ⇒ 被当新配置插入，AC-19「零新增」当场破。写入前 `toPlainString()`（`stripTrailingZeros()` 会把 `100` 变 `1E+2`）。
+② **停用材质导出后回导会被新建为同名启用材质** —— 导入按 `symbol AND status='ACTIVE'` 匹配（task-260901 既有语义），停用的匹配不上。实测 `SnO2-del`（`00263`）。**用户裁决：保持导出「所见即所得」、不改导入逻辑**，改为在材质导入抽屉加提醒 + AC-19 限定为「先筛启用再导出再回导」。
+③ **同名材质回导不进去（已知限制）** —— 库中 `AgCu`→`AgCu85`/`AgCu90`、`AgNi`→`AgNi90`/`AgNi95`（名同编号不同）。导出「材质」列写的是材质名，两条记录导出成同一个值 ⇒ 回导报「材质名对应多条材质记录」并跳过（**报明原因，非静默失败**）。要闭环需给导出加「材质编号」作回导键 = 改导入契约，**待单独裁决**。
+
+⚠️ **过程教训四条**：
+- **必现 ≠ 缺陷**：测试报「AC-22 必现 7/7 真缺陷」（切页签往返后导出变全量）。主线补测**「切回后筛选框显示什么」**这一维后判定为 **AC 假设错误** —— 壳页 `MasterDataHubPage.tsx:28` 的 `destroyInactiveTabPane` 使组件切走即销毁、切回重挂载，筛选态必然归零；切回后**筛选框=「全部」、列表 263 条、导出 630 行三者自洽**，是所见即所得。⇒ **改 AC 不改代码**。「确定性复现」只证明「不是 flaky」，不证明「是缺陷」，两个判断独立。
+- **AC 里引用 DB 事实必须先查库**：AC-26 原写「用户名 65 字符超列长」，实测 `username` 是 `varchar(100)`，65 根本不超长 ⇒ 照字面写的用例会得到「应跳过却创建成功」的假红。同理 `email` 是 `varchar(200)` **NOT NULL + UNIQUE**，立项时漏写邮箱校验规则，不拦就是 INSERT 撞约束**整批 500**（用户已追认补 4 条）。
+- **文档改动必须同步进 worktree 分支**：主线改完 AC/契约只提交在主工作区 master，worktree 分支仍是旧版，子代理照旧版干活（前端工程师先发现）。若无人发现，合并进来的会是**和代码对不上的验收标准**。
+- **共享库持续漂移**：同一条 `count(*)` 当天从 263→259、导出 630→622 行。所有数量断言写成「与同一时刻基准查询相等 / 前后差值」，实测两次复跑数字全变而断言不动；写死必假红。
+
+🚨 **顺带实证并登记的既有环境缺陷（非本次引入，未修，见 `INDEX.md` §0.0）**：test profile 的 **RBAC 开关自相矛盾**（`src/test/resources/application.properties:5=false` 被 `application-test.properties:86=true` 覆盖）+ **Redis 指向不可用实例**（`:68` → `172.16.18.56:6380`，TCP 通但不回字节 ⇒ 登录 500）⇒ 不带 session 的 HTTP 测试一律 401。实证：`DepartmentResourceTest` 4/4 全红；合并后 `com.cpq.task260902` 包下**另一任务**的 6 个测试类 31 个用例全红，其断言自陈「这是 harness 故障，不是 AC 结论」。本任务 26 个用例因**在基座 `given()` 统一带 admin session** 而全绿，可作修复参照。
+
+
 [2026-09-02] 侧边栏菜单（路径 B 直接修复） - **「🛒 3D 选配」一级目录暂时隐藏** | 涉及文件：`cpq-frontend/src/layouts/MainLayout.tsx`（`/configurator-hub` 整块含 7 个子项注释掉）| 合 master `48d6c709` | 用户裁决：**只隐菜单、保留路由**（`configurator/*` 5 条 + `system/configurator-templates|feature-library|customer-leads|part-models` 4 条一律不动，敲 URL 仍可达）。
 
 📌 **为什么可以放心注释**：`'/configurator-hub'` 这个 key 全工程**只有菜单定义这一处引用**（无 openKeys / 面包屑 / 权限表等消费点），且 `MainLayout` 的 `selectedKeys` 取的是 `location.pathname` —— 菜单里找不到 key 只是不高亮，不会报错。`ShoppingOutlined` 图标仍被「产品管理」使用，import 不悬空。**恢复 = 删注释符，不需要动别处。**
