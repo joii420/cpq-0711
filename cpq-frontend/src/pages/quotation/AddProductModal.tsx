@@ -207,7 +207,41 @@ const AddProductModal: React.FC<AddProductModalProps> = ({
       title: '客户产品编号',
       dataIndex: 'customerProductNo',
       key: 'customerProductNo',
-      render: (v: string | null) => v || '—',
+      width: 220,
+      /*
+       * task-260902 · AC-12b⑤-b：一个销售料号可以对应**多个**客户产品编号
+       * （方案甲下 `sel_product_no.quote_part_no` 刻意不唯一），后端列表用
+       * `DISTINCT ON (material_no)` 取 `created_at` 最早的作代表 ⇒ 后配的那个人
+       * 在列表里看到的是别人的编号，**认不出这是自己的产品**。
+       *
+       * 三条实现纪律：
+       *  1. 🚫 `customerProductNos` **缺失 / 为空一律回退到 `customerProductNo`**
+       *     （后端未上线、或 mcm 来源的老数据都会走这条）。绝不渲染 undefined 或空单元格。
+       *  2. 单编号（绝大多数行）**视觉零变化** —— 与改动前逐字节一致。
+       *  3. 多编号时「等 N 个」这个标记**必须活过列宽截断**：编号本身可以省略号，
+       *     标记不能跟着一起被截掉 —— 否则用户只看到一个被截断的号，反而不知道还有别的。
+       *     所以编号走 `flex:1; min-width:0` 省略，标记走 `flex:none` 的 Tag。
+       */
+      render: (v: string | null, row: ExistingProductDTO) => {
+        const all = (row.customerProductNos ?? []).filter((x) => !!x && String(x).trim() !== '');
+        // 回退链：全量列表 → 代表编号 → '—'
+        const primary = all[0] ?? v ?? '';
+        if (!primary) return '—';
+        if (all.length <= 1) {
+          // 单编号：原样一行文本，与改动前一致
+          return <Tooltip title={primary}><span>{primary}</span></Tooltip>;
+        }
+        return (
+          <Tooltip title={<div>{all.map((n) => <div key={n}>{n}</div>)}</div>}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {primary}
+              </span>
+              <Tag style={{ flex: 'none', marginInlineEnd: 0 }}>等 {all.length} 个</Tag>
+            </span>
+          </Tooltip>
+        );
+      },
     },
     { title: '销售料号', dataIndex: 'materialNo', key: 'materialNo' },
     { title: '品名', dataIndex: 'productName', key: 'productName', render: (v: string | null) => v || '—' },
