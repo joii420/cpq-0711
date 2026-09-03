@@ -156,6 +156,13 @@ public class GlobalExceptionMapper {
                             Map.of("code", mrae.getErrorCode())))
                     .build();
         }
+        // task-260902：用户模块错误码（api.md B-5）。同上，errorCode 放 data.code。
+        if (e instanceof com.cpq.system.exception.UserApiException uae) {
+            return Response.status(e.getCode())
+                    .entity(ApiResponse.error(e.getCode(), e.getMessage(),
+                            Map.of("code", uae.getErrorCode())))
+                    .build();
+        }
         if (e instanceof com.cpq.component.exception.ComponentElementBindingRequiredException cebre) {
             return Response.status(e.getCode())
                     .entity(ApiResponse.error(e.getCode(), e.getMessage(), Map.of(
