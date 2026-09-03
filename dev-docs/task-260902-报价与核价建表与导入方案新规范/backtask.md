@@ -21,13 +21,16 @@ com.cpq.dataset/
 
 ## B-1 · 45 张主表的 Flyway 迁移
 
-| 服务的 AC | AC-1, AC-2, AC-3, AC-4 |
+| 服务的 AC | AC-1, AC-2, AC-3, AC-4, AC-47 |
 |---|---|
 
 - 逐表逐列照 `字段矩阵.md` 建，**标 ❌ 不建的列一律不建**（白底 = 主数据 JOIN 展示列）。
 - 统一系统列：`id bigserial pk` / `source varchar(16) not null default 'IMPORT'` / `created_at timestamptz not null default now()` / `created_by varchar(64)` / `updated_at timestamptz` / `updated_by varchar(64)`。
 - 带版本表（39 张）追加 `version_no integer not null` + `row_fingerprint char(64) not null`。
 - 免版本表（6 张）**不得**有这两列，并按 `需求文档.md` R-2 的主键建唯一约束。
+- 🚩 **D-18 变更（2026-09-03 开工后）**：`ds_quote_customer_part` **加一列 `customer_no varchar(20) not null`**，
+  唯一约束 = **`(customer_no, customer_product_no)`**（不是原写的「客户产品编号 + 销售料号」）。
+  Excel 尚未补该列 —— 字段矩阵中该行已由主线手工补入并标 🚩，**照它建**。服务 **AC-47**。
 - 索引：每张带版本表建 `(轴列, version_no)` 复合索引；免版本表按主键建唯一索引。
 - ⚠️ 迁移版本号从**建分支当时**主仓最大号顺延（当前 `V400`，共享库上是移动靶，见 `RECORD.md` 并发教训）。**不许改名、改号已应用的迁移。**
 - ⚠️ 单文件迁移会很长（45 张表）。允许拆成 `V4xx__ds_quote_tables.sql` / `V4xx+1__ds_cost_basic_tables.sql` / `V4xx+2__ds_cost_detail_tables.sql` 三份。
@@ -77,7 +80,7 @@ com.cpq.dataset/
 
 ## B-6 · 导入 Phase 1：解析 + 全量校验（零写库）
 
-| 服务的 AC | AC-6, AC-7, AC-8, AC-9, AC-10, AC-34, AC-39, AC-40 |
+| 服务的 AC | AC-6, AC-7, AC-8, AC-9, AC-10, AC-34, AC-39, AC-40, AC-45, AC-46 |
 |---|---|
 
 - 校验项按 `需求文档.md` R-7；`reason` 取值必须落在 `api.md §1` 的封闭集内。
@@ -88,6 +91,9 @@ com.cpq.dataset/
 - 空 sheet（只有表头）合法，产出 `轴值数 0`，**不得**视为清空（AC-39）。
 - 长度校验按 DDL 的 `varchar(n)`，超长必须报错，**禁止静默截断**（AC-40）。
 - 主数据存在性：`element` / `process` / `material_recipe` / `customer` **只读**查询。
+- 🚩 **D-19 变更**：报价 `客户料号` sheet 的 **`customer_no` 必须存在于 `customer.code`，查不到整份拒收**，
+  `reason` 用 `客户编号未在客户档案中登记`（`api.md §1` 已加入封闭集）。服务 **AC-45 / AC-46**。
+  ⚠️ 原写的「客户产品编号 ∈ customer」是笔误，已在 `需求文档.md` R-7 改正 —— **校验的是客户编号，不是客户产品编号**。
   ⚠️ 必须**批量预取**（一次 `IN (...)` 查全部待校验编码），不许逐行查（B-12 / AC-44）。
 
 ## B-7 · 导入 Phase 2：单事务写入
