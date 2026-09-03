@@ -262,16 +262,18 @@ export function evidence(name: string, content: string) {
 export type RoleKey = 'SYSTEM_ADMIN' | 'PRICING_MANAGER' | 'SALES_REP' | 'SALES_MANAGER';
 
 /**
- * 角色账号来自环境变量，**不写死**。
+ * 角色账号：**env 优先，默认值兜底**。
  *
- * 🚨 2026-09-03 实测的测试环境缺陷（已报主线，本文件不自行绕过）：
- *   既有 `tc0712-roles.spec.ts` 用的 `salesrep` / `pricingmgr` / `salesmgr` 三个账号
- *   **在 dev 库里已经不存在**。当前库里同角色的 ACTIVE 账号是：
- *     PRICING_MANAGER → test_finance_c87a27ab（is_first_login=t，登录后会被强制改密）
- *     SALES_MANAGER   → fe-eval-tester
- *     SALES_REP       → co_test_active_1788350268738 等（is_first_login=t）
- *   口令均未知，且**新建账号 = 改共享库全局状态**（`testing.md §4.3` 禁止）。
- *   ⇒ AC-9 / AC-16 需要主线提供口令（`PW_PWD_*`）或授权建号，否则**无法执行**。
+ * 默认值是 2026-09-03 用户批准后为本任务新建的**专用账号**（只 INSERT，未改动任何现有账号）：
+ *   t260903_pm     → PRICING_MANAGER
+ *   t260903_sales  → SALES_REP
+ * 三个账号均已**实打 `/api/cpq/auth/login` 验证**返回 200 且 `forceChangePassword=false`
+ * （🚫 不采信 DB 的 `is_first_login` 字段 —— 字段对不代表登得进去）。
+ *
+ * 🚨 **为什么仍保留 env 覆盖 + 硬失败**：既有 `tc0712-roles.spec.ts` 写死的
+ *    `salesrep` / `pricingmgr` / `salesmgr` 三个账号**如今在库里已不存在** —— 写死的账号会烂。
+ *    ⇒ 账号一旦失效，`loginAs` 的报错会把「口令不对（**测试环境缺陷**）」与
+ *      「鉴权坏了（**产品缺陷**）」分开说，不让人把环境问题误判成回归。
  *
  * 🚫 缺账号时**硬失败，不 skip** —— skip 掉的角色断言会以「全部通过」的样子混过去，
  *    那正是 `testing.md §3` 说的「断言从未执行 = 假绿」。
@@ -279,9 +281,10 @@ export type RoleKey = 'SYSTEM_ADMIN' | 'PRICING_MANAGER' | 'SALES_REP' | 'SALES_
 export function credOf(role: RoleKey): { username: string; password: string } {
   const map: Record<RoleKey, [string, string]> = {
     SYSTEM_ADMIN:    [process.env.PW_USER_ADMIN   || 'admin', process.env.PW_PWD_ADMIN   || 'Admin@2026'],
-    PRICING_MANAGER: [process.env.PW_USER_PRICING || '',      process.env.PW_PWD_PRICING || ''],
-    SALES_REP:       [process.env.PW_USER_SALES   || '',      process.env.PW_PWD_SALES   || ''],
-    SALES_MANAGER:   [process.env.PW_USER_SMGR    || '',      process.env.PW_PWD_SMGR    || ''],
+    PRICING_MANAGER: [process.env.PW_USER_PRICING || 't260903_pm',    process.env.PW_PWD_PRICING || 'Admin@2026'],
+    SALES_REP:       [process.env.PW_USER_SALES   || 't260903_sales', process.env.PW_PWD_SALES   || 'Admin@2026'],
+    // SALES_MANAGER 本任务 AC 未用到（AC-16 只点名 SALES_REP）；需要时由 env 传入
+    SALES_MANAGER:   [process.env.PW_USER_SMGR    || '',              process.env.PW_PWD_SMGR    || ''],
   };
   const [username, password] = map[role];
   if (!username || !password) {

@@ -353,27 +353,27 @@ test('E2E-10 / AC-10：版本下拉存在；有 ≥2 版本则切换后内容变
   const select = drawer.locator('.ant-select').first();
   await expect(select, 'AC-10：版本下拉应存在').toBeVisible({ timeout: 10_000 });
 
-  if (versions >= 2) {
-    const beforeText = await drawer.locator('.ant-table-tbody').innerText();
-    await select.click();
-    // ⚠️ antd Select 走虚拟滚动：没渲染的选项在 DOM 里不存在。选项少时直接点，多时须先过滤。
-    const opts = page.locator('.ant-select-dropdown:visible .ant-select-item-option');
-    await expect(opts.first(), 'AC-10：版本下拉应有可选项').toBeVisible({ timeout: 8_000 });
-    const n = await opts.count();
-    expect(n, 'AC-10：版本下拉选项数应 ≥2').toBeGreaterThanOrEqual(2);
-    await opts.nth(1).click();   // 切到非最新版本
-    await page.waitForTimeout(1500);
-    const afterText = await drawer.locator('.ant-table-tbody').innerText();
-    expect(afterText, 'AC-10：切到另一个版本后表格内容应发生变化').not.toBe(beforeText);
-    await assertReadOnly(drawer, 'AC-10 历史版本');
-  } else {
-    // AC-10 原文的降级分支：「若样例数据只有 1 个版本，本条降级断言」
-    const label = (await select.innerText()).replace(/\s+/g, '');
-    console.log('[AC-10·降级] 版本下拉文案 =', label);
-    evidence('AC10-single-version', `版本数=${versions} 下拉文案=${label}`);
-    expect(label, 'AC-10 降级断言：单版本时下拉应显示 v1').toContain('v1');
-    await expect(select, 'AC-10 降级断言：版本下拉须为可交互的只读展示').toBeVisible();
-  }
+  // ✅ 2026-09-03 主线裁决：取消「单版本降级断言」条款，改为由样例准备步骤③**造第二个版本**。
+  //    ⇒ 这里不再有降级分支；版本数 <2 即为前置未就绪，硬失败。
+  expect(versions,
+    `AC-10：需要 ≥2 个版本才能验版本切换（样例准备步骤③应为 ${HERO} 的物料BOM 造 v2：` +
+    `v2 为当前、v1 整组入 _history）。当前版本数 = ${versions} ⇒ 步骤③未执行或未生效。`)
+    .toBeGreaterThanOrEqual(2);
+
+  const beforeText = await drawer.locator('.ant-table-tbody').innerText();
+  await select.click();
+  // ⚠️ antd Select 走虚拟滚动：没渲染的选项在 DOM 里不存在。选项少时直接点，多时须先过滤。
+  const opts = page.locator('.ant-select-dropdown:visible .ant-select-item-option');
+  await expect(opts.first(), 'AC-10：版本下拉应有可选项').toBeVisible({ timeout: 8_000 });
+  const n = await opts.count();
+  expect(n, 'AC-10：版本下拉选项数应 ≥2').toBeGreaterThanOrEqual(2);
+  await opts.nth(1).click();   // 切到非最新版本
+  await page.waitForTimeout(1500);
+  const afterText = await drawer.locator('.ant-table-tbody').innerText();
+  expect(afterText, 'AC-10：切到另一个版本后表格内容应发生变化').not.toBe(beforeText);
+  // 🚨 历史版本也只读 —— 且**当前版也只读**，这正是与核价侧的根本差异
+  await assertReadOnly(drawer, 'AC-10 历史版本');
+
   await assertReadOnly(drawer, 'AC-10 当前版');
   await shot(page, 'AC10-version', { fullPage: true });
   await closeDrawer(page);
@@ -489,16 +489,15 @@ test('E2E-13 / AC-13：0 行时 Empty 空态 + 总数 0 + 工具栏仍渲染 + �
   await switchTab(page, '销售产品');
 
   const db = Number(sqlOne('SELECT count(*) FROM ds_quote_material'));
-  // 🚨 AC-13 原文要求「ds_quote_material 为 0 行的干净库」。
-  //    共享库上**不许清表**（CLAUDE.md §3.2 环境销毁红线）⇒ 库非 0 行时改用
-  //    「搜一个必然 0 结果的关键词」来驱动同一条 0 行渲染分支。
-  //    ⚠️ 这是**代理条件不是原条件**，已在回报中作为 AC-13 的执行偏差列明。
-  if (db === 0) {
-    console.log('[AC-13] 走原条件：库中 ds_quote_material 确为 0 行');
-  } else {
-    console.log(`[AC-13] ⚠️ 走代理条件：库中 ${db} 行（不清表），改用零结果搜索驱动空态分支`);
-    await search(page, '__NO_SUCH_PART_260903__');
-  }
+  // ✅ 2026-09-03 主线裁决：AC-13 改**时序解法** —— 在灌数据**之前**跑，此刻表 0 行即真实空态。
+  //    零结果搜索的代理条件已取消。
+  // 🚨 若此处 db ≠ 0，说明空态窗口已被消耗 —— **硬失败，不降级**。
+  //    清表是 CLAUDE.md §3.2 红线，窗口一旦没了就无法重建，必须报主线裁决而不是换个条件糊过去。
+  expect(db,
+    `🚨 AC-13 的空态窗口已消耗：ds_quote_material 现有 ${db} 行。\n` +
+    `AC-13 要求「0 行的干净库」，而清表是 §3.2 红线 ⇒ 窗口不可重建。\n` +
+    `⇒ 停下报主线裁决，🚫 不得改用零结果搜索等代理条件把它变绿。`).toBe(0);
+  console.log('[AC-13] 走原条件：库中 ds_quote_material 确为 0 行（真实空态）');
 
   const total = await totalCount(page);
   console.log('[AC-13] 空态下分页器总数 =', total);
@@ -524,7 +523,6 @@ test('E2E-13 / AC-13：0 行时 Empty 空态 + 总数 0 + 工具栏仍渲染 + �
   evidence('AC13-console-errors', errors.join('\n') || '(无)');
   expect(errors, `AC-13：空态下点击不得报错，实际 ${errors.length} 条`).toEqual([]);
 
-  if (db !== 0) await clearSearch(page);
 });
 
 // ══════════════════════════ E2E-14 → AC-14 搜索与分页 ══════════════════════════
@@ -557,9 +555,9 @@ test('E2E-14 / AC-14：销售产品搜主角料号得 1 行、清空恢复；客
   expect(dbHit, `AC-14 前置：库中 ${KW} 应有行（0 行 ⇒ 断言空跑）`).toBeGreaterThan(0);
   expect(uiHit, `AC-14：页面搜索结果 ${uiHit} 行 ≠ 库中 ${dbHit} 行 —— 搜索条件与库口径不一致`)
     .toBe(dbHit);
-  expect(dbHit, `⚠️ AC-14 原文写「${KW} 占 12 行」，但库中实为 ${dbHit} 行。\n` +
-    `实测 material_customer_map 与 原型图/客户产品-默认态.html 均为 11 行 ⇒ **AC 原文疑为笔误，已报主线**。`)
-    .toBe(12);
+  // ✅ 2026-09-03 主线裁决：AC 原文的「12 行」是笔误，已改为 11（实测 material_customer_map
+  //    与 原型图/客户产品-默认态.html 双基准一致）。此处按修订后的 11 断言。
+  expect(dbHit, `AC-14：${KW} 应占 11 行（修订后 AC）`).toBe(11);
   await shot(page, 'AC14-search', { fullPage: true });
   await clearSearch(page);
 });
@@ -599,17 +597,37 @@ test('E2E-15 / AC-15：超长品名省略号截断、页面不出现横向滚动
   await shot(page, 'AC15-long-text', { fullPage: true });
   await closeDrawer(page);
 
-  // ── ≥60 字符的正样本 ──
-  const longest = sqlOne(
-    `SELECT coalesce(max(length(material_name)),0)::text FROM ds_quote_material`);
+  // ── ≥60 字符的正样本（修订后 AC：**替换**某行品名为 60+ 合成值，总数仍 42）──
+  const longest = Number(sqlOne(
+    `SELECT coalesce(max(length(material_name)),0)::text FROM ds_quote_material`));
   console.log(`[AC-15] 库中最长品名 = ${longest} 字符`);
   evidence('AC15-longest-name', `max(length(material_name)) = ${longest}`);
-  expect(Number(longest),
-    `🚨 AC-15 **当前不可执行**：AC 原文要求存在一条「品名长度 ≥ 60 字符」的记录，\n` +
-    `但库中最长品名只有 ${longest} 字符（旧表 material_master 实测最长 22 字符：AgNi10/Cu-Cu/301/Cu接触桥）。\n` +
-    `造一条 ≥60 的记录会让 ds_quote_material 变 43 行，与 AC-4 的「总数 42」冲突。\n` +
-    `⇒ 需主线裁决：① 改某条现有记录的品名（保持 42 行）② 放宽 AC-4 到 43 ③ 把 AC-15 降级为结构性断言。\n` +
-    `🚫 测试无权自行改断言把它变绿。`).toBeGreaterThanOrEqual(60);
+  expect(longest,
+    `AC-15：应存在一条品名 ≥60 字符的记录（由样例准备步骤④**替换**某行品名produced，` +
+    `不是新增 —— 新增会让 ds_quote_material 变 43 行、与 AC-4 的 42 冲突）。` +
+    `当前库中最长仅 ${longest} 字符 ⇒ 步骤④未执行或未生效。`).toBeGreaterThanOrEqual(60);
+
+  // 该超长行必须以省略号截断，且不把容器撑破
+  const longRow = sqlOne(
+    `SELECT material_no FROM ds_quote_material WHERE length(material_name) >= 60 LIMIT 1`)!;
+  await search(page, longRow);
+  const cell = page.locator('.ant-table-tbody tr.ant-table-row td').nth(1).first();
+  await expect(cell, `AC-15：应能搜到超长品名的行 ${longRow}`).toBeVisible({ timeout: 10_000 });
+  const clipped = await cell.evaluate((el) => ({
+    scrollW: el.scrollWidth, clientW: el.clientWidth,
+    textOverflow: getComputedStyle(el as HTMLElement).textOverflow,
+  }));
+  console.log('[AC-15] 超长单元格 =', JSON.stringify(clipped));
+  evidence('AC15-clipped', `${longRow}: ${JSON.stringify(clipped)}`);
+  expect(clipped.textOverflow, 'AC-15：超长品名须省略号截断').toBe('ellipsis');
+  expect(clipped.scrollW, 'AC-15：内容确实溢出了单元格（未溢出则截断断言是空跑）')
+    .toBeGreaterThan(clipped.clientW);
+
+  const overflow2 = await page.evaluate(() =>
+    document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow2, 'AC-15：超长文案在场时页面本体仍不得横向溢出').toBeLessThanOrEqual(1);
+  await shot(page, 'AC15-long-name-row', { fullPage: true });
+  await clearSearch(page);
 });
 
 // ══════════════════════════ E2E-16 → AC-16 权限不足 ══════════════════════════
