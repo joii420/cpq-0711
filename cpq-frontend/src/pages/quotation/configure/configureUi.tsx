@@ -21,7 +21,19 @@ export const ReasonedButton: React.FC<
   return (
     <Tooltip title={reason}>
       <span style={{ display: 'inline-block', cursor: 'not-allowed' }}>
-        <Button {...rest} disabled onClick={undefined}>{children}</Button>
+        {/*
+          `pointerEvents:'none'` 让外层 <span> 的 `cursor:not-allowed` 真正生效
+          （否则 disabled <button> 自己的光标样式会盖住它）。
+          ⚠️ **它不是 tooltip 能否弹出的前提** —— 2026-09-02 真机 Playwright 证伪实验：
+             去掉这一行后 tooltip 文本照样是「请先填写客户产品编号」，AntD v6 的 Button
+             已自行处理 disabled 态的事件透传。写在这里是防止后人误以为可以顺手删掉
+             `<span>` 包裹层 —— **那一层才是必需的**。
+          📌 断言 tooltip 时用 `.ant-tooltip-container`：AntD v6 已把 `.ant-tooltip-inner`
+             改名，用旧类名断言会恒返回空数组（我自己先踩了一次，误判成 tooltip 没弹）。
+        */}
+        <Button {...rest} disabled onClick={undefined} style={{ ...rest.style, pointerEvents: 'none' }}>
+          {children}
+        </Button>
       </span>
     </Tooltip>
   );

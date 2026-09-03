@@ -30,3 +30,8 @@ body[data-theme='dark'] {
 .cfg-row-selected > td {
   background: #e6f4ff !important;
 }
+/* 材质选择器里「不可选」的材质：灰显但**仍然列出**（AC-17 / AC-18b，§1.2 禁止隐藏能力）。
+   ⚠️ 必须用类名 —— AntD v6 的 Table `onRow` 不会把返回的 `style` 铺到 <tr> 上。 */
+.cfg-row-disabled > td {
+  opacity: 0.45;
+}

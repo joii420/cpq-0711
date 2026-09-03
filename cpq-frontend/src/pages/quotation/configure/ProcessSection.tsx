@@ -191,7 +191,7 @@ const ProcessSection: React.FC<Props> = ({
       </div>
 
       {pickerOpen && !disabledReason && (
-        <div style={pickerPanelStyle}>
+        <div className="cfg-process-picker" style={pickerPanelStyle}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
             <b>{labels.pickerTitle}</b>
             <Input

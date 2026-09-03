@@ -292,9 +292,18 @@ const ConfigureProductDrawer: React.FC<Props> = ({
       width={960}
       placement="right"
       destroyOnClose
-      footer={footer}
+      /*
+       * 🚨 子面板打开时**必须把外层 footer 也一起盖住**（footer 是 Drawer 的独立区域，
+       *    不在 body 里，`position:absolute; inset:0` 的子面板盖不到它）。
+       *    否则屏幕上会同时出现两套「取消 / 上一步 / 下一步」——上面一套属于子面板，
+       *    下面一套属于向导，用户点哪个都可能不是他以为的那个。
+       *    （2026-09-02 真机截图实证：外层 footer 露在子面板下方）
+       */
+      footer={subOpen ? null : footer}
+      /* body 去掉内边距并置为定位上下文，子面板才能真正铺满整个正文区 */
+      styles={{ body: { padding: 0, position: 'relative', overflow: subOpen ? 'hidden' : 'auto' } }}
     >
-      <div style={{ position: 'relative', minHeight: 520 }}>
+      <div style={{ padding: 24, minHeight: 520 }}>
         <Steps
           size="small"
           current={result ? 3 : step}
@@ -350,21 +359,22 @@ const ConfigureProductDrawer: React.FC<Props> = ({
           />
         )}
 
-        {/* 内层局部面板覆盖抽屉正文（🚫 不嵌套 Drawer，避免层级 / ESC 冲突） */}
-        <AddPartSubDrawer
-          key={editingUid ?? '__new__'}
-          open={subOpen}
-          editing={editingPart}
-          materials={materials}
-          materialsLoading={materialsLoading}
-          materialsError={materialsError}
-          processCandidates={processCandidates}
-          processLoading={processLoading}
-          processError={processError}
-          onConfirm={upsertPart}
-          onCancel={() => { setSubOpen(false); setEditingUid(null); }}
-        />
       </div>
+
+      {/* 内层局部面板覆盖整个抽屉正文（🚫 不嵌套 Drawer，避免层级 / ESC 冲突） */}
+      <AddPartSubDrawer
+        key={editingUid ?? '__new__'}
+        open={subOpen}
+        editing={editingPart}
+        materials={materials}
+        materialsLoading={materialsLoading}
+        materialsError={materialsError}
+        processCandidates={processCandidates}
+        processLoading={processLoading}
+        processError={processError}
+        onConfirm={upsertPart}
+        onCancel={() => { setSubOpen(false); setEditingUid(null); }}
+      />
     </Drawer>
   );
 };

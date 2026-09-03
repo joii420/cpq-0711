@@ -162,7 +162,9 @@ const MaterialPicker: React.FC<Props> = ({ materials, loading, loadError, addedC
   ];
 
   return (
-    <div style={pickerPanelStyle}>
+    /* `cfg-material-picker` 是给验收/E2E 用的稳定定位锚点：材质表与选择器表都是
+       `.ant-table`，不加这个类就只能靠下标猜，很容易读错表（我自测时就先读错过一次）。 */
+    <div className="cfg-material-picker" style={pickerPanelStyle}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
         <b>选择材质</b>
         <Input
@@ -211,7 +213,8 @@ const MaterialPicker: React.FC<Props> = ({ materials, loading, loadError, addedC
               showSizeChanger: false,
               onChange: setPage,
             }}
-            onRow={(m) => ({ style: disabledReason(m) ? { opacity: 0.45 } : undefined })}
+            /* 灰显走 `rowClassName` + CSS 类（与本仓其他表格一致），不用 `onRow` 返回 style */
+            rowClassName={(m) => (disabledReason(m) ? 'cfg-row-disabled' : '')}
           />
         )}
       </div>
