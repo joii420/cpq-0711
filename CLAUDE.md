@@ -68,7 +68,7 @@ CPQ (Configure, Price, Quote) system for manufacturing/industrial components. Th
 
 ## Technology Stack
 
-- **Backend**: Java 17 + Quarkus 3.23.3 (RESTEasy Reactive, Hibernate ORM with Panache, Flyway)
+- **Backend**: Java 21 + Quarkus 3.23.3 (RESTEasy Reactive, Hibernate ORM with Panache, Flyway)
 - **Frontend**: Node.js 24 (SPA framework TBD)
 - **Database**: PostgreSQL 16 (JSONB for flexible template/component config)
 - **Export**: Apache POI (Excel), Quarkus Qute (PDF)

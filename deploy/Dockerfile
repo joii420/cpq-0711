@@ -32,7 +32,7 @@ RUN npm run build
 # ============================================================================
 # Stage 2: Backend build (Maven -> quarkus-app/)
 # ============================================================================
-FROM maven:3.9-eclipse-temurin-17 AS backend-builder
+FROM maven:3.9-eclipse-temurin-21 AS backend-builder
 WORKDIR /app/backend
 
 # Warm the Maven cache (cached unless pom.xml changes)
@@ -53,7 +53,7 @@ RUN mvn -B -e -ntp -DskipTests package
 # ============================================================================
 # Stage 3: Runtime (slim JRE 17, non-root, Asia/Shanghai TZ)
 # ============================================================================
-FROM eclipse-temurin:17-jre-jammy AS runtime
+FROM eclipse-temurin:21-jre-jammy AS runtime
 
 # Quarkus scheduler assumes UTC+8 — set TZ at OS + JVM level.
 RUN apt-get update \
