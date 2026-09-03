@@ -56,9 +56,11 @@
 ```
 GET /dataset/{dataset}/customer-parts
 Query : page(0-based) / size / keyword / sortBy / sortDir
-200   : { success:true, data:{ total: 17, items:[ {
-            customerNo, customerName, customerPartName,
-            customerProductNo, customerDrawingNo, materialNo } ] } }
+200   : { code:200, message:"success", data:{
+            total: 17,
+            columns:[ {name,label,type} ],          // 只投影三键，不下发 ColumnDef
+            items:[ { customerNo, customerName, customerPartName,
+                      customerProductNo, customerDrawingNo, materialNo } ] } }
 ```
 
 - `customerName` **必须由后端 JOIN `customer` 表**得出：`ds_quote_customer_part` 只有 `customer_no`，且主源第一轮已提醒「客户名现网大量为空，要走 customer 表 JOIN 或兜底」。仅显示 `CUST-0004` 这类编号对业务不可用。
@@ -79,7 +81,12 @@ Query : page(0-based) / size / keyword / sortBy / sortDir
   | `C1` | **JOIN 不到** | 1 |
 
   > JOIN 不到时回 `null`，前端渲染 `—`（AC-2）。这不是缺陷，是现网真实状态。
-- `keyword` 建议匹配 `customer_no` / `customer_product_no` / `material_no` 三列（AC-14 要按 `CUST-0004` 搜出 12 行）。
+- `keyword` **严格匹配** `customer_no` / `customer_product_no` / `material_no` **三列**（AC-14 要按 `CUST-0004` 搜出 **11** 行）。
+  ⚠️ 日后若有人「顺手」把 `customer_part_name` 或 `c.name` 加进匹配范围，行数会变而**测试不一定挂** —— 后端代理留记，此处固化为契约。
+
+> 🚩 **2026-09-03 更正（后端代理实测抛回）**：本节示例原写 `{ success:true, ... }`，**与项目真实响应信封不符**。
+> `ApiResponse.java` **没有 `success` 字段**，真实信封是 `{code, message, data}`。前端 `productHubApi.ts` 已按「只看有无 `data` 键」解包，绝不读 `success`。
+> ⚠️ 主源 `task-260902` 的 `api.md` 同样写着 `success:true` —— **那是文档笔误，不是契约**。下一个照抄的人还会撞，已向对方提出。
 
 ### 缺口 2（次要）：`GET parts` 响应缺 `productionNo`
 
