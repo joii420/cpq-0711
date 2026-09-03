@@ -25,6 +25,11 @@ export interface FingerprintPreview {
   checking: boolean;
   matched: boolean;
   matchedPartNo?: string;
+  /**
+   * 命中复用时，**已有产品**的工序顺序（`lookupFingerprint` 响应的 `snapshot.processes`，按 `seqNo`）。
+   * AC-19④ 要靠它把「沿用的是哪一串顺序」写出来，而不是只说一句空话。
+   */
+  reusedProcesses?: string[];
 }
 
 export interface SubmitFailure {
@@ -178,8 +183,7 @@ const ConfirmStep: React.FC<Props> = ({
             ⚠️ 如果两次选的<b>配方编号不同</b>但含量逐字相同，<b>仍然判为相同</b>、仍然复用 ——
             这是用户裁决 D-5 的<b>有意为之</b>（含量相同即同一种材料），<b>不是 bug</b>。
             <br />
-            ⚠️ 工序<b>顺序</b>不影响复用判定，所以复用时工序顺序沿用已有产品的
-            {result.reusedHfPartNos.length > 0 ? <>（{result.reusedHfPartNos[0]}）</> : null}，不会按本次的排列重排。
+            ⚠️ 工序<b>顺序</b>不影响复用判定，所以复用时工序<b>顺序沿用已有产品</b>的，不会按本次的排列重排。
           </NoteBlock>
         )}
         {result.structureVersion ? (
@@ -223,10 +227,24 @@ const ConfirmStep: React.FC<Props> = ({
         <Alert
           type="info"
           showIcon
-          message={<b>产品库里已有相同配置的产品，将直接复用它的销售料号</b>}
+          message={<b>该配置已存在，产品库里已有相同配置的产品，将直接复用它的销售料号</b>}
           description={(
             <div>
               销售料号 <Mono>{preview.matchedPartNo || '（提交时确定）'}</Mono>
+              {/*
+                🚨 AC-19④：命中复用时**必须明示**工序顺序沿用已有产品的。
+                   理由不是"提示更友好"，而是**用户调的序确实不生效**：
+                   `unit_price` 的分组键没有 lineItem 维度，同料号同客户只有一套 `seq_no`；
+                   指纹命中时后端直接 return，第二次根本不写库。
+                   不写这句话，用户会以为自己刚调的工序顺序生效了 —— 那是静默的预期落空。
+              */}
+              <div style={{ marginTop: 6 }}>
+                ⚠️ 工序<b>顺序沿用已有产品</b>
+                {preview.reusedProcesses && preview.reusedProcesses.length > 0
+                  ? <>（{preview.reusedProcesses.join(' → ')}）</>
+                  : null}
+                ，不会按本次调整的排列重排 —— 换个次序仍是同一个产品。
+              </div>
               <div style={{ color: '#909399', fontSize: 12, marginTop: 4 }}>
                 不会新建料号。你的客户产品编号 {customerProductNo} 会作为新的映射关系记录下来。
               </div>

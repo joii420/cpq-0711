@@ -181,6 +181,12 @@ const ConfigureProductDrawer: React.FC<Props> = ({
             checking: false,
             matched: !!res.matched,
             matchedPartNo: res.matched ? (res.matchedPartNo || res.hfPartNo) : undefined,
+            // AC-19④：把**已有产品**的工序顺序带到确认页写出来（按 seqNo 升序，不是本次的排列）
+            reusedProcesses: res.matched
+              ? [...(res.snapshot?.processes ?? [])]
+                  .sort((a, b) => (a.seqNo ?? 0) - (b.seqNo ?? 0))
+                  .map((x) => x.name || x.processCode)
+              : undefined,
           });
         })
         .catch(() => {
