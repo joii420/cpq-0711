@@ -113,13 +113,16 @@ test.describe('task-260902 选配主流程', () => {
     await addMaterial(page, '00006', '70');
     await addMaterial(page, '00123', '20');
 
-    const warn = drawer(page).getByText(/90/).first();
-    await expect(warn, 'AC-4②：占比提示必须写出实际合计值 90（🚫 不接受「合计不正确」这类形容词）')
-      .toBeVisible({ timeout: 8000 });
-    const warnText = await warn.innerText();
-    console.log(`[AC-4] 提示文案 = ${warnText}`);
-    expect(warnText, 'AC-4②：提示应写成「材质占比合计为 90%，需要正好 100%」这类含实际值的句子')
-      .toMatch(/90\s*%/);
+    // 🚨 判据取**用户实际看到的文本**（抽屉 innerText），不用 locator 可见性：
+    //    `/90/` 这种宽正则 + `.first()` 会抓到某个隐藏节点就停下（实测报 Received: hidden），
+    //    于是「产品到底提示了什么」根本没被观测到 —— 观测手段没验明就下结论，是越界。
+    await page.waitForTimeout(1200);
+    const drawerText = (await drawer(page).innerText({ timeout: 3000 }).catch(() => '')).replace(/\s+/g, ' ');
+    console.log(`[AC-4] 抽屉全文 = ${drawerText.slice(0, 900)}`);
+    expect(drawerText, 'AC-4 阳性对照：抽屉文本为空 ⇒ 没抓到抽屉，本条结论无效').not.toBe('');
+    expect(drawerText,
+      'AC-4②：占比合计 ≠ 100 时，提示必须写出**实际合计值 90%**（AC 原文：不接受「合计不正确」这类形容词）'
+    ).toMatch(/90\s*%/);
 
     const confirm = drawer(page).getByRole('button', { name: /确\s*定|下一步/ }).last();
     await expect(confirm, 'AC-4①：合计 ≠ 100 时不得放行').toBeDisabled();

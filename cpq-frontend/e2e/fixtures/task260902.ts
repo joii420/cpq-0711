@@ -150,8 +150,14 @@ export async function expectNoLoadingPlaceholder(page: Page, scope = '.ant-drawe
  * ⇒ 三路依次尝试：外层包裹 → 按钮本身 → 鼠标坐标移动；仍为空才认为真的没有 tooltip。
  */
 export async function tooltipOf(page: Page, button: ReturnType<Page['locator']>): Promise<string> {
-  const read = async () =>
-    (await page.locator('.ant-tooltip-inner').last().innerText().catch(() => '')).trim();
+  // 🚨 与 hover 同一类坑的第二个入口：`innerText()` 对**不存在的元素**也会等，
+  //    不传 timeout 时它继承整条用例的超时（180s）⇒ 没有 tooltip 的场景直接把用例卡满。
+  //    ⇒ 先 count() 判存在，再带 timeout 读。
+  const read = async () => {
+    const tip = page.locator('.ant-tooltip-inner').last();
+    if (await tip.count() === 0) return '';
+    return (await tip.innerText({ timeout: 2000 }).catch(() => '')).trim();
+  };
 
   // 🚨 每个 hover 都必须带 timeout：不传时它继承**整条用例的超时**（本项目设成了 180s），
   //    一次 hover 不成功就把用例卡满 3 分钟，最后以「Test timeout」收场 ——
@@ -217,7 +223,7 @@ export async function startNewPart(page: any, name: string, spec: string, dim: s
  */
 export async function addMaterial(page: Page, recipeCode: string, ratio: string) {
   const dump = async (why: string) => {
-    const txt = (await drawer(page).innerText().catch(() => '(取不到)'))
+    const txt = (await drawer(page).innerText({ timeout: 3000 }).catch(() => '(取不到)'))
       .replace(/\n+/g, ' | ').slice(0, 800);
     throw new Error(`[夹具失败·选择器，非产品缺陷] ${why}\n当前抽屉可见文本：${txt}`);
   };
@@ -226,7 +232,7 @@ export async function addMaterial(page: Page, recipeCode: string, ratio: string)
   const pickerOpen = async () =>
     (await page.locator('.ant-drawer, .ant-modal').last()
       .getByPlaceholder(/搜索|材质编号|材质名/).count()) > 0;
-  for (const name of [/添加第一个材质/, /添加材质/, /添加第一个材质/]) {
+  for (const name of [/\+\s*添加第一个材质/, /\+\s*添加材质/, /添加材质/]) {
     if (await pickerOpen()) break;
     const btn = drawer(page).getByRole('button', { name }).first();
     if (await btn.count() === 0) continue;
@@ -244,7 +250,7 @@ export async function addMaterial(page: Page, recipeCode: string, ratio: string)
   const row = panel.locator('tr, li, .picker-row, [class*="row"]')
     .filter({ hasText: recipeCode }).first();
   if (await row.count() === 0) {
-    const seen = (await panel.innerText().catch(() => '')).replace(/\n+/g, ' | ').slice(0, 600);
+    const seen = (await panel.innerText({ timeout: 3000 }).catch(() => '')).replace(/\n+/g, ' | ').slice(0, 600);
     throw new Error(`[夹具失败·选择器，非产品缺陷] 材质选择器里搜「${recipeCode}」没有命中任何行。\n选择器现场：${seen}`);
   }
   const pickBtn = row.getByRole('button', { name: /选\s*择|添加|确\s*定/ }).first();
@@ -273,7 +279,7 @@ export async function openMaterialPicker(page: Page) {
   //    并且**验证选择器真的开了**（出现搜索框），🚫 不许「点了就当开了」。
   const opened = async () =>
     (await drawer(page).getByPlaceholder(/搜索|材质编号|材质名/).count()) > 0;
-  for (const name of [/添加第一个材质/, /添加材质/, /添加第一个材质/]) {
+  for (const name of [/\+\s*添加第一个材质/, /\+\s*添加材质/, /添加材质/]) {
     if (await opened()) return;
     const btn = drawer(page).getByRole('button', { name }).first();
     if (await btn.count() === 0) continue;
@@ -281,7 +287,7 @@ export async function openMaterialPicker(page: Page) {
     await page.waitForTimeout(900);
   }
   if (await opened()) return;
-  const txt = (await drawer(page).innerText().catch(() => '(取不到)')).replace(/\n+/g, ' | ').slice(0, 800);
+  const txt = (await drawer(page).innerText({ timeout: 3000 }).catch(() => '(取不到)')).replace(/\n+/g, ' | ').slice(0, 800);
   throw new Error(
     '[夹具失败·选择器，非产品缺陷] 点了「+ 添加材质 / + 添加第一个材质」后，材质选择器没有出现。\n'
     + `当前抽屉可见文本：${txt}`);
@@ -305,7 +311,7 @@ export async function addProcesses(page: Page, processNos: string[]) {
     // 打开工序选择器（空态入口是「+ 添加第一个工序」），并验证真的开了
     const opened = async () =>
       (await drawer(page).getByPlaceholder(/搜索|工序编号|工序名/).count()) > 0;
-    for (const name of [/添加第一个工序/, /添加工序/, /添加第一个工序/]) {
+    for (const name of [/\+\s*添加第一个工序/, /\+\s*添加工序/, /添加工序/]) {
       if (await opened()) break;
       const btn = drawer(page).getByRole('button', { name }).first();
       if (await btn.count() === 0) continue;
@@ -313,7 +319,7 @@ export async function addProcesses(page: Page, processNos: string[]) {
       await page.waitForTimeout(900);
     }
     if (!await opened()) {
-      const txt = (await drawer(page).innerText().catch(() => '')).replace(/\n+/g, ' | ').slice(0, 700);
+      const txt = (await drawer(page).innerText({ timeout: 3000 }).catch(() => '')).replace(/\n+/g, ' | ').slice(0, 700);
       throw new Error(`[夹具失败·选择器，非产品缺陷] 点了「+ 添加工序」后工序选择器没出现。\n抽屉现场：${txt}`);
     }
 
@@ -323,7 +329,7 @@ export async function addProcesses(page: Page, processNos: string[]) {
     const row = drawer(page).locator('tr, li, .picker-row, [class*="row"]')
       .filter({ hasText: no }).first();
     if (await row.count() === 0) {
-      const txt = (await drawer(page).innerText().catch(() => '')).replace(/\n+/g, ' | ').slice(0, 700);
+      const txt = (await drawer(page).innerText({ timeout: 3000 }).catch(() => '')).replace(/\n+/g, ' | ').slice(0, 700);
       throw new Error(`[夹具失败·选择器，非产品缺陷] 工序选择器里搜「${no}」没命中任何行。\n抽屉现场：${txt}`);
     }
     const pick = row.getByRole('button', { name: /选\s*择|添\s*加/ }).first();
@@ -381,7 +387,7 @@ export async function assertStep1Passable(page: Page) {
     const catItem = page.locator('.ant-form-item')
       .filter({ has: page.locator('label', { hasText: '产品分类' }) }).first();
     const catValue = (await catItem.locator('.ant-select-selection-item').first()
-      .innerText().catch(() => '')).trim();
+      .innerText({ timeout: 3000 }).catch(() => '')).trim();
     const catDisabled = ((await catItem.locator('.ant-select').first()
       .getAttribute('class').catch(() => '')) || '').includes('ant-select-disabled');
     throw new Error(
@@ -476,7 +482,7 @@ export async function selectAnyIfPresent(page: Page, label: string): Promise<boo
     await page.keyboard.press('Escape').catch(() => {});
     return false;
   }
-  const picked = (await options.first().innerText().catch(() => '')).replace(/\n/g, ' ');
+  const picked = (await options.first().innerText({ timeout: 3000 }).catch(() => '')).replace(/\n/g, ' ');
   await options.first().click();
   await page.waitForTimeout(500);
   console.log(`[夹具] 「${label}」选了第 1 个候选（共 ${n} 个）："${picked}"`);
@@ -494,7 +500,7 @@ export async function clickInDrawer(page: Page, what: string, matcher: RegExp | 
   try {
     await el.waitFor({ state: 'visible', timeout: 6000 });
   } catch {
-    const txt = (await drawer(page).innerText().catch(() => '(取不到抽屉文本)'))
+    const txt = (await drawer(page).innerText({ timeout: 3000 }).catch(() => '(取不到抽屉文本)'))
       .replace(/\n+/g, ' | ').slice(0, 900);
     throw new Error(
       `[夹具失败·选择器，非产品缺陷] 抽屉里找不到「${what}」。\n当前抽屉可见文本：${txt}`);
@@ -517,15 +523,19 @@ export async function openPartTypePicker(page: Page) {
   const appeared = async () =>
     await drawer(page).getByText(/第\s*1\s*步：选择类型/).first().isVisible().catch(() => false);
 
-  for (const name of [/添加第一个配件/, /添加配件/, /添加第一个配件/]) {
+  // 🚨 必须靠**前导「+」**把动作按钮和**步骤导航**区分开：
+  //    向导顶部的步骤条「客户产品编号 / 添加配件 / 组合工序 / 确认并添加」**本身就是 button**，
+  //    `/添加配件/` 会先命中导航项 ⇒ 点了只是切步骤，等于没点，
+  //    然后失败点落到「类型选择没出现」（AC-11 就这么挂的）。
+  for (const name of [/\+\s*添加第一个配件/, /\+\s*添加配件/, /\+\s*添加第一个配件/]) {
     if (await appeared()) return;
     const btn = drawer(page).getByRole('button', { name }).first();
     if (await btn.count() === 0) continue;
-    await btn.click({ force: true }).catch(() => {});
+    await btn.click({ force: true, timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(900);
   }
   if (await appeared()) return;
-  const txt = (await drawer(page).innerText().catch(() => '(取不到)')).replace(/\n+/g, ' | ').slice(0, 900);
+  const txt = (await drawer(page).innerText({ timeout: 3000 }).catch(() => '(取不到)')).replace(/\n+/g, ' | ').slice(0, 900);
   throw new Error(
     '[夹具失败·选择器，非产品缺陷] 点了「+ 添加配件 / + 添加第一个配件」之后，'
     + '配件类型选择（零件 / 外购件）始终没出现。\n当前抽屉可见文本：' + txt);
@@ -548,7 +558,7 @@ export async function advanceUntilVisible(page: Page, target: RegExp, what: stri
     await page.waitForTimeout(900);
   }
   if (await seen()) return;
-  const txt = (await drawer(page).innerText().catch(() => '(取不到)')).replace(/\n+/g, ' | ').slice(0, 900);
+  const txt = (await drawer(page).innerText({ timeout: 3000 }).catch(() => '(取不到)')).replace(/\n+/g, ' | ').slice(0, 900);
   throw new Error(
     `[夹具失败·选择器，非产品缺陷] 连点「下一步」${maxSteps} 次后仍未出现「${what}」。\n当前抽屉可见文本：${txt}`);
 }
@@ -585,7 +595,7 @@ export async function fillInDrawer(page: Page, label: string, value: string) {
       (els) => els.map((e) => (e as HTMLInputElement).placeholder || '(无)')).catch(() => []);
     const phsPage = await page.locator('input:visible').evaluateAll(
       (els) => els.map((e) => (e as HTMLInputElement).placeholder || '(无)')).catch(() => []);
-    const txt = (await drawer(page).innerText().catch(() => '(取不到)'))
+    const txt = (await drawer(page).innerText({ timeout: 3000 }).catch(() => '(取不到)'))
       .replace(/\n+/g, ' | ').slice(0, 700);
     throw new Error(
       `[夹具失败·选择器，非产品缺陷] 抽屉里找不到「${label}」对应的输入框。\n`
@@ -617,7 +627,7 @@ export async function advanceUntil(
     await page.waitForTimeout(1000);
   }
   if (await ready()) return;
-  const txt = (await drawer(page).innerText().catch(() => '(取不到)')).replace(/\n+/g, ' | ').slice(0, 900);
+  const txt = (await drawer(page).innerText({ timeout: 3000 }).catch(() => '(取不到)')).replace(/\n+/g, ' | ').slice(0, 900);
   throw new Error(
     `[夹具失败·选择器，非产品缺陷] 连点「下一步」${maxSteps} 次后仍未到达「${what}」。\n当前抽屉可见文本：${txt}`);
 }
@@ -648,7 +658,7 @@ export async function submitToQuotation(page: Page, tag: string) {
     submit.click(),
   ]);
   if (!resp) {
-    const after = (await drawer(page).innerText().catch(() => '(抽屉已关闭)'))
+    const after = (await drawer(page).innerText({ timeout: 3000 }).catch(() => '(抽屉已关闭)'))
       .replace(/\n+/g, ' | ').slice(0, 600);
     throw new Error(
       `[${tag} 阳性对照失败] 点了提交按钮后 25s 内没有观测到 `
@@ -658,7 +668,15 @@ export async function submitToQuotation(page: Page, tag: string) {
   }
   const body = await resp.text().catch(() => '');
   console.log(`[${tag}] 提交响应 ${resp.status()} ${body.slice(0, 300)}`);
-  await page.waitForTimeout(2000);
+
+  // 🚨 等抽屉真的关掉再把控制权交回调用方：抽屉/遮罩还在时，页面上的按钮
+  //    （如「添加产品」）会一直处于 not stable，表现为 locator.click 一路等到用例超时 ——
+  //    失败点落在那个按钮上，而根因是抽屉没关（AC-19④/AC-12 就这么各挂了 4 分钟）。
+  await page
+    .waitForFunction(() => document.querySelectorAll('.ant-drawer-open').length === 0, undefined,
+      { timeout: 15000 })
+    .catch(() => console.log(`[${tag}] ⚠️ 15s 内抽屉未关闭，后续操作可能被遮罩挡住`));
+  await page.waitForTimeout(1500);
   return resp;
 }
 
@@ -685,7 +703,7 @@ export async function addOutsourcedPart(page: Page, partNo: string) {
   const row = drawer(page).locator('tr, li, .picker-row, [class*="row"]')
     .filter({ hasText: partNo }).first();
   if (await row.count() === 0) {
-    const txt = (await drawer(page).innerText().catch(() => '')).replace(/\n+/g, ' | ').slice(0, 700);
+    const txt = (await drawer(page).innerText({ timeout: 3000 }).catch(() => '')).replace(/\n+/g, ' | ').slice(0, 700);
     throw new Error(`[夹具失败·选择器，非产品缺陷] 外购件列表里找不到 ${partNo}。\n抽屉现场：${txt}`);
   }
   const pick = row.getByRole('button', { name: /选\s*择|添加|确\s*定/ }).first();
