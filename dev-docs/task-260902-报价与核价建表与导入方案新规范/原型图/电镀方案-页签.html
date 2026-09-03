@@ -1,0 +1,68 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>主数据维护 · 电镀方案（只读）</title><link rel="stylesheet" href="antd-like.css"></head><body>
+<div class="page">
+  <div class="note"><b>AC-48~51</b>（S-9，2026-09-03 追加）　主数据维护第 <b>7</b> 个页签。
+  <b>一个页签 + 页内数据集下拉</b>，因为报价与详细核价各有一张电镀方案表且<b>字段不同</b>（10 列 vs 8 列）。
+  🚫 <b>只读</b> —— 电镀方案是免版本表，只能经导入通道覆盖更新。</div>
+
+  <div class="card">
+    <div class="card-head">主数据维护</div>
+    <div class="tabs">
+      <div class="tab">料号核价</div><div class="tab">材质</div><div class="tab">元素</div><div class="tab">工序</div>
+      <div class="tab">基础核价</div><div class="tab">详细核价</div>
+      <div class="tab active new" style="margin-right:28px">电镀方案</div>
+    </div>
+    <div class="card-body">
+      <div class="alert alert-info"><span>ℹ️</span><div>
+        电镀方案为导入维护，如需修改请通过「导入报价数据」/「导入核价数据」重新导入
+      </div></div>
+
+      <div class="toolbar">
+        <div class="row">
+          <span class="muted">数据集</span>
+          <select class="select" style="width:150px"><option>报价</option><option>详细核价</option></select>
+          <div class="search"><input class="input" placeholder="搜索方案编号 / 电镀元素名称"></div>
+        </div>
+        <div class="toolbar-right"><button class="btn">↻ 刷新</button></div>
+      </div>
+
+      <div class="table-wrap"><table class="compact">
+        <thead><tr>
+          <th>方案编号</th><th>版本</th><th>项次</th><th>电镀元素名称</th>
+          <th>元素单价来源网站网址</th><th>元素单价来源网站名称</th><th>元素单价抓取规则</th>
+          <th>电镀面积（cm2）</th><th>镀层厚度（μm）</th><th>电镀要求</th>
+        </tr></thead>
+        <tbody>
+          <tr><td>A0001</td><td>2000</td><td>1</td><td>Ni</td>
+            <td><span class="muted">https://www.ccmn.cn/</span></td><td>长江有色网</td><td>1.均价</td>
+            <td>0.031</td><td>0.4</td><td>镀层厚度≥0.4μm</td></tr>
+          <tr><td>A0001</td><td>2000</td><td>2</td><td>Au</td>
+            <td><span class="muted">https://www.ccmn.cn/</span></td><td>长江有色网</td><td>2.最高价</td>
+            <td>0.037</td><td>0.1</td><td>镀层厚度≥0.1μm</td></tr>
+        </tbody>
+      </table></div>
+      <div class="pager"><span class="muted">共 2 条</span>
+        <span class="pg">‹</span><span class="pg active">1</span><span class="pg">›</span>
+        <select class="select" style="width:110px"><option>20 条/页</option></select></div>
+
+      <div class="note" style="margin-top:20px">
+        <b>切到「详细核价」后表格变成 8 列</b>（AC-49）—— 少了网址/名称/抓取规则三列，多了「密度（g/cm3)」：
+        <div class="table-wrap" style="margin-top:8px"><table class="compact">
+          <thead><tr><th>方案编号</th><th>版本</th><th>项次</th><th>电镀元素名称</th>
+            <th>电镀面积（cm2）</th><th>镀层厚度（μm）</th><th>电镀要求</th><th>密度（g/cm3)</th></tr></thead>
+          <tbody>
+            <tr><td>A0001</td><td>2000</td><td>1</td><td>Ni</td><td>0.031</td><td>0.4</td><td>镀层厚度≥0.4μm</td><td>8.902</td></tr>
+            <tr><td>A0001</td><td>2000</td><td>2</td><td>Au</td><td>0.037</td><td>0.1</td><td>镀层厚度≥0.1μm</td><td>19.32</td></tr>
+          </tbody>
+        </table></div>
+        🚨 <b>列定义由接口的 <code>columns</code> 下发，前端不得写死任何一列。</b>
+      </div>
+
+      <div class="note">
+        <b>空态</b>（AC-51 同屏）：无数据时表格区显示
+        <span class="tag tag-grey">暂无电镀方案数据，请先导入</span>，
+        <b>不出现</b>「新增」按钮 —— 该页签没有任何写入口。
+      </div>
+    </div>
+  </div>
+</div></body></html>

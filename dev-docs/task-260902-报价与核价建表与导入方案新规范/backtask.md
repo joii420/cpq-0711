@@ -155,6 +155,17 @@ com.cpq.dataset/
 - 验证方式：开 `hibernate.show-sql`，导入 200 料号 vs 20 料号，**SQL 条数不得随料号数线性增长**。
   ⚠️ 这条要用 A/B 两组实测数字进 `test-report.md`，不许只写「已批量化」。
 
+## B-14 · 电镀方案只读端点（S-9，2026-09-03 追加）
+
+| 服务的 AC | AC-49, AC-50, AC-51 |
+|---|---|
+
+- `GET /dataset/{dataset}/plating-schemes`，契约见 `api.md §8.5`。
+- `{dataset}` 只接受 `quote` / `cost-detail`；传 `cost-basic` 返 **404**（该数据集无电镀方案表）。
+- **`columns` 按数据集下发**（报价 10 列 / 详细核价 8 列），直接从 Registry 的 `SheetDef` 取，🚫 不要再手写一份列定义。
+- 🚫 **只读，不提供任何写端点**（AC-51）。免版本表的写入只经导入通道。
+- 分页与 `keyword` 过滤在 SQL 侧做，🚫 不许全量查出来在内存里过滤。
+
 ## B-13 · 回归保障（零改动证明）
 
 | 服务的 AC | AC-42, AC-43 |

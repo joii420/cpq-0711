@@ -238,6 +238,50 @@
 
 ---
 
+## 8.5 `GET /dataset/{dataset}/plating-schemes` — 电镀方案只读列表（S-9 / AC-48~51）
+
+> 🚩 2026-09-03 追加（裁决 D-21）。补上**免版本表在新体系里没有查看入口**的缺口。
+> `{dataset}` 仅接受 `quote` 与 `cost-detail`（`cost-basic` 没有电镀方案表，返回 **404**）。
+
+**Query**：`page`（0-based）、`size`、`keyword`（匹配方案编号 / 电镀元素名称）
+
+**响应 200** —— `columns` 由后端**按数据集下发**，前端不得写死：
+
+```json
+{ "code": 200, "data": {
+  "total": 2,
+  "columns": [
+    { "name": "scheme_no",        "label": "方案编号",   "type": "STRING" },
+    { "name": "scheme_version",   "label": "版本",       "type": "STRING" },
+    { "name": "item_seq",         "label": "项次",       "type": "NUMBER" },
+    { "name": "plating_element",  "label": "电镀元素名称","type": "STRING" },
+    { "name": "price_source_url", "label": "元素单价来源网站网址", "type": "STRING" },
+    { "name": "price_source_name","label": "元素单价来源网站名称", "type": "STRING" },
+    { "name": "price_fetch_rule", "label": "元素单价抓取规则",     "type": "STRING" },
+    { "name": "plating_area",     "label": "电镀面积（cm2）",     "type": "DECIMAL" },
+    { "name": "coating_thickness","label": "镀层厚度（μm）",      "type": "DECIMAL" },
+    { "name": "plating_requirement","label": "电镀要求", "type": "STRING" }
+  ],
+  "items": [
+    { "scheme_no": "A0001", "scheme_version": "2000", "item_seq": 1, "plating_element": "Ni",
+      "price_source_url": "https://www.ccmn.cn/", "price_source_name": "长江有色网",
+      "price_fetch_rule": "1.均价", "plating_area": "0.031000000000",
+      "coating_thickness": "0.400000000000", "plating_requirement": "镀层厚度≥0.4μm" }
+  ]
+}}
+```
+
+**两个数据集的列不同**（AC-49）：
+
+| dataset | 表 | 列数 | 差异 |
+|---|---|---|---|
+| `quote` | `ds_quote_plating_scheme` | **10** | 多 `元素单价来源网站网址 / 名称 / 抓取规则` |
+| `cost-detail` | `ds_cost_detail_plating_scheme` | **8** | 多 `密度（g/cm3)`，无上述三列 |
+
+🚫 **只读，没有写端点。** 电镀方案是免版本表，写入语义是「按主键覆盖更新」，只能经导入通道（`POST .../import`）。
+
+---
+
 ## 9. 报价侧导入（复用 §1）
 
 报价单管理「导入报价数据」按钮调 `POST /dataset/quote/import`，**无独立端点**。
@@ -247,7 +291,7 @@
 
 ## 10. 回写 `main-api.md`
 
-本任务新增 **8 个端点**，测试完成后、合并 master 前必须回写 `dev-docs/main-api.md`（`task-docs.md §2.5`）：
+本任务新增 **9 个端点**，测试完成后、合并 master 前必须回写 `dev-docs/main-api.md`（`task-docs.md §2.5`）：
 
 ```
 POST /api/cpq/dataset/{dataset}/import
@@ -258,6 +302,7 @@ GET  /api/cpq/dataset/{dataset}/parts/{axisValue}/sheets/{sheetKey}/rows
 GET  /api/cpq/dataset/{dataset}/parts/{axisValue}/sheets/{sheetKey}/versions
 PUT  /api/cpq/dataset/{dataset}/parts/{axisValue}/sheets/{sheetKey}/rows
 GET  /api/cpq/dataset/{dataset}/lookup/{masterType}
+GET  /api/cpq/dataset/{dataset}/plating-schemes
 ```
 
 **本次不修改、不删除任何既有端点。**
