@@ -55,8 +55,10 @@ public class ExistingProductService {
         //    但列表必须按销售料号**去重成一行** —— 故最外层用 DISTINCT ON (material_no)，
         //    取 created_at 最早的那个编号作代表。筛选谓词在去重之前生效，
         //    所以「按任一编号都能搜到该产品」与「只出现一次」两个断言同时成立。
-        //    📌 这是对 AC-12b④ 与 AC-12① 之间张力的保守取舍（宁可少显示一个编号，
-        //       也不产生重复行），已在回报中登记为待主线确认点。
+        //    ✅ 用户裁决（2026-09-03，AC-12b⑤-b）：**去重对，少显示不对，两者不冲突** ——
+        //       行按料号去重保留，同时用 customerProductNos 数组把该料号名下**全部编号**带出来。
+        //       否则用第二个编号的销售打开列表看到的是别人的编号，会「认不出这是自己的产品」，
+        //       那是本任务要修的问题的另一面（从**找不到**变成**认不出**）。
         //    另：编号已进 spn 的料号不再从 mcm 出一次（mcm 侧的 NOT EXISTS 谓词）。
         //
         // 🚫 保留 mcm 侧那句 `OR EXISTS (SELECT 1 FROM sel_part_signature …)` 兜底不动 ——
@@ -128,10 +130,29 @@ public class ExistingProductService {
                 "WHERE " + spnWhere;
 
         String unionSql = "(" + mcmSelect + ") UNION ALL (" + spnSelect + ")";
+
+        // AC-12b⑤-b：该 (customer_no, material_no) 名下的全部客户产品编号，按 created_at 升序。
+        // 🚫 **不逐行查**（那是 backtask B-19 刚治过的 N+1）：这里是一个 GROUP BY 聚合子查询，
+        //    与主查询一次 LEFT JOIN 完成，SQL 条数与行数无关。
+        String aggSql =
+                "SELECT a.material_no, array_agg(a.customer_product_no ORDER BY a.created_at) AS all_product_nos "
+                + "FROM ( "
+                + "  SELECT spn.quote_part_no AS material_no, spn.customer_product_no, spn.created_at "
+                + "    FROM sel_product_no spn WHERE spn.customer_no = :customerNo "
+                + "  UNION ALL "
+                + "  SELECT mcm2.material_no, mcm2.customer_product_no, mcm2.created_at "
+                + "    FROM material_customer_map mcm2 "
+                + "   WHERE mcm2.system_type = 'QUOTE' AND mcm2.customer_no = :customerNo "
+                + "     AND mcm2.customer_product_no IS NOT NULL "
+                + ") a GROUP BY a.material_no";
+
         // DISTINCT ON 按销售料号去重（AC-12b④），代表行取 created_at 最早的那条。
         String dedupSql = "SELECT DISTINCT ON (u.material_no) u.material_no, u.customer_product_no, "
-                + "u.product_name, u.spec, u.has3d, u.thumbnail_url, u.source, u.config_product_type "
-                + "FROM (" + unionSql + ") u ORDER BY u.material_no, u.src_created_at, u.customer_product_no";
+                + "u.product_name, u.spec, u.has3d, u.thumbnail_url, u.source, u.config_product_type, "
+                + "agg.all_product_nos "
+                + "FROM (" + unionSql + ") u "
+                + "LEFT JOIN (" + aggSql + ") agg ON agg.material_no = u.material_no "
+                + "ORDER BY u.material_no, u.src_created_at, u.customer_product_no";
 
         // ── 总数（1 条 SQL） ──
         Query countQuery = em.createNativeQuery("SELECT COUNT(*) FROM (" + dedupSql + ") d");
@@ -158,6 +179,7 @@ public class ExistingProductService {
             dto.thumbnailUrl = (String) r[5];
             dto.source = (String) r[6];            // EXISTING(真·已有,有客户产品号) | CONFIGURED(选配发号)
             dto.configProductType = (String) r[7]; // SIMPLE | COMPOSITE(仅选配产品), 非选配为 null
+            dto.customerProductNos = toStringList(r[8]);   // AC-12b⑤-b：全部编号
             content.add(dto);
         }
         return new PageResult<>(content, safePage, safeSize, total);
@@ -179,6 +201,28 @@ public class ExistingProductService {
             throw new BusinessException(404, "报价单不存在: " + quotationId);
         }
         throw new BusinessException(400, "报价单未绑定客户，无法查询已有产品: " + quotationId);
+    }
+
+    /**
+     * PG {@code text[]} → {@code List<String>}。JDBC 驱动可能给回 {@link java.sql.Array}
+     * 或已转好的 {@code Object[]}，两种都要接住；null/空一律返回空 List（🚫 不返 null，
+     * 前端 {@code .map()} 直接用）。
+     */
+    private List<String> toStringList(Object arr) {
+        List<String> out = new ArrayList<>();
+        if (arr == null) return out;
+        try {
+            Object[] items = (arr instanceof java.sql.Array a) ? (Object[]) a.getArray()
+                           : (arr instanceof Object[] o) ? o : null;
+            if (items == null) return out;
+            for (Object it : items) {
+                if (it != null) out.add(it.toString());
+            }
+        } catch (java.sql.SQLException e) {
+            // 取数组失败不该让整个列表 500：降级成空数组，代表编号(customerProductNo)仍在。
+            return out;
+        }
+        return out;
     }
 
     private boolean notBlank(String s) {
