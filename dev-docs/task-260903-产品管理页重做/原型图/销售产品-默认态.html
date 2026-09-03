@@ -1,0 +1,86 @@
+<meta charset="utf-8">
+<title>产品管理 · 销售产品（默认态）</title>
+<link rel="stylesheet" href="antd-like.css">
+<style>
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;background:#fafafa;font-weight:600;padding:12px 16px;border-bottom:1px solid #f0f0f0;white-space:nowrap}
+  td{padding:12px 16px;border-bottom:1px solid #f0f0f0}
+  tbody tr{cursor:pointer}
+  tbody tr:hover{background:#e6f4ff}
+  .muted{color:rgba(0,0,0,.25)}
+  .num{text-align:right;font-variant-numeric:tabular-nums}
+  .pager{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:16px;font-size:14px}
+  .pg{min-width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #d9d9d9;border-radius:6px;background:#fff}
+  .pg.active{border-color:#1677ff;color:#1677ff}
+  .anno{background:#e6f4ff;border:1px solid #91caff;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px;line-height:1.8}
+</style>
+
+<div class="page">
+  <div class="anno">
+    <b>AC-4 / AC-5 / AC-14 / AC-15 的视觉基准。</b>
+    关键点：① 7 列顺序固定；② <b>行可点击</b>（<code>cursor:pointer</code> + hover 高亮），点行从右侧滑出抽屉；
+    ③ 数值列右对齐、按 <code>utils/precision.ts</code> 的 <code>formatDisplayDecimal</code> 渲染，
+    <b>🚫 后端以字符串回传保留 scale，禁止 <code>Number()</code> 转换后再格式化</b>（丢精度）。
+  </div>
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+    <h2 style="margin:0;font-size:20px">产品管理</h2>
+    <button class="btn">⊞ 产品分类管理</button>
+  </div>
+
+  <div class="card">
+    <div class="tabs">
+      <div class="tab">客户产品</div>
+      <div class="tab active">销售产品</div>
+    </div>
+    <div class="card-body">
+      <div class="toolbar">
+        <div class="search"><input class="input" placeholder="搜索销售料号 / 品名"></div>
+        <div class="toolbar-right"><button class="btn">↻ 刷新</button></div>
+      </div>
+
+      <table>
+        <thead><tr>
+          <th>销售料号</th><th>品名</th><th>规格</th><th>尺寸</th><th>旧料号</th><th style="text-align:right">单重</th><th>生产料号</th>
+        </tr></thead>
+        <tbody>
+          <tr><td>1630010773</td><td>料9</td><td class="muted">—</td><td>3.5×3.5×0.15</td><td>8DLX.550.662</td><td class="num">0.7</td><td class="muted">—</td></tr>
+          <tr><td>2101110225</td><td>料11</td><td class="muted">—</td><td>3.5×3.5×0.17</td><td>8DLX.550.664</td><td class="num">0.17</td><td class="muted">—</td></tr>
+          <tr><td>2111410069</td><td>料12</td><td class="muted">—</td><td>3.5×3.5×0.18</td><td>8DLX.550.665</td><td class="num">0.05</td><td class="muted">—</td></tr>
+          <tr><td>2120011658</td><td>料1</td><td class="muted">—</td><td>3.5×3.5×0.7</td><td>8DLX.550.654</td><td class="num">0.2</td><td class="muted">—</td></tr>
+          <tr><td>2120011659</td><td>料3</td><td class="muted">—</td><td>3.5×3.5×0.9</td><td>8DLX.550.656</td><td class="num">0.18</td><td class="muted">—</td></tr>
+          <tr><td>3110520789</td><td>料2</td><td class="muted">—</td><td>3.5×3.5×0.8</td><td>8DLX.550.655</td><td class="num">0.15</td><td class="muted">—</td></tr>
+          <tr><td>3110520790</td><td>料8</td><td class="muted">—</td><td>3.5×3.5×0.14</td><td>8DLX.550.661</td><td class="num">0.6</td><td class="muted">—</td></tr>
+          <tr><td>3111320634</td><td>料4</td><td class="muted">—</td><td>3.5×3.5×0.10</td><td>8DLX.550.657</td><td class="num">0.4</td><td class="muted">—</td></tr>
+          <tr><td>3111320635</td><td>料5</td><td class="muted">—</td><td>3.5×3.5×0.11</td><td>8DLX.550.658</td><td class="num">0.3</td><td class="muted">—</td></tr>
+          <tr><td>3111320636</td><td>料6</td><td class="muted">—</td><td>3.5×3.5×0.12</td><td>8DLX.550.659</td><td class="num">0.8</td><td class="muted">—</td></tr>
+          <tr><td>3111320637</td><td>料7</td><td class="muted">—</td><td>3.5×3.5×0.13</td><td>8DLX.550.660</td><td class="num">0.2</td><td class="muted">—</td></tr>
+          <tr><td>3112230066</td><td>料10</td><td class="muted">—</td><td>3.5×3.5×0.16</td><td>8DLX.550.663</td><td class="num">0.22</td><td class="muted">—</td></tr>
+          <tr><td>3112230067</td><td>料13</td><td class="muted">—</td><td>3.5×3.5×0.19</td><td>8DLX.550.666</td><td class="num">0.002</td><td class="muted">—</td></tr>
+          <tr><td>3120018220</td><td>主料1</td><td class="muted">—</td><td>3.5×3.5×0.6</td><td>8DLX.550.653</td><td class="num">3</td><td class="muted">—</td></tr>
+          <tr title="真实脏数据：除料号外全空"><td>COMP1</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="num muted">—</td><td class="muted">—</td></tr>
+          <tr title="真实脏数据：除料号外全空"><td>COMP2</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="num muted">—</td><td class="muted">—</td></tr>
+          <tr><td>S-1630010773</td><td>支座</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="num">0.7</td><td>1630010773</td></tr>
+          <tr><td>S-2120011658</td><td>AgNi10/Cu-Cu/301/Cu接触桥</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="num">0.2</td><td>2120011658</td></tr>
+          <tr><td>S-2120011659</td><td>AgNi10/Cu-Cu/301/Cu接触桥</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="num muted">—</td><td>2120011659</td></tr>
+          <tr style="background:#e6f4ff"><td><b>S-3120014539</b></td><td>主料1</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="num muted">—</td><td class="muted">—</td></tr>
+        </tbody>
+      </table>
+
+      <div class="pager">
+        <span style="color:rgba(0,0,0,.65)">共 42 条</span>
+        <span class="pg">‹</span><span class="pg active">1</span><span class="pg">2</span><span class="pg">3</span><span class="pg">›</span>
+        <select class="select" style="width:100px"><option>20 条/页</option></select>
+      </div>
+    </div>
+  </div>
+
+  <div class="anno" style="background:#fff7e6;border-color:#ffd591;margin-top:16px">
+    <b>⚠️ 三处易错点</b><br>
+    1. <b>「生产料号」列依赖后端补 <code>productionNo</code></b>（<code>api.md §2 缺口2</code>，主源 <code>GET parts</code> 响应目前缺这个字段）。
+       字段缺失时该列渲染 <code>—</code>，<b>不得因缺字段崩溃或整列不渲染</b>。<br>
+    2. <code>COMP1</code> / <code>COMP2</code> 是<b>真实脏数据</b>（除料号外全空），不是占位符——渲染必须能扛住整行空值。<br>
+    3. 高亮行 <code>S-3120014539</code> 是抽屉 AC 的主角料号（BOM 数据最丰富：物料BOM 9 行 / 元素BOM 2 行），
+       原型③ 展示的就是点它之后的形态。
+  </div>
+</div>
