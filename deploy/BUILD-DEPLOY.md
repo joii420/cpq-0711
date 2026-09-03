@@ -97,8 +97,8 @@ DOCKER_BUILDKIT=1 docker build -t cpq:latest -f Dockerfile ..
 注意末尾的 `..` —— 构建上下文是父目录 `dev/`,因为 Dockerfile 需要 `cpq-frontend/` 和 `cpq-backend/` 两个源码目录。
 
 - 第一阶段(node:24-alpine)装前端依赖 + `vite build`
-- 第二阶段(maven:3.9-eclipse-temurin-17)装 Maven 依赖 + 把前端 dist 嵌入 `META-INF/resources/` + `mvn package`
-- 第三阶段(eclipse-temurin:17-jre-jammy)最终运行镜像,非 root,UTC+8 时区
+- 第二阶段(maven:3.9-eclipse-temurin-21)装 Maven 依赖 + 把前端 dist 嵌入 `META-INF/resources/` + `mvn package`
+- 第三阶段(eclipse-temurin:21-jre-jammy)最终运行镜像,非 root,UTC+8 时区
 
 第一次构建 5~15 分钟(主要在 Maven 拉依赖)。之后修改源码再构建,缓存层会复用,通常 < 2 分钟。
 

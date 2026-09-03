@@ -1,0 +1,23 @@
+### P-A 改动前: 两参版函数整体耗时 x3  (AC-13 基线)
+    80
+Time: 23.185 ms
+    80
+Time: 22.151 ms
+    80
+Time: 26.345 ms
+
+### P-B candidate_materials 现状 is_current x3
+    16
+Time: 18.584 ms
+    16
+Time: 25.417 ms
+    16
+Time: 18.558 ms
+
+### P-C candidate_materials 加宽 OR pending x3
+  1861
+Time: 27.172 ms
+  1861
+Time: 25.817 ms
+  1861
+Time: 18.520 ms

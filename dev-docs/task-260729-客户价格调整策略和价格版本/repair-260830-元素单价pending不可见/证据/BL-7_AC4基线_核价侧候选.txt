@@ -1,0 +1,5 @@
+ global_candidates 
+-------------------
+                16
+(1 row)
+

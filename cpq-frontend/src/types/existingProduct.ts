@@ -17,8 +17,25 @@ export interface PageResult<T> {
 export interface ExistingProductDTO {
   /** 销售料号（= material_customer_map.material_no）。 */
   materialNo: string;
-  /** 客户产品编号。选配发号产品此列为 NULL（客户产品号待导入分配）；真·已有产品非空。 */
+  /**
+   * 客户产品编号 —— **代表编号**（后端 `DISTINCT ON (material_no)` 取 `created_at` 最早的那个）。
+   * ⚠️ task-260902 起语义收紧为「代表」：一个销售料号可能对应**多个**客户产品编号
+   *    （方案甲下 `sel_product_no.quote_part_no` 刻意不唯一）。
+   * 📌 既有读取方（如「加入报价单」时映射 `LineItem.customerProductNo`）继续读它，语义不变。
+   */
   customerProductNo?: string | null;
+  /**
+   * 🆕 task-260902 · AC-12b⑤-b：该销售料号名下**全部**客户产品编号，按 `created_at` 升序。
+   *
+   * 为什么需要它：销售甲用 `T260902-A` 配出料号 X，销售乙用 `T260902-B` 配了相同配置复用了 X。
+   * 列表按代表编号去重后只显示 `T260902-A` ⇒ **乙认不出这是自己的产品**。
+   * 本任务修的是「选配产品在产品库里找不回」，这条是它的另一面：从**找不到**变成**认不出**。
+   *
+   * 🚨 **可能不存在或为空**（后端未上线 / mcm 来源的老数据）⇒ 渲染方必须回退到
+   *    `customerProductNo`，🚫 绝不能渲染成 `undefined` 或空白单元格（AP-31 族：
+   *    宁可显示旧值，也不要空占位）。
+   */
+  customerProductNos?: string[] | null;
   /** 品名（= customer_material_name）。 */
   productName?: string | null;
   /** 规格：COALESCE(NULLIF(material_master.specification,''), dimension)（架构决策 3-A）。 */

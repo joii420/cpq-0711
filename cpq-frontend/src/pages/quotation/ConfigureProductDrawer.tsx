@@ -1,284 +1,318 @@
 /**
- * ConfigureProductDrawer — 报价单 Step2「添加产品 ▾ → 选配添加」抽屉（task-0712 F5 重构，D11）。
+ * ConfigureProductDrawer — 报价单 Step2「添加产品 ▾ → 选配添加」抽屉。
+ * task-260902 · F-2 / F-9 / F-13（在 task-0712 F5 / task-260901 的基础上**整体重做**）。
  *
- * 1:1 复刻 dev-docs/task-0712-选配模板和报价单选配功能/prototypes/原型-报价单-选配添加.html：
- * 打开即解析有效模板(D6) → 无模板空态 / 有模板进单屏明细表（左：明细表+新增子框+组合工艺条件区，
- * 右：3D 预览常驻）→ 底部指纹状态提示 + 取消/确认加入。
+ * 🔄 **模型变化（本次重构的核心）**：
+ *   旧：产品 → 配件（配件 ≡ 一个材质料号，`PartRequest.recipeCode` 单值）
+ *   新：产品 → **配件（零件 / 外购件）** → 零件挂 1~N 个材质（带占比） → 每个材质选含量配置
+ *   ⇒ 交互从「单屏明细表」改为 **4 步向导**：客户产品编号 → 添加配件 → 组合工序 → 确认并添加。
  *
- * 整体模型变化（对齐 fronttask.md F5 §5.1，取代旧 globalStep×subStep 逐配件向导）：
- * - 不再预选产品类型：`productType` 由明细表 Σqty 实时判定（Σqty==1→SIMPLE，≥2→COMPOSITE，
- *   api.md §3.3），且**后端按 Σqty 兜底裁决为准**——本组件按 `ConfigureProductResponse.productType`
- *   （而非请求里声明的 productType）消费返回的 `lineItems`，原样追加，不自行按 productType 重算行
- *   （交接方要求：见任务说明"前端必须消费返回的 line_items 原样追加"）。
- * - 材质/工序候选改为模板限定 `selTemplateService.effective(customerNo)`（D6），不再是全量字典；
- *   工序候选 key 直接是 `process_master.process_no`，原样进 `PartRequest.processNos`（task-0712
- *   缺口1 已根治 process/process_master 双表 UUID 契约缺口，本组件不再需要 UUID 映射/禁选孤儿）。
- * - 明细表/组合工艺条件变化时防抖调用 `/lookup-fingerprint`（task-0712 缺口2·3a）做确认前实时预览
- *   （对齐原型 D3），命中时右侧 3D 切到料号 3D；提交后仍以 `ConfigureProductResponse.fingerprintMatched`
- *   的 toast 兜底最终结果，详见 `configure/SummaryFingerprintPanel.tsx` 头注。
+ * 视觉基准 = `dev-docs/task-260902-选配流程重构/原型图/` 下的 **6 份独立原型**
+ * （`选配流程-交互原型.html` 是汇报展示用，不是验收基准）。
+ *
+ * ── F-13 选配模板下线（AC-25 / AC-26）────────────────────────────────────────
+ *   🚫 **移除了 `hasTemplate` 门禁**：旧版 `if (effectiveLoading || !hasTemplate)` 会让无模板的客户
+ *      只剩一个「取消」按钮 + 「缺少选配模板」空态，**整个选配功能对他不可用**。
+ *      实测选配模板唯一真正生效的就是这道门禁（三个参数开关与值域限定全部空转，见需求文档 §4.3c）
+ *      ⇒ 本期下线：**无模板也能正常走完 4 步并提交**。
+ *   ✅ **`effective` 的候选限定用法保持不动**（fronttask F-13 明确要求）：仍然调
+ *      `selTemplateService.effective`，若 `effectiveValues` 非空就据此**收窄**候选集合；
+ *      为空则全放行（实测 `sel_template_item_value` 现网 0 行 ⇒ 两条分支今天等价）。
+ *      🚨 但它**不再能阻断渲染** —— 解析失败/无模板一律按「不限」处理，绝不回到空态。
+ *   📌 路由 `/config/sel-templates` 与页面文件**保留不删**，只在 `MainLayout` 隐藏菜单入口
+ *      （AC-26 有反向断言：直接访问 URL 仍要能打开）。
+ *
+ * ── 选择器数据源（api.md §0 / §3）──────────────────────────────────────────────
+ *   材质：`GET /material-recipes`（**裸数组**）—— F-6 要的 `configCount` / `allowCustomContent`
+ *         只有这里有，`effectiveValues` 只给得出 `{key,label}`。
+ *   工序：`GET /sel-param-types/PROCESS/candidates`（**信封 `{code,data}`**）。
+ *   🚨 同一个后端两种包装格式，🚫 不要假设统一（2026-09-02 实调 8081 确认）。
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Drawer, Button, Spin, Tooltip, message } from 'antd';
+import { Button, Drawer, Steps, message } from 'antd';
 import { configureProductService } from '../../services/configureProductService';
 import { selTemplateService } from '../../services/selTemplateService';
 import { materialRecipeService, type MaterialRecipeLite } from '../../services/materialRecipeService';
-import { modelConfigService } from '../../services/modelConfigService';
+import { selParamCandidateService, type SelParamCandidate } from '../../services/selParamCandidateService';
 import type {
-  PartRequest, EffectiveTemplateDTO, SelDetailRow, CompositeSelectionState,
+  CompositeProcessItem, ConfigurePart, ConfigureProductResponse, EffectiveTemplateDTO, PartRequest,
 } from '../../types/configure';
-import type { ModelConfigDTO } from '../../types/modelConfig';
 import { genUUID } from '../../utils/uuid';
-import SelDetailTable from './configure/SelDetailTable';
 import AddPartSubDrawer from './configure/AddPartSubDrawer';
-import CompositeProcessSection from './configure/CompositeProcessSection';
-import { Preview3DPanel, FingerprintStatus, type PreviewMode } from './configure/SummaryFingerprintPanel';
-import {
-  buildConfigurePartsRequest,
-  normalizeQuantityInput,
-  sumQuantity,
-} from './configure/configureRequest';
-import { normalizeDecimalString, type DecimalString } from '../../utils/precision';
+import CompositeProcessStep from './configure/CompositeProcessStep';
+import ConfirmStep, { type FingerprintPreview, type SubmitFailure } from './configure/ConfirmStep';
+import CustomerProductNoStep, {
+  IDLE_CHECK, productNoStepReason, type ProductNoCheckState,
+} from './configure/CustomerProductNoStep';
+import PartCardList from './configure/PartCardList';
+import { buildConfigureParts } from './configure/configurePartsRequest';
+import { ReasonedButton } from './configure/configureUi';
 
 interface Props {
   open: boolean;
   quotationId: string;
-  /** 客户编码（`customer.code`），用于 `selTemplateService.effective(customerNo)`（D6）与
-   * `/lookup-fingerprint` 的 customerNo（销售侧客户维度指纹隔离，缺口2·3a 必填）。 */
+  /** 客户编码（`customer.code`）。用于编号占用校验、模板解析与指纹的客户维度隔离。 */
   customerNo: string | undefined;
+  customerLabel?: string;
   onCancel: () => void;
   onConfirm: (lineItems: any[]) => void;
+  /** AC-2：编号已被占用时跳去「从产品库添加」并定位到该产品。 */
+  onOpenExistingProducts?: (productNo: string) => void;
 }
 
-const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, customerNo, onCancel, onConfirm }) => {
-  const [effective, setEffective] = useState<EffectiveTemplateDTO | null>(null);
-  const [effectiveLoading, setEffectiveLoading] = useState(false);
-  const [materialDict, setMaterialDict] = useState<MaterialRecipeLite[]>([]);
+const STEP_TITLES = ['客户产品编号', '添加配件', '组合工序', '确认并添加'];
 
-  const [rows, setRows] = useState<SelDetailRow[]>([]);
-  const [compositeSelections, setCompositeSelections] = useState<CompositeSelectionState[]>([]);
+const ConfigureProductDrawer: React.FC<Props> = ({
+  open, quotationId, customerNo, customerLabel, onCancel, onConfirm, onOpenExistingProducts,
+}) => {
+  const [step, setStep] = useState(0);
 
+  // 步骤 1
+  const [productNo, setProductNo] = useState('');
+  const [productName, setProductName] = useState('');
+  const [check, setCheck] = useState<ProductNoCheckState>(IDLE_CHECK);
+
+  // 步骤 2
+  const [parts, setParts] = useState<ConfigurePart[]>([]);
   const [subOpen, setSubOpen] = useState(false);
-  const [editingRowId, setEditingRowId] = useState<string | null>(null);
-
-  // 材质预览：跟随最近一次操作的材质（D3/D15，来自 AddPartSubDrawer.onMaterialPreview）。
-  const [previewMode, setPreviewMode] = useState<PreviewMode>(null);
-  const [previewMaterialCode, setPreviewMaterialCode] = useState<string | null>(null);
-  const [previewMaterialLabel, setPreviewMaterialLabel] = useState('');
-  const [previewData, setPreviewData] = useState<ModelConfigDTO | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-
-  // 指纹预览（task-0712 缺口2·3a）：明细表/组合工艺条件变化时防抖调用 `/lookup-fingerprint`。
-  const [fingerprintChecking, setFingerprintChecking] = useState(false);
-  const [fingerprintMatched, setFingerprintMatched] = useState(false);
-  const [fingerprintPartNo, setFingerprintPartNo] = useState<string | undefined>(undefined);
-
-  const [submitting, setSubmitting] = useState(false);
-
-  const qtySum = useMemo(() => sumQuantity(rows), [rows]);
-  const qtySumText = normalizeDecimalString(qtySum);
-  const editingRow = editingRowId ? rows.find((r) => r.rowId === editingRowId) ?? null : null;
-
-  const resetState = () => {
-    setEffective(null);
-    setEffectiveLoading(false);
-    setMaterialDict([]);
-    setRows([]);
-    setCompositeSelections([]);
-    setSubOpen(false);
-    setEditingRowId(null);
-    setPreviewMode(null);
-    setPreviewMaterialCode(null);
-    setPreviewMaterialLabel('');
-    setPreviewData(null);
-    setPreviewLoading(false);
-    setFingerprintChecking(false);
-    setFingerprintMatched(false);
-    setFingerprintPartNo(undefined);
-    setSubmitting(false);
+  const [editingUid, setEditingUid] = useState<string | null>(null);
+  /**
+   * 子面板的「第几次打开」。**它进 `key` 的唯一目的是强制每次打开都重新挂载。**
+   *
+   * 🚨 不要把它删掉退回只用 `editingUid` 做 key —— 那会有一个不报错的真 bug：
+   *    连续两次点「+ 添加配件」时 `editingUid` 都是 null ⇒ key 不变 ⇒ 子面板不重挂载 ⇒
+   *    **第二次直接停在上一次留下的「新建零件」表单上，跳过了「选择类型 / 零件来源」两步**。
+   *    （2026-09-02 真机 Playwright 实测复现：第二次点开后 DOM 里是零件表单而不是类型卡片。）
+   *    编辑同一个配件两次也是同一个坑。
+   */
+  const [subSession, setSubSession] = useState(0);
+  const openSubPanel = (uid: string | null) => {
+    setEditingUid(uid);
+    setSubSession((n) => n + 1);
+    setSubOpen(true);
   };
 
-  // 打开抽屉：重置 + 解析有效模板(D6) + 拉 materialDict 反查字典（见 AddPartSubDrawer 头注坑①）。
+  // 步骤 3
+  const [composites, setComposites] = useState<CompositeProcessItem[]>([]);
+
+  // 候选数据
+  const [materials, setMaterials] = useState<MaterialRecipeLite[]>([]);
+  const [materialsLoading, setMaterialsLoading] = useState(false);
+  const [materialsError, setMaterialsError] = useState<string | null>(null);
+  const [processCandidates, setProcessCandidates] = useState<SelParamCandidate[]>([]);
+  const [processLoading, setProcessLoading] = useState(false);
+  const [processError, setProcessError] = useState<string | null>(null);
+
+  // 步骤 4
+  const [preview, setPreview] = useState<FingerprintPreview>({ checking: false, matched: false });
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<ConfigureProductResponse | null>(null);
+  const [failure, setFailure] = useState<SubmitFailure | null>(null);
+
+  const resetState = () => {
+    setStep(0);
+    setProductNo(''); setProductName(''); setCheck(IDLE_CHECK);
+    setParts([]); setSubOpen(false); setEditingUid(null); setSubSession(0);
+    setComposites([]);
+    setPreview({ checking: false, matched: false });
+    setSubmitting(false); setResult(null); setFailure(null);
+  };
+
+  // 打开抽屉：重置 + 拉候选。
+  // 🚨 **候选拉取失败不阻断渲染** —— 各选择器自己渲染错误态，用户仍能操作其他步骤。
   useEffect(() => {
     if (!open) return;
     resetState();
-    if (!customerNo) {
-      // 无客户上下文（理论不可达，QuotationStep2 Dropdown 已按 customerTemplateId 兜底）——
-      // 双保险：视同无模板空态,不崩溃。
-      setEffective({ customerNo: '', usedDefault: false, hasTemplate: false, params: [] });
-      return;
-    }
-    setEffectiveLoading(true);
-    Promise.all([
-      selTemplateService.effective(customerNo),
-      materialRecipeService.list(),
-    ])
+
+    setMaterialsLoading(true);
+    setMaterialsError(null);
+    setProcessLoading(true);
+    setProcessError(null);
+
+    // `effective` 只用来**收窄**候选；它失败 / 无模板一律按「不限」处理（F-13：不再有门禁）
+    const effectivePromise: Promise<EffectiveTemplateDTO | null> = customerNo
+      ? selTemplateService.effective(customerNo).catch(() => null)
+      : Promise.resolve(null);
+
+    Promise.all([effectivePromise, materialRecipeService.list()])
       .then(([eff, mats]) => {
-        setEffective(eff);
-        setMaterialDict(mats);
+        // 只列 ACTIVE 材质（AC-18 口径）。客户端过滤而不是加查询参数 —— 后端若已只返 ACTIVE 则是 no-op。
+        let list = (mats ?? []).filter((m) => (m.status ?? 'ACTIVE') === 'ACTIVE');
+        const allowed = eff?.params.find((p) => p.paramTypeCode === 'MATERIAL')?.effectiveValues ?? [];
+        if (allowed.length > 0) {
+          const keys = new Set(allowed.map((v) => v.key));
+          list = list.filter((m) => keys.has(m.code));
+        }
+        setMaterials(list);
       })
-      .catch((e: any) => {
-        message.error(e?.message || '加载选配模板失败');
-        setEffective({ customerNo, usedDefault: false, hasTemplate: false, params: [] });
+      .catch((e: any) => { setMaterials([]); setMaterialsError(e?.message || '加载材质库失败'); })
+      .finally(() => setMaterialsLoading(false));
+
+    Promise.all([effectivePromise, selParamCandidateService.list('PROCESS')])
+      .then(([eff, cands]) => {
+        let list = cands ?? [];
+        const allowed = eff?.params.find((p) => p.paramTypeCode === 'PROCESS')?.effectiveValues ?? [];
+        if (allowed.length > 0) {
+          const keys = new Set(allowed.map((v) => v.key));
+          list = list.filter((c) => keys.has(c.key));
+        }
+        setProcessCandidates(list);
       })
-      .finally(() => setEffectiveLoading(false));
+      .catch((e: any) => { setProcessCandidates([]); setProcessError(e?.message || '加载工序候选失败'); })
+      .finally(() => setProcessLoading(false));
   }, [open, customerNo]);
 
-  // Σqty 跌破 2 时组合工艺不再适用，清空已选（对齐原型 renderComboSection 行为）。
+  // ── 指纹预览（确认页的绿/蓝提示条）──
+  // 只在进到步骤 4 时跑，防抖 500ms；`seq` 丢弃过期响应。
+  const previewSeq = useRef(0);
   useEffect(() => {
-    if (qtySum.lessThan('2') && compositeSelections.length > 0) setCompositeSelections([]);
-  }, [qtySumText, compositeSelections.length]);
-
-  // 指纹预览（task-0712 缺口2·3a，对齐原型 D3「确认前实时🆕新建/✅命中」）：明细表/组合工艺条件
-  // 变化时防抖 500ms 调用 `/lookup-fingerprint`；fingerprintReqSeq 丢弃过期响应（连续编辑时旧请求
-  // 晚到不得覆盖新状态，同 elementReqSeq 惯例见 AddPartSubDrawer.tsx）。
-  const fingerprintReqSeq = useRef(0);
-  useEffect(() => {
-    if (rows.length === 0 || !customerNo) {
-      setFingerprintChecking(false);
-      setFingerprintMatched(false);
-      setFingerprintPartNo(undefined);
+    if (step !== 3 || parts.length === 0 || !customerNo || result) {
       return;
     }
-    const custNo = customerNo; // 局部 const 供内层闭包窄化（跨闭包对函数参数的 undefined 窄化不稳定）
-    const seq = ++fingerprintReqSeq.current;
-    setFingerprintChecking(true);
+    const custNo = customerNo;
+    const seq = ++previewSeq.current;
+    setPreview({ checking: true, matched: false });
     const timer = window.setTimeout(() => {
-      const { parts, compositeProcesses } = buildConfigurePartsRequest(rows, compositeSelections);
-      configureProductService
-        .lookupFingerprint({ customerNo: custNo, parts, compositeProcesses })
+      const { parts: partsReq, compositeProcesses } = buildConfigureParts(parts, composites);
+      configureProductService.lookupFingerprint({ customerNo: custNo, parts: partsReq, compositeProcesses })
         .then((res) => {
-          if (fingerprintReqSeq.current !== seq) return; // 已被更新的编辑取代，丢弃过期响应
-          setFingerprintChecking(false);
-          setFingerprintMatched(!!res.matched);
-          setFingerprintPartNo(res.matched ? (res.matchedPartNo || res.hfPartNo) : undefined);
+          if (previewSeq.current !== seq) return;
+          setPreview({
+            checking: false,
+            matched: !!res.matched,
+            matchedPartNo: res.matched ? (res.matchedPartNo || res.hfPartNo) : undefined,
+            // AC-19④：把**已有产品**的工序顺序带到确认页写出来（按 seqNo 升序，不是本次的排列）
+            reusedProcesses: res.matched
+              ? [...(res.snapshot?.processes ?? [])]
+                  .sort((a, b) => (a.seqNo ?? 0) - (b.seqNo ?? 0))
+                  .map((x) => x.name || x.processCode)
+              : undefined,
+          });
         })
         .catch(() => {
-          if (fingerprintReqSeq.current !== seq) return;
-          setFingerprintChecking(false);
-          setFingerprintMatched(false);
-          setFingerprintPartNo(undefined);
+          if (previewSeq.current !== seq) return;
+          // 预览失败按「未命中」渲染 —— 它只是提示，最终以提交响应为准
+          setPreview({ checking: false, matched: false });
         });
     }, 500);
     return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, compositeSelections, customerNo]);
+  }, [step, parts, composites, customerNo, result]);
 
-  // 3D 预览：指纹命中已有销售料号时优先切到料号 3D（对齐原型 D3 `fingerprintHit` 分支）；
-  // 否则回落到最近一次操作的材质预览（D3/D15）。
-  const effectivePreviewMode: PreviewMode = fingerprintMatched && fingerprintPartNo ? 'salespart' : previewMode;
-  const effectivePreviewKey: string | null = fingerprintMatched && fingerprintPartNo ? fingerprintPartNo : previewMaterialCode;
-  const effectivePreviewLabel: string = fingerprintMatched && fingerprintPartNo ? '' : previewMaterialLabel;
+  // ── 步骤放行判据（每一步的「下一步」禁用原因；null = 放行）──
+  const stepReasons = useMemo<(string | null)[]>(() => [
+    productNoStepReason(productNo, check),                              // AC-1 / AC-2
+    parts.length === 0 ? '请至少添加一个配件' : null,                     // AC-14 的产品层对应物
+    null,                                                               // 组合工序不是必填
+    null,
+  ], [productNo, check, parts.length]);
 
-  // AbortController 丢弃过期响应防闪回旧值。
-  useEffect(() => {
-    if (!effectivePreviewMode || !effectivePreviewKey) { setPreviewData(null); return; }
-    const controller = new AbortController();
-    setPreviewLoading(true);
-    modelConfigService
-      .current({ subjectType: effectivePreviewMode === 'material' ? 'MATERIAL' : 'SALES_PART', subjectKey: effectivePreviewKey }, controller.signal)
-      .then((d) => { if (!controller.signal.aborted) setPreviewData(d); })
-      .catch((e: any) => {
-        if (controller.signal.aborted || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') return;
-        setPreviewData(null);
-      })
-      .finally(() => { if (!controller.signal.aborted) setPreviewLoading(false); });
-    return () => controller.abort();
-  }, [effectivePreviewMode, effectivePreviewKey]);
+  /** 可跳到的最远步骤：从头往后扫，遇到第一个不放行的就停在那儿。 */
+  const maxReachableStep = useMemo(() => {
+    for (let i = 0; i < stepReasons.length; i++) {
+      if (stepReasons[i]) return i;
+    }
+    return stepReasons.length - 1;
+  }, [stepReasons]);
 
-  const handleAddClick = () => { setEditingRowId(null); setSubOpen(true); };
-  const handleEditClick = (rowId: string) => { setEditingRowId(rowId); setSubOpen(true); };
-  const handleDeleteRow = (rowId: string) => setRows((prev) => prev.filter((r) => r.rowId !== rowId));
-  const handleQuantityChange = (rowId: string, qty: DecimalString) =>
-    setRows((prev) => prev.map((r) => (
-      r.rowId === rowId ? { ...r, quantity: normalizeQuantityInput(qty) } : r
-    )));
+  const editingPart = editingUid ? parts.find((p) => p.uid === editingUid) ?? null : null;
 
-  const handleSubConfirm = (row: SelDetailRow) => {
-    setRows((prev) => {
-      const idx = prev.findIndex((r) => r.rowId === row.rowId);
-      if (idx >= 0) { const next = [...prev]; next[idx] = row; return next; }
-      return [...prev, row];
+  const upsertPart = (part: ConfigurePart) => {
+    setParts((prev) => {
+      const idx = prev.findIndex((p) => p.uid === part.uid);
+      if (idx >= 0) { const next = [...prev]; next[idx] = part; return next; }
+      return [...prev, part];
     });
     setSubOpen(false);
-    setEditingRowId(null);
+    setEditingUid(null);
   };
-  const handleSubCancel = () => { setSubOpen(false); setEditingRowId(null); };
-  const handleMaterialPreview = (code: string | null, label: string) => {
-    setPreviewMode(code ? 'material' : previewMode);
-    setPreviewMaterialCode(code);
-    setPreviewMaterialLabel(label);
-  };
-
-  const handleClose = () => { resetState(); onCancel(); };
 
   const submit = async () => {
-    if (rows.length === 0) return;
     if (!quotationId) { message.error('报价单尚未创建，无法选配'); return; }
     setSubmitting(true);
+    setFailure(null);
     try {
       const tempId = genUUID();
-      // Σqty 判定与后端同口径（api.md §3.3，D11+D12）：Σqty==1→SIMPLE；Σqty>=2→COMPOSITE。
-      // 后端仍会按 Σqty 兜底裁决（ConfigureProductResponse.productType 可能与此处不同），
-      // 提交后一律按响应值消费 lineItems。与 `/lookup-fingerprint` 预览共用 buildPartsReq，
-      // 仅补提交独有的 quotationLineItemId（工序隔离键）。
-      const { productType: requestProductType, parts: baseParts, compositeProcesses } =
-        buildConfigurePartsRequest(rows, compositeSelections);
+      const { productType, parts: baseParts, compositeProcesses } = buildConfigureParts(parts, composites);
+      // 工序隔离键：SIMPLE 与顶层 tempId 同值；COMPOSITE 每个子件独立 UUID（沿用 task-0712 语义）
       const partsReq: PartRequest[] = baseParts.map((p) => ({
         ...p,
-        quotationLineItemId: requestProductType === 'SIMPLE' ? tempId : genUUID(),
+        quotationLineItemId: productType === 'SIMPLE' ? tempId : genUUID(),
       }));
       const resp = await configureProductService.configureProduct(quotationId, {
-        productType: requestProductType,
+        productType,
         tempId,
+        customerProductNo: productNo.trim(),
+        customerProductName: productName.trim() || undefined,
         parts: partsReq,
         compositeProcesses,
       });
-      if (resp.fingerprintMatched) {
-        message.success(`已复用 ${resp.reusedHfPartNos.length} 个料号`);
-      } else {
-        message.success('已加入选配产品');
-      }
-      onConfirm(resp.lineItems);
-      resetState();
+      setResult(resp);
     } catch (e: any) {
-      message.error(e?.response?.data?.message ?? e?.message ?? '选配失败');
+      /*
+       * 错误码从 `ApiError.code` 取（`services/api.ts` 已把信封的 code/detail 带出来）。
+       * 🚨 但**现网错误信封的 `code` 装的是 HTTP 状态码数字**（实测提交失败时 `code === 400`），
+       *    而 `api.md §1.2` 约定的是 `RECIPE_HAS_NO_CONFIG` 这类业务码字符串 —— 两者同名不同义。
+       *    ⇒ 这里只把「非纯数字的字符串」当业务码，纯数字一律丢弃走通用提示，
+       *      否则确认页会显示「错误码 400」这种对用户毫无意义、还会误导排查的东西。
+       *    📌 已把这个契约不一致报给主线（api.md §1.2 vs 现网信封）。
+       */
+      const raw = e?.code;
+      const bizCode = typeof raw === 'string' && !/^\d+$/.test(raw) ? raw : undefined;
+      setFailure({ message: e?.message || '选配失败', code: bizCode });
     } finally {
       setSubmitting(false);
     }
   };
 
-  const hasTemplate = !!effective?.hasTemplate;
+  /**
+   * 关闭抽屉。
+   * 🚨 **已提交成功但还没交给宿主的 lineItems 必须在这里补交** —— 否则用户点 ✕ 而不是「完成」
+   *    就会出现「后端已经建好料号、报价单里却没有这一行」的静默丢数据。
+   */
+  const handleClose = () => {
+    if (result) {
+      const items = result.lineItems;
+      resetState();
+      onConfirm(items);
+      return;
+    }
+    resetState();
+    onCancel();
+  };
 
-  const footer = useMemo(() => {
-    if (effectiveLoading || !hasTemplate) {
+  const jumpToProductLibrary = (no: string) => {
+    resetState();
+    if (onOpenExistingProducts) onOpenExistingProducts(no);
+    else onCancel();
+  };
+
+  // ── footer ──
+  const footer = (() => {
+    if (result) {
       return (
-        <div style={{ textAlign: 'right' }}>
-          <Button onClick={handleClose}>取消</Button>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Button type="primary" onClick={handleClose}>完成</Button>
         </div>
       );
     }
+    const reason = stepReasons[step];
     return (
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-        <FingerprintStatus
-          rowCount={rows.length}
-          checking={fingerprintChecking}
-          matched={fingerprintMatched}
-          matchedPartNo={fingerprintPartNo}
-        />
-        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-          <Button onClick={handleClose}>取消</Button>
-          {rows.length === 0 ? (
-            <Tooltip title="请至少新增一个材质料号">
-              <Button type="primary" disabled>确认加入</Button>
-            </Tooltip>
-          ) : (
-            <Button type="primary" loading={submitting} onClick={submit}>确认加入</Button>
-          )}
-        </div>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
+        <Button onClick={handleClose}>取消</Button>
+        {step > 0 ? <Button onClick={() => setStep((s) => s - 1)}>上一步</Button> : null}
+        {step < 3 ? (
+          /* §1.2：禁用但可见 + tooltip 写明原因 */
+          <ReasonedButton type="primary" reason={reason} onClick={() => setStep((s) => s + 1)}>下一步</ReasonedButton>
+        ) : (
+          <Button type="primary" loading={submitting} onClick={submit}>
+            {preview.matched && preview.matchedPartNo
+              ? `添加到报价单（复用 ${preview.matchedPartNo}）`
+              : '添加到报价单'}
+          </Button>
+        )}
       </div>
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveLoading, hasTemplate, rows, submitting, fingerprintChecking, fingerprintMatched, fingerprintPartNo]);
+  })();
 
   return (
     <Drawer
@@ -288,60 +322,89 @@ const ConfigureProductDrawer: React.FC<Props> = ({ open, quotationId, customerNo
       width={960}
       placement="right"
       destroyOnClose
-      footer={footer}
+      /*
+       * 🚨 子面板打开时**必须把外层 footer 也一起盖住**（footer 是 Drawer 的独立区域，
+       *    不在 body 里，`position:absolute; inset:0` 的子面板盖不到它）。
+       *    否则屏幕上会同时出现两套「取消 / 上一步 / 下一步」——上面一套属于子面板，
+       *    下面一套属于向导，用户点哪个都可能不是他以为的那个。
+       *    （2026-09-02 真机截图实证：外层 footer 露在子面板下方）
+       */
+      footer={subOpen ? null : footer}
+      /* body 去掉内边距并置为定位上下文，子面板才能真正铺满整个正文区 */
+      styles={{ body: { padding: 0, position: 'relative', overflow: subOpen ? 'hidden' : 'auto' } }}
     >
-      {effectiveLoading ? (
-        <div style={{ textAlign: 'center', padding: '80px 0' }}>
-          <Spin size="large" />
-        </div>
-      ) : !hasTemplate ? (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 40px', textAlign: 'center', color: '#606266', minHeight: 420 }}>
-          <div style={{ fontSize: 52, marginBottom: 16, color: '#c0c4cc' }}>🗂️</div>
-          <div style={{ fontSize: 14, lineHeight: 1.8, maxWidth: 460, marginBottom: 16 }}>
-            缺少选配模板 —— 请先在「配置中心 → 选配模板管理」为该客户所属产品分类或默认分类配置选配参数。
-          </div>
-          <a
-            style={{ color: '#1890ff', cursor: 'pointer', fontWeight: 500 }}
-            onClick={() => window.open('/config/sel-templates', '_blank')}
-          >
-            → 去配置选配模板
-          </a>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', minHeight: 520 }}>
-          <div style={{ width: '62%', paddingRight: 20, borderRight: '1px solid #f0f0f0', position: 'relative' }}>
-            <SelDetailTable
-              rows={rows}
-              onAdd={handleAddClick}
-              onEdit={handleEditClick}
-              onDelete={handleDeleteRow}
-              onQuantityChange={handleQuantityChange}
-            />
-            <CompositeProcessSection sumQty={qtySumText} selections={compositeSelections} onChange={setCompositeSelections} />
-            <AddPartSubDrawer
-              open={subOpen}
-              effective={effective!}
-              materialDict={materialDict}
-              editingRow={editingRow}
-              onConfirm={handleSubConfirm}
-              onCancel={handleSubCancel}
-              onMaterialPreview={handleMaterialPreview}
-            />
-          </div>
-          <div style={{ width: '38%', paddingLeft: 20 }}>
-            <Preview3DPanel
-              mode={effectivePreviewMode}
-              materialLabel={effectivePreviewLabel}
-              materialCode={effectivePreviewKey}
-              loading={previewLoading}
-              modelData={previewData}
-            />
-            <div style={{ fontSize: 12, color: '#909399', marginTop: 8, lineHeight: 1.6 }}>
-              选材质后实时预览材质 3D；「⤢ 交互查看」为增强项占位。
-            </div>
-          </div>
-        </div>
-      )}
+      <div style={{ padding: 24, minHeight: 520 }}>
+        <Steps
+          size="small"
+          current={result ? 3 : step}
+          style={{ marginBottom: 20 }}
+          onChange={(next) => {
+            // 已完成的步骤可点回跳；🚫 不可跳到还没走完的步骤（跳过去只会看到一个填不了的表单）
+            if (result) return;
+            if (next <= maxReachableStep) setStep(next);
+          }}
+          items={STEP_TITLES.map((title, i) => ({
+            title,
+            disabled: !!result || i > maxReachableStep,
+          }))}
+        />
+
+        {step === 0 && (
+          <CustomerProductNoStep
+            customerNo={customerNo}
+            customerLabel={customerLabel}
+            productNo={productNo}
+            productName={productName}
+            check={check}
+            onProductNoChange={setProductNo}
+            onProductNameChange={setProductName}
+            onCheckChange={setCheck}
+            onOpenExistingProducts={jumpToProductLibrary}
+          />
+        )}
+
+        {step === 1 && (
+          <PartCardList
+            parts={parts}
+            onAdd={() => openSubPanel(null)}
+            onEdit={(uid) => openSubPanel(uid)}
+            onRemove={(uid) => setParts((prev) => prev.filter((p) => p.uid !== uid))}
+          />
+        )}
+
+        {step === 2 && (
+          <CompositeProcessStep parts={parts} value={composites} onChange={setComposites} />
+        )}
+
+        {step === 3 && (
+          <ConfirmStep
+            customerProductNo={productNo.trim()}
+            customerProductName={productName.trim()}
+            parts={parts}
+            composites={composites}
+            preview={preview}
+            result={result}
+            failure={failure}
+            onOpenExistingProducts={jumpToProductLibrary}
+          />
+        )}
+
+      </div>
+
+      {/* 内层局部面板覆盖整个抽屉正文（🚫 不嵌套 Drawer，避免层级 / ESC 冲突） */}
+      <AddPartSubDrawer
+        key={`${editingUid ?? '__new__'}#${subSession}`}
+        open={subOpen}
+        editing={editingPart}
+        materials={materials}
+        materialsLoading={materialsLoading}
+        materialsError={materialsError}
+        processCandidates={processCandidates}
+        processLoading={processLoading}
+        processError={processError}
+        onConfirm={upsertPart}
+        onCancel={() => { setSubOpen(false); setEditingUid(null); }}
+      />
     </Drawer>
   );
 };

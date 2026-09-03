@@ -79,7 +79,21 @@ public class CostingFreezeService {
         // task-0713 B5 修空白正手：冻结前先物化 lazy NULL 的卡片值（同 task-0712 materialize+flush
         // 纪律）。根因：首存快路径可能留 quote_card_values/costing_card_values 为 NULL，若不在此
         // 补算就冻结，frozen_dto 里对应行的核价值就是 NULL——打开核价单即空白。
-        cardSnapshotService.ensureCardValues(quotationId);
+        //
+        // task-260825 B-29-5：改调 Detailed 版并显式判 failedBatches——本方法唯一调用点是
+        // QuotationService.submit（见其 :~910），紧随其自身 ensureCardValuesDetailed(id, true)
+        // 部分批失败已抛 409 的那道守卫之后；本处补第二道判断是为了不假设"调用方一定已经守过"
+        // ——冻结的 frozen_dto/totalAmount 是不可逆历史凭据，本方法本身不该在部分批失败时静默
+        // 继续冻结（与 materialize 的容错语义不同，那里是懒算兜底可重来，这里是一次性冻结）。
+        // 🔒 WARMING_IN_PROGRESS 分支本次不新增处理：改动前 ensureCardValues(quotationId) 从未
+        // 检查过返回值，这是本方法既有的既存缺口，与 B-28/B-29 无关，不在本次范围内顺手扩大。
+        CardSnapshotService.EnsureResult freezeWarmResult =
+            cardSnapshotService.ensureCardValuesDetailed(quotationId, false);
+        if (freezeWarmResult.failedBatches > 0) {
+            throw new BusinessException(409, String.format(
+                "部分行的金额重算未完成（%d 批/%d 行），核价单无法在此刻冻结，请稍后重试",
+                freezeWarmResult.failedBatches, freezeWarmResult.failedRows));
+        }
 
         // 一次 getById 同时用于 frozen_dto 序列化和 totalAmount — 避免二次查询
         QuotationDTO dto = quotationService.getById(quotationId);

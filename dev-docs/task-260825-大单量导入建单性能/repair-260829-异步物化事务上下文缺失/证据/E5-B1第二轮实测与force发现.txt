@@ -1,0 +1,19 @@
+ quotation_number |  total_amount  |  cd  | li_nonzero 
+------------------+----------------+------+------------
+ QT-20260828-0199 | 0.000000000000 | 7380 |          0
+ QT-20260829-0203 | 0.000000000000 | 7380 |          0
+(2 rows)
+
+
+### 结论
+comp_data 已非空（7380 行，driverRow 真实数据齐全），但 li.subtotal 全部仍为 0，
+quote_card_values 长度仅 1049 字节（骨架值）。
+
+### 机制（已读代码坐实，CardSnapshotService.java）
+- ensureCardValues(qid) 无参重载 → ensureCardValues(qid, false)（:1421-1423）
+- forceRecomputeAll=false 时凭 IS NULL 谓词选择"需要补算"的行 —— 第一次失败物化时
+  ③ 步已在空 comp_data 上写下非 NULL 的骨架 quote_card_values（subtotal=0），
+  第二次重跑 materialize()/ensureCardValues 因为这些列"已经不是 NULL"而被跳过，不会重算。
+- forceRecomputeAll=true 才会"无视 IS NULL 谓词，强制重算整单全部行"（:1425-1426 注释）。
+- HTTP 端点 POST /quotations/{id}/ensure-card-values（QuotationResource.java:217）
+  调的正是无参重载 → false，**该端点无法修复已写过骨架值的单**。

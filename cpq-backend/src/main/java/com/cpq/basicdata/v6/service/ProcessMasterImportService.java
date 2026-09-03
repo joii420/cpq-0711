@@ -44,15 +44,19 @@ import java.util.UUID;
 public class ProcessMasterImportService {
 
     /** 首选 sheet 名；未命中则退回第一个 sheet。 */
-    private static final String PREFERRED_SHEET = "工序";
+    /** task-260902 · B-2：放宽到包可见，导出侧引用同一常量（🚫 不复制字面量）。 */
+    static final String PREFERRED_SHEET = "工序";
 
-    private static final String COL_NO = "工序编号";
-    private static final String COL_NAME = "工序名称";
-    private static final String COL_CATEGORY = "工序类别";
-    private static final String COL_OUTSOURCE = "是否外协";
-    private static final String COL_CURRENCY = "标准币种";
-    private static final String COL_UNIT = "标准单位";
-    private static final String COL_DEFECT_RATE = "默认不良率";
+    // task-260902 · B-2：由 private 放宽到<b>包可见</b>，供同包的
+    // {@link ProcessMasterExportService} 直接引用 —— 导出的列名必须与导入端认识的列名同名
+    // （工序导入按<b>列名</b>取列，顺序无关），🚫 不许在导出侧复制一份字面量。
+    static final String COL_NO = "工序编号";
+    static final String COL_NAME = "工序名称";
+    static final String COL_CATEGORY = "工序类别";
+    static final String COL_OUTSOURCE = "是否外协";
+    static final String COL_CURRENCY = "标准币种";
+    static final String COL_UNIT = "标准单位";
+    static final String COL_DEFECT_RATE = "默认不良率";
 
     @Inject
     EntityManager em;

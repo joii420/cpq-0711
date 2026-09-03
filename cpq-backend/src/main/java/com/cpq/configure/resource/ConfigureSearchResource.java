@@ -36,6 +36,9 @@ public class ConfigureSearchResource {
     @Inject
     MaterialRecipeService materialRecipeService;
 
+    @Inject
+    com.cpq.configure.service.ConfigureProductService configureProductService;
+
     @GET
     @Path("/search-parts")
     @SuppressWarnings("unchecked")
@@ -102,6 +105,39 @@ public class ConfigureSearchResource {
             out.add(m);
         }
         return out;
+    }
+
+    /**
+     * task-260902 · B-2（api.md §2.1，AC-1 / AC-2）：客户产品编号占用校验。
+     *
+     * <p>{@code GET /api/cpq/quotations/configure/check-product-no?customerNo=&productNo=}
+     * <p>未占用 → {@code {"taken": false}}；已占用 → {@code {"taken":true,"hfPartNo":…,"createdAt":…}}。
+     *
+     * <p>占用口径 = {@code sel_product_no}（选配来的）∪ {@code material_customer_map}（导入来的）。
+     * 前端在步骤 1 输入框 debounce 400ms 后调用，<b>不阻塞输入</b>，只驱动提示与「下一步」禁用态。
+     */
+    @GET
+    @Path("/check-product-no")
+    public Map<String, Object> checkProductNo(@QueryParam("customerNo") String customerNo,
+                                              @QueryParam("productNo") String productNo) {
+        return configureProductService.checkProductNo(customerNo, productNo);
+    }
+
+    /**
+     * task-260902 · B-7（api.md §2.2，AC-5 / AC-16）：外购件候选。
+     *
+     * <p>{@code GET /api/cpq/quotations/configure/outsourced-parts?keyword=&page=1&size=20}
+     * <p>判据（闸门 A0 已裁决）：{@code WHERE material_master.material_type = '外购件'}。
+     *
+     * <p>⚠️ <b>返回 0 条是正常业务状态</b>（AC-16）：实测当前库仅 1 条
+     * （{@code TEST-Q13-CODE / 组成件1}，规格与单重均空）。前端必须渲染空态而非「加载中…」（AP-31 族）。
+     */
+    @GET
+    @Path("/outsourced-parts")
+    public Map<String, Object> outsourcedParts(@QueryParam("keyword") String keyword,
+                                               @QueryParam("page") @DefaultValue("1") int page,
+                                               @QueryParam("size") @DefaultValue("20") int size) {
+        return configureProductService.listOutsourcedParts(keyword, page, size);
     }
 
     /**

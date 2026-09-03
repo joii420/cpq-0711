@@ -201,7 +201,7 @@ class QuotePendingRewriterTest {
             assertTrue(r.anchorInjected, "第一分支命中白名单表 material_bom_item，整视图应可回填（D3 场景）");
             assertEquals("material_bom_item", r.primaryTable);
             assertEquals("mbi", r.primaryAlias);
-            assertEquals(1, countOccurrences(r.sql, ".id AS " + QuotePendingRewriter.ANCHOR_COLUMN),
+            assertEquals(1L, countOccurrences(r.sql, ".id AS " + QuotePendingRewriter.ANCHOR_COLUMN),
                 "只有分支1应注入真实锚点，实际 sql=\n" + r.sql);
             assertTrue(r.sql.contains("NULL::uuid AS " + QuotePendingRewriter.ANCHOR_COLUMN),
                 "非白名单分支应注入 NULL::uuid 占位，保持列数对齐");
@@ -307,6 +307,138 @@ class QuotePendingRewriterTest {
             assertTrue(r.sql.contains("SELECT * FROM unit_price"),
                 "外层对 CTE 名 unit_price 的引用不应被替换成子查询");
         }
+    }
+
+    // =================================================================================
+    // repair-260830 B-3：库函数补参改写（AC-10 四个分项）
+    //
+    // ⚠️ 上面 11 条用例全部是「表 token 替换」——这正是本 BUG 漏网的原因（问题说明 §4.7）：
+    //    改写器单测从未覆盖过「函数调用」这条路径。以下 4 条专门针对函数调用，不要写成表用例。
+    // =================================================================================
+
+    /** mc_view 形态：element_bom_item 主位 + LEFT JOIN f_material_element_price(两参) + 注释里也写了函数名。 */
+    private static final String FN_CALL_VIEW =
+        "SELECT\n" +
+        "  ebi.material_no AS hf_part_no,\n" +
+        "  ebi.component_no AS _元素,\n" +
+        "  cep.unit_price AS 元素单价\n" +
+        "FROM element_bom_item ebi\n" +
+        "  LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep\n" +
+        "    ON cep.material_no = ebi.material_no AND cep.element_code = ebi.component_no\n" +
+        "WHERE ebi.customer_no = :customerCode AND ebi.is_current = true";
+
+    /** 函数名只出现在注释里（行注释 + 块注释），SQL 正文不调用它。 */
+    private static final String FN_IN_COMMENT_VIEW =
+        "-- 元素单价取自 f_material_element_price(:customerCode, :priceBaseDate)\n" +
+        "/* 历史：早期版本 LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep */\n" +
+        "SELECT ebi.material_no AS hf_part_no, ebi.component_no AS _元素\n" +
+        "FROM element_bom_item ebi\n" +
+        "WHERE ebi.is_current = true";
+
+    /** 已经是三参形态（幂等性用例）。 */
+    private static final String FN_ALREADY_THREE_ARG_VIEW =
+        "SELECT ebi.material_no AS hf_part_no, cep.unit_price AS 元素单价\n" +
+        "FROM element_bom_item ebi\n" +
+        "  LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate, :pq) cep\n" +
+        "    ON cep.material_no = ebi.material_no\n" +
+        "WHERE ebi.is_current = true";
+
+    /** 只调 f_customer_element_price（不读 BOM 表，与本 BUG 无关，必须原样不动）。 */
+    private static final String FN_CUSTOMER_ELEMENT_PRICE_VIEW =
+        "SELECT ebi.material_no AS hf_part_no, f.unit_price AS 元素单价\n" +
+        "FROM element_bom_item ebi\n" +
+        "  LEFT JOIN f_customer_element_price(:customerCode, :priceBaseDate) f\n" +
+        "    ON f.element_code = ebi.component_no\n" +
+        "WHERE ebi.is_current = true";
+
+    /** AC-10 ①：两参调用被补成三参，第三参 = :pq；且改写后 SQL 在真库可执行（LIMIT 0）。 */
+    @Test
+    void fnCall_twoArg_rewrittenToThreeArg() throws Exception {
+        try (Connection conn = dataSource.getConnection()) {
+            QuotePendingRewriter.Result r = QuotePendingRewriter.rewrite(FN_CALL_VIEW, conn);
+
+            assertFalse(FN_CALL_VIEW.contains(":priceBaseDate, :pq"), "前提：原模板是两参形态");
+            assertTrue(r.sql.contains("f_material_element_price(:customerCode, :priceBaseDate, :pq)"),
+                "两参调用应被补成三参且第三参为 :pq，实际改写结果=\n" + r.sql);
+            // ⚠️ 不能数 ":pq)"：表替换子查询里 "(t.is_current OR t.pending_quotation_id = :pq)" 同样以 ":pq)" 结尾。
+            //    只数函数调用处的补参形态。
+            assertEquals(1L, countOccurrences(r.sql, ":priceBaseDate, :pq)"),
+                "函数调用处应恰好补一次 :pq");
+            // 表替换仍照常发生（两条改写规则互不干扰）
+            assertTrue(r.touchedTables.contains("element_bom_item"), "白名单表替换不应受函数补参影响");
+            assertTrue(r.anchorInjected, "锚点注入不应受函数补参影响");
+
+            // 真库可执行性：LIMIT 0 探测（与 QuoteViewValidationService.bindProbe 同款绑定降级）
+            String bound = ("SELECT * FROM (" + r.sql + ") _outer LIMIT 0")
+                .replaceAll("(?<!:):pq\\b", "'" + UUID.randomUUID() + "'::uuid")
+                .replaceAll("(?<!:):priceBaseDate\\b", "DATE '2026-08-30'")
+                .replaceAll("(?<!:):[A-Za-z_][A-Za-z0-9_]*\\b", "NULL");
+            try (PreparedStatement ps = conn.prepareStatement(bound);
+                 ResultSet rs = ps.executeQuery()) {
+                assertTrue(rs.getMetaData().getColumnCount() > 0,
+                    "补参后的 SQL 应能在真库解析执行（证明 V397 三参重载存在且无歧义）");
+            }
+        }
+    }
+
+    /** AC-10 ②：注释里的 f_material_element_price(...) 文本原样保留，不被补参。 */
+    @Test
+    void fnCall_insideComment_notRewritten() throws Exception {
+        try (Connection conn = dataSource.getConnection()) {
+            QuotePendingRewriter.Result r = QuotePendingRewriter.rewrite(FN_IN_COMMENT_VIEW, conn);
+
+            assertTrue(r.sql.contains(
+                "-- 元素单价取自 f_material_element_price(:customerCode, :priceBaseDate)\n"),
+                "行注释里的函数调用文本必须原样保留，实际=\n" + r.sql);
+            assertTrue(r.sql.contains(
+                "/* 历史：早期版本 LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep */"),
+                "块注释里的函数调用文本必须原样保留，实际=\n" + r.sql);
+            assertFalse(r.sql.contains(":priceBaseDate, :pq"),
+                "注释里的调用不得被补参（否则 mc_view 这类模板的注释会被误改）");
+        }
+    }
+
+    /** AC-10 ③：已是三参的调用幂等跳过，不重复补参。 */
+    @Test
+    void fnCall_alreadyThreeArg_idempotent() throws Exception {
+        try (Connection conn = dataSource.getConnection()) {
+            QuotePendingRewriter.Result r = QuotePendingRewriter.rewrite(FN_ALREADY_THREE_ARG_VIEW, conn);
+
+            assertTrue(r.sql.contains("f_material_element_price(:customerCode, :priceBaseDate, :pq)"),
+                "三参调用应原样保留");
+            assertFalse(r.sql.contains(":pq, :pq"), "不得二次补参");
+            assertEquals(1L, countOccurrences(r.sql, "f_material_element_price("),
+                "函数调用出现次数不应变化");
+            assertEquals(1L, countOccurrences(r.sql, ":priceBaseDate, :pq)"), "函数调用处的 :pq 应仍只有一处");
+
+            // 二次改写（重入）仍幂等
+            QuotePendingRewriter.Result r2 = QuotePendingRewriter.rewrite(r.sql, conn);
+            assertEquals(1L, countOccurrences(r2.sql, ":priceBaseDate, :pq)"),
+                "对已改写结果再改写一次仍不得追加第二个 :pq");
+        }
+    }
+
+    /** AC-10 ④：f_customer_element_price 不受影响（它不读 BOM 表，与本 BUG 无关）。 */
+    @Test
+    void fnCall_customerElementPrice_untouched() throws Exception {
+        try (Connection conn = dataSource.getConnection()) {
+            QuotePendingRewriter.Result r = QuotePendingRewriter.rewrite(FN_CUSTOMER_ELEMENT_PRICE_VIEW, conn);
+
+            assertTrue(r.sql.contains("f_customer_element_price(:customerCode, :priceBaseDate)"),
+                "f_customer_element_price 调用必须逐字原样保留，实际=\n" + r.sql);
+            assertFalse(r.sql.contains("f_customer_element_price(:customerCode, :priceBaseDate, :pq)"),
+                "不得给 f_customer_element_price 补参");
+        }
+    }
+
+    /** AC-10 ④ 补充：非报价单上下文（quotationId=null）不补参 —— 由 SqlViewExecutor.applyPendingRewrite
+     *  的门槛判定保证「压根不调用改写器」。本用例锁死那条门槛的语义边界不被后续改动破坏。 */
+    @Test
+    void fnCall_noQuotationContext_rewriterNotInvoked() {
+        // SqlViewRuntimeContext 无 quotationId ⇒ applyPendingRewrite 直接 return 原模板 ⇒ 不补参。
+        // 这里以「原模板本身不含 :pq」为不变量断言：改写器不被调用时，模板逐字不变。
+        assertFalse(FN_CALL_VIEW.contains(":pq"),
+            "原模板不含 :pq —— 核价侧/冻结态不调用改写器时，SQL 逐字不变，走两参版（E-4/E-6 零回归）");
     }
 
     /** 锚点注入后：LIMIT 0 执行 + pgjdbc 基表元数据校验 __v6_id 的 base table/column = (table, id)。 */

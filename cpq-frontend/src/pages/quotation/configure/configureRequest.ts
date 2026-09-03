@@ -29,15 +29,30 @@ export function buildConfigurePartsRequest(
   compositeSelections: CompositeSelectionState[],
 ): { productType: ProductType; parts: PartRequest[]; compositeProcesses?: CompositeProcessRequest[] } {
   const productType: ProductType = sumQuantity(rows).greaterThanOrEqualTo('2') ? 'COMPOSITE' : 'SIMPLE';
-  const parts: PartRequest[] = rows.map((row) => ({
-    name: row.recipeLabel || row.recipeCode || '',
-    partMode: 'custom',
-    recipeCode: row.recipeCode!,
-    elements: Object.entries(row.elementOverrides).map(([elementCode, pct]) => ({ elementCode, pct })),
-    processNos: row.processNos.length > 0 ? row.processNos : undefined,
-    unitWeightGrams: row.unitWeightGrams ?? undefined,
-    quantity: row.quantity,
-  }));
+  const parts: PartRequest[] = rows.map((row) => {
+    // task-260901 · api.md §2.4：`configNo` 与 `elements` **必须恰好给一个**
+    // （两个都给或都不给 → 400 MATERIAL_SOURCE_AMBIGUOUS）。
+    // contentMode 未定义时按历史行为兜底：有 elementOverrides 就当自定义含量。
+    const mode = row.contentMode ?? (Object.keys(row.elementOverrides).length > 0 ? 'custom' : undefined);
+    const materialSource =
+      mode === 'config' && row.configNo
+        ? { configNo: row.configNo }
+        : mode === 'custom'
+          ? {
+              elements: Object.entries(row.elementOverrides)
+                .map(([elementCode, pct]) => ({ elementCode, pct })),
+            }
+          : {};
+    return {
+      name: row.recipeLabel || row.recipeCode || '',
+      partMode: 'custom' as const,
+      recipeCode: row.recipeCode!,
+      ...materialSource,
+      processNos: row.processNos.length > 0 ? row.processNos : undefined,
+      unitWeightGrams: row.unitWeightGrams ?? undefined,
+      quantity: row.quantity,
+    };
+  });
   const allPartIndexes = rows.map((_, index) => index);
   const compositeProcesses: CompositeProcessRequest[] = compositeSelections.map((selection) => ({
     defCode: selection.defCode,

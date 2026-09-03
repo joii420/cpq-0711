@@ -117,17 +117,33 @@ test('选配添加 COMPOSITE(Σqty=2 单料号去重子件) + 组合工艺区出
   await addRowBtn.first().click();
   await page.waitForTimeout(500);
 
-  // Step① 材质：选 00001(Ag，单元素默认配比=100%)。
-  await page.locator('.ant-drawer').getByText('00001', { exact: true }).first().click();
-  await page.waitForTimeout(300);
+  // ⚠️ task-260901 起子步骤由 3 段并为 **2 段**：`① 材质与含量` → `② 工序`
+  //    （原型 5 把材质与含量配置画在同一屏；原 `② 元素含量` 微调步正是被
+  //     「选标准配置 / 自定义含量」取代的那一步）。故这里只点**一次**「下一步」。
+  //    材质选择也由卡片网格改为 AntD Select（258 项虚拟滚动，必须先输入过滤再点选）。
+  // Step① 材质与含量：选 00001(Ag，单元素)，含量配置取该材质第一条 ACTIVE 配置。
+  const matSel = page.locator('.ant-drawer .ant-select').first();
+  await matSel.click();
+  await page.keyboard.type('00001');
+  await page.waitForTimeout(600);
+  await page.locator('.ant-select-dropdown:visible .ant-select-item-option')
+    .filter({ hasText: '00001' }).first().click();
+  await page.waitForTimeout(1000);
+
+  // 含量配置：默认自动选中第一条 ACTIVE 配置；没选上就手动补选。
+  const cfgSel = page.locator('.ant-drawer .ant-form-item')
+    .filter({ hasText: '含量配置' }).locator('.ant-select').first();
+  if (await cfgSel.count() > 0
+      && await cfgSel.locator('.ant-select-selection-item').count() === 0) {
+    await cfgSel.click();
+    await page.waitForTimeout(400);
+    await page.locator('.ant-select-dropdown:visible .ant-select-item-option').first().click();
+    await page.waitForTimeout(300);
+  }
   await page.locator('.ant-drawer button:has-text("下一步")').last().click();
   await page.waitForTimeout(700);
 
-  // Step② 元素含量：默认配比已=100%，直接下一步。
-  await page.locator('.ant-drawer button:has-text("下一步")').last().click();
-  await page.waitForTimeout(500);
-
-  // Step③ 工序：勾选第一个候选。
+  // Step② 工序：勾选第一个候选。
   const firstProcessChip = page.locator('.ant-drawer label').filter({ has: page.locator('input[type="checkbox"]') }).first();
   if (await firstProcessChip.count() > 0) {
     await firstProcessChip.click();

@@ -1,0 +1,1230 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>选配流程重构 · 交互原型（task-260902）</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;margin:0;padding:20px;background:#f0f2f5;color:rgba(0,0,0,.88);font-size:14px;line-height:1.5714}
+.wrap{max-width:1120px;margin:0 auto}
+h1{font-size:20px;margin:0 0 4px;font-weight:600}
+.sub{color:rgba(0,0,0,.45);font-size:13px;margin:0 0 16px}
+.card{background:#fff;border-radius:8px;padding:20px 24px;margin-bottom:16px;box-shadow:0 1px 2px rgba(0,0,0,.03),0 1px 6px -1px rgba(0,0,0,.02)}
+h3{font-size:14px;font-weight:600;margin:0 0 12px}
+.state{display:inline-block;background:#f0f5ff;color:#1677ff;border:1px solid #adc6ff;border-radius:4px;padding:0 7px;font-size:12px}
+.state.warn{background:#fffbe6;color:#d48806;border-color:#ffe58f}
+.state.err{background:#fff2f0;color:#cf1322;border-color:#ffccc7}
+.state.ok{background:#f6ffed;color:#389e0d;border-color:#b7eb8f}
+
+.btn{border:1px solid #d9d9d9;background:#fff;border-radius:6px;padding:4px 15px;font-size:14px;cursor:pointer;color:rgba(0,0,0,.88);height:32px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-family:inherit}
+.btn:hover:not(:disabled){border-color:#4096ff;color:#4096ff}
+.btn.primary{background:#1677ff;border-color:#1677ff;color:#fff}
+.btn.primary:hover:not(:disabled){background:#4096ff;border-color:#4096ff;color:#fff}
+.btn.sm{height:24px;padding:0 8px;font-size:12px;border-radius:4px}
+.btn.link{border:none;background:none;color:#1677ff;padding:0 4px;height:auto}
+.btn.link.danger{color:#ff4d4f}
+.btn:disabled{background:rgba(0,0,0,.04)!important;border-color:#d9d9d9!important;color:rgba(0,0,0,.25)!important;cursor:not-allowed}
+.dis{position:relative;display:inline-block}
+.dis>.tip{visibility:hidden;opacity:0;transition:.15s;position:absolute;left:50%;transform:translateX(-50%);bottom:calc(100% + 8px);background:rgba(0,0,0,.85);color:#fff;font-size:12px;padding:6px 8px;border-radius:6px;white-space:nowrap;z-index:30}
+.dis>.tip:after{content:"";position:absolute;top:100%;left:50%;margin-left:-5px;border:5px solid transparent;border-top-color:rgba(0,0,0,.85)}
+.dis:hover>.tip{visibility:visible;opacity:1}
+
+input,select{height:32px;border:1px solid #d9d9d9;border-radius:6px;padding:4px 11px;font-size:14px;background:#fff;font-family:inherit;width:100%;color:rgba(0,0,0,.88)}
+input:focus,select:focus{outline:none;border-color:#4096ff;box-shadow:0 0 0 2px rgba(5,145,255,.1)}
+input.err,select.err{border-color:#ff4d4f}
+input.ok{border-color:#52c41a}
+input:disabled{background:rgba(0,0,0,.04);color:rgba(0,0,0,.25);cursor:not-allowed}
+input[type=number]{text-align:right}
+.form-row{display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+.fi{display:flex;flex-direction:column;gap:6px;flex:1;min-width:150px}
+.fi>label{font-size:14px}
+.fi>label .req{color:#ff4d4f;margin-right:4px}
+.fi>label .opt{color:rgba(0,0,0,.45);font-size:12px}
+.msg{font-size:12px;line-height:1.6;min-height:18px}
+.msg.err{color:#ff4d4f}
+.msg.ok{color:#389e0d}
+.suffix{color:rgba(0,0,0,.45);font-size:13px;white-space:nowrap}
+
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-weight:600;background:#fafafa;padding:10px 12px;border-bottom:1px solid #f0f0f0;white-space:nowrap;font-size:13px}
+td{padding:8px 12px;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+tbody tr:hover td{background:#fafafa}
+tr.sel td{background:#e6f4ff}
+tr.sel:hover td{background:#e6f4ff}
+tr.rowerr td{background:#fff2f0}
+tfoot td{background:#fafafa;font-weight:600;border-bottom:none}
+.tblwrap{border:1px solid #f0f0f0;border-radius:8px;overflow:hidden}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.mono{font-family:"SFMono-Regular",Consolas,Menlo,monospace;font-size:12px}
+.muted{color:rgba(0,0,0,.45)}
+.small{font-size:12px}
+
+.tag{display:inline-block;border-radius:4px;padding:0 7px;font-size:12px;line-height:20px;border:1px solid #d9d9d9;background:#fafafa}
+.tag.blue{background:#e6f4ff;border-color:#91caff;color:#0958d9}
+.tag.green{background:#f6ffed;border-color:#b7eb8f;color:#389e0d}
+.tag.red{background:#fff2f0;border-color:#ffccc7;color:#cf1322}
+.tag.gold{background:#fffbe6;border-color:#ffe58f;color:#d48806}
+.tag.purple{background:#f9f0ff;border-color:#d3adf7;color:#531dab}
+.tag.grey{background:#fafafa;border-color:#d9d9d9;color:rgba(0,0,0,.45)}
+
+.steps{display:flex;margin-bottom:24px;flex-wrap:wrap}
+.step{display:flex;align-items:center;gap:8px;flex:1;min-width:110px;position:relative;padding-right:12px}
+.step .dot{width:24px;height:24px;border-radius:50%;border:1px solid #d9d9d9;color:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;background:#fff}
+.step .lb{font-size:13px;color:rgba(0,0,0,.45);white-space:nowrap}
+.step.on .dot{background:#1677ff;border-color:#1677ff;color:#fff}
+.step.on .lb{color:rgba(0,0,0,.88);font-weight:600}
+.step.done{cursor:pointer}
+.step.done .dot{border-color:#1677ff;color:#1677ff}
+.step.done .lb{color:rgba(0,0,0,.88)}
+.step.done:hover .lb{color:#1677ff}
+.step:not(:last-child):after{content:"";position:absolute;right:0;top:12px;width:12px;height:1px;background:#e8e8e8}
+
+.empty{padding:36px 0;text-align:center}
+.empty .ico{font-size:38px;display:block;margin-bottom:8px;opacity:.35}
+.empty .txt{color:rgba(0,0,0,.45)}
+.empty .act{margin-top:12px}
+
+.alert{border-radius:8px;padding:10px 14px;font-size:14px;display:flex;gap:10px;margin-bottom:16px;line-height:1.6}
+.alert .ico{flex-shrink:0}
+.alert.info{background:#e6f4ff;border:1px solid #91caff}
+.alert.warn{background:#fffbe6;border:1px solid #ffe58f}
+.alert.err{background:#fff2f0;border:1px solid #ffccc7}
+.alert.ok{background:#f6ffed;border:1px solid #b7eb8f}
+
+.pickrow{display:flex;gap:16px;flex-wrap:wrap}
+.pick{flex:1;min-width:230px;border:1px solid #d9d9d9;border-radius:8px;padding:16px;cursor:pointer;background:#fff;display:flex;gap:12px}
+.pick:hover{border-color:#4096ff}
+.pick.on{border-color:#1677ff;background:#e6f4ff}
+.pick .ico{font-size:22px}
+.pick .t{font-weight:600;margin-bottom:4px}
+.pick .d{font-size:12px;color:rgba(0,0,0,.45);line-height:1.6}
+.pick .radio{width:16px;height:16px;border-radius:50%;border:1px solid #d9d9d9;flex-shrink:0;margin-left:auto;background:#fff;align-self:center}
+.pick.on .radio{border:5px solid #1677ff}
+
+.partitem{border:1px solid #f0f0f0;border-radius:8px;padding:12px 16px;display:flex;gap:12px;margin-bottom:12px}
+.partitem .body{flex:1;min-width:0}
+.partitem .tt{font-weight:600;display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+.partitem .meta{font-size:12px;color:rgba(0,0,0,.45);line-height:1.8}
+
+.toolbar{display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap;padding-bottom:16px;border-bottom:1px solid #f0f0f0}
+.toolbar .spacer{flex:1}
+.note{background:#fafafa;border:1px solid #f0f0f0;border-radius:8px;padding:12px 16px;font-size:13px;color:rgba(0,0,0,.65);line-height:1.8;margin-top:16px}
+.note b{color:rgba(0,0,0,.88)}
+code{background:#f0f0f0;border-radius:3px;padding:1px 5px;font-family:"SFMono-Regular",Consolas,Menlo,monospace;font-size:12px}
+.ac{display:inline-block;background:#f9f0ff;color:#531dab;border:1px solid #d3adf7;border-radius:4px;padding:0 6px;font-size:11px;line-height:18px;font-family:"SFMono-Regular",Consolas,Menlo,monospace}
+
+/* 顶栏 */
+.topbar{background:#001529;color:#fff;border-radius:8px;padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.topbar .ttl{font-weight:600;font-size:15px}
+.topbar .badge{background:#52c41a;border-radius:4px;padding:1px 8px;font-size:12px}
+.topbar .spacer{flex:1}
+.tabs{display:flex;gap:4px;background:rgba(255,255,255,.1);border-radius:6px;padding:3px}
+.tabs button{border:none;background:none;color:rgba(255,255,255,.65);padding:4px 14px;border-radius:4px;cursor:pointer;font-size:13px;font-family:inherit}
+.tabs button.on{background:#fff;color:#001529;font-weight:600}
+
+/* 状态检视 */
+.inspector{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.inspector .sidebar{width:260px;flex-shrink:0}
+.inspector .stage{flex:1;min-width:420px}
+.slist{list-style:none;margin:0;padding:0}
+.slist li{padding:8px 12px;border-radius:6px;cursor:pointer;font-size:13px;margin-bottom:2px;display:flex;gap:8px;align-items:center}
+.slist li:hover{background:#f5f5f5}
+.slist li.on{background:#e6f4ff;color:#0958d9;font-weight:600}
+.slist .grp{font-size:12px;color:rgba(0,0,0,.45);padding:10px 12px 4px;font-weight:600;cursor:default}
+.slist .grp:hover{background:none}
+
+.fpbox{background:#001529;color:#7ee787;border-radius:8px;padding:12px 16px;font-family:"SFMono-Regular",Consolas,Menlo,monospace;font-size:12px;line-height:1.8;word-break:break-all;margin:12px 0}
+.fpbox .lbl{color:rgba(255,255,255,.45);display:block;margin-bottom:4px;font-size:11px}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="topbar">
+  <span class="ttl">选配流程重构 · 交互原型</span>
+  <span class="badge" style="background:#d48806">🎥 汇报展示用</span>
+  <span class="small" style="color:rgba(255,255,255,.55)">验收基准是同目录的 6 份独立原型，不是本页</span>
+  <span class="spacer"></span>
+  <div class="tabs">
+    <button id="tab-flow" class="on" onclick="switchMode('flow')">▶ 流程演示</button>
+    <button id="tab-insp" onclick="switchMode('insp')">◉ 状态检视</button>
+    <button id="tab-info" onclick="switchMode('info')">📋 裁决与说明</button>
+  </div>
+</div>
+
+<!-- ══════════ 流程演示 ══════════ -->
+<div id="mode-flow">
+  <div class="alert info">
+    <span class="ico">▶</span>
+    <div>
+      <b>这是可以真的点着走的原型</b>，校验、占比合计、指纹比对都是<b>真在算</b>。建议试三件事：<br>
+      ① 编号填 <code>3TF5622-0XM0-Z</code>（已存在）看它怎么挡你；
+      ② 材质占比故意填成 70+20，看「确定」怎么禁用；
+      ③ 走完一遍后<b>再走一遍相同配置</b>，看指纹命中复用；然后只改总重，看它铸新号。
+      <button class="btn sm" style="margin-left:8px" onclick="resetAll()">↻ 重来</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="steps" id="steps"></div>
+    <div id="stage"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;padding-top:16px;border-top:1px solid #f0f0f0;margin-top:20px" id="footer"></div>
+  </div>
+</div>
+
+<!-- ══════════ 状态检视 ══════════ -->
+<div id="mode-insp" class="hidden">
+  <div class="alert warn">
+    <span class="ico">◉</span>
+    <div><b>状态检视</b>：流程演示只能走到「正常路径」，而 <code>frontend.md §1.3</code> 要求空态 / 禁用态 / 最长文案 / 错误态都要有视觉基准。这里逐个直达，<b>开发照这些做</b>。</div>
+  </div>
+  <div class="card">
+    <div class="inspector">
+      <div class="sidebar"><ul class="slist" id="slist"></ul></div>
+      <div class="stage" id="inspstage"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ 说明 ══════════ -->
+<div id="mode-info" class="hidden">
+  <div class="card">
+    <h3>这次改的是什么</h3>
+    <div class="tblwrap"><table>
+      <thead><tr><th style="width:50%">现状（两层）</th><th>本次（三层）</th></tr></thead>
+      <tbody><tr>
+        <td class="mono" style="white-space:pre;font-size:12px;line-height:1.9">产品
+└── 配件 ＝ 一个材质料号
+     ├── 材质（<b>单个</b>）
+     ├── 元素含量
+     └── 工序</td>
+        <td class="mono" style="white-space:pre;font-size:12px;line-height:1.9">产品（客户产品编号 ← <b>前置到第 1 步</b>）
+└── 配件 1..N
+     ├── <b>零件</b>（新建 / 已有）
+     │    ├── 品名 / 规格 / 尺寸 / <b>总重</b>
+     │    ├── <b>材质 1..N（各带占比，Σ=100%）</b>
+     │    │    └── 含量配置（标准 / 自定义）
+     │    └── 工序
+     └── <b>外购件</b>（从料号库选）
+          └── 工序
+└── 组合工序</td>
+      </tr></tbody>
+    </table></div>
+    <div class="note"><b>「配件≡材质料号」不是推测</b>：<code>PartRequest.recipeCode</code> 是单值；前端提示语原文是「请至少新增一个材质料号」（<code>ConfigureProductDrawer.tsx:271</code>）；落库只写 1 行「自指物料行」。</div>
+  </div>
+
+  <div class="card">
+    <h3>用户裁决（写进原型的都是已定案的）</h3>
+    <div class="tblwrap"><table>
+      <thead><tr><th style="width:9%">编号</th><th style="width:36%">问题</th><th>裁决</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">D-1</td><td>配件 / 零件 / 材质的层级</td><td><b>三层，零件含多材质</b></td></tr>
+        <tr><td class="mono">D-2</td><td>多材质零件的重量怎么填</td><td><b>材质填占比，零件填总重</b>（克重 = 总重 × 占比）</td></tr>
+        <tr><td class="mono">D-3</td><td>客户产品编号已存在时</td><td><b>挡住</b>，改走产品库入口</td></tr>
+        <tr><td class="mono">D-4</td><td>外购件从哪来</td><td><b>从现有料号库选</b>（不建新主数据模块）</td></tr>
+        <tr><td class="mono">D-5</td><td>哪些维度不同就铸新料号</td><td><b>材质占比 / 零件总重 / 品名·规格·尺寸</b>进指纹；<b>配方编号不进</b></td></tr>
+        <tr><td class="mono">A0-1</td><td><code>material_type</code> 一列两义</td><td><b>归位为料号类型</b>（选配写 <code>'零件'</code>，材质名靠 <code>component_usage_type</code>）</td></tr>
+        <tr><td class="mono">A0-2</td><td>指纹 <code>structure_version</code></td><td><b>升到 v2</b>（表内 0 行，升版零代价）</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="card">
+    <h3>原型里用的都是实测数据</h3>
+    <div class="tblwrap"><table>
+      <thead><tr><th style="width:34%">数据</th><th>实测值（<code>cpq_db_0724</code>）</th></tr></thead>
+      <tbody>
+        <tr><td><code>material_type</code> 取值分布</td><td>零件 1848 · <b>外购件 1</b> · NULL 40（2026-09-02）⇒ 语义是<b>料号类型</b></td></tr>
+        <tr><td><code>characteristic='OUTSOURCED'</code></td><td><b>0 行</b>（全表 RECIPE 11095 / ASSEMBLY 49）⇒ 外购件是<b>从未落地</b>的能力</td></tr>
+        <tr><td><code>sel_part_signature</code></td><td><b>0 行</b> ⇒ 指纹改结构无存量失配风险</td></tr>
+        <tr><td><code>material_master.material_recipe_id</code></td><td><b>1890 行全 NULL（取数 2026-09-02，仍为 0）</b> ⇒ 选配 custom 路径从未跑通过</td></tr>
+        <tr><td><code>material_bom_item.material_ratio</code></td><td>V365 专为「材质占比」加的列，存量 11131 行仅 <b>3 行非空</b> ⇒ 占比有现成落点，<b>零新增列</b></td></tr>
+        <tr><td>材质库</td><td>262 条材质 / 82 种元素组合 / 223 种配比；<b>全部 <code>allow_custom_content=false</code></b></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="card">
+    <h3>🕰️ 与上一版原型（task-260712）的关系</h3>
+    <p class="sub">旧目录从未有过 index.html、也没挂过 📌，因此不存在「摘标记」动作；已在旧目录补 <code>README-原型身份说明.md</code>（原 HTML 一字未动）。</p>
+    <div class="tblwrap"><table>
+      <thead><tr><th style="width:32%">task-260712 的原型</th><th style="width:12%">身份</th><th>偏差</th></tr></thead>
+      <tbody>
+        <tr><td class="mono small">原型-报价单-选配添加.html</td><td><span class="tag grey">🕰️ 历史快照</span></td>
+          <td class="small">① 无客户产品编号步骤；② 无配件类型层；③ 一个配件只能一个材质、无占比；④ 无品名/规格/尺寸；⑤ 材质无「含量配置」下拉</td></tr>
+        <tr><td class="mono small">原型-报价单-从已有产品添加.html</td><td><span class="tag blue">仍有效</span></td><td class="small">另一个入口，本次不改其页面，仅新增从选配阻止态跳转过来的入口</td></tr>
+        <tr><td class="mono small">原型-选配模板管理.html</td><td><span class="tag blue">仍有效</span></td><td class="small">本次不动</td></tr>
+        <tr><td class="mono small">原型-配置中心-3D模型配置.html</td><td><span class="tag blue">仍有效</span></td><td class="small">本次不动</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="card">
+    <h3>规范符合性</h3>
+    <div class="note" style="margin-top:0">
+      <b>§1.1 抽屉替代弹窗</b>：全部弹出式交互都是右侧抽屉形态，无 Modal。<br>
+      <b>§1.2 列表动作</b>：配件列表与多材质表的行内「编辑/移除」适用该规则<b>例外白名单里的「抽屉内部子表」</b>条款 —— 不是违规。外购件 / 已有零件的选择列表是纯选择、无副作用动作，同样不适用工具栏模式。<br>
+      <b>§1.3 状态覆盖</b>：空数据 / 禁用态 / 最长文案 / 错误态四类全部可在「◉ 状态检视」逐个直达。
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+// ═══════════════ 数据（取自 cpq_db_0724 实测 + 真实业务样例）═══════════════
+// 材质库（真实材质名，取自 cpq_db_0724 的 material_recipe；库内实际 262 条，此处取有代表性的 12 条）
+const RECIPES = [
+  {code:'00006', name:'AgNi10', allowCustom:false, configs:[
+    {no:'00006-01', els:[['10001','Ag',"90"],['10005','Ni',"10"]]},
+    {no:'00006-02', els:[['10001','Ag',"90"],['10005','Ni',"10"]]},   // 与 -01 含量逐字相同 → 演示 AC-10
+    {no:'00006-03', els:[['10001','Ag',"88"],['10005','Ni',"12"]]},
+  ]},
+  {code:'00007', name:'Ag15CuP', allowCustom:false, configs:[
+    {no:'00007-01', els:[['10001','Ag',"85"],['10005','Ni',"15"]]},
+  ]},
+  {code:'00008', name:'Ag25CuP', allowCustom:false, configs:[
+    {no:'00008-01', els:[['10001','Ag',"80"],['10005','Ni',"20"]]},
+  ]},
+  {code:'00012', name:'AgCdO12', allowCustom:false, configs:[
+    {no:'00012-01', els:[['10001','Ag',"70"],['10005','Ni',"30"]]},
+  ]},
+  {code:'00031', name:'AgSnO₂', allowCustom:false, configs:[
+    {no:'00031-01', els:[['10001','Ag',"88"],['10041','Sn',"10"],['10052','O',"2"]]},
+    {no:'00031-02', els:[['10001','Ag',"90"],['10041','Sn',"8"],['10052','O',"2"]]},
+  ]},
+  {code:'00045', name:'AgCdO12', allowCustom:false, configs:[
+    {no:'00045-01', els:[['10001','Ag',"88"],['10063','Cd',"10.5"],['10052','O',"1.5"]]},
+  ]},
+  {code:'00123', name:'AgZnO12/Cu', allowCustom:true, configs:[
+    {no:'00123-01', els:[['10021','Cu',"72.2727"],['10077','Zn',"3.3273"],['10001','Ag',"24.4"]]},
+  ]},
+  {code:'00131', name:'DC03', allowCustom:true, configs:[
+    {no:'00131-01', els:[['10021','Cu',"62"],['10077','Zn',"38"]]},
+  ]},
+  {code:'00197', name:'AgNi10/Ag15CuP 复合材', allowCustom:false, configs:[
+    {no:'00197-01', els:[['10001','Ag',"85"],['10005','Ni',"10"],['10021','Cu',"5"]]},
+  ]},
+  {code:'00206', name:'WZHF34-05', allowCustom:false, configs:[
+    {no:'00206-01', els:[['10001','Ag',"92"],['10041','Sn',"6"],['10052','O',"2"]]},
+  ]},
+  {code:'00262', name:'SnO2', allowCustom:false, configs:[
+    {no:'00262-01', els:[['10041','Sn',"99.5"],['10033','P',"0.5"]]},
+  ]},
+  {code:'00263', name:'SnO2-del', allowCustom:false, configs:[]},      // 无配置 → 灰显不可选（AC-5 反向断言）
+];
+const EXISTING_PARTS = [
+  {no:'HF-SZXM-2506-0018', name:'静触头支架', spec:'φ10×2', w:'8',  mats:'AgSnO₂ 100%'},
+  {no:'HF-SZXM-2504-0007', name:'静触头底座', spec:'φ14×3', w:'12', mats:'AgZnO12/Cu 100%'},
+  {no:'HF-SZXM-2601-0044', name:'静触头复合镶块', spec:'12×8×3', w:'10', mats:'AgNi10 70% · AgZnO12/Cu 30%'},
+];
+let OUTSOURCED = [{no:'TEST-Q13-CODE', name:'组成件1', spec:'φ20×1', w:'2'}];
+// 工序主数据：以下 4 条是 cpq_db_0724 的 process_master 全量实测（TP10/TP20 是遗留测试数据）
+const PROCESSES = [
+  {no:'TP10',  name:'测试工序10', cat:'—',   out:false, real:true},
+  {no:'TP20',  name:'测试工序20', cat:'—',   out:false, real:true},
+  {no:'Z100',  name:'焊接',      cat:'装配', out:false, real:true},
+  {no:'Z101',  name:'铆接',      cat:'装配', out:false, real:true},
+];
+const TAKEN_PRODUCT_NOS = {'3TF5622-0XM0-Z':{partNo:'HF-SZXM-2508-0031', at:'2026-08-14'}};
+// 预置一条已有指纹：动触头 / φ12×3 / 12×8×3 / 10g / AgNi10 70%(Ag90Ni10) + AgZnO12/Cu 30%(Cu99.9 P0.1) / 车削+银焊
+const SIGNATURES = {};
+
+// ═══════════════ 精确小数（BigInt 定点，12 位）═══════════════
+const SCALE = 12n;
+function toFixedInt(s){
+  s = String(s==null||s===''?'0':s).trim();
+  const neg = s.startsWith('-'); if(neg) s = s.slice(1);
+  let [i,f=''] = s.split('.');
+  if(!/^\d*$/.test(i)||!/^\d*$/.test(f)) return null;
+  f = (f+'000000000000').slice(0,12);
+  const v = BigInt(i||'0')*(10n**SCALE)+BigInt(f||'0');
+  return neg? -v : v;
+}
+function trimZero(s){ return String(s).replace(/(\.\d*?)0+$/,'$1').replace(/\.$/,''); }
+function fixedToStr(v){
+  const neg = v<0n; if(neg) v=-v;
+  const i = v/(10n**SCALE), f = (v%(10n**SCALE)).toString().padStart(12,'0');
+  return (neg?'-':'')+trimZero(i.toString()+'.'+f);
+}
+const HUNDRED = 100n*(10n**SCALE);
+// 克重 = 总重 × 占比 / 100
+function gram(weight, ratio){
+  const w = toFixedInt(weight), r = toFixedInt(ratio);
+  if(w===null||r===null) return '—';
+  const v = (w*r)/(100n*(10n**SCALE));
+  return fixedToStr(v);
+}
+
+// ═══════════════ 状态 ═══════════════
+let S;
+function resetAll(){
+  S = { step:1, productNo:'', productName:'', parts:[], compProcs:[], editing:null, sub:null, compPicker:null };
+  render();
+}
+
+// ═══════════════ 指纹（真算，对齐 D-5 裁决）═══════════════
+function partToken(p){
+  if(p.type==='outsourced') return 'OUT='+p.outNo+'|PRC='+[...p.procs].sort().join(',');
+  if(p.source==='existing') return 'EXIST='+p.existNo+'|PRC='+[...p.procs].sort().join(',');
+  // 新建零件：品名/规格/尺寸 + 总重 + 材质:占比 + 每材质的元素含量（不含配方编号 —— D-5）
+  const mat = p.mats.map(m=>{
+    const els = m.custom ? m.customEls : cfgOf(m).els;
+    const eltok = els.map(e=>e[0]+':'+trimZero(e[2])).sort().join(',');
+    return m.code+':'+trimZero(m.ratio)+'('+eltok+')';
+  }).sort().join(',');
+  return 'PART='+p.name+'/'+p.spec+'/'+p.dim+'|WEIGHT='+trimZero(p.weight)+'|MAT='+mat+'|PRC='+[...p.procs].sort().join(',');
+}
+function fingerprintText(){
+  const parts = S.parts.map(partToken).sort().join(' ‖ ');
+  const cp = [...S.compProcs].sort().join(',');
+  return 'v2|CUST=SZXM|'+parts+(cp?('|CPROC='+cp):'');
+}
+function cfgOf(m){
+  const r = RECIPES.find(x=>x.code===m.code);
+  return r.configs.find(c=>c.no===m.configNo) || r.configs[0];
+}
+
+// ═══════════════ 校验 ═══════════════
+function ratioSum(mats){
+  let t=0n; for(const m of mats){ const v=toFixedInt(m.ratio); if(v===null) return null; t+=v; } return t;
+}
+function editorError(){
+  const e = S.editing; if(!e) return '请先选择配件类型';
+  if(e.type==='outsourced') return e.outNo? null : '请先选择一个外购件';
+  if(e.source==='existing') return e.existNo? null : '请先选择一个零件';
+  if(!e.name.trim()) return '请填写品名';
+  if(toFixedInt(e.weight)===null||toFixedInt(e.weight)<=0n) return '请填写大于 0 的总重';
+  if(!e.mats.length) return '请至少添加一个材质';
+  const noCfg = e.mats.find(m=>!RECIPES.find(r=>r.code===m.code).configs.length);
+  if(noCfg) return '材质 '+noCfg.code+' 尚未配置含量';
+  const s = ratioSum(e.mats);
+  if(s===null) return '材质占比填写有误';
+  if(s!==HUNDRED) return '材质占比合计为 '+fixedToStr(s)+'%，需要正好 100%';
+  return null;
+}
+function stepError(){
+  if(S.step===1){
+    if(!S.productNo.trim()) return '请先填写客户产品编号';
+    if(TAKEN_PRODUCT_NOS[S.productNo.trim()]) return '客户产品编号已存在，请从产品库添加';
+    return null;
+  }
+  if(S.step===2) return S.parts.length? null : '请至少添加一个配件';
+  return null;
+}
+
+// ═══════════════ 渲染 ═══════════════
+const esc = s => String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function render(){ renderSteps(); renderStage(); renderFooter(); }
+
+function renderSteps(){
+  const names=['客户产品编号','添加配件','组合工序','确认并添加'];
+  document.getElementById('steps').innerHTML = names.map((n,i)=>{
+    const k=i+1, cls = S.step===k?'on':(S.step>k?'done':'');
+    return `<div class="step ${cls}" ${S.step>k?`onclick="goStep(${k})"`:''}>
+      <span class="dot">${S.step>k?'✓':k}</span><span class="lb">${n}</span></div>`;
+  }).join('');
+}
+function goStep(k){ if(S.step>k){ S.step=k; S.editing=null; render(); } }
+
+function renderStage(){
+  const el = document.getElementById('stage');
+  if(S.editing){ el.innerHTML = viewEditor(); return; }
+  if(S.step===1) el.innerHTML = view1();
+  else if(S.step===2) el.innerHTML = view2();
+  else if(S.step===3) el.innerHTML = view3();
+  else el.innerHTML = view4();
+}
+
+function view1(){
+  const taken = TAKEN_PRODUCT_NOS[S.productNo.trim()];
+  const filled = S.productNo.trim().length>0;
+  return `
+    <div class="form-row">
+      <div class="fi" style="max-width:360px">
+        <label><span class="req">*</span>客户产品编号</label>
+        <input id="pno" value="${esc(S.productNo)}" placeholder="请输入客户产品编号"
+          class="${taken?'err':(filled?'ok':'')}"
+          oninput="S.productNo=this.value; renderStage(); renderFooter(); document.getElementById('pno').focus()">
+        <div class="msg ${taken?'err':'ok'}">${taken?'该编号已存在，请从产品库添加':(filled?'✓ 该编号未被占用，可以继续':'')}</div>
+      </div>
+      <div class="fi">
+        <label>客户产品名称<span class="opt">（选填）</span></label>
+        <input value="${esc(S.productName)}" placeholder="请输入" oninput="S.productName=this.value">
+        <div class="msg"></div>
+      </div>
+    </div>
+    ${taken?`<div class="alert err"><span class="ico">✕</span><div>
+      <b>客户产品编号 ${esc(S.productNo)} 已存在</b><br>
+      它已对应销售料号 <span class="mono">${taken.partNo}</span>（创建于 ${taken.at}）。
+      同一个客户产品编号只能对应一个销售料号，因此不能在选配里重新配置它。
+      <div style="margin-top:10px">
+        <button class="btn primary sm">→ 打开「从产品库添加」并定位到该产品</button>
+        <button class="btn sm" style="margin-left:8px" onclick="S.productNo='';render()">换一个编号</button>
+      </div></div></div>`:''}
+    <div class="note"><b>为什么把编号放第一步：</b>现状选配阶段拿不到客户产品编号（代码注释：「客户产品号在数据导入后才存在」），
+    导致选配生成的料号在 <code>material_customer_map</code> 里该列为空，「从已有产品添加」列表<b>找不回它</b>，
+    现在靠 <code>OR EXISTS (SELECT 1 FROM sel_part_signature …)</code> 兜着。编号前置后这条兜底可以退役。
+    <span class="ac">AC-1</span> <span class="ac">AC-2</span> <span class="ac">AC-12</span></div>`;
+}
+
+function view2(){
+  if(!S.parts.length){
+    return `<div class="toolbar"><button class="btn primary" onclick="newPart()">+ 添加配件</button>
+      <div class="spacer"></div><span class="muted small">共 0 个配件</span></div>
+      <div class="empty"><span class="ico">📦</span><div class="txt">还没有配件</div>
+      <div class="small muted" style="margin-top:6px">一个产品至少要有一个配件才能提交</div>
+      <div class="act"><button class="btn primary" onclick="newPart()">+ 添加第一个配件</button></div></div>`;
+  }
+  return `<div class="toolbar"><button class="btn primary" onclick="newPart()">+ 添加配件</button>
+    <div class="spacer"></div><span class="muted small">共 ${S.parts.length} 个配件</span></div>
+    ${S.parts.map((p,i)=>partCard(p,i)).join('')}
+    <div class="note">行内「编辑/移除」适用 <code>frontend.md §1.2</code> <b>例外白名单里的「抽屉内部子表」</b>条款——不是违规。</div>`;
+}
+function partCard(p,i){
+  let title,meta,ico,tags;
+  if(p.type==='outsourced'){
+    const o = OUTSOURCED.find(x=>x.no===p.outNo)||{name:'?',spec:'',w:''};
+    ico='🛒'; title=o.name; tags='<span class="tag purple">外购件</span> <span class="mono small muted">'+p.outNo+'</span>';
+    meta='规格 '+o.spec+' · 单重 '+o.w+' g · 工序：'+procNames(p.procs);
+  } else if(p.source==='existing'){
+    const e = EXISTING_PARTS.find(x=>x.no===p.existNo)||{name:'?',mats:''};
+    ico='🔩'; title=e.name; tags='<span class="tag blue">零件</span> <span class="tag green">已有</span> <span class="mono small muted">'+p.existNo+'</span>';
+    meta='材质构成沿用该料号自身（'+e.mats+'）· 工序：'+procNames(p.procs);
+  } else {
+    ico='🔩'; title=p.name; tags='<span class="tag blue">零件</span> <span class="tag grey">新建</span>';
+    const ms = p.mats.map(m=>{
+      const r=RECIPES.find(x=>x.code===m.code);
+      return '<span class="tag">'+r.name+' <b>'+trimZero(m.ratio)+'%</b>'+(m.custom?' <i style="font-style:normal;color:#d48806">自定义</i>':'')+'</span>';
+    }).join(' ');
+    meta=(p.spec?'规格 '+esc(p.spec)+' · ':'')+(p.dim?'尺寸 '+esc(p.dim)+' · ':'')+'总重 <b>'+trimZero(p.weight)+' g</b><br>材质：'+ms+' · 工序：'+procNames(p.procs);
+  }
+  return `<div class="partitem"><span style="font-size:20px">${ico}</span>
+    <div class="body"><div class="tt">${esc(title)} ${tags}</div><div class="meta">${meta}</div></div>
+    <div style="display:flex;gap:4px;align-items:flex-start">
+      <button class="btn link sm" onclick="editPart(${i})">编辑</button>
+      <button class="btn link danger sm" onclick="delPart(${i})">移除</button>
+    </div></div>`;
+}
+function procNames(ps){ return ps.length? ps.map(n=>(PROCESSES.find(x=>x.no===n)||{name:n}).name).join(' / ') : '<span class="muted">未选</span>'; }
+
+function view3(){
+  return `<div class="toolbar">
+    ${S.compPicker? '' : `<button class="btn primary" onclick="addCompProc()">+ 添加组合工序</button>`}
+    <div class="spacer"></div><span class="muted small">共 ${S.compProcs.length} 道</span></div>
+    ${S.compProcs.length? `<div class="tblwrap"><table>
+      <thead><tr><th style="width:8%" class="num">#</th><th style="width:30%">工序</th><th>参与配件</th><th style="width:22%"></th></tr></thead><tbody>
+      ${S.compProcs.map((c,i)=>{const p=PROCESSES.find(x=>x.no===c)||{name:c,cat:'—'};
+        return `<tr><td class="num muted">${i+1}</td>
+        <td>${esc(p.name)}<br><span class="mono muted">${c}</span></td>
+        <td>${S.parts.map(x=>'<span class="tag">'+esc(partTitle(x))+'</span>').join(' ')}</td>
+        <td style="text-align:right;white-space:nowrap">
+          ${i>0? `<button class="btn link sm" onclick="moveCompProc(${i},-1)">↑</button>`
+                : `<span class="dis"><span class="tip">已是第一道</span><button class="btn link sm" disabled>↑</button></span>`}
+          ${i<S.compProcs.length-1? `<button class="btn link sm" onclick="moveCompProc(${i},1)">↓</button>`
+                : `<span class="dis"><span class="tip">已是最后一道</span><button class="btn link sm" disabled>↓</button></span>`}
+          <button class="btn link danger sm" onclick="S.compProcs.splice(${i},1);render()">移除</button>
+        </td></tr>`;}).join('')}
+      </tbody></table></div>`
+    : `<div class="empty"><span class="ico">🔗</span><div class="txt">没有组合工序</div>
+       <div class="small muted" style="margin-top:6px">组合工序不是必填 —— 单配件产品可以没有，直接下一步</div></div>`}
+    ${S.compPicker? viewCompPicker() : ''}
+    <div class="note">组合工序作用于<b>多个配件之间</b>（如把动触头和支架铆在一起），与零件工序共用同一份 <code>process_master</code> 主数据。
+      添加方式与材质、零件工序<b>完全一致</b>：选择器选中 → 加入有序列表。为空时不阻止进入下一步。</div>`;
+}
+function viewCompPicker(){
+  const kw=S.compPicker.kw.trim().toLowerCase();
+  const list=PROCESSES.filter(p=> !kw || p.no.toLowerCase().includes(kw) || p.name.toLowerCase().includes(kw));
+  const rows=list.map(p=>{
+    const times=S.compProcs.filter(x=>x===p.no).length;
+    return `<tr style="cursor:pointer" onclick="pickCompProc('${p.no}')">
+      <td><span class="mono muted">${p.no}</span></td>
+      <td>${esc(p.name)}${times? ` <span class="tag grey">已加 ${times} 次</span>`:''}</td>
+      <td class="small muted">${p.cat}</td>
+      <td>${p.out? '<span class="tag gold">外协</span>':'<span class="tag grey">自制</span>'}</td>
+      <td style="text-align:right"><button class="btn sm primary" onclick="event.stopPropagation();pickCompProc('${p.no}')">加入</button></td>
+    </tr>`;}).join('');
+  return `<div style="margin-top:12px;border:1px solid #91caff;border-radius:8px;background:#f0f8ff;padding:16px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <b>选择组合工序</b>
+      <input id="compkw" style="max-width:300px" placeholder="输入工序编号或工序名过滤，如 Z101 / 铆接"
+        value="${esc(S.compPicker.kw)}" oninput="compPickerInput(this.value)">
+      <span class="muted small">${list.length} / ${PROCESSES.length} 条</span>
+      <div style="flex:1"></div><button class="btn sm" onclick="S.compPicker=null;render()">取消</button>
+    </div>
+    ${list.length? `<div class="tblwrap" style="background:#fff;max-height:250px;overflow-y:auto"><table>
+      <thead><tr><th style="width:18%">工序编号</th><th>工序名</th><th style="width:16%">分类</th>
+        <th style="width:14%">加工方式</th><th style="width:12%"></th></tr></thead><tbody>${rows}</tbody></table></div>`
+    : `<div class="empty" style="padding:26px 0;background:#fff;border-radius:8px"><span class="ico">🔍</span>
+       <div class="txt">没有匹配「${esc(S.compPicker.kw)}」的工序</div>
+       <div class="small muted" style="margin-top:6px">试试工序编号（Z101）或工序名（铆接）</div></div>`}
+  </div>`;
+}
+function addCompProc(){ S.compPicker={kw:''}; render(); focusCompPicker(); }
+function compPickerInput(v){ S.compPicker.kw=v; render(); focusCompPicker(); }
+function focusCompPicker(){
+  const el=document.getElementById('compkw'); if(!el) return;
+  el.focus(); const n=el.value.length; try{el.setSelectionRange(n,n);}catch(e){}
+}
+function pickCompProc(no){ S.compProcs.push(no); S.compPicker=null; render(); }
+function moveCompProc(i,d){
+  const a=S.compProcs, j=i+d; if(j<0||j>=a.length) return;
+  [a[i],a[j]]=[a[j],a[i]]; render();
+}
+function partTitle(p){
+  if(p.type==='outsourced') return (OUTSOURCED.find(x=>x.no===p.outNo)||{name:'?'}).name;
+  if(p.source==='existing') return (EXISTING_PARTS.find(x=>x.no===p.existNo)||{name:'?'}).name;
+  return p.name;
+}
+function addCompProc(){
+  const avail = PROCESSES.filter(p=>!S.compProcs.includes(p.no));
+  if(!avail.length) return;
+  S.compProcs.push(avail[0].no); render();
+}
+
+function view4(){
+  const txt = fingerprintText();
+  const hit = SIGNATURES[txt];
+  return `${hit? `<div class="alert info"><span class="ico">↻</span><div>
+      <b>产品库里已有相同配置的产品，将直接复用它的销售料号</b><br>
+      销售料号 <span class="mono">${hit.partNo}</span> · 首次创建于 ${hit.at} · 由客户产品编号 <span class="mono">${esc(hit.cpn)}</span> 建立<br>
+      <span class="muted small">不会新建料号。你的客户产品编号 ${esc(S.productNo)} 会作为新的映射关系记录下来。</span>
+    </div></div>`
+    : `<div class="alert ok"><span class="ico">✓</span><div>
+      <b>产品库里没有相同配置的产品，将新建一个销售料号</b><br>
+      <span class="muted small">新料号在点「添加到报价单」时才会真正生成。</span></div></div>`}
+
+    <div class="tblwrap" style="margin-bottom:16px"><table>
+      <thead><tr><th style="width:20%">项</th><th>内容</th></tr></thead><tbody>
+      <tr><td class="muted">客户产品编号</td><td class="mono">${esc(S.productNo)}</td></tr>
+      ${S.productName?`<tr><td class="muted">客户产品名称</td><td>${esc(S.productName)}</td></tr>`:''}
+      ${S.parts.map((p,i)=>`<tr><td class="muted">配件 ${i+1}</td><td>${partCardInline(p)}</td></tr>`).join('')}
+      ${S.compProcs.length?`<tr><td class="muted">组合工序</td><td>${procNames(S.compProcs)}</td></tr>`:''}
+      </tbody></table></div>
+
+    <div class="fpbox"><span class="lbl">本次配置的指纹原文（存 sel_part_signature.config_signature_text）</span>${esc(txt)}</div>
+    <div class="note">
+      开头 <code>v2</code> 是 <code>structure_version</code>。本次新增<b>材质占比 / 零件总重 / 品名规格尺寸</b>三个维度，结构从 v1 升到 v2（表内 0 行，升版零代价）。<br>
+      ⚠️ <b>指纹里没有配方编号</b> —— 这是裁决 D-5 的<b>有意为之</b>：含量相同即同一种材料。
+      试试把某个材质的配方从 <code>00006-01</code> 换成 <code>00006-02</code>（两者含量逐字相同），指纹<b>不会变</b>。
+      <span class="ac">AC-7</span> <span class="ac">AC-8</span> <span class="ac">AC-9</span> <span class="ac">AC-10</span>
+    </div>`;
+}
+function partCardInline(p){
+  if(p.type==='outsourced'){ const o=OUTSOURCED.find(x=>x.no===p.outNo)||{name:'?'};
+    return esc(o.name)+' <span class="tag purple">外购件</span> <span class="mono small">'+p.outNo+'</span> · '+procNames(p.procs); }
+  if(p.source==='existing'){ const e=EXISTING_PARTS.find(x=>x.no===p.existNo)||{name:'?'};
+    return esc(e.name)+' <span class="tag blue">零件</span> <span class="tag green">已有</span> <span class="mono small">'+p.existNo+'</span> · '+procNames(p.procs); }
+  return esc(p.name)+' <span class="tag blue">零件</span> · 总重 '+trimZero(p.weight)+' g · '+
+    p.mats.map(m=>{const r=RECIPES.find(x=>x.code===m.code);return '<span class="tag">'+r.name+' '+trimZero(m.ratio)+'%</span>';}).join(' ')+
+    ' · '+procNames(p.procs);
+}
+
+// ═══════════════ 配件编辑器 ═══════════════
+function newPart(){ S.editing={idx:-1, type:null, source:null, name:'', spec:'', dim:'', weight:'', mats:[], procs:[], outNo:null, existNo:null, search:'', picker:null, procPicker:null}; render(); }
+function editPart(i){ S.editing = JSON.parse(JSON.stringify(S.parts[i])); S.editing.idx=i;
+  S.editing.picker=null; S.editing.procPicker=null; S.editing.search=S.editing.search||''; render(); }
+function delPart(i){ S.parts.splice(i,1); render(); }
+
+function viewEditor(){
+  const e=S.editing;
+  if(!e.type) return `<h3>添加配件 · 第 1 步：选择类型</h3>
+    <div class="pickrow">
+      <div class="pick" onclick="S.editing.type='part';render()"><span class="ico">🔩</span>
+        <div><div class="t">零件</div><div class="d">本厂加工的零件。可以新建，也可以引用已有零件。<br>零件下面挂 1~N 个材质，每个材质填占比。</div></div>
+        <span class="radio"></span></div>
+      <div class="pick" onclick="S.editing.type='outsourced';render()"><span class="ico">🛒</span>
+        <div><div class="t">外购件</div><div class="d">从供应商采购的成品件，不含材质构成。<br>从现有料号库里选，再选它的工序。</div></div>
+        <span class="radio"></span></div>
+    </div>`;
+  if(e.type==='part' && !e.source) return `<h3>添加配件 · 第 2 步：零件来源</h3>
+    <div class="pickrow">
+      <div class="pick" onclick="S.editing.source='new';render()"><span class="ico">✨</span>
+        <div><div class="t">新建零件</div><div class="d">填品名 / 规格 / 尺寸 / 总重，再挂材质。<br>适用于这个客户产品特有的零件。</div></div>
+        <span class="radio"></span></div>
+      <div class="pick" onclick="S.editing.source='existing';render()"><span class="ico">📚</span>
+        <div><div class="t">已有零件</div><div class="d">从产品列表里选一个已存在的零件，只需再选工序。<br>材质构成沿用它自己的。</div></div>
+        <span class="radio"></span></div>
+    </div>`;
+  if(e.type==='outsourced') return viewOutsourced();
+  if(e.source==='existing') return viewExisting();
+  return viewNewPart();
+}
+
+function viewNewPart(){
+  const e=S.editing, sum=ratioSum(e.mats), bad = sum!==null && e.mats.length>0 && sum!==HUNDRED;
+  return `<h3>添加配件 · 新建零件</h3>
+    <div class="form-row">
+      <div class="fi"><label><span class="req">*</span>品名</label>
+        <input id="f_name" value="${esc(e.name)}" placeholder="如：动触头" oninput="S.editing.name=this.value;renderFooter()"></div>
+      <div class="fi"><label>规格</label><input value="${esc(e.spec)}" placeholder="如：φ12×3" oninput="S.editing.spec=this.value"></div>
+      <div class="fi"><label>尺寸</label><input value="${esc(e.dim)}" placeholder="如：12×8×3" oninput="S.editing.dim=this.value"></div>
+      <div class="fi" style="max-width:170px"><label><span class="req">*</span>总重</label>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input value="${esc(e.weight)}" placeholder="10" oninput="S.editing.weight=this.value;renderStage();renderFooter()"><span class="suffix">克</span>
+        </div></div>
+    </div>
+
+    <h3 style="margin-top:20px">材质构成 <span class="tag blue">${e.mats.length} 项</span></h3>
+    <p class="sub" style="margin:-6px 0 12px">各材质的克重 = 总重 × 占比，不单独录入（裁决 D-2）。</p>
+    ${e.mats.length? `<div class="tblwrap"><table>
+      <thead><tr><th style="width:26%">材质</th><th style="width:30%">含量配置</th><th style="width:16%" class="num">占比 %</th><th style="width:14%" class="num">折合克重</th><th style="width:14%"></th></tr></thead>
+      <tbody>${e.mats.map((m,i)=>matRow(m,i,bad)).join('')}</tbody>
+      <tfoot><tr><td colspan="2" class="muted">合计</td>
+        <td class="num"><span class="tag ${sum===HUNDRED?'green':'red'}">${sum===null?'—':fixedToStr(sum)+'%'}</span></td>
+        <td class="num">${sum===HUNDRED&&toFixedInt(e.weight)!==null? trimZero(e.weight)+' g':'—'}</td><td></td></tr></tfoot>
+      </table></div>
+      ${bad?`<div class="msg err" style="margin-top:8px">材质占比合计为 <b>${fixedToStr(sum)}%</b>，需要正好 100%（还差 ${fixedToStr(HUNDRED-sum)}%）</div>`:''}`
+    : `<div class="empty" style="padding:24px 0"><span class="ico">🧪</span><div class="txt">还没有材质</div>
+       <div class="small muted" style="margin-top:4px">一个零件至少要有一个材质</div></div>`}
+
+    ${e.picker? viewMatPicker() : `<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn" onclick="addMat()">+ 添加材质</button>
+      ${e.mats.length? `<button class="btn" onclick="fillEqual()">⚖ 平均分配占比</button>`:''}
+      ${e.mats.length>=2? `<button class="btn" onclick="fill7030()">70 / 30</button>`:''}
+    </div>`}
+
+    ${viewProcSection('工序')}
+    <div class="note"><span class="ac">AC-3</span> <span class="ac">AC-4</span> <span class="ac">AC-13</span> <span class="ac">AC-14</span> <span class="ac">AC-15</span> <span class="ac">AC-17</span>
+      · 占比合计用 <b>BigInt 定点 12 位</b>精确判等（对应实现里的 <code>BigDecimal.compareTo</code>）。
+      ⚠️ <b>实测提醒</b>：<code>33.333333333333×2+33.333333333334</code> 在 JS 浮点下<b>恰好</b>等于 100、并不出错，所以它<b>不能</b>用来论证"必须用定点"；
+      真正会出错的是极小值组合 —— 实测 <code>0.000000000001+99.999999999998+0.000000000001 = 99.99999999999999 ≠ 100</code>。
+      用定点的真正理由是：库列是 <code>numeric(24,12)</code> 本就是定点，前后端判等口径必须与存储一致，而不是"浮点一定算错"。</div>`;
+}
+function matRow(m,i,bad){
+  const r = RECIPES.find(x=>x.code===m.code);
+  const cfgs = r.configs;
+  const els = m.custom? m.customEls : (cfgOf(m)||{els:[]}).els;
+  const elTxt = els.map(e=>e[1]+' '+trimZero(e[2])+'%').join(' / ');
+  return `<tr class="${bad?'rowerr':''}">
+    <td><span class="mono muted">${r.code}</span> ${esc(r.name)}</td>
+    <td>${m.custom
+      ? `<span class="tag gold">自定义含量</span> <span class="small muted">${elTxt}</span>`
+      : `<select onchange="S.editing.mats[${i}].configNo=this.value;renderStage()">
+          ${cfgs.map(c=>`<option value="${c.no}" ${c.no===m.configNo?'selected':''}>${c.no}（${c.els.map(e=>e[1]+' '+trimZero(e[2])+'%').join(' / ')}）</option>`).join('')}
+        </select>`}</td>
+    <td><input value="${esc(m.ratio)}" oninput="S.editing.mats[${i}].ratio=this.value;renderStage();renderFooter()"></td>
+    <td class="num muted">${gram(S.editing.weight,m.ratio)} g</td>
+    <td style="display:flex;gap:2px">
+      ${r.allowCustom
+        ? `<button class="btn link sm" onclick="toggleCustom(${i})">${m.custom?'用标准':'自定义'}</button>`
+        : `<span class="dis"><span class="tip">该材质不支持自定义含量</span><button class="btn link sm" disabled>自定义</button></span>`}
+      <button class="btn link danger sm" onclick="S.editing.mats.splice(${i},1);renderStage();renderFooter()">移除</button>
+    </td></tr>`;
+}
+// ── 材质选择器（可搜索）──
+// 实测材质库 262 条 ⇒ 必须先输入过滤再点选，不能靠滚动找（对齐 task-260901 AC-35）
+function addMat(){ S.editing.picker={kw:''}; renderStage(); focusPicker(); }
+function closePicker(){ S.editing.picker=null; renderStage(); renderFooter(); }
+function pickerInput(v){ S.editing.picker.kw=v; renderStage(); focusPicker(); }
+function focusPicker(){
+  const el=document.getElementById('matkw'); if(!el) return;
+  el.focus(); const n=el.value.length; try{el.setSelectionRange(n,n);}catch(e){}
+}
+function pickMat(code){
+  const r=RECIPES.find(x=>x.code===code);
+  if(!r || !r.configs.length) return;                       // 无含量配置不可选
+  if(S.editing.mats.some(m=>m.code===code)) return;         // 已添加不可重复（AC-17）
+  S.editing.mats.push({code, configNo:r.configs[0].no, ratio:'', custom:false, customEls:[]});
+  S.editing.picker=null; renderStage(); renderFooter();
+}
+function viewMatPicker(){
+  const kw=S.editing.picker.kw.trim().toLowerCase();
+  const used=S.editing.mats.map(m=>m.code);
+  const list=RECIPES.filter(r=> !kw || r.code.toLowerCase().includes(kw) || r.name.toLowerCase().includes(kw));
+  const rows=list.map(r=>{
+    const isUsed=used.includes(r.code), noCfg=!r.configs.length, off=isUsed||noCfg;
+    const reason=noCfg?'该材质尚未配置含量':(isUsed?'该材质已添加':'');
+    const els=r.configs.length? r.configs[0].els.map(e=>e[1]+' '+trimZero(e[2])+'%').join(' / ') : '—';
+    return `<tr style="${off?'opacity:.45':'cursor:pointer'}" ${off?'':`onclick="pickMat('${r.code}')"`}>
+      <td><span class="mono muted">${r.code}</span></td>
+      <td>${esc(r.name)}</td>
+      <td class="small muted">${els}</td>
+      <td class="num">${r.configs.length? r.configs.length+' 组':'<span class="tag red">0 组</span>'}</td>
+      <td>${r.allowCustom? '<span class="tag gold">支持自定义</span>':'<span class="tag grey">仅标准</span>'}</td>
+      <td style="text-align:right">${off
+        ? `<span class="dis"><span class="tip">${reason}</span><button class="btn sm" disabled>选择</button></span>`
+        : `<button class="btn sm primary" onclick="event.stopPropagation();pickMat('${r.code}')">选择</button>`}</td>
+    </tr>`;}).join('');
+  return `<div style="margin-top:12px;border:1px solid #91caff;border-radius:8px;background:#f0f8ff;padding:16px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <b>选择材质</b>
+      <input id="matkw" style="max-width:300px" placeholder="输入材质编号或材质名过滤，如 00006 / AgNi / AgZnO12/Cu"
+        value="${esc(S.editing.picker.kw)}" oninput="pickerInput(this.value)">
+      <span class="muted small">${list.length} / ${RECIPES.length} 条</span>
+      <div class="spacer" style="flex:1"></div>
+      <button class="btn sm" onclick="closePicker()">取消</button>
+    </div>
+    ${list.length? `<div class="tblwrap" style="background:#fff;max-height:290px;overflow-y:auto"><table>
+      <thead><tr><th style="width:13%">材质编号</th><th style="width:24%">材质名</th><th>首个配置的含量</th>
+        <th style="width:10%" class="num">含量配置</th><th style="width:14%">自定义</th><th style="width:11%"></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`
+    : `<div class="empty" style="padding:28px 0;background:#fff;border-radius:8px">
+        <span class="ico">🔍</span><div class="txt">没有匹配「${esc(S.editing.picker.kw)}」的材质</div>
+        <div class="small muted" style="margin-top:6px">试试材质编号（00006）或材质名（AgNi / AgZnO12/Cu）</div></div>`}
+    <div class="note" style="margin-top:12px;background:#fff">
+      🚫 <b>不可选的材质仍然列出来、灰显并写明原因</b>，不从列表里过滤掉 —— 过滤掉用户会以为材质丢了（§1.2：禁止 <code>if(...) return null</code> 隐藏）。<br>
+      两种不可选：<b>含量配置 0 组</b>（如 <code>00263</code>，后端提交时也会 409 <code>RECIPE_HAS_NO_CONFIG</code>）· <b>本零件已添加过</b>（<span class="ac">AC-17</span>）。<br>
+      ⚠️ <b>实测材质库 262 条</b>，所以这里<b>必须支持按编号 / 名称过滤</b>，靠滚动找不可行（对齐 <code>task-260901</code> AC-35）。
+    </div></div>`;
+}
+function fillEqual(){
+  const n=S.editing.mats.length; if(!n) return;
+  const base = HUNDRED/BigInt(n), rem = HUNDRED-base*BigInt(n);
+  S.editing.mats.forEach((m,i)=> m.ratio = fixedToStr(i===n-1? base+rem : base));
+  renderStage(); renderFooter();
+}
+function fill7030(){
+  const n=S.editing.mats.length; if(n<2) return;
+  S.editing.mats.forEach((m,i)=> m.ratio = i===0?'70':(i===1?'30':'0'));
+  renderStage(); renderFooter();
+}
+function toggleCustom(i){
+  const m=S.editing.mats[i];
+  if(m.custom){ m.custom=false; }
+  else { m.custom=true; m.customEls = JSON.parse(JSON.stringify(cfgOf(m).els)); }
+  renderStage();
+}
+// ── 工序区：与材质同构（选择器 + 加入列表），但多一个「顺序」维度 ──
+function viewProcSection(title){
+  const e=S.editing;
+  const rows = e.procs.map((no,i)=>{
+    const p = PROCESSES.find(x=>x.no===no) || {no, name:'(未知工序)', cat:'—', out:false};
+    return `<tr>
+      <td class="num muted">${i+1}</td>
+      <td><span class="mono">${p.no}</span></td>
+      <td>${esc(p.name)}</td>
+      <td class="small muted">${p.cat}</td>
+      <td>${p.out? '<span class="tag gold">外协</span>':'<span class="tag grey">自制</span>'}</td>
+      <td style="text-align:right;white-space:nowrap">
+        ${i>0? `<button class="btn link sm" onclick="moveProc(${i},-1)">↑</button>`
+              : `<span class="dis"><span class="tip">已是第一道</span><button class="btn link sm" disabled>↑</button></span>`}
+        ${i<e.procs.length-1? `<button class="btn link sm" onclick="moveProc(${i},1)">↓</button>`
+              : `<span class="dis"><span class="tip">已是最后一道</span><button class="btn link sm" disabled>↓</button></span>`}
+        <button class="btn link danger sm" onclick="removeProc(${i})">移除</button>
+      </td></tr>`;}).join('');
+
+  return `<h3 style="margin-top:24px">${title} <span class="tag blue">${e.procs.length} 道</span></h3>
+    <p class="sub" style="margin:-6px 0 12px">按列表<b>从上到下的顺序</b>执行，可用 ↑↓ 调序。同一道工序<b>允许重复出现</b>（如 粗车 → 热处理 → 精车）。</p>
+    ${e.procs.length? `<div class="tblwrap"><table>
+      <thead><tr><th style="width:8%" class="num">#</th><th style="width:16%">工序编号</th><th>工序名</th>
+        <th style="width:14%">分类</th><th style="width:12%">加工方式</th><th style="width:22%"></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`
+    : `<div class="empty" style="padding:24px 0"><span class="ico">⚙</span><div class="txt">还没有工序</div>
+       <div class="small muted" style="margin-top:4px">工序不是必填 —— 没有工序也能提交</div></div>`}
+    ${e.procPicker? viewProcPicker() : `<div style="margin-top:12px"><button class="btn" onclick="addProc()">+ 添加工序</button></div>`}
+    <div class="note">
+      ✅ <b>已裁决（2026-09-02）</b>：工序进指纹，但<b>顺序不进</b> —— 指纹按工序编号排序生成，「焊接→铆接」与「铆接→焊接」<b>算同一个产品</b>。
+      <code>PRC=</code> 保持 <code>sorted().join(",")</code>，本任务不改这行代码。<br>
+      🚫 <b>但调序的 ↑↓ 不取消</b>：它影响工序在报价单里的显示顺序与 <code>unit_price.seq_no</code>，只是不影响料号复用判定 —— 两件事。<br>
+      🚨 <b>重复次数仍进指纹</b>（<code>sort</code> 不去重）：<code>Z100,Z101,Z100</code> → <code>Z100,Z100,Z101</code> ≠ <code>Z100,Z101</code>，
+      所以「焊两次」与「焊一次」是不同料号。实现时若在 <code>sorted()</code> 旁顺手加 <code>distinct()</code>，这条会被静默抹平。<br>
+      📌 实测 <code>process_master</code> <b>仅 4 条</b>（<code>TP10</code>/<code>TP20</code> 是遗留测试数据，<code>Z100 焊接</code>/<code>Z101 铆接</code> 为真实工序），
+      且 <code>MRO-*</code> 那批工序码<b>因基线库跳过了 336 个早期迁移而从未灌入</b> —— 所以选择器仍按<b>可搜索</b>设计，不能假设它永远只有 4 条。
+    </div>`;
+}
+function viewProcPicker(){
+  const kw=S.editing.procPicker.kw.trim().toLowerCase();
+  const list=PROCESSES.filter(p=> !kw || p.no.toLowerCase().includes(kw) || p.name.toLowerCase().includes(kw));
+  const rows=list.map(p=>{
+    const times=S.editing.procs.filter(x=>x===p.no).length;
+    return `<tr style="cursor:pointer" onclick="pickProc('${p.no}')">
+      <td><span class="mono muted">${p.no}</span></td>
+      <td>${esc(p.name)}${times? ` <span class="tag grey">已加 ${times} 次</span>`:''}</td>
+      <td class="small muted">${p.cat}</td>
+      <td>${p.out? '<span class="tag gold">外协</span>':'<span class="tag grey">自制</span>'}</td>
+      <td style="text-align:right"><button class="btn sm primary" onclick="event.stopPropagation();pickProc('${p.no}')">加入</button></td>
+    </tr>`;}).join('');
+  return `<div style="margin-top:12px;border:1px solid #91caff;border-radius:8px;background:#f0f8ff;padding:16px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <b>选择工序</b>
+      <input id="prockw" style="max-width:300px" placeholder="输入工序编号或工序名过滤，如 Z100 / 焊接"
+        value="${esc(S.editing.procPicker.kw)}" oninput="procPickerInput(this.value)">
+      <span class="muted small">${list.length} / ${PROCESSES.length} 条</span>
+      <div style="flex:1"></div>
+      <button class="btn sm" onclick="closeProcPicker()">取消</button>
+    </div>
+    ${list.length? `<div class="tblwrap" style="background:#fff;max-height:250px;overflow-y:auto"><table>
+      <thead><tr><th style="width:18%">工序编号</th><th>工序名</th><th style="width:16%">分类</th>
+        <th style="width:14%">加工方式</th><th style="width:12%"></th></tr></thead><tbody>${rows}</tbody></table></div>`
+    : `<div class="empty" style="padding:26px 0;background:#fff;border-radius:8px"><span class="ico">🔍</span>
+       <div class="txt">没有匹配「${esc(S.editing.procPicker.kw)}」的工序</div>
+       <div class="small muted" style="margin-top:6px">试试工序编号（Z100）或工序名（焊接）</div></div>`}
+    <div class="note" style="margin-top:12px;background:#fff">
+      与材质选择器的<b>唯一差别</b>：工序<b>可以重复加入</b>（列表里显示「已加 N 次」而不是灰显禁用），因为同一道工序在工艺路线里重复出现是常态。
+    </div></div>`;
+}
+function addProc(){ S.editing.procPicker={kw:''}; renderStage(); focusProcPicker(); }
+function closeProcPicker(){ S.editing.procPicker=null; renderStage(); }
+function procPickerInput(v){ S.editing.procPicker.kw=v; renderStage(); focusProcPicker(); }
+function focusProcPicker(){
+  const el=document.getElementById('prockw'); if(!el) return;
+  el.focus(); const n=el.value.length; try{el.setSelectionRange(n,n);}catch(e){}
+}
+function pickProc(no){ S.editing.procs.push(no); S.editing.procPicker=null; renderStage(); renderFooter(); }
+function removeProc(i){ S.editing.procs.splice(i,1); renderStage(); renderFooter(); }
+function moveProc(i,d){
+  const a=S.editing.procs, j=i+d; if(j<0||j>=a.length) return;
+  [a[i],a[j]]=[a[j],a[i]]; renderStage();
+}
+
+function viewExisting(){
+  const e=S.editing, kw=e.search.trim();
+  const list = EXISTING_PARTS.filter(p=>!kw || p.name.includes(kw) || p.no.includes(kw));
+  return `<h3>添加配件 · 选择已有零件</h3>
+    <div class="toolbar"><input style="max-width:280px" placeholder="搜索料号或品名" value="${esc(e.search)}"
+        oninput="S.editing.search=this.value;renderStage()">
+      <div class="spacer"></div><span class="muted small">共 ${list.length} 条</span></div>
+    ${list.length? `<div class="tblwrap"><table>
+      <thead><tr><th style="width:36px"></th><th style="width:24%">销售料号</th><th>品名</th><th style="width:14%">规格</th><th style="width:12%" class="num">单重</th><th style="width:22%">材质构成</th></tr></thead>
+      <tbody>${list.map(p=>`<tr class="${e.existNo===p.no?'sel':''}" style="cursor:pointer" onclick="S.editing.existNo='${p.no}';renderStage();renderFooter()">
+        <td><span style="display:inline-block;width:16px;height:16px;border-radius:50%;border:${e.existNo===p.no?'5px solid #1677ff':'1px solid #d9d9d9'};vertical-align:-3px;background:#fff"></span></td>
+        <td class="mono">${p.no}</td><td>${esc(p.name)}</td><td>${p.spec}</td><td class="num">${p.w} g</td>
+        <td>${p.mats.split(' · ').map(x=>'<span class="tag">'+x+'</span>').join(' ')}</td></tr>`).join('')}
+      </tbody></table></div>`
+    : `<div class="empty"><span class="ico">🔍</span><div class="txt">没有找到匹配「${esc(kw)}」的零件</div>
+       <div class="small muted" style="margin-top:6px">换个关键词，或改用「新建零件」</div>
+       <div class="act"><button class="btn" onclick="S.editing.source='new';render()">← 改为新建零件</button></div></div>`}
+
+    ${viewProcSection('这次用哪些工序')}
+    <div class="note">这条路<b>不重新配材质</b>——材质构成沿用该料号自身。末行「静触头复合镶块」是多材质零件（AgNi10 70% + AgZnO12/Cu 30%），本次重构之后才会出现这种数据，列表的材质列要能显示 N 个标签。</div>`;
+}
+
+function viewOutsourced(){
+  const e=S.editing;
+  return `<h3>添加配件 · 选择外购件</h3>
+    <div class="toolbar">
+      <input style="max-width:280px" placeholder="搜索料号或品名" value="${esc(e.search)}" oninput="S.editing.search=this.value;renderStage()">
+      <div class="spacer"></div>
+      <button class="btn sm" onclick="toggleOutsourcedEmpty()">${OUTSOURCED.length?'⚠ 演示：清空外购件库':'↻ 恢复外购件数据'}</button>
+      <span class="muted small">共 ${OUTSOURCED.length} 条</span></div>
+    ${OUTSOURCED.length? `<div class="tblwrap"><table>
+      <thead><tr><th style="width:36px"></th><th style="width:22%">料号</th><th>品名</th><th style="width:20%">规格</th><th style="width:12%" class="num">单重</th></tr></thead>
+      <tbody>${OUTSOURCED.map(p=>`<tr class="${e.outNo===p.no?'sel':''}" style="cursor:pointer" onclick="S.editing.outNo='${p.no}';renderStage();renderFooter()">
+        <td><span style="display:inline-block;width:16px;height:16px;border-radius:50%;border:${e.outNo===p.no?'5px solid #1677ff':'1px solid #d9d9d9'};vertical-align:-3px;background:#fff"></span></td>
+        <td class="mono">${p.no}</td><td>${esc(p.name)}</td><td>${p.spec}</td><td class="num">${p.w} g</td></tr>`).join('')}
+      </tbody></table></div>`
+    : `<div class="empty"><span class="ico">🛒</span><div class="txt">料号库里还没有外购件</div>
+       <div class="small muted" style="margin-top:6px">外购件需要先在<b>料号维护</b>里录入，并把「料号类型」设为<b>外购件</b></div>
+       <div class="act"><button class="btn">→ 打开料号维护</button>
+       <button class="btn" style="margin-left:8px" onclick="S.editing.type='part';S.editing.source=null;render()">← 改为添加零件</button></div></div>`}
+
+    ${viewProcSection('这次用哪些工序')}
+    <div class="note">
+      <b>判据（A0 裁决）</b>：列表只列 <code>material_master.material_type='外购件'</code> 的料号。该列现网 = 零件 1848 / <b>外购件 1</b> / NULL 40（取数 2026-09-02，会漂移）。<br>
+      ⚠️ 选配侧当前把<b>材质名</b>写进这一列（<code>ConfigureProductService:388</code> 传 <code>recipe.symbol</code>），A0 已裁决<b>归位为料号类型</b>，否则这个判据不成立。<br>
+      🚫 空态<b>必须是空态</b>，不能显示「加载中…」——那是 <code>docs/反模式.md</code> AP-31 族的典型病。<span class="ac">AC-5</span> <span class="ac">AC-16</span></div>`;
+}
+function toggleOutsourcedEmpty(){
+  if(OUTSOURCED.length){ OUTSOURCED=[]; if(S.editing) S.editing.outNo=null; }
+  else OUTSOURCED=[{no:'TEST-Q13-CODE', name:'组成件1', spec:'φ20×1', w:'2'}];
+  renderStage(); renderFooter();
+}
+
+// ═══════════════ 底栏 ═══════════════
+function renderFooter(){
+  const f=document.getElementById('footer');
+  if(S.editing){
+    const err=editorError();
+    f.innerHTML = `<button class="btn" onclick="cancelEdit()">取消</button>
+      ${err? `<span class="dis"><span class="tip">${esc(err)}</span><button class="btn primary" disabled>确定</button></span>`
+           : `<button class="btn primary" onclick="commitPart()">确定</button>`}`;
+    return;
+  }
+  const err=stepError();
+  const back = S.step>1? `<button class="btn" onclick="S.step--;render()">上一步</button>`:`<button class="btn">取消</button>`;
+  if(S.step===4){
+    const txt=fingerprintText(), hit=SIGNATURES[txt];
+    f.innerHTML = back + `<button class="btn primary" onclick="submit()">添加到报价单${hit?'（复用 '+hit.partNo+'）':''}</button>`;
+    return;
+  }
+  f.innerHTML = back + (err
+    ? `<span class="dis"><span class="tip">${esc(err)}</span><button class="btn primary" disabled>下一步</button></span>`
+    : `<button class="btn primary" onclick="S.step++;render()">下一步</button>`);
+}
+function cancelEdit(){ S.editing=null; render(); }
+function commitPart(){
+  const e=S.editing, idx=e.idx; delete e.idx; delete e.search; delete e.picker; delete e.procPicker;
+  if(idx>=0) S.parts[idx]=e; else S.parts.push(e);
+  S.editing=null; render();
+}
+let seq=7;
+function submit(){
+  const txt=fingerprintText(), hit=SIGNATURES[txt];
+  if(hit){
+    alert('✓ 指纹命中\n\n复用已有销售料号：'+hit.partNo+'\n（首次由客户产品编号 '+hit.cpn+' 创建于 '+hit.at+'）\n\n本次不铸新号，只新增一条客户产品编号映射。');
+  } else {
+    const pn='HF-SZXM-2509-'+String(++seq).padStart(4,'0');
+    SIGNATURES[txt]={partNo:pn, at:'2026-09-02', cpn:S.productNo};
+    TAKEN_PRODUCT_NOS[S.productNo.trim()]={partNo:pn, at:'2026-09-02'};
+    alert('✓ 指纹未命中\n\n已新建销售料号：'+pn+'\n\n现在再走一遍相同配置，就会命中复用；\n只改总重或占比，则会再铸一个新号。');
+  }
+  S.step=1; S.productNo=''; S.productName=''; S.parts=[]; S.compProcs=[]; render();
+}
+
+// ═══════════════ 状态检视 ═══════════════
+const INSPECT = [
+  {grp:'步骤 1 · 客户产品编号'},
+  {k:'s1-ok',   t:'默认（编号可用）', tag:'', fn:()=>insp1('CP-NEW-001')},
+  {k:'s1-taken',t:'编号已存在被挡住', tag:'红', fn:()=>insp1('3TF5622-0XM0-Z')},
+  {k:'s1-empty',t:'空输入（禁用+原因）', tag:'黄', fn:()=>insp1('')},
+  {k:'s1-long', t:'最长文案', tag:'灰', fn:()=>insp1('3TF5622-0XM0-Z-A01-B22-C33-D44-E55','高压真空接触器主回路动触头银氧化锡复合镶嵌组件（含镀银层）')},
+  {grp:'步骤 2 · 配件'},
+  {k:'s2-empty',t:'一个配件都没有（空态）', tag:'蓝', fn:inspPartsEmpty},
+  {k:'s2-list', t:'已加 3 个配件', tag:'绿', fn:inspPartsList},
+  {grp:'步骤 2a · 新建零件（核心）'},
+  {k:'m-pick',  t:'材质选择器 · 默认（可搜索）', tag:'蓝', fn:()=>inspPicker('')},
+  {k:'m-pickkw',t:'材质选择器 · 过滤「AgNi」', tag:'', fn:()=>inspPicker('AgNi')},
+  {k:'m-pick0', t:'材质选择器 · 无匹配', tag:'红', fn:()=>inspPicker('法兰')},
+  {k:'m-ok',   t:'默认 70 / 30，合计 100%', tag:'绿', fn:()=>inspMat('ok')},
+  {k:'m-bad',  t:'合计 90% → 阻止', tag:'红', fn:()=>inspMat('bad')},
+  {k:'m-one',  t:'单材质 100%（等价旧行为）', tag:'', fn:()=>inspMat('one')},
+  {k:'m-dec',  t:'12 位小数三等分', tag:'灰', fn:()=>inspMat('dec')},
+  {k:'m-cust', t:'自定义含量展开', tag:'黄', fn:()=>inspMat('cust')},
+  {k:'m-dis',  t:'不支持自定义（禁用+tooltip）', tag:'黄', fn:()=>inspMat('dis')},
+  {k:'m-dup',  t:'重复添加同一材质', tag:'红', fn:()=>inspMat('dup')},
+  {k:'m-nocfg',t:'材质无含量配置 → 灰显', tag:'红', fn:()=>inspMat('nocfg')},
+  {grp:'步骤 2c · 外购件'},
+  {k:'o-ok',   t:'有数据（实测仅 1 条）', tag:'绿', fn:()=>inspOut(true)},
+  {k:'o-empty',t:'料号库无外购件（空态）', tag:'红', fn:()=>inspOut(false)},
+  {grp:'步骤 4 · 提交'},
+  {k:'f-new',  t:'指纹未命中 → 新建料号', tag:'绿', fn:()=>inspFinal(false)},
+  {k:'f-hit',  t:'指纹命中 → 复用并带出信息', tag:'蓝', fn:()=>inspFinal(true)},
+  {k:'f-err',  t:'提交失败（材质无配置）', tag:'红', fn:inspFail},
+];
+let inspKey='s1-ok';
+function renderInspList(){
+  document.getElementById('slist').innerHTML = INSPECT.map(x=> x.grp
+    ? `<li class="grp">${x.grp}</li>`
+    : `<li class="${inspKey===x.k?'on':''}" onclick="pickInsp('${x.k}')">${x.t}</li>`).join('');
+}
+function pickInsp(k){ inspKey=k; renderInspList(); document.getElementById('inspstage').innerHTML = INSPECT.find(x=>x.k===k).fn(); }
+
+function insp1(no, name){
+  const taken=TAKEN_PRODUCT_NOS[no]||(no==='3TF5622-0XM0-Z'?{partNo:'HF-SZXM-2508-0031',at:'2026-08-14'}:null);
+  const filled=no.length>0;
+  return `<div class="card" style="margin:0">
+    <div class="form-row">
+      <div class="fi" style="max-width:360px"><label><span class="req">*</span>客户产品编号</label>
+        <input value="${esc(no)}" placeholder="请输入客户产品编号" class="${taken?'err':(filled?'ok':'')}" readonly
+          style="${no.length>28?'text-overflow:ellipsis':''}">
+        <div class="msg ${taken?'err':'ok'}">${taken?'该编号已存在，请从产品库添加':(filled?'✓ 该编号未被占用，可以继续':'')}</div></div>
+      <div class="fi"><label>客户产品名称<span class="opt">（选填）</span></label>
+        <input value="${esc(name||'')}" placeholder="请输入" readonly style="text-overflow:ellipsis"><div class="msg"></div></div>
+    </div>
+    ${taken?`<div class="alert err"><span class="ico">✕</span><div><b>客户产品编号 ${esc(no)} 已存在</b><br>
+      它已对应销售料号 <span class="mono">${taken.partNo}</span>（创建于 ${taken.at}）。
+      <div style="margin-top:10px"><button class="btn primary sm">→ 打开「从产品库添加」并定位到该产品</button>
+      <button class="btn sm" style="margin-left:8px">换一个编号</button></div></div></div>`:''}
+    <div style="display:flex;gap:8px;justify-content:flex-end;border-top:1px solid #f0f0f0;padding-top:16px">
+      <button class="btn">取消</button>
+      ${(!filled||taken)
+        ? `<span class="dis"><span class="tip">${taken?'客户产品编号已存在，请从产品库添加':'请先填写客户产品编号'}</span><button class="btn primary" disabled>下一步</button></span>`
+        : `<button class="btn primary">下一步</button>`}
+    </div>
+    ${no.length>28?'<div class="note">超长内容<b>单行省略 + hover 显示全文</b>，不换行、不撑高抽屉。</div>':''}
+  </div>`;
+}
+function inspPartsEmpty(){
+  return `<div class="card" style="margin:0">
+    <div class="toolbar"><button class="btn primary">+ 添加配件</button><div class="spacer"></div><span class="muted small">共 0 个配件</span></div>
+    <div class="empty"><span class="ico">📦</span><div class="txt">还没有配件</div>
+      <div class="small muted" style="margin-top:6px">一个产品至少要有一个配件才能提交</div>
+      <div class="act"><button class="btn primary">+ 添加第一个配件</button></div></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;border-top:1px solid #f0f0f0;padding-top:16px">
+      <button class="btn">上一步</button>
+      <span class="dis"><span class="tip">请至少添加一个配件</span><button class="btn primary" disabled>下一步</button></span></div></div>`;
+}
+function inspPartsList(){
+  return `<div class="card" style="margin:0">
+    <div class="toolbar"><button class="btn primary">+ 添加配件</button><div class="spacer"></div><span class="muted small">共 3 个配件</span></div>
+    <div class="partitem"><span style="font-size:20px">🔩</span><div class="body">
+      <div class="tt">动触头 <span class="tag blue">零件</span> <span class="tag grey">新建</span></div>
+      <div class="meta">规格 φ12×3 · 尺寸 12×8×3 · 总重 <b>10 g</b><br>材质：<span class="tag">AgNi10 <b>70%</b></span> <span class="tag">AgZnO12/Cu <b>30%</b></span> · 工序：车削 / 银焊</div></div>
+      <div style="display:flex;gap:4px"><button class="btn link sm">编辑</button><button class="btn link danger sm">移除</button></div></div>
+    <div class="partitem"><span style="font-size:20px">🔩</span><div class="body">
+      <div class="tt">静触头支架 <span class="tag blue">零件</span> <span class="tag green">已有</span> <span class="mono small muted">HF-SZXM-2506-0018</span></div>
+      <div class="meta">材质构成沿用该料号自身（AgSnO₂ 100%）· 工序：冲压 / 去毛刺</div></div>
+      <div style="display:flex;gap:4px"><button class="btn link sm">编辑</button><button class="btn link danger sm">移除</button></div></div>
+    <div class="partitem"><span style="font-size:20px">🛒</span><div class="body">
+      <div class="tt">组成件1 <span class="tag purple">外购件</span> <span class="mono small muted">TEST-Q13-CODE</span></div>
+      <div class="meta">规格 φ20×1 · 工序：装配</div></div>
+      <div style="display:flex;gap:4px"><button class="btn link sm">编辑</button><button class="btn link danger sm">移除</button></div></div>
+    <div class="note">行内「编辑/移除」适用 <code>§1.2</code> <b>例外白名单里的「抽屉内部子表」</b>条款——不是违规。</div></div>`;
+}
+function inspMat(kind){
+  const rows = {
+    ok:  [['00006','AgNi10','00006-01','Ag 90% / Ni 10%','70'],['00123','AgZnO12/Cu','00123-01','Ag 24.4% / Cu 72.2727% / Zn 3.3273%','30']],
+    bad: [['00006','AgNi10','00006-01','Ag 90% / Ni 10%','70'],['00123','AgZnO12/Cu','00123-01','Ag 24.4% / Cu 72.2727% / Zn 3.3273%','20']],
+    one: [['00006','AgNi10','00006-01','Ag 90% / Ni 10%','100']],
+    dec: [['00197','AgNi10/Ag15CuP 复合材','00197-01','Ag 85% / Ni 10% / Cu 5%','33.333333333333'],
+          ['00123','AgZnO12/Cu','00123-01','Ag 24.4% / Cu 72.2727% / Zn 3.3273%','33.333333333333'],
+          ['00006','AgNi10','00006-01','Ag 90% / Ni 10%','33.333333333334']],
+    cust:[['00123','AgZnO12/Cu','—','自定义','100']],
+    dis: [['00006','AgNi10','00006-01','Ag 90% / Ni 10%','100']],
+    dup: [['00006','AgNi10','00006-01','Ag 90% / Ni 10%','100']],
+    nocfg:[['00263','SnO2-del','—','（尚未配置含量）','100']],
+  }[kind];
+  let sum=0n; rows.forEach(r=>sum+=toFixedInt(r[4]));
+  const bad = sum!==HUNDRED;
+  const body = rows.map((r,i)=>`<tr class="${bad?'rowerr':''}${kind==='nocfg'?' rowerr':''}">
+    <td><span class="mono muted">${r[0]}</span> ${r[1]}</td>
+    <td>${kind==='cust'? '<span class="tag gold">自定义含量</span> <span class="small muted">Cu 88% / P 12%</span>'
+        : kind==='nocfg'? '<span class="tag red">尚未配置含量</span>'
+        : `<select disabled><option>${r[2]}（${r[3]}）</option></select>`}</td>
+    <td><input value="${r[4]}" readonly class="${bad?'err':''}" style="${r[4].length>8?'font-size:12px':''}"></td>
+    <td class="num muted">${gram('10',r[4])} g</td>
+    <td style="display:flex;gap:2px">
+      ${(kind==='cust'||r[0]==='00123')
+        ? `<button class="btn link sm">${kind==='cust'?'用标准':'自定义'}</button>`
+        : `<span class="dis"><span class="tip">该材质不支持自定义含量</span><button class="btn link sm" disabled>自定义</button></span>`}
+      <button class="btn link danger sm">移除</button></td></tr>`).join('');
+  const extra = {
+    bad:`<div class="msg err" style="margin-top:8px">材质占比合计为 <b>90%</b>，需要正好 100%（还差 10%）</div>`,
+    dec:`<div class="note">三等分（12 位小数）。合计判等用 <b>BigDecimal.compareTo</b> 定点比较，与库列 <code>numeric(24,12)</code> 口径一致。<br>
+      ⚠️ <b>实测更正</b>：这一组 <code>33.333333333333×2+33.333333333334</code> 在 JS 浮点下<b>恰好</b>等于 100，<b>不会</b>出错 —— 别拿它当"浮点不可用"的证据。
+      实际会出错的是极小值组合：<code>0.000000000001+99.999999999998+0.000000000001 = 99.99999999999999</code>。<br>
+      显示去尾随零：库里存 <code>70.000000000000</code>，界面显示 <code>70</code>；<b>去零必须走字符串正则，不许过 JS number</b>（12 位小数过 <code>Number()</code> 会丢尾数，这一条是确定的）。</div>`,
+    cust:`<div class="alert warn" style="margin-top:12px"><span class="ico">⚠</span><div>正在为 <b>AgZnO12/Cu</b> 使用<b>自定义含量</b>，该配比只用于本次选配、<b>不会回流材质库</b>。元素种类由材质的元素组成决定，<b>只能改含量、不能增删元素</b>。</div></div>`,
+    dup:`<div style="margin-top:12px;max-width:520px"><div class="fi"><label>添加材质</label>
+        <select class="err"><option>00006 / AgNi10</option></select>
+        <div class="msg err">材质 AgNi10 已添加，同一个零件里不能重复</div></div></div>`,
+    nocfg:`<div class="note">材质 <code>00263 / SnO2-del</code> 在材质库里没有任何启用的含量配置 ⇒ 下拉里<b>灰显不可选</b>，右侧写明原因。🚫 <b>不许从列表里过滤掉</b>——用户会以为材质丢了。后端同时硬拦（409 <code>RECIPE_HAS_NO_CONFIG</code>），前端灰显只是体验、后端拦才是正确性。</div>`,
+    dis:`<div class="note">存量 262 条材质<b>全部</b> <code>allow_custom_content=false</code>，所以这是当前最常见的状态。鼠标移到「自定义」按钮上看 tooltip。</div>`,
+  }[kind]||'';
+  return `<div class="card" style="margin:0">
+    <div class="form-row">
+      <div class="fi"><label><span class="req">*</span>品名</label><input value="动触头" readonly></div>
+      <div class="fi"><label>规格</label><input value="φ12×3" readonly></div>
+      <div class="fi"><label>尺寸</label><input value="12×8×3" readonly></div>
+      <div class="fi" style="max-width:160px"><label><span class="req">*</span>总重</label>
+        <div style="display:flex;gap:6px;align-items:center"><input value="10" readonly><span class="suffix">克</span></div></div>
+    </div>
+    <h3>材质构成 <span class="tag blue">${rows.length} 项</span></h3>
+    <div class="tblwrap"><table>
+      <thead><tr><th style="width:26%">材质</th><th style="width:30%">含量配置</th><th style="width:16%" class="num">占比 %</th><th style="width:14%" class="num">折合克重</th><th style="width:14%"></th></tr></thead>
+      <tbody>${body}</tbody>
+      <tfoot><tr><td colspan="2" class="muted">合计</td><td class="num"><span class="tag ${bad?'red':'green'}">${fixedToStr(sum)}%</span></td>
+        <td class="num">${bad?'—':'10 g'}</td><td></td></tr></tfoot></table></div>
+    ${extra}
+    <div style="display:flex;gap:8px;justify-content:flex-end;border-top:1px solid #f0f0f0;padding-top:16px;margin-top:16px">
+      <button class="btn">上一步</button>
+      ${bad||kind==='nocfg'
+        ? `<span class="dis"><span class="tip">${kind==='nocfg'?'材质 00263 尚未配置含量':'材质占比合计为 '+fixedToStr(sum)+'%，需要正好 100%'}</span><button class="btn primary" disabled>确定</button></span>`
+        : `<button class="btn primary">确定</button>`}</div></div>`;
+}
+function inspPicker(kw){
+  const k=kw.trim().toLowerCase();
+  const used=['00006'];   // 假设本零件已加过 AgNi10
+  const list=RECIPES.filter(r=> !k || r.code.toLowerCase().includes(k) || r.name.toLowerCase().includes(k));
+  const rows=list.map(r=>{
+    const isUsed=used.includes(r.code), noCfg=!r.configs.length, off=isUsed||noCfg;
+    const reason=noCfg?'该材质尚未配置含量':(isUsed?'该材质已添加':'');
+    const els=r.configs.length? r.configs[0].els.map(e=>e[1]+' '+trimZero(e[2])+'%').join(' / ') : '—';
+    return `<tr style="${off?'opacity:.45':''}">
+      <td><span class="mono muted">${r.code}</span></td><td>${esc(r.name)}</td>
+      <td class="small muted">${els}</td>
+      <td class="num">${r.configs.length? r.configs.length+' 组':'<span class="tag red">0 组</span>'}</td>
+      <td>${r.allowCustom? '<span class="tag gold">支持自定义</span>':'<span class="tag grey">仅标准</span>'}</td>
+      <td style="text-align:right">${off
+        ? `<span class="dis"><span class="tip">${reason}</span><button class="btn sm" disabled>选择</button></span>`
+        : `<button class="btn sm primary">选择</button>`}</td></tr>`;}).join('');
+  return `<div class="card" style="margin:0">
+    <div style="border:1px solid #91caff;border-radius:8px;background:#f0f8ff;padding:16px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+        <b>选择材质</b>
+        <input style="max-width:300px" value="${esc(kw)}" readonly placeholder="输入材质编号或材质名过滤，如 00006 / AgNi / AgZnO12/Cu">
+        <span class="muted small">${list.length} / ${RECIPES.length} 条</span>
+        <div style="flex:1"></div><button class="btn sm">取消</button>
+      </div>
+      ${list.length? `<div class="tblwrap" style="background:#fff"><table>
+        <thead><tr><th style="width:13%">材质编号</th><th style="width:24%">材质名</th><th>首个配置的含量</th>
+          <th style="width:10%" class="num">含量配置</th><th style="width:14%">自定义</th><th style="width:11%"></th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`
+      : `<div class="empty" style="padding:28px 0;background:#fff;border-radius:8px"><span class="ico">🔍</span>
+         <div class="txt">没有匹配「${esc(kw)}」的材质</div>
+         <div class="small muted" style="margin-top:6px">试试材质编号（00006）或材质名（AgNi / AgZnO12/Cu）</div></div>`}
+    </div>
+    <div class="note">
+      🚫 <b>不可选的材质仍然列出、灰显并写明原因</b>，不从列表里过滤掉 —— 过滤掉用户会以为材质丢了（§1.2 禁止 <code>if(...) return null</code> 隐藏）。<br>
+      两种不可选：<b>含量配置 0 组</b>（<code>00263 / SnO2-del</code>，后端提交也会 409 <code>RECIPE_HAS_NO_CONFIG</code>）· <b>本零件已添加过</b>（此处假设已加 <code>00006 / AgNi10</code>，<span class="ac">AC-17</span>）。<br>
+      ⚠️ <b>实测材质库 262 条</b> ⇒ 必须支持按编号 / 名称过滤，靠滚动找不可行（对齐 <code>task-260901</code> AC-35：258 项走虚拟滚动，用例必须先输入过滤再点选）。<br>
+      「首个配置的含量」列让用户不用展开就能分辨 <code>AgNi10</code> 与 <code>Ag15CuP</code> 的实际差别。
+    </div></div>`;
+}
+function inspOut(has){
+  return `<div class="card" style="margin:0">
+    <div class="toolbar"><input style="max-width:280px" placeholder="搜索料号或品名" readonly>
+      <div class="spacer"></div><span class="muted small">共 ${has?1:0} 条</span></div>
+    ${has? `<div class="tblwrap"><table>
+      <thead><tr><th style="width:36px"></th><th style="width:22%">料号</th><th>品名</th><th style="width:22%">规格</th><th style="width:12%" class="num">单重</th></tr></thead>
+      <tbody><tr class="sel"><td><span style="display:inline-block;width:16px;height:16px;border-radius:50%;border:5px solid #1677ff;vertical-align:-3px"></span></td>
+        <td class="mono">TEST-Q13-CODE</td><td>组成件1</td><td>φ20×1</td><td class="num">2 g</td></tr>
+      <tr><td><span style="display:inline-block;width:16px;height:16px;border-radius:50%;border:1px solid #d9d9d9;vertical-align:-3px;background:#fff"></span></td>
+        <td class="mono">TEST-Q13-CODE-A22-LONG</td>
+        <td style="max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">高温环氧玻璃布层压板组成件1（含双面硅胶涂层与定位凸台）</td>
+        <td style="max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">φ20×1±0.05 / 耐温 180℃</td><td class="num">2 g</td></tr>
+      </tbody></table></div><div class="note">第 2 行是<b>最长文案</b>样例：超长单元格省略 + hover 显示全文，表格不横向撑破抽屉。</div>`
+    : `<div class="empty"><span class="ico">🛒</span><div class="txt">料号库里还没有外购件</div>
+       <div class="small muted" style="margin-top:6px">外购件需要先在<b>料号维护</b>里录入，并把「料号类型」设为<b>外购件</b></div>
+       <div class="act"><button class="btn">→ 打开料号维护</button><button class="btn" style="margin-left:8px">← 改为添加零件</button></div></div>
+       <div class="note">🚫 <b>绝对不能显示「加载中…」永久占位</b> —— 那是 <code>docs/反模式.md</code> AP-31 族的典型病：把「空」误判为「还没加载完」。<br>
+       实测 <code>material_type='外购件'</code> 仅 1 条、<code>characteristic='OUTSOURCED'</code> 零行 ⇒ <b>这是上线第一天大概率看到的画面</b>，不是理论边界。</div>`}
+    <div style="display:flex;gap:8px;justify-content:flex-end;border-top:1px solid #f0f0f0;padding-top:16px;margin-top:16px">
+      <button class="btn">上一步</button>
+      ${has? `<button class="btn primary">确定</button>`
+           : `<span class="dis"><span class="tip">请先选择一个外购件</span><button class="btn primary" disabled>确定</button></span>`}</div></div>`;
+}
+function inspFinal(hit){
+  const fp='v2|CUST=SZXM|PART=动触头/φ12×3/12×8×3|WEIGHT=10|MAT=00006:70(10001:90,10005:10),00123:30(10001:24.4,10021:72.2727,10077:3.3273)|PRC=Z100,Z101';
+  return `<div class="card" style="margin:0">
+    ${hit? `<div class="alert info"><span class="ico">↻</span><div>
+      <b>产品库里已有相同配置的产品，将直接复用它的销售料号</b><br>
+      销售料号 <span class="mono">HF-SZXM-2509-0007</span> · 首次创建于 2026-09-01 · 已被 2 张报价单引用<br>
+      <span class="muted small">不会新建料号。你的客户产品编号 CP-NEW-002 会作为新的映射关系记录下来。</span></div></div>
+      <div class="tblwrap" style="margin-bottom:12px"><table>
+        <thead><tr><th style="width:24%">带出的销售产品信息</th><th>内容</th></tr></thead><tbody>
+        <tr><td class="muted">销售料号</td><td class="mono">HF-SZXM-2509-0007</td></tr>
+        <tr><td class="muted">品名 / 规格 / 尺寸</td><td>动触头 · φ12×3 · 12×8×3</td></tr>
+        <tr><td class="muted">单重</td><td>10 g</td></tr>
+        <tr><td class="muted">材质构成</td><td><span class="tag">AgNi10 70%</span> <span class="tag">AgZnO12/Cu 30%</span></td></tr>
+        <tr><td class="muted">历史报价</td><td>¥ 12.4800 / 件（2026-09-01，苏州西门子）</td></tr>
+        </tbody></table></div>`
+    : `<div class="alert ok"><span class="ico">✓</span><div><b>产品库里没有相同配置的产品，将新建一个销售料号</b><br>
+      <span class="muted small">新料号在点「添加到报价单」时才会真正生成。</span></div></div>`}
+    <div class="fpbox"><span class="lbl">本次配置的指纹原文</span>${fp}</div>
+    <div class="note">开头 <code>v2</code> 是 <code>structure_version</code>（本次从 v1 升版，表内 0 行、零代价）。
+      ⚠️ <b>指纹里没有配方编号</b> —— 裁决 D-5 的有意为之：含量相同即同一种材料。
+      <code>00006-01</code> 换成 <code>00006-02</code>（含量逐字相同）指纹不变、仍复用。<span class="ac">AC-10</span></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;border-top:1px solid #f0f0f0;padding-top:16px;margin-top:16px">
+      <button class="btn">上一步</button><button class="btn primary">添加到报价单${hit?'（复用 HF-SZXM-2509-0007）':''}</button></div></div>`;
+}
+function inspFail(){
+  return `<div class="card" style="margin:0">
+    <div class="alert err"><span class="ico">✕</span><div>
+      <b>添加失败：材质 SnO2-del 尚未配置含量</b><br>
+      该材质在材质库里没有任何启用的含量配置，无法确定元素构成。<br>
+      <span class="muted small">错误码 RECIPE_HAS_NO_CONFIG · 请到材质管理页为它添加配置，或改选其他材质。</span>
+      <div style="margin-top:10px"><button class="btn sm">→ 打开材质管理</button></div></div></div>
+    <div class="note">后端硬拦：前端灰显只是体验，<b>后端拦才是正确性</b>。对齐 <code>task-260901</code> 的 B-18（提交时材质无 ACTIVE 配置返 409）。</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;border-top:1px solid #f0f0f0;padding-top:16px;margin-top:16px">
+      <button class="btn">上一步</button><button class="btn primary" disabled>添加到报价单</button></div></div>`;
+}
+
+// ═══════════════ 模式切换 ═══════════════
+function switchMode(m){
+  ['flow','insp','info'].forEach(x=>{
+    document.getElementById('mode-'+x).classList.toggle('hidden', x!==m);
+    document.getElementById('tab-'+(x==='flow'?'flow':x==='insp'?'insp':'info')).classList.toggle('on', x===m);
+  });
+  if(m==='insp'){ renderInspList(); pickInsp(inspKey); }
+}
+
+resetAll();
+renderInspList();
+pickInsp('s1-ok');
+</script>
+</body>
+</html>

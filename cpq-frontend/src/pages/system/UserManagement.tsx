@@ -1,9 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Table, Button, Drawer, Form, Input, Select, Space, Tag, Popconfirm, message, Modal, TreeSelect } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import { Table, Button, Drawer, Form, Input, Select, Space, Tag, Tooltip, Popconfirm, message, Modal, TreeSelect } from 'antd';
+import { PlusOutlined, DownloadOutlined, ImportOutlined } from '@ant-design/icons';
 import { userService } from '../../services/userService';
 import { regionService } from '../../services/regionService';
 import { departmentService } from '../../services/departmentService';
+import UserImportDrawer from './UserImportDrawer';
+import { EXPORT_EMPTY_TOOLTIP } from '../../utils/exportDownload';
+import { apiErrorMessage } from '../../utils/apiError';
 
 const roleMap: Record<string, { label: string; color: string }> = {
   SYSTEM_ADMIN: { label: '系统管理员', color: 'red' },
@@ -21,6 +24,9 @@ const UserManagement: React.FC = () => {
   const [params, setParams] = useState({ page: 0, size: 20, role: '', status: '', keyword: '' });
   const [regions, setRegions] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
+  // task-260902 · F-3 / F-4
+  const [exporting, setExporting] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const deptTreeData = React.useMemo(() => {
     const buildTree = (list: any[], parentId: string | null = null): any[] => {
@@ -53,6 +59,35 @@ const UserManagement: React.FC = () => {
       setDepartments((res.data?.content || []).filter((d: any) => d.status === 'ACTIVE'));
     });
   }, []);
+
+  /**
+   * task-260902 · F-3「导出用户」（AC-12 / AC-13 / AC-23）。
+   *
+   * 参数直接取 `params` state 的三个筛选字段 —— 本页的搜索框是 `onSearch` 提交式（不是防抖），
+   * `params` 里存的本来就是**已生效**的值，所以没有材质页那个「输入框草稿 ≠ 生效值」的坑。
+   * 🚫 不传 page/size：导出的是筛选结果全量，不是当前页的 20 条。
+   */
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      await userService.exportUsers({
+        keyword: params.keyword || undefined,
+        role: params.role || undefined,
+        status: params.status || undefined,
+      });
+    } catch (e: unknown) {
+      message.error(apiErrorMessage(e, '导出失败，请稍后重试'));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  /**
+   * AC-23：筛选结果 0 条 → 「导出用户」禁用 + tooltip。
+   * ⚠️ 「导入用户」**不跟着 0 条禁用** —— 一张空表恰恰最需要导入（原型图 3 状态 B）。
+   * ⚠️ 本页整页已限 SYSTEM_ADMIN（MainLayout 菜单 roles），两个按钮常显、不做角色判断。
+   */
+  const exportDisabled = !loading && (data.totalElements ?? 0) === 0;
 
   const handleSave = async (values: any) => {
     try {
@@ -111,10 +146,30 @@ const UserManagement: React.FC = () => {
             <Select.Option value="INACTIVE">停用</Select.Option>
           </Select>
         </Space>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingUser(null); form.resetFields(); setDrawerOpen(true); }}>新增用户</Button>
+        {/* 右组顺序（原型图 3 状态 A）：导出用户 → 导入用户 → 新增用户 */}
+        <Space>
+          <Tooltip title={exportDisabled ? EXPORT_EMPTY_TOOLTIP : ''}>
+            <Button
+              icon={<DownloadOutlined />}
+              loading={exporting}
+              disabled={exportDisabled}
+              onClick={handleExport}
+            >
+              导出用户
+            </Button>
+          </Tooltip>
+          <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>导入用户</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingUser(null); form.resetFields(); setDrawerOpen(true); }}>新增用户</Button>
+        </Space>
       </div>
       <Table columns={columns} dataSource={data.content} rowKey="id" loading={loading}
         pagination={{ current: params.page + 1, pageSize: params.size, total: data.totalElements, onChange: (p, s) => setParams(prev => ({ ...prev, page: p - 1, size: s || 20 })) }} />
+      {/* task-260902 · F-4 / F-5：导入抽屉（上传 + 结果报告在同一个抽屉里换内容） */}
+      <UserImportDrawer
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={fetchData}
+      />
       <Drawer title={editingUser ? '编辑用户' : '新增用户'} open={drawerOpen} onClose={() => { setDrawerOpen(false); setEditingUser(null); }} size="large">
         <Form form={form} layout="vertical" onFinish={handleSave}>
           <Form.Item name="username" label="用户名" rules={[{ required: !editingUser, message: '请输入用户名' }]}><Input disabled={!!editingUser} /></Form.Item>

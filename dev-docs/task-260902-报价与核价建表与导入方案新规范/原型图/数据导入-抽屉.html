@@ -1,0 +1,45 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>数据导入 · 抽屉（成功）</title><link rel="stylesheet" href="antd-like.css"></head><body>
+<div class="page"><div class="card"><div class="card-head">主数据维护 · 基础核价</div><div class="card-body"><p class="muted">（背景页）</p></div></div></div>
+<div class="mask"></div>
+<div class="drawer" style="width:760px">
+  <div class="drawer-head"><span class="drawer-title">导入核价数据 · 基础核价</span><button class="close">✕</button></div>
+  <div class="drawer-body" style="padding:24px">
+    <div class="alert alert-info"><span>ℹ️</span><div>
+      本抽屉只接受 <b>基础核价</b>（「核价2」）格式的文件。上传后<b>先全量校验</b>，
+      任一必填项为空或主数据不存在，<b>整份拒收、一行不写</b>。
+    </div></div>
+
+    <div style="border:1px dashed #d9d9d9;border-radius:8px;padding:32px;text-align:center;background:#fafafa;margin-bottom:16px">
+      <div style="font-size:32px;opacity:.35">📄</div>
+      <p style="margin:8px 0 4px"><b>核价2 - 数据导入与表格建表.xlsx</b> <span class="muted">· 28.0 KB</span></p>
+      <p class="muted" style="margin:0">点击或拖拽替换文件（仅支持 .xlsx）</p>
+    </div>
+
+    <div class="row" style="justify-content:flex-end;margin-bottom:20px">
+      <button class="btn">取消</button><button class="btn btn-primary">开始导入</button>
+    </div>
+
+    <div class="alert" style="background:#f6ffed;border-color:#b7eb8f"><span>✔</span><div>
+      <b>导入成功</b>　耗时 4.21 s ｜ 10 个 sheet 全部处理完成
+    </div></div>
+
+    <div class="table-wrap"><table class="compact">
+      <thead><tr><th>Sheet</th><th style="width:90px">轴值数</th><th style="width:90px">新建</th><th style="width:90px">升版</th><th style="width:100px">无变化</th></tr></thead>
+      <tbody>
+        <tr><td>物料 <span class="tag tag-grey">免版本</span></td><td class="muted">—</td><td>新增 1</td><td colspan="2">覆盖 0</td></tr>
+        <tr><td>物料BOM</td><td>1</td><td>0</td><td><span class="tag tag-blue">1</span></td><td>0</td></tr>
+        <tr><td>物料与元素BOM</td><td>1</td><td><span class="tag tag-green">1</span></td><td>0</td><td>0</td></tr>
+        <tr><td>来料加工费</td><td>1</td><td>0</td><td>0</td><td><span class="tag tag-grey">1</span></td></tr>
+        <tr><td>来料其他费用</td><td>1</td><td>0</td><td>0</td><td><span class="tag tag-grey">1</span></td></tr>
+        <tr><td>来料其他固定费用</td><td>1</td><td><span class="tag tag-green">1</span></td><td>0</td><td>0</td></tr>
+        <tr><td>加工费&amp;组装费</td><td>1</td><td>0</td><td><span class="tag tag-blue">1</span></td><td>0</td></tr>
+        <tr><td>其他外加工成本</td><td>1</td><td><span class="tag tag-green">1</span></td><td>0</td><td>0</td></tr>
+        <tr><td>成品其他比例费用</td><td>1</td><td><span class="tag tag-green">1</span></td><td>0</td><td>0</td></tr>
+        <tr><td>成品其他固定费用</td><td class="muted">0</td><td colspan="3" class="muted">该 sheet 为空，未做任何改动</td></tr>
+      </tbody>
+    </table></div>
+    <p class="muted" style="margin-top:12px">关闭后<b>列表自动刷新</b>（AC-33）。空 sheet <b>不等于</b>清空 —— 库中原有数据原封不动（AC-39）。</p>
+  </div>
+  <div class="drawer-foot"><button class="btn btn-primary">完成并关闭</button></div>
+</div></body></html>

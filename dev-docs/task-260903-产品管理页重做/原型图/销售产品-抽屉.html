@@ -1,0 +1,111 @@
+<meta charset="utf-8">
+<title>产品管理 · 销售产品抽屉（只读 · 核心）</title>
+<link rel="stylesheet" href="antd-like.css">
+<style>
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.45)}
+  .drawer{position:fixed;top:0;right:0;bottom:0;width:1200px;max-width:96vw;background:#fff;display:flex;flex-direction:column;box-shadow:-6px 0 16px rgba(0,0,0,.08)}
+  .dh{padding:16px 24px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between}
+  .dh-t{font-size:16px;font-weight:600}
+  .dbody{flex:1;display:flex;min-height:0}
+  .ltabs{width:190px;border-right:1px solid #f0f0f0;overflow:auto;padding:8px 0;background:#fafafa}
+  .ltab{padding:9px 16px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:space-between;gap:8px;border-right:2px solid transparent}
+  .ltab:hover{background:#f0f0f0}
+  .ltab.active{background:#e6f4ff;color:#1677ff;font-weight:500;border-right-color:#1677ff}
+  .cnt{font-size:12px;background:#1677ff;color:#fff;border-radius:9px;padding:0 7px;line-height:18px;min-width:18px;text-align:center}
+  .ltab.active .cnt{background:#1677ff}
+  .cnt.zero{background:#d9d9d9;color:rgba(0,0,0,.45)}
+  .pane{flex:1;padding:16px 24px;overflow:auto;min-width:0}
+  .pane-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:12px;flex-wrap:wrap}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;background:#fafafa;font-weight:600;padding:10px 12px;border:1px solid #f0f0f0;white-space:nowrap}
+  td{padding:10px 12px;border:1px solid #f0f0f0}
+  .muted{color:rgba(0,0,0,.25)}
+  .num{text-align:right;font-variant-numeric:tabular-nums}
+  .anno{background:#e6f4ff;border:1px solid #91caff;border-radius:6px;padding:10px 14px;margin:0 0 14px;font-size:13px;line-height:1.8}
+  .ro{display:inline-flex;align-items:center;gap:5px;background:#f6ffed;border:1px solid #b7eb8f;color:#389e0d;border-radius:4px;padding:2px 9px;font-size:12px}
+</style>
+
+<div class="mask"></div>
+<div class="drawer">
+  <div class="dh">
+    <div>
+      <div class="dh-t">销售产品 · S-3120014539</div>
+      <div style="font-size:12px;color:rgba(0,0,0,.45);margin-top:2px">主料1　·　以销售料号为轴的报价数据</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <span class="ro">🔒 只读</span>
+      <span style="cursor:pointer;font-size:16px;color:rgba(0,0,0,.45)">✕</span>
+    </div>
+  </div>
+
+  <div class="dbody">
+    <div class="ltabs">
+      <div class="ltab active">物料BOM <span class="cnt">9</span></div>
+      <div class="ltab">物料与元素BOM <span class="cnt">2</span></div>
+      <div class="ltab">来料固定加工费 <span class="cnt zero">0</span></div>
+      <div class="ltab">来料其他费用 <span class="cnt zero">0</span></div>
+      <div class="ltab">来料回收折扣 <span class="cnt zero">0</span></div>
+      <div class="ltab">自制加工费 <span class="cnt zero">0</span></div>
+      <div class="ltab">成品其他费用 <span class="cnt zero">0</span></div>
+      <div class="ltab">组成件其他费用 <span class="cnt zero">0</span></div>
+      <div class="ltab">组装加工费 <span class="cnt zero">0</span></div>
+      <div class="ltab">组装加工费年降 <span class="cnt zero">0</span></div>
+      <div class="ltab">电镀费用 <span class="cnt zero">0</span></div>
+      <div class="ltab">来料年降 <span class="cnt zero">0</span></div>
+      <div class="ltab">年降系数 <span class="cnt zero">0</span></div>
+    </div>
+
+    <div class="pane">
+      <div class="anno">
+        <b>AC-6 ~ AC-10 的视觉基准。</b>
+        ① tab <b>恰好 13 个</b>，但<b>数量与顺序由 <code>GET /dataset/quote/sheets</code> 决定，🚫 前端不写死 13</b>；
+        ② <b>不含</b> 物料 / 客户料号 / 电镀方案三个免版本 sheet；
+        ③ <b>轴列「销售料号」在抽屉内隐藏</b>（<code>role=AXIS</code>），轴值已在标题上；
+        ④ 徽标 = 该 sheet 该料号的行数，<code>versionNo=null</code>（从未有数据）时打灰色 0。
+      </div>
+
+      <div class="pane-top">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="color:rgba(0,0,0,.65);font-size:13px">版本</span>
+          <select class="select" style="width:190px"><option>v1（当前）· 导入 · 2026-09-03</option></select>
+          <span class="ro">🔒 只读</span>
+        </div>
+        <div style="font-size:12px;color:rgba(0,0,0,.45)">来源：导入　·　共 9 行</div>
+      </div>
+
+      <table>
+        <thead><tr>
+          <th style="width:70px">项次</th><th style="width:110px">投入类型</th><th>投入料号</th><th>投入料号名称</th>
+          <th style="width:120px;text-align:right">组成数量</th><th style="width:120px;text-align:right">材料净重</th><th style="width:90px">重量单位</th>
+        </tr></thead>
+        <tbody>
+          <tr><td class="muted">—</td><td>0:必要</td><td>S-2120011658</td><td>AgNi10/Cu-Cu/301/Cu接触桥</td><td class="num">1</td><td class="num muted">—</td><td class="muted">—</td></tr>
+          <tr><td class="muted">—</td><td>0:必要</td><td>S-2120011659</td><td>AgNi10/Cu-Cu/301/Cu接触桥</td><td class="num">1</td><td class="num muted">—</td><td class="muted">—</td></tr>
+          <tr><td class="muted">—</td><td>0:必要</td><td>S-3111320634</td><td>H62接触板</td><td class="num">1</td><td class="num muted">—</td><td class="muted">—</td></tr>
+          <tr><td class="muted">—</td><td>0:必要</td><td>S-3111320635</td><td class="muted">—</td><td class="num">1</td><td class="num muted">—</td><td class="muted">—</td></tr>
+          <tr><td class="muted">—</td><td>0:必要</td><td>S-3111320636</td><td class="muted">—</td><td class="num">1</td><td class="num muted">—</td><td class="muted">—</td></tr>
+          <tr><td class="muted">—</td><td>0:必要</td><td>S-3111320637</td><td class="muted">—</td><td class="num">1</td><td class="num muted">—</td><td class="muted">—</td></tr>
+          <tr><td class="muted">—</td><td>0:必要</td><td>S-3110520790</td><td>AgNi10/Cu静触头</td><td class="num">2</td><td class="num muted">—</td><td class="muted">—</td></tr>
+          <tr><td class="muted">—</td><td>0:必要</td><td>S-1630010773</td><td>支座</td><td class="num">1</td><td class="num muted">—</td><td class="muted">—</td></tr>
+          <tr title="真实脏数据：该行除组成数量外全空"><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="num">2</td><td class="num muted">—</td><td class="muted">—</td></tr>
+        </tbody>
+      </table>
+
+      <div class="anno" style="background:#fff7e6;border-color:#ffd591;margin-top:16px">
+        <b>🔒 只读的四条硬要求（AC-8 / AC-9）</b><br>
+        1. <b>不渲染</b> <code>保存</code> / <code>新增行</code> / <code>删除</code> 按钮 —— 是<b>不渲染</b>，不是禁用。
+           （这是 <code>frontend.md §1.2</code>「禁止 <code>if(...) return null</code> 隐藏按钮」的<b>合理例外</b>：
+           那条针对「本可用但当前不可用」的动作；本页<b>整页无编辑能力</b>，渲染一排永久禁用的保存按钮反而误导。<b>此例外已在闸门 A 点名</b>。）<br>
+        2. 表格内<b>无</b> <code>input</code> / <code>select</code> / <code>textarea</code>，双击单元格不进编辑态，但<b>文本可选中复制</b>。<br>
+        3. <b><code>PRICING_MANAGER</code> 与 <code>SYSTEM_ADMIN</code> 也一样只读</b>——核价侧这两个角色可编辑，本页不可。
+           反向要求：<b>本任务不得把核价侧改成只读</b>。<br>
+        4. 🚨 <b>无论 <code>rows</code> 响应里 <code>readOnly</code> 字段为何值，一律按只读渲染</b>，不得据其推导出可编辑分支。<br>
+        <br>
+        <b>⚠️ 列渲染纪律</b>：按 <code>ColumnDef.type</code>（<code>STRING</code>/<code>NUMBER</code>/<code>DECIMAL</code>）决定对齐与格式化，
+        🚫 <b>禁止按列名硬编码</b> —— <code>task-260902</code> 刚修正 50 列类型（31 列方向错），
+        典型如 <code>pricing_unit</code>（计价单位）由 <code>DECIMAL</code> 改为 <code>STRING</code>，
+        <b>不得当数字格式化、不得右对齐</b>。
+      </div>
+    </div>
+  </div>
+</div>

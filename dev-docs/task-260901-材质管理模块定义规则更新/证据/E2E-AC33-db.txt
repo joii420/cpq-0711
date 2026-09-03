@@ -1,0 +1,3 @@
+code=00263
+composition=["Ag#1","Ni#2"]
+configs=["00263-01","00263-02"]

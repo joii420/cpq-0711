@@ -1,0 +1,95 @@
+=====================================================================
+repair-260830 后端（B-1~B-4）自检与 A/B 归因原始记录
+执行环境：worktree /home/joii/project/cpq/.claude/worktrees/repair-260830-element-price-pending
+         cpq-backend/ 内执行（不是主仓）；HEAD = 44110d24
+=====================================================================
+
+【1】迁移版本号实取（动手前重新核对，backtask 要求）
+  主仓 + 全部 7 个 worktree 的 db/migration 最大号：396
+  dev 库 cpq_db_0724 flyway 最大：396 (repair260829 dedupe qlcd add unique constraint, success=t)
+  测试库 cpq_db      flyway 最大：396
+  → 未撞号，实际使用 V397（与立项时一致）
+
+【2】迁移语法预检（测试库事务内 CREATE + 立即 ROLLBACK，零残留）
+  $ psql -d cpq_db  BEGIN; \i V397__...sql ; ... ; ROLLBACK;
+  BEGIN / CREATE FUNCTION / COMMENT / CREATE FUNCTION / COMMENT
+                     sig
+  ------------------------------------------
+   f_material_element_price(text,date)
+   f_material_element_price(text,date,uuid)
+  (2 rows)
+   two_arg=0 / three_null=0 / three_uuid=0     ← 三种调用形态均可解析执行，重载无歧义
+  ROLLBACK
+
+【3】Flyway 正式应用（Quarkus test profile 启动时 migrate-at-start，未手工 psql -f）
+  [org.fly.cor.int.com.DbMigrate] Migrating schema "public" to version
+      "397 - repair260830 material element price pending visibility"
+  [org.fly.cor.int.com.DbMigrate] Successfully applied 1 migration ... now at version v397 (00:00.104s)
+
+  $ psql -d cpq_db -c "SELECT version,description,success,execution_time FROM flyway_schema_history WHERE version='397'"
+  397|repair260830 material element price pending visibility|t|104        ← success = t ✅
+
+  $ psql -d cpq_db -c "SELECT p.oid::regprocedure FROM pg_proc p WHERE p.proname='f_material_element_price'"
+  f_material_element_price(text,date)
+  f_material_element_price(text,date,uuid)                                 ← 两参版仍在（未 DROP）
+
+【4】启动期视图校验（AC-11 的测试库等价物）
+  [QuoteViewValidationService] 校验通过 total=170 ok=170   （首次运行）
+  [QuoteViewValidationService] 校验通过 total=172 ok=172   （末次运行，测试库视图数被并发会话 +2）
+  测试库内引用 f_material_element_price 的 component_sql_view：23 个，全部 status=ACTIVE
+  → 这 23 张真实模板经改写补参后，全部通过 "SELECT * FROM (<改写后SQL>) _outer LIMIT 0" 真库执行
+
+【5】测试执行（worktree 的 cpq-backend/ 内跑，不是主仓）
+  $ ./mvnw -o test -Dtest='com.cpq.datasource.sqlview.*Test,Sec31CompileCorrectnessTest,Sec34PriceStrategyTest,ElementBindingDerivationTest'
+  Tests run: 2,  Failures: 0 -- QuotePendingRewriterOfficialVisibilityAndSupersedesTest
+  Tests run: 15, Failures: 0 -- QuotePendingRewriterTest                 ← 含本次新增 5 条
+  Tests run: 3,  Failures: 0 -- QuotePendingSqlTextAssertionTest
+  Tests run: 6,  Failures: 0 -- SqlViewExecutorNamedParamMaskingTest
+  Tests run: 3,  Failures: 0 -- SqlViewExecutorPendingHookTest
+  Tests run: 12, Failures: 0 -- QuotePendingScopeTest
+  Tests run: 9,  Failures: 0 -- SpineKeysMacroTest
+  Tests run: 8,  Failures: 0 -- SqlTextMaskTest
+  Tests run: 15, Failures: 0 -- SqlViewIsolationBoundaryTest
+  Tests run: 8,  Failures: 0 -- VersionFilterMacroTest
+  Tests run: 9,  Failures: 0, Skipped: 2 -- Sec31CompileCorrectnessTest   （2 skip 为既有）
+  Tests run: 5,  Failures: 0 -- Sec34PriceStrategyTest
+  Tests run: 5,  Failures: 0 -- ElementBindingDerivationTest
+  Tests run: 3,  Failures: 2 -- QuotePendingScopeOpenWhitelistTest        ← 见【6】pre-existing
+  合计 Tests run: 103, Failures: 2, Skipped: 2
+
+【6】A/B 归因：QuotePendingScopeOpenWhitelistTest 2 条失败 = pre-existing，与本次改动无关
+  失败 1 openCallSites_fileLevelWhitelist_exactMatch：
+      实际命中多出 com/cpq/quotation/service/QuotationService.java
+  失败 2 cardSnapshotService_quoteSideMethods_containOpenCall：
+      ensureExcelValues 体内未找到 QuotePendingScope.open(
+  归因依据（该测试是纯静态源码扫描，不依赖被我改的类）：
+    $ git diff --name-only HEAD
+      cpq-backend/src/main/java/com/cpq/datasource/sqlview/QuotePendingRewriter.java
+      cpq-backend/src/test/java/com/cpq/datasource/sqlview/QuotePendingRewriterTest.java
+      → QuotationService.java / CardSnapshotService.java 本次一行未改
+    $ git show HEAD:.../QuotationService.java | grep -c "QuotePendingScope.open("   → 1
+      （master HEAD 44110d24 上就已经有这一处，白名单不含它 ⇒ 干净基线同样红）
+    $ git show HEAD:.../CardSnapshotService.java | grep -n ensureExcelValues
+      → ensureExcelValues 在 HEAD 上已是转调 ensureExcelValuesDetailed 的薄包装，体内本就无 open(
+  结论：两条均在干净 master 上同样失败，本次未引入。
+
+【7】证伪实验（证明新增用例不是空验证）
+  做法：只把 cpq-backend/src/main/java/.../QuotePendingRewriter.java 还原到 HEAD（测试保留），重跑
+  $ git checkout -- .../QuotePendingRewriter.java && ./mvnw -o test -Dtest=QuotePendingRewriterTest
+  [ERROR] Tests run: 15, Failures: 1
+  [ERROR] QuotePendingRewriterTest.fnCall_twoArg_rewrittenToThreeArg:361
+          两参调用应被补成三参且第三参为 :pq，实际改写结果=...
+  [QuoteViewValidationService] 校验通过 total=170 ok=170        ← 基线校验数与改动后一致（零回归）
+  → 去掉修复 ⇒ 正向用例变红；恢复修复 ⇒ 全绿。用例非空验证 ✅
+  ⚠️ 另外 3 条（注释不改写 / 幂等 / f_customer_element_price 不动）是"否定式断言"，
+     在基线上也绿（当时压根没有函数改写）—— 它们锁的是"不许改坏"，不是"改对了"，如实登记。
+
+【8】N+1 自检
+  本次新增循环 3 处，均为纯内存字符串运算，无查库：
+    ① pendingAwareFunctionEdits() 的 while(m.find())      —— 正则遍历，无 DB
+    ② scanCallArgs() 的 for(char)                          —— 括号配平计数，无 DB
+    ③ applyEdits() 的 for(Edit)                            —— StringBuilder.replace，无 DB
+  既有循环 for(TableMatch) 里的 buildReplacementSubquery→columnsOf 是**改动前就有**的，
+  且走 COLUMNS_CACHE 进程级缓存、上限=8 张白名单表，与 N（料号数/行数）无关。
+  V397 函数体：candidate_materials 仍是 2 次集合扫描 + 1 次 CROSS JOIN，SQL 条数为常数。
+  N+1 自检：本次改动 3 处循环，均为纯内存运算，无查库 ✅

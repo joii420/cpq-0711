@@ -1,0 +1,33 @@
+{
+  "budgetMs": 10000,
+  "rounds": [
+    {
+      "round": 1,
+      "putMs": 5858,
+      "endToEndMs": 9381,
+      "requestBytes": 2311,
+      "responseBytes": 1562,
+      "envActiveQueries": 0,
+      "envProbeMs": 112
+    },
+    {
+      "round": 2,
+      "putMs": 5593,
+      "endToEndMs": 10270,
+      "requestBytes": 2311,
+      "responseBytes": 1562,
+      "envActiveQueries": 0,
+      "envProbeMs": 124
+    },
+    {
+      "round": 3,
+      "putMs": 5617,
+      "endToEndMs": 8129,
+      "requestBytes": 2311,
+      "responseBytes": 1562,
+      "envActiveQueries": 0,
+      "envProbeMs": 263
+    }
+  ],
+  "worstMs": 10270
+}

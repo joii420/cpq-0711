@@ -28,6 +28,14 @@ public class GlobalExceptionMapper {
                             Map.of("conflicts", rce.getConflicts())))
                     .build();
         }
+        // task-260901 B-3b：保存草稿乐观并发冲突 —— 前端据 reason=STALE_VERSION 弹「刷新页面」。
+        if (e instanceof StaleVersionException sve) {
+            return Response.status(e.getCode())
+                    .entity(ApiResponse.error(e.getCode(), e.getMessage(), Map.of(
+                            "reason", StaleVersionException.REASON,
+                            "currentVersion", sve.getCurrentVersion())))
+                    .build();
+        }
         // task-0806 阶段① API-3：提交闸门 —— 未落定对账差异 / 在飞写，见 ReconcilePendingException。
         if (e instanceof ReconcilePendingException rpe) {
             return Response.status(e.getCode())
@@ -138,6 +146,27 @@ public class GlobalExceptionMapper {
             return Response.status(e.getCode())
                     .entity(body)
                     .type(MediaType.APPLICATION_JSON)
+                    .build();
+        }
+        // task-260901：材质模块错误码（api.md §2）。errorCode 放 data.code，前端按它判定，
+        // 禁止按 message 文本匹配。
+        if (e instanceof com.cpq.configure.exception.MaterialRecipeApiException mrae) {
+            // task-260902（主线契约更正 2026-09-02）：业务码放**顶层 detail.bizCode**（字符串），
+            // 🚫 不放 code —— code 是 int(HTTP 状态码)，装不下字符串，改它的类型会波及全仓端点。
+            // data.code 保留是为了不打断 task-260901 已交付的前端/用例（它们按 data.code 读）。
+            Map<String, Object> detail = new java.util.LinkedHashMap<>();
+            detail.put("bizCode", mrae.getErrorCode());
+            if (mrae.getDetail() != null) detail.putAll(mrae.getDetail());
+            return Response.status(e.getCode())
+                    .entity(ApiResponse.error(e.getCode(), e.getMessage(),
+                            Map.of("code", mrae.getErrorCode()), detail))
+                    .build();
+        }
+        // task-260902：用户模块错误码（api.md B-5）。同上，errorCode 放 data.code。
+        if (e instanceof com.cpq.system.exception.UserApiException uae) {
+            return Response.status(e.getCode())
+                    .entity(ApiResponse.error(e.getCode(), e.getMessage(),
+                            Map.of("code", uae.getErrorCode())))
                     .build();
         }
         if (e instanceof com.cpq.component.exception.ComponentElementBindingRequiredException cebre) {

@@ -1,211 +1,198 @@
 /**
- * AddPartSubDrawer — 选配添加·新增/编辑材质料号 子框（task-0712 F5，D11/D14）。
+ * AddPartSubDrawer — 添加/编辑配件的内层面板（task-260902 · F-3，服务 AC-5 / AC-13 / AC-14）。
  *
- * 1:1 对齐原型 `.sub-panel`：内层局部覆盖面板（非独立 AntD Drawer——fronttask.md F5 §5.2
- * 明确建议"内层局部切换，避免嵌套 Drawer 层级/ESC 冲突"，覆盖宿主 `detail-left` 列，
- * `position:absolute; inset:0`）。三段子步骤：① 材质(带过滤) → ② 元素含量(微调) → ③ 工序(带过滤)。
+ * 1:1 对齐 `原型图/2-配件类型与来源.html` 状态 B（配件类型）/ 状态 C（零件来源），
+ * 之后按选择分流到 `NewPartPanel`(原型3) / `ExistingPartPanel`(原型4) / `OutsourcedPartPanel`(原型5)。
  *
- * 候选来源（api.md §1.4，D6）：材质/工序候选均来自 `effective.params[MATERIAL|PROCESS].effectiveValues`
- * （模板限定，留空=不限时后端已回填全量），不再是全量字典/`/processes`裸端点。
+ * ⚠️ **整体重做**：task-0712 版本是「一行 = 一个材质料号」的两层模型（`SelDetailRow`），
+ *    task-260901 刚把它的子步骤由 3 段并为 2 段。本次改成三层模型
+ *    产品 → **配件（零件 / 外购件）** → 零件挂 1~N 个材质 → 每个材质选含量配置，
+ *    「配件类型」这一中间层是**本次重构新增的**，现状没有这个概念。
  *
- * ⚠️ 已核实的候选值语义 id/code 映射坑（写代码前用只读子代理 + 真实 DB 查证，非猜测）：
- * MATERIAL `effectiveValues[].key` = `material_recipe.code`（非 UUID id），而元素详情端点
- * `GET /material-recipes/{id}` 严格要 UUID——故本组件用 `materialDict`(`materialRecipeService.list()`
- * 全量字典，与候选同源 `material_recipe` 表，code 值域是全量字典的严格子集，可放心反查，
- * 已用子代理核实 `SelParamCandidateService` MATERIAL 分支与 `MaterialRecipeResource.list()` 同表)
- * 建 code→id 索引后再调 `materialRecipeService.detail(id)`。
+ * 📌 **两个正交维度，不是一个**：现状 `PartRequest.partMode` 只有 `existing`/`custom` 两值，
+ *    是一个维度；新流程是 **配件类型（零件/外购件） × 零件来源（新建/已有）**。
+ *    外购件没有「来源」这一问 —— 它只能从料号库选，所以选了外购件直接跳过第 2 步。
  *
- * PROCESS `effectiveValues[].key` = `process_master.process_no`：F5 落地时提交端 `PartRequest.processIds`
- * 曾严格按旧 `process`(V4) 表 UUID 处理，前端一度靠 `/processes` 字典反查 + 禁选孤儿 code（TP10/TP20）做
- * 防御性缝合。**task-0712 缺口1 已在后端根治**（V336 迁移 + `PartRequest.processIds→processNos`）：
- * `quotation_line_process` 现直接落 `process_no`，孤儿 code 也能正常提交。本组件不再需要
- * `process`(V4) 字典/UUID 映射/禁选分支，候选 `key`（= process_no）原样即为提交值。
+ * 🚫 **不用嵌套 Drawer**（`frontend.md §1.1` 要求的是「别用 Modal」，不是「必须每层一个 Drawer」）：
+ *    本面板是覆盖宿主抽屉正文的内层局部面板（`position:absolute; inset:0`），
+ *    沿用 task-0712 的做法，避免嵌套 Drawer 的层级 / ESC 冲突。
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Input, InputNumber, Empty, Alert, Button, message } from 'antd';
-import { SearchOutlined } from '@ant-design/icons';
-import {
-  materialRecipeService,
-  type MaterialRecipeLite,
-  type MaterialRecipeElement,
-} from '../../../services/materialRecipeService';
-import type { EffectiveTemplateDTO, SelDetailRow } from '../../../types/configure';
-import { genUUID } from '../../../utils/uuid';
-import {
-  formatDisplayDecimal,
-  normalizeDecimalString,
-  sumDecimal,
-  type DecimalString,
-} from '../../../utils/precision';
+import React, { useState } from 'react';
+import { Button } from 'antd';
+import type { SelParamCandidate } from '../../../services/selParamCandidateService';
+import type { MaterialRecipeLite } from '../../../services/materialRecipeService';
+import type { ConfigurePart } from '../../../types/configure';
+import NewPartPanel from './NewPartPanel';
+import ExistingPartPanel from './ExistingPartPanel';
+import OutsourcedPartPanel from './OutsourcedPartPanel';
+
+type Stage = 'type' | 'source' | 'new' | 'existing' | 'outsourced';
 
 interface Props {
   open: boolean;
-  effective: EffectiveTemplateDTO;
-  materialDict: MaterialRecipeLite[];
-  /** null = 新增；非空 = 编辑该行 */
-  editingRow: SelDetailRow | null;
-  onConfirm: (row: SelDetailRow) => void;
+  /** null = 新增；非空 = 编辑该配件（直接进对应的表单，不再问类型） */
+  editing: ConfigurePart | null;
+  materials: MaterialRecipeLite[];
+  materialsLoading?: boolean;
+  materialsError?: string | null;
+  processCandidates: SelParamCandidate[];
+  processLoading?: boolean;
+  processError?: string | null;
+  onConfirm: (part: ConfigurePart) => void;
   onCancel: () => void;
-  onMaterialPreview: (recipeCode: string | null, label: string) => void;
 }
 
-type SubStep = 1 | 2 | 3;
-
-const swatchColors = [
-  '#b9c4d1', '#a9b6c8', '#e0c68a', '#e6cf94', '#d5dbe3',
-  '#c7ced9', '#9aa5b1', '#f0b7b7', '#b7e0c9', '#c9b7e0',
-];
-function swatchColor(code: string): string {
-  let h = 0;
-  for (let i = 0; i < code.length; i++) h = (h * 31 + code.charCodeAt(i)) >>> 0;
-  return swatchColors[h % swatchColors.length];
+function initialStage(editing: ConfigurePart | null): Stage {
+  if (!editing) return 'type';
+  if (editing.partType === 'OUTSOURCED') return 'outsourced';
+  return editing.partMode === 'existing' ? 'existing' : 'new';
 }
+
+interface PickCardProps {
+  icon: string;
+  title: string;
+  desc: React.ReactNode;
+  active: boolean;
+  onClick: () => void;
+}
+
+/** 并排选择卡片（原型 `.pick`）。两个选项都常用 ⇒ 并排展示而不是塞进下拉。 */
+const PickCard: React.FC<PickCardProps> = ({ icon, title, desc, active, onClick }) => (
+  <div
+    onClick={onClick}
+    style={{
+      flex: '1 1 260px', display: 'flex', gap: 12, alignItems: 'flex-start', cursor: 'pointer',
+      padding: 16, borderRadius: 8,
+      border: `1px solid ${active ? '#1677ff' : '#e4e7ed'}`,
+      background: active ? '#f0f8ff' : '#fff',
+      boxShadow: active ? '0 0 0 2px rgba(22,119,255,.08)' : undefined,
+    }}
+  >
+    <span style={{ fontSize: 24, lineHeight: 1.2 }}>{icon}</span>
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{title}</div>
+      <div style={{ fontSize: 12, color: '#909399', lineHeight: 1.7 }}>{desc}</div>
+    </div>
+    <span
+      style={{
+        flex: 'none', width: 16, height: 16, borderRadius: '50%', marginTop: 4,
+        border: active ? '5px solid #1677ff' : '1px solid #d9d9d9', background: '#fff',
+      }}
+    />
+  </div>
+);
 
 const AddPartSubDrawer: React.FC<Props> = ({
-  open, effective, materialDict, editingRow, onConfirm, onCancel, onMaterialPreview,
+  open, editing, materials, materialsLoading, materialsError,
+  processCandidates, processLoading, processError, onConfirm, onCancel,
 }) => {
-  const [step, setStep] = useState<SubStep>(1);
-  const [materialCode, setMaterialCode] = useState<string | null>(null);
-  const [materialLabel, setMaterialLabel] = useState('');
-  const [elementDefs, setElementDefs] = useState<MaterialRecipeElement[]>([]);
-  const [elementValues, setElementValues] = useState<Record<string, DecimalString>>({});
-  const [elementLoading, setElementLoading] = useState(false);
-  const [selectedProcesses, setSelectedProcesses] = useState<Array<{ id: string; label: string }>>([]);
-  const [materialFilter, setMaterialFilter] = useState('');
-  const [processFilter, setProcessFilter] = useState('');
-
-  // 打开/切换编辑目标时重置或回填种子状态。
-  useEffect(() => {
-    if (!open) return;
-    if (editingRow) {
-      setMaterialCode(editingRow.recipeCode);
-      setMaterialLabel(editingRow.recipeLabel);
-      setElementValues({ ...editingRow.elementOverrides });
-      setSelectedProcesses(
-        editingRow.processNos.map((no, i) => ({ id: no, label: editingRow.processLabels[i] ?? no })),
-      );
-      onMaterialPreview(editingRow.recipeCode, editingRow.recipeLabel);
-    } else {
-      setMaterialCode(null);
-      setMaterialLabel('');
-      setElementValues({});
-      setSelectedProcesses([]);
-    }
-    setStep(1);
-    setMaterialFilter('');
-    setProcessFilter('');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, editingRow?.rowId]);
-
-  // 材质选定后拉元素详情（code→id 反查 materialDict，见文件头注释坑①）。
-  // requestSeq 防连续切材质时旧请求晚到覆盖新选择（老 Step2Material.tsx 同类调用无此防护，
-  // 属本次顺手加固，非回归）。
-  const elementReqSeq = useRef(0);
-  useEffect(() => {
-    if (!open || !materialCode) { setElementDefs([]); return; }
-    const rec = materialDict.find((m) => m.code === materialCode);
-    if (!rec) { setElementDefs([]); return; }
-    const seq = ++elementReqSeq.current;
-    setElementLoading(true);
-    materialRecipeService.detail(rec.id)
-      .then((d) => {
-        if (elementReqSeq.current !== seq) return; // 已被更新的选择取代，丢弃过期响应
-        setElementDefs(d.elements);
-        setElementValues((prev) => {
-          if (Object.keys(prev).length > 0) return prev; // 已有值(编辑态/已微调过)不覆盖
-          const init: Record<string, DecimalString> = {};
-          d.elements.forEach((e) => { init[e.elementCode] = normalizeDecimalString(e.defaultPct); });
-          return init;
-        });
-      })
-      .catch(() => { if (elementReqSeq.current === seq) setElementDefs([]); })
-      .finally(() => { if (elementReqSeq.current === seq) setElementLoading(false); });
-  }, [open, materialCode, materialDict]);
-
-  const materialCandidates = useMemo(
-    () => effective.params.find((p) => p.paramTypeCode === 'MATERIAL')?.effectiveValues ?? [],
-    [effective],
+  const [stage, setStage] = useState<Stage>(() => initialStage(editing));
+  const [partType, setPartType] = useState<'PART' | 'OUTSOURCED'>(editing?.partType ?? 'PART');
+  const [partSource, setPartSource] = useState<'new' | 'existing'>(
+    editing?.partMode === 'existing' ? 'existing' : 'new',
   );
-  const processCandidates = useMemo(
-    () => effective.params.find((p) => p.paramTypeCode === 'PROCESS')?.effectiveValues ?? [],
-    [effective],
-  );
-  const filteredMaterials = useMemo(() => {
-    const kw = materialFilter.trim().toLowerCase();
-    if (!kw) return materialCandidates;
-    return materialCandidates.filter(
-      (c) => c.label.toLowerCase().includes(kw) || c.key.toLowerCase().includes(kw),
-    );
-  }, [materialCandidates, materialFilter]);
-
-  const filteredProcesses = useMemo(() => {
-    const kw = processFilter.trim().toLowerCase();
-    if (!kw) return processCandidates;
-    return processCandidates.filter(
-      (c) => c.label.toLowerCase().includes(kw) || c.key.toLowerCase().includes(kw),
-    );
-  }, [processCandidates, processFilter]);
-
-  const selectMaterial = (code: string, label: string) => {
-    const changed = code !== materialCode;
-    setMaterialCode(code);
-    setMaterialLabel(label);
-    if (changed) setElementValues({});
-    onMaterialPreview(code, label);
-  };
-
-  const setElem = (code: string, v: DecimalString) => {
-    setElementValues((prev) => ({ ...prev, [code]: v }));
-  };
-
-  const isProcessSelected = (id: string) => selectedProcesses.some((p) => p.id === id);
-  const toggleProcess = (id: string, label: string) => {
-    if (isProcessSelected(id)) setSelectedProcesses((prev) => prev.filter((p) => p.id !== id));
-    else setSelectedProcesses((prev) => [...prev, { id, label }]);
-  };
-  const removeProcess = (id: string) => setSelectedProcesses((prev) => prev.filter((p) => p.id !== id));
-
-  const sumPct = sumDecimal(Object.values(elementValues));
-  const sumPctText = formatDisplayDecimal(sumPct, 2);
-  const sumOk = sumPct.minus('100').abs().lessThan('0.01');
-
-  const goNext = () => {
-    if (step === 1) {
-      if (!materialCode) { message.warning('请先选择材质'); return; }
-      setStep(2);
-      return;
-    }
-    if (step === 2) {
-      setStep(3);
-      return;
-    }
-    confirmAdd();
-  };
-  const goPrev = () => { if (step > 1) setStep((step - 1) as SubStep); };
-  const goStepIfAllowed = (target: SubStep) => {
-    if (target >= 2 && !materialCode) return;
-    setStep(target);
-  };
-
-  const confirmAdd = () => {
-    if (!materialCode) { message.warning('请先选择材质'); return; }
-    if (!sumOk) { message.warning(`元素含量之和 ${sumPctText}%，必须 = 100%`); return; }
-    const row: SelDetailRow = {
-      rowId: editingRow?.rowId ?? genUUID(),
-      recipeCode: materialCode,
-      recipeLabel: materialLabel,
-      elementOverrides: { ...elementValues },
-      processNos: selectedProcesses.map((p) => p.id),
-      processLabels: selectedProcesses.map((p) => p.label),
-      quantity: editingRow?.quantity ?? '1',
-      unitWeightGrams: editingRow?.unitWeightGrams ?? null,
-    };
-    onConfirm(row);
-  };
-
+  /**
+   * 🚨 本组件**没有**「打开时重置」的逻辑，是有意的：宿主用
+   *    `key={`${editingUid ?? '__new__'}#${subSession}`}` 保证**每次打开都重新挂载**，
+   *    上面三个 `useState` 的初始值即是本次会话的正确起点。
+   * 🚫 不要改成「在组件内部靠比较 uid 来重置」—— 连续两次新增时 uid 都是 null，
+   *    比较不出差异，第二次就会停在上一次留下的表单上（真机实测过）。
+   */
   if (!open) return null;
 
-  const stepLabels: Record<SubStep, string> = { 1: '① 材质', 2: '② 元素含量', 3: '③ 工序' };
+  const title = (() => {
+    if (stage === 'type') return '添加配件 · 第 1 步：选择类型';
+    if (stage === 'source') return '添加配件 · 第 2 步：零件来源';
+    if (stage === 'new') return editing ? '编辑配件 · 新建零件' : '添加配件 · 新建零件';
+    if (stage === 'existing') return editing ? '编辑配件 · 已有零件' : '添加配件 · 选择已有零件';
+    return editing ? '编辑配件 · 外购件' : '添加配件 · 选择外购件';
+  })();
+
+  /** 从表单往回退：编辑态直接关闭（没有"上一步"可退），新增态退回类型/来源选择。 */
+  const backFromForm = () => {
+    if (editing) { onCancel(); return; }
+    setStage(partType === 'OUTSOURCED' ? 'type' : 'source');
+  };
+
+  const body = (() => {
+    if (stage === 'type') {
+      return (
+        <div style={{ padding: '16px 20px' }}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <PickCard
+              icon="🔩" title="零件" active={partType === 'PART'} onClick={() => setPartType('PART')}
+              desc={<>本厂加工的零件。可以新建，也可以引用已有零件。<br />零件下面挂 1~N 个材质，每个材质填占比。</>}
+            />
+            <PickCard
+              icon="🛒" title="外购件" active={partType === 'OUTSOURCED'} onClick={() => setPartType('OUTSOURCED')}
+              desc={<>从供应商采购的成品件，不含材质构成。<br />从现有料号库里选，再选它的工序。</>}
+            />
+          </div>
+        </div>
+      );
+    }
+    if (stage === 'source') {
+      return (
+        <div style={{ padding: '16px 20px' }}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <PickCard
+              icon="✨" title="新建零件" active={partSource === 'new'} onClick={() => setPartSource('new')}
+              desc={<>填品名 / 规格 / 尺寸 / 总重，再挂材质。<br />适用于这个客户产品特有的零件。</>}
+            />
+            <PickCard
+              icon="📚" title="已有零件" active={partSource === 'existing'} onClick={() => setPartSource('existing')}
+              desc={<>从产品列表里选一个已存在的零件，只需再选工序。<br />材质构成沿用它自己的，不重新配。</>}
+            />
+          </div>
+        </div>
+      );
+    }
+    if (stage === 'new') {
+      return (
+        <NewPartPanel
+          initial={editing}
+          materials={materials}
+          materialsLoading={materialsLoading}
+          materialsError={materialsError}
+          processCandidates={processCandidates}
+          processLoading={processLoading}
+          processError={processError}
+          onConfirm={onConfirm}
+          onBack={backFromForm}
+          onCancel={onCancel}
+        />
+      );
+    }
+    if (stage === 'existing') {
+      return (
+        <ExistingPartPanel
+          initial={editing}
+          processCandidates={processCandidates}
+          processLoading={processLoading}
+          processError={processError}
+          onConfirm={onConfirm}
+          onBack={backFromForm}
+          onCancel={onCancel}
+          onSwitchToNew={() => { setPartSource('new'); setStage('new'); }}
+        />
+      );
+    }
+    return (
+      <OutsourcedPartPanel
+        initial={editing}
+        processCandidates={processCandidates}
+        processLoading={processLoading}
+        processError={processError}
+        onConfirm={onConfirm}
+        onBack={backFromForm}
+        onCancel={onCancel}
+        onSwitchToPart={() => { setPartType('PART'); setPartSource('new'); setStage('new'); }}
+      />
+    );
+  })();
+
+  /** 只有前两个选择步骤需要本组件自己出 footer；三个表单各自带 footer。 */
+  const showOwnFooter = stage === 'type' || stage === 'source';
 
   return (
     <div
@@ -215,175 +202,33 @@ const AddPartSubDrawer: React.FC<Props> = ({
       }}
     >
       <div style={{ padding: '14px 20px 12px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-        <span style={{ fontSize: 14, fontWeight: 600 }}>{editingRow ? '编辑材质料号' : '新增材质料号'}</span>
+        <span style={{ fontSize: 14, fontWeight: 600 }}>{title}</span>
         <span style={{ cursor: 'pointer', color: '#909399', fontSize: 18, lineHeight: 1 }} onClick={onCancel}>✕</span>
       </div>
 
-      <div style={{ display: 'flex', padding: '12px 20px 0', flexShrink: 0 }}>
-        {([1, 2, 3] as SubStep[]).map((s) => (
-          <div
-            key={s}
-            onClick={() => goStepIfAllowed(s)}
-            style={{
-              flex: 1, textAlign: 'center', paddingBottom: 10,
-              borderBottom: `2px solid ${s === step ? '#1890ff' : '#f0f0f0'}`,
-              color: s === step ? '#1890ff' : s < step ? '#606266' : '#909399',
-              fontSize: 12.5, fontWeight: s === step ? 600 : 400,
-              cursor: materialCode || s === 1 ? 'pointer' : 'not-allowed',
+      <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+        {body}
+      </div>
+
+      {showOwnFooter && (
+        <div style={{ padding: '12px 20px', borderTop: '1px solid #f0f0f0', display: 'flex', gap: 8, justifyContent: 'flex-end', flexShrink: 0 }}>
+          <Button onClick={onCancel}>取消</Button>
+          {stage === 'source' ? <Button onClick={() => setStage('type')}>上一步</Button> : null}
+          <Button
+            type="primary"
+            onClick={() => {
+              if (stage === 'type') {
+                // 外购件没有「来源」这一问 —— 直接进料号选择
+                setStage(partType === 'OUTSOURCED' ? 'outsourced' : 'source');
+              } else {
+                setStage(partSource === 'existing' ? 'existing' : 'new');
+              }
             }}
           >
-            {stepLabels[s]}
-          </div>
-        ))}
-      </div>
-
-      <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px' }}>
-        {step === 1 && (
-          <>
-            <Input
-              prefix={<SearchOutlined />}
-              placeholder="搜索材质名称 / 代号，如「不锈钢」「H62」…"
-              value={materialFilter}
-              onChange={(e) => setMaterialFilter(e.target.value)}
-              style={{ marginBottom: 14 }}
-              allowClear
-            />
-            {materialCandidates.length === 0 ? (
-              <Empty description="该模板未启用材质参数，请联系管理员配置" />
-            ) : filteredMaterials.length === 0 ? (
-              <Empty description="未找到匹配的材质，请调整搜索词" />
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-                {filteredMaterials.map((c) => {
-                  const sel = c.key === materialCode;
-                  return (
-                    <div
-                      key={c.key}
-                      onClick={() => selectMaterial(c.key, c.label)}
-                      style={{
-                        border: `1.5px solid ${sel ? '#1890ff' : '#e4e7ed'}`,
-                        background: sel ? '#e6f7ff' : '#fff',
-                        borderRadius: 8, padding: '12px 8px', textAlign: 'center', cursor: 'pointer',
-                      }}
-                    >
-                      <div style={{ width: '100%', height: 34, borderRadius: 6, marginBottom: 6, background: swatchColor(c.key) }} />
-                      <div style={{ fontSize: 12.5, fontWeight: 500, color: '#303133' }}>{c.label}</div>
-                      <div style={{ fontSize: 11, color: '#909399', marginTop: 1 }}>{c.key}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </>
-        )}
-
-        {step === 2 && (
-          <>
-            <div style={{ fontSize: 12.5, color: '#909399', marginBottom: 14 }}>
-              以下为所选材质 <b>{materialLabel || materialCode}</b> 派生的元素含量，允许在合理范围内微调
-            </div>
-            {elementLoading ? (
-              <div style={{ textAlign: 'center', padding: '24px 0', color: '#c0c4cc' }}>加载中…</div>
-            ) : elementDefs.length === 0 && Object.keys(elementValues).length === 0 ? (
-              <Empty description="该材质无元素配比数据" />
-            ) : (
-              <>
-                {(elementDefs.length > 0 ? elementDefs : Object.keys(elementValues).map((code) => ({ elementCode: code, elementName: code } as MaterialRecipeElement))).map((e) => (
-                  <div key={e.elementCode} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid #f5f5f5' }}>
-                    <div style={{ width: 110, flexShrink: 0, fontSize: 13, color: '#303133' }}>
-                      <span style={{ display: 'inline-block', width: 22, height: 22, lineHeight: '22px', textAlign: 'center', background: '#f0f5ff', color: '#1890ff', borderRadius: 4, fontWeight: 600, marginRight: 6, fontSize: 11.5 }}>
-                        {e.elementCode}
-                      </span>
-                      {e.elementName || e.elementCode}
-                    </div>
-                    <InputNumber<string>
-                      stringMode
-                      value={elementValues[e.elementCode] ?? (e as MaterialRecipeElement).defaultPct ?? '0'}
-                      step={0.1}
-                      addonAfter="%"
-                      onChange={(v) => setElem(e.elementCode, normalizeDecimalString(v ?? '0'))}
-                    />
-                  </div>
-                ))}
-                <Alert
-                  style={{ marginTop: 12 }}
-                  type={sumOk ? 'success' : 'warning'}
-                  showIcon
-                  message={sumOk ? `含量之和 ${sumPctText}%，配比正确` : `含量之和 ${sumPctText}%，必须调整至 100%`}
-                />
-              </>
-            )}
-          </>
-        )}
-
-        {step === 3 && (
-          <>
-            <div style={{ fontSize: 12.5, color: '#909399', marginBottom: 14 }}>多选工序，按选中顺序记录加工顺序</div>
-            <Input
-              prefix={<SearchOutlined />}
-              placeholder="搜索工序名称，如「车」「电镀」…"
-              value={processFilter}
-              onChange={(e) => setProcessFilter(e.target.value)}
-              style={{ marginBottom: 14 }}
-              allowClear
-            />
-            {processCandidates.length === 0 ? (
-              <Empty description="该模板未启用工序参数，可跳过此步" />
-            ) : filteredProcesses.length === 0 ? (
-              <Empty description="未找到匹配的工序，请调整搜索词" />
-            ) : (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-                {filteredProcesses.map((c) => {
-                  const checked = isProcessSelected(c.key);
-                  return (
-                    <label
-                      key={c.key}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
-                        border: '1px solid #e4e7ed', borderRadius: 16, fontSize: 12.5, cursor: 'pointer',
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => toggleProcess(c.key, c.label)}
-                      />
-                      <span>{c.label}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-            <div style={{ marginTop: 10 }}>
-              {selectedProcesses.length === 0 ? (
-                <div style={{ color: '#c0c4cc', fontSize: 12 }}>尚未选择工序</div>
-              ) : (
-                <>
-                  <div style={{ fontSize: 12, color: '#909399', marginBottom: 4 }}>已选顺序：</div>
-                  {selectedProcesses.map((p, i) => (
-                    <span
-                      key={p.id}
-                      style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 5, background: '#f0f5ff', color: '#1890ff',
-                        padding: '4px 10px', borderRadius: 12, fontSize: 12, margin: '4px 6px 0 0',
-                      }}
-                    >
-                      {i + 1}. {p.label}
-                      <b style={{ cursor: 'pointer', fontWeight: 400, color: '#909399' }} onClick={() => removeProcess(p.id)} title="移除">✕</b>
-                    </span>
-                  ))}
-                </>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-
-      <div style={{ padding: '12px 20px', borderTop: '1px solid #f0f0f0', display: 'flex', gap: 8, justifyContent: 'flex-end', flexShrink: 0 }}>
-        <Button onClick={onCancel}>取消</Button>
-        <Button onClick={goPrev} disabled={step === 1}>上一步</Button>
-        <Button type="primary" onClick={goNext}>{step === 3 ? '确认添加' : '下一步'}</Button>
-      </div>
+            下一步
+          </Button>
+        </div>
+      )}
     </div>
   );
 };

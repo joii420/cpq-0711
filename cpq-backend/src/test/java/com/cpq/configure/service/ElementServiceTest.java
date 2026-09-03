@@ -45,11 +45,22 @@ public class ElementServiceTest {
             .setParameter("id", recipeId)
             .setParameter("c", "TMAT-" + recipeId.toString().substring(0, 8))
             .executeUpdate();
+        // task-260901：元素行归属已由「材质」下沉到「含量配置」——先建配置，元素行挂 config_id。
+        // 🚫 不再写 recipe_id：实体已不映射该列，V401 批准后它会被删掉；继续写旧形态等于埋
+        //    「config_id IS NULL 的孤儿行」，会顶掉 V400 迁移断言与 B-3 的 DROP 前置条件。
+        UUID configId = UUID.randomUUID();
+        em.createNativeQuery(
+            "INSERT INTO material_recipe_config (id, recipe_id, config_no, seq, status, sort_order) " +
+            "VALUES (:cid, :r, :cno, 1, 'ACTIVE', 1)")
+            .setParameter("cid", configId)
+            .setParameter("r", recipeId)
+            .setParameter("cno", "TMAT-" + recipeId.toString().substring(0, 8) + "-01")
+            .executeUpdate();
         em.createNativeQuery(
             "INSERT INTO material_recipe_element " +
-            "(id, recipe_id, element_no, element_code, element_name, default_pct, is_locked, sort_order, created_at) " +
-            "VALUES (gen_random_uuid(), :r, :no, :code, 'x', 100, true, 1, NOW())")
-            .setParameter("r", recipeId).setParameter("no", elementNo).setParameter("code", elementCode)
+            "(id, config_id, element_no, element_code, element_name, default_pct, is_locked, sort_order, created_at) " +
+            "VALUES (gen_random_uuid(), :cfg, :no, :code, 'x', 100, true, 1, NOW())")
+            .setParameter("cfg", configId).setParameter("no", elementNo).setParameter("code", elementCode)
             .executeUpdate();
     }
 

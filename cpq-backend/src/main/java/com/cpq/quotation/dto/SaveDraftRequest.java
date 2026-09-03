@@ -43,10 +43,42 @@ public class SaveDraftRequest {
      */
     public UUID categoryId;
 
-    // Line items
+    /**
+     * task-260901 B-3：前端最近一次从服务端拿到的 {@code quotation.user_data_version}（乐观并发基线）。
+     * 与库中现值不等 → 409 {@code STALE_VERSION}（见 {@code api.md §1.4}）。
+     * 走新三数组协议时必填；旧 {@code lineItems} 兼容模式下可空（不做版本校验）。
+     */
+    public Integer baseVersion;
+
+    // ── task-260901 B-2 增量协议：三数组取代全量 lineItems ────────────────────────────────────
+    /** 新增行。每个元素的 {@code id} 必须为 null（非 null → 400）；用 {@code tempId} 认领回传的新 id。 */
+    public List<LineItemDraft> added;
+    /** 修改行。每个元素的 {@code id} 必须非 null 且属于本单（否则 400）。 */
+    public List<LineItemDraft> modified;
+    /** 删除行的 id 列表。🚨 删除语义已从「payload 里没出现 = 删」改为「只删这里列出的」。 */
+    public List<UUID> removed;
+
+    /**
+     * ⚠️ <b>旧全量协议，保留一个版本周期做回滚兜底</b>（task-260901 B-2a）。非 null 时按旧语义处理
+     * （payload 未出现的行 = 用户删了）并打 WARN。不能与 {@code added/modified/removed} 同时出现。
+     */
     public List<LineItemDraft> lineItems;
 
     public static class LineItemDraft {
+        /**
+         * task-260901 B-4c：前端为「尚未持久化的行」生成的稳定 key。后端<b>原样回传</b>，前端据此
+         * 认领 DB 生成的新 id。🔒 不按数组下标配对——增量协议下下标已无语义（AC-17）。
+         */
+        public String tempId;
+        /**
+         * task-260901 B-2f：组合产品父子关系（取代 {@code tempParentIndex} 的下标耦合）。
+         * 父行也在本次 {@code added} 里时，填父行的 {@code tempId}。与 {@code parentLineItemId} 互斥。
+         */
+        public String tempParentKey;
+        /**
+         * task-260901 B-2f：父行已持久化时直接给它的 DB id。与 {@code tempParentKey} 互斥。
+         */
+        public UUID parentLineItemId;
         /**
          * 2026-06-01: 已存在行的 line_item id。前端回传后, saveDraft 按 id 复用同一行(就地 UPDATE, 不换 UUID),
          * 消除"全删全建换新 id"造成的 editQuoteCardValue 撞已删 id(400)+ driver 缓存 churn。
@@ -83,9 +115,9 @@ public class SaveDraftRequest {
         /** V169 选配组合产品关系标识 SIMPLE / COMPOSITE / PART (saveDraft 全量重建时必须透传保留) */
         public String compositeType;
         /**
-         * 父级在前端 lineItems list 中的索引 (PART 子件用).
-         * saveDraft 全量重建时旧 parent_line_item_id 已被 CASCADE 删除 → 不能直接传旧 UUID,
-         * 改传索引让后端按 newIds[tempParentIndex] 二阶段 UPDATE.
+         * ⚠️ <b>已废弃（task-260901 B-2f）</b>：父级在前端 lineItems list 中的索引 (PART 子件用)。
+         * 只在旧 {@code lineItems} 全量协议下仍被解释；新三数组协议下 payload 下标已无全局语义，
+         * 一律改用 {@code tempParentKey} / {@code parentLineItemId}。
          */
         public Integer tempParentIndex;
         /**

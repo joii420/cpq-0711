@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>保存冲突提示 · task-260901</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; padding:32px; background:#f5f5f5; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif; color:rgba(0,0,0,.88); }
+  h1 { font-size:20px; font-weight:600; margin:0 0 4px; }
+  .sub { color:rgba(0,0,0,.45); font-size:13px; margin-bottom:28px; }
+  .case { margin-bottom:36px; }
+  .case-title { font-size:14px; font-weight:600; margin-bottom:4px; }
+  .case-note { font-size:12px; color:rgba(0,0,0,.45); margin-bottom:12px; line-height:1.7; }
+  .stage { background:#fff; border:1px solid #f0f0f0; border-radius:8px; padding:40px 20px; display:flex; justify-content:center; }
+  /* antd Modal 视觉语汇 */
+  .modal { width:416px; background:#fff; border-radius:8px; box-shadow:0 6px 16px rgba(0,0,0,.08),0 3px 6px -4px rgba(0,0,0,.12),0 9px 28px 8px rgba(0,0,0,.05); padding:20px 24px; }
+  .modal-body { display:flex; gap:16px; }
+  .icon { flex:none; font-size:22px; line-height:1; color:#faad14; margin-top:2px; }
+  .icon.err { color:#ff4d4f; }
+  .modal-title { font-size:16px; font-weight:600; line-height:1.5; margin-bottom:8px; }
+  .modal-text { font-size:14px; line-height:1.6; color:rgba(0,0,0,.88); }
+  .modal-text .dim { color:rgba(0,0,0,.45); font-size:13px; display:block; margin-top:8px; }
+  .modal-footer { margin-top:24px; text-align:right; }
+  .btn { display:inline-block; height:32px; line-height:30px; padding:0 16px; border-radius:6px; font-size:14px; cursor:pointer; border:1px solid transparent; }
+  .btn-primary { background:#1677ff; color:#fff; }
+  .anno { margin-top:12px; font-size:12px; color:#d4380d; background:#fff2e8; border:1px solid #ffbb96; border-radius:4px; padding:8px 12px; line-height:1.7; }
+  .anno b { color:#ad2102; }
+  code { background:#f5f5f5; padding:1px 5px; border-radius:3px; font-size:12px; font-family:ui-monospace,Menlo,Consolas,monospace; }
+</style>
+</head>
+<body>
+
+<h1>保存冲突提示</h1>
+<div class="sub">task-260901 · 服务 AC-12 · 2026-09-01 用户裁决「强制刷新」</div>
+
+<div class="case">
+  <div class="case-title">状态 1 · 默认态（唯一交付形态）</div>
+  <div class="case-note">
+    触发：<code>PUT /draft</code> 返回 409 且 <code>reason === 'STALE_VERSION'</code>。<br>
+    点「刷新页面」→ <code>window.location.reload()</code>。
+  </div>
+  <div class="stage">
+    <div class="modal">
+      <div class="modal-body">
+        <div class="icon err">⊗</div>
+        <div>
+          <div class="modal-title">保存失败</div>
+          <div class="modal-text">
+            这张报价单已被他人修改，你页面上的数据已过期。
+            <span class="dim">刷新后请重新编辑。当前未保存的修改将丢失。</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <span class="btn btn-primary">刷新页面</span>
+      </div>
+    </div>
+  </div>
+  <div class="anno">
+    <b>🚫 只允许一个按钮。</b>不得添加「强制覆盖」「忽略」「稍后再说」或右上角关闭 ×（<code>closable=false</code>、<code>maskClosable=false</code>）。<br>
+    理由：给「强制覆盖」等于把 <code>QuotationLineItem</code> 类注释里那个 4/4 复现的静默数据丢失重新放回来 —— 用户会覆盖掉对方改的年用量、折扣，且没有任何提示。
+  </div>
+  <div class="anno" style="background:#e6f4ff;border-color:#91caff;color:#0958d9">
+    <b>关于 §1.1「弹层一律用 Drawer」：本弹层走例外条款。</b><br>
+    <code>frontend.md</code> §1.1 的例外原文是「轻量即时反馈类组件（<code>message</code> / <code>notification</code> / <b>简单二次确认</b>）不属于弹窗功能范畴」。
+    本弹层是**阻断式单按钮告知**（一句话 + 一个动作，无表单、无多步、无内容浏览），属该例外，用 antd <code>Modal.error</code> 而非 Drawer。<br>
+    判据：若将来它演化成「列出冲突行让用户逐行选」（本期已明确不做，见需求文档 §②），那就变成了内容浏览 + 决策界面，<b>届时必须改用 Drawer</b>。
+  </div>
+</div>
+
+<div class="case">
+  <div class="case-title">状态 2 · 最长文案（布局不得撑破）</div>
+  <div class="case-note">正文文案为固定串，不含变量；此状态验证 416px 宽度下的换行表现。</div>
+  <div class="stage">
+    <div class="modal">
+      <div class="modal-body">
+        <div class="icon err">⊗</div>
+        <div>
+          <div class="modal-title">保存失败</div>
+          <div class="modal-text">
+            这张报价单已被他人修改，你页面上的数据已过期。
+            <span class="dim">刷新后请重新编辑。当前未保存的修改将丢失。</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <span class="btn btn-primary">刷新页面</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="case">
+  <div class="case-title">状态 3 · 不触发本弹层的两种 409（对照，避免误用同一个弹层）</div>
+  <div class="case-note">
+    <code>reason=RECONCILE_PENDING</code> → 走既有 <code>ReconcilePendingDrawer</code>；
+    <code>reason=WRITE_IN_FLIGHT</code> → 走既有「正在保存，请稍候…」提示 + 自动重试一次。<br>
+    <b>三者行为不同，判据是 <code>reason</code> 字段，必须在既有通用 conflicts 判据之前拦截。</b>
+  </div>
+  <div class="stage">
+    <div class="modal" style="opacity:.5">
+      <div class="modal-body">
+        <div class="icon">⚠</div>
+        <div>
+          <div class="modal-title">（既有行为，本任务不改）</div>
+          <div class="modal-text">RECONCILE_PENDING / WRITE_IN_FLIGHT 保持现状</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

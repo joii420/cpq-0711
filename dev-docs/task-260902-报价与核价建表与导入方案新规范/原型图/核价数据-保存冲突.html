@@ -1,0 +1,46 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>基础核价 · 保存冲突（乐观锁 409）</title><link rel="stylesheet" href="antd-like.css"></head><body>
+<div class="page"><div class="card"><div class="card-head">主数据维护 · 基础核价</div><div class="card-body"><p class="muted">（背景页）</p></div></div></div>
+<div class="mask"></div>
+<div class="drawer" style="width:1180px">
+  <div class="drawer-head"><div><span class="drawer-title">基础核价 · <b>3120014539</b></span>
+    <span class="muted" style="margin-left:12px">主料1</span></div><button class="close">✕</button></div>
+  <div class="drawer-body"><div class="lt">
+    <div class="lt-nav">
+      <div class="lt-item active">物料BOM <span class="badge on">v3 · 7</span></div>
+      <div class="lt-item">物料与元素BOM <span class="badge on">v1 · 4</span></div>
+      <div class="lt-item">来料加工费 <span class="badge on">v2 · 3</span></div>
+      <div class="lt-item muted">…</div>
+    </div>
+    <div class="lt-body">
+      <div class="alert alert-err"><span>⚠️</span><div>
+        <b>数据已被他人更新至 v4，请刷新后重试</b><br>
+        <span class="muted">你正在编辑的是 v3。本次提交<b>未写入</b>，库中数据保持 v4 不变。</span>
+        <div style="margin-top:8px"><button class="btn btn-sm btn-primary">↻ 刷新到 v4</button>
+          <span class="muted" style="margin-left:8px">刷新会丢弃本地未保存的改动，会再次确认</span></div>
+      </div></div>
+      <div class="toolbar">
+        <div class="row"><span class="muted">版本</span>
+          <select class="select" style="width:190px"><option>v3（你的编辑基线）</option></select>
+          <span class="tag tag-red">已过期</span></div>
+        <div class="toolbar-right"><button class="btn">＋ 新增行</button><button class="btn btn-primary">💾 保 存</button></div>
+      </div>
+      <div class="table-wrap"><table class="compact">
+        <thead><tr><th style="width:70px">项次</th><th style="width:170px">组成料号 🔗</th><th style="width:130px">组成料号名称</th>
+          <th style="width:110px">组成用量 🔗</th><th style="width:100px">单位 🔗</th><th style="width:56px"></th></tr></thead>
+        <tbody>
+          <tr style="background:#fff2f0"><td><input class="input input-sm" value="10"></td>
+            <td><input class="input input-sm" value="S-2120011658"></td><td class="muted">半成品A</td>
+            <td><input class="input input-sm" value="3"></td><td><input class="input input-sm" value="PCS"></td>
+            <td><button class="btn btn-sm btn-text">🗑</button></td></tr>
+          <tr><td><input class="input input-sm" value="20"></td>
+            <td><input class="input input-sm" value="S-2120033401"></td><td class="muted">外购件-弹簧</td>
+            <td><input class="input input-sm" value="2"></td><td><input class="input input-sm" value="PCS"></td>
+            <td><button class="btn btn-sm btn-text">🗑</button></td></tr>
+        </tbody>
+      </table></div>
+      <p class="muted" style="margin-top:12px">保存请求带 <code>baseVersion: 3</code>，后端在<b>同一事务内</b>读到当前版本为 4 ⇒ 返回 <code>409</code>。
+        本地未保存的改动（浅红行）<b>保留在表格里</b>，不被清空。</p>
+    </div>
+  </div></div>
+</div></body></html>

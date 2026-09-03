@@ -1,0 +1,23 @@
+############ T-11 (AC-11) 启动期校验 + 端点存活 ############
+--- 实例身份 (验明正身, 非探到别人的实例) ---
+2026-08-30 18:31:23.099 INFO  [org.fly.cor.FlywayExecutor] (Quarkus Main Thread) Database: jdbc:postgresql://10.177.152.12:5432/cpq_db?sslmode=disable (PostgreSQL 16.13)
+2026-08-30 18:31:31.334 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (Quarkus Main Thread) [QuoteViewValidationService] 校验通过 total=170 ok=170（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-08-30 18:31:31.408 INFO  [io.quarkus] (Quarkus Main Thread) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 17.960s. Listening on: http://localhost:8123
+2026-08-30 18:31:31.409 INFO  [io.quarkus] (Quarkus Main Thread) Profile test activated. Live Coding activated.
+
+--- Flyway V397 success ---
+ version | success |  checksum  
+---------+---------+------------
+ 397     | t       | -526805303
+(1 row)
+
+--- 业务端点应返回 401 (未装 health, 401=应用在跑且鉴权正常) ---
+GET /api/cpq/components -> 401
+GET /q/health (应为 404, 不是探针) -> 404
+
+--- 阳性对照: 校验非空 (total=170 >0), 且测试库里引用该函数的 ACTIVE 视图数 ---
+ views_referencing_fmep 
+------------------------
+                     24
+(1 row)
+

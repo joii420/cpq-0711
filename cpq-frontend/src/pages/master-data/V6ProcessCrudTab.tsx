@@ -10,13 +10,18 @@ import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import {
   Input, Button, Space, Select, Tooltip, Tag, Typography, Drawer, Form, Switch, InputNumber, message,
 } from 'antd';
-import { ReloadOutlined, PlusOutlined, EditOutlined, DeleteOutlined, ImportOutlined } from '@ant-design/icons';
+import {
+  ReloadOutlined, PlusOutlined, EditOutlined, DeleteOutlined, ImportOutlined, DownloadOutlined,
+} from '@ant-design/icons';
 import type { ColumnsType, TableProps } from 'antd/es/table';
 import type { SortOrder } from 'antd/es/table/interface';
 import SelectableTable, { runBatch } from '../../components/SelectableTable';
 import {
-  listProcesses, listProcessCategories, createProcess, updateProcess, deleteProcess,
+  listProcesses, listProcessCategories, createProcess, updateProcess, deleteProcess, exportProcesses,
 } from '../../services/v6MasterDataService';
+import { useAuthStore } from '../../stores/authStore';
+import { EXPORT_EMPTY_TOOLTIP } from '../../utils/exportDownload';
+import { apiErrorMessage } from '../../utils/apiError';
 import type { ProcessMasterDTO, ProcessMasterUpsert, ProcessSortBy } from '../../services/v6MasterDataService';
 import V6ProcessDetailDrawer from './V6ProcessDetailDrawer';
 import ProcessMasterImportDrawer from './ProcessMasterImportDrawer';
@@ -87,6 +92,9 @@ const V6ProcessCrudTab: React.FC = () => {
   // 批量导入抽屉（childtask-1 · F1）
   const [importOpen, setImportOpen] = useState(false);
 
+  // 导出（task-260902 · F-2）
+  const [exporting, setExporting] = useState(false);
+
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (debounceTimer.current) clearTimeout(debounceTimer.current); }, []);
 
@@ -141,6 +149,29 @@ const V6ProcessCrudTab: React.FC = () => {
   };
 
   const handleRefresh = () => { void fetchData(); };
+
+  /**
+   * task-260902 · F-2「导出工序」（AC-9 / AC-11 / AC-23）。
+   *
+   * 三个参数取页面**当前生效**的筛选值，且**不传 page/size** —— 导出的是筛选结果全量，
+   * 不是当前页的 20 条。
+   * ⚠️ `keyword` 用的是 `keyword` state 而不是 `inputValue`：本页 `inputValue` 才是输入框草稿，
+   * `keyword` 是防抖后真正发给后端的那个（与 `fetchData` 同源），两者在打字窗口内不同。
+   */
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      await exportProcesses({
+        keyword: keyword || undefined,
+        isOutsource: isOutsourceParam,
+        processCategory: categoryFilter || undefined,
+      });
+    } catch (e: unknown) {
+      message.error(apiErrorMessage(e, '导出失败，请稍后重试'));
+    } finally {
+      setExporting(false);
+    }
+  };
 
   /**
    * 排序变化（三态：升序 → 降序 → 取消）。
@@ -297,6 +328,11 @@ const V6ProcessCrudTab: React.FC = () => {
 
   const noCategory = categories.length === 0;
 
+  /** AC-9：非 `SYSTEM_ADMIN` 时「导出工序」整个按钮不渲染（规则与材质页签逐字相同） */
+  const isSystemAdmin = useAuthStore((s) => s.user?.role === 'SYSTEM_ADMIN');
+  /** AC-23：筛选结果 0 条 → 禁用 + tooltip；本页是服务端分页，权威条数是 total 不是 data.length */
+  const exportDisabled = !loading && total === 0;
+
   // ⚠️ SelectableTable 内部 toolbar 容器已是 space-between 的 flex，这里直接给它两个并列子节点，
   //    不要再包一层 div，否则右组会被挤到左边。
   const toolbar = (
@@ -342,6 +378,19 @@ const V6ProcessCrudTab: React.FC = () => {
       </Space>
       <Space wrap>
         <Button icon={<ReloadOutlined />} onClick={handleRefresh}>刷新</Button>
+        {/* 右组顺序（原型图 2 状态 A）：刷新 → 导出工序 → 导入工序 → 新增工序 */}
+        {isSystemAdmin && (
+          <Tooltip title={exportDisabled ? EXPORT_EMPTY_TOOLTIP : ''}>
+            <Button
+              icon={<DownloadOutlined />}
+              loading={exporting}
+              disabled={exportDisabled}
+              onClick={handleExport}
+            >
+              导出工序
+            </Button>
+          </Tooltip>
+        )}
         <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>导入工序</Button>
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增工序</Button>
       </Space>

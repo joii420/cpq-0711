@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>步骤2b · 已有零件与工序 — 选配流程重构（task-260902）</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+<a class="navback" href="index.html">← 返回原型导航</a>
+<h1>步骤 2b · 已有零件 → 从产品列表选 → 选工序</h1>
+<p class="sub">这条路<b>不重新配材质</b>——零件的材质构成沿用它自己的，只需要选这次用哪些工序。对应现状的 <code>partMode=existing</code>。</p>
+
+<!-- ===== 状态 A ===== -->
+<div class="card">
+  <h2>状态 A · 默认（搜索 + 选中一行）<span class="state ok">有数据</span></h2>
+  <div class="drawer">
+    <div class="drawer-hd">
+      <div class="t">添加配件 · 选择已有零件</div>
+      <div class="muted small">CP-NEW-001 · 配件 2</div>
+    </div>
+    <div class="drawer-bd">
+      <div class="toolbar">
+        <div class="inp" style="max-width:280px">静触头</div>
+        <button class="btn">搜索</button>
+        <div class="spacer"></div>
+        <span class="muted small">共 3 条</span>
+      </div>
+
+      <div class="tblwrap">
+        <table>
+          <thead><tr>
+            <th style="width:36px"></th>
+            <th style="width:26%">销售料号</th>
+            <th>品名</th>
+            <th style="width:16%">规格</th>
+            <th style="width:14%" class="num">单重</th>
+            <th style="width:20%">材质构成</th>
+          </tr></thead>
+          <tbody>
+            <tr class="sel">
+              <td><span style="display:inline-block;width:16px;height:16px;border-radius:50%;border:5px solid #1677ff;vertical-align:-3px"></span></td>
+              <td class="mono">HF-SZXM-2506-0018</td>
+              <td>静触头支架</td>
+              <td>φ10×2</td>
+              <td class="num">8 g</td>
+              <td><span class="tag">AgSnO₂ 100%</span></td>
+            </tr>
+            <tr>
+              <td><span style="display:inline-block;width:16px;height:16px;border-radius:50%;border:1px solid #d9d9d9;vertical-align:-3px;background:#fff"></span></td>
+              <td class="mono">HF-SZXM-2504-0007</td>
+              <td>静触头底座</td>
+              <td>φ14×3</td>
+              <td class="num">12 g</td>
+              <td><span class="tag">AgZnO12/Cu 100%</span></td>
+            </tr>
+            <tr>
+              <td><span style="display:inline-block;width:16px;height:16px;border-radius:50%;border:1px solid #d9d9d9;vertical-align:-3px;background:#fff"></span></td>
+              <td class="mono">HF-SZXM-2601-0044</td>
+              <td>静触头复合镶块</td>
+              <td>12×8×3</td>
+              <td class="num">10 g</td>
+              <td><span class="tag">AgNi10 70%</span> <span class="tag">AgZnO12/Cu 30%</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 style="font-size:14px;font-weight:600;margin:24px 0 4px">这次用哪些工序 <span class="tag blue">2 道</span></h3>
+      <p class="hint" style="margin-bottom:12px">与材质、零件工序<b>同一套交互</b>：选择器选中 → 加入有序列表。</p>
+      <div class="tblwrap">
+        <table>
+          <thead><tr><th style="width:8%" class="num">#</th><th style="width:16%">工序编号</th><th>工序名</th>
+            <th style="width:14%">分类</th><th style="width:12%">加工方式</th><th style="width:22%"></th></tr></thead>
+          <tbody>
+            <tr><td class="num muted">1</td><td class="mono">Z100</td><td>焊接</td><td class="small muted">装配</td>
+              <td><span class="tag grey">自制</span></td>
+              <td style="text-align:right;white-space:nowrap">
+                <span class="dis"><span class="tip">已是第一道</span><button class="btn link sm" disabled>↑</button></span>
+                <button class="btn link sm">↓</button><button class="btn link danger sm">移除</button></td></tr>
+            <tr><td class="num muted">2</td><td class="mono">TP20</td><td>测试工序20</td><td class="small muted">—</td>
+              <td><span class="tag grey">自制</span></td>
+              <td style="text-align:right;white-space:nowrap">
+                <button class="btn link sm">↑</button>
+                <span class="dis"><span class="tip">已是最后一道</span><button class="btn link sm" disabled>↓</button></span>
+                <button class="btn link danger sm">移除</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:12px"><button class="btn">+ 添加工序</button></div>
+
+      <div class="note">
+        <b>末行「静触头复合镶块」是多材质零件</b>（AgNi10 70% + AgZnO12/Cu 30%）——本次重构之后才会出现这种数据。
+        列表的「材质构成」列要能显示 N 个材质标签，不能只显示第一个。
+      </div>
+    </div>
+    <div class="drawer-ft">
+      <button class="btn">上一步</button>
+      <button class="btn primary">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 状态 B ===== -->
+<div class="card">
+  <h2>状态 B · 搜索无结果（空态）<span class="state warn">空态</span></h2>
+  <div class="drawer">
+    <div class="drawer-hd"><div class="t">添加配件 · 选择已有零件</div></div>
+    <div class="drawer-bd">
+      <div class="toolbar">
+        <div class="inp" style="max-width:280px">法兰盘</div>
+        <button class="btn">搜索</button>
+        <div class="spacer"></div>
+        <span class="muted small">共 0 条</span>
+      </div>
+      <div class="empty">
+        <span class="ico">🔍</span>
+        <div class="txt">没有找到匹配「法兰盘」的零件</div>
+        <div class="small muted" style="margin-top:6px">换个关键词，或改用「新建零件」</div>
+        <div class="act"><button class="btn">← 改为新建零件</button></div>
+      </div>
+    </div>
+    <div class="drawer-ft">
+      <button class="btn">上一步</button>
+      <div class="dis"><span class="tip">请先选择一个零件</span><button class="btn primary">确定</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 状态 C ===== -->
+<div class="card">
+  <h2>状态 C · 未选零件就想确定（禁用 + 原因）<span class="state warn">禁用态</span></h2>
+  <div style="display:flex;gap:12px;align-items:center;padding:16px;background:#fff;border-radius:8px;border:1px solid #f0f0f0">
+    <span class="muted small">列表里一行都没选中时：</span>
+    <div class="dis"><span class="tip">请先选择一个零件</span><button class="btn primary">确定</button></div>
+  </div>
+</div>
+
+<div class="note">
+  <b>本页对应 AC：</b><span class="ac">AC-11</span> 序列 AC 的回填环节（已有零件 + 工序保存后刷新须回填）。<br>
+  <b>与现状的关系：</b>这条路径最接近现状（<code>existing</code> + <code>processNos</code>），改动最小；主要变化是它现在从属于「配件类型=零件」这一层之下。
+</div>
+</div>
+</body>
+</html>

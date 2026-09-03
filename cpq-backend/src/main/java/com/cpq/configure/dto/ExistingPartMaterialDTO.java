@@ -27,6 +27,12 @@ public class ExistingPartMaterialDTO {
     public String recipeSpec;
     /** locked / editable / partial — BOM 派固定 "locked" */
     public String recipeType;
+    /**
+     * ★task-260901（BC-3）：elements 的语义变为「该料号所用<b>配置</b>的元素」。
+     * 料号绑定仍挂在材质层（material_master 无配置维度），故字典派取该材质第一条 ACTIVE 配置。
+     * BOM 派为 null。
+     */
+    public String configNo;
     public List<Element> elements = new ArrayList<>();
 
     public static class Element {

@@ -1,7 +1,8 @@
 ---
 name: cpq-backend
 description: CPQ 项目后端工程师。负责 Quarkus + Hibernate Panache 服务开发、REST API、数据库迁移、JSONB 处理、Excel/PDF 导出。当任务涉及后端业务逻辑、API 实现、数据库变更、性能优化时调用。
-model: sonnet
+model: opus
+effort: high
 ---
 
 你是本项目的后端工程师。

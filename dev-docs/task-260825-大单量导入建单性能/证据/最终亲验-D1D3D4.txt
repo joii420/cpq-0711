@@ -1,0 +1,28 @@
+# 最终亲验（B-15 更正版 · D-1+D-3+D-4 全量）2026-08-25 20:5x
+环境：worktree 代码 × 临时端口 8099 × 库 cpq_db_0724 × 真实 1845 行
+
+## AC-1
+HTTP=200  总墙钟=123.113501 s
+{"code":200,"message":"success","data":{"quotationId":"1ed36b62-cb35-4f88-82e8-9456e496544d","importRecordId":"f1bb5b7d-065c-4c0c-98ae-f40ac04ea40e","hfPairsCount":1845,"lineItemsCount":1845,"cardValuesReady":true,"costingTreeRows":1845,"warnings":[]}}
+ARJUNA012117/016102/TransactionReaper 出现次数：0
+「后置物化失败」ERROR 出现次数：0
+
+## AC-2（改动前 1845/1845/1845）
+报价空 0 / 核价空 0 / 总行数 1845
+
+## AC-9 四步耗时
+2026-08-25 22:46:01.137 INFO  [com.cpq.bas.v6.ser.CreateQuotationMaterializer] (executor-thread-1) [create-quotation-timing] quotation=1ed36b62-cb35-4f88-82e8-9456e496544d ①snapshotQuotation=18078ms ②ensureStructure=228ms ③ensureCardValues=92376ms ④ensureExcelValues=7952ms 总计=118634ms
+
+## AC-11 分批耗时（判据：单批 ≤20000ms）
+ quotation=1ed36b62-cb35-4f88-82e8-9456e496544d batch=1/7 rows=300 elapsed=9530ms chunkSize=300
+ quotation=1ed36b62-cb35-4f88-82e8-9456e496544d batch=2/7 rows=300 elapsed=10957ms chunkSize=300
+ quotation=1ed36b62-cb35-4f88-82e8-9456e496544d batch=3/7 rows=300 elapsed=15691ms chunkSize=300
+ quotation=1ed36b62-cb35-4f88-82e8-9456e496544d batch=4/7 rows=300 elapsed=15338ms chunkSize=300
+ quotation=1ed36b62-cb35-4f88-82e8-9456e496544d batch=5/7 rows=300 elapsed=15328ms chunkSize=300
+ quotation=1ed36b62-cb35-4f88-82e8-9456e496544d batch=6/7 rows=300 elapsed=14546ms chunkSize=300
+ quotation=1ed36b62-cb35-4f88-82e8-9456e496544d batch=7/7 rows=45 elapsed=6326ms chunkSize=300
+
+单批最长 15691ms ≤ 20000ms ✅（余量 74%；对比 D-4 前的单事务 58679ms / 余量 2%）
+
+## ⚠️ 需注意：③ 总耗时由 58679ms 升至 92376ms（+57%）
+拆批换来了余量，代价是总时长变长。详见汇报说明。

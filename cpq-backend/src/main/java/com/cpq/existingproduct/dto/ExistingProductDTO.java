@@ -19,8 +19,27 @@ public class ExistingProductDTO {
     /** 销售料号（= material_customer_map.material_no）。 */
     public String materialNo;
 
-    /** 客户产品编号。占位行（选配发号副作用）此列为 NULL，已在服务层过滤排除（F005）。 */
+    /**
+     * 客户产品编号 —— <b>代表编号</b>（一料号多编号时取 created_at 最早的那个）。
+     * 占位行（选配发号副作用）此列为 NULL，已在服务层过滤排除（F005）。
+     *
+     * <p>🚫 <b>保留单值语义、不要改名/改类型</b>：前端与既有用例都在读它。
+     * 要拿全部编号请用 {@link #customerProductNos}。
+     */
     public String customerProductNo;
+
+    /**
+     * task-260902 · AC-12b⑤-b：该 {@code (customer_no, material_no)} 名下的<b>全部</b>客户产品编号，
+     * 按 {@code created_at} 升序；来源 = {@code sel_product_no} ∪ {@code material_customer_map}。
+     *
+     * <p>🚨 <b>为什么必须有它</b>：AC-12b④ 要求列表里该产品<b>只出现一次</b>（防 AP-22 重复渲染），
+     * 于是行按销售料号去重、{@link #customerProductNo} 只能显示一个代表编号。
+     * 但「一料号多编号」正是 AC-12b 的核心场景 —— 用第二个编号的销售不带过滤打开列表，
+     * 看到的是别人的编号，会<b>认不出这是自己的产品</b>。
+     * 那就是本任务要修的「选配产品在产品库里找不回」的另一面：从<b>找不到</b>变成<b>认不出</b>。
+     * ⇒ 去重保留，编号全给（用户裁决 2026-09-03）。
+     */
+    public java.util.List<String> customerProductNos = new java.util.ArrayList<>();
 
     /** 品名（= customer_material_name）。 */
     public String productName;

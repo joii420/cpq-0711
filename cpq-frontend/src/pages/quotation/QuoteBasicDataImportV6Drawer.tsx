@@ -9,6 +9,7 @@ import {
   Progress,
   Select,
   Space,
+  Spin,
   Steps,
   Table,
   Tag,
@@ -16,10 +17,11 @@ import {
   Upload,
 } from 'antd';
 import type { UploadFile, UploadProps } from 'antd/es/upload/interface';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import api from '../../services/api';
 import { customerService } from '../../services/customerService';
+import { quotationService } from '../../services/quotationService';
 import {
   basicDataImportV6Service,
   type ImportProgress,
@@ -76,6 +78,17 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
   // 自动带出每次打开抽屉只跑一次:返回上一步再进 Step 2 时不重新覆盖用户手改的模板/分类
   const [autoFilled, setAutoFilled] = useState(false);
 
+  // task-260825 D-5 + F-10/F-11：建单改「发起 → 轮询只读状态 → 完成」三段式（AC-13/AC-14）。
+  const [materializing, setMaterializing] = useState(false);
+  const [materializeElapsedMs, setMaterializeElapsedMs] = useState(0);
+  // F-11 放宽：只读端点带真实 ready/total，可显示「已完成 N / M」，不再是无进度的纯等待
+  const [materializeStatus, setMaterializeStatus] = useState<{ ready: number; total: number } | null>(null);
+  const [materializeError, setMaterializeError] = useState<string | null>(null);
+  const [pendingQuotation, setPendingQuotation] = useState<{ quotationId: string; importRecordId?: string; hfPairsCount?: number } | null>(null);
+  // 用户在轮询期间关闭抽屉（AC-14③ 允许）：置位后轮询完成不再自动 onClose()/navigate，避免"已关闭却被跳走"的意外体验；
+  // 后台计算本身不受影响（ensureCardValues 是服务端异步任务，前端只是不再等它）。
+  const pollAbortRef = useRef(false);
+
   useEffect(() => {
     if (!open) return;
     setStep(1);
@@ -88,6 +101,12 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
     setFormValid(false);
     setAutoHints({});
     setAutoFilled(false);
+    setMaterializing(false);
+    setMaterializeElapsedMs(0);
+    setMaterializeStatus(null);
+    setMaterializeError(null);
+    setPendingQuotation(null);
+    pollAbortRef.current = false;
     setCustomersLoading(true);
     customerService
       .list({ page: 0, size: 200 })
@@ -197,12 +216,52 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
     }
   };
 
+  /**
+   * F-10/F-11 轮询段：POST create-quotation 已返回（建单+建行完成），进「正在计算」态并轮询
+   * **只读**状态端点 `materialize-status` 直到 done=true，再进编辑页。
+   * 🚫 不再把 `ensure-card-values` 当主循环——那是 2026-08-26 亲验抓到的竞态根因（丢过 345 行，见
+   * backtask.md B-22）；`ensure-card-values` 现在只在只读端点判定「后台死了」时由
+   * `quotationService.pollMaterializeStatus` 内部节流触发一次自愈调用。
+   */
+  const runMaterializePoll = async (quotationId: string, importRecordId?: string, hfPairsCount?: number) => {
+    setMaterializing(true);
+    setMaterializeError(null);
+    setMaterializeElapsedMs(0);
+    setMaterializeStatus(null);
+    const startedAt = Date.now();
+    try {
+      await quotationService.pollMaterializeStatus(quotationId, {
+        intervalMs: 1500,
+        onTick: (status) => {
+          setMaterializeElapsedMs(Date.now() - startedAt);
+          setMaterializeStatus({ ready: status.ready, total: status.total });
+        },
+      });
+      if (pollAbortRef.current) return; // 用户已中途关闭抽屉，不再自动跳转（AC-14③）
+      setMaterializing(false);
+      message.success(`报价单已创建（涉及 ${hfPairsCount ?? 0} 个料号），正在跳转…`);
+      onClose();
+      const qs = new URLSearchParams({ autoPopulate: '1' });
+      if (importRecordId) qs.set('importRecordId', importRecordId);
+      navigate(`/quotations/${quotationId}/edit?${qs.toString()}`);
+    } catch (e: any) {
+      if (pollAbortRef.current) return;
+      setMaterializing(false);
+      // AC-14①：非续轮信号的错误（含 20 分钟兜底超时）一律显式提示 + 停止轮询，不许无限转圈
+      setMaterializeError(
+        e?.isPollTimeout ? (e.message as string) : (e?.message || '卡片值计算失败，请重试'),
+      );
+    }
+  };
+
   const handleCommit = async () => {
     if (!result?.importRecordId) return message.warning('请先完成 Step 1 导入');
     if (!customerId) return message.warning('客户信息丢失');
     if (!formValid) return message.warning('请填写报价单名称 + 选择客户报价模板');
     setCommitting(true);
+    setMaterializeError(null);
     try {
+      // 建单 POST：D-5 之后只做建单 + 建行，目标 <5s 内返回，不再等物化（api.md「契约变更」）。
       const resp: any = await api.post('/basic-data-import/v6/quote/create-quotation', {
         importRecordId: result.importRecordId,
         customerId,
@@ -212,16 +271,27 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
         costingTemplateId: createForm.costingTemplateId,
       });
       const data: CommitResultDTO = resp.data?.data ?? resp.data;
-      message.success(`报价单已创建（涉及 ${data.hfPairsCount} 个料号），正在跳转…`);
-      onClose();
-      const qs = new URLSearchParams({ autoPopulate: '1' });
-      if (data.importRecordId) qs.set('importRecordId', data.importRecordId);
-      navigate(`/quotations/${data.quotationId}/edit?${qs.toString()}`);
+      pollAbortRef.current = false;
+      setPendingQuotation({ quotationId: data.quotationId, importRecordId: data.importRecordId, hfPairsCount: data.hfPairsCount });
+      await runMaterializePoll(data.quotationId, data.importRecordId, data.hfPairsCount);
     } catch (e: any) {
       message.error(e?.message ?? '建报价单失败');
     } finally {
       setCommitting(false);
     }
+  };
+
+  /** 重试：quotationId 已创建，不重新 POST create-quotation，直接重新进入只读状态轮询（内含 F-11 自愈）。 */
+  const handleRetryMaterialize = () => {
+    if (!pendingQuotation) return;
+    pollAbortRef.current = false;
+    runMaterializePoll(pendingQuotation.quotationId, pendingQuotation.importRecordId, pendingQuotation.hfPairsCount);
+  };
+
+  /** 抽屉关闭统一入口：轮询在飞时置位 pollAbortRef，防止关闭后轮询完成又把用户"跳走"。 */
+  const handleDrawerClose = () => {
+    if (materializing) pollAbortRef.current = true;
+    onClose();
   };
 
   const statusTag = useMemo(() => {
@@ -255,12 +325,12 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
       width={1000}
       placement="right"
       open={open}
-      onClose={onClose}
+      onClose={handleDrawerClose}
       destroyOnClose
       footer={
         step === 1 ? (
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <Button onClick={onClose}>取消</Button>
+            <Button onClick={handleDrawerClose}>取消</Button>
             <Button
               type="primary"
               icon={<ArrowRightOutlined />}
@@ -273,16 +343,17 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
           </div>
         ) : (
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <Button onClick={() => setStep(1)}>上一步</Button>
+            <Button onClick={() => setStep(1)} disabled={committing || materializing}>上一步</Button>
             <Space>
-              <Button onClick={onClose}>取消</Button>
+              {/* AC-14③：轮询/失败态期间仍允许关闭抽屉，后台任务不受影响，只是前端不再等它 */}
+              <Button onClick={handleDrawerClose}>取消</Button>
               <Button
                 type="primary"
-                loading={committing}
-                disabled={!formValid}
+                loading={committing || materializing}
+                disabled={!formValid || materializing}
                 onClick={handleCommit}
               >
-                {committing ? '创建中…' : '创建报价单'}
+                {materializing ? '正在计算卡片值…' : committing ? '创建中…' : '创建报价单'}
               </Button>
             </Space>
           </div>
@@ -414,6 +485,50 @@ export default function QuoteBasicDataImportV6Drawer({ open, onClose, defaultCus
             customerTemplateHint={autoHints.customer}
             costingTemplateHint={autoHints.costing}
           />
+
+          {/* F-10/F-11：建单已完成，后台正在物化卡片值；只读状态端点带真实 ready/total，显示真实进度 */}
+          {materializing && (
+            <Alert
+              type="info"
+              showIcon
+              icon={<Spin size="small" />}
+              message="正在计算卡片值…"
+              description={
+                <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                  {materializeStatus && materializeStatus.total > 0 && (
+                    <Progress
+                      percent={Math.floor((materializeStatus.ready / materializeStatus.total) * 100)}
+                      status="active"
+                      format={() => `${materializeStatus.ready} / ${materializeStatus.total}`}
+                    />
+                  )}
+                  <Text type="secondary">
+                    报价单已创建，后台正在整单物化卡片值，请勿重复提交
+                    {materializeElapsedMs > 0 ? `（已等待 ${Math.round(materializeElapsedMs / 1000)} 秒）` : ''}。
+                  </Text>
+                  <Text type="secondary">完成后会自动跳转编辑页；也可先关闭本抽屉，稍后在报价单列表中查看该单。</Text>
+                </Space>
+              }
+            />
+          )}
+
+          {/* D-5 · F-8：轮询拿到非 409 错误或超过兜底时长 → 显式提示 + 停止轮询，不无限转圈 */}
+          {materializeError && (
+            <Alert
+              type="error"
+              showIcon
+              message="卡片值计算未完成"
+              description={
+                <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                  <Text>{materializeError}</Text>
+                  <Space>
+                    <Button size="small" onClick={handleRetryMaterialize}>重新计算</Button>
+                    <Button size="small" onClick={handleDrawerClose}>先关闭，稍后查看</Button>
+                  </Space>
+                </Space>
+              }
+            />
+          )}
         </Space>
       )}
     </Drawer>

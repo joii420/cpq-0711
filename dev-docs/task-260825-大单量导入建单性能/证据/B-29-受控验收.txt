@@ -1,0 +1,64 @@
+B-29 受控验收（主线亲验，2026-08-28）
+quotation = b72d2def-37ff-42c6-8137-3c09a5f5f70d   1845 行   库 = cpq_db_0724   后端 = worktree @ 8099（含 B-29-1~7）
+
+【装置】独立连接持有 sort_order ∈ [900,1200) 共 300 行的行锁 300 秒
+  （B-28 那轮用 130s 不够——③ 就要跑 ~75s，④ 会在锁释放后才开始，撞不上。本轮加长到 300s）
+  先证明干预生效：pg_locks ⋈ pg_stat_activity → pid=2244732 持有 1 个锁 ✅ 才继续
+
+【③ ensureCardValues】
+[ensure-cardvalues-batch] batch=1/7 rows=300 elapsed=11333ms chunkSize=300
+[ensure-cardvalues-batch] batch=2/7 rows=300 elapsed=11198ms chunkSize=300
+[ensure-cardvalues-batch] batch=3/7 rows=300 elapsed=10437ms chunkSize=300
+[ensure-cardvalues-batch-failed] batch=4/7 rows=300 idxRange=[900,1200) elapsed=14611ms chunkSize=300 原因=could not execute statemen
+[ensure-cardvalues-batch] batch=5/7 rows=300 elapsed=11140ms chunkSize=300
+[ensure-cardvalues-batch] batch=6/7 rows=300 elapsed=10753ms chunkSize=300
+[ensure-cardvalues-batch] batch=7/7 rows=45 elapsed=3167ms chunkSize=300
+[ensure-cardvalues] 补算 1845 行（分 7 批，chunk=300，总耗时=72645ms，失败 1 批/300 行）
+  ↓ 下面这两行属于【释放锁后的自愈那一次调用】，不是物化那一轮（按时序排在一起，勿混读）
+[ensure-cardvalues-batch] batch=1/1 rows=300 elapsed=14231ms chunkSize=300
+[ensure-cardvalues] 补算 300 行（分 1 批，chunk=300，总耗时=14232ms，失败 0 批/0 行）
+
+【④ ensureExcelValues —— B-29 的核心】
+[ensure-excel-values-batch] batch=3/7 rows=300 elapsed=5140ms chunkSize=300
+[ensure-excel-values-batch] batch=4/7 rows=300 elapsed=5366ms chunkSize=300
+[ensure-excel-values-batch] batch=5/7 rows=300 elapsed=5006ms chunkSize=300
+[ensure-excel-values-batch] batch=6/7 rows=300 elapsed=4914ms chunkSize=300
+[ensure-excel-values-batch] batch=7/7 rows=45 elapsed=780ms chunkSize=300
+[lazy-excel] ensureExcelValues 补算 1845 行（分 7 批，chunk=300，总耗时=41862ms，失败 2 批/600 行）
+[ensure-excel-values-batch] batch=1/2 rows=300 elapsed=5417ms chunkSize=300
+[ensure-excel-values-batch] batch=2/2 rows=300 elapsed=5121ms chunkSize=300
+[lazy-excel] ensureExcelValues 补算 600 行（分 2 批，chunk=300，总耗时=10540ms，失败 0 批/0 行）
+[0,300) elapsed=10472ms chunkSize=300 原因=Error invoking subclass method: io.quarkus.arc.ArcUndeclaredThrowableExcept
+[300,600) elapsed=10180ms chunkSize=300 原因=Error invoking subclass method: io.quarkus.arc.ArcUndeclaredThrowableExce
+
+  失败批根因（不是猜的，取自 Caused by 链）：
+    Caused by: org.postgresql.util.PSQLException: ERROR: canceling statement due to lock timeout
+    → SET LOCAL lock_timeout='10s' 精确生效（失败批 10472ms / 10180ms，成功批仅 ~5s）
+    → 日志首行的 ArcUndeclaredThrowableException 只是 CDI 包装层，不是根因
+
+【四步计时】
+[create-quotation-timing] ①snapshotQuotation=470ms ②ensureStructure=304ms ③ensureCardValues=74185ms ④ensureExcelValues=41945ms 总计=116904ms
+
+【物化结束时（锁仍持有）】
+  报价卡片值=1545 (=1845-300)   报价Excel=1245 (=1845-600)
+  🔑 关键判据：④ 不再是 0/1845 整步回滚，而是「被堵批之外全部完成」
+
+【释放锁后自愈】各调一次端点：
+  POST /quotations/{id}/ensure-card-values   → HTTP 200  18.13s
+  POST /quotations/{id}/ensure-excel-values  → HTTP 200  13.55s
+  终局：总行数=1845  报价卡片值=1845  核价卡片值=1845  报价Excel=1845  核价Excel=1845  哨兵=0
+
+【判据逐条核对】
+  1. 被堵批快速失败、日志含批号+行区间          ✅ ③ batch=4/7 [900,1200) / ④ batch=1,2/7 [0,300)[300,600)
+  2. 其余批照常完成（非 0/1845 整步回滚）        ✅ ③ 1545 / ④ 1245
+  3. ④ 链路 ARJUNA012117 不再出现                ✅ 0 次（对比修复前：1 次 + 整步回滚 0/1845）
+  4. 后置物化失败                                 ✅ 0 次
+  5. 释放锁后自愈补齐、哨兵 0                     ✅ 1845/1845 四列全满、哨兵 0
+
+【⚠️ 本次实验顺带抓到的新缺陷 → 已立 B-30，未修完不合并】
+  同样只锁 300 行：③ 只连带 300 行，④ 却连带 600 行（失败 2 批）。
+  根因：两处「挑待补算行」的 SELECT id 都【没有 ORDER BY】(CardSnapshotService :1064 / :1313)，
+        行序由 PG 物理堆顺序决定。③ 跑时物理序≈插入序≈sort_order，被锁 300 行整齐落一批；
+        但 ③ 刚 UPDATE 过这些行 → 堆位置变动 → ④ 再查时物理序已变 → 被锁行散落到两批。
+  性质：非正确性 bug（IS NULL 谓词保证重跑必补齐，本轮已实测自愈到 1845/1845），
+        但批边界不确定 → 连带损失不可预测、故障难复现、测试无法稳定复现批边界。

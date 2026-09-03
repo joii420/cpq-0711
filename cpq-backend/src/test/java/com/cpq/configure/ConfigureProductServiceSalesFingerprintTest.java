@@ -109,9 +109,20 @@ class ConfigureProductServiceSalesFingerprintTest {
         return new ElementOverride(code, new BigDecimal(pct));
     }
 
+    /**
+     * task-260902 · B-12：组合工艺 defCode 夹具。
+     * 🚨 原写死 {@code MRO-AS-0001} —— MRO-* 那 26 条是 V4 带的通用示例，
+     * 本库（cpq_db_0724）从未灌入 ⇒ 用例在本库必失败（组合工艺未找到）。
+     * 用户已确认工序是业务自维护的开放主数据，🚫 不写迁移补种子 ⇒ 改用现存 Z100 焊接。
+     */
+    String assemblyProcessNo() { return "Z100"; }
+
+    /** task-260902 · B-2：customerProductNo 必填；统一走 T260902- 前缀（收尾污染核对按此扫）。 */
+    String testProductNo() { return "T260902-SFP-" + UUID.randomUUID().toString().substring(0, 8); }
+
     PartRequest makeCustomPart(String recipeCode, List<ElementOverride> elems, BigDecimal weight) {
         PartRequest p = new PartRequest();
-        p.partMode = "custom";
+        p.partMode = "new";   // task-260902：值域改名 custom → new（后端两个都接受）
         p.recipeCode = recipeCode;
         p.elements = elems;
         p.processNos = List.of();
@@ -122,6 +133,7 @@ class ConfigureProductServiceSalesFingerprintTest {
 
     ConfigureProductRequest simpleCustomReq(String recipeCode, List<ElementOverride> elems, BigDecimal weight) {
         ConfigureProductRequest req = new ConfigureProductRequest();
+        req.customerProductNo = testProductNo();   // task-260902 · B-2：必填
         req.productType = "SIMPLE";
         req.parts = List.of(makeCustomPart(recipeCode, elems, weight));
         return req;
@@ -195,7 +207,8 @@ class ConfigureProductServiceSalesFingerprintTest {
     // ── R3: 同客户复用不重复落库 ─────────────────────────────────────────────
 
     /**
-     * 同一客户对同一 recipe+elements 选配两次（第二次 unitWeightGrams 不同，不参与指纹）：
+     * 同一客户对同一 recipe+elements+总重 选配两次
+     * （🔄 task-260902 · AC-8：总重已进指纹，第二次必须同重量才算「同配置」）：
      * <ul>
      *   <li>第二次命中复用，返回与第一次相同的 quotePartNo；</li>
      *   <li>material_master / element_bom_item 该料号行数第二次前后不变（幂等，守 AP-51，
@@ -218,9 +231,13 @@ class ConfigureProductServiceSalesFingerprintTest {
         long bomCountAfterFirst = countElementBomByNo(pn1);
         assertEquals(1, mpCountAfterFirst);
 
-        // 同客户同配置再次选配（weight 不同，不参与指纹）
+        // 🔄 task-260902 · AC-8：**零件总重进指纹了**（v2 新增 WEIGHT= token）——
+        //    本用例验的是「同配置复用同一料号」，故第二次必须给**同一个总重**；
+        //    原用例特意给了不同重量并注「weight 不参与指纹」，那是 v1 语义，
+        //    在 v2 下它验的会变成 AC-8（重量不同必铸新号），与用例名不符。
+        // 同客户同配置 + 同总重再次选配
         ConfigureProductRequest req2 = simpleCustomReq("AgNi90", List.of(
-            elem("Ag", "92.5"), elem("Ni", "7.5")), new BigDecimal("55.0"));
+            elem("Ag", "92.5"), elem("Ni", "7.5")), new BigDecimal("10.0"));
         ConfigureProductResponse resp2 = service.configure(q, req2, operatorId());
         String pn2 = (String) resp2.lineItems.get(0).get("productPartNo");
 

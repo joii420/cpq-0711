@@ -126,6 +126,33 @@
 🚫 **禁止形容词 AC**：「正确显示」「性能良好」「体验流畅」「符合预期」。
 **写不出可观测断言的条目不是 AC，是愿望** —— 打回需求文档重写。
 
+### 🚨 AC 里引用的「事实」必须实查，不许凭记忆写（2026-09-03 task-260902 教训晋升）
+
+AC 的可观测断言里经常要引用**客观事实**：DB 列长、枚举取值、约束（NOT NULL / UNIQUE）、默认值、现网数据分布。
+**这些一律要在写 AC 时当场查出来**，🚫 不许按印象写一个"看着差不多"的数字。
+
+| 反例（真实发生） | 后果 |
+|---|---|
+| AC 写「用户名填 **65** 个字符（超 DB 列长）→ 应跳过」 | 实测 `username` 是 `varchar(100)`，**65 根本不超长** ⇒ 用例照字面写，得到「应跳过却创建成功」的**假红**，工程师要反过来怀疑实现 |
+| AC 的跳过原因表**没有一条邮箱规则** | 实测 `email` 是 `NOT NULL + UNIQUE`，不拦就是 INSERT 撞约束 ⇒ **整批 500**，而同一份 AC 里另有一条明写「不许抛 500」，**AC 自相矛盾** |
+| 基准查询写 `WHERE status='ACTIVE'`，而契约写「不传即全状态」 | 两个数字永远对不上，验收时分不清是功能坏了还是 AC 错了 |
+
+**怎么做**（成本极低，一条 SQL 的事）：
+
+```sql
+-- 列长 / 可空 / 类型
+SELECT column_name, data_type, character_maximum_length, is_nullable
+  FROM information_schema.columns WHERE table_name='<表>';
+-- 唯一约束 / 主键
+SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint
+ WHERE conrelid='"<表>"'::regclass AND contype IN ('u','p');
+-- 现网取值分布（判断某条 AC 会不会因为"现网没这种数据"而空跑）
+SELECT <列>, count(*) FROM <表> GROUP BY 1 ORDER BY 2 DESC;
+```
+
+⚠️ **最后一条同样重要**：某维度现网若只有单一取值（实测 `recipe_type` 259 条**全是 `locked`**、`process_master` 全是非外协），
+那么「筛该维度后断言集合相等」的 AC **会筛出空集、断言空跑、用例照样绿** —— 这类 AC 必须配套要求用例**自造前缀化数据**，否则是又一个假绿。
+
 **AC 集合必须覆盖三类，缺类即视为需求文档未完成**：
 
 1. **单点 AC** —— 单次操作的正确性

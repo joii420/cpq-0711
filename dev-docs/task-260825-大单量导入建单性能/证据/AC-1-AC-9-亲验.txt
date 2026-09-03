@@ -1,0 +1,14 @@
+# AC-1 / AC-9 亲验证据（2026-08-25 20:01）
+环境: worktree 代码跑临时端口 8099 → 库 cpq_db_0724（真实数据，1845 行）
+
+## AC-1 ① ARJUNA / TransactionReaper 出现次数
+0  （同窗口日志确在写，非 grep 空）
+
+## AC-1 ②③ 接口返回
+{"code":200,"message":"success","data":{"quotationId":"1ed36b62-cb35-4f88-82e8-9456e496544d","importRecordId":"f1bb5b7d-065c-4c0c-98ae-f40ac04ea40e","hfPairsCount":1845,"lineItemsCount":1845,"cardValuesReady":true,"costingTreeRows":1845,"warnings":[]}}
+HTTP=200  总墙钟=92.517610 s
+
+## AC-9 四步耗时（B-10 埋点原始输出）
+2026-08-25 20:00:51.051 INFO  [com.cpq.bas.v6.ser.CreateQuotationMaterializer] (executor-thread-1) [create-quotation-timing] quotation=1ed36b62-cb35-4f88-82e8-9456e496544d ①snapshotQuotation=16758ms ②ensureStructure=290ms ③ensureCardValues=58679ms ④ensureExcelValues=10931ms 总计=86658ms
+
+## 🚨 关键：③ 距 Narayana 60s 硬上限仅剩 1.3s（余量 2%）

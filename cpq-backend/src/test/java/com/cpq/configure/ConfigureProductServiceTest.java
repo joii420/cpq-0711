@@ -132,9 +132,20 @@ class ConfigureProductServiceTest {
         return new ElementOverride(code, new BigDecimal(pct));
     }
 
+    /**
+     * task-260902 · B-12：组合工艺 defCode 夹具。
+     * 🚨 原写死 {@code MRO-AS-0001} —— MRO-* 那 26 条是 V4 带的通用示例，
+     * 本库（cpq_db_0724）从未灌入 ⇒ 用例在本库必失败（组合工艺未找到）。
+     * 用户已确认工序是业务自维护的开放主数据，🚫 不写迁移补种子 ⇒ 改用现存 Z100 焊接。
+     */
+    String assemblyProcessNo() { return "Z100"; }
+
+    /** task-260902 · B-2：customerProductNo 必填；统一走 T260902- 前缀（收尾污染核对按此扫）。 */
+    String testProductNo() { return "T260902-CPS-" + UUID.randomUUID().toString().substring(0, 8); }
+
     PartRequest makeCustomPart(String recipeCode, List<ElementOverride> elems, BigDecimal weight) {
         PartRequest p = new PartRequest();
-        p.partMode = "custom";
+        p.partMode = "new";   // task-260902：值域改名 custom → new（后端两个都接受）
         p.recipeCode = recipeCode;
         p.elements = elems;
         p.processNos = List.of();
@@ -147,6 +158,7 @@ class ConfigureProductServiceTest {
                                              List<ElementOverride> elems,
                                              BigDecimal weight) {
         ConfigureProductRequest req = new ConfigureProductRequest();
+        req.customerProductNo = testProductNo();   // task-260902 · B-2：必填
         req.productType = "SIMPLE";
         req.parts = List.of(makeCustomPart(recipeCode, elems, weight));
         return req;
@@ -241,6 +253,7 @@ class ConfigureProductServiceTest {
         String knownPn = seedExistingMatPart(); // 向 material_master 插入已知料号
 
         ConfigureProductRequest req = new ConfigureProductRequest();
+        req.customerProductNo = testProductNo();   // task-260902 · B-2：必填
         req.productType = "SIMPLE";
         PartRequest pr = new PartRequest();
         pr.partMode = "existing";
@@ -295,8 +308,10 @@ class ConfigureProductServiceTest {
     // ── case 3: custom 命中复用 ───────────────────────────────────────────────
 
     /**
-     * case 3: 同一事务内先建，再以完全相同的元素配置再次请求 → 命中指纹复用，
-     * countConfiguredMatPart 不再增加；unitWeightGrams 不参与指纹。
+     * case 3: 同一事务内先建，再以完全相同的元素配置 + 相同总重再次请求 → 命中指纹复用，
+     * countConfiguredMatPart 不再增加。
+     * <p>🔄 task-260902 · AC-8：{@code unitWeightGrams} <b>已进指纹</b>（v2 的 WEIGHT= token），
+     * 原注释「不参与指纹」是 v1 语义，已作废。
      * V6 单写后：指纹复用读 material_master.config_fingerprint，复用时不新增 material_master 行。
      */
     @Test
@@ -309,10 +324,14 @@ class ConfigureProductServiceTest {
 
         long before = countConfiguredMatPart();
 
-        // 第 2 次: 同配置，weight 不同
+        // 🔄 task-260902 · AC-8：**零件总重进指纹了**（v2 新增 WEIGHT= token）——
+        //    本用例验的是「同配置复用同一料号」，故第二次必须给**同一个总重**；
+        //    原用例特意给了不同重量并注「weight 不参与指纹」，那是 v1 语义，
+        //    在 v2 下它验的会变成 AC-8（重量不同必铸新号），与用例名不符。
+        // 第 2 次: 同配置 + 同总重
         ConfigureProductRequest req2 = simpleCustomReq("AgNi90", List.of(
             elem("Ag", "92.1"), elem("Ni", "7.9")
-        ), new BigDecimal("99.0"));
+        ), new BigDecimal("10.0"));
         ConfigureProductResponse r2 = service.configure(quotationId, req2, operatorId());
 
         assertEquals(before, countConfiguredMatPart(),
@@ -336,34 +355,60 @@ class ConfigureProductServiceTest {
     void custom_sumNot100_throws() {
         UUID quotationId = seedQuotationId();
 
+        // task-260902 · B-10：总重成了必填（PART_WEIGHT_REQUIRED），本用例验的是**元素含量 Σ 校验**，
+        // 与总重无关 ⇒ 给一个合法总重，免得被前置校验抢先拦下、验的就不是它要验的东西了。
         ConfigureProductRequest req = simpleCustomReq("AgNi90", List.of(
             elem("Ag", "80.0"), elem("Ni", "10.0")  // sum = 90, not 100
-        ), null);
+        ), new BigDecimal("10.0"));
 
-        assertThrows(IllegalArgumentException.class,
+        // task-260901（B-17）：Σ 校验的异常类型由 IllegalArgumentException 换成带错误码的
+        // MaterialRecipeApiException（api.md §2.4 CUSTOM_CONTENT_SUM_NOT_ONE，仍是 400）。
+        // 断言意图不变：Σ≠1 必须被拦。
+        com.cpq.configure.exception.MaterialRecipeApiException ex = assertThrows(
+            com.cpq.configure.exception.MaterialRecipeApiException.class,
             () -> service.configure(quotationId, req, operatorId()),
-            "元素含量和 = 90 应抛 IllegalArgumentException");
+            "元素含量和 = 90 应被拦下");
+        assertEquals("CUSTOM_CONTENT_SUM_NOT_ONE", ex.getErrorCode());
+        assertEquals(400, ex.getCode());
+        assertTrue(ex.getMessage().contains("含量合计必须为 1"), "实际=" + ex.getMessage());
     }
 
-    // ── case 5: locked 元素被改 → IllegalArgumentException ───────────────────
+    // ── case 5: 自定义含量的准入由「材质级开关」裁决（task-260901 · M-5 推翻旧的元素级锁）──
 
     /**
-     * case 5: AgCu85 的 Ag is_locked=true, default_pct=85.0。
-     * 传 Ag=90.0 (≠ 85) → validateCustomPart 抛 "元素已锁定，不可修改"。
-     * Cu=10 使 sum=100，让含量和校验通过，仅锁定校验触发。
+     * case 5（<b>task-260901 改写</b>）：原断言是「改 locked 元素 → 抛 元素已锁定,不可修改」。
+     *
+     * <p>M-5 明确把这条规则<b>上移一层</b>：{@code allow_custom_content} 优先于元素级
+     * {@code is_locked} —— 开关为 false 时<b>直接拒绝任何自定义含量，根本不进元素级判断</b>；
+     * 开关为 true 时 {@code is_locked} 不再单独生效。
+     * 所以这里验的是新规则：关着开关 ⇒ 403 {@code CUSTOM_CONTENT_NOT_ALLOWED}，
+     * 且报错<b>不再是</b>「元素已锁定」（那正是「不进元素级判断」的可观测证据）。
      */
     @Test
     @TestTransaction
-    void custom_lockedElementModified_throws() {
+    void custom_lockedElement_nowGovernedByAllowCustomContentSwitch() {
         UUID quotationId = seedQuotationId();
+        // 本用例要的是「开关关着」，夹具默认把 demo 材质开到了 true —— 在本事务内关回去（跑完回滚）
+        em.createNativeQuery(
+            "UPDATE material_recipe SET allow_custom_content = false WHERE code = 'AgCu85'")
+          .executeUpdate();
+        em.flush();
 
+        // 同上：补合法总重，避免 PART_WEIGHT_REQUIRED 抢先。
         ConfigureProductRequest req = simpleCustomReq("AgCu85", List.of(
-            elem("Ag", "90.0"), elem("Cu", "10.0")  // Ag should be locked at 85.0
-        ), null);
+            elem("Ag", "90.0"), elem("Cu", "10.0")  // Ag 在 AgCu85 里 is_locked=true, default 85.0
+        ), new BigDecimal("10.0"));
 
-        assertThrows(IllegalArgumentException.class,
+        com.cpq.configure.exception.MaterialRecipeApiException ex = assertThrows(
+            com.cpq.configure.exception.MaterialRecipeApiException.class,
             () -> service.configure(quotationId, req, operatorId()),
-            "修改 locked 元素应抛 IllegalArgumentException");
+            "M-5：开关关着时任何自定义含量都应被拒");
+        // 🔄 task-260902：错误码按本任务 api.md §1.2 更名 CUSTOM_CONTENT_NOT_ALLOWED →
+        //    RECIPE_CUSTOM_NOT_ALLOWED（前端 ConfirmStep.tsx:69 已按新码分支）。文案未变。
+        assertEquals("RECIPE_CUSTOM_NOT_ALLOWED", ex.getErrorCode());
+        assertEquals(403, ex.getCode());
+        assertFalse(ex.getMessage().contains("元素已锁定"),
+            "M-5：开关关着时不进元素级 is_locked 判断 —— 报错不该是「元素已锁定」，实际=" + ex.getMessage());
     }
 
     // ── case 6: 组合产品全新 ─────────────────────────────────────────────────
@@ -398,11 +443,12 @@ class ConfigureProductServiceTest {
         p2.name = "配件2";
 
         ConfigureProductRequest req = new ConfigureProductRequest();
+        req.customerProductNo = testProductNo();   // task-260902 · B-2：必填
         req.productType = "COMPOSITE";
         req.parts = List.of(p1, p2);
 
         CompositeProcessRequest cp = new CompositeProcessRequest();
-        cp.defCode = "MRO-AS-0001";  // B6: process_master.process_no（ASSEMBLY「总装配」），非 composite_process_def.code
+        cp.defCode = assemblyProcessNo();  // B6: process_master.process_no（ASSEMBLY「总装配」），非 composite_process_def.code
         cp.participatingPartIndexes = List.of(0, 1);
         cp.params = Map.of("pressure", 5.0, "height", 3.2);
         req.compositeProcesses = List.of(cp);
@@ -449,10 +495,13 @@ class ConfigureProductServiceTest {
 
         PartRequest rp1 = makeCustomPart("AgNi90",
             List.of(elem("Ag", "94.5"), elem("Ni", "5.5")), new BigDecimal("10.0"));
+        // 🔄 task-260902 · AC-8：总重进指纹 ⇒ 想复用子件就必须与 createSimpleAndGetPn 用的
+        //    总重（10.0）逐字一致；原来写 11.0 在 v1 下无所谓，在 v2 下会铸出第二个新料号。
         PartRequest rp2 = makeCustomPart("AgCu90",
-            List.of(elem("Ag", "90.0"), elem("Cu", "10.0")), new BigDecimal("11.0"));
+            List.of(elem("Ag", "90.0"), elem("Cu", "10.0")), new BigDecimal("10.0"));
 
         ConfigureProductRequest req = new ConfigureProductRequest();
+        req.customerProductNo = testProductNo();   // task-260902 · B-2：必填
         req.productType = "COMPOSITE";
         req.parts = List.of(rp1, rp2);
         req.compositeProcesses = List.of();
@@ -486,11 +535,12 @@ class ConfigureProductServiceTest {
             List.of(elem("Ag", "90.0"), elem("Cu", "10.0")), new BigDecimal("11.0"));
 
         ConfigureProductRequest req = new ConfigureProductRequest();
+        req.customerProductNo = testProductNo();   // task-260902 · B-2：必填
         req.productType = "COMPOSITE";
         req.parts = List.of(p1, p2);
 
         CompositeProcessRequest cp = new CompositeProcessRequest();
-        cp.defCode = "MRO-AS-0001";  // B6: process_master.process_no（ASSEMBLY「总装配」），非 composite_process_def.code
+        cp.defCode = assemblyProcessNo();  // B6: process_master.process_no（ASSEMBLY「总装配」），非 composite_process_def.code
         cp.participatingPartIndexes = List.of();  // 空，仍应拒绝
         cp.params = Map.of();
         req.compositeProcesses = List.of(cp);
@@ -516,11 +566,12 @@ class ConfigureProductServiceTest {
             List.of(elem("Ag", "90.0"), elem("Cu", "10.0")), new BigDecimal("11.0"));
 
         ConfigureProductRequest req = new ConfigureProductRequest();
+        req.customerProductNo = testProductNo();   // task-260902 · B-2：必填
         req.productType = "COMPOSITE";
         req.parts = List.of(p1, p2);
 
         CompositeProcessRequest cp = new CompositeProcessRequest();
-        cp.defCode = "MRO-AS-0001";  // B6: process_master.process_no（ASSEMBLY「总装配」），非 composite_process_def.code
+        cp.defCode = assemblyProcessNo();  // B6: process_master.process_no（ASSEMBLY「总装配」），非 composite_process_def.code
         cp.participatingPartIndexes = List.of(0);  // 仅 1 个，老规则 400，新规则放行
         cp.params = Map.of();
         req.compositeProcesses = List.of(cp);

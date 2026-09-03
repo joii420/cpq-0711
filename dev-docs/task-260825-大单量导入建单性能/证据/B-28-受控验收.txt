@@ -1,0 +1,47 @@
+B-28 受控验收（主线亲验，2026-08-28）
+quotation = e41a2d24-cadc-4668-bfd0-ba5a1dfb2337   1845 行   库 = cpq_db_0724   后端 = worktree @ 8099
+
+【装置】独立连接持有第 4 批行锁 130 秒：
+  BEGIN;
+  SELECT id FROM quotation_line_item WHERE quotation_id='e41a2d24-…' AND sort_order>=900 AND sort_order<1200 FOR UPDATE;
+  SELECT pg_sleep(130);
+  ROLLBACK;
+
+【先证明干预生效】(§⑧ 4 次装置失误的教训：不再拿阴性结果当结论)
+  pg_locks ⋈ pg_stat_activity → pid=2243135 持有 1 个锁   ✅ 才继续
+
+【实测日志原文】
+[ensure-cardvalues-batch] quotation=e41a2d24-cadc-4668-bfd0-ba5a1dfb2337 batch=1/7 rows=300 elapsed=12293ms chunkSize=300
+[ensure-cardvalues-batch] quotation=e41a2d24-cadc-4668-bfd0-ba5a1dfb2337 batch=2/7 rows=300 elapsed=12386ms chunkSize=300
+[ensure-cardvalues-batch] quotation=e41a2d24-cadc-4668-bfd0-ba5a1dfb2337 batch=3/7 rows=300 elapsed=11479ms chunkSize=300
+[ensure-cardvalues-batch-failed] quotation=e41a2d24-cadc-4668-bfd0-ba5a1dfb2337 batch=4/7 rows=300 idxRange=[900,1200) elapsed=14942ms chunkSize=300 原因=could not execute statement [ERROR: canceling statement due to lock timeout
+[ensure-cardvalues-batch] quotation=e41a2d24-cadc-4668-bfd0-ba5a1dfb2337 batch=5/7 rows=300 elapsed=12727ms chunkSize=300
+[ensure-cardvalues-batch] quotation=e41a2d24-cadc-4668-bfd0-ba5a1dfb2337 batch=6/7 rows=300 elapsed=14145ms chunkSize=300
+[ensure-cardvalues-batch] quotation=e41a2d24-cadc-4668-bfd0-ba5a1dfb2337 batch=7/7 rows=45 elapsed=5728ms chunkSize=300
+[ensure-cardvalues] quotation=e41a2d24-cadc-4668-bfd0-ba5a1dfb2337 补算 1845 行（分 7 批，chunk=300，总耗时=83706ms，失败 1 批/300 行）
+
+⚠️【读这份日志的人注意】末行「补算 1845 行」是【尝试数】，不是落库数。
+   实现即 `return new EnsureResult(missing.size(), failedBatches, failedRows)` —— computed 恒等于
+   missing.size()，从不扣减失败行。真正落库数看下面的 DB 终局（1545），或用「补算数 − 失败行数」。
+   主线本人就是被这行误导过（由 DB 计数 1545 反推 computed 也是 1545，错），并把错的说法转给了测试
+   agent，害它写出一条假红。javadoc 的 @return 也说谎（已立 B-29-6 修）。
+
+【DB 终局】
+  总行数=1845  报价卡片值=1545  核价卡片值=1545  哨兵(__cardValueFailed)=0
+  1545 = 1845 - 300 ✅ 被堵批的 300 行未落库，其余 6 批全部落库
+
+【reaper / 回归计数（物化窗口内）】
+  ARJUNA012117     1
+  ARJUNA016102     0
+  RequestScoped    0
+  注：ARJUNA012117 的这 1 次【不属于 ③】，栈为 ensureExcelValues（④，见下），已立 B-29。
+
+【④ 的连带取证 —— 本次实验的意外收获】
+2026-08-28 17:47:53.287 ERROR [com.cpq.bas.v6.ser.CreateQuotationMaterializer] (executor-thread-2) [create-quotation] 后置物化失败 quotation=e41a2d24-cadc-4668-bfd0-ba5a1dfb2337 耗时=146671ms（不丢单，前端 warm 兜底）: io.quarkus.arc.ArcUndeclaredThrowableException: Error invoking subclass method
+	at com.cpq.quotation.service.CardSnapshotService_Subclass.ensureExcelValues(Unknown Source)
+	at com.cpq.quotation.service.CardSnapshotService_ClientProxy.ensureExcelValues(Unknown Source)
+	at com.cpq.basicdata.v6.service.CreateQuotationMaterializer.materialize(CreateQuotationMaterializer.java:127)
+  Excel 值落库：报价 0 / 核价 0 / 总 1845  → 整步回滚
+
+【对照：修复前同装置的行为（见 问题说明.md §⑧）】
+  停在 900/1845，整条链路被 reaper 砍，批 4 之后一批不做。

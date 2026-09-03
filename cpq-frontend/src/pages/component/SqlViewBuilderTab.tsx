@@ -266,6 +266,16 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
         setSavedSnapshot(JSON.stringify(configPayloadFor(initT, null, [], null))); // D-55①：新组件的基线 = 空配置
       } else {
         // BUILDER：回填已有配置（savedSnapshot 留到下面的 rehydrate useEffect 里补——那时 sel 才真正建好）
+        //
+        // 2026-09-01：显式早退，把 `viewState==='BUILDER' ⇒ builderConfig 非空` 这个不变量补给 TS。
+        // 上面 :257 的三元判断确实保证了这一点，但结果被存进 viewState 变量后类型收窄信息就丢了，
+        // 于是 :270/:271/:275 三处报 TS18047。纯类型收窄，不改运行时行为（理论上不可达）。
+        // ⚠️ 这三条错误此前长期存在却没人发现，因为 frontend.md §2.1 的自检命令
+        //    `tsc -p tsconfig.json` 是空验证（solution-style 配置 + tsc -p 不跟进 references）。
+        if (!builderConfig) {
+          message.error('读取取数配置失败：服务端返回 BUILDER 态但配置为空');
+          return;
+        }
         setHasDriver(true);
         setTabType(builderConfig.tabType);
         setVariantKey(builderConfig.variantKey ?? null);
@@ -598,7 +608,12 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
         const insRes = await inspectBuilder(componentId, payload);
         setInspectResult(insRes);
       } catch (e: any) {
-        setInspectResult({ checks: [{ level: 'WARN', message: '体检请求失败：' + (e?.message ?? '未知错误') }] });
+        // 2026-09-01 修真 bug（不只是类型错误）：这里原本塞的是 `{ checks: [...] }`，
+        // 而 InspectResponse 的字段是 `{ blocked, items }`（sqlViewBuilderService.ts:292）。
+        // 渲染层读 `items` ⇒ **体检请求失败时，这条「体检请求失败」的警告根本显示不出来**。
+        // 来历：上一个提交 faa01cd7「D-49 /inspect 响应体契约对齐」把 checks 改成了 items，漏了这个 catch 分支。
+        // blocked=false 的取值依据：请求失败 ≠ 配置有错，不应据此拦住保存（真有 ERR 项时后端会拒）。
+        setInspectResult({ blocked: false, items: [{ level: 'WARN', message: '体检请求失败：' + (e?.message ?? '未知错误') }] });
       }
     }, 300);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };

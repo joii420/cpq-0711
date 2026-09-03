@@ -97,12 +97,20 @@ class ConfigureProductServiceB2LedgerTest {
      */
     @SuppressWarnings("unchecked")
     String seedProcessNo() {
+        // 🚨 task-260902 · B-12：原写死 'MRO-LP-0001' —— 那 26 条 MRO-* 是 V4 带的通用示例，
+        //    本库（cpq_db_0724，Flyway 基线晚于 V4）**从未灌入**，用例在本库必失败（组合工艺未找到）。
+        //    工序是业务在「主数据维护 → 工序」页自维护的开放主数据（用户确认），🚫 不写迁移补种子。
+        //    ⇒ 改用现存 fixture Z100 焊接（fixture基线.md §2）。
         List<Object> rows = em.createNativeQuery(
-                "SELECT process_no FROM process_master WHERE process_no = 'MRO-LP-0001' LIMIT 1")
+                "SELECT process_no FROM process_master WHERE process_no = 'Z100' LIMIT 1")
             .getResultList();
-        if (rows.isEmpty()) throw new IllegalStateException("process_master MRO-LP-0001 not found — V267 migration must have run");
+        if (rows.isEmpty()) throw new IllegalStateException(
+                "前置不成立：process_master 无 Z100（fixture基线.md §2）—— 请在「主数据维护 → 工序」补该工序");
         return rows.get(0).toString();
     }
+
+    /** task-260902 · B-12：组合工艺 defCode 夹具 —— 库里真实存在的组装类工序（Z100 焊接）。 */
+    String assemblyProcessNo() { return "Z100"; }
 
     /**
      * 孤儿工序编号: process_master 存在但 process(V4) 表无对应 code(F2 实证, TP10/TP20)。
@@ -110,12 +118,17 @@ class ConfigureProductServiceB2LedgerTest {
      */
     @SuppressWarnings("unchecked")
     String seedOrphanProcessNo() {
+        // 🚨 task-260902 · B-12：原写死 'TP10' —— 那是 2026-09-02 11:54 由测试夹具写进 dev 库的
+        //    污染数据，已按用户批准清理（fixture基线.md §2）。
+        //    ⇒ 改为「按属性挑一条」：process(V4) 表在本库 0 行，故任何 process_master 行都是孤儿；
+        //      用 NOT EXISTS 表达这个属性，而不是写死某个编号。
         List<Object> rows = em.createNativeQuery(
-                "SELECT process_no FROM process_master WHERE process_no = 'TP10' " +
-                "AND NOT EXISTS (SELECT 1 FROM process p WHERE p.code = process_master.process_no) LIMIT 1")
+                "SELECT process_no FROM process_master pm " +
+                "WHERE NOT EXISTS (SELECT 1 FROM process p WHERE p.code = pm.process_no) " +
+                "ORDER BY pm.process_no LIMIT 1")
             .getResultList();
         if (rows.isEmpty()) throw new IllegalStateException(
-                "process_master 孤儿工序 TP10 不存在(或已被 process(V4) 收录) — 夹具前提不成立");
+                "前置不成立：process_master 里找不到一条 process(V4) 未收录的工序 — 夹具前提不成立");
         return rows.get(0).toString();
     }
 
@@ -125,7 +138,9 @@ class ConfigureProductServiceB2LedgerTest {
 
     PartRequest makeCustomPart(String recipeCode, List<ElementOverride> elems, BigDecimal weight, List<String> processNos) {
         PartRequest p = new PartRequest();
-        p.partMode = "custom";
+        // task-260902：partMode 值域改名 custom → new（后端两个都接受）；这里用新值，
+        // 顺带把「老单值字段回落成 materials[0]」这条兼容路径也一起验了（B-1）。
+        p.partMode = "new";
         p.recipeCode = recipeCode;
         p.elements = elems;
         p.processNos = processNos != null ? processNos : List.of();
@@ -133,6 +148,9 @@ class ConfigureProductServiceB2LedgerTest {
         p.name = "Test";
         return p;
     }
+
+    /** task-260902 · B-2：customerProductNo 必填，用例统一走本前缀（收尾污染核对按 T260902- 扫）。 */
+    String testProductNo() { return "T260902-B2L-" + UUID.randomUUID().toString().substring(0, 8); }
 
     UUID operatorId() { return UUID.randomUUID(); }
 
@@ -246,6 +264,7 @@ class ConfigureProductServiceB2LedgerTest {
         SeededQuotation sq = seedQuotation();
 
         ConfigureProductRequest req = new ConfigureProductRequest();
+        req.customerProductNo = testProductNo();   // task-260902 · B-2：必填
         req.productType = "SIMPLE";
         req.parts = List.of(makeCustomPart("AgNi90",
             List.of(elem("Ag", "91.1"), elem("Ni", "8.9")), new BigDecimal("12.5"), List.of(seedProcessNo())));
@@ -255,7 +274,8 @@ class ConfigureProductServiceB2LedgerTest {
         String pn = (String) resp.lineItems.get(0).get("productPartNo");
 
         // ① material_master
-        assertEquals(1, materialMasterCount(pn, "AgNi"), "① material_master 身份行");
+        // 🔄 task-260902 · B-9：material_type 归位为**料号类型**（原写 recipe.symbol=材质名）。
+        assertEquals(1, materialMasterCount(pn, "零件"), "① material_master 身份行(material_type=零件)");
 
         // ② material_bom(头) + material_bom_item(子)
         assertEquals(1, materialBomHeaderCount(sq.customerCode(), pn), "② material_bom 头表行");
@@ -303,6 +323,7 @@ class ConfigureProductServiceB2LedgerTest {
         String processNo = seedProcessNo();
 
         ConfigureProductRequest req1 = new ConfigureProductRequest();
+        req1.customerProductNo = testProductNo();   // task-260902 · B-2：必填
         req1.productType = "SIMPLE";
         req1.parts = List.of(makeCustomPart("AgNi95",
             List.of(elem("Ag", "93.0"), elem("Ni", "7.0")), new BigDecimal("9.0"), List.of(processNo)));
@@ -317,11 +338,16 @@ class ConfigureProductServiceB2LedgerTest {
         long eleItemBefore = elementBomItemCount(sq.customerCode(), pn1, "AgNi95");
         long priceBefore = unitPriceProcessCount(sq.customerCode(), pn1);
 
-        // 同配置（元素含量完全一致，weight 不同——weight 不参与指纹）二次提交
+        // 🔄 task-260902 · AC-8：**零件总重进指纹了**（v2 新增 WEIGHT= token）——
+        //    本用例验的是「同配置复用同一料号」，故第二次必须给**同一个总重**；
+        //    原用例特意给了不同重量并注「weight 不参与指纹」，那是 v1 语义，
+        //    在 v2 下它验的会变成 AC-8（重量不同必铸新号），与用例名不符。
+        // 同配置（元素含量 + 总重完全一致）二次提交
         ConfigureProductRequest req2 = new ConfigureProductRequest();
+        req2.customerProductNo = testProductNo();   // task-260902 · B-2：必填
         req2.productType = "SIMPLE";
         req2.parts = List.of(makeCustomPart("AgNi95",
-            List.of(elem("Ag", "93.0"), elem("Ni", "7.0")), new BigDecimal("99.0"), List.of(processNo)));
+            List.of(elem("Ag", "93.0"), elem("Ni", "7.0")), new BigDecimal("9.0"), List.of(processNo)));
         ConfigureProductResponse r2 = service.configure(sq.quotationId(), req2, operatorId());
         String pn2 = (String) r2.lineItems.get(0).get("productPartNo");
 
@@ -347,13 +373,14 @@ class ConfigureProductServiceB2LedgerTest {
         p1.quantity = 2;  // D12/D17: 单行 qty>=2
 
         ConfigureProductRequest req = new ConfigureProductRequest();
+        req.customerProductNo = testProductNo();   // task-260902 · B-2：必填
         req.productType = "SIMPLE";  // 前端可能仍声明 SIMPLE，后端须按 Σqty 兜底裁决为 COMPOSITE
         req.parts = List.of(p1);
 
         CompositeProcessRequest cp = new CompositeProcessRequest();
         // B6（架构决策 2-2A）: defCode = process_master.process_no（ASSEMBLY「总装配」），
         // 不再是 composite_process_def.code。
-        cp.defCode = "MRO-AS-0001";
+        cp.defCode = assemblyProcessNo();
         cp.participatingPartIndexes = List.of(0);  // 单去重子件，放开后允许
         cp.params = Map.of();
         req.compositeProcesses = List.of(cp);
@@ -368,7 +395,8 @@ class ConfigureProductServiceB2LedgerTest {
         String childPn = (String) resp.lineItems.get(1).get("productPartNo");
 
         // 父 material_master(COMPOSITE)
-        assertEquals(1, materialMasterCount(parentPn, "COMPOSITE"), "父料号 material_type=COMPOSITE");
+        // 🔄 task-260902 · B-17②：COMPOSITE 父料号的 material_type 由结构类型 "COMPOSITE" 归位为料号类型「成品」。
+        assertEquals(1, materialMasterCount(parentPn, "成品"), "父料号 material_type=成品");
 
         // capacity 组装加工费行
         long capCount = count(
@@ -386,9 +414,9 @@ class ConfigureProductServiceB2LedgerTest {
                 "AND resource_group_no='QUOTE_ASSEMBLY' AND is_current=true")
             .setParameter("mn", parentPn).getResultList();
         assertEquals(1, capRow.size());
-        assertEquals("MRO-AS-0001", capRow.get(0)[0], "capacity.process_no 应 = 选中的 process_master.process_no");
-        assertEquals("总装配", capRow.get(0)[1], "capacity.process_name 应读自 process_master（不再读 composite_process_def）");
-        assertEquals("CNY", capRow.get(0)[2], "process_master ASSEMBLY 现网 currency 空 → 落库兜底 CNY");
+        assertEquals(assemblyProcessNo(), capRow.get(0)[0], "capacity.process_no 应 = 选中的 process_master.process_no");
+        assertEquals("焊接", capRow.get(0)[1], "capacity.process_name 应读自 process_master（不再读 composite_process_def）");
+        assertEquals("CNY", capRow.get(0)[2], "currency 取 process_master.standard_currency（Z100 = CNY）");
 
         // material_bom_item(ASSEMBLY) 恰 1 行，composition_qty=2（非展开 2 行）
         @SuppressWarnings("unchecked")
@@ -402,7 +430,7 @@ class ConfigureProductServiceB2LedgerTest {
         assertEquals(0, new BigDecimal("2").compareTo((BigDecimal) asmRows.get(0)[1]), "composition_qty=qty=2");
 
         // 子件自身完整落库（同 SIMPLE 六处齐全的前 3 处，子件无独立 processIds 故不测 unit_price）
-        assertEquals(1, materialMasterCount(childPn, "AgCu"), "子件 material_master");
+        assertEquals(1, materialMasterCount(childPn, "零件"), "子件 material_master(material_type=零件)");
         assertEquals(1, materialBomHeaderCount(sq.customerCode(), childPn), "子件 material_bom 头表");
         assertEquals(1, elementBomHeaderCount(sq.customerCode(), childPn, "AgCu85"), "子件 element_bom 头表");
 
@@ -411,7 +439,7 @@ class ConfigureProductServiceB2LedgerTest {
         assertNotNull(sigText);
         assertTrue(sigText.contains("COMBO=" + childPn + ":2"),
             "指纹应含 COMBO=" + childPn + ":2，实际: " + sigText);
-        assertTrue(sigText.contains("CPROC=MRO-AS-0001"),
+        assertTrue(sigText.contains("CPROC=" + assemblyProcessNo()),
             "B6: 指纹 CPROC token 应为 process_master.process_no，实际: " + sigText);
 
         // quotation_line_composite_process.def_code（B6 后端第四处锚点）应与 capacity.process_no /
@@ -420,7 +448,7 @@ class ConfigureProductServiceB2LedgerTest {
         String qlcpDefCode = (String) em.createNativeQuery(
                 "SELECT def_code FROM quotation_line_composite_process WHERE line_item_id=:lid")
             .setParameter("lid", parentLineItemId).getSingleResult();
-        assertEquals("MRO-AS-0001", qlcpDefCode,
+        assertEquals(assemblyProcessNo(), qlcpDefCode,
             "quotation_line_composite_process.def_code 应 = process_master.process_no（五处一致）");
     }
 
@@ -434,12 +462,13 @@ class ConfigureProductServiceB2LedgerTest {
      */
     @Test
     @TestTransaction
-    void simple_orphanProcessNoTP10_writesProcessNoWithNullProcessId_andUnitPriceOperationNo() {
+    void simple_orphanProcessNo_writesProcessNoWithNullProcessId_andUnitPriceOperationNo() {
         SeededQuotation sq = seedQuotation();
         String orphanNo = seedOrphanProcessNo();
-        assertEquals("TP10", orphanNo);
+        assertNotNull(orphanNo, "夹具：应能挑到一条 process(V4) 未收录的工序");
 
         ConfigureProductRequest req = new ConfigureProductRequest();
+        req.customerProductNo = testProductNo();   // task-260902 · B-2：必填
         req.productType = "SIMPLE";
         req.parts = List.of(makeCustomPart("AgNi90",
             List.of(elem("Ag", "91.1"), elem("Ni", "8.9")), new BigDecimal("12.5"), List.of(orphanNo)));
@@ -450,25 +479,25 @@ class ConfigureProductServiceB2LedgerTest {
         String pn = (String) resp.lineItems.get(0).get("productPartNo");
 
         // ④ unit_price.operation_no = process_no（孤儿工序照常直取，不再经 process(V4) 查表）
-        assertEquals(List.of("TP10"), unitPriceOperationNos(sq.customerCode(), pn),
+        assertEquals(List.of(orphanNo), unitPriceOperationNos(sq.customerCode(), pn),
             "unit_price.operation_no 应 = 选中的 process_no（含孤儿）");
 
         // quotation_line_process: process_no='TP10' 落值，process_id 为 NULL（新写路径不再填该列）
         List<Object[]> qlpRows = quotationLineProcessRows(lineItemId);
         assertEquals(1, qlpRows.size(), "quotation_line_process 恰 1 行");
-        assertEquals("TP10", qlpRows.get(0)[0], "process_no 应落值为选中的孤儿工序编号");
+        assertEquals(orphanNo, qlpRows.get(0)[0], "process_no 应落值为选中的孤儿工序编号");
         assertNull(qlpRows.get(0)[1], "process_id 应为 NULL（V336 加法式变体新写路径不填旧列）");
 
         // 指纹 PRC=TP10（孤儿工序参与销售指纹时同样直取 process_no，值域不变）
         String sigText = signatureTextFor(sq.customerCode(), pn);
         assertNotNull(sigText);
-        assertTrue(sigText.contains("PRC=TP10"), "指纹 PRC token 应为选中的 process_no，实际: " + sigText);
+        assertTrue(sigText.contains("PRC=" + orphanNo), "指纹 PRC token 应为选中的 process_no，实际: " + sigText);
 
         // ProcessDTO 回显(读回路径): 实体 → DTO 映射应透传 process_no（取代旧 processId UUID）
         QuotationLineProcess entity = QuotationLineProcess.find("lineItemId", lineItemId).firstResult();
         assertNotNull(entity);
         QuotationDTO.ProcessDTO dto = QuotationDTO.ProcessDTO.from(entity);
-        assertEquals("TP10", dto.processNo, "ProcessDTO.processNo 应正确回显选中的工序编号");
+        assertEquals(orphanNo, dto.processNo, "ProcessDTO.processNo 应正确回显选中的工序编号");
     }
 
     /**
@@ -489,11 +518,12 @@ class ConfigureProductServiceB2LedgerTest {
         p2.quantity = 1;
 
         ConfigureProductRequest req = new ConfigureProductRequest();
+        req.customerProductNo = testProductNo();   // task-260902 · B-2：必填
         req.productType = "COMPOSITE";
         req.parts = List.of(p1, p2);
 
         CompositeProcessRequest cp = new CompositeProcessRequest();
-        cp.defCode = "MRO-AS-0001";
+        cp.defCode = assemblyProcessNo();
         cp.participatingPartIndexes = List.of(0, 1);
         cp.params = Map.of();
         req.compositeProcesses = List.of(cp);
@@ -553,6 +583,7 @@ class ConfigureProductServiceB2LedgerTest {
         String processNo = seedProcessNo();
 
         ConfigureProductRequest req = new ConfigureProductRequest();
+        req.customerProductNo = testProductNo();   // task-260902 · B-2：必填
         req.productType = "SIMPLE";
         req.parts = List.of(makeCustomPart("AgNi95",
             List.of(elem("Ag", "93.0"), elem("Ni", "7.0")), new BigDecimal("9.0"), List.of(processNo)));
@@ -564,6 +595,11 @@ class ConfigureProductServiceB2LedgerTest {
         // 这里改用同 lineItemId 二次调 insertQuotationLineProcesses 的真实调用路径:
         // 直接验证同一 lineItemId 重新走一次 configure 的等价行为(covered by resolvePart 幂等)，
         // 断言表内该 lineItem 的工序行数仍恰为 1(先删后插不会累加)。
+        // 🔄 task-260902 · AC-2/AC-12b：客户产品编号在 (customer, 编号) 上唯一 ——
+        //    同一个编号再提交一次会被 409 CUSTOMER_PRODUCT_NO_TAKEN 挡住（这是 AC-2 要的）。
+        //    本用例验的是「同一销售料号复用时工序不累加」，故第二次换一个**新编号**：
+        //    这正是 AC-12b「一料号多编号」的形态。
+        req.customerProductNo = testProductNo();
         ConfigureProductResponse r2 = service.configure(sq.quotationId(), req, operatorId());
         UUID lineItemId2 = (UUID) r2.lineItems.get(0).get("id");
         assertTrue(r2.fingerprintMatched);

@@ -145,7 +145,96 @@
 
 ---
 
+
+### [BL-0184] 大单量报价单打开后 `batch-evaluate` 风暴：517 次请求 / 29 分钟不收敛，页面卡死
+- **优先级**：🔴 **P0**（1845 行的单**打不开**，「下一步」按钮同时卡住；建单再快也交付不了）
+- **来源**：`task-260825` 用户真机测试（2026-08-26）旁证发现。**与该任务修的四处 N+1 不是同一处**——
+  建单链路已验证正常（`6e74f0ef` 明细 1845 / 卡片值 1845 全落库），卡的是**打开报价单之后的编辑页渲染**。
+- **状态**：TODO。用户裁决**另立任务专查**，不并入 `task-260825`（那边已扩范围 4 次，且这是另一个子系统）。
+- **登记日期**：2026-08-26
+- **现象（F12 Network 实测）**：
+  - `POST /api/cpq/formulas/batch-evaluate` **517 个请求**，每个 200 / ≈620~720ms
+  - 累计 **40.3 MB** 传输、**29.2 分钟**仍未收敛，末尾请求持续「待处理」
+  - 页面「下一步」按钮同时卡死
+- **关键反证：不是分块分出来的**。
+  `cpq-frontend/src/services/formulaService.ts:73` `BATCH_EVALUATE_CHUNK = 5000`，
+  注释原文「实质"一次性"，**正常报价单 1 个 HTTP 搞定**；后端 BATCH_MAX 同步从 200 提到 5000」。
+  → 517 次只能是**调用方的 `useEffect` 被反复重发**，不是一次调用被切成 517 片。
+- **也不是组件实例爆炸**：`LinkedExcelView` 在 `QuotationStep2.tsx` 仅渲染 **2 处**（`:4501` / `:4564`），非 per line item。
+- **嫌疑点（未定位，留给专项任务）**：
+  `cpq-frontend/src/pages/quotation/useLinkedExcelRows.ts:274-330` 的 `useEffect` ——
+  依赖数组是 `[pathTasks, customerId, templateId, linkedTemplateId, quotationId, quotationStatus]`
+  （**显式 eslint-disable 排除了 `pathCache`**），而 `pathTasks` 是
+  `useMemo(..., [lineItems, parsedColumns])`。
+  待查方向：① `lineItems` 是否每次渲染换新引用 → `pathTasks` 抖动 → effect 反复重入；
+  ② 与后台物化并发时 `lineItems` 持续变化是否放大该抖动；
+  ③ `setPathCache` 异步提交与 effect 重入的时序（清理函数 `controller.abort()` 是否真的截住了前一发）。
+  ⚠️ 失败项已写 `next[cacheK] = null`（`:305`），**所以不是「失败项永不入缓存导致死循环」那种模式**——该假设已排除。
+- **归属确认**：`useLinkedExcelRows.ts` / `LinkedExcelView.tsx` / `formulaService.ts`
+  三个文件在 `task-260825` 分支上 **`git diff --stat master` 为空**，**本次任务一行未改**，属既有代码。
+  它只是**从未在 1845 行的单上跑过**——与该任务修的四处 N+1 同一个暴露模式：小单量看不出、大单量必现。
+- **同族线索**：`docs/RECORD.md` / 记忆中的「打开报价单空白 BUG —— 打开触发 autosave 风暴占满线程致 getById 超时」，
+  本条疑似同一族（打开期请求风暴）的 `batch-evaluate` 版本，排查时应一并对照。
+
 ## P1
+
+### [BL-0182] V6 导入 sheet「客户料号与宏丰料号的关系」逐行 upsert 致 Phase2 事务超时、随机整单回滚
+- **优先级**：🔴 **P0**（2026-08-26 由 P1 提级：实测失败率 1/4，用户当天撞上；原以为只是慢）
+- **状态：✅ DONE（2026-08-28，合 master merge `76c4b0ab`）** —— 由 `task-260825` 的 **B-26** 做掉：
+  `Q02CustomerMapHandler` 逐行 `upsertQuote` → 新增 `MaterialCustomerMapRepository.upsertQuoteBatch`
+  （内存按 `material_no` 折叠 + 分块多值写，CHUNK=200）。**实测 30678ms → 490ms（62×）**。
+  🔒 未走「先试批量、报错再逐行补救」路径：`SavepointIsolationFeasibilityTest` 已证伪
+  ——Quarkus/Agroal 在连接 enlist 进 JTA 后拒绝 `Connection.rollback(Savepoint)`，
+  该错误后同事务内任何后续 SQL 连锁失败。故改为**写库前折叠**消灭批内冲突。
+  测试：`MaterialCustomerMapUpsertBatchSqlCountTest`（条数不随 N 增长 + 证伪控制组）。
+- **状态更新（2026-08-26）**：根因已定位（见下），**已纳入 `task-260825` 一并修**（用户裁决）
+- **来源**：`task-260825-大单量导入建单性能` 排查期旁证发现（监控 tail 后端日志捞出），
+  **与该任务的建单物化 N+1 是两条独立链路**，故不并入该任务范围。
+- **状态**：TODO（未排期）。⚠️ **根因未定位** —— 按 `docs/rules/task-docs.md §5`
+  「根因未定位不许进闸门 A0」，本条必须先做定位才能立项修复。
+- **登记日期**：2026-08-25
+- **现象（实测日志原文）**：
+  ```
+  [v6import] QUOTE sheet=客户料号与宏丰料号的关系 rows=1845 handle=27200ms writer{groups=0 dbCalls=0 | lock=0x/0ms load=0x/0ms ver=0x/0ms flip=0x/0ms ins=0x/0ms}
+  ```
+  **27.2 秒**。
+  🔴 **2026-08-26 更正 —— 原判断「`dbCalls=0`（一次库都没打）→ 耗时 100% 在 Java 侧 CPU，疑 O(N²)」是错的。**
+  `dbCalls` 只统计 `writer{}` 的调用，**看不见 handler 自身的 repo 调用** —— 与「日志里没看到就说不存在」同属仪器盲区。
+  **真实根因 = 又一处 N+1**：`Q02CustomerMapHandler.writeRow` 对 `finalRows` 逐行调
+  `MaterialCustomerMapRepository.upsertQuote`（`:119-121` 循环 → `writeRow` 内）。
+  1845 行 × ≈16.6ms RTT ≈ **30.6s**，与实测 30,678ms / 32,207ms 吻合。
+  ⚠️ **批量方法本来就存在**（`MaterialCustomerMapRepository:125 upsertBatch`），是该 handler **主动放弃**的——
+  代码注释原文：「setBased 分支不再走批量 upsertBatch（本 spec 不需要 QUOTE 批量；**正确性优先**），两分支收敛到同一逐行 writeRow」。
+  放弃的理由可考：`writeRow` 的 catch 要 `result.recordError(row.rowNo, ..., "跨客户串号")` —— **逐行才能把错误精确归到行**。
+- **同批对照（证明这是该 sheet 独有，不是普遍现象）**：
+  | sheet | 行数 | handle |
+  |---|---|---|
+  | `物料BOM` | 1845 | **833ms** |
+  | `物料与元素BOM` | 4153 | **1132ms** |
+  | `成品其他费用` | 1845 | **305ms** |
+  | **`客户料号与宏丰料号的关系`** | **1845** | **27200ms** |
+
+  同为 1845 行，量级差 **30~90 倍**；4153 行的 sheet 反而只要 1.1s → **与行数无关，是算法问题**，
+  高度疑似该 handler 内含 O(N²)（如逐行对全量列表做线性查找 / 嵌套遍历）。
+- **定位方向**：目标类在 `com.cpq.basicdata.v6.quote.QuoteImportService` 及其对应 handler。
+  建议手法同 `task-260825` 的取证方式 —— 重放导入 + `jstack` 多次采样取交集，热点会自己浮出来。
+- 🔴 **严重度更正（2026-08-26，用户真机实测暴露）：它不是「慢」，是「会随机整单回滚」。**
+  原登记写「该步已是异步 + 轮询，**不会像建单那样撞 HTTP/事务超时**，故表现为导入很慢而非失败」——
+  **该判断错误**。它撞的不是 HTTP 超时，是 **Phase2 的 Narayana 60s 事务超时**：
+
+  ```
+  sheet handle = 30,678ms / 32,207ms（本 sheet 独占 Phase2 一半以上预算）
+    → ARJUNA "successfully canceled TX"（reaper 强杀）
+    → 之后 EntityManager 不可用 → ContextNotActiveException
+       (TransactionScopedSession.acquireSession:125 ← MaterialMasterRepository.upsertBatchNameType:216
+        ← Q02CustomerMapHandler.handle:131)
+    → 「Phase2 写入失败，整单回滚」
+  ```
+
+  **实测失败率 1/4**（2026-08-26 同文件同客户连跑 4 次：`13d9d634` SUCCESS / `0182b3fa` SUCCESS /
+  **`fb919f40` FAILED（3690/3691）** / `dd240112` SUCCESS）。用户当天即撞上。
+- **影响面**：导入步骤（Step 1）**会随机整单回滚**，用户需重试。行数越多失败率越高。
+
 
 ### [BL-0169] 核价简易模板 3 个组件的行键中英口径混存 → 连表公式跨页签「可比判定」失真
 
@@ -1187,6 +1276,45 @@
 - **详情**：`dev-docs/task-260729-客户价格调整策略和价格版本/repair-260803-报价单删除阻塞外键/`
   「续集」章节（需求文档 + test-report 同一目录延续记录）
 
+### [BL-0176] `Q06FixedProcessFeeHandler` 未写 `operation_no` —— 费用类页签的「工序」列是空壳
+- **优先级**：**P2**（不影响金额，只是该列恒空）
+- **来源**：`task-260819-取数配置器` 的 AC-36 handler 双向对账（这条断言的第 2 个真实产出）
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-21
+- **实证**（主线亲验，`cpq_db_0724`）：
+  - `SELECT count(operation_no) FROM unit_price WHERE price_type='INCOMING_MATERIAL_PROCESS' AND is_current AND system_type='QUOTE'` → 总行数 4、**非空 0**
+  - `Q06FixedProcessFeeHandler.java` 里 grep 不到任何 `operation_no` / `operationNo`
+- **后果**：现网 `ll_view` 输出的 `COALESCE(pm.process_name, up.operation_no) AS _工序` **取出来恒为空**（`up.operation_no` 全空 → `process_master` 也 JOIN 不上）。费用类页签的工序列从上线起就没有数据。
+- **不影响 golden**：配置器产物与手写基准两边都是空，逐行等值仍成立。
+- **修法方向**：导入侧补写 `operation_no`（属 V6 导入 handler 范畴，非取数配置器）。
+
+### [BL-0177] `material_bom_item.characteristic='OUTSOURCED'` 全库 0 行 —— 外购件页签的 golden 永远验不了
+- **优先级**：**P2**（现网功能不受影响，但削弱验证能力）
+- **来源**：`task-260819` 的 AC-38 golden 首跑，外购件那一类被迫 SKIPPED
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-21
+- **实证**：`SELECT count(*) FROM material_bom_item WHERE characteristic='OUTSOURCED'` → **0**（不分客户、不分料号）
+- **后果**：外购件基准组件 `COMP-0022` / `wg_view` 自己也只能返 0 行，配置器产物同样 0 行 —— **0 = 0 的「通过」没有任何验证力**，故如实标 SKIPPED 而非伪造通过。
+- **影响面**：AC-38 五类里的外购件那一类**在当前数据下无法验证**；`characteristic` 三态（RECIPE/ASSEMBLY/OUTSOURCED）中的 OUTSOURCED 分支在报价侧全链路都缺真实样本。
+- **修法方向**：造一批 OUTSOURCED 的 BOM 测试数据，或确认业务上该三态是否已停用 OUTSOURCED。
+
+### [BL-0178] test 库 `cpq_db` 夹具存在真实基数违反（`SELF_PROCESS→MATERIAL_BOM` ASSEMBLY 分支）
+- **优先级**：**P2**（夹具数据问题，不影响 dev 库与生产）
+- **来源**：`task-260819` 的边基数断言（`SemanticEdgeCardinalityReconcileTest`）在 test 库跑出的唯一真实 FAIL
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-21
+- **实证**：test 库里 `material_no=3120012530` 的多个 `component_no`（`10003` / `10001` / `0317-2607000004`）在 `characteristic='ASSEMBLY' AND is_current AND system_type='QUOTE'` 收窄后**各有 2 行**；**同一查询在 dev 库 `cpq_db_0724` 结果为空**。
+- **判定**：`assert_status=FAIL` 是**正确的**，不是收窄逻辑误报 —— 是 test 库夹具本身脏。
+- **修法方向**：清理 test 库该料号的重复 BOM 行，或确认夹具构造脚本为何产生重复。
+
+### [BL-0179] `PLATING_SCHEME` 识别列与 handler 不同步（`plating_scheme_no` vs `scheme_no`）
+- **优先级**：**P2**（N-8 已认定该 Sheet 现网数据双向全空）
+- **来源**：`task-260819` 的 AC-36 handler 双向对账（这条断言的第 1 个真实产出）
+- **状态**：TODO（未排期）；**对账测试里已加已知豁免**（`KNOWN_NAMING_MISMATCH_EXEMPT`，单独计 `exempted=1`，不并入 `checked`/`skipped`，不让 CI 恒红）
+- **登记日期**：2026-08-21
+- **根因**：语义图登记的识别列是 `plating_scheme_no`，而 `Q16PlatingSchemeHandler` 的组键写的是 `scheme_no`。
+- **修法方向**：统一二者命名（改 handler 或改登记），属导入侧；本任务不改。
+
 ### [BL-0175] 报价料号发号链 follow-up（Major-2 N+1 + 4 项 Minor + 2 项复核）
 - **优先级**：**P1**（由 Major-2 的 N+1 定级；其余 6 项本身为 P2，合并登记不拆条）
 - **来源**：报价料号 Spec 1 终审（`cpq-architect`）Major-2 + Minor-4/6/7 + 复核 Minor-A/B。
@@ -1232,7 +1360,318 @@
   `backend.md` N+1 硬指标验）；②Minor-4 —— 同 `material_no` 映射两个不同 `customer_product_no`
   的畸形输入产生 `recordError` 而非静默 last-wins；③Minor-7 两条溢出分支有测试覆盖。
 
+### [BL-0185] `saveDraft` 行 id 白名单（`partial`）+ 分批提交 —— 解「首存超时」
+- **优先级**：**P1**
+- **来源**：`task-260825-报价单大单量分页与料号查询` 立项讨论。用户 2026-08-26 裁决「服务端不变」，本条**整条转二期**。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-26
+- **问题**：批量导入 2000 个料号后首存，前端全量 `PUT /quotations/{id}/draft` → 撞前端 axios 30s（`api.ts:5`）
+  + Narayana 60s 事务 reaper（`QuotationService.saveDraft:315` 整个方法一个 `@Transactional`，全删全建）。
+- **方案**：`SaveDraftRequest` 增 `scope: {partial:true, lineItemIds:[...]}`；前端按批（默认 100）串行提交，
+  每批一个后端事务；失败**就地断点续传**，幂等靠前端 `tempId`（`QuotationWizard.tsx:273` 既有映射表）。
+- 🔴 **开工前必须先修的两个既有缺陷**（现在被「全量提交」这个巧合掩盖，一上 `partial` 立刻发作）：
+  - **B-1** `QuotationService.java:2379/2442/2599`：`q.originalAmount` 由 **payload 求和**写入。partial 送 100 行 →
+    整单原价被写成这 100 行之和（真值 1/20）。自愈不可靠：`recomputeDraftHeaderTotals` 只在 `snapshotNewLinesCardValues`
+    内被调，而 `ensureCardValues:1076` 有 `if (missing.isEmpty()) return 0;` 早退 → **总额永久停在错值**。
+  - **B-2** `QuotationResource.java:167-169` 的 `PriceReconciler.reconcileQuotation(id)` 在 saveDraft **之后**按整单
+    重写 `snapshot_rows`/`row_data`（`PriceReconciler.java:439/345`）→ 白名单做在 `saveDraft` 内部**覆盖不到它**。
+- ⚠️ 另：`PUT /draft` 还挂着三个整单 O(N) 后置步骤（`QuotationResource.java:150/153/167-169`），
+  分 20 批 = **各跑 20 次**，不一并改则分批是**负优化**。
+- **完整设计与评审结论**：`dev-docs/task-260825-报价单大单量分页与料号查询/需求文档-v1-服务端分页-已撤回.md`（勿重新推导）
+
+### [BL-0186] `QuotationDTO.LineItemDTO.from()` 每行 `Product.findById` —— 活的 N+1
+- **优先级**：**P1**
+- **来源**：`task-260825` 立项期独立评审（`cpq-architect`）查出。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-26
+- **缺口**：`cpq-backend/src/main/java/com/cpq/quotation/dto/QuotationDTO.java:226`
+  在 per-row 的 `from(li)` 里调 `Product.findById(li.productId)` → **1845 行 = 1845 次查询**，
+  直接违反 `docs/rules/backend.md` 的 N+1 硬指标（单个业务操作的 SQL 条数必须是常数）。
+- **影响面**：`loadLineItems` 被 `getById` / `saveDraft` / `submit` / `copy` 等 8+ 处调用，
+  即每次打开、每次保存大单都付这笔代价。
+- **修法方向**：与同方法内已有的 `material_customer_map` / `mat_part` 批量预取（`task-0723 B2`）合并，
+  一次 `IN` 查回 `product`，按 id 分组注入。
+
+### [BL-0190] `CostingFreezeService.createForSubmission` 从不检查 `ensureCardValues` 的返回值 —— `WARMING_IN_PROGRESS` 被当成正常值
+- **优先级**：**P2**
+- **来源**：`task-260825-大单量导入建单性能` 的 B-29-5 改动期，由**后端 agent 主动指出**（它按范围纪律没有顺手改，只报告 —— 处理正确）。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-28
+- **现状**：`CostingFreezeService.createForSubmission` 原代码是
+  ```java
+  cardSnapshotService.ensureCardValues(quotationId);   // 返回值被完全丢弃
+  ```
+  该方法可能返回 `WARMING_IN_PROGRESS`(-1)，表示**另一并发 warm 正持有单飞锁、本次一行都没算**。
+  丢弃返回值 = 在「卡片值可能压根没算」的状态下继续冻结核价单。
+- **与 B-29-5 的关系**：B-29-5 已在此处补了 `failedBatches > 0 → BusinessException(409)`，
+  但**没有**补 `WARMING_IN_PROGRESS` 判断 —— 那是本方法**既存**的缺口，与 B-28/B-29 无关，
+  故按 `CLAUDE.md §4.3`「不自行扩范围」留到这里，不塞进那次改动。
+- **对照**：同一条提交链路上的 `QuotationService.submit`（`:881` 附近）**有**这道守卫：
+  `warmResult.computed == WARMING_IN_PROGRESS → BusinessException(409, "系统正在重算…")`。
+  两处紧邻（`createForSubmission` 就在 submit 的 409 守卫之后被调用），**一处有守卫一处没有**。
+- **为什么不是 P1**：`createForSubmission` 的调用点紧跟在 submit 那道守卫之后，
+  正常路径下 submit 已先行 409 拦截，此处再撞 `WARMING_IN_PROGRESS` 需要**两次调用之间锁被别人抢走**这个窄窗口。
+  未实测复现，故 P2 而非 P1。
+- **修法建议**：改用 `ensureCardValuesDetailed` 并补 `computed == WARMING_IN_PROGRESS → 409`，与 submit 侧措辞对齐。
+
+### [BL-0189] 报价单编辑页 Step2 首次挂载有约 9.2s 固定成本（与渲染卡片数无关）
+- **优先级**：**P1**
+- **来源**：`task-260825-报价单大单量分页与料号查询` 亲验期，主线**线性度实验**实测发现。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-27
+- **实测三点**（1845 行单 `QT-20260825-0180`，headless Chrome，worktree 分页版）：
+  | 动作 | 耗时 | 渲染卡片数 |
+  |---|---|---|
+  | 首次进 Step2 | **9,811 ms** | 100 |
+  | Step2 内翻一页 | **581 ms** | 100 |
+  | 切页大小 → 500 | **2,620 ms** | 500 |
+- **推论**：`581 : 2,620 ≈ 1 : 5` → **纯渲染完美线性，约 5.2 ms/卡片**。
+  故首次进 Step2 的 9,811 ms 中仅约 581 ms 是渲染，**另约 9,230 ms 是一次性固定成本**。
+- **性质**：该成本作用在**全量 1845 行**数据集上（疑为公式引擎预热 / driver 展开 / path cache /
+  `buildExcelSnapshot` 等首次挂载开销），**与渲染窗口大小无关** →
+  **前端分页按设计消除不了它**（全量数据本就不切，本任务服务端零改动）。
+- **对照**：master 首次进 Step2 **32.0 s**，分页后 **9.8 s**（3.3× 改善）——
+  即固定成本在 master 上更高，说明它**部分**随渲染量变化，但存在很大的与渲染量无关的基底。
+- **排查方向（未验证，供接手者起步）**：用 Chrome Performance 火焰图定位 Step2 首次挂载的热点；
+  重点看 `computeAllFormulas` / `useDriverExpansions` / `usePathFormulaCache` / `buildExcelSnapshot`
+  是否在全量 `lineItems` 上跑，而非仅当前页。
+- ⚠️ **与 [[BL-0184]]（大单量报价单打开后 batch-evaluate 风暴）疑似同源**，接手时先合并看。
+
+### [BL-0192] 删除 1845 行报价单撞 Narayana 60s reaper（DELETE 路径未被 task-260825 覆盖）
+- **优先级**：**P1**
+- **来源**：`task-260825-报价单大单量分页与料号查询` 亲验期，主线实测。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-28
+- **实证**：对一张 1845 行 DRAFT 单调 `DELETE /api/cpq/quotations/{id}` →
+  **HTTP 500，耗时 60.17 秒**（Narayana 60s 事务 reaper 阈值），事务完整回滚，单据未删除。
+- **根因同族**：`QuotationService.delete()`（`:1805`）→ `deleteLineItems(id)` 把 1845 行放在**单个事务**内，
+  与建单物化、`ensureCardValues` 是同一个「单事务包全部行」架构问题。
+- ⚠️ **`task-260825-大单量导入建单性能` 的修复（merge `76c4b0ab`）覆盖了建单与物化路径，但 AC 里没有 DELETE**，
+  故本路径至今未修。
+- **人工处置记录**：本次为清理测试数据，主线按 `QuotationService.delete()` 的**同一顺序**手工执行 SQL
+  （`import_record` 置 NULL → 9 张 pending 表 → 3 张 NO ACTION 表 → 主表级联），共 13,381 行，成功。
+  ⚠️ 该序列**不可省略 pending 表清理** —— 直接 `DELETE FROM quotation` 会留下约 11,535 行
+  `pending_quotation_id` 指向已删单据的孤儿（`element_bom_item` 4153 / `unit_price` 1847 /
+  `material_bom`·`material_bom_item`·`element_bom` 各 1845）。
+
+### [BL-0193] `ensure-card-values` 物化成功但 HTTP 返回 500（用户视角仍是失败）
+- **优先级**：**P1**
+- **来源**：`task-260825-报价单大单量分页与料号查询` 亲验期，主线实测（在 `76c4b0ab` 修复**之后**）。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-28
+- **实证对比**（同一张 1845 行单 `QT-20260825-0180`）：
+
+  | | 修复前 | 修复后（master `0b084007`） |
+  |---|---|---|
+  | 耗时 | **60.5 s**（被 reaper 精准掐断） | **83.6 s**（未被掐断，拆批生效） |
+  | 数据结果 | **0 行物化** | ✅ **1845/1845 全部物化**（报价 13 MB + 核价 2425 kB，`original_amount` 恢复为 `-82729.665597520000`） |
+  | HTTP | 500 | **仍然 500** |
+
+- **意义**：**数据层已修好，接口响应层仍报错**。用户点一次会看到「失败」，但实际数据已经好了 ——
+  重刷一次才发现成功。这种「报错但其实成了」比单纯失败更容易误导（用户会重试，而重试要再等 83 秒）。
+- **疑似位置**：`QuotationResource.ensureCardValues`（`:218`）在 `ensureCardValues()` 之后
+  `return ApiResponse.success(quotationService.getById(id))` —— 该 `getById` 在 1845 行单上返回 **23.04 MB** DTO，
+  疑为超时/序列化失败点。**未取证，不作结论。**
+- ⚠️ **若 `task-260825` 的 AC 判据只看「无 reaper + 卡片值已物化」，会判通过，但用户仍看到 500。**
+
 ## P2
+
+### [BL-0194] `ConfigureSnapshotService.loadComponentsSnapshot` 的 `SUPPORTS` 语义清理
+- **优先级**：**P2**
+- **来源**：`repair-260829-异步物化事务上下文缺失` 闸门 A0（2026-08-29），作为**已否决备选（方案乙）**转 backlog，用户裁决登记。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-29
+- **内容**：`ConfigureSnapshotService.java:1068` 标 `@Transactional(TxType.SUPPORTS)`，
+  但其自身注释写着「只读 → SUPPORTS（表意：无需独立写事务；configure 已提交，SELECT 读最新已提交态即可）」——
+  **这个语义描述实际上等价于 `REQUIRES_NEW`**，`SUPPORTS` 是当年同步路径下"借调用方事务"的省事写法。
+- **为什么本次不做**：`repair-260829` 选定方案丙（修后台线程上下文），从源头解决"没有可用事务"这件事；
+  单改这一个注解**不足以修好本次缺陷**（生产日志 `21.559`→`21.647` 之间还有另一处 EntityManager 调用同样炸了）。
+  为避免"顺手改"扩大返修范围，转本条。
+- **前置条件**：`repair-260829` 已交付。做之前先确认丙的修复已稳定，否则会掩盖回归。
+- **影响面**：该方法**全工程仅 1 个调用点**（`ConfigureSnapshotService.java:296`），改动极小。
+  ⚠️ 注意 `CardSnapshotService` 里有个**同名的私有方法**（`:3953`），与本条无关，别改错。
+- **预估规模**：S
+
+### [BL-0195] 08-26/08-27 那 14 张空报价单的成因核查（`repair-260829` 未坐实项）
+- **优先级**：**P2**
+- **来源**：`repair-260829-异步物化事务上下文缺失` 立项勘察（2026-08-29），用户裁决登记。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-29
+- **内容**：本批 24 张单中 19 张 `quotation_line_component_data` 为 0 行。其中 **3 张**
+  （`QT-20260828-0201` / `0202` / `QT-20260829-0204`）已由生产日志 + 还原实验完整坐实根因；
+  但 **08-26/08-27 建的 14 张**（`0183`~`0190` / `0192`~`0196`）在缺陷激活点 `ca243876`（2026-08-28）**之前**，
+  成因**未坐实**。
+- **已有线索（推测，未取证）**：`RECORD.md` 记载 D-5 异步化是「2026-08-26 用户真机测试后裁决」，
+  dev server 可能在提交前就热重载跑了该改动。**这是推测，不作结论。**
+- **为什么可以是 P2**：存量数据靠 `repair-260829` 的 B-7 重跑 `ensure-card-values` 即可补齐，
+  **用户可用性不受阻**；本条只解决"归因完整性"，避免日后同类症状重新查一遍。
+- **前置条件**：`repair-260829` 已交付（否则新旧成因混在一起，查不清）。
+- ⚠️ **若 `repair-260829` 修复后仍有新单出现空 comp_data，本条立即升 P0** —— 那说明还有第二个根因。
+- **预估规模**：S
+
+
+### [BL-0196] `saveDraft` 落库 9,225 条 `componentData` INSERT 的 23~30 s
+- **优先级**：**P1**
+- **来源**：`repair-260829-保存草稿树页签校验N+1` 闸门 A0 裁决（2026-08-29），用户裁定转 BACKLOG。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-29
+- **内容**：1845 行单保存时，`flush` 写 **8.8 MB**（`row_data` 1.9 MB + `snapshot_rows` 5.8 MB），
+  实测耗时 **11.0 / 24.9 / 29.8 s 三次波动 2.7 倍**，是修完 B-1/B-2 后的最大剩余项。
+- 🔬 **判定实验已做，结论明确（勿重做）**：只改 `statement-batch-size`（100 → 1），其余不变 ——
+  **batch=1 时同一段 flush > 55 s 且被 60 s reaper 砍**，batch=100 时 29.8 s 完成
+  ⇒ **批处理确实在生效**，但只快不到 2 倍而非理论百倍。
+  ⇒ **瓶颈不在往返次数，在每批的处理成本**（客户端 jsonb 序列化 + 服务端 parse + TOAST 落盘）。
+  ⇒ **不是一个配置项能解决的问题**，要动就得换手法（`COPY` / 多值 INSERT / 压缩 `snapshot_rows` 体积）。
+- ⚠️ **B-6 交付后必须重新测量**：B-6 的记录级 UPSERT 已把写入量从 8.8 MB 降到约 1.9 MB
+  （`snapshot_rows` 不再删了又写回），本条的**剩余优化空间可能已大幅缩小甚至消失**。
+  **先测再排期，不要照搬本条登记时的数字。**
+- **前置条件**：`repair-260829` 的 B-6 已交付并实测。
+- **预估规模**：M
+
+### [BL-0197] 首存场景 `snapshotQuotation`（S2）的 14.1 s
+- **优先级**：P2
+- **来源**：同上。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-29
+- **内容**：`PUT /draft` 的 S2 段在**首存**（`snapshot_rows` 全空）时实测 **14.1 s**；
+  **续存时只要 1.7~1.9 s**（`skipRowsWithSnapshot=true` 让「driver 组件已有 snapshot_rows 的行」整行跳过 expand）。
+- **为什么是 P2**：稳态是续存，1.7 s 可接受；且 `repair-260829-异步物化事务上下文缺失` 交付后
+  建单即建好 `componentData`，**用户遇到的第一次保存也将是续存** ⇒ 14.1 s 的首存路径实际很少被走到。
+- ⚠️ **根因未拆解**：本任务未对 S2 内部埋点，14.1 s 花在哪未知。排期前先埋点，不要凭猜设计方案。
+- **预估规模**：M
+
+### [BL-0198] `componentData` 的**完整**增量保存（逐行 diff `row_data` 明细）
+- **优先级**：P2
+- **来源**：同上。用户在 A0 第二轮提出「saveDraft 应该也是增量更新」，裁定**本期只做记录级 UPSERT（B-6）**，完整增量转本条。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-29
+- **内容**：B-6 做的是**记录级** UPSERT（一条 `componentData` 记录整体更新，不看内部明细）。
+  完整增量指进一步比对 `row_data` jsonb **内部的明细行**，只写真正变化的那几行。
+- 🚨 **风险等级高于 B-6 一个数量级**：要引入「明细行级身份」，而行身份是本项目重灾区 ——
+  `AP-40`~`AP-54` 记录了 4 套行身份口径（`__effKey` 渲染 / `fp` 墓碑 / `rowKey` 提交校验 / `__nodeId` 树结构）
+  不一致导致的连环 bug（删错行、渲染错位、受控输入假死）。完整增量等于引入**第 5 套**。
+- **前置条件**：B-6 已交付且稳定；BL-0196 重测后确认写入量仍是瓶颈（否则本条收益为零）。
+- **预估规模**：L
+
+### [BL-0199] 前端保存只发变化的 payload
+- **优先级**：P2
+- **来源**：同上。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-29
+- **内容**：当前前端每次保存都发**全量** payload（1845 行单实测 **2.08 MB**（首存）/ **3.49 MB**（续存）），
+  后端无论怎么优化写入都省不掉传输与反序列化。
+- **为什么是 P2**：实测传输开销占比很小 —— 端到端 34.7 s 中 `[draft-profile]` 已覆盖 34.678 s，
+  **留给网络与序列化的不足 0.1 s**。收益有限。
+- ⚠️ 需要前端脏标记机制，改造面大于收益；**除非 BL-0196/0198 都做完后传输才成为瓶颈，否则不要启动本条**。
+- **预估规模**：L
+
+
+### [BL-0200] `BigDecimal.scale` 不匹配致无谓 UPDATE —— 同族字段排查
+- **优先级**：**P1**
+- **来源**：`repair-260829-保存草稿树页签校验N+1` 的 B-9（2026-08-29），用户裁决本期只修 `subtotal`，同族转本条。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-29
+- **内容**：B-9 已证实并修复 `subtotal` 一处：库列 `numeric(26,12)` 存 12 位小数、前端发 6 位，
+  Hibernate dirty check 用 `BigDecimal.equals()`（**比较 scale**）判定为脏 ⇒ 1,845 行全部无谓 UPDATE
+  ⇒ `QuotationLineItem` 带 `@DynamicUpdate`（全工程唯一）使其**无法合批** ⇒ 逐条跨网往返 **≈27 秒**。
+- 🔬 **实验证据（勿重做）**：唯一变量=payload 小数位数 ⇒ scale=6 → 1845 条 UPDATE / 43~52s；
+  scale=12 → **0 条** / 16.1s。修复后主仓实测 `line_item UPDATE=0`、端到端 **15.7~16.3s**。
+- ⚠️ **同族字段尚未排查**：`lineTotalAmount` / `lineUnitPrice` / `lineDiscountAmount` /
+  `discountRateApplied` / `finalDiscountRate` 等。本单这些值为 NULL 故未触发，
+  **换一张有优惠策略的单就会重现**。
+- ⚠️ **不止 `quotation_line_item`**：任何「`numeric(n,m)` 列 + 前端传更少小数位」的组合都会中招；
+  `quotation_line_component_data.subtotal` 同样是 `numeric(26,12)`。
+- **建议做法**：① 排查所有 `BigDecimal` 实体字段的赋值点，统一改 `compareTo` 判等；
+  ② 或在 DTO 反序列化层统一 `setScale` 到列定义的 scale（更根治，但要评估精度口径影响，
+  见 `docs/` 的「计算 12 位 / 显示 9 位 / 存储看列 scale」三层约定）。
+- **前置条件**：无。
+- **预估规模**：M
+
+
+### [BL-0201] `saveDraft` 与建单物化并发写 `componentData` —— 互斥锁根治
+- **优先级**：**P1**
+- **来源**：`repair-260829-保存草稿树页签校验N+1` 交付后返修（2026-08-29）。用户裁决本期用**前端规避**（F-4）止血，根治转本条。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-29
+- **内容**：建单后约 30 秒内（后台物化时长），任何 `saveDraft` 都会撞 `uq_qlcd_line_component` 而**整体失败**（409）。
+  两个流程并发写同一张表：物化的 `snapshotQuotation` 在「UPSERT 自建 componentData 行」，saveDraft 同时全删全建。
+- 🔬 **实测坐实**：等物化跑完后用**同一个 payload** 重发 → **200 成功** ⇒ 纯并发时序，非数据/逻辑错误。
+- 📌 **既有保护的边界**：`QuotationService:352` 有 `PESSIMISTIC_WRITE` 行锁（`SELECT ... FOR UPDATE` 锁 `quotation` 主表，持到事务结束）
+  ⇒ **两个 saveDraft 之间本就串行**；没被覆盖的只有 **saveDraft ↔ 物化**（物化不走这把锁）。
+- **候选修法**：让物化侧在写 `componentData` 前也去拿同一把行锁 ⇒ 两边天然串行，不需引入新锁对象。
+  落点（由并发会话 `repair-260829-异步物化事务上下文缺失` 提供）：`CreateQuotationMaterializer.materialize` 的 ① 步前后。
+- ⚠️ **持锁时长是关键权衡**：物化四步实测 `①22547ms ②283ms ③2767~6626ms ④…`，**① 步独占 76%**。
+  若锁只包 ① 步（driver 展开 + 写 `comp_data`，也正是冲突段），持锁约 **22 秒**；②③④ 写的是 `quote_card_values`/`costing_card_values`/Excel 值，**推测**不碰 `comp_data` 可放锁外。
+  🚫 **该推测未逐行核实**（提供方明确标注），采用前必须自己验一遍。
+- ⚠️ **体验是另一个决策点**：加锁后表现从「保存失败（可重试）」变成「保存转圈约 22 秒」。**哪个更好由用户定**，不要工程师代判。
+- 🚫 **已否决：`ON CONFLICT DO UPDATE`**（用户在了解风险后推翻）—— ① 把「响亮的失败」换成「沉默的数据倒退」（用户页面旧数据覆盖物化新成果，同族前科 `AP-60`/`BL-0188`）；② 物化侧走原生 SQL（`ConfigureSnapshotService:1331/1359`），`@SQLInsert` 对它无效，**反方向冲突仍会 409**。
+- 🆕 **2026-08-29 更新：候选方案扩为三条，成本与体验各不相同**（两条会话交叉讨论所得）
+
+  | 方案 | 用户看到什么 | 成本 | 备注 |
+  |---|---|---|---|
+  | **甲·排队**（原方案，互斥锁） | 「保存转圈 ~22 秒」后**成功** | 高：要评估持锁 22 秒对所有并发 saveDraft 的影响 | 唯一**无失败**的方案 |
+  | **乙·前端不让点**（F-4） | 按钮禁用 + 「基础数据正在准备中」，**压根点不了** | 低：纯前端 | 已实现待接线；**挡不住绕过前端/判据失效** |
+  | **丙·后端入口拒绝** | 「基础数据正在准备中，请稍候重试」，**仍是失败** | 低：`saveDraft` 入口判一次 `MaterializeRegistry.isInProgress` | 把「不可理解的失败」变成「可理解的失败」，并**省掉一次白跑的全量 saveDraft（1845 行、十几秒）** |
+
+- 🔑 **乙丙不互相替代，是前后端两层**：乙让用户压根不会点，丙兜住「绕过前端或前端判据失效」。
+  与并发会话 `repair-260829-卡片值算早了骨架值锁死` 的 B-1b（后端 `ensureCardValues` 入口判 `isInProgress`）**结构完全对称** ——
+  两条线各自在自己的入口装同一个闸门，道理都是「所有调用方都经过后端，一层挡住；前端只能挡住改到的那个入口」。
+- 🚦 **「转圈 22 秒」还是「明确失败」更好，是用户决策，不由工程师定。** 排期时先问。
+- 📌 **`MaterializeRegistry` 落地后甲的成本已大幅下降**：丙不引入锁、不改锁语义、不评估持锁影响，可先做丙止血，甲另议。
+- **前置条件**：`MaterializeRegistry`（由 `repair-260829-卡片值算早了骨架值锁死` 提供）已合并进 master。
+- **预估规模**：丙 = S；甲 = M
+
+### [BL-0202] 建单物化算完的卡片值被紧随的 `saveDraft` 清掉、再 lazy 重算一遍
+- **优先级**：P2
+- **来源**：并发会话 `task-260825/repair-260829-异步物化事务上下文缺失` 的观察，本线登记（2026-08-29）。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-29
+- **内容**：`saveDraft` **按设计**会把卡片值置 NULL（D-1 失效，`QuotationWizard.tsx:355` 注释亦写明），
+  由后续 lazy `ensureCardValues` 重算。于是建单物化辛苦算完的 `quote_card_values`/`costing_card_values`，
+  会被用户紧随其后的第一次保存**整批清掉**，再花时间重算一遍。
+- 🔬 **实测**：`QT-20260829-0205` 重算耗时 **24 秒**（`qcv` 0 → 1845，总价不变）。
+- **为什么是 P2**：功能正确（值最终会被算回来），纯粹是重复劳动；`F-4`（物化未完成时禁用保存）落地后
+  用户至少不会在物化跑到一半时保存，但「物化算完 → saveDraft 清掉 → lazy 再算」这个来回本身仍在。
+- **可能的方向**（未论证）：saveDraft 判断哪些行的 `snapshot_rows` 实际未变，就不失效其卡片值；
+  或让物化与 saveDraft 共享一次计算结果。⚠️ 触及 D-1 失效语义（`lazy-cardvalues` 的核心不变量），需谨慎论证。
+- **预估规模**：M
+
+### [BL-0183] 建单后置物化拆批事务 / 移出请求线程（`task-260825` 已否决备选丙）
+- **状态：✅ DONE（2026-08-28，合 master merge `76c4b0ab`）** —— 复评触发条件在 `task-260825`
+  实施期即被实测触发（③ `ensureCardValues` 实测 58,679ms / 60s 预算余量仅 2%，真实阈值 ≈1887 行），
+  故**两条可选做法最终都做了**，不再留待另立项：
+  ① 按行分批 + 每批独立 `REQUIRES_NEW`（D-4/B-28 治 ③、B-29 治 ④），批内加
+     `SET LOCAL lock_timeout='10s'`、单批失败不阻断其余批、批边界用
+     `ORDER BY sort_order NULLS LAST, id` 钉死（B-30）；
+  ② 整体移出请求线程，`POST` 立即返回 + 前端轮询只读状态端点（D-5 + B-22/B-23 + F-6~F-11）。
+  受控实验（持 300 行锁 300 秒）实测终态：③④ 各只废被堵的那一批，其余批照常完成，
+  `ARJUNA012117` 0 次，释放锁后自愈至 1845/1845、哨兵 0。
+- **优先级**：**P2**（`task-260825` 方案甲落地后复评；见下方「复评触发条件」）
+- **来源**：`task-260825-大单量导入建单性能` 闸门 A0（2026-08-25），用户裁决**本次不做、转 backlog**。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-25
+- **它治什么（与方案甲不同源，不可互相替代）**：
+  - **方案甲**（本次做）治的是「**不该有的** 27s」—— 消除 `ConfigureSnapshotService` 里的 N+1，
+    把耗时拉回 60s 事务预算内。
+  - **本条**治的是「**即使没有任何浪费**，量级再涨仍会超 60s」—— 即
+    `CreateQuotationMaterializer.materialize` 的四步物化全部串在**单个请求线程 + 单个 JTA 事务**里，
+    该结构对行数的容忍度存在**硬上限**（Narayana 默认 60s）。
+- **可选做法**（未裁决，留待立项时走 A0）：
+  1. 四步物化按行分批，每批独立事务（`REQUIRES_NEW`），单批控制在预算内；
+  2. 整体移出请求线程，`POST` 立即返回 + 轮询 —— **前端有现成范式可复用**：
+     `basicDataImportV6Service.pollImportResult`（Step 1 导入已用，20 分钟兜底）；
+  3. 显式加大事务超时 —— ⚠️ **最不推荐**，只是把墙推远且长事务本身有害（长时间持锁、连接占用）。
+- **⚠️ 复评触发条件（任一命中即应提级排期）**：
+  - `task-260825` 方案甲落地后，1845 行场景**仍**接近或超过 60s；
+  - 出现明显大于 1845 行的真实订单（当前库内第二大报价单仅 **2 行**，1845 是孤例）；
+  - 备选丙被证明是「彻底消除该类超时」的必要条件。
+    ✅ **2026-08-25 独立评审结论已出：不必须做丙。** 评审判定只要把 `task-260825` 的两处 N+1
+    （D-1 `loadRowDataByComp` + **D-3 `loadFrozenQuoteTabs`**，后者为真凶）都修掉，
+    阈值可从 ≈1845 行推到 **≈3700 行**，已覆盖当前业务量级 → **本条维持 P2 不上调**。
+    ⚠️ 但评审同时标注 **④ `ensureExcelValues` 未测**（同为单事务包住全部行），
+    它可能是下一堵墙；`task-260825` 的 **AC-9** 会测出四步耗时，**该数据出来后再复评本条**。
+- **关联**：`dev-docs/task-260825-大单量导入建单性能/问题说明.md` §⑤「已否决备选」、§⑦（与报价单分页功能的边界）
+
 
 ### [BL-0173] 报价单**详情页**BOM 树页签多出「版本」列（编辑页正常）
 - **优先级**：P2（纯渲染层错显，不影响取值/落库；但用户可见、与业务裁决直接冲突）
@@ -2190,6 +2629,96 @@
 - **验收要点**：待细化。
 
 ---
+
+### [BL-0180] 核价侧 `precomputeCostingDriverUnion` 缺 `BomTreeVarsContext` 注入（与 task-260819 B-19 同类缺口）
+- **优先级**：**P2**
+- **来源**：`task-260819-取数配置器` 开发期，后端子代理主动报告 + 主线核实（裁决 `D-62`）。
+  用户裁决**本期不修**，登记二期核价侧统一时一并做。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-24
+- **缺口**：`CardSnapshotService:1188` 的 `precomputeCostingDriverUnion()` → `expandForPartSet`
+  这条路径**从不 open `BomTreeVarsContext`**，与 task-260819 `B-19` 修的是同一类缺口
+  （`B-19` 修的是报价侧非 BOM 页签的 4 个注入点）。
+- **触发条件（两个同时满足才发作）**：① **非树核价模板**（`templateHasTreeTab` 为真时整个方法直接跳过）；
+  ② 该组件的 `$view` 引用了 `:total_material_no`。
+- **后果**：参数未注入 → `SqlViewExecutor:626` 「安全降级」为字面量 `NULL` → `x = ANY(NULL)`
+  求值为 NULL → **视图恒 0 行且不报错**（实测：`ANY(NULL)`=0 行 / `ANY(ARRAY[]::text[])`=0 行 /
+  `ANY(ARRAY['X'])`=1 行）。即配置错误被伪装成「这个客户没数据」。
+  ⚠️ task-260819 的 `B-20` 已把**报价侧**这条降级路径改成显式报错（`BusinessException 400`，
+  文案点名 `total_material_no`）；本条修复时应确认该保护是否覆盖到核价侧这条路径。
+- **为什么本期不做**（用户裁决理由）：本期核价侧**没有 golden、没有节点边声明**，修了也验不了 ——
+  会变成「改了但没人验证过」的代码，正是 `AC-59` 那类静默故障的温床。
+- **修复提示**：`B-19` 已在 `BomTreeRenderService` 抽出 `collectTotalMaterialNoUnion(lineItems, usage)`
+  （复用 `renderInternal()` 原算法，不另写第二套），核价侧直接复用该方法即可，传 `usage="COSTING"`。
+
+### [BL-0181] 组件 `50c646cb`「元素单价」违反可编辑性通则（核价组件配成 `INPUT_NUMBER`）
+- **优先级**：**P1**（金额字段 + 影响 3 个核价模板下的已有核价单编辑行为）
+- **来源**：`task-260819-取数配置器` 开发期，用户裁决第 3 条时给出通则（`D-60`）后，主线按该通则实测判定。
+  用户裁决**本期不修、单独任务做**。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-24
+- **🆕 判定通则（`D-60`，用户原话）**：「要看类型，如果是核价用的组件，就是 basic_data，
+  报价用的类型就是 INPUT_NUMBER，靠策略规则收敛编辑权限」
+  → **核价组件的取数字段用 `BASIC_DATA`（只读）；报价组件用 `INPUT_NUMBER`（可编辑）**。
+  ⚠️ **这条通则的适用范围远大于本条目** —— 它是判定任意组件配置合规性的判据，
+  配组件 / 审配置时可直接拿来判对错，不限于「元素单价」这一个字段。
+- **实测（`cpq_db_0724`，2026-08-24；判侧依据 = `template_kind`，不是 SQL 文本特征）**：
+  库中有 **4 个各自独立、同名「物料与元素BOM」**的组件，**全部只被 COSTING 模板引用**：
+
+  | 组件 id | 引用模板数 | 字段数 | 「元素单价」`field_type` | 绑定键 | 取价函数（notes） | 判定 |
+  |---|---|---|---|---|---|---|
+  | `9cab340e` | 1 | 7 | `BASIC_DATA` | `basic_data_path` | `f_material_element_price` | ✅ 合规 |
+  | `4560fc33` | 2 | 7 | `BASIC_DATA` | **两键都写** | `f_material_element_price` | ✅ 合规（含无害冗余） |
+  | **`50c646cb`** | **3** | 11 | **`INPUT_NUMBER`** | `default_source` | **`f_customer_element_price`** | ❌ **违规** |
+  | `e4dcfed7` | 1 | 7 | `BASIC_DATA` | `basic_data_path` | `f_material_element_price` | ✅ 合规 |
+
+- **要做的**：① `50c646cb` 的「元素单价」由 `INPUT_NUMBER` + `default_source` 改为
+  `BASIC_DATA` + `basic_data_path`；② 顺带清掉 `4560fc33` 的双绑定键冗余（两者路径相同，无行为差异）。
+- **🚨 为什么必须单独立项、不能顺手改**：
+  - 改 `field_type` 触发 **`AP-44`**（字段类型联动协议：17 个检查点 / 约 13 个文件 /
+    强制跑 `quotation-flow.spec.ts` + `composite-product-flow.spec.ts` 双 spec E2E），
+    是本项目最重的一类改动；
+  - 会**改变 3 个核价模板下已有核价单的编辑行为** —— 原本能手填单价的格子变只读，
+    需要先做存量评估（有多少张单实际手填过该列、改后这些值如何处理）;
+  - 取价函数也与另外三个不同（`f_customer_element_price` vs `f_material_element_price`，
+    notes 提到 task-0729 E12「两侧同一套客户价」）—— **需业务确认这是有意还是漂移**，
+    不要在没搞清前一并改掉。
+
+### [BL-0187] 报价单读侧服务端分页（GET 23 MB / 9.98 s / 数据常驻 101 MB）
+- **优先级**：**P2**
+- **来源**：`task-260825` 用户 2026-08-26 裁决撤回，转二期。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-26
+- **背景（实测）**：`GET /api/cpq/quotations/{id}` 在 1845 行单上 **23.04 MB / 9.98 s**
+  （`quoteCardValues` 65.0% / `componentData` 14.7% / `costingCardValues` 11.4%）；
+  前端数据常驻 **101 MB**。一期的前端分页只砍「渲染」那 426 MB，**这两项砍不到**。
+- **触发条件（任一成立才启动）**：① 一期 AC-19 达标但用户仍反馈慢（瓶颈在 Step1 的 22.2 s 取数+解析）；
+  ② 单据规模再上一量级（5000+ 行），101 MB 常驻逼近地板。
+- 🔴 **启动时必须重新处理的 4 项 P0**（独立评审已查实，勿重新推导）：
+  **A-2** COMPOSITE 父卡与 PART 子件跨页即断链（`useDriverExpansions.ts:258-267/302-305` 遍历全量数组建父子映射；
+  `QuotationWizard.tsx:1069-1071` `findIndex` 返 -1 → 后端 `QuotationService.java:2611` 静默 `continue` →
+  **PART 子件永久变孤儿，无日志**）→ 分页单元须改为「**卡片族**」，属方案级扩范围；
+  **D-3** `GET /quotations/{id}/excel-view`（`ExcelViewService.java:133`）是第三个读入口，全量无分页；
+  **Q2-a** `syncLineItemsFromResponse` 长度守卫（`QuotationWizard.tsx:776`）致回填静默 no-op → 插重复行；
+  **Q2-b** `ensure-card-values` 返回全量 DTO 会把分页数组打回全量。
+- **完整设计**：`dev-docs/task-260825-.../需求文档-v1-服务端分页-已撤回.md`
+
+### [BL-0188] 打开报价单编辑页会自发一次整单 `PUT /draft`（用户未点保存）
+- **优先级**：**P2**（建议另立 `repair-` 而非在此排期）
+- **来源**：`task-260825` 立项期主线**网络层拦截实测**。
+- **状态**：TODO（未排期）
+- **登记日期**：2026-08-26
+- **实证**：Playwright + `page.route('**/api/**')` 拦截，打开编辑页并切到 Step2 的全过程，
+  捕获到 **1 次** `PUT /api/cpq/quotations/{id}/draft`，**无任何用户编辑动作**；
+  **1 行单与 1845 行单都会触发**；详情页对照组 **0 次**。（测量全程零写入落库）
+- **意义**：`QuotationWizard.tsx:314` 记录的「打开 → autosave 风暴」问题，`:317` 的修复**未覆盖此触发路径**。
+  该 PUT 走 `QuotationService.saveDraft`（单 `@Transactional`、全删全建）→
+  **这是「首次 draft 接口超时」的真实触发点：用户根本没点保存**。
+- **待取证**：触发源是哪个 effect、是否每次打开都发、与 `EDIT_AUTOSAVE_ENABLED=false`（`:355`，编辑失焦 autosave
+  已关闭）如何共存。
+- **关联**：疑与 `task-260825` 证据文件中「同一张单首次 GET 卡片值全 NULL、二次全有」的异常同源
+  （`saveDraft` 会按 D-1 失效把卡片值置 NULL，`QuotationService.java:507/2425`），**因果链未取证，不作结论**。
+- **证据**：`dev-docs/task-260825-报价单大单量分页与料号查询/证据/开工前基线-读侧.md`
 
 ## 已完成
 

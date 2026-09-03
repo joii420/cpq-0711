@@ -9,8 +9,11 @@ import jakarta.inject.Inject;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @ApplicationScoped
@@ -251,6 +254,116 @@ public class MaterialCustomerMapRepository implements PanacheRepositoryBase<Mate
             .setParameter("pendingQuotationId", pendingQuotationId)
             .setParameter("updatedBy", updatedBy)
             .executeUpdate();
+    }
+
+    /** 每行占位数：QUOTE 批量语句一行的参数个数（11 个 upsertQuote 形参，不含 systemType 字面量
+     *  和 pendingQuotationId——后者对整批共用同一值，走单个共享绑定变量，不逐行占位）。 */
+    private static final int QUOTE_CHUNK_ROW_WIDTH = 12;
+
+    /**
+     * task-260825 B-26：QUOTE 侧批量 upsert，语义**逐字段**对齐 {@link #upsertQuote}
+     * （冲突键 = uq_mcm_quote_no 部分唯一索引 material_no WHERE system_type='QUOTE'；
+     * ★ 客户守卫 WHERE customer_no = EXCLUDED.customer_no；customer_product_no /
+     * pending_quotation_id 直接 SET；其余描述字段 COALESCE 末值非空胜），
+     * 用一条多值 INSERT 取代 N 次独立往返。
+     *
+     * <p><b>为什么必须先在 Java 内按 material_no 折叠（{@link MapRow#coalesceOver}）</b>：
+     * 本方法的 ON CONFLICT target 是 material_no。同一条多值 INSERT 语句里若两行命中同一
+     * material_no（sheet 内合法场景，见 {@code Q02CustomerMapReplaceTest
+     * #duplicateMaterialNoWithinSheet_lastRowWinsWithoutError}），Postgres 会抛
+     * 21000 cardinality_violation（"ON CONFLICT DO UPDATE command cannot affect row a
+     * second time"），把整个事务毒成 aborted——且**已被 {@code SavepointIsolationFeasibilityTest}
+     * 证伪**：Quarkus/Agroal 在连接 enlist 进 JTA 事务后拒绝 {@code Connection.rollback(Savepoint)}，
+     * 该错误发生后同事务内任何后续 SQL（包括"重放为逐行"的补救查询）都会连锁失败。因此不能走
+     * "先试批量、报错再逐行补救"的事后捕获路径，必须**在写库前**用折叠消灭这唯一可达的批内冲突
+     * ——与调用方 {@code Q02CustomerMapHandler} 类注释的既有设计哲学（"必须从根上预防而非事后捕获"）一致。
+     * {@code coalesceOver} 的字段级 COALESCE / 直接覆盖语义与「同一事务内连续调用 upsertQuote」
+     * 逐字段等价（后行看见前行已提交的效果，非空覆盖空，customer_product_no/systemType 直接取末值）。
+     *
+     * <p><b>customer_product_no 唯一性（uq_mcm_quote_cust_prod）不在本方法折叠范围内</b>：
+     * 该冲突由调用方 {@code Q02CustomerMapHandler} 的 ②-a 内存去重在调用本方法前就已消灭
+     * （按 customer_product_no 分组，组内只留最后一行），本方法收到的 rows 里 customer_product_no
+     * 必然两两不同，正常路径下不会撞该唯一约束。若仍然撞了（去重逻辑遗漏），本方法照样让异常
+     * 穿透——调用方按块（非按行）捕获并转 {@code IllegalStateException}，不吞不静默。
+     *
+     * <p><b>跨客户串号不是异常</b>：客户守卫 WHERE 失败时该行只是不出现在 RETURNING 结果里
+     * （等价 DO NOTHING），不抛错、不影响同批其余行——调用方按"折叠后的 material_no 是否在
+     * 返回集合里"逐行归因，同一 material_no 在同一次 handle() 调用内的多次出现结果必然一致
+     * （ctx.customerNo 全程不变，见类注释）。
+     *
+     * @return 本批次实际写入（INSERT 或客户守卫放行的 UPDATE）成功的 material_no 集合；
+     *         折叠后某个 material_no 不在返回集合里 = 客户守卫拦截（跨客户串号）。
+     */
+    public Set<String> upsertQuoteBatch(List<MapRow> rows, UUID updatedBy, UUID pendingQuotationId) {
+        if (rows == null || rows.isEmpty()) return Collections.emptySet();
+        LinkedHashMap<String, MapRow> folded = new LinkedHashMap<>();
+        for (MapRow r : rows) {
+            folded.merge(r.materialNo, r, MapRow::coalesceOver);
+        }
+        List<MapRow> chunk = new ArrayList<>(folded.values());
+        Set<String> succeeded = new LinkedHashSet<>();
+        final int CHUNK = 200;
+        for (int off = 0; off < chunk.size(); off += CHUNK) {
+            succeeded.addAll(upsertQuoteChunk(chunk.subList(off, Math.min(off + CHUNK, chunk.size())), updatedBy, pendingQuotationId));
+        }
+        return succeeded;
+    }
+
+    private Set<String> upsertQuoteChunk(List<MapRow> chunk, UUID updatedBy, UUID pendingQuotationId) {
+        StringBuilder vals = new StringBuilder();
+        for (int i = 0; i < chunk.size(); i++) {
+            if (i > 0) vals.append(", ");
+            int b = i * QUOTE_CHUNK_ROW_WIDTH;
+            vals.append("('QUOTE', :p").append(b).append(", :p").append(b + 1).append(", :p").append(b + 2)
+                .append(", :p").append(b + 3).append(", :p").append(b + 4).append(", :p").append(b + 5)
+                .append(", :p").append(b + 6).append(", :p").append(b + 7).append(", :p").append(b + 8)
+                .append(", :p").append(b + 9).append(", :p").append(b + 10).append(", :p").append(b + 11)
+                .append(", :pq, NOW(), NOW(), :ub)");
+        }
+        String sql =
+            "INSERT INTO material_customer_map (system_type, material_no, customer_no, customer_name, " +
+            "  customer_material_name, customer_product_no, customer_drawing_no, seq_no, " +
+            "  payment_method, base_currency, quote_currency, exchange_rate, production_no, pending_quotation_id, " +
+            "  created_at, updated_at, updated_by) VALUES " + vals +
+            " ON CONFLICT (material_no) WHERE system_type='QUOTE' DO UPDATE SET " +
+            "  customer_product_no     = EXCLUDED.customer_product_no, " +
+            "  customer_name           = COALESCE(EXCLUDED.customer_name,          material_customer_map.customer_name), " +
+            "  customer_material_name  = COALESCE(EXCLUDED.customer_material_name, material_customer_map.customer_material_name), " +
+            "  customer_drawing_no     = COALESCE(EXCLUDED.customer_drawing_no,    material_customer_map.customer_drawing_no), " +
+            "  seq_no                  = COALESCE(EXCLUDED.seq_no,                 material_customer_map.seq_no), " +
+            "  payment_method          = COALESCE(EXCLUDED.payment_method,         material_customer_map.payment_method), " +
+            "  base_currency           = COALESCE(EXCLUDED.base_currency,          material_customer_map.base_currency), " +
+            "  quote_currency          = COALESCE(EXCLUDED.quote_currency,         material_customer_map.quote_currency), " +
+            "  exchange_rate           = COALESCE(EXCLUDED.exchange_rate,          material_customer_map.exchange_rate), " +
+            "  production_no           = COALESCE(EXCLUDED.production_no,          material_customer_map.production_no), " +
+            "  pending_quotation_id    = EXCLUDED.pending_quotation_id, " +
+            "  updated_at              = NOW(), " +
+            "  updated_by              = EXCLUDED.updated_by " +
+            "WHERE material_customer_map.customer_no = EXCLUDED.customer_no " +
+            "RETURNING material_no";
+        Query q = em.createNativeQuery(sql);
+        for (int i = 0; i < chunk.size(); i++) {
+            MapRow r = chunk.get(i);
+            int b = i * QUOTE_CHUNK_ROW_WIDTH;
+            q.setParameter("p" + b, r.materialNo);
+            q.setParameter("p" + (b + 1), r.customerNo);
+            q.setParameter("p" + (b + 2), r.customerName);
+            q.setParameter("p" + (b + 3), r.customerMaterialName);
+            q.setParameter("p" + (b + 4), r.customerProductNo);
+            q.setParameter("p" + (b + 5), r.customerDrawingNo);
+            q.setParameter("p" + (b + 6), r.seqNo);
+            q.setParameter("p" + (b + 7), r.paymentMethod);
+            q.setParameter("p" + (b + 8), r.baseCurrency);
+            q.setParameter("p" + (b + 9), r.quoteCurrency);
+            q.setParameter("p" + (b + 10), r.exchangeRate);
+            q.setParameter("p" + (b + 11), r.productionNo);
+        }
+        q.setParameter("pq", pendingQuotationId);
+        q.setParameter("ub", updatedBy);
+        List<?> rs = q.getResultList();
+        Set<String> out = new LinkedHashSet<>();
+        for (Object o : rs) out.add((String) o);
+        return out;
     }
 
     /** ① replace-per-customer：删除该客户全部映射（重导前清栈，避免历史脏行残留扇出）。

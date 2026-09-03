@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>原型导航 · task-260901</title>
+<style>
+  body { margin:0; padding:40px; background:#f5f5f5; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif; color:rgba(0,0,0,.88); }
+  .wrap { max-width:760px; margin:0 auto; }
+  .badge { display:inline-block; background:#fff7e6; border:1px solid #ffd591; color:#d46b08; border-radius:4px; padding:6px 14px; font-size:13px; font-weight:600; margin-bottom:20px; }
+  h1 { font-size:22px; margin:0 0 6px; }
+  .sub { color:rgba(0,0,0,.45); font-size:13px; margin-bottom:28px; }
+  .card { background:#fff; border:1px solid #f0f0f0; border-radius:8px; padding:18px 20px; margin-bottom:14px; }
+  .card a { font-size:15px; font-weight:600; color:#1677ff; text-decoration:none; }
+  .card .meta { font-size:12px; color:rgba(0,0,0,.45); margin-top:6px; line-height:1.8; }
+  .note { background:#fff; border:1px solid #f0f0f0; border-radius:8px; padding:18px 20px; font-size:13px; line-height:1.9; color:rgba(0,0,0,.65); }
+  code { background:#f5f5f5; padding:1px 5px; border-radius:3px; font-size:12px; font-family:ui-monospace,Menlo,Consolas,monospace; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="badge">📌 当前基准 · 2026-09-01</div>
+  <h1>task-260901 · 保存草稿增量协议与并发保护</h1>
+  <div class="sub">本任务动到的弹层共 1 个，故原型 1 份。</div>
+
+  <div class="card">
+    <a href="./冲突提示.html">冲突提示.html</a>
+    <div class="meta">
+      服务 <b>AC-12</b> · 对应 <code>fronttask.md</code> 的 <b>F-2d</b><br>
+      含三种状态：默认态 / 最长文案 / 不触发本弹层的两种 409（对照）
+    </div>
+  </div>
+
+  <div class="note">
+    <b>为什么只有一份原型</b>：按 <code>frontend.md</code> §1.3 的触发条件（新页面 / 新抽屉或弹层 / 布局与信息架构改动 / 交互流程改动 / 表格列与工具栏动作增删），本任务逐条核对 <code>fronttask.md</code> 的 F-x：
+    <br>· <b>F-2d</b> 冲突对话框 —— <b>新弹层，触发</b> ✅ 已出
+    <br>· F-1a~e（diff 计算）、F-2a~c（版本号维护）、F-3a~c（响应回填）—— 纯逻辑与取数改动，<b>不触发</b>
+    <br>· F-4a~e —— 回归确认项，无 UI 改动，<b>不触发</b>
+    <br><br>
+    <b>关于「空数据态」</b>：本弹层是阻断式告知，文案为固定串、无列表、无变量，不存在空数据形态；「禁用态」同理不存在（唯一按钮恒可点）。故三种必画状态中只有「最长文案」适用，已画。
+    <br><br>
+    <b>历史快照</b>：本任务是该弹层的首份原型，无上一份需要改挂 🕰️。
+  </div>
+
+</div>
+</body>
+</html>

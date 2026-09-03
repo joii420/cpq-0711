@@ -1,0 +1,8 @@
+{
+  "code": 409,
+  "message": "这张报价单已被他人修改",
+  "data": {
+    "reason": "STALE_VERSION",
+    "currentVersion": 11
+  }
+}

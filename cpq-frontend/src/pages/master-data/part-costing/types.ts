@@ -30,7 +30,9 @@ export type ColumnRole = 'AXIS' | 'SUBDIM' | 'VALUE' | 'NAME';
 export type ColumnType = 'STRING' | 'NUMBER' | 'DECIMAL' | 'BOOLEAN' | 'ENUM';
 /** MASTER=走主表 lookup / ENUM=固定枚举 / FREE=自由文本 */
 export type DropdownKind = 'MASTER' | 'ENUM' | 'FREE';
-export type MasterType = 'process' | 'element' | 'material';
+// task-260902 · F-1：`/dataset/{dataset}/lookup/{masterType}` 契约（api.md §8）多出 recipe / customer 两种，
+// 此处为**加法式**扩宽；现有 /pricing-basic-data 侧后端只会下发前三种，行为不变。
+export type MasterType = 'process' | 'element' | 'material' | 'recipe' | 'customer';
 
 export interface DropdownDef {
   kind: DropdownKind;
@@ -49,6 +51,15 @@ export interface ColumnDef {
   role: ColumnRole;
   editable: boolean;
   dropdown?: DropdownDef;
+  /**
+   * task-260902（api.md §2）：`/dataset/{dataset}/sheets` 才下发的两个**可选**字段。
+   * 现有 `/pricing-basic-data/sheets` 不下发 ⇒ 恒为 undefined，现有页签渲染不受影响。
+   * - `compared`：是否为比对项（参与行指纹）。前端**只读展示**，列头打 🔗 角标，不参与任何逻辑；
+   *   且仅在 `EditableSheetTable` 显式传 `showComparedBadge` 时才渲染角标。
+   * - `required`：红底必填 / 轴列。前端前置校验用，后端仍会再校验一次。
+   */
+  compared?: boolean;
+  required?: boolean;
 }
 
 export interface SheetMeta {

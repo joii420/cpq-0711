@@ -1,0 +1,36 @@
+{
+  "totalRows": 3,
+  "createdCount": 3,
+  "skippedCount": 0,
+  "elapsedMs": 1178,
+  "created": [
+    {
+      "rowNum": 2,
+      "username": "t260902a",
+      "fullName": "张明",
+      "role": "SALES_REP",
+      "roleLabel": "销售代表",
+      "initialPassword": "sjrcrE!Btn",
+      "hint": null
+    },
+    {
+      "rowNum": 3,
+      "username": "t260902b",
+      "fullName": "李思",
+      "role": "SALES_MANAGER",
+      "roleLabel": "销售经理",
+      "initialPassword": "G2kjub2TQn",
+      "hint": null
+    },
+    {
+      "rowNum": 4,
+      "username": "t260902c",
+      "fullName": "王赫",
+      "role": "PRICING_MANAGER",
+      "roleLabel": "财务",
+      "initialPassword": "k5fJ6LjbP9",
+      "hint": null
+    }
+  ],
+  "skipped": []
+}

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Button, Input, Space, Tag, Card, message, Tabs,
+  Button, Input, Space, Tag, Card, message, Tabs, Tooltip,
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined,
@@ -15,6 +15,9 @@ import { useAuthStore } from '../../stores/authStore';
 import QuoteBasicDataImportV6Drawer from './QuoteBasicDataImportV6Drawer';
 import CopyQuotationDrawer from './CopyQuotationDrawer';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
+// task-260902 · F-7：报价数据集导入（与现有「从基础数据导入」两条线互不相干，AC-35 / AC-43）
+import DatasetImportDrawer from '../master-data/dataset/DatasetImportDrawer';
+import { DATASET_EDIT_ROLES, NO_PERMISSION_TIP } from '../master-data/dataset/datasetConfig';
 import { formatNumber } from '../../utils/formatNumber';
 
 const { Search } = Input;
@@ -53,6 +56,9 @@ const QuotationList: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [basicImportOpen, setBasicImportOpen] = useState(false);
+  // task-260902 · F-7：新增的「导入报价数据」抽屉，与上面那个**互不影响**
+  const [quoteDatasetImportOpen, setQuoteDatasetImportOpen] = useState(false);
+  const canImportQuoteDataset = !!user && DATASET_EDIT_ROLES.includes(user.role);
   const [copySource, setCopySource] = useState<{ id: string; templateId?: string } | null>(null);
 
   const loadData = async () => {
@@ -273,6 +279,18 @@ const QuotationList: React.FC = () => {
         <Button type="primary" icon={<ImportOutlined />} onClick={() => setBasicImportOpen(true)}>
           从基础数据导入
         </Button>
+        {/* task-260902 · F-7（AC-35）：位置固定在「从基础数据导入」之后、「新建报价单」之前。
+            写端点仅 PRICING_MANAGER / SYSTEM_ADMIN（api.md §0）⇒ 其余角色可见但禁用。 */}
+        <Tooltip title={canImportQuoteDataset ? undefined : NO_PERMISSION_TIP}>
+          <Button
+            type="primary"
+            icon={<ImportOutlined />}
+            disabled={!canImportQuoteDataset}
+            onClick={() => setQuoteDatasetImportOpen(true)}
+          >
+            导入报价数据
+          </Button>
+        </Tooltip>
         <Button icon={<PlusOutlined />} onClick={() => navigate('/quotations/new')}>
           新建报价单
         </Button>
@@ -307,6 +325,12 @@ const QuotationList: React.FC = () => {
       />
 
       <QuoteBasicDataImportV6Drawer open={basicImportOpen} onClose={() => { setBasicImportOpen(false); loadData(); }} />
+      <DatasetImportDrawer
+        open={quoteDatasetImportOpen}
+        dataset="quote"
+        onClose={() => setQuoteDatasetImportOpen(false)}
+        onSuccess={() => { setQuoteDatasetImportOpen(false); loadData(); }}
+      />
       <CopyQuotationDrawer
         open={!!copySource}
         defaultTemplateId={copySource?.templateId}

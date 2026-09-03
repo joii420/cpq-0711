@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Input, InputNumber, Select, Checkbox, Button, Typography, Tooltip, Space, Modal, Form, Alert, Segmented, Tag } from 'antd';
+import { Input, Select, Checkbox, Button, Typography, Tooltip, Space, Modal, Form, Alert, Segmented, Tag } from 'antd';
 import { dataSourceResolverService, RESOLVER_TYPE_LABEL } from '../../services/dataSourceResolverService';
 import { SortableTable, DragHandle } from '../../components/SortableTable';
 
 const { Text } = Typography;
 import { DeleteOutlined, PlusOutlined, LinkOutlined, EditOutlined } from '@ant-design/icons';
 import type { FieldItem, FormulaItem } from './types';
-import { FIELD_TYPE_OPTIONS, newFieldRow, FIELD_WIDTH_PRESETS, resolveFieldWidth } from './types';
+import { FIELD_TYPE_OPTIONS, newFieldRow, resolveFieldWidth } from './types';
 import PathPickerDrawer from './PathPickerDrawer';
 import GlobalVariablePickerDrawer from '../../components/GlobalVariablePickerDrawer';
 import DefaultSourceEditor from './DefaultSourceEditor';
@@ -104,14 +104,6 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
     updateField(key, { is_subtotal: checked, ...(checked ? {} : { is_amount: false }) });
   };
 
-  const moveField = (index: number, direction: 'up' | 'down') => {
-    const next = [...fields];
-    const swapIndex = direction === 'up' ? index - 1 : index + 1;
-    if (swapIndex < 0 || swapIndex >= next.length) return;
-    [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
-    onChange(next);
-  };
-
   const deleteField = (key: string) => {
     onChange(fields.filter((f) => f.key !== key));
   };
@@ -126,12 +118,17 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
     {
       title: '字段名',
       key: 'name',
+      width: 220,
       render: (_: unknown, record: FieldItem) => (
         <Input
           value={record.name}
           onChange={(e) => updateField(record.key, { name: e.target.value })}
           placeholder="字段名称"
           size="small"
+          // SortableTable 未设 scroll.x ⇒ antd 走 table-layout:auto，列上的 width 只是建议，
+          // 空间会被内容最长的「内容/配置」列吃掉（实测字段名列被压到 32px，表头竖排成「字段名」）。
+          // 用单元格内容的 minWidth 兜出硬下限，才是这张表里真正生效的加宽手段。
+          style={{ minWidth: 190 }}
         />
       ),
     },
@@ -472,61 +469,6 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
         />
       ),
     },
-    {
-      title: '宽度',
-      key: 'width',
-      width: 150,
-      render: (_: unknown, record: FieldItem) => (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <InputNumber
-            size="small"
-            min={1}
-            value={record.width}
-            onChange={(val) =>
-              updateField(record.key, { width: typeof val === 'number' && val > 0 ? val : undefined })
-            }
-            placeholder="默认120"
-            addonAfter="px"
-            style={{ width: '100%' }}
-          />
-          <Space size={2}>
-            {FIELD_WIDTH_PRESETS.map((p) => (
-              <Button
-                key={p.value}
-                size="small"
-                type={record.width === p.value ? 'primary' : 'default'}
-                style={{ padding: '0 6px', height: 18, fontSize: 11 }}
-                onClick={() => updateField(record.key, { width: p.value })}
-              >
-                {p.label}
-              </Button>
-            ))}
-          </Space>
-        </div>
-      ),
-    },
-    {
-      title: '小数位数',
-      key: 'decimals',
-      width: 90,
-      render: (_: unknown, record: FieldItem) => {
-        const numericTypes: FieldItem['field_type'][] = ['INPUT_NUMBER', 'FORMULA', 'BASIC_DATA', 'LIST_FORMULA'];
-        if (!numericTypes.includes(record.field_type)) {
-          return <Text type="secondary" style={{ fontSize: 12 }}>—</Text>;
-        }
-        return (
-          <InputNumber
-            size="small"
-            min={0}
-            max={6}
-            value={record.decimals ?? null}
-            onChange={(v) => updateField(record.key, { decimals: v == null ? null : Number(v) })}
-            placeholder="默认"
-            style={{ width: '100%' }}
-          />
-        );
-      },
-    },
     ...(onToggleRowKey ? [{
       title: '行键',
       key: 'is_row_key',
@@ -586,33 +528,6 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
           placeholder="备注"
           size="small"
         />
-      ),
-    },
-    {
-      title: '排序',
-      key: 'sort',
-      width: 64,
-      render: (_: unknown, _record: FieldItem, index: number) => (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          <Button
-            type="text"
-            size="small"
-            disabled={index === 0}
-            onClick={() => moveField(index, 'up')}
-            style={{ padding: '0 4px', height: 16, fontSize: 10 }}
-          >
-            ↑
-          </Button>
-          <Button
-            type="text"
-            size="small"
-            disabled={index === fields.length - 1}
-            onClick={() => moveField(index, 'down')}
-            style={{ padding: '0 4px', height: 16, fontSize: 10 }}
-          >
-            ↓
-          </Button>
-        </div>
       ),
     },
     {

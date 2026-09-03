@@ -117,6 +117,33 @@ public class Quotation extends PanacheEntityBase {
     @Column(name = "product_category_id")
     public UUID productCategoryId;
 
+    /**
+     * task-260901 B-3：<b>用户数据</b>版本号（V398）。saveDraft / quote-card-edit 等「用户改了东西」
+     * 的写入 +1；ensureCardValues / ensureExcelValues / snapshotQuotation / 建单物化 / priceReconcile
+     * 这些<b>系统自算派生数据</b>的写入<b>绝不</b>递增（api.md §4.2，AC-13）。
+     *
+     * <p>🚫 不是 JPA {@code @Version}：这里要的是「用户数据变了没有」的语义，不是「这一行被写过没有」。
+     * 挂 {@code @Version} 会让上面那些派生写入自动把它 +1，等于用户什么都没做就被要求刷新，
+     * 形成「保存 → 重算 → 必冲突 → 刷新 → 保存」死循环。
+     *
+     * <p>也与 {@code quotation_line_item.row_version}（V368 price-adjust 的原生 SQL 乐观锁）无关。
+     *
+     * <h3>🔒 {@code insertable=false, updatable=false} —— B-3e 的结构性保证，不要摘掉</h3>
+     * {@code Quotation} 实体<b>没有</b> {@code @DynamicUpdate}，任何事务只要碰过这个实体的<b>任何一个</b>
+     * 字段，Hibernate 就会发一条<b>全列</b> UPDATE，把事务开始时读到的 {@code user_data_version} 一起写回。
+     * 而 {@code ensureCardValues} / {@code recomputeDraftHeaderTotals} / 建单物化 / 归位这些派生路径
+     * 全都会改 {@code total_amount} 之类的列并跑上一两秒——中间只要有一次 saveDraft 提交，版本号就会被
+     * 它们<b>倒退</b>回旧值。倒退的后果和递增一样糟：前端手里的 baseVersion 比库里大 ⇒ 用户什么都没做错
+     * 却被判 409 强制刷新（AC-13 要防的正是这个）。
+     *
+     * <p>所以本列<b>只读映射</b>：读得到（{@code QuotationDTO} 直接取），但 Hibernate 一个字节都写不了。
+     * 唯一的写入口是 {@code QuotationService#bumpUserDataVersion} 的原生
+     * {@code UPDATE quotation SET user_data_version = user_data_version + 1}——与 V368
+     * {@code row_version} 的既有做法同一个套路（原生 SQL 乐观锁列，不是 JPA {@code @Version}）。
+     */
+    @Column(name = "user_data_version", insertable = false, updatable = false)
+    public Integer userDataVersion = 0;
+
     // V72：核价模板（template 表里 template_kind='COSTING' 的那条）→ 用于「核价单」视图的产品卡片渲染
     @Column(name = "costing_card_template_id")
     public UUID costingCardTemplateId;

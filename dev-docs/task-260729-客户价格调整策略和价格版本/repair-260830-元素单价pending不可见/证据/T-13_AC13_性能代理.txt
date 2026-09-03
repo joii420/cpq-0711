@@ -1,0 +1,18 @@
+############ T-13 (AC-13) 性能 —— dev 库只读代理测量 ############
+说明: dev 库尚未应用 V397(未合并), 无法直接调三参版。
+改用只读等价代理: 候选集 CROSS JOIN f_customer_element_price —— 这是函数 realtime 分支的主要成本项。
+
+--- A: 现状口径 (is_current only) 候选 x 元素 ---
+    80
+Time: 41.103 ms
+    80
+Time: 19.142 ms
+    80
+Time: 20.055 ms
+--- B: 修复后口径 (OR pending = 本单) 候选 x 元素 ---
+  9305
+Time: 16.600 ms
+  9305
+Time: 21.501 ms
+  9305
+Time: 30.298 ms

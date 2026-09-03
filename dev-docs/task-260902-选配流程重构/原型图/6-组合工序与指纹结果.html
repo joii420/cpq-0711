@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>步骤3-4 · 组合工序与指纹比对结果 — 选配流程重构（task-260902）</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+<a class="navback" href="index.html">← 返回原型导航</a>
+<h1>步骤 3-4 · 组合工序 → 指纹比对 → 添加到报价单</h1>
+<p class="sub">对应用户原话：「添加到报价单的时候先根据指纹比对本次添加的产品是否在产品库已经存在，存在则带出销售产品信息，不存在则新建一个销售料号」。</p>
+
+<!-- ===== 状态 A ===== -->
+<div class="card">
+  <h2>状态 A · 选择组合工序（步骤 3）</h2>
+  <p class="hint">组合工序作用于多个配件之间（如把动触头和支架焊在一起），需要指明参与的配件。</p>
+
+  <div class="drawer">
+    <div class="drawer-hd">
+      <div class="t">添加产品 — 选配</div>
+      <div class="muted small">CP-NEW-001 · 苏州西门子电器有限公司</div>
+    </div>
+    <div class="drawer-bd">
+      <div class="steps">
+        <div class="step done"><span class="dot">✓</span><span class="lb">客户产品编号</span></div>
+        <div class="step done"><span class="dot">✓</span><span class="lb">添加配件</span></div>
+        <div class="step on"><span class="dot">3</span><span class="lb">组合工序</span></div>
+        <div class="step"><span class="dot">4</span><span class="lb">确认并添加</span></div>
+      </div>
+
+      <div class="toolbar">
+        <button class="btn primary">+ 添加组合工序</button>
+        <div class="spacer"></div>
+        <span class="muted small">共 1 道</span>
+      </div>
+
+      <div class="tblwrap">
+        <table>
+          <thead><tr>
+            <th style="width:7%" class="num">#</th>
+            <th style="width:20%">工序</th>
+            <th style="width:28%">参与配件</th>
+            <th style="width:26%">参数</th>
+            <th style="width:19%"></th>
+          </tr></thead>
+          <tbody>
+            <tr>
+              <td class="num muted">1</td>
+              <td>铆接<br><span class="mono muted small">Z101</span></td>
+              <td><span class="tag">动触头</span> <span class="tag">静触头支架</span></td>
+              <td class="small muted">压力 5.0 t · 高度 3.2 mm</td>
+              <td style="text-align:right;white-space:nowrap">
+                <span class="dis"><span class="tip">已是第一道</span><button class="btn link sm" disabled>↑</button></span>
+                <span class="dis"><span class="tip">已是最后一道</span><button class="btn link sm" disabled>↓</button></span>
+                <button class="btn link danger sm">移除</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:12px"><button class="btn">+ 添加组合工序</button></div>
+
+      <div class="note">组合工序作用于<b>多个配件之间</b>，与零件工序共用同一份 <code>process_master</code> 主数据，
+        添加方式也<b>与材质、零件工序完全一致</b>：选择器选中 → 加入有序列表。<b>不是必填</b>——单配件产品可以没有，为空时直接进下一步。</div>
+    </div>
+    <div class="drawer-ft">
+      <button class="btn">上一步</button>
+      <button class="btn primary">下一步</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 状态 B ===== -->
+<div class="card">
+  <h2>状态 B · 确认页 · 指纹<b>未命中</b> → 将新建销售料号 <span class="state ok">新建</span><span class="ac">AC-7</span></h2>
+  <p class="hint">这是第一次配出这套结构时的画面。</p>
+
+  <div class="drawer">
+    <div class="drawer-hd">
+      <div class="t">添加产品 — 选配 · 确认</div>
+      <div class="muted small">CP-NEW-001</div>
+    </div>
+    <div class="drawer-bd">
+      <div class="steps">
+        <div class="step done"><span class="dot">✓</span><span class="lb">客户产品编号</span></div>
+        <div class="step done"><span class="dot">✓</span><span class="lb">添加配件</span></div>
+        <div class="step done"><span class="dot">✓</span><span class="lb">组合工序</span></div>
+        <div class="step on"><span class="dot">4</span><span class="lb">确认并添加</span></div>
+      </div>
+
+      <div class="alert ok">
+        <span class="ico">✓</span>
+        <div>
+          <b>产品库里没有相同配置的产品，将新建一个销售料号</b><br>
+          <span class="muted small">新料号在点「添加到报价单」时才会真正生成。</span>
+        </div>
+      </div>
+
+      <div class="tblwrap" style="margin-bottom:16px">
+        <table>
+          <thead><tr><th style="width:22%">项</th><th>内容</th></tr></thead>
+          <tbody>
+            <tr><td class="muted">客户产品编号</td><td class="mono">CP-NEW-001</td></tr>
+            <tr><td class="muted">客户产品名称</td><td>高压接触器动触头组件</td></tr>
+            <tr><td class="muted">配件 1</td><td>动触头 <span class="tag blue">零件</span> · 总重 10 g · <span class="tag">AgNi10 70%</span> <span class="tag">AgZnO12/Cu 30%</span> · 车削 / 银焊</td></tr>
+            <tr><td class="muted">配件 2</td><td>静触头支架 <span class="tag blue">零件</span> <span class="tag green">已有</span> <span class="mono small">HF-SZXM-2506-0018</span> · 冲压 / 去毛刺</td></tr>
+            <tr><td class="muted">配件 3</td><td>组成件1 <span class="tag purple">外购件</span> <span class="mono small">TEST-Q13-CODE</span> · 装配</td></tr>
+            <tr><td class="muted">组合工序</td><td>组合铆接（压力 5.0 t · 高度 3.2 mm）</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note">
+        <b>本次配置的指纹原文</b>（存 <code>sel_part_signature.config_signature_text</code>）：<br>
+        <span class="mono small" style="word-break:break-all">v2|CUST=SZXM|PART=动触头/φ12×3/12×8×3|WEIGHT=10|MAT=00006:70(10001:90,10005:10),00123:30(10001:24.4,10021:72.2727,10077:3.3273)|PRC=Z100,Z101|CPROC=Z101</span><br>
+        开头的 <code>v2</code> 是 <code>structure_version</code>。本次因新增<b>材质占比 / 零件总重 / 品名规格尺寸</b>三个维度，指纹结构从 <code>v1</code> 升到 <code>v2</code>。
+        实测 <code>sel_part_signature</code> 当前 <b>0 行</b>，升版无存量失配风险。
+      </div>
+    </div>
+    <div class="drawer-ft">
+      <button class="btn">上一步</button>
+      <button class="btn primary">添加到报价单</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 状态 C ===== -->
+<div class="card">
+  <h2>状态 C · 确认页 · 指纹<b>命中</b> → 复用已有料号并带出信息 <span class="state">复用</span><span class="ac">AC-7</span><span class="ac">AC-10</span></h2>
+  <p class="hint">配出了一套和以前完全相同的结构。系统认出来，直接复用那个销售料号，不铸新号。</p>
+
+  <div class="drawer">
+    <div class="drawer-hd"><div class="t">添加产品 — 选配 · 确认</div><div class="muted small">CP-NEW-002</div></div>
+    <div class="drawer-bd">
+      <div class="alert info">
+        <span class="ico">↻</span>
+        <div>
+          <b>产品库里已有相同配置的产品，将直接复用它的销售料号</b><br>
+          销售料号 <span class="mono">HF-SZXM-2509-0007</span> · 首次创建于 2026-09-01 · 已被 2 张报价单引用<br>
+          <span class="muted small">不会新建料号。你的客户产品编号 CP-NEW-002 会作为新的映射关系记录下来。</span>
+        </div>
+      </div>
+
+      <div class="tblwrap" style="margin-bottom:16px">
+        <table>
+          <thead><tr><th style="width:22%">带出的销售产品信息</th><th>内容</th></tr></thead>
+          <tbody>
+            <tr><td class="muted">销售料号</td><td class="mono">HF-SZXM-2509-0007</td></tr>
+            <tr><td class="muted">品名 / 规格 / 尺寸</td><td>动触头 · φ12×3 · 12×8×3</td></tr>
+            <tr><td class="muted">单重</td><td>10 g</td></tr>
+            <tr><td class="muted">材质构成</td><td><span class="tag">AgNi10 70%</span> <span class="tag">AgZnO12/Cu 30%</span></td></tr>
+            <tr><td class="muted">历史报价</td><td>¥ 12.4800 / 件（2026-09-01，苏州西门子）</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note">
+        <b>为什么这次算「相同」</b>：材质、占比、总重、品名规格尺寸、工序全部一致 ⇒ 指纹相同。<br>
+        ⚠️ <span class="ac">AC-10</span> 特别规定：如果两次选的<b>配方编号不同</b>（如 <code>00006-01</code> vs <code>00006-02</code>）但含量逐字相同，
+        <b>仍然判为相同</b>、仍然复用 —— 这是用户裁决 D-5 的<b>有意为之</b>：含量相同即同一种材料。
+      </div>
+    </div>
+    <div class="drawer-ft">
+      <button class="btn">上一步</button>
+      <button class="btn primary">添加到报价单（复用 HF-SZXM-2509-0007）</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 状态 D ===== -->
+<div class="card">
+  <h2>状态 D · 提交中 / 提交失败（错误态）</h2>
+  <div class="drawer" style="max-width:720px">
+    <div class="drawer-hd"><div class="t">添加产品 — 选配 · 确认</div></div>
+    <div class="drawer-bd">
+      <div class="alert err">
+        <span class="ico">✕</span>
+        <div>
+          <b>添加失败：材质 AgNi10 尚未配置含量</b><br>
+          该材质在材质库里没有任何启用的含量配置，无法确定元素构成。<br>
+          <span class="muted small">错误码 RECIPE_HAS_NO_CONFIG · 请到材质管理页为它添加配置，或改选其他材质。</span>
+          <div style="margin-top:10px"><button class="btn sm">→ 打开材质管理</button></div>
+        </div>
+      </div>
+      <div class="note">
+        后端硬拦（前端灰显只是体验，后端拦才是正确性）。对齐 <code>task-260901</code> 的 B-18：提交时材质无 ACTIVE 配置返 409。
+      </div>
+    </div>
+    <div class="drawer-ft"><button class="btn">上一步</button><button class="btn primary" disabled>添加到报价单</button></div>
+  </div>
+</div>
+
+<div class="note">
+  <b>本页对应 AC：</b><span class="ac">AC-7</span> 相同配置复用料号 · <span class="ac">AC-8</span> 总重不同则铸新号 · <span class="ac">AC-9</span> 占比不同则铸新号 · <span class="ac">AC-10</span> 配方编号不同但含量相同仍复用 · <span class="ac">AC-12</span> 客户产品编号落 mcm。
+</div>
+</div>
+</body>
+</html>

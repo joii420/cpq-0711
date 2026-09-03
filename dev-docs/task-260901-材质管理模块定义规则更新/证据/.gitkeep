@@ -1,0 +1,3 @@
+证据归档目录：E2E 截图 / SQL 原始输出 / 接口响应原文。
+由 e2e/task260901-material.helpers.ts 的 shot() / evidence() 直接写入这里，
+不写 test-results/（那里下一轮开跑会被清空 = 没有证据）。

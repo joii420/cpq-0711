@@ -1,0 +1,85 @@
+<meta charset="utf-8">
+<title>产品管理 · 与核价侧的同构与差异</title>
+<link rel="stylesheet" href="antd-like.css">
+<style>
+  .wrap{max-width:1080px;margin:0 auto;padding:24px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;background:#fff;margin-bottom:20px}
+  th{text-align:left;background:#fafafa;font-weight:600;padding:11px 14px;border:1px solid #f0f0f0}
+  td{padding:11px 14px;border:1px solid #f0f0f0;vertical-align:top}
+  .same{background:#f6ffed}
+  .diff{background:#fff7e6}
+  .tag{font-size:12px;padding:1px 8px;border-radius:4px;white-space:nowrap}
+  .t-same{background:#d9f7be;color:#389e0d}
+  .t-diff{background:#ffe7ba;color:#d46b08}
+  .anno{background:#e6f4ff;border:1px solid #91caff;border-radius:6px;padding:12px 16px;margin-bottom:20px;font-size:13px;line-height:1.8}
+  h1{font-size:20px;margin:0 0 6px}
+  h3{font-size:15px;margin:26px 0 10px}
+  code{background:#f5f5f5;padding:1px 5px;border-radius:3px;font-size:12.5px}
+</style>
+<div class="wrap">
+  <h1>与核价侧的同构与差异</h1>
+  <div class="anno">
+    用户原话：「<b>与核价侧的展示逻辑相同，但是只能查看不可以编辑</b>」。<br>
+    「相同」的部分照抄不要发明；「不同」的部分<b>只有一处</b>但是根本性的（只读）。
+    本页是给还原者的<b>防抄错清单</b> —— 逐条核对，不要凭印象。<br><br>
+    核价侧参照物：<code>cpq-frontend/src/pages/master-data/part-costing/</code>
+    （<code>PartCostingTab.tsx</code> / <code>PartCostingDrawer.tsx</code> / <code>EditableSheetTable.tsx</code>），
+    路由 <code>/master-data-hub</code> →「料号核价」页签。
+    🚫 <b>这四个文件一个字节都不许改</b> —— <code>task-260902</code> 的 F-1 正在把它们抽成公共件。
+  </div>
+
+  <h3>✅ 相同的部分（照抄，不要重新设计）</h3>
+  <table>
+    <thead><tr><th style="width:150px">维度</th><th>核价侧的做法</th><th style="width:90px">本任务</th></tr></thead>
+    <tbody>
+      <tr class="same"><td>列表形态</td><td>裸 <code>&lt;Table&gt;</code> + 可点击行；服务端分页 / 服务端排序 / 服务端过滤</td><td><span class="tag t-same">相同</span></td></tr>
+      <tr class="same"><td>列表定位</td><td>属「列表操作规范」<b>例外白名单</b>（纯查看 / Master-Detail 导航），不用 <code>SelectableTable</code>；工具栏自套 <code>TOOLBAR_ROW_STYLE</code></td><td><span class="tag t-same">相同</span></td></tr>
+      <tr class="same"><td>主入口</td><td><b>点行开右侧 Drawer</b>，行内无动作按钮</td><td><span class="tag t-same">相同</span></td></tr>
+      <tr class="same"><td>抽屉结构</td><td><code>&lt;Tabs tabPosition="left"&gt;</code>，左侧竖排 tab，每 tab = 一个版本组</td><td><span class="tag t-same">相同</span></td></tr>
+      <tr class="same"><td>tab 内布局</td><td>版本下拉 + <b>平铺表格</b>（<b>不是树</b>）</td><td><span class="tag t-same">相同</span></td></tr>
+      <tr class="same"><td>表格渲染</td><td>元数据驱动：按 <code>ColumnDef.role</code> / <code>type</code> 渲染，<b>不按列名硬编码</b></td><td><span class="tag t-same">相同</span></td></tr>
+      <tr class="same"><td>轴列处理</td><td><code>role=AXIS</code> 的列在抽屉内<b>隐藏</b>（轴值已在标题上）</td><td><span class="tag t-same">相同</span></td></tr>
+      <tr class="same"><td>徽标</td><td>tab 上显示该 sheet 该轴值的行数；<code>versionNo=null</code> = 从未有过数据</td><td><span class="tag t-same">相同</span></td></tr>
+      <tr class="same"><td>数值传输</td><td>后端<b>以字符串回传</b>保留库中 scale，前端不做 <code>Number()</code> 转换</td><td><span class="tag t-same">相同</span></td></tr>
+      <tr class="same"><td>tab 数来源</td><td>由 <code>GET sheets</code> 决定，<b>前端不写死</b></td><td><span class="tag t-same">相同</span></td></tr>
+      <tr class="same"><td>空态</td><td>antd <code>Empty</code> + <code>暂无数据</code></td><td><span class="tag t-same">相同</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3>⚠️ 不同的部分（差异全在这里，逐条核对）</h3>
+  <table>
+    <thead><tr><th style="width:150px">维度</th><th>核价侧</th><th>本任务（销售产品）</th></tr></thead>
+    <tbody>
+      <tr class="diff"><td><b>可编辑性</b><br><span style="font-size:12px;color:rgba(0,0,0,.45)">唯一的根本差异</span></td>
+        <td>可编辑：单元格是 <code>input</code>/<code>select</code>，有 <b>保存 / 新增行 / 删除</b> 按钮，保存走整组升版</td>
+        <td><b>全只读</b>：<code>editable={false}</code>；<b>不渲染</b>保存/新增/删除；无 <code>input</code>；<b>不调 <code>PUT rows</code></b></td></tr>
+      <tr class="diff"><td>角色差异</td>
+        <td><code>EDIT_ROLES = ['PRICING_MANAGER','SYSTEM_ADMIN']</code> 可编辑</td>
+        <td><b>所有角色都只读</b>，含上述两个角色。<br>🚨 反向要求：<b>不得把核价侧改成只读</b></td></tr>
+      <tr class="diff"><td>页面位置</td><td>主数据维护 <code>/master-data-hub</code> →「料号核价」</td><td>产品管理 <code>/products-hub</code> →「销售产品」</td></tr>
+      <tr class="diff"><td>轴</td><td><b>生产料号</b></td><td><b>销售料号</b>（<code>axisLabel="销售料号"</code>）</td></tr>
+      <tr class="diff"><td>tab 数</td><td>核价 16 个（基础 9 / 详细 17）</td><td><b>报价 13 个</b></td></tr>
+      <tr class="diff"><td>数据集</td><td><code>basePath='/dataset/cost-basic'</code> 或 <code>'/dataset/cost-detail'</code></td><td><code>basePath='/dataset/quote'</code></td></tr>
+      <tr class="diff"><td>导入按钮</td><td>页签内有导入按钮</td><td><b>无</b> —— 导入留在报价单管理的「导入报价数据」</td></tr>
+      <tr class="diff"><td>历史版本</td><td>切到历史版本才变只读（<code>readOnly=true</code>）</td><td><b>当前版也只读</b>；无论 <code>readOnly</code> 为何值一律只读</td></tr>
+    </tbody>
+  </table>
+
+  <div class="anno" style="background:#fff1f0;border-color:#ffa39e">
+    <b>🚨 一个必须点名的规范例外</b><br>
+    <code>frontend.md §1.2</code> 规定「禁止用 <code>if(...) return null</code> 隐藏不可用按钮」——理由是用户看不到按钮就不知道能力存在。<br>
+    本任务<b>不渲染</b>保存/新增/删除按钮，形式上违反该条。判定为<b>合理例外</b>：那条针对的是「本可用但当前不可用」的动作，
+    需要让用户知道能力存在并给出禁用原因；而本页是<b>整页无编辑能力</b>（产品定位就是只读查看），
+    渲染一排永久禁用的保存按钮反而误导用户「这里本来能编辑」。<br>
+    <b>此例外已在闸门 A 呈报时向用户点名。</b>
+  </div>
+
+  <div class="anno" style="background:#f6ffed;border-color:#b7eb8f">
+    <b>🔍 只读渲染的已知风险（F-6 要专门验）</b><br>
+    <code>EditableSheetTable</code> 的 <code>editable={false}</code> 分支<b>目前只在「历史版本」路径上被用过</b>
+    （<code>task-260902</code> 主线原话）。本任务是它第一次被当作<b>常态</b>使用。<br>
+    需逐类核对：<code>role=NAME</code> 的 JOIN 展示列、<code>type=DECIMAL</code> 的数值列、
+    <code>type=STRING</code> 但值像数字的列（<code>pricing_unit</code>）、<code>null</code> 单元格。<br>
+    🚫 <b>发现缺陷只记录不修改</b> —— 报主线转 <code>task-260902</code>，不许自己动 <code>part-costing/</code>。
+  </div>
+</div>

@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>步骤2 · 添加配件与类型分流 — 选配流程重构（task-260902）</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+<a class="navback" href="index.html">← 返回原型导航</a>
+<h1>步骤 2 · 添加配件 → 选择配件类型</h1>
+<p class="sub">这一层是<b>本次重构新增的</b>。现状没有「配件类型」概念，「配件」直接等于一个材质料号。</p>
+
+<div class="alert info">
+  <span class="ico">ℹ</span>
+  <div>
+    <b>三层模型的中间层</b>：产品 → <b>配件（零件 / 外购件）</b> → 零件挂 1~N 个材质 → 每个材质选含量配置。<br>
+    实测：<code>material_bom_item</code> 的 <code>characteristic</code> 三态里 <b><code>OUTSOURCED</code> 零行</b>（全表 RECIPE 11095 / ASSEMBLY 49）——
+    外购件是从未落地过的能力，不是「已有但没接」。
+  </div>
+</div>
+
+<!-- ===== 状态 A ===== -->
+<div class="card">
+  <h2>状态 A · 空数据（一个配件都还没加）<span class="state warn">空态</span></h2>
+  <p class="hint">§1.3 要求必画空态，否则开发容易随手来个空白页。</p>
+
+  <div class="drawer">
+    <div class="drawer-hd">
+      <div class="t">添加产品 — 选配</div>
+      <div class="muted small">CP-NEW-001 · 苏州西门子电器有限公司</div>
+    </div>
+    <div class="drawer-bd">
+      <div class="steps">
+        <div class="step done"><span class="dot">✓</span><span class="lb">客户产品编号</span></div>
+        <div class="step on"><span class="dot">2</span><span class="lb">添加配件</span></div>
+        <div class="step"><span class="dot">3</span><span class="lb">组合工序</span></div>
+        <div class="step"><span class="dot">4</span><span class="lb">确认并添加</span></div>
+      </div>
+
+      <div class="toolbar">
+        <button class="btn primary">+ 添加配件</button>
+        <div class="spacer"></div>
+        <span class="muted small">共 0 个配件</span>
+      </div>
+
+      <div class="empty">
+        <span class="ico">📦</span>
+        <div class="txt">还没有配件</div>
+        <div class="small muted" style="margin-top:6px">一个产品至少要有一个配件才能提交</div>
+        <div class="act"><button class="btn primary">+ 添加第一个配件</button></div>
+      </div>
+    </div>
+    <div class="drawer-ft">
+      <button class="btn">上一步</button>
+      <div class="dis">
+        <span class="tip">请至少添加一个配件</span>
+        <button class="btn primary">下一步</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 状态 B ===== -->
+<div class="card">
+  <h2>状态 B · 选择配件类型（零件 / 外购件）</h2>
+  <p class="hint">点「添加配件」后的第一个岔路。两个选项都常用，所以并排展示而不是下拉。</p>
+
+  <div class="drawer" style="max-width:820px">
+    <div class="drawer-hd"><div class="t">添加配件 · 第 1 步：选择类型</div></div>
+    <div class="drawer-bd">
+      <div class="pickrow">
+        <div class="pick on">
+          <span class="ico">🔩</span>
+          <div>
+            <div class="t">零件</div>
+            <div class="d">本厂加工的零件。可以新建，也可以引用已有零件。<br>零件下面挂 1~N 个材质，每个材质填占比。</div>
+          </div>
+          <span class="radio"></span>
+        </div>
+        <div class="pick">
+          <span class="ico">🛒</span>
+          <div>
+            <div class="t">外购件</div>
+            <div class="d">从供应商采购的成品件，不含材质构成。<br>从现有料号库里选，再选它的工序。</div>
+          </div>
+          <span class="radio"></span>
+        </div>
+      </div>
+    </div>
+    <div class="drawer-ft">
+      <button class="btn">取消</button>
+      <button class="btn primary">下一步</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 状态 C ===== -->
+<div class="card">
+  <h2>状态 C · 零件来源（新建 / 已有）</h2>
+  <p class="hint">选了「零件」之后的第二个岔路。选「新建零件」进原型 3，选「已有零件」进原型 4。</p>
+
+  <div class="drawer" style="max-width:820px">
+    <div class="drawer-hd"><div class="t">添加配件 · 第 2 步：零件来源</div></div>
+    <div class="drawer-bd">
+      <div class="pickrow">
+        <div class="pick on">
+          <span class="ico">✨</span>
+          <div>
+            <div class="t">新建零件</div>
+            <div class="d">填品名 / 规格 / 尺寸 / 总重，再挂材质。<br>适用于这个客户产品特有的零件。</div>
+          </div>
+          <span class="radio"></span>
+        </div>
+        <div class="pick">
+          <span class="ico">📚</span>
+          <div>
+            <div class="t">已有零件</div>
+            <div class="d">从产品列表里选一个已存在的零件，只需再选工序。<br>材质构成沿用它自己的，不重新配。</div>
+          </div>
+          <span class="radio"></span>
+        </div>
+      </div>
+    </div>
+    <div class="drawer-ft">
+      <button class="btn">上一步</button>
+      <button class="btn primary">下一步</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 状态 D ===== -->
+<div class="card">
+  <h2>状态 D · 已加多个配件（默认态）<span class="state ok">有数据</span></h2>
+  <p class="hint">配了 2 个零件 + 1 个外购件。配件卡片直接显示它的构成摘要，不用展开就能核对。</p>
+
+  <div class="drawer">
+    <div class="drawer-hd">
+      <div class="t">添加产品 — 选配</div>
+      <div class="muted small">CP-NEW-001 · 苏州西门子电器有限公司</div>
+    </div>
+    <div class="drawer-bd">
+      <div class="steps">
+        <div class="step done"><span class="dot">✓</span><span class="lb">客户产品编号</span></div>
+        <div class="step on"><span class="dot">2</span><span class="lb">添加配件</span></div>
+        <div class="step"><span class="dot">3</span><span class="lb">组合工序</span></div>
+        <div class="step"><span class="dot">4</span><span class="lb">确认并添加</span></div>
+      </div>
+
+      <div class="toolbar">
+        <button class="btn primary">+ 添加配件</button>
+        <div class="spacer"></div>
+        <span class="muted small">共 3 个配件</span>
+      </div>
+
+      <div class="partlist">
+        <div class="partitem">
+          <span style="font-size:20px">🔩</span>
+          <div class="body">
+            <div class="tt">
+              动触头 <span class="tag blue">零件</span> <span class="tag grey">新建</span>
+            </div>
+            <div class="meta">
+              规格 φ12×3 · 尺寸 12×8×3 · 总重 <b>10 g</b><br>
+              材质：<span class="tag">AgNi10 <b>70%</b></span> <span class="tag">AgZnO12/Cu <b>30%</b></span> · 工序：车削 / 银焊
+            </div>
+          </div>
+          <div style="display:flex;gap:4px">
+            <button class="btn link sm">编辑</button>
+            <button class="btn link danger sm">移除</button>
+          </div>
+        </div>
+
+        <div class="partitem">
+          <span style="font-size:20px">🔩</span>
+          <div class="body">
+            <div class="tt">
+              静触头支架 <span class="tag blue">零件</span> <span class="tag green">已有</span> <span class="mono small muted">HF-SZXM-2506-0018</span>
+            </div>
+            <div class="meta">
+              材质构成沿用该料号自身（AgSnO₂ 100%）· 工序：冲压 / 去毛刺
+            </div>
+          </div>
+          <div style="display:flex;gap:4px">
+            <button class="btn link sm">编辑</button>
+            <button class="btn link danger sm">移除</button>
+          </div>
+        </div>
+
+        <div class="partitem">
+          <span style="font-size:20px">🛒</span>
+          <div class="body">
+            <div class="tt">
+              组成件1 <span class="tag purple">外购件</span> <span class="mono small muted">TEST-Q13-CODE</span>
+            </div>
+            <div class="meta">
+              规格 φ20×1 · 工序：装配
+            </div>
+          </div>
+          <div style="display:flex;gap:4px">
+            <button class="btn link sm">编辑</button>
+            <button class="btn link danger sm">移除</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="note">
+        <b>关于行内操作按钮：</b><code>frontend.md §1.2</code> 要求列表动作上提到工具栏，但它的<b>例外白名单里明列「抽屉内部子表」</b>——
+        本列表在抽屉内、且「编辑/移除」作用于单个配件而非批量，属于该例外。<b>不是违规，是例外条款适用。</b>
+      </div>
+    </div>
+    <div class="drawer-ft">
+      <button class="btn">上一步</button>
+      <button class="btn primary">下一步</button>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <b>本页对应 AC：</b><span class="ac">AC-5</span> 外购件类型入口 · <span class="ac">AC-13</span> 单材质零件（等价旧行为，验不回归）· <span class="ac">AC-14</span> 一个材质都不加时阻止。<br>
+  <b>与现状的差异：</b>现状 <code>PartRequest.partMode</code> 只有 <code>existing</code>/<code>custom</code> 两值，是<b>一个维度</b>；新流程是<b>两个正交维度</b>——配件类型（零件/外购件）× 零件来源（新建/已有）。
+</div>
+</div>
+</body>
+</html>

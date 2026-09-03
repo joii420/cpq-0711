@@ -18,7 +18,7 @@ import java.util.regex.Pattern;
  * <p>只读 SQL 结构（词法扫描 FROM/JOIN 白名单表 token）+ DB 元数据（{@code pg_attribute} 列清单），
  * 不读任何组件名/页签名/列别名 —— 用户随意命名不影响正确性（需求说明 §规则三"零配置"）。
  *
- * <p>三步改写（backtask B3.1）：
+ * <p>四步改写（backtask B3.1 三步 + repair-260830 补第四步）：
  * <ol>
  *   <li><b>表替换</b>（换表不换谓词）：把白名单表 token 换成等价子查询，子查询内把 {@code is_current}
  *       列重定义为 {@code (t.is_current OR t.pending_quotation_id = :pq)}；用户原谓词
@@ -30,6 +30,14 @@ import java.util.regex.Pattern;
  *       顶层为 UNION/INTERSECT/EXCEPT 集合运算时（repair-0727 B1）：按分支切分后逐分支独立判定/注入，
  *       某分支未命中白名单表或含 GROUP BY 只让该分支取 {@code NULL::uuid}，不阻断整视图，见
  *       {@link #rewrite(String, Connection, boolean)} 内联注释。</li>
+ *   <li><b>库函数补参</b>（repair-260830）：把 {@link #PENDING_AWARE_FUNCTION} 的两参调用补成三参
+ *       （第三参 {@code :pq}）。<b>为什么必须有这一步</b>：第 1 步的表替换是<b>文本</b>改写，够不到
+ *       编译在库里的函数体；而 {@code f_material_element_price} 内部自己又读了一遍
+ *       {@code material_bom_item} / {@code element_bom_item} 并写死 {@code is_current = true} ——
+ *       同一次查询里同一张表被读两遍，外层看得见 pending、函数里看不见，本单 pending 料号在函数
+ *       候选集里整体缺席（症状：元素单价恒 NULL，见 repair-260830 问题说明 §4.1）。
+ *       <p>⚠️ <b>今后凡在 SQL 视图里引用「内部会读版本化表」的数据库函数，都必须同步登记进
+ *       {@link #PENDING_AWARE_FUNCTION} 这条通道</b>，否则会静默复现同一类断链。</li>
  * </ol>
  *
  * <p><b>安全降级</b>：找不到白名单主位表（如整个模板压根不碰这 8 张表，或主位是非白名单表如
@@ -53,6 +61,28 @@ public final class QuotePendingRewriter {
 
     /** SQL 里代表"当前报价单 pending 归属"的命名参数（{@link SqlViewExecutor} 负责绑定实际值）。 */
     public static final String PENDING_PARAM = "pq";
+
+    /**
+     * repair-260830：<b>内部会自己读版本化表、因而文本改写够不到的库函数</b>——必须显式把
+     * {@code :pq} 当参数传进去，否则同一次查询里同一张 BOM 表被读两遍：外层那遍（表替换）看得见
+     * pending 影子行，函数体里那遍（写死 {@code is_current = true}）看不见，结果就是本单 pending
+     * 料号在函数的候选集里整体缺席（元素单价恒 NULL，见 repair-260830 问题说明 §4.1）。
+     *
+     * <p>{@code f_material_element_price} 的 {@code candidate_materials} CTE 读
+     * {@code material_bom_item} / {@code element_bom_item}；V397 起提供三参重载
+     * {@code (text, date, uuid)}，第三参为当前报价单 id，传 NULL 时自动退化为纯 {@code is_current}
+     * （核价侧 / 冻结态所需）。
+     *
+     * <p>⚠️ 不包含 {@code f_customer_element_price}——它是纯元素级算价，不读任何 BOM 表。
+     */
+    static final String PENDING_AWARE_FUNCTION = "f_material_element_price";
+
+    /** {@link #PENDING_AWARE_FUNCTION} 补参前的参数个数（补参后 = 该值 + 1）。 */
+    private static final int PENDING_AWARE_FUNCTION_BASE_ARITY = 2;
+
+    /** {@code f_material_element_price(} 调用起点（大小写不敏感；masked 文本上定位，注释/字面量内的同名文本天然不匹配）。 */
+    private static final Pattern PENDING_AWARE_FN_CALL = Pattern.compile(
+        "\\b" + PENDING_AWARE_FUNCTION + "\\s*\\(", Pattern.CASE_INSENSITIVE);
 
     private static final Pattern TABLE_TOKEN = Pattern.compile(
         "\\b(FROM|JOIN)\\s+(" + String.join("|", WHITELIST_TABLES) + ")\\b" +
@@ -281,6 +311,71 @@ public final class QuotePendingRewriter {
     private record Edit(int start, int end, String replacement) {}
 
     /**
+     * repair-260830：从 {@code openParen}（{@code '('} 的下标）起在 masked 文本上做括号配平扫描。
+     *
+     * <p>为什么不能用贪婪正则一把梭：参数里可能出现嵌套括号（如 {@code COALESCE(a,b)}）与命名占位符，
+     * {@code [^)]*} 会在第一个内层 {@code ')'} 就收口，把补参插到错误位置。
+     *
+     * @return {@code int[]{ 配平的 ')' 下标, 顶层逗号数 }}；括号不配平返回 {@code null}
+     */
+    static int[] scanCallArgs(String masked, int openParen) {
+        int depth = 0, topLevelCommas = 0;
+        for (int i = openParen; i < masked.length(); i++) {
+            char c = masked.charAt(i);
+            if (c == '(') {
+                depth++;
+            } else if (c == ')') {
+                if (--depth == 0) return new int[]{i, topLevelCommas};
+            } else if (c == ',' && depth == 1) {
+                topLevelCommas++;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * repair-260830：把 {@link #PENDING_AWARE_FUNCTION} 的两参调用补成三参（第三参 {@code :pq}）。
+     *
+     * <p>四条约束（backtask B-2）：
+     * <ol>
+     *   <li><b>注释屏蔽</b>：在 {@code masked} 上定位（{@code mask()} 把注释/字符串字面量整体换成等长
+     *       空白），所以 {@code mc_view} 注释里写到的函数名不会被改写；实际插入作用于原文同一偏移量。</li>
+     *   <li><b>幂等</b>：已是三参（顶层逗号数 != 1）的调用直接跳过，不重复补参。</li>
+     *   <li><b>只改这一个函数</b>：{@code f_customer_element_price} 名字不匹配，天然不受影响。</li>
+     *   <li><b>安全降级</b>：括号不配平 / 参数个数非预期 → 跳过该处（退化为两参版 = 改动前行为），
+     *       不抛异常、不阻断其余改写。</li>
+     * </ol>
+     */
+    static List<Edit> pendingAwareFunctionEdits(String sqlTemplate, String masked) {
+        List<Edit> out = new ArrayList<>();
+        Matcher m = PENDING_AWARE_FN_CALL.matcher(masked);
+        while (m.find()) {
+            int open = m.end() - 1;                       // 匹配以 '(' 结尾
+            int[] scan = scanCallArgs(masked, open);
+            if (scan == null) continue;                   // 括号不配平：安全降级
+            int close = scan[0];
+            // 参数个数 = 顶层逗号数 + 1，但空参表（原文括号内全空白）算 0 个。
+            // ⚠️ 判空必须看原文而不是 masked：masked 把字符串字面量换成了空白，
+            //    f_material_element_price('CUST-0004','2026-08-30') 在 masked 里看着"全空"。
+            int args = sqlTemplate.substring(open + 1, close).isBlank() ? 0 : scan[1] + 1;
+            if (args != PENDING_AWARE_FUNCTION_BASE_ARITY) continue;   // 已三参 / 形态异常 → 跳过
+            out.add(new Edit(close, close, ", :" + PENDING_PARAM));
+        }
+        return out;
+    }
+
+    /** 按起始位置降序应用编辑（同起点先应用范围更大的），返回改写后的文本。 */
+    private static String applyEdits(String src, List<Edit> edits) {
+        edits.sort((a, b) -> {
+            int c = Integer.compare(b.start(), a.start());
+            return c != 0 ? c : Integer.compare(b.end(), a.end());
+        });
+        StringBuilder sb = new StringBuilder(src);
+        for (Edit e : edits) sb.replace(e.start(), e.end(), e.replacement());
+        return sb.toString();
+    }
+
+    /**
      * 改写入口（等价 {@code rewrite(sqlTemplate, conn, true)}，保留既有调用方 2 参签名不变）。
      *
      * @param sqlTemplate 组件/模板 sql_template 原文
@@ -321,14 +416,18 @@ public final class QuotePendingRewriter {
         String masked = mask(sqlTemplate);
         Set<String> ctes = cteNames(masked);
         List<TableMatch> matches = findTableTokens(masked, ctes);
+        // repair-260830：库函数补参与白名单表命中互相独立——模板可能只调 f_material_element_price
+        // 而不直接 FROM 任何白名单表，此时仍必须补 :pq（否则函数体里那遍 BOM 读取看不见 pending）。
+        List<Edit> fnEdits = pendingAwareFunctionEdits(sqlTemplate, masked);
         if (matches.isEmpty()) {
-            return new Result(sqlTemplate, false, null, null, Set.of(), null);
+            String onlyFn = fnEdits.isEmpty() ? sqlTemplate : applyEdits(sqlTemplate, fnEdits);
+            return new Result(onlyFn, false, null, null, Set.of(), null);
         }
 
         boolean setOp = hasTopLevelSetOp(masked);
 
         Set<String> touched = new HashSet<>();
-        List<Edit> edits = new ArrayList<>();
+        List<Edit> edits = new ArrayList<>(fnEdits);
         for (TableMatch mt : matches) {
             touched.add(mt.table);
             String replBody = buildReplacementSubquery(mt.table, conn);
@@ -430,18 +529,14 @@ public final class QuotePendingRewriter {
 
         // 统一按起始位置降序应用编辑（同起点则先应用范围更大的，即表替换优先于零长度锚点插入不会发生冲突，
         // 因为锚点插入点恒在 SELECT 关键字之后、任何表 token 之前，位置互斥不重叠；跨分支同理，各分支
-        // 文本区间互不重叠）。
-        edits.sort((a, b) -> {
-            int c = Integer.compare(b.start(), a.start());
-            return c != 0 ? c : Integer.compare(b.end(), a.end());
-        });
-        StringBuilder sb = new StringBuilder(sqlTemplate);
-        for (Edit e : edits) sb.replace(e.start(), e.end(), e.replacement());
+        // 文本区间互不重叠）。repair-260830 的函数补参编辑落在 f_material_element_price(...) 的闭括号处，
+        // 与表 token 区间、锚点插入点同样互不重叠。
+        String rewrittenSql = applyEdits(sqlTemplate, edits);
 
         String primaryBranchSql = primaryBranchRange != null
             ? buildPrimaryBranchSql(sqlTemplate, masked, edits, primaryBranchRange) : null;
 
-        return new Result(sb.toString(), anchorInjected, primaryTable, primaryAlias, touched, primaryBranchSql);
+        return new Result(rewrittenSql, anchorInjected, primaryTable, primaryAlias, touched, primaryBranchSql);
     }
 
     /**

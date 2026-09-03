@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>工序页签工具栏 · task-260902</title>
+<link rel="stylesheet" href="./_ant.css">
+<link rel="stylesheet" href="./_common.css">
+</head>
+<body>
+<div class="wrap">
+<a class="navback" href="./index.html">&larr; 返回原型导航</a>
+<h1>工序页签 · 工具栏（新增「导出工序」）</h1>
+<p class="sub">主数据维护 &rarr; 工序页签。对应 <code>pages/master-data/V6ProcessCrudTab.tsx</code>。<b>本任务只加 1 个按钮，表格与筛选保持现状。</b></p>
+
+<div class="alert warn"><span class="ico">&#9888;</span><div>
+<b>页面列名 与 导入模板列名 本来就不同名</b>（不是本次引入的）：
+页面显示「工序<b>分类</b>」「标准<b>货币</b>」，导入模板的列常量却是「工序<b>类别</b>」「标准<b>币种</b>」（<code>ProcessMasterImportService.COL_CATEGORY / COL_CURRENCY</code>）。
+<br>本次导出<b>必须用导入模板那一套列名</b>，否则导出的文件回导时这两列会被当成未知列丢弃。⇒ <b>导出文件的表头与页面表头会有 2 处对不上，这是刻意的。</b><span class="acref">AC-10</span>
+</div></div>
+
+<div class="card">
+  <h2>状态 A · 系统管理员，有数据（默认态）<span class="state">默认</span></h2>
+  <p class="hint">右组顺序：<b>刷新 &rarr; 导出工序 &rarr; 导入工序 &rarr; 新增工序</b>。与材质页签同构（工序侧没有「下载导入模板」按钮，这是现状，本次不补）。<span class="acref">AC-9</span></p>
+  <div class="toolbar" style="border-bottom:none;padding-bottom:0">
+    <span class="srch">搜索 工序编号 / 名称 <span class="muted">&#128269;</span></span>
+    <span class="sel2">全部 <span class="arw">&#9662;</span></span>
+    <span class="sel2">工序分类 <span class="arw">&#9662;</span></span>
+    <span class="spacer"></span>
+    <button class="btn">&#8635; 刷新</button>
+    <span class="new"><button class="btn">&#8595; 导出工序</button></span>
+    <button class="btn">&#8593; 导入工序</button>
+    <button class="btn primary">+ 新增工序</button>
+  </div>
+  <table>
+    <thead><tr><th style="width:40px"></th><th>工序编号</th><th>工序名称</th><th>工序分类</th><th style="width:90px">是否外协</th><th style="width:90px">标准货币</th><th style="width:90px">标准单位</th><th style="width:110px">默认不良率</th></tr></thead>
+    <tbody>
+      <tr><td><span class="ckbox"></span></td><td class="mono">Z100</td><td><b>焊接</b></td><td>组装</td><td><span class="tag grey">否</span></td><td>CNY</td><td>PCS</td><td class="mono">1.00%</td></tr>
+      <tr><td><span class="ckbox"></span></td><td class="mono">Z101</td><td><b>铆接</b></td><td>组装</td><td><span class="tag grey">否</span></td><td>CNY</td><td>PCS</td><td class="mono">1.00%</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>状态 B · 销售经理 / 财务登录（非管理员）<span class="state err">权限</span></h2>
+  <p class="hint">「导出工序」<b>整个按钮不渲染</b>，规则与材质页签逐字相同。<span class="acref">AC-9</span></p>
+  <div class="toolbar" style="border-bottom:none;padding-bottom:0">
+    <span class="srch">搜索 工序编号 / 名称 <span class="muted">&#128269;</span></span>
+    <span class="sel2">全部 <span class="arw">&#9662;</span></span>
+    <span class="sel2">工序分类 <span class="arw">&#9662;</span></span>
+    <span class="spacer"></span>
+    <button class="btn">&#8635; 刷新</button>
+    <button class="btn">&#8593; 导入工序</button>
+    <button class="btn primary">+ 新增工序</button>
+  </div>
+  <div class="note">后端兜底：非管理员直接调 <code>GET /api/cpq/v6/process-master/export</code> &rarr; <b>403</b>；未登录 &rarr; <b>401</b>。</div>
+</div>
+
+<div class="card">
+  <h2>状态 C · 筛选结果为 0 条<span class="state warn">空数据</span></h2>
+  <div class="toolbar" style="border-bottom:none;padding-bottom:0">
+    <span class="srch" style="color:rgba(0,0,0,.88)">zzz不存在zzz <span class="muted">&#10005;</span></span>
+    <span class="sel2">全部 <span class="arw">&#9662;</span></span>
+    <span class="sel2">工序分类 <span class="arw">&#9662;</span></span>
+    <span class="spacer"></span>
+    <button class="btn">&#8635; 刷新</button>
+    <span class="dis new"><button class="btn">&#8595; 导出工序</button><span class="tip">当前筛选结果为 0 条，无可导出数据</span></span>
+    <button class="btn">&#8593; 导入工序</button>
+    <button class="btn primary">+ 新增工序</button>
+  </div>
+  <div class="empty"><span class="ico">&#128230;</span>暂无数据</div>
+  <div class="note">tooltip 文案与材质页<b>逐字相同</b>：「当前筛选结果为 0 条，无可导出数据」。<span class="acref">AC-23</span></div>
+</div>
+
+<div class="card">
+  <h2>状态 D · 导出文件长什么样<span class="state ok">交付物</span></h2>
+  <p class="hint">7 列，列名取自 <code>ProcessMasterImportService</code> 的 <code>COL_*</code> 常量。工序导入按<b>列名</b>匹配（不看顺序），所以这 7 列可直接回导。<span class="acref">AC-10</span></p>
+  <div class="mx">
+  <table>
+    <thead><tr><th>工序编号</th><th>工序名称</th><th>工序类别</th><th>是否外协</th><th>标准币种</th><th>标准单位</th><th class="el">默认不良率</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">Z100</td><td><b>焊接</b></td><td>组装</td><td>否</td><td>CNY</td><td>PCS</td><td class="num">0.01</td></tr>
+      <tr><td class="mono">Z101</td><td><b>铆接</b></td><td>组装</td><td>否</td><td>CNY</td><td>PCS</td><td class="num">0.01</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="note">
+  <b>「是否外协」写中文 <code>是</code>/<code>否</code>，不写 <code>true</code>/<code>false</code></b> —— 导出是给人看的，且导入端本就按中文解析。<span class="acref">AC-10</span><br>
+  <b>「默认不良率」写小数 <code>0.01</code>，不写 <code>1.00%</code></b> —— 库里存的就是 <code>numeric</code> 小数（实测 <code>0.010000000000</code>），
+  写成百分号字符串回导时会解析失败。页面上显示成 <code>1.00%</code> 是渲染层的事，不要带进文件。
+  </div>
+</div>
+</div>
+</body>
+</html>
