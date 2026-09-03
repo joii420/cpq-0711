@@ -146,3 +146,44 @@ TS 0 错误 ✅；ProductHubPage / ProductCustomerPartTab / ProductSalesPartTab 
 worktree 内自检需软链 `node_modules` + 另起临时端口（见记忆条目「worktree前端自检坑」）。
 
 🚫 **「已自检」≠「亲验」** —— 自检答「代码能跑吗」，亲验答「功能对吗」。亲验由主线做，不要代劳，也不要声称已完成。
+
+---
+
+## 5. 开工后情报更新（2026-09-03）
+
+> 来自 `task-260902` 主动通知 + 主线实测。**未改动任何 AC，改的是实现路径与已知坑。**
+
+### 5.1 🚨 `SheetPartDrawer` 不会存在（推翻 §1 F-3/F-4 的复用前提）
+
+对方前端代理实测：新抽屉 UI 与 legacy `PartCostingDrawer` **逐项不同**（tab 徽标 `v3 · 7`、版本下拉格式、比对项提示条、归档告警、空态块、409 冲突条），合并要在 386 行组件里穿 **12 处 `variant` 分支**，而其 `AC-42`（现有「料号核价」页签零改动）风险陡增、收益为零。
+⇒ 对方改为「**零触碰 legacy + 新建 `dataset/DatasetSheetDrawer.tsx`**」。
+
+**对本任务的影响：方向不变，只是对齐目标换人。**
+
+| 公共件 | 状态 |
+|---|---|
+| `createSheetApi(basePath)` | ✅ 有（对方分支） |
+| `SheetPartListTab` | ✅ 有（对方分支） |
+| ~~`SheetPartDrawer`~~ | ❌ **不会有** |
+| `DatasetSheetDrawer` | 🔵 新建中，**尚未合并 master** |
+| `EditableSheetTable` | ✅ 可复用；加了 4 个可选 prop（`showComparedBadge` / `lookupFn` / `rowClassName` / `deleteDisabledTip`），**全部有默认值**，`editable=false` 时全列只读 |
+
+⇒ **F-3/F-4 继续按平行实现做**（照 `PartCostingTab`/`PartCostingDrawer` 结构新写，不 import 不修改 `part-costing/`）。
+待 `dataset/DatasetSheetDrawer.tsx` 合进 master 后，**主线会通知你切换对齐目标**——它是按新契约写的，只读化只需关掉编辑分支。
+
+### 5.2 ⚠️ 类型不要复用 `part-costing/types.ts`
+
+`sheets` 返回体与旧 `SheetMeta` **三个字段名都不同**（`sheetName`↔`tabName` / `sortOrder`↔`order` / `masterType`↔`master`）。
+⇒ 在 `productHubApi.ts` 自建类型 + 收敛映射。详见 `api.md §5.1`。
+
+### 5.3 ⚠️ 一个会伪装成产品 bug 的环境坑
+
+**多个 vite 共用软链的 `node_modules/.vite`，会互相踢掉依赖预构建缓存。**
+对方实测这是其第一轮页面加载超时的**真因，不是产品 bug**。当前有三个 worktree 可能同时跑 vite。
+
+⇒ 遇到诡异的模块加载失败 / 白屏 / 超时，**先怀疑这个再怀疑自己的代码**。起临时 vite 时用独立 `cacheDir` 或 `--force`。
+
+### 5.4 ✅ 迁移已同步，但端点仍未合并
+
+主线已在本 worktree 执行 `git merge master`，`V405~V408` 到位，共享库 84 张 `ds_` 表已建好（实测 `success=t`）。
+但 **8 个后端端点仍在对方未提交状态** ⇒ **继续 mock 开发**，这条不变。

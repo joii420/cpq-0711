@@ -177,3 +177,24 @@ SELECT count(*) FROM ds_quote_material_bom WHERE material_no='S-3120014539';  --
   ⚠️ `/q/health` 返 404 是正常的（未装 smallrye-health），**它不是健康探针**
 - 账号 `admin` / `Admin@2026`
   ⚠️ E2E 反复跑可能把 admin 置成 `INACTIVE`，需 SQL 改回 `ACTIVE`（记忆条目 `quote-element-delete-wrong-row-root`）
+
+---
+
+## 8. 开工后新增风险：共享库并发（2026-09-03）
+
+> `ds_quote_*` 现在是**两个任务共用**：`task-260902` 的五路子代理正在同一批表上跑 `@QuarkusTest`
+> （`test` profile 实连 `cpq_db_0724`，启动即 `migrate-at-start`）。
+
+### 三条硬约束（覆盖 §1 的操作口径）
+
+1. 🚫 **绝对不许跑清表 / 清库型测试** —— `CLAUDE.md §3.2` 环境销毁红线。写在 `beforeAll` 里也不行，会打掉对方正在用的数据。
+2. 🚫 **不许写死绝对行数断言**。`§1.6` 的验证 SQL 要改成**相对不变量**：
+   - ❌ `SELECT count(*) FROM ds_quote_material` 期望 42
+   - ✅ 「导入后 = 导入前基线 + 42」，或按本次灌入的料号集合过滤后计数
+   > 同源教训：对方立项时实测共享库数据在漂移（同一条 `count(*)` 几分钟内材质 263→259），最后把 AC 全改写成「与同一时刻基准查询相等」的不变量。
+3. ⚠️ **灌样例数据前必须由主线与对方协调窗口**，子代理不得自行往共享库写。
+
+### 环境坑：vite 依赖预构建缓存互踢
+
+多个 vite 共用软链的 `node_modules/.vite` 会互相踢掉预构建缓存 —— 对方实测这是页面加载超时的**真因，不是产品 bug**。
+⇒ E2E 遇到诡异加载超时 / 白屏，**先排除这个再报产品缺陷**，否则会误报。
