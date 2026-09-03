@@ -32,6 +32,10 @@ test.describe('task-260902 选配模板下线', () => {
    */
   test('AC-25 hasTemplate=false 时抽屉仍可用、仍能提交', async ({ page }) => {
     test.skip(!backendUp, '后端未启动');
+    // 🚨 这条要走完「建单 → 4 步向导 → 提交 → 落库核对」，实测建单+零件表单就近 30s，
+    //    默认 30s 上限会在中途把用例掐断，失败点落在**当时正好在做的那一步**，
+    //    看起来像那一步的选择器坏了（本轮已被这个假象骗过一次）。
+    test.setTimeout(180_000);
 
     await page.route('**/api/cpq/sel-templates/effective**', async (route) => {
       const res = await route.fetch();
@@ -48,6 +52,19 @@ test.describe('task-260902 选配模板下线', () => {
       await route.fulfill({ response: res, body: JSON.stringify(body) });
     });
 
+    // 🚨 阳性对照：记录提交请求本身。
+    //    没有它，「sel_product_no 落 0 行」有两种完全不同的解释 ——
+    //    ① 提交真的失败了（产品缺陷）；② 我压根没点到提交（夹具缺陷）。
+    //    看库是分不出来的，必须看请求有没有发出去、回了什么。
+    const submits: string[] = [];
+    page.on('response', async (r) => {
+      if (r.url().includes('/configure-product/quotations/') && r.request().method() === 'POST') {
+        let body = '';
+        try { body = (await r.text()).slice(0, 400); } catch { body = '(读不到 body)'; }
+        submits.push(`${r.status()} ${body}`);
+      }
+    });
+
     await loginAsAdmin(page);
     await openSelConfigDrawer(page, 'ac25');
 
@@ -55,10 +72,14 @@ test.describe('task-260902 选配模板下线', () => {
     await expect(drawer(page).getByText(/缺少选配模板|未配置选配模板|请先配置选配模板/),
       'AC-25③：无模板时🚫 不得出现「缺少选配模板」之类的空态或阻断提示'
     ).toHaveCount(0);
-    // ① 底部按钮不再只剩「取消」
-    await expect(drawer(page).getByRole('button', { name: /取消/ }),
-      'AC-25①：「取消」应在（对照锚点，证明我们确实看到了 footer）'
-    ).toBeVisible();
+    // ① 对照锚点：先把抽屉里**实际有哪些按钮**打出来再断言。
+    //    🚨 锚点不要挑某个具体文案（上一版挑了「取消」，它压根不存在 ⇒ 用例死在锚点上，
+    //    而真正要验的「确认加入」一次都没验到）。锚点只需证明「我确实看到了抽屉的按钮区」。
+    const drawerButtons = await drawer(page).getByRole('button').allInnerTexts();
+    console.log('[AC-25] 抽屉内按钮 =', JSON.stringify(drawerButtons.map(t => t.replace(/\s+/g, ''))));
+    expect(drawerButtons.length,
+      'AC-25 对照锚点：抽屉里应能看到按钮；一个都看不到 ⇒ 没抓到抽屉，本条结论无效'
+    ).toBeGreaterThan(0);
     await shot(page, 'AC-25-无模板抽屉正常渲染');
 
     // ② 完整走完 4 步并提交成功
@@ -66,22 +87,55 @@ test.describe('task-260902 选配模板下线', () => {
     await fillStep1(page, productNo);
     await startNewPart(page, '触点', 'φ5', '5×3×2', '10');
     await addMaterial(page, '00006', '100');
-    await drawer(page).getByRole('button', { name: /确定/ }).last().click();
+    await drawer(page).getByRole('button', { name: /确\s*定/ }).last().click();
     await page.waitForTimeout(600);
     await nextStep(page);      // → 组合工序
     await nextStep(page);      // → 确认并添加
 
-    const submit = drawer(page).getByRole('button', { name: /确认并添加|确认加入/ }).last();
+    // 提交前先把现场打出来：按钮清单 + 向导当前停在哪一步
+    const btnTexts = (await drawer(page).getByRole('button').allInnerTexts())
+      .map((t) => t.replace(/\s+/g, ''));
+    console.log('[AC-25①] 第 4 步的按钮 =', JSON.stringify(btnTexts));
+    console.log('[AC-25①] 抽屉文本尾部 =',
+      (await drawer(page).innerText().catch(() => '')).replace(/\n+/g, ' | ').slice(-400));
+
+    const submit = drawer(page).getByRole('button', { name: /添加到报价单|确认并添加|确认加入/ }).last();
     await expect(submit,
       'AC-25①：无模板时底部必须有「确认加入」按钮（🚫 不再是只剩「取消」的门禁态）'
     ).toBeVisible({ timeout: 10000 });
     await expect(submit, 'AC-25①：该按钮必须可点').toBeEnabled();
-    await submit.click();
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2500);
+
+    // 🚨 点击与「请求真的发出」绑在一起等：只 click 不等响应，
+    //    「点了但没发请求」会一路滑到最后才以「落库 0 行」的面目出现，根因被推远。
+    const [resp] = await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('/configure-product/quotations/') && r.request().method() === 'POST',
+        { timeout: 25000 },
+      ).catch(() => null),
+      submit.click(),
+    ]);
+    if (!resp) {
+      const after = (await drawer(page).innerText().catch(() => '(抽屉已关闭)'))
+        .replace(/\n+/g, ' | ').slice(0, 600);
+      throw new Error(
+        '[AC-25 诊断] 点了提交按钮后 25s 内没有观测到 POST /configure-product/quotations/。\n'
+        + `点击的按钮文案清单=${JSON.stringify(btnTexts)}\n点击后抽屉现场=${after}`);
+    }
+    console.log(`[AC-25①] 提交响应 ${resp.status()}`);
+    await page.waitForTimeout(2000);
     await shot(page, 'AC-25-无模板提交成功');
 
-    // ② 落库确认：该编号真的建出来了（🚫 不靠「界面没报错」当成功）
+    // ② 先看提交请求（阳性对照），再看落库
+    console.log(`[AC-25②] 观测到的提交请求 = ${JSON.stringify(submits)}`);
+    expect(submits.length,
+      'AC-25 阳性对照：整条用例没有观测到任何 POST /configure-product/quotations/ 请求 ⇒ '
+      + '说明**提交按钮根本没点到**（夹具问题），此时「落库 0 行」不能解释成产品缺陷'
+    ).toBeGreaterThan(0);
+    const lastStatus = submits[submits.length - 1].slice(0, 3);
+    expect(lastStatus,
+      `AC-25②：提交请求应返回 200，实际=${submits[submits.length - 1]}`
+    ).toBe('200');
+
     const landed = query(
       `SELECT count(*) FROM sel_product_no WHERE customer_product_no='${productNo}'`
     );
