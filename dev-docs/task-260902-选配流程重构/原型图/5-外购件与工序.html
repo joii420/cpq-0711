@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>步骤2c · 外购件与工序 — 选配流程重构（task-260902）</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+<a class="navback" href="index.html">← 返回原型导航</a>
+<h1>步骤 2c · 外购件 → 从料号库选 → 选工序</h1>
+<p class="sub">🆕 <b>全新能力</b>。外购件不含材质构成，只选料号 + 工序。</p>
+
+<div class="alert warn">
+  <span class="ico">⚠</span>
+  <div>
+    <b>空态是当前最可能出现的状态，必须画。</b>实测 dev 库 <code>material_master.material_type='外购件'</code> <b>只有 1 条</b>；
+    而 <code>material_bom_item.characteristic='OUTSOURCED'</code> <b>零行</b>。
+    所以状态 B 不是理论边界，是<b>上线第一天大概率看到的画面</b>。
+  </div>
+</div>
+
+<!-- ===== 状态 A ===== -->
+<div class="card">
+  <h2>状态 A · 默认（料号库里有外购件）<span class="state ok">有数据</span><span class="ac">AC-5</span></h2>
+  <div class="drawer">
+    <div class="drawer-hd">
+      <div class="t">添加配件 · 选择外购件</div>
+      <div class="muted small">CP-NEW-001 · 配件 3</div>
+    </div>
+    <div class="drawer-bd">
+      <div class="toolbar">
+        <div class="inp ph" style="max-width:280px">搜索料号或品名</div>
+        <button class="btn">搜索</button>
+        <div class="spacer"></div>
+        <span class="muted small">共 1 条</span>
+      </div>
+
+      <div class="tblwrap">
+        <table>
+          <thead><tr>
+            <th style="width:36px"></th>
+            <th style="width:22%">料号</th>
+            <th>品名</th>
+            <th style="width:18%">规格</th>
+            <th style="width:14%" class="num">单重</th>
+          </tr></thead>
+          <tbody>
+            <tr class="sel">
+              <td><span style="display:inline-block;width:16px;height:16px;border-radius:50%;border:5px solid #1677ff;vertical-align:-3px"></span></td>
+              <td class="mono">TEST-Q13-CODE</td>
+              <td>组成件1</td>
+              <td>φ20×1</td>
+              <td class="num">2 g</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 style="font-size:14px;font-weight:600;margin:24px 0 4px">这次用哪些工序 <span class="tag blue">1 道</span></h3>
+      <p class="hint" style="margin-bottom:12px">与材质、零件工序<b>同一套交互</b>：选择器选中 → 加入有序列表。外购件同样可以有工序（到货后的装配、检验等）。</p>
+      <div class="tblwrap">
+        <table>
+          <thead><tr><th style="width:8%" class="num">#</th><th style="width:16%">工序编号</th><th>工序名</th>
+            <th style="width:14%">分类</th><th style="width:12%">加工方式</th><th style="width:22%"></th></tr></thead>
+          <tbody>
+            <tr><td class="num muted">1</td><td class="mono">Z101</td><td>铆接</td><td class="small muted">装配</td>
+              <td><span class="tag grey">自制</span></td>
+              <td style="text-align:right;white-space:nowrap">
+                <span class="dis"><span class="tip">已是第一道</span><button class="btn link sm" disabled>↑</button></span>
+                <span class="dis"><span class="tip">已是最后一道</span><button class="btn link sm" disabled>↓</button></span>
+                <button class="btn link danger sm">移除</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:12px"><button class="btn">+ 添加工序</button></div>
+
+      <div class="note">
+        <b>判据来自本任务闸门 A0 的裁决</b>：列表只列 <code>material_master.material_type = '外购件'</code> 的料号。
+        该列现网取值分布 = 零件 1848 / NULL 40 / 外购件 1（取数 2026-09-02，共享库会漂移），语义是<b>料号类型</b>。
+        ⚠️ 选配侧当前把<b>材质名</b>（<code>recipe.symbol</code>）写进这一列（<code>ConfigureProductService:388</code>），
+        A0 已裁决<b>归位为料号类型</b>（选配改写 <code>'零件'</code>），否则这个判据不成立。
+      </div>
+    </div>
+    <div class="drawer-ft">
+      <button class="btn">上一步</button>
+      <button class="btn primary">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 状态 B ===== -->
+<div class="card">
+  <h2>状态 B · 料号库里一个外购件都没有（空态）<span class="state err">最可能出现</span><span class="ac">AC-16</span></h2>
+  <p class="hint">🚫 <b>绝对不能显示「加载中…」永久占位</b>——这是 <code>docs/反模式.md</code> AP-31 整个族的典型病：把「空」误判为「还没加载完」。</p>
+
+  <div class="drawer">
+    <div class="drawer-hd"><div class="t">添加配件 · 选择外购件</div></div>
+    <div class="drawer-bd">
+      <div class="toolbar">
+        <div class="inp ph" style="max-width:280px">搜索料号或品名</div>
+        <button class="btn">搜索</button>
+        <div class="spacer"></div>
+        <span class="muted small">共 0 条</span>
+      </div>
+      <div class="empty">
+        <span class="ico">🛒</span>
+        <div class="txt">料号库里还没有外购件</div>
+        <div class="small muted" style="margin-top:6px">
+          外购件需要先在<b>料号维护</b>里录入，并把「料号类型」设为<b>外购件</b>
+        </div>
+        <div class="act">
+          <button class="btn">→ 打开料号维护</button>
+          <button class="btn" style="margin-left:8px">← 改为添加零件</button>
+        </div>
+      </div>
+    </div>
+    <div class="drawer-ft">
+      <button class="btn">上一步</button>
+      <div class="dis"><span class="tip">请先选择一个外购件</span><button class="btn primary">确定</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 状态 C ===== -->
+<div class="card">
+  <h2>状态 C · 最长文案（品名与规格都很长）</h2>
+  <div class="tblwrap" style="max-width:900px">
+    <table>
+      <thead><tr><th style="width:36px"></th><th style="width:22%">料号</th><th>品名</th><th style="width:22%">规格</th><th style="width:12%" class="num">单重</th></tr></thead>
+      <tbody><tr>
+        <td><span style="display:inline-block;width:16px;height:16px;border-radius:50%;border:5px solid #1677ff;vertical-align:-3px"></span></td>
+        <td class="mono">TEST-Q13-CODE-A22-LONG</td>
+        <td style="max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">高温环氧玻璃布层压板组成件1（含双面硅胶涂层与定位凸台）</td>
+        <td style="max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">φ20×1±0.05 / 耐温 180℃</td>
+        <td class="num">2 g</td>
+      </tr></tbody>
+    </table>
+  </div>
+  <div class="note">超长单元格<b>省略 + hover 显示全文</b>，表格不横向撑破抽屉。</div>
+</div>
+
+<div class="note">
+  <b>本页对应 AC：</b><span class="ac">AC-5</span> 列表只列外购件类型料号 · <span class="ac">AC-16</span> 空态必须是空态而非「加载中…」。
+</div>
+</div>
+</body>
+</html>

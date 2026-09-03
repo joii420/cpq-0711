@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>步骤2a · 新建零件与多材质占比 — 选配流程重构（task-260902）</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+<a class="navback" href="index.html">← 返回原型导航</a>
+<h1>步骤 2a · 新建零件 → 品名规格尺寸 → 挂多个材质</h1>
+<p class="sub">🔥 <b>本次重构的核心页</b>。现状一个配件只能有一种材质（<code>PartRequest.recipeCode</code> 是单值），这一页把它变成 1~N 个。</p>
+
+<div class="alert info">
+  <span class="ico">ℹ</span>
+  <div>
+    <b>三个落点全部复用现有列，本页零新增字段</b>：品名/规格/尺寸/总重 → <code>material_master.material_name / specification / dimension / unit_weight</code>；
+    材质占比 → <code>material_bom_item.material_ratio</code>（V365 专为「材质占比」加的列，导入侧已在用，存量 11131 行仅 3 行非空）。
+  </div>
+</div>
+
+<!-- ===== 状态 A ===== -->
+<div class="card">
+  <h2>状态 A · 默认（2 个材质，占比 70 / 30，合计 100%）<span class="state ok">可提交</span><span class="ac">AC-3</span></h2>
+
+  <div class="drawer">
+    <div class="drawer-hd">
+      <div class="t">添加配件 · 新建零件</div>
+      <div class="muted small">CP-NEW-001 · 配件 1</div>
+    </div>
+    <div class="drawer-bd">
+      <h3 style="font-size:14px;font-weight:600;margin:0 0 12px">零件信息</h3>
+      <div class="form-row">
+        <div class="fi"><label><span class="req">*</span>品名</label><div class="inp">动触头</div></div>
+        <div class="fi"><label>规格</label><div class="inp">φ12×3</div></div>
+        <div class="fi"><label>尺寸</label><div class="inp">12×8×3</div></div>
+        <div class="fi" style="max-width:180px">
+          <label><span class="req">*</span>总重</label>
+          <div style="display:flex;align-items:center"><div class="inp num" style="text-align:right">10</div><span class="suffix">克</span></div>
+        </div>
+      </div>
+
+      <h3 style="font-size:14px;font-weight:600;margin:24px 0 4px;display:flex;align-items:center;gap:8px">
+        材质构成 <span class="tag blue">2 项</span>
+      </h3>
+      <p class="hint" style="margin-bottom:12px">各材质的克重 = 总重 × 占比，不单独录入（用户裁决 D-2）。</p>
+
+      <div class="tblwrap">
+        <table>
+          <thead><tr>
+            <th style="width:30%">材质</th>
+            <th style="width:34%">含量配置</th>
+            <th style="width:16%" class="num">占比 %</th>
+            <th style="width:12%" class="num">折合克重</th>
+            <th style="width:8%"></th>
+          </tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="mono muted small">00006</span> AgNi10</td>
+              <td><div class="fakesel">00006-01（Ag 90% / Ni 10%）<span class="caret">▼</span></div></td>
+              <td><div class="inp num" style="text-align:right">70</div></td>
+              <td class="num muted">7 g</td>
+              <td><button class="btn link danger sm">移除</button></td>
+            </tr>
+            <tr>
+              <td><span class="mono muted small">00123</span> AgZnO12/Cu</td>
+              <td><div class="fakesel">00123-01（Ag 24.4% / Cu 72.2727% / Zn 3.3273%）<span class="caret">▼</span></div></td>
+              <td><div class="inp num" style="text-align:right">30</div></td>
+              <td class="num muted">3 g</td>
+              <td><button class="btn link danger sm">移除</button></td>
+            </tr>
+          </tbody>
+          <tfoot><tr>
+            <td colspan="2" class="muted">合计</td>
+            <td class="num"><span class="tag green">100%</span></td>
+            <td class="num">10 g</td>
+            <td></td>
+          </tr></tfoot>
+        </table>
+      </div>
+
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+        <button class="btn">+ 添加材质</button>
+        <div class="dis">
+          <span class="tip">该材质不支持自定义含量</span>
+          <button class="btn">切换到自定义含量</button>
+        </div>
+      </div>
+
+      <h3 style="font-size:14px;font-weight:600;margin:24px 0 4px">工序 <span class="tag blue">2 道</span></h3>
+      <p class="hint" style="margin-bottom:12px">添加方式<b>与材质完全一致</b>：选择器选中 → 加入列表。按列表从上到下的顺序执行，可用 ↑↓ 调序。</p>
+      <div class="tblwrap">
+        <table>
+          <thead><tr><th style="width:8%" class="num">#</th><th style="width:16%">工序编号</th><th>工序名</th>
+            <th style="width:14%">分类</th><th style="width:12%">加工方式</th><th style="width:22%"></th></tr></thead>
+          <tbody>
+            <tr><td class="num muted">1</td><td class="mono">Z100</td><td>焊接</td><td class="small muted">装配</td>
+              <td><span class="tag grey">自制</span></td>
+              <td style="text-align:right;white-space:nowrap">
+                <span class="dis"><span class="tip">已是第一道</span><button class="btn link sm" disabled>↑</button></span>
+                <button class="btn link sm">↓</button><button class="btn link danger sm">移除</button></td></tr>
+            <tr><td class="num muted">2</td><td class="mono">Z101</td><td>铆接</td><td class="small muted">装配</td>
+              <td><span class="tag grey">自制</span></td>
+              <td style="text-align:right;white-space:nowrap">
+                <button class="btn link sm">↑</button>
+                <span class="dis"><span class="tip">已是最后一道</span><button class="btn link sm" disabled>↓</button></span>
+                <button class="btn link danger sm">移除</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:12px"><button class="btn">+ 添加工序</button></div>
+    </div>
+    <div class="drawer-ft">
+      <button class="btn">上一步</button>
+      <button class="btn primary">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 状态 A2 ===== -->
+<div class="card">
+  <h2>状态 A2 · 点「+ 添加材质」→ 材质选择器（可搜索）<span class="state">新增</span><span class="ac">AC-17</span></h2>
+  <p class="hint">🚨 <b>实测材质库 262 条</b>，所以这一步<b>必须能按材质编号 / 材质名过滤</b>，靠滚动找不可行（对齐 <code>task-260901</code> AC-35：258 项走虚拟滚动，用例必须先输入过滤再点选）。</p>
+
+  <div style="border:1px solid #91caff;border-radius:8px;background:#f0f8ff;padding:16px;margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <b>选择材质</b>
+      <div class="inp ph" style="max-width:300px">输入材质编号或材质名过滤，如 00006 / AgNi / AgZnO12/Cu</div>
+      <span class="muted small">12 / 262 条</span>
+      <div style="flex:1"></div>
+      <button class="btn sm">取消</button>
+    </div>
+    <div class="tblwrap" style="background:#fff">
+      <table>
+        <thead><tr><th style="width:13%">材质编号</th><th style="width:24%">材质名</th><th>首个配置的含量</th>
+          <th style="width:10%" class="num">含量配置</th><th style="width:14%">自定义</th><th style="width:11%"></th></tr></thead>
+        <tbody>
+          <tr style="opacity:.45">
+            <td><span class="mono muted">00006</span></td><td>AgNi10</td>
+            <td class="small muted">Ag 90% / Ni 10%</td><td class="num">3 组</td>
+            <td><span class="tag grey">仅标准</span></td>
+            <td style="text-align:right"><span class="dis"><span class="tip">该材质已添加</span><button class="btn sm" disabled>选择</button></span></td>
+          </tr>
+          <tr><td><span class="mono muted">00007</span></td><td>Ag15CuP</td>
+            <td class="small muted">Ag 85% / Ni 15%</td><td class="num">1 组</td>
+            <td><span class="tag grey">仅标准</span></td>
+            <td style="text-align:right"><button class="btn sm primary">选择</button></td></tr>
+          <tr><td><span class="mono muted">00031</span></td><td>AgSnO₂</td>
+            <td class="small muted">Ag 88% / Sn 10% / O 2%</td><td class="num">2 组</td>
+            <td><span class="tag grey">仅标准</span></td>
+            <td style="text-align:right"><button class="btn sm primary">选择</button></td></tr>
+          <tr><td><span class="mono muted">00123</span></td><td>AgZnO12/Cu</td>
+            <td class="small muted">Ag 24.4% / Cu 72.2727% / Zn 3.3273%</td><td class="num">1 组</td>
+            <td><span class="tag gold">支持自定义</span></td>
+            <td style="text-align:right"><button class="btn sm primary">选择</button></td></tr>
+          <tr><td><span class="mono muted">00197</span></td><td>AgNi10/Ag15CuP 复合材</td>
+            <td class="small muted">Ag 85% / Ni 10% / Cu 5%</td><td class="num">1 组</td>
+            <td><span class="tag grey">仅标准</span></td>
+            <td style="text-align:right"><button class="btn sm primary">选择</button></td></tr>
+          <tr style="opacity:.45">
+            <td><span class="mono muted">00263</span></td><td>SnO2-del</td>
+            <td class="small muted">—</td><td class="num"><span class="tag red">0 组</span></td>
+            <td><span class="tag grey">仅标准</span></td>
+            <td style="text-align:right"><span class="dis"><span class="tip">该材质尚未配置含量</span><button class="btn sm" disabled>选择</button></span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note" style="margin-top:12px;background:#fff">
+      🚫 <b>不可选的材质仍然列出、灰显并写明原因，不从列表里过滤掉</b> —— 过滤掉用户会以为材质丢了（§1.2 禁止 <code>if(...) return null</code> 隐藏能力）。<br>
+      两种不可选：<b>含量配置 0 组</b>（<code>00263</code>，后端提交也会 409 <code>RECIPE_HAS_NO_CONFIG</code>）· <b>本零件已添加过</b>（<code>00006</code>，<span class="ac">AC-17</span>）。<br>
+      「首个配置的含量」列让用户不展开就能分辨 <code>AgNi10</code> 与 <code>Ag15CuP</code> 的实际差别；「含量配置」列的组数直接暴露 0 组这种不可用材质。
+    </div>
+  </div>
+
+  <h3 style="font-size:14px;font-weight:600;margin:20px 0 8px">A2-b · 输入「AgNi」过滤后</h3>
+  <div class="tblwrap" style="max-width:820px;margin-bottom:12px">
+    <table>
+      <thead><tr><th style="width:16%">材质编号</th><th style="width:30%">材质名</th><th>首个配置的含量</th><th style="width:12%" class="num">含量配置</th></tr></thead>
+      <tbody>
+        <tr><td><span class="mono muted">00006</span></td><td>AgNi10</td><td class="small muted">Ag 90% / Ni 10%</td><td class="num">3 组</td></tr>
+        <tr><td><span class="mono muted">00007</span></td><td>Ag15CuP</td><td class="small muted">Ag 85% / Ni 15%</td><td class="num">1 组</td></tr>
+        <tr><td><span class="mono muted">00008</span></td><td>Ag25CuP</td><td class="small muted">Ag 80% / Ni 20%</td><td class="num">1 组</td></tr>
+        <tr><td><span class="mono muted">00012</span></td><td>AgCdO12</td><td class="small muted">Ag 70% / Ni 30%</td><td class="num">1 组</td></tr>
+        <tr><td><span class="mono muted">00197</span></td><td>AgNi10/Ag15CuP 复合材</td><td class="small muted">Ag 85% / Ni 10% / Cu 5%</td><td class="num">1 组</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="hint">过滤对<b>材质编号与材质名都生效</b>，大小写不敏感（输 <code>agni</code> 同样命中）。中文名同样可搜（输「AgZnO12/Cu」命中 <code>00123</code>）。</p>
+
+  <h3 style="font-size:14px;font-weight:600;margin:20px 0 8px">A2-c · 无匹配（空态）</h3>
+  <div style="border:1px solid #f0f0f0;border-radius:8px;background:#fff">
+    <div class="empty" style="padding:28px 0">
+      <span class="ico">🔍</span>
+      <div class="txt">没有匹配「法兰」的材质</div>
+      <div class="small muted" style="margin-top:6px">试试材质编号（00006）或材质名（AgNi / AgZnO12/Cu）</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 状态 B ===== -->
+<div class="card">
+  <h2>状态 B · 占比合计 ≠ 100%（错误态）<span class="state err">阻止提交</span><span class="ac">AC-4</span></h2>
+  <p class="hint">🚫 提示必须写出<b>实际合计值</b>，不许只说「合计不正确」这种形容词。</p>
+
+  <div class="drawer">
+    <div class="drawer-hd"><div class="t">添加配件 · 新建零件</div></div>
+    <div class="drawer-bd">
+      <div class="tblwrap">
+        <table>
+          <thead><tr><th style="width:30%">材质</th><th style="width:34%">含量配置</th><th style="width:16%" class="num">占比 %</th><th style="width:12%" class="num">折合克重</th><th style="width:8%"></th></tr></thead>
+          <tbody>
+            <tr class="rowerr">
+              <td><span class="mono muted small">00006</span> AgNi10</td>
+              <td><div class="fakesel">00006-01（Ag 90% / Ni 10%）<span class="caret">▼</span></div></td>
+              <td><div class="inp num err" style="text-align:right">70</div></td>
+              <td class="num muted">—</td>
+              <td><button class="btn link danger sm">移除</button></td>
+            </tr>
+            <tr class="rowerr">
+              <td><span class="mono muted small">00123</span> AgZnO12/Cu</td>
+              <td><div class="fakesel">00123-01（Ag 24.4% / Cu 72.2727% / Zn 3.3273%）<span class="caret">▼</span></div></td>
+              <td><div class="inp num err" style="text-align:right">20</div></td>
+              <td class="num muted">—</td>
+              <td><button class="btn link danger sm">移除</button></td>
+            </tr>
+          </tbody>
+          <tfoot><tr>
+            <td colspan="2" class="muted">合计</td>
+            <td class="num"><span class="tag red">90%</span></td>
+            <td class="num muted">—</td>
+            <td></td>
+          </tr></tfoot>
+        </table>
+      </div>
+      <div class="errmsg" style="margin-top:8px">材质占比合计为 <b>90%</b>，需要正好 100%（还差 10%）</div>
+    </div>
+    <div class="drawer-ft">
+      <button class="btn">上一步</button>
+      <div class="dis">
+        <span class="tip">材质占比合计为 90%，需要正好 100%</span>
+        <button class="btn primary">确定</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 状态 C ===== -->
+<div class="card">
+  <h2>状态 C · 材质支持自定义含量（展开自定义区）<span class="ac">AC-6</span></h2>
+  <p class="hint">依赖 <code>task-260901</code> 的 <code>allow_custom_content</code> 开关。为 true 时才可切换。</p>
+
+  <div class="drawer">
+    <div class="drawer-hd"><div class="t">添加配件 · 新建零件 · 自定义 AgNi10 的含量</div></div>
+    <div class="drawer-bd">
+      <div class="alert warn">
+        <span class="ico">⚠</span>
+        <div>正在为 <b>AgNi10</b> 使用<b>自定义含量</b>，该配比只用于本次选配，<b>不会回流材质库</b>。<br>
+        元素种类由材质的元素组成决定，<b>只能改含量、不能增删元素</b>。</div>
+      </div>
+
+      <div class="tblwrap" style="max-width:520px">
+        <table>
+          <thead><tr><th>元素</th><th class="num" style="width:34%">含量 %</th></tr></thead>
+          <tbody>
+            <tr><td><span class="mono muted small">10001</span> Ag 银</td><td><div class="inp num" style="text-align:right">88</div></td></tr>
+            <tr><td><span class="mono muted small">10005</span> Ni 镍</td><td><div class="inp num" style="text-align:right">12</div></td></tr>
+          </tbody>
+          <tfoot><tr><td class="muted">合计</td><td class="num"><span class="tag green">100%</span></td></tr></tfoot>
+        </table>
+      </div>
+
+      <div style="margin-top:12px"><button class="btn">← 改回选择标准配置</button></div>
+    </div>
+    <div class="drawer-ft"><button class="btn">取消</button><button class="btn primary">确定</button></div>
+  </div>
+</div>
+
+<!-- ===== 状态 D ===== -->
+<div class="card">
+  <h2>状态 D · 材质不支持自定义（禁用但可见 + 原因）<span class="state warn">禁用态</span></h2>
+  <p class="hint">存量 262 条材质<b>全部</b> <code>allow_custom_content=false</code>，所以这是当前最常见的状态。鼠标移到按钮上看 tooltip。</p>
+  <div style="display:flex;gap:12px;align-items:center;padding:16px;background:#fff;border-radius:8px;border:1px solid #f0f0f0">
+    <span class="mono muted small">00006</span> <span>AgNi10</span>
+    <div class="dis">
+      <span class="tip">该材质不支持自定义含量</span>
+      <button class="btn">切换到自定义含量</button>
+    </div>
+    <span class="muted small">如需开启，请到<b>材质管理</b>页把该材质的「支持自定义含量」打开</span>
+  </div>
+</div>
+
+<!-- ===== 状态 E ===== -->
+<div class="card">
+  <h2>状态 E · 单材质（占比 100%）—— 等价于旧行为 <span class="ac">AC-13</span></h2>
+  <p class="hint">验证不回归：只挂一个材质时，行为应与现状单材质选配一致。</p>
+  <div class="tblwrap" style="max-width:820px">
+    <table>
+      <thead><tr><th style="width:32%">材质</th><th style="width:38%">含量配置</th><th style="width:16%" class="num">占比 %</th><th style="width:14%" class="num">折合克重</th></tr></thead>
+      <tbody><tr>
+        <td><span class="mono muted small">00006</span> AgNi10</td>
+        <td><div class="fakesel">00006-01（Ag 90% / Ni 10%）<span class="caret">▼</span></div></td>
+        <td><div class="inp num" style="text-align:right">100</div></td>
+        <td class="num muted">10 g</td>
+      </tr></tbody>
+      <tfoot><tr><td colspan="2" class="muted">合计</td><td class="num"><span class="tag green">100%</span></td><td class="num">10 g</td></tr></tfoot>
+    </table>
+  </div>
+</div>
+
+<!-- ===== 状态 F ===== -->
+<div class="card">
+  <h2>状态 F · 极值：12 位小数占比 + 最长材质名 <span class="ac">AC-15a</span></h2>
+  <p class="hint">三等分场景。合计判等用定点比较（后端 <code>BigDecimal.compareTo</code>），与库列 <code>numeric(24,12)</code> 口径一致。</p>
+  <div class="tblwrap" style="max-width:900px">
+    <table>
+      <thead><tr><th style="width:34%">材质</th><th style="width:30%">含量配置</th><th style="width:22%" class="num">占比 %</th><th style="width:14%" class="num">折合克重</th></tr></thead>
+      <tbody>
+        <tr><td><span class="mono muted small">00197</span> AgNi10/Ag15CuP 复合材</td><td><div class="fakesel">00197-01<span class="caret">▼</span></div></td><td><div class="inp num mono" style="text-align:right;font-size:12px">33.333333333333</div></td><td class="num muted">3.3333333333 g</td></tr>
+        <tr><td><span class="mono muted small">00123</span> AgZnO12/Cu</td><td><div class="fakesel">00123-01<span class="caret">▼</span></div></td><td><div class="inp num mono" style="text-align:right;font-size:12px">33.333333333333</div></td><td class="num muted">3.3333333333 g</td></tr>
+        <tr><td><span class="mono muted small">00006</span> AgNi10</td><td><div class="fakesel">00006-01<span class="caret">▼</span></div></td><td><div class="inp num mono" style="text-align:right;font-size:12px">33.333333333334</div></td><td class="num muted">3.3333333333 g</td></tr>
+      </tbody>
+      <tfoot><tr><td colspan="2" class="muted">合计</td><td class="num"><span class="tag green">100%</span></td><td class="num">10 g</td></tr></tfoot>
+    </table>
+  </div>
+  <div class="note">
+    <b>显示去尾随零</b>（对齐 260901 AC-30）：库里存 <code>70.000000000000</code>，界面显示 <code>70</code>；输入框回填也是 <code>70</code>。
+    去零只发生在<b>渲染层</b>，存储与接口仍是完整精度。🚫 去零必须走字符串正则，<b>不许过 JS <code>number</code></b>——12 位小数过 <code>Number()</code> 会丢尾数（这一条是确定的）。
+  </div>
+
+  <h3 style="font-size:14px;font-weight:600;margin:24px 0 8px">F-b · 证伪对照组（浮点实现会在这里挂）<span class="ac">AC-15b</span></h3>
+  <div class="alert warn">
+    <span class="ico">⚠</span>
+    <div>
+      <b>上面那组三等分不能用来论证「必须用定点」</b> —— 实测 <code>33.333333333333×2 + 33.333333333334</code> 在 JS 浮点下<b>恰好等于 100</b>，浮点实现照样能通过。
+      真正有分辨力的是下面这组极小值：浮点算出 <code>99.99999999999999</code>，会<b>错误拒绝</b>一个合法输入。
+    </div>
+  </div>
+  <div class="tblwrap" style="max-width:820px">
+    <table>
+      <thead><tr><th style="width:30%">材质</th><th style="width:34%" class="num">占比 %</th><th class="num">折合克重（总重 10 g）</th></tr></thead>
+      <tbody>
+        <tr><td><span class="mono muted">00006</span> AgNi10</td><td><div class="inp num mono" style="text-align:right;font-size:12px">0.000000000001</div></td><td class="num muted">0.00000000001 g</td></tr>
+        <tr><td><span class="mono muted">00123</span> AgZnO12/Cu</td><td><div class="inp num mono" style="text-align:right;font-size:12px">99.999999999998</div></td><td class="num muted">9.9999999999998 g</td></tr>
+        <tr><td><span class="mono muted">00031</span> AgSnO₂</td><td><div class="inp num mono" style="text-align:right;font-size:12px">0.000000000001</div></td><td class="num muted">0.00000000001 g</td></tr>
+      </tbody>
+      <tfoot><tr><td class="muted">合计</td><td class="num"><span class="tag green">100%</span></td><td class="num">10 g</td></tr></tfoot>
+    </table>
+  </div>
+  <div class="note">
+    <b>期望：校验通过、允许提交。</b>若实现用了 <code>Number</code> 累加，这里会显示 <code>99.99999999999999%</code> 并禁用「确定」——那就是实现错了，不是数据错了。<br>
+    用定点的理由不是「浮点一定算错」，而是<b>库列 <code>numeric(24,12)</code> 本就是定点，前后端判等口径必须与存储一致</b>。
+  </div>
+</div>
+
+<!-- ===== 状态 G ===== -->
+<div class="card">
+  <h2>状态 G · 重复添加同一材质（阻止）<span class="ac">AC-17</span></h2>
+  <div class="drawer" style="max-width:620px">
+    <div class="drawer-hd"><div class="t">添加材质</div></div>
+    <div class="drawer-bd">
+      <div class="fi"><label>材质</label><div class="fakesel err" style="border-color:#ff4d4f">00006 / AgNi10<span class="caret">▼</span></div>
+        <div class="errmsg">材质 AgNi10 已添加，同一个零件里不能重复</div>
+      </div>
+    </div>
+    <div class="drawer-ft">
+      <button class="btn">取消</button>
+      <div class="dis"><span class="tip">材质 AgNi10 已添加</span><button class="btn primary">确定</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 状态 H ===== -->
+<div class="card">
+  <h2>状态 H · 工序选择器（与材质选择器同构）<span class="state">新增</span></h2>
+  <p class="hint">点「+ 添加工序」后展开。<b>与材质选择器唯一的差别：工序可以重复加入</b>（列表里显示「已加 N 次」而不是灰显禁用），因为同一道工序在工艺路线里重复出现是常态（粗车 → 热处理 → 精车）。</p>
+
+  <div style="border:1px solid #91caff;border-radius:8px;background:#f0f8ff;padding:16px;margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <b>选择工序</b>
+      <div class="inp ph" style="max-width:300px">输入工序编号或工序名过滤，如 Z100 / 焊接</div>
+      <span class="muted small">4 / 4 条</span>
+      <div style="flex:1"></div>
+      <button class="btn sm">取消</button>
+    </div>
+    <div class="tblwrap" style="background:#fff">
+      <table>
+        <thead><tr><th style="width:18%">工序编号</th><th>工序名</th><th style="width:16%">分类</th>
+          <th style="width:14%">加工方式</th><th style="width:12%"></th></tr></thead>
+        <tbody>
+          <tr><td><span class="mono muted">TP10</span></td><td>测试工序10</td><td class="small muted">—</td>
+            <td><span class="tag grey">自制</span></td><td style="text-align:right"><button class="btn sm primary">加入</button></td></tr>
+          <tr><td><span class="mono muted">TP20</span></td><td>测试工序20</td><td class="small muted">—</td>
+            <td><span class="tag grey">自制</span></td><td style="text-align:right"><button class="btn sm primary">加入</button></td></tr>
+          <tr><td><span class="mono muted">Z100</span></td><td>焊接 <span class="tag grey">已加 1 次</span></td><td class="small muted">装配</td>
+            <td><span class="tag grey">自制</span></td><td style="text-align:right"><button class="btn sm primary">加入</button></td></tr>
+          <tr><td><span class="mono muted">Z101</span></td><td>铆接 <span class="tag grey">已加 1 次</span></td><td class="small muted">装配</td>
+            <td><span class="tag grey">自制</span></td><td style="text-align:right"><button class="btn sm primary">加入</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note" style="margin-top:12px;background:#fff">
+      📌 <b>上表 4 条是 <code>process_master</code> 的全量实测</b>（<code>TP10</code>/<code>TP20</code> 是遗留测试数据，<code>Z100 焊接</code>/<code>Z101 铆接</code> 为真实工序）。
+      工序主数据<b>尚未导全</b>，所以选择器仍按<b>可搜索</b>设计，不能假设它永远只有 4 条。
+    </div>
+  </div>
+
+  <div class="alert ok">
+    <span class="ico">✓</span>
+    <div>
+      <b>已裁决（2026-09-02）：工序进指纹，但顺序不进 —— 指纹按工序编号排序生成。</b>
+      「焊接→铆接」与「铆接→焊接」<b>算同一个产品</b>，复用同一销售料号。
+      ⇒ <code>SalesFingerprintCalculator</code> 的 <code>PRC=</code> 保持现状 <code>sorted().join(",")</code>，本任务<b>不改这行代码</b>。
+    </div>
+  </div>
+  <div class="tblwrap" style="max-width:760px">
+    <table>
+      <thead><tr><th style="width:34%">维度</th><th style="width:20%">是否进指纹</th><th>实测依据</th></tr></thead>
+      <tbody>
+        <tr><td>工序<b>顺序</b></td><td><span class="tag grey">❌ 不进</span></td>
+          <td class="small mono">["Z100","Z101"].sort() === ["Z101","Z100"].sort() → "Z100,Z101"</td></tr>
+        <tr><td>工序<b>重复次数</b></td><td><span class="tag green">✅ 仍进</span></td>
+          <td class="small mono">["Z100","Z101","Z100"].sort() → "Z100,Z100,Z101" ≠ "Z100,Z101"</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note">
+    🚫 <b>调序的 ↑↓ 不因此取消</b> —— 它影响工序在报价单里的<b>显示顺序</b>与落 <code>unit_price</code> 时的 <code>seq_no</code>，只是不影响料号复用判定。这是两件事。<br>
+    🚨 <b>「重复次数仍进指纹」是防错重点</b>：<code>sort()</code> 不去重，所以「焊两次」与「焊一次」是不同料号（<span class="ac">AC-20</span>）。
+    实现者若在 <code>sorted()</code> 旁顺手加一个 <code>distinct()</code>，这条行为会被静默抹平 —— 而它没有任何报错外观，只表现为两个不同工艺的产品共用了价格。
+  </div>
+</div>
+
+<div class="note">
+  <b>本页对应 AC：</b><span class="ac">AC-3</span> 多材质落库 · <span class="ac">AC-4</span> 占比合计校验写出实际值 · <span class="ac">AC-6</span> 自定义禁用态 · <span class="ac">AC-13</span> 单材质等价旧行为 · <span class="ac">AC-14</span> 零材质阻止 · <span class="ac">AC-15a</span> 12 位小数精度 · <span class="ac">AC-15b</span> 极小值证伪对照组 · <span class="ac">AC-17</span> 材质已添加则灰显不可选 · <span class="ac">AC-18</span> 材质选择器的 6 种搜索输入。<br>
+  <b>工序相关 AC：</b><span class="ac">AC-19</span> 换顺序复用同一料号（顺序不进指纹，但 <code>unit_price.seq_no</code> 各按自己顺序落）· <span class="ac">AC-20</span> 焊两次 ≠ 焊一次（重复次数仍进指纹，防 <code>distinct()</code>）。<br>
+  <b>尚无 AC 覆盖：</b>工序选择器本身的搜索与调序交互 —— 待 <code>fronttask.md</code> 拆 <code>F-x</code> 时补齐。
+</div>
+</div>
+</body>
+</html>
