@@ -33,12 +33,17 @@ public class UserService {
     private static final int PASSWORD_LENGTH = 10;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    public PageResult<UserDTO> list(int page, int size, String role, String status, String keyword) {
-        page = com.cpq.common.dto.Pagination.clampPage(page);
-        size = com.cpq.common.dto.Pagination.clampSize(size);
+    /**
+     * <b>用户列表过滤条件的唯一出处</b>（task-260902 · B-3 抽取，条件文本逐字沿用改造前的 list()）。
+     *
+     * <p>列表分页查询与<b>导出</b>共用本方法 —— 🚫 导出侧不许照着描述另写一套 JPQL，
+     * 否则「页面筛出 N 条、导出文件 M 条」这种对不上的现象迟早出现。
+     *
+     * @param params 出参：把绑定参数填进这个 Map（调用方原样交给 Panache）
+     * @return JPQL where 片段（恒以 {@code 1=1} 开头，可直接拼 {@code " ORDER BY ..."}）
+     */
+    static String buildFilter(String role, String status, String keyword, Map<String, Object> params) {
         StringBuilder query = new StringBuilder("1=1");
-        Map<String, Object> params = new HashMap<>();
-
         if (role != null && !role.isBlank()) {
             query.append(" AND role = :role");
             params.put("role", role);
@@ -51,6 +56,14 @@ public class UserService {
             query.append(" AND (username LIKE :kw OR fullName LIKE :kw OR email LIKE :kw)");
             params.put("kw", "%" + keyword + "%");
         }
+        return query.toString();
+    }
+
+    public PageResult<UserDTO> list(int page, int size, String role, String status, String keyword) {
+        page = com.cpq.common.dto.Pagination.clampPage(page);
+        size = com.cpq.common.dto.Pagination.clampSize(size);
+        Map<String, Object> params = new HashMap<>();
+        StringBuilder query = new StringBuilder(buildFilter(role, status, keyword, params));
 
         long total = User.count(query.toString(), params);
         List<UserDTO> content = User
@@ -77,7 +90,7 @@ public class UserService {
         }
 
         String rawPassword = generatePassword();
-        String hash = BCrypt.hashpw(rawPassword, BCrypt.gensalt(12));
+        String hash = hashPassword(rawPassword);
 
         User user = new User();
         user.username = request.username;
@@ -183,7 +196,7 @@ public class UserService {
         }
 
         String rawPassword = generatePassword();
-        user.passwordHash = BCrypt.hashpw(rawPassword, BCrypt.gensalt(12));
+        user.passwordHash = hashPassword(rawPassword);
         user.isFirstLogin = true;
         user.initialPasswordExpiresAt = OffsetDateTime.now().plusHours(24);
 
@@ -198,11 +211,24 @@ public class UserService {
         return dto;
     }
 
-    private String generatePassword() {
+    /**
+     * <b>初始密码生成的唯一实现</b>（新建用户 / 重置密码 / task-260902 批量导入 三处共用）。
+     * 🚫 不许在导入侧另写一套 —— 两套实现＝两套强度，且以后改密码策略只会改到一边。
+     * task-260902：由 private 放宽到<b>包可见</b>供同包的 {@code UserExportImportService} 调用。
+     */
+    String generatePassword() {
         StringBuilder sb = new StringBuilder(PASSWORD_LENGTH);
         for (int i = 0; i < PASSWORD_LENGTH; i++) {
             sb.append(PASSWORD_CHARS.charAt(SECURE_RANDOM.nextInt(PASSWORD_CHARS.length())));
         }
         return sb.toString();
+    }
+
+    /**
+     * <b>口令哈希的唯一实现</b>（BCrypt cost 12），同上由三处共用。
+     * task-260902：从 create()/resetPassword() 原地抽出，参数与轮数逐字不变。
+     */
+    String hashPassword(String rawPassword) {
+        return BCrypt.hashpw(rawPassword, BCrypt.gensalt(12));
     }
 }

@@ -12,6 +12,7 @@ import com.cpq.configure.dto.MaterialRecipeDTO;
 import com.cpq.configure.dto.MaterialRecipePartDTO;
 import com.cpq.configure.dto.MaterialRecipeUpsertRequest;
 import com.cpq.configure.service.MaterialRecipeConfigService;
+import com.cpq.configure.service.MaterialRecipeExportService;
 import com.cpq.configure.service.MaterialRecipeImportService;
 import com.cpq.configure.service.MaterialRecipeService;
 import jakarta.inject.Inject;
@@ -50,6 +51,9 @@ public class MaterialRecipeResource {
     @Inject
     MaterialRecipeConfigService configService;
 
+    @Inject
+    MaterialRecipeExportService exportService;
+
     /**
      * POST /material-recipes/import — 上传 xlsx 导入材质库。
      * task-260901：只接<b>新 4 列单表模板</b>（材质 / 组号 / 元素符号 / 含量），旧两 sheet 模板返 400；
@@ -68,6 +72,32 @@ public class MaterialRecipeResource {
             throw new RuntimeException("读取上传文件失败: " + e.getMessage(), e);
         }
         return importService.importLibrary(bytes);
+    }
+
+    /**
+     * GET /material-recipes/export — 导出材质库 xlsx（task-260902 · B-1，api.md B-1）。
+     *
+     * <p><b>导出「当前筛选结果」的全量</b>：按页面上已输入的 keyword / 类型 / 状态过滤，
+     * 但<b>不受分页限制</b>；不传任何参数即全量。前 4 列与导入模板同构 ⇒ 可直接回导。
+     *
+     * <p>🔒 权限：类级放开了 4 个角色，这里靠<b>方法级</b> {@code @RoleAllowed} 收紧到仅管理员
+     * （{@code RoleFilter} 取注解的逻辑是 {@code methodAnno != null ? methodAnno : classAnno}）。
+     * 非管理员 → 403；未登录 → 401。
+     *
+     * <p>⚠️ Content-Disposition 用 ASCII 文件名；中文文件名由前端 {@code a.download} 决定
+     * （前端本就自定文件名、不读响应头 ⇒ 不必碰 RFC 5987 编码）。
+     */
+    @GET
+    @Path("/export")
+    @Produces("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public Response export(@QueryParam("keyword") String keyword,
+                           @QueryParam("recipeType") String recipeType,
+                           @QueryParam("status") String status) {
+        byte[] xlsx = exportService.export(keyword, recipeType, status);
+        return Response.ok(xlsx)
+            .header("Content-Disposition", "attachment; filename=\"material_library.xlsx\"")
+            .build();
     }
 
     /** GET /material-recipes/import/template — 下载干净的单 sheet 4 列导入模板（task-260901 · B-13）。 */

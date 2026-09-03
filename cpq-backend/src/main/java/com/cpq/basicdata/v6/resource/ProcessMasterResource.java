@@ -3,6 +3,7 @@ package com.cpq.basicdata.v6.resource;
 import com.cpq.basicdata.v6.dto.ProcessMasterDTO;
 import com.cpq.basicdata.v6.dto.ProcessMasterImportReportDTO;
 import com.cpq.basicdata.v6.dto.ProcessMasterUpsertRequest;
+import com.cpq.basicdata.v6.service.ProcessMasterExportService;
 import com.cpq.basicdata.v6.service.ProcessMasterImportService;
 import com.cpq.basicdata.v6.service.ProcessMasterReadService;
 import com.cpq.common.dto.ApiResponse;
@@ -38,6 +39,9 @@ public class ProcessMasterResource {
 
     @Inject
     ProcessMasterImportService importService;
+
+    @Inject
+    ProcessMasterExportService exportService;
 
     @Inject
     SessionHelper sessionHelper;
@@ -105,6 +109,27 @@ public class ProcessMasterResource {
         }
         UUID userId = sessionHelper.getCurrentUserIdOrFallback(httpRequest);
         return ApiResponse.success(importService.importProcesses(bytes, userId));
+    }
+
+    /**
+     * GET /v6/process-master/export — 导出工序主数据 xlsx（task-260902 · B-2，api.md B-2）。
+     *
+     * <p>三个筛选参数与 {@code GET /v6/process-master} 的同名参数<b>语义完全一致</b>
+     * （复用同一个查询构造），只是<b>不传 page/size</b> ⇒ 导出筛选结果全量，不是当前页。
+     *
+     * <p>🔒 本类无类级 {@code @RoleAllowed}，各方法自标；导出仅管理员可用（非管理员 403 / 未登录 401）。
+     */
+    @GET
+    @Path("/export")
+    @Produces("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public Response export(@QueryParam("keyword") String keyword,
+                           @QueryParam("isOutsource") Boolean isOutsource,
+                           @QueryParam("processCategory") String processCategory) {
+        byte[] xlsx = exportService.export(keyword, isOutsource, processCategory);
+        return Response.ok(xlsx)
+            .header("Content-Disposition", "attachment; filename=\"process_master.xlsx\"")
+            .build();
     }
 
     /** GET /v6/process-master/import/template — 下载干净导入模板 xlsx（登录即可，同 list() 权限口径）。 */

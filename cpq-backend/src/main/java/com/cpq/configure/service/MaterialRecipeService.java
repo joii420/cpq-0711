@@ -86,6 +86,28 @@ public class MaterialRecipeService {
      *   <li>withCount=true 时一次性聚合填 boundPartsCount（本期前端不展示，保留兼容）。</li>
      * </ul>
      */
+    /**
+     * <b>keyword 匹配条件的唯一出处</b>（task-260902 · B-1 抽取，条件文本逐字沿用改造前的 list()）。
+     *
+     * <p>命中 code / symbol / name / 任一元素 element_code / element_name 之一即算命中；
+     * 元素维度走 EXISTS 子查询，不产生 JOIN 膨胀也无 N+1。
+     *
+     * <p>🚫 <b>导出侧不许照着描述另写一套</b> —— 两套实现＝两套结果，
+     * 用户会看到「页面 12 条、导出 9 条」这种对不上的现象。
+     * 调用方只需绑定名为 {@code kw} 的参数（值形如 {@code %关键字%}）。
+     *
+     * @param a material_recipe 在调用方 SQL 里的表别名（list() 用 mr、导出用 r）
+     */
+    static String keywordPredicate(String a) {
+        return "(" + a + ".code ILIKE :kw OR " + a + ".symbol ILIKE :kw OR " + a + ".name ILIKE :kw "
+            + "OR EXISTS (SELECT 1 FROM material_recipe_composition mc2 "
+            + "           LEFT JOIN element el2 ON el2.element_no = mc2.element_no "
+            + "           WHERE mc2.recipe_id = " + a + ".id "
+            // 快照与权威值都参与匹配：搜 'Sn' 能搜到 00262（权威），搜 '10004' 也仍能搜到（快照）
+            + "             AND (mc2.element_code ILIKE :kw OR mc2.element_name ILIKE :kw "
+            + "               OR el2.element_code ILIKE :kw OR el2.element_name ILIKE :kw)))";
+    }
+
     @SuppressWarnings("unchecked")
     public List<MaterialRecipeDTO> list(String keyword, boolean withCount) {
         boolean hasKw = keyword != null && !keyword.isBlank();
@@ -109,13 +131,7 @@ public class MaterialRecipeService {
             "         WHERE cfg.recipe_id = mr.id AND cfg.status = 'ACTIVE') AS config_count " +
             "FROM material_recipe mr ");
         if (hasKw) {
-            sql.append("WHERE (mr.code ILIKE :kw OR mr.symbol ILIKE :kw OR mr.name ILIKE :kw " +
-                "OR EXISTS (SELECT 1 FROM material_recipe_composition mc2 " +
-                "           LEFT JOIN element el2 ON el2.element_no = mc2.element_no " +
-                "           WHERE mc2.recipe_id = mr.id " +
-                // 快照与权威值都参与匹配：搜 'Sn' 能搜到 00262（权威），搜 '10004' 也仍能搜到（快照）
-                "             AND (mc2.element_code ILIKE :kw OR mc2.element_name ILIKE :kw " +
-                "               OR el2.element_code ILIKE :kw OR el2.element_name ILIKE :kw))) ");
+            sql.append("WHERE ").append(keywordPredicate("mr")).append(' ');
         }
         sql.append("ORDER BY (mr.status = 'ACTIVE') DESC, mr.updated_at DESC, mr.created_at DESC");
 
