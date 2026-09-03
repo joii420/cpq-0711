@@ -167,11 +167,23 @@ class CustomerProductNoAcTest extends SelConfigAcTestBase {
      * <b>AC-12b</b>（序列）：「编号 {@code T260902-A} 配出料号 X → 再用<b>新编号</b> {@code T260902-B}
      * 配一套<b>完全相同</b>的配置」⇒
      * ①「第二次<b>复用料号 X</b>」；②「{@code sel_product_no} 出现<b>两行</b>，均落库成功、无 500」；
-     * ③「{@code material_customer_map} <b>不新增任何行</b>」；
-     * ④「列表能按<b>任一编号</b>找到该产品，且该产品<b>只出现一次</b>（不因两行映射而重复）」。
+     * ③「{@code material_customer_map} 中 <b>{@code customer_product_no} 非空的行数不变</b>」
+     *   （🚨 守卫：确认没有回退到把编号写进 mcm 的老方案；铸号占位行是必需的，见类注释）；
+     * ⑤-a（<b>搜索面</b>）「{@code GET existing-products?customerProductNo=<任一编号>} 都必须返回料号 X」；
+     * ⑤-b（<b>浏览面</b>）「不带过滤时料号 X <b>只出现 1 次</b>；该行 {@code customerProductNos}
+     *   含全部编号 {@code [T260902-A, T260902-B]}；旧字段 {@code customerProductNo} 仍是代表编号
+     *   {@code T260902-A}（🚫 不得改成数组，会破坏既有消费方）」。
+     *
+     * <p>📌 原 ④「能按任一编号找到」可观测面不唯一，已按主线裁决拆成 ⑤-a / ⑤-b。
+     * ⑤-b 的理由：{@code DISTINCT ON} 取最早编号作代表 ⇒ 用编号 B 的销售不带过滤看列表会看到编号 A，
+     * <b>以为这不是自己的产品</b> —— 「找不到」变成「认不出」，同一个病的另一面。
+     *
+     * <p>⚠️ <b>一条留给后来者的教训</b>：本用例初版断言「该端点没有按编号过滤的能力」，依据是
+     * {@code ExistingProductResourceTest:98-106} 只测了 {@code productName} —— <b>那是改造前的旧测试，
+     * 不是当前契约</b>。测试文件同样会过期，契约以 {@code api.md} + 当前实现为准。
      */
     @Test
-    @DisplayName("AC-12b 一料号多编号：两行映射共存、mcm 零新增、列表不重复")
+    @DisplayName("AC-12b 一料号多编号：两行映射共存、mcm 无编号行、按任一编号可搜、列表不重复且带全部编号")
     void ac12b_onePartNoManyProductNos() {
         Fx fx = newFixture("ac12b");
         Map<String, Object> part = newPart("触点", "φ5", "5×3×2", "10",
@@ -200,26 +212,52 @@ class CustomerProductNoAcTest extends SelConfigAcTestBase {
         // 🚨 占号行应恰好 1 条：两次提交复用同一个料号 ⇒ 只铸过一次号（是 ① 的推论）
         assertMcmHoldsNoProductNo(fx, "AC-12b③", 1);
 
-        // ④ 列表能按任一编号找到，且产品只出现一次
+        // ⑤-a 搜索面：按**任一编号**过滤都必须能查回料号 X
+        for (String no : List.of(PREFIX + "A", PREFIX + "B")) {
+            Response hit = RestAssured.given().queryParam("customerProductNo", no)
+                    .get(String.format(EXISTING_PRODUCTS, fx.quotationId())).thenReturn();
+            assertReachedBusinessLayer(hit, "AC-12b⑤-a 按编号 " + no + " 过滤");
+            assertEquals(200, hit.statusCode(), "AC-12b⑤-a：按编号过滤应返回 200，实际=" + hit.asString());
+            List<String> found = hit.jsonPath().getList("data.content.materialNo", String.class);
+            System.out.println("[AC-12b⑤-a] customerProductNo=" + no + " → " + found);
+            assertTrue(found != null && found.contains(x),
+                    "AC-12b⑤-a：按编号 " + no + " 过滤必须能查回料号 " + x
+                            + "（一料号多编号 ⇒ 每个编号都得找得回自己的产品），实际=" + hit.asString());
+        }
+
+        // ⑤-b 浏览面：不带过滤时，产品只出现 1 次，且该行把两个编号都带出来
         Response list = RestAssured.given()
                 .get(String.format(EXISTING_PRODUCTS, fx.quotationId())).thenReturn();
-        assertEquals(200, list.statusCode(), "AC-12b④：列表端点应返回 200");
-        String body = list.asString();
-        System.out.println("[AC-12b④] existing-products=" + body);
-        // 🚨 AC-12b④ 原文：「列表能按**任一编号**找到该产品」。
-        //    该端点的过滤契约只有 productName（见 ExistingProductResourceTest:98-106），没有按编号过滤，
-        //    所以「能按任一编号找到」的可观测面 = 列表行**把两个编号都暴露出来**。
-        boolean hasA = body.contains(PREFIX + "A"), hasB = body.contains(PREFIX + "B");
-        System.out.println("[AC-12b④] 编号 A 可见=" + hasA + "，编号 B 可见=" + hasB);
-        assertTrue(hasA && hasB,
-                "AC-12b④：一料号两编号时，列表只暴露了其中一个（A=" + hasA + " B=" + hasB + "）⇒ "
-                        + "用另一个编号的人在产品库里找不回自己的产品，正是本任务要修的历史问题。"
-                        + "两条出路（归主线裁决）：① 列表行带出该料号名下的全部 customer_product_no；"
-                        + "② 端点支持按编号过滤。实际响应=" + body);
-        int occurrences = body.split(java.util.regex.Pattern.quote(x), -1).length - 1;
-        System.out.println("[AC-12b④] 料号 " + x + " 在列表响应里出现 " + occurrences + " 次");
+        assertReachedBusinessLayer(list, "AC-12b⑤-b 不带过滤浏览");
+        assertEquals(200, list.statusCode(), "AC-12b⑤-b：列表端点应返回 200");
+        System.out.println("[AC-12b⑤-b] existing-products=" + list.asString());
+
+        List<String> rows = list.jsonPath().getList("data.content.materialNo", String.class);
+        assertTrue(rows != null && !rows.isEmpty(),
+                "AC-12b⑤-b：列表不得为空（空 ⇒ 下面的断言全部空跑）");
+        long occurrences = rows.stream().filter(x::equals).count();
+        System.out.println("[AC-12b⑤-b] 料号 " + x + " 在列表里出现 " + occurrences + " 次");
         assertEquals(1, occurrences,
-                "AC-12b④：该产品在列表里应<b>只出现一次</b>，不因两行编号映射而重复（AP-22 重复渲染族）");
+                "AC-12b⑤-b：该产品在列表里应只出现一次，不因两行编号映射而重复（AP-22 重复渲染族）");
+
+        // 代表编号：旧字段语义不变（DISTINCT ON 取最早的那个），🚫 不许把它改成数组
+        String representative = list.jsonPath()
+                .get("data.content.find { it.materialNo == '" + x + "' }.customerProductNo");
+        System.out.println("[AC-12b⑤-b] 代表编号 customerProductNo=" + representative);
+        assertEquals(PREFIX + "A", representative,
+                "AC-12b⑤-b：旧字段 customerProductNo 应保留「代表编号」语义（最早的 T260902-A），"
+                        + "🚫 不得改成数组 —— 那会破坏既有消费方");
+
+        // 🚨 新字段：该行必须带出该料号名下的**全部**客户产品编号
+        List<String> allNos = list.jsonPath()
+                .getList("data.content.find { it.materialNo == '" + x + "' }.customerProductNos", String.class);
+        System.out.println("[AC-12b⑤-b] customerProductNos=" + allNos);
+        assertNotNull(allNos,
+                "AC-12b⑤-b：列表行须新增 customerProductNos 字段（该料号名下的全部客户产品编号）—— "
+                        + "缺了它，用编号 B 的人浏览列表只看到编号 A，会以为这不是自己的产品。实际=" + list.asString());
+        // 📌 断言集合相等而非顺序相等：谁是代表已由上面 representative 单独锁死，这里只管「一个都不能少」
+        assertEquals(List.of(PREFIX + "A", PREFIX + "B"), allNos.stream().sorted().toList(),
+                "AC-12b⑤-b：customerProductNos 应含该料号名下的全部编号，实际=" + allNos);
     }
 
     /**
