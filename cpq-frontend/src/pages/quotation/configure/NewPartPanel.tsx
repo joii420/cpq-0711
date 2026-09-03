@@ -30,7 +30,7 @@ import { formatPctText, trimTrailingZeros, type DecimalString } from '../../../u
 import { isPctLegal, isSumOk, pctIllegalText, sumDisplayPct, sumNotOneText, sumPct } from '../../config/recipeContentRules';
 import MaterialPicker from './MaterialPicker';
 import ProcessSection from './ProcessSection';
-import { computeGramsByRatio, isWeightValid, parseRatio, ratioErrorText, ratioSumMessage, sumRatios } from './ratioRules';
+import { computeGramsByRatio, isWeightValid, ratioErrorText, ratioSumMessage, sumRatios } from './ratioRules';
 import { PART_TEXT_MAX_LENGTH, validatePartText } from './partTextRules';
 import { EmptyBlock, Mono, NoteBlock, ReasonedButton, hintStyle, sectionTitleStyle } from './configureUi';
 
@@ -86,6 +86,30 @@ const NewPartPanel: React.FC<Props> = ({
 
   useEffect(() => { setDraft(initial ? { ...initial } : emptyPart()); }, [initial]);
 
+  /**
+   * 详情落地的**唯一入口**：写进缓存的同时，顺手给还没选配置的材质补上第一条 ACTIVE 配置。
+   * 🚫 不要改回「effect 里监听 details 再 setDraft」的写法 —— 那是 setState-in-effect 的
+   *    级联渲染，而且默认值只在详情刚到那一刻需要算一次，本来就不该是个持续同步关系。
+   */
+  const applyDetails = (patchMap: Record<string, MaterialRecipeDetail>) => {
+    if (Object.keys(patchMap).length === 0) return;
+    setDetails((prev) => ({ ...prev, ...patchMap }));
+    setDraft((prev) => ({
+      ...prev,
+      materials: prev.materials.map((m) => {
+        if (m.contentMode !== 'config' || m.configNo) return m;
+        const d = patchMap[m.recipeCode];
+        const first = d?.configs?.[0];
+        if (!first) return m;
+        return {
+          ...m,
+          configNo: first.configNo,
+          configLabel: configOptionLabel(first, (d.composition ?? []).map((c) => c.elementNo)),
+        };
+      }),
+    }));
+  };
+
   // 为已添加但还没有详情的材质补拉（编辑回填场景一次拉齐）。
   useEffect(() => {
     const todo = draft.materials
@@ -99,9 +123,9 @@ const NewPartPanel: React.FC<Props> = ({
       () => null,
     ))).then((rows) => {
       if (cancelled) return;
-      const patch: Record<string, MaterialRecipeDetail> = {};
-      rows.forEach((r) => { if (r) patch[r[0]] = r[1]; });
-      if (Object.keys(patch).length > 0) setDetails((prev) => ({ ...prev, ...patch }));
+      const patchMap: Record<string, MaterialRecipeDetail> = {};
+      rows.forEach((r) => { if (r) patchMap[r[0]] = r[1]; });
+      applyDetails(patchMap);
     });
     return () => { cancelled = true; };
   }, [draft.materials, materials, details]);
@@ -131,30 +155,11 @@ const NewPartPanel: React.FC<Props> = ({
       }],
     }));
     setPickerOpen(false);
-    // 详情拉回来后自动选中第一条 ACTIVE 配置（下面的 effect 负责）
+    // 详情拉回来后由 applyDetails 自动选中第一条 ACTIVE 配置（对齐原型 A：加进来就带着配置）
     materialRecipeService.detail(lite.id)
-      .then((d) => setDetails((prev) => ({ ...prev, [lite.code]: d })))
+      .then((d) => applyDetails({ [lite.code]: d }))
       .catch(() => undefined);
   };
-
-  // 详情到位后为还没选配置的材质默认选第一条 ACTIVE 配置（对齐原型 A：加进来就带着配置）。
-  useEffect(() => {
-    setDraft((prev) => {
-      let changed = false;
-      const next = prev.materials.map((m) => {
-        if (m.contentMode !== 'config' || m.configNo) return m;
-        const first = details[m.recipeCode]?.configs?.[0];
-        if (!first) return m;
-        changed = true;
-        return {
-          ...m,
-          configNo: first.configNo,
-          configLabel: configOptionLabel(first, (details[m.recipeCode]?.composition ?? []).map((c) => c.elementNo)),
-        };
-      });
-      return changed ? { ...prev, materials: next } : prev;
-    });
-  }, [details]);
 
   const removeMaterial = (uid: string) =>
     setDraft((prev) => ({ ...prev, materials: prev.materials.filter((m) => m.uid !== uid) }));

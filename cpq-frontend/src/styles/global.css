@@ -16,3 +16,17 @@ body[data-theme='dark'] {
   background-color: #141414;
   color: rgba(255, 255, 255, 0.85);
 }
+
+/* ── task-260902 选配抽屉（`pages/quotation/configure/*`）────────────────────
+   两条行状态样式。AntD 的 Table 没有「整行错误底色」「单选行高亮」的内置态，
+   `rowClassName` 又只能给类名，所以落在全局样式里。类名带 `cfg-` 前缀避免撞名。 */
+
+/* 材质占比合计 ≠ 100% 时的行级红底（原型 3 状态 B 的 `.rowerr`）。
+   🚫 只作用于底色，不动文字颜色 —— 输入框自身的 `status="error"` 已经标了红边框。 */
+.cfg-ratio-row-error > td {
+  background: #fff2f0 !important;
+}
+/* 已有零件 / 外购件列表里被选中的那一行（原型 4、5 的 `.sel`）。 */
+.cfg-row-selected > td {
+  background: #e6f4ff !important;
+}

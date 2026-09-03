@@ -29,6 +29,15 @@ export interface AddProductModalProps {
   quotationId: string | undefined;
   /** 已绑定的客户报价模板 id；用于「加入报价单」时展开 LineItem。 */
   customerTemplateId: string | undefined;
+  /**
+   * 打开时预置的过滤条（task-260902 · F-1 / AC-2 新增，**唯一的改动点**）。
+   *
+   * 用途：选配抽屉在步骤 1 发现客户产品编号已被占用时，提供「→ 打开『从产品库添加』并定位到
+   * 该产品」的出口 —— 由宿主关掉选配抽屉、带着该编号打开本弹层。
+   * 🚫 本次**不改本页其他任何东西**（列表、表单、校验一概不动，见 fronttask「明确不做」）。
+   * 不传时行为与改动前**逐字节一致**（回落到全空过滤条）。
+   */
+  initialFilters?: ExistingProductQueryParams;
   onCancel: () => void;
   onConfirm: (lineItems: LineItem[]) => void;
 }
@@ -46,6 +55,7 @@ const AddProductModal: React.FC<AddProductModalProps> = ({
   open,
   quotationId,
   customerTemplateId,
+  initialFilters,
   onCancel,
   onConfirm,
 }) => {
@@ -68,12 +78,15 @@ const AddProductModal: React.FC<AddProductModalProps> = ({
   // 每次打开重置为初始态（对齐原型 openDrawer()：过滤条 + 选中态 + 预览目标全部重置）。
   useEffect(() => {
     if (!open) return;
-    setFilters(EMPTY_FILTERS);
-    setAppliedFilters({});
+    // task-260902：有预置过滤条时用它开局（否则与改动前一致，回落全空）
+    const seed = initialFilters ? { ...EMPTY_FILTERS, ...initialFilters } : EMPTY_FILTERS;
+    setFilters(seed);
+    setAppliedFilters(initialFilters ? { ...initialFilters } : {});
     setPage(0);
     setSelectedRowKeys([]);
     setActiveRow(null);
     setZoomHint(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   // 拉列表：打开 / 过滤条件变化 / 翻页 时查询。

@@ -214,7 +214,15 @@ export interface EffectiveTemplateDTO {
   /** true = 回退到 __DEFAULT__ 通用模板。 */
   usedDefault: boolean;
   templateId?: string;
-  /** false = 该客户行业与默认模板都没配，前端渲染"缺少选配模板"空态。 */
+  /**
+   * 该客户所属产品分类（或默认分类）是否命中了一套选配模板。
+   *
+   * ⚠️ **task-260902 · F-13（AC-25）起，前端不再用它做门禁。**
+   *    旧语义是「false ⇒ 渲染『缺少选配模板』空态、整个选配不可用」；实测那道门禁是选配模板
+   *    唯一真正生效的东西（三个参数开关与值域限定全部空转，`sel_template_item_value` 现网 0 行），
+   *    结果是**没配模板的客户完全用不了选配** ⇒ 本期移除门禁：无模板也能正常走完 4 步并提交。
+   * 📌 字段本身保留（后端仍在返），仅作诊断信息用；🚫 不要拿它去 `if` 掉任何渲染分支。
+   */
   hasTemplate: boolean;
   /** 仅含 enabled=true 的参数。 */
   params: EffectiveTemplateParam[];
