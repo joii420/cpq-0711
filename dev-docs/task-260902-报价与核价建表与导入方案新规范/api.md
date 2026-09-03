@@ -102,7 +102,10 @@
 
 ## 3. `GET /dataset/{dataset}/parts` — 料号列表（列表页数据源 = 该数据集的物料表）
 
-**Query**：`page`（**0-based**）、`size`、`keyword`、`sortBy`、`sortDir`（`asc`|`desc`）
+**Query**：`page`（**0-based**）、`size`、`keyword`、`sortBy`、`sortDir`（`asc`|`desc`）、**`configured`**（`Boolean`，可空）
+
+🚩 **`configured`（2026-09-03 补）**：`true` = 只返已配齐（`configuredCount == totalSheetCount`）、`false` = 只返未配齐、**不传 = 全部**。
+原型 `核价数据-列表.html` 的「配置状态」下拉对应此参数。此前本节漏写该参数、后端签名也没有它 ⇒ 前端发送后被静默忽略。
 
 `sortBy` 白名单：`axisValue` / `materialName` / `specification` / `dimension` / `configuredCount` / `lastUpdatedAt`
 
