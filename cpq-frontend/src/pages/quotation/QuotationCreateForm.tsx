@@ -159,21 +159,29 @@ const QuotationCreateForm: React.FC<Props> = ({
         if (readOnly) return;
         // hotfix: loadQuotation 已带 customerTemplateId 时, 若 ID 在匹配结果里就保留,
         // 不要被 useEffect 覆盖成 undefined (MIXED 多模板场景刷新页面后报价模板丢失)
-        const currentId = value.customerTemplateId;
+        //
+        // 🚨 2026-09-02:本回调里的所有读写一律走 valueRef.current，不许碰 effect 闭包的 `value`。
+        //   本 effect 与下面「拉取核价模板」的 effect **deps 完全相同**（[value.categoryId, customerId]）
+        //   ⇒ 同一次分类变更把两条异步请求一起发出去，谁后返回，谁的 stale `value` 整组展开就把
+        //   对方刚设好的字段抹掉。实测症状：选完客户后**核价模板自动选中、报价模板被抹成空**，
+        //   用户看到 placeholder「请选择模板」+ 红字「请选择报价模板」，必须手选一遍。
+        //   （文件顶部 valueRef 的注释讲的就是这个坑，但当时只有「分类反查」那个 effect 用上了。）
+        const cur = valueRef.current;
+        const currentId = cur.customerTemplateId;
         if (currentId && data.templates.some((t) => t.id === currentId)) {
           return;  // 保留已选, 不调 onChange 覆盖
         }
         if (data.templates.length === 1) {
-          onChange({ ...value, customerTemplateId: data.templates[0].id });
+          onChange({ ...valueRef.current, customerTemplateId: data.templates[0].id });
         } else {
-          onChange({ ...value, customerTemplateId: undefined });
+          onChange({ ...valueRef.current, customerTemplateId: undefined });
         }
       })
       .catch(() => {
         setMatchResult({ matchType: 'NONE', templates: [] });
         // catch 也保留已有选择 (网络失败时不该清空)
-        if (!value.customerTemplateId) {
-          onChange({ ...value, customerTemplateId: undefined });
+        if (!valueRef.current.customerTemplateId) {
+          onChange({ ...valueRef.current, customerTemplateId: undefined });
         }
       })
       .finally(() => setMatching(false));
@@ -204,16 +212,19 @@ const QuotationCreateForm: React.FC<Props> = ({
         if (readOnly) return;
         // hotfix: loadQuotation 已带 costingTemplateId 时, 若 ID 在筛选结果里就保留,
         // 否则才默认选第一个 (同 customerTemplateId 修法对称)
-        const currentId = value.costingTemplateId;
+        //
+        // 🚨 2026-09-02:同上一个 effect —— 一律走 valueRef.current。这一侧才是实测中「后返回」的
+        //   那个，它用 stale `value` 展开时会把上面刚设好的 customerTemplateId 抹回 undefined。
+        const currentId = valueRef.current.costingTemplateId;
         if (currentId && filtered.some((t) => t.id === currentId)) {
           return;  // 保留已选
         }
-        onChange({ ...value, costingTemplateId: filtered[0]?.id });
+        onChange({ ...valueRef.current, costingTemplateId: filtered[0]?.id });
       })
       .catch(() => {
         setCostingTemplates([]);
-        if (!value.costingTemplateId) {
-          onChange({ ...value, costingTemplateId: undefined });
+        if (!valueRef.current.costingTemplateId) {
+          onChange({ ...valueRef.current, costingTemplateId: undefined });
         }
       })
       .finally(() => setLoadingCosting(false));
