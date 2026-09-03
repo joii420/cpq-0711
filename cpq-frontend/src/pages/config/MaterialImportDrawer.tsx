@@ -221,6 +221,25 @@ const MaterialImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) =>
             }
           />
 
+          {/*
+            task-260902 · D1（用户裁决 2026-09-02）——对照本任务 `原型图/1-材质页签-工具栏.html` 状态 E。
+
+            为什么要这句：材质导入按 `symbol AND status='ACTIVE'` 匹配既有材质（task-260901 既有语义），
+            **停用**的材质（实测 `SnO2-del` / `00263`）匹配不上 ⇒ 会被当成新材质、新建一条**同名的启用材质**。
+            裁决是「导出保持所见即所得、导入逻辑一行不改」，改为在这里明示风险与规避方法。
+          */}
+          <Alert
+            style={{ marginBottom: 16 }}
+            type="warning"
+            showIcon
+            message={
+              <Text strong>
+                若导入的是「未筛选状态」导出的文件，其中已停用的材质会被新建为一条同名的启用材质。
+              </Text>
+            }
+            description="需要原样回导时，请先在列表把「状态」筛为「启用」再导出。"
+          />
+
           <CompactUploadDragger
             accept=".xlsx"
             maxCount={1}

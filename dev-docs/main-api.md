@@ -1,7 +1,7 @@
 # CPQ 系统接口总览文档（main-api.md）
 
 > 本文件由技术总监扫描 `cpq-backend` 全部 JAX-RS Resource 自动生成，覆盖 **87 个 Resource 类、约 413 个 HTTP 端点**，按业务模块分为 12 大类。
-> 生成日期：2026-07-08 ｜ 最近契约更新：2026-08-11（repair-0811 输入值与结果精度分层） ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
+> 生成日期：2026-07-08 ｜ 最近契约更新：**2026-09-03（task-260902 主数据与用户导入导出：新增 5 个端点 —— 材质/工序/用户三个导出 + 用户导入模板 + 用户导入）** ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
 > 用途：前后端接口契约基线、联调对照、新接口设计参照。字段说明取自源码 javadoc / 注释，无注释处据字段名与类型推断。
 
 ---
@@ -791,6 +791,53 @@
 | initialPassword | string | 重置后的初始密码 |
 
 ---
+
+
+#### 导出用户（task-260902 新增）
+- **功能**: 按当前筛选条件导出用户列表为 xlsx（**不受分页限制**，筛出多少导多少）
+- **方法**: GET
+- **路径**: `/api/cpq/users/export`
+- **鉴权**: 需登录 + 角色 [SYSTEM_ADMIN]（方法级 `@RoleAllowed`）
+- **查询参数**: `keyword` / `role` / `status`，语义与 `GET /api/cpq/users` 同名参数**完全一致**（复用同一查询方法，仅不传 page/size）
+- **响应**: `Response`（**不包 `ApiResponse`**）+ `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` + `Content-Disposition: attachment; filename="users.xlsx"`
+- **xlsx 结构**: 前 6 列＝导入模板列 `用户名 | 姓名 | 邮箱 | 角色 | 区域 | 部门`；后 2 列只读 `状态 | 创建时间`
+  - 角色列写**中文标签**（系统管理员/销售经理/销售代表/财务）；状态写 `启用`/`停用`；创建时间 `yyyy-MM-dd HH:mm:ss`
+  - 🚫 不含 `id`、不含任何密码字段
+- **空结果**: 仍 200 + 只有表头的 xlsx
+
+#### 下载用户导入模板（task-260902 新增）
+- **功能**: 下载空白导入模板 xlsx
+- **方法**: GET
+- **路径**: `/api/cpq/users/import/template`
+- **鉴权**: 需登录 + 角色 [SYSTEM_ADMIN]
+- **响应**: 单 sheet（名 `用户`）6 列 + 1 行示例；`角色`列表头挂单元格批注列出 4 个合法值
+
+#### 批量导入用户（task-260902 新增）
+- **功能**: 上传 xlsx 批量**新建**用户，返回逐人初始密码与跳过明细
+- **方法**: POST
+- **路径**: `/api/cpq/users/import`
+- **鉴权**: 需登录 + 角色 [SYSTEM_ADMIN]
+- **Consumes**: `multipart/form-data`（表单字段名 `file`）⚠️ 方法级覆盖类级的 `application/json`，否则 multipart 会被吃掉
+- **语义**: **只新增，不修改，不删除**。用户名已存在 ⇒ 整行跳过，🚫 不 UPDATE 任何既有用户字段。**部分成功**，不整单回滚
+- **响应**: `ApiResponse<UserImportReportDTO>`
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| totalRows | int | 读取的数据行数 |
+| createdCount | int | 新建用户数 |
+| skippedCount | int | 跳过行数 |
+| elapsedMs | long | 耗时 |
+| created[] | list | `{rowNum, username, fullName, role, roleLabel, initialPassword, hint}` |
+| skipped[] | list | `{rowNum, username, reason}` |
+
+- 🚨 **`initialPassword` 只在本响应出现一次**：不落库明文、**不写任何日志**、不进导出文件。生成器与哈希复用 `UserService` 新建用户的同一实现。新用户 `status='ACTIVE'`、`is_first_login=true`（首登强制改密）
+- **400（文件本身不可用，一行都没处理）**: `IMPORT_FILE_INVALID`（非 xlsx）/ `IMPORT_HEADER_INVALID`（前 6 列表头不符）
+  - ⚠️ **只有表头、0 行数据 ≠ 400**，返回 200 + 三个计数为 0
+- **逐行跳过原因（逐字，测试按此断言）**: `用户名为空` / `用户名超长（最多 100 字符）` / `文件内用户名重复，已取首行` / `用户名已存在` / `姓名为空` / `姓名超长（最多 200 字符）` / `邮箱为空` / `邮箱超长（最多 200 字符）` / `邮箱格式不合法：<原值>` / `文件内邮箱重复，已取首行` / `邮箱已存在：<原值>` / `角色不合法：<原值>`
+  - 🚨 邮箱四条是**必需**的：`"user".email` 是 `varchar(200)` **NOT NULL + UNIQUE(user_email_key)**，不拦就是 INSERT 撞约束 ⇒ 整批 500
+- **软提示（行照常创建，写进该行 `hint`）**: `区域未匹配：<原值>` / `部门未匹配：<原值>` —— 🚫 匹配不上**不拒绝整行**（`region`/`department` 两表当前均 0 条）
+
+> 来源任务：`task-260902-主数据与用户导入导出`｜回写日期：2026-09-03
 
 ### 1.11 NotificationResource（消息通知）
 
@@ -5255,6 +5302,22 @@ Cell：`quote`(Object 报价值)、`costing`(Object 核价值)、`highlighted`(b
 
 ---
 
+
+#### 导出工序主数据（task-260902 新增）
+- **功能**: 按当前筛选条件导出工序为 xlsx（**不受分页限制**）
+- **方法**: GET
+- **路径**: `/api/cpq/v6/process-master/export`
+- **鉴权**: 需登录 + 角色 **[SYSTEM_ADMIN]**（⚠️ 比同类 `list`/`categories` 的四角色更严，方法级 `@RoleAllowed` 收紧）
+- **查询参数**: `keyword` / `isOutsource` / `processCategory`，语义与 `GET /api/cpq/v6/process-master` 同名参数一致
+- **响应**: `Response`（**不包 `ApiResponse`**）+ xlsx MIME + `Content-Disposition`
+- **xlsx 结构（7 列，列名取自 `ProcessMasterImportService.COL_*` 常量，可直接回导）**:
+  `工序编号 | 工序名称 | 工序类别 | 是否外协 | 标准币种 | 标准单位 | 默认不良率`
+  - ⚠️ **第 3、5 列的列名与页面表头刻意不同**（页面是「工序**分类**」「标准**货币**」）—— 导出要能回导就必须用导入端认识的列名
+  - `是否外协` 写 `是`/`否`（不是 true/false）；`默认不良率` 写原始小数 `0.01`（不是 `1.00%`）
+  - 工序导入按**列名**匹配（不看顺序）
+
+> 来源任务：`task-260902-主数据与用户导入导出`｜回写日期：2026-09-03
+
 ### 6.7 MasterDataResource（UI-4 主数据维护页只读查询）
 
 类级 `@Path`: `/api/cpq/master-data`
@@ -8866,6 +8929,39 @@ Cell：`quote`(Object 报价值)、`costing`(Object 核价值)、`highlighted`(b
 > 全局基准：基址 `http://localhost:8081`；鉴权=会话 Cookie（`@RoleAllowed` 端点需登录且携带对应角色，请求头带 `Cookie`；无注解不校验）；统一响应体 `ApiResponse<T> = { code, message, data }`，个别端点直返实体 / `Response`（Excel 二进制、204 空响应等），已在各端点据实标注。
 
 ---
+
+
+#### 导出材质库（task-260902 新增）
+- **功能**: 按当前筛选条件导出材质库为 xlsx（**不受分页限制**），前 4 列与导入模板同构、**可直接回导**
+- **方法**: GET
+- **路径**: `/api/cpq/material-recipes/export`
+- **鉴权**: 需登录 + 角色 **[SYSTEM_ADMIN]**（⚠️ 类级放开了 4 个角色，本方法用方法级 `@RoleAllowed` **收紧**；`RoleFilter` 取注解的逻辑是 `methodAnno != null ? methodAnno : classAnno`）
+- **查询参数**:
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| keyword | string | 否 | 与 `GET /api/cpq/material-recipes` 同一套匹配规则（材质编号/名称/元素符号/元素中文名），**复用同一查询条件** |
+| recipeType | string | 否 | `locked`/`editable`/`partial`，对 `material_recipe.recipe_type` 精确相等 |
+| status | string | 否 | `ACTIVE`/`INACTIVE`。**不传 = 不过滤（全状态）**，与页面列表口径一致。⚠️ 口径与前端 `isActive()` 对齐：**仅 `'ACTIVE'` 算启用，其余含 NULL 都算停用** |
+
+- **响应**: `Response`（**不包 `ApiResponse`**）+ xlsx MIME + `Content-Disposition: attachment; filename="material_library.xlsx"`
+- **xlsx 结构（8 列）**:
+
+| 列 | 表头 | 取值 |
+|---|---|---|
+| 1-4 | `材质` `组号` `元素符号` `含量` | **== `MaterialRecipeImportService.HEADER`（位置与文字都不能变）** |
+| 5-8 | `材质编号` `含量配置编号` `状态` `含量类型` | 只读参考列，回导时被忽略 |
+
+- 🚨 **含量列写 `default_pct ÷ 100` 的 0–1 小数**（库存 `84` ⇒ 文件写 `0.84`）。导入端 `pctInRange(v, 1)` 只收 `(0,1]`，照搬库值导出的文件回导时**每一行**都会被判「含量非法」
+  - 除法用**无 scale** 的 `BigDecimal.divide`（除以 100 必为有限小数、逐位无损）；指定 scale 12 会把 `numeric(16,12)` 尾部两位舍掉 ⇒ 回导 `sameContent` 判不等 ⇒ 被当新配置插入
+  - 写入前 `toPlainString()`，避免 `stripTrailingZeros()` 把 `100` 变成 `1E+2`
+- 🚨 **只读列只能放第 5 列起** —— 导入端 `assertHeader` 按**位置**逐列比对前 4 列，插在前面即 400 `IMPORT_HEADER_INVALID`
+- **行集合**: `material_recipe_element` JOIN `material_recipe_config`(`status='ACTIVE'`) JOIN `material_recipe`(按筛选)，按 `symbol, seq, sort_order` 排序；SQL 条数恒为常数（1 条三表 JOIN）
+- ⚠️ **已知限制（2026-09-03 主线亲验实测）**:
+  1. **不传 `status` 时导出含停用材质**，而这些行回导会被**新建为同名启用材质**（导入按 `symbol AND status='ACTIVE'` 匹配，停用的匹配不上）。用户裁决：保持「所见即所得」、不改导入逻辑，改为在材质导入抽屉加提醒。**需要原样回导时先筛「启用」**
+  2. **同名材质（`symbol` 重复、编号不同）回导不进去** —— 实测库中 `AgCu`→AgCu85/AgCu90、`AgNi`→AgNi90/AgNi95，回导报「材质名对应多条材质记录，请先在材质管理页处理」并跳过该行（**报明原因，非静默失败**）
+
+> 来源任务：`task-260902-主数据与用户导入导出`｜回写日期：2026-09-03
 
 ### 12.1 ProductResource（产品主数据管理）
 

@@ -1,5 +1,6 @@
 import api from './api';
 import { isDecimalString, normalizeDecimalString, type DecimalString } from '../utils/precision';
+import { downloadExport, exportFileName } from '../utils/exportDownload';
 
 // ─── 通用分页结果 ───────────────────────────────────────────────────────────
 export interface PageResult<T> {
@@ -231,6 +232,25 @@ export async function downloadProcessTemplate(): Promise<Blob> {
     : new Blob([data], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       });
+}
+
+/**
+ * GET /v6/process-master/export — 工序主数据导出（task-260902 · B-2 / F-2）。
+ *
+ * 三个参数与 `listProcesses` 的**同名参数同义**，但**不传 page/size** ——
+ * 导出永远是「当前筛选结果的全量」，不是当前页（AC-11）。
+ * 非 `SYSTEM_ADMIN` 调用返 403，`downloadExport` 解析出 message 抛出且不触发下载。
+ */
+export async function exportProcesses(params: {
+  keyword?: string;
+  isOutsource?: boolean;
+  processCategory?: string;
+}): Promise<void> {
+  await downloadExport('/v6/process-master/export', {
+    ...(params.keyword ? { keyword: params.keyword } : {}),
+    ...(params.isOutsource !== undefined ? { isOutsource: params.isOutsource } : {}),
+    ...(params.processCategory ? { processCategory: params.processCategory } : {}),
+  }, exportFileName('工序主数据'));
 }
 
 /** 分页查询 BOM 明细 */
