@@ -59,13 +59,22 @@ export async function openSelConfigDrawer(page: Page, label: string) {
   await page.waitForLoadState('networkidle');
 
   await selectByLabel(page, '客户', '西门子');
-  await page.waitForTimeout(800);
-  await selectByLabel(page, '产品分类', '默认分类');
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(1200);
-  await selectByLabel(page, '报价模板', '0608');
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(1500);
+
+  // 🚨 产品分类**不要选**：task-0712 update-071501 换轴到「客户产品分类」后，
+  //    它随客户自动带出且渲染为 `ant-select-disabled`（2026-09-03 实测），
+  //    点它不会出下拉 ⇒ 旧写法在这里必然 timeout，且长得像产品缺陷。
+  await page.keyboard.press('Escape').catch(() => {});
+  await page.waitForTimeout(400);
+
+  // 🚨 前置体检：产品分类是**必填**且随客户自动带出。若客户的 product_category_id 指向一条
+  //    **已不存在**的分类，下拉找不到对应 option ⇒ 该必填项永远为空 ⇒「下一步」永远禁用。
+  //    那种失败表现为「按钮一直不可点」的超时，和产品缺陷长得一模一样 ⇒ 这里提前判死并说清根因。
+  await assertCategoryResolved(page);
+
+  // 报价模板：当前表单里不一定有这个字段（实测选完客户后只有 客户/报价单名称/产品分类/核价模板），
+  // 有就选、没有就跳过，🚫 不要因为夹具的一个可选步骤把整条用例判死
+  await selectIfPresent(page, '报价模板', '0608');
 
   await page.locator('input[placeholder*="报价单名称"]').first().fill(`E2E-260902-${label}-${Date.now()}`);
   const next = page.getByRole('button', { name: /下一步/ }).first();
@@ -82,6 +91,13 @@ export async function openSelConfigDrawer(page: Page, label: string) {
 }
 
 export async function selectByLabel(page: Page, label: string, search: string, optionText?: string) {
+  // 🚨 先关掉上一个下拉：antd 选完之后浮层**仍挂在 DOM 里**，
+  //    全局查 `.ant-select-item-option` 会命中上一个下拉的残留选项。
+  //    实测症状：选「产品分类」时拿到的候选是 ["苏州西门子 (8000137)"]（客户下拉的），
+  //    然后以 timeout 结束 —— 长得像产品缺陷，其实是选择器串台。
+  await page.keyboard.press('Escape').catch(() => {});
+  await page.waitForTimeout(250);
+
   const item = page.locator('.ant-form-item')
     .filter({ has: page.locator('label', { hasText: label }) }).first();
   await item.locator('.ant-select').first().click();
@@ -90,7 +106,23 @@ export async function selectByLabel(page: Page, label: string, search: string, o
     await page.keyboard.type(search, { delay: 60 });
     await page.waitForTimeout(900);
   }
-  await page.locator('.ant-select-item-option').filter({ hasText: optionText || search }).first().click();
+  // 🚨 找不到选项时 **不要让它超时**：超时长得和产品缺陷一模一样
+  //    （`cpq-playwright-selector-pitfalls`：四个选择器坑全表现为 timeout，最易误判）。
+  //    这里把它转成一条带「当前实际候选」的诊断，读报告的人一眼能分清是夹具还是产品。
+  const want = optionText || search;
+  // 只在**当前可见**的那个下拉浮层里找选项（.last() = 最近打开的那个）
+  const dropdown = page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden)').last();
+  const option = dropdown.locator('.ant-select-item-option').filter({ hasText: want }).first();
+  try {
+    await option.waitFor({ state: 'visible', timeout: 8000 });
+  } catch {
+    const candidates = await dropdown.locator('.ant-select-item-option').allInnerTexts().catch(() => []);
+    throw new Error(
+      `[夹具失败·非产品缺陷] 「${label}」下拉里找不到选项「${want}」。`
+      + `当前实际候选（${candidates.length} 个）=${JSON.stringify(candidates)}。`
+      + `⇒ 这是 E2E 夹具/选择器问题，不是被测功能的结论。`);
+  }
+  await option.click();
   await page.waitForTimeout(400);
 }
 
@@ -191,5 +223,51 @@ export async function addProcesses(page: any, processNos: string[]) {
     await p.locator('tr, li, .picker-row').filter({ hasText: no }).first()
       .getByRole('button', { name: /选择|添加/ }).first().click();
     await page.waitForTimeout(600);
+  }
+}
+
+/** 表单里有这个字段就选，没有就跳过（并打印，便于事后判断夹具走了哪条路）。 */
+export async function selectIfPresent(page: Page, label: string, search: string) {
+  const n = await page.locator('.ant-form-item')
+    .filter({ has: page.locator('label', { hasText: label }) }).count();
+  if (n === 0) { console.log(`[夹具] 表单里没有「${label}」字段，跳过`); return false; }
+  const sel = page.locator('.ant-form-item')
+    .filter({ has: page.locator('label', { hasText: label }) }).first().locator('.ant-select').first();
+  const cls = (await sel.getAttribute('class')) || '';
+  if (cls.includes('ant-select-disabled')) {
+    console.log(`[夹具] 「${label}」是禁用态（随客户自动带出），跳过`);
+    return false;
+  }
+  await selectByLabel(page, label, search);
+  return true;
+}
+
+/**
+ * 断言「产品分类」这个**必填**项真的被解析出来了。
+ *
+ * 🚨 2026-09-03 实测：`苏州西门子(8000137).product_category_id = b9576df8-24bf-42b7-b5a7-58bda3a023d2`
+ * 在 `product_category` 表里**不存在**（全库唯一一个悬空引用）⇒ 下拉找不到对应 option ⇒
+ * 必填的产品分类显示为空、且控件是禁用态（用户也改不了）⇒「下一步」永远禁用 ⇒
+ * <b>用这个客户建不出报价单</b>，走「新建报价单」的 E2E 全部卡在 Step1。
+ * 这不是被测功能的缺陷，也不是选择器问题，是<b>共享库的数据完整性问题</b>。
+ */
+export async function assertCategoryResolved(page: Page) {
+  const item = page.locator('.ant-form-item')
+    .filter({ has: page.locator('label', { hasText: '产品分类' }) }).first();
+  if (await item.count() === 0) return;                       // 没这个字段就不管
+  const required = await item.locator('.ant-form-item-required').count() > 0
+    || await page.locator('.ant-form-item-required').filter({ hasText: '产品分类' }).count() > 0;
+  const shown = (await item.locator('.ant-select-selection-item').first()
+    .innerText().catch(() => '')).trim();
+  console.log(`[夹具] 产品分类 必填=${required} 当前值="${shown}"`);
+  if (required && !shown) {
+    throw new Error(
+      '[夹具失败·共享库数据问题，非产品缺陷] 必填项「产品分类」随客户自动带出但解析为空，'
+      + '且控件为禁用态 ⇒「下一步」永远不可点，本用例无法进入被测流程。\n'
+      + '实测根因：该客户的 product_category_id 指向一条已不存在的产品分类（悬空外键）。\n'
+      + '核对 SQL：SELECT c.code, c.product_category_id, pc.id IS NOT NULL AS 分类存在 '
+      + "FROM customer c LEFT JOIN product_category pc ON pc.id=c.product_category_id WHERE c.name LIKE '%西门子%';\n"
+      + '⇒ 需主线裁决：① 修数据（把该客户指向存在的分类）；② 换一个分类有效的夹具客户；'
+      + '③ 前端对悬空分类做兜底。🚫 改共享库数据属红线，测试侧不自行处理。');
   }
 }
