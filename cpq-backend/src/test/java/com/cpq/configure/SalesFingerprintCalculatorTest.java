@@ -109,7 +109,12 @@ class SalesFingerprintCalculatorTest {
 
         Signature sig = calculator.computeSimple("CUST-001", enabled);
 
-        assertTrue(sig.text().startsWith("v1|CUST="), "text 应以 v1|CUST= 开头, 实际: " + sig.text());
+        // task-260902 · B-5：结构版本 v1 → v2（三层模型：PART=/WEIGHT= 新增，MAT= 改多材质，ELE= 删除）。
+        // 🚫 不写死 "v2"，改为跟常量对账 —— 版本再升一次时本用例仍然表达同一个不变量。
+        assertTrue(sig.text().startsWith(SalesFingerprintCalculator.STRUCTURE_VERSION + "|CUST="),
+            "text 应以 " + SalesFingerprintCalculator.STRUCTURE_VERSION + "|CUST= 开头, 实际: " + sig.text());
+        assertEquals("v2", SalesFingerprintCalculator.STRUCTURE_VERSION,
+            "task-260902 起 STRUCTURE_VERSION 应为 v2（三层模型）");
     }
 
     @Test

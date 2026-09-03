@@ -157,7 +157,7 @@ public class ConfigureProductService {
         // 已解析的 elements 算指纹，否则「预览命中」≠「提交命中」，回到 3a 之前那种误导性的恒 false。
         List<String> lfDefCodes = req.compositeProcesses == null ? List.of()
             : req.compositeProcesses.stream().map(cp -> cp.defCode).collect(Collectors.toList());
-        prepareParts(req.parts, lfDefCodes);
+        prepareParts(req.parts, lfDefCodes, false);   // 预览端：不强制总重（见方法注释）
 
         int totalQty = req.parts.stream()
             .mapToInt(pr -> (pr.quantity == null || pr.quantity < 1) ? 1 : pr.quantity)
@@ -471,8 +471,11 @@ public class ConfigureProductService {
         Map<PartRequest, List<EnabledParam>> byPart = new IdentityHashMap<>();
         if (req.parts != null) {
             for (PartRequest pr : req.parts) {
-                // existing 模式不走销售指纹（复用既有料号，无需投影）；保留空 List。
-                if (!"custom".equals(pr.partMode)) {
+                // existing 模式 / 外购件都不走销售指纹（直接复用既有料号，无需投影）；保留空 List。
+                // 🚨 task-260902 · B-1：判定必须走 pr.isNewMode()（同时认 "new" 与老值 "custom"）。
+                //    这里若还写死 "custom".equals(...)，前端改发 "new" 之后每个配件都会拿到空投影，
+                //    computeSimple 立刻抛「enabled 参数集不能为空（防指纹坍缩）」—— 全链 500。
+                if (pr.isOutsourced() || !pr.isNewMode()) {
                     byPart.put(pr, List.of());
                     continue;
                 }
@@ -731,9 +734,23 @@ public class ConfigureProductService {
      * {@code MATERIAL_SOURCE_AMBIGUOUS}（评审 P2-15）。
      */
     ConfigureCatalog prepareParts(List<PartRequest> parts, List<String> compositeDefCodes) {
+        return prepareParts(parts, compositeDefCodes, true);
+    }
+
+    /**
+     * @param submitting {@code true}=提交端（{@code configure}），跑全部校验；
+     *                   {@code false}=预览端（{@code lookupFingerprint}），跳过
+     *                   {@code PART_WEIGHT_REQUIRED}。
+     *                   <p>⚠️ 这条区别是刻意的：api.md §1.2 的校验规则表挂在<b>主提交端点</b>下，
+     *                   预览是用户还在填表途中调的（P2→P3 之间），此时总重可能尚未录入 ——
+     *                   在预览就 400 会把「实时查是否命中」这个交互直接打断。
+     *                   代价是：没填重量时预览按 {@code WEIGHT=0} 算，与最终提交的指纹不同 ⇒
+     *                   <b>可能预览未命中而提交命中</b>（偏保守方向，不会造成错误复用）。
+     */
+    ConfigureCatalog prepareParts(List<PartRequest> parts, List<String> compositeDefCodes, boolean submitting) {
         ConfigureCatalog cat = loadCatalog(parts, compositeDefCodes);
         if (parts != null) {
-            for (PartRequest pr : parts) preparePart(pr, cat);   // 循环体内零查库（全部走 catalog）
+            for (PartRequest pr : parts) preparePart(pr, cat, submitting);   // 循环体内零查库（全部走 catalog）
         }
         if (compositeDefCodes != null) {
             for (String d : compositeDefCodes) {                  // 循环体内零查库
@@ -747,7 +764,9 @@ public class ConfigureProductService {
     }
 
     /** 单个配件的归一 + 校验 + 材质物化（循环体内零查库，全部走 {@link ConfigureCatalog}）。 */
-    void preparePart(PartRequest pr, ConfigureCatalog cat) {
+    void preparePart(PartRequest pr, ConfigureCatalog cat) { preparePart(pr, cat, true); }
+
+    void preparePart(PartRequest pr, ConfigureCatalog cat, boolean submitting) {
         if (pr == null) throw new IllegalArgumentException("parts 项不能为 null");
         if (pr.partType == null || pr.partType.isBlank()) pr.partType = "PART";
         if (!"PART".equals(pr.partType) && !"OUTSOURCED".equals(pr.partType)) {
@@ -781,7 +800,7 @@ public class ConfigureProductService {
         assertPartText(pr.spec, "规格");
         assertPartText(pr.dimension, "尺寸");
 
-        if (pr.unitWeightGrams == null || pr.unitWeightGrams.compareTo(BigDecimal.ZERO) <= 0) {
+        if (submitting && (pr.unitWeightGrams == null || pr.unitWeightGrams.compareTo(BigDecimal.ZERO) <= 0)) {
             throw com.cpq.configure.exception.MaterialRecipeApiException.badRequest(
                 "PART_WEIGHT_REQUIRED", "零件总重必须大于 0");
         }
