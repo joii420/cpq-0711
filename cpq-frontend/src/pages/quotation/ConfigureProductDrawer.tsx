@@ -76,6 +76,21 @@ const ConfigureProductDrawer: React.FC<Props> = ({
   const [parts, setParts] = useState<ConfigurePart[]>([]);
   const [subOpen, setSubOpen] = useState(false);
   const [editingUid, setEditingUid] = useState<string | null>(null);
+  /**
+   * 子面板的「第几次打开」。**它进 `key` 的唯一目的是强制每次打开都重新挂载。**
+   *
+   * 🚨 不要把它删掉退回只用 `editingUid` 做 key —— 那会有一个不报错的真 bug：
+   *    连续两次点「+ 添加配件」时 `editingUid` 都是 null ⇒ key 不变 ⇒ 子面板不重挂载 ⇒
+   *    **第二次直接停在上一次留下的「新建零件」表单上，跳过了「选择类型 / 零件来源」两步**。
+   *    （2026-09-02 真机 Playwright 实测复现：第二次点开后 DOM 里是零件表单而不是类型卡片。）
+   *    编辑同一个配件两次也是同一个坑。
+   */
+  const [subSession, setSubSession] = useState(0);
+  const openSubPanel = (uid: string | null) => {
+    setEditingUid(uid);
+    setSubSession((n) => n + 1);
+    setSubOpen(true);
+  };
 
   // 步骤 3
   const [composites, setComposites] = useState<CompositeProcessItem[]>([]);
@@ -97,7 +112,7 @@ const ConfigureProductDrawer: React.FC<Props> = ({
   const resetState = () => {
     setStep(0);
     setProductNo(''); setProductName(''); setCheck(IDLE_CHECK);
-    setParts([]); setSubOpen(false); setEditingUid(null);
+    setParts([]); setSubOpen(false); setEditingUid(null); setSubSession(0);
     setComposites([]);
     setPreview({ checking: false, matched: false });
     setSubmitting(false); setResult(null); setFailure(null);
@@ -336,8 +351,8 @@ const ConfigureProductDrawer: React.FC<Props> = ({
         {step === 1 && (
           <PartCardList
             parts={parts}
-            onAdd={() => { setEditingUid(null); setSubOpen(true); }}
-            onEdit={(uid) => { setEditingUid(uid); setSubOpen(true); }}
+            onAdd={() => openSubPanel(null)}
+            onEdit={(uid) => openSubPanel(uid)}
             onRemove={(uid) => setParts((prev) => prev.filter((p) => p.uid !== uid))}
           />
         )}
@@ -363,7 +378,7 @@ const ConfigureProductDrawer: React.FC<Props> = ({
 
       {/* 内层局部面板覆盖整个抽屉正文（🚫 不嵌套 Drawer，避免层级 / ESC 冲突） */}
       <AddPartSubDrawer
-        key={editingUid ?? '__new__'}
+        key={`${editingUid ?? '__new__'}#${subSession}`}
         open={subOpen}
         editing={editingPart}
         materials={materials}

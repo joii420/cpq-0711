@@ -91,15 +91,13 @@ const AddPartSubDrawer: React.FC<Props> = ({
   const [partSource, setPartSource] = useState<'new' | 'existing'>(
     editing?.partMode === 'existing' ? 'existing' : 'new',
   );
-  /** 每次打开重置（`key` 由宿主控制时不会走到这里，留作双保险）。 */
-  const [openedFor, setOpenedFor] = useState<string | null>(null);
-  if (open && openedFor !== (editing?.uid ?? '__new__')) {
-    setOpenedFor(editing?.uid ?? '__new__');
-    setStage(initialStage(editing));
-    setPartType(editing?.partType ?? 'PART');
-    setPartSource(editing?.partMode === 'existing' ? 'existing' : 'new');
-  }
-
+  /**
+   * 🚨 本组件**没有**「打开时重置」的逻辑，是有意的：宿主用
+   *    `key={`${editingUid ?? '__new__'}#${subSession}`}` 保证**每次打开都重新挂载**，
+   *    上面三个 `useState` 的初始值即是本次会话的正确起点。
+   * 🚫 不要改成「在组件内部靠比较 uid 来重置」—— 连续两次新增时 uid 都是 null，
+   *    比较不出差异，第二次就会停在上一次留下的表单上（真机实测过）。
+   */
   if (!open) return null;
 
   const title = (() => {
