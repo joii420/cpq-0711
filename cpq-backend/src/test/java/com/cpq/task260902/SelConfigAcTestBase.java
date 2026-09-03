@@ -4,6 +4,7 @@ import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
+import io.restassured.specification.RequestSpecification;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
@@ -332,10 +333,86 @@ public abstract class SelConfigAcTestBase {
         return id;
     }
 
+    // ═════════════════════════ 管理员 session（🚨 本套用例的正确性前提）═════════════════════════
+
+    /**
+     * 全 JVM 复用的管理员会话。
+     *
+     * <h3>🚨 为什么必须登录（2026-09-03 血的教训）</h3>
+     * {@code ConfigureProductResource} <b>类级早就有</b>
+     * {@code @RoleAllowed({"SALES_REP","SALES_MANAGER","PRICING_MANAGER","SYSTEM_ADMIN"})}，
+     * 而 test profile 的 {@code cpq.security.rbac.enabled=true} ⇒ <b>提交端点一直需要登录</b>。
+     * 本套用例最初<b>从头到尾没登录</b>，却在 worktree 里跑出「33 全绿」——
+     * 那次构建里鉴权碰巧没生效（两边 {@code RoleFilter.class} 字节相同，疑为 CDI 注册/
+     * {@code ResourceInfo} 注入时序差异）。换到主仓干净构建后 <b>31/33 全部 401</b>。
+     * ⇒ <b>测试必须自己带凭证，绝不能依赖「鉴权碰巧没生效」</b>。
+     *
+     * <p>📌 那 31 个红之所以没被误读成「合并引入了回归」，靠的是
+     * {@link #assertReachedBusinessLayer}：它把 401 直接标成「harness 故障，不是 AC 结论」。
+     * 这条经验反过来说明：<b>状态码级的守卫要写在断言链最前面。</b>
+     *
+     * <p>⚠️ 登录限流 30 次/分/IP ⇒ 会话必须全 JVM 复用，每个用例各登一次会打满，
+     * 打满后表现为「登录失败」，<b>看起来像鉴权坏了</b>。
+     */
+    private static Map<String, String> ADMIN_COOKIES;
+
+    /**
+     * <b>本套用例一律用它起手，🚫 不要直接用 {@code RestAssured.given()}</b> —— 那样不带 cookie，
+     * 会被 {@code RoleFilter} 挡在业务层之外。
+     */
+    protected RequestSpecification given() {
+        return RestAssured.given().cookies(adminSession());
+    }
+
+    /** 取（必要时重建）管理员会话；每次先用 {@code /auth/me} 验明正身，过期就重登。 */
+    protected Map<String, String> adminSession() {
+        if (ADMIN_COOKIES != null) {
+            Response me = RestAssured.given().cookies(ADMIN_COOKIES).get("/api/cpq/auth/me").thenReturn();
+            if (me.statusCode() == 200) return ADMIN_COOKIES;
+            System.out.println("[task260902·sel] 缓存会话已失效（/auth/me=" + me.statusCode() + "），重新登录");
+            ADMIN_COOKIES = null;
+        }
+        // 只解锁，🚫 不改 admin 的密码/状态/角色（testing.md §4.3：不得改变共享库的全局状态）
+        QuarkusTransaction.requiringNew().run(() -> em.createNativeQuery(
+                "UPDATE \"user\" SET failed_login_attempts = 0, locked_until = NULL WHERE username = 'admin'")
+                .executeUpdate());
+
+        Response last = null;
+        for (int i = 0; i < 4; i++) {
+            last = RestAssured.given().contentType(ContentType.JSON)
+                    .body(Map.of("username", "admin", "password", "Admin@2026"))
+                    .post("/api/cpq/auth/login").thenReturn();
+            if (last.statusCode() == 200) {
+                ADMIN_COOKIES = new LinkedHashMap<>(last.getCookies());
+                assertFalse(ADMIN_COOKIES.isEmpty(), "登录返 200 却没拿到 cookie（会话机制变了？）");
+                // 🚨 阳性对照：cookie 拿到 ≠ cookie 生效。不打这一枪，
+                //    「会话没生效」会以业务失败的面目出现在几十条断言上。
+                Response me = RestAssured.given().cookies(ADMIN_COOKIES).get("/api/cpq/auth/me").thenReturn();
+                assertEquals(200, me.statusCode(),
+                        "登录拿到 cookie 但 /auth/me 仍不通（" + me.statusCode() + "）⇒ 会话未生效，"
+                                + "此时所有业务断言都不可信。body=" + me.asString());
+                assertEquals("SYSTEM_ADMIN", me.jsonPath().getString("data.role"),
+                        "🚨 会话角色不是 SYSTEM_ADMIN ⇒ 后面「管理员应能调通」的断言失去意义");
+                System.out.println("[task260902·sel] admin 登录成功，cookies=" + ADMIN_COOKIES.keySet());
+                return ADMIN_COOKIES;
+            }
+            System.out.println("[task260902·sel] 第 " + (i + 1) + " 次登录失败 status=" + last.statusCode()
+                    + (last.statusCode() == 429 ? "（登录限流 30/min/IP）" : "")
+                    + (last.statusCode() >= 500 ? "（疑似 Redis 瞬断：SessionHelper.createSession→hset 抛"
+                        + " CONNECTION_CLOSED，认证本身是成功的 ⇒ 退避重试）" : ""));
+            try { Thread.sleep(3000L * (i + 1)); } catch (InterruptedException ignored) { }
+        }
+        throw new AssertionError(
+                "admin 登录连续 4 次失败，最后 status=" + last.statusCode() + " body=" + last.asString()
+                + "\n🚫 这是**登录基础设施故障**，不是被测功能的结论："
+                + " 429=登录限流；423/401=账号被锁或密码不对；5xx=Redis/会话存储不可用。"
+                + " 请先修环境再看业务断言。");
+    }
+
     // ─────────────────────────── 请求构造（结构以 api.md §1 为准）───────────────────────────
 
     protected Response configure(Fx fx, Map<String, Object> body) {
-        return RestAssured.given().contentType(ContentType.JSON).body(body)
+        return given().contentType(ContentType.JSON).body(body)
                 .post(CONFIGURE + fx.quotationId()).thenReturn();
     }
 

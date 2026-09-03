@@ -220,7 +220,7 @@ class RenderRegressionAcTest extends SelConfigAcTestBase {
                     .setParameter("pn", productNo).executeUpdate();
         });
 
-        Response list = RestAssured.given()
+        Response list = given()
                 .get("/api/cpq/quotations/" + fx.quotationId() + "/existing-products").thenReturn();
         assertReachedBusinessLayer(list, "R-6 从产品库添加列表");
         assertEquals(200, list.statusCode(), "R-6：列表端点应 200，实际=" + list.asString());

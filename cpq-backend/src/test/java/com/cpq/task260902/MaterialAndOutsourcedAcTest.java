@@ -57,7 +57,7 @@ class MaterialAndOutsourcedAcTest extends SelConfigAcTestBase {
                 "AC-5 前置：库里应至少有 1 条外购件（fixture基线 §3.1：TEST-Q13-CODE）。"
                         + "0 条时本用例会退化成空对空的假绿 ⇒ 前置不成立就硬失败，请先补数据");
 
-        Response res = RestAssured.given().queryParam("page", 1).queryParam("size", 200)
+        Response res = given().queryParam("page", 1).queryParam("size", 200)
                 .get(OUTSOURCED_PARTS).thenReturn();
         assertReachedBusinessLayer(res, "AC-5 外购件候选");
         assertEquals(200, res.statusCode(), "AC-5：端点应返回 200，实际=" + res.asString());
@@ -93,7 +93,7 @@ class MaterialAndOutsourcedAcTest extends SelConfigAcTestBase {
             assertEquals(0, count("SELECT count(*) FROM material_master WHERE material_type='" + OUTSOURCED_TYPE + "'"),
                     "AC-16 构造自检：外购件应已变成 0 条，否则本用例验的不是空态场景（假绿）");
 
-            Response res = RestAssured.given().queryParam("page", 1).queryParam("size", 20)
+            Response res = given().queryParam("page", 1).queryParam("size", 20)
                     .get(OUTSOURCED_PARTS).thenReturn();
             assertReachedBusinessLayer(res, "AC-16 空外购件列表");
             System.out.println("[AC-16] " + res.statusCode() + " " + res.asString());
@@ -315,7 +315,7 @@ class MaterialAndOutsourcedAcTest extends SelConfigAcTestBase {
     }
 
     private Response searchRecipes(String keyword) {
-        Response res = RestAssured.given()
+        Response res = given()
                 .queryParam("keyword", keyword).queryParam("status", "ACTIVE")
                 .get(RECIPES).thenReturn();
         assertReachedBusinessLayer(res, "材质选择器数据源 keyword=" + keyword);

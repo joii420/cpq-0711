@@ -64,7 +64,7 @@ class CustomerProductNoAcTest extends SelConfigAcTestBase {
                         + fx.customerNo() + "' AND customer_product_no='" + productNo + "'"),
                 "AC-1 前置：该编号必须尚未被占用");
 
-        Response res = RestAssured.given()
+        Response res = given()
                 .queryParam("customerNo", fx.customerNo())
                 .queryParam("productNo", productNo)
                 .get(CHECK_PRODUCT_NO).thenReturn();
@@ -92,7 +92,7 @@ class CustomerProductNoAcTest extends SelConfigAcTestBase {
         String productNo = PREFIX + "TAKEN-001";
         String occupiedPartNo = seedOccupiedProductNo(fx, productNo);
 
-        Response check = RestAssured.given()
+        Response check = given()
                 .queryParam("customerNo", fx.customerNo())
                 .queryParam("productNo", productNo)
                 .get(CHECK_PRODUCT_NO).thenReturn();
@@ -149,7 +149,7 @@ class CustomerProductNoAcTest extends SelConfigAcTestBase {
         assertMcmHoldsNoProductNo(fx, "AC-12②", 1);
 
         // ①③ 「从产品库添加」列表
-        Response list = RestAssured.given()
+        Response list = given()
                 .get(String.format(EXISTING_PRODUCTS, fx.quotationId())).thenReturn();
         assertReachedBusinessLayer(list, "AC-12 从产品库添加列表");
         assertEquals(200, list.statusCode(), "AC-12①：列表端点应返回 200，实际=" + list.asString());
@@ -214,7 +214,7 @@ class CustomerProductNoAcTest extends SelConfigAcTestBase {
 
         // ⑤-a 搜索面：按**任一编号**过滤都必须能查回料号 X
         for (String no : List.of(PREFIX + "A", PREFIX + "B")) {
-            Response hit = RestAssured.given().queryParam("customerProductNo", no)
+            Response hit = given().queryParam("customerProductNo", no)
                     .get(String.format(EXISTING_PRODUCTS, fx.quotationId())).thenReturn();
             assertReachedBusinessLayer(hit, "AC-12b⑤-a 按编号 " + no + " 过滤");
             assertEquals(200, hit.statusCode(), "AC-12b⑤-a：按编号过滤应返回 200，实际=" + hit.asString());
@@ -226,7 +226,7 @@ class CustomerProductNoAcTest extends SelConfigAcTestBase {
         }
 
         // ⑤-b 浏览面：不带过滤时，产品只出现 1 次，且该行把两个编号都带出来
-        Response list = RestAssured.given()
+        Response list = given()
                 .get(String.format(EXISTING_PRODUCTS, fx.quotationId())).thenReturn();
         assertReachedBusinessLayer(list, "AC-12b⑤-b 不带过滤浏览");
         assertEquals(200, list.statusCode(), "AC-12b⑤-b：列表端点应返回 200");
@@ -278,12 +278,16 @@ class CustomerProductNoAcTest extends SelConfigAcTestBase {
                 List.of(material(RECIPE_A, CONFIG_A, "100")), List.of(PROC_1));
         Map<String, Object> body = submitBody(productNo, part);
 
+        // 🚨 会话必须**在并发之前**解析好：两个线程各自去 adminSession() 可能同时触发登录，
+        //    打满 30/min/IP 的登录限流，然后以「登录失败」的面目掩盖掉本条真正要验的竞态。
+        Map<String, String> session = adminSession();
+
         CyclicBarrier startLine = new CyclicBarrier(2);
         ExecutorService pool = Executors.newFixedThreadPool(2);
         try {
             Callable<Response> task = () -> {
                 startLine.await(10, TimeUnit.SECONDS);   // 🚨 两个请求在同一瞬间发出
-                return RestAssured.given().contentType(ContentType.JSON).body(body)
+                return RestAssured.given().cookies(session).contentType(ContentType.JSON).body(body)
                         .post(CONFIGURE + fx.quotationId()).thenReturn();
             };
             Future<Response> f1 = pool.submit(task);
