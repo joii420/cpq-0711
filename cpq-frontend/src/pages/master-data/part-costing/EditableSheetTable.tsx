@@ -19,8 +19,9 @@ import { Select, AutoComplete, InputNumber, Input, Button, Spin, Typography } fr
 import { DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { Table } from 'antd';
-import type { ColumnDef, MasterType, SheetRow } from './types';
+import type { ColumnDef, ColumnType, MasterType, SheetRow } from './types';
 import { lookup } from './api';
+import type { LookupFn } from './api';
 import { normalizeDecimalString, isDecimalString } from '../../../utils/precision';
 
 const { Text } = Typography;
@@ -47,11 +48,29 @@ function ridOf(r: SheetRow): string {
   return String(r.__rid);
 }
 
-function displayText(v: unknown): string {
+/**
+ * 只读单元格的展示值。
+ *
+ * 🚨 task-260902 · F-11（AC-53/54/55）修复「按值的形状猜类型」：
+ *    本函数原来是 `if (typeof v === 'string' && isDecimalString(v))` —— **不看列类型，只看值长什么样**。
+ *    于是 `type=STRING` 的编码列只要**长得像数字**就被当数值处理，前导零被抹掉：
+ *      `00168` → `168`　`00006` → `6`　`00001` → `1`　`1.10` → `1.1`（实算复现，见任务回报）
+ *    实测 `material_recipe` 260 个 code 里 **258 个带前导零**，且这些值已落在
+ *    `ds_*_element_bom.material_part_no` 里 ⇒ 「物料与元素BOM」的材质料号必然显示错。
+ *
+ *    ⇒ 改为**由列类型决定**：只有 `DECIMAL` / `NUMBER` 才走去尾零，其余（含 STRING、以及
+ *      调用方没给类型的场景）一律 `String(v)` 原样透传。
+ *
+ * 🚫 不能改 `precision.ts` —— `isDecimalString` / `normalizeDecimalString` 本身没错，
+ *    错的是这里的**判据**（拿它当类型探测器用）。
+ * 🚫 数值列的去尾零行为**必须原样保留**（AC-54 专门验这条，防止修过头）。
+ */
+function displayText(v: unknown, type?: ColumnType): string {
   if (v === null || v === undefined || v === '') return '—';
   if (typeof v === 'boolean') return v ? '是' : '否';
-  // 数值列（DECIMAL/NUMBER）后端按 DB 列 scale 定标序列化（如 "1.230000000000"）。
-  // 仅对合法十进制数字字符串做展示层**去尾零**，非数值列（编码/文本等）原样 String() 透传。
+  const isNumericColumn = type === 'DECIMAL' || type === 'NUMBER';
+  if (!isNumericColumn) return String(v);
+  // 以下仅对**数值列**成立：后端按 DB 列 scale 定标序列化（如 "1.230000000000"）。
   //
   // ⚠️ 用 normalizeDecimalString（纯去尾零、**不截位**）而非 formatDisplayDecimal（截 9 位）：
   //    task-0813 把基础资料列扩到 12 位小数，本页是这些值的**编辑界面**。截到 9 位会让用户在
@@ -89,8 +108,10 @@ function MasterSelectCell(props: {
   currentLabel?: string;
   master: MasterType;
   onPick: (code: string, name: string) => void;
+  /** task-260902 · F-1：下拉数据源可注入（dataset 侧走 /dataset/{ds}/lookup），不传＝现有 /pricing-basic-data/lookup */
+  lookupFn?: LookupFn;
 }) {
-  const { value, currentLabel, master, onPick } = props;
+  const { value, currentLabel, master, onPick, lookupFn = lookup } = props;
   const [options, setOptions] = useState<MasterOption[]>([]);
   const [fetching, setFetching] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -100,7 +121,7 @@ function MasterSelectCell(props: {
     timer.current = setTimeout(async () => {
       setFetching(true);
       try {
-        const r = await lookup(master, kw);
+        const r = await lookupFn(master, kw);
         setOptions(
           (r.items ?? []).map((i) => ({
             value: i.code,
@@ -149,6 +170,22 @@ export interface EditableSheetTableProps {
   editable: boolean;
   onChange: (rows: SheetRow[]) => void;
   loading?: boolean;
+  /**
+   * task-260902 · F-1（三个都是**可选**，不传时渲染与改造前逐像素一致）：
+   * - `showComparedBadge`：列头按 `ColumnDef.compared` 打 🔗 角标（比对项，原型「核价数据-抽屉」）。
+   *   现有页签不传 ⇒ 恒 false ⇒ 列头只出 label，与改造前一致。
+   * - `lookupFn`：MASTER 下拉的数据源，dataset 侧注入 `/dataset/{ds}/lookup`。
+   * - `rowClassName`：行样式钩子，保存冲突态给「本地未保存改动行」上浅红底（原型「核价数据-保存冲突」）。
+   */
+  showComparedBadge?: boolean;
+  lookupFn?: LookupFn;
+  rowClassName?: (row: SheetRow) => string | undefined;
+  /**
+   * 「只剩一行时删除按钮禁用」的 hover 文案。
+   * 默认 `至少保留一行`＝现有「料号核价」页签改造前的原文案（AC-42 零变化）；
+   * dataset 侧传 api.md §7 的 422 原文，让用户在**点之前**就知道为什么不能删。
+   */
+  deleteDisabledTip?: string;
 }
 
 const EditableSheetTable: React.FC<EditableSheetTableProps> = ({
@@ -157,6 +194,10 @@ const EditableSheetTable: React.FC<EditableSheetTableProps> = ({
   editable,
   onChange,
   loading,
+  showComparedBadge = false,
+  lookupFn,
+  rowClassName,
+  deleteDisabledTip = '至少保留一行',
 }) => {
   const visibleColumns = columns.filter((c) => c.role !== 'AXIS');
 
@@ -178,13 +219,14 @@ const EditableSheetTable: React.FC<EditableSheetTableProps> = ({
       const nameCol = dd.nameColumn;
       const currentLabel =
         nameCol && row[nameCol]
-          ? `${displayText(value) === '—' ? '' : String(value)} · ${String(row[nameCol])}`
+          ? `${displayText(value, col.type) === '—' ? '' : String(value)} · ${String(row[nameCol])}`
           : undefined;
       return (
         <MasterSelectCell
           value={value}
           currentLabel={currentLabel}
           master={dd.master}
+          lookupFn={lookupFn}
           onPick={(code, name) => {
             const changes: Record<string, unknown> = { [col.name]: code || undefined };
             if (nameCol) changes[nameCol] = name || undefined;
@@ -276,7 +318,8 @@ const EditableSheetTable: React.FC<EditableSheetTableProps> = ({
   const tableColumns: ColumnsType<SheetRow> = visibleColumns.map((col) => {
     const cellEditable = editable && col.editable && col.role !== 'NAME';
     return {
-      title: col.label,
+      // 🔗 = 比对项（参与行指纹）。仅在调用方显式开启且后端下发 compared=true 时渲染。
+      title: showComparedBadge && col.compared ? `${col.label} 🔗` : col.label,
       dataIndex: col.name,
       key: col.name,
       width: cellEditable ? 180 : 140,
@@ -285,7 +328,7 @@ const EditableSheetTable: React.FC<EditableSheetTableProps> = ({
           if (col.role === 'NAME') {
             return renderNameOrHint(row[col.name], nameColumnHint(col.name));
           }
-          return <span>{displayText(row[col.name])}</span>;
+          return <span>{displayText(row[col.name], col.type)}</span>;
         }
         return renderEditControl(col, row);
       },
@@ -305,7 +348,7 @@ const EditableSheetTable: React.FC<EditableSheetTableProps> = ({
           danger
           icon={<DeleteOutlined />}
           disabled={rows.length <= 1}
-          title={rows.length <= 1 ? '至少保留一行' : '删除该行'}
+          title={rows.length <= 1 ? deleteDisabledTip : '删除该行'}
           onClick={() => deleteRow(ridOf(row))}
         >
           删除
@@ -324,6 +367,7 @@ const EditableSheetTable: React.FC<EditableSheetTableProps> = ({
         loading={loading}
         pagination={false}
         scroll={{ x: 'max-content' }}
+        rowClassName={rowClassName ? (r) => rowClassName(r) ?? '' : undefined}
       />
     </div>
   );
