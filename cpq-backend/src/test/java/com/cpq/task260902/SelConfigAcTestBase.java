@@ -7,6 +7,7 @@ import io.restassured.response.Response;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -56,6 +57,14 @@ public abstract class SelConfigAcTestBase {
     /** 本任务专属前缀：所有自建数据都带它，删除面靠它限死（{@code test.md §0}）。 */
     protected static final String PREFIX = "T260902-";
 
+    /**
+     * 本次 JVM 运行的唯一标记。自建材质的 {@code code} 带上它 ⇒
+     * <b>任何两轮运行都不可能撞 {@code material_recipe_code_key}</b>。
+     * 🚨 这不是洁癖：不带它时，「上一轮残留」会以「本轮 duplicate key」的面目出现，
+     * 而那个报错长得非常像业务缺陷（实测第三轮里它盖掉了 2 条真实用例的结论）。
+     */
+    protected static final String RUN_ID = UUID.randomUUID().toString().substring(0, 6);
+
     protected static final String CONFIGURE = "/api/cpq/configure-product/quotations/";
     protected static final String LOOKUP_FP = "/api/cpq/configure-product/lookup-fingerprint";
     protected static final String CHECK_PRODUCT_NO = "/api/cpq/quotations/configure/check-product-no";
@@ -90,6 +99,41 @@ public abstract class SelConfigAcTestBase {
 
     /** 一套「客户 + 报价单」夹具。customerNo 同时是 V6 表的 {@code customer_no} 维度。 */
     protected record Fx(UUID customerId, String customerNo, UUID quotationId) {}
+
+    /**
+     * 🚨 <b>开跑前先清一次上一轮的残留</b>（沿用 {@code MaterialAcTestBase} 的做法）。
+     *
+     * <p>没有这一步时，上一轮崩溃留下的 {@code T260902-} 材质会让本轮的
+     * {@code assertNoResidue} 在<b>每一个</b>用例结束时失败 —— 一次残留污染整份报告，
+     * 而且失败信息指向的是「本轮」，读报告的人会去查本轮的业务代码。
+     * <p>🚫 删除面仅限 {@code T260902-} 前缀的<b>自建物</b>（材质/分类/模板），
+     * 不碰任何存量数据，不碰 customer（它的 code 带随机 UUID，永不撞名）。
+     */
+    @BeforeEach
+    void sweepResidueFromPreviousRun() {
+        QuarkusTransaction.requiringNew().run(() -> {
+            em.createNativeQuery("DELETE FROM material_recipe_element WHERE recipe_id IN "
+                    + "(SELECT id FROM material_recipe WHERE code LIKE :p)").setParameter("p", PREFIX + "%").executeUpdate();
+            em.createNativeQuery("DELETE FROM material_recipe_config WHERE recipe_id IN "
+                    + "(SELECT id FROM material_recipe WHERE code LIKE :p)").setParameter("p", PREFIX + "%").executeUpdate();
+            em.createNativeQuery("DELETE FROM material_recipe_composition WHERE recipe_id IN "
+                    + "(SELECT id FROM material_recipe WHERE code LIKE :p)").setParameter("p", PREFIX + "%").executeUpdate();
+            em.createNativeQuery("DELETE FROM material_recipe WHERE code LIKE :p")
+                    .setParameter("p", PREFIX + "%").executeUpdate();
+            if (tableExists("sel_template_item_value")) {
+                em.createNativeQuery("DELETE FROM sel_template_item_value WHERE item_id IN "
+                        + "(SELECT i.id FROM sel_template_item i JOIN sel_template t ON t.id=i.template_id "
+                        + " WHERE t.name LIKE :p)").setParameter("p", PREFIX + "%").executeUpdate();
+            }
+            em.createNativeQuery("DELETE FROM sel_template_item WHERE template_id IN "
+                    + "(SELECT id FROM sel_template WHERE name LIKE :p)").setParameter("p", PREFIX + "%").executeUpdate();
+            em.createNativeQuery("DELETE FROM sel_template WHERE name LIKE :p")
+                    .setParameter("p", PREFIX + "%").executeUpdate();
+        });
+        // 清完立刻自检：脏库必须以「残留」的名义硬失败，不许伪装成本轮的业务缺陷
+        assertEquals(0, count("SELECT count(*) FROM material_recipe WHERE code LIKE '" + PREFIX + "%'"),
+                "开跑前自检：上一轮的 T260902- 材质残留没清掉");
+    }
 
     // ─────────────────────────── 夹具 ───────────────────────────
 
@@ -162,8 +206,11 @@ public abstract class SelConfigAcTestBase {
      * @return 材质 code（即请求里的 {@code recipeCode}）
      */
     protected String createRecipe(String label, boolean allowCustom, List<String[]> elements) {
-        String code = PREFIX + "M" + label;
-        String symbol = PREFIX + "M" + label;   // material_recipe.symbol varchar(32)
+        // 🚨 code 必须带 RUN_ID：material_recipe.code 上有 UNIQUE(code)，
+        //    上一轮若因崩溃留下残留，下一轮同名 INSERT 会直接撞 material_recipe_code_key，
+        //    于是「上一轮的清理没做干净」会伪装成「本轮建夹具失败」——2026-09-03 第三轮实测踩到。
+        String code = PREFIX + "M" + label + "-" + RUN_ID;
+        String symbol = PREFIX + "M" + label + "-" + RUN_ID;   // material_recipe.symbol varchar(32)
         QuarkusTransaction.requiringNew().run(() -> {
             em.createNativeQuery(
                             "INSERT INTO material_recipe (id,code,symbol,name,recipe_type,sort_order,status,allow_custom_content,created_at,updated_at) "
@@ -415,8 +462,10 @@ public abstract class SelConfigAcTestBase {
      */
     @AfterEach
     void restoreFixtures() {
+        List<String> cleanupErrors = new ArrayList<>();
         try {
             for (Fx fx : fixtures) {
+              try {
                 QuarkusTransaction.requiringNew().run(() -> {
                     String cust = fx.customerNo();
                     // 先把本客户名下铸出的销售料号收集起来（material_master 没有 customer 维度，
@@ -468,8 +517,14 @@ public abstract class SelConfigAcTestBase {
                     em.createNativeQuery("DELETE FROM customer WHERE id=:id")
                             .setParameter("id", fx.customerId()).executeUpdate();
                 });
+              } catch (RuntimeException e) {
+                  // 🚨 一个夹具清不掉，不能连累后面的夹具与材质/分类/模板的清理
+                  //    （第三轮实测：fixtures 循环里抛一次，后面的材质删除整段被跳过 ⇒ 残留）
+                  cleanupErrors.add("fixture " + fx.customerNo() + ": " + e);
+              }
             }
 
+            try {
             QuarkusTransaction.requiringNew().run(() -> {
                 for (UUID tid : createdTemplateIds) {
                     if (tableExists("sel_template_item_value")) {
@@ -503,12 +558,16 @@ public abstract class SelConfigAcTestBase {
                             .setParameter("id", cid).executeUpdate();
                 }
             });
+            } catch (RuntimeException e) {
+                cleanupErrors.add("recipes/templates/categories: " + e);
+            }
         } finally {
             List<Fx> done = List.copyOf(fixtures);
             fixtures.clear();
             createdRecipeCodes.clear();
             createdCategoryIds.clear();
             createdTemplateIds.clear();
+            if (!cleanupErrors.isEmpty()) System.out.println("[还原] 清理时的异常：" + cleanupErrors);
             assertNoResidue(done);
         }
     }

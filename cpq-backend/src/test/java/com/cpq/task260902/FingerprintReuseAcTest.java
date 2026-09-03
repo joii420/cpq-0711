@@ -2,6 +2,7 @@ package com.cpq.task260902;
 
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.response.Response;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -131,7 +132,32 @@ class FingerprintReuseAcTest extends SelConfigAcTestBase {
      * @AfterEach 精确删除，不碰存量。
      */
     @Test
-    @DisplayName("AC-10 换成含量逐字相同的另一条配方 → 仍复用（D-5 有意行为）")
+    @Disabled("""
+            🚫 阻塞（2026-09-03 实跑确认）：AC-10 在当前 schema 下**造不出前置**，不是实现有 bug。
+
+            根因：material_recipe_element 上的唯一索引是
+                uq_recipe_element = UNIQUE (recipe_id, element_code)     ← 实查 pg_indexes
+            即**同一材质下两条配置不能出现同名元素**。而 AC-10 要的恰恰是「同材质、两条含量
+            *逐字相同* 的配置」——逐字相同 ⇒ 元素码必然相同 ⇒ 必撞该唯一索引。
+            实跑报错：duplicate key "uq_recipe_element" Key (recipe_id, element_code)=(…, Ag)。
+            旁证：现网唯一有 2 组配置的 00262/SnO2，两组的元素码恰恰**不同**（10004 vs Sn）——
+            正是被这个约束逼出来的形状。
+
+            为什么不绕（放弃「甲：换个构造方式」）：
+              · 换成两条**不同元素码**的配置 ⇒ 含量不再逐字相同 ⇒ 指纹本就该不同 ⇒
+                用例会断言复用并失败，而那个失败是**正确行为**，等于把 AC-10 改写成了另一条 AC；
+              · 换成**另一个材质** ⇒ MAT= token 含材质码 ⇒ 指纹必不同 ⇒ 同上；
+              · 钻 recipe_id 可空的空子（现网 631 行里有 10 行为 NULL）能绕过约束，但那是
+                应用自己**不会产生**的行形状，测出来的绿说明不了任何事（典型假绿）。
+
+            解除条件：task-260901 的 **B-3 迁移（DROP CONSTRAINT uq_recipe_element）获批并落地**后，
+            删掉本注解即可，用例正文无需改动。
+
+            覆盖缺口有多大：D-5「配方编号不进指纹、按含量内容判同」这条规则**并未失去验证** ——
+            AC-22③（自定义含量 90/10 与标准配方逐字相同 → 复用 X）走的是同一条判同路径且可构造，
+            已在 ac22_customVsStandardContentDiagonal 覆盖。本条缺的是「配方 ↔ 配方」这一种形态。
+            """)
+    @DisplayName("AC-10 换成含量逐字相同的另一条配方 → 仍复用（D-5 有意行为）【被 uq_recipe_element 阻塞】")
     void ac10_sameContentDifferentConfigNoStillReuses() {
         String recipe = createRecipe("10", false, List.of(new String[]{"Ag", "90"}, new String[]{"Ni", "10"}));
         addConfig(recipe, recipe + "-02", 2, List.of(new String[]{"Ag", "90"}, new String[]{"Ni", "10"}));

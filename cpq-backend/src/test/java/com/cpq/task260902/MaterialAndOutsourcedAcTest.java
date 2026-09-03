@@ -186,8 +186,13 @@ class MaterialAndOutsourcedAcTest extends SelConfigAcTestBase {
     @DisplayName("AC-21 自定义含量正向落库 88/12，且不回流材质库")
     void ac21_customContentPersistsAndDoesNotFlowBack() {
         String recipe = createRecipe("21", true, List.of(new String[]{"Ag", "90"}, new String[]{"Ni", "10"}));
-        long cfgBefore = count("SELECT count(*) FROM material_recipe_config");
-        long eleBefore = count("SELECT count(*) FROM material_recipe_element");
+        // 🚨 范围取「本用例自建的这条材质」，不用全表计数 —— 共享库上别的会话随时会改全表计数，
+        //    那会让 AC-21② 变成一条会随机翻红的断言。回流真发生的话，必然写到这条材质名下。
+        String scope = " c JOIN material_recipe r ON r.id=c.recipe_id WHERE r.code='" + recipe + "'";
+        long cfgBefore = count("SELECT count(*) FROM material_recipe_config" + scope);
+        long eleBefore = count("SELECT count(*) FROM material_recipe_element e "
+                + "JOIN material_recipe_config c ON c.id=e.config_id JOIN material_recipe r ON r.id=c.recipe_id "
+                + "WHERE r.code='" + recipe + "'");
         Fx fx = newFixture("ac21");
 
         Response res = configure(fx, submitBody(PREFIX + "L", newPart(
@@ -218,9 +223,15 @@ class MaterialAndOutsourcedAcTest extends SelConfigAcTestBase {
                 "AC-21①：Ni 应落自定义值 12（不是标准配方的 10），实际=" + ni);
 
         // ② 不回流材质库
-        assertEquals(cfgBefore, count("SELECT count(*) FROM material_recipe_config"),
+        long cfgAfter = count("SELECT count(*) FROM material_recipe_config" + scope);
+        long eleAfter = count("SELECT count(*) FROM material_recipe_element e "
+                + "JOIN material_recipe_config c ON c.id=e.config_id JOIN material_recipe r ON r.id=c.recipe_id "
+                + "WHERE r.code='" + recipe + "'");
+        System.out.println("[AC-21②] 该材质名下 config " + cfgBefore + "→" + cfgAfter
+                + "，element " + eleBefore + "→" + eleAfter);
+        assertEquals(cfgBefore, cfgAfter,
                 "AC-21②：material_recipe_config 不得新增（自定义含量不回流材质库）");
-        assertEquals(eleBefore, count("SELECT count(*) FROM material_recipe_element"),
+        assertEquals(eleBefore, eleAfter,
                 "AC-21②：material_recipe_element 不得新增（自定义含量不回流材质库）");
     }
 

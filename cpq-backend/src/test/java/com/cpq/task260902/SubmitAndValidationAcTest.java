@@ -133,7 +133,6 @@ class SubmitAndValidationAcTest extends SelConfigAcTestBase {
     @DisplayName("AC-4 占比合计 90% → 400 + 响应带实际值 90")
     void ac4_ratioSumNot100RejectedWithActualValue() {
         Fx fx = newFixture("ac4");
-        long masterBefore = count("SELECT count(*) FROM material_master");
 
         Response res = configure(fx, submitBody(PREFIX + "C", newPart(
                 "触点", "φ5", "5×3×2", "10",
@@ -148,8 +147,7 @@ class SubmitAndValidationAcTest extends SelConfigAcTestBase {
                 "AC-4：错误码应为 MATERIAL_RATIO_SUM_INVALID，实际=" + body);
         assertTrue(body.contains("90"),
                 "AC-4：提示必须写出实际合计值 90（AC 原文：不是『合计不正确』这种形容词），实际=" + body);
-        assertEquals(masterBefore, count("SELECT count(*) FROM material_master"),
-                "AC-4：被拒的提交不得落任何料号");
+        assertNothingLanded(fx, "AC-4");
     }
 
     /**
@@ -160,7 +158,6 @@ class SubmitAndValidationAcTest extends SelConfigAcTestBase {
     @DisplayName("AC-14 零材质 → 400 PART_HAS_NO_MATERIAL")
     void ac14_zeroMaterialRejected() {
         Fx fx = newFixture("ac14");
-        long masterBefore = count("SELECT count(*) FROM material_master");
 
         Response res = configure(fx, submitBody(PREFIX + "D", newPart(
                 "触点", "φ5", "5×3×2", "10", List.of(), List.of(PROC_1))));
@@ -170,8 +167,7 @@ class SubmitAndValidationAcTest extends SelConfigAcTestBase {
         assertEquals(400, res.statusCode(), "AC-14：零材质应被拒，实际 " + res.statusCode() + " " + res.asString());
         assertTrue(res.asString().contains("PART_HAS_NO_MATERIAL"),
                 "AC-14：错误码应为 PART_HAS_NO_MATERIAL，实际=" + res.asString());
-        assertEquals(masterBefore, count("SELECT count(*) FROM material_master"),
-                "AC-14：被拒的提交不得落任何料号");
+        assertNothingLanded(fx, "AC-14");
     }
 
     /**
@@ -313,5 +309,24 @@ class SubmitAndValidationAcTest extends SelConfigAcTestBase {
                 "api.md §1.2：partType=OUTSOURCED 但 outsourcedPartNo 为空应被拒，实际 " + res.statusCode());
         assertTrue(res.asString().contains("OUTSOURCED_PART_REQUIRED"),
                 "错误码应为 OUTSOURCED_PART_REQUIRED，实际=" + res.asString());
+    }
+
+    /**
+     * 「被拒的提交不得落库」的<b>可 hermetic 断言</b>。
+     *
+     * <p>🚨 <b>不要用 {@code count(*) FROM material_master} 这种全局计数</b>：
+     * 本套用例跑在<b>共享开发库</b>上，别的会话（dev server、另一个 agent 的测试）随时会改它 ⇒
+     * 「前后差 1」既可能是本次提交落了行，也可能是别人插了行。
+     * 2026-09-03 第三轮实测就出现过一次 {@code expected:<1889> but was:<1890>} 的假失败。
+     * ⇒ 一律改为<b>按本用例自建客户 / 报价单</b>取范围，与其他会话完全隔离。
+     */
+    private void assertNothingLanded(Fx fx, String ac) {
+        long bom = count("SELECT count(*) FROM material_bom_item WHERE customer_no='" + fx.customerNo() + "'");
+        long sig = count("SELECT count(*) FROM sel_part_signature WHERE customer_no='" + fx.customerNo() + "'");
+        long line = count("SELECT count(*) FROM quotation_line_item WHERE quotation_id='" + fx.quotationId() + "'");
+        System.out.println("[" + ac + "] 被拒后落库检查 bom=" + bom + " signature=" + sig + " lineItem=" + line);
+        assertEquals(0, bom, ac + "：被拒的提交不得落 material_bom_item");
+        assertEquals(0, sig, ac + "：被拒的提交不得落 sel_part_signature");
+        assertEquals(0, line, ac + "：被拒的提交不得往报价单加行");
     }
 }

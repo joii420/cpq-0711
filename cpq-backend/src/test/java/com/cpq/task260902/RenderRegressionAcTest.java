@@ -63,8 +63,14 @@ class RenderRegressionAcTest extends SelConfigAcTestBase {
         String partNo = latestLinePartNo(fx);
 
         // R-1：材质视图应返 2 行
+        // 🚨 列映射（实查 viewdef，2026-09-03）：两个视图的 child_hf_part_no 语义**不同**，别照抄：
+        //   v_composite_child_materials: hf_part_no = asy.material_no（销售料号）
+        //                                child_hf_part_no = asy.component_no（**材质码** 00006/00123）
+        //   v_composite_child_elements : child_hf_part_no = ebi.material_no（销售料号）
+        // ⇒ 拿销售料号去匹配材质视图的 child_hf_part_no 必然 0 行（本用例首轮就栽在这儿，
+        //   靠断言信息里那句「0 行 ⇒ 断言空跑」才没被误读成实现缺陷）。材质视图必须查 hf_part_no。
         List<Object[]> mats = rows("SELECT material_name, chemical_symbol, material_code FROM v_composite_child_materials "
-                + "WHERE child_hf_part_no='" + partNo + "' ORDER BY material_code");
+                + "WHERE hf_part_no='" + partNo + "' ORDER BY material_code");
         System.out.println("[R-1] v_composite_child_materials=" + mats.stream().map(java.util.Arrays::toString).toList());
         assertEquals(2, mats.size(),
                 "R-1：多材质料号在 v_composite_child_materials 应返 2 行（改造前只有 1 行），实际 " + mats.size()
@@ -168,10 +174,11 @@ class RenderRegressionAcTest extends SelConfigAcTestBase {
                         outsourcedPart(outsourcedNo, List.of(PROC_2)))),
                 "R-5 零件 + 外购件提交");
 
-        List<Object[]> mats = rows("SELECT child_hf_part_no, material_name, material_code "
+        // 列映射同 R-1：材质视图按 hf_part_no（销售料号）关联，child_hf_part_no 是材质码
+        List<Object[]> mats = rows("SELECT v.hf_part_no, v.child_hf_part_no, v.material_name "
                 + "FROM v_composite_child_materials v JOIN material_bom_item b "
-                + "  ON b.material_no = v.child_hf_part_no AND b.customer_no='" + fx.customerNo() + "' "
-                + "WHERE b.customer_no='" + fx.customerNo() + "' GROUP BY 1,2,3");
+                + "  ON b.material_no = v.hf_part_no AND b.component_no = v.child_hf_part_no "
+                + " AND b.customer_no='" + fx.customerNo() + "' GROUP BY 1,2,3");
         System.out.println("[R-5] 本客户在材质视图里的行=" + mats.stream().map(java.util.Arrays::toString).toList());
         long outsourcedRows = count("SELECT count(*) FROM material_bom_item WHERE customer_no='"
                 + fx.customerNo() + "' AND characteristic='OUTSOURCED' AND is_current=true");
@@ -182,7 +189,8 @@ class RenderRegressionAcTest extends SelConfigAcTestBase {
 
         boolean appears = count("SELECT count(*) FROM v_composite_child_materials v "
                 + "WHERE EXISTS (SELECT 1 FROM material_bom_item b WHERE b.customer_no='" + fx.customerNo() + "' "
-                + "AND b.characteristic='OUTSOURCED' AND b.material_no = v.child_hf_part_no)") > 0;
+                + "AND b.characteristic='OUTSOURCED' AND b.is_current=true "
+                + "AND b.material_no = v.hf_part_no AND b.component_no = v.child_hf_part_no)") > 0;
         System.out.println("[R-5] 外购件出现在材质视图？ " + appears);
         assertEquals(EXPECT_OUTSOURCED_ROW_IN_MATERIALS_TAB, appears,
                 "R-5：外购件是否作为『材质』出现在选配-材质页签，与裁决不一致（当前裁决="
