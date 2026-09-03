@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>原型导航 · 主数据与用户导入导出（task-260902）</title>
+<link rel="stylesheet" href="./_ant.css">
+<link rel="stylesheet" href="./_common.css">
+<style>
+.idcard{background:#fff;border-radius:8px;padding:16px 20px;margin-bottom:20px;border:1px solid #b7eb8f;background:#f6ffed}
+.nav{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+.nav a{display:block;background:#fff;border:1px solid #f0f0f0;border-radius:8px;padding:16px 18px;text-decoration:none;color:inherit;transition:.15s}
+.nav a:hover{border-color:#1677ff;box-shadow:0 2px 8px rgba(22,119,255,.12)}
+.nav .t{font-size:15px;font-weight:600;margin-bottom:4px;color:#1677ff}
+.nav .d{font-size:12px;color:rgba(0,0,0,.45);line-height:1.7}
+.nav .st{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="idcard">
+  <div style="font-size:16px;font-weight:600;margin-bottom:6px">&#128204; 当前基准 &nbsp;<span class="muted" style="font-size:13px;font-weight:400">task-260902-主数据与用户导入导出 &nbsp;|&nbsp; 2026-09-02</span></div>
+  <div style="font-size:13px;line-height:1.8">
+  本组原型是<b>下列范围</b>的视觉验收基准，实现须 1:1 还原：<br>
+  &bull; 材质页签 <b>工具栏</b>（原型 1）&nbsp;&bull; 工序页签 <b>工具栏</b>（原型 2）<br>
+  &bull; <b>用户管理页整页</b>（原型 3，全项目首份）&nbsp;&bull; <b>用户导入抽屉与结果页</b>（原型 4、5，全新）<br>
+  &bull; 三个<b>导出文件</b>的列结构（原型 1D / 2D / 3C）
+  </div>
+</div>
+
+<h1>原型导航 · 主数据（材质/工序）导出 + 用户导入导出</h1>
+<p class="sub">任务：<code>dev-docs/task-260902-主数据与用户导入导出/</code> &nbsp;|&nbsp; 需求文档：<a href="../需求文档.md">需求文档.md</a></p>
+
+<div class="alert"><span class="ico">&#9432;</span><div>
+<b>本任务的原型都是「现状 + 少量新增」，不是重新设计。</b>
+每份原型里，<span style="outline:2px dashed #52c41a;outline-offset:2px;padding:0 4px">绿色虚线框</span>标出的才是本次新增的部分，其余照抄当前实现。
+</div></div>
+
+<div class="nav">
+  <a href="./1-材质页签-工具栏.html">
+    <div class="t">1 &middot; 材质页签 · 工具栏</div>
+    <div class="d">新增「导出材质库」按钮。含管理员态 / 非管理员态（按钮不渲染）/ 0 条禁用态 / <b>导出文件列结构</b>。</div>
+    <div class="st"><span class="state">默认</span><span class="state err">权限</span><span class="state warn">空数据</span><span class="state ok">交付物</span></div>
+  </a>
+  <a href="./2-工序页签-工具栏.html">
+    <div class="t">2 &middot; 工序页签 · 工具栏</div>
+    <div class="d">新增「导出工序」按钮。含<b>页面列名 ≠ 导入模板列名</b>的说明（工序分类/类别、标准货币/币种）。</div>
+    <div class="st"><span class="state">默认</span><span class="state err">权限</span><span class="state warn">空数据</span><span class="state ok">交付物</span></div>
+  </a>
+  <a href="./3-用户列表.html">
+    <div class="t">3 &middot; 用户管理 · 列表</div>
+    <div class="d">新增「导出用户 / 导入用户」两个按钮。<b>全项目第一份用户管理页原型</b>，含真实用户数据与导出文件列结构。</div>
+    <div class="st"><span class="state">默认</span><span class="state warn">空数据</span><span class="state ok">交付物</span></div>
+  </a>
+  <a href="./4-用户导入抽屉.html">
+    <div class="t">4 &middot; 导入用户 · 抽屉</div>
+    <div class="d">上传前 / 已选文件 / 导入中（锁死关闭）/ 表头错误。形态与「导入材质库」抽屉一致。</div>
+    <div class="st"><span class="state">默认</span><span class="state ok">就绪</span><span class="state warn">进行中</span><span class="state err">错误</span></div>
+  </a>
+  <a href="./5-用户导入结果.html">
+    <div class="t">5 &middot; 导入用户 · 结果报告</div>
+    <div class="d">🔑 <b>初始密码回显（只显示一次）</b>。含有增有跳 / 全成功 / 全跳过 / 空文件四态，以及「跳过 vs 提示」的区分。</div>
+    <div class="st"><span class="state ok">主结果</span><span class="state warn">零新增</span><span class="state warn">边界</span></div>
+  </a>
+</div>
+
+<div class="card" style="margin-top:24px">
+  <h2>&#128336; 与既有原型的关系（不取代，只补充）</h2>
+  <p class="hint">按 <code>frontend.md &sect;1.3</code>：同一页面全项目只能有一份 📌。本组<b>没有</b>把任何既有原型降级为历史快照，原因如下。</p>
+  <table>
+    <thead><tr><th style="width:330px">既有原型</th><th style="width:110px">身份变化</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>task-260901/原型图/1-材质管理页.html</code></td>
+        <td><span class="tag blue">仍是基准</span></td>
+        <td><b>材质管理页「表格 + 列 + 空态 + 极值」的基准仍看那一份</b>，本次一个字没动。本组原型 1 只接管<b>工具栏</b>那一条。<br>
+        ⚠️ 那份原型把工具栏画成<b>一行</b>（新建/编辑/停用/导入/下载模板），实现落地为 <code>SelectableTable</code> 的<b>两行</b>结构（查询行 + 动作行）——
+        这个差异<b>不是本次引入的</b>，属组件库形态所限的等价实现。本组原型 1 按<b>实现现状</b>画。</td>
+      </tr>
+      <tr>
+        <td><code>task-260901/原型图/4-导入抽屉与报告.html</code></td>
+        <td><span class="tag blue">仍是基准</span></td>
+        <td><b>材质</b>导入抽屉的基准，本次不动材质导入。本组原型 4/5 是<b>用户</b>导入，两者形态刻意保持一致但互不取代。</td>
+      </tr>
+      <tr>
+        <td>工序页签 / 用户管理页</td>
+        <td><span class="tag green">首份</span></td>
+        <td>全项目此前没有这两个页面的原型，本组原型 2、3 是第一份。</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>&#9989; 三个页面共用的两条规则（写在这里避免各页各写一套）</h2>
+  <table>
+    <thead><tr><th style="width:200px">规则</th><th>内容</th></tr></thead>
+    <tbody>
+      <tr><td><b>「没权限」= 不渲染</b></td><td>材质/工序页签对非 <code>SYSTEM_ADMIN</code>，导出按钮<b>整个不渲染</b>，不是灰色禁用。<br>禁用态是在说「条件不满足，满足了就能点」；这里是「你这个角色没有这项能力」，画成禁用反而在暗示可以申请。<span class="acref">AC-2</span></td></tr>
+      <tr><td><b>「没东西可导」= 禁用</b></td><td>筛选结果 0 条时，导出按钮<b>禁用 + tooltip</b>，三页文案逐字相同：<br><code>当前筛选结果为 0 条，无可导出数据</code><br>「导入」按钮<b>不</b>跟着禁用 —— 空表最需要导入。<span class="acref">AC-23</span></td></tr>
+    </tbody>
+  </table>
+</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>用户导入结果 · task-260902</title>
+<link rel="stylesheet" href="./_ant.css">
+<link rel="stylesheet" href="./_common.css">
+</head>
+<body>
+<div class="wrap">
+<a class="navback" href="./index.html">&larr; 返回原型导航</a>
+<h1>导入用户 · 结果报告（含初始密码回显）</h1>
+<p class="sub">导入完成后<b>在同一个抽屉里换内容</b>，不新开弹层。</p>
+
+<div class="alert warn"><span class="ico">&#9888;</span><div>
+<b>这一页是全任务唯一需要小心的地方：初始密码只在这里出现一次。</b>
+密码由后端生成、<b>只在本次响应里回显</b>，不落库明文、不写日志、不进任何导出文件。
+关掉抽屉就<b>再也查不到</b>——但不是死路：管理员可以对任一用户点「重置密码」重新生成（既有功能）。
+这个「只显示一次」必须在界面上说清楚，否则管理员会以为随时能回来看。
+</div></div>
+
+<div class="card">
+  <h2>状态 A · 有新增有跳过（主结果）<span class="state ok">主结果</span></h2>
+  <p class="hint">对应 AC-15 + AC-16 + AC-17 + AC-18 的混合场景。</p>
+  <div class="drawer wide">
+    <div class="drawer-hd"><span class="t">导入完成</span><span class="muted" style="cursor:pointer">&#10005;</span></div>
+    <div class="drawer-bd">
+      <div class="stat">
+        <div class="box"><div class="n">8</div><div class="l">读取行数</div></div>
+        <div class="box ok"><div class="n">3</div><div class="l">新增用户</div></div>
+        <div class="box warn"><div class="n">4</div><div class="l">跳过</div></div>
+        <div class="box"><div class="n" style="font-size:16px;padding-top:8px">142 ms</div><div class="l">耗时</div></div>
+      </div>
+
+      <div class="alert warn" style="margin-bottom:14px"><span class="ico">&#128273;</span><div>
+        <b>以下初始密码只显示这一次，请立即复制并转交给对应同事。</b><br>
+        关闭本窗口后无法再查看；忘了可以在用户列表对该用户点「重置密码」重新生成。<br>
+        新用户首次登录时会被<b>强制修改密码</b>。
+      </div></div>
+
+      <table style="margin-bottom:8px">
+        <thead><tr><th style="width:150px">用户名</th><th style="width:120px">姓名</th><th style="width:110px">角色</th><th style="width:180px">初始密码</th><th>提示</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">t260902a</td><td>张明</td><td><span class="tag green">销售代表</span></td><td><span class="pw">Kv7#mQ2xLp9d</span></td><td class="muted">-</td></tr>
+          <tr><td class="mono">t260902b</td><td>李思</td><td><span class="tag blue">销售经理</span></td><td><span class="pw">Rt4$nB8wZc3f</span></td><td class="muted">-</td></tr>
+          <tr><td class="mono">t260902c</td><td>王赫</td><td><span class="tag gold">财务</span></td><td><span class="pw">Ym6!hD5vJq1s</span></td><td><span class="tag gold">部门未匹配：不存在的部门</span></td></tr>
+        </tbody>
+      </table>
+      <div style="display:flex;gap:8px;margin-bottom:20px"><button class="btn">&#128203; 复制全部密码</button><span class="muted" style="font-size:12px;align-self:center">复制为「用户名<span class="mono">&nbsp;制表符&nbsp;</span>密码」两列，可直接粘进 Excel 或聊天窗口</span></div>
+
+      <div class="exp-title" style="font-size:13px;font-weight:600;margin:0 0 10px">跳过的 4 行</div>
+      <table>
+        <thead><tr><th style="width:70px">Excel 行</th><th style="width:150px">用户名</th><th>原因</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">4</td><td class="mono">admin</td><td>用户名已存在<span class="acref">AC-16</span></td></tr>
+          <tr><td class="mono">5</td><td class="mono">t260902d</td><td>角色不合法：财务总监<span class="acref">AC-17</span></td></tr>
+          <tr><td class="mono">7</td><td class="mono">t260902e</td><td>邮箱格式不合法：abc<span class="acref">AC-26</span></td></tr>
+          <tr><td class="mono">8</td><td class="mono">t260902a</td><td>文件内用户名重复，已取首行<span class="acref">AC-25</span></td></tr>
+        </tbody>
+      </table>
+      <div class="note">
+      <b>「跳过」与「提示」是两回事，不要混在一起：</b><br>
+      &bull; <b>跳过</b>＝这一行<b>没有</b>创建用户（上表）。<br>
+      &bull; <b>提示</b>＝用户<b>创建成功了</b>，但某个非必需字段没落上（如 <code>t260902c</code> 的部门），挂在成功行的最后一列。<span class="acref">AC-18</span><br>
+      🚫 部门/区域匹配不上<b>不许</b>整行拒绝 —— 那两张表现在还是空的，一拒就一个人都导不进来。
+      </div>
+    </div>
+    <div class="drawer-ft"><button class="btn primary">完成并刷新列表</button></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>状态 B · 全部成功<span class="state ok">顺利</span></h2>
+  <div class="drawer wide">
+    <div class="drawer-hd"><span class="t">导入完成</span><span class="muted" style="cursor:pointer">&#10005;</span></div>
+    <div class="drawer-bd">
+      <div class="stat">
+        <div class="box"><div class="n">3</div><div class="l">读取行数</div></div>
+        <div class="box ok"><div class="n">3</div><div class="l">新增用户</div></div>
+        <div class="box"><div class="n">0</div><div class="l">跳过</div></div>
+        <div class="box"><div class="n" style="font-size:16px;padding-top:8px">118 ms</div><div class="l">耗时</div></div>
+      </div>
+      <div class="alert warn" style="margin-bottom:14px"><span class="ico">&#128273;</span><div><b>以下初始密码只显示这一次，请立即复制并转交给对应同事。</b></div></div>
+      <table>
+        <thead><tr><th style="width:150px">用户名</th><th style="width:120px">姓名</th><th style="width:110px">角色</th><th style="width:180px">初始密码</th><th>提示</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">t260902a</td><td>张明</td><td><span class="tag green">销售代表</span></td><td><span class="pw">Kv7#mQ2xLp9d</span></td><td class="muted">-</td></tr>
+          <tr><td class="mono">t260902b</td><td>李思</td><td><span class="tag blue">销售经理</span></td><td><span class="pw">Rt4$nB8wZc3f</span></td><td class="muted">-</td></tr>
+          <tr><td class="mono">t260902c</td><td>王赫</td><td><span class="tag gold">财务</span></td><td><span class="pw">Ym6!hD5vJq1s</span></td><td class="muted">-</td></tr>
+        </tbody>
+      </table>
+      <div style="margin-top:8px"><button class="btn">&#128203; 复制全部密码</button></div>
+    </div>
+    <div class="drawer-ft"><button class="btn primary">完成并刷新列表</button></div>
+  </div>
+  <div class="note">跳过为 0 时<b>不渲染「跳过的 N 行」表格</b>，也不渲染空表格占位。<span class="acref">AC-15</span></div>
+</div>
+
+<div class="card">
+  <h2>状态 C · 全部跳过（同一份文件导第二次）<span class="state warn">零新增</span></h2>
+  <p class="hint">这是 <b>AC-16 的正向证据</b>：重复导入不改任何东西。</p>
+  <div class="drawer wide">
+    <div class="drawer-hd"><span class="t">导入完成</span><span class="muted" style="cursor:pointer">&#10005;</span></div>
+    <div class="drawer-bd">
+      <div class="stat">
+        <div class="box"><div class="n">3</div><div class="l">读取行数</div></div>
+        <div class="box"><div class="n">0</div><div class="l">新增用户</div></div>
+        <div class="box warn"><div class="n">3</div><div class="l">跳过</div></div>
+        <div class="box"><div class="n" style="font-size:16px;padding-top:8px">96 ms</div><div class="l">耗时</div></div>
+      </div>
+      <div class="alert"><span class="ico">&#9432;</span><div><b>没有新增任何用户</b>，因此没有初始密码需要显示。现有用户的姓名、角色、区域、部门<b>均未被修改</b>。</div></div>
+      <div class="exp-title" style="font-size:13px;font-weight:600;margin:0 0 10px">跳过的 3 行</div>
+      <table>
+        <thead><tr><th style="width:70px">Excel 行</th><th style="width:150px">用户名</th><th>原因</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">2</td><td class="mono">t260902a</td><td>用户名已存在</td></tr>
+          <tr><td class="mono">3</td><td class="mono">t260902b</td><td>用户名已存在</td></tr>
+          <tr><td class="mono">4</td><td class="mono">t260902c</td><td>用户名已存在</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="drawer-ft"><button class="btn primary">完成并刷新列表</button></div>
+  </div>
+  <div class="note">新增为 0 时<b>整个密码区（含警示条）不渲染</b> —— 出现一个空的「初始密码」表格会让人以为密码丢了。<span class="acref">AC-16</span></div>
+</div>
+
+<div class="card">
+  <h2>状态 D · 空文件（只有表头）<span class="state warn">边界</span></h2>
+  <div class="drawer wide">
+    <div class="drawer-hd"><span class="t">导入完成</span><span class="muted" style="cursor:pointer">&#10005;</span></div>
+    <div class="drawer-bd">
+      <div class="stat">
+        <div class="box"><div class="n">0</div><div class="l">读取行数</div></div>
+        <div class="box"><div class="n">0</div><div class="l">新增用户</div></div>
+        <div class="box"><div class="n">0</div><div class="l">跳过</div></div>
+        <div class="box"><div class="n" style="font-size:16px;padding-top:8px">41 ms</div><div class="l">耗时</div></div>
+      </div>
+      <div class="empty" style="padding:28px 0"><span class="ico">&#128196;</span>文件里没有数据行<div class="muted" style="font-size:12px;margin-top:6px">表头正确，但表头以下一行数据都没有</div></div>
+    </div>
+    <div class="drawer-ft"><button class="btn primary">完成</button></div>
+  </div>
+  <div class="note">🚫 <b>空文件不报 400、不报 500</b>，正常进结果页显示三个 0。<span class="acref">AC-24</span><br>
+  按钮文案是「完成」不是「完成并刷新列表」—— 什么都没变，没必要刷新。</div>
+</div>
+</div>
+</body>
+</html>

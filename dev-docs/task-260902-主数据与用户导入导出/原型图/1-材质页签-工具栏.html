@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>材质页签工具栏 · task-260902</title>
+<link rel="stylesheet" href="./_ant.css">
+<link rel="stylesheet" href="./_common.css">
+</head>
+<body>
+<div class="wrap">
+<a class="navback" href="./index.html">&larr; 返回原型导航</a>
+<h1>材质页签 · 工具栏（新增「导出材质库」）</h1>
+<p class="sub">主数据维护 &rarr; 材质页签。对应 <code>pages/config/MaterialRecipeManagement.tsx</code>。<b>本任务只动工具栏右组，表格与其余交互一律保持现状。</b></p>
+
+<div class="alert"><span class="ico">&#9432;</span><div>
+<b>本页是「现状 + 1 个按钮」的原型，不是重新设计。</b>
+工具栏两行结构、搜索框与两个过滤下拉、动作条（编辑/停用）的位置与文案<b>全部照抄当前实现</b>；
+本次唯一改动是在右组插入 <b>导出材质库</b>（绿色虚线框标注）。
+<br>⚠️ 与 <code>task-260901/原型图/1-材质管理页.html</code> 的差异不是本次引入的 —— 那份原型画的是「动作按钮上提」形态，实现后来演进成了「查询行 + 动作行」两行结构。本页以<b>实现现状</b>为基准。
+</div></div>
+
+<div class="card">
+  <h2>状态 A · 系统管理员，有数据（默认态）<span class="state">默认</span></h2>
+  <p class="hint">右组顺序：<b>刷新 &rarr; 导出材质库 &rarr; 导入材质库 &rarr; 下载导入模板 &rarr; 新建材质</b>。读取类动作在前，写入类在后。<span class="acref">AC-1</span></p>
+  <div class="toolbar" style="border-bottom:none;padding-bottom:0">
+    <span class="srch">搜索 材质编号 / 化学式 / 名称 / 元素 <span class="muted">&#128269;</span></span>
+    <span class="sel2">类型：全部 <span class="arw">&#9662;</span></span>
+    <span class="sel2">状态：全部 <span class="arw">&#9662;</span></span>
+    <span class="spacer"></span>
+    <button class="btn">&#8635; 刷新</button>
+    <span class="new"><button class="btn">&#8595; 导出材质库</button></span>
+    <button class="btn">&#8593; 导入材质库</button>
+    <button class="btn">&#8595; 下载导入模板</button>
+    <button class="btn primary">+ 新建材质</button>
+  </div>
+  <div class="actbar" style="margin-top:12px"><span class="muted" style="font-size:13px">未选中行 &nbsp;</span><button class="btn" disabled style="background:rgba(0,0,0,.04);border-color:#d9d9d9;color:rgba(0,0,0,.25)">编辑</button><button class="btn" disabled style="background:rgba(0,0,0,.04);border-color:#d9d9d9;color:rgba(0,0,0,.25)">停用</button></div>
+  <table>
+    <thead><tr><th style="width:40px"></th><th>材质编号</th><th>材质名 / 化学式</th><th>元素组成</th><th style="width:110px">含量配置</th><th style="width:130px">支持自定义含量</th><th style="width:80px">状态</th></tr></thead>
+    <tbody>
+      <tr><td><span class="ckbox"></span></td><td class="mono">00168</td><td><b>301/Cu/301</b></td><td><span class="tag blue">Cu</span> <span class="tag blue">301</span></td><td><span class="tag green">1 组</span></td><td><span class="tag grey">否</span></td><td><span class="tag green">启用</span></td></tr>
+      <tr><td><span class="ckbox"></span></td><td class="mono">00186</td><td><b>304/Cu/304</b></td><td><span class="tag blue">304</span> <span class="tag blue">Cu</span></td><td><span class="tag green">1 组</span></td><td><span class="tag grey">否</span></td><td><span class="tag green">启用</span></td></tr>
+      <tr><td><span class="ckbox"></span></td><td class="mono">00238</td><td><b>316L/B30</b></td><td><span class="tag blue">316</span> <span class="tag blue">Cu</span></td><td><span class="tag green">1 组</span></td><td><span class="tag grey">否</span></td><td><span class="tag green">启用</span></td></tr>
+      <tr><td><span class="ckbox"></span></td><td class="mono">00253</td><td><b>301</b></td><td><span class="tag blue">301</span></td><td><span class="tag green">1 组</span></td><td><span class="tag grey">否</span></td><td><span class="tag green">启用</span></td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>点击「导出材质库」后：</b>按钮进入 loading 态（转圈 + 文字不变 + 不可重复点击），完成后浏览器下载 <code>材质库_20260902_143005.xlsx</code>，页面不跳转、不弹窗、不刷新列表。<span class="acref">AC-27</span></div>
+</div>
+
+<div class="card">
+  <h2>状态 B · 销售经理 / 财务登录（非管理员）<span class="state err">权限</span></h2>
+  <p class="hint">「导出材质库」<b>整个按钮不渲染</b>——不是灰色禁用。理由：这不是「条件不满足暂时不能点」，而是「这个角色没有这项能力」，渲染成禁用态反而在暗示可以申请。<span class="acref">AC-2</span></p>
+  <div class="toolbar" style="border-bottom:none;padding-bottom:0">
+    <span class="srch">搜索 材质编号 / 化学式 / 名称 / 元素 <span class="muted">&#128269;</span></span>
+    <span class="sel2">类型：全部 <span class="arw">&#9662;</span></span>
+    <span class="sel2">状态：全部 <span class="arw">&#9662;</span></span>
+    <span class="spacer"></span>
+    <button class="btn">&#8635; 刷新</button>
+    <button class="btn">&#8593; 导入材质库</button>
+    <button class="btn">&#8595; 下载导入模板</button>
+    <button class="btn primary">+ 新建材质</button>
+  </div>
+  <div class="note">右组回到 4 个按钮，<b>其余一切不变</b>（导入、下载模板对非管理员仍开放，本次不收紧它们的权限——那是既有行为）。
+  后端同时兜底：该角色直接调 <code>GET /api/cpq/material-recipes/export</code> 返回 <b>403</b>。<span class="acref">AC-3</span></div>
+</div>
+
+<div class="card">
+  <h2>状态 C · 筛选结果为 0 条（空态 + 禁用态）<span class="state warn">空数据</span></h2>
+  <p class="hint">搜索框输入 <code>zzz不存在zzz</code>。「导出材质库」变<b>禁用</b>（这次是禁用，不是隐藏——管理员有这个能力，只是此刻没东西可导），hover 出 tooltip 说明原因。<span class="acref">AC-23</span></p>
+  <div class="toolbar" style="border-bottom:none;padding-bottom:0">
+    <span class="srch" style="color:rgba(0,0,0,.88)">zzz不存在zzz <span class="muted">&#10005;</span></span>
+    <span class="sel2">类型：全部 <span class="arw">&#9662;</span></span>
+    <span class="sel2">状态：全部 <span class="arw">&#9662;</span></span>
+    <span class="spacer"></span>
+    <button class="btn">&#8635; 刷新</button>
+    <span class="dis new"><button class="btn">&#8595; 导出材质库</button><span class="tip">当前筛选结果为 0 条，无可导出数据</span></span>
+    <button class="btn">&#8593; 导入材质库</button>
+    <button class="btn">&#8595; 下载导入模板</button>
+    <button class="btn primary">+ 新建材质</button>
+  </div>
+  <div class="actbar" style="margin-top:12px"><span class="muted" style="font-size:13px">未选中行 &nbsp;</span><button class="btn" disabled style="background:rgba(0,0,0,.04);border-color:#d9d9d9;color:rgba(0,0,0,.25)">编辑</button><button class="btn" disabled style="background:rgba(0,0,0,.04);border-color:#d9d9d9;color:rgba(0,0,0,.25)">停用</button></div>
+  <div class="empty"><span class="ico">&#128230;</span>暂无数据</div>
+  <div class="note">👆 <b>把鼠标移到灰掉的「导出材质库」上可以看到 tooltip</b>（本原型可交互）。<br>
+  文案固定为「<b>当前筛选结果为 0 条，无可导出数据</b>」，三个页面（材质/工序/用户）共用同一句，不要各写各的。</div>
+</div>
+
+<div class="card">
+  <h2>状态 D · 导出文件长什么样<span class="state ok">交付物</span></h2>
+  <p class="hint">这不是页面，是<b>下载下来的 xlsx</b>。前 4 列＝导入模板（可直接回导），第 5 列起是只读参考列。<span class="acref">AC-4 / AC-5 / AC-6</span></p>
+  <div class="mx">
+  <table>
+    <thead><tr>
+      <th>材质</th><th>组号</th><th>元素符号</th><th class="el">含量</th>
+      <th style="border-left:2px solid #d9d9d9">材质编号</th><th>含量配置编号</th><th>状态</th><th>含量类型</th>
+    </tr></thead>
+    <tbody>
+      <tr><td><b>301/Cu/301</b></td><td class="mono">1</td><td class="mono">Cu</td><td class="num"><b>0.84</b></td><td class="mono" style="border-left:2px solid #d9d9d9;background:#fafafa">00168</td><td class="mono" style="background:#fafafa">00168-01</td><td style="background:#fafafa">启用</td><td style="background:#fafafa">标准锁定</td></tr>
+      <tr><td><b>301/Cu/301</b></td><td class="mono">1</td><td class="mono">301</td><td class="num"><b>0.16</b></td><td class="mono" style="border-left:2px solid #d9d9d9;background:#fafafa">00168</td><td class="mono" style="background:#fafafa">00168-01</td><td style="background:#fafafa">启用</td><td style="background:#fafafa">标准锁定</td></tr>
+      <tr><td><b>304/Cu/304</b></td><td class="mono">1</td><td class="mono">304</td><td class="num">0.364</td><td class="mono" style="border-left:2px solid #d9d9d9;background:#fafafa">00186</td><td class="mono" style="background:#fafafa">00186-01</td><td style="background:#fafafa">启用</td><td style="background:#fafafa">标准锁定</td></tr>
+      <tr><td><b>304/Cu/304</b></td><td class="mono">1</td><td class="mono">Cu</td><td class="num">0.636</td><td class="mono" style="border-left:2px solid #d9d9d9;background:#fafafa">00186</td><td class="mono" style="background:#fafafa">00186-01</td><td style="background:#fafafa">启用</td><td style="background:#fafafa">标准锁定</td></tr>
+      <tr><td><b>301</b></td><td class="mono">1</td><td class="mono">301</td><td class="num">1</td><td class="mono" style="border-left:2px solid #d9d9d9;background:#fafafa">00253</td><td class="mono" style="background:#fafafa">00253-01</td><td style="background:#fafafa">启用</td><td style="background:#fafafa">标准锁定</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="note">
+  🚨 <b>含量列必须是 0–1 小数，不是库里的百分数。</b>库中 <code>301/Cu/301</code> 存的是 <code>default_pct = 84</code> 和 <code>16</code>，
+  导出必须写 <b>0.84</b> / <b>0.16</b>。因为导入端 <code>pctInRange(v, 1)</code> 只收 <code>(0, 1]</code> ——
+  照搬库值导出的文件，回导时<b>每一行</b>都会被判「含量非法」，这个功能就白做了。<span class="acref">AC-5</span><br>
+  <b>只读列为什么只能放第 5 列起：</b><code>MaterialRecipeImportService.validateHeader</code> 按<b>位置</b>逐列比对前 4 列，
+  在前面插一列 → 400 <code>IMPORT_HEADER_INVALID</code>，整个文件读不进去。<span class="acref">AC-4 / AC-6</span><br>
+  <b>组号：</b>取 <code>material_recipe_config.seq</code>。它在导入侧只是「文件内给同一材质分组」的标签、不落库，所以导出时用 seq 填回去即可，回导后仍是同一组。
+  </div>
+</div>
+</div>
+</body>
+</html>

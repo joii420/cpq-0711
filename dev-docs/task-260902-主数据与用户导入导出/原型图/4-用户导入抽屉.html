@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>用户导入抽屉 · task-260902</title>
+<link rel="stylesheet" href="./_ant.css">
+<link rel="stylesheet" href="./_common.css">
+</head>
+<body>
+<div class="wrap">
+<a class="navback" href="./index.html">&larr; 返回原型导航</a>
+<h1>导入用户 · 抽屉</h1>
+<p class="sub">从用户管理页工具栏「导入用户」打开。<b>形态与「导入材质库」抽屉保持一致</b>（说明区 &rarr; 上传区 &rarr; 下载模板 &rarr; 底部动作），不另发明一套。</p>
+
+<div class="alert"><span class="ico">&#9432;</span><div>
+按 <code>frontend.md &sect;1.1</code>：<b>用抽屉不用弹窗</b>。宽度取 <code>640px</code>，与材质导入抽屉同宽。
+</div></div>
+
+<div class="card">
+  <h2>状态 A · 打开时（未选文件）<span class="state">默认</span></h2>
+  <div class="drawer">
+    <div class="drawer-hd"><span class="t">导入用户</span><span class="muted" style="cursor:pointer">&#10005;</span></div>
+    <div class="drawer-bd">
+      <div class="alert"><span class="ico">&#9432;</span><div>
+        <b>模板列（6 列，单个工作表）：</b>用户名 &nbsp;|&nbsp; 姓名 &nbsp;|&nbsp; 邮箱 &nbsp;|&nbsp; 角色 &nbsp;|&nbsp; 区域 &nbsp;|&nbsp; 部门<br>
+        &bull; <b>只新增，不修改</b> —— 用户名已存在的行整行跳过，不会覆盖现有用户的姓名/角色/部门<br>
+        &bull; <b>不填密码</b> —— 系统为每个新用户生成一个随机初始密码，导入完成后在结果页统一显示<br>
+        &bull; <b>角色</b>填：系统管理员 / 销售经理 / 销售代表 / 财务（也接受 <code>SYSTEM_ADMIN</code> 等英文枚举）<br>
+        &bull; <b>区域 / 部门</b>可留空；填了但系统里没有该名称时，该行<b>仍会创建</b>，只是这两个字段留空并在报告里提示
+      </div></div>
+      <div class="upl">
+        <span class="ico">&#8679;</span>
+        <div class="t1">点击或拖拽 .xlsx 文件到此处</div>
+        <div class="t2">仅支持 .xlsx，单文件最大 20 MB</div>
+      </div>
+      <div style="margin-top:12px"><button class="btn">&#8595; 下载导入模板</button><span class="acref">AC-14</span></div>
+      <div class="note"><b>为什么不做「导入前预览再确认」：</b>本次语义是「只新增、重复跳过」——
+      最坏情况是多出几个可以停用的账号，<b>不会破坏任何现有数据</b>，多一轮确认换不来对应的安全收益。
+      与材质/工序导入的交互也保持一致（都是直接执行 + 报告）。<span class="acref">需求文档 &sect;2「不做什么」</span></div>
+    </div>
+    <div class="drawer-ft"><button class="btn">取消</button><span class="dis"><button class="btn primary">开始导入</button><span class="tip">请先选择要导入的文件</span></span></div>
+  </div>
+  <div class="note">👆 <b>「开始导入」在未选文件时禁用</b>，hover 显示原因（本原型可交互）。<span class="acref">frontend.md &sect;1.2</span></div>
+</div>
+
+<div class="card">
+  <h2>状态 B · 已选文件（可提交）<span class="state ok">就绪</span></h2>
+  <div class="drawer">
+    <div class="drawer-hd"><span class="t">导入用户</span><span class="muted" style="cursor:pointer">&#10005;</span></div>
+    <div class="drawer-bd">
+      <div class="upl" style="padding:18px 16px"><span class="ico" style="font-size:24px;margin-bottom:6px">&#8679;</span><div class="t2">点击或拖拽 .xlsx 文件到此处</div></div>
+      <div class="file"><span>&#128196;</span><span class="nm">新员工名单-20260902.xlsx</span><span class="muted">18.4 KB</span><span class="btn link" style="color:#ff4d4f">&#10005;</span></div>
+      <div style="margin-top:12px"><button class="btn">&#8595; 下载导入模板</button></div>
+    </div>
+    <div class="drawer-ft"><button class="btn">取消</button><button class="btn primary">开始导入</button></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>状态 C · 导入中<span class="state warn">进行中</span></h2>
+  <div class="drawer">
+    <div class="drawer-hd"><span class="t">导入用户</span><span class="muted" style="cursor:pointer;opacity:.35">&#10005;</span></div>
+    <div class="drawer-bd">
+      <div class="file"><span>&#128196;</span><span class="nm">新员工名单-20260902.xlsx</span><span class="muted">18.4 KB</span></div>
+      <div style="text-align:center;padding:28px 0;color:rgba(0,0,0,.45)">
+        <div style="font-size:24px;color:#1677ff">&#9696;</div>
+        <div style="margin-top:8px">正在导入，请勿关闭此窗口&hellip;</div>
+      </div>
+    </div>
+    <div class="drawer-ft"><span class="dis"><button class="btn">取消</button><span class="tip">导入进行中，无法取消</span></span><span class="dis"><button class="btn primary">导入中&hellip;</button><span class="tip">正在处理，请稍候</span></span></div>
+  </div>
+  <div class="note">导入中：<b>关闭按钮、取消按钮、遮罩点击全部锁死</b>（<code>maskClosable=false</code>），避免用户中途关掉后不知道到底导没导进去。</div>
+</div>
+
+<div class="card">
+  <h2>状态 D · 文件本身不可用（400）<span class="state err">错误</span></h2>
+  <p class="hint">三种情形共用同一个错误区：非 .xlsx / 表头不符 / 文件损坏。<b>错误留在抽屉里，不跳结果页</b>——因为一行都没处理。<span class="acref">AC-24</span></p>
+  <div class="drawer">
+    <div class="drawer-hd"><span class="t">导入用户</span><span class="muted" style="cursor:pointer">&#10005;</span></div>
+    <div class="drawer-bd">
+      <div class="alert err"><span class="ico">&#10005;</span><div>
+        <b>表头不符合模板要求，请下载新模板</b><br>
+        <span class="muted">期望的前 6 列：用户名 | 姓名 | 邮箱 | 角色 | 区域 | 部门<br>
+        实际读到：账号 | 名字 | 邮件 | 角色 | 区域 | 部门</span>
+      </div></div>
+      <div class="file"><span>&#128196;</span><span class="nm">旧版名单.xlsx</span><span class="muted">12.1 KB</span><span class="btn link" style="color:#ff4d4f">&#10005;</span></div>
+      <div style="margin-top:12px"><button class="btn">&#8595; 下载导入模板</button></div>
+    </div>
+    <div class="drawer-ft"><button class="btn">取消</button><span class="dis"><button class="btn primary">开始导入</button><span class="tip">请先修正文件后重新选择</span></span></div>
+  </div>
+  <div class="note">另两句文案：非 xlsx &rarr;「<b>请上传 .xlsx 文件</b>」；空文件（只有表头 0 行数据）<b>不算错误</b>，正常进结果页显示「新增 0 条，跳过 0 条」。<span class="acref">AC-24</span></div>
+</div>
+</div>
+</body>
+</html>

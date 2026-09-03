@@ -1,0 +1,142 @@
+# 前端任务分解 · task-260902
+
+> 认领人：`cpq-frontend` 子代理。视觉基准 = `原型图/`（**1:1 还原**），验收标准见 `需求文档.md §3`。
+> 🚫 **本次不改任何既有交互**：三个页面的表格、筛选、既有按钮、既有抽屉一律不动。只加按钮 + 加一个抽屉。
+
+---
+
+## 全局约定（三个导出按钮共用，写一遍，三处复用）
+
+### ① 下载的实现方式：照抄现有范式
+
+`MaterialRecipeManagement.tsx:146-158` 已有完整范式：`service` 返回 `Blob` → `URL.createObjectURL` → 造 `<a download>` → click → `revokeObjectURL`。
+**照抄，不要发明新写法。**
+
+### ② 🚨 blob 下载的错误处理（现有范式的坑，必须补上）
+
+现有 `handleDownloadTemplate` 的 catch 是**静默**的。而本次导出端点会返 **403**（非管理员直接调）。
+`responseType: 'blob'` 时 axios 会把错误 JSON 也当成 Blob 交给你 ⇒ **`catch` 里拿不到 message，界面上什么都不发生**，用户以为按钮坏了。
+
+**必须做**：下载前先判断返回的 Blob 类型 —— 若 `blob.type` 是 `application/json`，说明是错误响应，`await blob.text()` 解析出 `message` 后 `message.error(...)` 提示，**不要触发下载**。
+
+### ③ 文件名由前端决定
+
+后端 `Content-Disposition` 是 ASCII，前端 `a.download` 才是用户看到的名字。统一格式：
+
+| 页面 | 文件名 |
+|---|---|
+| 材质 | `材质库_YYYYMMDD_HHmmss.xlsx` |
+| 工序 | `工序主数据_YYYYMMDD_HHmmss.xlsx` |
+| 用户 | `用户列表_YYYYMMDD_HHmmss.xlsx` |
+
+### ④ 按钮的两种"不可用"，不要混
+
+| 情形 | 表现 | 理由 |
+|---|---|---|
+| **角色没权限**（材质/工序，非 `SYSTEM_ADMIN`） | **整个按钮不渲染** | 禁用态在暗示"满足条件就能点"，但角色不会变 |
+| **筛选结果 0 条**（三个页面都是） | **禁用 + tooltip**：`当前筛选结果为 0 条，无可导出数据` | 管理员有这个能力，只是此刻没东西可导 |
+
+三页 tooltip 文案**逐字相同**，抽成共用常量。
+角色取 `useAuthStore((s) => s.user)`，判 `user?.role === 'SYSTEM_ADMIN'`。
+
+---
+
+## F-1 · 材质页签「导出材质库」 服务的 AC：AC-1、AC-2、AC-7、AC-8、AC-22、AC-23、AC-27
+
+| 项 | 内容 |
+|---|---|
+| 文件 | `pages/config/MaterialRecipeManagement.tsx`、`services/materialRecipeService.ts` |
+| 原型 | `原型图/1-材质页签-工具栏.html` 状态 A / B / C |
+| 位置 | 工具栏**右组**，顺序 `刷新 → 导出材质库 → 导入材质库 → 下载导入模板 → 新建材质` |
+| 图标 | `DownloadOutlined`（与「下载导入模板」同款） |
+
+🚨 **导出参数必须与页面当前筛选逐字对应**（AC-7 / AC-22 的命门）：
+
+```
+keyword    ← 搜索框里 已生效 的关键字（不是输入框里还没回车的草稿）
+recipeType ← typeFilter
+status     ← statusFilter
+```
+
+⚠️ **`keyword` 取哪个变量要看清楚**：页面里 `keyword` state 是**输入框当前值**，真正生效的是 `onSearch` 时传给 `refresh()` 的那个值。
+两者在"输入了但没回车"时**不一样**。导出必须用**已生效**的那个，否则会出现「列表显示 12 条、导出 3 条」。
+⇒ 建议加一个 `appliedKeyword` state 记录最后一次生效值，导出与 `refresh` 都读它。
+
+---
+
+## F-2 · 工序页签「导出工序」 服务的 AC：AC-9、AC-11、AC-23
+
+| 项 | 内容 |
+|---|---|
+| 文件 | `pages/master-data/V6ProcessCrudTab.tsx` + 对应 service |
+| 原型 | `原型图/2-工序页签-工具栏.html` |
+| 位置 | 右组，`刷新 → 导出工序 → 导入工序 → 新增工序` |
+| 参数 | `keyword` / `isOutsource` / `processCategory` ← 页面三个筛选控件的**当前生效值** |
+
+---
+
+## F-3 · 用户列表「导出用户」 服务的 AC：AC-12、AC-13、AC-23
+
+| 项 | 内容 |
+|---|---|
+| 文件 | `pages/system/UserManagement.tsx`、`services/userService.ts` |
+| 原型 | `原型图/3-用户列表.html` 状态 A / B |
+| 位置 | 右组，`导出用户 → 导入用户 → 新增用户` |
+| 参数 | `keyword` / `role` / `status` ← 取 `params` state 里的对应字段（该页筛选本就受控且已生效，无 F-1 那个坑） |
+
+⚠️ **这一页不做角色判断**（整页已限 `SYSTEM_ADMIN`），但 0 条禁用规则照常。
+
+---
+
+## F-4 · 用户导入抽屉 服务的 AC：AC-14、AC-24
+
+| 项 | 内容 |
+|---|---|
+| 文件 | `pages/system/UserImportDrawer.tsx`（**新建**） |
+| 原型 | `原型图/4-用户导入抽屉.html` 状态 A / B / C / D |
+| 参照 | `pages/master-data/ProcessMasterImportDrawer.tsx`（同形态，照它的结构写） |
+
+- 宽度 640，`maskClosable={false}`。
+- **导入中**：关闭按钮、取消按钮、遮罩全部锁死（原型状态 C）。
+- **未选文件**：「开始导入」禁用 + tooltip `请先选择要导入的文件`。
+- **400 错误**：错误留在抽屉内的红色 alert 区，**不跳结果页**（原型状态 D）。三句文案见原型。
+- 「下载导入模板」按钮走 B-4，同样要处理 ② 的 blob 错误坑。
+
+---
+
+## F-5 · 用户导入结果报告 服务的 AC：AC-15、AC-16、AC-17、AC-18、AC-25
+
+| 项 | 内容 |
+|---|---|
+| 文件 | 同 `UserImportDrawer.tsx`（**同一个抽屉换内容**，不新开弹层） |
+| 原型 | `原型图/5-用户导入结果.html` 状态 A / B / C / D |
+
+🚨 **这是全任务唯一的敏感界面**，四条硬要求：
+
+1. **密码警示条必须显示**：「以下初始密码只显示这一次，请立即复制并转交给对应同事」+ 「忘了可以用重置密码重新生成」+「首登强制改密」。
+2. **`createdCount === 0` 时，整个密码区（含警示条与表格）不渲染** —— 空的密码表格会让人以为密码丢了（原型状态 C）。
+3. **`skippedCount === 0` 时，不渲染「跳过的 N 行」表格**，也不渲染空表格占位（原型状态 B）。
+4. **「跳过」与「提示」分开渲染**：跳过 = 没创建（独立表格）；提示 = 创建成功但某字段没落上（挂在成功行最后一列）。🚫 不许混在一起。
+
+- 「复制全部密码」按钮：复制为 `用户名\t密码` 两列纯文本。
+- 底部按钮：有新增 → 「完成并刷新列表」（关闭并 `fetchData()`）；全 0 → 「完成」（只关闭）。
+
+---
+
+## 前端自检（`frontend.md`，缺一不可，写进汇报）
+
+```bash
+cd cpq-frontend
+npx tsc --noEmit                 # 期望 0 error
+npm run build                    # 期望 built 成功
+curl -s --noproxy '*' -o /dev/null -w '%{http_code}\n' http://localhost:5174/    # 期望 200
+```
+
+⚠️ dev server 5174 是**全会话共享**的：**先探端口，已在跑就复用，不要重复起**（`CLAUDE.md`）。
+⚠️ 在 worktree 里跑前端自检要先软链 `node_modules`（见记忆「worktree前端自检坑」）。
+
+## 汇报要求
+
+- 每个 F-x 报「改了哪些文件 + 服务的 AC + 自检输出原文 + **与原型的逐屏比对结果**」。
+- 与原型有偏差时**逐条列出**，只允许「组件库能力所限的等价实现」这一类，其余一律改回来。
+- 🚫 不要自己判定 AC 通过 —— AC 由主线亲验。
