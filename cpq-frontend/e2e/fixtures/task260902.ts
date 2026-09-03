@@ -141,11 +141,33 @@ export async function expectNoLoadingPlaceholder(page: Page, scope = '.ant-drawe
   await expect(loading, '🚫 空态区域出现了「加载中…」永久占位（AP-31 族）').toHaveCount(0);
 }
 
-/** 禁用按钮的 tooltip 文案（§1.2：禁用必须可见并说明原因）。 */
+/**
+ * 读禁用按钮的 tooltip 文案（§1.2：禁用必须可见并说明原因）。
+ *
+ * <p>🚨 <b>antd 的禁用按钮本身不触发鼠标事件</b>，tooltip 挂在外层包裹元素上 ⇒
+ * 直接 hover 按钮读到的是空字符串。空字符串会让「产品没写原因」和「我没读到」
+ * 长得一模一样 —— 又一个观测手段失灵伪装成产品缺陷的形态。
+ * ⇒ 三路依次尝试：外层包裹 → 按钮本身 → 鼠标坐标移动；仍为空才认为真的没有 tooltip。
+ */
 export async function tooltipOf(page: Page, button: ReturnType<Page['locator']>): Promise<string> {
-  await button.hover({ force: true });
-  await page.waitForTimeout(600);
-  return (await page.locator('.ant-tooltip-inner').last().innerText().catch(() => '')).trim();
+  const read = async () =>
+    (await page.locator('.ant-tooltip-inner').last().innerText().catch(() => '')).trim();
+
+  // 🚨 每个 hover 都必须带 timeout：不传时它继承**整条用例的超时**（本项目设成了 180s），
+  //    一次 hover 不成功就把用例卡满 3 分钟，最后以「Test timeout」收场 ——
+  //    失败点落在毫不相干的地方，根因完全不可见（AC-2/AC-14 就这么各挂了 3 分钟）。
+  for (const target of [button.locator('xpath=..'), button]) {
+    await target.hover({ force: true, timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(700);
+    const t = await read();
+    if (t) return t;
+  }
+  const box = await button.boundingBox().catch(() => null);
+  if (box) {
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.waitForTimeout(800);
+  }
+  return await read();
 }
 
 // ─────────────────────────── 步骤操作（按原型的可见文案定位）───────────────────────────
@@ -246,9 +268,23 @@ export async function addMaterial(page: Page, recipeCode: string, ratio: string)
 
 
 /** 打开材质选择器（不选，只打开）—— AC-17 / AC-18 / AC-18b 用。 */
-export async function openMaterialPicker(page: any) {
-  await drawer(page).getByRole('button', { name: /添加材质/ }).first().click();
-  await page.waitForTimeout(700);
+export async function openMaterialPicker(page: Page) {
+  // 🚨 空态入口叫「+ 添加第一个材质」，非空态才是「+ 添加材质」——两个都要试，
+  //    并且**验证选择器真的开了**（出现搜索框），🚫 不许「点了就当开了」。
+  const opened = async () =>
+    (await drawer(page).getByPlaceholder(/搜索|材质编号|材质名/).count()) > 0;
+  for (const name of [/添加第一个材质/, /添加材质/, /添加第一个材质/]) {
+    if (await opened()) return;
+    const btn = drawer(page).getByRole('button', { name }).first();
+    if (await btn.count() === 0) continue;
+    await btn.click({ force: true }).catch(() => {});
+    await page.waitForTimeout(900);
+  }
+  if (await opened()) return;
+  const txt = (await drawer(page).innerText().catch(() => '(取不到)')).replace(/\n+/g, ' | ').slice(0, 800);
+  throw new Error(
+    '[夹具失败·选择器，非产品缺陷] 点了「+ 添加材质 / + 添加第一个材质」后，材质选择器没有出现。\n'
+    + `当前抽屉可见文本：${txt}`);
 }
 
 /** 材质选择器里输入关键词并等过滤结果稳定，返回可见行数。 */
@@ -264,18 +300,40 @@ export async function searchInPicker(page: any, keyword: string): Promise<number
  * 「+ 添加工序」→ 搜索 → 选择，按给定顺序依次加入**有序列表**（允许重复）。
  * ⚠️ 顺序即工艺顺序：它影响落库 `unit_price.seq_no` 与显示，**不影响料号复用判定**（A0 裁决）。
  */
-export async function addProcesses(page: any, processNos: string[]) {
+export async function addProcesses(page: Page, processNos: string[]) {
   for (const no of processNos) {
-    await drawer(page).getByRole('button', { name: /添加工序/ }).first().click();
-    await page.waitForTimeout(500);
-    const p = page.locator('.ant-drawer, .ant-modal').last();
-    await p.getByPlaceholder(/搜索|工序编号|工序名/).first().fill(no);
-    await page.waitForTimeout(900);
-    await p.locator('tr, li, .picker-row').filter({ hasText: no }).first()
-      .getByRole('button', { name: /选\s*择|添加/ }).first().click();
-    await page.waitForTimeout(600);
+    // 打开工序选择器（空态入口是「+ 添加第一个工序」），并验证真的开了
+    const opened = async () =>
+      (await drawer(page).getByPlaceholder(/搜索|工序编号|工序名/).count()) > 0;
+    for (const name of [/添加第一个工序/, /添加工序/, /添加第一个工序/]) {
+      if (await opened()) break;
+      const btn = drawer(page).getByRole('button', { name }).first();
+      if (await btn.count() === 0) continue;
+      await btn.click({ force: true }).catch(() => {});
+      await page.waitForTimeout(900);
+    }
+    if (!await opened()) {
+      const txt = (await drawer(page).innerText().catch(() => '')).replace(/\n+/g, ' | ').slice(0, 700);
+      throw new Error(`[夹具失败·选择器，非产品缺陷] 点了「+ 添加工序」后工序选择器没出现。\n抽屉现场：${txt}`);
+    }
+
+    await drawer(page).getByPlaceholder(/搜索|工序编号|工序名/).first().fill(no);
+    await page.waitForTimeout(1100);
+
+    const row = drawer(page).locator('tr, li, .picker-row, [class*="row"]')
+      .filter({ hasText: no }).first();
+    if (await row.count() === 0) {
+      const txt = (await drawer(page).innerText().catch(() => '')).replace(/\n+/g, ' | ').slice(0, 700);
+      throw new Error(`[夹具失败·选择器，非产品缺陷] 工序选择器里搜「${no}」没命中任何行。\n抽屉现场：${txt}`);
+    }
+    const pick = row.getByRole('button', { name: /选\s*择|添\s*加/ }).first();
+    if (await pick.count() > 0) await pick.click({ force: true, timeout: 5000 }).catch(() => {});
+    else await row.click({ force: true, timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(800);
+    console.log(`[夹具] 已加工序 ${no}`);
   }
 }
+
 
 /** 表单里有这个字段就选，没有就跳过（并打印，便于事后判断夹具走了哪条路）。 */
 export async function selectIfPresent(page: Page, label: string, search: string) {
@@ -296,10 +354,17 @@ export async function selectIfPresent(page: Page, label: string, search: string)
 /**
  * 断言 Step1 **真的能过** —— 判据是「下一步」变可点，而不是某个控件长什么样。
  *
- * <p>🚨 <b>为什么判据是按钮而不是分类控件</b>：分类是客户 onChange 触发的 effect 异步填的
- * （`QuotationCreateForm` 的合并 patch，依赖 `[customerName, lockedCategoryId, readOnly]`），
- * 定时读它必然踩竞态 —— 上一版就是在固定时刻读到空值，把「还没填完」判成了「分类坏了」。
- * 我要的前置条件本来就只是「能不能继续」，那就直接等这件事发生。
+ * <p>🚨 <b>为什么判据是按钮而不是分类控件</b>（归因经两次更正，写全免得后人只学到一半）：
+ * <ol>
+ *   <li>第一版在**填名称之前**就读分类 ⇒ 把「必填项还没填完」判成「分类坏了」（自造假故障）；</li>
+ *   <li>第二版怀疑是异步竞态。<b>但主线实机复核推翻了它</b>：罗克韦尔的分类<b>一直正常显示</b>
+ *       「默认分类」，按钮禁用的真实原因写在 `title="请先填写产品分类和报价模板"` 里 ——
+ *       是<b>报价模板没选</b>。之所以三次探测都读不到分类值，是<b>用 antd 内部类名做选择器失灵</b>
+ *       （还有一次把输出截断了，而目标在更后面）。</li>
+ * </ol>
+ * ⇒ 结论：<b>根因是「读中间态的手段不可靠」，不只是时机</b>。
+ * 🚫 <b>所以不要以为加个 `waitForTimeout` 就够</b> —— 真正管用的是<b>不去读中间态</b>：
+ * 判据直接取「下一步能不能点」这个最终事实，读不到中间态也就不会被它骗。
  *
  * <p>只有在**等不到**的时候才去读控件做归因，并把三类可能一次列全，
  * 让读报告的人不用再猜（🚫 失败信息里不写「可能有问题」这种话）。
@@ -446,8 +511,11 @@ export async function clickInDrawer(page: Page, what: string, matcher: RegExp | 
  * 仍不变才判死并打印现场 —— 🚫 不许「点了就当开了」然后让后续断言去背锅。
  */
 export async function openPartTypePicker(page: Page) {
+  // 🚨 就绪判据用**弹层标题**，不用「零件」二字：加完第一个配件后，配件卡片摘要里
+  //    就带着「零件」（如「触点 零件新建 · 总重 10 g」）⇒ 第二次调用会误判为「已经开了」，
+  //    于是根本没点开选择器，失败点落到后面找不到「外购件」（AC-11 就这么挂的）。
   const appeared = async () =>
-    await drawer(page).getByText(/^零件$/).first().isVisible().catch(() => false);
+    await drawer(page).getByText(/第\s*1\s*步：选择类型/).first().isVisible().catch(() => false);
 
   for (const name of [/添加第一个配件/, /添加配件/, /添加第一个配件/]) {
     if (await appeared()) return;
@@ -552,4 +620,80 @@ export async function advanceUntil(
   const txt = (await drawer(page).innerText().catch(() => '(取不到)')).replace(/\n+/g, ' | ').slice(0, 900);
   throw new Error(
     `[夹具失败·选择器，非产品缺陷] 连点「下一步」${maxSteps} 次后仍未到达「${what}」。\n当前抽屉可见文本：${txt}`);
+}
+
+/**
+ * 点「添加到报价单」提交，并**等到提交请求真的发出**。返回该响应。
+ *
+ * <p>🚨 <b>凡是要断言落库结果的用例，都必须走这个函数</b>（主线纪律）：
+ * 看库分不出「提交失败」和「没点到提交」—— 两者都表现为「0 行」。
+ * 本轮 AC-25 就靠这条阳性对照拦下了一次险些误报的 P0：当时
+ * 「观测到的提交请求 = []」，真因是提交按钮叫「添加到报价单」而不是「确认并添加」。
+ */
+export async function submitToQuotation(page: Page, tag: string) {
+  const btnTexts = (await drawer(page).getByRole('button').allInnerTexts())
+    .map((t) => t.replace(/\s+/g, ''));
+  console.log(`[${tag}] 提交前按钮 =`, JSON.stringify(btnTexts));
+
+  const submit = drawer(page)
+    .getByRole('button', { name: /添加到报价单|确认并添加|确认加入/ }).last();
+  await expect(submit, `${tag}：底部应有「添加到报价单」按钮`).toBeVisible({ timeout: 10000 });
+  await expect(submit, `${tag}：提交按钮应可点`).toBeEnabled();
+
+  const [resp] = await Promise.all([
+    page.waitForResponse(
+      (r) => r.url().includes('/configure-product/quotations/') && r.request().method() === 'POST',
+      { timeout: 25000 },
+    ).catch(() => null),
+    submit.click(),
+  ]);
+  if (!resp) {
+    const after = (await drawer(page).innerText().catch(() => '(抽屉已关闭)'))
+      .replace(/\n+/g, ' | ').slice(0, 600);
+    throw new Error(
+      `[${tag} 阳性对照失败] 点了提交按钮后 25s 内没有观测到 `
+      + 'POST /configure-product/quotations/ ⇒ **按钮没点到**（夹具问题），'
+      + '此时任何「落库 0 行」都不能解释成产品缺陷。\n'
+      + `按钮清单=${JSON.stringify(btnTexts)}\n点击后现场=${after}`);
+  }
+  const body = await resp.text().catch(() => '');
+  console.log(`[${tag}] 提交响应 ${resp.status()} ${body.slice(0, 300)}`);
+  await page.waitForTimeout(2000);
+  return resp;
+}
+
+/**
+ * 加一个外购件配件：打开类型选择 → 选「外购件」→ 下一步 → 选料号 → 确定。
+ *
+ * <p>🚨 与零件同构：「添加配件」是**多步子流程**，选完类型必须再点「下一步」。
+ * 每一步都验证状态真的变了，失败时打印抽屉现场（🚫 不许「点了就当成了」）。
+ */
+export async function addOutsourcedPart(page: Page, partNo: string) {
+  await openPartTypePicker(page);
+  await clickInDrawer(page, '外购件', /^外购件$/);
+  await page.waitForTimeout(400);
+  // 判据用结构性事实：出现了搜索框或该料号本身，而不是「外购件」三个字
+  //（卡片说明文案里就含「外购件」，用文本判会在上一步误判为已到位）
+  await advanceUntil(page, async () =>
+    (await drawer(page).getByPlaceholder(/搜索|料号|品名/).count()) > 0
+    || (await drawer(page).getByText(partNo).count()) > 0,
+    '外购件选择列表');
+
+  const kw = drawer(page).getByPlaceholder(/搜索|料号|品名/).first();
+  if (await kw.count() > 0) { await kw.fill(partNo); await page.waitForTimeout(1000); }
+
+  const row = drawer(page).locator('tr, li, .picker-row, [class*="row"]')
+    .filter({ hasText: partNo }).first();
+  if (await row.count() === 0) {
+    const txt = (await drawer(page).innerText().catch(() => '')).replace(/\n+/g, ' | ').slice(0, 700);
+    throw new Error(`[夹具失败·选择器，非产品缺陷] 外购件列表里找不到 ${partNo}。\n抽屉现场：${txt}`);
+  }
+  const pick = row.getByRole('button', { name: /选\s*择|添加|确\s*定/ }).first();
+  if (await pick.count() > 0) await pick.click({ force: true }).catch(() => {});
+  else await row.click({ force: true }).catch(() => {});
+  await page.waitForTimeout(800);
+
+  const ok = drawer(page).getByRole('button', { name: /确\s*定/ }).last();
+  if (await ok.count() > 0) { await ok.click({ force: true }).catch(() => {}); await page.waitForTimeout(800); }
+  console.log(`[夹具] 已加外购件 ${partNo}`);
 }

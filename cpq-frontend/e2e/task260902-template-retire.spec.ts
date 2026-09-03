@@ -233,7 +233,7 @@ async function expandConfigCenter(page: Page): Promise<boolean> {
   for (let i = 1; i <= 4; i++) {
     if (await visible()) { console.log(`[AC-26] 子菜单已展开（第 ${i} 轮前）`); return true; }
     // 先试 hover（popup 模式），再试 click（inline 模式）
-    await title.hover({ force: true }).catch(() => {});
+    await title.hover({ force: true, timeout: 3000 }).catch(() => {});
     await page.waitForTimeout(600);
     if (await visible()) { console.log(`[AC-26] hover 展开成功（第 ${i} 轮）`); return true; }
     await title.click({ force: true, timeout: 3000 }).catch(() => {});

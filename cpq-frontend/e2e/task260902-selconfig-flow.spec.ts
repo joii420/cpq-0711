@@ -12,6 +12,7 @@ import { loginAsAdmin, isBackendUp } from './fixtures/auth';
 import {
   shot, query, drawer, openSelConfigDrawer, tooltipOf, EVIDENCE_DIR,
   fillStep1, nextStep, startNewPart, addMaterial, addProcesses, pickQualifiedCustomer,
+  submitToQuotation, addOutsourcedPart,
 } from './fixtures/task260902';
 
 let backendUp = false;
@@ -31,6 +32,7 @@ test.describe('task-260902 选配主流程', () => {
    */
   test('AC-1 未占用的客户产品编号 → 绿色提示 + 「下一步」可点', async ({ page }) => {
     test.skip(!backendUp, '后端未启动');
+    test.setTimeout(180_000);   // 建单流程本身约 25s，默认 30s 会把用例从中间掐断
     await loginAsAdmin(page);
     await openSelConfigDrawer(page, 'ac1');
 
@@ -57,6 +59,7 @@ test.describe('task-260902 选配主流程', () => {
    */
   test('AC-2 已占用的编号 → 挡住 + 指路文案 + 跳转入口', async ({ page }) => {
     test.skip(!backendUp, '后端未启动');
+    test.setTimeout(180_000);   // 建单流程本身约 25s，默认 30s 会把用例从中间掐断
 
     // 🚨 AC-2 对夹具客户有**额外**要求：必须名下已有一个被占用的客户产品编号，
     //    否则「编号已存在则挡住」这条根本没有可验的输入（会空跑）。
@@ -101,6 +104,7 @@ test.describe('task-260902 选配主流程', () => {
    */
   test('AC-4 占比合计 90% → 提示必须写出实际值 90%', async ({ page }) => {
     test.skip(!backendUp, '后端未启动');
+    test.setTimeout(180_000);   // 建单流程本身约 25s，默认 30s 会把用例从中间掐断
     await loginAsAdmin(page);
     await openSelConfigDrawer(page, 'ac4');
     await fillStep1(page, FREE_PRODUCT_NO());
@@ -128,6 +132,7 @@ test.describe('task-260902 选配主流程', () => {
    */
   test('AC-14 零材质 → 「确定」禁用 + tooltip「请至少添加一个材质」', async ({ page }) => {
     test.skip(!backendUp, '后端未启动');
+    test.setTimeout(180_000);   // 建单流程本身约 25s，默认 30s 会把用例从中间掐断
     await loginAsAdmin(page);
     await openSelConfigDrawer(page, 'ac14');
     await fillStep1(page, FREE_PRODUCT_NO());
@@ -152,6 +157,7 @@ test.describe('task-260902 选配主流程', () => {
    */
   test('AC-11 保存草稿 → 刷新 → 重开：多材质/占比/外购件/工序全部回填', async ({ page }) => {
     test.skip(!backendUp, '后端未启动');
+    test.setTimeout(240_000);   // 整条向导 + 提交 + 刷新回填，默认 30s 会被中途掐断
     await loginAsAdmin(page);
     await openSelConfigDrawer(page, 'ac11');
     const productNo = FREE_PRODUCT_NO();
@@ -165,22 +171,13 @@ test.describe('task-260902 选配主流程', () => {
     await page.waitForTimeout(600);
     await shot(page, 'AC-11-配件1已添加');
 
-    // 配件 2：外购件
-    await drawer(page).getByRole('button', { name: /添加配件/ }).first().click();
-    await page.waitForTimeout(400);
-    await drawer(page).getByText('外购件', { exact: false }).first().click();
-    await page.waitForTimeout(800);
-    await drawer(page).getByText('TEST-Q13-CODE').first().click();
-    await page.waitForTimeout(400);
-    await drawer(page).getByRole('button', { name: /确\s*定/ }).last().click();
-    await page.waitForTimeout(600);
+    // 配件 2：外购件（fixture基线 §3.1：现网唯一一条外购件）
+    await addOutsourcedPart(page, 'TEST-Q13-CODE');
 
     // 提交到报价单
     await nextStep(page);           // → 组合工序
     await nextStep(page);           // → 确认并添加
-    await drawer(page).getByRole('button', { name: /添加到报价单|确认并添加|确认加入/ }).last().click();
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2000);
+    await submitToQuotation(page, 'AC-11');
     await shot(page, 'AC-11-已添加到报价单');
 
     // 保存草稿 → 刷新 → 重开
@@ -213,6 +210,7 @@ test.describe('task-260902 选配主流程', () => {
    */
   test('AC-19④ 工序换序命中复用时，确认页必须明示「顺序沿用已有产品」', async ({ page }) => {
     test.skip(!backendUp, '后端未启动');
+    test.setTimeout(240_000);   // 整条向导 + 提交 + 刷新回填，默认 30s 会被中途掐断
     await loginAsAdmin(page);
 
     // 第一次：Z100 → Z101
@@ -226,9 +224,7 @@ test.describe('task-260902 选配主流程', () => {
     await page.waitForTimeout(600);
     await nextStep(page);
     await nextStep(page);
-    await drawer(page).getByRole('button', { name: /添加到报价单|确认并添加|确认加入/ }).last().click();
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2500);
+    await submitToQuotation(page, 'AC-19④·第一次');
     await shot(page, 'AC-19-第一次提交Z100-Z101');
 
     // 第二次：完全相同但工序为 Z101 → Z100
@@ -264,6 +260,7 @@ test.describe('task-260902 选配主流程', () => {
    */
   test('AC-12 选配产品能在「从产品库添加」列表按客户产品编号找回', async ({ page }) => {
     test.skip(!backendUp, '后端未启动');
+    test.setTimeout(240_000);   // 整条向导 + 提交 + 刷新回填，默认 30s 会被中途掐断
     await loginAsAdmin(page);
     await openSelConfigDrawer(page, 'ac12');
     const productNo = FREE_PRODUCT_NO();
@@ -274,9 +271,7 @@ test.describe('task-260902 选配主流程', () => {
     await page.waitForTimeout(600);
     await nextStep(page);
     await nextStep(page);
-    await drawer(page).getByRole('button', { name: /添加到报价单|确认并添加|确认加入/ }).last().click();
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(2500);
+    await submitToQuotation(page, 'AC-12');
 
     // 打开「从产品库添加」
     await page.getByRole('button', { name: /添加产品/ }).first().click();
