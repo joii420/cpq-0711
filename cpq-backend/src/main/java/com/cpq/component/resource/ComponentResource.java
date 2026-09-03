@@ -14,10 +14,13 @@ import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.service.ComponentDriverService;
 import com.cpq.component.service.ComponentImportService;
 import com.cpq.component.service.ComponentService;
+import com.cpq.datasource.sqlview.BomTreeVarsContext;
 import com.cpq.datasource.sqlview.QuotePendingScope;
 import com.cpq.formula.dataloader.QuotationIdContext;
 import com.cpq.formula.dataloader.SnapshotRowsContext;
 import com.cpq.quotation.entity.Quotation;
+import com.cpq.quotation.entity.QuotationLineItem;
+import com.cpq.quotation.service.BomTreeRenderService;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -49,6 +52,14 @@ public class ComponentResource {
 
     @Inject
     ComponentImportService componentImportService;
+
+    /**
+     * D-74（生产故障修复）：整单 BOM 料号并集计算——{@code :total_material_no} 唯一权威口径
+     * 与 {@code CardSnapshotService}/{@code ConfigureSnapshotService} 共用同一算法
+     * （{@link BomTreeRenderService#collectTotalMaterialNoUnion}），不另写第二套。
+     */
+    @Inject
+    BomTreeRenderService bomTreeRenderService;
 
     @GET
     public ApiResponse<List<ComponentDTO>> list(
@@ -215,6 +226,15 @@ public class ComponentResource {
         // usage 缺省/非法/COSTING 的 task 不收集（本就不会调 QuotePendingScope.open，省一次 DB 往返）。
         Map<UUID, String> quoteStatusById = prefetchQuoteStatuses(req.tasks);
 
+        // task-260819 D-74（生产故障修复）：整单一次算好 :total_material_no 料号并集——本入口是
+        // ComponentResource.batchExpand（渲染贯穿三入口之一，见 QuotationIdContext 类注释），此前
+        // 遗漏 open BomTreeVarsContext（B-19 只覆盖了 CardSnapshotService/ConfigureSnapshotService
+        // 两个入口），凡组件 $view 引用 :total_material_no（如 $bom_view）在此入口一律撞 B-20 守卫
+        // 直接阻断，编辑页产品行全空。按 quotationId 分组，一次 IN 查 quotation_line_item + 每个
+        // distinct quotationId 各发 1 次递归 SQL（N+1 约束：SQL 条数只与 distinct quotationId 数量
+        // 成正比，与 tasks 条数无关——批内通常只有 1 个 distinct quotationId）。
+        Map<UUID, BomTreeRenderService.MaterialUnionResult> quoteUnions = computeQuoteUnionsForBatch(req.tasks);
+
         // ── P0(2026-06-26):批量预载 snapshot,杜绝 Phase 1 每 task 一次 SELECT snapshot_rows(N+1)──
         //   收集所有 task 的 lineItemId,一次 IN 查全部 snapshot_rows 塞 ThreadLocal;expand 的 snapshot-read
         //   命中上下文即用、不再逐 task 查库(一单 600+ task 全有快照时:600+ 次远程往返 → 1 次 IN)。
@@ -237,7 +257,7 @@ public class ComponentResource {
         try {
             long _bp1 = System.nanoTime();
             ApiResponse<BatchExpandDriverResponse> out =
-                    doBatchExpandPhases(req, resp, bucketEnabled, debugSql, quoteStatusById);
+                    doBatchExpandPhases(req, resp, bucketEnabled, debugSql, quoteStatusById, quoteUnions);
             // phase1 命中数(driverPath=snapshot)vs phase2(实时 expand)= 诊断 batch-expand 慢在快照读还是实时展开
             int _snapHit = 0;
             for (Result r : resp.results) if (r != null && r.data != null && "snapshot".equals(r.data.driverPath)) _snapHit++;
@@ -252,7 +272,8 @@ public class ComponentResource {
 
     private ApiResponse<BatchExpandDriverResponse> doBatchExpandPhases(
             BatchExpandDriverRequest req, BatchExpandDriverResponse resp,
-            boolean bucketEnabled, boolean debugSql, Map<UUID, String> quoteStatusById) {
+            boolean bucketEnabled, boolean debugSql, Map<UUID, String> quoteStatusById,
+            Map<UUID, BomTreeRenderService.MaterialUnionResult> quoteUnions) {
         // ── Phase 1:每个 task 先试 snapshot,命中直返;未命中收集进 Phase 2 候选 ──
         List<Integer> phase2 = new ArrayList<>();
         for (int i = 0; i < req.tasks.size(); i++) {
@@ -273,18 +294,24 @@ public class ComponentResource {
                             || t.compositeType != null
                             || (t.childLineItemIds != null && !t.childLineItemIds.isEmpty());
                     if (!bucketEnabled) {
-                        // Flag 关 → 维持原逻辑(无 Phase 2)
-                        if (debugSql) com.cpq.datasource.sqlview.SqlDebugContext.begin();
-                        if (hasContext) {
-                            r.data = componentDriverService.expandWithSnapshot(
-                                t.componentId, t.customerId, t.partNo, t.partVersion,
-                                t.overrideDataDriverPath, t.overrideFieldsJson, t.lineItemId, t.compositeType,
-                                t.childLineItemIds);
-                        } else {
-                            r.data = componentDriverService.expand(t.componentId, t.customerId, t.partNo, t.partVersion);
+                        // Flag 关 → 维持原逻辑(无 Phase 2)。task-260819 D-74：本分支真发 SQL（expand /
+                        // expandWithSnapshot 内部可能落到 SqlViewExecutor），须 open BomTreeVarsContext。
+                        boolean _bvOpened = openBomTreeVars(quoteUnions.get(t.quotationId));
+                        try {
+                            if (debugSql) com.cpq.datasource.sqlview.SqlDebugContext.begin();
+                            if (hasContext) {
+                                r.data = componentDriverService.expandWithSnapshot(
+                                    t.componentId, t.customerId, t.partNo, t.partVersion,
+                                    t.overrideDataDriverPath, t.overrideFieldsJson, t.lineItemId, t.compositeType,
+                                    t.childLineItemIds);
+                            } else {
+                                r.data = componentDriverService.expand(t.componentId, t.customerId, t.partNo, t.partVersion);
+                            }
+                            if (debugSql) r.debugSql = com.cpq.datasource.sqlview.SqlDebugContext.drainJoined();
+                            r.status = "OK";
+                        } finally {
+                            if (_bvOpened) BomTreeVarsContext.clear();
                         }
-                        if (debugSql) r.debugSql = com.cpq.datasource.sqlview.SqlDebugContext.drainJoined();
-                        r.status = "OK";
                         continue;
                     }
                     // Flag 开 → Phase 1 仅【窥探】snapshot:命中直返;未命中绝不实时展开,直接进 Phase 2。
@@ -365,7 +392,7 @@ public class ComponentResource {
                 for (int idx : idxs) {
                     Task t = req.tasks.get(idx);
                     Result r = resp.results.get(idx);
-                    runSingleTask(t, r, quoteStatusById);
+                    runSingleTask(t, r, quoteStatusById, quoteUnions);
                 }
                 long _ms = (System.nanoTime() - _bktStart) / 1_000_000;
                 LOG.debugf("[be-bucket] comp=%s dp=%s merged=false tasks=%d lineItemIdView=%b ms=%d",
@@ -389,12 +416,16 @@ public class ComponentResource {
                 UUID _pqPrev = _pqOpened
                         ? QuotePendingScope.open(pivot.quotationId, quoteStatusById.get(pivot.quotationId))
                         : null;
+                // task-260819 D-74：桶内同一 quotationId（bucketKey 已含 |q= 维度），用 pivot 的整单
+                // 料号并集即可代表整桶，expandMulti 真发 SQL，须 open。
+                boolean _bvOpened = openBomTreeVars(quoteUnions.get(pivot.quotationId));
                 Map<String, ExpandDriverResponse> merged;
                 try {
                     merged = componentDriverService.expandMulti(
                             pivot.componentId, pivot.customerId, partNos, pivot.partVersion,
                             pivot.overrideDataDriverPath, pivot.overrideFieldsJson);
                 } finally {
+                    if (_bvOpened) BomTreeVarsContext.clear();
                     if (_pqOpened) QuotePendingScope.restore(_pqPrev);
                     QuotationIdContext.clear();
                 }
@@ -419,7 +450,7 @@ public class ComponentResource {
                 for (int idx : idxs) {
                     Task t = req.tasks.get(idx);
                     Result r = resp.results.get(idx);
-                    runSingleTask(t, r, quoteStatusById);
+                    runSingleTask(t, r, quoteStatusById, quoteUnions);
                 }
             }
         }
@@ -427,7 +458,8 @@ public class ComponentResource {
     }
 
     /** Phase 2 桶不可合时的单 task 跑(同原 batchExpand 逻辑),包 QuotationIdContext 让视图能用 :quotationId。 */
-    private void runSingleTask(Task t, Result r, Map<UUID, String> quoteStatusById) {
+    private void runSingleTask(Task t, Result r, Map<UUID, String> quoteStatusById,
+                                Map<UUID, BomTreeRenderService.MaterialUnionResult> quoteUnions) {
         try {
             QuotationIdContext.set(t.quotationId);
             // task-0725 T3-P3：按 task.usage 决定是否打开报价侧 pending 可见域（同 Phase 1 判定）。
@@ -435,6 +467,9 @@ public class ComponentResource {
             UUID _pqPrev = _pqOpened
                     ? QuotePendingScope.open(t.quotationId, quoteStatusById.get(t.quotationId))
                     : null;
+            // task-260819 D-74：本方法两条分支（expandWithSnapshot 的实时展开兜底 / expand）都可能
+            // 真发 SQL 落到 SqlViewExecutor，须 open。
+            boolean _bvOpened = openBomTreeVars(quoteUnions.get(t.quotationId));
             try {
                 boolean hasContext = (t.overrideDataDriverPath != null && !t.overrideDataDriverPath.isBlank())
                         || (t.overrideFieldsJson != null && !t.overrideFieldsJson.isBlank())
@@ -462,6 +497,7 @@ public class ComponentResource {
                 }
                 r.status = "OK";
             } finally {
+                if (_bvOpened) BomTreeVarsContext.clear();
                 if (_pqOpened) QuotePendingScope.restore(_pqPrev);
                 QuotationIdContext.clear();
             }
@@ -502,6 +538,67 @@ public class ComponentResource {
             out.put(q.id, q.status);
         }
         return out;
+    }
+
+    /**
+     * task-260819 D-74（生产故障修复）：{@code batchExpand} 渲染入口整单一次算好
+     * {@code :total_material_no} 料号并集——口径与 {@code CardSnapshotService}/
+     * {@code ConfigureSnapshotService} 完全一致（同一个
+     * {@link BomTreeRenderService#collectTotalMaterialNoUnion}，不另写第二套算法，D-50 要
+     * 收敛的正是「多套口径分叉」）。
+     *
+     * <p><b>根因回顾</b>：全工程 {@code BomTreeVarsContext.set(...)} 此前只覆盖了
+     * {@code quotation/service} 与 {@code configure/service} 两处渲染入口，唯独漏了
+     * {@code ComponentResource.batchExpand} 这条前端编辑页打开时真正会打到的渲染路径——
+     * 组件 $view 一旦引用 {@code :total_material_no}（如 D-50「主树供数组」机制产出的
+     * {@code $bom_view}），SQL 到这里必定撞 B-20 守卫，产品行全空。
+     *
+     * <p><b>N+1 约束</b>：本方法只发 <b>1 次</b> {@code quotation_line_item} 的 IN 查询
+     * （覆盖本批所有 distinct quotationId），随后每个 distinct quotationId 各发 <b>1 次</b>递归
+     * 树 SQL——SQL 总条数 = 1 + distinct(quotationId)，与 {@code tasks} 条数无关（批内绝大多数
+     * 场景只有 1 个 distinct quotationId，即打开中的这一张报价单）。
+     *
+     * @return quotationId → 该单整单 BOM 料号并集；task 无 quotationId（如独立组件预览，不落在
+     *         任何报价单上下文里）或该 quotationId 名下没有带 {@code productPartNoSnapshot} 的行时，
+     *         不会出现在返回的 map 里——调用方按 {@code union == null} 分支处理（不 open，
+     *         维持 B-20 守卫原有的「引用了但拿不到值就报错」行为，见类方法 {@link #openBomTreeVars}）。
+     */
+    private Map<UUID, BomTreeRenderService.MaterialUnionResult> computeQuoteUnionsForBatch(List<Task> tasks) {
+        if (tasks == null || tasks.isEmpty()) return Map.of();
+        Set<UUID> ids = new LinkedHashSet<>();
+        for (Task t : tasks) {
+            if (t.quotationId != null) ids.add(t.quotationId);
+        }
+        if (ids.isEmpty()) return Map.of();
+        // 唯一一次访问 quotation_line_item 表的查询,无论 tasks 条数多少(N+1 约束)。
+        List<QuotationLineItem> allLines = QuotationLineItem.list("quotationId in ?1", new ArrayList<>(ids));
+        Map<UUID, List<QuotationLineItem>> byQuotation = new LinkedHashMap<>();
+        for (QuotationLineItem li : allLines) {
+            if (li.productPartNoSnapshot == null || li.productPartNoSnapshot.isBlank()) continue;
+            byQuotation.computeIfAbsent(li.quotationId, k -> new ArrayList<>()).add(li);
+        }
+        Map<UUID, BomTreeRenderService.MaterialUnionResult> out = new HashMap<>();
+        for (Map.Entry<UUID, List<QuotationLineItem>> e : byQuotation.entrySet()) {
+            out.put(e.getKey(), bomTreeRenderService.collectTotalMaterialNoUnion(e.getValue(), "QUOTE"));
+        }
+        return out;
+    }
+
+    /**
+     * task-260819 D-74：{@code union} 非空时 open {@link BomTreeVarsContext}（RENDER 模式，
+     * 携带整单料号并集 + 「后代→根」映射，与 B-19/B-21 既有口径一致），返回是否已 open——
+     * 调用方据此决定 finally 是否要 clear（成对，防 ThreadLocal 泄漏串单）。
+     *
+     * <p>{@code union == null}（该 task 无 quotationId，或该 quotationId 查不到任何带料号的行）
+     * 时不 open——🚫 不放宽 B-20 守卫：如果该组件的 $view 确实引用了 {@code :total_material_no}，
+     * 后续执行仍会按守卫既有行为抛出「未提供该参数」的可识别错误，而不是静默返回错误数据。
+     */
+    private static boolean openBomTreeVars(BomTreeRenderService.MaterialUnionResult union) {
+        if (union == null) return false;
+        BomTreeVarsContext.set(new BomTreeVarsContext.Vars(
+                null, union.totalMaterialNo, null,
+                BomTreeVarsContext.Mode.RENDER, union.rootsByMaterial, union.materialsByRoot));
+        return true;
     }
 
     /**
