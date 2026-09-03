@@ -14,9 +14,18 @@
 | `cost-basic` | 基础核价 | `production_no`（生产料号） | 9 |
 | `cost-detail` | 详细核价 | `production_no`（生产料号） | 17 |
 
-**统一响应包**：沿用项目现有 `ApiResponse<T>`（`{ success, data, message }`）。
+**统一响应包**：沿用项目现有 `ApiResponse<T>`。
 
-**权限**：读端点 `PRICING_MANAGER` / `SYSTEM_ADMIN` / `SALES` 均可；写端点（`PUT rows`、`POST import`）**仅** `PRICING_MANAGER` / `SYSTEM_ADMIN`（AC-31）。
+🚩 **2026-09-03 更正（由后端 #3 实查指出，本文档原先写错）**：真实结构是 **`{ code, message, data }`**，
+**没有 `success` 字段**（`cpq-backend/src/main/java/com/cpq/common/dto/ApiResponse.java`：`private int code / String message / T data`）。
+本文档下方示例中出现的 `"success": true/false` **一律按 `code` 判定**：`code=200` 成功、`400`/`409`/`422`/`500` 见各节。
+⚠️ **前端不得按 `success` 字段判定成功与否** —— 那个字段不存在，判定会恒为 falsy。
+
+**权限**：写端点（`PUT rows`、`POST import`）**仅** `PRICING_MANAGER` / `SYSTEM_ADMIN`（AC-31）；
+读端点再加上 `SALES_REP` / `SALES_MANAGER`。
+
+🚩 **2026-09-03 更正**：本文档原写的 `SALES` **角色不存在**。实查 `user` 表，项目真实角色仅四个：
+`SYSTEM_ADMIN` / `PRICING_MANAGER` / `SALES_MANAGER` / `SALES_REP`。
 
 ---
 
@@ -105,12 +114,16 @@
   "items": [
     { "axisValue": "3120014539", "materialName": "主料1", "specification": null,
       "dimension": "3.5×3.5×0.6", "oldMaterialNo": "8DLX.550.653", "unitWeight": null,
+      "productionNo": null,
       "configuredCount": 6, "totalSheetCount": 9, "lastUpdatedAt": "2026-09-03T10:12:00+08:00" }
   ]
 }}
 ```
 
 - `configuredCount` = 该轴值在**带版本表**中至少有 1 行数据的 sheet 数（列表「已配置 6/9」徽标）。
+- 🚩 **`productionNo`（2026-09-03 补）**：`ds_quote_material` 建了 **7 列**（销售料号/品名/规格/尺寸/旧料号/单重/**生产料号**），
+  本响应体原先只列了 6 个、漏掉生产料号 —— 由「产品管理优化」会话指出，属**契约疏漏修补**（响应体本就该覆盖表全部列），非扩范围。
+  `dataset=quote` 时该字段有值；`cost-basic` / `cost-detail` 的物料表**没有**这一列（它们的轴本身就是生产料号），返回时**省略该字段**，不要返 null。
 
 ---
 
@@ -195,6 +208,18 @@
 ```
 
 **校验失败 400**：与导入同构，`errors` 数组的 `sheet` 固定为本 sheet 名、`row` 为**数组下标 + 1**。
+
+**整组清空 422**（2026-09-03 补定义）
+
+```json
+{ "code": 422, "message": "至少保留一行数据；整组清空不在本期范围", "data": null }
+```
+
+`rows` 传空数组时返回 422、**不写库**。理由：整组清空会让主表当前版本消失、版本号只剩 `_history`，
+下次保存时乐观锁会误判成「该轴值从未有过数据」而走 `CREATED` 分支，版本号回退。
+与现有 `PricingMaintenanceService` 的同名护栏口径一致。
+> 📌 这条原本不在任何 AC 里，是后端 #3 实现时加的防御。主线裁决**保留**，并在此定义为契约的一部分 ——
+> 删行到只剩 0 行属于「删除整组数据」，本期不提供该能力（见 `需求文档.md §② 明确不做`）。
 
 ---
 
