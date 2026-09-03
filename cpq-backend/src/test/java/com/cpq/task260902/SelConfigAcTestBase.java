@@ -108,31 +108,48 @@ public abstract class SelConfigAcTestBase {
      * 而且失败信息指向的是「本轮」，读报告的人会去查本轮的业务代码。
      * <p>🚫 删除面仅限 {@code T260902-} 前缀的<b>自建物</b>（材质/分类/模板），
      * 不碰任何存量数据，不碰 customer（它的 code 带随机 UUID，永不撞名）。
+     *
+     * <h4>🚨 只扫「陈旧」残留 —— 这一条是并发安全的关键</h4>
+     * 2026-09-03 第六轮实测：另一轮同套件与本轮重叠运行时，本方法的
+     * {@code DELETE ... WHERE code LIKE 'T260902-%'} 把<b>对方在途的材质</b>删掉了 ⇒
+     * 对方的用例中途报 {@code 404 材质不存在或已停用} / {@code 409 Referenced record does not exist}，
+     * <b>那些报错长得和业务缺陷一模一样</b>（{@code testing.md §4.2}：并行测试的临时资源必须唯一化，
+     * 且获取与占用之间不能有「无主窗口」—— 全局前缀删除正是把别人的资源变成了无主）。
+     * ⇒ 加 {@code created_at < now() - 30min} 门槛：崩溃残留必然是旧的，
+     * 并发轮的在途数据必然是新的，两者构造性分开。
      */
+    private static final String STALE = " AND created_at < now() - interval '30 minutes'";
+
     @BeforeEach
     void sweepResidueFromPreviousRun() {
         QuarkusTransaction.requiringNew().run(() -> {
             em.createNativeQuery("DELETE FROM material_recipe_element WHERE recipe_id IN "
-                    + "(SELECT id FROM material_recipe WHERE code LIKE :p)").setParameter("p", PREFIX + "%").executeUpdate();
+                    + "(SELECT id FROM material_recipe WHERE code LIKE :p" + STALE + ")")
+                    .setParameter("p", PREFIX + "%").executeUpdate();
             em.createNativeQuery("DELETE FROM material_recipe_config WHERE recipe_id IN "
-                    + "(SELECT id FROM material_recipe WHERE code LIKE :p)").setParameter("p", PREFIX + "%").executeUpdate();
+                    + "(SELECT id FROM material_recipe WHERE code LIKE :p" + STALE + ")")
+                    .setParameter("p", PREFIX + "%").executeUpdate();
             em.createNativeQuery("DELETE FROM material_recipe_composition WHERE recipe_id IN "
-                    + "(SELECT id FROM material_recipe WHERE code LIKE :p)").setParameter("p", PREFIX + "%").executeUpdate();
-            em.createNativeQuery("DELETE FROM material_recipe WHERE code LIKE :p")
+                    + "(SELECT id FROM material_recipe WHERE code LIKE :p" + STALE + ")")
+                    .setParameter("p", PREFIX + "%").executeUpdate();
+            em.createNativeQuery("DELETE FROM material_recipe WHERE code LIKE :p" + STALE)
                     .setParameter("p", PREFIX + "%").executeUpdate();
             if (tableExists("sel_template_item_value")) {
                 em.createNativeQuery("DELETE FROM sel_template_item_value WHERE item_id IN "
                         + "(SELECT i.id FROM sel_template_item i JOIN sel_template t ON t.id=i.template_id "
-                        + " WHERE t.name LIKE :p)").setParameter("p", PREFIX + "%").executeUpdate();
+                        + " WHERE t.name LIKE :p" + STALE.replace("created_at", "t.created_at") + ")")
+                        .setParameter("p", PREFIX + "%").executeUpdate();
             }
             em.createNativeQuery("DELETE FROM sel_template_item WHERE template_id IN "
-                    + "(SELECT id FROM sel_template WHERE name LIKE :p)").setParameter("p", PREFIX + "%").executeUpdate();
-            em.createNativeQuery("DELETE FROM sel_template WHERE name LIKE :p")
+                    + "(SELECT id FROM sel_template WHERE name LIKE :p" + STALE + ")")
+                    .setParameter("p", PREFIX + "%").executeUpdate();
+            em.createNativeQuery("DELETE FROM sel_template WHERE name LIKE :p" + STALE)
                     .setParameter("p", PREFIX + "%").executeUpdate();
         });
         // 清完立刻自检：脏库必须以「残留」的名义硬失败，不许伪装成本轮的业务缺陷
-        assertEquals(0, count("SELECT count(*) FROM material_recipe WHERE code LIKE '" + PREFIX + "%'"),
-                "开跑前自检：上一轮的 T260902- 材质残留没清掉");
+        assertEquals(0, count("SELECT count(*) FROM material_recipe WHERE code LIKE '" + PREFIX + "%'"
+                        + STALE),
+                "开跑前自检：上一轮的陈旧 T260902- 材质残留没清掉");
     }
 
     // ─────────────────────────── 夹具 ───────────────────────────
@@ -187,8 +204,8 @@ public abstract class SelConfigAcTestBase {
                         "INSERT INTO product_category (id,code,name,status,sort_order,created_at,updated_at) "
                                 + "VALUES (:id,:code,:name,'ACTIVE',9902,NOW(),NOW())")
                 .setParameter("id", id)
-                .setParameter("code", PREFIX + label)
-                .setParameter("name", PREFIX + "分类" + label)
+                .setParameter("code", PREFIX + label + "-" + RUN_ID)
+                .setParameter("name", PREFIX + "分类" + label + "-" + RUN_ID)
                 .executeUpdate());
         createdCategoryIds.add(id);
         return id;
@@ -300,7 +317,7 @@ public abstract class SelConfigAcTestBase {
             em.createNativeQuery(
                             "INSERT INTO sel_template (id,name,status,version,product_category_id,created_at,updated_at) "
                                     + "VALUES (:id,:name,'ACTIVE',0,:cat,NOW(),NOW())")
-                    .setParameter("id", id).setParameter("name", PREFIX + "模板")
+                    .setParameter("id", id).setParameter("name", PREFIX + "模板-" + RUN_ID)
                     .setParameter("cat", categoryId).executeUpdate();
             String[] codes = {"MATERIAL", "ELEMENT", "PROCESS"};
             for (int i = 0; i < codes.length; i++) {
@@ -590,9 +607,11 @@ public abstract class SelConfigAcTestBase {
             assertEquals(0, count("SELECT count(*) FROM customer WHERE code='" + c + "'"),
                     "还原自检：customer 仍有 " + c + " 的残留");
         }
-        assertEquals(0, count("SELECT count(*) FROM material_recipe WHERE code LIKE '" + PREFIX + "%'"),
-                "还原自检：material_recipe 仍有 " + PREFIX + " 前缀的残留");
-        assertEquals(0, count("SELECT count(*) FROM sel_template WHERE name LIKE '" + PREFIX + "%'"),
-                "还原自检：sel_template 仍有 " + PREFIX + " 前缀的残留");
+        // 🚨 只认本轮 RUN_ID：另一轮同套件可能正在并发跑，它的在途数据不是我的残留。
+        //    第六轮实测就因为这个全局判据，把别人的在途材质当成我的残留报了红。
+        assertEquals(0, count("SELECT count(*) FROM material_recipe WHERE code LIKE '%-" + RUN_ID + "'"),
+                "还原自检：material_recipe 仍有本轮（RUN_ID=" + RUN_ID + "）的残留");
+        assertEquals(0, count("SELECT count(*) FROM sel_template WHERE name LIKE '%-" + RUN_ID + "'"),
+                "还原自检：sel_template 仍有本轮（RUN_ID=" + RUN_ID + "）的残留");
     }
 }

@@ -26,9 +26,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>覆盖 <b>AC-1 / AC-2 / AC-12 / AC-12b / AC-24</b>。
  *
- * <h3>🚨 本类的核心守卫</h3>
- * AC-12②/AC-12b③ 都要求「{@code material_customer_map} <b>零新增行</b>」——
- * 这不是顺带断言，而是<b>确认没有回退到「改 mcm」的老方案</b>的守卫：
+ * <h3>🚨 本类的核心守卫：mcm 的<b>双重角色</b>必须分开断言</h3>
+ * {@code material_customer_map} 在选配链路里承担<b>两件不同的事</b>，2026-09-03 由本类的断言顶出来
+ * （初版断言把两者混成一件，误报成后端 bug，特此留痕）：
+ * <ol>
+ *   <li><b>占号表</b>：铸报价料号时必然写一行，{@code customer_product_no} 留 <b>NULL</b>，
+ *       防止料号被重复分配。<b>这行是必需的，禁掉就没法铸号。</b>
+ *       实测现网 QUOTE 域：NULL 占号行 16 / 非空真映射行 1846。</li>
+ *   <li><b>客户产品编号映射</b>：{@code customer_product_no} <b>非空</b>的行。
+ *       🚫 方案甲要求这类行<b>一条都不许新增</b> —— 客户产品编号只落 {@code sel_product_no}。</li>
+ * </ol>
+ * ⇒ 判据是「{@code WHERE customer_product_no IS NOT NULL} 的行数」，<b>不是整表行数</b>。
+ * 守卫意图不变：确认没有回退到把编号写进 mcm 的老方案 ——
  * {@code uq_mcm_quote_no} 同时是 {@code upsertQuote} 的 ON CONFLICT target 与跨客户串号检测的载体
  * （森萨塔事故的防线），方案甲的全部价值就在于不动它。
  */
@@ -111,7 +120,8 @@ class CustomerProductNoAcTest extends SelConfigAcTestBase {
     /**
      * <b>AC-12</b>：「选配生成料号后，进入『从产品库添加』入口」⇒
      * ①「该产品<b>出现在列表中</b>，『客户产品编号』列显示 AC-1 输入的编号」；
-     * ②「SQL 验 {@code sel_product_no} 有对应行，🚫 {@code material_customer_map} <b>无新增行</b>」；
+     * ②「SQL 验 {@code sel_product_no} 有对应行，🚫 {@code material_customer_map} 中<b>不得出现
+     * {@code customer_product_no} 非空的新增行</b>」；
      * ③「该行的 {@code source} 标记为 {@code CONFIGURED}（按<b>来源表</b>判定）」。
      */
     @Test
@@ -136,9 +146,7 @@ class CustomerProductNoAcTest extends SelConfigAcTestBase {
         assertEquals(1, spn.size(), "AC-12②：sel_product_no 应恰好 1 行，实际 " + spn.size());
         assertEquals(productNo, spn.get(0)[0], "AC-12②：customer_product_no 应是输入的编号");
         assertEquals(partNo, spn.get(0)[1], "AC-12②：quote_part_no 应是本次的销售料号");
-        assertEquals(0, count("SELECT count(*) FROM material_customer_map WHERE customer_no='"
-                        + fx.customerNo() + "'"),
-                "AC-12②：🚨 material_customer_map 不得新增任何行（方案甲的核心：不动 mcm）");
+        assertMcmHoldsNoProductNo(fx, "AC-12②", 1);
 
         // ①③ 「从产品库添加」列表
         Response list = RestAssured.given()
@@ -189,9 +197,8 @@ class CustomerProductNoAcTest extends SelConfigAcTestBase {
         assertEquals(x, spn.get(0)[1], "AC-12b②：两行的 quote_part_no 应同为 X");
         assertEquals(x, spn.get(1)[1], "AC-12b②：两行的 quote_part_no 应同为 X");
         // ③ mcm 零新增（守卫）
-        assertEquals(0, count("SELECT count(*) FROM material_customer_map WHERE customer_no='"
-                        + fx.customerNo() + "'"),
-                "AC-12b③：🚨 material_customer_map 不得新增任何行 —— 新增即说明回退到了改 mcm 的老方案");
+        // 🚨 占号行应恰好 1 条：两次提交复用同一个料号 ⇒ 只铸过一次号（是 ① 的推论）
+        assertMcmHoldsNoProductNo(fx, "AC-12b③", 1);
 
         // ④ 列表能按任一编号找到，且产品只出现一次
         Response list = RestAssured.given()
@@ -199,8 +206,16 @@ class CustomerProductNoAcTest extends SelConfigAcTestBase {
         assertEquals(200, list.statusCode(), "AC-12b④：列表端点应返回 200");
         String body = list.asString();
         System.out.println("[AC-12b④] existing-products=" + body);
-        assertTrue(body.contains(PREFIX + "A") && body.contains(PREFIX + "B"),
-                "AC-12b④：两个编号都应能在列表里找到，实际=" + body);
+        // 🚨 AC-12b④ 原文：「列表能按**任一编号**找到该产品」。
+        //    该端点的过滤契约只有 productName（见 ExistingProductResourceTest:98-106），没有按编号过滤，
+        //    所以「能按任一编号找到」的可观测面 = 列表行**把两个编号都暴露出来**。
+        boolean hasA = body.contains(PREFIX + "A"), hasB = body.contains(PREFIX + "B");
+        System.out.println("[AC-12b④] 编号 A 可见=" + hasA + "，编号 B 可见=" + hasB);
+        assertTrue(hasA && hasB,
+                "AC-12b④：一料号两编号时，列表只暴露了其中一个（A=" + hasA + " B=" + hasB + "）⇒ "
+                        + "用另一个编号的人在产品库里找不回自己的产品，正是本任务要修的历史问题。"
+                        + "两条出路（归主线裁决）：① 列表行带出该料号名下的全部 customer_product_no；"
+                        + "② 端点支持按编号过滤。实际响应=" + body);
         int occurrences = body.split(java.util.regex.Pattern.quote(x), -1).length - 1;
         System.out.println("[AC-12b④] 料号 " + x + " 在列表响应里出现 " + occurrences + " 次");
         assertEquals(1, occurrences,
@@ -288,5 +303,34 @@ class CustomerProductNoAcTest extends SelConfigAcTestBase {
                 "AC-2 前置自检：该编号必须真的已被占用，否则本用例验的不是 AC-2 的场景");
         assertNotNull(partNo);
         return partNo;
+    }
+
+    /**
+     * 方案甲的核心守卫：<b>mcm 里不得出现「客户产品编号」</b>（那该落 {@code sel_product_no}），
+     * 但<b>铸号占位行必须允许</b>（{@code customer_product_no} 为 NULL）。
+     *
+     * <p>🚨 <b>为什么要带阳性对照</b>（{@code testing.md §4.4}）：本方法断言的是「某事<b>没</b>发生」。
+     * 若哪天 mcm 名下一行都没有，「非空行 = 0」会<b>无条件成立</b> —— 守卫悄悄变成空断言，
+     * 而它看起来和真通过一模一样。因此同时断言占号行确实存在：
+     * 观察手段能抓到 mcm 的写入，「没抓到编号行」才是有意义的结论。
+     *
+     * @param expectedHolderRows 期望的占号行数 = 本用例铸出的<b>不同</b>销售料号个数
+     */
+    private void assertMcmHoldsNoProductNo(Fx fx, String ac, int expectedHolderRows) {
+        long total = count("SELECT count(*) FROM material_customer_map WHERE customer_no='" + fx.customerNo() + "'");
+        long holder = count("SELECT count(*) FROM material_customer_map WHERE customer_no='"
+                + fx.customerNo() + "' AND customer_product_no IS NULL");
+        long mapped = count("SELECT count(*) FROM material_customer_map WHERE customer_no='"
+                + fx.customerNo() + "' AND customer_product_no IS NOT NULL");
+        System.out.println("[" + ac + "] mcm 本客户：总 " + total + " 行 = 占号行(编号 NULL) " + holder
+                + " + 编号映射行(编号非空) " + mapped);
+
+        assertEquals(0, mapped,
+                ac + "：🚨 material_customer_map 里出现了 customer_product_no 非空的行 —— "
+                        + "说明回退到了把客户产品编号写进 mcm 的老方案。客户产品编号只能落 sel_product_no");
+        assertEquals(expectedHolderRows, holder,
+                ac + " 阳性对照：铸号占位行应有 " + expectedHolderRows + " 条（customer_product_no 为 NULL）。"
+                        + "为 0 说明观察手段根本没抓到 mcm 的写入 ⇒ 上面那条『没有编号行』是空断言；"
+                        + "多于预期说明铸了多个料号（与复用语义矛盾）");
     }
 }
