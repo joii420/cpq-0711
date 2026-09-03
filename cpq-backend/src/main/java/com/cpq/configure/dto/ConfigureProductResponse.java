@@ -12,4 +12,16 @@ public class ConfigureProductResponse {
      * 可能与请求里的 req.productType 不同（如单行 qty>=2 请求声明 SIMPLE 也会被裁成 COMPOSITE）。
      */
     public String productType;
+
+    /**
+     * task-260902 · B-11（api.md §1.3，AC-7 状态 C）：命中复用时带出的销售产品信息；
+     * 未命中为 null。
+     */
+    public ReusedProductInfoDTO reusedProductInfo;
+
+    /**
+     * task-260902 · B-11：本次指纹的结构版本（{@code SalesFingerprintCalculator.STRUCTURE_VERSION}），
+     * 便于前端与排查时对账「这个料号是用哪一版指纹口径算出来的」。
+     */
+    public String structureVersion;
 }

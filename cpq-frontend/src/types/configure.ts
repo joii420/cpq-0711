@@ -3,7 +3,16 @@
 import type { DecimalString } from '../utils/precision';
 
 export type ProductType = 'SIMPLE' | 'COMPOSITE';
-export type PartMode = 'existing' | 'custom';
+/**
+ * 配件来源模式。
+ * 🔄 task-260902 · api.md §1.2：`'custom'` 更名为 `'new'`，后端两个值都接受，
+ *    **前端新代码只发 `'new'`**；`'custom'` 保留仅为让 task-0712 遗留的
+ *    `configure/configureRequest.ts`（已停用但保留以免破坏既有单测）继续通过类型检查。
+ */
+export type PartMode = 'existing' | 'new' | 'custom';
+
+/** 配件类型（task-260902 · AC-5 新增的中间层）：本厂零件 / 外购件。 */
+export type PartType = 'PART' | 'OUTSOURCED';
 export type CompositeType = 'SIMPLE' | 'COMPOSITE' | 'PART';
 
 export interface ElementOverride {
@@ -11,10 +20,38 @@ export interface ElementOverride {
   pct: DecimalString;
 }
 
+/**
+ * 单个材质的选择（task-260902 · api.md §1.2 `PartRequest.materials[]`）。
+ * 取代 task-0712 的单值 `recipeCode` + `configNo` + `elements`（老字段保留为回落分支）。
+ */
+export interface PartMaterialRequest {
+  recipeCode: string;
+  /** 标准含量配置编号，如 '00006-01'。与 `elements` **互斥且必须恰好给一个**。 */
+  configNo?: string | null;
+  /** 材质占比 %（100 制、12 位小数字符串）→ `material_bom_item.material_ratio`。 */
+  ratio: DecimalString;
+  /** 自定义含量。与 `configNo` 互斥；材质 `allowCustomContent=false` 时给了它 → 403。 */
+  elements?: ElementOverride[] | null;
+}
+
 export interface PartRequest {
   name: string;
   partMode: PartMode;
+  /** 🆕 task-260902：'PART' | 'OUTSOURCED'。缺省按 'PART' 解释（后端回落）。 */
+  partType?: PartType;
+  /** 🆕 规格 → material_master.specification */
+  spec?: string;
+  /** 🆕 尺寸 → material_master.dimension */
+  dimension?: string;
+  /** 🆕 partType=OUTSOURCED 时必填 */
+  outsourcedPartNo?: string;
+  /**
+   * 🆕 多材质（AC-3 / AC-4）。非空时后端用它；为空才回落到下面的单值 `recipeCode`。
+   * 🚨 占比是**字符串**，提交时原样发送 —— 不补零、不过 JS `number`。
+   */
+  materials?: PartMaterialRequest[];
   existingHfPartNo?: string;
+  /** @deprecated task-260902 起由 `materials[]` 取代，仅并发分支安全回落用。 */
   recipeCode?: string;
   /**
    * 含量配置编号（task-260901 · api.md §2.4 新增），如 '00006-01'。
@@ -44,16 +81,36 @@ export interface CompositeProcessRequest {
 
 export interface ConfigureProductRequest {
   productType: ProductType;
+  /** 🆕 客户产品编号（AC-1 / AC-2，必填）。 */
+  customerProductNo?: string;
+  /** 🆕 客户产品名称（选填）。 */
+  customerProductName?: string;
   parts: PartRequest[];
   compositeProcesses?: CompositeProcessRequest[];
   /** 主 lineItem.id UUID：后端用此 UUID insert，响应 lineItem.id === tempId，前后端 id 对齐 */
   tempId?: string;
 }
 
+/** 命中复用时带出的销售产品信息（task-260902 · api.md §1.3，AC-7 状态 C）。 */
+export interface ReusedProductInfo {
+  hfPartNo: string;
+  partName?: string | null;
+  specification?: string | null;
+  dimension?: string | null;
+  unitWeight?: DecimalString | null;
+  materials?: Array<{ recipeCode: string; name?: string | null; ratio?: DecimalString | null }> | null;
+  firstCreatedAt?: string | null;
+  lastQuotedPrice?: DecimalString | null;
+}
+
 export interface ConfigureProductResponse {
   lineItems: Array<Record<string, any>>;
   fingerprintMatched: boolean;
   reusedHfPartNos: string[];
+  /** 🆕 命中复用时带出销售产品信息（可空 —— 未命中或后端未回填时为 undefined）。 */
+  reusedProductInfo?: ReusedProductInfo | null;
+  /** 🆕 本次指纹结构版本（'v2'），便于前端与排查对账。 */
+  structureVersion?: string;
   /**
    * 后端按 Σqty 兜底裁决后的有效 productType（api.md §3.3，D11+D12 架构决策1-A）：
    * Σqty==1 → SIMPLE；Σqty≥2 → COMPOSITE。可能与请求里的 req.productType 不同
@@ -97,12 +154,29 @@ export interface LookupFingerprintResponse {
   snapshot?: LookupFingerprintSnapshot;
 }
 
+/** 已有零件的单个材质构成项（多材质零件在 task-260902 之后才会出现）。 */
+export interface SearchPartMaterial {
+  recipeCode?: string | null;
+  recipeSymbol?: string | null;
+  recipeName?: string | null;
+  /** 占比 %（100 制字符串）；单材质零件为 '100' 或空。 */
+  ratio?: DecimalString | null;
+}
+
 export interface SearchPartResult {
   hfPartNo: string;
   partName?: string;
   specification?: string;
   sizeInfo?: string;
+  unitWeight?: DecimalString | null;
   statusCode?: string;
+  /**
+   * 🚧 **契约缺口（已报主线）**：`原型图/4-已有零件与工序.html` 状态 A 要求「材质构成」列能显示
+   * N 个材质标签，但 `api.md §3` 把 `search-parts` 列为「复用、不改」，DTO 里只有单值
+   * `recipeCode/recipeSymbol`。本字段按**可选**声明：后端补上就渲染 N 个标签，
+   * 没有就回落到下面的单值字段渲染 1 个标签（不报错、不空白）。
+   */
+  materials?: SearchPartMaterial[] | null;
   recipeId?: string;
   recipeCode?: string;
   recipeSymbol?: string;
@@ -140,7 +214,15 @@ export interface EffectiveTemplateDTO {
   /** true = 回退到 __DEFAULT__ 通用模板。 */
   usedDefault: boolean;
   templateId?: string;
-  /** false = 该客户行业与默认模板都没配，前端渲染"缺少选配模板"空态。 */
+  /**
+   * 该客户所属产品分类（或默认分类）是否命中了一套选配模板。
+   *
+   * ⚠️ **task-260902 · F-13（AC-25）起，前端不再用它做门禁。**
+   *    旧语义是「false ⇒ 渲染『缺少选配模板』空态、整个选配不可用」；实测那道门禁是选配模板
+   *    唯一真正生效的东西（三个参数开关与值域限定全部空转，`sel_template_item_value` 现网 0 行），
+   *    结果是**没配模板的客户完全用不了选配** ⇒ 本期移除门禁：无模板也能正常走完 4 步并提交。
+   * 📌 字段本身保留（后端仍在返），仅作诊断信息用；🚫 不要拿它去 `if` 掉任何渲染分支。
+   */
   hasTemplate: boolean;
   /** 仅含 enabled=true 的参数。 */
   params: EffectiveTemplateParam[];
@@ -193,4 +275,103 @@ export interface FingerprintSummaryState {
   matched: boolean;
   hfPartNo?: string;
   snapshot?: LookupFingerprintSnapshot;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// task-260902 · 选配流程重构：4 步向导的 UI 状态类型
+//
+// 🚨 与上面 task-0712 的 `SelDetailRow` 是**两套模型**，不是替换关系：
+//    `SelDetailRow`（一行 = 一个材质料号）是旧的两层模型，本次重构后不再被
+//    `ConfigureProductDrawer` 使用，但**文件与类型都保留** —— `configure/SelDetailTable.tsx`
+//    与 `configure/configureRequest.ts` 及其单测仍引用它，删了会连带弄红别人的产出。
+//    新流程用下面的三层模型：产品 → 配件(ConfigurePart) → 材质(ConfigurePartMaterial)。
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 选配里选中的一个工序（有序列表的一项；**允许重复**，故 uid 与 processNo 分开）。 */
+export interface SelectedProcess {
+  /** 前端本地 key —— 同一个 processNo 可重复加入（AC-20 焊两次 ≠ 焊一次）。 */
+  uid: string;
+  /** = `process_master.process_no`，原样进 `PartRequest.processNos`。 */
+  processNo: string;
+  name: string;
+  category?: string | null;
+  processType?: string | null;
+}
+
+/** 配件下挂的一个材质（UI 状态）。 */
+export interface ConfigurePartMaterial {
+  uid: string;
+  recipeCode: string;
+  /** 材质名（symbol，展示用）。 */
+  recipeName: string;
+  /** 该材质是否允许自定义含量（来自 `MaterialRecipeLite.allowCustomContent`）。 */
+  allowCustomContent: boolean;
+  contentMode: 'config' | 'custom';
+  configNo: string | null;
+  /** 含量配置的展示文案，如 `00006-01（Ag 90% / Ni 10%）`（已去尾随零）。 */
+  configLabel?: string;
+  /** 自定义含量：元素只能改含量、不能增删。 */
+  elements: Array<{ elementNo: string; elementCode: string; elementName: string; pct: DecimalString }>;
+  /**
+   * 材质占比 %（**用户输入的原始字符串**，原样提交）。
+   * 🚨 合计校验走定点整数（`configure/ratioRules.ts`），🚫 不许 `Number` 累加。
+   */
+  ratio: DecimalString;
+}
+
+/** 一个配件（本次重构新增的中间层）。 */
+export interface ConfigurePart {
+  uid: string;
+  partType: PartType;
+  /** partType='PART' 时有意义；'OUTSOURCED' 恒为 'new'（不参与判断）。 */
+  partMode: PartMode;
+
+  // ── partType=PART & partMode=new ──
+  name: string;
+  spec: string;
+  dimension: string;
+  unitWeightGrams: DecimalString;
+  materials: ConfigurePartMaterial[];
+
+  // ── partType=PART & partMode=existing ──
+  existingHfPartNo?: string;
+  existingPartName?: string;
+  existingSpec?: string;
+  existingMaterialSummary?: string;
+
+  // ── partType=OUTSOURCED ──
+  outsourcedPartNo?: string;
+  outsourcedName?: string;
+  outsourcedSpec?: string;
+
+  /** 三条路径共用：工序有序列表。 */
+  processes: SelectedProcess[];
+}
+
+/** 组合工序的一条（步骤 3）。 */
+export interface CompositeProcessItem {
+  uid: string;
+  /** = `process_master.process_no`（五处标识锚点之一）。 */
+  defCode: string;
+  name: string;
+}
+
+/** `GET /quotations/configure/check-product-no` 响应（api.md §2.1）。 */
+export interface CheckProductNoResponse {
+  taken: boolean;
+  hfPartNo?: string | null;
+  createdAt?: string | null;
+}
+
+/** `GET /quotations/configure/outsourced-parts` 的单项（api.md §2.2）。 */
+export interface OutsourcedPartDTO {
+  materialNo: string;
+  materialName?: string | null;
+  specification?: string | null;
+  unitWeight?: DecimalString | null;
+}
+
+export interface OutsourcedPartPage {
+  total: number;
+  items: OutsourcedPartDTO[];
 }
