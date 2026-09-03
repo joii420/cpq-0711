@@ -1,0 +1,55 @@
+<meta charset="utf-8">
+<title>产品管理 · 抽屉空 tab 态</title>
+<link rel="stylesheet" href="antd-like.css">
+<style>
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.45)}
+  .drawer{position:fixed;top:0;right:0;bottom:0;width:1200px;max-width:96vw;background:#fff;display:flex;flex-direction:column;box-shadow:-6px 0 16px rgba(0,0,0,.08)}
+  .dh{padding:16px 24px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between}
+  .dbody{flex:1;display:flex;min-height:0}
+  .ltabs{width:190px;border-right:1px solid #f0f0f0;overflow:auto;padding:8px 0;background:#fafafa}
+  .ltab{padding:9px 16px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:space-between;gap:8px;border-right:2px solid transparent}
+  .ltab.active{background:#e6f4ff;color:#1677ff;font-weight:500;border-right-color:#1677ff}
+  .cnt{font-size:12px;background:#1677ff;color:#fff;border-radius:9px;padding:0 7px;line-height:18px;min-width:18px;text-align:center}
+  .cnt.zero{background:#d9d9d9;color:rgba(0,0,0,.45)}
+  .pane{flex:1;padding:16px 24px;overflow:auto}
+  .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 0;color:rgba(0,0,0,.25)}
+  .empty svg{margin-bottom:8px}
+  .anno{background:#e6f4ff;border:1px solid #91caff;border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:13px;line-height:1.8}
+  .ro{display:inline-flex;align-items:center;gap:5px;background:#f6ffed;border:1px solid #b7eb8f;color:#389e0d;border-radius:4px;padding:2px 9px;font-size:12px}
+</style>
+<div class="mask"></div>
+<div class="drawer">
+  <div class="dh">
+    <div><div style="font-size:16px;font-weight:600">销售产品 · S-3120014539</div>
+    <div style="font-size:12px;color:rgba(0,0,0,.45);margin-top:2px">主料1　·　以销售料号为轴的报价数据</div></div>
+    <div style="display:flex;align-items:center;gap:12px"><span class="ro">🔒 只读</span><span style="cursor:pointer;color:rgba(0,0,0,.45)">✕</span></div>
+  </div>
+  <div class="dbody">
+    <div class="ltabs">
+      <div class="ltab">物料BOM <span class="cnt">9</span></div>
+      <div class="ltab">物料与元素BOM <span class="cnt">2</span></div>
+      <div class="ltab">来料固定加工费 <span class="cnt zero">0</span></div>
+      <div class="ltab">来料其他费用 <span class="cnt zero">0</span></div>
+      <div class="ltab">来料回收折扣 <span class="cnt zero">0</span></div>
+      <div class="ltab">自制加工费 <span class="cnt zero">0</span></div>
+      <div class="ltab">成品其他费用 <span class="cnt zero">0</span></div>
+      <div class="ltab">组成件其他费用 <span class="cnt zero">0</span></div>
+      <div class="ltab">组装加工费 <span class="cnt zero">0</span></div>
+      <div class="ltab">组装加工费年降 <span class="cnt zero">0</span></div>
+      <div class="ltab">电镀费用 <span class="cnt zero">0</span></div>
+      <div class="ltab">来料年降 <span class="cnt zero">0</span></div>
+      <div class="ltab active">年降系数 <span class="cnt zero">0</span></div>
+    </div>
+    <div class="pane">
+      <div class="anno"><b>AC-12 的视觉基准 —— 空 tab。</b>
+        该 sheet 该料号从未有过数据（<code>overview</code> 返回 <code>versionNo=null</code>）。
+        🚨 <b>必须显示 <code>暂无数据</code>，绝不能停在「加载中…」</b> —— 那是 <code>AP-31「加载中永久占位族」</code>的典型症状。
+        版本下拉此时<b>不渲染</b>（没有任何版本可选）。
+      </div>
+      <div class="empty">
+        <svg width="64" height="41" viewBox="0 0 64 41"><g fill="none" fill-rule="evenodd"><ellipse fill="#f5f5f5" cx="32" cy="33" rx="32" ry="7"></ellipse><g fill-rule="nonzero" stroke="#d9d9d9"><path d="M55 12.76L44.854 1.258C44.367.474 43.656 0 42.907 0H21.093c-.749 0-1.46.474-1.947 1.257L9 12.761V22h46v-9.24z"></path><path d="M41.613 15.931c0-1.605.994-2.93 2.227-2.931H55v18.137C55 33.26 53.68 35 52.05 35h-40.1C10.32 35 9 33.259 9 31.137V13h11.16c1.233 0 2.227 1.323 2.227 2.928v.022c0 1.605 1.005 2.901 2.237 2.901h14.752c1.232 0 2.237-1.308 2.237-2.913v-.007z" fill="#fafafa"></path></g></g></svg>
+        <div>暂无数据</div>
+      </div>
+    </div>
+  </div>
+</div>

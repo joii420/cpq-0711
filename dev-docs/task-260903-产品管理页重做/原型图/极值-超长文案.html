@@ -1,0 +1,72 @@
+<meta charset="utf-8">
+<title>产品管理 · 极值与超长文案</title>
+<link rel="stylesheet" href="antd-like.css">
+<style>
+  .tw{width:100%;overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:14px;table-layout:fixed}
+  th{text-align:left;background:#fafafa;font-weight:600;padding:12px 16px;border-bottom:1px solid #f0f0f0;white-space:nowrap}
+  td{padding:12px 16px;border-bottom:1px solid #f0f0f0}
+  .ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .muted{color:rgba(0,0,0,.25)}
+  .num{text-align:right;font-variant-numeric:tabular-nums}
+  .anno{background:#e6f4ff;border:1px solid #91caff;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px;line-height:1.8}
+  h3{font-size:15px;margin:24px 0 10px}
+</style>
+<div class="page">
+  <div class="anno"><b>AC-15 的视觉基准 —— 极值与超长文案。</b>
+    判据：<b>单元格省略号截断</b>（<code>ellipsis</code>），<b>页面不出现横向滚动条撑破容器</b>，抽屉标题不换行破版。<br>
+    表格用 <code>table-layout:fixed</code> + 列宽约束；超长内容 hover 显示完整值（antd <code>Tooltip</code> 或原生 <code>title</code>）。
+  </div>
+
+  <h3>① 销售产品 · 超长品名 + 极值单重</h3>
+  <div class="card"><div class="card-body"><div class="tw">
+    <table>
+      <colgroup><col style="width:150px"><col style="width:230px"><col style="width:110px"><col style="width:130px"><col style="width:130px"><col style="width:120px"><col style="width:130px"></colgroup>
+      <thead><tr><th>销售料号</th><th>品名</th><th>规格</th><th>尺寸</th><th>旧料号</th><th style="text-align:right">单重</th><th>生产料号</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="ell" title="S-3120014539-EXTRA-LONG-MATERIAL-NUMBER-FOR-BOUNDARY-TEST">S-3120014539-EXTRA-LONG-MATERIAL-NUMBER-FOR-BOUNDARY-TEST</td>
+          <td class="ell" title="AgNi10/Cu-Cu/301/Cu接触桥（含银镍复合层与铜基体的多层复合结构，适用于高分断能力断路器）">AgNi10/Cu-Cu/301/Cu接触桥（含银镍复合层与铜基体的多层复合结构，适用于高分断能力断路器）</td>
+          <td class="ell muted">—</td><td class="ell">3.5×3.5×0.6</td><td class="ell">8DLX.550.653</td>
+          <td class="num">0.000000001</td><td class="ell">3120018220</td>
+        </tr>
+        <tr>
+          <td class="ell">S-2120011658</td><td class="ell">AgNi10/Cu-Cu/301/Cu接触桥</td>
+          <td class="ell muted">—</td><td class="ell muted">—</td><td class="ell muted">—</td>
+          <td class="num">999999999.999999999</td><td class="ell">2120011658</td>
+        </tr>
+        <tr>
+          <td class="ell">COMP1</td><td class="ell muted">—</td><td class="ell muted">—</td><td class="ell muted">—</td>
+          <td class="ell muted">—</td><td class="num muted">—</td><td class="ell muted">—</td>
+        </tr>
+      </tbody>
+    </table>
+  </div></div></div>
+
+  <h3>② 客户产品 · 超长客户名与客户产品编号</h3>
+  <div class="card"><div class="card-body"><div class="tw">
+    <table>
+      <colgroup><col style="width:130px"><col style="width:200px"><col style="width:180px"><col style="width:190px"><col style="width:140px"><col style="width:160px"></colgroup>
+      <thead><tr><th>客户编号</th><th>客户名称</th><th>客户料号名称</th><th>客户产品编号</th><th>客户图号</th><th>销售料号</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="ell">CUST-0004</td>
+          <td class="ell" title="正泰电器股份有限公司低压电器事业部华东区域采购中心">正泰电器股份有限公司低压电器事业部华东区域采购中心</td>
+          <td class="ell muted">—</td>
+          <td class="ell" title="CP-0028-2609000001-CUSTOMER-EXTENDED-PART-NUMBER">CP-0028-2609000001-CUSTOMER-EXTENDED-PART-NUMBER</td>
+          <td class="ell muted">—</td><td class="ell">0028-2609000001</td>
+        </tr>
+      </tbody>
+    </table>
+  </div></div></div>
+
+  <div class="anno" style="background:#fff7e6;border-color:#ffd591;margin-top:20px">
+    <b>⚠️ 数值列两条纪律</b><br>
+    1. <b>右对齐 + 等宽数字</b>（<code>font-variant-numeric:tabular-nums</code>），便于纵向比对位数。<br>
+    2. 🚫 <b>后端以字符串回传保留 scale，禁止 <code>Number()</code> 转换</b> ——
+       <code>999999999.999999999</code> 经 JS 数值转换会丢精度。用 <code>utils/precision.ts</code> 的 <code>formatDisplayDecimal</code>。<br>
+    3. 🚨 <b><code>pricing_unit</code>（计价单位）类型已由 <code>DECIMAL</code> 修正为 <code>STRING</code></b>，
+       它的值是 <code>PCS</code> / <code>g</code> 这类文本 —— <b>左对齐，不得当数字处理</b>。
+       按 <code>ColumnDef.type</code> 判断，<b>不要按列名硬编码</b>。
+  </div>
+</div>
