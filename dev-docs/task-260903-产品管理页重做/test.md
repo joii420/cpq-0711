@@ -139,7 +139,7 @@ SELECT count(*) FROM ds_quote_material_bom WHERE material_no='S-3120014539';  --
 | AC-11 | L2 | `E2E-11` | 八步序列，中间态与最终态都断言，console 无 error |
 | AC-12 | L2 | `E2E-12` | 空 tab 显示 `暂无数据`，**不显示 `加载中…`** |
 | AC-13 | L1+L2 | `UT-01` `E2E-13` | 0 行时 `Empty` + 总数 0，不白屏不转圈 |
-| AC-14 | L2 | `E2E-14` | 搜 `S-3120014539` 得 1 行；搜 `CUST-0004` 得 12 行；清空恢复 |
+| AC-14 | L2 | `E2E-14` | 搜 `S-3120014539` 得 1 行；搜 `CUST-0004` 得 **11** 行；清空恢复 |
 | AC-15 | L2 | `E2E-15` | ≥60 字符品名省略号截断、无横向滚动条撑破 |
 | AC-16 | L2 | `E2E-16` | `SALES_REP` 可查看、无 403、无红色遮罩 |
 | AC-17 | L3 | `ST-01` | grep `docs/列表操作规范.md` 与 `RECORD.md` 命中新增条目 |
@@ -154,7 +154,7 @@ SELECT count(*) FROM ds_quote_material_bom WHERE material_no='S-3120014539';  --
 
 | # | 实验 | 做法 | 判据 |
 |---|---|---|---|
-| **FS-1** | **只读是真的吗** | 临时把 `editable={false}` 改成 `true`，重跑 `E2E-08` | **必须变红**。不变红 ⇒ 用例根本没在查编辑控件，是空验证 |
+| **FS-1** | **只读是真的吗** | ~~临时把 `editable={false}` 改成 `true`~~ 🚩 **2026-09-03 更正干预点**：前端交付的是 `ReadonlySheetTable.tsx`（**从类型上就不接受 `editable` prop**），不是复用 `EditableSheetTable`。⇒ 改为**临时给 `ReadonlySheetTable` 加一个渲染 `<input>` 的分支**，重跑 `E2E-08` | **必须变红**。不变红 ⇒ 用例根本没在查编辑控件，是空验证。<br>⚠️ **干预点选错会让「改了没变红」被误判成用例失效** —— 测试代理提出，采纳 |
 | **FS-2** | **数字是真的吗** | 临时把样例中 `S-3120014539` 的物料BOM 删掉 1 行重导，重跑 `E2E-07` | **必须从 9 变 8 并失败**。不变 ⇒ 用例读的是缓存或写死值 |
 | **FS-3** | **pending 过滤是真的吗** | 临时往 `ds_quote_material` 插 1 行，重跑 `E2E-04` | 总数 **必须 43**。仍是 42 ⇒ 页面读的不是这张表 |
 | **FS-4** | **空态是真的吗** | 临时清空某 tab 数据重跑 `E2E-12` | 必须显示 `暂无数据` 而非 `加载中…`。显示「加载中」⇒ 撞 AP-31「加载中永久占位族」 |
@@ -224,3 +224,42 @@ SELECT count(*) FROM ds_quote_material_bom WHERE material_no='S-3120014539';  --
 
 多个 vite 共用软链的 `node_modules/.vite` 会互相踢掉预构建缓存 —— 对方实测这是页面加载超时的**真因，不是产品 bug**。
 ⇒ E2E 遇到诡异加载超时 / 白屏，**先排除这个再报产品缺陷**，否则会误报。
+
+---
+
+## 9. 测试账号（2026-09-03 建立，AC-9 / AC-16 的前置）
+
+### 问题背景
+
+`AC-9`（角色层面只读）与 `AC-16`（权限不足）需要 `PRICING_MANAGER` 与 `SALES_REP` 两个可登录账号。实测发现：
+
+- 既有 E2E spec 引用的 `salesrep` / `pricingmgr` / `salesmgr` **在共享库里已不存在**（被其他会话清理过）
+- 现存同角色 ACTIVE 账号（`test_finance_c87a27ab` / `co_test_active_*`）**全部 `is_first_login=t`** ⇒ 登录后强制改密，E2E 会卡在改密页
+- ⇒ 这是**测试环境缺陷**，不是产品缺陷。测试代理未自行建号是正确的（建号=改共享库全局状态，无批准权）
+
+### 处置（用户 2026-09-03 批准）
+
+新增 **2 个专用测试账号**，复用 `admin` 的密码哈希 ⇒ **口令与 admin 相同**：
+
+| username | role | status | is_first_login | 口令 |
+|---|---|---|---|---|
+| `t260903_pm` | `PRICING_MANAGER` | ACTIVE | **false** | `Admin@2026` |
+| `t260903_sales` | `SALES_REP` | ACTIVE | **false** | `Admin@2026` |
+
+**实测登录验证**（不采信 DB 字段，实打端点）：
+
+```
+admin          → 200 SYSTEM_ADMIN
+t260903_pm     → 200 PRICING_MANAGER
+t260903_sales  → 200 SALES_REP
+```
+
+### 纪律
+
+- 建号前已核对唯一约束（`user_username_key` / `user_email_key`）与占用情况（0 冲突），事务内建成、核对哈希一致后才 `COMMIT`
+- 🚫 **未修改任何现有账号** —— 没有去重置 `test_finance_c87a27ab` 等别的会话建的账号的口令，那可能打挂它们正在跑的用例
+- **结案时的去留**：这两个账号可精确删除（`DELETE FROM "user" WHERE username IN ('t260903_pm','t260903_sales')`）。建议**保留**——既有 spec 引用的账号已被清理过一次，说明这类账号缺失会反复发生；但需在结案时向用户确认。
+
+### E2E 用法
+
+用例走 `PW_USER_*` / `PW_PWD_*` 环境变量，**缺账号时硬失败而非 skip**（测试代理已实现）。
