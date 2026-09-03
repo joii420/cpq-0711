@@ -83,6 +83,13 @@ const QuotationCreateForm: React.FC<Props> = ({
   lockedCategoryId,
 }) => {
   const [categories, setCategories] = useState<ProductCategory[]>([]);
+  /**
+   * 分类列表是否**已经拉完**（成功或失败都算）。
+   * 🚨 只为一件事存在：判「客户绑的分类是不是悬空」必须等列表到位。
+   *    加载中「找不到」是**正常中间态** —— 在那一刻就判悬空并解禁，会让 25 个正常客户
+   *    也短暂变成可手选，等列表一到又变回禁用，是新造的 bug。
+   */
+  const [categoriesLoaded, setCategoriesLoaded] = useState(false);
   const [matchResult, setMatchResult] = useState<MatchResult | null>(null);
   const [matching, setMatching] = useState(false);
   const [costingTemplates, setCostingTemplates] = useState<CostingCardTemplate[]>([]);
@@ -114,7 +121,10 @@ const QuotationCreateForm: React.FC<Props> = ({
         const list: ProductCategory[] = res.data || [];
         setCategories(list);
       })
-      .catch(() => setCategories([]));
+      .catch(() => setCategories([]))
+      // 失败也要置位：否则拉不到分类时永远停在「加载中」，悬空兜底永远不生效，
+      // 又回到「用户既改不了也看不出为什么」的死局。
+      .finally(() => setCategoriesLoaded(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -231,6 +241,59 @@ const QuotationCreateForm: React.FC<Props> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value.categoryId, customerId]);
 
+  /**
+   * 🩹 存量缺陷兜底（非 task-260902 引入，用户裁决在本任务顺带修）：
+   *    **客户绑定的 `product_category_id` 指向一条已被删除的分类**（悬空外键）。
+   *
+   * 现网实证：`8000137 苏州西门子` 的 `product_category_id` 在 `product_category` 表里不存在。
+   * 旧行为的死锁链：
+   *    `lockedCategoryId` 有值 ⇒ 下拉 `disabled`
+   *    ⇒ 但 `categories` 里没有对应 option，分类等于没选中
+   *    ⇒ 模板按分类匹配不到 ⇒ `customerTemplateId` 永远为空
+   *    ⇒ `isValid` 恒 false ⇒ 「下一步」**永久点不动**
+   *    ⇒ 而 `value.categoryId` 其实**被塞了那个悬空 UUID**（见上面的初始化 effect），
+   *      所以 `validateStatus`/`help` 的 `!value.categoryId` 判据**恒为 false**
+   *      ⇒ 一个字的解释都不给。用这个客户**建不出报价单，且看不出为什么**。
+   *
+   * ⇒ 核心修法是**解除禁用**（只加提示解决不了：用户改不了才是卡死的原因）。
+   *
+   * 三条边界：
+   *  1. 必须 `categoriesLoaded` 之后才判 —— 见该 state 的注释。
+   *  2. `!readOnly` 收口 —— 只读态（编辑已有报价单）整条分支不参与，行为逐字节不变。
+   *  3. 正常路径（`lockedCategoryId` 能在 `categories` 里找到）**一个像素都不动**。
+   */
+  const lockedCategoryMissing =
+    !readOnly
+    && categoriesLoaded
+    // 🚨 列表为空时**不下悬空结论**（接口挂了 / 库里一条分类都没有）：
+    //    那种情况下我们并不知道这个分类存不存在，说「已不存在」是撒谎；
+    //    而且下拉里本来就没有 option，解禁了也选不出东西来，等于白解。
+    //    ⇒ 只在「确实拿到了分类列表、而绑定的那个不在里面」时才判悬空。
+    && categories.length > 0
+    && !!lockedCategoryId
+    && !categories.some((c) => c.id === lockedCategoryId);
+
+  /**
+   * 「分类由客户绑定锁定、不可手选」是否**真的成立**。
+   * 悬空时不成立 —— 这一个值同时管住 `disabled` / `onChange` / `allowClear` / `showSearch` 四处，
+   * 🚫 不要只改 `disabled`：那样下拉能点开却选不进去（`onChange` 仍是 undefined），
+   *    比禁用更糟 —— 用户以为自己选上了。
+   */
+  const categoryLocked = !!lockedCategoryId && !lockedCategoryMissing;
+
+  /**
+   * 分类这一格「还没满足」——驱动红色 `validateStatus` 与 `help`。
+   *
+   * 非悬空路径**与改动前逐字一致**（就是 `!value.categoryId`），所以 25 个正常客户 +
+   * 14 个未绑分类客户 + 只读态的表现一个像素都不变。
+   * 悬空路径单独判：`value.categoryId` 此刻装的是那个**悬空 UUID**（初始化 effect 塞进去的），
+   * 用 `!value.categoryId` 判会恒为 false ⇒ 一个字的错误提示都出不来。
+   * ⇒ 悬空时改判「有没有选出一个在列表里真实存在的分类」，用户选好后红字与错误态一并消失。
+   */
+  const categoryUnsatisfied = lockedCategoryMissing
+    ? !categories.some((c) => c.id === value.categoryId)
+    : !value.categoryId;
+
   // 通知父组件表单合法性
   useEffect(() => {
     // 编辑态(已有报价单): 产品分类不持久化(quotation 表无 category_id), 模板已锁定 →
@@ -323,25 +386,34 @@ const QuotationCreateForm: React.FC<Props> = ({
       <Form.Item
         label="产品分类"
         required
-        tooltip={lockedCategoryId
-          ? '产品分类由客户绑定决定，如需变更请到客户管理修改客户所属产品分类'
-          : '选择后系统自动匹配「客户专属模板」(如有) → 「通用模板」(兜底)'}
-        validateStatus={!value.categoryId ? 'error' : ''}
-        help={!value.categoryId
-          ? (readOnly && !value.customerTemplateId
-            ? '该报价单未绑定报价模板，无法带出产品分类'
-            : '请选择产品分类')
-          : undefined}
+        tooltip={lockedCategoryMissing
+          // 悬空时原文案是**误导**：照它去客户管理改绑，当下这张单还是走不下去
+          ? '该客户绑定的产品分类已不存在，已解除锁定，请在此手动选择一个分类'
+          : lockedCategoryId
+            ? '产品分类由客户绑定决定，如需变更请到客户管理修改客户所属产品分类'
+            : '选择后系统自动匹配「客户专属模板」(如有) → 「通用模板」(兜底)'}
+        validateStatus={categoryUnsatisfied ? 'error' : ''}
+        help={lockedCategoryMissing && categoryUnsatisfied
+          // 🚨 这一条要排在最前：悬空时 value.categoryId 是**有值的**（那个悬空 UUID），
+          //    排在 !value.categoryId 分支之后就永远走不到，用户还是一个字都看不到。
+          ? '该客户绑定的产品分类已不存在（可能已被删除），请选择一个分类，或到客户管理为该客户重新绑定'
+          : !value.categoryId
+            ? (readOnly && !value.customerTemplateId
+              ? '该报价单未绑定报价模板，无法带出产品分类'
+              : '请选择产品分类')
+            : undefined}
       >
         <Select
           options={categories.map((c) => ({ value: c.id, label: c.name }))}
           placeholder="请选择产品分类"
-          value={value.categoryId}
-          onChange={lockedCategoryId ? undefined : (v) => onChange({ ...value, categoryId: v })}
-          allowClear={!lockedCategoryId}
-          showSearch={!lockedCategoryId}
+          // 悬空时不要把那串裸 UUID 当标签显示出来（options 里没有它，AntD 会直接回显原始值），
+          // 置空让 placeholder「请选择产品分类」露出来，用户才知道该动手
+          value={lockedCategoryMissing ? undefined : value.categoryId}
+          onChange={categoryLocked ? undefined : (v) => onChange({ ...value, categoryId: v })}
+          allowClear={!categoryLocked}
+          showSearch={!categoryLocked}
           optionFilterProp="label"
-          disabled={readOnly || !!lockedCategoryId}
+          disabled={readOnly || categoryLocked}
         />
       </Form.Item>
 
