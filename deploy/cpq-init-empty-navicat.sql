@@ -103,7 +103,30 @@
 --       · 基线号上调理由同 V368/V382: V388 含 CREATE TABLE 无 IF NOT EXISTS, 非幂等,
 --          基线不上调则连 Quarkus 时重放会因"表已存在"启动失败。
 --       · 已建库的内网环境如需从 V387 补到 V398, 用等价增量脚本 deploy/0901-dbupdate.sql
--- 内容: 150 业务活表 + flyway_schema_history + 3 活视图 + 6 函数 + 1 个 admin 用户 + 语义图种子 269 行
+-- 同步: 2026-09-02  已增量同步 V399 基线归位 + V400 的全部**结构**变更, 基线号 398 -> 400。
+--       · V399: sel_param_type 3 行封闭枚举种子。⚠️ 该种子在 2026-09-01 那次同步时已随
+--                本脚本带入(见文件末尾种子段), 但基线号当时停在 398 —— 本次一并上调后不再重放,
+--                行为不变(V399 本就是 ON CONFLICT DO NOTHING, 带不带基线都幂等)。
+--       · V400: 材质模型三层化(材质 -> 含量配置 -> 元素行, task-260901 B-1+B-2)
+--                · 新增 2 张表: material_recipe_composition(材质的元素组成, 配置矩阵列权威来源;
+--                  pkey + uq_mrcomp_recipe_element + idx_mrcomp_recipe + recipe_id 外键 CASCADE)
+--                  material_recipe_config(含量配置, M-1 发号 / M-2 软删不回收编号;
+--                  pkey + uq_mrc_config_no + uq_mrc_recipe_seq + chk_mrc_status + idx_mrc_recipe
+--                  + recipe_id 外键 CASCADE)
+--                · material_recipe 加列 allow_custom_content boolean NOT NULL DEFAULT false(M-5)
+--                · material_recipe_element 加列 config_id uuid + uq_config_element(config_id,
+--                  element_code) + fk_mre_config(-> material_recipe_config CASCADE) + idx_mre_config
+--                · material_recipe_element.recipe_id 由 NOT NULL 改为**可空**(过渡期: 新元素行只挂
+--                  config_id 不再写 recipe_id)。旧约束 uq_recipe_element 与 recipe_id 外键**保留不动**
+--                  —— 删除它们属 CLAUDE.md §3.2 契约销毁红线, 另置于待批 V401, 本脚本同步其现状
+--       · ⚠️ 基线号上调理由同 V368/V382/V388: V400 的 `ADD CONSTRAINT uq_config_element` 与
+--          `ADD CONSTRAINT fk_mre_config` **不带 IF NOT EXISTS, 非幂等** —— 基线停在 398 则连
+--          Quarkus 时会重放 V400 并因"约束已存在"启动失败。
+--       · ⚠️ 同 2026-08-04 惯例: 只同步结构, 不含 V400 第④节的存量双向迁移(建 -01 配置 / 回填
+--          config_id / 推导元素组成)与第⑤节的迁移断言 —— 空库无行, 断言恒真, 带上无意义。
+--       · 本次**无**等价增量脚本: 已建库的内网环境更新后端到含 V400 的版本并重启即可, Flyway
+--          会连同存量迁移一并跑完(存量回填只在有数据的库才有意义, 手工脚本反而漏掉断言保护)。
+-- 内容: 152 业务活表 + flyway_schema_history + 3 活视图 + 6 函数 + 1 个 admin 用户 + 语义图种子 269 行
 --       + 2 条 BOM 树递归 SQL 配置(唯一的业务配置种子, 见文件末尾)
 --       + 1 条 price_adjust_settings 系统参数种子行(id=1, 阈值 0.01, 守卫开关 false)
 -- 不含: task-0723 的 _drop 废弃表/视图、Flyway 历史迁移记录(仅留 1 行 baseline)、业务数据
@@ -2048,8 +2071,48 @@ CREATE TABLE public.material_recipe (
     updated_at timestamp(6) with time zone DEFAULT now() NOT NULL,
     created_by uuid,
     updated_by uuid,
+    allow_custom_content boolean DEFAULT false NOT NULL,
     CONSTRAINT chk_material_recipe_status CHECK (((status)::text = ANY (ARRAY[('ACTIVE'::character varying)::text, ('INACTIVE'::character varying)::text]))),
     CONSTRAINT chk_material_recipe_type CHECK (((recipe_type)::text = ANY (ARRAY[('locked'::character varying)::text, ('editable'::character varying)::text, ('partial'::character varying)::text])))
+);
+
+
+--
+-- Name: material_recipe_composition; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.material_recipe_composition (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    recipe_id uuid NOT NULL,
+    element_no character varying(32) NOT NULL,
+    element_code character varying(32) NOT NULL,
+    element_name character varying(64) NOT NULL,
+    sort_order integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: material_recipe_config; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.material_recipe_config (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    recipe_id uuid NOT NULL,
+    config_no character varying(80) NOT NULL,
+    seq integer NOT NULL,
+    status character varying(16) DEFAULT 'ACTIVE'::character varying NOT NULL,
+    remark character varying(255),
+    sort_order integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    created_by uuid,
+    updated_by uuid,
+--  ⚠️ 本条**刻意**写成 IN 而非 pg_dump 的 ANY(ARRAY[...]) 风格, 勿"修正"回去:
+--     PG 会把 `= ANY (ARRAY[...])` 的两种显式写法都重写成逐元素 cast, 与 dev 库
+--     (由 V400 的 `status IN (...)` 生成的整体 cast `(ARRAY[...])::text[]`) 表达式树不等,
+--     导致本脚本建的库与 dev 库 pg_dump 比对出假差异。实测三种写法后取此形式。
+    CONSTRAINT chk_mrc_status CHECK (status IN ('ACTIVE','INACTIVE'))
 );
 
 
@@ -2059,7 +2122,7 @@ CREATE TABLE public.material_recipe (
 
 CREATE TABLE public.material_recipe_element (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    recipe_id uuid NOT NULL,
+    recipe_id uuid,
     element_code character varying(32) NOT NULL,
     element_name character varying(64) NOT NULL,
     default_pct numeric(16,12) NOT NULL,
@@ -2069,6 +2132,7 @@ CREATE TABLE public.material_recipe_element (
     sort_order integer DEFAULT 0 NOT NULL,
     created_at timestamp(6) with time zone DEFAULT now() NOT NULL,
     element_no character varying(32),
+    config_id uuid,
     CONSTRAINT chk_recipe_element_range CHECK ((((is_locked = true) AND (min_pct IS NULL) AND (max_pct IS NULL)) OR ((is_locked = false) AND (min_pct IS NOT NULL) AND (max_pct IS NOT NULL) AND (min_pct <= max_pct))))
 );
 
@@ -4574,6 +4638,22 @@ ALTER TABLE ONLY public.material_recipe
 
 
 --
+-- Name: material_recipe_composition material_recipe_composition_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_recipe_composition
+    ADD CONSTRAINT material_recipe_composition_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: material_recipe_config material_recipe_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_recipe_config
+    ADD CONSTRAINT material_recipe_config_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: material_recipe_element material_recipe_element_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5427,6 +5507,38 @@ ALTER TABLE ONLY public.product_process
 
 ALTER TABLE ONLY public.quotation_comparison_config
     ADD CONSTRAINT uq_qcc_quotation_bucket UNIQUE (quotation_id, bucket);
+
+
+--
+-- Name: quotation_view_structure uq_quotation_view_structure; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_recipe_element
+    ADD CONSTRAINT uq_config_element UNIQUE (config_id, element_code);
+
+
+--
+-- Name: material_recipe_config uq_mrc_config_no; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_recipe_config
+    ADD CONSTRAINT uq_mrc_config_no UNIQUE (config_no);
+
+
+--
+-- Name: material_recipe_config uq_mrc_recipe_seq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_recipe_config
+    ADD CONSTRAINT uq_mrc_recipe_seq UNIQUE (recipe_id, seq);
+
+
+--
+-- Name: material_recipe_composition uq_mrcomp_recipe_element; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_recipe_composition
+    ADD CONSTRAINT uq_mrcomp_recipe_element UNIQUE (recipe_id, element_no);
 
 
 --
@@ -6313,6 +6425,27 @@ CREATE INDEX idx_mpuji_quotation ON public.material_price_update_job_item USING 
 --
 
 CREATE INDEX idx_mpuji_warn_code ON public.material_price_update_job_item USING btree (warn_code, updated_at DESC) WHERE (warn_code IS NOT NULL);
+
+
+--
+-- Name: idx_mrc_recipe; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mrc_recipe ON public.material_recipe_config USING btree (recipe_id, seq);
+
+
+--
+-- Name: idx_mrcomp_recipe; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mrcomp_recipe ON public.material_recipe_composition USING btree (recipe_id, sort_order);
+
+
+--
+-- Name: idx_mre_config; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_mre_config ON public.material_recipe_element USING btree (config_id);
 
 
 --
@@ -7953,6 +8086,30 @@ ALTER TABLE ONLY public.material_price_version_ref
 
 
 --
+-- Name: material_recipe_composition material_recipe_composition_recipe_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_recipe_composition
+    ADD CONSTRAINT material_recipe_composition_recipe_id_fkey FOREIGN KEY (recipe_id) REFERENCES public.material_recipe(id) ON DELETE CASCADE;
+
+
+--
+-- Name: material_recipe_config material_recipe_config_recipe_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_recipe_config
+    ADD CONSTRAINT material_recipe_config_recipe_id_fkey FOREIGN KEY (recipe_id) REFERENCES public.material_recipe(id) ON DELETE CASCADE;
+
+
+--
+-- Name: material_recipe_element fk_mre_config; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.material_recipe_element
+    ADD CONSTRAINT fk_mre_config FOREIGN KEY (config_id) REFERENCES public.material_recipe_config(id) ON DELETE CASCADE;
+
+
+--
 -- Name: material_recipe_element material_recipe_element_recipe_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9156,13 +9313,13 @@ INSERT INTO public.semantic_tab_view_column (id, view_id, column_id, roles, sort
 
 INSERT INTO public.flyway_schema_history
   (installed_rank, version, description, type, script, checksum, installed_by, installed_on, execution_time, success)
-VALUES (1, '398', '<< Flyway Baseline >>', 'BASELINE', '<< Flyway Baseline >>', NULL, 'baseline', now(), 0, true);
+VALUES (1, '400', '<< Flyway Baseline >>', 'BASELINE', '<< Flyway Baseline >>', NULL, 'baseline', now(), 0, true);
 
 
 -- ============================================================
 -- 导入后自检(逐条核对期望值)
 -- ============================================================
--- SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';  -- 期望 151
+-- SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE';  -- 期望 153
 -- SELECT count(*) FROM information_schema.views  WHERE table_schema='public';                              -- 期望 3
 -- SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public';     -- 期望 6
 -- SELECT version FROM flyway_schema_history;                                                               -- 期望 398
@@ -9198,3 +9355,20 @@ VALUES (1, '398', '<< Flyway Baseline >>', 'BASELINE', '<< Flyway Baseline >>', 
 -- SELECT conname FROM pg_constraint WHERE conname='uq_qlcd_line_component';  -- 期望 1 行
 -- SELECT pg_get_function_identity_arguments(oid) FROM pg_proc
 --   WHERE proname='f_material_element_price' ORDER BY 1;              -- 期望 2 行(两参 / 三参)
+--
+-- ---- 2026-09-02 新增(V400 材质模型三层化) ----
+-- SELECT count(*) FROM information_schema.tables WHERE table_schema='public'
+--   AND table_name IN ('material_recipe_config','material_recipe_composition');   -- 期望 2
+-- SELECT is_nullable FROM information_schema.columns
+--   WHERE table_name='material_recipe_element' AND column_name='recipe_id';       -- 期望 YES(过渡期放开)
+-- SELECT column_name FROM information_schema.columns WHERE table_name='material_recipe_element'
+--   AND column_name='config_id';                                                  -- 期望 1 行
+-- SELECT column_default, is_nullable FROM information_schema.columns
+--   WHERE table_name='material_recipe' AND column_name='allow_custom_content';    -- 期望 false / NO
+-- SELECT conname FROM pg_constraint WHERE conname IN
+--   ('uq_config_element','fk_mre_config','uq_mrc_config_no','uq_mrc_recipe_seq',
+--    'uq_mrcomp_recipe_element','chk_mrc_status') ORDER BY 1;                     -- 期望 6 行
+-- SELECT indexname FROM pg_indexes WHERE indexname IN
+--   ('idx_mrc_recipe','idx_mrcomp_recipe','idx_mre_config') ORDER BY 1;           -- 期望 3 行
+-- SELECT count(*) FROM material_recipe_config;                                    -- 期望 0(空库, 存量迁移无行可迁)
+-- SELECT count(*) FROM material_recipe_composition;                               -- 期望 0

@@ -4,6 +4,18 @@
 
 ---
 
+[2026-09-02] 建库脚本（路径 B 直接修复） - **`deploy/cpq-init-empty-navicat.sql` 同步 V400，基线 398 → 400** | 涉及文件：`deploy/cpq-init-empty-navicat.sql`（13 处结构同步 + 1 处 CHECK 写法修正）| 用户裁决：走路径 B，立即同步不等 task-260901 结案。
+
+🔑 **同步内容（只同步结构，不含 V400 第④节存量迁移与第⑤节断言 —— 空库无行）**：新增 2 表 `material_recipe_composition` / `material_recipe_config`（含 pkey / uq / chk / 索引 / recipe_id 外键 CASCADE）；`material_recipe` 加 `allow_custom_content`；`material_recipe_element` 加 `config_id` + `uq_config_element` + `fk_mre_config` + `idx_mre_config`，且 `recipe_id` 由 NOT NULL 改**可空**（过渡期）。旧契约 `uq_recipe_element` 与 recipe_id 外键**保留不动**（删除属 §3.2 红线，在待批 V401）。表总数 151 → 153。
+
+⚠️ **基线必须上调到 400，有证伪实验支撑**：V400 的 `ADD CONSTRAINT uq_config_element` / `fk_mre_config` **不带 IF NOT EXISTS**。在已建好结构的库上重放整份 V400 → `ERROR: relation "uq_config_element" already exists`（退出码 3）⇒ 基线若停在 398，新建库连 Quarkus 会启动失败。同 V368/V382/V388 的既有教训。（附带实证：该重放在 ADD CONSTRAINT 处失败前只跑了幂等语句，四表结构仍与 dev 逐字节一致，不留半吊子结构。）
+
+🔬 **验证方式 = 建全新空库真跑 + 与 dev 库六维比对**（非 diff 目测）：新建 `cpq_verify_v400_tmp2` 跑脚本退出码 0；表总数 153 ✅ / baseline 400 ✅ / V400 专项自检 8 项全中；`material_recipe` 四表 pg_dump **逐字节一致**（116 行 DDL）；全库列级**反向差异 0 条**（脚本未多建任何对象），正向差异全部落在 8 张人工备份表（`_bak_bl0098_*` / `bak_task260901_b0` / `zz_d3_bk_*` 等，本就不该进建库脚本）；全库约束 483/483、索引 515/515 条数全等。
+
+⚠️ **`CHECK` 约束的表达式树会被 PG 重写，dump 形式不能照抄**：`chk_mrc_status` 首版照抄 dev 的 `= ANY ((ARRAY[...])::text[])`，导入后 PG 重写成逐元素 cast，与 dev 比对出假差异。**实测三种写法**（整体 cast / 逐元素 cast / `IN`）后确认：只有 `status IN ('ACTIVE','INACTIVE')` 才生成 dev 的整体 cast 形式，故脚本内该条**刻意写成 IN**并就地加注释防后人"修正"。
+
+🐛 **顺带发现两处既有问题（本次未动，待裁决）**：① 脚本存在**系统性 CHECK 形式漂移** —— 8 张表 11 条约束（`annual_discount` / `customer_price_adjust_strategy*` / `element_price_version` / `material_price_*` / `notification`）同属此因，语义等价、功能零影响，但会持续污染将来的 pg_dump 比对；② `V400__task260901_...sql` 文件内部注释头与 3 处 `RAISE EXCEPTION` 文案仍写作 **"V399"**（重命名后未跟改），迁移失败时报错信息会指向错误的版本号。
+
 [2026-09-02] 报价单建单（路径 B 直接修复） - **新建报价单选了模板，重新打开却回落「请选择模板」** | 涉及文件：`cpq-frontend/src/pages/quotation/QuotationWizard.tsx`（`handleCreateQuotation` 的 `POST /quotations` payload 补 `customerTemplateId` / `costingTemplateId` 两个字段）| 用户裁决：走路径 B，**存量单不回填**。
 
 🔑 **根因：建单接口漏发模板字段，模板从来没进过库**（不是渲染丢失）。`handleCreateQuotation` 构造 payload 时只带 `customerId / name / quoteType / priority / stage / projectName / expectedCloseDate / categoryId`，**两个模板字段一个都没发**；后端两端都是好的（`CreateQuotationRequest` 有字段、`QuotationService.create:303/331` 有写入 + `validateTemplateBinding` 校验），只是 `if (request.customerTemplateId != null)` 恒不成立 ⇒ `quotation.customer_template_id` / `costing_card_template_id` 建单当时恒为 NULL。同文件的 `buildDraftPayload`（saveDraft 路径）**一直有发**，所以事后编辑过的单会被顺手补上 —— 这正是它长期只对一部分单发作的原因。
