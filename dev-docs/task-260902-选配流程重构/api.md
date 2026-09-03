@@ -101,11 +101,34 @@
 
 ⇒ `materialResolved` **也必须下沉到 material 级**。`lookupFingerprint` 与 `configure` 各会调一次 `prepareMaterialSelection`，不下沉则第二次调用必误报 400。
 
-🚨 **`MATERIAL_RATIO_SUM_INVALID` 的错误响应必须带实际合计值**，前端要把它显示出来（AC-4 断言「提示写出实际合计 90%」，不是形容词）：
+### 🚨 错误信封的真实结构（**A 轮我写错了，2026-09-02 实测更正**）
+
+**现网 `ApiResponse.code` 是 `private int`**（`common/dto/ApiResponse.java:8`），类型上**装不了业务码字符串**；`GlobalExceptionMapper` 填的是 HTTP 状态码数字。
+⇒ 上表「错误码」列里的 `RECIPE_HAS_NO_CONFIG` 等**不是 `code` 字段的值**，必须另找落点。
+
+**本任务约定**（后端按此实现，前端按此解析）：
+
 ```jsonc
-{ "code": "MATERIAL_RATIO_SUM_INVALID", "message": "材质占比合计为 90%，需要正好 100%",
-  "detail": { "actualSum": "90", "expected": "100" } }
+{
+  "code": 400,                                  // int，HTTP 状态码（现网既有语义，不动）
+  "message": "材质占比合计为 90%，需要正好 100%",  // 直接可展示给用户的中文
+  "detail": {
+    "bizCode": "MATERIAL_RATIO_SUM_INVALID",    // 🆕 业务码放这里（字符串）
+    "actualSum": "90",                          // AC-4 要求的实际值
+    "expected": "100"
+  }
+}
 ```
+
+| 约定 | 说明 |
+|---|---|
+| `code` | **int，HTTP 状态码** —— 现网既有语义，🚫 不改（改它会波及全仓所有端点） |
+| `message` | **可直接展示的中文**，AC-4 要求的「实际合计 90%」**必须出现在这里**（前端可能只显示 message） |
+| `detail.bizCode` | 🆕 业务码字符串（`RECIPE_HAS_NO_CONFIG` / `MATERIAL_RATIO_SUM_INVALID` / …），前端据此做分支与指路 |
+| `detail.*` | 该错误特有的结构化字段（如 `actualSum`） |
+
+🚫 **前端不得把 `code` 当业务码用** —— 它是数字。判业务分支一律读 `detail.bizCode`。
+📌 前端已按「非纯数字字符串才当业务码」做了容错，与本约定兼容；后端补上 `detail.bizCode` 后两侧即可对齐。
 
 🚨 **合计判等必须用 `BigDecimal.compareTo`**，不得用 `double`/`equals`。AC-15b 是证伪对照组：`0.000000000001 + 99.999999999998 + 0.000000000001` 在浮点下等于 `99.99999999999999`，浮点实现会错误拒绝这个合法输入。
 
