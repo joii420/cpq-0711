@@ -242,8 +242,17 @@ const ConfigureProductDrawer: React.FC<Props> = ({
       });
       setResult(resp);
     } catch (e: any) {
-      // 错误码从 `ApiError.code` 取（`services/api.ts` 已把信封的 code/detail 带出来）
-      setFailure({ message: e?.message || '选配失败', code: e?.code });
+      /*
+       * 错误码从 `ApiError.code` 取（`services/api.ts` 已把信封的 code/detail 带出来）。
+       * 🚨 但**现网错误信封的 `code` 装的是 HTTP 状态码数字**（实测提交失败时 `code === 400`），
+       *    而 `api.md §1.2` 约定的是 `RECIPE_HAS_NO_CONFIG` 这类业务码字符串 —— 两者同名不同义。
+       *    ⇒ 这里只把「非纯数字的字符串」当业务码，纯数字一律丢弃走通用提示，
+       *      否则确认页会显示「错误码 400」这种对用户毫无意义、还会误导排查的东西。
+       *    📌 已把这个契约不一致报给主线（api.md §1.2 vs 现网信封）。
+       */
+      const raw = e?.code;
+      const bizCode = typeof raw === 'string' && !/^\d+$/.test(raw) ? raw : undefined;
+      setFailure({ message: e?.message || '选配失败', code: bizCode });
     } finally {
       setSubmitting(false);
     }
