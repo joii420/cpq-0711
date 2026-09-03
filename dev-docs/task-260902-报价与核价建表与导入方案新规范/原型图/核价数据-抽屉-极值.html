@@ -1,0 +1,51 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>基础核价 · 抽屉（极值 / 最长文案）</title><link rel="stylesheet" href="antd-like.css"></head><body>
+<div class="page"><div class="card"><div class="card-head">主数据维护 · 基础核价</div><div class="card-body"><p class="muted">（背景页）</p></div></div></div>
+<div class="mask"></div>
+<div class="drawer" style="width:1180px">
+  <div class="drawer-head"><div><span class="drawer-title">基础核价 · <b>3120019902</b></span>
+    <span class="muted" style="margin-left:12px">触点组件-银镍复合型双面焊接式 ｜ AgNi11#-Ⅰ / 线材 ｜ 12.5×12.5×0.85</span></div><button class="close">✕</button></div>
+  <div class="drawer-body"><div class="lt">
+    <div class="lt-nav">
+      <div class="lt-item">物料BOM <span class="badge on">v12 · 48</span></div>
+      <div class="lt-item">物料与元素BOM <span class="badge on">v7 · 61</span></div>
+      <div class="lt-item">来料加工费 <span class="badge on">v3 · 9</span></div>
+      <div class="lt-item">来料其他费用 <span class="badge on">v2 · 6</span></div>
+      <div class="lt-item">来料其他固定费用 <span class="badge on">v1 · 3</span></div>
+      <div class="lt-item">加工费&amp;组装费 <span class="badge on">v5 · 12</span></div>
+      <div class="lt-item">其他外加工成本 <span class="badge on">v1 · 2</span></div>
+      <div class="lt-item active">成品其他比例费用 <span class="badge on">v2 · 4</span></div>
+      <div class="lt-item">成品其他固定费用 <span class="badge on">v1 · 5</span></div>
+    </div>
+    <div class="lt-body">
+      <div class="toolbar">
+        <div class="row"><span class="muted">版本</span>
+          <select class="select" style="width:190px"><option>v2（当前）· 2026-09-03 11:02</option></select>
+          <span class="tag tag-green">最新版本 · 可编辑</span></div>
+        <div class="toolbar-right"><button class="btn">＋ 新增行</button><button class="btn btn-primary">💾 保 存</button></div>
+      </div>
+      <div class="table-wrap"><table class="compact">
+        <thead><tr><th style="width:70px">项次 🔗</th><th style="width:520px">要素名称 🔗</th><th style="width:200px">比例（%）🔗</th><th style="width:56px"></th></tr></thead>
+        <tbody>
+          <tr><td><input class="input input-sm" value="1"></td>
+            <td><input class="input input-sm" value="材料管理费及仓储周转综合分摊费用含跨厂区调拨与包装耗材摊销共计合并计价项目名称测试用超长文案共一百二十八个汉字用于验证表格列宽在极端情况下不会撑破抽屉布局也不会静默截断保存时后端会按字段长度上限校验并返回明确错误"></td>
+            <td><input class="input input-sm" value="4.500000000000"></td>
+            <td><button class="btn btn-sm btn-text">🗑</button></td></tr>
+          <tr><td><input class="input input-sm" value="2"></td>
+            <td><input class="input input-sm" value="外购件管理费"></td>
+            <td><input class="input input-sm" value="0.000000000001"></td>
+            <td><button class="btn btn-sm btn-text">🗑</button></td></tr>
+          <tr><td><input class="input input-sm" value="3"></td>
+            <td><input class="input input-sm" value="运费"></td>
+            <td><input class="input input-sm" value="99999.999999999999"></td>
+            <td><button class="btn btn-sm btn-text">🗑</button></td></tr>
+        </tbody>
+      </table></div>
+      <div class="alert alert-warn" style="margin-top:12px"><span>⚠️</span><div>
+        超长值<b>不截断</b>：列宽固定、内容横向滚动；超出 DDL 长度上限时保存返回
+        <code>列「要素名称」：超出长度上限 128</code>（AC-40）。<br>
+        小数位按现行口径<b>计算 12 位 / 显示 9 位</b>（<code>precision.ts</code> / <code>PrecisionPolicy.java</code>），原型此处按库中 scale 原样展示。
+      </div></div>
+    </div>
+  </div></div>
+</div></body></html>

@@ -1,0 +1,81 @@
+<meta charset="utf-8">
+<title>产品管理 · 客户产品（默认态）</title>
+<link rel="stylesheet" href="antd-like.css">
+<style>
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;background:#fafafa;font-weight:600;padding:12px 16px;border-bottom:1px solid #f0f0f0;white-space:nowrap}
+  td{padding:12px 16px;border-bottom:1px solid #f0f0f0}
+  tbody tr:hover{background:#fafafa}
+  .muted{color:rgba(0,0,0,.25)}
+  .syn{color:#d46b08;border-bottom:1px dashed #d46b08;cursor:help}
+  .pager{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:16px;font-size:14px}
+  .pg{min-width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #d9d9d9;border-radius:6px;background:#fff}
+  .pg.active{border-color:#1677ff;color:#1677ff}
+  .anno{background:#e6f4ff;border:1px solid #91caff;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px;line-height:1.8}
+</style>
+
+<div class="page">
+  <div class="anno">
+    <b>AC-2 / AC-3 / AC-13 / AC-14 / AC-15 的视觉基准。</b>
+    关键点：① 6 列顺序固定；② <b>行不可点击</b>——不加 <code>cursor:pointer</code>、不绑 <code>onRow.onClick</code>，点任意单元格<b>不弹抽屉</b>；
+    ③ 工具栏<b>只有搜索 + 刷新</b>，无新增/编辑/删除/导入；④ 空值一律渲染 <code>—</code>，不留空白。
+  </div>
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+    <h2 style="margin:0;font-size:20px">产品管理</h2>
+    <button class="btn">⊞ 产品分类管理</button>
+  </div>
+
+  <div class="card">
+    <div class="tabs">
+      <div class="tab active">客户产品</div>
+      <div class="tab">销售产品</div>
+    </div>
+    <div class="card-body">
+      <div class="toolbar">
+        <div class="search"><input class="input" placeholder="搜索客户编号 / 客户产品编号 / 销售料号"></div>
+        <div class="toolbar-right"><button class="btn">↻ 刷新</button></div>
+      </div>
+
+      <table>
+        <thead><tr>
+          <th>客户编号</th><th>客户名称</th><th>客户料号名称</th><th>客户产品编号</th><th>客户图号</th><th>销售料号</th>
+        </tr></thead>
+        <tbody>
+          <tr><td>C1</td><td class="muted">—</td><td class="muted">—</td><td><span class="syn" title="合成值：真实库中为空">CP-TEST-Q13-CODE</span></td><td class="muted">—</td><td>TEST-Q13-CODE</td></tr>
+          <tr><td>CUST-0001</td><td>罗克韦尔</td><td class="muted">—</td><td><span class="syn" title="合成值：真实库中为空">CP-S-80011</span></td><td class="muted">—</td><td>S-80011</td></tr>
+          <tr><td>CUST-0001</td><td>罗克韦尔</td><td class="muted">—</td><td><span class="syn" title="合成值：真实库中为空">CP-W-1001</span></td><td class="muted">—</td><td>W-1001</td></tr>
+          <tr><td>CUST-0002</td><td>测试客户</td><td class="muted">—</td><td>11001101</td><td class="muted">—</td><td>3120011203</td></tr>
+          <tr><td>CUST-0004</td><td>正泰</td><td class="muted">—</td><td><span class="syn" title="合成值：真实库中为空">CP-0028-2609000001</span></td><td class="muted">—</td><td>0028-2609000001</td></tr>
+          <tr><td>CUST-0004</td><td>正泰</td><td class="muted">—</td><td><span class="syn" title="合成值：真实库中为空">CP-0028-2609000002</span></td><td class="muted">—</td><td>0028-2609000002</td></tr>
+          <tr><td>CUST-0004</td><td>正泰</td><td class="muted">—</td><td><span class="syn" title="合成值：真实库中为空">CP-0028-2609000003</span></td><td class="muted">—</td><td>0028-2609000003</td></tr>
+          <tr><td>CUST-0004</td><td>正泰</td><td class="muted">—</td><td><span class="syn" title="合成值：真实库中为空">CP-0028-2609000004</span></td><td class="muted">—</td><td>0028-2609000004</td></tr>
+          <tr><td>CUST-0004</td><td>正泰</td><td class="muted">—</td><td><span class="syn" title="合成值：真实库中为空">CP-0028-2609000005</span></td><td class="muted">—</td><td>0028-2609000005</td></tr>
+          <tr><td>CUST-0004</td><td>正泰</td><td class="muted">—</td><td><span class="syn" title="合成值：真实库中为空">CP-0028-2609000006</span></td><td class="muted">—</td><td>0028-2609000006</td></tr>
+          <tr><td>CUST-0004</td><td>正泰</td><td class="muted">—</td><td><span class="syn" title="合成值：真实库中为空">CP-0028-2609000007</span></td><td class="muted">—</td><td>0028-2609000007</td></tr>
+          <tr><td>CUST-0004</td><td>正泰</td><td class="muted">—</td><td><span class="syn" title="合成值：真实库中为空">CP-0028-2609000008</span></td><td class="muted">—</td><td>0028-2609000008</td></tr>
+          <tr><td>CUST-0004</td><td>正泰</td><td class="muted">—</td><td><span class="syn" title="合成值：真实库中为空">CP-0028-2609000009</span></td><td class="muted">—</td><td>0028-2609000009</td></tr>
+          <tr><td>CUST-0004</td><td>正泰</td><td class="muted">—</td><td><span class="syn" title="合成值：真实库中为空">CP-0028-2609000010</span></td><td class="muted">—</td><td>0028-2609000010</td></tr>
+          <tr><td>CUST-0004</td><td>正泰</td><td class="muted">—</td><td><span class="syn" title="合成值：真实库中为空">CP-0028-2609000011</span></td><td class="muted">—</td><td>0028-2609000011</td></tr>
+          <tr><td>Q13CUST0617</td><td class="muted" title="该客户编号未在 customer 档案登记，LEFT JOIN 不到">—</td><td class="muted">—</td><td><span class="syn" title="合成值：真实库中为空">CP-0046-2609000001</span></td><td class="muted">—</td><td>0046-2609000001</td></tr>
+          <tr><td>Q13CUST0617</td><td class="muted" title="该客户编号未在 customer 档案登记，LEFT JOIN 不到">—</td><td class="muted">—</td><td><span class="syn" title="合成值：真实库中为空">CP-0046-2609000002</span></td><td class="muted">—</td><td>0046-2609000002</td></tr>
+        </tbody>
+      </table>
+
+      <div class="pager">
+        <span style="color:rgba(0,0,0,.65)">共 17 条</span>
+        <span class="pg">‹</span><span class="pg active">1</span><span class="pg">›</span>
+        <select class="select" style="width:100px"><option>20 条/页</option></select>
+      </div>
+    </div>
+  </div>
+
+  <div class="anno" style="background:#fff7e6;border-color:#ffd591;margin-top:16px">
+    <b>⚠️ 三处易错点（还原时注意）</b><br>
+    1. <b>「客户名称」必须 LEFT JOIN</b>：<code>customer</code> 表的客户编号列名是 <code>code</code> 不是 <code>customer_no</code>；
+       用 INNER JOIN 会静默丢掉 <code>Q13CUST0617</code>×2 和 <code>C1</code>×1 共 3 行，总数从 17 变 14。<br>
+    2. <b>分页 <code>page</code> 是 0-based</b>，antd 的 <code>current</code> 是 1-based，必须减 1。<br>
+    3. 本页属<b>列表操作规范例外白名单</b>（纯查看无批量动作）⇒ 用裸 <code>&lt;Table&gt;</code> 不用 <code>SelectableTable</code>，
+       但工具栏要自套 <code>TOOLBAR_ROW_STYLE</code>。
+  </div>
+</div>

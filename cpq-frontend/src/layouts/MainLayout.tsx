@@ -98,7 +98,14 @@ const allMenuItems: MenuItem[] = [
     children: [
       { key: '/components', label: '组件管理', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
       { key: '/templates', label: '模板管理', roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
-      { key: '/config/sel-templates', label: '选配模板管理', roles: ['PRICING_MANAGER', 'SALES_MANAGER', 'SYSTEM_ADMIN'] },
+      // ── task-260902 · F-13（AC-26）：「选配模板管理」入口**暂时隐藏** ────────────────
+      //   下线理由：实测这套模板唯一真正生效的只有选配抽屉里那道 `hasTemplate` 门禁
+      //   （三个参数开关与值域限定全部空转，`sel_template_item_value` 现网 0 行），
+      //   而那道门禁会让没配模板的客户**完全用不了选配** —— 弊远大于利，本期一并移除。
+      //   🚫 **路由 `router/index.tsx` 的 `config/sel-templates` 与页面 `SelTemplateManagement.tsx`
+      //      保留不删**（AC-26 反向断言：直接敲 URL 仍要能打开），`sel_template` 系列表与数据也不删。
+      //   将来要按新模型重新引入（管步骤可见性 / 值域 / 必填性）时，删掉下面这行的注释符即可。
+      // { key: '/config/sel-templates', label: '选配模板管理', roles: ['PRICING_MANAGER', 'SALES_MANAGER', 'SYSTEM_ADMIN'] },
       { key: '/config/model-configs', label: '3D 模型配置', roles: ['PRICING_MANAGER', 'SALES_MANAGER', 'SYSTEM_ADMIN'] },
     ],
   },

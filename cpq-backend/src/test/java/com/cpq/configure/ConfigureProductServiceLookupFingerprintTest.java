@@ -101,9 +101,20 @@ class ConfigureProductServiceLookupFingerprintTest {
         return new ElementOverride(code, new BigDecimal(pct));
     }
 
+    /**
+     * task-260902 · B-12：组合工艺 defCode 夹具。
+     * 🚨 原写死 {@code MRO-AS-0001} —— MRO-* 那 26 条是 V4 带的通用示例，
+     * 本库（cpq_db_0724）从未灌入 ⇒ 用例在本库必失败（组合工艺未找到）。
+     * 用户已确认工序是业务自维护的开放主数据，🚫 不写迁移补种子 ⇒ 改用现存 Z100 焊接。
+     */
+    String assemblyProcessNo() { return "Z100"; }
+
+    /** task-260902 · B-2：customerProductNo 必填；统一走 T260902- 前缀（收尾污染核对按此扫）。 */
+    String testProductNo() { return "T260902-LFP-" + UUID.randomUUID().toString().substring(0, 8); }
+
     PartRequest makeCustomPart(String recipeCode, List<ElementOverride> elems, BigDecimal weight) {
         PartRequest p = new PartRequest();
-        p.partMode = "custom";
+        p.partMode = "new";   // task-260902：值域改名 custom → new（后端两个都接受）
         p.recipeCode = recipeCode;
         p.elements = elems;
         p.processNos = List.of();
@@ -114,15 +125,30 @@ class ConfigureProductServiceLookupFingerprintTest {
 
     ConfigureProductRequest simpleCustomReq(String recipeCode, List<ElementOverride> elems, BigDecimal weight) {
         ConfigureProductRequest req = new ConfigureProductRequest();
+        req.customerProductNo = testProductNo();   // task-260902 · B-2：必填
         req.productType = "SIMPLE";
         req.parts = List.of(makeCustomPart(recipeCode, elems, weight));
         return req;
     }
 
+    /**
+     * 🔄 task-260902 · AC-8：预览请求必须带上<b>与提交端相同的总重</b> ——
+     * v2 指纹含 {@code WEIGHT=} token，预览侧不带重量就会算出另一个指纹，
+     * 「预览命中 = 提交命中」这条不变量（task-0712 缺口2 3a）会失效。
+     */
     LookupFingerprintRequest lookupSimpleReq(String customerNo, String recipeCode, List<ElementOverride> elems) {
+        return lookupSimpleReq(customerNo, recipeCode, elems, new BigDecimal("10.0"));
+    }
+
+    LookupFingerprintRequest lookupSimpleReqNoWeight(String customerNo, String recipeCode, List<ElementOverride> elems) {
+        return lookupSimpleReq(customerNo, recipeCode, elems, null);
+    }
+
+    LookupFingerprintRequest lookupSimpleReq(String customerNo, String recipeCode,
+                                             List<ElementOverride> elems, BigDecimal weight) {
         LookupFingerprintRequest req = new LookupFingerprintRequest();
         req.customerNo = customerNo;
-        req.parts = List.of(makeCustomPart(recipeCode, elems, null));
+        req.parts = List.of(makeCustomPart(recipeCode, elems, weight));
         return req;
     }
 
@@ -211,10 +237,11 @@ class ConfigureProductServiceLookupFingerprintTest {
         p1.quantity = 1;
 
         ConfigureProductRequest cReq = new ConfigureProductRequest();
+        cReq.customerProductNo = testProductNo();   // task-260902 · B-2：必填
         cReq.productType = "COMPOSITE";
         cReq.parts = List.of(p0, p1);
         CompositeProcessRequest cp = new CompositeProcessRequest();
-        cp.defCode = "MRO-AS-0001"; // ASSEMBLY「总装配」，与 ConfigureProductServiceB2LedgerTest 同款夹具
+        cp.defCode = assemblyProcessNo(); // ASSEMBLY「总装配」，与 ConfigureProductServiceB2LedgerTest 同款夹具
         cp.participatingPartIndexes = List.of(0, 1);
         cp.params = Map.of();
         cReq.compositeProcesses = List.of(cp);
@@ -224,16 +251,17 @@ class ConfigureProductServiceLookupFingerprintTest {
         String parentPn = (String) cResp.lineItems.get(0).get("productPartNo");
 
         // 预览：同一 customerNo + 同一子件集(recipe+elements+qty) + 同一组合工艺 defCode
-        PartRequest lp0 = makeCustomPart("AgNi90", List.of(elem("Ag", "91.0"), elem("Ni", "9.0")), null);
+        // 🔄 task-260902 · AC-8：子件总重进指纹 ⇒ 预览必须带与提交相同的 5.0，否则子件先失配。
+        PartRequest lp0 = makeCustomPart("AgNi90", List.of(elem("Ag", "91.0"), elem("Ni", "9.0")), new BigDecimal("5.0"));
         lp0.quantity = 1;
-        PartRequest lp1 = makeCustomPart("AgCu85", List.of(elem("Ag", "85.0"), elem("Cu", "15.0")), null);
+        PartRequest lp1 = makeCustomPart("AgCu85", List.of(elem("Ag", "85.0"), elem("Cu", "15.0")), new BigDecimal("5.0"));
         lp1.quantity = 1;
 
         LookupFingerprintRequest lReq = new LookupFingerprintRequest();
         lReq.customerNo = sq.customerCode();
         lReq.parts = List.of(lp0, lp1);
         CompositeProcessRequest lcp = new CompositeProcessRequest();
-        lcp.defCode = "MRO-AS-0001";
+        lcp.defCode = assemblyProcessNo();
         lReq.compositeProcesses = List.of(lcp);
 
         long sigBefore = signatureCountFor(sq.customerCode());
@@ -263,14 +291,15 @@ class ConfigureProductServiceLookupFingerprintTest {
         PartRequest p0cfg = makeCustomPart("AgNi90",
             List.of(elem("Ag", "92.0"), elem("Ni", "8.0")), new BigDecimal("5.0"));
         ConfigureProductRequest cReq0 = new ConfigureProductRequest();
+        cReq0.customerProductNo = testProductNo();   // task-260902 · B-2：必填
         cReq0.productType = "SIMPLE";
         cReq0.parts = List.of(p0cfg);
         service.configure(sq.quotationId(), cReq0, operatorId());
 
         // 预览 COMPOSITE: p0 同配置(已存在) + p1(AgCu90, 未知子件)
-        PartRequest lp0 = makeCustomPart("AgNi90", List.of(elem("Ag", "92.0"), elem("Ni", "8.0")), null);
+        PartRequest lp0 = makeCustomPart("AgNi90", List.of(elem("Ag", "92.0"), elem("Ni", "8.0")), new BigDecimal("5.0"));
         lp0.quantity = 1;
-        PartRequest lp1 = makeCustomPart("AgCu90", List.of(elem("Ag", "90.0"), elem("Cu", "10.0")), null);
+        PartRequest lp1 = makeCustomPart("AgCu90", List.of(elem("Ag", "90.0"), elem("Cu", "10.0")), new BigDecimal("5.0"));
         lp1.quantity = 1;
 
         LookupFingerprintRequest lReq = new LookupFingerprintRequest();

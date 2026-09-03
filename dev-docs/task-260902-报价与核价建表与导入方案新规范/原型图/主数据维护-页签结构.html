@@ -1,0 +1,24 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>主数据维护 · 页签结构</title><link rel="stylesheet" href="antd-like.css"></head><body>
+<div class="page">
+  <div class="note"><b>AC-24</b>　页签由现有 4 个变为 <b>6 个</b>。<b>现有「料号核价」保留不动</b>（闸门 A0 · D-6），新增的两个挂在最后。</div>
+  <div class="card">
+    <div class="card-head">主数据维护</div>
+    <div class="tabs">
+      <div class="tab">料号核价</div>
+      <div class="tab">材质</div>
+      <div class="tab">元素</div>
+      <div class="tab">工序</div>
+      <div class="tab active new">基础核价</div>
+      <div class="tab new" style="margin-right:28px">详细核价</div>
+    </div>
+    <div class="card-body">
+      <div class="alert alert-info"><span>ℹ️</span><div>
+        <b>「基础核价」</b>接 <code>ds_cost_basic_*</code>（10 张表，来自「核价2」）；
+        <b>「详细核价」</b>接 <code>ds_cost_detail_*</code>（19 张表，来自「核价1」）。
+        两者与「料号核价」所服务的旧 V6 表<b>完全独立</b>，互不影响。
+      </div></div>
+      <p class="muted" style="margin:24px 0 0">页签内容见 <a class="link" href="核价数据-列表.html">核价数据-列表.html</a>。</p>
+    </div>
+  </div>
+</div></body></html>

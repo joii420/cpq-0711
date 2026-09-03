@@ -193,6 +193,12 @@ const QuotationWizard: React.FC = () => {
   const [costingCardTemplateId, setCostingCardTemplateId] = useState<string | undefined>();
   // T34: 选配添加 Drawer 开关
   const [configureDrawerOpen, setConfigureDrawerOpen] = useState(false);
+  /**
+   * task-260902 · F-1（AC-2）：选配步骤 1 发现客户产品编号已被占用时，
+   * 从选配抽屉跳到「从产品库添加」并按该编号预过滤。
+   * 🚫 只是把编号带过去当过滤条，不改「从产品库添加」这个入口页本身。
+   */
+  const [existingProductPrefill, setExistingProductPrefill] = useState<string | null>(null);
   // T35: Step1 表单（QuotationCreateForm 4 字段）是否已填完
   const [step1Valid, setStep1Valid] = useState(false);
   // ★ Bug 修复: QuotationCreateForm 是受控组件，必须把 4 字段值放到 React state，
@@ -2102,7 +2108,8 @@ const QuotationWizard: React.FC = () => {
         open={addProductModalOpen}
         quotationId={quotationId || undefined}
         customerTemplateId={customerTemplateId}
-        onCancel={() => setAddProductModalOpen(false)}
+        initialFilters={existingProductPrefill ? { customerProductNo: existingProductPrefill } : undefined}
+        onCancel={() => { setAddProductModalOpen(false); setExistingProductPrefill(null); }}
         onConfirm={(newItems) => {
           // F4：从已有产品添加改为批量多选，去重规则对齐 onAddBatch（同 productPartNo 只保留一份，以现有为准）。
           setLineItemsByUser((prev) => {
@@ -2111,6 +2118,7 @@ const QuotationWizard: React.FC = () => {
             return [...prev, ...deduped];
           });
           setAddProductModalOpen(false);
+          setExistingProductPrefill(null);
         }}
       />
 
@@ -2118,8 +2126,17 @@ const QuotationWizard: React.FC = () => {
         open={configureDrawerOpen}
         quotationId={quotationId || ''}
         customerNo={selectedCustomer?.code}
+        customerLabel={selectedCustomer?.name
+          ? `${selectedCustomer.name}${selectedCustomer.code ? `（${selectedCustomer.code}）` : ''}`
+          : undefined}
         onCancel={() => setConfigureDrawerOpen(false)}
         onConfirm={onConfigureConfirm}
+        onOpenExistingProducts={(productNo) => {
+          // AC-2 的出口：关掉选配抽屉，带着这个客户产品编号打开「从产品库添加」
+          setConfigureDrawerOpen(false);
+          setExistingProductPrefill(productNo);
+          setAddProductModalOpen(true);
+        }}
       />
     </div>
   );

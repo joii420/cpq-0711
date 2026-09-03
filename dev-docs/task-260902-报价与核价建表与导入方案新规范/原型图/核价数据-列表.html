@@ -1,0 +1,47 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>基础核价 · 料号列表</title><link rel="stylesheet" href="antd-like.css"></head><body>
+<div class="page">
+  <div class="note"><b>AC-25</b>　列表数据源 = 该数据集的<b>物料表</b>（<code>ds_cost_basic_material</code>）。
+  「详细核价」页签结构完全相同，仅数据源换成 <code>ds_cost_detail_material</code>。<br>
+  点行开抽屉 = Master-Detail 导航，属 <code>列表操作规范</code> 例外白名单，用可点击行的裸 Table。</div>
+  <div class="card">
+    <div class="card-head">主数据维护</div>
+    <div class="tabs">
+      <div class="tab">料号核价</div><div class="tab">材质</div><div class="tab">元素</div><div class="tab">工序</div>
+      <div class="tab active">基础核价</div><div class="tab">详细核价</div>
+    </div>
+    <div class="card-body">
+      <div class="toolbar">
+        <div class="row">
+          <div class="search"><input class="input" placeholder="搜索生产料号 / 品名"></div>
+          <select class="select" style="width:140px"><option>配置状态：全部</option><option>已配齐</option><option>未配齐</option></select>
+        </div>
+        <div class="toolbar-right">
+          <button class="btn">↻ 刷新</button>
+          <button class="btn btn-primary">⬆ 导入核价数据</button>
+        </div>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th>生产料号 ⇅</th><th>品名 ⇅</th><th>规格 ⇅</th><th>尺寸 ⇅</th>
+          <th>旧料号</th><th>已配置 ⇅</th><th>最后更新 ⇅</th>
+        </tr></thead>
+        <tbody>
+          <tr class="clickable sel"><td><b>3120014539</b></td><td>主料1</td><td class="muted">—</td><td>3.5×3.5×0.6</td>
+            <td>8DLX.550.653</td><td><span class="tag tag-blue">6 / 9</span></td><td class="muted">2026-09-03 10:12:41</td></tr>
+          <tr class="clickable"><td><b>2120011658</b></td><td>半成品A</td><td>φ8×120</td><td>8×8×1.2</td>
+            <td class="muted">—</td><td><span class="tag tag-green">9 / 9</span></td><td class="muted">2026-09-03 09:48:07</td></tr>
+          <tr class="clickable"><td><b>3120019902</b></td><td>触点组件-银镍复合型双面焊接式</td><td>AgNi11#-Ⅰ / 线材</td><td>12.5×12.5×0.85</td>
+            <td>8DLX.550.981</td><td><span class="tag tag-gold">2 / 9</span></td><td class="muted">2026-09-02 22:03:55</td></tr>
+          <tr class="clickable"><td><b>2120033401</b></td><td>外购件-弹簧</td><td class="muted">—</td><td class="muted">—</td>
+            <td class="muted">—</td><td><span class="tag tag-grey">0 / 9</span></td><td class="muted">—</td></tr>
+        </tbody>
+      </table></div>
+      <div class="pager"><span class="muted">共 128 条</span>
+        <span class="pg">‹</span><span class="pg active">1</span><span class="pg">2</span><span class="pg">3</span><span class="pg">›</span>
+        <select class="select" style="width:110px"><option>20 条/页</option></select></div>
+    </div>
+  </div>
+  <div class="note" style="margin-top:16px"><b>极值态已画在第 3 行</b>：品名 16 字、规格含斜杠 —— 列不换行、不撑破布局。
+  <b>零配置态见第 4 行</b>：徽标为灰色 <code>0 / 9</code>，点进去每个 tab 都是空态（见 <a class="link" href="核价数据-抽屉-空态.html">核价数据-抽屉-空态.html</a>）。</div>
+</div></body></html>

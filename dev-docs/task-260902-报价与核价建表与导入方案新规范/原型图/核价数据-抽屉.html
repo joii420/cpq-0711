@@ -1,0 +1,95 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>基础核价 · 抽屉（编辑态）</title><link rel="stylesheet" href="antd-like.css"></head><body>
+<div class="page"><div class="card"><div class="card-head">主数据维护 · 基础核价</div>
+<div class="card-body"><p class="muted">（背景页，抽屉覆盖其上）</p></div></div></div>
+<div class="mask"></div>
+<div class="drawer" style="width:1180px">
+  <div class="drawer-head">
+    <div>
+      <span class="drawer-title">基础核价 · <b>3120014539</b></span>
+      <span class="muted" style="margin-left:12px">主料1 ｜ 3.5×3.5×0.6</span>
+    </div>
+    <button class="close">✕</button>
+  </div>
+  <div class="drawer-body"><div class="lt">
+    <div class="lt-nav">
+      <div class="lt-item active">物料BOM <span class="badge on">v3 · 7</span></div>
+      <div class="lt-item">物料与元素BOM <span class="badge on">v1 · 4</span></div>
+      <div class="lt-item">来料加工费 <span class="badge on">v2 · 3</span></div>
+      <div class="lt-item">来料其他费用 <span class="badge on">v1 · 2</span></div>
+      <div class="lt-item">来料其他固定费用 <span class="badge on">v1 · 1</span></div>
+      <div class="lt-item">加工费&amp;组装费 <span class="badge on">v4 · 5</span></div>
+      <div class="lt-item">其他外加工成本 <span class="badge">—</span></div>
+      <div class="lt-item">成品其他比例费用 <span class="badge">—</span></div>
+      <div class="lt-item">成品其他固定费用 <span class="badge">—</span></div>
+    </div>
+    <div class="lt-body">
+      <div class="toolbar">
+        <div class="row">
+          <span class="muted">版本</span>
+          <select class="select" style="width:190px"><option>v3（当前）· 2026-09-03 10:12</option><option>v2 · 2026-09-02 21:40</option><option>v1 · 2026-09-01 14:05</option></select>
+          <span class="tag tag-green">最新版本 · 可编辑</span>
+          <span class="tag tag-grey">来源：导入</span>
+        </div>
+        <div class="toolbar-right">
+          <button class="btn">＋ 新增行</button>
+          <button class="btn btn-primary">💾 保 存</button>
+        </div>
+      </div>
+      <div class="alert alert-info"><span>🔗</span><div>列头带 <b>🔗</b> 的是<b>比对项</b>，参与行指纹。改动它们会触发<b>整组升版</b>；
+        改「项次」这类非比对项<b>不会</b>升版（改动也不会被写入）。</div></div>
+      <div class="table-wrap"><table class="compact">
+        <thead><tr>
+          <th style="width:70px">项次</th><th style="width:110px">组成类型 🔗</th><th style="width:170px">组成料号 🔗</th>
+          <th style="width:130px">组成料号名称</th><th style="width:110px">工序编号 🔗</th><th style="width:120px">使用特性 🔗</th>
+          <th style="width:110px">组成用量 🔗</th><th style="width:100px">单位 🔗</th><th style="width:100px">底数 🔗</th>
+          <th style="width:100px">损耗率% 🔗</th><th style="width:56px"></th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td><input class="input input-sm" value="10"></td>
+            <td><select class="select input-sm"><option>料件</option><option>元素</option></select></td>
+            <td><input class="input input-sm" value="S-2120011658"></td>
+            <td class="muted">半成品A</td>
+            <td><input class="input input-sm" value=""></td>
+            <td><select class="select input-sm"><option>0:必要</option><option>1:可选</option></select></td>
+            <td><input class="input input-sm" value="1"></td>
+            <td><input class="input input-sm" value="PCS"></td>
+            <td><input class="input input-sm" value="1"></td>
+            <td><input class="input input-sm" value="0"></td>
+            <td><button class="btn btn-sm btn-text" title="删除">🗑</button></td>
+          </tr>
+          <tr>
+            <td><input class="input input-sm" value="20"></td>
+            <td><select class="select input-sm"><option>料件</option></select></td>
+            <td><input class="input input-sm" value="S-2120033401"></td>
+            <td class="muted">外购件-弹簧</td>
+            <td><input class="input input-sm" value="Z053"></td>
+            <td><select class="select input-sm"><option>0:必要</option></select></td>
+            <td><input class="input input-sm" value="2"></td>
+            <td><input class="input input-sm" value="PCS"></td>
+            <td><input class="input input-sm" value="1"></td>
+            <td><input class="input input-sm" value="1.5"></td>
+            <td><button class="btn btn-sm btn-text">🗑</button></td>
+          </tr>
+          <tr>
+            <td><input class="input input-sm" value="30"></td>
+            <td><select class="select input-sm"><option>料件</option></select></td>
+            <td><input class="input input-sm" value="00168"></td>
+            <td class="muted">AgNi11#-Ⅰ</td>
+            <td><input class="input input-sm" value="Z002"></td>
+            <td><select class="select input-sm"><option>0:必要</option></select></td>
+            <td><input class="input input-sm" value="41.138100000000"></td>
+            <td><input class="input input-sm" value="g"></td>
+            <td><input class="input input-sm" value="1"></td>
+            <td><input class="input input-sm" value="0"></td>
+            <td><button class="btn btn-sm btn-text">🗑</button></td>
+          </tr>
+        </tbody>
+      </table></div>
+      <p class="muted" style="margin-top:12px">白底列（组成料号名称 / 工序名称）为<b>主数据带出的只读列</b>，不建数据库字段、不参与保存。</p>
+    </div>
+  </div></div>
+</div>
+<div class="toast"><span style="color:#52c41a">✔</span> 已升版至 v4</div>
+</body></html>

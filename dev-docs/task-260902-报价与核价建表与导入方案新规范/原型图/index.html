@@ -1,0 +1,45 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>原型导航 · 报价与核价建表与导入方案新规范</title><link rel="stylesheet" href="antd-like.css"></head><body>
+<div class="page">
+  <div class="card">
+    <div class="card-head">📌 当前基准 · <code>task-260902-报价与核价建表与导入方案新规范</code></div>
+    <div class="card-body">
+      <div class="alert alert-info"><span>📌</span><div>
+        <b>本目录是「基础核价」「详细核价」两个新页签、以及数据导入抽屉的当前视觉基准。</b>
+        定稿后原型即验收基准，<b>改原型 = 改验收标准</b>，须走 <code>task-docs.md §4</code> 四步。
+      </div></div>
+
+      <h3 style="margin:24px 0 8px">页面与状态</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th style="width:280px">原型</th><th style="width:120px">状态</th><th style="width:130px">对应 AC</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td><a class="link" href="主数据维护-页签结构.html">主数据维护-页签结构.html</a></td><td><span class="tag tag-blue">默认态</span></td><td>AC-24</td><td>4 个页签 → 6 个；现有「料号核价」保留不动</td></tr>
+          <tr><td><a class="link" href="核价数据-列表.html">核价数据-列表.html</a></td><td><span class="tag tag-blue">默认 + 极值 + 零配置</span></td><td>AC-25</td><td>列表数据源 = 该数据集的物料表；点行开抽屉</td></tr>
+          <tr><td><a class="link" href="核价数据-抽屉.html">核价数据-抽屉.html</a></td><td><span class="tag tag-blue">默认 · 可编辑</span></td><td>AC-26, AC-27, AC-30</td><td>左侧 tab + 版本切换 + 可编辑表格 + 保存</td></tr>
+          <tr><td><a class="link" href="核价数据-抽屉-历史只读.html">核价数据-抽屉-历史只读.html</a></td><td><span class="tag tag-gold">禁用态</span></td><td>AC-29</td><td>保存/新增<b>禁用但可见</b> + hover 说明原因</td></tr>
+          <tr><td><a class="link" href="核价数据-抽屉-空态.html">核价数据-抽屉-空态.html</a></td><td><span class="tag tag-grey">空数据</span></td><td>AC-32</td><td>空态文案；非红色遮罩、非白屏</td></tr>
+          <tr><td><a class="link" href="核价数据-抽屉-极值.html">核价数据-抽屉-极值.html</a></td><td><span class="tag tag-gold">最长文案 / 极值</span></td><td>AC-40</td><td>128 字要素名 + 12 位小数，不撑破、不截断</td></tr>
+          <tr><td><a class="link" href="核价数据-保存冲突.html">核价数据-保存冲突.html</a></td><td><span class="tag tag-red">错误态</span></td><td>AC-41</td><td>乐观锁 409；本地改动保留不清空</td></tr>
+          <tr><td><a class="link" href="数据导入-抽屉.html">数据导入-抽屉.html</a></td><td><span class="tag tag-green">成功态</span></td><td>AC-11, AC-33, AC-39</td><td>导入结果汇总表；关闭后列表自动刷新</td></tr>
+          <tr><td><a class="link" href="数据导入-校验失败.html">数据导入-校验失败.html</a></td><td><span class="tag tag-red">错误态</span></td><td>AC-6~AC-10, AC-34</td><td>整份拒收；错误一次列全，不 fail-fast</td></tr>
+          <tr><td><a class="link" href="电镀方案-页签.html">电镀方案-页签.html</a></td><td><span class="tag tag-green">新增 · 默认+空态</span></td><td>AC-48~AC-51</td><td>🚩 S-9 追加：第 7 个页签，一页签+数据集下拉，<b>只读</b></td></tr>
+          <tr><td><a class="link" href="报价单管理-工具栏.html">报价单管理-工具栏.html</a></td><td><span class="tag tag-blue">默认态</span></td><td>AC-35, AC-38</td><td>唯一新增控件；旧按钮零改动</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3 style="margin:24px 0 8px">「详细核价」页签为什么没有单独原型</h3>
+      <p class="muted" style="margin:0">它与「基础核价」<b>逐像素同构</b>，唯一差异是抽屉左侧 tab 由 <b>9 个</b>变为 <b>17 个</b>（多出
+        产能 / 设备折旧成本 / 生产设备能耗 / 辅助设备能耗 / 模具工装成本 / 生产耗材BOM / 包装材料BOM / 电镀成本），
+        且 tab 数由 <code>GET /dataset/{dataset}/sheets</code> 返回决定、<b>前端不写死</b>。
+        再画一份完全相同的图只会制造两份需要同步维护的基准。</p>
+
+      <h3 style="margin:24px 0 8px">还原纪律</h3>
+      <ul class="muted" style="margin:0;padding-left:20px">
+        <li>视觉基准是原型图，不是审美 —— 布局结构、控件类型与顺序、文案、空态与禁用态文案逐项对齐</li>
+        <li>允许的偏差只有一类：<b>组件库能力所限的等价实现</b>，且必须在回报里列出</li>
+        <li>🚫 原型没画到的地方<b>不许自由发挥</b> —— 停下来问，那是需求缺口</li>
+        <li>🚨 原型与 AC 冲突时<b>以 AC 为准</b>，并立即报告</li>
+      </ul>
+    </div>
+  </div>
+</div></body></html>

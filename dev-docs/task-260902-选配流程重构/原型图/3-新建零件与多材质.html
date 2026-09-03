@@ -58,14 +58,22 @@
           <tbody>
             <tr>
               <td><span class="mono muted small">00006</span> AgNi10</td>
-              <td><div class="fakesel">00006-01（Ag 90% / Ni 10%）<span class="caret">▼</span></div></td>
+              <td><div class="fakesel">00006-01（Ag 90% / Ni 10%）<span class="caret">▼</span></div>
+                  <div class="dis" style="margin-top:6px">
+                    <span class="tip">该材质不支持自定义含量</span>
+                    <button class="btn link sm">切换到自定义含量</button>
+                  </div></td>
               <td><div class="inp num" style="text-align:right">70</div></td>
               <td class="num muted">7 g</td>
               <td><button class="btn link danger sm">移除</button></td>
             </tr>
             <tr>
               <td><span class="mono muted small">00123</span> AgZnO12/Cu</td>
-              <td><div class="fakesel">00123-01（Ag 24.4% / Cu 72.2727% / Zn 3.3273%）<span class="caret">▼</span></div></td>
+              <td><div class="fakesel">00123-01（Ag 24.4% / Cu 72.2727% / Zn 3.3273%）<span class="caret">▼</span></div>
+                  <div class="dis" style="margin-top:6px">
+                    <span class="tip">该材质不支持自定义含量</span>
+                    <button class="btn link sm">切换到自定义含量</button>
+                  </div></td>
               <td><div class="inp num" style="text-align:right">30</div></td>
               <td class="num muted">3 g</td>
               <td><button class="btn link danger sm">移除</button></td>
@@ -82,10 +90,7 @@
 
       <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
         <button class="btn">+ 添加材质</button>
-        <div class="dis">
-          <span class="tip">该材质不支持自定义含量</span>
-          <button class="btn">切换到自定义含量</button>
-        </div>
+        <span class="muted small">「切换到自定义含量」在每行的<b>含量配置</b>列内 —— 它是针对<b>某一个材质</b>的操作，不是整张表的（2026-09-03 用户裁决，与状态 D 及前端实现统一）</span>
       </div>
 
       <h3 style="font-size:14px;font-weight:600;margin:24px 0 4px">工序 <span class="tag blue">2 道</span></h3>
@@ -317,9 +322,9 @@
     <table>
       <thead><tr><th style="width:34%">材质</th><th style="width:30%">含量配置</th><th style="width:22%" class="num">占比 %</th><th style="width:14%" class="num">折合克重</th></tr></thead>
       <tbody>
-        <tr><td><span class="mono muted small">00197</span> AgNi10/Ag15CuP 复合材</td><td><div class="fakesel">00197-01<span class="caret">▼</span></div></td><td><div class="inp num mono" style="text-align:right;font-size:12px">33.333333333333</div></td><td class="num muted">3.3333333333 g</td></tr>
-        <tr><td><span class="mono muted small">00123</span> AgZnO12/Cu</td><td><div class="fakesel">00123-01<span class="caret">▼</span></div></td><td><div class="inp num mono" style="text-align:right;font-size:12px">33.333333333333</div></td><td class="num muted">3.3333333333 g</td></tr>
-        <tr><td><span class="mono muted small">00006</span> AgNi10</td><td><div class="fakesel">00006-01<span class="caret">▼</span></div></td><td><div class="inp num mono" style="text-align:right;font-size:12px">33.333333333334</div></td><td class="num muted">3.3333333333 g</td></tr>
+        <tr><td><span class="mono muted small">00197</span> AgNi10/Ag15CuP 复合材</td><td><div class="fakesel">00197-01<span class="caret">▼</span></div></td><td><div class="inp num mono" style="text-align:right;font-size:12px">33.333333333333</div></td><td class="num muted">3.3333333333333 g</td></tr>
+        <tr><td><span class="mono muted small">00123</span> AgZnO12/Cu</td><td><div class="fakesel">00123-01<span class="caret">▼</span></div></td><td><div class="inp num mono" style="text-align:right;font-size:12px">33.333333333333</div></td><td class="num muted">3.3333333333333 g</td></tr>
+        <tr><td><span class="mono muted small">00006</span> AgNi10</td><td><div class="fakesel">00006-01<span class="caret">▼</span></div></td><td><div class="inp num mono" style="text-align:right;font-size:12px">33.333333333334</div></td><td class="num muted">3.3333333333333 g</td></tr>
       </tbody>
       <tfoot><tr><td colspan="2" class="muted">合计</td><td class="num"><span class="tag green">100%</span></td><td class="num">10 g</td></tr></tfoot>
     </table>
@@ -329,6 +334,7 @@
     去零只发生在<b>渲染层</b>，存储与接口仍是完整精度。🚫 去零必须走字符串正则，<b>不许过 JS <code>number</code></b>——12 位小数过 <code>Number()</code> 会丢尾数（这一条是确定的）。
   </div>
 
+  <div class="note" style="background:#fffbe6;border-color:#ffe58f">🔧 <b>2026-09-02 缺陷修正</b>：本状态与 F-b 的「折合克重」列原写 <code>3.3333333333</code> / <code>0.00000000001</code>，实际应为 <code>3.3333333333333</code> / <code>0.0000000000001</code>（10 × 0.000000000001% = 1E-13，差两个数量级）。由前端工程师逐屏比对时指出。<b>属交付当天即算错，是缺陷不是漂移</b>（`frontend.md §1.3`），故就地修正而非打历史快照。</div>
   <h3 style="font-size:14px;font-weight:600;margin:24px 0 8px">F-b · 证伪对照组（浮点实现会在这里挂）<span class="ac">AC-15b</span></h3>
   <div class="alert warn">
     <span class="ico">⚠</span>
@@ -341,9 +347,9 @@
     <table>
       <thead><tr><th style="width:30%">材质</th><th style="width:34%" class="num">占比 %</th><th class="num">折合克重（总重 10 g）</th></tr></thead>
       <tbody>
-        <tr><td><span class="mono muted">00006</span> AgNi10</td><td><div class="inp num mono" style="text-align:right;font-size:12px">0.000000000001</div></td><td class="num muted">0.00000000001 g</td></tr>
+        <tr><td><span class="mono muted">00006</span> AgNi10</td><td><div class="inp num mono" style="text-align:right;font-size:12px">0.000000000001</div></td><td class="num muted">0.0000000000001 g</td></tr>
         <tr><td><span class="mono muted">00123</span> AgZnO12/Cu</td><td><div class="inp num mono" style="text-align:right;font-size:12px">99.999999999998</div></td><td class="num muted">9.9999999999998 g</td></tr>
-        <tr><td><span class="mono muted">00031</span> AgSnO₂</td><td><div class="inp num mono" style="text-align:right;font-size:12px">0.000000000001</div></td><td class="num muted">0.00000000001 g</td></tr>
+        <tr><td><span class="mono muted">00031</span> AgSnO₂</td><td><div class="inp num mono" style="text-align:right;font-size:12px">0.000000000001</div></td><td class="num muted">0.0000000000001 g</td></tr>
       </tbody>
       <tfoot><tr><td class="muted">合计</td><td class="num"><span class="tag green">100%</span></td><td class="num">10 g</td></tr></tfoot>
     </table>

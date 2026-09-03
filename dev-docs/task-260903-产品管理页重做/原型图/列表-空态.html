@@ -1,0 +1,58 @@
+<meta charset="utf-8">
+<title>产品管理 · 列表空数据态</title>
+<link rel="stylesheet" href="antd-like.css">
+<style>
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;background:#fafafa;font-weight:600;padding:12px 16px;border-bottom:1px solid #f0f0f0;white-space:nowrap}
+  .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:70px 0;color:rgba(0,0,0,.25)}
+  .anno{background:#e6f4ff;border:1px solid #91caff;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px;line-height:1.8}
+  .pager{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:16px;font-size:14px}
+  .pg{min-width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #d9d9d9;border-radius:6px;background:#fff;color:rgba(0,0,0,.25)}
+  h3{font-size:15px;margin:24px 0 10px}
+</style>
+<div class="page">
+  <div class="anno"><b>AC-13 的视觉基准 —— 表尚未导入数据时。</b>
+    这不是假设场景：<code>ds_quote_*</code> 是<b>新建的空表</b>，上线当天两个页签就是这个样子，直到走一次导入。<br>
+    🚨 必须是 <code>Empty</code> 空态 + 分页器显示 <b>共 0 条</b>，
+    <b>不许白屏、不许无限转圈、不许红色错误遮罩</b>。点击空白区域不报错。
+  </div>
+
+  <h3>① 客户产品 · 空态</h3>
+  <div class="card">
+    <div class="tabs"><div class="tab active">客户产品</div><div class="tab">销售产品</div></div>
+    <div class="card-body">
+      <div class="toolbar">
+        <div class="search"><input class="input" placeholder="搜索客户编号 / 客户产品编号 / 销售料号"></div>
+        <div class="toolbar-right"><button class="btn">↻ 刷新</button></div>
+      </div>
+      <table><thead><tr><th>客户编号</th><th>客户名称</th><th>客户料号名称</th><th>客户产品编号</th><th>客户图号</th><th>销售料号</th></tr></thead></table>
+      <div class="empty">
+        <svg width="64" height="41" viewBox="0 0 64 41"><g fill="none" fill-rule="evenodd"><ellipse fill="#f5f5f5" cx="32" cy="33" rx="32" ry="7"></ellipse><g fill-rule="nonzero" stroke="#d9d9d9"><path d="M55 12.76L44.854 1.258C44.367.474 43.656 0 42.907 0H21.093c-.749 0-1.46.474-1.947 1.257L9 12.761V22h46v-9.24z"></path><path d="M41.613 15.931c0-1.605.994-2.93 2.227-2.931H55v18.137C55 33.26 53.68 35 52.05 35h-40.1C10.32 35 9 33.259 9 31.137V13h11.16c1.233 0 2.227 1.323 2.227 2.928v.022c0 1.605 1.005 2.901 2.237 2.901h14.752c1.232 0 2.237-1.308 2.237-2.913v-.007z" fill="#fafafa"></path></g></g></svg>
+        <div>暂无数据</div>
+      </div>
+      <div class="pager"><span style="color:rgba(0,0,0,.65)">共 0 条</span><span class="pg">‹</span><span class="pg">1</span><span class="pg">›</span></div>
+    </div>
+  </div>
+
+  <h3>② 销售产品 · 空态</h3>
+  <div class="card">
+    <div class="tabs"><div class="tab">客户产品</div><div class="tab active">销售产品</div></div>
+    <div class="card-body">
+      <div class="toolbar">
+        <div class="search"><input class="input" placeholder="搜索销售料号 / 品名"></div>
+        <div class="toolbar-right"><button class="btn">↻ 刷新</button></div>
+      </div>
+      <table><thead><tr><th>销售料号</th><th>品名</th><th>规格</th><th>尺寸</th><th>旧料号</th><th style="text-align:right">单重</th><th>生产料号</th></tr></thead></table>
+      <div class="empty">
+        <svg width="64" height="41" viewBox="0 0 64 41"><g fill="none" fill-rule="evenodd"><ellipse fill="#f5f5f5" cx="32" cy="33" rx="32" ry="7"></ellipse><g fill-rule="nonzero" stroke="#d9d9d9"><path d="M55 12.76L44.854 1.258C44.367.474 43.656 0 42.907 0H21.093c-.749 0-1.46.474-1.947 1.257L9 12.761V22h46v-9.24z"></path><path d="M41.613 15.931c0-1.605.994-2.93 2.227-2.931H55v18.137C55 33.26 53.68 35 52.05 35h-40.1C10.32 35 9 33.259 9 31.137V13h11.16c1.233 0 2.227 1.323 2.227 2.928v.022c0 1.605 1.005 2.901 2.237 2.901h14.752c1.232 0 2.237-1.308 2.237-2.913v-.007z" fill="#fafafa"></path></g></g></svg>
+        <div>暂无数据</div>
+      </div>
+      <div class="pager"><span style="color:rgba(0,0,0,.65)">共 0 条</span><span class="pg">‹</span><span class="pg">1</span><span class="pg">›</span></div>
+    </div>
+  </div>
+
+  <div class="anno" style="background:#fff7e6;border-color:#ffd591;margin-top:20px">
+    <b>⚠️ 空态下工具栏仍然渲染</b>（搜索框 + 刷新按钮都在，不因无数据而隐藏）——
+    否则用户连「刷新重试」都点不到。这与 <code>frontend.md §1.2</code>「禁用但可见」的精神一致。
+  </div>
+</div>

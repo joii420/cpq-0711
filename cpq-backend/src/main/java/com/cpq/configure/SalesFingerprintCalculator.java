@@ -35,13 +35,28 @@ import java.util.stream.IntStream;
 @ApplicationScoped
 public class SalesFingerprintCalculator {
 
-    /** 结构版本号，与 T1 sel_part_signature.structure_version + FingerprintCalculator.VERSION 命名统一. */
-    public static final String STRUCTURE_VERSION = "v1";
+    /**
+     * 结构版本号，与 T1 sel_part_signature.structure_version + FingerprintCalculator.VERSION 命名统一.
+     *
+     * <p><b>task-260902 升 v1 → v2</b>（三层模型，api.md §4）：SIMPLE 串新增 {@code PART=} / {@code WEIGHT=}
+     * 两个固定前缀 token，{@code MAT=} 改为「材质码:占比(元素码:含量,…)」多材质形态，{@code ELE=} 删除
+     * （元素含量折进 MAT 的括号内按材质分组）。COMPOSITE 串结构未变，仅因共用本常量一并升到 v2。
+     * 实测 {@code sel_part_signature} 0 行 ⇒ 升版无存量失配风险。
+     */
+    public static final String STRUCTURE_VERSION = "v2";
 
     private static final String SENTINEL_EMPTY = "∅";
 
     /** 元素码 + 含量 — ELEMENT 类型启用参数的组成项. */
     public record ElementPct(String elementCode, BigDecimal pct) {}
+
+    /**
+     * task-260902（v2）：一个材质在指纹里的完整投影 —— 材质码 + 占比 + 该材质的元素含量。
+     *
+     * <p>🚫 <b>不含 configNo</b>：AC-10 裁决「配方编号不进指纹，按含量内容判同」——
+     * 含量逐字相同的两条配置（乃至一条标准配方 vs 一份自定义含量，AC-22③）必须复用同一料号。
+     */
+    public record MaterialPct(String materialCode, BigDecimal ratio, List<ElementPct> elements) {}
 
     /**
      * 启用参数投影 —— 由 T3 运行时按本次使用模板的 enabled 参数 + 选值构造.
@@ -56,7 +71,19 @@ public class SalesFingerprintCalculator {
      * @param processCodes  PROCESS: 工序码集合（无序）；否则 null
      */
     public record EnabledParam(String paramTypeCode, String materialCode,
-                                List<ElementPct> elements, List<String> processCodes) {}
+                                List<ElementPct> elements, List<String> processCodes,
+                                List<MaterialPct> materials) {
+        /** v1 形态的 4 参构造（materials 留空）；PROCESS 槽位仍用它。 */
+        public EnabledParam(String paramTypeCode, String materialCode,
+                            List<ElementPct> elements, List<String> processCodes) {
+            this(paramTypeCode, materialCode, elements, processCodes, null);
+        }
+
+        /** task-260902（v2）：MATERIAL 槽位的多材质构造。 */
+        public static EnabledParam material(List<MaterialPct> materials) {
+            return new EnabledParam("MATERIAL", null, null, null, materials);
+        }
+    }
 
     /** 计算结果: hash（落库/比对用）+ text（可读原文，便于调试与审计）. */
     public record Signature(String hash, String text) {}
@@ -71,6 +98,34 @@ public class SalesFingerprintCalculator {
      * @param enabled    启用参数集，不可空/null（防指纹坍缩）
      */
     public Signature computeSimple(String customerNo, List<EnabledParam> enabled) {
+        return computeSimple(customerNo, null, null, null, null, enabled);
+    }
+
+    /**
+     * task-260902（v2，api.md §4.1）：带零件层信息的 SIMPLE 指纹。
+     *
+     * <pre>
+     * v2|CUST=&lt;客户码&gt;|PART=&lt;len&gt;:&lt;品名&gt;&lt;len&gt;:&lt;规格&gt;&lt;len&gt;:&lt;尺寸&gt;|WEIGHT=&lt;总重&gt;|MAT=…|PRC=…
+     * </pre>
+     *
+     * <p><b>为什么 {@code PART=} 用长度前缀而不是 {@code /} 分隔</b>（评审 P1-7，api.md §4.3）：
+     * 实查 {@code material_recipe.symbol} 含 {@code /} 的有 74 条（{@code AgZnO12/Cu}…），品名含
+     * {@code /} 的料号也真实存在（{@code AgNi10/Cu触点}）⇒ 本业务文本带 {@code /} 是常态。
+     * 用 {@code /} 分隔时「品名 A/B + 规格 C」与「品名 A + 规格 B/C」渲染出同一个 {@code PART=}
+     * → 同一料号 → <b>静默错价</b>（与本类类注释里那个 {@code PRC=a,b,c} 事故同型）。
+     * 长度前缀编码在任何字符集下都无歧义。
+     *
+     * <p>{@code PART=} / {@code WEIGHT=} <b>不走 {@code sel_param_type} 槽位机制</b>（api.md §4.4）：
+     * 那套是封闭枚举（实测恰好 3 行 + {@code renderToken} 的 {@code switch} 硬匹配），新增成员会连带
+     * 迁移种子 / 候选服务 / 选配模板管理页；本任务定为由本方法显式接参拼接的固定前缀 token。
+     *
+     * @param partName   零件品名（可空 → 空串）
+     * @param spec       规格（可空 → 空串）
+     * @param dimension  尺寸（可空 → 空串）
+     * @param unitWeight 零件总重（可空 → "0"）
+     */
+    public Signature computeSimple(String customerNo, String partName, String spec, String dimension,
+                                    BigDecimal unitWeight, List<EnabledParam> enabled) {
         if (customerNo == null || customerNo.isBlank()) {
             throw new IllegalArgumentException("computeSimple: customerNo 不能为空");
         }
@@ -78,14 +133,26 @@ public class SalesFingerprintCalculator {
             throw new IllegalArgumentException("computeSimple: enabled 参数集不能为空（防指纹坍缩）");
         }
         assertNoDelimiter(customerNo, "customerNo");
+        assertNoDelimiter(partName, "partName");
+        assertNoDelimiter(spec, "spec");
+        assertNoDelimiter(dimension, "dimension");
 
         String tokens = enabled.stream()
             .sorted(Comparator.comparing(EnabledParam::paramTypeCode))
             .map(this::renderToken)
             .collect(Collectors.joining("|"));
 
-        String text = STRUCTURE_VERSION + "|CUST=" + customerNo + "|" + tokens;
+        String text = STRUCTURE_VERSION + "|CUST=" + customerNo
+            + "|PART=" + lenPrefixed(partName) + lenPrefixed(spec) + lenPrefixed(dimension)
+            + "|WEIGHT=" + normalize(unitWeight)
+            + "|" + tokens;
         return new Signature(sha256(text), text);
+    }
+
+    /** 长度前缀编码：{@code <字符数>:<内容>}；null 视为空串（{@code 0:}）。 */
+    private String lenPrefixed(String v) {
+        String safe = (v == null) ? "" : v;
+        return safe.length() + ":" + safe;
     }
 
     /**
@@ -139,6 +206,27 @@ public class SalesFingerprintCalculator {
     private String renderToken(EnabledParam param) {
         switch (param.paramTypeCode()) {
             case "MATERIAL": {
+                // task-260902（v2）：多材质形态 —— MAT=<材质码:占比(元素码:含量,…)>,… 按材质码排序。
+                List<MaterialPct> materials = param.materials();
+                if (materials != null && !materials.isEmpty()) {
+                    String rendered = materials.stream()
+                        .sorted(Comparator.comparing(MaterialPct::materialCode))
+                        .map(m -> {
+                            assertNoDelimiter(m.materialCode(), "materialCode");
+                            List<ElementPct> els = m.elements() == null ? List.of() : m.elements();
+                            String inner = els.stream()
+                                .sorted(Comparator.comparing(ElementPct::elementCode))
+                                .map(e -> {
+                                    assertNoDelimiter(e.elementCode(), "elementCode");
+                                    return e.elementCode() + ":" + normalize(e.pct());
+                                })
+                                .collect(Collectors.joining(","));
+                            return m.materialCode() + ":" + normalize(m.ratio()) + "(" + inner + ")";
+                        })
+                        .collect(Collectors.joining(","));
+                    return "MAT=" + rendered;
+                }
+                // v1 兼容分支（单值 materialCode）；本任务的投影层不再走这里。
                 String materialCode = param.materialCode();
                 if (materialCode == null || materialCode.isBlank()) {
                     return "MAT=" + SENTINEL_EMPTY;
@@ -146,6 +234,8 @@ public class SalesFingerprintCalculator {
                 assertNoDelimiter(materialCode, "materialCode");
                 return "MAT=" + materialCode;
             }
+            // v1 遗留：v2 起 ELEMENT 不再作为槽位投影（元素含量折进 MAT 的括号内按材质分组，
+            // api.md §4.5）。分支保留是为了任何残留调用方不至于撞 default 抛异常。
             case "ELEMENT": {
                 List<ElementPct> elements = param.elements();
                 if (elements == null || elements.isEmpty()) {
@@ -166,6 +256,10 @@ public class SalesFingerprintCalculator {
                     return "PRC=" + SENTINEL_EMPTY;
                 }
                 processCodes.forEach(p -> assertNoDelimiter(p, "processCode"));
+                // 🚨 task-260902 AC-19/AC-20：本行**一个字都不许改**。
+                //   · sorted() ⇒ 工序顺序不进指纹（换个次序仍是同一个产品，A0 裁决）；
+                //   · 🚫 绝不可加 distinct() ⇒ sort 不去重正是「焊两次 ≠ 焊一次」的依据
+                //     （["Z100","Z101","Z100"].sort() = Z100,Z100,Z101 ≠ Z100,Z101 ⇒ 必铸新料号）。
                 String sortedProcs = processCodes.stream().sorted().collect(Collectors.joining(","));
                 return "PRC=" + sortedProcs;
             }

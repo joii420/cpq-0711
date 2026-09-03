@@ -653,10 +653,15 @@ public class QuotationService {
                     // task-0712 缺口1 遗留涟漪修复: process_no 全链贯通(与 ConfigureProductService.
                     // insertQuotationLineProcesses 同口径), 取代旧 process_id(process V4 UUID) 写法。
                     if (liDraft.processNos != null) {
+                        // task-260902 · B-22：seq_no 按数组下标 +1 —— 与
+                        // ConfigureProductService.insertQuotationLineProcesses 同口径。
+                        // 🚨 saveDraft 会全量重建本表，这里漏写 seq_no 就等于「存一次草稿顺序就丢」。
+                        int lpSeq = 1;
                         for (String processNo : liDraft.processNos) {
                             QuotationLineProcess lp = new QuotationLineProcess();
                             lp.lineItemId = li.id;
                             lp.processNo = processNo;
+                            lp.seqNo = lpSeq++;
                             lp.persist();
                         }
                     }
@@ -676,8 +681,10 @@ public class QuotationService {
                                 // 孤儿工序(如 TP10)只进 process_master, 不进 process(V4), 若仍 JOIN 旧表
                                 // 会漏 seed(F9, 见 ConfigureProductService#resolveProcessCodes 注释)。
                                 em.createNativeQuery(
-                                        "INSERT INTO quotation_line_process (id, line_item_id, process_no) " +
-                                        "SELECT gen_random_uuid(), :lid, pm.process_no FROM (" +
+                                        // task-260902 · B-22：seq_no 补上（seed 来源无顺序信息，按 process_no 稳定排序）
+                                        "INSERT INTO quotation_line_process (id, line_item_id, process_no, seq_no) " +
+                                        "SELECT gen_random_uuid(), :lid, pm.process_no, " +
+                                        "       ROW_NUMBER() OVER (ORDER BY pm.process_no) FROM (" +
                                         "  SELECT DISTINCT operation_no FROM material_bom_item " +
                                         "  WHERE system_type='QUOTE' AND customer_no=:cc AND material_no=:part " +
                                         "    AND characteristic='ASSEMBLY' AND operation_no IS NOT NULL AND is_current = true" +
@@ -1874,12 +1881,14 @@ public class QuotationService {
             lineIdMap.put(srcLi.id, newLi.id);
             newItems.add(newLi);
 
-            for (QuotationLineProcess srcP : QuotationLineProcess.<QuotationLineProcess>list("lineItemId = ?1", srcLi.id)) {
+            for (QuotationLineProcess srcP : QuotationLineProcess.<QuotationLineProcess>list(
+                    "lineItemId = ?1 ORDER BY seqNo NULLS LAST, id", srcLi.id)) {
                 QuotationLineProcess newP = new QuotationLineProcess();
                 newP.lineItemId = newLi.id;
                 // task-0712 缺口1 遗留涟漪修复: 复制 process_no(权威列); process_id 是遗留列,
                 // 新写路径统一不再填(与 ConfigureProductService/saveDraft 同口径)。
                 newP.processNo = srcP.processNo;
+                newP.seqNo = srcP.seqNo;    // task-260902 · B-22：复制报价单时顺序必须跟着走
                 newP.persist();
             }
 
@@ -2996,10 +3005,13 @@ public class QuotationService {
             // processNos（低频，逐行 persist，无性能收益集合化）
             // task-0712 缺口1 遗留涟漪修复: process_no 全链贯通, 取代旧 process_id(process V4 UUID)。
             if (liDraft.processNos != null) {
+                // task-260902 · B-22：seq_no 按数组下标 +1（同上）。
+                int lpSeq = 1;
                 for (String processNo : liDraft.processNos) {
                     QuotationLineProcess lp = new QuotationLineProcess();
                     lp.lineItemId = li.id;
                     lp.processNo = processNo;
+                    lp.seqNo = lpSeq++;
                     lp.persist();
                 }
             }
@@ -3204,8 +3216,10 @@ public class QuotationService {
                     // process_master 取代 process(V4, 冻结快照) 作 JOIN 目标: 选配落库的孤儿工序
                     // (如 TP10)只进 process_master, 不进 process(V4)(F9)。
                     em.createNativeQuery(
-                            "INSERT INTO quotation_line_process (id, line_item_id, process_no) " +
-                            "SELECT gen_random_uuid(), kv.lid::uuid, pm.process_no " +
+                            // task-260902 · B-22：seq_no 补上（按 lineItem 分区、process_no 稳定排序）
+                            "INSERT INTO quotation_line_process (id, line_item_id, process_no, seq_no) " +
+                            "SELECT gen_random_uuid(), kv.lid::uuid, pm.process_no, " +
+                            "       ROW_NUMBER() OVER (PARTITION BY kv.lid ORDER BY pm.process_no) " +
                             "FROM ( " +
                             "  SELECT unnest(CAST(:lids AS text[]))::uuid AS lid, unnest(CAST(:parts AS text[])) AS part_no " +
                             ") kv " +
@@ -3476,7 +3490,9 @@ public class QuotationService {
                     System.getenv().getOrDefault("CPQ_GETBYID_BATCH", "true")));
         final List<UUID> lineIds = items.stream().map(i -> i.id).collect(Collectors.toList());
         final Map<UUID, List<QuotationLineProcess>> procByLine = !getByIdBatch ? Map.of()
-                : QuotationLineProcess.<QuotationLineProcess>list("lineItemId IN ?1 ORDER BY lineItemId, id", lineIds)
+                // task-260902 · B-22：ORDER BY seqNo —— 原按 id（gen_random_uuid）排 = 随机顺序，
+                // AC-11「工序顺序回填」在它下面只能靠运气绿。NULLS LAST 兼容 V402 之前的存量行。
+                : QuotationLineProcess.<QuotationLineProcess>list("lineItemId IN ?1 ORDER BY lineItemId, seqNo NULLS LAST, id", lineIds)
                     .stream().collect(Collectors.groupingBy(p -> p.lineItemId));
         final Map<UUID, List<QuotationLineComponentData>> cdByLine = !getByIdBatch ? Map.of()
                 : QuotationLineComponentData.<QuotationLineComponentData>list("lineItemId IN ?1 ORDER BY lineItemId, sortOrder, id", lineIds)
@@ -3549,7 +3565,9 @@ public class QuotationService {
                 return dto;
             }
 
-            dto.processes = QuotationLineProcess.<QuotationLineProcess>list("lineItemId = ?1", li.id)
+            // task-260902 · B-22：ORDER BY seqNo（原来完全没有 ORDER BY —— 堆表顺序不保证）
+            dto.processes = QuotationLineProcess.<QuotationLineProcess>list(
+                    "lineItemId = ?1 ORDER BY seqNo NULLS LAST, id", li.id)
                     .stream().map(QuotationDTO.ProcessDTO::from).collect(Collectors.toList());
 
             // 选配-组合工艺 per-quote:读本行步骤回传,使刷新/saveDraft 透传后跨保存存活
