@@ -194,17 +194,7 @@ export async function nextStep(page: any) {
 
 /** 「+ 添加配件」→ 零件 → 新建零件 → 填品名/规格/尺寸/总重（原型 2 + 原型 3）。 */
 export async function startNewPart(page: any, name: string, spec: string, dim: string, weight: string) {
-  await openPartTypePicker(page);
-  await clickInDrawer(page, '零件', /^零件$/);          // 第 1 步：选类型
-  await page.waitForTimeout(400);
-  await advanceUntilVisible(page, /新建零件/, '零件来源选择（新建/已有）');
-  await clickInDrawer(page, '新建零件', /新建零件/);     // 第 2 步：选来源
-  await page.waitForTimeout(400);
-  // 🚨 判据用「抽屉里出现可输入字段」，不用文本 /品名/ ——
-  //    卡片说明文案「填品名 / 规格 / 尺寸 / 总重，再挂材质。」里就含「品名」二字，
-  //    文本匹配会在**上一步**就误判为已到表单，于是永远不再点下一步（自己骗自己）。
-  await advanceUntil(page, async () => (await drawer(page).locator('input:visible').count()) > 0,
-    '零件表单（可输入的字段）');
+  await openNewPartForm(page);
   await fillInDrawer(page, '品名', name);
   await fillInDrawer(page, '规格', spec);
   await fillInDrawer(page, '尺寸', dim);
@@ -687,15 +677,7 @@ export async function submitToQuotation(page: Page, tag: string) {
  * 每一步都验证状态真的变了，失败时打印抽屉现场（🚫 不许「点了就当成了」）。
  */
 export async function addOutsourcedPart(page: Page, partNo: string) {
-  await openPartTypePicker(page);
-  await clickInDrawer(page, '外购件', /^外购件$/);
-  await page.waitForTimeout(400);
-  // 判据用结构性事实：出现了搜索框或该料号本身，而不是「外购件」三个字
-  //（卡片说明文案里就含「外购件」，用文本判会在上一步误判为已到位）
-  await advanceUntil(page, async () =>
-    (await drawer(page).getByPlaceholder(/搜索|料号|品名/).count()) > 0
-    || (await drawer(page).getByText(partNo).count()) > 0,
-    '外购件选择列表');
+  await openOutsourcedList(page);
 
   const kw = drawer(page).getByPlaceholder(/搜索|料号|品名/).first();
   if (await kw.count() > 0) { await kw.fill(partNo); await page.waitForTimeout(1000); }
@@ -714,4 +696,33 @@ export async function addOutsourcedPart(page: Page, partNo: string) {
   const ok = drawer(page).getByRole('button', { name: /确\s*定/ }).last();
   if (await ok.count() > 0) { await ok.click({ force: true }).catch(() => {}); await page.waitForTimeout(800); }
   console.log(`[夹具] 已加外购件 ${partNo}`);
+}
+
+/**
+ * 打开「外购件」候选列表（只打开、不选料号）—— AC-5 / AC-16 用。
+ *
+ * 🚨 「添加配件」是多步子流程：选类型 → **下一步** → 才到列表。
+ * 到达判据用结构性事实（出现搜索框或列表行），🚫 不用「外购件」三个字 ——
+ * 类型卡片的说明文案里就有它，会在上一步误判为已到位。
+ */
+export async function openOutsourcedList(page: Page) {
+  await openPartTypePicker(page);
+  await clickInDrawer(page, '外购件', /^外购件$/);
+  await page.waitForTimeout(400);
+  await advanceUntil(page, async () =>
+    (await drawer(page).getByPlaceholder(/搜索|料号|品名/).count()) > 0
+    || (await drawer(page).getByText(/料号库里还没有外购件|共\s*\d+\s*条/).count()) > 0,
+    '外购件候选列表（或其空态）');
+}
+
+/** 打开「新建零件」表单（只打开、不填）—— AC-23 用；startNewPart 也走它。 */
+export async function openNewPartForm(page: Page) {
+  await openPartTypePicker(page);
+  await clickInDrawer(page, '零件', /^零件$/);
+  await page.waitForTimeout(400);
+  await advanceUntilVisible(page, /新建零件/, '零件来源选择（新建/已有）');
+  await clickInDrawer(page, '新建零件', /新建零件/);
+  await page.waitForTimeout(400);
+  await advanceUntil(page, async () => (await drawer(page).locator('input:visible').count()) > 0,
+    '零件表单（可输入的字段）');
 }

@@ -14,6 +14,7 @@ import { loginAsAdmin, isBackendUp } from './fixtures/auth';
 import {
   shot, query, drawer, openSelConfigDrawer, tooltipOf,
   fillStep1, startNewPart, addMaterial, openMaterialPicker, expectNoLoadingPlaceholder,
+  openOutsourcedList, openNewPartForm,
 } from './fixtures/task260902';
 
 let backendUp = false;
@@ -24,7 +25,7 @@ const NEW_NO = () => `T260902-SEL-${Date.now()}`;
 
 /** 选择器里的命中条数（原型的计数文案：「12 / 262 条」或「共 1 条」）。 */
 async function pickerCount(page: Page): Promise<number> {
-  const text = await picker(page).innerText();
+  const text = await picker(page).innerText({ timeout: 5000 });
   const m1 = text.match(/(\d+)\s*\/\s*\d+\s*条/);
   if (m1) return parseInt(m1[1], 10);
   const m2 = text.match(/共\s*(\d+)\s*条/);
@@ -60,7 +61,7 @@ test.describe('task-260902 选择器与空态', () => {
     await expectNoLoadingPlaceholder(page, '.ant-drawer, .ant-modal');
     const firstRow = picker(page).locator('tbody tr, .picker-row').first();
     await expect(firstRow, 'AC-18①：默认应列出材质（空列表 ⇒ 后面全部断言空跑）').toBeVisible({ timeout: 10000 });
-    const headerText = await picker(page).innerText();
+    const headerText = await picker(page).innerText({ timeout: 5000 });
     for (const col of ['材质编号', '材质名', '含量配置', '自定义']) {
       expect(headerText, `AC-18①：选择器须显示「${col}」列`).toContain(col);
     }
@@ -225,15 +226,12 @@ test.describe('task-260902 选择器与空态', () => {
     await loginAsAdmin(page);
     await openSelConfigDrawer(page, 'ac5');
     await fillStep1(page, NEW_NO());
-    await drawer(page).getByRole('button', { name: /添加配件|添加第一个配件/ }).first().click();
-    await page.waitForTimeout(500);
-    await drawer(page).getByText('外购件', { exact: false }).first().click();
-    await page.waitForTimeout(1200);
+    await openOutsourcedList(page);
 
     await expectNoLoadingPlaceholder(page);
     await expect(drawer(page), 'AC-5：列表应含实测唯一的外购件 TEST-Q13-CODE / 组成件1')
       .toContainText('TEST-Q13-CODE', { timeout: 10000 });
-    const text = await drawer(page).innerText();
+    const text = await drawer(page).innerText({ timeout: 5000 });
     const m = text.match(/共\s*(\d+)\s*条/);
     if (m) {
       console.log(`[AC-5] 列表显示 ${m[1]} 条，SQL ${expected} 条`);
@@ -260,10 +258,7 @@ test.describe('task-260902 选择器与空态', () => {
     await loginAsAdmin(page);
     await openSelConfigDrawer(page, 'ac16');
     await fillStep1(page, NEW_NO());
-    await drawer(page).getByRole('button', { name: /添加配件|添加第一个配件/ }).first().click();
-    await page.waitForTimeout(500);
-    await drawer(page).getByText('外购件', { exact: false }).first().click();
-    await page.waitForTimeout(1500);
+    await openOutsourcedList(page);
 
     await expect(drawer(page).getByText('料号库里还没有外购件'),
       'AC-16：应显示空态文案「料号库里还没有外购件」（原型 5 逐字）'
@@ -291,12 +286,7 @@ test.describe('task-260902 选择器与空态', () => {
     await loginAsAdmin(page);
     await openSelConfigDrawer(page, 'ac23');
     await fillStep1(page, NEW_NO());
-    await drawer(page).getByRole('button', { name: /添加配件|添加第一个配件/ }).first().click();
-    await page.waitForTimeout(500);
-    await drawer(page).getByText('零件', { exact: true }).first().click();
-    await page.waitForTimeout(400);
-    await drawer(page).getByText('新建零件', { exact: false }).first().click();
-    await page.waitForTimeout(800);
+    await openNewPartForm(page);
 
     const longName = 'T260902-' + '长'.repeat(93);   // 101 字符
     expect(longName.length).toBe(101);
