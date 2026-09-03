@@ -192,7 +192,7 @@ class SubmitAndValidationAcTest extends SelConfigAcTestBase {
     @DisplayName("AC-15a+15b 12 位小数占比（含浮点证伪对照组，必须成对）")
     void ac15_fixedPointRatioSum_bothGroupsMustPass() {
         // 第三个材质：现网找不到「第三条能安全占用的存量材质」，事务外自建 + @AfterEach 精确删除
-        String recipeC = createRecipe("15", false, List.of(new String[]{"Ag", "100"}));
+        String recipeC = createRecipe("15", false, List.<String[]>of(new String[]{"Ag", "100"}));
 
         // ── AC-15a ──────────────────────────────────────────────
         Fx fxA = newFixture("ac15a");
