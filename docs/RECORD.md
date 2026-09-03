@@ -12,6 +12,20 @@
 
 亲验：侧边栏一级菜单实测 `["工作台","客户管理","产品管理","报价中心","定价管理","配置中心","主数据维护","系统管理"]` —— 3D 选配 已消失、**其余 8 项一个没少**（防「隐藏过头」的反向断言）；`/configurator/instances` 直接访问仍正常渲染「📋 选配实例列表」而非 404（证明路由确实保留）。
 
+[2026-09-02] 构建与部署（路径 B 直接修复） - **JDK 17 → 21 全量切换（含字节码目标）** | 涉及文件：`deploy/Dockerfile`（构建 + 运行两阶段镜像）· `deploy/Dockerfile.runtime`（离线瘦运行镜像 + 离线包名 `base-temurin-21-jre.tar.gz`）· `deploy/BUILD-DEPLOY.md`（两处阶段说明）· `cpq-backend/pom.xml`（`maven.compiler.release` 17→21）· `CLAUDE.md`（技术栈声明）共 5 文件 8 处 | 合 master `40e05402` | 用户裁决：走路径 B，**「指向 17 的都指向 21」**（含 pom，覆盖了我原先「pom 先不动以保回滚」的保守建议）。
+
+🔑 **动机不是「21 更快」，而是消除「开发验 21、生产跑 17」的错配**：dev server 一直跑 21，全部功能 / E2E / 性能实测都在 21 完成，而生产跑 17 —— **充分验证的版本没上生产，上了生产的版本没充分验证**。统一到已被大量实证的那一侧。旁证：全工程零虚拟线程使用（`RunOnVirtualThread` grep 无命中），21 最大的风险面根本不触发；而 expand/公式/快照求值层非线程安全（2026-06-22 竞态已回滚），本就不该碰虚拟线程。
+
+⚠️ **`release=21` 的不可逆后果（已知情裁决）**：字节码 major 61→**65**，17 的 JRE 再也加载不了。已做**反证实验**：用 JDK 17 跑新产物 → `ExceptionInInitializerError` at `Unsafe.allocateInstance`，证明 release 真的生效、且回滚必须重新编译（不能只换镜像）。
+
+🔬 **验证**：JDK 21 `clean package` BUILD SUCCESS；字节码 major=65 ✅；迁移文件 380/380 打进 jar ✅；冷启动带**生产同款 JVM 参数**（`-XX:+UseG1GC -XX:MaxRAMPercentage=75.0 -Duser.timezone=Asia/Shanghai`）7.026s、`Profile prod`、19 feature 全装载 ✅；`/api/cpq/health`=200 ✅；带鉴权实跑 `material-masters` 200 / 42 条 / **79ms**（JDK 17 那次同接口同库 185ms）✅；**时区实证** —— 系统 PDT `19:32` vs JVM 日志 `2026-09-03 10:31`，差 15 小时 = UTC-7→UTC+8，`scheduler` 依赖的 Asia/Shanghai 生效 ✅。
+
+🚨 **教训（我的操作失误，造成实际损害）：`mvn clean` 会打掉正在运行的共享 dev server。** Quarkus dev mode 依赖 `target/quarkus/bootstrap/dev-app-model.dat` 与 `target/classes`，`clean` 把它们删掉 ⇒ 8081 进程 16761 直接死亡（实证：`ps` 查无此进程、该 `.dat` 不存在、8081 curl 返 `000`）。**这同时解释了第一次 `clean package` 构建失败**：clean 与运行中的 dev server 争抢 target；dev server 死后第二、三次 clean 反而都成功 —— **「重试就好了」在这里是假象，真因是第一次把干扰源杀掉了**。已重启恢复（15s，8081=401，Live Coding 正常，Flyway 未误改：V400 / 44 行 / 0 失败）。⇒ **规则提议：动共享 dev server 所在工作区的 `target/` 前（`mvn clean` / `rm -rf target`），必须先确认没有 dev server 在跑，或改用不带 clean 的构建。**
+
+⚠️ **未查明的缺口（诚实记录）**：第一次 `clean package` 的完整错误信息**被我用 `tail -18` 截断丢失**，只看到栈尾。上述归因是基于「dev server 确实死了 + 依赖文件确实被删 + 无 dev server 时 clean 必成功」三条证据的推断，**未经直接复现验证**。
+
+📌 **顺带发现（未改，待裁决）**：`CLAUDE.md` 技术栈行写 `Quarkus 3.23.3`，实际 pom 是 **3.34.3**（同一行的既有事实漂移，本次只按指令改了 Java 版本，未擅自扩范围）。另：重启 dev server 时 Hibernate post-boot 报 `missing table [mat_composite_process]` —— 属 `mat_*` 废弃表断供族（BL-0069）既有问题，与本次 JDK 切换无关，不阻断启动。
+
 [2026-09-02] 建库脚本（路径 B 直接修复） - **`deploy/cpq-init-empty-navicat.sql` 同步 V400，基线 398 → 400** | 涉及文件：`deploy/cpq-init-empty-navicat.sql`（13 处结构同步 + 1 处 CHECK 写法修正）| 用户裁决：走路径 B，立即同步不等 task-260901 结案。
 
 🔑 **同步内容（只同步结构，不含 V400 第④节存量迁移与第⑤节断言 —— 空库无行）**：新增 2 表 `material_recipe_composition` / `material_recipe_config`（含 pkey / uq / chk / 索引 / recipe_id 外键 CASCADE）；`material_recipe` 加 `allow_custom_content`；`material_recipe_element` 加 `config_id` + `uq_config_element` + `fk_mre_config` + `idx_mre_config`，且 `recipe_id` 由 NOT NULL 改**可空**（过渡期）。旧契约 `uq_recipe_element` 与 recipe_id 外键**保留不动**（删除属 §3.2 红线，在待批 V401）。表总数 151 → 153。
