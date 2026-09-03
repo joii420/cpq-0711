@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Tag, Button, Space, Input, Select, Drawer, Alert, Table, message } from 'antd';
+import { Tag, Button, Space, Input, Select, Drawer, Alert, Table, Tooltip, message } from 'antd';
 import {
   PlusOutlined, ImportOutlined, ReloadOutlined, DownloadOutlined,
 } from '@ant-design/icons';
@@ -18,6 +18,9 @@ import {
 import MaterialRecipeEditDrawer from './MaterialRecipeEditDrawer';
 import MaterialRecipeCreateDrawer from './MaterialRecipeCreateDrawer';
 import MaterialImportDrawer from './MaterialImportDrawer';
+import { useAuthStore } from '../../stores/authStore';
+import { EXPORT_EMPTY_TOOLTIP } from '../../utils/exportDownload';
+import { apiErrorMessage } from '../../utils/apiError';
 
 const recipeTypeTag: Record<string, { label: string; color: string }> = {
   locked:   { label: '标准锁定', color: 'red' },
@@ -56,7 +59,17 @@ const MaterialRecipeManagement: React.FC = () => {
   const [createOpen, setCreateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [keyword, setKeyword] = useState('');
+  /**
+   * 🚨 task-260902 · F-1（AC-7 / AC-22 的命门）：**已生效**的关键字。
+   *
+   * `keyword` 是搜索框的**当前输入值**，因为有 300ms 防抖，它与列表实际过滤用的词在
+   * 「打了字还没到防抖点」这个窗口里**是不一样的**。导出参数若取 `keyword`，
+   * 就会出现「列表显示 12 条、导出 3 条」。
+   * ⇒ 由 `refresh()` 统一写入本 state：谁触发的刷新都行，它永远等于列表当前用的那个词。
+   */
+  const [appliedKeyword, setAppliedKeyword] = useState('');
   const debounceRef = useRef<number | undefined>(undefined);
 
   // 停用二次确认（frontend.md §1.2 危险动作走弹层并逐条列出所选项；AC-29）
@@ -75,6 +88,8 @@ const MaterialRecipeManagement: React.FC = () => {
 
   // 列表顺序由后端定(启用优先→改时倒序→建时倒序)，未点击表头时不做本地 sort（= 三态里的「取消」态）。
   const refresh = async (kw?: string) => {
+    // 导出参数的唯一权威来源（见 appliedKeyword 注释）——所有 refresh 入口都会经过这里
+    setAppliedKeyword(kw ?? '');
     setLoading(true);
     try {
       const data = await materialRecipeService.list(kw ? { keyword: kw } : undefined);
@@ -162,6 +177,28 @@ const MaterialRecipeManagement: React.FC = () => {
     }
   };
 
+  /**
+   * task-260902 · F-1「导出材质库」（AC-1 / AC-7 / AC-8 / AC-22 / AC-27）。
+   *
+   * 导出的是**当前筛选结果的全量**：三个参数与页面上已生效的筛选逐字对应，且不传分页。
+   * ⚠️ `keyword` 取 `appliedKeyword` 而不是 `keyword`（见该 state 的注释）。
+   * 错误（如非管理员绕过 UI 直接触发 → 403）由 `downloadExport` 从 blob 里解析出文案后抛出。
+   */
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      await materialRecipeService.exportLibrary({
+        keyword: appliedKeyword.trim() || undefined,
+        recipeType: typeFilter,
+        status: statusFilter,
+      });
+    } catch (e: unknown) {
+      message.error(apiErrorMessage(e, '导出失败，请稍后重试'));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const confirmDisable = async () => {
     setDisabling(true);
     const failed: string[] = [];
@@ -199,6 +236,21 @@ const MaterialRecipeManagement: React.FC = () => {
       && (!statusFilter || (statusFilter === 'ACTIVE' ? isActive(r.status) : !isActive(r.status)))),
     [list, typeFilter, statusFilter],
   );
+
+  /**
+   * task-260902 · AC-2：非 `SYSTEM_ADMIN` 时「导出材质库」**整个按钮不渲染**，不是禁用态。
+   *
+   * ⚠️ 这一条**刻意背离** `frontend.md §1.2`「禁用但可见 + 说明原因」——
+   * 那条规则针对的是「条件不满足、满足了就能点」；角色不会变，画成禁用态等于在暗示可以申请。
+   * AC-2 与 `原型图/1-材质页签-工具栏.html` 状态 B 都明确要求不渲染，以 AC 为准。
+   */
+  const isSystemAdmin = useAuthStore((s) => s.user?.role === 'SYSTEM_ADMIN');
+
+  /**
+   * AC-23：筛选结果 0 条 → **禁用 + tooltip**（这次是禁用不是隐藏：管理员有这个能力，只是此刻没东西可导）。
+   * `!loading` 是为了避免首屏加载中（此刻 list 还是空数组）误报「0 条」。
+   */
+  const exportDisabled = !loading && filteredList.length === 0;
 
   // 过滤后条数变少时，避免停在越界页码上
   useEffect(() => {
@@ -380,6 +432,19 @@ const MaterialRecipeManagement: React.FC = () => {
         <Button icon={<ReloadOutlined />} onClick={() => refresh(keyword.trim() || undefined)}>
           刷新
         </Button>
+        {/* 右组顺序（原型图 1 状态 A）：刷新 → 导出材质库 → 导入材质库 → 下载导入模板 → 新建材质 */}
+        {isSystemAdmin && (
+          <Tooltip title={exportDisabled ? EXPORT_EMPTY_TOOLTIP : ''}>
+            <Button
+              icon={<DownloadOutlined />}
+              loading={exporting}
+              disabled={exportDisabled}
+              onClick={handleExport}
+            >
+              导出材质库
+            </Button>
+          </Tooltip>
+        )}
         <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>
           导入材质库
         </Button>

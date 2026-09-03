@@ -113,6 +113,31 @@
 - 页顶固定一行说明：`电镀方案为导入维护，如需修改请通过「导入报价数据」/「导入核价数据」重新导入`。
 - 空态文案：`暂无电镀方案数据，请先导入`。
 
+## F-11 · 前导零编码显示修复（D-25，2026-09-03 追加）
+
+| 服务的 AC | AC-53, AC-54, AC-55 |
+|---|---|
+
+**问题**：`part-costing/EditableSheetTable.tsx` 的 `displayText(v)` **按值的形状猜类型**
+（`if (typeof v === 'string' && isDecimalString(v)) return normalizeDecimalString(v)`），
+**完全不读 `ColumnDef.type`**。后果：`type=STRING` 的列，值 `00168` 被渲染成 `168`。
+
+**实测影响面**：`material_recipe` 260 个 code 中 **258 个带前导零**，且这些值已落在
+`ds_cost_basic_element_bom` / `ds_cost_detail_element_bom` 的 `material_part_no` 里
+（实测值：`00006, 00168, 991`）⇒ 新页签的「物料与元素BOM」tab 必然显示错。
+
+**改法**：`displayText` 增加列类型入参，**仅当 `col.type` 为 `DECIMAL` / `NUMBER` 时**才走
+`normalizeDecimalString`；`STRING` 及其余类型一律 `String(v)` 原样透传。
+
+🚨 **三条纪律**：
+1. **不要改 `precision.ts`** —— `isDecimalString` / `normalizeDecimalString` 本身没错，错的是调用处的判据。
+2. **数值列的去尾零行为必须原样保留**（AC-54 专门验这一条，防止修过头）。
+3. 🚨 **改完必须重跑 AC-42 的 A/B 比对**（AC-55）—— 你上次拿到的「抽屉截图 MD5 逐字节相同」这次**会变**，
+   因为材质料号列的显示从 `168` 变成 `00168`。**这是预期的改善**，请在回报里逐项说明变化点，
+   证明除此之外其余渲染逐项不变。
+
+📌 **P-2（只读态数值列右对齐）/ P-3（12 位精度例外溢出到只读态）本期不做**，已进 BACKLOG。
+
 ---
 
 ## 前端强制自检（`frontend.md §2`，交付前逐条跑，缺一不算完成）

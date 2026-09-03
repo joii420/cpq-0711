@@ -18,7 +18,7 @@
 
 🚩 **2026-09-03 更正（由后端 #3 实查指出，本文档原先写错）**：真实结构是 **`{ code, message, data }`**，
 **没有 `success` 字段**（`cpq-backend/src/main/java/com/cpq/common/dto/ApiResponse.java`：`private int code / String message / T data`）。
-本文档下方示例中出现的 `"success": true/false` **一律按 `code` 判定**：`code=200` 成功、`400`/`409`/`422`/`500` 见各节。
+所有示例已于 2026-09-03 统一改用 `code`（此前误写为 `"success": true/false`，全文 11 处已清）：`code=200` 成功、`400`/`409`/`422`/`500` 见各节。
 ⚠️ **前端不得按 `success` 字段判定成功与否** —— 那个字段不存在，判定会恒为 falsy。
 
 **权限**：写端点（`PUT rows`、`POST import`）**仅** `PRICING_MANAGER` / `SYSTEM_ADMIN`（AC-31）；
@@ -36,7 +36,7 @@
 **成功 200**
 
 ```json
-{ "success": true, "data": {
+{ "code": 200, "data": {
   "dataset": "cost-basic",
   "fileName": "核价2 - 数据导入与表格建表.xlsx",
   "durationMs": 4210,
@@ -52,7 +52,7 @@
 **校验失败 400**（Phase 1 拒收，**一行未写**）
 
 ```json
-{ "success": false, "message": "导入校验未通过，共 4 处问题，本次未写入任何数据", "data": {
+{ "code": 400, "message": "导入校验未通过，共 4 处问题，本次未写入任何数据", "data": {
   "errors": [
     { "sheet": "物料BOM",       "row": 3, "column": "组成料号", "reason": "必填项为空" },
     { "sheet": "年降系数",       "row": 2, "column": "销售料号", "reason": "轴列不可为空" },
@@ -64,7 +64,7 @@
 
 - `row` = **Excel 物理行号**（表头占 1~2 行，数据从第 3 行起；免版本 sheet 无第 2 行，数据从第 2 行起）。
 - 🚫 **必须一次返回全部错误**，不许遇错即停（AC-10）。
-- `reason` 取值封闭集：`必填项为空` / `轴列不可为空` / `主数据不存在` / `不是合法数值` / `不是合法整数` / `超出长度上限 {n}` / `sheet「{名}」不属于{数据集中文名}数据集` / `表头列名与规范不一致：缺少「{列名}」` / **`客户编号未在客户档案中登记`**（D-19，仅报价 `客户料号` sheet）。
+- `reason` 取值封闭集：`必填项为空` / `轴列不可为空` / `主数据不存在` / `不是合法数值` / `不是合法整数` / `超出长度上限 {n}` / `sheet「{名}」不属于{数据集中文名}数据集` / `表头列名与规范不一致：缺少「{列名}」` / **`客户编号未在客户档案中登记`**（D-19，仅报价 `客户料号` sheet） / **`轴值未在物料表登记`**（D-24，全部带版本 sheet）。
 
 **服务端异常 500**：Phase 2 整事务回滚，`message` 为 `写入失败，已回滚：{原因}`。
 
@@ -75,7 +75,7 @@
 **响应 200** —— 结构**完全对齐**现有 `SheetMeta`，前端 `EditableSheetTable` 可直接消费：
 
 ```json
-{ "success": true, "data": { "sheets": [
+{ "code": 200, "data": { "sheets": [
   { "sheetKey": "MATERIAL_BOM", "sheetName": "物料BOM", "sortOrder": 1,
     "axisColumn": "production_no", "axisLabel": "生产料号",
     "columns": [
@@ -102,14 +102,17 @@
 
 ## 3. `GET /dataset/{dataset}/parts` — 料号列表（列表页数据源 = 该数据集的物料表）
 
-**Query**：`page`（**0-based**）、`size`、`keyword`、`sortBy`、`sortDir`（`asc`|`desc`）
+**Query**：`page`（**0-based**）、`size`、`keyword`、`sortBy`、`sortDir`（`asc`|`desc`）、**`configured`**（`Boolean`，可空）
+
+🚩 **`configured`（2026-09-03 补）**：`true` = 只返已配齐（`configuredCount == totalSheetCount`）、`false` = 只返未配齐、**不传 = 全部**。
+原型 `核价数据-列表.html` 的「配置状态」下拉对应此参数。此前本节漏写该参数、后端签名也没有它 ⇒ 前端发送后被静默忽略。
 
 `sortBy` 白名单：`axisValue` / `materialName` / `specification` / `dimension` / `configuredCount` / `lastUpdatedAt`
 
 **响应 200**
 
 ```json
-{ "success": true, "data": {
+{ "code": 200, "data": {
   "total": 128,
   "items": [
     { "axisValue": "3120014539", "materialName": "主料1", "specification": null,
@@ -130,7 +133,7 @@
 ## 4. `GET /dataset/{dataset}/parts/{axisValue}/overview` — 抽屉徽标
 
 ```json
-{ "success": true, "data": {
+{ "code": 200, "data": {
   "axisValue": "3120014539", "materialName": "主料1",
   "sheets": [ { "sheetKey": "MATERIAL_BOM", "rowCount": 7, "versionNo": 3, "lastUpdatedAt": "…", "source": "IMPORT" } ]
 }}
@@ -145,7 +148,7 @@
 **Query**：`version`（可选；省略 = 当前版本）
 
 ```json
-{ "success": true, "data": {
+{ "code": 200, "data": {
   "versionNo": 3, "isLatest": true, "readOnly": false, "source": "MANUAL",
   "rows": [ { "item_seq": 10, "component_no": "S-2120011658", "component_name": "半成品A",
               "component_qty": "1.000000000000", "currency": "CNY", "row_fingerprint": "a3f1…" } ]
@@ -160,7 +163,7 @@
 ## 6. `GET /dataset/{dataset}/parts/{axisValue}/sheets/{sheetKey}/versions` — 版本列表
 
 ```json
-{ "success": true, "data": { "versions": [
+{ "code": 200, "data": { "versions": [
   { "versionNo": 3, "isLatest": true,  "rowCount": 7, "archivedAt": null,
     "updatedAt": "2026-09-03T10:12:00+08:00", "updatedBy": "admin", "source": "MANUAL" },
   { "versionNo": 2, "isLatest": false, "rowCount": 7, "archivedAt": "2026-09-03T10:12:00+08:00",
@@ -188,7 +191,7 @@
 **成功 200**
 
 ```json
-{ "success": true, "data": { "result": "UPGRADED", "versionNo": 4, "rowCount": 7,
+{ "code": 200, "data": { "result": "UPGRADED", "versionNo": 4, "rowCount": 7,
                              "message": "已升版至 v4" } }
 ```
 
@@ -203,7 +206,7 @@
 **冲突 409**（AC-41）
 
 ```json
-{ "success": false, "message": "数据已被他人更新至 v4，请刷新后重试",
+{ "code": 400, "message": "数据已被他人更新至 v4，请刷新后重试",
   "data": { "currentVersion": 4, "baseVersion": 3 } }
 ```
 
@@ -230,7 +233,7 @@
 `masterType` ∈ `material` / `process` / `element` / `recipe` / `customer`
 
 ```json
-{ "success": true, "data": { "items": [ { "code": "Z053", "name": "铣割" } ] } }
+{ "code": 200, "data": { "items": [ { "code": "Z053", "name": "铣割" } ] } }
 ```
 
 > **主数据共享，不拆**（D-16）。本端点读的是现有 `process` / `element` / `material_recipe` / `customer` 表，**只读**。

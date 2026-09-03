@@ -1,5 +1,6 @@
 import api from './api';
 import type { DecimalString } from '../utils/precision';
+import { downloadExport, exportFileName } from '../utils/exportDownload';
 
 /**
  * 材质服务层。
@@ -279,6 +280,29 @@ export const materialRecipeService = {
       : new Blob([data], {
           type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         });
+  },
+
+  // ── 材质库导出 (task-260902 · B-1 / F-1) ──
+
+  /**
+   * GET /material-recipes/export — 导出**当前筛选结果的全量**（不受分页限制）。
+   *
+   * 三个参数必须与页面上**已生效**的筛选逐字对应（AC-7 / AC-22）：
+   *   keyword ← 已生效的搜索词（不是输入框里还没触发查询的草稿）
+   *   recipeType ← 类型下拉；status ← 状态下拉（这两项列表侧是前端过滤，导出侧由后端复刻）
+   *
+   * 非 `SYSTEM_ADMIN` 调用时后端返 403，`downloadExport` 会解析出 message 抛出（不触发下载）。
+   */
+  async exportLibrary(params: {
+    keyword?: string;
+    recipeType?: string;
+    status?: string;
+  }): Promise<void> {
+    await downloadExport('/material-recipes/export', {
+      ...(params.keyword ? { keyword: params.keyword } : {}),
+      ...(params.recipeType ? { recipeType: params.recipeType } : {}),
+      ...(params.status ? { status: params.status } : {}),
+    }, exportFileName('材质库'));
   },
 
   // ── 材质-料号 绑定关系管理(Phase 1 新增；task-260901 不改，绑定挂材质层) ──

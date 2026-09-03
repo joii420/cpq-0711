@@ -125,7 +125,7 @@ test.describe('task-260902 选择器与空态', () => {
     const row = picker(page).locator('tbody tr, .picker-row').filter({ hasText: '00006' }).first();
     await expect(row, 'AC-17：🚫 已添加的材质**仍须出现在列表中**（过滤掉 = 用户以为材质丢了）')
       .toBeVisible({ timeout: 8000 });
-    const btn = row.getByRole('button', { name: /选择/ }).first();
+    const btn = row.getByRole('button', { name: /选\s*择/ }).first();
     await expect(btn, 'AC-17：「选择」按钮必须可见').toBeVisible();
     await expect(btn, 'AC-17：「选择」按钮必须禁用').toBeDisabled();
     const tip = await tooltipOf(page, btn);
@@ -196,7 +196,7 @@ test.describe('task-260902 选择器与空态', () => {
     const row = picker(page).locator('tbody tr, .picker-row').filter({ hasText: FAKE }).first();
     await expect(row, 'AC-18b：0 组配置的材质🚫 不得被过滤掉，必须出现在列表里').toBeVisible({ timeout: 8000 });
     await expect(row, 'AC-18b：「含量配置」列应显示 0 组').toContainText('0 组');
-    const btn = row.getByRole('button', { name: /选择/ }).first();
+    const btn = row.getByRole('button', { name: /选\s*择/ }).first();
     await expect(btn, 'AC-18b：「选择」按钮必须可见').toBeVisible();
     await expect(btn, 'AC-18b：0 组配置时「选择」必须禁用').toBeDisabled();
     const tip = await tooltipOf(page, btn);

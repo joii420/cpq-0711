@@ -18,7 +18,7 @@ PGPASSWORD=joii5231 psql -h 10.177.152.12 -U postgres -d cpq_db_0724 -tAc "<下�
 
 | 项 | 实测值 |
 |---|---|
-| 总数 / ACTIVE | **259 / 258**（2026-09-02 清理 4 条 demo 污染后）|
+| 总数 / ACTIVE | **259 / 258**（2026-09-03 二次清理后复核，与 09-02 口径一致）|
 | 每条材质的 ACTIVE 配置数 | **恰好 1 组**（唯一例外见 §1.2） |
 | **0 组配置的 ACTIVE 材质** | ❌ **一条都没有** |
 | `allow_custom_content=true` | **0 条** —— 原 4 条为测试污染，已于 2026-09-02 清理 ⇒ **需要该开关的用例必须事务内自建材质** |
@@ -51,7 +51,14 @@ PGPASSWORD=joii5231 psql -h 10.177.152.12 -U postgres -d cpq_db_0724 -tAc "<下�
 SELECT count(*) FROM material_recipe WHERE allow_custom_content=true;  →  0
 ```
 
-原有 `AgCu85 / AgCu90 / AgNi90 / AgNi95` 四条是 `DemoMaterialRecipeFixture` 提交式夹具于 2026-09-02 11:17 种入的污染数据，**已按用户批准清理**（连同 4 config + 8 element + 8 composition 共 24 行，业务引用实查为 0）。
+原有 `AgCu85 / AgCu90 / AgNi90 / AgNi95` 四条是 `DemoMaterialRecipeFixture` 提交式夹具种入的污染数据。
+
+🔁 **已清理两次（2026-09-02、2026-09-03），两次都复发** —— 第二次清理时实测 `created_at = 2026-09-03 06:43:38`，
+是当天跑 `configure` 测试后 34 秒种下的。**跑一次全量测试必然再来**，因为：
+- `application-test.properties:24` 的库名默认值就是 `cpq_db_0724` ⇒ **`mvnw test` 直接写开发库**（`f2f4cc4b` 用户裁决，`cpq_db` 已废弃）
+- `DemoMaterialRecipeFixture.ensureSeeded` 是 `@BeforeEach @Transactional` **提交式**，注释明说「须在 `@Transactional` 上下文调用以提交」，被 **5 个测试类**当「事务外持久、只读」使用
+
+⇒ 已立 **BL-0204** 单独做护栏。**在护栏落地前，看到这 4 条不要当真实主数据**，也不要据它们写用例。
 
 ⇒ **AC-21 / AC-22 必须事务内自建 `allow_custom_content=true` 的材质 + 回滚**，🚫 库里没有可直接引用的样本。
 
@@ -63,7 +70,8 @@ SELECT count(*) FROM material_recipe WHERE allow_custom_content=true;  →  0
 Z100 | 焊接 | 分类=组装 | created=2026-07-28 04:03:47
 Z101 | 铆接 | 分类=组装 | created=2026-07-28 04:03:47
 ```
-📌 `TP10`/`TP20`（`created=2026-09-02 11:54`，测试夹具写入）**已按用户批准清理**，业务引用实查为 0（`unit_price` / `material_bom_item` / `quotation_line_process` 三处均 0）。
+📌 `TP10`/`TP20` 来自 `PricingMaintenanceServiceTest:33-38` 的 `@Transactional seed()`（`@BeforeEach` 跑前清、**跑完不清**）。
+🔁 **同样已清两次**（2026-09-02 / 2026-09-03），第二次实测 `created_at = 2026-09-03 07:04:07`，落在全量 `mvnw test` 区间内。两次清理前业务引用实查均为 0（`unit_price.operation_no` / `material_bom_item.operation_no` / `quotation_line_process.process_no` 三处）。见 **BL-0204**。
 ⚠️ **但没有机制阻止下次 `./mvnw test` 再写入** —— 这正是 `test.md §0` 收尾污染核对存在的理由。
 
 - ✅ **工序是业务在「主数据维护 → 工序」页自行维护的开放主数据**（用户确认，截图见 `素材-工序主数据维护页-20260902.png`），不随迁移交付。

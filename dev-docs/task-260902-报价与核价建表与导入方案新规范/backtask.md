@@ -80,7 +80,7 @@ com.cpq.dataset/
 
 ## B-6 · 导入 Phase 1：解析 + 全量校验（零写库）
 
-| 服务的 AC | AC-6, AC-7, AC-8, AC-9, AC-10, AC-34, AC-39, AC-40, AC-45, AC-46 |
+| 服务的 AC | AC-6, AC-7, AC-8, AC-9, AC-10, AC-34, AC-39, AC-40, AC-45, AC-46, AC-52 |
 |---|---|
 
 - 校验项按 `需求文档.md` R-7；`reason` 取值必须落在 `api.md §1` 的封闭集内。
@@ -90,7 +90,11 @@ com.cpq.dataset/
 - sheet 匹配：Excel sheet 名 ∉ 本数据集 Registry → 报 `sheet「X」不属于{数据集中文名}数据集`（AC-34）。表头列名与 `ColumnDef.label` 不一致 → 报缺列。
 - 空 sheet（只有表头）合法，产出 `轴值数 0`，**不得**视为清空（AC-39）。
 - 长度校验按 DDL 的 `varchar(n)`，超长必须报错，**禁止静默截断**（AC-40）。
-- 主数据存在性：`element` / `process` / `material_recipe` / `customer` **只读**查询。
+- 主数据存在性：`element` / **`process_master`**（🚩 不是 `process` —— 那张表 0 行且字段名不同）/ `material_recipe` / `customer` **只读**查询。
+- 🚩 **D-24 变更（2026-09-03）**：带版本 sheet 的**每个轴值**必须存在于**同一数据集的物料表**
+  （同一份 Excel 内的「物料」sheet 也算，Phase 1 需把本次待写入的物料先纳入判定集合）。
+  查不到 → 整份拒收，`reason` = `轴值未在物料表登记`。服务 **AC-52**。
+  ⚠️ 批量判定：一次 `SELECT ... WHERE 轴列 IN (...)` 取全部已登记轴值，🚫 不许逐轴值查（N+1）。
 - 🚩 **D-19 变更**：报价 `客户料号` sheet 的 **`customer_no` 必须存在于 `customer.code`，查不到整份拒收**，
   `reason` 用 `客户编号未在客户档案中登记`（`api.md §1` 已加入封闭集）。服务 **AC-45 / AC-46**。
   ⚠️ 原写的「客户产品编号 ∈ customer」是笔误，已在 `需求文档.md` R-7 改正 —— **校验的是客户编号，不是客户产品编号**。
@@ -125,6 +129,16 @@ com.cpq.dataset/
 - `NAME` 角色列由后端 JOIN 主数据带出（`material` / `process` / `element` / `recipe`），**批量 JOIN，不许逐行查**。
 - 无数据的 sheet 返回 `rows: []` + `versionNo: null`（AC-32），**不许抛 404**。
 - `lookup` 可复用现有实现的查询逻辑，但**必须新开路径**（`api.md §8`）。
+
+## B-15 · `GET parts` 补「配置状态」过滤（2026-09-03 追加）
+
+| 服务的 AC | AC-25 |
+|---|---|
+
+- `GET /dataset/{dataset}/parts` 新增 Query 参数 **`configured`**（`Boolean`，可空；不传 = 全部）。
+- `configured=true` → 只返 `configuredCount == totalSheetCount` 的行；`configured=false` → 只返其余行。
+- 🚫 **在 SQL 侧过滤**，不许全量查出来内存过滤（`configuredCount` 本就是 SQL 聚合出来的，加个 `HAVING` 即可）。
+- 📌 这不是扩范围：原型 `核价数据-列表.html` 画了该控件、`fronttask.md` F-2 写了「配置状态过滤」、前端也已发送该参数 —— **是后端签名漏了**，参数被静默忽略。
 
 ## B-10 · 保存端点 `PUT …/rows`
 
