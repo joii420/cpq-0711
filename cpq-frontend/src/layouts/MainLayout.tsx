@@ -103,23 +103,30 @@ const allMenuItems: MenuItem[] = [
     ],
   },
   { key: '/master-data-hub', icon: <DatabaseOutlined />, label: '主数据维护', roles: ['SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
-  {
-    key: '/configurator-hub',
-    icon: <ShoppingOutlined />,
-    label: '🛒 3D 选配',
-    roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'],
-    children: [
-      // 销售路径
-      { key: '/configurator/instances', label: '📋 选配实例列表', roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
-      { key: '/configurator/start', label: '🎯 开始选配', roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
-      { key: '/configurator/shares', label: '🔗 我分享的链接', roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
-      { key: '/system/customer-leads', label: '📩 客户线索', roles: ['SALES_REP', 'SALES_MANAGER', 'SYSTEM_ADMIN'] },
-      // 管理资源
-      { key: '/system/configurator-templates', label: '🛒 选配模板管理', roles: ['SYSTEM_ADMIN', 'PRICING_MANAGER'] },
-      { key: '/system/feature-library', label: '📚 特征库管理', roles: ['SYSTEM_ADMIN', 'PRICING_MANAGER'] },
-      { key: '/system/part-models', label: '📦 3D 源文件管理', roles: ['SYSTEM_ADMIN', 'PRICING_MANAGER'] },
-    ],
-  },
+  // ── 2026-09-02:「🛒 3D 选配」目录**暂时隐藏**（用户要求，路径 B）──────────────────
+  //   隐藏的只是侧边栏入口，**路由与页面组件一概未动** —— `router/index.tsx` 里
+  //   `configurator/*`（5 条）与 `system/configurator-templates|feature-library|customer-leads|part-models`
+  //   仍然挂着，直接敲 URL 照样进得去。要连路由一起下线是另一个决定，届时另说。
+  //   恢复方式：删掉本段注释符即可，不需要改别处 —— `'/configurator-hub'` 这个 key
+  //   在全工程只有这一处引用（无 openKeys/面包屑等消费点），且 `selectedKeys` 取的是
+  //   `location.pathname`，菜单里找不到 key 只是不高亮，不会报错。
+  // {
+  //   key: '/configurator-hub',
+  //   icon: <ShoppingOutlined />,
+  //   label: '🛒 3D 选配',
+  //   roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'],
+  //   children: [
+  //     // 销售路径
+  //     { key: '/configurator/instances', label: '📋 选配实例列表', roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
+  //     { key: '/configurator/start', label: '🎯 开始选配', roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
+  //     { key: '/configurator/shares', label: '🔗 我分享的链接', roles: ['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN'] },
+  //     { key: '/system/customer-leads', label: '📩 客户线索', roles: ['SALES_REP', 'SALES_MANAGER', 'SYSTEM_ADMIN'] },
+  //     // 管理资源
+  //     { key: '/system/configurator-templates', label: '🛒 选配模板管理', roles: ['SYSTEM_ADMIN', 'PRICING_MANAGER'] },
+  //     { key: '/system/feature-library', label: '📚 特征库管理', roles: ['SYSTEM_ADMIN', 'PRICING_MANAGER'] },
+  //     { key: '/system/part-models', label: '📦 3D 源文件管理', roles: ['SYSTEM_ADMIN', 'PRICING_MANAGER'] },
+  //   ],
+  // },
   {
     key: '/system',
     icon: <SettingOutlined />,
