@@ -23,6 +23,31 @@
 - **本任务不修该缺陷**，用例一律自带 session。
 - 🚩 看到 `Expected <200> but was <401>` **先怀疑这个坑**，不要误判成「端点没做 / 权限判错」。
 
+### 0.2b 🚩 `test` profile 的 Redis 指向连不上的实例 —— RBAC-401 的同族第二例
+
+**2026-09-03 由测试代理实证发现。** 与 §0.2 是同一种覆盖机制（profile-specific 压过 `src/test/resources`）：
+
+```
+src/test/resources/application.properties:11      redis://:joii5231@10.177.152.12:6379/0      ← 可用
+src/main/resources/application-test.properties:68  redis://:WzHf20230610@172.16.18.56:6380/0   ← 覆盖它，AUTH 失败
+```
+
+**症状**：登录返 **500**，`GlobalExceptionMapper: CompletionException: CONNECTION_CLOSED at BlockingHashCommandsImpl.hset`
+⇒ **`@QuarkusTest` 里每一条带 session 的用例全倒**，而 8081 上同样的登录返 **200**。
+🚩 **极易误判成「鉴权坏了」或「端点没做」** —— 和 §0.2 的 401 假红是同一族陷阱，但表现为 500。
+
+**绕法（不改任何文件）**：
+
+```bash
+export QUARKUS_REDIS_HOSTS="redis://:joii5231@10.177.152.12:6379/0"
+```
+
+环境变量的 MicroProfile Config ordinal 是 300，压过 properties 文件。**本任务所有带 session 的测试结果都是这么跑出来的。**
+
+⚠️ **本任务不修这个缺陷**（同 §0.2 的处置），只规避 + 记录。
+
+---
+
 ### 0.3 ⚠️ 共享库数据在漂移
 
 实测同一条 `count(*)` 几分钟内会变（其他会话在写）。
