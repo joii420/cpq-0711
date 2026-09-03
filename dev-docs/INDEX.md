@@ -65,7 +65,7 @@
 
 | 分支 | worktree | 领先 master | 状态 |
 |---|---|---|---|
-| `feat/task-260902-dataset-tables-import` | `.claude/worktrees/task-260902-dataset-import` | **0 笔**（建于 `2aa02faa`） | 🔵 **开发中** —— `task-260902-报价与核价建表与导入方案新规范`（闸门 A 2026-09-03 放行）。84 张新表（`ds_quote_*` / `ds_cost_basic_*` / `ds_cost_detail_*`）+ 通用升版写入器 + 两阶段导入器 + 两个新页签。**B-1~B-13 / F-1~F-9 已派 5 个子代理**。⚠️ 迁移从 **V401** 起（建分支时实取，共享库上是移动靶）。合并前须回写 `dev-docs/main-api.md`（新增 8 个端点） |
+| `feat/task-260902-dataset-tables-import` | `.claude/worktrees/task-260902-dataset-import` | **0 笔**（建于 `2aa02faa`） | 🔵 **开发中** —— `task-260902-报价与核价建表与导入方案新规范`（闸门 A 2026-09-03 放行）。84 张新表（`ds_quote_*` / `ds_cost_basic_*` / `ds_cost_detail_*`）+ 通用升版写入器 + 两阶段导入器 + 两个新页签。**B-1~B-13 / F-1~F-9 已派 5 个子代理**。⚠️ 迁移从 **V405** 起。🚩 **建分支时实取的 V400 是错的** —— 那是**主仓目录**最大号；实查**共享库** `flyway_schema_history` 已到 **V404**（`task-260902-选配流程重构` 的 V401~V404 已应用但未合并进 master，故目录看不到）。由后端子代理主动查库发现，用户 2026-09-03 批准改名 V401~V404 → V405~V408（文件从未应用、从未提交，零风险）。**教训：查迁移号必须查共享库的 `flyway_schema_history`，不能只 `ls` 目录。**合并前须回写 `dev-docs/main-api.md`（新增 8 个端点） |
 | `feat/task-260902-master-data-export-user-import` | `.claude/worktrees/task-260902-export-import` | **0 笔**（建于 `160dc2ee`） | 🔵 **开发中** —— `task-260902-主数据与用户导入导出`（闸门 A 2026-09-02 放行）。材质/工序导出 + 用户导入导出，B-1~B-5 / F-1~F-5 已派三类子代理。合并前须回写 `dev-docs/main-api.md`（新增 5 个端点）|
 | `feat/quote-material-no` | 无 | **1 笔** | 🟡 悬挂（内容仅 `BACKLOG.md` +15 行零代码，技术债已转 [[BL-0175]]，见 §8.3） |
 | `fix/repair-260829-skeleton-lock` | `.claude/worktrees/repair-260829-skeleton-lock` | **0 笔**（建于 `cf76bb8e`） | 🔵 **开发中** —— `repair-260829-卡片值算早了骨架值锁死`，闸门 A 已放行（2026-08-29）。B-1 产物自检为主体，B-4 `MaterializeRegistry` 供并发会话消费 |
