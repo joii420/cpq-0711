@@ -332,8 +332,10 @@ const NewPartPanel: React.FC<Props> = ({
       width: 130,
       align: 'right',
       render: (_v, m) => {
-        // 总重或占比任一不合法 → 「—」（原型状态 B 的错误态就是「—」，不是 0）
-        const g = computeGramsByRatio(draft.unitWeightGrams, m.ratio);
+        // 🚨 合计 ≠ 100 时**逐行也显示「—」**，对齐原型 3 状态 B（那一屏的折合克重列整列是「—」）。
+        //    理由：占比合计不对时，按各自占比算出来的克重是**误导** —— 它们加起来不等于总重，
+        //    用户会照着这个数去核对，然后困惑为什么对不上。宁可不显示。
+        const g = ratioResult.ok ? computeGramsByRatio(draft.unitWeightGrams, m.ratio) : null;
         return g === null
           ? <span style={{ color: '#c0c4cc' }}>—</span>
           : <span style={{ color: '#909399' }}>{g} g</span>;
