@@ -21,8 +21,18 @@ import java.util.stream.Collectors;
 @ApplicationScoped
 public class CompositeProcessService {
 
-    /** 组合工艺分类值域里代表"组装"的现网实值（DB 实查：无独立 '组合工艺' 枚举）。 */
-    private static final String ASSEMBLY_CATEGORY = "ASSEMBLY";
+    /**
+     * 组合工艺分类值域里代表"组装"的现网实值（DB 实查：无独立 '组合工艺' 枚举）。
+     *
+     * <p>🚨 <b>task-260902 · B-12</b>：{@code process_master.process_category} 在
+     * {@code cpq_db_0724} 上的实值是<b>中文「组装」</b>（{@code Z100 焊接} / {@code Z101 铆接}），
+     * 而本常量原本只认英文 {@code ASSEMBLY} ⇒ 候选端点在本库<b>恒返 0 条</b>、
+     * {@code assertAssemblyProcessExists} 对任何真实工序都 fail-fast，组合工艺整条路走不通。
+     * 工序是业务在「主数据维护 → 工序」页自维护的<b>开放主数据</b>（用户确认），
+     * 分类值域由业务填写、不由迁移种子约束 ⇒ <b>两种写法都必须接受</b>。
+     * 🚫 不要「统一成一种」再去改库里的业务数据 —— 那是拿代码口味覆盖业务数据。
+     */
+    public static final List<String> ASSEMBLY_CATEGORIES = List.of("ASSEMBLY", "组装");
 
     private static final ObjectMapper OM = new ObjectMapper();
 
@@ -40,7 +50,7 @@ public class CompositeProcessService {
      */
     public List<CompositeProcessCandidateDTO> listAssemblyCandidates() {
         return ProcessMaster.<ProcessMaster>find(
-                "processCategory = ?1 ORDER BY processNo", ASSEMBLY_CATEGORY).list()
+                "processCategory in ?1 ORDER BY processNo", ASSEMBLY_CATEGORIES).list()
             .stream().map(this::toCandidateDTO).collect(Collectors.toList());
     }
 

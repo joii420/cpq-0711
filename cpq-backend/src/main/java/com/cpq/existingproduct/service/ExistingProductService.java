@@ -39,51 +39,70 @@ public class ExistingProductService {
         int safePage = Math.max(page, 0);
         int safeSize = size <= 0 ? 20 : size;
 
-        // A 方案(2026-07-16):列表也纳入选配发号产品(customer_product_no 尚为 NULL,但已在 sel_part_signature 登记),
-        // 前端按 source='CONFIGURED' 标「选配」。仍排除既无客户产品号又非选配登记的纯占位行(旧 F005 只保真产品,
-        // 现放宽为「真产品 OR 选配登记」)。
-        // task-0721 B7 闸门：未审核（pending_quotation_id 非空）的报价单料号一律不出现，
-        // 无论是真实客户产品号还是选配发号登记（单表谓词，零 N+1，AC-4/AC-16）。
+        // ═══════════════════════════════════════════════════════════════════
+        // task-260902 · B-16b：列表 = material_customer_map（导入来的） ∪ sel_product_no（选配来的）
+        //
+        // 方案甲下选配<b>不再写 mcm</b>（B-8），所以「从产品库添加」必须并上 sel_product_no，
+        // 否则选配产品在列表里彻底消失。
+        //
+        // 🔄 source 语义随之简化（评审 P2-17）：现状 `CASE WHEN mcm.customer_product_no IS NULL
+        //    THEN 'CONFIGURED' ELSE 'EXISTING' END` 会被 B-8 静默翻转（选配产品从此有编号了）——
+        //    改为**按来源表判定**：来自 sel_product_no → CONFIGURED，来自 mcm → EXISTING。
+        //    语义更准，且不再依赖「编号是否为空」这个易变判据。
+        //
+        // ⚠️ AC-12b④「该产品只出现一次（不因两行映射而重复）」：一个销售料号可以对多个客户产品编号
+        //    （sel_product_no 的 quote_part_no 刻意不唯一，那正是 AC-12b 要的），
+        //    但列表必须按销售料号**去重成一行** —— 故最外层用 DISTINCT ON (material_no)，
+        //    取 created_at 最早的那个编号作代表。筛选谓词在去重之前生效，
+        //    所以「按任一编号都能搜到该产品」与「只出现一次」两个断言同时成立。
+        //    📌 这是对 AC-12b④ 与 AC-12① 之间张力的保守取舍（宁可少显示一个编号，
+        //       也不产生重复行），已在回报中登记为待主线确认点。
+        //    另：编号已进 spn 的料号不再从 mcm 出一次（mcm 侧的 NOT EXISTS 谓词）。
+        //
+        // 🚫 保留 mcm 侧那句 `OR EXISTS (SELECT 1 FROM sel_part_signature …)` 兜底不动 ——
+        //    它本是为「选配料号在 mcm 里编号为空」打的补丁，B-8 落地后可退役，
+        //    但**退不退由主线裁定**（backtask B-16b 明确要求不要顺手删）。
+        // ═══════════════════════════════════════════════════════════════════
         StringBuilder where = new StringBuilder(
                 "mcm.system_type = 'QUOTE' AND mcm.customer_no = :customerNo " +
                 "AND mcm.pending_quotation_id IS NULL " +
                 "AND (mcm.customer_product_no IS NOT NULL " +
-                "     OR EXISTS (SELECT 1 FROM sel_part_signature sps WHERE sps.quote_part_no = mcm.material_no AND sps.customer_no = mcm.customer_no))");
+                "     OR EXISTS (SELECT 1 FROM sel_part_signature sps WHERE sps.quote_part_no = mcm.material_no AND sps.customer_no = mcm.customer_no)) " +
+                // 编号已被 sel_product_no 收录的，由 spn 分支出行，避免同一 (料号, 编号) 出两行
+                "AND NOT EXISTS (SELECT 1 FROM sel_product_no spn0 WHERE spn0.customer_no = mcm.customer_no " +
+                "     AND spn0.quote_part_no = mcm.material_no)");
+        StringBuilder spnWhere = new StringBuilder("spn.customer_no = :customerNo");
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("customerNo", customerNo);
 
         if (notBlank(customerProductNo)) {
             where.append(" AND mcm.customer_product_no ILIKE :customerProductNo");
+            spnWhere.append(" AND spn.customer_product_no ILIKE :customerProductNo");
             params.put("customerProductNo", likePattern(customerProductNo));
         }
         if (notBlank(salesPartNo)) {
             where.append(" AND mcm.material_no ILIKE :salesPartNo");
+            spnWhere.append(" AND spn.quote_part_no ILIKE :salesPartNo");
             params.put("salesPartNo", likePattern(salesPartNo));
         }
         if (notBlank(productName)) {
             where.append(" AND mcm.customer_material_name ILIKE :productName");
+            spnWhere.append(" AND COALESCE(NULLIF(spn.customer_product_name,''), smm.material_name) ILIKE :productName");
             params.put("productName", likePattern(productName));
         }
         if (notBlank(spec)) {
             where.append(" AND COALESCE(NULLIF(mm.specification,''), mm.dimension) ILIKE :spec");
+            spnWhere.append(" AND COALESCE(NULLIF(smm.specification,''), smm.dimension) ILIKE :spec");
             params.put("spec", likePattern(spec));
         }
 
-        // ── 总数（1 条 SQL） ──
-        Query countQuery = em.createNativeQuery(
-                "SELECT COUNT(*) FROM material_customer_map mcm " +
-                "LEFT JOIN material_master mm ON mm.material_no = mcm.material_no " +
-                "WHERE " + where);
-        params.forEach(countQuery::setParameter);
-        long total = ((Number) countQuery.getSingleResult()).longValue();
-
-        // ── 分页数据（1 条 SQL，两 LEFT JOIN 一次带出规格 + 3D，禁逐行查） ──
-        Query dataQuery = em.createNativeQuery(
-                "SELECT mcm.material_no, mcm.customer_product_no, " +
+        // 两侧共用的行构造（列顺序必须逐位对齐，UNION ALL 按位置配对）。
+        String mcmSelect =
+                "SELECT mcm.material_no, mcm.customer_product_no, mcm.created_at AS src_created_at, " +
                 "       COALESCE(NULLIF(mcm.customer_material_name,''), mm.material_name, mm.material_type, mcm.material_no) AS product_name, " +
                 "       COALESCE(NULLIF(mm.specification,''), mm.dimension) AS spec, " +
                 "       (model3d.id IS NOT NULL) AS has3d, model3d.thumbnail_url, " +
-                "       CASE WHEN mcm.customer_product_no IS NULL THEN 'CONFIGURED' ELSE 'EXISTING' END AS source, " +
+                "       'EXISTING' AS source, " +
                 "       (SELECT sps.product_type FROM sel_part_signature sps WHERE sps.quote_part_no = mcm.material_no AND sps.customer_no = mcm.customer_no ORDER BY sps.created_at DESC LIMIT 1) AS config_product_type " +
                 "FROM material_customer_map mcm " +
                 "LEFT JOIN material_master mm ON mm.material_no = mcm.material_no " +
@@ -91,8 +110,37 @@ public class ExistingProductService {
                 "       ON model3d.subject_type = 'SALES_PART' " +
                 "      AND model3d.subject_key = mcm.material_no " +
                 "      AND model3d.is_current = true " +
-                "WHERE " + where +
-                " ORDER BY mcm.material_no");
+                "WHERE " + where;
+
+        String spnSelect =
+                "SELECT spn.quote_part_no AS material_no, spn.customer_product_no, spn.created_at AS src_created_at, " +
+                "       COALESCE(NULLIF(spn.customer_product_name,''), smm.material_name, spn.quote_part_no) AS product_name, " +
+                "       COALESCE(NULLIF(smm.specification,''), smm.dimension) AS spec, " +
+                "       (smodel3d.id IS NOT NULL) AS has3d, smodel3d.thumbnail_url, " +
+                "       'CONFIGURED' AS source, " +
+                "       (SELECT sps.product_type FROM sel_part_signature sps WHERE sps.quote_part_no = spn.quote_part_no AND sps.customer_no = spn.customer_no ORDER BY sps.created_at DESC LIMIT 1) AS config_product_type " +
+                "FROM sel_product_no spn " +
+                "LEFT JOIN material_master smm ON smm.material_no = spn.quote_part_no " +
+                "LEFT JOIN model_config smodel3d " +
+                "       ON smodel3d.subject_type = 'SALES_PART' " +
+                "      AND smodel3d.subject_key = spn.quote_part_no " +
+                "      AND smodel3d.is_current = true " +
+                "WHERE " + spnWhere;
+
+        String unionSql = "(" + mcmSelect + ") UNION ALL (" + spnSelect + ")";
+        // DISTINCT ON 按销售料号去重（AC-12b④），代表行取 created_at 最早的那条。
+        String dedupSql = "SELECT DISTINCT ON (u.material_no) u.material_no, u.customer_product_no, "
+                + "u.product_name, u.spec, u.has3d, u.thumbnail_url, u.source, u.config_product_type "
+                + "FROM (" + unionSql + ") u ORDER BY u.material_no, u.src_created_at, u.customer_product_no";
+
+        // ── 总数（1 条 SQL） ──
+        Query countQuery = em.createNativeQuery("SELECT COUNT(*) FROM (" + dedupSql + ") d");
+        params.forEach(countQuery::setParameter);
+        long total = ((Number) countQuery.getSingleResult()).longValue();
+
+        // ── 分页数据（1 条 SQL，LEFT JOIN 一次带出规格 + 3D，禁逐行查） ──
+        Query dataQuery = em.createNativeQuery(
+                "SELECT * FROM (" + dedupSql + ") d ORDER BY d.material_no");
         params.forEach(dataQuery::setParameter);
         dataQuery.setFirstResult(safePage * safeSize);
         dataQuery.setMaxResults(safeSize);

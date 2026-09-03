@@ -30,4 +30,16 @@ public class QuotationLineProcess extends PanacheEntityBase {
      */
     @Column(name = "process_no")
     public String processNo;
+
+    /**
+     * task-260902 · B-22（V402）：<b>工艺顺序</b>，写入时按请求 {@code processNos} 数组下标 +1 赋值。
+     *
+     * <p>本表原先<b>一个顺序列都没有</b>（只有 id / line_item_id / process_id / process_no），
+     * 读出点只能 {@code ORDER BY id}（{@code gen_random_uuid()} ⇒ 随机），
+     * 而 AC-11 断言「工序顺序回填」、AC-19④ 要显示第一次的顺序
+     * ⇒ 不加这一列，那两条 AC 会「今天绿、下周红」（堆表 UPDATE 后物理顺序还会变）。
+     * 🚨 <b>所有读出点必须 {@code ORDER BY seqNo}</b>。
+     */
+    @Column(name = "seq_no")
+    public Integer seqNo;
 }

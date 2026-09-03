@@ -15,13 +15,32 @@ public class MaterialRecipeApiException extends BusinessException {
 
     private final String errorCode;
 
+    /**
+     * task-260902：结构化补充信息，随响应信封的 {@code data.detail} 一起下发（可空）。
+     *
+     * <p>存在的理由是 AC-4：占比合计不对时提示必须写出<b>实际合计值</b>（「90%」），
+     * 而不是「合计不正确」这种形容词 —— 前端要把 {@code detail.actualSum} 直接显示出来。
+     */
+    private final java.util.Map<String, Object> detail;
+
     public MaterialRecipeApiException(int httpStatus, String errorCode, String message) {
+        this(httpStatus, errorCode, message, null);
+    }
+
+    public MaterialRecipeApiException(int httpStatus, String errorCode, String message,
+                                      java.util.Map<String, Object> detail) {
         super(httpStatus, message);
         this.errorCode = errorCode;
+        this.detail = detail;
     }
 
     public String getErrorCode() {
         return errorCode;
+    }
+
+    /** 可空；非空时进响应 {@code data.detail}。 */
+    public java.util.Map<String, Object> getDetail() {
+        return detail;
     }
 
     // ── 便捷工厂（HTTP 状态按 api.md 固定，调用点不再各写各的）──
