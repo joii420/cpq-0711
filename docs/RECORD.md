@@ -4,6 +4,14 @@
 
 ---
 
+[2026-09-02] 侧边栏菜单（路径 B 直接修复） - **「🛒 3D 选配」一级目录暂时隐藏** | 涉及文件：`cpq-frontend/src/layouts/MainLayout.tsx`（`/configurator-hub` 整块含 7 个子项注释掉）| 合 master `48d6c709` | 用户裁决：**只隐菜单、保留路由**（`configurator/*` 5 条 + `system/configurator-templates|feature-library|customer-leads|part-models` 4 条一律不动，敲 URL 仍可达）。
+
+📌 **为什么可以放心注释**：`'/configurator-hub'` 这个 key 全工程**只有菜单定义这一处引用**（无 openKeys / 面包屑 / 权限表等消费点），且 `MainLayout` 的 `selectedKeys` 取的是 `location.pathname` —— 菜单里找不到 key 只是不高亮，不会报错。`ShoppingOutlined` 图标仍被「产品管理」使用，import 不悬空。**恢复 = 删注释符，不需要动别处。**
+
+📌 **范围边界（已与用户确认）**：配置中心下的「3D 模型配置」(`/config/model-configs`) **不在本次范围** —— 它名字带 3D 但与 v0.4 选配器不是一套（选配器的源文件入口是目录内的「📦 3D 源文件管理」`/system/part-models`），隐掉会连带影响 task-0712 那条线。
+
+亲验：侧边栏一级菜单实测 `["工作台","客户管理","产品管理","报价中心","定价管理","配置中心","主数据维护","系统管理"]` —— 3D 选配 已消失、**其余 8 项一个没少**（防「隐藏过头」的反向断言）；`/configurator/instances` 直接访问仍正常渲染「📋 选配实例列表」而非 404（证明路由确实保留）。
+
 [2026-09-02] 建库脚本（路径 B 直接修复） - **`deploy/cpq-init-empty-navicat.sql` 同步 V400，基线 398 → 400** | 涉及文件：`deploy/cpq-init-empty-navicat.sql`（13 处结构同步 + 1 处 CHECK 写法修正）| 用户裁决：走路径 B，立即同步不等 task-260901 结案。
 
 🔑 **同步内容（只同步结构，不含 V400 第④节存量迁移与第⑤节断言 —— 空库无行）**：新增 2 表 `material_recipe_composition` / `material_recipe_config`（含 pkey / uq / chk / 索引 / recipe_id 外键 CASCADE）；`material_recipe` 加 `allow_custom_content`；`material_recipe_element` 加 `config_id` + `uq_config_element` + `fk_mre_config` + `idx_mre_config`，且 `recipe_id` 由 NOT NULL 改**可空**（过渡期）。旧契约 `uq_recipe_element` 与 recipe_id 外键**保留不动**（删除属 §3.2 红线，在待批 V401）。表总数 151 → 153。
