@@ -450,6 +450,69 @@ class ConfigureProductThreeLayerRegressionTest {
         assertEquals("100", ex.getDetail().get("expected"));
     }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // ⑦ 真实材质库 fixture（fixture基线.md §1.1）：00006 AgNi10 + 00123 AgZnO12/Cu
+    //    —— 同时覆盖三件本任务的关键事项：
+    //    (a) B-1 的 configNo「标准含量配置」路径（其余用例走的都是 elements 自定义路径）；
+    //    (b) 🚨 B-9 的实查证据：material_type 归位成「零件」后，材质名仍必须显示 AgNi10；
+    //    (c) B-21 的长度前缀编码：品名里带 '/'（业务常态，实查 74 条材质符号含 '/'）。
+    // ═══════════════════════════════════════════════════════════════════════
+
+    @Test
+    @TestTransaction
+    void b9_realRecipeFixture_materialNameStaysAgNi10_notPartTypeLiteral() {
+        Seeded sq = seedQuotation();
+
+        // fixture基线 §1.1：00006/AgNi10(cfg 00006-01) + 00123/AgZnO12-Cu(cfg 00123-01)
+        // 🚫 两条材质 allow_custom_content 都是 false ⇒ 只能走 configNo，不能走 elements（AC-6）。
+        MaterialSelection m1 = new MaterialSelection("00006", "00006-01", new BigDecimal("70"), null);
+        MaterialSelection m2 = new MaterialSelection("00123", "00123-01", new BigDecimal("30"), null);
+
+        PartRequest part = newPart("AgNi10/Cu触点", "φ12×3", "12×8×3", "10", List.of(m1, m2), List.of());
+        String pn = submit(sq.quotationId(), req(part));
+
+        // 🚨 B-9 实查证据：v_composite_child_materials.material_name 的 COALESCE 链是
+        //    COALESCE(asy.component_usage_type, mm.material_type, mr.name, mm.material_name)
+        //    —— mm.material_type 是**第二兜底**，B-9 把它从材质名改成了「零件」。
+        //    component_usage_type 一旦漏写，这里就会从 AgNi10 变成「零件」。
+        List<Object[]> view = rows(
+            "SELECT child_hf_part_no, material_name, chemical_symbol FROM v_composite_child_materials " +
+            "WHERE hf_part_no=:p ORDER BY child_seq", Map.of("p", pn));
+        System.out.println("[B-13⑦ B-9 实查] material_master.material_type = "
+            + em.createNativeQuery("SELECT material_type FROM material_master WHERE material_no=:p")
+                .setParameter("p", pn).getSingleResult());
+        System.out.println("[B-13⑦ B-9 实查] v_composite_child_materials(" + pn + ") = "
+            + view.stream().map(java.util.Arrays::toString).toList());
+
+        assertEquals(2, view.size(), "AC-3②：双材质应在材质页签渲染 2 行");
+        List<String> names = view.stream().map(r -> (String) r[1]).sorted().toList();
+        assertEquals(List.of("AgNi10", "AgZnO12/Cu"), names,
+            "🚨 B-9 回归：材质名必须仍是 AgNi10 / AgZnO12/Cu，"
+            + "🚫 不得因 material_type 归位成「零件」而降级显示成「零件」。实际=" + names);
+        assertFalse(names.contains("零件"),
+            "🚨 出现「零件」= component_usage_type 没写上，material_name 掉到了 mm.material_type 兜底");
+
+        // (a) configNo 路径：元素应从标准配置物化出来，且**不回流**材质库
+        List<Object[]> ele = rows(
+            "SELECT material_part_no, component_no, content FROM element_bom_item " +
+            "WHERE system_type='QUOTE' AND customer_no=:cn AND material_no=:mn AND is_current=true " +
+            "ORDER BY material_part_no, seq_no",
+            Map.of("cn", sq.customerCode(), "mn", pn));
+        System.out.println("[B-13⑦ configNo 路径] element_bom_item = "
+            + ele.stream().map(java.util.Arrays::toString).toList());
+        assertEquals(2, ele.stream().map(r -> r[0]).distinct().count(), "元素应按 2 个材质分 2 组");
+        assertTrue(ele.size() >= 2, "标准配置的元素应被物化落库");
+
+        // (c) B-21：品名含 '/' 必须能正常提交（长度前缀编码），且指纹里可无歧义还原
+        String sig = signatureText(sq.customerCode(), pn);
+        System.out.println("[B-13⑦ B-21 长度前缀] sig = " + sig);
+        assertTrue(sig.contains("PART=11:AgNi10/Cu触点"),
+            "B-21：PART= 必须是 <字符数>:<内容> 长度前缀编码，'/' 是业务常态不是分隔符。实际=" + sig);
+        assertTrue(sig.contains("MAT=00006:70(") && sig.contains("00123:30("),
+            "B-5：MAT= 应为「材质码:占比(元素码:含量,…)」并按材质码排序。实际=" + sig);
+        assertFalse(sig.contains("|ELE="), "api.md §4.5：v2 中 ELE= token 已删除。实际=" + sig);
+    }
+
     // ── helper ──────────────────────────────────────────────────────────────
 
     @SuppressWarnings("unchecked")
