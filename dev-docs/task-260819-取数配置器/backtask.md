@@ -65,3 +65,31 @@
 - 取价函数仍为 `f_material_element_price` + 双条件 + 别名 `cep`（AC-1 / AC-3 依赖）
 - `annual_discount` 三种 `discount_type` 的维度声明（年降三张按 N-7 挂空，二期才用，但种子要登记）
 - builder 端点的角色口径：`SYSTEM_ADMIN` + `PRICING_MANAGER` 是否与组件管理现有口径一致
+
+---
+
+# 🆕 v9 后端任务（2026-09-03 闸门 A 放行 · 三数据集范围替换）
+
+> 🚨 **上面 B-1~B-31 是 V6 时代的，已随 §2/§3 一并作废，只作历史追溯。本节 B-40 起才是现行任务。**
+> **验收标准以 `需求文档.md §9.4` 的 AC 原文为准**；本表是分解结果，两者有出入以 AC 原文为准并向主线报告。
+
+## 🚦 三条全局硬约束（每一项都踩过）
+
+1. **迁移号必须实查再占**：`SELECT max(version::numeric) FROM flyway_schema_history;`（共享库 `cpq_db_0724`，2026-09-03 = **408**，但**是移动靶**，至少三条并发分支在跑）。🚫 不许 `ls` 目录定号。
+2. 🚨 **禁止对共享库 `cpq_db_0724` 执行任何破坏性迁移。** 删 `semantic_*` 的 V6 行属 `CLAUDE.md §3.2` 数据销毁红线，**你没有批准权**。自己验证请**建克隆库**（`CREATE DATABASE cpq_b42_verify TEMPLATE cpq_db_0724;`），迁移写好后**只在克隆库跑**，共享库由主线在取得用户批准后应用。
+3. **`ds_*` 45 张表的表结构不许改**（属 `task-260902`，迁移 `V405~V408` 已应用、checksum 锁死）。建视图可以，加列/加索引不行。
+
+## 任务表
+
+| # | 服务的 AC | 内容 |
+|---|---|---|
+| **B-40** | AC-101 / AC-107 / AC-108 / AC-110 | **`CompileDialect` 扩到三值** `QUOTE` / `COST_BASIC` / `COST_DETAIL`（S-21）。<br>现有 **4 个分支点逐点复核**：`SemanticCompiler:159`、`:171`、`:543`、`AliasGenerator:25`（行号基于合并 master 前，**以实际 grep 为准**）。<br>**别名规则保持按侧不统一**（AC-110）：`QUOTE` → `_<短名>_<显示名>`；两个 `COST_*` → 裸英文 `dbColumn`。理由写在 AC-110 里（报价侧渲染层用中文名做 token，`BL-0090` 未解），🚫 不要"顺手统一"。 |
+| **B-41** | AC-107 / AC-108 | **`applyFullScope()` 新方言分支**（S-22）：<br>① 🚫 **不生成** `system_type` / `customer_no` —— `ds_*` 45 张表**没有这两列**（`ds_quote_customer_part` 除外，但它不进图）。<br>② 轴收窄：`QUOTE` → `material_no = ANY(:total_material_no)`；两个 `COST_*` → `production_no = ANY(:total_material_no)`。<br>③ 版本谓词见 B-44。<br>④ 旧 `QUOTE`/`COSTING` 分支**随 V6 节点一并删除**，不保留。 |
+| **B-42** | AC-102 ~ AC-106 | **语义图种子重建**（S-23 / D-82）。<br>🚨 **种子 SQL 必须由脚本从 `dev-docs/task-260902-报价与核价建表与导入方案新规范/字段矩阵.md` 机器生成**，脚本入仓、可重放（AC-103 断言重跑产出 md5 相同）。🚫 不许手抄 45×15 条声明。<br>📌 **主线已写过一个解析器验证可行性**，产出 `{dataset: {表: {cn, versioned, axis, cols:[{cn, db, pg, mark}]}}}`，并与 dev 库 `information_schema` **逐列双向差集比对差异 0**（45/45）。你可以自己重写，但**必须复现那个零差异结论**并在回报里附输出。<br>**要灌的**：45 张主表的节点 + 列声明 + 边 + 三套页签视图（映射见 `需求文档.md §9.2`）。<br>**要删的**：V6 的 23 节点 / 25 边 / 7 页签视图 / 145 列声明 —— ⚠️ 见全局约束 2，**只在克隆库跑**。<br>🚫 **`_history` 表不进图**（N-17）；🚫 年降 3 张与 `ds_quote_customer_part` 不进图（N-18 / N-19）。 |
+| **B-43** | AC-111 / AC-112 | **料号桥**（S-24 / D-76）：`ds_quote_material` 作 LOOKUP 节点，`material_no → production_no`，供两个 `COST_*` 方言由销售料号找到生产料号。<br>🚨 **必须 LEFT JOIN 语义**：桥无对应行 → **返回 0 行，不抛异常**。<br>⚠️ **业务语义（`task-260902` 会话澄清，不要当缺陷处理）**：`production_no` 为空是**正常业务状态**（"报价时生产料号可能还没定，是后期维护的，且可改"），表现应为「未关联核价数据」。实测当前模板 4 行里 3 行为空。<br>⚠️ 两者**无外键**，是文本列匹配。 |
+| **B-44** | AC-109 / AC-124 / AC-125 / AC-126 | **核价版本切换重新接通**（S-31 / D-84~D-87）。四件事：<br>① **建 26 张全版本视图**（`ds_cost_basic_*` 9 + `ds_cost_detail_*` 17，**报价侧那 13 张不建**）：<br>`CREATE VIEW v_<主表>_all AS SELECT <主表列>, true AS is_current FROM <主表> UNION ALL SELECT <同列>, false FROM <主表>_history;`<br>`_history` 是主表列的**严格超集**（多 `archived_at`/`archive_reason`/`archived_by`/`origin_id` 四个审计列），按主表列取；表名 `<主表>_history`（**39/39 零例外，已实测**）。**视图注释必须写死 `is_current` 的派生语义**（见 D-84′）。<br>② `semantic_node.physical_table` 指向视图。<br>③ 编译器发 `:versionFilter(alias.is_current, alias.version_no::text, alias.<轴列>)` —— 🚨 **`::text` 不是可选的**：宏绑 `:__vfVer::text[]`，而 `ds_*.version_no` 是 `integer`，不转换直接 `operator does not exist: integer = text`（D-85）。<br>④ **版本列表改专用查询**（D-86）：`SELECT version_no FROM 主表 WHERE 轴=:p UNION SELECT version_no FROM <主表>_history WHERE 轴=:p`。🚫 **不复用 `Mode.LIST` 跑整个页签视图 SQL** —— 那正是笛卡尔积的来源。<br>✅ `VersionFilterMacro` 与 `SqlViewExecutor` 参数注入**零改动**，不要去改它们。<br>🚨 ⑤ **AC-125 的漂移自检做成启动期**（对齐 `DatasetSchemaSelfCheck`：不一致直接启动失败）。**理由必须理解**：视图的 UNION 显式列举列 ⇒ `task-260902` 给主表加列时**视图不报错、只静默丢列**，对方自检照过 ⇒ 新列永远查不到且零信号。 |
+| **B-45** | AC-123 | **S-20 四道保存期校验在新图上跑通**（S-28），重点是第③道「物理存在性」（表/列须在 `information_schema`）。**反证型**：引用不存在的列必须被拒绝保存并点名是哪张表哪一列。 |
+
+## 📌 已由主线执行、你不要重做
+
+- **21 个 builder 产出的测试视图 + 组件已删除**（`sql_view` 171 → 150，`builder_config` 非空 = 0）。备份在 `证据-删除备份/`。⇒ **AC-113 的断言主线已实测通过**，你不必再删一次。

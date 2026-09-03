@@ -253,3 +253,73 @@ SELECT side, field_type, count(*) FROM fields GROUP BY side, field_type ORDER BY
 | ④ | AC-58 要求"取 `BomTreeVarsContext.get()` 的实际值"，黑盒测试下不可直接读取这个 Java 内部构造 | `golden/ac58-context-injection-verify.sh` 只能做"下游可观测效应"的间接验证（渲染行数是否覆盖到乙组基准），不是逐字节验证 `total_material_no` 数组内容 | 建议 B-19 实现处打一行 DEBUG 日志（含 `total_material_no` 内容），执行阶段 grep 应用日志做补充证据；或提供一个仅测试环境可用的调试端点 |
 | ⑤ | AC-61③ 原文的细分数字（报价侧 `default_source` 791 + `basic_data_path` 30；核价侧 `basic_data_path` 267）与本次独立复核结果（789 / 0 / 297）对不上，但总数（66/26/1183）完全吻合 | 若后续有 AC 依赖这份细分数字，会踩空；本轮 AC-61 的核心判据（存量不被动）不受影响，因为判据是"前后对比"不依赖细分是否准确 | 详见 §3c；怀疑是 D-54 统计时把30条核价侧 BASIC_DATA 记录误记成报价侧，请主线视情况更正需求文档，不影响本轮验收 |
 | ⑥ | AC-61 在 §4 矩阵里原被标为 T-3（test profile / `cpq_db`），但 AC-61③ 的基线数字是 dev 库 `cpq_db_0724` 当天的真实业务数据，test 库上同口径查询得到完全不同的数字（40视图/2组件） | 若照矩阵原样在 test 库跑 AC-61，会得到与 AC 原文对不上的数字，误判为"存量被动到了" | 已在 §3c 更正矩阵行，改用 dev 库限定的 `golden/ac61-legacy-baseline.sh` |
+
+---
+
+# 🆕 v9 测试方案（2026-09-03 闸门 A 放行 · 三数据集范围替换）
+
+> 🚨 **上面的方案与追溯矩阵是 V6 时代的，已随 §2/§3 一并作废。本节起为现行方案。**
+> **AC 原文在 `需求文档.md §9.4`（AC-101 ~ AC-126，共 25 条）。**
+
+## 0. 三条写作纪律（D-72 / D-74 的教训，本轮机器化执行）
+
+1. **任何行数基准必须写明「在哪个库、用什么查询取」，或改用自建合成数据。**
+   历史事故：AC-15 的 `1/2/4` 基准照着 dev 库写、测试却跑在 test profile 的 `cpq_db`，任何库都凑不齐 ⇒ 恒失败。
+2. 🚫 **禁止写死版本号。** `ds_cost_basic_material_bom` 的 `3120014539` 现在是 v5，那是隔壁会话跑升版实验留下的，**会漂移**。改断言不变量（如 AC-118：同一轴值在主表只有一个 distinct `version_no`）。
+3. 🚨 **`skip ≠ pass`。** 任何 `Assumptions.assumeTrue` 导致的 SKIP 一律视为**未验证**，回报里必须单列，🚫 不许计入通过。
+   历史事故：AC-26 自 D-64 之后**一直 SKIP、从未真正执行**，而主线差点在结案报告里把它当「已验证」。
+
+## 1. 追溯矩阵（25 条 AC → 用例）
+
+| AC | 主题 | 用例要点 |
+|---|---|---|
+| AC-101 | 三方言存在 | `semantic_node.dialect` distinct = `{QUOTE, COST_BASIC, COST_DETAIL}`，每值下 `node_kind='SHEET'` > 0 |
+| AC-102 | V6 节点清零 | 8 张 V6 表名在 `semantic_node` 命中 0；`semantic_edge` 悬挂边 0 |
+| AC-103 | 种子可重放 | 重跑生成脚本，产出与仓库版本 **md5 相同** |
+| AC-104 | 列声明与库一致 | 45 表各 1 节点；列集合与 `information_schema` **双向无差集** |
+| AC-105 | `_history` 不进图 | `physical_table LIKE '%\_history'` = 0 |
+| AC-106 | 页签视图三套同构 | `(tab_type, variant_key)` 组合数与 §9.2 映射表逐格相等（费用类 8/7/15） |
+| AC-107 | 不发 V6 收窄 | 产物不含 `system_type`、不含 `customer_no` |
+| AC-108 | 轴收窄 | `QUOTE`→`material_no = ANY(:total_material_no)`；`COST_*`→`production_no = ANY(...)` |
+| AC-109 | 版本切换产物 | FROM 源是 `v_<主表>_all`；含 `:versionFilter(...version_no::text...)`；输出 `view_version` |
+| AC-110 | 别名规则 | `QUOTE`→`_<短名>_<显示名>`；`COST_*`→裸英文 |
+| AC-111 | 料号桥 | 产物含对 `ds_quote_material` 的 LEFT JOIN，连接键 `production_no`；执行非空 |
+| AC-112 | 桥缺数据 | `ds_quote_material` 无对应行 → **0 行且不抛异常** |
+| AC-113 | 存量已清 | ✅ **主线已实测**（171→150，`builder_config` 非空 = 0）。用例只需复核当前状态 |
+| AC-115 | 数据集选择器 | 新建视图时出现三选一 |
+| AC-116 | 跨数据集隔离 | 选「基础核价」后，`ds_quote_*` 与 `ds_cost_detail_*` 的表**一张都不出现**（不是置灰） |
+| AC-117 | 核价基础端到端 | 配 `COST_BASIC` 主件 → 预览**非空**；行数 = **紧邻操作前**取的基准。🚫 空列表/0 行/「—」不算通过 |
+| AC-118 | 版本不变量 | 同一轴值在主表 `count(DISTINCT version_no) > 1` 的组数 = **0** |
+| AC-119 | 核价明细端到端 | 同 AC-117 口径 |
+| AC-120 | 报价端到端 | 用 `POST /api/cpq/dataset/quote/import` 自灌数据后验。⚠️ 清理用**正向条件**（`WHERE material_no IN (...)`），🚫 不许 `TRUNCATE`/无 `WHERE` 删 —— 库里有别的会话的 42 行 |
+| AC-121 | CI 断言 | **反证型**：人为改错一条边的 `cardinality` → 必须变红；改回变绿 |
+| AC-122 | 零回归 | 150 个视图的 `md5(sql_template)` 逐个与改动前相同；报价单/核价单渲染 E2E 双 spec 不回归 |
+| AC-123 | 保存期校验 | **反证型**：引用不存在的列 → 保存被拒且点名表与列；改对后成功 |
+| AC-124 | 版本列表专用查询 | 返回 = `主表 ∪ _history` 的 distinct `version_no`；**反向断言：该端点执行期间不得跑页签视图 SQL**（SQL 日志或调用计数取证） |
+| AC-125 | 视图漂移探针 | 26 张视图列 = 主表列 + `is_current`，无差集；**做成启动期自检**（不一致启动失败） |
+| AC-126 | `::text` 转换 | 执行不报 `operator does not exist: integer = text`；**反证型**：去掉 `::text` 必须报这个错 |
+
+## 2. 可用的真实数据（dev 库 `cpq_db_0724`，2026-09-03 实测）
+
+```
+ds_cost_basic_material        5 行  （3120014539 / 2120011658 / 2120011659 / 3110520789 / S-3120014539）
+ds_cost_basic_material_bom   14 行  version_no 1 与 5 混合，_history 31 行
+ds_cost_basic_element_bom     7 行  material_part_no = 00006 / 00168 / 991
+ds_cost_detail_material_bom  14 行
+ds_cost_detail_capacity       4 行  operation_no = Z053 等
+ds_quote_material            42 行  （「产品管理优化」会话灌的，🚫 不要动）
+```
+
+⚠️ 这些是**别的会话导入的真实模板数据**，会漂移。**取基准必须紧邻被测操作前后**，不要跨实验取。
+
+## 3. 三份导入模板（自灌数据用）
+
+⚠️ 工作区里那三份 `.xlsx` **可能是损坏状态**（用户在编辑）。**从 git 取已提交的好版本**：
+```bash
+git show HEAD:"dev-docs/task-260902-报价与核价建表与导入方案新规范/核价2 - 数据导入与表格建表.xlsx" > /tmp/c2.xlsx
+```
+`核价1` = **明细核价**（19 sheet）· `核价2` = **基础核价**（10 sheet）· `报价` = 16 sheet。
+
+**导入会被整份拒收的两条规则**（自造素材极易漏）：
+1. **D-24 轴值登记**：带版本 sheet 的每个轴值必须在同数据集的物料表里。
+2. **主数据严格校验**：元素 ∈ `element`、工序 ∈ **`process_master`**（不是 `process`，那是 0 行空壳）、材质 ∈ `material_recipe`、客户编号 ∈ `customer.code`。
