@@ -1,0 +1,38 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>报价单管理 · 工具栏</title><link rel="stylesheet" href="antd-like.css"></head><body>
+<div class="page">
+  <div class="note"><b>AC-35</b>　新增「导入报价数据」按钮，位置在<b>「从基础数据导入」之后、「新建报价单」之前</b>。
+  🚫 现有「从基础数据导入」按钮及其 <code>QuoteBasicDataImportV6Drawer</code> <b>一个字节都不改</b>（AC-43）。</div>
+  <div class="card">
+    <div class="card-head">报价单管理</div>
+    <div class="tabs">
+      <div class="tab active">全部</div><div class="tab">草稿</div><div class="tab">待审批</div>
+      <div class="tab">已通过</div><div class="tab">已驳回</div>
+    </div>
+    <div class="card-body">
+      <div class="toolbar">
+        <div class="search" style="width:300px"><input class="input" placeholder="搜索报价单号/名称/客户"></div>
+        <div class="toolbar-right">
+          <button class="btn">🕘 导入历史</button>
+          <button class="btn btn-primary">⬆ 从基础数据导入</button>
+          <button class="btn btn-primary" style="outline:2px dashed #52c41a;outline-offset:2px">⬆ 导入报价数据</button>
+          <button class="btn">＋ 新建报价单</button>
+        </div>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>报价单号</th><th>名称</th><th>客户</th><th>状态</th><th>总金额</th><th>更新时间</th></tr></thead>
+        <tbody>
+          <tr class="clickable"><td>QT-20260903-2087</td><td>触点组件年度报价</td><td>苏州西门子</td>
+            <td><span class="tag tag-blue">草稿</span></td><td>15,500.00</td><td class="muted">2026-09-03 10:22:11</td></tr>
+          <tr class="clickable"><td>QT-20260902-2081</td><td>银镍复合材报价</td><td>西安中熔</td>
+            <td><span class="tag tag-gold">待审批</span></td><td>14,500.00</td><td class="muted">2026-09-02 18:40:03</td></tr>
+        </tbody>
+      </table></div>
+      <div class="note" style="margin-top:16px">
+        <b>绿色虚线框</b>标出的是本次<b>唯一</b>新增控件。点它打开的导入抽屉与核价侧<b>同一个组件</b>（<code>dataset='quote'</code>），
+        见 <a class="link" href="数据导入-抽屉.html">数据导入-抽屉.html</a>。<br>
+        🚫 <b>本期不为报价数据配任何维护页签</b>（AC-38）—— <code>ds_quote_*</code> 只能由这个按钮写入。
+      </div>
+    </div>
+  </div>
+</div></body></html>
