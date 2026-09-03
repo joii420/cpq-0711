@@ -176,3 +176,20 @@ export async function searchInPicker(page: any, keyword: string): Promise<number
   await page.waitForTimeout(1200);
   return picker.locator('tbody tr, li.picker-row, .picker-row').count();
 }
+
+/**
+ * 「+ 添加工序」→ 搜索 → 选择，按给定顺序依次加入**有序列表**（允许重复）。
+ * ⚠️ 顺序即工艺顺序：它影响落库 `unit_price.seq_no` 与显示，**不影响料号复用判定**（A0 裁决）。
+ */
+export async function addProcesses(page: any, processNos: string[]) {
+  for (const no of processNos) {
+    await drawer(page).getByRole('button', { name: /添加工序/ }).first().click();
+    await page.waitForTimeout(500);
+    const p = page.locator('.ant-drawer, .ant-modal').last();
+    await p.getByPlaceholder(/搜索|工序编号|工序名/).first().fill(no);
+    await page.waitForTimeout(900);
+    await p.locator('tr, li, .picker-row').filter({ hasText: no }).first()
+      .getByRole('button', { name: /选择|添加/ }).first().click();
+    await page.waitForTimeout(600);
+  }
+}

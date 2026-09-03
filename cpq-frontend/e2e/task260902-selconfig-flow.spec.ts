@@ -11,7 +11,7 @@ import { test, expect } from '@playwright/test';
 import { loginAsAdmin, isBackendUp } from './fixtures/auth';
 import {
   shot, query, drawer, openSelConfigDrawer, tooltipOf, EVIDENCE_DIR,
-  fillStep1, nextStep, startNewPart, addMaterial,
+  fillStep1, nextStep, startNewPart, addMaterial, addProcesses,
 } from './fixtures/task260902';
 
 let backendUp = false;
@@ -197,6 +197,59 @@ test.describe('task-260902 选配主流程', () => {
       'AC-11：占比必须显示为 70，🚫 不得出现 70.000000000000（F-12 去尾随零）'
     ).toHaveCount(0);
     await shot(page, 'AC-11-刷新后回填');
+  });
+
+  /**
+   * **AC-19④**（序列，前端半句）：工序换序后命中复用时，前端必须**明示提示**：
+   * 「该配置已存在，工序顺序沿用已有产品（Z100 → Z101）」。
+   *
+   * 🚨 **这条提示不是锦上添花，是裁决的代价补偿**：A0 裁定「工序顺序不进指纹、也不改写已有
+   * `unit_price.seq_no`」⇒ 用户调了序但不生效，只能靠这句提示解释。没有它，用户会以为自己调的序生效了。
+   * ①②③（复用料号 / 签名 1 条 / seq_no 不被改写）由 `FingerprintReuseAcTest#ac19_*` 覆盖。
+   */
+  test('AC-19④ 工序换序命中复用时，确认页必须明示「顺序沿用已有产品」', async ({ page }) => {
+    test.skip(!backendUp, '后端未启动');
+    await loginAsAdmin(page);
+
+    // 第一次：Z100 → Z101
+    await openSelConfigDrawer(page, 'ac19-1');
+    const first = FREE_PRODUCT_NO();
+    await fillStep1(page, first);
+    await startNewPart(page, '触点', 'φ5', '5×3×2', '10');
+    await addMaterial(page, '00006', '100');
+    await addProcesses(page, ['Z100', 'Z101']);
+    await drawer(page).getByRole('button', { name: /确定/ }).last().click();
+    await page.waitForTimeout(600);
+    await nextStep(page);
+    await nextStep(page);
+    await drawer(page).getByRole('button', { name: /确认并添加|确认加入/ }).last().click();
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2500);
+    await shot(page, 'AC-19-第一次提交Z100-Z101');
+
+    // 第二次：完全相同但工序为 Z101 → Z100
+    await page.getByRole('button', { name: /添加产品/ }).first().click();
+    await page.waitForTimeout(400);
+    await page.locator('text=选配添加').first().click();
+    await page.waitForTimeout(800);
+    await fillStep1(page, FREE_PRODUCT_NO());
+    await startNewPart(page, '触点', 'φ5', '5×3×2', '10');
+    await addMaterial(page, '00006', '100');
+    await addProcesses(page, ['Z101', 'Z100']);
+    await drawer(page).getByRole('button', { name: /确定/ }).last().click();
+    await page.waitForTimeout(600);
+    await nextStep(page);
+    await nextStep(page);
+
+    const footerText = await drawer(page).innerText();
+    console.log(`[AC-19④] 确认页文案 = ${footerText.slice(0, 600)}`);
+    await expect(drawer(page).getByText(/已有相同配置|该配置已存在/),
+      'AC-19④：命中复用时必须明示「该配置已存在」（原型 6 状态 B）'
+    ).toBeVisible({ timeout: 10000 });
+    expect(footerText,
+      'AC-19④：提示必须说明「工序顺序沿用已有产品」——否则用户会以为自己调的序生效了'
+    ).toMatch(/顺序.*沿用|沿用.*顺序/);
+    await shot(page, 'AC-19-4-换序命中复用提示');
   });
 
   /**
