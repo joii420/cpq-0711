@@ -11,7 +11,7 @@ import { test, expect } from '@playwright/test';
 import { loginAsAdmin, isBackendUp } from './fixtures/auth';
 import {
   shot, query, drawer, openSelConfigDrawer, tooltipOf, EVIDENCE_DIR,
-  fillStep1, nextStep, startNewPart, addMaterial, addProcesses,
+  fillStep1, nextStep, startNewPart, addMaterial, addProcesses, pickQualifiedCustomer,
 } from './fixtures/task260902';
 
 let backendUp = false;
@@ -58,16 +58,20 @@ test.describe('task-260902 选配主流程', () => {
   test('AC-2 已占用的编号 → 挡住 + 指路文案 + 跳转入口', async ({ page }) => {
     test.skip(!backendUp, '后端未启动');
 
-    // fixture 取自真实业务数据：西门子名下一个已存在的客户产品编号
+    // 🚨 AC-2 对夹具客户有**额外**要求：必须名下已有一个被占用的客户产品编号，
+    //    否则「编号已存在则挡住」这条根本没有可验的输入（会空跑）。
+    //    ⇒ 用 needsTakenProductNo 让挑选器把这条也纳入判据，🚫 不写死客户。
+    const cust = pickQualifiedCustomer({ needsTakenProductNo: true });
     const taken = query(
-      `SELECT m.customer_product_no FROM material_customer_map m JOIN customer c ON c.code=m.customer_no
-       WHERE m.customer_product_no IS NOT NULL AND m.system_type='QUOTE' AND c.name LIKE '%西门子%' LIMIT 1`
+      `SELECT m.customer_product_no FROM material_customer_map m
+       WHERE m.customer_no='${cust.code}' AND m.system_type='QUOTE'
+         AND m.customer_product_no IS NOT NULL LIMIT 1`
     );
-    expect(taken, 'AC-2 前置：西门子名下应有一个已占用的客户产品编号（取不到 ⇒ 本用例会空跑）').not.toBe('');
-    console.log(`[AC-2] 已占用编号 = ${taken}`);
+    expect(taken, `AC-2 前置：${cust.name} 名下应有一个已占用的客户产品编号（取不到 ⇒ 本用例会空跑）`).not.toBe('');
+    console.log(`[AC-2] 客户=${cust.code}/${cust.name} 已占用编号=${taken}`);
 
     await loginAsAdmin(page);
-    await openSelConfigDrawer(page, 'ac2');
+    await openSelConfigDrawer(page, 'ac2', cust);
     const input = drawer(page).getByPlaceholder(/客户产品编号|请输入.*编号/).first();
     await input.fill(taken);
     await page.waitForTimeout(1200);
@@ -113,7 +117,7 @@ test.describe('task-260902 选配主流程', () => {
     expect(warnText, 'AC-4②：提示应写成「材质占比合计为 90%，需要正好 100%」这类含实际值的句子')
       .toMatch(/90\s*%/);
 
-    const confirm = drawer(page).getByRole('button', { name: /确定|下一步/ }).last();
+    const confirm = drawer(page).getByRole('button', { name: /确\s*定|下一步/ }).last();
     await expect(confirm, 'AC-4①：合计 ≠ 100 时不得放行').toBeDisabled();
     await shot(page, 'AC-4-占比合计90被拦');
   });
@@ -129,7 +133,7 @@ test.describe('task-260902 选配主流程', () => {
     await fillStep1(page, FREE_PRODUCT_NO());
     await startNewPart(page, '触点', 'φ5', '5×3×2', '10');
 
-    const confirm = drawer(page).getByRole('button', { name: /确定/ }).last();
+    const confirm = drawer(page).getByRole('button', { name: /确\s*定/ }).last();
     await expect(confirm, 'AC-14：「确定」必须可见（禁用不等于隐藏）').toBeVisible();
     await expect(confirm, 'AC-14：零材质时「确定」必须禁用').toBeDisabled();
     const tip = await tooltipOf(page, confirm);
@@ -157,7 +161,7 @@ test.describe('task-260902 选配主流程', () => {
     await startNewPart(page, '触点', 'φ5', '5×3×2', '10');
     await addMaterial(page, '00006', '70');
     await addMaterial(page, '00123', '30');
-    await drawer(page).getByRole('button', { name: /确定/ }).last().click();
+    await drawer(page).getByRole('button', { name: /确\s*定/ }).last().click();
     await page.waitForTimeout(600);
     await shot(page, 'AC-11-配件1已添加');
 
@@ -168,13 +172,13 @@ test.describe('task-260902 选配主流程', () => {
     await page.waitForTimeout(800);
     await drawer(page).getByText('TEST-Q13-CODE').first().click();
     await page.waitForTimeout(400);
-    await drawer(page).getByRole('button', { name: /确定/ }).last().click();
+    await drawer(page).getByRole('button', { name: /确\s*定/ }).last().click();
     await page.waitForTimeout(600);
 
     // 提交到报价单
     await nextStep(page);           // → 组合工序
     await nextStep(page);           // → 确认并添加
-    await drawer(page).getByRole('button', { name: /确认并添加|确认加入/ }).last().click();
+    await drawer(page).getByRole('button', { name: /添加到报价单|确认并添加|确认加入/ }).last().click();
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
     await shot(page, 'AC-11-已添加到报价单');
@@ -218,11 +222,11 @@ test.describe('task-260902 选配主流程', () => {
     await startNewPart(page, '触点', 'φ5', '5×3×2', '10');
     await addMaterial(page, '00006', '100');
     await addProcesses(page, ['Z100', 'Z101']);
-    await drawer(page).getByRole('button', { name: /确定/ }).last().click();
+    await drawer(page).getByRole('button', { name: /确\s*定/ }).last().click();
     await page.waitForTimeout(600);
     await nextStep(page);
     await nextStep(page);
-    await drawer(page).getByRole('button', { name: /确认并添加|确认加入/ }).last().click();
+    await drawer(page).getByRole('button', { name: /添加到报价单|确认并添加|确认加入/ }).last().click();
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2500);
     await shot(page, 'AC-19-第一次提交Z100-Z101');
@@ -236,7 +240,7 @@ test.describe('task-260902 选配主流程', () => {
     await startNewPart(page, '触点', 'φ5', '5×3×2', '10');
     await addMaterial(page, '00006', '100');
     await addProcesses(page, ['Z101', 'Z100']);
-    await drawer(page).getByRole('button', { name: /确定/ }).last().click();
+    await drawer(page).getByRole('button', { name: /确\s*定/ }).last().click();
     await page.waitForTimeout(600);
     await nextStep(page);
     await nextStep(page);
@@ -266,11 +270,11 @@ test.describe('task-260902 选配主流程', () => {
     await fillStep1(page, productNo);
     await startNewPart(page, '触点', 'φ5', '5×3×2', '10');
     await addMaterial(page, '00006', '100');
-    await drawer(page).getByRole('button', { name: /确定/ }).last().click();
+    await drawer(page).getByRole('button', { name: /确\s*定/ }).last().click();
     await page.waitForTimeout(600);
     await nextStep(page);
     await nextStep(page);
-    await drawer(page).getByRole('button', { name: /确认并添加|确认加入/ }).last().click();
+    await drawer(page).getByRole('button', { name: /添加到报价单|确认并添加|确认加入/ }).last().click();
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2500);
 
