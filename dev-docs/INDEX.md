@@ -57,12 +57,13 @@
 
 | **BL-0184** 大单量报价单打开后 `batch-evaluate` 风暴 | 🔴 **P0 · 另立任务待查** | 1845 行的单打不开：`POST /formulas/batch-evaluate` **517 次 / 40.3MB / 29.2 分钟不收敛**，「下一步」同时卡死。**不是分块**（前端 `BATCH_EVALUATE_CHUNK=5000`，注释称「正常报价单 1 个 HTTP 搞定」）、**不是实例爆炸**（`LinkedExcelView` 仅渲染 2 处）→ 是 `useLinkedExcelRows.ts:274` 的 effect 反复重入。**`task-260825` 未改过这三个文件**（`git diff master` 为空），属既有代码、只是从未在 1845 行量级跑过。疑与「打开触发 autosave 风暴」同族 |
 
-### 未合并分支（2 条）· 快照 2026-08-29
+### 未合并分支（3 条）· 快照 2026-09-02
 
 > 判据：`git log master..<branch> --oneline | wc -l`（**领先 master 的提交数**），不是凭印象。
 
 | 分支 | worktree | 领先 master | 状态 |
 |---|---|---|---|
+| `feat/task-260902-master-data-export-user-import` | `.claude/worktrees/task-260902-export-import` | **0 笔**（建于 `160dc2ee`） | 🔵 **开发中** —— `task-260902-主数据与用户导入导出`（闸门 A 2026-09-02 放行）。材质/工序导出 + 用户导入导出，B-1~B-5 / F-1~F-5 已派三类子代理。合并前须回写 `dev-docs/main-api.md`（新增 5 个端点）|
 | `feat/quote-material-no` | 无 | **1 笔** | 🟡 悬挂（内容仅 `BACKLOG.md` +15 行零代码，技术债已转 [[BL-0175]]，见 §8.3） |
 | `fix/repair-260829-skeleton-lock` | `.claude/worktrees/repair-260829-skeleton-lock` | **0 笔**（建于 `cf76bb8e`） | 🔵 **开发中** —— `repair-260829-卡片值算早了骨架值锁死`，闸门 A 已放行（2026-08-29）。B-1 产物自检为主体，B-4 `MaterializeRegistry` 供并发会话消费 |
 
