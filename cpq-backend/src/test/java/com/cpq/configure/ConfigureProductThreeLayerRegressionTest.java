@@ -513,7 +513,91 @@ class ConfigureProductThreeLayerRegressionTest {
         assertFalse(sig.contains("|ELE="), "api.md §4.5：v2 中 ELE= token 已删除。实际=" + sig);
     }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // ⑧ B-7 修正（V404）：外购件**不得**出现在「选配-材质」页签
+    //    用户裁决 2026-09-03：外购件不是材质。
+    // ═══════════════════════════════════════════════════════════════════════
+
+    @Test
+    @TestTransaction
+    void b7_outsourcedRow_mustNotAppearInMaterialsTab() {
+        Seeded sq = seedQuotation();
+        String outNo = outsourcedFixture();
+
+        PartRequest out = new PartRequest();
+        out.name = "T260902-外购件";
+        out.partType = "OUTSOURCED";
+        out.outsourcedPartNo = outNo;
+        out.processNos = List.of();
+        out.quantity = 1;
+
+        ConfigureProductRequest r = req(out);
+        String pn = submit(sq.quotationId(), r);
+        assertEquals(outNo, pn, "外购件不铸新号，直接复用料号库里的那个料号");
+
+        // 落库侧：characteristic='OUTSOURCED' 确实写进去了（B-7 的可观测判据）
+        List<Object[]> bom = rows(
+            "SELECT characteristic, component_no, component_usage_type FROM material_bom_item " +
+            "WHERE system_type='QUOTE' AND customer_no=:cn AND material_no=:mn AND is_current=true",
+            Map.of("cn", sq.customerCode(), "mn", outNo));
+        System.out.println("[B-13⑧ B-7] material_bom_item = " + bom.stream().map(java.util.Arrays::toString).toList());
+        assertEquals(1, bom.size(), "外购件应落 1 行自指物料行");
+        assertEquals("OUTSOURCED", bom.get(0)[0],
+            "B-7：characteristic 必须是 OUTSOURCED（该值此前全表 0 行，是首次通电的路径）");
+
+        // 🚨 渲染侧：材质页签**不得**出现它（V404）
+        List<Object[]> view = rows(
+            "SELECT child_hf_part_no, material_name FROM v_composite_child_materials WHERE hf_part_no=:p",
+            Map.of("p", outNo));
+        System.out.println("[B-13⑧ V404] v_composite_child_materials(" + outNo + ") = "
+            + view.stream().map(java.util.Arrays::toString).toList());
+        assertEquals(0, view.size(),
+            "🚨 用户裁决：外购件不是材质，不得出现在材质页签。实际=" + view.stream().map(java.util.Arrays::toString).toList());
+
+        // ── 还原实验：证明这条断言不是空验证 ──
+        // (a) V404 之前的第一分支谓词（只排 ASSEMBLY）对同一行会放行 ⇒ 1 行
+        List<Object[]> preFix = rows(
+            "SELECT asy.component_no FROM material_bom_item asy " +
+            "WHERE asy.system_type='QUOTE' AND asy.characteristic IS DISTINCT FROM 'ASSEMBLY' " +
+            "  AND asy.is_current=true AND asy.material_no=:p", Map.of("p", outNo));
+        System.out.println("[B-13⑧ 还原实验] V404 之前的第一分支谓词返回 = " + preFix.size() + " 行");
+        assertEquals(1, preFix.size(),
+            "还原实验失败：旧谓词也返 0 行 ⇒ 本用例没验到东西（空验证）。"
+            + "旧谓词是排除法(IS DISTINCT FROM 'ASSEMBLY')，对新枚举值 OUTSOURCED 应当放行");
+
+        // (b) 第二 UNION 分支不得让它重新冒出来（这正是「两处一起改就等于没修」的守卫）
+        List<Object[]> branch2 = rows(
+            "SELECT 1 FROM material_master mm WHERE mm.material_no=:p AND NOT EXISTS (" +
+            "  SELECT 1 FROM material_bom_item asy2 WHERE asy2.system_type='QUOTE' " +
+            "    AND asy2.characteristic IS DISTINCT FROM 'ASSEMBLY' AND asy2.is_current=true " +
+            "    AND asy2.material_no = mm.material_no)", Map.of("p", outNo));
+        System.out.println("[B-13⑧ 第二分支守卫] 兜底分支命中 = " + branch2.size() + " 行（应为 0）");
+        assertEquals(0, branch2.size(),
+            "V404 注释里的守卫：第二分支的 NOT EXISTS 必须仍把 OUTSOURCED 计入「已有 BOM 行」，"
+            + "否则外购件会从兜底分支重新冒出来、material_name 显示成「外购件」，等于没修");
+    }
+
     // ── helper ──────────────────────────────────────────────────────────────
+
+    /**
+     * 外购件 fixture（fixture基线.md §3.1）：{@code material_type='外购件'} 的料号。
+     * 实测现网仅 1 条（{@code TEST-Q13-CODE / 组成件1}）；查不到就<b>事务内自建</b>并回滚，
+     * 🚫 不写死编号、也不依赖库当时的状态。
+     */
+    @SuppressWarnings("unchecked")
+    String outsourcedFixture() {
+        List<Object> got = em.createNativeQuery(
+                "SELECT material_no FROM material_master WHERE material_type='外购件' ORDER BY material_no LIMIT 1")
+            .getResultList();
+        if (!got.isEmpty() && got.get(0) != null) return got.get(0).toString();
+        String no = "T260902-WG1";
+        em.createNativeQuery(
+                "INSERT INTO material_master (material_no, material_name, material_type) " +
+                "VALUES (:m, 'T260902-外购组成件', '外购件')")
+            .setParameter("m", no).executeUpdate();
+        em.flush();
+        return no;
+    }
 
     @SuppressWarnings("unchecked")
     void assertProcessFixture() {
