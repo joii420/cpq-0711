@@ -168,6 +168,106 @@ class FieldTreeAndDialectParseSelfCheckTest {
     }
 
     // =====================================================================
+    // B-49：料号桥既是 LOOKUP 目标又是 AUX 组 → 列不许在 MAIN 组里再内联一遍
+    // 图形状按共享库 COST_BASIC「主件」实测 1:1 搭：
+    //   MAIN=MATERIAL(7 列, 2 code) + AUX=QUOTE_MATERIAL_BRIDGE(9 列, 4 code, LOOKUP 边)
+    // =====================================================================
+
+    private static SemanticTabViewNode tvnRole(SemanticTabView v, SemanticNode n, String role) {
+        SemanticTabViewNode x = new SemanticTabViewNode();
+        x.id = UUID.randomUUID(); x.viewId = v.id; x.nodeId = n.id; x.role = role;
+        x.addDims = new String[0];
+        return x;
+    }
+
+    private static SemanticNodeColumn colCode(SemanticNode n, String db, String display, boolean isCode) {
+        SemanticNodeColumn c = col(n, db, display);
+        c.isCode = isCode;
+        return c;
+    }
+
+    /** 真图形状：桥同时是 LOOKUP 目标 + AUX 节点。 */
+    private static SemanticGraphSnapshot graphWithBridge(String dialect, boolean attachBridgeAsAux) {
+        SemanticNode main = node("MATERIAL", "主件", "ds_cost_basic_material", dialect, "dcbm.production_no");
+        SemanticNode bridge = node("QUOTE_MATERIAL_BRIDGE", "料号桥", "ds_quote_material", dialect, "dqm.material_no");
+
+        List<SemanticNodeColumn> cols = new ArrayList<>(List.of(
+                colCode(main, "production_no", "生产料号", true),
+                colCode(main, "old_material_no", "旧料号", true),
+                colCode(main, "material_name", "品名", false),
+                colCode(main, "specification", "规格", false),
+                colCode(main, "dimension", "尺寸", false),
+                colCode(main, "unit_weight", "单重", false),
+                colCode(main, "material_type", "материал类型", false)));
+        // 桥：4 code + 5 非 code（非 code 的正是被重复内联的那 5 个）
+        for (String[] c : new String[][]{{"material_no", "t"}, {"production_no", "t"},
+                {"category_code", "t"}, {"old_material_no", "t"},
+                {"material_name", "f"}, {"specification", "f"}, {"dimension", "f"},
+                {"unit_weight", "f"}, {"material_type", "f"}}) {
+            cols.add(colCode(bridge, c[0], c[0], "t".equals(c[1])));
+        }
+
+        SemanticEdge e = new SemanticEdge();
+        e.id = UUID.randomUUID(); e.fromNodeId = main.id; e.toNodeId = bridge.id;
+        e.edgeKind = "LOOKUP"; e.cardinality = "MANY_TO_ONE";
+        SemanticEdgeKey k = new SemanticEdgeKey();
+        k.id = UUID.randomUUID(); k.edgeId = e.id;
+        k.leftColumn = "production_no"; k.rightColumn = "production_no"; k.seq = 0;
+
+        SemanticTabView v = view("主件", "", null, dialect, main);
+        List<SemanticTabViewNode> tvns = new ArrayList<>(List.of(tvnRole(v, main, "MAIN")));
+        if (attachBridgeAsAux) tvns.add(tvnRole(v, bridge, "AUX"));
+
+        return new SemanticGraphSnapshot(1, List.of(main, bridge), cols,
+                List.of(e), List.of(k), List.of(v), tvns, List.of());
+    }
+
+    /** 主线亲验抓到的 bug：MAIN 组字段数必须 = 该表业务列数（7），桥的列只在 LOOKUP/AUX 组里。 */
+    @Test
+    void bridgeColumnsAreNotInlinedIntoMainGroup() {
+        FieldTreeBuilder ftb = new FieldTreeBuilder();
+        FieldTreeBuilder.FieldTreeResponse r =
+                ftb.build(graphWithBridge("COST_BASIC", true), CompileDialect.COST_BASIC, "主件", "", null);
+
+        FieldTreeBuilder.Group main = r.groups.stream()
+                .filter(g -> "MATERIAL".equals(g.groupKey)).findFirst().orElseThrow();
+        FieldTreeBuilder.Group aux = r.groups.stream()
+                .filter(g -> "QUOTE_MATERIAL_BRIDGE".equals(g.groupKey)).findFirst().orElseThrow();
+        List<String> mainCols = main.fields.stream().map(f -> f.sourceColumn).toList();
+        System.out.println("---- B-49 MAIN 组 ----\n" + mainCols
+                + "\n桥组=" + aux.fields.stream().map(f -> f.sourceColumn).toList());
+
+        assertEquals(7, main.fields.size(), "MAIN 组应恰为该表 7 个业务列：" + mainCols);
+        assertEquals(new LinkedHashSet<>(mainCols).size(), mainCols.size(), "MAIN 组有重复字段：" + mainCols);
+        // 桥的 5 个非 code 列一个都不许出现在 MAIN 组
+        for (String leaked : List.of("category_code")) {
+            assertFalse(mainCols.contains(leaked), "桥的列泄漏进 MAIN 组：" + leaked);
+        }
+        assertTrue(main.fields.stream().allMatch(f -> "MATERIAL".equals(f.sourceNodeKey)),
+                "MAIN 组里出现了别的节点的字段：" + main.fields.stream().map(f -> f.sourceNodeKey).toList());
+        // 桥自己那一组仍然完整（9 列），字段没被弄丢，只是不再重复
+        assertEquals(9, aux.fields.size(), "桥组应保持完整 9 列");
+    }
+
+    /**
+     * 反向保护：**纯查名维表**（只有 LOOKUP 边、没挂进 tab_view_node）仍要内联进 MAIN 组 ——
+     * B-49 的判据是"已自成一组吗"，不是"是不是 LOOKUP"，别把 V6 的既有能力一起改没了。
+     */
+    @Test
+    void pureLookupDimensionStillInlinesIntoMain() {
+        FieldTreeBuilder ftb = new FieldTreeBuilder();
+        FieldTreeBuilder.FieldTreeResponse r =
+                ftb.build(graphWithBridge("COST_BASIC", false), CompileDialect.COST_BASIC, "主件", "", null);
+        FieldTreeBuilder.Group main = r.groups.stream()
+                .filter(g -> "MATERIAL".equals(g.groupKey)).findFirst().orElseThrow();
+        List<String> nodes = main.fields.stream().map(f -> f.sourceNodeKey).distinct().toList();
+        System.out.println("---- 纯查名维表仍内联 ----\nMAIN 字段数=" + main.fields.size() + " 来源=" + nodes);
+        assertEquals(12, main.fields.size(), "7 自有 + 5 个非 code 查名列");
+        assertTrue(nodes.contains("QUOTE_MATERIAL_BRIDGE"), "查名列应内联进 MAIN：" + nodes);
+        assertEquals(1, r.groups.size(), "维表没挂进 tab_view_node 时不自成一组");
+    }
+
+    // =====================================================================
     // B-46 任务二：未知方言显式 400（主线指定的反证）
     // =====================================================================
     @Test

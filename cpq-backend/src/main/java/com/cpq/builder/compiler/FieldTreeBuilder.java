@@ -178,6 +178,10 @@ public class FieldTreeBuilder {
 
         List<Group> groups = new ArrayList<>();
         List<SemanticTabViewNode> tvns = snap.tabViewNodesByView.getOrDefault(tv.id, List.of());
+        // B-49：本页签视图上"已经自成一组"的节点集合 —— 供 syntheticLookupFields 排除，见该方法注释。
+        Set<UUID> nodesWithOwnGroup = tvns.stream()
+                .map(x -> x.nodeId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
         for (SemanticTabViewNode tvn : tvns) {
             SemanticNode node = snap.nodeById.get(tvn.nodeId);
             if (node == null) continue;
@@ -225,7 +229,7 @@ public class FieldTreeBuilder {
             }
 
             if (isMain) {
-                fields.addAll(syntheticLookupFields(snap, dialect, anchor));
+                fields.addAll(syntheticLookupFields(snap, dialect, anchor, nodesWithOwnGroup));
             }
             g.fields = fields;
             groups.add(g);
@@ -275,13 +279,34 @@ public class FieldTreeBuilder {
      * 经 LOOKUP 边到达的"虚拟字段"（查名结果），挂在锚点自己的组下展示。
      * 🔴 B-24/D-65：PRICE 边不再在这里合并进 MAIN 组——已改为在 {@link #build} 里单独成
      * {@code groupKind='PRICE'} 的组返回，避免与新逻辑重复输出「元素单价/货币」两份。
+     *
+     * <p>🔄 <b>2026-09-04（B-49）：跳过"已在本页签视图上自成一组"的 LOOKUP 目标。</b>
+     *
+     * <p><b>为什么会重复</b>（V6 设计与 B-43 的碰撞，不是谁写错了）：本方法的原意是
+     * 「LOOKUP 节点 = <b>查名维表</b>（{@code material_master}/{@code material_recipe} 那种），
+     * 用户不会想把整张维表当一个组来拖，所以把它的名称列<b>内联</b>进 MAIN 组」。V6 时代
+     * LOOKUP 只有这一种用法，设计成立。
+     *
+     * <p>但 B-43 的<b>跨数据集料号桥</b>（{@code QUOTE_MATERIAL_BRIDGE}）也<b>必须</b>声明成
+     * LOOKUP —— {@code SemanticCompiler#ensureLeftJoin} 里只有 LOOKUP 才编译成 LEFT JOIN
+     * （{@code GRAIN} 会展开行、{@code SUB} 是相关标量子查询，都不是桥要的语义）。而桥
+     * <b>同时又作为 AUX 挂在页签视图上</b>（它是一整张有意义的表，用户要能整组拖）⇒
+     * 它的列<b>既被内联进 MAIN、又自成一组</b>，同一个字段在面板上出现两次。
+     * 实测 {@code COST_BASIC} 主件：MAIN 组 7 个自有列 + 桥的 5 个非 code 列 = 12 个。
+     *
+     * <p><b>判据落在「这个节点在本页签里已经可见了吗」</b>：已经自成一组的，就不再内联
+     * （谁自成一组谁负责展示自己的列）；纯查名维表不会挂进 {@code tab_view_node}，
+     * 不受影响、继续内联。<b>不靠去重收场</b> —— 去重只是把症状盖掉，"桥该不该内联"这个问题
+     * 还在，换个页签形态又会以别的形式冒出来。
      */
-    private List<Field> syntheticLookupFields(SemanticGraphSnapshot snap, CompileDialect dialect, SemanticNode anchor) {
+    private List<Field> syntheticLookupFields(SemanticGraphSnapshot snap, CompileDialect dialect,
+                                              SemanticNode anchor, Set<UUID> nodesWithOwnGroup) {
         List<Field> out = new ArrayList<>();
         Set<String> handledGroups = new HashSet<>();
         for (SemanticEdge e : snap.edgesFrom(anchor.id)) {
             SemanticNode target = snap.nodeById.get(e.toNodeId);
             if (target == null) continue;
+            if (nodesWithOwnGroup.contains(target.id)) continue; // B-49：已自成一组，不再内联
             if ("LOOKUP".equals(e.edgeKind)) {
                 if (e.coalesceGroup != null) {
                     if (!handledGroups.add(e.coalesceGroup)) continue; // 同组只出现一次（用 fallback=0 的列代表）
@@ -290,6 +315,8 @@ public class FieldTreeBuilder {
                             .min(Comparator.comparingInt(x -> x.fallbackOrder == null ? 0 : x.fallbackOrder))
                             .orElse(e);
                     SemanticNode leadNode = snap.nodeById.get(lead.toNodeId);
+                    // 多源 COALESCE：代表节点可能与触发本次循环的 target 不是同一个，单独再判一次
+                    if (leadNode == null || nodesWithOwnGroup.contains(leadNode.id)) continue;
                     for (SemanticNodeColumn col : snap.columnsOf(leadNode.id)) {
                         if (!col.isCode) out.add(lookupField(dialect, leadNode, col));
                     }
