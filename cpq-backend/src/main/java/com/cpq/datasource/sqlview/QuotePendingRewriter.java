@@ -7,6 +7,7 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
@@ -82,6 +83,44 @@ public final class QuotePendingRewriter {
         // task-260903 B-3：V411 表名替换后的兼容视图名（material_master 无 is_current/
         // pending_quotation_id 语义，历来就不在白名单里，其兼容视图同样不加）
         "v_compat_material_bom_item", "v_compat_element_bom_item");
+
+    /**
+     * <b>兼容视图名 → 物理表名</b>（task-260903 · B-3 · 主线裁决「方案乙」）。
+     *
+     * <h3>为什么读路径走视图、写路径必须回物理表</h3>
+     * V411 把组件 SQL 的表名换成兼容视图后，{@code QuoteBackfillColumnMapper} 解析出的
+     * {@code primaryTable} 就是视图名（pgjdbc {@code getBaseTableName} 对视图返回视图名本身，
+     * UNION 视图亦然，已实测）。而回填最终执行的是
+     * {@code UPDATE <表> SET is_current = …} —— UNION 视图<b>不可更新</b>。
+     *
+     * <h3>为什么归一化就够，不需要 INSTEAD OF 触发器</h3>
+     * 兼容视图的新表侧把 {@code pending_quotation_id} 投影成常量 {@code NULL}（V410），
+     * 而回填的两条 UPDATE 都带 {@code WHERE pending_quotation_id = :qid}
+     * （{@code QuoteBackfillService#executeFlip}）⇒ <b>新表侧的行永远不会被回填选中</b>。
+     * 所以归一化之后：V6 侧行的 {@code id} 是真 uuid，{@code UPDATE material_bom_item}
+     * 与改造前逐字一致；新表侧行本就选不中，不存在「合成 uuid 定位不到物理行」的问题。
+     * 触发器方案是在为一个不会发生的场景付出复杂度。
+     *
+     * <p>🚨 <b>新增兼容视图时必须同步加进本表</b>。漏加不会报错 ——
+     * {@code QuoteBackfillCollector:172} 的 {@code QuoteTableAxis.of(...) == null → continue}
+     * 守卫会让它静默降级成「不回填」。守卫测试见
+     * {@code com.cpq.quotation.service.backfill.CompatViewBackfillGuardTest}。
+     */
+    public static final Map<String, String> COMPAT_VIEW_TO_TABLE = Map.of(
+        "v_compat_material_bom_item", "material_bom_item",
+        "v_compat_element_bom_item", "element_bom_item");
+
+    /**
+     * 把兼容视图名归一化成物理表名；非兼容视图（含 null）原样返回。
+     *
+     * <p>🚫 <b>只允许在 {@code QuoteBackfillColumnMapper} 解析出 {@code primaryTable} 的那一处调用。</b>
+     * 散在多处会让「这个字符串到底是视图名还是表名」变成需要逐处推理的问题 ——
+     * {@code QuoteBackfillCollector} 里有 4 处硬编码的
+     * {@code "material_bom_item".equals(primaryTable)} 分支，单点归一化才能一次性覆盖它们。
+     */
+    public static String physicalTable(String table) {
+        return table == null ? null : COMPAT_VIEW_TO_TABLE.getOrDefault(table, table);
+    }
 
     /** 物化期注入的行锚点系统列名。 */
     public static final String ANCHOR_COLUMN = "__v6_id";
