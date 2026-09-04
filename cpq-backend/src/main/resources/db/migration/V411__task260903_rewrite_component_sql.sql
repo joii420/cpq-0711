@@ -1,31 +1,34 @@
 -- =====================================================================
 -- task-260903 · 阶段 B · B-3：135 段 component_sql_view.sql_template 表名替换
 --
--- 🚩🚩 本文件与 V410 刻意拆开，因为它**不是**零风险改动，落地前需要主线裁决一件事。
+-- 🚨 本文件与 V410 拆开，是因为它**必须与 QuotePendingRewriter 的白名单同批上线**。
+--    单独并入其中任何一个都会造成静默故障，顺序无关 —— 两者是同一次协议变更的两半。
 --
--- 【实测发现，2026-09-03】改表名会静默掐断 pending 报价单改写链路：
---   QuotePendingRewriter.WHITELIST_TABLES = {unit_price, material_bom, material_bom_item,
---   element_bom, element_bom_item, capacity, plating_scheme, annual_discount}，
---   其 TABLE_TOKEN 正则要求表名**紧跟在 FROM/JOIN 之后**。改成 v_compat_* 后不再命中。
---   实测口径（共享库 cpq_db_0724）：
---     · 150 段视图中 128 段现在会命中白名单 → 被做表替换 + 注入 __v6_id 锚点
+-- 【问题】QuotePendingRewriter.TABLE_TOKEN 要求表名紧跟 FROM/JOIN 之后才算命中白名单。
+--   改成 v_compat_* 后不再命中，而后果完全静默：QuoteViewValidationService.checkOne
+--   对 anchorInjected=false 返回「不适用，非失败」（那是 rewriter 刻意的安全降级设计），
+--   启动不报错、日志不告警。实测口径（共享库 cpq_db_0724，2026-09-03）：
+--     · 150 段视图中 128 段命中白名单 → 表替换 + __v6_id 锚点注入
 --     · 其中 48 段**只**靠 material_bom_item / element_bom_item 命中 ⇒ 改名后锚点全丢
---   丢锚点的后果是**静默的**：QuoteViewValidationService.checkOne 对 anchorInjected=false
---   直接返回「不适用，非失败」，启动不报错、日志不告警，只是这 48 段从此
---   ① 看不见 pending 影子行 ② 不参与 B5 回填（QuoteBackfillColumnMapper 按基表名过滤）。
 --
--- 【已实证的一半好消息】pgjdbc 的 getBaseTableName 对视图返回**视图名本身**，
---   UNION 视图、子查询包裹都成立（jshell/JDBC 实测，见回报）。所以只要把 3 个
---   v_compat_* 名字登记进 WHITELIST_TABLES，锚点注入与启动期硬校验就能恢复。
+-- 【裁决】主线 2026-09-03：把 v_compat_material_bom_item / v_compat_element_bom_item
+--   并入 QuotePendingRewriter.WHITELIST_TABLES（同一分支的另一个提交）。
+--   v_compat_material_master 不并 —— material_master 历来就不在白名单里
+--   （它没有 is_current 列，rewriter 的替换子查询会 SQL 报错），保持原状。
 --
--- 【仍未解决、需要裁决的一半】QuoteBackfillService 回填时执行的是
---   `UPDATE <基表名> SET is_current = ...`。基表名若解析成 v_compat_material_bom_item，
---   UNION 视图不可更新 → 运行时报错；若在写边界把名字归一化回 material_bom_item，
---   则新表侧那条 md5 合成 id 在 V6 表里不存在 → UPDATE 命中 0 行、静默无效。
---   两条修法（视图加 INSTEAD OF 触发器分流 / 写边界归一化 + 新表侧另走一套回填）
---   都跨出本任务 backtask 的授权范围，属闸门 A0 级岔路。
+-- 【实测验证】48 段族去重后 22 个不同模板，逐个跑 rewrite + 实跑改写后 SQL（非 LIMIT 0）：
+--     · anchorInjected 保持 true         22/22
+--     · __v6_id 基表解析到兼容视图名      22/22（pgjdbc getBaseTableName 对视图返回视图名，
+--                                          UNION 视图亦然，已 JDBC 实测）
+--     · 实跑结果集与改造前逐行相同        22/22（其中 13 个为非空结果，最多 31 行）
+--   锚点 id 列：兼容视图两侧同为 uuid（V6 侧原生，新表侧 md5(...)::uuid 合成），
+--   11156 行 / 11156 个唯一 id / 0 个 NULL。
 --
--- ⇒ 未拿到裁决前，请**不要**把本文件并进 master。
+-- 🚩 【仍未闭合，已报主线待裁决】B5 回填的**写回**路径没打通：
+--   QuoteBackfillCollector:172 有 `QuoteTableAxis.of(primaryTable) == null → continue` 守卫，
+--   所以不会 NPE，但 v_compat_* 未登记 ⇒ 这 48 段从「能回填」降级成「不回填」。
+--   （若强行登记，executeFlip 会 `UPDATE v_compat_material_bom_item` —— UNION 视图不可更新；
+--    且新表侧那条合成 id 在任何物理表里都不存在。两条修法都跨出本任务授权范围。）
 -- =====================================================================
 
 -- ── 5. B-3 · 135 段 component_sql_view.sql_template 表名替换 ──────────
