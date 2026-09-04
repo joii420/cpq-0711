@@ -20,7 +20,11 @@ COL = {
  "销售料号":"material_no","生产料号":"production_no","品名":"material_name","规格":"specification",
  "尺寸":"dimension","旧料号":"old_material_no","单重":"unit_weight","项次":"item_seq",
  "客户编号":"customer_no","客户料号名称":"customer_part_name","客户产品编号":"customer_product_no","客户图号":"customer_drawing_no",
- "投入类型":"input_type","投入料号":"input_material_no","投入料号名称":"input_material_name",
+ "投入料号":"input_material_no","投入料号名称":"input_material_name",
+ # ── D-26 / D-27（2026-09-03 交付后变更）──
+ "类型":"material_type",          # 料号级：零件 / 外购件（三套物料表都有）
+ "产品分类":"category_code",      # 仅报价侧；存 product_category.code
+
  "产出料号类型":"output_material_type","组成数量":"component_qty","材料毛重":"gross_weight",
  "材料净重":"net_weight","重量单位":"weight_unit","材料占比（%）":"material_ratio",
  "损耗率（%）":"loss_rate","损耗率%":"loss_rate","不良率（%）":"defect_rate",
