@@ -264,7 +264,7 @@ public class ConfigureProductService {
 
         // unit_weight from material_master (V6, material_no = hfPartNo)
         List<Object> w = em.createNativeQuery(
-                "SELECT unit_weight FROM material_master WHERE material_no = :p")
+                "SELECT unit_weight FROM v_compat_material_master WHERE material_no = :p")
             .setParameter("p", hfPartNo).getResultList();
         s.unitWeightGrams = (w.isEmpty() || w.get(0) == null)
             ? null
@@ -348,7 +348,7 @@ public class ConfigureProductService {
             // 尚未回填 V6 → 此前只查 material_master 会误报"料号不存在"。
             @SuppressWarnings("unchecked")
             List<Object[]> v6rows = em.createNativeQuery(
-                    "SELECT material_recipe_id, unit_weight FROM material_master WHERE material_no = :p")
+                    "SELECT material_recipe_id, unit_weight FROM v_compat_material_master WHERE material_no = :p")
                 .setParameter("p", pr.existingHfPartNo)
                 .getResultList();
             if (v6rows.isEmpty()) {
@@ -715,7 +715,7 @@ public class ConfigureProductService {
         // ⑥ 外购件料号
         if (!outsourcedNos.isEmpty()) {
             List<Object[]> rows = em.createNativeQuery(
-                    "SELECT material_no, material_name, material_type FROM material_master WHERE material_no IN (:nos)")
+                    "SELECT material_no, material_name, material_type FROM v_compat_material_master WHERE material_no IN (:nos)")
                 .setParameter("nos", outsourcedNos).getResultList();
             for (Object[] r : rows) {
                 cat.outsourcedByNo.put(r[0].toString(), new String[]{
@@ -1794,14 +1794,14 @@ public class ConfigureProductService {
         String where = "material_type = :t"
             + (hasKw ? " AND (material_no ILIKE :kw OR COALESCE(material_name,'') ILIKE :kw)" : "");
 
-        var countQ = em.createNativeQuery("SELECT COUNT(*) FROM material_master WHERE " + where)
+        var countQ = em.createNativeQuery("SELECT COUNT(*) FROM v_compat_material_master WHERE " + where)
             .setParameter("t", MATERIAL_TYPE_OUTSOURCED);
         if (hasKw) countQ.setParameter("kw", pattern);
         long total = ((Number) countQ.getSingleResult()).longValue();
 
         var dataQ = em.createNativeQuery(
                 "SELECT material_no, material_name, specification, unit_weight " +
-                "FROM material_master WHERE " + where + " ORDER BY material_no")
+                "FROM v_compat_material_master WHERE " + where + " ORDER BY material_no")
             .setParameter("t", MATERIAL_TYPE_OUTSOURCED);
         if (hasKw) dataQ.setParameter("kw", pattern);
         dataQ.setFirstResult((safePage - 1) * safeSize);
@@ -1838,7 +1838,7 @@ public class ConfigureProductService {
                 "SELECT mm.material_name, mm.specification, mm.dimension, mm.unit_weight, " +
                 "       (SELECT min(sps.created_at) FROM sel_part_signature sps " +
                 "          WHERE sps.quote_part_no = mm.material_no) " +
-                "FROM material_master mm WHERE mm.material_no = :p")
+                "FROM v_compat_material_master mm WHERE mm.material_no = :p")
             .setParameter("p", hfPartNo).getResultList();
         if (!mm.isEmpty()) {
             Object[] r = mm.get(0);
