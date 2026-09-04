@@ -110,7 +110,7 @@ class SelTemplateRetirementAcTest extends SelConfigAcTestBase {
                 "AC-26：该模板的 3 条 sel_template_item（MATERIAL/ELEMENT/PROCESS）应原样保留，实际 " + items);
 
         // 端点保留：effective 仍可调用（前端不再据它做门禁，但接口不删）
-        Response res = RestAssured.given().queryParam("customerNo", "___T260902_NOT_EXIST___")
+        Response res = given().queryParam("customerNo", "___T260902_NOT_EXIST___")
                 .get(EFFECTIVE).thenReturn();
         System.out.println("[AC-26] effective 端点仍可用：" + res.statusCode());
         assertTrue(res.statusCode() != 404,
@@ -120,7 +120,7 @@ class SelTemplateRetirementAcTest extends SelConfigAcTestBase {
     // ─────────────────────────── 辅助 ───────────────────────────
 
     private String effective(String customerNo) {
-        Response res = RestAssured.given().queryParam("customerNo", customerNo).get(EFFECTIVE).thenReturn();
+        Response res = given().queryParam("customerNo", customerNo).get(EFFECTIVE).thenReturn();
         return res.statusCode() + " " + res.asString();
     }
 

@@ -1,7 +1,7 @@
 # CPQ 系统接口总览文档（main-api.md）
 
-> 本文件由技术总监扫描 `cpq-backend` 全部 JAX-RS Resource 自动生成，覆盖 **87 个 Resource 类、约 413 个 HTTP 端点**，按业务模块分为 12 大类。
-> 生成日期：2026-07-08 ｜ 最近契约更新：**2026-09-03（task-260902 主数据与用户导入导出：新增 5 个端点 —— 材质/工序/用户三个导出 + 用户导入模板 + 用户导入）** ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
+> 本文件由技术总监扫描 `cpq-backend` 全部 JAX-RS Resource 自动生成，覆盖 **89 个 Resource 类、约 422 个 HTTP 端点**，按业务模块分为 12 大类。
+> 生成日期：2026-07-08 ｜ 最近契约更新：**2026-09-03（task-260903 产品管理页重做：新增 1 个端点 —— `GET /dataset/{dataset}/customer-parts` 客户料号只读列表，见 §6.9；其前序 task-260902 新增 9 个端点，见 §6.8 / §6.9）** ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
 > 用途：前后端接口契约基线、联调对照、新接口设计参照。字段说明取自源码 javadoc / 注释，无注释处据字段名与类型推断。
 
 ---
@@ -5416,6 +5416,76 @@ Cell：`quote`(Object 报价值)、`costing`(Object 核价值)、`highlighted`(b
 | rowId | String | 主键值；多数表为 UUID 格式，mat_part 为 part_no 字符串 |
 
 - **响应内容**: `ApiResponse<Map<String,Object>>`（单行 key=物理列名，value=序列化值）
+### 6.8 DatasetImportResource（数据集 Excel 导入 · 报价/基础核价/详细核价三套独立表）
+
+> **新体系**（`task-260902-报价与核价建表与导入方案新规范`）。与 6.3 `BasicDataImportV6Resource` **并行双轨**：
+> 6.3 写旧 V6 共享表并服务 107 个组件 SQL 视图；本 Resource 写 **45 张 `ds_*` 独立表 + 39 张 `_history`**，本期不参与渲染。
+> `{dataset}` 三取一：`quote`（报价，轴=销售料号）/ `cost-basic`（基础核价，轴=生产料号）/ `cost-detail`（详细核价，轴=生产料号）。非法值 404。
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| POST | `/api/cpq/dataset/{dataset}/import` | `PRICING_MANAGER` / `SYSTEM_ADMIN` | multipart 上传 `.xlsx`，**两阶段导入** |
+
+**两阶段语义**：Phase 1 全量解析 + 校验（**零写库**）→ Phase 2 单事务写入。任一校验失败**整份拒收，一行不写**。
+
+**成功 200**：`{ code, data: { dataset, fileName, durationMs, importRecordId, summary[] } }`
+`summary` 每项：带版本 sheet 出 `{sheet, versioned:true, axisCount, created, upgraded, unchanged}`；免版本 sheet 出 `{sheet, versioned:false, inserted, updated}`。
+
+**校验失败 400**：`{ code:400, message:"导入校验未通过，共 N 处问题，本次未写入任何数据", data:{ errors:[{sheet,row,column,reason}] } }`
+🚫 **必须一次返回全部错误**，不许 fail-fast。`row` 为 **Excel 物理行号**（带版本 sheet 数据从第 3 行起，免版本从第 2 行起）。
+
+`reason` **封闭集**（9 个）：`必填项为空` / `轴列不可为空` / `主数据不存在` / `不是合法数值` / `不是合法整数` / `超出长度上限 {n}` / `sheet「{名}」不属于{数据集中文名}数据集` / `表头列名与规范不一致：缺少「{列名}」` / `轴值未在物料表登记`。
+
+**核心规则**（`需求文档.md` R-1~R-8）：
+- 每 Excel sheet 一张表；表头**底色**定字段取舍（🔴红=必填建 / ⚪白=**不建**，是主数据 JOIN 展示列 / 🟡其余=选填建）
+- Excel 第 2 行的「轴 / 对比项」驱动版本化：**按轴分组**，行数不同或**指纹多重集**不同（不看行序）⇒ 整组 `version_no+1`，旧版整组移入 `_history`
+- 行指纹 = SHA-256(各对比项列的规范化值，按建表字段顺序，`0x1F` 连接)。数值走 `stripTrailingZeros().toPlainString()`（`1`/`1.0`/`1.00` 同指纹）
+- **增量语义**：本次 Excel 未出现的轴值**原封不动**，不升版不删除
+- **轴值登记**：带版本 sheet 的每个轴值必须存在于同数据集的物料表（同一份 Excel 内的「物料」sheet 也算）
+- 免版本 6 张表（各套物料 / 报价客户料号 / 报价与详细核价的电镀方案）按主键 **UPSERT**
+
+> 来源任务：`task-260902-报价与核价建表与导入方案新规范`｜回写日期：2026-09-03
+
+---
+
+### 6.9 DatasetMaintenanceResource（数据集维护端 · 读写 + 乐观锁）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/api/cpq/dataset/{dataset}/sheets` | 读 4 角色 | 该数据集**带版本** sheet 的元数据（`cost-basic` 9 个 / `cost-detail` 17 个 / `quote` 13 个）。前端 tab 数由此决定，**不得写死** |
+| GET | `/api/cpq/dataset/{dataset}/parts` | 读 4 角色 | 料号列表，数据源 = 该数据集的**物料表**。Query：`page`（**0-based**）/`size`/`keyword`/`sortBy`/`sortDir`。`dataset=quote` 时 items 含 `productionNo`，另两套**该键整个省略** |
+| GET | `/api/cpq/dataset/{dataset}/parts/{axisValue}/overview` | 读 4 角色 | 各 sheet 的行数/版本徽标。无数据 sheet 仍在数组里，`rowCount:0` + `versionNo:null` |
+| GET | `/api/cpq/dataset/{dataset}/parts/{axisValue}/sheets/{sheetKey}/rows` | 读 4 角色 | 行数据。`?version=` 指历史版则读 `_history` 并置 `isLatest:false`/`readOnly:true`。**无数据返 `rows:[]` + `versionNo:null`，不 404** |
+| GET | `/api/cpq/dataset/{dataset}/parts/{axisValue}/sheets/{sheetKey}/versions` | 读 4 角色 | 版本列表（主表 + `_history` 一条 UNION ALL 聚合），倒序 |
+| PUT | `/api/cpq/dataset/{dataset}/parts/{axisValue}/sheets/{sheetKey}/rows` | `PRICING_MANAGER` / `SYSTEM_ADMIN` | 保存整组全量，走与导入**同一条**升版路径 |
+| GET | `/api/cpq/dataset/{dataset}/lookup/{masterType}` | 读 4 角色 | 主数据下拉。`masterType` ∈ `material`/`process`/`element`/`recipe`/`customer`。**只读**，与 `/pricing-basic-data/lookup` 并行不干扰 |
+| GET | `/api/cpq/dataset/{dataset}/plating-schemes` | 读 4 角色 | 电镀方案**只读**列表。`{dataset}` 仅接受 `quote`（10 列）与 `cost-detail`（8 列，多「密度」少「网址/名称/抓取规则」）；传 `cost-basic` **404**。`columns` 按数据集下发，前端不得写死 |
+| GET | `/api/cpq/dataset/{dataset}/customer-parts` | 读 4 角色 | 客户料号**只读**列表。`{dataset}` **仅接受 `quote`**（另两套无客户维度，传之 400）。Query：`page`（**0-based**）/`size`/`keyword`/`sortBy`/`sortDir`。`columns` 按数据集下发（6 列），**只投影 `{name,label,type}` 三键**，不下发 `editable/required/compared`（本页只读，下发 `editable=true` 会误导前端渲染编辑态）。🚨 `customerName` 由 **LEFT JOIN `customer` 表**得出，**JOIN 键是 `customer.code`**（该表无 `customer_no` 列）；必须 LEFT，实测 17 行中 3 行 JOIN 不到（`Q13CUST0617`×2、`C1`×1 未建档），用 INNER 会静默丢行使 total 17→14。`keyword` **严格匹配 `customer_no`/`customer_product_no`/`material_no` 三列** |
+
+> 来源任务：`task-260903-产品管理页重做`（`GET /dataset/{dataset}/customer-parts` 一条）｜回写日期：2026-09-03
+> 📌 该端点按用户裁决由 `task-260903` **自建**（`task-260902` 本期不承接），形状对齐其 `DsPlatingSchemes`，**待 `com.cpq.dataset` 包稳定后应迁入统一维护**（已写入类注释）。
+
+
+**`PUT rows` 的三态与错误码**：
+
+| 情况 | 返回 |
+|---|---|
+| 指纹多重集与行数均未变 | 200 `{ result:"UNCHANGED", versionNo }`，**一行不写** |
+| 已升版 | 200 `{ result:"UPGRADED", versionNo, message:"已升版至 v{n}" }`，旧版进 `_history` |
+| 该轴值首次有数据 | 200 `{ result:"CREATED", versionNo:1 }` |
+| `baseVersion` ≠ 库中当前版本 | **409** `{ code:409, message:"数据已被他人更新至 v{n}，请刷新后重试", data:{currentVersion, baseVersion} }` |
+| `rows` 传空数组 | **422** `至少保留一行数据；整组清空不在本期范围`（整组清空会让版本号回退，下次保存乐观锁误判 CREATED） |
+| 校验失败 | **400**，`errors` 结构同 6.8，`row` 为数组下标 + 1 |
+
+**乐观锁实现**：取 advisory lock（key = `ds:<表名>`）→ **锁后**读当前版本 → 比对 `baseVersion` → 调写入器，全程同一事务，消除检查-使用竞态。
+
+**响应信封**：`ApiResponse<T>` = `{ code, message, data }` —— 🚫 **无 `success` 字段**，判成功一律看 `code`。
+
+> 来源任务：`task-260902-报价与核价建表与导入方案新规范`｜回写日期：2026-09-03
+
+---
+
+
 ## 七、客户与销售线索
 
 > 全局基准：基址 `http://localhost:8081`；统一响应包 `ApiResponse<T> = { code, message, data }`。

@@ -1,0 +1,64 @@
+<meta charset="utf-8">
+<title>销售产品 · 生产料号可编辑</title>
+<link rel="stylesheet" href="antd-like.css">
+<style>
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;background:#fafafa;font-weight:600;padding:12px 16px;border-bottom:1px solid #f0f0f0;white-space:nowrap}
+  td{padding:12px 16px;border-bottom:1px solid #f0f0f0}
+  .muted{color:rgba(0,0,0,.25)}
+  .num{text-align:right;font-variant-numeric:tabular-nums}
+  .anno{background:#e6f4ff;border:1px solid #91caff;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px;line-height:1.8}
+  .cell-edit{display:inline-flex;align-items:center;gap:6px}
+  .pen{color:#1677ff;font-size:12px;opacity:0}
+  tr:hover .pen{opacity:1}
+  .inp{height:28px;padding:2px 8px;border:1px solid #1677ff;border-radius:6px;box-shadow:0 0 0 2px rgba(5,145,255,.1);width:130px;font-size:14px}
+  .st{font-size:12px;margin-left:6px}
+  .st-saving{color:#1677ff}
+  .st-fail{color:#cf1322}
+  h3{font-size:15px;margin:22px 0 10px}
+</style>
+<div class="page">
+  <div class="anno">
+    <b>AC-6 / AC-10 / AC-12 / AC-13 的视觉基准。</b>
+    🚨 <b>可编辑的只有「生产料号」一列</b> —— 其余 6 列（销售料号/品名/规格/尺寸/旧料号/单重）双击<b>不进编辑态</b>，抽屉<b>维持全只读</b>。
+  </div>
+
+  <div class="card"><div class="card-body">
+    <table>
+      <thead><tr><th>销售料号</th><th>品名</th><th>规格</th><th>尺寸</th><th>旧料号</th><th style="text-align:right">单重</th><th style="width:210px">生产料号</th></tr></thead>
+      <tbody>
+        <tr title="① 常态：纯文本，鼠标移上去才出现编辑图标">
+          <td>S-1630010773</td><td>支座</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="num">0.7</td>
+          <td><span class="cell-edit">1630010773 <span class="pen">✎</span></span></td>
+        </tr>
+        <tr title="② 编辑中：Input + 回车/失焦保存、Esc 取消">
+          <td>S-2120011658</td><td>AgNi10/Cu-Cu/301/Cu接触桥</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="num">0.2</td>
+          <td><input class="inp" value="2120011658"></td>
+        </tr>
+        <tr title="③ 保存中">
+          <td>S-2120011659</td><td>AgNi10/Cu-Cu/301/Cu接触桥</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="num muted">—</td>
+          <td><span class="cell-edit">2120011659 <span class="st st-saving">⟳ 保存中…</span></span></td>
+        </tr>
+        <tr title="④ 保存失败：回滚到原值 + 提示，不把失败的值留在界面上">
+          <td>S-3110520789</td><td>AgNi10/Cu动触头</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="num muted">—</td>
+          <td><span class="cell-edit">3110520789 <span class="st st-fail">✕ 保存失败，已还原</span></span></td>
+        </tr>
+        <tr title="⑤ 空值：合法（用户原话「生产料号选填」）">
+          <td>1630010773</td><td>料9</td><td class="muted">—</td><td>3.5×3.5×0.15</td><td>8DLX.550.662</td><td class="num">0.7</td>
+          <td><span class="cell-edit"><span class="muted">—</span> <span class="pen">✎</span></span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div></div>
+
+  <div class="anno" style="background:#fff7e6;border-color:#ffd591;margin-top:16px">
+    <b>⚠️ 四条实现纪律</b><br>
+    1. <b>保存只传 <code>{ productionNo }</code></b> —— 🚫 不要整行回传。后端只更新传入列，整行回传会把没改的列一起写。<br>
+    2. 🚨 <b><code>source</code> 不传、也不要期望它变</b>。它是<b>行级</b>来源（<code>IMPORT</code>/<code>MANUAL</code>），改一列就把整行标成 <code>MANUAL</code> 会误导 —— 该行绝大部分数据仍来自导入。<b>AC-10 断言它保持 <code>IMPORT</code></b>。<br>
+    3. <b>清空是合法操作</b>（用户原话「生产料号选填」）：落库 <code>NULL</code>（不是空字符串），列表渲染 <code>—</code>。<br>
+    　 ⚠️ <b>与导入的 <code>COALESCE</code> 区分</b>：<b>页面显式清空 ⇒ 真的变 NULL</b>；<b>导入时 Excel 空着 ⇒ 保留库里的值</b>。两件事，别用同一条分支。<br>
+    4. <b>保存失败要回滚到原值并提示</b>，🚫 不许把失败的值留在界面上假装成功（状态 ④）。<br><br>
+    <b>🔐 权限：四个角色都能改</b>（用户 2026-09-03 裁决）⇒ <b>不写任何角色分支</b>。
+    ⚠️ 已知风险留痕：这一列是「报价料号 → 核价数据」的桥，改错会让该报价单静默取到另一个料号的核价数据（金额悄悄变）。用户在知悉后仍裁决开放给四角色。
+  </div>
+</div>
