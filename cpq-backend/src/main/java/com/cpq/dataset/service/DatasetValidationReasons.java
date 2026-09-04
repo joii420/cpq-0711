@@ -44,6 +44,31 @@ public final class DatasetValidationReasons {
         return "sheet「" + sheetName + "」不属于" + datasetName + "数据集";
     }
 
+    /**
+     * D-27 / AC-59：产品分类值不在 {@code product_category} 主数据里 → 整份拒收。
+     * <p>文案与 {@link #MASTER_MISSING} 区分，让用户直接看出「要先去产品分类主数据里登记」。
+     */
+    public static String categoryNotRegistered(String value) {
+        return "产品分类「" + value + "」未在产品分类主数据中登记";
+    }
+
+    /**
+     * D-30 / AC-64：受控值域校验失败。<b>必须同时点名「填的值」与「允许值域」</b> ——
+     * 只说「值非法」会让用户不知道该填什么，是最没用的一类报错。
+     */
+    public static String notInEnum(String value, java.util.List<String> allowed) {
+        return "值「" + value + "」不在允许值域：" + String.join(" / ", allowed);
+    }
+
+    /**
+     * D-28 / AC-63：同一份 Excel 内主键重复 → 整份拒收。
+     * <p><b>必须点名主键值 + 两个行号</b>：笼统的「有重复」在几百行的模板里等于没报
+     *（本条的发现经过就是靠跨 sheet 交叉比对才挖出 {@code S0002} 笔误的）。
+     */
+    public static String duplicateKey(String keyValue, int firstRow, int dupRow) {
+        return "主键「" + keyValue + "」重复：第 " + firstRow + " 行与第 " + dupRow + " 行";
+    }
+
     /** {@code 表头列名与规范不一致：缺少「{列名}」}。 */
     public static String headerMissing(String label) {
         return "表头列名与规范不一致：缺少「" + label + "」";

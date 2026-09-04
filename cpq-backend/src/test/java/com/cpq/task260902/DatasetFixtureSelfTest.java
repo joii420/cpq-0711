@@ -82,9 +82,9 @@ class DatasetFixtureSelfTest {
                     "无探针时不该发生任何回退替换，实际：" + Fixtures.appliedSubstitutions);
 
             // AC 锚点未被夹具动过
-            assertEquals("1", b.readAsString("物料BOM", 3, "组成用量"), "AC-14 锚点：组成用量应仍为 1");
-            assertEquals("10", b.readAsString("物料BOM", 3, "项次"), "AC-17 锚点：项次应仍为 10");
-            assertEquals("5.5", b.readAsString("来料加工费", 3, "加工费"), "AC-9/AC-18 锚点：加工费应仍为 5.5");
+            assertEquals("1", b.readAsString("物料BOM", 2, "组成用量"), "AC-14 锚点：组成用量应仍为 1");
+            assertEquals("10", b.readAsString("物料BOM", 2, "项次"), "AC-17 锚点：项次应仍为 10");
+            assertEquals("5.5", b.readAsString("来料加工费", 2, "加工费"), "AC-9/AC-18 锚点：加工费应仍为 5.5");
             assertEquals("主料1", b.readAsString("物料", 2, "品名"), "AC-21 锚点：品名应仍为 主料1");
 
             // 轴 TEST-DS-3120014539 在物料BOM 下应有 8 行（AC-12/AC-15 的行数判据）
@@ -103,18 +103,18 @@ class DatasetFixtureSelfTest {
     void fs03_rowOperations() {
         DatasetFixtureBuilder b = Fixtures.costBasic();
         try {
-            String before3 = b.readAsString("物料BOM", 3, "组成料号");
-            String before4 = b.readAsString("物料BOM", 4, "组成料号");
+            String before3 = b.readAsString("物料BOM", 2, "组成料号");
+            String before4 = b.readAsString("物料BOM", 3, "组成料号");
             assertFalse(before3.equals(before4), "自检前提：两行的组成料号本就不同");
 
-            b.swapRows("物料BOM", 3, 4);
-            assertEquals(before4, b.readAsString("物料BOM", 3, "组成料号"), "swapRows 没换成");
-            assertEquals(before3, b.readAsString("物料BOM", 4, "组成料号"), "swapRows 没换成");
+            b.swapRows("物料BOM", 2, 3);
+            assertEquals(before4, b.readAsString("物料BOM", 2, "组成料号"), "swapRows 没换成");
+            assertEquals(before3, b.readAsString("物料BOM", 3, "组成料号"), "swapRows 没换成");
 
             int cnt = b.dataRowCount("物料BOM", true);
-            b.deleteRow("物料BOM", 3);
+            b.deleteRow("物料BOM", 2);
             assertEquals(cnt - 1, b.dataRowCount("物料BOM", true), "deleteRow 没删掉");
-            assertEquals(before3, b.readAsString("物料BOM", 3, "组成料号"), "deleteRow 后未上移");
+            assertEquals(before3, b.readAsString("物料BOM", 2, "组成料号"), "deleteRow 后未上移");
 
             int cnt2 = b.dataRowCount("物料", false);
             b.appendCopyOf("物料", 2, row -> row.getCell(0).setCellValue(DatasetAcTestBase.P + "APPEND"));
@@ -194,21 +194,21 @@ class DatasetFixtureSelfTest {
     void fs06_writesActuallyTakeEffect() {
         DatasetFixtureBuilder b = Fixtures.costBasic();
         try {
-            b.setText("物料BOM", 3, "组成料号", "WRITE-PROBE");
-            assertEquals("WRITE-PROBE", b.readAsString("物料BOM", 3, "组成料号"),
+            b.setText("物料BOM", 2, "组成料号", "WRITE-PROBE");
+            assertEquals("WRITE-PROBE", b.readAsString("物料BOM", 2, "组成料号"),
                     "🚨 setText 静默失效：写进去的值读不回来。"
                             + "根因多半是 inlineStr 单元格未先 setBlank()（2026-09-03 实证）。"
                             + "⇒ 此时所有改值型用例都在验一份没被改过的文件，全是假绿/假红。");
 
-            b.setNumber("物料BOM", 3, "组成用量", 987d);
-            assertEquals("987", b.readAsString("物料BOM", 3, "组成用量"), "🚨 setNumber 静默失效");
+            b.setNumber("物料BOM", 2, "组成用量", 987d);
+            assertEquals("987", b.readAsString("物料BOM", 2, "组成用量"), "🚨 setNumber 静默失效");
 
-            b.blank("物料BOM", 3, "组成类型");
-            String blanked = b.readAsString("物料BOM", 3, "组成类型");
+            b.blank("物料BOM", 2, "组成类型");
+            String blanked = b.readAsString("物料BOM", 2, "组成类型");
             assertTrue(blanked == null || blanked.isBlank(), "🚨 blank 静默失效，实际=" + blanked);
 
             // 轴前缀也走同一条写入路径
-            String axis = b.readAsString("物料BOM", 3, "生产料号");
+            String axis = b.readAsString("物料BOM", 2, "生产料号");
             assertTrue(axis != null && axis.startsWith(DatasetAcTestBase.P),
                     "🚨 轴前缀静默失效：实际=" + axis + "（共享库清理面依赖这个前缀）");
         } finally {
