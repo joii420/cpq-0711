@@ -1,0 +1,265 @@
+// 临时 mock 后端（仅供 task-260903 前端自测；不进仓库、不进构建）
+// 形状严格对齐 dev-docs/task-260902-.../api.md：信封 {code,message,data}，page 0-based，数值字符串回传
+import http from 'node:http';
+
+const PORT = Number(process.env.MOCK_PORT) || 8199;
+const ROLE = process.env.MOCK_ROLE || 'SYSTEM_ADMIN';
+const EMPTY = process.env.MOCK_EMPTY === '1';   // AC-13 空库场景
+const NO_PROD_NO = process.env.MOCK_NO_PRODUCTION_NO === '1'; // 缺口2 未补齐场景
+const LONG = process.env.MOCK_LONG === '1';     // AC-15 极值场景
+
+const ok = (data) => JSON.stringify({ code: 200, message: 'ok', data });
+
+// ── 客户产品 17 行（取自原型「客户产品-默认态」真实数据）────────────────────
+const CUSTOMER_PARTS = [
+  ['C1', null, null, 'CP-TEST-Q13-CODE', null, 'TEST-Q13-CODE'],
+  ['CUST-0001', '罗克韦尔', null, 'CP-S-80011', null, 'S-80011'],
+  ['CUST-0001', '罗克韦尔', null, 'CP-W-1001', null, 'W-1001'],
+  ['CUST-0002', '测试客户', null, '11001101', null, '3120011203'],
+  ...Array.from({ length: 11 }, (_, i) => {
+    const n = String(i + 1).padStart(2, '0');
+    return ['CUST-0004', '正泰', null, `CP-0028-26090000${n}`, null, `0028-26090000${n}`];
+  }),
+  ['Q13CUST0617', null, null, 'CP-0046-2609000001', null, '0046-2609000001'],
+  ['Q13CUST0617', null, null, 'CP-0046-2609000002', null, '0046-2609000002'],
+].map(([customerNo, customerName, customerPartName, customerProductNo, customerDrawingNo, materialNo]) =>
+  ({ customerNo, customerName, customerPartName, customerProductNo, customerDrawingNo, materialNo }));
+
+// ── 销售产品 42 行（前 21 行取自原型，其余补足到 42）────────────────────────
+const P = (axisValue, materialName, dimension, oldMaterialNo, unitWeight, productionNo) =>
+  ({ axisValue, materialName, specification: null, dimension, oldMaterialNo, unitWeight, productionNo });
+const PARTS = [
+  P('1630010773', '料9', '3.5×3.5×0.15', '8DLX.550.662', '0.700000000000', null),
+  P('2101110225', '料11', '3.5×3.5×0.17', '8DLX.550.664', '0.170000000000', null),
+  P('2111410069', '料12', '3.5×3.5×0.18', '8DLX.550.665', '0.050000000000', null),
+  P('2120011658', '料1', '3.5×3.5×0.7', '8DLX.550.654', '0.200000000000', null),
+  P('2120011659', '料3', '3.5×3.5×0.9', '8DLX.550.656', '0.180000000000', null),
+  P('3110520789', '料2', '3.5×3.5×0.8', '8DLX.550.655', '0.150000000000', null),
+  P('3110520790', '料8', '3.5×3.5×0.14', '8DLX.550.661', '0.600000000000', null),
+  P('3111320634', '料4', '3.5×3.5×0.10', '8DLX.550.657', '0.400000000000', null),
+  P('3111320635', '料5', '3.5×3.5×0.11', '8DLX.550.658', '0.300000000000', null),
+  P('3111320636', '料6', '3.5×3.5×0.12', '8DLX.550.659', '0.800000000000', null),
+  P('3111320637', '料7', '3.5×3.5×0.13', '8DLX.550.660', '0.200000000000', null),
+  P('3112230066', '料10', '3.5×3.5×0.16', '8DLX.550.663', '0.220000000000', null),
+  P('3112230067', '料13', '3.5×3.5×0.19', '8DLX.550.666', '0.002000000000', null),
+  P('3120018220', '主料1', '3.5×3.5×0.6', '8DLX.550.653', '3.000000000000', null),
+  // 真实脏数据：除料号外全空
+  P('COMP1', null, null, null, null, null),
+  P('COMP2', null, null, null, null, null),
+  P('S-1630010773', '支座', null, null, '0.700000000000', '1630010773'),
+  P('S-2120011658', 'AgNi10/Cu-Cu/301/Cu接触桥', null, null, '0.200000000000', '2120011658'),
+  P('S-2120011659', 'AgNi10/Cu-Cu/301/Cu接触桥', null, null, null, '2120011659'),
+  P('S-3120014539', LONG
+      ? 'AgNi10/Cu-Cu/301/Cu接触桥（含银镍复合层与铜基体的多层复合结构，适用于高分断能力断路器）'
+      : '主料1',
+    null, null, LONG ? '999999999.999999999' : null, null),
+];
+while (PARTS.length < 42) {
+  const i = PARTS.length;
+  PARTS.push(P(`S-31113206${30 + i}`, `补充料${i}`, null, null, '0.010000000000', null));
+}
+
+// ── 13 张带版本 sheet（顺序即 AC-6）──────────────────────────────────────────
+const col = (name, label, role, type, extra = {}) => ({ name, label, role, type, editable: role !== 'NAME', ...extra });
+const AXIS = col('material_no', '销售料号', 'AXIS', 'STRING');
+
+const MATERIAL_BOM_COLUMNS = [
+  AXIS,
+  col('item_seq', '项次', 'VALUE', 'NUMBER', { required: true }),
+  col('input_type', '投入类型', 'VALUE', 'STRING', { compared: true }),
+  col('input_material_no', '投入料号', 'SUBDIM', 'STRING', {
+    required: true, compared: true,
+    dropdown: { kind: 'MASTER', masterType: 'material', nameColumn: 'input_material_name' },
+  }),
+  col('input_material_name', '投入料号名称', 'NAME', undefined),
+  col('unit_weight', '单重', 'VALUE', 'DECIMAL', { compared: true }),
+  col('output_material_type', '产出料号类型', 'VALUE', 'STRING', { compared: true }),
+  col('component_qty', '组成数量', 'VALUE', 'DECIMAL', { required: true, compared: true }),
+  col('gross_weight', '材料毛重', 'VALUE', 'DECIMAL', { compared: true }),
+  col('net_weight', '材料净重', 'VALUE', 'DECIMAL', { compared: true }),
+  col('weight_unit', '重量单位', 'VALUE', 'STRING', { compared: true }),
+  col('material_ratio', '材料占比（%）', 'VALUE', 'DECIMAL', { compared: true }),
+  col('loss_rate', '损耗率（%）', 'VALUE', 'DECIMAL', { compared: true }),
+  col('defect_rate', '不良率（%）', 'VALUE', 'DECIMAL', { compared: true }),
+];
+
+const ELEMENT_BOM_COLUMNS = [
+  AXIS,
+  col('material_part_no', '材质料号', 'SUBDIM', 'STRING', {
+    required: true, compared: true,
+    dropdown: { kind: 'MASTER', masterType: 'recipe', nameColumn: 'material_part_name' },
+  }),
+  col('material_part_name', '材质料号名称', 'NAME', undefined),
+  col('item_seq', '项次', 'VALUE', 'NUMBER', { required: true }),
+  col('element_code', '元素', 'SUBDIM', 'STRING', { required: true, compared: true }),
+  col('content_pct', '组成含量（%）', 'VALUE', 'DECIMAL', { required: true, compared: true }),
+  col('loss_rate', '损耗率%', 'VALUE', 'DECIMAL', { compared: true }),
+  col('gross_usage', '毛用量', 'VALUE', 'DECIMAL', { compared: true }),
+  col('gross_usage_unit', '毛用量单位', 'VALUE', 'STRING', { compared: true }),
+  col('net_usage', '净用量', 'VALUE', 'DECIMAL', { compared: true }),
+  col('net_usage_unit', '净用量单位', 'VALUE', 'STRING', { compared: true }),
+  col('recovery_discount', '回收折扣(%)', 'VALUE', 'DECIMAL', { compared: true }),
+  col('recovery_qty', '回收量', 'VALUE', 'STRING', { compared: true }),
+];
+
+// 来料固定加工费：含 pricing_unit（🚨 已由 DECIMAL 修正为 STRING）+ boolean 列
+const INCOMING_FIXED_FEE_COLUMNS = [
+  AXIS,
+  col('item_seq', '项次', 'VALUE', 'NUMBER', { required: true }),
+  col('input_material_no', '投入料号', 'SUBDIM', 'STRING', {
+    required: true, compared: true,
+    dropdown: { kind: 'MASTER', masterType: 'material', nameColumn: 'input_material_name' },
+  }),
+  col('input_material_name', '投入料号名称', 'NAME', undefined),
+  col('base_value', '基准值', 'VALUE', 'DECIMAL', { compared: true }),
+  col('ratio_pct', '比例（%）', 'VALUE', 'DECIMAL', { compared: true }),
+  col('currency', '货币', 'VALUE', 'STRING', { compared: true }),
+  col('pricing_unit', '计价单位', 'VALUE', 'STRING', { compared: true }),
+  col('follow_material_price', '是否随材料价格波动', 'VALUE', 'BOOLEAN', { compared: true }),
+];
+
+const GENERIC_COLUMNS = [
+  AXIS,
+  col('item_seq', '项次', 'VALUE', 'NUMBER', { required: true }),
+  col('amount', '金额', 'VALUE', 'DECIMAL', { compared: true }),
+  col('currency', '货币', 'VALUE', 'STRING', { compared: true }),
+  col('pricing_unit', '计价单位', 'VALUE', 'STRING', { compared: true }),
+];
+
+const SHEET_DEFS = [
+  ['MATERIAL_BOM', '物料BOM', MATERIAL_BOM_COLUMNS],
+  ['ELEMENT_BOM', '物料与元素BOM', ELEMENT_BOM_COLUMNS],
+  ['INCOMING_FIXED_FEE', '来料固定加工费', INCOMING_FIXED_FEE_COLUMNS],
+  ['INCOMING_OTHER_FEE', '来料其他费用', GENERIC_COLUMNS],
+  ['INCOMING_RECOVERY', '来料回收折扣', GENERIC_COLUMNS],
+  ['SELF_PROCESS_FEE', '自制加工费', GENERIC_COLUMNS],
+  ['FINISHED_OTHER_FEE', '成品其他费用', GENERIC_COLUMNS],
+  ['SUB_COMPONENT_FEE', '组成件其他费用', GENERIC_COLUMNS],
+  ['ASSEMBLY_FEE', '组装加工费', GENERIC_COLUMNS],
+  ['ASSEMBLY_FEE_ANNUAL', '组装加工费年降', GENERIC_COLUMNS],
+  ['PLATING_FEE', '电镀费用', GENERIC_COLUMNS],
+  ['INCOMING_ANNUAL', '来料年降', GENERIC_COLUMNS],
+  ['ANNUAL_DISCOUNT', '年降系数', GENERIC_COLUMNS],
+];
+const SHEETS = SHEET_DEFS.map(([sheetKey, sheetName, columns], i) => ({
+  sheetKey, sheetName, sortOrder: i + 1,
+  axisColumn: 'material_no', axisLabel: '销售料号', columns,
+}));
+
+// ── S-3120014539 的行数据（物料BOM 9 行 / 物料与元素BOM 2 行）────────────────
+const bomRow = (input_material_no, input_material_name, component_qty) => ({
+  material_no: 'S-3120014539', item_seq: null, input_type: '0:必要',
+  input_material_no, input_material_name,
+  unit_weight: null, output_material_type: null,
+  component_qty, gross_weight: null, net_weight: null, weight_unit: null,
+  material_ratio: null, loss_rate: null, defect_rate: null,
+});
+const MATERIAL_BOM_ROWS = [
+  bomRow('S-2120011658', 'AgNi10/Cu-Cu/301/Cu接触桥', '1.000000000000'),
+  bomRow('S-2120011659', 'AgNi10/Cu-Cu/301/Cu接触桥', '1.000000000000'),
+  bomRow('S-3111320634', 'H62接触板', '1.000000000000'),
+  bomRow('S-3111320635', null, '1.000000000000'),
+  bomRow('S-3111320636', null, '1.000000000000'),
+  bomRow('S-3111320637', null, '1.000000000000'),
+  bomRow('S-3110520790', 'AgNi10/Cu静触头', '2.000000000000'),
+  bomRow('S-1630010773', '支座', '1.000000000000'),
+  bomRow(null, null, '2.000000000000'), // 真实脏数据行
+];
+const ELEMENT_BOM_ROWS = [
+  { material_no: 'S-3120014539', material_part_no: 'M-AgNi10', material_part_name: 'AgNi10',
+    item_seq: 1, element_code: 'Ag', content_pct: '90.000000000000', loss_rate: null,
+    gross_usage: '0.001230000000', gross_usage_unit: 'g', net_usage: null, net_usage_unit: null,
+    recovery_discount: null, recovery_qty: null },
+  { material_no: 'S-3120014539', material_part_no: 'M-AgNi10', material_part_name: null,
+    item_seq: 2, element_code: 'Ni', content_pct: '10.000000000000', loss_rate: null,
+    gross_usage: '999999999.999999999', gross_usage_unit: 'g', net_usage: null, net_usage_unit: null,
+    recovery_discount: null, recovery_qty: null },
+];
+// 只读渲染验证专用：pricing_unit(STRING 值像数字) / BOOLEAN / NAME 空值 / DECIMAL 极值
+const INCOMING_FIXED_FEE_ROWS = [
+  { material_no: 'S-3120014539', item_seq: 1, input_material_no: 'S-2120011658',
+    input_material_name: 'AgNi10/Cu-Cu/301/Cu接触桥', base_value: '12.300000000000',
+    ratio_pct: '0.000000001000', currency: 'CNY', pricing_unit: '1000', follow_material_price: true },
+  { material_no: 'S-3120014539', item_seq: 2, input_material_no: 'S-2120011659',
+    input_material_name: null, base_value: null, ratio_pct: null,
+    currency: 'CNY', pricing_unit: 'PCS', follow_material_price: false },
+];
+
+const ROWS_BY_SHEET = {
+  MATERIAL_BOM: MATERIAL_BOM_ROWS,
+  ELEMENT_BOM: ELEMENT_BOM_ROWS,
+  INCOMING_FIXED_FEE: INCOMING_FIXED_FEE_ROWS,
+};
+
+const rowsFor = (axis, key) => (axis === 'S-3120014539' ? (ROWS_BY_SHEET[key] ?? []) : []);
+
+const server = http.createServer((req, res) => {
+  const url = new URL(req.url, 'http://x');
+  const p = url.pathname;
+  const q = url.searchParams;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+
+  const page = Number(q.get('page') ?? 0);   // 0-based
+  const size = Number(q.get('size') ?? 20);
+  const keyword = (q.get('keyword') ?? '').trim();
+
+  const paged = (all) => {
+    const f = keyword
+      ? all.filter((r) => Object.values(r).some((v) => v != null && String(v).includes(keyword)))
+      : all;
+    // 🚩 故意按 0-based 切片：前端若忘了 current-1，首屏会明显取到第二页
+    return { total: f.length, items: f.slice(page * size, page * size + size) };
+  };
+
+  if (p === '/api/cpq/auth/me') {
+    return res.end(ok({ id: 'u1', username: 'admin', fullName: '系统管理员', role: ROLE, forceChangePassword: false }));
+  }
+  if (p.startsWith('/api/cpq/notifications')) {
+    return res.end(ok({ count: 0, total: 0, items: [] }));
+  }
+  if (p === '/api/cpq/dataset/quote/customer-parts') {
+    return res.end(ok(EMPTY ? { total: 0, items: [] } : paged(CUSTOMER_PARTS)));
+  }
+  if (p === '/api/cpq/dataset/quote/parts') {
+    if (EMPTY) return res.end(ok({ total: 0, items: [] }));
+    const r = paged(PARTS);
+    if (NO_PROD_NO) r.items = r.items.map(({ productionNo, ...rest }) => rest); // 缺口2 未补齐
+    return res.end(ok(r));
+  }
+  if (p === '/api/cpq/dataset/quote/sheets') {
+    return res.end(ok({ sheets: SHEETS }));
+  }
+  let m = p.match(/^\/api\/cpq\/dataset\/quote\/parts\/([^/]+)\/overview$/);
+  if (m) {
+    const axis = decodeURIComponent(m[1]);
+    return res.end(ok({
+      axisValue: axis,
+      materialName: PARTS.find((x) => x.axisValue === axis)?.materialName ?? null,
+      sheets: SHEETS.map((s) => {
+        const rows = rowsFor(axis, s.sheetKey);
+        return { sheetKey: s.sheetKey, rowCount: rows.length,
+                 versionNo: rows.length > 0 ? 1 : null,
+                 lastUpdatedAt: rows.length > 0 ? '2026-09-03T10:12:00+08:00' : null,
+                 source: rows.length > 0 ? 'IMPORT' : null };
+      }),
+    }));
+  }
+  m = p.match(/^\/api\/cpq\/dataset\/quote\/parts\/([^/]+)\/sheets\/([^/]+)\/rows$/);
+  if (m) {
+    const rows = rowsFor(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
+    // 🚨 故意回 readOnly:false —— 前端必须无视它，一律只读（api.md 硬约束 7 / AC-8）
+    return res.end(ok({ versionNo: rows.length ? 1 : null, isLatest: true, readOnly: false,
+                        source: 'IMPORT', rows }));
+  }
+  m = p.match(/^\/api\/cpq\/dataset\/quote\/parts\/([^/]+)\/sheets\/([^/]+)\/versions$/);
+  if (m) {
+    const rows = rowsFor(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
+    return res.end(ok({ versions: rows.length
+      ? [{ versionNo: 1, isLatest: true, rowCount: rows.length,
+           updatedAt: '2026-09-03T10:12:00+08:00', updatedBy: 'admin', source: 'IMPORT' }]
+      : [] }));
+  }
+  res.statusCode = 404;
+  res.end(JSON.stringify({ code: 404, message: `mock: no route ${p}`, data: null }));
+});
+server.listen(PORT, () => console.log(`mock backend on ${PORT} role=${ROLE} empty=${EMPTY}`));

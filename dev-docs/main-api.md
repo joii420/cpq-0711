@@ -1,7 +1,7 @@
 # CPQ 系统接口总览文档（main-api.md）
 
 > 本文件由技术总监扫描 `cpq-backend` 全部 JAX-RS Resource 自动生成，覆盖 **89 个 Resource 类、约 422 个 HTTP 端点**，按业务模块分为 12 大类。
-> 生成日期：2026-07-08 ｜ 最近契约更新：**2026-09-03（task-260902 报价与核价建表与导入方案新规范：新增 9 个端点 —— 数据集导入 1 + 维护端读写 8，见 §6.8 / §6.9）** ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
+> 生成日期：2026-07-08 ｜ 最近契约更新：**2026-09-03（task-260903 产品管理页重做：新增 1 个端点 —— `GET /dataset/{dataset}/customer-parts` 客户料号只读列表，见 §6.9；其前序 task-260902 新增 9 个端点，见 §6.8 / §6.9）** ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
 > 用途：前后端接口契约基线、联调对照、新接口设计参照。字段说明取自源码 javadoc / 注释，无注释处据字段名与类型推断。
 
 ---
@@ -5460,6 +5460,11 @@ Cell：`quote`(Object 报价值)、`costing`(Object 核价值)、`highlighted`(b
 | PUT | `/api/cpq/dataset/{dataset}/parts/{axisValue}/sheets/{sheetKey}/rows` | `PRICING_MANAGER` / `SYSTEM_ADMIN` | 保存整组全量，走与导入**同一条**升版路径 |
 | GET | `/api/cpq/dataset/{dataset}/lookup/{masterType}` | 读 4 角色 | 主数据下拉。`masterType` ∈ `material`/`process`/`element`/`recipe`/`customer`。**只读**，与 `/pricing-basic-data/lookup` 并行不干扰 |
 | GET | `/api/cpq/dataset/{dataset}/plating-schemes` | 读 4 角色 | 电镀方案**只读**列表。`{dataset}` 仅接受 `quote`（10 列）与 `cost-detail`（8 列，多「密度」少「网址/名称/抓取规则」）；传 `cost-basic` **404**。`columns` 按数据集下发，前端不得写死 |
+| GET | `/api/cpq/dataset/{dataset}/customer-parts` | 读 4 角色 | 客户料号**只读**列表。`{dataset}` **仅接受 `quote`**（另两套无客户维度，传之 400）。Query：`page`（**0-based**）/`size`/`keyword`/`sortBy`/`sortDir`。`columns` 按数据集下发（6 列），**只投影 `{name,label,type}` 三键**，不下发 `editable/required/compared`（本页只读，下发 `editable=true` 会误导前端渲染编辑态）。🚨 `customerName` 由 **LEFT JOIN `customer` 表**得出，**JOIN 键是 `customer.code`**（该表无 `customer_no` 列）；必须 LEFT，实测 17 行中 3 行 JOIN 不到（`Q13CUST0617`×2、`C1`×1 未建档），用 INNER 会静默丢行使 total 17→14。`keyword` **严格匹配 `customer_no`/`customer_product_no`/`material_no` 三列** |
+
+> 来源任务：`task-260903-产品管理页重做`（`GET /dataset/{dataset}/customer-parts` 一条）｜回写日期：2026-09-03
+> 📌 该端点按用户裁决由 `task-260903` **自建**（`task-260902` 本期不承接），形状对齐其 `DsPlatingSchemes`，**待 `com.cpq.dataset` 包稳定后应迁入统一维护**（已写入类注释）。
+
 
 **`PUT rows` 的三态与错误码**：
 

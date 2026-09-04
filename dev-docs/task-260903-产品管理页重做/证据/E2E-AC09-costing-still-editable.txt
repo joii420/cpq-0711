@@ -1,0 +1,1 @@
+核价侧 PRICING_MANAGER：物料BOM tab 行数=8 input=96 保存按钮数=1

@@ -27,7 +27,7 @@
 | C-1 | `GET /dataset/quote/parts` | 「销售产品」页签列表数据源 | AC-4, AC-14, AC-15 |
 | C-2 | `GET /dataset/quote/sheets` | 抽屉 tab 清单与顺序（**tab 数由本接口决定，前端不写死**） | AC-6 |
 | C-3 | `GET /dataset/quote/parts/{axisValue}/overview` | 抽屉各 tab 的行数徽标 / 是否从未有数据 | AC-6, AC-12 |
-| C-4 | `GET /dataset/quote/parts/{axisValue}/sheets/{sheetKey}/rows` | 抽屉某 tab 的行数据与列元数据 | AC-7, AC-8, AC-10 |
+| C-4 | `GET /dataset/quote/parts/{axisValue}/sheets/{sheetKey}/rows` | 抽屉某 tab 的**行数据**（🚩 **不含列元数据**，见 §5.6） | AC-7, AC-8, AC-10 |
 | C-5 | `GET /dataset/quote/parts/{axisValue}/sheets/{sheetKey}/versions` | 版本下拉 | AC-10 |
 | C-6 | **`GET /dataset/quote/customer-parts`** ⚠️ **待主源新增** | 「客户产品」页签列表数据源 | AC-2, AC-3, AC-14 |
 
@@ -56,9 +56,11 @@
 ```
 GET /dataset/{dataset}/customer-parts
 Query : page(0-based) / size / keyword / sortBy / sortDir
-200   : { success:true, data:{ total: 17, items:[ {
-            customerNo, customerName, customerPartName,
-            customerProductNo, customerDrawingNo, materialNo } ] } }
+200   : { code:200, message:"success", data:{
+            total: 17,
+            columns:[ {name,label,type} ],          // 只投影三键，不下发 ColumnDef
+            items:[ { customerNo, customerName, customerPartName,
+                      customerProductNo, customerDrawingNo, materialNo } ] } }
 ```
 
 - `customerName` **必须由后端 JOIN `customer` 表**得出：`ds_quote_customer_part` 只有 `customer_no`，且主源第一轮已提醒「客户名现网大量为空，要走 customer 表 JOIN 或兜底」。仅显示 `CUST-0004` 这类编号对业务不可用。
@@ -79,7 +81,12 @@ Query : page(0-based) / size / keyword / sortBy / sortDir
   | `C1` | **JOIN 不到** | 1 |
 
   > JOIN 不到时回 `null`，前端渲染 `—`（AC-2）。这不是缺陷，是现网真实状态。
-- `keyword` 建议匹配 `customer_no` / `customer_product_no` / `material_no` 三列（AC-14 要按 `CUST-0004` 搜出 12 行）。
+- `keyword` **严格匹配** `customer_no` / `customer_product_no` / `material_no` **三列**（AC-14 要按 `CUST-0004` 搜出 **11** 行）。
+  ⚠️ 日后若有人「顺手」把 `customer_part_name` 或 `c.name` 加进匹配范围，行数会变而**测试不一定挂** —— 后端代理留记，此处固化为契约。
+
+> 🚩 **2026-09-03 更正（后端代理实测抛回）**：本节示例原写 `{ success:true, ... }`，**与项目真实响应信封不符**。
+> `ApiResponse.java` **没有 `success` 字段**，真实信封是 `{code, message, data}`。前端 `productHubApi.ts` 已按「只看有无 `data` 键」解包，绝不读 `success`。
+> ⚠️ 主源 `task-260902` 的 `api.md` 同样写着 `success:true` —— **那是文档笔误，不是契约**。下一个照抄的人还会撞，已向对方提出。
 
 ### 缺口 2（次要）：`GET parts` 响应缺 `productionNo`
 
@@ -118,3 +125,61 @@ Query : page(0-based) / size / keyword / sortBy / sortDir
 | §2 走退路条款（本任务自建） | **必须回写** `dev-docs/main-api.md`，两个新端点各起一节 + 来源标记 `> 来源任务：task-260903-产品管理页重做｜回写日期：<实取日期>` |
 
 > 按 `task-docs.md §2.5`：回写时机 = 测试完成后、合并 master 之前。未回写不得进入合并环节。
+
+---
+
+## 5. 开工后的契约更正与情报（2026-09-03，来自 `task-260902` 主动通知 + 主线实测）
+
+> 按 `task-docs.md §4`「开工后 AC/契约变更」记录。**本节全部是情报与更正，未改动任何 AC。**
+
+### 5.1 ⚠️ 契约措辞不准 —— `sheets` 返回体并不对齐旧 `SheetMeta`
+
+主源 `api.md §2` 原写「结构完全对齐现有 `SheetMeta`」，**实测不成立**，三个字段名都不同：
+
+| 新接口 | 旧 `part-costing/types.ts` 的 `SheetMeta` |
+|---|---|
+| `sheetName` | `tabName` |
+| `sortOrder` | `order` |
+| `masterType` | `master` |
+
+🚫 **不要把新接口返回直接喂给旧类型**，也不要 import `part-costing/types.ts` 的类型定义。
+✅ 在 `productHubApi.ts` 里自建类型 + 一层收敛映射（对方在 `dataset/types.ts` 的 `toColumnDefs()` 里做了同样的事）。
+> 对方已表示会更正主源措辞；在其更正落地前，**以本节为准**。
+
+### 5.2 ✅ 建表迁移已合 master，共享库表已就绪
+
+`cfa5e5bc` 已将 `V405`~`V408` 合入 master，本分支已 `git merge master` 同步。**主线实测确认**：
+
+```
+ds_ 表数 = 84
+flyway_schema_history: 405 / 406 / 407 / 408 全部 success = t
+ds_quote_material 当前行数 = 0
+```
+
+🚫 **这 4 个迁移文件的 checksum 已锁死，任何人不得改动一个字节。** 只读，不要动。
+
+> 背景：这 4 个文件曾被对方测试代理的 `@QuarkusTest` 意外应用进共享库（`test` profile 实连 `cpq_db_0724` 且 `migrate-at-start`），造成「迁移进库、文件没进 master」的失配，用户裁决单独合并修复。**这也正好满足了本任务「提前拿到建表」的请求。**
+
+### 5.3 ⚠️ 后端 8 个端点**仍未合并** —— 前端继续 mock
+
+表建好了 ≠ 端点能调。`com.cpq.dataset` 包仍在对方 worktree 未提交状态。
+⇒ F-2/F-3/F-5 继续用 mock 自测；接真实端点做亲验**仍须等对方合并**。
+
+### 5.4 🚨 共享库并发风险（新增，写入 `test.md` 同步执行）
+
+`ds_quote_*` 现在是**两个任务共用**：对方五路子代理正在同一批表上跑 `@QuarkusTest`。
+
+- 🚫 **绝对不许跑清表 / 清库型测试**（`CLAUDE.md §3.2` 环境销毁红线）
+- 🚫 **不许写死绝对行数断言**（「表里就该是 42 行」）⇒ 改为**相对不变量**（「导入后 = 导入前 + 42」或按料号过滤后计数）
+- ⚠️ 灌样例数据前**必须由主线与对方协调窗口**，子代理不得自行往共享库写
+
+> 同源教训：对方立项时实测共享库数据在漂移（同一条 `count(*)` 几分钟内材质 263→259），最后把 AC 全改写成「与同一时刻基准查询相等」的不变量。
+
+### 5.5 §2 两个缺口的最新状态：**仍未闭合**
+
+| 缺口 | 状态 |
+|---|---|
+| `ds_quote_customer_part` 无读端点 | ⏸ 待对方答复。**新论据**：对方为电镀方案加的 `GET /{dataset}/plating-schemes` + `DsPlatingSchemes` DTO，其类注释原文就是「补的是**免版本表在新体系里没有查看入口**的缺口」——报价侧 3 张免版本表它补了 2 张（物料走 `GET parts`、电镀方案走新端点），**客户料号这张漏了**。已把 `DsPlatingSchemes` 作为现成模板递过去 |
+| `GET parts` 缺 `productionNo` | ⏸ 待对方答复。主线 grep 复核：`production_no` 只在 `CostBasicRegistry`（核价轴）命中，**报价侧响应体确实没有** |
+
+⇒ 两条不补，**AC-2 / AC-4 达不成**（断言的是完整列）。前端已做「缺字段渲染 `—` 不崩」兜底，不阻塞开发，但阻塞验收。

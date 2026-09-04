@@ -35,11 +35,34 @@
 
 ## 2. ⚠️ 条件性任务（仅当退路条款启用时才做）
 
-**启用条件（两个都满足才算）**：
-1. `task-260902` 明确答复**本期不承接** `api.md §2` 的两处扩展；且
-2. **用户在闸门 A 明确批准**本任务自建只读端点
+## ✅ 2026-09-03：退路条款**已启用**，B-1 转为正式任务；B-2 已由对方承接
 
-> 🚦 条件未满足前 **一行代码都不要写**。默认路径是等主源交付。
+| 启用条件 | 状态 |
+|---|---|
+| `task-260902` 明确答复本期不承接 | ✅ **成立** —— 对方将本任务的完整论证呈报用户，用户裁决「客户料号端点仍归 `task-260903` 自建」。这是范围归属裁决，非对方驳回 |
+| 用户明确批准本任务自建只读端点 | ✅ **成立** —— 主线于 2026-09-03 直接向用户确认（🚫 未采信对方转述：`peer` 的转述不能当作本会话用户的批准） |
+
+**⇒ B-1 转为正式任务，必须实现。**
+
+**⇒ B-2 取消，不要做。** 对方核实后确认这是**它的实现漏了跟上契约**（`api.md §3` 已有 `productionNo`，但后端 `DsPartsPage.Item` 是改契约之前写的），已派其后端 #3 补。
+> ⚠️ **三数据集差异**（对方提醒，写渲染逻辑时注意）：`dataset=quote` 时 `productionNo` 有值；`cost-basic` / `cost-detail` 的物料表**没有这一列**（它们的轴本身就是生产料号），响应里该字段**整个省略** —— 🚫 不要写成「期望 null」的渲染逻辑。
+
+### B-1 的补充设计依据（对方提供，照此实现可日后平滑并入主源）
+
+对方为**同类问题**已实现 `GET /{dataset}/plating-schemes` + `DsPlatingSchemes` DTO，其类注释原文即
+「**补的是「免版本表在新体系里没有查看入口」的缺口**……只读，没有配套写端点」。
+报价侧 3 张免版本表它覆盖了 2 张（物料走 `GET parts`、电镀方案走新端点），**客户料号这张是剩余的第 3 张**。
+
+⇒ **照 `DsPlatingSchemes` 的形状写 `DsCustomerParts`**，三条设计要点对方已验证、本任务完全认同：
+1. `columns` **按数据集下发**，前端不写死
+2. 🚫 **不直接下发 `ColumnDef`** —— 那会带上 `editable` / `required` / `compared`，而本页只读，下发 `editable=true` 会误导前端渲染出编辑态。只投影 `{name, label, type}` 三个键（唯一真源仍是 Registry 的 `SheetDef.columns`）
+3. 只读，**无配套写端点**
+
+⚠️ **两张名字极像的表，别搞混**（对方实测）：
+- `customer_material_mapping` —— **1 行**，几乎空，挂着一套**零引用的死代码**端点（`CustomerMaterialMappingResource` + `CustomerMaterialMappingTab.tsx`）
+- `material_customer_map` —— **1877 行**，真表，被 20 个 `component_sql_view` 引用
+
+🚫 **B-1 读的是新体系的 `ds_quote_customer_part`，与上面两张旧表都无关。**
 
 | 编号 | 服务的 AC | 任务内容 |
 |---|---|---|
@@ -63,7 +86,9 @@
 | # | 确认项 | 方法 | 期望 |
 |---|---|---|---|
 | G-1 | `product` 表端点仍可用 | `GET /api/cpq/products?page=1&size=1` | 200，`total` = 3 |
-| G-2 | `material_master` 端点仍可用 | `GET /api/cpq/material-masters?page=0&size=1` | 200，`total` = 1889 |
+| G-2 | `material_master` 端点仍可用 | `GET /api/cpq/material-masters?page=0&size=1` | 200，`total` = **42** |
+
+> 🚩 **2026-09-03 更正**：本行原写 `total = 1889`，**是主线写错的**。测试代理实测该端点返回 **42** —— 它已过滤 `pending_quotation_id`，1889 是表的物理行数不是端点返回值。照原值比对会报出一个**不存在的回归**。
 | G-3 | 三张外键引用表未受影响 | `SELECT count(*) FROM quotation_line_item WHERE product_id IS NOT NULL` | 与改动前一致 |
 | G-4 | 核价侧端点零变化 | `GET /pricing-basic-data/...` 若干 | 与改动前逐字节一致 |
 | G-5 | 后端存活 | `curl -s --noproxy '*' -o /dev/null -w '%{http_code}' http://localhost:8081/api/cpq/components` | **401**（不是 404、不是 000） |

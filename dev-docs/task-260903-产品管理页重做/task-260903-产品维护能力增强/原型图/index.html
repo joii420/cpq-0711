@@ -1,0 +1,58 @@
+<meta charset="utf-8">
+<title>产品维护能力增强 · 原型导航</title>
+<link rel="stylesheet" href="antd-like.css">
+<style>
+  .wrap{max-width:980px;margin:0 auto;padding:24px}
+  .badge{display:inline-block;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:600}
+  .badge-now{background:#f6ffed;color:#389e0d;border:1px solid #b7eb8f}
+  .badge-inherit{background:#e6f4ff;color:#0958d9;border:1px solid #91caff}
+  .nav-item{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border:1px solid #f0f0f0;border-radius:8px;margin-bottom:10px;background:#fff;text-decoration:none;color:inherit}
+  .nav-item:hover{border-color:#1677ff;box-shadow:0 2px 8px rgba(22,119,255,.08)}
+  .nav-t{font-weight:600;margin-bottom:2px}
+  .nav-d{font-size:12px;color:rgba(0,0,0,.45)}
+  .tag{font-size:12px;padding:1px 8px;border-radius:4px;background:#f5f5f5;color:rgba(0,0,0,.65);white-space:nowrap}
+  .tag-new{background:#f6ffed;color:#389e0d}
+  .tag-edge{background:#fff1f0;color:#cf1322}
+  h1{font-size:22px;margin:0 0 4px}
+  .meta{color:rgba(0,0,0,.45);font-size:13px;margin-bottom:20px}
+  .note{background:#fffbe6;border:1px solid #ffe58f;border-radius:8px;padding:12px 16px;margin:16px 0;font-size:13px;line-height:1.8}
+</style>
+<div class="wrap">
+  <h1>产品维护能力增强 · 原型图 <span class="badge badge-now">📌 增量基准</span></h1>
+  <div class="meta">
+    子任务 <code>task-260903-产品维护能力增强</code>　·　2026-09-03　·　定稿于闸门 A<br>
+    父任务：<code>task-260903-产品管理页重做</code>（✅ 已交付）
+  </div>
+
+  <div class="note" style="background:#e6f4ff;border-color:#91caff">
+    <b>🕰️ 与父任务原型的关系 —— 请先读这段</b><br><br>
+    父任务的 <a href="../../原型图/index.html">8 份原型</a> <b>仍然是这两个页面的当前基准</b>，<b>没有被本组取代</b>。
+    本子任务只改动<b>两处增量</b>（客户产品加过滤器 · 销售产品的生产料号列变可编辑），页面的整体布局、列顺序、抽屉形态<b>全部沿用父任务原型</b>。<br><br>
+    ⇒ 所以本组<b>不把父任务那 8 份降级为历史快照</b>，而是标为
+    <span class="badge badge-inherit">🔗 继承有效</span>：
+    <b>凡本组未画到的部分，一律以父任务原型为准。</b><br>
+    ⇒ 本组这几份挂 <span class="badge badge-now">📌 增量基准</span>：<b>仅在它们覆盖的范围内</b>取代父任务原型。<br><br>
+    🚫 <b>本组没画的地方不许自由发挥</b> —— 先去父任务原型里找；两处都没有的，停下来问主线（那是需求缺口）。
+  </div>
+
+  <a class="nav-item" href="客户产品-过滤器.html">
+    <div><div class="nav-t">① 客户产品 · 客户过滤器</div><div class="nav-d">工具栏加客户下拉 · 默认「所有客户」· 含未建档客户的文案（AC-1~AC-5）</div></div>
+    <span class="tag tag-new">新增</span>
+  </a>
+
+  <a class="nav-item" href="销售产品-可编辑生产料号.html">
+    <div><div class="nav-t">② 销售产品 · 生产料号可编辑</div><div class="nav-d">常态/悬停/编辑中/保存中/失败 五种状态 · <b>其余 6 列保持只读</b>（AC-6、AC-10、AC-12、AC-13）</div></div>
+    <span class="tag tag-new">新增</span>
+  </a>
+
+  <a class="nav-item" href="边界-过滤空结果与极值.html">
+    <div><div class="nav-t">③ 边界 · 过滤空结果 / 超长输入 / 清空</div><div class="nav-d">命中 0 行时过滤器仍可交互；超长提示；清空后渲染 `—`（AC-12~AC-14）</div></div>
+    <span class="tag tag-edge">边界</span>
+  </a>
+
+  <div class="note">
+    <b>🚨 一条贯穿全组的反向要求</b>：本组<b>只</b>开放「销售产品列表的生产料号」这一个格子。
+    <b>抽屉维持全只读</b>（无保存/新增/删除、无输入控件），销售产品其余 6 列、客户产品全部列<b>都不可编辑</b>。
+    这是 AC-7 的反向断言 —— 还原时若发现编辑能力渗进了抽屉，<b>立刻停下报主线</b>。
+  </div>
+</div>
