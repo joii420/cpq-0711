@@ -33,13 +33,13 @@ class DatasetImportValidationAcTest extends DatasetAcTestBase {
         DatasetFixtureBuilder b = Fixtures.costBasic(probe());
         try {
             // 物料BOM 第 3 行的「组成料号」是红底必填（字段矩阵：component_no / FFFF0000）
-            b.blank("物料BOM", 3, "组成料号");
+            b.blank("物料BOM", 2, "组成料号");
             Response r = DatasetApi.importFile(adminSession(), DatasetApi.COST_BASIC,
                     b.toBytes(), "ac06-required-blank.xlsx");
 
             assertStatus(r, 400, "AC-6");
             List<Map<String, Object>> errors = errorsOf(r);
-            assertHasError(errors, "物料BOM", 3, "组成料号", "必填项为空", "AC-6");
+            assertHasError(errors, "物料BOM", 2, "组成料号", "必填项为空", "AC-6");
             assertEquals(1, errors.size(),
                     "AC-6 要求报告「含且仅含一条」，实际 " + errors.size() + " 条：" + errors);
 
@@ -59,11 +59,12 @@ class DatasetImportValidationAcTest extends DatasetAcTestBase {
     void ti02_axisBlankOverridesFill() {
         DatasetFixtureBuilder b = Fixtures.quote(probe());
         try {
-            // 🚩 AC-7 原文写「年降系数 第 2 行」，但模板里第 2 行是「轴/对比项」标记行，
-            //    且该 sheet 一条数据行都没有（maxRow=2）。⇒ 夹具在第 3 行造一条数据行、轴值留空。
-            //    行号差异已在 test-report 点名，属 AC 文字与模板不符，不是实现缺陷。
-            b.appendCopyOf("年降系数", 2, row -> {
-                row.getCell(0).setBlank();                     // 销售料号（轴，橙底 FFFFC000）留空
+            // 🚩 B-21（2026-09-03）后：建表模板自带的「轴/对比项」标记行已由 stripMarkerRows 删掉，
+            //    而「年降系数」在模板里本来就一条数据行都没有 ⇒ 夹具直接在末尾造一条全新数据行、轴值留空。
+            //    🚫 不能再用 appendCopyOf(sheet, 2, ...) —— 第 2 行现在要么不存在、要么是真数据，
+            //    复制它测的都不是 AC-7 想测的东西。
+            b.appendBlankRow("年降系数", row -> {
+                row.createCell(0).setBlank();                  // 销售料号（轴，橙底 FFFFC000）留空
                 row.createCell(1).setCellValue(1d);            // 年降顺序
                 row.createCell(2).setCellValue("5");           // 年降系数（%/年）
                 row.createCell(4).setCellValue("CNY");         // 货币
@@ -89,12 +90,12 @@ class DatasetImportValidationAcTest extends DatasetAcTestBase {
     void ti03_masterDataMissing() {
         DatasetFixtureBuilder b = Fixtures.costBasic(probe());
         try {
-            b.setText("物料与元素BOM", 3, "元素代码", ELEMENT_ABSENT);
+            b.setText("物料与元素BOM", 2, "元素代码", ELEMENT_ABSENT);
             Response r = DatasetApi.importFile(adminSession(), DatasetApi.COST_BASIC,
                     b.toBytes(), "ac08-master-missing.xlsx");
 
             assertStatus(r, 400, "AC-8");
-            assertHasError(errorsOf(r), "物料与元素BOM", 3, "元素代码", "主数据不存在", "AC-8");
+            assertHasError(errorsOf(r), "物料与元素BOM", 2, "元素代码", "主数据不存在", "AC-8");
         } finally {
             b.close();
         }
@@ -107,12 +108,12 @@ class DatasetImportValidationAcTest extends DatasetAcTestBase {
     void ti04_notANumber() {
         DatasetFixtureBuilder b = Fixtures.costBasic(probe());
         try {
-            b.setText("来料加工费", 3, "加工费", "abc");
+            b.setText("来料加工费", 2, "加工费", "abc");
             Response r = DatasetApi.importFile(adminSession(), DatasetApi.COST_BASIC,
                     b.toBytes(), "ac09-nan.xlsx");
 
             assertStatus(r, 400, "AC-9");
-            assertHasError(errorsOf(r), "来料加工费", 3, "加工费", "不是合法数值", "AC-9");
+            assertHasError(errorsOf(r), "来料加工费", 2, "加工费", "不是合法数值", "AC-9");
         } finally {
             b.close();
         }
@@ -128,10 +129,10 @@ class DatasetImportValidationAcTest extends DatasetAcTestBase {
 
         DatasetFixtureBuilder b = Fixtures.costBasic(probe());
         try {
-            b.blank("物料BOM", 3, "组成料号");                       // ① 必填项为空
-            b.setText("物料与元素BOM", 3, "元素代码", ELEMENT_ABSENT); // ② 主数据不存在
-            b.setText("来料加工费", 3, "加工费", "abc");               // ③ 不是合法数值
-            b.blank("成品其他固定费用", 3, "生产料号");                // ④ 轴列不可为空
+            b.blank("物料BOM", 2, "组成料号");                       // ① 必填项为空
+            b.setText("物料与元素BOM", 2, "元素代码", ELEMENT_ABSENT); // ② 主数据不存在
+            b.setText("来料加工费", 2, "加工费", "abc");               // ③ 不是合法数值
+            b.blank("成品其他固定费用", 2, "生产料号");                // ④ 轴列不可为空
 
             Response r = DatasetApi.importFile(adminSession(), DatasetApi.COST_BASIC,
                     b.toBytes(), "ac10-four-errors.xlsx");
@@ -139,9 +140,9 @@ class DatasetImportValidationAcTest extends DatasetAcTestBase {
             assertStatus(r, 400, "AC-10");
             List<Map<String, Object>> errors = errorsOf(r);
 
-            assertHasError(errors, "物料BOM", 3, "组成料号", "必填项为空", "AC-10");
-            assertHasError(errors, "物料与元素BOM", 3, "元素代码", "主数据不存在", "AC-10");
-            assertHasError(errors, "来料加工费", 3, "加工费", "不是合法数值", "AC-10");
+            assertHasError(errors, "物料BOM", 2, "组成料号", "必填项为空", "AC-10");
+            assertHasError(errors, "物料与元素BOM", 2, "元素代码", "主数据不存在", "AC-10");
+            assertHasError(errors, "来料加工费", 2, "加工费", "不是合法数值", "AC-10");
             assertHasError(errors, "成品其他固定费用", 3, "生产料号", "轴列不可为空", "AC-10");
 
             // 🚫 不许 fail-fast：AC-10 的核心就是「同时列出 4 条，不是只报第一条」

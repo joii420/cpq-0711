@@ -131,6 +131,12 @@ public class DatasetMaintenanceService {
         // 🚫 不写死 dataset=='quote' —— 按 Registry 元数据判定，将来哪套数据集加了这一列都自动跟上。
         // 核价两套的轴本身就是 production_no，已由 axisValue 表达，再出一遍是冗余（契约要求整个省略）。
         boolean hasProductionNo = hasNonAxisColumn(reg, "production_no");
+        // api.md §3 / 需求文档 R-1.6（D-26）：料号类型是「料号的属性」，三套物料表都建了这一列。
+        // 🚫 同样不写死 dataset —— 走 Registry 元数据，将来哪套去掉这一列，键自动跟着消失。
+        boolean hasMaterialType = hasNonAxisColumn(reg, "material_type");
+        // api.md §3 / 需求文档 R-1.7（D-27）：产品分类【只有报价侧】的物料表建了这一列。
+        // 核价两套没有 ⇒ categoryCode / categoryName 两个键整个不出现（AC-61 后半段专门验）。
+        boolean hasCategory = hasNonAxisColumn(reg, "category_code");
         int pg = Math.max(0, page);
         int sz = Math.min(Math.max(1, size), 200);
         boolean hasKw = keyword != null && !keyword.isBlank();
@@ -138,6 +144,11 @@ public class DatasetMaintenanceService {
         String cfgAgg = "(SELECT av, COUNT(DISTINCT sk) AS c, MAX(uat) AS u FROM ("
             + configuredUnion(vs, axis, null) + ") cfg WHERE av IS NOT NULL GROUP BY av)";
         String from = " FROM " + matTable + " m LEFT JOIN " + cfgAgg + " a ON a.av = m." + axis;
+        // 🚫 N+1（AC-61 附加判据）：分类名必须在【同一条 SELECT】里 JOIN 带出，不得逐行查
+        //    —— 逐行查会让 SQL 条数变成 2 + 料号数，正是 backend.md 的硬指标反面。
+        //    product_category.code 有 UNIQUE 约束 ⇒ LEFT JOIN 不会放大行数。
+        //    只挂在分页查询上、不挂 count：总数与 JOIN 无关，少一次连接更省。
+        String fromPage = from + (hasCategory ? " LEFT JOIN product_category pc ON pc.code = m.category_code" : "");
         String lastUpdated = "GREATEST(a.u, COALESCE(m.updated_at, m.created_at))";
 
         // 过滤条件收集：count 与 page 是两条独立 SQL，必须共用同一份 where + 同一份绑定，
@@ -158,7 +169,9 @@ public class DatasetMaintenanceService {
             "SELECT m." + axis + ", m.material_name, m.specification, m.dimension, m.old_material_no,"
                 + " m.unit_weight, COALESCE(a.c, 0), " + lastUpdated
                 + (hasProductionNo ? ", m.production_no" : "")
-                + from + where
+                + (hasMaterialType ? ", m.material_type" : "")
+                + (hasCategory ? ", m.category_code, pc.name" : "")
+                + fromPage + where
                 + partsOrderBy(sortBy, sortDir, axis, lastUpdated)
                 + " LIMIT :lim OFFSET :off");
         bindPartsFilters(pq, hasKw, keyword, configured, vs.size());
@@ -179,8 +192,16 @@ public class DatasetMaintenanceService {
             it.configuredCount = toIntOr0(r[6]);
             it.totalSheetCount = vs.size();
             it.lastUpdatedAt = toOdt(r[7]);
-            // 键的有无按数据集决定：报价恒 put（值可为 null），核价两套压根不 put → 键不出现。
-            if (hasProductionNo) it.putProductionNo(str(r[8]));
+            // 键的有无按数据集决定：物料表建了这一列就恒 put（值可为 null），没建则整个键不出现。
+            // ⚠️ 动态列的下标必须按「实际被拼进 SELECT 的顺序」递进，
+            //    不能各自写死常量 —— 再加一个动态列时写死的下标会静默错位（取到隔壁列的值）。
+            int dyn = 8;
+            if (hasProductionNo) it.putProductionNo(str(r[dyn++]));
+            if (hasMaterialType) it.putMaterialType(str(r[dyn++]));
+            if (hasCategory) {
+                it.putCategoryCode(str(r[dyn++]));
+                it.putCategoryName(str(r[dyn++]));   // ← 来自 LEFT JOIN，不是第二条查询
+            }
             items.add(it);
         }
         return new DsPartsPage(total, items);
@@ -214,8 +235,8 @@ public class DatasetMaintenanceService {
     /**
      * 该数据集的<b>物料表</b>是否把 {@code columnName} 建成了「轴列之外的独立列」。
      *
-     * <p>用于 api.md §3 的 {@code productionNo}：报价物料表有独立的「生产料号」列；
-     * 核价两套的 {@code production_no} 就是轴列本身，不算独立列。
+     * <p>用于 api.md §3 的 {@code productionNo} / {@code materialType}：报价物料表有独立的「生产料号」列；
+     * 核价两套的 {@code production_no} 就是轴列本身，不算独立列。{@code material_type} 三套都有。
      * 判定走 Registry 元数据而非硬编码 datasetKey —— 与建表同源，将来加列自动跟上。
      */
     private boolean hasNonAxisColumn(DatasetRegistry reg, String columnName) {
@@ -821,6 +842,175 @@ public class DatasetMaintenanceService {
             && c.dropdown != null
             && "MASTER".equals(c.dropdown.kind)
             && masterChecker.supports(c.dropdown.masterType);
+    }
+
+    // ==================================================================
+    // §3.5 PUT parts/{axisValue} —— 免版本物料表的单列更新（B-20 / D-31 / AC-65）
+    // ==================================================================
+
+    /**
+     * 免版本物料表的<b>部分更新</b>（D-31 / AC-65）—— 免版本表的<b>第二条写入路径</b>。
+     *
+     * <h3>🚨 为什么不能复用 {@code PlainTableWriter.upsert}</h3>
+     * 那是<b>整行 UPSERT</b>：未传的列会被显式绑成 {@code NULL} 写进去。
+     * 用它实现「只改一列」的结果是<b>把这一行其余字段全清空</b>，而且不报错。
+     * 所以这里发的是真正的部分更新 {@code UPDATE 表 SET <白名单列> WHERE <轴列>}（AC-65 ③）。
+     *
+     * <h3>四条语义（AC-65 逐条验）</h3>
+     * <ol>
+     *   <li><b>白名单</b>：只有 {@link ColumnDef#partEditable} 的列可改，其余一律 400 <b>点名该字段</b>
+     *       —— 🚫 不靠「前端不显示」兜底（AC-65 ②）；</li>
+     *   <li><b>其余列逐字不变</b>（AC-65 ③）；</li>
+     *   <li>{@code source} <b>不动</b> —— 行级来源仍是 {@code IMPORT}，不因改一列翻成 {@code MANUAL}（AC-65 ④）。
+     *       🚫 别顺手加 {@code source = 'MANUAL'}：那会让「这行数据是导入来的」这个事实丢失；</li>
+     *   <li><b>不接升版</b>：免版本表没有 {@code version_no}，也不写 {@code _history}（AC-65 ⑤）。</li>
+     * </ol>
+     *
+     * <h3>与导入的冲突消解（D-29）</h3>
+     * 这里改过的 {@code production_no} 不会被下次导入的空格子打回 ——
+     * {@code PlainTableWriter} 对 {@code preserveOnNull} 的列走 {@code COALESCE}（AC-62）。
+     * ⚠️ <b>每新开放一个可编辑字段，都要单独回答「下次导入会不会把它打回」</b>，不能默认继承。
+     *
+     * <h3>🚩 {@code null} 与「键缺席」必须区分（跨端契约，api.md §3.5）</h3>
+     * <ul>
+     *   <li><b>键存在、值为 {@code null}</b> → 该列写 {@code NULL}（<b>清空</b>）；</li>
+     *   <li><b>键不存在</b> → 该列<b>不进</b> {@code UPDATE SET}，一个字节不动。</li>
+     * </ul>
+     * 🚫 <b>严禁用 {@code map.get(k) != null} 判断「这个字段要不要改」</b> ——
+     * {@code {"production_no": null}} 与 {@code {}} 在 {@code get()} 下<b>返回同一个 null</b>，
+     * 「清空」会被当成「没传」而<b>静默不改</b>，症状是「点了清空、提示保存成功、值还在」。
+     * 本方法遍历 {@code entrySet()}，天然按「键在不在」判定 —— 改写时不要退回 {@code get()}。
+     *
+     * <h3>键名接受两种写法</h3>
+     * DB 列名 {@code production_no}（契约正名）与其小驼峰 {@code productionNo}
+     *（= {@code GET /parts} item 里的键名）都接受，解析到同一列。
+     * 前端从列表拿到的是小驼峰，写回时若被迫做一次蛇形转换，转错了就是<b>静默改不到</b>。
+     * 🚫 白名单强度不因此降低：解析后仍按 {@link ColumnDef#partEditable} 判定，不在白名单一律 400 点名。
+     *
+     * <p>🚫 N+1：SQL 恒为 2 条（UPDATE 1 + 回读 1），与传入字段数无关。
+     *
+     * @param patch 字段名 → 新值。键可以是 DB 列名或其小驼峰形式；值为 {@code null} 表示清空该列
+     */
+    @Transactional
+    public DsPartPatchResult updatePart(String dataset, String axisValue,
+                                        Map<String, Object> patch, String operator) {
+        DatasetRegistry reg = registry(dataset);
+        SheetDef material = materialSheet(reg);
+        String table = SqlIdent.of(material.tableName);
+        String axis = SqlIdent.of(reg.axisColumn());
+
+        if (axisValue == null || axisValue.isBlank()) {
+            throw new BusinessException(400, "缺少料号");
+        }
+        if (patch == null || patch.isEmpty()) {
+            throw new BusinessException(400, "未提供任何待更新字段");
+        }
+
+        // ── 白名单 + 取值校验（一次列全，与导入 Phase 1 同一口径：先 trim，超长报错不截断）
+        List<String> setSql = new ArrayList<>();
+        Map<String, Object> bind = new LinkedHashMap<>();
+        Map<String, Object> echo = new LinkedHashMap<>();
+        int i = 0;
+        // 🚩 遍历 entrySet ⇒ 判据是「键在不在」，不是「值是不是 null」。
+        //    传了 null 的键会走到下面 coerce → null → SET col = NULL（清空）；没传的键压根不进循环。
+        for (Map.Entry<String, Object> e : patch.entrySet()) {
+            ColumnDef c = resolveEditableColumn(material, e.getKey());
+            if (c == null || !c.persisted || !c.partEditable) {
+                // 🚩 AC-65 ②：必须点名字段。笼统的「字段不允许编辑」在前端排查时等于没报。
+                throw new BusinessException(400,
+                    "字段「" + e.getKey() + "」不允许直接编辑（可编辑字段：" + editableNames(material) + "）");
+            }
+            Integer max = DatasetValues.maxLength(c);
+            if (max != null && !ValueNormalizer.isBlank(e.getValue())
+                    && ValueNormalizer.toRawString(e.getValue()).length() > max) {
+                throw new BusinessException(400,
+                    "列「" + c.label + "」" + DatasetValidationReasons.tooLong(max));
+            }
+            Object v = DatasetValues.coerce(c, e.getValue());   // 🚫 不截断；空 → null（= 清空该列）
+            String pn = "v" + (i++);
+            setSql.add(c.name + " = :" + pn);
+            bind.put(pn, v);
+            echo.put(e.getKey(), v);   // 回显用调用方发来的键名，前端回填时不必再做一次转换
+        }
+
+        // 🚫 刻意不写 source —— 保持原值（AC-65 ④）。updated_at / updated_by 是审计列，必须更新。
+        String sql = "UPDATE " + table + " SET " + String.join(", ", setSql)
+                   + ", updated_at = now(), updated_by = :op WHERE " + axis + " = :axis";
+        Query q = em.createNativeQuery(sql);
+        for (Map.Entry<String, Object> b : bind.entrySet()) q.setParameter(b.getKey(), b.getValue());
+        q.setParameter("op", operator);
+        q.setParameter("axis", axisValue);
+        int affected = q.executeUpdate();
+        if (affected == 0) {
+            throw new BusinessException(404, "料号不存在: " + axisValue);
+        }
+
+        // 回读审计信息（第 2 条也是最后一条 SQL）
+        Object[] back = (Object[]) em.createNativeQuery(
+                "SELECT updated_at, source FROM " + table + " WHERE " + axis + " = :axis")
+            .setParameter("axis", axisValue)
+            .getSingleResult();
+
+        DsPartPatchResult out = new DsPartPatchResult();
+        out.dataset = reg.datasetKey();
+        out.axisValue = axisValue;
+        out.updated = echo;
+        out.updatedAt = toOdt(back[0]);
+        out.source = str(back[1]);
+        return out;
+    }
+
+    /** 该数据集的物料表 SheetDef（列表 / 单列更新的落点）。 */
+    private SheetDef materialSheet(DatasetRegistry reg) {
+        for (SheetDef s : reg.sheets()) {
+            if (reg.materialTable().equals(s.tableName)) return s;
+        }
+        throw new BusinessException(500, "数据集 " + reg.datasetKey() + " 未声明物料表");
+    }
+
+    /**
+     * 把请求里的字段名解析成物料表的列：先按 DB 列名精确匹配，再按<b>小驼峰</b>匹配
+     *（{@code productionNo} → {@code production_no}）。
+     *
+     * <p>为什么要认小驼峰：{@code GET /parts} 的 item 键是小驼峰，前端写回时若必须自己转蛇形，
+     * 转错了的表现是<b>字段名不在白名单 → 400</b>（还算好）或者更糟的静默不改。
+     * 两种写法都认，代价只是这一个方法。
+     * <p>🚫 <b>不是</b>放宽白名单：解析不到列、或解析到的列没打 {@code partEditable}，调用方一样吃 400。
+     */
+    private static ColumnDef resolveEditableColumn(SheetDef material, String field) {
+        if (field == null || field.isBlank()) return null;
+        ColumnDef exact = material.column(field);
+        if (exact != null) return exact;
+        for (ColumnDef c : material.persistedColumns()) {
+            if (toCamel(c.name).equals(field)) return c;
+        }
+        return null;
+    }
+
+    /** {@code production_no} → {@code productionNo}。 */
+    private static String toCamel(String snake) {
+        StringBuilder sb = new StringBuilder(snake.length());
+        boolean up = false;
+        for (int i = 0; i < snake.length(); i++) {
+            char ch = snake.charAt(i);
+            if (ch == '_') { up = true; continue; }
+            sb.append(up ? Character.toUpperCase(ch) : ch);
+            up = false;
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 白名单里的列名，用于 400 报文提示「那到底能改什么」。
+     * <p>两种写法都列出来（{@code production_no / productionNo}），省得调用方拿到 400 之后
+     * 还要猜是不是大小写/下划线的问题。
+     */
+    private static String editableNames(SheetDef material) {
+        List<String> names = new ArrayList<>();
+        for (ColumnDef c : material.persistedColumns()) {
+            if (c.partEditable) names.add(c.name + " / " + toCamel(c.name));
+        }
+        return names.isEmpty() ? "无" : String.join("，", names);
     }
 
     // ==================================================================

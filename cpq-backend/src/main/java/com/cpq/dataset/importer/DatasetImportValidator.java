@@ -36,6 +36,14 @@ import java.util.Set;
  *   <li>必填：红底列 + <b>轴列</b>（凌驾底色，AC-7）+ 免版本表主键列（AC-45）</li>
  *   <li>类型：{@code numeric} 列可解析 BigDecimal（AC-9）；{@code integer} 列可解析整数</li>
  *   <li>长度：按 {@code ColumnDef.pgType} 的 {@code varchar(n)}，超长报错，<b>🚫 禁止静默截断</b>（AC-40）</li>
+ *   <li><b>受控值域</b>：{@code strictOptions} 声明的列（当前只有三套物料表的「类型」）
+ *       —— 先 trim 再比对，域外值整份拒收并<b>点名允许值域</b>（D-30 / AC-64）；
+ *       空值放行（{@code required=false} 不因加枚举而变严）</li>
+ *   <li><b>产品分类</b>：{@code categoryRef} 列按 {@code product_category} 的 code → name 顺序解析，
+ *       解析成功<b>改写行值为 code</b>，解析失败整份拒收；空值填 {@code 000000}（D-27 / AC-59 / AC-60）。
+ *       🚫 不过滤 {@code status}（R-1.7 第 4 条）</li>
+ *   <li><b>同一份 Excel 内主键重复</b>：只查免版本表，点名主键值与两个行号后整份拒收（D-28 / AC-63）。
+ *       带版本表同轴值多行是合法的，<b>不查</b></li>
  *   <li>主数据存在性：{@code masterCheck=true} 的列批量预取（AC-8）；
  *       其中<b>客户编号严格校验</b>（D-19 / AC-45 / AC-46）—— 不在 {@code customer.code} 中整份拒收，
  *       reason 用 {@code 客户编号未在客户档案中登记}，与其他主数据的 {@code 主数据不存在} 区分</li>
@@ -44,6 +52,7 @@ import java.util.Set;
  * <h3>N+1（B-12 / AC-44）</h3>
  * 逐行循环体内<b>零查询</b>：先全量扫一遍收集待校验编码 → 每个 masterType 一条 {@code IN} 查询
  * → 再逐行比对内存 Set。长度 / 类型元数据来自 {@code ColumnDef.pgType}（Registry 常量，零查询）。
+ * 产品分类同一手法（③c 一条 SQL 解析全部候选值）；主键查重与枚举校验是纯内存，零查询。
  */
 @ApplicationScoped
 public class DatasetImportValidator {
@@ -96,6 +105,24 @@ public class DatasetImportValidator {
             existing.put(e.getKey(), masters.existing(e.getKey(), e.getValue()));   // ← 循环体外的常数条查询
         }
 
+        // ── ③c 产品分类批量解析（D-27 / AC-59）：整份文件【一条】SQL，与料号数无关。
+        //    这里只做「解析」，报错与默认值填充在下面的行级循环里做（循环体内零查询）。
+        Set<String> categoryValues = new LinkedHashSet<>();
+        for (ParsedSheet ps : sheets) {
+            if (!ps.missingHeaders.isEmpty()) continue;
+            for (ColumnDef c : ps.spec.persistedColumns()) {
+                if (!c.categoryRef) continue;
+                for (ParsedRow r : ps.rows) {
+                    String v = r.get(c.name);
+                    if (!ValueNormalizer.isBlank(v)) categoryValues.add(ValueNormalizer.toRawString(v));
+                }
+            }
+        }
+        Map<String, String> categoryCodes = masters.resolveCategoryCodes(categoryValues);
+
+        // ── ③d 同一份 Excel 内主键重复（D-28 / AC-63）
+        validateDuplicateKeys(sheets, errors);
+
         // ── ③b 轴值登记校验（D-24 / AC-52）：带版本 sheet 的每个轴值必须已在本数据集的物料表登记
         //    判定集合 = 「本次 Excel 物料 sheet 里的轴值」∪「库中物料表已有的轴值」。
         //    前者不可省：同一份文件内「先登记后引用」是合法的 —— 本次导入会把物料表一起写进去，
@@ -122,7 +149,11 @@ public class DatasetImportValidator {
                         } else if (c.required || pkColumns.contains(c.name)) {
                             errors.add(err(spec, row, c, DatasetValidationReasons.REQUIRED_EMPTY));
                         }
-                        continue;   // 空值不再做类型 / 长度 / 主数据校验
+                        // 🚩 D-27 / AC-60：产品分类留空 → 在【这里】填默认分类 000000。
+                        //    🚫 不能靠 DB 列 DEFAULT —— PlainTableWriter 是全列 INSERT、空值显式绑 NULL，
+                        //    PG 的列 DEFAULT 在这条路径上永不触发（R-1.7 实证结论）。
+                        if (c.categoryRef) row.values().put(c.name, ColumnDef.DEFAULT_CATEGORY_CODE);
+                        continue;   // 空值不再做类型 / 长度 / 枚举 / 主数据校验（AC-64 ④ 依赖这条）
                     }
 
                     String v = ValueNormalizer.toRawString(raw);
@@ -147,6 +178,29 @@ public class DatasetImportValidator {
                         }
                     }
 
+                    // 受控值域（D-30 / AC-64）：只对 strictOptions 声明的列生效。
+                    // v 已经过 toRawString 的 strip ⇒「先 trim 再校验」，`零件␣` 在这里等于 `零件`。
+                    // 入库值同样走 DatasetValues.coerce → toRawString ⇒ 库里不留空格。
+                    if (c.enforceEnum && c.dropdown != null && c.dropdown.options != null
+                            && !c.dropdown.options.contains(v)) {
+                        errors.add(err(spec, row, c,
+                                DatasetValidationReasons.notInEnum(v, c.dropdown.options)));
+                        continue;
+                    }
+
+                    // 产品分类（D-27 / AC-59）：解析成 code 后【改写回行值】—— Excel 填名称也能入库存 code。
+                    // 纯内存查表，查询在 ③c 已经一次性做完（循环体内零查询）。
+                    if (c.categoryRef) {
+                        String code = categoryCodes.get(v);
+                        if (code == null) {
+                            errors.add(err(spec, row, c,
+                                    DatasetValidationReasons.categoryNotRegistered(v)));
+                        } else {
+                            row.values().put(c.name, code);
+                        }
+                        continue;
+                    }
+
                     // 主数据存在性（纯内存 Set 比对）
                     String mt = masterTypeOf(c);
                     if (mt != null) {
@@ -157,6 +211,61 @@ public class DatasetImportValidator {
             }
         }
         return errors;
+    }
+
+    /** 主键去重键分隔符 0x1F —— 与 {@code PlainTableWriter} / 行指纹同一约定（业务值不可能包含）。 */
+    private static final char KEY_SEP = (char) 0x1F;
+
+    /**
+     * 同一份 Excel 内主键重复 → 整份拒收（D-28 / AC-63）。
+     *
+     * <p><b>只管免版本表</b>：带版本表（如「物料BOM」）走的是整组升版、不是主键 UPSERT，
+     * 同一轴值下多行是<b>合法</b>的 —— 在那里查重会误伤正常文件（AC-63 的反向断言专门守这条）。
+     *
+     * <p><b>为什么必须在 Phase 1 拦</b>：{@code PlainTableWriter} 为绕开 PG 的
+     * {@code ON CONFLICT DO UPDATE command cannot affect row a second time} 做了「按主键去重、
+     * 后出现的行胜出」—— 绕对了但绕过头，用户的笔误会被<b>静默丢行</b>。
+     * 该做的是在这里报错，不是在那里悄悄丢。
+     *
+     * <p>主键任一段为空的行跳过：那已经由 AC-45 的必填分支报过「必填项为空」，
+     * 再报一条「主键重复」只会让报告变吵（多行空主键会互相"重复"）。
+     *
+     * <p>🚫 N+1：纯内存，零查询。
+     */
+    private void validateDuplicateKeys(List<ParsedSheet> sheets, List<DsValidationError> errors) {
+        for (ParsedSheet ps : sheets) {
+            SheetDef spec = ps.spec;
+            if (spec.versioned || spec.primaryKeyColumns.isEmpty()) continue;
+            if (!ps.missingHeaders.isEmpty()) continue;
+
+            StringBuilder labels = new StringBuilder();
+            for (String c : spec.primaryKeyColumns) {
+                ColumnDef cd = spec.column(c);
+                if (labels.length() > 0) labels.append(" + ");
+                labels.append(cd == null ? c : cd.label);
+            }
+
+            Map<String, Integer> firstRowOf = new LinkedHashMap<>();
+            for (ParsedRow row : ps.rows) {
+                StringBuilder key = new StringBuilder();
+                StringBuilder shown = new StringBuilder();
+                boolean anyBlank = false;
+                for (String c : spec.primaryKeyColumns) {
+                    String raw = row.get(c);
+                    if (ValueNormalizer.isBlank(raw)) { anyBlank = true; break; }
+                    String v = ValueNormalizer.toRawString(raw);
+                    key.append(KEY_SEP).append(v);
+                    if (shown.length() > 0) shown.append(" / ");
+                    shown.append(v);
+                }
+                if (anyBlank) continue;
+                Integer first = firstRowOf.putIfAbsent(key.toString(), row.excelRow());
+                if (first != null) {
+                    errors.add(new DsValidationError(spec.sheetName, row.excelRow(), labels.toString(),
+                            DatasetValidationReasons.duplicateKey(shown.toString(), first, row.excelRow())));
+                }
+            }
+        }
     }
 
     /**

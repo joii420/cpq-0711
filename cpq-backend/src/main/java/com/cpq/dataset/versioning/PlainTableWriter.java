@@ -61,6 +61,10 @@ public class PlainTableWriter {
 
         // 同一份 Excel 里主键重复 -> PG 报「ON CONFLICT DO UPDATE command cannot affect row a second time」。
         // 按主键去重，后出现的行胜出（与「按主键覆盖更新」语义一致）。
+        // 🚩 D-28 / AC-63：正常导入路径【走不到这里】—— Phase 1 的 DatasetImportValidator#validateDuplicateKeys
+        //    已经把「同一份 Excel 内主键重复」整份拒收了（原来的静默丢行是 D-28 要修的 bug）。
+        //    保留本段是兜底：维护端保存等非导入调用方仍可能传进重复行，去重比让 PG 抛 500 好。
+        //    🚫 别把它当成「重复是允许的」—— 允许与否由 Phase 1 说了算。
         Map<String, Map<String, Object>> deduped = new LinkedHashMap<>();
         for (Map<String, Object> r : rows) {
             StringBuilder key = new StringBuilder();
@@ -77,7 +81,16 @@ public class PlainTableWriter {
         List<String> setClauses = new ArrayList<>();
         for (ColumnDef c : dbCols) {
             if (pk.contains(c.name)) continue;                  // 主键列不更新
-            setClauses.add(c.name + " = EXCLUDED." + c.name);
+            if (c.preserveOnNull) {
+                // 🚩 D-29 / AC-62：该列有【第二条写入路径】（PUT /dataset/{dataset}/parts/{axisValue}），
+                //    Excel 空着必须保留库里的旧值，否则页面维护的成果每次导入都被打回，
+                //    「能改生产料号」就成了骗人的按钮。Excel 有值仍以 Excel 为准。
+                // 🚫 只有 preserveOnNull 的列走 COALESCE —— 其余列的「Excel 整行覆盖」语义不变
+                //    （AC-62 用 specification 在同一次导入里反向验：置空必须真的变 NULL）。
+                setClauses.add(c.name + " = COALESCE(EXCLUDED." + c.name + ", " + table + "." + c.name + ")");
+            } else {
+                setClauses.add(c.name + " = EXCLUDED." + c.name);
+            }
         }
         setClauses.add("source = EXCLUDED.source");
         setClauses.add("updated_at = now()");

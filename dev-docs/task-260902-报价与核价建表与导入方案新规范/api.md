@@ -6,6 +6,13 @@
 
 ## 0. 公共约定
 
+> 🚩 **2026-09-03 · 交付后模型变更 D-26（需求文档 R-1.6）**：料号类型从「BOM 行的属性」改为「料号的属性」。
+> 契约影响面仅一处 —— §3 `GET parts` 的 item 新增 **`materialType`**（见该节）。
+> 服务端连带（不进契约但会被前端看到）：三套 `物料BOM` sheet 的元数据里
+> 报价「投入类型」/ 核价「组成类型」两列**已移除**，`GET /dataset/{dataset}/sheets` 不再下发它们；
+> 三套 `物料` sheet 的列里新增「类型」。取值域 `零件` / `外购件`，选填。
+> 📌 两个旧列都是行指纹比对项，删列后现存行指纹必变 ⇒ 删列后的**首次导入必然整组升版**（AC-58 专门验，是预期行为）。
+
 **`{dataset}` 路径参数**（三取一，非法值返回 404）：
 
 | 值 | 数据集 | 轴字段 | 带版本 sheet 数 |
@@ -23,6 +30,7 @@
 
 **权限**：写端点（`PUT rows`、`POST import`）**仅** `PRICING_MANAGER` / `SYSTEM_ADMIN`（AC-31）；
 读端点再加上 `SALES_REP` / `SALES_MANAGER`。
+🚦 **唯一例外：`PUT /dataset/{dataset}/parts/{axisValue}`（§3.5）四个角色都可调** —— 用户在知悉风险后的裁决（D-31），不是遗漏。
 
 🚩 **2026-09-03 更正**：本文档原写的 `SALES` **角色不存在**。实查 `user` 表，项目真实角色仅四个：
 `SYSTEM_ADMIN` / `PRICING_MANAGER` / `SALES_MANAGER` / `SALES_REP`。
@@ -64,7 +72,7 @@
 
 - `row` = **Excel 物理行号**（表头占 1~2 行，数据从第 3 行起；免版本 sheet 无第 2 行，数据从第 2 行起）。
 - 🚫 **必须一次返回全部错误**，不许遇错即停（AC-10）。
-- `reason` 取值封闭集：`必填项为空` / `轴列不可为空` / `主数据不存在` / `不是合法数值` / `不是合法整数` / `超出长度上限 {n}` / `sheet「{名}」不属于{数据集中文名}数据集` / `表头列名与规范不一致：缺少「{列名}」` / **`客户编号未在客户档案中登记`**（D-19，仅报价 `客户料号` sheet） / **`轴值未在物料表登记`**（D-24，全部带版本 sheet）。
+- `reason` 取值封闭集：`必填项为空` / `轴列不可为空` / `主数据不存在` / `不是合法数值` / `不是合法整数` / `超出长度上限 {n}` / `sheet「{名}」不属于{数据集中文名}数据集` / `表头列名与规范不一致：缺少「{列名}」` / **`客户编号未在客户档案中登记`**（D-19，仅报价 `客户料号` sheet） / **`轴值未在物料表登记`**（D-24，全部带版本 sheet） / **`产品分类「{值}」未在产品分类主数据中登记`**（D-27，仅报价 `物料` sheet） / **`值「{值}」不在允许值域：{允许值域}`**（D-30，三套 `物料` sheet 的「类型」列） / **`主键「{值}」重复：第 {a} 行与第 {b} 行`**（D-28，全部免版本 sheet）。
 
 **服务端异常 500**：Phase 2 整事务回滚，`message` 为 `写入失败，已回滚：{原因}`。
 
@@ -117,7 +125,8 @@
   "items": [
     { "axisValue": "3120014539", "materialName": "主料1", "specification": null,
       "dimension": "3.5×3.5×0.6", "oldMaterialNo": "8DLX.550.653", "unitWeight": null,
-      "productionNo": null,
+      "productionNo": null, "materialType": "零件",
+      "categoryCode": "000000", "categoryName": "默认分类",
       "configuredCount": 6, "totalSheetCount": 9, "lastUpdatedAt": "2026-09-03T10:12:00+08:00" }
   ]
 }}
@@ -127,6 +136,85 @@
 - 🚩 **`productionNo`（2026-09-03 补）**：`ds_quote_material` 建了 **7 列**（销售料号/品名/规格/尺寸/旧料号/单重/**生产料号**），
   本响应体原先只列了 6 个、漏掉生产料号 —— 由「产品管理优化」会话指出，属**契约疏漏修补**（响应体本就该覆盖表全部列），非扩范围。
   `dataset=quote` 时该字段有值；`cost-basic` / `cost-detail` 的物料表**没有**这一列（它们的轴本身就是生产料号），返回时**省略该字段**，不要返 null。
+- 🚩 **`materialType`（2026-09-03 补，D-26 / 需求文档 R-1.6）**：料号类型，取值域 **`零件` / `外购件`**，**可空**（`null` = 尚未分类）。
+  三套数据集的物料表**都**建了这一列（`ds_quote_material` / `ds_cost_basic_material` / `ds_cost_detail_material`），
+  ⇒ **三套的键都恒出现**，该料号没填就是 `"materialType": null`（与 `specification` / `dimension` 的空值口径一致）。
+  与 `productionNo` 同一套判定口径：**键的有无由「数据集的物料表有没有这一列」决定，不由「行的值」决定**，
+  服务端按 Registry 元数据判断而非硬编码 `dataset`。
+
+- 🚩 **`categoryCode` / `categoryName`（2026-09-03，D-27 / AC-61）**：产品分类编码与显示名。
+  **只有 `dataset=quote`** 下发这两个键（只有 `ds_quote_material` 建了 `category_code` 列）；`cost-basic` / `cost-detail` **整个键不出现**，与 `productionNo` 同口径。
+  `categoryName` 由后端 `LEFT JOIN product_category` 在**同一条 SELECT** 里带出 —— 🚫 不逐行查，该端点 SQL 条数恒为 2（count + page）。
+  `categoryCode` 恒非空（导入 Phase 1 对空格子填 `000000`）；`categoryName` 在分类被删时可能为 `null`，此时前端显示 code 本身。
+
+---
+
+## 3.5 `PUT /dataset/{dataset}/parts/{axisValue}` — 料号单列更新（2026-09-03 新增，D-31 / AC-65）
+
+> 🚩 **免版本表的第二条写入路径。** 原规则「免版本表只能经导入通道写入」已由 D-31 作废。
+> ⚠️ 电镀方案**仍然只读** —— 本次开放的只有 `ds_quote_material.production_no` 一列。
+
+**请求 body**：`{ "<字段名>": <值> }`，可一次传多列。
+
+字段名**两种写法都接受**：DB 列名 `production_no`（正名）与其小驼峰 `productionNo`
+（= §3 `GET /parts` item 里的键名）。前端从列表拿到的是小驼峰，写回时不必再自己转蛇形。
+
+```json
+{ "production_no": "P-3120014539" }
+{ "productionNo": "P-3120014539" }     // 等价
+```
+
+🚩 **`null` 与「键缺席」是两件事，必须区分**：
+
+| body | 含义 |
+|---|---|
+| `{ "productionNo": "X" }` | 该列改成 `X` |
+| `{ "productionNo": null }` | 该列**清空**（写 `NULL`） |
+| `{}` | 400 `未提供任何待更新字段` |
+| 不传 `productionNo` 这个键 | 该列**一个字节不动** |
+
+⚠️ 后端**不得**用 `map.get(k) != null` 判断「这个字段要不要改」——
+`{"productionNo": null}` 与 `{}` 在 `get()` 下返回同一个 `null`，
+「清空」会被当成「没传」而**静默不改**，症状是「点了清空、提示保存成功、值还在」。
+判据必须是**键在不在**（`containsKey` / 遍历 `entrySet`）。
+
+**`updated` 回显用调用方发来的键名**（发 `productionNo` 就回 `productionNo`），前端可直接回填。
+
+**成功 200**
+
+```json
+{ "code": 200, "data": {
+  "dataset": "quote",
+  "axisValue": "S-3120014539",
+  "updated": { "production_no": "P-3120014539" },
+  "updatedAt": "2026-09-03T18:40:11+08:00",
+  "source": "IMPORT"
+}}
+```
+
+**语义**（AC-65 逐条验）：
+
+| # | 规则 |
+|---|---|
+| ① | **白名单**：只有 `ColumnDef.partEditable` 的列可改。当前白名单 = `ds_quote_material.production_no` **一列**。不在白名单 / 不存在的字段 → **400 并点名该字段**，🚫 不靠「前端不显示」兜底 |
+| ② | **部分更新**：只写传入的列，该行其余列**逐字不变**。🚫 后端不得复用整行 UPSERT（那会把未传字段写成 `NULL`） |
+| ③ | `source` **保持原值**（行级来源仍是 `IMPORT`，不因改一列翻成 `MANUAL`） |
+| ④ | `updated_at` 变新、`updated_by` = 调用者 |
+| ⑤ | **不接升版**：免版本表没有 `version_no`，也不写 `_history` |
+| ⑥ | 与导入的冲突消解：本端点改过的 `production_no` **不会**被下次导入的空格子打回（导入侧对该列走 `COALESCE(EXCLUDED.x, 旧值)`，D-29 / AC-62）。⚠️ **每新开放一个可编辑字段都要单独回答这个问题**，不能默认继承 |
+
+**错误**：
+
+| 状态 | 场景 | message |
+|---|---|---|
+| 400 | 字段不在白名单 | `字段「specification」不允许直接编辑（可编辑字段：production_no / productionNo）` |
+| 400 | body 为空 | `未提供任何待更新字段` |
+| 400 | 值超列长度上限 | `列「生产料号」超出长度上限 128` |
+| 404 | 料号不存在 | `料号不存在: {axisValue}` |
+| 404 | dataset 非法 | `数据集不存在: {dataset}` |
+
+**权限**：🚦 **`SALES_REP` / `SALES_MANAGER` / `PRICING_MANAGER` / `SYSTEM_ADMIN` 四个角色都可调**。
+⚠️ 这与本文件其他写端点（仅 `PRICING_MANAGER` / `SYSTEM_ADMIN`）**刻意不同**，是用户在知悉风险后的裁决（D-31 留痕），🚫 不要「顺手对齐」改回两角色。
 
 ---
 
@@ -294,7 +382,7 @@
 
 ## 10. 回写 `main-api.md`
 
-本任务新增 **9 个端点**，测试完成后、合并 master 前必须回写 `dev-docs/main-api.md`（`task-docs.md §2.5`）：
+本任务新增 **10 个端点**，测试完成后、合并 master 前必须回写 `dev-docs/main-api.md`（`task-docs.md §2.5`）：
 
 ```
 POST /api/cpq/dataset/{dataset}/import
@@ -303,6 +391,7 @@ GET  /api/cpq/dataset/{dataset}/parts
 GET  /api/cpq/dataset/{dataset}/parts/{axisValue}/overview
 GET  /api/cpq/dataset/{dataset}/parts/{axisValue}/sheets/{sheetKey}/rows
 GET  /api/cpq/dataset/{dataset}/parts/{axisValue}/sheets/{sheetKey}/versions
+PUT  /api/cpq/dataset/{dataset}/parts/{axisValue}                                  ← 2026-09-03 新增（D-31）
 PUT  /api/cpq/dataset/{dataset}/parts/{axisValue}/sheets/{sheetKey}/rows
 GET  /api/cpq/dataset/{dataset}/lookup/{masterType}
 GET  /api/cpq/dataset/{dataset}/plating-schemes

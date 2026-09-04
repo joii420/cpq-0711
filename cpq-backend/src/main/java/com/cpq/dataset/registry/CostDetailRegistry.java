@@ -36,7 +36,11 @@ public class CostDetailRegistry extends AbstractDatasetRegistry {
                 col("specification", "规格", "VALUE", "STRING", "varchar(128)", false, false),
                 col("dimension", "尺寸", "VALUE", "STRING", "varchar(128)", false, false),
                 col("old_material_no", "旧料号", "VALUE", "STRING", "varchar(128)", false, false),
-                col("unit_weight", "单重", "VALUE", "DECIMAL", "numeric(26,12)", false, false)
+                col("unit_weight", "单重", "VALUE", "DECIMAL", "numeric(26,12)", false, false),
+                // D-30（AC-64）：硬枚举 零件/外购件，域外值 Phase 1 整份拒收；空值仍放行。
+                // 三套物料表都有这一列 ⇒ 三套都校验（与 D-27 的「产品分类只加报价侧」不是同一批）。
+                col("material_type", "类型", "VALUE", "STRING", "varchar(128)", false, false)
+                        .strictOptions(QuoteRegistry.MATERIAL_TYPE)
         )));
 
         // ── 02 · sheet「物料BOM」 → ds_cost_detail_material_bom（带版本）
@@ -44,7 +48,6 @@ public class CostDetailRegistry extends AbstractDatasetRegistry {
                 "production_no", "生产料号", List.of(
                 col("production_no", "生产料号", "AXIS", "STRING", "varchar(128)", true, false),
                 col("item_seq", "项次", "VALUE", "NUMBER", "integer", true, false),
-                col("component_type", "组成类型", "VALUE", "STRING", "varchar(128)", false, true),
                 col("component_no", "组成料号", "VALUE", "STRING", "varchar(128)", true, true),
                 col("operation_no", "工序编号", "SUBDIM", "STRING", "varchar(128)", false, true).master("process", "operation_no_name"),
                 nameCol("operation_no_name", "工序名称", "operation_no", "process_master", "process_no", "process_name"),

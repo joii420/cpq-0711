@@ -30,9 +30,20 @@ import java.util.function.Consumer;
  */
 final class DatasetFixtureBuilder {
 
-    /** 带版本 sheet：第 1 行表头、第 2 行「轴/对比项」标记、数据从第 3 行起（0-based：2）。 */
-    static final int VERSIONED_FIRST_DATA_ROW0 = 2;
-    /** 免版本 sheet：无标记行，数据从第 2 行起（0-based：1）。 */
+    /**
+     * 🚩 <b>B-21（2026-09-03）</b>：所有 sheet 一律「第 1 行表头、第 2 行起数据」（0-based：1）。
+     *
+     * <p>原先带版本 sheet 是 2（跳过「轴/对比项」标记行）。用户澄清
+     * <b>「正式的导入数据没有标记行」</b> —— 标记行只存在于设计沟通用的建表模板里。
+     * 生产侧 {@code DatasetSheetParser.firstDataRow} 已收敛为常量 2，这里必须同步，
+     * 否则夹具的行号与被测实现<b>各说各话</b>，红绿都不可信。
+     *
+     * <p>⚠️ 建表模板里那一行仍然物理存在 ⇒ {@link #from(Path)} 会调 {@link #stripMarkerRows()}
+     * 把它删掉，让夹具字节形态与真实导入数据一致。删掉后模板的第一条数据行
+     * <b>物理行号从 3 变成 2</b>，本包里按「3」写死的断言已同步下移。
+     */
+    static final int VERSIONED_FIRST_DATA_ROW0 = 1;
+    /** 免版本 sheet：数据从第 2 行起（0-based：1）。与带版本同值，保留两个常量只为调用点可读。 */
     static final int PLAIN_FIRST_DATA_ROW0 = 1;
 
     private final Workbook wb;
@@ -90,7 +101,9 @@ final class DatasetFixtureBuilder {
             throw new IllegalStateException("模板不存在：" + template);
         }
         try (InputStream in = Files.newInputStream(template)) {
-            return new DatasetFixtureBuilder(new XSSFWorkbook(in));
+            DatasetFixtureBuilder b = new DatasetFixtureBuilder(new XSSFWorkbook(in));
+            b.stripMarkerRows();     // B-21：建表模板自带标记行，真实导入数据没有 —— 一律删掉
+            return b;
         } catch (IOException e) {
             throw new IllegalStateException("模板不可读（BadZipFile 属于此类）：" + template, e);
         }
@@ -236,6 +249,69 @@ final class DatasetFixtureBuilder {
             mutate.accept(dst);
         }
         return this;
+    }
+
+    /**
+     * 在 sheet 末尾追加一条<b>全新空行</b>，由 {@code mutate} 逐格填值。
+     *
+     * <p>🚩 B-21 后新增：原来「造一条数据行」的写法是 {@code appendCopyOf(sheet, 2, ...)}
+     * —— 复制第 2 行（标记行）再覆盖几格。标记行被 {@link #stripMarkerRows()} 删掉之后
+     * 第 2 行不再存在，那种写法会直接抛异常；而改成复制表头行会把中文列名当数据带进去。
+     * 需要「从零造一行」时用本方法，不要再去复制某一行。
+     */
+    DatasetFixtureBuilder appendBlankRow(String sheetName, Consumer<Row> mutate) {
+        Sheet s = sheet(sheetName);
+        Row dst = s.createRow(s.getLastRowNum() + 1);
+        if (mutate != null) {
+            mutate.accept(dst);
+        }
+        return this;
+    }
+
+    /**
+     * 删除建表模板里的「轴 / 对比项」标记行（B-21）。
+     *
+     * <p><b>为什么必须删</b>：那一行是<b>给人看的设计说明</b>，用来告诉实现者哪列是轴、哪列是比对项；
+     * 用户已明确「正式的导入数据没有标记行」。生产解析器改成「数据从第 2 行起」之后，
+     * 模板里残留的标记行会被当成一条数据行读进去（轴值 = 字面量「轴」），夹具从此测的是幻觉。
+     *
+     * <p><b>判定必须保守</b>：只有「第 2 行的全部非空单元格都 ∈ {轴, 对比项}」才认定为标记行。
+     * 🚫 不许按「行号 == 2」无条件删 —— 那样一旦模板换成真实格式，就把<b>第一条真实数据</b>删了，
+     * 而且同样静默。判据放在<b>内容</b>上，模板是哪一版都不会错。
+     */
+    DatasetFixtureBuilder stripMarkerRows() {
+        for (int i = 0; i < wb.getNumberOfSheets(); i++) {
+            Sheet s = wb.getSheetAt(i);
+            Row r = s.getRow(1);
+            if (r == null || !isMarkerRow(r)) {
+                continue;
+            }
+            s.removeRow(r);
+            if (s.getLastRowNum() > 1) {
+                s.shiftRows(2, s.getLastRowNum(), -1);
+            }
+        }
+        return this;
+    }
+
+    /** 「非空单元格全是『轴』或『对比项』」= 标记行；整行空不算（那是普通空行）。 */
+    private static boolean isMarkerRow(Row r) {
+        boolean any = false;
+        for (int c = 0; c < r.getLastCellNum(); c++) {
+            Cell cell = r.getCell(c);
+            if (cell == null || cell.getCellType() == CellType.BLANK) {
+                continue;
+            }
+            String v = str(cell).strip();
+            if (v.isEmpty()) {
+                continue;
+            }
+            if (!"轴".equals(v) && !"对比项".equals(v)) {
+                return false;
+            }
+            any = true;
+        }
+        return any;
     }
 
     /** 清掉一个 sheet 的全部数据行，只留表头（AC-39「某个带版本 sheet 完全为空」）。 */

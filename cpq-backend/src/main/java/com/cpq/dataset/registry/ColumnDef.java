@@ -52,6 +52,51 @@ public final class ColumnDef {
     /** role=NAME 时非空：这一列的值从哪张主数据表 JOIN 出来。 */
     @JsonIgnore public NameSource source;
 
+    /**
+     * D-30（AC-64）：{@link Dropdown#options} 是<b>硬枚举</b>，Phase 1 值不在域内即整份拒收。
+     *
+     * <p>🚩 与 {@link #options(List)} 刻意分成两个方法：既有的「货币 / 计价单位」等列用
+     * {@code options(...)} 只是给前端下拉候选，<b>未知值必须放行</b>（用户填 {@code RMB} 不该被拒）。
+     * 把两者合成一个开关会让 13 张带版本表的枚举列一起变严，属于未经裁决的范围扩张。
+     * <p>空值<b>不</b>受本开关约束 —— 必填与否只由 {@link #required} 决定（AC-64 ④ 反向验这条）。
+     */
+    @JsonIgnore public boolean enforceEnum;
+
+    /**
+     * D-27（AC-59 / AC-60）：本列存的是 {@code product_category} 的分类编码。
+     *
+     * <p>Phase 1 行为：非空 → 先按 {@code code} 再按 {@code name} 精确匹配并<b>改写成 code</b>，
+     * 都不中则整份拒收；空 → 填 {@link #DEFAULT_CATEGORY_CODE}。
+     * <p>🚫 <b>不过滤 status</b>：Excel 是全量重导，历史料号可能挂在已停用分类上，
+     * 拒收会让存量数据再也导不回去（R-1.7 解析规则第 4 条）。
+     */
+    @JsonIgnore public boolean categoryRef;
+
+    /**
+     * D-29（AC-62）：导入 UPSERT 时该列走 {@code COALESCE(EXCLUDED.x, 表.x)} —— Excel 空着<b>保留库里的旧值</b>。
+     *
+     * <p>为什么只给个别列开：这一列有<b>第二条写入路径</b>（{@code PUT /dataset/{dataset}/parts/{axisValue}}），
+     * 不这么做的话页面维护的成果每次导入都被打回，「能改生产料号」就是个骗人的按钮。
+     * <p>⚠️ 其余列没有第二写入路径，「Excel 整行覆盖」语义<b>不变</b>（AC-62 在同一次导入里正反两向验）。
+     * <b>每新开放一个可编辑字段都要重走一遍 D-29 的裁决</b>，不能默认继承。
+     */
+    @JsonIgnore public boolean preserveOnNull;
+
+    /**
+     * D-31（AC-65 ②）：本列可经 {@code PUT /dataset/{dataset}/parts/{axisValue}} 单列更新。<b>默认 false</b>。
+     *
+     * <p>🚩 <b>刻意不复用 {@link #editable}</b>：那个字段是 api.md §2 的既有契约
+     *（抽屉表格里这一格能不能编辑，非 AXIS 恒 true），复用等于把免版本表的<b>每一列</b>
+     * 都开成可直接改 —— 白名单会当场失效且完全静默。
+     * <p>白名单之外的字段一律 400 点名，🚫 不靠「前端不显示」兜底。
+     * <p>📌 {@code @JsonIgnore}：本批不改 api.md §2 的 {@code columns} 形状 —— 料号列表的可编辑列
+     * 由前端按 {@code GET /parts} 的既有字段渲染，不消费 sheet 级 columns。要下发给前端时再单独提契约变更。
+     */
+    @JsonIgnore public boolean partEditable;
+
+    /** D-27：产品分类默认值（{@code product_category.code} = 默认分类）。 */
+    public static final String DEFAULT_CATEGORY_CODE = "000000";
+
     private ColumnDef() {}
 
     // ── 工厂 ────────────────────────────────────────────────────────────
@@ -99,6 +144,34 @@ public final class ColumnDef {
     /** 固定候选枚举（无字典表，未知值可输入回退 —— 与现有 PricingSheetRegistry 同口径）。 */
     public ColumnDef options(List<String> opts) {
         this.dropdown = Dropdown.enumOf(opts);
+        return this;
+    }
+
+    /**
+     * <b>硬</b>枚举（D-30 / AC-64）：候选值同时是<b>受控值域</b>，Phase 1 不在域内整份拒收。
+     * <p>先 trim 再比对、存 trim 后的值（{@code 零件␣} 通过且入库为 {@code 零件}），空值放行。
+     */
+    public ColumnDef strictOptions(List<String> opts) {
+        this.dropdown = Dropdown.enumOf(opts);
+        this.enforceEnum = true;
+        return this;
+    }
+
+    /** 标记为产品分类编码列（D-27 / AC-59 / AC-60），Phase 1 做 code|name 解析 + 默认值填充。 */
+    public ColumnDef categoryRef() {
+        this.categoryRef = true;
+        return this;
+    }
+
+    /** 导入时空值不覆盖旧值（D-29 / AC-62）。只给「有第二条写入路径」的列开。 */
+    public ColumnDef preserveOnNull() {
+        this.preserveOnNull = true;
+        return this;
+    }
+
+    /** 列入 {@code PUT /parts/{axisValue}} 的单列更新白名单（D-31 / AC-65）。 */
+    public ColumnDef partEditable() {
+        this.partEditable = true;
         return this;
     }
 

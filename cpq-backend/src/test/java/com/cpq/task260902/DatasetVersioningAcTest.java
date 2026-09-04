@@ -38,7 +38,7 @@ class DatasetVersioningAcTest extends DatasetAcTestBase {
     private static final String T = "ds_cost_basic_material_bom";
     private static final String H = "ds_cost_basic_material_bom_history";
     private static final String SHEET = "物料BOM";
-    /** AC-14 / AC-17 锚定的那一行的组成料号（模板第 3 行）。 */
+    /** AC-14 / AC-17 锚定的那一行的组成料号（B-21 删掉标记行后 = 模板第 2 行）。 */
     private static final String ANCHOR_COMPONENT = "S-2120011658";
 
     // ═══════════════════════════════════════════════════════════════
@@ -80,7 +80,7 @@ class DatasetVersioningAcTest extends DatasetAcTestBase {
         assertEquals(0L, countRows(H, axis()), "AC-13：一字未改却写了 _history");
 
         // ── TV-03 / AC-14：改比对项「组成用量」1 → 2 → 升版至 2，旧 8 行进 _history 且 version_no=1 ──
-        Consumer<DatasetFixtureBuilder> mutV2 = b -> b.setNumber(SHEET, 3, "组成用量", 2d);
+        Consumer<DatasetFixtureBuilder> mutV2 = b -> b.setNumber(SHEET, 2, "组成用量", 2d);
         Response r3 = importCostBasic(mutV2, "tv03-upgrade.xlsx");
         assertStatus(r3, 200, "AC-14");
         assertSummary(r3, SHEET, "upgraded", 1, "AC-14");
@@ -100,7 +100,7 @@ class DatasetVersioningAcTest extends DatasetAcTestBase {
         System.out.printf("[TV-03] v=2 archived=%d%n", archived);
 
         // ── TV-04 / AC-15：删掉该料号的一行 → 行数不同即升版，版本 3 ──
-        Consumer<DatasetFixtureBuilder> mutV3 = mutV2.andThen(b -> b.deleteRow(SHEET, 4));
+        Consumer<DatasetFixtureBuilder> mutV3 = mutV2.andThen(b -> b.deleteRow(SHEET, 3));
         Response r4 = importCostBasic(mutV3, "tv04-delete-row.xlsx");
         assertStatus(r4, 200, "AC-15");
         assertSummary(r4, SHEET, "upgraded", 1, "AC-15");
@@ -118,7 +118,7 @@ class DatasetVersioningAcTest extends DatasetAcTestBase {
 
         // ── TV-05 / AC-16：两行对调顺序、值一字不改 → UNCHANGED（指纹多重集不看顺序） ──
         // 🚨 FT-2 证伪实验瞄准这条：比较改成按顺序逐行比对，本断言必须变红。
-        Consumer<DatasetFixtureBuilder> mutSwap = mutV3.andThen(b -> b.swapRows(SHEET, 3, 4));
+        Consumer<DatasetFixtureBuilder> mutSwap = mutV3.andThen(b -> b.swapRows(SHEET, 2, 3));
         Response r5 = importCostBasic(mutSwap, "tv05-swap.xlsx");
         assertStatus(r5, 200, "AC-16");
         assertSummaryAllUnchanged(r5, SHEET, "AC-16");
@@ -145,7 +145,7 @@ class DatasetVersioningAcTest extends DatasetAcTestBase {
         // ── TV-07 / AC-18：5.5 → 5.500000 → UNCHANGED（R-3 数值规范化） ──
         // 🚨 FT-1 证伪实验瞄准这条：指纹去掉 stripTrailingZeros()，本断言必须变红。
         Consumer<DatasetFixtureBuilder> mutZeros = mutSeq.andThen(
-                b -> b.setText("来料加工费", 3, "加工费", "5.500000"));
+                b -> b.setText("来料加工费", 2, "加工费", "5.500000"));
         Response r7 = importCostBasic(mutZeros, "tv07-trailing-zeros.xlsx");
         assertStatus(r7, 200, "AC-18");
         assertSummaryAllUnchanged(r7, "来料加工费", "AC-18");
@@ -228,7 +228,7 @@ class DatasetVersioningAcTest extends DatasetAcTestBase {
         assertEquals(Set.of(1), versionsOfAxis(), "AC-20 ①：应为 v1");
 
         // ② 改一个比对项
-        Consumer<DatasetFixtureBuilder> changed = b -> b.setNumber(SHEET, 3, "组成用量", 7d);
+        Consumer<DatasetFixtureBuilder> changed = b -> b.setNumber(SHEET, 2, "组成用量", 7d);
         assertStatus(importCostBasic(changed, "tv09-2.xlsx"), 200, "AC-20 ②");
         assertEquals(Set.of(2), versionsOfAxis(), "AC-20 ②：应升到 v2");
         List<Object> fpAfterSecond = fingerprints(T, AXIS_BASIC);
