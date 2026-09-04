@@ -90,3 +90,51 @@ ls | grep '\.hold$' && echo '❌ 还有残留' || echo '✅ 已还原'
 ### ② 合并顺序：B 必须先于 A 上线
 
 A 先于 B 上线 = 选配产品在报价单里渲染为空。两者若同批合并，确认 B 的迁移号小于 A。
+
+
+---
+
+## 🚨 迁移与共享库的流程闸（今天栽了三次，必须成为默认动作）
+
+**同一形状的事故在 2026-09-03~04 发生三次：**
+
+| # | 谁的迁移 | 卡住了谁 |
+|---|---|---|
+| ① | 我的 `V401~V404`（task-260902） | 「新料号数据规则」会话不敢合并 |
+| ② | 我的 `V410/V411` | 「产品管理优化」会话冷启动连续 4 次失败；8081 存活 20 小时纯属侥幸 |
+| ③ | 后端代理的 `V414` | 从 master 冷启动 `not resolved locally: 414` |
+
+**根因不是「谁忘了合并」，是流程缺一道闸：**
+
+```
+worktree 里任何一次 mvnw test（@QuarkusTest 会启动实例）
+  → migrate-at-start 自动把迁移写进【共享库】
+  → 无提示、无确认、事后无检查
+  → 而文件还在未合并分支上
+  ⇒ 所有从 master 或其它分支冷启动的后端全部起不来
+```
+
+⚠️ 而 **Flyway 只在启动时校验** —— 已经跑着的进程不会立刻死，所以**故障是延迟引爆的**：
+下一个重启它的人（可能是几小时后的另一条线）才踩到，且现场已经和肇事动作脱钩。
+
+### 三条默认动作
+
+1. **跑测试前**：`git merge master` —— 分支落后于共享库是**常态**，不是异常
+2. **跑测试后**：查一次 `flyway_schema_history` 的 `max(version)`，与本分支迁移文件比对；
+   有新号 = 你刚刚往共享库写了东西，**立刻把 `.sql` 单独合进 master**（不必合整条分支）
+3. **合并前**：用这条扫全工程（`src` 与 `target/classes` 都要扫，`target` 里有编译期复制的副本）
+   ```bash
+   find /home/joii/project/cpq -path "*/db/migration/V4*.sql" | awk -F'/V' '{n=$NF+0; if(n>=409) print}'
+   ```
+
+### 处方（三次都一样）
+
+```bash
+git checkout master
+git checkout <分支> -- cpq-backend/src/main/resources/db/migration/V4xx__*.sql
+git commit -m "fix: 补 V4xx 迁移文件进 master（已应用共享库，缺文件致冷启动 validate 失败）" -- <那个路径>
+# 然后必须真的冷启动一次验证，不能只看文件在不在
+```
+
+🚫 **另外三条路都别走**：删 `flyway_schema_history` 行（§3.2 红线，且 DDL 效果已在库里，删了会重跑撞「对象已存在」）；
+`validate-on-migrate=false`；`baselineVersion` —— 后两条都是改共享配置来掩盖问题。
