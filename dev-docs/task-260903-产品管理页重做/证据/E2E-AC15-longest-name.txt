@@ -1,0 +1,1 @@
+max(length(material_name)) = 65
