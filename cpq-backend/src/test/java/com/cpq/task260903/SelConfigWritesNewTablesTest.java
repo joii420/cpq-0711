@@ -185,6 +185,42 @@ class SelConfigWritesNewTablesTest extends Task260903Base {
                 "A-AC-7：外购件料号的 material_type 必须是『外购件』，实际=" + mats.get(0)[1]);
     }
 
+    /**
+     * <b>A-AC-7 → A-AC-8 的链路补强</b>：外购件身份必须<b>穿得过兼容视图</b>，不能只存在于表里。
+     *
+     * <p>A-AC-7 原文只要求「{@code ds_quote_material.material_type} = 外购件」——那是<b>写入侧</b>。
+     * 但 A-AC-8 要求「产品卡片正常渲染出外购件」，而渲染侧读的是
+     * {@code v_compat_material_master}。⇒ 只验表侧会漏掉「写了但渲染不出来」这一整类。
+     *
+     * <p>🚨 实测（2026-09-04）本条<b>现在是红的</b>，且根因已定位：
+     * {@code v_compat_material_master} 的新表侧把 {@code material_type} 硬写成
+     * {@code NULL::character varying(50)}，于是新表独有的外购件（如 {@code S0003}）
+     * 在视图里 {@code material_type} 为空 ——
+     * {@code SELECT count(*) FROM v_compat_material_master WHERE material_type='外购件'}
+     * 只数得到 V6 侧那一条，新表侧的一条都数不到。
+     */
+    @Test
+    @DisplayName("A-AC-7→A-AC-8 外购件身份必须穿得过兼容视图（非仅落表）")
+    void aac7_outsourcedTypeMustSurviveCompatView() {
+        requireCompatViews();
+        List<Object[]> lost = rows(
+                "SELECT m.material_no, m.material_type, coalesce(v.material_type,'(空)') "
+                        + "FROM ds_quote_material m JOIN v_compat_material_master v ON v.material_no = m.material_no "
+                        + "WHERE m.material_type IS NOT NULL AND v.material_type IS DISTINCT FROM m.material_type "
+                        + "ORDER BY m.material_no");
+        System.out.println("[A-AC-7→8] material_type 在兼容视图里丢失/变形的料号="
+                + lost.stream().map(java.util.Arrays::toString).toList());
+
+        long haveType = count("SELECT count(*) FROM ds_quote_material WHERE material_type IS NOT NULL");
+        assertTrue(haveType > 0,
+                "A-AC-7→8 前置：ds_quote_material 里应有带 material_type 的料号，实际 0 条 ⇒ 本断言会空跑（假绿）");
+
+        assertEquals(List.of(), lost.stream().map(java.util.Arrays::toString).toList(),
+                "A-AC-7→8：ds_quote_material.material_type 必须原样透传到 v_compat_material_master，"
+                        + "否则渲染侧看不到外购件身份（A-AC-8 会渲染不出外购件）。"
+                        + "上面列出的每一行都是 表里有值 / 视图里没有。");
+    }
+
     /** {@code version_no} 全 1 —— 先要求行数 > 0，否则「全 1」在 0 行时也成立。 */
     private void assertVersionAllOne(String table, String materialNo, long expectRows, String when) {
         assertTrue(expectRows > 0, when + "：" + table + " 应有行才能验 version_no，实际 0 行 ⇒ 断言会空跑");
