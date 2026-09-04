@@ -87,6 +87,61 @@ public abstract class Task260903Base extends SelConfigAcTestBase {
         return count("SELECT count(*) FROM ds_quote_element_bom WHERE material_no='" + materialNo + "'");
     }
 
+    protected long dsCustomerPart(String customerNo) {
+        return count("SELECT count(*) FROM ds_quote_customer_part WHERE customer_no='" + customerNo + "'");
+    }
+
+    protected long selProductNo(String customerNo) {
+        return count("SELECT count(*) FROM sel_product_no WHERE customer_no='" + customerNo + "'");
+    }
+
+    /** 两张版本化子表的 {@code _history} 行数（A-AC-5：选配阶段不得升版 ⇒ 零新增）。 */
+    protected Map<String, Long> historyCounts() {
+        Map<String, Long> m = new LinkedHashMap<>();
+        m.put("ds_quote_material_bom_history", count("SELECT count(*) FROM ds_quote_material_bom_history"));
+        m.put("ds_quote_element_bom_history", count("SELECT count(*) FROM ds_quote_element_bom_history"));
+        return m;
+    }
+
+    /**
+     * 🚨 <b>正向对照：先证明「真的写进去了」，之后的「V6 没变 / 没升版」才有意义。</b>
+     *
+     * <p>{@code test.md §3} 第 2、3 号假绿陷阱：A-AC-2「V6 五表行数不变」与 A-AC-5「version_no 全 1」
+     * <b>在提交压根没成功时同样成立</b>（什么都没写，行数当然不变、也没有版本可升）。
+     * ⇒ 任何「零新增 / 不变」类断言之前，必须先过这一关。
+     *
+     * @return 该料号在 {@code ds_quote_material_bom} 的行数（>0）
+     */
+    protected long assertNewTablesGotRows(String materialNo, String when) {
+        long mat = dsMaterial(materialNo);
+        long bom = dsMaterialBom(materialNo);
+        long elem = dsElementBom(materialNo);
+        System.out.println("[" + when + "] 料号 " + materialNo + " 落库：ds_quote_material=" + mat
+                + " ds_quote_material_bom=" + bom + " ds_quote_element_bom=" + elem);
+        assertEquals(1L, mat,
+                when + "：ds_quote_material 应落 1 条料号主档（A-AC-1①），实际 " + mat
+                        + " 条。0 条 ⇒ 后面所有『V6 没变 / 没升版』的断言都会因为『压根没写』而假绿");
+        assertTrue(bom > 0,
+                when + "：ds_quote_material_bom 应落材质行（A-AC-1②），实际 0 行 ⇒ 同上，假绿风险");
+        return bom;
+    }
+
+    /**
+     * 🚨 <b>写了 ≠ 渲染得出来。</b>兼容视图的 BOM 侧要靠 {@code ds_quote_customer_part}
+     * 反查 {@code customer_no}；追溯不到时<b>整组 0 行且不报错</b>。
+     * ⇒ A-AC-1 只验「新表有行」会漏掉「写了但渲染不出来」这一整类缺陷，故补这一条。
+     */
+    protected void assertVisibleThroughCompatView(String materialNo, String when) {
+        long viaView = count("SELECT count(*) FROM " + COMPAT_MBI + " WHERE material_no='" + materialNo + "'");
+        long inTable = dsMaterialBom(materialNo);
+        System.out.println("[" + when + "] " + materialNo + " 新表 " + inTable + " 行 → 兼容视图 " + viaView + " 行");
+        assertTrue(viaView > 0,
+                when + "：料号 " + materialNo + " 在 ds_quote_material_bom 有 " + inTable
+                        + " 行，但兼容视图 " + COMPAT_MBI + " 读到 0 行 ⇒ 写进去了却渲染不出来。"
+                        + "典型根因：ds_quote_customer_part 没有对应行，兼容视图反查不到 customer_no，"
+                        + "于是整组被客户作用域过滤掉（静默，不报错）。A 阶段停写 V6 后这就是报价单空白。");
+    }
+
     // ─────────────────────────── 前置存在性 ───────────────────────────
 
     /** 视图/表是否存在（{@code to_regclass} 对不存在的对象返 NULL，不抛错）。 */
