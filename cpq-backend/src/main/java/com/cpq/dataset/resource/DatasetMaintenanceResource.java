@@ -168,6 +168,33 @@ public class DatasetMaintenanceResource {
     // ==================================================================
 
     /**
+     * api.md §3.5 —— 免版本物料表的<b>单列更新</b>（B-20 / D-31 / AC-65）。
+     *
+     * <p>body 形如 {@code {"production_no": "P-001"}}，键是 DB 列名。
+     * 只有 {@code ColumnDef.partEditable} 白名单里的列能改（当前<b>只有</b>
+     * {@code ds_quote_material.production_no}），其余一律 400 并点名该字段。
+     *
+     * <h3>🚦 权限 = 四个角色（与本类其他写端点<b>刻意不同</b>）</h3>
+     * 其他写端点是 {@code PRICING_MANAGER} / {@code SYSTEM_ADMIN}，这里多开了两个销售角色。
+     * <b>这是用户在知悉风险后的裁决（D-31），不是笔误，🚫 不要"顺手对齐"改回去。</b>
+     * 留痕：主线建议沿用两角色，理由是这一列是「报价料号 → 核价数据」的桥，改错一个字
+     * 那张单就取到另一个料号的核价数据，不报错不告警。用户仍裁决开放给四个角色。
+     *
+     * <p>返回 {@code ApiResponse<DsPartPatchResult>}；400（白名单 / 超长）与 404（料号不存在）
+     * 走 {@code BusinessException} → {@code GlobalExceptionMapper}，本类不自己拼响应。
+     */
+    @PUT
+    @Path("/{dataset}/parts/{axisValue}")
+    @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
+    public ApiResponse<DsPartPatchResult> updatePart(
+            @PathParam("dataset") String dataset,
+            @PathParam("axisValue") String axisValue,
+            Map<String, Object> patch) {
+        String operator = sessionHelper.getCurrentUserIdOrFallback(httpRequest).toString();
+        return ApiResponse.success(service.updatePart(dataset, axisValue, patch, operator));
+    }
+
+    /**
      * api.md §7 —— 保存整组（走 R-4 升版）。
      *
      * <p><b>B-11 权限（AC-31）</b>：仅 {@code PRICING_MANAGER} / {@code SYSTEM_ADMIN}，

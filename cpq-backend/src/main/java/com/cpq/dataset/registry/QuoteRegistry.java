@@ -23,6 +23,13 @@ public class QuoteRegistry extends AbstractDatasetRegistry {
 
     private static final List<String> CURRENCY = List.of("CNY", "USD", "EUR", "JPY");
     private static final List<String> UNIT = List.of("PCS", "KG", "H", "SET", "M", "G");
+    /**
+     * 料号类型的<b>受控值域</b>（D-30 / AC-64）。走 {@code strictOptions} ⇒ 域外值 Phase 1 整份拒收。
+     * <p>🚫 别顺手改成 {@code options} —— 那样 {@code 零部件} 会静默入库，
+     * 而下游取数配置器发的是 {@code WHERE material_type IN ('零件','外购件')}，
+     * 症状是「配置器里那个页签少行」，离根因隔了两层。
+     */
+    static final List<String> MATERIAL_TYPE = List.of("零件", "外购件");
 
     public QuoteRegistry() {
         super("quote", "报价数据", "ds_quote_",
@@ -37,7 +44,18 @@ public class QuoteRegistry extends AbstractDatasetRegistry {
                 col("dimension", "尺寸", "VALUE", "STRING", "varchar(128)", false, false),
                 col("old_material_no", "旧料号", "VALUE", "STRING", "varchar(128)", false, false),
                 col("unit_weight", "单重", "VALUE", "DECIMAL", "numeric(26,12)", false, false),
+                // D-29（AC-62）+ D-31（AC-65）：生产料号有第二条写入路径（PUT /parts/{axisValue}），
+                // 故 ① 进单列更新白名单 ② 导入时 Excel 空着不覆盖旧值（COALESCE）。
                 col("production_no", "生产料号", "VALUE", "STRING", "varchar(128)", false, false)
+                        .partEditable().preserveOnNull(),
+                // D-30（AC-64）：硬枚举，域外值整份拒收；空值仍放行（required=false 不因加枚举而变）。
+                col("material_type", "类型", "VALUE", "STRING", "varchar(128)", false, false)
+                        .strictOptions(MATERIAL_TYPE),
+                // D-27（AC-59/60/61）：产品分类编码。🟡 选填 —— 空值由 Phase 1 填 000000（默认分类），
+                // 🚫 不是靠 DB 列 DEFAULT（全列 INSERT 下永不触发，R-1.7 实证）。
+                // 只有报价侧这一张表有；核价两套的物料表【不加】。
+                col("category_code", "产品分类", "VALUE", "STRING", "varchar(128)", false, false)
+                        .categoryRef()
         )));
 
         // ── 02 · sheet「客户料号」 → ds_quote_customer_part（免版本）
@@ -55,7 +73,6 @@ public class QuoteRegistry extends AbstractDatasetRegistry {
                 "material_no", "销售料号", List.of(
                 col("material_no", "销售料号", "AXIS", "STRING", "varchar(128)", true, false),
                 col("item_seq", "项次", "VALUE", "NUMBER", "integer", true, false),
-                col("input_type", "投入类型", "VALUE", "STRING", "varchar(128)", false, true),
                 col("input_material_no", "投入料号", "VALUE", "STRING", "varchar(128)", true, true).masterNoCheck("recipe", "input_material_no_name"),
                 nameCol("input_material_no_name", "投入料号名称", "input_material_no", "material_recipe", "code", "name"),
                 col("unit_weight", "单重", "VALUE", "DECIMAL", "numeric(26,12)", false, true),
