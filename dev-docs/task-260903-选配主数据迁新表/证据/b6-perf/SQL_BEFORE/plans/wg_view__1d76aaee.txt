@@ -1,0 +1,24 @@
+SET
+Incremental Sort  (cost=24.98..25.03 rows=2 width=67) (actual time=0.079..0.080 rows=1 loops=1)
+  Sort Key: mbi.material_no, mbi.seq_no
+  Presorted Key: mbi.material_no
+  Full-sort Groups: 1  Sort Method: quicksort  Average Memory: 25kB  Peak Memory: 25kB
+  Buffers: shared hit=14
+  ->  Nested Loop Left Join  (cost=0.83..24.97 rows=1 width=67) (actual time=0.046..0.047 rows=1 loops=1)
+        Buffers: shared hit=8
+        ->  Nested Loop Left Join  (cost=0.56..16.62 rows=1 width=37) (actual time=0.039..0.040 rows=1 loops=1)
+              Buffers: shared hit=6
+              ->  Index Scan using idx_material_bom_item_parent on material_bom_item mbi  (cost=0.29..8.32 rows=1 width=27) (actual time=0.026..0.026 rows=1 loops=1)
+                    Index Cond: (((customer_no)::text = 'CUST-0001'::text) AND ((characteristic)::text = 'OUTSOURCED'::text))
+                    Filter: (is_current AND ((system_type)::text = 'QUOTE'::text))
+                    Buffers: shared hit=3
+              ->  Index Scan using uq_material_master_no on material_master mm  (cost=0.28..8.29 rows=1 width=22) (actual time=0.012..0.012 rows=1 loops=1)
+                    Index Cond: ((material_no)::text = (mbi.component_no)::text)
+                    Buffers: shared hit=3
+        ->  Index Scan using material_recipe_code_key on material_recipe mr  (cost=0.27..8.29 rows=1 width=15) (actual time=0.005..0.005 rows=0 loops=1)
+              Index Cond: ((code)::text = (mbi.component_no)::text)
+              Buffers: shared hit=2
+Planning:
+  Buffers: shared hit=465
+Planning Time: 2.121 ms
+Execution Time: 0.169 ms

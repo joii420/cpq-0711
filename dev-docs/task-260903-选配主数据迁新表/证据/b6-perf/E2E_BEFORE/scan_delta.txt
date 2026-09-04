@@ -1,0 +1,11 @@
+SCAN_PRE : component_sql_view=114871 element_bom=4372 element_bom_item=14097 material_bom=9605 material_bom_item=2239481 material_master=748956 material_recipe=386569 quotation_line_item=1514045 quotation_line_item=7
+SCAN_POST: component_sql_view=114871 element_bom=4372 element_bom_item=14097 material_bom=9605 material_bom_item=2239482 material_master=748958 material_recipe=386569 quotation_line_item=1514046 quotation_line_item=7
+DELTA(单次渲染的表扫描次数增量):
+  component_sql_view              0
+  element_bom                     0
+  element_bom_item                0
+  material_bom                    0
+  material_bom_item               1
+  material_master                 2
+  material_recipe                 0
+  quotation_line_item             0

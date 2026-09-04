@@ -1,0 +1,29 @@
+SET
+Hash Left Join  (cost=184.55..427.69 rows=1891 width=273) (actual time=0.756..1.728 rows=1893 loops=1)
+  Hash Cond: ((v.material_no)::text = (mcm.material_no)::text)
+  Buffers: shared hit=372
+  ->  Append  (cost=0.00..217.35 rows=1891 width=12) (actual time=0.008..0.679 rows=1893 loops=1)
+        Buffers: shared hit=250
+        ->  Seq Scan on material_master v  (cost=0.00..140.90 rows=1890 width=12) (actual time=0.008..0.491 rows=1893 loops=1)
+              Buffers: shared hit=122
+        ->  Subquery Scan on "*SELECT* 2"  (cost=0.28..67.00 rows=1 width=58) (actual time=0.084..0.084 rows=0 loops=1)
+              Buffers: shared hit=128
+              ->  Nested Loop Anti Join  (cost=0.28..66.99 rows=1 width=1502) (actual time=0.083..0.084 rows=0 loops=1)
+                    Buffers: shared hit=128
+                    ->  Seq Scan on ds_quote_material m  (cost=0.00..1.19 rows=19 width=11) (actual time=0.003..0.005 rows=42 loops=1)
+                          Buffers: shared hit=1
+                    ->  Index Only Scan using uq_material_master_no on material_master x  (cost=0.28..3.45 rows=1 width=12) (actual time=0.002..0.002 rows=1 loops=42)
+                          Index Cond: (material_no = (m.material_no)::text)
+                          Heap Fetches: 42
+                          Buffers: shared hit=127
+  ->  Hash  (cost=153.45..153.45 rows=2488 width=261) (actual time=0.718..0.719 rows=1857 loops=1)
+        Buckets: 4096  Batches: 1  Memory Usage: 131kB
+        Buffers: shared hit=122
+        ->  Seq Scan on material_customer_map mcm  (cost=0.00..153.45 rows=2488 width=261) (actual time=0.012..0.457 rows=1857 loops=1)
+              Filter: ((customer_no)::text = 'CUST-0004'::text)
+              Rows Removed by Filter: 24
+              Buffers: shared hit=122
+Planning:
+  Buffers: shared hit=520
+Planning Time: 3.024 ms
+Execution Time: 1.855 ms

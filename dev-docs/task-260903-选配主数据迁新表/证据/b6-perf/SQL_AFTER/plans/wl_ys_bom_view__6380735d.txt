@@ -1,0 +1,228 @@
+SET
+Sort  (cost=2787.82..2788.91 rows=435 width=135) (actual time=8.977..8.991 rows=46 loops=1)
+  Sort Key: ebi.seq_no
+  Sort Method: quicksort  Memory: 29kB
+  Buffers: shared hit=1334
+  CTE bom_closure
+    ->  Recursive Union  (cost=8.45..95.62 rows=11 width=66) (actual time=0.089..1.682 rows=208 loops=1)
+          Buffers: shared hit=115
+          ->  Unique  (cost=8.45..8.46 rows=1 width=28) (actual time=0.088..0.097 rows=20 loops=1)
+                Buffers: shared hit=23
+                ->  Sort  (cost=8.45..8.46 rows=1 width=28) (actual time=0.088..0.091 rows=68 loops=1)
+                      Sort Key: b.material_no
+                      Sort Method: quicksort  Memory: 28kB
+                      Buffers: shared hit=23
+                      ->  Subquery Scan on b  (cost=0.41..8.44 rows=1 width=28) (actual time=0.025..0.068 rows=68 loops=1)
+                            Buffers: shared hit=23
+                            ->  Index Scan using uq_material_bom_item on material_bom_item v_3  (cost=0.41..8.43 rows=1 width=1987) (actual time=0.025..0.058 rows=68 loops=1)
+                                  Index Cond: (((system_type)::text = 'PRICING'::text) AND ((customer_no)::text = '_GLOBAL_'::text))
+                                  Buffers: shared hit=23
+          ->  Nested Loop  (cost=0.41..8.70 rows=1 width=66) (actual time=0.098..0.390 rows=47 loops=4)
+                Join Filter: ((c.node_no)::text = (v_4.material_no)::text)
+                Rows Removed by Join Filter: 3489
+                Buffers: shared hit=92
+                ->  Index Scan using uq_material_bom_item on material_bom_item v_4  (cost=0.41..8.43 rows=1 width=1987) (actual time=0.007..0.015 rows=68 loops=4)
+                      Index Cond: (((system_type)::text = 'PRICING'::text) AND ((customer_no)::text = '_GLOBAL_'::text))
+                      Buffers: shared hit=92
+                ->  WorkTable Scan on bom_closure c  (cost=0.00..0.22 rows=3 width=120) (actual time=0.000..0.003 rows=52 loops=272)
+                      Filter: (lvl < 10)
+  ->  Hash Right Join  (cost=376.00..2673.14 rows=435 width=135) (actual time=8.890..8.952 rows=46 loops=1)
+        Hash Cond: (((v_1.element_code)::text = (ebi.component_no)::text) AND ((v_1.material_no)::text = (COALESCE(cl.root_no, ebi.material_no))::text))
+        Buffers: shared hit=1331
+        ->  Append  (cost=4.15..2140.25 rows=4282 width=186) (actual time=5.910..6.130 rows=105 loops=1)
+              Buffers: shared hit=949
+              CTE versioned
+                ->  Hash Join  (cost=1.06..4.15 rows=2 width=27) (actual time=0.028..0.029 rows=0 loops=1)
+                      Hash Cond: (i.version_id = material_price_version_ref.version_id)
+                      Buffers: shared hit=2
+                      ->  Seq Scan on element_price_version_item i  (cost=0.00..2.78 rows=77 width=32) (actual time=0.003..0.003 rows=1 loops=1)
+                            Filter: (current_price IS NOT NULL)
+                            Buffers: shared hit=1
+                      ->  Hash  (cost=1.05..1.05 rows=1 width=27) (actual time=0.008..0.008 rows=0 loops=1)
+                            Buckets: 1024  Batches: 1  Memory Usage: 8kB
+                            Buffers: shared hit=1
+                            ->  Seq Scan on material_price_version_ref  (cost=0.00..1.05 rows=1 width=27) (actual time=0.007..0.007 rows=0 loops=1)
+                                  Filter: ((customer_no)::text = 'CUST-0004'::text)
+                                  Rows Removed by Filter: 4
+                                  Buffers: shared hit=1
+              ->  CTE Scan on versioned v_1  (cost=0.00..0.04 rows=2 width=320) (actual time=0.029..0.029 rows=0 loops=1)
+                    Buffers: shared hit=2
+              ->  Hash Anti Join  (cost=1331.44..2114.65 rows=4280 width=186) (actual time=5.881..6.093 rows=105 loops=1)
+                    Hash Cond: (((material_bom_item.material_no)::text = (v2.material_no)::text) AND ((((e.element_code)::character varying))::text = (v2.element_code)::text))
+                    Buffers: shared hit=947
+                    ->  Nested Loop  (cost=1331.38..2049.28 rows=4284 width=186) (actual time=5.866..6.065 rows=105 loops=1)
+                          Buffers: shared hit=947
+                          ->  HashAggregate  (cost=1330.30..1331.32 rows=102 width=58) (actual time=5.736..5.739 rows=21 loops=1)
+                                Group Key: material_bom_item.material_no
+                                Batches: 1  Memory Usage: 24kB
+                                Buffers: shared hit=878
+                                ->  Append  (cost=0.00..1330.05 rows=102 width=58) (actual time=0.004..5.720 rows=85 loops=1)
+                                      Buffers: shared hit=878
+                                      ->  Seq Scan on material_bom_item  (cost=0.00..410.31 rows=59 width=12) (actual time=0.003..1.683 rows=54 loops=1)
+                                            Filter: (is_current AND ((customer_no)::text = ANY ('{CUST-0004,_GLOBAL_}'::text[])))
+                                            Rows Removed by Filter: 11101
+                                            Buffers: shared hit=271
+                                      ->  Seq Scan on element_bom_item  (cost=0.00..919.23 rows=43 width=12) (actual time=0.004..4.031 rows=31 loops=1)
+                                            Filter: (is_current AND ((customer_no)::text = ANY ('{CUST-0004,_GLOBAL_}'::text[])))
+                                            Rows Removed by Filter: 24951
+                                            Buffers: shared hit=607
+                          ->  Materialize  (cost=1.07..664.51 rows=42 width=128) (actual time=0.006..0.015 rows=5 loops=21)
+                                Buffers: shared hit=69
+                                ->  Nested Loop Left Join  (cost=1.07..664.30 rows=42 width=128) (actual time=0.121..0.301 rows=5 loops=1)
+                                      Filter: (((x.id IS NOT NULL) OR (d.id IS NOT NULL)) AND (CASE CASE WHEN (x.id IS NOT NULL) THEN x.method ELSE d.method END WHEN 'LATEST'::text THEN (SubPlan 9) WHEN 'AVG'::text THEN (SubPlan 10) WHEN 'MAX'::text THEN (SubPlan 11) ELSE (SubPlan 12) END IS NOT NULL))
+                                      Rows Removed by Filter: 43
+                                      Buffers: shared hit=69
+                                      ->  Hash Left Join  (cost=1.07..2.78 rows=42 width=168) (actual time=0.033..0.044 rows=48 loops=1)
+                                            Hash Cond: ((e.element_code)::text = (x.element_code)::text)
+                                            Buffers: shared hit=2
+                                            ->  Seq Scan on element e  (cost=0.00..1.54 rows=42 width=4) (actual time=0.009..0.013 rows=48 loops=1)
+                                                  Filter: ((status)::text = 'ACTIVE'::text)
+                                                  Rows Removed by Filter: 1
+                                                  Buffers: shared hit=1
+                                            ->  Hash  (cost=1.06..1.06 rows=1 width=310) (actual time=0.004..0.004 rows=0 loops=1)
+                                                  Buckets: 1024  Batches: 1  Memory Usage: 8kB
+                                                  Buffers: shared hit=1
+                                                  ->  Seq Scan on element_price_strategy x  (cost=0.00..1.06 rows=1 width=310) (actual time=0.004..0.004 rows=1 loops=1)
+                                                        Filter: (((customer_no)::text = 'CUST-0004'::text) AND ((status)::text = 'ACTIVE'::text))
+                                                        Rows Removed by Filter: 5
+                                                        Buffers: shared hit=1
+                                      ->  Materialize  (cost=0.00..1.07 rows=1 width=164) (actual time=0.000..0.000 rows=1 loops=48)
+                                            Buffers: shared hit=1
+                                            ->  Subquery Scan on d  (cost=0.00..1.07 rows=1 width=164) (actual time=0.004..0.005 rows=1 loops=1)
+                                                  Buffers: shared hit=1
+                                                  ->  Limit  (cost=0.00..1.06 rows=1 width=554) (actual time=0.003..0.003 rows=1 loops=1)
+                                                        Buffers: shared hit=1
+                                                        ->  Seq Scan on element_price_strategy  (cost=0.00..1.06 rows=1 width=554) (actual time=0.003..0.003 rows=1 loops=1)
+                                                              Filter: ((element_code IS NULL) AND ((customer_no)::text = 'CUST-0004'::text) AND ((status)::text = 'ACTIVE'::text))
+                                                              Rows Removed by Filter: 4
+                                                              Buffers: shared hit=1
+                                      SubPlan 3
+                                        ->  Limit  (cost=1.27..1.28 rows=1 width=9) (actual time=0.004..0.004 rows=1 loops=5)
+                                              Buffers: shared hit=5
+                                              ->  Sort  (cost=1.27..1.28 rows=1 width=9) (actual time=0.004..0.004 rows=1 loops=5)
+                                                    Sort Key: dp.price_date DESC
+                                                    Sort Method: quicksort  Memory: 25kB
+                                                    Buffers: shared hit=5
+                                                    ->  Seq Scan on element_daily_price dp  (cost=0.00..1.26 rows=1 width=9) (actual time=0.001..0.002 rows=2 loops=5)
+                                                          Filter: ((raw_price IS NOT NULL) AND (price_date <= '2026-09-03'::date) AND ((element_name)::text = (e.element_code)::text) AND (source_id = CASE WHEN (x.id IS NOT NULL) THEN x.source_id ELSE d.source_id END))
+                                                          Rows Removed by Filter: 13
+                                                          Buffers: shared hit=5
+                                      SubPlan 4
+                                        ->  Aggregate  (cost=1.75..1.76 rows=1 width=32) (never executed)
+                                              ->  Seq Scan on element_daily_price dp_1  (cost=0.00..1.75 rows=1 width=5) (never executed)
+                                                    Filter: ((raw_price IS NOT NULL) AND (price_date <= '2026-09-03'::date) AND ((element_name)::text = (e.element_code)::text) AND (source_id = CASE WHEN (x.id IS NOT NULL) THEN x.source_id ELSE d.source_id END) AND (price_date >= CASE WHEN ((CASE WHEN (x.id IS NOT NULL) THEN x.method ELSE d.method END)::text = 'LATEST'::text) THEN NULL::date ELSE (('2026-09-03'::date - ((((CASE WHEN (x.id IS NOT NULL) THEN x.window_num ELSE d.window_num END)::text || ' '::text) || CASE CASE WHEN (x.id IS NOT NULL) THEN x.window_unit ELSE d.window_unit END WHEN 'DAY'::text THEN 'day'::text WHEN 'WEEK'::text THEN 'week'::text WHEN 'MONTH'::text THEN 'month'::text ELSE 'year'::text END))::interval))::date END))
+                                      SubPlan 5
+                                        ->  Aggregate  (cost=1.75..1.76 rows=1 width=32) (never executed)
+                                              ->  Seq Scan on element_daily_price dp_2  (cost=0.00..1.75 rows=1 width=5) (never executed)
+                                                    Filter: ((raw_price IS NOT NULL) AND (price_date <= '2026-09-03'::date) AND ((element_name)::text = (e.element_code)::text) AND (source_id = CASE WHEN (x.id IS NOT NULL) THEN x.source_id ELSE d.source_id END) AND (price_date >= CASE WHEN ((CASE WHEN (x.id IS NOT NULL) THEN x.method ELSE d.method END)::text = 'LATEST'::text) THEN NULL::date ELSE (('2026-09-03'::date - ((((CASE WHEN (x.id IS NOT NULL) THEN x.window_num ELSE d.window_num END)::text || ' '::text) || CASE CASE WHEN (x.id IS NOT NULL) THEN x.window_unit ELSE d.window_unit END WHEN 'DAY'::text THEN 'day'::text WHEN 'WEEK'::text THEN 'week'::text WHEN 'MONTH'::text THEN 'month'::text ELSE 'year'::text END))::interval))::date END))
+                                      SubPlan 6
+                                        ->  Aggregate  (cost=1.75..1.76 rows=1 width=32) (never executed)
+                                              ->  Seq Scan on element_daily_price dp_3  (cost=0.00..1.75 rows=1 width=5) (never executed)
+                                                    Filter: ((raw_price IS NOT NULL) AND (price_date <= '2026-09-03'::date) AND ((element_name)::text = (e.element_code)::text) AND (source_id = CASE WHEN (x.id IS NOT NULL) THEN x.source_id ELSE d.source_id END) AND (price_date >= CASE WHEN ((CASE WHEN (x.id IS NOT NULL) THEN x.method ELSE d.method END)::text = 'LATEST'::text) THEN NULL::date ELSE (('2026-09-03'::date - ((((CASE WHEN (x.id IS NOT NULL) THEN x.window_num ELSE d.window_num END)::text || ' '::text) || CASE CASE WHEN (x.id IS NOT NULL) THEN x.window_unit ELSE d.window_unit END WHEN 'DAY'::text THEN 'day'::text WHEN 'WEEK'::text THEN 'week'::text WHEN 'MONTH'::text THEN 'month'::text ELSE 'year'::text END))::interval))::date END))
+                                      SubPlan 7
+                                        ->  Limit  (cost=1.27..1.28 rows=1 width=8) (actual time=0.005..0.005 rows=1 loops=5)
+                                              Buffers: shared hit=5
+                                              ->  Sort  (cost=1.27..1.28 rows=1 width=8) (actual time=0.005..0.005 rows=1 loops=5)
+                                                    Sort Key: dp_4.price_date DESC
+                                                    Sort Method: quicksort  Memory: 25kB
+                                                    Buffers: shared hit=5
+                                                    ->  Seq Scan on element_daily_price dp_4  (cost=0.00..1.26 rows=1 width=8) (actual time=0.001..0.002 rows=2 loops=5)
+                                                          Filter: ((price_date <= '2026-09-03'::date) AND ((element_name)::text = (e.element_code)::text) AND (source_id = CASE WHEN (x.id IS NOT NULL) THEN x.source_id ELSE d.source_id END))
+                                                          Rows Removed by Filter: 13
+                                                          Buffers: shared hit=5
+                                      SubPlan 8
+                                        ->  Limit  (cost=1.27..1.28 rows=1 width=8) (actual time=0.004..0.004 rows=1 loops=5)
+                                              Buffers: shared hit=5
+                                              ->  Sort  (cost=1.27..1.28 rows=1 width=8) (actual time=0.004..0.004 rows=1 loops=5)
+                                                    Sort Key: dp_5.price_date DESC
+                                                    Sort Method: quicksort  Memory: 25kB
+                                                    Buffers: shared hit=5
+                                                    ->  Seq Scan on element_daily_price dp_5  (cost=0.00..1.26 rows=1 width=8) (actual time=0.001..0.002 rows=2 loops=5)
+                                                          Filter: ((price_date <= '2026-09-03'::date) AND ((element_name)::text = (e.element_code)::text) AND (source_id = CASE WHEN (x.id IS NOT NULL) THEN x.source_id ELSE d.source_id END))
+                                                          Rows Removed by Filter: 13
+                                                          Buffers: shared hit=5
+                                      SubPlan 9
+                                        ->  Limit  (cost=1.27..1.28 rows=1 width=9) (actual time=0.003..0.003 rows=0 loops=48)
+                                              Buffers: shared hit=51
+                                              ->  Sort  (cost=1.27..1.28 rows=1 width=9) (actual time=0.003..0.003 rows=0 loops=48)
+                                                    Sort Key: dp_6.price_date DESC
+                                                    Sort Method: quicksort  Memory: 25kB
+                                                    Buffers: shared hit=51
+                                                    ->  Seq Scan on element_daily_price dp_6  (cost=0.00..1.26 rows=1 width=9) (actual time=0.001..0.001 rows=0 loops=48)
+                                                          Filter: ((raw_price IS NOT NULL) AND (price_date <= '2026-09-03'::date) AND ((element_name)::text = (e.element_code)::text) AND (source_id = CASE WHEN (x.id IS NOT NULL) THEN x.source_id ELSE d.source_id END))
+                                                          Rows Removed by Filter: 15
+                                                          Buffers: shared hit=48
+                                      SubPlan 10
+                                        ->  Aggregate  (cost=1.75..1.76 rows=1 width=32) (never executed)
+                                              ->  Seq Scan on element_daily_price dp_7  (cost=0.00..1.75 rows=1 width=5) (never executed)
+                                                    Filter: ((raw_price IS NOT NULL) AND (price_date <= '2026-09-03'::date) AND ((element_name)::text = (e.element_code)::text) AND (source_id = CASE WHEN (x.id IS NOT NULL) THEN x.source_id ELSE d.source_id END) AND (price_date >= CASE WHEN ((CASE WHEN (x.id IS NOT NULL) THEN x.method ELSE d.method END)::text = 'LATEST'::text) THEN NULL::date ELSE (('2026-09-03'::date - ((((CASE WHEN (x.id IS NOT NULL) THEN x.window_num ELSE d.window_num END)::text || ' '::text) || CASE CASE WHEN (x.id IS NOT NULL) THEN x.window_unit ELSE d.window_unit END WHEN 'DAY'::text THEN 'day'::text WHEN 'WEEK'::text THEN 'week'::text WHEN 'MONTH'::text THEN 'month'::text ELSE 'year'::text END))::interval))::date END))
+                                      SubPlan 11
+                                        ->  Aggregate  (cost=1.75..1.76 rows=1 width=32) (never executed)
+                                              ->  Seq Scan on element_daily_price dp_8  (cost=0.00..1.75 rows=1 width=5) (never executed)
+                                                    Filter: ((raw_price IS NOT NULL) AND (price_date <= '2026-09-03'::date) AND ((element_name)::text = (e.element_code)::text) AND (source_id = CASE WHEN (x.id IS NOT NULL) THEN x.source_id ELSE d.source_id END) AND (price_date >= CASE WHEN ((CASE WHEN (x.id IS NOT NULL) THEN x.method ELSE d.method END)::text = 'LATEST'::text) THEN NULL::date ELSE (('2026-09-03'::date - ((((CASE WHEN (x.id IS NOT NULL) THEN x.window_num ELSE d.window_num END)::text || ' '::text) || CASE CASE WHEN (x.id IS NOT NULL) THEN x.window_unit ELSE d.window_unit END WHEN 'DAY'::text THEN 'day'::text WHEN 'WEEK'::text THEN 'week'::text WHEN 'MONTH'::text THEN 'month'::text ELSE 'year'::text END))::interval))::date END))
+                                      SubPlan 12
+                                        ->  Aggregate  (cost=1.75..1.76 rows=1 width=32) (never executed)
+                                              ->  Seq Scan on element_daily_price dp_9  (cost=0.00..1.75 rows=1 width=5) (never executed)
+                                                    Filter: ((raw_price IS NOT NULL) AND (price_date <= '2026-09-03'::date) AND ((element_name)::text = (e.element_code)::text) AND (source_id = CASE WHEN (x.id IS NOT NULL) THEN x.source_id ELSE d.source_id END) AND (price_date >= CASE WHEN ((CASE WHEN (x.id IS NOT NULL) THEN x.method ELSE d.method END)::text = 'LATEST'::text) THEN NULL::date ELSE (('2026-09-03'::date - ((((CASE WHEN (x.id IS NOT NULL) THEN x.window_num ELSE d.window_num END)::text || ' '::text) || CASE CASE WHEN (x.id IS NOT NULL) THEN x.window_unit ELSE d.window_unit END WHEN 'DAY'::text THEN 'day'::text WHEN 'WEEK'::text THEN 'week'::text WHEN 'MONTH'::text THEN 'month'::text ELSE 'year'::text END))::interval))::date END))
+                    ->  Hash  (cost=0.04..0.04 rows=2 width=200) (actual time=0.001..0.001 rows=0 loops=1)
+                          Buckets: 1024  Batches: 1  Memory Usage: 8kB
+                          ->  CTE Scan on versioned v2  (cost=0.00..0.04 rows=2 width=200) (actual time=0.001..0.001 rows=0 loops=1)
+        ->  Hash  (cost=365.32..365.32 rows=435 width=137) (actual time=2.786..2.790 rows=46 loops=1)
+              Buckets: 1024  Batches: 1  Memory Usage: 13kB
+              Buffers: shared hit=382
+              ->  Nested Loop Left Join  (cost=113.02..365.32 rows=435 width=137) (actual time=1.988..2.772 rows=46 loops=1)
+                    Buffers: shared hit=382
+                    ->  Hash Right Join  (cost=112.75..341.56 rows=435 width=79) (actual time=0.231..0.851 rows=46 loops=1)
+                          Hash Cond: ((v.material_no)::text = (ebi.material_part_no)::text)
+                          Buffers: shared hit=264
+                          ->  Append  (cost=0.00..217.36 rows=1891 width=43) (actual time=0.005..0.514 rows=1893 loops=1)
+                                Buffers: shared hit=250
+                                ->  Seq Scan on material_master v  (cost=0.00..140.90 rows=1890 width=43) (actual time=0.005..0.326 rows=1893 loops=1)
+                                      Buffers: shared hit=122
+                                ->  Subquery Scan on "*SELECT* 2"  (cost=0.28..67.01 rows=1 width=712) (actual time=0.073..0.074 rows=0 loops=1)
+                                      Buffers: shared hit=128
+                                      ->  Nested Loop Anti Join  (cost=0.28..67.00 rows=1 width=1502) (actual time=0.073..0.073 rows=0 loops=1)
+                                            Buffers: shared hit=128
+                                            ->  Seq Scan on ds_quote_material m  (cost=0.00..1.19 rows=19 width=47) (actual time=0.003..0.005 rows=42 loops=1)
+                                                  Buffers: shared hit=1
+                                            ->  Index Only Scan using uq_material_master_no on material_master x_1  (cost=0.28..3.45 rows=1 width=12) (actual time=0.001..0.001 rows=1 loops=42)
+                                                  Index Cond: (material_no = (m.material_no)::text)
+                                                  Heap Fetches: 42
+                                                  Buffers: shared hit=127
+                          ->  Hash  (cost=112.18..112.18 rows=46 width=48) (actual time=0.208..0.209 rows=46 loops=1)
+                                Buckets: 1024  Batches: 1  Memory Usage: 12kB
+                                Buffers: shared hit=14
+                                ->  Hash Right Join  (cost=100.14..112.18 rows=46 width=48) (actual time=0.134..0.198 rows=46 loops=1)
+                                      Hash Cond: ((mr.code)::text = (ebi.material_part_no)::text)
+                                      Buffers: shared hit=14
+                                      ->  Seq Scan on material_recipe mr  (cost=0.00..10.60 rows=260 width=15) (actual time=0.003..0.044 rows=260 loops=1)
+                                            Buffers: shared hit=8
+                                      ->  Hash  (cost=99.57..99.57 rows=46 width=38) (actual time=0.058..0.058 rows=46 loops=1)
+                                            Buckets: 1024  Batches: 1  Memory Usage: 12kB
+                                            Buffers: shared hit=6
+                                            ->  Subquery Scan on ebi  (cost=0.41..99.57 rows=46 width=38) (actual time=0.022..0.046 rows=46 loops=1)
+                                                  Buffers: shared hit=6
+                                                  ->  Index Scan using uq_element_bom_item on element_bom_item v_2  (cost=0.41..99.11 rows=46 width=2354) (actual time=0.020..0.035 rows=46 loops=1)
+                                                        Index Cond: ((system_type)::text = 'PRICING'::text)
+                                                        Buffers: shared hit=6
+                    ->  Memoize  (cost=0.27..0.29 rows=1 width=58) (actual time=0.041..0.042 rows=1 loops=46)
+                          Cache Key: ebi.material_no
+                          Cache Mode: binary
+                          Hits: 34  Misses: 12  Evictions: 0  Overflows: 0  Memory Usage: 2kB
+                          Buffers: shared hit=118
+                          ->  Subquery Scan on cl  (cost=0.26..0.28 rows=1 width=58) (actual time=0.158..0.158 rows=1 loops=12)
+                                Buffers: shared hit=118
+                                ->  Limit  (cost=0.26..0.27 rows=1 width=66) (actual time=0.158..0.158 rows=1 loops=12)
+                                      Buffers: shared hit=118
+                                      ->  Sort  (cost=0.26..0.27 rows=1 width=66) (actual time=0.157..0.157 rows=1 loops=12)
+                                            Sort Key: (CASE WHEN (bom_closure.lvl = 0) THEN 1 ELSE 0 END), bom_closure.lvl, bom_closure.root_no
+                                            Sort Method: top-N heapsort  Memory: 25kB
+                                            Buffers: shared hit=118
+                                            ->  CTE Scan on bom_closure  (cost=0.00..0.25 rows=1 width=66) (actual time=0.008..0.154 rows=6 loops=12)
+                                                  Filter: ((node_no)::text = (ebi.material_no)::text)
+                                                  Rows Removed by Filter: 202
+                                                  Buffers: shared hit=115
+Planning:
+  Buffers: shared hit=2123
+Planning Time: 12.033 ms
+Execution Time: 9.679 ms

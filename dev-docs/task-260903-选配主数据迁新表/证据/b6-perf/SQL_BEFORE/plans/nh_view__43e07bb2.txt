@@ -1,0 +1,27 @@
+SET
+Hash Left Join  (cost=1.38..82.29 rows=33 width=825) (actual time=0.057..0.114 rows=36 loops=1)
+  Hash Cond: ((pe.process_no)::text = (pm.process_no)::text)
+  Buffers: shared hit=35
+  ->  Nested Loop Left Join  (cost=0.29..81.07 rows=33 width=846) (actual time=0.019..0.068 rows=36 loops=1)
+        Buffers: shared hit=34
+        ->  Seq Scan on production_energy pe  (cost=0.00..3.00 rows=33 width=815) (actual time=0.007..0.018 rows=36 loops=1)
+              Filter: (((system_type)::text = 'PRICING'::text) AND ((price_type)::text = 'ENERGY'::text))
+              Rows Removed by Filter: 34
+              Buffers: shared hit=2
+        ->  Memoize  (cost=0.29..6.12 rows=1 width=43) (actual time=0.001..0.001 rows=1 loops=36)
+              Cache Key: pe.material_no
+              Cache Mode: logical
+              Hits: 24  Misses: 12  Evictions: 0  Overflows: 0  Memory Usage: 2kB
+              Buffers: shared hit=32
+              ->  Index Scan using uq_material_master_no on material_master mm  (cost=0.28..6.11 rows=1 width=43) (actual time=0.002..0.002 rows=1 loops=12)
+                    Index Cond: ((material_no)::text = (pe.material_no)::text)
+                    Buffers: shared hit=32
+  ->  Hash  (cost=1.04..1.04 rows=4 width=16) (actual time=0.018..0.018 rows=7 loops=1)
+        Buckets: 1024  Batches: 1  Memory Usage: 9kB
+        Buffers: shared hit=1
+        ->  Seq Scan on process_master pm  (cost=0.00..1.04 rows=4 width=16) (actual time=0.002..0.003 rows=7 loops=1)
+              Buffers: shared hit=1
+Planning:
+  Buffers: shared hit=467
+Planning Time: 1.991 ms
+Execution Time: 0.192 ms
