@@ -144,7 +144,9 @@ json.dump(data, open(os.path.join(SP,"matrix_full.json"),"w",encoding="utf-8"), 
 # ── 生成 md ────────────────────────────────────────────────────────────────
 L=[]
 L.append("# 附录 · 三套数据集字段矩阵（建表唯一依据）\n")
-L.append("> 由 `scratchpad/gen_matrix.py` 从三份 Excel 机器生成。**改 Excel 必须重跑本脚本并更新本文件**。\n")
+L.append("> 由本任务目录下的 `gen_matrix.py` 从**三份建表规范 Excel** 机器生成。**改 Excel 必须重跑本脚本并更新本文件**。\n")
+L.append("> 🚩 **权威源只有这三份**（都在本任务目录下）：`报价 - 数据导入与表格建表.xlsx` · `核价1 - 数据导入与表格建表.xlsx`（= **详细核价** `ds_cost_detail_*`，19 sheet） · `核价2 - 数据导入与表格建表.xlsx`（= **基础核价** `ds_cost_basic_*`，10 sheet）。\n")
+L.append("> 🚫 **不要改 `数据测试/*.xlsx`** —— 那是用户造的模拟数据，sheet 名与列名与建表规范完全相同、极易混，但改它对建表和本矩阵**零影响**。（2026-09-03 两个会话各指错一次，故此显式标注。）\n")
 L.append("> 底色语义：🔴 红 `FFFF0000` = 必填建字段 · ⚪ 白/无填充 `theme0` = **不建字段**（主数据 JOIN 展示列）· 🟡 其余色 = 选填建字段。\n")
 L.append("> 轴列**无论底色一律必填**（闸门 A0 裁决）。\n")
 missing=set()
