@@ -21,7 +21,7 @@
  */
 import { test, expect } from '@playwright/test';
 import {
-  assertIsolatedEnv, assertSampleDataLoaded, snapshotDataState, assertNoWrite,
+  assertIsolatedEnv, assertSampleDataLoaded, assertEmptyWindow, snapshotDataState, assertNoWrite,
   expectTotalMatchesDb, heroRowsInDb, sql, sqlOne, tableExists,
   shot, evidence, loginAs, gotoProductHub, switchTab, headerTexts, totalCount,
   rowCount, search, clearSearch, openDrawer, closeDrawer, drawerTabTexts,
@@ -37,9 +37,12 @@ test.describe.configure({ mode: 'serial' });
 
 let before: DataState;
 
+/** AC-13 的前提与其余用例相反（要求 0 行），由 PW_EMPTY_WINDOW=1 切换前置守卫。 */
+const EMPTY_WINDOW = process.env.PW_EMPTY_WINDOW === '1';
+
 test.beforeAll(() => {
   assertIsolatedEnv();
-  assertSampleDataLoaded();
+  if (EMPTY_WINDOW) assertEmptyWindow(); else assertSampleDataLoaded();
   before = snapshotDataState();
   console.log('[基线快照] 已记录 16 张 ds_quote_* 的行数与内容指纹');
 });
@@ -324,10 +327,28 @@ test('E2E-09 / AC-9：PRICING_MANAGER 与 SYSTEM_ADMIN 结果一致；反向 —
   const costDrawer = page.locator('.ant-drawer').first();
   await expect(costDrawer, '反向断言前置：核价侧抽屉应打开').toBeVisible({ timeout: 10_000 });
   await page.waitForTimeout(3000);
+
+  // 🚨 必须先切到**该料号确实有数据**的 tab 再断言。
+  //    核价抽屉默认停在第一个 tab「生产耗材BOM」，而 S-3120014539 在该 tab 上是「未维护」
+  //    （版本下拉 0 个选项）⇒ 本来就没有可编辑的东西，自然没有保存按钮。
+  //    2026-09-03 实测：不切 tab 时保存按钮 = 0，切到「物料BOM」后 = 1（96 个 input、8 行、版本 2000（当前））。
+  //    ⚠️ 这是**导航选错**，不是产品缺陷 —— A/B 已证主仓 master 与本分支行为逐项一致。
+  //    不切 tab 就断言，会把「默认 tab 无数据」误报成「核价侧被改成只读」。
+  const costTab = costDrawer.locator('[role="tab"]').filter({ hasText: '物料BOM' }).first();
+  await expect(costTab, '反向断言前置：核价抽屉应有「物料BOM」tab').toHaveCount(1);
+  await costTab.click();
+  await page.waitForTimeout(3500);
+  const costRows = await costDrawer.locator('.ant-table-tbody tr.ant-table-row').count();
+  const costInputs = await costDrawer.locator('.ant-table input').count();
+  console.log(`[AC-9 反向] 核价侧「物料BOM」行数=${costRows} 可编辑 input=${costInputs}`);
+  expect(costRows, '反向断言前置：该 tab 须有行（0 行 ⇒ 断言空跑）').toBeGreaterThan(0);
+
   const saveBtns = await costDrawer.getByRole('button', { name: /保\s*存/ }).count();
   console.log('[AC-9 反向] 核价侧抽屉「保存」按钮数 =', saveBtns);
-  evidence('AC09-costing-still-editable', `核价侧 PRICING_MANAGER 保存按钮数 = ${saveBtns}`);
+  evidence('AC09-costing-still-editable',
+    `核价侧 PRICING_MANAGER：物料BOM tab 行数=${costRows} input=${costInputs} 保存按钮数=${saveBtns}`);
   await shot(page, 'AC09-costing-editable', { fullPage: true });
+  expect(costInputs, '🚨 AC-9 反向断言：核价侧表格必须仍有可编辑控件').toBeGreaterThan(0);
   expect(saveBtns, '🚨 AC-9 反向断言：本任务不得把核价侧改成只读 —— ' +
     'PRICING_MANAGER 在「料号核价」抽屉里必须仍能看到保存按钮').toBeGreaterThan(0);
 });
@@ -551,7 +572,7 @@ test('E2E-14 / AC-14：销售产品搜主角料号得 1 行、清空恢复；客
   await search(page, KW);
   const uiHit = await rowCount(page);
   console.log(`[AC-14] 搜「${KW}」页面 ${uiHit} 行，库中 customer_no='${KW}' 为 ${dbHit} 行（AC 原文写 12）`);
-  evidence('AC14-cust0004', `ui=${uiHit} db=${dbHit} ac原文=12`);
+  evidence('AC14-cust0004', `ui=${uiHit} db=${dbHit} ac原文=11`);
   expect(dbHit, `AC-14 前置：库中 ${KW} 应有行（0 行 ⇒ 断言空跑）`).toBeGreaterThan(0);
   expect(uiHit, `AC-14：页面搜索结果 ${uiHit} 行 ≠ 库中 ${dbHit} 行 —— 搜索条件与库口径不一致`)
     .toBe(dbHit);

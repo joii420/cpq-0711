@@ -155,6 +155,34 @@ export function assertSampleDataLoaded(): { material: number; customerPart: numb
 }
 
 /**
+ * 🚨 空态窗口守卫（AC-13 专用，`PW_EMPTY_WINDOW=1` 时替代 `assertSampleDataLoaded`）。
+ *
+ * AC-13 的前提与其余用例**正好相反**：它要求 `ds_quote_material` **就是 0 行**。
+ * ⇒ 不能沿用「0 行就硬失败」的前置守卫，否则唯一能验空态的用例反而跑不起来。
+ *
+ * 但这**不是放宽**：本守卫同样是硬断言，只是断言方向相反 ——
+ *   ① 表必须存在（不存在 ⇒ 页面 404 而非空态，验的不是一回事）
+ *   ② 四张表必须**确实为 0 行**（非 0 ⇒ 窗口已被占用，硬失败并要求上报，
+ *      🚫 不许改用「搜一个不存在的关键词」等代理条件把自己糊绿）
+ */
+export function assertEmptyWindow() {
+  for (const t of ['ds_quote_material', 'ds_quote_customer_part']) {
+    if (!tableExists(t)) {
+      throw new Error(`🚨 停下报告：表 ${t} 不存在 —— 页面会 404，验的不是空态。`);
+    }
+  }
+  const rows = ['ds_quote_material', 'ds_quote_customer_part',
+                'ds_quote_material_bom', 'ds_quote_element_bom']
+    .map(t => [t, Number(sqlOne(`SELECT count(*) FROM ${t}`))] as const);
+  console.log('[空态窗口] ' + rows.map(([t, n]) => `${t}=${n}`).join('  '));
+  for (const [t, n] of rows) {
+    expect(n, `🚨 AC-13 的空态窗口已被占用：${t} 有 ${n} 行。\n` +
+      `窗口须由 dev-docs/task-260903-产品管理页重做/回退-清理我方数据.sql 精确回收后重开。\n` +
+      `🚫 不得改用代理条件把本用例变绿。`).toBe(0);
+  }
+}
+
+/**
  * 🚨 共享库漂移下唯一站得住的列表总数断言。
  *
  * 断的是**不变量**：「页面显示的总数 == 同一时刻库里的 count(*)」。
@@ -328,9 +356,42 @@ export async function gotoProductHub(page: Page) {
     throw new Error('🚨 停下报告：该账号 is_first_login=true，被强制跳改密页。' +
       '改密 = 改共享库全局状态，本用例不做。请主线提供一个 is_first_login=false 的账号。');
   }
-  if (/\/login/.test(page.url())) await page.goto('/products-hub');
-  await expect(page.getByRole('tab', { name: '客户产品' }),
-    '页面应渲染出「客户产品」页签（渲染不出 = 页面未实现或路由错）').toBeVisible({ timeout: 20_000 });
+  // ⚠️ SPA 鉴权态未就绪时会被弹回 /login。重试到真正落在 /products-hub 为止。
+  for (let i = 0; i < 3 && /\/login/.test(page.url()); i++) {
+    await page.waitForTimeout(1000);
+    await page.goto('/products-hub');
+  }
+
+  // 🚨 空白页兜底（2026-09-03 实测的**测试基础设施**问题，不是产品缺陷）：
+  //    症状 = URL 正确停在 /products-hub、但 body 全空、20s 内 React never mounts，
+  //    且每轮挂的用例都不一样（第一轮 E2E-06、第二轮 E2E-07）——
+  //    `testing.md §4`「随机挂一条、每次不一样」= 先查测试基础设施。
+  //    已排除：vite 未发生依赖重新预构建（日志无 optimize/reload）、登录返回 200、服务存活。
+  //    ⇒ 这里做**有界重载**，但每次重试都 console.warn 打出来，
+  //    🚫 绝不静默 —— 静默重试会把真实的「页面白屏」缺陷一起吞掉。
+  for (let i = 0; i < 3; i++) {
+    const txt = (await page.locator('body').innerText().catch(() => '')).trim();
+    if (txt.length > 0) break;
+    console.warn(`[gotoProductHub] ⚠️ 第 ${i + 1} 次检测到空白 body（URL=${page.url()}），reload 重试。` +
+      `这是已知的 dev-server 瞬态；若最终仍空白会硬失败。`);
+    await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
+    await page.waitForTimeout(2000);
+  }
+  // 🚨 失败信息必须自带现场：只说「页面未实现或路由错」会把**会话/路由问题**误导成产品缺陷
+  //    （2026-09-03 实测踩到：手工驱动同一页面渲染完全正常，但用例报「页面未实现」）。
+  try {
+    await expect(page.getByRole('tab', { name: '客户产品' })).toBeVisible({ timeout: 20_000 });
+  } catch (e) {
+    const url = page.url();
+    const body = (await page.locator('body').innerText().catch(() => '<取不到>')).slice(0, 300).replace(/\n+/g, ' | ');
+    const tabs = await page.locator('[role="tab"]').allInnerTexts().catch(() => []);
+    const html = (await page.content().catch(() => '')).length;
+    console.warn(`[gotoProductHub] 失败现场：document.length=${html}`);
+    throw new Error(
+      `「客户产品」页签未渲染。\n  当前 URL = ${url}\n  页面上的 role=tab = ${JSON.stringify(tabs)}\n` +
+      `  body[0:300] = ${body}\n` +
+      `  ⇒ URL 停在 /login = 会话未建立（测试基础设施问题）；URL 正确但无 tab 才是产品缺陷。`);
+  }
 }
 
 /**

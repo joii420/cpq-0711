@@ -27,7 +27,7 @@
 | C-1 | `GET /dataset/quote/parts` | 「销售产品」页签列表数据源 | AC-4, AC-14, AC-15 |
 | C-2 | `GET /dataset/quote/sheets` | 抽屉 tab 清单与顺序（**tab 数由本接口决定，前端不写死**） | AC-6 |
 | C-3 | `GET /dataset/quote/parts/{axisValue}/overview` | 抽屉各 tab 的行数徽标 / 是否从未有数据 | AC-6, AC-12 |
-| C-4 | `GET /dataset/quote/parts/{axisValue}/sheets/{sheetKey}/rows` | 抽屉某 tab 的行数据与列元数据 | AC-7, AC-8, AC-10 |
+| C-4 | `GET /dataset/quote/parts/{axisValue}/sheets/{sheetKey}/rows` | 抽屉某 tab 的**行数据**（🚩 **不含列元数据**，见 §5.6） | AC-7, AC-8, AC-10 |
 | C-5 | `GET /dataset/quote/parts/{axisValue}/sheets/{sheetKey}/versions` | 版本下拉 | AC-10 |
 | C-6 | **`GET /dataset/quote/customer-parts`** ⚠️ **待主源新增** | 「客户产品」页签列表数据源 | AC-2, AC-3, AC-14 |
 
