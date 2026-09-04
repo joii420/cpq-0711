@@ -662,10 +662,25 @@ export async function submitToQuotation(page: Page, tag: string) {
   // 🚨 等抽屉真的关掉再把控制权交回调用方：抽屉/遮罩还在时，页面上的按钮
   //    （如「添加产品」）会一直处于 not stable，表现为 locator.click 一路等到用例超时 ——
   //    失败点落在那个按钮上，而根因是抽屉没关（AC-19④/AC-12 就这么各挂了 4 分钟）。
+  // 🚨 提交成功后抽屉**不会自己关**，这是产品的有意设计，不是缺陷：
+  //    `ConfigureProductDrawer.submit()` 成功后走 `setResult(resp)` 渲染**结果页**（Steps 走到 current=3），
+  //    由用户点结果页的「完成」(`:294`，onClick=handleClose) 才关闭。
+  //    `handleClose` 的注释写明了原因 —— 已提交成功但尚未交给宿主的 lineItems 要在那里补交，
+  //    否则用户点 ✕ 会出现「后端已建好料号、报价单里却没有这一行」的静默丢数据。
+  // ⇒ 夹具必须**主动点「完成」**，🚫 不能干等 `.ant-drawer-open` 消失。
+  //    早先的干等写法让 AC-11 / AC-19④ 各挂 4 分钟，失败点落在页面按钮上，
+  //    根因却在这里 —— 典型的「timeout 伪装成产品缺陷」。
+  const doneBtn = page.locator('.ant-drawer-open').getByRole('button', { name: /完\s*成/ });
+  if (await doneBtn.count() > 0) {
+    await doneBtn.last().click({ timeout: 10000 }).catch(() => {});
+  } else {
+    console.log(`[${tag}] ⚠️ 结果页没有「完成」按钮，退回点 ✕ 关闭`);
+    await page.locator('.ant-drawer-open .ant-drawer-close').last().click({ timeout: 10000 }).catch(() => {});
+  }
   await page
     .waitForFunction(() => document.querySelectorAll('.ant-drawer-open').length === 0, undefined,
       { timeout: 15000 })
-    .catch(() => console.log(`[${tag}] ⚠️ 15s 内抽屉未关闭，后续操作可能被遮罩挡住`));
+    .catch(() => console.log(`[${tag}] ⚠️ 点「完成」后 15s 内抽屉仍未关闭 —— 这才是异常，请查产品`));
   await page.waitForTimeout(1500);
   return resp;
 }
