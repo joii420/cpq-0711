@@ -77,6 +77,16 @@ export interface PartListItem {
    * ⚠️ 后端未补齐前该字段为 undefined —— 渲染必须兜底 `—`，不得崩溃、不得整列不渲染。
    */
   productionNo?: string | null;
+  /**
+   * 产品分类（子任务 AC-8，来自 `task-260902` 的 B-16）。
+   *
+   * 🚩 **列表只显示 `categoryName`（如「默认分类」），不显示 `categoryCode`（`000000`）**
+   *    —— 用户 2026-09-03 裁决。`categoryCode` 声明在此只为契约完整，**渲染层不要用它**。
+   * ⏸ 对方 B-16 尚未落库 ⇒ 两个字段当前都是 undefined，渲染必须兜底 `—`、不得崩溃。
+   * ⚠️ 字段名以 `api.md §1 C-2` 为准；联调时若实际不同**报主线**，🚫 不自行改契约。
+   */
+  categoryCode?: string | null;
+  categoryName?: string | null;
   configuredCount?: number;
   totalSheetCount?: number;
   lastUpdatedAt?: string | null;
@@ -156,4 +166,32 @@ export interface CustomerPartItem {
 export interface CustomerPartListResult {
   total: number;
   items: CustomerPartItem[];
+}
+
+// ── 客户过滤器候选（GET /dataset/{dataset}/customer-parts/customers · 本任务 api.md §2 B-2）──
+
+/**
+ * 客户过滤器的一个候选项。
+ *
+ * 🚨 **候选来自 `ds_quote_customer_part` 里实际出现过的 `customer_no`（SELECT DISTINCT），
+ *    不是 `customer` 主数据表**（AC-5）。
+ *    `Q13CUST0617` 与 `C1` 未在 `customer` 表建档 —— 若候选只从 `customer` 表取，
+ *    这两个客户的 3 行产品在页面上看得见、却永远筛不出来。
+ */
+export interface CustomerOption {
+  customerNo: string;
+  /**
+   * 后端 LEFT JOIN `customer.code` 得出；JOIN 不到时为 null
+   * ⇒ 前端下拉显示 `客户编号（未建档）`（原型「客户产品-过滤器」）。
+   */
+  customerName?: string | null;
+  /**
+   * 该客户的产品行数，供下拉右侧显示「11」这类提示。
+   * ⚠️ api.md §2 B-2 注明 **实现可省** ⇒ 缺失时前端不显示数量，不得据其做任何判断。
+   */
+  count?: number | null;
+}
+
+export interface CustomerOptionsResult {
+  items: CustomerOption[];
 }
