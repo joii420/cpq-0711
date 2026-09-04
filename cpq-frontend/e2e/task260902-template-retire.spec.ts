@@ -97,7 +97,7 @@ test.describe('task-260902 选配模板下线', () => {
       .map((t) => t.replace(/\s+/g, ''));
     console.log('[AC-25①] 第 4 步的按钮 =', JSON.stringify(btnTexts));
     console.log('[AC-25①] 抽屉文本尾部 =',
-      (await drawer(page).innerText().catch(() => '')).replace(/\n+/g, ' | ').slice(-400));
+      (await drawer(page).innerText({ timeout: 3000 }).catch(() => '')).replace(/\n+/g, ' | ').slice(-400));
 
     const submit = drawer(page).getByRole('button', { name: /添加到报价单|确认并添加|确认加入/ }).last();
     await expect(submit,
@@ -115,7 +115,7 @@ test.describe('task-260902 选配模板下线', () => {
       submit.click(),
     ]);
     if (!resp) {
-      const after = (await drawer(page).innerText().catch(() => '(抽屉已关闭)'))
+      const after = (await drawer(page).innerText({ timeout: 3000 }).catch(() => '(抽屉已关闭)'))
         .replace(/\n+/g, ' | ').slice(0, 600);
       throw new Error(
         '[AC-25 诊断] 点了提交按钮后 25s 内没有观测到 POST /configure-product/quotations/。\n'
@@ -233,7 +233,7 @@ async function expandConfigCenter(page: Page): Promise<boolean> {
   for (let i = 1; i <= 4; i++) {
     if (await visible()) { console.log(`[AC-26] 子菜单已展开（第 ${i} 轮前）`); return true; }
     // 先试 hover（popup 模式），再试 click（inline 模式）
-    await title.hover({ force: true }).catch(() => {});
+    await title.hover({ force: true, timeout: 3000 }).catch(() => {});
     await page.waitForTimeout(600);
     if (await visible()) { console.log(`[AC-26] hover 展开成功（第 ${i} 轮）`); return true; }
     await title.click({ force: true, timeout: 3000 }).catch(() => {});
