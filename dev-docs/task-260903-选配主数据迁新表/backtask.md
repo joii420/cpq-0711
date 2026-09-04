@@ -57,3 +57,36 @@ B-1→B-AC-1/4/6 · B-2→B-AC-5 · B-3→B-AC-2 · B-4→B-AC-3 · B-5→B-AC-2
 A-1→A-AC-1 · A-2→A-AC-1/6 · A-3→A-AC-1 · A-4→A-AC-6 · A-5→A-AC-7 · A-6→A-AC-3 · A-7→A-AC-2 · A-8→A-AC-4/9 · A-9→A-AC-5 · A-10→A-AC-10 · A-11→R-1
 
 **无指不回 AC 的条目。**
+
+---
+
+## 🚨 合并前必做（漏了就是生产事故）
+
+### ① 还原两个迁移的 `.hold` 后缀
+
+2026-09-03 为防止「未批准就自动应用到共享库」，把两个迁移改名加了 `.hold`（提交 `9ea3c141`）：
+
+```
+V410__task260903_compat_views.sql.hold
+V411__task260903_rewrite_component_sql.sql.hold
+```
+
+🚫 **带着 `.hold` 合进 master = 灾难**：Flyway 不识别该后缀 ⇒ 迁移永远不跑 ⇒
+**兼容视图不存在，而 135 段 SQL 已改名指向它** ⇒ 报价单渲染全线 500。
+
+**合并前的动作**：
+```bash
+cd cpq-backend/src/main/resources/db/migration
+mv V410__task260903_compat_views.sql.hold          V410__task260903_compat_views.sql
+mv V411__task260903_rewrite_component_sql.sql.hold V411__task260903_rewrite_component_sql.sql
+# 然后确认目录里没有任何 .hold
+ls | grep '\.hold$' && echo '❌ 还有残留' || echo '✅ 已还原'
+```
+
+⚠️ **迁移号在合并那一刻要重新确认** —— 共享库是移动靶，V410/V411 可能已被别的任务线占用。
+查**共享库** `flyway_schema_history` 的 `max(version)`，🚫 不要只 `ls` 目录
+（目录里看不到别人已应用未合并的号）。
+
+### ② 合并顺序：B 必须先于 A 上线
+
+A 先于 B 上线 = 选配产品在报价单里渲染为空。两者若同批合并，确认 B 的迁移号小于 A。
