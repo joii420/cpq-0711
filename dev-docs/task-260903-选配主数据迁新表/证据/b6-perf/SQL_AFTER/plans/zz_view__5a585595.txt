@@ -1,0 +1,39 @@
+SET
+Sort  (cost=242.28..242.35 rows=28 width=101) (actual time=0.369..0.371 rows=3 loops=1)
+  Sort Key: c.seq_no
+  Sort Method: quicksort  Memory: 25kB
+  Buffers: shared hit=405
+  ->  Nested Loop Left Join  (cost=3.58..241.61 rows=28 width=101) (actual time=0.148..0.347 rows=3 loops=1)
+        Buffers: shared hit=402
+        ->  Hash Right Join  (cost=3.30..15.55 rows=3 width=48) (actual time=0.132..0.134 rows=3 loops=1)
+              Hash Cond: ((mr.code)::text = (c.material_no)::text)
+              Buffers: shared hit=11
+              ->  Seq Scan on material_recipe mr  (cost=0.00..10.60 rows=260 width=15) (actual time=0.008..0.048 rows=260 loops=1)
+                    Buffers: shared hit=8
+              ->  Hash  (cost=3.26..3.26 rows=3 width=38) (actual time=0.026..0.026 rows=3 loops=1)
+                    Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                    Buffers: shared hit=3
+                    ->  Seq Scan on capacity c  (cost=0.00..3.26 rows=3 width=38) (actual time=0.008..0.021 rows=3 loops=1)
+                          Filter: (is_current AND ((system_type)::text = 'QUOTE'::text))
+                          Rows Removed by Filter: 18
+                          Buffers: shared hit=3
+        ->  Append  (cost=0.28..75.31 rows=2 width=22) (actual time=0.006..0.070 rows=1 loops=3)
+              Buffers: shared hit=391
+              ->  Index Scan using uq_material_master_no on material_master v  (cost=0.28..8.29 rows=1 width=22) (actual time=0.005..0.005 rows=1 loops=3)
+                    Index Cond: ((material_no)::text = (c.material_no)::text)
+                    Buffers: shared hit=9
+              ->  Subquery Scan on "*SELECT* 2"  (cost=0.28..67.00 rows=1 width=276) (actual time=0.063..0.063 rows=0 loops=3)
+                    Filter: (("*SELECT* 2".material_no)::text = (c.material_no)::text)
+                    Buffers: shared hit=382
+                    ->  Nested Loop Anti Join  (cost=0.28..66.99 rows=1 width=1502) (actual time=0.063..0.063 rows=0 loops=3)
+                          Buffers: shared hit=382
+                          ->  Seq Scan on ds_quote_material m  (cost=0.00..1.19 rows=19 width=25) (actual time=0.001..0.003 rows=42 loops=3)
+                                Buffers: shared hit=3
+                          ->  Index Only Scan using uq_material_master_no on material_master x  (cost=0.28..3.45 rows=1 width=12) (actual time=0.001..0.001 rows=1 loops=126)
+                                Index Cond: (material_no = (m.material_no)::text)
+                                Heap Fetches: 126
+                                Buffers: shared hit=379
+Planning:
+  Buffers: shared hit=576
+Planning Time: 2.388 ms
+Execution Time: 0.461 ms

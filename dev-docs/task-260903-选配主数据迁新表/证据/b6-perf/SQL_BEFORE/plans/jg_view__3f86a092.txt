@@ -1,0 +1,30 @@
+SET
+Sort  (cost=33.28..33.28 rows=1 width=102) (actual time=0.130..0.131 rows=2 loops=1)
+  Sort Key: up.seq_no
+  Sort Method: quicksort  Memory: 25kB
+  Buffers: shared hit=34
+  ->  Nested Loop Left Join  (cost=0.96..33.27 rows=1 width=102) (actual time=0.045..0.111 rows=2 loops=1)
+        Join Filter: ((pm.process_no)::text = (up.operation_no)::text)
+        Rows Removed by Join Filter: 5
+        Buffers: shared hit=31
+        ->  Nested Loop Left Join  (cost=0.96..32.18 rows=1 width=63) (actual time=0.040..0.103 rows=2 loops=1)
+              Buffers: shared hit=29
+              ->  Nested Loop Left Join  (cost=0.69..23.83 rows=1 width=53) (actual time=0.028..0.090 rows=2 loops=1)
+                    Buffers: shared hit=25
+                    ->  Index Scan using uq_unit_price on unit_price up  (cost=0.41..15.52 rows=1 width=43) (actual time=0.021..0.080 rows=2 loops=1)
+                          Index Cond: (((system_type)::text = 'QUOTE'::text) AND ((price_type)::text = 'PROCESS'::text))
+                          Filter: (is_current AND ((customer_no)::text = 'CUST-0004'::text))
+                          Rows Removed by Filter: 1
+                          Buffers: shared hit=19
+                    ->  Index Scan using uq_material_master_no on material_master mm  (cost=0.28..8.29 rows=1 width=22) (actual time=0.004..0.004 rows=1 loops=2)
+                          Index Cond: ((material_no)::text = (up.code)::text)
+                          Buffers: shared hit=6
+              ->  Index Scan using material_recipe_code_key on material_recipe mr  (cost=0.27..8.29 rows=1 width=15) (actual time=0.006..0.006 rows=0 loops=2)
+                    Index Cond: ((code)::text = (up.code)::text)
+                    Buffers: shared hit=4
+        ->  Seq Scan on process_master pm  (cost=0.00..1.04 rows=4 width=16) (actual time=0.002..0.002 rows=4 loops=2)
+              Buffers: shared hit=2
+Planning:
+  Buffers: shared hit=604
+Planning Time: 2.558 ms
+Execution Time: 0.223 ms

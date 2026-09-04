@@ -1,0 +1,30 @@
+SET
+Sort  (cost=67.39..67.44 rows=22 width=861) (actual time=0.121..0.124 rows=22 loops=1)
+  Sort Key: tc.seq_no
+  Sort Method: quicksort  Memory: 28kB
+  Buffers: shared hit=32
+  ->  Hash Left Join  (cost=1.38..66.90 rows=22 width=861) (actual time=0.038..0.082 rows=22 loops=1)
+        Hash Cond: ((tc.process_no)::text = (pm.process_no)::text)
+        Buffers: shared hit=29
+        ->  Nested Loop Left Join  (cost=0.29..65.68 rows=22 width=882) (actual time=0.014..0.052 rows=22 loops=1)
+              Buffers: shared hit=28
+              ->  Seq Scan on tooling_cost tc  (cost=0.00..1.27 rows=22 width=851) (actual time=0.006..0.012 rows=22 loops=1)
+                    Filter: ((system_type)::text = 'PRICING'::text)
+                    Buffers: shared hit=1
+              ->  Memoize  (cost=0.29..6.67 rows=1 width=43) (actual time=0.001..0.001 rows=1 loops=22)
+                    Cache Key: tc.material_no
+                    Cache Mode: logical
+                    Hits: 13  Misses: 9  Evictions: 0  Overflows: 0  Memory Usage: 2kB
+                    Buffers: shared hit=27
+                    ->  Index Scan using uq_material_master_no on material_master mm  (cost=0.28..6.66 rows=1 width=43) (actual time=0.002..0.002 rows=1 loops=9)
+                          Index Cond: ((material_no)::text = (tc.material_no)::text)
+                          Buffers: shared hit=27
+        ->  Hash  (cost=1.04..1.04 rows=4 width=16) (actual time=0.008..0.009 rows=7 loops=1)
+              Buckets: 1024  Batches: 1  Memory Usage: 9kB
+              Buffers: shared hit=1
+              ->  Seq Scan on process_master pm  (cost=0.00..1.04 rows=4 width=16) (actual time=0.004..0.005 rows=7 loops=1)
+                    Buffers: shared hit=1
+Planning:
+  Buffers: shared hit=484
+Planning Time: 1.713 ms
+Execution Time: 0.197 ms

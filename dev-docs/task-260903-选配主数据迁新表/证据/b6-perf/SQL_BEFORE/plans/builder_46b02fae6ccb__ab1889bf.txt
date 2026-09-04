@@ -1,0 +1,24 @@
+SET
+Incremental Sort  (cost=32.28..32.33 rows=2 width=59) (actual time=0.128..0.129 rows=5 loops=1)
+  Sort Key: ebi.material_no, ebi.material_part_no, ebi.component_no, ebi.seq_no
+  Presorted Key: ebi.material_no
+  Full-sort Groups: 1  Sort Method: quicksort  Average Memory: 25kB  Peak Memory: 25kB
+  Buffers: shared hit=37
+  ->  Nested Loop Left Join  (cost=1.01..32.27 rows=1 width=59) (actual time=0.040..0.068 rows=5 loops=1)
+        Buffers: shared hit=31
+        ->  Nested Loop Left Join  (cost=0.73..23.97 rows=1 width=37) (actual time=0.033..0.056 rows=5 loops=1)
+              Buffers: shared hit=21
+              ->  Index Scan using uq_element_bom_item on element_bom_item ebi  (cost=0.46..15.62 rows=1 width=27) (actual time=0.019..0.022 rows=5 loops=1)
+                    Index Cond: (((system_type)::text = 'QUOTE'::text) AND ((customer_no)::text = 'CUST-0002'::text))
+                    Filter: (is_current AND ((material_no)::text = ANY ('{00005,00006,00168,00256,1630010773,2101110225,2111410069,2120011658,2120011659,3110520789,3110520790,3111320634,3111320635,3111320636,3111320637,0028-2609000012,3120011203,3110520422,00144}'::text[])))
+                    Buffers: shared hit=6
+              ->  Index Scan using material_recipe_code_key on material_recipe mr  (cost=0.27..8.29 rows=1 width=15) (actual time=0.006..0.006 rows=1 loops=5)
+                    Index Cond: ((code)::text = (ebi.material_part_no)::text)
+                    Buffers: shared hit=15
+        ->  Index Scan using uq_material_master_no on material_master mm  (cost=0.28..8.29 rows=1 width=22) (actual time=0.002..0.002 rows=0 loops=5)
+              Index Cond: ((material_no)::text = (ebi.material_part_no)::text)
+              Buffers: shared hit=10
+Planning:
+  Buffers: shared hit=467
+Planning Time: 2.025 ms
+Execution Time: 0.227 ms

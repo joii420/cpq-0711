@@ -1,0 +1,36 @@
+SET
+Hash Left Join  (cost=2.84..238.49 rows=284 width=824) (actual time=0.062..0.783 rows=30 loops=1)
+  Hash Cond: ((ae.process_no)::text = (pm.process_no)::text)
+  Buffers: shared hit=252
+  ->  Hash Right Join  (cost=1.75..236.13 rows=284 width=845) (actual time=0.041..0.756 rows=30 loops=1)
+        Hash Cond: ((v.material_no)::text = (ae.material_no)::text)
+        Buffers: shared hit=251
+        ->  Append  (cost=0.00..217.36 rows=1891 width=43) (actual time=0.003..0.592 rows=1893 loops=1)
+              Buffers: shared hit=250
+              ->  Seq Scan on material_master v  (cost=0.00..140.90 rows=1890 width=43) (actual time=0.003..0.357 rows=1893 loops=1)
+                    Buffers: shared hit=122
+              ->  Subquery Scan on "*SELECT* 2"  (cost=0.28..67.01 rows=1 width=712) (actual time=0.127..0.128 rows=0 loops=1)
+                    Buffers: shared hit=128
+                    ->  Nested Loop Anti Join  (cost=0.28..67.00 rows=1 width=1502) (actual time=0.127..0.127 rows=0 loops=1)
+                          Buffers: shared hit=128
+                          ->  Seq Scan on ds_quote_material m  (cost=0.00..1.19 rows=19 width=47) (actual time=0.009..0.011 rows=42 loops=1)
+                                Buffers: shared hit=1
+                          ->  Index Only Scan using uq_material_master_no on material_master x  (cost=0.28..3.45 rows=1 width=12) (actual time=0.002..0.002 rows=1 loops=42)
+                                Index Cond: (material_no = (m.material_no)::text)
+                                Heap Fetches: 42
+                                Buffers: shared hit=127
+        ->  Hash  (cost=1.38..1.38 rows=30 width=814) (actual time=0.018..0.019 rows=30 loops=1)
+              Buckets: 1024  Batches: 1  Memory Usage: 11kB
+              Buffers: shared hit=1
+              ->  Seq Scan on auxiliary_energy ae  (cost=0.00..1.38 rows=30 width=814) (actual time=0.005..0.010 rows=30 loops=1)
+                    Filter: ((system_type)::text = 'PRICING'::text)
+                    Buffers: shared hit=1
+  ->  Hash  (cost=1.04..1.04 rows=4 width=16) (actual time=0.007..0.007 rows=7 loops=1)
+        Buckets: 1024  Batches: 1  Memory Usage: 9kB
+        Buffers: shared hit=1
+        ->  Seq Scan on process_master pm  (cost=0.00..1.04 rows=4 width=16) (actual time=0.003..0.004 rows=7 loops=1)
+              Buffers: shared hit=1
+Planning:
+  Buffers: shared hit=516
+Planning Time: 2.434 ms
+Execution Time: 0.867 ms
