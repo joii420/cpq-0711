@@ -2,6 +2,7 @@ package com.cpq.task260903;
 
 import com.cpq.task260902.SelConfigAcTestBase;
 import io.quarkus.narayana.jta.QuarkusTransaction;
+import org.junit.jupiter.api.AfterEach;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -161,6 +162,41 @@ public abstract class Task260903Base extends SelConfigAcTestBase {
                             + "这是**环境前置缺失**，不是被测功能的结论。"
                             + "请先让后端把 V410 落库（起一次后端即 migrate-at-start），再跑本用例。");
         }
+    }
+
+    // ─────────────────────────── 残留登记（🚫 不自行删除）───────────────────────────
+
+    /**
+     * 🚨 <b>A 阶段用例会在共享库 {@code cpq_db_0724} 留下 {@code ds_quote_*} 残留，本方法只<b>登记</b>不删除。</b>
+     *
+     * <p>原因有二：
+     * <ol>
+     *   <li>父类 {@link com.cpq.task260902.SelConfigAcTestBase} 的 {@code @AfterEach} 是为 task-260902 写的，
+     *       它清 V6 与 {@code sel_product_no}，<b>不认识 {@code ds_quote_*}</b>（那时这些表还不在它的射程内）。</li>
+     *   <li>{@code DELETE} 属 {@code CLAUDE.md §3.2} 红线，<b>子代理没有批准权</b>。
+     *       ⇒ 这里打印精确的清理 SQL 与命中行数，由主线报用户批准后执行。</li>
+     * </ol>
+     *
+     * <p>残留是<b>可定位</b>的：{@code customer_no} 形如 {@code T2609}+uuid，每轮唯一，不会撞存量数据。
+     * 🚫 但「可定位」不等于「可以不管」—— 不登记的话，下一个人会把它当成业务数据。
+     */
+    @AfterEach
+    void reportDsQuoteResidue() {
+        List<String> custNos = fixtures.stream().map(Fx::customerNo).toList();
+        if (custNos.isEmpty()) return;
+        String inList = custNos.stream().map(c -> "'" + c + "'").reduce((a, b) -> a + "," + b).orElse("''");
+        long cp = count("SELECT count(*) FROM ds_quote_customer_part WHERE customer_no IN (" + inList + ")");
+        long mat = count("SELECT count(*) FROM ds_quote_material WHERE material_no IN "
+                + "(SELECT material_no FROM ds_quote_customer_part WHERE customer_no IN (" + inList + "))");
+        if (cp == 0 && mat == 0) {
+            System.out.println("[残留登记] 本用例未在 ds_quote_* 留下行");
+            return;
+        }
+        System.out.println("[残留登记] 🚨 本用例在共享库留下 ds_quote_* 残留（🚫 未删除，需主线批准）：\n"
+                + "    ds_quote_customer_part = " + cp + " 行\n"
+                + "    ds_quote_material      = " + mat + " 行\n"
+                + "  清理 SQL（交主线走 §3.2 三步前置后执行）：\n"
+                + "    DELETE FROM ds_quote_customer_part WHERE customer_no IN (" + inList + ");");
     }
 
     // ─────────────────────────── 事务内造数 + 回滚 ───────────────────────────
