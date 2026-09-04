@@ -57,6 +57,41 @@ public final class DsPartsPage {
             dynamic.put("productionNo", value);
         }
 
+        /**
+         * 料号类型（api.md §3，D-26 / R-1.6，2026-09-03）—— 取值域 {@code 零件} / {@code 外购件}。
+         *
+         * <p>与 {@link #putProductionNo} 同一套「键的有无由数据集决定」口径：三套数据集的物料表
+         * 当前<b>都</b>建了这一列 ⇒ 三套的键都恒出现，该料号没填就是 {@code "materialType": null}。
+         * 判定仍走 Registry 元数据而非硬编码 datasetKey —— 将来某套去掉这一列，键会自动跟着消失。
+         */
+        public void putMaterialType(String value) {
+            dynamic.put("materialType", value);
+        }
+
+        /**
+         * 产品分类编码（api.md §3，D-27 / R-1.7，2026-09-03）—— {@code product_category.code}。
+         *
+         * <p>同一套「键的有无由数据集决定」口径：<b>只有报价</b>的物料表建了 {@code category_code}
+         * ⇒ 只有 {@code dataset=quote} 的 items 出现本键；核价两套整个键不出现。
+         * <p>值永远非空：导入 Phase 1 对空格子填 {@code 000000}（默认分类），
+         * 存量行由 V409 迁移回填 —— 但这里仍<b>不</b>在展示层兜底成默认值，
+         * 真出现 null 说明有第三条写入路径绕过了 Phase 1，应当看得见而不是被抹平。
+         */
+        public void putCategoryCode(String value) {
+            dynamic.put("categoryCode", value);
+        }
+
+        /**
+         * 产品分类名称（api.md §3，D-27 / AC-61）—— 由 {@code LEFT JOIN product_category} 带出的显示名。
+         *
+         * <p>🚫 <b>不逐行查</b>：与 {@link #putCategoryCode} 同在一条 SELECT 里取回，
+         * 该端点的 SQL 条数恒为 2（count + page），与料号数无关。
+         * <p>code 在 {@code product_category} 里查不到（分类被删）时为 null —— 此时前端显示 code 本身即可。
+         */
+        public void putCategoryName(String value) {
+            dynamic.put("categoryName", value);
+        }
+
         @JsonAnyGetter
         public Map<String, Object> getDynamic() {
             return dynamic;
