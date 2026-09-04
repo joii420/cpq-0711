@@ -30,6 +30,12 @@
 | `material_ratio` | 直取 | `material_ratio`（`numeric(24,12)` → `(26,12)` 放宽，无损） |
 | `is_current` | 直取 | 常量 `true`（新表主表天然只存当前版本） |
 
+| `composition_qty` | 直取 | **`component_qty`**（2026-09-03 补，超出立项时的 §2.1）<br>🚨 实测 **53 段模板引用 `composition_qty`**，组合产品的装配用量全靠它，不映射 A-AC-8 必挂 |
+
+📌 **其余列（`rough_weight` / `net_weight` / `scrap_rate` / `defect_rate` 等）一律留 `NULL`**：
+它们的语义有「百分比 vs 小数」歧义，而选配侧在 V6 时代本来就写 NULL ——
+**留 NULL 才是行为等价**，硬填一个猜测值反而制造新 bug。
+
 ### 2.2 `v_compat_material_master` / `v_compat_element_bom_item`
 
 同构，映射见 `backtask.md B-1`。`element_bom_item.content_pct` ↔ `ds_quote_element_bom.content_pct` 同名直取。
