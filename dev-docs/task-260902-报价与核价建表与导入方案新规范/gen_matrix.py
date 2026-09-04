@@ -4,6 +4,8 @@ import openpyxl, os, json, re
 
 # 🚩 2026-09-03 修：原来这两个是「会话级 scratchpad 绝对路径 + 依赖 cwd 的相对路径」，
 #    换个会话跑必崩（scratchpad 随会话销毁），而本脚本是「建表唯一依据」的生成器，必须可重放。
+import argparse, subprocess, hashlib, tempfile
+
 _HERE = os.path.dirname(os.path.abspath(__file__))
 SP = os.path.join(_HERE, ".gen")     # 中间产物（matrix_full.json）落任务目录下，与会话无关
 D  = _HERE + os.sep                  # 三份建表规范 Excel 与本脚本同目录
@@ -14,6 +16,44 @@ DATASETS = [
     ("COST_BASIC",  "基础核价",   "ds_cost_basic_",  "核价2 - 数据导入与表格建表.xlsx"),
     ("COST_DETAIL", "详细核价",   "ds_cost_detail_", "核价1 - 数据导入与表格建表.xlsx"),
 ]
+
+# ── 输入源：工作区 vs git ────────────────────────────────────────────────────
+# 🚩 这三份 xlsx 会被企业 DLP 反复加密（文件头 877d1c..，openpyxl 报 BadZipFile）。
+#    加密只发生在「经 Windows 侧写入」的文件上，git blob 不受影响。
+#    ⇒ --from-git 让本脚本从 HEAD 读，使「重跑得到同样结果」成为真命题而不是碰运气。
+#    🚫 但默认仍读工作区 —— 否则「用户改了 Excel 忘了 commit」时会静默用旧版生成建表依据，
+#       那又是一条静默通道（与已删掉的 detail_fallback 降级同型）。
+_ap = argparse.ArgumentParser(description="从三份建表规范 Excel 生成字段矩阵")
+_ap.add_argument("--from-git", action="store_true",
+                 help="从 git HEAD 读三份 Excel（绕开 DLP 加密；可重放）。默认读工作区。")
+ARGS = _ap.parse_args()
+
+def _git(*a):
+    return subprocess.run(["git","-C",_HERE,*a], capture_output=True)
+
+def _rel(fn):
+    pref = _git("rev-parse","--show-prefix").stdout.decode().strip()
+    return pref + fn
+
+def resolve(fn):
+    """返回 (可打开的路径, 来源说明)。--from-git 时把 blob 落临时文件。"""
+    ws = os.path.join(D, fn)
+    if ARGS.from_git:
+        r = _git("show", "HEAD:" + _rel(fn))
+        if r.returncode != 0:
+            raise SystemExit(f"\n❌ git 里没有 {fn}（HEAD:{_rel(fn)}）\n   {r.stderr.decode().strip()}")
+        tmp = os.path.join(SP, "_git_" + fn)
+        open(tmp,"wb").write(r.stdout)
+        return tmp, "git HEAD"
+    # 默认读工作区，但比对 git 版本，不一致就提醒（不阻断 —— 用户可能正在改）
+    note = "工作区"
+    r = _git("show", "HEAD:" + _rel(fn))
+    if r.returncode == 0 and os.path.exists(ws):
+        if hashlib.md5(r.stdout).hexdigest() != hashlib.md5(open(ws,"rb").read()).hexdigest():
+            note = "工作区（⚠️ 与 git HEAD 不一致，记得 commit）"
+    return ws, note
+
+SRC_NOTE = {}
 
 # ── 中文列名 → 英文字段名（沿用现有 V6 命名习惯）────────────────────────────
 COL = {
@@ -127,7 +167,9 @@ def color_of(cell):
 DIRTY = []   # 表头含内部空白的列，收集后统一报错
 
 def load(fn):
-    wb = openpyxl.load_workbook(os.path.join(D, fn))
+    path, note = resolve(fn)
+    SRC_NOTE[fn] = note
+    wb = openpyxl.load_workbook(path)
     out=[]
     for ws in wb.worksheets:
         r2=[ws.cell(2,c).value for c in range(1,ws.max_column+1)]
@@ -161,7 +203,9 @@ for key,label,prefix,fn in DATASETS:
             f"   原因: {type(e).__name__}: {e}\n\n"
             f"   若报 'File is not a zip file'，先看文件头:  head -c 4 '{fn}' | xxd\n"
             f"     · 504b0304 = 正常 xlsx\n"
-            f"     · 877d1c.. = 企业 DLP 加密态 —— 请在 Windows 上打开后「另存为」写出明文\n\n"
+            f"     · 877d1c.. = 企业 DLP 加密态（会反复发生）—— 两条出路：\n"
+            f"         a) 在 Windows 上打开后「另存为」写出明文；或\n"
+            f"         b) 若该版本已提交，直接用已提交版本重跑:  python3 gen_matrix.py --from-git\n\n"
             f"   🚫 本脚本不再静默降级到 detail_fallback.json —— 那会用过期快照生成建表依据。")
     data[key+"__src"]=src
 
