@@ -323,3 +323,65 @@ git show HEAD:"dev-docs/task-260902-报价与核价建表与导入方案新规�
 **导入会被整份拒收的两条规则**（自造素材极易漏）：
 1. **D-24 轴值登记**：带版本 sheet 的每个轴值必须在同数据集的物料表里。
 2. **主数据严格校验**：元素 ∈ `element`、工序 ∈ **`process_master`**（不是 `process`，那是 0 行空壳）、材质 ∈ `material_recipe`、客户编号 ∈ `customer.code`。
+
+---
+
+## 4. 🆕 AC 可追溯矩阵（用例已落盘 · 2026-09-03 第二轮）
+
+> 本节把 §1 的「用例要点」落到**具体类名 + 方法名**。`testing.md §2`：矩阵缺行 = 文档未完成。
+> ⚠️ **本轮只写用例、未执行**（前后端仍在并行开发）。「验收证据形式」栏写的是**跑起来之后**会留下什么。
+
+**测试文件清单**（全部新增）：
+
+| 文件 | 覆盖 |
+|---|---|
+| `cpq-backend/src/test/java/com/cpq/task260819v9/V9TestBase.java` | 公共基座（登录/只读 SQL/发现/清理），不含断言 |
+| `…/V9SemanticGraphSeedTest.java` | AC-101 / 102 / 104 / 105 / 106 |
+| `…/V9SeedReplayTest.java` | AC-103 |
+| `…/V9CompileArtifactTest.java` | AC-107 / 108 / 109 / 110 / 111 / 112 |
+| `…/V9VersionAndDriftTest.java` | AC-118 / 124 / 125 / 126 |
+| `…/V9ZeroRegressionTest.java` | AC-113 / 122 |
+| `…/V9EndToEndPreviewTest.java` | AC-117 / 119 / 120 + 数据集切换序列 |
+| `…/V9ValidationAndCiTest.java` | AC-121 / 123（两条都是反证型） |
+| `cpq-frontend/e2e/task260819v9-dataset-selector.spec.ts` | AC-115 / 116（含序列） |
+| `dev-docs/task-260819-取数配置器/golden/ac125-drift-probe.sh` | AC-125 启动期自检的反证（🚦 **未执行，待批准**） |
+
+| AC | 覆盖它的测试（类 · 方法） | 层级 | 验收证据形式 |
+|---|---|---|---|
+| AC-101 | `V9SemanticGraphSeedTest.ac101_threeDialectsExist` | 数据层 | stdout 打印 dialect distinct + 每方言 SHEET 数 |
+| AC-102 | `V9SemanticGraphSeedTest.ac102_v6NodesGoneAndNoDanglingEdges` | 数据层 | stdout 打印 V6 命中明细 + 悬挂边数（含阳性对照） |
+| AC-103 | `V9SeedReplayTest.ac103_seedGeneratorIsReplayable` | 脚本层 | stdout 打印 已提交 md5 / 重跑 md5 / 产出来源 |
+| AC-104 | `V9SemanticGraphSeedTest.ac104_nodeColumnsMatchInformationSchema` | 数据层 | stdout 打印 45 表清单、进图数、逐节点列差集 |
+| AC-105 | `V9SemanticGraphSeedTest.ac105_historyTablesNotInGraph` | 数据层 | stdout 打印 `_history` 表数（阳性对照）+ 命中清单 |
+| AC-106 | `V9SemanticGraphSeedTest.ac106_tabViewsIsomorphicAcrossDialects` | 数据层 | stdout 打印三方言 tab_type / 费用类 variant_key 全清单 |
+| AC-107 | `V9CompileArtifactTest.ac107_noV6ScopePredicates` | 接口层 | stdout 打印完整产物 SQL |
+| AC-108 | `V9CompileArtifactTest.ac108_axisNarrowingPerDialect` | 接口层 | 三方言产物 SQL 全文（正反两向断言） |
+| AC-109 | `V9CompileArtifactTest.ac109_versionSwitchArtifact` | 接口层 | 两个 COST_* 的带版本页签产物 SQL |
+| AC-110 | `V9CompileArtifactTest.ac110_aliasRulePerDialect` | 接口层 | 三方言 `declaredColumns` 实际值 |
+| AC-111 | `V9CompileArtifactTest.ac111_partNoBridge` | 接口层 + 数据 | 桥重叠行清单 + 产物 SQL + preview 响应体 |
+| AC-112 | `V9CompileArtifactTest.ac112_bridgeMissingRowYieldsZeroRowsNotError` | 接口层（边界） | preview 响应体（rowCount + diagnostics 原文） |
+| AC-113 | `V9ZeroRegressionTest.ac113_legacyBuilderViewsRemoved` | 数据层 | 总数/`builder_config` 计数 + md5 差异清单 |
+| AC-115 | `task260819v9-dataset-selector.spec.ts` › `AC-115: …` | E2E | 📎 截图归档到 `证据/e2e/AC-115-数据集选择器三选一.png` |
+| AC-116 | 同上 › `AC-116: …` + `AC-116（序列）: …` | E2E（单点+边界+序列） | 📎 `证据/e2e/AC-116-*.png` + stdout 的两个集合 |
+| AC-117 | `V9EndToEndPreviewTest.ac117_costBasicEndToEnd` | 端到端 | stdout「紧邻取基准 + 预览行数」两行 |
+| AC-118 | `V9VersionAndDriftTest.ac118_mainTableHoldsOnlyCurrentVersion` | 数据层 | 逐表 rows/violations 打印 |
+| AC-119 | `V9EndToEndPreviewTest.ac119_costDetailEndToEnd` | 端到端 | 同 AC-117 |
+| AC-120 | `V9EndToEndPreviewTest.ac120_quoteEndToEndAfterSelfImport` | 端到端 | import 响应 + 自灌行数 + 预览行数 + 「别人的行未变」摘要 |
+| AC-121 | `V9ValidationAndCiTest.ac121_edgeCardinalityCiAssertion` | 接口层（**反证**） | 三段：绿 → 400 原文（含表/列名）→ 绿 |
+| AC-122 | `V9ZeroRegressionTest.ac122_noSqlTemplateChangedByThisTask` + **E2E 双 spec** | 数据层 + E2E | md5 逐行 diff；E2E 需另跑 `quotation-flow` / `composite-product-flow` |
+| AC-123 | `V9ValidationAndCiTest.ac123_physicalExistenceCheckOnSave` | 接口层（**反证**） | 两段：400 原文（点名表+列）→ 200 |
+| AC-124 | `V9VersionAndDriftTest.ac124a_dedicatedQuerySemantics`（数据层）<br>`…ac124b_endpointDoesNotRunTabViewSql`（端点层 + 反向） | 数据层 ✅ / 端点层 ❌ | ①集合相等打印；②**当前无夹具，判「未验证」** |
+| AC-125 | `V9VersionAndDriftTest.ac125_versionViewsHaveNoColumnDrift`（不变量）<br>`golden/ac125-drift-probe.sh`（启动期自检反证，**未执行**） | 数据层 ✅ / 启动期 ❌ | 逐视图列差集打印；反证需主线批准后跑脚本 |
+| AC-126 | `V9VersionAndDriftTest.ac126_versionColumnMustBeCastToText` | 数据层（**反证**） | 反证报错原文 + 正向行数 + 存量兜底清单 |
+
+### 4.1 🚨 本轮登记：用例会动的全局状态（`testing.md` §4.3）
+
+| 用例 | 动了什么 | 还原方式 |
+|---|---|---|
+| `V9CompileArtifactTest` / `V9EndToEndPreviewTest` / `V9ValidationAndCiTest` | `component` 插 1 行（`code` 前缀 `V9T-`） | `@AfterAll` `DELETE … WHERE code LIKE 'V9T-%'` |
+| `V9ValidationAndCiTest.ac123` | `component_sql_view` 插 1 行（自建组件下） | `@AfterAll` 按组件正向条件删 |
+| `V9ValidationAndCiTest.ac121` | `semantic_edge` + `semantic_edge_key` 新增 1 条边 | `finally` 按 edge id 删，**删后再断言残留=0** |
+| `V9EndToEndPreviewTest.ac120` | `ds_quote_material` 插入若干 `material_no` 前缀 `V9T-` 的行 | `@AfterEach` `WHERE material_no LIKE 'V9T-%'`；导入前后各断言一次「别人的 42 行一个字节没变」 |
+
+🚫 全套用例**不含** `TRUNCATE` / `DROP` / 无 `WHERE` 的 `DELETE`｜`UPDATE`。
+🚫 全套用例**不用** `Assumptions.assumeTrue` / `test.skip` —— 环境前置不满足一律硬失败并注明「未验证」。

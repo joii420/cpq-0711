@@ -32,7 +32,7 @@ D-21 要求「生成的 SQL」右侧常驻、随拖拽实时刷新。这看起�
 | 方法 | 路径 | 角色 | 说明 |
 |---|---|---|---|
 | `GET` | `/` | **全部 4 角色** | 读全图。`SALES_REP` / `SALES_MANAGER` / `PRICING_MANAGER` / `SYSTEM_ADMIN` 返回**内容完全相同**（AC-56 断言③） |
-| `GET` | `/field-tree?tabType=&variantKey=&selectedConfig=` | 全部 4 角色 | 配置器左侧字段面板的数据源（含**两层 roles** 合并结果）。响应形状见 §1.4 —— 🔴 **不是扁平节点数组** |
+| `GET` | `/field-tree?dialect=&tabType=&variantKey=&selectedConfig=` | 全部 4 角色 | 配置器左侧字段面板的数据源（含**两层 roles** 合并结果）。响应形状见 §1.4 —— 🔴 **不是扁平节点数组** |
 | `POST` | `/nodes` `/edges` `/tab-views` | `SYSTEM_ADMIN` | 新增。非超管一律 **403**，且库中数据逐行不变（AC-56 断言①） |
 | `PUT` | `/nodes/{id}` `/edges/{id}` `/tab-views/{id}` | `SYSTEM_ADMIN` | 修改 |
 | `DELETE` | `/nodes/{id}` `/edges/{id}` `/tab-views/{id}` | `SYSTEM_ADMIN` | 删除。被引用时由**库层外键**拒绝（AC-54） |
@@ -351,3 +351,57 @@ D-21 要求「生成的 SQL」右侧常驻、随拖拽实时刷新。这看起�
 - 判后端健康看业务端点返 **401**，不要用 `/q/health`（未装 smallrye-health，恒 404）
 - `/compile` 用 **300ms debounce**，拖拽连续操作不要每帧发请求
 - 切换「页签类型」或「数据来源」= 换主源 Sheet，已选列全部失效 → 必须二次确认再清空（D-34）
+
+---
+
+# 🆕 v9 契约增量（2026-09-03 · 三数据集范围替换）
+
+> 🚨 **本节裁决 D-89 / D-90 两条，是并行开发期两个代理各自独立报上来的同一件事。**
+> 上文其余部分未标注 v9 的，一律仍然有效。
+
+## v9-1 · 方言字段名一律是 `dialect`，🚫 不是 `dataset`
+
+依据 `需求文档.md §9.8 D-77`：**不另加 `dataset` 维度，`dialect` 直接扩到三值**。
+
+| 位置 | 字段 | 取值 |
+|---|---|---|
+| `GET /config/semantic-graph/field-tree` | **query 参数 `dialect`** | `QUOTE` \| `COST_BASIC` \| `COST_DETAIL` |
+| `POST /compile` · `/preview` · `/inspect` · `PUT /builder` 的 `builderConfig` | **`dialect`** | 同上 |
+| `GET /field-tree` 响应的 `groups[]` | **`dialect`**（服务端权威） | 同上 |
+
+取值与后端 `com.cpq.builder.compiler.CompileDialect` 的枚举名**逐字一致**（大写下划线）。
+
+✅ **前端内部类型名与 UI 文案不受约束** —— 界面上叫「数据集」、TS 类型叫 `BuilderDataset` 都可以。**只有过线的字段名必须是 `dialect`。**
+
+### 🚨 未知方言必须显式 400，不许静默回落
+
+**原行为**：`BuilderService#resolveDialect()` 对缺省 / 认不出的值一律按 `QUOTE` 处理且不报错。
+**后果**：客户端发 `dataset`（旧写法）或旧值 `"COSTING"` → **用户选了「基础核价」，后端按报价侧编译，全程不报错**。
+
+**新契约**：
+- **不传 `dialect`** → 缺省 `QUOTE`（保持向后兼容，存量手写视图不受影响）
+- **显式传了非三值之一**（含旧值 `"COSTING"`）→ **400**，错误信息点名收到的是什么、合法值有哪些
+
+⚠️ **旧值 `"COSTING"` 一并拒绝**：它已随 V6 整块作废，留着容错等于给「用错方言」开后门。
+
+> 🔑 **为什么这条必须写进契约而不是当实现细节**：`AC-107`/`AC-108` 在静默回落下**会照样通过** —— 它们只断言产物里没有 `system_type`/`customer_no`，**不断言方言选对了**。断言本身没写错，是覆盖不到「选错方言」这个失败模式。契约层堵住比加断言可靠。
+
+## v9-2 · `GET /field-tree` 必须按方言取页签视图（AC-116 的硬前提）
+
+**原状**：`SemanticGraphResource.fieldTree()` 签名只有 `tabType / variantKey / selectedConfig`。
+🚨 **`JAX-RS 会静默忽略未知查询参数`** —— 前端发 `?dialect=COST_BASIC` **不报错也不生效**。
+
+**必须补两处**：
+
+1. **入参** `@QueryParam("dialect")`。`semantic_tab_view` 唯一键是 `(tab_type, variant_key, dialect)`，不带方言过滤就无法确定取哪套页签视图 —— 三套并列，`findFirst()` 会**随机取到别的数据集那一行**。
+2. **响应** `groups[].dialect`（服务端权威）。
+
+⚠️ **前端不可能自己推断，这不是"前端偷懒"**：V410 种子实测 `semantic_node.node_key` **跨方言重名** —— `MATERIAL` / `MATERIAL_BOM` / `ELEMENT_BOM` 等 **10 个键在三套数据集里各有一份**，区分它们的是 `physical_table` 与 `semantic_node.dialect`，而字段树只给 `node_key`。
+
+⇒ **AC-116「另两套的表一张都不出现（不是置灰，是不出现）」的过滤必须在服务端做。** 前端的兜底推断保留为第二道防线，不作主路径。
+
+## v9-3 · 已知的存量跨端不一致（本任务不改，留痕）
+
+**页签类型「BOM」的写法两端不同**：前端本地常量存 `'BOM'`，服务端 `semantic_tab_view.tab_type` 存 **`'BOM 树'`**；实测 `GET /field-tree?tabType=BOM` 返回 **0 个分组**。
+
+F-30 之前就存在（旧代码直接铺服务端返回的 `availableTabTypes`，把它掩盖了）。**本任务内部绕开并留注释，🚫 不顺手统一** —— 改它等于改契约，超出 v9 范围，另行立项。
