@@ -2,8 +2,12 @@
 """生成三套数据集的字段矩阵（建表依据）。"""
 import openpyxl, os, json, re
 
-SP = "/tmp/claude-1000/-home-joii-project-cpq/0ba29c9c-75e6-47a4-ab46-934bb746ffa9/scratchpad"
-D  = "dev-docs/task-260902-报价与核价建表与导入方案新规范/"
+# 🚩 2026-09-03 修：原来这两个是「会话级 scratchpad 绝对路径 + 依赖 cwd 的相对路径」，
+#    换个会话跑必崩（scratchpad 随会话销毁），而本脚本是「建表唯一依据」的生成器，必须可重放。
+_HERE = os.path.dirname(os.path.abspath(__file__))
+SP = os.path.join(_HERE, ".gen")     # 中间产物（matrix_full.json）落任务目录下，与会话无关
+D  = _HERE + os.sep                  # 三份建表规范 Excel 与本脚本同目录
+os.makedirs(SP, exist_ok=True)
 
 DATASETS = [
     ("QUOTE",       "报价数据",   "ds_quote_",       "报价 - 数据导入与表格建表.xlsx"),
@@ -116,6 +120,8 @@ def color_of(cell):
     except Exception: pass
     return "none"
 
+DIRTY = []   # 表头含内部空白的列，收集后统一报错
+
 def load(fn):
     wb = openpyxl.load_workbook(os.path.join(D, fn))
     out=[]
@@ -127,7 +133,14 @@ def load(fn):
             n=ws.cell(1,c).value
             if n is None: continue
             m=ws.cell(2,c).value if versioned else None
-            cols.append([str(n).strip(), color_of(ws.cell(1,c)), m if m in ('轴','对比项') else None])
+            raw = str(n)
+            name = raw.strip()
+            # 🚩 列名内部空白 = 手误，且 strip() 治不了（空格在中间）。
+            #    建表规范的列名是 schema 的一部分，一个空格就会让 Registry 的 label 对不上、导入整份 400。
+            #    🚫 不自动去除 —— 那会让 Excel 与矩阵/DB 三方不一致且没人发现（今日「静默通道」族教训）。
+            if any(ch.isspace() for ch in name):
+                DIRTY.append((fn, ws.title, ws.cell(1,c).coordinate, name))
+            cols.append([name, color_of(ws.cell(1,c)), m if m in ('轴','对比项') else None])
         out.append({"name":ws.title,"versioned":versioned,"cols":cols})
     return out
 
@@ -136,8 +149,28 @@ for key,label,prefix,fn in DATASETS:
     try:
         data[key]=load(fn); src="机器解析"
     except Exception as e:
-        data[key]=json.load(open(os.path.join(SP,"detail_fallback.json"),encoding="utf-8")); src="人工转录（文件损坏）"
+        # 🚩 2026-09-03 修：原来这里静默降级到 detail_fallback.json（一份人工转录的快照）。
+        #    那意味着「Excel 读不了」时，脚本会拿过期数据生成「建表唯一依据」且不报错 ——
+        #    与 D-28/D-30/D-32 同属「静默通道」族。现在一律硬失败。
+        raise SystemExit(
+            f"\n❌ 无法读取建表规范 Excel: {fn}\n"
+            f"   原因: {type(e).__name__}: {e}\n\n"
+            f"   若报 'File is not a zip file'，先看文件头:  head -c 4 '{fn}' | xxd\n"
+            f"     · 504b0304 = 正常 xlsx\n"
+            f"     · 877d1c.. = 企业 DLP 加密态 —— 请在 Windows 上打开后「另存为」写出明文\n\n"
+            f"   🚫 本脚本不再静默降级到 detail_fallback.json —— 那会用过期快照生成建表依据。")
     data[key+"__src"]=src
+
+if DIRTY:
+    msg = "\n".join(
+        f"   · {f} · sheet「{sh}」· {coord}: {nm!r}\n"
+        f"       逐字符: " + " ".join(f"{ch}(U+{ord(ch):04X})" for ch in nm)
+        for f, sh, coord, nm in DIRTY)
+    raise SystemExit(
+        f"\n❌ 建表规范的表头里有 {len(DIRTY)} 个列名含空白字符:\n{msg}\n\n"
+        f"   列名是 schema 的一部分，一个空格就会让导入时表头对不上、整份 400 拒收。\n"
+        f"   请在 Excel 里删掉这些空格后重跑本脚本。\n"
+        f"   🚫 本脚本不自动去除 —— 那会让 Excel 与矩阵/DB 三方不一致且没人发现。")
 
 json.dump(data, open(os.path.join(SP,"matrix_full.json"),"w",encoding="utf-8"), ensure_ascii=False, indent=1)
 
