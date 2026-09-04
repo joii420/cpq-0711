@@ -1,0 +1,234 @@
+SET
+Sort  (cost=741.66..741.71 rows=19 width=177) (actual time=0.868..0.879 rows=2 loops=1)
+  Sort Key: (COALESCE((min(bom_closure.lvl)), 0)), mbi.material_no, mbi.seq_no
+  Sort Method: quicksort  Memory: 25kB
+  Buffers: shared hit=304
+  CTE bom_closure
+    ->  Recursive Union  (cost=43.12..538.96 rows=125 width=118) (actual time=0.289..0.450 rows=34 loops=1)
+          Buffers: shared hit=24
+          ->  Subquery Scan on "*SELECT* 1_2"  (cost=43.12..43.37 rows=25 width=116) (actual time=0.287..0.293 rows=6 loops=1)
+                Buffers: shared hit=12
+                ->  HashAggregate  (cost=43.12..43.37 rows=25 width=116) (actual time=0.287..0.291 rows=6 loops=1)
+                      Group Key: b_2.material_no
+                      Batches: 1  Memory Usage: 24kB
+                      Buffers: shared hit=12
+                      ->  Subquery Scan on b_2  (cost=0.29..43.06 rows=25 width=116) (actual time=0.019..0.284 rows=10 loops=1)
+                            Buffers: shared hit=12
+                            ->  Append  (cost=0.29..42.81 rows=25 width=3025) (actual time=0.019..0.282 rows=10 loops=1)
+                                  Buffers: shared hit=12
+                                  ->  Index Scan using idx_material_bom_item_parent on material_bom_item v_2  (cost=0.29..10.20 rows=1 width=1987) (actual time=0.018..0.028 rows=10 loops=1)
+                                        Index Cond: ((customer_no)::text = 'CUST-0001'::text)
+                                        Filter: (is_current AND ((system_type)::text = 'QUOTE'::text))
+                                        Buffers: shared hit=6
+                                  ->  Nested Loop Anti Join  (cost=9.28..32.48 rows=24 width=3068) (actual time=0.250..0.253 rows=0 loops=1)
+                                        Join Filter: ((x_2.material_no)::text = (b_3.material_no)::text)
+                                        Buffers: shared hit=6
+                                        ->  Hash Right Join  (cost=9.00..21.14 rows=24 width=154) (actual time=0.249..0.252 rows=0 loops=1)
+                                              Hash Cond: ((mr_2.code)::text = (b_3.input_material_no)::text)
+                                              Buffers: shared hit=6
+                                              ->  Seq Scan on material_recipe mr_2  (cost=0.00..10.60 rows=260 width=15) (never executed)
+                                              ->  Hash  (cost=8.70..8.70 rows=24 width=144) (actual time=0.236..0.238 rows=0 loops=1)
+                                                    Buckets: 1024  Batches: 1  Memory Usage: 8kB
+                                                    Buffers: shared hit=6
+                                                    ->  Hash Join  (cost=5.66..8.70 rows=24 width=144) (actual time=0.236..0.238 rows=0 loops=1)
+                                                          Hash Cond: ((b_3.material_no)::text = (cp_2.material_no)::text)
+                                                          Buffers: shared hit=6
+                                                          ->  Seq Scan on ds_quote_material_bom b_3  (cost=0.00..2.58 rows=58 width=86) (actual time=0.002..0.004 rows=58 loops=1)
+                                                                Buffers: shared hit=2
+                                                          ->  Hash  (cost=5.56..5.56 rows=8 width=332) (actual time=0.062..0.064 rows=2 loops=1)
+                                                                Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                                                                Buffers: shared hit=4
+                                                                ->  HashAggregate  (cost=5.48..5.56 rows=8 width=332) (actual time=0.059..0.061 rows=2 loops=1)
+                                                                      Group Key: cp_2.customer_no, cp_2.material_no
+                                                                      Batches: 1  Memory Usage: 24kB
+                                                                      Buffers: shared hit=4
+                                                                      ->  Append  (cost=1.22..5.44 rows=8 width=332) (actual time=0.022..0.058 rows=2 loops=1)
+                                                                            Buffers: shared hit=4
+                                                                            ->  Unique  (cost=1.22..1.23 rows=2 width=23) (actual time=0.022..0.023 rows=2 loops=1)
+                                                                                  Buffers: shared hit=1
+                                                                                  ->  Sort  (cost=1.22..1.23 rows=2 width=23) (actual time=0.021..0.022 rows=2 loops=1)
+                                                                                        Sort Key: cp_2.material_no
+                                                                                        Sort Method: quicksort  Memory: 25kB
+                                                                                        Buffers: shared hit=1
+                                                                                        ->  Seq Scan on ds_quote_customer_part cp_2  (cost=0.00..1.21 rows=2 width=23) (actual time=0.005..0.006 rows=2 loops=1)
+                                                                                              Filter: ((material_no IS NOT NULL) AND ((customer_no)::text = 'CUST-0001'::text))
+                                                                                              Rows Removed by Filter: 15
+                                                                                              Buffers: shared hit=1
+                                                                            ->  HashAggregate  (cost=4.11..4.17 rows=6 width=19) (actual time=0.033..0.034 rows=0 loops=1)
+                                                                                  Group Key: b_4.input_material_no
+                                                                                  Batches: 1  Memory Usage: 24kB
+                                                                                  Buffers: shared hit=3
+                                                                                  ->  Hash Join  (cost=1.24..4.09 rows=6 width=19) (actual time=0.032..0.033 rows=0 loops=1)
+                                                                                        Hash Cond: ((b_4.material_no)::text = (cp_3.material_no)::text)
+                                                                                        Buffers: shared hit=3
+                                                                                        ->  Seq Scan on ds_quote_material_bom b_4  (cost=0.00..2.58 rows=57 width=21) (actual time=0.002..0.007 rows=57 loops=1)
+                                                                                              Filter: (input_material_no IS NOT NULL)
+                                                                                              Rows Removed by Filter: 1
+                                                                                              Buffers: shared hit=2
+                                                                                        ->  Hash  (cost=1.21..1.21 rows=2 width=23) (actual time=0.006..0.007 rows=2 loops=1)
+                                                                                              Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                                                                                              Buffers: shared hit=1
+                                                                                              ->  Seq Scan on ds_quote_customer_part cp_3  (cost=0.00..1.21 rows=2 width=23) (actual time=0.002..0.003 rows=2 loops=1)
+                                                                                                    Filter: ((material_no IS NOT NULL) AND ((customer_no)::text = 'CUST-0001'::text))
+                                                                                                    Rows Removed by Filter: 15
+                                                                                                    Buffers: shared hit=1
+                                        ->  Materialize  (cost=0.29..10.21 rows=1 width=21) (never executed)
+                                              ->  Index Scan using idx_material_bom_item_parent on material_bom_item x_2  (cost=0.29..10.20 rows=1 width=21) (never executed)
+                                                    Index Cond: ((customer_no)::text = 'CUST-0001'::text)
+                                                    Filter: (is_current AND ((system_type)::text = 'QUOTE'::text))
+          ->  Hash Join  (cost=43.37..49.43 rows=10 width=118) (actual time=0.012..0.013 rows=3 loops=11)
+                Hash Cond: ((c.node_no)::text = (b_5.material_no)::text)
+                Buffers: shared hit=12
+                ->  WorkTable Scan on bom_closure c  (cost=0.00..5.62 rows=83 width=120) (actual time=0.000..0.000 rows=3 loops=11)
+                      Filter: (lvl < 10)
+                      Rows Removed by Filter: 0
+                ->  Hash  (cost=43.06..43.06 rows=25 width=112) (actual time=0.107..0.110 rows=10 loops=1)
+                      Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                      Buffers: shared hit=12
+                      ->  Subquery Scan on b_5  (cost=0.29..43.06 rows=25 width=112) (actual time=0.009..0.104 rows=10 loops=1)
+                            Buffers: shared hit=12
+                            ->  Append  (cost=0.29..42.81 rows=25 width=3025) (actual time=0.009..0.103 rows=10 loops=1)
+                                  Buffers: shared hit=12
+                                  ->  Index Scan using idx_material_bom_item_parent on material_bom_item v_3  (cost=0.29..10.20 rows=1 width=1987) (actual time=0.008..0.011 rows=10 loops=1)
+                                        Index Cond: ((customer_no)::text = 'CUST-0001'::text)
+                                        Filter: (is_current AND ((system_type)::text = 'QUOTE'::text))
+                                        Buffers: shared hit=6
+                                  ->  Nested Loop Anti Join  (cost=9.28..32.48 rows=24 width=3068) (actual time=0.088..0.090 rows=0 loops=1)
+                                        Join Filter: ((x_3.material_no)::text = (b_6.material_no)::text)
+                                        Buffers: shared hit=6
+                                        ->  Hash Right Join  (cost=9.00..21.14 rows=24 width=154) (actual time=0.088..0.090 rows=0 loops=1)
+                                              Hash Cond: ((mr_3.code)::text = (b_6.input_material_no)::text)
+                                              Buffers: shared hit=6
+                                              ->  Seq Scan on material_recipe mr_3  (cost=0.00..10.60 rows=260 width=15) (never executed)
+                                              ->  Hash  (cost=8.70..8.70 rows=24 width=144) (actual time=0.073..0.075 rows=0 loops=1)
+                                                    Buckets: 1024  Batches: 1  Memory Usage: 8kB
+                                                    Buffers: shared hit=6
+                                                    ->  Hash Join  (cost=5.66..8.70 rows=24 width=144) (actual time=0.073..0.074 rows=0 loops=1)
+                                                          Hash Cond: ((b_6.material_no)::text = (cp_4.material_no)::text)
+                                                          Buffers: shared hit=6
+                                                          ->  Seq Scan on ds_quote_material_bom b_6  (cost=0.00..2.58 rows=58 width=86) (actual time=0.001..0.004 rows=58 loops=1)
+                                                                Buffers: shared hit=2
+                                                          ->  Hash  (cost=5.56..5.56 rows=8 width=332) (actual time=0.053..0.054 rows=2 loops=1)
+                                                                Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                                                                Buffers: shared hit=4
+                                                                ->  HashAggregate  (cost=5.48..5.56 rows=8 width=332) (actual time=0.050..0.051 rows=2 loops=1)
+                                                                      Group Key: cp_4.customer_no, cp_4.material_no
+                                                                      Batches: 1  Memory Usage: 24kB
+                                                                      Buffers: shared hit=4
+                                                                      ->  Append  (cost=1.22..5.44 rows=8 width=332) (actual time=0.017..0.049 rows=2 loops=1)
+                                                                            Buffers: shared hit=4
+                                                                            ->  Unique  (cost=1.22..1.23 rows=2 width=23) (actual time=0.016..0.017 rows=2 loops=1)
+                                                                                  Buffers: shared hit=1
+                                                                                  ->  Sort  (cost=1.22..1.23 rows=2 width=23) (actual time=0.016..0.016 rows=2 loops=1)
+                                                                                        Sort Key: cp_4.material_no
+                                                                                        Sort Method: quicksort  Memory: 25kB
+                                                                                        Buffers: shared hit=1
+                                                                                        ->  Seq Scan on ds_quote_customer_part cp_4  (cost=0.00..1.21 rows=2 width=23) (actual time=0.004..0.005 rows=2 loops=1)
+                                                                                              Filter: ((material_no IS NOT NULL) AND ((customer_no)::text = 'CUST-0001'::text))
+                                                                                              Rows Removed by Filter: 15
+                                                                                              Buffers: shared hit=1
+                                                                            ->  HashAggregate  (cost=4.11..4.17 rows=6 width=19) (actual time=0.030..0.031 rows=0 loops=1)
+                                                                                  Group Key: b_7.input_material_no
+                                                                                  Batches: 1  Memory Usage: 24kB
+                                                                                  Buffers: shared hit=3
+                                                                                  ->  Hash Join  (cost=1.24..4.09 rows=6 width=19) (actual time=0.029..0.030 rows=0 loops=1)
+                                                                                        Hash Cond: ((b_7.material_no)::text = (cp_5.material_no)::text)
+                                                                                        Buffers: shared hit=3
+                                                                                        ->  Seq Scan on ds_quote_material_bom b_7  (cost=0.00..2.58 rows=57 width=21) (actual time=0.001..0.005 rows=57 loops=1)
+                                                                                              Filter: (input_material_no IS NOT NULL)
+                                                                                              Rows Removed by Filter: 1
+                                                                                              Buffers: shared hit=2
+                                                                                        ->  Hash  (cost=1.21..1.21 rows=2 width=23) (actual time=0.007..0.007 rows=2 loops=1)
+                                                                                              Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                                                                                              Buffers: shared hit=1
+                                                                                              ->  Seq Scan on ds_quote_customer_part cp_5  (cost=0.00..1.21 rows=2 width=23) (actual time=0.002..0.003 rows=2 loops=1)
+                                                                                                    Filter: ((material_no IS NOT NULL) AND ((customer_no)::text = 'CUST-0001'::text))
+                                                                                                    Rows Removed by Filter: 15
+                                                                                                    Buffers: shared hit=1
+                                        ->  Materialize  (cost=0.29..10.21 rows=1 width=21) (never executed)
+                                              ->  Index Scan using idx_material_bom_item_parent on material_bom_item x_3  (cost=0.29..10.20 rows=1 width=21) (never executed)
+                                                    Index Cond: ((customer_no)::text = 'CUST-0001'::text)
+                                                    Filter: (is_current AND ((system_type)::text = 'QUOTE'::text))
+  ->  Nested Loop Left Join  (cost=40.33..202.30 rows=19 width=177) (actual time=0.638..0.815 rows=2 loops=1)
+        Buffers: shared hit=298
+        ->  Hash Right Join  (cost=40.05..51.65 rows=2 width=186) (actual time=0.623..0.627 rows=2 loops=1)
+              Hash Cond: ((mr.code)::text = (mbi.component_no)::text)
+              Buffers: shared hit=37
+              ->  Seq Scan on material_recipe mr  (cost=0.00..10.60 rows=260 width=15) (actual time=0.003..0.044 rows=260 loops=1)
+                    Buffers: shared hit=8
+              ->  Hash  (cost=40.03..40.03 rows=2 width=176) (actual time=0.548..0.551 rows=2 loops=1)
+                    Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                    Buffers: shared hit=29
+                    ->  Hash Right Join  (cost=37.04..40.03 rows=2 width=176) (actual time=0.540..0.548 rows=2 loops=1)
+                          Hash Cond: ((bom_closure.node_no)::text = (mbi.material_no)::text)
+                          Buffers: shared hit=29
+                          ->  HashAggregate  (cost=3.44..4.69 rows=125 width=120) (actual time=0.467..0.469 rows=15 loops=1)
+                                Group Key: bom_closure.root_no, bom_closure.node_no
+                                Batches: 1  Memory Usage: 40kB
+                                Buffers: shared hit=24
+                                ->  CTE Scan on bom_closure  (cost=0.00..2.50 rows=125 width=120) (actual time=0.290..0.454 rows=34 loops=1)
+                                      Buffers: shared hit=24
+                          ->  Hash  (cost=33.58..33.58 rows=2 width=114) (actual time=0.057..0.059 rows=1 loops=1)
+                                Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                                Buffers: shared hit=5
+                                ->  Subquery Scan on mbi  (cost=0.29..33.58 rows=2 width=114) (actual time=0.035..0.052 rows=1 loops=1)
+                                      Buffers: shared hit=5
+                                      ->  Append  (cost=0.29..33.56 rows=2 width=2528) (actual time=0.034..0.051 rows=1 loops=1)
+                                            Buffers: shared hit=5
+                                            ->  Index Scan using idx_material_bom_item_parent on material_bom_item v_1  (cost=0.29..8.32 rows=1 width=1987) (actual time=0.034..0.034 rows=1 loops=1)
+                                                  Index Cond: (((customer_no)::text = 'CUST-0001'::text) AND ((characteristic)::text = 'OUTSOURCED'::text))
+                                                  Filter: (is_current AND ((system_type)::text = 'QUOTE'::text))
+                                                  Buffers: shared hit=3
+                                            ->  Nested Loop Anti Join  (cost=6.04..25.23 rows=1 width=3068) (actual time=0.013..0.015 rows=0 loops=1)
+                                                  Buffers: shared hit=2
+                                                  ->  Nested Loop Left Join  (cost=5.75..16.88 rows=1 width=154) (actual time=0.013..0.015 rows=0 loops=1)
+                                                        Buffers: shared hit=2
+                                                        ->  Nested Loop  (cost=5.48..8.53 rows=1 width=144) (actual time=0.013..0.014 rows=0 loops=1)
+                                                              Join Filter: ((b.material_no)::text = (cp.material_no)::text)
+                                                              Buffers: shared hit=2
+                                                              ->  Seq Scan on ds_quote_material_bom b  (cost=0.00..2.87 rows=1 width=86) (actual time=0.013..0.013 rows=0 loops=1)
+                                                                    Filter: (((output_material_type)::character varying(100))::text = 'OUTSOURCED'::text)
+                                                                    Rows Removed by Filter: 58
+                                                                    Buffers: shared hit=2
+                                                              ->  HashAggregate  (cost=5.48..5.56 rows=8 width=332) (never executed)
+                                                                    Group Key: cp.customer_no, cp.material_no
+                                                                    ->  Append  (cost=1.22..5.44 rows=8 width=332) (never executed)
+                                                                          ->  Unique  (cost=1.22..1.23 rows=2 width=23) (never executed)
+                                                                                ->  Sort  (cost=1.22..1.23 rows=2 width=23) (never executed)
+                                                                                      Sort Key: cp.material_no
+                                                                                      ->  Seq Scan on ds_quote_customer_part cp  (cost=0.00..1.21 rows=2 width=23) (never executed)
+                                                                                            Filter: ((material_no IS NOT NULL) AND ((customer_no)::text = 'CUST-0001'::text))
+                                                                          ->  HashAggregate  (cost=4.11..4.17 rows=6 width=19) (never executed)
+                                                                                Group Key: b_1.input_material_no
+                                                                                ->  Hash Join  (cost=1.24..4.09 rows=6 width=19) (never executed)
+                                                                                      Hash Cond: ((b_1.material_no)::text = (cp_1.material_no)::text)
+                                                                                      ->  Seq Scan on ds_quote_material_bom b_1  (cost=0.00..2.58 rows=57 width=21) (never executed)
+                                                                                            Filter: (input_material_no IS NOT NULL)
+                                                                                      ->  Hash  (cost=1.21..1.21 rows=2 width=23) (never executed)
+                                                                                            ->  Seq Scan on ds_quote_customer_part cp_1  (cost=0.00..1.21 rows=2 width=23) (never executed)
+                                                                                                  Filter: ((material_no IS NOT NULL) AND ((customer_no)::text = 'CUST-0001'::text))
+                                                        ->  Index Scan using material_recipe_code_key on material_recipe mr_1  (cost=0.27..8.29 rows=1 width=15) (never executed)
+                                                              Index Cond: ((code)::text = (b.input_material_no)::text)
+                                                  ->  Index Scan using idx_material_bom_item_parent on material_bom_item x  (cost=0.29..8.31 rows=1 width=21) (never executed)
+                                                        Index Cond: (((customer_no)::text = 'CUST-0001'::text) AND ((material_no)::text = (b.material_no)::text))
+                                                        Filter: (is_current AND ((system_type)::text = 'QUOTE'::text))
+        ->  Append  (cost=0.28..75.31 rows=2 width=22) (actual time=0.007..0.092 rows=1 loops=2)
+              Buffers: shared hit=261
+              ->  Index Scan using uq_material_master_no on material_master v  (cost=0.28..8.29 rows=1 width=22) (actual time=0.007..0.007 rows=1 loops=2)
+                    Index Cond: ((material_no)::text = (mbi.component_no)::text)
+                    Buffers: shared hit=6
+              ->  Subquery Scan on "*SELECT* 2"  (cost=0.28..67.00 rows=1 width=276) (actual time=0.084..0.084 rows=0 loops=2)
+                    Filter: (("*SELECT* 2".material_no)::text = (mbi.component_no)::text)
+                    Buffers: shared hit=255
+                    ->  Nested Loop Anti Join  (cost=0.28..66.99 rows=1 width=1502) (actual time=0.083..0.083 rows=0 loops=2)
+                          Buffers: shared hit=255
+                          ->  Seq Scan on ds_quote_material m  (cost=0.00..1.19 rows=19 width=25) (actual time=0.001..0.004 rows=42 loops=2)
+                                Buffers: shared hit=2
+                          ->  Index Only Scan using uq_material_master_no on material_master x_1  (cost=0.28..3.45 rows=1 width=12) (actual time=0.002..0.002 rows=1 loops=84)
+                                Index Cond: (material_no = (m.material_no)::text)
+                                Heap Fetches: 84
+                                Buffers: shared hit=253
+Planning:
+  Buffers: shared hit=850
+Planning Time: 8.059 ms
+Execution Time: 1.931 ms

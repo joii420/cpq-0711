@@ -1,0 +1,32 @@
+SET
+Sort  (cost=83.77..83.78 rows=1 width=101) (actual time=0.956..0.958 rows=14 loops=1)
+  Sort Key: up.seq_no
+  Sort Method: quicksort  Memory: 26kB
+  Buffers: shared hit=1855
+  ->  Nested Loop Left Join  (cost=0.69..83.76 rows=1 width=101) (actual time=0.058..0.924 rows=14 loops=1)
+        Buffers: shared hit=1852
+        ->  Index Scan using uq_unit_price on unit_price up  (cost=0.41..8.43 rows=1 width=58) (actual time=0.046..0.060 rows=14 loops=1)
+              Index Cond: (((system_type)::text = 'PRICING'::text) AND ((price_type)::text = 'FINISHED_OTHER'::text))
+              Filter: (cost_ratio IS NULL)
+              Rows Removed by Filter: 14
+              Buffers: shared hit=31
+        ->  Append  (cost=0.28..75.31 rows=2 width=43) (actual time=0.002..0.061 rows=1 loops=14)
+              Buffers: shared hit=1821
+              ->  Index Scan using uq_material_master_no on material_master v  (cost=0.28..8.29 rows=1 width=43) (actual time=0.002..0.002 rows=1 loops=14)
+                    Index Cond: ((material_no)::text = (up.code)::text)
+                    Buffers: shared hit=42
+              ->  Subquery Scan on "*SELECT* 2"  (cost=0.28..67.01 rows=1 width=712) (actual time=0.058..0.058 rows=0 loops=14)
+                    Filter: (("*SELECT* 2".material_no)::text = (up.code)::text)
+                    Buffers: shared hit=1779
+                    ->  Nested Loop Anti Join  (cost=0.28..67.00 rows=1 width=1502) (actual time=0.058..0.058 rows=0 loops=14)
+                          Buffers: shared hit=1779
+                          ->  Seq Scan on ds_quote_material m  (cost=0.00..1.19 rows=19 width=47) (actual time=0.001..0.003 rows=42 loops=14)
+                                Buffers: shared hit=14
+                          ->  Index Only Scan using uq_material_master_no on material_master x  (cost=0.28..3.45 rows=1 width=12) (actual time=0.001..0.001 rows=1 loops=588)
+                                Index Cond: (material_no = (m.material_no)::text)
+                                Heap Fetches: 588
+                                Buffers: shared hit=1765
+Planning:
+  Buffers: shared hit=589
+Planning Time: 3.204 ms
+Execution Time: 1.078 ms

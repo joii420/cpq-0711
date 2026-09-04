@@ -7,6 +7,7 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
@@ -50,11 +51,76 @@ public final class QuotePendingRewriter {
     private QuotePendingRewriter() {}
 
     /** 8 张版本化表白名单（占号表 material_customer_map 不参与，见 backtask B3.1 明确排除）。
-     *  repair-0804：annual_discount 并入。 */
+     *  repair-0804：annual_discount 并入。
+     *
+     *  <p><b>task-260903 · B-3：并入 3 张兼容视图。</b>本类的 {@link #TABLE_TOKEN} 要求表名
+     *  <b>紧跟在 FROM/JOIN 之后</b>才算命中。V411 把 135 段组件 SQL 里的
+     *  {@code material_bom_item} / {@code element_bom_item} / {@code material_master}
+     *  替换成 {@code v_compat_*} 之后，若不同步登记这三个名字，命中就会消失，而后果是
+     *  <b>完全静默</b>的 —— {@code QuoteViewValidationService.checkOne} 对
+     *  {@code anchorInjected=false} 返回「不适用，非失败」（那是本类刻意的安全降级设计），
+     *  启动不报错、日志不告警。
+     *
+     *  <p>实测口径（共享库 {@code cpq_db_0724}，2026-09-03）：150 段视图中 128 段命中白名单，
+     *  其中 <b>48 段只靠 {@code material_bom_item} / {@code element_bom_item} 命中</b>，
+     *  改名后这 48 段会同时失去 ① pending 影子行可见性 ② B5 回填资格。
+     *
+     *  <p>✅ 视图可以当表用：本类第 1 步的表替换只是把 token 换成
+     *  {@code (SELECT … FROM <名字> t WHERE …) alias} 等价子查询，视图完全支持；
+     *  {@code columnsOf} 走 {@code pg_attribute + regclass}，视图同样返回列清单；
+     *  锚点用的 {@code id} 列在兼容视图两侧都是 {@code uuid}
+     *  （V6 侧原生 uuid，新表侧由 {@code md5(...)::uuid} 合成，见 V410）。
+     *
+     *  <p>🚩 <b>已知未闭合缺口（回报已登记，待裁决）</b>：{@code QuoteBackfillService} 回填时执行
+     *  {@code UPDATE <基表名> SET is_current = …}，基表名由 pgjdbc {@code getBaseTableName} 得到
+     *  ——对视图返回<b>视图名本身</b>（实测，UNION 视图亦然）。UNION 视图不可更新，
+     *  且新表侧的合成 id 在任何物理表里都不存在。⇒ 兼容视图目前只保证
+     *  「pending 可见 + 锚点可追」，<b>回填写回路径尚未打通</b>。 */
     public static final Set<String> WHITELIST_TABLES = Set.of(
         "unit_price", "material_bom", "material_bom_item",
         "element_bom", "element_bom_item", "capacity", "plating_scheme",
-        "annual_discount");
+        "annual_discount",
+        // task-260903 B-3：V411 表名替换后的兼容视图名（material_master 无 is_current/
+        // pending_quotation_id 语义，历来就不在白名单里，其兼容视图同样不加）
+        "v_compat_material_bom_item", "v_compat_element_bom_item");
+
+    /**
+     * <b>兼容视图名 → 物理表名</b>（task-260903 · B-3 · 主线裁决「方案乙」）。
+     *
+     * <h3>为什么读路径走视图、写路径必须回物理表</h3>
+     * V411 把组件 SQL 的表名换成兼容视图后，{@code QuoteBackfillColumnMapper} 解析出的
+     * {@code primaryTable} 就是视图名（pgjdbc {@code getBaseTableName} 对视图返回视图名本身，
+     * UNION 视图亦然，已实测）。而回填最终执行的是
+     * {@code UPDATE <表> SET is_current = …} —— UNION 视图<b>不可更新</b>。
+     *
+     * <h3>为什么归一化就够，不需要 INSTEAD OF 触发器</h3>
+     * 兼容视图的新表侧把 {@code pending_quotation_id} 投影成常量 {@code NULL}（V410），
+     * 而回填的两条 UPDATE 都带 {@code WHERE pending_quotation_id = :qid}
+     * （{@code QuoteBackfillService#executeFlip}）⇒ <b>新表侧的行永远不会被回填选中</b>。
+     * 所以归一化之后：V6 侧行的 {@code id} 是真 uuid，{@code UPDATE material_bom_item}
+     * 与改造前逐字一致；新表侧行本就选不中，不存在「合成 uuid 定位不到物理行」的问题。
+     * 触发器方案是在为一个不会发生的场景付出复杂度。
+     *
+     * <p>🚨 <b>新增兼容视图时必须同步加进本表</b>。漏加不会报错 ——
+     * {@code QuoteBackfillCollector:172} 的 {@code QuoteTableAxis.of(...) == null → continue}
+     * 守卫会让它静默降级成「不回填」。守卫测试见
+     * {@code com.cpq.quotation.service.backfill.CompatViewBackfillGuardTest}。
+     */
+    public static final Map<String, String> COMPAT_VIEW_TO_TABLE = Map.of(
+        "v_compat_material_bom_item", "material_bom_item",
+        "v_compat_element_bom_item", "element_bom_item");
+
+    /**
+     * 把兼容视图名归一化成物理表名；非兼容视图（含 null）原样返回。
+     *
+     * <p>🚫 <b>只允许在 {@code QuoteBackfillColumnMapper} 解析出 {@code primaryTable} 的那一处调用。</b>
+     * 散在多处会让「这个字符串到底是视图名还是表名」变成需要逐处推理的问题 ——
+     * {@code QuoteBackfillCollector} 里有 4 处硬编码的
+     * {@code "material_bom_item".equals(primaryTable)} 分支，单点归一化才能一次性覆盖它们。
+     */
+    public static String physicalTable(String table) {
+        return table == null ? null : COMPAT_VIEW_TO_TABLE.getOrDefault(table, table);
+    }
 
     /** 物化期注入的行锚点系统列名。 */
     public static final String ANCHOR_COLUMN = "__v6_id";

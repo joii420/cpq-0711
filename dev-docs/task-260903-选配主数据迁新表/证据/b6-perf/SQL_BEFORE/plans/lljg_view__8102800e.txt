@@ -1,0 +1,18 @@
+SET
+Nested Loop Left Join  (cost=0.96..25.08 rows=1 width=121) (actual time=0.070..0.161 rows=21 loops=1)
+  Buffers: shared hit=117
+  ->  Nested Loop Left Join  (cost=0.69..16.73 rows=1 width=89) (actual time=0.062..0.128 rows=21 loops=1)
+        Buffers: shared hit=75
+        ->  Index Scan using uq_unit_price on unit_price up  (cost=0.41..8.43 rows=1 width=58) (actual time=0.037..0.063 rows=21 loops=1)
+              Index Cond: (((system_type)::text = 'PRICING'::text) AND ((price_type)::text = 'INCOMING_PROCESS'::text))
+              Buffers: shared hit=12
+        ->  Index Scan using uq_material_master_no on material_master mi  (cost=0.28..8.29 rows=1 width=43) (actual time=0.002..0.002 rows=1 loops=21)
+              Index Cond: ((material_no)::text = (up.code)::text)
+              Buffers: shared hit=63
+  ->  Index Scan using material_recipe_code_key on material_recipe mr  (cost=0.27..8.29 rows=1 width=15) (actual time=0.001..0.001 rows=0 loops=21)
+        Index Cond: ((code)::text = (up.code)::text)
+        Buffers: shared hit=42
+Planning:
+  Buffers: shared hit=548
+Planning Time: 2.284 ms
+Execution Time: 0.271 ms

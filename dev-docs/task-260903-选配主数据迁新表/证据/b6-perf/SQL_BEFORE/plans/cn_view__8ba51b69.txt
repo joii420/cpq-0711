@@ -1,0 +1,26 @@
+SET
+Hash Left Join  (cost=1.38..63.87 rows=31 width=202) (actual time=0.064..0.112 rows=31 loops=1)
+  Hash Cond: ((lr.process_no)::text = (pm.process_no)::text)
+  Buffers: shared hit=29
+  ->  Nested Loop Left Join  (cost=0.29..62.65 rows=31 width=192) (actual time=0.038..0.080 rows=31 loops=1)
+        Buffers: shared hit=28
+        ->  Seq Scan on labor_rate lr  (cost=0.00..1.39 rows=31 width=161) (actual time=0.008..0.016 rows=31 loops=1)
+              Filter: ((system_type)::text = 'PRICING'::text)
+              Buffers: shared hit=1
+        ->  Memoize  (cost=0.29..6.24 rows=1 width=43) (actual time=0.002..0.002 rows=1 loops=31)
+              Cache Key: lr.material_no
+              Cache Mode: logical
+              Hits: 22  Misses: 9  Evictions: 0  Overflows: 0  Memory Usage: 2kB
+              Buffers: shared hit=27
+              ->  Index Scan using uq_material_master_no on material_master mm  (cost=0.28..6.23 rows=1 width=43) (actual time=0.005..0.005 rows=1 loops=9)
+                    Index Cond: ((material_no)::text = (lr.material_no)::text)
+                    Buffers: shared hit=27
+  ->  Hash  (cost=1.04..1.04 rows=4 width=16) (actual time=0.009..0.009 rows=7 loops=1)
+        Buckets: 1024  Batches: 1  Memory Usage: 9kB
+        Buffers: shared hit=1
+        ->  Seq Scan on process_master pm  (cost=0.00..1.04 rows=4 width=16) (actual time=0.003..0.004 rows=7 loops=1)
+              Buffers: shared hit=1
+Planning:
+  Buffers: shared hit=414
+Planning Time: 1.822 ms
+Execution Time: 0.177 ms

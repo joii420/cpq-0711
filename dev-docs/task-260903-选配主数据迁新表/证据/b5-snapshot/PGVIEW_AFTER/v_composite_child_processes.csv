@@ -1,0 +1,4 @@
+hf_part_no,child_hf_part_no,child_part_name,child_seq,seq_no,process_code,assembly_process,customer_id,quotation_line_item_id
+"0028-2609000012","0028-2609000012","234","0","1","Z002","包装","1f5818d8-b934-44be-b1c3-47df7053cff4",\N
+"0028-2609000012","0028-2609000012","234","0","2","Z008","成品清洗","1f5818d8-b934-44be-b1c3-47df7053cff4",\N
+"S-3120014539","S-3120014539","主料1","0","1","Z380","Z380","f6d10ef0-04cc-45f3-829c-568c8cce3adf",\N

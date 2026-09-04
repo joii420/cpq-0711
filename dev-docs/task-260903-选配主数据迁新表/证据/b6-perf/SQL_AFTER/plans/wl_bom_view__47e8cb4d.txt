@@ -1,0 +1,43 @@
+SET
+Sort  (cost=93.41..93.43 rows=9 width=203) (actual time=1.685..1.687 rows=26 loops=1)
+  Sort Key: v_1.seq_no
+  Sort Method: quicksort  Memory: 28kB
+  Buffers: shared hit=3485
+  ->  Nested Loop Left Join  (cost=1.01..93.27 rows=9 width=203) (actual time=0.051..1.650 rows=26 loops=1)
+        Buffers: shared hit=3482
+        ->  Nested Loop Left Join  (cost=0.73..17.93 rows=1 width=148) (actual time=0.037..0.174 rows=26 loops=1)
+              Join Filter: ((pm.process_no)::text = (v_1.operation_no)::text)
+              Rows Removed by Join Filter: 144
+              Buffers: shared hit=109
+              ->  Nested Loop Left Join  (cost=0.73..16.84 rows=1 width=137) (actual time=0.028..0.116 rows=26 loops=1)
+                    Buffers: shared hit=83
+                    ->  Index Scan using uq_material_bom_item on material_bom_item v_1  (cost=0.46..8.48 rows=1 width=1987) (actual time=0.021..0.064 rows=26 loops=1)
+                          Index Cond: (((system_type)::text = 'PRICING'::text) AND ((customer_no)::text = '_GLOBAL_'::text))
+                          Filter: ((component_no)::text = ANY ('{00005,00006,00168,00256,1630010773,2101110225,2111410069,2120011658,2120011659,3110520789,3110520790,3111320634,3111320635,3111320636,3111320637,0028-2609000012,3120011203,3110520422,00144}'::text[]))
+                          Rows Removed by Filter: 42
+                          Buffers: shared hit=23
+                    ->  Index Scan using material_recipe_code_key on material_recipe mr  (cost=0.27..8.29 rows=1 width=15) (actual time=0.001..0.001 rows=0 loops=26)
+                          Index Cond: ((code)::text = (v_1.component_no)::text)
+                          Buffers: shared hit=60
+              ->  Seq Scan on process_master pm  (cost=0.00..1.04 rows=4 width=16) (actual time=0.001..0.001 rows=6 loops=26)
+                    Buffers: shared hit=26
+        ->  Append  (cost=0.28..75.32 rows=2 width=49) (actual time=0.018..0.056 rows=1 loops=26)
+              Buffers: shared hit=3373
+              ->  Index Scan using uq_material_master_no on material_master v  (cost=0.28..8.29 rows=1 width=49) (actual time=0.002..0.002 rows=1 loops=26)
+                    Index Cond: ((material_no)::text = (v_1.component_no)::text)
+                    Buffers: shared hit=70
+              ->  Subquery Scan on "*SELECT* 2"  (cost=0.28..67.01 rows=1 width=734) (actual time=0.054..0.054 rows=0 loops=26)
+                    Filter: (("*SELECT* 2".material_no)::text = (v_1.component_no)::text)
+                    Buffers: shared hit=3303
+                    ->  Nested Loop Anti Join  (cost=0.28..67.00 rows=1 width=1502) (actual time=0.054..0.054 rows=0 loops=26)
+                          Buffers: shared hit=3303
+                          ->  Seq Scan on ds_quote_material m  (cost=0.00..1.19 rows=19 width=52) (actual time=0.001..0.003 rows=42 loops=26)
+                                Buffers: shared hit=26
+                          ->  Index Only Scan using uq_material_master_no on material_master x  (cost=0.28..3.45 rows=1 width=12) (actual time=0.001..0.001 rows=1 loops=1092)
+                                Index Cond: (material_no = (m.material_no)::text)
+                                Heap Fetches: 1092
+                                Buffers: shared hit=3277
+Planning:
+  Buffers: shared hit=904
+Planning Time: 4.459 ms
+Execution Time: 1.784 ms

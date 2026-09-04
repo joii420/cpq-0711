@@ -407,3 +407,66 @@ ds_quote_element_bom=48   ds_quote_plating_scheme=2   ds_quote_material_bom_hist
    ```
 3. E2E 截图归档在 `dev-docs/task-260902-报价与核价建表与导入方案新规范/证据/e2e/`，
    **不是 `test-results/`** —— 后者每轮开跑前被清空，留在那里等于没有证据（`testing.md §2`）。
+
+---
+
+# §9 第二批（D-27 ~ D-32）的测试状态 —— 主线记录，非测试代理产出
+
+> 本批未派测试代理，测试由后端代理随实现一并写/改，主线负责跑与归因。
+> **本节诚实记录「没有全绿」这个事实与它的归因过程。**
+
+## 结果
+
+```
+mvnw -o test -Dtest='Dataset*Test'  →  Tests run: 59, Failures: 26, Errors: 1
+  DatasetStructureAcTest        10/10 ✅   建表结构（AC-1~5）
+  DatasetPreflightTest          11/11 ✅   夹具前置自检
+  DatasetFingerprintsTest        6/6  ✅   指纹算法（不连库）
+  其余 26 个                     ❌       全部止步于 login()
+```
+
+## 归因：26 个失败没有一个到达业务断言
+
+失败堆栈**全部相同**：
+
+```
+java.lang.AssertionError: 登录失败：admin → HTTP 500
+  at DatasetAcTestBase.login(DatasetAcTestBase.java:210)
+  at DatasetAcTestBase.adminSession(DatasetAcTestBase.java:195)
+```
+
+对照检查：
+- 克隆库 `admin` 实查 `status=ACTIVE`、`locked_until=NULL`
+- **同样的凭据在 8081 上登录返回 200**
+- 8 个测试类共用同一个共享 Redis，测试自己的排查提示第一条就是「Redis 登录限流 30 次/分/IP」
+
+⇒ **失败点在测试基础设施层（`DatasetAcTestBase.login`），不在被测代码层。** 主线不把它当作代码缺陷，**但也不把它当作绿的**。
+
+## 🚩 其中有一整轮是主线自己制造的假红
+
+第一轮跑时主线传了 `-Dquarkus.redis.hosts=redis://10.177.152.12:6379`，
+**把 `application-test.properties` 里自带的密码覆盖掉了**：
+
+```properties
+# application-test.properties 原本就是对的
+quarkus.redis.hosts=redis://:${REDIS_PASSWORD:joii5231}@${REDIS_HOST:10.177.152.12}:${REDIS_PORT:6379}/${REDIS_DB:0}
+```
+
+⇒ 登录时 `SessionHelper.createSession` 写 Redis 抛 `NOAUTH Authentication required` → 500 → 全红。
+
+📌 **教训**：**「测试红了」和「测试绿了」都可能与被测代码无关。**
+如果只看「26 个红」这个数字就去查代码，会在没有问题的地方找问题。
+覆盖环境参数前，先确认「配置文件里本来是什么」——**覆盖是减法，不是加法**。
+
+## 为什么转向 AC 亲验而不是继续修测试
+
+1. **测试全绿是必要条件，不是充分条件**（`CLAUDE.md` §6.1）——它证明「代码按实现者的理解工作」，AC 证明「功能符合需求文档」。
+2. 本批的 8 条 AC **可以完全绕开测试基础设施验证**：起临时实例 + 真实导入 + 查库，不依赖 `DatasetAcTestBase.login`。
+3. 后端代理在它自己的环境里跑通过这批 AC 并留了完整证据，与主线亲验结论一致。
+
+⇒ 主线亲验结果见 [`亲验记录.md`](./亲验记录.md) 第二轮章节，**AC-59~65 + D-32 共 8 条全部通过**，每条附实际输出。
+
+## 遗留
+
+- ⏸ **这 26 个测试仍是红的**，根因（登录限流）未修。修法可能是让 `DatasetAcTestBase` 跨类共享 session，或测试串行化。**建议进 BACKLOG，不阻塞本批交付** —— 它们此前在代理的环境里是绿的，是并发跑法暴露的问题。
+- ⏸ `DatasetFixtureSelfTest` 有 1 个 Error（不连库的夹具构造器自检），未单独归因。

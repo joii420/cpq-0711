@@ -1,0 +1,41 @@
+SET
+Append  (cost=0.83..620.77 rows=20 width=340) (actual time=0.095..2.086 rows=18 loops=1)
+  Buffers: shared hit=410
+  ->  Nested Loop Left Join  (cost=0.83..100.76 rows=1 width=71) (actual time=0.094..0.275 rows=5 loops=1)
+        Buffers: shared hit=99
+        ->  Nested Loop Left Join  (cost=0.56..92.40 rows=1 width=49) (actual time=0.079..0.239 rows=5 loops=1)
+              Buffers: shared hit=85
+              ->  Index Scan using idx_material_bom_item_comp on material_bom_item mbi  (cost=0.29..84.10 rows=1 width=39) (actual time=0.071..0.223 rows=5 loops=1)
+                    Index Cond: ((component_no)::text = ANY ('{00005,00006,00168,00256,1630010773,2101110225,2111410069,2120011658,2120011659,3110520789,3110520790,3111320634,3111320635,3111320636,3111320637,0028-2609000012,3120011203,3110520422,00144}'::text[]))
+                    Filter: (is_current AND ((system_type)::text = 'QUOTE'::text))
+                    Rows Removed by Filter: 26
+                    Buffers: shared hit=74
+              ->  Index Scan using uq_material_master_no on material_master mm  (cost=0.28..8.29 rows=1 width=22) (actual time=0.003..0.003 rows=0 loops=5)
+                    Index Cond: ((material_no)::text = (mbi.component_no)::text)
+                    Buffers: shared hit=11
+        ->  Index Scan using material_recipe_code_key on material_recipe mr  (cost=0.27..8.29 rows=1 width=15) (actual time=0.007..0.007 rows=1 loops=5)
+              Index Cond: ((code)::text = (mbi.component_no)::text)
+              Buffers: shared hit=14
+  ->  Subquery Scan on "*SELECT* 2"  (cost=109.25..519.92 rows=19 width=272) (actual time=1.804..1.808 rows=13 loops=1)
+        Buffers: shared hit=311
+        ->  Hash Right Anti Join  (cost=109.25..519.73 rows=19 width=272) (actual time=1.803..1.806 rows=13 loops=1)
+              Hash Cond: ((x.component_no)::text = (mm_1.material_no)::text)
+              Buffers: shared hit=311
+              ->  Seq Scan on material_bom_item x  (cost=0.00..410.31 rows=59 width=4) (actual time=0.008..1.748 rows=17 loops=1)
+                    Filter: (is_current AND ((system_type)::text = 'QUOTE'::text))
+                    Rows Removed by Filter: 11138
+                    Buffers: shared hit=271
+              ->  Hash  (cost=109.01..109.01 rows=19 width=80) (actual time=0.035..0.035 rows=14 loops=1)
+                    Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                    Buffers: shared hit=40
+                    ->  Bitmap Heap Scan on material_master mm_1  (cost=57.47..109.01 rows=19 width=80) (actual time=0.027..0.030 rows=14 loops=1)
+                          Recheck Cond: ((material_no)::text = ANY ('{00005,00006,00168,00256,1630010773,2101110225,2111410069,2120011658,2120011659,3110520789,3110520790,3111320634,3111320635,3111320636,3111320637,0028-2609000012,3120011203,3110520422,00144}'::text[]))
+                          Heap Blocks: exact=2
+                          Buffers: shared hit=40
+                          ->  Bitmap Index Scan on uq_material_master_no  (cost=0.00..57.41 rows=19 width=0) (actual time=0.023..0.023 rows=14 loops=1)
+                                Index Cond: ((material_no)::text = ANY ('{00005,00006,00168,00256,1630010773,2101110225,2111410069,2120011658,2120011659,3110520789,3110520790,3111320634,3111320635,3111320636,3111320637,0028-2609000012,3120011203,3110520422,00144}'::text[]))
+                                Buffers: shared hit=38
+Planning:
+  Buffers: shared hit=496
+Planning Time: 2.181 ms
+Execution Time: 2.256 ms

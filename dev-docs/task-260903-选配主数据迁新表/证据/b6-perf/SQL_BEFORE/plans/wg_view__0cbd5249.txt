@@ -1,0 +1,49 @@
+SET
+Sort  (cost=140.33..140.34 rows=1 width=121) (actual time=0.379..0.381 rows=31 loops=1)
+  Sort Key: (COALESCE(cl.lvl, 0)), mbi.material_no, mbi.seq_no
+  Sort Method: quicksort  Memory: 27kB
+  Buffers: shared hit=236
+  CTE bom_closure
+    ->  Recursive Union  (cost=0.29..114.99 rows=11 width=66) (actual time=0.013..0.142 rows=47 loops=1)
+          Buffers: shared hit=72
+          ->  Unique  (cost=0.29..10.21 rows=1 width=28) (actual time=0.012..0.018 rows=6 loops=1)
+                Buffers: shared hit=6
+                ->  Index Scan using idx_material_bom_item_parent on material_bom_item b  (cost=0.29..10.20 rows=1 width=28) (actual time=0.012..0.015 rows=10 loops=1)
+                      Index Cond: ((customer_no)::text = 'CUST-0001'::text)
+                      Filter: (is_current AND ((system_type)::text = 'QUOTE'::text))
+                      Buffers: shared hit=6
+          ->  Nested Loop  (cost=0.29..10.47 rows=1 width=66) (actual time=0.008..0.010 rows=4 loops=11)
+                Join Filter: ((c.node_no)::text = (b_1.material_no)::text)
+                Rows Removed by Join Filter: 36
+                Buffers: shared hit=66
+                ->  Index Scan using idx_material_bom_item_parent on material_bom_item b_1  (cost=0.29..10.20 rows=1 width=16) (actual time=0.002..0.004 rows=10 loops=11)
+                      Index Cond: ((customer_no)::text = 'CUST-0001'::text)
+                      Filter: (is_current AND ((system_type)::text = 'QUOTE'::text))
+                      Buffers: shared hit=66
+                ->  WorkTable Scan on bom_closure c  (cost=0.00..0.22 rows=3 width=120) (actual time=0.000..0.000 rows=4 loops=110)
+                      Filter: (lvl < 10)
+                      Rows Removed by Filter: 0
+  ->  Nested Loop Left Join  (cost=0.83..25.33 rows=1 width=121) (actual time=0.069..0.272 rows=31 loops=1)
+        Buffers: shared hit=230
+        ->  Nested Loop Left Join  (cost=0.56..16.98 rows=1 width=99) (actual time=0.061..0.237 rows=31 loops=1)
+              Buffers: shared hit=168
+              ->  Nested Loop Left Join  (cost=0.29..8.67 rows=1 width=89) (actual time=0.046..0.184 rows=31 loops=1)
+                    Join Filter: ((cl.node_no)::text = (mbi.material_no)::text)
+                    Rows Removed by Join Filter: 16
+                    Buffers: shared hit=75
+                    ->  Index Scan using idx_material_bom_item_parent on material_bom_item mbi  (cost=0.29..8.32 rows=1 width=27) (actual time=0.025..0.025 rows=1 loops=1)
+                          Index Cond: (((customer_no)::text = 'CUST-0001'::text) AND ((characteristic)::text = 'OUTSOURCED'::text))
+                          Filter: (is_current AND ((system_type)::text = 'QUOTE'::text))
+                          Buffers: shared hit=3
+                    ->  CTE Scan on bom_closure cl  (cost=0.00..0.22 rows=11 width=120) (actual time=0.013..0.151 rows=47 loops=1)
+                          Buffers: shared hit=72
+              ->  Index Scan using uq_material_master_no on material_master mm  (cost=0.28..8.29 rows=1 width=22) (actual time=0.001..0.001 rows=1 loops=31)
+                    Index Cond: ((material_no)::text = (mbi.component_no)::text)
+                    Buffers: shared hit=93
+        ->  Index Scan using material_recipe_code_key on material_recipe mr  (cost=0.27..8.29 rows=1 width=15) (actual time=0.001..0.001 rows=0 loops=31)
+              Index Cond: ((code)::text = (mbi.component_no)::text)
+              Buffers: shared hit=62
+Planning:
+  Buffers: shared hit=465
+Planning Time: 2.157 ms
+Execution Time: 0.519 ms

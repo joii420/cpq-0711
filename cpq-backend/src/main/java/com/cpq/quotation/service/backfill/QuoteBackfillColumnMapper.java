@@ -105,12 +105,20 @@ public final class QuoteBackfillColumnMapper {
                     if (!QuotePendingRewriter.WHITELIST_TABLES.contains(baseTable)) {
                         continue; // 非白名单基表（如 material_master 等维表 JOIN 出的列）不参与回填
                     }
-                    colToBase.put(label, new ColumnRef(baseTable, baseColumn));
+                    // task-260903 B-3：白名单判定用视图名（V411 后 SQL 里就是视图名），
+                    // 存进 ColumnRef 时归一化回物理表名——回填是写路径，UNION 视图不可更新。
+                    colToBase.put(label, new ColumnRef(QuotePendingRewriter.physicalTable(baseTable), baseColumn));
                 }
             } catch (SQLException e) {
                 return NOT_BACKFILLABLE;
             }
-            return new Resolved(colToBase, rw.primaryTable, true);
+            // 🚨 task-260903 B-3（主线裁决「方案乙」）：**唯一的归一化点**。
+            // rw.primaryTable 在 V411 之后是兼容视图名，而下游全是写路径语义：
+            //   · QuoteBackfillCollector:172/560  QuoteTableAxis.of(primaryTable)（未登记 → 静默不回填）
+            //   · QuoteBackfillCollector:184      byTable key → GroupChange.table → UPDATE 的目标表
+            //   · QuoteBackfillCollector:485/553  4 处硬编码 "material_bom_item".equals(primaryTable)
+            // 在这里归一一次，上述 6 处全部自动正确；散到下游去改则必漏。
+            return new Resolved(colToBase, QuotePendingRewriter.physicalTable(rw.primaryTable), true);
         } catch (Exception e) {
             return NOT_BACKFILLABLE;
         }
