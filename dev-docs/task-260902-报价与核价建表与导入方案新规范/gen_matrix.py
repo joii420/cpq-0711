@@ -2,8 +2,14 @@
 """生成三套数据集的字段矩阵（建表依据）。"""
 import openpyxl, os, json, re
 
-SP = "/tmp/claude-1000/-home-joii-project-cpq/0ba29c9c-75e6-47a4-ab46-934bb746ffa9/scratchpad"
-D  = "dev-docs/task-260902-报价与核价建表与导入方案新规范/"
+# 🚩 2026-09-03 修：原来这两个是「会话级 scratchpad 绝对路径 + 依赖 cwd 的相对路径」，
+#    换个会话跑必崩（scratchpad 随会话销毁），而本脚本是「建表唯一依据」的生成器，必须可重放。
+import argparse, subprocess, hashlib, tempfile
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+SP = os.path.join(_HERE, ".gen")     # 中间产物（matrix_full.json）落任务目录下，与会话无关
+D  = _HERE + os.sep                  # 三份建表规范 Excel 与本脚本同目录
+os.makedirs(SP, exist_ok=True)
 
 DATASETS = [
     ("QUOTE",       "报价数据",   "ds_quote_",       "报价 - 数据导入与表格建表.xlsx"),
@@ -11,12 +17,54 @@ DATASETS = [
     ("COST_DETAIL", "详细核价",   "ds_cost_detail_", "核价1 - 数据导入与表格建表.xlsx"),
 ]
 
+# ── 输入源：工作区 vs git ────────────────────────────────────────────────────
+# 🚩 这三份 xlsx 会被企业 DLP 反复加密（文件头 877d1c..，openpyxl 报 BadZipFile）。
+#    加密只发生在「经 Windows 侧写入」的文件上，git blob 不受影响。
+#    ⇒ --from-git 让本脚本从 HEAD 读，使「重跑得到同样结果」成为真命题而不是碰运气。
+#    🚫 但默认仍读工作区 —— 否则「用户改了 Excel 忘了 commit」时会静默用旧版生成建表依据，
+#       那又是一条静默通道（与已删掉的 detail_fallback 降级同型）。
+_ap = argparse.ArgumentParser(description="从三份建表规范 Excel 生成字段矩阵")
+_ap.add_argument("--from-git", action="store_true",
+                 help="从 git HEAD 读三份 Excel（绕开 DLP 加密；可重放）。默认读工作区。")
+ARGS = _ap.parse_args()
+
+def _git(*a):
+    return subprocess.run(["git","-C",_HERE,*a], capture_output=True)
+
+def _rel(fn):
+    pref = _git("rev-parse","--show-prefix").stdout.decode().strip()
+    return pref + fn
+
+def resolve(fn):
+    """返回 (可打开的路径, 来源说明)。--from-git 时把 blob 落临时文件。"""
+    ws = os.path.join(D, fn)
+    if ARGS.from_git:
+        r = _git("show", "HEAD:" + _rel(fn))
+        if r.returncode != 0:
+            raise SystemExit(f"\n❌ git 里没有 {fn}（HEAD:{_rel(fn)}）\n   {r.stderr.decode().strip()}")
+        tmp = os.path.join(SP, "_git_" + fn)
+        open(tmp,"wb").write(r.stdout)
+        return tmp, "git HEAD"
+    # 默认读工作区，但比对 git 版本，不一致就提醒（不阻断 —— 用户可能正在改）
+    note = "工作区"
+    r = _git("show", "HEAD:" + _rel(fn))
+    if r.returncode == 0 and os.path.exists(ws):
+        if hashlib.md5(r.stdout).hexdigest() != hashlib.md5(open(ws,"rb").read()).hexdigest():
+            note = "工作区（⚠️ 与 git HEAD 不一致，记得 commit）"
+    return ws, note
+
+SRC_NOTE = {}
+
 # ── 中文列名 → 英文字段名（沿用现有 V6 命名习惯）────────────────────────────
 COL = {
  "销售料号":"material_no","生产料号":"production_no","品名":"material_name","规格":"specification",
  "尺寸":"dimension","旧料号":"old_material_no","单重":"unit_weight","项次":"item_seq",
  "客户编号":"customer_no","客户料号名称":"customer_part_name","客户产品编号":"customer_product_no","客户图号":"customer_drawing_no",
- "投入类型":"input_type","投入料号":"input_material_no","投入料号名称":"input_material_name",
+ "投入料号":"input_material_no","投入料号名称":"input_material_name",
+ # ── D-26 / D-27（2026-09-03 交付后变更）──
+ "类型":"material_type",          # 料号级：零件 / 外购件（三套物料表都有）
+ "产品分类":"category_code",      # 仅报价侧；存 product_category.code
+
  "产出料号类型":"output_material_type","组成数量":"component_qty","材料毛重":"gross_weight",
  "材料净重":"net_weight","重量单位":"weight_unit","材料占比（%）":"material_ratio",
  "损耗率（%）":"loss_rate","损耗率%":"loss_rate","不良率（%）":"defect_rate",
@@ -116,8 +164,12 @@ def color_of(cell):
     except Exception: pass
     return "none"
 
+DIRTY = []   # 表头含内部空白的列，收集后统一报错
+
 def load(fn):
-    wb = openpyxl.load_workbook(os.path.join(D, fn))
+    path, note = resolve(fn)
+    SRC_NOTE[fn] = note
+    wb = openpyxl.load_workbook(path)
     out=[]
     for ws in wb.worksheets:
         r2=[ws.cell(2,c).value for c in range(1,ws.max_column+1)]
@@ -127,7 +179,14 @@ def load(fn):
             n=ws.cell(1,c).value
             if n is None: continue
             m=ws.cell(2,c).value if versioned else None
-            cols.append([str(n).strip(), color_of(ws.cell(1,c)), m if m in ('轴','对比项') else None])
+            raw = str(n)
+            name = raw.strip()
+            # 🚩 列名内部空白 = 手误，且 strip() 治不了（空格在中间）。
+            #    建表规范的列名是 schema 的一部分，一个空格就会让 Registry 的 label 对不上、导入整份 400。
+            #    🚫 不自动去除 —— 那会让 Excel 与矩阵/DB 三方不一致且没人发现（今日「静默通道」族教训）。
+            if any(ch.isspace() for ch in name):
+                DIRTY.append((fn, ws.title, ws.cell(1,c).coordinate, name))
+            cols.append([name, color_of(ws.cell(1,c)), m if m in ('轴','对比项') else None])
         out.append({"name":ws.title,"versioned":versioned,"cols":cols})
     return out
 
@@ -136,15 +195,39 @@ for key,label,prefix,fn in DATASETS:
     try:
         data[key]=load(fn); src="机器解析"
     except Exception as e:
-        data[key]=json.load(open(os.path.join(SP,"detail_fallback.json"),encoding="utf-8")); src="人工转录（文件损坏）"
+        # 🚩 2026-09-03 修：原来这里静默降级到 detail_fallback.json（一份人工转录的快照）。
+        #    那意味着「Excel 读不了」时，脚本会拿过期数据生成「建表唯一依据」且不报错 ——
+        #    与 D-28/D-30/D-32 同属「静默通道」族。现在一律硬失败。
+        raise SystemExit(
+            f"\n❌ 无法读取建表规范 Excel: {fn}\n"
+            f"   原因: {type(e).__name__}: {e}\n\n"
+            f"   若报 'File is not a zip file'，先看文件头:  head -c 4 '{fn}' | xxd\n"
+            f"     · 504b0304 = 正常 xlsx\n"
+            f"     · 877d1c.. = 企业 DLP 加密态（会反复发生）—— 两条出路：\n"
+            f"         a) 在 Windows 上打开后「另存为」写出明文；或\n"
+            f"         b) 若该版本已提交，直接用已提交版本重跑:  python3 gen_matrix.py --from-git\n\n"
+            f"   🚫 本脚本不再静默降级到 detail_fallback.json —— 那会用过期快照生成建表依据。")
     data[key+"__src"]=src
+
+if DIRTY:
+    msg = "\n".join(
+        f"   · {f} · sheet「{sh}」· {coord}: {nm!r}\n"
+        f"       逐字符: " + " ".join(f"{ch}(U+{ord(ch):04X})" for ch in nm)
+        for f, sh, coord, nm in DIRTY)
+    raise SystemExit(
+        f"\n❌ 建表规范的表头里有 {len(DIRTY)} 个列名含空白字符:\n{msg}\n\n"
+        f"   列名是 schema 的一部分，一个空格就会让导入时表头对不上、整份 400 拒收。\n"
+        f"   请在 Excel 里删掉这些空格后重跑本脚本。\n"
+        f"   🚫 本脚本不自动去除 —— 那会让 Excel 与矩阵/DB 三方不一致且没人发现。")
 
 json.dump(data, open(os.path.join(SP,"matrix_full.json"),"w",encoding="utf-8"), ensure_ascii=False, indent=1)
 
 # ── 生成 md ────────────────────────────────────────────────────────────────
 L=[]
 L.append("# 附录 · 三套数据集字段矩阵（建表唯一依据）\n")
-L.append("> 由 `scratchpad/gen_matrix.py` 从三份 Excel 机器生成。**改 Excel 必须重跑本脚本并更新本文件**。\n")
+L.append("> 由本任务目录下的 `gen_matrix.py` 从**三份建表规范 Excel** 机器生成。**改 Excel 必须重跑本脚本并更新本文件**。\n")
+L.append("> 🚩 **权威源只有这三份**（都在本任务目录下）：`报价 - 数据导入与表格建表.xlsx` · `核价1 - 数据导入与表格建表.xlsx`（= **详细核价** `ds_cost_detail_*`，19 sheet） · `核价2 - 数据导入与表格建表.xlsx`（= **基础核价** `ds_cost_basic_*`，10 sheet）。\n")
+L.append("> 🚫 **不要改 `数据测试/*.xlsx`** —— 那是用户造的模拟数据，sheet 名与列名与建表规范完全相同、极易混，但改它对建表和本矩阵**零影响**。（2026-09-03 两个会话各指错一次，故此显式标注。）\n")
 L.append("> 底色语义：🔴 红 `FFFF0000` = 必填建字段 · ⚪ 白/无填充 `theme0` = **不建字段**（主数据 JOIN 展示列）· 🟡 其余色 = 选填建字段。\n")
 L.append("> 轴列**无论底色一律必填**（闸门 A0 裁决）。\n")
 missing=set()
