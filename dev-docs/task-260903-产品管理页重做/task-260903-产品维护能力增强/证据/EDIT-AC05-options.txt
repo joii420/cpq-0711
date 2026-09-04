@@ -1,0 +1,31 @@
+候选项原文 = [
+  "所有客户 17",
+  "CUST-0001 罗克韦尔 2",
+  "CUST-0002 测试客户 1",
+  "CUST-0004 正泰 11",
+  "Q13CUST0617（未建档） 2",
+  "C1（未建档） 1"
+]
+库中分布 = [
+  {
+    "customerNo": "C1",
+    "count": 1
+  },
+  {
+    "customerNo": "CUST-0001",
+    "count": 2
+  },
+  {
+    "customerNo": "CUST-0002",
+    "count": 1
+  },
+  {
+    "customerNo": "CUST-0004",
+    "count": 11
+  },
+  {
+    "customerNo": "Q13CUST0617",
+    "count": 2
+  }
+]
+未建档 = ["C1","Q13CUST0617"]

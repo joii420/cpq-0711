@@ -432,9 +432,20 @@ export async function rowCount(scope: any): Promise<number> {
   return scope.locator('.ant-table-tbody tr.ant-table-row').count();
 }
 
-/** 在当前页签的搜索框里输入关键词。⚠️ 占位符文案可能是「搜索」也可能带具体字段，用 `*=` 宽松匹配。 */
+/**
+ * 在当前页签的搜索框里输入关键词。⚠️ 占位符文案可能是「搜索」也可能带具体字段，用 `*=` 宽松匹配。
+ *
+ * 🚨 **必须排除 `.ant-select-input`**（2026-09-04 子任务 `产品维护能力增强` 实测踩到）：
+ *    antd `Select` 内部会渲染一个 `<input type="search" readonly class="ant-select-input">`，
+ *    子任务给「客户产品」加了客户过滤器（位置在搜索框**左侧**）之后，它在 DOM 里排在真搜索框**前面**
+ *    ⇒ `.first()` 命中的是那个 **readonly** 的假搜索框，`fill()` 永远等不到 editable，
+ *      表现为 `Test timeout` —— **看起来完全像产品 bug**（"搜索框点不动了"），实则是选择器撞车。
+ *    ⚠️ 这条同样影响父任务的 `product-hub-readonly.spec.ts`（其 `E2E-02` 会在客户产品页签搜客户编号）。
+ */
 export async function search(page: Page, keyword: string) {
-  const box = page.locator('input[placeholder*="搜索"], input[type="search"]').first();
+  const box = page.locator(
+    'input[placeholder*="搜索"]:not(.ant-select-input), input[type="search"]:not(.ant-select-input)'
+  ).first();
   await expect(box, '工具栏应有搜索框（空态下也必须渲染，AC-13）').toBeVisible({ timeout: 10_000 });
   await box.fill(keyword);
   await box.press('Enter').catch(() => {});
@@ -442,7 +453,10 @@ export async function search(page: Page, keyword: string) {
 }
 
 export async function clearSearch(page: Page) {
-  const box = page.locator('input[placeholder*="搜索"], input[type="search"]').first();
+  // 同 search()：必须排除 antd Select 内部那个 readonly 的 `type="search"` 输入框
+  const box = page.locator(
+    'input[placeholder*="搜索"]:not(.ant-select-input), input[type="search"]:not(.ant-select-input)'
+  ).first();
   await box.fill('');
   await box.press('Enter').catch(() => {});
   await page.waitForTimeout(1200);
