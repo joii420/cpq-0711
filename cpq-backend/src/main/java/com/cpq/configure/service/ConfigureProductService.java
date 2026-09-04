@@ -78,6 +78,18 @@ public class ConfigureProductService {
     @Inject
     VersionedV6Writer versionedWriter;
 
+    /** task-260903 · 阶段 A：选配产出写 {@code ds_quote_*} 新表体系（取代下面那组 {@code *V6} 方法）。 */
+    @Inject
+    SelDsQuoteWriter dsWriter;
+
+    /**
+     * 操作人 UUID → {@code ds_quote_*.created_by/updated_by}（{@code varchar(64)}）。
+     * 🚫 不能用 {@code String.valueOf} —— 它把 null 变成字面量 "null" 存进库。
+     */
+    private static String opOf(UUID operatorId) {
+        return operatorId == null ? null : operatorId.toString();
+    }
+
     /**
      * 选配 Plan 3b (T3): 有效模板解析服务 — buildSalesConfigContext 用于载入
      * enabled 参数类型集 (PROCESS 是否作为槽位), 与 T2 SalesFingerprintCalculator 配合
@@ -438,9 +450,12 @@ public class ConfigureProductService {
             com.cpq.configure.entity.MaterialRecipe only = cat.recipeByCode.get(mats.get(0).recipeCode);
             singleRecipeId = (only == null) ? null : only.id;
         }
-        // B-14：material_master 补写 material_name / specification / dimension（AC-3 断言①）。
-        insertMaterialMasterV6(hfPartNo, MATERIAL_TYPE_PART, pr.unitWeightGrams, singleRecipeId, null,
-            pr.name, pr.spec, pr.dimension);
+        // 🆕 task-260903 · A-1（A-AC-1①）：料号主档改落 ds_quote_material，停写 material_master。
+        //    A-5（A-AC-7）：material_type 写「零件」。
+        //    ⚠️ singleRecipeId 不再有落点 —— 新表没有 material_recipe_id 列。它在 V6 时代的用途
+        //    （单材质料号的材质判据）已被 B-18 用户裁决废除，材质权威是 ds_quote_material_bom 的 N 行。
+        dsWriter.upsertMaterial(hfPartNo, pr.name, pr.spec, pr.dimension, pr.unitWeightGrams,
+            SelDsQuoteWriter.TYPE_PART, opOf(operatorId));
         // B-4：元素行按材质分组落库（每材质一组 element_bom + element_bom_item）。
         insertElementBomV6(hfPartNo, customerCode, mats);
         // B-3：物料行由 1 行改 N 行（每材质一行 + material_ratio 占比）。
@@ -1647,6 +1662,13 @@ public class ConfigureProductService {
     private static final String UQ_SPN = "uq_spn_cust_prod";
 
     /**
+     * task-260903 · A-10（A-AC-10）：{@code ds_quote_customer_part} 的唯一索引名。
+     * A-6 停写 {@code sel_product_no} 后，并发同编号的仲裁点从 {@code uq_spn_cust_prod}
+     * 移到这里，23505 归因也必须跟着换 —— 否则并发冲突会漏成 500。
+     */
+    private static final String UQ_DQCP = "uq_ds_quote_customer_part";
+
+    /**
      * task-260902 · B-2（AC-1 / AC-2）：客户产品编号必填 + 占用前置检查。
      *
      * <p>占用口径 = <b>{@code sel_product_no}（选配来的） ∪ {@code material_customer_map}（导入来的）</b>
@@ -1681,6 +1703,12 @@ public class ConfigureProductService {
     @SuppressWarnings("unchecked")
     Object[] findProductNoOwner(String customerCode, String customerProductNo) {
         List<Object[]> rows = em.createNativeQuery(
+                // 🆕 task-260903 · A-6：并上 ds_quote_customer_part（选配新落点）。
+                // sel_product_no 仍留在 UNION 里 —— 它虽已停写，存量 14 行仍是真实占用，
+                // 摘掉会让那些编号被判成「可用」，二次分配给别的料号。
+                "SELECT material_no AS part_no, created_at FROM ds_quote_customer_part " +
+                "WHERE customer_no = :cn AND customer_product_no = :pn " +
+                "UNION ALL " +
                 "SELECT quote_part_no, created_at FROM sel_product_no " +
                 "WHERE customer_no = :cn AND customer_product_no = :pn " +
                 "UNION ALL " +
@@ -1728,19 +1756,18 @@ public class ConfigureProductService {
         if (customerProductNo == null || customerProductNo.isBlank()) return;
         if (quotePartNo == null || quotePartNo.isBlank()) return;
         try {
-            em.createNativeQuery(
-                    "INSERT INTO sel_product_no (customer_no, customer_product_no, customer_product_name, " +
-                    "  quote_part_no, quotation_id, created_by, updated_by) " +
-                    "VALUES (:cn, :pn, :nm, :qp, :qid, :op, :op)")
-                .setParameter("cn", customerCode)
-                .setParameter("pn", customerProductNo)
-                .setParameter("nm", customerProductName)
-                .setParameter("qp", quotePartNo)
-                .setParameter("qid", quotationId)
-                .setParameter("op", operatorId)
-                .executeUpdate();
+            // 🆕 task-260903 · A-6（A-AC-3）：改落 ds_quote_customer_part，sel_product_no 退役
+            //    （保留表与存量数据，仅停写 —— 对齐选配模板下线的做法）。
+            // 🚨 A-10（A-AC-10）：这里必须是**裸 INSERT**。并发同编号时后者阻塞在
+            //    uq_ds_quote_customer_part 上直到前者提交，然后拿到 23505，本方法映射成 409。
+            //    🚫 不许改成 PlainTableWriter / ON CONFLICT DO UPDATE —— 那会让两个并发请求
+            //    都「成功」，后者静默覆盖前者的料号归属，A-AC-10 的「只有 1 行」断言直接失效。
+            // ⚠️ quotation_id 在新表没有对应列（ds_quote_* 是基础资料层，不挂单据维度）。
+            //    该列在 sel_product_no 时代仅供追溯，无消费方，故不迁移。
+            dsWriter.insertCustomerPart(customerCode, customerProductNo, customerProductName,
+                quotePartNo, opOf(operatorId));
         } catch (RuntimeException e) {
-            if (isUniqueViolation(e, UQ_SPN)) {
+            if (isUniqueViolation(e, UQ_DQCP) || isUniqueViolation(e, UQ_SPN)) {
                 Map<String, Object> detail = new LinkedHashMap<>();
                 detail.put("customerProductNo", customerProductNo);
                 throw new com.cpq.configure.exception.MaterialRecipeApiException(
@@ -1975,7 +2002,10 @@ public class ConfigureProductService {
                     //    对本料号不生效：writeCombomaterialBomV6 会给父料号写 MATERIAL 组
                     //    （characteristic=RECIPE）⇒ 父料号命中第一分支，material_name 取
                     //    component_usage_type（子件材质名），与本改动无关。
-                    insertMaterialMasterV6(parentHfPartNo, MATERIAL_TYPE_FINISHED, null, null, null); // R1
+                    // 🆕 task-260903 · A-1：父料号主档改落 ds_quote_material。
+                    // 🚩 material_type 传 null —— V6 的「成品」在新表值域（零件/外购件）里没有位置，
+                    //    见 SelDsQuoteWriter#upsertMaterial 的契约缺口说明。🚫 不许拿「零件」凑数。
+                    dsWriter.upsertMaterial(parentHfPartNo, null, null, null, null, null, opOf(operatorId));
                     // V6 落库 Phase 2（选配 COMBO 补全，设计 §6 / 用户方案 B1/B2/B3）：统一走
                     // VersionedV6Writer（内容相同复用 / 不同 max+1 升版 / is_current 翻转）。
                     writeCombomaterialBomV6(parentHfPartNo, customerCode, childHfPartNos, childQtys);
