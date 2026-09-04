@@ -385,3 +385,26 @@ git show HEAD:"dev-docs/task-260902-报价与核价建表与导入方案新规�
 
 🚫 全套用例**不含** `TRUNCATE` / `DROP` / 无 `WHERE` 的 `DELETE`｜`UPDATE`。
 🚫 全套用例**不用** `Assumptions.assumeTrue` / `test.skip` —— 环境前置不满足一律硬失败并注明「未验证」。
+
+### 4.2 🆕 一条非 AC、但必须验的契约用例
+
+| 用例 | 依据 | 为什么它不能省 |
+|---|---|---|
+| `V9CompileArtifactTest.contractV91_unknownDialectMustFailLoudly` | `api.md` v9-1「未知方言必须显式 400，不许静默回落」 | **AC-107 / AC-108 在静默回落下会照样通过** —— 它们只断言产物里没有 `system_type`/`customer_no`，**不断言方言选对了**。缺这条，「用户选了基础核价、后端按报价编译、全程不报错」这个失败模式没有任何用例盖得住。<br>覆盖：`COSTING`（V6 旧值）/ 拼错值 / 小写 `quote` 三种都要 400 且点名收到值与合法值；不传 `dialect` 缺省 `QUOTE` 且轴收窄用 `material_no`。 |
+
+### 4.3 ⚠️ 写用例时踩到、已规避的两个坑（留痕）
+
+1. **`semantic_node.node_key` 跨方言重名**（`api.md` v9-2 实测：`MATERIAL` / `MATERIAL_BOM` / `ELEMENT_BOM` 等 10 个键三套各一份）。
+   ⇒ 用例里取列、取 `short_name` **一律按 `node_id` 或 `(dialect, node_key)`**，🚫 不许只按 `node_key`。
+   按 key 取会跨方言串到别人那一行，拿到的列可能根本不属于当前方言的表，**而且不报错** —— 断言打在错的对象上还全绿。
+   已封装为 `V9TestBase.someColumnById(nodeId)` / `shortNameOf(dialect, nodeKey)`。
+2. **页签类型「BOM 树」服务端带空格**（`api.md` v9-3），前端本地常量是 `'BOM'`。用例一律用服务端口径 `'BOM 树'`。
+
+### 4.4 🚦 已知未覆盖 / 未验证（交付缺口，不许沉默）
+
+| # | 缺口 | 原因 | 需要谁裁决 |
+|---|---|---|---|
+| G-1 | **AC-124 端点层 + 反向断言** | 现存 150 个视图引用 `ds_*` 的 = **0**（N-16 明确不重绑 107 个存量视图）⇒ 没有一张核价单能走到新数据集的版本列表路径。且 `pg_stat_statements` 在共享库**未安装**（`pg_extension` 只有 `plpgsql`），装它要改 `shared_preload_libraries` + 重启 PG = 共享环境变更（§3.2） | 主线：① 是否造一张绑新数据集组件的核价单夹具；② 反向取证走「实现暴露调用计数」还是「克隆库开 `log_statement=all`」 |
+| G-2 | **AC-125 的「启动期自检不一致则启动失败」** | 证伪它要 `ALTER TABLE ds_cost_*`，属 §3.2 契约销毁 + `backtask` 全局约束③ | 主线：批准后跑 `golden/ac125-drift-probe.sh`（克隆库方案，脚本已备，含建库/删库两处报批点） |
+| G-3 | **AC-122 后半句「E2E 双 spec 不回归」** | 属既有 spec，不新写；需在有后端与前端 dev server 的环境下另跑 | 执行期：`npx playwright test e2e/quotation-flow.spec.ts e2e/composite-product-flow.spec.ts` |
+| G-4 | **AC-120 的前置风险已排除但仍设安全网** | 导入语义经 `DatasetUnversionedAcTest`（R-2 免版本表按主键 UPSERT）确认为 upsert，不会整表替换；用例仍在导入前后各断言一次「别的会话的 42 行一个字节没变」 | 无需裁决，留痕 |

@@ -18,4 +18,12 @@ public class CompileResult {
      * 而不是原始请求里用户手拖的那 6 项。
      */
     public List<BuilderConfig.ColumnConfig> effectiveColumns = new ArrayList<>();
+
+    /**
+     * 锚点物理表/视图名与轴列名（task-260819 B-48）。{@code /preview} 走裸 JDBC、拿不到编译期上下文，
+     * 但要给 {@code :total_material_no} 造一个"本数据集下有意义"的值，必须知道从哪张表取轴值。
+     * 🚫 不是给渲染链路用的——渲染走 {@code SqlViewExecutor}，那边不需要这两个字段。
+     */
+    public String anchorTable;
+    public String axisColumn;
 }

@@ -7,9 +7,9 @@ task-260819 · v9 · B-42 / B-43 / B-44①  语义图种子 + 全版本视图  �
            （由 task-260902 的 scratchpad/gen_matrix.py 从三份 Excel 机器生成）
 
 产出（两份迁移，均为纯生成物，🚫 不要手改）：
-  1) V409__task260819_v9_cost_all_version_views.sql
+  1) V412__task260819_v9_cost_all_version_views.sql
        核价两套 26 张带版本表的 v_<主表>_all 全版本视图（S-31 / D-84 / AC-109 / AC-125）
-  2) V410__task260819_v9_semantic_graph_reseed.sql
+  2) V413__task260819_v9_semantic_graph_reseed.sql
        删 V6 语义图种子 + 灌 41 张进图主表的节点/列/边/三套页签视图（S-23 / AC-102~AC-106）
        + 料号桥 LOOKUP 节点与边（S-24 / AC-111 / AC-112）
 
@@ -60,8 +60,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 MATRIX = ROOT / "dev-docs/task-260902-报价与核价建表与导入方案新规范/字段矩阵.md"
 MIGDIR = ROOT / "cpq-backend/src/main/resources/db/migration"
-OUT_VIEWS = MIGDIR / "V409__task260819_v9_cost_all_version_views.sql"
-OUT_SEED = MIGDIR / "V410__task260819_v9_semantic_graph_reseed.sql"
+OUT_VIEWS = MIGDIR / "V412__task260819_v9_cost_all_version_views.sql"
+OUT_SEED = MIGDIR / "V413__task260819_v9_semantic_graph_reseed.sql"
 
 # ── 固定 namespace（🚫 永远不要改：改了全部 UUID 主键都会变） ────────────────
 NS = uuid.UUID("6f1a2c34-8e7b-5d90-a1b2-c3d4e5f60718")
@@ -287,7 +287,7 @@ IS_CURRENT_COMMENT = (
 
 def gen_views(tables):
     out = []
-    out.append("-- V409__task260819_v9_cost_all_version_views.sql")
+    out.append("-- V412__task260819_v9_cost_all_version_views.sql")
     out.append("-- 🤖 由 dev-docs/task-260819-取数配置器/scripts/gen_v9_semantic_seed.py 生成，🚫 不要手改。")
     out.append("-- task-260819 · v9 · B-44① / S-31 / D-84（AC-109 / AC-125 / AC-126）")
     out.append("--")
@@ -329,7 +329,7 @@ def gen_views(tables):
 def gen_seed(tables):
     graph = [t for t in tables if t["table"] not in EXCLUDED_TABLES]
     o = []
-    o.append("-- V410__task260819_v9_semantic_graph_reseed.sql")
+    o.append("-- V413__task260819_v9_semantic_graph_reseed.sql")
     o.append("-- 🤖 由 dev-docs/task-260819-取数配置器/scripts/gen_v9_semantic_seed.py 生成，🚫 不要手改。")
     o.append("-- task-260819 · v9 · B-42 / B-43（S-23 / S-24，AC-102~AC-106 / AC-111 / AC-112）")
     o.append("--")

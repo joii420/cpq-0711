@@ -41,13 +41,17 @@ public class SemanticGraphService {
      * 返回 {@code {groups:[...]}} 形状（2026-08-21 裁决，api.md §1.4；原扁平 {@code List<NodeDTO>}
      * 实现已废弃——前端与测试都按分组形状实现，扁平结构联调必炸）。
      *
+     * @param dialect 取哪套数据集（B-46，AC-116）——决定用哪一行 {@code semantic_tab_view}，
+     *                进而决定字段面板出哪些表。缺省 QUOTE、非法值 400，见
+     *                {@code CompileDialect#parse}
      * @param selectedConfigJson 当前已选列（JSON 数组，与 builder_config.columns 同形），
      *                           null/空 = 不计算 conflict（api.md §1.4 之"只有带 selectedConfig 才算 conflict"）
      */
-    public FieldTreeBuilder.FieldTreeResponse getFieldTree(String tabType, String variantKey,
+    public FieldTreeBuilder.FieldTreeResponse getFieldTree(com.cpq.builder.compiler.CompileDialect dialect,
+                                                            String tabType, String variantKey,
                                                             List<BuilderConfig.ColumnConfig> selectedConfigJson) {
         SemanticGraphSnapshot snap = loader.get();
-        return fieldTreeBuilder.build(snap, tabType, variantKey, selectedConfigJson);
+        return fieldTreeBuilder.build(snap, dialect, tabType, variantKey, selectedConfigJson);
     }
 
     // ---------------- 写：节点 ----------------

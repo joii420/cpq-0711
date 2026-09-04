@@ -99,7 +99,13 @@ public class CostingVersionService {
             TreeSet<String> options = new TreeSet<>(CostingVersionService::compareVersionDesc);
             String isCurrentVersion = null; // is_current=true 对应的版本（override 缺失时的兜底 currentVersion）
 
-            if (isTreeComponent(componentId)) {
+            // task-260819 v9 · B-44④：非空 = 该组件的驱动视图是 builder 编译出来的 ds_cost_* 产物，
+            // 走专用版本查询；null = V6 存量手写视图/报价侧，行为逐字不变（零回归）。
+            // 树组件走 material_bom_item 硬编码分支，不需要这次解析，故短路掉（省 1 条 SQL）。
+            boolean tree = isTreeComponent(componentId);
+            String dsCostBase = tree ? null : dsCostBaseTableOf(componentId);
+
+            if (tree) {
                 @SuppressWarnings("unchecked")
                 List<Object[]> rows = em.createNativeQuery(
                                 "SELECT bom_version, is_current FROM material_bom_item " +
@@ -110,6 +116,33 @@ public class CostingVersionService {
                     if (r[0] == null) continue;
                     String v = r[0].toString();
                     options.add(v);
+                    if (r[1] instanceof Boolean b && b) isCurrentVersion = v;
+                }
+            } else if (dsCostBase != null) {
+                // task-260819 v9 · B-44④（D-86 / AC-124）：新 ds_cost_* 数据集的组件走**专用查询**，
+                // 不再复用 Mode.LIST 跑整个页签视图 SQL。
+                //
+                // 🚫 为什么不能复用 LIST：applyFullScope 对 SUB/JOIN 目标节点也发 :versionFilter 宏，
+                //    LIST 模式下宏整体展开成 TRUE ⇒ 锚点 N 个版本 × 被 JOIN 表 M 个版本 = 笛卡尔积。
+                //    版本选项本身不会错（options 是 Set，view_version 只从锚点取），代价是**性能**，
+                //    随 _history 增长线性恶化（实测 ds_cost_basic_material_bom 主表 14 行 / _history 47 行）。
+                //    换成下面这条查询后，整个笛卡尔积问题消失 —— 两张表、一个轴列条件、零 JOIN。
+                //
+                // N+1：**一条** SQL 查完（主表 UNION 历史表），与版本数/行数/页签数均无关。
+                String base = dsCostBase;
+                @SuppressWarnings("unchecked")
+                List<Object[]> vrows = em.createNativeQuery(
+                                "SELECT version_no::text, true  AS is_cur FROM " + base
+                                        + " WHERE production_no = :p AND version_no IS NOT NULL"
+                                        + " UNION "
+                                        + "SELECT version_no::text, false AS is_cur FROM " + base + "_history"
+                                        + " WHERE production_no = :p AND version_no IS NOT NULL")
+                        .setParameter("p", partNo).getResultList();
+                for (Object[] r : vrows) {
+                    if (r[0] == null) continue;
+                    String v = r[0].toString();
+                    options.add(v);
+                    // 主表按定义只存当前版本（AC-118 不变量：同一轴值主表内 version_no 只有一个 distinct 值）
                     if (r[1] instanceof Boolean b && b) isCurrentVersion = v;
                 }
             } else {
@@ -427,6 +460,48 @@ public class CostingVersionService {
         } finally {
             BomTreeVarsContext.clear();
         }
+    }
+
+    // =========================================================================
+    // task-260819 v9 · B-44④（D-86 / AC-124）：ds_cost_* 组件的专用版本源解析
+    // =========================================================================
+
+    /** 编译器产物的 FROM 源（{@code SemanticCompiler#compile} 恒在行首输出 {@code FROM <物理源> <别名>}）。 */
+    private static final java.util.regex.Pattern FROM_LINE =
+            java.util.regex.Pattern.compile("(?m)^FROM\\s+(\\S+)");
+    /** 只认 v9 核价两套的全版本视图；顺带把表名限死成白名单形态，杜绝任何拼接注入。 */
+    private static final java.util.regex.Pattern COST_ALL_VIEW =
+            java.util.regex.Pattern.compile("^v_(ds_cost_(?:basic|detail)_[a-z0-9_]+)_all$");
+
+    /**
+     * 该组件的驱动 SQL 视图是不是 builder 编译出来的 {@code ds_cost_*} 产物？是则返回它的<b>主表名</b>
+     * （如 {@code ds_cost_basic_material_bom}），否则返回 {@code null}。
+     *
+     * <p><b>为什么按 SQL 文本的 FROM 源判定，而不是解析 builder_config</b>：{@code builder_config}
+     * 里<b>没有</b>方言字段（{@code BuilderConfig#dialect} 的注释自陈"仅 POST /compile 消费，不是
+     * 持久化字段"），单靠 {@code tabType/variantKey} 反查语义图还要再决定查哪个 dialect —— 等于把
+     * 一个已经写死在产物里的事实重新猜一遍。编译器的 {@code FROM <物理源>} 是**行首固定输出**，
+     * 而 {@code physical_table} 正是 V410 种子写进去的 {@code v_<主表>_all}，这是最短且唯一的真源。
+     *
+     * <p><b>失败即回退</b>：匹配不上（V6 存量手写视图 / 报价侧 / 组件没有 builder 视图）一律返回
+     * {@code null}，调用方走原来的 {@code Mode.LIST} 路径，存量行为逐字不变。
+     *
+     * <p>N+1：一条 SQL，与组件数/版本数无关。
+     */
+    private String dsCostBaseTableOf(UUID componentId) {
+        @SuppressWarnings("unchecked")
+        List<String> tpls = em.createNativeQuery(
+                        "SELECT sql_template FROM component_sql_view "
+                        + "WHERE component_id = :cid AND builder_config IS NOT NULL")
+                .setParameter("cid", componentId).getResultList();
+        for (String tpl : tpls) {
+            if (tpl == null) continue;
+            java.util.regex.Matcher m = FROM_LINE.matcher(tpl);
+            if (!m.find()) continue;
+            java.util.regex.Matcher v = COST_ALL_VIEW.matcher(m.group(1));
+            if (v.matches()) return v.group(1);
+        }
+        return null;
     }
 
     /** 行的「本行归属料号」：优先 hf_part_no（flat 组件标准键），退化 material_no（树/pj_view 等）。 */

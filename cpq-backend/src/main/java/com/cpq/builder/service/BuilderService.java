@@ -3,6 +3,9 @@ package com.cpq.builder.service;
 import com.cpq.builder.compiler.BuilderConfig;
 import com.cpq.builder.compiler.CompileDialect;
 import com.cpq.builder.compiler.CompileResult;
+import com.cpq.builder.compiler.PhysicalColumnCatalog;
+import com.cpq.datasource.sqlview.SpineKeysMacro;
+import com.cpq.datasource.sqlview.VersionFilterMacro;
 import com.cpq.builder.dto.BuilderDTOs.*;
 import com.cpq.builder.exception.BuilderApiException;
 import com.cpq.component.dto.CreateComponentRequest;
@@ -58,6 +61,7 @@ public class BuilderService {
     @Inject TemplateService templateService;
     @Inject DataSource dataSource;
     @Inject BomTreeRenderService bomTreeRenderService;
+    @Inject PhysicalColumnCatalog physicalColumnCatalog;
 
     // ---------------- GET / (B-20, AC-34) ----------------
 
@@ -134,14 +138,15 @@ public class BuilderService {
         return compiler.compile(snap, cfg, resolveDialect(cfg));
     }
 
-    /** task-260819 B-22：缺省/无法识别的 dialect 值一律按 QUOTE 处理（与改动前行为一致，零回归）。 */
+    /**
+     * 取本次编译用哪套数据集（task-260819 B-22 引入，<b>B-46 改判据</b>）。
+     *
+     * <p>🔄 <b>2026-09-03（主线裁决）：无法识别的值不再静默回落 QUOTE，改为显式 400。</b>
+     * 缺省（不传 dialect）仍是 {@code QUOTE}。判据与错误文案的唯一出处是
+     * {@link CompileDialect#parse}——那里写着"为什么必须拒绝"，不要在这里再复制一份判断。
+     */
     private static CompileDialect resolveDialect(BuilderConfig cfg) {
-        if (cfg == null || cfg.dialect == null || cfg.dialect.isBlank()) return CompileDialect.QUOTE;
-        try {
-            return CompileDialect.valueOf(cfg.dialect.trim().toUpperCase());
-        } catch (IllegalArgumentException e) {
-            return CompileDialect.QUOTE;
-        }
+        return CompileDialect.parse(cfg == null ? null : cfg.dialect);
     }
 
     // ---------------- POST /preview (B-11, AC-26~28) ----------------
@@ -150,8 +155,7 @@ public class BuilderService {
         requireComponent(componentId);
         CompileResult r = doCompile(req);
 
-        String bound = bindLiterals(r.sql, req.customerCode,
-                req.customerCode != null ? LocalDate.now().toString() : null);
+        String bound = buildPreviewSql(r, req);
 
         // task-260819 B-23（D-63）：D-50 后编译产物一律带 = ANY(:total_material_no)，但 /preview
         // 走裸 JDBC 直接拼 SQL 执行、不经 SqlViewExecutor/BomTreeVarsContext，该占位符无人绑定会
@@ -159,7 +163,6 @@ public class BuilderService {
         // 与 customerCode/priceBaseDate 同款字面量替换风格，注入"该料号自己的 BOM 闭包"（成品+
         // 全部后代，D-58「传几行算几行」口径）——复用 BomTreeRenderService.collectTotalMaterialNoUnion，
         // 不另写第二套闭包算法（D-50 要收敛的正是这个）。
-        bound = bindTotalMaterialNo(bound, req.partNo, req.customerCode);
 
         String wrapped = "SELECT * FROM (" + bound + ") __preview";
         List<String> conditions = new ArrayList<>();
@@ -221,6 +224,84 @@ public class BuilderService {
         return "该客户下无此类基础数据，请先导入基础资料";
     }
 
+    /**
+     * 预览路径的宏展开（task-260819 B-48）。
+     *
+     * <p><b>为什么会漏</b>：编译产物是给渲染链路（{@code SqlViewExecutor}）吃的，那条链路会
+     * 展开宏 + 绑命名参数；而 {@code /preview} 为了"所见即所得且只读"走裸 JDBC 直接拼 SQL 执行，
+     * <b>两条路径对同一份 SQL 的处理能力不对等</b>。D-63/B-23 已经因为 {@code :total_material_no}
+     * 栽过一次，这次是 {@code :versionFilter} —— <b>同一个结构性缺陷的第二次发作</b>，
+     * 所以这里不只修这一个宏，而是把"预览要自己消化什么"列成清单集中处理。
+     *
+     * <p><b>选 {@code expandForValidation} 而不是 {@code expandForExecution}</b>：前者展开成
+     * {@code (is_current列)}，<b>不引入新占位符</b>；后者会吐出 {@code :__vfPart::text[]} /
+     * {@code :__vfVer::text[]} 两个新占位符，裸 JDBC 这边还得再绑一次空数组——等于把同一个坑
+     * 往后挪一格。语义上 {@code (is_current)} = 「预览看当前版本」，与预览"不带 override 上下文"
+     * 的定位一致，也与保存期 dry-run 的口径同源。
+     *
+     * <p>{@code :spineKeys} 目前的编译产物不会产生（{@code grep} 全 builder 包为空），但它可以
+     * 经节点的 {@code fixed_predicate}/{@code discriminator} 从图里流进来 —— 一并展开，
+     * <b>不赌"现在没有就永远没有"</b>。
+     */
+    /**
+     * 编译产物 → 可直接发给 PG 的预览 SQL（task-260819 B-48）。
+     *
+     * <p>⚠️ <b>本方法必须是 preview() 里"从编译产物到可执行 SQL"的唯一通道</b>，一步都不要挪回
+     * 调用点。原因是实测教训：我第一版把三步（展开宏 / 替字面量 / 绑轴数组）摊在 {@code preview()}
+     * 里、自测直接调各个小方法——结果**把宏展开那步从 preview() 删掉，自测照样全绿**（测的是零件，
+     * 不是装配）。收成一个方法后，删掉其中任何一步自测都会红。
+     */
+    String buildPreviewSql(CompileResult r, PreviewRequest req) {
+        // 预览走裸 JDBC，**不经 SqlViewExecutor 那条管线**，所以编译产物里每一个「本该由管线消化
+        // 的东西」都得在这里自己消化。先展开宏、再替字面量——宏展开后仍可能吐出占位符，顺序反了会漏。
+        String bound = expandMacrosForPreview(r.sql);
+        bound = bindLiterals(bound, req.customerCode, LocalDate.now().toString());
+        bound = bindTotalMaterialNo(bound, req.partNo, req.customerCode, resolveDialect(req), r);
+
+        // 兜底：还有没人认领的占位符就别发给 PG——PG 只会回一句 "syntax error at or near :"，
+        // 对配置人员零信息量（AC-117/AC-119 被阻塞时看到的正是这句）。
+        String unbound = detectUnboundPlaceholders(bound);
+        if (unbound != null) {
+            throw new BuilderApiException(500, "PREVIEW_UNBOUND_PLACEHOLDER",
+                    "预览无法执行：编译产物里的占位符「" + unbound + "」没有被预览路径绑定。"
+                            + "这是预览路径（裸 JDBC）与渲染路径（SqlViewExecutor）能力不对等导致的，"
+                            + "属后端缺陷，请连同本条信息报告开发", Map.of("placeholders", unbound));
+        }
+        return bound;
+    }
+
+    // 包级可见仅为开发自测直调；生产调用点只有 buildPreviewSql()。
+    String expandMacrosForPreview(String sql) {
+        String out = sql;
+        if (VersionFilterMacro.containsMacro(out)) out = VersionFilterMacro.expandForValidation(out);
+        if (SpineKeysMacro.containsMacro(out)) out = SpineKeysMacro.expandForValidation(out);
+        return out;
+    }
+
+    /** 预览拼完 SQL 后仍残留的 {@code :name} 占位符（PG 不认识，发过去就是 syntax error）。 */
+    private static final Pattern LEFTOVER_PLACEHOLDER = Pattern.compile("(?<!:):([a-zA-Z_][a-zA-Z0-9_]*)");
+
+    /**
+     * 预览专用兜底体检（B-48）：SQL 发给 PG 之前，先看看还有没有没人认领的 {@code :占位符}。
+     *
+     * <p>🔑 <b>这条比修某一个宏更重要</b>：D-63 漏 {@code :total_material_no}、本次漏
+     * {@code :versionFilter}，两次都是「编译端新增了一个东西、预览端没跟上」，而症状都是
+     * 一句对配置人员毫无意义的 {@code syntax error at or near ":"}。有了这条，<b>下一次再漏</b>
+     * 会得到一个点名占位符的可读诊断，而不是又一轮根因排查。
+     */
+    // 包级可见仅为开发自测直调；生产调用点只有 preview()。
+    String detectUnboundPlaceholders(String sql) {
+        // 先摘掉单引号字符串字面量再扫描：料号/客户编码里真的可能带冒号（如 'AB:CD'），
+        // 不摘的话会把 CD 当成"未绑定占位符"报一个假 500 —— 体检本身反而成了故障源。
+        // PG 的 '' 是转义单引号，正则里用 (?:[^']|'')* 处理。
+        Matcher m = LEFTOVER_PLACEHOLDER.matcher(sql.replaceAll("'(?:[^']|'')*'", "''"));
+        LinkedHashSet<String> left = new LinkedHashSet<>();
+        while (m.find()) left.add(m.group(1));
+        // PG 的类型转换 ::text 不是占位符；上面的 (?<!:) 已排除，这里只是保险
+        left.removeIf(String::isBlank);
+        return left.isEmpty() ? null : String.join(", ", left);
+    }
+
     /** 把 :customerCode / :priceBaseDate 直接替换成字面量（预览只读场景，不走 PreparedStatement 位置参数）。 */
     private String bindLiterals(String sql, String customerCode, String priceBaseDate) {
         String result = sql;
@@ -234,6 +315,11 @@ public class BuilderService {
     }
 
     private static final Pattern TOTAL_MATERIAL_NO_TOKEN = Pattern.compile("(?<!:):total_material_no\\b");
+
+    /** 标识符白名单守卫：表名/列名来自语义图（DDL 受控），但拼进 SQL 前仍然自己再验一次。 */
+    private static boolean isSafeIdentifier(String s) {
+        return s != null && s.matches("[a-zA-Z_][a-zA-Z0-9_]*");
+    }
 
     /**
      * task-260819 B-23（D-63）：把编译产物里的 {@code :total_material_no} 占位符替换成一个
@@ -250,8 +336,33 @@ public class BuilderService {
      * 预览页面「未选料号时不该看到任何具体料号的数据行」的直觉一致，且不会把 AC-27/AC-28 那类
      * 「本该 0 行给诊断」的用例升级成一个新的必答问题（保持零回归）。
      */
-    private String bindTotalMaterialNo(String sql, String partNo, String customerCode) {
+    // 包级可见仅为开发自测直调；生产调用点只有 preview()。
+    String bindTotalMaterialNo(String sql, String partNo, String customerCode,
+                                       CompileDialect dialect, CompileResult compiled) {
         if (!TOTAL_MATERIAL_NO_TOKEN.matcher(sql).find()) return sql; // 该 SQL 不含此占位符，零开销跳过
+
+        // ---- B-48：核价两套走另一条口径 ----
+        // 🚫 不能复用下面的 QUOTE 闭包：collectTotalMaterialNoUnion(..., "QUOTE") 查的是 V6 的
+        // material_bom_item、按**销售料号**展开；而核价两套的轴是 ds_* 的**生产料号**。拿 V6 的
+        // 销售料号闭包去喂 production_no = ANY(...)，结果恒空 ⇒ 预览永远 0 行，且不报错
+        // （正是本任务在消灭的静默形态）。两套模型之间只有 D-76 的料号桥，不存在"核价侧闭包"。
+        if (dialect.isCosting()) {
+            if (partNo != null && !partNo.isBlank()) {
+                // 指定了料号：就看这一个（核价侧无子件闭包概念，BOM 行本身按轴列挂在成品上）
+                return TOTAL_MATERIAL_NO_TOKEN.matcher(sql).replaceAll(Matcher.quoteReplacement(
+                        "ARRAY['" + partNo.replace("'", "''") + "']::text[]"));
+            }
+            // 未指定料号 = "看这份配置整体产出什么"（AC-117/AC-119 的基准就是整表行数）。
+            // 用子查询数组而不是先查一遍再拼字面量：零额外往返、永远与库同步；外层还有 LIMIT 50。
+            String tbl = compiled == null ? null : compiled.anchorTable;
+            String axis = compiled == null ? null : compiled.axisColumn;
+            if (isSafeIdentifier(tbl) && isSafeIdentifier(axis)) {
+                return TOTAL_MATERIAL_NO_TOKEN.matcher(sql).replaceAll(Matcher.quoteReplacement(
+                        "ARRAY(SELECT DISTINCT " + axis + "::text FROM " + tbl + ")"));
+            }
+            return TOTAL_MATERIAL_NO_TOKEN.matcher(sql).replaceAll(
+                    Matcher.quoteReplacement("ARRAY[]::text[]"));
+        }
 
         List<String> closure;
         if (partNo != null && !partNo.isBlank()) {
@@ -330,6 +441,17 @@ public class BuilderService {
     public InspectResponse inspect(UUID componentId, BuilderConfig cfg) {
         requireComponent(componentId);
         InspectResponse resp = new InspectResponse();
+
+        // B-45（AC-123）：S-20 第③道「物理存在性」前置到 compile 之前。
+        // 🔑 为什么必须前置而不是让 compile 去报：compile 只认识**图里的列声明**
+        // （findColumn → COMPILE_COLUMN_NOT_FOUND，消息里只有节点显示名，没有物理表名）；
+        // 而"图里声明了、库里没有"这一类它**根本查不出来**——编译照样成功，SQL 落库，
+        // 到运行期才 column does not exist（AC-123 要拦的正是这一类静默故障）。
+        if (checkPhysicalExistence(cfg, resolveDialect(cfg), resp)) {
+            resp.blocked = true;
+            return resp;
+        }
+
         CompileResult r;
         try {
             r = doCompile(cfg);
@@ -345,6 +467,99 @@ public class BuilderService {
         runInspectChecks(cfg, r, resp);
         resp.blocked = resp.items.stream().anyMatch(i -> "ERR".equals(i.level));
         return resp;
+    }
+
+    /**
+     * S-20 第③道 · 物理存在性校验在新图上跑通（task-260819 B-45，AC-123 / S-28）。
+     *
+     * <p>校验对象是「本次配置**实际会引用到**的 (物理表, 物理列)」：页签视图锚点的表 + 每个已选列
+     * 所属节点的表与列。判据是 {@code information_schema}（视图同样算数——{@code information_schema}
+     * 的 {@code tables}/{@code columns} 覆盖 VIEW，所以 S-31 建的 {@code v_<主表>_all} 全版本视图
+     * 天然通过，不必开例外）。
+     *
+     * <p>🚨 <b>错误信息必须点名"哪张表的哪一列"</b>（AC-123 原文）：配置人员不写 SQL，
+     * "节点「物料与元素BOM」没有列 xxx" 对他们不可操作；给出物理表名 + 该表实有列清单才能自己改对。
+     *
+     * <p>🚫 <b>不复用 {@link com.cpq.semanticgraph.service.SemanticGraphValidator#checkColumnExists}</b>：
+     * 那个方法是**每列一条** {@code information_schema} 查询，那里的调用方一次只校验一列所以没问题；
+     * 在这里按已选列循环调用就是标准 N+1（列数 N → N 条 SQL）。改用
+     * {@link PhysicalColumnCatalog#columnsOf}，本次涉及的全部物理表<b>一条 SQL 查完</b>。
+     *
+     * <p>N+1 自检：本方法恒 1 条 SQL（{@code columnsOf} 的 {@code table_name = ANY(:tbls)}），
+     * 与已选列数 / 图节点数无关；两个 {@code for} 循环体内全是 {@link SemanticGraphSnapshot}
+     * 的内存 Map 查找，零查库。
+     *
+     * @return true = 发现不存在的表/列（已把 ERR 写入 resp.items，调用方应阻断）
+     */
+    // 包级可见（而非 private）仅为让同包的开发自测直接喂桩 loader/catalog 调用它——本方法唯一的
+    // 生产调用点仍是上面的 inspect()。
+    boolean checkPhysicalExistence(BuilderConfig cfg, CompileDialect dialect, InspectResponse resp) {
+        List<BuilderConfig.ColumnConfig> cols = cfg.columns == null ? List.of() : cfg.columns;
+        SemanticGraphSnapshot snap = loader.get();
+        String dl = dialect.name();
+        String vk = cfg.variantKey == null ? "" : cfg.variantKey;
+
+        // 待校验的 (表 → 列集合)。锚点表即使一列都没选也要校验——FROM 子句一定引用它。
+        Map<String, Set<String>> want = new LinkedHashMap<>();
+        // 列 → 报错时用的可读上下文：[物理表, 物理列, 字段名]
+        List<String[]> colRefs = new ArrayList<>();
+
+        SemanticTabView tv = snap.tabViews.stream()
+                .filter(t -> t.tabType.equals(cfg.tabType) && t.variantKey.equals(vk) && dl.equals(t.dialect))
+                .findFirst().orElse(null);
+        if (tv != null) {
+            SemanticNode anchor = snap.nodeById.get(tv.anchorNodeId);
+            if (anchor != null && anchor.physicalTable != null && !anchor.physicalTable.isBlank()) {
+                want.computeIfAbsent(anchor.physicalTable, k -> new LinkedHashSet<>());
+            }
+        }
+        // 页签视图/锚点缺失不在本校验的职责内——compile() 会报 COMPILE_TABVIEW_NOT_FOUND，
+        // 在这里再报一遍只会让同一个问题出现两条不同措辞的错误。
+
+        for (BuilderConfig.ColumnConfig col : cols) {
+            if (col.sourceNodeKey == null || col.sourceColumn == null || col.sourceColumn.isBlank()) continue;
+            SemanticNode n = snap.nodeByKeyDialect.get(col.sourceNodeKey + "|" + dl);
+            if (n == null) continue;                       // compile 报 COMPILE_COLUMN_SOURCE_UNKNOWN
+            if (n.physicalTable == null || n.physicalTable.isBlank()) continue; // FUNCTION 节点（价格策略）无物理表
+            want.computeIfAbsent(n.physicalTable, k -> new LinkedHashSet<>()).add(col.sourceColumn);
+            String fieldName = (col.fieldName != null && !col.fieldName.isBlank()) ? col.fieldName : col.sourceColumn;
+            colRefs.add(new String[]{n.physicalTable, col.sourceColumn, fieldName});
+        }
+        if (want.isEmpty()) return false;
+
+        Map<String, Set<String>> actual = physicalColumnCatalog.columnsOf(want.keySet()); // ← 唯一一条 SQL
+        boolean failed = false;
+        Set<String> reported = new LinkedHashSet<>();
+
+        for (String table : want.keySet()) {
+            if (!actual.containsKey(table) || actual.get(table).isEmpty()) {
+                resp.items.add(new InspectItem("ERR", "PHYSICAL_EXISTENCE",
+                        "取数表「" + table + "」在数据库里不存在（数据集 " + dl
+                                + "）：语义图声明的物理表已被改名或删除，这个配置存下来一定取不到数"));
+                failed = true;
+            }
+        }
+        for (String[] ref : colRefs) {
+            String table = ref[0], column = ref[1], fieldName = ref[2];
+            Set<String> real = actual.get(table);
+            if (real == null || real.isEmpty()) continue;   // 表都不存在，上面已报，不重复刷屏
+            if (real.contains(column)) continue;
+            if (!reported.add(table + "." + column)) continue;
+            resp.items.add(new InspectItem("ERR", "PHYSICAL_EXISTENCE",
+                    "字段「" + fieldName + "」取的是 " + table + "." + column
+                            + " —— 该表在数据库里没有这一列。" + table + " 实有列："
+                            + previewColumns(real)));
+            failed = true;
+        }
+        return failed;
+    }
+
+    /** 错误信息里列出实有列，超过 30 个截断——全列表对排查没有增量价值，只会把 message 撑爆。 */
+    private static String previewColumns(Set<String> cols) {
+        List<String> sorted = new ArrayList<>(cols);
+        Collections.sort(sorted);
+        if (sorted.size() <= 30) return String.join(", ", sorted);
+        return String.join(", ", sorted.subList(0, 30)) + " …（共 " + sorted.size() + " 列）";
     }
 
     private void runInspectChecks(BuilderConfig cfg, CompileResult r, InspectResponse resp) {
@@ -406,8 +621,14 @@ public class BuilderService {
 
         SemanticGraphSnapshot snap = loader.get();
         String variantKey = cfg.variantKey == null ? "" : cfg.variantKey;
+        // B-41 连带修：页签视图与节点查找必须带 dialect —— semantic_tab_view 的唯一键是
+        // (tab_type, variant_key, dialect)，v9 起三套数据集各有一行并列。不过滤时 findFirst()
+        // 会拿到加载顺序里的第一行，体检读的锚点可能是另一套数据集的 ⇒ AC-18/19 的小计判据
+        // 静默按错锚点算（既可能漏拦也可能误拦），且全程不报错。
+        String graphDialect = resolveDialect(cfg).name();
         SemanticTabView tabView = snap.tabViews.stream()
-                .filter(t -> t.tabType.equals(cfg.tabType) && t.variantKey.equals(variantKey))
+                .filter(t -> t.tabType.equals(cfg.tabType) && t.variantKey.equals(variantKey)
+                        && graphDialect.equals(t.dialect))
                 .findFirst().orElse(null);
         if (tabView == null) return; // compile() 早已对页签视图缺失报过错，这里不会真的走到
         SemanticNode anchor = snap.nodeById.get(tabView.anchorNodeId);
@@ -418,7 +639,7 @@ public class BuilderService {
 
         for (BuilderConfig.ColumnConfig col : cols) {
             if (!Boolean.TRUE.equals(col.inSubtotal)) continue;
-            SemanticNode source = snap.nodeByKeyDialect.get(col.sourceNodeKey + "|QUOTE");
+            SemanticNode source = snap.nodeByKeyDialect.get(col.sourceNodeKey + "|" + graphDialect);
             if (source == null) continue;
             String fieldName = (col.fieldName != null && !col.fieldName.isBlank()) ? col.fieldName : source.displayName;
 

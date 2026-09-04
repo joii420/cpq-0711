@@ -30,6 +30,24 @@ import java.util.regex.Pattern;
  * {@code SUB}（相关标量子查询）而不是 {@code LOOKUP}，编译器只需老实按 {@code edge_kind} 分支，
  * 不需要另行猜哪张表"危险"。
  *
+ * <p>🔄 <b>2026-09-03（task-260819 v9，B-40/B-41）：三数据集范围替换</b>。{@link CompileDialect}
+ * 由两值扩到三值，编译器凡是"按侧"分叉的地方一律改读 {@code c.dialect}，不再有任何硬编码的
+ * {@code "QUOTE"} 字面量：
+ * <ul>
+ *   <li><b>页签视图 / 节点查找按方言过滤</b>（{@link #resolveTabView} / {@link #resolveColumn}）——
+ *       三套数据集在 {@code semantic_tab_view} 里是 {@code (tab_type, variant_key, dialect)} 三行并列，
+ *       不带 dialect 过滤会随机取到别的数据集那一行（唯一键第三段就是 dialect，漏过滤 = 静默取错表）。</li>
+ *   <li><b>收窄退化为「只做轴收窄 + 版本谓词」</b>（{@link #applyFullScope}）——{@code ds_*} 45 张表
+ *       <b>没有 {@code system_type} / {@code customer_no} 列</b>（唯一有 customer_no 的
+ *       {@code ds_quote_customer_part} 按 N-19 不进图），旧 V6 的三件套收窄整块删除，不保留（B-41④）。</li>
+ *   <li><b>版本谓词改由全版本视图承载</b>（S-31/D-84）——核价两套的节点 {@code physical_table} 指向
+ *       {@code v_<主表>_all}（{@code 主表 UNION ALL <主表>_history}，多一列常量 {@code is_current}），
+ *       编译器对其发 {@code :versionFilter(alias.is_current, alias.version_no::text, alias.<轴列>)}。
+ *       🚨 {@code ::text} <b>不是可选的</b>：{@code VersionFilterMacro.render()} 把版本列与
+ *       {@code :__vfVer::text[]} 展开出来的 {@code k.v} 比较，而 {@code ds_*.version_no} 是
+ *       {@code integer} ⇒ 不转换直接 {@code operator does not exist: integer = text}（D-85）。</li>
+ * </ul>
+ *
  * <p>N+1 自检：单次 compile() 调用只有一条 {@link PhysicalColumnCatalog#columnsOf} SQL
  * （一次性查完本次涉及的全部物理表列名），其余全是内存图遍历（{@link SemanticGraphSnapshot}
  * 已是不可变内存快照）——SQL 条数与已选列数/图节点数无关，恒为 1。
@@ -64,6 +82,8 @@ public class SemanticCompiler {
         List<String> discriminatorValues = new ArrayList<>(); // 费用类多变体合并用（AC-8②）
         String discriminatorColumn; // 上面那组值所在的列名（不带别名）
         List<String> warnings = new ArrayList<>();
+        /** 本次已产出的输出列名（B-47 去重用，含 hf_part_no / view_version 等约定列）。 */
+        LinkedHashSet<String> usedAliases = new LinkedHashSet<>();
     }
 
     public CompileResult compile(SemanticGraphSnapshot snap, BuilderConfig cfg, CompileDialect dialect) {
@@ -72,7 +92,7 @@ public class SemanticCompiler {
         c.dialect = dialect;
         c.cfg = cfg;
 
-        c.tabView = resolveTabView(snap, cfg);
+        c.tabView = resolveTabView(snap, cfg, dialect);
         c.anchor = snap.nodeById.get(c.tabView.anchorNodeId);
         if (c.anchor == null) {
             throw new BuilderApiException(400, "COMPILE_ANCHOR_MISSING", "页签视图的锚点节点不存在", Map.of());
@@ -110,13 +130,22 @@ public class SemanticCompiler {
             emitMandatoryJoin(c, e);
         }
 
+        // B-47：两个约定列先占住名字，**必须在逐列循环之前**。业务列若正好叫 hf_part_no /
+        // view_version（核价侧「裸 dbColumn」规则下完全可能），撞的就是渲染链路赖以定位料号 /
+        // 版本的那一列——后果比普通撞名重得多。先占 ⇒ 业务列被改名让路；后占则业务列先拿到裸名、
+        // 约定列再输出一个同名的，等于没修。
+        c.usedAliases.add("hf_part_no");
+        c.usedAliases.add("view_version");
+
         // 逐列编译 SELECT 表达式
         List<String> selectExprs = new ArrayList<>();
         List<String> declaredColumns = new ArrayList<>();
         for (BuilderConfig.ColumnConfig col : effectiveColumns) {
             if (isPriceColumn(pricePlan, col)) continue; // 价格策略列单独在下面统一输出
             ResolvedColumn rc = resolveColumn(c, col.sourceNodeKey, col.sourceColumn);
-            String alias = AliasGenerator.viewColumn(dialect, rc.node.shortName, rc.column.displayName, rc.column.dbColumn);
+            String alias = dedupeAlias(c,
+                    AliasGenerator.viewColumn(dialect, rc.node.shortName, rc.column.displayName, rc.column.dbColumn),
+                    rc.node.shortName);
             selectExprs.add(rc.expr + " AS " + quoteAlias(alias));
             declaredColumns.add(alias);
             col.viewColumn = alias;
@@ -131,8 +160,13 @@ public class SemanticCompiler {
             for (BuilderConfig.ColumnConfig col : effectiveColumns) {
                 if (!isPriceColumn(pricePlan, col)) continue;
                 String dbCol = col.sourceColumn;
-                SemanticNodeColumn funcCol = findColumn(c, c.snap.nodeByKeyDialect.get(PRICE_FUNC_NODE_KEY + "|QUOTE"), dbCol);
-                String bare = AliasGenerator.bareColumn(col.fieldName != null ? col.fieldName : funcCol.displayName);
+                // B-41：原先在这里用 nodeByKeyDialect.get(PRICE_FUNC_NODE_KEY + "|QUOTE") 重新查了
+                // 一次函数节点（硬编码方言）。改用 resolvePricePlan 里**顺着 PRICE 边**解析出来的
+                // 那个节点——边本身就是按方言声明的，既消灭硬编码又消灭"查到另一个节点"的可能。
+                SemanticNodeColumn funcCol = findColumn(c, pricePlan.funcNode, dbCol);
+                String bare = dedupeAlias(c,
+                        AliasGenerator.bareColumn(col.fieldName != null ? col.fieldName : funcCol.displayName),
+                        pricePlan.funcNode.shortName);
                 selectExprs.add(PRICE_FUNC_ALIAS + "." + dbCol + " AS " + quoteAlias(bare));
                 declaredColumns.add(bare);
                 col.viewColumn = bare;
@@ -150,27 +184,24 @@ public class SemanticCompiler {
         selectExprs.add(0, hfExpr + " AS hf_part_no");
         declaredColumns.add(0, "hf_part_no");
 
-        // 锚点自身三件套 + 判别式
+        // 锚点自身收窄（轴收窄 + 核价侧版本谓词，B-41）+ 判别式
+        // ⚠️ 轴收窄现在**三个方言统一**由 applyFullScope 发（见该方法注释）——原先 QUOTE 方言在
+        // 本处另发一遍 anchorColumnOnly(c) + " = ANY(:total_material_no)" 的分支已删除，
+        // 保留会与 applyFullScope 发出的同款谓词重复出现在 WHERE 里。
         applyFullScope(c, c.anchor, c.anchorAlias, c.anchorWhere);
-        // AC-37③（D-71 跟进）：核价侧输出 view_version 约定列——versionFilter 宏真正生效
-        // （即 applyFullScope 判定该锚点 is_current + 收窄列都存在）时才输出，避免给不支持
-        // 版本切换的锚点也硬造一列。取值列同 versionFilter 宏的第二实参（有 version_no 用
-        // version_no，没有则退回 is_current，与 applyFullScope 内部口径保持一致，不重复分叉）。
-        if (c.dialect == CompileDialect.COSTING) {
+        // AC-109③（B-41，随 D-84 反转）：核价两套输出 view_version 约定列——只有 applyFullScope
+        // 真的发出了 :versionFilter 宏（锚点物理源同时有 is_current / version_no / 轴列，即它是
+        // S-31 建的 v_<主表>_all 全版本视图）时才输出，避免给不支持版本切换的锚点硬造一列。
+        // 🚨 取值必须 ::text：{@code CostingVersionService} 拿 driverRow 里的 view_version 直接
+        // toString() 后与 costing_order_version_override.view_version（varchar(40)）比对，而
+        // ds_*.version_no 是 integer —— V6 时代 unit_price.version_no 本身就是 character varying，
+        // 下游是按 String 写的。这里转一次 text，下游契约逐字不变，且与宏第二实参口径一致。
+        if (c.dialect.isCosting()) {
             Set<String> anchorCols = c.columnCatalog.getOrDefault(c.anchor.physicalTable, Set.of());
-            String anchorClosureCol = closureColumnName(c.anchor);
-            if (anchorCols.contains("is_current") && anchorCols.contains(anchorClosureCol)) {
-                String versionCol = anchorCols.contains("version_no") ? "version_no" : "is_current";
-                selectExprs.add(c.anchorAlias + "." + versionCol + " AS view_version");
+            if (emitsVersionFilter(c, anchorCols)) {
+                selectExprs.add(c.anchorAlias + ".version_no::text AS view_version");
                 declaredColumns.add("view_version");
             }
-        }
-        // D-50（AC-3①/AC-37①）：QUOTE 方言的子件收窄统一为「主树供数组」—— 锚点料号列上生成
-        // = ANY(:total_material_no)，无任何用户开关（AC-60）。COSTING 方言的同款收窄已在
-        // applyFullScope 的 else 分支按 code 列实现（AC-37①同一收窄口径，不在此重复）。
-        if (c.dialect == CompileDialect.QUOTE) {
-            c.anchorWhere.add(anchorColumnOnly(c) + " = ANY(:total_material_no)");
-            c.requiredVars.add("total_material_no");
         }
         String anchorDiscriminator = resolveDiscriminator(c, c.anchor, null);
         if (anchorDiscriminator != null) {
@@ -234,18 +265,30 @@ public class SemanticCompiler {
         result.warnings = c.warnings;
         result.effectiveColumns = effectiveColumns;
         result.rewriterCompatible = checkRewriterCompatible(finalSql, c.anchor.physicalTable);
+        result.anchorTable = c.anchor.physicalTable;
+        result.axisColumn = c.dialect.axisColumn();
         return result;
     }
 
     // ---------------- 页签视图解析 ----------------
 
-    private SemanticTabView resolveTabView(SemanticGraphSnapshot snap, BuilderConfig cfg) {
+    /**
+     * 页签视图解析（B-41：<b>必须带 dialect 过滤</b>）。
+     *
+     * <p>🚨 {@code semantic_tab_view} 的唯一键是 {@code (tab_type, variant_key, dialect)} ——
+     * v9 起同一个 {@code (页签类型, 变体)} 在三个数据集下<b>各有一行并列存在</b>（§9.2 映射表）。
+     * 不带 dialect 过滤时 {@code findFirst()} 命中的是加载顺序里的第一行，编译「基础核价·主件」
+     * 可能拿到报价侧那一行的锚点 ⇒ FROM 到另一套物理表、还照样编译成功、照样能查 —— 典型的
+     * 静默取错数据集。
+     */
+    private SemanticTabView resolveTabView(SemanticGraphSnapshot snap, BuilderConfig cfg, CompileDialect dialect) {
         String vk = cfg.variantKey == null ? "" : cfg.variantKey;
+        String dl = dialect.graphDialect();
         return snap.tabViews.stream()
-                .filter(t -> t.tabType.equals(cfg.tabType) && t.variantKey.equals(vk))
+                .filter(t -> t.tabType.equals(cfg.tabType) && t.variantKey.equals(vk) && dl.equals(t.dialect))
                 .findFirst()
                 .orElseThrow(() -> new BuilderApiException(400, "COMPILE_TABVIEW_NOT_FOUND",
-                        "未找到页签视图: " + cfg.tabType + "/" + vk, Map.of()));
+                        "未找到页签视图: " + cfg.tabType + "/" + vk + "（数据集 " + dl + "）", Map.of()));
     }
 
     // D-51/AC-60：containsSwitch() 曾用于读 tabView.switches 里的 CLOSURE 标记，随闭包开关整体
@@ -299,10 +342,13 @@ public class SemanticCompiler {
     }
 
     private ResolvedColumn resolveColumn(Ctx c, String sourceNodeKey, String sourceColumn) {
-        SemanticNode target = c.snap.nodeByKeyDialect.get(sourceNodeKey + "|QUOTE");
+        // B-41：节点查找必须按当前方言取（{@code semantic_node} 唯一键 = (node_key, dialect)）。
+        // 原先硬编码 "|QUOTE"：三方言并存后，用 COST_BASIC 编译会一律拿到报价侧同名节点的
+        // physical_table，编出来的 SQL 指着另一套数据集的表且不报错。
+        SemanticNode target = c.snap.nodeByKeyDialect.get(sourceNodeKey + "|" + c.dialect.graphDialect());
         if (target == null) {
             throw new BuilderApiException(400, "COMPILE_COLUMN_SOURCE_UNKNOWN",
-                    "未知的列来源节点: " + sourceNodeKey, Map.of());
+                    "未知的列来源节点: " + sourceNodeKey + "（数据集 " + c.dialect.graphDialect() + "）", Map.of());
         }
         SemanticNodeColumn col = findColumn(c, target, sourceColumn);
 
@@ -536,70 +582,86 @@ public class SemanticCompiler {
         return null; // BOM 树：不过滤（AC-6②）
     }
 
-    // ---------------- 三件套收窄（is_current / system_type / customer_no，按真实列存在与否决定） ----------------
+    // ---------------- 收窄（B-41：轴收窄 + 核价侧版本谓词；🚫 已无 system_type / customer_no） ----------------
 
+    /**
+     * 节点级收窄（task-260819 B-41，AC-107 / AC-108 / AC-109②）。
+     *
+     * <p>🔄 <b>2026-09-03 整块改写</b>。原方法叫「三件套收窄」（{@code is_current} /
+     * {@code system_type} / {@code customer_no}），那是 V6 表结构的形态；新的 {@code ds_*} 45 张表
+     * <b>这三列一列都没有</b>（唯一有 {@code customer_no} 的 {@code ds_quote_customer_part} 按 N-19
+     * 不进图，2026-09-03 逐表查 {@code information_schema} 实测确认）。旧 {@code QUOTE}/{@code COSTING}
+     * 两条分支随 V6 节点一并删除、不保留（B-41④）——留着只会在新图上生成永远为假/永远报错的谓词。
+     *
+     * <p>现在只剩两类谓词，且<b>三个方言同一套代码</b>（差异全部压进 {@link CompileDialect}）：
+     * <ol>
+     *   <li><b>轴收窄</b>（AC-108）：{@code <别名>.<轴列> = ANY(:total_material_no)}。轴列由
+     *       {@link CompileDialect#axisColumn()} 给出（{@code QUOTE} → {@code material_no}；
+     *       两个 {@code COST_*} → {@code production_no}）。<b>只在目标表真的有这一列时才发</b> ——
+     *       按 {@code scheme_no} 建模的 {@code ds_*_plating_scheme} 之类没有轴列，硬造一个不存在的
+     *       列引用会让整条 SQL 运行期报错（这正是 AC-7② 当年实测踩到的同型坑），此时靠该节点自身
+     *       的连接键收窄即可。</li>
+     *   <li><b>版本谓词</b>（AC-109②，仅核价两套）：{@code :versionFilter(<别名>.is_current,
+     *       <别名>.version_no::text, <别名>.<轴列>)}。触发条件 = 该物理源同时有
+     *       {@code is_current} + {@code version_no} + 轴列，也就是它是 S-31 建的
+     *       {@code v_<主表>_all} 全版本视图（{@code 主表 UNION ALL <主表>_history}，多一列常量
+     *       {@code is_current}）；报价侧节点直接指主表、连 {@code is_current} 都没有，天然不发（AC-107）。</li>
+     * </ol>
+     *
+     * <p>🚨 <b>{@code ::text} 不是可选的</b>（D-85）：{@link com.cpq.datasource.sqlview.VersionFilterMacro}
+     * 展开出 {@code (版本列) IS NOT DISTINCT FROM k.v}，而 {@code k.v} 来自 {@code :__vfVer::text[]}；
+     * {@code ds_*.version_no} 是 {@code integer} ⇒ 不转换直接
+     * {@code operator does not exist: integer = text}。V6 的 {@code unit_price.version_no} 是
+     * {@code character varying} 所以老路从没暴露过这个问题。
+     *
+     * <p>兜底分支：物理源有 {@code is_current} 但缺 {@code version_no} 或缺轴列时（新模型里不该出现，
+     * 因为全版本视图必然三者齐全），退回裸 {@code <别名>.is_current} —— <b>不能什么都不发</b>，
+     * 否则 {@code _history} 的历史行（{@code is_current=false}）会整批漏进结果，是静默的行数翻倍。
+     */
     private void applyFullScope(Ctx c, SemanticNode node, String alias, List<String> where) {
         Set<String> cols = c.columnCatalog.getOrDefault(node.physicalTable, Set.of());
-        if (c.dialect == CompileDialect.QUOTE) {
-            if (cols.contains("system_type")) where.add(alias + ".system_type = 'QUOTE'");
-            if (cols.contains("is_current")) where.add(alias + ".is_current");
-            if (cols.contains("customer_no") && !alreadyScopedByMandatoryJoin(c, node)) {
-                where.add(alias + ".customer_no = :customerCode");
-                c.requiredVars.add("customerCode");
+        String axis = c.dialect.axisColumn();
+
+        if (c.dialect.isCosting() && cols.contains("is_current")) {
+            if (emitsVersionFilter(c, cols)) {
+                where.add(":versionFilter(" + alias + ".is_current, "
+                        + alias + ".version_no::text, "
+                        + alias + "." + axis + ")");
+            } else {
+                where.add(alias + ".is_current");
             }
-        } else {
-            // COSTING（AC-37，D-71）：:versionFilter(...) 宏收窄 + <业务键列> = ANY(:total_material_no)。
-            // 🚫 D-71 修复：业务键列名不再硬编码 "code"——element_bom_item 等 QUOTE 侧老命名表
-            // （只有 material_no，没有 code/version_no）用这个硬编码编不出任何 WHERE，SQL 全表扫。
-            // 改按节点声明取（node.anchor_expr 的列部分，与 QUOTE 方言/hf_part_no 用的是同一列，
-            // 语义天然一致）；节点从未声明过 anchor_expr（只是 JOIN/GRAIN/SUB 目标，如
-            // unit_price 系节点）时退回 "code"，与改动前行为逐字一致——不改变其它已交付节点
-            // （V6 命名表）的产物，只解决本节点没被覆盖到的场景（不顺手重构本分支其余部分）。
-            String closureCol = closureColumnName(node);
-            boolean hasVersionNo = cols.contains("version_no");
-            if (cols.contains("is_current") && cols.contains(closureCol)) {
-                // version_no 列缺失（如 element_bom_item 只有 is_current，没有真正的版本列）时
-                // 退回用 is_current 本身占位——VersionFilterMacro 的三个实参只要求"列引用/
-                // 表达式"，不要求语义上必须是独立的版本列；没有版本概念的表，宏展开后（无 override）
-                // 恒退化为 is_current 分支，行为等价于"这张表不支持按版本切换，永远取当前值"。
-                String versionCol = hasVersionNo ? "version_no" : "is_current";
-                where.add(":versionFilter(" + alias + ".is_current, " + alias + "." + versionCol + ", "
-                        + alias + "." + closureCol + ")");
-            }
-            if (cols.contains(closureCol)) {
-                where.add(alias + "." + closureCol + " = ANY(:total_material_no)");
-                c.requiredVars.add("total_material_no");
-            }
+        }
+
+        if (cols.contains(axis)) {
+            where.add(alias + "." + axis + " = ANY(:total_material_no)");
+            c.requiredVars.add("total_material_no");
         }
     }
 
     /**
-     * COSTING 方言收窄用的业务键列名（D-71）：优先取节点自身 {@code anchor_expr} 声明的列
-     * （如 {@code ebi.material_no} → {@code material_no}），未声明该节点从未作为任何页签锚点
-     * 时退回 {@code "code"}（V6 命名表既有行为，逐字不变）。
+     * 该物理源是否具备发 {@code :versionFilter} 宏的条件（AC-109②）——{@link #applyFullScope}
+     * 与 {@code view_version} 约定列的输出判据必须<b>逐字同源</b>：两处判据一旦漂移，就会出现
+     * 「发了宏但没输出 view_version」（版本下拉恒空）或「输出了 view_version 但没发宏」
+     * （切了版本没反应）这两种静默故障，都不报错。
      */
-    private static String closureColumnName(SemanticNode node) {
-        if (node.anchorExpr != null && !node.anchorExpr.isBlank()) {
-            String[] parts = node.anchorExpr.split("\\.", 2);
-            return parts[parts.length - 1];
-        }
-        return "code";
+    private boolean emitsVersionFilter(Ctx c, Set<String> cols) {
+        return c.dialect.isCosting()
+                && cols.contains("is_current")
+                && cols.contains("version_no")
+                && cols.contains(c.dialect.axisColumn());
     }
 
-    /** 客户维度已经由强制 JOIN（edge_kind=JOIN 的 fixedPredicate）覆盖时，锚点自己不再重复加 WHERE。 */
-    private boolean alreadyScopedByMandatoryJoin(Ctx c, SemanticNode node) {
-        if (!node.id.equals(c.anchor.id)) return false;
-        return c.snap.edgesFrom(c.anchor.id).stream().anyMatch(e -> "JOIN".equals(e.edgeKind)
-                && c.snap.nodeById.get(e.toNodeId) != null
-                && c.snap.nodeById.get(e.toNodeId).fixedPredicate != null
-                && c.snap.nodeById.get(e.toNodeId).fixedPredicate.contains("customer_no"));
-    }
+    // 📌 已删除的 alreadyScopedByMandatoryJoin(...)（B-41）：它唯一的作用是"customer_no 收窄已由
+    // 强制 JOIN 覆盖时锚点不再重复加 WHERE"，而 customer_no 收窄本身已随 V6 三件套整块删除
+    // （ds_* 45 张表没有这一列）。留一个再也不会被调用、且描述的是已废弃谓词的判据方法，
+    // 下一个人照它推断"编译器还会发 customer_no"就是错的。
 
     // ---------------- 价格策略原子组（B-9，D-09） ----------------
 
     private static final class PricePlan {
         String joinClause;
         String elementCodeSourceColumn; // anchor 自己的编码列名（形态 A 时非空）
+        SemanticNode funcNode;          // B-41：顺 PRICE 边解析出的价格函数节点（替代按 key+"|QUOTE" 反查）
     }
 
     private boolean isPriceColumn(PricePlan plan, BuilderConfig.ColumnConfig col) {
@@ -620,6 +682,10 @@ public class SemanticCompiler {
                 .orElseThrow(() -> new BuilderApiException(400, "COMPILE_PRICE_EDGE_NOT_FOUND",
                         "锚点「" + c.anchor.displayName + "」没有声明价格策略边", Map.of()));
         SemanticNode funcNode = c.snap.nodeById.get(priceEdge.toNodeId);
+        if (funcNode == null) {
+            throw new BuilderApiException(500, "COMPILE_PRICE_FUNC_NODE_MISSING",
+                    "价格策略边指向的函数节点不存在（图数据不一致）", Map.of());
+        }
         List<SemanticEdgeKey> keys = c.snap.keysOf(priceEdge.id).stream()
                 .sorted(Comparator.comparingInt(k -> k.seq)).toList();
         if (keys.isEmpty()) {
@@ -635,6 +701,7 @@ public class SemanticCompiler {
         }
 
         PricePlan plan = new PricePlan();
+        plan.funcNode = funcNode;
         // key[0]：编码键，字面量列引用；key[1..]：与 hf_part_no 表达式逐字一致（AC-1⑤/AC-3⑤）——
         // D-50/D-56 后 hf_part_no 恒为锚点自身列，不再有闭包分支。
         SemanticEdgeKey codeKey = keys.get(0);
@@ -714,6 +781,34 @@ public class SemanticCompiler {
                 "), bom_closure_d AS (\n" +
                 "  SELECT root_no, node_no, MIN(lvl) AS lvl FROM bom_closure GROUP BY root_no, node_no\n" +
                 ")\n";
+    }
+
+    /**
+     * 输出列名去重（task-260819 B-47，主线 2026-09-03 裁决）。
+     *
+     * <p><b>问题</b>：核价两套的别名规则是「裸英文 {@code dbColumn}」（AC-110），而不同节点完全
+     * 可能有同名列——实测 {@code COST_BASIC} 主件同时选主表与料号桥的 {@code material_name} 时，
+     * {@code declaredColumns} 出现两个 {@code material_name}。<b>PG 允许 SELECT 输出重复列名</b>，
+     * 所以 SQL 跑得通、dry-run 也过；但渲染链路按「列名 → 值」的 Map 读行，
+     * <b>后写的会覆盖先写的，静默丢一列</b>（本项目 AP-22 那一族的同型失败）。
+     *
+     * <p><b>规则</b>：<b>首次出现的保持裸名不变</b>（AC-110 既有断言零回归），后出现的加
+     * {@code _<节点短名>} 后缀；后缀本身再撞（同一短名下同名列）就继续追加序号，直到唯一。
+     * 报价侧别名带 {@code _<短名>_} 前缀、本就几乎不会撞，但同样走这条路径——<b>不做"只在核价侧
+     * 去重"的分叉</b>：撞名是输出层的事实问题，与方言无关，分叉只会制造一个只在一侧存在的漏洞。
+     *
+     * <p>⚠️ 纯函数性质不变（AC-11②）：去重只依赖「本次已产出的别名序列」，同一份
+     * {@code builder_config} 任何时候编译，列的遍历顺序相同 ⇒ 结果逐字相同。
+     */
+    private String dedupeAlias(Ctx c, String alias, String shortName) {
+        if (c.usedAliases.add(alias)) return alias;
+        String candidate = alias + "_" + (shortName == null || shortName.isBlank() ? "x" : shortName);
+        int n = 2;
+        while (!c.usedAliases.add(candidate)) {
+            candidate = alias + "_" + (shortName == null || shortName.isBlank() ? "x" : shortName) + n;
+            n++;
+        }
+        return candidate;
     }
 
     /**
