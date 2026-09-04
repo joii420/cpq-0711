@@ -369,7 +369,7 @@ D-21 要求「生成的 SQL」右侧常驻、随拖拽实时刷新。这看起�
 | `POST /compile` · `/preview` · `/inspect` · `PUT /builder` 的 `builderConfig` | **`dialect`** | 同上 |
 | `GET /field-tree` 响应的 `groups[]` | **`dialect`**（服务端权威） | 同上 |
 
-取值与后端 `com.cpq.builder.compiler.CompileDialect` 的枚举名**逐字一致**（大写下划线）。
+取值必须是 `QUOTE` / `COST_BASIC` / `COST_DETAIL` **三者之一**。<br>🔄 **2026-09-04 放宽（D-109，用户裁决）**：**大小写与首尾空白容错**（服务端归一后比对），其余一律**显式 400**。原文写「逐字一致（大写下划线）」，与实现的容错不符 —— **容错不改变语义、不会导致「选错数据集」**，所以让文档跟实现走，🚫 不为对齐文档去收紧实现。<br>⚠️ 但**客户端仍应发大写形式** —— 容错是防御，不是契约邀请。
 
 ✅ **前端内部类型名与 UI 文案不受约束** —— 界面上叫「数据集」、TS 类型叫 `BuilderDataset` 都可以。**只有过线的字段名必须是 `dialect`。**
 
