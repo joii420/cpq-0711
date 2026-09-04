@@ -1,0 +1,60 @@
+<meta charset="utf-8">
+<title>边界 · 过滤空结果 / 超长 / 清空</title>
+<link rel="stylesheet" href="antd-like.css">
+<style>
+  table{width:100%;border-collapse:collapse;font-size:14px;table-layout:fixed}
+  th{text-align:left;background:#fafafa;font-weight:600;padding:12px 16px;border-bottom:1px solid #f0f0f0;white-space:nowrap}
+  td{padding:12px 16px;border-bottom:1px solid #f0f0f0}
+  .ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .muted{color:rgba(0,0,0,.25)}
+  .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 0;color:rgba(0,0,0,.25)}
+  .anno{background:#e6f4ff;border:1px solid #91caff;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px;line-height:1.8}
+  .inp-err{height:28px;padding:2px 8px;border:1px solid #ff4d4f;border-radius:6px;box-shadow:0 0 0 2px rgba(255,77,79,.1);width:130px;font-size:14px}
+  .err{color:#cf1322;font-size:12px;margin-top:4px}
+  h3{font-size:15px;margin:24px 0 10px}
+</style>
+<div class="page">
+  <h3>① AC-14 · 客户过滤命中 0 行</h3>
+  <div class="anno">🚨 <b>过滤器本身仍可交互</b>（不因无结果而禁用，否则用户切不回「所有客户」就卡死了）；<code>共 0 条</code> 仍渲染；无红色遮罩。</div>
+  <div class="card"><div class="card-body">
+    <div class="toolbar">
+      <div style="display:flex;gap:8px;align-items:center">
+        <select class="select" style="width:200px"><option>C1（未建档）</option></select>
+        <div class="search"><input class="input" value="不存在的料号XYZ"></div>
+      </div>
+      <div class="toolbar-right"><button class="btn">↻ 刷新</button></div>
+    </div>
+    <table><thead><tr><th>客户编号</th><th>客户名称</th><th>客户料号名称</th><th>客户产品编号</th><th>客户图号</th><th>销售料号</th></tr></thead></table>
+    <div class="empty">
+      <svg width="64" height="41" viewBox="0 0 64 41"><g fill="none" fill-rule="evenodd"><ellipse fill="#f5f5f5" cx="32" cy="33" rx="32" ry="7"></ellipse><g fill-rule="nonzero" stroke="#d9d9d9"><path d="M55 12.76L44.854 1.258C44.367.474 43.656 0 42.907 0H21.093c-.749 0-1.46.474-1.947 1.257L9 12.761V22h46v-9.24z"></path><path d="M41.613 15.931c0-1.605.994-2.93 2.227-2.931H55v18.137C55 33.26 53.68 35 52.05 35h-40.1C10.32 35 9 33.259 9 31.137V13h11.16c1.233 0 2.227 1.323 2.227 2.928v.022c0 1.605 1.005 2.901 2.237 2.901h14.752c1.232 0 2.237-1.308 2.237-2.913v-.007z" fill="#fafafa"></path></g></g></svg>
+      <div>暂无数据</div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:16px;color:rgba(0,0,0,.65)">共 0 条</div>
+  </div></div>
+
+  <h3>② AC-13 · 超长输入被拒</h3>
+  <div class="anno">>128 字符（列长 <code>varchar(128)</code>）时给<b>可读提示</b>，🚫 不出现 500、不出现红色错误遮罩；<b>库中原值不被截断写入</b>。</div>
+  <div class="card"><div class="card-body">
+    <table>
+      <colgroup><col style="width:160px"><col style="width:200px"><col style="width:230px"></colgroup>
+      <thead><tr><th>销售料号</th><th>品名</th><th>生产料号</th></tr></thead>
+      <tbody><tr>
+        <td class="ell">S-1630010773</td><td class="ell">支座</td>
+        <td><input class="inp-err" value="PROD-0001-0002-0003-…"><div class="err">生产料号最长 128 字符，当前 <b>147</b></div></td>
+      </tr></tbody>
+    </table>
+  </div></div>
+
+  <h3>③ AC-12 · 清空后渲染 <code>—</code></h3>
+  <div class="anno">
+    清空是<b>合法操作</b>（用户原话「生产料号选填」）：保存成功、列表渲染 <code>—</code>、落库 <b><code>NULL</code> 而非空字符串</b>。<br>
+    ⚠️ <b>与导入的 <code>COALESCE</code> 是两件事</b>：页面显式清空 ⇒ 真的变 NULL；导入时 Excel 空着 ⇒ 保留库里的值。<b>别用同一条分支实现。</b>
+  </div>
+  <div class="card"><div class="card-body">
+    <table>
+      <colgroup><col style="width:160px"><col style="width:200px"><col style="width:230px"></colgroup>
+      <thead><tr><th>销售料号</th><th>品名</th><th>生产料号</th></tr></thead>
+      <tbody><tr><td class="ell">S-1630010773</td><td class="ell">支座</td><td class="muted">—</td></tr></tbody>
+    </table>
+  </div></div>
+</div>
