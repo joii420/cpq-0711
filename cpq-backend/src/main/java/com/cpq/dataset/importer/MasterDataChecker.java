@@ -67,6 +67,43 @@ public class MasterDataChecker {
     }
 
     /**
+     * 产品分类解析（D-27 / AC-59 / AC-60，需求文档 R-1.7「解析规则」）。
+     *
+     * <p>返回 {@code Excel 里填的值 → product_category.code}。Excel 两种填法都支持：
+     * <b>先按 code 精确匹配，再按 name 精确匹配</b>（code 优先 —— 万一某个分类的 name
+     * 恰好等于另一个分类的 code，按 code 解释才与「存的是 code」这条裁决自洽）。
+     * 没解析出来的值不会出现在返回里 ⇒ 调用方据此报「未在产品分类主数据中登记」并整份拒收。
+     *
+     * <p>🚫 <b>刻意不过滤 {@code status}</b>：Excel 是全量重导，历史料号可能挂在已停用分类上，
+     * 导入时拒收会让存量数据<b>再也导不回去</b>（R-1.7 解析规则第 4 条，不是疏忽）。
+     *
+     * <p>🚫 N+1：整份文件<b>一条</b> SQL，与料号数无关。
+     */
+    @SuppressWarnings("unchecked")
+    public Map<String, String> resolveCategoryCodes(Collection<String> values) {
+        if (values == null || values.isEmpty()) return Map.of();
+        List<Object[]> rows = em.createNativeQuery(
+                        "SELECT code, name FROM product_category WHERE code IN (:vals) OR name IN (:vals)")
+                .setParameter("vals", values)
+                .getResultList();
+        Map<String, String> byName = new java.util.LinkedHashMap<>();
+        Map<String, String> byCode = new java.util.LinkedHashMap<>();
+        for (Object[] r : rows) {
+            String code = r[0] == null ? null : String.valueOf(r[0]);
+            String name = r[1] == null ? null : String.valueOf(r[1]);
+            if (code != null) byCode.put(code, code);
+            if (name != null) byName.putIfAbsent(name, code);
+        }
+        Map<String, String> out = new java.util.LinkedHashMap<>();
+        for (String v : values) {
+            String hit = byCode.get(v);                 // ① code 优先
+            if (hit == null) hit = byName.get(v);       // ② 再按 name
+            if (hit != null) out.put(v, hit);
+        }
+        return out;
+    }
+
+    /**
      * 批量查存在的编码。
      *
      * @return codes 中<b>确实存在</b>于主数据表里的子集

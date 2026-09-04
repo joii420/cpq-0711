@@ -79,12 +79,18 @@
 
 本任务会在共享库造测试数据，收尾必须核对并清理（DELETE 属 §3.2 红线，须单独批准）：
 
+🚨 **前缀是 `T260902-` 不是 `T260903-`**（2026-09-03 裁决更正）：本任务复用 `task-260902` 的 `SelConfigAcTestBase`
+（它已有真实登录、`assertReachedBusinessLayer`、`@AfterEach` 精确还原，重写一套只会漂移），
+而它的 `PREFIX` 是 `static final "T260902-"`、`customer_no` 是 `"T2609"+uuid`，**子类无法覆盖**。
+
+⚠️ **查 `T260903%` 会返回 0 条 —— 那是查错了前缀，不是「很干净」。** 这个陷阱本身值得留痕。
+
 ```sql
-SELECT 'ds_quote_material',      count(*) FROM ds_quote_material      WHERE material_no LIKE 'T260903%'
-UNION ALL SELECT 'ds_quote_material_bom',  count(*) FROM ds_quote_material_bom  WHERE material_no LIKE 'T260903%'
-UNION ALL SELECT 'ds_quote_element_bom',   count(*) FROM ds_quote_element_bom   WHERE material_no LIKE 'T260903%'
-UNION ALL SELECT 'ds_quote_customer_part', count(*) FROM ds_quote_customer_part WHERE customer_no LIKE 'T260903%'
-UNION ALL SELECT 'customer',               count(*) FROM customer               WHERE code       LIKE 'T260903%';
+SELECT 'ds_quote_material',      count(*) FROM ds_quote_material      WHERE material_no LIKE 'T260902%'
+UNION ALL SELECT 'ds_quote_material_bom',  count(*) FROM ds_quote_material_bom  WHERE material_no LIKE 'T260902%'
+UNION ALL SELECT 'ds_quote_element_bom',   count(*) FROM ds_quote_element_bom   WHERE material_no LIKE 'T260902%'
+UNION ALL SELECT 'ds_quote_customer_part', count(*) FROM ds_quote_customer_part WHERE customer_no LIKE 'T2609%'
+UNION ALL SELECT 'customer',               count(*) FROM customer               WHERE code       LIKE 'T2609%';
 ```
 
 ⚠️ 已知的既有污染（**不是本任务造成的**，见 `BL-0204`）：`DemoMaterialRecipeFixture` 的 4 条 demo 材质、

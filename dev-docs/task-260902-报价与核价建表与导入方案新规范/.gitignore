@@ -1,0 +1,4 @@
+# gen_matrix.py 的中间产物（matrix_full.json）。
+# 字段矩阵.md 才是产物本体，必须进 git；这里只是解析中间态，重跑即可再生。
+.gen/
+__pycache__/

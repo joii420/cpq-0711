@@ -78,14 +78,14 @@ class DatasetBoundaryAcTest extends DatasetAcTestBase {
         String c129 = "A".repeat(129);
         assertEquals(129, c129.length(), "夹具自检");
         assertOverLengthRejected(
-                b -> b.setText("成品其他固定费用", 3, "币种", c129),
+                b -> b.setText("成品其他固定费用", 2, "币种", c129),
                 "币种", 128, table, "currency", c129, "tb02-currency-129.xlsx");
 
         // ── ② 要素名称 257 字符 → 超出长度上限 256 ──
         String n257 = "测".repeat(257);
         assertEquals(257, n257.length(), "夹具自检");
         assertOverLengthRejected(
-                b -> b.setText("成品其他固定费用", 3, "要素名称", n257),
+                b -> b.setText("成品其他固定费用", 2, "要素名称", n257),
                 "要素名称", 256, table, "element_name", n257, "tb02-elementname-257.xlsx");
     }
 

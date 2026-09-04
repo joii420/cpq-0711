@@ -1,0 +1,71 @@
+<meta charset="utf-8">
+<title>客户产品 · 客户过滤器</title>
+<link rel="stylesheet" href="antd-like.css">
+<style>
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;background:#fafafa;font-weight:600;padding:12px 16px;border-bottom:1px solid #f0f0f0;white-space:nowrap}
+  td{padding:12px 16px;border-bottom:1px solid #f0f0f0}
+  .muted{color:rgba(0,0,0,.25)}
+  .anno{background:#e6f4ff;border:1px solid #91caff;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px;line-height:1.8}
+  .dd{position:absolute;top:38px;left:0;width:260px;background:#fff;border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.12);padding:4px;z-index:9}
+  .dd-item{padding:8px 12px;border-radius:6px;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+  .dd-item:hover{background:#f5f5f5}
+  .dd-item.sel{background:#e6f4ff;color:#1677ff;font-weight:500}
+  .cnt{font-size:12px;color:rgba(0,0,0,.45)}
+  .warn{font-size:12px;color:#d46b08}
+  .pager{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:16px;font-size:14px}
+</style>
+<div class="page">
+  <div class="anno">
+    <b>AC-1 ~ AC-5 的视觉基准。</b>
+    ① 过滤器在<b>搜索框左侧</b>，默认文案 <code>所有客户</code>；② 与搜索<b>叠加</b>（AND），切客户重置到第 1 页但<b>不清空搜索框</b>；
+    ③ 🚨 <b>候选来自 <code>ds_quote_customer_part</code> 里实际出现过的客户，不是 <code>customer</code> 主数据表</b>。
+  </div>
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+    <h2 style="margin:0;font-size:20px">产品管理</h2>
+    <button class="btn">⊞ 产品分类管理</button>
+  </div>
+
+  <div class="card">
+    <div class="tabs"><div class="tab active">客户产品</div><div class="tab">销售产品</div></div>
+    <div class="card-body">
+      <div class="toolbar">
+        <div style="display:flex;gap:8px;align-items:center">
+          <div style="position:relative">
+            <select class="select" style="width:200px"><option>CUST-0004　正泰</option></select>
+            <div class="dd">
+              <div class="dd-item">所有客户 <span class="cnt">17</span></div>
+              <div class="dd-item">CUST-0001　罗克韦尔 <span class="cnt">2</span></div>
+              <div class="dd-item">CUST-0002　测试客户 <span class="cnt">1</span></div>
+              <div class="dd-item sel">CUST-0004　正泰 <span class="cnt">11</span></div>
+              <div class="dd-item">Q13CUST0617<span class="warn">（未建档）</span> <span class="cnt">2</span></div>
+              <div class="dd-item">C1<span class="warn">（未建档）</span> <span class="cnt">1</span></div>
+            </div>
+          </div>
+          <div class="search"><input class="input" placeholder="搜索客户编号 / 客户产品编号 / 销售料号"></div>
+        </div>
+        <div class="toolbar-right"><button class="btn">↻ 刷新</button></div>
+      </div>
+
+      <table>
+        <thead><tr><th>客户编号</th><th>客户名称</th><th>客户料号名称</th><th>客户产品编号</th><th>客户图号</th><th>销售料号</th></tr></thead>
+        <tbody>
+          <tr><td>CUST-0004</td><td>正泰</td><td class="muted">—</td><td>CP-0028-2609000001</td><td class="muted">—</td><td>0028-2609000001</td></tr>
+          <tr><td>CUST-0004</td><td>正泰</td><td class="muted">—</td><td>CP-0028-2609000002</td><td class="muted">—</td><td>0028-2609000002</td></tr>
+          <tr><td>CUST-0004</td><td>正泰</td><td class="muted">—</td><td>CP-0028-2609000003</td><td class="muted">—</td><td>0028-2609000003</td></tr>
+          <tr><td colspan="6" style="text-align:center;color:rgba(0,0,0,.25);padding:8px">⋯ 其余 8 行同属 CUST-0004 ⋯</td></tr>
+        </tbody>
+      </table>
+      <div class="pager"><span style="color:rgba(0,0,0,.65)">共 11 条</span></div>
+    </div>
+  </div>
+
+  <div class="anno" style="background:#fff7e6;border-color:#ffd591;margin-top:16px">
+    <b>🚨 AC-5 是本页最容易做错的一条 —— 候选来源</b><br>
+    <code>Q13CUST0617</code> 与 <code>C1</code> <b>没有在 <code>customer</code> 表建档</b>（父任务实证：它们在列表里客户名称显示 <code>—</code>）。<br>
+    ⇒ 若候选只从 <code>customer</code> 表取，<b>这两个客户的 3 行产品在页面上看得见、却永远筛不出来</b>。<br>
+    ⇒ 必须 <code>SELECT DISTINCT customer_no FROM ds_quote_customer_part</code>，名称走 <b>LEFT JOIN</b>（键是 <code>customer.code</code>，该表<b>没有</b> <code>customer_no</code> 列），JOIN 不到的显示 <code>（未建档）</code> 后缀。<br><br>
+    <b>⚠️ 另两条</b>：切客户<b>重置到第 1 页</b>但<b>不清空搜索框</b>（AC-3 断言清空搜索后回到 11 而非 17）；过滤必须<b>在后端做</b>（`total` 直接是 11），前端捞 17 行自己 filter 会让翻页错乱。
+  </div>
+</div>
