@@ -567,7 +567,11 @@ public abstract class SelConfigAcTestBase {
                     List<Object> partNos = col(
                             "SELECT DISTINCT quote_part_no FROM sel_part_signature WHERE customer_no='" + cust + "' "
                                     + "UNION SELECT DISTINCT material_no FROM material_bom_item WHERE customer_no='" + cust + "' "
-                                    + "UNION SELECT DISTINCT material_no FROM material_customer_map WHERE customer_no='" + cust + "'");
+                                    + "UNION SELECT DISTINCT material_no FROM material_customer_map WHERE customer_no='" + cust + "' "
+                                    // 🆕 task-260903 · A-6：选配料号已改落 ds_quote_customer_part，
+                                    //    不并这一支，本轮铸的料号一个都反查不到 ⇒ ds_quote_* 全成残留
+                                    + "UNION SELECT DISTINCT material_no FROM ds_quote_customer_part "
+                                    + "  WHERE customer_no='" + cust + "' AND source='MANUAL'");
 
                     em.createNativeQuery("DELETE FROM quotation_line_process WHERE line_item_id IN "
                                     + "(SELECT id FROM quotation_line_item WHERE quotation_id=:q)")
@@ -597,6 +601,39 @@ public abstract class SelConfigAcTestBase {
                             .setParameter("c", cust).executeUpdate();
                     em.createNativeQuery("DELETE FROM material_customer_map WHERE customer_no=:c")
                             .setParameter("c", cust).executeUpdate();
+
+                    // ═══ task-260903 · A 阶段：清理选配写进 ds_quote_* 的行 ═══
+                    // 🚨 **白名单口径**，不是黑名单：只删 source='MANUAL'（= SelDsQuoteWriter 唯一写入来源，
+                    //    四条写入路径统一，见 SelDsQuoteWriter:66）+ 本客户/本轮料号。
+                    //    🚫 不许写成 source <> 'IMPORT' —— 那语义是「除导入外都能删」，
+                    //    明天别人加一条 source='SYNC' 的写入路径就会被这段 @AfterEach 静默删掉。
+                    //    这四张表里躺着另外两条线的导入基础数据（实测 45/18/61/48 行，全 IMPORT），
+                    //    误删会直接打断它们。
+                    int delCp = em.createNativeQuery(
+                            "DELETE FROM ds_quote_customer_part WHERE customer_no=:c AND source='MANUAL'")
+                            .setParameter("c", cust).executeUpdate();
+                    int delBom = 0, delEl = 0, delMat = 0;
+                    if (!partNos.isEmpty()) {
+                        List<String> pns = partNos.stream().filter(java.util.Objects::nonNull)
+                                .map(Object::toString).toList();
+                        if (!pns.isEmpty()) {
+                            delBom = em.createNativeQuery("DELETE FROM ds_quote_material_bom "
+                                            + "WHERE material_no IN (:p) AND source='MANUAL'")
+                                    .setParameter("p", pns).executeUpdate();
+                            delEl = em.createNativeQuery("DELETE FROM ds_quote_element_bom "
+                                            + "WHERE material_no IN (:p) AND source='MANUAL'")
+                                    .setParameter("p", pns).executeUpdate();
+                            delMat = em.createNativeQuery("DELETE FROM ds_quote_material "
+                                            + "WHERE material_no IN (:p) AND source='MANUAL'")
+                                    .setParameter("p", pns).executeUpdate();
+                        }
+                    }
+                    // 🚨 删除行数自检：判据一旦写宽，第一次跑就暴露成「删了 40 行但本轮只造了 3 个料号」，
+                    //    而不是悄悄抹掉别人的数据。数字打出来，人能看见。
+                    System.out.println("[还原] ds_quote_* 清理 cust=" + cust
+                            + " 料号数=" + partNos.size()
+                            + " customer_part=" + delCp + " material_bom=" + delBom
+                            + " element_bom=" + delEl + " material=" + delMat);
 
                     // material_master：只删「已经没有任何引用」的本次料号。
                     // 🚨 NOT EXISTS 三条是护栏 —— 万一某个料号被别的客户共用，绝不误删。
@@ -683,6 +720,11 @@ public abstract class SelConfigAcTestBase {
                     "还原自检：material_customer_map 仍有 " + c + " 的残留");
             assertEquals(0, count("SELECT count(*) FROM customer WHERE code='" + c + "'"),
                     "还原自检：customer 仍有 " + c + " 的残留");
+            // 🆕 task-260903：选配新落点同样要查残留。只认 source='MANUAL'——
+            //    导入行（IMPORT）是别人的基础数据，不是我的残留。
+            assertEquals(0, count("SELECT count(*) FROM ds_quote_customer_part WHERE customer_no='"
+                            + c + "' AND source='MANUAL'"),
+                    "还原自检：ds_quote_customer_part 仍有 " + c + " 的选配残留");
         }
         // 🚨 只认本轮 RUN_ID：另一轮同套件可能正在并发跑，它的在途数据不是我的残留。
         //    第六轮实测就因为这个全局判据，把别人的在途材质当成我的残留报了红。

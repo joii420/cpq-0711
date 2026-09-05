@@ -121,39 +121,41 @@ class RenderRegressionAcTest extends SelConfigAcTestBase {
                 List.of(PROC_1)))), "R-4 双材质提交");
         String partNo = latestLinePartNo(fx);
 
-        List<Object[]> before = rows("SELECT material_part_no, characteristic, count(*) FROM element_bom_item "
-                + "WHERE customer_no='" + fx.customerNo() + "' AND material_no='" + partNo + "' AND is_current=true "
-                + "GROUP BY material_part_no, characteristic ORDER BY material_part_no");
-        System.out.println("[R-4] 升版前分组=" + before.stream().map(java.util.Arrays::toString).toList());
+        // 🔄 task-260903 · A-3 后本用例的性质变了，改动理由必须留在这里，否则后人会以为是被削弱了：
+        //
+        // 【旧模型】element_bom_item 的组键含 material_part_no，**每材质一个独立版本**
+        //   （characteristic 当版本列用，实测取值 2000~2018）。所以「A 材质升版、B 材质没升」
+        //   是真实可达状态，而 v_composite_child_elements 的 max(characteristic) 子查询若漏了
+        //   material_part_no 维度，就会把停在旧版本的那组静默吞掉 —— 那正是 B-15 修的 bug。
+        //
+        // 【新模型】ds_quote_element_bom 的轴**只有 material_no**，一个料号一个 version_no，
+        //   N 个材质的元素行同属一组、共享同一个版本。⇒「两组版本错位」在结构上不可达，
+        //   旧的构造手法（UPDATE ... SET characteristic = characteristic+1）无对应物。
+        //
+        // ⇒ 本用例改为守护**用户可见的那条不变量**（两个材质的元素在视图里都在、一组都不能少），
+        //   外加一条新模型的结构不变量（同一料号只有一个版本号）。
+        //   🚫 不许为了"保住原样"去伪造版本错位——那会变成守一个不可能发生的场景的假绿。
+        List<Object[]> before = rows("SELECT material_part_no, count(*) FROM ds_quote_element_bom "
+                + "WHERE material_no='" + partNo + "' GROUP BY material_part_no ORDER BY material_part_no");
+        System.out.println("[R-4] 元素分组=" + before.stream().map(java.util.Arrays::toString).toList());
         assertEquals(2, before.size(), "R-4 前置：应有 2 组元素，实际 " + before.size() + " —— 前置不成立则本守卫空跑");
-        assertEquals(1, Set.copyOf(before.stream().map(b -> String.valueOf(b[1])).toList()).size(),
-                "R-4 前置：两组的 characteristic（版本）此刻应相同，实际=" + before.stream()
-                        .map(b -> String.valueOf(b[1])).toList());
-        long viewBefore = count("SELECT count(*) FROM v_composite_child_elements WHERE child_hf_part_no='" + partNo + "'");
-        assertTrue(viewBefore > 0, "R-4 前置：视图此刻应能读到元素行");
 
-        // 构造版本错位：只把「第一组」的版本 +1，另一组原地不动
-        String driftGroup = String.valueOf(before.get(0)[0]);
-        QuarkusTransaction.requiringNew().run(() -> em.createNativeQuery(
-                        "UPDATE element_bom_item SET characteristic = (characteristic::int + 1)::text "
-                                + "WHERE customer_no=:c AND material_no=:m AND material_part_no=:p AND is_current=true")
-                .setParameter("c", fx.customerNo()).setParameter("m", partNo).setParameter("p", driftGroup)
-                .executeUpdate());
-        List<Object[]> after = rows("SELECT material_part_no, characteristic FROM element_bom_item "
-                + "WHERE customer_no='" + fx.customerNo() + "' AND material_no='" + partNo + "' AND is_current=true "
-                + "GROUP BY material_part_no, characteristic ORDER BY material_part_no");
-        System.out.println("[R-4] 升版后分组=" + after.stream().map(java.util.Arrays::toString).toList());
-        assertEquals(2, Set.copyOf(after.stream().map(a -> String.valueOf(a[1])).toList()).size(),
-                "R-4 构造自检：两组的版本此刻应<b>不同</b>，否则这个守卫根本没被通电（假绿）");
+        long versions = count("SELECT count(DISTINCT version_no) FROM ds_quote_element_bom "
+                + "WHERE material_no='" + partNo + "'");
+        assertEquals(1, versions,
+                "R-4 结构不变量：ds_quote_element_bom 的轴只有 material_no ⇒ 同一料号的所有元素行"
+                        + "必须共享同一个 version_no。出现多个版本号说明有人给这张表按 material_part_no 分了组，"
+                        + "那会把旧模型的『版本错位吞组』bug 一并搬回来");
 
-        long groups = count("SELECT count(DISTINCT child_part_name) FROM v_composite_child_elements "
-                + "WHERE child_hf_part_no='" + partNo + "'");
         long viewRows = count("SELECT count(*) FROM v_composite_child_elements WHERE child_hf_part_no='" + partNo + "'");
-        System.out.println("[R-4] 视图行数 升版前=" + viewBefore + " 升版后=" + viewRows + "（分组数=" + groups + "）");
-        assertEquals(viewBefore, viewRows,
-                "🔴 R-4：只有一个材质升版后，v_composite_child_elements 的行数变了（"
-                        + viewBefore + " → " + viewRows + "）⇒ max(characteristic) 子查询缺 material_part_no 维度，"
-                        + "停在旧版本的那组元素被<b>静默吞掉</b>（无任何报错）。修法见 backtask B-15");
+        long groups = count("SELECT count(DISTINCT material_part_no) FROM v_composite_child_elements "
+                + "WHERE child_hf_part_no='" + partNo + "'");
+        System.out.println("[R-4] 视图行数=" + viewRows + " 分组数=" + groups);
+        assertTrue(viewRows > 0, "R-4：v_composite_child_elements 应能读到本料号的元素行");
+        assertEquals(2, groups,
+                "🔴 R-4：两个材质的元素在 v_composite_child_elements 里应各成一组（实际 " + groups + " 组）⇒ "
+                        + "少一组就是旧 B-15 那个『静默吞掉一组元素』的症状在新模型下复发，"
+                        + "查 v_compat_element_bom_item 的 characteristic 投影与视图的 max() 子查询");
     }
 
     /**
@@ -163,7 +165,8 @@ class RenderRegressionAcTest extends SelConfigAcTestBase {
     @Test
     @DisplayName("R-5 外购件是否出现在选配-材质页签（明确断言，不许含糊）")
     void r5_outsourcedRowInMaterialsTab() {
-        String outsourcedNo = scalar("SELECT material_no FROM material_master WHERE material_type='外购件' LIMIT 1");
+        // 🔄 task-260903：外购件可能只存在于 ds_quote_material（实测 S0003），查兼容视图才找得全
+        String outsourcedNo = scalar("SELECT material_no FROM v_compat_material_master WHERE material_type='外购件' LIMIT 1");
         assertTrue(outsourcedNo != null && !outsourcedNo.isBlank(),
                 "R-5 前置：库里应至少有 1 条外购件（fixture基线 §3.1）");
 
@@ -176,19 +179,22 @@ class RenderRegressionAcTest extends SelConfigAcTestBase {
 
         // 列映射同 R-1：材质视图按 hf_part_no（销售料号）关联，child_hf_part_no 是材质码
         List<Object[]> mats = rows("SELECT v.hf_part_no, v.child_hf_part_no, v.material_name "
-                + "FROM v_composite_child_materials v JOIN material_bom_item b "
+                + "FROM v_composite_child_materials v JOIN v_compat_material_bom_item b "
                 + "  ON b.material_no = v.hf_part_no AND b.component_no = v.child_hf_part_no "
                 + " AND b.customer_no='" + fx.customerNo() + "' GROUP BY 1,2,3");
         System.out.println("[R-5] 本客户在材质视图里的行=" + mats.stream().map(java.util.Arrays::toString).toList());
-        long outsourcedRows = count("SELECT count(*) FROM material_bom_item WHERE customer_no='"
+        // 🔄 task-260903 · A-4：外购件自指行改落 ds_quote_material_bom.output_material_type='OUTSOURCED'，
+        //    经 v_compat_material_bom_item 投影回 characteristic ⇒ 这里查兼容视图，
+        //    既覆盖 V6 存量也覆盖新表，且与 v_composite_child_materials 的数据源同源。
+        long outsourcedRows = count("SELECT count(*) FROM v_compat_material_bom_item WHERE customer_no='"
                 + fx.customerNo() + "' AND characteristic='OUTSOURCED' AND is_current=true");
         System.out.println("[R-5] 本客户的 OUTSOURCED 行数=" + outsourcedRows);
         assertTrue(outsourcedRows > 0,
-                "R-5 前置：外购件应落 material_bom_item 且 characteristic='OUTSOURCED'（B-7；实测该值现网 0 行，"
+                "R-5 前置：外购件应落 ds_quote_material_bom 且 output_material_type='OUTSOURCED'（A-4；"
                         + "本任务是第一次写它）—— 0 行则本判定空跑");
 
         boolean appears = count("SELECT count(*) FROM v_composite_child_materials v "
-                + "WHERE EXISTS (SELECT 1 FROM material_bom_item b WHERE b.customer_no='" + fx.customerNo() + "' "
+                + "WHERE EXISTS (SELECT 1 FROM v_compat_material_bom_item b WHERE b.customer_no='" + fx.customerNo() + "' "
                 + "AND b.characteristic='OUTSOURCED' AND b.is_current=true "
                 + "AND b.material_no = v.hf_part_no AND b.component_no = v.child_hf_part_no)") > 0;
         System.out.println("[R-5] 外购件出现在材质视图？ " + appears);

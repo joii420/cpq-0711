@@ -52,9 +52,13 @@ class SubmitAndValidationAcTest extends SelConfigAcTestBase {
         System.out.println("[AC-3] 销售料号=" + partNo);
 
         // ① material_master 四列（AC-3 断言①）
+        // 🔄 task-260903 · A-1：料号主档落点 material_master → ds_quote_material
         List<Object[]> mm = rows("SELECT material_name, specification, dimension, unit_weight::text "
-                + "FROM material_master WHERE material_no='" + partNo + "'");
-        assertEquals(1, mm.size(), "AC-3①：material_master 应恰好 1 行，实际 " + mm.size());
+                + "FROM ds_quote_material WHERE material_no='" + partNo + "'");
+        assertEquals(1, mm.size(), "AC-3①：ds_quote_material 应恰好 1 行，实际 " + mm.size());
+        // 🆕 A-AC-2 守卫：V6 五表零新增（停写后 material_master 不该再有这个料号）
+        assertEquals(0, count("SELECT count(*) FROM material_master WHERE material_no='" + partNo + "'"),
+                "A-AC-2：A 阶段已停写 V6，material_master 不得再出现选配铸的料号 " + partNo);
         Object[] r = mm.get(0);
         System.out.println("[AC-3①] material_master=" + java.util.Arrays.toString(r));
         assertEquals("触点", r[0], "AC-3①：material_name 应为『触点』");
@@ -65,29 +69,40 @@ class SubmitAndValidationAcTest extends SelConfigAcTestBase {
                 "AC-3①：unit_weight 应为 10，实际 " + r[3]);
 
         // ② material_bom_item 2 行 + 占比 + characteristic（AC-3 断言②）
-        List<Object[]> bom = rows("SELECT component_no, material_ratio::text, characteristic, component_usage_type, seq_no "
-                + "FROM material_bom_item WHERE customer_no='" + fx.customerNo() + "' AND material_no='" + partNo
-                + "' AND is_current=true ORDER BY seq_no");
-        System.out.println("[AC-3②] material_bom_item=" + bom.stream().map(java.util.Arrays::toString).toList());
-        assertEquals(2, bom.size(), "AC-3②：material_bom_item 应落 2 行（每材质一行），实际 " + bom.size());
+        // 🔄 task-260903 · A-2/A-4：material_bom_item → ds_quote_material_bom。
+        //    列名：component_no→input_material_no / characteristic→output_material_type / seq_no→item_seq。
+        //    ⚠️ 新表**没有 customer_no 也没有 is_current** —— 轴只有 material_no，
+        //       主表天然只存当前版本，历史进 _history。谓词跟着少两个，不是漏写。
+        List<Object[]> bom = rows("SELECT input_material_no, material_ratio::text, output_material_type, item_seq "
+                + "FROM ds_quote_material_bom WHERE material_no='" + partNo + "' ORDER BY item_seq");
+        System.out.println("[AC-3②] ds_quote_material_bom=" + bom.stream().map(java.util.Arrays::toString).toList());
+        assertEquals(2, bom.size(), "AC-3②：ds_quote_material_bom 应落 2 行（每材质一行），实际 " + bom.size());
         assertEquals(0, new BigDecimal(bom.get(0)[1].toString()).compareTo(new BigDecimal("70")),
                 "AC-3②：第 1 行 material_ratio 应为 70，实际 " + bom.get(0)[1]);
         assertEquals(0, new BigDecimal(bom.get(1)[1].toString()).compareTo(new BigDecimal("30")),
                 "AC-3②：第 2 行 material_ratio 应为 30，实际 " + bom.get(1)[1]);
         for (Object[] row : bom) {
-            assertEquals("RECIPE", row[2], "AC-3②：characteristic 应为 RECIPE，实际 " + row[2]);
+            assertEquals("RECIPE", row[2], "AC-3②/A-AC-6：output_material_type 应为 RECIPE，实际 " + row[2]);
         }
         assertEquals(List.of(RECIPE_A, RECIPE_B),
                 bom.stream().map(x -> String.valueOf(x[0])).toList(),
-                "AC-3②：两行的 component_no 应分别是两个材质编号");
+                "AC-3②：两行的 input_material_no 应分别是两个材质编号");
+        // 🆕 A-AC-5：选配阶段不升版 —— 新料号必走 CREATED 分支，version_no 恒为 1
+        assertEquals(0, count("SELECT count(*) FROM ds_quote_material_bom WHERE material_no='" + partNo
+                        + "' AND version_no <> 1"),
+                "A-AC-5：选配阶段不得发生版本升级，version_no 必须全为 1");
+        assertEquals(0, count("SELECT count(*) FROM ds_quote_material_bom_history WHERE material_no='" + partNo + "'"),
+                "A-AC-5：选配阶段 _history 必须零新增");
 
         // ③ element_bom_item 按材质分 2 组（AC-3 断言③）
-        List<Object[]> groups = rows("SELECT material_part_no, count(*) FROM element_bom_item "
-                + "WHERE customer_no='" + fx.customerNo() + "' AND material_no='" + partNo + "' AND is_current=true "
-                + "GROUP BY material_part_no ORDER BY material_part_no");
-        System.out.println("[AC-3③] element_bom_item 分组=" + groups.stream().map(java.util.Arrays::toString).toList());
+        // 🔄 task-260903 · A-3：element_bom_item → ds_quote_element_bom。
+        //    ⚠️ V6 时代「每材质一组」是**组键**的一维，新表里 material_part_no 降级成普通列、
+        //       N 个材质的元素同属一个轴值组 —— 但「按 material_part_no 能分回 2 组」这条语义不变。
+        List<Object[]> groups = rows("SELECT material_part_no, count(*) FROM ds_quote_element_bom "
+                + "WHERE material_no='" + partNo + "' GROUP BY material_part_no ORDER BY material_part_no");
+        System.out.println("[AC-3③] ds_quote_element_bom 分组=" + groups.stream().map(java.util.Arrays::toString).toList());
         assertEquals(2, groups.size(),
-                "AC-3③：element_bom_item 应按 material_part_no 分成 2 组，实际 " + groups.size() + " 组");
+                "AC-3③：ds_quote_element_bom 应按 material_part_no 分成 2 组，实际 " + groups.size() + " 组");
         for (Object[] g : groups) {
             assertTrue(((Number) g[1]).intValue() > 0, "AC-3③：每组元素行不得为空（空组 = 断言空跑）");
         }
@@ -108,18 +123,19 @@ class SubmitAndValidationAcTest extends SelConfigAcTestBase {
         assertSubmitOk(res, "AC-13 提交");
 
         String partNo = latestLinePartNo(fx);
-        List<Object[]> bom = rows("SELECT component_no, material_ratio::text, characteristic FROM material_bom_item "
-                + "WHERE customer_no='" + fx.customerNo() + "' AND material_no='" + partNo + "' AND is_current=true");
-        System.out.println("[AC-13] material_bom_item=" + bom.stream().map(java.util.Arrays::toString).toList());
+        // 🔄 task-260903 · A-2：落点与列名同 AC-3②
+        List<Object[]> bom = rows("SELECT input_material_no, material_ratio::text, output_material_type "
+                + "FROM ds_quote_material_bom WHERE material_no='" + partNo + "'");
+        System.out.println("[AC-13] ds_quote_material_bom=" + bom.stream().map(java.util.Arrays::toString).toList());
         assertEquals(1, bom.size(), "AC-13：单材质应落 1 行，实际 " + bom.size());
-        assertEquals(RECIPE_A, bom.get(0)[0], "AC-13：component_no 应为材质编号 " + RECIPE_A);
+        assertEquals(RECIPE_A, bom.get(0)[0], "AC-13：input_material_no 应为材质编号 " + RECIPE_A);
         assertEquals(0, new BigDecimal(bom.get(0)[1].toString()).compareTo(new BigDecimal("100")),
                 "AC-13：material_ratio 应为 100，实际 " + bom.get(0)[1]);
-        assertEquals("RECIPE", bom.get(0)[2], "AC-13：characteristic 应为 RECIPE");
+        assertEquals("RECIPE", bom.get(0)[2], "AC-13：output_material_type 应为 RECIPE");
         // 元素也应落，且恰好 1 组（单材质）
-        assertEquals(1, count("SELECT count(DISTINCT material_part_no) FROM element_bom_item "
-                        + "WHERE customer_no='" + fx.customerNo() + "' AND material_no='" + partNo + "' AND is_current=true"),
-                "AC-13：单材质的 element_bom_item 应恰好 1 组");
+        assertEquals(1, count("SELECT count(DISTINCT material_part_no) FROM ds_quote_element_bom "
+                        + "WHERE material_no='" + partNo + "'"),
+                "AC-13：单材质的 ds_quote_element_bom 应恰好 1 组");
     }
 
     /**
@@ -201,8 +217,9 @@ class SubmitAndValidationAcTest extends SelConfigAcTestBase {
         assertSubmitOk(a, "AC-15a 12 位小数三等分");
 
         String partA = latestLinePartNo(fxA);
-        List<Object> ratios = col("SELECT material_ratio::text FROM material_bom_item WHERE customer_no='"
-                + fxA.customerNo() + "' AND material_no='" + partA + "' AND is_current=true ORDER BY seq_no");
+        // 🔄 task-260903 · A-2：占比落点改 ds_quote_material_bom（numeric(26,12)，精度只增不减）
+        List<Object> ratios = col("SELECT material_ratio::text FROM ds_quote_material_bom "
+                + "WHERE material_no='" + partA + "' ORDER BY item_seq");
         System.out.println("[AC-15a] material_ratio=" + ratios);
         assertEquals(3, ratios.size(), "AC-15a：应落 3 行占比，实际 " + ratios.size());
         for (Object v : ratios) {
