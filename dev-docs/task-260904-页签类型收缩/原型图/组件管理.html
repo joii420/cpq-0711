@@ -1,0 +1,43 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>组件管理 · 页签类型展示位</title><link rel="stylesheet" href="_style.css"></head><body><div class="wrap">
+
+<div class="card"><h1>组件管理 · 页签类型展示位</h1>
+<div class="sub">task-260904 · 服务 F-4（AC-15）· 2026-09-04</div>
+<span class="tag">📌 当前基准</span></div>
+
+<div class="card"><h2>A · 改动前（对照）</h2>
+<table><thead><tr><th>组件编码</th><th>名称</th><th>页签类型</th><th>料号列</th><th>更新时间</th></tr></thead><tbody>
+<tr><td class="mono">COMP-0790</td><td>取值器测试</td><td><span class="tag gold">材质元素</span></td><td>材质料号</td><td>2026-09-03</td></tr>
+<tr><td class="mono">COMP-0062</td><td>投料明细</td><td><span class="tag gray">零件</span></td><td>零件料号</td><td>2026-08-21</td></tr>
+<tr><td class="mono">COMP-0044</td><td>外购件清单</td><td><span class="tag gray">外购件</span></td><td>—</td><td>2026-08-19</td></tr>
+<tr><td class="mono">COMP-0031</td><td>成品信息</td><td><span class="tag gray">主件</span></td><td>销售料号</td><td>2026-07-30</td></tr>
+<tr><td class="mono">COMP-0028</td><td>来料加工费</td><td><span style="color:rgba(0,0,0,.25)">—</span></td><td>投入料号</td><td>2026-06-12</td></tr>
+</tbody></table>
+<div class="note del">「页签类型」是<b>纯展示</b>（<span class="mono">ComponentManagement.tsx:768</span>，无编辑入口），值来自 <span class="mono">component.tab_type</span>。现网 223 个组件里 <b>109 个有值、114 个为空</b>。</div></div>
+
+<div class="card"><h2>B · 改动后 · 第一阶段（列保留，值改为推导）</h2>
+<table><thead><tr><th>组件编码</th><th>名称</th><th>数据源</th><th>料号列</th><th>更新时间</th></tr></thead><tbody>
+<tr><td class="mono">COMP-0790</td><td>取值器测试</td><td>物料与元素BOM <span class="tag gold">材质元素</span></td><td>材质料号</td><td>2026-09-03</td></tr>
+<tr><td class="mono">COMP-0062</td><td>投料明细</td><td>物料BOM <span class="tag green">BOM 树</span></td><td>零件料号</td><td>2026-08-21</td></tr>
+<tr><td class="mono">COMP-0044</td><td>外购件清单</td><td>物料BOM <span class="tag green">BOM 树</span></td><td>—</td><td>2026-08-19</td></tr>
+<tr><td class="mono">COMP-0031</td><td>成品信息</td><td>物料</td><td>销售料号</td><td>2026-07-30</td></tr>
+<tr><td class="mono">COMP-0028</td><td>来料加工费</td><td>来料固定加工费</td><td>投入料号</td><td>2026-06-12</td></tr>
+</tbody></table>
+<div class="note"><b>三处变化</b>：① 列名「页签类型」→「<b>数据源</b>」；② 值 = 组件绑定的数据源名，语义标记只在 BOM 树 / 材质元素两类上出现；③ 原「零件」「外购件」两个组件现在都显示为「物料BOM · BOM 树」—— 它们本来就读同一张表。</div></div>
+
+<div class="card"><h2>C · 必画状态</h2>
+<h3>C1 · 空态（组件未绑数据源）</h3>
+<table><thead><tr><th>组件编码</th><th>名称</th><th>数据源</th><th>料号列</th></tr></thead><tbody>
+<tr><td class="mono">COMP-0201</td><td>手工填报页签</td><td><span style="color:rgba(0,0,0,.25)">未绑定</span></td><td>—</td></tr></tbody></table>
+<div class="note">114 个存量未配组件走此态。<b>它们必须仍能正常保存</b>（AC-15）—— 后端 <span class="mono">tabType == null</span> 直接放行的分支不得删。</div>
+<h3>C2 · 列表空数据</h3>
+<div class="panel"><div class="empty">暂无组件</div></div>
+<h3>C3 · 最长文案不撑破列宽</h3>
+<table style="table-layout:fixed"><thead><tr><th style="width:140px">组件编码</th><th style="width:200px">名称</th><th>数据源</th></tr></thead><tbody>
+<tr><td class="mono">COMP-0058</td><td>组成件其他费用明细页签</td><td>组成件其他费用</td></tr>
+<tr><td class="mono">COMP-0790</td><td>取值器测试</td><td>物料与元素BOM <span class="tag gold">材质元素</span></td></tr></tbody></table></div>
+
+<div class="card"><h2>D · 第二阶段（随 S-8 删列，需单独批准）</h2>
+<div class="alert warn"><span class="ic">!</span><div class="bd"><div class="ti">本阶段未获批准前不实施</div>
+<div class="ds"><span class="mono">ALTER TABLE component DROP COLUMN tab_type</span> 触 <b>CLAUDE.md §3.2 不可逆红线</b>。删列后本页展示逻辑不变（值本来就已改为从数据源推导），仅前端移除对 <span class="mono">tabType</span> 字段的残留引用。</div></div></div></div>
+
+</div></body></html>

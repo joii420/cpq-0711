@@ -1,0 +1,28 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>原型图导航 · task-260904 页签类型收缩</title><link rel="stylesheet" href="_style.css"></head><body><div class="wrap">
+<div class="card"><h1>原型图 · task-260904 页签类型收缩</h1>
+<div class="sub">2026-09-04 · 闸门 A 前置产物 · 定稿后即 1:1 还原的验收基准</div>
+<span class="tag">📌 当前基准</span> <span class="tag gray">3 份 = 本任务动到的 3 个页面</span></div>
+
+<div class="card"><h2>页面清单</h2>
+<table><thead><tr><th style="width:220px">原型</th><th>覆盖的任务项</th><th>服务的 AC</th></tr></thead><tbody>
+<tr><td><a href="取数配置Tab.html">取数配置Tab.html</a><br><span class="tag green">承接定稿原型</span></td><td>F-1 数据源下拉 · F-2 semantic 分支渲染 · F-3 只读回显 · F-6 状态连续性<br><b>字段名编辑（AC-19）等既有交互原样保留</b></td><td>AC-1 / AC-2 / AC-3 / AC-10 / AC-19</td></tr>
+<tr><td><a href="加叶子拒绝态.html">加叶子拒绝态.html</a></td><td>F-5 两个新拒绝态文案</td><td>AC-6 / AC-7（并展示 AC-8 / AC-12）</td></tr>
+<tr><td><a href="组件管理.html">组件管理.html</a></td><td>F-4 页签类型展示位改造</td><td>AC-15</td></tr>
+</tbody></table></div>
+
+<div class="card"><h2>⚠️ 取数配置Tab 的来源（务必先读）</h2>
+<div class="note"><b>本页不是新画的</b>，是直接复制 <span class="mono">dev-docs/task-260819-取数配置器/原型图/原型-取数配置器.html</span>（定稿版）后<b>只改了 recipe-bar 第一行</b>：<br>
+原「页签类型」下拉 + 费用类才出现的「数据来源」下拉 → 合并为<b>一个「数据源」下拉</b>。<br><br>
+三栏布局（可用字段 / 已选列 / SQL 预览）、已选列行内的<b>字段名编辑框</b>、保存前体检、真实预览、⋯菜单 —— <b>全部原样保留，一处不动</b>。<br>
+👉 开发照此还原时：<b>凡定稿原型里有的交互，本次都不许改</b>；改动面仅限那一行下拉。</div>
+<div class="note del" style="margin-top:8px">主线首版曾自行重画布局（单栏堆叠），<b>已废弃</b> —— 用户 2026-09-04 指出应沿用原有原型设计。</div></div>
+
+<div class="card"><h2>本次改动一句话</h2>
+<div class="note" style="font-size:14px">界面上的「<b>页签类型</b>」下拉换成「<b>数据源</b>」下拉。<br>
+6 类页签里只有两类需要额外语义 —— <b>物料BOM → BOM 树</b>（递归）、<b>物料与元素BOM → 材质元素</b>（价格策略）；
+「零件 / 外购件」是物料BOM 的重复读法，取消；其余数据源无语义标记。<br>
+料号类型改从<b>物料表 / 材质库</b>读，不再靠页签反推、也不再回填。</div></div>
+
+<div class="card"><h2>历史版本</h2>
+<div class="sub">暂无 —— 本任务首份原型。后续若改版，本节列出 🕰️ 历史快照并附偏差清单。</div></div>
+</div></body></html>
