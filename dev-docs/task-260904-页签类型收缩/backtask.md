@@ -11,6 +11,19 @@
 
 ---
 
+## 🚦 批次（用户 2026-09-04 裁决）
+
+| 批次 | 项 | 前置 |
+|---|---|---|
+| **第一批（本次）** | B-4 ~ B-13 · B-17 · B-18 · B-20 | 无 —— 这些文件 `task-260819` 一行未动 |
+| **第二批** | B-1 · B-2 · B-3 | 🚦 等 `task-260819` 合 master |
+
+🚫 **第一批严禁触碰这 5 个文件**（`task-260819` 正在大改，碰了就产生合并冲突）：
+`FieldTreeBuilder.java` · `BuilderService.java` · `SemanticCompiler.java` · `SqlViewBuilderTab.tsx` · `sqlViewBuilderService.ts`
+⚠️ 若你发现某项非改它们不可，**停下来报主线**，不要自行绕开。
+
+---
+
 ## 任务项
 
 | 编号 | 服务的 AC | 任务内容 |
