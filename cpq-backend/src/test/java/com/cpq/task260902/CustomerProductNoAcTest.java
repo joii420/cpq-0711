@@ -137,15 +137,19 @@ class CustomerProductNoAcTest extends SelConfigAcTestBase {
                 "AC-12 提交");
         String partNo = latestLinePartNo(fx);
 
-        // ② sel_product_no 有行 + mcm 零新增
-        assertTrue(tableExists("sel_product_no"),
-                "AC-12②：新表 sel_product_no 应已由迁移建出（backtask B-16）");
-        List<Object[]> spn = rows("SELECT customer_product_no, quote_part_no, customer_product_name "
-                + "FROM sel_product_no WHERE customer_no='" + fx.customerNo() + "'");
-        System.out.println("[AC-12②] sel_product_no=" + spn.stream().map(java.util.Arrays::toString).toList());
-        assertEquals(1, spn.size(), "AC-12②：sel_product_no 应恰好 1 行，实际 " + spn.size());
+        // ② 编号映射有行 + mcm 零新增
+        // 🔄 task-260903 · A-6：落点由 sel_product_no 迁到 ds_quote_customer_part。
+        //    列名同步改：quote_part_no → material_no，customer_product_name → customer_part_name。
+        List<Object[]> spn = rows("SELECT customer_product_no, material_no, customer_part_name "
+                + "FROM ds_quote_customer_part WHERE customer_no='" + fx.customerNo() + "'");
+        System.out.println("[AC-12②] ds_quote_customer_part=" + spn.stream().map(java.util.Arrays::toString).toList());
+        assertEquals(1, spn.size(), "AC-12②：ds_quote_customer_part 应恰好 1 行，实际 " + spn.size());
         assertEquals(productNo, spn.get(0)[0], "AC-12②：customer_product_no 应是输入的编号");
-        assertEquals(partNo, spn.get(0)[1], "AC-12②：quote_part_no 应是本次的销售料号");
+        assertEquals(partNo, spn.get(0)[1], "AC-12②：material_no 应是本次的销售料号");
+        // 🆕 A-AC-3 的 🚫 半边：sel_product_no 已退役，必须零新增
+        assertEquals(0, count("SELECT count(*) FROM sel_product_no WHERE customer_no='"
+                        + fx.customerNo() + "'"),
+                "A-AC-3：sel_product_no 本任务已退役（保留表与存量、仅停写），选配不得再写它");
         assertMcmHoldsNoProductNo(fx, "AC-12②", 1);
 
         // ①③ 「从产品库添加」列表
@@ -200,14 +204,15 @@ class CustomerProductNoAcTest extends SelConfigAcTestBase {
         // ① 复用
         assertEquals(x, second, "AC-12b①：配置完全相同 ⇒ 第二次必须复用料号 X（AC-7 语义不变）");
         // ② 两行映射共存
-        List<Object[]> spn = rows("SELECT customer_product_no, quote_part_no FROM sel_product_no "
+        // 🔄 task-260903 · A-6：落点改 ds_quote_customer_part（quote_part_no → material_no）
+        List<Object[]> spn = rows("SELECT customer_product_no, material_no FROM ds_quote_customer_part "
                 + "WHERE customer_no='" + fx.customerNo() + "' ORDER BY customer_product_no");
-        System.out.println("[AC-12b②] sel_product_no=" + spn.stream().map(java.util.Arrays::toString).toList());
-        assertEquals(2, spn.size(), "AC-12b②：sel_product_no 应有 2 行（一料号多编号），实际 " + spn.size());
+        System.out.println("[AC-12b②] ds_quote_customer_part=" + spn.stream().map(java.util.Arrays::toString).toList());
+        assertEquals(2, spn.size(), "AC-12b②：ds_quote_customer_part 应有 2 行（一料号多编号），实际 " + spn.size());
         assertEquals(PREFIX + "A", spn.get(0)[0]);
         assertEquals(PREFIX + "B", spn.get(1)[0]);
-        assertEquals(x, spn.get(0)[1], "AC-12b②：两行的 quote_part_no 应同为 X");
-        assertEquals(x, spn.get(1)[1], "AC-12b②：两行的 quote_part_no 应同为 X");
+        assertEquals(x, spn.get(0)[1], "AC-12b②：两行的 material_no 应同为 X");
+        assertEquals(x, spn.get(1)[1], "AC-12b②：两行的 material_no 应同为 X");
         // ③ mcm 零新增（守卫）
         // 🚨 占号行应恰好 1 条：两次提交复用同一个料号 ⇒ 只铸过一次号（是 ① 的推论）
         assertMcmHoldsNoProductNo(fx, "AC-12b③", 1);
@@ -312,9 +317,10 @@ class CustomerProductNoAcTest extends SelConfigAcTestBase {
                     "AC-24：冲突方的错误码应为 CUSTOMER_PRODUCT_NO_TAKEN，实际=" + conflictBody);
 
             // 落库侧同样只能有一份编号映射
-            assertEquals(1, count("SELECT count(*) FROM sel_product_no WHERE customer_no='"
+            // 🔄 task-260903 · A-10：仲裁点由 uq_spn_cust_prod 移到 uq_ds_quote_customer_part
+            assertEquals(1, count("SELECT count(*) FROM ds_quote_customer_part WHERE customer_no='"
                             + fx.customerNo() + "' AND customer_product_no='" + productNo + "'"),
-                    "AC-24：并发后该编号在 sel_product_no 里只应有 1 行");
+                    "AC-24 / A-AC-10：并发后该编号在 ds_quote_customer_part 里只应有 1 行");
         } finally {
             pool.shutdownNow();
         }

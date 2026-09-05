@@ -2,12 +2,17 @@ package com.cpq.task260903;
 
 import com.cpq.task260902.SelConfigAcTestBase;
 import io.quarkus.narayana.jta.QuarkusTransaction;
+import org.junit.jupiter.api.AfterEach;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -49,7 +54,10 @@ public abstract class Task260903Base extends SelConfigAcTestBase {
 
     // ─────────────────────────── V6 零新增守卫 ───────────────────────────
 
-    /** V6 五表的当前行数快照。 */
+    /**
+     * V6 五表的当前行数快照 —— <b>仅作日志可读性用，🚫 不再是 A-AC-2 的判据</b>。
+     * 判据见 {@link #assertV6Unchanged(String, String)}。
+     */
     protected Map<String, Long> v6Counts() {
         Map<String, Long> m = new LinkedHashMap<>();
         for (String t : V6_TABLES) m.put(t, count("SELECT count(*) FROM " + t));
@@ -57,20 +65,92 @@ public abstract class Task260903Base extends SelConfigAcTestBase {
     }
 
     /**
-     * A-AC-2：V6 五表行数不变。
-     * <p>🚨 <b>本方法必须在「已证明提交成功且新表真落了行」之后才调用</b> ——
-     * {@code test.md §3} 第 2 号假绿陷阱：提交失败时什么都没写，行数当然不变，
-     * 于是「不双写」会因为「压根没写」而通过。调用方有责任先打正向断言。
+     * 取<b>数据库时钟</b>的当前时刻，作为「零新增」窗口的起点。
+     * <p>🚫 不用 JVM 时钟：测试 JVM 与 PG 在不同机器上，时钟偏移会让窗口错位（多算或漏算行）。
      */
-    protected void assertV6Unchanged(Map<String, Long> before, String when) {
-        Map<String, Long> after = v6Counts();
-        System.out.println("[" + when + "] V6 五表行数 before=" + before + " after=" + after);
+    protected String v6ClockNow() {
+        return scalar("SELECT now()::text");
+    }
+
+    /**
+     * 本套件在 {@code material_master} 里自建物的命名空间。
+     * <p>🚨 只对 {@code material_master} 排除，且只排这一个前缀：选配铸出的销售料号形如
+     * {@code 0663-2609000001}，永远不会命中它 ⇒ 排除它<b>不会遮蔽任何真实的 A-AC-2 违规</b>。
+     * <p>🚫 <b>四张 BOM 表刻意不按 {@code customer_no} 排除</b>：真发生双写时，行正是落在
+     * 夹具的 {@code customer_no}（{@code T2609*}）下 —— 按它排除等于把要抓的东西排除掉。
+     */
+    private static final String MM_SUITE_NS = " AND material_no NOT LIKE '" + PREFIX + "%'";
+
+    /**
+     * 某张 V6 表在窗口 {@code t0} 之后<b>留下写入痕迹</b>的行数。
+     *
+     * <p>🚨 判据是 {@code created_at >= t0 <b>OR</b> updated_at >= t0}，两个都要看：
+     * V6 的写入器（如 {@code MaterialMasterRepository}）走的是
+     * <b>{@code ON CONFLICT DO UPDATE} upsert</b> —— 对一个<b>已存在</b>的料号再写一次，
+     * 落地形式是 <b>UPDATE 而不是 INSERT</b>，{@code created_at} 纹丝不动。
+     * ⇒ 只看 {@code created_at} 会<b>整类漏判</b>「对存量料号的重复双写」。
+     * （2026-09-04 主线指出；实测五张表都有 {@code updated_at} 且 {@code material_master} 无 NULL。）
+     */
+    private String v6TouchedPredicate(String table, String t0) {
+        return " WHERE (created_at >= '" + t0 + "'::timestamptz"
+                + " OR updated_at >= '" + t0 + "'::timestamptz)"
+                + ("material_master".equals(table) ? MM_SUITE_NS : "");
+    }
+
+    private long v6NewRows(String table, String t0) {
+        return count("SELECT count(*) FROM " + table + v6TouchedPredicate(table, t0));
+    }
+
+    /**
+     * <b>A-AC-2 判据</b>：窗口 {@code t0} 之后，V6 五表<b>零新增</b>。
+     *
+     * <h4>🚨 2026-09-04 判据改写：从「全表绝对行数不变」改成「窗口内零新增」</h4>
+     * 原判据是 {@code count(*)} 前后相等，在共享库 {@code cpq_db_0724} 上有三个毛病，
+     * 实测已经犯了第一个：
+     * <ol>
+     *   <li><b>方向错判</b>：实测一次 {@code material_master 1894 → 1893}（<b>减少</b> 1 行）也把
+     *       A-AC-2 判红。而 A-AC-2 管的是「<b>不双写</b>」= 零新增，<b>别人删了一行不是本 AC 的违规</b> ——
+     *       这是 harness 噪声伪装成业务缺陷。</li>
+     *   <li><b>会漏判</b>：{@code +1 新增} 与 {@code -1 删除} 在同一窗口内相互抵消时，行数相等，
+     *       真实的双写被掩盖。行数相等<b>不等于</b>没有新增。</li>
+     *   <li><b>粒度不够</b>：按 {@code material_no} 集合比对也不行 —— 给<b>已存在</b>的料号补写一行
+     *       BOM 明细，集合不变但确实双写了。</li>
+     * </ol>
+     * 新判据按 {@code created_at}／{@code updated_at} 数窗口内<b>留下写入痕迹的行</b>：
+     * 行级、免疫第三方删行、抵消不了，且<b>抓得到 upsert 的 UPDATE 分支</b>
+     * （对存量料号重复双写时 {@code created_at} 不变，只看它会整类漏判）。
+     *
+     * <p>⚠️ 残余风险：共享库上<b>另一套测试并发</b>写这五张表时会误报。
+     * 所以失败信息里直接把新增行的 {@code material_no / customer_no / created_at} 列出来 ——
+     * 一眼能看出是不是本轮选配写的。
+     *
+     * <p>🚨 本守卫的鉴别力由 {@code V6ZeroWriteGuardTest#falsify_guardMustGoRedWhenV6IsActuallyWritten}
+     * 每轮证伪一次（在回滚事务里真插一行 V6，断言本方法必须报红）。
+     */
+    protected void assertV6Unchanged(String t0, String when) {
+        List<String> violations = new java.util.ArrayList<>();
         for (String t : V6_TABLES) {
-            assertEquals(before.get(t), after.get(t),
-                    when + "：A-AC-2 要求 V6 五表零新增（不双写），但 " + t + " 从 "
-                            + before.get(t) + " 变成 " + after.get(t)
-                            + " ⇒ 选配仍在写 V6。before=" + before + " after=" + after);
+            long added = v6NewRows(t, t0);
+            System.out.println("[" + when + "] " + t + " 窗口(" + t0 + ") 内留下写入痕迹的行数=" + added);
+            if (added > 0) {
+                // 🚨 明细里 created_at 与 updated_at 都要打：两者相等 ⇒ 是 INSERT；
+                //    updated_at 更晚 ⇒ 是 upsert 的 UPDATE 分支（这一类原判据看不见）
+                String cols = "material_master".equals(t)
+                        ? "material_no, created_at::text, updated_at::text"
+                        : "material_no, customer_no, created_at::text, updated_at::text";
+                List<Object[]> bad = rows("SELECT " + cols + " FROM " + t
+                        + v6TouchedPredicate(t, t0) + " ORDER BY greatest(created_at, updated_at) LIMIT 20");
+                violations.add(t + " 新增 " + added + " 行：" + bad.stream()
+                        .map(java.util.Arrays::toString).toList());
+            }
         }
+        assertEquals(List.of(), violations,
+                when + "：A-AC-2 要求 V6 五表零新增（用户裁决「不双写」），"
+                        + "但窗口 " + t0 + " 之后有行留下了写入痕迹（INSERT 或 upsert 的 UPDATE）"
+                        + " ⇒ 选配仍在写 V6。明细（created_at/updated_at 相等=INSERT，updated_at 更晚=UPDATE）："
+                        + violations
+                        + "\n  ⚠️ 归因提示：先看新增行的 customer_no —— 是本轮夹具的 T2609* 就是真双写；"
+                        + "是别的前缀就是共享库上另一套测试并发写入，属 harness 噪声。");
     }
 
     // ─────────────────────────── 新表计数 ───────────────────────────
@@ -85,6 +165,207 @@ public abstract class Task260903Base extends SelConfigAcTestBase {
 
     protected long dsElementBom(String materialNo) {
         return count("SELECT count(*) FROM ds_quote_element_bom WHERE material_no='" + materialNo + "'");
+    }
+
+    protected long dsCustomerPart(String customerNo) {
+        return count("SELECT count(*) FROM ds_quote_customer_part WHERE customer_no='" + customerNo + "'");
+    }
+
+    protected long selProductNo(String customerNo) {
+        return count("SELECT count(*) FROM sel_product_no WHERE customer_no='" + customerNo + "'");
+    }
+
+    /** 两张版本化子表的 {@code _history} 行数（A-AC-5：选配阶段不得升版 ⇒ 零新增）。 */
+    protected Map<String, Long> historyCounts() {
+        Map<String, Long> m = new LinkedHashMap<>();
+        m.put("ds_quote_material_bom_history", count("SELECT count(*) FROM ds_quote_material_bom_history"));
+        m.put("ds_quote_element_bom_history", count("SELECT count(*) FROM ds_quote_element_bom_history"));
+        return m;
+    }
+
+    /**
+     * 🚨 <b>正向对照：先证明「真的写进去了」，之后的「V6 没变 / 没升版」才有意义。</b>
+     *
+     * <p>{@code test.md §3} 第 2、3 号假绿陷阱：A-AC-2「V6 五表行数不变」与 A-AC-5「version_no 全 1」
+     * <b>在提交压根没成功时同样成立</b>（什么都没写，行数当然不变、也没有版本可升）。
+     * ⇒ 任何「零新增 / 不变」类断言之前，必须先过这一关。
+     *
+     * @return 该料号在 {@code ds_quote_material_bom} 的行数（>0）
+     */
+    protected long assertNewTablesGotRows(String materialNo, String when) {
+        long mat = dsMaterial(materialNo);
+        long bom = dsMaterialBom(materialNo);
+        long elem = dsElementBom(materialNo);
+        System.out.println("[" + when + "] 料号 " + materialNo + " 落库：ds_quote_material=" + mat
+                + " ds_quote_material_bom=" + bom + " ds_quote_element_bom=" + elem);
+        assertEquals(1L, mat,
+                when + "：ds_quote_material 应落 1 条料号主档（A-AC-1①），实际 " + mat
+                        + " 条。0 条 ⇒ 后面所有『V6 没变 / 没升版』的断言都会因为『压根没写』而假绿");
+        assertTrue(bom > 0,
+                when + "：ds_quote_material_bom 应落材质行（A-AC-1②），实际 0 行 ⇒ 同上，假绿风险");
+        return bom;
+    }
+
+    /**
+     * 🚨 <b>写了 ≠ 渲染得出来。</b>兼容视图的 BOM 侧要靠 {@code ds_quote_customer_part}
+     * 反查 {@code customer_no}；追溯不到时<b>整组 0 行且不报错</b>。
+     * ⇒ A-AC-1 只验「新表有行」会漏掉「写了但渲染不出来」这一整类缺陷，故补这一条。
+     */
+    protected void assertVisibleThroughCompatView(String materialNo, String when) {
+        long viaView = count("SELECT count(*) FROM " + COMPAT_MBI + " WHERE material_no='" + materialNo + "'");
+        long inTable = dsMaterialBom(materialNo);
+        System.out.println("[" + when + "] " + materialNo + " 新表 " + inTable + " 行 → 兼容视图 " + viaView + " 行");
+        assertTrue(viaView > 0,
+                when + "：料号 " + materialNo + " 在 ds_quote_material_bom 有 " + inTable
+                        + " 行，但兼容视图 " + COMPAT_MBI + " 读到 0 行 ⇒ 写进去了却渲染不出来。"
+                        + "典型根因：ds_quote_customer_part 没有对应行，兼容视图反查不到 customer_no，"
+                        + "于是整组被客户作用域过滤掉（静默，不报错）。A 阶段停写 V6 后这就是报价单空白。");
+    }
+
+    // ─────────────── 行主体：COMPOSITE 父件 / 子件必须显式区分（踩坑三次）───────────────
+
+    /**
+     * 本轮提交在报价单里落下的全部行：{@code [料号, composite_type, 是否根行]}。
+     *
+     * <p>🚨 <b>为什么不用 {@code latestLinePartNo()} 也不从提交响应的 JSON 猜字段名</b>：
+     * {@code latestLinePartNo()} 在 COMPOSITE 提交下返回的是<b>父料号</b>，本套用例已因此
+     * 把断言打错靶三次（见 {@code SelConfigWritesNewTablesTest} 里两处「第三次踩同一个坑」注释）。
+     * {@code quotation_line_item.composite_type} 是权威口径 —— 实测取值只有三种：
+     * {@code SIMPLE}（根）/ {@code COMPOSITE}（根）/ {@code PART}（子，{@code parent_line_item_id} 非空）。
+     */
+    protected List<Object[]> lineItemsOf(Fx fx) {
+        return rows("SELECT product_part_no_snapshot, composite_type, (parent_line_item_id IS NULL) "
+                + "FROM quotation_line_item WHERE quotation_id='" + fx.quotationId() + "' "
+                + "ORDER BY composite_type, sort_order");
+    }
+
+    /** COMPOSITE <b>主产品（父件）</b>料号。SIMPLE 提交时返回 {@code null}。 */
+    protected String compositeParentPartNo(Fx fx) {
+        return scalar("SELECT product_part_no_snapshot FROM quotation_line_item "
+                + "WHERE quotation_id='" + fx.quotationId() + "' AND composite_type='COMPOSITE' "
+                + "AND parent_line_item_id IS NULL ORDER BY sort_order LIMIT 1");
+    }
+
+    /** COMPOSITE 的<b>子件</b>料号（零件子件 + 外购件子件都在内）。 */
+    protected List<String> childPartNos(Fx fx) {
+        return col("SELECT product_part_no_snapshot FROM quotation_line_item "
+                + "WHERE quotation_id='" + fx.quotationId() + "' AND composite_type='PART' "
+                + "AND parent_line_item_id IS NOT NULL ORDER BY sort_order")
+                .stream().filter(java.util.Objects::nonNull).map(Object::toString).toList();
+    }
+
+    /** 本轮提交<b>铸出的全部料号</b>（COMPOSITE：父 + 全部子；SIMPLE：那一个）。 */
+    protected List<String> allCastPartNos(Fx fx) {
+        return col("SELECT DISTINCT product_part_no_snapshot FROM quotation_line_item "
+                + "WHERE quotation_id='" + fx.quotationId() + "' AND product_part_no_snapshot IS NOT NULL "
+                + "ORDER BY 1").stream().map(Object::toString).toList();
+    }
+
+    /**
+     * 提交<b>之前</b> {@code ds_quote_material} 里已有的料号全集。
+     * <p>🚨 用途：证明「本轮确实新造了行」。{@code testing.md §3} 第 3 号陷阱 ——
+     * 「所有新料号的 {@code category_code}={@code 000000}」在一行都没新造时同样成立；
+     * 而如果断言落在一条<b>存量 IMPORT 行</b>上（它本来就是 {@code 000000}），断言就变成恒真。
+     */
+    protected Set<String> dsMaterialNoSnapshot() {
+        return col("SELECT material_no FROM ds_quote_material").stream()
+                .map(String::valueOf).collect(Collectors.toSet());
+    }
+
+    /**
+     * 断言这些料号<b>都是本轮新造的</b>（提交前不在 {@code ds_quote_material} 里），并落了主档。
+     * <p>🚫 少了这一关，A-AC-7/A-AC-11 的取值断言就可能打在存量行上 ⇒ 恒真。
+     */
+    protected void assertFreshlyCast(Set<String> before, List<String> partNos, String when) {
+        assertTrue(!partNos.isEmpty(), when + "：本轮应铸出至少 1 个料号，实际 0 个 ⇒ 后面的取值断言会空跑（假绿）");
+        for (String pn : partNos) {
+            assertFalse(before.contains(pn),
+                    when + "：料号 " + pn + " 在本次提交**之前**就已存在于 ds_quote_material ⇒ "
+                            + "它不是「本轮铸出的新料号」，对它断言取值等于验存量数据（恒真风险）。"
+                            + "提交前快照共 " + before.size() + " 条。");
+            assertEquals(1L, dsMaterial(pn),
+                    when + "：本轮铸出的料号 " + pn + " 应在 ds_quote_material 有且仅有 1 条主档，实际 "
+                            + dsMaterial(pn) + " 条");
+        }
+    }
+
+    // ─────────────── 合成外购件（本轮独有，用来验「新建外购件行」）───────────────
+
+    /**
+     * 本轮自建的外购件料号，{@link #cleanupSyntheticOutsourced()} 负责删掉。
+     */
+    protected final List<String> createdOutsourcedNos = new ArrayList<>();
+
+    /**
+     * 造一个<b>本轮独有</b>的外购件（{@code material_master.material_type='外购件'}）。
+     *
+     * <p>🚨 <b>为什么必须自己造</b>：库里存量的外购件<b>只有 {@code TEST-Q13-CODE} 一条</b>，
+     * 而它<b>已经在 {@code ds_quote_material} 里</b>（{@code source=IMPORT}，实测 2026-09-04）。
+     * 用它跑 A-AC-7①/A-AC-11 时本次提交根本不会创建它 ⇒ 「新建的外购件行带不带
+     * {@code material_type} / {@code category_code}」这一问<b>无从验起</b>，
+     * 上一轮只能 {@code Assumptions.abort} 记成「未验证」。造一条本轮独有的，
+     * 就把「未验证」变成真验证。
+     *
+     * <p>⚠️ {@code material_master.material_no} 是 {@code varchar(20)} ⇒ 名字必须短：
+     * {@code T260902-OS-} + 6 位 RUN_ID = 17 字符。
+     */
+    protected String createSyntheticOutsourcedPart() {
+        String no = PREFIX + "OS-" + RUN_ID;             // 17 字符，卡在 varchar(20) 以内
+        QuarkusTransaction.requiringNew().run(() -> em.createNativeQuery(
+                        "INSERT INTO material_master (id,material_no,material_name,material_type,created_at,updated_at) "
+                                + "SELECT gen_random_uuid(),:no,:nm,'外购件',NOW(),NOW() "
+                                + "WHERE NOT EXISTS (SELECT 1 FROM material_master WHERE material_no=:no)")
+                .setParameter("no", no).setParameter("nm", PREFIX + "合成外购件").executeUpdate());
+        assertEquals(1L, count("SELECT count(*) FROM material_master WHERE material_no='" + no
+                        + "' AND material_type='外购件'"),
+                "前置自检：合成外购件 " + no + " 应已建好且 material_type='外购件'");
+        if (!createdOutsourcedNos.contains(no)) createdOutsourcedNos.add(no);
+        System.out.println("[合成外购件] 本轮自建 " + no + "（存量外购件只有 TEST-Q13-CODE 且已在 ds_quote_material，用它验不了新建行）");
+        return no;
+    }
+
+    /**
+     * 删掉本轮自建的外购件。
+     * <p>🚫 每条 DELETE 都收敛到「本轮 RUN_ID 的那一个料号」+ {@code source='MANUAL'}（选配唯一来源），
+     * 不存在无 WHERE 的删除，不碰任何存量数据。删除行数打印出来，人能看见。
+     * <p>📌 JUnit 5 里子类 {@code @AfterEach} 先于父类执行 ⇒ 这里跑在
+     * {@code SelConfigAcTestBase#restoreFixtures} 之前；合成外购件不出现在父类的
+     * {@code partNos} 反查里（它只作 {@code input_material_no}，不作 {@code material_no}），
+     * 所以必须自己收。
+     */
+    @AfterEach
+    void cleanupSyntheticOutsourced() {
+        if (createdOutsourcedNos.isEmpty()) return;
+        List<String> nos = List.copyOf(createdOutsourcedNos);
+        createdOutsourcedNos.clear();
+        try {
+            QuarkusTransaction.requiringNew().run(() -> {
+                for (String no : nos) {
+                    int el = em.createNativeQuery("DELETE FROM ds_quote_element_bom WHERE material_no=:n AND source='MANUAL'")
+                            .setParameter("n", no).executeUpdate();
+                    int bom = em.createNativeQuery("DELETE FROM ds_quote_material_bom WHERE material_no=:n AND source='MANUAL'")
+                            .setParameter("n", no).executeUpdate();
+                    int mat = em.createNativeQuery("DELETE FROM ds_quote_material WHERE material_no=:n AND source='MANUAL'")
+                            .setParameter("n", no).executeUpdate();
+                    int mm = em.createNativeQuery(
+                                    "DELETE FROM material_master mm WHERE mm.material_no=:n "
+                                            + "AND NOT EXISTS (SELECT 1 FROM material_bom_item b WHERE b.material_no=mm.material_no) "
+                                            + "AND NOT EXISTS (SELECT 1 FROM material_customer_map m WHERE m.material_no=mm.material_no) "
+                                            + "AND NOT EXISTS (SELECT 1 FROM sel_part_signature s WHERE s.quote_part_no=mm.material_no)")
+                            .setParameter("n", no).executeUpdate();
+                    System.out.println("[还原] 合成外购件 " + no + " 清理：element_bom=" + el + " material_bom=" + bom
+                            + " ds_quote_material=" + mat + " material_master=" + mm);
+                }
+            });
+        } catch (RuntimeException e) {
+            System.out.println("[还原] 🚨 合成外购件清理失败（需主线登记残留）：" + nos + " → " + e);
+        }
+        for (String no : nos) {
+            long left = count("SELECT count(*) FROM material_master WHERE material_no='" + no + "'")
+                    + count("SELECT count(*) FROM ds_quote_material WHERE material_no='" + no + "'");
+            assertEquals(0L, left, "还原自检：本轮合成外购件 " + no + " 仍有 " + left
+                    + " 行残留在共享库（material_master / ds_quote_material）⇒ 必须登记给主线");
+        }
     }
 
     // ─────────────────────────── 前置存在性 ───────────────────────────
@@ -106,6 +387,41 @@ public abstract class Task260903Base extends SelConfigAcTestBase {
                             + "这是**环境前置缺失**，不是被测功能的结论。"
                             + "请先让后端把 V410 落库（起一次后端即 migrate-at-start），再跑本用例。");
         }
+    }
+
+    // ─────────────────────────── 残留登记（🚫 不自行删除）───────────────────────────
+
+    /**
+     * 🚨 <b>A 阶段用例会在共享库 {@code cpq_db_0724} 留下 {@code ds_quote_*} 残留，本方法只<b>登记</b>不删除。</b>
+     *
+     * <p>原因有二：
+     * <ol>
+     *   <li>父类 {@link com.cpq.task260902.SelConfigAcTestBase} 的 {@code @AfterEach} 是为 task-260902 写的，
+     *       它清 V6 与 {@code sel_product_no}，<b>不认识 {@code ds_quote_*}</b>（那时这些表还不在它的射程内）。</li>
+     *   <li>{@code DELETE} 属 {@code CLAUDE.md §3.2} 红线，<b>子代理没有批准权</b>。
+     *       ⇒ 这里打印精确的清理 SQL 与命中行数，由主线报用户批准后执行。</li>
+     * </ol>
+     *
+     * <p>残留是<b>可定位</b>的：{@code customer_no} 形如 {@code T2609}+uuid，每轮唯一，不会撞存量数据。
+     * 🚫 但「可定位」不等于「可以不管」—— 不登记的话，下一个人会把它当成业务数据。
+     */
+    @AfterEach
+    void reportDsQuoteResidue() {
+        List<String> custNos = fixtures.stream().map(Fx::customerNo).toList();
+        if (custNos.isEmpty()) return;
+        String inList = custNos.stream().map(c -> "'" + c + "'").reduce((a, b) -> a + "," + b).orElse("''");
+        long cp = count("SELECT count(*) FROM ds_quote_customer_part WHERE customer_no IN (" + inList + ")");
+        long mat = count("SELECT count(*) FROM ds_quote_material WHERE material_no IN "
+                + "(SELECT material_no FROM ds_quote_customer_part WHERE customer_no IN (" + inList + "))");
+        if (cp == 0 && mat == 0) {
+            System.out.println("[残留登记] 本用例未在 ds_quote_* 留下行");
+            return;
+        }
+        System.out.println("[残留登记] 🚨 本用例在共享库留下 ds_quote_* 残留（🚫 未删除，需主线批准）：\n"
+                + "    ds_quote_customer_part = " + cp + " 行\n"
+                + "    ds_quote_material      = " + mat + " 行\n"
+                + "  清理 SQL（交主线走 §3.2 三步前置后执行）：\n"
+                + "    DELETE FROM ds_quote_customer_part WHERE customer_no IN (" + inList + ");");
     }
 
     // ─────────────────────────── 事务内造数 + 回滚 ───────────────────────────

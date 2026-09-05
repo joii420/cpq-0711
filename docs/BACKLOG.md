@@ -17,6 +17,28 @@
 
 ## 待开发条目
 
+### 报价单渲染 / 数据丢失
+
+- [ ] **「刷新基础数据」（`refresh-snapshot`）静默丢掉用户手工加的 BOM 树叶子**
+  - 来源：`task-260904-页签类型收缩` 第一批开发期，后端子代理做 AC-11 的 A/B 归因时顺带查出（2026-09-05）
+  - **现象**：用户在报价单 BOM 树页签上手工加的叶子（`__manual=true` 行），点一次「刷新基础数据」按钮（`POST /configure-product/quotations/{id}/refresh-snapshot`）后**从 `snapshot_rows` 中消失**，不报错、无提示
+  - **根因**：`ConfigureSnapshotService.snapshotQuotation()` 的树页签 Pass-2 用 `BomTreeRenderService.render()` 的结果**整体覆盖** `snapshot_rows`，**不与既有 `__manual` 行做合并**；而生产 `saveDraft` 路径走 `preservedSnapshots` + `skipRowsWithSnapshot`，整行复用旧快照 ⇒ 两条路径对手工行的处置不一致
+  - 🔬 **A/B 实证（同一报价行、同一宿主、真实 HTTP 端点）**：
+
+    | 动作 | `task-260904` 分支 | 干净 master |
+    |---|---|---|
+    | addLeaf → 真实 `PUT /quotations/{id}/draft` → 重读 | 手工叶子**存活** | 手工叶子**存活** |
+    | addLeaf → `POST .../refresh-snapshot` | 手工叶子**消失** | 手工叶子**消失** |
+
+    ⇒ **非 `task-260904` 引入，是既有缺陷**
+  - **影响**：生产可触发（那是个用户可见按钮）。用户手工维护的 BOM 结构会在无感知的情况下丢失
+  - ⚠️ **修复面在渲染主链路**：`ConfigureSnapshotService` 的 Pass-2 是 `AP-31`（"加载中…"永久占位族）与 `AP-51`（`snapshotRows` 累加死锁）的同一块代码，改动需完整回归
+  - 优先级：**P1**（静默数据丢失，且入口是常用按钮）
+  - 前置条件：无
+  - 预估规模：S=1-2天（改动小但回归面大）
+
+---
+
 ### 基础资料 / 数据质量
 
 - [ ] **「物料」数据源双表建模：客户料号为主表 + 物料表连表**
