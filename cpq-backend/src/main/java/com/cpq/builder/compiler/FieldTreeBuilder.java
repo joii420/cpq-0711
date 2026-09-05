@@ -176,8 +176,20 @@ public class FieldTreeBuilder {
             if (!priceKeys.isEmpty()) elemKeySourceColumn = priceKeys.get(0).leftColumn;
         }
 
+        // B-50：NARROW 边的目标是**入参收窄源**，不是可拖的数据源 —— 它不产出任何显示列
+        // （编译器侧 resolveColumn 会直接拒绝取它的列），所以字段面板里也不能出现，
+        // 否则用户拖得动、却在保存/编译时才被拒，是最难自解释的一类交互。
+        // 🔑 这里按**边**判而不是等种子把它从 tab_view_node 里摘掉：桥此前是以 AUX 身份挂上去的，
+        //    种子改不改是另一个会话的事，编译器与字段面板必须自己保证口径一致。
+        Set<UUID> narrowTargets = snap.edgesFrom(anchor == null ? null : anchor.id).stream()
+                .filter(e -> "NARROW".equals(e.edgeKind))
+                .map(e -> e.toNodeId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
         List<Group> groups = new ArrayList<>();
-        List<SemanticTabViewNode> tvns = snap.tabViewNodesByView.getOrDefault(tv.id, List.of());
+        List<SemanticTabViewNode> tvns = snap.tabViewNodesByView.getOrDefault(tv.id, List.of()).stream()
+                .filter(x -> !narrowTargets.contains(x.nodeId))
+                .toList();
         // B-49：本页签视图上"已经自成一组"的节点集合 —— 供 syntheticLookupFields 排除，见该方法注释。
         Set<UUID> nodesWithOwnGroup = tvns.stream()
                 .map(x -> x.nodeId)

@@ -148,6 +148,36 @@ public class SemanticGraphService {
 
     // ---------------- 写：边 ----------------
 
+    /**
+     * {@code edge_kind='NARROW'}：半连接收窄边（task-260819 B-43，2026-09-04 用户裁决）。
+     * 契约与编译器侧 {@code SemanticCompiler#emitNarrowPredicate} 的 case 标签**同一个字符串**。
+     */
+    static final String NARROW_EDGE_KIND = "NARROW";
+
+    /**
+     * 该边要不要跑「右侧连接键唯一」基数断言（{@link SemanticGraphValidator#checkEdgeCardinality}）。
+     *
+     * <p><b>本方法是这条规则的唯一出处</b> —— 三个调用点（{@code createEdge} / {@code validateEdge}
+     * / {@code recomputeAssertStatus}）此前各写一遍 {@code "MANY_TO_ONE".equals(...)}，
+     * 是典型的三处双写；加 NARROW 例外时漏掉任何一处，症状都是"保存莫名 400"而且不报到点子上。
+     *
+     * <p>🚫 <b>NARROW 边一律不跑</b>，两条理由：
+     * <ol>
+     *   <li><b>语义上无意义</b>：基数断言问的是「JOIN 会不会把一行放大成多行」。NARROW 的产物是
+     *       {@code WHERE 左键 IN (SELECT 右键 FROM 目标表 WHERE ...)} —— 半连接<b>按定义</b>不放大
+     *       行数（{@code IN} 对重复值幂等），右键唯不唯一都不影响产物。</li>
+     *   <li><b>不跳过就是误报</b>：料号桥的右键 {@code ds_quote_material.production_no} 本来就不唯一
+     *       （2026-09-04 实测：45 行 / 25 行非空 / 24 个不同值 / 重复组 1，
+     *       {@code TEST0813-P01-PROD} 被两个销售料号共用，且<b>用户已裁决这是合法业务</b>）。
+     *       不加例外，这 28 条边会被判 FAIL，任何走保存路径的操作都被 400 挡住，
+     *       而错误信息指向「右键不唯一」——<b>看起来像数据问题，实际是校验器对新 edge_kind 没有例外</b>，
+     *       排查方向会被整个带偏。</li>
+     * </ol>
+     */
+    static boolean assertsCardinality(String edgeKind, String cardinality) {
+        return "MANY_TO_ONE".equals(cardinality) && !NARROW_EDGE_KIND.equals(edgeKind);
+    }
+
     @Transactional
     public int createEdge(EdgeUpsertRequest req, String operatorId) {
         SemanticGraphSnapshot snap = loader.get();
@@ -157,7 +187,7 @@ public class SemanticGraphService {
 
         List<SemanticGraphValidator.CheckResult> checks = new ArrayList<>();
         checks.add(validator.checkTableExists(to.physicalTable));
-        if ("MANY_TO_ONE".equals(req.cardinality) && to.physicalTable != null && req.keys != null && !req.keys.isEmpty()) {
+        if (assertsCardinality(req.edgeKind, req.cardinality) && to.physicalTable != null && req.keys != null && !req.keys.isEmpty()) {
             List<String> rightCols = req.keys.stream().map(k -> k.rightColumn).collect(Collectors.toList());
             checks.add(validator.checkEdgeCardinality(to.physicalTable, rightCols, DiscriminatorResolver.resolve(from, to)));
         }
@@ -278,7 +308,7 @@ public class SemanticGraphService {
         SemanticNode from = SemanticNode.findById(e.fromNodeId);
         SemanticNode to = SemanticNode.findById(e.toNodeId);
         List<SemanticEdgeKey> keys = SemanticEdgeKey.list("edgeId", e.id);
-        boolean eligible = "MANY_TO_ONE".equals(e.cardinality) && to != null
+        boolean eligible = assertsCardinality(e.edgeKind, e.cardinality) && to != null
                 && to.physicalTable != null && !keys.isEmpty();
         if (!eligible) {
             e.assertStatus = "NA";
@@ -395,7 +425,7 @@ public class SemanticGraphService {
             return checks;
         }
         checks.add(validator.checkTableExists(to.physicalTable));
-        if ("MANY_TO_ONE".equals(req.cardinality) && to.physicalTable != null && req.keys != null && !req.keys.isEmpty()) {
+        if (assertsCardinality(req.edgeKind, req.cardinality) && to.physicalTable != null && req.keys != null && !req.keys.isEmpty()) {
             List<String> rightCols = req.keys.stream().map(k -> k.rightColumn).collect(Collectors.toList());
             checks.add(validator.checkEdgeCardinality(to.physicalTable, rightCols, DiscriminatorResolver.resolve(from, to)));
         }

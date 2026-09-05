@@ -84,6 +84,8 @@ public class SemanticCompiler {
         List<String> warnings = new ArrayList<>();
         /** 本次已产出的输出列名（B-47 去重用，含 hf_part_no / view_version 等约定列）。 */
         LinkedHashSet<String> usedAliases = new LinkedHashSet<>();
+        /** B-50：锚点上存在 NARROW 边 ⇒ 轴收窄职责已移交半连接，applyFullScope 不再直接发轴谓词。 */
+        boolean narrowedByBridge = false;
     }
 
     public CompileResult compile(SemanticGraphSnapshot snap, BuilderConfig cfg, CompileDialect dialect) {
@@ -128,6 +130,13 @@ public class SemanticCompiler {
         for (SemanticEdge e : snap.edgesFrom(c.anchor.id)) {
             if (!"JOIN".equals(e.edgeKind)) continue;
             emitMandatoryJoin(c, e);
+        }
+
+        // B-50：NARROW 半连接收窄。同样"无论是否被选列引用都必须出现"——它是**入参收窄**，
+        // 不是可选的取列方式（用户根本选不到它的列，见 resolveColumn 的 NARROW 分支）。
+        for (SemanticEdge e : snap.edgesFrom(c.anchor.id)) {
+            if (!"NARROW".equals(e.edgeKind)) continue;
+            emitNarrowPredicate(c, e);
         }
 
         // B-47：两个约定列先占住名字，**必须在逐列循环之前**。业务列若正好叫 hf_part_no /
@@ -333,6 +342,71 @@ public class SemanticCompiler {
         c.joinClauses.add("JOIN " + target.physicalTable + " " + alias + " ON " + String.join(" AND ", on));
     }
 
+    // ---------------- NARROW 半连接收窄（B-50） ----------------
+
+    /**
+     * {@code edge_kind='NARROW'}：拿 from 表的键去 to 表解析出对应键，用结果<b>收窄 from 表</b>
+     * （task-260819 B-50，用户 2026-09-04 裁决）。
+     *
+     * <p><b>它解决什么</b>：核价侧的轴是<b>生产料号</b>，而产品卡片给的是<b>销售料号</b>，中间要过
+     * {@code ds_quote_material} 这座桥。桥原本声明成 {@code LOOKUP}（输出列）⇒ 编译成
+     * {@code LEFT JOIN ds_quote_material ON dqm.production_no = 锚点.production_no}，方向是
+     * 「生产料号 → 销售料号」，而一个生产料号可以对应多个销售料号（用户裁决：这是<b>合法业务</b>）
+     * ⇒ <b>一行核价数据被放大成 N 行，行数与金额一起翻倍</b>。
+     *
+     * <p><b>改法的要点是方向反过来 + 落在 WHERE 而不是 FROM</b>：
+     * <pre>
+     * 锚点.production_no IN (SELECT b.production_no FROM ds_quote_material b
+     *                        WHERE b.material_no = ANY(:total_material_no))
+     * </pre>
+     * 方向变成「销售料号 → 生产料号」（45/45 唯一），且半连接<b>按定义不放大行数</b>——
+     * 子查询返回多少个销售料号都不影响外层行数，这正是 {@code IN} 与 {@code JOIN} 的本质差别。
+     * <b>同一张表、同一列，用在 SELECT 里还是 WHERE 里，差别就是扇出与不扇出。</b>
+     *
+     * <p>🚫 不产出 FROM 项、不产出任何显示列、不进字段面板（{@code FieldTreeBuilder} 侧同步排除）。
+     *
+     * <p><b>入参列</b>取 {@link CompileDialect#QUOTE} 的轴列（{@code material_no}）——桥节点的
+     * {@code anchor_expr} 实测为 NULL（它从不作为页签锚点），所以不能从那里推。桥表里没有这一列时
+     * <b>直接报错而不是静默不发</b>：不发 = 子查询退化成"整张桥表"= 完全不收窄 = 全表数据，
+     * 那是比报错坏得多的静默故障。
+     */
+    private void emitNarrowPredicate(Ctx c, SemanticEdge e) {
+        SemanticNode target = c.snap.nodeById.get(e.toNodeId);
+        if (target == null || target.physicalTable == null || target.physicalTable.isBlank()) {
+            throw new BuilderApiException(500, "COMPILE_NARROW_TARGET_MISSING",
+                    "NARROW 边指向的节点不存在或没有物理表（图数据不一致）", Map.of("edge", String.valueOf(e.id)));
+        }
+        List<SemanticEdgeKey> keys = c.snap.keysOf(e.id).stream()
+                .sorted(Comparator.comparingInt(k -> k.seq)).toList();
+        if (keys.isEmpty()) {
+            throw new BuilderApiException(500, "COMPILE_NARROW_NO_KEYS",
+                    "NARROW 边「" + target.displayName + "」没有声明连接键，无法生成收窄条件", Map.of());
+        }
+
+        Set<String> targetCols = c.columnCatalog.getOrDefault(target.physicalTable, Set.of());
+        String inputCol = CompileDialect.QUOTE.axisColumn(); // 产品卡片给的是销售料号
+        if (!targetCols.contains(inputCol)) {
+            throw new BuilderApiException(500, "COMPILE_NARROW_INPUT_COLUMN_MISSING",
+                    "收窄源「" + target.displayName + "」(" + target.physicalTable + ") 没有入参列 "
+                            + inputCol + "，无法按销售料号收窄", Map.of("table", target.physicalTable));
+        }
+
+        String sub = allocAlias(c, target.physicalTable);
+        String left = keys.size() == 1
+                ? c.anchorAlias + "." + keys.get(0).leftColumn
+                : "(" + keys.stream().map(k -> c.anchorAlias + "." + k.leftColumn)
+                        .reduce((a, b) -> a + ", " + b).orElseThrow() + ")";
+        String right = keys.stream().map(k -> sub + "." + k.rightColumn)
+                .reduce((a, b) -> a + ", " + b).orElseThrow();
+
+        c.anchorWhere.add(left + " IN (SELECT " + right
+                + " FROM " + target.physicalTable + " " + sub
+                + " WHERE " + sub + "." + inputCol + " = ANY(:total_material_no))");
+        c.requiredVars.add("total_material_no");
+        // 轴收窄的职责就此移交给本谓词，applyFullScope 不再另发一条（见该方法注释）
+        c.narrowedByBridge = true;
+    }
+
     // ---------------- 单列解析 ----------------
 
     private static final class ResolvedColumn {
@@ -381,6 +455,14 @@ public class SemanticCompiler {
             // ensureLeftJoin() 命中 existing alias 时直接复用、不会重复建 JOIN 子句，也不会把
             // 强制 JOIN 降级成 LEFT JOIN（JOIN 子句本身在 emitMandatoryJoin 里已经生成过）。
             case "JOIN" -> resolveLookup(c, edge, target, col);
+            // B-50：NARROW 的产物是 WHERE 半连接，不产出 FROM 项、不产出显示列 ⇒ 它的列**不可选**。
+            // 给一条专门的错误文案而不是落进 default 的"暂不支持"——后者会让人以为是没实现，
+            // 于是去给 NARROW 加取列实现，而那恰恰是这次要消灭的扇出根源（桥当输出列 = LEFT JOIN）。
+            case "NARROW" -> throw new BuilderApiException(400, "COMPILE_EDGE_KIND_UNSUPPORTED",
+                    "「" + target.displayName + "」是收窄用的输入源（NARROW），只用来限定取哪些行，"
+                            + "本身不提供可展示的列。若确实需要展示它的字段，应改用查名（LOOKUP）声明，"
+                            + "但要先确认不会因一对多而放大行数",
+                    Map.of("node", target.nodeKey, "edgeKind", edge.edgeKind));
             case "SUB" -> resolveSub(c, edge, target, col);
             case "GRAIN" -> resolveGrain(c, edge, target, col);
             default -> throw new BuilderApiException(400, "COMPILE_EDGE_KIND_UNSUPPORTED",
@@ -632,7 +714,13 @@ public class SemanticCompiler {
             }
         }
 
-        if (cols.contains(axis)) {
+        // B-50：锚点声明了 NARROW 边时，**不再直接发轴谓词**。
+        // 🚨 这不是优化，是正确性：:total_material_no 装的是**销售料号**，而核价侧的轴列是
+        // production_no —— 两者是不同号段，直接 `production_no = ANY(:total_material_no)` 会
+        // 恒不命中（0 行），且与半连接 AND 在一起时"看起来只是没数据"，不会报任何错。
+        // 收窄职责整体交给半连接：它挂在锚点上，SUB/GRAIN 目标通过各自的连接键与锚点相关联，
+        // 因而是被间接收窄的，不需要各自再发一条。
+        if (!c.narrowedByBridge && cols.contains(axis)) {
             where.add(alias + "." + axis + " = ANY(:total_material_no)");
             c.requiredVars.add("total_material_no");
         }
