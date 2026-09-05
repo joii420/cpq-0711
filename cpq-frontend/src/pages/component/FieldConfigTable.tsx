@@ -13,6 +13,8 @@ import DefaultSourceEditor from './DefaultSourceEditor';
 import ListFormulaConfigDrawer from './ListFormulaConfigDrawer';
 import ConditionalFormulaDrawer, { type ConditionalFormulaValue } from './ConditionalFormulaDrawer';
 import { extractSqlViewName } from './sqlViewPath';
+// task-260904 F-8（AC-24）：§1.35 双判据的唯一前端实现
+import { isTreeTab, tabSemanticLabel, type BoundTabSemantic } from '../../utils/tabSemantic';
 import './styles.css';
 
 /**
@@ -59,10 +61,17 @@ interface FieldConfigTableProps {
    * hover 说明原因。置灰只是软提示，硬闸在后端 assertTreeTokenGates 闸②-b。
    */
   tabType?: string;
+  /**
+   * task-260904 F-8（AC-24 / 需求文档 §1.35 双判据）：该组件绑定数据源的语义。
+   * `undefined` = 未绑定数据源（存量组件）→ 树判据回退读 `tabType === 'BOM'`，行为逐字不变；
+   * `null` = 已绑定但语义为普通数据源（判为非树）。两者不可互换，见 utils/tabSemantic.ts。
+   */
+  boundSemantic?: BoundTabSemantic;
 }
 
 const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
   tabType,
+  boundSemantic,
   fields,
   formulas,
   onChange,
@@ -73,6 +82,8 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
   onToggleRowKey,
   dataDriverPath,
 }) => {
+  // task-260904 F-8（AC-24 / §1.35）：本组件是不是「BOM 树页签」——双判据，唯一入口。
+  const isTreeSourceTab = isTreeTab(boundSemantic, tabType);
   const [pathPickerKey, setPathPickerKey] = useState<string | null>(null);
   // V109: 全局变量选择器, 选完编译为 BNF path + 写入 global_variable_code 元数据
   const [gvPickerKey, setGvPickerKey] = useState<string | null>(null);
@@ -749,11 +760,12 @@ const FieldConfigTable: React.FC<FieldConfigTableProps> = ({
           ...fields.map(f => ({ label: f.name, value: f.name })).filter(o => o.value),
           // task-0803：树属性直接作为条件判据，免去"先配一个 FORMULA 中转列再按它比"的绕行。
           // 值就是表达式里同名的中文保留字，两端 lookup 都会在最前面拦截解析。
+          // task-260904 F-8（AC-24）：判据由 `tabType !== 'BOM'` 改为 §1.35 双判据。
           ...TREE_ATTR_COND_OPTIONS.map(o => ({
             ...o,
-            disabled: tabType !== 'BOM',
-            title: tabType === 'BOM' ? o.title
-              : `树属性仅 BOM 类型页签可用（当前页签类型：${tabType || '未配置'}）`,
+            disabled: !isTreeSourceTab,
+            title: isTreeSourceTab ? o.title
+              : `树属性仅 BOM 类型页签可用（当前页签类型：${tabSemanticLabel(boundSemantic, tabType)}）`,
           })),
         ]}
         onClose={() => setCondFormulaKey(null)}

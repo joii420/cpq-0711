@@ -85,6 +85,18 @@ public class ComponentService {
         java.util.Set.of("材质元素", "零件", "外购件", "主件", "费用类");
 
     /**
+     * task-260904 B-11（AC-15）：页签类型收缩后本集合的适用范围收窄为<b>存量组件</b>。
+     * <ul>
+     *   <li>🚫 <b>{@code tabType == null} 直接放行的分支必须保留</b> —— 114 个存量未配组件靠它；</li>
+     *   <li>🆕 <b>取数配置器绑定的新模型组件整体跳过本校验</b>：它们的「料号列 / 名称列至少一个」
+     *       由配置器自己的保存前体检把关（{@code BuilderService.inspect}，AC-30），而其
+     *       {@code component.tab_type} 由内部坐标透传（可能是「材质元素」这类值），在这里再拦一道
+     *       会把「体检已放行、料号角色确实解析不出」的合法配置误判成 400 —— 属于弄坏新路径。</li>
+     * </ul>
+     * 集合本身<b>一个值都不动</b>：存量 109 个组件的保存期行为逐字不变（AC-25）。
+     */
+
+    /**
      * task-0721 B4：页签类型属性写入编排。{@code requestedTabType == null} → tabType 本身不变（既有
      * {@code bomRecursiveExpand} 手动设置保留），但仍按【当前生效的 tabType + 本次合并后的
      * partNoField/partNameField】校验标识列要求（见 {@link #assertPartNoFieldRequirement}）。
@@ -107,13 +119,38 @@ public class ComponentService {
             component.partNameField = requestedPartNameField.isBlank() ? null : requestedPartNameField;
         }
 
+        // task-260904 B-4/B-17/B-18：本方法内一切「是不是树页签」的问题都由这一个值回答。
+        // 只查一次（builderTreeFlag → 1 条 component_sql_view 查询；null = 没有取数配置器绑定），
+        // 下面三处消费点共用，🚫 不重复调用（保存是单组件操作，SQL 条数必须是常数）。
+        // 两种「结构上不可能有 builder_config」的情形直接按未绑定处理，不查库：
+        //   ① component.id == null —— 新建流程尚未 persist，谈不上有 component_sql_view；
+        //   ② tabSemanticResolver == null —— 纯 JUnit 单测直接 new ComponentService()（无 CDI 注入），
+        //      既有 ComponentServiceTreeTokenGateTest 即此形态，判据退化为分支②，与改动前逐字一致。
+        Boolean builderTree = (component.id == null || tabSemanticResolver == null)
+                ? null
+                : tabSemanticResolver.builderTreeFlag(component.id);
+        // 诊断锚点（task-260904）：builderTreeFlag == null 表示「无取数配置器绑定，走分支②」，
+        // true/false 表示「分支① 判定为树/非树」。三态混淆过一次（V417 改键值后误判非树），保留此行。
+        LOG.debugf("[tab-semantic] applyTabType comp=%s requestedTabType=%s currentTabType=%s builderTreeFlag=%s",
+                component.id, requestedTabType, component.tabType, builderTree);
+
         if (requestedTabType != null) {
             assertValidTabType(requestedTabType);
             String normalized = requestedTabType.isBlank() ? null : requestedTabType;
             // task-0803 Task5 闸③（反向闸，需求 §4.3.8）：记录"变更前"是否为 BOM，
             // 必须在 component.tabType 被下面覆盖之前取值。
-            boolean wasBom = "BOM".equals(component.tabType);
-            if (BomTreeRenderService.isQuoteTreeTabType(normalized)) {
+            // task-260904 B-18：两处判据均改走双判据收口点（TabSemanticResolver）。
+            // wasBom = 「变更前是否为树页签」；willBeTree = 「本次保存后是否为树页签」。
+            // 注：取数配置器保存时（BuilderService.save）会先落 builder_config 再调本方法，
+            // 故对新模型组件而言 wasBom 反映的是「本次配置后的语义」——存量组件（builder_config
+            // 为 NULL）走分支②，与改动前逐字一致。
+            boolean wasBom = builderTree != null
+                    ? builderTree
+                    : TabSemanticResolver.isLegacyTreeTabType(component.tabType);
+            boolean willBeTree = builderTree != null
+                    ? builderTree
+                    : TabSemanticResolver.isLegacyTreeTabType(normalized);
+            if (willBeTree) {
                 assertNotReferencedByCostingTemplate(component.id);
                 component.bomRecursiveExpand = Boolean.TRUE;
             } else {
@@ -138,7 +175,31 @@ public class ComponentService {
             component.tabType = normalized;
         }
 
-        assertPartNoFieldRequirement(component.tabType, component.partNoField, component.partNameField);
+        // ── task-260904 B-17（AC-21）：component.bom_recursive_expand 的新写入源 ──
+        // 原唯一写点是上面那个 `requestedTabType != null` 的分支；取数配置器去掉「页签类型」下拉后
+        // 请求不再带 tabType ⇒ 该分支不执行 ⇒ 新建的树页签组件该列恒 false、拿不到 BOM union driver
+        // 且不报错（静默失效）。这里补上按「绑定数据源的 semantic=='TREE'」推导的写入。
+        //
+        // 🔒 只在 requestedTabType == null 时兜底：requestedTabType 非 null 时上面的分支已经用同一个
+        //    双判据算过一遍，结果一致，不重复算；存量组件（无 builder 绑定）builderTreeFlag 返回 null，
+        //    本段整体 no-op ⇒ 存量行为零变化（AC-25）。
+        if (requestedTabType == null) {
+            if (builderTree != null) {
+                if (Boolean.TRUE.equals(builderTree)) {
+                    // 与上面的树分支同款护栏：被【尚未冻结】的核价模板引用的组件不能设为树页签。
+                    assertNotReferencedByCostingTemplate(component.id);
+                    component.bomRecursiveExpand = Boolean.TRUE;
+                } else {
+                    component.bomRecursiveExpand = Boolean.FALSE;
+                }
+            }
+        }
+
+        // task-260904 B-11：新模型（取数配置器绑定）组件整体跳过标识列强制要求，理由见
+        // TAB_TYPES_REQUIRE_PART_NO_FIELD 上的说明。
+        if (builderTree == null) {
+            assertPartNoFieldRequirement(component.tabType, component.partNoField, component.partNameField);
+        }
     }
 
     /**
@@ -238,14 +299,38 @@ public class ComponentService {
     }
 
     /**
+     * task-260904 B-10（AC-18）：三道闸的<b>双判据</b>入口 —— 生产调用点一律用这个。
+     *
+     * <p>「是不是树页签」由 {@link TabSemanticResolver} 回答（新模型按绑定数据源
+     * {@code semantic=='TREE'}，存量回退 {@code tab_type=='BOM'}），<b>语义不变</b>：
+     * {@code tree_ref}/{@code tree_attr} 仍只有树页签能用；树页签仍禁「上一行」类 token。
+     *
+     * <p>保留的 {@link #assertTreeTokenGates(String, String, String)} 只按 {@code tab_type} 判
+     * （分支②），供纯单测与「拿不到 componentId」的调用点使用。
+     */
+    void assertTreeTokenGatesFor(java.util.UUID componentId, String tabType,
+                                  String formulasJson, String fieldsJson) {
+        assertTreeTokenGates(tabSemanticResolver.isTreeTab(componentId, tabType), tabType, formulasJson, fieldsJson);
+    }
+
+    /**
      * @param fieldsJson 组件字段 JSON。task-0803（2026-08-04）：条件公式的 {@code when} 里也能用
      *        树属性保留字（[层级]/[是否叶子]/[是否根]），而 {@code conditional_formula} 挂在
      *        <b>fields</b> 上、不在 formulas 里 —— 只扫 formulas 会让非 BOM 页签把
      *        「按 [是否叶子] 分流」的条件存进库，绕过闸②。传 null 表示跳过该项校验（兼容重载）。
      */
     void assertTreeTokenGates(String tabType, String formulasJson, String fieldsJson) {
+        // task-260904 B-18：字面量收编到 TabSemanticResolver；本重载 = 分支②（存量判据）。
+        assertTreeTokenGates(TabSemanticResolver.isLegacyTreeTabType(tabType), tabType, formulasJson, fieldsJson);
+    }
+
+    /**
+     * 三道闸的判定体。{@code isBom}（= 本次保存后是否为树页签）由调用方按双判据算好传入，
+     * 本方法不再自己按 {@code tabType} 猜（task-260904 B-10/B-18）。{@code tabType} 仍然传进来，
+     * 只用于错误文案。
+     */
+    private void assertTreeTokenGates(boolean isBom, String tabType, String formulasJson, String fieldsJson) {
         List<Map<String, Object>> formulas = parseList(formulasJson);
-        boolean isBom = "BOM".equals(tabType);
         TokenMappabilityValidator innerValidator = new TokenMappabilityValidator();
 
         for (Map<String, Object> formula : formulas) {
@@ -502,6 +587,10 @@ public class ComponentService {
     @Inject
     ComponentSqlViewRepository sqlViewRepository;
 
+    /** task-260904 B-4/B-17/B-18：树页签双判据 + bom_recursive_expand 新写入源（需求文档 §1.35）。 */
+    @Inject
+    TabSemanticResolver tabSemanticResolver;
+
     public List<ComponentDTO> list(UUID directoryId, String keyword) {
         StringBuilder query = new StringBuilder("1=1");
         Map<String, Object> params = new HashMap<>();
@@ -635,7 +724,7 @@ public class ComponentService {
         applyTabType(component, request.tabType, request.partNoField, request.partNameField);
         // task-0803 Task5 闸①②④：父子取值(tree_ref/tree_attr) + previous_row_subtotal 的
         // tabType 联动校验，必须在 applyTabType 之后跑(此时 component.tabType 已是最终生效值)。
-        assertTreeTokenGates(component.tabType, component.formulas, component.fields);
+        assertTreeTokenGatesFor(component.id, component.tabType, component.formulas, component.fields);
         // task-0722：行排序列(可空)。非 null 时覆盖(空串=清空)。
         if (request.sortField != null) component.sortField = request.sortField.isBlank() ? null : request.sortField;
 
@@ -756,7 +845,7 @@ public class ComponentService {
         // task-0803 Task5 闸①②④：父子取值(tree_ref/tree_attr) + previous_row_subtotal 的
         // tabType 联动校验，必须在 applyTabType 之后跑(此时 component.tabType 已是最终生效值，
         // component.formulas 也已是本次保存后生效的最终值)。
-        assertTreeTokenGates(component.tabType, component.formulas, component.fields);
+        assertTreeTokenGatesFor(component.id, component.tabType, component.formulas, component.fields);
         // task-0722：行排序列(可空)。非 null 时覆盖(空串=清空)。
         if (request.sortField != null) component.sortField = request.sortField.isBlank() ? null : request.sortField;
 

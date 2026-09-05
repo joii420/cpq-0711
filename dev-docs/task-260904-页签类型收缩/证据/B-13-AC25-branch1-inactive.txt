@@ -1,0 +1,6 @@
+=== AC-25 结构性证明：现网没有任何页签会走分支① ===
+ sql_views_total | branch1_inputs | legacy_components | legacy_tree_components | frozen_tabs_hitting_branch1 
+-----------------+----------------+-------------------+------------------------+-----------------------------
+             150 |              0 |               109 |                     21 |                           0
+(1 row)
+

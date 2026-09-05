@@ -54,6 +54,14 @@ public class QuotationTreeService {
     @Inject
     com.cpq.template.service.PublishedTemplateReader publishedTemplateReader;
 
+    /** task-260904 B-4/B-18：树页签 / 受限页签的双判据（全工程唯一实现，需求文档 §1.35）。 */
+    @Inject
+    com.cpq.component.service.TabSemanticResolver tabSemanticResolver;
+
+    /** task-260904 B-5/B-6：加叶子类型判定的主数据批量取数（2 条 SQL，与料号数无关）。 */
+    @Inject
+    MasterPartTypeService masterPartTypeService;
+
     // =========================================================================
     // 元数据加载
     // =========================================================================
@@ -68,6 +76,19 @@ public class QuotationTreeService {
         /** task-0721（2026-07-23 补录，匹配标识放宽）：该页签「名称列」字段名——partNoField 为空时的
          * 兜底标识列（如「外购件/费用」类页签无料号列，只用「料件名称」做标识）。 */
         String partNameField;
+        /**
+         * task-260904 B-4/B-18：是否报价侧 BOM 树页签 —— 双判据产物（新模型按绑定数据源
+         * {@code semantic=='TREE'}，存量回退 {@code tab_type=='BOM'}）。
+         * 🚫 不要在消费点重新按 {@link #tabType} 判：判据要查 {@code component_sql_view}，
+         * 逐个判就是 N+1；本字段在 {@link #mapToCompMeta} 里整批一次算好。
+         */
+        boolean treeTab;
+        /**
+         * task-260904 B-9：是否「受限页签」（料号在 BOM 树上已有下级则禁止加入）。
+         * 新模型按 {@code semantic=='MATERIAL_ELEMENT'}；存量回退 {@code tab_type∈{材质元素,外购件}}
+         * ——与改动前逐字一致（AC-25：存量 15 个外购件组件行为不得变化）。
+         */
+        boolean restrictedTab;
     }
 
     /**
@@ -108,7 +129,14 @@ public class QuotationTreeService {
         return mapToCompMeta(publishedTemplateReader.allTabsOf(templateId));
     }
 
-    private static List<CompMeta> mapToCompMeta(List<com.cpq.template.entity.TemplateComponentSnapshot> tabs) {
+    /**
+     * task-260904 B-4/B-18：由 static 改为实例方法 —— 双判据要查 {@code component_sql_view}，
+     * 必须能拿到注入的 {@link com.cpq.component.service.TabSemanticResolver}。
+     *
+     * <p><b>N+1 纪律</b>：整批组件一次算完（{@code isTreeTabBatch}/{@code isRestrictedTabBatch}
+     * 各 ≤2 条 SQL，与组件数无关），🚫 不在循环里逐个判。
+     */
+    private List<CompMeta> mapToCompMeta(List<com.cpq.template.entity.TemplateComponentSnapshot> tabs) {
         List<CompMeta> out = new ArrayList<>();
         for (com.cpq.template.entity.TemplateComponentSnapshot s : tabs) {
             CompMeta m = new CompMeta();
@@ -119,6 +147,16 @@ public class QuotationTreeService {
             m.partNoField = s.partNoField;
             m.partNameField = s.partNameField;
             out.add(m);
+        }
+        if (!out.isEmpty()) {
+            Map<UUID, String> tabTypeById = new LinkedHashMap<>();
+            for (CompMeta m : out) if (m.id != null) tabTypeById.put(m.id, m.tabType);
+            Map<UUID, Boolean> treeFlags = tabSemanticResolver.isTreeTabBatch(tabTypeById);
+            Map<UUID, Boolean> restrictedFlags = tabSemanticResolver.isRestrictedTabBatch(tabTypeById);
+            for (CompMeta m : out) {
+                m.treeTab = Boolean.TRUE.equals(treeFlags.get(m.id));
+                m.restrictedTab = Boolean.TRUE.equals(restrictedFlags.get(m.id));
+            }
         }
         return out;
     }
@@ -215,7 +253,36 @@ public class QuotationTreeService {
     }
 
     private HitContextBundle buildHitContext(UUID lineItemId) {
-        return buildHitContext(loadTemplateComponents(lineItemId), loadComponentDataByLineItem(lineItemId));
+        HitContextBundle b = buildHitContext(loadTemplateComponents(lineItemId), loadComponentDataByLineItem(lineItemId));
+        // task-260904 AC-26（2026-09-05 用户裁决扩宽）：整单一次取全部行的成品料号，供规则五跨行拦截。
+        // 🚫 N+1 纪律：只在本重载（addLeaf / previewDelete / executeDelete —— 每请求调一次）里查；
+        //    saveDraft 的批量重载 buildHitContext(comps, compData) 走的是受限页签校验，
+        //    不做类型判定、用不到规则五，故那条被逐行调用的路径一条查询都不加。
+        for (String pn : loadQuotationFinishedPartNos(lineItemId)) {
+            b.ctx.addQuotationFinishedPartNo(pn);
+        }
+        return b;
+    }
+
+    /**
+     * task-260904 AC-26：本报价行所属<b>报价单</b>全部行的成品料号
+     * （{@code quotation_line_item.product_part_no_snapshot}），<b>1 条 SQL</b>，与行数无关。
+     */
+    @SuppressWarnings("unchecked")
+    private List<String> loadQuotationFinishedPartNos(UUID lineItemId) {
+        if (lineItemId == null) return List.of();
+        List<Object> rows = em.createNativeQuery(
+                "SELECT DISTINCT sib.product_part_no_snapshot FROM quotation_line_item li " +
+                "JOIN quotation_line_item sib ON sib.quotation_id = li.quotation_id " +
+                "WHERE li.id = :lid AND sib.product_part_no_snapshot IS NOT NULL")
+                .setParameter("lid", lineItemId).getResultList();
+        List<String> out = new ArrayList<>();
+        for (Object o : rows) {
+            if (o == null) continue;
+            String v = o.toString();
+            if (!v.isBlank()) out.add(v);
+        }
+        return out;
     }
 
     /**
@@ -239,14 +306,19 @@ public class QuotationTreeService {
             Object[] data = b.compData.get(cm.id);
             String rowsJson = data != null ? (String) data[0] : null;
             ArrayNode rows = parseRows(rowsJson);
-            if (BomTreeRenderService.isQuoteTreeTabType(cm.tabType)) {
+            if (cm.treeTab) {   // task-260904 B-18：双判据结果（CompMeta.treeTab，整批预算）
                 b.treeComponentIds.add(cm.id);
                 b.treeRowsByComp.put(cm.id.toString(), rows);
                 for (JsonNode row : rows) {
                     String parentNo = row.path("__parentNo").isNull() ? null : row.path("__parentNo").asText(null);
                     String hfPartNo = row.path("__hfPartNo").isNull() ? null : row.path("__hfPartNo").asText(null);
-                    if (parentNo != null && !parentNo.isBlank() && hfPartNo != null && !hfPartNo.isBlank()) {
+                    if (hfPartNo == null || hfPartNo.isBlank()) continue;
+                    if (parentNo != null && !parentNo.isBlank()) {
                         b.ctx.addChild(parentNo, hfPartNo);
+                    } else {
+                        // task-260904 B-20 规则五：无父 = 树根 = 成品。改读主数据后成品也在物料表里，
+                        // 不登记根就会被判成「零件」而放行挂为他人叶子（AC-26）。
+                        b.ctx.addRoot(hfPartNo);
                     }
                 }
             } else if (cm.tabType != null && !cm.tabType.isBlank()) {
@@ -279,8 +351,18 @@ public class QuotationTreeService {
         String compIdStr = componentId != null ? componentId.toString() : null;
         ArrayNode rows = b.treeRowsByComp.get(compIdStr);
         if (rows == null) {
+            // ② 校验顺序（api.md §3.5）。判据 task-260904 B-4 起为双判据（新模型按数据源
+            // semantic=='TREE'，存量回退 tab_type=='BOM'），文案不变。
             throw new BusinessException(400, "componentId 不是该报价行的树页签(tab_type=BOM)组件: " + componentId);
         }
+
+        // ── task-260904 B-5：主数据类型索引，本请求一次预取（N+1 纪律：2 条 SQL，与树节点数无关）──
+        // 料号 = 本行树上下文里出现过的全部料号 ∪ 本次待挂料号；此后 resolveStrict/resolveLenient
+        // 全程只读内存索引，不再查库。
+        java.util.Set<String> masterLookupKeys = new LinkedHashSet<>(b.ctx.allKnownPartNos());
+        if (partNo != null && !partNo.isBlank()) masterLookupKeys.add(partNo);
+        BomNodeTypeResolver.MasterTypeIndex master = masterPartTypeService.load(masterLookupKeys);
+        b.ctx.attachMasterTypes(master);
 
         // ① 校验宿主节点存在 + 判定宿主类型
         int hostLastIdx = -1;
@@ -306,13 +388,38 @@ public class QuotationTreeService {
             BomNodeTypeResolver.Resolution hr = bomNodeTypeResolver.resolveLenient(hostPartNo, b.ctx);
             hostNodeType = hr != null ? hr.nodeType : null;
         }
+        // ④ 宿主不是材质 / 外购件（既有护栏，task-260904 AC-8 反向断言：不得失效）。
+        //    宿主类型判定同样已改读主数据（B-8）——上面的 resolveLenient 走的就是新判定链。
         if (BomNodeTypeResolver.MATERIAL.equals(hostNodeType) || BomNodeTypeResolver.OUTSOURCED.equals(hostNodeType)) {
             throw new BusinessException(400,
                     (BomNodeTypeResolver.MATERIAL.equals(hostNodeType) ? "材质" : "外购件") + "节点不可再添加下级");
         }
 
-        // ② 判定新料号类型（B5 严格模式：命中主件/零命中/冲突分别抛 400/400/409）
+        // ⑤ task-260904 B-6（AC-6）：料号必须在主数据（物料表或材质库）中存在，否则 400
+        //    LEAF_PART_NOT_IN_MASTER，且不落任何行。必须早于 ⑥ —— 不存在的料号谈不上成不成环，
+        //    先报"不存在"更贴近用户认知（api.md §3.5）。
+        if (partNo == null || partNo.isBlank()) {
+            throw new BusinessException(400, "料号不能为空");
+        }
+        if (!master.known(partNo)) {
+            throw com.cpq.common.exception.LeafAddRejectedException.partNotInMaster(partNo);
+        }
+
+        // ⑥ task-260904 B-7（AC-7）：不成环。判据 = 待挂料号是否为宿主节点的祖先（含宿主自身）。
+        //    树上下文已在 rows 里，🚫 不为此再查一次全树。
+        List<String> cyclePath = detectLeafCycle(rows, hostNodeId, partNo);
+        if (cyclePath != null) {
+            throw com.cpq.common.exception.LeafAddRejectedException.cycleDetected(partNo, cyclePath);
+        }
+
+        // ⑦ 判定新料号类型（B5 严格模式，已改读主数据：成品/冲突分别抛 400/409）
         BomNodeTypeResolver.Resolution resolution = bomNodeTypeResolver.resolveStrict(partNo, b.ctx);
+        if (resolution.materialTypeFallback) {
+            // AC-12③：标明本次判定走的是「material_type 为空 → 默认零件」兜底分支，
+            // 便于将来数据补齐后回归对照。
+            LOG.infof("[quotation-tree] addLeaf line=%s part=%s 走 material_type 空值兜底分支 → 判「%s」",
+                    lineItemId, partNo, resolution.nodeType);
+        }
 
         // ③ 生成系统列
         String uuidTag = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
@@ -353,8 +460,56 @@ public class QuotationTreeService {
         Map<String, Object> resp = new LinkedHashMap<>();
         resp.put("nodeId", newNodeId);
         resp.put("nodeType", resolution.nodeType);
+        // AC-12③：响应里显式标注是否走了 material_type 空值兜底（不改既有键，只新增一个标记键）。
+        resp.put("materialTypeFallback", resolution.materialTypeFallback);
         resp.put("quoteCardValues", li.quoteCardValues);
         return resp;
+    }
+
+    /**
+     * task-260904 B-7（AC-7）：加叶子成环检测。
+     *
+     * <p><b>判据</b> = 待挂料号 {@code partNo} 是否为宿主节点的<b>祖先</b>（含宿主自身 ⇒ 覆盖自环）。
+     * 沿 {@code __parentId} 从宿主向根走一遍即可，🚫 不新增任何查询（树行 {@code rows} 已在手）。
+     *
+     * @return {@code null} = 不成环；否则返回环路径的料号序列（从命中的那个祖先出发，
+     *         沿树往下到宿主，再回到待挂料号，形如 {@code A → B → A}）
+     */
+    private static List<String> detectLeafCycle(ArrayNode rows, String hostNodeId, String partNo) {
+        if (rows == null || hostNodeId == null || partNo == null) return null;
+        // nodeId → (parentId, partNo)：一次遍历建索引，纯内存。
+        Map<String, String> parentByNode = new LinkedHashMap<>();
+        Map<String, String> partByNode = new LinkedHashMap<>();
+        for (JsonNode row : rows) {
+            String nid = row.path("__nodeId").isNull() ? null : row.path("__nodeId").asText(null);
+            if (nid == null || nid.isBlank()) continue;
+            String pid = row.path("__parentId").isNull() ? null : row.path("__parentId").asText(null);
+            String pno = row.path("__hfPartNo").isNull() ? null : row.path("__hfPartNo").asText(null);
+            parentByNode.putIfAbsent(nid, pid);
+            partByNode.putIfAbsent(nid, pno);
+        }
+
+        // 从宿主往根走，收集「宿主自身 + 全部祖先」的料号链（自底向上）。
+        List<String> upward = new ArrayList<>();
+        Set<String> visited = new LinkedHashSet<>();
+        String cur = hostNodeId;
+        int hitIdx = -1;
+        while (cur != null && !cur.isBlank() && visited.add(cur)) {
+            String pno = partByNode.get(cur);
+            upward.add(pno);
+            if (partNo.equals(pno)) { hitIdx = upward.size() - 1; break; }
+            cur = parentByNode.get(cur);
+        }
+        if (hitIdx < 0) return null;
+
+        // upward = [宿主, 父, 祖父, ... , 命中的祖先]；环路径按「从祖先往下到宿主，再回到新叶子」呈现。
+        List<String> path = new ArrayList<>();
+        for (int i = hitIdx; i >= 0; i--) {
+            String v = upward.get(i);
+            path.add(v == null ? "(未知料号)" : v);
+        }
+        path.add(partNo);   // 新叶子挂回来 ⇒ 闭环
+        return path;
     }
 
     /** UPSERT 写 snapshot_rows（沿用 quotation_line_component_data 现有行；不存在则不写，理论不触发——加叶子前置已校验存在）。 */
@@ -422,7 +577,7 @@ public class QuotationTreeService {
         List<Map<String, Object>> cascadeTabs = new ArrayList<>();
         if (!result.cascadeMaterials.isEmpty()) {
             for (CompMeta cm : b.comps) {
-                if (BomTreeRenderService.isQuoteTreeTabType(cm.tabType)) continue; // 只级联到非树页签
+                if (cm.treeTab) continue; // 只级联到非树页签（task-260904 B-18：双判据结果）
                 Object[] data = b.compData.get(cm.id);
                 if (data == null || data[0] == null) continue;
                 ArrayNode rows = parseRows((String) data[0]);
@@ -543,7 +698,7 @@ public class QuotationTreeService {
         // 级联行 → 各组件 deleted_row_keys（非树页签，nodeId 传 null 保持 fp 单键语义，见 B3.1）
         if (!result.cascadeMaterials.isEmpty()) {
             for (CompMeta cm : b.comps) {
-                if (BomTreeRenderService.isQuoteTreeTabType(cm.tabType)) continue;
+                if (cm.treeTab) continue;   // task-260904 B-18：双判据结果
                 Object[] data = b.compData.get(cm.id);
                 if (data == null || data[0] == null) continue;
                 ArrayNode rows = parseRows((String) data[0]);
@@ -805,7 +960,9 @@ public class QuotationTreeService {
      * @param lineItemId    所属报价行（用于加载该行的树结构，判断 partNo 是否已有子节点）
      */
     public void assertCanAddToRestrictedTab(String targetTabType, List<String> partNos, UUID lineItemId) {
-        if (!"材质元素".equals(targetTabType) && !"外购件".equals(targetTabType)) return; // 只约束这两类
+        // task-260904 B-9：本重载只拿得到 tabType（拿不到 componentId），故只能用分支②（存量判据）。
+        // 「哪些页签触发校验」的双判据版本在 assertCanAddRowsToRestrictedTab 系列里（那里有 componentId）。
+        if (!com.cpq.component.service.TabSemanticResolver.isLegacyRestrictedTabType(targetTabType)) return;
         if (partNos == null || partNos.isEmpty() || lineItemId == null) return;
         assertNoChildrenInRestrictedTab(targetTabType, partNos, buildHitContext(lineItemId));
     }
@@ -819,7 +976,9 @@ public class QuotationTreeService {
      */
     private void assertCanAddToRestrictedTab(String targetTabType, List<String> partNos, UUID lineItemId,
                                               List<CompMeta> comps, Map<UUID, Object[]> compData) {
-        if (!"材质元素".equals(targetTabType) && !"外购件".equals(targetTabType)) return; // 只约束这两类
+        // 同三参版本：这里只有 tabType，触发判据用分支②；调用方（六参 assertCanAddRowsToRestrictedTab）
+        // 已用双判据把过一道门，本处是二次快速放行，不会放宽也不会收紧。
+        if (!com.cpq.component.service.TabSemanticResolver.isLegacyRestrictedTabType(targetTabType)) return;
         if (partNos == null || partNos.isEmpty() || lineItemId == null) return;
         assertNoChildrenInRestrictedTab(targetTabType, partNos, buildHitContext(comps, compData));
     }
@@ -871,7 +1030,11 @@ public class QuotationTreeService {
         Object[] meta = loadSingleComponentTabMeta(componentId, lineItemId);
         if (meta == null) return;
         String tabType = meta[0] != null ? meta[0].toString() : null;
-        if (!"材质元素".equals(tabType) && !"外购件".equals(tabType)) return; // 快速放行,避免无谓解析
+        // task-260904 B-9：触发判据改双判据（新模型按数据源 semantic=='MATERIAL_ELEMENT'，
+        // 存量回退 tab_type∈{材质元素,外购件}）。⚠️ 本方法是 kill switch 关闭时的逐行逃生路径
+        // （已是 O(N) 查询，见类注释 repair-260829 B-8），此处多的这 1 条查询不改变其数量级；
+        // 热路径（批量版）走下面的 4/6 参重载，用预取好的 CompMeta.restrictedTab，零新增查询。
+        if (!tabSemanticResolver.isRestrictedTab(componentId, tabType)) return;
         String partNoField = meta[1] != null ? meta[1].toString() : null;
         String partNameField = meta[2] != null ? meta[2].toString() : null;
         // task-0721（2026-07-23 放宽）：料号列优先，名称列兜底；两者皆缺失才防御性放行
@@ -927,7 +1090,8 @@ public class QuotationTreeService {
         TabMeta meta = metaByComponent == null ? null : metaByComponent.get(componentId);
         if (meta == null) return;
         String tabType = meta.tabType();
-        if (!"材质元素".equals(tabType) && !"外购件".equals(tabType)) return; // 快速放行,避免无谓解析
+        // task-260904 B-9：双判据触发（无 CompMeta 可用，走 resolver 单点入口）。
+        if (!tabSemanticResolver.isRestrictedTab(componentId, tabType)) return;
         List<String> partNos = extractRestrictedTabPartNos(flatRowsJson, meta.partNoField(), meta.partNameField());
         assertCanAddToRestrictedTab(tabType, partNos, lineItemId);
     }
@@ -955,9 +1119,25 @@ public class QuotationTreeService {
         TabMeta meta = metaByComponent == null ? null : metaByComponent.get(componentId);
         if (meta == null) return;
         String tabType = meta.tabType();
-        if (!"材质元素".equals(tabType) && !"外购件".equals(tabType)) return; // 快速放行,避免无谓解析
+        // task-260904 B-9：双判据触发。🚫 不调 resolver —— 本重载在 saveDraft 的整单循环里被逐行调用
+        // （QuotationService:3144），调 resolver 就是新引入 N+1。treeComps 是调用方整单只查一次的
+        // CompMeta 列表，其 restrictedTab 已由 mapToCompMeta 整批算好，此处纯内存查表。
+        if (!isRestrictedByPrefetchedMeta(treeComps, componentId, tabType)) return;
         List<String> partNos = extractRestrictedTabPartNos(flatRowsJson, meta.partNoField(), meta.partNameField());
         assertCanAddToRestrictedTab(tabType, partNos, lineItemId, treeComps, treeCompData);
+    }
+
+    /**
+     * task-260904 B-9：从调用方预取好的 {@link CompMeta} 列表里取「是否受限页签」（双判据结果），
+     * 查不到该组件时回退分支②（存量判据）——与改动前逐字一致。<b>纯内存，零查询</b>。
+     */
+    private static boolean isRestrictedByPrefetchedMeta(List<CompMeta> comps, UUID componentId, String tabType) {
+        if (comps != null && componentId != null) {
+            for (CompMeta cm : comps) {
+                if (componentId.equals(cm.id)) return cm.restrictedTab;
+            }
+        }
+        return com.cpq.component.service.TabSemanticResolver.isLegacyRestrictedTabType(tabType);
     }
 
     /**

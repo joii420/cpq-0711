@@ -83,19 +83,26 @@ public class BomTreeRenderService {
      * task-0721 B3/B4/B6/B7 单一收口点（2026-07-21 业务方裁决 Q1）：判定某组件是否为
      * 「报价侧 BOM 树页签」。
      *
-     * <p><b>判据 = {@code component.tabType == "BOM"}</b>，与既有 {@code bomRecursiveExpand}
-     * （核价侧递归展开开关）<b>无关</b>——后者是组件级全局开关，同一组件被多模板共用时一开全生效；
-     * B4 保存组件时会按 {@code tabType} 自动同步 {@code bomRecursiveExpand}（{@code tabType="BOM"}
-     * → 置 true；改为其他值 → 置 false），但那只是实现细节 / 兼容既有 UI 展示，<b>不参与本判断</b>。
+     * <p>🚨 <b>task-260904 B-4：判据升级为双判据，实现已搬到
+     * {@link com.cpq.component.service.TabSemanticResolver}</b>（需求文档 §1.35）——
+     * 新模型组件（{@code component_sql_view.builder_version} 非空）按绑定数据源的
+     * {@code semantic == 'TREE'} 判，存量组件回退 {@code component.tab_type == 'BOM'}。
+     * 本方法退化为<b>分支②（存量回退）的转调门面</b>，只在「结构上确定没有 builder_config」
+     * 的调用点使用；<b>拿得到 componentId 的调用点一律改调</b>
+     * {@code TabSemanticResolver#isTreeTab(UUID, String)} / {@code #isTreeTabBatch(Map)}。
      *
-     * <p>全链路（B3 物化路由 / B6 加叶子 / B7 删除级联）只应调用本方法判定"是否走树渲染"，
+     * <p>与既有 {@code bomRecursiveExpand}（核价侧递归展开开关）<b>无关</b>——后者是组件级全局
+     * 开关，同一组件被多模板共用时一开全生效；保存组件时会按语义自动同步它（task-260904 B-17
+     * 起改由「绑定数据源 semantic=='TREE'」推导），但那只是实现细节，<b>不参与本判断</b>。
+     *
+     * <p>全链路（B3 物化路由 / B6 加叶子 / B7 删除级联）只应经这一条链路判定"是否走树渲染"，
      * 不要在别处散落重复的 {@code "BOM".equals(...)} / {@code bomRecursiveExpand} 判断。
      *
      * <p>核价侧路由判据不受影响：{@code CardSnapshotService#templateHasTreeTab} 仍按
      * {@code bomRecursiveExpand=true} 判定（核价侧现有行为逐位不变，AC-10 零回归门禁）。
      */
     public static boolean isQuoteTreeTabType(String tabType) {
-        return "BOM".equals(tabType);
+        return com.cpq.component.service.TabSemanticResolver.isLegacyTreeTabType(tabType);
     }
 
     /**
