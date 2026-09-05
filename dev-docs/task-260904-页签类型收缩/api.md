@@ -6,13 +6,16 @@
 
 ## 0. 设计前提：内部坐标不动，只换用户面
 
-`BuilderConfig`（存在 `component.builder_config` JSONB 里）用 `(tabType, variantKey)` 作为**定位 `semantic_tab_view` 的内部坐标**。
+`BuilderConfig` 用 `(tabType, variantKey)` 作为**定位 `semantic_tab_view` 的内部坐标**。
+
+🚨 **落点更正（2026-09-04 评审实查）**：它存在 **`component_sql_view.builder_config`**，不是 `component.builder_config` —— **`component` 表没有这一列**。
+⚠️ 更要紧的是：该列现网 **150 行全部为 `NULL`**（`task-260819` 未合并，尚无组件写入过）。B-4「按组件绑定的数据源判树」的**判据输入源目前是空的** —— 开工前必须确认 `task-260819` 合并后该列会被填充，否则 B-4 无法实现。
 
 🚫 **本次不改这对坐标的字段名，也不改 `field-tree` / `compile` 的请求入参。**
 
 理由：
 1. 用户诉求发生在**界面层**（不再选抽象的"页签类型"），内部坐标叫什么用户看不见
-2. 改坐标名 = 存量组件的 `builder_config` JSONB 全部要迁移，收益为零、风险不小
+2. 改坐标名 = 存量 `component_sql_view.builder_config` 全部要迁移，收益为零、风险不小
 3. `(tabType, variantKey)` 本来就唯一定位一行 `semantic_tab_view`，语义正确
 
 **变的是**：前端不再让用户直接选 `tabType`，改为选「数据源」；每个数据源在响应里自带它对应的 `(tabType, variantKey)` 坐标，前端原样回传。
@@ -41,7 +44,7 @@
   "availableSources": [
     { "sourceKey": "MATERIAL_BOM",  "label": "物料BOM",     "tabType": "BOM 树",   "variantKey": "", "semantic": "TREE" },
     { "sourceKey": "ELEMENT_BOM",   "label": "物料与元素BOM", "tabType": "材质元素", "variantKey": "", "semantic": "MATERIAL_ELEMENT" },
-    { "sourceKey": "CUSTOMER_PART", "label": "物料",         "tabType": "主件",     "variantKey": "", "semantic": null },  // ← S-11：锚点是客户料号表，物料表以 JOIN 组接入
+    { "sourceKey": "MATERIAL",      "label": "物料",         "tabType": "主件",     "variantKey": "", "semantic": null },
     { "sourceKey": "SELF_PROCESS_FEE", "label": "自制加工费", "tabType": "费用类",   "variantKey": "SELF_PROCESS_FEE", "semantic": null }
     // …共 11 项（QUOTE 方言）
   ],
@@ -69,7 +72,7 @@
 
 停用 6 行（3 方言 × {零件, 外购件}）后，`QUOTE` 方言返回 **11** 项、`COST_BASIC` **10** 项、`COST_DETAIL` **18** 项。
 
-⚠️ **「物料」是唯一的双表数据源**（S-11）：其 `sourceKey` 为 `CUSTOMER_PART`，字段面板返回**两个组** —— `客户料号(MAIN)` 5 列 + `物料(JOIN)` 9 列。其余数据源一律一组。
+⚠️ **一个数据源可能返回多个字段组**，前端不得假设「一源一组」。实测：QUOTE 材质元素挂 2 组（`ELEMENT_BOM(MAIN)` + `FUNC_ELEMENT_PRICE(AUX)`）；**`COST_BASIC`/`COST_DETAIL` 的全部 5 类页签各挂 2 组**（多一个 `QUOTE_MATERIAL_BRIDGE(AUX)`）；QUOTE 其余各挂 1 组。
 
 ### 1.4 错误
 
@@ -164,7 +167,7 @@
 | 接口 / 结构 | 为什么列在这里 |
 |---|---|
 | `BuilderConfig` 的 `tabType` / `variantKey` 字段名 | §0 已述，内部坐标 |
-| `component.builder_config` JSONB 形态 | 存量零迁移 |
+| `component_sql_view.builder_config` JSONB 形态 | 存量零迁移 |
 | `snapshot_rows` 中 `__nodeType` 的键名与取值域 | 只改判定来源，不改产物 |
 | `ds_quote_material_bom.output_material_type` | 用户业务字段，本次一列不动、一值不改 |
 | `template_component_snapshot.tab_type` | 冻结快照，114 行历史值保留（A0-3） |

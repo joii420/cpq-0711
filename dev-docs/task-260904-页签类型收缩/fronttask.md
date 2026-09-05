@@ -20,11 +20,13 @@
 | **F-5** | AC-6, AC-7 | 加叶子弹层新增两个拒绝态的展示：`LEAF_PART_NOT_IN_MASTER`（点名料号 + 提示去建档）、`LEAF_CYCLE_DETECTED`（**展示环路径**）。两者都不得只弹一个通用的"操作失败" |
 | **F-6** | AC-10 | 状态连续性：切走到别的 Tab 再切回、刷新整页、重新打开组件后，数据源选择与已选列均正确保留，无 JS 报错 |
 
+| **F-8** | AC-24 | 🚨 **前端 5 处语义闸门改判据**（与后端 B-10 对称，第一阶段就要改，否则出现「后端放行、前端灰掉」）：<br>· `FieldConfigTable.tsx:754/755` 字段类型选项禁用<br>· `FormulaBuilder.tsx:101` `isBomTab` —— 父子取值分区启用<br>· `ComponentManagement.tsx:1463/1913/1916/1927` 料号列/名称列校验与 Tooltip 文案<br>· `TabJoinFormulaDrawer.tsx:165/293` 跨页签公式 + SUMIF 源判定<br>· `tabjoin/FormulaEditorPanel.tsx:105` `treeDisabled` 树 token 禁用<br>全部由 `tabType === 'BOM'` 改为按绑定数据源的 `semantic === 'TREE'` |
+
 ## 第二阶段（需用户单独批准后才能做）
 
 | 编号 | 服务的 AC | 任务内容 |
 |---|---|---|
-| **F-7** | AC-16 | 移除前端对组件 `tabType` 字段的全部引用（`types.ts` / `componentDraft.ts` / `ComponentPalette.tsx` / `FieldConfigTable.tsx` / `FormulaBuilder.tsx` / `TabJoinFormulaDrawer.tsx` / `crossTabText.ts` 及相关测试） |
+| **F-7** | AC-16 | 移除前端对组件 `tabType` 字段的全部引用。**2026-09-04 实测完整清单 = 20 个文件**（v1 只列了 7 个）：`component/` 下 `componentDraft.ts` · `ComponentManagement.tsx` · `crossTabText.ts` · `FieldConfigTable.tsx` · `FormulaBuilder.tsx` · `formulaSerialize.ts` · `SqlViewBuilderTab.tsx` · `types.ts` · `__tests__/treeRefUI.test.tsx`；`quotation/` 下 `bomTreeLeaf.ts` · `BulkImportPartsDrawer.tsx` · `enrichComponentData.ts` · `QuotationStep2.tsx`；`template/` 下 `ComponentPalette.tsx` · `TabJoinFormulaDrawer.tsx` · `tabjoin/FormulaEditorPanel.tsx` · `__tests__/treeRefGate.test.ts`；`services/` 下 `quotationService.ts` · `sqlViewBuilderService.ts` · `tabJoinFormulaService.ts` |
 
 ---
 

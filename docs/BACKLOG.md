@@ -19,6 +19,17 @@
 
 ### 基础资料 / 数据质量
 
+- [ ] **「物料」数据源双表建模：客户料号为主表 + 物料表连表**
+  - 来源：用户 2026-09-04 需求「物料页签中同时提供物料和客户料号两个表的数据，以客户料号作为主表，使用物料表的品名单重等信息」；原 `task-260904` S-11，**同日独立评审后撤出、用户裁决另立项**
+  - 需求本身**未被否定**，撤出原因是**依赖已被删除的编译器行为**：
+    - `task-260819` 的 **N-19 裁决**把 `customer_no` 收窄随 V6 三件套整块删除（`SemanticCompiler` B-41 删了 `alreadyScopedByMandatoryJoin`）⇒ 原 AC 要求的 `cp.customer_no = :customerCode` **编译器不会生成**
+    - 原 AC「CUST-0004 预览 12 行」**实测不可复现**：该客户 QUOTE 根料号闭包命中 `ds_quote_customer_part` **0 行**，改动前后都是 0
+    - 立项时称「预览路径返回全部 45 个物料不分客户」**也是错的**：那段「注入锚点表全部轴值」是 `if (dialect.isCosting())` 核价专属分支，QUOTE 分支注入该客户的 BOM 闭包、本就分客户
+  - ⚠️ 重新立项前必须先解决：① `ds_quote_customer_part` 唯一约束 `(customer_no, customer_product_no)` **不含 `material_no`**，实测 5 个料号各 2 行 ⇒ 换锚点会让主件页签一行变 N 行，**改变行粒度**、可能撞行键坍缩坑；② `customer_no` 收窄由谁加回来（与 `task-260819` 协商）；③ 两表 `material_no` 匹配率极低（实测 18 条仅 2 条能对上）
+  - 前置条件：`task-260819` 合并 + `customer_no` 收窄归属明确
+  - 优先级：P2
+  - 预估规模：M=3-5天
+
 - [ ] **补齐 `ds_quote_material.material_type`（料号类型）**
   - 来源：`dev-docs/task-260904-页签类型收缩/需求文档.md` §2.3 A0-1 裁决（2026-09-04 用户采纳）
   - 背景：`task-260904` 把加叶子的料号类型判定从「页签命中反推」改为「读主数据」——在材质库 `material_recipe` 命中 → 材质；在 `ds_quote_material` 命中 → 按 `material_type` 判零件/外购件
