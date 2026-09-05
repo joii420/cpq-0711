@@ -197,13 +197,22 @@ class SelConfigWritesNewTablesTest extends Task260903Base {
         String partNo = latestLinePartNo(fx);
         assertNewTablesGotRows(partNo, "A-AC-7");
 
-        // ── 总能跑的正向断言：本轮**新建**的料号主档必须带 material_type ──
+        // ── 总能跑的正向断言：本轮新建的**零件子料号**必须带 material_type ──
+        // 🚨 第三次踩同一个坑的记录（2026-09-04）：latestLinePartNo() 在 COMPOSITE 提交下返回的是
+        //    **父料号**，而父件既不是零件也不是外购件。实测规律很干净：
+        //      普通/子件 25 条 → material_type='零件'；COMPOSITE 父件 1 条 → null。
+        //    A-AC-7 原文约束的是「外购件料号」，🚫 从未约束 COMPOSITE 父件 ⇒ 不许对父件断言。
+        //    「COMPOSITE 父件该不该有 material_type」是产品决策，已单独报主线，不在本用例里替它裁决。
+        String childPartNo = childPartNoOf(res, outsourced);
+        assertNotNull(childPartNo, "A-AC-7 前置：响应里应有非外购件的 PART 子料号。响应=" + res.asString());
         List<Object[]> created = rows("SELECT material_no, coalesce(material_type,'(null)') "
-                + "FROM ds_quote_material WHERE material_no='" + partNo + "'");
-        System.out.println("[A-AC-7] 本轮新建的料号主档=" + created.stream().map(java.util.Arrays::toString).toList());
-        assertEquals(1, created.size(), "A-AC-7 前置：本轮铸出的料号 " + partNo + " 应有 1 条主档");
-        assertNotEquals("(null)", String.valueOf(created.get(0)[1]),
-                "A-AC-7：本次流程创建的料号主档 " + partNo + " 必须带上 material_type，实际为空 ⇒ 流程产出没有身份");
+                + "FROM ds_quote_material WHERE material_no='" + childPartNo + "'");
+        System.out.println("[A-AC-7] 父料号=" + partNo + "（🚫 不对它断言）；零件子料号主档="
+                + created.stream().map(java.util.Arrays::toString).toList());
+        assertEquals(1, created.size(), "A-AC-7 前置：本轮铸出的零件子料号 " + childPartNo + " 应有 1 条主档");
+        assertEquals("零件", String.valueOf(created.get(0)[1]),
+                "A-AC-7：本次流程创建的零件子料号 " + childPartNo + " 的 material_type 应为『零件』，实际="
+                        + created.get(0)[1] + " ⇒ 流程产出没有带上身份");
 
         // ── 外购件那一条：只有当它确实由本轮创建时才断言 ──
         if (outsourcedPreexisted) {
