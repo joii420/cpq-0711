@@ -126,6 +126,56 @@ class PreviewPlaceholderSelfCheckTest {
         assertTrue(q.contains("在客户「CUST1」下不存在"), q);
     }
 
+    /**
+     * B-52 接线守卫：**带桥的图**下，preview 的编译入口必须按"有没有 partNo"决定经不经桥。
+     * 🔑 打的是 {@code compileForPreview}（preview 真正调的那个），不是判定函数本身 ——
+     * 后者测不到接线，删掉接线照样全绿（干预 L 第一次就是这样溜过去的）。
+     */
+    @Test
+    void previewCompileBypassesBridgeOnlyWhenPartNoAbsent() {
+        BuilderService svc = new BuilderService();
+        StubLoader ldr = new StubLoader();
+        ldr.snap = com.cpq.builder.compiler.B52BridgeFixture.graph();
+        svc.loader = ldr;
+        svc.compiler = com.cpq.builder.compiler.B52BridgeFixture.compiler();
+
+        BuilderDTOs.PreviewRequest noPart = req("COST_BASIC", null, null);
+        noPart.columns = com.cpq.builder.compiler.B52BridgeFixture.columns();
+        String sqlNoPart = svc.compileForPreview(noPart).sql;
+        System.out.println("---- B-52 接线守卫 · 无 partNo ----\n" + sqlNoPart);
+        assertFalse(sqlNoPart.contains("ds_quote_material"), "无 partNo 不该经桥：\n" + sqlNoPart);
+        assertTrue(sqlNoPart.contains("= ANY(:total_material_no)"), "必须恢复轴收窄：\n" + sqlNoPart);
+
+        BuilderDTOs.PreviewRequest withPart = req("COST_BASIC", "TEST0813-P01", null);
+        withPart.columns = com.cpq.builder.compiler.B52BridgeFixture.columns();
+        String sqlWithPart = svc.compileForPreview(withPart).sql;
+        System.out.println("---- B-52 接线守卫 · 有 partNo ----\n" + sqlWithPart);
+        assertTrue(sqlWithPart.contains("IN (SELECT"), "有 partNo 必须经桥：\n" + sqlWithPart);
+
+        // 报价侧恒不跳过（零回归）
+        assertFalse(svc.isUnrestrictedPreview(req("QUOTE", null, "C")), "报价侧永远不走不经桥分支");
+    }
+
+    @jakarta.enterprise.inject.Vetoed
+    static final class StubLoader extends com.cpq.semanticgraph.service.SemanticGraphLoader {
+        com.cpq.semanticgraph.service.SemanticGraphSnapshot snap;
+        @Override public com.cpq.semanticgraph.service.SemanticGraphSnapshot get() { return snap; }
+    }
+
+    /** B-52：无 partNo 时，注入的数组与消费它的谓词必须是**同一个料号语义**。 */
+    @Test
+    void unrestrictedPreviewInjectsAxisValuesForAxisPredicate() {
+        BuilderService svc = new BuilderService();
+        CompileResult r = compileCostBasic();           // 无桥、带直接轴谓词
+        BuilderDTOs.PreviewRequest rq = req("COST_BASIC", null, null);
+        String sql = svc.wrapPreviewSql(svc.buildPreviewSql(r, rq), rq);
+        System.out.println("---- B-52 无 partNo 预览 ----\n" + sql);
+        // 消费方是轴谓词 ⇒ 注入的必须是锚点表自己的轴值（生产料号），不是桥的销售料号
+        assertTrue(sql.contains("production_no = ANY(ARRAY(SELECT DISTINCT production_no::text FROM"), sql);
+        assertFalse(sql.contains("ds_quote_material"), "无 partNo 时不该经桥：\n" + sql);
+        assertTrue(sql.endsWith("LIMIT 50"), "AC-26 要求保留 LIMIT 50");
+    }
+
     /** 兜底体检不能把字符串字面量里的冒号误判成占位符（否则合法料号会触发假 500）。 */
     @Test
     void quotedLiteralsWithColonAreNotFlagged() {

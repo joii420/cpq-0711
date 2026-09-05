@@ -443,6 +443,25 @@ class CompilerV9DialectSelfCheckTest {
         assertTrue(ex.getMessage().contains("material_no"), ex.getMessage());
     }
 
+    /** B-52：skipNarrowPredicates=true 时不发半连接，且**恢复**直接轴收窄（两者是一对，不能只关一半）。 */
+    @Test
+    void skipNarrowRestoresDirectAxisPredicate() {
+        Object[] g = bridgeGraph("NARROW", true, true);
+        CompileResult skipped = compilerWith((StubCatalog) g[1]).compile(
+                (SemanticGraphSnapshot) g[0], cfg("主件", "COST_BASIC", "COST_MAIN", "part_name"),
+                CompileDialect.COST_BASIC, true);
+        System.out.println("---- B-52 skipNarrow ----\n" + skipped.sql);
+        assertFalse(skipped.sql.contains("IN (SELECT"), "不该再有半连接：\n" + skipped.sql);
+        assertTrue(skipped.sql.contains("dcbm.production_no = ANY(:total_material_no)"),
+                "跳过桥后必须恢复直接轴收窄，否则整条 SQL 完全不收窄：\n" + skipped.sql);
+
+        // 默认重载（三参）行为不变 —— 保存/编译/体检走的是它
+        CompileResult normal = compilerWith((StubCatalog) bridgeGraph("NARROW", true, true)[1]).compile(
+                (SemanticGraphSnapshot) bridgeGraph("NARROW", true, true)[0],
+                cfg("主件", "COST_BASIC", "COST_MAIN", "part_name"), CompileDialect.COST_BASIC);
+        assertTrue(normal.sql.contains("IN (SELECT"), "默认必须带桥：\n" + normal.sql);
+    }
+
     private static int countOf(String s, String needle) {
         int n = 0, i = 0;
         while ((i = s.indexOf(needle, i)) >= 0) { n++; i += needle.length(); }

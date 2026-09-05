@@ -89,6 +89,23 @@ public class SemanticCompiler {
     }
 
     public CompileResult compile(SemanticGraphSnapshot snap, BuilderConfig cfg, CompileDialect dialect) {
+        return compile(snap, cfg, dialect, false);
+    }
+
+    /**
+     * @param skipNarrowPredicates {@code true} = <b>不发 NARROW 半连接</b>（task-260819 B-52）。
+     *
+     * <p>唯一使用者是 {@code /preview} 的「<b>未指定料号</b>」场景：桥的作用是把**给定的**销售料号
+     * 翻译成生产料号；一个料号都没给时没有什么可翻译，此时经桥反而会把结果收窄成"恰好有桥映射的
+     * 那几个料号"——实测 {@code ds_cost_basic_material} 12 行里只有 6 行有桥，而 AC-117 的基准是
+     * <b>整表</b>。跳过后 {@link #applyFullScope} 恢复直接轴收窄
+     * （{@code <轴列> = ANY(:total_material_no)}），预览侧注入锚点表自己的轴值 ⇒ 整表样例。
+     *
+     * <p>🚫 <b>保存/编译/体检一律传 false</b>：落库的 {@code sql_template} 必须带桥，
+     * 否则渲染期就不收窄了。这是**预览专用的放宽**，不是编译器的常规能力。
+     */
+    public CompileResult compile(SemanticGraphSnapshot snap, BuilderConfig cfg, CompileDialect dialect,
+                                 boolean skipNarrowPredicates) {
         Ctx c = new Ctx();
         c.snap = snap;
         c.dialect = dialect;
@@ -134,9 +151,11 @@ public class SemanticCompiler {
 
         // B-50：NARROW 半连接收窄。同样"无论是否被选列引用都必须出现"——它是**入参收窄**，
         // 不是可选的取列方式（用户根本选不到它的列，见 resolveColumn 的 NARROW 分支）。
-        for (SemanticEdge e : snap.edgesFrom(c.anchor.id)) {
-            if (!"NARROW".equals(e.edgeKind)) continue;
-            emitNarrowPredicate(c, e);
+        if (!skipNarrowPredicates) {
+            for (SemanticEdge e : snap.edgesFrom(c.anchor.id)) {
+                if (!"NARROW".equals(e.edgeKind)) continue;
+                emitNarrowPredicate(c, e);
+            }
         }
 
         // B-47：两个约定列先占住名字，**必须在逐列循环之前**。业务列若正好叫 hf_part_no /

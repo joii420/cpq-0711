@@ -131,11 +131,15 @@ public class BuilderService {
     }
 
     private CompileResult doCompile(BuilderConfig cfg) {
+        return doCompile(cfg, false);
+    }
+
+    private CompileResult doCompile(BuilderConfig cfg, boolean skipNarrowPredicates) {
         SemanticGraphSnapshot snap = loader.get();
         // task-260819 B-22（D-59）：改读请求体 cfg.dialect，不再硬编码 QUOTE——硬编码会让
         // AC-37 的核价侧编译路径根本走不到（一期 B-10「方言参数化」因此无法验收）。
         // 只改取值来源，编译器内部按 dialect 分支的逻辑（B-10 已交付部分）不动。
-        return compiler.compile(snap, cfg, resolveDialect(cfg));
+        return compiler.compile(snap, cfg, resolveDialect(cfg), skipNarrowPredicates);
     }
 
     /**
@@ -149,11 +153,34 @@ public class BuilderService {
         return CompileDialect.parse(cfg == null ? null : cfg.dialect);
     }
 
+    /**
+     * 预览是否走「不经桥的整表样例」（task-260819 B-52）：<b>核价方言 + 未指定料号</b>。
+     *
+     * <p>桥是用来翻译**给定的**销售料号的；一个料号都没给时没有什么可翻译，此时经桥反而会把结果
+     * 收窄成"恰好有桥映射的那几个料号"——实测 {@code ds_cost_basic_material} 12 行里只有 6 行有桥，
+     * 而 AC-117 的基准是<b>整表 12</b>。报价侧不经桥，恒 false（零回归）。
+     */
+    boolean isUnrestrictedPreview(PreviewRequest req) {
+        return resolveDialect(req).isCosting() && (req.partNo == null || req.partNo.isBlank());
+    }
+
+    /**
+     * 预览专用编译（B-52）。
+     *
+     * <p>⚠️ <b>必须是 preview() 唯一的编译入口</b>：把 {@code isUnrestrictedPreview} 的结果摊回
+     * 调用点，自测就只能打到"判定函数"本身，而<b>接线被删掉照样全绿</b>——B-48 与本条我各踩过一次，
+     * 两次都是证伪实验才抓出来的。收成一个方法后，删掉接线自测必红。
+     */
+    CompileResult compileForPreview(PreviewRequest req) {
+        return doCompile(req, isUnrestrictedPreview(req));
+    }
+
     // ---------------- POST /preview (B-11, AC-26~28) ----------------
 
     public PreviewResponse preview(UUID componentId, PreviewRequest req) {
         requireComponent(componentId);
-        CompileResult r = doCompile(req);
+        boolean unrestricted = isUnrestrictedPreview(req);
+        CompileResult r = compileForPreview(req);
 
         String bound = buildPreviewSql(r, req);
 
@@ -167,6 +194,13 @@ public class BuilderService {
         String wrapped = wrapPreviewSql(bound, req);
 
         PreviewResponse resp = new PreviewResponse();
+        if (unrestricted) {
+            // 让"预览 SQL 与落库 SQL 不同"这件事**可见**：不说的话，用户会以为自己预览的就是
+            // 将来渲染要跑的那条，而这正是本任务反复在消灭的静默错配。
+            resp.diagnostics.add(new Diagnostic("WARN", "PREVIEW_UNRESTRICTED_SAMPLE", null,
+                    "未指定料号：本次预览展示的是整表样例（最多 50 行），未经料号桥收窄。"
+                            + "落库后的取数仍会按销售料号经桥收窄——要看真实收窄结果，请填一个销售料号"));
+        }
         long start = System.currentTimeMillis();
         try (Connection conn = dataSource.getConnection()) {
             conn.setReadOnly(true);
