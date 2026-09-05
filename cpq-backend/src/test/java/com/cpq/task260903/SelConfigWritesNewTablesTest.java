@@ -2,7 +2,6 @@ package com.cpq.task260903;
 
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.response.Response;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -161,29 +160,36 @@ class SelConfigWritesNewTablesTest extends Task260903Base {
     }
 
     /**
-     * <b>A-AC-7</b>：「外购件料号在 {@code ds_quote_material.material_type} = <b>{@code 外购件}</b>」
-     * （依赖 V409 落地）。
+     * <b>A-AC-7</b>（2026-09-04 用户裁决改写后的原文）：
+     * 「{@code ds_quote_material.material_type}：① 外购件 = <b>{@code 外购件}</b>；
+     * ② 零件子料号 = <b>{@code 零件}</b>；③ 🆕 <b>COMPOSITE 主产品 = {@code 零件}</b>
+     * （2026-09-04 用户裁决，<b>覆盖</b>原「传 {@code null}，🚫 不许拿零件凑数」）。
+     * 🚫 <b>不得有 NULL</b>」。
+     *
+     * <h4>🚨 父件 / 子件必须显式区分（本套用例踩过三次）</h4>
+     * {@code latestLinePartNo()} 在 COMPOSITE 下返回的是<b>父料号</b>。本用例三个断言分别打在
+     * <b>三个不同的料号</b>上，因此一律从 {@code quotation_line_item.composite_type} 取，
+     * 并把「父=X 零件子=Y 外购子=Z」打进日志。
+     *
+     * <h4>🚩 {@code Assumptions.abort} 已删除（上一轮的「未验证」被消除）</h4>
+     * 上一轮 ① 无从验起，是因为库里存量外购件<b>只有 {@code TEST-Q13-CODE} 一条、且它已在
+     * {@code ds_quote_material}（{@code source=IMPORT}）</b> ⇒ 本次提交根本不会「创建」它。
+     * 本轮改为 {@link #createSyntheticOutsourcedPart()} 自建一条<b>本轮独有</b>的外购件，
+     * 场景可构造 ⇒ ① 变成真断言，abort 不再需要。
      */
     @Test
-    @DisplayName("A-AC-7 本次流程创建的料号带上 material_type")
-    void aac7_outsourcedPartKeepsItsMaterialType() {
+    @DisplayName("A-AC-7 三态齐备：外购件=外购件 / 零件子料号=零件 / COMPOSITE 主产品=零件")
+    void aac7_materialTypeThreeStatesAllPresent() {
         // 前置：V409 必须已落（该列在 V409 之前不存在）
-        assertTrue(count("SELECT count(*) FROM information_schema.columns "
-                        + "WHERE table_name='ds_quote_material' AND column_name='material_type'") == 1,
+        assertEquals(1L, count("SELECT count(*) FROM information_schema.columns "
+                        + "WHERE table_name='ds_quote_material' AND column_name='material_type'"),
                 "A-AC-7 前置：ds_quote_material.material_type 列不存在 ⇒ V409 尚未落地。"
                         + "这是**环境前置缺失**，不是被测功能的结论。");
 
-        String outsourced = anOutsourcedPartNo();
-        // 🚨 口径（2026-09-04 主线裁决，解释②）：A-AC-7 约束的是**流程产出**，不是存量数据的完整性。
-        //    补齐既有 IMPORT 行属于数据治理；让「选配提交」顺带改写别人导入的数据，比留 null 更危险。
-        //    ⇒ 本用例只对「本轮新建的行」断言。
-        boolean outsourcedPreexisted = dsMaterial(outsourced) > 0;
-        String preInfo = outsourcedPreexisted
-                ? String.valueOf(rows("SELECT source, coalesce(material_type,'(null)'), created_at::text "
-                        + "FROM ds_quote_material WHERE material_no='" + outsourced + "'")
-                        .stream().map(java.util.Arrays::toString).toList())
-                : "(本轮之前不存在)";
-        System.out.println("[A-AC-7] 外购件 " + outsourced + " 提交前在 ds_quote_material 的状态=" + preInfo);
+        String outsourced = createSyntheticOutsourcedPart();
+        // 🚨 提交前快照：证明本轮三个料号都是**新造**的。少了这一关，取值断言可能打在
+        //    存量 IMPORT 行上（它本来就带 material_type）⇒ 恒真（testing.md §3 第 2、3 号陷阱）。
+        java.util.Set<String> before = dsMaterialNoSnapshot();
 
         Fx fx = newFixture("aac7");
         Response res = configure(fx, submitBody(PREFIX + "A7",
@@ -194,46 +200,173 @@ class SelConfigWritesNewTablesTest extends Task260903Base {
                 outsourcedPart(outsourced, List.of(PROC_2))));
         assertSubmitOk(res, "A-AC-7 提交");
 
-        String partNo = latestLinePartNo(fx);
-        assertNewTablesGotRows(partNo, "A-AC-7");
+        // ── 先把三个角色分清楚，再断言 ──
+        String parent = compositeParentPartNo(fx);
+        List<String> children = childPartNos(fx);
+        System.out.println("[A-AC-7] 报价行结构="
+                + lineItemsOf(fx).stream().map(java.util.Arrays::toString).toList());
+        assertNotNull(parent,
+                "A-AC-7③ 前置：『零件 + 外购件』应铸出 COMPOSITE 主产品行（composite_type='COMPOSITE'），"
+                        + "实际取不到 ⇒ ③ 无从验起。行结构见上一行日志。");
+        assertTrue(children.contains(outsourced),
+                "A-AC-7① 前置：外购件 " + outsourced + " 应作为子件出现在报价行里，实际子件="
+                        + children + " ⇒ ① 会打错靶");
+        List<String> partChildren = children.stream().filter(c -> !c.equals(outsourced)).toList();
+        assertEquals(1, partChildren.size(),
+                "A-AC-7② 前置：应恰好 1 个零件子料号，实际=" + partChildren + "（全部子件=" + children + "）");
+        String partChild = partChildren.get(0);
+        System.out.println("[A-AC-7] 角色分派：父(COMPOSITE 主产品)=" + parent
+                + "  零件子料号=" + partChild + "  外购件子料号=" + outsourced);
 
-        // ── 总能跑的正向断言：本轮新建的**零件子料号**必须带 material_type ──
-        // 🚨 第三次踩同一个坑的记录（2026-09-04）：latestLinePartNo() 在 COMPOSITE 提交下返回的是
-        //    **父料号**，而父件既不是零件也不是外购件。实测规律很干净：
-        //      普通/子件 25 条 → material_type='零件'；COMPOSITE 父件 1 条 → null。
-        //    A-AC-7 原文约束的是「外购件料号」，🚫 从未约束 COMPOSITE 父件 ⇒ 不许对父件断言。
-        //    「COMPOSITE 父件该不该有 material_type」是产品决策，已单独报主线，不在本用例里替它裁决。
-        String childPartNo = childPartNoOf(res, outsourced);
-        assertNotNull(childPartNo, "A-AC-7 前置：响应里应有非外购件的 PART 子料号。响应=" + res.asString());
-        List<Object[]> created = rows("SELECT material_no, coalesce(material_type,'(null)') "
-                + "FROM ds_quote_material WHERE material_no='" + childPartNo + "'");
-        System.out.println("[A-AC-7] 父料号=" + partNo + "（🚫 不对它断言）；零件子料号主档="
-                + created.stream().map(java.util.Arrays::toString).toList());
-        assertEquals(1, created.size(), "A-AC-7 前置：本轮铸出的零件子料号 " + childPartNo + " 应有 1 条主档");
-        assertEquals("零件", String.valueOf(created.get(0)[1]),
-                "A-AC-7：本次流程创建的零件子料号 " + childPartNo + " 的 material_type 应为『零件』，实际="
-                        + created.get(0)[1] + " ⇒ 流程产出没有带上身份");
+        List<String> cast = new java.util.ArrayList<>(List.of(parent));
+        cast.addAll(children);
+        assertFreshlyCast(before, cast, "A-AC-7");
 
-        // ── 外购件那一条：只有当它确实由本轮创建时才断言 ──
-        if (outsourcedPreexisted) {
-            // 🚩 🚫 不许在这里 assertTrue(true) 蒙混过关：场景没被构造出来就是**没验证**，
-            //    JUnit 的 abort 会把它记成 aborted 而不是 passed —— 报告里看得见这个洞。
-            Assumptions.abort("A-AC-7 未验证（场景不可构造，非产品结论）："
-                    + "外购件 " + outsourced + " 在本轮之前就已存在于 ds_quote_material " + preInfo
-                    + "，因此本次提交不会创建它，「新建行是否带 material_type」这一问无从验起。"
-                    + "\n  ⚠️ 库里 material_type='外购件' 的料号只有这一个，且已被导入过 ⇒ 无法另选。"
-                    + "\n  📌 真实风险仍在（已报主线进 BL）：只存在于新表、V6 里没有的外购件会丢身份；"
-                    + "V6 里有的靠兼容视图 V6 侧兜得住（实测 " + outsourced + " 在 material_master 里是『"
-                    + scalar("SELECT material_type FROM material_master WHERE material_no='" + outsourced + "'") + "』）。");
+        List<Object[]> got = rows("SELECT material_no, coalesce(material_type,'(null)'), source "
+                + "FROM ds_quote_material WHERE material_no IN ("
+                + cast.stream().map(c -> "'" + c + "'").collect(java.util.stream.Collectors.joining(","))
+                + ") ORDER BY material_no");
+        System.out.println("[A-AC-7] 本轮铸出料号的 material_type 实际落库="
+                + got.stream().map(java.util.Arrays::toString).toList());
+
+        // ① 外购件
+        assertEquals("外购件", materialTypeOf(outsourced),
+                "A-AC-7①：本轮新建的外购件 " + outsourced + " 的 material_type 应为『外购件』，实际="
+                        + materialTypeOf(outsourced) + "。落库实况=" + got.stream().map(java.util.Arrays::toString).toList());
+        // ② 零件子料号
+        assertEquals("零件", materialTypeOf(partChild),
+                "A-AC-7②：零件子料号 " + partChild + " 的 material_type 应为『零件』，实际="
+                        + materialTypeOf(partChild));
+        // ③ COMPOSITE 主产品（2026-09-04 裁决新增；🚫 上一轮的「父件传 null」已作废）
+        assertEquals("零件", materialTypeOf(parent),
+                "A-AC-7③：COMPOSITE 主产品 " + parent + " 的 material_type 应为『零件』"
+                        + "（2026-09-04 用户裁决原话：『物料表中主产品的类型应该是[零件]』），实际="
+                        + materialTypeOf(parent)
+                        + "。⚠️ 若实际是 (null)，说明写入侧仍是被裁决作废的『主产品传 null』旧口径。");
+
+        // 🚫 不得有 NULL —— 本轮铸出的这批料号里 material_type IS NULL 的行数必须 = 0
+        long nulls = count("SELECT count(*) FROM ds_quote_material WHERE material_type IS NULL "
+                + "AND material_no IN ("
+                + cast.stream().map(c -> "'" + c + "'").collect(java.util.stream.Collectors.joining(",")) + ")");
+        assertEquals(0L, nulls,
+                "A-AC-7🚫：本轮铸出的 " + cast.size() + " 个料号里，material_type IS NULL 的行数应为 0，实际 "
+                        + nulls + " 行。落库实况=" + got.stream().map(java.util.Arrays::toString).toList());
+    }
+
+    /**
+     * <b>A-AC-11</b>（2026-09-04 新增）：「选配铸出的<b>所有</b>新料号，
+     * {@code ds_quote_material.category_code} = <b>{@code 000000}</b>
+     * （{@code product_category} 里名为「默认分类」）。🚫 不得为 NULL」。
+     *
+     * <p>🚨 <b>恒真自查</b>：如果断言落在<b>存量</b>行上，它是恒真的 ——
+     * 现存 45 条 {@code source=IMPORT} 行本来<b>全部</b>就是 {@code 000000}（实测 2026-09-04）。
+     * ⇒ 必须先用 {@link #assertFreshlyCast} 证明这些料号<b>提交前不存在</b>，
+     * 断言才落在「本轮新造的行」上。
+     */
+    @Test
+    @DisplayName("A-AC-11 选配铸出的所有新料号 category_code = 000000（默认分类）")
+    void aac11_newlyCastMaterialsGetDefaultCategory() {
+        assertEquals(1L, count("SELECT count(*) FROM information_schema.columns "
+                        + "WHERE table_name='ds_quote_material' AND column_name='category_code'"),
+                "A-AC-11 前置：ds_quote_material.category_code 列不存在 ⇒ 环境前置缺失，不是被测功能的结论。");
+        assertEquals("默认分类", scalar("SELECT name FROM product_category WHERE code='000000'"),
+                "A-AC-11 前置：product_category 里 code='000000' 应名为『默认分类』（AC 原文口径），"
+                        + "取不到或名字不对 ⇒ 断言的常量 000000 失去业务含义。");
+
+        String outsourced = createSyntheticOutsourcedPart();
+        java.util.Set<String> before = dsMaterialNoSnapshot();
+
+        Fx fx = newFixture("aac11");
+        Response res = configure(fx, submitBody(PREFIX + "A11",
+                newPart("触点", "φ5", "5×3×2", "10",
+                        List.of(material(RECIPE_A, CONFIG_A, "70"),
+                                material(RECIPE_B, CONFIG_B, "30")),
+                        List.of(PROC_1)),
+                outsourcedPart(outsourced, List.of(PROC_2))));
+        assertSubmitOk(res, "A-AC-11 提交");
+
+        String parent = compositeParentPartNo(fx);
+        List<String> children = childPartNos(fx);
+        assertNotNull(parent, "A-AC-11 前置：应铸出 COMPOSITE 主产品行，实际取不到。行结构="
+                + lineItemsOf(fx).stream().map(java.util.Arrays::toString).toList());
+        System.out.println("[A-AC-11] 角色分派：父(COMPOSITE 主产品)=" + parent
+                + "  子件=" + children + "（其中外购件=" + outsourced + "）");
+
+        List<String> cast = new java.util.ArrayList<>(List.of(parent));
+        cast.addAll(children);
+        // 🚨 「所有新料号」= 父 + 全部子件，一个都不许漏；且必须证明它们提交前不存在（否则恒真）
+        assertFreshlyCast(before, cast, "A-AC-11");
+
+        String inList = cast.stream().map(c -> "'" + c + "'")
+                .collect(java.util.stream.Collectors.joining(","));
+        List<Object[]> got = rows("SELECT material_no, coalesce(category_code,'(null)'), source "
+                + "FROM ds_quote_material WHERE material_no IN (" + inList + ") ORDER BY material_no");
+        System.out.println("[A-AC-11] 本轮铸出料号的 category_code 实际落库="
+                + got.stream().map(java.util.Arrays::toString).toList());
+        assertEquals(cast.size(), got.size(),
+                "A-AC-11 前置：本轮铸出 " + cast.size() + " 个料号（" + cast + "），"
+                        + "但 ds_quote_material 只读到 " + got.size() + " 条主档 ⇒ 有料号根本没落主档，断言会漏掉它");
+
+        for (Object[] r : got) {
+            assertEquals("000000", String.valueOf(r[1]),
+                    "A-AC-11：选配铸出的新料号 " + r[0] + "（source=" + r[2] + "）的 category_code 应为『000000』"
+                            + "（默认分类），实际=" + r[1]
+                            + "。⚠️ 若实际是 (null)，说明写入侧仍是被 2026-09-04 裁决作废的"
+                            + "『category_code 本方法刻意不写』旧口径。全量落库实况="
+                            + got.stream().map(java.util.Arrays::toString).toList());
         }
-        List<Object[]> mats = rows("SELECT material_no, material_type FROM ds_quote_material "
-                + "WHERE material_no='" + outsourced + "'");
-        assertEquals(1, mats.size(),
-                "A-AC-7：本轮新建的外购件料号 " + outsourced + " 应在 ds_quote_material 有且仅有 1 条主档，实际 "
-                        + mats.size() + " 条");
-        assertEquals("外购件", String.valueOf(mats.get(0)[1]),
-                "A-AC-7：本轮新建的外购件料号 " + outsourced + " 的 material_type 必须是『外购件』，实际="
-                        + mats.get(0)[1]);
+    }
+
+    /**
+     * <b>A-AC-7🚫 与 A-AC-11🚫 的判据原文</b>（需求文档 §4.2 逐字照抄）：
+     * <ul>
+     *   <li>A-AC-7：{@code 选配铸出的料号里 material_type IS NULL 的行数 = 0}</li>
+     *   <li>A-AC-11：{@code SELECT count(*) FROM ds_quote_material WHERE source='MANUAL'
+     *       AND category_code IS DISTINCT FROM '000000'} = 0</li>
+     * </ul>
+     *
+     * <p>🚨 这两条判据的作用域是<b>整张表的 {@code source='MANUAL'} 全集</b>，不只是本轮新造的行 ——
+     * 与上面两个用例（只约束本轮产出）<b>不是同一个口径</b>，故单独成一个用例，
+     * 让红/绿的归因不会混在一起。失败信息里会把「本轮之前就存在的行」单独列出来，
+     * 因为那类行<b>不是写入侧改一行代码就能变绿的</b>，需要主线裁决（补一支回填迁移 or 收窄判据口径）。
+     */
+    @Test
+    @DisplayName("A-AC-7🚫/A-AC-11🚫 判据原文：全表 source=MANUAL 不得有 NULL 类型 / 非默认分类")
+    void acLiteralGuards_noNullTypeAndNoNonDefaultCategoryAmongManualRows() {
+        List<Object[]> all = rows("SELECT material_no, coalesce(material_type,'(null)'), "
+                + "coalesce(category_code,'(null)'), created_at::text "
+                + "FROM ds_quote_material WHERE source='MANUAL' ORDER BY created_at, material_no");
+        System.out.println("[判据原文] ds_quote_material 全部 source='MANUAL' 行（" + all.size() + " 条）="
+                + all.stream().map(java.util.Arrays::toString).toList());
+        assertTrue(all.size() > 0,
+                "判据前置：ds_quote_material 里应有 source='MANUAL'（选配铸出）的行，实际 0 条 ⇒ "
+                        + "两条判据都会在『压根没有行』的情况下成立（testing.md §3 第 3 号陷阱：空跑即假绿）");
+
+        long nullType = count("SELECT count(*) FROM ds_quote_material "
+                + "WHERE source='MANUAL' AND material_type IS NULL");
+        long badCat = count("SELECT count(*) FROM ds_quote_material "
+                + "WHERE source='MANUAL' AND category_code IS DISTINCT FROM '000000'");
+        System.out.println("[判据原文] material_type IS NULL 行数=" + nullType
+                + "；category_code IS DISTINCT FROM '000000' 行数=" + badCat);
+
+        assertEquals(0L, nullType,
+                "A-AC-7🚫 判据原文：选配铸出（source='MANUAL'）的料号里 material_type IS NULL 的行数应为 0，实际 "
+                        + nullType + " 行。全部 MANUAL 行（含 created_at）="
+                        + all.stream().map(java.util.Arrays::toString).toList()
+                        + "\n  ⚠️ 归因提示：若这些行的 created_at **早于本轮**，那是写入侧改好之前就已落库的存量行，"
+                        + "写入侧修复不会追溯改写它们 ⇒ 需主线裁决（补回填迁移 or 把判据口径收窄成「本轮产出」）。");
+        assertEquals(0L, badCat,
+                "A-AC-11🚫 判据原文：SELECT count(*) FROM ds_quote_material WHERE source='MANUAL' "
+                        + "AND category_code IS DISTINCT FROM '000000' 应为 0，实际 " + badCat
+                        + " 行。全部 MANUAL 行（含 created_at）="
+                        + all.stream().map(java.util.Arrays::toString).toList()
+                        + "\n  ⚠️ 归因提示同上。");
+    }
+
+    /** {@code ds_quote_material.material_type} 实际值（不存在返 null，NULL 返 {@code (null)}）。 */
+    private String materialTypeOf(String materialNo) {
+        return scalar("SELECT coalesce(material_type,'(null)') FROM ds_quote_material "
+                + "WHERE material_no='" + materialNo + "'");
     }
 
     /**

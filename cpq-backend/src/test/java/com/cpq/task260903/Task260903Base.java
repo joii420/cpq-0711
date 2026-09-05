@@ -4,11 +4,15 @@ import com.cpq.task260902.SelConfigAcTestBase;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import org.junit.jupiter.api.AfterEach;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -141,6 +145,152 @@ public abstract class Task260903Base extends SelConfigAcTestBase {
                         + " 行，但兼容视图 " + COMPAT_MBI + " 读到 0 行 ⇒ 写进去了却渲染不出来。"
                         + "典型根因：ds_quote_customer_part 没有对应行，兼容视图反查不到 customer_no，"
                         + "于是整组被客户作用域过滤掉（静默，不报错）。A 阶段停写 V6 后这就是报价单空白。");
+    }
+
+    // ─────────────── 行主体：COMPOSITE 父件 / 子件必须显式区分（踩坑三次）───────────────
+
+    /**
+     * 本轮提交在报价单里落下的全部行：{@code [料号, composite_type, 是否根行]}。
+     *
+     * <p>🚨 <b>为什么不用 {@code latestLinePartNo()} 也不从提交响应的 JSON 猜字段名</b>：
+     * {@code latestLinePartNo()} 在 COMPOSITE 提交下返回的是<b>父料号</b>，本套用例已因此
+     * 把断言打错靶三次（见 {@code SelConfigWritesNewTablesTest} 里两处「第三次踩同一个坑」注释）。
+     * {@code quotation_line_item.composite_type} 是权威口径 —— 实测取值只有三种：
+     * {@code SIMPLE}（根）/ {@code COMPOSITE}（根）/ {@code PART}（子，{@code parent_line_item_id} 非空）。
+     */
+    protected List<Object[]> lineItemsOf(Fx fx) {
+        return rows("SELECT product_part_no_snapshot, composite_type, (parent_line_item_id IS NULL) "
+                + "FROM quotation_line_item WHERE quotation_id='" + fx.quotationId() + "' "
+                + "ORDER BY composite_type, sort_order");
+    }
+
+    /** COMPOSITE <b>主产品（父件）</b>料号。SIMPLE 提交时返回 {@code null}。 */
+    protected String compositeParentPartNo(Fx fx) {
+        return scalar("SELECT product_part_no_snapshot FROM quotation_line_item "
+                + "WHERE quotation_id='" + fx.quotationId() + "' AND composite_type='COMPOSITE' "
+                + "AND parent_line_item_id IS NULL ORDER BY sort_order LIMIT 1");
+    }
+
+    /** COMPOSITE 的<b>子件</b>料号（零件子件 + 外购件子件都在内）。 */
+    protected List<String> childPartNos(Fx fx) {
+        return col("SELECT product_part_no_snapshot FROM quotation_line_item "
+                + "WHERE quotation_id='" + fx.quotationId() + "' AND composite_type='PART' "
+                + "AND parent_line_item_id IS NOT NULL ORDER BY sort_order")
+                .stream().filter(java.util.Objects::nonNull).map(Object::toString).toList();
+    }
+
+    /** 本轮提交<b>铸出的全部料号</b>（COMPOSITE：父 + 全部子；SIMPLE：那一个）。 */
+    protected List<String> allCastPartNos(Fx fx) {
+        return col("SELECT DISTINCT product_part_no_snapshot FROM quotation_line_item "
+                + "WHERE quotation_id='" + fx.quotationId() + "' AND product_part_no_snapshot IS NOT NULL "
+                + "ORDER BY 1").stream().map(Object::toString).toList();
+    }
+
+    /**
+     * 提交<b>之前</b> {@code ds_quote_material} 里已有的料号全集。
+     * <p>🚨 用途：证明「本轮确实新造了行」。{@code testing.md §3} 第 3 号陷阱 ——
+     * 「所有新料号的 {@code category_code}={@code 000000}」在一行都没新造时同样成立；
+     * 而如果断言落在一条<b>存量 IMPORT 行</b>上（它本来就是 {@code 000000}），断言就变成恒真。
+     */
+    protected Set<String> dsMaterialNoSnapshot() {
+        return col("SELECT material_no FROM ds_quote_material").stream()
+                .map(String::valueOf).collect(Collectors.toSet());
+    }
+
+    /**
+     * 断言这些料号<b>都是本轮新造的</b>（提交前不在 {@code ds_quote_material} 里），并落了主档。
+     * <p>🚫 少了这一关，A-AC-7/A-AC-11 的取值断言就可能打在存量行上 ⇒ 恒真。
+     */
+    protected void assertFreshlyCast(Set<String> before, List<String> partNos, String when) {
+        assertTrue(!partNos.isEmpty(), when + "：本轮应铸出至少 1 个料号，实际 0 个 ⇒ 后面的取值断言会空跑（假绿）");
+        for (String pn : partNos) {
+            assertFalse(before.contains(pn),
+                    when + "：料号 " + pn + " 在本次提交**之前**就已存在于 ds_quote_material ⇒ "
+                            + "它不是「本轮铸出的新料号」，对它断言取值等于验存量数据（恒真风险）。"
+                            + "提交前快照共 " + before.size() + " 条。");
+            assertEquals(1L, dsMaterial(pn),
+                    when + "：本轮铸出的料号 " + pn + " 应在 ds_quote_material 有且仅有 1 条主档，实际 "
+                            + dsMaterial(pn) + " 条");
+        }
+    }
+
+    // ─────────────── 合成外购件（本轮独有，用来验「新建外购件行」）───────────────
+
+    /**
+     * 本轮自建的外购件料号，{@link #cleanupSyntheticOutsourced()} 负责删掉。
+     */
+    protected final List<String> createdOutsourcedNos = new ArrayList<>();
+
+    /**
+     * 造一个<b>本轮独有</b>的外购件（{@code material_master.material_type='外购件'}）。
+     *
+     * <p>🚨 <b>为什么必须自己造</b>：库里存量的外购件<b>只有 {@code TEST-Q13-CODE} 一条</b>，
+     * 而它<b>已经在 {@code ds_quote_material} 里</b>（{@code source=IMPORT}，实测 2026-09-04）。
+     * 用它跑 A-AC-7①/A-AC-11 时本次提交根本不会创建它 ⇒ 「新建的外购件行带不带
+     * {@code material_type} / {@code category_code}」这一问<b>无从验起</b>，
+     * 上一轮只能 {@code Assumptions.abort} 记成「未验证」。造一条本轮独有的，
+     * 就把「未验证」变成真验证。
+     *
+     * <p>⚠️ {@code material_master.material_no} 是 {@code varchar(20)} ⇒ 名字必须短：
+     * {@code T260902-OS-} + 6 位 RUN_ID = 17 字符。
+     */
+    protected String createSyntheticOutsourcedPart() {
+        String no = PREFIX + "OS-" + RUN_ID;             // 17 字符，卡在 varchar(20) 以内
+        QuarkusTransaction.requiringNew().run(() -> em.createNativeQuery(
+                        "INSERT INTO material_master (id,material_no,material_name,material_type,created_at,updated_at) "
+                                + "SELECT gen_random_uuid(),:no,:nm,'外购件',NOW(),NOW() "
+                                + "WHERE NOT EXISTS (SELECT 1 FROM material_master WHERE material_no=:no)")
+                .setParameter("no", no).setParameter("nm", PREFIX + "合成外购件").executeUpdate());
+        assertEquals(1L, count("SELECT count(*) FROM material_master WHERE material_no='" + no
+                        + "' AND material_type='外购件'"),
+                "前置自检：合成外购件 " + no + " 应已建好且 material_type='外购件'");
+        if (!createdOutsourcedNos.contains(no)) createdOutsourcedNos.add(no);
+        System.out.println("[合成外购件] 本轮自建 " + no + "（存量外购件只有 TEST-Q13-CODE 且已在 ds_quote_material，用它验不了新建行）");
+        return no;
+    }
+
+    /**
+     * 删掉本轮自建的外购件。
+     * <p>🚫 每条 DELETE 都收敛到「本轮 RUN_ID 的那一个料号」+ {@code source='MANUAL'}（选配唯一来源），
+     * 不存在无 WHERE 的删除，不碰任何存量数据。删除行数打印出来，人能看见。
+     * <p>📌 JUnit 5 里子类 {@code @AfterEach} 先于父类执行 ⇒ 这里跑在
+     * {@code SelConfigAcTestBase#restoreFixtures} 之前；合成外购件不出现在父类的
+     * {@code partNos} 反查里（它只作 {@code input_material_no}，不作 {@code material_no}），
+     * 所以必须自己收。
+     */
+    @AfterEach
+    void cleanupSyntheticOutsourced() {
+        if (createdOutsourcedNos.isEmpty()) return;
+        List<String> nos = List.copyOf(createdOutsourcedNos);
+        createdOutsourcedNos.clear();
+        try {
+            QuarkusTransaction.requiringNew().run(() -> {
+                for (String no : nos) {
+                    int el = em.createNativeQuery("DELETE FROM ds_quote_element_bom WHERE material_no=:n AND source='MANUAL'")
+                            .setParameter("n", no).executeUpdate();
+                    int bom = em.createNativeQuery("DELETE FROM ds_quote_material_bom WHERE material_no=:n AND source='MANUAL'")
+                            .setParameter("n", no).executeUpdate();
+                    int mat = em.createNativeQuery("DELETE FROM ds_quote_material WHERE material_no=:n AND source='MANUAL'")
+                            .setParameter("n", no).executeUpdate();
+                    int mm = em.createNativeQuery(
+                                    "DELETE FROM material_master mm WHERE mm.material_no=:n "
+                                            + "AND NOT EXISTS (SELECT 1 FROM material_bom_item b WHERE b.material_no=mm.material_no) "
+                                            + "AND NOT EXISTS (SELECT 1 FROM material_customer_map m WHERE m.material_no=mm.material_no) "
+                                            + "AND NOT EXISTS (SELECT 1 FROM sel_part_signature s WHERE s.quote_part_no=mm.material_no)")
+                            .setParameter("n", no).executeUpdate();
+                    System.out.println("[还原] 合成外购件 " + no + " 清理：element_bom=" + el + " material_bom=" + bom
+                            + " ds_quote_material=" + mat + " material_master=" + mm);
+                }
+            });
+        } catch (RuntimeException e) {
+            System.out.println("[还原] 🚨 合成外购件清理失败（需主线登记残留）：" + nos + " → " + e);
+        }
+        for (String no : nos) {
+            long left = count("SELECT count(*) FROM material_master WHERE material_no='" + no + "'")
+                    + count("SELECT count(*) FROM ds_quote_material WHERE material_no='" + no + "'");
+            assertEquals(0L, left, "还原自检：本轮合成外购件 " + no + " 仍有 " + left
+                    + " 行残留在共享库（material_master / ds_quote_material）⇒ 必须登记给主线");
+        }
     }
 
     // ─────────────────────────── 前置存在性 ───────────────────────────
