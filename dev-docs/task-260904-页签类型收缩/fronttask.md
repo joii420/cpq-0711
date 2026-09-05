@@ -3,7 +3,7 @@
 > 只按本文件做。AC 原文在 `需求文档.md §③`，此处只标编号不复制原文。接口契约以 `api.md` 为准。
 > 🎨 **原型图是验收基准**：`原型图/` 下的 HTML 定稿后 1:1 还原，偏差必须逐条报出。
 
-## 阶段划分
+## 阶段
 
 同后端：**第一阶段**（F-1 ~ F-6）不动 `tabType` 字段本身；**第二阶段**（F-7）随删列，需用户单独批准。
 
@@ -20,15 +20,9 @@
 | **F-5** | AC-6, AC-7 | 加叶子弹层新增两个拒绝态的展示：`LEAF_PART_NOT_IN_MASTER`（点名料号 + 提示去建档）、`LEAF_CYCLE_DETECTED`（**展示环路径**）。两者都不得只弹一个通用的"操作失败" |
 | **F-6** | AC-10 | 状态连续性：切走到别的 Tab 再切回、刷新整页、重新打开组件后，数据源选择与已选列均正确保留，无 JS 报错 |
 
-| **F-8** | AC-24 | 🚨 **前端 5 处语义闸门改判据**（与后端 B-10 对称，第一阶段就要改，否则出现「后端放行、前端灰掉」）：<br>· `FieldConfigTable.tsx:754/755` 字段类型选项禁用<br>· `FormulaBuilder.tsx:101` `isBomTab` —— 父子取值分区启用<br>· `ComponentManagement.tsx:1463/1913/1916/1927` 料号列/名称列校验与 Tooltip 文案<br>· `TabJoinFormulaDrawer.tsx:165/293` 跨页签公式 + SUMIF 源判定<br>· `tabjoin/FormulaEditorPanel.tsx:105` `treeDisabled` 树 token 禁用<br>全部由 `tabType === 'BOM'` 改为按绑定数据源的 `semantic === 'TREE'` |
+| **F-8** | AC-24 | 🚨 **前端 5 处语义闸门改为双判据**（与后端 B-4 对称）：有数据源绑定时按 `semantic === 'TREE'`，否则回退 `tabType === 'BOM'`。🔑 **存量组件必须仍可用**（AC-24②）：<br>· `FieldConfigTable.tsx:754/755` 字段类型选项禁用<br>· `FormulaBuilder.tsx:101` `isBomTab` —— 父子取值分区启用<br>· `ComponentManagement.tsx:1463/1913/1916/1927` 料号列/名称列校验与 Tooltip 文案<br>· `TabJoinFormulaDrawer.tsx:165/293` 跨页签公式 + SUMIF 源判定<br>· `tabjoin/FormulaEditorPanel.tsx:105` `treeDisabled` 树 token 禁用<br>全部由 `tabType === 'BOM'` 改为按绑定数据源的 `semantic === 'TREE'` |
 
-## 第二阶段（需用户单独批准后才能做）
-
-| 编号 | 服务的 AC | 任务内容 |
-|---|---|---|
-| **F-7** | AC-16 | 移除前端对组件 `tabType` 字段的全部引用。**2026-09-04 实测完整清单 = 20 个文件**（v1 只列了 7 个）：`component/` 下 `componentDraft.ts` · `ComponentManagement.tsx` · `crossTabText.ts` · `FieldConfigTable.tsx` · `FormulaBuilder.tsx` · `formulaSerialize.ts` · `SqlViewBuilderTab.tsx` · `types.ts` · `__tests__/treeRefUI.test.tsx`；`quotation/` 下 `bomTreeLeaf.ts` · `BulkImportPartsDrawer.tsx` · `enrichComponentData.ts` · `QuotationStep2.tsx`；`template/` 下 `ComponentPalette.tsx` · `TabJoinFormulaDrawer.tsx` · `tabjoin/FormulaEditorPanel.tsx` · `__tests__/treeRefGate.test.ts`；`services/` 下 `quotationService.ts` · `sqlViewBuilderService.ts` · `tabJoinFormulaService.ts` |
-
----
+> ⛔ **原第二阶段（F-7 移除前端 `tabType` 引用）已取消**（v3）：`component.tab_type` 列永久保留，前端 20 个引用它的文件**继续保留该字段**，只是新组件不再依赖它。编号保留不复用。
 
 ## 涉及的页面（= 原型图份数，`frontend.md §1.3`）
 
