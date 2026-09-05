@@ -126,48 +126,82 @@ class V6ZeroWriteGuardTest extends Task260903Base {
      *
      * <p>{@code testing.md §3}：新加的守卫<b>首次 PASS 证明不了它接上了</b> ——
      * 必须故意破坏它保护的条件，确认它<b>硬失败</b>。
-     * 本方法在一个<b>永不提交的事务</b>里真往 {@code material_master} 插一行（共享库零残留），
+     * 本方法在<b>永不提交的事务</b>里真动 {@code material_master}（共享库零残留），
      * 然后断言 {@code assertV6Unchanged} <b>必须抛断言错误</b>。
      *
-     * <p>三段结构缺一不可：
+     * <h4>两个分支都要验，🚫 少一个就有一整类抓不到</h4>
      * <ol>
-     *   <li><b>干预前</b>先跑一次守卫并要求它<b>绿</b> —— 否则后面的红说明不了是这一行造成的</li>
-     *   <li><b>证明干预真的生效</b>（假行确实插进去了）—— 否则「守卫报红」可能是别的原因</li>
-     *   <li>断言守卫<b>报红</b>，并把它的报错原文打出来</li>
+     *   <li><b>INSERT 分支</b>：新写一行 ⇒ {@code created_at} 落在窗口内</li>
+     *   <li><b>UPDATE 分支</b>：对一条<b>已存在</b>的行做 upsert ⇒ {@code created_at} <b>纹丝不动</b>，
+     *       只有 {@code updated_at} 变。V6 写入器是 {@code ON CONFLICT DO UPDATE}，
+     *       「对存量料号重复双写」正是这个形状 —— 只看 {@code created_at} 的判据<b>整类漏判</b>
+     *       （2026-09-04 主线指出的盲区）。</li>
      * </ol>
      *
-     * <p>📌 假行料号 {@code ZZFAKE-*} 刻意<b>不用</b> {@code T260902-} 前缀 ——
-     * 那个前缀会被 {@code MM_SUITE_NS} 排除掉，用它就证伪不了任何东西（假行会被守卫忽略，
-     * 于是「没报红」看起来像守卫失效，实则是我自己把它排除了）。
+     * <p>每个分支都是三段结构，缺一不可：
+     * <ol>
+     *   <li><b>干预前</b>先跑一次守卫并要求它<b>绿</b> —— 否则后面的红说明不了是这次干预造成的</li>
+     *   <li><b>证明干预真的生效</b> —— 否则「守卫报红」可能是别的原因</li>
+     *   <li>断言守卫<b>报红</b>，并把报错原文打出来</li>
+     * </ol>
+     *
+     * <p>📌 干预对象刻意<b>避开</b> {@code T260902-} 前缀 —— 那个前缀会被 {@code MM_SUITE_NS}
+     * 排除掉，用它就证伪不了任何东西（假行会被守卫忽略，于是「没报红」看起来像守卫失效，
+     * 实则是我自己把它排除了）。
      */
     @Test
-    @DisplayName("A-AC-2 证伪：真往 V6 写一行，守卫必须报红（回滚事务，共享库零残留）")
+    @DisplayName("A-AC-2 证伪：INSERT 与 upsert-UPDATE 两条写入形状，守卫都必须报红")
     void falsify_guardMustGoRedWhenV6IsActuallyWritten() {
+        // ══════════ 分支 ①：INSERT 一行新的 ══════════
         String fake = "ZZFAKE-" + RUN_ID;   // 13 字符，material_master.material_no 是 varchar(20)
         String t0 = v6ClockNow();
-
-        // ① 干预前：守卫必须是绿的
-        assertV6Unchanged(t0, "A-AC-2 证伪·干预前");
+        assertV6Unchanged(t0, "A-AC-2 证伪①·干预前");
 
         inRollback(() -> {
             em.createNativeQuery("INSERT INTO material_master (id,material_no,material_name,created_at,updated_at) "
                             + "VALUES (gen_random_uuid(),:n,'证伪用假行·永不提交',NOW(),NOW())")
                     .setParameter("n", fake).executeUpdate();
-
-            // ② 先证明干预真的生效
             assertEquals(1L, count("SELECT count(*) FROM material_master WHERE material_no='" + fake + "'"),
-                    "证伪前置：假行没插进去 ⇒ 下面的『守卫报红』无从谈起，这次证伪等于没做");
-
-            // ③ 守卫必须报红
+                    "证伪①前置：假行没插进去 ⇒ 下面的『守卫报红』无从谈起，这次证伪等于没做");
             AssertionError err = assertThrows(AssertionError.class,
-                    () -> assertV6Unchanged(t0, "A-AC-2 证伪·干预后"),
-                    "🚨 证伪失败：已经真往 material_master 写了一行，A-AC-2 守卫却没报红 ⇒ "
-                            + "这个守卫是空的，它平时的绿证明不了任何事");
-            System.out.println("[A-AC-2 证伪] 守卫如期报红 ✅ 原文：" + err.getMessage());
+                    () -> assertV6Unchanged(t0, "A-AC-2 证伪①·干预后"),
+                    "🚨 证伪①失败：已经真往 material_master INSERT 了一行，守卫却没报红 ⇒ 守卫是空的");
+            System.out.println("[A-AC-2 证伪①·INSERT] 守卫如期报红 ✅ 原文：" + err.getMessage());
         });
-
-        // 还原自检：回滚是构造性的，不依赖任何 DELETE
         assertEquals(0L, count("SELECT count(*) FROM material_master WHERE material_no='" + fake + "'"),
-                "证伪还原自检：假行必须随事务回滚消失，共享库零残留");
+                "证伪①还原自检：假行必须随事务回滚消失，共享库零残留");
+
+        // ══════════ 分支 ②：对已存在的行做 upsert（created_at 不变，只动 updated_at）══════════
+        // 🚨 这一支专门盯 ON CONFLICT DO UPDATE：只看 created_at 的判据在这里恒绿。
+        String victim = scalar("SELECT material_no FROM material_master "
+                + "WHERE material_no NOT LIKE '" + PREFIX + "%' ORDER BY material_no LIMIT 1");
+        assertTrue(victim != null,
+                "证伪②前置：需要一条不带套件前缀的存量 material_master 行作为 upsert 对象，实际取不到");
+        String createdBefore = scalar("SELECT created_at::text FROM material_master WHERE material_no='" + victim + "'");
+        System.out.println("[A-AC-2 证伪②·UPDATE] 干预对象=" + victim + " 原 created_at=" + createdBefore);
+
+        String t1 = v6ClockNow();
+        assertV6Unchanged(t1, "A-AC-2 证伪②·干预前");
+
+        inRollback(() -> {
+            int touched = em.createNativeQuery(
+                            "UPDATE material_master SET updated_at = NOW() WHERE material_no = :n")
+                    .setParameter("n", victim).executeUpdate();
+            // ② 证明干预生效，且**确实只动了 updated_at**（created_at 没变 ⇒ 这才是 upsert 的形状）
+            assertEquals(1, touched, "证伪②前置：UPDATE 应命中 1 行，实际 " + touched + " 行");
+            assertEquals(createdBefore,
+                    scalar("SELECT created_at::text FROM material_master WHERE material_no='" + victim + "'"),
+                    "证伪②前置：created_at 必须没变 —— 变了就说明这次干预不是 upsert 的形状，"
+                            + "那么『守卫报红』可能只是因为 created_at，UPDATE 分支等于没验");
+            AssertionError err = assertThrows(AssertionError.class,
+                    () -> assertV6Unchanged(t1, "A-AC-2 证伪②·干预后"),
+                    "🚨 证伪②失败：对存量行做了 upsert（created_at 不变、updated_at 变新），守卫却没报红 ⇒ "
+                            + "「对存量料号重复双写」这一整类抓不到");
+            System.out.println("[A-AC-2 证伪②·UPDATE] 守卫如期报红 ✅ 原文：" + err.getMessage());
+        });
+        assertEquals(createdBefore,
+                scalar("SELECT created_at::text FROM material_master WHERE material_no='" + victim + "'"),
+                "证伪②还原自检：干预对象必须完好如初");
+        assertV6Unchanged(v6ClockNow(), "A-AC-2 证伪②·还原后");
     }
 }

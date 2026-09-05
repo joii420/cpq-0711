@@ -81,10 +81,24 @@ public abstract class Task260903Base extends SelConfigAcTestBase {
      */
     private static final String MM_SUITE_NS = " AND material_no NOT LIKE '" + PREFIX + "%'";
 
-    /** 某张 V6 表在窗口 {@code t0} 之后新增的行数。 */
+    /**
+     * 某张 V6 表在窗口 {@code t0} 之后<b>留下写入痕迹</b>的行数。
+     *
+     * <p>🚨 判据是 {@code created_at >= t0 <b>OR</b> updated_at >= t0}，两个都要看：
+     * V6 的写入器（如 {@code MaterialMasterRepository}）走的是
+     * <b>{@code ON CONFLICT DO UPDATE} upsert</b> —— 对一个<b>已存在</b>的料号再写一次，
+     * 落地形式是 <b>UPDATE 而不是 INSERT</b>，{@code created_at} 纹丝不动。
+     * ⇒ 只看 {@code created_at} 会<b>整类漏判</b>「对存量料号的重复双写」。
+     * （2026-09-04 主线指出；实测五张表都有 {@code updated_at} 且 {@code material_master} 无 NULL。）
+     */
+    private String v6TouchedPredicate(String table, String t0) {
+        return " WHERE (created_at >= '" + t0 + "'::timestamptz"
+                + " OR updated_at >= '" + t0 + "'::timestamptz)"
+                + ("material_master".equals(table) ? MM_SUITE_NS : "");
+    }
+
     private long v6NewRows(String table, String t0) {
-        return count("SELECT count(*) FROM " + table + " WHERE created_at >= '" + t0 + "'::timestamptz"
-                + ("material_master".equals(table) ? MM_SUITE_NS : ""));
+        return count("SELECT count(*) FROM " + table + v6TouchedPredicate(table, t0));
     }
 
     /**
@@ -102,7 +116,9 @@ public abstract class Task260903Base extends SelConfigAcTestBase {
      *   <li><b>粒度不够</b>：按 {@code material_no} 集合比对也不行 —— 给<b>已存在</b>的料号补写一行
      *       BOM 明细，集合不变但确实双写了。</li>
      * </ol>
-     * 新判据按 {@code created_at} 数窗口内新增的<b>行</b>：行级、免疫第三方删行、抵消不了。
+     * 新判据按 {@code created_at}／{@code updated_at} 数窗口内<b>留下写入痕迹的行</b>：
+     * 行级、免疫第三方删行、抵消不了，且<b>抓得到 upsert 的 UPDATE 分支</b>
+     * （对存量料号重复双写时 {@code created_at} 不变，只看它会整类漏判）。
      *
      * <p>⚠️ 残余风险：共享库上<b>另一套测试并发</b>写这五张表时会误报。
      * 所以失败信息里直接把新增行的 {@code material_no / customer_no / created_at} 列出来 ——
@@ -115,22 +131,23 @@ public abstract class Task260903Base extends SelConfigAcTestBase {
         List<String> violations = new java.util.ArrayList<>();
         for (String t : V6_TABLES) {
             long added = v6NewRows(t, t0);
-            System.out.println("[" + when + "] " + t + " 窗口(" + t0 + ") 内新增行数=" + added);
+            System.out.println("[" + when + "] " + t + " 窗口(" + t0 + ") 内留下写入痕迹的行数=" + added);
             if (added > 0) {
+                // 🚨 明细里 created_at 与 updated_at 都要打：两者相等 ⇒ 是 INSERT；
+                //    updated_at 更晚 ⇒ 是 upsert 的 UPDATE 分支（这一类原判据看不见）
                 String cols = "material_master".equals(t)
-                        ? "material_no, created_at::text"
-                        : "material_no, customer_no, created_at::text";
+                        ? "material_no, created_at::text, updated_at::text"
+                        : "material_no, customer_no, created_at::text, updated_at::text";
                 List<Object[]> bad = rows("SELECT " + cols + " FROM " + t
-                        + " WHERE created_at >= '" + t0 + "'::timestamptz"
-                        + ("material_master".equals(t) ? MM_SUITE_NS : "")
-                        + " ORDER BY created_at LIMIT 20");
+                        + v6TouchedPredicate(t, t0) + " ORDER BY greatest(created_at, updated_at) LIMIT 20");
                 violations.add(t + " 新增 " + added + " 行：" + bad.stream()
                         .map(java.util.Arrays::toString).toList());
             }
         }
         assertEquals(List.of(), violations,
                 when + "：A-AC-2 要求 V6 五表零新增（用户裁决「不双写」），"
-                        + "但窗口 " + t0 + " 之后出现了新行 ⇒ 选配仍在写 V6。明细："
+                        + "但窗口 " + t0 + " 之后有行留下了写入痕迹（INSERT 或 upsert 的 UPDATE）"
+                        + " ⇒ 选配仍在写 V6。明细（created_at/updated_at 相等=INSERT，updated_at 更晚=UPDATE）："
                         + violations
                         + "\n  ⚠️ 归因提示：先看新增行的 customer_no —— 是本轮夹具的 T2609* 就是真双写；"
                         + "是别的前缀就是共享库上另一套测试并发写入，属 harness 噪声。");
