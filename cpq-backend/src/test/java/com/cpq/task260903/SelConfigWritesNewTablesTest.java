@@ -2,6 +2,7 @@ package com.cpq.task260903;
 
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.response.Response;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -9,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -163,7 +165,7 @@ class SelConfigWritesNewTablesTest extends Task260903Base {
      * （依赖 V409 落地）。
      */
     @Test
-    @DisplayName("A-AC-7 外购件料号的 material_type='外购件'")
+    @DisplayName("A-AC-7 本次流程创建的料号带上 material_type")
     void aac7_outsourcedPartKeepsItsMaterialType() {
         // 前置：V409 必须已落（该列在 V409 之前不存在）
         assertTrue(count("SELECT count(*) FROM information_schema.columns "
@@ -172,8 +174,18 @@ class SelConfigWritesNewTablesTest extends Task260903Base {
                         + "这是**环境前置缺失**，不是被测功能的结论。");
 
         String outsourced = anOutsourcedPartNo();
-        Fx fx = newFixture("aac7");
+        // 🚨 口径（2026-09-04 主线裁决，解释②）：A-AC-7 约束的是**流程产出**，不是存量数据的完整性。
+        //    补齐既有 IMPORT 行属于数据治理；让「选配提交」顺带改写别人导入的数据，比留 null 更危险。
+        //    ⇒ 本用例只对「本轮新建的行」断言。
+        boolean outsourcedPreexisted = dsMaterial(outsourced) > 0;
+        String preInfo = outsourcedPreexisted
+                ? String.valueOf(rows("SELECT source, coalesce(material_type,'(null)'), created_at::text "
+                        + "FROM ds_quote_material WHERE material_no='" + outsourced + "'")
+                        .stream().map(java.util.Arrays::toString).toList())
+                : "(本轮之前不存在)";
+        System.out.println("[A-AC-7] 外购件 " + outsourced + " 提交前在 ds_quote_material 的状态=" + preInfo);
 
+        Fx fx = newFixture("aac7");
         Response res = configure(fx, submitBody(PREFIX + "A7",
                 newPart("触点", "φ5", "5×3×2", "10",
                         List.of(material(RECIPE_A, CONFIG_A, "70"),
@@ -185,28 +197,34 @@ class SelConfigWritesNewTablesTest extends Task260903Base {
         String partNo = latestLinePartNo(fx);
         assertNewTablesGotRows(partNo, "A-AC-7");
 
-        // 外购件料号必须作为一条 ds_quote_material 存在，且身份是「外购件」
+        // ── 总能跑的正向断言：本轮**新建**的料号主档必须带 material_type ──
+        List<Object[]> created = rows("SELECT material_no, coalesce(material_type,'(null)') "
+                + "FROM ds_quote_material WHERE material_no='" + partNo + "'");
+        System.out.println("[A-AC-7] 本轮新建的料号主档=" + created.stream().map(java.util.Arrays::toString).toList());
+        assertEquals(1, created.size(), "A-AC-7 前置：本轮铸出的料号 " + partNo + " 应有 1 条主档");
+        assertNotEquals("(null)", String.valueOf(created.get(0)[1]),
+                "A-AC-7：本次流程创建的料号主档 " + partNo + " 必须带上 material_type，实际为空 ⇒ 流程产出没有身份");
+
+        // ── 外购件那一条：只有当它确实由本轮创建时才断言 ──
+        if (outsourcedPreexisted) {
+            // 🚩 🚫 不许在这里 assertTrue(true) 蒙混过关：场景没被构造出来就是**没验证**，
+            //    JUnit 的 abort 会把它记成 aborted 而不是 passed —— 报告里看得见这个洞。
+            Assumptions.abort("A-AC-7 未验证（场景不可构造，非产品结论）："
+                    + "外购件 " + outsourced + " 在本轮之前就已存在于 ds_quote_material " + preInfo
+                    + "，因此本次提交不会创建它，「新建行是否带 material_type」这一问无从验起。"
+                    + "\n  ⚠️ 库里 material_type='外购件' 的料号只有这一个，且已被导入过 ⇒ 无法另选。"
+                    + "\n  📌 真实风险仍在（已报主线进 BL）：只存在于新表、V6 里没有的外购件会丢身份；"
+                    + "V6 里有的靠兼容视图 V6 侧兜得住（实测 " + outsourced + " 在 material_master 里是『"
+                    + scalar("SELECT material_type FROM material_master WHERE material_no='" + outsourced + "'") + "』）。");
+        }
         List<Object[]> mats = rows("SELECT material_no, material_type FROM ds_quote_material "
                 + "WHERE material_no='" + outsourced + "'");
-        System.out.println("[A-AC-7] ds_quote_material 中的外购件行="
-                + mats.stream().map(java.util.Arrays::toString).toList());
         assertEquals(1, mats.size(),
-                "A-AC-7：外购件料号 " + outsourced + " 应在 ds_quote_material 有且仅有 1 条主档，实际 "
+                "A-AC-7：本轮新建的外购件料号 " + outsourced + " 应在 ds_quote_material 有且仅有 1 条主档，实际 "
                         + mats.size() + " 条");
-        // 🚩 诊断线索（2026-09-04 实测）：本条红时先看这三行再判是不是产品缺陷
-        List<Object[]> diag = rows("SELECT source, coalesce(material_type,'(null)'), created_at::text "
-                + "FROM ds_quote_material WHERE material_no='" + outsourced + "'");
-        String inV6 = scalar("SELECT material_type FROM material_master WHERE material_no='" + outsourced + "'");
-        System.out.println("[A-AC-7 诊断] ds_quote_material 行=" + diag.stream().map(java.util.Arrays::toString).toList()
-                + " ；同料号在 material_master 里的 material_type=" + inV6);
-
         assertEquals("外购件", String.valueOf(mats.get(0)[1]),
-                "A-AC-7：外购件料号 " + outsourced + " 的 material_type 必须是『外购件』，实际=" + mats.get(0)[1]
-                        + "\n  诊断：该行 source=" + (diag.isEmpty() ? "?" : diag.get(0)[0])
-                        + "，同料号在 V6 material_master 里是『" + inV6 + "』。"
-                        + "\n  ⇒ 若 source=IMPORT，说明这行是既有导入数据、并非本次选配写入；"
-                        + "选配流程遇到『已存在于 ds_quote_material 的外购件』时没有补齐 material_type。"
-                        + "\n  ⇒ 影响：只存在于新表、V6 里没有的外购件将丢失身份（V6 里有的还能靠兼容视图 V6 侧兜住）。");
+                "A-AC-7：本轮新建的外购件料号 " + outsourced + " 的 material_type 必须是『外购件』，实际="
+                        + mats.get(0)[1]);
     }
 
     /**
