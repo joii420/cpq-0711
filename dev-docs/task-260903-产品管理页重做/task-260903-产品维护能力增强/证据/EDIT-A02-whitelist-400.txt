@@ -1,0 +1,3 @@
+PUT {"materialName":"改名试试"} → 400
+body={"code":400,"message":"字段「materialName」不允许直接编辑（可编辑字段：production_no / productionNo）"}
+material_name 改前="支座" 改后="支座"

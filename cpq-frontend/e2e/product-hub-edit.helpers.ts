@@ -21,10 +21,11 @@
  *   1. 每个写用例**自己复原**：改前记原值，断言完改回去。🚫 不留残留。
  *   2. **只碰测试专用料号** `S-1630010773`（`HERO_EDIT`）。🚫 不许换成别的料号。
  *   3. 🚫 严禁 `TRUNCATE` / 无 `WHERE` 的 `DELETE` / 任何反向条件（`WHERE ... NOT LIKE ...`）。
- *      ⇒ 本文件唯一的写库入口是 `restoreProductionNo()`，它把 SQL 模板写死、
+ *      ⇒ 唯一的写库入口是 `setProductionNoInDb()`（2026-09-04 已**下沉到共享件**
+ *        `product-hub.helpers.ts`，本文件只 re-export）：SQL 模板写死、
  *        `WHERE` 恒为 `material_no = 'S-1630010773'`，且**执行前先数命中行数，≠1 就拒绝执行**。
  */
-import { expect, Page, Locator, APIRequestContext, request as pwRequest } from '@playwright/test';
+import { expect, Page, Locator } from '@playwright/test';
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -38,11 +39,19 @@ export {
   assertReadOnly, assertReadOnlyProbeWorks, collectConsoleErrors, credOf,
   BASE_URL, BACKEND_URL, DB_NAME, HERO, MATERIAL_COLUMNS, CUSTOMER_PART_COLUMNS,
   DS_QUOTE_TABLES, N_MATERIAL, N_CUSTOMER_PART,
+  // ↓ 2026-09-04 下沉到共享件：DB 同一性守卫及其依赖。
+  //   下沉理由：父任务 product-hub-readonly.spec.ts 有**同一个洞** ——
+  //   它一旦跑在错的库上，「16 张表指纹全未变」这条只读证明会给出**假的干净结论**，
+  //   而那恰恰是父任务最强的一条证据。**留着洞的回归，不如没有回归。**
+  //   下沉而不是让父任务 import 子任务的件 ⇒ 依赖方向是正的：共享件是底座，两套 spec 都往上依赖。
+  HERO_EDIT, readProductionNo, readColumn, restoreProductionNo,
+  anonymousApi, apiAs, assertSameDatabase,
   type DataState, type RoleKey,
 } from './product-hub.helpers';
 
 import {
   sql, sqlOne, totalCount, rowCount, search, BACKEND_URL, credOf, type RoleKey,
+  HERO_EDIT, readProductionNo, readColumn, restoreProductionNo,
 } from './product-hub.helpers';
 
 const __f = fileURLToPath(import.meta.url);
@@ -55,11 +64,6 @@ export const EVIDENCE_DIR = path.resolve(
 
 // ─────────────────────────── AC 常量（来自 需求文档.md ④，🚫 禁止就地改数） ───────────────────────────
 
-/**
- * 🚨 **本套用例唯一允许写的料号**（`test.md §1` 纪律 2）。
- * 2026-09-03 实测其 `production_no='1630010773'`、`source='IMPORT'`。
- */
-export const HERO_EDIT = 'S-1630010773';
 
 /** AC-7 的抽屉主角（只读反向断言用，不写）。 */
 export const HERO_DRAWER = 'S-3120014539';
@@ -161,72 +165,6 @@ export function unregisteredCustomersInDb(): string[] {
               WHERE c.code IS NULL GROUP BY 1 ORDER BY 1`);
 }
 
-// ─────────────────────────── 库读 / 唯一的库写（还原用） ───────────────────────────
-
-/** 读 `production_no`（区分 NULL 与空串 —— AC-12 的断言正是这个区别）。 */
-export function readProductionNo(): { raw: string | null; isNull: boolean; isEmptyString: boolean } {
-  const marker = sqlOne(
-    `SELECT CASE WHEN production_no IS NULL THEN '<NULL>'
-                 ELSE '<VAL>' || production_no END
-     FROM ds_quote_material WHERE material_no = '${HERO_EDIT}'`);
-  if (marker === null) throw new Error(`🚨 ${HERO_EDIT} 在库里查不到 —— 前置守卫应该先拦住才对`);
-  if (marker === '<NULL>') return { raw: null, isNull: true, isEmptyString: false };
-  const raw = marker.slice('<VAL>'.length);
-  return { raw, isNull: false, isEmptyString: raw === '' };
-}
-
-export function readColumn(col: 'source' | 'material_name' | 'updated_by'): string | null {
-  const m = sqlOne(
-    `SELECT CASE WHEN ${col} IS NULL THEN '<NULL>' ELSE '<VAL>' || ${col} END
-     FROM ds_quote_material WHERE material_no = '${HERO_EDIT}'`);
-  return m === '<NULL>' || m === null ? null : m.slice('<VAL>'.length);
-}
-
-/**
- * 🚨 **本文件唯一的写库入口**，且只用于**还原**。
- *
- * 四道硬约束（缺一即拒绝执行，`CLAUDE.md §3.2` 不可逆操作红线的落实）：
- *   1. 表名 / 列名**写死在模板里**，不接受参数拼接 ⇒ 不可能变成别的表。
- *   2. `WHERE` 恒为 `material_no = 'S-1630010773'`（`HERO_EDIT` 常量）⇒ 不可能无 WHERE、
- *      也不可能出现反向条件（`NOT LIKE` 那类会把别人的数据带走）。
- *   3. **执行前先数命中行数**，`≠ 1` 直接抛错拒绝执行 ⇒ 影响面在执行前就是已量化的「1 行」。
- *   4. 只 `UPDATE` `production_no` 一列 ⇒ 🚫 不碰 `source` / `updated_*`
- *      （AC-10 断言 `source` 保持 `IMPORT`，还原时把它一起写反而会掩盖缺陷）。
- *
- * 📌 为什么还原走 SQL 而不是走页面：页面正是被测对象。它若坏了，走页面还原**也会失败**，
- *    于是残留留在共享库里没人知道。还原路径必须与被测路径正交。
- */
-export function restoreProductionNo(original: string | null): void {
-  const hit = Number(sqlOne(`SELECT count(*) FROM ds_quote_material WHERE material_no = '${HERO_EDIT}'`));
-  if (hit !== 1) {
-    throw new Error(
-      `🚨 拒绝执行还原：WHERE material_no='${HERO_EDIT}' 命中 ${hit} 行（要求恰好 1 行）。\n` +
-      `  影响面不是 1 行就不许写 —— 停下报告主线（CLAUDE.md §3.2 第 1 步：先量化影响面）。`);
-  }
-  if (original !== null && original.includes("'")) {
-    throw new Error(`🚨 拒绝执行还原：原值含单引号，本模板不做转义。原值=${JSON.stringify(original)}`);
-  }
-  const setExpr = original === null ? 'NULL' : `'${original}'`;
-  const q = `UPDATE ds_quote_material SET production_no = ${setExpr} WHERE material_no = '${HERO_EDIT}'`;
-  console.log(`[还原] ${q}`);
-  const out = execFileSync('psql',
-    ['-h', process.env.PW_DB_HOST || '10.177.152.12', '-U', process.env.PW_DB_USER || 'postgres',
-     '-d', process.env.PW_DB || 'cpq_db_0724', '-tAF', '\t', '-c', q],
-    { env: { ...process.env, PGPASSWORD: process.env.PW_DB_PASS || 'joii5231' }, encoding: 'utf-8' });
-  const affected = out.trim();
-  console.log(`[还原] psql 回执 = ${affected}`);
-  if (affected !== 'UPDATE 1') {
-    throw new Error(`🚨 还原未按预期影响 1 行（psql 回执 = ${JSON.stringify(affected)}）—— 请人工核对并上报。`);
-  }
-  const now = readProductionNo();
-  const ok = original === null ? now.isNull : now.raw === original;
-  if (!ok) {
-    throw new Error(
-      `🚨 还原后校验失败：期望 ${JSON.stringify(original)}，实际 ${JSON.stringify(now.raw)}（isNull=${now.isNull}）。\n` +
-      `  ⚠️ 共享库上留下了残留，**必须上报主线**，不要重试掩盖。`);
-  }
-  console.log(`[还原] ✅ ${HERO_EDIT}.production_no 已复位为 ${JSON.stringify(original)}`);
-}
 
 // ─────────────────────────── 客户过滤器（AC-1~AC-5、AC-14） ───────────────────────────
 
@@ -508,26 +446,6 @@ export async function assertNoRedOverlay(page: Page, label: string) {
   await expect(overlay, `${label}：不得出现红色错误遮罩（vite overlay / ant-result-error）`).toHaveCount(0);
 }
 
-// ─────────────────────────── 接口层（A-01~A-04） ───────────────────────────
-
-/** 直连后端的匿名请求上下文（AC-15 的 401 必须匿名打，走前端代理会带上 cookie）。 */
-export async function anonymousApi(): Promise<APIRequestContext> {
-  return pwRequest.newContext({ baseURL: BACKEND_URL });
-}
-
-/** 直连后端 + 指定角色登录后的请求上下文（鉴权是 **Cookie** 不是 Bearer，回归执行手册 §1 实证）。 */
-export async function apiAs(role: RoleKey): Promise<APIRequestContext> {
-  const { username, password } = credOf(role);
-  const ctx = await pwRequest.newContext({ baseURL: BACKEND_URL });
-  const res = await ctx.post('/api/cpq/auth/login', { data: { username, password } });
-  const body = await res.text().catch(() => '');
-  expect(res.ok(),
-    `接口层登录失败 role=${role} user=${username} status=${res.status()} body=${body.slice(0, 200)}\n` +
-    `  429 = 登录限流（30 次/分/IP，测试基础设施问题）；其它码需区分「口令不对」（环境缺陷）与「鉴权坏了」（产品缺陷）`)
-    .toBe(true);
-  return ctx;
-}
-
 /** `PUT /api/cpq/dataset/quote/parts/{axisValue}`（`api.md` C-1）。 */
 export function putPartUrl(materialNo: string, dataset = 'quote'): string {
   return `/api/cpq/dataset/${dataset}/parts/${encodeURIComponent(materialNo)}`;
@@ -546,7 +464,17 @@ export function putPartUrl(materialNo: string, dataset = 'quote'): string {
  *   它对别人的漂移免疫，却能百分之百抓到「某个写用例忘了还原」。
  */
 export function snapshotHeroRow(): string {
-  const s = sqlOne(`SELECT t::text FROM ds_quote_material t WHERE material_no = '${HERO_EDIT}'`);
+  // 🚨 **排除审计列 `updated_at` / `updated_by`**（2026-09-04 实测踩到）：
+  //    对方的 `PUT parts/{axisValue}` 按约定会更新这两列（api.md C-1），而我们的还原**有意不碰它们**
+  //    —— 还原时把审计列一起写回去，等于抹掉「这一行被动过」的痕迹，反而会掩盖缺陷。
+  //    ⇒ 观察整行 ⇒ 只要跑过一次写用例就**恒定报残留**，是**假红**。
+  //    而假红比没有守卫更糟：它让人怀疑一个本来正确的结论，几次之后守卫就被放宽或删掉了。
+  //
+  //    🚩 用 `to_jsonb(t) - 'updated_at' - 'updated_by'` 而不是手写列清单 ——
+  //    手写清单会在别人给表加列时**静默漏掉**新列（观察面悄悄变窄，且没人会发现）。
+  const s = sqlOne(
+    `SELECT (to_jsonb(t) - 'updated_at' - 'updated_by')::text
+     FROM ds_quote_material t WHERE material_no = '${HERO_EDIT}'`);
   if (s === null) {
     throw new Error(`🚨 ${HERO_EDIT} 在 ds_quote_material 里查不到 —— 前置守卫应先拦住`);
   }
@@ -554,6 +482,13 @@ export function snapshotHeroRow(): string {
 }
 
 /** 表级指纹只做**提示**，不做断言（共享库漂移会让它必然变化，断言它等于制造假红）。 */
+/** 审计列快照：**不参与残留断言**，只作为「PUT 确实发生过」的正向佐证打印出来。 */
+export function heroAuditColumns(): string {
+  return sqlOne(
+    `SELECT coalesce(updated_at::text,'<NULL>') || ' / ' || coalesce(updated_by,'<NULL>')
+     FROM ds_quote_material WHERE material_no = '${HERO_EDIT}'`) ?? '<读不到>';
+}
+
 export function reportTableDrift(beforeCounts: Record<string, number>) {
   for (const t of ['ds_quote_material', 'ds_quote_customer_part']) {
     const now = Number(sqlOne(`SELECT count(*) FROM ${t}`));

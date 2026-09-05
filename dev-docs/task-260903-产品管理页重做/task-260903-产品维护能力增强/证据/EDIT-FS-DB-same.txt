@@ -1,0 +1,10 @@
+变体=same
+PW_DB=cpq_db_0724（42 行）
+BACKEND=http://localhost:8081
+守卫是否抛错=false
+错误原文=
+
+
+哨兵前 S-1630010773.production_no="1630010773"
+跑完后 S-1630010773.production_no="1630010773"
+残留检查=✅ 已复位，无残留

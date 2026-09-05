@@ -1,0 +1,7 @@
+核价抽屉 input=96 保存=1
+assertReadOnly 是否抛错=true
+AC-8[FS-4 阳性对照]：抽屉内不得渲染「保存」按钮
+
+[2mexpect([22m[31mlocator[39m[2m).[22mtoHaveCount[2m([22m[32mexpected[39m[2m)[22m failed
+
+Locator:  locator('.ant-drawer').first().getByRole('button', { name

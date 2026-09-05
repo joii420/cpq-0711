@@ -22,7 +22,7 @@
  */
 import { test, expect } from '@playwright/test';
 import {
-  assertIsolatedEnv, assertEditFixtureReady, snapshotHeroRow, reportTableDrift,
+  assertIsolatedEnv, assertSameDatabase, assertEditFixtureReady, snapshotHeroRow, reportTableDrift,
   sql, sqlOne, loginAs, gotoProductHub, switchTab, headerTexts, totalCount, rowCount,
   search, clearSearch, openDrawer, closeDrawer, clickDrawerTab,
   assertReadOnly, assertReadOnlyProbeWorks, collectConsoleErrors,
@@ -44,8 +44,12 @@ let heroRowBefore: string | null = null;
 let baselineProductionNo: string | null = null;
 let beforeCounts: Record<string, number> = {};
 
-test.beforeAll(() => {
+test.beforeAll(async () => {
   assertIsolatedEnv();
+  // 🚨 必须在取基线**之前**跑：它证明「页面后端」与「断言查的库」是同一个库。
+  //    少了它，下面所有「页面 == 库」的不变量断言都可能是跨库比较 —— 只会假绿不会假红。
+  //    哨兵在本函数内自复位，所以它对随后的基线快照零影响。
+  await assertSameDatabase();
   const { productionNo, source } = assertEditFixtureReady();
   baselineProductionNo = productionNo;
   heroRowBefore = snapshotHeroRow();
@@ -535,9 +539,17 @@ test('E-12 / AC-13【边界】：超长输入被拒 —— 可读提示、无 50
     await assertNoRedOverlay(page, 'AC-13');
 
     // ③ 有可读提示（前端或后端给出均可 —— AC 原文允许两者之一）
+    // 🚨 **不要把「有没有提示」绑死在 antd 类名上**（2026-09-04 实测踩到）：
+    //    原先只找 `.ant-message-notice` / `.ant-form-item-explain-error` 等四类类名，
+    //    而实现按原型把提示渲染成**单元格内的行内文案**（原型 边界-过滤空结果与极值.html ② 就是这么画的）
+    //    ⇒ 页面上明明写着「生产料号最长 128 字符，当前 129」，用例却报「一条提示都没有」。
+    //    **那是把断言写死在实现形态上**，正是本套一直在防的错。
+    //    ⇒ 改回 AC 的可观测事实：**用户能在页面上看到一条说明长度限制的文案**。
     const inlineErr = await page.locator('.ant-form-item-explain-error, .ant-input-status-error, .ant-message-error')
       .allInnerTexts().then(a => a.map(s => s.trim())).catch(() => []);
-    const allHints = [...r.messages, ...inlineErr].filter(Boolean);
+    const pageText = (await page.locator('.ant-table-tbody').innerText().catch(() => '')).replace(/\s+/g, ' ');
+    const inlineHints = pageText.match(/[^ ]{0,20}(最长|长度|字符|超出|上限)[^ ]{0,30}/g) ?? [];
+    const allHints = [...r.messages, ...inlineErr, ...inlineHints].filter(Boolean);
     console.log(`[AC-13] 可读提示 = ${JSON.stringify(allHints)}`);
     expect(allHints.length,
       `AC-13：超长输入必须给出**可读提示**（原型图/边界-过滤空结果与极值.html ②：` +

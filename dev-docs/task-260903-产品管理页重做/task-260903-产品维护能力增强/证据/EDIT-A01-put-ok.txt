@@ -1,0 +1,5 @@
+PUT → 200
+body={"code":200,"message":"success","data":{"dataset":"quote","axisValue":"S-1630010773","updated":{"productionNo":"TEST-PROD-001"},"updatedAt":"2026-09-04T07:37:56.825291Z","source":"IMPORT"}}
+production_no "1630010773" → "TEST-PROD-001"
+source="IMPORT"（改前 "IMPORT"）
+material_name="支座"（改前 "支座"）

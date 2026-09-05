@@ -11,7 +11,7 @@
  */
 import { test, expect } from '@playwright/test';
 import {
-  assertIsolatedEnv, assertEditFixtureReady, snapshotHeroRow,
+  assertIsolatedEnv, assertSameDatabase, assertEditFixtureReady, snapshotHeroRow,
   sqlOne, loginAs, search, gotoProductHub, switchTab,
   assertReadOnly, customerFilter, selectCustomer, columnValues,
   readProductionNo, restoreProductionNo,
@@ -19,8 +19,9 @@ import {
   HERO, HERO_EDIT, FILTER_CUSTOMER, NON_WHITELIST_FIELD, AC_N_CUST0004,
 } from './product-hub-edit.helpers';
 
-test.beforeAll(() => {
+test.beforeAll(async () => {
   assertIsolatedEnv();
+  await assertSameDatabase();   // 见主 spec 的说明：跨库比较只会假绿，必须先验明正身
   assertEditFixtureReady();
 });
 
@@ -187,7 +188,12 @@ test('FS-3：选客户时请求带 customerNo，且后端直接返回过滤后�
 test('FS-4：assertReadOnly 指向已知可编辑的核价抽屉，必须硬失败（阳性对照 + RG-5）', async ({ page }) => {
   await loginAs(page, 'PRICING_MANAGER');
   await page.goto('/master-data-hub');
-  await page.getByText('料号核价', { exact: true }).first().click();
+  // 🚨 **不用 `getByText('料号核价',{exact:true}).first()`**（2026-09-04 实测踩到，300s 超时）：
+  //    该文案在页面上出现多处（页签 + 面包屑/导航），`.first()` 落到的那个**不可点击**，
+  //    于是 click 一直等 actionability，表现为纯超时 —— **看起来像页面坏了**，
+  //    实测诊断：页面渲染完全正常、无 4xx/5xx、`role=tab` 里就有「料号核价」。
+  //    ⇒ 按**角色**定位，不按文案。（父任务 FS-1a 的写法在当时可用，DOM 变了之后就烂了。）
+  await page.getByRole('tab', { name: '料号核价', exact: true }).click();
   await page.waitForTimeout(1500);
   await search(page, HERO);
   await page.getByRole('cell', { name: HERO, exact: true }).first().click();

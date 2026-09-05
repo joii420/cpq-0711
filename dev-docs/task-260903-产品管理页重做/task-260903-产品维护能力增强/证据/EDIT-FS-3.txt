@@ -1,0 +1,8 @@
+库中 CUST-0004=12 全部=18
+捕获请求 = [
+  {
+    "url": "http://127.0.0.1:5196/api/cpq/dataset/quote/customer-parts?customerNo=CUST-0004&page=0&size=20",
+    "total": 12,
+    "itemCount": 12
+  }
+]
