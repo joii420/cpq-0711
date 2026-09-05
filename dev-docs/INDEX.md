@@ -75,6 +75,9 @@
 
 **已全部并入 master、仅剩分支指针与 worktree 的（7 条，可清理）**：
 
+> ✅ **2026-09-04 已清理 2 条的 worktree**（`task-260903` 父子任务，用户批准）：见本表末两行。
+> 🚨 清理时**实证了下方那条 `node_modules` 软链警告的价值** —— 两个 worktree 的 `cpq-frontend/node_modules` **都是指向主仓的软链**（主仓 208 个包）。先 `rm` 断链再 `git worktree remove`，删除前后主仓包数均为 208，穿透删除风险已避开。**若直接 remove，所有会话的前端会一起挂掉。**
+
 | 分支 | worktree | 领先 master |
 |---|---|---|
 | `feat/task-260902-master-data-export-user-import` | `.claude/worktrees/task-260902-export-import`（**待清理**） | 0 笔（merge `fba93b92`，2026-09-03）· 闸门 B 待用户验收 |
@@ -84,6 +87,8 @@
 | `feat/task-260825-quote-frontend-paging` | `.claude/worktrees/task-260825-quote-frontend-paging` | 0 笔（merge `bef24579` / `a4410b09` / `8b15e806`） |
 | `feat/task-260819-sql-view-builder` | `.claude/worktrees/task-260819-sql-view-builder` | 0 笔 |
 | `fix/repair-260828-materialize-row-roundtrip` | `.claude/worktrees/repair-260828-materialize-row-roundtrip` | 0 笔 |
+| `feat/task-260903-product-hub` | ✅ **worktree 已移除**（2026-09-04） | 0 笔（merge `929fdee1`）· 分支指针待删（用户已批准，hook 二次确认中）|
+| `feat/task-260903-product-enhance` | ✅ **worktree 已移除**（2026-09-04） | 0 笔（merge `b5ebc504`）· 分支指针待删（同上）|
 
 > ⚠️ **清理前先断 `node_modules` 软链**：worktree 里的 `node_modules` 多为指向主仓的软链，
 > `git worktree remove` 前必须先 `rm` 掉软链本身，否则有穿透删除主仓依赖的风险（2026-08-17 教训）。
