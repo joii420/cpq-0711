@@ -347,8 +347,11 @@ public class ConfigureProductService {
             // 🆕 task-260903 · A-4 / A-5（A-AC-7）：外购件身份 + 自指物料行改落 ds_quote_*。
             // upsertMaterial 是 ON CONFLICT DO NOTHING —— 外购件料号本就存在于料号库时，
             // 不会反向覆盖导入侧已有的品名/类型。
+            // 🆕 A-AC-11（2026-09-04 用户裁决）：新建料号的产品分类默认「默认分类」(000000)。
+            //    ⚠️ ON CONFLICT DO NOTHING ⇒ 库里早有的外购件料号不会被回填，这是刻意的
+            //    （不让选配顺手改写导入侧的数据），A-AC-11 只约束本流程新建的行。
             dsWriter.upsertMaterial(outNo, meta[0], null, null, null,
-                SelDsQuoteWriter.TYPE_OUTSOURCED, opOf(operatorId));
+                SelDsQuoteWriter.TYPE_OUTSOURCED, SelDsQuoteWriter.CATEGORY_DEFAULT, opOf(operatorId));
             dsWriter.writeOutsourcedSelfRow(outNo, opOf(operatorId));
             if (pr.processNos != null && !pr.processNos.isEmpty()) {
                 insertProcessSimpleUnitPriceV6(outNo, pr.processNos, customerCode, cat);
@@ -459,8 +462,9 @@ public class ConfigureProductService {
         //    A-5（A-AC-7）：material_type 写「零件」。
         //    ⚠️ singleRecipeId 不再有落点 —— 新表没有 material_recipe_id 列。它在 V6 时代的用途
         //    （单材质料号的材质判据）已被 B-18 用户裁决废除，材质权威是 ds_quote_material_bom 的 N 行。
+        //    🆕 A-AC-11（2026-09-04 用户裁决）：category_code 一律写「默认分类」000000。
         dsWriter.upsertMaterial(hfPartNo, pr.name, pr.spec, pr.dimension, pr.unitWeightGrams,
-            SelDsQuoteWriter.TYPE_PART, opOf(operatorId));
+            SelDsQuoteWriter.TYPE_PART, SelDsQuoteWriter.CATEGORY_DEFAULT, opOf(operatorId));
         // 🆕 task-260903 · A-2 / A-3 / A-4：物料行与元素行改落 ds_quote_*，停写 V6。
         //
         // 🚨 与 V6 最关键的形态差异：新表的轴**只有 material_no**，没有 characteristic /
@@ -1846,16 +1850,24 @@ public class ConfigureProductService {
                     //    —— 那是**产品结构类型**，不是料号类型。B-9 把选配写入侧的 material_type 归位为
                     //    料号类型后，本处必须一并归位，否则 material_type 仍混着第三种语义，
                     //    §S-6 的外购件判据（material_type='外购件'）以及导入侧的类型分布都会被污染。
-                    //    组合产品的父料号 = 可对外报价的**成品**。
+                    //    组合产品的父料号在**业务语义**上是可对外报价的成品；但新表值域里没有「成品」，
+                    //    且 2026-09-04 用户裁决要求主产品入库按「零件」存 ⇒ 落库值 = 零件（见下）。
                     // ⚠️ v_composite_child_materials 的第二 UNION 分支 COALESCE(mm.material_type, mm.material_name)
                     //    对本料号不生效：buildCompositeBomRows 会给父料号写 RECIPE 行
                     //    ⇒ 父料号命中第一分支。⚠️ task-260903 起 component_usage_type 由兼容视图
                     //    按 input_material_no JOIN material_recipe 现算，而这里的 input_material_no
                     //    是子件报价料号 ⇒ JOIN 落空，材质名降级到 COALESCE 兜底（见 buildCompositeBomRows）。
                     // 🆕 task-260903 · A-1：父料号主档改落 ds_quote_material。
-                    // 🚩 material_type 传 null —— V6 的「成品」在新表值域（零件/外购件）里没有位置，
-                    //    见 SelDsQuoteWriter#upsertMaterial 的契约缺口说明。🚫 不许拿「零件」凑数。
-                    dsWriter.upsertMaterial(parentHfPartNo, null, null, null, null, null, opOf(operatorId));
+                    // 🚨 2026-09-04 用户裁决（需求文档 A-AC-7③）**覆盖**了原来的「传 null」处置：
+                    //    用户原话「选配的数据的主产品在入库时,物料表中主产品的类型应该是[零件]」
+                    //    ⇒ 组合产品父料号写 TYPE_PART。
+                    //    🚩 「V6 的第三态『成品』在新表值域（零件/外购件）里没有位置」这个**事实**仍成立，
+                    //       变的是处置：从「留 NULL」改为「按用户裁决归入零件」。
+                    //    🚫 原注释「不许拿『零件』凑数」已作废，不要依据它改回 null ——
+                    //       A-AC-7 的判据是：选配铸出的料号里 material_type IS NULL 的行数 = 0。
+                    // 🆕 A-AC-11：category_code 一律写「默认分类」000000。
+                    dsWriter.upsertMaterial(parentHfPartNo, null, null, null, null,
+                        SelDsQuoteWriter.TYPE_PART, SelDsQuoteWriter.CATEGORY_DEFAULT, opOf(operatorId));
                     // V6 落库 Phase 2（选配 COMBO 补全，设计 §6 / 用户方案 B1/B2/B3）：统一走
                     // VersionedV6Writer（内容相同复用 / 不同 max+1 升版 / is_current 翻转）。
                     // 🆕 task-260903 · A-2 / A-4（A-AC-6）：父级 BOM 改落 ds_quote_material_bom。

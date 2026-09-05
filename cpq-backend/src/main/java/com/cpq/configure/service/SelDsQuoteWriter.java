@@ -89,27 +89,34 @@ public class SelDsQuoteWriter {
      *
      * <p><b>A-5（A-AC-7）· {@code materialType}</b>：V409 已落库，值域由
      * {@code QuoteRegistry} 的 {@code .strictOptions(零件 / 外购件)} 把住。
-     * 🚩 <b>V6 的第三态「成品」在新表值域里没有位置</b> —— 组合产品父料号
-     * （V6 时代写 {@code material_type='成品'}）本方法传 {@code null}，
-     * 🚫 不许改写成「零件」凑数，也不许硬塞「成品」污染值域
-     * （下游取数配置器发的是 {@code WHERE material_type IN ('零件','外购件')}）。
-     * 已在回报中登记为契约缺口。
+     * 🚩 <b>事实仍成立</b>：V6 的第三态「成品」在新表值域里没有位置
+     * （下游取数配置器发的是 {@code WHERE material_type IN ('零件','外购件')}，硬塞「成品」会污染值域）。
+     * <b>但处置已被 2026-09-04 用户裁决改写</b>（需求文档 A-AC-7③）：组合产品父料号
+     * （V6 时代写 {@code material_type='成品'}）<b>不再传 {@code null}，改为归入「零件」</b>
+     * {@link #TYPE_PART} —— 用户原话「选配的数据的主产品在入库时，物料表中主产品的类型应该是[零件]」。
+     * ⇒ 选配铸出的料号 {@code material_type} <b>不得为 NULL</b>（A-AC-7 判据：NULL 行数 = 0）。
+     * 🚫 <b>旧注释「本方法传 null，不许拿『零件』凑数」已作废</b>，不要依据它把本行改回去。
      *
-     * <p>🚫 <b>{@code category_code} 本方法刻意不写</b>：那是「新料号数据规则」为产品分类轴
-     * 加的料号属性（D-27），而选配铸的料号没有产品分类概念（分类挂在
-     * {@code customer.product_category_id} 上，是客户属性）。
-     * 实测该列 {@code compared=false} 且 {@code ds_quote_material} 是免版本表
-     * （无 {@code row_fingerprint} / {@code version_no} / {@code _history}）⇒
-     * 留空不会触发任何升版。用户后续导入同料号时由导入 Phase 1 填 {@code 000000}。
+     * <p><b>A-11（A-AC-11）· {@code categoryCode}</b>（2026-09-04 用户裁决<b>新增</b>，
+     * <b>覆盖</b>原「🚫 {@code category_code} 本方法刻意不写」那条裁决）：
+     * 用户原话「新建产品的产品分类默认都归属[默认分类]」⇒ 选配铸出的所有新料号一律写
+     * {@link #CATEGORY_DEFAULT}（{@code product_category.code='000000'}，名即「默认分类」）。
+     * 口径<b>对齐导入侧</b>（实测现存 45 条 {@code source=IMPORT} 行全部是 {@code 000000}），
+     * 不是新造规则。📌 该列 {@code compared=false} 且本表免版本
+     * （无 {@code row_fingerprint} / {@code version_no} / {@code _history}）⇒ 写它不触发任何升版。
+     *
+     * <p>⚠️ 两个新值都受 {@code ON CONFLICT DO NOTHING} 约束：<b>料号已存在时不回填</b>
+     * （例如库里早有的外购件料号）。A-AC-7 / A-AC-11 约束的是「本流程新建的行」，
+     * 存量行的补齐属数据治理，不由选配顺手改写别人导入的数据。
      */
     public void upsertMaterial(String materialNo, String materialName, String specification,
                                String dimension, BigDecimal unitWeight, String materialType,
-                               String operator) {
+                               String categoryCode, String operator) {
         if (materialNo == null || materialNo.isBlank()) return;
         em.createNativeQuery(
                 "INSERT INTO ds_quote_material (material_no, material_name, specification, dimension, "
-              + "  unit_weight, material_type, source, created_by, updated_at, updated_by) "
-              + "VALUES (:mn, :nm, :sp, :dm, :uw, :mt, :src, :op, now(), :op) "
+              + "  unit_weight, material_type, category_code, source, created_by, updated_at, updated_by) "
+              + "VALUES (:mn, :nm, :sp, :dm, :uw, :mt, :cc, :src, :op, now(), :op) "
               + "ON CONFLICT (material_no) DO NOTHING")
             .setParameter("mn", materialNo)
             .setParameter("nm", materialName)
@@ -117,6 +124,7 @@ public class SelDsQuoteWriter {
             .setParameter("dm", dimension)
             .setParameter("uw", unitWeight)
             .setParameter("mt", materialType)
+            .setParameter("cc", categoryCode)
             .setParameter("src", SOURCE)
             .setParameter("op", operator)
             .executeUpdate();
@@ -125,6 +133,14 @@ public class SelDsQuoteWriter {
     /** {@code ds_quote_material.material_type} 值域（{@code QuoteRegistry.MATERIAL_TYPE} 的镜像）。 */
     public static final String TYPE_PART = "零件";
     public static final String TYPE_OUTSOURCED = "外购件";
+
+    /**
+     * A-AC-11（2026-09-04 用户裁决）：选配铸出的新料号一律归「默认分类」。
+     * <p>{@code product_category.code='000000'}，其 {@code name} 实测就是「默认分类」。
+     * 🚫 别改成 {@code null} 或空串 —— A-AC-11 的判据是本流程新建行的
+     * {@code category_code} 恒为 {@code 000000}。
+     */
+    public static final String CATEGORY_DEFAULT = "000000";
 
     // ══════════════════════════════════════════════════════════════════
     // A-6 / A-10 · 客户产品编号 → ds_quote_customer_part（免版本）
