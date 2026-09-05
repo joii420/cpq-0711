@@ -21,10 +21,12 @@
  */
 import { test, expect } from '@playwright/test';
 import {
-  assertIsolatedEnv, assertSampleDataLoaded, assertEmptyWindow, snapshotDataState, assertNoWrite,
+  assertIsolatedEnv, assertSameDatabase,
+  assertSampleDataLoaded, assertEmptyWindow, snapshotDataState, assertNoWrite,
   expectTotalMatchesDb, heroRowsInDb, sql, sqlOne, tableExists,
   shot, evidence, loginAs, gotoProductHub, switchTab, headerTexts, totalCount,
   rowCount, search, clearSearch, openDrawer, closeDrawer, drawerTabTexts,
+  cellByHeader, firstRowCellByHeader,
   clickDrawerTab, assertReadOnly, assertReadOnlyProbeWorks, collectConsoleErrors,
   HERO, N_MATERIAL, N_CUSTOMER_PART, N_HERO_MATERIAL_BOM, N_HERO_ELEMENT_BOM,
   CUSTOMER_PART_COLUMNS, MATERIAL_COLUMNS, DRAWER_TABS, FORBIDDEN_TABS, EMPTY_TAB,
@@ -40,8 +42,32 @@ let before: DataState;
 /** AC-13 的前提与其余用例相反（要求 0 行），由 PW_EMPTY_WINDOW=1 切换前置守卫。 */
 const EMPTY_WINDOW = process.env.PW_EMPTY_WINDOW === '1';
 
-test.beforeAll(() => {
+test.beforeAll(async () => {
   assertIsolatedEnv();
+
+  // 🚨 2026-09-04 新增：证明「页面后端连的库」与「本文件断言查的库」是同一个库。
+  //
+  //    本套最强的一条证据是 afterAll 的「16 张表指纹全未变」（AC-8/AC-9 的只读证明）。
+  //    但它读的是 `PW_DB`，而页面读的是 `PW_BACKEND_URL` 那个后端所连的库 ——
+  //    两者若不是同一个库（实测踩到过：临时后端连的是**克隆库**），
+  //    这条证明会给出一个**假的干净结论**：页面明明在另一个库上写了，这边却报「全未变 ✅」。
+  //    ⇒ **留着这个洞的回归，不如没有回归。**
+  //
+  //    ⚠️ 次序是硬要求：必须在 `snapshotDataState()` **之前**跑完。
+  //       守卫内部会写一个哨兵并自复位；顺序错了，`assertNoWrite` 会把哨兵算成
+  //       「页面写的」⇒ 变成一条**假红**，而假红比没有守卫更糟 —— 它让人怀疑一个本来正确的结论。
+  //
+  //    📌 被测对象仍然是只读的：写的是**测试自己的守卫**，不是产品行为。
+  //       「页面不写库」这个结论不受影响。
+  if (EMPTY_WINDOW) {
+    // 空态窗口下 ds_quote_material 就是 0 行，没有可用作哨兵的那一行 ⇒ 本守卫**不适用**。
+    // 🚫 这不是「静默跳过」：大声打出来，并记为该模式下的**已知覆盖缺口**。
+    console.warn('⚠️ [DB同一性] 空态窗口模式（PW_EMPTY_WINDOW=1）下跳过 —— ' +
+      '表为 0 行，没有哨兵行可用。⇒ 该模式下「同库」这一前提未经校验，结论请人工确认后端连的库。');
+  } else {
+    await assertSameDatabase();
+  }
+
   if (EMPTY_WINDOW) assertEmptyWindow(); else assertSampleDataLoaded();
   before = snapshotDataState();
   console.log('[基线快照] 已记录 16 张 ds_quote_* 的行数与内容指纹');
@@ -134,7 +160,9 @@ test('E2E-02 / AC-2：客户产品 6 列顺序 + 总数 == 库中 count(*) + 客
     await search(page, cno);
     const row = page.locator('.ant-table-tbody tr.ant-table-row').first();
     await expect(row, `AC-2：应能搜到客户编号 ${cno} 的行`).toBeVisible({ timeout: 10_000 });
-    const nameCell = (await row.locator('td').nth(1).innerText()).trim();
+    // 🚨 按列头文案取列，不写死 `td.nth(1)`（见 helpers 的 `columnIndexOf` 注释：
+    //    列序会随需求变更右移，硬下标会静默验错列）。
+    const nameCell = (await (await cellByHeader(page, row, '客户名称')).innerText()).trim();
     console.log(`[AC-2] 客户编号 ${cno} 的「客户名称」单元格 = ${JSON.stringify(nameCell)}`);
     evidence('AC02-dash-cell', `customer_no=${cno}  客户名称单元格=${JSON.stringify(nameCell)}`);
     expect(nameCell, `AC-2：${cno} 在 customer 表查无此人 ⇒ 客户名称须渲染「—」，` +
@@ -598,7 +626,11 @@ test('E2E-15 / AC-15：超长品名省略号截断、页面不出现横向滚动
     .toBeLessThanOrEqual(1);
 
   // 品名列须有省略号截断能力
-  const nameCell = page.locator('.ant-table-tbody tr.ant-table-row td').nth(1).first();
+  // 🚨 2026-09-04：原为 `td.nth(1)`，在子任务插入「产品分类」列后指向了错的列
+  //    （详见 helpers `columnIndexOf` 的注释）。改为按列头文案定位。
+  await expect(page.locator('.ant-table-tbody tr.ant-table-row').first(),
+    'AC-15：销售产品首屏应有行（0 行 ⇒ 下面的样式断言空跑）').toBeVisible({ timeout: 10_000 });
+  const nameCell = await firstRowCellByHeader(page, '品名');
   const ellipsis = await nameCell.evaluate((el) => {
     const cs = getComputedStyle(el as HTMLElement);
     return { textOverflow: cs.textOverflow, whiteSpace: cs.whiteSpace, overflow: cs.overflow };
@@ -632,8 +664,11 @@ test('E2E-15 / AC-15：超长品名省略号截断、页面不出现横向滚动
   const longRow = sqlOne(
     `SELECT material_no FROM ds_quote_material WHERE length(material_name) >= 60 LIMIT 1`)!;
   await search(page, longRow);
-  const cell = page.locator('.ant-table-tbody tr.ant-table-row td').nth(1).first();
-  await expect(cell, `AC-15：应能搜到超长品名的行 ${longRow}`).toBeVisible({ timeout: 10_000 });
+  // 🚨 同上：先等到行，再**按列头文案**取「品名」单元格。
+  const longRowLoc = page.locator('.ant-table-tbody tr.ant-table-row').first();
+  await expect(longRowLoc, `AC-15：应能搜到超长品名的行 ${longRow}`).toBeVisible({ timeout: 10_000 });
+  const cell = await cellByHeader(page, longRowLoc, '品名');
+  await expect(cell, `AC-15：${longRow} 的「品名」单元格应可见`).toBeVisible({ timeout: 10_000 });
   const clipped = await cell.evaluate((el) => ({
     scrollW: el.scrollWidth, clientW: el.clientWidth,
     textOverflow: getComputedStyle(el as HTMLElement).textOverflow,

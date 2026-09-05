@@ -35,3 +35,20 @@ body[data-theme='dark'] {
 .cfg-row-disabled > td {
   opacity: 0.45;
 }
+
+/* ── task-260903 子任务「产品维护能力增强」· 销售产品列表的生产料号可编辑单元格 ──────
+   原型 `销售产品-可编辑生产料号.html` 的 `tr:hover .pen{opacity:1}`：
+   ✎ 图标常态透明，鼠标移到**整行**上才浮出。
+   ⚠️ 必须走 CSS —— 用 React 的 hover state 只能感知「移到这一个单元格」，
+      做不到「移到行的任意位置就亮」，与原型不符。类名带 `ph-` 前缀（product hub）避免撞名。 */
+.ph-edit-pen {
+  color: #1677ff;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  cursor: pointer;
+}
+.ant-table-row:hover .ph-edit-pen,
+.ph-edit-pen:focus-visible {
+  opacity: 1;
+}

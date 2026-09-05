@@ -1,0 +1,41 @@
+================ 任务 A · E2E-15 ================
+改动（仅测试文件，未碰产品代码）：
+  cpq-frontend/e2e/product-hub.helpers.ts   +columnIndexOf() / cellByHeader() / firstRowCellByHeader()
+  cpq-frontend/e2e/product-hub-readonly.spec.ts  162/626/660 三处 td.nth(1) → 按列头文案定位
+跑绿：E2E-15 单跑 ✓ 12.1s；E2E-02+E2E-15 合跑 2 passed，零 skipped
+  [AC-15] 超长单元格 = {"scrollW":783,"clientW":230,"textOverflow":"ellipsis"}   ← 品名列，真溢出
+证伪 FS-B（把 helper 指向老 nth(1) 命中的「产品分类」列）：
+  ✘ [AC-15] 超长单元格 = {"scrollW":140,"clientW":140}
+    Error: AC-15：内容确实溢出了单元格（未溢出则截断断言是空跑）
+    Expected: > 140   Received: 140     ← 与主线报告的原始红逐字一致
+证伪 FS-A（把列名改成不存在的「品名XX不存在」）：
+  ✘ Error: 列「品名XX不存在」不在当前表头里 … Expected: >= 0  Received: -1  （硬失败，不退回下标）
+还原：spec 与备份 diff = byte-identical
+
+================ 任务 B · E2E-11 批次 1（第 1~6 轮）================
+环境：前端临时 vite 127.0.0.1:5197（独立 cacheDir）；后端 = 本 worktree 既有 Quarkus 8092；PW_DB=cpq_db_0724
+轮  结果  测试时长   失败位置
+1   绿    24.8s     —（八步全走完，console error = 0）
+2   红    26.1s     步骤⑦ openDrawer(HERO)：getByRole('cell',{name:'S-3120014539'}) 10s 内 not found
+3   红     8.8s     步骤② totalCount() 返回 null（「共 N 条」分页器没渲染出来）
+4   红     0ms      beforeAll：psql "No route to host" + 后端登录 500
+5   红     0ms      beforeAll：同上
+6   红     0ms      beforeAll：同上
+关键原始输出（第 4/5/6 轮）：
+  psql: error: connection to server at "10.177.152.12", port 5432 failed: No route to host
+  Error: 接口层登录失败 role=SYSTEM_ADMIN user=admin status=500 body={"code":500,"message":"Internal server error"}
+跑完后立即复查：psql select 1 = 1；ping 5/5 0% loss；后端 8092 = 401  ⇒ 链路是**间歇性断**，不是永久坏
+附带发现：「Test timeout of 150000ms exceeded.」在本 spec 里**任何失败都会附带打印**
+  （第 2 轮实测时长 26.1s、第 3 轮 8.8s、FS-A/FS-B 11.0s，都打了这行）
+  ⇒ 主线报告里「Test timeout 150s」不是独立的失败模式，是失败后的附带输出
+
+================ 任务 B · E2E-11 批次 2（第 7~12 轮，带墙钟时间戳 + 并行只读网络探针）================
+轮  结果  测试时长  失败位置                                探针同期
+7   红    2.5m     步骤⑧ switchTab('销售产品') 点不到 tab   全程 OK（≥45 个采样点无异常）
+8   红    26.1s    步骤⑦ openDrawer(HERO) 行找不到          全程 OK
+9   红    29.3s    末尾 console 断言：173 条 ERR_NETWORK_CHANGED  17:33:57 ping=DOWN ✅命中
+10  绿    41.7s    —（步骤⑦→⑧ 耗时 17s，异常慢）           17:35:11 / 17:35:22 ping=DOWN ✅命中
+11  绿    26.7s    —                                        OK
+12  绿    25.1s    —                                        OK
+探针：314 采样 / 17:20:17–17:38:34，异常 3 条（全部 ping=DOWN）
+逐步耗时（第 7/9/10/11/12 轮，秒）：①→②≈1  ②→④≈5  ④→⑥≈1-2  ⑥→⑦≈3-4  ⑦→⑧≈3-6（第10轮17s，第7轮 ∞）
