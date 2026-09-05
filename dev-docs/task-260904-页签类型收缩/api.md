@@ -18,7 +18,9 @@
 2. 改坐标名 = 存量 `component_sql_view.builder_config` 全部要迁移，收益为零、风险不小
 3. `(tabType, variantKey)` 本来就唯一定位一行 `semantic_tab_view`，语义正确
 
-**变的是**：前端不再让用户直接选 `tabType`，改为选「数据源」；每个数据源在响应里自带它对应的 `(tabType, variantKey)` 坐标，前端原样回传。
+**变的是**：前端不再让用户直接选 `tabType`，改为选「数据源」；每个数据源在响应里自带它对应的 **`(tabType, variantKey, dialect)` 三段坐标**，前端原样回传。
+
+🚨 **坐标必须是三段，不能只传前两段**（2026-09-04 `task-260819` 会话指出，主线已复核）：`semantic_tab_view` 的唯一约束实测为 `UNIQUE (tab_type, variant_key, dialect)`。**只用 `(tabType, variantKey)` 反查会命中 3 行** —— 实测 `BOM 树`/`主件`/`材质元素`/`零件`/`外购件` 每个都在 `QUOTE`+`COST_BASIC`+`COST_DETAIL` 各有一行。漏掉 `dialect` 会在 `findFirst()` 处静默取到错误方言的声明。
 
 ---
 
@@ -42,10 +44,10 @@
 
   // 🆕 新增：数据源清单，替代 availableTabTypes 成为前端下拉的数据源
   "availableSources": [
-    { "sourceKey": "MATERIAL_BOM",  "label": "物料BOM",     "tabType": "BOM 树",   "variantKey": "", "semantic": "TREE" },
-    { "sourceKey": "ELEMENT_BOM",   "label": "物料与元素BOM", "tabType": "材质元素", "variantKey": "", "semantic": "MATERIAL_ELEMENT" },
-    { "sourceKey": "MATERIAL",      "label": "物料",         "tabType": "主件",     "variantKey": "", "semantic": null },
-    { "sourceKey": "SELF_PROCESS_FEE", "label": "自制加工费", "tabType": "费用类",   "variantKey": "SELF_PROCESS_FEE", "semantic": null }
+    { "sourceKey": "MATERIAL_BOM",  "label": "物料BOM",     "tabType": "BOM 树",   "variantKey": "", "dialect": "QUOTE", "semantic": "TREE" },
+    { "sourceKey": "ELEMENT_BOM",   "label": "物料与元素BOM", "tabType": "材质元素", "variantKey": "", "dialect": "QUOTE", "semantic": "MATERIAL_ELEMENT" },
+    { "sourceKey": "MATERIAL",      "label": "物料",         "tabType": "主件",     "variantKey": "", "dialect": "QUOTE", "semantic": null },
+    { "sourceKey": "SELF_PROCESS_FEE", "label": "自制加工费", "tabType": "费用类",   "variantKey": "SELF_PROCESS_FEE", "dialect": "QUOTE", "semantic": null }
     // …共 11 项（QUOTE 方言）
   ],
 
