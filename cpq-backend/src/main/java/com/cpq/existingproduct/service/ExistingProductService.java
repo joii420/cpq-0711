@@ -72,29 +72,43 @@ public class ExistingProductService {
                 "     OR EXISTS (SELECT 1 FROM sel_part_signature sps WHERE sps.quote_part_no = mcm.material_no AND sps.customer_no = mcm.customer_no)) " +
                 // 编号已被 sel_product_no 收录的，由 spn 分支出行，避免同一 (料号, 编号) 出两行
                 "AND NOT EXISTS (SELECT 1 FROM sel_product_no spn0 WHERE spn0.customer_no = mcm.customer_no " +
-                "     AND spn0.quote_part_no = mcm.material_no)");
+                "     AND spn0.quote_part_no = mcm.material_no) " +
+                // 🆕 task-260903 · P1：同理挡住已被 ds_quote_customer_part 收录的料号
+                "AND NOT EXISTS (SELECT 1 FROM ds_quote_customer_part dq0 WHERE dq0.customer_no = mcm.customer_no " +
+                "     AND dq0.material_no = mcm.material_no AND dq0.source <> 'IMPORT')");
         StringBuilder spnWhere = new StringBuilder("spn.customer_no = :customerNo");
+        // 🆕 task-260903 · P1（A-6 的读侧配套）：选配产出改落 ds_quote_customer_part 后，
+        // 不并上这一支，选配产品会从「从产品库添加」列表里彻底消失。
+        // 🚩 只取 source <> 'IMPORT' 的行 = 选配产出，与原 sel_product_no 分支口径一一对应。
+        //    导入来的 ds_quote_customer_part 行**刻意不并进来** —— 那批产品今天由 mcm 分支负责，
+        //    把它们也并进来会让列表凭空多出用户从没在这里见过的产品，属超范围的行为变更。
+        //    （占用判重 findProductNoOwner 则相反：那里必须认全部行，导入占的号同样是占号。）
+        StringBuilder dqcpWhere = new StringBuilder("dqcp.customer_no = :customerNo AND dqcp.source <> 'IMPORT'");
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("customerNo", customerNo);
 
         if (notBlank(customerProductNo)) {
             where.append(" AND mcm.customer_product_no ILIKE :customerProductNo");
             spnWhere.append(" AND spn.customer_product_no ILIKE :customerProductNo");
+            dqcpWhere.append(" AND dqcp.customer_product_no ILIKE :customerProductNo");
             params.put("customerProductNo", likePattern(customerProductNo));
         }
         if (notBlank(salesPartNo)) {
             where.append(" AND mcm.material_no ILIKE :salesPartNo");
             spnWhere.append(" AND spn.quote_part_no ILIKE :salesPartNo");
+            dqcpWhere.append(" AND dqcp.material_no ILIKE :salesPartNo");
             params.put("salesPartNo", likePattern(salesPartNo));
         }
         if (notBlank(productName)) {
             where.append(" AND mcm.customer_material_name ILIKE :productName");
             spnWhere.append(" AND COALESCE(NULLIF(spn.customer_product_name,''), smm.material_name) ILIKE :productName");
+            dqcpWhere.append(" AND COALESCE(NULLIF(dqcp.customer_part_name,''), dmm.material_name) ILIKE :productName");
             params.put("productName", likePattern(productName));
         }
         if (notBlank(spec)) {
             where.append(" AND COALESCE(NULLIF(mm.specification,''), mm.dimension) ILIKE :spec");
             spnWhere.append(" AND COALESCE(NULLIF(smm.specification,''), smm.dimension) ILIKE :spec");
+            dqcpWhere.append(" AND COALESCE(NULLIF(dmm.specification,''), dmm.dimension) ILIKE :spec");
             params.put("spec", likePattern(spec));
         }
 
@@ -122,14 +136,32 @@ public class ExistingProductService {
                 "       'CONFIGURED' AS source, " +
                 "       (SELECT sps.product_type FROM sel_part_signature sps WHERE sps.quote_part_no = spn.quote_part_no AND sps.customer_no = spn.customer_no ORDER BY sps.created_at DESC LIMIT 1) AS config_product_type " +
                 "FROM sel_product_no spn " +
-                "LEFT JOIN material_master smm ON smm.material_no = spn.quote_part_no " +
+                // task-260903：选配料号 A 阶段起只落 ds_quote_material，改读兼容视图才带得出品名/规格
+                "LEFT JOIN v_compat_material_master smm ON smm.material_no = spn.quote_part_no " +
                 "LEFT JOIN model_config smodel3d " +
                 "       ON smodel3d.subject_type = 'SALES_PART' " +
                 "      AND smodel3d.subject_key = spn.quote_part_no " +
                 "      AND smodel3d.is_current = true " +
                 "WHERE " + spnWhere;
 
-        String unionSql = "(" + mcmSelect + ") UNION ALL (" + spnSelect + ")";
+        // 🆕 task-260903 · P1：ds_quote_customer_part 分支（选配产出的新落点）。
+        // 列顺序必须与上面两支逐位对齐 —— UNION ALL 按位置配对，错位不报错只串值。
+        String dqcpSelect =
+                "SELECT dqcp.material_no, dqcp.customer_product_no, dqcp.created_at AS src_created_at, " +
+                "       COALESCE(NULLIF(dqcp.customer_part_name,''), dmm.material_name, dqcp.material_no) AS product_name, " +
+                "       COALESCE(NULLIF(dmm.specification,''), dmm.dimension) AS spec, " +
+                "       (dmodel3d.id IS NOT NULL) AS has3d, dmodel3d.thumbnail_url, " +
+                "       'CONFIGURED' AS source, " +
+                "       (SELECT sps.product_type FROM sel_part_signature sps WHERE sps.quote_part_no = dqcp.material_no AND sps.customer_no = dqcp.customer_no ORDER BY sps.created_at DESC LIMIT 1) AS config_product_type " +
+                "FROM ds_quote_customer_part dqcp " +
+                "LEFT JOIN v_compat_material_master dmm ON dmm.material_no = dqcp.material_no " +
+                "LEFT JOIN model_config dmodel3d " +
+                "       ON dmodel3d.subject_type = 'SALES_PART' " +
+                "      AND dmodel3d.subject_key = dqcp.material_no " +
+                "      AND dmodel3d.is_current = true " +
+                "WHERE " + dqcpWhere;
+
+        String unionSql = "(" + mcmSelect + ") UNION ALL (" + spnSelect + ") UNION ALL (" + dqcpSelect + ")";
 
         // AC-12b⑤-b：该 (customer_no, material_no) 名下的全部客户产品编号，按 created_at 升序。
         // 🚫 **不逐行查**（那是 backtask B-19 刚治过的 N+1）：这里是一个 GROUP BY 聚合子查询，
@@ -139,6 +171,10 @@ public class ExistingProductService {
                 + "FROM ( "
                 + "  SELECT spn.quote_part_no AS material_no, spn.customer_product_no, spn.created_at "
                 + "    FROM sel_product_no spn WHERE spn.customer_no = :customerNo "
+                + "  UNION ALL "
+                // 🆕 task-260903 · P1：全部编号也要认新表，否则「一料号多编号」在选配产品上只显示旧的
+                + "  SELECT dqcp2.material_no, dqcp2.customer_product_no, dqcp2.created_at "
+                + "    FROM ds_quote_customer_part dqcp2 WHERE dqcp2.customer_no = :customerNo "
                 + "  UNION ALL "
                 + "  SELECT mcm2.material_no, mcm2.customer_product_no, mcm2.created_at "
                 + "    FROM material_customer_map mcm2 "
