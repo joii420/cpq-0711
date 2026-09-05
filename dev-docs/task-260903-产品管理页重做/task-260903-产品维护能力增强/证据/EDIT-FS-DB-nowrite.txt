@@ -1,0 +1,15 @@
+变体=nowrite
+PW_DB=cpq_db_0724（42 行）
+BACKEND=http://localhost:8081
+守卫是否抛错=true
+错误原文=
+🚨 **DB 同一性守卫失败（步骤④ 验明正身）** —— 这正是 2026-09-04 那次错位。
+  哨兵已写入 PW_DB=cpq_db_0724 的 S-1630010773.production_no = PWDBPROBE-1788493933600-nyqnpxqq
+  但页面后端（http://localhost:8081）读回的仍是 {"axisValue":"S-1630010773","materialName":"支座","specification":null,"dimension":null,"oldMaterialNo":null,"unitWeight":"0.700000000000","configuredCount":0,"totalSheetCount":13,"lastUpdatedAt":"2026-09-03T12:56:00.012002Z","productionNo":"1630010773"}
+  ⇒ **后端连的不是 cpq_db_0724**（很可能是它的一个克隆库）。
+  ⚠️ 注意 ①②③ 刚刚是**通过**的（42 == 42）—— 克隆库逐行一致，只读比对分辨不出，只有这一步能分辨。
+  🚫 不要因为「数字对得上」就放行：此时所有「页面 == 库」断言都是错位的，写用例的还原更会写错库、而「无残留证明」会给出假的"干净"结论。
+
+哨兵前 S-1630010773.production_no="1630010773"
+跑完后 S-1630010773.production_no="1630010773"
+残留检查=✅ 已复位，无残留

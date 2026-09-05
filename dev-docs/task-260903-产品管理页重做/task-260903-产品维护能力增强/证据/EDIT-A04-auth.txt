@@ -1,0 +1,3 @@
+匿名 PUT → 401（期望 401）
+SALES_REP PUT → 200（期望 200）
+库值="TEST-SALESREP-API"

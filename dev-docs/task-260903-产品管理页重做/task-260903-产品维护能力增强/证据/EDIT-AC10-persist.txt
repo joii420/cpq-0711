@@ -1,0 +1,5 @@
+改前 production_no="1630010773" source="IMPORT"
+message=["保存成功"]
+刷新后页面="TEST-PROD-001"
+库中="TEST-PROD-001"
+改后 source="IMPORT"
