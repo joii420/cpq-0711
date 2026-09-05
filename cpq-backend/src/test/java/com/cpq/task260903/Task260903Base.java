@@ -54,7 +54,10 @@ public abstract class Task260903Base extends SelConfigAcTestBase {
 
     // ─────────────────────────── V6 零新增守卫 ───────────────────────────
 
-    /** V6 五表的当前行数快照。 */
+    /**
+     * V6 五表的当前行数快照 —— <b>仅作日志可读性用，🚫 不再是 A-AC-2 的判据</b>。
+     * 判据见 {@link #assertV6Unchanged(String, String)}。
+     */
     protected Map<String, Long> v6Counts() {
         Map<String, Long> m = new LinkedHashMap<>();
         for (String t : V6_TABLES) m.put(t, count("SELECT count(*) FROM " + t));
@@ -62,20 +65,75 @@ public abstract class Task260903Base extends SelConfigAcTestBase {
     }
 
     /**
-     * A-AC-2：V6 五表行数不变。
-     * <p>🚨 <b>本方法必须在「已证明提交成功且新表真落了行」之后才调用</b> ——
-     * {@code test.md §3} 第 2 号假绿陷阱：提交失败时什么都没写，行数当然不变，
-     * 于是「不双写」会因为「压根没写」而通过。调用方有责任先打正向断言。
+     * 取<b>数据库时钟</b>的当前时刻，作为「零新增」窗口的起点。
+     * <p>🚫 不用 JVM 时钟：测试 JVM 与 PG 在不同机器上，时钟偏移会让窗口错位（多算或漏算行）。
      */
-    protected void assertV6Unchanged(Map<String, Long> before, String when) {
-        Map<String, Long> after = v6Counts();
-        System.out.println("[" + when + "] V6 五表行数 before=" + before + " after=" + after);
+    protected String v6ClockNow() {
+        return scalar("SELECT now()::text");
+    }
+
+    /**
+     * 本套件在 {@code material_master} 里自建物的命名空间。
+     * <p>🚨 只对 {@code material_master} 排除，且只排这一个前缀：选配铸出的销售料号形如
+     * {@code 0663-2609000001}，永远不会命中它 ⇒ 排除它<b>不会遮蔽任何真实的 A-AC-2 违规</b>。
+     * <p>🚫 <b>四张 BOM 表刻意不按 {@code customer_no} 排除</b>：真发生双写时，行正是落在
+     * 夹具的 {@code customer_no}（{@code T2609*}）下 —— 按它排除等于把要抓的东西排除掉。
+     */
+    private static final String MM_SUITE_NS = " AND material_no NOT LIKE '" + PREFIX + "%'";
+
+    /** 某张 V6 表在窗口 {@code t0} 之后新增的行数。 */
+    private long v6NewRows(String table, String t0) {
+        return count("SELECT count(*) FROM " + table + " WHERE created_at >= '" + t0 + "'::timestamptz"
+                + ("material_master".equals(table) ? MM_SUITE_NS : ""));
+    }
+
+    /**
+     * <b>A-AC-2 判据</b>：窗口 {@code t0} 之后，V6 五表<b>零新增</b>。
+     *
+     * <h4>🚨 2026-09-04 判据改写：从「全表绝对行数不变」改成「窗口内零新增」</h4>
+     * 原判据是 {@code count(*)} 前后相等，在共享库 {@code cpq_db_0724} 上有三个毛病，
+     * 实测已经犯了第一个：
+     * <ol>
+     *   <li><b>方向错判</b>：实测一次 {@code material_master 1894 → 1893}（<b>减少</b> 1 行）也把
+     *       A-AC-2 判红。而 A-AC-2 管的是「<b>不双写</b>」= 零新增，<b>别人删了一行不是本 AC 的违规</b> ——
+     *       这是 harness 噪声伪装成业务缺陷。</li>
+     *   <li><b>会漏判</b>：{@code +1 新增} 与 {@code -1 删除} 在同一窗口内相互抵消时，行数相等，
+     *       真实的双写被掩盖。行数相等<b>不等于</b>没有新增。</li>
+     *   <li><b>粒度不够</b>：按 {@code material_no} 集合比对也不行 —— 给<b>已存在</b>的料号补写一行
+     *       BOM 明细，集合不变但确实双写了。</li>
+     * </ol>
+     * 新判据按 {@code created_at} 数窗口内新增的<b>行</b>：行级、免疫第三方删行、抵消不了。
+     *
+     * <p>⚠️ 残余风险：共享库上<b>另一套测试并发</b>写这五张表时会误报。
+     * 所以失败信息里直接把新增行的 {@code material_no / customer_no / created_at} 列出来 ——
+     * 一眼能看出是不是本轮选配写的。
+     *
+     * <p>🚨 本守卫的鉴别力由 {@code V6ZeroWriteGuardTest#falsify_guardMustGoRedWhenV6IsActuallyWritten}
+     * 每轮证伪一次（在回滚事务里真插一行 V6，断言本方法必须报红）。
+     */
+    protected void assertV6Unchanged(String t0, String when) {
+        List<String> violations = new java.util.ArrayList<>();
         for (String t : V6_TABLES) {
-            assertEquals(before.get(t), after.get(t),
-                    when + "：A-AC-2 要求 V6 五表零新增（不双写），但 " + t + " 从 "
-                            + before.get(t) + " 变成 " + after.get(t)
-                            + " ⇒ 选配仍在写 V6。before=" + before + " after=" + after);
+            long added = v6NewRows(t, t0);
+            System.out.println("[" + when + "] " + t + " 窗口(" + t0 + ") 内新增行数=" + added);
+            if (added > 0) {
+                String cols = "material_master".equals(t)
+                        ? "material_no, created_at::text"
+                        : "material_no, customer_no, created_at::text";
+                List<Object[]> bad = rows("SELECT " + cols + " FROM " + t
+                        + " WHERE created_at >= '" + t0 + "'::timestamptz"
+                        + ("material_master".equals(t) ? MM_SUITE_NS : "")
+                        + " ORDER BY created_at LIMIT 20");
+                violations.add(t + " 新增 " + added + " 行：" + bad.stream()
+                        .map(java.util.Arrays::toString).toList());
+            }
         }
+        assertEquals(List.of(), violations,
+                when + "：A-AC-2 要求 V6 五表零新增（用户裁决「不双写」），"
+                        + "但窗口 " + t0 + " 之后出现了新行 ⇒ 选配仍在写 V6。明细："
+                        + violations
+                        + "\n  ⚠️ 归因提示：先看新增行的 customer_no —— 是本轮夹具的 T2609* 就是真双写；"
+                        + "是别的前缀就是共享库上另一套测试并发写入，属 harness 噪声。");
     }
 
     // ─────────────────────────── 新表计数 ───────────────────────────

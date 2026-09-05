@@ -318,49 +318,78 @@ class SelConfigWritesNewTablesTest extends Task260903Base {
     }
 
     /**
-     * <b>A-AC-7🚫 与 A-AC-11🚫 的判据原文</b>（需求文档 §4.2 逐字照抄）：
+     * <b>A-AC-7🚫 与 A-AC-11🚫 的收尾守卫</b>（需求文档 §4.2，2026-09-04 判据作用域修正后）。
+     *
+     * <p>两条 AC 的 🚫 判据现在都限定在<b>「本轮流程新建的料号」</b>：
      * <ul>
-     *   <li>A-AC-7：{@code 选配铸出的料号里 material_type IS NULL 的行数 = 0}</li>
-     *   <li>A-AC-11：{@code SELECT count(*) FROM ds_quote_material WHERE source='MANUAL'
-     *       AND category_code IS DISTINCT FROM '000000'} = 0</li>
+     *   <li>A-AC-7：其中 {@code material_type IS NULL} 的行数 = 0</li>
+     *   <li>A-AC-11：其中 {@code category_code <> '000000'} 的行数 = 0</li>
      * </ul>
      *
-     * <p>🚨 这两条判据的作用域是<b>整张表的 {@code source='MANUAL'} 全集</b>，不只是本轮新造的行 ——
-     * 与上面两个用例（只约束本轮产出）<b>不是同一个口径</b>，故单独成一个用例，
-     * 让红/绿的归因不会混在一起。失败信息里会把「本轮之前就存在的行」单独列出来，
-     * 因为那类行<b>不是写入侧改一行代码就能变绿的</b>，需要主线裁决（补一支回填迁移 or 收窄判据口径）。
+     * <h4>🚨 它和上面两条主用例不重复，作用域更宽</h4>
+     * 主用例各自只看<b>自己那几个料号</b>（父 + 子件）。本用例问的是另一个问题：
+     * <b>本轮跑完，{@code ds_quote_material} 里有没有冒出<u>任何</u>不合规的新行</b> ——
+     * 包括写入侧顺手多铸的、主用例没点名的料号。
+     *
+     * <h4>作用域怎么划：用提交前快照，🚫 不用时间戳、不用料号前缀</h4>
+     * 作用域 = {@code 提交后的料号全集 \ 提交前的料号全集}。
+     * <b>为什么不用 {@code created_at} 或 {@code LIKE 'T2609%'}</b>：前者要求两台机器时钟一致，
+     * 后者只认得本套件自己造的料号 —— 而选配铸出的销售料号形如 {@code 0662-2609000001}，
+     * 根本不带套件前缀，用前缀筛会把要验的东西全筛掉（那正是「判据恒真」的典型长法）。
+     *
+     * <p>📌 用户手工配的 {@code 0526-2609000004} / {@code 0526-2609000005} 在提交前快照里，
+     * 天然落在作用域外 —— 它们是修复之前落的存量行（{@code upsertMaterial} 是
+     * {@code ON CONFLICT DO NOTHING}，不追溯改写），回不回填是数据治理决定，不归本 AC。
      */
     @Test
-    @DisplayName("A-AC-7🚫/A-AC-11🚫 判据原文：全表 source=MANUAL 不得有 NULL 类型 / 非默认分类")
-    void acLiteralGuards_noNullTypeAndNoNonDefaultCategoryAmongManualRows() {
-        List<Object[]> all = rows("SELECT material_no, coalesce(material_type,'(null)'), "
-                + "coalesce(category_code,'(null)'), created_at::text "
-                + "FROM ds_quote_material WHERE source='MANUAL' ORDER BY created_at, material_no");
-        System.out.println("[判据原文] ds_quote_material 全部 source='MANUAL' 行（" + all.size() + " 条）="
-                + all.stream().map(java.util.Arrays::toString).toList());
-        assertTrue(all.size() > 0,
-                "判据前置：ds_quote_material 里应有 source='MANUAL'（选配铸出）的行，实际 0 条 ⇒ "
-                        + "两条判据都会在『压根没有行』的情况下成立（testing.md §3 第 3 号陷阱：空跑即假绿）");
+    @DisplayName("A-AC-7🚫/A-AC-11🚫 收尾守卫：本轮新增的料号里 0 条 NULL 类型 / 0 条非默认分类")
+    void acFreshRowGuard_noNullTypeAndNoNonDefaultCategoryAmongNewlyCastRows() {
+        String outsourced = createSyntheticOutsourcedPart();
+        java.util.Set<String> before = dsMaterialNoSnapshot();
+        System.out.println("[收尾守卫] 提交前 ds_quote_material 料号全集大小=" + before.size());
+
+        Fx fx = newFixture("guard");
+        Response res = configure(fx, submitBody(PREFIX + "AG",
+                newPart("触点", "φ5", "5×3×2", "10",
+                        List.of(material(RECIPE_A, CONFIG_A, "70"),
+                                material(RECIPE_B, CONFIG_B, "30")),
+                        List.of(PROC_1)),
+                outsourcedPart(outsourced, List.of(PROC_2))));
+        assertSubmitOk(res, "收尾守卫 提交");
+
+        java.util.Set<String> fresh = new java.util.TreeSet<>(dsMaterialNoSnapshot());
+        fresh.removeAll(before);
+        System.out.println("[收尾守卫] 本轮新增出来的料号（" + fresh.size() + " 个）=" + fresh);
+
+        // 🚨 空跑防护：一行都没新增时，「0 条不合规」照样成立（testing.md §3 第 3 号陷阱）
+        assertTrue(fresh.size() >= 3,
+                "收尾守卫前置：一次『零件 + 外购件』提交应至少新增 3 个料号"
+                        + "（COMPOSITE 主产品 / 零件子料号 / 外购件），实际只新增 " + fresh.size()
+                        + " 个=" + fresh + " ⇒ 下面的『0 条不合规』会在几乎没有行的情况下成立，等于空跑");
+
+        String inList = fresh.stream().map(c -> "'" + c + "'")
+                .collect(java.util.stream.Collectors.joining(","));
+        List<Object[]> detail = rows("SELECT material_no, coalesce(material_type,'(null)'), "
+                + "coalesce(category_code,'(null)'), source FROM ds_quote_material "
+                + "WHERE material_no IN (" + inList + ") ORDER BY material_no");
+        System.out.println("[收尾守卫] 本轮新增行明细="
+                + detail.stream().map(java.util.Arrays::toString).toList());
 
         long nullType = count("SELECT count(*) FROM ds_quote_material "
-                + "WHERE source='MANUAL' AND material_type IS NULL");
+                + "WHERE material_type IS NULL AND material_no IN (" + inList + ")");
         long badCat = count("SELECT count(*) FROM ds_quote_material "
-                + "WHERE source='MANUAL' AND category_code IS DISTINCT FROM '000000'");
-        System.out.println("[判据原文] material_type IS NULL 行数=" + nullType
-                + "；category_code IS DISTINCT FROM '000000' 行数=" + badCat);
+                + "WHERE category_code IS DISTINCT FROM '000000' AND material_no IN (" + inList + ")");
+        System.out.println("[收尾守卫] material_type IS NULL 行数=" + nullType
+                + "；category_code <> '000000' 行数=" + badCat);
 
         assertEquals(0L, nullType,
-                "A-AC-7🚫 判据原文：选配铸出（source='MANUAL'）的料号里 material_type IS NULL 的行数应为 0，实际 "
-                        + nullType + " 行。全部 MANUAL 行（含 created_at）="
-                        + all.stream().map(java.util.Arrays::toString).toList()
-                        + "\n  ⚠️ 归因提示：若这些行的 created_at **早于本轮**，那是写入侧改好之前就已落库的存量行，"
-                        + "写入侧修复不会追溯改写它们 ⇒ 需主线裁决（补回填迁移 or 把判据口径收窄成「本轮产出」）。");
+                "A-AC-7🚫：本轮新建的 " + fresh.size() + " 个料号里，material_type IS NULL 的行数应为 0，实际 "
+                        + nullType + " 行。新增行明细="
+                        + detail.stream().map(java.util.Arrays::toString).toList());
         assertEquals(0L, badCat,
-                "A-AC-11🚫 判据原文：SELECT count(*) FROM ds_quote_material WHERE source='MANUAL' "
-                        + "AND category_code IS DISTINCT FROM '000000' 应为 0，实际 " + badCat
-                        + " 行。全部 MANUAL 行（含 created_at）="
-                        + all.stream().map(java.util.Arrays::toString).toList()
-                        + "\n  ⚠️ 归因提示同上。");
+                "A-AC-11🚫：本轮新建的 " + fresh.size() + " 个料号里，category_code <> '000000' 的行数应为 0，实际 "
+                        + badCat + " 行。新增行明细="
+                        + detail.stream().map(java.util.Arrays::toString).toList());
     }
 
     /** {@code ds_quote_material.material_type} 实际值（不存在返 null，NULL 返 {@code (null)}）。 */
