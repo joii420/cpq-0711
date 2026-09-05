@@ -6,6 +6,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -54,14 +55,25 @@ class SelConfigWritesNewTablesTest extends Task260903Base {
         long bomRows = assertNewTablesGotRows(partNo, "A-AC-1");
 
         // ③ 元素含量
-        long elem = dsElementBom(partNo);
-        System.out.println("[A-AC-1③] ds_quote_element_bom 行数=" + elem);
+        // 🚨 2026-09-04 修正（本条原先是我的用例缺陷，不是产品缺陷）：
+        //    「零件 + 外购件」提交出来的是 COMPOSITE，响应 lineItems 有三层：
+        //      COMPOSITE 父料号 / PART 零件子料号 / PART 外购件子料号。
+        //    latestLinePartNo() 拿到的是**父料号**，而元素含量属于**零件子料号** ——
+        //    断在父料号上恒为 0 行。实证：同一轮里 SIMPLE 提交 element_bom=5，
+        //    COMPOSITE 父料号 element_bom=0、material_bom=4。
+        //    ⇒ 元素断言必须打在零件子料号上。
+        String childPartNo = childPartNoOf(res, outsourced);
+        System.out.println("[A-AC-1③] 父料号=" + partNo + " 零件子料号=" + childPartNo);
+        assertNotNull(childPartNo,
+                "A-AC-1③ 前置：响应里应有一个非外购件的 PART 子料号，实际取不到 ⇒ 断言会打错靶。响应=" + res.asString());
+        long elem = dsElementBom(childPartNo);
+        System.out.println("[A-AC-1③] " + childPartNo + " 的 ds_quote_element_bom 行数=" + elem);
         assertTrue(elem > 0,
-                "A-AC-1③：ds_quote_element_bom 应落元素含量（2 个材质各自的元素组成），实际 0 行");
+                "A-AC-1③：零件子料号 " + childPartNo + " 应落元素含量（2 个材质各自的元素组成），实际 0 行");
 
         // ④ version_no 全部 = 1 —— 🚨 先证明有行, 否则「全 1」在 0 行时也成立（test.md §3 第 3 号陷阱）
         assertVersionAllOne("ds_quote_material_bom", partNo, bomRows, "A-AC-1④");
-        assertVersionAllOne("ds_quote_element_bom", partNo, elem, "A-AC-1④");
+        assertVersionAllOne("ds_quote_element_bom", childPartNo, elem, "A-AC-1④");
 
         // 🚨 写了 ≠ 渲染得出来（兼容视图 BOM 侧要靠 ds_quote_customer_part 反查 customer_no）
         assertVisibleThroughCompatView(partNo, "A-AC-1");
@@ -181,8 +193,20 @@ class SelConfigWritesNewTablesTest extends Task260903Base {
         assertEquals(1, mats.size(),
                 "A-AC-7：外购件料号 " + outsourced + " 应在 ds_quote_material 有且仅有 1 条主档，实际 "
                         + mats.size() + " 条");
+        // 🚩 诊断线索（2026-09-04 实测）：本条红时先看这三行再判是不是产品缺陷
+        List<Object[]> diag = rows("SELECT source, coalesce(material_type,'(null)'), created_at::text "
+                + "FROM ds_quote_material WHERE material_no='" + outsourced + "'");
+        String inV6 = scalar("SELECT material_type FROM material_master WHERE material_no='" + outsourced + "'");
+        System.out.println("[A-AC-7 诊断] ds_quote_material 行=" + diag.stream().map(java.util.Arrays::toString).toList()
+                + " ；同料号在 material_master 里的 material_type=" + inV6);
+
         assertEquals("外购件", String.valueOf(mats.get(0)[1]),
-                "A-AC-7：外购件料号的 material_type 必须是『外购件』，实际=" + mats.get(0)[1]);
+                "A-AC-7：外购件料号 " + outsourced + " 的 material_type 必须是『外购件』，实际=" + mats.get(0)[1]
+                        + "\n  诊断：该行 source=" + (diag.isEmpty() ? "?" : diag.get(0)[0])
+                        + "，同料号在 V6 material_master 里是『" + inV6 + "』。"
+                        + "\n  ⇒ 若 source=IMPORT，说明这行是既有导入数据、并非本次选配写入；"
+                        + "选配流程遇到『已存在于 ds_quote_material 的外购件』时没有补齐 material_type。"
+                        + "\n  ⇒ 影响：只存在于新表、V6 里没有的外购件将丢失身份（V6 里有的还能靠兼容视图 V6 侧兜住）。");
     }
 
     /**
@@ -219,6 +243,21 @@ class SelConfigWritesNewTablesTest extends Task260903Base {
                 "A-AC-7→8：ds_quote_material.material_type 必须原样透传到 v_compat_material_master，"
                         + "否则渲染侧看不到外购件身份（A-AC-8 会渲染不出外购件）。"
                         + "上面列出的每一行都是 表里有值 / 视图里没有。");
+    }
+
+    /**
+     * 从提交响应里取「零件」子料号：{@code compositeType='PART'} 且不是外购件的那个。
+     * <p>SIMPLE 提交时没有子层，直接返回唯一的行料号。
+     */
+    private String childPartNoOf(Response res, String outsourcedNo) {
+        List<Map<String, Object>> items = res.jsonPath().getList("lineItems");
+        if (items == null || items.isEmpty()) return null;
+        if (items.size() == 1) return String.valueOf(items.get(0).get("productPartNo"));
+        return items.stream()
+                .filter(i -> "PART".equals(String.valueOf(i.get("compositeType"))))
+                .map(i -> String.valueOf(i.get("productPartNo")))
+                .filter(pn -> !pn.equals(outsourcedNo))
+                .findFirst().orElse(null);
     }
 
     /** {@code version_no} 全 1 —— 先要求行数 > 0，否则「全 1」在 0 行时也成立。 */
