@@ -24,6 +24,16 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class BuilderPhysicalExistenceSelfCheckTest {
 
+    /**
+     * 🚫 {@code @Vetoed} 不是可选的：{@code jakarta.enterprise.context.ApplicationScoped}
+     * 带 {@code @Inherited}，所以任何**具名**子类都会自动继承 bean 定义注解、成为第二个
+     * {@code @Default} bean ⇒ 全项目任何 {@code @QuarkusTest} 启动时报
+     * {@code Ambiguous dependencies for type ...}，而**报错点在别人的测试里**，别人根本不知道
+     * 是本文件引起的。本类只是给纯 JUnit 直接 {@code new} 用的桩，从不被注入 ⇒ 用 {@code @Vetoed}
+     * 明确逐出 bean 发现，比 {@code @Alternative @Priority}（仍然是个 bean）更贴合意图。
+     * ⚠️ {@code @Vetoed} 不是 {@code @Inherited}，每个具名桩类都要各自标一次。
+     */
+    @jakarta.enterprise.inject.Vetoed
     static class StubCatalog extends PhysicalColumnCatalog {
         final Map<String, Set<String>> byTable = new HashMap<>();
         @Override public Map<String, Set<String>> columnsOf(Collection<String> tables) {
@@ -33,6 +43,16 @@ class BuilderPhysicalExistenceSelfCheckTest {
         }
     }
 
+    /**
+     * 🚫 {@code @Vetoed} 不是可选的：{@code jakarta.enterprise.context.ApplicationScoped}
+     * 带 {@code @Inherited}，所以任何**具名**子类都会自动继承 bean 定义注解、成为第二个
+     * {@code @Default} bean ⇒ 全项目任何 {@code @QuarkusTest} 启动时报
+     * {@code Ambiguous dependencies for type ...}，而**报错点在别人的测试里**，别人根本不知道
+     * 是本文件引起的。本类只是给纯 JUnit 直接 {@code new} 用的桩，从不被注入 ⇒ 用 {@code @Vetoed}
+     * 明确逐出 bean 发现，比 {@code @Alternative @Priority}（仍然是个 bean）更贴合意图。
+     * ⚠️ {@code @Vetoed} 不是 {@code @Inherited}，每个具名桩类都要各自标一次。
+     */
+    @jakarta.enterprise.inject.Vetoed
     static final class StubLoader extends SemanticGraphLoader {
         SemanticGraphSnapshot snap;
         @Override public SemanticGraphSnapshot get() { return snap; }

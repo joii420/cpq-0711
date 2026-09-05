@@ -67,6 +67,65 @@ class PreviewPlaceholderSelfCheckTest {
         assertFalse(noPart.contains("ARRAY[]::text[]"), "空数组恒假 ⇒ 核价预览永远 0 行：\n" + noPart);
     }
 
+    // =====================================================================
+    // B-51：外层 hf_part_no 过滤在核价侧语义错位（partNo 是销售料号、hf_part_no 是生产料号）
+    // =====================================================================
+
+    private static BuilderDTOs.PreviewRequest req(String dialect, String partNo, String customer) {
+        BuilderDTOs.PreviewRequest r = new BuilderDTOs.PreviewRequest();
+        r.tabType = "主件"; r.variantKey = ""; r.dialect = dialect;
+        r.partNo = partNo; r.customerCode = customer;
+        r.columns = new ArrayList<>();
+        return r;
+    }
+
+    /** 核价两套：外层不许再加 hf_part_no 过滤（加了就恒 0 行）。 */
+    @Test
+    void costingPreviewDropsOuterPartNoFilter() {
+        BuilderService svc = new BuilderService();
+        for (String d : List.of("COST_BASIC", "COST_DETAIL")) {
+            String w = svc.wrapPreviewSql("SELECT 1 AS hf_part_no", req(d, "TEST0813-P01", null));
+            System.out.println("---- B-51 " + d + " 包装 ----\n" + w);
+            assertFalse(w.contains("hf_part_no ="), d + " 仍带外层等值过滤 ⇒ 销售料号比生产料号，恒 0 行：\n" + w);
+            assertTrue(w.endsWith("LIMIT 50"), w);
+        }
+    }
+
+    /** 报价侧零回归：外层过滤逐字保留。 */
+    @Test
+    void quotePreviewKeepsOuterPartNoFilterVerbatim() {
+        BuilderService svc = new BuilderService();
+        String w = svc.wrapPreviewSql("SELECT 1 AS hf_part_no", req("QUOTE", "P-001", "CUST1"));
+        System.out.println("---- B-51 QUOTE 包装 ----\n" + w);
+        assertEquals("SELECT * FROM (SELECT 1 AS hf_part_no) __preview"
+                + " WHERE hf_part_no = 'P-001' LIMIT 50", w);
+        // 单引号转义未被削弱
+        assertTrue(svc.wrapPreviewSql("X", req("QUOTE", "A'B", "C")).contains("hf_part_no = 'A''B'"));
+    }
+
+    /** 不传 partNo 时两侧都不加过滤（原行为）。 */
+    @Test
+    void noPartNoMeansNoOuterFilterEitherSide() {
+        BuilderService svc = new BuilderService();
+        for (String d : List.of("QUOTE", "COST_BASIC")) {
+            assertFalse(svc.wrapPreviewSql("X", req(d, null, "C")).contains("WHERE"), d);
+        }
+    }
+
+    /** 0 行诊断不许再把人往"数据缺失/客户"方向带偏 —— 核价侧根本没有客户维度。 */
+    @Test
+    void costingZeroRowsHintIsNotMisleading() {
+        BuilderService svc = new BuilderService();
+        String hint = svc.zeroRowsHint(req("COST_BASIC", "TEST0813-P01", null), CompileDialect.COST_BASIC);
+        System.out.println("---- B-51 核价 0 行诊断 ----\n" + hint);
+        assertFalse(hint.contains("客户「null」"), "不许出现「客户「null」」：" + hint);
+        assertTrue(hint.contains("料号桥") || hint.contains("ds_quote_material"), hint);
+        assertTrue(hint.contains("生产料号"), hint);
+        // 报价侧文案不变
+        String q = svc.zeroRowsHint(req("QUOTE", "P-001", "CUST1"), CompileDialect.QUOTE);
+        assertTrue(q.contains("在客户「CUST1」下不存在"), q);
+    }
+
     /** 兜底体检不能把字符串字面量里的冒号误判成占位符（否则合法料号会触发假 500）。 */
     @Test
     void quotedLiteralsWithColonAreNotFlagged() {

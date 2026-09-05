@@ -164,13 +164,7 @@ public class BuilderService {
         // 全部后代，D-58「传几行算几行」口径）——复用 BomTreeRenderService.collectTotalMaterialNoUnion，
         // 不另写第二套闭包算法（D-50 要收敛的正是这个）。
 
-        String wrapped = "SELECT * FROM (" + bound + ") __preview";
-        List<String> conditions = new ArrayList<>();
-        if (req.partNo != null && !req.partNo.isBlank()) {
-            conditions.add("hf_part_no = '" + req.partNo.replace("'", "''") + "'");
-        }
-        if (!conditions.isEmpty()) wrapped += " WHERE " + String.join(" AND ", conditions);
-        wrapped += " LIMIT 50";
+        String wrapped = wrapPreviewSql(bound, req);
 
         PreviewResponse resp = new PreviewResponse();
         long start = System.currentTimeMillis();
@@ -198,7 +192,7 @@ public class BuilderService {
 
                     if (resp.rowCount == 0) {
                         resp.diagnostics.add(new Diagnostic("WARN", "PREVIEW_ZERO_ROWS", null,
-                                zeroRowsHint(req)));
+                                zeroRowsHint(req, resolveDialect(req))));
                     } else {
                         for (String col : resp.columns) {
                             if ("hf_part_no".equals(col)) continue;
@@ -216,8 +210,31 @@ public class BuilderService {
         return resp;
     }
 
-    private String zeroRowsHint(PreviewRequest req) {
-        if (req.partNo != null && !req.partNo.isBlank()) {
+    /**
+     * 0 行时的可操作诊断（B-51 起按方言分叉）。
+     *
+     * <p>⚠️ <b>原文案在核价侧是误导的</b>：它说「料号在客户 X 下不存在」，而核价两套
+     * <b>根本没有客户维度</b>（{@code ds_cost_*} 无 {@code customer_no} 列，{@code customerCode}
+     * 恒为 null，于是打印成「客户「null」下不存在」），并且核价侧 0 行最常见的原因**不是**料号不存在，
+     * 而是<b>料号桥没接上</b>——销售料号在 {@code ds_quote_material} 里没有对应行，或那行的
+     * {@code production_no} 为空（实测 45 行里仅 25 行非空，"报价时生产料号还没定"是正常业务状态）。
+     * 诊断把人指向"数据缺失"，排查方向会被整个带偏（本条正是这么被发现的）。
+     */
+    // 包级可见仅为开发自测直调。
+    String zeroRowsHint(PreviewRequest req, CompileDialect dialect) {
+        boolean hasPart = req.partNo != null && !req.partNo.isBlank();
+        if (dialect.isCosting()) {
+            if (hasPart) {
+                return "没有取到数据。核价取数是「销售料号 → 料号桥 → 生产料号」三步，请按顺序排查："
+                        + "① 销售料号「" + req.partNo + "」在报价物料（ds_quote_material）里是否存在；"
+                        + "② 该行的生产料号是否已填（报价阶段可能尚未确定，属正常业务状态，"
+                        + "表现就是暂时取不到核价数据）；③ 该生产料号在本页签对应的核价表里是否已有数据。"
+                        + "🚫 与客户无关——核价数据集没有客户维度";
+            }
+            return "没有取到数据：本页签对应的核价表里还没有数据，请先导入核价基础资料"
+                    + "（核价数据集没有客户维度，与选哪个客户无关）";
+        }
+        if (hasPart) {
             return "料号「" + req.partNo + "」在客户「" + req.customerCode + "」下不存在，或该客户下无此类基础数据；" +
                     "若该料号数据挂在子件上，请勾选『子件数据也要』后重试";
         }
@@ -268,6 +285,33 @@ public class BuilderService {
                             + "属后端缺陷，请连同本条信息报告开发", Map.of("placeholders", unbound));
         }
         return bound;
+    }
+
+    /**
+     * 预览外层包装（task-260819 B-51）：{@code SELECT * FROM (编译产物) __preview [WHERE …] LIMIT 50}。
+     *
+     * <p>⚠️ <b>外层 {@code hf_part_no} 等值过滤只对报价方言成立</b>。它是"桥改形态之前"的假设 ——
+     * 当时 {@code partNo} 与锚点自己的键是同一个号段，外层再过一道只是把闭包收敛到指定成品。
+     * B-50 之后核价两套的 {@code partNo} <b>语义翻转成了销售料号</b>，而 {@code hf_part_no} 输出的是
+     * 锚点的<b>生产料号</b> ⇒ 两者永不相等 ⇒ <b>恒 0 行</b>。核价侧的收窄已经由 NARROW 半连接在
+     * {@code WHERE} 里做完（销售料号 → 生产料号），外层再按 {@code partNo} 过一遍既重复又错位。
+     *
+     * <p>📌 <b>这是 /preview 的第三个同型缺陷</b>（D-63 漏注入 {@code :total_material_no} →
+     * D-95 核价闭包错取 QUOTE 模型 → 本条外层过滤语义错位）。共因是<b>预览路径不走渲染管线，
+     * 每加一个"渲染期才成立"的假设，预览就漏一次</b>。{@code detectUnboundPlaceholders} 防得住
+     * "漏注入"，防不住"语义错位"——后者没有任何机械信号，只表现为 0 行。
+     *
+     * <p>⚠️ <b>本方法必须是 preview() 唯一的包装通道</b>，别把条件挪回调用点：B-48 的教训是
+     * 把步骤摊在 {@code preview()} 里、自测打各个零件，结果删掉其中一步自测照样全绿。
+     */
+    String wrapPreviewSql(String bound, PreviewRequest req) {
+        String wrapped = "SELECT * FROM (" + bound + ") __preview";
+        List<String> conditions = new ArrayList<>();
+        if (!resolveDialect(req).isCosting() && req.partNo != null && !req.partNo.isBlank()) {
+            conditions.add("hf_part_no = '" + req.partNo.replace("'", "''") + "'");
+        }
+        if (!conditions.isEmpty()) wrapped += " WHERE " + String.join(" AND ", conditions);
+        return wrapped + " LIMIT 50";
     }
 
     // 包级可见仅为开发自测直调；生产调用点只有 buildPreviewSql()。

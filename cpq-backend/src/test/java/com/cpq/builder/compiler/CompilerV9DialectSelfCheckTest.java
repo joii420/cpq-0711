@@ -24,6 +24,16 @@ import static org.junit.jupiter.api.Assertions.*;
 class CompilerV9DialectSelfCheckTest {
 
     // ---------- 桩：把 information_schema 换成写死的列集合 ----------
+    /**
+     * 🚫 {@code @Vetoed} 不是可选的：{@code jakarta.enterprise.context.ApplicationScoped}
+     * 带 {@code @Inherited}，所以任何**具名**子类都会自动继承 bean 定义注解、成为第二个
+     * {@code @Default} bean ⇒ 全项目任何 {@code @QuarkusTest} 启动时报
+     * {@code Ambiguous dependencies for type ...}，而**报错点在别人的测试里**，别人根本不知道
+     * 是本文件引起的。本类只是给纯 JUnit 直接 {@code new} 用的桩，从不被注入 ⇒ 用 {@code @Vetoed}
+     * 明确逐出 bean 发现，比 {@code @Alternative @Priority}（仍然是个 bean）更贴合意图。
+     * ⚠️ {@code @Vetoed} 不是 {@code @Inherited}，每个具名桩类都要各自标一次。
+     */
+    @jakarta.enterprise.inject.Vetoed
     static final class StubCatalog extends PhysicalColumnCatalog {
         final Map<String, Set<String>> byTable = new HashMap<>();
         @Override
@@ -299,6 +309,138 @@ class CompilerV9DialectSelfCheckTest {
                 r.declaredColumns.toString());
         assertEquals("hf_part_no", r.declaredColumns.get(0), "第 0 列必须是约定的料号列");
         assertTrue(r.declaredColumns.contains("hf_part_no_主件"), r.declaredColumns.toString());
+    }
+
+    // =====================================================================
+    // B-50：edge_kind='NARROW' 半连接收窄（桥当入参，不当输出列）
+    // =====================================================================
+
+    /** 建一张「核价主件 + 料号桥」的图；bridgeEdgeKind 决定桥是 NARROW 还是老的 LOOKUP。 */
+    private static Object[] bridgeGraph(String bridgeEdgeKind, boolean attachBridgeAsAux,
+                                        boolean bridgeHasMaterialNo) {
+        SemanticNode main = sheet("COST_MAIN", "核价主件", "主件",
+                "ds_cost_basic_material", "COST_BASIC", "dcbm.production_no");
+        SemanticNode bridge = sheet("QUOTE_MATERIAL_BRIDGE", "料号桥", "料号桥",
+                "ds_quote_material", "COST_BASIC", null);   // 实测桥的 anchor_expr 就是 NULL
+        SemanticNodeColumn mPart = col(main, "production_no", "生产料号", "TEXT");
+        SemanticNodeColumn mName = col(main, "part_name", "品名", "TEXT");
+        SemanticNodeColumn bSales = col(bridge, "material_no", "销售料号", "TEXT");
+
+        SemanticEdge e = new SemanticEdge();
+        e.id = UUID.randomUUID(); e.fromNodeId = main.id; e.toNodeId = bridge.id;
+        e.edgeKind = bridgeEdgeKind; e.cardinality = "MANY_TO_MANY";
+        SemanticEdgeKey k = new SemanticEdgeKey();
+        k.id = UUID.randomUUID(); k.edgeId = e.id;
+        k.leftColumn = "production_no"; k.rightColumn = "production_no"; k.seq = 0;
+
+        StubCatalog stub = new StubCatalog();
+        stub.byTable.put("ds_cost_basic_material",
+                new LinkedHashSet<>(List.of("production_no", "part_name")));
+        stub.byTable.put("ds_quote_material", bridgeHasMaterialNo
+                ? new LinkedHashSet<>(List.of("material_no", "production_no"))
+                : new LinkedHashSet<>(List.of("production_no")));   // 缺入参列的坏声明
+
+        SemanticTabView v = tabView("主件", "COST_BASIC", main);
+        List<SemanticTabViewNode> tvns = new ArrayList<>();
+        SemanticTabViewNode mn = new SemanticTabViewNode();
+        mn.id = UUID.randomUUID(); mn.viewId = v.id; mn.nodeId = main.id; mn.role = "MAIN";
+        mn.addDims = new String[0];
+        tvns.add(mn);
+        if (attachBridgeAsAux) {
+            SemanticTabViewNode bn = new SemanticTabViewNode();
+            bn.id = UUID.randomUUID(); bn.viewId = v.id; bn.nodeId = bridge.id; bn.role = "AUX";
+            bn.addDims = new String[0];
+            tvns.add(bn);
+        }
+        SemanticGraphSnapshot snapshot = new SemanticGraphSnapshot(1,
+                List.of(main, bridge), List.of(mPart, mName, bSales),
+                List.of(e), List.of(k), List.of(v), tvns, List.of());
+        return new Object[]{snapshot, stub};
+    }
+
+    /** 核心：NARROW 产出 WHERE 半连接，且**不再**有对桥的 LEFT JOIN（扇出根源被拆掉）。 */
+    @Test
+    void narrowEmitsSemiJoinInsteadOfLeftJoin() {
+        Object[] g = bridgeGraph("NARROW", true, true);
+        CompileResult r = compilerWith((StubCatalog) g[1]).compile(
+                (SemanticGraphSnapshot) g[0], cfg("主件", "COST_BASIC", "COST_MAIN", "part_name"),
+                CompileDialect.COST_BASIC);
+        System.out.println("---- B-50 NARROW 产物 ----\n" + r.sql);
+
+        assertFalse(r.sql.contains("LEFT JOIN ds_quote_material"), "桥不许再出现在 FROM 侧：\n" + r.sql);
+        assertFalse(r.sql.contains("JOIN ds_quote_material"), "桥不许产出任何 FROM 项：\n" + r.sql);
+        assertTrue(r.sql.contains(
+                "dcbm.production_no IN (SELECT dqm.production_no FROM ds_quote_material dqm"
+                        + " WHERE dqm.material_no = ANY(:total_material_no))"), r.sql);
+        // 桥的列一个都不许进 SELECT
+        assertFalse(r.declaredColumns.contains("material_no"), r.declaredColumns.toString());
+        assertTrue(r.requiredVariables.contains("total_material_no"), r.requiredVariables.toString());
+    }
+
+    /**
+     * 正确性关键：有 NARROW 时**不许再发**直接轴谓词。
+     * :total_material_no 装的是销售料号，而轴列是 production_no —— 两条 AND 在一起恒 0 行，
+     * 且"看起来只是没数据"，不报任何错。
+     */
+    @Test
+    void narrowSuppressesDirectAxisPredicate() {
+        Object[] g = bridgeGraph("NARROW", true, true);
+        CompileResult r = compilerWith((StubCatalog) g[1]).compile(
+                (SemanticGraphSnapshot) g[0], cfg("主件", "COST_BASIC", "COST_MAIN", "part_name"),
+                CompileDialect.COST_BASIC);
+        assertFalse(r.sql.contains("dcbm.production_no = ANY(:total_material_no)"),
+                "销售料号不能直接拿去比生产料号：\n" + r.sql);
+        assertEquals(1, countOf(r.sql, ":total_material_no"), "收窄入口应只有半连接这一处：\n" + r.sql);
+    }
+
+    /** 零回归：没有 NARROW 边时，轴收窄行为逐字不变。 */
+    @Test
+    void withoutNarrowEdgeAxisPredicateIsUnchanged() {
+        SemanticNode n = sheet("M", "核价主件", "主件",
+                "ds_cost_basic_material", "COST_BASIC", "dcbm.production_no");
+        StubCatalog stub = new StubCatalog();
+        stub.byTable.put("ds_cost_basic_material",
+                new LinkedHashSet<>(List.of("production_no", "part_name")));
+        CompileResult r = compilerWith(stub).compile(
+                snap(List.of(n), List.of(col(n, "part_name", "品名", "TEXT")),
+                        List.of(tabView("主件", "COST_BASIC", n))),
+                cfg("主件", "COST_BASIC", "M", "part_name"), CompileDialect.COST_BASIC);
+        assertTrue(r.sql.contains("dcbm.production_no = ANY(:total_material_no)"), r.sql);
+    }
+
+    /** NARROW 目标的列不可选，且错误文案要说清"为什么不给选"，别只说"暂不支持"。 */
+    @Test
+    void selectingColumnFromNarrowTargetIsRejected() {
+        Object[] g = bridgeGraph("NARROW", true, true);
+        BuilderApiException ex = assertThrows(BuilderApiException.class, () ->
+                compilerWith((StubCatalog) g[1]).compile((SemanticGraphSnapshot) g[0],
+                        cfg("主件", "COST_BASIC", "QUOTE_MATERIAL_BRIDGE", "material_no"),
+                        CompileDialect.COST_BASIC));
+        System.out.println("---- 取 NARROW 的列 ----\n" + ex.getMessage());
+        assertEquals("COMPILE_EDGE_KIND_UNSUPPORTED", ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("收窄"), ex.getMessage());
+    }
+
+    /** 字段面板不出现桥 —— 即便种子里它还以 AUX 身份挂在页签视图上。 */
+    @Test
+    void narrowTargetIsHiddenFromFieldPanel() {
+        Object[] g = bridgeGraph("NARROW", true, true);
+        FieldTreeBuilder.FieldTreeResponse resp = new FieldTreeBuilder()
+                .build((SemanticGraphSnapshot) g[0], CompileDialect.COST_BASIC, "主件", "", null);
+        List<String> keys = resp.groups.stream().map(x -> x.groupKey).toList();
+        System.out.println("---- NARROW 下的字段面板分组 ----\n" + keys);
+        assertEquals(List.of("COST_MAIN"), keys, "桥不该是可拖分组：" + keys);
+    }
+
+    /** 桥表缺入参列时必须报错 —— 静默不发 = 完全不收窄 = 全表数据。 */
+    @Test
+    void narrowWithoutInputColumnFailsLoudly() {
+        Object[] g = bridgeGraph("NARROW", true, false);
+        BuilderApiException ex = assertThrows(BuilderApiException.class, () ->
+                compilerWith((StubCatalog) g[1]).compile((SemanticGraphSnapshot) g[0],
+                        cfg("主件", "COST_BASIC", "COST_MAIN", "part_name"), CompileDialect.COST_BASIC));
+        assertEquals("COMPILE_NARROW_INPUT_COLUMN_MISSING", ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("material_no"), ex.getMessage());
     }
 
     private static int countOf(String s, String needle) {
