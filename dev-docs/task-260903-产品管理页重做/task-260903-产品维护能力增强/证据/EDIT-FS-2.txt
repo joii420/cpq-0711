@@ -1,0 +1,2 @@
+白名单内 productionNo → 200  body={"code":200,"message":"success","data":{"dataset":"quote","axisValue":"S-1630010773","updated":{"productionNo":"FS2-WHITELIST-PROBE"},"updatedAt":"2026-09-04T07:38:48.801053Z","source":"IMPORT"}}  库值="FS2-WHITELIST-PROBE"
+白名单外 materialName → 400  body={"code":400,"message":"字段「materialName」不允许直接编辑（可编辑字段：production_no / productionNo）"}

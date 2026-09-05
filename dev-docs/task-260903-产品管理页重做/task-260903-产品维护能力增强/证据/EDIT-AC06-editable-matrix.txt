@@ -1,0 +1,7 @@
+生产料号: 进编辑态 ✅ via=dblclick
+销售料号: entered=false via=null
+品名: entered=false via=null
+规格: entered=false via=null
+尺寸: entered=false via=null
+旧料号: entered=false via=null
+单重: entered=false via=null

@@ -5460,9 +5460,10 @@ Cell：`quote`(Object 报价值)、`costing`(Object 核价值)、`highlighted`(b
 | PUT | `/api/cpq/dataset/{dataset}/parts/{axisValue}/sheets/{sheetKey}/rows` | `PRICING_MANAGER` / `SYSTEM_ADMIN` | 保存整组全量，走与导入**同一条**升版路径 |
 | GET | `/api/cpq/dataset/{dataset}/lookup/{masterType}` | 读 4 角色 | 主数据下拉。`masterType` ∈ `material`/`process`/`element`/`recipe`/`customer`。**只读**，与 `/pricing-basic-data/lookup` 并行不干扰 |
 | GET | `/api/cpq/dataset/{dataset}/plating-schemes` | 读 4 角色 | 电镀方案**只读**列表。`{dataset}` 仅接受 `quote`（10 列）与 `cost-detail`（8 列，多「密度」少「网址/名称/抓取规则」）；传 `cost-basic` **404**。`columns` 按数据集下发，前端不得写死 |
-| GET | `/api/cpq/dataset/{dataset}/customer-parts` | 读 4 角色 | 客户料号**只读**列表。`{dataset}` **仅接受 `quote`**（另两套无客户维度，传之 400）。Query：`page`（**0-based**）/`size`/`keyword`/`sortBy`/`sortDir`。`columns` 按数据集下发（6 列），**只投影 `{name,label,type}` 三键**，不下发 `editable/required/compared`（本页只读，下发 `editable=true` 会误导前端渲染编辑态）。🚨 `customerName` 由 **LEFT JOIN `customer` 表**得出，**JOIN 键是 `customer.code`**（该表无 `customer_no` 列）；必须 LEFT，实测 17 行中 3 行 JOIN 不到（`Q13CUST0617`×2、`C1`×1 未建档），用 INNER 会静默丢行使 total 17→14。`keyword` **严格匹配 `customer_no`/`customer_product_no`/`material_no` 三列** |
+| GET | `/api/cpq/dataset/{dataset}/customer-parts` | 读 4 角色 | 客户料号**只读**列表。`{dataset}` **仅接受 `quote`**（另两套无客户维度，传之 400）。Query：`page`（**0-based**）/`size`/`keyword`/**`customerNo`（可选，精确等值，与 `keyword` 取 AND；传不存在的值返 `total:0` 而非 404）**/`sortBy`/`sortDir`。`columns` 按数据集下发（6 列），**只投影 `{name,label,type}` 三键**，不下发 `editable/required/compared`（本页只读，下发 `editable=true` 会误导前端渲染编辑态）。🚨 `customerName` 由 **LEFT JOIN `customer` 表**得出，**JOIN 键是 `customer.code`**（该表无 `customer_no` 列）；必须 LEFT，实测 17 行中 3 行 JOIN 不到（`Q13CUST0617`×2、`C1`×1 未建档），用 INNER 会静默丢行使 total 17→14。`keyword` **严格匹配 `customer_no`/`customer_product_no`/`material_no` 三列** |
+| GET | `/api/cpq/dataset/{dataset}/customer-parts/customers` | 读 4 角色 | 客户料号过滤器的**候选来源**。🚨 候选取自 `SELECT DISTINCT customer_no FROM ds_quote_customer_part`（**不是 `customer` 主数据表**）—— 实测现网 `Q13CUST0617`/`C1` 未在客户档案建档，从主数据取会让这两个客户的 3 行产品**在页面上看得见却永远筛不出来**；从主数据取还会多列 35 个无产品客户。`customerName` 走 `LEFT JOIN customer ON c.code = t.customer_no`（**必须 LEFT**，INNER 实测候选 5→3、覆盖 17→14）。响应 `{items:[{customerNo, customerName, count}]}` |
 
-> 来源任务：`task-260903-产品管理页重做`（`GET /dataset/{dataset}/customer-parts` 一条）｜回写日期：2026-09-03
+> 来源任务：`task-260903-产品管理页重做` / 子任务 `产品维护能力增强`（`customer-parts` 及其 `customers` 候选端点，共 2 条）｜回写日期：2026-09-03
 > 📌 该端点按用户裁决由 `task-260903` **自建**（`task-260902` 本期不承接），形状对齐其 `DsPlatingSchemes`，**待 `com.cpq.dataset` 包稳定后应迁入统一维护**（已写入类注释）。
 
 

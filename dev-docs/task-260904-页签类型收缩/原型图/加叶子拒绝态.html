@@ -1,0 +1,54 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>加叶子拒绝态 · 页签类型收缩</title><link rel="stylesheet" href="_style.css"></head><body><div class="wrap">
+
+<div class="card"><h1>报价单 BOM 树 ·「加叶子」弹层</h1>
+<div class="sub">task-260904 · 服务 F-5（AC-6 / AC-7），并展示 AC-8 / AC-12 的既有与新增行为 · 2026-09-04</div>
+<span class="tag">📌 当前基准</span> <span class="tag gray">QT-20260830-0211 · 正泰 CUST-0004</span></div>
+
+<div class="card"><h2>A · 默认态（可提交）</h2>
+<div style="max-width:520px">
+<div style="margin-bottom:12px"><label class="fl" style="width:80px">宿主节点</label><span class="ro" style="min-width:280px">202601010001 · 接触片组件</span></div>
+<div style="margin-bottom:12px"><label class="fl" style="width:80px">料号</label><input style="width:280px;height:32px;padding:0 11px;border:1px solid #d9d9d9;border-radius:6px" value="AgNi11#-Ⅰ"></div>
+<div style="margin-bottom:12px"><label class="fl" style="width:80px">判定类型</label><span class="ro"><span class="tag gold">材质</span>&nbsp;来源：材质库 material_recipe</span></div>
+<div><span class="btn">取消</span> <span class="btn pri" style="margin-left:8px">确定添加</span></div></div>
+<div class="note"><b>类型不再由用户选，也不再靠页签反推</b> —— 料号一填就从主数据查出来并回显。材质库命中 → 材质；物料表命中 → 按「类型」列判零件/外购件。</div></div>
+
+<div class="card"><h2>B · 拒绝态 ①：料号不在主数据（AC-6 · 新增）</h2>
+<div class="alert err"><span class="ic">×</span><div class="bd">
+<div class="ti">料号「<span class="mono">Z99-NOTEXIST</span>」不存在，无法添加</div>
+<div class="ds">该料号既不在<b>物料表</b>，也不在<b>材质库</b>。请先在基础资料中建档后再添加。</div></div></div>
+<div class="row" style="margin-top:12px">
+<div class="note" style="flex:1;margin:0">后端 400 <span class="mono">LEAF_PART_NOT_IN_MASTER</span>。<br><b>文案必须点名料号</b>，不能只说「添加失败」。</div>
+<div class="note del" style="flex:1;margin:0">现网实测：38 个 BOM 投入料号里<b>有 1 个两表都不在</b> —— 本护栏正好拦住这类脏数据。</div></div></div>
+
+<div class="card"><h2>C · 拒绝态 ②：成环（AC-7 · 新增）</h2>
+<h3>C1 · 真环</h3>
+<div class="alert err"><span class="ic">×</span><div class="bd">
+<div class="ti">添加后会形成循环引用</div>
+<div class="ds">环路径：<span class="mono">202601010001 → 202601010007 → 202601010001</span><br>料号「202601010001」已是宿主节点「202601010007」的上级，不能再挂到它下面。</div></div></div>
+<h3>C2 · 自环</h3>
+<div class="alert err"><span class="ic">×</span><div class="bd">
+<div class="ti">不能把料号挂到它自己下面</div>
+<div class="ds">环路径：<span class="mono">202601010007 → 202601010007</span></div></div></div>
+<div class="note del"><b>这是新增功能，不是修复</b> —— 现有 <span class="mono">addLeaf</span> 完全没有环检测，挂出环来无人拦。后端 400 <span class="mono">LEAF_CYCLE_DETECTED</span>，<b>响应必须带环路径</b>（只判状态码的用例会假绿）。</div></div>
+
+<div class="card"><h2>D · 拒绝态 ③：宿主不可加下级（AC-8 · 既有，不得失效）</h2>
+<div class="alert err"><span class="ic">×</span><div class="bd"><div class="ti">材质节点不可再添加下级</div>
+<div class="ds">宿主节点「AgNi11#-Ⅰ」是材质，材质是叶子级概念。</div></div></div>
+<div class="alert err" style="margin-top:8px"><span class="ic">×</span><div class="bd"><div class="ti">外购件节点不可再添加下级</div>
+<div class="ds">宿主节点「WG-0032」是外购件。</div></div></div>
+<div class="note"><b>反向 AC</b>：本次改造后这两条仍须原样生效，只是宿主类型判定也改成读主数据。</div></div>
+
+<div class="card"><h2>E · 边界态：类型列为空 → 默认零件（AC-12）</h2>
+<div style="max-width:520px">
+<div style="margin-bottom:12px"><label class="fl" style="width:80px">料号</label><span class="ro" style="min-width:280px">202601010015</span></div>
+<div style="margin-bottom:12px"><label class="fl" style="width:80px">判定类型</label><span class="ro"><span class="tag gray">零件</span>&nbsp;物料表未维护「类型」，按默认值处理</span></div>
+<div><span class="btn">取消</span> <span class="btn pri" style="margin-left:8px">确定添加</span></div></div>
+<div class="alert warn" style="margin-top:12px"><span class="ic">!</span><div class="bd"><div class="ti">该料号在物料表中未维护「类型」</div>
+<div class="ds">已按默认值<b>零件</b>处理（可继续挂下级）。建议在物料表补齐类型，以免与实际业务不符。</div></div></div>
+<div class="note">A0-1 裁决。现网 <span class="mono">ds_quote_material.material_type</span> <b>45 行里 42 行为空</b>，38 个 BOM 投入料号里 <b>29 个</b>命中本态 —— 这是当前最常见的路径，提示语必须存在但不能挡住操作。</div></div>
+
+<div class="card"><h2>F · 空态：树上还没有任何节点</h2>
+<div class="panel"><div class="empty">该报价行尚未生成 BOM 树，无法添加叶子</div></div>
+<div class="note">对应后端「该行尚无树结构，无从校验，放行」的分支 —— 前端不给入口，不让用户走到 400。</div></div>
+
+</div></body></html>

@@ -10,9 +10,17 @@
  * 三条与 task-260901 相同的纪律（不重复论证，见那份的头注释）：
  *   1. 🚨 端口/库避让：默认拒绝跑在 5174 / 8081。
  *   2. 🚨 证据归档：截图写任务目录 `证据/`，不写 `test-results/`（下一轮会被清空 ⇒ 等于没证据）。
- *   3. 🚨 只读 SQL：本文件所有 SQL 均为 SELECT。**没有任何 DELETE / UPDATE / TRUNCATE。**
+ *   3. 🚨 只读 SQL —— **2026-09-04 起有且仅有一个例外**，必须写清楚免得下一个人以为本文件仍是纯读：
+ *      `setProductionNoInDb()` 会 `UPDATE ds_quote_material.production_no`，
+ *      **只服务于 `assertSameDatabase()` 的哨兵与写用例的还原**（见文件末尾那一节的完整论证）。
+ *      它把表名列名写死、`WHERE` 恒为 `material_no = 'S-1630010773'`、执行前先数命中行数（≠1 拒绝执行）、
+ *      写后回读校验。**除它之外，本文件所有 SQL 仍是 SELECT，没有任何 DELETE / TRUNCATE。**
+ *
+ *      ⚠️ 对「只读证明」的影响：哨兵**必须在 `snapshotDataState()` 取基线之前**完成写入与复位。
+ *      顺序错了，`assertNoWrite` 会把哨兵算成「页面写的」⇒ 变成一条**假红**，
+ *      而假红比没有守卫更糟 —— 它会让人怀疑一个本来正确的结论。
  */
-import { expect, Page } from '@playwright/test';
+import { expect, Page, APIRequestContext, request as pwRequest } from '@playwright/test';
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -416,6 +424,58 @@ export async function headerTexts(scope: any): Promise<string[]> {
 }
 
 /**
+ * 🚨 按**列头文案**取列下标 —— 替代硬编码 `td.nth(i)`。
+ *
+ * 2026-09-04 实证（`E2E-15` 假红）：父任务写死 `td.nth(1)` = 「品名」，成立的前提是
+ * 销售产品**恰好 7 列**。子任务按用户裁决在第 2 位插入「产品分类」列后，列序整体右移，
+ * `nth(1)` 变成「产品分类」（内容 `默认分类`，4 字不溢出）⇒ 那条「内容确实溢出了单元格」
+ * 的非空守卫报 `Expected > 140, Received 140`。
+ * **产品行为是对的，红的是用例的下标脆弱性** —— 与 `docs/反模式.md` AP-54
+ * 「过滤后下标当原数组下标」同型：**渲染顺序会变的东西，不能当稳定标识**。
+ *
+ * ⇒ 一律先读表头文案定位下标，再取对应 `td`。列序再变也不会验错列；
+ *   而列**改名或消失**时本函数**硬失败**（不是静默退回 0 号列），这正是它该有的牙。
+ */
+export async function columnIndexOf(scope: any, header: string): Promise<number> {
+  const th = scope.locator('.ant-table-thead th');
+  const n = await th.count();
+  // 🚨 这里**不过滤空表头**（`headerTexts()` 会过滤）：过滤会让数组下标与 `td` 下标错位，
+  //    正是本函数要根治的那类 bug。
+  const raw: string[] = [];
+  for (let i = 0; i < n; i++) {
+    raw.push((await th.nth(i).innerText()).replace(/\s+/g, '').trim());
+  }
+  const idx = raw.indexOf(header);
+  expect(idx,
+    `列「${header}」不在当前表头里。实际表头 = ${JSON.stringify(raw)}\n` +
+    '⇒ 列被改名/删除/尚未渲染。🚫 不得退回硬编码下标 —— 那会静默验错列。')
+    .toBeGreaterThanOrEqual(0);
+  return idx;
+}
+
+/**
+ * 取某一行里「列头文案为 `header`」的那个单元格。
+ *
+ * 附带一条对齐守卫：表头 `th` 数必须等于该行 `td` 数。不等说明有 `colSpan` /
+ * 展开列 / 选择列之类的结构，**按下标取列本身就不成立**，此时硬失败而不是取错一列继续跑。
+ */
+export async function cellByHeader(scope: any, row: any, header: string) {
+  const idx = await columnIndexOf(scope, header);
+  const ths = await scope.locator('.ant-table-thead th').count();
+  const tds = await row.locator('td').count();
+  expect(tds,
+    `表头 ${ths} 列，行内 ${tds} 个 td —— 数量不等时按下标取列不可靠（colSpan/展开列/选择列）。`)
+    .toBe(ths);
+  return row.locator('td').nth(idx);
+}
+
+/** 取当前表格**第一行**里 `header` 那一列的单元格。 */
+export async function firstRowCellByHeader(page: Page, header: string) {
+  const row = page.locator('.ant-table-tbody tr.ant-table-row').first();
+  return cellByHeader(page, row, header);
+}
+
+/**
  * 读 antd 分页器的总数。
  * ⚠️ `共 N 条` 里 antd 会在数字两侧留空格，正则必须容忍：`/共\s*(\d+)\s*条/`。
  * 拿不到时返回 null，由调用方给出「分页器未渲染」的明确失败，而不是把 null 当 0 比。
@@ -432,9 +492,20 @@ export async function rowCount(scope: any): Promise<number> {
   return scope.locator('.ant-table-tbody tr.ant-table-row').count();
 }
 
-/** 在当前页签的搜索框里输入关键词。⚠️ 占位符文案可能是「搜索」也可能带具体字段，用 `*=` 宽松匹配。 */
+/**
+ * 在当前页签的搜索框里输入关键词。⚠️ 占位符文案可能是「搜索」也可能带具体字段，用 `*=` 宽松匹配。
+ *
+ * 🚨 **必须排除 `.ant-select-input`**（2026-09-04 子任务 `产品维护能力增强` 实测踩到）：
+ *    antd `Select` 内部会渲染一个 `<input type="search" readonly class="ant-select-input">`，
+ *    子任务给「客户产品」加了客户过滤器（位置在搜索框**左侧**）之后，它在 DOM 里排在真搜索框**前面**
+ *    ⇒ `.first()` 命中的是那个 **readonly** 的假搜索框，`fill()` 永远等不到 editable，
+ *      表现为 `Test timeout` —— **看起来完全像产品 bug**（"搜索框点不动了"），实则是选择器撞车。
+ *    ⚠️ 这条同样影响父任务的 `product-hub-readonly.spec.ts`（其 `E2E-02` 会在客户产品页签搜客户编号）。
+ */
 export async function search(page: Page, keyword: string) {
-  const box = page.locator('input[placeholder*="搜索"], input[type="search"]').first();
+  const box = page.locator(
+    'input[placeholder*="搜索"]:not(.ant-select-input), input[type="search"]:not(.ant-select-input)'
+  ).first();
   await expect(box, '工具栏应有搜索框（空态下也必须渲染，AC-13）').toBeVisible({ timeout: 10_000 });
   await box.fill(keyword);
   await box.press('Enter').catch(() => {});
@@ -442,7 +513,10 @@ export async function search(page: Page, keyword: string) {
 }
 
 export async function clearSearch(page: Page) {
-  const box = page.locator('input[placeholder*="搜索"], input[type="search"]').first();
+  // 同 search()：必须排除 antd Select 内部那个 readonly 的 `type="search"` 输入框
+  const box = page.locator(
+    'input[placeholder*="搜索"]:not(.ant-select-input), input[type="search"]:not(.ant-select-input)'
+  ).first();
   await box.fill('');
   await box.press('Enter').catch(() => {});
   await page.waitForTimeout(1200);
@@ -521,4 +595,233 @@ export function collectConsoleErrors(page: Page): string[] {
   page.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
   page.on('pageerror', e => errs.push(`pageerror: ${e.message}`));
   return errs;
+}
+
+/**
+ * 🚨 **本套用例唯一允许写的料号**（`test.md §1` 纪律 2）。
+ * 2026-09-03 实测其 `production_no='1630010773'`、`source='IMPORT'`。
+ */
+export const HERO_EDIT = 'S-1630010773';
+// ─────────────────────────── 库读 / 唯一的库写（还原用） ───────────────────────────
+
+/** 读 `production_no`（区分 NULL 与空串 —— AC-12 的断言正是这个区别）。 */
+export function readProductionNo(): { raw: string | null; isNull: boolean; isEmptyString: boolean } {
+  const marker = sqlOne(
+    `SELECT CASE WHEN production_no IS NULL THEN '<NULL>'
+                 ELSE '<VAL>' || production_no END
+     FROM ds_quote_material WHERE material_no = '${HERO_EDIT}'`);
+  if (marker === null) throw new Error(`🚨 ${HERO_EDIT} 在库里查不到 —— 前置守卫应该先拦住才对`);
+  if (marker === '<NULL>') return { raw: null, isNull: true, isEmptyString: false };
+  const raw = marker.slice('<VAL>'.length);
+  return { raw, isNull: false, isEmptyString: raw === '' };
+}
+
+export function readColumn(col: 'source' | 'material_name' | 'updated_by'): string | null {
+  const m = sqlOne(
+    `SELECT CASE WHEN ${col} IS NULL THEN '<NULL>' ELSE '<VAL>' || ${col} END
+     FROM ds_quote_material WHERE material_no = '${HERO_EDIT}'`);
+  return m === '<NULL>' || m === null ? null : m.slice('<VAL>'.length);
+}
+
+/**
+ * 🚨 **本文件唯一的写库入口**，且只用于**还原**。
+ *
+ * 四道硬约束（缺一即拒绝执行，`CLAUDE.md §3.2` 不可逆操作红线的落实）：
+ *   1. 表名 / 列名**写死在模板里**，不接受参数拼接 ⇒ 不可能变成别的表。
+ *   2. `WHERE` 恒为 `material_no = 'S-1630010773'`（`HERO_EDIT` 常量）⇒ 不可能无 WHERE、
+ *      也不可能出现反向条件（`NOT LIKE` 那类会把别人的数据带走）。
+ *   3. **执行前先数命中行数**，`≠ 1` 直接抛错拒绝执行 ⇒ 影响面在执行前就是已量化的「1 行」。
+ *   4. 只 `UPDATE` `production_no` 一列 ⇒ 🚫 不碰 `source` / `updated_*`
+ *      （AC-10 断言 `source` 保持 `IMPORT`，还原时把它一起写反而会掩盖缺陷）。
+ *
+ * 📌 为什么还原走 SQL 而不是走页面：页面正是被测对象。它若坏了，走页面还原**也会失败**，
+ *    于是残留留在共享库里没人知道。还原路径必须与被测路径正交。
+ */
+export function restoreProductionNo(original: string | null): void {
+  setProductionNoInDb(original, '还原');
+}
+
+/**
+ * 🚨 **本文件唯一真正执行 UPDATE 的地方**（`restoreProductionNo` 与 DB 同一性哨兵都走它）。
+ * 四道硬约束集中在这一处，就不会出现「某个调用方绕过了守卫」。
+ */
+function setProductionNoInDb(value: string | null, purpose: string): void {
+  const hit = Number(sqlOne(`SELECT count(*) FROM ds_quote_material WHERE material_no = '${HERO_EDIT}'`));
+  if (hit !== 1) {
+    throw new Error(
+      `🚨 拒绝执行写入[${purpose}]：WHERE material_no='${HERO_EDIT}' 命中 ${hit} 行（要求恰好 1 行）。\n` +
+      `  影响面不是 1 行就不许写 —— 停下报告主线（CLAUDE.md §3.2 第 1 步：先量化影响面）。`);
+  }
+  if (value !== null && value.includes("'")) {
+    throw new Error(`🚨 拒绝执行写入[${purpose}]：值含单引号，本模板不做转义。值=${JSON.stringify(value)}`);
+  }
+  const setExpr = value === null ? 'NULL' : `'${value}'`;
+  const q = `UPDATE ds_quote_material SET production_no = ${setExpr} WHERE material_no = '${HERO_EDIT}'`;
+  console.log(`[写库:${purpose}] db=${process.env.PW_DB || 'cpq_db_0724'}  ${q}`);
+  const out = execFileSync('psql',
+    ['-h', process.env.PW_DB_HOST || '10.177.152.12', '-U', process.env.PW_DB_USER || 'postgres',
+     '-d', process.env.PW_DB || 'cpq_db_0724', '-tAF', '\t', '-c', q],
+    { env: { ...process.env, PGPASSWORD: process.env.PW_DB_PASS || 'joii5231' }, encoding: 'utf-8' });
+  const affected = out.trim();
+  console.log(`[写库:${purpose}] psql 回执 = ${affected}`);
+  if (affected !== 'UPDATE 1') {
+    throw new Error(`🚨 写入[${purpose}]未按预期影响 1 行（psql 回执 = ${JSON.stringify(affected)}）—— 请人工核对并上报。`);
+  }
+  const now = readProductionNo();
+  const ok = value === null ? now.isNull : now.raw === value;
+  if (!ok) {
+    throw new Error(
+      `🚨 写入[${purpose}]后校验失败：期望 ${JSON.stringify(value)}，实际 ${JSON.stringify(now.raw)}（isNull=${now.isNull}）。\n` +
+      `  ⚠️ 库上可能留下了残留，**必须上报主线**，不要重试掩盖。`);
+  }
+  console.log(`[写库:${purpose}] ✅ ${HERO_EDIT}.production_no = ${JSON.stringify(value)}`);
+}
+// ─────────────────────────── 接口层（A-01~A-04） ───────────────────────────
+
+/** 直连后端的匿名请求上下文（AC-15 的 401 必须匿名打，走前端代理会带上 cookie）。 */
+export async function anonymousApi(): Promise<APIRequestContext> {
+  return pwRequest.newContext({ baseURL: BACKEND_URL });
+}
+
+/** 直连后端 + 指定角色登录后的请求上下文（鉴权是 **Cookie** 不是 Bearer，回归执行手册 §1 实证）。 */
+export async function apiAs(role: RoleKey): Promise<APIRequestContext> {
+  const { username, password } = credOf(role);
+  const ctx = await pwRequest.newContext({ baseURL: BACKEND_URL });
+  const res = await ctx.post('/api/cpq/auth/login', { data: { username, password } });
+  const body = await res.text().catch(() => '');
+  expect(res.ok(),
+    `接口层登录失败 role=${role} user=${username} status=${res.status()} body=${body.slice(0, 200)}\n` +
+    `  429 = 登录限流（30 次/分/IP，测试基础设施问题）；其它码需区分「口令不对」（环境缺陷）与「鉴权坏了」（产品缺陷）`)
+    .toBe(true);
+  return ctx;
+}
+
+// ─────────────────────────── 🚨 DB 同一性守卫（2026-09-04 事故后新增） ───────────────────────────
+
+/**
+ * 🚨 **断言「页面后端连的库」与「断言查的库」是同一个库。**
+ *
+ * ── 为什么需要它（2026-09-04 真实事故）──
+ *   本套断言用的是不变量形式「页面总数 == 同一时刻库中 count(*)」——
+ *   这个形式是为了抗共享库漂移，**但它引入了一个新维度：哪个库**。
+ *   实测踩到：借用的临时后端 `:8199` 连的是**克隆库**，而 helpers 的 `PW_DB`
+ *   默认写死 `cpq_db_0724`（共享库）⇒ 两个 17 来自**不同的库**。
+ *   克隆库数据一致 ⇒ 数字碰巧相等 ⇒ **断言 PASS，但验证逻辑是错位的**。
+ *
+ *   ⚠️ 这类错位 **只会假绿不会假红**：两库一致时永远 PASS，
+ *   只有在两库不一致时才以「产品 bug」的面目爆出来。
+ *   而且**断言写得越严谨越容易中招** —— 写死绝对值 17 反而没这个问题。
+ *
+ *   ⚠️ 写侧更糟：UI 写克隆库、`finally` 的还原去 UPDATE 共享库（空转），
+ *   而 `afterAll` 的「无残留证明」读共享库 ⇒ 报「逐字节相同 ✅」。
+ *   **用来证明「没弄脏环境」的那条证据，本身也被同一个洞骗过去了。**
+ *
+ * ── 四步，第 ④ 步是这条守卫成不成立的分界 ──
+ *   ① 取后端侧的 `total`
+ *   ② 取 `PW_DB` 侧的 `count(*)`
+ *   ③ 不相等 → 硬失败
+ *   ④ 🚨 **验明正身（哨兵法）**：往 `PW_DB` 写一个高熵哨兵，
+ *      再**经页面后端的只读端点**读回来；读不到 ⇒ 不是同一个库。
+ *
+ *   🚨 **①②③ 在本次事故里同样会通过（42 == 42）—— 判别力为零。**
+ *   原因是克隆库与源库逐行一致，任何**只读**的比对都分辨不出它们；
+ *   **只有一次「变更」能区分**。所以 ④ 必须是写，且不做 ④ 就别做这条守卫 ——
+ *   那只会让人以为「已经有防护了」，比没有更糟。
+ *
+ * ── 哨兵为什么用 UPDATE 而不是 INSERT ──
+ *   备选是插一行 `PWDBPROBE-xxx` 再删。否决理由：
+ *     · INSERT/DELETE 会让 `ds_quote_material` 行数瞬时变化 ⇒ 撞坏别人正在跑的行数断言
+ *       与父任务 `assertNoWrite` 的表级指纹；
+ *     · 崩溃在 INSERT 与 DELETE 之间会留下一行**孤儿**，而清理它需要一条前缀条件，
+ *       前缀条件的命中面不如「等于某个主键」那么确定。
+ *   改用 UPDATE `HERO_EDIT` 的 `production_no`：
+ *     · 只碰**本套已获授权的那一行**（`test.md §1` 纪律 2）；
+ *     · 行数恒定不变；
+ *     · 清理条件就是它自己的主键 `material_no = 'S-1630010773'`，命中面恒为 1 行；
+ *     · 复用同一个带四道守卫的写入口 `setProductionNoInDb`。
+ */
+export async function assertSameDatabase(
+  opts: { __fsSkipSentinelWrite?: boolean } = {}
+): Promise<void> {
+  // 🔬 `__fsSkipSentinelWrite` **只给证伪实验用**（`product-hub-db-identity-fs.spec.ts`）：
+  //    跳过哨兵的写入、其余一字不改，于是步骤④ 必须失败。
+  //    这样证伪实验跑的是**这条守卫本身**，而不是一份平行实现 —— 平行实现证明不了正品有牙。
+  const dbName = process.env.PW_DB || 'cpq_db_0724';
+  const ctx = await apiAs('SYSTEM_ADMIN');
+  try {
+    const url = '/api/cpq/dataset/quote/parts?page=0&size=500';
+
+    // ① 后端侧
+    const res1 = await ctx.get(url);
+    const raw1 = await res1.text();
+    if (!res1.ok()) {
+      throw new Error(`🚨 DB 同一性守卫无法执行：GET ${url} → ${res1.status()}  body=${raw1.slice(0, 300)}`);
+    }
+    let body1: any;
+    try { body1 = JSON.parse(raw1); } catch {
+      throw new Error(`🚨 DB 同一性守卫无法执行：响应不是 JSON。body=${raw1.slice(0, 300)}`);
+    }
+    const backendTotal = body1?.data?.total ?? body1?.total;
+
+    // ② PW_DB 侧
+    const dbTotal = Number(sqlOne('SELECT count(*) FROM ds_quote_material'));
+    console.log(`[DB同一性] ①后端 total=${backendTotal}  ②${dbName} count(*)=${dbTotal}`);
+
+    // ③ 粗差拦截（能抓「读错表 / 完全不同的库」，抓不到克隆库）
+    if (backendTotal !== dbTotal) {
+      throw new Error(
+        `🚨 DB 同一性守卫失败（步骤③）：后端 total=${backendTotal} ≠ ${dbName} 的 ${dbTotal} 行。\n` +
+        `  ⇒ 页面后端（PW_BACKEND_URL=${BACKEND_URL}）连的不是 PW_DB=${dbName}。\n` +
+        `  修法：把 PW_DB 指向后端实际连的库，或换一个连 ${dbName} 的后端。`);
+    }
+
+    // ③.5 🚨 阳性对照：先证明「这个观察通道看得见 HERO 行」。
+    //     少了这一步，④ 的「读不到哨兵」会有两种解释（不同库 / 通道压根看不见这行），
+    //     而失败信息会把后者说成前者 —— 把环境问题误报成同一性问题。
+    const itemsOf = (b: any): any[] => (b?.data?.items ?? b?.items ?? []) as any[];
+    const heroOf = (b: any) => itemsOf(b).find(it => JSON.stringify(it).includes(`"${HERO_EDIT}"`));
+    const heroBefore = heroOf(body1);
+    if (!heroBefore) {
+      throw new Error(
+        `🚨 DB 同一性守卫无法执行（步骤③.5 阳性对照失败）：后端返回的 ${itemsOf(body1).length} 条里` +
+        `找不到 ${HERO_EDIT}。\n` +
+        `  ⇒ 通道本身看不见这一行（分页/过滤/字段命名问题），此时步骤④ 的结论没有意义。`);
+    }
+    console.log(`[DB同一性] ③.5 阳性对照 ✅ 后端能看到 ${HERO_EDIT}：${JSON.stringify(heroBefore)}`);
+
+    // ④ 🚨 验明正身：哨兵
+    const orig = readProductionNo().raw;
+    const sentinel = `PWDBPROBE-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    try {
+      if (opts.__fsSkipSentinelWrite) {
+        console.warn('[DB同一性] 🔬 证伪模式：**跳过哨兵写入**，步骤④ 应当失败');
+      } else {
+        setProductionNoInDb(sentinel, 'DB 同一性哨兵');
+      }
+      const res2 = await ctx.get(url);
+      const raw2 = await res2.text();
+      const body2 = JSON.parse(raw2);
+      const heroAfter = heroOf(body2);
+      const seen = JSON.stringify(heroAfter ?? {}).includes(sentinel);
+      console.log(`[DB同一性] ④哨兵=${sentinel}  后端读回 HERO=${JSON.stringify(heroAfter)}  命中=${seen}`);
+      if (!seen) {
+        throw new Error(
+          `🚨 **DB 同一性守卫失败（步骤④ 验明正身）** —— 这正是 2026-09-04 那次错位。\n` +
+          `  哨兵已写入 PW_DB=${dbName} 的 ${HERO_EDIT}.production_no = ${sentinel}\n` +
+          `  但页面后端（${BACKEND_URL}）读回的仍是 ${JSON.stringify(heroAfter)}\n` +
+          `  ⇒ **后端连的不是 ${dbName}**（很可能是它的一个克隆库）。\n` +
+          `  ⚠️ 注意 ①②③ 刚刚是**通过**的（${backendTotal} == ${dbTotal}）—— ` +
+          `克隆库逐行一致，只读比对分辨不出，只有这一步能分辨。\n` +
+          `  🚫 不要因为「数字对得上」就放行：此时所有「页面 == 库」断言都是错位的，` +
+          `写用例的还原更会写错库、而「无残留证明」会给出假的"干净"结论。`);
+      }
+      console.log(`[DB同一性] ✅ 验明正身：后端 ${BACKEND_URL} 与 PW_DB=${dbName} 是同一个库`);
+    } finally {
+      // 哨兵自清理：条件落在哨兵自己的主键上，命中面恒为 1 行，🚫 无任何反向条件。
+      // 证伪模式没写过，就不需要复位（也不该白写一次库）。
+      if (!opts.__fsSkipSentinelWrite) setProductionNoInDb(orig, '哨兵复位');
+    }
+  } finally {
+    await ctx.dispose();
+  }
 }

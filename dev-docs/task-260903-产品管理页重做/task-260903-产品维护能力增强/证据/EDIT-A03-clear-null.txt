@@ -1,0 +1,3 @@
+PUT null → 200  库中 isNull=true
+PUT ''   → 200  库中 isNull=true isEmptyString=false
+📌 空串行为为实测记录，供与 task-260902 对齐（api.md C-1 第 5 条）
