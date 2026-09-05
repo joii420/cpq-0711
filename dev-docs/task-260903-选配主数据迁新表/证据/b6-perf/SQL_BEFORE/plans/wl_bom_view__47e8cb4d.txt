@@ -1,0 +1,30 @@
+SET
+Sort  (cost=26.24..26.24 rows=1 width=203) (actual time=0.258..0.260 rows=26 loops=1)
+  Sort Key: mbt.seq_no
+  Sort Method: quicksort  Memory: 28kB
+  Buffers: shared hit=182
+  ->  Nested Loop Left Join  (cost=1.01..26.23 rows=1 width=203) (actual time=0.052..0.222 rows=26 loops=1)
+        Join Filter: ((pm.process_no)::text = (mbt.operation_no)::text)
+        Rows Removed by Join Filter: 144
+        Buffers: shared hit=179
+        ->  Nested Loop Left Join  (cost=1.01..25.14 rows=1 width=174) (actual time=0.047..0.172 rows=26 loops=1)
+              Buffers: shared hit=153
+              ->  Nested Loop Left Join  (cost=0.74..16.79 rows=1 width=164) (actual time=0.042..0.119 rows=26 loops=1)
+                    Buffers: shared hit=93
+                    ->  Index Scan using uq_material_bom_item on material_bom_item mbt  (cost=0.46..8.48 rows=1 width=127) (actual time=0.033..0.069 rows=26 loops=1)
+                          Index Cond: (((system_type)::text = 'PRICING'::text) AND ((customer_no)::text = '_GLOBAL_'::text))
+                          Filter: ((component_no)::text = ANY ('{00005,00006,00168,00256,1630010773,2101110225,2111410069,2120011658,2120011659,3110520789,3110520790,3111320634,3111320635,3111320636,3111320637,0028-2609000012,3120011203,3110520422,00144}'::text[]))
+                          Rows Removed by Filter: 42
+                          Buffers: shared hit=23
+                    ->  Index Scan using uq_material_master_no on material_master mm  (cost=0.28..8.29 rows=1 width=49) (actual time=0.001..0.001 rows=1 loops=26)
+                          Index Cond: ((material_no)::text = (mbt.component_no)::text)
+                          Buffers: shared hit=70
+              ->  Index Scan using material_recipe_code_key on material_recipe mr  (cost=0.27..8.29 rows=1 width=15) (actual time=0.002..0.002 rows=0 loops=26)
+                    Index Cond: ((code)::text = (mbt.component_no)::text)
+                    Buffers: shared hit=60
+        ->  Seq Scan on process_master pm  (cost=0.00..1.04 rows=4 width=16) (actual time=0.000..0.001 rows=6 loops=26)
+              Buffers: shared hit=26
+Planning:
+  Buffers: shared hit=572
+Planning Time: 2.438 ms
+Execution Time: 0.357 ms

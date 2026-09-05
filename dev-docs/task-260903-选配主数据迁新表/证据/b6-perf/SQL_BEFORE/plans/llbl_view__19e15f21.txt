@@ -1,0 +1,24 @@
+SET
+Sort  (cost=25.09..25.10 rows=1 width=120) (actual time=0.109..0.110 rows=8 loops=1)
+  Sort Key: up.seq_no
+  Sort Method: quicksort  Memory: 26kB
+  Buffers: shared hit=59
+  ->  Nested Loop Left Join  (cost=0.96..25.08 rows=1 width=120) (actual time=0.042..0.087 rows=8 loops=1)
+        Buffers: shared hit=56
+        ->  Nested Loop Left Join  (cost=0.69..16.73 rows=1 width=88) (actual time=0.036..0.074 rows=8 loops=1)
+              Buffers: shared hit=40
+              ->  Index Scan using uq_unit_price on unit_price up  (cost=0.41..8.43 rows=1 width=57) (actual time=0.028..0.056 rows=8 loops=1)
+                    Index Cond: (((system_type)::text = 'PRICING'::text) AND ((price_type)::text = 'INCOMING_OTHER'::text))
+                    Filter: (cost_ratio IS NOT NULL)
+                    Rows Removed by Filter: 11
+                    Buffers: shared hit=16
+              ->  Index Scan using uq_material_master_no on material_master mi  (cost=0.28..8.29 rows=1 width=43) (actual time=0.002..0.002 rows=1 loops=8)
+                    Index Cond: ((material_no)::text = (up.code)::text)
+                    Buffers: shared hit=24
+        ->  Index Scan using material_recipe_code_key on material_recipe mr  (cost=0.27..8.29 rows=1 width=15) (actual time=0.001..0.001 rows=0 loops=8)
+              Index Cond: ((code)::text = (up.code)::text)
+              Buffers: shared hit=16
+Planning:
+  Buffers: shared hit=525
+Planning Time: 2.172 ms
+Execution Time: 0.197 ms

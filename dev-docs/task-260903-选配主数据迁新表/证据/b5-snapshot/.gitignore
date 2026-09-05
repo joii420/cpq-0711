@@ -1,0 +1,9 @@
+# 逐段结果集原文共 381MB，只在本机做 BEFORE/AFTER 定位差异用，不进 git。
+# 真正的可核对证据是 manifest.tsv（每段 sha256 + 行数 + 列数）与 guard_*.txt（并发写入水位），
+# 二者已足以复核「改造前后逐字相同」这一结论。
+#
+# ⚠️ 2026-09-04 补：原规则只列了 BEFORE/BEFORE2，而后续新增的
+#    AFTER / AFTER2 / PREIMPORT / POSTIMPORT 没被挡住（3340 个文件、381MB 差点进 git）。
+#    改用通配，新增快照目录自动生效。
+*/data/
+*/views.csv
