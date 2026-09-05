@@ -87,6 +87,27 @@ ls | grep '\.hold$' && echo '❌ 还有残留' || echo '✅ 已还原'
 查**共享库** `flyway_schema_history` 的 `max(version)`，🚫 不要只 `ls` 目录
 （目录里看不到别人已应用未合并的号）。
 
+### ①-b 删掉 V416 的「借用副本」
+
+2026-09-04 测试复跑被 `Detected applied migration not resolved locally: 416` 挡住。
+V416 属 **task-260819**（`feat/task-260819-sql-view-builder`），17:58 从他们分支直接应用到
+共享库，**master 上没有**，所以 `git merge master` 解决不了。
+
+处置：把他们的文件**按未跟踪副本**拷进本 worktree 的 `db/migration/`，仅供本地测试构建解析。
+🚫 **它不属于本任务，绝不能跟着本分支进 master。**
+
+```bash
+rm -f cpq-backend/src/main/resources/db/migration/V416__task260819_v9_bridge_narrow_form.sql
+git status --porcelain -- cpq-backend/src/main/resources/db/migration/   # 应无 V416 任何痕迹
+```
+
+⚠️ 提交一律用 `git commit -- <显式路径>`，**永远不要 `git add -A`** —— 那会把这份借用副本
+连同别人的迁移一起提进本分支。
+
+⚠️ **V416 必须由 task-260819 自己合进 master**。若本任务先合而 V416 仍不在 master，
+master 的 8081 重启会因同样的 validate 失败而起不来（V410/V411 那次事故的同型）。
+合并前查一次：`git ls-tree -r --name-only master -- cpq-backend/src/main/resources/db/migration | grep V416`
+
 ### ② 合并顺序：B 必须先于 A 上线
 
 A 先于 B 上线 = 选配产品在报价单里渲染为空。两者若同批合并，确认 B 的迁移号小于 A。
