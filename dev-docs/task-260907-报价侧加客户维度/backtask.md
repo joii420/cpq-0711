@@ -97,6 +97,40 @@ SRC=<worktree>                                     ← 命中在这
 ⇒ 合并日**不要依赖热重载**，显式重启 8081，让 Flyway 走冷启动路径
 （冷启动的顺序安全性已实证，见下方「合并日操作」；**热重载的顺序未验证**）。
 
+### ①c 🚨 差集必须查 **classpath**，不是源码树（2026-09-07 并发会话真实事故）
+
+```bash
+# Flyway 解析的是 classpath，不是 src/。两个都要查，且以 classpath 为准。
+W=/home/joii/project/cpq/.claude/worktrees/task-260907-customer-dim
+SRC=$W/cpq-backend/src/main/resources/db/migration
+CLS=$W/cpq-backend/target/classes/db/migration
+echo "--- classpath 有而源码树没有的（= 会被静默应用的幽灵）---"
+comm -13 <(ls "$SRC" | sort) <(ls "$CLS" 2>/dev/null | sort)
+```
+
+🚨 **并发会话 2026-09-07 09:31:05 的真实事故**：用户按批准删掉了源文件、该会话也复查过
+「共享库顶版 422 / V423 记录 0」—— **两项都属实**。但 **`target/classes/db/migration/` 里的编译产物没被清**，
+后端代理跑 `mvnw test` 时 Flyway 从残留产物把它落进了共享库，且它**不在 master** ⇒ 孤儿迁移。
+
+⇒ 📌 **判据提炼（对方自己的话，照抄）**：
+> **我查的是代理指标（源文件在不在），不是那个东西本身（classpath 里有没有）。**
+
+这与本文档里「数字对上 ≠ 内容对上」「判据落在恒为 1 的维度上是零证据」是**同一族** ——
+**今天这一族至少咬了双方五次，每次换一个伪装。**
+
+### 🔴 改号（renumber）流程 —— 本坑的最高危形态
+
+**整体改号时，旧号文件仍留在 `target/classes/db/migration/`，与新号一起被应用**（源码树看起来完全正常）。
+且旧号与新号**内容一模一样**，重复执行的症状五花八门（撞唯一键 / 重复插入 / 无害但污染历史）。
+
+⇒ **改号必须按此序，🚫 不许靠「记得清理」**：
+```bash
+rm -rf "$CLS"                      # ① 先清 classpath 产物
+git mv <旧号> <新号>  …            # ② 再改号
+(cd cpq-backend && ./mvnw -o -q clean test-compile)   # ③ 重编
+comm -13 <(ls "$SRC"|sort) <(ls "$CLS"|sort)          # ④ 差集必须为空
+```
+
 ### ①b 兜底守卫：起任何**连共享库**的服务前先比对（不能替代 ①）
 
 ```bash
