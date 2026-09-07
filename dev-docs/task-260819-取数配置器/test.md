@@ -353,26 +353,54 @@ git show HEAD:"dev-docs/task-260902-报价与核价建表与导入方案新规�
 | AC-103 | `V9SeedReplayTest.ac103_seedGeneratorIsReplayable` | 脚本层 | stdout 打印 已提交 md5 / 重跑 md5 / 产出来源 |
 | AC-104 | `V9SemanticGraphSeedTest.ac104_nodeColumnsMatchInformationSchema` | 数据层 | stdout 打印 45 表清单、进图数、逐节点列差集 |
 | AC-105 | `V9SemanticGraphSeedTest.ac105_historyTablesNotInGraph` | 数据层 | stdout 打印 `_history` 表数（阳性对照）+ 命中清单 |
-| AC-106 | `V9SemanticGraphSeedTest.ac106_tabViewsIsomorphicAcrossDialects` | 数据层 | stdout 打印三方言 tab_type / 费用类 variant_key 全清单 |
+| AC-106 | `V9SemanticGraphSeedTest.ac106_tabViewsIsomorphicAcrossDialects` | 数据层 | stdout 打印三方言 tab_type / 费用类 variant_key 全清单。🔄 **2026-09-06 随 V417 改断言**：非费用类页签清单里 BOM 树页签用**库值 `'BOM'`**（D-39：存储值 `BOM` / 显示名「BOM 树」）|
 | AC-107 | `V9CompileArtifactTest.ac107_noV6ScopePredicates` | 接口层 | stdout 打印完整产物 SQL |
 | AC-108 | `V9CompileArtifactTest.ac108_axisNarrowingPerDialect` | 接口层 | 三方言产物 SQL 全文（正反两向断言） |
 | AC-109 | `V9CompileArtifactTest.ac109_versionSwitchArtifact` | 接口层 | 两个 COST_* 的带版本页签产物 SQL |
 | AC-110 | `V9CompileArtifactTest.ac110_aliasRulePerDialect` | 接口层 | 三方言 `declaredColumns` 实际值 |
 | AC-111 | `V9CompileArtifactTest.ac111_partNoBridge` | 接口层 + 数据 | 桥重叠行清单 + 产物 SQL + preview 响应体 |
 | AC-112 | `V9CompileArtifactTest.ac112_bridgeMissingRowYieldsZeroRowsNotError` | 接口层（边界） | preview 响应体（rowCount + diagnostics 原文） |
-| AC-113 | `V9ZeroRegressionTest.ac113_legacyBuilderViewsRemoved` | 数据层 | 总数/`builder_config` 计数 + md5 差异清单 |
+| AC-113 | `V9ZeroRegressionTest.ac113_legacyBuilderViewsRemoved` | 数据层 | 🔄 **2026-09-06 三段全改不变量形态**（原判据自毁，详见下方 §自毁判据）：①基线 150 个存量视图上 `builder_config` 命中数（≠ 全表 count）②引用 AC-122①（迁移零写）③比较集 = 基线 ∩ 非 V411，逐字节 md5 |
 | AC-115 | `task260819v9-dataset-selector.spec.ts` › `AC-115: …` | E2E | 📎 截图归档到 `证据/e2e/AC-115-数据集选择器三选一.png` |
 | AC-116 | 同上 › `AC-116: …` + `AC-116（序列）: …` | E2E（单点+边界+序列） | 📎 `证据/e2e/AC-116-*.png` + stdout 的两个集合 |
 | AC-117 | `V9EndToEndPreviewTest.ac117_costBasicEndToEnd` | 端到端 | stdout「紧邻取基准 + 预览行数」两行 |
 | AC-118 | `V9VersionAndDriftTest.ac118_mainTableHoldsOnlyCurrentVersion` | 数据层 | 逐表 rows/violations 打印 |
 | AC-119 | `V9EndToEndPreviewTest.ac119_costDetailEndToEnd` | 端到端 | 同 AC-117 |
-| AC-120 | `V9EndToEndPreviewTest.ac120_quoteEndToEndAfterSelfImport` | 端到端 | import 响应 + 自灌行数 + 预览行数 + 「别人的行未变」摘要 |
+| AC-120 | `V9EndToEndPreviewTest.ac120_quoteEndToEndAfterSelfImport` | 端到端 | import 响应 + 自灌行数 + 预览行数 + 「别人的行未变」摘要。🔄 **2026-09-06 模板改从 `git show HEAD:<path>` 取**（工作区副本被企业 DLP 加密，头 `877d1c49`，POI 抛 ZipException）。❌ **当前仍判【未验证】**：DLP 层已排除，但夹具把模板第 2 行（说明/值域行）当数据行 → 导入 400 |
 | AC-121 | `V9ValidationAndCiTest.ac121_edgeCardinalityCiAssertion` | 接口层（**反证**） | 三段：绿 → 400 原文（含表/列名）→ 绿 |
-| AC-122 | `V9ZeroRegressionTest.ac122_noSqlTemplateChangedByThisTask` + **E2E 双 spec** | 数据层 + E2E | md5 逐行 diff；E2E 需另跑 `quotation-flow` / `composite-product-flow` |
+| AC-122 | `V9ZeroRegressionTest.ac122_thisTaskWroteNoViewSql` + **E2E 双 spec** | 数据层 + E2E | ①迁移零写（静态文件判据）②比较集 = 基线 ∩ 非 V411 逐字节 md5（🔄 2026-09-06 由「库 − V411」改来，原写法把夹具运行时新建的视图判成漂移 ⇒ 自毁）③E2E 需另跑 `quotation-flow` / `composite-product-flow`，**仍未跑** |
 | AC-123 | `V9ValidationAndCiTest.ac123_physicalExistenceCheckOnSave` | 接口层（**反证**） | 两段：400 原文（点名表+列）→ 200 |
 | AC-124 | `V9VersionAndDriftTest.ac124a_dedicatedQuerySemantics`（数据层）<br>`…ac124b_endpointDoesNotRunTabViewSql`（端点层 + 反向） | 数据层 ✅ / 端点层 ❌ | ①集合相等打印；②**当前无夹具，判「未验证」** |
 | AC-125 | `V9VersionAndDriftTest.ac125_versionViewsHaveNoColumnDrift`（不变量）<br>`golden/ac125-drift-probe.sh`（启动期自检反证，**未执行**） | 数据层 ✅ / 启动期 ❌ | 逐视图列差集打印；反证需主线批准后跑脚本 |
 | AC-126 | `V9VersionAndDriftTest.ac126_versionColumnMustBeCastToText` | 数据层（**反证**） | 反证报错原文 + 正向行数 + 存量兜底清单 |
+
+### 🚨 自毁判据（2026-09-06 修复记录）
+
+**症状**：`AC-113①` / `AC-113③` / `AC-122②` 三段在代码一个字没改的情况下由绿转红，且**第二遍比第一遍更红**。
+
+**根因**：判据断言的是「`component_sql_view` 这张表的当前状态」，而这张表被**本套测试自己的夹具**实时写入 ——
+`SemanticGraphTestSupport`（`Sec3x` 家族）与 `Sec34PriceStrategyTest` 的 `@BeforeEach` 每跑一次就新建
+`SQLVB-TEST-*` 组件 + `builder_*` 视图（实测 100% 归它）。⇒ **跑测试这个动作本身，就会创建被断言禁止的行**。
+与 `D-107` / `D-118` / `D-129` 同一个病：**判据绑在「我控制不了的数字」上**。
+
+**处置**（延续 `D-129` 对 `AC-113②` 的方向：从「表的当前状态」改问「本任务是否写过」）：
+
+| 段 | 旧判据 | 新判据 | 为什么不再自毁 |
+|---|---|---|---|
+| `AC-113①` | 全表 `builder_config IS NOT NULL` 计数 = 0 | **基线登记的 150 个存量视图**里命中数 = 0 | 夹具新建的行用 `gen_random_uuid()`，id 必然不在基线里 ⇒ 进不了问责集合 |
+| `AC-113②` | `sql_view` 总数 = 150 | 引用 `AC-122①`（迁移零写，**静态文件判据**） | 只读迁移源码，完全不看库当前状态 |
+| `AC-113③` / `AC-122②` | 比较集 = 库 − V411 备份表 | 比较集 = **基线 ∩ 非 V411**（从基线侧遍历） | 同上；新建行进不了比较集，而要防的回归（改存量视图 SQL）其 id **就在**基线里，仍被钉死 |
+
+**自证**（🚫 首次 PASS 不算数）：
+1. **连跑两遍 + 中间灌残留**：run1 绿 → 跑 `Sec34PriceStrategyTest`（`builder_config` 非空 8→10、视图 156→158）→ run2 **仍绿**，且日志显式打印「基线之外 11 个，故意不进比较集」。
+2. **证伪实验**（临时篡改基线，跑完逐字节还原并经 `md5sum` + `git status` 双重核对）：
+   - 注入 A：把一个 `builder_config` 非空视图的 id 塞进基线 → `AC-113①` **硬失败**，点名该视图。
+   - 注入 B：改坏比较集内一条 md5 → `AC-113③` 与 `AC-122②` **两条同时硬失败**。
+   ⇒ 判据确实在执行，且确实能红。
+
+**⚠️ 一并暴露的既有问题**：基线文件 `golden/v9-sqlview-md5-baseline.tsv` 的 150 行里有 **3 行本身是测试产物**
+（`builder_2214b8f7623c` / `builder_46b02fae6ccb` / `test_pricebase_view`），抓基线时被一起框了进去，现已从库中清掉。
+故「比较集里已从库消失的行」只打印不断言 —— 断言它们「必须还在」等于要求永远不清测试残留，**又是一条自毁判据**。
 
 ### 4.1 🚨 本轮登记：用例会动的全局状态（`testing.md` §4.3）
 
@@ -382,6 +410,7 @@ git show HEAD:"dev-docs/task-260902-报价与核价建表与导入方案新规�
 | `V9ValidationAndCiTest.ac123` | `component_sql_view` 插 1 行（自建组件下） | `@AfterAll` 按组件正向条件删 |
 | `V9ValidationAndCiTest.ac121` | `semantic_edge` + `semantic_edge_key` 新增 1 条边 | `finally` 按 edge id 删，**删后再断言残留=0** |
 | `V9EndToEndPreviewTest.ac120` | `ds_quote_material` 插入若干 `material_no` 前缀 `V9T-` 的行 | `@AfterEach` `WHERE material_no LIKE 'V9T-%'`；导入前后各断言一次「别人的 42 行一个字节没变」 |
+| 🆕 `e2e/task260819v9-dataset-selector.spec.ts`（AC-115 / AC-116，3 条用例） | **每条用例新建 1 个 `component`**（`name` 前缀 `V9T-`）—— 2026-09-04 校准后的入口路径要求先建组件才能进「取数配置」Tab | ⚠️ **当前未自动清理**：Playwright 侧没有 DB 连接。2026-09-04 实跑共留下 **8 个** `V9T-*` 组件（`COMP-0796/0797/0799/0800/0815/0817/0823/0825`）。<br>清理动作 = `DELETE FROM component WHERE name LIKE 'V9T-%'`（正向条件），🚨 **属 §3.2 数据销毁，须主线报批后执行，测试工程师无批准权** —— 本轮只清点未执行。 |
 
 🚫 全套用例**不含** `TRUNCATE` / `DROP` / 无 `WHERE` 的 `DELETE`｜`UPDATE`。
 🚫 全套用例**不用** `Assumptions.assumeTrue` / `test.skip` —— 环境前置不满足一律硬失败并注明「未验证」。
@@ -390,7 +419,7 @@ git show HEAD:"dev-docs/task-260902-报价与核价建表与导入方案新规�
 
 | 用例 | 依据 | 为什么它不能省 |
 |---|---|---|
-| `V9CompileArtifactTest.contractV91_unknownDialectMustFailLoudly` | `api.md` v9-1「未知方言必须显式 400，不许静默回落」 | **AC-107 / AC-108 在静默回落下会照样通过** —— 它们只断言产物里没有 `system_type`/`customer_no`，**不断言方言选对了**。缺这条，「用户选了基础核价、后端按报价编译、全程不报错」这个失败模式没有任何用例盖得住。<br>覆盖：`COSTING`（V6 旧值）/ 拼错值 / 小写 `quote` 三种都要 400 且点名收到值与合法值；不传 `dialect` 缺省 `QUOTE` 且轴收窄用 `material_no`。 |
+| `V9CompileArtifactTest.contractV91_unknownDialectMustFailLoudly` | `api.md` v9-1「未知方言必须显式 400，不许静默回落」 | **AC-107 / AC-108 在静默回落下会照样通过** —— 它们只断言产物里没有 `system_type`/`customer_no`，**不断言方言选对了**。缺这条，「用户选了基础核价、后端按报价编译、全程不报错」这个失败模式没有任何用例盖得住。<br>🔄 **2026-09-04 随 `api.md` §v9-1 的 D-109 放宽同步改判据**：**大小写与首尾空白容错**（服务端 `trim + 大写`归一后比对），其余一律显式 400。<br>⇒ 覆盖改为：**坏值** `COSTING`（V6 旧值）/ `COST_BASIC_TYPO`（拼错）两种必须 400 且点名收到值与合法值；**正向** `quote` 与 `" QUOTE "` 必须 **200 且真的按 QUOTE 编译**（轴收窄用 `material_no`、且不得出现核价侧的 `production_no` 轴收窄）—— 🔑 只断言 200 不够，**静默回落 QUOTE 时也会 200**，区分不出「归一成功」与「认不出就回落」；不传 `dialect` 缺省 `QUOTE`。<br>~~小写 `quote` 也要 400~~ **已作废**（D-109：容错不改变语义、不会导致「选错数据集」，🚫 不为对齐文档去收紧实现）。 |
 
 ### 4.3 ⚠️ 写用例时踩到、已规避的两个坑（留痕）
 
@@ -405,6 +434,84 @@ git show HEAD:"dev-docs/task-260902-报价与核价建表与导入方案新规�
 | # | 缺口 | 原因 | 需要谁裁决 |
 |---|---|---|---|
 | G-1 | **AC-124 端点层 + 反向断言** | 现存 150 个视图引用 `ds_*` 的 = **0**（N-16 明确不重绑 107 个存量视图）⇒ 没有一张核价单能走到新数据集的版本列表路径。且 `pg_stat_statements` 在共享库**未安装**（`pg_extension` 只有 `plpgsql`），装它要改 `shared_preload_libraries` + 重启 PG = 共享环境变更（§3.2） | 主线：① 是否造一张绑新数据集组件的核价单夹具；② 反向取证走「实现暴露调用计数」还是「克隆库开 `log_statement=all`」 |
-| G-2 | **AC-125 的「启动期自检不一致则启动失败」** | 证伪它要 `ALTER TABLE ds_cost_*`，属 §3.2 契约销毁 + `backtask` 全局约束③ | 主线：批准后跑 `golden/ac125-drift-probe.sh`（克隆库方案，脚本已备，含建库/删库两处报批点） |
+| ~~G-2~~ | ~~**AC-125 的「启动期自检不一致则启动失败」**~~ | ✅ **2026-09-03 关闭** —— `cpq-backend #2` 已在克隆库 `cpq_b42_flyway` 上完成 A/B 实证（A 轮无漂移正常启动 + 日志「26 张 `v_<主表>_all` 逐列与主表双向一致」；B 轮注入 `ALTER TABLE ds_cost_basic_material_bom ADD COLUMN drift_probe` 后 `IllegalStateException` 并点名缺列）。`golden/ac125-drift-probe.sh` 随之**作废**（头部已标注，🚫 不要执行、不要再报批），保留仅作方法留痕 | 无 |
 | G-3 | **AC-122 后半句「E2E 双 spec 不回归」** | 属既有 spec，不新写；需在有后端与前端 dev server 的环境下另跑 | 执行期：`npx playwright test e2e/quotation-flow.spec.ts e2e/composite-product-flow.spec.ts` |
 | G-4 | **AC-120 的前置风险已排除但仍设安全网** | 导入语义经 `DatasetUnversionedAcTest`（R-2 免版本表按主键 UPSERT）确认为 upsert，不会整表替换；用例仍在导入前后各断言一次「别的会话的 42 行一个字节没变」 | 无需裁决，留痕 |
+| **G-5** 🆕 | **`AC-127④` 零件 / 外购件两类页签在 v9 下不可用** | **外购件**：`SemanticCompiler:685` 发 V6 的 `characteristic='OUTSOURCED'`，`ds_quote_material_bom` 无此列 ⇒ 保存 **400**。**零件**：编译产物与 BOM 树**逐字节相同**、无任何类型过滤 ⇒ **静默返回全部 BOM 行**（比 400 更危险）。<br>**存量零影响（实测）**：`tab_type IN ('零件','外购件')` 共 31 个组件，`builder_config` 非空的只有 1 个（`AC-127` 测试件本身）；其余 30 个是手写视图，外购件 **15/15 走 `v_compat_material_bom_item` 兼容层、0 个直查 V6 表**，供数正常。 | **已裁决归 `task-260904` 第二批**（`D-134`，用户 2026-09-06 选 B）。闭合条件：`availableSources` + `availableTabTypes` 两处同步过滤 ⇒ 新建即退役；`semantic_tab_view` 那 6 行保持 ACTIVE 供存量打开；`characteristic` 硬编码由对方 `B-3` 移除。🚫 **不补跨表判别式** —— 料号类型是料号自身的属性（`ds_quote_material.material_type`），不是页签的属性。<br>**本任务不修，原样带过去。** |
+| **G-6** 🆕 | **`AC-127⑤` 错误文案未列出合法值域** | 传非法 `tabType` 确实 **400**（达标），但信息是 `未找到页签视图: X（数据集 QUOTE）` —— **点名了收到的值，没告诉用户合法的有哪些**。配置器使用者是实施顾问、不写 SQL，看不到值域只能猜。<br>另：`tabType=费用类` 不传 `variantKey` 也返回同一条文案，让人误以为「费用类不存在」（实为**缺变体**）。 | **本期修**（用户 2026-09-06 裁决「补文案」）⇒ `B-60`。🚫 值域必须从图按 dialect 实时取，**不许写死 6 个值** —— 写死即是 `D-39`/`D-128`/`D-133` 那个坑的第四次。 |
+
+
+### 4.5 🔄 2026-09-03 第二轮修订（主线审核回流）
+
+**AC-112 按 D-94 拆成两条，原用例只覆盖了 ②，已补 ①。**
+
+| AC | 形态 | 用例 | 断言 |
+|---|---|---|---|
+| **AC-112①** | 料号在核价侧**存在**、桥上无对应行（**常态**：`ds_quote_material` 42 行里只有 **22** 行填了 `production_no`，实测） | `V9CompileArtifactTest.ac112a_bridgeMissingRowKeepsAnchorRowWithNullBridgeColumn` | HTTP 200 + **`rowCount > 0`（锚点行仍在）** + **桥列每行都是 NULL/空** + 加桥列前后行数不变 |
+| **AC-112②** | 轴值在核价侧与桥上**都不存在**（边界） | `V9CompileArtifactTest.ac112b_unknownAxisValueYieldsZeroRowsNotError`（原 `ac112_…` 重命名） | HTTP 200 + `rowCount == 0` + `diagnostics` 非空 |
+
+**AC-112① 的三处设计**（都是为了挡住具体的假绿/误判形态）：
+1. **阳性对照**：先用「只有锚点列」的配置预览同一轴值，`rowCount` 必须 > 0。没有它，⑤ 万一 0 行分不清是「桥把行滤没了」还是「这个轴值本来就查不出」。阳性对照失败时失败信息直接指向 `partNo` 语义假设，🚫 不许据此说桥有问题。
+2. **桥列别名靠 `declaredColumns` 差集推导**（带桥列 − 只有锚点列 = 恰好 1 个），🚫 不按 AC-110 的别名规则手拼 —— 手拼等于把 AC-110 的结论当前提，AC-110 红了这里会跟着误判。
+3. **失败信息写明 D-76 语义**：`production_no` 为空是**正常业务状态**（「报价时生产料号可能还没定，是后期维护的，且可改」），表现为「未关联核价数据」，🚫 不是缺陷 —— 免得将来有人看到 NULL 就当 bug 报。
+   反过来，**桥列取到了值**才是重大缺陷（跨料号串数据），断言信息里也点明了。
+
+**其余同步**：
+- 迁移号 `V409/V410` → **`V412/V413`**：`V9SeedReplayTest` **从未写死文件名**（靠语义发现：`*.sql` 且含 `semantic` 且含 `seed`/`v9` ⇒ 只命中 `V413__…_semantic_graph_reseed.sql`；`V412__…_cost_all_version_views.sql` 不含 `semantic` 故不误匹配）。已补注释说明「不按号找，号是移动靶」。
+- 生成脚本实际落点 `dev-docs/task-260819-取数配置器/scripts/gen_v9_semantic_seed.py`，已加入发现目录首位；并新增 `--check` 退出码 0 的**补充**断言（⚠️ 补充不是替代 —— `--check` 是被测方自证，主判据仍是我自己算 md5 逐字节比对）。
+- 字段矩阵新增 `material_type` / 报价侧 `category_code`、删 `input_type`/`component_type`：**AC-104 无需改** —— 它做的是 `semantic_node_column` ⇄ `information_schema` 双向差集，自动跟随。
+- `V9SeedReplayTest:118` 的 `committed` 非 effectively final 编译错误：**上一轮末尾已修**（改用 `final String committedName`），本轮复核 `javac` 退出码仍为 0。
+
+### 4.6 🔄 2026-09-03 第三轮修订（主线审核回流 · D-93 / AC-125 证据）
+
+**① AC-104 已按 D-93 重写**（`V9SemanticGraphSeedTest.ac104_nodeColumnsMatchInformationSchema`），四条逐条落地、不写死任何数字：
+
+| AC-104 子句 | 用例里的断言 |
+|---|---|
+| ① 每物理源恰 1 个 `SHEET` 节点 | `GROUP BY physical_table HAVING count(*)<>1` 必须 0 行（`node_kind='SHEET'` 过滤） |
+| ② 列集合双向无差集（**排除派生列 `is_current`**） | 逐节点比 `semantic_node_column` ⇄ `information_schema`，两侧都先 `remove(is_current)`；两边任一为空先硬失败（防「都空 = 假通过」） |
+| ③ 物理源存在性 | 所有 `physical_table` 在 `information_schema` 可解析，缺失数 = 0（缺失时提示「指向 `v_<主表>_all` 的节点缺失 ⇒ B-44① 的 26 张视图没建」） |
+| ④ `ds_quote_material` 例外 | `SHEET` 恰 1 个 + `LOOKUP` ≥ 1 个，并打印按 `(node_kind, dialect)` 的分布 |
+| （补充，非 AC 四条） | §9.2 + N-18/N-19 的「不进图」4 张按**名字**断言为 0。⚠️ **N-20 的 `ds_*_plating_scheme` 在图内**（孤儿 SHEET、不挂页签），不在该名单 |
+
+**超出「删两处文字」的改动，此处交代**：原实现还有一条「进图主表集合 == 45 − 4 = 41」的**集合相等断言**，那正是「41 读法」的代码化身。新 AC 没有这一条 ⇒ **已整条删除**（不是只删文字）。同时把逐节点列比对从 `JOIN … ON node_key` 改为**按 `node_id`**，与 §4.3 坑 1 保持一致。
+
+**② AC-125 的「启动期自检」半边已闭合**，证据来自 `cpq-backend #2` 的克隆库 A/B 实证，已写进 `V9VersionAndDriftTest` 类头注释与失败信息（注明证据来源，避免它看起来还是缺口）。`golden/ac125-drift-probe.sh` 头部已标注**已作废、不要执行、不要报批**，按归档纪律保留留碑而非删除。
+
+**③ 类头保留一行历史碑**：「原文曾写『45 张…』，D-93 已改成断言不变量」—— 故意留着，防止下一个人把数字加回去。
+
+### 4.7 🆕 `AC-127` 主线亲验记录（2026-09-06）
+
+> `AC-127` 是 `D-128` 才补入的（原 25 条 AC 覆盖了配置器的每个零件，**唯独没覆盖主干「配好 → 保存成功」**）。
+> **它没有任何自动化用例** —— 本节是主线亲验的原始记录，闸门 B 以此为证据。
+> **环境**：worktree 临时后端 `8083`（= 本分支代码，非主仓），走**真实 REST**，两道启动期自检均通过
+> （`CostAllVersionViewSelfCheck` 26 张视图 ✅ / `SemanticGraphKeyValueSelfCheck` 3 条规则 134 行 ✅）。
+
+| 断言 | 结果 | 原始证据 |
+|---|---|---|
+| **①** `PUT /components/{id}/builder` `tabType=BOM` | ✅ | `HTTP 200` `{"builderVersion":1,"affectedTemplates":0}` —— **`V417` 之前此处必然 400**，这是 `D-128` 修复的直接证据 |
+| **②** `component.tab_type` 是**存储值** | ✅ | 查库：`tab_type='BOM'`（不是显示名「BOM 树」）；`part_no_field='投入料号'`、`row_key_fields=["投入料号","销售料号"]` |
+| **③** `component_sql_view` 新增 1 行、两列非空 | ✅ | `sql_view_name=builder_71221fecb995` · `builder_version=1` · `builder_config IS NOT NULL` · `length(sql_template)=297` |
+| **④** 六类逐个走一遍 | ⚠️ **4/6** | 主件 ✅200 · 材质元素 ✅200 · 费用类 ✅200（带 `variantKey=SELF_PROCESS_FEE`）· BOM ✅200 ／ **外购件 🔴400** · **零件 🔴200 但产物错** ⇒ **`G-5`** |
+| **⑤** 非法 `tabType` 必须 400 | ⚠️ **半达标** | `不存在的页签` / `BOM 树` / `COSTING` **三个全 400** ✅；但文案未列出合法值域 ⇒ **`G-6`**（`B-60` 本期修） |
+
+**④ 的两条失败详情**（均已裁决归 `task-260904`，见 `G-5` / `D-134`）：
+```
+外购件 → 400  SQL 校验失败：column dqmb.characteristic does not exist
+零件   → 200  但 sql_template 与 BOM 树逐字节相同：
+  SELECT dqmb.material_no AS hf_part_no, dqmb.input_material_no AS "_物料BOM_投入料号"
+  FROM ds_quote_material_bom dqmb
+  WHERE dqmb.material_no = ANY(:total_material_no)
+  ORDER BY dqmb.material_no, dqmb.input_material_no, dqmb.item_seq
+                                          ↑ 无任何类型过滤
+```
+
+#### ⚠️ 亲验过程中主线自己犯的两个错（留痕，避免后人照抄错误方法）
+
+1. **第一轮六类全跑失败，全是脚本的错，不是产品缺陷** —— 我复用同一个组件跑六类 ⇒ 主件撞 `409 IMPACT_CONFIRM_REQUIRED`（删列确认，**设计行为**）；挑列时写的是「`PART_NO` **或** `ROW_KEY`」⇒ 挑中只有 `ROW_KEY` 的列，撞保存期体检「缺少标识列」；费用类没传 `variantKey` ⇒ 404。
+   ⇒ **改成每类建独立组件 + 只挑 `PART_NO`/`PART_NAME` 列 + 补 `variantKey` 后才拿到真结果。**
+   🔑 **教训**：亲验脚本本身也会产生假失败，**下「产品有缺陷」的结论前先证明脚本是对的** —— 这与 `D-105`（按猜的形状解析响应）同源。
+
+2. **费用类差点被我误判成缺陷** —— 不传 `variantKey` 时返回 `groups=0 / variants=[]`，我据此写下「该页签无可用列」。**实为 HTTP 404**（正确行为，前端会先选变体），而我**没看 HTTP 码**就下了判断。补传 `variantKey=SELF_PROCESS_FEE` 后 8 个变体、字段齐全、保存 200。
+
+**残留**：本次亲验产生 `AC127-` 前缀组件 **8 个** + 视图 **5 个**，**0 处模板引用**，收口时与其它测试残留一并清理。
