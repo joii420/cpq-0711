@@ -128,3 +128,8 @@ ds_quote_material      47 行                                                   
 - 不改 V413 种子里 `FUNC_ELEMENT_PRICE` 的 AUX 挂载（有意为之 + `Sec34PriceStrategyTest` 5 条靠它 + 已应用共享库）
 - 共享 dev 库**不许跑清库型测试**；夹具用完按主键删净并给出「残留=0」证据
 - 迁移号是移动靶：取号前先看 master 最新；**已应用到共享库的迁移禁改名改号**
+- 🚨 **迁移一落共享库，文件必须当即进 master**（2026-09-07 本任务线实证，同型第三次）：
+  Flyway **只在启动时校验** ⇒ 落库的人自己看不见问题，**下一个新检出/新 worktree 的人启动即挂**：
+  `FlywayValidateException: Detected applied migration not resolved locally: <N>`
+  ⇒ 你无权 commit，所以**落库后立刻回报主线「V<N> 已应用，请推 master」**，别等整批做完。
+  🚫 撞到这个错时**不要**用 `-Dquarkus.flyway.validate-on-migrate=false` 长期绕过 —— 那关掉的正是发现同型事故的唯一信号。

@@ -91,10 +91,20 @@ public abstract class V9TestBase {
             "id", "version_no", "row_fingerprint", "source",
             "created_at", "created_by", "updated_at", "updated_by");
 
-    /** §9.2「不进图」的 4 张报价侧表：年降 3 张（N-18）+ 客户料号（N-19）。 */
-    protected static final List<String> NOT_IN_GRAPH = List.of(
-            "ds_quote_assembly_fee_annual", "ds_quote_incoming_annual", "ds_quote_annual_discount",
-            "ds_quote_customer_part");
+    /**
+     * §9.2「不进图」的报价侧表清单。
+     *
+     * <p>🪦→🚦 <b>2026-09-07 起为空</b>：原先的 4 张（年降 3 张 N-18 + 客户料号 N-19）
+     * 已由 <b>task-260907</b> 按<b>用户裁决</b>全部接入语义图（迁移 V418）——
+     * 用户 2026-09-07 原话：「数据源是物料的页签中要增加客户料号页签的内容」+
+     * 「缺 3 个数据源语义图：年降系数 / 组装加工费年降 / 来料年降」。
+     * ⇒ N-18 / N-19 两条决策<b>已被推翻</b>，不是这里漏了。
+     *
+     * <p>🚫 <b>不要把这个常量连同它的断言一起删掉</b>：它守的是「明确决定不进图的表真的没进图」，
+     * 将来再出现这类决策时直接往里加一行即可；空列表时下方断言退化为空跑，
+     * {@code ac104_nodeColumnsMatchInformationSchema} 里已有对应说明。
+     */
+    protected static final List<String> NOT_IN_GRAPH = List.of();
 
     /** AC-102 点名的 8 张 V6 表。 */
     protected static final List<String> V6_TABLES = List.of(

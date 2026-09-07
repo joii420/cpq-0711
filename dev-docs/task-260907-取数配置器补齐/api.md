@@ -43,9 +43,21 @@
 
 🚫 **前端不得按 `label` / `sourceKey` 硬编码判语义**，一律读 `semantic`（沿用 `task-260904` F-2 的既有纪律）。
 
-> 🔑 **`semantic` 必须是显式 `null`，不能是缺键**。前端用 `undefined`（清单未到手）与 `null`（已知是普通源）区分两种状态，
-> 缺键会让 PRICE 组隐藏判断永不生效。已实证本项目 Quarkus **未开 `NON_NULL`**（`conflictReason: null` / `lookupLib: null` 均作为显式键出现）——
-> 🚫 **本任务不得引入 `@JsonInclude(NON_NULL)`**，那会静默打断该设计。
+> 🔄 **2026-09-07 更正（原文写错了，由前端工程师指出、主线复核确认）**：
+> 原文写「`semantic` 必须是显式 `null` 不能是缺键，缺键会让 PRICE 组隐藏判断永不生效」—— **不成立**。
+> 实现是 `SqlViewBuilderTab.tsx:784`：
+> ```ts
+> const semantic = selectedSource ? (selectedSource.semantic ?? null) : undefined;
+> ```
+> `??` 把 `undefined` 与 `null` **都**塌成 `null` ⇒ **键缺失照样得到 `null`，PRICE 组照常隐藏**。
+> `undefined` 的唯一来源是 **`selectedSource` 本身不存在**（当前坐标不在 `availableSources` 里），与 JSON 有没有这个键无关。
+>
+> ✅ **仍然保留的建议**（理由改写）：🚫 不引入 `@JsonInclude(NON_NULL)`。
+> 不是因为它会打断三态，而是因为**契约里声明为可空的字段应当稳定出现**，缺键会让「服务端没给」与「服务端给了 null」在调用方看来不可区分 ——
+> 本任务的前端恰好用 `??` 抹平了，但下一个消费方未必。
+>
+> 📌 **主线记账**：这个错误判断在 `task-260904` 期间就形成了，当时还把 Jackson 的 null 输出策略称作「前端三态设计的地基」并据此做了一轮实测。
+> 实测本身没错（Quarkus 确实未开 `NON_NULL`），**错在因果**——我把一个恰好成立的事实，当成了另一件事成立的原因。
 
 ### 1.3 `groups` —— 「物料」数据源新增一组（F-1，AC-1）
 
@@ -73,6 +85,15 @@
 | `ds_quote_incoming_annual` | 独立数据源「来料年降」 |
 
 ⇒ **该提示整条消失**（或 N=0）。
+
+> 🚨 **归属更正（2026-09-07，前端工程师指出）**：本节写在「`GET /field-tree` 响应内容变化」下，**读起来像后端产物 —— 错了**。
+> 该提示的数据源是**前端硬编码常量** `SqlViewBuilderTab.tsx:60` 的 `EXCLUDED_TABLES`，
+> **后端把 4 张表接进语义图不会让它消失**，必须前端改。
+> ⇒ 已由前端把 `QUOTE` 的 4 条清空（机制保留、注释写明去向）。
+>
+> 🚦 **合并前置**：该提示现在**无条件消失**，与后端是否真的接入 4 张表**没有耦合**。
+> 若 B-1/B-2 滑期，界面会既没有那 4 张表的字段、也没有「它为什么不在这儿」的解释，**且没有任何信号**。
+> ⇒ **合并前必须先确认 AC-1① 与 AC-11① 实测通过**（主线 2026-09-07 裁决，采纳前端工程师的风险提示）。
 
 ### 1.5 错误（不变）
 
@@ -131,9 +152,21 @@ WHERE dqm.material_no = ANY(:total_material_no)
 
 ---
 
-## 3. 组件列表接口 —— **新增一个响应字段**（F-2，AC-3）
+## 3. `GET /api/cpq/component-directories` —— **新增一个响应字段**（F-2，AC-3）
 
-> ⚠️ 端点路径与现有分页/过滤参数**一律不变**，仅在组件项上加字段。
+> ⚠️ 端点路径与现有参数**一律不变**，仅在组件项上加字段。
+
+🚨 **必须加在这条链路上，加错地方会静默失效**（2026-09-07 前端工程师指出，主线已复核）：
+
+```
+GET /api/cpq/component-directories
+  → ComponentDirectoryResource.tree()
+  → ComponentDirectoryDTO.components : List<ComponentDTO>      ← dataSourceLabel 加在这个 DTO
+```
+前端 `componentService.listDirectories`（`:186`）是**原样透传，无 mapper**。
+⇒ 若只加在别的组件列表端点（如 `GET /components`），**徽章会 222 个全显示「—」，且不报错、不告警**。
+
+> 📌 本文档原写「组件列表接口」而未点名端点 —— 这类含糊在本项目会稳定地变成「加了但没生效」。
 
 ### 3.1 新增字段
 

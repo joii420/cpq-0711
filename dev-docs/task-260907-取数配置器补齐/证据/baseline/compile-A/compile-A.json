@@ -1,0 +1,58 @@
+{
+ "ELEMENT_BOM": {
+  "declaredColumns": [
+   "hf_part_no",
+   "_物料与元素BOM_材质料号",
+   "_物料与元素BOM_组成含量（%）"
+  ],
+  "grain": [
+   "物料与元素BOM"
+  ],
+  "md5": "0fb3aa6bac2dc4ef5d22eccf8d17b701",
+  "rewriterCompatible": true,
+  "sql": "SELECT\n  dqeb.material_no AS hf_part_no,\n  dqeb.material_part_no AS \"_物料与元素BOM_材质料号\",\n  dqeb.content_pct AS \"_物料与元素BOM_组成含量（%）\"\nFROM ds_quote_element_bom dqeb\nWHERE dqeb.material_no = ANY(:total_material_no)\nORDER BY dqeb.material_no, dqeb.material_part_no, dqeb.element_code, dqeb.item_seq",
+  "warnings": []
+ },
+ "MATERIAL": {
+  "declaredColumns": [
+   "hf_part_no",
+   "_物料_销售料号",
+   "_物料_品名"
+  ],
+  "grain": [
+   "物料"
+  ],
+  "md5": "0c31f942a38cba1bf4b12f25af423aea",
+  "rewriterCompatible": true,
+  "sql": "SELECT\n  dqm.material_no AS hf_part_no,\n  dqm.material_no AS \"_物料_销售料号\",\n  dqm.material_name AS \"_物料_品名\"\nFROM ds_quote_material dqm\nWHERE dqm.material_no = ANY(:total_material_no)\nORDER BY dqm.material_no",
+  "warnings": []
+ },
+ "MATERIAL_BOM": {
+  "declaredColumns": [
+   "hf_part_no",
+   "_物料BOM_投入料号",
+   "_物料BOM_组成数量"
+  ],
+  "grain": [
+   "物料BOM"
+  ],
+  "md5": "e8ac464526ee9e447f1a14c22d1ca283",
+  "rewriterCompatible": true,
+  "sql": "SELECT\n  dqmb.material_no AS hf_part_no,\n  dqmb.input_material_no AS \"_物料BOM_投入料号\",\n  dqmb.component_qty AS \"_物料BOM_组成数量\"\nFROM ds_quote_material_bom dqmb\nWHERE dqmb.material_no = ANY(:total_material_no)\nORDER BY dqmb.material_no, dqmb.input_material_no, dqmb.item_seq",
+  "warnings": []
+ },
+ "SELF_PROCESS_FEE": {
+  "declaredColumns": [
+   "hf_part_no",
+   "_自制加工费_投入料号",
+   "_自制加工费_值"
+  ],
+  "grain": [
+   "自制加工费"
+  ],
+  "md5": "6be42e032e3833242857c7c633187718",
+  "rewriterCompatible": true,
+  "sql": "SELECT\n  dqspf.material_no AS hf_part_no,\n  dqspf.input_material_no AS \"_自制加工费_投入料号\",\n  dqspf.value AS \"_自制加工费_值\"\nFROM ds_quote_self_process_fee dqspf\nWHERE dqspf.material_no = ANY(:total_material_no)\nORDER BY dqspf.material_no, dqspf.input_material_no, dqspf.item_seq",
+  "warnings": []
+ }
+}

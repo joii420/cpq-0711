@@ -108,21 +108,42 @@ class Sec33FieldPanelGrainTest {
         assertTrue(views > 0, "🚨 语义图里一个 ACTIVE 页签视图都没有 —— 这不是「作废前提成立」，是种子没就位。"
                 + "本条判定为【未验证】，🚫 不许当成通过。");
 
-        assertEquals(0L, multiSheetViews,
-                "🚦 AC-15/16/17/18 的作废前提被推翻：有 " + multiSheetViews + " 个页签视图挂了 2 个及以上 SHEET 节点。\n"
-                        + "  2026-09-05 作废这四条的唯一理由是「v9 单锚点 ⇒ 行粒度恒等于锚点自己的 grain_columns，"
-                        + "『粒度随所选字段动态变化』和『粒度冲突』都构造不出来」。\n"
-                        + "  现在多源了 ⇒ 粒度冲突、粗粒度列勾小计、field-tree 冲突标记这三道防线必须重新接上"
-                        + "（历史实现见本类 git 历史）。\n"
-                        + "  📌 特别提醒：保存期兜底 COMPILE_GRAIN_CONFLICT 的实现<b>一直都在</b>，"
-                        + "作废的只是「喂得出触发输入的夹具」。");
+        // 🪦→🚦 task-260907 B-1（用户 2026-09-07 裁决）：**前提已被本任务有意推翻**。
+        // 🚫 不许删断言、也不许把 0 改成 1：改为钉住**违例的身份**，再多一个照样变红。
+        // 📌 为什么"粒度冲突"这条防线**这次没有真的回来**（所以不接回 AC-15~19 的历史实现）：
+        //    客户料号是经 **LOOKUP 边** LEFT JOIN 进来的，不是 GRAIN 边 ——
+        //    SemanticCompiler#resolveGrain / COMPILE_GRAIN_CONFLICT 只对 GRAIN 边生效，
+        //    LOOKUP 目标不进 c.grainDims、不改行粒度声明。实测它与物料是 1:1
+        //    （⚠️ 同一客户挂多个 customer_product_no 时会放大，残留已在需求文档 AC-2 记录）。
+        //    ⇒ 真正需要重新接 AC-15~19 的触发条件是「出现 **GRAIN 边**目标或粗粒度 AUX Sheet」，
+        //      下面两条断言正是守着这个 —— 一旦冒出别的多 Sheet 页签/AUX Sheet 就变红。
+        @SuppressWarnings("unchecked")
+        List<String> multiSheetViewIds = (List<String>) em.createNativeQuery(
+                "SELECT v.dialect||'/'||v.tab_type||COALESCE(NULLIF('/'||v.variant_key,'/'),'') "
+                        + "FROM semantic_tab_view_node tvn "
+                        + "JOIN semantic_node n ON n.id = tvn.node_id "
+                        + "JOIN semantic_tab_view v ON v.id = tvn.view_id "
+                        + "WHERE n.node_kind='SHEET' AND tvn.status='ACTIVE' "
+                        + "GROUP BY 1 HAVING count(*) > 1 ORDER BY 1").getResultList();
+        @SuppressWarnings("unchecked")
+        List<String> auxSheetIds = (List<String>) em.createNativeQuery(
+                "SELECT v.dialect||'/'||v.tab_type||COALESCE(NULLIF('/'||v.variant_key,'/'),'')||' AUX '||n.node_key "
+                        + "FROM semantic_tab_view_node tvn "
+                        + "JOIN semantic_node n ON n.id = tvn.node_id "
+                        + "JOIN semantic_tab_view v ON v.id = tvn.view_id "
+                        + "WHERE tvn.role='AUX' AND n.node_kind='SHEET' AND tvn.status='ACTIVE' ORDER BY 1").getResultList();
 
-        assertEquals(0L, auxSheetNodes,
-                "🚦 AC-19（附属源列勾小计阻断）的作废前提被推翻：出现了 " + auxSheetNodes
-                        + " 个以 AUX 角色挂载的 SHEET 节点。\n"
-                        + "  作废理由是「v9 唯一的 AUX 是 FUNCTION 价格策略、与锚点同粒度，勾小计不构成重复计算"
-                        + "（2026-09-05 实测 /inspect 返回 blocked=false, items=[]）」。\n"
-                        + "  真正的『比主源粗的附属 Sheet』回来了 ⇒ 必须把该断言重新接上。");
+        assertEquals(java.util.List.of("QUOTE/主件"), multiSheetViewIds,
+                "🚦 挂 2 个及以上 SHEET 的页签视图集合与登记的例外不符（实际 " + multiSheetViews + " 个）。\n"
+                        + "  唯一登记在案的例外 = task-260907 B-1 的 QUOTE/主件（物料 + 客户料号，LOOKUP 左连、不改行粒度）。\n"
+                        + "  再出现别的多 Sheet 页签 ⇒ 粒度冲突/粗粒度列勾小计/field-tree 冲突标记三道防线必须重新接上"
+                        + "（AC-15~18 历史实现见本类 git 历史）。\n"
+                        + "  📌 保存期兜底 COMPILE_GRAIN_CONFLICT 的实现<b>一直都在</b>，作废的只是「喂得出触发输入的夹具」。");
+
+        assertEquals(java.util.List.of("QUOTE/主件 AUX CUSTOMER_PART"), auxSheetIds,
+                "🚦 以 AUX 角色挂载的 SHEET 节点集合与登记的例外不符（实际 " + auxSheetNodes + " 个）。\n"
+                        + "  唯一登记在案的例外 = task-260907 B-1 的客户料号（与主源 1:1，勾小计不构成重复计算）。\n"
+                        + "  出现**比主源粗**的附属 Sheet ⇒ AC-19（附属源列勾小计阻断）必须重新接上。");
 
         assertEquals(0L, addDims,
                 "🚦 粒度族用例的作废前提被推翻：有 " + addDims + " 条 semantic_tab_view_node 带上了 add_dims"
