@@ -110,21 +110,24 @@ class DatasetQuoteAndRegressionAcTest extends DatasetAcTestBase {
 
     // ═══════════════ AC-43 新旧两条线互不串扰 ═══════════════
 
+    /**
+     * ⚠️ <b>2026-09-07（task-260907）语义收窄</b>：本用例原先同时打旧<b>核价</b>与旧<b>报价</b>两个
+     * 导入端点。核价侧那半段已随 {@code task-260907} 删除核价导入端点而移除 —— 该端点已不存在，
+     * 继续断言它「不是 404」必然失败，且那是我们主动下线的结果，不是回归。
+     * 现在本用例的语义收窄为：<b>走旧报价导入端点不得写到任何 ds_* 表</b>。
+     *
+     * <p>报价侧那半段<b>刻意不动</b>：它归并发任务线处置（把 {@code /quote} 改 410 后，
+     * 410 ≠ 404，{@link #assertNotEquals404} 守卫仍然成立）。
+     */
     @Test
     @DisplayName("TR-02 / AC-43：走旧导入端点后，ds_* 全部 84 张表 count 零变化（双轨互不串扰）")
     void tr02_legacyImportDoesNotTouchNewTables() {
         Map<String, Long> before = snapshotAllDatasetCounts();
 
         // 旧导入端点（2026-09-03 由主线给出正确路径，BasicDataImportV6Resource）：
-        //   POST /api/cpq/basic-data-import/v6/pricing  ← 核价侧（「料号核价」页签内的导入）
         //   POST /api/cpq/basic-data-import/v6/quote    ← 报价侧（「从基础数据导入」按钮）
-        // ⚠️ 我上一版猜的 /api/cpq/pricing-basic-data/import 根本不存在（返 404），
-        //    那会让「新表没被碰」变成空验证 —— 见 assertNotEquals404 的守卫。
-        // api.md §9 明确这两个端点「一个字节都不改」。
-        Response legacyPricing = postLegacy("/api/cpq/basic-data-import/v6/pricing", "legacy-pricing.xlsx");
-        assertNotEquals404(legacyPricing, "/api/cpq/basic-data-import/v6/pricing");
-        System.out.printf("[TR-02] 旧核价导入端点返回 %d%n", legacyPricing.statusCode());
-
+        // ⚠️ 路径必须是实际存在的端点，打到一个根本不存在的路径（返 404）会让
+        //    「新表没被碰」变成空验证 —— 见 assertNotEquals404 的守卫。
         Response legacyQuote = postLegacy("/api/cpq/basic-data-import/v6/quote", "legacy-quote.xlsx");
         assertNotEquals404(legacyQuote, "/api/cpq/basic-data-import/v6/quote");
         System.out.printf("[TR-02] 旧报价导入端点返回 %d%n", legacyQuote.statusCode());

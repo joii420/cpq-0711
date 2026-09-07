@@ -1,0 +1,18 @@
+AC-13 改动后（8097） · 单 6441b4d2-96da-493e-9085-0daca297b244（正泰 报价单, DRAFT）
+采样时刻(UTC): 2026-09-07T11:11:10Z
+采样方式: GET /api/cpq/quotations/{id}（admin 会话），对核价侧字段求指纹
+--- 核价页签数与名 ---
+tabs=5
+  - 
+  - 
+  - 
+  - 
+  - 
+--- costingCardStructure 全量指纹 ---
+structure_md5=bbef97b6315161c54b15fb174c39e0ab
+--- lineItems 核价值 ---
+lineItems=1845
+nonEmptyCostingCardValues=1844
+allCostingCardValues_md5=0ec7b3a373f4423ee58a324c57a8e550
+--- 三个非空单元格（人类可读证据，坐标固定）---
+  tabs = [{"tabName":"物料BOM","baseRows":[{"__lvl":1,"__nodeId":"202601010001","driverRow":{"material_no":"202601010001"},"__hfPartNo":"202601010001","__parentId":null,"__parentNo":null,"__bomVersion":null,"basicDataValues":{}}],"editRows":[],"subtotal":"0","componentId":"8698a700-68a0-4f25-9aa7-d02638706379","resolvedRows":[{"层级":1,"__nodeId":"202601010001","是否根":1,"是否叶子":1}],"componentType":"NORMAL","formulaResults":[{"rowKey":"0","values":{}}]},{"tabName":"物料与元素BOM","baseRows":[],"editRows":[],"subtotal":"0","componentId":"e4dcfed7-32d6-443e-abae-588f2590ab92","resolvedRows":[],"componentType":"NORMAL","formulaResults":[]},{"tabName":"加工费&组装费","baseRows":[],"editRows":[],"subtotal":"0","componentId":"28b22da7-8482-4184-94a1-c20da868b88c","resolvedRows":[],"componentType":"NORMAL","formulaResults":[]},{"tabName":"成品其他比例费用","baseRows":[],"editRows":[],"subtotal":"0","componentId":"f954db50-4c5f-4a9f-8c80-cf952c44eae8","resolvedRows":[],"componentType":"NORMAL","formulaResults":[]},{"tabName":"小计1","baseRows":[],"editRows":[],"subtotal":"12","componentId":"c282179a-dccc-43af-8c88-bd9b636799fa","resolvedRows":[],"componentType":"SUBTOTAL","formulaResults":[]}]

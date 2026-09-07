@@ -20,14 +20,14 @@ import java.util.Map;
 /**
  * 三套数据集的<b>维护端</b>端点（task-260902 · B-9 / B-10 / B-11）。
  *
- * <p>契约逐字见 {@code api.md §2 ~ §8}。路径风格照搬现有
- * {@code PricingBasicDataMaintenanceResource}（{@code /parts/{axis}/sheets/{sheetKey}/rows} 同构），
+ * <p>契约逐字见 {@code api.md §2 ~ §8}。路径风格照搬当时的核价基础数据维护端
+ * （{@code /parts/{axis}/sheets/{sheetKey}/rows} 同构；该实现已于 2026-09-07 随 task-260907 移除），
  * 便于前端 {@code createSheetApi(basePath)} 工厂复用同一套 URL 拼装（fronttask F-1）。
  *
  * <h2>三条不能忘的约束</h2>
  * <ul>
- *   <li>🚨 <b>闸门 A0 · D-13</b>：本类是<b>新建</b>的，与
- *       {@code PricingBasicDataMaintenanceResource} 完全并行 —— 现有端点一个字节都不改（AC-43）。</li>
+ *   <li>🚨 <b>闸门 A0 · D-13</b>：本类是<b>新建</b>的，与当时的核价基础数据维护端
+ *       完全并行 —— 现有端点一个字节都不改（AC-43）。</li>
  *   <li>导入端点 {@code POST /dataset/{dataset}/import}（B-8）<b>不在本类</b>，
  *       在 {@code DatasetImportResource} —— 两个 Resource 分开，避免并行开发时互相覆盖。</li>
  *   <li><b>B-11 权限（AC-31）</b>：写端点仅 {@code PRICING_MANAGER} / {@code SYSTEM_ADMIN}；
@@ -64,7 +64,7 @@ public class DatasetMaintenanceResource {
     /**
      * api.md §3 —— 料号列表（AC-25）。
      *
-     * <p>⚠️ {@code page} 是 <b>0-based</b>（api.md §3 明写，与现有 {@code /pricing-basic-data/parts}
+     * <p>⚠️ {@code page} 是 <b>0-based</b>（api.md §3 明写，与当时核价维护端 parts 端点
      * 的 1-based 不同）。默认值写 {@code 0} 而不是 {@code 1}，别顺手对齐旧端点。
      *
      * <p>{@code configured}（B-15）：{@code true}=只看已配齐、{@code false}=只看未配齐、
@@ -128,8 +128,8 @@ public class DatasetMaintenanceResource {
     /**
      * api.md §8 —— 主数据下拉（只读）。
      *
-     * <p>🚨 复用的是<b>查询逻辑</b>，路径是<b>新开</b>的 —— 现有
-     * {@code /pricing-basic-data/lookup/{masterType}} 不改（AC-43）。
+     * <p>🚨 复用的是<b>查询逻辑</b>，路径是<b>新开</b>的 —— 当时核价维护端的
+     * lookup 端点不改（AC-43）。
      */
     @GET
     @Path("/{dataset}/lookup/{masterType}")

@@ -9,7 +9,8 @@
 //
 // 🚧 过渡说明（2026-09-03 主线情报更正）：原计划复用的公共件 `SheetPartDrawer` 不会存在了，
 //    task-260902 改为零触碰 legacy + 新建 `pages/master-data/dataset/DatasetSheetDrawer.tsx`
-//    （该目录当前尚未合入 master）。本任务**不得 import 也不得修改 `part-costing/` 下任何文件**，
+//    （该目录当时尚未合入 master）。本任务**不得 import 也不得修改主数据维护核价侧旧公共件目录
+//    （已于 2026-09-07 迁至 `shared/`）下任何文件**，
 //    故此处按 `EditableSheetTable` 只读分支的等价语义新写一份平行实现。
 //
 // 🚫 列渲染一律按 `ColumnDef.type` 判断，**禁止按列名硬编码** ——

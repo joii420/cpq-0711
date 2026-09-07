@@ -125,7 +125,7 @@ export type ProcessSortBy =
  * 分页查询工序主数据。
  *
  * task-0728 · api.md A2：新增 `sortBy` / `sortOrder` / `isOutsource` / `processCategory` 四个**可选**参数（加法式）。
- * ⚠️ `page` 为 **0-based**（与料号核价 A1 的 1-based 不同），调用方负责 -1。
+ * ⚠️ `page` 为 **0-based**（与核价侧料号列表 A1 的 1-based 不同），调用方负责 -1。
  */
 export async function listProcesses(params: {
   keyword?: string;

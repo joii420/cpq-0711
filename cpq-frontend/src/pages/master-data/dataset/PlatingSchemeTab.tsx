@@ -17,7 +17,7 @@ import { ReloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { createDatasetApi } from './api';
 import type { PlatingDatasetKey, PlatingSchemeColumn } from './types';
-import type { ColumnType } from '../part-costing/types';
+import type { ColumnType } from '../shared/types';
 import {
   SEARCH_WIDTH, SEARCH_DEBOUNCE_MS, DEFAULT_PAGE_SIZE, commonPagination, TOOLBAR_ROW_STYLE,
 } from '../listConventions';

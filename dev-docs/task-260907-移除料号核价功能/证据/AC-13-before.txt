@@ -1,0 +1,77 @@
+AC-13 改动前基线 · 核价单渲染零回归
+================================================================
+夹具单：6441b4d2-96da-493e-9085-0daca297b244（「正泰 报价单」，status=DRAFT）
+采样时刻(UTC)：2026-09-07T08:44:47Z
+采样方式：GET /api/cpq/quotations/{id}（admin 会话，24,977,479 字节）+ 直连 DB 交叉核对
+
+--- 核价页签（5 个）---
+tabs=5
+  - 物料BOM
+  - 物料与元素BOM
+  - 加工费&组装费
+  - 成品其他比例费用
+  - 小计1
+
+--- 全量指纹（改动后必须逐字相同）---
+structure_md5           = bbef97b6315161c54b15fb174c39e0ab
+lineItems               = 1845
+nonEmptyCostingCardValues = 1844
+allCostingCardValues_md5 = 0ec7b3a373f4423ee58a324c57a8e550
+
+--- 三个非空单元格（人类可读，坐标固定）---
+line_item 00416b5c-54ba-44bf-89b3-c71ea0aff378 · 页签「小计1」· subtotal = 12
+line_item 00542f46-70e2-4d22-abe2-981560c480b9 · 页签「小计1」· subtotal = 12
+line_item 00992e93-61a5-4705-842b-4b5eb954ff9c · 页签「小计1」· subtotal = 12
+
+复采 SQL（改动后原样再跑一次，三行值必须相同）：
+  SELECT li.id::text, t->>'tabName', t->>'subtotal'
+    FROM quotation_line_item li
+    CROSS JOIN LATERAL jsonb_array_elements(li.costing_card_values->'tabs') t
+   WHERE li.quotation_id='6441b4d2-96da-493e-9085-0daca297b244'
+     AND (t->>'subtotal') ~ '^[1-9]'
+   ORDER BY li.id::text, t->>'tabName' LIMIT 3;
+
+================================================================
+采样过程中我自己犯的两个错（记下来，因为它们都差点变成错误结论）
+================================================================
+
+【错误 1】用 LIKE 判 JSON 结构 —— 假阴性
+  我先跑了这组判据：
+    costing_card_values::text LIKE '%basicDataValues":{"%'   → 0
+    costing_card_values::text ~ '"subtotal":"[1-9]'          → 0
+    costing_card_values::text LIKE '%editRows":[{%'          → 0
+    costing_card_values::text LIKE '%resolvedRows":[{%'      → 0
+  「整整齐齐全是 0」，差点据此写下"全库核价侧无任何业务数据"。
+
+  实际原因：列是 jsonb，`::text` 输出会被 PG 规范化成 **冒号后带空格**：
+    {"tabs": [{"tabName": "物料BOM", "baseRows": [{...
+  而我的模式全部假设冒号后无空格 ⇒ 必然 0 命中。
+
+  改用 jsonb 操作符重查后：
+    非零 subtotal 的页签 = 9257   ← 不是 0
+    非空 basicDataValues 的行 = 0  ← 这个确实是 0（另一回事，见下）
+    非空 editRows 的页签 = 0       ← 同上
+
+  📌 教训：**判 JSON 结构要用 jsonb 操作符，不要用字符串 LIKE。**
+     「结果整齐得可疑」本身就是重查的理由 —— 真实数据很少这么干净。
+
+【错误 2】看一个样本下全称结论
+  我把 API 响应里 **第一个** lineItem 的 costingCardValues 打出来，看到
+  4 个页签 baseRows 为 []、subtotal 为 "0"，就判定「这张单核价侧几乎全空、
+  不能当夹具」，并准备去换单。
+
+  实际：这张单 1845 个 lineItem 里，**1844 个有非零 subtotal**。
+  我抽到的第一个恰好是那唯一的空行。
+
+  📌 教训：判夹具是否够用要**统计全体**（GROUP BY / count），
+     不是看第一条。
+
+================================================================
+本条 AC 的覆盖边界（如实声明，不粉饰）
+================================================================
+✅ 能验：核价页签结构、页签数、各 lineItem 的 subtotal 计算结果、整体指纹
+⚠️ 验不到：`basicDataValues`（数据源取值）在全库 **9255 行核价卡片值中无一非空**，
+   故「数据源取值渲染」这一层本轮无法通过 AC-13 验证。
+   这不是本次改动造成的，是现网数据现状；按「缺数据未覆盖 ≠ 已实现」如实标为覆盖缺口，
+   🚫 不用空集断言充数。
+   → 该缺口与 AC-12（V6 表数据逐字节不变）互补：V6 表没被碰 ⇒ 取值层不可能变。

@@ -9,7 +9,8 @@
 //    409 冲突条），抽公共件要在 386 行组件里穿 12 处 variant 分支，改为
 //    **零触碰 legacy + 新建 `pages/master-data/dataset/DatasetSheetDrawer.tsx`**。
 //    该目录当前尚未合入 master（实测不存在），本任务无从参照 ⇒ 维持本地平行实现。
-//    ⚠️ 本任务**不得 import 也不得修改 `pages/master-data/part-costing/` 下任何文件**。
+//    ⚠️ 本任务**不得 import 也不得修改主数据维护核价侧旧公共件目录**
+//       （已于 2026-09-07 迁至 `pages/master-data/shared/`）**下任何文件**。
 //    ⇒ 日后若要与 `dataset/` 收敛，删掉下面这个 `createSheetApi` 改成 import 即可，
 //      调用方（ProductSalesPartTab / ProductSalesPartDrawer）一行都不用改。
 //
@@ -49,7 +50,8 @@ const unwrap = <T>(r: unknown): T =>
 /**
  * 列表查询参数。🚨 `page` 是 **0-based**（api.md 消费方硬约束 1），调用方务必传 `current - 1`。
  *
- * ⚠️ 本文件的类型一律取自 `./productHubTypes`，**刻意不复用 `part-costing/types.ts`**：
+ * ⚠️ 本文件的类型一律取自 `./productHubTypes`，**刻意不复用核价侧旧公共件的 `types.ts`**
+ *    （已于 2026-09-07 迁至 `pages/master-data/shared/types.ts`）：
  *    api.md §2 写的「结构完全对齐现有 SheetMeta」措辞不准（对方 2026-09-03 主动更正），
  *    实际三处不同名 —— `sheetName`↔`tabName` / `sortOrder`↔`order` / `masterType`↔`master`。
  *    喂错类型不会报编译错，只会在运行时静默取到 undefined（tab 名空白、排序乱序）。
