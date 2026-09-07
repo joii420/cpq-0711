@@ -3,7 +3,8 @@ import { Input, Select, Tag } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import { useDraggable } from '@dnd-kit/core';
 import { componentService } from '../../services/componentService';
-import { TAB_TYPE_COLOR } from '../component/types';
+// task-260907 F-5（AC-14②）：卡片徽章已改读 dataSourceLabel，不再按 tabType 上色 ⇒
+// 这里不再 import TAB_TYPE_COLOR（该映射在 component/types.ts 保留导出，未删）。
 import './styles.css';
 
 interface CompItem {
@@ -16,8 +17,20 @@ interface CompItem {
    * task-0721：页签类型属性，纯展示（卡片最右侧 Tag）。数据来源 componentService.list()
    * 直读组件管理 REST 接口（ComponentDTO），字段名是 camelCase `tabType`——
    * 与走模板 componentsSnapshot(JSONB, snake_case `tab_type`) 的 TabComponentArea 不同源，勿混用。
+   * ⚠️ task-260907 F-5 起**不再用它渲染徽章**（改读 dataSourceLabel），字段本身保留。
    */
   tabType?: string;
+  /**
+   * task-260907 F-5（AC-14 / api.md §3.1）：该组件所绑数据源的用户可见名。
+   *
+   * 🚨 **端点不是 `component-directories`**：本页走 `componentService.list()` →
+   *    `GET /api/cpq/components` → `ComponentService.list()` → `ComponentDTO`，
+   *    与组件管理页（F-2，走 `GET /api/cpq/component-directories` → `ComponentDirectoryService.buildTree()`）
+   *    是**两个不同的服务端方法**。⇒ 后端两处都必须填这个字段，
+   *    只填一处的失败形态是「这一侧徽章全为『—』」——**不报错、无信号**（AC-14③ 的判据就是它）。
+   *    2026-09-07 实测两处均已填（见 §自检）。
+   */
+  dataSourceLabel?: string | null;
 }
 
 interface DirOption {
@@ -58,15 +71,20 @@ const DraggableComponentCard = ({ comp, type }: { comp: CompItem; type: 'normal'
         <div style={{ fontWeight: 600, fontSize: 12 }}>
           {prefix}{comp.name}
         </div>
-        {/* task-0721：页签类型属性(tabType)纯展示，卡片最右侧；无编辑入口(编辑走组件管理表单) */}
-        {comp.tabType && (
-          <Tag
-            color={TAB_TYPE_COLOR[comp.tabType]}
-            style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 10, lineHeight: '14px', padding: '0 4px' }}
-          >
-            {comp.tabType}
-          </Tag>
-        )}
+        {/* task-0721：本徽章纯展示，卡片最右侧；无编辑入口(编辑走组件管理表单)。
+            task-260907 F-5（AC-14）：由「页签类型」改显示「数据源名」——
+              · comp.dataSourceLabel 有值 → 显示该值（如「物料BOM」）
+              · 为 null/缺省 → 显示「—」（用户 2026-09-07 裁决）
+            🚫 取值处不得再出现 comp.tabType（AC-14② 的判据）。
+            📌 与组件管理列表（ComponentManagement.tsx 的 F-2）是**同一条规则的两个执行点**，
+               配色（有值蓝 / 「—」灰）两处必须一致，改一处就要改另一处。 */}
+        <Tag
+          color={comp.dataSourceLabel ? 'blue' : 'default'}
+          style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 10, lineHeight: '14px', padding: '0 4px' }}
+          title={comp.dataSourceLabel ? `数据源：${comp.dataSourceLabel}` : '未绑定数据源'}
+        >
+          {comp.dataSourceLabel || '—'}
+        </Tag>
       </div>
       <div className="tm-component-item-sub">{comp.code}</div>
     </div>

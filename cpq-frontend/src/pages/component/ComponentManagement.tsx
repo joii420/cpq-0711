@@ -26,7 +26,10 @@ import { componentService } from '../../services/componentService';
 import { datasourceService } from '../../services/datasourceService';
 import { tabJoinFormulaService, type TabDef } from '../../services/tabJoinFormulaService';
 import type { DirectoryNode, ComponentItem, FieldItem, ComponentType, FormulaItem, FormulaToken } from './types';
-import { newFormulaRow, TAB_TYPE_COLOR } from './types';
+// task-260907 F-2（AC-3③）：列表徽章已改读 dataSourceLabel，不再按 tabType 上色 ⇒
+// 这里不再 import TAB_TYPE_COLOR。⚠️ task-260907 F-5 起 template/ComponentPalette.tsx 也已改读
+// dataSourceLabel ⇒ **该映射当前无消费方**；types.ts 仍保留导出（删除属超范围，未走裁决）。
+import { newFormulaRow } from './types';
 import FieldConfigTable from './FieldConfigTable';
 import ComponentImportDrawer from './ComponentImportDrawer';
 import FormulaBindingConsolidateDrawer from './FormulaBindingConsolidateDrawer';
@@ -773,16 +776,20 @@ const MasterList: React.FC<MasterListProps> = ({
         <div className="cmm-c-code">
           {comp.code}
           {/* task-0721：页签类型属性(tabType)纯展示，不加编辑入口。
-              task-260904 F-9（AC-28③）：详情工具栏的编辑入口已移除，此处**保留不动** ——
-              存量组件的 tab_type 仍需可见，只是不能再改。 */}
-          {comp.tabType && (
-            <Tag
-              color={TAB_TYPE_COLOR[comp.tabType]}
-              style={{ marginLeft: 6, fontSize: 10, lineHeight: '14px', padding: '0 4px' }}
-            >
-              {comp.tabType}
-            </Tag>
-          )}
+              task-260904 F-9（AC-28③）：详情工具栏的编辑入口已移除。
+              task-260907 F-2（AC-3）：本徽章由「页签类型」改显示「数据源名」——
+                · comp.dataSourceLabel 有值 → 显示该值（如「物料BOM」）
+                · comp.dataSourceLabel 为 null/缺省 → 显示「—」（用户 2026-09-07 裁决）
+              🚫 取值处不得再出现 comp.tabType（AC-3③ 的判据就是这个）。
+                 comp.tabType 字段本身保留（后端仍返回，存量语义仍在），只是不再用它渲染徽章。
+              📌 实测存量 222 个组件里 202 个会显示「—」，是知情选择的代价，不是缺陷。 */}
+          <Tag
+            color={comp.dataSourceLabel ? 'blue' : 'default'}
+            style={{ marginLeft: 6, fontSize: 10, lineHeight: '14px', padding: '0 4px' }}
+            title={comp.dataSourceLabel ? `数据源：${comp.dataSourceLabel}` : '未绑定数据源'}
+          >
+            {comp.dataSourceLabel || '—'}
+          </Tag>
         </div>
       </div>
     );

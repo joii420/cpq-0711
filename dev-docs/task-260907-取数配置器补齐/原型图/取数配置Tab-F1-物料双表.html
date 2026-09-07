@@ -183,14 +183,36 @@
 </div>
 
 <div class="card">
-  <h2>关键状态 ④ · 最长文案</h2>
+  <h2>关键状态 ④ · 最长文案（<b>实查现网真值</b>，非编造）</h2>
+  <p class="sub">🚫 极值样本<b>不许自己想一个长字符串</b> —— 那等于在「防编造」这一屏里又编了一次。
+     下列全部取自 <code class="mono">ORDER BY length(...) DESC LIMIT</code> 的实查结果（2026-09-07）。</p>
+
+  <h3>① 字段面板（面板固定 300px）</h3>
   <div class="pane" style="max-width:300px"><div class="pb">
     <div class="grpline">▾ 客户料号</div>
     <div class="fld newsrc">客户零件名称 <span class="db">customer_part_name</span></div>
     <div class="fld newsrc">客户产品号 <span class="db">customer_product_no</span></div>
   </div></div>
-  <div class="note">字段显示名与 <code class="mono">db_column</code> 同行；面板固定 300px，
-    <code class="mono">db_column</code> 过长时它先收缩（<code class="mono">margin-left:auto</code> 右对齐），<b>显示名不被挤掉</b>。</div>
+  <div class="note">显示名与 <code class="mono">db_column</code> 同行；<code class="mono">db_column</code> 过长时它先收缩
+    （<code class="mono">margin-left:auto</code> 右对齐），<b>显示名不被挤掉</b>。</div>
+
+  <h3>② 预览区的极值数据（真实最长值）</h3>
+  <table class="pv">
+    <thead><tr><th style="width:180px">销售料号</th><th>品名</th><th style="width:170px">客户产品号</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="mono">TEST0813-COMP01-BD1</td>
+        <td>AgNi10/Cu-Cu/301/Cu接触桥（含银镍复合层与铜基体的多层复合结构，适用于高分断能力断路器）（工程验证批·极值样本）</td>
+        <td class="mono">CP-0028-2609000001</td>
+      </tr>
+      <tr><td class="mono">0526-2609000004</td><td>AgNi10/Cu动触头</td><td class="nul">—</td></tr>
+    </tbody>
+  </table>
+  <div class="note">
+    实查值（`ds_quote_*`，2026-09-07）：<b>品名最长 65 字符</b> · <b>销售料号最长 19</b>（<code class="mono">TEST0813-COMP01-BD1</code>）·
+    <b>客户产品号最长 18</b>（<code class="mono">CP-0028-2609000001</code>）· 客户零件名称最长 6（<code class="mono">示例客户料号</code>）。<br>
+    ⇒ 品名列<b>必须能换行或截断+title</b>，65 字符按当前字号约 600px，<b>会撑破三栏布局的中栏</b>。
+  </div>
 </div>
 
 <!-- 数据来源声明 -->
@@ -204,6 +226,9 @@
       ⚠️ <b>显示名（客户编号/客户零件名称/客户产品号/客户图号）是本原型的提议</b>，B-1 建节点时定稿</td></tr>
   <tr><td>47 / 19 / 28 / 0 四个数字</td><td>dev 库 <code class="mono">cpq_db_0724</code> 实查，2026-09-07</td></tr>
   <tr><td>整体布局（三栏 / 顶部两行信息 / 底部动作区）</td><td>用户 2026-09-07 真机截图 <code class="mono">证据/用户报-物料BOM生成的SQL无递归.png</code></td></tr>
+  <tr><td>极值样本（65 / 19 / 18 / 6 四个长度与其值）</td>
+      <td><code class="mono">SELECT length(x), x FROM ds_quote_material / ds_quote_customer_part ORDER BY 1 DESC LIMIT 3</code>，2026-09-07 实查。
+      🚫 <b>不是自己想的长字符串</b> —— 那会让「最长文案」这一屏本身成为编造的一部分</td></tr>
   </tbody></table>
   <div class="note del">
     🚨 <b>本页首版曾凭想象编造字段名</b>（「计量单位 / 币种 / 备注」等实际不存在，「料号类型」实际叫「类型」，

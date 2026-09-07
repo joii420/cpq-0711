@@ -27,7 +27,10 @@ import java.util.Set;
 @ApplicationScoped
 public class MasterDataChecker {
 
-    /** masterType → [表名, 编码列]。与既有 {@code PricingMaintenanceService.MASTER} 同源，只读。 */
+    /**
+     * masterType → [表名, 编码列]。与历史上核价维护端的同名主数据表映射同源，只读
+     * （该维护端实现已于 2026-09-07 随 task-260907 移除，本表自此成为唯一副本）。
+     */
     private static final Map<String, String[]> MASTER_TABLES = Map.of(
             "element",  new String[]{"element",         "element_code"},
             "process",  new String[]{"process_master",  "process_no"},

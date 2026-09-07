@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>产品管理客户过滤 · 原型图索引</title>
+<link rel="stylesheet" href="prototype.css">
+<style>
+  .badge-now {
+    display: inline-flex; align-items: center; height: 24px; padding: 0 10px;
+    border-radius: 4px; font-size: 13px; font-weight: 500;
+    background: var(--c-primary-bg); color: var(--c-primary); border: 1px solid var(--c-primary-border);
+    vertical-align: middle; margin-left: 8px;
+  }
+  h1 { font-size: 22px; margin: 0 0 8px; }
+  h3 { font-size: 16px; margin: 28px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--c-split); }
+  .dev-tbl { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+  .dev-tbl th, .dev-tbl td { border: 1px solid var(--c-split); padding: 8px 10px; text-align: left; vertical-align: top; }
+  .dev-tbl th { background: var(--c-head-bg); font-weight: 600; white-space: nowrap; }
+  code { background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 4px;
+         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <h1>产品管理页 · 客户过滤 · 原型图 <span class="badge-now">📌 当前基准</span></h1>
+  <p class="muted" style="margin:0 0 4px">
+    任务：<code>task-260907-产品管理客户过滤</code>　·　出图日期：2026-09-07　·　定稿于闸门 A
+  </p>
+  <p class="muted" style="margin:0">
+    本组 <b>6 份</b>是「产品管理页」（<code>/products-hub</code>，含客户产品 / 销售产品两个页签及其抽屉）
+    此刻的视觉标准，<b>照这几张做</b>。
+  </p>
+
+  <div class="alert warn" style="margin-top:16px">
+    <span>⚠️</span>
+    <span>
+      <b>本组原型的落地时机卡在上游任务之后。</b>
+      <code>task-260907-报价侧加客户维度</code> 的 28 张表 DDL 与复合轴改造尚未开工 ——
+      在它合并 master 之前，图中「同一料号跨两个客户」的场景<b>在现网造不出来</b>。
+      原型定稿不受此影响，但<b>实现与验收必须等前置落地</b>。
+    </span>
+  </div>
+
+  <h3>本组原型（6 份）</h3>
+
+  <div class="idx-grid">
+
+    <a class="idx-card" href="01-壳页-客户产品-默认态.html">
+      <div class="t">01 · 壳页默认态（客户产品页签）</div>
+      <div class="d">全局客户选择器的位置；客户产品页签原有下拉已摘除，改收壳页下发</div>
+      <div class="ac"><span class="tag grey">F-1</span><span class="tag grey">F-3</span>
+        <span class="tag blue">AC-1</span><span class="tag blue">AC-4</span><span class="tag blue">AC-9</span></div>
+    </a>
+
+    <a class="idx-card" href="02-客户选择器-展开.html">
+      <div class="t">02 · 客户选择器展开态</div>
+      <div class="d">候选口径（<code>customer</code> 表 ∪ 未建档客户号）、分组顺序、未建档标记</div>
+      <div class="ac"><span class="tag grey">F-1</span>
+        <span class="tag blue">AC-2</span><span class="tag blue">AC-14</span></div>
+    </a>
+
+    <a class="idx-card" href="03-销售产品-所有客户.html">
+      <div class="t">03 · 销售产品「所有客户」态 <span class="tag warn">关键</span></div>
+      <div class="d">行语义变更为「客户 × 料号」；新增客户两列；同料号跨客户两行并存；<code>rowKey</code> 改造</div>
+      <div class="ac"><span class="tag grey">F-4</span>
+        <span class="tag blue">AC-3</span><span class="tag blue">AC-5</span><span class="tag blue">AC-16</span></div>
+    </a>
+
+    <a class="idx-card" href="04-销售产品-选中客户与抽屉.html">
+      <div class="t">04 · 选中客户的列表 + 抽屉</div>
+      <div class="d">后端过滤后的列表；抽屉按<b>行携带的</b>客户号取数；版本下拉不混排；生产料号编辑</div>
+      <div class="ac"><span class="tag grey">F-4</span><span class="tag grey">F-5</span><span class="tag grey">F-6</span>
+        <span class="tag blue">AC-3</span><span class="tag blue">AC-6</span><span class="tag blue">AC-7</span></div>
+    </a>
+
+    <a class="idx-card" href="05-空态与降级.html">
+      <div class="t">05 · 空态与降级（三种）</div>
+      <div class="d">A 该客户无产品数据 / B 记住的客户失效 / C 候选端点未就绪 —— 三者必须可区分</div>
+      <div class="ac"><span class="tag grey">F-2</span><span class="tag grey">F-7</span>
+        <span class="tag blue">AC-12</span><span class="tag blue">AC-13</span></div>
+    </a>
+
+    <a class="idx-card" href="06-极值与未建档.html">
+      <div class="t">06 · 极值文案与未建档客户</div>
+      <div class="d">33 字符客户名 / 65 字符料号名 / 19 字符料号的截断；未建档客户可选且可筛</div>
+      <div class="ac"><span class="tag grey">F-1</span><span class="tag grey">F-4</span>
+        <span class="tag blue">AC-14</span><span class="tag blue">AC-15</span></div>
+    </a>
+
+  </div>
+
+  <h3>覆盖面自查（<code>frontend.md §1.3</code>：本任务动到几个页面/弹层，就要有几份原型）</h3>
+
+  <table class="dev-tbl">
+    <thead><tr><th>F-x</th><th>动到的页面 / 弹层</th><th>对应原型</th></tr></thead>
+    <tbody>
+      <tr><td>F-1 / F-2</td><td>壳页 <code>ProductHubPage</code>（标题行选择器）</td><td>01 · 02 · 05 · 06</td></tr>
+      <tr><td>F-3</td><td>客户产品页签 <code>ProductCustomerPartTab</code></td><td>01 · 06</td></tr>
+      <tr><td>F-4</td><td>销售产品页签 <code>ProductSalesPartTab</code></td><td>03 · 04 · 06</td></tr>
+      <tr><td>F-5 / F-6</td><td>销售产品抽屉 <code>ProductSalesPartDrawer</code> + 行内编辑</td><td>04</td></tr>
+      <tr><td>F-7</td><td>两个页签的空态</td><td>05</td></tr>
+    </tbody>
+  </table>
+
+  <p class="muted" style="margin-top:8px">
+    三种必画状态自查：<b>空数据</b> ✅（05 状态 A）　<b>禁用/降级态</b> ✅（05 状态 B / C）　<b>最长文案</b> ✅（06）
+  </p>
+
+  <h3>🕰️ 被本组降级的历史快照</h3>
+
+  <p style="margin:0 0 12px">
+    按 <code>frontend.md §1.3</code>「新任务出原型时把上一份的 📌 摘掉改成 🕰️ 并补偏差清单」，
+    以下两组自本组定稿起<b>不再是当前基准</b>。
+    🚫 <b>其内容一律不回改</b> —— 它们是各自那次交付的验收记录。
+  </p>
+
+  <table class="dev-tbl">
+    <thead>
+      <tr><th>历史快照</th><th>控件 / 取值</th><th>本组改成了什么</th><th>被谁改的</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td rowspan="4"><a href="../../task-260903-产品管理页重做/原型图/index.html">task-260903-产品管理页重做 · 8 份</a></td>
+        <td>壳页标题行：仅「产品分类管理」按钮</td>
+        <td>新增<b>全局客户选择器</b>（带「客户」addon，默认「所有客户」）</td>
+        <td>本任务 F-1</td>
+      </tr>
+      <tr>
+        <td>销售产品列表列：无客户信息</td>
+        <td>最左新增<b>客户编号 / 客户名称</b>两列</td>
+        <td>本任务 F-4</td>
+      </tr>
+      <tr>
+        <td>销售产品列表行语义：一行 = 一个销售料号；<code>rowKey = axisValue</code></td>
+        <td>一行 = <b>客户 × 销售料号</b>；<code>rowKey = customerNo|axisValue</code>；同料号可多行</td>
+        <td>本任务 F-4（根因是 <code>task-260907-报价侧加客户维度</code> 的复合轴）</td>
+      </tr>
+      <tr>
+        <td>销售产品抽屉标题：料号 + 料号名</td>
+        <td>增加<b>客户标签</b>与「当前展示某客户数据」提示条；版本下拉只列该客户版本</td>
+        <td>本任务 F-5</td>
+      </tr>
+      <tr>
+        <td rowspan="2"><a href="../../task-260903-产品管理页重做/task-260903-产品维护能力增强/原型图/index.html">task-260903-产品维护能力增强 · 4 份</a></td>
+        <td>客户产品页签<b>内部</b>的客户下拉</td>
+        <td><b>摘除</b>，上提为壳页级全局选择器（两个页签共用一个客户上下文）</td>
+        <td>本任务 F-1 / F-3</td>
+      </tr>
+      <tr>
+        <td>客户候选口径 = <code>ds_quote_customer_part</code> 的 <code>DISTINCT customer_no</code></td>
+        <td>改为 <code>customer</code> 表全集 <b>∪</b> 业务表未建档客户号<br>
+            （保留「未建档可选」，补上「无产品数据的已建档客户也可选」）</td>
+        <td>本任务 F-1 / B-1，用户 2026-09-07 裁决 <code>D-3</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>定稿后的效力</h3>
+  <p style="margin:0">
+    🚨 <b>定稿后原型即验收基准，改原型 = 改验收标准</b> → 须走 <code>task-docs.md §4</code> 四步：
+    回用户确认 → 同步四处（<code>需求文档.md</code> / <code>api.md</code> / <code>fronttask.md</code>·<code>backtask.md</code> / <code>test.md</code>）
+    → 通知在跑的子代理 → 重跑闸门 A 自检。<br>
+    还原纪律：<b>视觉基准是原型图，不是审美，也不是「差不多就行」</b>。
+    允许的偏差只有<b>「组件库能力所限的等价实现」</b>一类，且必须在回报里逐条列出。
+    🚫 原型没画到的地方<b>不许自由发挥</b> —— 停下来问，那是需求缺口。
+    🚨 原型与 AC 冲突时<b>以 AC 为准并立即报告</b>。
+  </p>
+
+</div>
+
+</body>
+</html>

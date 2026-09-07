@@ -15,14 +15,28 @@ test.beforeAll(() => assertIsolatedEnv());
  * FS-1a（非侵入式）：把**同一个** `assertReadOnly` 指向核价侧抽屉 ——
  * 那里实测有 96 个 input + 1 个保存按钮 ⇒ 它**必须失败**。
  * 不失败 = 该 helper 根本没在查编辑控件，E2E-08/09/16 的只读结论全是空验证。
+ *
+ * 🚩 **task-260907 改造**：原来指向的核价维护页签已随其整条功能移除，
+ *    阳性对照的载体换成**基础核价**页签（同样可编辑，同样走 `EditableSheetTable`），
+ *    **语义不变**：仍然是「拿一个已知可编辑的抽屉去撞 assertReadOnly，它必须抛错」。
+ *
+ * ⚠️ 两处必须一起改，只改一处会得到一条误导性的失败：
+ *    1. 页签选择器：🚫 不用 `getByText(...).first()`（`product-hub-edit-fs.spec.ts:191`
+ *       实测该写法 300s 超时，看起来像页面坏了），改 `getByRole('tab', {name, exact:true})`。
+ *    2. 料号：`HERO = 'S-3120014539'` 在 `ds_cost_basic_*` 子表里**一行都没有**（2026-09-07 实查），
+ *       基础核价侧数据充分的是**不带 S- 前缀**的 `3120014539`。
+ *       沿用 HERO ⇒ 抽屉全空 ⇒ 阳性对照本身失效（且会伪装成产品缺陷）。
  */
+/** task-260907：基础核价 / 详细核价侧数据充分的料号（轴 = 生产料号，无 S- 前缀）。 */
+const COST_HERO = '3120014539';
+
 test('FS-1a：assertReadOnly 指向已知可编辑的核价抽屉，必须硬失败（阳性对照）', async ({ page }) => {
   await loginAs(page, 'PRICING_MANAGER');
   await page.goto('/master-data-hub');
-  await page.getByText('料号核价', { exact: true }).first().click();
+  await page.getByRole('tab', { name: '基础核价', exact: true }).click();
   await page.waitForTimeout(1500);
-  await search(page, HERO);
-  await page.getByRole('cell', { name: HERO, exact: true }).first().click();
+  await search(page, COST_HERO);
+  await page.getByRole('cell', { name: COST_HERO, exact: true }).first().click();
   const drawer = page.locator('.ant-drawer').first();
   await expect(drawer).toBeVisible({ timeout: 10_000 });
   await page.waitForTimeout(3000);
@@ -31,8 +45,11 @@ test('FS-1a：assertReadOnly 指向已知可编辑的核价抽屉，必须硬失
 
   const inputs = await drawer.locator('.ant-table input').count();
   const saves = await drawer.getByRole('button', { name: /保\s*存/ }).count();
-  console.log(`[FS-1a] 核价抽屉 input=${inputs} 保存=${saves}（这是已知可编辑的阳性样本）`);
-  expect(inputs, 'FS-1a 前置：核价抽屉必须确实有编辑控件，否则这个阳性对照本身无效')
+  console.log(`[FS-1a] 基础核价抽屉 input=${inputs} 保存=${saves}（这是已知可编辑的阳性样本）`);
+  expect(inputs,
+    'FS-1a 前置：核价抽屉必须确实有编辑控件，否则这个阳性对照本身无效。\n' +
+    '  为 0 有两种可能，处置完全不同：① 料号夹具漂移（测试环境问题，报主线换夹具）；\n' +
+    '  ② task-260907 的公共件迁移把 EditableSheetTable 弄坏了（产品缺陷）。需人工分辨。')
     .toBeGreaterThan(0);
 
   let threw = false;

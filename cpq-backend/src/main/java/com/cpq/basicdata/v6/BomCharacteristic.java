@@ -4,8 +4,9 @@ package com.cpq.basicdata.v6;
  * {@code material_bom_item.characteristic} 三态常量与派生规则（单一定义点）。
  *
  * <p>核价侧（system_type='PRICING'）的 characteristic 是由 {@code calc_type} **派生**的量，
- * 不是用户输入。导入器（P06MaterialBomHandler）与维护端（PricingMaintenanceService）
- * 必须共用 {@link #fromCalcType}，否则两条写路径会漂移——这正是本类被抽出的原因。
+ * 不是用户输入。导入器（P06MaterialBomHandler）与历史上的核价基础数据维护端两条写路径
+ * 必须共用 {@link #fromCalcType}，否则会漂移——这正是本类被抽出的原因。
+ * （维护端实现已于 2026-09-07 随 task-260907 整体移除，本类目前是导入侧的单一定义点。）
  *
  * <p>报价侧（QUOTE）的 characteristic 来自 Excel「组成类型」列，走
  * {@code MaterialBomMergeHandler.kindToCharacteristic}，不在本类职责内。

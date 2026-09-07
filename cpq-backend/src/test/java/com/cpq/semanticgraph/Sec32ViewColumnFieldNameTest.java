@@ -112,12 +112,25 @@ class Sec32ViewColumnFieldNameTest {
 
         assertTrue(views > 0, "🚨 语义图里一个 ACTIVE 页签视图都没有 —— 这不是「作废前提成立」，是种子没就位。"
                 + "本条判定为【未验证】，🚫 不许当成通过。");
-        assertEquals(0L, multiSheetViews,
-                "🚦 AC-11③「跨 Sheet 同名列别名不冲突」的作废前提被推翻：有 " + multiSheetViews
-                        + " 个页签视图挂了 2 个及以上 SHEET 节点。\n"
-                        + "  2026-09-05 作废该断言的唯一理由是「v9 每个页签视图只挂 1 个 SHEET，跨 Sheet 场景构造不出来」。\n"
-                        + "  现在能构造了 ⇒ 必须把跨 Sheet 别名唯一性重新验起来（历史实现见本类 git 历史）。\n"
-                        + "  🚫 不许直接删掉本断言了事 —— 那等于把「两张 Sheet 的同名列会不会撞同一个视图列名」这道防线一起删了。");
+        // 🪦→🚦 task-260907 B-1（用户 2026-09-07 裁决）：**前提已被本任务有意推翻**。
+        //   QUOTE/主件 现在挂 2 个 SHEET（物料 + 客户料号），跨 Sheet 场景第一次真的可构造。
+        // 🚫 不许删断言、也不许把 0 改成 1：改为钉住**违例的身份**，再多一个照样变红。
+        // ✅ 「跨 Sheet 同名列会不会撞同一个视图列名」这道防线并没有丢：
+        //    两张表都有 material_no，实测视图列名分别是 _物料_销售料号 / _客户料号_销售料号
+        //    （AliasGenerator.viewColumn 带 <短名> 前缀），天然不撞；真撞了还有 SemanticCompiler#dedupeAlias
+        //    兜底。⇒ 本条留碑改为「例外集合守卫」，别名唯一性由下方 AC-11 用例继续正面覆盖。
+        @SuppressWarnings("unchecked")
+        List<String> multiSheetViewIds = (List<String>) em.createNativeQuery(
+                "SELECT v.dialect||'/'||v.tab_type||COALESCE(NULLIF('/'||v.variant_key,'/'),'') "
+                        + "FROM semantic_tab_view_node tvn "
+                        + "JOIN semantic_node n ON n.id = tvn.node_id "
+                        + "JOIN semantic_tab_view v ON v.id = tvn.view_id "
+                        + "WHERE n.node_kind='SHEET' AND tvn.status='ACTIVE' "
+                        + "GROUP BY 1 HAVING count(*) > 1 ORDER BY 1").getResultList();
+        assertEquals(java.util.List.of("QUOTE/主件"), multiSheetViewIds,
+                "🚦 挂 2 个及以上 SHEET 的页签视图集合与登记的例外不符（实际 " + multiSheetViews + " 个）。\n"
+                        + "  唯一登记在案的例外 = task-260907 B-1 的 QUOTE/主件（物料 + 客户料号）。\n"
+                        + "  再出现别的多 Sheet 页签 ⇒ 跨 Sheet 别名唯一性必须重新验起来（历史实现见本类 git 历史）。");
     }
 
     // ===================================================================

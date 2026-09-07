@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>05 · 空态与降级</title>
+<link rel="stylesheet" href="prototype.css">
+</head>
+<body>
+
+<div class="proto-note">
+  <b>05 · 三种「没数据」的状态 —— 它们长得不一样，含义也不一样</b>　服务 <code>F-2</code> <code>F-7</code>　AC-12 / AC-13<br>
+  🚨 <b>三种状态必须可区分。</b> 全画成同一个空白页，用户就分不清「这个客户没产品」「记住的客户失效了」
+  和「后端挂了」—— 而这三件事的处理方式完全不同。
+</div>
+
+<!-- ═══ 状态 A：选中的客户没有任何产品数据 ═══ -->
+<div class="page" style="margin-bottom:16px">
+  <div class="page-head">
+    <h2>产品管理　<span class="tag grey" style="font-weight:400">状态 A · 该客户无产品数据（AC-13）</span></h2>
+    <div class="head-actions">
+      <div class="select-group">
+        <span class="addon">客户</span>
+        <span class="select"><span class="val filled">CUST-0031　苏州西门子</span><span class="caret">▾</span></span>
+      </div>
+      <button class="btn">⊞ 产品分类管理</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab">客户产品</div>
+    <div class="tab active">销售产品</div>
+  </div>
+
+  <div class="toolbar">
+    <span class="input">搜索销售料号 / 料号名称</span>
+    <button class="btn">查询</button>
+    <button class="btn">重置</button>
+  </div>
+
+  <div class="table-wrap">
+    <table class="tbl">
+      <colgroup><col style="width:120px"><col style="width:150px"><col style="width:165px"><col style="width:150px"><col style="width:170px"></colgroup>
+      <thead><tr><th>客户编号</th><th>客户名称</th><th>销售料号</th><th>料号名称</th><th>生产料号</th></tr></thead>
+    </table>
+    <div class="empty">
+      <div class="icon">🗂</div>
+      <div class="title">该客户暂无销售产品数据</div>
+      <div class="desc">客户「苏州西门子（CUST-0031）」下还没有导入过报价数据。切换客户或先导入数据。</div>
+    </div>
+  </div>
+
+  <div class="proto-note" style="max-width:none;margin:16px 0 0">
+    ✅ <b>这是正常业务状态，不是错误。</b> 三条禁令：🚫 不许报错 / 红色遮罩；
+    🚫 不许「加载中…」永久占位（本项目 <code>AP-31</code> 缺陷族的典型形态）；🚫 不许纯空白页。<br>
+    切回其它客户后数据必须正常恢复。<b>客户产品页签同理，文案换成「该客户暂无客户产品数据」。</b>
+  </div>
+</div>
+
+<!-- ═══ 状态 B：localStorage 记住的客户已不在候选里 ═══ -->
+<div class="page" style="margin-bottom:16px">
+  <div class="page-head">
+    <h2>产品管理　<span class="tag warn" style="font-weight:400">状态 B · 记住的客户已失效（AC-12）</span></h2>
+    <div class="head-actions">
+      <div class="select-group">
+        <span class="addon">客户</span>
+        <!-- 🔑 静默回落「所有客户」，并清掉那条 localStorage -->
+        <span class="select"><span class="val placeholder">所有客户</span><span class="caret">▾</span></span>
+      </div>
+      <button class="btn">⊞ 产品分类管理</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab">客户产品</div>
+    <div class="tab active">销售产品</div>
+  </div>
+
+  <div class="toolbar">
+    <span class="input">搜索销售料号 / 料号名称</span>
+    <button class="btn">查询</button>
+    <button class="btn">重置</button>
+  </div>
+
+  <div class="table-wrap">
+    <table class="tbl">
+      <colgroup><col style="width:120px"><col style="width:150px"><col style="width:165px"><col style="width:150px"><col style="width:170px"></colgroup>
+      <thead><tr><th>客户编号</th><th>客户名称</th><th>销售料号</th><th>料号名称</th><th>生产料号</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">CUST-0001</td><td>罗克韦尔</td><td class="mono">0526-2609000004</td><td>选配A1</td><td class="muted">—</td></tr>
+        <tr><td class="mono">CUST-0001</td><td>罗克韦尔</td><td class="mono">1630010773</td><td>料9</td><td class="muted">—</td></tr>
+        <tr><td class="mono">CUST-0004</td><td>正泰</td><td class="mono">S0001</td><td>示例料号</td><td class="mono">P-S0001</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="proto-note" style="max-width:none;margin:16px 0 0">
+    🔇 <b>静默降级 —— 页面上看不出发生过什么。</b> 上次记住的客户号已不在本次候选里（客户被停用 / 数据被清），
+    ⇒ 回落「所有客户」+ 清掉那条 localStorage + <b>列表正常展示全量</b>。<br>
+    <b>断言</b>：console <b>无 error 级输出</b>、不出现红色遮罩。<br>
+    🚫 <b>不要弹 message 报错</b> —— 用户没做错任何事，弹窗只会制造困惑。<br>
+    ⚠️ localStorage 的读写<b>一律 try/catch</b>：隐私窗口 / 站点数据被清 / 浏览器禁用存储时访问器本身会抛，未捕获会整页白屏。
+  </div>
+</div>
+
+<!-- ═══ 状态 C：候选端点未就绪 ═══ -->
+<div class="page">
+  <div class="page-head">
+    <h2>产品管理　<span class="tag warn" style="font-weight:400">状态 C · 候选端点未就绪</span></h2>
+    <div class="head-actions">
+      <div class="select-group">
+        <span class="addon">客户</span>
+        <span class="select"><span class="val placeholder">所有客户</span><span class="caret">▾</span></span>
+      </div>
+      <button class="btn">⊞ 产品分类管理</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab">客户产品</div>
+    <div class="tab active">销售产品</div>
+  </div>
+
+  <div class="alert warn">
+    <span>⚠️</span>
+    <span>客户候选加载失败，当前只能查看全部客户的数据。列表功能不受影响。</span>
+  </div>
+
+  <div class="table-wrap">
+    <table class="tbl">
+      <colgroup><col style="width:120px"><col style="width:150px"><col style="width:165px"><col style="width:150px"><col style="width:170px"></colgroup>
+      <thead><tr><th>客户编号</th><th>客户名称</th><th>销售料号</th><th>料号名称</th><th>生产料号</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">CUST-0001</td><td>罗克韦尔</td><td class="mono">0526-2609000004</td><td>选配A1</td><td class="muted">—</td></tr>
+        <tr><td class="mono">CUST-0004</td><td>正泰</td><td class="mono">S0001</td><td>示例料号</td><td class="mono">P-S0001</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="proto-note" style="max-width:none;margin:16px 0 0">
+    <b>降级为「候选只剩『所有客户』，列表照常可用」</b>，并给一条<b>可见但不阻断</b>的提示条。<br>
+    🚫 <b>不做任何 mock 兜底</b> —— 塞假候选会把「后端没就绪」伪装成「这个客户真的没有产品」，
+    这是本项目 <code>productHubApi.ts</code> 已成文的纪律。<br>
+    🔑 <b>状态 C 与状态 A 必须长得不一样</b>：A 是「查过了，确实没有」，C 是「压根没查成」。
+  </div>
+</div>
+
+</body>
+</html>

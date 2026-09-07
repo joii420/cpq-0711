@@ -1,0 +1,47 @@
+AC-4 / AC-5 主线亲验 —— 端点层 A/B 同轮次对照
+================================================================
+时间(UTC): 2026-09-07T03:50Z
+A 侧: localhost:8081 = 主工作区 master（改动前）
+B 侧: localhost:8097 = worktree feat/task-260907-remove-part-costing（改动后，已合入 master 至 8c3cedfb）
+两侧均以 admin(SYSTEM_ADMIN) 登录态发起，同一轮循环内逐条发出
+recordId 实查取值: 2e428139-c041-4112-aa3b-c09136fa2caf
+
+请求                                                    master(8081)  本分支(8097)   判定
+--------------------------------------------------------------------------------------
+GET  /api/cpq/pricing-basic-data/parts?page=1&size=1        200          404      ✅ AC-4
+GET  /api/cpq/pricing-basic-data/sheets                     200          404      ✅ AC-4
+GET  /api/cpq/basic-data-import/v6/pricing/template         200          404      ✅ AC-5
+POST /api/cpq/basic-data-import/v6/pricing                  400          405      ✅ AC-5
+POST /api/cpq/basic-data-import/v6/zzz-not-a-path           405          405      ✅ 阳性对照
+GET  /api/cpq/dataset/cost-basic/parts?page=0&size=1        200          200      ✅ 反向对照
+GET  /api/cpq/basic-data-import/v6/{recordId}               200          200      ✅ 反向对照
+GET  /api/cpq/components                                    200          200      ✅ 两侧存活
+
+为什么这组证据成立（三层防假绿）
+--------------------------------------------------------------------------------------
+① 进程级：末行 GET /components 两侧均 200 ⇒ 两个服务都在正常服务，
+   排除「后端没起来 ⇒ 所有路径都 404 ⇒ 删除成功全绿」。
+② 405 的绝对值不是证据：POST /v6/zzz-not-a-path 在 master 上同样是 405
+   （它是保留端点 @GET @Path("/{recordId}") 的既有方法不匹配兜底）。
+   真正的证据是 POST /v6/pricing 的 400 → 405 这个**变化量**。
+③ 反向对照：dataset 侧与同类保留端点 /v6/{recordId} 两侧都是 200
+   ⇒ 删掉的是方法，不是整个 Resource 类，也没波及并行的 dataset 体系。
+
+⚠️ 与后端代理回报的差异（不影响结论）
+--------------------------------------------------------------------------------------
+代理用**无会话**对照，master 侧读到的是 401（被鉴权拦下）；
+主线用**登录态**对照，master 侧读到 200/400（真实业务响应）。
+两者结论一致，但登录态的对比更强 —— 401 只能证明「路由存在」，
+200 能证明「端点本来是可用的」。
+
+⚠️ 本次亲验过程中撞到的迁移撞车（第 7 次同型）
+--------------------------------------------------------------------------------------
+首次起 8097 时 Flyway 报 `Detected applied migration not resolved locally: 418, 419`。
+按 backtask B-6 的已知坑处置：**先查这个号是谁的**，不假设是自己的 ——
+  SELECT version, script FROM flyway_schema_history WHERE version IN ('418','419');
+  → V418__task260907_semantic_graph_customer_part_and_annual.sql
+  → V419__task260907_customer_part_customer_scope.sql
+二者属并发线 `task-260907-取数配置器补齐`，且**已经在 master 上**。
+根因不是「文件丢失」，是**我的分支从 a81f2c40 建出后落后于 master 13 个提交**。
+处置：`git merge master`（代码文件零重叠、无冲突，fast-forward）后重启即通过。
+🚫 未伪造迁移文件、🚫 未 flyway repair、🚫 未改共享 application-test.properties。

@@ -10,6 +10,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.transaction.UserTransaction;
 import org.junit.jupiter.api.*;
 
+import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -158,6 +159,21 @@ class Sec31CompileCorrectnessTest {
         long auxSheetNodes = scalar("SELECT count(*) FROM semantic_tab_view_node tvn "
                 + "JOIN semantic_node n ON n.id = tvn.node_id "
                 + "WHERE tvn.role='AUX' AND n.node_kind='SHEET' AND tvn.status='ACTIVE'");
+        // task-260907（用户 2026-09-07 裁决）登记的例外身份 —— 见本方法下方两条断言的说明
+        @SuppressWarnings("unchecked")
+        List<String> lookupOrAuxEdgeIds = (List<String>) em.createNativeQuery(
+                "SELECT f.node_key||'/'||f.dialect||' --'||e.edge_kind||'--> '||t.node_key "
+                        + "FROM semantic_edge e "
+                        + "JOIN semantic_node f ON f.id = e.from_node_id "
+                        + "JOIN semantic_node t ON t.id = e.to_node_id "
+                        + "WHERE e.edge_kind IN ('LOOKUP','AUX') ORDER BY 1").getResultList();
+        @SuppressWarnings("unchecked")
+        List<String> auxSheetIds = (List<String>) em.createNativeQuery(
+                "SELECT v.dialect||'/'||v.tab_type||COALESCE(NULLIF('/'||v.variant_key,'/'),'')||' AUX '||n.node_key "
+                        + "FROM semantic_tab_view_node tvn "
+                        + "JOIN semantic_node n ON n.id = tvn.node_id "
+                        + "JOIN semantic_tab_view v ON v.id = tvn.view_id "
+                        + "WHERE tvn.role='AUX' AND n.node_kind='SHEET' AND tvn.status='ACTIVE' ORDER BY 1").getResultList();
         long withDiscriminator = scalar("SELECT count(*) FROM semantic_node "
                 + "WHERE discriminator IS NOT NULL AND status='ACTIVE'");
         long twoHopPaths = scalar("SELECT count(*) FROM semantic_edge e1 JOIN semantic_edge e2 "
@@ -177,16 +193,23 @@ class Sec31CompileCorrectnessTest {
                         + "  对象回来了 ⇒ 必须重新评估：要么把对应用例接回来（历史实现见本类 git 历史），"
                         + "要么解释清楚新回来的 V6 节点为什么不需要这些编译产物断言。");
 
-        assertEquals(0L, lookupOrAuxEdges,
-                "🚦 AC-4（查名连线自动生成、不重复 JOIN）的作废前提被推翻：图里出现了 "
-                        + lookupOrAuxEdges + " 条 LOOKUP/AUX 边。\n"
-                        + "  作废理由是「v9 一条查名边都没有」。现在有了 ⇒ 「自动生成的查名 JOIN 会不会重复/别名冲突」"
-                        + "这道防线必须重新接上。");
+        // 🪦→🚦 task-260907 B-1（用户 2026-09-07 裁决）：**前提已被本任务有意推翻**，不再是 0。
+        //   客户料号 ds_quote_customer_part 接入语义图，必须声明成 LOOKUP —— SemanticCompiler 里
+        //   只有 LOOKUP 编译成 LEFT JOIN（edge_kind='JOIN' 走 emitMandatoryJoin，出的是 INNER JOIN，
+        //   会把没有客户料号的物料整行丢掉，违反 AC-2②）。
+        // 🚫 **不许把断言删掉，也不许把 0 改成 1** —— 两种改法都会让哨兵对「又多出一个」放行。
+        //   改为钉住**违例的身份集合**：再冒出第二条 LOOKUP/AUX 边，本条照样当场变红。
+        assertEquals(List.of("MATERIAL/QUOTE --LOOKUP--> CUSTOMER_PART"), lookupOrAuxEdgeIds,
+                "🚦 LOOKUP/AUX 边的集合与登记的例外不符（实际 " + lookupOrAuxEdges + " 条）。\n"
+                        + "  唯一登记在案的例外 = task-260907 B-1 的『物料 → 客户料号』左连边。\n"
+                        + "  出现别的查名边 ⇒ 「自动生成的查名 JOIN 会不会重复/别名冲突」这道防线必须重新接上"
+                        + "（AC-4 历史实现见本类 git 历史）。");
 
-        assertEquals(0L, auxSheetNodes,
-                "🚦 AC-5（附属源编译为相关标量子查询、不改行粒度）的作废前提被推翻：出现了 "
-                        + auxSheetNodes + " 个以 AUX 角色挂在页签视图上的 SHEET 节点。\n"
-                        + "  作废理由是「v9 每个页签视图只挂 1 个 SHEET」。现在多源了 ⇒ 行数翻倍风险回来了，必须重新评估。");
+        assertEquals(List.of("QUOTE/主件 AUX CUSTOMER_PART"), auxSheetIds,
+                "🚦 以 AUX 角色挂在页签视图上的 SHEET 节点集合与登记的例外不符（实际 " + auxSheetNodes + " 个）。\n"
+                        + "  唯一登记在案的例外 = task-260907 B-1 挂在 QUOTE/主件 上的客户料号。\n"
+                        + "  ⚠️ 它与主源实测为 1:1（挂多个客户产品编号时会放大，已在需求文档 AC-2 记录残留），\n"
+                        + "  再出现别的 AUX SHEET ⇒ 行数翻倍风险回来了，AC-5 必须重新评估。");
 
         assertEquals(0L, withDiscriminator,
                 "🚦 AC-6/AC-8（判别式由页签类型推导 / 费用类双源判别式）的作废前提被推翻："

@@ -1,7 +1,7 @@
 # CPQ 系统接口总览文档（main-api.md）
 
 > 本文件由技术总监扫描 `cpq-backend` 全部 JAX-RS Resource 自动生成，覆盖 **89 个 Resource 类、约 422 个 HTTP 端点**，按业务模块分为 12 大类。
-> 生成日期：2026-07-08 ｜ 最近契约更新：**2026-09-03（task-260903 产品管理页重做：新增 1 个端点 —— `GET /dataset/{dataset}/customer-parts` 客户料号只读列表，见 §6.9；其前序 task-260902 新增 9 个端点，见 §6.8 / §6.9）** ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
+> 生成日期：2026-07-08 ｜ 最近契约更新：**2026-09-07（task-260907 移除主数据维护端的核价页签：删除 §6.3 中「核价基础数据导入」一节所记的 POST 端点；同批下线但总账从未登记的还有其模板下载 GET 端点与核价基础数据维护端的七个端点）** ｜ 前次：2026-09-03（task-260903 产品管理页重做：新增 `GET /dataset/{dataset}/customer-parts`，见 §6.9；其前序 task-260902 新增 9 个端点，见 §6.8 / §6.9） ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
 > 用途：前后端接口契约基线、联调对照、新接口设计参照。字段说明取自源码 javadoc / 注释，无注释处据字段名与类型推断。
 
 ---
@@ -4903,7 +4903,11 @@ Cell：`quote`(Object 报价值)、`costing`(Object 核价值)、`highlighted`(b
 类级 `@Path`: `/api/cpq/basic-data-import/v6`
 `@Produces`: `application/json`
 
-> 报价基础数据 19 Sheet（按 customerId 注入 customer_no）；核价基础数据 24 Sheet（customer_no 从 Excel 行读）。
+> 报价基础数据 19 Sheet（按 customerId 注入 customer_no）。
+>
+> ⚠️ **2026-09-07（task-260907）**：本类原有的核价基础数据导入端点（POST，子路径 `/pricing`）
+> 与其模板下载端点（GET，子路径 `/pricing/template`）已随主数据维护端核价页签整体下线而删除，
+> 现均返 **404**。本类其余端点不变。
 
 #### 报价基础数据导入（异步）
 - **功能**: 上传报价基础数据 Excel，同步建导入记录并读入内存，后台线程异步处理，立即返回 PROCESSING；前端用 GET `/{recordId}` 轮询
@@ -4941,21 +4945,6 @@ Cell：`quote`(Object 报价值)、`costing`(Object 核价值)、`highlighted`(b
 | writtenCounts | Map&lt;String,Integer&gt; | 各目标表写入条数 |
 
 - **错误码**: 400（customerId/file 为空、客户未配 code）、401（未登录）、404（客户不存在）、500（读文件失败）
-
-#### 核价基础数据导入（同步）
-- **功能**: 上传核价基础数据 Excel，同步解析落库并返回结果（customer_no 从 Excel 行内读取）
-- **方法**: POST
-- **路径**: `/api/cpq/basic-data-import/v6/pricing`
-- **鉴权**: SALES_MANAGER / SYSTEM_ADMIN
-- **请求头**: `Content-Type: multipart/form-data`
-- **请求体**（multipart form）:
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| file | FileUpload | 是 | 上传的 Excel 文件 |
-
-- **响应内容**: `ApiResponse<ImportResultDTO>`（字段同上；同步返回完整结果）
-- **错误码**: 400（file 为空）、401（未登录）、500（导入失败）
 
 #### 由导入记录创建报价单
 - **功能**: V6 commit Step 2——导入完成后依据模板创建报价单（不填 LineItem，由编辑页 autoPopulate 自动生成）
@@ -5458,7 +5447,7 @@ Cell：`quote`(Object 报价值)、`costing`(Object 核价值)、`highlighted`(b
 | GET | `/api/cpq/dataset/{dataset}/parts/{axisValue}/sheets/{sheetKey}/rows` | 读 4 角色 | 行数据。`?version=` 指历史版则读 `_history` 并置 `isLatest:false`/`readOnly:true`。**无数据返 `rows:[]` + `versionNo:null`，不 404** |
 | GET | `/api/cpq/dataset/{dataset}/parts/{axisValue}/sheets/{sheetKey}/versions` | 读 4 角色 | 版本列表（主表 + `_history` 一条 UNION ALL 聚合），倒序 |
 | PUT | `/api/cpq/dataset/{dataset}/parts/{axisValue}/sheets/{sheetKey}/rows` | `PRICING_MANAGER` / `SYSTEM_ADMIN` | 保存整组全量，走与导入**同一条**升版路径 |
-| GET | `/api/cpq/dataset/{dataset}/lookup/{masterType}` | 读 4 角色 | 主数据下拉。`masterType` ∈ `material`/`process`/`element`/`recipe`/`customer`。**只读**，与 `/pricing-basic-data/lookup` 并行不干扰 |
+| GET | `/api/cpq/dataset/{dataset}/lookup/{masterType}` | 读 4 角色 | 主数据下拉。`masterType` ∈ `material`/`process`/`element`/`recipe`/`customer`。**只读**（原与核价基础数据维护端的 lookup 端点并行不干扰；后者已于 2026-09-07 随 task-260907 下线，本端点自此为唯一 lookup） |
 | GET | `/api/cpq/dataset/{dataset}/plating-schemes` | 读 4 角色 | 电镀方案**只读**列表。`{dataset}` 仅接受 `quote`（10 列）与 `cost-detail`（8 列，多「密度」少「网址/名称/抓取规则」）；传 `cost-basic` **404**。`columns` 按数据集下发，前端不得写死 |
 | GET | `/api/cpq/dataset/{dataset}/customer-parts` | 读 4 角色 | 客户料号**只读**列表。`{dataset}` **仅接受 `quote`**（另两套无客户维度，传之 400）。Query：`page`（**0-based**）/`size`/`keyword`/**`customerNo`（可选，精确等值，与 `keyword` 取 AND；传不存在的值返 `total:0` 而非 404）**/`sortBy`/`sortDir`。`columns` 按数据集下发（6 列），**只投影 `{name,label,type}` 三键**，不下发 `editable/required/compared`（本页只读，下发 `editable=true` 会误导前端渲染编辑态）。🚨 `customerName` 由 **LEFT JOIN `customer` 表**得出，**JOIN 键是 `customer.code`**（该表无 `customer_no` 列）；必须 LEFT，实测 17 行中 3 行 JOIN 不到（`Q13CUST0617`×2、`C1`×1 未建档），用 INNER 会静默丢行使 total 17→14。`keyword` **严格匹配 `customer_no`/`customer_product_no`/`material_no` 三列** |
 | GET | `/api/cpq/dataset/{dataset}/customer-parts/customers` | 读 4 角色 | 客户料号过滤器的**候选来源**。🚨 候选取自 `SELECT DISTINCT customer_no FROM ds_quote_customer_part`（**不是 `customer` 主数据表**）—— 实测现网 `Q13CUST0617`/`C1` 未在客户档案建档，从主数据取会让这两个客户的 3 行产品**在页面上看得见却永远筛不出来**；从主数据取还会多列 35 个无产品客户。`customerName` 走 `LEFT JOIN customer ON c.code = t.customer_no`（**必须 LEFT**，INNER 实测候选 5→3、覆盖 17→14）。响应 `{items:[{customerNo, customerName, count}]}` |

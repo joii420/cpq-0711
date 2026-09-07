@@ -8,9 +8,10 @@ import java.util.List;
  *
  * <p>三套互相独立：无外键、无共享行、无相互引用（需求文档 §① 目标）。
  *
- * <p>🚨 <b>闸门 A0 裁决 D-13</b>：本包为新建独立包，与
- * {@code com.cpq.basicdata.v6.maintenance.PricingSheetRegistry} 及 {@code Q01~Q19} / {@code P01~P24}
- * <b>并行双轨、零耦合</b>，现有代码一行不改。
+ * <p>🚨 <b>闸门 A0 裁决 D-13</b>：本包为新建独立包，与当时的核价基础数据维护端登记表
+ * 及 {@code Q01~Q19} / {@code P01~P24} 导入器 <b>并行双轨、零耦合</b>，现有代码一行不改。
+ * <p>（核价维护端整包已于 2026-09-07 随 task-260907 移除；本包与 {@code Q01~Q19} /
+ * {@code P01~P24} 导入器之间的零耦合关系不变。）
  */
 public interface DatasetRegistry {
 

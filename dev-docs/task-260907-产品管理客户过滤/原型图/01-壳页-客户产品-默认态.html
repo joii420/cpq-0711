@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>01 · 壳页默认态（客户产品页签）</title>
+<link rel="stylesheet" href="prototype.css">
+</head>
+<body>
+
+<div class="proto-note">
+  <b>01 · 壳页默认态 —— 全局客户选择器 + 客户产品页签</b>　服务 <code>F-1</code> <code>F-3</code>　AC-1 / AC-4 / AC-9<br>
+  本图定义两件事：① 客户选择器的<b>位置</b>（标题行右侧、与「产品分类管理」同一行，<b>不在页签内部</b>）；
+  ② 客户产品页签<b>原有的那个下拉已被摘掉</b>，它的数据现在由壳页下发。<br>
+  🔑 默认值是「所有客户」，此时列表展示全量 —— 客户编号列可分辨每行归属。数据取自 dev 库真实行。
+</div>
+
+<div class="page">
+
+  <div class="page-head">
+    <h2>产品管理</h2>
+    <div class="head-actions">
+      <!-- 🎯 F-1：全局客户选择器。带 addon 标签，让「这是页面级筛选」一眼可辨 -->
+      <div class="select-group">
+        <span class="addon">客户</span>
+        <span class="select"><span class="val placeholder">所有客户</span><span class="caret">▾</span></span>
+      </div>
+      <button class="btn">⊞ 产品分类管理</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active">客户产品</div>
+    <div class="tab">销售产品</div>
+  </div>
+
+  <div class="toolbar">
+    <!-- ⚠️ 页签内部【不再有】客户下拉 —— 它已上提到标题行 -->
+    <span class="input">搜索客户产品编号 / 客户料号名称</span>
+    <button class="btn">查询</button>
+    <button class="btn">重置</button>
+    <div class="toolbar-right">
+      <span class="muted">共 22 条</span>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="tbl">
+      <colgroup>
+        <col style="width:130px"><col style="width:180px"><col style="width:190px">
+        <col style="width:180px"><col style="width:140px"><col style="width:170px">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>客户编号</th><th>客户名称</th><th>客户产品编号</th>
+          <th>客户料号名称</th><th>客户图号</th><th>销售料号</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono">CUST-0001</td><td>罗克韦尔</td><td class="mono">2222222</td>
+          <td>测试选配</td><td class="muted">—</td><td class="mono">0526-2609000005</td>
+        </tr>
+        <tr>
+          <td class="mono">CUST-0001</td><td>罗克韦尔</td><td class="mono">CP-S-80011</td>
+          <td class="muted">—</td><td class="muted">—</td><td class="mono">S-80011</td>
+        </tr>
+        <tr>
+          <td class="mono">CUST-0001</td><td>罗克韦尔</td><td class="mono">CP-W-1001</td>
+          <td class="muted">—</td><td class="muted">—</td><td class="mono">W-1001</td>
+        </tr>
+        <tr>
+          <td class="mono">CUST-0002</td><td>测试客户</td><td class="mono">11001101</td>
+          <td class="muted">—</td><td class="muted">—</td><td class="mono">3120011203</td>
+        </tr>
+        <tr>
+          <td class="mono">CUST-0004</td><td>正泰</td><td class="mono">A002</td>
+          <td>示例客户料号</td><td class="mono">4332243</td><td class="mono">S0001</td>
+        </tr>
+        <!-- 🔑 未建档客户：客户名称列渲染「—」，行本身照常展示，🚫 不许被前端筛掉 -->
+        <tr>
+          <td class="mono">C1</td>
+          <td class="muted">—</td>
+          <td class="mono">CP-TEST-Q13-CODE</td>
+          <td class="muted">—</td><td class="muted">—</td><td class="mono">TEST-Q13-CODE</td>
+        </tr>
+        <tr>
+          <td class="mono">Q13CUST0617</td>
+          <td class="muted">—</td>
+          <td class="mono">CP-Q13-0617-A</td>
+          <td class="muted">—</td><td class="muted">—</td><td class="mono">Q13-0617-A</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="pager">
+    <span class="muted">共 22 条</span>
+    <span class="pg-num">‹</span>
+    <span class="pg-num active">1</span>
+    <span class="pg-num">2</span>
+    <span class="pg-num">›</span>
+    <span class="select" style="min-width:110px"><span class="val">20 条/页</span><span class="caret">▾</span></span>
+  </div>
+
+</div>
+
+<div class="proto-note" style="margin-top:16px">
+  <b>还原纪律 —— 三处最容易做错的地方</b><br>
+  1. 选择器<b>必须在标题行</b>，不许放回页签内部（放回去就退化成页签级私有状态，AC-9 不成立）。<br>
+  2. 「所有客户」这一项的 value 用<b>空串而非 <code>undefined</code></b> —— antd <code>Select</code> 拿到 <code>undefined</code>
+     会显示 placeholder 而不是选项文案（这是本项目已踩过的坑）。发请求时再转回 <code>undefined</code>。<br>
+  3. 未建档客户（<code>C1</code> / <code>Q13CUST0617</code>）的行<b>照常展示</b>，客户名称列渲染 <code>—</code>。
+     🚫 不得因 <code>customerName</code> 为空而把行或候选项过滤掉。
+</div>
+
+</body>
+</html>

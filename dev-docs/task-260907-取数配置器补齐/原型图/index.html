@@ -57,6 +57,31 @@
 并让<b>列表页与详情页的概念对齐</b>（列表还在显示已被取消的「页签类型」）。
 </div></div>
 
+<div class="card"><h2>📌 数据出处（每一项都要能回答「查来的还是想出来的」）</h2>
+<div class="sub">🔑 本段的作用不是存档，而是<b>在写的时候就逼自己回答这个问题</b> ——
+经验是：它比「记得去查」有效得多。</div>
+<table><thead><tr><th style="width:230px">内容</th><th>出处</th></tr></thead><tbody>
+<tr><td>「物料」9 个字段的显示名与 <span class="mono">db_column</span></td>
+    <td><span class="mono">SELECT db_column, display_name, roles FROM semantic_node_column c JOIN semantic_node n … WHERE n.node_key='MATERIAL' AND n.dialect='QUOTE'</span>，2026-09-07 实查</td></tr>
+<tr><td>「客户料号」4 个列名</td>
+    <td><span class="mono">information_schema.columns</span> 实查 <span class="mono">ds_quote_customer_part</span>（业务列 = 物理列 − 系统列）。
+    ⚠️ <b>显示名是本原型的提议</b>，B-1 建节点时定稿</td></tr>
+<tr><td>47 / 19 / 28 / 0 四个行数</td><td>dev 库 <span class="mono">cpq_db_0724</span> 实查，2026-09-07。⚠️ 共享库并发写，<b>会漂</b></td></tr>
+<tr><td><b>极值样本</b>（品名 65 / 料号 19 / 客户产品号 18 / 客户零件名 6）</td>
+    <td><span class="mono">ORDER BY length(x) DESC LIMIT 3</span> 实查。
+    🚫 <b>不是自己想的长字符串</b> —— 那会让「最长文案」这一屏本身成为编造的一部分</td></tr>
+<tr><td>整体布局</td><td>用户 2026-09-07 真机截图 <span class="mono">证据/用户报-物料BOM生成的SQL无递归.png</span> + <span class="mono">证据/真页面-组件管理列表-2026-09-07.png</span></td></tr>
+</tbody></table>
+<div class="note del">
+🚨 <b>本目录首版曾凭想象编造数据</b>（编出实际不存在的「计量单位/币种/备注」，把「类型」写成「料号类型」，
+漏掉「尺寸/旧料号/生产料号」；组件列表画成树形条目，真页面是<b>目录卡片列表</b>）—— 用户 2026-09-07 当场指出后返工。
+<br><b>为什么最难被发现</b>：转述至少有个来源、回头能对；<b>编的东西自带内部一致性</b> ——
+「计量单位/币种」看起来完全像那张表该有的列，<b>正因为它合理，才没人会去查</b>。
+<br>⇒ 判据只能是「<b>这个值我是查来的，还是想出来的</b>」，不能是「它看起来对不对」。
+<br>📌 同日 <span class="mono">核价回填</span> 会话在自己的原型里编造客户名（苏州西门子/西安中熔/珠海格力，实际是正泰/罗克韦尔/Import Record Test Customer），
+<b>同一天、同一条规则、同一种方式</b> —— 两条独立实证并列，说明这不是偶然。
+</div></div>
+
 <div class="card"><h2>🕰️ 历史快照</h2>
 <table><thead><tr><th style="width:300px">快照</th><th>关系</th></tr></thead><tbody>
 <tr><td><span class="mono">task-260904-页签类型收缩/原型图/取数配置Tab.html</span></td>

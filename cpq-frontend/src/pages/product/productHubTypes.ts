@@ -2,7 +2,8 @@
 // 产品管理页（task-260903）· 前端类型定义
 //
 // 对齐 `dev-docs/task-260902-.../api.md` 的 `{dataset}` 参数化只读端点契约，
-// **不是** `part-costing/types.ts`（那套是核价侧旧契约：SheetMeta.tabName / version:string，
+// **不是**主数据维护核价侧旧公共件的 `types.ts`（已于 2026-09-07 迁至 `pages/master-data/shared/`；
+//   那套是核价侧旧契约：SheetMeta.tabName / version:string，
 // 与新契约的 sheetName / versionNo:number 不同名不同型，直接复用会静默取到 undefined）。
 //
 // 🚫 本文件只声明本页**读端点**用得到的形状。写端点（PUT rows / POST import / lookup）

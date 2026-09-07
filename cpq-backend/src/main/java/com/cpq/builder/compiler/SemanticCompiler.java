@@ -86,7 +86,52 @@ public class SemanticCompiler {
         LinkedHashSet<String> usedAliases = new LinkedHashSet<>();
         /** B-50：锚点上存在 NARROW 边 ⇒ 轴收窄职责已移交半连接，applyFullScope 不再直接发轴谓词。 */
         boolean narrowedByBridge = false;
+
+        /**
+         * task-260907 B-3（F-3，AC-4）：树页签的<b>子件列</b>物理列名，非树页签恒 {@code null}。
+         *
+         * <p>非空时 {@link #applyFullScope} 对<b>锚点自身</b>发的 {@code = ANY(:total_material_no)}
+         * 改落在这一列上（父件列 → 子件列）。🚫 只作用于锚点：GRAIN/SUB 目标是别的物理表，
+         * 它们靠自己的连接键与锚点相关联，轴列语义不变。
+         */
+        String treeChildColumn;
+        /** 树页签根分支的数据源节点（同方言「主件」页签的锚点，如 QUOTE → {@code ds_quote_material}）。 */
+        SemanticNode treeRootNode;
+        /** 锚点上生效的那条 NARROW 料号桥边（核价两套有、报价侧为 null）——树根分支要经同一座桥。 */
+        SemanticEdge narrowEdge;
+        /**
+         * 树页签根分支自己的 WHERE 谓词原文。
+         *
+         * <p>🚨 单独存一份是给 {@link #assertAxisParamSingleSemantic} 记账用的：护栏按
+         * 「结构化认出的桥 vs 产物里数出的桥」对账，根分支的桥不在 {@link #anchorWhere} 里，
+         * 不登记就会被判成 {@code COMPILE_AXIS_NARROW_UNCLASSIFIABLE}（护栏在正确实现上误报）。
+         * <b>登记 ≠ 放宽</b>：它仍然要出现在产物里、条数仍然要对得上，只是从「未知形态」变成「已知形态」。
+         */
+        List<String> treeRootWhere = new ArrayList<>();
     }
+
+    // ---------------- task-260907 B-3：树页签边式契约的三个约定列 / 坐标 ----------------
+
+    /**
+     * 树契约的两个约定列名（与存量 {@code $bom_view} / {@code $wl_bom_view} 逐字同名）：
+     * {@code material_no} = <b>子件</b>、{@code parent_no} = <b>父件</b>。
+     *
+     * <p>{@code BomTreeRenderService} 按 {@code (parent_no, material_no)} 边键分桶
+     * （见该类 {@code edgeKey} 与 {@code assertParentNoPresent}）——两个名字都是**渲染主链路的硬契约**，
+     * 🚫 不许改名，也不许只出其中一个（只出 material_no 时渲染层会 400「未输出 parent_no 列」）。
+     */
+    private static final String TREE_COL_MATERIAL_NO = "material_no";
+    private static final String TREE_COL_PARENT_NO = "parent_no";
+
+    /**
+     * 树页签根分支的数据源坐标：同方言「主件」页签的锚点节点。
+     *
+     * <p>🚫 这里出现字面量「主件」是<b>刻意的且唯一的</b>一处：根分支要的是「成品自身那张主档表」，
+     * 图里没有别的属性能表达它（{@code node_key} 三方言都叫 {@code MATERIAL} 但那是 key 巧合，
+     * 不是契约）。用页签坐标反查 ⇒ 表名仍然从图里来（QUOTE → {@code ds_quote_material}），
+     * 换表只改种子不改代码。该值属 {@code ComponentService.VALID_TAB_TYPES} 的存储值域（D-39）。
+     */
+    private static final String ROOT_SOURCE_TAB_TYPE = "主件";
 
     public CompileResult compile(SemanticGraphSnapshot snap, BuilderConfig cfg, CompileDialect dialect) {
         return compile(snap, cfg, dialect, false);
@@ -120,6 +165,17 @@ public class SemanticCompiler {
         // 或 tabView.switches 决定——统一改为在锚点料号列上生成 = ANY(:total_material_no) 收窄
         // （见下方 anchorWhere 追加处），SQL 侧不再区分"闭包/非闭包"两态。
 
+        // task-260907 B-3（F-3）：本页签是不是「BOM 树」——判据只有一条，走 TabSemanticResolver
+        // 的唯一映射（🚫 不在本文件里再写一份 tab_type→semantic 的 if/else，那会是第四份）。
+        boolean treeSemantic = com.cpq.component.service.TabSemanticResolver.SEMANTIC_TREE.equals(
+                com.cpq.component.service.TabSemanticResolver.semanticOfGraphTabType(c.tabView.tabType));
+        // 根分支的数据源节点必须**在建列目录之前**解析出来，否则它的物理表进不了下面那一条
+        // columnsOf() 查询，就得为它另发一条 SQL（N+1 的起点）。解析不到先记 null，
+        // 真要用它的时候（applyTreeContract）再报错。
+        if (treeSemantic) {
+            c.treeRootNode = resolveTreeRootNode(c);
+        }
+
         // 收集本次涉及的全部物理表（anchor + 直接边目标 + 价格函数节点忽略，函数无物理表）
         Set<String> tables = new LinkedHashSet<>();
         tables.add(c.anchor.physicalTable);
@@ -127,9 +183,20 @@ public class SemanticCompiler {
             SemanticNode to = snap.nodeById.get(e.toNodeId);
             if (to != null && to.physicalTable != null) tables.add(to.physicalTable);
         }
+        if (c.treeRootNode != null && c.treeRootNode.physicalTable != null) {
+            tables.add(c.treeRootNode.physicalTable);
+        }
         c.columnCatalog = catalog.columnsOf(tables);
 
         c.anchorAlias = allocAlias(c, c.anchor.physicalTable);
+
+        // 🌳 task-260907 B-3：子件列必须**在 NARROW 循环之前**解析出来 ——
+        //    核价两套的 BOM 页签靠料号桥（NARROW 半连接）收窄，而树契约要求那条半连接
+        //    也落在**子件列**上（与报价侧的直接轴收窄同一口径）。晚于 NARROW 循环解析，
+        //    桥就已经按父件列发出去了，再改就得回头改字符串 —— 那正是最容易漂的写法。
+        if (treeSemantic) {
+            c.treeChildColumn = resolveTreeChildColumn(c);
+        }
 
         // B-26（AC-15①，D-45同类跟进）：锚点自身的基线粒度此前从未写进 c.grainDims——只有
         // resolveGrain() 命中某个 GRAIN 目标时才会追加一维，导致"只选主档列（不涉及任何 GRAIN
@@ -165,9 +232,39 @@ public class SemanticCompiler {
         c.usedAliases.add("hf_part_no");
         c.usedAliases.add("view_version");
 
+        // ── task-260907 B-3（F-3，AC-4）：树页签走「边式契约」 ──────────────────────────
+        // 三处改动（其余数据源一个字不变，AC-8）：
+        //   ① 产出父子两列 material_no（子）/ parent_no（父）；
+        //   ② 轴收窄从父件列改到子件列（见 Ctx.treeChildColumn / applyFullScope）；
+        //   ③ 补 UNION ALL 根分支（无父边的成品自身，parent_no 置 NULL）。
+        // 🚫 **不生成 WITH RECURSIVE**：递归早已存在于 costing_bom_tree_config（全系统一份、
+        //    配置化、自带 CYCLE 防环），从本单根成品 unnest(:production_part_nos) 出发产出
+        //    :total_material_no。页签 SQL 只吐「集合内的边」，树由 BomTreeRenderService 拼。
+        // 🚦 2026-09-07 用户裁决：**核价两套（COST_BASIC / COST_DETAIL）本期一并改**，
+        //    不再按「锚点挂了料号桥就跳过」收窄。桥不是障碍，只是收窄形态不同：
+        //      · 报价侧无桥 ⇒ 直接轴收窄，子件列上发 `= ANY(:total_material_no)`；
+        //      · 核价两套有桥 ⇒ 半连接收窄，同样落在**子件列**（见 emitNarrowPredicate），
+        //        根分支也经同一座桥（见 buildTreeRootBranch）—— 🚫 绝不能退回
+        //        `<根表>.<轴> = ANY(:total_material_no)`：核价轴是生产料号、数组装的是销售料号，
+        //        那样写恒不命中（0 行且不报错）；更不能干脆不收窄，那是整张主档表全扫。
+        boolean treeContract = treeSemantic;
+        String treeParentExpr = null;
+        String treeChildExpr = null;
+        if (treeContract) {
+            treeChildExpr = c.anchorAlias + "." + c.treeChildColumn;
+            treeParentExpr = anchorColumnOnly(c);
+            // 与 hf_part_no / view_version 同理（B-47）：两个约定列先占住名字，**必须在逐列循环之前**。
+            // 核价侧「裸 dbColumn」别名规则下，业务列完全可能正好叫 material_no —— 撞的就是
+            // 渲染层用来定位树节点的那一列，后果比普通撞名重得多。
+            c.usedAliases.add(TREE_COL_MATERIAL_NO);
+            c.usedAliases.add(TREE_COL_PARENT_NO);
+        }
+
         // 逐列编译 SELECT 表达式
         List<String> selectExprs = new ArrayList<>();
         List<String> declaredColumns = new ArrayList<>();
+        // 树页签根分支的逐列占位表达式，与 selectExprs **严格同序同长**（UNION ALL 要求列数对齐）。
+        List<String> rootExprs = new ArrayList<>();
         for (BuilderConfig.ColumnConfig col : effectiveColumns) {
             if (isPriceColumn(pricePlan, col)) continue; // 价格策略列单独在下面统一输出
             ResolvedColumn rc = resolveColumn(c, col.sourceNodeKey, col.sourceColumn);
@@ -175,6 +272,7 @@ public class SemanticCompiler {
                     AliasGenerator.viewColumn(dialect, rc.node.shortName, rc.column.displayName, rc.column.dbColumn),
                     rc.node.shortName);
             selectExprs.add(rc.expr + " AS " + quoteAlias(alias));
+            rootExprs.add(TREE_NULL_PLACEHOLDER);
             declaredColumns.add(alias);
             col.viewColumn = alias;
             col.resolvedDataType = rc.column.dataType;
@@ -196,6 +294,7 @@ public class SemanticCompiler {
                         AliasGenerator.bareColumn(col.fieldName != null ? col.fieldName : funcCol.displayName),
                         pricePlan.funcNode.shortName);
                 selectExprs.add(PRICE_FUNC_ALIAS + "." + dbCol + " AS " + quoteAlias(bare));
+                rootExprs.add(TREE_NULL_PLACEHOLDER);
                 declaredColumns.add(bare);
                 col.viewColumn = bare;
                 col.resolvedDataType = funcCol.dataType;
@@ -207,10 +306,22 @@ public class SemanticCompiler {
         // hf_part_no 表达式（D-50/D-56：始终保持锚点自身列，不再按闭包改写为 COALESCE(cl.root_no,...)——
         // "子件行归属哪个成品"这层职责已整体移交 Java 侧，见 BomTreeRenderService#collectTotalMaterialNoUnion
         // 顺带产出的「后代→根」映射与 B-21 的 expandMulti 回分，AC-3③/AC-62）。
-        String anchorExpr = requalifyAnchorExpr(c);
-        String hfExpr = anchorExpr;
+        String anchorExpr = requalifyAnchorExpr(c);   // 顺带做别名漂移校验，树/非树都要跑
+        // 🌳 task-260907 B-3①：树页签的 hf_part_no 取**子件**（这一行讲的是这个料号，不是它父件），
+        //    与存量 $wl_bom_view 的 `mbt.component_no as hf_part_no` 同口径。
+        String hfExpr = treeContract ? treeChildExpr : anchorExpr;
         selectExprs.add(0, hfExpr + " AS hf_part_no");
+        rootExprs.add(0, TREE_ROOT_SELF_EXPR);   // 占位，下面拿到根别名后统一回填
         declaredColumns.add(0, "hf_part_no");
+        if (treeContract) {
+            // 顺序 = api.md §2.2：material_no（子）· parent_no（父）· hf_part_no · 业务列…
+            selectExprs.add(0, treeParentExpr + " AS " + TREE_COL_PARENT_NO);
+            rootExprs.add(0, "NULL::text");
+            declaredColumns.add(0, TREE_COL_PARENT_NO);
+            selectExprs.add(0, treeChildExpr + " AS " + TREE_COL_MATERIAL_NO);
+            rootExprs.add(0, TREE_ROOT_SELF_EXPR);
+            declaredColumns.add(0, TREE_COL_MATERIAL_NO);
+        }
 
         // 锚点自身收窄（轴收窄 + 核价侧版本谓词，B-41）+ 判别式
         // ⚠️ 轴收窄现在**三个方言统一**由 applyFullScope 发（见该方法注释）——原先 QUOTE 方言在
@@ -228,6 +339,7 @@ public class SemanticCompiler {
             Set<String> anchorCols = c.columnCatalog.getOrDefault(c.anchor.physicalTable, Set.of());
             if (emitsVersionFilter(c, anchorCols)) {
                 selectExprs.add(c.anchorAlias + ".version_no::text AS view_version");
+                rootExprs.add("NULL::text");
                 declaredColumns.add("view_version");
             }
         }
@@ -260,11 +372,20 @@ public class SemanticCompiler {
 
         // FROM（D-50：闭包 CTE 已停用，顶层 FROM 恒为裸表——AC-3④，closureCte() 不再被调用）
         StringBuilder sql = new StringBuilder();
+        if (treeContract) {
+            sql.append("-- 树契约: ").append(TREE_COL_MATERIAL_NO).append("=子 / ")
+               .append(TREE_COL_PARENT_NO).append("=父 + :total_material_no; 边式全子件 + 根分支\n");
+        }
         sql.append("SELECT\n  ").append(String.join(",\n  ", selectExprs)).append("\n");
         sql.append("FROM ").append(c.anchor.physicalTable).append(" ").append(c.anchorAlias).append("\n");
         for (String j : c.joinClauses) sql.append("  ").append(j).append("\n");
         if (!c.anchorWhere.isEmpty()) {
             sql.append("WHERE ").append(String.join(" AND ", c.anchorWhere)).append("\n");
+        }
+        // 🌳 task-260907 B-3③：根分支 —— 集合内**无父边**的成品自身（树根，parent_no = NULL）。
+        //    没有它，spine 的根节点（parent_no IS NULL）永远配不到业务行 ⇒ 树顶一行空白。
+        if (treeContract) {
+            sql.append(buildTreeRootBranch(c, rootExprs));
         }
         // D-45①（2026-08-21 主线裁决）：PG 没有 ORDER BY 的行序是未定义的——必须排序。判据是
         // "golden 行序与基准一致"，不是"加了 ORDER BY 就算数"（golden 实测见 backtask 回报）。键的
@@ -272,12 +393,22 @@ public class SemanticCompiler {
         // 打头（D-50 后闭包层级列已随 A 机制一并停用），随后接锚点节点自身 grain_columns（逐列，按
         // 声明顺序），最后接该节点带 SORT 角色的列（如有）。
         List<String> orderCols = new ArrayList<>();
-        orderCols.add(anchorColumnOnly(c));
-        for (String grainCol : c.anchor.grainColumns) {
-            orderCols.add(c.anchorAlias + "." + grainCol);
+        if (treeContract) {
+            // 🚨 UNION ALL 的 ORDER BY **只能引用输出列名/序号**，不能写 `别名.列`
+            //    （PG：`ORDER BY dqmb.material_no` 在集合运算上直接语法错）。⇒ 树分支改用输出列名。
+            //    键的构成与非树同源：父 → 子 → 该节点的 SORT 列（选中了才有输出列可排）。
+            orderCols.add(TREE_COL_PARENT_NO);
+            orderCols.add(TREE_COL_MATERIAL_NO);
+            String sortAlias = findSortOutputAlias(c, effectiveColumns);
+            if (sortAlias != null) orderCols.add(sortAlias);
+        } else {
+            orderCols.add(anchorColumnOnly(c));
+            for (String grainCol : c.anchor.grainColumns) {
+                orderCols.add(c.anchorAlias + "." + grainCol);
+            }
+            String sortCol = findSortColumn(c);
+            if (sortCol != null) orderCols.add(sortCol);
         }
-        String sortCol = findSortColumn(c);
-        if (sortCol != null) orderCols.add(sortCol);
         sql.append("ORDER BY ").append(String.join(", ", orderCols));
 
         String finalSql = sql.toString();
@@ -414,10 +545,25 @@ public class SemanticCompiler {
                             + inputCol + "，无法按销售料号收窄", Map.of("table", target.physicalTable));
         }
 
+        // 🌳 task-260907 B-3②（核价侧）：树页签的收窄同样落在**子件列**上。
+        //    改动前是 `<锚点>.production_no IN (...)`，即「这条边的**父件**在本单」；
+        //    树契约要的是「这条边的**子件**在本单」，与报价侧 input_material_no 的直接轴收窄同口径。
+        //    🚫 只在树页签覆盖，其余数据源仍按连接键左列（AC-8：非树产物逐字不变）。
+        List<String> leftCols = c.treeChildColumn != null
+                ? List.of(c.treeChildColumn)
+                : keys.stream().map(k -> k.leftColumn).toList();
+        if (c.treeChildColumn != null && keys.size() != 1) {
+            throw new BuilderApiException(500, "COMPILE_TREE_NARROW_MULTIKEY",
+                    "BOM 树页签的料号桥声明了 " + keys.size() + " 个连接键，"
+                            + "无法把收窄整体挪到单一子件列「" + c.treeChildColumn + "」上 —— "
+                            + "复合键的树收窄语义未定义，拒绝猜。",
+                    Map.of("anchorNodeKey", c.anchor.nodeKey, "edge", String.valueOf(e.id)));
+        }
+
         String sub = allocAlias(c, target.physicalTable);
-        String left = keys.size() == 1
-                ? c.anchorAlias + "." + keys.get(0).leftColumn
-                : "(" + keys.stream().map(k -> c.anchorAlias + "." + k.leftColumn)
+        String left = leftCols.size() == 1
+                ? c.anchorAlias + "." + leftCols.get(0)
+                : "(" + leftCols.stream().map(x -> c.anchorAlias + "." + x)
                         .reduce((a, b) -> a + ", " + b).orElseThrow() + ")";
         String right = keys.stream().map(k -> sub + "." + k.rightColumn)
                 .reduce((a, b) -> a + ", " + b).orElseThrow();
@@ -428,6 +574,7 @@ public class SemanticCompiler {
         c.requiredVars.add("total_material_no");
         // 轴收窄的职责就此移交给本谓词，applyFullScope 不再另发一条（见该方法注释）
         c.narrowedByBridge = true;
+        c.narrowEdge = e;   // 树页签的根分支要经同一座桥（buildTreeRootBranch）
     }
 
     // ---------------- 单列解析 ----------------
@@ -752,10 +899,204 @@ public class SemanticCompiler {
         // 恒不命中（0 行），且与半连接 AND 在一起时"看起来只是没数据"，不会报任何错。
         // 收窄职责整体交给半连接：它挂在锚点上，SUB/GRAIN 目标通过各自的连接键与锚点相关联，
         // 因而是被间接收窄的，不需要各自再发一条。
-        if (!c.narrowedByBridge && cols.contains(axis)) {
-            where.add(alias + "." + axis + " = ANY(:total_material_no)");
+        // 🌳 task-260907 B-3②：树页签的轴收窄落在**子件列**，不是父件（轴）列 ——
+        //    与存量 $bom_view 的 `mbi.component_no = ANY(:total_material_no)` 逐字同口径。
+        //
+        //    ⚠️ 说清楚它修的是什么、不是什么（2026-09-07 实跑产物核对过，免得照需求文档的措辞去验错东西）：
+        //    · **不是**"父件过滤只出一层"。:total_material_no 是本单闭包（成品 + 全部后代），
+        //      闭包对"取子件"封闭 ⇒ 父件过滤同样能出孙级边。物料BOM 页签真正坏在
+        //      **从不产出 parent_no / 没有根分支**（本方法上游那两处）。
+        //    · 两种写法覆盖的 spine 节点集合相同（spine 每个节点的父与子都在闭包里，两边都命中）；
+        //      差别在**多出来的行**：子件过滤会额外带回「子件在本单、父件不在本单」的边
+        //      （实测料号 0526-2609000005 的闭包下多出 3 行，父件是 S-2120011659 / S-3110520789 /
+        //      T260907-M1）。这些行在 BomTreeRenderService 里按 (parent_no, material_no) 配不到
+        //      spine 节点，被原样丢弃 —— 无害，但确实是多查出来的。
+        //    · 那为什么仍然改：**与存量树视图口径统一**（18/18 个 bom_recursive_expand=true 的
+        //      组件全是子件过滤，如 $bom_view 的 `mbi.component_no = ANY(:total_material_no)`）。
+        //      同一份数据、配置器一条路、手写视图另一条路，产出规则不一致本身就是故障源 ——
+        //      这正是本任务在收敛的东西。
+        // 🚫 只对**锚点自身**生效：GRAIN/SUB 目标是别的物理表，轴语义不变。
+        // 🚫 只对**锚点自身**生效：GRAIN/SUB 目标是别的物理表，轴语义不变。
+        String effectiveAxis = (c.treeChildColumn != null && alias.equals(c.anchorAlias))
+                ? c.treeChildColumn : axis;
+        if (!c.narrowedByBridge && cols.contains(effectiveAxis)) {
+            where.add(alias + "." + effectiveAxis + " = ANY(:total_material_no)");
             c.requiredVars.add("total_material_no");
         }
+    }
+
+    // ---------------- task-260907 B-3：树页签边式契约的解析与产出 ----------------
+
+    /**
+     * 根分支里「其余列」的占位表达式 —— <b>刻意用无类型 {@code NULL}，不写 {@code NULL::text}</b>。
+     *
+     * <p>PG 的 {@code UNION} 类型消解规则：某一分支该列是 unknown（裸 {@code NULL}）时，
+     * 结果类型取<b>另一分支</b>的类型。⇒ 无论上面那列是 {@code varchar} / {@code numeric} /
+     * {@code integer} / {@code timestamptz}，根分支都天然对齐。
+     * 若在这里按语义 {@code data_type} 猜一个物理类型（TEXT→text、NUMBER→numeric），
+     * 一旦某列的语义类型与物理类型不同族（例如 TEXT 落在 {@code date} 上），
+     * 就会得到 {@code UNION types text and date cannot be matched} —— 而且是<b>保存那一刻才炸</b>。
+     */
+    private static final String TREE_NULL_PLACEHOLDER = "NULL";
+
+    /** 根分支里「成品自身料号」的占位记号，{@link #buildTreeRootBranch} 拿到根别名后回填。 */
+    private static final String TREE_ROOT_SELF_EXPR = "<<TREE_ROOT_SELF>>";
+
+    /**
+     * 树页签的<b>子件列</b>：锚点节点上带 {@code PART_NO} 角色的列（QUOTE 物料BOM →
+     * {@code input_material_no}；核价两套 → {@code component_no}）。
+     *
+     * <p>🚫 <b>不硬编码列名</b>：三个方言的子件列各不相同，写死等于把「哪一列是子件」这件事
+     * 从图里搬进代码，换表/换数据集就静默错位。{@code PART_NO} 在本项目里的语义正是
+     * 「这一行讲的是哪个料号」（{@code BuilderService} 回填 {@code partNoField} 用的也是它），
+     * 对一张 BOM 边表来说那就是子件。
+     *
+     * <p>解析不到 ⇒ <b>报错而不是退回父件列</b>：退回等于产出一棵所有节点都指向自己的"树"，
+     * 渲染层不会报错，只会把整棵树画错。
+     */
+    private String resolveTreeChildColumn(Ctx c) {
+        String parentCol = c.anchor.anchorExpr == null ? null
+                : c.anchor.anchorExpr.substring(c.anchor.anchorExpr.indexOf('.') + 1);
+        for (SemanticNodeColumn col : c.snap.columnsOf(c.anchor.id)) {
+            if (!mergedRoles(c, col).contains("PART_NO")) continue;
+            if (col.dbColumn.equals(parentCol)) continue;   // 父件列自己不能当子件列
+            return col.dbColumn;
+        }
+        throw new BuilderApiException(500, "COMPILE_TREE_CHILD_COLUMN_MISSING",
+                "BOM 树页签「" + c.anchor.displayName + "」的锚点节点上找不到子件列 —— "
+                        + "树契约要求产出 material_no（子）/ parent_no（父）两列，"
+                        + "子件列的判据是节点列上带 PART_NO 角色且不是父件列（" + parentCol + "）。"
+                        + "请在 semantic_node_column 上给子件列补 PART_NO 角色。",
+                Map.of("anchorNodeKey", c.anchor.nodeKey, "dialect", c.dialect.graphDialect()));
+    }
+
+    /**
+     * 根分支的数据源节点 = 同方言「主件」页签的锚点（QUOTE → {@code ds_quote_material}）。
+     * 解析不到返回 {@code null}（真要用时由 {@link #buildTreeRootBranch} 报错）。
+     */
+    private SemanticNode resolveTreeRootNode(Ctx c) {
+        String dl = c.dialect.graphDialect();
+        return c.snap.tabViews.stream()
+                .filter(t -> ROOT_SOURCE_TAB_TYPE.equals(t.tabType)
+                        && (t.variantKey == null || t.variantKey.isEmpty())
+                        && dl.equals(t.dialect))
+                .map(t -> c.snap.nodeById.get(t.anchorNodeId))
+                .filter(Objects::nonNull)
+                .filter(n -> n.physicalTable != null && !n.physicalTable.isBlank())
+                .filter(n -> n.anchorExpr != null && n.anchorExpr.contains("."))
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * 产出 {@code UNION ALL} 根分支：本单闭包里<b>没有任何父边</b>的料号（= 成品自身）。
+     *
+     * <pre>
+     * UNION ALL
+     * SELECT dqm.material_no, NULL::text, dqm.material_no, NULL, NULL, …
+     * FROM ds_quote_material dqm
+     * WHERE dqm.material_no = ANY(:total_material_no)
+     *   AND NOT EXISTS (SELECT 1 FROM ds_quote_material_bom dqmb2
+     *                   WHERE dqmb2.input_material_no = dqm.material_no)
+     * </pre>
+     *
+     * <p>🚫 <b>不生成 WITH RECURSIVE</b>（见 {@code compile} 里的说明）。
+     * 🚫 <b>不去掉 {@code = ANY(:total_material_no)}</b>：没有它就是整张主档表全捞。
+     */
+    private String buildTreeRootBranch(Ctx c, List<String> rootExprs) {
+        SemanticNode root = c.treeRootNode;
+        if (root == null) {
+            throw new BuilderApiException(500, "COMPILE_TREE_ROOT_SOURCE_MISSING",
+                    "BOM 树页签需要一个「根分支」数据源（成品自身那张主档表），但本数据集（"
+                            + c.dialect.graphDialect() + "）在 semantic_tab_view 里没有可用的「"
+                            + ROOT_SOURCE_TAB_TYPE + "」页签声明。没有根分支，树顶那一行永远是空白。",
+                    Map.of("dialect", c.dialect.graphDialect()));
+        }
+        String rootAxis = root.anchorExpr.substring(root.anchorExpr.indexOf('.') + 1);
+        Set<String> rootCols = c.columnCatalog.getOrDefault(root.physicalTable, Set.of());
+        if (!rootCols.contains(rootAxis)) {
+            throw new BuilderApiException(500, "COMPILE_TREE_ROOT_AXIS_MISSING",
+                    "根分支数据源「" + root.displayName + "」(" + root.physicalTable + ") 没有料号列 "
+                            + rootAxis + "，无法按 :total_material_no 收窄 —— 不收窄就是整表全捞。",
+                    Map.of("table", root.physicalTable, "axis", rootAxis));
+        }
+        String rootAlias = allocAlias(c, root.physicalTable);
+        String notExistsAlias = allocAlias(c, c.anchor.physicalTable);
+        String selfExpr = rootAlias + "." + rootAxis;
+
+        List<String> exprs = new ArrayList<>(rootExprs.size());
+        for (String e : rootExprs) exprs.add(TREE_ROOT_SELF_EXPR.equals(e) ? selfExpr : e);
+
+        // 🚨 根分支的收窄必须与主分支**同一套机制**，否则不是恒 0 行就是全表扫：
+        //   · 报价侧（无桥）：直接轴收窄 `<根表>.material_no = ANY(:total_material_no)`；
+        //   · 核价两套（有桥）：经**同一座料号桥**做半连接。
+        //     🚫 这里绝不能退回直接轴收窄 —— 核价的轴是生产料号、:total_material_no 装的是
+        //        销售料号，`production_no = ANY(销售料号[])` 恒不命中（0 行且不报错）；
+        //     🚫 更不能干脆不发收窄 —— 那是把整张主档表全扫进来。
+        c.treeRootWhere.clear();
+        c.treeRootWhere.add(rootNarrowPredicate(c, rootAlias, rootAxis, root));
+        c.requiredVars.add("total_material_no");
+
+        return "UNION ALL\n"
+                + "-- 根分支：本单闭包里无父边的成品自身（树根，parent_no 恒 NULL）\n"
+                + "SELECT\n  " + String.join(",\n  ", exprs) + "\n"
+                + "FROM " + root.physicalTable + " " + rootAlias + "\n"
+                + "WHERE " + String.join(" AND ", c.treeRootWhere) + "\n"
+                + "  AND NOT EXISTS (SELECT 1 FROM " + c.anchor.physicalTable + " " + notExistsAlias
+                + " WHERE " + notExistsAlias + "." + c.treeChildColumn + " = " + selfExpr + ")\n";
+    }
+
+    /**
+     * 根分支的收窄谓词：有料号桥就经桥，没有就直接轴收窄。
+     *
+     * <p><b>经桥时为什么可以把桥的左列换成根表的轴列</b>：桥的左列声明在**锚点**上，
+     * 而根分支 FROM 的是另一张表。只有当两者是同一个号段时替换才成立 ——
+     * 实测全部 28 条 NARROW 边都是单键且 {@code left=right='production_no'}，
+     * 与核价「主件」表的轴列 {@code production_no} 逐字相同。
+     * <b>不满足就报错，不猜</b>：猜错的形态是「谓词写得出来、跑得通、返回的却是别的号段的行」。
+     */
+    private String rootNarrowPredicate(Ctx c, String rootAlias, String rootAxis, SemanticNode root) {
+        String selfExpr = rootAlias + "." + rootAxis;
+        if (c.narrowEdge == null) {
+            return selfExpr + " = ANY(:total_material_no)";
+        }
+        SemanticNode bridge = c.snap.nodeById.get(c.narrowEdge.toNodeId);
+        List<SemanticEdgeKey> keys = c.snap.keysOf(c.narrowEdge.id).stream()
+                .sorted(Comparator.comparingInt(k -> k.seq)).toList();
+        if (bridge == null || bridge.physicalTable == null || keys.size() != 1) {
+            throw new BuilderApiException(500, "COMPILE_TREE_ROOT_BRIDGE_UNUSABLE",
+                    "BOM 树页签的根分支要经料号桥收窄，但桥不可用（桥节点缺失或不是单键）："
+                            + "keys=" + (keys.isEmpty() ? 0 : keys.size())
+                            + "。不经桥的写法只有两种，都是错的：直接轴收窄会因号段不同而恒 0 行，"
+                            + "不收窄则是整张主档表全扫。",
+                    Map.of("anchorNodeKey", c.anchor.nodeKey, "dialect", c.dialect.graphDialect()));
+        }
+        String leftCol = keys.get(0).leftColumn;
+        if (!leftCol.equals(rootAxis)) {
+            throw new BuilderApiException(500, "COMPILE_TREE_ROOT_BRIDGE_COLUMN_MISMATCH",
+                    "料号桥的左列是「" + leftCol + "」（声明在锚点上），而根分支数据源「"
+                            + root.displayName + "」(" + root.physicalTable + ") 的料号列是「" + rootAxis
+                            + "」—— 两者不同名，无法确定它们是同一号段，拒绝按桥收窄。",
+                    Map.of("bridgeLeftColumn", leftCol, "rootAxis", rootAxis));
+        }
+        String sub = allocAlias(c, bridge.physicalTable);
+        String inputCol = CompileDialect.QUOTE.axisColumn();   // 桥的入参恒是销售料号
+        return selfExpr + " IN (SELECT " + sub + "." + keys.get(0).rightColumn
+                + " FROM " + bridge.physicalTable + " " + sub
+                + " WHERE " + sub + "." + inputCol + " = ANY(:total_material_no))";
+    }
+
+    /**
+     * 树分支 ORDER BY 用的 SORT 输出列名（已加引号）。取<b>已选列里</b>第一个带 SORT 角色的
+     * ——没选就没有对应输出列，集合运算的 ORDER BY 引用不到，只能不排（父/子两键已保证确定性）。
+     */
+    private String findSortOutputAlias(Ctx c, List<BuilderConfig.ColumnConfig> effectiveColumns) {
+        for (BuilderConfig.ColumnConfig col : effectiveColumns) {
+            if (col.resolvedRoles == null || !col.resolvedRoles.contains("SORT")) continue;
+            if (col.viewColumn == null || col.viewColumn.isBlank()) continue;
+            return quoteAlias(col.viewColumn);
+        }
+        return null;
     }
 
     // ---------------- B-53：`:total_material_no` 单一语义护栏（产物级） ----------------
@@ -825,7 +1166,13 @@ public class SemanticCompiler {
                 .filter(e -> "NARROW".equals(e.edgeKind))
                 .map(e -> String.valueOf(e.id))
                 .toList();
-        checkAxisParamSingleSemantic(c.anchorWhere, finalSql, c.dialect.axisColumn(),
+        // 🌳 task-260907 B-3：树页签的**根分支**也会发一条同形态的收窄谓词，它不在 anchorWhere 里。
+        //    必须一并登记，否则护栏「产物里数出的桥 vs 结构化认出的桥」对不上，会在**正确实现**上
+        //    抛 COMPILE_AXIS_NARROW_UNCLASSIFIABLE。
+        //    🚨 这是**登记新的已知形态**，不是放宽判据：条数照样要对得上，剔干净后照样不许有残留。
+        List<String> knownAxisPredicates = new ArrayList<>(c.anchorWhere);
+        knownAxisPredicates.addAll(c.treeRootWhere);
+        checkAxisParamSingleSemantic(knownAxisPredicates, finalSql, c.dialect.axisColumn(),
                 String.valueOf(c.dialect), c.anchor.nodeKey, c.anchor.physicalTable, narrowEdgeIds);
     }
 
@@ -853,15 +1200,27 @@ public class SemanticCompiler {
      * <b>多条 NARROW 边</b>，那时该入参正常就会出现多次，计数法会误报。逐字 {@code replace} 剔除
      * 已知桥能正确处理 N 个桥，保留这个手法。
      */
-    static void checkAxisParamSingleSemantic(List<String> anchorWhere, String finalSql,
+    static void checkAxisParamSingleSemantic(List<String> knownAxisPredicates, String finalSql,
                                              String axisColumn, String dialect,
                                              String anchorNodeKey, String anchorTable,
                                              List<String> narrowEdgeIds) {
         // ① 结构化认出已知桥；② 数一遍产物里实际有几处 —— 两处判据共用 BRIDGE_SEMI_JOIN，不可能漂移
-        List<String> bridgePredicates = anchorWhere.stream()
+        // 🌳 task-260907：入参由「锚点 WHERE」扩成「**全部已登记的**轴谓词原文」
+        //    （锚点 WHERE + 树页签根分支 WHERE）。语义没变——仍然是「护栏认得出的那些」，
+        //    只是树根分支这一种新形态被登记了进来；未登记的形态照旧拒绝放行。
+        // 🚨 分析对象必须是**屏蔽掉注释与字符串字面量**的文本，不是原文（task-260907 实测踩到）：
+        //    B-3 给树页签产物加了一行说明性头注释，里面原样写着 `:total_material_no`
+        //    （照存量 $bom_view 的注释体例）。注释里的参数名**不会被执行**，但下面第 ③ 步是
+        //    `contains(":total_material_no")` 的纯文本判断 ⇒ 护栏在**完全正确**的产物上抛
+        //    COMPILE_AXIS_NARROW_UNCLASSIFIABLE，核价两套的 BOM 页签直接编译不出来。
+        //    ⇒ 屏蔽注释是**修正判据的作用域**（注释本来就不该参与判定），不是放宽判据：
+        //      条数照样要对得上、剔干净后照样不许有残留。
+        //    📌 报错信息里仍打印**原文** finalSql，屏蔽后的文本只用于分析 —— 排查时要看的是真产物。
+        String scanned = com.cpq.datasource.sqlview.SqlTextMask.mask(finalSql);
+        List<String> bridgePredicates = knownAxisPredicates.stream()
                 .filter(w -> BRIDGE_SEMI_JOIN.matcher(w).find())
                 .toList();
-        long inArtifact = BRIDGE_SEMI_JOIN.matcher(finalSql).results().count();
+        long inArtifact = BRIDGE_SEMI_JOIN.matcher(scanned).results().count();
         if (inArtifact != bridgePredicates.size()) {
             throw new BuilderApiException(500, "COMPILE_AXIS_NARROW_UNCLASSIFIABLE",
                     "护栏无法对编译产物分类，拒绝放行：产物里数出 " + inArtifact + " 处桥半连接收窄，"
@@ -878,7 +1237,7 @@ public class SemanticCompiler {
         }
         if (bridgePredicates.isEmpty()) return; // 确认过「产物里也一处都没有」⇒ 入参语义唯一，直接轴谓词是正确形态
 
-        String stripped = finalSql;
+        String stripped = scanned;
         for (String bridge : bridgePredicates) stripped = stripped.replace(bridge, "");
 
         Matcher m = DIRECT_AXIS_NARROW.matcher(stripped);

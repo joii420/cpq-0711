@@ -41,8 +41,8 @@ import java.util.UUID;
  * {@code DatasetResource} 里。两人分文件，避免同文件并发编辑冲突。
  * 两个类的 {@code @Path} 前缀相同但子路径不重叠，JAX-RS 允许。
  *
- * <p>🚫 现有 {@code /api/cpq/basic-data-import/v6/*} 与 {@code /api/cpq/pricing-basic-data/*}
- * <b>一个字节都没改</b>（AC-43 / D-13）。
+ * <p>🚫 本类落地时，现有 {@code /api/cpq/basic-data-import/v6/*} 与当时的核价基础数据维护端点
+ * <b>一个字节都没改</b>（AC-43 / D-13）。（后者已于 2026-09-07 随 task-260907 整体下线。）
  */
 @Path("/api/cpq/dataset")
 @Produces(MediaType.APPLICATION_JSON)
