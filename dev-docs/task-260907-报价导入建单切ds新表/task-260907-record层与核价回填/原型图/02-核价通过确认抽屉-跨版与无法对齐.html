@@ -37,6 +37,7 @@
       <div class="item"><div class="k">将升版</div><div class="v">2</div></div>
       <div class="item"><div class="k">无变更</div><div class="v">0</div></div>
       <div class="item"><div class="k">无法对齐的行</div><div class="v warn">1</div></div>
+      <div class="item"><div class="k">行数会减少的组</div><div class="v warn">1</div></div>
     </div>
 
     <div class="alert alert-warn">
@@ -58,6 +59,15 @@
       </div>
     </div>
 
+    <div class="alert alert-error">
+      <span>🚨</span>
+      <div>
+        <b>有 1 个料号组的行数会减少 —— 按设计不应发生。</b>
+        回填只增不删（页签没表征的行一律原样保留），出现「回填后行数 &lt; 整组行数」说明有异常。
+        <b>请先不要确认，联系技术人员核查。</b>
+      </div>
+    </div>
+
     <!-- ── 物料BOM ── -->
     <div class="sheet-head">
       <span class="name">物料BOM</span>
@@ -68,7 +78,7 @@
         <thead>
           <tr>
             <th>销售料号</th><th>版本迁移</th><th>判定</th>
-            <th class="num">整组行数</th><th class="num">本次覆盖</th><th class="num">本次不动</th><th class="num">对不上</th>
+            <th class="num">整组行数</th><th class="num">回填后行数</th><th class="num">本次覆盖</th><th class="num">本次不动</th><th class="num">对不上</th>
             <th>本次覆盖的列</th><th>原样保留的列</th>
           </tr>
         </thead>
@@ -85,15 +95,25 @@
               </span>
             </td>
             <td><span class="tag tag-gold">跨版升版</span></td>
-            <td class="num">9</td><td class="num">3</td><td class="num">5</td><td class="num" style="color:#cf1322;font-weight:600">1</td>
+            <td class="num">9</td><td class="num" style="color:#d4380d;font-weight:600">10</td><td class="num">3</td><td class="num">5</td><td class="num" style="color:#cf1322;font-weight:600">1</td>
             <td><span class="tag tag-grey">组成数量</span> <span class="tag tag-grey">损耗率</span></td>
             <td class="muted">项次、投入料号、产出料号类型、材料毛重、材料净重、重量单位、材料占比、不良率</td>
+          </tr>
+          <tr class="row-error">
+            <td class="mono">S-3111320636</td>
+            <td><span class="ver">v4 <span class="arrow">→</span> <span class="to">v5</span></span></td>
+            <td><span class="tag tag-red">异常</span></td>
+            <td class="num">9</td>
+            <td class="num" style="color:#cf1322;font-weight:600">5<div style="font-weight:400;font-size:12px;white-space:nowrap">该组行数会减少 —— 按设计不应发生</div></td>
+            <td class="num">2</td><td class="num">3</td><td class="num">0</td>
+            <td><span class="tag tag-grey">组成数量</span></td>
+            <td class="muted">项次、投入料号、产出料号类型</td>
           </tr>
           <tr>
             <td class="mono">S-2120011659</td>
             <td><span class="ver">v1 <span class="arrow">→</span> <span class="to">v2</span></span></td>
             <td><span class="tag tag-blue">升版</span></td>
-            <td class="num">4</td><td class="num">2</td><td class="num">2</td><td class="num">0</td>
+            <td class="num">4</td><td class="num">4</td><td class="num">2</td><td class="num">2</td><td class="num">0</td>
             <td><span class="tag tag-grey">组成数量</span></td>
             <td class="muted">项次、投入料号、产出料号类型、材料毛重、材料净重、重量单位、材料占比、损耗率、不良率</td>
           </tr>

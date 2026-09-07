@@ -229,8 +229,15 @@ class V9SemanticGraphSeedTest extends V9TestBase {
                         + "实际 LOOKUP 节点数=" + bridgeLookups
                         + "\n  为 0 说明料号桥没建 —— AC-111 / AC-112 会跟着失败。");
 
-        // ── 补充断言（不属 AC-104 四条，来自 §9.2 + N-18 / N-19）：明确不进图的 4 张一张都不许出现。
+        // ── 补充断言（不属 AC-104 四条，来自 §9.2）：明确「决定不进图」的表一张都不许出现。
         //    ⚠️ N-20 的 ds_*_plating_scheme **在图内**（孤儿 SHEET，不挂页签视图），故不在本名单。
+        //    🪦→🚦 2026-09-07：原先的 4 张（年降 3 + 客户料号）已由 task-260907 按用户裁决接入图，
+        //         NOT_IN_GRAPH 因此为空 ⇒ **本段现在是空跑**。留着它不是形式主义：
+        //         下次再有「这张表明确不进图」的决策，往 V9TestBase.NOT_IN_GRAPH 加一行就自动守起来。
+        if (NOT_IN_GRAPH.isEmpty()) {
+            System.out.println("[§9.2 补充断言] NOT_IN_GRAPH 为空 —— 本段**空跑**（原 4 张已由 task-260907 接入图），"
+                    + "🚫 别把它读成「校验通过」");
+        }
         for (String t : NOT_IN_GRAPH) {
             long hit = scalarLong(
                     "SELECT count(*) FROM semantic_node WHERE physical_table=?1 OR physical_table=?2",
@@ -278,8 +285,16 @@ class V9SemanticGraphSeedTest extends V9TestBase {
         //    已由 V417（B-54，用户 2026-09-05 批准）改回 'BOM' ⇒ 本断言必须跟着用 'BOM'。
         //    🚫 不要因为报错信息里想显示「BOM 树」就把这里改回去 —— 那会让断言查不到行而恒红。
         List<String> nonFeeTabs = List.of("主件", "材质元素", "零件", "外购件", "BOM");
+        // 🪦→🚦 2026-09-07（task-260907 B-2，用户裁决）：**报价侧由 8 变 11**。
+        //   年降 3 张（年降系数 / 组装加工费年降 / 来料年降）各自成为一个独立数据源，
+        //   复用 tab_type='费用类' + 新 variant_key 落地（迁移 V418）。
+        //   🚦 为什么复用「费用类」而不是新造 tab_type：semantic_tab_view.tab_type 的值域由
+        //      ComponentService.VALID_TAB_TYPES 钉死，启动期 SemanticGraphKeyValueSelfCheck 硬校验，
+        //      越界会让服务直接起不来；新造值就得动 FieldTreeBuilder.ALL_TAB_TYPES（本任务红线禁止）。
+        //   ⚠️ 用户看到的是**数据源名**（锚点 display_name），页签类型早已不由用户手选（task-260904）。
+        //   核价两套不变（年降是报价侧概念）。
         Map<String, Integer> feeVariants = new LinkedHashMap<>();
-        feeVariants.put(QUOTE, 8);
+        feeVariants.put(QUOTE, 11);
         feeVariants.put(COST_BASIC, 7);
         feeVariants.put(COST_DETAIL, 15);
 
@@ -319,7 +334,8 @@ class V9SemanticGraphSeedTest extends V9TestBase {
         }
         assertEquals("", err.toString(),
                 "AC-106: 与 §9.2 映射表不逐格相等：" + err
-                        + "\n  📌 8/7/15 的推导（供核对）：报价 16 主表 − 年降3 − 客户料号 − 物料 − 元素BOM − 物料BOM − 电镀方案 = 8；"
+                        + "\n  📌 11/7/15 的推导（供核对）：报价 16 主表 − 客户料号 − 物料 − 元素BOM − 物料BOM − 电镀方案 = 11"
+                        + "（🪦 原为 8：年降 3 张当时按 N-18『不进图』扣除；task-260907 按用户裁决把它们接成了独立数据源，故加回）；"
                         + "\n     基础核价 10 − 物料 − 元素BOM − 物料BOM = 7（无电镀方案表）；"
                         + "\n     明细核价 19 − 物料 − 元素BOM − 物料BOM − 电镀方案 = 15。"
                         + "\n     ⇒ 三套一致地把 *_plating_scheme 排除在『费用类变体』之外，这是 §9.2 的 8/7/15 唯一自洽解。"

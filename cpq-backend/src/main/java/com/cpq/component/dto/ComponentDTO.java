@@ -31,6 +31,20 @@ public class ComponentDTO {
     public Boolean bomRecursiveExpand;
     /** task-0721 B4：页签类型属性(可选)。值域 5 类：BOM / 材质元素 / 零件 / 外购件 / 主件。 */
     public String tabType;
+    /**
+     * task-260907 B-4（F-2 / AC-3，api.md §3.1）：该组件所绑<b>数据源</b>的用户可见名
+     * （如「物料BOM」「物料与元素BOM」），组件列表的徽章取这一列。
+     *
+     * <p>{@code null} = 该组件<b>没有</b>取数配置器绑定（{@code component_sql_view.builder_version}
+     * 为 NULL），前端渲染成「—」（用户 2026-09-07 裁决）。
+     * 🚫 <b>前端不得再从 {@link #tabType} 推导徽章</b> —— 页签类型已由 task-260904 收缩成
+     * 「按数据源推导的只读回显」，两者不再是同一个概念。
+     *
+     * <p>⚠️ 只有<b>列表 / 详情</b>两个读端点会填它（{@code ComponentService#list} /
+     * {@code #getById}）；create/update 等返回同一个 DTO 的路径保持 {@code null}，
+     * 不额外查库。
+     */
+    public String dataSourceLabel;
     /** task-0721（2026-07-21 补录）：该页签「料号列」字段名。 */
     public String partNoField;
     /** task-0721（2026-07-21 补录）：该页签「料号名称列」字段名，可空。 */

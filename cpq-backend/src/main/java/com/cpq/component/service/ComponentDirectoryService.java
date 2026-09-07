@@ -17,6 +17,10 @@ public class ComponentDirectoryService {
 
     private static final Logger LOG = Logger.getLogger(ComponentDirectoryService.class);
 
+    /** task-260907 B-4：组件列表徽章的数据源名（整批一次解析，恒 1 条 SQL）。 */
+    @jakarta.inject.Inject
+    TabSemanticResolver tabSemanticResolver;
+
     public List<ComponentDirectoryDTO> listTree() {
         return buildTree(null, false);
     }
@@ -51,11 +55,21 @@ public class ComponentDirectoryService {
         }
 
         // Attach components to their directories
+        // N+1 自检：本循环体是纯内存组装（ComponentDTO.from 只做 JSON 解析，不查库）。
+        List<ComponentDTO> attached = new ArrayList<>();
         for (Component comp : allComponents) {
             if (comp.directoryId != null && dtoMap.containsKey(comp.directoryId)) {
-                dtoMap.get(comp.directoryId).components.add(ComponentDTO.from(comp));
+                ComponentDTO dto = ComponentDTO.from(comp);
+                dtoMap.get(comp.directoryId).components.add(dto);
+                attached.add(dto);
             }
         }
+        // 🆕 task-260907 B-4（F-2 / AC-3）：组件管理页的徽章由**本端点**驱动
+        //    （前端 componentService.listDirectories 原样透传，无 mapper）——
+        //    只给 GET /components 加字段的话，222 个徽章会全显示「—」且不报错。
+        // 🚨 N+1：整棵树的组件**一次**解析，恒 1 条 SQL（见 applyDataSourceLabels 注释），
+        //    与目录数/组件数无关。🚫 不许挪进上面那个 for 里逐个解析。
+        tabSemanticResolver.applyDataSourceLabels(attached);
 
         // Build tree (attach children to parents)
         List<ComponentDirectoryDTO> roots = new ArrayList<>();

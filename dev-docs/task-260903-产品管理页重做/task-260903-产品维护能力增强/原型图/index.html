@@ -18,14 +18,44 @@
   .note{background:#fffbe6;border:1px solid #ffe58f;border-radius:8px;padding:12px 16px;margin:16px 0;font-size:13px;line-height:1.8}
 </style>
 <div class="wrap">
-  <h1>产品维护能力增强 · 原型图 <span class="badge badge-now">📌 增量基准</span></h1>
+  <h1>产品维护能力增强 · 原型图 <span class="badge">🕰️ 历史快照</span></h1>
   <div class="meta">
     子任务 <code>task-260903-产品维护能力增强</code>　·　2026-09-03　·　定稿于闸门 A<br>
     父任务：<code>task-260903-产品管理页重做</code>（✅ 已交付）
   </div>
 
-  <div class="note" style="background:#e6f4ff;border-color:#91caff">
-    <b>🕰️ 与父任务原型的关系 —— 请先读这段</b><br><br>
+  <div class="note" style="background:#fff2f0;border-color:#ffccc7">
+    <b>🕰️ 2026-09-07 起本组不再是基准（含下方「增量基准」标记，一并失效）</b><br><br>
+    当前基准已移交
+    <a href="../../../task-260907-产品管理客户过滤/原型图/index.html"><code>task-260907-产品管理客户过滤</code> 的 6 份原型</a>。
+    <b>本组交付当时是对的</b>（漂移，非缺陷）⇒ 🚫 <b>内容一律不回改</b>。<br><br>
+    <b>逐项偏差清单（本组 → 当前基准）</b>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:8px">
+      <tr style="background:rgba(0,0,0,.03)">
+        <th style="border:1px solid #f0f0f0;padding:6px 8px;text-align:left">本组画的</th>
+        <th style="border:1px solid #f0f0f0;padding:6px 8px;text-align:left">现在变成了什么</th>
+        <th style="border:1px solid #f0f0f0;padding:6px 8px;text-align:left">被谁改的</th>
+      </tr>
+      <tr>
+        <td style="border:1px solid #f0f0f0;padding:6px 8px">客户过滤下拉在<b>客户产品页签的工具栏内</b>（页签级私有状态）</td>
+        <td style="border:1px solid #f0f0f0;padding:6px 8px"><b>摘除</b>，上提为<b>壳页标题行的全局选择器</b>，两个页签共用同一个客户上下文</td>
+        <td style="border:1px solid #f0f0f0;padding:6px 8px">task-260907-产品管理客户过滤 F-1 / F-3<br>（用户 2026-09-07 裁决 <code>D-1</code>）</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #f0f0f0;padding:6px 8px">候选口径 = <code>ds_quote_customer_part</code> 的 <code>DISTINCT customer_no</code>（刻意不查 <code>customer</code> 表）</td>
+        <td style="border:1px solid #f0f0f0;padding:6px 8px"><code>customer</code> 表全集 <b>∪</b> 业务表未建档客户号。<br>
+            <b>保留</b>本组要保护的「未建档客户可选、其产品筛得出」，<b>补上</b>本组给不了的「无产品数据的已建档客户也能选到」</td>
+        <td style="border:1px solid #f0f0f0;padding:6px 8px">同上 F-1 / B-1<br>（用户裁决 <code>D-3</code>，本组 AC-5 口径被取代）</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #f0f0f0;padding:6px 8px">销售产品生产料号列可编辑，保存只带料号</td>
+        <td style="border:1px solid #f0f0f0;padding:6px 8px">编辑行为不变，但保存时<b>恒带该行的 <code>customerNo</code></b>（复合轴下不带会改掉所有客户的同料号行）</td>
+        <td style="border:1px solid #f0f0f0;padding:6px 8px">同上 F-6</td>
+      </tr>
+    </table>
+    <br>
+    ─────────────────────────────<br><br>
+    <b>以下为本组交付当时的原文，保留备查：</b><br><br>
     父任务的 <a href="../../原型图/index.html">8 份原型</a> <b>仍然是这两个页面的当前基准</b>，<b>没有被本组取代</b>。
     本子任务只改动<b>两处增量</b>（客户产品加过滤器 · 销售产品的生产料号列变可编辑），页面的整体布局、列顺序、抽屉形态<b>全部沿用父任务原型</b>。<br><br>
     ⇒ 所以本组<b>不把父任务那 8 份降级为历史快照</b>，而是标为

@@ -651,10 +651,24 @@ public class ComponentService {
             query.append(" AND (name LIKE :kw OR code LIKE :kw)");
             params.put("kw", "%" + keyword + "%");
         }
-        return Component.<Component>list(query + " ORDER BY createdAt ASC", params)
+        List<ComponentDTO> dtos = Component.<Component>list(query + " ORDER BY createdAt ASC", params)
             .stream()
             .map(ComponentDTO::from)
             .collect(Collectors.toList());
+        fillDataSourceLabels(dtos);
+        return dtos;
+    }
+
+    /**
+     * task-260907 B-4（F-2 / AC-3，api.md §3.1）：给列表项填「数据源名」徽章。
+     *
+     * <p>🚨 <b>N+1 自检</b>：整批组件<b>一次</b>解析（{@link TabSemanticResolver#builderDataSourceLabels}
+     * 恒 1 条 SQL，语义图走内存快照），下面的循环体是<b>纯内存 Map 分发</b>，没有任何查询/懒加载。
+     * ⇒ 222 个组件 = 1 条 SQL，与组件数无关。
+     * 🚫 不许改成逐个 {@code resolver.builderDataSourceLabels(List.of(id))}，那就是 222 条。
+     */
+    private void fillDataSourceLabels(List<ComponentDTO> dtos) {
+        tabSemanticResolver.applyDataSourceLabels(dtos);
     }
 
     public ComponentDTO getById(UUID id) {
@@ -662,7 +676,10 @@ public class ComponentService {
         if (component == null) {
             throw new BusinessException(404, "Component not found: " + id);
         }
-        return ComponentDTO.from(component);
+        ComponentDTO dto = ComponentDTO.from(component);
+        // 详情页与列表页显示同一个概念，口径必须一致（否则「列表说物料BOM、详情说没绑」）。
+        fillDataSourceLabels(List.of(dto));
+        return dto;
     }
 
     /**

@@ -365,7 +365,24 @@ class V9CompileArtifactTest extends V9TestBase {
         Map<String, Object> cfg = config(COST_BASIC, tabType, null,
                 List.of(column(nodeKey, String.valueOf(col[0]), "测试字段")));
 
+        // 🔄 task-260907 B-3（用户 2026-09-07 裁决）：本页签**可能是 BOM 树页签**。
+        //   pickTabByMainTable 按 tab_type 排序取第一个，'BOM' 恰好排在最前 ⇒ 实际命中的就是树页签。
+        //   树页签的行集语义已经变了：从「父件 = 本料号的边」改成「**子件**属于本单闭包的边 + 根分支」，
+        //   而上面的 baseline 是按 `WHERE production_no=?`（**父件**口径）数出来的 ⇒ 两者天然不等。
+        //   🚫 **不能因此把 baseline 断言删掉** —— 它在非树页签上仍然是 D-110 的主判据。
+        //   ⇒ 拆成两层：
+        //     · 第 1 层（**所有页签都查**）= AC-112① 真正的不变量：N 个销售料号各自的行数**必须彼此相同**。
+        //       扇出的特征就是「行数随销售料号个数放大」，这一层足以证伪它，且与页签语义无关。
+        //     · 第 2 层（**仅非树页签**）= 原来的强判据：行数还必须等于不带桥的基准。
+        boolean treeTab = com.cpq.component.service.TabSemanticResolver.SEMANTIC_TREE.equals(
+                com.cpq.component.service.TabSemanticResolver.semanticOfGraphTabType(tabType));
+        if (treeTab) {
+            System.out.println("[AC-112①] 命中的是 BOM 树页签（task-260907 B-3 后行集口径 = 子件在本单闭包 + 根分支），"
+                    + "不带桥基准 " + baseline + " 是父件口径、不可比 ⇒ 本轮只查『各销售料号行数彼此相同』这一层");
+        }
+
         StringBuilder err = new StringBuilder();
+        Map<String, Integer> rcBySales = new LinkedHashMap<>();
         for (String salesNo : salesNos) {
             Map<String, Object> pv = new LinkedHashMap<>(cfg);
             pv.put("partNo", salesNo);
@@ -382,7 +399,8 @@ class V9CompileArtifactTest extends V9TestBase {
                 err.append("\n  ").append(salesNo).append(": 响应缺 rowCount");
                 continue;
             }
-            if (rc != baseline) {
+            rcBySales.put(salesNo, rc);
+            if (!treeTab && rc != baseline) {
                 err.append("\n  ").append(salesNo).append(": 行数=").append(rc)
                         .append("，与不带桥的基准 ").append(baseline).append(" 不同");
                 if (rc == baseline * salesNos.size()) {
@@ -391,11 +409,26 @@ class V9CompileArtifactTest extends V9TestBase {
                 }
             }
         }
+
+        // 第 1 层：各销售料号行数必须彼此相同（扇出的直接判据，树/非树都查）
+        long distinctRc = rcBySales.values().stream().distinct().count();
+        if (distinctRc > 1) {
+            err.append("\n  🚨 各销售料号的行数彼此不同 ").append(rcBySales)
+                    .append(" ⇒ 行数随销售料号变化，**这就是桥扇出**（D-110 要消灭的正是它）");
+        }
+        // 🚨 全 0 时「彼此相同」恒成立 ⇒ 会退化成假通过，必须单独挡掉
+        boolean allZero = !rcBySales.isEmpty() && rcBySales.values().stream().allMatch(v -> v == 0);
+        assertFalse(allZero, notReady("AC-112①",
+                "全部销售料号预览都是 0 行 —— 『行数彼此相同』退化成 0==0 的假通过，本条判定为【未验证】",
+                "主线（V9T-FIXTURE 夹具）/ task-260907 B-7 递归换表"));
+
         assertEquals("", err.toString(),
-                "AC-112①: 桥是输入收窄，一个生产料号对应多个销售料号时行数**必须与不带桥相同**（基准="
-                        + baseline + "）：" + err);
+                "AC-112①: 桥是输入收窄，一个生产料号对应多个销售料号时行数**不得随销售料号个数放大**"
+                        + (treeTab ? "（本轮命中树页签，仅查『彼此相同』层）"
+                                   : "，且必须与不带桥相同（基准=" + baseline + "）")
+                        + "：" + err);
         System.out.println("[AC-112① ✅] 生产料号 " + prodNo + " 的 " + salesNos.size()
-                + " 个销售料号各自预览均为 " + baseline + " 行 —— 未扇出（老形态会是 "
+                + " 个销售料号各自预览行数 " + rcBySales + " —— 未扇出（老形态会是 "
                 + (baseline * salesNos.size()) + " 行）");
     }
 

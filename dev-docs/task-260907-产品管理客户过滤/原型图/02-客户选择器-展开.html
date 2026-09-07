@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>02 · 客户选择器展开态</title>
+<link rel="stylesheet" href="prototype.css">
+</head>
+<body>
+
+<div class="proto-note">
+  <b>02 · 客户选择器展开态 —— 候选口径与未建档标记</b>　服务 <code>F-1</code>　AC-2 / AC-14<br>
+  候选 = <code>customer</code> 主数据表全集 <b>∪</b> 报价业务表中出现过但未建档的客户号。<br>
+  🔑 <b>两个半集各解决一个问题</b>：主数据表那半让「尚无产品数据的新建档客户也能选到」；
+  差集那半让「未建档客户的产品筛得出来」。<b>缺任一半都会有一类产品变成「看得见却筛不出来」。</b>
+</div>
+
+<div class="page">
+
+  <div class="page-head">
+    <h2>产品管理</h2>
+    <div class="head-actions">
+      <div class="select-group">
+        <span class="addon">客户</span>
+        <span class="select focus"><span class="val filled">CUST-0004　正泰</span><span class="caret">▴</span></span>
+      </div>
+      <button class="btn">⊞ 产品分类管理</button>
+    </div>
+  </div>
+
+  <!-- 下拉浮层：定位到选择器正下方（原型用相对定位模拟，实现用 antd Select 的 popup） -->
+  <div style="position:relative;height:0">
+    <div class="dropdown" style="right:150px;top:-8px;width:380px;max-height:none">
+
+      <div class="dd-item selected">
+        <span class="no mono">CUST-0004</span>
+        <span class="nm">正泰</span>
+        <span style="margin-left:auto;color:var(--c-primary)">✓</span>
+      </div>
+
+      <div class="dd-divider"></div>
+      <div class="dd-group">全部客户</div>
+
+      <div class="dd-item">
+        <span class="no">所有客户</span>
+        <span class="nm">不按客户过滤，展示全量</span>
+      </div>
+
+      <div class="dd-divider"></div>
+      <div class="dd-group">已建档客户（48）</div>
+
+      <div class="dd-item"><span class="no mono">CUST-0001</span><span class="nm">罗克韦尔</span></div>
+      <div class="dd-item"><span class="no mono">CUST-0002</span><span class="nm">测试客户</span></div>
+      <div class="dd-item"><span class="no mono">CUST-0004</span><span class="nm">正泰</span></div>
+      <div class="dd-item"><span class="no mono">CUST-0027</span><span class="nm">Import Record Test Customer</span></div>
+      <!-- 🔑 已建档但【一行产品数据都没有】的客户 —— 旧口径下选不到，这是本次新增的能力 -->
+      <div class="dd-item">
+        <span class="no mono">CUST-0031</span><span class="nm">苏州西门子</span>
+        <span class="tag grey" style="margin-left:auto">暂无产品</span>
+      </div>
+
+      <div class="dd-divider"></div>
+      <!-- 🔑 未建档：置于列表【尾部】，加「未建档」标记与告警色 -->
+      <div class="dd-group">未在客户主数据建档（2）</div>
+
+      <div class="dd-item">
+        <span class="no mono unreg">C1</span>
+        <span class="tag warn">未建档</span>
+      </div>
+      <div class="dd-item">
+        <span class="no mono unreg">Q13CUST0617</span>
+        <span class="tag warn">未建档</span>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="tabs" style="margin-top:8px">
+    <div class="tab active">客户产品</div>
+    <div class="tab">销售产品</div>
+  </div>
+
+  <div class="toolbar">
+    <span class="input">搜索客户产品编号 / 客户料号名称</span>
+    <button class="btn">查询</button>
+    <button class="btn">重置</button>
+  </div>
+
+  <div class="table-wrap" style="opacity:.4">
+    <table class="tbl">
+      <colgroup><col style="width:130px"><col style="width:180px"><col style="width:190px"><col style="width:180px"></colgroup>
+      <thead><tr><th>客户编号</th><th>客户名称</th><th>客户产品编号</th><th>客户料号名称</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">CUST-0004</td><td>正泰</td><td class="mono">A002</td><td>示例客户料号</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<div class="proto-note" style="margin-top:16px">
+  <b>还原纪律</b><br>
+  1. <b>分组顺序固定</b>：所有客户 → 已建档（按编号升序）→ 未建档（按编号升序，置尾）。<br>
+  2. 未建档项<b>必须可见且可选</b>，标记文案「未建档」，配色 <code>#d46b08</code>。
+     🚫 不得因 <code>customerName</code> 为 <code>null</code> 就把它筛掉 —— 那等于把后端特意带出来的候选又丢一遍。<br>
+  3. <b>搜索匹配编号与名称两者</b>（antd <code>showSearch</code> + 自定义 <code>filterOption</code>）。
+     未建档项没有名称，靠编号也要能搜到。<br>
+  4. 「暂无产品」标记是<b>可选增强</b>，若实现成本高可省略；但该客户<b>必须出现在候选里</b>（这是并集口径的意义所在）。<br>
+  5. <b>候选端点失败（404 / 500）时的降级</b>：候选只剩「所有客户」一项，列表照常可用。
+     🚫 <b>不做任何 mock 兜底</b> —— 塞 mock 会把「后端没就绪」伪装成「这个客户真的没有产品」。
+</div>
+
+</body>
+</html>

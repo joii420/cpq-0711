@@ -18,10 +18,48 @@
 </style>
 
 <div class="wrap">
-  <h1>产品管理页重做 · 原型图 <span class="badge badge-now">📌 当前基准</span></h1>
+  <h1>产品管理页重做 · 原型图 <span class="badge">🕰️ 历史快照</span></h1>
   <div class="meta">
     任务 <code>task-260903-产品管理页重做</code>　·　2026-09-03　·　定稿于闸门 A<br>
     全项目「产品管理页」此前<b>无页面原型</b>，本组是第一份基准，未降级任何历史快照。
+  </div>
+
+  <div class="note" style="background:#fff2f0;border-color:#ffccc7">
+    <b>🕰️ 2026-09-07 起本组不再是当前基准</b><br><br>
+    当前基准已移交
+    <a href="../../task-260907-产品管理客户过滤/原型图/index.html"><code>task-260907-产品管理客户过滤</code> 的 6 份原型</a>。
+    <b>本组交付当时是对的</b>（这是漂移，不是缺陷）⇒ 🚫 <b>内容一律不回改</b>，它是那次交付的验收记录。<br><br>
+    <b>逐项偏差清单（本组 → 当前基准）</b>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:8px">
+      <tr style="background:rgba(0,0,0,.03)">
+        <th style="border:1px solid #f0f0f0;padding:6px 8px;text-align:left">本组画的</th>
+        <th style="border:1px solid #f0f0f0;padding:6px 8px;text-align:left">现在变成了什么</th>
+        <th style="border:1px solid #f0f0f0;padding:6px 8px;text-align:left">被谁改的</th>
+      </tr>
+      <tr>
+        <td style="border:1px solid #f0f0f0;padding:6px 8px">壳页标题行只有「产品分类管理」按钮</td>
+        <td style="border:1px solid #f0f0f0;padding:6px 8px">新增<b>全局客户选择器</b>（带「客户」addon，默认「所有客户」）</td>
+        <td style="border:1px solid #f0f0f0;padding:6px 8px">task-260907-产品管理客户过滤 F-1</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #f0f0f0;padding:6px 8px">销售产品列表列中无客户信息</td>
+        <td style="border:1px solid #f0f0f0;padding:6px 8px">最左新增<b>客户编号 / 客户名称</b>两列</td>
+        <td style="border:1px solid #f0f0f0;padding:6px 8px">同上 F-4</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #f0f0f0;padding:6px 8px">销售产品一行 = 一个销售料号；<code>rowKey = axisValue</code></td>
+        <td style="border:1px solid #f0f0f0;padding:6px 8px">一行 = <b>客户 × 销售料号</b>；<code>rowKey = customerNo|axisValue</code>；同料号可出现多行</td>
+        <td style="border:1px solid #f0f0f0;padding:6px 8px">同上 F-4<br>（根因是 <code>task-260907-报价侧加客户维度</code> 的复合轴改造）</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #f0f0f0;padding:6px 8px">销售产品抽屉标题 = 料号 + 料号名</td>
+        <td style="border:1px solid #f0f0f0;padding:6px 8px">增加<b>客户标签</b>与「当前展示某客户数据」提示条；版本下拉只列该客户的版本</td>
+        <td style="border:1px solid #f0f0f0;padding:6px 8px">同上 F-5</td>
+      </tr>
+    </table>
+    <br>
+    ℹ️ <b>未列入偏差的部分仍然可参考</b>（页面骨架、列顺序、抽屉形态、空态形状均被当前基准沿用），
+    但遇到冲突<b>一律以当前基准为准</b>。
   </div>
 
   <div class="note">

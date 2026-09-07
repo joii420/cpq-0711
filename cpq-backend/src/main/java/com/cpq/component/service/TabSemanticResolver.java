@@ -282,12 +282,17 @@ public class TabSemanticResolver {
         return out;
     }
 
-    /** 解析单个 {@code builder_config} JSONB → semantic；解析不出返回 null（调用方回退分支②）。 */
-    private static String resolveSemantic(UUID componentId, String builderConfigJson,
-                                           Map<String, SemanticTabView> byCoord,
-                                           Map<String, List<SemanticTabView>> byTabAndVariant) {
+    /**
+     * {@code builder_config} JSONB 里的三段坐标。解析不出返回 {@code null}（调用方回退分支②）。
+     *
+     * <p>抽出来是为了让「按坐标反查 semantic_tab_view」这件事只有<b>一份</b>解析实现 ——
+     * task-260907 B-4 的数据源名反查用的是同一份坐标，各写一份必然漂移。
+     */
+    private record Coord(String tabType, String variantKey, String dialect) { }
+
+    private static Coord parseCoord(UUID componentId, String builderConfigJson) {
         if (builderConfigJson == null || builderConfigJson.isBlank()) {
-            LOG.warnf("[tab-semantic] comp=%s builder_version 非空但 builder_config 为空，回退 tab_type 判据", componentId);
+            LOG.warnf("[tab-semantic] comp=%s builder_version 非空但 builder_config 为空", componentId);
             return null;
         }
         String tabType;
@@ -299,15 +304,28 @@ public class TabSemanticResolver {
             variantKey = text(node, "variantKey");
             rawDialect = text(node, "dialect");
         } catch (Exception ex) {
-            LOG.warnf("[tab-semantic] comp=%s builder_config 解析失败(%s)，回退 tab_type 判据", componentId, ex.getMessage());
+            LOG.warnf("[tab-semantic] comp=%s builder_config 解析失败(%s)", componentId, ex.getMessage());
             return null;
         }
         if (tabType == null || tabType.isBlank()) {
-            LOG.warnf("[tab-semantic] comp=%s builder_config.tabType 缺失，回退 tab_type 判据", componentId);
+            LOG.warnf("[tab-semantic] comp=%s builder_config.tabType 缺失", componentId);
             return null;
         }
-        String vk = variantKey == null ? "" : variantKey;
-        String dialect = normalizeDialect(rawDialect);
+        return new Coord(tabType, variantKey == null ? "" : variantKey, normalizeDialect(rawDialect));
+    }
+
+    /** 解析单个 {@code builder_config} JSONB → semantic；解析不出返回 null（调用方回退分支②）。 */
+    private static String resolveSemantic(UUID componentId, String builderConfigJson,
+                                           Map<String, SemanticTabView> byCoord,
+                                           Map<String, List<SemanticTabView>> byTabAndVariant) {
+        Coord coord = parseCoord(componentId, builderConfigJson);
+        if (coord == null) {
+            LOG.warnf("[tab-semantic] comp=%s 坐标解析不出，回退 tab_type 判据", componentId);
+            return null;
+        }
+        String tabType = coord.tabType();
+        String vk = coord.variantKey();
+        String dialect = coord.dialect();
 
         if (dialect != null) {
             SemanticTabView tv = byCoord.get(coordKey(tabType, vk, dialect));
@@ -343,6 +361,125 @@ public class TabSemanticResolver {
             }
         }
         return agreed;
+    }
+
+    // =========================================================================
+    // task-260907 B-4（F-2 / AC-3）：组件 → 所绑「数据源名」
+    // =========================================================================
+
+    @jakarta.inject.Inject
+    com.cpq.semanticgraph.service.SemanticGraphLoader graphLoader;
+
+    /**
+     * 批量解析「该组件绑的是哪个数据源」的<b>用户可见名</b>（组件列表徽章，api.md §3.1）。
+     *
+     * <p>取值链：{@code component_sql_view.builder_config} 的三段坐标 →
+     * {@code semantic_tab_view} → 其<b>锚点节点</b>的 {@code display_name}
+     * （与 {@code FieldTreeBuilder#buildAvailableSources} 的 {@code label} <b>同一个取值口径</b>，
+     * 这样列表徽章上的字与配置器数据源下拉里那一行字逐字相同）。
+     *
+     * <p>🚨 <b>N+1 硬指标</b>：本方法<b>恒 1 条 SQL</b>（{@code component_sql_view} 的一次 IN 批量），
+     * 与入参组件数无关 —— 语义图走 {@link com.cpq.semanticgraph.service.SemanticGraphLoader} 的
+     * <b>内存不可变快照</b>，零查库。222 个组件 = 1 条 SQL，2 个组件也是 1 条。
+     * 🚫 不许把它放进按组件的循环里调用。
+     *
+     * @return componentId → 数据源名；<b>只有解析成功的组件才出现在 map 里</b> ——
+     *         未绑取数配置器（{@code builder_version} 为 NULL）或坐标查不到行的一律不出现，
+     *         调用方按「缺键 = null = 前端渲染成『—』」处理（用户 2026-09-07 裁决）
+     */
+    public Map<UUID, String> builderDataSourceLabels(Collection<UUID> componentIds) {
+        Map<UUID, String> out = new LinkedHashMap<>();
+        if (componentIds == null || componentIds.isEmpty()) return out;
+        List<UUID> ids = new ArrayList<>(new LinkedHashSet<>(componentIds));
+        ids.removeIf(java.util.Objects::isNull);
+        if (ids.isEmpty()) return out;
+
+        // SQL #1（本方法唯一一条查询）：这批组件里「由取数配置器产出」的视图。
+        // 同一组件出现多条 builder 视图时取 updated_at 最新的那条（确定性优先，与 builderSemantics 同规则）。
+        List<ComponentSqlView> views = ComponentSqlView.list(
+                "componentId in ?1 and builderVersion is not null and status = ?2 order by updatedAt desc, id desc",
+                ids, "ACTIVE");
+        if (views.isEmpty()) return out;
+        Map<UUID, ComponentSqlView> chosen = new LinkedHashMap<>();
+        for (ComponentSqlView v : views) chosen.putIfAbsent(v.componentId, v);
+
+        // 内存快照，0 条 SQL（SemanticGraphLoader 启动时全量装载 + 写端点后整体换引用）
+        com.cpq.semanticgraph.service.SemanticGraphSnapshot snap = graphLoader.get();
+        Map<String, SemanticTabView> byCoord = new LinkedHashMap<>();
+        Map<String, List<SemanticTabView>> byTabAndVariant = new LinkedHashMap<>();
+        for (SemanticTabView tv : snap.tabViews) {
+            if (!"ACTIVE".equals(tv.status)) continue;
+            String vk = tv.variantKey == null ? "" : tv.variantKey;
+            byCoord.put(coordKey(tv.tabType, vk, tv.dialect), tv);
+            byTabAndVariant.computeIfAbsent(tv.tabType + SEP + vk, k -> new ArrayList<>()).add(tv);
+        }
+
+        // 纯内存分发：本循环体内**没有任何查询/懒加载**（snap 是不可变 POJO 图，chosen 已在上面取全）
+        for (Map.Entry<UUID, ComponentSqlView> e : chosen.entrySet()) {
+            UUID cid = e.getKey();
+            Coord coord = parseCoord(cid, e.getValue().builderConfig);
+            if (coord == null) continue;
+            String label = null;
+            if (coord.dialect() != null) {
+                SemanticTabView tv = byCoord.get(coordKey(coord.tabType(), coord.variantKey(), coord.dialect()));
+                label = anchorDisplayName(snap, tv);
+            } else {
+                // 方言缺失：与 resolveSemantic 同一条兜底规则 —— 不 findFirst 静默取一行，
+                // 而是「全部候选必须给出同一个名字」才采用（三方言的同名页签 display_name 本就相同）。
+                List<SemanticTabView> candidates = byTabAndVariant.get(coord.tabType() + SEP + coord.variantKey());
+                if (candidates != null) {
+                    for (SemanticTabView tv : candidates) {
+                        String n = anchorDisplayName(snap, tv);
+                        if (n == null) { label = null; break; }
+                        if (label == null) { label = n; }
+                        else if (!label.equals(n)) {
+                            LOG.warnf("[tab-semantic] comp=%s 坐标 (%s,%s) 缺 dialect 且候选行数据源名不一致"
+                                    + "(%s vs %s)，徽章留空", cid, coord.tabType(), coord.variantKey(), label, n);
+                            label = null;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (label != null && !label.isBlank()) out.put(cid, label);
+        }
+        return out;
+    }
+
+    /**
+     * 把 {@link com.cpq.component.dto.ComponentDTO#dataSourceLabel} 填上（整批一次，B-4 唯一写入点）。
+     *
+     * <p>🚨 <b>三个读端点都必须调它</b>，否则会出现「列表有徽章、目录树没有」这种一半生效的形态：
+     * <ul>
+     *   <li>{@code GET /api/cpq/component-directories} → {@code ComponentDirectoryService#buildTree}
+     *       —— <b>组件管理页真正驱动徽章的就是这一条</b>（前端 {@code listDirectories} 原样透传，无 mapper）；</li>
+     *   <li>{@code GET /api/cpq/components} → {@code ComponentService#list}；</li>
+     *   <li>{@code GET /api/cpq/components/{id}} → {@code ComponentService#getById}。</li>
+     * </ul>
+     *
+     * <p>🚨 <b>N+1</b>：整批一次解析（{@link #builderDataSourceLabels} 恒 1 条 SQL），
+     * 下面的循环体是纯内存 Map 分发。目录树一次带 222 个组件也只有 1 条 SQL。
+     */
+    public void applyDataSourceLabels(Collection<com.cpq.component.dto.ComponentDTO> dtos) {
+        if (dtos == null || dtos.isEmpty()) return;
+        List<UUID> ids = dtos.stream()
+                .map(d -> d.id)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        if (ids.isEmpty()) return;
+        Map<UUID, String> labels = builderDataSourceLabels(ids);
+        // 🚫 labels 为空也要走完循环：语义是「全部未绑数据源」⇒ 全部保持 null（前端渲染「—」），
+        //    提前 return 与走完循环等价，但不提前 return 少一处将来加逻辑时的分叉。
+        for (com.cpq.component.dto.ComponentDTO d : dtos) {
+            d.dataSourceLabel = labels.get(d.id);   // 缺键 = 未绑 = null（AC-3②）
+        }
+    }
+
+    private static String anchorDisplayName(com.cpq.semanticgraph.service.SemanticGraphSnapshot snap,
+                                            SemanticTabView tv) {
+        if (tv == null) return null;
+        com.cpq.semanticgraph.entity.SemanticNode anchor = snap.nodeById.get(tv.anchorNodeId);
+        return anchor == null ? null : anchor.displayName;
     }
 
     /**

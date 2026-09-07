@@ -47,7 +47,8 @@
       "axes": 3,                     // 将被触碰的「表×轴值」组数
       "upgradedGroups": 2,           // 判定为 UPGRADED 的组数
       "unchangedGroups": 1,          // 判定为 UNCHANGED 的组数（一行不写）
-      "unanchoredRows": 1            // 🔴 「无法对齐」的行数，>0 时前端必须显著提示
+      "unanchoredRows": 1,           // 🔴 「无法对齐」的行数，>0 时前端必须显著提示
+      "recordStale": false           // 🆕 D-35 布尔，便于前端直接做红条
     },
     "tables": [
       {
@@ -73,7 +74,7 @@
                 "originId": 161,             // 快照时的主表行 id（已失效）
                 "baseRowFingerprint": "9f2c…",
                 "displayValues": { "项次": "90", "投入料号": "S-1630010773" },
-                "reason": "CROSS_VERSION_FINGERPRINT_MISS"
+                "reason": "CROSS_VERSION_FINGERPRINT_MISS"   // 见下方「行级 reason 全集」，🚫 与 nonParticipating 的 reason 是两套独立枚举
               }
             ],
             "columnScope": {                 // 该页签表征了哪些列 —— AP-60 列维度判据
@@ -84,6 +85,15 @@
         ]
       }
     ],
+    "recordStale": {                 // 🆕 D-35：本单的 _record 快照写失败过 ⇒ 预览内容可能不是最新
+      "stale": true,
+      "reason": "WRITE_FAILED",
+      "detail": "IllegalStateException: …",   // 🚫 仅排障，前端**不得**直接当用户文案渲染
+      "detectedAt": "2026-09-07T06:17:29Z"
+    },
+    "nonParticipating": [            // 🆕 D-33：不参与基础数据升版的组件（手写视图，无 builder_config）
+      { "componentId": "…", "componentName": "投料", "reason": "NO_BUILDER_CONFIG" }
+    ],
     "extendColumnOnly": [               // 只落 extend_column、不回填的字段（AC-3）
       { "sheetKey": "MATERIAL_BOM", "fields": ["自定义列A", "毛利率(公式)"] }
     ]
@@ -91,19 +101,38 @@
 }
 ```
 
+**`unanchoredRows[].reason` 全集**（2026-09-07 补 —— 原文只列了一个，实测后端还会返 `NO_ANCHOR`；前端代理指出）：
+
+| 码 | 什么情形 | 给财务看的中文 |
+|---|---|---|
+| `NO_ANCHOR` | `_record` 这一行**根本没有锚** —— `origin_id` 与 `base_row_fingerprint` 都是空。发生在「只活在 `row_data` 的行」与「用户手工新增的行」上：它们没有经过 driver 展开，主表里本就没有对应行 | 这是报价单上新增的行，基础数据里没有对应记录，确认后按新增写入 |
+| `CROSS_VERSION_FINGERPRINT_MISS` | 有过锚，但**跨版后指纹对不上** —— 本单拍快照之后，该行内容被别的报价单改过 | 本单拍快照后，该行内容已被其他报价单改动，无法在当前版本中定位 |
+
+🚫 **这套 reason 与 `nonParticipating[].reason` 是两套独立枚举，不许混成一个值域** —— 前者是「行为什么锚不上」，后者是「组件为什么不参与」。
+
 **字段语义的三条硬约束**：
 
 1. `untouchedRows` **必须出现在响应里**，且前端**必须渲染**。它是 `AP-60` 的守卫：财务要能看见「这一组有 7 行本次不动」，否则「不写 = 删除」这类后果就永远不在她的视野里。
 2. `unanchoredRows` 非空时，`confirmRequired` 仍为 `true` 但前端**必须显著提示**；🚫 不许折叠进「更多」里。
 3. `result: "UNCHANGED"` 的组仍要出现在列表里（带 `patchedRows: 0`），🚫 不许过滤掉 —— 否则财务无法区分「这张表没变」和「这张表根本没被算进去」。
+4. 🆕 🚨 **`recordStale.stale === true` 时前端必须显著提示**（`D-35`）：「**此刻预览的内容可能不是报价单的最新数据**」。
+   🚫 不许折叠、不许静默。文案由前端按 `reason` 映射，**🚫 不许把 `detail` 里的异常原文给财务看**。
+   ⚠️ `recordStale` 非空时 `applicable` 恒 `true`（即使 `tables=[]`）—— 否则警告恰好在最该出现时整块不渲染，与 `D-33` 同理。
+5. 🆕 **`unanchoredRows[].reason` 与 `nonParticipating[].reason` 是两套独立值域**（后端实测交集为空，定义在两个不同的类）。
+   🚫 **前端不许合并成一张映射表。** 行级实测有三个值：`NO_ANCHOR` / `CROSS_VERSION_FINGERPRINT_MISS` / **`SAME_VERSION_ORIGIN_MISS`**（同版但 `origin_id` 没命中）。
+6. 🆕 **`nonParticipating` 非空时前端必须显式告知**（`D-33`）：「本单有 N 个组件不参与基础数据升版」。🚫 不许静默 —— 实测现网 156/228 个组件视图是手写的（无 `builder_config`），财务会以为全覆盖了。这与 `AP-60` 判据四（「不写 = 删除」不在 diff 模型里）是同型的静默。
 
 ### 错误码
 
 | 码 | 条件 |
 |---|---|
 | 404 | 报价单不存在 |
-| 400 | 报价单状态不是 `SUBMITTED` |
 | 403 | 非 `PRICING_MANAGER` / `SYSTEM_ADMIN`（既有 `@RoleAllowed`） |
+
+> 🕰️ **本表曾写「400 · 报价单状态不是 `SUBMITTED`」，是主线起草时的臆测，已删**（2026-09-07 后端代理实查指出）。
+> 实测 `QuotationResource:600` 的 `costingApprovePreview` **没有任何状态校验**，直接 `preview(id)` —— 预览是只读、无副作用、幂等的，任何状态调它都不会写库。
+> 🚫 **本段不给它补状态闸** —— 那是改既有端点行为，不在任何一条 AC 内，属超范围。要补另立任务。
+> ⚠️ 状态闸在 `POST .../costing-approve`（`doCostingApprove` 的 `!"SUBMITTED".equals(q.status)` → 400），**写入侧是拦住的**，这才是要紧的那一侧。
 
 ---
 
@@ -125,7 +154,7 @@
 |---|---|---|
 | 400 | `previewToken` 缺失 | 既有行为，强制先调预览 |
 | 400 | 状态不是 `SUBMITTED` | 既有行为 |
-| **409** | token 与提交时重算不一致 | 既有行为，文案「报价数据在预览后发生变化，请重新预览」。⚠️ **这是「预览后又变了」，不是「乐观锁撞车」** —— 后者已按 `D-25` 改为不拒绝、由财务确认 |
+| **409** | token 与提交时重算不一致 | 文案「报价数据在预览后发生变化，请重新预览」。⚠️ **这是「预览后又变了」，不是「乐观锁撞车」** —— 后者已按 `D-25` 改为不拒绝、由财务确认。<br>🔧 **`D-32` 契约变更（2026-09-07 用户批准）**：`previewToken` 的计算**必须纳入 `dsBackfill`**。现状只哈希老 `QuoteBackfillPlan.groups` ⇒ 预览后销售再保存一次、`_record` 变了 token 却不变，而 `_record` 正是财务确认的对象 ⇒ 该保护对新链路完全失效。 |
 | 403 | 权限不足 | 既有 |
 
 🚫 **不新增 409 STALE_VERSION 类错误。** `D-25` 明确推翻了「拒绝后通过的单」这一设计。
