@@ -89,6 +89,22 @@ application.properties:67  quarkus.flyway.migrate-at-start=true
 
 ### ② 🔴 DDL 与轴模型**必须同一批合并**，不许中间态
 
+#### 合并日操作（主线 2026-09-07 预先实证，合并那天照做即可，🚫 不要重新推导）
+
+**✅ 已证实：启动顺序是安全的，合并后不存在「代码要列、库还没列」的窗口。**
+判据不是 `DatasetSchemaSelfCheck` 那句自称「早于 StartupEvent，顺序是安全的」的 javadoc
+（设计期注释不能当判据），而是**实证**：隔离库克隆自 V422（当时**没有** `customer_no`），
+用**要求该列**的分支代码起服务 —— 结果 `flyway_schema_history` 423/424 `success=true`，
+且 `pg_stat_activity` 上出现 **5 idle + 1 active** 的连接池
+⇒ **Flyway 先跑完，自检才跑，并且通过**。若顺序反了，应用会在自检处抛 `IllegalStateException` 起不来。
+
+**⚠️ 真正的协调成本在别处**：合并 + 有人重启使共享库迁移之后，
+**其它会话仍在跑旧代码的 worktree，下次重启会撞 `多出未声明的列: customer_no`**
+（`DatasetSchemaSelfCheck:116` 的双向比对，方向反过来）。
+⇒ 合并前必须**广播**给全部并发会话：「本次合并后，重启后端之前先把 master 合进你的 worktree」。
+合并时点的活跃会话可用 `ListAgents` 取；当天已知 6 个。
+
+
 **不允许「先加列、轴模型下一轮再改」。** 中间那个状态最危险：列已经在、值也在填，而删除仍按单列轴走 ——
 **看起来一切正常，实际每次导入都在删别的客户的数据。**
 
