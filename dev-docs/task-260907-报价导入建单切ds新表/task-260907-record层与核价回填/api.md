@@ -57,7 +57,7 @@
         "groups": [
           {
             "axisValue": "S-3120014539",     // 销售料号（D-3：轴 = 报价单产品卡片的销售料号）
-            "customerNo": null,              // ⛔ 上游 report-侧加客户维度 落地后填充
+            "customerNo": "CUST-0001",       // string，= customer.code；上游 DDL 落库前过渡期可为 null（前端须容忍）
             "baseVersionNo": 1,              // _record 拍快照时的版本
             "currentVersionNo": 2,           // 库里当前版本
             "targetVersionNo": 3,            // 将升到的版本 = max(current, historyMax) + 1
@@ -144,4 +144,4 @@
 
 | 字段 | 阻塞于 | 现状 |
 |---|---|---|
-| `dsBackfill.tables[].groups[].customerNo` | `task-260907-报价侧加客户维度` 的 `A0-1`（存量行回填策略）决定 `customer_no` 的类型与可空性 | 契约里**先占位为 `null`**，不猜类型；上游裁决后同步本文 + 四处（`需求文档.md` / `backtask.md` / `fronttask.md` / `test.md`）并通知在跑的子代理（`task-docs.md` §4「开工后契约变更四步」） |
+| `dsBackfill.tables[].groups[].customerNo` | ~~上游 `A0-1`~~ ✅ **2026-09-07 已裁决** | 类型 **`string`**（DB 侧 `varchar(20) NOT NULL`，取值 = `customer.code`，如 `CUST-0001`）。契约里不再是 `null` 占位 —— **前端按 `string` 渲染**。<br>⛔ 但上游 DDL **尚未落库**（实测 0 张带版本表有该列）⇒ 后端在建表前该字段实际取不到值，**过渡期允许返 `null`，前端必须容忍 `null` 不报错**（渲染为「—」）。DDL 落地后即恒非空 |
