@@ -32,7 +32,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * 本文件验两件事：① 行为——{@code skipInProgressGuard=true} 时即便 registry 标记进行中也能
  * 正常算出结果，2 参重载（守卫生效）此时仍会被拦住；② 反射——全工程只应有 1 处调用点传
  * {@code true}，防止后人随手加一个 {@code true} 把守卫绕过去而不自知（同类"反射式断言防悄悄
- * 扩大绕过口子"的先例见 {@code PricingSheetRegistry} 相关测试）。
+ * 扩大绕过口子"的先例，见当时核价维护端登记表的相关测试——该实现已于 2026-09-07
+ * 随 task-260907 移除）。
  */
 @QuarkusTest
 class EnsureCardValuesSkipInProgressGuardTest {

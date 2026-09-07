@@ -4,8 +4,8 @@ package com.cpq.priceadjust.dto;
  * task-0729 B4.3 · 比对列定义 —— 复用 task-0717 {@code ColumnDef} schema（前端
  * {@code comparisonViewService.ts ColumnDef}），供 {@code comparison_column_config.columns}
  * JSONB 反序列化。后端此前完全没有这个类型（{@code ComparisonConfigDTO.java:20} 注释
- * "后端只存不解释内容"；{@code com.cpq.basicdata.v6.maintenance.dto.ColumnDef} 是同名不同物，
- * 本类专属 task-0729/0717 比对列语义，不与之混用）。
+ * "后端只存不解释内容"；当时核价维护端另有一个同名的 {@code ColumnDef} DTO，是同名不同物，
+ * 本类专属 task-0729/0717 比对列语义，不与之混用；该 DTO 已于 2026-09-07 随 task-260907 移除）。
  */
 public class ComparisonColumnDef {
     public String id;

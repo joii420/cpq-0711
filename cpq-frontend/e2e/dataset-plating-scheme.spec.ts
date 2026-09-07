@@ -35,8 +35,13 @@ async function shot(page: Page, name: string) {
   console.log(`[screenshot] ${name} => ${file}`);
 }
 
-/** AC-48：7 个页签，「电镀方案」在最后。 */
-const HUB_TABS_7 = ['料号核价', '材质', '元素', '工序', '基础核价', '详细核价', '电镀方案'];
+/**
+ * AC-48：页签清单，「电镀方案」在最后。
+ *
+ * 🚩 **task-260907 · AC-1 更新**：原首位的核价维护页签已随其整条功能移除，7 → 6。
+ *    其余 6 项名称与相对顺序一个字未动，「电镀方案」仍在最后。
+ */
+const HUB_TABS_6 = ['材质', '元素', '工序', '基础核价', '详细核价', '电镀方案'];
 
 /** AC-49：数据集 =「报价」时的 10 列，顺序即判据。 */
 const QUOTE_COLUMNS = [
@@ -102,7 +107,7 @@ async function switchDataset(page: Page, label: string) {
 // AC-48 第 7 个页签
 // ═══════════════════════════════════════════════════════════════════
 
-test('TH-01 / AC-48：主数据维护共 7 个页签，「电镀方案」排在最后', async ({ page }) => {
+test('TH-01 / AC-48（task-260907 · AC-1 更新）：主数据维护共 6 个页签，「电镀方案」排在最后', async ({ page }) => {
   await page.goto('/master-data-hub');
   await page.waitForLoadState('networkidle');
   await page.waitForTimeout(1200);
@@ -111,11 +116,12 @@ test('TH-01 / AC-48：主数据维护共 7 个页签，「电镀方案」排在�
     .map((t) => t.trim());
   console.log('[TH-01] 实际页签:', tabs);
 
-  expect(tabs.length, `AC-48 期望 7 个页签，实际 ${tabs.length}：${JSON.stringify(tabs)}`).toBe(7);
-  expect(tabs, 'AC-48 页签名称/顺序与 原型图/电镀方案-页签.html 不符').toEqual(HUB_TABS_7);
-  expect(tabs[6], 'AC-48：「电镀方案」必须排在最后').toBe('电镀方案');
+  expect(tabs.length, `期望 6 个页签（task-260907 · AC-1），实际 ${tabs.length}：${JSON.stringify(tabs)}`).toBe(6);
+  expect(tabs, 'AC-48 页签名称/顺序与 原型图/电镀方案-页签.html + task-260907 AC-1 不符').toEqual(HUB_TABS_6);
+  // 🚨 用 tabs.length-1 而不是写死下标：下标写死会在下次加/减页签时静默指向错的位置
+  expect(tabs[tabs.length - 1], 'AC-48：「电镀方案」必须排在最后').toBe('电镀方案');
 
-  await shot(page, 'ac48-7-tabs');
+  await shot(page, 'ac48-6-tabs');
 });
 
 // ═══════════════════════════════════════════════════════════════════

@@ -133,3 +133,52 @@ PreconditionViolationException: Could not load class with name: XxxTest
 | 分组标题类名 | `.svb-grp-h`（不是 `.svb-grp-head`）；分组容器 `.svb-grp`，折叠态 `.svb-grp.collapsed` |
 | 数据源下拉 | `[data-role="builder-source"]`；语义回显 `[data-role="builder-source-semantic"]` |
 | 默认 30s 超时不够 | 本页前置等待就要 18s+，用例需 `test.setTimeout(150_000)` |
+
+---
+
+## 8. 🚨 主线复验必查项 · 孤儿迁移（每次收到代理回报就跑）
+
+**2026-09-07 同型第四次事故后新增**（V416/V417 属 `task-260819`，V418/V419 属本线）。
+
+### 为什么放在这里，而不是放在 `backtask.md`
+
+原先我把「迁移落库就推 master」写进了 `backtask.md` 的红线段 —— **那条纪律根本没机会生效**：
+`backtask.md` 是**派工时读一次**的文档，而落迁移这个动作发生在**代理跑起来之后的某一刻**。
+把规则放在只读一次的地方，等于指望它在几小时后被想起来。
+
+> 该判断由 `报价数据导入切ds新表` 会话指出：「或许更该绑在**你复验代理产出时的必查项**上」。**采纳。**
+
+⇒ **判据要绑在会重复发生的动作上，不是绑在只发生一次的动作上。**
+
+### 一条命令
+
+```bash
+export PGPASSWORD=joii5231
+psql -h 10.177.152.12 -U postgres -d cpq_db_0724 -tA \
+  -c "SELECT version FROM flyway_schema_history WHERE success ORDER BY version::int DESC LIMIT 8;" | sort > /tmp/db_v.txt
+git ls-tree master --name-only cpq-backend/src/main/resources/db/migration/ \
+  | grep -o 'V[0-9]*' | tr -d 'V' | sort -n | tail -8 | sort > /tmp/master_v.txt
+comm -23 /tmp/db_v.txt /tmp/master_v.txt   # 期望：空。非空 = 孤儿迁移，立即推 master
+```
+
+### 失败形态（为什么必须主动查）
+
+- **Flyway 只在启动时校验** ⇒ **落库的人自己看不见问题**
+- 共享 8081 若启动早于该迁移，是**侥幸活着** —— 任何一次重启（谁的都算）都会
+  `FlywayValidateException: Detected applied migration not resolved locally: <N>`，
+  而报价/核价/选配**所有会话都连它**
+- 新检出 / 新 worktree 的后端**启动即挂**
+
+🚫 **撞到这个错时不要用 `-Dquarkus.flyway.validate-on-migrate=false` 长期绕过** —— 那关掉的正是发现同型事故的唯一信号。
+🚫 **更不要对共享库跑 `flyway repair`** —— 那会打掉别人的记录，属 `CLAUDE.md` §3.2。
+
+### 夹具前缀命名空间
+
+⚠️ 多线并发时，**夹具前缀必须各线错开**。危害不是脏数据，是**互删**：
+两边都按 `LIKE 'T260907%'` 清理，谁先跑谁把对方的删了，**症状是随机挂且极像业务回归**。
+
+| 线 | 前缀 |
+|---|---|
+| 本线后端 | `T260907B-` |
+| 本线测试 | `T260907Q-` |
+| `报价导入切ds新表` 测试 | `T260907T-`（对方已改） |

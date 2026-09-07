@@ -5,7 +5,7 @@
 // （F-3：tab 数 9 / 17 由 `GET /dataset/{ds}/sheets` 决定，前端不写死）。
 //
 // 列表是裸 <Table> + 可点击行（Master-Detail 导航，属 `docs/列表操作规范.md` 例外白名单），
-// 行为骨架复用 `part-costing/SheetPartListTab`（F-1 抽出的公共件），
+// 行为骨架复用 `../shared/SheetPartListTab`（F-1 抽出的公共件），
 // 工具栏版式由它内部套 TOOLBAR_ROW_STYLE。
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useMemo, useState } from 'react';
@@ -13,8 +13,8 @@ import { Button, Tag, Tooltip, Typography } from 'antd';
 import { ImportOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useAuthStore } from '../../../stores/authStore';
-import SheetPartListTab from '../part-costing/SheetPartListTab';
-import type { ConfiguredFilter } from '../part-costing/SheetPartListTab';
+import SheetPartListTab from '../shared/SheetPartListTab';
+import type { ConfiguredFilter } from '../shared/SheetPartListTab';
 import { createDatasetApi } from './api';
 import { DATASETS, DATASET_EDIT_ROLES, NO_PERMISSION_TIP } from './datasetConfig';
 import type { DatasetKey, DatasetPartRow } from './types';

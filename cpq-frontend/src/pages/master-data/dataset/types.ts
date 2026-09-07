@@ -2,13 +2,13 @@
 // 数据集维护（task-260902）· 前端类型定义
 // 与 `api.md` 的 8 个端点响应体一一对应。
 //
-// ⚠️ 与现有 `part-costing/types.ts` **刻意不合并**：两套端点的字段名不同
+// ⚠️ 与 `../shared/types.ts`（核价侧旧契约类型）**刻意不合并**：两套端点的字段名不同
 //    （sheetName↔tabName / sortOrder↔order / versionNo↔version / isLatest↔isCurrent /
 //     masterType↔master），把新契约的字段名回灌进旧类型会改动现有页签的解析口径（AC-42）。
 //    只有 `ColumnDef` / `SheetRow` 是共用的（EditableSheetTable 直接消费），
 //    由本文件的 `toColumnDefs()` 把新契约映射过去。
 // ─────────────────────────────────────────────────────────────────────────────
-import type { ColumnDef, ColumnType, ColumnRole, MasterType, DropdownKind } from '../part-costing/types';
+import type { ColumnDef, ColumnType, ColumnRole, MasterType, DropdownKind } from '../shared/types';
 
 /** 三个数据集（api.md §0） */
 export type DatasetKey = 'quote' | 'cost-basic' | 'cost-detail';

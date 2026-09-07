@@ -15,7 +15,8 @@
 //
 // 🚧 过渡（2026-09-03 主线情报更正）：原计划复用的 `<SheetPartListTab>` 公共件不会存在了
 //    （task-260902 改为零触碰 legacy + 新建 `pages/master-data/dataset/`，该目录尚未合入 master）。
-//    **不得 import 也不得修改 `part-costing/` 下任何文件**，故照 `PartCostingTab.tsx` 的结构
+//    **不得 import 也不得修改主数据维护核价侧旧公共件目录（已于 2026-09-07 迁至 `shared/`）
+//    下任何文件**，故照当时核价侧列表页签的结构
 //    新写一份平行实现；数据集相关部分已参数化为 `basePath`，日后收敛时改动面最小。
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useCallback, useEffect, useRef, useState } from 'react';

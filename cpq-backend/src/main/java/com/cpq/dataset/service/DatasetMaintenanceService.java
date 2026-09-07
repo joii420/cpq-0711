@@ -37,10 +37,10 @@ import java.util.*;
  *       主数据存在性走「收集 → 批量 IN → 回头比对」两趟法。🚫 循环体内绝不查库。</li>
  *   <li>🚫 <b>升版逻辑一律交给 {@link VersionedGroupWriter}</b>（B-5）。本类不自己算指纹 / 归档 /
  *       定版本号 —— 与导入共用同一条写入路径，两套实现必然漂移
- *       （{@code PricingSheetRegistry} 类注释自陈的「双写漂移」就是前车之鉴）。</li>
- *   <li>🚨 <b>闸门 A0 · D-13</b>：本类只新建、不改现有代码。既有 {@code PricingMaintenanceService}
+ *       （历史上核价维护端的声明式镜像与导入器 handler 双写、静默漂移，就是前车之鉴）。</li>
+ *   <li>🚨 <b>闸门 A0 · D-13</b>：本类只新建、不改现有代码。当时的核价维护端服务
  *       有形似方法，<b>刻意不去抽公共件</b> —— 抽取会改到现有类，推翻 D-13 并让 AC-42
- *       「现有页签零回归」失去零改动证据。</li>
+ *       「现有页签零回归」失去零改动证据。（该维护端已于 2026-09-07 随 task-260907 移除。）</li>
  * </ol>
  */
 @ApplicationScoped
@@ -115,7 +115,7 @@ public class DatasetMaintenanceService {
      * AC-25：列表数据源 = 该数据集的<b>物料表</b>（R-8），行数恒等于
      * {@code SELECT count(*) FROM ds_<集>_material}。
      *
-     * <p>⚠️ {@code page} 是 <b>0-based</b>（api.md §3 明写，与现有 {@code /pricing-basic-data/parts}
+     * <p>⚠️ {@code page} 是 <b>0-based</b>（api.md §3 明写，与当时核价维护端 parts 端点
      * 的 1-based <b>不同</b>）—— 前端两套页签共用组件时最容易在这里错一页，故严格按契约，不做兼容。
      *
      * <p>N+1 自检：count 1 条 + page 1 条 = <b>2 条</b>。{@code configuredCount} 由 9/17 段
@@ -214,7 +214,7 @@ public class DatasetMaintenanceService {
      * 关键字条件是裸 {@code A OR B}，直接拼成 {@code A OR B AND C} 会因 AND 优先级高于 OR
      * 被解析成 {@code A OR (B AND C)} —— <b>过滤静默失效、结果反而变多</b>，而且不报错。
      * 逐个加括号让规则与 predicate 内容无关，后续再加条件不会重蹈覆辙
-     * （既有 {@code PricingMaintenanceService.andWhere} 踩过同一个坑）。
+     * （历史上核价维护端的同名 {@code andWhere} 拼装踩过同一个坑）。
      */
     private static String andWhere(List<String> preds) {
         if (preds.isEmpty()) return "";
@@ -536,9 +536,10 @@ public class DatasetMaintenanceService {
     // ==================================================================
 
     /**
-     * 🚨 api.md §8：<b>可复用现有实现的查询逻辑，但必须新开路径</b> ——
-     * 现有 {@code /pricing-basic-data/lookup/{masterType}} 一个字节都不改（AC-43）。
-     * 本方法是独立实现，比现有端点多支持 {@code recipe} / {@code customer} 两种 masterType。
+     * 🚨 api.md §8：<b>可复用当时实现的查询逻辑，但必须新开路径</b> ——
+     * 当时核价维护端的 lookup 端点一个字节都不改（AC-43）。
+     * 本方法是独立实现，比那个端点多支持 {@code recipe} / {@code customer} 两种 masterType。
+     * （那个端点已于 2026-09-07 随 task-260907 下线，本方法自此是唯一 lookup 实现。）
      */
     public DsLookupResponse lookup(String dataset, String masterType, String keyword, int limit) {
         registry(dataset);                          // 校验 {dataset} 合法（非法 → 404）

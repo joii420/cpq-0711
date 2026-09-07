@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>核价通过确认抽屉 · 零变更与空态 —— task-260907 第二段</title>
+<link rel="stylesheet" href="_style.css">
+</head>
+<body>
+
+<div class="page-hint">
+  📌 <b>当前基准</b> · 状态 <b>3/4：零变更 + 空态 + 禁用态</b> ——
+  服务 <code>AC-14</code>（零变更不写不删）与 <code>AC-15</code>（老单不走新回填）。
+  本屏同时画了<b>禁用按钮的 hover tooltip 原因</b>（<code>frontend.md §1.2</code>：禁用但可见 + 说明原因，🚫 不许 <code>return null</code> 藏掉）。
+</div>
+
+<div class="behind">
+  <h2>报价单 QT-20260907-0421 · 待核价</h2>
+  <div class="card">客户：罗克韦尔（CUST-0001）　｜　产品：1 个　｜　金额：¥12,860.00</div>
+</div>
+
+<div class="mask"></div>
+<div class="drawer" style="height:52vh; top:0;">
+
+  <div class="drawer-header">
+    <div>
+      <div class="drawer-title">核价通过 —— 确认基础数据升版</div>
+      <div class="drawer-sub">报价单 QT-20260907-0421　·　客户 罗克韦尔（CUST-0001）</div>
+    </div>
+    <button class="drawer-close">✕</button>
+  </div>
+
+  <div class="drawer-body">
+
+    <div class="summary">
+      <div class="item"><div class="k">涉及表</div><div class="v">2</div></div>
+      <div class="item"><div class="k">涉及料号组</div><div class="v">2</div></div>
+      <div class="item"><div class="k">将升版</div><div class="v">0</div></div>
+      <div class="item"><div class="k">无变更</div><div class="v">2</div></div>
+      <div class="item"><div class="k">无法对齐的行</div><div class="v">0</div></div>
+    </div>
+
+    <div class="alert alert-success">
+      <span>✓</span>
+      <div>
+        <b>本单不会改动任何基础数据。</b>报价单里的数据与基础数据当前版本完全一致，
+        确认后这 2 个料号组<b>一行都不会写</b>，版本号与更新时间都保持不变。
+      </div>
+    </div>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>页签</th><th>销售料号</th><th>版本迁移</th><th>判定</th><th class="num">整组行数</th><th class="num">本次覆盖</th><th class="num">本次不动</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>物料BOM<div class="mono muted" style="font-size:12px">ds_quote_material_bom</div></td>
+            <td class="mono">VS-FG01</td>
+            <td><span class="ver">v1 <span class="arrow">→</span> <span class="muted">v1</span></span></td>
+            <td><span class="tag tag-grey">无变更</span></td>
+            <td class="num">5</td><td class="num">0</td><td class="num">5</td>
+          </tr>
+          <tr>
+            <td>物料与元素BOM<div class="mono muted" style="font-size:12px">ds_quote_element_bom</div></td>
+            <td class="mono">VS-FG01</td>
+            <td><span class="ver">v1 <span class="arrow">→</span> <span class="muted">v1</span></span></td>
+            <td><span class="tag tag-grey">无变更</span></td>
+            <td class="num">3</td><td class="num">0</td><td class="num">3</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="muted" style="font-size:13px">
+      🔑 判定为「无变更」的组<b>仍然列在这里</b>，不会被过滤掉 ——
+      否则分不清「这张表没变」和「这张表根本没被算进去」。
+    </p>
+
+  </div>
+
+  <div class="drawer-footer">
+    <span class="footer-note">本次确认不写入任何基础数据，仅将报价单状态置为「已核准」。</span>
+    <button class="btn">取消</button>
+    <button class="btn btn-primary">确认并核价通过</button>
+  </div>
+</div>
+
+<!-- ══════════ 第二屏：空态 / 不适用 ══════════ -->
+<div style="position:fixed; left:0; right:0; bottom:0; height:48vh; background:#f0f2f5; border-top:2px dashed #d9d9d9;">
+  <div class="page-hint" style="border-top:0">
+    ↓ <b>同屏第二态：老单（不走 ds_ 新回填）</b> —— <code>dsBackfill.applicable = false</code>，服务 <code>AC-15</code>
+  </div>
+  <div style="position:absolute; top:44px; right:0; bottom:0; width:1200px; max-width:96vw; background:#fff; display:flex; flex-direction:column; box-shadow:-6px 0 16px rgba(0,0,0,.08);">
+    <div class="drawer-header">
+      <div>
+        <div class="drawer-title">核价通过</div>
+        <div class="drawer-sub">报价单 QT-20260615-0033　·　该单建于基础数据切换之前</div>
+      </div>
+      <button class="drawer-close">✕</button>
+    </div>
+    <div class="drawer-body">
+      <div class="empty">
+        <div class="icon">📄</div>
+        <div class="text">
+          本单不涉及新基础数据表的升版。<br>
+          <span style="font-size:13px">该报价单建于数据源切换之前，按原有流程核价通过即可。</span>
+        </div>
+      </div>
+    </div>
+    <div class="drawer-footer">
+      <span class="footer-note">—</span>
+      <button class="btn">取消</button>
+      <span class="tip">
+        <button class="btn btn-primary" disabled>确认并核价通过</button>
+        <span class="tip-text">当前登录角色不是财务或管理员，无权核价</span>
+      </span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -25,7 +25,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 一致性反射测试（AC-2，长期防漂移）。
  *
  * <p>本任务的教训：scale 常量在代码里有多份独立副本（DB 列 / JPA 实体 / 导入 handler 字面量 /
- * {@code PricingSheetRegistry} 声明式镜像），漏改任一处都是静默失效——不报错、不失败，只是精度悄悄
+ * 当时核价维护端的声明式镜像——该镜像已于 2026-09-07 随 task-260907 移除），漏改任一处都是
+ * 静默失效——不报错、不失败，只是精度悄悄
  * 变短。本测试只堵其中一处漂移面（JPA 实体声明 vs DB 实际列类型），但价值是长期的：以后任何人改列
  * 精度忘了同步实体，这里会立刻 fail，而不是像 {@code ProductionEnergy.unit_price} 那样漂移了很久
  * 才被人工勘察发现（见 {@code 需求文档.md} §6.2）。

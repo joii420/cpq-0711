@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>核价通过确认抽屉 · 默认态 —— task-260907 第二段</title>
+<link rel="stylesheet" href="_style.css">
+</head>
+<body>
+
+<div class="page-hint">
+  📌 <b>当前基准</b> · 状态 <b>1/4：默认态（有数据，同版路径）</b> ——
+  服务 <code>AC-5</code> <code>AC-6</code> <code>AC-14</code>。抽屉右侧滑出 <code>placement="right"</code> <code>width=1200</code>（<code>frontend.md §1.1</code>：确认配置类交互一律用抽屉，不用 Modal）。
+</div>
+
+<div class="behind">
+  <h2>报价单 QT-20260907-0412 · 待核价</h2>
+  <div class="card">客户：正泰（CUST-0004）　｜　产品：3 个　｜　金额：¥186,420.00</div>
+</div>
+
+<div class="mask"></div>
+<div class="drawer">
+
+  <div class="drawer-header">
+    <div>
+      <div class="drawer-title">核价通过 —— 确认基础数据升版</div>
+      <div class="drawer-sub">报价单 QT-20260907-0412　·　客户 正泰（CUST-0004）　·　确认后将按下表把报价单数据写回基础数据并升版</div>
+    </div>
+    <button class="drawer-close">✕</button>
+  </div>
+
+  <div class="drawer-body">
+
+    <div class="summary">
+      <div class="item"><div class="k">涉及表</div><div class="v">3</div></div>
+      <div class="item"><div class="k">涉及料号组</div><div class="v">4</div></div>
+      <div class="item"><div class="k">将升版</div><div class="v">3</div></div>
+      <div class="item"><div class="k">无变更</div><div class="v">1</div></div>
+      <div class="item"><div class="k">无法对齐的行</div><div class="v">0</div></div>
+    </div>
+
+    <div class="alert alert-info">
+      <span>ℹ️</span>
+      <div>
+        下表列的是<b>确认后基础数据会变成什么样</b>，不是「哪些值变了」。
+        「<b>本次不动</b>」那一列是本页签没有表征的行 —— 它们会<b>原样保留</b>，不会被删除、不会被置空。
+      </div>
+    </div>
+
+    <!-- ── 物料BOM ── -->
+    <div class="sheet-head">
+      <span class="name">物料BOM</span>
+      <span class="table-name mono muted">ds_quote_material_bom</span>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>销售料号</th><th>版本迁移</th><th>判定</th>
+            <th class="num">整组行数</th><th class="num">本次覆盖</th><th class="num">本次不动</th>
+            <th>本次覆盖的列</th><th>原样保留的列</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="mono">S-3120014539</td>
+            <td><span class="ver">v2 <span class="arrow">→</span> <span class="to">v3</span></span></td>
+            <td><span class="tag tag-blue">升版</span></td>
+            <td class="num">9</td><td class="num">2</td><td class="num">7</td>
+            <td><span class="tag tag-grey">组成数量</span> <span class="tag tag-grey">单重</span></td>
+            <td class="muted">项次、投入料号、产出料号类型、材料毛重、材料净重、重量单位、材料占比、损耗率、不良率</td>
+          </tr>
+          <tr>
+            <td class="mono">S-2120011659</td>
+            <td><span class="ver">v1 <span class="arrow">→</span> <span class="to">v2</span></span></td>
+            <td><span class="tag tag-blue">升版</span></td>
+            <td class="num">4</td><td class="num">4</td><td class="num">0</td>
+            <td><span class="tag tag-grey">组成数量</span> <span class="tag tag-grey">损耗率</span></td>
+            <td class="muted">项次、投入料号、产出料号类型、材料毛重、材料净重、重量单位、材料占比、不良率</td>
+          </tr>
+          <tr>
+            <td class="mono">VS-FG01</td>
+            <td><span class="ver">v1 <span class="arrow">→</span> <span class="to muted" style="color:rgba(0,0,0,.45);font-weight:400">v1</span></span></td>
+            <td><span class="tag tag-grey">无变更</span></td>
+            <td class="num">5</td><td class="num">0</td><td class="num">5</td>
+            <td class="muted">—</td>
+            <td class="muted">整组不写，连更新时间都不会动</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ── 物料与元素BOM ── -->
+    <div class="sheet-head">
+      <span class="name">物料与元素BOM</span>
+      <span class="table-name mono muted">ds_quote_element_bom</span>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>销售料号</th><th>版本迁移</th><th>判定</th>
+            <th class="num">整组行数</th><th class="num">本次覆盖</th><th class="num">本次不动</th>
+            <th>本次覆盖的列</th><th>原样保留的列</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="mono">S-3120014539</td>
+            <td><span class="ver">v1 <span class="arrow">→</span> <span class="to">v2</span></span></td>
+            <td><span class="tag tag-blue">升版</span></td>
+            <td class="num">6</td><td class="num">3</td><td class="num">3</td>
+            <td><span class="tag tag-grey">组成含量（%）</span> <span class="tag tag-grey">损耗率%</span></td>
+            <td class="muted">材质料号、元素、项次、毛用量、毛用量单位、净用量、净用量单位、回收折扣、回收量</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="alert alert-warn">
+      <span>⚠️</span>
+      <div>
+        <b>元素价格不写回基础数据。</b>报价单里用到的元素实时价（<span class="mono">element_price</span>）
+        只记录在报价单自己的快照里，供后续价格调整对照用；基础数据的元素价格由「客户价格调整策略」维护，本次确认不会碰它。
+      </div>
+    </div>
+
+    <!-- ── 只留痕不回填 ── -->
+    <div class="sheet-head">
+      <span class="name">仅记录、不写回基础数据的字段</span>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>页签</th><th>字段</th><th>为什么不写回</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>物料BOM</td>
+            <td><span class="tag tag-grey">单件材料成本</span> <span class="tag tag-grey">工厂备注</span></td>
+            <td class="muted">公式列 / 自定义列，基础数据里没有对应字段</td>
+          </tr>
+          <tr>
+            <td>物料与元素BOM</td>
+            <td><span class="tag tag-grey">元素小计</span></td>
+            <td class="muted">公式列，基础数据里没有对应字段</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <div class="drawer-footer">
+    <span class="footer-note">确认后不可撤销：3 个料号组将升版，旧版本进入历史可查。</span>
+    <button class="btn">取消</button>
+    <button class="btn btn-primary">确认并核价通过</button>
+  </div>
+
+</div>
+
+</body>
+</html>

@@ -1,6 +1,6 @@
 // task-0721 F4：报价侧 BOM 树「加叶子」——候选料号本地采集。
 //
-// 架构红线（api.md §7）：候选料号列表**不调用任何远程端点**（不查 pricing-basic-data/lookup，
+// 架构红线（api.md §7）：候选料号列表**不调用任何远程端点**（不查核价侧的主表 lookup 端点，
 // 不新增后端接口）——数据已在前端 componentData / quoteCardValues 快照中，本地过滤即可。
 //
 // 匹配范围 = 当前报价单各页签**已渲染**的行（quoteCardValues.tabs[].baseRows），

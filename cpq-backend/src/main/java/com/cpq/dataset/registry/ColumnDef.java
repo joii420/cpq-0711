@@ -11,8 +11,9 @@ import java.util.List;
  * <p><b>唯一真源</b>：本类的每一个实例都与 {@code V401~V404} 迁移里的一列 <b>一一对应</b>，
  * 两侧同出自 {@code dev-docs/task-260902-.../字段矩阵.md}。运行期由
  * {@link DatasetSchemaSelfCheck} 在启动时逐表比对 {@code information_schema.columns}，
- * <b>对不上直接启动失败</b> —— 这是为了硬拦 {@code PricingSheetRegistry} 类注释自陈的"双写漂移"
- * （改 handler 忘了改 Registry → 虚假升版 / 匹配错组，且完全静默）。
+ * <b>对不上直接启动失败</b> —— 这是为了硬拦历史上核价维护端声明式镜像与导入器 handler 之间的"双写漂移"
+ * （改 handler 忘了改镜像 → 虚假升版 / 匹配错组，且完全静默；该维护端实现已于 2026-09-07
+ * 随 task-260907 移除，本自检机制正是为了不再重蹈那条覆辙）。
  *
  * <p>JSON 形态对齐 {@code api.md §2}（{@code name/label/role/type/editable/required/compared/dropdown}）。
  * 带 {@link JsonIgnore} 的字段是服务端内部元数据（建表类型、长度上限、主数据校验开关、NAME 取数来源），
@@ -141,7 +142,7 @@ public final class ColumnDef {
         return this;
     }
 
-    /** 固定候选枚举（无字典表，未知值可输入回退 —— 与现有 PricingSheetRegistry 同口径）。 */
+    /** 固定候选枚举（无字典表，未知值可输入回退 —— 与历史上核价维护端的枚举列同口径）。 */
     public ColumnDef options(List<String> opts) {
         this.dropdown = Dropdown.enumOf(opts);
         return this;

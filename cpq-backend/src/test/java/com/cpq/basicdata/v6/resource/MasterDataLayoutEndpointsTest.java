@@ -1,8 +1,6 @@
 package com.cpq.basicdata.v6.resource;
 
 import com.cpq.basicdata.v6.dto.ProcessMasterDTO;
-import com.cpq.basicdata.v6.maintenance.PricingBasicDataMaintenanceResource;
-import com.cpq.basicdata.v6.maintenance.dto.PartListPage;
 import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.dto.PageResult;
 import io.quarkus.test.junit.QuarkusTest;
@@ -10,7 +8,6 @@ import io.restassured.RestAssured;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
-import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,8 +26,12 @@ import static org.junit.jupiter.api.Assertions.*;
  *       用「同前缀的不存在子路径返 404」作对照，401 即证明<b>路由确实命中了资源方法</b>
  *       （尤其 {@code /v6/process-master/categories} 没被 {@code /{id}} 吞掉）；</li>
  *   <li><b>参数直通层</b>：直接调用 Resource 方法（绕过鉴权），验证 {@code @QueryParam} 的顺序 /
- *       语义没接错（如 isOutsource 与 processCategory 传反），以及模板下载的响应头与字节流。</li>
+ *       语义没接错（如 isOutsource 与 processCategory 传反）。</li>
  * </ol>
+ *
+ * <p>⚠️ <b>task-260907（2026-09-07）</b>：原 A1（核价基础数据 parts 端点参数直通）与
+ * A4（核价基础数据模板下载响应头）两个用例，已随主数据维护端核价页签的整体下线而删除，
+ * 其被测端点不再存在。本类其余用例（工序主数据端点的版式断言）不受影响。
  */
 @QuarkusTest
 class MasterDataLayoutEndpointsTest {
@@ -38,7 +39,6 @@ class MasterDataLayoutEndpointsTest {
     @Inject EntityManager em;
     @Inject ProcessMasterResource processMasterResource;
     @Inject BasicDataImportV6Resource importResource;
-    @Inject PricingBasicDataMaintenanceResource maintenanceResource;
 
     @Transactional
     void cleanup() {
@@ -81,21 +81,13 @@ class MasterDataLayoutEndpointsTest {
             "GET /categories 未命中自己的资源方法（被 /{id} 吞掉或未注册）");
     }
 
-    /** 另外三个端点带新参数时都能路由到（401 而非 404/405/500）。 */
+    /** 工序主数据列表端点带新参数时能路由到（401 而非 404/405/500）。 */
     @Test
     void changedEndpoints_areRoutedWithNewParams() {
         assertEquals(401, RestAssured.given()
             .queryParam("sortBy", "processName").queryParam("sortOrder", "desc")
             .queryParam("isOutsource", true).queryParam("processCategory", "制造")
             .when().get("/api/cpq/v6/process-master").getStatusCode());
-
-        assertEquals(401, RestAssured.given()
-            .queryParam("sortBy", "materialNo").queryParam("sortOrder", "desc")
-            .queryParam("configured", false)
-            .when().get("/api/cpq/pricing-basic-data/parts").getStatusCode());
-
-        assertEquals(401, RestAssured.given()
-            .when().get("/api/cpq/basic-data-import/v6/pricing/template").getStatusCode());
     }
 
     // --------------------------------------------- ② 参数直通层（Resource 方法）
@@ -127,32 +119,4 @@ class MasterDataLayoutEndpointsTest {
         assertTrue(cats.containsAll(List.of("ZT分类甲", "ZT分类乙")), "缺自建分类: " + cats);
     }
 
-    /** A1：parts 端点三个新参数直通（configured 生效、非法 sortBy 不炸）。 */
-    @Test
-    void partsResource_passesParamsThrough() {
-        ApiResponse<PartListPage> all = maintenanceResource.parts(null, 1, 5, null, "asc", null);
-        assertEquals(1, all.getData().page);
-        assertEquals(5, all.getData().size);
-
-        long total = all.getData().total;
-        long yes = maintenanceResource.parts(null, 1, 1, "materialNo", "desc", Boolean.TRUE).getData().total;
-        long no = maintenanceResource.parts(null, 1, 1, "materialNo", "desc", Boolean.FALSE).getData().total;
-        assertEquals(total, yes + no, "端点层 configured 二分不完备");
-
-        assertDoesNotThrow(() -> maintenanceResource.parts(null, 1, 5, "bogus;DROP", "sideways", null));
-    }
-
-    /** A4：模板下载响应 200 + Content-Disposition + xlsx 魔数 PK。 */
-    @Test
-    void pricingTemplateEndpoint_returnsXlsxAttachment() {
-        Response r = importResource.pricingTemplate();
-        assertEquals(200, r.getStatus());
-        assertEquals("attachment; filename=\"pricing_basic_data_template.xlsx\"",
-            r.getHeaderString("Content-Disposition"));
-
-        byte[] body = (byte[]) r.getEntity();
-        assertTrue(body.length > 1000, "模板体积异常: " + body.length);
-        assertEquals('P', body[0]);
-        assertEquals('K', body[1]);
-    }
 }

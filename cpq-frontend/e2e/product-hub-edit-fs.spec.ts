@@ -183,20 +183,31 @@ test('FS-3：选客户时请求带 customerNo，且后端直接返回过滤后�
  *   父任务实测那里有 `input=96 / 保存=1`，所以它**必须抛错**。
  *   不抛错 ⇒ E-08 的「抽屉全只读」结论是空验证，不可采信。
  *
- * 📌 顺带覆盖 `test.md §6` 的 **RG-5**：核价侧「料号核价」仍可编辑（本任务不得波及它）。
+ * 📌 顺带覆盖 `test.md §6` 的 **RG-5**：核价侧维护页签仍可编辑（本任务不得波及它）。
+ *
+ * 🚩 **task-260907 改造**：原来指向的核价维护页签已随其整条功能移除，
+ *    载体换成**基础核价**页签 —— 它同样可编辑、同样走 `EditableSheetTable`，
+ *    因此**阳性对照与 RG-5 的语义都不变**（RG-5 现在读作：公共件迁到 `shared/` 后核价侧仍可编辑）。
+ *
+ * ⚠️ 料号也必须一起换：`HERO = 'S-3120014539'` 在 `ds_cost_basic_*` 子表里**一行都没有**
+ *    （2026-09-07 实查），基础核价侧数据充分的是不带 S- 前缀的 `3120014539`。
+ *    只换页签不换料号 ⇒ 抽屉全空 ⇒ 阳性对照失效，且会伪装成「公共件被改坏了」。
  */
+/** task-260907：基础核价 / 详细核价侧数据充分的料号（轴 = 生产料号，无 S- 前缀）。 */
+const COST_HERO = '3120014539';
+
 test('FS-4：assertReadOnly 指向已知可编辑的核价抽屉，必须硬失败（阳性对照 + RG-5）', async ({ page }) => {
   await loginAs(page, 'PRICING_MANAGER');
   await page.goto('/master-data-hub');
-  // 🚨 **不用 `getByText('料号核价',{exact:true}).first()`**（2026-09-04 实测踩到，300s 超时）：
-  //    该文案在页面上出现多处（页签 + 面包屑/导航），`.first()` 落到的那个**不可点击**，
+  // 🚨 **不用 `getByText('<页签名>',{exact:true}).first()`**（2026-09-04 实测踩到，300s 超时）：
+  //    页签文案在页面上会出现多处（页签 + 面包屑/导航），`.first()` 落到的那个**不可点击**，
   //    于是 click 一直等 actionability，表现为纯超时 —— **看起来像页面坏了**，
-  //    实测诊断：页面渲染完全正常、无 4xx/5xx、`role=tab` 里就有「料号核价」。
-  //    ⇒ 按**角色**定位，不按文案。（父任务 FS-1a 的写法在当时可用，DOM 变了之后就烂了。）
-  await page.getByRole('tab', { name: '料号核价', exact: true }).click();
+  //    实测诊断：页面渲染完全正常、无 4xx/5xx、`role=tab` 里就有那个页签。
+  //    ⇒ 按**角色**定位，不按文案。（task-260907 改造后沿用这个写法。）
+  await page.getByRole('tab', { name: '基础核价', exact: true }).click();
   await page.waitForTimeout(1500);
-  await search(page, HERO);
-  await page.getByRole('cell', { name: HERO, exact: true }).first().click();
+  await search(page, COST_HERO);
+  await page.getByRole('cell', { name: COST_HERO, exact: true }).first().click();
   const drawer = page.locator('.ant-drawer').first();
   await expect(drawer).toBeVisible({ timeout: 10_000 });
   await page.waitForTimeout(3000);
@@ -209,9 +220,10 @@ test('FS-4：assertReadOnly 指向已知可编辑的核价抽屉，必须硬失�
 
   // 这一条同时就是 RG-5：核价侧仍可编辑
   expect(inputs,
-    'FS-4 前置 / RG-5：核价抽屉必须确实有编辑控件。\n' +
-    '  为 0 有两种可能，处置完全不同：① 阳性对照样本失效（测试问题）；' +
-    '② **本任务把核价侧也改成只读了（产品缺陷，越界）**。需人工分辨后再下结论。')
+    'FS-4 前置 / RG-5：基础核价抽屉必须确实有编辑控件。\n' +
+    '  为 0 有三种可能，处置完全不同：① 料号夹具漂移（测试环境问题，报主线换夹具）；' +
+    '② 阳性对照样本失效（测试问题）；' +
+    '③ **公共件迁到 shared/ 后核价侧变成只读了（产品缺陷，越界）**。需人工分辨后再下结论。')
     .toBeGreaterThan(0);
 
   let threw = false;

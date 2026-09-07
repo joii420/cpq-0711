@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>原型图导航 —— task-260907 第二段 · 核价通过回填确认</title>
+<link rel="stylesheet" href="_style.css">
+</head>
+<body>
+<div class="nav">
+
+  <h1>核价通过 —— 基础数据升版确认抽屉</h1>
+  <div class="muted">task-260907 第二段 · <span class="mono">_record</span> 数据层 + 核价通过回填升版　｜　2026-09-07</div>
+
+  <div class="baseline">
+    📌 <b>当前基准</b> —— 本页面（核价通过确认交互）此刻的视觉标准，前端照这 4 张 1:1 还原。
+  </div>
+
+  <div class="alert alert-info" style="margin-bottom:20px">
+    <span>ℹ️</span>
+    <div>
+      <b>本页面此前没有原型图。</b>2026-09-07 实查 <span class="mono">dev-docs/</span> 全部 <span class="mono">原型图/</span>：
+      无任何一份画过「核价通过确认 / 回填预览」这个交互（<span class="mono">repair-260727-回填语义与预览重做</span> 当年未出原型）。
+      ⇒ 本次是该页面的<b>首份基准</b>，无历史快照需要降级。
+    </div>
+  </div>
+
+  <div class="alert alert-warn" style="margin-bottom:20px">
+    <span>⚠️</span>
+    <div>
+      <b>形态取自 <code>frontend.md §1.1</code>：抽屉，不是 Modal。</b>
+      「确认配置」属于弹出式交互，一律 <span class="mono">placement="right"</span>；宽度按内容复杂度取 <b>1200</b>（逐表逐组多列比对）。
+      🚫 还原时不许改成 <span class="mono">Modal.confirm</span>。
+    </div>
+  </div>
+
+  <ul>
+    <li>
+      <a href="01-核价通过确认抽屉-默认态.html">01 · 默认态（有数据，同版路径）</a>
+      <div class="desc">最常见的一屏：快照基版 == 库当前版本，按 <span class="mono">origin_id</span> 精确对位。含「本次不动」列与「仅记录不写回」区。</div>
+      <div class="acs">服务 AC-5、AC-6、AC-14 ｜ 认领 F-1、F-2、F-3</div>
+    </li>
+    <li>
+      <a href="02-核价通过确认抽屉-跨版与无法对齐.html">02 · 跨版 + 无法对齐（警示态）</a>
+      <div class="desc">别的报价单已把同一料号升过版。三段式版本迁移「快照 v1 → 库中 v2 → v3」，以及「对不上的行」明细区与红色主按钮。</div>
+      <div class="acs">服务 AC-10、AC-20 ｜ 认领 F-2、F-4</div>
+    </li>
+    <li>
+      <a href="03-核价通过确认抽屉-零变更与空态.html">03 · 零变更 + 空态 + 禁用态</a>
+      <div class="desc">上半屏：全部判定 UNCHANGED，一行不写。下半屏：老单 <span class="mono">applicable=false</span> 的空态，以及禁用按钮的 hover 原因文案。</div>
+      <div class="acs">服务 AC-14、AC-15 ｜ 认领 F-3、F-5</div>
+    </li>
+    <li>
+      <a href="04-核价通过确认抽屉-极值与错误态.html">04 · 最长文案 / 极值 / 提交失败</a>
+      <div class="desc">13 张表 / 41 组 / 单组 18 行 / 超长客户名与料号；以及提交时撞 409「预览后数据已变化」的错误态与「重新预览」出口。</div>
+      <div class="acs">服务 AC-18 ｜ 认领 F-4、F-6</div>
+    </li>
+  </ul>
+
+  <h2 style="font-size:16px; margin:28px 0 8px">还原时的三条硬要求</h2>
+  <ul>
+    <li>
+      <div class="desc">
+        <b>1. 「本次不动」这一列必须渲染，不许省。</b>
+        它是 <span class="mono">AP-60</span> 的守卫 —— 财务要能看见「这一组有 7 行本次不动」，
+        否则「不写 = 删除」这类后果永远不在她的视野里。<span class="mono">repair-0727</span> 的真实事故就是预览显示「0 变更」而执行删了 3 行。
+      </div>
+    </li>
+    <li>
+      <div class="desc">
+        <b>2. 判定为「无变更」的组仍要列出，不许过滤。</b>
+        否则分不清「这张表没变」和「这张表根本没被算进去」。
+      </div>
+    </li>
+    <li>
+      <div class="desc">
+        <b>3. 「对不上的行」不许折叠进「更多」。</b>
+        <span class="mono">unanchoredRows &gt; 0</span> 时主按钮变红并改文案「仍然确认并核价通过」，页脚左侧显著提示条数。
+      </div>
+    </li>
+  </ul>
+
+  <p class="muted" style="font-size:13px; margin-top:24px">
+    <b>数据出处（2026-09-07 实查共享库 <span class="mono">cpq_db_0724</span>）</b>：
+    客户名取自 <span class="mono">customer</span> 表 —— <span class="mono">CUST-0001</span>=罗克韦尔、<span class="mono">CUST-0004</span>=正泰；
+    极值屏用现网<b>最长客户名</b>（<span class="mono">CO Test Cust active_1788419415321</span>，33 字符）与<b>最长销售料号</b>（<span class="mono">TEST0813-P01-BD1</span>，16 字符）。
+    料号组取自 <span class="mono">ds_quote_material_bom</span> 真实数据：<span class="mono">S-3120014539</span>（整组 9 行、项次 10~80）、
+    <span class="mono">S-2120011659</span>（4 行）、<span class="mono">VS-FG01</span>（5 行），投入料号为该组真实值。
+    🚫 无 lorem ipsum、无灰色占位块。<br>
+    ⚠️ <b>2026-09-07 修正</b>：初稿的客户名（「苏州西门子」「西安中熔」「珠海格力…」）是<b>主线编造的</b>，
+    与 <span class="mono">customer</span> 表不符，违反 <span class="mono">frontend.md §1.3</span>「真实文案 + 真实示例数据」。
+    按该节判据「交付当天就不对 = 缺陷，就地修」已全部替换为实测值，并已通知在跑的前端代理重读。
+</p>
+
+</div>
+</body>
+</html>
