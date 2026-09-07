@@ -286,6 +286,16 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
   const [fieldTree, setFieldTree] = useState<FieldTreeResponse | null>(null);
   const [treeLoading, setTreeLoading] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  /**
+   * 折叠态**已为哪个坐标初始化过**（`dataset|tabType|variantKey`），null = 尚未初始化。
+   *
+   * 🚨 2026-09-07 用户报缺陷：「每拖一个字段，左侧分组就全折回去，得重新展开再拖」。
+   * 根因是原实现用 `collapsed.size === 0` 当「尚未初始化」的判据 —— 但**用户把分组全部展开时，
+   * `collapsed` 也正好是空集**。两种完全不同的语义共用同一个状态值 ⇒ 拖入字段触发字段树重拉
+   * （本组件的 fetch 依赖里含 `sel`），重拉就把用户展开的分组全部折回去。
+   * ⇒ 用独立的 ref 记「初始化过没有」，不再从 `collapsed` 的形状反推意图。
+   */
+  const collapseInitedRef = useRef<string | null>(null);
 
   const [compileResult, setCompileResult] = useState<CompileResponse | null>(null);
   const [compileError, setCompileError] = useState<CompileErrorBody | null>(null);
@@ -490,14 +500,14 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
         // 覆盖成空数组会让下拉在每次重拉时闪成空。给了空数组也照收（那是「本方言确实没有数据源」
         // 这一真实状态，不能当成"没给"来兜底）。
         if (res.availableSources) setSources(res.availableSources);
-        // 默认折叠态照原型（原型 .grp 默认带 collapsed class）——仅首次拿到该 tabType 的分组时设置，
-        // 避免每次因 selectedConfig 变化重拉时把用户手动展开的分组又折回去。
-        setCollapsed((prev) => {
-          const known = new Set(prev);
-          let changed = false;
-          res.groups.forEach((g) => { if (!known.has(g.groupName) && prev.size === 0) { known.add(g.groupName); changed = true; } });
-          return changed ? known : prev;
-        });
+        // 默认折叠态照原型（原型 .grp 默认带 collapsed class）——**每个坐标只设一次**。
+        // 🚫 判据不能是 `collapsed.size === 0`：用户手动展开全部分组时它同样为 0，
+        //    会被误判成"尚未初始化"而把分组全折回去（2026-09-07 用户报的那个缺陷）。
+        const coordKey = `${dataset}|${tabType}|${variantKey ?? ''}`;
+        if (collapseInitedRef.current !== coordKey) {
+          collapseInitedRef.current = coordKey;
+          setCollapsed(new Set(res.groups.map((g) => g.groupName)));
+        }
       } catch (e: any) {
         message.error('加载字段面板失败：' + (e?.message ?? '未知错误'));
         setFieldTree(null);
@@ -510,13 +520,9 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
   }, [dataset, tabType, variantKey, initLoading, guideMode,
     sel.map((s) => `${s.sourceNodeKey}.${s.sourceColumn}`).join('|')]);
 
-  // 首次进入某 tabType 时字段面板默认全折叠（原型默认态）；后续 selectedConfig 触发的重拉不重置折叠态。
-  useEffect(() => {
-    if (fieldTree && collapsed.size === 0 && !sel.length) {
-      setCollapsed(new Set(fieldTree.groups.map((g) => g.groupName)));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fieldTree === null]);
+  // 🗑️ 2026-09-07 移除：这里原有第二个"默认全折叠"的 useEffect，判据同样是 `collapsed.size === 0`，
+  //    与上面那处犯同一个错（把"用户全展开"误当"尚未初始化"），是同一缺陷的第二个执行点。
+  //    初始化职责已由上面的 `collapseInitedRef` 单点承担 —— 🚫 不要再加第三处。
 
   // ── 字段树就绪后，若有待恢复的 builderConfig，重建 sel（AC-39：刷新后拖拽态与保存前一致）───
   useEffect(() => {
@@ -712,6 +718,7 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
       setElemKeyOverrideField(null);
       setFieldTree(null);
       setCollapsed(new Set());
+      collapseInitedRef.current = null; // 换坐标 ⇒ 新分组要重新按默认态折叠一次
     };
     if (sel.length) {
       Modal.confirm({
@@ -789,6 +796,7 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
       setElemKeyOverrideField(null);
       setFieldTree(null);
       setCollapsed(new Set());
+      collapseInitedRef.current = null; // 换坐标 ⇒ 新分组要重新按默认态折叠一次
     };
     if (sel.length) {
       // 原型 `取数配置Tab.html`：confirm('切换数据源会清空已选输出列。继续？')
