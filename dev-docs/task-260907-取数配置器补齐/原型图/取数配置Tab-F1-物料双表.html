@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>F-1 · 「物料」数据源出两张表的列</title>
+<link rel="stylesheet" href="_style.css">
+<style>
+.seg{display:inline-flex;border:1px solid #d9d9d9;border-radius:6px;overflow:hidden}
+.seg span{padding:4px 14px;cursor:pointer;border-right:1px solid #d9d9d9;font-size:13px}
+.seg span:last-child{border-right:0}
+.seg span.on{background:#1677ff;color:#fff}
+.bar2{color:#8a909a;font-size:12px;margin-top:8px}
+.bar3{font-size:13px;margin-top:6px}
+.badge-tree{border:1px solid #91caff;background:#e6f0ff;color:#0958d9;font-size:12px;padding:2px 10px;border-radius:4px}
+.col3{display:grid;grid-template-columns:300px 1fr 1fr;gap:14px;align-items:start}
+.pane{border:1px solid #e5e7eb;border-radius:8px;background:#fff}
+.pane>.ph{padding:10px 14px;border-bottom:1px solid #e5e7eb;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+.pane>.pb{padding:12px 14px}
+.grpline{padding:6px 0;cursor:pointer;font-weight:500}
+.fld{display:flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid #e5e7eb;border-radius:4px;margin:5px 0;background:#fff;cursor:grab;font-size:13px}
+.fld .db{color:#8a909a;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;margin-left:auto}
+.fld.newsrc{border-color:#b7eb8f;background:#f6ffed}
+.rolechip{font-size:10px;line-height:15px;padding:0 5px;border-radius:3px;border:1px solid #91caff;background:#e6f0ff;color:#0958d9}
+.warnbox{background:#fffbe6;border:1px solid #ffe58f;border-radius:6px;padding:9px 11px;font-size:12px;line-height:1.8;margin-top:10px}
+.selrow{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px}
+.selrow input.fname{width:130px;height:28px;padding:0 8px;border:1px solid #d9d9d9;border-radius:4px;font-size:13px}
+.vc{background:#f5f6f8;border:1px solid #e5e7eb;border-radius:3px;padding:1px 6px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:#5a6069}
+.vc.newsrc{border-color:#b7eb8f;background:#f6ffed;color:#389e0d}
+.ty{color:#8a909a;font-size:12px}
+.ck{color:#8a909a;font-size:12px}
+.sqlbox{background:#fff;border-radius:6px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;line-height:1.75;overflow-x:auto;white-space:pre;color:#1f2329}
+.sqlbox .kw{color:#0958d9;font-weight:600}.sqlbox .st{color:#c41d7f}.sqlbox .cm{color:#8a909a}
+.sqlbox .hl{background:#f6ffed;outline:1px solid #b7eb8f}
+.foot{display:flex;justify-content:space-between;margin-top:14px}
+.pv td.nul{color:rgba(0,0,0,.25);font-style:italic}
+</style></head><body><div class="wrap">
+
+<h1>F-1 · 「物料」数据源同时出物料表与客户料号表的列</h1>
+<p class="sub">
+  task-260907 · 服务 <b>AC-1 / AC-2 / AC-6</b> · 📌 本次基准
+</p>
+
+<div class="alert info"><span class="ic">i</span><div class="bd">
+  <div class="ti">本任务只出这一份原型</div>
+  <div class="ds">F-2（列表徽章）· F-3（SQL 产物）· F-4（下拉多三项）按 <code>frontend.md §1.3</code> 的「不触发」清单
+    （纯取数改动 / 纯文案 / 后端改动）**不出原型**，由 <code>api.md</code> 的契约与 AC 的可观测断言约束。
+    <b>本页有真实视觉决策</b>：客户料号那组挂在哪、怎么与物料表区分。</div>
+</div></div>
+
+<!-- ===== 真实布局：照 2026-09-07 用户截图 1:1 ===== -->
+<div class="card">
+  <div class="tabs"><span>字段配置</span><span class="on">取数配置</span><span>公式</span><span>SQL 视图</span></div>
+
+  <div class="panel" style="margin-bottom:14px">
+    <div class="row" style="align-items:center;flex-wrap:wrap">
+      <label class="fl">数据集</label>
+      <span class="seg"><span class="on">报价</span><span>基础核价</span><span>明细核价</span></span>
+      <label class="fl" style="margin-left:24px">数据源</label>
+      <span class="sel" style="min-width:200px">物料 <span class="caret">▾</span></span>
+      <span class="ro" style="margin-left:12px;color:#8a909a">普通数据源</span>
+    </div>
+    <div class="bar2">轴列 <b>销售料号 material_no</b> · 表前缀 <code class="mono">ds_quote_</code> · 版本切换是核价侧独有功能，报价侧不建全版本视图</div>
+    <div class="bar3">取数：<b>物料</b> <span class="tag green" style="height:20px;line-height:18px">LEFT JOIN 客户料号（1:1）</span> · 行粒度：<b>成品</b></div>
+  </div>
+
+  <div class="col3">
+    <!-- 左：可用字段 -->
+    <div class="pane">
+      <div class="ph">可用字段 <span style="color:#8a909a;font-weight:400;font-size:12px">共 13 个字段</span></div>
+      <div class="pb">
+        <div class="grpline">▾ 物料</div>
+        <div class="fld">销售料号 <span class="rolechip">料号</span><span class="rolechip">行键</span><span class="db">material_no</span></div>
+        <div class="fld">产品分类 <span class="db">category_code</span></div>
+        <div class="fld">品名 <span class="db">material_name</span></div>
+        <div class="fld">规格 <span class="db">specification</span></div>
+        <div class="fld">尺寸 <span class="db">dimension</span></div>
+        <div class="fld">旧料号 <span class="db">old_material_no</span></div>
+        <div class="fld">单重 <span class="db">unit_weight</span></div>
+        <div class="fld">生产料号 <span class="db">production_no</span></div>
+        <div class="fld">类型 <span class="db">material_type</span></div>
+
+        <div class="grpline" style="margin-top:10px">▾ 客户料号 <span class="tag green" style="height:18px;line-height:16px;font-size:11px">本次新增</span></div>
+        <div class="fld newsrc">客户编号 <span class="db">customer_no</span></div>
+        <div class="fld newsrc">客户零件名称 <span class="db">customer_part_name</span></div>
+        <div class="fld newsrc">客户产品号 <span class="db">customer_product_no</span></div>
+        <div class="fld newsrc">客户图号 <span class="db">customer_drawing_no</span></div>
+
+        <div class="warnbox">
+          <b>本数据集有 4 张表不进语义图（配置器里拖不到）：</b><br>
+          <span class="strike mono">ds_quote_customer_part</span> <span class="tag green" style="height:18px;line-height:16px;font-size:11px">本次接入</span><br>
+          <span class="strike mono">ds_quote_annual_discount</span> · <span class="strike mono">ds_quote_assembly_fee_annual</span> ·
+          <span class="strike mono">ds_quote_incoming_annual</span> <span class="tag green" style="height:18px;line-height:16px;font-size:11px">本次各自独立成源（F-4）</span><br>
+          ⇒ <b>4 张全部接入后，本提示整条消失</b>（AC-1③）
+        </div>
+      </div>
+    </div>
+
+    <!-- 中：已选输出列 -->
+    <div class="pane">
+      <div class="ph">已选输出列</div>
+      <div class="pb">
+        <div class="selrow">⠿ <input class="fname" value="销售料号"><span class="vc">_物料_销售料号</span><span class="ty">文本</span>
+          <span class="ck" style="margin-left:auto">☐ 金额 ☐ 小计 ✕</span></div>
+        <div style="padding-left:22px"><span class="rolechip">行键</span> <span class="rolechip">料号</span></div>
+        <div class="selrow">⠿ <input class="fname" value="品名"><span class="vc">_物料_品名</span><span class="ty">文本</span>
+          <span class="ck" style="margin-left:auto">☐ 金额 ☐ 小计 ✕</span></div>
+        <div class="selrow">⠿ <input class="fname" value="单重"><span class="vc">_物料_单重</span><span class="ty">数字</span>
+          <span class="ck" style="margin-left:auto">☐ 金额 ☐ 小计 ✕</span></div>
+        <div class="selrow">⠿ <input class="fname" value="客户产品号"><span class="vc newsrc">_客户料号_客户产品号</span><span class="ty">文本</span>
+          <span class="ck" style="margin-left:auto">☐ 金额 ☐ 小计 ✕</span></div>
+        <div class="selrow">⠿ <input class="fname" value="客户图号"><span class="vc newsrc">_客户料号_客户图号</span><span class="ty">文本</span>
+          <span class="ck" style="margin-left:auto">☐ 金额 ☐ 小计 ✕</span></div>
+        <div class="note" style="margin-top:12px">
+          🎨 <b>视觉决策</b>：两张表的列<b>混排在同一个列表</b>，不分区、不加分隔线；
+          来源靠 <b>viewColumn 前缀</b>（<code class="mono">_物料_</code> / <code class="mono">_客户料号_</code>）与<b>浅绿底色</b>区分。
+          <br>🚫 已选列**不再显示来源表标签** —— 字段名可被用户改写（公式按字段名匹配行键），再加一列来源会挤掉字段名输入框。
+        </div>
+      </div>
+    </div>
+
+    <!-- 右：生成的 SQL -->
+    <div class="pane">
+      <div class="ph">生成的 SQL（实时 · 只读） <span style="color:#8a909a;font-weight:400">⤢</span></div>
+      <div class="pb"><div class="sqlbox"><span class="kw">SELECT</span>
+  dqm.material_no          <span class="kw">AS</span> <span class="st">hf_part_no</span>,
+  dqm.material_no          <span class="kw">AS</span> <span class="st">"_物料_销售料号"</span>,
+  dqm.material_name        <span class="kw">AS</span> <span class="st">"_物料_品名"</span>,
+  dqm.unit_weight          <span class="kw">AS</span> <span class="st">"_物料_单重"</span>,
+  dqcp.customer_product_no <span class="kw">AS</span> <span class="st">"_客户料号_客户产品号"</span>,
+  dqcp.customer_drawing_no <span class="kw">AS</span> <span class="st">"_客户料号_客户图号"</span>
+<span class="kw">FROM</span> ds_quote_material dqm
+<span class="hl"><span class="kw">LEFT JOIN</span> ds_quote_customer_part dqcp
+       <span class="kw">ON</span> dqcp.material_no = dqm.material_no</span>
+<span class="kw">WHERE</span> dqm.material_no = <span class="kw">ANY</span>(:total_material_no)
+<span class="kw">ORDER BY</span> dqm.material_no</div></div>
+    </div>
+  </div>
+
+  <div class="foot"><span class="btn">⋯</span><span><span class="btn">取 消</span> <span class="btn pri" style="margin-left:8px">保 存</span></span></div>
+</div>
+
+<!-- ===== 关键状态 ===== -->
+<div class="card">
+  <h2>关键状态 ① · 物料没有对应客户料号（AC-2② / AC-6①）</h2>
+  <p class="sub">实测 dev 库：物料 <b>47</b> 行、客户料号 <b>19</b> 行、一个 <code class="mono">material_no</code> 对多行客户料号 <b>0</b> 条
+    ⇒ 确为 1:1，但 <b>28/47 的物料没有客户料号</b>。这些行<b>照常出现</b>，客户列为空。</p>
+  <table class="pv">
+    <thead><tr><th>销售料号</th><th>品名</th><th>单重</th><th>客户产品号</th><th>客户图号</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">S-80011</td><td>接触片组件</td><td>12.400</td><td class="mono">CP-2211</td><td class="mono">DWG-0091</td></tr>
+      <tr><td class="mono">S-80020</td><td>铜带 T2-Y</td><td>0.870</td><td class="nul">—</td><td class="nul">—</td></tr>
+    </tbody>
+  </table>
+  <div class="note">
+    ⇒ <b>预览恒 47 行，不是 19，也不得 &gt; 47</b>（AC-2①④）。
+    🚫 不是整行消失、不是报错、不是红色遮罩。
+  </div>
+</div>
+
+<div class="card">
+  <h2>关键状态 ② · 客户料号表为空（AC-6②）</h2>
+  <p class="sub">LEFT JOIN 退化，物料 47 行照常全出，客户料号列整列为空。</p>
+  <div class="alert info"><span class="ic">i</span><div class="bd">
+    <div class="ti">客户料号表当前无数据</div>
+    <div class="ds">已选的「客户产品号」「客户图号」两列将全部为空；物料侧数据不受影响。</div>
+  </div></div>
+</div>
+
+<div class="card">
+  <h2>关键状态 ③ · 禁用态（核价两套不接入本期）</h2>
+  <p class="sub">切到「基础核价 / 明细核价」时，客户料号分组<b>整组不出现</b>（不是置灰）——
+    因为语义图只在 <code class="mono">QUOTE</code> 方言下挂这个节点，服务端根本不返回该组。</p>
+  <div class="pane"><div class="pb">
+    <div class="grpline">▾ 物料</div>
+    <div class="fld">销售料号 <span class="rolechip">料号</span><span class="rolechip">行键</span><span class="db">material_no</span></div>
+    <div class="fld">品名 <span class="db">material_name</span></div>
+    <div class="warnbox">🚫 此处<b>不出现</b>「客户料号」分组 —— 本期只接报价侧（需求文档 §② 不做什么）。</div>
+  </div></div>
+  <div class="note del">
+    🎨 <b>视觉决策</b>：核价侧选择<b>不出现</b>而非<b>置灰</b>。
+    理由：置灰要配 hover 原因文案，而「本期不做核价侧」是<b>范围决策不是权限限制</b>，
+    给用户一个永远点不开的灰项只会制造疑问。
+    <br>⚠️ 这与 <code>frontend.md §1.2</code>「禁用但可见 + 说明原因」不冲突 —— 那条管的是<b>动作</b>，本项是<b>数据源不存在</b>。
+  </div>
+</div>
+
+<div class="card">
+  <h2>关键状态 ④ · 最长文案</h2>
+  <div class="pane" style="max-width:300px"><div class="pb">
+    <div class="grpline">▾ 客户料号</div>
+    <div class="fld newsrc">客户零件名称 <span class="db">customer_part_name</span></div>
+    <div class="fld newsrc">客户产品号 <span class="db">customer_product_no</span></div>
+  </div></div>
+  <div class="note">字段显示名与 <code class="mono">db_column</code> 同行；面板固定 300px，
+    <code class="mono">db_column</code> 过长时它先收缩（<code class="mono">margin-left:auto</code> 右对齐），<b>显示名不被挤掉</b>。</div>
+</div>
+
+<!-- 数据来源声明 -->
+<div class="card">
+  <h2>📌 本页数据的来源（不是编的）</h2>
+  <table><thead><tr><th style="width:200px">内容</th><th>来源</th></tr></thead><tbody>
+  <tr><td>「物料」9 个字段的显示名与 <code class="mono">db_column</code></td>
+      <td><code class="mono">semantic_node_column</code> 实查（<code class="mono">node_key='MATERIAL' AND dialect='QUOTE'</code>），2026-09-07</td></tr>
+  <tr><td>「客户料号」4 个列名</td>
+      <td><code class="mono">information_schema.columns</code> 实查 <code class="mono">ds_quote_customer_part</code>（业务列 = 物理列 − 系统列）。
+      ⚠️ <b>显示名（客户编号/客户零件名称/客户产品号/客户图号）是本原型的提议</b>，B-1 建节点时定稿</td></tr>
+  <tr><td>47 / 19 / 28 / 0 四个数字</td><td>dev 库 <code class="mono">cpq_db_0724</code> 实查，2026-09-07</td></tr>
+  <tr><td>整体布局（三栏 / 顶部两行信息 / 底部动作区）</td><td>用户 2026-09-07 真机截图 <code class="mono">证据/用户报-物料BOM生成的SQL无递归.png</code></td></tr>
+  </tbody></table>
+  <div class="note del">
+    🚨 <b>本页首版曾凭想象编造字段名</b>（「计量单位 / 币种 / 备注」等实际不存在，「料号类型」实际叫「类型」，
+    并漏掉「尺寸 / 旧料号 / 生产料号」），由用户 2026-09-07 当场指出后按实查重做。
+    <br>教训：<code>frontend.md §1.3</code> 明写「真实文案 + 真实示例数据」，
+    <b>编一份看起来合理的原型，比不出原型更糟</b> —— 它会变成一份会误导开发的错误基准。
+  </div>
+</div>
+
+</div></body></html>

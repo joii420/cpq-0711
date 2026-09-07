@@ -1,7 +1,16 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>原型图导航 · task-260904 页签类型收缩</title><link rel="stylesheet" href="_style.css"></head><body><div class="wrap">
 <div class="card"><h1>原型图 · task-260904 页签类型收缩</h1>
 <div class="sub">2026-09-04 · 闸门 A 前置产物 · 定稿后即 1:1 还原的验收基准</div>
-<span class="tag">📌 当前基准</span> <span class="tag gray">3 份 = 本任务动到的 3 个页面</span></div>
+<span class="tag gold">🕰️ 部分降级</span> <span class="tag gray">3 份 —— 逐份标身份，不一刀切</span>
+<table style="margin-top:12px"><thead><tr><th style="width:200px">文件</th><th style="width:110px">身份</th><th>说明</th></tr></thead><tbody>
+<tr><td><span class="mono">取数配置Tab.html</span></td><td><span class="tag gold">🕰️ 历史快照</span></td>
+    <td>📌 已移交 <span class="mono">task-260907-取数配置器补齐/原型图/</span>（2026-09-07）。偏差清单见下方</td></tr>
+<tr><td><span class="mono">组件管理.html</span></td><td><span class="tag">📌 当前基准</span></td>
+    <td><b>仍是该页面的基准</b> —— <span class="mono">task-260907</span> 只改列表徽章取值（纯文案级），<b>未改该页布局</b>，故不接管</td></tr>
+<tr><td><span class="mono">加叶子拒绝态.html</span></td><td><span class="tag">📌 当前基准</span></td>
+    <td>无后继任务改动</td></tr>
+</tbody></table>
+<div class="note del" style="margin-top:12px">🚫 本目录内容<b>不再修改</b> —— 它是 task-260904 交付当时的验收记录，改了就再也说不清当时验收的是什么。</div></div>
 
 <div class="card"><h2>页面清单</h2>
 <table><thead><tr><th style="width:220px">原型</th><th>覆盖的任务项</th><th>服务的 AC</th></tr></thead><tbody>
@@ -23,6 +32,15 @@
 「零件 / 外购件」是物料BOM 的重复读法，取消；其余数据源无语义标记。<br>
 料号类型改从<b>物料表 / 材质库</b>读，不再靠页签反推、也不再回填。</div></div>
 
-<div class="card"><h2>历史版本</h2>
-<div class="sub">暂无 —— 本任务首份原型。后续若改版，本节列出 🕰️ 历史快照并附偏差清单。</div></div>
+<div class="card"><h2>🕰️ 本快照与当前基准的偏差（截至 2026-09-07）</h2>
+<div class="sub">交付当天这份是对的 ⇒ 属<b>漂移</b>不是缺陷，故打快照标记而不修改内容（<code>frontend.md §1.3</code> 判据）。</div>
+<table><thead><tr><th style="width:170px">本快照画的</th><th>当前基准</th><th style="width:150px">被谁改的</th></tr></thead><tbody>
+<tr><td>「物料」数据源只出 <span class="mono">ds_quote_material</span> 一张表的列</td><td>同时出 <span class="mono">ds_quote_customer_part</span> 的列（1:1 左连，物料为主）</td><td>task-260907 F-1</td></tr>
+<tr><td>数据源下拉 11 项（报价）</td><td><b>14 项</b> —— 新增「年降系数 / 组装加工费年降 / 来料年降」</td><td>task-260907 F-4</td></tr>
+<tr><td>物料BOM 的 SQL 平铺（无 <span class="mono">parent_no</span>、过滤在父件列、无根分支）</td><td>边式契约：<span class="mono">material_no</span>=子 / <span class="mono">parent_no</span>=父 + <span class="mono">UNION ALL</span> 根分支，过滤改子件列</td><td>task-260907 F-3<br><span class="tag gold">本快照画的是缺陷形态</span></td></tr>
+<tr><td>组件列表徽章显示<b>页签类型</b></td><td>显示<b>数据源名</b>；未绑数据源显示「—」</td><td>task-260907 F-2</td></tr>
+<tr><td>QUOTE 材质元素画 1 个价格策略组</td><td>仍是 1 个（实现侧曾出现 2 个，已由 task-260904 B-23 修回）</td><td>—<span class="tag green">无偏差</span></td></tr>
+</tbody></table>
+<div class="note del" style="margin-top:10px">⚠️ 第 3 行特别注意：<b>本快照当时画的物料BOM SQL 就是后来被用户报出的缺陷形态</b>。
+它交付当天符合当时的实现与 AC，因此仍属漂移；但<b>照这一行还原会重现缺陷</b> —— 请以当前基准为准。</div></div>
 </div></body></html>
