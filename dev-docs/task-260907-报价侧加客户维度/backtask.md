@@ -279,12 +279,40 @@ ds_quote_* 的 UNIQUE 约束：pg_indexes UNIQUE 非 pkey → 3 条，全在【�
 |---|---|---|
 | `DatasetImportService` | 0 | 导入时选客户（`报价导入切ds新表` 的 `QuotationImportService` 提供） |
 | `DatasetMaintenanceService` | 0 | 🚚 **前端选择器已移出本任务**（`task-260907-产品管理客户过滤` 承接）。本任务只需**让它能接收并透传** |
-| `DatasetCustomerPartService` | 22 | 自带 |
 | `SelDsQuoteWriter` | 5 | 选配链路 |
-| `ConfigureProductService` | 55 | 选配主链路。⚠️ `:1205-1265` 有**明确标注的豁免点**至今仍写 V6 表，**不是纯 ds_ 路径**，算影响面时别按「已全切新表」这个前提 |
+| `ConfigureProductService` | 55 | 选配主链路，**间接**调用（经 `SelDsQuoteWriter`）。⚠️ `:1205-1265` 有**明确标注的豁免点**至今仍写 V6 表，**不是纯 ds_ 路径**，算影响面时别按「已全切新表」这个前提 |
 | （未来）`核价回填` 的 S-4 | — | 报价单客户（`quotation.customer_id → customer_no`） |
 
-> 🚫 **`DatasetGroupLock` 不在此列** —— 36 行锁键工具，**不调用** writer；反过来是 `VersionedGroupWriter:140` 调它。
+### 🔴 「直接调用写入器的有几个」—— 主线在这条上连错四次，最终结论如下
+
+**判据不是类名 grep，是「有没有对写入器*实例*的方法调用」**（后端代理 2026-09-07 独立复核）：
+
+```
+DatasetImportService:143        versionedWriter.writeGroups(...)
+DatasetMaintenanceService:708   writer.writeGroup(...)
+SelDsQuoteWriter:229            versionedWriter.writeGroup(...)
+SelDsQuoteWriter:314            versionedWriter.writeGroup(...)
+```
+⇒ **直接调用方 = 3 个类 / 4 个调用点。**
+
+**四次错的形态各不相同，所以值得逐条留碑**：
+
+| # | 错法 | 为什么 grep 骗过了我 |
+|---|---|---|
+| ① | 类名 grep 漏了 `ConfigureProductService` | 把**使用点**和**定义点**混为一谈 |
+| ② | 漏了并发会话的未来调用方（`核价回填` S-4） | 只扫了当前代码，没扫在途任务 |
+| ③ | 把 `DatasetGroupLock` 算成调用方 | 它是 **36 行的锁键工具**，反过来是 `VersionedGroupWriter:140` 调它 |
+| ④ | 把 `ConfigureProductService` 算成**直接**调用方 | 它 `@Inject VersionedV6Writer`（`:79`，写 **V6** 表）+ `@Inject SelDsQuoteWriter`（`:83`）。它对 `VersionedGroupWriter` 的引用数 **= 0**，是**间接**调用方 |
+
+🚫 **`DatasetCustomerPartService` 已从表中删除** —— 它**根本不是写入方**：
+类 javadoc 自述「本类不含任何 INSERT/UPDATE/DELETE，不引用 `VersionedGroupWriter`」，grep 证实无 writer 注入 ⇒ **只读**。
+先前把它列为「自带 `customerNo` 的调用方」，是把「文件里 `customerNo` 出现 22 次」当成了「它是写入方」。
+
+⚠️ **但 ④ 不改变 `B-4` 对 `ConfigureProductService` 的要求** —— 它仍必须能提供并透传 `customerNo`，
+只是「直接调 writer」这个描述是错的。**「谁直接调」与「谁要负责传参」是两个问题，别用一个答案回答两个。**
+
+> 📌 **静态常量引用不算调用方**：`DatasetImportService:126`、`SelDsQuoteWriter:66/67` 命中的是
+> `VersionedGroupWriter.SOURCE_*` 常量，实际调的是 `plainWriter.upsert`。测试源码 6 处命中全是注释/DisplayName 文本。
 
 ---
 
