@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>06 · 极值文案与未建档客户</title>
+<link rel="stylesheet" href="prototype.css">
+</head>
+<body>
+
+<div class="proto-note">
+  <b>06 · 极值文案 + 未建档客户筛选</b>　服务 <code>F-1</code> <code>F-4</code>　AC-14 / AC-15<br>
+  本图的所有极值<b>取自 dev 库真实最长值</b>，不是编的：<br>
+  · 最长客户名 <code>CO Test Cust active_1788350268738</code>（33 字符）<br>
+  · 最长料号名 65 字符（<code>AgNi10/Cu-Cu/301/Cu接触桥（含银镍复合层…极值样本）</code>）<br>
+  · 最长销售料号 <code>TEST0813-COMP01-BD1</code>（19 字符）
+</div>
+
+<!-- ═══ 极值：选择器 + 列表 ═══ -->
+<div class="page" style="margin-bottom:16px">
+  <div class="page-head">
+    <h2>产品管理　<span class="tag grey" style="font-weight:400">极值文案（AC-15）</span></h2>
+    <div class="head-actions">
+      <!-- 🔑 33 字符客户名：选择器有 max-width，超出以省略号截断，title 可看全 -->
+      <div class="select-group">
+        <span class="addon">客户</span>
+        <span class="select" title="CUST-0044　CO Test Cust active_1788350268738">
+          <span class="val filled">CUST-0044　CO Test Cust active_1788350268738</span>
+          <span class="caret">▾</span>
+        </span>
+      </div>
+      <button class="btn">⊞ 产品分类管理</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab">客户产品</div>
+    <div class="tab active">销售产品</div>
+  </div>
+
+  <div class="toolbar">
+    <span class="input">搜索销售料号 / 料号名称</span>
+    <button class="btn">查询</button>
+    <button class="btn">重置</button>
+  </div>
+
+  <div class="table-wrap">
+    <table class="tbl">
+      <colgroup>
+        <col style="width:120px"><col style="width:150px"><col style="width:165px"><col style="width:150px">
+        <col style="width:170px"><col style="width:130px"><col style="width:100px">
+      </colgroup>
+      <thead>
+        <tr><th>客户编号</th><th>客户名称</th><th>销售料号</th><th>料号名称</th>
+            <th>生产料号</th><th>尺寸</th><th>料号类型</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="mono">CUST-0044</td>
+          <!-- 33 字符，列宽 150px ⇒ 省略号截断 + title -->
+          <td title="CO Test Cust active_1788350268738">CO Test Cust active_1788350268738</td>
+          <td class="mono" title="TEST0813-COMP01-BD1">TEST0813-COMP01-BD1</td>
+          <!-- 65 字符料号名 ⇒ 省略号截断 + title -->
+          <td title="AgNi10/Cu-Cu/301/Cu接触桥（含银镍复合层与铜基体的多层复合结构，适用于高分断能力断路器）（工程验证批·极值样本）">AgNi10/Cu-Cu/301/Cu接触桥（含银镍复合层与铜基体的多层复合结构，适用于高分断能力断路器）（工程验证批·极值样本）</td>
+          <td class="mono">P-TEST0813-COMP01-BD1</td>
+          <td>3.5×3.5×0.15</td><td>零件</td>
+        </tr>
+        <tr>
+          <td class="mono">CUST-0044</td>
+          <td title="CO Test Cust active_1788350268738">CO Test Cust active_1788350268738</td>
+          <td class="mono">TEST0813-P01-BD1</td>
+          <td title="AgNi10/Cu-Cu/301/Cu接触桥">AgNi10/Cu-Cu/301/Cu接触桥</td>
+          <td class="muted">—</td>
+          <td class="muted">—</td><td>零件</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="proto-note" style="max-width:none;margin:16px 0 0">
+    <b>断言（AC-15）</b>：选择器与列表客户列均<b>以省略号截断</b>，<code>title</code> / tooltip 可看全，
+    <b>表格不出现横向撑破</b>（表格自身可横向滚动，但页面 body 不许横向滚动）。<br>
+    实现要点：列定义加 <code>ellipsis: true</code>；选择器加 <code>max-width</code> + <code>text-overflow</code>。
+  </div>
+</div>
+
+<!-- ═══ 未建档客户筛选结果 ═══ -->
+<div class="page">
+  <div class="page-head">
+    <h2>产品管理　<span class="tag warn" style="font-weight:400">未建档客户（AC-14）</span></h2>
+    <div class="head-actions">
+      <div class="select-group">
+        <span class="addon">客户</span>
+        <span class="select">
+          <span class="val filled unreg">Q13CUST0617</span>
+          <span class="tag warn" style="margin-left:6px">未建档</span>
+          <span class="caret">▾</span>
+        </span>
+      </div>
+      <button class="btn">⊞ 产品分类管理</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active">客户产品</div>
+    <div class="tab">销售产品</div>
+  </div>
+
+  <div class="alert warn">
+    <span>⚠️</span>
+    <span>客户编号 <b>Q13CUST0617</b> 未在客户主数据建档，因此没有客户名称。其产品数据正常可见。</span>
+  </div>
+
+  <div class="table-wrap">
+    <table class="tbl">
+      <colgroup><col style="width:150px"><col style="width:170px"><col style="width:190px"><col style="width:170px"><col style="width:170px"></colgroup>
+      <thead><tr><th>客户编号</th><th>客户名称</th><th>客户产品编号</th><th>客户料号名称</th><th>销售料号</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="mono unreg">Q13CUST0617</td>
+          <td class="muted">—</td>
+          <td class="mono">CP-Q13-0617-A</td>
+          <td class="muted">—</td>
+          <td class="mono">Q13-0617-A</td>
+        </tr>
+        <tr>
+          <td class="mono unreg">Q13CUST0617</td>
+          <td class="muted">—</td>
+          <td class="mono">CP-Q13-0617-B</td>
+          <td class="muted">—</td>
+          <td class="mono">Q13-0617-B</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="pager"><span class="muted">共 2 条</span><span class="pg-num active">1</span></div>
+
+  <div class="proto-note" style="max-width:none;margin:16px 0 0">
+    <b>这一屏在防什么</b>：<code>C1</code> / <code>Q13CUST0617</code> 共 3 行产品数据是真实存在的。
+    如果候选只查 <code>customer</code> 主数据表，这两个客户号<b>选不到</b> ⇒ 它们的产品
+    <b>「选『所有客户』看得见，选任何具体客户都筛不出来」</b>。<br>
+    🚫 <b>三条禁令</b>：不得把未建档候选项从下拉里筛掉；不得把这些行从列表里筛掉；
+    不得因 <code>customerName</code> 为 <code>null</code> 而渲染成空白（必须是 <code>—</code>）。<br>
+    ℹ️ 顶部提示条是<b>可选增强</b>；下拉里的「未建档」标记与列表的 <code>—</code> 是<b>必做项</b>。
+  </div>
+</div>
+
+</body>
+</html>

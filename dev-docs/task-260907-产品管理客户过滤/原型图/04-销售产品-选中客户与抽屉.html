@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>04 · 销售产品（选中客户）+ 抽屉</title>
+<link rel="stylesheet" href="prototype.css">
+</head>
+<body>
+
+<div class="proto-note">
+  <b>04 · 选中客户后的列表 + 抽屉</b>　服务 <code>F-4</code> <code>F-5</code> <code>F-6</code>　AC-3 / AC-6 / AC-7<br>
+  上半屏：选中 <code>CUST-0001</code> 后列表<b>只剩该客户的行</b>，<code>total</code> 也随之变小（🚨 过滤在后端做，
+  前端捞一页自己 <code>filter</code> 会让 <code>total</code> 保持全量、第 2 页取到未过滤的第 2 页）。<br>
+  下半屏：抽屉。🔑 <b>抽屉的客户号取自被点击的那一行，不是取自壳页选择器</b> —— 两者在「所有客户」态下不相等。
+</div>
+
+<div class="page" style="margin-bottom:16px">
+
+  <div class="page-head">
+    <h2>产品管理</h2>
+    <div class="head-actions">
+      <div class="select-group">
+        <span class="addon">客户</span>
+        <span class="select"><span class="val filled">CUST-0001　罗克韦尔</span><span class="caret">▾</span></span>
+      </div>
+      <button class="btn">⊞ 产品分类管理</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab">客户产品</div>
+    <div class="tab active">销售产品</div>
+  </div>
+
+  <div class="toolbar">
+    <span class="input">搜索销售料号 / 料号名称</span>
+    <button class="btn">查询</button>
+    <button class="btn">重置</button>
+  </div>
+
+  <div class="table-wrap">
+    <table class="tbl">
+      <colgroup>
+        <col style="width:120px"><col style="width:150px"><col style="width:165px"><col style="width:150px">
+        <col style="width:170px"><col style="width:130px"><col style="width:100px"><col style="width:110px">
+      </colgroup>
+      <thead>
+        <tr><th>客户编号</th><th>客户名称</th><th>销售料号</th><th>料号名称</th>
+            <th>生产料号</th><th>尺寸</th><th>料号类型</th><th>配置状态</th></tr>
+      </thead>
+      <tbody>
+        <tr class="hl">
+          <td class="mono">CUST-0001</td><td>罗克韦尔</td>
+          <td class="mono"><a class="btn-link">T260907M-X</a></td><td>跨客户夹具件</td>
+          <!-- 🎯 F-6：生产料号单列可编辑。保存时【恒传】该行的 customerNo -->
+          <td><span class="input filled mono" style="min-width:0;width:100%;height:28px">T260907M-P-A</span></td>
+          <td>3.5×3.5×0.7</td><td>零件</td><td><span class="tag blue">13 / 13</span></td>
+        </tr>
+        <tr>
+          <td class="mono">CUST-0001</td><td>罗克韦尔</td>
+          <td class="mono"><a class="btn-link">0526-2609000004</a></td><td>选配A1</td>
+          <td class="muted">—</td><td>123</td><td>零件</td><td><span class="tag grey">0 / 13</span></td>
+        </tr>
+        <tr>
+          <td class="mono">CUST-0001</td><td>罗克韦尔</td>
+          <td class="mono"><a class="btn-link">1630010773</a></td><td>料9</td>
+          <td class="muted">—</td><td>3.5×3.5×0.15</td><td class="muted">—</td><td><span class="tag blue">13 / 13</span></td>
+        </tr>
+        <tr>
+          <td class="mono">CUST-0001</td><td>罗克韦尔</td>
+          <td class="mono"><a class="btn-link">2120011658</a></td><td>料1</td>
+          <td class="muted">—</td><td>3.5×3.5×0.7</td><td class="muted">—</td><td><span class="tag blue">13 / 13</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="pager">
+    <span class="muted">共 18 条</span>
+    <span class="pg-num">‹</span><span class="pg-num active">1</span><span class="pg-num">›</span>
+  </div>
+
+</div>
+
+<!-- ══════════════ 抽屉 ══════════════ -->
+<div class="proto-note">
+  <b>点开 <code>CUST-0001 / T260907M-X</code> 那一行 → 抽屉</b>（沿用现有抽屉，本次只加客户上下文）
+</div>
+
+<div class="drawer-mask">
+  <div class="drawer">
+
+    <div class="drawer-head">
+      <div class="drawer-title">
+        <span>T260907M-X</span>
+        <span class="muted" style="font-weight:400">跨客户夹具件</span>
+        <!-- 🎯 F-5：标题显式带客户，让用户确认自己在看谁的数据 -->
+        <span class="tag blue">CUST-0001　罗克韦尔</span>
+      </div>
+      <div class="drawer-sub">销售料号 · 报价数据 · 13 张带版本页签</div>
+    </div>
+
+    <div class="drawer-body">
+
+      <div class="alert info">
+        <span>ℹ️</span>
+        <span>当前展示 <b>CUST-0001（罗克韦尔）</b> 的数据。同一料号在其它客户下的数据需回到列表切换客户查看。</span>
+      </div>
+
+      <div class="tabs" style="gap:24px;margin-bottom:12px">
+        <div class="tab active">物料BOM</div>
+        <div class="tab">元素BOM</div>
+        <div class="tab">自制加工费</div>
+        <div class="tab">电镀费</div>
+        <div class="tab">装配费</div>
+        <div class="tab muted">…</div>
+      </div>
+
+      <div class="toolbar" style="margin-bottom:12px">
+        <span class="muted">版本</span>
+        <!-- 🚨 版本下拉只列【该客户】的版本，不得把两个客户的版本号混排 -->
+        <span class="select" style="min-width:180px"><span class="val">v3（当前）</span><span class="caret">▾</span></span>
+        <div class="toolbar-right">
+          <span class="tag grey">只读</span>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="tbl">
+          <colgroup><col style="width:160px"><col style="width:160px"><col style="width:120px"><col style="width:120px"><col style="width:140px"></colgroup>
+          <thead><tr><th>销售料号</th><th>组成件料号</th><th>用量</th><th>单位</th><th>特征</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">T260907M-X</td><td class="mono">T260907M-C1</td><td>2.000000</td><td>PCS</td><td>ASSEMBLY</td></tr>
+            <tr><td class="mono">T260907M-X</td><td class="mono">T260907M-C2</td><td>1.000000</td><td>PCS</td><td>RECIPE</td></tr>
+            <tr><td class="mono">T260907M-X</td><td class="mono">AgNi11#-Ⅰ</td><td>0.031000</td><td>KG</td><td>RECIPE</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="proto-note" style="margin-top:16px">
+  <b>还原纪律 —— 抽屉三条</b><br>
+  1. 🔑 <b>客户号取自被点击的行，不是壳页选择器的当前值。</b> 在「所有客户」态下选择器是空值，
+     而行自身携带确定的客户号 —— 取错会让抽屉在「所有客户」下退化成混行。<br>
+  2. <code>overview</code> / <code>rows</code> / <code>versions</code> <b>三个请求全部</b>带 <code>customerNo</code>，过滤口径必须一致。<br>
+  3. 🚨 <b>版本下拉只列该客户的版本</b>。版本号按 <code>(customer_no, 销售料号)</code> 各自独立递增，
+     混排会让用户看到一个不存在的版本序列。<br>
+  <b>生产料号编辑（F-6）</b>：保存时恒传该行的 <code>customerNo</code>；后端对「命中多行」会报错，
+  前端要<b>如实展示该错误</b>，🚫 不许吞掉或改写成「保存成功」。
+</div>
+
+</body>
+</html>

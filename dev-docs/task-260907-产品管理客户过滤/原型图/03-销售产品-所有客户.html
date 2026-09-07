@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>03 · 销售产品（所有客户）</title>
+<link rel="stylesheet" href="prototype.css">
+</head>
+<body>
+
+<div class="proto-note">
+  <b>03 · 销售产品页签 · 「所有客户」态 —— 本任务最关键的一屏</b>　服务 <code>F-4</code>　AC-3 / AC-5 / AC-16<br>
+  🔴 <b>这一屏定义了「行语义变更」</b>：复合轴落地后，一行 = <b>「客户 × 销售料号」</b>，不再是「销售料号」。
+  下表 <code>T260907M-X</code> 出现<b>两行</b>（CUST-0001 与 CUST-0004 各一行），这是<b>正确行为，不要去重</b>。<br>
+  🚨 <code>rowKey</code> 必须是 <code>customerNo|axisValue</code>。仍用 <code>axisValue</code> 会让 React 把这两行认成同一行 ⇒ 渲染错乱、勾选串行。
+</div>
+
+<div class="page">
+
+  <div class="page-head">
+    <h2>产品管理</h2>
+    <div class="head-actions">
+      <div class="select-group">
+        <span class="addon">客户</span>
+        <span class="select"><span class="val placeholder">所有客户</span><span class="caret">▾</span></span>
+      </div>
+      <button class="btn">⊞ 产品分类管理</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab">客户产品</div>
+    <div class="tab active">销售产品</div>
+  </div>
+
+  <div class="toolbar">
+    <span class="input">搜索销售料号 / 料号名称</span>
+    <button class="btn">查询</button>
+    <button class="btn">重置</button>
+    <div class="toolbar-right">
+      <span class="select" style="min-width:130px"><span class="val placeholder">配置状态</span><span class="caret">▾</span></span>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="tbl">
+      <colgroup>
+        <col style="width:120px"><col style="width:150px"><col style="width:165px"><col style="width:150px">
+        <col style="width:150px"><col style="width:110px"><col style="width:130px">
+        <col style="width:100px"><col style="width:110px">
+      </colgroup>
+      <thead>
+        <tr>
+          <!-- 🎯 F-4 新增的两列，置于最左：它们现在是行身份的一部分 -->
+          <th>客户编号</th><th>客户名称</th>
+          <th>销售料号</th><th>料号名称</th><th>生产料号</th>
+          <th>规格</th><th>尺寸</th><th>料号类型</th><th>配置状态</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- ══ 同料号跨客户：两行并存，客户列是唯一的区分点 ══ -->
+        <tr class="hl">
+          <td class="mono">CUST-0001</td><td>罗克韦尔</td>
+          <td class="mono"><a class="btn-link">T260907M-X</a></td><td>跨客户夹具件</td>
+          <td class="mono">T260907M-P-A</td>
+          <td class="muted">—</td><td>3.5×3.5×0.7</td><td>零件</td>
+          <td><span class="tag blue">13 / 13</span></td>
+        </tr>
+        <tr class="hl">
+          <td class="mono">CUST-0004</td><td>正泰</td>
+          <td class="mono"><a class="btn-link">T260907M-X</a></td><td>跨客户夹具件</td>
+          <td class="mono">T260907M-P-B</td>
+          <td class="muted">—</td><td>3.5×3.5×0.7</td><td>零件</td>
+          <td><span class="tag grey">4 / 13</span></td>
+        </tr>
+        <!-- ══ 以下为 dev 库真实存量行 ══ -->
+        <tr>
+          <td class="mono">CUST-0001</td><td>罗克韦尔</td>
+          <td class="mono"><a class="btn-link">0526-2609000004</a></td><td>选配A1</td>
+          <td class="muted">—</td>
+          <td>12^2</td><td>123</td><td>零件</td>
+          <td><span class="tag grey">0 / 13</span></td>
+        </tr>
+        <tr>
+          <td class="mono">CUST-0001</td><td>罗克韦尔</td>
+          <td class="mono"><a class="btn-link">1630010773</a></td><td>料9</td>
+          <td class="muted">—</td>
+          <td class="muted">—</td><td>3.5×3.5×0.15</td><td class="muted">—</td>
+          <td><span class="tag blue">13 / 13</span></td>
+        </tr>
+        <tr>
+          <td class="mono">CUST-0001</td><td>罗克韦尔</td>
+          <td class="mono"><a class="btn-link">2120011658</a></td><td>料1</td>
+          <td class="muted">—</td>
+          <td class="muted">—</td><td>3.5×3.5×0.7</td><td class="muted">—</td>
+          <td><span class="tag blue">13 / 13</span></td>
+        </tr>
+        <tr>
+          <td class="mono">CUST-0004</td><td>正泰</td>
+          <td class="mono"><a class="btn-link">S0001</a></td><td>示例料号</td>
+          <td class="mono">P-S0001</td>
+          <td class="muted">—</td><td class="muted">—</td><td>零件</td>
+          <td><span class="tag blue">13 / 13</span></td>
+        </tr>
+        <tr>
+          <td class="mono">CUST-0002</td><td>测试客户</td>
+          <td class="mono"><a class="btn-link">3120011203</a></td><td>料5</td>
+          <td class="muted">—</td>
+          <td class="muted">—</td><td>3.5×3.5×0.6</td><td class="muted">—</td>
+          <td><span class="tag grey">7 / 13</span></td>
+        </tr>
+        <!-- 🔑 未建档客户的行：客户名称列渲染「—」，🚫 不是空白、不是报错 -->
+        <tr>
+          <td class="mono">C1</td>
+          <td class="muted">—</td>
+          <td class="mono"><a class="btn-link">TEST-Q13-CODE</a></td><td>Q13 测试件</td>
+          <td class="muted">—</td>
+          <td class="muted">—</td><td class="muted">—</td><td class="muted">—</td>
+          <td><span class="tag grey">0 / 13</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="pager">
+    <span class="muted">共 51 条</span>
+    <span class="pg-num">‹</span>
+    <span class="pg-num active">1</span>
+    <span class="pg-num">2</span>
+    <span class="pg-num">3</span>
+    <span class="pg-num">›</span>
+    <span class="select" style="min-width:110px"><span class="val">20 条/页</span><span class="caret">▾</span></span>
+  </div>
+
+</div>
+
+<div class="proto-note" style="margin-top:16px">
+  <b>还原纪律 —— 四条</b><br>
+  1. 🚨 <b><code>rowKey</code> = <code>`${customerNo}|${axisValue}`</code></b>。这是本屏最容易漏、症状最像「玄学 bug」的一处。<br>
+  2. <b>客户两列置于最左</b>，因为它们现在是行身份的一部分，不是附属信息。<br>
+  3. <code>customerName</code> 为 <code>null</code> 时渲染 <code>—</code>（<b>不是空白</b>）。它来自后端同一条 SELECT 的
+     <code>LEFT JOIN customer</code>，🚫 前端不得逐行去查。<br>
+  4. <b>「所有客户」下不去重</b>：同料号跨客户的多行都要展示。去重会让用户以为只有一个客户配了这个料号。<br>
+  <b>本次不动的</b>：客户列<b>不支持点击排序</b>（后端 <code>sortBy</code> 白名单本次不新增键）；生产料号列的<b>可编辑行为不变</b>（见图 04）。
+</div>
+
+</body>
+</html>
