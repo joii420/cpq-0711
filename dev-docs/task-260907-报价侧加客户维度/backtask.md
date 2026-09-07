@@ -16,14 +16,23 @@
 292 张表 / flyway 顶版 422 / ds_quote_material 49 行  ← 与共享库当时状态一致
 ```
 
-起服务 / 跑测试时覆盖数据源（**三个参数都要给，只给 url 不生效**）：
+🚨 **必须用环境变量覆盖，🚫 不要用 `-Dquarkus.datasource.jdbc.url`**：
 ```bash
-cd cpq-backend && ./mvnw quarkus:dev \
-  -Dquarkus.http.port=<你自己的端口> \
-  -Dquarkus.datasource.jdbc.url=jdbc:postgresql://10.177.152.12:5432/cpq_t260907_custdim \
-  -Dquarkus.datasource.username=postgres \
-  -Dquarkus.datasource.password=joii5231
+cd cpq-backend && \
+DB_HOST=10.177.152.12 DB_PORT=5432 DB_NAME=cpq_t260907_custdim \
+DB_USERNAME=postgres DB_PASSWORD=joii5231 \
+  ./mvnw quarkus:dev -Dquarkus.http.port=<你自己的端口>
 ```
+
+🚨 **为什么 `-D` 那种写法是错的（2026-09-07 实证，主线先前派工给错了）**：
+配置里有**两个**数据源，都默认指向共享库：
+```
+application.properties:24  quarkus.datasource.jdbc.url=...${DB_NAME:cpq_db_0724}
+                     :40  quarkus.datasource."datasource-readonly".jdbc.url=...${DB_NAME:cpq_db_0724}
+```
+`-Dquarkus.datasource.jdbc.url=...` **只覆盖第一个** ⇒ **`datasource-readonly` 池仍然连着共享库**，
+而 `SqlViewExecutor` 走的正是它 ⇒ 一切经 `$view` / SQL 视图执行取到的证据，**读的都是共享库**。
+环境变量走 `${DB_NAME:...}` 占位符，**两个数据源一起被覆盖**（实测：冷启动 7 条连接全在隔离库、0 条在共享库）。
 ✅ **起完先自证连对了库**：查 `flyway_schema_history` 顶版应为 **423 或更高**。
 **若仍是 422 ⇒ 你没连过去，参数没生效，立刻停下** —— 这一步不做，后面所有「已验证」都可能是在共享库上得出的。
 
@@ -43,8 +52,9 @@ DatasetSchemaSelfCheck.java:73    throw new IllegalStateException(...)
 # 仓库根目录执行。检查不过【根本不会】走到启动那一支。
 M=cpq-backend/src/main/resources/db/migration
 DIFF=$(comm -23 \
-  <(ls "$M" | grep -oE '^V[0-9]+' | sort -u) \
-  <(git ls-tree master --name-only "$M" | grep -oE 'V[0-9]+' | sort -u))
+  <(ls "$M"                              | grep -oE '^V[0-9]+' | sort -u) \
+  <(git ls-tree master --name-only "$M/" | grep -oE  'V[0-9]+' | sort -u))
+#                                    ↑ 尾斜杠不能省，见下方「两个坑」
 
 if [ -n "$DIFF" ]; then
   echo "🚨 工作区有 master 上没有的迁移：$DIFF"
@@ -54,6 +64,25 @@ else
   (cd cpq-backend && ./mvnw quarkus:dev)
 fi
 ```
+
+🚨 **两个坑，方向相反，必须同时躲开**（本条守卫 2026-09-07 一天内被两次证伪，各由一方发现）：
+
+**坑 1 · 漏放（左边）**：左边写 `git ls-tree HEAD` 会**看不见未跟踪文件**。
+`V423`/`V424` 当时正是未跟踪状态，A/B 实测：旧守卫返回**空**（放行启动），新守卫抓到 `V423 V424`。
+**Flyway 读的是文件系统，不是 git** —— 一个只看已提交内容的守卫，防不住「还没提交」这个最常见的形态。
+
+**坑 2 · 恒拦（右边）**：`git ls-tree` 对**尾斜杠敏感**，右边省掉 `/` 会静默退化：
+```
+git ls-tree master --name-only .../db/migration    → 1 行（目录条目本身），grep 命中 0
+git ls-tree master --name-only .../db/migration/   → 402 行，grep 命中 401
+```
+⇒ 右边恒为空集 ⇒ **左边所有迁移全被判成差集**。实测 `DIFF` = **405 条**（不是应有的 4 条）⇒ **每次都拦、服务永远起不来**。
+🚨 **假阳性的危害不亚于漏放**：一个「每次都拦」的守卫，第二天就会被人直接注释掉 —— 然后两个坑一起回来。
+
+> 📌 **坑 2 是主线自己引入的，且原因很具体**：临时验证时敲的是带尾斜杠的 `"$M/"`，
+> **落盘进本文档的却是不带斜杠的 `"$M"`** —— **验证的与落盘的不是同一段代码**。
+> 由 `产品管理客户过滤` 会话按「先看它在正常场景下会不会误伤」跑出来。
+> ⇒ **守卫改动后，除了验「该拦的拦住」，还必须验「不该拦的别拦」。**
 
 🔑 **左边必须是 `ls`（文件系统），🚫 不是 `git ls-tree HEAD`** ——
 本条 2026-09-07 由主线实证修正：**Flyway 读的是文件系统，不是 git**。
@@ -283,6 +312,81 @@ WITH RECURSIVE bom AS (
 
 ✅ **AC-1 原文保留不动**，本期真正达成。
 
+### 🚦 B-7c · 落地方式改为 **追加 V427**（2026-09-07 主线定，B-7b 的执行细则）
+
+⚠️ **B-7b 原写「换表并进 V426 的同一条 UPDATE」，现在做不到了** —— `V426` 已应用到隔离库
+（`flyway_schema_history` 426 `success=t`），改写它 = checksum 失配，隔离库下次启动直接挂。
+这与 `V425` 走追加式是同一条理由。
+
+**V427 一条 `UPDATE` 写入完整的最终模板**（`_cust` 参数化 + 4 处表名一起），不是在 V426 上打补丁：
+- 语义上仍是「一次 UPDATE 带两个改动」，**并且顺带解决了「谁后落谁赢」** —— 两个改动由一个人
+  写进同一条语句，不存在静默互相覆盖
+- 全新库跑 `V426→V427`、已应用库只跑 `V427`，**两条路径收敛同态**
+
+**V427 的三件事**（与 B-7b 一致）：
+1. QUOTE 模板 4 处 `material_bom_item` → `v_compat_material_bom_item`（连同 `_cust` 一起写全）
+2. 兼容视图 ds_ 分支按下面的 **(c) 形态**改
+3. 回填口径改：能从 `cust_scope` 推出客户的按推出来的填，推不出的才落 `CUST-0001`
+
+#### (c) 形态：`EXISTS` 只过滤，`customer_no` 取权威列（并发会话提出，主线验证后采纳）
+
+```sql
+-- 现状（扇出源）：JOIN 既过滤又提供 customer_no
+FROM ds_quote_material_bom b
+  JOIN cust_scope cs ON cs.material_no::text = b.material_no::text
+-- (c)：EXISTS 只过滤；输出列的 cs.customer_no 换成 b.customer_no
+FROM ds_quote_material_bom b
+WHERE EXISTS (SELECT 1 FROM cust_scope cs WHERE cs.material_no::text = b.material_no::text)
+```
+⚠️ **视图原有的 `NOT EXISTS` 去重子句必须保留**，且其中的客户比对也要换成 `b.customer_no`。
+
+**为什么 (c) 优于「给 JOIN 补 `AND cs.customer_no = b.customer_no`」**：
+后者是**掉行**（把不一致的行剔掉，实测 12 行 → **7 行**，掉 42%）；
+(c) 让**扇出结构上消失**（不是把它压回 1），**零掉行**。
+
+#### ✅ 判据：**11 行逐行比对**（🚫 不要跑 89 段 SQL 回归）
+
+消费 `v_compat_material_bom_item` 的存量组件 SQL 有 **89 段**（并发会话实查；主线先前转述的 135 是二手数字，已更正）。
+但**它们按视图名文本引用** ⇒ 改视图体不改任何一段 SQL 文本 ⇒ 「编译产物逐字节相同」**是结构上保证的恒真判据，零证据**。
+（这条是主线提的，被并发会话当场证伪 —— 与本文档里那条「恒为 1 的维度」是同型错误，同一天犯了两次。）
+
+**真正的影响面有上界**：视图 11166 行 − V6 裸表 11155 行 = **ds_ 分支净增 11 行**，
+第 2 条只可能动这 11 行的客户号，动不到另外 11155 行。⇒ **逐行核这 11 行即可**：
+
+| 期望改后客户号 | 父件 | 子件 | seq |
+|---|---|---|---|
+| `C1` | TEST-Q13-CODE | TEST-Q13-CODE | 1 |
+| `CUST-0001` | 0526-2609000004 | 00006 | 1 |
+| `CUST-0001` | 0526-2609000004 | 00230 | 2 |
+| `CUST-0001` | 0526-2609000005 | 0526-2609000004 | 1 |
+| `CUST-0001` | 0526-2609000005 | TEST-Q13-CODE | 2 |
+| `CUST-0001` | 0526-2609000005 | 0526-2609000004 | 3 |
+| `CUST-0001` | 0526-2609000005 | TEST-Q13-CODE | 4 |
+| `CUST-0004` | S0001 | S0002 | 1 |
+| `CUST-0004` | S0001 | S0003 | 2 |
+| `CUST-0004` | S0002 | 992 | 1 |
+| `CUST-0004` | T260907-M1 | 00006 | 1 |
+
+**这张表 = 改动前的现状，也 = 期望的改后状态**（主线已算过：回填按 `cust_scope` 推之后，
+`b.customer_no` 恰好等于视图现在合成的值 ⇒ **11 行零变化**）。
+⇒ 落完重跑，**11 行都在 + 客户号逐行一致 = 零影响**；有出入就把那几行拎出来报主线。
+⚠️ 数字会随共享库并发写而漂，**判据是「逐行一致」不是「11 这个数」**。
+
+#### ✅ 一个自动闭合的风险（后端代理复核结论，主线采纳）
+
+`QuotePendingRewriter.WHITELIST_TABLES` 实为 **10 项**（8 张物理版本化表 + `v_compat_material_bom_item`
+/ `v_compat_element_bom_item` 两张兼容视图），**不是 8 项**。且：
+- `ds_quote_material_bom` / `ds_quote_element_bom` **既无 `pending_quotation_id` 也无 `is_current`**，
+  而改写器 `:365`/`:371-372` **无条件**生成 `t.pending_quotation_id = :pq` ⇒ 把 ds_ 裸表加进白名单会直接
+  `column does not exist` 运行时报错。**「加白名单」结构上做不到，不是该不该的问题。**
+- **换成 `v_compat_material_bom_item` 时，该名字已在白名单** ⇒ 改写命中，V6 那半边照常带出 pending 行
+  ⇒ **pending 可见性自动保住，无需动白名单。**
+
+⇒ 先前记的「11070 行 pending 不可见」这个风险，**只在「换 ds_ 裸表」路线下成立；走兼容视图路线自动闭合**。
+🚫 仍然不要动白名单（并发会话的 AC-16 判据依赖它不含 ds_ 表）。
+
+---
+
 ### 🚦 B-7b · 换兼容视图 + 客户权威归位（2026-09-07 用户裁决 A0-6）
 
 **三条判据主线已独立复核（在隔离库上亲跑，🚫 不是采信并发会话的汇报）**：
@@ -438,10 +542,14 @@ SELECT count(*) FROM (
 
 ### 自证要求（🚫 不许只说「加了」）
 
-1. **A/B 值中性证据**：改动前后，对**每个** `customer.code` 跑
-   `SELECT md5(string_agg(material_no||'|'||element_code||'|'||unit_price, ',' ORDER BY 1,2))
-    FROM f_material_element_price(code, CURRENT_DATE)`，
-   **原有客户的 md5 必须逐一相同**（新增料号只会让 ds_ 侧客户多出行 ⇒ 说清哪几个客户的 md5 变了、为什么该变）
+1. **A/B 值中性证据**：用**多重集双向差集 `EXCEPT ALL`** 逐客户对拍改动前后的函数输出，
+   判据是「**只在旧**」逐客户全为 **0**（纯加法：零丢失、零改值）。
+
+   🚨 **🚫 不要用 `md5(string_agg(..., ',' ORDER BY 1,2))` —— 那是主线写错的坏判据**（2026-09-07 实证）：
+   聚合函数内 `ORDER BY` 里的 `1,2` 是**常量、不是列序号**（序号语义只在查询级 `ORDER BY` 成立）
+   ⇒ 排序键恒定 ⇒ 输出序 = 执行计划顺序。给 `candidate_materials` 加 UNION 支会改变计划，
+   于是**行数不变、md5 却变**，把纯行序变化误报成真回归（实测 CUST-0002 / CUST-0004 各报一次假阳性）。
+   非要用 md5 的话写成 `ORDER BY s`（对拼好的整串排序）。
 2. **闭环证据**：那 8 个 ds_ 独有料号中，**至少 1 个**在改动后能取到非空单价，贴出料号 + 元素 + 值
 3. ⚠️ **数据依赖三层**（缺任一层该元素整行不出现，不是返 0）：
    `element` 表 ACTIVE + 该客户有 `element_price_strategy` + `element_daily_price` 有行情。
