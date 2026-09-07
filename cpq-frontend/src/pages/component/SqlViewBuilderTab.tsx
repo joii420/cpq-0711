@@ -53,18 +53,33 @@ const datasetLabel = (k: BuilderDataset) => DATASETS.find((d) => d.key === k)?.l
 
 /**
  * F-30：明确**不进语义图**的表（配置器里拖不到），照原型的 `deadBlock()` 渲染成一块警示。
- * 依据是需求文档 §9.2 的「不进图」行 + N-18 / N-19 两条明确不做项 —— 这些表按定义不会出现在
- * `GET /field-tree` 的响应里，所以只能由前端说明「它为什么不在这儿」，否则配置人员会一直找它。
+ * 原依据是 task-260819 需求文档 §9.2 的「不进图」行 + N-18 / N-19 两条明确不做项 —— 这些表按定义
+ * 不会出现在 `GET /field-tree` 的响应里，所以只能由前端说明「它为什么不在这儿」，否则配置人员会一直找它。
+ * ⚠️ task-260907 起 QUOTE 的 4 张已全部接入，清单为空（见下方常量注释）。
  * 🚫 这不是「本数据集有哪些表」的清单（那由服务端给），只是缺席原因的说明文案。
  */
 const EXCLUDED_TABLES: Partial<Record<BuilderDataset, Array<{ table: string; label: string; reason: string }>>> = {
-  // 表名 / 中文名 / 顺序均逐字取自原型 `原型-v9-数据集与字段面板.html` 的 DATA.quote（tab 以「不进图」开头的 4 张）。
-  QUOTE: [
-    { table: 'ds_quote_customer_part', label: '客户料号', reason: 'N-19 无轴列语义' },
-    { table: 'ds_quote_assembly_fee_annual', label: '组装加工费年降', reason: 'N-18 年降，用户已裁不做' },
-    { table: 'ds_quote_incoming_annual', label: '来料年降', reason: 'N-18 年降，用户已裁不做' },
-    { table: 'ds_quote_annual_discount', label: '年降系数', reason: 'N-18 年降，用户已裁不做' },
-  ],
+  /**
+   * task-260907（AC-1③ / api.md §1.4 / 原型 `取数配置Tab-F1-物料双表.html` 的 warnbox）：
+   * QUOTE 原有的 4 张「不进图」表**本次全部接入语义图** ⇒ 清单清空 ⇒
+   * `renderExcludedTables()` 返回 null ⇒ **该提示整条消失**。
+   *   · ds_quote_customer_part      → F-1/B-1 并入「物料」数据源（CUSTOMER_PART / AUX 组）
+   *   · ds_quote_annual_discount    → F-4/B-2 独立数据源「年降系数」
+   *   · ds_quote_assembly_fee_annual→ F-4/B-2 独立数据源「组装加工费年降」
+   *   · ds_quote_incoming_annual    → F-4/B-2 独立数据源「来料年降」
+   * ⚠️ 原 N-18 / N-19 两条「不做」裁决已被用户 2026-09-07 的新裁决推翻，不要照旧文档把它们加回来。
+   * 📌 机制本身保留（这块警示是**前端硬编码的缺席原因说明**，不是服务端清单）——
+   *    以后若又有表明确不进图，在此登记即可。
+   *
+   * 🚨 **合并前置（本条只存在于代码里，文档没有对应耦合，别删）**：
+   *    本清单是**前端硬编码**，与后端是否真的把那 4 张表接进语义图**没有任何耦合** ——
+   *    清空它，这条提示就**无条件消失**，不管 B-1 / B-2 有没有落地。
+   *    ⇒ 若 B-1 / B-2 滑期，界面会**既没有这 4 张表的字段、也没有「它为什么不在这儿」的解释，
+   *      且没有任何信号**（不报错、不告警，只是安静地少一块）。
+   *    ⇒ **合并前必须先确认 AC-1①（物料源真的出两张表的列）与 AC-11①（下拉真的到 14 项）实测通过。**
+   *    （由 frontend-engineer 2026-09-07 提出、主线当日裁决钉为合并前置；api.md §1.4 的归属已同步更正。）
+   */
+  QUOTE: [],
 };
 
 /**

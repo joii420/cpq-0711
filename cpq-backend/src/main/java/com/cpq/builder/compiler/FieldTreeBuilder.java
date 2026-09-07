@@ -338,7 +338,20 @@ public class FieldTreeBuilder {
 
             SemanticEdge edgeFromAnchor = isMain ? null : snap.edgesFrom(anchor.id).stream()
                     .filter(e -> e.toNodeId.equals(node.id)).findFirst().orElse(null);
-            g.groupKind = isMain ? "MAIN" : (edgeFromAnchor != null ? edgeFromAnchor.edgeKind : "AUX");
+            // 🆕 task-260907 B-1（api.md §1.3）：**经 LOOKUP 边到达、又自成一组**的节点，
+            //    groupKind 报 "AUX" 而不是 "LOOKUP"。
+            //    · 为什么会出现这种节点：客户料号必须走 LOOKUP —— SemanticCompiler 里只有 LOOKUP
+            //      编译成 LEFT JOIN（JOIN 是 INNER，会把 28 个没有客户料号的物料整行丢掉，AC-2②）；
+            //      同时它又是一整张有意义的表，要以 AUX 挂在页签上让用户整组拖。
+            //    · 为什么不直接报 "LOOKUP"：api.md §1.3 把这一组的 groupKind 定义为 AUX；
+            //      而 groupKind 在前端只用于 PRICE / SUB / GRAIN·JOIN·SAME 三处徽标分支，
+            //      "LOOKUP" 与 "AUX" 的渲染完全相同 ⇒ 报 AUX 零视觉差异、契约却对得上。
+            //    · 零回归依据（2026-09-07 实测共享库）：本分支此前**不可达** —— 挂进
+            //      semantic_tab_view_node 的非 SHEET 节点只有 FUNC_ELEMENT_PRICE（PRICE 边，
+            //      走末尾专用块且已被 B-23 从 tvns 里过滤掉），没有任何节点经 LOOKUP 边自成一组。
+            String edgeKind = edgeFromAnchor == null ? null : edgeFromAnchor.edgeKind;
+            g.groupKind = isMain ? "MAIN"
+                    : (edgeKind == null || "LOOKUP".equals(edgeKind) ? "AUX" : edgeKind);
 
             if (!isMain && "GRAIN".equals(g.groupKind)) {
                 if (g.dims.isEmpty()) g.dims = new ArrayList<>(List.of(node.grainColumns));
