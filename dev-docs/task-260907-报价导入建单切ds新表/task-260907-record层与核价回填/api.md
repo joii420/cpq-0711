@@ -106,8 +106,12 @@
 | 码 | 条件 |
 |---|---|
 | 404 | 报价单不存在 |
-| 400 | 报价单状态不是 `SUBMITTED` |
 | 403 | 非 `PRICING_MANAGER` / `SYSTEM_ADMIN`（既有 `@RoleAllowed`） |
+
+> 🕰️ **本表曾写「400 · 报价单状态不是 `SUBMITTED`」，是主线起草时的臆测，已删**（2026-09-07 后端代理实查指出）。
+> 实测 `QuotationResource:600` 的 `costingApprovePreview` **没有任何状态校验**，直接 `preview(id)` —— 预览是只读、无副作用、幂等的，任何状态调它都不会写库。
+> 🚫 **本段不给它补状态闸** —— 那是改既有端点行为，不在任何一条 AC 内，属超范围。要补另立任务。
+> ⚠️ 状态闸在 `POST .../costing-approve`（`doCostingApprove` 的 `!"SUBMITTED".equals(q.status)` → 400），**写入侧是拦住的**，这才是要紧的那一侧。
 
 ---
 
