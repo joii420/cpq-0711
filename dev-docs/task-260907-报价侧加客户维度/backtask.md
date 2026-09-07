@@ -211,6 +211,7 @@ application.properties:67  quarkus.flyway.migrate-at-start=true
 |---|---|---|
 | **1** | 🚨 **先把 worktree 的改动全部提交** | 2026-09-07 实查：**16 个已改文件 + 13 个未跟踪**（含 5 个迁移、6 个测试类），而分支只比 master 多 1 个提交。子代理按纪律不 `commit`，**提交责任隐式落到主线**，而「跑了测试」「看了 diff」「查了分支」三项常规前置检查**都发现不了代码没进 git**。⚠️ `git worktree remove` 会**连未跟踪文件一起删**（本项目实证近 13000 行险些丢失） |
 | **2** | 🚨 **合并前广播全部并发会话** | 合并后共享库会有 `customer_no`，而 `DatasetSchemaSelfCheck:116` 是**双向**比对 ⇒ **任何仍在跑旧代码的 worktree，下次启动会撞「多出未声明的列: customer_no」**。广播内容：「重启后端之前先把 master 合进你的 worktree」。用 `ListAgents` 取当时的活跃会话 |
+| **2.5** | 🚨 **撞号检查（四个维度，缺一即漏）** | 见下方脚本。非空就停下重编号，**不要合** |
 | **3** | 合并到 master | 文件交集先查一遍。⚠️ **已知与 `核价回填` 会话有文本级冲突**（非语义冲突，两组常量互不相干、开关维度不同）：`SheetDef.java`（我加 `CUSTOMER_COLUMNS`，它加 `RECORD_COLUMNS`/`SOURCE_QUOTATION_COLUMN`）· `QuoteRegistry.java`（我传 `customerScoped=true`，它覆写 `quoteRecordEnabled()`）· `DatasetRegistry.java` · `DatasetSchemaSelfCheck.java`。**双方已约定我先合、它后合并由它解冲突**（它还要走亲验，本就在我后面） |
 | **4** | 🚨 **显式重启主仓 8081，🚫 不要依赖热重载** | 主仓 8081 是**长跑进程**（`cwd=/home/joii/project/cpq/cpq-backend`），master 迁移目录一变就会**热重载即迁移**。**已实证的是冷启动下 Flyway 先于自检的顺序，热重载的顺序未验证** ⇒ 走已验证的那条路 |
 | **5** | 验共享库迁移 | `SELECT version,success FROM flyway_schema_history WHERE version::int >= 423` → **423~427 全部 `success=t`** |
@@ -235,6 +236,42 @@ application.properties:67  quarkus.flyway.migrate-at-start=true
 
 > 📌 **一条不要误设的前提**：`核价回填` 的 `S-7 全库清空` 属 §3.2，需其用户当次批准，**尚未发生**。
 > 🚫 不要按「旧单已清空」来排任何验收前提。（本任务的 AC-2 亲验用自造夹具 `MZ-` 前缀，不依赖库干净。）
+
+#### 第 2.5 步的撞号检查脚本（四个维度）
+
+```bash
+cd /home/joii/project/cpq
+export PGPASSWORD=joii5231
+for v in $(git diff master...HEAD --name-only -- cpq-backend/src/main/resources/db/migration/ \
+           | grep -oE 'V[0-9]+' | sort -u); do
+  m=$(git ls-tree master --name-only cpq-backend/src/main/resources/db/migration/ | grep -c "${v}__")
+  d=$(psql -h 10.177.152.12 -U postgres -d cpq_db_0724 -tA \
+      -c "SELECT count(*) FROM flyway_schema_history WHERE version='${v#V}'")
+  [ "$m" != "0" -o "$d" != "0" ] && echo "🚨 $v 已被占用 (master=$m, db=$d)"
+done
+# ③ 别人还没提交的工作区（🚨 前两个维度会把这些号报成「空闲」）
+for w in /home/joii/project/cpq/.claude/worktrees/*/; do
+  ls $w/cpq-backend/src/main/resources/db/migration/ 2>/dev/null | grep -oE '^V[0-9]+' | sort -u \
+    | sed "s|^|  $(basename $w): |"
+done
+# ④ classpath 幽灵（见 §①c）
+comm -13 <(ls "$SRC"|sort) <(ls "$CLS" 2>/dev/null|sort)
+```
+
+**四个维度各挡一类，🚫 不能互相替代**：
+
+| 维度 | 挡什么 | 实证 |
+|---|---|---|
+| `master` 文件 | 已合并的占号 | 09:31 事故后 `V423` 就在这里 |
+| 共享库 `flyway_schema_history` | 已落库的占号 | 同上 |
+| **其它 worktree** | **别人还没提交的占号** | 实测 `task-260907-quote-import` 已占 `V424`，而前两个维度都报「空闲」 |
+| **`target/classes`** | **改号后旧号的幽灵** | 见 §①c，09:31 事故的直接根因 |
+
+> 🔑 **一个防护手段可能同时降低另一类风险的可见性**（`产品管理客户过滤` 会话 2026-09-07 归纳）：
+> 本任务用隔离库避开了「28 张表加列打挂所有人」，但**隔离库不含共享库的 flyway 历史**
+> （它是共享库在 `V422` 时刻的克隆，而对方的 `V423` 是 09:31:05 落的，在克隆之后）
+> ⇒ **本地怎么跑都不会撞号，合并那一刻才爆。**
+> 这不是说隔离库错了，而是说**它挡不住撞号 —— 撞号只能靠合并前比对上面四个维度**。
 
 > ⚠️ **第 4 步与第 2 步的顺序不能换**：先重启会让共享库立刻有 `customer_no`，此时还没广播的会话一重启就挂。
 
