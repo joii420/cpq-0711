@@ -36,6 +36,7 @@
       <div class="item"><div class="k">将升版</div><div class="v">3</div></div>
       <div class="item"><div class="k">无变更</div><div class="v">1</div></div>
       <div class="item"><div class="k">无法对齐的行</div><div class="v">0</div></div>
+      <div class="item"><div class="k">不参与的组件</div><div class="v warn">2</div></div>
     </div>
 
     <div class="alert alert-info">
@@ -76,6 +77,14 @@
             <td class="num">4</td><td class="num">4</td><td class="num">0</td>
             <td><span class="tag tag-grey">组成数量</span> <span class="tag tag-grey">损耗率</span></td>
             <td class="muted">项次、投入料号、产出料号类型、材料毛重、材料净重、重量单位、材料占比、不良率</td>
+          </tr>
+          <tr>
+            <td class="mono">T260907R-NEW01</td>
+            <td><span class="ver"><span class="muted">—</span> <span class="arrow">→</span> <span class="to">v1</span></span></td>
+            <td><span class="tag tag-green">新建</span></td>
+            <td class="num">0</td><td class="num">3</td><td class="num">0</td>
+            <td><span class="tag tag-grey">组成数量</span> <span class="tag tag-grey">单重</span></td>
+            <td class="muted">该料号在基础数据里还没有，本次整组新建</td>
           </tr>
           <tr>
             <td class="mono">VS-FG01</td>
@@ -122,6 +131,24 @@
         <b>元素价格不写回基础数据。</b>报价单里用到的元素实时价（<span class="mono">element_price</span>）
         只记录在报价单自己的快照里，供后续价格调整对照用；基础数据的元素价格由「客户价格调整策略」维护，本次确认不会碰它。
       </div>
+    </div>
+
+    <!-- ── D-33：不参与升版的组件 ── -->
+    <div class="alert alert-warn">
+      <span>⚠️</span>
+      <div>
+        <b>本单有 2 个组件不参与基础数据升版。</b>
+        它们的数据只留在报价单里，<b>不会写回基础数据</b>。逐条原因见下表。
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>组件</th><th>为什么不参与</th></tr></thead>
+        <tbody>
+          <tr><td>投料</td><td class="muted">该页签的取数视图是手工编写的，系统无法自动判断它对应哪张基础数据表 —— 需由配置人员改用取数配置器重建</td></tr>
+          <tr><td>产品小计</td><td class="muted">该页签没有配置数据来源，本次不写回</td></tr>
+        </tbody>
+      </table>
     </div>
 
     <!-- ── 只留痕不回填 ── -->
