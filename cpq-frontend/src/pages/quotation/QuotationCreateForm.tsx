@@ -1,5 +1,7 @@
 // V6 导入向导 Step 3 — 创建报价单表单（复用组件，无 Drawer 壳）
-// 由 QuotationWizard / QuoteBasicDataImportV6Drawer 共用
+// 当前唯一使用方：QuotationWizard
+// 🪦 原另一使用方 QuoteBasicDataImportV6Drawer（「从基础数据导入」）已随 task-260907 F-1 下线并删除，
+//    本文件保留是因为 QuotationWizard 仍在用；文件名里的「V6 导入向导 Step 3」是历史称谓。
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,

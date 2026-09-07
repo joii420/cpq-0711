@@ -14,8 +14,9 @@ import { quotationSnapshotService } from '../../services/quotationSnapshotServic
 import { useAuthStore } from '../../stores/authStore';
 // task-260907 · F-1（AC-13）：旧「从基础数据导入」入口已下线 —— 它调的
 // `POST /basic-data-import/v6/quote/create-quotation` 已被 B-10 摘除（实测返 410），
-// 按钮留着只会把用户带进死路。抽屉组件 `QuoteBasicDataImportV6Drawer` 与其
-// service 文件本身暂留仓库（未删），但**已无任何引用**。
+// 按钮留着只会把用户带进死路。
+// 🪦 配套的抽屉组件 `QuoteBasicDataImportV6Drawer.tsx` 与 `services/basicDataImportV6Service.ts`
+//    已于 2026-09-07 一并删除（用户批准），**仓库里不再有这两个文件**；需要参照请查 git history。
 import CopyQuotationDrawer from './CopyQuotationDrawer';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
 // task-260907 · F-2（AC-13 / AC-19）：「导入报价数据」改开**建单专用**抽屉（选客户 → 上传 → 建单）。
