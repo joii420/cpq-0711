@@ -115,6 +115,23 @@ public final class SheetDef {
      * 免版本表返回空（它们走 {@link #conflictKeyColumns()}）。
      *
      * <p>🚨 单列时<b>逐字退化成原来的形态</b> —— 核价两套的写入 SQL 与改动前一模一样（AC-6）。
+     *
+     * <h3>📍 这里就是整组删除的轴的<b>唯一</b>来源（2026-09-07 立碑）</h3>
+     * 本方法看起来只是个元数据 getter，实际是承重的：
+     * <pre>
+     *   VersionedGroupWriter:295  axisPredicate() → sqlIdents(sheet.axisColumns())
+     *                      :203  upPred = axisPredicate(...)
+     *                      :220  DELETE FROM &lt;表&gt; WHERE &lt;upPred&gt;      ← 整组删除
+     *                      :152  axisSelect / axisArity（读现状 + 回读轴键）
+     * </pre>
+     * 全工程引用 <b>4 处</b>（均在 {@code VersionedGroupWriter}）。
+     *
+     * <p>⚠️ <b>曾被误判为「引用数 = 0 的死代码」</b> —— 起因是按 {@code axisKeyColumns} 这个
+     * <b>不存在的名字</b>去 grep，空结果被当成了「没人用」。据此差点删掉它，那会让整组删除失去轴。
+     * ⇒ 教训：grep 空结果先确认<b>符号名拼对了</b>，再谈「无引用」。
+     *
+     * <p>🔒 想改本方法的返回值前，先读 {@code AbstractDatasetRegistry#reg} 里那条启动期断言 ——
+     * 它保护的正是「{@code customerScoped} 被意外置 false ⇒ 本方法退回单列 ⇒ 跨客户静默删数据」。
      */
     @JsonIgnore
     public List<String> axisColumns() {
