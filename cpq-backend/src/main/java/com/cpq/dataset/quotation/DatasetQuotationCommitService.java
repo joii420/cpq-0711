@@ -185,9 +185,18 @@ public class DatasetQuotationCommitService {
      *       这是 <b>AC-18 的正常场景</b>：返 200、{@code lineItemsCount=0}。</li>
      * </ul>
      *
-     * <p>按 {@code customerNo} 过滤而不是全取：AC-3（跨客户文件整份拒收）归 B-14，
-     * 当前跨客户文件仍会放行 ⇒ 清单里可能混着别的客户的料号，
-     * 不过滤就会把 A 客户的料号建进 B 客户的单里。
+     * <p><b>为什么仍按 {@code customerNo} 过滤，而不是把 batchParts 全取</b>：
+     * 这是一道<b>纵深防御</b>，不是因为上游没拦。
+     * <p>🔄 <b>2026-09-07 更正</b>：本段原写「AC-3 归 B-14，当前跨客户文件仍会放行」——
+     * <b>那已经过时了</b>。B-15 已实现并接线（{@code QuotationImportService#validateSingleCustomer}
+     * 经 {@link com.cpq.dataset.importer.DatasetImportService.ExtraValidation} 钩子在
+     * {@code parseAndValidate} 抛出<b>之前</b>并入同一批错误），跨客户文件在 Phase 1 就整份拒收，
+     * 根本走不到建单这一步。
+     * <p>⚠️ 注释与代码相反比没有注释更危险 —— 照旧注释推断「这里的过滤是唯一防线」，
+     * 或反过来推断「跨客户没人管」，两种误判都会发生。
+     * <p>那为什么不把过滤删掉？因为 {@code batchParts} 是<b>历史数据</b>：
+     * B-15 之前落库的 {@code import_record} 里可能确实混着别的客户的料号，
+     * 拿那种老批次建单时这道过滤仍是最后一道闸。删它等于赌「库里没有老数据」。
      *
      * <p>🚫 <b>N+1</b>：纯内存解析 + 过滤，无查询。
      */

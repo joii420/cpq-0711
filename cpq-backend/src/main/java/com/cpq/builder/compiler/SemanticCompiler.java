@@ -58,7 +58,11 @@ public class SemanticCompiler {
     public static final int CURRENT_VERSION = 1;
 
     private static final String PRICE_FUNC_ALIAS = "cep";
-    private static final String PRICE_FUNC_NODE_KEY = "FUNC_ELEMENT_PRICE";
+    // 🚫 task-260907 B-17：这里原先是 PRICE_FUNC_NODE_KEY = "FUNC_ELEMENT_PRICE" 常量。
+    //    它把「价格函数」这个**角色**钉死成了**某一个具体节点**，于是第二个价格函数
+    //    （FUNC_CUSTOMER_ELEMENT_PRICE，D-27：报价侧一单元素价统一、与料号无关）的列
+    //    压根不会被识别成价格列 —— 症状是「元素单价整列空」，且编译不报错。
+    //    ⇒ 改为**顺锚点的 PRICE 边**解析，见 resolvePricePlan。角色由图数据表达，不由常量表达。
 
     @Inject
     PhysicalColumnCatalog catalog;
@@ -940,8 +944,20 @@ public class SemanticCompiler {
         SemanticNode funcNode;          // B-41：顺 PRICE 边解析出的价格函数节点（替代按 key+"|QUOTE" 反查）
     }
 
+    /**
+     * 是否为「价格策略原子组」的输出列。
+     *
+     * <p>判据是 {@code col.sourceNodeKey} 是否等于<b>本次解析出的那个</b>价格函数节点
+     * —— 🚫 不是跟某个常量比。同一份图里可以有多个价格函数节点（当前 QUOTE 方言有两个：
+     * 按料号的 {@code FUNC_ELEMENT_PRICE} 与按客户的 {@code FUNC_CUSTOMER_ELEMENT_PRICE}），
+     * 用常量比会把「另一个」的列漏判成普通列，然后在 resolveColumn 里当作锚点列去找，
+     * 要么报一个语义完全不相干的错，要么静默输出空列。
+     *
+     * <p>{@code plan == null}（没选价格列、或形态 B 已把价格列摘掉）时恒 false。
+     */
     private boolean isPriceColumn(PricePlan plan, BuilderConfig.ColumnConfig col) {
-        return PRICE_FUNC_NODE_KEY.equals(col.sourceNodeKey);
+        return plan != null && plan.funcNode != null
+                && plan.funcNode.nodeKey.equals(col.sourceNodeKey);
     }
 
     /**
@@ -949,19 +965,65 @@ public class SemanticCompiler {
      * {@code effectiveColumns}（AC-2①「7 项」的来源，也是 D-09 原子组"拖一列自动带出"的落地点）。
      */
     private PricePlan resolvePricePlan(Ctx c, List<BuilderConfig.ColumnConfig> effectiveColumns) {
-        boolean priceSelected = effectiveColumns.stream().anyMatch(col -> PRICE_FUNC_NODE_KEY.equals(col.sourceNodeKey));
-        if (!priceSelected) return null;
-
-        SemanticEdge priceEdge = c.snap.edgesFrom(c.anchor.id).stream()
-                .filter(e -> "PRICE".equals(e.edgeKind))
-                .findFirst()
-                .orElseThrow(() -> new BuilderApiException(400, "COMPILE_PRICE_EDGE_NOT_FOUND",
-                        "锚点「" + c.anchor.displayName + "」没有声明价格策略边", Map.of()));
-        SemanticNode funcNode = c.snap.nodeById.get(priceEdge.toNodeId);
-        if (funcNode == null) {
-            throw new BuilderApiException(500, "COMPILE_PRICE_FUNC_NODE_MISSING",
-                    "价格策略边指向的函数节点不存在（图数据不一致）", Map.of());
+        // ── ① 顺锚点的 PRICE 边，列出「本锚点可用的价格函数节点」
+        //    🚨 这里**绝不能用 findFirst()**。原实现是
+        //        edgesFrom(anchor).filter(PRICE).findFirst()
+        //    —— 同一锚点挂两条 PRICE 边时它按遍历顺序碰运气取一条，取错了也不报错。
+        //    这是本项目反复出现的反模式（refreshSnapshotsByComponent 的 firstResult()、
+        //    semantic_tab_view 三段坐标只用两段）。⇒ 按 builder_config 里列引用的函数节点
+        //    **精确匹配**，多一条少一条都有明确的错误码。
+        Map<String, SemanticEdge> priceEdgeByFuncKey = new LinkedHashMap<>();
+        for (SemanticEdge e : c.snap.edgesFrom(c.anchor.id)) {
+            if (!"PRICE".equals(e.edgeKind)) continue;
+            SemanticNode to = c.snap.nodeById.get(e.toNodeId);
+            if (to == null) {
+                throw new BuilderApiException(500, "COMPILE_PRICE_FUNC_NODE_MISSING",
+                        "价格策略边指向的函数节点不存在（图数据不一致）", Map.of());
+            }
+            SemanticEdge dup = priceEdgeByFuncKey.putIfAbsent(to.nodeKey, e);
+            if (dup != null) {
+                // 同一锚点 → 同一函数节点有两条 PRICE 边：图数据本身有歧义，
+                // 此时无论选哪条都是碰运气 ⇒ 直接拒绝，不许猜。
+                throw new BuilderApiException(400, "COMPILE_PRICE_EDGE_DUPLICATED",
+                        "锚点「" + c.anchor.displayName + "」到价格函数「" + to.nodeKey
+                                + "」存在多条 PRICE 边，无法确定用哪条", Map.of());
+            }
         }
+
+        // ── ② 本次选列引用了哪些价格函数节点
+        LinkedHashSet<String> selectedFuncKeys = new LinkedHashSet<>();
+        for (BuilderConfig.ColumnConfig col : effectiveColumns) {
+            if (col.sourceNodeKey != null && priceEdgeByFuncKey.containsKey(col.sourceNodeKey)) {
+                selectedFuncKeys.add(col.sourceNodeKey);
+            }
+        }
+
+        if (selectedFuncKeys.isEmpty()) {
+            // 没选价格列。但要区分「真没选」和「选了某个 FUNCTION 节点的列、锚点却没有对应 PRICE 边」——
+            // 后者若静默 return null，那列会掉进普通列分支被当成锚点列去找，
+            // 报出来的错与真实原因毫不相干。⇒ 在这里就点名。
+            for (BuilderConfig.ColumnConfig col : effectiveColumns) {
+                if (col.sourceNodeKey == null) continue;
+                SemanticNode n = c.snap.nodeByKeyDialect.get(
+                        col.sourceNodeKey + "|" + c.dialect.graphDialect());
+                if (n != null && "FUNCTION".equals(n.nodeKind)) {
+                    throw new BuilderApiException(400, "COMPILE_PRICE_EDGE_NOT_FOUND",
+                            "锚点「" + c.anchor.displayName + "」没有指向价格函数「"
+                                    + col.sourceNodeKey + "」的价格策略边", Map.of());
+                }
+            }
+            return null;
+        }
+        if (selectedFuncKeys.size() > 1) {
+            // 一个组件同时选两个价格函数的列：JOIN 别名 cep 只有一个，且两组价格语义不同，
+            // 合成一张视图没有业务含义 ⇒ 拒绝，而不是悄悄只生效一个。
+            throw new BuilderApiException(400, "COMPILE_PRICE_MULTI_FUNC",
+                    "同一组件不能同时使用多个价格函数：" + selectedFuncKeys, Map.of());
+        }
+
+        String funcKey = selectedFuncKeys.iterator().next();
+        SemanticEdge priceEdge = priceEdgeByFuncKey.get(funcKey);
+        SemanticNode funcNode = c.snap.nodeById.get(priceEdge.toNodeId);
         List<SemanticEdgeKey> keys = c.snap.keysOf(priceEdge.id).stream()
                 .sorted(Comparator.comparingInt(k -> k.seq)).toList();
         if (keys.isEmpty()) {
@@ -972,7 +1034,7 @@ public class SemanticCompiler {
         if (ps != null && ps.elementCodeManualField != null && !ps.elementCodeManualField.isBlank()) {
             // 形态 B（AC-23）：元素键改绑手填字段，SQL 不再输出价格策略——既有 element_code_field/
             // element_price_field 运行时定价机制（task-0729）接管，本编译器不生成 JOIN。
-            effectiveColumns.removeIf(col -> PRICE_FUNC_NODE_KEY.equals(col.sourceNodeKey));
+            effectiveColumns.removeIf(col -> funcKey.equals(col.sourceNodeKey));
             return null;
         }
 
