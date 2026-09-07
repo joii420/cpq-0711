@@ -1,0 +1,405 @@
+package com.cpq.task260819v9;
+
+import io.quarkus.test.junit.QuarkusTest;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+
+import java.nio.charset.StandardCharsets;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * 需求文档.md §9.4 <b>C 组 · 存量降级（零回归）</b> —— AC-113 / AC-122。
+ *
+ * <p><b>基线来源</b>：{@code dev-docs/task-260819-取数配置器/golden/v9-sqlview-md5-baseline.tsv}，
+ * 150 行 {@code <id>\t<sql_view_name>\t<md5(sql_template)>}，
+ * 由上一轮同岗位代理在<b>主线执行删除之后、本任务任何迁移之前</b>抓取。
+ * 🚫 <b>绝不重抓</b> —— 重抓等于把改动后的状态当基线，基线当场作废。
+ *
+ * <h3>取基线用的查询（可复核）</h3>
+ * <pre>SELECT id::text, sql_view_name, md5(sql_template) FROM component_sql_view ORDER BY id</pre>
+ * 2026-09-03 本用例作者已用该查询在 {@code cpq_db_0724} 上重放并与基线文件 <b>逐行 diff 一致</b>，
+ * 证明「基线的计算口径」本身没猜错（而不是等到用例第一次跑才发现口径不对）。
+ *
+ * <h3>本类不改任何全局状态</h3>
+ * 全部只读。
+ */
+@QuarkusTest
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+class V9ZeroRegressionTest extends V9TestBase {
+
+    private static final String BASELINE = "golden/v9-sqlview-md5-baseline.tsv";
+
+    // ═══════════════════════════════════════════════════════════════
+    // AC-113（单点）存量已清
+    //
+    // 🚨 2026-09-06 三段全部改判据（本轮）。共因只有一个：
+    //    **原判据断言的是「表的当前状态」，而这张表被测试夹具实时写入** ——
+    //    `SemanticGraphTestSupport`（Sec3x 家族 / Sec34PriceStrategyTest 的 @BeforeEach）
+    //    每跑一次就新建 `SQLVB-TEST-*` 组件 + `builder_*` 视图（实测残留 8 行，100% 是它）。
+    //    ⇒ **跑这套测试的动作本身，就会创建被断言禁止的行** —— 判据自毁，与代码对错无关。
+    //    与 D-107 / D-118 / D-129 同一个病：判据绑在「我控制不了的数字」上。
+    //
+    // ✅ 统一改成「**本任务是否写过**」的不变量形态（延续 D-129 对 ② 的处置方向）：
+    //    ① 改问「**基线登记的那 150 个存量视图**里，有没有被写上 builder_config 的」
+    //    ② 改问「本任务的迁移有没有写 component_sql_view」（D-129 已在 AC 原文改掉，代码本轮才跟上）
+    //    ③ 比较集由「库 − V411 备份表」改成「**基线 ∩ 非 V411**」，把运行时新建的视图排除在问责面外
+    //    🔑 三段的共同性质：**新建行只会落在基线之外，永远进不了比较集** ⇒ 跑多少遍都不会自己变红。
+    // ═══════════════════════════════════════════════════════════════
+    @Test
+    @Order(113)
+    @DisplayName("AC-113: ①存量 150 个视图无 builder_config ②本任务迁移零写 ③未被 V411 触碰的逐字节不变")
+    void ac113_legacyBuilderViewsRemoved() {
+        Map<String, String> baseline = readBaseline();
+        assertEquals(150, baseline.size(),
+                "AC-113 前置：基线文件应有 150 行，实际=" + baseline.size() + "（文件=" + baselinePath() + "）"
+                        + "\n  🚫 基线不对就别往下判 —— 后面三段全靠它当对照点。");
+
+        long total = scalarLong("SELECT count(*) FROM component_sql_view");
+
+        // ── ① 存量视图上不得有 builder_config 残留（D-79′：21 个 builder 产物已由主线删除）
+        //    判据落在**基线登记的那 150 个 id** 上，而不是全表 count。
+        //    夹具新建的视图用 gen_random_uuid()，id 必然不在基线里 ⇒ 它们进不了这个集合。
+        List<Object[]> withBuilder = rowList(
+                "SELECT id::text, sql_view_name FROM component_sql_view "
+                        + "WHERE builder_config IS NOT NULL ORDER BY sql_view_name");
+        List<String> onBaseline = new ArrayList<>();
+        List<String> offBaseline = new ArrayList<>();
+        for (Object[] r : withBuilder) {
+            String id = String.valueOf(r[0]);
+            String name = String.valueOf(r[1]);
+            (baseline.containsKey(id) ? onBaseline : offBaseline).add(name + "(" + id + ")");
+        }
+        System.out.println("[AC-113①] component_sql_view 总数=" + total
+                + "；builder_config 非空=" + withBuilder.size()
+                + "（其中落在基线 150 个存量视图上的=" + onBaseline.size()
+                + "，基线之外/运行时新建的=" + offBaseline.size() + "）");
+        if (!offBaseline.isEmpty()) {
+            System.out.println("[AC-113①] ℹ️ 基线之外的 builder_config 视图（**不计入本条问责面**，"
+                    + "它们是本套测试自己的夹具产物或别的会话的在途探针）：" + offBaseline);
+        }
+        assertEquals(List.of(), onBaseline,
+                "AC-113①: 基线登记的 150 个**存量**视图里不得有 builder_config（D-79′ 已全部置 NULL 降级为手写模式）。"
+                        + "命中=" + onBaseline
+                        + "\n  🔑 本条只问『存量视图有没有被写上 builder_config』，"
+                        + "🚫 不再断言全表 count=0 —— 那个数会被测试夹具自己顶红（见方法上方注释）。"
+                        + "\n  ⚠️ 真红的含义：本任务的代码/迁移把 builder_config 写回了存量视图，这是 D-81 明令禁止的。");
+
+        // ── ② D-129（用户 2026-09-05 裁决 b）：🚫 不再断言 sql_view 原始总数 = 150。
+        //    实测该数字在代码一个字没改的一小时内由 150 变 184（夹具残留实时增长）。
+        //    ⇒ 直接引用 AC-122①「本任务的迁移对 component_sql_view 的写操作命中数 = 0」。
+        //    ⚠️ 2026-09-06 补记：D-129 当时只改了 AC **原文**，本方法的 assertEquals(150L, total) 留着没动 ——
+        //       因为 ① 先失败，JUnit 根本走不到 ②，这条**从未被执行过**，所以没人发现它也是红的。
+        //       这正是 D-118/D-129 反复说的「同一条 AC 只改了一半」，本轮第三次复发。
+        assertMigrationsWroteNoComponentSqlView("AC-113②");
+        System.out.println("[AC-113②] ✅ 引用 AC-122① 成立（本任务迁移零写 component_sql_view）；"
+                + "当前全表 " + total + " 行这个数字**故意不断言**（D-129）。");
+
+        // ── ③ D-118：与 AC-122② 同一条判据，走同一个比较集
+        List<String> drift113 = driftAgainstBaseline(baseline, "AC-113③");
+        assertEquals(List.of(), drift113,
+                "AC-113③（D-118 判据）: 比较集内的视图必须与本任务改动前基线**逐字节相同**，漂移=" + drift113
+                        + "\n  基线=" + baselinePath()
+                        + "\n  🚫 修法一律不是『重抓基线』—— 重抓等于把回归洗白（D-107）。先查是谁改的。");
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // AC-122（🔄 D-107 改判据，用户裁决）证明**本任务零写入**，而不是证明库没变过
+    //   ① 本任务迁移不含任何对 component_sql_view 的写操作（grep 命中 0）
+    //   ② 比较集（基线 ∩ 非 V411）内的视图，md5 与本任务改动前基线逐字节相同
+    //   ③ E2E 双 spec 不回归（本类覆盖不到，另跑，见方法末尾打印）
+    // 🚫 不重抓基线 —— 重抓等于把别人的改动洗进我的基线
+    // ═══════════════════════════════════════════════════════════════
+    @Test
+    @Order(122)
+    @DisplayName("AC-122: ①本任务迁移零写 component_sql_view ②比较集内视图逐字节不变")
+    void ac122_thisTaskWroteNoViewSql() {
+        // ── ① 本任务的迁移文件里不得出现对 component_sql_view 的写操作
+        assertMigrationsWroteNoComponentSqlView("AC-122①");
+
+        // ── ② 比较集内的视图，逐字节不变
+        Map<String, String> baseline = readBaseline();
+        assertFalse(baseline.isEmpty(), "AC-122②: 基线文件为空，断言会空跑。文件=" + baselinePath());
+
+        List<String> drift = driftAgainstBaseline(baseline, "AC-122②");
+        assertEquals(List.of(), drift,
+                "AC-122②: 比较集内的视图必须与本任务改动前基线**逐字节相同**，漂移=" + drift
+                        + "\n  基线=" + baselinePath()
+                        + "\n  🚫 处置不是「重抓基线」—— 重抓等于把别人的改动洗进我的基线（D-107）。");
+
+        System.out.println("[AC-122 ✅] ① 本任务迁移零写 component_sql_view；② 比较集内视图逐字节不变。"
+                + "\n  ⚠️ ③『E2E 双 spec 不回归』本用例覆盖不到，须另跑："
+                + "\n    cd cpq-frontend && npx playwright test e2e/quotation-flow.spec.ts e2e/composite-product-flow.spec.ts"
+                + "\n  🚫 不跑那两条，AC-122 只能算验了三分之二。");
+    }
+
+    // ═══════════════════════ AC-113 / AC-122 共用判据 ═══════════════════════
+
+    /**
+     * AC-122①（AC-113② 直接引用它）：本任务的 {@code *task260819_v9*.sql} 迁移
+     * 不得含任何对 {@code component_sql_view} 的写操作（D-81：删的是配置器元数据，不动视图）。
+     *
+     * <p>🔑 这是**静态文件判据**：只读迁移源码，不看库当前状态 ⇒ 跑多少遍测试都不会自己变化。
+     * D-129 让 AC-113② 从「表的当前总数」改投到这条上，正是图它这个性质。
+     */
+    private void assertMigrationsWroteNoComponentSqlView(String ac) {
+        Path migDir = repoRoot().resolve("cpq-backend/src/main/resources/db/migration");
+        List<Path> mine;
+        try (Stream<Path> st = Files.list(migDir)) {
+            mine = st.filter(f -> {
+                String n = f.getFileName().toString();
+                return n.endsWith(".sql") && n.contains("task260819_v9");
+            }).sorted().toList();
+        } catch (Exception e) {
+            throw new AssertionError("列不出迁移目录：" + migDir, e);
+        }
+        System.out.println("[" + ac + "] 本任务迁移文件 = " + mine.stream().map(x -> x.getFileName().toString()).toList());
+        assertFalse(mine.isEmpty(), notReady(ac,
+                "迁移目录里找不到本任务的 *task260819_v9*.sql —— 本条等于空跑", "cpq-backend"));
+
+        StringBuilder writes = new StringBuilder();
+        for (Path f : mine) {
+            String sql;
+            try {
+                sql = Files.readString(f);
+            } catch (Exception e) {
+                throw new AssertionError("读不出迁移文件：" + f, e);
+            }
+            // 只认写操作，注释里提到表名不算
+            Matcher m = Pattern.compile(
+                    "(?is)\\b(insert\\s+into|update|delete\\s+from|truncate|alter\\s+table|drop\\s+table)\\s+[\"`]?component_sql_view\\b")
+                    .matcher(stripSqlComments(sql));
+            while (m.find()) {
+                writes.append("\n  ").append(f.getFileName()).append(" → ").append(m.group());
+            }
+        }
+        System.out.println("[" + ac + "] " + mine.size() + " 个迁移文件对 component_sql_view 的写操作命中 = "
+                + (writes.length() == 0 ? "0" : "见断言"));
+        assertEquals("", writes.toString(),
+                ac + ": 本任务的迁移**不得**写 component_sql_view（D-81：删的是配置器元数据，不动视图）。命中：" + writes);
+    }
+
+    /**
+     * AC-113③ / AC-122② 共用的逐字节比对，返回漂移明细（空 = 无漂移）。
+     *
+     * <h3>🚨 比较集为什么是「基线 ∩ 非 V411」，而不是「库 − V411 备份表」</h3>
+     * 旧写法 {@code WHERE id NOT IN (SELECT id FROM component_sql_view_backup_260903)} 取的是**库的当前全集**，
+     * 于是把测试夹具在**本次运行中刚建出来的** {@code builder_*} 视图也卷了进来。这些视图必然不在基线里
+     * （基线是 2026-09-03 抓的），于是走 {@code baseMd5 == null} 分支被判成「本任务新建的视图？」⇒ 漂移。
+     * ⇒ <b>跑测试这个动作本身让判据变红</b>，且第二遍会比第一遍更红。这不是回归，是判据自毁。
+     *
+     * <p>改成从**基线侧**出发遍历后：夹具新建的行 id 不在基线里 ⇒ 根本进不了比较集 ⇒ 判据对「跑了几遍」免疫。
+     * 而本条要防的回归（本任务改了存量视图的 SQL）仍然被完整钉死 —— 那些视图的 id <b>就在</b>基线里。
+     *
+     * <p>📌 「本任务新建了视图」这层担心由 <b>AC-122①</b>（迁移零写，静态文件判据）承担，
+     * 不再靠「库里多出行」来反推 —— 后者分不清「迁移建的」和「测试夹具建的」。
+     *
+     * <p>⚠️ <b>比较集里已从库中消失的行只打印、不断言</b>：实测这类行本身就是被清理掉的测试产物
+     * （{@code test_pricebase_view}），基线抓取时把它一起框进去了。断言它「必须还在」等于要求
+     * 永远不清测试残留 —— 又一条自毁判据。基线本身含 3 条测试产物这件事已在回报里登记。
+     */
+    private List<String> driftAgainstBaseline(Map<String, String> baseline, String ac) {
+        List<String> v411List = strList("SELECT id::text FROM component_sql_view_backup_260903");
+        System.out.println("[" + ac + "] V411(task-260903) 备份表登记的被改视图 = " + v411List.size() + " 个（不计入本任务问责面）");
+        assertFalse(v411List.isEmpty(), notReady(ac,
+                "找不到 component_sql_view_backup_260903 —— 无法区分「V411 改的」与「本任务改的」",
+                "task-260903 的 V410"));
+        Set<String> v411 = new HashSet<>(v411List);
+
+        Map<String, String> nowMd5 = new LinkedHashMap<>();
+        for (Object[] r : rowList("SELECT id::text, md5(sql_template) FROM component_sql_view")) {
+            nowMd5.put(String.valueOf(r[0]), String.valueOf(r[1]));
+        }
+        assertFalse(nowMd5.isEmpty(), notReady(ac, "component_sql_view 是空表，md5 比对等于空跑", "环境"));
+
+        List<String> compare = baseline.keySet().stream().filter(id -> !v411.contains(id)).sorted().toList();
+        // 🚨 阳性对照：比较集必须非空，否则「一个都没漂移」是空跑出来的绿
+        assertFalse(compare.isEmpty(), notReady(ac,
+                "比较集（基线 " + baseline.size() + " 个 ∩ 非 V411）为空 —— 逐字节比对会退化成空跑", "环境"));
+
+        List<String> drift = new ArrayList<>();
+        List<String> gone = new ArrayList<>();
+        int checked = 0;
+        for (String id : compare) {
+            String name = BASELINE_NAMES.getOrDefault(id, "?");
+            String cur = nowMd5.get(id);
+            if (cur == null) {
+                gone.add(name + "(" + id + ")");
+                continue;
+            }
+            checked++;
+            String base = baseline.get(id);
+            if (!base.equals(cur)) {
+                drift.add(name + "(" + id + ") " + base + " → " + cur);
+            }
+        }
+        long outsideBaseline = nowMd5.keySet().stream().filter(id -> !baseline.containsKey(id)).count();
+        System.out.println("[" + ac + "] 比较集 = " + compare.size() + " 个（基线 " + baseline.size()
+                + " − V411 " + v411.size() + "）；实际逐字节比对 " + checked + " 个；漂移 " + drift.size() + " 个");
+        System.out.println("[" + ac + "] ℹ️ 库里基线之外的视图 = " + outsideBaseline
+                + " 个（测试夹具产物 / 别的会话在途探针，**故意不进比较集**，见方法 javadoc）");
+        if (!gone.isEmpty()) {
+            System.out.println("[" + ac + "] ⚠️ 比较集里已从库中消失的 " + gone.size()
+                    + " 个（只报告不断言，基线自带的测试产物）：" + gone);
+        }
+        return drift;
+    }
+
+    /** 去掉 SQL 行注释与块注释，避免注释里提到表名被当成写操作。 */
+    private static String stripSqlComments(String sql) {
+        return sql.replaceAll("(?s)/\\*.*?\\*/", " ").replaceAll("(?m)--.*$", " ");
+    }
+
+    // ═══════════════════════ 辅助 ═══════════════════════
+
+    private static Path baselinePath() {
+        return taskDir().resolve(BASELINE);
+    }
+
+    /** 读基线 tsv → {@code id -> md5}，同时保留 name 供报错时可读。 */
+    /**
+     * id → 视图名（只为报错可读，🚫 不参与比较）。
+     *
+     * <p>🚨 2026-09-04 教训：原实现把 md5 与 name **打包成一个字符串**再 {@code split(" ")[0]} 取回，
+     * 而分隔符实际写成了 NUL（{@code ^@}）⇒ 永不切分 ⇒ 15 个视图**全部误判为漂移**（假红）。
+     * psql 侧逐行 diff 证明它们逐字节一致。教训：**能用两张 map 就别把两个值编码进一个字符串**。
+     */
+    private static final Map<String, String> BASELINE_NAMES = new LinkedHashMap<>();
+
+    private Map<String, String> readBaseline() {
+        Path p = baselinePath();
+        assertTrue(Files.isRegularFile(p),
+                notReady("AC-113/AC-122", "基线文件不存在：" + p, "上一轮测试代理（已落盘，勿重抓）"));
+        List<String> lines;
+        try {
+            lines = Files.readAllLines(p, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new AssertionError("基线文件读不出来：" + p, e);
+        }
+        Map<String, String> m = new LinkedHashMap<>();
+        for (String line : lines) {
+            if (line.isBlank()) {
+                continue;
+            }
+            String[] parts = line.split("\t", -1);
+            assertEquals(3, parts.length,
+                    "基线文件格式应为 <id>\\t<sql_view_name>\\t<md5>，异常行=" + line);
+            m.put(parts[0], parts[2]);
+            BASELINE_NAMES.put(parts[0], parts[1]);
+        }
+        return m;
+    }
+
+    private void assertNoMd5Drift(Map<String, String> baseline, String ac) {
+        List<Object[]> now = rowList(
+                "SELECT id::text, sql_view_name, md5(sql_template) FROM component_sql_view ORDER BY id");
+        assertFalse(now.isEmpty(), notReady(ac, "component_sql_view 是空表，md5 比对等于空跑", "环境"));
+
+        Map<String, String> nowMap = new LinkedHashMap<>();
+        for (Object[] r : now) {
+            nowMap.put(String.valueOf(r[0]), String.valueOf(r[2]) + " " + String.valueOf(r[1]));
+        }
+        System.out.println("[" + ac + "] 基线 " + baseline.size() + " 行 vs 当前 " + nowMap.size() + " 行");
+
+        TreeSet<String> disappeared = new TreeSet<>(baseline.keySet());
+        disappeared.removeAll(nowMap.keySet());
+        TreeSet<String> appeared = new TreeSet<>(nowMap.keySet());
+        appeared.removeAll(baseline.keySet());
+
+        List<String> changed = new ArrayList<>();
+        for (Map.Entry<String, String> e : baseline.entrySet()) {
+            String cur = nowMap.get(e.getKey());
+            if (cur == null) {
+                continue;
+            }
+            String baseMd5 = e.getValue().split(" ")[0];
+            String curMd5 = cur.split(" ")[0];
+            if (!baseMd5.equals(curMd5)) {
+                changed.add(cur.split(" ")[1] + "(" + e.getKey() + ") " + baseMd5 + " → " + curMd5);
+            }
+        }
+
+        StringBuilder err = new StringBuilder();
+        if (!disappeared.isEmpty()) {
+            err.append("\n  基线里有、现在没了（").append(disappeared.size()).append(" 个）：")
+                    .append(describe(baseline, disappeared));
+        }
+        if (!appeared.isEmpty()) {
+            err.append("\n  现在多出来的（").append(appeared.size()).append(" 个）：")
+                    .append(describe(nowMap, appeared));
+        }
+        if (!changed.isEmpty()) {
+            err.append("\n  sql_template 被改过的（").append(changed.size()).append(" 个）：").append(changed);
+        }
+        // 自动归因：若被改的 id 恰好落在某个外部任务留下的备份表里，说明 delta 不是本任务的。
+        String attribution = attribute(changed);
+        assertEquals("", err.toString(),
+                ac + ": 本任务不许改任何存量视图的 SQL（D-81：删的是配置器元数据，不动视图）。差异：" + err
+                        + attribution
+                        + "\n  基线文件=" + baselinePath()
+                        + "\n  基线取法=SELECT id::text, sql_view_name, md5(sql_template) FROM component_sql_view ORDER BY id"
+                        + "\n  🚫 修法一律不是『重抓基线』—— 重抓等于把回归洗白。先查是谁改的。"
+                        + "\n  🔴 若归因显示 delta 全来自外部迁移：AC-122 已由 D-107 改判据，"
+                        + "**AC-113③ 是同一条判据但没跟着改** —— 请主线同步修 AC-113③（本条在修之前判【未验证】）。");
+    }
+
+    /**
+     * 归因：把「被改过的 id 集合」与库里存在的外部备份表做交集，判断 delta 是否来自别的任务。
+     *
+     * <p>2026-09-03 实跑遇到：135 个视图被改，逐一核对后确认是 {@code task-260903} 的
+     * {@code V411__task260903_rewrite_component_sql.sql}（表名替换），并非本任务。
+     * 没有这段归因，报告会写成「本任务造成 135 个视图回归」—— 那会让人去改本来是对的代码。
+     */
+    private String attribute(List<String> changedDesc) {
+        StringBuilder sb = new StringBuilder();
+        List<String> backups = strList(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema='public' "
+                        + "AND table_name LIKE 'component\\_sql\\_view\\_backup%' ORDER BY 1");
+        if (backups.isEmpty()) {
+            return "\n  📌 库里没有 component_sql_view_backup* 备份表，无法自动归因 —— 请人工核对是谁改的。";
+        }
+        sb.append("\n  📌 自动归因（库里发现外部备份表 ").append(backups).append("）：");
+        for (String b : backups) {
+            long overlap = scalarLong(
+                    "SELECT count(*) FROM " + b + " b JOIN component_sql_view v ON v.id = b.id "
+                            + "WHERE md5(v.sql_template) <> md5(b.sql_template)");
+            long total = scalarLong("SELECT count(*) FROM " + b);
+            sb.append("\n    - ").append(b).append("：备份 ").append(total)
+                    .append(" 行，其中当前与备份不同的 ").append(overlap).append(" 行");
+            if (overlap > 0) {
+                sb.append("  ⇒ 这 ").append(overlap)
+                        .append(" 处改动**归属该外部迁移，不是本任务**（本任务的 V412/V413 对 "
+                                + "component_sql_view 的写操作数 = 0，可 grep 复核）。");
+            }
+        }
+        sb.append("\n  🚫 处置一律**不是**「重抓基线」—— 重抓等于把回归洗白。"
+                + "\n     正确动作：确认外部任务的改动是有意的之后，由主线批准重取基线并注明来源。");
+        return sb.toString();
+    }
+
+    private static String describe(Map<String, String> m, TreeSet<String> ids) {
+        List<String> l = new ArrayList<>();
+        for (String id : ids) {
+            String v = m.get(id);
+            l.add((v == null ? "?" : v.split(" ")[1]) + "(" + id + ")");
+        }
+        return l.toString();
+    }
+}

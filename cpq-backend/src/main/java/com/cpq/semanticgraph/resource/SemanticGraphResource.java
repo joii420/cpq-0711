@@ -49,9 +49,14 @@ public class SemanticGraphResource {
     @GET
     @Path("/field-tree")
     public com.cpq.builder.compiler.FieldTreeBuilder.FieldTreeResponse fieldTree(
+            @QueryParam("dialect") String dialect,
             @QueryParam("tabType") String tabType,
             @QueryParam("variantKey") String variantKey,
             @QueryParam("selectedConfig") String selectedConfigJson) {
+        // B-46（AC-116）：数据集决定字段面板出哪些表，过滤在服务端做。
+        // 缺省（不传）= QUOTE；显式传了非三值之一 = 400，见 CompileDialect#parse。
+        // 📌 曾短暂支持过 ?dataset= 别名（前端早期写法），主线 2026-09-03 裁决线上统一用 dialect，
+        //    前端已改完并实测三次请求全部发 dialect ⇒ 别名无消费方，已删除。
         List<BuilderConfig.ColumnConfig> selected = null;
         if (selectedConfigJson != null && !selectedConfigJson.isBlank()) {
             try {
@@ -61,7 +66,8 @@ public class SemanticGraphResource {
                 // 解析失败按"未带 selectedConfig"处理——conflict 恒 false，不 500
             }
         }
-        return service.getFieldTree(tabType, variantKey, selected);
+        return service.getFieldTree(com.cpq.builder.compiler.CompileDialect.parse(dialect),
+                tabType, variantKey, selected);
     }
 
     // ---------------- 节点 ----------------

@@ -12,29 +12,103 @@ import org.junit.jupiter.api.*;
 
 import java.util.UUID;
 
-import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * 需求文档.md §3.1 编译产物正确性 —— AC-1 ~ AC-10。
+ * 🪦 <b>本类原覆盖 需求文档.md §3.1（v8 期 AC-1 ~ AC-10）—— 其中 7 条已于 2026-09-05 作废留碑</b>，
+ * 2 条换成 v9 对象后保留（见下表）。
  *
- * 层级 = T-1（后端单测/接口）。因编译器无公开的内部类契约（尚未实现），一律走
- * {@code POST /api/cpq/components/{id}/builder/compile}（api.md §2.2）这个已定协议的黑盒端点，
- * 断言返回的 sql 文本 —— 与 AC 原文「查看生成的 SQL」的可观测层面完全一致，不依赖任何实现细节。
+ * <h3>裁决来源</h3>
+ * <ul>
+ *   <li><b>用户 2026-09-05 裁决</b>（{@code 需求文档.md} 的 {@code D-123}，「本任务顺手退役掉 v8 期语义图用例」）；</li>
+ *   <li>其技术前提是 <b>{@code D-77}</b>（{@code dialect} 扩三值，{@code COSTING} 作废）与
+ *       <b>{@code D-78}</b>（原 56 条绑死 V6 的 AC 整块作废、按新数据集重写）——
+ *       {@code V413} 已把 V6 的 23 节点 / 25 边 / 7 页签视图 / 145 列声明从 {@code semantic_*} 删光，
+ *       本类下列方法的<b>断言对象整个消失</b>。</li>
+ * </ul>
  *
- * 环境：test profile → cpq_db（与 dev 库 cpq_db_0724 不同库，语义图种子数据 B-1 落地后两库都应有
- * 同一份 17 节点/19 边种子，因为迁移是文件级的，两库各自 migrate-at-start 时都会灌一次）。
+ * <h3>📌 被作废的 7 个方法（保留历史价值说明，勿删）</h3>
+ * <table>
+ *   <tr><th>方法</th><th>它验的是什么</th><th>为什么退役</th><th>接替者</th></tr>
+ *   <tr><td>{@code ac1_materialElementBaseRecipeAndPriceStrategy}</td>
+ *       <td>材质元素页签七项：{@code ebi.material_no AS hf_part_no} / 别名前缀 / 价格策略函数
+ *           {@code f_material_element_price(...) cep} 双条件 JOIN / 无 {@code COALESCE(...,0)} 兜底 /
+ *           <b>{@code is_current}·{@code system_type} 只许出现在顶层 WHERE、不许进 JOIN…ON</b>（铁律⑦）</td>
+ *       <td>锚点 {@code ELEMENT_BOM_ITEM} 与查名节点 {@code LOOKUP_MATERIAL_RECIPE}/{@code LOOKUP_ELEMENT}
+ *           已随 {@code V413} 删除；铁律⑦ 更是被 {@code S-22} <b>反转</b> ——
+ *           新表根本没有 {@code is_current}/{@code system_type} 两列，{@code applyFullScope()} 退化为只做轴收窄</td>
+ *       <td>铁律⑦ → <b>{@code AC-107}</b>（产物不含 {@code system_type}/{@code customer_no}）；<br>
+ *           价格策略原子组 → 本轮保留的 {@link Sec34PriceStrategyTest}（已换 v9 对象，
+ *           {@code FUNC_ELEMENT_PRICE} 节点在 v9 图里仍然存在且仍挂 QUOTE/材质元素）</td></tr>
+ *   <tr><td>{@code ac4_autoLookupJoinNoDuplication}</td>
+ *       <td>查名连线自动生成：{@code COALESCE(mr.name, mm2.material_name)} 双路径合并、
+ *           {@code material_master} 只 JOIN 一次不重复、别名不冲突</td>
+ *       <td><b>v9 图里一条查名边都没有</b>（2026-09-05 实测：{@code semantic_edge.edge_kind} 的 distinct 值
+ *           只有 {@code NARROW}(28) 与 {@code PRICE}(1)，{@code LOOKUP} = 0）——
+ *           新数据集一表一 sheet、列自带中文名，不再需要「按码查名」这一层</td>
+ *       <td>无（判据随对象一并消失）。防线由 {@link #retiredCompileAcs_tombstone_premiseStillHolds()} 守着：
+ *           一旦 {@code LOOKUP}/{@code AUX} 边回来，本条变红要求重新评估</td></tr>
+ *   <tr><td>{@code ac5_auxSourceAsScalarSubquery}</td>
+ *       <td>附属源列编译为<b>相关标量子查询</b>（{@code (SELECT … LIMIT 1)}）而不是 {@code LEFT JOIN}，
+ *           因而行粒度不被附属源改变（拖入前后 {@code grain} 相等）</td>
+ *       <td>v9 的页签视图<b>每个只挂 1 个 SHEET 节点</b>（实测：{@code semantic_tab_view_node} 里
+ *           {@code role='AUX'} 且节点是 SHEET 的行 = 0；唯一的 AUX 是 QUOTE/材质元素 上的
+ *           {@code FUNC_ELEMENT_PRICE}，那是 FUNCTION 不是 Sheet）⇒ 「附属源 Sheet」这个对象不存在</td>
+ *       <td>同上（前提守卫）。行数不翻倍这件事在 v9 由 <b>{@code AC-112①}</b>（桥不扇出）承担</td></tr>
+ *   <tr><td>{@code ac6_bomDiscriminatorDerivedFromTabType}</td>
+ *       <td>物料 BOM 判别式由页签类型推导：外购件产物含 {@code characteristic='OUTSOURCED'}，
+ *           BOM 树产物不含任何 {@code characteristic} 过滤</td>
+ *       <td>v9 全部 44 个节点 {@code discriminator} 均为 NULL（实测）；且 {@code D-112} 查明
+ *           三方言的「零件 / 外购件 / BOM 树」<b>共用同一锚点、{@code tab_view_node} 逐字相同</b>
+ *           ⇒ 零件/外购件本就是 BOM 树的重复读法，判别式无从谈起</td>
+ *       <td>并发任务 <b>{@code task-260904} 页签类型收缩</b>（{@code D-112}：把 3 方言 × {零件,外购件}
+ *           共 6 行 {@code semantic_tab_view} 置 {@code INACTIVE}）</td></tr>
+ *   <tr><td>{@code ac7_mainPartCustomerNarrowingSpecialCase}</td>
+ *       <td>主件页签的客户收窄特例：{@code JOIN material_customer_map mcm ON … AND mcm.customer_no = :customerCode}，
+ *           且不含 {@code mm.is_current}/{@code mm.system_type}，不出现空 {@code WHERE}</td>
+ *       <td>{@code material_customer_map} 与 {@code material_master} 双双出图（{@code AC-102} 点名的 8 张 V6 表之一）；
+ *           新数据集<b>只有 {@code ds_quote_customer_part} 带客户列</b>，而它按 {@code N-19} 明确不进图
+ *           ⇒ 「客户收窄」在 v9 编译器里整个不存在</td>
+ *       <td><b>{@code AC-107}</b>（产物不含 {@code customer_no}）+ <b>{@code AC-108}</b>（三方言轴收窄）</td></tr>
+ *   <tr><td>{@code ac8_expenseTabDualSourceDiscriminator}</td>
+ *       <td>费用类双源判别式：单拖 → {@code price_type = 'INCOMING_MATERIAL_PROCESS'}；
+ *           双拖 → {@code price_type IN ('INCOMING_MATERIAL_PROCESS','INCOMING_MATERIAL_OTHER')}；
+ *           投入料号名称 {@code COALESCE(mm.material_name, mr.name)} 双 LEFT JOIN</td>
+ *       <td>整条建立在 <b>V6「多 sheet 挤一张 {@code unit_price} 表、靠 {@code discriminator} 分流」</b> 之上；
+ *           {@code §9.1.3} 起新模型是<b>一表一 sheet</b>（费用类变体 报价 8 / 基础核价 7 / 明细核价 15，
+ *           各自独立物理表），判别式与双源查名一起消失</td>
+ *       <td><b>{@code AC-106}</b>（三方言 {@code (tab_type, variant_key)} 组合数逐格相等，费用类 8/7/15）</td></tr>
+ *   <tr><td>{@code ac10_pathAmbiguityMustError_negativeCase}</td>
+ *       <td>反证型：两条可达路径时编译必须 400 {@code COMPILE_PATH_AMBIGUOUS} 并列出全部候选路径
+ *           ——「编译器不猜」</td>
+ *       <td>① 该用例<b>自始至终没真跑过</b>：它依赖测试侧虚构的 {@code __testOnlyForcePathAmbiguity} 钩子，
+ *           后端从未实现，2026-08-21 起恒 SKIP（{@code skip != pass}）；
+ *           ② v9 图是<b>星形</b>的 —— 28 条 {@code NARROW} 边全部指向同一个料号桥、桥本身<b>没有出边</b>
+ *           （实测二跳边 = 0）⇒ 只读手段构造不出第二条路径</td>
+ *       <td>🚨 <b>无接替者，这是一个交付缺口</b>：{@code AC-123} 只覆盖四道校验里的第③道「物理存在性」，
+ *           <b>{@code PATH_UNIQUENESS} 在 v9 AC 集合里没有任何一条覆盖</b>。
+ *           已随本次退役一并上报主线（同 {@code Sec36a.ac55}，两者是同一缺口的编译期/保存期两面）</td></tr>
+ * </table>
  *
- * 覆盖：AC-1, AC-2(仅③④两项由本类验，①②在 Sec32/BuilderSave 覆盖), AC-3, AC-4, AC-5, AC-6, AC-7,
- * AC-8, AC-9(反证), AC-10(反证)。
+ * <h3>✅ 换 v9 对象后保留的 2 个方法</h3>
+ * <ul>
+ *   <li>{@link #ac3_artifactShapeInvariants_onV9Graph()} —— 原 {@code ac3}。判据（{@code D-50~D-53}
+ *       闭包统一为「主树供数组」：产物只发 {@code = ANY(:total_material_no)}，
+ *       <b>不得再有 {@code WITH RECURSIVE}/{@code bom_closure}</b>，顶层 {@code FROM} 保持裸表）
+ *       与数据集无关，v9 上依然成立且<b>没有任何 v9 AC 覆盖「不得出现 WITH RECURSIVE」这一条</b>。</li>
+ *   <li>{@link #ac9_generatedShapeMustBeRewriterRecognizable()} —— 原 {@code ac9①}。
+ *       {@code rewriterCompatible}（{@code TABLE_TOKEN} 回扫命中）是编译产物的<b>形状契约</b>，与数据集无关。
+ *       原 {@code ac9②} 的「畸形产物必须被拒」因依赖虚构钩子从未跑通，随本轮一并作废（见方法内注释）。</li>
+ * </ul>
  *
- * 🔄 2026-08-24（D-50~D-53）：AC-3 整条改写——子件闭包由「各页签自建 WITH RECURSIVE」（A 机制）
- * 统一为「主树供 `= ANY(:total_material_no)` 数组，页签消费」（B 机制），旧的「闭包三铁律」断言
- * 全部作废，详见 ac3_childDataNarrowedByTotalMaterialNoArray() 方法头注释。
+ * <h3>🚫 没有留成「永久 skip 的死用例」</h3>
+ * 项目规矩 {@code skip != pass}，故本类<b>不用 {@code @Disabled}</b>。
+ * {@link #retiredCompileAcs_tombstone_premiseStillHolds()} 是一条<b>会真的执行</b>的「作废前提守卫」。
  */
 @QuarkusTest
 @TestProfile(SemanticGraphTestSupport.RbacOffProfile.class)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+@DisplayName("Sec31CompileCorrectnessTest — 🪦 v8 期 AC-1/4/5/6/7/8/10 已作废（2026-09-05 D-123），AC-3/AC-9① 换 v9 对象保留")
 class Sec31CompileCorrectnessTest {
 
     @Inject
@@ -45,16 +119,12 @@ class Sec31CompileCorrectnessTest {
     private UUID componentId;
 
     @BeforeEach
-    void setUp() throws Exception {
+    void setUp() {
         componentId = createBlankComponent();
     }
 
-
     private UUID createBlankComponent() {
-        // 复用既有组件创建端点建一个空壳组件——AC 前置"新建组件"，创建接口不属于本任务范围，
-        // 只作为拿到 componentId 的手段。
         Response resp = RestAssured.given()
-                
                 .contentType(ContentType.JSON)
                 .body("{\"name\":\"" + SemanticGraphTestSupport.TAG + "compile-" + UUID.randomUUID() + "\"}")
                 .post("/api/cpq/components");
@@ -64,430 +134,153 @@ class Sec31CompileCorrectnessTest {
 
     private Response compile(String builderConfigJson) {
         return RestAssured.given()
-                
                 .contentType(ContentType.JSON)
                 .body(builderConfigJson)
                 .post("/api/cpq/components/" + componentId + "/builder/compile");
     }
 
-    // -------------------------------------------------------------------
-    // AC-1（单点）材质元素基础配方 + 价格策略
-    // -------------------------------------------------------------------
+    private long scalar(String sql) {
+        return ((Number) em.createNativeQuery(sql).getSingleResult()).longValue();
+    }
+
+    // ===================================================================
+    // 🪦 作废前提守卫（会真的执行；前提被推翻就变红）
+    // ===================================================================
     @Test
     @Order(1)
-    @DisplayName("AC-1: 材质元素六列 + 价格策略 SQL 七项断言")
-    void ac1_materialElementBaseRecipeAndPriceStrategy() {
+    @DisplayName("🪦 作废前提守卫: V6 物理源全部出图 + 查名/附属边为 0 + 判别式为 0 + 无二跳路径")
+    void retiredCompileAcs_tombstone_premiseStillHolds() {
+        long activeNodes = scalar("SELECT count(*) FROM semantic_node WHERE status='ACTIVE'");
+        long v6Nodes = scalar("SELECT count(*) FROM semantic_node WHERE physical_table IN ("
+                + "'element_bom_item','material_bom_item','unit_price','capacity','material_master',"
+                + "'material_customer_map','material_recipe','element','plating_scheme','annual_discount')");
+        long lookupOrAuxEdges = scalar("SELECT count(*) FROM semantic_edge WHERE edge_kind IN ('LOOKUP','AUX')");
+        long auxSheetNodes = scalar("SELECT count(*) FROM semantic_tab_view_node tvn "
+                + "JOIN semantic_node n ON n.id = tvn.node_id "
+                + "WHERE tvn.role='AUX' AND n.node_kind='SHEET' AND tvn.status='ACTIVE'");
+        long withDiscriminator = scalar("SELECT count(*) FROM semantic_node "
+                + "WHERE discriminator IS NOT NULL AND status='ACTIVE'");
+        long twoHopPaths = scalar("SELECT count(*) FROM semantic_edge e1 JOIN semantic_edge e2 "
+                + "ON e2.from_node_id = e1.to_node_id WHERE e1.status='ACTIVE' AND e2.status='ACTIVE'");
+
+        System.out.println("[🪦 Sec31 留碑] ACTIVE 节点=" + activeNodes + " · V6 物理源节点=" + v6Nodes
+                + " · LOOKUP/AUX 边=" + lookupOrAuxEdges + " · AUX 挂 SHEET=" + auxSheetNodes
+                + " · 带 discriminator 节点=" + withDiscriminator + " · 二跳路径=" + twoHopPaths);
+
+        assertTrue(activeNodes > 0, "🚨 语义图为空（ACTIVE 节点 " + activeNodes + " 个）——"
+                + "这不是「作废前提成立」，是种子没就位。本条判定为【未验证】，🚫 不许当成通过。");
+
+        assertEquals(0L, v6Nodes,
+                "🚦 AC-1/4/5/6/7/8 的作废前提被推翻：V6 物理源又回到语义图里了（命中 " + v6Nodes + " 个节点）。\n"
+                        + "  这些用例是 2026-09-05 按 D-123（技术前提 D-77/D-78 + V413 删 V6 图）作废的，"
+                        + "唯一理由就是「断言对象整个消失」。\n"
+                        + "  对象回来了 ⇒ 必须重新评估：要么把对应用例接回来（历史实现见本类 git 历史），"
+                        + "要么解释清楚新回来的 V6 节点为什么不需要这些编译产物断言。");
+
+        assertEquals(0L, lookupOrAuxEdges,
+                "🚦 AC-4（查名连线自动生成、不重复 JOIN）的作废前提被推翻：图里出现了 "
+                        + lookupOrAuxEdges + " 条 LOOKUP/AUX 边。\n"
+                        + "  作废理由是「v9 一条查名边都没有」。现在有了 ⇒ 「自动生成的查名 JOIN 会不会重复/别名冲突」"
+                        + "这道防线必须重新接上。");
+
+        assertEquals(0L, auxSheetNodes,
+                "🚦 AC-5（附属源编译为相关标量子查询、不改行粒度）的作废前提被推翻：出现了 "
+                        + auxSheetNodes + " 个以 AUX 角色挂在页签视图上的 SHEET 节点。\n"
+                        + "  作废理由是「v9 每个页签视图只挂 1 个 SHEET」。现在多源了 ⇒ 行数翻倍风险回来了，必须重新评估。");
+
+        assertEquals(0L, withDiscriminator,
+                "🚦 AC-6/AC-8（判别式由页签类型推导 / 费用类双源判别式）的作废前提被推翻："
+                        + withDiscriminator + " 个节点重新带上了 discriminator。\n"
+                        + "  作废理由是「新模型一表一 sheet，不再靠判别式分流」。判别式回来了 ⇒ 必须重新评估。");
+
+        assertEquals(0L, twoHopPaths,
+                "🚦 AC-10（路径歧义编译期报错）的作废前提被推翻：图里出现了 " + twoHopPaths + " 条二跳路径。\n"
+                        + "  作废理由之一是「v9 是星形图、桥无出边，只读手段构造不出第二条路径」。\n"
+                        + "  🚨 顺带提醒：PATH_UNIQUENESS 在 v9 AC 集合（AC-101~126）里本来就没有任何一条覆盖，"
+                        + "这是已上报主线的交付缺口 —— 现在有多跳路径了，缺口的风险等级要重新评。");
+    }
+
+    // ===================================================================
+    // ✅ 保留（换 v9 对象）：原 AC-3 —— 编译产物的形状不变量
+    // ===================================================================
+    @Test
+    @Order(2)
+    @DisplayName("AC-3(v9): 产物只用 = ANY(:total_material_no) 收窄；不含 WITH RECURSIVE/bom_closure；顶层 FROM 是裸表")
+    void ac3_artifactShapeInvariants_onV9Graph() {
+        // 换对象取证：v9 QUOTE/材质元素 的锚点是 ds_quote_element_bom（V410 种子），
+        // 由本方法自己从库里查出来，🚫 不写死表名（种子由脚本机器生成，命名不由测试定）。
+        Object[] anchor = (Object[]) em.createNativeQuery(
+                        "SELECT n.node_key, n.physical_table FROM semantic_tab_view v "
+                                + "JOIN semantic_node n ON n.id = v.anchor_node_id "
+                                + "WHERE v.dialect='QUOTE' AND v.tab_type='材质元素' AND v.status='ACTIVE'")
+                .getSingleResult();
+        String anchorKey = String.valueOf(anchor[0]);
+        String anchorTable = String.valueOf(anchor[1]);
+        System.out.println("[AC-3(v9)] QUOTE/材质元素 锚点 node_key=" + anchorKey + " physical_table=" + anchorTable);
+        assertNotNull(anchorTable, "锚点物理表不应为空 —— 环境前置未就绪，本条判定为【未验证】");
+
         String config = """
-                {
-                  "tabType": "材质元素",
-                  "columns": [
-                    {"sourceNodeKey":"LOOKUP_MATERIAL_RECIPE","sourceColumn":"name","fieldName":"材质名称","isRowKey":true},
-                    {"sourceNodeKey":"LOOKUP_ELEMENT","sourceColumn":"element_name","fieldName":"元素名称"},
-                    {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"content","fieldName":"组成含量"},
-                    {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"scrap_rate","fieldName":"损耗率"},
-                    {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"composition_qty","fieldName":"毛用量"},
-                    {"sourceNodeKey":"FUNC_ELEMENT_PRICE","sourceColumn":"unit_price","fieldName":"元素单价"}
-                  ]
-                }
-                """;
+                { "dialect": "QUOTE", "tabType": "材质元素", "columns": [
+                  {"sourceNodeKey":"%s","sourceColumn":"material_part_no","fieldName":"材质料号","isRowKey":true,"isPartNo":true},
+                  {"sourceNodeKey":"%s","sourceColumn":"element_code","fieldName":"元素"},
+                  {"sourceNodeKey":"%s","sourceColumn":"content_pct","fieldName":"组成含量"}
+                ]}
+                """.formatted(anchorKey, anchorKey, anchorKey);
         Response resp = compile(config);
         assertEquals(200, resp.statusCode(), "编译应成功: " + resp.getBody().asString());
         String sql = resp.jsonPath().getString("sql");
         assertNotNull(sql, "sql 字段不应为空");
         assertFalse(sql.isBlank(), "sql 不应为空字符串");
+        System.out.println("[AC-3(v9)] 编译产物:\n" + sql);
 
-        // ① AS hf_part_no，表达式为 ebi.material_no
-        assertTrue(sql.matches("(?s).*\\bebi\\.material_no\\s+AS\\s+hf_part_no\\b.*"),
-                "① 应含 `ebi.material_no AS hf_part_no`，实际 SQL:\n" + sql);
-        // ② 业务列别名均形如 _<来源简称>_<原列名>
-        assertTrue(sql.matches("(?s).*_[\\u4e00-\\u9fa5A-Za-z0-9]+_[\\u4e00-\\u9fa5A-Za-z0-9]+.*"),
-                "② 应出现至少一个 _<来源>_<列名> 形式的业务列别名，实际 SQL:\n" + sql);
-        // ③ 元素单价/货币两列别名不带 _ 前缀
-        // 中文别名在生成的SQL里会被双引号包裹（Postgres非ASCII标识符必须加引号），
-        // 正则需容忍可选的引号，否则会误判真正满足AC的产物为不满足。
-        // Java正则默认\w不含中文字符，紧跟中文的\b边界判定不可靠（引号与中文字之间本就非word/word
-        // 过渡）——去掉两端\b，只保留结构性的"AS <可选引号>元素单价<可选引号>"匹配。
-        assertTrue(sql.matches("(?s).*\\bAS\\s+\"?元素单价\"?[,\\s].*") || sql.matches("(?s).*\\bAS\\s+\"?元素单价\"?\\s*$"),
-                "③ 元素单价别名应为『元素单价』（无前缀），实际:\n" + sql);
-        // ④ LEFT JOIN f_material_element_price(...) cep（不是 f_customer_element_price）
-        assertTrue(sql.contains("f_material_element_price("), "④ 应调用 f_material_element_price(...)，实际:\n" + sql);
-        assertFalse(sql.contains("f_customer_element_price"), "④ 不应出现 f_customer_element_price，实际:\n" + sql);
-        assertTrue(sql.matches("(?s).*LEFT JOIN\\s+f_material_element_price\\([^)]*\\)\\s+cep\\b.*"),
-                "④ 别名须逐字为 cep，实际:\n" + sql);
-        // ⑤ 双条件 JOIN，且 cep.material_no 与 hf_part_no 表达式逐字一致（本例即 ebi.material_no）
-        assertTrue(sql.contains("cep.element_code = ebi.component_no"), "⑤ 缺少元素码条件，实际:\n" + sql);
-        assertTrue(sql.contains("cep.material_no = ebi.material_no"),
-                "⑤ cep.material_no 应与 hf_part_no 表达式(ebi.material_no)逐字一致，实际:\n" + sql);
-        // ⑥ 不含 COALESCE(...,0) 形式的价格兜底
-        assertFalse(sql.matches("(?s).*COALESCE\\([^)]*,\\s*0\\).*"),
-                "⑥ 不应出现 COALESCE(...,0) 价格兜底，实际:\n" + sql);
-        // ⑦ is_current / system_type 只在顶层 WHERE，不在任何 JOIN...ON 内
-        assertNoVersionColumnInJoinOn(sql, "ebi");
+        // ① 锚点轴列上生成 = ANY(:total_material_no)（参数名逐字，允许 ANY(:x) / ANY( :x ) 两种空白写法）
+        assertTrue(sql.matches("(?is).*\\.material_no\\s*=\\s*ANY\\(\\s*:total_material_no\\s*\\).*"),
+                "① 锚点轴列应生成 = ANY(:total_material_no) 收窄谓词，实际:\n" + sql);
+
+        // ② D-50~D-53 闭包统一：全文不得再有 WITH RECURSIVE / bom_closure（A 机制已停用）
+        assertFalse(sql.toUpperCase().contains("WITH RECURSIVE"),
+                "② 不应含 WITH RECURSIVE（D-50 闭包机制已统一为「主树供数组」），实际:\n" + sql);
+        assertFalse(sql.contains("bom_closure"), "② 不应含 bom_closure，实际:\n" + sql);
+
+        // ③ 顶层 FROM 仍是裸表（改写器可识别的形状；与下面 ac9 的 rewriterCompatible 互为印证）
+        assertTrue(sql.matches("(?is).*\\bFROM\\s+" + anchorTable + "\\s+\\w+\\b.*"),
+                "③ 顶层 FROM 应是裸表 " + anchorTable + "，实际:\n" + sql);
     }
 
-    /** 铁律通用校验：把 SQL 按 JOIN...ON 分段，确认 is_current / system_type 不出现在任意 ON 子句内。 */
-    private void assertNoVersionColumnInJoinOn(String sql, String alias) {
-        java.util.regex.Matcher m = java.util.regex.Pattern
-                .compile("(?is)\\bON\\b(.*?)(?=\\bLEFT\\s+JOIN\\b|\\bJOIN\\b|\\bWHERE\\b|$)")
-                .matcher(sql);
-        while (m.find()) {
-            String onClause = m.group(1);
-            assertFalse(onClause.contains(alias + ".is_current"),
-                    "⑦ is_current 不得出现在 JOIN...ON 内，命中片段: " + onClause);
-            assertFalse(onClause.contains(alias + ".system_type"),
-                    "⑦ system_type 不得出现在 JOIN...ON 内，命中片段: " + onClause);
-        }
-        assertTrue(sql.matches("(?is).*\\bWHERE\\b.*" + alias + "\\.is_current.*")
-                        || sql.matches("(?is).*\\bWHERE\\b.*" + alias + "\\.system_type.*"),
-                "⑦ is_current/system_type 至少一项应出现在顶层 WHERE，实际:\n" + sql);
-    }
-
-    // -------------------------------------------------------------------
-    // AC-3（单点）子件数据经主树料号数组收窄（🔄 D-50 改写，原「闭包三铁律」整条作废）
-    // -------------------------------------------------------------------
-    // 2026-08-24 改写说明：D-50 裁决子件闭包统一到 B 机制——递归只发生在 BOM 类型组件一处，
-    // 其余页签一律消费主树算好的 `:total_material_no` 数组，编译产物里**不再有任何用户开关**
-    // 可以左右这段 SQL（AC-60）。本方法验的是 AC-3 原文①~⑤，旧的「闭包三铁律六项」
-    // （WITH RECURSIVE / UNION / GROUP BY root_no,node_no / COALESCE(cl.root_no,...)）全部作废，
-    // 不得沿用旧断言（旧字面量与旧字段 `switches.includeChildParts` 已随 D-51/AC-60 删除，
-    // 继续传它不会报错但也不会再被消费——本用例干脆不传，与 AC-3 原文「无任何用户开关可勾」的
-    // 前置一致）。
+    // ===================================================================
+    // ✅ 保留（换 v9 对象）：原 AC-9① —— 产物形状必须被改写器识别
+    // ===================================================================
+    // 🪦 原 ac9② 一并作废：它靠测试侧虚构的 `__testOnlyForceWrapFromAsSubquery` 开关制造「顶层 FROM 被包成
+    //    子查询」的畸形产物，后端从未实现该开关（架构上编译器完全自己控制 SQL 模板，没有这种合法配置路径），
+    //    2026-08-21 起该分支恒 SKIP —— 它从来没有验证过任何东西，退役掉的是一个从未生效的断言。
+    //    要真正坐实这条反证，需要开发侧给出一个可从公开 API 触达的畸形入口，或证明该畸形在当前架构下不可能发生。
     @Test
     @Order(3)
-    @DisplayName("AC-3: 编译产物用 = ANY(:total_material_no) 收窄，无任何开关、不含 WITH RECURSIVE/bom_closure")
-    void ac3_childDataNarrowedByTotalMaterialNoArray() {
-        // 前置：AC-1 的配置，不带任何 switches 字段。
-        String config = """
-                {
-                  "tabType": "材质元素",
-                  "columns": [
-                    {"sourceNodeKey":"LOOKUP_MATERIAL_RECIPE","sourceColumn":"name","fieldName":"材质名称","isRowKey":true},
-                    {"sourceNodeKey":"LOOKUP_ELEMENT","sourceColumn":"element_name","fieldName":"元素名称"},
-                    {"sourceNodeKey":"FUNC_ELEMENT_PRICE","sourceColumn":"unit_price","fieldName":"元素单价"}
-                  ]
-                }
-                """;
-        Response resp = compile(config);
-        assertEquals(200, resp.statusCode(), "编译应成功: " + resp.getBody().asString());
-        String sql = resp.jsonPath().getString("sql");
-        assertNotNull(sql);
-        assertFalse(sql.isBlank());
+    @DisplayName("AC-9①(v9): 三个页签类型的 v9 产物 rewriterCompatible 均为 true（TABLE_TOKEN 回扫命中≥1）")
+    void ac9_generatedShapeMustBeRewriterRecognizable() {
+        // 每个页签类型用它自己锚点上的一个真实列 —— 锚点与列都从库里现查，不写死。
+        for (String tabType : java.util.List.of("材质元素", "外购件", "主件")) {
+            Object[] anchor = (Object[]) em.createNativeQuery(
+                            "SELECT n.node_key, n.id FROM semantic_tab_view v "
+                                    + "JOIN semantic_node n ON n.id = v.anchor_node_id "
+                                    + "WHERE v.dialect='QUOTE' AND v.tab_type=:tt AND v.status='ACTIVE'")
+                    .setParameter("tt", tabType).getSingleResult();
+            String nodeKey = String.valueOf(anchor[0]);
+            String column = String.valueOf(em.createNativeQuery(
+                            "SELECT c.db_column FROM semantic_node_column c "
+                                    + "WHERE c.node_id = :nid AND c.status='ACTIVE' AND 'PART_NO' = ANY(c.roles) LIMIT 1")
+                    .setParameter("nid", anchor[1]).getSingleResult());
+            System.out.println("[AC-9①(v9)] " + tabType + " → 锚点 " + nodeKey + " 料号列 " + column);
 
-        // ① 锚点表(element_bom_item，别名ebi)的料号列上生成 = ANY(:total_material_no)，
-        //   逐字包含该参数名——允许 ANY(:x) 与 ANY( :x ) 两种空白写法，不允许参数名被换掉。
-        assertTrue(sql.matches("(?is).*\\bebi\\.material_no\\s*=\\s*ANY\\(\\s*:total_material_no\\s*\\).*"),
-                "① 锚点料号列应生成 ebi.material_no = ANY(:total_material_no) 收窄谓词，实际:\n" + sql);
-
-        // ② 全文不含 WITH RECURSIVE、不含 bom_closure（A 机制已停用，closureCte() 不应再被调用）
-        assertFalse(sql.toUpperCase().contains("WITH RECURSIVE"),
-                "② 不应再含 WITH RECURSIVE（A机制已停用），实际:\n" + sql);
-        assertFalse(sql.contains("bom_closure"), "② 不应再含 bom_closure，实际:\n" + sql);
-
-        // ③ hf_part_no 表达式保持锚点自身列(ebi.material_no)，不再改写为 COALESCE(cl.root_no, ...)
-        assertTrue(sql.matches("(?s).*\\bebi\\.material_no\\s+AS\\s+hf_part_no\\b.*"),
-                "③ hf_part_no 应仍为 ebi.material_no（锚点自身列），实际:\n" + sql);
-        assertFalse(sql.contains("COALESCE(cl.root_no"),
-                "③ 不应再出现 COALESCE(cl.root_no, ...) 改写，实际:\n" + sql);
-
-        // ④ 顶层 FROM 仍是裸表 element_bom_item
-        assertTrue(sql.matches("(?is).*\\bFROM\\s+element_bom_item\\s+ebi\\b.*"),
-                "④ 顶层 FROM 应仍是裸表 element_bom_item，实际:\n" + sql);
-
-        // ⑤ 价格策略的 cep.material_no 同样保持锚点自身列，与③一致(逐字 ebi.material_no)
-        assertTrue(sql.contains("cep.material_no = ebi.material_no"),
-                "⑤ 价格策略 cep.material_no 应与 hf_part_no 表达式一致(ebi.material_no)，实际:\n" + sql);
-    }
-
-    // -------------------------------------------------------------------
-    // AC-4（单点）查名连线自动生成，界面不出现 JOIN 字样（SQL 侧的 ①②③④ 四项；⑤属前端 E2E）
-    // -------------------------------------------------------------------
-    @Test
-    @Order(4)
-    @DisplayName("AC-4: 查名连线自动生成，无重复 JOIN 无别名冲突")
-    void ac4_autoLookupJoinNoDuplication() {
-        String config = """
-                {
-                  "tabType": "材质元素",
-                  "columns": [
-                    {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"material_part_no","fieldName":"材质料号"},
-                    {"sourceNodeKey":"LOOKUP_MATERIAL_RECIPE","sourceColumn":"name","fieldName":"材质名称"},
-                    {"sourceNodeKey":"LOOKUP_ELEMENT","sourceColumn":"element_name","fieldName":"元素名称"}
-                  ]
-                }
-                """;
-        Response resp = compile(config);
-        assertEquals(200, resp.statusCode(), "编译应成功: " + resp.getBody().asString());
-        String sql = resp.jsonPath().getString("sql");
-        assertNotNull(sql);
-        assertFalse(sql.isBlank());
-
-        // AC-4原文的"mm2"是在"该表已被第一个别名mm占用"的场景下的示意别名，本用例只单独拖了
-        // 材质名称一列(没有前置占用mm的列)，真跑实测后端自然分配别名"mm"而非"mm2"——这是别名分配器
-        // 的合理结果(无碰撞时没理由多此一举加后缀)，不是bug。放宽为结构性断言：只要求
-        // COALESCE(mr.name, <某别名>.material_name)这个"双路径合并"结构成立，不死抠字面别名。
-        assertTrue(sql.matches("(?s).*COALESCE\\(mr\\.name,\\s*\\w+\\.material_name\\).*"),
-                "① 材质名称表达式应为 COALESCE(mr.name, <别名>.material_name) 结构，实际:\n" + sql);
-        assertTrue(sql.matches("(?s).*LEFT JOIN\\s+material_recipe\\b.*"), "① 应自动出现 LEFT JOIN material_recipe，实际:\n" + sql);
-        assertTrue(sql.matches("(?s).*LEFT JOIN\\s+material_master\\b.*"), "① 应自动出现 LEFT JOIN material_master，实际:\n" + sql);
-        assertTrue(sql.contains("el.element_code = ebi.component_no"),
-                "② 元素名称应自动接 LEFT JOIN element el ON el.element_code = ebi.component_no，实际:\n" + sql);
-
-        // ④ material_master 只应出现一次 JOIN（不管是否被两个码列展开）
-        int joinCount = countOccurrences(sql, "JOIN material_master");
-        assertEquals(1, joinCount, "④ material_master 应恰好出现一次 JOIN，无重复；实际出现 " + joinCount + " 次，SQL:\n" + sql);
-    }
-
-    private static int countOccurrences(String haystack, String needle) {
-        int count = 0, idx = 0;
-        while ((idx = haystack.indexOf(needle, idx)) != -1) {
-            count++;
-            idx += needle.length();
-        }
-        return count;
-    }
-
-    // -------------------------------------------------------------------
-    // AC-5（单点）附属源编译为相关标量子查询，行数不翻倍
-    // -------------------------------------------------------------------
-    @Test
-    @Order(5)
-    @DisplayName("AC-5: 附属源列编译为相关标量子查询，不出现 LEFT JOIN material_bom_item")
-    void ac5_auxSourceAsScalarSubquery() {
-        String config = """
-                {
-                  "tabType": "材质元素",
-                  "columns": [
-                    {"sourceNodeKey":"LOOKUP_MATERIAL_RECIPE","sourceColumn":"name","fieldName":"材质名称","isRowKey":true},
-                    {"sourceNodeKey":"LOOKUP_ELEMENT","sourceColumn":"element_name","fieldName":"元素名称"},
-                    {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"content","fieldName":"组成含量"},
-                    {"sourceNodeKey":"MATERIAL_BOM","sourceColumn":"composition_qty","fieldName":"组成数量"}
-                  ]
-                }
-                """;
-        Response resp = compile(config);
-        assertEquals(200, resp.statusCode(), "编译应成功: " + resp.getBody().asString());
-        String sql = resp.jsonPath().getString("sql");
-        assertNotNull(sql);
-        assertFalse(sql.isBlank());
-
-        // AC-5原文写的"rb"同样是示意别名，真跑实测后端用的是"t"——放宽为任意别名的结构性断言，
-        // 只关心"是相关标量子查询、来自material_bom_item表、带LIMIT 1"这个形状本身。
-        assertTrue(sql.matches("(?is).*\\(SELECT\\b.*FROM\\s+material_bom_item\\s+\\w+\\b.*LIMIT\\s+1\\).*"),
-                "① 组成数量应为相关标量子查询形式，实际:\n" + sql);
-        assertFalse(sql.contains("LEFT JOIN material_bom_item"), "② 不应出现 LEFT JOIN material_bom_item，实际:\n" + sql);
-
-        // ③⑤ 行粒度不因附属源改变——用同样不含附属源的配置再编译一次比对 grain
-        String baseConfig = """
-                {
-                  "tabType": "材质元素",
-                  "columns": [
-                    {"sourceNodeKey":"LOOKUP_MATERIAL_RECIPE","sourceColumn":"name","fieldName":"材质名称","isRowKey":true},
-                    {"sourceNodeKey":"LOOKUP_ELEMENT","sourceColumn":"element_name","fieldName":"元素名称"},
-                    {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"content","fieldName":"组成含量"}
-                  ]
-                }
-                """;
-        Response baseResp = compile(baseConfig);
-        assertEquals(200, baseResp.statusCode());
-        assertEquals(baseResp.jsonPath().getList("grain"), resp.jsonPath().getList("grain"),
-                "⑤ 拖入附属源后行粒度（维度集合）应与拖入前完全一致");
-        // ④ 需要真实预览返回的行数对比，本类不含预览调用（属 T-2/T-3 覆盖，见 PreviewInspectAcTest）——
-        //    此处只做 SQL 结构 + grain 断言，留空非缺陷。
-    }
-
-    // -------------------------------------------------------------------
-    // AC-6（单点）物料 BOM 判别式由页签类型推导
-    // -------------------------------------------------------------------
-    @Test
-    @Order(6)
-    @DisplayName("AC-6: 外购件含 characteristic='OUTSOURCED'，BOM 树不含任何 characteristic 过滤")
-    void ac6_bomDiscriminatorDerivedFromTabType() {
-        String outsourced = """
-                { "tabType": "外购件", "columns": [
-                  {"sourceNodeKey":"MATERIAL_BOM","sourceColumn":"component_no","fieldName":"组成件料号","isRowKey":true}
-                ]}
-                """;
-        Response r1 = compile(outsourced);
-        assertEquals(200, r1.statusCode(), r1.getBody().asString());
-        String sql1 = r1.jsonPath().getString("sql");
-        assertNotNull(sql1);
-        assertFalse(sql1.isBlank());
-        assertTrue(sql1.contains("mbi.characteristic = 'OUTSOURCED'"),
-                "① 外购件应含 mbi.characteristic = 'OUTSOURCED'，实际:\n" + sql1);
-
-        // ⚠️ D-39 冲突记录：主线上一轮说 tabType 存储值='BOM'（无"树"字），但本轮主线给的
-        // semantic-seed-actual.json（从 cpq_db_0724 实表导出）显示 tabViews[0].tabType 实际存的是
-        // 「BOM 树」（带空格）。两份事实来源打架——这里改回按实表数据「BOM 树」发请求，
-        // 否则请求会因匹配不到任何 tabView 而失败，拿不到真实运行结果；已在测试报告里向主线报告此冲突，
-        // 不擅自认定哪一份是"对的"。
-        String bomTree = """
-                { "tabType": "BOM 树", "columns": [
-                  {"sourceNodeKey":"MATERIAL_BOM","sourceColumn":"component_no","fieldName":"料件料号","isRowKey":true}
-                ]}
-                """;
-        Response r2 = compile(bomTree);
-        assertEquals(200, r2.statusCode(), r2.getBody().asString());
-        String sql2 = r2.jsonPath().getString("sql");
-        assertNotNull(sql2);
-        assertFalse(sql2.isBlank());
-        assertFalse(sql2.toLowerCase().contains("characteristic"),
-                "② BOM 树不应含任何 characteristic 过滤，实际:\n" + sql2);
-        // ③（界面无 characteristic/Sheet 选择控件）属前端可观测项，见 E2E sql-view-builder.spec.ts
-    }
-
-    // -------------------------------------------------------------------
-    // AC-7（边界）主件的客户收窄特例
-    // -------------------------------------------------------------------
-    @Test
-    @Order(7)
-    @DisplayName("AC-7: 主件不含 mm.is_current/mm.system_type，收窄全在 JOIN 里，无空 WHERE")
-    void ac7_mainPartCustomerNarrowingSpecialCase() {
-        String config = """
-                { "tabType": "主件", "columns": [
-                  {"sourceNodeKey":"PRODUCT_MASTER","sourceColumn":"material_no","fieldName":"销售料号","isRowKey":true,"isPartNo":true},
-                  {"sourceNodeKey":"PRODUCT_MASTER","sourceColumn":"material_name","fieldName":"物料名称","isPartName":true}
-                ]}
-                """;
-        Response resp = compile(config);
-        assertEquals(200, resp.statusCode(), resp.getBody().asString());
-        String sql = resp.jsonPath().getString("sql");
-        assertNotNull(sql);
-        assertFalse(sql.isBlank());
-
-        assertTrue(sql.matches("(?is).*JOIN\\s+material_customer_map\\s+mcm\\s+ON\\s+mcm\\.material_no\\s*=\\s*mm\\.material_no\\s+AND\\s+mcm\\.customer_no\\s*=\\s*:customerCode.*"),
-                "① 应含 material_customer_map 双条件 JOIN，实际:\n" + sql);
-        assertFalse(sql.contains("mm.is_current"), "② 不应含 mm.is_current（该表无此列），实际:\n" + sql);
-        assertFalse(sql.contains("mm.system_type"), "② 不应含 mm.system_type（该表无此列），实际:\n" + sql);
-        assertFalse(sql.matches("(?is).*\\bWHERE\\s*(\\n|\\r|$).*") || sql.trim().matches("(?is).*WHERE\\s*$"),
-                "③ 不应出现空的 WHERE 子句，实际:\n" + sql);
-    }
-
-    // -------------------------------------------------------------------
-    // AC-8（单点）费用类的双源查名与判别式
-    // -------------------------------------------------------------------
-    @Test
-    @Order(8)
-    @DisplayName("AC-8: 单源 price_type 单值，双源 IN 两值，投入料号名称双 COALESCE")
-    void ac8_expenseTabDualSourceDiscriminator() {
-        String single = """
-                { "tabType": "费用类", "variantKey": "INCOMING_FIXED", "columns": [
-                  {"sourceNodeKey":"INCOMING_FIXED","sourceColumn":"base_value","fieldName":"来料固定加工费","isAmount":true}
-                ]}
-                """;
-        Response r1 = compile(single);
-        assertEquals(200, r1.statusCode(), r1.getBody().asString());
-        String sql1 = r1.jsonPath().getString("sql");
-        assertNotNull(sql1);
-        assertFalse(sql1.isBlank());
-        assertTrue(sql1.contains("price_type = 'INCOMING_MATERIAL_PROCESS'"),
-                "① 只拖固定加工费时应为单值判别式，实际:\n" + sql1);
-
-        String both = """
-                { "tabType": "费用类", "variantKey": "INCOMING_FIXED", "columns": [
-                  {"sourceNodeKey":"INCOMING_FIXED","sourceColumn":"base_value","fieldName":"来料固定加工费","isAmount":true},
-                  {"sourceNodeKey":"INCOMING_OTHER","sourceColumn":"pricing_price","fieldName":"来料其他费用","isAmount":true},
-                  {"sourceNodeKey":"INCOMING_FIXED","sourceColumn":"code","fieldName":"投入料号","isRowKey":true},
-                  {"sourceNodeKey":"LOOKUP_MATERIAL_MASTER","sourceColumn":"material_name","fieldName":"投入料号名称"}
-                ]}
-                """;
-        Response r2 = compile(both);
-        assertEquals(200, r2.statusCode(), r2.getBody().asString());
-        String sql2 = r2.jsonPath().getString("sql");
-        assertNotNull(sql2);
-        assertFalse(sql2.isBlank());
-        assertTrue(sql2.contains("price_type IN ('INCOMING_MATERIAL_PROCESS','INCOMING_MATERIAL_OTHER')"),
-                "② 两组都拖时应为 IN 两值判别式，实际:\n" + sql2);
-        assertTrue(sql2.contains("COALESCE(mm.material_name, mr.name)"),
-                "③ 投入料号名称应为 COALESCE(mm.material_name, mr.name)，实际:\n" + sql2);
-        assertTrue(sql2.matches("(?s).*LEFT JOIN\\s+material_master\\b.*") && sql2.matches("(?s).*LEFT JOIN\\s+material_recipe\\b.*"),
-                "③ 应同时接上 material_master 与 material_recipe 两条 LEFT JOIN，实际:\n" + sql2);
-    }
-
-    // -------------------------------------------------------------------
-    // AC-9（边界·反证）生成形状必须被改写器识别
-    // -------------------------------------------------------------------
-    @Test
-    @Order(9)
-    @DisplayName("AC-9【反证】: TABLE_TOKEN 回扫命中≥1；FROM 被包成子查询后编译必须失败")
-    void ac9_generatedShapeMustBeRewriterRecognizable_negativeCase() {
-        // ① 三个页签类型的产物 TABLE_TOKEN 命中数均 >=1：用 rewriterCompatible 标志代理验证
-        //    （QuotePendingRewriter.TABLE_TOKEN 是既有实现类，本测试不读其源码，只信 api.md 契约：
-        //     compile 响应带 rewriterCompatible 字段即代表该正则回扫结果）。
-        // 三个页签类型各自的锚点节点不同（"MATERIAL_MASTER"这个节点根本不存在，见 golden/semantic-seed-actual.json），
-        // 每个 tabType 用该页签自己主源节点的一个真实存在的列，而不是复用同一份跨页签不成立的列声明。
-        java.util.Map<String, String> tabTypeToColumnSpec = new java.util.LinkedHashMap<>();
-        tabTypeToColumnSpec.put("材质元素", "{\"sourceNodeKey\":\"ELEMENT_BOM_ITEM\",\"sourceColumn\":\"material_part_no\",\"fieldName\":\"料号\",\"isRowKey\":true}");
-        tabTypeToColumnSpec.put("外购件", "{\"sourceNodeKey\":\"MATERIAL_BOM\",\"sourceColumn\":\"component_no\",\"fieldName\":\"料号\",\"isRowKey\":true}");
-        tabTypeToColumnSpec.put("主件", "{\"sourceNodeKey\":\"PRODUCT_MASTER\",\"sourceColumn\":\"material_no\",\"fieldName\":\"料号\",\"isRowKey\":true}");
-        for (var entry : tabTypeToColumnSpec.entrySet()) {
-            String tabType = entry.getKey();
-            String config = "{\"tabType\":\"" + tabType + "\",\"columns\":[" + entry.getValue() + "]}";
+            String config = "{\"dialect\":\"QUOTE\",\"tabType\":\"" + tabType + "\",\"columns\":["
+                    + "{\"sourceNodeKey\":\"" + nodeKey + "\",\"sourceColumn\":\"" + column
+                    + "\",\"fieldName\":\"料号\",\"isRowKey\":true,\"isPartNo\":true}]}";
             Response resp = compile(config);
             assertEquals(200, resp.statusCode(), tabType + " 编译应成功: " + resp.getBody().asString());
             Boolean compat = resp.jsonPath().getBoolean("rewriterCompatible");
-            assertNotNull(compat, tabType + " 响应应带 rewriterCompatible 字段");
-            assertTrue(compat, "① " + tabType + " 的产物 rewriterCompatible 应为 true（TABLE_TOKEN 命中≥1）");
+            assertNotNull(compat, tabType + " 响应应带 rewriterCompatible 字段，实际=" + resp.getBody().asString());
+            assertTrue(compat, "① " + tabType + " 的产物 rewriterCompatible 应为 true（TABLE_TOKEN 命中≥1），"
+                    + "实际 sql=\n" + resp.jsonPath().getString("sql"));
         }
-
-        // ②【破坏方式】人为构造一个"顶层 FROM 被包成子查询"的畸形 builder_config——
-        //    用一个明确越权/不存在于合法拓扑内的 wrapAsSubquery 开关表达"顶层 FROM 非裸表"意图。
-        //    若后端尚未实现该开关，此断言应表现为编译请求本身返回 400（非法配置），同样视为满足
-        //    "不是告警、不是静默通过"这条核心断言；若后端把它当合法配置接受并返回 200 且
-        //    rewriterCompatible=true，则为真缺陷（AC-9 未达成），必须显式报告不算通过。
-        String malformed = """
-                { "tabType": "材质元素", "columns": [
-                  {"sourceNodeKey":"LOOKUP_MATERIAL_RECIPE","sourceColumn":"name","fieldName":"材质名称","isRowKey":true}
-                ], "__testOnlyForceWrapFromAsSubquery": true }
-                """;
-        Response bad = compile(malformed);
-        boolean rejectedOrIncompatible = bad.statusCode() >= 400
-                || (bad.statusCode() == 200 && Boolean.FALSE.equals(bad.jsonPath().getBoolean("rewriterCompatible")));
-        // 2026-08-21 真跑实测：`__testOnlyForceWrapFromAsSubquery` 这个字段是我方虚构的测试钩子，
-        // 后端从未实现过这种开关（架构上编译器完全自己控制SQL生成模板，压根没有"把FROM包成子查询"的
-        // 合法配置路径——这不是留了个洞没堵，而是这个洞本来就不该存在）。真跑结果=200+
-        // rewriterCompatible=true，即"请求被当成普通合法配置处理，畸形标志被忽略"，而不是
-        // "编译器接受了一个真正畸形的产物"。按规则不能悄悄把断言改成配合这个结果，但也不该把它当
-        // "编译器有真bug"上报——这是黑盒测试侧构造不出该反证场景的架构性局限，标记 SKIPPED 并如实说明，
-        // 需要开发侧配合给出一个可从公开API触达的畸形入口，或者证明这条反证在当前架构下根本不可能发生
-        // （因而AC-9②的前提本身不成立）。
-        Assumptions.assumeTrue(rejectedOrIncompatible,
-                "[AC-9②] 测试侧虚构的 __testOnlyForceWrapFromAsSubquery 钩子未被后端实现（被当成普通字段忽略），"
-                        + "无法通过公开API独立构造真正畸形的SQL产物来验证这条反证，标记为 SKIPPED 而非判定为实现bug。"
-                        + "实际 status=" + bad.statusCode() + " body=" + bad.getBody().asString());
-    }
-
-    // -------------------------------------------------------------------
-    // AC-10（边界·反证）路径歧义报错，编译器不猜
-    // -------------------------------------------------------------------
-    @Test
-    @Order(10)
-    @DisplayName("AC-10【反证】: 两条可达路径 → 编译 400 COMPILE_PATH_AMBIGUOUS 且列出两条路径")
-    void ac10_pathAmbiguityMustError_negativeCase() {
-        // 需要在语义图声明中人为构造歧义（等价于 AC-55 在库层构造两条路径），
-        // 用一个明确指向"物料主档"经两条不同链路可达的列请求触发。若语义图种子(B-1)尚未落地，
-        // 或图内本无歧义边组合，本用例的 400 断言天然满足不了正向条件——
-        // 此时应视为"环境前置未就绪"而非用例设计缺陷，须在 test-report.md 里注明并附 body。
-        String config = """
-                { "tabType": "材质元素", "columns": [
-                  {"sourceNodeKey":"LOOKUP_MATERIAL_MASTER","sourceColumn":"material_name","fieldName":"物料名称（歧义列）"}
-                ], "__testOnlyForcePathAmbiguity": true }
-                """;
-        Response resp = compile(config);
-        // 2026-08-21 真跑实测：同 AC-9②，`__testOnlyForcePathAmbiguity` 是测试侧虚构的钩子，
-        // 后端未实现（实测返回200正常SQL，而非400）。当前语义图种子本身应是无歧义的健康状态
-        // （AC-51 验的就是这件事），所以不改图声明的话，compile() 这条路径天然构造不出真实歧义。
-        // AC-55 走的是"在库里构造两条路径的边组合，走保存端点验证"这条更贴近真实的路子——
-        // 若要在编译期（而非保存期）验证AC-10，需要先用写端点临时插入一条歧义边、编译后再撤销，
-        // 这涉及写共享库的语义图数据，超出本用例原设计的只读探测范围，标记为架构性局限，非实现bug。
-        Assumptions.assumeTrue(resp.statusCode() == 400,
-                "[AC-10] 测试侧虚构的 __testOnlyForcePathAmbiguity 钩子未被后端实现，且当前语义图种子本身"
-                        + "无歧义（compile()只读、不改图声明构造不出真实的两条路径场景）。标记为 SKIPPED——"
-                        + "如需坐实，应改造为像 AC-55 那样先用写端点临时插入歧义边再编译。"
-                        + "实际 status=" + resp.statusCode() + " body=" + resp.getBody().asString());
-        assertEquals("COMPILE_PATH_AMBIGUOUS", resp.jsonPath().getString("code"), "错误码应为 COMPILE_PATH_AMBIGUOUS");
-        java.util.List<?> paths = resp.jsonPath().getList("paths");
-        assertNotNull(paths, "应带 paths 字段列出候选路径");
-        assertFalse(paths.isEmpty(), "候选路径不应为空");
-        assertTrue(paths.size() >= 2, "应列出全部（至少两条）候选路径，实际=" + paths.size());
     }
 }

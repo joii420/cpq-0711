@@ -69,3 +69,7 @@ task_plan.md
 
 # Codegraph 本地索引(不入库)
 .codegraph/
+
+# 并发代理生成的 Python 编译产物（task-260819 v9 种子生成脚本）
+__pycache__/
+*.pyc

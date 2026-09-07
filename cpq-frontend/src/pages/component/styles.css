@@ -805,3 +805,8 @@
 .svb-stale-bar { display:flex; align-items:center; gap:10px; margin-bottom:8px; padding:6px 10px; border-radius:6px;
   background:rgba(90,150,240,.12); border:1px solid rgba(90,150,240,.45); font-size:12px; }
 .svb-guide { padding:40px 24px; text-align:center; color:var(--svb-sub); }
+
+/* F-30（task-260819 v9）：数据集选择器相关的空态 / 不进图警示块 */
+.svb-empty-tip { padding:22px 14px; text-align:center; color:var(--svb-sub); border:1px dashed var(--svb-border); border-radius:8px; font-size:12px; line-height:1.7; margin:8px 4px; }
+.svb-dead-block { margin:10px 4px 4px; padding:8px 10px; background:#fff8c5; border:1px solid #eed888; border-radius:6px; color:#6f5500; font-size:11px; line-height:1.8; }
+.svb-dead-block code { background:rgba(0,0,0,.06); border-radius:3px; padding:0 4px; }

@@ -8,16 +8,87 @@
 //    （GET /field-tree 带 selectedConfig 时返回 groups[].conflict），前端只读展示、不自行判定。
 //    详见 sqlViewBuilderService.ts 顶部注释（含与 api.md §2.1a 的对齐记录）。
 import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Checkbox, Drawer, Dropdown, Input, Select, Space, message, Modal, Tooltip } from 'antd';
+import { Alert, Button, Checkbox, Drawer, Dropdown, Input, Segmented, Select, Space, message, Modal, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   fetchFieldTree, getBuilder, compileBuilder, previewBuilder, inspectBuilder, saveBuilder, detachBuilder,
   type FieldTreeResponse, type FieldTreeColumn, type FieldTreeGroup, type BuilderConfigPayload, type CompileResponse,
   type CompileErrorBody, type PreviewResponse, type InspectResponse, type FieldRole, type SavedBuilderColumn,
+  type BuilderDataset,
 } from '../../services/sqlViewBuilderService';
 import { customerService } from '../../services/customerService';
 
 // ── 常量 ────────────────────────────────────────────────────────────────
+
+/**
+ * F-30（v9 · S-27，AC-115）：三套数据集。**顺序、显示名与原型 `原型-v9-数据集与字段面板.html` 的
+ * `DS` 常量逐字一致**（报价 / 基础核价 / 明细核价）。
+ *
+ * 📌 这里为什么可以是本地常量（而「数据来源」下拉的选项绝对不可以）：
+ *    数据集是 D-77 裁死的三值枚举（= 后端 `CompileDialect` 的三个枚举名），属于**协议常量**；
+ *    而费用类的「数据来源」变体数随数据集变（报价 8 / 基础核价 7 / 明细核价 15，§9.2），是**数据**，
+ *    只能来自 `GET /field-tree` 的 `variants`（见下方渲染处，本次改动一个数字都没往里写）。
+ *
+ * `axis` / `tablePrefix` 同属数据集身份（需求文档 §9.1.1 的轴列定义），只用于顶部说明行的文案；
+ * 🚫 不参与任何过滤/编译判定 —— 真正的「本数据集有哪些表」由服务端字段树给出。
+ */
+const DATASETS: ReadonlyArray<{
+  key: BuilderDataset; label: string; tablePrefix: string; axis: string; note: string;
+}> = [
+  {
+    key: 'QUOTE', label: '报价', tablePrefix: 'ds_quote_', axis: '销售料号 material_no',
+    note: '版本切换是核价侧独有功能，报价侧不建全版本视图',
+  },
+  {
+    key: 'COST_BASIC', label: '基础核价', tablePrefix: 'ds_cost_basic_', axis: '生产料号 production_no',
+    note: '带版本表指向 v_<主表>_all 全版本视图',
+  },
+  {
+    key: 'COST_DETAIL', label: '明细核价', tablePrefix: 'ds_cost_detail_', axis: '生产料号 production_no',
+    note: '带版本表指向 v_<主表>_all 全版本视图',
+  },
+];
+const DEFAULT_DATASET: BuilderDataset = 'QUOTE';
+const datasetLabel = (k: BuilderDataset) => DATASETS.find((d) => d.key === k)?.label ?? k;
+
+/**
+ * F-30：明确**不进语义图**的表（配置器里拖不到），照原型的 `deadBlock()` 渲染成一块警示。
+ * 依据是需求文档 §9.2 的「不进图」行 + N-18 / N-19 两条明确不做项 —— 这些表按定义不会出现在
+ * `GET /field-tree` 的响应里，所以只能由前端说明「它为什么不在这儿」，否则配置人员会一直找它。
+ * 🚫 这不是「本数据集有哪些表」的清单（那由服务端给），只是缺席原因的说明文案。
+ */
+const EXCLUDED_TABLES: Partial<Record<BuilderDataset, Array<{ table: string; label: string; reason: string }>>> = {
+  // 表名 / 中文名 / 顺序均逐字取自原型 `原型-v9-数据集与字段面板.html` 的 DATA.quote（tab 以「不进图」开头的 4 张）。
+  QUOTE: [
+    { table: 'ds_quote_customer_part', label: '客户料号', reason: 'N-19 无轴列语义' },
+    { table: 'ds_quote_assembly_fee_annual', label: '组装加工费年降', reason: 'N-18 年降，用户已裁不做' },
+    { table: 'ds_quote_incoming_annual', label: '来料年降', reason: 'N-18 年降，用户已裁不做' },
+    { table: 'ds_quote_annual_discount', label: '年降系数', reason: 'N-18 年降，用户已裁不做' },
+  ],
+};
+
+/**
+ * F-30（AC-116）：一个字段分组属于哪套数据集 —— **只认服务端给的 `group.dialect`**。
+ *
+ * 🚨 **前端不可能自己推断出来，别再试**（2026-09-03 实测 V410 种子迁移）：
+ *    `semantic_node.node_key` 跨方言重名 —— `MATERIAL` / `MATERIAL_BOM` / `ELEMENT_BOM` 等
+ *    **10 个键在三套数据集里各有一份**，真正区分它们的是 `physical_table`
+ *    （`ds_quote_material` vs `ds_cost_basic_material` vs `ds_cost_detail_material`）与
+ *    `semantic_node.dialect`，而字段树只给 `sourceNodeKey`（= node_key）。
+ *    ⇒ 曾经写过的「按 sourceNodeKey 的 ds_* 前缀推断」是**永远不命中的死代码**，已删除。
+ *
+ * 🚫 返回 null（服务端没给）时**保留该分组**，不藏：把面板变空是比多显示更难诊断的失败形态。
+ *    这意味着 **AC-116 的达成取决于服务端**（见 sqlViewBuilderService.ts `FieldTreeGroup.dialect`
+ *    的注释：`GET /field-tree` 目前既不收方言入参也不回该字段，缺口已报主线）。
+ */
+function detectGroupDataset(g: FieldTreeGroup): BuilderDataset | null {
+  return g.dialect ?? null;
+}
+
+/** 把存量 / 异常的方言值归一到三值之一（旧值 `"COSTING"`、缺省、拼错都落到 QUOTE，与后端 resolveDialect 同口径）。 */
+function normalizeDataset(v: unknown): BuilderDataset {
+  return DATASETS.some((d) => d.key === v) ? (v as BuilderDataset) : DEFAULT_DATASET;
+}
 
 /**
  * AC-25：页签类型下拉含 6 项（新增「费用类」，D-34 分立建模）。字段树 availableTabTypes 缺失时的兜底常量。
@@ -31,6 +102,11 @@ import { customerService } from '../../services/customerService';
 const TAB_TYPES = ['主件', '材质元素', '零件', '外购件', '费用类', 'BOM'] as const;
 /** D-39：仅 BOM 的显示名与存储值不同；其余 5 类未列出时 Select 渲染逻辑回退用存储值本身当显示名。 */
 const TAB_TYPE_LABEL: Record<string, string> = { BOM: 'BOM 树' };
+// 📌 此处原有 `TAB_TYPE_VALUE_BY_LABEL` / `canonTabType` 两种写法归一的比较垫片，
+//    为绕开 V413 种子把 `semantic_tab_view.tab_type` 写成显示名「BOM 树」的缺陷而加；
+//    已由 V417 修复根因后撤销（D-39 / 2026-09-05 用户裁决）。
+//    服务端 `availableTabTypes` 现回**存储值**，与本地 `TAB_TYPES` 逐字一致。
+//    🚫 不要再加回归一层 —— 两边写法本该一致，归一只会掩盖下一次的口径漂移。
 const ROLE_LABEL: Record<FieldRole, string> = { PART_NO: '料号', PART_NAME: '名称', ROW_KEY: '行键', SORT: '排序' };
 const DATA_TYPE_LABEL: Record<string, string> = { TEXT: '文本', NUMBER: '数字', MONEY: '金额' };
 
@@ -168,6 +244,8 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
   const [guideMode, setGuideMode] = useState(false);
   const [hasDriver, setHasDriver] = useState(false);
 
+  /** F-30（AC-115）：当前数据集。它决定字段面板出哪些表，所以在页签类型**之前**选。 */
+  const [dataset, setDataset] = useState<BuilderDataset>(DEFAULT_DATASET);
   const [tabType, setTabType] = useState<string>(TAB_TYPES[0]);
   const [variantKey, setVariantKey] = useState<string | null>(null);
   const [sel, setSel] = useState<SelColumn[]>([]);
@@ -243,6 +321,7 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
     pendingRehydrateRef.current = null;
     setSel([]);
     setSavedSnapshot(null); // D-55①：基线未知（NEW/BUILDER 分支各自补上；BUILDER 要等 rehydrate 完成 sel 才算数）
+    setDataset(DEFAULT_DATASET);
     setElemKeyOverrideField(null);
     setStaleInfo(null);
     setStaleDismissed(false);
@@ -261,9 +340,10 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
       } else if (viewState === 'NEW') {
         // 全新组件，尚无任何 SQL 视图：直接进入空白拖拽态（页签类型可选、字段面板可用、已选列为空）
         const initT = initialTabType && (TAB_TYPES as readonly string[]).includes(initialTabType) ? initialTabType : TAB_TYPES[0];
+        setDataset(DEFAULT_DATASET);
         setTabType(initT);
         setVariantKey(null);
-        setSavedSnapshot(JSON.stringify(configPayloadFor(initT, null, [], null))); // D-55①：新组件的基线 = 空配置
+        setSavedSnapshot(JSON.stringify(configPayloadFor(DEFAULT_DATASET, initT, null, [], null))); // D-55①：新组件的基线 = 空配置
       } else {
         // BUILDER：回填已有配置（savedSnapshot 留到下面的 rehydrate useEffect 里补——那时 sel 才真正建好）
         //
@@ -277,6 +357,10 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
           return;
         }
         setHasDriver(true);
+        // F-30：存量 builder_config 可能没有 dialect 键、或带着已作废的旧值 "COSTING" ——
+        // 一律归一到三值（按 QUOTE 兜底）而不是报错，老配置照常打开；
+        // 用户一旦切数据集，走的就是带确认的 handleDatasetChange。
+        setDataset(normalizeDataset(builderConfig.dialect));
         setTabType(builderConfig.tabType);
         setVariantKey(builderConfig.variantKey ?? null);
         setOldSqlTemplate(sqlTemplate ?? null);
@@ -315,8 +399,12 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
   // 拆成纯函数 configPayloadFor + 薄封装 buildConfigPayload：D-55① 的快照比对需要在"值刚被算出、
   // 尚未等一轮 re-render 提交进 state"的时刻（loadBuilderState 的 NEW 分支、rehydrate 完成后）就地
   // 算一次等价 payload 当基线，不依赖组件 state 闭包此刻是否已提交完成。
-  function configPayloadFor(t: string, vk: string | null, selCols: SelColumn[], override: string | null): BuilderConfigPayload {
+  function configPayloadFor(ds: BuilderDataset, t: string, vk: string | null, selCols: SelColumn[], override: string | null): BuilderConfigPayload {
     const payload: BuilderConfigPayload = {
+      // F-30（AC-115）：数据集随 config 走全链路（compile / preview / inspect / save 共用同一份请求体），
+      // 因此也天然进了 D-55① 的 dirty 快照 —— 切数据集算未保存改动，不需要额外埋点。
+      // 🚨 键名是 `dialect`（后端 BuilderConfig 的字段名），发成 `dataset` 会被静默忽略并按 QUOTE 编译。
+      dialect: ds,
       tabType: t,
       variantKey: vk,
       columns: selCols.map((s) => ({
@@ -340,7 +428,7 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
     return payload;
   }
   function buildConfigPayload(): BuilderConfigPayload {
-    return configPayloadFor(tabType, variantKey, sel, elemKeyOverrideField);
+    return configPayloadFor(dataset, tabType, variantKey, sel, elemKeyOverrideField);
   }
   // D-55①：单一快照判据，天然覆盖 tabType/variantKey/columns/priceStrategy 全部配置项——
   // savedSnapshot === null（尚未确立基线，如 initLoading/guideMode 期间）时一律判定不 dirty。
@@ -354,7 +442,7 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
     const selectedConfig = sel.length ? buildConfigPayload() : undefined;
     (async () => {
       try {
-        const res = await fetchFieldTree(tabType, variantKey, selectedConfig);
+        const res = await fetchFieldTree(dataset, tabType, variantKey, selectedConfig);
         if (cancelled) return;
         setFieldTree(res);
         // 默认折叠态照原型（原型 .grp 默认带 collapsed class）——仅首次拿到该 tabType 的分组时设置，
@@ -374,7 +462,7 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabType, variantKey, initLoading, guideMode,
+  }, [dataset, tabType, variantKey, initLoading, guideMode,
     sel.map((s) => `${s.sourceNodeKey}.${s.sourceColumn}`).join('|')]);
 
   // 首次进入某 tabType 时字段面板默认全折叠（原型默认态）；后续 selectedConfig 触发的重拉不重置折叠态。
@@ -390,6 +478,11 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
     const pending = pendingRehydrateRef.current;
     if (!fieldTree || !pending) return;
     const allCols: Array<{ col: FieldTreeColumn; group: FieldTreeGroup }> = [];
+    // F-30：这里**故意**用未过滤的 fieldTree.groups（而 addColumn 用 visibleGroups）——两者目的相反：
+    // addColumn 是「往已选里加新列」，必须受 AC-116 约束；这里是「把已保存的列找回它的角色信息」，
+    // 找不到就退化成 fromSavedColumn（丢角色但不丢列）。若这里也过滤，一旦 detectGroupDataset 误判
+    // 就会让存量配置静默丢失角色信息，属于更糟的失败形态。dataset 已在 fetch 前按 builderConfig 设好，
+    // 正常路径下服务端返回的本就只有本数据集的分组，两者等价。
     fieldTree.groups.forEach((g) => g.fields.forEach((c) => allCols.push({ col: c, group: g })));
     const rebuilt: SelColumn[] = pending.columns.map((bc) => {
       const found = allCols.find((x) => x.col.sourceNodeKey === bc.sourceNodeKey && x.col.sourceColumn === bc.sourceColumn);
@@ -410,7 +503,7 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
     setElemKeyOverrideField(override);
     // D-55①：这一刻 sel（+ 上面回填的 override）才真正等于"服务端已保存的样子"——用 pending 自带的
     // tabType/variantKey（不依赖 tabType/variantKey state 此刻是否已提交完成的时序假设）。
-    setSavedSnapshot(JSON.stringify(configPayloadFor(pending.tabType, pending.variantKey ?? null, rebuilt, override)));
+    setSavedSnapshot(JSON.stringify(configPayloadFor(normalizeDataset(pending.dialect), pending.tabType, pending.variantKey ?? null, rebuilt, override)));
     pendingRehydrateRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fieldTree]);
@@ -425,7 +518,10 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
     if (group.groupKind === 'PRICE' && !elemKeyCol) {
       // AC-20：拖价格策略列时若无元素列，自动带出元素符号列（取价函数 JOIN 左键，缺它接不上）
       let ek: { col: FieldTreeColumn; group: FieldTreeGroup } | null = null;
-      for (const g of fieldTree?.groups || []) {
+      // F-30（AC-116）：自动带出的元素列也必须来自**当前数据集可见的分组**。
+      // 用未过滤的 fieldTree.groups 会在服务端漏过滤时，把另一套数据集的元素列悄悄塞进"已选输出列"——
+      // 那列在左侧面板里根本看不见（AC-116 要求不出现），用户无从解释它是哪来的，也删不掉整组的来源。
+      for (const g of visibleGroups) {
         for (const c of g.fields) if (c.elemKey) { ek = { col: c, group: g }; break; }
         if (ek) break;
       }
@@ -553,6 +649,40 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
 
   // ── tabType / variant 切换：换主源 Sheet → 已选列全部失效 → 二次确认后清空（F-1）───
   // D-51：不再有「switch 切换」这回事——子件闭包开关整体移除（AC-60），toggleSwitch 已删除。
+  /**
+   * F-30（AC-115 ④）：切数据集的破坏性**比切页签类型更强** —— 跨数据集的表与列完全不通
+   * （报价轴是 material_no、核价两套轴是 production_no，物理表都不是同一批），已选列一个都保不住。
+   * 所以确认文案照原型逐字写清「切到哪」「几个列会没」，而不是复用页签类型那句笼统的「继续？」。
+   */
+  function handleDatasetChange(v: BuilderDataset) {
+    if (v === dataset) return;
+    const doSwitch = () => {
+      setDataset(v);
+      // 页签类型回到「主件」：§9.2 映射表里三套数据集都有主件，是唯一一个必定可选的落点。
+      setTabType(TAB_TYPES[0]);
+      setVariantKey(null);
+      setSel([]);
+      setElemKeyOverrideField(null);
+      setFieldTree(null);
+      setCollapsed(new Set());
+    };
+    if (sel.length) {
+      Modal.confirm({
+        title: '切换数据集会清空已选输出列',
+        content: (
+          <div>
+            <div>
+              从 <b>{datasetLabel(dataset)}</b> 切到 <b>{datasetLabel(v)}</b>，当前已选的 <b>{sel.length}</b> 个输出列将被清空。
+            </div>
+            <div style={{ marginTop: 10, background: '#fff8c5', border: '1px solid #eed888', borderRadius: 6, padding: '6px 10px', fontSize: 12 }}>
+              跨数据集的表与列<b>完全不通</b>——不像切页签类型还可能留下同名列，这里已选的列一个都保不住。
+            </div>
+          </div>
+        ),
+        okText: '确认切换', okButtonProps: { danger: true }, cancelText: '取消', onOk: doSwitch,
+      });
+    } else doSwitch();
+  }
   function handleTabTypeChange(v: string) {
     if (v === tabType) return;
     const doSwitch = () => {
@@ -795,10 +925,74 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
       </div>
     );
   }
-  const totalFieldCount = useMemo(() => {
-    if (!fieldTree) return 0;
-    return fieldTree.groups.reduce((sum, g) => sum + g.fields.length, 0);
+  /**
+   * F-30：本数据集里**明确不进语义图**的表（配置器拖不到）单列一块警示，照原型 `deadBlock()`。
+   * 不写它的话，配置人员会在字段面板里反复找 `ds_quote_customer_part` 这类表却得不到任何解释。
+   */
+  function renderExcludedTables() {
+    const dead = EXCLUDED_TABLES[dataset];
+    if (!dead || !dead.length) return null;
+    return (
+      <div className="svb-dead-block">
+        <b>本数据集有 {dead.length} 张表不进语义图</b>（配置器里拖不到）：
+        {dead.map((d, i) => (
+          <span key={d.table}>
+            {i > 0 && '　·　'}
+            <code>{d.table}</code>（{d.label}，{d.reason}）
+          </span>
+        ))}
+      </div>
+    );
+  }
+
+  /**
+   * F-30（AC-116）：字段面板只出**当前数据集**的表，另两套一张都不出现（不是置灰，是不出现）。
+   * 第一道防线在服务端（`GET /field-tree?dataset=`）；这里是第二道，防「服务端漏过滤 / 还没改完」时
+   * 界面上真的把别套数据集的表画出来。`detectGroupDataset` 推不出归属的分组一律保留，见其函数注释。
+   */
+  const visibleGroups = useMemo(() => {
+    if (!fieldTree) return [] as FieldTreeGroup[];
+    return fieldTree.groups.filter((g) => {
+      const d = detectGroupDataset(g);
+      return d === null || d === dataset;
+    });
+  }, [fieldTree, dataset]);
+  const totalFieldCount = useMemo(
+    () => visibleGroups.reduce((sum, g) => sum + g.fields.length, 0),
+    [visibleGroups],
+  );
+  /**
+   * F-30（AC-115 ③）：本数据集是否没有当前页签类型。判据只用服务端的 `availableTabTypes`
+   * （§9.2 的映射是服务端语义图的事实，前端不复刻那张表）；服务端没给就不判定为"无"。
+   * 📌 D-39：两侧都是**存储值**，逐字比较即可（原 `canonTabType` 归一已随 V417 撤销）。
+   */
+  const tabTypeMissingInDataset =
+    !!fieldTree?.availableTabTypes
+    && !fieldTree.availableTabTypes.includes(tabType);
+  /**
+   * 页签类型下拉：本数据集有的照常可选，**没有的置灰 + 加「（本数据集无）」后缀**（AC-115 ③）。
+   * 📌 D-39：选项 `value` 一律用本地 `TAB_TYPES` 的**存储值** —— 它就是随 configPayloadFor 提交给
+   *    后端、写进 `builder_config.tabType` 的那个字符串；`label` 走 `TAB_TYPE_LABEL` 只管显示。
+   *    原「value 沿用服务端写法 + canonTabType 归一比较」的兼容层，为绕开 V413 种子把
+   *    `semantic_tab_view.tab_type` 写成显示名「BOM 树」的缺陷而加，已由 V417 修复根因后撤销
+   *    （2026-09-05 用户裁决）。
+   */
+  const tabTypeOptions = useMemo(() => {
+    const avail = fieldTree?.availableTabTypes ?? null;
+    const availSet = new Set(avail ?? []);
+    const known = (TAB_TYPES as readonly string[]).map((t) => {
+      const label = TAB_TYPE_LABEL[t] ?? t;
+      // avail 缺失（后端没给这个字段）时一律不置灰——不能把用户锁死在无法选择的状态
+      const disabled = !!avail && !availSet.has(t);
+      return { value: t, label: disabled ? `${label}（本数据集无）` : label, disabled };
+    });
+    // 服务端多给的类型（本地常量还没跟上）照原样追加，不丢
+    const extra = (avail ?? [])
+      .filter((t) => !(TAB_TYPES as readonly string[]).includes(t))
+      .map((t) => ({ value: t, label: TAB_TYPE_LABEL[t] ?? t, disabled: false }));
+    return [...known, ...extra];
   }, [fieldTree]);
+  const datasetMeta = DATASETS.find((d) => d.key === dataset)!;
 
   // ── 渲染：已选输出列（含价格策略原子组块，F-5）──────────────────────────
   function renderRoleBadges(s: SelColumn) {
@@ -1016,8 +1210,16 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
 
       <div className="svb-recipe-bar">
         <div className="svb-rb-line">
-          <span className="svb-lbl">页签类型</span>
-          <Select size="small" style={{ width: 140 }} value={tabType} onChange={handleTabTypeChange} options={(fieldTree?.availableTabTypes ?? TAB_TYPES as unknown as string[]).map((t) => ({ value: t, label: TAB_TYPE_LABEL[t] ?? t }))} />
+          {/* F-30（AC-115）：数据集三选一——**位置必须在「页签类型」之前**，它决定字段面板出哪些表。 */}
+          <span className="svb-lbl">数据集</span>
+          <Segmented
+            size="small"
+            value={dataset}
+            onChange={(v) => handleDatasetChange(v as BuilderDataset)}
+            options={DATASETS.map((d) => ({ value: d.key, label: d.label }))}
+          />
+          <span className="svb-lbl" style={{ marginLeft: 14 }}>页签类型</span>
+          <Select size="small" style={{ width: 168 }} value={tabType} onChange={handleTabTypeChange} options={tabTypeOptions} />
           {fieldTree?.variants && fieldTree.variants.length > 0 && (
             <>
               <span className="svb-lbl" style={{ marginLeft: 14 }}>数据来源</span>
@@ -1025,6 +1227,13 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
               <span className="svb-hint-i">{fieldTree.variants.find((v) => v.key === (variantKey ?? fieldTree.variants![0].key))?.hint}</span>
             </>
           )}
+        </div>
+        <div className="svb-rb-line">
+          {/* F-30：数据集身份说明（轴列 / 表前缀 / 版本口径），照原型的 axisInfo 行。
+              🚫 不含任何「本数据集有几张表」的写死数字——那是数据，只能来自服务端字段树。 */}
+          <span className="svb-hint-i">
+            轴列 <b>{datasetMeta.axis}</b>{'　·　'}表前缀 <code>{datasetMeta.tablePrefix}</code>{'　·　'}{datasetMeta.note}
+          </span>
         </div>
         <div className="svb-rb-line">
           <span>取数：<b>{fieldTree?.anchorDesc ?? (treeLoading ? '加载中…' : '—')}</b>　·　行粒度：<b>{grainText}</b></span>
@@ -1036,7 +1245,20 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
       <div className="svb-cols">
         <div className="svb-pane left">
           <div className="svb-pane-h"><b>可用字段</b><span>{treeLoading ? '加载中…' : `共 ${totalFieldCount} 个字段`}</span></div>
-          <div className="svb-pane-b">{fieldTree?.groups.map((g) => renderGroup(g))}</div>
+          <div className="svb-pane-b">
+            {/* AC-116：只渲染 visibleGroups——别套数据集的分组连 DOM 都不生成（不是置灰） */}
+            {visibleGroups.map((g) => renderGroup(g))}
+            {/* AC-115 ③：本数据集没有该页签类型时的空态文案（下拉里对应项已置灰） */}
+            {!treeLoading && fieldTree && visibleGroups.length === 0 && (
+              <div className="svb-empty-tip">
+                {tabTypeMissingInDataset
+                  ? `本数据集下没有「${TAB_TYPE_LABEL[tabType] ?? tabType}」类型的表 —— 该页签类型不可选（下拉里已置灰）。`
+                  : `「${datasetLabel(dataset)}」数据集在当前页签类型下没有可用字段。`}
+              </div>
+            )}
+            {/* 原型 render()：deadBlock 只跟在有卡片的 grid 后面，空态分支只渲染 .empty —— 照此对齐 */}
+            {visibleGroups.length > 0 && renderExcludedTables()}
+          </div>
         </div>
         <div className="svb-pane right">
           <div className="svb-pane-h"><b>已选输出列</b></div>

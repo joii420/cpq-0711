@@ -1,7 +1,5 @@
 package com.cpq.semanticgraph;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.TestProfile;
 import io.restassured.RestAssured;
@@ -12,7 +10,6 @@ import jakarta.persistence.EntityManager;
 import jakarta.transaction.UserTransaction;
 import org.junit.jupiter.api.*;
 
-import java.io.File;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -22,16 +19,96 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * 需求文档.md §3.6a 语义图落库 · 表结构/校验/权限（D-27~D-30）—— AC-51 ~ AC-57。
+ * 需求文档.md §3.6a 语义图落库 · 表结构 / 校验 / 权限（D-27 ~ D-30）—— AC-51 ~ AC-57。
  *
- * 本节 7 条里 4 条是反证型（AC-52/53/54/55）+ 1 条权限反证（AC-56）——真源进库之后，
- * 「校验拦不拦得住」比「正常路径跑不跑得通」重要得多，逐条都必须证明"人为破坏后确实失败"。
+ * <h3>🔄 2026-09-05（用户裁决 {@code D-123}）：3 条换 v9 对象保留，4 条作废留碑，1 条待主线裁决</h3>
  *
- * 层级 = T-3（AC-51/57）/ T-2,T-3 反证（AC-52/53/54/55/56）。
+ * <h4>📌 被作废的 4 个方法（保留历史价值说明，勿删）</h4>
+ * <table>
+ *   <tr><th>方法</th><th>它验的是什么</th><th>为什么退役</th><th>接替者</th></tr>
+ *   <tr><td>{@code ac51_seedMigrationMatchesOriginalDeclaration}</td>
+ *       <td>{@code GET /config/semantic-graph} 全图与
+ *           {@code golden/semantic-graph-baseline.json} <b>逐字段</b>比对：
+ *           17 个 Sheet 节点的 {@code physicalTable}/列数/{@code usedBy}/{@code discriminator}/孤儿标记、
+ *           6 个查名与函数节点的 {@code nodeKind}/{@code funcSignature}、22 条边的
+ *           {@code from/to/kind/cardinality/连接键/fallbackOrder/coalesceGroup}</td>
+ *       <td><b>基线文件本身描述的是 V6 那张图</b>（23 节点 / 22 连接），而 {@code V413} 已把它整块删掉、
+ *           {@code V410} 灌入的是三套 {@code ds_*} 的 44 节点 / 29 边。<br>
+ *           ⚠️ 另有一个<b>结构性冲突</b>：本方法断言「{@code displayName} 互不重名」，而 v9 是
+ *           <b>刻意重名</b>的 —— 10 个节点键 × 3 方言各一份（{@code test.md §4.3 坑1}），
+ *           2026-09-05 实测 44 节点只有 28 个不同的 {@code display_name}。<b>这是 v9 的设计，不是数据错。</b></td>
+ *       <td><b>{@code AC-101}</b>（三方言存在且各有 SHEET）· <b>{@code AC-102}</b>（V6 表命中 0 + 无悬挂边）·
+ *           <b>{@code AC-104}</b>（列声明 ⇄ {@code information_schema} 双向无差集）·
+ *           <b>{@code AC-105}</b>（{@code _history} 不进图）· <b>{@code AC-106}</b>（页签视图逐格相等）·
+ *           <b>{@code AC-103}</b>（种子脚本可重放，md5 逐字节相同）—— 六条合起来比「跟一份手抄基线比对」更强：
+ *           它们钉的是<b>真实 DDL</b>，而不是另一份可能一起写错的文件</td></tr>
+ *   <tr><td>{@code ac52_edgeCardinalityOnlineInterception_negativeCase}</td>
+ *       <td>反证：把一条真实一对多的边 {@code PUT} 成 {@code MANY_TO_ONE} → 400
+ *           {@code SEMANTIC_VALIDATION_FAILED}/{@code EDGE_CARDINALITY} + 错误信息点名右侧键 +
+ *           库中未写入；改回 {@code ONE_TO_MANY} 同一请求成功</td>
+ *       <td><b>作废（已被覆盖）</b>，判据本身仍然有效，只是已有一份 v9 原生实现</td>
+ *       <td><b>{@code AC-121}②③</b>（{@code V9ValidationAndCiTest.ac121b_edgeCardinalityFalsification}：
+ *           新增一条右键重复的 {@code MANY_TO_ONE} 边必须被拒并指名，改成 {@code ONE_TO_MANY} 同一请求成功）<br>
+ *           📌 v9 版比这一版<b>更安全</b>：它用「新增再撤回」而不是「原地改坏一条现网边」，
+ *           不存在断言失败后把共享图留在改坏状态的窗口</td></tr>
+ *   <tr><td>{@code ac52_thinSampleBlindSpot}</td>
+ *       <td>样本不足盲区：目标表 &lt; 30 行的边，{@code assertStatus} 必须是 {@code THIN} 而不是 {@code PASS}
+ *           （否则任何基数声明都能「碰巧」通过 —— 这是该断言的固有假阴性）</td>
+ *       <td><b>判据没有对象</b>。2026-09-05 实测：全部 29 条边的 {@code assert_status} 一律为
+ *           {@code 'NA'}、{@code assert_sample_rows} <b>全为 NULL</b> ——
+ *           v9 种子由脚本机器生成（{@code B-42}），<b>压根没跑过在线基数抽样</b>，
+ *           因此不存在「抽样了但样本太薄」这个状态。<br>
+ *           🚫 不能「换个对象保留」：图里一条带 {@code assertSampleRows} 的边都没有，
+ *           保留下来只会得到一条恒空跑的断言（四类假绿里的「断言从未执行」）</td>
+ *       <td>🚨 <b>无接替者，这是一个已知缺口</b>：v9 AC 集合里没有任何一条覆盖「基数断言的样本充分性」。
+ *           已随本次退役一并上报主线。防线由 {@link #tombstone_retiredSemanticGraphAcs_premiseStillHolds()}
+ *           守着 —— 一旦有边带上了 {@code assert_sample_rows}，本条变红要求把 THIN 语义重新验起来</td></tr>
+ *   <tr><td>{@code ac55_pathAmbiguityRejectedAtSaveTime_negativeCase}</td>
+ *       <td>反证：在库中构造两条可达路径的边组合 → 保存该边被 {@code PATH_UNIQUENESS} 拒绝，
+ *           错误信息列出两条路径各自的节点序列</td>
+ *       <td><b>构造不出来</b>。v9 图是<b>星形</b>的：28 条 {@code NARROW} 边全部从各锚点指向同一个料号桥，
+ *           而桥本身<b>没有出边</b>（2026-09-05 实测二跳路径 = 0）。本方法的构造手法依赖
+ *           「anchor → mid → target 的二跳」，第一步就取不到 {@code secondHop}，自 v9 起恒 SKIP。</td>
+ *       <td>🚨 <b>无接替者，这是一个交付缺口</b>：{@code AC-123} 只覆盖四道校验里的第③道「物理存在性」，
+ *           <b>{@code PATH_UNIQUENESS} 在 AC-101~126 里没有任何一条覆盖</b>。
+ *           与 {@code Sec31.ac10}（编译期路径歧义）是同一缺口的两面，已一并上报主线</td></tr>
+ * </table>
+ *
+ * <h4>✅ 换 v9 对象后保留的 3 个方法</h4>
+ * <ul>
+ *   <li>{@link #ac53_physicalExistenceValidation_negativeCase()} —— 图写端点的物理存在性校验。
+ *       {@code AC-123} 验的是 <b>builder 保存端点</b>上的同名校验，<b>不是图写端点</b>，两者不可互相替代。</li>
+ *   <li>{@link #ac54_referentialIntegrityEnforcedByDbLayer_negativeCase()} —— 引用完整性由<b>库层</b>保证。
+ *       <br>🔑 <b>安全性取证（2026-09-05，主动做在改用例之前）</b>：本方法会用 psql 直接 {@code DELETE}
+ *       一个节点，若外键<b>没</b>拦住，它就会真的从共享图里删掉一行。因此先用
+ *       <b>{@code BEGIN; DELETE …; ROLLBACK;}</b> 做了一次零风险预演，输出为：
+ *       <pre>ERROR: update or delete on table "semantic_node" violates foreign key constraint
+ *   "semantic_edge_from_node_id_fkey" on table "semantic_edge"
+ * DETAIL: Key (id)=(e77545bb-…-b7be932020ea) is still referenced from table "semantic_edge".</pre>
+ *       ⇒ 该节点被 FK 引用、{@code DELETE} 必然被拒，本方法的破坏动作<b>不可能真的删掉数据</b>。
+ *       用例内仍会重新确认「被引用」这个前提，🚫 不靠上面这段输出吃老本。</li>
+ *   <li>{@link #ac57_concurrencySafety()} —— 原 {@code ac57②}（20 并发预览无 500、无半新半旧）。
+ *       原 ①（改 {@code fallback_order} 不重启即生效）与 ③（存量 {@code sql_template} 逐字未变）
+ *       <b>在 v9 上都没有对象</b>：实测 29 条边的 {@code fallback_order} 全为 NULL；
+ *       {@code component_sql_view} 里 {@code builder_config IS NOT NULL} 的行 = 0（{@code S-25} 已删净 21 个）。
+ *       两者原本就是「找不到就 print 一句跳过」的软分支 —— <b>留着只会伪装成绿</b>，随本轮一并作废，
+ *       前提由守卫方法钉住。<br>
+ *       📌 ③ 的目的（本任务不改动存量视图 SQL）已由 <b>{@code AC-122}</b> 精确承担。</li>
+ * </ul>
+ *
+ * <h4>⏸ 待主线裁决的 1 个方法</h4>
+ * {@link #ac56_writeEndpointRolePermission_negativeCase()} —— 写端点的角色权限反证。
+ * <b>它与 v8/v9 语义图无关</b>（验的是 RBAC 本身），因此<b>不属于本次「退役 v8 期用例」的范围</b>；
+ * 它恒 SKIP 的原因是<b>测试环境的 Redis 会话缺陷</b>（{@code com.cpq.integration.PermissionTest} 基线同样复现），
+ * 不是断言对象消失。<b>本轮原样保留、一个字未改</b>，请主线裁决是留着等环境修好，还是转 BACKLOG。
+ * 🚫 我没有把它归到「已退役」—— 那会把一条<b>安全</b>验收项悄悄抹掉。
+ *
+ * <p>层级 = T-3（AC-57）/ T-2,T-3 反证（AC-53/54）。
  */
 @QuarkusTest
 @TestProfile(SemanticGraphTestSupport.RbacOffProfile.class)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+@DisplayName("Sec36aSemanticGraphDbTest — AC-53/54/57② 换 v9 对象保留；🪦 AC-51/52/52THIN/55/57①③ 已作废；AC-56 待主线裁决")
 class Sec36aSemanticGraphDbTest {
 
     @Inject
@@ -39,500 +116,167 @@ class Sec36aSemanticGraphDbTest {
     @Inject
     UserTransaction utx;
 
-    // RBAC 关闭（@TestProfile），本类大部分方法不再需要真实登录/CPQ_SESSION——
-    // 唯一仍需要真实角色登录的 AC-56 已单独用 Assumptions 标记 SKIPPED，见该方法注释。
     @AfterEach
     void tearDown() throws Exception {
         SemanticGraphTestSupport.cleanupUsers(em, utx);
     }
 
-    // -------------------------------------------------------------------
-    // AC-51（单点）种子迁移与原声明逐项等值
-    // -------------------------------------------------------------------
+    private long scalar(String sql) {
+        return ((Number) em.createNativeQuery(sql).getSingleResult()).longValue();
+    }
+
+    // ===================================================================
+    // 🪦 作废前提守卫（会真的执行；任一前提被推翻就变红）
+    // ===================================================================
     @Test
     @Order(1)
-    @DisplayName("AC-51: GET全图与 golden/semantic-graph-baseline.json 逐项比对（非结构性抽查——语义节点/边/页签视图逐字段核对）")
-    void ac51_seedMigrationMatchesOriginalDeclaration() throws Exception {
-        // 依裁决改为逐项比对：baseline 是主线从定稿原型 data.js 导出的纯数据 JSON（非实现代码），
-        // 读它不违反"不读实现代码"隔离——见 dev-docs/task-260819-取数配置器/golden/semantic-graph-baseline.json。
-        File baselineFile = locateBaselineFile();
-        Assumptions.assumeTrue(baselineFile != null,
-                "[AC-51] 找不到基线文件 dev-docs/task-260819-取数配置器/golden/semantic-graph-baseline.json，标记为 SKIPPED");
-        Map<String, Object> baseline = new ObjectMapper().readValue(baselineFile, new TypeReference<Map<String, Object>>() {
-        });
-        Map<String, Object> baselineMeta = (Map<String, Object>) baseline.get("_meta");
-        assertNotNull(baselineMeta, "基线文件缺 _meta");
+    @DisplayName("🪦 作废前提守卫: 无二跳路径(AC-55) + 无 assert_sample_rows(AC-52THIN) + 无 fallback_order(AC-57①) + 无 builder 视图(AC-57③)")
+    void tombstone_retiredSemanticGraphAcs_premiseStillHolds() {
+        long activeNodes = scalar("SELECT count(*) FROM semantic_node WHERE status='ACTIVE'");
+        long activeEdges = scalar("SELECT count(*) FROM semantic_edge WHERE status='ACTIVE'");
+        long twoHopPaths = scalar("SELECT count(*) FROM semantic_edge e1 JOIN semantic_edge e2 "
+                + "ON e2.from_node_id = e1.to_node_id WHERE e1.status='ACTIVE' AND e2.status='ACTIVE'");
+        long withSample = scalar("SELECT count(*) FROM semantic_edge WHERE assert_sample_rows IS NOT NULL");
+        long withFallback = scalar("SELECT count(*) FROM semantic_edge WHERE fallback_order IS NOT NULL");
+        // ⚠️ 必须排除本套用例自建的组件（TAG 前缀）—— Sec32/34/35/36 里好几条保留下来的用例
+        //    本来就会保存 builder 配置，同批次跑完这个数字必然 > 0。首轮实测 8 个全是 SQLVB-TEST-*，
+        //    不排除就会得到一条「自己把自己判红」的守卫（假红，同样是坏信号）。
+        long builderViews = ((Number) em.createNativeQuery(
+                        "SELECT count(*) FROM component_sql_view v JOIN component c ON c.id = v.component_id "
+                                + "WHERE v.builder_config IS NOT NULL AND c.name NOT LIKE :tag")
+                .setParameter("tag", SemanticGraphTestSupport.TAG + "%").getSingleResult()).longValue();
 
-        Response resp = RestAssured.given()
-                .get("/api/cpq/config/semantic-graph");
-        assertEquals(200, resp.statusCode(), resp.getBody().asString());
+        System.out.println("[🪦 Sec36a 留碑] ACTIVE 节点=" + activeNodes + " 边=" + activeEdges
+                + " · 二跳路径=" + twoHopPaths + " · 带 assert_sample_rows 的边=" + withSample
+                + " · 带 fallback_order 的边=" + withFallback + " · builder_config 非空的视图=" + builderViews);
 
-        List<Map<String, Object>> apiNodes = resp.jsonPath().getList("nodes");
-        assertNotNull(apiNodes, "nodes不应为空");
-        assertFalse(apiNodes.isEmpty(), "nodes不应为空列表——种子迁移未落地则本用例判定失败而非跳过");
-        List<Map<String, Object>> apiEdges = resp.jsonPath().getList("edges");
-        assertNotNull(apiEdges, "edges不应为空");
-        assertFalse(apiEdges.isEmpty(), "edges不应为空列表");
-        List<Map<String, Object>> apiTabViews = resp.jsonPath().getList("tabViews");
-        assertNotNull(apiTabViews, "tabViews不应为空");
-        assertFalse(apiTabViews.isEmpty(), "tabViews不应为空列表");
+        assertTrue(activeNodes > 0 && activeEdges > 0,
+                "🚨 语义图为空（节点 " + activeNodes + " / 边 " + activeEdges + "）—— 这不是「作废前提成立」，"
+                        + "是种子没就位。本条判定为【未验证】，🚫 不许当成通过。");
 
-        // displayName -> API节点（覆盖17个Sheet + 6个查名/函数节点，共23个，理论上互不重名）
-        Map<String, Map<String, Object>> apiNodeByName = new java.util.HashMap<>();
-        for (Map<String, Object> n : apiNodes) {
-            Object dn = n.get("displayName");
-            assertNotNull(dn, "节点displayName不应为空: " + n);
-            apiNodeByName.put(String.valueOf(dn), n);
-        }
-        assertEquals(apiNodes.size(), apiNodeByName.size(),
-                "displayName应互不重名（基线按name匹配，重名会产生歧义），节点数=" + apiNodes.size()
-                        + " 去重后=" + apiNodeByName.size());
+        assertEquals(0L, twoHopPaths,
+                "🚦 AC-55（保存期路径歧义拦截）的作废前提被推翻：图里出现了 " + twoHopPaths + " 条二跳路径。\n"
+                        + "  作废理由是「v9 是星形图（28 条 NARROW 边全指向料号桥、桥无出边），"
+                        + "构造不出 anchor→mid→target 的第二条路径」。\n"
+                        + "  🚨 重点：PATH_UNIQUENESS 在 v9 AC 集合（AC-101~126）里<b>本来就没有任何一条覆盖</b>，"
+                        + "这是已上报主线的交付缺口。现在图里有多跳了 ⇒ 缺口从『暂时无对象』变成『真的没人管』，"
+                        + "必须立刻把这条防线补上。");
 
-        int expectedNodeTotal = ((Number) baselineMeta.get("nodeCount")).intValue()
-                + ((Number) baselineMeta.get("lookupCount")).intValue();
-        assertEquals(expectedNodeTotal, apiNodes.size(),
-                "节点总数应=基线 nodeCount+lookupCount=" + expectedNodeTotal + "，实际=" + apiNodes.size());
+        assertEquals(0L, withSample,
+                "🚦 AC-52-THIN（样本不足盲区必须判 THIN 而非 PASS）的作废前提被推翻：有 " + withSample
+                        + " 条边带上了 assert_sample_rows。\n"
+                        + "  作废理由是「v9 种子由脚本机器生成、从未跑过在线基数抽样，assert_status 一律 NA、"
+                        + "assert_sample_rows 全 NULL ⇒ 没有『抽样了但样本太薄』这个状态可验」。\n"
+                        + "  抽样回来了 ⇒ 必须把 THIN 语义重新验起来，否则「样本 <30 行时任何基数声明都能碰巧通过」"
+                        + "这个固有假阴性就没人挡了。");
 
-        // ① 17个 SHEET 节点逐项比对：physicalTable / 列数 / usedBy / discriminator / orphan
-        List<Map<String, Object>> baselineNodes = (List<Map<String, Object>>) baseline.get("nodes");
-        assertNotNull(baselineNodes, "基线nodes不应为空");
-        assertFalse(baselineNodes.isEmpty(), "基线nodes不应为空列表");
-        StringBuilder nodeViolations = new StringBuilder();
-        for (Map<String, Object> bn : baselineNodes) {
-            String name = String.valueOf(bn.get("name"));
-            Map<String, Object> an = apiNodeByName.get(name);
-            if (an == null) {
-                nodeViolations.append("缺失节点『").append(name).append("』; ");
-                continue;
-            }
-            String expectedTable = String.valueOf(bn.get("table"));
-            Object actualTable = an.get("physicalTable");
-            if (!expectedTable.equals(String.valueOf(actualTable))) {
-                nodeViolations.append(name).append(".physicalTable 期望=").append(expectedTable)
-                        .append(" 实际=").append(actualTable).append("; ");
-            }
-            int expectedCols = ((Number) bn.get("cols")).intValue();
-            List<?> actualCols = (List<?>) an.get("columns");
-            int actualColCount = actualCols == null ? -1 : actualCols.size();
-            if (expectedCols != actualColCount) {
-                nodeViolations.append(name).append(".列数 期望=").append(expectedCols)
-                        .append(" 实际=").append(actualColCount).append("; ");
-            }
-            // shortName（D-13 Sheet简称，AC-11别名纯函数的输入之一）——基线未给出期望值，
-            // 只做存在性核对；具体简称取法开工前才定死，值级比对留给 AC-11 通过实际别名反向验证。
-            Object shortName = an.get("shortName");
-            if (shortName == null || String.valueOf(shortName).isBlank()) {
-                nodeViolations.append(name).append(".shortName 不应为空; ");
-            }
-            boolean expectedOrphan = Boolean.TRUE.equals(bn.get("orphan"));
-            Object orphanReason = an.get("orphanReason");
-            boolean actualOrphan = orphanReason != null && !String.valueOf(orphanReason).isBlank();
-            if (expectedOrphan != actualOrphan) {
-                nodeViolations.append(name).append(".orphan 期望=").append(expectedOrphan)
-                        .append(" 实际orphanReason=").append(orphanReason).append("; ");
-            }
-            String expDiscStr = normalizeSql(bn.get("discriminator") == null ? null : String.valueOf(bn.get("discriminator")));
-            String actDiscStr = normalizeSql(an.get("discriminator") == null ? null : String.valueOf(an.get("discriminator")));
-            if (!java.util.Objects.equals(expDiscStr, actDiscStr)) {
-                nodeViolations.append(name).append(".discriminator 期望=").append(expDiscStr)
-                        .append(" 实际=").append(actDiscStr).append("; ");
-            }
-            List<?> expectedUsedByRaw = (List<?>) bn.get("usedBy");
-            List<String> expectedUsedBy = expectedUsedByRaw == null ? List.of()
-                    : expectedUsedByRaw.stream().map(String::valueOf).sorted().toList();
-            List<?> actualUsedByRaw = (List<?>) an.get("usedBy");
-            List<String> actualUsedBy = actualUsedByRaw == null ? List.of()
-                    : actualUsedByRaw.stream().map(String::valueOf).sorted().toList();
-            if (!expectedUsedBy.equals(actualUsedBy)) {
-                nodeViolations.append(name).append(".usedBy 期望=").append(expectedUsedBy)
-                        .append(" 实际=").append(actualUsedBy).append("; ");
-            }
-        }
-        assertEquals("", nodeViolations.toString(), "① 17个Sheet节点逐项比对发现差异: " + nodeViolations);
+        assertEquals(0L, withFallback,
+                "🚦 AC-57①（改 fallback_order 不重启即生效）的作废前提被推翻：有 " + withFallback
+                        + " 条边带上了 fallback_order。\n"
+                        + "  作废理由是「v9 图里 fallback_order 全为 NULL，原用例的『找一条带 fallbackOrder 的边』"
+                        + "永远找不到，只会 print 一句然后跳过 —— 那是伪装成绿的空跑」。\n"
+                        + "  它回来了 ⇒ 热生效（改图不重启即生效、graphVersion 递增）这条防线要重新接上。");
 
-        // ①b 6个查名/函数节点：nodeKind 逐项核对；FUNCTION 额外核对 funcSignature 前缀
-        // （基线 lookups[] 不带 physicalTable，只能核对到这一层——比 SHEET 节点弱，属已知的比对粒度差异，非漏测）
-        List<Map<String, Object>> baselineLookups = (List<Map<String, Object>>) baseline.get("lookups");
-        assertNotNull(baselineLookups, "基线lookups不应为空");
-        assertFalse(baselineLookups.isEmpty(), "基线lookups不应为空列表");
-        StringBuilder lookupViolations = new StringBuilder();
-        for (Map<String, Object> bl : baselineLookups) {
-            String name = String.valueOf(bl.get("name"));
-            Map<String, Object> an = apiNodeByName.get(name);
-            if (an == null) {
-                lookupViolations.append("缺失查名/函数节点『").append(name).append("』; ");
-                continue;
-            }
-            String expectedKind = String.valueOf(bl.get("kind"));
-            if (!expectedKind.equals(String.valueOf(an.get("nodeKind")))) {
-                lookupViolations.append(name).append(".nodeKind 期望=").append(expectedKind)
-                        .append(" 实际=").append(an.get("nodeKind")).append("; ");
-            }
-            if ("FUNCTION".equals(expectedKind)) {
-                String expectedSig = String.valueOf(bl.get("key")).split(" cep")[0].trim();
-                Object actualSig = an.get("funcSignature");
-                if (actualSig == null || !String.valueOf(actualSig).startsWith(expectedSig)) {
-                    lookupViolations.append(name).append(".funcSignature 期望前缀=").append(expectedSig)
-                            .append(" 实际=").append(actualSig).append("; ");
-                }
-            }
-        }
-        assertEquals("", lookupViolations.toString(), "①b 6个查名/函数节点比对发现差异: " + lookupViolations);
-
-        // ② 边：22条原始连接逐条比对 from/to/kind/cardinality/连接键/fallbackOrder/coalesceGroup/tabs
-        List<Map<String, Object>> baselineEdges = (List<Map<String, Object>>) baseline.get("edges");
-        assertNotNull(baselineEdges, "基线edges不应为空");
-        assertFalse(baselineEdges.isEmpty(), "基线edges不应为空列表");
-        assertEquals(((Number) baselineMeta.get("connectionCount")).intValue(), baselineEdges.size(),
-                "基线自身连接数与_meta.connectionCount应一致（防基线文件本身被改坏）——不等则本用例的比对基准就是错的");
-
-        Map<String, String> apiNodeNameById = new java.util.HashMap<>();
-        for (Map<String, Object> n : apiNodes) {
-            apiNodeNameById.put(String.valueOf(n.get("id")), String.valueOf(n.get("displayName")));
-        }
-
-        StringBuilder edgeViolations = new StringBuilder();
-        java.util.Set<Map<String, Object>> matchedApiEdges =
-                java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-        for (Map<String, Object> be : baselineEdges) {
-            String beId = String.valueOf(be.get("id"));
-            String fromName = String.valueOf(be.get("from"));
-            String toName = String.valueOf(be.get("to"));
-            String kind = String.valueOf(be.get("kind"));
-            String cardinality = String.valueOf(be.get("cardinality"));
-
-            List<Map<String, Object>> candidates = apiEdges.stream()
-                    .filter(ae -> !matchedApiEdges.contains(ae))
-                    .filter(ae -> fromName.equals(apiNodeNameById.get(String.valueOf(ae.get("fromNodeId")))))
-                    .filter(ae -> toName.equals(apiNodeNameById.get(String.valueOf(ae.get("toNodeId")))))
-                    .filter(ae -> kind.equals(String.valueOf(ae.get("edgeKind"))))
-                    .toList();
-            if (candidates.isEmpty()) {
-                edgeViolations.append(beId).append("(").append(fromName).append("->").append(toName)
-                        .append(",").append(kind).append(") 在API响应中找不到对应边; ");
-                continue;
-            }
-            Integer expectedFallback = be.get("fallbackOrder") == null ? null
-                    : ((Number) be.get("fallbackOrder")).intValue();
-            Map<String, Object> matched;
-            if (expectedFallback != null) {
-                matched = candidates.stream()
-                        .filter(ae -> ae.get("fallbackOrder") != null
-                                && ((Number) ae.get("fallbackOrder")).intValue() == expectedFallback)
-                        .findFirst().orElse(candidates.get(0));
-            } else {
-                matched = candidates.get(0);
-            }
-            matchedApiEdges.add(matched);
-
-            String actualCardinality = String.valueOf(matched.get("cardinality"));
-            if (!cardinality.equals(actualCardinality)) {
-                edgeViolations.append(beId).append(".cardinality 期望=").append(cardinality)
-                        .append(" 实际=").append(actualCardinality).append("; ");
-            }
-
-            Integer actualFallback = matched.get("fallbackOrder") == null ? null
-                    : ((Number) matched.get("fallbackOrder")).intValue();
-            if (!java.util.Objects.equals(expectedFallback, actualFallback)) {
-                edgeViolations.append(beId).append(".fallbackOrder 期望=").append(expectedFallback)
-                        .append(" 实际=").append(actualFallback).append("; ");
-            }
-
-            Object expectedGroup = be.get("coalesceGroup");
-            Object actualGroup = matched.get("coalesceGroup");
-            if (!java.util.Objects.equals(expectedGroup, actualGroup)) {
-                edgeViolations.append(beId).append(".coalesceGroup 期望=").append(expectedGroup)
-                        .append(" 实际=").append(actualGroup).append("; ");
-            }
-
-            List<?> expectedTabsRaw = (List<?>) be.get("tabs");
-            List<String> expectedTabs = expectedTabsRaw == null ? List.of()
-                    : expectedTabsRaw.stream().map(String::valueOf).sorted().toList();
-            List<?> actualTabsRaw = (List<?>) matched.get("usedByTabs");
-            List<String> actualTabs = actualTabsRaw == null ? List.of()
-                    : actualTabsRaw.stream().map(String::valueOf).sorted().toList();
-            if (!expectedTabs.equals(actualTabs)) {
-                edgeViolations.append(beId).append(".tabs 期望=").append(expectedTabs)
-                        .append(" 实际=").append(actualTabs).append("; ");
-            }
-
-            // 连接键：只对形如 "a.col = b.col"（两侧均非字符串字面量/占位符）的AND子句逐字比对；
-            // SAME类型(无连接键)与含字面量过滤条件/占位符的子句（如 E10 的 price_type='PLATING'、
-            // E09 的 <hf_part_no 表达式>）不参与本项比对——见 parseJoinColumnPairs 注释。
-            if (!"SAME".equals(kind)) {
-                List<String[]> expectedKeyCols = parseJoinColumnPairs(String.valueOf(be.get("on")));
-                List<Map<String, Object>> actualKeys = (List<Map<String, Object>>) matched.get("keys");
-                if (!expectedKeyCols.isEmpty()) {
-                    if (actualKeys == null || actualKeys.size() < expectedKeyCols.size()) {
-                        edgeViolations.append(beId).append(".keys 期望至少").append(expectedKeyCols.size())
-                                .append("组，实际=").append(actualKeys).append("; ");
-                    } else {
-                        for (int i = 0; i < expectedKeyCols.size(); i++) {
-                            String expLeft = expectedKeyCols.get(i)[0];
-                            String expRight = expectedKeyCols.get(i)[1];
-                            Map<String, Object> actualKey = actualKeys.get(i);
-                            String actLeft = String.valueOf(actualKey.get("leftColumn"));
-                            String actRight = String.valueOf(actualKey.get("rightColumn"));
-                            boolean ok = (expLeft.equals(actLeft) && expRight.equals(actRight))
-                                    || (expLeft.equals(actRight) && expRight.equals(actLeft));
-                            if (!ok) {
-                                edgeViolations.append(beId).append(".keys[").append(i).append("] 期望(")
-                                        .append(expLeft).append(",").append(expRight).append(") 实际(")
-                                        .append(actLeft).append(",").append(actRight).append("); ");
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        assertEquals("", edgeViolations.toString(), "② 22条基线连接逐项比对发现差异: " + edgeViolations);
-
-        // ③ tabViews：7条，按 (tabType, variantLabel) 匹配，核对 anchor 与可用节点集合非空
-        List<Map<String, Object>> baselineTabViews = (List<Map<String, Object>>) baseline.get("tabViews");
-        assertNotNull(baselineTabViews, "基线tabViews不应为空");
-        assertFalse(baselineTabViews.isEmpty(), "基线tabViews不应为空列表");
-        assertEquals(((Number) baselineMeta.get("tabViewCount")).intValue(), apiTabViews.size(),
-                "页签视图数应=" + baselineMeta.get("tabViewCount") + "，实际=" + apiTabViews.size());
-        StringBuilder tabViewViolations = new StringBuilder();
-        for (Map<String, Object> btv : baselineTabViews) {
-            String tab = String.valueOf(btv.get("tab"));
-            String variant = btv.get("variant") == null ? null : String.valueOf(btv.get("variant"));
-            Map<String, Object> matched = apiTabViews.stream()
-                    .filter(atv -> tab.equals(String.valueOf(atv.get("tabType"))))
-                    .filter(atv -> variant == null
-                            ? isBlankOrNull(atv.get("variantLabel")) && isBlankOrNull(atv.get("variantKey"))
-                            : variant.equals(String.valueOf(atv.get("variantLabel"))))
-                    .findFirst().orElse(null);
-            if (matched == null) {
-                tabViewViolations.append("缺失页签视图『").append(tab)
-                        .append(variant == null ? "" : "/" + variant).append("』; ");
-                continue;
-            }
-            List<?> nodesInView = (List<?>) matched.get("nodes");
-            if (nodesInView == null || nodesInView.isEmpty()) {
-                tabViewViolations.append(tab).append(" 可用节点集合为空; ");
-            }
-            if (matched.get("anchorNodeId") == null) {
-                tabViewViolations.append(tab).append(" anchor节点为空; ");
-            }
-        }
-        assertEquals("", tabViewViolations.toString(), "③ 7条页签视图比对发现差异: " + tabViewViolations);
+        assertEquals(0L, builderViews,
+                "🚦 AC-57③（存量 sql_template 逐字未变）的作废前提被推翻：component_sql_view 里出现了 "
+                        + builderViews + " 个 builder_config 非空的视图。\n"
+                        + "  作废理由是「S-25 已把 21 个 builder 产出视图连同组件一并删除，builder_config 非空 = 0"
+                        + "（AC-113① 实测），原用例的比对对象为空」。\n"
+                        + "  📌 本计数已排除 " + SemanticGraphTestSupport.TAG + "* 自建组件，所以这里的数字是"
+                        + "「真的有非测试组件重新启用了 builder 模式」。\n"
+                        + "  📌 「本任务不改动存量视图 SQL」这个目的已由 AC-122 精确承担。");
     }
 
-    /** 从 user.dir 向上最多8层查找基线文件（兼容从 cpq-backend/ 或仓库根跑测试两种情况）。 */
-    private static File locateBaselineFile() {
-        File dir = new File(System.getProperty("user.dir")).getAbsoluteFile();
-        for (int i = 0; i < 8 && dir != null; i++, dir = dir.getParentFile()) {
-            File candidate = new File(dir, "dev-docs/task-260819-取数配置器/golden/semantic-graph-baseline.json");
-            if (candidate.isFile()) {
-                return candidate;
-            }
-        }
-        return null;
-    }
-
-    private static String normalizeSql(String s) {
-        return s == null ? null : s.replaceAll("\\s+", " ").trim();
-    }
-
-    private static boolean isBlankOrNull(Object o) {
-        return o == null || String.valueOf(o).isBlank();
-    }
-
-    /**
-     * 从 baseline 的 "on" 文本里抽出形如 "alias.col = alias2.col2" 的连接键对（去掉表别名，只留列名），
-     * 按 " AND " 切分多组。含字符串字面量（如 price_type='PLATING'）或占位符（如 &lt;hf_part_no 表达式&gt;）
-     * 的子句会被跳过——它们是过滤条件或本次未定的表达式，不是可逐字比对的连接键。
-     */
-    private static List<String[]> parseJoinColumnPairs(String onClause) {
-        List<String[]> pairs = new java.util.ArrayList<>();
-        if (onClause == null) return pairs;
-        for (String clause : onClause.split(" AND ")) {
-            String c = clause.trim();
-            java.util.regex.Matcher m = java.util.regex.Pattern
-                    .compile("^([\\w.]+)\\s*=\\s*([\\w.]+)$").matcher(c);
-            if (!m.matches()) continue;
-            String left = m.group(1);
-            String right = m.group(2);
-            String leftCol = left.contains(".") ? left.substring(left.lastIndexOf('.') + 1) : left;
-            String rightCol = right.contains(".") ? right.substring(right.lastIndexOf('.') + 1) : right;
-            pairs.add(new String[]{leftCol, rightCol});
-        }
-        return pairs;
-    }
-
-    // -------------------------------------------------------------------
-    // AC-52（边界·反证）边基数在线拦截 + THIN 样本不足盲区
-    // -------------------------------------------------------------------
+    // ===================================================================
+    // AC-53（边界·反证）物理存在性校验 —— 图写端点侧
+    // ===================================================================
     @Test
     @Order(2)
-    @DisplayName("AC-52【反证】: 一对多边声明成MANY_TO_ONE → 400拒绝+库中未写入；改回ONE_TO_MANY后成功")
-    void ac52_edgeCardinalityOnlineInterception_negativeCase() {
-        // 2026-08-21 真跑教训：最初版本用 POST /edges 新建一条边来做反证，但① api.md 明确写
-        // "成功 200 返回新的 graphVersion"——响应体压根不含新建边的 id，导致收尾清理找不到该删哪一行；
-        // ② 而且新建边若 edgeKind 与已有边不同，会绕开 (from,to,edge_kind) 唯一约束插入一条真实的
-        // 新行——实测确实在共享库 cpq_db 里留下了 1 条孤儿边（已用 psql 手工核实并删除，量化过影响面=
-        // 精确1行，已恢复到22条边的基线）。改法：不新建边，而是对**已存在**的边用 PUT 原地临时改坏
-        // cardinality——同一行改回改去，从不产生新行，天然不需要"删除新建的边"这一步，清理风险归零。
-        Map<String, Object> targetEdgeInfo = findAnEdgeSuitableForCardinalityAttack();
-        Assumptions.assumeTrue(targetEdgeInfo != null,
-                "[AC-52] 库中语义图种子未就绪或找不到可用于反证的一对多边，标记为 SKIPPED，待种子迁移落地后补跑");
-        String edgeId = String.valueOf(targetEdgeInfo.get("edgeId"));
-        String rightColumn = String.valueOf(targetEdgeInfo.get("rightColumn"));
-
-        try {
-            Response badResp = RestAssured.given().contentType(ContentType.JSON)
-                    .body("{\"cardinality\":\"MANY_TO_ONE\"}")
-                    .put("/api/cpq/config/semantic-graph/edges/" + edgeId);
-            assertTrue(badResp.statusCode() >= 400, "① 声明成MANY_TO_ONE应被拒绝(非2xx)，实际=" + badResp.statusCode()
-                    + " body=" + badResp.getBody().asString());
-            assertEquals("SEMANTIC_VALIDATION_FAILED", badResp.jsonPath().getString("code"));
-            assertEquals("EDGE_CARDINALITY", badResp.jsonPath().getString("failedCheck"));
-            String message = badResp.jsonPath().getString("message");
-            assertNotNull(message, "① 错误信息不应为空");
-            assertTrue(message.contains(rightColumn) || String.valueOf(badResp.jsonPath().get("detail")).contains(rightColumn),
-                    "① 错误信息应指出是哪条边、右侧哪个键、重复了几行，实际=" + badResp.getBody().asString());
-
-            // ② 库中该边的 cardinality 未被改动（仍是 ONE_TO_MANY，被拒绝的写入没有生效）
-            List<Object> cardinalityRows = em.createNativeQuery(
-                            "SELECT cardinality FROM semantic_edge WHERE id=CAST(:id AS uuid)")
-                    .setParameter("id", edgeId).getResultList();
-            assertFalse(cardinalityRows.isEmpty(), "② 边应仍存在: " + edgeId);
-            assertEquals("ONE_TO_MANY", String.valueOf(cardinalityRows.get(0)),
-                    "② 被拒绝的写入不应生效，库中cardinality应仍为ONE_TO_MANY，实际=" + cardinalityRows.get(0));
-        } finally {
-            // ③ 无论①②断言是否通过，都显式把同一条边的 cardinality 写回 ONE_TO_MANY（哪怕它本来就没变过，
-            // 幂等写回也是"改回正确值后同一请求成功"的直接验证，且保证本用例绝不残留全局状态改动）。
-            Response goodResp = RestAssured.given().contentType(ContentType.JSON)
-                    .body("{\"cardinality\":\"ONE_TO_MANY\"}")
-                    .put("/api/cpq/config/semantic-graph/edges/" + edgeId);
-            assertTrue(goodResp.statusCode() >= 200 && goodResp.statusCode() < 300,
-                    "③ 改回ONE_TO_MANY后应保存成功，实际=" + goodResp.statusCode() + " body=" + goodResp.getBody().asString());
-        }
-    }
-
-    /**
-     * AC-52 附带断言：样本不足盲区必须显式处理为 THIN 而非 PASS（D-32 实测口径）。
-     * 造一张只有1行数据的目标表场景——用现网已知样本量极小的节点（若能在图里找到assertSampleRows<30
-     * 的边）直接断言其assertStatus=='THIN'；若图中暂无这类边，则构造一个1行的临时表验证同一逻辑。
-     */
-    @Test
-    @Order(3)
-    @DisplayName("AC-52附带【样本不足盲区】: 目标表<30行 → assertStatus=THIN而非PASS，warnings非空")
-    void ac52_thinSampleBlindSpot() {
-        Response graphResp = RestAssured.given()
-                .get("/api/cpq/config/semantic-graph");
-        assertEquals(200, graphResp.statusCode(), graphResp.getBody().asString());
-        List<Map<String, Object>> edges = graphResp.jsonPath().getList("edges");
-        assertNotNull(edges, "edges不应为空");
-        assertFalse(edges.isEmpty(), "edges不应为空列表");
-
-        Map<String, Object> thinEdge = edges.stream()
-                .filter(e -> {
-                    Object sample = e.get("assertSampleRows");
-                    return sample instanceof Number && ((Number) sample).intValue() < 30;
-                }).findFirst().orElse(null);
-
-        Assumptions.assumeTrue(thinEdge != null,
-                "[AC-52-THIN] 图中当前没有 assertSampleRows<30 的边（可能来料回收折扣等薄样本节点尚未落种子），"
-                        + "本断言无法就现有数据执行——须在种子迁移落地（含 D-32 实测的 INCOMING_MATERIAL_RECYCLE 仅1行样本）"
-                        + "后补跑，标记为 SKIPPED 而非通过");
-        Object assertStatus = thinEdge.get("assertStatus");
-        assertNotNull(assertStatus, "THIN边应带assertStatus");
-        assertEquals("THIN", assertStatus,
-                "样本<30行的边assertStatus应为THIN而非PASS（否则任何基数声明都能'碰巧'通过——这是该断言的固有假阴性），"
-                        + "实际edge=" + thinEdge);
-    }
-
-    private Map<String, Object> findAnEdgeSuitableForCardinalityAttack() {
-        Response graphResp = RestAssured.given()
-                .get("/api/cpq/config/semantic-graph");
-        if (graphResp.statusCode() != 200) return null;
-        List<Map<String, Object>> edges = graphResp.jsonPath().getList("edges");
-        if (edges == null || edges.isEmpty()) return null;
-        for (Map<String, Object> e : edges) {
-            if ("ONE_TO_MANY".equals(e.get("cardinality"))) {
-                List<Map<String, Object>> keys = (List<Map<String, Object>>) e.get("keys");
-                if (keys != null && !keys.isEmpty() && e.get("id") != null) {
-                    Map<String, Object> result = new java.util.HashMap<>();
-                    result.put("edgeId", e.get("id"));
-                    result.put("fromNodeId", e.get("fromNodeId"));
-                    result.put("toNodeId", e.get("toNodeId"));
-                    result.put("leftColumn", keys.get(0).get("leftColumn"));
-                    result.put("rightColumn", keys.get(0).get("rightColumn"));
-                    return result;
-                }
-            }
-        }
-        return null;
-    }
-
-    // -------------------------------------------------------------------
-    // AC-53（边界·反证）物理存在性校验
-    // -------------------------------------------------------------------
-    @Test
-    @Order(4)
-    @DisplayName("AC-53【反证】: physical_table填不存在表名/db_column填不存在列名 → 均400，分别点名，库无残留")
+    @DisplayName("AC-53(v9)【反证】: physicalTable 填不存在表名 / dbColumn 填不存在列名 → 均 400，分别点名，库无残留")
     void ac53_physicalExistenceValidation_negativeCase() {
+        String bogusTable = "sqlvb_test_table_does_not_exist_xyz";
+        String bogusNodeKey = "SQLVB_TEST_BOGUS_NODE_" + UUID.randomUUID().toString().substring(0, 8);
         String bogusTableNode = """
-                { "nodeKey": "SQLVB_TEST_BOGUS_NODE_%s", "displayName": "不存在的表测试节点", "nodeKind": "SHEET",
-                  "physicalTable": "sqlvb_test_table_does_not_exist_xyz", "scope": "NONE" }
-                """.formatted(UUID.randomUUID().toString().substring(0, 8));
+                { "nodeKey": "%s", "displayName": "不存在的表测试节点", "nodeKind": "SHEET",
+                  "physicalTable": "%s", "scope": "NONE" }
+                """.formatted(bogusNodeKey, bogusTable);
         Response r1 = RestAssured.given().contentType(ContentType.JSON)
                 .body(bogusTableNode).post("/api/cpq/config/semantic-graph/nodes");
-        assertTrue(r1.statusCode() >= 400, "① 表不存在应被拒绝，实际=" + r1.statusCode() + " body=" + r1.getBody().asString());
-        assertEquals("PHYSICAL_EXISTENCE", r1.jsonPath().getString("failedCheck"));
-        assertTrue(r1.jsonPath().getString("message").contains("表不存在") || r1.getBody().asString().contains("表不存在"),
+        assertTrue(r1.statusCode() >= 400,
+                "① 表不存在应被拒绝，实际=" + r1.statusCode() + " body=" + r1.getBody().asString());
+        assertEquals("PHYSICAL_EXISTENCE", r1.jsonPath().getString("failedCheck"),
+                "① failedCheck 应为 PHYSICAL_EXISTENCE，实际=" + r1.getBody().asString());
+        assertTrue(r1.getBody().asString().contains("表不存在"),
                 "① 错误信息应点名『表不存在』，实际=" + r1.getBody().asString());
+        assertEquals(0L, ((Number) em.createNativeQuery(
+                        "SELECT count(*) FROM semantic_node WHERE physical_table = :t")
+                .setParameter("t", bogusTable).getSingleResult()).longValue(),
+                "① 库中不应残留该非法节点");
 
-        List<Object> nodeCountRows = em.createNativeQuery(
-                        "SELECT count(*) FROM semantic_node WHERE physical_table='sqlvb_test_table_does_not_exist_xyz'")
-                .getResultList();
-        assertEquals(0, ((Number) nodeCountRows.get(0)).intValue(), "库中不应残留该非法节点");
+        // ② 用一个 v9 图内真实存在的节点，给它加一个不存在的列名
+        Object[] anchor = (Object[]) em.createNativeQuery(
+                        "SELECT n.id, n.node_key, n.physical_table FROM semantic_tab_view v "
+                                + "JOIN semantic_node n ON n.id = v.anchor_node_id "
+                                + "WHERE v.dialect='QUOTE' AND v.tab_type='材质元素' AND v.status='ACTIVE'")
+                .getSingleResult();
+        String nodeId = String.valueOf(anchor[0]);
+        System.out.println("[AC-53(v9)] 用真实节点 " + anchor[1] + "（" + anchor[2] + "）验列不存在分支");
 
-        // ② 新增节点列时db_column填不存在的列名——用一个已知真实存在的表(element_bom_item)配一个假列名
-        List<Object> ebiNodeIdRows = em.createNativeQuery(
-                        "SELECT id FROM semantic_node WHERE node_key='ELEMENT_BOM_ITEM' LIMIT 1").getResultList();
-        Assumptions.assumeTrue(!ebiNodeIdRows.isEmpty(),
-                "[AC-53] 语义图种子未就绪(找不到ELEMENT_BOM_ITEM节点)，②部分标记为 SKIPPED");
-        String ebiNodeId = String.valueOf(ebiNodeIdRows.get(0));
-        String bogusColumn = "{\"nodeId\":\"" + ebiNodeId + "\",\"dbColumn\":\"sqlvb_bogus_column_xyz\","
+        String bogusColumn = "sqlvb_bogus_column_xyz";
+        String body = "{\"nodeId\":\"" + nodeId + "\",\"dbColumn\":\"" + bogusColumn + "\","
                 + "\"displayName\":\"假列\",\"dataType\":\"TEXT\"}";
         Response r2 = RestAssured.given().contentType(ContentType.JSON)
-                .body(bogusColumn).post("/api/cpq/config/semantic-graph/nodes/" + ebiNodeId + "/columns");
-        assertTrue(r2.statusCode() >= 400, "② 列不存在应被拒绝，实际=" + r2.statusCode() + " body=" + r2.getBody().asString());
+                .body(body).post("/api/cpq/config/semantic-graph/nodes/" + nodeId + "/columns");
+        assertTrue(r2.statusCode() >= 400,
+                "② 列不存在应被拒绝，实际=" + r2.statusCode() + " body=" + r2.getBody().asString());
         assertTrue(r2.getBody().asString().contains("列不存在"),
                 "② 错误信息应点名『列不存在，该表实有列为…』，实际=" + r2.getBody().asString());
-
-        List<Object> colCountRows = em.createNativeQuery(
-                        "SELECT count(*) FROM semantic_node_column WHERE db_column='sqlvb_bogus_column_xyz'")
-                .getResultList();
-        assertEquals(0, ((Number) colCountRows.get(0)).intValue(), "库中不应残留该非法列");
+        assertEquals(0L, ((Number) em.createNativeQuery(
+                        "SELECT count(*) FROM semantic_node_column WHERE db_column = :c")
+                .setParameter("c", bogusColumn).getSingleResult()).longValue(),
+                "② 库中不应残留该非法列");
     }
 
-    // -------------------------------------------------------------------
-    // AC-54（边界·反证）引用完整性由库层保证 —— 必须用 psql 直接绕过应用
-    // -------------------------------------------------------------------
+    // ===================================================================
+    // AC-54（边界·反证·关键）引用完整性由库层保证 —— 必须绕过应用层
+    // ===================================================================
     @Test
-    @Order(5)
-    @DisplayName("AC-54【反证·关键】: psql直接DELETE被引用节点 → 数据库层外键拒绝并回滚；写端点删同节点给可读错误")
+    @Order(3)
+    @DisplayName("AC-54(v9)【反证·关键】: psql 直接 DELETE 被引用节点 → 库层外键拒绝并回滚；写端点删同节点给可读 409")
     void ac54_referentialIntegrityEnforcedByDbLayer_negativeCase() throws Exception {
-        List<Object> countRows = em.createNativeQuery(
-                        "SELECT count(*) FROM semantic_node WHERE node_key='ELEMENT_BOM_ITEM'").getResultList();
-        Number before = (Number) countRows.get(0);
-        Assumptions.assumeTrue(before.intValue() != 0,
-                "[AC-54] 语义图种子未就绪(ELEMENT_BOM_ITEM节点不存在)，标记为 SKIPPED，待种子迁移落地后补跑");
-        assertEquals(1, before.intValue(), "前置：ELEMENT_BOM_ITEM 节点应恰好存在1行，实际=" + before);
+        // 选一个 v9 图内「确实被引用」的节点（被边引用 + 被页签视图引用）。
+        // 🔑 先证明「被引用」这个前提，再做破坏动作 —— 否则 DELETE 可能真的删掉一行共享数据。
+        Object[] target = (Object[]) em.createNativeQuery(
+                        "SELECT n.id, n.node_key, n.dialect, "
+                                + "(SELECT count(*) FROM semantic_edge e WHERE e.from_node_id=n.id OR e.to_node_id=n.id), "
+                                + "(SELECT count(*) FROM semantic_tab_view_node tvn WHERE tvn.node_id=n.id) "
+                                + "FROM semantic_tab_view v JOIN semantic_node n ON n.id = v.anchor_node_id "
+                                + "WHERE v.dialect='QUOTE' AND v.tab_type='材质元素' AND v.status='ACTIVE'")
+                .getSingleResult();
+        UUID nodeId = (UUID) target[0];
+        String nodeKey = String.valueOf(target[1]);
+        String dialect = String.valueOf(target[2]);
+        long edgeRefs = ((Number) target[3]).longValue();
+        long viewRefs = ((Number) target[4]).longValue();
+        System.out.println("[AC-54(v9)] 目标节点 " + nodeKey + "/" + dialect + " id=" + nodeId
+                + " 被边引用=" + edgeRefs + " 被页签视图引用=" + viewRefs);
+        assertTrue(edgeRefs > 0,
+                "🚨 前置不成立：该节点没有被任何 semantic_edge 引用 ⇒ 下面的 DELETE 可能会<b>真的删掉一行共享数据</b>。"
+                        + "本条判定为【未验证】并立即停止，🚫 不许硬跑。实际 edgeRefs=" + edgeRefs);
 
-        // ①【破坏方式】不经应用层，直接用真正的 psql 二进制对 test profile 的库执行 DELETE。
-        // 这是 CLAUDE.md 环境事实里记录的 test profile 连接信息：10.177.152.12:5432/cpq_db。
-        String dbHost = "10.177.152.12";
-        String dbName = "cpq_db";
+        long before = scalar("SELECT count(*) FROM semantic_node WHERE id = '" + nodeId + "'");
+        assertEquals(1L, before, "前置：目标节点应恰好存在 1 行，实际=" + before);
+
+        // ①【破坏方式】不经应用层，直接用 psql 二进制对 test profile 的库执行 DELETE。
+        // ⚠️ test profile 的默认库就是共享开发库 cpq_db_0724（application-test.properties:24，D-114）。
+        String dbHost = System.getenv().getOrDefault("DB_HOST", "10.177.152.12");
+        String dbName = System.getenv().getOrDefault("DB_NAME", "cpq_db_0724");
         String dbUser = System.getenv().getOrDefault("DB_USERNAME", "postgres");
         String dbPassword = System.getenv().getOrDefault("DB_PASSWORD", "joii5231");
 
         ProcessBuilder pb = new ProcessBuilder("psql", "-h", dbHost, "-U", dbUser, "-d", dbName,
-                "-c", "DELETE FROM semantic_node WHERE node_key='ELEMENT_BOM_ITEM'");
+                "-v", "ON_ERROR_STOP=1",
+                "-c", "DELETE FROM semantic_node WHERE id = '" + nodeId + "'");
         pb.environment().put("PGPASSWORD", dbPassword);
         pb.redirectErrorStream(true);
         Process proc = pb.start();
@@ -540,28 +284,23 @@ class Sec36aSemanticGraphDbTest {
         try (var reader = new java.io.BufferedReader(new java.io.InputStreamReader(proc.getInputStream()))) {
             output = reader.lines().reduce("", (a, b) -> a + "\n" + b);
         }
-        boolean exited = proc.waitFor(15, TimeUnit.SECONDS);
-        assertTrue(exited, "psql 进程应在15秒内退出");
+        assertTrue(proc.waitFor(15, TimeUnit.SECONDS), "psql 进程应在 15 秒内退出");
         int exitCode = proc.exitValue();
+        System.out.println("[AC-54(v9)] psql exitCode=" + exitCode + " output=" + output);
 
         assertNotEquals(0, exitCode,
-                "① psql DELETE 应因外键约束被数据库拒绝(非0退出码)，实际exitCode=" + exitCode + " output=" + output);
+                "① psql DELETE 应因外键约束被数据库拒绝(非 0 退出码)，实际 exitCode=" + exitCode + " output=" + output);
         assertTrue(output.toLowerCase().contains("foreign key") || output.toLowerCase().contains("violat"),
-                "① 输出应包含外键违反信息，实际output=" + output);
+                "① 输出应包含外键违反信息，实际 output=" + output);
 
-        List<Object> afterRows = em.createNativeQuery(
-                        "SELECT count(*) FROM semantic_node WHERE node_key='ELEMENT_BOM_ITEM'").getResultList();
-        Number after = (Number) afterRows.get(0);
-        assertEquals(before.intValue(), after.intValue(),
-                "① 数据库应已回滚，节点数应与破坏前相同，实际前=" + before + " 后=" + after);
+        long after = scalar("SELECT count(*) FROM semantic_node WHERE id = '" + nodeId + "'");
+        assertEquals(before, after, "① 数据库应已回滚，节点数应与破坏前相同，实际 前=" + before + " 后=" + after);
 
         // ② 走写端点删同一节点，应返回可读错误并列出还在被哪些边/页签视图引用
-        String nodeId = String.valueOf(em.createNativeQuery(
-                        "SELECT id FROM semantic_node WHERE node_key='ELEMENT_BOM_ITEM'").getResultList().get(0));
         Response deleteViaApi = RestAssured.given()
                 .delete("/api/cpq/config/semantic-graph/nodes/" + nodeId);
         assertEquals(409, deleteViaApi.statusCode(),
-                "② 走写端点删除被引用节点应返回409 FK_STILL_REFERENCED，实际=" + deleteViaApi.statusCode()
+                "② 走写端点删除被引用节点应返回 409 FK_STILL_REFERENCED，实际=" + deleteViaApi.statusCode()
                         + " body=" + deleteViaApi.getBody().asString());
         List<?> referencingEdges = deleteViaApi.jsonPath().getList("detail.referencingEdges");
         List<?> referencingTabViews = deleteViaApi.jsonPath().getList("detail.referencingTabViews");
@@ -569,210 +308,125 @@ class Sec36aSemanticGraphDbTest {
                 || (referencingTabViews != null && !referencingTabViews.isEmpty());
         assertTrue(hasReferenceList,
                 "② 应列出还有哪些边/哪些页签视图在引用该节点，实际=" + deleteViaApi.getBody().asString());
+
+        long afterApi = scalar("SELECT count(*) FROM semantic_node WHERE id = '" + nodeId + "'");
+        assertEquals(before, afterApi, "② 走端点删除被拒后，节点仍应在，实际 前=" + before + " 后=" + afterApi);
     }
 
-    // -------------------------------------------------------------------
-    // AC-55（边界·反证）路径歧义在保存期就被拒
-    // -------------------------------------------------------------------
+    // ===================================================================
+    // AC-56（边界·反证）写端点权限 —— ⏸ 待主线裁决，本轮一字未改
+    // ===================================================================
     @Test
-    @Order(6)
-    @DisplayName("AC-55【反证】: 库中构造两条可达路径的边组合 → 保存该边/页签视图被拒，错误信息列出两条路径")
-    void ac55_pathAmbiguityRejectedAtSaveTime_negativeCase() {
-        // 与 AC-10 成对：AC-10 验编译期（未落库场景），本条验保存期（错误的图根本进不了库）。
-        // 破坏方式：找到一个已有 anchor->A->B 路径的页签视图，再尝试新增一条 anchor->B 的直连边，
-        // 构成 anchor 到 B 的第二条路径，保存该边时应被 PATH_UNIQUENESS 校验拒绝。
-        Response graphResp = RestAssured.given()
-                .get("/api/cpq/config/semantic-graph");
-        assertEquals(200, graphResp.statusCode(), graphResp.getBody().asString());
-        List<Map<String, Object>> tabViews = graphResp.jsonPath().getList("tabViews");
-        assertNotNull(tabViews, "tabViews不应为空");
-        assertFalse(tabViews.isEmpty(), "tabViews不应为空列表");
-
-        Map<String, Object> materialElementView = tabViews.stream()
-                .filter(v -> "材质元素".equals(v.get("tabType"))).findFirst().orElse(null);
-        Assumptions.assumeTrue(materialElementView != null,
-                "[AC-55] 找不到『材质元素』页签视图（种子未就绪），标记为 SKIPPED");
-        String anchorNodeId = String.valueOf(materialElementView.get("anchorNodeId"));
-        List<Map<String, Object>> edges = graphResp.jsonPath().getList("edges");
-        // 找一条从anchor出发经过某中间节点、且该中间节点还有另一条边指向同一目的地的组合——
-        // 若找不到现成的二跳路径，直接尝试构造一条与已有边"逻辑等价"的重复直连边来触发歧义。
-        Map<String, Object> anchorEdge = edges.stream()
-                .filter(e -> anchorNodeId.equals(String.valueOf(e.get("fromNodeId")))).findFirst().orElse(null);
-        Assumptions.assumeTrue(anchorEdge != null,
-                "[AC-55] 找不到anchor出发的边，标记为 SKIPPED（种子未就绪或图结构与预期不同）");
-        String midNodeId = String.valueOf(anchorEdge.get("toNodeId"));
-        Map<String, Object> secondHop = edges.stream()
-                .filter(e -> midNodeId.equals(String.valueOf(e.get("fromNodeId")))).findFirst().orElse(null);
-        Assumptions.assumeTrue(secondHop != null,
-                "[AC-55] 找不到二跳边构造歧义场景，标记为 SKIPPED——须人工在种子中挑一组真实存在歧义前置的节点");
-        String targetNodeId = String.valueOf(secondHop.get("toNodeId"));
-        List<Map<String, Object>> keys = (List<Map<String, Object>>) secondHop.get("keys");
-        Assumptions.assumeTrue(keys != null && !keys.isEmpty(),
-                "[AC-55] 二跳边缺连接键信息，标记为 SKIPPED");
-
-        String ambiguousDirectEdge = String.format("""
-                { "fromNodeId": "%s", "toNodeId": "%s", "edgeKind": "LOOKUP", "cardinality": "MANY_TO_ONE",
-                  "keys": [{"seq":0,"leftColumn":"%s","rightColumn":"%s"}] }
-                """, anchorNodeId, targetNodeId, keys.get(0).get("leftColumn"), keys.get(0).get("rightColumn"));
-
-        Response resp = RestAssured.given().contentType(ContentType.JSON)
-                .body(ambiguousDirectEdge).post("/api/cpq/config/semantic-graph/edges");
-        // 若这条边恰好构成了从anchor到target的第二条路径，应被拒；若图设计上anchor本就不该直连target
-        // (例如经过LOOKUP专用中间表)，后端也可能以别的校验(如PHYSICAL_EXISTENCE)先行拒绝——
-        // 只要是400且failedCheck合理即可，核心断言是"不会被静默接受"。
-        assertTrue(resp.statusCode() >= 400,
-                "构造出的歧义边不应被静默接受，实际=" + resp.statusCode() + " body=" + resp.getBody().asString());
-        if ("PATH_UNIQUENESS".equals(resp.jsonPath().getString("failedCheck"))) {
-            List<?> paths = resp.jsonPath().getList("detail.paths");
-            assertNotNull(paths, "应列出两条路径各自的节点序列");
-            assertTrue(paths.size() >= 2, "应列出至少两条路径，实际=" + (paths == null ? 0 : paths.size()));
-        } else {
-            System.out.println("[AC-55] 本次构造被其他校验(" + resp.jsonPath().getString("failedCheck")
-                    + ")先行拦下，未能验证到PATH_UNIQUENESS这一具体分支——需要更精确的歧义构造场景，"
-                    + "已记为部分覆盖，body=" + resp.getBody().asString());
-        }
-    }
-
-    // -------------------------------------------------------------------
-    // AC-56（边界·反证）写端点权限 —— 【本环境阻塞，见下方说明，不是假绿】
-    // -------------------------------------------------------------------
-    @Test
-    @Order(7)
-    @DisplayName("AC-56【反证·阻塞】: 需要真实RBAC+多角色登录，本测试环境登录墙(Redis CONNECTION_CLOSED)挡住，标记SKIPPED")
-    void ac56_writeEndpointRolePermission_negativeCase() throws Exception {
-        // AC-56 的核心是验证"角色确实被区分对待"——PRICING_MANAGER/SALES_MANAGER/SALES_REP 写请求
-        // 必须 403，SYSTEM_ADMIN 必须 2xx。这要求 RBAC 必须开启（本类其余方法为了绕过登录墙用了
-        // @TestProfile 关闭 RBAC，但那样跑 AC-56 毫无意义——RBAC 关闭后所有角色都会 2xx，
-        // 验证不到"角色确实被拒绝"这件事，等于自己把断言做成了假绿）。
+    @Order(4)
+    @DisplayName("AC-56【反证·阻塞】: 需要真实 RBAC + 多角色登录，本测试环境登录墙(Redis CONNECTION_CLOSED)挡住，标记 SKIPPED")
+    void ac56_writeEndpointRolePermission_negativeCase() {
+        // ⏸ 2026-09-05 退役工作说明：本方法验的是 RBAC 角色区分（PRICING_MANAGER/SALES_MANAGER/SALES_REP
+        // 写请求必须 403，SYSTEM_ADMIN 必须 2xx），与 v8/v9 语义图<b>无关</b>——
+        // 它恒 SKIP 的原因是测试环境缺陷（真实 POST /auth/login 稳定 500 CONNECTION_CLOSED，
+        // 用未改动的基线测试 com.cpq.integration.PermissionTest 复现出完全相同的错误），
+        // 不是「断言对象消失」。因此它不属于本次「退役 v8 期语义图用例」的范围，本轮原样保留、一个字未改。
+        // 🚫 没有把它归到「已退役」——那会把一条安全验收项悄悄抹掉。请主线裁决：留着等环境修好，还是转 BACKLOG。
         //
-        // 而 RBAC 开启后，本用例需要真实登录 3 个不同角色拿 CPQ_SESSION——但本测试环境（test profile）
-        // 任何走真实 POST /api/cpq/auth/login 的请求都稳定 500 CONNECTION_CLOSED
-        // （SessionHelper 写 Redis session 失败）。用未改动的既有基线测试
-        // com.cpq.integration.PermissionTest 复现出完全相同的错误（见 test-report 附的原始输出），
-        // 证明这是预先存在、与本任务无关的测试环境缺陷，不是 AC-56 本身的固件或实现问题。
-        //
-        // 结论：AC-56 在当前测试环境下客观无法拿到真实结果——不是"没测"，是"测不了"，两者性质不同，
-        // 已如实标记为 SKIPPED 而非删除用例或伪造通过。一旦 Redis session 问题被修复（不在本任务范围），
-        // 应改回不带 RbacOffProfile 的独立测试类重新验证。
+        // 另注：本类其余方法用 @TestProfile 关掉了 RBAC，那样跑 AC-56 毫无意义——
+        // RBAC 关闭后所有角色都会 2xx，等于自己把断言做成假绿。
         Assumptions.assumeTrue(false,
-                "[AC-56] 阻塞：验证角色403需要RBAC开启+真实多角色登录，但本测试环境登录会稳定触发"
-                        + "Redis CONNECTION_CLOSED（PermissionTest 基线同样复现，与本任务无关）。"
-                        + "标记为 SKIPPED，不是假绿——不删除本用例，待测试环境的 Redis 会话问题解决后应改回真实验证。");
+                "[AC-56] 阻塞：验证角色 403 需要 RBAC 开启 + 真实多角色登录，但本测试环境登录会稳定触发"
+                        + " Redis CONNECTION_CLOSED（PermissionTest 基线同样复现，与本任务无关）。"
+                        + "标记为 SKIPPED，不是假绿——不删除本用例，待测试环境的 Redis 会话问题解决后应改回真实验证。"
+                        + "⏸ 2026-09-05：本条不在 D-123 退役范围内，处置待主线裁决。");
     }
-    // -------------------------------------------------------------------
-    // AC-57（单点）热生效与并发安全
-    // -------------------------------------------------------------------
+
+    // ===================================================================
+    // AC-57②（保留）并发安全
+    // ===================================================================
     @Test
-    @Order(8)
-    @DisplayName("AC-57: 改边fallback_order不重启即生效；20并发预览全成功无500无半新半旧；存量sql_template逐字未变")
-    void ac57_hotReloadAndConcurrencySafety() throws Exception {
-        Response beforeGraph = RestAssured.given()
-                .get("/api/cpq/config/semantic-graph");
-        Integer versionBefore = beforeGraph.jsonPath().getInt("graphVersion");
-        assertNotNull(versionBefore, "① graphVersion不应为空");
+    @Order(5)
+    @DisplayName("AC-57②(v9): 20 并发预览全部成功、无 500、无半新半旧")
+    void ac57_concurrencySafety() {
+        // 🪦 原 ac57① / ③ 已随本轮作废（fallback_order 全 NULL / builder 视图为 0，两者都没有对象），
+        //    见类头碑文与 tombstone_retiredSemanticGraphAcs_premiseStillHolds()。
 
-        List<Map<String, Object>> edges = beforeGraph.jsonPath().getList("edges");
-        assertNotNull(edges, "edges不应为空");
-        assertFalse(edges.isEmpty(), "edges不应为空列表");
-        // uq_edge_fallback 唯一约束只在 coalesce_group IS NOT NULL 时生效（见 需求文档.md §4.5 DDL）——
-        // 优先挑一条 coalesceGroup 为空的边来改 fallbackOrder，天然不可能撞约束；
-        // 若种子里没有这种边，才退化为在同组内找一个未被占用的值，避免重蹈 409 的覆辙。
-        Map<String, Object> anEdge = edges.stream()
-                .filter(e -> e.get("fallbackOrder") != null && e.get("coalesceGroup") == null)
-                .findFirst().orElse(null);
-        if (anEdge == null) {
-            anEdge = edges.stream().filter(e -> e.get("fallbackOrder") != null).findFirst().orElse(null);
-        }
-        if (anEdge == null) {
-            System.out.println("[AC-57] 找不到带fallbackOrder的边（种子未就绪），跳过①部分");
-        } else {
-            String edgeId = String.valueOf(anEdge.get("id"));
-            Object groupObj = anEdge.get("coalesceGroup");
-            int newOrder;
-            if (groupObj == null) {
-                newOrder = ((Number) anEdge.get("fallbackOrder")).intValue() + 1;
-            } else {
-                java.util.Set<Integer> usedInGroup = edges.stream()
-                        .filter(e -> groupObj.equals(e.get("coalesceGroup")) && e.get("fallbackOrder") != null)
-                        .map(e -> ((Number) e.get("fallbackOrder")).intValue())
-                        .collect(java.util.stream.Collectors.toSet());
-                newOrder = 0;
-                while (usedInGroup.contains(newOrder)) newOrder++;
-            }
-            Response putResp = RestAssured.given().contentType(ContentType.JSON)
-                    .body("{\"fallbackOrder\":" + newOrder + "}")
-                    .put("/api/cpq/config/semantic-graph/edges/" + edgeId);
-            assertEquals(200, putResp.statusCode(), "改fallback_order应成功: " + putResp.getBody().asString());
-            Integer versionAfter = putResp.jsonPath().getInt("graphVersion");
-            assertNotNull(versionAfter, "① 应返回新的graphVersion");
-            assertTrue(versionAfter > versionBefore, "① graphVersion应递增，前=" + versionBefore + " 后=" + versionAfter);
+        Object[] anchor = (Object[]) em.createNativeQuery(
+                        "SELECT n.node_key, n.id FROM semantic_tab_view v "
+                                + "JOIN semantic_node n ON n.id = v.anchor_node_id "
+                                + "WHERE v.dialect='QUOTE' AND v.tab_type='材质元素' AND v.status='ACTIVE'")
+                .getSingleResult();
+        String anchorKey = String.valueOf(anchor[0]);
+        String partNoColumn = String.valueOf(em.createNativeQuery(
+                        "SELECT c.db_column FROM semantic_node_column c "
+                                + "WHERE c.node_id=:nid AND c.status='ACTIVE' AND 'PART_NO' = ANY(c.roles) LIMIT 1")
+                .setParameter("nid", anchor[1]).getSingleResult());
+        // 用一个真有数据的料号——0 行也能「并发成功」，但那样验不到取数路径上的竞态
+        String partNo = String.valueOf(em.createNativeQuery(
+                "SELECT material_no FROM ds_quote_element_bom GROUP BY material_no "
+                        + "ORDER BY count(*) DESC LIMIT 1").getSingleResult());
+        System.out.println("[AC-57②(v9)] 锚点=" + anchorKey + " 料号列=" + partNoColumn + " 料号=" + partNo);
 
-            Response afterGraph = RestAssured.given()
-                    .get("/api/cpq/config/semantic-graph");
-            Integer confirmedOrder = afterGraph.jsonPath().getInt(
-                    "edges.find { it.id == '" + edgeId + "' }.fallbackOrder");
-            assertNotNull(confirmedOrder, "① 不重启即应读到新值");
-            assertEquals(newOrder, confirmedOrder, "① 新编译应反映改动后的COALESCE顺序，无需重启");
-
-            // 还原（全局状态改动纪律）
-            RestAssured.given().contentType(ContentType.JSON)
-                    .body("{\"fallbackOrder\":" + anEdge.get("fallbackOrder") + "}")
-                    .put("/api/cpq/config/semantic-graph/edges/" + edgeId);
-        }
-
-        // ②20并发预览调用，全部成功无500
-        UUID componentId = UUID.fromString(RestAssured.given()
-                .contentType(ContentType.JSON)
+        UUID componentId = UUID.fromString(RestAssured.given().contentType(ContentType.JSON)
                 .body("{\"name\":\"" + SemanticGraphTestSupport.TAG + "concurrency-" + UUID.randomUUID() + "\"}")
                 .post("/api/cpq/components").jsonPath().getString("data.id"));
-        // api.md §1.5②：/preview 请求体是裸 builder_config + 平级的 customerCode，不包一层 "builderConfig"。
-        String previewBody = "{\"tabType\":\"材质元素\",\"columns\":["
-                + "{\"sourceNodeKey\":\"LOOKUP_MATERIAL_RECIPE\",\"sourceColumn\":\"name\",\"fieldName\":\"材质名称\",\"isRowKey\":true}"
-                + "],\"customerCode\":\"罗克韦尔\"}";
+
+        // api.md §1.5②：/preview 请求体是裸 builder_config + 平级的预览参数，不包一层 "builderConfig"。
+        String previewBody = "{\"dialect\":\"QUOTE\",\"tabType\":\"材质元素\",\"partNo\":\"" + partNo + "\",\"columns\":["
+                + "{\"sourceNodeKey\":\"" + anchorKey + "\",\"sourceColumn\":\"" + partNoColumn
+                + "\",\"fieldName\":\"材质料号\",\"isRowKey\":true,\"isPartNo\":true}]}";
+
+        // 先单跑一次，确认这份请求体本身是好的、且真的取到行 —— 否则 20 个并发全 200 也可能是空跑
+        Response warmup = RestAssured.given().contentType(ContentType.JSON)
+                .body(previewBody).post("/api/cpq/components/" + componentId + "/builder/preview");
+        assertEquals(200, warmup.statusCode(), "预热请求应成功: " + warmup.getBody().asString());
+        Integer warmupRows = warmup.jsonPath().getObject("rowCount", Integer.class);
+        assertNotNull(warmupRows, "预热请求应返回 rowCount，body=" + warmup.getBody().asString());
+        assertTrue(warmupRows > 0,
+                "🚨 预热请求返回 " + warmupRows + " 行 —— 并发跑一份恒 0 行的请求验不到取数路径上的竞态（空跑=假绿）。"
+                        + "本条判定为【未验证】。body=" + warmup.getBody().asString());
 
         ExecutorService pool = Executors.newFixedThreadPool(20);
         AtomicInteger failures = new AtomicInteger(0);
         AtomicInteger serverErrors = new AtomicInteger(0);
+        AtomicInteger rowMismatch = new AtomicInteger(0);
         try {
             List<Callable<Integer>> tasks = new java.util.ArrayList<>();
             for (int i = 0; i < 20; i++) {
-                tasks.add(() -> RestAssured.given().contentType(ContentType.JSON)
-                        .body(previewBody).post("/api/cpq/components/" + componentId + "/builder/preview")
-                        .statusCode());
+                tasks.add(() -> {
+                    Response r = RestAssured.given().contentType(ContentType.JSON)
+                            .body(previewBody).post("/api/cpq/components/" + componentId + "/builder/preview");
+                    if (r.statusCode() == 200) {
+                        Integer rc = r.jsonPath().getObject("rowCount", Integer.class);
+                        // 「无半新半旧」：同一份配置在并发下必须给出同一个行数
+                        if (rc == null || !rc.equals(warmupRows)) {
+                            rowMismatch.incrementAndGet();
+                        }
+                    }
+                    return r.statusCode();
+                });
             }
-            List<Future<Integer>> results = pool.invokeAll(tasks, 30, TimeUnit.SECONDS);
+            List<Future<Integer>> results = pool.invokeAll(tasks, 60, TimeUnit.SECONDS);
             for (Future<Integer> f : results) {
                 try {
                     int status = f.get();
-                    if (status >= 500) serverErrors.incrementAndGet();
-                    if (status >= 400) failures.incrementAndGet();
+                    if (status >= 500) {
+                        serverErrors.incrementAndGet();
+                    }
+                    if (status >= 400) {
+                        failures.incrementAndGet();
+                    }
                 } catch (Exception e) {
                     failures.incrementAndGet();
                 }
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("并发预览被中断", e);
         } finally {
             pool.shutdownNow();
         }
-        assertEquals(0, serverErrors.get(), "② 并发预览不应出现500，实际500次数=" + serverErrors.get());
+        System.out.println("[AC-57②(v9)] 20 并发结果：500 次数=" + serverErrors.get()
+                + " 失败次数=" + failures.get() + " 行数不一致次数=" + rowMismatch.get()
+                + "（基准行数=" + warmupRows + "）");
+        assertEquals(0, serverErrors.get(), "② 并发预览不应出现 500，实际 500 次数=" + serverErrors.get());
         assertEquals(0, failures.get(), "② 并发预览全部应成功，实际失败次数=" + failures.get());
-
-        // ③ 存量已保存视图的sql_template逐字未变——用一个已存在的builder组件对比改动前后的sql_template
-        List<Object> anySavedRows = em.createNativeQuery(
-                        "SELECT component_id, sql_template FROM component_sql_view "
-                                + "WHERE builder_config IS NOT NULL LIMIT 1")
-                .getResultList();
-        if (!anySavedRows.isEmpty()) {
-            Object[] savedRow = (Object[]) anySavedRows.get(0);
-            String beforeSql = String.valueOf(savedRow[1]);
-            // 图版本已在①中变动过（若①执行了），此处重新查询同一行确认sql_template未随之改写
-            List<Object> afterRows = em.createNativeQuery(
-                            "SELECT sql_template FROM component_sql_view WHERE component_id=:cid")
-                    .setParameter("cid", savedRow[0]).getResultList();
-            String afterSql = String.valueOf(afterRows.get(0));
-            assertEquals(beforeSql, afterSql, "③ 存量sql_template应逐字未变（D-28快照不动）");
-        } else {
-            System.out.println("[AC-57] 库中暂无带builder_config的存量视图供③比对，需在有存量保存记录后补跑");
-        }
+        assertEquals(0, rowMismatch.get(),
+                "② 并发下同一份配置的行数应恒等于 " + warmupRows + "（无半新半旧），实际不一致次数=" + rowMismatch.get());
     }
-
 }

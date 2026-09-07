@@ -17,26 +17,62 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * 需求文档.md §3.6 CI 断言 · 方言参数化 —— AC-35, AC-36, AC-37。
- * （AC-38 golden 见独立脚本 golden-verify；AC-39 端到端序列见 E2E；AC-40 自检声明是 shell checklist，
- *  两者均不适合 @QuarkusTest 形态，登记在 testcase.md。）
+ * 🪦 <b>本类原覆盖 需求文档.md §3.6 CI 断言 · 方言参数化（v8 期 AC-35 / AC-36 / AC-37）——
+ * 其中 2 条已被 v9 用例接替、1 条只保留与方言无关的第④项</b>。
  *
- * 层级 = T-6（AC-35/36 是 CI 断言，反证型，本类把它们做成可在 `mvn test` 里跑的 JUnit 用例，
- * 与"发版前跑一次"的 CI 定位一致）；T-1（AC-37 方言参数化产物对照）。
+ * <h3>裁决来源</h3>
+ * 用户 2026-09-05 裁决（{@code 需求文档.md} 的 {@code D-123}）；三条的技术前提各不相同，逐条写在下表。
  *
- * ⚠️ AC-36【已知信息缺口】：D-27 要求 handler 双向对账"从代码读 Q*Handler 实际 put 的列"。
- * 本测试工程师禁止读 cpq-backend/src/main/** 源码（含具体 Q*Handler 类实现），因此无法知道
- * handler 内部实际执行了哪些 put(...) 调用、也无法知道对账逻辑该反射哪个包/类。api.md 只给出
- * GET /config/semantic-graph 响应里每个节点带 sourceHandler 字符串（如"Q04ElementBomHandler"），
- * 但没有给出"如何拿到该 handler 真实写了哪些列"的可调用契约（无端点、无反射入口约定）。
- * 本类因此只能验证"对账检查确实跑过且给出结构化结果"这一半（通过 POST /validate 的
- * HANDLER_RECONCILE 分项），无法独立实现"人为在 Q*Handler 里加 put() 后断言必须变红"这一半的
- * 破坏步骤——那一步依赖后端 B-17 自己写的 CI 用例（backtask.md 已把 B-17 派给后端，要求其
- * "必须同时证明人为改错后测试确实失败"）。这是信息不足，已按规则停下报告，不在此臆测具体反射方式。
+ * <h3>📌 处置逐条说明（保留历史价值说明，勿删）</h3>
+ * <table>
+ *   <tr><th>方法</th><th>它验的是什么</th><th>处置</th><th>接替者</th></tr>
+ *   <tr><td>{@code ac35_edgeCardinalityCiAssertion_negativeCase}</td>
+ *       <td>CI 反证：正常数据下全部 {@code MANY_TO_ONE} 边的右侧连接键在目标表中唯一；
+ *           把一条真实一对多的边人为改成 {@code MANY_TO_ONE} 后断言必须变红并指名
+ *           （哪条边 / 哪个键 / 重复几组）</td>
+ *       <td><b>作废（已被覆盖）</b>。原实现自身的失败形态已被 {@code D-120} 判定为
+ *           <b>「断言从未执行」型假绿</b>：{@code V416} 把 28 条桥边改成 {@code NARROW} 后，
+ *           图里 {@code MANY_TO_ONE} 只剩 1 条且指向 {@code physical_table IS NULL} 的 FUNCTION 节点，
+ *           循环转 1 圈全跳过、一句断言都没跑，测试照样报绿。<br>
+ *           ⚠️ 注意：<b>作废的是这份实现，不是这道防线</b> —— {@code D-120} 明确裁决「🚫 不作废」，
+ *           改成「不变量 + 阳性对照」重写</td>
+ *       <td>{@link SemanticEdgeCardinalityReconcileTest}（S-29-a 重写版：保留
+ *           {@code asserted > 0} 下限守卫 + 28 条 NARROW 边输入收窄唯一性的阳性对照）<br>
+ *           + <b>{@code AC-121}</b>（①当前数据为绿 ②③反证：新增右键重复的 {@code MANY_TO_ONE} 边必须被拒并指名）</td></tr>
+ *   <tr><td>{@code ac36_handlerReconcileCheckExistsAndPassesNormally}</td>
+ *       <td>{@code POST /validate} 的四道校验里存在 {@code HANDLER_RECONCILE} 分项，且正常路径下不告警</td>
+ *       <td><b>作废（已被覆盖）</b>。{@code D-121} 已就 S-29-b 单独裁决「明确作废 + 留碑」：
+ *           对账的另一侧整个换人了（V6 的 17 个 {@code Q*Handler} → {@code com.cpq.dataset} 的通用参数化导入器），
+ *           实测 {@code semantic_node.source_handler} 非空 = <b>0</b></td>
+ *       <td>{@link SemanticHandlerReconcileTest}（S-29-b 的碑与前提守卫）<br>
+ *           + <b>{@code AC-104}</b>（列声明 ⇄ {@code information_schema} 双向无差集）
+ *           + {@code DatasetSchemaSelfCheck}（启动期，Registry 声明 ⇄ {@code information_schema}）</td></tr>
+ *   <tr><td>{@code ac37_dialectParameterizationProducesTwoForms} ①②③</td>
+ *       <td>方言参数化：同一节点声明分别以 {@code QUOTE} / {@code COSTING} 编译，
+ *           核对别名规则、子件收窄、{@code customer_no + is_current} vs {@code :versionFilter(...)}、
+ *           {@code view_version} 约定列</td>
+ *       <td><b>作废</b>。{@code D-77} 把 {@code dialect} 扩成三值
+ *           {@code QUOTE}/{@code COST_BASIC}/{@code COST_DETAIL}，
+ *           <b>{@code COSTING} 这个值本身没了</b> —— 本方法发 {@code {"dialect":"COSTING"}} 并断言 200，
+ *           在 v9 下必然 400</td>
+ *       <td><b>{@code AC-107}</b>（不含 {@code system_type}/{@code customer_no}）·
+ *           <b>{@code AC-108}</b>（三方言轴收窄）· <b>{@code AC-109}</b>（{@code v_<主表>_all} +
+ *           {@code :versionFilter(...::text...)} + {@code view_version}）·
+ *           <b>{@code AC-110}</b>（列别名按方言分两种形态）—— 四条把①②③逐项接了过去</td></tr>
+ * </table>
+ *
+ * <h3>✅ 保留的 1 项：原 AC-37④（{@code D-55}）</h3>
+ * 「<b>字段绑定键跟 {@code field_type} 走，不跟侧走</b>」：{@code INPUT_*} 写 {@code default_source.path}、
+ * {@code BASIC_DATA} 写 {@code basic_data_path}。这条与数据集、与方言都无关，v9 上依然成立，
+ * 且 <b>{@code AC-101~AC-126} 里没有任何一条覆盖它</b> ⇒ 换 v9 对象后单独保留为
+ * {@link #ac37d_bindingKeyFollowsFieldTypeNotDialect()}。
+ * <p>⚠️ 它同时是 {@code AP-44}「字段类型联动协议」在配置器侧的落脚点 —— 删掉它，
+ * 「加一个新 {@code field_type} 时绑定键写错」这类静默失败就没有任何机械信号了。
  */
 @QuarkusTest
 @TestProfile(SemanticGraphTestSupport.RbacOffProfile.class)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+@DisplayName("Sec36DialectAndCiAssertionTest — 🪦 AC-35/36/37①②③ 已作废（2026-09-05 D-123），仅保留 AC-37④ 绑定键契约")
 class Sec36DialectAndCiAssertionTest {
 
     @Inject
@@ -44,256 +80,96 @@ class Sec36DialectAndCiAssertionTest {
     @Inject
     UserTransaction utx;
 
-
-    @BeforeEach
-    void setUp() throws Exception {
+    private long scalar(String sql) {
+        return ((Number) em.createNativeQuery(sql).getSingleResult()).longValue();
     }
 
-
-    // -------------------------------------------------------------------
-    // AC-35（边界·反证）边基数断言能抓到写错的声明 —— 从表读取边定义
-    // -------------------------------------------------------------------
+    // ===================================================================
+    // 🪦 作废前提守卫（会真的执行）
+    // ===================================================================
     @Test
     @Order(1)
-    @DisplayName("AC-35【CI反证】: 正常数据下MANY_TO_ONE边全部唯一；人为改错一条真实一对多的边后必须失败并指名")
-    void ac35_edgeCardinalityCiAssertion_negativeCase() throws Exception {
-        // ① 正常路径：对库中全部 cardinality='MANY_TO_ONE' 的边，逐条校验其右侧连接键在目标表中唯一。
-        //    纯 SQL 断言，不依赖任何 Java 实现类——"从表读取边定义"正是 D-27 要求的口径。
-        @SuppressWarnings("unchecked")
-        List<Object[]> manyToOneEdges = em.createNativeQuery(
-                "SELECT e.id, tn.physical_table, ek.right_column " +
-                        "FROM semantic_edge e " +
-                        "JOIN semantic_node tn ON tn.id = e.to_node_id " +
-                        "JOIN semantic_edge_key ek ON ek.edge_id = e.id AND ek.seq = 0 " +
-                        "WHERE e.cardinality = 'MANY_TO_ONE' AND e.status = 'ACTIVE' " +
-                        "AND tn.physical_table IS NOT NULL"
-        ).getResultList();
+    @DisplayName("🪦 作废前提守卫: source_handler 全空（AC-36）+ 方言 distinct 值不含 COSTING（AC-37①②③）")
+    void tombstone_ac36Ac37PremiseStillHolds() {
+        long activeNodes = scalar("SELECT count(*) FROM semantic_node WHERE status='ACTIVE'");
+        long withHandler = scalar("SELECT count(*) FROM semantic_node WHERE source_handler IS NOT NULL");
+        List<?> dialects = em.createNativeQuery(
+                "SELECT DISTINCT dialect FROM semantic_node WHERE status='ACTIVE' ORDER BY 1").getResultList();
+        System.out.println("[🪦 Sec36 留碑] ACTIVE 节点=" + activeNodes + " · source_handler 非空=" + withHandler
+                + " · 方言 distinct=" + dialects);
 
-        assertFalse(manyToOneEdges.isEmpty(),
-                "库中应存在 MANY_TO_ONE 边（种子迁移 B-1 应已灌入 19 条边），若为空说明 semantic_edge "
-                        + "尚未落地/未跑种子迁移——这是环境前置未就绪，不是本用例判定为『通过』的依据");
+        assertTrue(activeNodes > 0, "🚨 语义图为空 —— 这不是「作废前提成立」，是种子没就位。"
+                + "本条判定为【未验证】，🚫 不许当成通过。");
 
-        StringBuilder violations = new StringBuilder();
-        for (Object[] edge : manyToOneEdges) {
-            String table = String.valueOf(edge[1]);
-            String rightColumn = String.valueOf(edge[2]);
-            List<Object[]> dupes = em.createNativeQuery(
-                            "SELECT " + rightColumn + ", count(*) c FROM " + table
-                                    + " GROUP BY " + rightColumn + " HAVING count(*) > 1")
-                    .getResultList();
-            if (!dupes.isEmpty()) {
-                violations.append(table).append(".").append(rightColumn)
-                        .append(" 重复 ").append(dupes.size()).append(" 组; ");
-            }
-        }
-        assertEquals("", violations.toString(), "① 正常数据下全部 MANY_TO_ONE 边右键应唯一，违规=" + violations);
+        assertEquals(0L, withHandler,
+                "🚦 AC-36（HANDLER_RECONCILE 分项存在且不告警）的作废前提被推翻：有 " + withHandler
+                        + " 个节点重新登记了 source_handler。\n"
+                        + "  作废理由（D-121）是「对账的另一侧整个换人了，登记侧恒为 0，判据没有对象」。\n"
+                        + "  对象回来了 ⇒ 见 SemanticHandlerReconcileTest 的碑文重新评估是否把对账接回来。");
 
-        // ②【破坏方式】挑一条已知真实一对多的边（右侧键必然重复），在库中把它的 cardinality
-        // 改成 MANY_TO_ONE，重新跑同一断言逻辑，必须变红并指出是哪条边、哪个键重复了几行。
-        Object[] oneToManyEdge = findAKnownOneToManyEdge();
-        Assumptions.assumeTrue(oneToManyEdge != null,
-                "[AC-35] 库中未找到可用于反证的 ONE_TO_MANY 边（种子未就绪），②反证部分标记为 SKIPPED，"
-                        + "须在种子迁移落地后补跑");
-        UUID edgeId = (UUID) oneToManyEdge[0];
-        String table = String.valueOf(oneToManyEdge[1]);
-        String rightColumn = String.valueOf(oneToManyEdge[2]);
-
-        utx.begin();
-        em.joinTransaction();
-        em.createNativeQuery("UPDATE semantic_edge SET cardinality='MANY_TO_ONE' WHERE id=:id")
-                .setParameter("id", edgeId).executeUpdate();
-        utx.commit();
-        try {
-            List<Object[]> dupesAfterCorruption = em.createNativeQuery(
-                            "SELECT " + rightColumn + ", count(*) c FROM " + table
-                                    + " GROUP BY " + rightColumn + " HAVING count(*) > 1")
-                    .getResultList();
-            assertFalse(dupesAfterCorruption.isEmpty(),
-                    "② 断言必须失败：把真实一对多的边改成 MANY_TO_ONE 后，" + table + "." + rightColumn
-                            + " 应能查到重复行，若这里是空说明选错了边（该边本来就是一对一），需要换一条真正的一对多边做反证");
-            System.out.println("[AC-35 反证成功] 边=" + edgeId + " 表=" + table + " 列=" + rightColumn
-                    + " 重复组数=" + dupesAfterCorruption.size() + "（失败信息应指出这三项）");
-        } finally {
-            // 还原（CLAUDE.md §4.3 全局状态改动纪律：改了必须在 finally 里还原）
-            utx.begin();
-            em.joinTransaction();
-            em.createNativeQuery("UPDATE semantic_edge SET cardinality='ONE_TO_MANY' WHERE id=:id")
-                    .setParameter("id", edgeId).executeUpdate();
-            utx.commit();
-        }
+        assertFalse(dialects.contains("COSTING"),
+                "🚦 AC-37①②③（QUOTE vs COSTING 两形态对照）的作废前提被推翻：方言里又出现了 COSTING。\n"
+                        + "  作废理由是「D-77 把 dialect 扩成三值 QUOTE/COST_BASIC/COST_DETAIL，COSTING 这个值没了」。\n"
+                        + "  它回来了 ⇒ 必须搞清楚是回滚了 D-77，还是有人新写了一份不该存在的声明。\n"
+                        + "  实际 distinct=" + dialects);
+        assertTrue(dialects.contains("QUOTE"), "语义图里连 QUOTE 方言都没有 —— 环境前置未就绪，本条判定为【未验证】。"
+                + "实际 distinct=" + dialects);
     }
 
-    /** 找一条已知右键必然重复的边（用于②反证）。选择依据：目标表存在计数>1的分组。 */
-    private Object[] findAKnownOneToManyEdge() {
-        @SuppressWarnings("unchecked")
-        List<Object[]> candidates = em.createNativeQuery(
-                "SELECT e.id, tn.physical_table, ek.right_column " +
-                        "FROM semantic_edge e " +
-                        "JOIN semantic_node tn ON tn.id = e.to_node_id " +
-                        "JOIN semantic_edge_key ek ON ek.edge_id = e.id AND ek.seq = 0 " +
-                        "WHERE e.cardinality = 'ONE_TO_MANY' AND e.status='ACTIVE' " +
-                        "AND tn.physical_table IS NOT NULL"
-        ).getResultList();
-        for (Object[] c : candidates) {
-            String table = String.valueOf(c[1]);
-            String rightColumn = String.valueOf(c[2]);
-            try {
-                List<Object[]> dupes = em.createNativeQuery(
-                                "SELECT " + rightColumn + ", count(*) FROM " + table
-                                        + " GROUP BY " + rightColumn + " HAVING count(*) > 1 LIMIT 1")
-                        .getResultList();
-                if (!dupes.isEmpty()) {
-                    return c;
-                }
-            } catch (Exception ignored) {
-                // 表/列名非法，跳过候选
-            }
-        }
-        return null;
-    }
-
-    // -------------------------------------------------------------------
-    // AC-36（边界·反证）登记与导入 handler 双向对账 —— 部分覆盖（见类头信息缺口说明）
-    // -------------------------------------------------------------------
+    // ===================================================================
+    // ✅ 保留（换 v9 对象）：原 AC-37④ —— 绑定键跟 field_type 走，不跟侧走（D-55）
+    // ===================================================================
     @Test
     @Order(2)
-    @DisplayName("AC-36【部分覆盖，另见类头信息缺口】: HANDLER_RECONCILE 校验分项存在且正常路径下不告警")
-    void ac36_handlerReconcileCheckExistsAndPassesNormally() {
-        // 2026-08-21 真跑教训：发空对象 {} 会被当成"新增一个节点"来校验，PHYSICAL_EXISTENCE 第一步就
-        // 报"节点不存在"直接短路，后面的 EDGE_CARDINALITY/PATH_UNIQUENESS/HANDLER_RECONCILE 全部
-        // status=SKIPPED（api.md §1.3：四道校验固定次序，前一道不过后面不跑）。/validate 是"干跑你
-        // 即将保存的这一条声明"，不是"扫全图"——发一个真实存在的节点（原样重新提交）才能让四道校验
-        // 全部真正跑到，包括我们要看的 HANDLER_RECONCILE。
-        Response graphResp = RestAssured.given().get("/api/cpq/config/semantic-graph");
-        assertEquals(200, graphResp.statusCode(), graphResp.getBody().asString());
-        List<Map<String, Object>> nodes = graphResp.jsonPath().getList("nodes");
-        assertNotNull(nodes, "nodes不应为空");
-        assertFalse(nodes.isEmpty(), "nodes不应为空列表");
-        Map<String, Object> aRealNode = nodes.stream()
-                .filter(n -> n.get("sourceHandler") != null).findFirst().orElse(nodes.get(0));
+    @DisplayName("AC-37④(v9): 同一节点同一次保存里，INPUT_NUMBER 写 default_source、BASIC_DATA 写 basic_data_path")
+    void ac37d_bindingKeyFollowsFieldTypeNotDialect() {
+        Object[] anchor = (Object[]) em.createNativeQuery(
+                        "SELECT n.node_key, n.id FROM semantic_tab_view v "
+                                + "JOIN semantic_node n ON n.id = v.anchor_node_id "
+                                + "WHERE v.dialect='QUOTE' AND v.tab_type='材质元素' AND v.status='ACTIVE'")
+                .getSingleResult();
+        String anchorKey = String.valueOf(anchor[0]);
+        String partNoColumn = String.valueOf(em.createNativeQuery(
+                        "SELECT c.db_column FROM semantic_node_column c "
+                                + "WHERE c.node_id=:nid AND c.status='ACTIVE' AND 'PART_NO' = ANY(c.roles) LIMIT 1")
+                .setParameter("nid", anchor[1]).getSingleResult());
+        System.out.println("[AC-37④(v9)] 锚点=" + anchorKey + " 料号列=" + partNoColumn);
 
-        String validatePayloadJson;
-        try {
-            validatePayloadJson = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(aRealNode);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-        Response validateResp = RestAssured.given().contentType(ContentType.JSON)
-                .body(validatePayloadJson)
-                .post("/api/cpq/config/semantic-graph/validate");
-        assertEquals(200, validateResp.statusCode(), validateResp.getBody().asString());
-        List<java.util.Map<String, Object>> checks = validateResp.jsonPath().getList("checks");
-        assertNotNull(checks, "checks不应为空");
-        assertFalse(checks.isEmpty(), "checks不应为空列表");
-        boolean hasHandlerReconcile = checks.stream()
-                .anyMatch(c -> "HANDLER_RECONCILE".equals(c.get("check")));
-        assertTrue(hasHandlerReconcile, "应存在 HANDLER_RECONCILE 校验分项，实际=" + checks);
-        // 破坏后必须失败的那一半：见类头说明，信息不足，无法在测试工程师侧独立实现，
-        // 已在 testcase.md 与本次回报中登记为需要后端 B-17 补齐的对账入口契约。
-    }
-
-    // -------------------------------------------------------------------
-    // AC-37（单点）方言参数化：同一声明产出两种形态
-    // 🔄 2026-08-24（D-50 / D-54 修订）：方言由「三处」减为「两处」——
-    //   · 业务列别名规则（_<Sheet简称>_<列名>）与子件收窄（= ANY(:total_material_no)）
-    //     现在是【两侧共有】，不再是方言（D-50 统一闭包机制、D-54 统一别名纯函数规则）。
-    //     旧断言「核价侧别名不带 _ 前缀、用英文DB列名」已作废，必须反过来断言核价侧也带前缀。
-    //   · 方言只剩：① 报价侧 customer_no+is_current 收窄 vs 核价侧 :versionFilter(...) 收窄
-    //             ② 字段绑定键——但 D-55 已澄清这也【不是】"报价 vs 核价"的方言，而是跟
-    //                field_type 走（INPUT_* → default_source.path；BASIC_DATA → basic_data_path，
-    //                两侧同规则）。本方法④用同一节点在两侧分别编两种 field_type 验证"编译器按
-    //                field_type 决定写哪个键，不按侧决定"。
-    //   🚫 本条只约束新产物：存量 26 视图/1183 字段的别名与绑定键一字节不动，见 AC-61。
-    // -------------------------------------------------------------------
-    @Test
-    @Order(3)
-    @DisplayName("AC-37: 同一节点声明分别以报价侧/核价侧参数编译，两处方言逐一核对（别名与子件收窄两侧统一）")
-    void ac37_dialectParameterizationProducesTwoForms() {
-        UUID componentId = UUID.fromString(RestAssured.given()
-                .contentType(ContentType.JSON)
-                .body("{\"name\":\"" + SemanticGraphTestSupport.TAG + "dialect-" + UUID.randomUUID() + "\"}")
+        UUID componentId = UUID.fromString(RestAssured.given().contentType(ContentType.JSON)
+                .body("{\"name\":\"" + SemanticGraphTestSupport.TAG + "bindkey-" + UUID.randomUUID() + "\"}")
                 .post("/api/cpq/components").jsonPath().getString("data.id"));
 
-        String quoteConfig = """
-                { "tabType": "材质元素", "dialect": "QUOTE", "columns": [
-                  {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"content","fieldName":"组成含量"}
-                ]}
-                """;
-        Response quoteResp = RestAssured.given().contentType(ContentType.JSON)
-                .body(quoteConfig).post("/api/cpq/components/" + componentId + "/builder/compile");
-        assertEquals(200, quoteResp.statusCode(), quoteResp.getBody().asString());
-        String quoteSql = quoteResp.jsonPath().getString("sql");
-        assertNotNull(quoteSql);
-        assertFalse(quoteSql.isBlank());
-        // ①【两侧共有】业务列别名一律 _<Sheet简称>_<列名>
-        assertTrue(quoteSql.matches("(?s).*_[\\u4e00-\\u9fa5A-Za-z0-9]+_[\\u4e00-\\u9fa5A-Za-z0-9]+.*"),
-                "① 报价侧业务列别名应带 _ 前缀，实际:\n" + quoteSql);
-        // ①【两侧共有】子件收窄一律 = ANY(:total_material_no)（D-50）
-        assertTrue(quoteSql.contains("= ANY(:total_material_no)"),
-                "① 报价侧子件收窄也应含 = ANY(:total_material_no)（D-50 两侧统一），实际:\n" + quoteSql);
-        // ② 报价侧独有：customer_no = :customerCode + is_current
-        assertTrue(quoteSql.contains(":customerCode"), "② 报价侧收窄应含 customer_no = :customerCode，实际:\n" + quoteSql);
-        assertTrue(quoteSql.contains("is_current"), "② 报价侧收窄应含 is_current，实际:\n" + quoteSql);
-        assertFalse(quoteSql.contains(":versionFilter("), "② 报价侧不应出现核价侧的 :versionFilter(...)，实际:\n" + quoteSql);
+        // 一次保存里同时放两种 field_type —— 唯一变量就是 fieldType 本身，方言/节点/表都相同。
+        String config = "{\"dialect\":\"QUOTE\",\"tabType\":\"材质元素\",\"columns\":["
+                + "{\"sourceNodeKey\":\"" + anchorKey + "\",\"sourceColumn\":\"" + partNoColumn
+                + "\",\"fieldName\":\"料件号\",\"isRowKey\":true,\"isPartNo\":true},"
+                + "{\"sourceNodeKey\":\"" + anchorKey + "\",\"sourceColumn\":\"content_pct\","
+                + "\"fieldName\":\"组成含量_INPUT\",\"fieldType\":\"INPUT_NUMBER\"},"
+                + "{\"sourceNodeKey\":\"" + anchorKey + "\",\"sourceColumn\":\"loss_rate\","
+                + "\"fieldName\":\"损耗率_BASIC\",\"fieldType\":\"BASIC_DATA\"}]}";
 
-        String costingConfig = """
-                { "tabType": "材质元素", "dialect": "COSTING", "columns": [
-                  {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"content","fieldName":"组成含量"}
-                ]}
-                """;
-        Response costingResp = RestAssured.given().contentType(ContentType.JSON)
-                .body(costingConfig).post("/api/cpq/components/" + componentId + "/builder/compile");
-        assertEquals(200, costingResp.statusCode(), costingResp.getBody().asString());
-        String costingSql = costingResp.jsonPath().getString("sql");
-        assertNotNull(costingSql);
-        assertFalse(costingSql.isBlank());
-        // ①【两侧共有，反转旧断言】核价侧业务列别名现在也应带 _<Sheet简称>_<列名> 前缀
-        //   （D-54：不再是「英文DB列名无前缀」，那是 D-50 之前的旧方言口径，已作废）
-        assertTrue(costingSql.matches("(?s).*_[\\u4e00-\\u9fa5A-Za-z0-9]+_[\\u4e00-\\u9fa5A-Za-z0-9]+.*"),
-                "① 核价侧业务列别名也应带 _<Sheet简称>_<列名> 前缀（D-54 两侧统一，旧“无前缀”口径已作废），实际:\n" + costingSql);
-        // 约定列名(hf_part_no)两侧同名——核价侧同一份声明理应也能推出 hf_part_no（若该 tabType 有约定料号列）
-        // ①【两侧共有】子件收窄一律 = ANY(:total_material_no)
-        assertTrue(costingSql.contains("= ANY(:total_material_no)"),
-                "① 核价侧子件收窄应含 = ANY(:total_material_no)，实际:\n" + costingSql);
-        // ③ 核价侧独有：:versionFilter(is_current, version_no, code) 收窄 + view_version 约定列
-        assertTrue(costingSql.contains(":versionFilter("),
-                "③ 核价侧收窄应含 :versionFilter(is_current, version_no, code)，实际:\n" + costingSql);
-        assertFalse(costingSql.contains(":customerCode"), "③ 核价侧不应出现 :customerCode（D-54①：客户维度不计入方言，核价侧本就不随客户变化），实际:\n" + costingSql);
-        List<String> costingDeclared = costingResp.jsonPath().getList("declaredColumns");
-        assertNotNull(costingDeclared, "核价侧declaredColumns不应为空");
-        assertFalse(costingDeclared.isEmpty(), "核价侧declaredColumns不应为空列表");
-        assertTrue(costingDeclared.contains("view_version"),
-                "③ 核价侧declaredColumns应含view_version，实际=" + costingDeclared);
+        Response save = RestAssured.given().contentType(ContentType.JSON)
+                .body(config).put("/api/cpq/components/" + componentId + "/builder");
+        assertEquals(200, save.statusCode(), "保存应成功: " + save.getBody().asString());
 
-        // ④ 字段绑定键跟 field_type 走，不跟侧走（D-55）：本节点在两侧各存一次，INPUT_NUMBER 走
-        //    default_source.path、BASIC_DATA 走 basic_data_path——用同一份 payload 分别在两侧
-        //    保存后查 component.fields，断言绑定键只随 field_type 变化、不随 dialect 变化。
-        // 与 ac13 同源问题（B-27 新增「缺标识列阻断」校验）：本 payload 原本两列都没有
-        // isPartNo/isRowKey 标记，B-27 之前写的老 payload 保存不了。照 ac13 的做法补一列
-        // 标识列（ELEMENT_BOM_ITEM.material_part_no 本就在 semantic_node_column 里注册了
-        // PART_NO 角色），不改动原有两列的字段名/字段类型，不放宽 B-27 的校验断言。
-        String quoteSaveConfig = """
-                { "tabType": "材质元素", "dialect": "QUOTE", "columns": [
-                  {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"material_part_no","fieldName":"料件号","isRowKey":true,"isPartNo":true},
-                  {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"content","fieldName":"组成含量_INPUT","fieldType":"INPUT_NUMBER"},
-                  {"sourceNodeKey":"ELEMENT_BOM_ITEM","sourceColumn":"scrap_rate","fieldName":"损耗率_BASIC","fieldType":"BASIC_DATA"}
-                ]}
-                """;
-        Response quoteSave = RestAssured.given().contentType(ContentType.JSON)
-                .body(quoteSaveConfig).put("/api/cpq/components/" + componentId + "/builder");
-        assertEquals(200, quoteSave.statusCode(), "④ 报价侧保存应成功: " + quoteSave.getBody().asString());
-        // 用 GET 组件详情核对 fields（黑盒契约，不直接拼裸 SQL 读 jsonb 做类型转换）
-        Response quoteDetail = RestAssured.given().get("/api/cpq/components/" + componentId);
-        List<Map<String, Object>> quoteFieldList = quoteDetail.jsonPath().getList("data.fields");
-        assertNotNull(quoteFieldList, "④ 报价侧 fields 不应为空");
-        Map<String, Object> inputField = quoteFieldList.stream()
+        // 用 GET 组件详情核对 fields（黑盒契约，不拼裸 SQL 读 jsonb）
+        Response detail = RestAssured.given().get("/api/cpq/components/" + componentId);
+        assertEquals(200, detail.statusCode(), detail.getBody().asString());
+        List<Map<String, Object>> fields = detail.jsonPath().getList("data.fields");
+        assertNotNull(fields, "fields 不应为空，实际=" + detail.getBody().asString());
+        assertFalse(fields.isEmpty(), "fields 不应为空列表");
+        System.out.println("[AC-37④(v9)] fields=" + fields);
+
+        Map<String, Object> inputField = fields.stream()
                 .filter(f -> "组成含量_INPUT".equals(f.get("name"))).findFirst().orElse(null);
-        Map<String, Object> basicField = quoteFieldList.stream()
+        Map<String, Object> basicField = fields.stream()
                 .filter(f -> "损耗率_BASIC".equals(f.get("name"))).findFirst().orElse(null);
-        assertNotNull(inputField, "④ 应能找到组成含量_INPUT字段，实际=" + quoteFieldList);
-        assertNotNull(basicField, "④ 应能找到损耗率_BASIC字段，实际=" + quoteFieldList);
-        assertTrue(inputField.containsKey("default_source"), "④ INPUT_NUMBER 应写 default_source，实际=" + inputField);
+        assertNotNull(inputField, "应能找到 组成含量_INPUT 字段，实际=" + fields);
+        assertNotNull(basicField, "应能找到 损耗率_BASIC 字段，实际=" + fields);
+
+        assertTrue(inputField.containsKey("default_source") && inputField.get("default_source") != null,
+                "INPUT_NUMBER 应写 default_source（绑定键跟 field_type 走），实际=" + inputField);
         assertTrue(basicField.containsKey("basic_data_path") && basicField.get("basic_data_path") != null,
-                "④ BASIC_DATA 即使在报价侧也应写 basic_data_path（跟field_type走，不跟侧走），实际=" + basicField);
+                "BASIC_DATA 应写 basic_data_path（绑定键跟 field_type 走，不跟侧走），实际=" + basicField);
     }
 }
