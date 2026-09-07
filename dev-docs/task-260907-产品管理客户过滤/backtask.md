@@ -132,10 +132,11 @@
 
 ```bash
 # 在仓库根目录执行。检查不通过就【不会】启动 —— 这是控制流，不是提示。
-M=cpq-backend/src/main/resources/db/migration
+SRC=cpq-backend/src/main/resources/db/migration
+CP=cpq-backend/target/classes/db/migration      # ← Flyway 真正读的是这里，不是源码树
 DIFF=$(comm -23 \
-  <(ls "$M"                    | grep -oE '^V[0-9]+' | sort -u) \
-  <(git ls-tree master --name-only "$M/" | grep -oE  'V[0-9]+' | sort -u))
+  <( { ls "$SRC" 2>/dev/null; ls "$CP" 2>/dev/null; } | grep -oE '^V[0-9]+' | sort -u ) \
+  <( git ls-tree master --name-only "$SRC/" | grep -oE 'V[0-9]+' | sort -u ))
 
 if [ -n "$DIFF" ]; then
   echo "🚨 本分支有 master 上没有的迁移：$DIFF"
@@ -167,7 +168,15 @@ fi
 新守卫（左 = ls 文件系统）      → 🚨 拦下
 ```
 
-**坑 2 · 右边的 `git ls-tree` 路径必须带尾斜杠 `"$M/"`。**
+**坑 3 · 左边必须同时扫 `target/classes/db/migration`，不能只扫源码树。**
+🚨 **Flyway 解析的是 classpath，不是源码树。** 源文件删了/改名了，**编译产物还在** ⇒ 起服务照样从残留产物落库。
+📌 实证（`页签属性的标签优化` 会话 2026-09-07 交底）：当天一起事故里，肇事方查了源码树、也复查了「库顶版 422 / V423 记录 0」——**两项都属实**，
+但 `target/classes` 没清，`mvnw test` 就从残留产物把迁移落进了共享库。
+⚠️ **改迁移号之后尤其危险**：旧号文件留在 `target/classes`，与新号**一起**被应用，而且内容一模一样，
+`ON CONFLICT DO NOTHING` 吃掉大部分冲突后，剩下的症状零散、不成规律，极难归因。
+⇒ 改号流程固定四步：**先清 classpath → 改号 → 重编 → 差集必须为空**。
+
+**坑 2 · 右边的 `git ls-tree` 路径必须带尾斜杠 `"$SRC/"`。**
 `git ls-tree` 对尾斜杠敏感：**不带**尾斜杠时它只返回**目录条目本身**（`.../db/migration` 一行），`grep 'V[0-9]+'` 命中 **0** 条
 ⇒ 右边恒为空集 ⇒ **左边所有迁移都被判成差集 ⇒ 守卫每次都拦，服务永远起不来**。
 🚨 这个假阳性的危害不亚于漏放：**一个「每次都拦」的守卫，会在第二天就被人直接注释掉**。
@@ -182,6 +191,7 @@ git ls-tree master --name-only .../migration/   → .../migration/V1__a.sql …�
 |---|---|---|
 | 本分支有已提交但 master 没有的迁移（V3） | 拦 | 🚨 拦下 |
 | 本分支有**未提交**的迁移（V4） | 拦 | 🚨 拦下 |
+| `target/classes` 有残留而源码树已无 | 拦 | 🚨 拦下（坑 3，2026-09-07 补） |
 | 两者都合进 master 后 | 放行 | ✅ 放行 |
 
 > 🔑 **一条方法论**（对方指出，我认同）：先前那轮 `HEAD~40` 基线的 4/4 证伪实验**结构上不可能暴露坑 1** —— 它用的全是**已提交**的迁移。
