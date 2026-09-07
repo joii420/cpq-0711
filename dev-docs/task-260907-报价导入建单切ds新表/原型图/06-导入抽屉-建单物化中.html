@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>06 · 导入抽屉 建单完成 · 物化中 — task-260907</title>
+<link rel="stylesheet" href="proto.css">
+</head>
+<body>
+
+<div class="proto-note">
+  <b>📌 当前基准 · task-260907 · F-7 · 服务 AC-1 / AC-20</b>
+  <code>POST /dataset/quote/create-quotation</code> 同步段只做<b>建单 + 建行</b>并立即返回；卡片值物化转后台。
+  响应 <code>materializing=true</code> 是<b>唯一显式的「要去轮询」信号</b> ——
+  🚫 不许靠 <code>cardValuesReady==false</code> 去猜（分不清「真失败」与「还没开始算」）。
+  重试时 <b>不重新 POST create-quotation</b>，直接重进轮询。
+</div>
+
+<!-- ============ 物化中 ============ -->
+<div class="drawer-mask" style="margin-bottom:24px">
+  <div class="drawer">
+    <div class="drawer-head">
+      <div class="drawer-title">导入报价数据　<span class="hint">报价单已创建 · 正在计算</span></div>
+      <div class="drawer-close">✕</div>
+    </div>
+    <div class="drawer-body">
+
+      <div class="steps">
+        <div class="step done"><span class="step-num">✓</span><span class="step-txt">选客户并上传</span></div>
+        <div class="step-line"></div>
+        <div class="step done"><span class="step-num">✓</span><span class="step-txt">选模板并建单</span></div>
+      </div>
+
+      <div class="alert alert-info" style="border-color:#b7eb8f;background:#f6ffed">
+        <b>报价单已创建　<span class="mono">QT-20260907-0003</span></b>
+        共建出 <b>12</b> 个产品行。正在后台计算卡片值，完成后自动进入编辑页。
+      </div>
+
+      <dl class="desc" style="margin-bottom:24px">
+        <dt>客户</dt><dd>正泰　<span class="hint">CUST-0004</span></dd>
+        <dt>报价单名称</dt><dd>正泰 · 9 月新料号报价</dd>
+        <dt>报价模板</dt><dd>报价模板 · ds 原生 v1.0　<span class="tag tag-blue">11 页签</span></dd>
+        <dt>产品行</dt><dd>12</dd>
+      </dl>
+
+      <div style="margin-bottom:8px">正在计算卡片值…</div>
+      <div class="progress-row" style="margin-bottom:8px">
+        <div class="progress"><i style="width:62%"></i></div>
+        <div class="progress-pct">62%</div>
+      </div>
+      <div class="hint" style="margin-left:0">已完成 <b>7 / 12</b> 个产品</div>
+
+      <div class="alert alert-warn" style="margin-top:24px">
+        <b>可以关闭本窗口</b>
+        计算在后台继续。关闭后可从报价单列表直接打开该单，届时若仍在计算会继续显示进度。
+      </div>
+
+    </div>
+    <div class="drawer-foot">
+      <button class="btn">关闭（后台继续）</button>
+      <button class="btn btn-primary btn-disabled">进入编辑页</button>
+      <span class="tip">计算完成后可进入</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 物化失败 · 可重试 ============ -->
+<div class="drawer-mask">
+  <div class="drawer">
+    <div class="drawer-head">
+      <div class="drawer-title">导入报价数据　<span class="hint">错误态 · 计算失败可重试</span></div>
+      <div class="drawer-close">✕</div>
+    </div>
+    <div class="drawer-body">
+
+      <div class="steps">
+        <div class="step done"><span class="step-num">✓</span><span class="step-txt">选客户并上传</span></div>
+        <div class="step-line"></div>
+        <div class="step done"><span class="step-num">✓</span><span class="step-txt">选模板并建单</span></div>
+      </div>
+
+      <div class="alert alert-error">
+        <b>卡片值计算未完成</b>
+        <b>报价单已创建成功，数据没有丢失</b> —— 只是卡片值还没算完。可以重试计算，或直接进入编辑页（页面会自行触发计算）。
+      </div>
+
+      <dl class="desc" style="margin-bottom:16px">
+        <dt>报价单号</dt><dd class="mono">QT-20260907-0003</dd>
+        <dt>产品行</dt><dd>12</dd>
+        <dt>已完成</dt><dd>7 / 12</dd>
+      </dl>
+
+      <div class="alert alert-warn">
+        <b>重试不会重复建单</b>
+        <code>quotationId</code> 已存在时只重新进入轮询，🚫 不再 POST <code>create-quotation</code>。
+      </div>
+
+    </div>
+    <div class="drawer-foot">
+      <button class="btn">进入编辑页</button>
+      <button class="btn btn-primary">重试计算</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

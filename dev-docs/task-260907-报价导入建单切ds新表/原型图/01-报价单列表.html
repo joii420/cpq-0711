@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>01 · 报价单列表（摘掉「从基础数据导入」后）— task-260907</title>
+<link rel="stylesheet" href="proto.css">
+</head>
+<body>
+
+<div class="proto-note">
+  <b>📌 当前基准 · task-260907 · F-1 / F-2 · 服务 AC-13 / AC-19</b>
+  工具栏最终顺序：<code>[搜索框] [导入历史] [导入报价数据] [新建报价单]</code>。
+  「从基础数据导入」按钮 <b>已移除</b>（原位于 <code>QuotationList.tsx:279</code>，在「导入报价数据」之前）。
+  下方同页展示<b>有权限（默认态）</b>与<b>无权限（禁用态）</b>两种工具栏。
+</div>
+
+<div class="page">
+
+  <!-- ============ 默认态：有权限 ============ -->
+  <div class="card" style="margin-bottom:24px">
+    <div class="card-head">报价单管理　<span class="hint">默认态 · 当前角色 SALES_REP</span></div>
+    <div class="card-body">
+
+      <div style="margin-bottom:8px">
+        <span class="tag tag-blue">全部</span>
+        <span class="hint">草稿 160　待核价 70　核价驳回 9　已通过 9　已发送 3</span>
+      </div>
+
+      <div class="toolbar">
+        <div class="search">搜索报价单号/名称/客户</div>
+        <div class="spacer"></div>
+        <button class="btn">🕘 导入历史</button>
+        <button class="btn btn-primary">⤓ 导入报价数据</button>
+        <button class="btn">＋ 新建报价单</button>
+      </div>
+
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th style="width:36px"></th>
+              <th>报价单号</th><th>名称</th><th>客户</th>
+              <th>产品分类</th><th>状态</th><th>总金额</th><th>创建时间</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td class="mono">QT-20260907-0003</td>
+              <td>正泰 · 9 月新料号报价</td>
+              <td>正泰</td><td>默认分类</td>
+              <td><span class="tag tag-blue">草稿</span></td>
+              <td class="mono">128,540.00</td><td class="mono">2026-09-07 10:24</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td class="mono">QT-20260907-0002</td>
+              <td>罗克韦尔 · 银镍触点</td>
+              <td>罗克韦尔</td><td>默认分类</td>
+              <td><span class="tag tag-gold">待核价</span></td>
+              <td class="mono">86,220.00</td><td class="mono">2026-09-07 09:12</td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td class="mono">QT-20260906-0011</td>
+              <td>测试客户 · 组装件试算</td>
+              <td>测试客户</td><td>默认分类</td>
+              <td><span class="tag tag-green">已通过</span></td>
+              <td class="mono">14,500.00</td><td class="mono">2026-09-06 17:48</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============ 禁用态：无权限 ============ -->
+  <div class="card">
+    <div class="card-head">报价单管理　<span class="hint">禁用态 · 当前角色 PRICING_MANAGER（不在导入白名单）</span></div>
+    <div class="card-body">
+
+      <div class="toolbar">
+        <div class="search">搜索报价单号/名称/客户</div>
+        <div class="spacer"></div>
+        <button class="btn">🕘 导入历史</button>
+        <button class="btn btn-primary btn-disabled">⤓ 导入报价数据</button>
+        <span class="tip">仅销售/销售经理/管理员可导入报价数据</span>
+        <button class="btn">＋ 新建报价单</button>
+      </div>
+
+      <div class="alert alert-info" style="margin-top:8px">
+        <b>禁用但可见（frontend.md §1.2）</b>
+        按钮保留在原位并置灰，hover 出 tooltip 说明原因；🚫 不许直接隐藏 —— 隐藏会让用户以为功能不存在。
+      </div>
+
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,154 @@
+/* task-260907 原型图公共样式 —— 对齐 Ant Design 5 视觉语汇（间距 8/16/24、圆角 6、主色 #1677ff） */
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 24px; background: #f5f5f5;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+               Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 14px; line-height: 1.5714; color: rgba(0,0,0,.88);
+}
+.proto-note {
+  max-width: 1180px; margin: 0 auto 16px; padding: 10px 14px;
+  background: #e6f4ff; border: 1px solid #91caff; border-radius: 6px;
+  font-size: 13px; color: #0958d9;
+}
+.proto-note b { color: #003eb3; }
+.proto-note code { background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 4px; }
+
+/* ---------- 卡片 / 页面壳 ---------- */
+.page { max-width: 1180px; margin: 0 auto; }
+.card { background: #fff; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+.card-head {
+  padding: 16px 24px; border-bottom: 1px solid #f0f0f0;
+  font-size: 16px; font-weight: 600;
+}
+.card-body { padding: 24px; }
+
+/* ---------- 抽屉 ---------- */
+.drawer-mask { max-width: 1180px; margin: 0 auto; background: rgba(0,0,0,.45); border-radius: 8px; padding: 0 0 0 34%; }
+.drawer { background: #fff; height: 640px; display: flex; flex-direction: column; border-radius: 0 8px 8px 0; }
+.drawer-head {
+  padding: 16px 24px; border-bottom: 1px solid #f0f0f0;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.drawer-title { font-size: 16px; font-weight: 600; }
+.drawer-close { color: rgba(0,0,0,.45); cursor: pointer; font-size: 16px; }
+.drawer-body { padding: 24px; flex: 1; overflow: auto; }
+.drawer-foot {
+  padding: 12px 24px; border-top: 1px solid #f0f0f0;
+  display: flex; justify-content: flex-end; gap: 8px;
+}
+
+/* ---------- 按钮 ---------- */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 15px; border-radius: 6px;
+  border: 1px solid #d9d9d9; background: #fff; color: rgba(0,0,0,.88);
+  font-size: 14px; cursor: pointer; white-space: nowrap;
+}
+.btn-primary { background: #1677ff; border-color: #1677ff; color: #fff; }
+.btn[disabled], .btn-disabled {
+  background: rgba(0,0,0,.04); border-color: #d9d9d9; color: rgba(0,0,0,.25); cursor: not-allowed;
+}
+.btn-primary.btn-disabled { background: rgba(0,0,0,.04); border-color: #d9d9d9; color: rgba(0,0,0,.25); }
+
+/* ---------- 表单 ---------- */
+.form-item { margin-bottom: 20px; }
+.form-label { display: block; margin-bottom: 8px; color: rgba(0,0,0,.88); }
+.form-label .req { color: #ff4d4f; margin-right: 4px; font-family: SimSun, sans-serif; }
+.input, .select {
+  width: 100%; height: 32px; padding: 4px 11px;
+  border: 1px solid #d9d9d9; border-radius: 6px; background: #fff;
+  font-size: 14px; color: rgba(0,0,0,.88); display: flex; align-items: center;
+  justify-content: space-between;
+}
+.select .ph { color: rgba(0,0,0,.25); }
+.select .caret { color: rgba(0,0,0,.25); font-size: 11px; }
+.input.disabled, .select.disabled { background: rgba(0,0,0,.04); color: rgba(0,0,0,.25); cursor: not-allowed; }
+.form-extra { margin-top: 6px; font-size: 12px; color: rgba(0,0,0,.45); }
+
+/* ---------- 上传区 ---------- */
+.upload {
+  border: 1px dashed #d9d9d9; border-radius: 8px; background: #fafafa;
+  padding: 28px 16px; text-align: center; cursor: pointer;
+}
+.upload.disabled { background: rgba(0,0,0,.04); border-color: #d9d9d9; cursor: not-allowed; color: rgba(0,0,0,.25); }
+.upload .up-icon { font-size: 28px; color: #1677ff; }
+.upload.disabled .up-icon { color: rgba(0,0,0,.25); }
+.upload .up-main { margin-top: 10px; font-size: 14px; }
+.upload .up-sub { margin-top: 4px; font-size: 12px; color: rgba(0,0,0,.45); }
+.upload.disabled .up-sub { color: rgba(0,0,0,.25); }
+
+/* ---------- 步骤条 ---------- */
+.steps { display: flex; gap: 8px; margin-bottom: 24px; }
+.step { flex: 1; display: flex; align-items: center; gap: 8px; }
+.step-num {
+  width: 24px; height: 24px; border-radius: 50%; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; border: 1px solid rgba(0,0,0,.25); color: rgba(0,0,0,.45); background: #fff;
+}
+.step.active .step-num { background: #1677ff; border-color: #1677ff; color: #fff; }
+.step.done .step-num { background: #fff; border-color: #1677ff; color: #1677ff; }
+.step-txt { font-size: 14px; color: rgba(0,0,0,.45); }
+.step.active .step-txt { color: rgba(0,0,0,.88); font-weight: 500; }
+.step.done .step-txt { color: rgba(0,0,0,.88); }
+.step-line { flex: 1; height: 1px; background: #f0f0f0; }
+
+/* ---------- 表格 ---------- */
+table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.tbl th {
+  background: #fafafa; text-align: left; font-weight: 600;
+  padding: 12px 16px; border-bottom: 1px solid #f0f0f0; white-space: nowrap;
+}
+table.tbl td { padding: 12px 16px; border-bottom: 1px solid #f0f0f0; }
+table.tbl tr:last-child td { border-bottom: none; }
+.tbl-wrap { border: 1px solid #f0f0f0; border-radius: 8px; overflow: auto; }
+.mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 13px; }
+.ell { display: inline-block; max-width: 180px; overflow: hidden; text-overflow: ellipsis;
+       white-space: nowrap; vertical-align: bottom; }
+
+/* ---------- 工具栏 ---------- */
+.toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.search {
+  width: 300px; height: 32px; padding: 4px 11px; border: 1px solid #d9d9d9;
+  border-radius: 6px; display: flex; align-items: center; color: rgba(0,0,0,.25);
+}
+.spacer { flex: 1; }
+
+/* ---------- 标签 / 提示 ---------- */
+.tag { display: inline-block; padding: 0 8px; height: 22px; line-height: 20px;
+       border-radius: 4px; font-size: 12px; border: 1px solid; }
+.tag-blue { color: #0958d9; background: #e6f4ff; border-color: #91caff; }
+.tag-green { color: #389e0d; background: #f6ffed; border-color: #b7eb8f; }
+.tag-gold { color: #d46b08; background: #fff7e6; border-color: #ffd591; }
+.tag-red { color: #cf1322; background: #fff2f0; border-color: #ffccc7; }
+.alert { padding: 8px 12px; border-radius: 6px; margin-bottom: 16px; font-size: 14px; }
+.alert-error { background: #fff2f0; border: 1px solid #ffccc7; color: rgba(0,0,0,.88); }
+.alert-warn { background: #fffbe6; border: 1px solid #ffe58f; color: rgba(0,0,0,.88); }
+.alert-info { background: #e6f4ff; border: 1px solid #91caff; color: rgba(0,0,0,.88); }
+.alert b { display: block; margin-bottom: 2px; }
+
+/* ---------- 进度条 ---------- */
+.progress { height: 8px; background: #f5f5f5; border-radius: 100px; overflow: hidden; }
+.progress > i { display: block; height: 100%; background: #1677ff; border-radius: 100px; }
+.progress-row { display: flex; align-items: center; gap: 12px; }
+.progress-row .progress { flex: 1; }
+.progress-pct { font-size: 14px; color: rgba(0,0,0,.88); min-width: 40px; text-align: right; }
+
+/* ---------- tooltip（原型用静态展示，标注禁用原因） ---------- */
+.tip {
+  position: relative; display: inline-block; margin-left: 8px; vertical-align: middle;
+  background: rgba(0,0,0,.85); color: #fff; font-size: 12px;
+  padding: 5px 10px; border-radius: 6px; white-space: nowrap;
+}
+.tip::before {
+  content: ""; position: absolute; left: -5px; top: 50%; transform: translateY(-50%);
+  border: 5px solid transparent; border-right-color: rgba(0,0,0,.85); border-left: 0;
+}
+.hint { font-size: 12px; color: rgba(0,0,0,.45); margin-left: 8px; }
+
+.empty { padding: 48px 16px; text-align: center; color: rgba(0,0,0,.25); }
+.empty .e-icon { font-size: 40px; }
+.empty .e-txt { margin-top: 12px; font-size: 14px; }
+.desc { display: grid; grid-template-columns: 120px 1fr; row-gap: 12px; font-size: 14px; }
+.desc dt { color: rgba(0,0,0,.45); }
+.desc dd { margin: 0; }

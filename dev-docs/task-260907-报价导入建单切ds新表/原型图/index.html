@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>原型图导航 — task-260907 报价导入建单切 ds 新表</title>
+<link rel="stylesheet" href="proto.css">
+<style>
+  a.link { color:#1677ff; text-decoration:none; }
+  a.link:hover { text-decoration:underline; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="card" style="margin-bottom:24px">
+    <div class="card-head">📌 当前基准 · <code>task-260907-报价导入建单切ds新表</code></div>
+    <div class="card-body">
+
+      <div class="alert alert-info">
+        <b>本任务动到 1 个页面 + 1 个新抽屉（6 个关键状态），共 7 份原型</b>
+        份数判据来自 <code>fronttask.md</code> 的 F-1~F-9：F-1/F-2 → 列表页；F-3~F-8 → 新抽屉各状态；
+        F-9 是零改动回归确认，不产出新界面故无原型。
+      </div>
+
+      <div class="tbl-wrap" style="margin-bottom:24px">
+        <table class="tbl">
+          <thead><tr><th style="width:300px">文件</th><th style="width:150px">状态</th><th style="width:130px">服务的 AC</th><th>要点</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><a class="link" href="01-报价单列表.html">01-报价单列表.html</a></td>
+              <td><span class="tag tag-blue">默认态</span> <span class="tag tag-gold">禁用态</span></td>
+              <td>AC-13, AC-19</td>
+              <td>摘掉「从基础数据导入」后的工具栏顺序；无权限时禁用但可见 + tooltip</td>
+            </tr>
+            <tr>
+              <td><a class="link" href="02-导入抽屉-Step1-选客户上传.html">02-导入抽屉-Step1-选客户上传.html</a></td>
+              <td><span class="tag tag-gold">禁用态</span> <span class="tag tag-blue">默认态</span></td>
+              <td>AC-1, AC-2</td>
+              <td>客户必选；未选客户时上传区禁用</td>
+            </tr>
+            <tr>
+              <td><a class="link" href="03-导入抽屉-导入中.html">03-导入抽屉-导入中.html</a></td>
+              <td><span class="tag tag-blue">进行中</span> <span class="tag tag-green">成功</span></td>
+              <td>AC-5, AC-20, AC-12</td>
+              <td>异步轮询进度；可关闭后台继续；逐 Sheet 三态结果（含「未变」的解释）</td>
+            </tr>
+            <tr>
+              <td><a class="link" href="04-导入抽屉-校验失败.html">04-导入抽屉-校验失败.html</a></td>
+              <td><span class="tag tag-red">错误态</span></td>
+              <td>AC-4</td>
+              <td>整份拒收；错误<b>全部</b>列出可滚动；顶部标「未写入任何数据」</td>
+            </tr>
+            <tr>
+              <td><a class="link" href="05-导入抽屉-Step2-选模板建单.html">05-导入抽屉-Step2-选模板建单.html</a></td>
+              <td><span class="tag tag-blue">默认态</span></td>
+              <td>AC-1, AC-7</td>
+              <td>auto-defaults 带出模板与分类，只首次带出；预览将建出的产品行</td>
+            </tr>
+            <tr>
+              <td><a class="link" href="06-导入抽屉-建单物化中.html">06-导入抽屉-建单物化中.html</a></td>
+              <td><span class="tag tag-blue">进行中</span> <span class="tag tag-red">错误态</span></td>
+              <td>AC-1, AC-20</td>
+              <td><code>materializing=true</code> 驱动轮询；重试不重复建单</td>
+            </tr>
+            <tr>
+              <td><a class="link" href="07-导入抽屉-空态与极值.html">07-导入抽屉-空态与极值.html</a></td>
+              <td><span class="tag tag-blue">空数据</span> <span class="tag tag-gold">最长文案</span></td>
+              <td>AC-18</td>
+              <td>0 条客户料号仍可建单；超长值截断 + title 悬停</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="alert alert-warn">
+        <b>三种必画状态的落位（frontend.md §1.3）</b>
+        空数据 → <code>07</code>　·　禁用态（含 tooltip 文案）→ <code>01</code> + <code>02</code> + <code>03</code> + <code>06</code>　·　最长文案/极值 → <code>07</code>　·　错误态 → <code>04</code> + <code>06</code>
+      </div>
+
+      <div class="alert alert-info">
+        <b>数据都是真值，不是占位</b>
+        客户取自 <code>customer</code> 表实测三条可用编号（CUST-0001 罗克韦尔 / CUST-0002 测试客户 / CUST-0004 正泰）；
+        料号取自 <code>ds_quote_material</code> / <code>ds_quote_customer_part</code> 实测行；
+        产品分类现网只有 <code>000000 默认分类</code> 一条；
+        校验错误里的 <code>8000142</code> / <code>8000155</code> 是实测「从未在 customer.code 登记」的芜湖德力西编号。
+      </div>
+
+      <div class="alert alert-warn">
+        <b>还原纪律</b>
+        视觉基准是这 7 份原型，不是审美。允许的偏差只有一类：<b>组件库能力所限的等价实现</b>（如手写下拉换成 AntD <code>Select</code>），
+        且要在回报里逐条列出。🚫 原型没画到的地方不许自由发挥 —— 停下来问，那是需求缺口。
+        🚨 原型与 AC 冲突时<b>以 AC 为准并立即报告</b>。
+      </div>
+
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">🕰️ 被本次取代的上一份基准</div>
+    <div class="card-body">
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th style="width:420px">原基准</th><th>偏差（本次改了什么）</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>task-260902-报价与核价建表与导入方案新规范/原型图/报价单管理-工具栏.html</code></td>
+              <td>
+                ① <b>「从基础数据导入」按钮被移除</b> —— 该原型画的是「旧按钮零改动 + 新增一个」的并行态，本任务终结了并行；<br>
+                ② 「导入报价数据」的权限判据从 <code>PRICING_MANAGER/SYSTEM_ADMIN</code> 改为 <code>SALES_REP/SALES_MANAGER/SYSTEM_ADMIN</code>，禁用 tooltip 文案随之变化；<br>
+                ③ 该按钮打开的抽屉从共用的 <code>DatasetImportDrawer</code> 换成新建的建单专用抽屉（两步式）。
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="hint" style="margin-left:0;margin-top:12px">
+        🚫 不回改历史快照的内容 —— 它是那次交付的验收记录。上表只登记偏差，不修改对方文件的画面。
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

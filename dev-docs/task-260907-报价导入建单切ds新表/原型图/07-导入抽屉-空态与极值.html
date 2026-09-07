@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>07 · 导入抽屉 空态与极值文案 — task-260907</title>
+<link rel="stylesheet" href="proto.css">
+</head>
+<body>
+
+<div class="proto-note">
+  <b>📌 当前基准 · task-260907 · F-8 · 服务 AC-18</b>
+  两个必画状态：<b>空数据</b>（所选客户在本次导入里 0 条客户料号 —— 建单要成功、明细行为 0，
+  🚫 不是白屏不是 500）与<b>最长文案 / 极值</b>（客户名、文件名、料号、模板名超长时截断 + <code>title</code> 悬停全文）。
+</div>
+
+<!-- ============ 空态：该客户 0 条客户料号 ============ -->
+<div class="drawer-mask" style="margin-bottom:24px">
+  <div class="drawer">
+    <div class="drawer-head">
+      <div class="drawer-title">导入报价数据　<span class="hint">空态 · 该客户无客户料号</span></div>
+      <div class="drawer-close">✕</div>
+    </div>
+    <div class="drawer-body">
+
+      <div class="steps">
+        <div class="step done"><span class="step-num">✓</span><span class="step-txt">选客户并上传</span></div>
+        <div class="step-line"></div>
+        <div class="step active"><span class="step-num">2</span><span class="step-txt">选模板并建单</span></div>
+      </div>
+
+      <div class="alert alert-warn">
+        <b>该客户在本次导入数据中没有客户料号</b>
+        建单可以继续，但<b>不会产生任何产品行</b>。若这不符合预期，请检查 Excel「客户料号」Sheet 的客户编号列。
+      </div>
+
+      <div class="form-item">
+        <label class="form-label"><span class="req">*</span>报价单名称</label>
+        <div class="input">测试客户 · 空数据试建</div>
+      </div>
+
+      <div class="form-item">
+        <label class="form-label"><span class="req">*</span>报价模板</label>
+        <div class="select"><span>报价模板 · ds 原生 v1.0　<span class="tag tag-blue" style="margin-left:6px">11 页签</span></span><span class="caret">▾</span></div>
+      </div>
+
+      <div style="margin-bottom:8px;font-weight:500">将建出的产品行</div>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th>客户产品编号</th><th>客户料号名称</th><th>销售料号</th><th>品名</th></tr></thead>
+          <tbody>
+            <tr><td colspan="4">
+              <div class="empty">
+                <div class="e-icon">🗂</div>
+                <div class="e-txt">客户「测试客户（CUST-0002）」在本次导入中没有客户料号</div>
+              </div>
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+    <div class="drawer-foot">
+      <button class="btn">上一步</button>
+      <button class="btn btn-primary">仍然创建（0 个产品行）</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 极值：最长文案 ============ -->
+<div class="drawer-mask">
+  <div class="drawer">
+    <div class="drawer-head">
+      <div class="drawer-title">导入报价数据　<span class="hint">极值 · 最长文案不撑破布局</span></div>
+      <div class="drawer-close">✕</div>
+    </div>
+    <div class="drawer-body">
+
+      <div class="steps">
+        <div class="step done"><span class="step-num">✓</span><span class="step-txt">选客户并上传</span></div>
+        <div class="step-line"></div>
+        <div class="step active"><span class="step-num">2</span><span class="step-txt">选模板并建单</span></div>
+      </div>
+
+      <dl class="desc" style="margin-bottom:20px">
+        <dt>客户</dt>
+        <dd><span class="ell" style="max-width:300px" title="芜湖德力西电气成套设备制造有限公司第二事业部">芜湖德力西电气成套设备制造有限公司第二事业部</span></dd>
+        <dt>文件</dt>
+        <dd><span class="ell" style="max-width:300px" title="报价数据-芜湖德力西电气成套设备制造有限公司-2026年9月第二版-含年降与电镀.xlsx">报价数据-芜湖德力西电气成套设备制造有限公司-2026年9月第二版-含年降与电镀.xlsx</span></dd>
+      </dl>
+
+      <div class="form-item">
+        <label class="form-label"><span class="req">*</span>报价单名称</label>
+        <div class="input"><span class="ell" style="max-width:100%">芜湖德力西 · 2026 年 9 月第二版报价（含年降系数与电镀费用重算）</span></div>
+      </div>
+
+      <div class="form-item">
+        <label class="form-label"><span class="req">*</span>报价模板</label>
+        <div class="select">
+          <span class="ell" style="max-width:300px" title="报价模板 · ds 原生 v1.0（含 11 个页签，物料/BOM/元素/费用类）">报价模板 · ds 原生 v1.0（含 11 个页签，物料/BOM/元素/费用类）</span>
+          <span class="caret">▾</span>
+        </div>
+      </div>
+
+      <div style="margin-bottom:8px;font-weight:500">将建出的产品行</div>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th>客户产品编号</th><th>客户料号名称</th><th>销售料号</th><th>品名</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="mono"><span class="ell" title="CP-0028-2609000001-REV-B-LONG">CP-0028-2609000001-REV-B-LONG</span></td>
+              <td><span class="ell" title="银镍触点组件（含镀层与二次加工工序）">银镍触点组件（含镀层与二次加工工序）</span></td>
+              <td class="mono"><span class="ell" title="0526-2609000005">0526-2609000005</span></td>
+              <td><span class="ell" title="选配A1">选配A1</span></td>
+            </tr>
+            <tr>
+              <td class="mono">A002</td><td>示例客户料号</td><td class="mono">S0001</td><td>—</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="hint" style="margin-left:0;margin-top:8px">
+        超长值一律截断 + <code>title</code> 悬停全文；🚫 不许换行撑高行、也不许横向滚出抽屉。
+      </div>
+
+    </div>
+    <div class="drawer-foot">
+      <button class="btn">上一步</button>
+      <button class="btn btn-primary">创建报价单</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

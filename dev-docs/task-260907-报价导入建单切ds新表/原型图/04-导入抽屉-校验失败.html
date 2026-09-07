@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>04 · 导入抽屉 校验失败（整份拒收）— task-260907</title>
+<link rel="stylesheet" href="proto.css">
+</head>
+<body>
+
+<div class="proto-note">
+  <b>📌 当前基准 · task-260907 · F-5 · 服务 AC-4</b>
+  Phase 1 校验<b>零写库</b>，任一处不合格即整份拒收。<code>errors[]</code> 必须<b>全部</b>渲染（不是只有第一条），
+  表格可滚动。错误数据取自实测：现网 19 个客户编号只有 <code>CUST-0001/0002/0004</code> 三个能在
+  <code>customer.code</code> 命中，芜湖德力西的 <code>8000142</code>~<code>8000155</code> 等 16 个从未登记。
+</div>
+
+<div class="drawer-mask">
+  <div class="drawer">
+    <div class="drawer-head">
+      <div class="drawer-title">导入报价数据　<span class="hint">校验未通过</span></div>
+      <div class="drawer-close">✕</div>
+    </div>
+    <div class="drawer-body">
+
+      <div class="steps">
+        <div class="step active"><span class="step-num">1</span><span class="step-txt">选客户并上传</span></div>
+        <div class="step-line"></div>
+        <div class="step"><span class="step-num">2</span><span class="step-txt">选模板并建单</span></div>
+      </div>
+
+      <div class="alert alert-error">
+        <b>导入校验未通过，共 7 处问题 —— 本次未写入任何数据</b>
+        16 张表的数据量与导入前完全一致。请修正 Excel 后重新上传。
+      </div>
+
+      <dl class="desc" style="margin-bottom:16px">
+        <dt>客户</dt><dd>正泰　<span class="hint">CUST-0004</span></dd>
+        <dt>文件</dt><dd><span class="ell" style="max-width:280px">报价数据-正泰-2026年9月.xlsx</span></dd>
+      </dl>
+
+      <div style="margin-bottom:8px;font-weight:500">问题清单</div>
+      <div class="tbl-wrap" style="max-height:260px">
+        <table class="tbl">
+          <thead>
+            <tr><th style="width:132px">Sheet</th><th style="width:60px">行号</th>
+                <th style="width:110px">列</th><th style="width:120px">值</th><th>原因</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>客户料号</td><td class="mono">8</td><td>客户编号</td><td class="mono">8000142</td><td>客户编号不存在于 customer.code</td></tr>
+            <tr><td>客户料号</td><td class="mono">9</td><td>客户编号</td><td class="mono">8000155</td><td>客户编号不存在于 customer.code</td></tr>
+            <tr><td>客户料号</td><td class="mono">14</td><td>客户产品编号</td><td class="mono">—</td><td>必填项为空</td></tr>
+            <tr><td>物料</td><td class="mono">23</td><td>类型</td><td class="mono">零部件</td><td>不在受控值域（零件 / 外购件）</td></tr>
+            <tr><td>物料BOM</td><td class="mono">51</td><td>销售料号</td><td class="mono">—</td><td>轴列不可为空</td></tr>
+            <tr><td>物料BOM</td><td class="mono">67</td><td>投入料号</td><td class="mono">99999</td><td>材质库中不存在该料号</td></tr>
+            <tr><td>物料与元素BOM</td><td class="mono">12</td><td>组成含量（%）</td><td class="mono">abc</td><td>不是合法数值</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="hint" style="margin-left:0;margin-top:8px">
+        问题较多时列表可滚动 —— 🚫 不许只显示第一条。
+      </div>
+
+    </div>
+    <div class="drawer-foot">
+      <button class="btn">取消</button>
+      <button class="btn btn-primary">重新上传</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>03 · 导入抽屉 导入中（异步轮询）— task-260907</title>
+<link rel="stylesheet" href="proto.css">
+</head>
+<body>
+
+<div class="proto-note">
+  <b>📌 当前基准 · task-260907 · F-4 · 服务 AC-5 / AC-20</b>
+  导入段<b>异步</b>（D-19 裁决乙）：<code>POST /dataset/quote/quotation-import</code> 立即返回
+  <code>{importRecordId, status:"PROCESSING"}</code>，前端轮询
+  <code>GET /dataset/quote/quotation-import/{recordId}</code> 渲染 <code>progress</code>。
+  <b>允许关闭抽屉</b>，后台继续跑。
+</div>
+
+<div class="drawer-mask" style="margin-bottom:24px">
+  <div class="drawer">
+    <div class="drawer-head">
+      <div class="drawer-title">导入报价数据　<span class="hint">导入中</span></div>
+      <div class="drawer-close">✕</div>
+    </div>
+    <div class="drawer-body">
+
+      <div class="steps">
+        <div class="step active"><span class="step-num">1</span><span class="step-txt">选客户并上传</span></div>
+        <div class="step-line"></div>
+        <div class="step"><span class="step-num">2</span><span class="step-txt">选模板并建单</span></div>
+      </div>
+
+      <dl class="desc" style="margin-bottom:24px">
+        <dt>客户</dt><dd>正泰　<span class="hint">CUST-0004</span></dd>
+        <dt>文件</dt><dd><span class="ell" style="max-width:280px">报价数据-正泰-2026年9月.xlsx</span></dd>
+        <dt>导入批次</dt><dd class="mono" style="font-size:12px">a7f3c1e8-4b02-4d19-9c66-1f2e3d4a5b6c</dd>
+      </dl>
+
+      <div style="margin-bottom:8px">正在导入…</div>
+      <div class="progress-row" style="margin-bottom:8px">
+        <div class="progress"><i style="width:39%"></i></div>
+        <div class="progress-pct">39%</div>
+      </div>
+      <div class="hint" style="margin-left:0">正在处理：<b>物料与元素BOM</b>（第 7 / 18 步）</div>
+
+      <div class="alert alert-info" style="margin-top:24px">
+        <b>可以关闭本窗口</b>
+        导入在后台继续执行。完成后可在【导入历史】查看结果，或重新打开本抽屉继续建单。
+      </div>
+
+    </div>
+    <div class="drawer-foot">
+      <button class="btn">关闭（后台继续）</button>
+      <button class="btn btn-primary btn-disabled">下一步</button>
+      <span class="tip">导入完成后才能进入建单</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 导入成功态 ============ -->
+<div class="drawer-mask">
+  <div class="drawer">
+    <div class="drawer-head">
+      <div class="drawer-title">导入报价数据　<span class="hint">导入成功</span></div>
+      <div class="drawer-close">✕</div>
+    </div>
+    <div class="drawer-body">
+
+      <div class="steps">
+        <div class="step done"><span class="step-num">✓</span><span class="step-txt">选客户并上传</span></div>
+        <div class="step-line"></div>
+        <div class="step active"><span class="step-num">2</span><span class="step-txt">选模板并建单</span></div>
+      </div>
+
+      <div class="alert alert-info" style="border-color:#b7eb8f;background:#f6ffed">
+        <b>导入完成 · 共 1845 行写入</b>
+        用时 4.2 秒。下一步选择报价模板与产品分类，即可建出报价单。
+      </div>
+
+      <div style="margin-bottom:8px;font-weight:500">逐 Sheet 结果</div>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th>Sheet</th><th>类型</th><th>结果</th></tr></thead>
+          <tbody>
+            <tr><td>物料</td><td><span class="tag tag-blue">免版本</span></td><td>新增 12 · 更新 3</td></tr>
+            <tr><td>客户料号</td><td><span class="tag tag-blue">免版本</span></td><td>新增 12 · 更新 0</td></tr>
+            <tr><td>物料BOM</td><td><span class="tag tag-gold">带版本</span></td><td>轴值 47 · 新建 5 · 升版 2 · 未变 40</td></tr>
+            <tr><td>物料与元素BOM</td><td><span class="tag tag-gold">带版本</span></td><td>轴值 31 · 新建 3 · 升版 1 · 未变 27</td></tr>
+            <tr><td>来料固定加工费</td><td><span class="tag tag-gold">带版本</span></td><td>轴值 18 · 新建 18 · 升版 0 · 未变 0</td></tr>
+            <tr><td>来料其他费用</td><td><span class="tag tag-gold">带版本</span></td><td>轴值 9 · 新建 9 · 升版 0 · 未变 0</td></tr>
+            <tr><td>自制加工费</td><td><span class="tag tag-gold">带版本</span></td><td>轴值 22 · 新建 22 · 升版 0 · 未变 0</td></tr>
+            <tr><td colspan="3" class="hint" style="margin:0">…其余 9 个 Sheet 同型展示，列表可滚动</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="alert alert-warn" style="margin-top:16px">
+        <b>「未变」不是没导入</b>
+        轴值（销售料号）的整组行内容与库中<b>完全一致</b>时不升版、一行不写 —— 这是增量语义，不是失败。
+      </div>
+
+    </div>
+    <div class="drawer-foot">
+      <button class="btn">上一步</button>
+      <button class="btn btn-primary">下一步</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

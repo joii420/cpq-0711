@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>02 · 导入抽屉 Step 1 选客户 + 上传 — task-260907</title>
+<link rel="stylesheet" href="proto.css">
+</head>
+<body>
+
+<div class="proto-note">
+  <b>📌 当前基准 · task-260907 · F-3 · 服务 AC-1 / AC-2</b>
+  新建 <code>QuotationDatasetImportDrawer.tsx</code>。🚫 不改 <code>DatasetImportDrawer.tsx</code>（被【基础资料维护】共用）。
+  抽屉不是弹窗（<code>frontend.md §1.1</code>）。下方展示<b>禁用态（未选客户）</b>与<b>默认态（已选客户+已选文件）</b>。
+</div>
+
+<!-- ============ 禁用态：未选客户 ============ -->
+<div class="drawer-mask" style="margin-bottom:24px">
+  <div class="drawer">
+    <div class="drawer-head">
+      <div class="drawer-title">导入报价数据　<span class="hint">禁用态 · 未选客户</span></div>
+      <div class="drawer-close">✕</div>
+    </div>
+    <div class="drawer-body">
+
+      <div class="steps">
+        <div class="step active"><span class="step-num">1</span><span class="step-txt">选客户并上传</span></div>
+        <div class="step-line"></div>
+        <div class="step"><span class="step-num">2</span><span class="step-txt">选模板并建单</span></div>
+      </div>
+
+      <div class="form-item">
+        <label class="form-label"><span class="req">*</span>客户</label>
+        <div class="select"><span class="ph">请选择客户</span><span class="caret">▾</span></div>
+        <div class="form-extra">导入的数据按销售料号入库；客户决定本次建出哪些产品行。</div>
+      </div>
+
+      <div class="form-item">
+        <label class="form-label"><span class="req">*</span>报价数据 Excel</label>
+        <div class="upload disabled">
+          <div class="up-icon">⤓</div>
+          <div class="up-main">请先选择客户</div>
+          <div class="up-sub">支持 .xlsx，需含 16 个 Sheet（物料 / 客户料号 / 物料BOM / 物料与元素BOM / 8 张费用表 / 3 张年降表 / 电镀方案）</div>
+        </div>
+        <div class="form-extra">未选客户时上传区禁用 —— 🚫 前端不许自己放行空客户，后端同样校验（AC-2 两侧都断言）。</div>
+      </div>
+
+    </div>
+    <div class="drawer-foot">
+      <button class="btn">取消</button>
+      <button class="btn btn-primary btn-disabled">开始导入</button>
+      <span class="tip">请先选择客户并上传文件</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 默认态：已选客户 + 已选文件 ============ -->
+<div class="drawer-mask">
+  <div class="drawer">
+    <div class="drawer-head">
+      <div class="drawer-title">导入报价数据　<span class="hint">默认态 · 可提交</span></div>
+      <div class="drawer-close">✕</div>
+    </div>
+    <div class="drawer-body">
+
+      <div class="steps">
+        <div class="step active"><span class="step-num">1</span><span class="step-txt">选客户并上传</span></div>
+        <div class="step-line"></div>
+        <div class="step"><span class="step-num">2</span><span class="step-txt">选模板并建单</span></div>
+      </div>
+
+      <div class="form-item">
+        <label class="form-label"><span class="req">*</span>客户</label>
+        <div class="select"><span>正泰　<span class="hint">CUST-0004</span></span><span class="caret">▾</span></div>
+        <div class="form-extra">可选：正泰（CUST-0004）· 罗克韦尔（CUST-0001）· 测试客户（CUST-0002）</div>
+      </div>
+
+      <div class="form-item">
+        <label class="form-label"><span class="req">*</span>报价数据 Excel</label>
+        <div class="upload">
+          <div class="up-icon">⤓</div>
+          <div class="up-main">点击或拖拽文件到此处上传</div>
+          <div class="up-sub">支持 .xlsx，需含 16 个 Sheet</div>
+        </div>
+        <div class="tbl-wrap" style="margin-top:12px">
+          <table class="tbl">
+            <tbody>
+              <tr>
+                <td style="width:24px">📄</td>
+                <td><span class="ell" style="max-width:340px">报价数据-正泰-2026年9月.xlsx</span></td>
+                <td class="mono" style="width:90px">2.4 MB</td>
+                <td style="width:40px;color:rgba(0,0,0,.45);cursor:pointer">✕</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="alert alert-info">
+        <b>整份拒收</b>
+        校验阶段<b>零写库</b>：只要有一处不合格，本次一行都不会写入，错误会逐条列出。
+      </div>
+
+    </div>
+    <div class="drawer-foot">
+      <button class="btn">取消</button>
+      <button class="btn btn-primary">开始导入</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
