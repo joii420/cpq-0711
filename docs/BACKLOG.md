@@ -181,6 +181,51 @@
 
 ---
 
+
+### [数据迁移] BL-0209 · V6 报价侧数据退役 —— 价格函数换源 + 取价规则改读新表 + 报价侧视图重绑
+
+- [ ] 待开发 · 优先级 **P1** · 来源：`task-260819-取数配置器` 结案期用户裁决（2026-09-06，`D-130`）
+- **范围**：淘汰被 `ds_quote_*` 取代的 V6 **报价侧**数据表。🚫 **不含** `material_recipe` / `process_master`（用户 2026-09-06 明确「还是用的」）。
+- 🔴 **必须先做的前置（否则会静默打断元素价格策略）**：
+  - `f_material_element_price`（3 参数版，48 行）的 `FROM` 里有 **`element_bom_item` + `material_bom_item`** —— 正是要停的两张。
+  - **停表会让它取不到价、返 0 行，且不报错、不告警。** ⇒ 顺序必须是「先给函数换数据源（改读 `ds_quote_element_bom` / `ds_quote_material_bom`），再停表」，不能反。
+- **取价规则的新落点**：V6 把规则挂在费用大表 `unit_price` 的 `source_url` / `source_name` / `fetch_rule` / `fetched_price` 四列上；新设计挪到了 `ds_quote_plating_scheme` 的 `price_source_url` / `price_source_name` / `price_fetch_rule`（实测 2 行：`Ni`→「1.均价」、`Au`→「2.最高价」，来源均为「长江有色网」）。
+  - ⚠️ **待定的语义问题**：新表的规则按**电镀元素**给（键 = 方案编号+版本+项次），而价格策略算的是**材质组成元素**。**规则该按元素码直接套用，还是只在电镀场景下生效？** 立项时必须先定这条。
+  - 📌 V6 的 `element_price_fetch_rule` 表 **0 行、从来没被填过**；`element_price_source` 4 行里 3 条是 `TEST-*` ⇒ 老的规则主数据表实际是空的，不构成迁移负担。
+- **影响面（2026-09-06 实测 dev 库 `cpq_db_0724`）**：
+  - 组件视图：**148 个里 147 个引用 V6 表**，只有 1 个不碰。按表：`material_recipe` 104（**留用，不在本条范围**）· `unit_price` 91 · `process_master` 45（**留用**）· `material_customer_map` 16 · `capacity` 12 · `production_energy` 2 · `labor_rate`/`tooling_cost`/`auxiliary_energy` 各 1
+  - Java 侧：`unit_price` 60 文件 · `material_master` 60 · `material_bom_item` 37 · `material_recipe` 28 · `element_bom_item` 25 · `material_customer_map` 25
+- **新旧对应关系是一对多，不是一对一**（这条别踩）：`unit_price` 一张 V6 费用大表（`price_type` 12+ 个取值）对应新侧 `ds_quote_*_fee` / `ds_cost_*_consumable` / `_packaging` / `_plating_cost` 等**多张**，即 `task-260819` 的 `D-34` 分立建模。
+  - 🚨 **主线在这里判错过一次**：按「找一张同名对应表」比对，得出「`unit_price` 无对应表」的错误结论。⇒ 判「有没有对应物」前先问「对应关系是不是一对一」。
+- **起始基线（供验收对照）**：`f_material_element_price` 在 `CUST-0002`/`CUST-0004` 下各返 105 行，按双键 `(element_code, material_no)` 与 `ds_quote_element_bom` 命中 **36 行**；v9 的 9 个元素码 `301/721/Ag/C/Cu/Fe/Ni/Ni36/TEST0813-E01` 里只有 `Ag/Cu/Ni` 在函数覆盖内。
+- **与 `N-16` 的关系**：`task-260819` 的 `N-16` 裁「不重绑 107 个组件视图、渲染继续走 V6」，本条即是那条排除项的解冻，但**只解冻报价侧**。
+- 预估规模：**L**（跨迁移 + PG 函数 + 视图重绑 + Java 读点）
+
+### [测试覆盖] BL-0210 · `PATH_UNIQUENESS` 路径唯一性校验无人覆盖
+
+- [ ] 待开发 · 优先级 P2 · 来源：`task-260819` 的 `Sec3x` 退役（2026-09-05，`D-123`）暴露
+- 保存期四道校验里的**路径唯一性**这一道，原本由 `Sec31.ac10`（编译期）+ `Sec36a.ac55`（保存期）覆盖，但**这两条从来没真跑过** —— 它们靠一个虚构的测试钩子 `__testOnlyForceWrapFromAsSubquery` 构造场景，自始至终恒 SKIP。
+- 退役后**无人接管**：`AC-123` 只覆盖四道里的第③道「物理存在性」，`AC-101`~`AC-127` 没有任何一条验路径唯一性。
+- ⚠️ **现在补 AC 也只能写一条跑不了的**：v9 是星形图（桥无出边、二跳路径 = 0），**构造不出第二条路径**。⇒ 等图长出多跳结构（如 `SUB`/`GRAIN`/`JOIN` 边真正被用上）再验才有意义。
+- 📌 已由 `Sec31`/`Sec36a` 的碑文前提守卫钉住：**二跳路径数一旦不为 0，那两条守卫变红**，届时本条自动被唤醒。
+- 预估规模：S（图具备条件后）
+
+### [测试覆盖] BL-0211 · 边基数断言的样本充分性（THIN 语义）无人覆盖
+
+- [ ] 待开发 · 优先级 P2 · 来源：同上
+- 原由 `Sec36a.ac52_thinSampleBlindSpot` 覆盖，防的是**固有假阴性**：目标表样本 < 30 行时，任何基数声明都可能碰巧通过。
+- 退役理由（实测）：29 条边的 `assert_status` **全为 `NA`**、`assert_sample_rows` **全 NULL** ⇒ 库里根本不存在「抽样了但样本太薄」这个状态，保留只会得到恒空跑断言。
+- ⚠️ 但**风险本身没消失**：新数据集行数普遍偏小（`ds_quote_element_bom` 53 行、`ds_quote_plating_scheme` 2 行），正是假阴性高发区。
+- 前置：需要先让基数校验器真正落库 `assert_status` / `assert_sample_rows`，本条才有对象。
+- 预估规模：M
+
+### [测试环境] BL-0212 · `Sec36a.ac56` RBAC 用例恒 SKIP —— 测试环境 Redis 会话缺陷
+
+- [ ] 待开发 · 优先级 P2 · 来源：`task-260819` 的 `Sec3x` 退役（2026-09-05）清点，用户 2026-09-06 裁决转入
+- `ac56_writeEndpointRolePermission` 验的是**语义图写端点的角色权限区分**（RBAC），**与 v8/v9 语义图无关** ⇒ 不属于 `D-123` 的退役范围，退役时一字未改，也**没有**被归入「已退役」（那会把一条安全验收项悄悄抹掉）。
+- 恒 SKIP 的真实原因：**测试环境的 Redis 会话缺陷**，`com.cpq.integration.PermissionTest` 基线同样复现 ⇒ 不是本任务引入，也不是用例写得不好。
+- ⚠️ **`skip ≠ pass`**：这条安全验收项目前实质**未验证**，环境修好前一直如此。
+- 预估规模：S（环境修复后重跑即可）
 ### [测试基建] BL-0207 · `product-hub-readonly` 的 E2E-11 缺重锚守卫，撞上瞬态会烧光 150s 且零诊断
 
 - [ ] 待开发 · 优先级 **P2** · 来源：`task-260903-产品维护能力增强` 结案（2026-09-04 用户裁决登记）
