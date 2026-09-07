@@ -1,0 +1,66 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>主数据维护 · 页签栏默认态</title><link rel="stylesheet" href="antd-like.css"></head><body>
+<div class="page">
+  <div class="note"><b>AC-1 / AC-2</b>　页签由现有 7 个变为 <b>6 个</b>：<b>「料号核价」摘除</b>，其余 6 个的<b>顺序、标题、内容一律不动</b>。默认落点由「料号核价」改为 <b>「材质」</b>（删除后自然滑到第一位）。</div>
+
+  <div class="card">
+    <div class="card-head">主数据维护</div>
+    <div class="tabs">
+      <div class="tab active">材质</div>
+      <div class="tab">元素</div>
+      <div class="tab">工序</div>
+      <div class="tab">基础核价</div>
+      <div class="tab">详细核价</div>
+      <div class="tab" style="margin-right:28px">电镀方案</div>
+    </div>
+    <div class="card-body">
+
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+        <input class="input" style="width:260px" placeholder="搜索材质编号 / 材质名 / 名称" />
+        <button class="btn">查询</button>
+        <button class="btn">重置</button>
+        <span style="flex:1"></span>
+        <button class="btn btn-primary">新建材质</button>
+        <button class="btn">导入</button>
+        <button class="btn">导出</button>
+      </div>
+
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th style="width:110px">材质编号</th>
+          <th style="width:200px">材质名 / 化学式</th>
+          <th style="width:160px">名称</th>
+          <th style="width:150px">元素组成</th>
+          <th style="width:110px">含量配置</th>
+          <th style="width:90px">类型</th>
+          <th style="width:90px">状态</th>
+          <th>修改时间</th>
+        </tr></thead>
+        <tbody>
+          <tr><td>00001</td><td>Ag</td><td>Ag</td><td>Ag</td><td><span class="tag tag-green">已配置</span></td><td>locked</td><td><span class="tag tag-green">启用</span></td><td>2026-09-01 14:22:07</td></tr>
+          <tr><td>00002</td><td>AgC3</td><td>AgC3</td><td>Ag · C</td><td><span class="tag tag-green">已配置</span></td><td>locked</td><td><span class="tag tag-green">启用</span></td><td>2026-09-01 14:22:07</td></tr>
+          <tr><td>00003</td><td>AgC4</td><td>AgC4</td><td>Ag · C</td><td><span class="tag tag-green">已配置</span></td><td>locked</td><td><span class="tag tag-green">启用</span></td><td>2026-09-01 14:22:07</td></tr>
+          <tr><td>00004</td><td>AgC5</td><td>AgC5</td><td>Ag · C</td><td><span class="tag tag-green">已配置</span></td><td>locked</td><td><span class="tag tag-green">启用</span></td><td>2026-09-01 14:22:07</td></tr>
+          <tr><td>00005</td><td>AgNi25C2</td><td>AgNi25C2</td><td>Ag · Ni · C</td><td><span class="tag tag-green">已配置</span></td><td>locked</td><td><span class="tag tag-green">启用</span></td><td>2026-09-01 14:22:07</td></tr>
+          <tr><td>00006</td><td>AgNi10</td><td>AgNi10</td><td>Ag · Ni</td><td><span class="tag tag-green">已配置</span></td><td>locked</td><td><span class="tag tag-green">启用</span></td><td>2026-09-01 14:22:07</td></tr>
+        </tbody>
+      </table></div>
+
+      <div style="display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:12px">
+        <span class="muted">共 264 条</span>
+        <button class="btn" disabled>上一页</button>
+        <button class="btn btn-primary">1</button>
+        <button class="btn">2</button>
+        <button class="btn">3</button>
+        <button class="btn">下一页</button>
+      </div>
+
+      <div class="alert alert-info" style="margin-top:20px"><span>ℹ️</span><div>
+        <b>本页签内容零改动。</b>上表就是现有「材质」页签（<code>MaterialRecipeManagement</code>）的当前样子，
+        本任务<b>只把它从第 2 位变成第 1 位、并让它成为默认落点</b>，列、工具栏、分页、数据源一个字节都不改。
+        数据取自 <code>cpq_db_0724.material_recipe</code>（实查 264 条）。
+      </div></div>
+
+    </div>
+  </div>
+</div></body></html>

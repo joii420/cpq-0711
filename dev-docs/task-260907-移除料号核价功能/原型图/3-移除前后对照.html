@@ -1,0 +1,97 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>主数据维护 · 移除前后对照</title><link rel="stylesheet" href="antd-like.css"></head><body>
+<div class="page">
+  <div class="note">本页是<b>改动面对照表</b>，不是新设计。左＝当前 master 的样子，右＝本任务交付后的样子。<b>凡右侧未标「改」的，一律零改动。</b></div>
+
+  <div class="card">
+    <div class="card-head">① 页签栏</div>
+    <div class="card-body">
+      <div style="display:flex;gap:24px;flex-wrap:wrap">
+        <div style="flex:1;min-width:300px">
+          <div class="muted" style="margin-bottom:8px">移除前 · 7 个页签，默认停在「料号核价」</div>
+          <div class="tabs" style="border-radius:6px;border:1px solid #f0f0f0">
+            <div class="tab active" style="text-decoration:line-through;opacity:.55">料号核价</div>
+            <div class="tab">材质</div><div class="tab">元素</div><div class="tab">工序</div>
+            <div class="tab">基础核价</div><div class="tab">详细核价</div><div class="tab" style="margin-right:12px">电镀方案</div>
+          </div>
+        </div>
+        <div style="flex:1;min-width:300px">
+          <div class="muted" style="margin-bottom:8px">移除后 · 6 个页签，默认停在「材质」</div>
+          <div class="tabs" style="border-radius:6px;border:1px solid #f0f0f0">
+            <div class="tab active">材质</div><div class="tab">元素</div><div class="tab">工序</div>
+            <div class="tab">基础核价</div><div class="tab">详细核价</div><div class="tab" style="margin-right:12px">电镀方案</div>
+          </div>
+        </div>
+      </div>
+      <div class="alert alert-warn" style="margin-top:16px"><span>⚠️</span><div>
+        「料号核价」页签内还内嵌着<b>「导入核价数据」按钮</b>（<code>task-0728 · F2</code> 从壳页顶部移进来的）。
+        它<b>随页签一并删除</b>，且<b>不挪到别处</b> —— 用户 2026-09-07 已知悉后果并裁决。
+      </div></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:24px">
+    <div class="card-head">② 前端文件结构（A0 岜路 1 · 方案乙）</div>
+    <div class="card-body">
+      <div class="table-wrap"><table>
+        <thead><tr><th style="width:46%">移除前</th><th style="width:8%">→</th><th>移除后</th></tr></thead>
+        <tbody>
+          <tr><td><code>master-data/part-costing/PartCostingTab.tsx</code></td><td><b>删</b></td><td class="muted">—</td></tr>
+          <tr><td><code>master-data/part-costing/PartCostingDrawer.tsx</code></td><td><b>删</b></td><td class="muted">—</td></tr>
+          <tr><td><code>master-data/PricingBasicDataImportDrawer.tsx</code></td><td><b>删</b></td><td class="muted">—</td></tr>
+          <tr style="background:#f6ffed"><td><code>master-data/part-costing/EditableSheetTable.tsx</code></td><td><b>迁</b></td><td><code>master-data/<b>shared</b>/EditableSheetTable.tsx</code></td></tr>
+          <tr style="background:#f6ffed"><td><code>master-data/part-costing/SheetPartListTab.tsx</code></td><td><b>迁</b></td><td><code>master-data/<b>shared</b>/SheetPartListTab.tsx</code></td></tr>
+          <tr style="background:#f6ffed"><td><code>master-data/part-costing/types.ts</code></td><td><b>迁</b></td><td><code>master-data/<b>shared</b>/types.ts</code></td></tr>
+          <tr style="background:#f6ffed"><td><code>master-data/part-costing/api.ts</code></td><td><b>迁+瘦</b></td><td><code>master-data/<b>shared</b>/sheetApiFactory.ts</code><br><span class="muted">只留 <code>createSheetApi</code> 工厂；7 个 legacy 具名导出与 <code>legacy</code> 实例、<code>BASE</code>、<code>PartSortBy</code> 全删</span></td></tr>
+          <tr><td colspan="3" style="background:#fafafa"><b>受牵连的 import（6 处，全在 <code>master-data/dataset/</code> 下）</b>：<code>types.ts</code>、<code>DatasetSheetDrawer.tsx</code>×2、<code>api.ts</code>×2、<code>DatasetPartListTab.tsx</code>×2、<code>PlatingSchemeTab.tsx</code> —— 只改路径，不改导入的符号名</td></tr>
+        </tbody>
+      </table></div>
+      <div class="alert alert-info" style="margin-top:16px"><span>🛡️</span><div>
+        <b>AC-16 守卫</b>：四个被迁移的文件，除 <b>import 路径</b>、<b>文件头注释</b>、<b>legacy 段删除</b>三类外，
+        <b>函数体 / JSX / props / 类型字段名 / 样式一个字节都不许改</b>。
+        只有这样，AC-8 的三页签回归「过了」才等于「迁移没弄坏东西」。
+      </div></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:24px">
+    <div class="card-head">③ 后端端点</div>
+    <div class="card-body">
+      <div class="table-wrap"><table>
+        <thead><tr><th style="width:56%">端点</th><th style="width:14%">处置</th><th>移除后行为</th></tr></thead>
+        <tbody>
+          <tr><td><code>GET /api/cpq/pricing-basic-data/parts</code></td><td><span class="tag tag-red">删</span></td><td>404</td></tr>
+          <tr><td><code>GET /api/cpq/pricing-basic-data/sheets</code></td><td><span class="tag tag-red">删</span></td><td>404</td></tr>
+          <tr><td><code>GET /api/cpq/pricing-basic-data/parts/{no}/overview</code></td><td><span class="tag tag-red">删</span></td><td>404</td></tr>
+          <tr><td><code>GET /api/cpq/pricing-basic-data/parts/{no}/sheets/{key}/rows</code></td><td><span class="tag tag-red">删</span></td><td>404</td></tr>
+          <tr><td><code>GET /api/cpq/pricing-basic-data/parts/{no}/sheets/{key}/versions</code></td><td><span class="tag tag-red">删</span></td><td>404</td></tr>
+          <tr><td><code>PUT /api/cpq/pricing-basic-data/parts/{no}/sheets/{key}/rows</code></td><td><span class="tag tag-red">删</span></td><td>404</td></tr>
+          <tr><td><code>GET /api/cpq/pricing-basic-data/lookup/{masterType}</code></td><td><span class="tag tag-red">删</span></td><td>404</td></tr>
+          <tr><td><code>POST /api/cpq/basic-data-import/v6/pricing</code></td><td><span class="tag tag-red">删</span></td><td>404</td></tr>
+          <tr><td><code>GET /api/cpq/basic-data-import/v6/pricing/template</code></td><td><span class="tag tag-red">删</span></td><td>404</td></tr>
+          <tr style="background:#f6ffed"><td><code>POST /api/cpq/basic-data-import/v6/quote</code></td><td><span class="tag tag-green">留</span></td><td>不传 customerId → <b>400</b>（不是 404）</td></tr>
+          <tr style="background:#f6ffed"><td><code>GET /api/cpq/basic-data-import/v6/{recordId}</code></td><td><span class="tag tag-green">留</span></td><td>不变</td></tr>
+          <tr style="background:#f6ffed"><td><code>GET /api/cpq/dataset/{dataset}/*</code>（三数据集全部）</td><td><span class="tag tag-green">留</span></td><td>不变</td></tr>
+        </tbody>
+      </table></div>
+      <div class="alert alert-warn" style="margin-top:16px"><span>🚨</span><div>
+        最后三行是 <b>AC-4 / AC-5 的反向对照</b>，不是凑数：服务没起来时<b>所有</b>路径都返 404，
+        只断言「删掉的返 404」会得到假绿（<code>task-260819 · D-123</code> 进程级假绿）。
+        必须在<b>同一次会话、同一轮请求</b>里同时证明「该没的没了」和「该在的还在」。
+      </div></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:24px">
+    <div class="card-head">④ 数据库 —— 零改动（红线）</div>
+    <div class="card-body">
+      <div class="alert alert-warn"><span>🚫</span><div>
+        <b>本任务不含任何 DDL、不含任何写库语句、不新增迁移。</b>
+        <code>unit_price</code> / <code>material_bom_item</code> / <code>element_bom_item</code> / <code>production_energy</code> /
+        <code>capacity</code> / <code>labor_rate</code> / <code>tooling_cost</code> 等 V6 表<b>仍在给核价单渲染供数</b>
+        （<code>task-260819</code> 裁决 <code>N-16</code>：不重绑 107 个存量视图，渲染继续走 V6）。
+        <b>AC-12</b> 用改动前后 <code>count(*)</code> + 内容 md5 逐字节比对来守这条线。
+      </div></div>
+    </div>
+  </div>
+</div></body></html>

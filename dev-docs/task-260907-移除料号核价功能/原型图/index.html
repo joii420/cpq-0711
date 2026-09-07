@@ -1,0 +1,73 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>原型导航 · 移除料号核价功能</title><link rel="stylesheet" href="antd-like.css"></head><body>
+<div class="page">
+  <div class="card">
+    <div class="card-head">📌 当前基准 · <code>task-260907-移除料号核价功能</code></div>
+    <div class="card-body">
+
+      <div class="alert alert-info"><span>📌</span><div>
+        <b>本目录是「主数据维护」壳页页签栏的当前视觉基准</b>（取代 <code>task-260902</code> 的
+        <code>主数据维护-页签结构.html</code>，见下方交接说明）。
+        定稿后原型即验收基准，<b>改原型 = 改验收标准</b>，须走 <code>task-docs.md §4</code> 四步。
+      </div></div>
+
+      <h3 style="margin:24px 0 8px">页面与状态</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th style="width:270px">原型</th><th style="width:150px">状态</th><th style="width:120px">对应 AC</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><a class="link" href="1-主数据维护-页签栏-默认态.html">1-主数据维护-页签栏-默认态.html</a></td>
+            <td><span class="tag tag-blue">默认态 · 有数据</span></td>
+            <td>AC-1, AC-2</td>
+            <td>7 个页签 → <b>6 个</b>；默认落点由「料号核价」改为「材质」。材质页签内容<b>零改动</b>，数据取自 <code>cpq_db_0724.material_recipe</code>（实查 264 条）</td>
+          </tr>
+          <tr>
+            <td><a class="link" href="2-材质页签-空态与极值.html">2-材质页签-空态与极值.html</a></td>
+            <td><span class="tag tag-grey">空数据</span> <span class="tag tag-gold">最长文案</span></td>
+            <td>AC-2</td>
+            <td>材质成为门面后，空态与极值必须有基准。另含<b>「本任务不引入的状态」说明表</b>（禁用态/错误态/加载态为何没有）</td>
+          </tr>
+          <tr>
+            <td><a class="link" href="3-移除前后对照.html">3-移除前后对照.html</a></td>
+            <td><span class="tag tag-blue">改动面对照</span></td>
+            <td>AC-4~AC-7, AC-12, AC-16</td>
+            <td>四张对照表：页签栏 / 前端文件结构（A0 方案乙）/ 后端 11 个端点去留 / 数据库零改动红线</td>
+          </tr>
+        </tbody>
+      </table></div>
+
+      <h3 style="margin:24px 0 8px">🕰️ 与上一份基准的交接</h3>
+      <div class="alert alert-warn"><span>🕰️</span><div>
+        <code>dev-docs/task-260902-报价与核价建表与导入方案新规范/原型图/<b>主数据维护-页签结构.html</b></code>
+        自 <b>2026-09-07</b> 起转为<b>历史快照</b>，其 📌 已在该目录的 <code>index.html</code> 中摘除。
+        <div style="margin-top:10px"><b>偏差清单</b>（该图与本目录基准的差异）：</div>
+        <ol style="margin:6px 0 0;padding-left:20px">
+          <li>该图画 <b>6 个</b>页签（料号核价 / 材质 / 元素 / 工序 / 基础核价 / 详细核价），且明写「<b>现有『料号核价』保留不动</b>（闸门 A0 · D-6）」—— 本任务<b>删掉了它</b>，该结论已失效</li>
+          <li>该图出图时「电镀方案」尚未追加（后由同任务 S-9 加为第 7 个），故图上缺这一页签</li>
+          <li>该图的选中页签是「基础核价」，未表达默认落点；本任务把默认落点<b>明确定为「材质」</b>并写进 AC-2</li>
+        </ol>
+        <div style="margin-top:10px">🚫 <b>不回改该历史快照的内容</b> —— 它是 <code>task-260902</code> 那次交付的验收记录。</div>
+        <div style="margin-top:6px">✅ 该目录里另外 10 份原型（核价数据列表/抽屉各态、数据导入、电镀方案等）<b>仍是各自页面的 📌 当前基准</b>，本任务不触碰。</div>
+      </div>
+
+      <h3 style="margin:24px 0 8px">本任务的原型份数为什么是 3 份</h3>
+      <p class="muted" style="margin:0">
+        <code>frontend.md §1.3</code>：<b>本任务动到几个页面就要有几份原型</b>。
+        数一遍 <code>fronttask.md</code> 的 <code>F-x</code> —— 本任务前端只动到<b>一个页面</b>（主数据维护壳页 <code>/master-data-hub</code>），
+        其余全是<b>删文件与迁文件</b>，不产生新的可视界面。
+        故 1 份画该页面默认态、1 份画它的空态与极值、1 份画改动面对照，<b>没有第四个页面被动到</b>。
+        被删的「料号核价」页签与「导入核价数据」抽屉<b>不画</b> —— 删掉的东西没有视觉基准可言，它们的样子由 3 号图的对照表和 git 历史记录。
+      </p>
+
+      <h3 style="margin:24px 0 8px">还原纪律</h3>
+      <ul class="muted" style="margin:0;padding-left:20px">
+        <li>视觉基准是原型图，不是审美 —— 布局结构、控件类型与顺序、文案、空态文案逐项对齐</li>
+        <li>允许的偏差只有一类：<b>组件库能力所限的等价实现</b>，且必须在回报里列出</li>
+        <li>🚫 原型没画到的地方<b>不许自由发挥</b> —— 停下来问，那是需求缺口</li>
+        <li>🚨 原型与 AC 冲突时<b>以 AC 为准</b>，并立即报告</li>
+        <li>🚨 本任务<b>只做减法</b>：若发现自己在为某个新控件/新状态做设计决策，说明已超范围，停下来问</li>
+      </ul>
+
+    </div>
+  </div>
+</div></body></html>

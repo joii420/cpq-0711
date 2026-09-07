@@ -13,7 +13,7 @@
       <div class="table-wrap"><table>
         <thead><tr><th style="width:280px">原型</th><th style="width:120px">状态</th><th style="width:130px">对应 AC</th><th>说明</th></tr></thead>
         <tbody>
-          <tr><td><a class="link" href="主数据维护-页签结构.html">主数据维护-页签结构.html</a></td><td><span class="tag tag-blue">默认态</span></td><td>AC-24</td><td>4 个页签 → 6 个；现有「料号核价」保留不动</td></tr>
+          <tr style="background:#fffbe6"><td><a class="link" href="主数据维护-页签结构.html">主数据维护-页签结构.html</a></td><td><span class="tag tag-gold">🕰️ 历史快照</span></td><td>AC-24</td><td><b>已被 <code>task-260907-移除料号核价功能/原型图/1-主数据维护-页签栏-默认态.html</code> 取代（2026-09-07）。</b>交付当天是对的，之后需求演进 —— 属漂移不是缺陷，故<b>本文件内容不回改</b>。<br><b>偏差清单</b>：① 本图明写「现有『料号核价』<b>保留不动</b>（闸门 A0 · D-6）」，而 <code>task-260907</code> <b>删掉了该页签</b>，这条结论已失效；② 本图出图时「电镀方案」尚未追加（后由本任务 S-9 加为第 7 个），故图上缺该页签；③ 本图选中态是「基础核价」、未表达默认落点，<code>task-260907</code> 把默认落点<b>明确定为「材质」</b>并写进其 AC-2。</td></tr>
           <tr><td><a class="link" href="核价数据-列表.html">核价数据-列表.html</a></td><td><span class="tag tag-blue">默认 + 极值 + 零配置</span></td><td>AC-25</td><td>列表数据源 = 该数据集的物料表；点行开抽屉</td></tr>
           <tr><td><a class="link" href="核价数据-抽屉.html">核价数据-抽屉.html</a></td><td><span class="tag tag-blue">默认 · 可编辑</span></td><td>AC-26, AC-27, AC-30</td><td>左侧 tab + 版本切换 + 可编辑表格 + 保存</td></tr>
           <tr><td><a class="link" href="核价数据-抽屉-历史只读.html">核价数据-抽屉-历史只读.html</a></td><td><span class="tag tag-gold">禁用态</span></td><td>AC-29</td><td>保存/新增<b>禁用但可见</b> + hover 说明原因</td></tr>
@@ -23,9 +23,11 @@
           <tr><td><a class="link" href="数据导入-抽屉.html">数据导入-抽屉.html</a></td><td><span class="tag tag-green">成功态</span></td><td>AC-11, AC-33, AC-39</td><td>导入结果汇总表；关闭后列表自动刷新</td></tr>
           <tr><td><a class="link" href="数据导入-校验失败.html">数据导入-校验失败.html</a></td><td><span class="tag tag-red">错误态</span></td><td>AC-6~AC-10, AC-34</td><td>整份拒收；错误一次列全，不 fail-fast</td></tr>
           <tr><td><a class="link" href="电镀方案-页签.html">电镀方案-页签.html</a></td><td><span class="tag tag-green">新增 · 默认+空态</span></td><td>AC-48~AC-51</td><td>🚩 S-9 追加：第 7 个页签，一页签+数据集下拉，<b>只读</b></td></tr>
-          <tr><td><a class="link" href="报价单管理-工具栏.html">报价单管理-工具栏.html</a></td><td><span class="tag tag-blue">默认态</span></td><td>AC-35, AC-38</td><td>唯一新增控件；旧按钮零改动</td></tr>
+          <tr style="background:#fffbe6"><td><a class="link" href="报价单管理-工具栏.html">报价单管理-工具栏.html</a></td><td><span class="tag tag-gold">🕰️ 历史快照</span></td><td>AC-35, AC-38</td><td><b>已被 <code>task-260907-报价导入建单切ds新表/原型图/01-报价单列表.html</code> 取代（2026-09-07）。</b>交付当天是对的，之后需求演进 —— 属漂移不是缺陷，故<b>本文件内容不回改</b>。<br><b>偏差清单</b>：① 本图画的是「旧按钮零改动 + 新增一个」的<b>并行态</b>，task-260907 移除了「从基础数据导入」，并行终结；② 「导入报价数据」权限判据由 <code>PRICING_MANAGER/SYSTEM_ADMIN</code> 改为 <code>SALES_REP/SALES_MANAGER/SYSTEM_ADMIN</code>，禁用 tooltip 文案随之变化；③ 该按钮打开的抽屉由共用的 <code>DatasetImportDrawer</code> 换成新建的建单专用两步式抽屉。</td></tr>
         </tbody>
       </table></div>
+
+      <div class="alert alert-info" style="margin-top:16px"><span>🕰️</span><div><b>本目录仍是其余 9 份原型的 📌 当前基准</b> —— 只有 <code>报价单管理-工具栏.html</code> 与 <code>主数据维护-页签结构.html</code> 两份于 2026-09-07 转为历史快照（分别被 <code>task-260907-报价导入建单切ds新表</code> 与 <code>task-260907-移除料号核价功能</code> 取代）。🚫 不要因为两行变更就把整份索引翻成历史快照，那会误伤另外 9 份仍然有效的基准。</div></div>
 
       <h3 style="margin:24px 0 8px">「详细核价」页签为什么没有单独原型</h3>
       <p class="muted" style="margin:0">它与「基础核价」<b>逐像素同构</b>，唯一差异是抽屉左侧 tab 由 <b>9 个</b>变为 <b>17 个</b>（多出

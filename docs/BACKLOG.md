@@ -415,3 +415,32 @@ pickQualifiedCustomer({ needsTakenProductNo? })
 - 🔑 **同一根因解释了两条 AC 的漂移**：B-50 摘掉该节点 ⇒ ① `AC-20②`「核价两套各多挂 1 组」过期；② 本条无法构造。
 - ⚠️ **与用户裁决的关系**：用户 2026-09-06 明确「先保留 料号列和料号名称列」。名称列在**数据模型与老路上都还在**，只是**新配置器路径上暂时不可达**。根因在 `task-260819` 的语义图种子（谁挂哪些节点），**不在 `task-260904` 的收缩改动**。
 - **待定**：是把 `QUOTE_MATERIAL_BRIDGE` 重新挂回去（会连带改回 AC-20 的组数），还是把闸的文案与逻辑诚实改成「料号列必填」。⇒ **需要与 `task-260819` 一起决策**，别单方面改。
+
+---
+
+### [技术债] BL-0214 · V6 老核价导入链路（`PricingImportService` / P01~P24）的最终处置
+
+- [ ] 待开发 · 优先级 **P2** · 来源：`task-260907-移除料号核价功能` 立项（2026-09-07 用户裁决登记）
+
+**背景**：`task-260907` 删掉了「料号核价」页签、`com.cpq.basicdata.v6.maintenance` 整包，以及 `BasicDataImportV6Resource` 的 `importPricing()` / `pricingTemplate()` 两个端点。用户明确裁决 **P01~P24 handlers 与 `PricingImportService` / `PricingTemplateService` / `PricingHandlerCatalog` 保留不动**（删除牵动面远超那个任务的范围）。
+
+**遗留状态**：这几个类删除后将处于一个尴尬位置 ——
+
+| 事实 | 含义 |
+|---|---|
+| **生产调用方 = 0** | 唯一入口 `POST /basic-data-import/v6/pricing` 已下线 |
+| **仍被 3 个测试类覆盖** | `PricingTemplateServiceTest` / `PricingVersioningImportE2ETest` / `Task0812DisabledSheetsTest` |
+| 🚨 **是 V6 表唯一的写入实现** | `unit_price` / `material_bom_item` / `element_bom_item` / `production_energy` / `capacity` / `labor_rate` / `tooling_cost` |
+| 🚨 **V6 表仍在给核价单渲染供数** | `task-260819` 裁决 `N-16`：不重绑 107 个存量视图，渲染继续走 V6 |
+
+⇒ **它看起来像死代码，但不是。** `task-260907` 的 B-3 已在两个 service 的类 javadoc 顶部加了防误删标注，但注释挡不住一次"清理死代码"的批量操作。
+
+**待决策（三选一，需与 V6 退役主线一起定，🚫 不要单方面动）**：
+
+1. **随 V6 表整体退役一并删除** —— 前提是 `BL-0209`（V6 报价侧数据退役）与核价侧视图重绑都完成，V6 表不再供数
+2. **挂回一个新入口** —— 若业务上还需要 Excel 灌 V6 核价数据，给它一个新的维护入口（但那等于把 `task-260907` 删掉的东西换个位置装回来，需要业务先确认真有这个需求）
+3. **保持现状** —— 靠 javadoc 标注 + 3 个测试类兜底，等 V6 退役自然消解
+
+**触发条件**：`BL-0209` 推进到「核价侧视图重绑」时，本条必须一并处置，否则 V6 表退役后这几个类才是真死代码，而那时已经没人记得它们为什么留着。
+
+⚠️ **本条的代价已被用户知悉并接受**：V6 老核价数据自 2026-09-07 起**无任何 UI 入口**（维护页与 Excel 导入一并删除），只能改库。

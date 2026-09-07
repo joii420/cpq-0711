@@ -1,0 +1,68 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>主数据维护 · 材质页签空态与极值</title><link rel="stylesheet" href="antd-like.css"></head><body>
+<div class="page">
+  <div class="note"><b>AC-2</b>　「材质」成为默认落点后，<b>页面一打开就会渲染它</b>。所以它的空态与极值必须画出来 —— 原来它是第 2 个页签、要点一下才进得去，出问题也只是「点进去才看到」；现在它是门面，任何异常都会成为主数据维护的第一印象。</div>
+
+  <div class="card">
+    <div class="card-head">状态 A · 搜索无结果（空数据）</div>
+    <div class="tabs">
+      <div class="tab active">材质</div><div class="tab">元素</div><div class="tab">工序</div>
+      <div class="tab">基础核价</div><div class="tab">详细核价</div><div class="tab" style="margin-right:28px">电镀方案</div>
+    </div>
+    <div class="card-body">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+        <input class="input" style="width:260px" value="ZZZ-不存在的材质" />
+        <button class="btn">查询</button><button class="btn">重置</button>
+        <span style="flex:1"></span>
+        <button class="btn btn-primary">新建材质</button><button class="btn">导入</button><button class="btn">导出</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th style="width:110px">材质编号</th><th style="width:200px">材质名 / 化学式</th><th style="width:160px">名称</th><th style="width:150px">元素组成</th><th style="width:110px">含量配置</th><th style="width:90px">类型</th><th style="width:90px">状态</th><th>修改时间</th></tr></thead>
+        <tbody><tr><td colspan="8" style="text-align:center;padding:56px 0">
+          <div style="font-size:40px;line-height:1;opacity:.25">🗂️</div>
+          <div class="muted" style="margin-top:12px">暂无数据</div>
+        </td></tr></tbody>
+      </table></div>
+      <div class="alert alert-info" style="margin-top:16px"><span>ℹ️</span><div>
+        <b>空态判据（AC-2）</b>：必须是表格内的「暂无数据」占位，<b>🚫 不许是白屏、🚫 不许是红色遮罩、🚫 不许停在「加载中…」</b>。
+        这是既有 <code>MaterialRecipeManagement</code> 的现有行为，本任务<b>不改它</b> —— 画出来是为了让 AC-2 有可比对的基准。
+      </div></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:24px">
+    <div class="card-head">状态 B · 最长文案 / 极值数据</div>
+    <div class="card-body">
+      <div class="table-wrap"><table>
+        <thead><tr><th style="width:110px">材质编号</th><th style="width:240px">材质名 / 化学式</th><th style="width:200px">名称</th><th style="width:180px">元素组成</th><th style="width:110px">含量配置</th><th style="width:90px">类型</th><th style="width:90px">状态</th><th>修改时间</th></tr></thead>
+        <tbody>
+          <tr><td>00193</td><td>AgNi(0.2)/C10500/AgNi(0.2)</td><td>AgNi(0.2)/C10500/AgNi(0.2)</td><td>Ag · Ni · Cu</td><td><span class="tag tag-green">已配置</span></td><td>locked</td><td><span class="tag tag-green">启用</span></td><td>2026-09-01 14:22:07</td></tr>
+          <tr><td>00182</td><td>AIMgSi05(EN 6101-B T6)</td><td>AIMgSi05(EN 6101-B T6)</td><td>Al · Mg · Si</td><td><span class="tag tag-grey">未配置</span></td><td>locked</td><td><span class="tag tag-green">启用</span></td><td>2026-09-01 14:22:07</td></tr>
+          <tr><td>00028</td><td>AgSnO2(12)/Ag/Ag15CuP</td><td>AgSnO2(12)/Ag/Ag15CuP</td><td>Ag · Sn · O · Cu · P</td><td><span class="tag tag-green">已配置</span></td><td>locked</td><td><span class="tag tag-green">启用</span></td><td>2026-09-01 14:22:07</td></tr>
+        </tbody>
+      </table></div>
+      <div class="alert alert-info" style="margin-top:16px"><span>ℹ️</span><div>
+        实查 <code>cpq_db_0724.material_recipe</code> 的三条最长记录（26 / 22 / 21 字符）。
+        断言：<b>不撑破布局、不出现横向滚动条、不截断成「…」</b>。同为既有行为，本任务不改。
+      </div></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:24px">
+    <div class="card-head">本任务不引入的状态（说明，非省略）</div>
+    <div class="card-body">
+      <div class="table-wrap"><table>
+        <thead><tr><th style="width:140px">状态</th><th>为什么本任务没有</th></tr></thead>
+        <tbody>
+          <tr><td><b>禁用态</b></td><td>本任务<b>只做减法</b> —— 摘页签、删组件、删端点，<b>不新增任何控件</b>，因此没有新的 <code>enabledWhen</code> 判据与禁用 tooltip 要画。剩余 6 个页签内部的既有禁用态一律不动。</td></tr>
+          <tr><td><b>错误态</b></td><td>页签栏本身不发请求。材质页签的接口失败态是 <code>MaterialRecipeManagement</code> 的既有行为，本任务零改动。</td></tr>
+          <tr><td><b>加载态</b></td><td>同上，既有行为。</td></tr>
+        </tbody>
+      </table></div>
+      <div class="alert alert-warn" style="margin-top:16px"><span>⚠️</span><div>
+        这三行不是「懒得画」—— 是<b>显式声明本任务的视觉改动面为零</b>。
+        开发若发现自己需要为某个禁用态/错误态做设计决策，说明<b>已经超出本任务范围</b>，应停下来问，不要自由发挥。
+      </div></div>
+    </div>
+  </div>
+</div></body></html>
