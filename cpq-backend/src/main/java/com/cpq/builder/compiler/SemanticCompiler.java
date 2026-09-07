@@ -282,6 +282,9 @@ public class SemanticCompiler {
 
         String finalSql = sql.toString();
 
+        // B-53：产物级护栏。在**最终 SQL 文本**上复核 :total_material_no 只被一种语义消费
+        assertAxisParamSingleSemantic(c, finalSql);
+
         // customerCode 只要涉及任意 customer_no 收窄或价格函数就需要
         if (finalSql.contains(":customerCode")) c.requiredVars.add("customerCode");
 
@@ -315,8 +318,9 @@ public class SemanticCompiler {
         return snap.tabViews.stream()
                 .filter(t -> t.tabType.equals(cfg.tabType) && t.variantKey.equals(vk) && dl.equals(t.dialect))
                 .findFirst()
-                .orElseThrow(() -> new BuilderApiException(400, "COMPILE_TABVIEW_NOT_FOUND",
-                        "未找到页签视图: " + cfg.tabType + "/" + vk + "（数据集 " + dl + "）", Map.of()));
+                // B-60/AC-127⑤：报文必须点名**合法值域**（从图按 dialect 实时取），
+                // 且把"页签类型非法"与"类型合法、只是缺/错变体"分开说 —— 见 TabViewNotFound。
+                .orElseThrow(() -> TabViewNotFound.of(snap, 400, cfg.tabType, vk, dl));
     }
 
     // D-51/AC-60：containsSwitch() 曾用于读 tabView.switches 里的 CLOSURE 标记，随闭包开关整体
@@ -742,6 +746,162 @@ public class SemanticCompiler {
         if (!c.narrowedByBridge && cols.contains(axis)) {
             where.add(alias + "." + axis + " = ANY(:total_material_no)");
             c.requiredVars.add("total_material_no");
+        }
+    }
+
+    // ---------------- B-53：`:total_material_no` 单一语义护栏（产物级） ----------------
+
+    /** 直接轴谓词的形态：{@code <别名>.<列> = ANY(:total_material_no)}（{@link #applyFullScope} 产）。 */
+    private static final Pattern DIRECT_AXIS_NARROW = Pattern.compile(
+            "([A-Za-z_]\\w*)\\.([A-Za-z_]\\w*)\\s*=\\s*ANY\\(\\s*:total_material_no\\s*\\)");
+
+    /**
+     * 桥半连接的形态：{@code IN (SELECT … = ANY(:total_material_no))}（{@link #emitNarrowPredicate} 产）。
+     *
+     * <p>🚨 <b>这一个 Pattern 同时充当两处判据</b>——「从 {@link Ctx#anchorWhere} 里认出已知桥」与
+     * 「在最终 SQL 文本里数出实际有几处桥」。<b>刻意共用同一条**，就是为了让两处判据不可能漂移：
+     * 一旦它们用不同的写法（比如一处认字面量 {@code "IN (SELECT"}、另一处用正则），
+     * 将来任何改动只要动了桥的文本形态，就会出现「结构化认不出、文本认得出」的偏差，
+     * 而那个偏差过去是被 {@code bridgePredicates.isEmpty() → return} 静默吞掉的。
+     *
+     * <p><b>中间段用 {@code [^()]} 而不是 {@code [\s\S]}</b>：桥子查询从 {@code IN (SELECT} 到
+     * {@code = ANY(} 之间只有 {@code <列> FROM <表> <别名> WHERE <别名>.<列>}，<b>不含任何括号</b>。
+     * 用「禁止括号」把匹配锁死在同一层子查询里 ⇒ 一个与本入参无关的 {@code IN (SELECT …)}
+     * 不可能跨过自己的右括号、去够上后面某条直接轴谓词的 {@code ANY(:total_material_no)}
+     * （那会造成假报警）。同时 {@code \s*} + {@code CASE_INSENSITIVE} 让它不受
+     * {@code IN(SELECT} 无空格、换行、大小写的影响。
+     */
+    private static final Pattern BRIDGE_SEMI_JOIN = Pattern.compile(
+            "\\bIN\\s*\\(\\s*SELECT\\b[^()]{0,2000}=\\s*ANY\\s*\\(\\s*:total_material_no\\s*\\)",
+            Pattern.CASE_INSENSITIVE);
+
+    /**
+     * 🚨 <b>护栏（task-260819 B-53，用户 2026-09-04 裁决「护栏做」）</b>：产物里
+     * {@code :total_material_no} 只允许被<b>一种</b>语义消费。
+     *
+     * <p><b>防的是什么</b>：绑定变量 {@code :total_material_no} 只有一个数组，但编译器有两条
+     * 会消费它的路径，且要求的号段<b>相反</b>：
+     * <ul>
+     *   <li>{@link #emitNarrowPredicate} 的桥半连接 —— 数组必须装<b>销售料号</b>
+     *       （拿去查 {@code ds_quote_material.material_no}）；</li>
+     *   <li>{@link #applyFullScope} 的直接轴谓词 —— 核价方言下轴列是 {@code production_no}，
+     *       数组必须装<b>生产料号</b>。</li>
+     * </ul>
+     * 两者一旦同时出现在同一段产物里，<b>无论数组装哪种号，另一条必然恒不命中 ⇒ 两个条件
+     * AND 起来交集为空 ⇒ 查出 0 行，而且不抛异常、不告警、不留任何诊断</b>——这正是 B-52
+     * （D-119）的成因，也是 {@code /preview} 第四次同型「静默返空」缺陷。
+     *
+     * <p><b>为什么要有第二重检查</b>：现行防线是 {@link Ctx#narrowedByBridge} 这个布尔标志位
+     * （有桥就不发直接轴谓词）——它是<b>运行时靠一个变量维持</b>的约束，任何一条新增代码路径
+     * 漏读它就重新引入同型缺陷，而缺陷本身不报错。本护栏<b>刻意不读那个标志</b>，只看编译产出
+     * 的最终 SQL 文本，因而「{@code narrowedByBridge} 维护得对不对」不影响它的判定。
+     *
+     * <p>⚠️ <b>但「完全不依赖被检查方」是做不到的，别这么宣称</b>（2026-09-04 主线复核纠正）。
+     * 本护栏仍然依赖一条性质：<b>桥谓词落在 {@link Ctx#anchorWhere} 里</b>（否则认不出它是桥，
+     * 就无法与直接轴谓词区分）。这条性质将来可能被破坏 —— 比如照 {@link #resolveSub} 那条路
+     * 把桥发进某个局部 {@code where}。<b>关键不在于消灭这个依赖（消灭不掉），而在于让它被破坏时
+     * 「响亮地失败」而不是「安静地放行」</b>：所以
+     * {@link #checkAxisParamSingleSemantic} 会把「产物里数出的桥」与「结构化认出的桥」对账，
+     * 对不上就抛 {@code COMPILE_AXIS_NARROW_UNCLASSIFIABLE}。
+     *
+     * <p><b>判定手法（结构化标记 + 产物文本，二者取长）</b>：桥谓词的<b>原文</b>从
+     * {@link Ctx#anchorWhere} 按 {@link #BRIDGE_SEMI_JOIN} 形态取（<b>不是</b>按「哪个方法产的」认），
+     * 再从最终 SQL 里逐字剔除；剩下的文本中只要还能匹配到直接轴谓词形态即判定冲突。
+     * 这样做的两点好处：① 剔除是<b>逐字子串</b>匹配，不需要正则去数括号配对，不会被子查询里
+     * 那个 {@code = ANY(...)} 误伤；② 扫描面是<b>整段产物</b>而不只是 {@code anchorWhere}，
+     * 因此 {@link #resolveSub} 相关子查询里、{@code JOIN ... ON} 里冒出来的同型谓词一样能抓到。
+     */
+    private void assertAxisParamSingleSemantic(Ctx c, String finalSql) {
+        List<String> narrowEdgeIds = c.snap.edgesFrom(c.anchor.id).stream()
+                .filter(e -> "NARROW".equals(e.edgeKind))
+                .map(e -> String.valueOf(e.id))
+                .toList();
+        checkAxisParamSingleSemantic(c.anchorWhere, finalSql, c.dialect.axisColumn(),
+                String.valueOf(c.dialect), c.anchor.nodeKey, c.anchor.physicalTable, narrowEdgeIds);
+    }
+
+    /**
+     * 护栏的<b>纯函数内核</b>（包级可见，仅为让 {@code SemanticCompilerAxisNarrowGuardTest} 能直接喂
+     * 合成产物驱动它）。不碰 {@link Ctx}、不碰图、不碰 DB ⇒ 它的用例是<b>不启 Quarkus、不连库</b>的
+     * 普通 JUnit，因而可以放心把「护栏自己坏没坏」做成常驻回归（共享库红线下这点很关键）。
+     *
+     * <p>🚨 <b>三条出口，两条都是「响亮失败」而不是放行</b>（2026-09-04 主线复核回流 ①）：
+     * <ol>
+     *   <li><b>分类不上 ⇒ {@code COMPILE_AXIS_NARROW_UNCLASSIFIABLE}</b>。产物里数出来的桥半连接
+     *       条数与从 {@code anchorWhere} 结构化认出来的对不上 ⇒ 说明有桥<b>不在 {@code anchorWhere} 里</b>
+     *       （例如将来有人照 {@link #resolveSub} 那条路把桥发进某个局部 {@code where}），
+     *       护栏此时<b>无法对产物分类</b>。<b>🚫 绝不能当成「没有桥」放过</b> —— 老写法
+     *       {@code if (bridgePredicates.isEmpty()) return;} 恰恰会在这种情况下提前返回、一声不吭，
+     *       而 {@code narrowedByBridge} 那套逻辑是独立的、直接轴谓词照发 ⇒ <b>B-52 原样重现，
+     *       护栏在旁边看着什么都不说</b>。<b>护栏的失效形态 = 静默 no-op = 它被造出来要防的那件事。</b></li>
+     *   <li><b>两种语义共存 ⇒ {@code COMPILE_AXIS_NARROW_CONFLICT}</b>（本护栏的主目标，见类内注释）。</li>
+     *   <li><b>冒出第三种形态 ⇒ 同样 {@code UNCLASSIFIABLE}</b>。把已知的两种形态都剔干净后，
+     *       文本里居然还在消费 {@code :total_material_no} ⇒ 出现了护栏没见过的用法，
+     *       同样拒绝放行而不是假设它无害。</li>
+     * </ol>
+     *
+     * <p>⚠️ <b>为什么不能简化成「数 {@code :total_material_no} 出现几次」</b>：单个锚点可以挂
+     * <b>多条 NARROW 边</b>，那时该入参正常就会出现多次，计数法会误报。逐字 {@code replace} 剔除
+     * 已知桥能正确处理 N 个桥，保留这个手法。
+     */
+    static void checkAxisParamSingleSemantic(List<String> anchorWhere, String finalSql,
+                                             String axisColumn, String dialect,
+                                             String anchorNodeKey, String anchorTable,
+                                             List<String> narrowEdgeIds) {
+        // ① 结构化认出已知桥；② 数一遍产物里实际有几处 —— 两处判据共用 BRIDGE_SEMI_JOIN，不可能漂移
+        List<String> bridgePredicates = anchorWhere.stream()
+                .filter(w -> BRIDGE_SEMI_JOIN.matcher(w).find())
+                .toList();
+        long inArtifact = BRIDGE_SEMI_JOIN.matcher(finalSql).results().count();
+        if (inArtifact != bridgePredicates.size()) {
+            throw new BuilderApiException(500, "COMPILE_AXIS_NARROW_UNCLASSIFIABLE",
+                    "护栏无法对编译产物分类，拒绝放行：产物里数出 " + inArtifact + " 处桥半连接收窄，"
+                            + "但只能从锚点 WHERE 里结构化认出 " + bridgePredicates.size() + " 处"
+                            + "（多出来的桥不在 anchorWhere 里，护栏无法把它与『直接轴收窄』区分开）。"
+                            + " 🚫 此处**必须**报错而不是放行：放行等于退回 B-52 那种「两条谓词共存 ⇒ 恒 0 行且不报错」的静默故障。"
+                            + " dialect=" + dialect + "；锚点=" + anchorNodeKey + "(" + anchorTable + ")"
+                            + "；NARROW 边=" + narrowEdgeIds + "；产物=\n" + finalSql,
+                    Map.of("bridgesInArtifact", inArtifact,
+                            "bridgesRecognized", bridgePredicates.size(),
+                            "dialect", String.valueOf(dialect),
+                            "anchorNodeKey", String.valueOf(anchorNodeKey),
+                            "narrowEdgeIds", narrowEdgeIds));
+        }
+        if (bridgePredicates.isEmpty()) return; // 确认过「产物里也一处都没有」⇒ 入参语义唯一，直接轴谓词是正确形态
+
+        String stripped = finalSql;
+        for (String bridge : bridgePredicates) stripped = stripped.replace(bridge, "");
+
+        Matcher m = DIRECT_AXIS_NARROW.matcher(stripped);
+        if (m.find()) {
+            String direct = m.group();
+            throw new BuilderApiException(500, "COMPILE_AXIS_NARROW_CONFLICT",
+                    "编译产物同时含「桥半连接收窄」与「直接轴收窄」，两者对 :total_material_no 的号段要求相反"
+                            + "（桥要销售料号、轴列要 " + axisColumn + "）"
+                            + " ⇒ 无论数组装哪种号另一条都恒不命中，AND 起来交集为空 ⇒ 静默返 0 行且不报错。"
+                            + " 直接轴谓词=[" + direct + "]；桥半连接=" + bridgePredicates
+                            + "；dialect=" + dialect
+                            + "；锚点=" + anchorNodeKey + "(" + anchorTable + ")"
+                            + "；NARROW 边=" + narrowEdgeIds,
+                    Map.of("directAxisPredicate", direct,
+                            "bridgePredicates", bridgePredicates,
+                            "dialect", String.valueOf(dialect),
+                            "anchorNodeKey", String.valueOf(anchorNodeKey),
+                            "narrowEdgeIds", narrowEdgeIds));
+        }
+
+        // ③ 两种已知形态都剔干净了，还在消费该入参 ⇒ 第三种形态，护栏没见过 ⇒ 同样不放行
+        if (stripped.contains(":total_material_no")) {
+            throw new BuilderApiException(500, "COMPILE_AXIS_NARROW_UNCLASSIFIABLE",
+                    "护栏无法对编译产物分类，拒绝放行：剔除已知的「桥半连接」与「直接轴收窄」两种形态后，"
+                            + "产物里仍在消费 :total_material_no —— 出现了护栏未知的第三种用法，"
+                            + "无法判断它与桥的号段是否相容。"
+                            + " dialect=" + dialect + "；锚点=" + anchorNodeKey + "(" + anchorTable + ")"
+                            + "；NARROW 边=" + narrowEdgeIds + "；剔除后残留=\n" + stripped,
+                    Map.of("bridgePredicates", bridgePredicates,
+                            "dialect", String.valueOf(dialect),
+                            "anchorNodeKey", String.valueOf(anchorNodeKey),
+                            "narrowEdgeIds", narrowEdgeIds));
         }
     }
 

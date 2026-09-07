@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+# ⛔ 已作废（2026-09-03）—— 🚫 不要执行，也不要再为它向共享库报批。
+#
+# 本脚本原本是 AC-125「启动期自检」反证的安全替代方案（建克隆库跑）。
+# 但 cpq-backend #2 已在克隆库 cpq_b42_flyway 上把 A/B 两轮都跑完了：
+#   A 轮（无漂移）：正常启动，日志 "[builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致(+is_current)"
+#   B 轮（ALTER TABLE ds_cost_basic_material_bom ADD COLUMN drift_probe）：启动失败，
+#        IllegalStateException: [builder] 核价全版本视图 ... 缺列 drift_probe（该列在取数配置器里永远查不到）
+# ⇒ AC-125 的反证证据已存在，本脚本的唯一价值降为「方法留痕」。
+#
+# 保留而不删除，遵循 CLAUDE.md 的归档纪律（Agent 会引用旧路径，要让它撞到「已作废，见 X」而不是撞到空）。
+# 静态不变量那一半仍在 V9VersionAndDriftTest.ac125_versionViewsHaveNoColumnDrift 里，随 mvnw test 跑。
 # ─────────────────────────────────────────────────────────────────────────────
 # AC-125 反证探针 —— 「视图列漂移 ⇒ 后端启动失败」
 #

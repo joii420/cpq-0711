@@ -1,6 +1,5 @@
 package com.cpq.builder.compiler;
 
-import com.cpq.builder.exception.BuilderApiException;
 import com.cpq.semanticgraph.entity.*;
 import com.cpq.semanticgraph.service.SemanticGraphSnapshot;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -30,9 +29,32 @@ import java.util.stream.Collectors;
 @ApplicationScoped
 public class FieldTreeBuilder {
 
-    /** 标准 6 个页签类型（展示顺序的权威来源，也是 {@code tabTypesFallback} 时返回的兜底全量）。 */
+    /**
+     * 标准 6 个页签类型（展示顺序的权威来源，也是 {@code tabTypesFallback} 时返回的兜底全量）。
+     *
+     * <p>🚨 <b>这里装的是「存储值」，不是显示名</b>（需求文档 <b>D-39</b>）。
+     * 存储值 = {@code "BOM"}（{@code component.tab_type} /
+     * {@link com.cpq.component.service.ComponentService#VALID_TAB_TYPES} /
+     * {@code semantic_tab_view.tab_type} / {@code builder_config.tabType} 四处统一）；
+     * 显示名「BOM 树」只活在前端的 {@code TAB_TYPE_LABEL} 映射、图谱页文案和文档正文里。
+     *
+     * <p>本常量原写作 {@code "BOM 树"}，是 D-39 被违反的<b>第三次</b>（前两次：前端 {@code TAB_TYPES}
+     * 常量、{@code V413} 种子，后者由 {@code V417} 修）。两处后果：
+     * <ul>
+     *   <li>{@code tabTypesFallback} 分支把「BOM 树」当<b>可选值</b>发给前端 ⇒ 用户选中后
+     *       {@code PUT /builder} 被 {@code ComponentService.assertValidTabType} 判 400
+     *       {@code Invalid tabType}；</li>
+     *   <li>正常路径的展示顺序收窄里「BOM 树」永不匹配库里的 {@code 'BOM'} ⇒ {@code 'BOM'} 落到
+     *       下方"图里有但不在标准值里"的兜底追加，被挤到列表末位，顺序静默退化。</li>
+     * </ul>
+     *
+     * <p>🔒 本常量与 {@code ComponentService.VALID_TAB_TYPES} 的<b>同集关系</b>由
+     * {@code TabTypeValueDomainSelfCheckTest} 钉死（B-58b）。改这一行必须同时跑它。
+     * 启动期的 {@code SemanticGraphKeyValueSelfCheck}（B-56）钉的是<b>库侧</b>
+     * （{@code semantic_tab_view.tab_type ⊆ 值域}），钉不到这里。
+     */
     static final List<String> ALL_TAB_TYPES =
-            List.of("主件", "材质元素", "零件", "外购件", "费用类", "BOM 树");
+            List.of("主件", "材质元素", "零件", "外购件", "费用类", "BOM");
 
     public static final class Field {
         public String sourceNodeKey;
@@ -129,8 +151,9 @@ public class FieldTreeBuilder {
         SemanticTabView tv = snap.tabViews.stream()
                 .filter(t -> t.tabType.equals(tabType) && t.variantKey.equals(vk) && dl.equals(t.dialect))
                 .findFirst()
-                .orElseThrow(() -> new BuilderApiException(404, "COMPILE_TABVIEW_NOT_FOUND",
-                        "未找到页签视图: " + tabType + "/" + vk + "（数据集 " + dl + "）", Map.of()));
+                // B-60/AC-127⑤：同 SemanticCompiler，报文统一走 TabViewNotFound —— 这里是主线实测
+                // 「GET /field-tree?tabType=费用类 不传 variantKey → 404 看着像费用类不存在」那一例的现场。
+                .orElseThrow(() -> TabViewNotFound.of(snap, 404, tabType, vk, dl));
         SemanticNode anchor = snap.nodeById.get(tv.anchorNodeId);
 
         FieldTreeResponse resp = new FieldTreeResponse();

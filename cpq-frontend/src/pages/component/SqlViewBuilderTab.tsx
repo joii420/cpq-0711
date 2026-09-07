@@ -102,15 +102,11 @@ function normalizeDataset(v: unknown): BuilderDataset {
 const TAB_TYPES = ['主件', '材质元素', '零件', '外购件', '费用类', 'BOM'] as const;
 /** D-39：仅 BOM 的显示名与存储值不同；其余 5 类未列出时 Select 渲染逻辑回退用存储值本身当显示名。 */
 const TAB_TYPE_LABEL: Record<string, string> = { BOM: 'BOM 树' };
-/**
- * 把「同一个页签类型的两种写法」归一到同一个键，只用于**比较**（🚫 不用于取值 / 不发给后端）。
- * 存量口径不一致：本地存储值 `'BOM'` ↔ 服务端 `availableTabTypes` 里的显示名 `'BOM 树'`。
- * 实测 2026-09-03：`GET /field-tree?tabType=BOM` 返回 0 个分组，后端只认 `'BOM 树'`。
- */
-const TAB_TYPE_VALUE_BY_LABEL: Record<string, string> = Object.fromEntries(
-  Object.entries(TAB_TYPE_LABEL).map(([value, label]) => [label, value]),
-);
-const canonTabType = (t: string) => TAB_TYPE_VALUE_BY_LABEL[t] ?? t;
+// 📌 此处原有 `TAB_TYPE_VALUE_BY_LABEL` / `canonTabType` 两种写法归一的比较垫片，
+//    为绕开 V413 种子把 `semantic_tab_view.tab_type` 写成显示名「BOM 树」的缺陷而加；
+//    已由 V417 修复根因后撤销（D-39 / 2026-09-05 用户裁决）。
+//    服务端 `availableTabTypes` 现回**存储值**，与本地 `TAB_TYPES` 逐字一致。
+//    🚫 不要再加回归一层 —— 两边写法本该一致，归一只会掩盖下一次的口径漂移。
 const ROLE_LABEL: Record<FieldRole, string> = { PART_NO: '料号', PART_NAME: '名称', ROW_KEY: '行键', SORT: '排序' };
 const DATA_TYPE_LABEL: Record<string, string> = { TEXT: '文本', NUMBER: '数字', MONEY: '金额' };
 
@@ -968,39 +964,31 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
   /**
    * F-30（AC-115 ③）：本数据集是否没有当前页签类型。判据只用服务端的 `availableTabTypes`
    * （§9.2 的映射是服务端语义图的事实，前端不复刻那张表）；服务端没给就不判定为"无"。
-   * ⚠️ 比较前必须过 `canonTabType` —— 见下方 tabTypeOptions 的说明。
+   * 📌 D-39：两侧都是**存储值**，逐字比较即可（原 `canonTabType` 归一已随 V417 撤销）。
    */
   const tabTypeMissingInDataset =
     !!fieldTree?.availableTabTypes
-    && !fieldTree.availableTabTypes.map(canonTabType).includes(canonTabType(tabType));
+    && !fieldTree.availableTabTypes.includes(tabType);
   /**
    * 页签类型下拉：本数据集有的照常可选，**没有的置灰 + 加「（本数据集无）」后缀**（AC-115 ③）。
-   *
-   * 🚨 这里有一个**命名口径不一致**必须绕开（实测，2026-09-03，dev 后端 8081）：
-   *    - 本地 `TAB_TYPES` 用的是**存储值**，BOM 树写作 `'BOM'`（D-39）；
-   *    - 服务端 `availableTabTypes` 回的是**显示名** `'BOM 树'`，且 `GET /field-tree?tabType=BOM`
-   *      直接返回空结果（groups=0），只认 `'BOM 树'`。
-   *    ⇒ 若把两个清单直接并集，会凭空多出一个**永远置灰的幽灵项「BOM（本数据集无）」**，
-   *      而真正可用的「BOM 树」还在旁边 —— 用户看到两个 BOM。
-   *    所以：**选项的 value 一律沿用服务端的写法**（服务端给了就用它的），只有服务端没给的
-   *    那几类才用本地存储值占位并置灰。canon 只用于「两边是不是同一类」的比较，不参与取值。
-   *    📌 这个不一致是**存量**问题（F-30 之前 options 就是直接铺 availableTabTypes），本次不改口径，
-   *       仅在此绕开；已在回报里列给主线裁决。
+   * 📌 D-39：选项 `value` 一律用本地 `TAB_TYPES` 的**存储值** —— 它就是随 configPayloadFor 提交给
+   *    后端、写进 `builder_config.tabType` 的那个字符串；`label` 走 `TAB_TYPE_LABEL` 只管显示。
+   *    原「value 沿用服务端写法 + canonTabType 归一比较」的兼容层，为绕开 V413 种子把
+   *    `semantic_tab_view.tab_type` 写成显示名「BOM 树」的缺陷而加，已由 V417 修复根因后撤销
+   *    （2026-09-05 用户裁决）。
    */
   const tabTypeOptions = useMemo(() => {
     const avail = fieldTree?.availableTabTypes ?? null;
-    const serverNameByCanon = new Map<string, string>();
-    (avail ?? []).forEach((t) => serverNameByCanon.set(canonTabType(t), t));
+    const availSet = new Set(avail ?? []);
     const known = (TAB_TYPES as readonly string[]).map((t) => {
-      const serverName = serverNameByCanon.get(canonTabType(t));
       const label = TAB_TYPE_LABEL[t] ?? t;
       // avail 缺失（后端没给这个字段）时一律不置灰——不能把用户锁死在无法选择的状态
-      const disabled = !!avail && !serverName;
-      return { value: serverName ?? t, label: disabled ? `${label}（本数据集无）` : label, disabled };
+      const disabled = !!avail && !availSet.has(t);
+      return { value: t, label: disabled ? `${label}（本数据集无）` : label, disabled };
     });
     // 服务端多给的类型（本地常量还没跟上）照原样追加，不丢
     const extra = (avail ?? [])
-      .filter((t) => !(TAB_TYPES as readonly string[]).some((k) => canonTabType(k) === canonTabType(t)))
+      .filter((t) => !(TAB_TYPES as readonly string[]).includes(t))
       .map((t) => ({ value: t, label: TAB_TYPE_LABEL[t] ?? t, disabled: false }));
     return [...known, ...extra];
   }, [fieldTree]);

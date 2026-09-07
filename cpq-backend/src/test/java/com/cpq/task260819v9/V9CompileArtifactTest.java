@@ -106,21 +106,37 @@ class V9CompileArtifactTest extends V9TestBase {
             String flat = flatten(sql);
             System.out.println("[AC-108] " + e.getKey() + " 主件产物:\n" + sql);
 
-            // 断言形状：<别名>.<轴列> = ANY(:total_material_no)。别名不写死（由 AliasGenerator 决定）。
-            String pattern = "(?i)[\\w\\.\"]*\\b" + e.getValue() + "\\b\\s*=\\s*ANY\\s*\\(\\s*:total_material_no\\s*\\)";
-            if (!flat.matches(".*" + pattern + ".*")) {
-                err.append("\n  ").append(e.getKey()).append(" 期望含 `")
-                        .append(e.getValue()).append(" = ANY(:total_material_no)`，实际 SQL=\n").append(sql);
+            // 🔴 AC-108 原文（「COST_* → production_no = ANY(:total_material_no)」）**未随 D-110 同步**。
+            //    D-110 把桥改成「输入收窄」后，COST_* 的实际产物是：
+            //      dcbm.production_no IN (SELECT dqm.production_no FROM ds_quote_material dqm
+            //                             WHERE dqm.material_no = ANY(:total_material_no))
+            //    ⇒ 字面的 `production_no = ANY(:total_material_no)` 不再出现，
+            //      且 `material_no = ANY(...)`**合法地**出现在桥子查询里（原反向断言会误伤）。
+            //    这里断言两种读法都认可的**落点不变量**，并把「AC 原文待同步」写进失败信息报主线。
+            String axis = e.getValue();
+            boolean literalAny = flat.matches(
+                    "(?i).*[\\w\\.\"]*\\b" + axis + "\\b\\s*=\\s*ANY\\s*\\(\\s*:total_material_no\\s*\\).*");
+            boolean bridgedIn = QUOTE.equals(e.getKey()) ? false
+                    : flat.matches("(?i).*[\\w\\.\"]*\\b" + axis
+                            + "\\b\\s+IN\\s*\\(\\s*SELECT[^)]*ds_quote_material[^)]*:total_material_no.*");
+            if (!literalAny && !bridgedIn) {
+                err.append("\n  ").append(e.getKey()).append(" 轴收窄没落在 `").append(axis)
+                        .append("` 上（既不是 `= ANY(:total_material_no)`，也不是经 ds_quote_material 桥的 `IN (SELECT …)`）。SQL=\n")
+                        .append(sql);
+            } else {
+                System.out.println("[AC-108] " + e.getKey() + " 收窄形态 = "
+                        + (literalAny ? "字面 = ANY(:total_material_no)" : "经桥 IN (SELECT … FROM ds_quote_material …)（D-110）"));
             }
-            // 反向：不许发另一侧的轴列做收窄（三套轴语义不同，串了就是取错数据）
-            String wrongAxis = "material_no".equals(e.getValue()) ? "production_no" : "material_no";
-            String wrongPattern = "(?i)[\\w\\.\"]*\\b" + wrongAxis + "\\b\\s*=\\s*ANY\\s*\\(\\s*:total_material_no\\s*\\)";
-            if (flat.matches(".*" + wrongPattern + ".*")) {
-                err.append("\n  ").append(e.getKey()).append(" 不应该用 ").append(wrongAxis)
-                        .append(" 做轴收窄（§9.1.1 轴列表）。SQL=\n").append(sql);
+            // 反向：QUOTE 侧不许出现生产料号收窄（报价侧没有桥，串了就是取错数据）
+            if (QUOTE.equals(e.getKey()) && flat.matches(
+                    "(?i).*[\\w\\.\"]*\\bproduction_no\\b\\s*=\\s*ANY\\s*\\(\\s*:total_material_no\\s*\\).*")) {
+                err.append("\n  QUOTE 不应该用 production_no 做轴收窄（§9.1.1 轴列表）。SQL=\n").append(sql);
             }
         }
-        assertEquals("", err.toString(), "AC-108 轴收窄不符：" + err);
+        assertEquals("", err.toString(), "AC-108 轴收窄不符：" + err
+                + "\n  🔴 提醒主线：AC-108 原文仍写「COST_* → production_no = ANY(:total_material_no)」，"
+                + "**未随 D-110（桥改输入收窄）同步** —— 与 AC-113③ 未随 D-107 同步是同一类问题。"
+                + "\n     本用例按 D-110 的实际形态断言落点不变量，请主线同步 AC-108 措辞。");
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -250,117 +266,169 @@ class V9CompileArtifactTest extends V9TestBase {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // AC-111（单点）料号桥 —— 有对应行时 LEFT JOIN + production_no 连接键 + 执行非空
+    // AC-111（单点）料号桥 = 输入收窄（🔄🔄 D-110 重写，桥不再是输出 LOOKUP）
+    // ① 产物不含对 ds_quote_material 的 LEFT JOIN
+    // ② WHERE 里含经桥解析的收窄（锚点.production_no IN (SELECT … FROM ds_quote_material WHERE material_no = ANY(...)))
+    // ③ 传销售料号 S 执行 → 返回 P 对应的行，非空
     // ═══════════════════════════════════════════════════════════════
     @Test
     @Order(111)
-    @DisplayName("AC-111: COST_BASIC 场景引用销售料号 → 产物含对 ds_quote_material 的 LEFT JOIN（连接键 production_no），执行非空")
-    void ac111_partNoBridge() {
-        // ① 前置：紧邻取一次桥的重叠行（🚫 不照抄文档里的数字，它会漂移）
-        List<Object[]> bridged = rowList(
-                "SELECT q.material_no, q.production_no FROM ds_quote_material q "
-                        + "JOIN ds_cost_basic_material m ON m.production_no = q.production_no "
-                        + "WHERE q.production_no IS NOT NULL AND q.production_no <> '' ORDER BY 1");
-        System.out.println("[AC-111] 紧邻取基准（库 cpq_db_0724）："
-                + "SELECT ... FROM ds_quote_material q JOIN ds_cost_basic_material m ON m.production_no=q.production_no"
-                + " → " + bridged.size() + " 行 " + fmt(bridged));
-        assertFalse(bridged.isEmpty(), notReady("AC-111",
-                "ds_quote_material 与 ds_cost_basic_material 在 production_no 上零重叠 —— "
-                        + "『执行返回非空』这一条无从验证（业务上 production_no 为空是正常状态，见 B-43 说明）",
-                "灌数据方（本任务 AC-120 会灌报价侧，或等 task-260902 侧补 production_no）"));
-        String salesPartNo = String.valueOf(bridged.get(0)[0]);
-        String prodNo = String.valueOf(bridged.get(0)[1]);
+    @DisplayName("AC-111: 桥是输入收窄 —— 产物无 LEFT JOIN ds_quote_material，WHERE 含桥子查询；传销售料号执行非空")
+    void ac111_partNoBridgeAsInputNarrowing() {
+        Object[] pair = pickSalesToProduction();
+        assertNotNull(pair, notReady("AC-111",
+                "找不到「销售料号 S → 生产料号 P 且 P 在 ds_cost_basic_material 里」的映射", "灌数据方"));
+        String salesNo = String.valueOf(pair[0]);
+        String prodNo = String.valueOf(pair[1]);
+        System.out.println("[AC-111] 紧邻取基准（库 cpq_db_0724）：销售料号 " + salesNo + " → 生产料号 " + prodNo);
 
-        // ② 编译：COST_BASIC 主件 + 一列取自 ds_quote_material（销售料号）
-        Object[] bridgeNode = findNodeByTable("ds_quote_material");
-        assertNotNull(bridgeNode, notReady("AC-111",
-                "semantic_node 里没有 physical_table='ds_quote_material' 的 LOOKUP 节点（料号桥）",
-                "cpq-backend #2 / B-43（S-24 / D-76）"));
-        String bridgeKey = String.valueOf(bridgeNode[0]);
+        Compiled c = compileMainTab(COST_BASIC);
+        String flat = flatten(c.sql);
+        System.out.println("[AC-111] COST_BASIC 主件产物 SQL:\n" + c.sql);
 
-        Object[] anchor = anchorNode(COST_BASIC, "主件");
-        assertNotNull(anchor, notReady("AC-111", "COST_BASIC『主件』页签视图不存在", "cpq-backend #2 / B-42"));
-        String anchorKey = String.valueOf(anchor[0]);
-        Object[] anchorCol = someColumnById(String.valueOf(anchor[3]));
-        assertNotNull(anchorCol, notReady("AC-111", "锚点节点 " + anchorKey + " 无列声明", "cpq-backend #2 / B-42"));
+        // ① 🚫 不得再有 LEFT JOIN ds_quote_material（那是被 D-110 推翻的老形态，会扇出）
+        assertFalse(flat.matches("(?i).*\\bleft\\s+(outer\\s+)?join\\s+ds_quote_material\\b.*"),
+                "AC-111①: 桥已改为『输入收窄』，产物**不得**再含对 ds_quote_material 的 LEFT JOIN（D-110）。"
+                        + "\n  老形态会让「一个生产料号对应多个销售料号」时行数翻倍 —— 那正是 AC-112① 要守的。SQL=\n" + c.sql);
 
-        List<Map<String, Object>> cols = new ArrayList<>();
-        cols.add(column(anchorKey, String.valueOf(anchorCol[0]), "锚点列"));
-        cols.add(column(bridgeKey, "material_no", "销售料号"));
+        // ② WHERE 里要有经桥解析的收窄：既提到 ds_quote_material，又落在轴列上
+        assertTrue(flat.toLowerCase().contains("ds_quote_material"),
+                "AC-111②: 产物必须经 ds_quote_material 解析销售料号→生产料号（D-76 料号桥）。SQL=\n" + c.sql);
+        assertTrue(flat.matches("(?i).*\\bproduction_no\\b.*ds_quote_material.*")
+                        || flat.matches("(?i).*ds_quote_material.*\\bproduction_no\\b.*"),
+                "AC-111②: 桥的收窄必须落在 production_no 上。SQL=\n" + c.sql);
+        assertTrue(flat.contains(":total_material_no"),
+                "AC-111②: 收窄的入参应是 :total_material_no（传进来的是销售料号）。SQL=\n" + c.sql);
 
-        Response r = compile(componentId, config(COST_BASIC, "主件", null, cols));
-        assertEquals(200, r.statusCode(), "AC-111: compile 应 200，实际=" + r.statusCode() + " body=" + r.asString());
-        String sql = r.jsonPath().getString("sql");
-        assertNotNull(sql, "AC-111: compile 响应没有 sql 字段（api.md §2.2）。body=" + r.asString());
-        String flat = flatten(sql);
-        System.out.println("[AC-111] 产物 SQL:\n" + sql);
-
-        assertTrue(flat.matches("(?i).*\\bleft\\s+(outer\\s+)?join\\s+ds_quote_material\\b.*"),
-                "AC-111①: 产物必须含对 `ds_quote_material` 的 LEFT JOIN（S-24 硬要求：桥无对应行时 0 行不报错）。SQL=\n" + sql);
-        assertTrue(flat.toLowerCase().contains("production_no"),
-                "AC-111②: 桥的连接条件必须是 `production_no`（D-76）。SQL=\n" + sql);
-
-        // ③ 执行非空 —— 用真实存在桥行的料号
-        Map<String, Object> pv = new LinkedHashMap<>(config(COST_BASIC, "主件", null, cols));
-        pv.put("partNo", prodNo);
+        // ③ 传销售料号执行 → 非空，且行确实落在 P 上
+        Map<String, Object> pv = new LinkedHashMap<>(configForMainTab(COST_BASIC));
+        pv.put("partNo", salesNo);
         Response p = preview(componentId, pv);
-        System.out.println("[AC-111] preview(partNo=" + prodNo + " 对应销售料号=" + salesPartNo + ") → HTTP "
-                + p.statusCode() + " body=" + p.asString());
-        assertEquals(200, p.statusCode(), "AC-111③: preview 应 200，实际=" + p.statusCode() + " body=" + p.asString());
-        Integer rowCount = p.jsonPath().getObject("rowCount", Integer.class);
-        assertNotNull(rowCount, "AC-111③: preview 响应缺 rowCount（api.md §2.3）。body=" + p.asString());
-        assertTrue(rowCount > 0, "AC-111③: 桥有对应行时执行必须返回非空，实际 rowCount=" + rowCount
-                + "\n  🚫 空列表 / 0 行 / 「—」一律不算通过。诊断=" + p.jsonPath().getString("diagnostics")
-                + "\n  前置数据：ds_quote_material.material_no=" + salesPartNo + " → production_no=" + prodNo);
+        System.out.println("[AC-111③] preview(partNo=" + salesNo + " 销售料号) → HTTP " + p.statusCode()
+                + " body=" + trunc(p.asString()));
+        assertEquals(200, p.statusCode(), "AC-111③: preview 应 200，body=" + p.asString());
+        Integer rc = p.jsonPath().getObject("rowCount", Integer.class);
+        assertNotNull(rc, "AC-111③: 响应缺 rowCount。body=" + p.asString());
+        assertTrue(rc > 0, "AC-111③: 传销售料号 " + salesNo + " 应返回 P=" + prodNo
+                + " 对应的行，实际 rowCount=" + rc + "。🚫 0 行不算通过。诊断=" + p.jsonPath().getString("diagnostics"));
+
+        List<Map<String, Object>> rows = p.jsonPath().getList("rows");
+        assertNotNull(rows, "AC-111③: 响应缺 rows");
+        assertFalse(rows.isEmpty(), "AC-111③: rowCount=" + rc + " 但 rows 为空 —— 断言空跑");
+        boolean allOnP = rows.stream().allMatch(r0 -> prodNo.equals(String.valueOf(r0.get("production_no"))));
+        assertTrue(allOnP, "AC-111③: 返回的行应全部落在生产料号 " + prodNo + " 上，实际 rows=" + rows);
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // AC-112（边界）桥缺数据 → 0 行且不抛异常
+    // AC-112①（🔄🔄 D-110 重写）不扇出：一个生产料号对应多个销售料号时，行数与不带桥相同
     // ═══════════════════════════════════════════════════════════════
     @Test
-    @Order(112)
-    @DisplayName("AC-112: 桥无对应行 → 执行 0 行、不抛异常、诊断可读")
-    void ac112_bridgeMissingRowYieldsZeroRowsNotError() {
-        // 构造一个「保证桥上没有」的料号：库里查一次确认它真的不存在（不是我以为不存在）
-        String ghost = TAG + "NO-BRIDGE-" + System.currentTimeMillis();
-        long inQuote = scalarLong("SELECT count(*) FROM ds_quote_material WHERE material_no=?1 OR production_no=?1", ghost);
-        long inCost = scalarLong("SELECT count(*) FROM ds_cost_basic_material WHERE production_no=?1", ghost);
-        System.out.println("[AC-112] 幽灵料号 " + ghost + " 在 ds_quote_material 命中=" + inQuote
-                + "，在 ds_cost_basic_material 命中=" + inCost);
-        assertEquals(0L, inQuote + inCost, "AC-112 前置：幽灵料号必须在两侧都不存在，否则这条边界用例没意义");
+    @Order(1121)
+    @DisplayName("AC-112①: 一个生产料号↔多个销售料号 → 核价侧行数与不带桥时相同，🚫 不翻倍")
+    void ac112a_bridgeMustNotFanOut() {
+        // 紧邻找「一个生产料号对应 ≥2 个销售料号」的轴值（🚫 不写死 TEST0813-P01-PROD）
+        List<String> multi = strList(
+                "SELECT production_no FROM ds_quote_material "
+                        + "WHERE production_no IS NOT NULL AND production_no <> '' "
+                        + "GROUP BY production_no HAVING count(DISTINCT material_no) > 1 ORDER BY 1");
+        System.out.println("[AC-112①] 紧邻取基准：一个生产料号对应多个销售料号的轴值 = " + multi);
+        assertFalse(multi.isEmpty(), notReady("AC-112①",
+                "ds_quote_material 里没有『一个生产料号对应多个销售料号』的数据 —— 扇出无从构造，"
+                        + "这条 AC 的全部意义就在这种数据上", "主线（V9T-FIXTURE 夹具）"));
+        String prodNo = multi.get(0);
 
-        Object[] bridgeNode = findNodeByTable("ds_quote_material");
-        assertNotNull(bridgeNode, notReady("AC-112", "料号桥节点不存在", "cpq-backend #2 / B-43"));
-        Object[] anchor = anchorNode(COST_BASIC, "主件");
-        assertNotNull(anchor, notReady("AC-112", "COST_BASIC『主件』页签视图不存在", "cpq-backend #2 / B-42"));
-        Object[] anchorCol = someColumnById(String.valueOf(anchor[3]));
-        assertNotNull(anchorCol, notReady("AC-112", "锚点节点无列声明", "cpq-backend #2 / B-42"));
+        List<String> salesNos = strList(
+                "SELECT material_no FROM ds_quote_material WHERE production_no=?1 ORDER BY 1", prodNo);
+        assertTrue(salesNos.size() >= 2,
+                "AC-112① 前置：该生产料号应有 ≥2 个销售料号，实际=" + salesNos);
+        System.out.println("[AC-112①] 生产料号 " + prodNo + " ← 销售料号 " + salesNos);
 
-        List<Map<String, Object>> cols = new ArrayList<>();
-        cols.add(column(String.valueOf(anchor[0]), String.valueOf(anchorCol[0]), "锚点列"));
-        cols.add(column(String.valueOf(bridgeNode[0]), "material_no", "销售料号"));
+        // 挑一个锚点落在多行表上的页签（1 行的表扇出只从 1→2，证据力弱；夹具在 _bom 上有 3 行）
+        Object[] tab = pickTabByMainTable(COST_BASIC, "ds_cost_basic_material_bom");
+        assertNotNull(tab, notReady("AC-112①",
+                "COST_BASIC 下找不到锚点为 ds_cost_basic_material_bom 的页签视图", "cpq-backend #2 / B-42"));
+        String tabType = String.valueOf(tab[0]);
+        String nodeKey = String.valueOf(tab[1]);
+        String nodeId = String.valueOf(tab[3]);
 
-        Map<String, Object> pv = new LinkedHashMap<>(config(COST_BASIC, "主件", null, cols));
+        // 不带桥的基准：直接查主表（当前版本）
+        long baseline = scalarLong(
+                "SELECT count(*) FROM ds_cost_basic_material_bom WHERE production_no=?1", prodNo);
+        System.out.println("[AC-112①] 紧邻取基准（不带桥）：SELECT count(*) FROM ds_cost_basic_material_bom "
+                + "WHERE production_no='" + prodNo + "' → " + baseline + " 行");
+        assertTrue(baseline > 0, notReady("AC-112①",
+                "该生产料号在 ds_cost_basic_material_bom 上 0 行 —— 『不翻倍』会退化成 0==0 的假通过",
+                "主线（V9T-FIXTURE 夹具）"));
+
+        Object[] col = someColumnById(nodeId);
+        assertNotNull(col, notReady("AC-112①", "节点 " + nodeKey + " 无列声明", "cpq-backend #2 / B-42"));
+        Map<String, Object> cfg = config(COST_BASIC, tabType, null,
+                List.of(column(nodeKey, String.valueOf(col[0]), "测试字段")));
+
+        StringBuilder err = new StringBuilder();
+        for (String salesNo : salesNos) {
+            Map<String, Object> pv = new LinkedHashMap<>(cfg);
+            pv.put("partNo", salesNo);
+            Response p = preview(componentId, pv);
+            System.out.println("[AC-112①] preview(销售料号=" + salesNo + ", 页签=" + tabType + ") → HTTP "
+                    + p.statusCode() + " rowCount=" + p.jsonPath().getObject("rowCount", Integer.class));
+            if (p.statusCode() != 200) {
+                err.append("\n  ").append(salesNo).append(": HTTP ").append(p.statusCode())
+                        .append(" body=").append(p.asString());
+                continue;
+            }
+            Integer rc = p.jsonPath().getObject("rowCount", Integer.class);
+            if (rc == null) {
+                err.append("\n  ").append(salesNo).append(": 响应缺 rowCount");
+                continue;
+            }
+            if (rc != baseline) {
+                err.append("\n  ").append(salesNo).append(": 行数=").append(rc)
+                        .append("，与不带桥的基准 ").append(baseline).append(" 不同");
+                if (rc == baseline * salesNos.size()) {
+                    err.append("  🚨 恰好 = 基准 × 销售料号个数(").append(salesNos.size())
+                            .append(") ⇒ **这就是桥扇出**（老 LEFT JOIN 形态的特征），D-110 要消灭的正是它");
+                }
+            }
+        }
+        assertEquals("", err.toString(),
+                "AC-112①: 桥是输入收窄，一个生产料号对应多个销售料号时行数**必须与不带桥相同**（基准="
+                        + baseline + "）：" + err);
+        System.out.println("[AC-112① ✅] 生产料号 " + prodNo + " 的 " + salesNos.size()
+                + " 个销售料号各自预览均为 " + baseline + " 行 —— 未扇出（老形态会是 "
+                + (baseline * salesNos.size()) + " 行）");
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // AC-112②（边界）传一个 ds_quote_material 里不存在的销售料号 → 0 行、不抛异常
+    // ═══════════════════════════════════════════════════════════════
+    @Test
+    @Order(1122)
+    @DisplayName("AC-112②: 销售料号在 ds_quote_material 不存在 → 收窄生效，0 行、不抛异常、诊断可读")
+    void ac112b_unknownSalesPartNoYieldsZeroRows() {
+        String ghost = TAG + "NO-SALES-" + System.currentTimeMillis();
+        long inQuote = scalarLong("SELECT count(*) FROM ds_quote_material WHERE material_no=?1", ghost);
+        System.out.println("[AC-112②] 幽灵销售料号 " + ghost + " 在 ds_quote_material 命中=" + inQuote);
+        assertEquals(0L, inQuote, "AC-112② 前置：幽灵销售料号必须真的不存在，否则边界用例没意义");
+
+        Map<String, Object> pv = new LinkedHashMap<>(configForMainTab(COST_BASIC));
         pv.put("partNo", ghost);
         Response p = preview(componentId, pv);
-        System.out.println("[AC-112] preview(partNo=" + ghost + ") → HTTP " + p.statusCode() + " body=" + p.asString());
+        System.out.println("[AC-112②] preview(partNo=" + ghost + ") → HTTP " + p.statusCode()
+                + " body=" + trunc(p.asString()));
 
         assertEquals(200, p.statusCode(),
-                "AC-112: 桥缺数据必须是『0 行且不抛异常』，不是错误响应。实际 HTTP=" + p.statusCode()
-                        + " body=" + p.asString()
-                        + "\n  ⚠️ 尤其不能是 500 —— api.md §2.5 明写 500 不允许。");
-        Integer rowCount = p.jsonPath().getObject("rowCount", Integer.class);
-        assertNotNull(rowCount, "AC-112: 响应缺 rowCount。body=" + p.asString());
-        assertEquals(0, rowCount.intValue(), "AC-112: 桥无对应行时应返回 0 行，实际=" + rowCount
-                + "\n  📌 若这里返回了非 0 行，说明桥被编译成了保留左表的形态而轴收窄没落到桥的结果上 —— "
-                + "请主线核对 AC-112 的语义读法（LEFT JOIN 本身是保留行的，AC 要的 0 行只有在"
-                + "『轴收窄依赖桥映射出的 production_no』这一读法下才成立）。");
-
+                "AC-112②: 销售料号不存在必须是『0 行且不抛异常』。实际 HTTP=" + p.statusCode()
+                        + " body=" + p.asString() + "\n  ⚠️ 尤其不能是 500（api.md §2.5）。");
+        Integer rc = p.jsonPath().getObject("rowCount", Integer.class);
+        assertNotNull(rc, "AC-112②: 响应缺 rowCount。body=" + p.asString());
+        assertEquals(0, rc.intValue(),
+                "AC-112②: 桥收窄应把不存在的销售料号解析成空集 ⇒ 0 行，实际=" + rc
+                        + "\n  📌 非 0 说明收窄没生效（桥被跳过或退化成全表）。");
         List<?> diagnostics = p.jsonPath().getList("diagnostics");
-        assertNotNull(diagnostics, "AC-112: 0 行时必须给 diagnostics（api.md §2.3：🚫 不许只返回空表格）。body=" + p.asString());
-        assertFalse(diagnostics.isEmpty(),
-                "AC-112: 0 行时 diagnostics 不得为空 —— 必须给『哪一层收窄把行滤没了』的可操作诊断。body=" + p.asString());
-        System.out.println("[AC-112] 诊断信息 = " + diagnostics);
+        assertNotNull(diagnostics, "AC-112②: 0 行时必须给 diagnostics（api.md §2.3）。body=" + p.asString());
+        assertFalse(diagnostics.isEmpty(), "AC-112②: 0 行时 diagnostics 不得为空。body=" + p.asString());
+        System.out.println("[AC-112②] 诊断 = " + diagnostics);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -368,6 +436,14 @@ class V9CompileArtifactTest extends V9TestBase {
     //
     // api.md v9-1 明写：显式传了非三值之一（含旧值 "COSTING"）→ 400，且错误点名收到的是什么、合法值有哪些；
     // 不传 dialect → 缺省 QUOTE。
+    //
+    // 🔄 2026-09-04 随 api.md §v9-1 的 D-109 放宽同步改判据（用户裁决）：
+    //    **大小写与首尾空白容错**（服务端归一后比对），其余一律显式 400。
+    //    原文写「逐字一致（大写下划线）」与实现不符 —— 容错不改变语义、不会导致「选错数据集」，
+    //    ⇒ 让文档跟实现走，🚫 不为对齐文档去收紧实现。
+    //    本用例据此把 "quote" 从坏值列表**移出**，并补一条**正向**断言：
+    //    "quote" / " QUOTE " 必须 200 且**真的按 QUOTE 编译**（轴收窄用 material_no）——
+    //    只断言 200 是不够的，静默回落 QUOTE 时也会 200，区分不出「归一成功」与「认不出就回落」。
     // 🔑 为什么这条必须验：静默回落时 AC-107 / AC-108 **会照样通过** ——
     //    它们只断言产物里没有 system_type / customer_no，不断言「方言选对了」。
     //    也就是说，缺了这条，AC-107/108 的绿盖不住「用户选了基础核价、后端按报价编译」这个失败模式。
@@ -384,8 +460,9 @@ class V9CompileArtifactTest extends V9TestBase {
         List<Map<String, Object>> cols =
                 List.of(column(String.valueOf(anchor[0]), String.valueOf(col[0]), "测试字段"));
 
-        // ① 旧值 COSTING —— 已随 V6 整块作废，必须被拒（留着容错等于给「用错方言」开后门）
-        for (String badDialect : List.of("COSTING", "COST_BASIC_TYPO", "quote")) {
+        // ① 旧值 COSTING + 拼错值 —— 必须被拒（留着容错等于给「用错方言」开后门）
+        //    🚫 "quote" 已按 D-109 移出本列表：大小写/空白容错是**明文契约**，不是缺陷。
+        for (String badDialect : List.of("COSTING", "COST_BASIC_TYPO")) {
             Response r = compile(componentId, config(badDialect, "主件", null, cols));
             String body = r.asString();
             System.out.println("[契约 v9-1] dialect=" + badDialect + " → HTTP " + r.statusCode()
@@ -398,6 +475,28 @@ class V9CompileArtifactTest extends V9TestBase {
                     "契约 v9-1: 错误信息必须点名『收到的是什么』（`" + badDialect + "`）。body=" + body);
             assertTrue(body.contains(COST_BASIC) && body.contains(COST_DETAIL) && body.contains(QUOTE),
                     "契约 v9-1: 错误信息必须列出『合法值有哪些』（三个方言名）。body=" + body);
+        }
+
+        // ①b【正向 · D-109】大小写与首尾空白必须被归一后接受，且**真的按归一后的方言编译**
+        //     判据不能只看 200：静默回落 QUOTE 时同样 200。所以必须再断言轴收窄列，
+        //     证明产物确实是 QUOTE 侧（material_no），不是「认不出 → 回落」这个失败模式。
+        for (String tolerated : List.of("quote", " QUOTE ")) {
+            Response ok = compile(componentId, config(tolerated, "主件", null, cols));
+            String okBody = ok.asString();
+            System.out.println("[契约 v9-1/D-109] dialect=[" + tolerated + "] → HTTP " + ok.statusCode()
+                    + " body=" + trunc(okBody));
+            assertEquals(200, ok.statusCode(),
+                    "契约 v9-1（D-109 放宽）: 方言 `" + tolerated + "` 应被『trim + 大写归一』后识别为 QUOTE 并正常编译（200），"
+                            + "实际=" + ok.statusCode() + "\n  body=" + okBody);
+            String tolSql = ok.jsonPath().getString("sql");
+            assertNotNull(tolSql, "契约 v9-1（D-109）: `" + tolerated + "` 编译响应缺 sql 字段。body=" + okBody);
+            assertTrue(flatten(tolSql).matches(
+                            "(?i).*[\\w\\.\"]*\\bmaterial_no\\b\\s*=\\s*ANY\\s*\\(\\s*:total_material_no\\s*\\).*"),
+                    "契约 v9-1（D-109）: `" + tolerated + "` 必须**归一成 QUOTE**（轴收窄用 material_no），"
+                            + "而不是被静默丢弃后走别的路径。实际 SQL=\n" + tolSql);
+            assertFalse(flatten(tolSql).matches(
+                            "(?i).*\\bproduction_no\\b\\s*=\\s*ANY\\s*\\(\\s*:total_material_no\\s*\\).*"),
+                    "契约 v9-1（D-109）: `" + tolerated + "` 归一后应是 QUOTE，产物不该出现核价侧的 production_no 轴收窄。实际 SQL=\n" + tolSql);
         }
 
         // ② 不传 dialect → 缺省 QUOTE（向后兼容，存量手写视图不受影响）
@@ -478,11 +577,66 @@ class V9CompileArtifactTest extends V9TestBase {
         return null;
     }
 
+    /** 紧邻找一对「销售料号 S → 生产料号 P，且 P 在 ds_cost_basic_material 里」。 */
+    private Object[] pickSalesToProduction() {
+        List<Object[]> r = rowList(
+                "SELECT q.material_no, q.production_no FROM ds_quote_material q "
+                        + "JOIN ds_cost_basic_material m ON m.production_no = q.production_no "
+                        + "WHERE q.production_no IS NOT NULL AND q.production_no <> '' ORDER BY 1 LIMIT 1");
+        return r.isEmpty() ? null : r.get(0);
+    }
+
+    /** 找锚点落在指定主表上的页签视图，返回 {@code (tab_type, node_key, main_table, node_id)}。 */
+    private Object[] pickTabByMainTable(String dialect, String mainTable) {
+        List<Object[]> tabs = rowList(
+                "SELECT v.tab_type, n.node_key, n.physical_table, n.id::text FROM semantic_tab_view v "
+                        + "JOIN semantic_node n ON n.id = v.anchor_node_id "
+                        + "WHERE v.dialect=?1 AND v.status='ACTIVE' ORDER BY v.tab_type", dialect);
+        for (Object[] t : tabs) {
+            String main = normalizeToMainTable(t[2] == null ? null : String.valueOf(t[2]));
+            if (mainTable.equals(main)) {
+                return new Object[]{String.valueOf(t[0]), String.valueOf(t[1]), main, String.valueOf(t[3])};
+            }
+        }
+        return null;
+    }
+
+    /** 组一份「某方言主件页签 + 锚点一列」的裸 config。 */
+    private Map<String, Object> configForMainTab(String dialect) {
+        Object[] anchor = anchorNode(dialect, "主件");
+        assertNotNull(anchor, notReady("AC-111/112", dialect + " 的『主件』页签视图不存在", "cpq-backend #2 / B-42"));
+        Object[] col = someColumnById(String.valueOf(anchor[3]));
+        assertNotNull(col, notReady("AC-111/112", "锚点节点无列声明", "cpq-backend #2 / B-42"));
+        return config(dialect, "主件", null,
+                List.of(column(String.valueOf(anchor[0]), String.valueOf(col[0]), "测试字段")));
+    }
+
+    private static String trunc(String s) {
+        return s == null ? "null" : (s.length() > 1200 ? s.substring(0, 1200) + "…(截断)" : s);
+    }
+
     private Object[] findNodeByTable(String table) {
         List<Object[]> r = rowList(
                 "SELECT node_key, physical_table FROM semantic_node "
                         + "WHERE status='ACTIVE' AND (physical_table=?1 OR physical_table=?2) LIMIT 1",
                 table, "v_" + table + "_all");
+        return r.isEmpty() ? null : r.get(0);
+    }
+
+    /**
+     * 取<b>指定方言</b>下的料号桥节点（{@code ds_quote_material} 的 LOOKUP 节点）。
+     *
+     * <p>🚨 2026-09-03 实跑教训：只按 {@code physical_table} 取会命中 <b>QUOTE 侧的 SHEET 节点「物料」</b>
+     * （{@code node_key=MATERIAL}）。把它当桥塞进 COST_BASIC 的配置里，编译器按当前方言解析
+     * {@code MATERIAL} → {@code ds_cost_basic_material}，那张表没有 {@code material_no}
+     * ⇒ 400 {@code COMPILE_COLUMN_NOT_FOUND}「节点『物料』没有列: material_no」。
+     * 与 {@code api.md v9-2}「node_key 跨方言重名」同源，桥这一处是我漏掉的最后一个。
+     */
+    private Object[] findBridgeNode(String dialect) {
+        List<Object[]> r = rowList(
+                "SELECT node_key, physical_table, id::text FROM semantic_node "
+                        + "WHERE status='ACTIVE' AND physical_table='ds_quote_material' "
+                        + "AND dialect=?1 AND node_kind='LOOKUP' LIMIT 1", dialect);
         return r.isEmpty() ? null : r.get(0);
     }
 

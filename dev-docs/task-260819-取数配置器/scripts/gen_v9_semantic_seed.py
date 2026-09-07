@@ -17,8 +17,12 @@ task-260819 · v9 · B-42 / B-43 / B-44①  语义图种子 + 全版本视图  �
   4) V416__task260819_v9_bridge_narrow_form.sql
        料号桥从「输出 LOOKUP」改成「输入收窄 NARROW」+ 摘掉 32 行 AUX 挂载
        （用户 2026-09-04 裁决；V414 自此无实际意义但不撤销）
+  5) V417__task260819_v9_tab_type_key_value_fix.sql
+       semantic_tab_view.tab_type 的 3 行「BOM 树」→「BOM」（B-54 / D-39）
+       —— V413 把**显示名**写进了**键值列**，导致配置器配「BOM 树」页签的新组件
+       PUT builder 直接 400 存不进去（用户 2026-09-05 批准）
 
-🔒 V412 / V413 / V414 **已应用到共享库**，checksum 被 Flyway 锁死。
+🔒 V412 / V413 / V414 / V416 **已应用到共享库**，checksum 被 Flyway 锁死。
    本脚本必须继续把它们逐字节原样产出 —— 任何内容变化都会让所有人的服务 validate 失败
    （CLAUDE.md §3.2 契约销毁）。⇒ 对语义图的后续修正一律走**新的增量迁移**，
    像 V414 那样；🚫 不许"重新生成一遍 V413 让它变成新的正确状态"。
@@ -75,6 +79,7 @@ OUT_VIEWS = MIGDIR / "V412__task260819_v9_cost_all_version_views.sql"
 OUT_SEED = MIGDIR / "V413__task260819_v9_semantic_graph_reseed.sql"
 OUT_CARD_FIX = MIGDIR / "V414__task260819_v9_bridge_cardinality_fix.sql"
 OUT_NARROW = MIGDIR / "V416__task260819_v9_bridge_narrow_form.sql"
+OUT_TAB_TYPE = MIGDIR / "V417__task260819_v9_tab_type_key_value_fix.sql"
 
 # ── 料号桥边的基数声明 ───────────────────────────────────────────────────────
 # 🚨 两个常量，不要合并成一个：
@@ -100,6 +105,39 @@ BRIDGE_EDGE_KIND = "NARROW"                # ✅ 现行契约（主线 2026-09-0
 # V413 里桥是否挂成页签的 AUX 数据源（＝是否出现在字段面板里可拖）。
 BRIDGE_AS_AUX_V413 = True                  # 🔒 冻结的历史行为
 BRIDGE_AS_AUX = False                      # ✅ 现行：桥只做收窄，不是可拖数据源（V416 摘掉挂载）
+
+# ── 页签类型：键值 vs 显示名（需求文档 D-39，2026-08-21 裁决）────────────────
+# 🚨 这里是**同一个缺陷的第二次**。D-39 原文：
+#     · 存储值 = 'BOM'   —— component.tab_type / ComponentService.VALID_TAB_TYPES /
+#                           semantic_tab_view.tab_type / builder_config.tabType，四处统一
+#     · 显示名 = 「BOM 树」—— Select 的 label、图谱页文案、文档正文
+#   第一次犯：前端把 TAB_TYPES 写成 'BOM 树'，includes() 静默 miss，存量 tab_type='BOM'
+#            的组件打开取数配置 Tab 被误初始化成「主件」（D-39 的「起因」栏）。
+#   第二次犯（本处）：本脚本把**显示名**写进了 semantic_tab_view.tab_type 这个**键值列**，
+#            三个方言全错。后果：用配置器配「BOM 树」页签的新组件
+#            PUT /api/cpq/components/{id}/builder → 400 Invalid tabType: BOM 树，**根本存不进去**。
+#   ⇒ 存量口径实测站在 'BOM' 一边：component.tab_type 里 BOM=21 行、'BOM 树' 0 行。
+#
+# 🔒 与料号桥同一套「冻结历史值 + 现行真值」手法：V413 已应用共享库、checksum 被 Flyway 锁死，
+#    必须继续原样产出**错的**历史值；修正走增量迁移 V417（下面 gen_tab_type_fix）。
+# ⚠️ TAB_TYPE_TREE_V413 同时是页签视图主键 UUIDv5 的**输入键串**
+#    （uid("tv:<dialect>:<tab>:<variant>")）—— 换成 'BOM' 会让 3 个主键变成另外 3 个 UUID，
+#    而 V417 是原地 UPDATE、id 不变。所以 uid() 的键串**永远用冻结值**，
+#    只有写进 tab_type 列的那个**取值**才随 V417 切到现行真值。
+TAB_TYPE_TREE_V413 = "BOM 树"              # 🔒 冻结的历史值 —— ❌ 它是错的（显示名进了键值列），🚫 不许改
+TAB_TYPE_TREE = "BOM"                      # ✅ 现行真值 = ComponentService.VALID_TAB_TYPES 里的存储值
+
+# 冻结历史值 → 现行真值。V413 恒发左边，V417 把库里的左边改成右边；
+# 将来任何**新**种子一律走 tab_type_current()，🚫 不要再直接写字面量。
+TAB_TYPE_V413_TO_CURRENT = {TAB_TYPE_TREE_V413: TAB_TYPE_TREE}
+
+
+def tab_type_current(tab_key):
+    """页签类型的**现行存储值**（写进 semantic_tab_view.tab_type 的值域，
+    权威值域 = ComponentService.VALID_TAB_TYPES，启动期由 SemanticGraphKeyValueSelfCheck 兜底）。
+
+    入参 tab_key 是 V413 冻结的键串（也是 UUIDv5 的输入，不可变）。"""
+    return TAB_TYPE_V413_TO_CURRENT.get(tab_key, tab_key)
 
 # ── 固定 namespace（🚫 永远不要改：改了全部 UUID 主键都会变） ────────────────
 NS = uuid.UUID("6f1a2c34-8e7b-5d90-a1b2-c3d4e5f60718")
@@ -303,7 +341,10 @@ def tab_of(t):
     if s == "element_bom":
         return [("材质元素", "", None)]
     if s == "material_bom":
-        return [("零件", "", None), ("外购件", "", None), ("BOM 树", "", None)]
+        # ⚠️ 第三项恒发**冻结值** TAB_TYPE_TREE_V413（= "BOM 树"）：它既是 V413 的列取值
+        #    （checksum 锁死），也是页签视图主键 UUIDv5 的键串（V417 原地 UPDATE 不换 id）。
+        #    现行真值经 tab_type_current() 取，由 V417 落库。
+        return [("零件", "", None), ("外购件", "", None), (TAB_TYPE_TREE_V413, "", None)]
     if s == "plating_scheme":
         return []
     return [("费用类", t["node_key"], t["cn"])]
@@ -532,9 +573,14 @@ def gen_seed(tables):
     tvn_vals = []
     counts = {}
     bridge_aux_tvn_ids = []
+    tree_tv_ids = []          # V417 的命中面：tab_type 存了显示名的那几行（(dialect, node_key, id)）
     for t in graph:
         for (tab, vk, vl) in tab_of(t):
+            # 🔒 uid 的键串 + 列取值都恒发**冻结值** tab（V413 checksum 锁死）。
+            #    现行真值 tab_type_current(tab) 由 V417 原地 UPDATE 落库，id 不变。
             vid = uid("tv:%s:%s:%s" % (t["dialect"], tab, vk))
+            if tab_type_current(tab) != tab:
+                tree_tv_ids.append((t["dialect"], t["node_key"], vid, tab, tab_type_current(tab)))
             tv_vals.append("(%s,%s,%s,%s,%s,'{}',%s)" % (
                 q(vid), q(tab), q(vk), q(vl), q(t["id"]), q(t["dialect"])))
             tvn_vals.append("(%s,%s,%s,'MAIN','{}',0)" % (
@@ -573,6 +619,7 @@ def gen_seed(tables):
         "views": len(tv_vals), "tvn": len(tvn_vals), "graph_tables": len(graph),
         "bridge_edge_ids": bridge_edge_ids,
         "bridge_aux_tvn_ids": bridge_aux_tvn_ids,
+        "tree_tv_ids": tree_tv_ids,
     }
     o.append("-- ============ 统计（生成时计算，用于人工复核） ============")
     o.append("--   进图主表 %d 张 / 节点 %d（含 2 桥 + 1 函数）/ 列声明 %d / 边 %d / 页签视图 %d / 页签节点 %d"
@@ -719,6 +766,106 @@ def gen_narrow(bridge_edge_ids, bridge_aux_tvn_ids):
     return "\n".join(o) + "\n"
 
 
+# ── 生成：V417 页签类型键值列修正（增量，🚫 不改 V413） ──────────────────────
+def gen_tab_type_fix(tree_tv_ids):
+    """把 semantic_tab_view.tab_type 里被写成**显示名**的行改回**存储值**（D-39 / B-54）。
+
+    🚫 不改 V413：它已应用共享库、checksum 被 Flyway 锁死。与 V414 / V416 同一手法 ——
+       按 UUIDv5 主键逐条 UPDATE，🚫 不发无 WHERE 的全表 UPDATE（CLAUDE.md §3.2）。
+    """
+    n = len(tree_tv_ids)
+    assert n > 0, "tree_tv_ids 为空 —— 冻结值与现行真值已无差异？那本迁移就不该再生成"
+    frozen = sorted({r[3] for r in tree_tv_ids})
+    target = sorted({r[4] for r in tree_tv_ids})
+    assert len(frozen) == 1 and len(target) == 1, \
+        "本迁移只处理单一取值的改名；出现多组时请扩写模板（frozen=%s target=%s)" % (frozen, target)
+    old_v, new_v = frozen[0], target[0]
+
+    # 主键列表（两处复用：UPDATE 的 WHERE 与守卫的计数）
+    id_lines = ["     %s%s -- %s.%s" % (q(vid), "," if i < n - 1 else "", d, nk)
+                for i, (d, nk, vid, _f, _t) in enumerate(tree_tv_ids)]
+
+    o = []
+    o.append("-- V417__task260819_v9_tab_type_key_value_fix.sql")
+    o.append("-- 🤖 由 dev-docs/task-260819-取数配置器/scripts/gen_v9_semantic_seed.py 生成，🚫 不要手改。")
+    o.append("-- task-260819 · v9 · B-54（需求文档 D-39，2026-08-21 裁决；用户 2026-09-05 批准本次修复）")
+    o.append("--")
+    o.append("-- 【改什么】semantic_tab_view.tab_type：'%s' → '%s'，共 %d 行（三个方言各 1 行）。"
+             % (old_v, new_v, n))
+    o.append("--")
+    o.append("-- 【为什么】D-39 原文把两件东西分得很清楚：")
+    o.append("--     · 存储值 = '%s'     —— component.tab_type / ComponentService.VALID_TAB_TYPES /" % new_v)
+    o.append("--                            semantic_tab_view.tab_type / builder_config.tabType，四处统一")
+    o.append("--     · 显示名 = 「%s」   —— Select 的 label、图谱页文案、文档正文" % old_v)
+    o.append("--   而 V413 种子把**显示名写进了键值列**。后果不是显示难看，是**存不进去**：")
+    o.append("--     PUT /api/cpq/components/{id}/builder   tabType = '%s'" % old_v)
+    o.append("--       → 400 Invalid tabType: %s. Must be one of: [费用类,外购件,零件,BOM,主件,材质元素]" % old_v)
+    o.append("--     ⇒ 用取数配置器配「%s」页签的**新组件根本建不出来**。" % old_v)
+    o.append("--")
+    o.append("-- 🚨 这是**同一缺陷的第二次**。D-39 的「起因」栏记的就是第一次：前端把 TAB_TYPES 写成")
+    o.append("--   '%s'，includes() 静默 miss，存量 tab_type='%s' 的组件打开取数配置 Tab 被误初始化" % (old_v, new_v))
+    o.append("--   成「主件」。D-39 就是为防它而写的裁决，然后种子这一侧犯了镜像版本的同一个错。")
+    o.append("--   ⇒ 光有文档裁决拦不住第三次，故本次同时加**启动期自检**（B-56）")
+    o.append("--     com.cpq.semanticgraph.service.SemanticGraphKeyValueSelfCheck：")
+    o.append("--     semantic_tab_view.tab_type ⊄ ComponentService.VALID_TAB_TYPES 时**服务直接起不来**。")
+    o.append("--")
+    o.append("-- 【存量口径站在 '%s' 一边】实测 component.tab_type 分布：" % new_v)
+    o.append("--   BOM=21 / 主件=36 / 材质元素=22 / 零件=15 / 外购件=15 / NULL=186；'%s' **0 行**。" % old_v)
+    o.append("--   ⇒ 该改的是种子，不是 VALID_TAB_TYPES（D-39 明写「现网已有该值的数据，不可改」）。")
+    o.append("--")
+    o.append("-- 【命中面】%d 行，可逆（反向 UPDATE 即还原）。🚫 不删行、🚫 不动 id ——" % n)
+    o.append("--   id 是 UUIDv5（键串里含冻结的 '%s'），semantic_tab_view_node 有 FK 指着它。" % old_v)
+    o.append("-- 【明确不动的行】零件 / 外购件 / 主件 / 材质元素 / 费用类 一律不碰：它们两边逐字一致，")
+    o.append("--   且现网 30 个存量组件靠「零件 / 外购件」两行打开配置页（task-260904 S-4 划的边界）。")
+    o.append("")
+    o.append("-- ① 落地前守卫：目标值不能已被占用 —— 唯一键是 (tab_type, variant_key, dialect)，")
+    o.append("--    改 tab_type 就是在动唯一键，撞了要给出说得清的报错，而不是一句裸 23505。")
+    o.append("DO $$")
+    o.append("DECLARE clash int;")
+    o.append("BEGIN")
+    o.append("  SELECT count(*) INTO clash FROM semantic_tab_view v")
+    o.append("   WHERE v.tab_type = " + q(new_v))
+    o.append("     AND EXISTS (SELECT 1 FROM semantic_tab_view s")
+    o.append("                  WHERE s.tab_type = " + q(old_v) + " AND s.variant_key = v.variant_key")
+    o.append("                    AND s.dialect = v.dialect);")
+    o.append("  IF clash > 0 THEN")
+    o.append("    RAISE EXCEPTION 'V417 撞唯一键 (tab_type,variant_key,dialect)：已有 % 行 tab_type="
+             + new_v + " 与待改行的 (variant_key,dialect) 重合。🚫 不要强改，先人工核对这些行是谁写的。', clash;")
+    o.append("  END IF;")
+    o.append("END $$;")
+    o.append("")
+    o.append("-- ② 按主键逐条更新（%d 个确定性 UUIDv5，非无 WHERE 的全表 UPDATE）" % n)
+    o.append("UPDATE semantic_tab_view")
+    o.append("   SET tab_type = " + q(new_v) + ", updated_by = 'seed', updated_at = now()")
+    o.append(" WHERE tab_type = " + q(old_v))
+    o.append("   AND id IN (")
+    o.extend(id_lines)
+    o.append("   );")
+    o.append("")
+    o.append("-- ③ 落地守卫：断言**状态**而不是变化量（RECORD「断言状态而非变化量」）——")
+    o.append("--    对不上就报错中止，🚫 不允许静默改 0 行。")
+    o.append("DO $$")
+    o.append("DECLARE fixed int; leftover int; domain_now text;")
+    o.append("BEGIN")
+    o.append("  -- ③-a 点名的那 %d 行，现在必须都是 '%s'" % (n, new_v))
+    o.append("  SELECT count(*) INTO fixed FROM semantic_tab_view")
+    o.append("   WHERE tab_type = " + q(new_v) + " AND id IN (")
+    o.extend(id_lines)
+    o.append("   );")
+    o.append("  -- ③-b 全表不允许再有 '%s' 残留（含本次没点名的行，防漏网）" % old_v)
+    o.append("  SELECT count(*) INTO leftover FROM semantic_tab_view WHERE tab_type = " + q(old_v) + ";")
+    o.append("  IF fixed <> %d OR leftover <> 0 THEN" % n)
+    o.append("    SELECT string_agg(DISTINCT tab_type, ' | ' ORDER BY tab_type) INTO domain_now")
+    o.append("      FROM semantic_tab_view;")
+    o.append("    RAISE EXCEPTION 'V417 未落全：期望 " + str(n) + " 行 tab_type=" + new_v
+             + " / 0 行 " + old_v + " 残留，实得 % / %。当前 tab_type 值域=[%]', fixed, leftover, domain_now;")
+    o.append("  END IF;")
+    o.append("  RAISE NOTICE 'V417 ✅ semantic_tab_view.tab_type：% 行改为 " + new_v
+             + "，全表无 " + old_v + " 残留', fixed;")
+    o.append("END $$;")
+    return "\n".join(o) + "\n"
+
+
 def main():
     check = "--check" in sys.argv
     text = MATRIX.read_text(encoding="utf-8")
@@ -742,6 +889,9 @@ def main():
     sql_seed, stats, counts = gen_seed(tables)
     sql_card = gen_card_fix(stats["bridge_edge_ids"])
     sql_narrow = gen_narrow(stats["bridge_edge_ids"], stats["bridge_aux_tvn_ids"])
+    sql_tabtype = gen_tab_type_fix(stats["tree_tv_ids"])
+    assert len(stats["tree_tv_ids"]) == 3, \
+        "页签类型键值修正应命中 3 行（三方言各 1 行 BOM 树），实得 %d" % len(stats["tree_tv_ids"])
     assert len(stats["bridge_aux_tvn_ids"]) == 32, \
         "桥的 AUX 挂载应为 32 行（COST_BASIC 12 + COST_DETAIL 20），实得 %d" % len(stats["bridge_aux_tvn_ids"])
     assert len(stats["bridge_edge_ids"]) == 28, \
@@ -749,7 +899,8 @@ def main():
 
     if check:
         ok = True
-        for path, content in ((OUT_VIEWS, sql_views), (OUT_SEED, sql_seed), (OUT_CARD_FIX, sql_card), (OUT_NARROW, sql_narrow)):
+        for path, content in ((OUT_VIEWS, sql_views), (OUT_SEED, sql_seed), (OUT_CARD_FIX, sql_card),
+                              (OUT_NARROW, sql_narrow), (OUT_TAB_TYPE, sql_tabtype)):
             new = hashlib.md5(content.encode("utf-8")).hexdigest()
             old = hashlib.md5(path.read_bytes()).hexdigest() if path.exists() else "(缺失)"
             same = new == old
@@ -761,6 +912,7 @@ def main():
     OUT_SEED.write_text(sql_seed, encoding="utf-8")
     OUT_CARD_FIX.write_text(sql_card, encoding="utf-8")
     OUT_NARROW.write_text(sql_narrow, encoding="utf-8")
+    OUT_TAB_TYPE.write_text(sql_tabtype, encoding="utf-8")
     print("解析主表 %d 张；进图 %d 张" % (len(tables), stats["graph_tables"]))
     print("料号桥边 %d 条：V413 发历史值 %s，V414 增量改成 %s"
           % (len(stats["bridge_edge_ids"]), BRIDGE_CARDINALITY_V413, BRIDGE_CARDINALITY))
@@ -771,8 +923,11 @@ def main():
           % (stats["nodes"], stats["cols"], stats["edges"], stats["views"], stats["tvn"]))
     print("料号桥形态：V413 发历史值 %s + AUX 挂载 %d 行，V416 增量改成 %s + 摘掉挂载"
           % (BRIDGE_EDGE_KIND_V413, len(stats["bridge_aux_tvn_ids"]), BRIDGE_EDGE_KIND))
-    print("写出：\n  %s\n  %s\n  %s\n  %s" % (OUT_VIEWS, OUT_SEED, OUT_CARD_FIX, OUT_NARROW))
-    for path in (OUT_VIEWS, OUT_SEED, OUT_CARD_FIX, OUT_NARROW):
+    print("页签类型键值：V413 发历史值 %s（错，显示名进了键值列）%d 行，V417 增量改成 %s"
+          % (TAB_TYPE_TREE_V413, len(stats["tree_tv_ids"]), TAB_TYPE_TREE))
+    print("写出：\n  %s\n  %s\n  %s\n  %s\n  %s"
+          % (OUT_VIEWS, OUT_SEED, OUT_CARD_FIX, OUT_NARROW, OUT_TAB_TYPE))
+    for path in (OUT_VIEWS, OUT_SEED, OUT_CARD_FIX, OUT_NARROW, OUT_TAB_TYPE):
         print("  md5 %s  %s" % (hashlib.md5(path.read_bytes()).hexdigest(), path.name))
 
 

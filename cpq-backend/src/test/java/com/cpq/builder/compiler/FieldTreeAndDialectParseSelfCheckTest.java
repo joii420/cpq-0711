@@ -163,7 +163,16 @@ class FieldTreeAndDialectParseSelfCheckTest {
                 + " fallback=" + r.tabTypesFallback + " groups=" + r.groups.size());
         assertTrue(r.tabTypesFallback, "必须带兜底标记，否则与正常返回无法区分");
         assertEquals(6, r.availableTabTypes.size(), r.availableTabTypes.toString());
-        assertTrue(r.availableTabTypes.contains("BOM 树"), r.availableTabTypes.toString());
+        // 🚨 B-58 修正：本行原写 contains("BOM 树")，**断言的是一个错误的契约**——
+        //    兜底分支返回的这份列表会被前端当作 tabType 的**可选值**用，选中即 PUT /builder，
+        //    而「BOM 树」是显示名、不是存储值（D-39），必被 assertValidTabType 判 400。
+        //    即：这条断言当年是绿的，绿得恰恰是因为产品代码错了。改断存储值「BOM」。
+        assertTrue(r.availableTabTypes.contains("BOM"),
+                "兜底全量必须给**存储值**（D-39：「BOM」是存储值，「BOM 树」只是前端 label）："
+                        + r.availableTabTypes);
+        assertFalse(r.availableTabTypes.contains("BOM 树"),
+                "显示名不得出现在 availableTabTypes —— 前端会拿它当 tabType 提交，PUT /builder 必 400："
+                        + r.availableTabTypes);
         assertTrue(r.groups.isEmpty(), "没有种子就没有分组");
     }
 

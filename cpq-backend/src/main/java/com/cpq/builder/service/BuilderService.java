@@ -892,13 +892,25 @@ public class BuilderService {
             }
         }
         if (priceField != null) {
-            // 编码列 = effectiveColumns 里第一个带 ROW_KEY 角色、来自锚点自身编码列的成员，
-            // 与 SemanticCompiler 自动注入的那一列同源（sourceNodeKey=锚点自身）。
-            codeField = r.effectiveColumns.stream()
-                    .filter(col -> !"FUNC_ELEMENT_PRICE".equals(col.sourceNodeKey))
-                    .filter(col -> col.resolvedRoles != null && col.resolvedRoles.contains("ROW_KEY"))
-                    .filter(col -> "component_no".equals(col.sourceColumn) || "code".equals(col.sourceColumn))
-                    .map(col -> col.fieldName).findFirst().orElse(null);
+            // 编码列 = 顺着**锚点的 PRICE 边**取 seq 最小的那个连接键，其 left_column 就是锚点侧的
+            // 元素键列 —— 与 {@link SemanticCompiler#resolvePricePlan} 读的是同一处真源（那边据此
+            // 生成 JOIN 左键 cep.<right> = <锚点别名>.<left>，并在用户没手拖时把这一列自动补进
+            // effectiveColumns）。两处认列判据同源，就不会再各自漂移。
+            //
+            // 🚫 不要退回按列名匹配：此处原先写死 V6 口径的 component_no / code，而 v9 锚点
+            // ELEMENT_BOM 的元素键列叫 element_code，两个名字都对不上 ⇒ codeField 恒为 null ⇒
+            // 形态 A（元素列取自语义图）保存必撞它自己的 COMPONENT_ELEMENT_BINDING_REQUIRED
+            // 守卫，v9 下任何想用价格策略的「材质元素」组件都存不下来（B-57）。
+            // ⚠️ 也不要放宽成"任意带 ROW_KEY 的编码列"：实测锚点上 material_no / material_part_no
+            // 同样是 ROW_KEY + is_code，宽松判据会让 findFirst() 把 element_code_field 回填成
+            // 「材质料号」—— 存得下来但绑错列，比直接报错隐蔽得多。必须按连接键逐字认列。
+            ElementCodeSource src = resolveElementCodeSource(req);
+            if (src != null) {
+                codeField = r.effectiveColumns.stream()
+                        .filter(col -> src.nodeKey().equals(col.sourceNodeKey)
+                                && src.column().equals(col.sourceColumn))
+                        .map(col -> col.fieldName).findFirst().orElse(null);
+            }
         }
         if (req.priceStrategy != null && req.priceStrategy.elementCodeManualField != null
                 && !req.priceStrategy.elementCodeManualField.isBlank()) {
@@ -908,6 +920,50 @@ public class BuilderService {
         compReq.elementPriceField = priceField;
         compReq.elementCurrencyField = currencyField;
         return compReq;
+    }
+
+    /** 锚点侧元素键列的来源坐标（节点 key + 物理列名），由 PRICE 边的连接键解出。 */
+    private record ElementCodeSource(String nodeKey, String column) {}
+
+    /**
+     * 解析「元素键列」在语义图里的来源坐标（task-260819 B-57）。
+     *
+     * <p>判据与 {@code SemanticCompiler#resolvePricePlan} <b>逐字同源</b>：页签视图按
+     * {@code (tabType, variantKey, dialect)} 三元组定位 → 取其锚点 → 顺锚点的 {@code PRICE} 边 →
+     * 取 {@code seq} 最小的连接键，其 {@code leftColumn} 即锚点侧元素键列。编译器正是用这一列
+     * 生成 JOIN 左键、并在用户没手拖时把它自动补进 {@code effectiveColumns}，所以回填按同一坐标
+     * 去 {@code effectiveColumns} 里认列必然认得到。
+     *
+     * <p>解析不出来时返回 {@code null}（调用方据此让 {@code codeField} 保持为空，由既有守卫报错）——
+     * 保存流程在此之前已经 {@code doCompile} 过一次，图缺页签/锚点/边/连接键的情形编译器早就 400 了，
+     * 这里的 {@code null} 分支只是不越权替它下结论。
+     *
+     * <p>N+1 自检：{@code loader.get()} 返回的是启动期加载、{@code AtomicReference} 持有的不可变
+     * 内存快照，本方法全程只做内存图遍历，<b>零 SQL</b>；每次 save 调用一次，与列数/图规模无关。
+     */
+    private ElementCodeSource resolveElementCodeSource(BuilderConfig cfg) {
+        SemanticGraphSnapshot snap = loader.get();
+        String variantKey = cfg.variantKey == null ? "" : cfg.variantKey;
+        String graphDialect = resolveDialect(cfg).graphDialect();
+        SemanticTabView tabView = snap.tabViews.stream()
+                .filter(t -> t.tabType.equals(cfg.tabType) && t.variantKey.equals(variantKey)
+                        && graphDialect.equals(t.dialect))
+                .findFirst().orElse(null);
+        if (tabView == null) return null;
+        SemanticNode anchor = snap.nodeById.get(tabView.anchorNodeId);
+        if (anchor == null) return null;
+        SemanticEdge priceEdge = snap.edgesFrom(anchor.id).stream()
+                .filter(e -> "PRICE".equals(e.edgeKind)).findFirst().orElse(null);
+        if (priceEdge == null) return null;
+        String codeColumn = null;
+        int bestSeq = Integer.MAX_VALUE;
+        for (var k : snap.keysOf(priceEdge.id)) {
+            if (k.seq < bestSeq) {
+                bestSeq = k.seq;
+                codeColumn = k.leftColumn;
+            }
+        }
+        return codeColumn == null ? null : new ElementCodeSource(anchor.nodeKey, codeColumn);
     }
 
     // ---------------- POST /detach (B-15, AC-33) ----------------

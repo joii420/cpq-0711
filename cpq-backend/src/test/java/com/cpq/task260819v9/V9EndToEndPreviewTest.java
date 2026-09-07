@@ -169,11 +169,15 @@ class V9EndToEndPreviewTest extends V9TestBase {
                 "AC-120 前置：ds_quote_material 里应有别的会话的行（实测 42 行）。"
                         + "为 0 说明表被清过 —— 停下来查，这可能是别人的数据被打掉了。");
 
-        // ── ② 造夹具：从 git 已提交的模板取（工作区那份可能是用户正在编辑的损坏态）
-        Path tpl = dataset902Dir().resolve("报价 - 数据导入与表格建表.xlsx");
-        assertTrue(Files.isRegularFile(tpl), notReady("AC-120", "报价模板不存在：" + tpl, "task-260902"));
+        // ── ② 造夹具：从 **git HEAD 的 blob** 取模板，🚫 不读工作区那份。
+        //    2026-09-06 实证：工作区副本文件头 = 877d1c49（**企业 DLP 加密**，git status 显示 M），
+        //    POI 只会抛 `ZipException: Cannot find zip signature within the first 4096 bytes` ——
+        //    看着像「模板损坏」，其实是环境问题（用户在 Windows 上打开完全正常，客户端透明解密）。
+        //    HEAD 里那份是正常 zip（504b0304）。gitXlsxAtHead 会验明正身后再交给 POI。
+        String tplRel = "dev-docs/task-260902-报价与核价建表与导入方案新规范/报价 - 数据导入与表格建表.xlsx";
+        byte[] tplBytes = gitXlsxAtHead(tplRel);
         String axisPrefix = TAG;
-        byte[] xlsx = buildQuoteFixture(tpl, axisPrefix);
+        byte[] xlsx = buildQuoteFixture(tplBytes, axisPrefix, tplRel);
 
         // ── ③ 导入
         Response imp = RestAssured.given().cookie("CPQ_SESSION", session())
@@ -182,10 +186,28 @@ class V9EndToEndPreviewTest extends V9TestBase {
                 .when().post("/api/cpq/dataset/{ds}/import", "quote");
         System.out.println("[AC-120] import → HTTP " + imp.statusCode() + " body=" + trunc(imp.asString()));
         assertEquals(200, imp.statusCode(),
-                "AC-120: 报价数据导入应 200，实际=" + imp.statusCode() + " body=" + imp.asString()
-                        + "\n  ⚠️ 整份拒收的两条高频原因：① D-24 轴值登记（带版本 sheet 的轴值必须在物料表里）；"
-                        + "② 主数据严格校验（元素∈element、工序∈process_master、材质∈material_recipe、客户编号∈customer.code）。"
-                        + "\n  本夹具已把除「物料」外的全部 sheet 清空，以规避②。");
+                "🔴【AC-120 未验证 —— 环境/夹具前置未就绪，不是本任务的产品缺陷】导入返回 "
+                        + imp.statusCode() + "，body=" + imp.asString()
+                        + "\n  归属：报价导入模板 ⇄ dataset Registry 的字段口径不匹配，属 task-260902 / task-260903 那条线，"
+                        + "🚫 本任务不改对方的模板（主线 2026-09-04 明确）。"
+                        + "\n  ✅ 2026-09-06 已排除的一层：模板**不再是**读不出来的（原先工作区副本被企业 DLP 加密，"
+                        + "文件头 877d1c49，POI 抛 ZipException）。现改从 git HEAD blob 取（504b0304，32081 字节，"
+                        + "16 个 sheet 全部解析成功）⇒ **本条已不是「模板读不出来」，是导入器拒收**。"
+                        + "\n  📌 当前实测归因（2026-09-06 逐条核过拒收明细，59 处）：**夹具把模板第 2 行当数据行**。"
+                        + "\n     直接证据：『物料』sheet 报 `值「零件/外购件」不在允许值域：零件 / 外购件` ——"
+                        + "「零件/外购件」是**值域说明文字**，不是某一行的取值 ⇒ 第 2 行是说明行。"
+                        + "\n     其余 sheet 同型：clearDataRows() 对『带版本 sheet』从第 3 行起清（保留第 2 行当轴标记），"
+                        + "而导入器把那一行当数据校验 ⇒ 『必填项为空 / 不是合法数值 / 主数据不存在』成片出现。"
+                        + "\n     ⚠️ 连带：『物料BOM.销售料号 轴值未在物料表登记』(D-24 那条) **本次也在** ——"
+                        + "因为『物料』只给带 V9T- 前缀的轴值，而未被清掉的说明行引用的是原始料号。"
+                        + "\n  🔑 修法方向（留给主线裁决，🚫 本用例不自行猜模板契约）：要么夹具连第 2 行一起清，"
+                        + "要么按 task-260902 的模板契约确认第 2 行到底是『说明行』还是『轴标记行』——"
+                        + "两者对 clearDataRows() 的起始行要求相反，猜错就是换一种假绿。"
+                        + "\n  ⚠️ 判定纪律：本条以**红**的身份出现在报告里，但结案时记【未验证】，"
+                        + "🚫 不得记成通过，也 🚫 不得记成『本任务引入的缺陷』——"
+                        + "夹具构造与报价导入模板契约属 task-260902 那条线，本任务不改对方的模板（主线 2026-09-04 明确）。"
+                        + "\n  📌 安全网已复核：导入返回『本次未写入任何数据』，实测 ds_quote_material 的 V9T- 行 = 0、"
+                        + "他人行数未变 ⇒ 这次红**没有污染共享库**。");
 
         // ── ④ 安全网复查：别人的行一个都没变
         long othersAfter = scalarLong("SELECT count(*) FROM ds_quote_material WHERE material_no NOT LIKE 'V9T-%'");
@@ -277,8 +299,8 @@ class V9EndToEndPreviewTest extends V9TestBase {
      *
      * <p><b>为什么表头一个字不改</b>：表头列名是导入器的结构校验判据，手改必炸。
      */
-    private static byte[] buildQuoteFixture(Path template, String axisPrefix) throws Exception {
-        try (InputStream in = Files.newInputStream(template);
+    private static byte[] buildQuoteFixture(byte[] template, String axisPrefix, String tplRel) throws Exception {
+        try (InputStream in = new java.io.ByteArrayInputStream(template);
              Workbook wb = new XSSFWorkbook(in);
              ByteArrayOutputStream out = new ByteArrayOutputStream()) {
 
@@ -286,7 +308,7 @@ class V9EndToEndPreviewTest extends V9TestBase {
             for (int i = 0; i < wb.getNumberOfSheets(); i++) {
                 names.add(wb.getSheetName(i));
             }
-            assertFalse(names.isEmpty(), "报价模板一个 sheet 都没有 —— 模板损坏");
+            assertFalse(names.isEmpty(), "报价模板一个 sheet 都没有 —— 模板损坏（来源 = git HEAD:" + tplRel + "）");
             System.out.println("[AC-120] 模板 sheet = " + names);
 
             Sheet material = wb.getSheet("物料");

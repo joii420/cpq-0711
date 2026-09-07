@@ -34,7 +34,7 @@
  * 📌 证据归档：本 spec 的截图写到 `dev-docs/task-260819-取数配置器/证据/e2e/`，
  *    **不留在 test-results/**（那目录每轮开跑前会被清空 ⇒ 留在那儿等于没有证据，testing.md §2）。
  */
-import { test, expect, Page, APIRequestContext } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -98,17 +98,50 @@ test('AC-115: 新建 SQL 视图时出现数据集选择器，三个选项 报价
   ).toBe(3);
 
   // ④ 位置在「页签类型」之前 —— 原型明写「它决定字段面板出哪些表」，顺序是语义的一部分
+  //
+  // 🚦 2026-09-04 校准：原判据在**整页文本**上取 `页签类型` 的首次出现下标，
+  //    但组件详情页顶部的配置条里**也有一个「页签类型」**（和 料号列/名称列/元素列 并排），
+  //    它排在取数配置面板之前 ⇒ 判据恒红（实测 数据集=1029 > 页签类型=897），
+  //    而面板内的真实顺序其实是对的（`数据集 | 报价 | 基础核价 | 明细核价 | 页签类型 | 主件`）。
+  //    这是**判据取错作用域**导致的假红，不是产品缺陷。
+  //    ⇒ 改为：先找到「数据集」标签，向上找到**同时含「页签类型」的最近祖先**（= 取数配置面板），
+  //      在该容器内用 DOM 文档序比较。作用域对了，判据本身没放松。
   const order = await page.evaluate(() => {
-    const all = Array.from(document.querySelectorAll('body *'));
-    const idxOf = (t: string) => all.findIndex((e) => e.childElementCount === 0 && e.textContent?.trim() === t);
-    return { ds: idxOf('数据集'), tab: idxOf('页签类型') };
+    const leaves = (t: string) =>
+      Array.from(document.querySelectorAll('body *')).filter(
+        (e) => e.childElementCount === 0 && e.textContent?.trim() === t
+      );
+    const dsEls = leaves('数据集');
+    const tabEls = leaves('页签类型');
+    if (dsEls.length === 0) return { ok: false, why: 'DOM 里找不到「数据集」文本节点' };
+    if (tabEls.length === 0) return { ok: false, why: 'DOM 里找不到「页签类型」文本节点' };
+    for (const ds of dsEls) {
+      let anc: Element | null = ds.parentElement;
+      while (anc) {
+        const tabIn = tabEls.filter((t) => anc!.contains(t));
+        if (tabIn.length > 0) {
+          // 找到同时含两者的最近容器 = 取数配置面板；在容器内比文档序
+          const pos = ds.compareDocumentPosition(tabIn[0]);
+          return {
+            ok: true,
+            dsBeforeTab: (pos & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+            container: (anc as HTMLElement).className || anc.tagName,
+            tabCount: tabEls.length,
+          };
+        }
+        anc = anc.parentElement;
+      }
+    }
+    return { ok: false, why: '「数据集」与「页签类型」没有共同祖先 —— DOM 结构与预期不符' };
   });
-  expect(order.ds, 'AC-115④: DOM 里找不到「数据集」文本节点').toBeGreaterThanOrEqual(0);
-  expect(order.tab, 'AC-115④: DOM 里找不到「页签类型」文本节点').toBeGreaterThanOrEqual(0);
+  expect(order.ok, `AC-115④ 前置失败：${(order as any).why}`).toBe(true);
+  console.log('[AC-115④] 比较容器 =', (order as any).container,
+    '| 页面上「页签类型」文本节点总数 =', (order as any).tabCount,
+    '（>1 说明顶部配置条也有一个，正是原判据取错作用域的原因）');
   expect(
-    order.ds,
-    `AC-115④: 「数据集」必须排在「页签类型」之前（原型 §9.9 / F-30①）。实际下标 数据集=${order.ds} 页签类型=${order.tab}`
-  ).toBeLessThan(order.tab);
+    (order as any).dsBeforeTab,
+    'AC-115④: 在取数配置面板内，「数据集」必须排在「页签类型」之前（原型 §9.9 / F-30①）'
+  ).toBe(true);
 
   await page.screenshot({ path: path.join(EVIDENCE_DIR, 'AC-115-数据集选择器三选一.png'), fullPage: true });
 });
@@ -116,9 +149,9 @@ test('AC-115: 新建 SQL 视图时出现数据集选择器，三个选项 报价
 // ═══════════════════════════════════════════════════════════════════════
 // AC-116（单点 + 边界 + 序列）跨数据集隔离
 // ═══════════════════════════════════════════════════════════════════════
-test('AC-116: 选「基础核价」后字段面板只出该数据集的表，另两套一张都不出现（不是置灰）', async ({ page, request }) => {
+test('AC-116: 选「基础核价」后字段面板只出该数据集的表，另两套一张都不出现（不是置灰）', async ({ page }) => {
   // ── 运行期算出「该出现」与「绝不该出现」两个集合（🚫 不写死中文表名）
-  const sets = await datasetSheetNames(request);
+  const sets = await datasetSheetNames(page);
   console.log('[AC-116] 基础核价 SHEET 显示名 =', [...sets.costBasic]);
   console.log('[AC-116] 另两套独有 SHEET 显示名 =', [...sets.exclusiveToOthers]);
 
@@ -138,6 +171,18 @@ test('AC-116: 选「基础核价」后字段面板只出该数据集的表，另
 
   const panelText = await readFieldPanelText(page);
   console.log('[AC-116] 字段面板文本长度 =', panelText.length);
+
+  // ── 阳性对照 ⓪【精确】：面板自报的表前缀必须是基础核价那一套
+  //    这一条比下面按中文显示名找表**强得多** —— 三套数据集的显示名大量重名
+  //    （`物料`/`物料BOM`/`物料与元素BOM` 三套同名），只按名字找到「物料」
+  //    根本分不清是 ds_quote_material 还是 ds_cost_basic_material。
+  const prefix = await readTablePrefix(page);
+  console.log('[AC-116] 面板自报表前缀 =', prefix);
+  expect(
+    prefix,
+    `AC-116【阳性对照·精确】: 选「基础核价」后面板表前缀应为 ds_cost_basic_，实际=${prefix}。\n` +
+      `  不是它 ⇒ 数据集根本没切过去（或切错了），后面「另两套没泄漏」是空验证。`
+  ).toBe('ds_cost_basic_');
 
   // ── 阳性对照：先证明面板真的渲染出了基础核价的表（否则「另两套没有」是空验证）
   const shown = [...sets.costBasic].filter((n) => panelText.includes(n));
@@ -173,56 +218,80 @@ test('AC-116: 选「基础核价」后字段面板只出该数据集的表，另
   await page.screenshot({ path: path.join(EVIDENCE_DIR, 'AC-116-基础核价字段面板隔离.png'), fullPage: true });
 });
 
-test('AC-116（序列）: 基础核价 → 明细核价 → 切回基础核价，每一步面板都只出当前数据集的表', async ({ page, request }) => {
-  const sets = await datasetSheetNames(request);
+test('AC-116（序列）: 基础核价 → 明细核价 → 切回基础核价，每一步面板都只出当前数据集的表', async ({ page }) => {
+  const sets = await datasetSheetNames(page);
   expect(sets.costBasic.size, 'AC-116 序列前置：COST_BASIC 无 SHEET 节点 ⇒【未验证】').toBeGreaterThan(0);
   expect(sets.costDetail.size, 'AC-116 序列前置：COST_DETAIL 无 SHEET 节点 ⇒【未验证】').toBeGreaterThan(0);
 
-  const onlyBasic = diff(sets.costBasic, sets.costDetail, sets.quote);
   const onlyDetail = diff(sets.costDetail, sets.costBasic, sets.quote);
+  // 🔄 2026-09-03 实跑修正：原判据要求「两套核价各有独有表名」，但
+  //    **「基础核价独有」恒为空** —— §9.2 三套结构同构，COST_BASIC 的 10 张表名
+  //    全被 QUOTE / COST_DETAIL 覆盖（实测：基础核价独有=∅，明细核价独有 8 个）。
+  //    ⇒ 改用**单侧鉴别**：拿「明细核价独有」的 8 个名字当探针
+  //      —— 选基础核价时它们必须一个都不出现，选明细核价时必须至少出现一个，切回又全部消失。
+  //    这同样能证明「切换真的生效且不残留」，且不依赖一个恒空的集合。
   expect(
-    onlyBasic.size > 0 && onlyDetail.size > 0,
-    `AC-116 序列前置：两套核价必须各有「独有表名」才能分辨切换是否生效。\n` +
-      `  基础核价独有=${[...onlyBasic]}\n  明细核价独有=${[...onlyDetail]}\n` +
-      `  都为空说明判据不成立 —— 停下来报主线换判据，不要自行放宽。`
-  ).toBe(true);
+    onlyDetail.size,
+    `AC-116 序列前置：明细核价必须有「独有表名」才能当切换探针。实际=${[...onlyDetail]}\n` +
+      `  为空说明判据不成立 —— 停下来报主线换判据，不要自行放宽。`
+  ).toBeGreaterThan(0);
+  console.log('[AC-116 序列] 探针（明细核价独有）=', [...onlyDetail]);
 
   await openBuilderTab(page);
 
   // ① 基础核价
   await selectDataset(page, '基础核价');
   let text = await readFieldPanelText(page);
-  const first = [...onlyBasic].filter((n) => text.includes(n));
-  expect(first.length, `序列①: 选基础核价后应出现其独有表，候选=${[...onlyBasic]}`).toBeGreaterThan(0);
+  // 阳性对照：面板得真的渲染出东西（否则「探针不出现」是空验证）
+  const basicShown = [...sets.costBasic].filter((n) => text.includes(n));
+  expect(
+    basicShown.length,
+    `序列①【阳性对照】: 选基础核价后面板应至少出现 1 张该数据集的表，候选=${[...sets.costBasic]}`
+  ).toBeGreaterThan(0);
   expect(
     [...onlyDetail].filter((n) => text.includes(n)),
-    '序列①: 基础核价面板不得出现明细核价独有的表'
+    '序列①: 基础核价面板不得出现明细核价独有的表（探针）'
   ).toEqual([]);
 
   // ② 切到明细核价（切数据集会弹确认 —— F-30④「跨数据集列完全不通，一个都保不住」）
+  //
+  // 🚦 2026-09-04 校准：原判据是「切过去后应出现明细核价**独有的表名**」，实测恒为 0。
+  //    根因不是产品没切 —— 是**字段面板按「页签类型」过滤**，当前页签类型是「主件」，
+  //    面板永远只出一张 `物料`，`产能/电镀成本/...` 这些独有表本就不该在「主件」下出现。
+  //    ⇒ 原探针在这个页签类型下**永远取不到值**，属判据选错探针，不是回归。
+  //    改用面板自报的**表前缀**做中间态探针：它随数据集变、与页签类型无关，才是「切换真的生效」的信号。
   await selectDataset(page, '明细核价');
+  const prefixDetail = await readTablePrefix(page);
+  console.log('[AC-116 序列②] 切到明细核价后表前缀 =', prefixDetail);
+  expect(
+    prefixDetail,
+    `序列②【中间态】: 切到明细核价后面板表前缀应为 ds_cost_detail_，实际=${prefixDetail}。\n` +
+      `  不变 = 面板没刷新（切换没生效），这正是「单点全过、串起来翻车」要抓的形态。`
+  ).toBe('ds_cost_detail_');
   text = await readFieldPanelText(page);
   expect(
-    [...onlyDetail].filter((n) => text.includes(n)).length,
-    `序列②: 切到明细核价后应出现其独有表，候选=${[...onlyDetail]}`
-  ).toBeGreaterThan(0);
-  expect(
-    [...onlyBasic].filter((n) => text.includes(n)),
-    '序列②: 切到明细核价后，基础核价独有的表必须消失（中间态断言 —— 只验最终态会漏掉残留）'
+    [...diff(sets.costBasic, sets.costDetail, sets.quote)].filter((n) => text.includes(n)),
+    '序列②: 切到明细核价后，基础核价**独有**的表不得残留（三套重名的表不算残留，故只看独有名）'
   ).toEqual([]);
 
   // ③ 切回基础核价：应与①完全一致（不残留、不叠加）
   await selectDataset(page, '基础核价');
+  const prefixBack = await readTablePrefix(page);
+  console.log('[AC-116 序列③] 切回基础核价后表前缀 =', prefixBack);
+  expect(
+    prefixBack,
+    `序列③【中间态】: 切回基础核价后表前缀应回到 ds_cost_basic_，实际=${prefixBack}`
+  ).toBe('ds_cost_basic_');
   text = await readFieldPanelText(page);
-  const back = [...onlyBasic].filter((n) => text.includes(n));
+  const back = [...sets.costBasic].filter((n) => text.includes(n));
   expect(
     back.sort(),
-    `序列③: 切走再切回后，基础核价面板应与首次完全一致。首次=${first.sort()} 切回=${back.sort()}\n` +
+    `序列③: 切走再切回后，基础核价面板应与首次完全一致。首次=${basicShown.sort()} 切回=${back.sort()}\n` +
       `  不一致 = 切数据集留下了残留状态，正是「单点全过、串起来用翻车」的典型形态。`
-  ).toEqual(first.sort());
+  ).toEqual(basicShown.sort());
   expect(
     [...onlyDetail].filter((n) => text.includes(n)),
-    '序列③: 切回基础核价后不得残留明细核价的表'
+    '序列③: 切回基础核价后不得残留明细核价的表（探针必须又全部消失）'
   ).toEqual([]);
 
   await page.screenshot({ path: path.join(EVIDENCE_DIR, 'AC-116-序列-切回基础核价.png'), fullPage: true });
@@ -233,8 +302,13 @@ test('AC-116（序列）: 基础核价 → 明细核价 → 切回基础核价�
 // ═══════════════════════════════════════════════════════════════════════
 
 /** 从语义图端点现算三套数据集各自的 SHEET 显示名（🚫 不写死中文表名）。 */
-async function datasetSheetNames(request: APIRequestContext) {
-  const res = await request.get(`${BACKEND_URL}/api/cpq/config/semantic-graph`);
+/**
+ * ⚠️ 必须用 `page.request` 而不是独立的 `request` fixture ——
+ * 后者不共享浏览器上下文的 cookie，`loginAsAdmin(page)` 拿到的 CPQ_SESSION 带不过去，恒 401。
+ * 实跑栽过一次：三条用例都倒在「GET /config/semantic-graph 实际=401」。
+ */
+async function datasetSheetNames(page: Page) {
+  const res = await page.request.get(`${BACKEND_URL}/api/cpq/config/semantic-graph`);
   expect(
     res.status(),
     `AC-116 前置：GET /api/cpq/config/semantic-graph 应 200，实际=${res.status()}。` +
@@ -287,28 +361,90 @@ async function countDatasetOptions(page: Page): Promise<number> {
   }, DATASET_LABELS);
 }
 
-/** 新建一个测试组件并进入「取数配置」Tab。任何一步进不去都硬失败并说明是入口问题。 */
+/**
+ * 进入「取数配置」Tab（取数配置器 = 本任务的被测界面）。
+ *
+ * 🚦 2026-09-04 校准（实跑逐屏探明，替换首轮那版）。首轮那版照搬 `cross-tab-builder.spec.ts`
+ * 的 `.cm-tree-container / .ant-tree / [role="tree"]`，**当前 UI 上这些容器一个都不存在** ——
+ * 组件管理页左栏是自绘的 `.cm-layout` 目录列表（`📁 目录名` + `▶` 展开箭头），不是 antd Tree。
+ * 首轮 3 条用例全部倒在这里，症状是 timeout，**长得像产品缺陷，其实是选择器写错**
+ * （`cpq-playwright-selector-pitfalls` 的典型形态）。
+ *
+ * 实测有效的操作序列（逐步都验过）：
+ *   ① `/components` → ② 点一个目录（📁 罗克韦尔）把它选中
+ *   ③ 点工具栏「新建」——⚠️ **不选目录时点它没有任何反应**，不弹窗也不报错
+ *   ④ 右侧**内联**出「新建组件」表单（不是 Modal，也不是 Drawer）：
+ *      组件类型=页签组件 / 组件名称 `input[placeholder*="投料成本表"]` / 所属目录
+ *   ⑤ 点「创 建」——⚠️ antd 两字按钮渲染成「创 建」（中间有空格），
+ *      正则必须写 `/^创\s*建$/`，写 `/^创建$/` 匹配不到
+ *   ⑥ 组件打开，右侧出 Tab 条：字段配置 / 取数配置 / 公式 / SQL 视图 → 点「取数配置」
+ *
+ * ⚠️ 本函数会**新建一个组件**（名字带 {@link TAG} 前缀）写进共享库。
+ *    原因：打开既有组件必须先展开目录，而展开动作实跑会让 headless chrome 崩
+ *    （"Target page, context or browser has been closed"）。新建是当前唯一稳定路径。
+ *    产物在 `test.md §4.1` 登记，清理用正向条件 `name LIKE 'V9T-%'`。
+ */
 async function openBuilderTab(page: Page) {
-  const name = `${TAG}${Date.now()}`;
   await page.goto('/components');
-  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(6000);
 
-  const newBtn = page.getByRole('button', { name: /新建|新增/ }).first();
-  await expect(newBtn, '进不了组件管理的「新建」按钮 ⇒ 入口问题，本条 AC【未验证】').toBeVisible({ timeout: 10_000 });
+  // ② 选中一个目录（不选则「新建」无反应）
+  const dir = page.getByText('罗克韦尔', { exact: false }).first();
+  await expect(
+    dir,
+    '组件管理页左栏没有任何目录 ⇒ 入口问题，本条 AC【未验证】，不是产品缺陷'
+  ).toBeVisible({ timeout: 15_000 });
+  await dir.click();
+  await page.waitForTimeout(2000);
+
+  // ③ 新建
+  const newBtn = page.locator('button').filter({ hasText: /^新\s*建$/ }).first();
+  await expect(newBtn, '工具栏没有「新建」按钮 ⇒ 入口问题，本条 AC【未验证】').toBeVisible({ timeout: 10_000 });
   await newBtn.click();
+  await page.waitForTimeout(2000);
 
-  const nameInput = page.locator('input[placeholder*="名称"]').first();
-  await expect(nameInput, '新建组件表单里找不到名称输入框 ⇒ 入口问题').toBeVisible({ timeout: 10_000 });
+  // ④⑤ 填名字并创建
+  const nameInput = page.locator('input[placeholder*="投料成本表"]').first();
+  await expect(
+    nameInput,
+    '点「新建」后没出现「新建组件」内联表单（组件名称输入框） ⇒ 入口问题，本条 AC【未验证】'
+  ).toBeVisible({ timeout: 10_000 });
+  const name = `${TAG}${Date.now()}`;
   await nameInput.fill(name);
-  await page.getByRole('button', { name: /确\s*定|保\s*存/ }).first().click();
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(400);
+  await page.locator('button').filter({ hasText: /^创\s*建$/ }).first().click();
+  await page.waitForTimeout(4000);
+  console.log('[入口] 已新建组件 =', name, '（共享库产物，清理条件 name LIKE \'V9T-%\'）');
 
-  await page.getByText(name, { exact: true }).first().click();
-  await page.waitForTimeout(500);
+  // ⑥ 切到「取数配置」
   const tab = page.getByText('取数配置', { exact: true }).first();
-  await expect(tab, '组件详情里没有「取数配置」Tab ⇒ 入口问题，本条 AC【未验证】').toBeVisible({ timeout: 10_000 });
+  await expect(
+    tab,
+    '组件已打开但没有「取数配置」Tab ⇒ 入口问题，本条 AC【未验证】，不是产品缺陷'
+  ).toBeVisible({ timeout: 15_000 });
   await tab.click();
-  await page.waitForTimeout(800);
+  await page.waitForTimeout(4000);
+}
+
+/**
+ * 读取取数配置面板自己打印的**表前缀**（`表前缀 ds_quote_` / `ds_cost_basic_` / `ds_cost_detail_`）。
+ *
+ * 🔑 为什么要这个：AC-116 原来的阳性对照用**中文显示名**判「基础核价的表出现了」，
+ * 但三套数据集的显示名**大量重名**（`物料` / `物料BOM` / `物料与元素BOM` 三套都叫这个）。
+ * 实测「主件」页签下面板只出一张 `物料` —— 这个名字无法区分它是 `ds_quote_material`
+ * 还是 `ds_cost_basic_material`，⇒ 阳性对照其实**证不出数据集选对了**。
+ * 面板自己渲染的 `表前缀 ds_xxx_` 是**数据集独有**的字符串，是真正能证伪的信号。
+ */
+async function readTablePrefix(page: Page): Promise<string> {
+  const body = await page.locator('body').innerText();
+  const m = body.match(/表前缀\s*(ds_[a-z_]+_)/);
+  expect(
+    m,
+    '取数配置面板里读不到「表前缀 ds_xxx_」标记 —— 该标记是本用例判定「数据集真的切过去了」的唯一精确信号。\n' +
+      '  读不到说明面板文案变了 ⇒ 判据需重新校准（本条 AC 判【未验证】，不是产品缺陷）。\n' +
+      `  页面文本（截断 800）=\n${body.slice(0, 800)}`
+  ).not.toBeNull();
+  return m![1];
 }
 
 /** 选择数据集；若弹出「切数据集会清空已选输出列」的确认，点确认（F-30④）。 */

@@ -30,11 +30,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <h3>本类不改任何全局状态</h3>
  * 全部只读。无 {@code INSERT}/{@code UPDATE}/{@code DELETE}。
  *
- * <h3>🔴 一处 AC 内部矛盾，已报主线待裁决（见 {@link #ac104_nodeColumnsMatchInformationSchema}）</h3>
- * AC-104 写「<b>45 张</b>主表每张在 {@code semantic_node} 有且仅有 1 行」，
- * 而 §9.2 的「不进图」行明确排除了年降 3 张（N-18）+ {@code ds_quote_customer_part}（N-19）⇒ 应为 <b>41</b>。
- * 两者不能同时成立。本用例按<b>可调和读法</b>断言（41 进图 + 4 显式不进图），
- * 失败信息里把两种读法都打出来，由主线裁决改 AC 还是改种子。
+ * <h3>AC-104 已按 D-93 二次修正 —— 不写死任何数字</h3>
+ * 原文曾写「45 张主表每张…有且仅有 1 行」，与 N-18 / N-19 / N-20 及 B-43 互斥；
+ * D-93 已整条改成断言不变量（每物理源恰 1 个 SHEET 节点 · 列双向无差集 · 物理源存在性 · 桥节点例外）。
+ * 本类照新原文实现，🚫 不再有「45 vs 41」那两种读法。
  */
 @QuarkusTest
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
@@ -105,94 +104,140 @@ class V9SemanticGraphSeedTest extends V9TestBase {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // AC-104（单点 + 边界）45 表各 1 节点；列集合与 information_schema 双向无差集
+    // AC-104（单点 + 边界）逐节点比对 semantic_node_column 与 information_schema
+    //
+    // 🔄🔄 按 D-93 二次修正后的 AC 原文实现，**四条逐条落地、不写死任何数字**：
+    //   ① 每个被 SHEET 节点引用的物理源，恰好 1 个 SHEET 节点
+    //      （GROUP BY physical_table HAVING count(*)<>1 必须 0 行）
+    //   ② 每个节点的列集合与 information_schema 双向无差集（排除派生列 is_current）
+    //   ③ 物理源存在性：所有 physical_table 都能在 information_schema 找到（表或视图），缺失数 = 0
+    //   ④ ds_quote_material 例外：除 QUOTE 侧 SHEET 节点外，另有两个 COST_* 方言的 LOOKUP 桥节点（B-43）
+    //      ⇒ ① 按 node_kind='SHEET' 计数，不按节点总数
+    //
+    // 🚫 不再断言「进图主表恰好 N 张」—— D-93 明写「写死数字这条已经栽两次，改判据」。
+    //    保留的唯一名单类断言是 §9.2 的「明确不进图」4 张（N-18 年降 3 张 + N-19 客户料号），
+    //    按**名字**断言不按个数；N-20 的 ds_*_plating_scheme 现为**孤儿 SHEET、在图内**，不在该名单。
     // ═══════════════════════════════════════════════════════════════
     @Test
     @Order(104)
-    @DisplayName("AC-104: 每张进图主表恰 1 个节点；节点列集合与 information_schema 双向无差集")
+    @DisplayName("AC-104: 每物理源恰 1 个 SHEET 节点 · 列集合双向无差集(排除 is_current) · 物理源全部存在 · 料号桥例外")
     void ac104_nodeColumnsMatchInformationSchema() {
-        List<String> all45 = allDsMainTables();
-        System.out.println("[AC-104] 库里 ds_* 主表（非 _history）实测 = " + all45.size() + " 张");
-        assertEquals(45, all45.size(),
-                "AC-104 前置：§9.1.1 说 45 张主表（16+10+19），实测=" + all45.size()
-                        + "。若这里对不上，说明 task-260902 的表结构变了，先停下来核对，不要继续往下断言。");
+        // ── 阳性对照：图里得有东西，否则下面四条全是空跑（testing.md §3 红线 3）
+        long anySheet = scalarLong(
+                "SELECT count(*) FROM semantic_node WHERE status='ACTIVE' AND node_kind='SHEET'");
+        System.out.println("[AC-104] ACTIVE SHEET 节点数 = " + anySheet);
+        assertTrue(anySheet > 0, notReady("AC-104",
+                "semantic_node 没有任何 ACTIVE 的 SHEET 节点，四条断言全部空跑", "cpq-backend #2 / B-42"));
 
-        // 期望进图 = 45 - §9.2「不进图」的 4 张
-        Set<String> expectedInGraph = new LinkedHashSet<>(all45);
-        expectedInGraph.removeAll(NOT_IN_GRAPH);
+        // ── ① 每个被 SHEET 引用的物理源，恰好 1 个 SHEET 节点（AC 原文的 SQL 逐字实现）
+        List<Object[]> dup = rowList(
+                "SELECT physical_table, count(*) FROM semantic_node "
+                        + "WHERE status='ACTIVE' AND node_kind='SHEET' AND physical_table IS NOT NULL "
+                        + "GROUP BY physical_table HAVING count(*) <> 1 ORDER BY 1");
+        System.out.println("[AC-104①] 违规物理源（SHEET 节点数 != 1）= " + fmt(dup));
+        assertTrue(dup.isEmpty(),
+                "AC-104①: 每个被 SHEET 节点引用的物理源必须恰好 1 个 SHEET 节点，违规=" + fmt(dup)
+                        + "\n  📌 计数只算 node_kind='SHEET'（AC-104④）—— ds_quote_material 另有两个 COST_* 的"
+                        + " LOOKUP 桥节点（B-43），按节点总数算会误判成重复。");
 
-        // 实际进图（physical_table 可能指向 v_<主表>_all 视图，S-31/D-84 —— 归一化回主表）
-        List<String> physical = strList(
-                "SELECT physical_table FROM semantic_node "
-                        + "WHERE status='ACTIVE' AND physical_table IS NOT NULL AND node_kind='SHEET'");
-        assertFalse(physical.isEmpty(), notReady("AC-104",
-                "semantic_node 里没有任何带 physical_table 的 SHEET 节点", "cpq-backend #2 / B-42"));
-
-        Map<String, Integer> countByMain = new LinkedHashMap<>();
-        for (String p : physical) {
-            String main = normalizeToMainTable(p);
-            countByMain.merge(main, 1, Integer::sum);
-        }
-        System.out.println("[AC-104] 实际进图主表数（归一化 v_*_all 后）= " + countByMain.size());
-
-        // ① 每张恰 1 行
-        List<String> dup = new ArrayList<>();
-        countByMain.forEach((t, c) -> {
-            if (c != 1) {
-                dup.add(t + "×" + c);
-            }
-        });
-        assertTrue(dup.isEmpty(), "AC-104①: 每张主表在 semantic_node 必须『有且仅有 1 行』，重复的=" + dup);
-
-        // ② 进图集合 == 45 - 不进图 4
-        Set<String> missing = new TreeSet<>(expectedInGraph);
-        missing.removeAll(countByMain.keySet());
-        Set<String> extra = new TreeSet<>(countByMain.keySet());
-        extra.removeAll(expectedInGraph);
-        assertTrue(missing.isEmpty() && extra.isEmpty(),
-                "AC-104②: 进图主表集合与期望不符。\n  缺=" + missing + "\n  多=" + extra
-                        + "\n  🔴 提醒主线：AC-104 原文写『45 张主表每张…有且仅有 1 行』，"
-                        + "而 §9.2 的『不进图』行排除了年降 3 张（N-18）+ ds_quote_customer_part（N-19）⇒ 应为 41 张。"
-                        + "\n     两种读法：[45 全进图] vs [41 进图 + 4 显式不进图]。本用例按后者断言（与 §9.2 + N-18/N-19 一致）。"
-                        + "\n     若裁决改为前者，请改 AC 或改 §9.2，两处必须一致。");
-
-        // ③ 显式断言那 4 张确实不进图（不是漏配，是明确排除）
-        for (String t : NOT_IN_GRAPH) {
-            assertEquals(0L, scalarLong(
-                            "SELECT count(*) FROM semantic_node WHERE physical_table=?1 OR physical_table=?2", t, "v_" + t + "_all"),
-                    "AC-104③: §9.2 明确『不进图』的 " + t + " 不应出现在 semantic_node（N-18 / N-19）");
-        }
-
-        // ④ 逐节点列集合双向无差集
+        // ── ③ 物理源存在性：所有 physical_table（不分 kind）都要能在 information_schema 找到
         List<Object[]> nodes = rowList(
-                "SELECT n.node_key, n.physical_table FROM semantic_node n "
-                        + "WHERE n.status='ACTIVE' AND n.node_kind='SHEET' AND n.physical_table IS NOT NULL ORDER BY 1");
-        StringBuilder bad = new StringBuilder();
-        int checked = 0;
+                "SELECT n.id::text, n.node_key, n.dialect, n.node_kind, n.physical_table FROM semantic_node n "
+                        + "WHERE n.status='ACTIVE' AND n.physical_table IS NOT NULL "
+                        + "ORDER BY n.dialect, n.node_key");
+        assertFalse(nodes.isEmpty(), notReady("AC-104",
+                "没有任何带 physical_table 的 ACTIVE 节点", "cpq-backend #2 / B-42"));
+
+        List<String> missingRelations = new ArrayList<>();
         for (Object[] n : nodes) {
-            String nodeKey = String.valueOf(n[0]);
-            String rel = String.valueOf(n[1]);
+            String rel = String.valueOf(n[4]);
+            if (columnsOf(rel).isEmpty()) {
+                missingRelations.add(n[1] + "/" + n[2] + " -> " + rel);
+            }
+        }
+        System.out.println("[AC-104③] 带 physical_table 的节点 = " + nodes.size()
+                + "，其中物理源在 information_schema 找不到的 = " + missingRelations.size());
+        assertTrue(missingRelations.isEmpty(),
+                "AC-104③: 所有 physical_table 都必须能在 information_schema 里找到（表或视图），缺失="
+                        + missingRelations
+                        + "\n  📌 指向 v_<主表>_all 的节点若在这里缺失，说明 B-44① 的 26 张全版本视图还没建。");
+
+        // ── ② 逐节点列集合双向无差集（两侧都排除派生列 is_current）
+        StringBuilder bad = new StringBuilder();
+        int compared = 0;
+        for (Object[] n : nodes) {
+            String nodeId = String.valueOf(n[0]);
+            String nodeKey = String.valueOf(n[1]);
+            String dialect = String.valueOf(n[2]);
+            String rel = String.valueOf(n[4]);
+
+            // 🚨 按 node id 取列 —— node_key 跨方言重名（api.md v9-2），按 key 取会串到别的数据集
             Set<String> declared = new TreeSet<>(strList(
-                    "SELECT c.db_column FROM semantic_node_column c JOIN semantic_node nn ON nn.id=c.node_id "
-                            + "WHERE nn.node_key=?1 AND c.status='ACTIVE'", nodeKey));
+                    "SELECT db_column FROM semantic_node_column "
+                            + "WHERE node_id = CAST(?1 AS uuid) AND status='ACTIVE'", nodeId));
             Set<String> actual = new TreeSet<>(columnsOf(rel));
-            assertFalse(actual.isEmpty(), "AC-104④: 节点 " + nodeKey + " 的 physical_table=" + rel
-                    + " 在 information_schema 里查不到任何列 —— 表/视图不存在，或名字写错");
-            assertFalse(declared.isEmpty(), "AC-104④: 节点 " + nodeKey + " 一条列声明都没有 —— "
-                    + "『双向无差集』会因为两边都空而假通过，这里先挡掉");
+
+            // 🔄 D-106：两侧都排除 ① 派生列 is_current（视图 UNION 合成，不在任何主表里）
+            //    与 ② 建表器统一追加的 8 个系统列（生成器 SYS_HEAD+SYS_VER+SYS_TAIL）。
+            //    2026-09-03 首轮实跑就是漏了②，在**正确实现**上判红 43/43。
+            declared.remove(DERIVED_COLUMN);
+            actual.remove(DERIVED_COLUMN);
+            declared.removeAll(SYSTEM_COLUMNS);
+            actual.removeAll(SYSTEM_COLUMNS);
+
+            assertFalse(actual.isEmpty(), "AC-104②: 节点 " + nodeKey + "/" + dialect
+                    + " 的 physical_table=" + rel + " 除 " + DERIVED_COLUMN + " 外没有任何列");
+            assertFalse(declared.isEmpty(), "AC-104②: 节点 " + nodeKey + "/" + dialect
+                    + " 一条列声明都没有 —— 『双向无差集』会因为两边都空而假通过，这里先挡掉");
+
             Set<String> onlyDeclared = new TreeSet<>(declared);
             onlyDeclared.removeAll(actual);
+            // D-106 点名的「真正的不变量」的前半句：种子从不声明库里没有的列。
+            // 单独断言一次，好让失败时一眼看出是"声明多了"还是"库里多了"。
+            assertTrue(onlyDeclared.isEmpty(), "AC-104②: 节点 " + nodeKey + "/" + dialect
+                    + " 声明了库里不存在的列 " + onlyDeclared + " —— declared ⊆ actual 被破坏");
             Set<String> onlyActual = new TreeSet<>(actual);
             onlyActual.removeAll(declared);
             if (!onlyDeclared.isEmpty() || !onlyActual.isEmpty()) {
-                bad.append("\n  ").append(nodeKey).append('(').append(rel).append(')')
+                bad.append("\n  ").append(nodeKey).append('/').append(dialect)
+                        .append('(').append(rel).append(')')
                         .append(" 声明多出=").append(onlyDeclared).append(" 库里多出=").append(onlyActual);
             }
-            checked++;
+            compared++;
         }
-        System.out.println("[AC-104] 逐节点列比对完成，节点数=" + checked);
-        assertTrue(checked > 0, notReady("AC-104", "没有任何 SHEET 节点可比对，④等于空跑", "cpq-backend #2 / B-42"));
-        assertEquals("", bad.toString(), "AC-104④: 节点列集合与 information_schema 必须双向无差集，差异=" + bad);
+        System.out.println("[AC-104②] 逐节点列比对完成，节点数=" + compared
+                + "（两侧均已排除派生列 " + DERIVED_COLUMN + " 与 8 个系统列 " + SYSTEM_COLUMNS + "）");
+        assertTrue(compared > 0, notReady("AC-104", "没有节点可比对，②等于空跑", "cpq-backend #2 / B-42"));
+        assertEquals("", bad.toString(),
+                "AC-104②: 节点列集合与 information_schema 必须双向无差集（排除派生列 "
+                        + DERIVED_COLUMN + "），差异=" + bad);
+
+        // ── ④ ds_quote_material 的例外形态：1 个 SHEET（QUOTE 侧主件）+ 至少 1 个 LOOKUP 桥（COST_*）
+        List<Object[]> bridgeKinds = rowList(
+                "SELECT node_kind, dialect, count(*) FROM semantic_node "
+                        + "WHERE status='ACTIVE' AND physical_table='ds_quote_material' "
+                        + "GROUP BY 1,2 ORDER BY 1,2");
+        System.out.println("[AC-104④] ds_quote_material 的节点形态 = " + fmt(bridgeKinds));
+        long bridgeSheets = scalarLong("SELECT count(*) FROM semantic_node WHERE status='ACTIVE' "
+                + "AND physical_table='ds_quote_material' AND node_kind='SHEET'");
+        long bridgeLookups = scalarLong("SELECT count(*) FROM semantic_node WHERE status='ACTIVE' "
+                + "AND physical_table='ds_quote_material' AND node_kind='LOOKUP'");
+        assertEquals(1L, bridgeSheets,
+                "AC-104④: ds_quote_material 应恰有 1 个 SHEET 节点（QUOTE 侧主件），实际=" + bridgeSheets);
+        assertTrue(bridgeLookups > 0,
+                "AC-104④: ds_quote_material 还应作为 LOOKUP 料号桥被 COST_* 引用（B-43 / S-24 / D-76），"
+                        + "实际 LOOKUP 节点数=" + bridgeLookups
+                        + "\n  为 0 说明料号桥没建 —— AC-111 / AC-112 会跟着失败。");
+
+        // ── 补充断言（不属 AC-104 四条，来自 §9.2 + N-18 / N-19）：明确不进图的 4 张一张都不许出现。
+        //    ⚠️ N-20 的 ds_*_plating_scheme **在图内**（孤儿 SHEET，不挂页签视图），故不在本名单。
+        for (String t : NOT_IN_GRAPH) {
+            long hit = scalarLong(
+                    "SELECT count(*) FROM semantic_node WHERE physical_table=?1 OR physical_table=?2",
+                    t, "v_" + t + "_all");
+            assertEquals(0L, hit, "§9.2 补充断言: 明确『不进图』的 " + t
+                    + " 不应出现在 semantic_node（N-18 年降 3 张 / N-19 客户料号）");
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -228,7 +273,11 @@ class V9SemanticGraphSeedTest extends V9TestBase {
         assertTrue(anyView > 0, notReady("AC-106", "semantic_tab_view 无 ACTIVE 行", "cpq-backend #2 / B-42"));
 
         // §9.2 映射表：5 个非费用类页签在三套里都有；费用类变体数 = 报价 8 / 基础核价 7 / 明细核价 15
-        List<String> nonFeeTabs = List.of("主件", "材质元素", "零件", "外购件", "BOM 树");
+        // 🔑 这里的字符串是**库值**（直接进 semantic_tab_view.tab_type 的 WHERE 子句），不是显示名。
+        //    D-39 把两者故意分开：存储值 = 'BOM'，显示名 =「BOM 树」。V413 种子曾把显示名写进键值列，
+        //    已由 V417（B-54，用户 2026-09-05 批准）改回 'BOM' ⇒ 本断言必须跟着用 'BOM'。
+        //    🚫 不要因为报错信息里想显示「BOM 树」就把这里改回去 —— 那会让断言查不到行而恒红。
+        List<String> nonFeeTabs = List.of("主件", "材质元素", "零件", "外购件", "BOM");
         Map<String, Integer> feeVariants = new LinkedHashMap<>();
         feeVariants.put(QUOTE, 8);
         feeVariants.put(COST_BASIC, 7);

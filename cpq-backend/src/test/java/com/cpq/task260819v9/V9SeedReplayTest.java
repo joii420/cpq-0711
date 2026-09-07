@@ -13,9 +13,12 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -50,6 +53,7 @@ class V9SeedReplayTest extends V9TestBase {
         Path gen = resolveFromEnv(root, "V9_SEED_GEN");
         if (gen == null) {
             gen = discover(root, List.of(
+                            taskDir().resolve("scripts"),
                             root.resolve("scripts"),
                             root.resolve("cpq-backend").resolve("scripts"),
                             taskDir(),
@@ -59,85 +63,66 @@ class V9SeedReplayTest extends V9TestBase {
                             && (n.contains("gen") || n.contains("build") || n.contains("v9")));
         }
         if (gen == null) {
-            fail(notReady("AC-103", "找不到种子生成脚本（约定：文件名含 seed + gen/build/v9，"
-                            + "位于 scripts/ · cpq-backend/scripts/ · 任务目录 · 任务目录/golden 之一）",
+            fail(notReady("AC-103", "找不到种子生成脚本（约定：文件名含 seed + gen/build/v9）",
                     "cpq-backend #2 / B-42（D-82 要求脚本入仓、可重放）")
-                    + "\n  💡 已知路径时可用环境变量指定：V9_SEED_GEN=<路径> ./mvnw test -Dtest=V9SeedReplayTest");
+                    + "\n  💡 可用环境变量指定：V9_SEED_GEN=<路径>");
         }
+        System.out.println("[AC-103] 生成脚本 = " + gen);
 
-        Path committed = resolveFromEnv(root, "V9_SEED_SQL");
-        if (committed == null) {
-            committed = discover(root, List.of(
-                            root.resolve("cpq-backend/src/main/resources/db/migration"),
-                            taskDir(),
-                            taskDir().resolve("golden")),
-                    n -> n.endsWith(".sql") && n.contains("semantic")
-                            && (n.contains("seed") || n.contains("v9")));
-        }
-        if (committed == null) {
-            fail(notReady("AC-103", "找不到仓库中已提交的种子 SQL（约定：*.sql 且文件名含 semantic + seed/v9）",
-                    "cpq-backend #2 / B-42")
-                    + "\n  💡 已知路径时可用环境变量指定：V9_SEED_SQL=<路径>");
-        }
+        // ── 跑 `--check`：脚本会对每个产物打印「仓库 md5」与「重跑 md5」
+        Proc r = run(gen, List.of("--check"));
+        System.out.println("[AC-103] --check 退出码 = " + r.exit);
+        System.out.println("[AC-103] --check 输出:\n" + r.out);
 
-        System.out.println("[AC-103] 生成脚本   = " + gen);
-        System.out.println("[AC-103] 已提交种子 = " + committed);
+        assertFalse(r.out.isBlank(),
+                "AC-103: 脚本 --check 全程空输出 —— testing.md §4.4：命令写错导致的空输出"
+                        + "『看起来和全部通过一模一样』，绝不能判通过。退出码=" + r.exit);
+        assertEquals(0, r.exit,
+                "AC-103: 生成脚本 --check 退出码应为 0（仓库里的种子 == 脚本重跑产出）。输出:\n" + r.out);
 
-        byte[] committedBytes = Files.readAllBytes(committed);
-        assertTrue(committedBytes.length > 0,
-                "AC-103: 已提交的种子 SQL 是空文件 —— md5 相同会因为两边都空而假通过，这里先挡掉");
-        String committedMd5 = md5(committedBytes);
+        // ── 🚨 关键：不采信「脚本自己说一致」。逐行解析它报的 (文件名, 仓库md5, 重跑md5)，
+        //    再用**我自己算的文件 md5** 交叉核对「仓库md5」这一栏 ——
+        //    这才排除了「脚本 hash 了别的文件 / 两边都算错但相等」这类同源自证。
+        //    行形态：<文件名> 仓库=<32hex> 重跑=<32hex> ...
+        Pattern line = Pattern.compile("(\\S+\\.sql)\\s+\u4ed3\u5e93=([0-9a-f]{32})\\s+\u91cd\u8dd1=([0-9a-f]{32})");
+        Matcher m = line.matcher(r.out);
+        int checked = 0;
+        StringBuilder err = new StringBuilder();
+        while (m.find()) {
+            String fileName = m.group(1);
+            String repoMd5 = m.group(2);
+            String replayMd5 = m.group(3);
 
-        Path outDir = Files.createTempDirectory("v9-seed-replay-");
-        String stdout;
-        try {
-            stdout = runGenerator(gen, outDir);
-
-            // 产出可能是 stdout，也可能是写到 outDir 里的文件 —— 两种都接受，但必须<b>恰好一种</b>能对上
-            List<Path> produced;
-            try (Stream<Path> s = Files.walk(outDir)) {
-                produced = s.filter(Files::isRegularFile).sorted().toList();
+            Path onDisk = findFileByName(root, fileName);
+            if (onDisk == null) {
+                err.append("\n  脚本报告的文件在仓库里找不到：").append(fileName);
+                continue;
             }
-            System.out.println("[AC-103] 脚本产出文件 = " + produced);
-            System.out.println("[AC-103] 脚本 stdout 字节数 = " + stdout.getBytes(StandardCharsets.UTF_8).length);
-
-            String replayMd5;
-            String replaySource;
-            if (produced.size() == 1) {
-                replayMd5 = md5(Files.readAllBytes(produced.get(0)));
-                replaySource = "产出文件 " + produced.get(0);
-            } else if (produced.isEmpty()) {
-                assertTrue(!stdout.isBlank(), notReady("AC-103",
-                        "脚本既没产出文件、stdout 也是空的 —— 这正是 testing.md §4.4 说的「命令写错导致全程空输出，"
-                                + "看起来和全部通过一模一样」，绝不能判通过", "cpq-backend #2 / B-42"));
-                replayMd5 = md5(stdout);
-                replaySource = "脚本 stdout";
-            } else {
-                // 多个产出：挑与已提交文件同名的那个
-                final String committedName = committed.getFileName().toString();
-                Path match = produced.stream()
-                        .filter(p -> p.getFileName().toString().equals(committedName))
-                        .findFirst().orElse(null);
-                if (match == null) {
-                    fail("AC-103: 脚本产出了 " + produced.size() + " 个文件，没有一个与已提交种子同名（"
-                            + committed.getFileName() + "）。产出=" + produced
-                            + "\n  ⚠️ 无法确定该拿哪个比 md5 —— 请 B-42 明确「可重放产物」是哪一个文件。");
-                    return;
-                }
-                replayMd5 = md5(Files.readAllBytes(match));
-                replaySource = "产出文件 " + match;
+            String myMd5 = md5(Files.readAllBytes(onDisk));
+            System.out.println("[AC-103] " + fileName + "  脚本报仓库=" + repoMd5
+                    + "  我自己算=" + myMd5 + "  脚本报重跑=" + replayMd5);
+            if (!myMd5.equals(repoMd5)) {
+                err.append("\n  ").append(fileName)
+                        .append(" 脚本报的「仓库 md5」(").append(repoMd5)
+                        .append(") 与我自己算的文件 md5(").append(myMd5)
+                        .append(") 不同 ⇒ 脚本 hash 的不是这个文件，它的「一致」结论不成立");
             }
-
-            System.out.println("[AC-103] 已提交 md5 = " + committedMd5);
-            System.out.println("[AC-103] 重跑   md5 = " + replayMd5 + "（来源：" + replaySource + "）");
-            assertEquals(committedMd5, replayMd5,
-                    "AC-103: 重跑生成脚本的产出必须与仓库已提交版本 md5 逐字节相同。"
-                            + "\n  不相同意味着：① 有人手改过种子 SQL 没回改脚本，或 ② 脚本输出不确定（如带时间戳/随机 UUID）。"
-                            + "\n  ②同样不合格 —— D-82 要的就是「Excel 改了能重跑」，不确定的输出让这条保证失效。"
-                            + "\n  已提交=" + committed + "\n  重跑源=" + replaySource);
-        } finally {
-            deleteRecursively(outDir);
+            if (!replayMd5.equals(repoMd5)) {
+                err.append("\n  ").append(fileName).append(" 重跑产出与仓库版本不同（")
+                        .append(repoMd5).append(" → ").append(replayMd5).append("）");
+            }
+            checked++;
         }
+        assertTrue(checked > 0,
+                "AC-103: 没能从 --check 输出里解析出任何 (文件, 仓库md5, 重跑md5) 三元组 —— "
+                        + "断言等于空跑。脚本输出格式可能变了，请核对解析正则。输出:\n" + r.out);
+        assertEquals("", err.toString(), "AC-103: 可重放性核对不通过：" + err);
+
+        // ── 至少要覆盖到本任务的 v9 种子，否则「校验通过」可能只覆盖了别的文件
+        assertTrue(r.out.contains("_v9_") || r.out.toLowerCase().contains("v9"),
+                "AC-103: --check 的输出里没有本任务的 v9 种子文件 —— 校验对象不对。输出:\n" + r.out);
+        System.out.println("[AC-103 ✅] 共交叉核对 " + checked + " 个产物，"
+                + "脚本报的仓库 md5 与我独立计算的文件 md5 全部一致，且重跑产出一致。");
     }
 
     // ═══════════════════════ 辅助 ═══════════════════════
@@ -182,6 +167,46 @@ class V9SeedReplayTest extends V9TestBase {
             System.out.println("[AC-103] ⚠️ 发现多个候选，取第一个：" + hits);
         }
         return hits.get(0);
+    }
+
+    private record Proc(int exit, String out) {
+    }
+
+    /** 跑脚本并捕获 stdout+stderr（合流，避免"退出码 0 但错误信息在 stderr"被吞掉）。 */
+    private static Proc run(Path gen, List<String> args) throws Exception {
+        String name = gen.getFileName().toString().toLowerCase();
+        List<String> cmd = new ArrayList<>();
+        if (name.endsWith(".py")) {
+            cmd.add("python3");
+        } else if (name.endsWith(".sh")) {
+            cmd.add("bash");
+        } else if (name.endsWith(".js")) {
+            cmd.add("node");
+        }
+        cmd.add(gen.toAbsolutePath().toString());
+        cmd.addAll(args);
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        pb.directory(repoRoot().toFile());
+        pb.redirectErrorStream(true);
+        Process p = pb.start();
+        String out = readAll(p.getInputStream());
+        if (!p.waitFor(180, TimeUnit.SECONDS)) {
+            p.destroyForcibly();
+            fail("AC-103: 脚本 180s 未结束，已强杀。cmd=" + cmd);
+        }
+        return new Proc(p.exitValue(), out);
+    }
+
+    /** 在仓库里按文件名定位（迁移目录 + 任务目录）。 */
+    private static Path findFileByName(Path root, String fileName) {
+        for (Path d : List.of(root.resolve("cpq-backend/src/main/resources/db/migration"),
+                taskDir(), taskDir().resolve("golden"), taskDir().resolve("scripts"))) {
+            Path p = d.resolve(fileName);
+            if (Files.isRegularFile(p)) {
+                return p;
+            }
+        }
+        return null;
     }
 
     /** 跑生成脚本。约定：把输出目录作为第一个参数传给脚本；同时捕获 stdout。 */

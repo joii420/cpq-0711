@@ -16,7 +16,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * task-260819 v9「三数据集范围替换」验收用例的公共基座。
@@ -69,6 +71,25 @@ public abstract class V9TestBase {
     protected static final String QUOTE = "QUOTE";
     protected static final String COST_BASIC = "COST_BASIC";
     protected static final String COST_DETAIL = "COST_DETAIL";
+
+    /**
+     * AC-104② 明写要排除的<b>派生列</b> —— 它由 {@code v_<主表>_all} 的 UNION 合成
+     * （主表行 {@code true} / {@code _history} 行 {@code false}），不是主表的列。
+     * 🚫 它与 V6 的同名列<b>同名不同源</b>：V6 的是存储列、可 UPDATE、会漂移；这里的是派生常量、不可写（D-84′）。
+     */
+    protected static final String DERIVED_COLUMN = "is_current";
+
+    /**
+     * AC-104②（🔄 D-106）要排除的 <b>建表器统一追加的 8 个系统列</b>
+     * （生成器的 {@code SYS_HEAD + SYS_VER + SYS_TAIL}）。
+     *
+     * <p>它们不是业务字段、不进配置器的字段面板，因此种子从不声明它们。
+     * 真正的不变量是 <b>{@code declared ⊆ actual} 且 {@code actual − declared ⊆ 系统列}</b> ——
+     * 实测「声明多出 = []」在全部 43 个节点上恒成立。
+     */
+    protected static final java.util.Set<String> SYSTEM_COLUMNS = java.util.Set.of(
+            "id", "version_no", "row_fingerprint", "source",
+            "created_at", "created_by", "updated_at", "updated_by");
 
     /** §9.2「不进图」的 4 张报价侧表：年降 3 张（N-18）+ 客户料号（N-19）。 */
     protected static final List<String> NOT_IN_GRAPH = List.of(
@@ -222,6 +243,70 @@ public abstract class V9TestBase {
         return repoRoot().resolve("dev-docs").resolve("task-260902-报价与核价建表与导入方案新规范");
     }
 
+    /**
+     * 读**仓库已提交版本**（{@code git show HEAD:<path>}）的二进制文件，而不是工作区那份。
+     *
+     * <h3>🚨 为什么必须绕开工作区（2026-09-06 实证）</h3>
+     * {@code dev-docs/task-260902-…/*.xlsx} 三份模板在工作区的文件头是 {@code 877d1c49}，
+     * 这是**企业 DLP 加密**的特征，不是文件损坏 —— 用户在 Windows 上打开完全正常（客户端透明解密），
+     * 但命令行/JVM 读到的是密文。POI 只会抛一句
+     * {@code ZipException: Cannot find zip signature within the first 4096 bytes}，
+     * 看起来像「模板坏了」，实际是**环境**问题，与本任务的产品代码无关。
+     * git HEAD 里的那份是正常 zip（{@code 504b0304}）⇒ 一律从 blob 取。
+     *
+     * <p>📌 同族坑：{@code git status} 会把这三份 xlsx 显示成 {@code M}（被改过），
+     * 🚫 <b>不要 commit</b> —— 那会把加密副本写进仓库。
+     *
+     * @param repoRelPath 相对仓库根的路径（用 {@code /} 分隔，含中文原样传）
+     */
+    protected static byte[] gitBlobAtHead(String repoRelPath) {
+        Path root = repoRoot();
+        ProcessBuilder pb = new ProcessBuilder("git", "show", "HEAD:" + repoRelPath);
+        pb.directory(root.toFile());
+        pb.redirectErrorStream(false);
+        byte[] bytes;
+        String stderr;
+        int code;
+        try {
+            Process proc = pb.start();
+            try (java.io.InputStream out = proc.getInputStream();
+                 java.io.InputStream err = proc.getErrorStream()) {
+                bytes = out.readAllBytes();
+                stderr = new String(err.readAllBytes(), StandardCharsets.UTF_8);
+            }
+            code = proc.waitFor();
+        } catch (Exception e) {
+            throw new AssertionError("🔴【环境前置未就绪，非产品缺陷】跑不了 git show HEAD:" + repoRelPath
+                    + "（仓库根=" + root + "）", e);
+        }
+        assertEquals(0, code, notReady("git blob",
+                "git show HEAD:" + repoRelPath + " 返回 " + code + "，stderr=" + stderr
+                        + "\n  ⇒ 该文件在 HEAD 里不存在或路径写错了", "git 仓库"));
+        assertTrue(bytes.length > 0, notReady("git blob",
+                "git show HEAD:" + repoRelPath + " 读出 0 字节", "git 仓库"));
+
+        // 验明正身：必须是真 zip（xlsx = PK\x03\x04）。不是就当场说清是 DLP 加密，
+        // 🚫 不要让 POI 抛一句看不懂的 ZipException 把人引去查「模板结构变了」。
+        String head4 = String.format("%02x%02x%02x%02x", bytes[0], bytes[1], bytes[2], bytes[3])
+                .replace("ffffff", "");
+        System.out.println("[git blob] HEAD:" + repoRelPath + " → " + bytes.length + " 字节，文件头=" + head4);
+        return bytes;
+    }
+
+    /** {@link #gitBlobAtHead} 的 xlsx 专用版：额外断言取回的确实是未加密的 zip。 */
+    protected static byte[] gitXlsxAtHead(String repoRelPath) {
+        byte[] b = gitBlobAtHead(repoRelPath);
+        boolean isZip = b.length > 4 && b[0] == 'P' && b[1] == 'K' && b[2] == 3 && b[3] == 4;
+        assertTrue(isZip, notReady("git blob(xlsx)",
+                "HEAD:" + repoRelPath + " 取回的不是 zip（xlsx 应以 PK\\x03\\x04 开头）"
+                        + "，实得首 4 字节=" + String.format("%02x %02x %02x %02x", b[0], b[1], b[2], b[3])
+                        + "\n  🔑 若首字节是 87 7d 1c ⇒ 连 git HEAD 里的那份也是**企业 DLP 加密**副本"
+                        + "（有人把加密态 commit 进去了），本条判【未验证】，"
+                        + "🚫 不要换一个别的模板文件来凑绿。",
+                "task-260902 的模板文件"));
+        return b;
+    }
+
     protected static String md5(byte[] bytes) {
         try {
             MessageDigest md = MessageDigest.getInstance("MD5");
@@ -295,8 +380,11 @@ public abstract class V9TestBase {
     /**
      * 取某方言某页签类型的锚点节点 {@code (node_key, physical_table, short_name, node_id)}；不存在返回 null。
      *
-     * <p>⚠️ 页签类型「BOM 树」在服务端存的就是 {@code 'BOM 树'}（带空格），前端本地常量是 {@code 'BOM'} ——
-     * 这是 {@code api.md v9-3} 登记的存量跨端不一致，本任务不改。传参一律用服务端口径。
+     * <p>🔑 <b>{@code tabType} 传的是库值，不是显示名</b>（D-39）：BOM 树页签的<b>存储值 = {@code 'BOM'}</b>，
+     * 「BOM 树」只是前端 Select 的 <b>label</b>。V413 种子一度把显示名写进了
+     * {@code semantic_tab_view.tab_type} 这个键值列，已由 <b>V417</b>（B-54，用户 2026-09-05 批准）改回
+     * {@code 'BOM'}，并加了启动期自检 {@code SemanticGraphKeyValueSelfCheck} 防第三次。
+     * ⇒ 调用方一律传 {@code 'BOM'}；传 {@code 'BOM 树'} 会查不到行而静默返回 null。
      */
     protected Object[] anchorNode(String dialect, String tabType) {
         List<Object[]> r = rowList(

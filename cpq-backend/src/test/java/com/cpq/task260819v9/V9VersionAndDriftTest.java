@@ -26,12 +26,26 @@ import static org.junit.jupiter.api.Assertions.fail;
  * <h3>本类不改任何全局状态</h3>
  * 全部只读 SQL + 只读端点。AC-126 的反证是<b>一条 SELECT</b>（故意让 PG 报类型错），不写任何数据。
  *
- * <h3>🚨 AC-125 的一半我做不了，已在回报里单列为「未验证」</h3>
- * AC-125 要求「做成<b>启动期自检</b>，不一致直接启动失败」。要证伪它（人为制造漂移 → 确认后端真的起不来），
- * 必须 {@code ALTER TABLE ds_cost_*} 加一列 —— 而那是 {@code task-260902} 的表、迁移 checksum 已锁死，
- * 属 {@code CLAUDE.md} §3.2 契约销毁 + backtask 全局约束③（「ds_* 45 张表的表结构不许改」）。
- * <b>我没有批准权，停下报告。</b>安全替代方案已写成 {@code golden/ac125-drift-probe.sh}（建克隆库跑），
- * 需主线批准后执行。本类只验<b>不变量本身</b>（视图列 = 主表列 + is_current，无差集）。
+ * <h3>AC-125 的分工：静态不变量在本类，启动期反证的证据由后端 #2 提供</h3>
+ * AC-125 有两半：
+ * <ol>
+ *   <li><b>不变量</b>（26 张视图列 = 主表列 + {@code is_current}，双向无差集）—— 本类
+ *       {@link #ac125_versionViewsHaveNoColumnDrift} 负责，纯 SQL，随时可跑。</li>
+ *   <li><b>「不一致则启动失败」</b>—— 要证伪它必须 {@code ALTER TABLE ds_cost_*}，那是 task-260902 的表、
+ *       迁移 checksum 已锁死，属 {@code CLAUDE.md} §3.2 契约销毁 + backtask 全局约束③，
+ *       <b>测试工程师没有批准权</b>。
+ *       ✅ <b>该半已由 cpq-backend #2 在克隆库 {@code cpq_b42_flyway} 上完成 A/B 实证</b>
+ *       （2026-09-03，主线转述并将在闸门 B 引用原始输出）：
+ *       <pre>
+ *       A 轮（无漂移）：正常启动
+ *         [builder] 全版本视图自检通过：26 张 v_&lt;主表&gt;_all，逐列与主表双向一致（+is_current）
+ *       B 轮（注入 ALTER TABLE ds_cost_basic_material_bom ADD COLUMN drift_probe）：启动失败
+ *         IllegalStateException: [builder] 核价全版本视图 v_&lt;主表&gt;_all 与 ds_cost_* 主表不一致，共 1 处：
+ *           - v_ds_cost_basic_material_bom_all 缺列 drift_probe（该列在取数配置器里永远查不到）
+ *       </pre>
+ *       ⇒ <b>AC-125 不再是交付缺口</b>；{@code golden/ac125-drift-probe.sh} 随之作废，
+ *       保留仅作方法留痕（不要再向共享库报批执行它）。</li>
+ * </ol>
  */
 @QuarkusTest
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
@@ -139,9 +153,10 @@ class V9VersionAndDriftTest extends V9TestBase {
                 "AC-125: 全版本视图与主表列必须无差集（视图列 = 主表列 + is_current）：" + err
                         + "\n  🚨 这是漂移探针：UNION 显式列举列 ⇒ task-260902 给主表加列时视图不会报错，"
                         + "只会**静默丢列**，对方的自检照样通过 ⇒ 新列永远查不到且零信号（D-84′）。"
-                        + "\n  ⚠️ 本用例只验『不变量此刻成立』；AC-125 要求的『启动期自检不一致则启动失败』"
-                        + "这一半**本用例验不了** —— 证伪它要 ALTER TABLE ds_cost_*，属 §3.2 契约销毁 + "
-                        + "backtask 全局约束③，测试工程师没有批准权。见 golden/ac125-drift-probe.sh（需主线批准）。");
+                        + "\n  ⚠️ 本用例只验『不变量此刻成立』；AC-125 的另一半『启动期自检不一致则启动失败』"
+                        + "由 cpq-backend #2 在克隆库 cpq_b42_flyway 上做过 A/B 实证（无漂移正常启动 / "
+                        + "注入 ALTER TABLE ... ADD COLUMN drift_probe 后抛 IllegalStateException 并点名缺列），"
+                        + "证据由主线在闸门 B 引用。⇒ 本条不是交付缺口。");
 
         // 反向：报价侧那 13 张不该建视图（S-31 明写「报价侧不建」）
         List<String> quoteViews = strList(

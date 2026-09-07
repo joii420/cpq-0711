@@ -154,25 +154,85 @@ class V9ValidationAndCiTest extends V9TestBase {
     // AC-121（反证型）CI 断言改读新图
     // ═══════════════════════════════════════════════════════════════
     @Test
-    @Order(121)
-    @DisplayName("AC-121【反证】: 边基数断言在新图上 —— 正常全绿；人为把一条边写成 MANY_TO_ONE 必须变红并指名；改回变绿")
-    void ac121_edgeCardinalityCiAssertion() {
-        // ── ① 正常：库里全部 ACTIVE 的 MANY_TO_ONE 边，右侧连接键在目标关系里必须唯一
+    @Order(1211)
+    @DisplayName("AC-121①: MANY_TO_ONE 边右键唯一（当前空真）+ NARROW 桥收窄输入唯一（阳性对照，真跑）")
+    void ac121a_edgeCardinalityGreenOnCurrentData() {
         List<Object[]> m2o = rowList(
                 "SELECT e.id::text, tn.physical_table, ek.right_column FROM semantic_edge e "
                         + "JOIN semantic_node tn ON tn.id = e.to_node_id "
                         + "JOIN semantic_edge_key ek ON ek.edge_id = e.id AND ek.seq = 0 "
                         + "WHERE e.cardinality='MANY_TO_ONE' AND e.status='ACTIVE' "
                         + "AND tn.physical_table IS NOT NULL");
-        System.out.println("[AC-121①] 库中 ACTIVE 的 MANY_TO_ONE 边 = " + m2o.size() + " 条");
-        assertFalse(m2o.isEmpty(), notReady("AC-121",
-                "库里一条 MANY_TO_ONE 边都没有 —— ① 的『全绿』等于断言从未执行", "cpq-backend #2 / B-42"));
+        System.out.println("[AC-121①] 库中 ACTIVE 且 to 节点有物理表的 MANY_TO_ONE 边 = " + m2o.size() + " 条");
+
+        // 🚦 2026-09-04：本处原为硬前置 assertFalse(m2o.isEmpty())。v9 新图上唯一一条
+        //    MANY_TO_ONE 边指向 FUNCTION 节点 FUNC_ELEMENT_PRICE（physical_table 为 NULL）
+        //    ⇒ 本集合恒为空，前置恒红。这与 S-29-a 是**结构完全相同**的一个问题，
+        //    主线 2026-09-04 对 S-29-a 的裁决是【方案 A：改成不变量 + 阳性对照，不作废】。
+        //    ✅ 这里按同一形态套用：不变量保留（将来加边即生效）+ 补一条真跑得起来的阳性对照。
+        //    ⚠️ 这是测试工程师对已有裁决的**同型套用**，不是新裁决；已在回报里点名，
+        //       若主线认为超出授权请打回。AC-121 原文的验收判据是反证型（②③，见 ac121b），
+        //       原文另明写「只证明『现在是绿的』不算通过」⇒ ① 本就不是验收判据。
+        int asserted121 = m2o.size();
+
+        // 阳性对照：NARROW 桥边的输入收窄唯一性（AC-112①「不扇出」的全部安全性所在）
+        List<Object[]> narrowBridges = rowList(
+                "SELECT DISTINCT tn.physical_table, ek.right_column FROM semantic_edge e "
+                        + "JOIN semantic_node tn ON tn.id = e.to_node_id "
+                        + "JOIN semantic_edge_key ek ON ek.edge_id = e.id AND ek.seq = 0 "
+                        + "WHERE e.edge_kind='NARROW' AND e.status='ACTIVE' "
+                        + "AND tn.physical_table IS NOT NULL");
+        System.out.println("[AC-121①/阳性] NARROW 桥（表, 右键） = " + narrowBridges.stream()
+                .map(r -> r[0] + "." + r[1]).toList());
+        assertFalse(narrowBridges.isEmpty(), notReady("AC-121①",
+                "库里既没有『有物理表的 MANY_TO_ONE 边』也没有 NARROW 桥边 —— 两条腿同时断，断言从未执行",
+                "cpq-backend #2 / B-42"));
+
+        for (Object[] b : narrowBridges) {
+            String table = String.valueOf(b[0]);
+            String rightCol = String.valueOf(b[1]);
+            // 收窄输入列：D-110 方向为销售料号 material_no → 生产料号 production_no
+            String inputCol = "material_no";
+            assertTrue(relationHasColumn(table, inputCol),
+                    "AC-121① 前置：桥表 " + table + " 没有收窄输入列 " + inputCol
+                            + " ⇒ D-110 的「输入收窄」方向已变，判据需重定");
+            long rows = scalarLong("SELECT count(*) FROM " + quoteIdent(table));
+            assertTrue(rows > 0, notReady("AC-121①",
+                    "桥表 " + table + " 0 行 —— 空表上「输入列唯一」恒成立，阳性对照会退化成空跑", "环境"));
+            long fanOut = scalarLong("SELECT count(*) FROM (SELECT " + quoteIdent(inputCol) + " FROM "
+                    + quoteIdent(table) + " WHERE " + quoteIdent(inputCol) + " IS NOT NULL GROUP BY 1 "
+                    + "HAVING count(DISTINCT " + quoteIdent(rightCol) + ") > 1) t");
+            System.out.println("[AC-121①/阳性] " + table + ": 行数=" + rows + "，"
+                    + inputCol + " 映射到多个 " + rightCol + " 的值 = " + fanOut + " 个");
+            assertEquals(0L, fanOut,
+                    "AC-121①/阳性对照：" + table + " 上有 " + fanOut + " 个 " + inputCol
+                            + " 值映射到多个 " + rightCol
+                            + " ⇒ 桥收窄会扇出，AC-112①「不翻倍」不再成立。");
+            asserted121++;
+        }
+        assertTrue(asserted121 > 0, "AC-121①: 真正执行了断言的对象数 = 0，本方法等于空跑。");
 
         String violations = checkAllManyToOneEdges();
-        assertEquals("", violations, "AC-121①: 正常数据下全部 MANY_TO_ONE 边右键应唯一，违规=" + violations);
+        assertEquals("", violations,
+                "AC-121①: 现状数据下全部 MANY_TO_ONE 边右键应唯一，违规=" + violations
+                        + "\n  ⚠️ 判定前先分清两种成因（testing.md §4.1.5「必现≠缺陷」）："
+                        + "\n    (a) **种子把边声明错了** ⇒ 语义图缺陷，归 cpq-backend #2；"
+                        + "\n    (b) **共享库里是别的会话的夹具残留** ⇒ 数据污染，不是产品缺陷。"
+                        + "\n  分辨办法：看重复值长什么样。带 TEST-/V9T-/DEMO- 之类前缀的基本是 (b)。");
+    }
+
+    @Test
+    @Order(1212)
+    @DisplayName("AC-121②③【反证】: 新增一条右键重复的 MANY_TO_ONE 边必须被拒并指名；改成 ONE_TO_MANY 同一请求成功")
+    void ac121b_edgeCardinalityFalsification() {
+        // ⚠️ 与 ①分开成两个方法：①红了不能挡住②执行 ——
+        //    反证被前置断言挡掉 = 反证「未验证」，那正是本轮要避免的形态。
 
         // ── ② 反证：新增一条「右键必然重复」的边并声明成 MANY_TO_ONE
         //    🚫 不去改别人的种子边（改坏了别人当场受影响）；改用「插自己的边」，证伪力相同、风险面小得多。
+        String baselineViolations = checkAllManyToOneEdges();
+        System.out.println("[AC-121②] 干预前的违规基线 = " + (baselineViolations.isEmpty() ? "(空)" : baselineViolations));
+
         Dup dup = findDuplicatedKeyColumn();
         assertNotNull(dup, notReady("AC-121",
                 "在全部 SHEET 节点里找不到任何『存在重复值的列』，无法构造右键必然重复的反证边",
@@ -221,9 +281,12 @@ class V9ValidationAndCiTest extends V9TestBase {
                     fromNodeId, dup.nodeId, dup.column);
             assertNotNull(createdEdgeId, "AC-121③: 保存成功但库里找不到这条边");
 
-            // ④ 加了这条 ONE_TO_MANY 边之后，①的断言仍应全绿（它只管 MANY_TO_ONE）
-            assertEquals("", checkAllManyToOneEdges(),
-                    "AC-121④: 新增一条 ONE_TO_MANY 边后，MANY_TO_ONE 断言仍应全绿");
+            // ④ 加了这条 ONE_TO_MANY 边之后，MANY_TO_ONE 断言的违规集**不得增加**
+            //    （🚫 不断言"全绿" —— 现状数据本身可能已有违规，那属于 ①的范畴，不该在这里重复判）
+            String after = checkAllManyToOneEdges();
+            assertEquals(baselineViolations, after,
+                    "AC-121④: 新增一条 ONE_TO_MANY 边不应让 MANY_TO_ONE 断言多出违规。"
+                            + "\n  之前=" + baselineViolations + "\n  之后=" + after);
         } finally {
             // 还原：删掉本用例建的边 + 它的连接键。正向条件，只删这一条。
             if (createdEdgeId != null) {
@@ -258,8 +321,12 @@ class V9ValidationAndCiTest extends V9TestBase {
                         .append("（这属于物理存在性问题，同样要红）");
                 continue;
             }
+            // 🚨 必须排除 NULL/空 —— JOIN 语义下 NULL 永不匹配，NULL 组不构成"多对一被破坏"。
+            //    实测教训：ds_quote_material 42 行里 20 行 production_no 为 NULL，
+            //    不排除的话 GROUP BY 会把它们聚成 1 个"重复组"，把每条桥边都误判成违规（假阳性）。
             long dupGroups = scalarLong("SELECT count(*) FROM (SELECT " + quoteIdent(col) + " FROM "
-                    + quoteIdent(table) + " GROUP BY 1 HAVING count(*) > 1) t");
+                    + quoteIdent(table) + " WHERE " + quoteIdent(col) + " IS NOT NULL AND "
+                    + quoteIdent(col) + "::text <> '' GROUP BY 1 HAVING count(*) > 1) t");
             if (dupGroups > 0) {
                 v.append("\n  边 ").append(e[0]).append(": ").append(table).append('.').append(col)
                         .append(" 有 ").append(dupGroups).append(" 组重复值，不能声明为 MANY_TO_ONE");
@@ -292,7 +359,8 @@ class V9ValidationAndCiTest extends V9TestBase {
             long n;
             try {
                 n = scalarLong("SELECT count(*) FROM (SELECT " + quoteIdent(col) + " FROM "
-                        + quoteIdent(table) + " GROUP BY 1 HAVING count(*) > 1) t");
+                        + quoteIdent(table) + " WHERE " + quoteIdent(col) + " IS NOT NULL AND "
+                        + quoteIdent(col) + "::text <> '' GROUP BY 1 HAVING count(*) > 1) t");
             } catch (Exception e) {
                 continue;
             }
