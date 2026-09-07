@@ -47,7 +47,8 @@
       "axes": 3,                     // 将被触碰的「表×轴值」组数
       "upgradedGroups": 2,           // 判定为 UPGRADED 的组数
       "unchangedGroups": 1,          // 判定为 UNCHANGED 的组数（一行不写）
-      "unanchoredRows": 1            // 🔴 「无法对齐」的行数，>0 时前端必须显著提示
+      "unanchoredRows": 1,           // 🔴 「无法对齐」的行数，>0 时前端必须显著提示
+      "recordStale": false           // 🆕 D-35 布尔，便于前端直接做红条
     },
     "tables": [
       {
@@ -84,6 +85,12 @@
         ]
       }
     ],
+    "recordStale": {                 // 🆕 D-35：本单的 _record 快照写失败过 ⇒ 预览内容可能不是最新
+      "stale": true,
+      "reason": "WRITE_FAILED",
+      "detail": "IllegalStateException: …",   // 🚫 仅排障，前端**不得**直接当用户文案渲染
+      "detectedAt": "2026-09-07T06:17:29Z"
+    },
     "nonParticipating": [            // 🆕 D-33：不参与基础数据升版的组件（手写视图，无 builder_config）
       { "componentId": "…", "componentName": "投料", "reason": "NO_BUILDER_CONFIG" }
     ],
@@ -108,7 +115,12 @@
 1. `untouchedRows` **必须出现在响应里**，且前端**必须渲染**。它是 `AP-60` 的守卫：财务要能看见「这一组有 7 行本次不动」，否则「不写 = 删除」这类后果就永远不在她的视野里。
 2. `unanchoredRows` 非空时，`confirmRequired` 仍为 `true` 但前端**必须显著提示**；🚫 不许折叠进「更多」里。
 3. `result: "UNCHANGED"` 的组仍要出现在列表里（带 `patchedRows: 0`），🚫 不许过滤掉 —— 否则财务无法区分「这张表没变」和「这张表根本没被算进去」。
-4. 🆕 **`nonParticipating` 非空时前端必须显式告知**（`D-33`）：「本单有 N 个组件不参与基础数据升版」。🚫 不许静默 —— 实测现网 156/228 个组件视图是手写的（无 `builder_config`），财务会以为全覆盖了。这与 `AP-60` 判据四（「不写 = 删除」不在 diff 模型里）是同型的静默。
+4. 🆕 🚨 **`recordStale.stale === true` 时前端必须显著提示**（`D-35`）：「**此刻预览的内容可能不是报价单的最新数据**」。
+   🚫 不许折叠、不许静默。文案由前端按 `reason` 映射，**🚫 不许把 `detail` 里的异常原文给财务看**。
+   ⚠️ `recordStale` 非空时 `applicable` 恒 `true`（即使 `tables=[]`）—— 否则警告恰好在最该出现时整块不渲染，与 `D-33` 同理。
+5. 🆕 **`unanchoredRows[].reason` 与 `nonParticipating[].reason` 是两套独立值域**（后端实测交集为空，定义在两个不同的类）。
+   🚫 **前端不许合并成一张映射表。** 行级实测有三个值：`NO_ANCHOR` / `CROSS_VERSION_FINGERPRINT_MISS` / **`SAME_VERSION_ORIGIN_MISS`**（同版但 `origin_id` 没命中）。
+6. 🆕 **`nonParticipating` 非空时前端必须显式告知**（`D-33`）：「本单有 N 个组件不参与基础数据升版」。🚫 不许静默 —— 实测现网 156/228 个组件视图是手写的（无 `builder_config`），财务会以为全覆盖了。这与 `AP-60` 判据四（「不写 = 删除」不在 diff 模型里）是同型的静默。
 
 ### 错误码
 
