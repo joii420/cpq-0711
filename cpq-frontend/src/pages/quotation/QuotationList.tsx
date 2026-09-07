@@ -12,7 +12,10 @@ import { useNavigate } from 'react-router-dom';
 import { quotationService } from '../../services/quotationService';
 import { quotationSnapshotService } from '../../services/quotationSnapshotService';
 import { useAuthStore } from '../../stores/authStore';
-import QuoteBasicDataImportV6Drawer from './QuoteBasicDataImportV6Drawer';
+// task-260907 · F-1（AC-13）：旧「从基础数据导入」入口已下线 —— 它调的
+// `POST /basic-data-import/v6/quote/create-quotation` 已被 B-10 摘除（实测返 410），
+// 按钮留着只会把用户带进死路。抽屉组件 `QuoteBasicDataImportV6Drawer` 与其
+// service 文件本身暂留仓库（未删），但**已无任何引用**。
 import CopyQuotationDrawer from './CopyQuotationDrawer';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
 // task-260907 · F-2（AC-13 / AC-19）：「导入报价数据」改开**建单专用**抽屉（选客户 → 上传 → 建单）。
@@ -56,8 +59,7 @@ const QuotationList: React.FC = () => {
   const [keyword, setKeyword] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [loading, setLoading] = useState(false);
-  const [basicImportOpen, setBasicImportOpen] = useState(false);
-  // task-260907 · F-2：建单专用导入抽屉（新建），与上面那个 V6 抽屉**互不影响**
+  // task-260907 · F-2：建单专用导入抽屉
   const [quoteDatasetImportOpen, setQuoteDatasetImportOpen] = useState(false);
   // task-260907 · F-2（AC-19）：权限判据改按 api.md §1 的角色白名单（销售/销售经理/管理员），
   // 🚫 不再用 `DATASET_EDIT_ROLES`（PRICING_MANAGER/SYSTEM_ADMIN）—— 那是维护页写端点的口径。
@@ -279,12 +281,8 @@ const QuotationList: React.FC = () => {
         <Button icon={<HistoryOutlined />} onClick={() => navigate('/import-history')}>
           导入历史
         </Button>
-        <Button type="primary" icon={<ImportOutlined />} onClick={() => setBasicImportOpen(true)}>
-          从基础数据导入
-        </Button>
         {/* task-260907 · F-2（AC-13 / AC-19）：位置固定在「新建报价单」之前。
-            ⏸ 「从基础数据导入」按钮的摘除是 F-1（P2，排在 S-5 模板落地之后），本次**刻意保留** ——
-               新模板未到位前摘掉旧入口，用户只剩一条没通的路（fronttask.md §0 第 4 条）。
+            ✅ F-1 已执行：旧「从基础数据导入」按钮已摘除（S-5 模板已落地，新链路已通）。
             无权限时**禁用但可见** + hover 出原因（frontend.md §1.2）。 */}
         <Tooltip title={canImportQuoteDataset ? undefined : QUOTE_IMPORT_NO_PERMISSION_TIP}>
           <Button
@@ -329,7 +327,6 @@ const QuotationList: React.FC = () => {
         rowLabel={(r: any) => `${r.quotationNumber} ${r.name}${r.snapshotCustomerName ? ' · ' + r.snapshotCustomerName : ''}`}
       />
 
-      <QuoteBasicDataImportV6Drawer open={basicImportOpen} onClose={() => { setBasicImportOpen(false); loadData(); }} />
       <QuotationDatasetImportDrawer
         open={quoteDatasetImportOpen}
         onClose={() => setQuoteDatasetImportOpen(false)}

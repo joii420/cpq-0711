@@ -437,3 +437,139 @@ D-28 已批准 `createdb cpq_t260907_ac7` + 跑完 `dropdb`。B-11 的迁移 **V
 E2E spec 建的报价单**不带料号前缀**，JUnit 基座的前缀还原清不到它 ⇒ 实测攒了 **3 张**。
 已按名称清空，并给 spec **补了 `afterAll` 自清理**。
 E2E 导入的 **58 行**夹具也已按前缀清净。
+
+---
+
+# 📋 收口：22 条 AC 逐条状态（供闸门 B）
+
+> 统计时点 2026-09-07。分三类：**已验 / 阻塞（含外部依赖）/ 未验（含原因）**。
+> 🚫 「没跑」一律不记作「通过」。
+
+## A. 已验通过（16 条）
+
+| AC | 用例 | 层 | 关键实测证据 |
+|---|---|---|---|
+| AC-1 | T1.1 / T4.1 | L1+L4 | 明细行 **3**（= 客户料号 sheet 行数，≠ 物料表 8 料号）；`quotationNumber` 非空；编辑页产品卡片数 **3** |
+| AC-2 | T1.2 | L1 | 缺 `customerId` → 400 且消息点名；29 表 count 逐表不变 |
+| AC-3 | T1.3 | L1+L2 | B-15 修复后：200+PROCESSING → 终态 `FAILED`，错误含「本次导入客户 CUST-0004 / 出现 CUST-0001 / 第 5 行」三要素；各表 count 不变 |
+| AC-4 | T1.4 / T1.3b | L1+L2 | 整份拒收 + **逐条**（2 行非法各 1 条）+ 零写库；B-16 后 `errors[].value` **逐条目查字段**通过；D-19 与 B-15 **同批报出**、同一行各报一条 |
+| AC-5 | T1.5 | L1 | 轮询 200 / 终态 SUCCESS / `systemType=DATASET_QUOTE` / summary 非空；`import_record` 落库正确 |
+| AC-6 | T4.2 | **L4** | **13 个平铺页签行数逐一命中**（物料 1 · 材质元素 3 · 8 张费用表各 **2**）。⚠️ 第 14 个树页签见 §B |
+| AC-7 | T2.1 | L2 | 临时库只跑 V421：模板 **1** 张 · `builder_version` NULL **0** 个 · `template_component` **13** · 第二遍 **40 条全 `INSERT 0 0`** |
+| AC-9 | T4.4 | **L4** | 12.5 → 77.5，**三个时点全 77.5**；证伪：带外改权威存储 `row_data` → 刷新后 DOM 跟随（证明时点3 真读服务端） |
+| AC-10 | T1.6 | L1+L2 | `SUBMITTED` + `submission_snapshot` 非空 + `quotation_component_sql_snapshot` **13 行** |
+| AC-11 | T1.7 | L1 | 核价通过 200 → `APPROVED`，不抛异常 |
+| AC-12 | T1.8 | L1+L2 | 13 张带版本表全 `created=0,upgraded=0`；`version_no` 逐行不变；`_history` 零新增；**免版本 3 张业务内容指纹不变** |
+| AC-15 | T1.10 | L1 | **结构层**：14 端点字段集/嵌套结构逐一相同（骨架比对，已证伪）；**数据层**：唯一差异可归因到并发夹具 |
+| AC-16 | T1.11 | L1+L2 | 预览端点直接返回 `versionedGroups/addedRows/deletedRows/changedRows` **全 0** 且 `groups:[]`（= 跑了但无可回填，非「没跑」）；**V6 八张表** md5 + 行数逐表不变；无 ERROR |
+| AC-17 | T1.12 | L1+L2 | 空 sheet 导入后 count / `version_no` / `_history` **三者全不变**（前置先写入，非 0→0 空验证） |
+| AC-18 | T1.13 | L1 | 200 + `lineItemsCount=0` + 库内 0 行 |
+| AC-19 | T1.14 | L1 | `PRICING_MANAGER` 调三个新端点全 **403**；`quotation` 行数不变。<br>⚠️ AC-19② 的「按钮禁用但可见」**路由层不可达**（`QUOTATION_MGMT_ROLES` 与导入白名单相同），**不验**，不为凑证据造产品里不存在的状态 |
+| AC-20 | 部分 | L1 | 导入段实测：1845 料号 **1789ms**（次线性，离 60s 超时 30 倍余量）。⚠️ **建单同步段未测**，见 §C |
+| AC-21 | T1.16 | L1+L2 | 同料号 2 个明细行；`product_part_no_snapshot` 相同、`customer_part_no` 不同；`sort_order` 0,1,2 |
+
+> 📌 AC-20 同时出现在「已验」与「未验」——**导入段已验、建单同步段未验**，不合并计数。
+
+## B. 阻塞（外部依赖，🚫 不计为本任务失败）
+
+| AC | 用例 | 卡在谁 | 实测证据 |
+|---|---|---|---|
+| **AC-6 的树页签** | T4.2b（已留为**回归哨兵**，标 `fixme`） | `取数配置器补齐` **B-7** | 树只出根行。归因：`ds_quote_material_bom` 本套 BOM **6 行俱在**、其余 13 页签同源渲染正常；而两条 active `costing_bom_tree_config` 的 SQL 都读 **V6 裸表 `material_bom_item`**，该表本套料号 **0 行**；`v_compat_material_bom_item` 则 **6/6 全覆盖** ⇒ 改读兼容视图即可解 |
+| **AC-8** | T4.3 | 上游语义节点（`f_customer_element_price` 节点 + PRICE 边） | ds 模板的「物料与元素BOM」12 个字段中**没有元素单价列**；`element_code_field/element_price_field/element_currency_field` **三绑定全空**；14 个组件引用任一元素价格函数的 **0 个** ⇒ 该列不存在，AC-8 结构上不可能通过 |
+| **AC-22** | T1.17（未写） | `报价侧加客户维度`（28 表 `customer_no` DDL） | DDL 未落地（实测仅 `ds_quote_customer_part` 一张有 `customer_no`） |
+| **R-2 / R-3** | — | 同 AC-8 / AC-6 树 | 两条证伪都依赖模板侧尚未就位的能力 |
+
+## C. 未验（附原因，🚫 不算通过）
+
+| 项 | 原因 |
+|---|---|
+| **AC-14 / T1.9** | 旧端点仍返 400 而非 410 —— **B-10 属 ⏸ P2 批**，按 §2.3b 排在 S-5 之后，**按计划未实现，非缺陷** |
+| **AC-20 的建单同步段** | 只测了导入段（1845 料号 1789ms）。建 1845 个明细行的同步耗时与 SQL 条数**未测** |
+| **AC-16① 的日志摘要** | 42 条日志中未捕获 `QuoteBackfillService` 关键字。①的结论由预览端点的结构化四计数器独立支撑，**不依赖这条日志**；但日志项本身如实标「未验证」 |
+| **T4.2 在 v1.1 上的复跑** | 环境不稳未完成（见下）。**已用 SQL 定量替代**：v1.1 = v1.0 的**同一批 13 个组件**（0 删除、0 修改，`sql_view` 自 v1.0 建成后 `updated_at` 变更 **0** 次）+ 新增 `COMP-2254` ⇒ 纯加法，v1.0 的实测结果适用于这 13 个。**严格意义的 v1.1 复跑仍标未完成。** |
+| **L3 前端用例 T3.1~T3.6** | 未单独执行；其中 T3.4 的「禁用态」子项按 AC-19② 路由层不可达 |
+
+## D. 环境风险（会影响后续复跑，须知会闸门 B）
+
+1. 🚨 **本 worktree 的 Quarkus dev 实例不稳定**：一次跑测期间**重启 3 次**（`Restarting quarkus due to changes in ...`，因后端代理在同一 worktree 编译），后又出现「进程在、端口不监听」的卡死。
+   症状是 `ECONNREFUSED`，而测试前后手工 curl 都通 —— 典型的 §4「随机挂」。
+   **已做结构性缓解**：spec 加了 `waitBackendReady()` 就绪闸（业务端点 401/200 才放行），它把这类失败**报成基础设施问题而不是产品红**。
+2. ⚠️ 共享库上同时挂多个 Quarkus 实例，`AC-16` 那类「逐字不变」断言有被并发写入误红的风险 —— **若复跑变红，先查并发写入再查代码**。
+3. ⚠️ 两个临时库 `cpq_t260907_ac7`（来路不明）/ `cpq_t260907_ac7b`（我建、已验完）**均未删除**：`dropdb` 被权限系统拦下，**未绕行**。
+
+## E. 共享库最终状态（逐项实测）
+
+| 检查 | 结果 |
+|---|---|
+| `ds_quote_*` 的 `T260907T-` 夹具残留 | **0** ✅ |
+| 本套建的报价单残留 | **0** ✅ |
+| 用户指定保留的 6 张验证单 | **6 张全在** ✅ |
+| 后端夹具 `T260907-M1/M2` | **未触碰** ✅ |
+| 主工作区 5174 / 8081 | **200 / 401**，未受临时栈影响 ✅ |
+
+🚫 全程无 `TRUNCATE` / `DROP` / 无 `WHERE` 的 `DELETE`；所有清理均前缀或主键限定并**先计数后执行**。
+
+---
+
+# 🔍 主线亲验（2026-09-07，`§4.5` 步骤 4）
+
+> 🚫 **本节与上面测试代理的结论相互独立。** 测试代理的「已验 16 条」是它的结论，不能替代主线亲验。
+> 环境：worktree 后端 `8096`（带 `-Dquarkus.flyway.migrate-at-start=false`，见下方注）+ 临时 vite `5196` 代理到 8096。
+
+## 已亲验通过
+
+| AC | 判据 | 实测原始输出 |
+|---|---|---|
+| **AC-14** | 两个旧端点返 410 且不建单 | `POST /basic-data-import/v6/quote/create-quotation` → **410** `{"code":410,"message":"报价基础数据导入已迁移至『导入报价数据』"}`；`POST /basic-data-import/v6/quote`（**真 multipart xlsx**）→ **410**；`quotation` **272 → 272** |
+| **AC-16 的前提** | 新组件不触及回填白名单 | 14/14 组件：读 `v_compat_*` **0** 个、读白名单物理表 **0** 个、读 `ds_quote_*` **14** 个。且 `QuotePendingRewriter` javadoc 实证：兼容视图新表侧 `pending_quotation_id` 恒 `NULL`，而回填两条 UPDATE 都带 `WHERE pending_quotation_id = :qid` ⇒ **结构上选不中** |
+
+⚠️ **一次自我更正**：`POST /v6/quote` 第一次实测返 **415**，我差点记成异常。实为**我发了 JSON 而它是 multipart 端点**，框架层挡在方法之前。换真 multipart 才拿到 410。**判据没问题，是我的调用方式不对。**
+
+| **AC-3 / AC-4** | 跨客户整份拒收 + 逐条报错 + 零写库 | 提交 `T260907-组合负例-D19与B15.xlsx`（选 `CUST-0004`）→ 同步段 **200 + PROCESSING**；轮询终态 **FAILED**；**3 条错误**，含<br>· `{"sheetName":"客户料号","rowNum":3,"columnLabel":"客户编号","value":"CUST-0001","reason":"本次导入客户为 CUST-0004，文件中出现其它客户编号：CUST-0001（第 3 行）。一份 Excel 只能属于一个客户"}`<br>· 第 4 行**同时**命中 D-19（「客户编号未在客户档案中登记」）与 B-15（「本次导入客户为…」）**各报一条** ⇒ 两条校验同批报出、不互相吞<br>· `errors[].value` **逐条有值**（B-16）<br>③ 16 张 `ds_quote_*` 行数 **逐表不变**（`diff` 为空），`_history`=17 / `_record`=7 未动 |
+| **AC-12 ①②③** | 幂等再导 | **第一次导入**：16 张表全部写入（8 张费用表 **0 → 3**，3 张年降表 **0 → 3**，`material` 49→57，`material_bom` 69→75）—— 📌 这一步同时填掉了 AC-6 「现网费用表全 0 行会导致空验证」那个坑<br>**第二次导入同一文件**：所有 `ds_quote_*`（**含 `_history` / `_record`**）行数**逐表不变**<br>**②免版本 3 张表**：业务内容 md5（`to_jsonb(z.*)` 去掉 `id`/四个审计列）**逐表相同** —— `material=e393e308…` `customer_part=079cc534…` `plating_scheme=a2374e01…`；同时实测 `ds_quote_material` 有 **8 行 `updated_at` 被刷新** ⇒ 确实走了 UPDATE，但值没变，正是 AC 原文「允许 UPDATE 但值必须一样」<br>**①带版本表**：`material_bom` / `element_bom` 最大 `version_no` 停在 **3** 未被顶<br>**③建单**：`POST /dataset/quote/create-quotation` → **200**，`QT-20260907-0519`，**`lineItemsCount=3`** |
+| **AC-1** | 建单明细行数 | 同上：**3 行** = 客户料号 sheet 行数，**≠ 物料表 8 个料号** —— 这是 AC-1 真正的判据（拿物料表行数会得到 8） |
+
+### 🔬 AC-12② 的证伪实验（判据自证会红）
+
+```
+BEGIN;
+UPDATE ds_quote_plating_scheme SET scheme_no = scheme_no||'#PROBE' WHERE id=(…LIMIT 1);   -- 改 1 行
+  指纹 → 855743229bbd054f94e1ffeab096a0d8      ← 与基线 a2374e017a7be8ac329615d571542770 不同 ✅
+ROLLBACK;
+  回滚后残留 #PROBE 行数 = 0                                                          ✅
+```
+
+🚫 **过程中我自己造过一次假绿，留痕**：第一版业务指纹用 shell heredoc 拼 `DO $$ … $$`，转义被 bash 吃掉导致 SQL 报错、两次都产出**空文件**，`diff` 比两个空文件当然"相同"，打出了一个 ✅。
+**改法不是重跑，是给量具加自证**：先断言指纹行数 `== 3`（`grep -c '=[0-9a-f]\{32\}$'`），不满足就 `exit 1` 停手。**判据必须先证明自己不是恒真的。**
+
+## 🔴 亲验抓到的缺陷（两个代理都没报）
+
+**`AC-13` 红 —— 且不是用例问题，是产品处在一个比两个终态都差的半成品状态。**
+
+```
+QuotationList.tsx:283            「从基础数据导入」按钮仍在渲染
+  └ onClick → setBasicImportOpen(true)
+     └ QuoteBasicDataImportV6Drawer.tsx:265
+        └ POST /basic-data-import/v6/quote/create-quotation
+           └ 实测 HTTP = 410   ← B-10 已把它下线
+```
+⇒ **按钮还亮着，用户点进去走到最后一步必然 410。**
+
+**为什么会这样（也是为什么两个代理都没报）**：
+`B-10`（后端返 410）在本批，`F-1`（前端摘按钮）被排进 **P2 批**，理由写在 `QuotationList.tsx:286`——
+> 「新模板未到位前摘掉旧入口，用户只剩一条没通的路」
+
+**那个理由当时成立**（S-5 未落地）。但 **S-5 已经落地**（14 组件 + 模板 v1.1 PUBLISHED），理由随之失效，**而没有任何机制会在前置条件满足时把 F-1 重新唤醒**。
+后端代理按计划做了 B-10 并如实汇报，测试代理按旧计划把 AC-13/AC-14 记成「按计划未实现，非缺陷」——**各自都对，合起来是错的**。
+
+📌 **判据沉淀**：**一对互补改动被拆进两个批次时，"只做一半"会产生一个第三种状态，而它可能比两个终态都差。** 拆批次时必须显式回答「只做前一半，系统长什么样」。
+
+⇒ 已派前端代理执行 F-1。
+
+## 环境注记
+
+`cpq-backend/src/main/resources/db/migration/V423__task260907_customer_element_price_node.sql`
+= `D-39` 作废 + 与并发线 `task-260907-报价侧加客户维度` 的 `V423` **撞号**，
+`§3.2` hook 拦住删除，用户已批准但尚未执行 `rm`。
+⇒ **本 worktree 起服务一律带 `-Dquarkus.flyway.migrate-at-start=false`**，且每次起完复查三项状态：
+`flyway 顶版 = 422` · `V423 记录 = 0` · `FUNC_CUSTOMER_ELEMENT_PRICE 节点 = 0`（三次起停均如此）。
