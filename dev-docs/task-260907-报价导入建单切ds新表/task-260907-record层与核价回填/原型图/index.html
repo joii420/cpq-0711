@@ -80,10 +80,16 @@
   </ul>
 
   <p class="muted" style="font-size:13px; margin-top:24px">
-    数据取自 2026-09-07 共享库 <span class="mono">cpq_db_0724</span> 实测：料号 <span class="mono">S-3120014539</span>（物料BOM 整组 9 行、项次 10~80）、
-    <span class="mono">S-2120011659</span>（4 行）、<span class="mono">VS-FG01</span>（5 行）；投入料号取自该组真实值。
-    🚫 无 lorem ipsum、无灰色占位块。
-  </p>
+    <b>数据出处（2026-09-07 实查共享库 <span class="mono">cpq_db_0724</span>）</b>：
+    客户名取自 <span class="mono">customer</span> 表 —— <span class="mono">CUST-0001</span>=罗克韦尔、<span class="mono">CUST-0004</span>=正泰；
+    极值屏用现网<b>最长客户名</b>（<span class="mono">CO Test Cust active_1788419415321</span>，33 字符）与<b>最长销售料号</b>（<span class="mono">TEST0813-P01-BD1</span>，16 字符）。
+    料号组取自 <span class="mono">ds_quote_material_bom</span> 真实数据：<span class="mono">S-3120014539</span>（整组 9 行、项次 10~80）、
+    <span class="mono">S-2120011659</span>（4 行）、<span class="mono">VS-FG01</span>（5 行），投入料号为该组真实值。
+    🚫 无 lorem ipsum、无灰色占位块。<br>
+    ⚠️ <b>2026-09-07 修正</b>：初稿的客户名（「苏州西门子」「西安中熔」「珠海格力…」）是<b>主线编造的</b>，
+    与 <span class="mono">customer</span> 表不符，违反 <span class="mono">frontend.md §1.3</span>「真实文案 + 真实示例数据」。
+    按该节判据「交付当天就不对 = 缺陷，就地修」已全部替换为实测值，并已通知在跑的前端代理重读。
+</p>
 
 </div>
 </body>
