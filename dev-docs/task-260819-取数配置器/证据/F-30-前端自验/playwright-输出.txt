@@ -1,0 +1,13 @@
+card text = 产品 / COMP-0088主件
+TABS: ["字段配置","取数配置","公式","SQL 视图"]
+AC-115① Segmented 选项 = ["报价","基础核价","明细核价"]
+AC-115① 顶部标签顺序 = ["数据集","页签类型"]
+AC-116 [QUOTE 选中] 面板 = {"quote":true,"cost_basic":false,"cost_detail":false,"groups":["▾ 物料·报价 (ds_quote_material)"],"count":"共 2 个字段"}
+已选输出列区文本(截断) = 已选输出列 | ⋮⋮ | c1 | 文本 | 料号 | 行键 | 金额 | 小计 | ✕
+[err] Warning: [antd: Modal] Static function can not consume context like dynamic theme. Please use 'App' component instead.
+AC-115④ 确认弹层数 = [33m1[39m | 标题 = 切换数据集会清空已选输出列
+AC-115④ 正文 = 从 报价 切到 基础核价，当前已选的 1 个输出列将被清空。 | 跨数据集的表与列完全不通——不像切页签类型还可能留下同名列，这里已选的列一个都保不住。
+AC-116 [COST_BASIC 选中] 面板 = {"quote":false,"cost_basic":true,"cost_detail":false,"groups":["▾ 物料·基础核价 (ds_cost_basic_material)"],"count":"共 2 个字段"}
+AC-115③ 页签类型下拉 = [{"text":"主件","disabled":false},{"text":"材质元素","disabled":false},{"text":"零件","disabled":false},{"text":"外购件（本数据集无）","disabled":true},{"text":"费用类","disabled":false},{"text":"BOM 树","disabled":false}]
+field-tree 请求记录 = [{"dialect":"QUOTE","tabType":"主件"},{"dialect":"QUOTE","tabType":"主件"},{"dialect":"COST_BASIC","tabType":"主件"},{"dialect":"COST_DETAIL","tabType":"主件"}]
+compile 请求体里的 dialect 值 = ["QUOTE"]

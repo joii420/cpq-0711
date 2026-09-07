@@ -24,9 +24,17 @@ public class BuilderConfig {
     public List<ColumnConfig> columns;
     public PriceStrategyConfig priceStrategy;
     /**
-     * task-260819 B-22（D-59）：编译方言（"QUOTE"/"COSTING"），仅 {@code POST /compile} 消费
-     * （{@code BuilderService#doCompile}），不是 {@code builder_config} JSONB 的持久化字段——
-     * api.md §2.1 的落库示例没有它。缺省/无法识别时按 QUOTE 处理（与改动前行为一致，零回归）。
+     * 编译方言 = 取哪套数据集（task-260819 B-22/D-59 引入，B-40/D-77 由两值扩到三值）。
+     * 取值必须是 {@link CompileDialect} 的枚举名：{@code "QUOTE"} / {@code "COST_BASIC"} /
+     * {@code "COST_DETAIL"}（原 {@code "COSTING"} 已随 V6 一并作废）。
+     * {@code compile}/{@code preview}/{@code inspect}/{@code save} 四个动作共用
+     * （{@code BuilderService#doCompile}）；不是 {@code builder_config} JSONB 的持久化字段——
+     * api.md §2.1 的落库示例没有它。
+     *
+     * <p>⚠️ <b>缺省/无法识别时按 {@code QUOTE} 处理</b>（{@code BuilderService#resolveDialect}，
+     * B-22 为零回归定的口径）。v9 三方言并存后这个宽容口径有了新的风险面：客户端拼错
+     * 或发旧值 {@code "COSTING"} 时，<b>不报错、静默按报价侧编译</b>。是否改成显式 400，
+     * 属契约变更，已向主线报告，本轮未自行改动。
      */
     public String dialect;
 

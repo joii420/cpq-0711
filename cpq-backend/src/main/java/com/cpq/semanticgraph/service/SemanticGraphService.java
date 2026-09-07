@@ -3,6 +3,7 @@ package com.cpq.semanticgraph.service;
 import com.cpq.builder.compiler.BuilderConfig;
 import com.cpq.builder.compiler.FieldTreeBuilder;
 import com.cpq.common.exception.BusinessException;
+import com.cpq.component.service.ComponentService;
 import com.cpq.semanticgraph.dto.SemanticGraphDTOs.*;
 import com.cpq.semanticgraph.entity.*;
 import com.cpq.semanticgraph.exception.SemanticNodeReferencedException;
@@ -41,13 +42,17 @@ public class SemanticGraphService {
      * 返回 {@code {groups:[...]}} 形状（2026-08-21 裁决，api.md §1.4；原扁平 {@code List<NodeDTO>}
      * 实现已废弃——前端与测试都按分组形状实现，扁平结构联调必炸）。
      *
+     * @param dialect 取哪套数据集（B-46，AC-116）——决定用哪一行 {@code semantic_tab_view}，
+     *                进而决定字段面板出哪些表。缺省 QUOTE、非法值 400，见
+     *                {@code CompileDialect#parse}
      * @param selectedConfigJson 当前已选列（JSON 数组，与 builder_config.columns 同形），
      *                           null/空 = 不计算 conflict（api.md §1.4 之"只有带 selectedConfig 才算 conflict"）
      */
-    public FieldTreeBuilder.FieldTreeResponse getFieldTree(String tabType, String variantKey,
+    public FieldTreeBuilder.FieldTreeResponse getFieldTree(com.cpq.builder.compiler.CompileDialect dialect,
+                                                            String tabType, String variantKey,
                                                             List<BuilderConfig.ColumnConfig> selectedConfigJson) {
         SemanticGraphSnapshot snap = loader.get();
-        return fieldTreeBuilder.build(snap, tabType, variantKey, selectedConfigJson);
+        return fieldTreeBuilder.build(snap, dialect, tabType, variantKey, selectedConfigJson);
     }
 
     // ---------------- 写：节点 ----------------
@@ -144,6 +149,36 @@ public class SemanticGraphService {
 
     // ---------------- 写：边 ----------------
 
+    /**
+     * {@code edge_kind='NARROW'}：半连接收窄边（task-260819 B-43，2026-09-04 用户裁决）。
+     * 契约与编译器侧 {@code SemanticCompiler#emitNarrowPredicate} 的 case 标签**同一个字符串**。
+     */
+    static final String NARROW_EDGE_KIND = "NARROW";
+
+    /**
+     * 该边要不要跑「右侧连接键唯一」基数断言（{@link SemanticGraphValidator#checkEdgeCardinality}）。
+     *
+     * <p><b>本方法是这条规则的唯一出处</b> —— 三个调用点（{@code createEdge} / {@code validateEdge}
+     * / {@code recomputeAssertStatus}）此前各写一遍 {@code "MANY_TO_ONE".equals(...)}，
+     * 是典型的三处双写；加 NARROW 例外时漏掉任何一处，症状都是"保存莫名 400"而且不报到点子上。
+     *
+     * <p>🚫 <b>NARROW 边一律不跑</b>，两条理由：
+     * <ol>
+     *   <li><b>语义上无意义</b>：基数断言问的是「JOIN 会不会把一行放大成多行」。NARROW 的产物是
+     *       {@code WHERE 左键 IN (SELECT 右键 FROM 目标表 WHERE ...)} —— 半连接<b>按定义</b>不放大
+     *       行数（{@code IN} 对重复值幂等），右键唯不唯一都不影响产物。</li>
+     *   <li><b>不跳过就是误报</b>：料号桥的右键 {@code ds_quote_material.production_no} 本来就不唯一
+     *       （2026-09-04 实测：45 行 / 25 行非空 / 24 个不同值 / 重复组 1，
+     *       {@code TEST0813-P01-PROD} 被两个销售料号共用，且<b>用户已裁决这是合法业务</b>）。
+     *       不加例外，这 28 条边会被判 FAIL，任何走保存路径的操作都被 400 挡住，
+     *       而错误信息指向「右键不唯一」——<b>看起来像数据问题，实际是校验器对新 edge_kind 没有例外</b>，
+     *       排查方向会被整个带偏。</li>
+     * </ol>
+     */
+    static boolean assertsCardinality(String edgeKind, String cardinality) {
+        return "MANY_TO_ONE".equals(cardinality) && !NARROW_EDGE_KIND.equals(edgeKind);
+    }
+
     @Transactional
     public int createEdge(EdgeUpsertRequest req, String operatorId) {
         SemanticGraphSnapshot snap = loader.get();
@@ -153,7 +188,7 @@ public class SemanticGraphService {
 
         List<SemanticGraphValidator.CheckResult> checks = new ArrayList<>();
         checks.add(validator.checkTableExists(to.physicalTable));
-        if ("MANY_TO_ONE".equals(req.cardinality) && to.physicalTable != null && req.keys != null && !req.keys.isEmpty()) {
+        if (assertsCardinality(req.edgeKind, req.cardinality) && to.physicalTable != null && req.keys != null && !req.keys.isEmpty()) {
             List<String> rightCols = req.keys.stream().map(k -> k.rightColumn).collect(Collectors.toList());
             checks.add(validator.checkEdgeCardinality(to.physicalTable, rightCols, DiscriminatorResolver.resolve(from, to)));
         }
@@ -274,7 +309,7 @@ public class SemanticGraphService {
         SemanticNode from = SemanticNode.findById(e.fromNodeId);
         SemanticNode to = SemanticNode.findById(e.toNodeId);
         List<SemanticEdgeKey> keys = SemanticEdgeKey.list("edgeId", e.id);
-        boolean eligible = "MANY_TO_ONE".equals(e.cardinality) && to != null
+        boolean eligible = assertsCardinality(e.edgeKind, e.cardinality) && to != null
                 && to.physicalTable != null && !keys.isEmpty();
         if (!eligible) {
             e.assertStatus = "NA";
@@ -291,8 +326,38 @@ public class SemanticGraphService {
 
     // ---------------- 写：页签视图 ----------------
 
+    /**
+     * 页签视图 {@code tab_type} 的写入闸（task-260819 B-59）。
+     *
+     * <p>🚨 <b>为什么必须有这道闸</b>：{@link SemanticGraphKeyValueSelfCheck}（B-56）在<b>启动期</b>
+     * 校验 {@code semantic_tab_view.tab_type ⊆ ComponentService.VALID_TAB_TYPES}，越域即
+     * {@code IllegalStateException} 让服务起不来。而本类的写入口此前零校验——
+     * 一次合法的 {@code POST /tab-views} 传个显示名（如「BOM 树」，D-39 明示那只是前端 label）
+     * 就当场 200 落库，<b>下一个重启的人</b>才炸，且现场离肇事点极远。
+     * ⇒ 校验必须落在<b>写入边界</b>；🚫 放宽 B-56 或改值域都是把洞挪个地方而已。
+     *
+     * <p>🚫 <b>刻意不沿用 {@link ComponentService#assertValidTabType} 的 null/blank 语义</b>：
+     * 那边「空 = 未配置，放行」是对的——{@code component.tab_type} 本就可空可选。
+     * 但本表的 {@code tab_type} 是 <b>{@code NOT NULL} 且属唯一键 {@code (tab_type, variant_key,
+     * dialect)} 的身份列</b>，空值不是「未配置」而是坏数据：{@code null} 会撞 NOT NULL 约束翻成 500，
+     * 空串 {@code ""} 更糟——它能<b>穿过</b> {@code assertValidTabType} 落库，再原样触发 B-56 那颗
+     * 延迟起爆的雷。所以这里先堵空，再把值域判定<b>委托</b>给权威声明。
+     *
+     * @param tabType 待校验值；空 / 越域一律当场 400（不是 500，更不是放行）
+     */
+    private static void requireValidTabViewType(String tabType) {
+        if (tabType == null || tabType.isBlank()) {
+            throw new BusinessException(400,
+                    "tabType 不能为空：semantic_tab_view.tab_type 是 NOT NULL 的身份列（唯一键的一部分）。"
+                    + "合法取值 = " + new java.util.TreeSet<>(ComponentService.VALID_TAB_TYPES));
+        }
+        // 值域判定委托给唯一权威声明（D-39）——🚫 不在这里抄字面量，抄一份就是又造一处双写漂移。
+        ComponentService.assertValidTabType(tabType);
+    }
+
     @Transactional
     public int createTabView(TabViewUpsertRequest req, String operatorId) {
+        requireValidTabViewType(req.tabType);
         SemanticGraphSnapshot snap = loader.get();
         if (!snap.nodeById.containsKey(req.anchorNodeId)) {
             throw new BusinessException(400, "anchorNodeId 不存在");
@@ -359,6 +424,21 @@ public class SemanticGraphService {
         SemanticTabView tv = SemanticTabView.findById(id);
         if (tv == null) throw new BusinessException(404, "页签视图不存在");
         if (partial != null) {
+            // B-59：本接口**不支持**改 tabType（它是唯一键 (tab_type, variant_key, dialect) 的一部分，
+            // 改它等于换一个页签视图的身份，应走删除 + 新建）。此前是**静默忽略**——传了不报错也不生效，
+            // 调用方以为改成功了。静默忽略同时也是个陷阱：下一个人顺手补上一行赋值就重新捅穿 B-56。
+            // ⇒ 传了就说话：越域先报值域错，合法但想改身份则明确拒绝；回传原值（echo-back）当无操作放行。
+            if (partial.containsKey("tabType")) {
+                Object raw = partial.get("tabType");
+                String requested = raw == null ? null : String.valueOf(raw);
+                requireValidTabViewType(requested);
+                if (!requested.equals(tv.tabType)) {
+                    throw new BusinessException(400,
+                            "tabType 不可通过本接口修改（当前「" + tv.tabType + "」→ 请求「" + requested + "」）："
+                            + "它是唯一键 (tab_type, variant_key, dialect) 的一部分，"
+                            + "改类型请删除本页签视图后新建。");
+                }
+            }
             if (partial.containsKey("variantLabel")) tv.variantLabel = (String) partial.get("variantLabel");
             if (partial.containsKey("switches")) {
                 Object sw = partial.get("switches");
@@ -391,7 +471,7 @@ public class SemanticGraphService {
             return checks;
         }
         checks.add(validator.checkTableExists(to.physicalTable));
-        if ("MANY_TO_ONE".equals(req.cardinality) && to.physicalTable != null && req.keys != null && !req.keys.isEmpty()) {
+        if (assertsCardinality(req.edgeKind, req.cardinality) && to.physicalTable != null && req.keys != null && !req.keys.isEmpty()) {
             List<String> rightCols = req.keys.stream().map(k -> k.rightColumn).collect(Collectors.toList());
             checks.add(validator.checkEdgeCardinality(to.physicalTable, rightCols, DiscriminatorResolver.resolve(from, to)));
         }

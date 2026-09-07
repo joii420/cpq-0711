@@ -67,6 +67,15 @@ builderHttp.interceptors.response.use(
 
 // ── 字段树（GET /config/semantic-graph/field-tree）────────────────────────
 
+/**
+ * F-30（v9 · S-27 / D-77，AC-115）：三套数据集 = 编译方言 `CompileDialect` 的三个值。
+ * 需求文档 §9.8 D-77 裁决：不另加 `dataset` 维度，`dialect` 直接扩到三值 —— 所以这里的字符串
+ * 必须与后端 `com.cpq.builder.compiler.CompileDialect` 的枚举名**逐字一致**（大写下划线）。
+ * ⚠️ 后端 v9 改造（S-21）落地前 `CompileDialect` 仍是 `{QUOTE, COSTING}` 两值 —— 前端先按目标契约写，
+ *    联调时由主线对齐（本文件顶部同款「目前证据所支持的最佳猜测」纪律）。
+ */
+export type BuilderDataset = 'QUOTE' | 'COST_BASIC' | 'COST_DETAIL';
+
 export type FieldRole = 'PART_NO' | 'PART_NAME' | 'ROW_KEY' | 'SORT';
 export type FieldDataType = 'TEXT' | 'NUMBER' | 'MONEY';
 
@@ -120,11 +129,30 @@ export interface FieldTreeGroup {
    * 价格策略分组永不成块、元素列不会自动带出（AC-20/AC-21 失效）。此处以 api.md 为准更正类型名。
    */
   groupKind?: string;
+  /**
+   * F-30（AC-116）：本分组属于哪套数据集（= 方言）。**只能由服务端给，前端无法自行推断。**
+   *
+   * 🚨 实测依据（V410 种子迁移，2026-09-03）：`semantic_node.node_key` **跨方言重名** ——
+   *    `MATERIAL` / `MATERIAL_BOM` / `ELEMENT_BOM` 等 10 个键在三套数据集里各有一份，
+   *    区分它们的是 `physical_table`（`ds_quote_material` vs `ds_cost_basic_material`）和
+   *    `semantic_node.dialect`，而 `fields[].sourceNodeKey` 给的是 node_key。
+   *    ⇒ 靠 sourceNodeKey 猜数据集是做不到的，AC-116 的过滤**必须**由服务端完成。
+   *
+   * ⚠️ 截至本次前端提交，`GET /field-tree` **既不接受方言入参、也不回本字段**（api.md §1.4 与
+   *    `SemanticGraphResource.fieldTree()` 均无），所以缺失时前端保留全部分组（不藏 ——
+   *    把面板变空是更难诊断的失败形态）。这条缺口已向主线报告，由后端补齐。
+   */
+  dialect?: BuilderDataset | null;
 }
 
 export interface FieldTreeResponse {
   groups: FieldTreeGroup[];
-  /** 6 个页签类型的完整清单；未提供时前端用本地常量兜底（AC-25 已知固定 6 值）。 */
+  /**
+   * **本数据集下可用**的页签类型清单（F-30 起语义收窄，AC-115 ③）。
+   * 🔄 v9 之前它是「6 个页签类型的完整清单」；现在是子集 —— 前端始终渲染完整 6 项（本地常量 `TAB_TYPES`），
+   * 把**不在本清单里**的那些置灰 + 加「（本数据集无）」后缀（原型 `原型-v9-数据集与字段面板.html` 的 `o.disabled`）。
+   * 未提供时前端不置灰任何一项（向后兼容，不会把用户锁死在无法选择的状态）。
+   */
   availableTabTypes?: string[];
   /** 费用类等有 variants 的页签，可选数据来源列表；未提供时「数据来源」下拉不出现。 */
   variants?: Array<{ key: string; label: string; hint?: string }> | null;
@@ -142,12 +170,20 @@ export interface FieldTreeResponse {
  *   带上后 groups[].conflict 才会被服务端算出（AC-16 拖拽期置灰的数据依据，Sec33 测试已验证）。
  */
 export const fetchFieldTree = (
+  dialect: BuilderDataset,
   tabType: string,
   variantKey?: string | null,
   selectedConfig?: unknown,
 ): Promise<FieldTreeResponse> =>
   builderHttp.get('/config/semantic-graph/field-tree', {
     params: {
+      // F-30（AC-116）：方言（=数据集）决定字段面板出哪些表。过滤只能在服务端做
+      // （`semantic_tab_view` 的唯一键就是 (tab_type, variant_key, dialect)，§9.2），前端只负责传。
+      // ⚠️ 参数名取 `dialect`：全工程（`semantic_node.dialect` / `semantic_tab_view.dialect` /
+      //    `BuilderConfig.dialect`）以及 D-77「不另加 dataset 维度，dialect 直接扩到三值」都用这个词。
+      // ⚠️ 当前后端 `SemanticGraphResource.fieldTree()` 尚未声明本入参 —— JAX-RS 会静默忽略未知
+      //    查询参数，所以现在传了也不生效（不报错）。缺口已报主线。
+      dialect,
       tabType,
       variantKey: variantKey || undefined,
       selectedConfig: selectedConfig ? JSON.stringify(selectedConfig) : undefined,
@@ -178,6 +214,17 @@ export interface PriceStrategyOverride {
 }
 
 export interface BuilderConfigPayload {
+  /**
+   * F-30（AC-115）：本视图取自哪套数据集 —— compile / preview / inspect / save 四个写端点共用同一份
+   * config，所以只在这里声明一次即可全链路带上。
+   *
+   * 🚨 **字段名必须是 `dialect`，不能自造 `dataset`**：后端 `BuilderConfig.dialect`（B-22/D-59 引入，
+   *    D-77 由两值扩到三值）就是这个字段，且 `BuilderService#resolveDialect` 对**缺省或不认识的值
+   *    一律按 QUOTE 处理、不报错** ⇒ 发错名字的后果不是 400，而是**静默按报价侧编译**。
+   * ⚠️ 可选而非必填：`GET /builder` 回来的存量 `builderConfig` 可能没有这个键、或带着已作废的
+   *    旧值 `"COSTING"`；读回时统一过 `normalizeDataset()` 归到 `QUOTE`，不让老配置打不开。
+   */
+  dialect?: BuilderDataset;
   tabType: string;
   variantKey?: string | null;
   /**

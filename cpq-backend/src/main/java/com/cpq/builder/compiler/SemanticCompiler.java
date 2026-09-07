@@ -30,6 +30,24 @@ import java.util.regex.Pattern;
  * {@code SUB}（相关标量子查询）而不是 {@code LOOKUP}，编译器只需老实按 {@code edge_kind} 分支，
  * 不需要另行猜哪张表"危险"。
  *
+ * <p>🔄 <b>2026-09-03（task-260819 v9，B-40/B-41）：三数据集范围替换</b>。{@link CompileDialect}
+ * 由两值扩到三值，编译器凡是"按侧"分叉的地方一律改读 {@code c.dialect}，不再有任何硬编码的
+ * {@code "QUOTE"} 字面量：
+ * <ul>
+ *   <li><b>页签视图 / 节点查找按方言过滤</b>（{@link #resolveTabView} / {@link #resolveColumn}）——
+ *       三套数据集在 {@code semantic_tab_view} 里是 {@code (tab_type, variant_key, dialect)} 三行并列，
+ *       不带 dialect 过滤会随机取到别的数据集那一行（唯一键第三段就是 dialect，漏过滤 = 静默取错表）。</li>
+ *   <li><b>收窄退化为「只做轴收窄 + 版本谓词」</b>（{@link #applyFullScope}）——{@code ds_*} 45 张表
+ *       <b>没有 {@code system_type} / {@code customer_no} 列</b>（唯一有 customer_no 的
+ *       {@code ds_quote_customer_part} 按 N-19 不进图），旧 V6 的三件套收窄整块删除，不保留（B-41④）。</li>
+ *   <li><b>版本谓词改由全版本视图承载</b>（S-31/D-84）——核价两套的节点 {@code physical_table} 指向
+ *       {@code v_<主表>_all}（{@code 主表 UNION ALL <主表>_history}，多一列常量 {@code is_current}），
+ *       编译器对其发 {@code :versionFilter(alias.is_current, alias.version_no::text, alias.<轴列>)}。
+ *       🚨 {@code ::text} <b>不是可选的</b>：{@code VersionFilterMacro.render()} 把版本列与
+ *       {@code :__vfVer::text[]} 展开出来的 {@code k.v} 比较，而 {@code ds_*.version_no} 是
+ *       {@code integer} ⇒ 不转换直接 {@code operator does not exist: integer = text}（D-85）。</li>
+ * </ul>
+ *
  * <p>N+1 自检：单次 compile() 调用只有一条 {@link PhysicalColumnCatalog#columnsOf} SQL
  * （一次性查完本次涉及的全部物理表列名），其余全是内存图遍历（{@link SemanticGraphSnapshot}
  * 已是不可变内存快照）——SQL 条数与已选列数/图节点数无关，恒为 1。
@@ -64,15 +82,36 @@ public class SemanticCompiler {
         List<String> discriminatorValues = new ArrayList<>(); // 费用类多变体合并用（AC-8②）
         String discriminatorColumn; // 上面那组值所在的列名（不带别名）
         List<String> warnings = new ArrayList<>();
+        /** 本次已产出的输出列名（B-47 去重用，含 hf_part_no / view_version 等约定列）。 */
+        LinkedHashSet<String> usedAliases = new LinkedHashSet<>();
+        /** B-50：锚点上存在 NARROW 边 ⇒ 轴收窄职责已移交半连接，applyFullScope 不再直接发轴谓词。 */
+        boolean narrowedByBridge = false;
     }
 
     public CompileResult compile(SemanticGraphSnapshot snap, BuilderConfig cfg, CompileDialect dialect) {
+        return compile(snap, cfg, dialect, false);
+    }
+
+    /**
+     * @param skipNarrowPredicates {@code true} = <b>不发 NARROW 半连接</b>（task-260819 B-52）。
+     *
+     * <p>唯一使用者是 {@code /preview} 的「<b>未指定料号</b>」场景：桥的作用是把**给定的**销售料号
+     * 翻译成生产料号；一个料号都没给时没有什么可翻译，此时经桥反而会把结果收窄成"恰好有桥映射的
+     * 那几个料号"——实测 {@code ds_cost_basic_material} 12 行里只有 6 行有桥，而 AC-117 的基准是
+     * <b>整表</b>。跳过后 {@link #applyFullScope} 恢复直接轴收窄
+     * （{@code <轴列> = ANY(:total_material_no)}），预览侧注入锚点表自己的轴值 ⇒ 整表样例。
+     *
+     * <p>🚫 <b>保存/编译/体检一律传 false</b>：落库的 {@code sql_template} 必须带桥，
+     * 否则渲染期就不收窄了。这是**预览专用的放宽**，不是编译器的常规能力。
+     */
+    public CompileResult compile(SemanticGraphSnapshot snap, BuilderConfig cfg, CompileDialect dialect,
+                                 boolean skipNarrowPredicates) {
         Ctx c = new Ctx();
         c.snap = snap;
         c.dialect = dialect;
         c.cfg = cfg;
 
-        c.tabView = resolveTabView(snap, cfg);
+        c.tabView = resolveTabView(snap, cfg, dialect);
         c.anchor = snap.nodeById.get(c.tabView.anchorNodeId);
         if (c.anchor == null) {
             throw new BuilderApiException(400, "COMPILE_ANCHOR_MISSING", "页签视图的锚点节点不存在", Map.of());
@@ -110,13 +149,31 @@ public class SemanticCompiler {
             emitMandatoryJoin(c, e);
         }
 
+        // B-50：NARROW 半连接收窄。同样"无论是否被选列引用都必须出现"——它是**入参收窄**，
+        // 不是可选的取列方式（用户根本选不到它的列，见 resolveColumn 的 NARROW 分支）。
+        if (!skipNarrowPredicates) {
+            for (SemanticEdge e : snap.edgesFrom(c.anchor.id)) {
+                if (!"NARROW".equals(e.edgeKind)) continue;
+                emitNarrowPredicate(c, e);
+            }
+        }
+
+        // B-47：两个约定列先占住名字，**必须在逐列循环之前**。业务列若正好叫 hf_part_no /
+        // view_version（核价侧「裸 dbColumn」规则下完全可能），撞的就是渲染链路赖以定位料号 /
+        // 版本的那一列——后果比普通撞名重得多。先占 ⇒ 业务列被改名让路；后占则业务列先拿到裸名、
+        // 约定列再输出一个同名的，等于没修。
+        c.usedAliases.add("hf_part_no");
+        c.usedAliases.add("view_version");
+
         // 逐列编译 SELECT 表达式
         List<String> selectExprs = new ArrayList<>();
         List<String> declaredColumns = new ArrayList<>();
         for (BuilderConfig.ColumnConfig col : effectiveColumns) {
             if (isPriceColumn(pricePlan, col)) continue; // 价格策略列单独在下面统一输出
             ResolvedColumn rc = resolveColumn(c, col.sourceNodeKey, col.sourceColumn);
-            String alias = AliasGenerator.viewColumn(dialect, rc.node.shortName, rc.column.displayName, rc.column.dbColumn);
+            String alias = dedupeAlias(c,
+                    AliasGenerator.viewColumn(dialect, rc.node.shortName, rc.column.displayName, rc.column.dbColumn),
+                    rc.node.shortName);
             selectExprs.add(rc.expr + " AS " + quoteAlias(alias));
             declaredColumns.add(alias);
             col.viewColumn = alias;
@@ -131,8 +188,13 @@ public class SemanticCompiler {
             for (BuilderConfig.ColumnConfig col : effectiveColumns) {
                 if (!isPriceColumn(pricePlan, col)) continue;
                 String dbCol = col.sourceColumn;
-                SemanticNodeColumn funcCol = findColumn(c, c.snap.nodeByKeyDialect.get(PRICE_FUNC_NODE_KEY + "|QUOTE"), dbCol);
-                String bare = AliasGenerator.bareColumn(col.fieldName != null ? col.fieldName : funcCol.displayName);
+                // B-41：原先在这里用 nodeByKeyDialect.get(PRICE_FUNC_NODE_KEY + "|QUOTE") 重新查了
+                // 一次函数节点（硬编码方言）。改用 resolvePricePlan 里**顺着 PRICE 边**解析出来的
+                // 那个节点——边本身就是按方言声明的，既消灭硬编码又消灭"查到另一个节点"的可能。
+                SemanticNodeColumn funcCol = findColumn(c, pricePlan.funcNode, dbCol);
+                String bare = dedupeAlias(c,
+                        AliasGenerator.bareColumn(col.fieldName != null ? col.fieldName : funcCol.displayName),
+                        pricePlan.funcNode.shortName);
                 selectExprs.add(PRICE_FUNC_ALIAS + "." + dbCol + " AS " + quoteAlias(bare));
                 declaredColumns.add(bare);
                 col.viewColumn = bare;
@@ -150,27 +212,24 @@ public class SemanticCompiler {
         selectExprs.add(0, hfExpr + " AS hf_part_no");
         declaredColumns.add(0, "hf_part_no");
 
-        // 锚点自身三件套 + 判别式
+        // 锚点自身收窄（轴收窄 + 核价侧版本谓词，B-41）+ 判别式
+        // ⚠️ 轴收窄现在**三个方言统一**由 applyFullScope 发（见该方法注释）——原先 QUOTE 方言在
+        // 本处另发一遍 anchorColumnOnly(c) + " = ANY(:total_material_no)" 的分支已删除，
+        // 保留会与 applyFullScope 发出的同款谓词重复出现在 WHERE 里。
         applyFullScope(c, c.anchor, c.anchorAlias, c.anchorWhere);
-        // AC-37③（D-71 跟进）：核价侧输出 view_version 约定列——versionFilter 宏真正生效
-        // （即 applyFullScope 判定该锚点 is_current + 收窄列都存在）时才输出，避免给不支持
-        // 版本切换的锚点也硬造一列。取值列同 versionFilter 宏的第二实参（有 version_no 用
-        // version_no，没有则退回 is_current，与 applyFullScope 内部口径保持一致，不重复分叉）。
-        if (c.dialect == CompileDialect.COSTING) {
+        // AC-109③（B-41，随 D-84 反转）：核价两套输出 view_version 约定列——只有 applyFullScope
+        // 真的发出了 :versionFilter 宏（锚点物理源同时有 is_current / version_no / 轴列，即它是
+        // S-31 建的 v_<主表>_all 全版本视图）时才输出，避免给不支持版本切换的锚点硬造一列。
+        // 🚨 取值必须 ::text：{@code CostingVersionService} 拿 driverRow 里的 view_version 直接
+        // toString() 后与 costing_order_version_override.view_version（varchar(40)）比对，而
+        // ds_*.version_no 是 integer —— V6 时代 unit_price.version_no 本身就是 character varying，
+        // 下游是按 String 写的。这里转一次 text，下游契约逐字不变，且与宏第二实参口径一致。
+        if (c.dialect.isCosting()) {
             Set<String> anchorCols = c.columnCatalog.getOrDefault(c.anchor.physicalTable, Set.of());
-            String anchorClosureCol = closureColumnName(c.anchor);
-            if (anchorCols.contains("is_current") && anchorCols.contains(anchorClosureCol)) {
-                String versionCol = anchorCols.contains("version_no") ? "version_no" : "is_current";
-                selectExprs.add(c.anchorAlias + "." + versionCol + " AS view_version");
+            if (emitsVersionFilter(c, anchorCols)) {
+                selectExprs.add(c.anchorAlias + ".version_no::text AS view_version");
                 declaredColumns.add("view_version");
             }
-        }
-        // D-50（AC-3①/AC-37①）：QUOTE 方言的子件收窄统一为「主树供数组」—— 锚点料号列上生成
-        // = ANY(:total_material_no)，无任何用户开关（AC-60）。COSTING 方言的同款收窄已在
-        // applyFullScope 的 else 分支按 code 列实现（AC-37①同一收窄口径，不在此重复）。
-        if (c.dialect == CompileDialect.QUOTE) {
-            c.anchorWhere.add(anchorColumnOnly(c) + " = ANY(:total_material_no)");
-            c.requiredVars.add("total_material_no");
         }
         String anchorDiscriminator = resolveDiscriminator(c, c.anchor, null);
         if (anchorDiscriminator != null) {
@@ -223,6 +282,9 @@ public class SemanticCompiler {
 
         String finalSql = sql.toString();
 
+        // B-53：产物级护栏。在**最终 SQL 文本**上复核 :total_material_no 只被一种语义消费
+        assertAxisParamSingleSemantic(c, finalSql);
+
         // customerCode 只要涉及任意 customer_no 收窄或价格函数就需要
         if (finalSql.contains(":customerCode")) c.requiredVars.add("customerCode");
 
@@ -234,18 +296,31 @@ public class SemanticCompiler {
         result.warnings = c.warnings;
         result.effectiveColumns = effectiveColumns;
         result.rewriterCompatible = checkRewriterCompatible(finalSql, c.anchor.physicalTable);
+        result.anchorTable = c.anchor.physicalTable;
+        result.axisColumn = c.dialect.axisColumn();
         return result;
     }
 
     // ---------------- 页签视图解析 ----------------
 
-    private SemanticTabView resolveTabView(SemanticGraphSnapshot snap, BuilderConfig cfg) {
+    /**
+     * 页签视图解析（B-41：<b>必须带 dialect 过滤</b>）。
+     *
+     * <p>🚨 {@code semantic_tab_view} 的唯一键是 {@code (tab_type, variant_key, dialect)} ——
+     * v9 起同一个 {@code (页签类型, 变体)} 在三个数据集下<b>各有一行并列存在</b>（§9.2 映射表）。
+     * 不带 dialect 过滤时 {@code findFirst()} 命中的是加载顺序里的第一行，编译「基础核价·主件」
+     * 可能拿到报价侧那一行的锚点 ⇒ FROM 到另一套物理表、还照样编译成功、照样能查 —— 典型的
+     * 静默取错数据集。
+     */
+    private SemanticTabView resolveTabView(SemanticGraphSnapshot snap, BuilderConfig cfg, CompileDialect dialect) {
         String vk = cfg.variantKey == null ? "" : cfg.variantKey;
+        String dl = dialect.graphDialect();
         return snap.tabViews.stream()
-                .filter(t -> t.tabType.equals(cfg.tabType) && t.variantKey.equals(vk))
+                .filter(t -> t.tabType.equals(cfg.tabType) && t.variantKey.equals(vk) && dl.equals(t.dialect))
                 .findFirst()
-                .orElseThrow(() -> new BuilderApiException(400, "COMPILE_TABVIEW_NOT_FOUND",
-                        "未找到页签视图: " + cfg.tabType + "/" + vk, Map.of()));
+                // B-60/AC-127⑤：报文必须点名**合法值域**（从图按 dialect 实时取），
+                // 且把"页签类型非法"与"类型合法、只是缺/错变体"分开说 —— 见 TabViewNotFound。
+                .orElseThrow(() -> TabViewNotFound.of(snap, 400, cfg.tabType, vk, dl));
     }
 
     // D-51/AC-60：containsSwitch() 曾用于读 tabView.switches 里的 CLOSURE 标记，随闭包开关整体
@@ -290,6 +365,71 @@ public class SemanticCompiler {
         c.joinClauses.add("JOIN " + target.physicalTable + " " + alias + " ON " + String.join(" AND ", on));
     }
 
+    // ---------------- NARROW 半连接收窄（B-50） ----------------
+
+    /**
+     * {@code edge_kind='NARROW'}：拿 from 表的键去 to 表解析出对应键，用结果<b>收窄 from 表</b>
+     * （task-260819 B-50，用户 2026-09-04 裁决）。
+     *
+     * <p><b>它解决什么</b>：核价侧的轴是<b>生产料号</b>，而产品卡片给的是<b>销售料号</b>，中间要过
+     * {@code ds_quote_material} 这座桥。桥原本声明成 {@code LOOKUP}（输出列）⇒ 编译成
+     * {@code LEFT JOIN ds_quote_material ON dqm.production_no = 锚点.production_no}，方向是
+     * 「生产料号 → 销售料号」，而一个生产料号可以对应多个销售料号（用户裁决：这是<b>合法业务</b>）
+     * ⇒ <b>一行核价数据被放大成 N 行，行数与金额一起翻倍</b>。
+     *
+     * <p><b>改法的要点是方向反过来 + 落在 WHERE 而不是 FROM</b>：
+     * <pre>
+     * 锚点.production_no IN (SELECT b.production_no FROM ds_quote_material b
+     *                        WHERE b.material_no = ANY(:total_material_no))
+     * </pre>
+     * 方向变成「销售料号 → 生产料号」（45/45 唯一），且半连接<b>按定义不放大行数</b>——
+     * 子查询返回多少个销售料号都不影响外层行数，这正是 {@code IN} 与 {@code JOIN} 的本质差别。
+     * <b>同一张表、同一列，用在 SELECT 里还是 WHERE 里，差别就是扇出与不扇出。</b>
+     *
+     * <p>🚫 不产出 FROM 项、不产出任何显示列、不进字段面板（{@code FieldTreeBuilder} 侧同步排除）。
+     *
+     * <p><b>入参列</b>取 {@link CompileDialect#QUOTE} 的轴列（{@code material_no}）——桥节点的
+     * {@code anchor_expr} 实测为 NULL（它从不作为页签锚点），所以不能从那里推。桥表里没有这一列时
+     * <b>直接报错而不是静默不发</b>：不发 = 子查询退化成"整张桥表"= 完全不收窄 = 全表数据，
+     * 那是比报错坏得多的静默故障。
+     */
+    private void emitNarrowPredicate(Ctx c, SemanticEdge e) {
+        SemanticNode target = c.snap.nodeById.get(e.toNodeId);
+        if (target == null || target.physicalTable == null || target.physicalTable.isBlank()) {
+            throw new BuilderApiException(500, "COMPILE_NARROW_TARGET_MISSING",
+                    "NARROW 边指向的节点不存在或没有物理表（图数据不一致）", Map.of("edge", String.valueOf(e.id)));
+        }
+        List<SemanticEdgeKey> keys = c.snap.keysOf(e.id).stream()
+                .sorted(Comparator.comparingInt(k -> k.seq)).toList();
+        if (keys.isEmpty()) {
+            throw new BuilderApiException(500, "COMPILE_NARROW_NO_KEYS",
+                    "NARROW 边「" + target.displayName + "」没有声明连接键，无法生成收窄条件", Map.of());
+        }
+
+        Set<String> targetCols = c.columnCatalog.getOrDefault(target.physicalTable, Set.of());
+        String inputCol = CompileDialect.QUOTE.axisColumn(); // 产品卡片给的是销售料号
+        if (!targetCols.contains(inputCol)) {
+            throw new BuilderApiException(500, "COMPILE_NARROW_INPUT_COLUMN_MISSING",
+                    "收窄源「" + target.displayName + "」(" + target.physicalTable + ") 没有入参列 "
+                            + inputCol + "，无法按销售料号收窄", Map.of("table", target.physicalTable));
+        }
+
+        String sub = allocAlias(c, target.physicalTable);
+        String left = keys.size() == 1
+                ? c.anchorAlias + "." + keys.get(0).leftColumn
+                : "(" + keys.stream().map(k -> c.anchorAlias + "." + k.leftColumn)
+                        .reduce((a, b) -> a + ", " + b).orElseThrow() + ")";
+        String right = keys.stream().map(k -> sub + "." + k.rightColumn)
+                .reduce((a, b) -> a + ", " + b).orElseThrow();
+
+        c.anchorWhere.add(left + " IN (SELECT " + right
+                + " FROM " + target.physicalTable + " " + sub
+                + " WHERE " + sub + "." + inputCol + " = ANY(:total_material_no))");
+        c.requiredVars.add("total_material_no");
+        // 轴收窄的职责就此移交给本谓词，applyFullScope 不再另发一条（见该方法注释）
+        c.narrowedByBridge = true;
+    }
+
     // ---------------- 单列解析 ----------------
 
     private static final class ResolvedColumn {
@@ -299,10 +439,13 @@ public class SemanticCompiler {
     }
 
     private ResolvedColumn resolveColumn(Ctx c, String sourceNodeKey, String sourceColumn) {
-        SemanticNode target = c.snap.nodeByKeyDialect.get(sourceNodeKey + "|QUOTE");
+        // B-41：节点查找必须按当前方言取（{@code semantic_node} 唯一键 = (node_key, dialect)）。
+        // 原先硬编码 "|QUOTE"：三方言并存后，用 COST_BASIC 编译会一律拿到报价侧同名节点的
+        // physical_table，编出来的 SQL 指着另一套数据集的表且不报错。
+        SemanticNode target = c.snap.nodeByKeyDialect.get(sourceNodeKey + "|" + c.dialect.graphDialect());
         if (target == null) {
             throw new BuilderApiException(400, "COMPILE_COLUMN_SOURCE_UNKNOWN",
-                    "未知的列来源节点: " + sourceNodeKey, Map.of());
+                    "未知的列来源节点: " + sourceNodeKey + "（数据集 " + c.dialect.graphDialect() + "）", Map.of());
         }
         SemanticNodeColumn col = findColumn(c, target, sourceColumn);
 
@@ -335,6 +478,14 @@ public class SemanticCompiler {
             // ensureLeftJoin() 命中 existing alias 时直接复用、不会重复建 JOIN 子句，也不会把
             // 强制 JOIN 降级成 LEFT JOIN（JOIN 子句本身在 emitMandatoryJoin 里已经生成过）。
             case "JOIN" -> resolveLookup(c, edge, target, col);
+            // B-50：NARROW 的产物是 WHERE 半连接，不产出 FROM 项、不产出显示列 ⇒ 它的列**不可选**。
+            // 给一条专门的错误文案而不是落进 default 的"暂不支持"——后者会让人以为是没实现，
+            // 于是去给 NARROW 加取列实现，而那恰恰是这次要消灭的扇出根源（桥当输出列 = LEFT JOIN）。
+            case "NARROW" -> throw new BuilderApiException(400, "COMPILE_EDGE_KIND_UNSUPPORTED",
+                    "「" + target.displayName + "」是收窄用的输入源（NARROW），只用来限定取哪些行，"
+                            + "本身不提供可展示的列。若确实需要展示它的字段，应改用查名（LOOKUP）声明，"
+                            + "但要先确认不会因一对多而放大行数",
+                    Map.of("node", target.nodeKey, "edgeKind", edge.edgeKind));
             case "SUB" -> resolveSub(c, edge, target, col);
             case "GRAIN" -> resolveGrain(c, edge, target, col);
             default -> throw new BuilderApiException(400, "COMPILE_EDGE_KIND_UNSUPPORTED",
@@ -536,70 +687,248 @@ public class SemanticCompiler {
         return null; // BOM 树：不过滤（AC-6②）
     }
 
-    // ---------------- 三件套收窄（is_current / system_type / customer_no，按真实列存在与否决定） ----------------
+    // ---------------- 收窄（B-41：轴收窄 + 核价侧版本谓词；🚫 已无 system_type / customer_no） ----------------
 
+    /**
+     * 节点级收窄（task-260819 B-41，AC-107 / AC-108 / AC-109②）。
+     *
+     * <p>🔄 <b>2026-09-03 整块改写</b>。原方法叫「三件套收窄」（{@code is_current} /
+     * {@code system_type} / {@code customer_no}），那是 V6 表结构的形态；新的 {@code ds_*} 45 张表
+     * <b>这三列一列都没有</b>（唯一有 {@code customer_no} 的 {@code ds_quote_customer_part} 按 N-19
+     * 不进图，2026-09-03 逐表查 {@code information_schema} 实测确认）。旧 {@code QUOTE}/{@code COSTING}
+     * 两条分支随 V6 节点一并删除、不保留（B-41④）——留着只会在新图上生成永远为假/永远报错的谓词。
+     *
+     * <p>现在只剩两类谓词，且<b>三个方言同一套代码</b>（差异全部压进 {@link CompileDialect}）：
+     * <ol>
+     *   <li><b>轴收窄</b>（AC-108）：{@code <别名>.<轴列> = ANY(:total_material_no)}。轴列由
+     *       {@link CompileDialect#axisColumn()} 给出（{@code QUOTE} → {@code material_no}；
+     *       两个 {@code COST_*} → {@code production_no}）。<b>只在目标表真的有这一列时才发</b> ——
+     *       按 {@code scheme_no} 建模的 {@code ds_*_plating_scheme} 之类没有轴列，硬造一个不存在的
+     *       列引用会让整条 SQL 运行期报错（这正是 AC-7② 当年实测踩到的同型坑），此时靠该节点自身
+     *       的连接键收窄即可。</li>
+     *   <li><b>版本谓词</b>（AC-109②，仅核价两套）：{@code :versionFilter(<别名>.is_current,
+     *       <别名>.version_no::text, <别名>.<轴列>)}。触发条件 = 该物理源同时有
+     *       {@code is_current} + {@code version_no} + 轴列，也就是它是 S-31 建的
+     *       {@code v_<主表>_all} 全版本视图（{@code 主表 UNION ALL <主表>_history}，多一列常量
+     *       {@code is_current}）；报价侧节点直接指主表、连 {@code is_current} 都没有，天然不发（AC-107）。</li>
+     * </ol>
+     *
+     * <p>🚨 <b>{@code ::text} 不是可选的</b>（D-85）：{@link com.cpq.datasource.sqlview.VersionFilterMacro}
+     * 展开出 {@code (版本列) IS NOT DISTINCT FROM k.v}，而 {@code k.v} 来自 {@code :__vfVer::text[]}；
+     * {@code ds_*.version_no} 是 {@code integer} ⇒ 不转换直接
+     * {@code operator does not exist: integer = text}。V6 的 {@code unit_price.version_no} 是
+     * {@code character varying} 所以老路从没暴露过这个问题。
+     *
+     * <p>兜底分支：物理源有 {@code is_current} 但缺 {@code version_no} 或缺轴列时（新模型里不该出现，
+     * 因为全版本视图必然三者齐全），退回裸 {@code <别名>.is_current} —— <b>不能什么都不发</b>，
+     * 否则 {@code _history} 的历史行（{@code is_current=false}）会整批漏进结果，是静默的行数翻倍。
+     */
     private void applyFullScope(Ctx c, SemanticNode node, String alias, List<String> where) {
         Set<String> cols = c.columnCatalog.getOrDefault(node.physicalTable, Set.of());
-        if (c.dialect == CompileDialect.QUOTE) {
-            if (cols.contains("system_type")) where.add(alias + ".system_type = 'QUOTE'");
-            if (cols.contains("is_current")) where.add(alias + ".is_current");
-            if (cols.contains("customer_no") && !alreadyScopedByMandatoryJoin(c, node)) {
-                where.add(alias + ".customer_no = :customerCode");
-                c.requiredVars.add("customerCode");
+        String axis = c.dialect.axisColumn();
+
+        if (c.dialect.isCosting() && cols.contains("is_current")) {
+            if (emitsVersionFilter(c, cols)) {
+                where.add(":versionFilter(" + alias + ".is_current, "
+                        + alias + ".version_no::text, "
+                        + alias + "." + axis + ")");
+            } else {
+                where.add(alias + ".is_current");
             }
-        } else {
-            // COSTING（AC-37，D-71）：:versionFilter(...) 宏收窄 + <业务键列> = ANY(:total_material_no)。
-            // 🚫 D-71 修复：业务键列名不再硬编码 "code"——element_bom_item 等 QUOTE 侧老命名表
-            // （只有 material_no，没有 code/version_no）用这个硬编码编不出任何 WHERE，SQL 全表扫。
-            // 改按节点声明取（node.anchor_expr 的列部分，与 QUOTE 方言/hf_part_no 用的是同一列，
-            // 语义天然一致）；节点从未声明过 anchor_expr（只是 JOIN/GRAIN/SUB 目标，如
-            // unit_price 系节点）时退回 "code"，与改动前行为逐字一致——不改变其它已交付节点
-            // （V6 命名表）的产物，只解决本节点没被覆盖到的场景（不顺手重构本分支其余部分）。
-            String closureCol = closureColumnName(node);
-            boolean hasVersionNo = cols.contains("version_no");
-            if (cols.contains("is_current") && cols.contains(closureCol)) {
-                // version_no 列缺失（如 element_bom_item 只有 is_current，没有真正的版本列）时
-                // 退回用 is_current 本身占位——VersionFilterMacro 的三个实参只要求"列引用/
-                // 表达式"，不要求语义上必须是独立的版本列；没有版本概念的表，宏展开后（无 override）
-                // 恒退化为 is_current 分支，行为等价于"这张表不支持按版本切换，永远取当前值"。
-                String versionCol = hasVersionNo ? "version_no" : "is_current";
-                where.add(":versionFilter(" + alias + ".is_current, " + alias + "." + versionCol + ", "
-                        + alias + "." + closureCol + ")");
-            }
-            if (cols.contains(closureCol)) {
-                where.add(alias + "." + closureCol + " = ANY(:total_material_no)");
-                c.requiredVars.add("total_material_no");
-            }
+        }
+
+        // B-50：锚点声明了 NARROW 边时，**不再直接发轴谓词**。
+        // 🚨 这不是优化，是正确性：:total_material_no 装的是**销售料号**，而核价侧的轴列是
+        // production_no —— 两者是不同号段，直接 `production_no = ANY(:total_material_no)` 会
+        // 恒不命中（0 行），且与半连接 AND 在一起时"看起来只是没数据"，不会报任何错。
+        // 收窄职责整体交给半连接：它挂在锚点上，SUB/GRAIN 目标通过各自的连接键与锚点相关联，
+        // 因而是被间接收窄的，不需要各自再发一条。
+        if (!c.narrowedByBridge && cols.contains(axis)) {
+            where.add(alias + "." + axis + " = ANY(:total_material_no)");
+            c.requiredVars.add("total_material_no");
+        }
+    }
+
+    // ---------------- B-53：`:total_material_no` 单一语义护栏（产物级） ----------------
+
+    /** 直接轴谓词的形态：{@code <别名>.<列> = ANY(:total_material_no)}（{@link #applyFullScope} 产）。 */
+    private static final Pattern DIRECT_AXIS_NARROW = Pattern.compile(
+            "([A-Za-z_]\\w*)\\.([A-Za-z_]\\w*)\\s*=\\s*ANY\\(\\s*:total_material_no\\s*\\)");
+
+    /**
+     * 桥半连接的形态：{@code IN (SELECT … = ANY(:total_material_no))}（{@link #emitNarrowPredicate} 产）。
+     *
+     * <p>🚨 <b>这一个 Pattern 同时充当两处判据</b>——「从 {@link Ctx#anchorWhere} 里认出已知桥」与
+     * 「在最终 SQL 文本里数出实际有几处桥」。<b>刻意共用同一条**，就是为了让两处判据不可能漂移：
+     * 一旦它们用不同的写法（比如一处认字面量 {@code "IN (SELECT"}、另一处用正则），
+     * 将来任何改动只要动了桥的文本形态，就会出现「结构化认不出、文本认得出」的偏差，
+     * 而那个偏差过去是被 {@code bridgePredicates.isEmpty() → return} 静默吞掉的。
+     *
+     * <p><b>中间段用 {@code [^()]} 而不是 {@code [\s\S]}</b>：桥子查询从 {@code IN (SELECT} 到
+     * {@code = ANY(} 之间只有 {@code <列> FROM <表> <别名> WHERE <别名>.<列>}，<b>不含任何括号</b>。
+     * 用「禁止括号」把匹配锁死在同一层子查询里 ⇒ 一个与本入参无关的 {@code IN (SELECT …)}
+     * 不可能跨过自己的右括号、去够上后面某条直接轴谓词的 {@code ANY(:total_material_no)}
+     * （那会造成假报警）。同时 {@code \s*} + {@code CASE_INSENSITIVE} 让它不受
+     * {@code IN(SELECT} 无空格、换行、大小写的影响。
+     */
+    private static final Pattern BRIDGE_SEMI_JOIN = Pattern.compile(
+            "\\bIN\\s*\\(\\s*SELECT\\b[^()]{0,2000}=\\s*ANY\\s*\\(\\s*:total_material_no\\s*\\)",
+            Pattern.CASE_INSENSITIVE);
+
+    /**
+     * 🚨 <b>护栏（task-260819 B-53，用户 2026-09-04 裁决「护栏做」）</b>：产物里
+     * {@code :total_material_no} 只允许被<b>一种</b>语义消费。
+     *
+     * <p><b>防的是什么</b>：绑定变量 {@code :total_material_no} 只有一个数组，但编译器有两条
+     * 会消费它的路径，且要求的号段<b>相反</b>：
+     * <ul>
+     *   <li>{@link #emitNarrowPredicate} 的桥半连接 —— 数组必须装<b>销售料号</b>
+     *       （拿去查 {@code ds_quote_material.material_no}）；</li>
+     *   <li>{@link #applyFullScope} 的直接轴谓词 —— 核价方言下轴列是 {@code production_no}，
+     *       数组必须装<b>生产料号</b>。</li>
+     * </ul>
+     * 两者一旦同时出现在同一段产物里，<b>无论数组装哪种号，另一条必然恒不命中 ⇒ 两个条件
+     * AND 起来交集为空 ⇒ 查出 0 行，而且不抛异常、不告警、不留任何诊断</b>——这正是 B-52
+     * （D-119）的成因，也是 {@code /preview} 第四次同型「静默返空」缺陷。
+     *
+     * <p><b>为什么要有第二重检查</b>：现行防线是 {@link Ctx#narrowedByBridge} 这个布尔标志位
+     * （有桥就不发直接轴谓词）——它是<b>运行时靠一个变量维持</b>的约束，任何一条新增代码路径
+     * 漏读它就重新引入同型缺陷，而缺陷本身不报错。本护栏<b>刻意不读那个标志</b>，只看编译产出
+     * 的最终 SQL 文本，因而「{@code narrowedByBridge} 维护得对不对」不影响它的判定。
+     *
+     * <p>⚠️ <b>但「完全不依赖被检查方」是做不到的，别这么宣称</b>（2026-09-04 主线复核纠正）。
+     * 本护栏仍然依赖一条性质：<b>桥谓词落在 {@link Ctx#anchorWhere} 里</b>（否则认不出它是桥，
+     * 就无法与直接轴谓词区分）。这条性质将来可能被破坏 —— 比如照 {@link #resolveSub} 那条路
+     * 把桥发进某个局部 {@code where}。<b>关键不在于消灭这个依赖（消灭不掉），而在于让它被破坏时
+     * 「响亮地失败」而不是「安静地放行」</b>：所以
+     * {@link #checkAxisParamSingleSemantic} 会把「产物里数出的桥」与「结构化认出的桥」对账，
+     * 对不上就抛 {@code COMPILE_AXIS_NARROW_UNCLASSIFIABLE}。
+     *
+     * <p><b>判定手法（结构化标记 + 产物文本，二者取长）</b>：桥谓词的<b>原文</b>从
+     * {@link Ctx#anchorWhere} 按 {@link #BRIDGE_SEMI_JOIN} 形态取（<b>不是</b>按「哪个方法产的」认），
+     * 再从最终 SQL 里逐字剔除；剩下的文本中只要还能匹配到直接轴谓词形态即判定冲突。
+     * 这样做的两点好处：① 剔除是<b>逐字子串</b>匹配，不需要正则去数括号配对，不会被子查询里
+     * 那个 {@code = ANY(...)} 误伤；② 扫描面是<b>整段产物</b>而不只是 {@code anchorWhere}，
+     * 因此 {@link #resolveSub} 相关子查询里、{@code JOIN ... ON} 里冒出来的同型谓词一样能抓到。
+     */
+    private void assertAxisParamSingleSemantic(Ctx c, String finalSql) {
+        List<String> narrowEdgeIds = c.snap.edgesFrom(c.anchor.id).stream()
+                .filter(e -> "NARROW".equals(e.edgeKind))
+                .map(e -> String.valueOf(e.id))
+                .toList();
+        checkAxisParamSingleSemantic(c.anchorWhere, finalSql, c.dialect.axisColumn(),
+                String.valueOf(c.dialect), c.anchor.nodeKey, c.anchor.physicalTable, narrowEdgeIds);
+    }
+
+    /**
+     * 护栏的<b>纯函数内核</b>（包级可见，仅为让 {@code SemanticCompilerAxisNarrowGuardTest} 能直接喂
+     * 合成产物驱动它）。不碰 {@link Ctx}、不碰图、不碰 DB ⇒ 它的用例是<b>不启 Quarkus、不连库</b>的
+     * 普通 JUnit，因而可以放心把「护栏自己坏没坏」做成常驻回归（共享库红线下这点很关键）。
+     *
+     * <p>🚨 <b>三条出口，两条都是「响亮失败」而不是放行</b>（2026-09-04 主线复核回流 ①）：
+     * <ol>
+     *   <li><b>分类不上 ⇒ {@code COMPILE_AXIS_NARROW_UNCLASSIFIABLE}</b>。产物里数出来的桥半连接
+     *       条数与从 {@code anchorWhere} 结构化认出来的对不上 ⇒ 说明有桥<b>不在 {@code anchorWhere} 里</b>
+     *       （例如将来有人照 {@link #resolveSub} 那条路把桥发进某个局部 {@code where}），
+     *       护栏此时<b>无法对产物分类</b>。<b>🚫 绝不能当成「没有桥」放过</b> —— 老写法
+     *       {@code if (bridgePredicates.isEmpty()) return;} 恰恰会在这种情况下提前返回、一声不吭，
+     *       而 {@code narrowedByBridge} 那套逻辑是独立的、直接轴谓词照发 ⇒ <b>B-52 原样重现，
+     *       护栏在旁边看着什么都不说</b>。<b>护栏的失效形态 = 静默 no-op = 它被造出来要防的那件事。</b></li>
+     *   <li><b>两种语义共存 ⇒ {@code COMPILE_AXIS_NARROW_CONFLICT}</b>（本护栏的主目标，见类内注释）。</li>
+     *   <li><b>冒出第三种形态 ⇒ 同样 {@code UNCLASSIFIABLE}</b>。把已知的两种形态都剔干净后，
+     *       文本里居然还在消费 {@code :total_material_no} ⇒ 出现了护栏没见过的用法，
+     *       同样拒绝放行而不是假设它无害。</li>
+     * </ol>
+     *
+     * <p>⚠️ <b>为什么不能简化成「数 {@code :total_material_no} 出现几次」</b>：单个锚点可以挂
+     * <b>多条 NARROW 边</b>，那时该入参正常就会出现多次，计数法会误报。逐字 {@code replace} 剔除
+     * 已知桥能正确处理 N 个桥，保留这个手法。
+     */
+    static void checkAxisParamSingleSemantic(List<String> anchorWhere, String finalSql,
+                                             String axisColumn, String dialect,
+                                             String anchorNodeKey, String anchorTable,
+                                             List<String> narrowEdgeIds) {
+        // ① 结构化认出已知桥；② 数一遍产物里实际有几处 —— 两处判据共用 BRIDGE_SEMI_JOIN，不可能漂移
+        List<String> bridgePredicates = anchorWhere.stream()
+                .filter(w -> BRIDGE_SEMI_JOIN.matcher(w).find())
+                .toList();
+        long inArtifact = BRIDGE_SEMI_JOIN.matcher(finalSql).results().count();
+        if (inArtifact != bridgePredicates.size()) {
+            throw new BuilderApiException(500, "COMPILE_AXIS_NARROW_UNCLASSIFIABLE",
+                    "护栏无法对编译产物分类，拒绝放行：产物里数出 " + inArtifact + " 处桥半连接收窄，"
+                            + "但只能从锚点 WHERE 里结构化认出 " + bridgePredicates.size() + " 处"
+                            + "（多出来的桥不在 anchorWhere 里，护栏无法把它与『直接轴收窄』区分开）。"
+                            + " 🚫 此处**必须**报错而不是放行：放行等于退回 B-52 那种「两条谓词共存 ⇒ 恒 0 行且不报错」的静默故障。"
+                            + " dialect=" + dialect + "；锚点=" + anchorNodeKey + "(" + anchorTable + ")"
+                            + "；NARROW 边=" + narrowEdgeIds + "；产物=\n" + finalSql,
+                    Map.of("bridgesInArtifact", inArtifact,
+                            "bridgesRecognized", bridgePredicates.size(),
+                            "dialect", String.valueOf(dialect),
+                            "anchorNodeKey", String.valueOf(anchorNodeKey),
+                            "narrowEdgeIds", narrowEdgeIds));
+        }
+        if (bridgePredicates.isEmpty()) return; // 确认过「产物里也一处都没有」⇒ 入参语义唯一，直接轴谓词是正确形态
+
+        String stripped = finalSql;
+        for (String bridge : bridgePredicates) stripped = stripped.replace(bridge, "");
+
+        Matcher m = DIRECT_AXIS_NARROW.matcher(stripped);
+        if (m.find()) {
+            String direct = m.group();
+            throw new BuilderApiException(500, "COMPILE_AXIS_NARROW_CONFLICT",
+                    "编译产物同时含「桥半连接收窄」与「直接轴收窄」，两者对 :total_material_no 的号段要求相反"
+                            + "（桥要销售料号、轴列要 " + axisColumn + "）"
+                            + " ⇒ 无论数组装哪种号另一条都恒不命中，AND 起来交集为空 ⇒ 静默返 0 行且不报错。"
+                            + " 直接轴谓词=[" + direct + "]；桥半连接=" + bridgePredicates
+                            + "；dialect=" + dialect
+                            + "；锚点=" + anchorNodeKey + "(" + anchorTable + ")"
+                            + "；NARROW 边=" + narrowEdgeIds,
+                    Map.of("directAxisPredicate", direct,
+                            "bridgePredicates", bridgePredicates,
+                            "dialect", String.valueOf(dialect),
+                            "anchorNodeKey", String.valueOf(anchorNodeKey),
+                            "narrowEdgeIds", narrowEdgeIds));
+        }
+
+        // ③ 两种已知形态都剔干净了，还在消费该入参 ⇒ 第三种形态，护栏没见过 ⇒ 同样不放行
+        if (stripped.contains(":total_material_no")) {
+            throw new BuilderApiException(500, "COMPILE_AXIS_NARROW_UNCLASSIFIABLE",
+                    "护栏无法对编译产物分类，拒绝放行：剔除已知的「桥半连接」与「直接轴收窄」两种形态后，"
+                            + "产物里仍在消费 :total_material_no —— 出现了护栏未知的第三种用法，"
+                            + "无法判断它与桥的号段是否相容。"
+                            + " dialect=" + dialect + "；锚点=" + anchorNodeKey + "(" + anchorTable + ")"
+                            + "；NARROW 边=" + narrowEdgeIds + "；剔除后残留=\n" + stripped,
+                    Map.of("bridgePredicates", bridgePredicates,
+                            "dialect", String.valueOf(dialect),
+                            "anchorNodeKey", String.valueOf(anchorNodeKey),
+                            "narrowEdgeIds", narrowEdgeIds));
         }
     }
 
     /**
-     * COSTING 方言收窄用的业务键列名（D-71）：优先取节点自身 {@code anchor_expr} 声明的列
-     * （如 {@code ebi.material_no} → {@code material_no}），未声明该节点从未作为任何页签锚点
-     * 时退回 {@code "code"}（V6 命名表既有行为，逐字不变）。
+     * 该物理源是否具备发 {@code :versionFilter} 宏的条件（AC-109②）——{@link #applyFullScope}
+     * 与 {@code view_version} 约定列的输出判据必须<b>逐字同源</b>：两处判据一旦漂移，就会出现
+     * 「发了宏但没输出 view_version」（版本下拉恒空）或「输出了 view_version 但没发宏」
+     * （切了版本没反应）这两种静默故障，都不报错。
      */
-    private static String closureColumnName(SemanticNode node) {
-        if (node.anchorExpr != null && !node.anchorExpr.isBlank()) {
-            String[] parts = node.anchorExpr.split("\\.", 2);
-            return parts[parts.length - 1];
-        }
-        return "code";
+    private boolean emitsVersionFilter(Ctx c, Set<String> cols) {
+        return c.dialect.isCosting()
+                && cols.contains("is_current")
+                && cols.contains("version_no")
+                && cols.contains(c.dialect.axisColumn());
     }
 
-    /** 客户维度已经由强制 JOIN（edge_kind=JOIN 的 fixedPredicate）覆盖时，锚点自己不再重复加 WHERE。 */
-    private boolean alreadyScopedByMandatoryJoin(Ctx c, SemanticNode node) {
-        if (!node.id.equals(c.anchor.id)) return false;
-        return c.snap.edgesFrom(c.anchor.id).stream().anyMatch(e -> "JOIN".equals(e.edgeKind)
-                && c.snap.nodeById.get(e.toNodeId) != null
-                && c.snap.nodeById.get(e.toNodeId).fixedPredicate != null
-                && c.snap.nodeById.get(e.toNodeId).fixedPredicate.contains("customer_no"));
-    }
+    // 📌 已删除的 alreadyScopedByMandatoryJoin(...)（B-41）：它唯一的作用是"customer_no 收窄已由
+    // 强制 JOIN 覆盖时锚点不再重复加 WHERE"，而 customer_no 收窄本身已随 V6 三件套整块删除
+    // （ds_* 45 张表没有这一列）。留一个再也不会被调用、且描述的是已废弃谓词的判据方法，
+    // 下一个人照它推断"编译器还会发 customer_no"就是错的。
 
     // ---------------- 价格策略原子组（B-9，D-09） ----------------
 
     private static final class PricePlan {
         String joinClause;
         String elementCodeSourceColumn; // anchor 自己的编码列名（形态 A 时非空）
+        SemanticNode funcNode;          // B-41：顺 PRICE 边解析出的价格函数节点（替代按 key+"|QUOTE" 反查）
     }
 
     private boolean isPriceColumn(PricePlan plan, BuilderConfig.ColumnConfig col) {
@@ -620,6 +949,10 @@ public class SemanticCompiler {
                 .orElseThrow(() -> new BuilderApiException(400, "COMPILE_PRICE_EDGE_NOT_FOUND",
                         "锚点「" + c.anchor.displayName + "」没有声明价格策略边", Map.of()));
         SemanticNode funcNode = c.snap.nodeById.get(priceEdge.toNodeId);
+        if (funcNode == null) {
+            throw new BuilderApiException(500, "COMPILE_PRICE_FUNC_NODE_MISSING",
+                    "价格策略边指向的函数节点不存在（图数据不一致）", Map.of());
+        }
         List<SemanticEdgeKey> keys = c.snap.keysOf(priceEdge.id).stream()
                 .sorted(Comparator.comparingInt(k -> k.seq)).toList();
         if (keys.isEmpty()) {
@@ -635,6 +968,7 @@ public class SemanticCompiler {
         }
 
         PricePlan plan = new PricePlan();
+        plan.funcNode = funcNode;
         // key[0]：编码键，字面量列引用；key[1..]：与 hf_part_no 表达式逐字一致（AC-1⑤/AC-3⑤）——
         // D-50/D-56 后 hf_part_no 恒为锚点自身列，不再有闭包分支。
         SemanticEdgeKey codeKey = keys.get(0);
@@ -714,6 +1048,34 @@ public class SemanticCompiler {
                 "), bom_closure_d AS (\n" +
                 "  SELECT root_no, node_no, MIN(lvl) AS lvl FROM bom_closure GROUP BY root_no, node_no\n" +
                 ")\n";
+    }
+
+    /**
+     * 输出列名去重（task-260819 B-47，主线 2026-09-03 裁决）。
+     *
+     * <p><b>问题</b>：核价两套的别名规则是「裸英文 {@code dbColumn}」（AC-110），而不同节点完全
+     * 可能有同名列——实测 {@code COST_BASIC} 主件同时选主表与料号桥的 {@code material_name} 时，
+     * {@code declaredColumns} 出现两个 {@code material_name}。<b>PG 允许 SELECT 输出重复列名</b>，
+     * 所以 SQL 跑得通、dry-run 也过；但渲染链路按「列名 → 值」的 Map 读行，
+     * <b>后写的会覆盖先写的，静默丢一列</b>（本项目 AP-22 那一族的同型失败）。
+     *
+     * <p><b>规则</b>：<b>首次出现的保持裸名不变</b>（AC-110 既有断言零回归），后出现的加
+     * {@code _<节点短名>} 后缀；后缀本身再撞（同一短名下同名列）就继续追加序号，直到唯一。
+     * 报价侧别名带 {@code _<短名>_} 前缀、本就几乎不会撞，但同样走这条路径——<b>不做"只在核价侧
+     * 去重"的分叉</b>：撞名是输出层的事实问题，与方言无关，分叉只会制造一个只在一侧存在的漏洞。
+     *
+     * <p>⚠️ 纯函数性质不变（AC-11②）：去重只依赖「本次已产出的别名序列」，同一份
+     * {@code builder_config} 任何时候编译，列的遍历顺序相同 ⇒ 结果逐字相同。
+     */
+    private String dedupeAlias(Ctx c, String alias, String shortName) {
+        if (c.usedAliases.add(alias)) return alias;
+        String candidate = alias + "_" + (shortName == null || shortName.isBlank() ? "x" : shortName);
+        int n = 2;
+        while (!c.usedAliases.add(candidate)) {
+            candidate = alias + "_" + (shortName == null || shortName.isBlank() ? "x" : shortName) + n;
+            n++;
+        }
+        return candidate;
     }
 
     /**
