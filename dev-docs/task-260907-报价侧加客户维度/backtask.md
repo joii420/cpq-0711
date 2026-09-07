@@ -227,3 +227,64 @@ usage=COSTING  同上                                                    带 ver
 - 🚫 不对共享库跑 `flyway repair`；🚫 不用 `-Dquarkus.flyway.validate-on-migrate=false` 长期绕过
 - 🚫 不 `pkill -f "quarkus:dev"`（会误伤他人进程），按端口精确定位 PID
 - 🚫 绝不 cd 回主仓跑 `mvnw`；worktree 里跑 `quarkus:dev` 与 `mvnw` **共用 `target/`** ⇒ 用隔离副本，拷完 `diff -rq`
+
+---
+
+## B-8 · 🆕 元素价格策略闭环：加 `FUNC_CUSTOMER_ELEMENT_PRICE` 语义节点
+
+**服务的 AC**：AC-8（用户 2026-09-07 裁决「加上，让元素价格策略闭环」）
+
+### 为什么需要（实测）
+
+```
+f_material_element_price('CUST-0004') → 21 个料号，其中 V6 里没有的 = 0
+  ⇒ 它只覆盖 V6 来源的料号，ds_ 独有料号【恒返 0 行】
+  ⇒ 配置器配的「物料与元素BOM」页签配不出对新料号有效的元素单价列
+```
+
+`f_customer_element_price` 才是**价格策略函数本身**（读 `element_price_strategy` + `element_daily_price`，
+按 `method(LATEST/AVG/MAX/MIN)` + 时间窗算 `raw × factor + premium`），**粒度 = 客户 × 元素，料号不进运算**。
+
+### 照现有节点的形态建（实查）
+
+```
+现有 FUNC_ELEMENT_PRICE（QUOTE）:
+  node_kind      = FUNCTION
+  short_name     = 价格策略
+  display_name   = 价格策略 f_material_element_price
+  func_signature = f_material_element_price(:customerCode, :priceBaseDate)
+  scope          = NONE   physical_table 空   grain_columns {}
+  列             = unit_price「元素单价」· currency「货币」          ← 只有 2 列
+  边             = ELEMENT_BOM --PRICE--> FUNC_ELEMENT_PRICE
+```
+
+**新节点**：`FUNC_CUSTOMER_ELEMENT_PRICE`，`func_signature = f_customer_element_price(:customerCode, :priceBaseDate)`，
+`dialect = QUOTE`，声明 **3 列**：`unit_price`「元素单价」· `currency`「货币」· **`price_unit`「计价单位」**。
+
+🚨 **`price_unit` 必须声明** —— 现有节点漏了它，但函数**实际返回 4 列且该列有值**（实测 `kg`）。
+
+### 🔴 最大风险：可能重现刚修掉的「两个价格策略组」
+
+`ELEMENT_BOM → FUNC_ELEMENT_PRICE` **已有一条 `PRICE` 边**。
+`FieldTreeBuilder` 的 `priceEdge` 专用块**只取一条**，**两条 PRICE 边的行为未定义** ——
+极可能重现 `task-260907-取数配置器补齐` 的 `AC-30`（QUOTE 材质元素返回两个价格策略组，
+两块 `viewColumn`/`isCore` 不同，用户无从分辨该拖哪个，从错的那块拖会让原子组语义失效）。
+
+🚦 **实现前必须先确定「同一锚点两条 PRICE 边」的行为，并在回报里说明你选了哪种**：
+- **(a) 取代** —— 现有 `FUNC_ELEMENT_PRICE` 节点保留（核价侧可能还引用），但**不再挂 PRICE 边**
+- **(b) 共存** —— 面板出两组，但**必须能让用户区分**（否则就是 AC-30 重演）
+- **(c) 其它** —— 说明理由
+
+🚫 **不许默认「加上去就行」** —— 那正是 AC-30 的成因。
+⚠️ 改之前先跑一次「QUOTE/材质元素 的 PRICE 组数」作基线（当前应为 **1**），改完再跑，**不许从 1 变 2**。
+
+### 验收数据（🚫 别拿空结果当缺陷）
+
+该函数有**三层数据依赖**，缺任一层该元素**整行不出现**（不是返 0）：
+`element` 表 ACTIVE + 该客户有 `element_price_strategy` + `element_daily_price` 有行情。
+
+实测 `CUST-0004` 下**实际能算出价的只有 5 个元素**：`Ag 3000 / Cu 101.14 / Ni 105 / Zn 24.17 / 白银 12345`（全 CNY/kg）。
+⇒ **验收必须挑这 5 个里的元素**，否则会拿到「空但不是 bug」的结果。
+
+> 📌 已知取舍：`f_material_element_price` 的 `versioned` 分支（价格版本冻结）在新路径下会丢。
+> 实测 `material_price_version_ref` 全库仅 4 行 / 4 客户 / 4 料号，`CUST-0004` 为 0 ⇒ **现网零损失**。
