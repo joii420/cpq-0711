@@ -111,7 +111,38 @@
 | **共享库** | 测试直连共享开发库 `10.177.152.12:5432/cpq_db_0724`。🚫 **不许跑任何清库型测试**，哪怕写在 `beforeAll` 里 |
 | **夹具前缀** | 本任务线统一用 **`T260907M-`**（与并发三线 `T260907B-` / `T260907Q-` / `T260907T-` 错开）。🚫 清理**一律用主键或完整名精确删**，不许 `LIKE 'T260907%'` —— 那会把别的会话的夹具一起删掉，症状是随机挂且极像业务回归 |
 | **迁移** | 本任务**不写任何迁移**。若发现非写不可，说明前置没满足 ⇒ 停下报主线 |
-| 🚦 **起 Quarkus 前的安全闸**<br>（**本表最容易在不知情下违反的一条**） | `application.properties:67` `quarkus.flyway.migrate-at-start=true`，**dev mode 仍生效** ⇒ **在 worktree 里起一次 Quarkus 服务，就会把该 worktree 里所有 master 上没有的迁移文件自动落进共享库**。<br>🚨 **落库的人自己看不见** —— Flyway 只在启动时校验，肇事者一切正常，而**下一个重启后端的人**（任何会话）会撞 `FlywayValidateException: Detected applied migration not resolved locally`，新检出 / CI 全线起不来。2026-09-07 当天已同型发生 **5 次**（V416/417/418/419/421），其中一次正是**子代理起临时服务自检时无意落的** —— 它回报「未手工执行任何迁移 SQL」**属实，它不知道**。<br>⇒ 🚦 **每次 `./mvnw quarkus:dev` 之前先跑差集检查，非空就停下报主线，🚫 不许先起服务再说**：<br>`comm -23 <(git ls-tree HEAD --name-only cpq-backend/src/main/resources/db/migration/ | grep -o 'V[0-9]*' | sort) <(git ls-tree master --name-only cpq-backend/src/main/resources/db/migration/ | grep -o 'V[0-9]*' | sort)` → **期望空**<br>🚫 撞到 validate 失败**不许**用 `-Dquarkus.flyway.validate-on-migrate=false` 绕过（那关掉的正是唯一的发现信号）；🚫 **更不许**对共享库跑 `flyway repair`（会打掉别人的记录，属 `CLAUDE.md` §3.2 红线）|
+| 🚦 **起 Quarkus 前的安全闸**<br>（**本表最容易在不知情下违反的一条**） | `application.properties:67` `quarkus.flyway.migrate-at-start=true`，**dev mode 仍生效** ⇒ **在 worktree 里起一次 Quarkus 服务，就会把该 worktree 里所有 master 上没有的迁移文件自动落进共享库**。<br>🚨 **落库的人自己看不见** —— Flyway 只在启动时校验，肇事者一切正常，而**下一个重启后端的人**（任何会话）会撞 `FlywayValidateException: Detected applied migration not resolved locally`，新检出 / CI 全线起不来。2026-09-07 当天已同型发生 **5 次**（V416/417/418/419/421），其中一次正是**子代理起临时服务自检时无意落的** —— 它回报「未手工执行任何迁移 SQL」**属实，它不知道**。<br>⇒ 🚦 **不要「记得先检查再起服务」—— 用下面这条命令【代替】 `./mvnw quarkus:dev`，让检查与启动成为同一个不可分离的动作**（见本文件末尾「起服务命令」段）。<br>🚫 撞到 validate 失败**不许**用 `-Dquarkus.flyway.validate-on-migrate=false` 绕过（那关掉的正是唯一的发现信号）；🚫 **更不许**对共享库跑 `flyway repair`（会打掉别人的记录，属 `CLAUDE.md` §3.2 红线）|
 | **N+1** | 单个业务操作的 SQL 条数必须是常数、与 N 无关。循环体里出现查询 = 违规 |
 | **自检** | 完成后必须给出「已自检」一行：编译通过 + 相关测试结果 + 端点实际返回码。没有这行 = 未完成 |
 | **越界** | 发现范围外的问题（如遗留 Modal、其它页面的缺陷）**只报位置，不要顺手改** —— 由主线裁决 |
+
+---
+
+## 🚦 起服务命令（**用它代替 `./mvnw quarkus:dev`，不要分两步**）
+
+```bash
+# 在仓库根目录执行。检查不通过就【不会】启动 —— 这是控制流，不是提示。
+M=cpq-backend/src/main/resources/db/migration/
+DIFF=$(comm -23 \
+  <(git ls-tree HEAD   --name-only "$M" | grep -o 'V[0-9]*' | sort -u) \
+  <(git ls-tree master --name-only "$M" | grep -o 'V[0-9]*' | sort -u))
+
+if [ -n "$DIFF" ]; then
+  echo "🚨 本分支有 master 上没有的迁移：$DIFF"
+  echo "   起服务会把它们自动落进共享库（migrate-at-start=true）"
+  echo "   ⇒ 停下报主线，先把迁移文件推 master，不要起服务"
+else
+  (cd cpq-backend && ./mvnw quarkus:dev)
+fi
+```
+
+### 为什么给命令而不是给规则
+
+**2026-09-07 实证**：并发会话在同型事故后承诺「把规则加进 `backtask.md` 红线段」，**38 分钟后同型复发**（V418 → V419）。它自己的归因是：
+
+> 那条规则放在了**子代理只读一次的地方**。
+
+⇒ 规则写在文档里 = 依赖读的人**记得**；而这个失败模式的特征恰恰是**当事人不知道自己触发了它**（起服务是它知道的动作，落库是它看不见的副作用）。
+⇒ 唯一可靠的形态是**把检查绑进它必然要执行的那个动作里**，让「跳过检查」需要额外动作才能做到。
+
+🚫 **本项目另一条实证教训**（`RECORD.md` 2026-09-06 规则升级提议④）：**脚本里的红线守卫必须是控制流，不能是打印**。曾写过 `[ -e "$DST" ] && echo "已存在，停手"` —— **打印了「停手」却继续执行**，覆盖了未读过的文件。上面这段用的是 `if/else`，检查不过**根本不会走到启动那一支**。
