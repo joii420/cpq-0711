@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>核价通过确认抽屉 · 跨版与无法对齐 —— task-260907 第二段</title>
+<link rel="stylesheet" href="_style.css">
+</head>
+<body>
+
+<div class="page-hint">
+  📌 <b>当前基准</b> · 状态 <b>2/4：跨版 + 无法对齐（错误/警示态）</b> ——
+  服务 <code>AC-10</code> <code>AC-20</code>。本屏是 <code>D-25</code>「财务通过时与当前版本比对再确认」的核心场景：
+  别的报价单已经把同一料号升过版，本单的快照基版落后了。
+</div>
+
+<div class="behind">
+  <h2>报价单 QT-20260907-0418 · 待核价</h2>
+  <div class="card">客户：苏州西门子（CUST-0004）　｜　产品：2 个　｜　金额：¥94,300.00</div>
+</div>
+
+<div class="mask"></div>
+<div class="drawer">
+
+  <div class="drawer-header">
+    <div>
+      <div class="drawer-title">核价通过 —— 确认基础数据升版</div>
+      <div class="drawer-sub">报价单 QT-20260907-0418　·　客户 苏州西门子（CUST-0004）　·　⚠️ 部分料号在本单提交后已被其他报价单改动</div>
+    </div>
+    <button class="drawer-close">✕</button>
+  </div>
+
+  <div class="drawer-body">
+
+    <div class="summary">
+      <div class="item"><div class="k">涉及表</div><div class="v">2</div></div>
+      <div class="item"><div class="k">涉及料号组</div><div class="v">2</div></div>
+      <div class="item"><div class="k">将升版</div><div class="v">2</div></div>
+      <div class="item"><div class="k">无变更</div><div class="v">0</div></div>
+      <div class="item"><div class="k">无法对齐的行</div><div class="v warn">1</div></div>
+    </div>
+
+    <div class="alert alert-warn">
+      <span>⚠️</span>
+      <div>
+        <b>基础数据在本单提交后被改动过。</b>
+        料号 <span class="mono">S-3120014539</span> 的物料BOM 在本单拍快照时是 <b>v1</b>，现在库里已经是 <b>v2</b>
+        —— 是报价单 <b>QT-20260907-0412</b> 于 2026-09-07 14:22 核价通过时升上去的。<br>
+        本次确认会以<b>库里当前的 v2 为底</b>再叠加本单的改动，<b>不会把别人改的内容退回去</b>。
+      </div>
+    </div>
+
+    <div class="alert alert-error">
+      <span>🚫</span>
+      <div>
+        <b>有 1 行对不上。</b>这一行在本单拍快照之后被别人改过内容，系统无法确定它现在对应库里的哪一行。
+        <b>确认后这一行将作为新增行写入，库里原有的行不会被删除。</b>
+        如果这不是你要的结果，请点「取消」，让销售重新打开报价单刷新基础数据后再提交。
+      </div>
+    </div>
+
+    <!-- ── 物料BOM ── -->
+    <div class="sheet-head">
+      <span class="name">物料BOM</span>
+      <span class="table-name mono muted">ds_quote_material_bom</span>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>销售料号</th><th>版本迁移</th><th>判定</th>
+            <th class="num">整组行数</th><th class="num">本次覆盖</th><th class="num">本次不动</th><th class="num">对不上</th>
+            <th>本次覆盖的列</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="row-warn">
+            <td class="mono">S-3120014539</td>
+            <td>
+              <span class="ver">
+                <span class="tag tag-gold">快照 v1</span>
+                <span class="arrow">→</span>
+                <span class="tag tag-blue">库中 v2</span>
+                <span class="arrow">→</span>
+                <span class="to">v3</span>
+              </span>
+            </td>
+            <td><span class="tag tag-gold">跨版升版</span></td>
+            <td class="num">9</td><td class="num">3</td><td class="num">5</td><td class="num" style="color:#cf1322;font-weight:600">1</td>
+            <td><span class="tag tag-grey">组成数量</span> <span class="tag tag-grey">损耗率</span></td>
+          </tr>
+          <tr>
+            <td class="mono">S-2120011659</td>
+            <td><span class="ver">v1 <span class="arrow">→</span> <span class="to">v2</span></span></td>
+            <td><span class="tag tag-blue">升版</span></td>
+            <td class="num">4</td><td class="num">2</td><td class="num">2</td><td class="num">0</td>
+            <td><span class="tag tag-grey">组成数量</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ── 对不上的行明细 ── -->
+    <div class="sheet-head">
+      <span class="name" style="color:#cf1322">对不上的行（1）</span>
+      <span class="table-name muted">确认后按新增写入，库里原行保留</span>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>页签</th><th>销售料号</th><th>项次</th><th>投入料号</th><th>组成数量</th><th>原因</th></tr>
+        </thead>
+        <tbody>
+          <tr class="row-error">
+            <td>物料BOM</td>
+            <td class="mono">S-3120014539</td>
+            <td class="num">70</td>
+            <td class="mono">S-3110520790</td>
+            <td class="num">3.000000000000</td>
+            <td>本单拍快照后，该行内容已被 QT-20260907-0412 改动</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="alert alert-info">
+      <span>ℹ️</span>
+      <div>
+        料号 <span class="mono">S-3120014539</span> 的物料BOM 有 <b>5 行本次不动</b> ——
+        其中包含 QT-20260907-0412 改过而本单没有表征的列，它们会<b>保持 QT-20260907-0412 的值</b>。
+      </div>
+    </div>
+
+  </div>
+
+  <div class="drawer-footer">
+    <span class="footer-note" style="color:#d4380d">⚠️ 有 1 行对不上，确认前请先看上方明细。</span>
+    <button class="btn">取消</button>
+    <button class="btn btn-danger">仍然确认并核价通过</button>
+  </div>
+
+</div>
+
+</body>
+</html>
