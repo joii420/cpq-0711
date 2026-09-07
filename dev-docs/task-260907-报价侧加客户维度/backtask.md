@@ -177,7 +177,7 @@ application.properties:67  quarkus.flyway.migrate-at-start=true
 |---|---|---|
 | **1** | 🚨 **先把 worktree 的改动全部提交** | 2026-09-07 实查：**16 个已改文件 + 13 个未跟踪**（含 5 个迁移、6 个测试类），而分支只比 master 多 1 个提交。子代理按纪律不 `commit`，**提交责任隐式落到主线**，而「跑了测试」「看了 diff」「查了分支」三项常规前置检查**都发现不了代码没进 git**。⚠️ `git worktree remove` 会**连未跟踪文件一起删**（本项目实证近 13000 行险些丢失） |
 | **2** | 🚨 **合并前广播全部并发会话** | 合并后共享库会有 `customer_no`，而 `DatasetSchemaSelfCheck:116` 是**双向**比对 ⇒ **任何仍在跑旧代码的 worktree，下次启动会撞「多出未声明的列: customer_no」**。广播内容：「重启后端之前先把 master 合进你的 worktree」。用 `ListAgents` 取当时的活跃会话 |
-| **3** | 合并到 master | 文件交集先查一遍（今天这次是 0 交集） |
+| **3** | 合并到 master | 文件交集先查一遍。⚠️ **已知与 `核价回填` 会话有文本级冲突**（非语义冲突，两组常量互不相干、开关维度不同）：`SheetDef.java`（我加 `CUSTOMER_COLUMNS`，它加 `RECORD_COLUMNS`/`SOURCE_QUOTATION_COLUMN`）· `QuoteRegistry.java`（我传 `customerScoped=true`，它覆写 `quoteRecordEnabled()`）· `DatasetRegistry.java` · `DatasetSchemaSelfCheck.java`。**双方已约定我先合、它后合并由它解冲突**（它还要走亲验，本就在我后面） |
 | **4** | 🚨 **显式重启主仓 8081，🚫 不要依赖热重载** | 主仓 8081 是**长跑进程**（`cwd=/home/joii/project/cpq/cpq-backend`），master 迁移目录一变就会**热重载即迁移**。**已实证的是冷启动下 Flyway 先于自检的顺序，热重载的顺序未验证** ⇒ 走已验证的那条路 |
 | **5** | 验共享库迁移 | `SELECT version,success FROM flyway_schema_history WHERE version::int >= 423` → **423~427 全部 `success=t`** |
 | **6** | 验自检通过 | 启动日志出现 `[dataset] Registry↔DDL 自检通过：N 张表 / M 列`。**没出现 = 自检抛了，服务没起来** |
