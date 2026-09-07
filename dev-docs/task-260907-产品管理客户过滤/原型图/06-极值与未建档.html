@@ -137,8 +137,9 @@
 
   <div class="proto-note" style="max-width:none;margin:16px 0 0">
     <b>这一屏在防什么</b>：<code>C1</code> / <code>Q13CUST0617</code> 共 3 行产品数据是真实存在的。
-    如果候选只查 <code>customer</code> 主数据表，这两个客户号<b>选不到</b> ⇒ 它们的产品
-    <b>「选『所有客户』看得见，选任何具体客户都筛不出来」</b>。<br>
+    如果候选只查 <code>customer</code> 主数据表，这两个客户号<b>选不到</b>。<br>
+    🔄 <b><code>D-7</code>（客户必选）让这个后果更严重了</b>：原先还能「选『所有客户』看得见」，
+    而现在<b>没有「所有客户」这个退路</b> ⇒ 选不到该客户 = <b>它的 3 行产品在整个页面上彻底不可达</b>。<br>
     🚫 <b>三条禁令</b>：不得把未建档候选项从下拉里筛掉；不得把这些行从列表里筛掉；
     不得因 <code>customerName</code> 为 <code>null</code> 而渲染成空白（必须是 <code>—</code>）。<br>
     ℹ️ 顶部提示条是<b>可选增强</b>；下拉里的「未建档」标记与列表的 <code>—</code> 是<b>必做项</b>。

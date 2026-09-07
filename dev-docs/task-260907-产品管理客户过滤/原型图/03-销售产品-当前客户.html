@@ -2,16 +2,17 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>03 · 销售产品（所有客户）</title>
+<title>03 · 销售产品（当前客户）</title>
 <link rel="stylesheet" href="prototype.css">
 </head>
 <body>
 
 <div class="proto-note">
-  <b>03 · 销售产品页签 · 「所有客户」态 —— 本任务最关键的一屏</b>　服务 <code>F-4</code>　AC-3 / AC-5 / AC-16<br>
-  🔴 <b>这一屏定义了「行语义变更」</b>：复合轴落地后，一行 = <b>「客户 × 销售料号」</b>，不再是「销售料号」。
-  下表 <code>T260907M-X</code> 出现<b>两行</b>（CUST-0001 与 CUST-0004 各一行），这是<b>正确行为，不要去重</b>。<br>
-  🚨 <code>rowKey</code> 必须是 <code>customerNo|axisValue</code>。仍用 <code>axisValue</code> 会让 React 把这两行认成同一行 ⇒ 渲染错乱、勾选串行。
+  <b>03 · 销售产品页签 · 当前客户态 —— 本任务最关键的一屏</b>　服务 <code>F-4</code>　AC-3 / AC-5 / AC-16<br>
+  🔄 <b>2026-09-07 用户变更（<code>D-7</code>）：客户必选 ⇒ 列表恒为单客户</b>（原图画的是「所有客户」态，已作废）。<br>
+  🔴 <b>行语义仍是「客户 × 销售料号」</b>：同一料号在别的客户下另有一行，只是<b>不同屏出现</b> —— 切换客户才看得到（AC-16 拆两层验，见 <code>D-8</code>）。<br>
+  🚨 <code>rowKey</code> <b>仍必须</b>是 <code>customerNo|axisValue</code>。单客户下虽不会同屏出现两行，但<b>切换客户时 React 会复用行组件</b>，
+  key 不含客户号会导致切换后仍显示上一个客户的单元格值。
 </div>
 
 <div class="page">
@@ -21,7 +22,7 @@
     <div class="head-actions">
       <div class="select-group">
         <span class="addon">客户</span>
-        <span class="select"><span class="val placeholder">所有客户</span><span class="caret">▾</span></span>
+        <span class="select"><span class="val filled">CUST-0001　罗克韦尔</span><span class="caret">▾</span></span>
       </div>
       <button class="btn">⊞ 产品分类管理</button>
     </div>
@@ -57,7 +58,7 @@
         </tr>
       </thead>
       <tbody>
-        <!-- ══ 同料号跨客户：两行并存，客户列是唯一的区分点 ══ -->
+        <!-- ══ 客户必选 ⇒ 全表恒为 CUST-0001 的行；同料号在 CUST-0004 下的那一行【不同屏】 ══ -->
         <tr class="hl">
           <td class="mono">CUST-0001</td><td>罗克韦尔</td>
           <td class="mono"><a class="btn-link">T260907M-X</a></td><td>跨客户夹具件</td>
@@ -65,14 +66,6 @@
           <td class="muted">—</td><td>3.5×3.5×0.7</td><td>零件</td>
           <td><span class="tag blue">13 / 13</span></td>
         </tr>
-        <tr class="hl">
-          <td class="mono">CUST-0004</td><td>正泰</td>
-          <td class="mono"><a class="btn-link">T260907M-X</a></td><td>跨客户夹具件</td>
-          <td class="mono">T260907M-P-B</td>
-          <td class="muted">—</td><td>3.5×3.5×0.7</td><td>零件</td>
-          <td><span class="tag grey">4 / 13</span></td>
-        </tr>
-        <!-- ══ 以下为 dev 库真实存量行 ══ -->
         <tr>
           <td class="mono">CUST-0001</td><td>罗克韦尔</td>
           <td class="mono"><a class="btn-link">0526-2609000004</a></td><td>选配A1</td>
@@ -95,38 +88,21 @@
           <td><span class="tag blue">13 / 13</span></td>
         </tr>
         <tr>
-          <td class="mono">CUST-0004</td><td>正泰</td>
-          <td class="mono"><a class="btn-link">S0001</a></td><td>示例料号</td>
-          <td class="mono">P-S0001</td>
-          <td class="muted">—</td><td class="muted">—</td><td>零件</td>
+          <td class="mono">CUST-0001</td><td>罗克韦尔</td>
+          <td class="mono"><a class="btn-link">2120011659</a></td><td>料3</td>
+          <td class="muted">—</td>
+          <td class="muted">—</td><td>3.5×3.5×0.9</td><td class="muted">—</td>
           <td><span class="tag blue">13 / 13</span></td>
-        </tr>
-        <tr>
-          <td class="mono">CUST-0002</td><td>测试客户</td>
-          <td class="mono"><a class="btn-link">3120011203</a></td><td>料5</td>
-          <td class="muted">—</td>
-          <td class="muted">—</td><td>3.5×3.5×0.6</td><td class="muted">—</td>
-          <td><span class="tag grey">7 / 13</span></td>
-        </tr>
-        <!-- 🔑 未建档客户的行：客户名称列渲染「—」，🚫 不是空白、不是报错 -->
-        <tr>
-          <td class="mono">C1</td>
-          <td class="muted">—</td>
-          <td class="mono"><a class="btn-link">TEST-Q13-CODE</a></td><td>Q13 测试件</td>
-          <td class="muted">—</td>
-          <td class="muted">—</td><td class="muted">—</td><td class="muted">—</td>
-          <td><span class="tag grey">0 / 13</span></td>
         </tr>
       </tbody>
     </table>
   </div>
 
   <div class="pager">
-    <span class="muted">共 51 条</span>
+    <span class="muted">共 18 条</span>
     <span class="pg-num">‹</span>
     <span class="pg-num active">1</span>
     <span class="pg-num">2</span>
-    <span class="pg-num">3</span>
     <span class="pg-num">›</span>
     <span class="select" style="min-width:110px"><span class="val">20 条/页</span><span class="caret">▾</span></span>
   </div>
@@ -139,7 +115,10 @@
   2. <b>客户两列置于最左</b>，因为它们现在是行身份的一部分，不是附属信息。<br>
   3. <code>customerName</code> 为 <code>null</code> 时渲染 <code>—</code>（<b>不是空白</b>）。它来自后端同一条 SELECT 的
      <code>LEFT JOIN customer</code>，🚫 前端不得逐行去查。<br>
-  4. <b>「所有客户」下不去重</b>：同料号跨客户的多行都要展示。去重会让用户以为只有一个客户配了这个料号。<br>
+  4. 🔄 <b><code>D-8</code>：AC-16 拆两层验</b> —— <b>UI 层</b>切到 <code>CUST-0004</code> 后仍能看到 <code>T260907M-X</code>，
+     但客户列变成 <code>CUST-0004</code> 且<b>行内容不同</b>（生产料号是 <code>T260907M-P-B</code> 而非 <code>-P-A</code>）；
+     <b>后端层</b>直接调 API 断言两个客户的行都在库里。<br>
+     🔑 <b>两层合起来才证伪得了「静默删掉别人的行」</b>：只验 UI 单客户可见，抓不住「B 的行其实已被 A 的导入删掉」。<br>
   <b>本次不动的</b>：客户列<b>不支持点击排序</b>（后端 <code>sortBy</code> 白名单本次不新增键）；生产料号列的<b>可编辑行为不变</b>（见图 04）。
 </div>
 
