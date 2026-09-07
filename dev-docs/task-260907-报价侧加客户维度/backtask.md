@@ -49,16 +49,32 @@ DatasetSchemaSelfCheck.java:73    throw new IllegalStateException(...)
 ### ①a 🚨 **建迁移文件的那一刻就要查有没有服务在跑**（比 ①b 更早的时点）
 
 ```bash
-# 在 worktree 里【新建/修改任何迁移文件之前】跑这个
+# 在 worktree 里【新建/修改任何迁移文件之前】跑这个。判据是 cwd，不是命令行文本。
 W=/home/joii/project/cpq/.claude/worktrees/task-260907-customer-dim
-PIDS=$(ps -eo pid,args | awk -v w="$W" '$0 ~ /java/ && index($0,w) {print $1}')
+PIDS=""
+for p in $(pgrep -x java); do
+  c=$(readlink -f /proc/$p/cwd 2>/dev/null)
+  case "$c" in "$W"|"$W"/*) PIDS="$PIDS $p";; esac
+done
 if [ -n "$PIDS" ]; then
-  echo "🚨 本 worktree 有服务在跑（PID: $PIDS）—— 迁移文件与运行中的服务同时存在 = 随时可能被热重载落库"
+  echo "🚨 本 worktree 有服务在跑（PID:$PIDS）—— 迁移文件与运行中的服务同时存在 = 随时可能被热重载落库"
   echo "   ⇒ 先按端口精确停掉它（ss -lptn \"sport = :<port>\"），再建迁移文件"
 else
   echo "✅ 本 worktree 无运行中的服务，可以建迁移文件"
 fi
 ```
+
+🚨 **判据必须是 `cwd`，🚫 不能是命令行子串匹配**（2026-09-07 实证，主线第一版就是错的）：
+原版用 `index($0, w)` 匹配整条命令行，**命中了两个根本不属于本 worktree 的进程** ——
+测试代理的 scratch 隔离副本，它们的命令行里只是**提到**了这个路径：
+```
+-Dcustdim.evidenceDir=<worktree>/dev-docs/...     ← 命中在这
+SRC=<worktree>                                     ← 命中在这
+实际 cwd = <scratch>/iso/cpq-backend               ← 根本不读本 worktree 的 migration 目录
+```
+🚨 **这个假阳性比漏放更危险**，因为**守卫诱导的动作是「按端口停掉它」** ——
+照做就会去杀别人正在跑的测试进程。后端代理没有照做，改用 cwd 判据复核后才判清。
+（这是本文档里第三次记同一件事：**守卫的假阳性和假阴性都要验**。）
 
 🔑 **为什么必须在这个时点、而不只是「起服务前」**（并发会话 2026-09-07 实证，**差一个 HTTP 请求就炸**）：
 
@@ -494,6 +510,10 @@ WHERE EXISTS (SELECT 1 FROM cust_scope cs WHERE cs.material_no::text = b.materia
 ⇒ 料号挂两客户时每行发两遍，**与该行自己的 `customer_no` 无关** ⇒ AC-1 要验的隔离被反向抹平。
 
 ⚠️ **写 AC-1 夹具前必读这条**：现网 `max(count DISTINCT customer_no) per material = 1` ⇒ **扇出恒为 1**
+🚨 **但这句话必须限定维度**（2026-09-07 实证更正）：它在 **`ds_quote_material_bom` 上成立**，
+在 **`cust_scope` 上不成立** —— `cust_scope` 是两支 UNION（客户料号表直给 + 父件的客户传给子件），
+实测 `TEST-Q13-CODE` 就有 **2 个**候选客户（`C1` + `CUST-0001`）。
+**这正是 V427 落地后 11 行变 10 行的成因** —— 不限定维度就会以为哪里做错了而乱改。
 ⇒ **任何用现网数据的等价性验证都必然通过**（主线那个「34 行 diff 为空」也是）。
 它证明的是「**单客户下**等价」。**判据落在一个恒为 1 的维度上时，它不是弱证据，是零证据。**
 ⇒ **夹具必须自己造出扇出 ≥ 2 的场景**：同料号、两个 `customer_no`、子件不同。
