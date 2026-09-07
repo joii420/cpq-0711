@@ -43,7 +43,7 @@
       <span>ℹ️</span>
       <div>
         下表列的是<b>确认后基础数据会变成什么样</b>，不是「哪些值变了」。
-        「<b>本次不动</b>」那一列是本页签没有表征的行 —— 它们会<b>原样保留</b>，不会被删除、不会被置空。
+        「<b>本次不动</b>」那一列是本页签没有表征的行 —— 它们会<b>原样保留</b>，不会被删除、不会被置空。<br>「<b>回填后行数</b>」与「整组行数」不同时会标色：<span style="color:#389e0d;font-weight:600">绿色</span>=整组新建，<span style="color:#d4380d;font-weight:600">红色</span>=有对不上的行按新增写入、组会变大。
       </div>
     </div>
 
@@ -57,7 +57,7 @@
         <thead>
           <tr>
             <th>销售料号</th><th>版本迁移</th><th>判定</th>
-            <th class="num">整组行数</th><th class="num">本次覆盖</th><th class="num">本次不动</th>
+            <th class="num">整组行数</th><th class="num">回填后行数</th><th class="num">本次覆盖</th><th class="num">本次不动</th>
             <th>本次覆盖的列</th><th>原样保留的列</th>
           </tr>
         </thead>
@@ -66,7 +66,7 @@
             <td class="mono">S-3120014539</td>
             <td><span class="ver">v2 <span class="arrow">→</span> <span class="to">v3</span></span></td>
             <td><span class="tag tag-blue">升版</span></td>
-            <td class="num">9</td><td class="num">2</td><td class="num">7</td>
+            <td class="num">9</td><td class="num">9</td><td class="num">2</td><td class="num">7</td>
             <td><span class="tag tag-grey">组成数量</span> <span class="tag tag-grey">单重</span></td>
             <td class="muted">项次、投入料号、产出料号类型、材料毛重、材料净重、重量单位、材料占比、损耗率、不良率</td>
           </tr>
@@ -74,7 +74,7 @@
             <td class="mono">S-2120011659</td>
             <td><span class="ver">v1 <span class="arrow">→</span> <span class="to">v2</span></span></td>
             <td><span class="tag tag-blue">升版</span></td>
-            <td class="num">4</td><td class="num">4</td><td class="num">0</td>
+            <td class="num">4</td><td class="num">4</td><td class="num">4</td><td class="num">0</td>
             <td><span class="tag tag-grey">组成数量</span> <span class="tag tag-grey">损耗率</span></td>
             <td class="muted">项次、投入料号、产出料号类型、材料毛重、材料净重、重量单位、材料占比、不良率</td>
           </tr>
@@ -82,7 +82,7 @@
             <td class="mono">T260907R-NEW01</td>
             <td><span class="ver"><span class="muted">—</span> <span class="arrow">→</span> <span class="to">v1</span></span></td>
             <td><span class="tag tag-green">新建</span></td>
-            <td class="num">0</td><td class="num">3</td><td class="num">0</td>
+            <td class="num">0</td><td class="num" style="color:#389e0d;font-weight:600">3</td><td class="num">3</td><td class="num">0</td>
             <td><span class="tag tag-grey">组成数量</span> <span class="tag tag-grey">单重</span></td>
             <td class="muted">该料号在基础数据里还没有，本次整组新建</td>
           </tr>
@@ -90,7 +90,7 @@
             <td class="mono">VS-FG01</td>
             <td><span class="ver">v1 <span class="arrow">→</span> <span class="to muted" style="color:rgba(0,0,0,.45);font-weight:400">v1</span></span></td>
             <td><span class="tag tag-grey">无变更</span></td>
-            <td class="num">5</td><td class="num">0</td><td class="num">5</td>
+            <td class="num">5</td><td class="num">5</td><td class="num">0</td><td class="num">5</td>
             <td class="muted">—</td>
             <td class="muted">整组不写，连更新时间都不会动</td>
           </tr>
@@ -108,7 +108,7 @@
         <thead>
           <tr>
             <th>销售料号</th><th>版本迁移</th><th>判定</th>
-            <th class="num">整组行数</th><th class="num">本次覆盖</th><th class="num">本次不动</th>
+            <th class="num">整组行数</th><th class="num">回填后行数</th><th class="num">本次覆盖</th><th class="num">本次不动</th>
             <th>本次覆盖的列</th><th>原样保留的列</th>
           </tr>
         </thead>
@@ -117,7 +117,7 @@
             <td class="mono">S-3120014539</td>
             <td><span class="ver">v1 <span class="arrow">→</span> <span class="to">v2</span></span></td>
             <td><span class="tag tag-blue">升版</span></td>
-            <td class="num">6</td><td class="num">3</td><td class="num">3</td>
+            <td class="num">6</td><td class="num">6</td><td class="num">3</td><td class="num">3</td>
             <td><span class="tag tag-grey">组成含量（%）</span> <span class="tag tag-grey">损耗率%</span></td>
             <td class="muted">材质料号、元素、项次、毛用量、毛用量单位、净用量、净用量单位、回收折扣、回收量</td>
           </tr>
