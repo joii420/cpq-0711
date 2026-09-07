@@ -61,7 +61,7 @@
           <tr>
             <th>页签</th><th>销售料号</th><th>版本迁移</th><th>判定</th>
             <th class="num">整组行数</th><th class="num">本次覆盖</th><th class="num">本次不动</th><th class="num">对不上</th>
-            <th>本次覆盖的列</th>
+            <th>本次覆盖的列</th><th>原样保留的列</th>
           </tr>
         </thead>
         <tbody>
@@ -72,6 +72,7 @@
             <td><span class="tag tag-gold">跨版升版</span></td>
             <td class="num">9</td><td class="num">4</td><td class="num">4</td><td class="num" style="color:#cf1322;font-weight:600">1</td>
             <td><span class="tag tag-grey">组成数量</span> <span class="tag tag-grey">材料毛重</span> <span class="tag tag-grey">材料净重</span> <span class="tag tag-grey">材料占比（%）</span></td>
+            <td class="muted">项次、投入料号、产出料号类型、重量单位、损耗率、不良率</td>
           </tr>
           <tr>
             <td>物料与元素BOM<div class="mono muted" style="font-size:12px">ds_quote_element_bom</div></td>
@@ -80,6 +81,7 @@
             <td><span class="tag tag-blue">升版</span></td>
             <td class="num">18</td><td class="num">18</td><td class="num">0</td><td class="num">0</td>
             <td><span class="tag tag-grey">组成含量（%）</span> <span class="tag tag-grey">损耗率%</span> <span class="tag tag-grey">毛用量</span> <span class="tag tag-grey">净用量</span> <span class="tag tag-grey">回收折扣(%)</span> <span class="tag tag-grey">回收量</span></td>
+            <td class="muted">材质料号、元素、项次、毛用量单位、净用量单位</td>
           </tr>
           <tr class="row-warn">
             <td>组成件其他费用<div class="mono muted" style="font-size:12px">ds_quote_sub_component_fee</div></td>
@@ -88,6 +90,7 @@
             <td><span class="tag tag-gold">跨版升版</span></td>
             <td class="num">6</td><td class="num">2</td><td class="num">2</td><td class="num" style="color:#cf1322;font-weight:600">2</td>
             <td><span class="tag tag-grey">费用金额</span></td>
+            <td class="muted">项次、费用名称、币种、备注</td>
           </tr>
           <tr>
             <td>年降系数<div class="mono muted" style="font-size:12px">ds_quote_annual_discount</div></td>
@@ -96,6 +99,7 @@
             <td><span class="tag tag-grey">无变更</span></td>
             <td class="num">3</td><td class="num">0</td><td class="num">3</td><td class="num">0</td>
             <td class="muted">—</td>
+            <td class="muted">整组不写</td>
           </tr>
         </tbody>
       </table>
