@@ -540,6 +540,46 @@ E2E 导入的 **58 行**夹具也已按前缀清净。
 | **AC-15 ①②** | 【基础资料维护】共用端点零回归（D-32 两层判据） | 🚦 **先断言 10/10 端点 HTTP=200 才进 diff** —— 401 会让 diff 忠实报出「全漂移」的假红。<br>**① 结构层（严格）**：把响应剥成骨架（字段集 + 嵌套结构，值换成类型名）比对 → **10 相同 / 0 不同** ✅<br>**② 数据层（宽松）**：唯一差异是 `02-parts-p1.json` 的 `total` **47 → 57**，**逐条归因完毕**：<br>　`ds_quote_material` 57 行按 `created_at` 分桶 = **47 行创建于 09-03~09-05（早于基线采集时点 09-07 01:43）** + **10 行创建于 09-07 08:00 后（= 本次主线亲验自己导入的）** + **0 行来路不明**<br>⇒ 差异 100% 归因到本任务自身写入，AC-15 两层均通过。C 侧产物落 `证据/AC-15主线C侧/` |
 | **AC-9** | 改一格 → 保存 → 切走切回 → 刷新，三时点一致 | 新建 `QT-20260907-0521`（3 明细）→ 编辑页 Step2 → 选中第一个有数值的单元格（原值 **12.5**）→ 改成 **20**（+7.5）→ 保存<br>**时点1（保存后当场）= 20 · 时点2（切走切回）= 20 · 时点3（刷新页面）= 20** ✅<br>🚫 **防空验证**：用例先断言「可编辑单元格数 > 0」（实测 20 个）与「必须找到一个有数值的格」（下标 2，原值 12.5），两条不满足就直接失败，不会在没有输入框的页面上"通过" |
 
+| **AC-19** | 权限 | 以 `t260903_pm`（`PRICING_MANAGER`，ACTIVE）登录 → 三个新端点 **全部 403**：`POST /dataset/quote/quotation-import` · `GET /dataset/quote/quotation-import/{id}` · `POST /dataset/quote/create-quotation`；`quotation` **275 → 275** 不变 |
+| **AC-20 ②③** | N+1 与物化转后台 | ③ 响应含 `materializing=true` ✅（两次建单都有）<br>② 见下方专节 —— **实质成立、字面不成立**，须订正 AC 措辞 |
+
+### 🔬 AC-20② 实测：无 N+1，但 AC 原文的「与料号数无关」字面不成立
+
+量具：worktree 服务带 `-Dquarkus.hibernate-orm.log.sql=true` 重起，按日志里的 `^\[Hibernate\]` 行数语句。
+🚦 **量具先自证**：打一个已知的列表请求，计数器 `176 → 178`（+2 = 计数查询 + 分页查询），会动才继续。
+（第一版量具用 `date +%s%3N` 计时 + 时间戳正则数语句，**两个都是坏的**（本环境 `date` 不支持 `%3N`；SQL 是多行格式、语句边界是 `[Hibernate]` 行而非时间戳行），计数恒返 0。已弃用，改用 `curl -w '%{time_total}'` + `[Hibernate]` 计数。）
+
+| | 3 明细 | 200 明细 | 倍数 |
+|---|---|---|---|
+| 明细行数 | 3 | 200 | **×66.7** |
+| 同步段耗时 | 0.126 s | 0.259 s | ×2.1 |
+| SQL 语句总数 | **68** | **119** | ×1.75 |
+| 最高重复形态 | 14 × `select component_sql_view` | 28 × `update quotation_line_component_data` | ×2 |
+
+**200 明细那次的完整构成**：
+```
+ 28  update quotation_line_component_data      14  select component
+ 14  select component_sql_view                 14  insert quotation_line_component_data
+  9  select quotation_line_item                 8  select quotation
+  8  select template                            6  select quotation_line_component_data
+  6  select template_component_snapshot         3  select quotation_view_structure
+  2  select costing_bom_tree_config             2  insert quotation_view_structure
+  1  select semantic_tab_view                   1  update quotation
+```
+
+✅ **无 N+1（实质判据成立）**：若存在 N+1，200 明细下应有某语句形态出现 **≈200 次**，实际**最高 28 次**；
+且 `select component` / `select component_sql_view` / `insert quotation_line_component_data` **各恰好 14 次 = 页签数**
+⇒ **没有任何语句形态随料号数增长**，增长维度是页签数不是料号数。
+
+⚠️ **但 AC-20② 原文写「SQL 条数与料号数**无关**」，实测 68 ≠ 119，字面不成立。**
+差异来源是页签级工作与异步物化的窗口重叠，**不是逐料号查询**。
+📌 **须在结案时订正 AC-20② 措辞** —— 正确的不变量是「**不存在随明细行数线性增长的语句形态**」，而不是「总条数是常数」。
+这是 `task-260819` 那条沉淀的又一例：**AC 判据要写成不变量，不能写成一个会被实现细节推翻的绝对说法。**
+
+🚫 **AC-20① 未按原文验证**：原文要求 **1845 行**明细，我实测的是 **200 行**（同步段 0.259 s，离 60 s 超时有 230 倍余量）。
+1845 的夹具已被测试代理清理（`ds_quote_customer_part` 中 `T260907T-B*` = 0），重跑需重新灌 1845 行到共享库。
+**「无 N+1」这个结构结论支持 1845 也安全，但那是推论，不是实测** —— 如实记为未验。
+
 ### 📌 顺带实测：14 个页签全部渲染
 
 AC-9 用例打印 `.qt-tab-btn` 计数 = **42 = 14 页签 × 3 明细行**，页签名依次为
