@@ -2,12 +2,12 @@
 // 数据集维护（task-260902）· 前端服务层
 // Base path：/api/cpq/dataset/{dataset}（axios baseURL 已含 /api/cpq）
 //
-// 复用 `part-costing/api.ts` 的 `createSheetApi(basePath)` 工厂（F-1）：
-//   路径形状与 /pricing-basic-data 完全同构，只有响应体字段名不同，
+// 复用 `../shared/sheetApiFactory.ts` 的 `createSheetApi(basePath)` 工厂（F-1）：
+//   路径形状与核价侧旧维护端点完全同构，只有响应体字段名不同，
 //   故 URL 构造/编码/unwrap 共用，字段映射留在本文件。
 // ─────────────────────────────────────────────────────────────────────────────
-import { createSheetApi } from '../part-costing/api';
-import type { LookupResult, MasterType } from '../part-costing/types';
+import { createSheetApi } from '../shared/sheetApiFactory';
+import type { LookupResult, MasterType } from '../shared/types';
 import type {
   DatasetKey,
   DatasetPartListResult,
@@ -32,7 +32,7 @@ export interface DatasetListPartsParams {
   /**
    * ⚠️ 契约缺口：原型「核价数据-列表」画了「配置状态」过滤下拉，但 api.md §3 的 Query
    *    只列了 page/size/keyword/sortBy/sortDir，**没有这个参数**。已上报主线。
-   *    此处按现有 /pricing-basic-data 的同名参数发送；后端未实现时该参数被忽略（过滤不生效），
+   *    此处按核价侧旧维护端点的同名参数发送；后端未实现时该参数被忽略（过滤不生效），
    *    不会引发报错。
    */
   configured?: boolean;

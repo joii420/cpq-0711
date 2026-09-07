@@ -2,7 +2,7 @@
  * task-260903「产品管理页重做」E2E —— `E2E-01` ~ `E2E-16` + `ST-01`。
  *
  * 🚫 **本文件从 `需求文档.md` ③ 的 AC-1~AC-17 原文派生，没有读过任何实现代码**
- *    （`cpq-frontend/src/pages/product/` 与 `part-costing/` 全程未打开）。
+ *    （`cpq-frontend/src/pages/product/` 与主数据维护核价侧的公共件目录 全程未打开）。
  *    从实现派生的测试只能证明「代码按实现者的理解工作」，证明不了「功能符合需求」。
  *
  * 追溯矩阵见 `dev-docs/task-260903-产品管理页重做/test.md §3`。
@@ -36,6 +36,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 test.describe.configure({ mode: 'serial' });
+
+/**
+ * task-260907：基础核价 / 详细核价侧数据充分的料号（轴 = **生产料号**，无 S- 前缀）。
+ * 🚨 与本 spec 主角 `HERO = 'S-3120014539'` 是**两个不同的轴口径**：
+ *    产品管理页（ds_quote_*）用销售料号 S-…；核价数据集（ds_cost_*）用生产料号 …。
+ *    2026-09-07 实查：`S-3120014539` 在 ds_cost_basic_material_bom 里 0 行，`3120014539` 有 8 行。
+ */
+const COST_HERO = '3120014539';
 
 let before: DataState;
 
@@ -345,11 +353,18 @@ test('E2E-09 / AC-9：PRICING_MANAGER 与 SYSTEM_ADMIN 结果一致；反向 —
   await closeDrawer(page);
 
   // ── 反向断言：本任务不得把核价侧改成只读 ──
+  // 🚩 **task-260907 改造**：原来指向的核价维护页签已随其整条功能移除，
+  //    载体换成**基础核价**页签（同样可编辑、同样走 EditableSheetTable），**语义不变**。
+  //    ⚠️ 两处一起改，只改一处会得到误导性失败：
+  //      1. 页签一律 `getByRole('tab', {name, exact:true})` —— `getByText(...).first()`
+  //         实测 300s 超时（见 product-hub-edit-fs.spec.ts 的同款注释）；
+  //      2. 料号换成 COST_HERO —— `HERO='S-3120014539'` 在 ds_cost_basic_* 子表里一行都没有
+  //         （2026-09-07 实查），沿用它会让抽屉全空、反向断言空跑。
   await page.goto('/master-data-hub');
-  await page.getByText('料号核价', { exact: true }).first().click();
+  await page.getByRole('tab', { name: '基础核价', exact: true }).click();
   await page.waitForTimeout(1500);
-  await search(page, HERO);
-  const costCell = page.getByRole('cell', { name: HERO, exact: true }).first();
+  await search(page, COST_HERO);
+  const costCell = page.getByRole('cell', { name: COST_HERO, exact: true }).first();
   await expect(costCell, '反向断言前置：核价侧应能搜到主角料号').toBeVisible({ timeout: 10_000 });
   await costCell.click();
   const costDrawer = page.locator('.ant-drawer').first();
@@ -378,7 +393,8 @@ test('E2E-09 / AC-9：PRICING_MANAGER 与 SYSTEM_ADMIN 结果一致；反向 —
   await shot(page, 'AC09-costing-editable', { fullPage: true });
   expect(costInputs, '🚨 AC-9 反向断言：核价侧表格必须仍有可编辑控件').toBeGreaterThan(0);
   expect(saveBtns, '🚨 AC-9 反向断言：本任务不得把核价侧改成只读 —— ' +
-    'PRICING_MANAGER 在「料号核价」抽屉里必须仍能看到保存按钮').toBeGreaterThan(0);
+    'PRICING_MANAGER 在「基础核价」抽屉里必须仍能看到保存按钮' +
+    '（task-260907 · AC-11 同判据：公共件迁到 shared/ 后核价侧仍可编辑）').toBeGreaterThan(0);
 });
 
 // ══════════════════════════ E2E-10 → AC-10 版本切换 ══════════════════════════

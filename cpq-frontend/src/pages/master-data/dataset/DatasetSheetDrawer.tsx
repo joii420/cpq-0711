@@ -6,7 +6,7 @@
 // tab 数由 `GET /dataset/{ds}/sheets` 决定，**前端不写死**（F-3：9 或 17 都走同一段代码）。
 //
 // 复用（闸门 A0 · D-13 抽公共件）：
-//   · 表体直接用现有 `part-costing/EditableSheetTable`（+ 三个可选 prop）
+//   · 表体直接用现有 `../shared/EditableSheetTable`（+ 三个可选 prop）
 //   · 行身份走现有 `__rid`（AP-54 教训：过滤后下标当原下标会让受控输入错位/假死）
 //   · HTTP 层走 `createSheetApi(basePath)` 工厂
 //
@@ -19,8 +19,8 @@ import {
 } from 'antd';
 import { SaveOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useAuthStore } from '../../../stores/authStore';
-import EditableSheetTable, { withRowIds, newBlankRow } from '../part-costing/EditableSheetTable';
-import type { ColumnDef, SheetRow } from '../part-costing/types';
+import EditableSheetTable, { withRowIds, newBlankRow } from '../shared/EditableSheetTable';
+import type { ColumnDef, SheetRow } from '../shared/types';
 import { createDatasetApi } from './api';
 import type { DatasetApi } from './api';
 import {

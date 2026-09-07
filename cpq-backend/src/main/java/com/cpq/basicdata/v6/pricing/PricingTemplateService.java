@@ -15,7 +15,18 @@ import java.io.ByteArrayOutputStream;
 import java.util.List;
 
 /**
- * 核价基础数据导入模板生成（task-0728 · B4 / api.md A4）。
+ * ⚠️ <b>2026-09-07 起无生产调用方</b>（{@code task-260907} 删除了
+ * {@code POST /api/cpq/basic-data-import/v6/pricing} 端点），当前仅由
+ * {@code PricingTemplateServiceTest} / {@code PricingVersioningImportE2ETest} /
+ * {@code Task0812DisabledSheetsTest} 覆盖。
+ *
+ * <p>🚫 <b>不要按死代码清理</b> —— 它是 V6 核价基础数据表（{@code unit_price} /
+ * {@code material_bom_item} / {@code element_bom_item} / {@code production_energy} /
+ * {@code capacity} / {@code labor_rate} / {@code tooling_cost} 等）<b>唯一的写入实现</b>，
+ * 而这批表仍在给核价单渲染供数（{@code task-260819} 裁决 N-16：不重绑 107 个存量视图）。
+ * 删了它 = V6 表再无任何写入路径。最终处置见 {@code docs/BACKLOG.md · BL-0214}。
+ *
+ * <p>核价基础数据导入模板生成（task-0728 · B4 / api.md A4）。
  *
  * <p>规则：
  * <ul>

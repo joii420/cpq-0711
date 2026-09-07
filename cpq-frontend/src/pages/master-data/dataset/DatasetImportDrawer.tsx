@@ -6,8 +6,8 @@
 //   · 报价数据           → 报价单管理工具栏的「导入报价数据」按钮
 //
 // 🚫 `frontend.md §1.1`：用 Drawer，不用 Modal。
-// 🚫 现有「从基础数据导入」（QuoteBasicDataImportV6Drawer）与「料号核价 → 导入核价数据」
-//    （PricingBasicDataImportDrawer）与本组件**完全无关**，一个字节都不碰（AC-35 / AC-43）。
+// 🚫 现有「从基础数据导入」（QuoteBasicDataImportV6Drawer）与本组件**完全无关**，
+//    一个字节都不碰（AC-35 / AC-43）。核价侧那条 V6 老导入抽屉已于 task-260907 随其页签一并移除。
 //
 // 🚨 原型与 AC 冲突（已上报主线，按 AC 原文实现）：
 //    - 原型「数据导入-抽屉」把成功汇总留在抽屉里，靠底部「完成并关闭」手工关；

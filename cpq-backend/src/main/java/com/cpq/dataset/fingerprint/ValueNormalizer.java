@@ -19,7 +19,8 @@ import java.math.BigDecimal;
  * <p>🚨 小数口径<b>一律复用</b> {@link PrecisionPolicy}（{@code RECORD.md}「小数口径三层」：
  * 计算 12 位 / 显示 9 位 / 存储看列 scale），本类<b>不自造</b>任何舍入常量。
  * 列声明了 {@code scale}（= DB 列 scale）时先按该 scale 归一再去尾零，
- * 防「库里存 12 位、Excel 给 15 位」造成的<b>虚假升版</b>（同 {@code PricingSheetDef.decimalScales} 的既有教训）。
+ * 防「库里存 12 位、Excel 给 15 位」造成的<b>虚假升版</b>
+ * （同历史上核价维护端「按列声明小数位」的既有教训；该实现已于 2026-09-07 随 task-260907 移除）。
  */
 public final class ValueNormalizer {
 

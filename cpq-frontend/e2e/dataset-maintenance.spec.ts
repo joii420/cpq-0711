@@ -71,10 +71,17 @@ const BASIC_TABS = [
 ];
 
 /**
- * AC-24（2026-09-03 修正后）/ AC-48 共同点名的 7 个页签，顺序即判据。
+ * AC-24（2026-09-03 修正后）/ AC-48 共同点名的页签清单，顺序即判据。
  * 「电镀方案」由 S-9 追加，排在最后。
+ *
+ * 🚩 **task-260907 · AC-1 更新**：原首位的核价维护页签已随其整条功能移除，
+ *    清单由 7 项变 6 项。其余 6 项的名称与相对顺序**一个字都没动**
+ *    （task-260907「不做」第 5 条：不调整其余页签的顺序/标题/内容）。
  */
-const HUB_TABS = ['料号核价', '材质', '元素', '工序', '基础核价', '详细核价', '电镀方案'];
+const HUB_TABS = ['材质', '元素', '工序', '基础核价', '详细核价', '电镀方案'];
+
+/** task-260907 · AC-1 的反向断言用；本文件唯一一处该字面量（见 TE-01 里的说明）。 */
+const REMOVED_TAB = '料号核价';
 
 let backendUp = false;
 
@@ -161,7 +168,7 @@ function drawerTabs(page: Page) {
 // AC-24 页签结构
 // ═══════════════════════════════════════════════════════════════════
 
-test('TE-01 / AC-24：主数据维护共 7 个页签，「料号核价」内容零改动', async ({ page }) => {
+test('TE-01 / AC-24（task-260907 · AC-1 更新）：主数据维护共 6 个页签，且不含已移除的核价维护页签', async ({ page }) => {
   await openHub(page);
 
   const tabs = page.locator('.ant-tabs > .ant-tabs-nav .ant-tabs-tab');
@@ -170,9 +177,18 @@ test('TE-01 / AC-24：主数据维护共 7 个页签，「料号核价」内容�
 
   // 🚩 2026-09-03：AC-24 原写「共 6 个」，与 AC-48 的「共 7 个」自相矛盾（S-9 追加时漏改）。
   //    主线已修正 AC-24 为 7 个，并写明「页签总数与顺序由 AC-48 统一定义，
-  //    本条只负责『现有页签零改动』这一半」⇒ 这里改回正常断言。
-  expect(texts.length, `AC-24 期望 7 个页签，实际 ${texts.length}：${JSON.stringify(texts)}`).toBe(7);
-  expect(texts, 'AC-24 页签名称或顺序与 AC-48 / 原型图不符').toEqual(HUB_TABS);
+  //    本条只负责『现有页签零改动』这一半」。
+  // 🚩 2026-09-07（task-260907 · AC-1）：原首位的核价维护页签整条功能移除，7 → 6。
+  //    ⚠️ 用**集合断言**而不是只断言数量 —— 数量会被后续任务加页签改掉，
+  //       集合能同时抓住「漏删」与「误删」两个方向。
+  expect(texts.length, `期望 6 个页签，实际 ${texts.length}：${JSON.stringify(texts)}`).toBe(6);
+  expect(texts, '页签名称或顺序与 AC-48 / task-260907 AC-1 不符').toEqual(HUB_TABS);
+  // 🚨 AC-1 原文还点名了一条反向断言「不含被移除的那个页签」。
+  //    它与上面的集合相等在判据上是同一件事（集合相等已同时抓住「漏删」与「误删」），
+  //    但 AC 原文明写了，故保留 —— REMOVED_TAB 常量是本文件里唯一一处该字面量，
+  //    AC-7「零残留引用」的扫描会命中它，已在 test-report 中登记为「合法使用」并上报主线裁决。
+  expect(texts, 'AC-1：被移除的核价维护页签仍在清单里 ⇒ 入口没摘干净')
+    .not.toContain(REMOVED_TAB);
 
   await shot(page, 'ac24-hub-tabs');
 });
@@ -511,40 +527,19 @@ test('TE-11 UI 半边 / AC-34：在基础核价页签导入错数据集的文件
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// AC-42 现有「料号核价」页签零回归
+// AC-42 原「核价维护」页签零回归 —— 🗑️ 整块移除（task-260907）
+//
+// 原 TR-01 专测那个已被移除的核价维护页签在 task-260902 抽公共件后行为不变。
+// task-260907 已把该页签及其前后端专属代码整体移除 ⇒ **被测对象不存在了**，
+// 这块留着只会变成一条恒失败的假红。
+//
+// 📌 它的价值没有丢，只是换了载体：
+//   · 「公共件迁移后其余页签零回归」→ task-260907 的 AC-8a/8b/8c（`task260907-remove-legacy-costing-tab.spec.ts`）
+//   · 「页签集合正确」               → 本文件的 TE-01（已按 AC-1 改为 6 项集合断言）
+//
+// ⚠️ AC-15 差集归因用：本块在 P_before（master, 2026-09-07）里是 **failed**，不在通过集合内，
+//    因此删除它对「P_before − P_after − 被删用例 = ∅」这个判据零影响。
 // ═══════════════════════════════════════════════════════════════════
-
-test('TR-01 / AC-42：现有「料号核价」页签 —— 3 个料号 × 3 个 tab 打开、切换、改值保存，行为不变', async ({ page }) => {
-  await openHub(page);
-  await openHubTab(page, '料号核价');
-
-  const rows = page.locator('.ant-table-row');
-  const rowCount = await rows.count();
-  expect(rowCount, 'AC-42：料号核价列表为空 ⇒ 回归断言会空跑（testing.md §3.3）').toBeGreaterThan(0);
-
-  const take = Math.min(3, rowCount);
-  for (let i = 0; i < take; i++) {
-    await rows.nth(i).click();
-    const drawer = page.locator('.ant-drawer-content');
-    await expect(drawer, `AC-42：第 ${i + 1} 个料号的抽屉没打开`).toBeVisible({ timeout: 10_000 });
-    await page.waitForTimeout(600);
-
-    const tabs = drawer.locator('.ant-tabs-tab');
-    const tabCount = await tabs.count();
-    expect(tabCount, `AC-42：第 ${i + 1} 个料号的抽屉没有 tab`).toBeGreaterThan(0);
-
-    for (let t = 0; t < Math.min(3, tabCount); t++) {
-      await tabs.nth(t).click();
-      await page.waitForTimeout(400);
-      const body = (await drawer.textContent()) ?? '';
-      expect(body, `AC-42：料号 ${i + 1} 的第 ${t + 1} 个 tab 卡在「加载中…」`).not.toContain('加载中…');
-      expect(body, `AC-42：料号 ${i + 1} 的第 ${t + 1} 个 tab 崩了`).not.toContain('Unexpected Application Error');
-    }
-    await shot(page, `ac42-legacy-part-${i + 1}`);
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(400);
-  }
-});
 
 /**
  * ⚠️ 跑完若出现「登录不上」：E2E 反复跑会把 admin 置成 INACTIVE。
