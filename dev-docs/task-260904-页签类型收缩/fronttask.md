@@ -20,6 +20,7 @@
 | **F-5** | AC-6, AC-7 | 加叶子弹层新增两个拒绝态的展示：`LEAF_PART_NOT_IN_MASTER`（点名料号 + 提示去建档）、`LEAF_CYCLE_DETECTED`（**展示环路径**）。两者都不得只弹一个通用的"操作失败" |
 | **F-6** | AC-10 | 状态连续性：切走到别的 Tab 再切回、刷新整页、重新打开组件后，数据源选择与已选列均正确保留，无 JS 报错 |
 
+| **F-9** 🆕 | AC-28 | 🚨 **移除组件详情顶部的「页签类型」下拉**（`ComponentManagement.tsx:1947` 的 `<Select>`，含其 `:1946` Tooltip）——用户 2026-09-06 真机验收发现的第一批缺口，裁决「直接移除」。<br>连带处理：① 保存时**不再提交 `tabType`**（让后端走 `requestedTabType == null` ⇒ 存量值不被改写）；② `:1508` 的「既没绑数据源也没配页签类型」放行分支**必须保留**（AC-15）；③ `:1518` 的校验文案里 `tabSemanticLabel(...)` 仍需能显示存量组件的 `tab_type`（**移除的是编辑入口，不是可见性**）。<br>🚫 不许顺手改动 `component.tab_type` 的存量值。 |
 | **F-8** | AC-24 | 🚨 **前端 5 处语义闸门改为双判据**（与后端 B-4 对称）：有数据源绑定时按 `semantic === 'TREE'`，否则回退 `tabType === 'BOM'`。🔑 **存量组件必须仍可用**（AC-24②）：<br>· `FieldConfigTable.tsx:754/755` 字段类型选项禁用<br>· `FormulaBuilder.tsx:101` `isBomTab` —— 父子取值分区启用<br>· `ComponentManagement.tsx:1463/1913/1916/1927` 料号列/名称列校验与 Tooltip 文案<br>· `TabJoinFormulaDrawer.tsx:165/293` 跨页签公式 + SUMIF 源判定<br>· `tabjoin/FormulaEditorPanel.tsx:105` `treeDisabled` 树 token 禁用<br>全部由 `tabType === 'BOM'` 改为按绑定数据源的 `semantic === 'TREE'` |
 
 > ⛔ **原第二阶段（F-7 移除前端 `tabType` 引用）已取消**（v3）：`component.tab_type` 列永久保留，前端 20 个引用它的文件**继续保留该字段**，只是新组件不再依赖它。编号保留不复用。
