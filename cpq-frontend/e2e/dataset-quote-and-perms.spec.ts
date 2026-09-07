@@ -32,8 +32,13 @@ async function shot(page: Page, name: string) {
 
 const AXIS_BASIC = 'TEST-DS-3120014539';
 
-/** AC-35 原文点名的工具栏顺序。 */
-const TOOLBAR = ['导入历史', '从基础数据导入', '导入报价数据', '新建报价单'];
+/**
+ * 工具栏顺序。
+ * 🪦 task-260902 AC-35 的「从基础数据导入」期望已被 task-260907 AC-13 取代
+ *    （旧入口下线，后端端点返 410）。原期望见 git history
+ *    （原为 ['导入历史','从基础数据导入','导入报价数据','新建报价单']）。
+ */
+const TOOLBAR = ['导入历史', '导入报价数据', '新建报价单'];
 
 let backendUp = false;
 test.beforeAll(async () => {
@@ -47,7 +52,7 @@ test.beforeEach(async () => {
 // AC-35 报价单管理工具栏
 // ═══════════════════════════════════════════════════════════════════
 
-test('TQ-01 / AC-35：工具栏依次为 导入历史/从基础数据导入/导入报价数据/新建报价单；旧按钮行为不变', async ({ page }) => {
+test('TQ-01 / AC-35(经 task-260907 AC-13 取代)：工具栏依次为 导入历史/导入报价数据/新建报价单', async ({ page }) => {
   await loginAsAdmin(page);
   await page.goto('/quotations');
   await page.waitForLoadState('networkidle');
@@ -77,16 +82,14 @@ test('TQ-01 / AC-35：工具栏依次为 导入历史/从基础数据导入/导�
     .toEqual(TOOLBAR);
   await shot(page, 'ac35-toolbar');
 
-  // 旧按钮行为不变：点「从基础数据导入」打开的仍是原有抽屉
-  await page.locator('button', { hasText: /从\s*基础数据导入/ }).first().click();
-  const drawer = page.locator('.ant-drawer-content');
-  await expect(drawer, 'AC-35：「从基础数据导入」没打开抽屉 ⇒ 旧行为被破坏（AC-43 双轨约束）')
-    .toBeVisible({ timeout: 10_000 });
-  const title = (await drawer.locator('.ant-drawer-title').first().textContent()) ?? '';
-  console.log('[TQ-01] 旧抽屉标题:', title);
-  expect(title, 'AC-35：「从基础数据导入」打开的抽屉标题不该是新的「导入报价数据」')
-    .not.toContain('导入报价数据');
-  await shot(page, 'ac35-legacy-drawer');
+  // 🪦 task-260902 AC-35 的「从基础数据导入」期望已被 task-260907 AC-13 取代
+  //    （旧入口下线，后端端点返 410）。原期望见 git history。
+  //    此处原有「点旧按钮 → 断言打开原有抽屉（AC-43 双轨约束）」子步骤，已随入口摘除一并移除。
+  //    ⚠️ 反向断言补位：旧入口必须真的不在 DOM 里，否则「顺序对了」也可能是漏读。
+  await expect(
+    page.locator('button', { hasText: /从\s*基础数据导入/ }),
+    'task-260907 AC-13①：旧入口「从基础数据导入」应已从 DOM 消失'
+  ).toHaveCount(0);
 });
 
 // ═══════════════════════════════════════════════════════════════════
