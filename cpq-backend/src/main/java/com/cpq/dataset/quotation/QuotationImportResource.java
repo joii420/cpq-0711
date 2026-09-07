@@ -286,6 +286,7 @@ public class QuotationImportResource {
             v.sheetName = text(n, "sheet");
             v.rowNum = n.path("row").asInt(0);
             v.columnLabel = text(n, "column");
+            v.value = text(n, "value");     // B-16：出错单元格原始值；无对应单元格时为 null
             v.reason = text(n, "reason");
             out.add(v);
         }

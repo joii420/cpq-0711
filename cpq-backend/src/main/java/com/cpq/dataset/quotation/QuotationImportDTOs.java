@@ -64,19 +64,21 @@ public final class QuotationImportDTOs {
     /**
      * api.md §2 的 {@code errors[]}。
      *
-     * <p>⚠️ <b>{@code value} 恒为 null（契约缺口，已报主线）</b>：api.md §2 的示例带 {@code value}
-     * （出错单元格的原始值），但既有 {@link DsValidationError} 只有 {@code sheet/row/column/reason}
-     * 四个字段，产出它的 {@code DatasetImportValidator} 是【基础资料维护】导入共用的类。
-     * 要补 {@code value} 就得改那两个共用件，届时 {@code POST /dataset/{dataset}/import} 的 400
-     * 响应体会多一个字段 —— 与 AC-15「读写行为与改动前逐字一致」冲突。
-     * ⇒ 本任务<b>不改</b>，{@code value} 留空（{@code NON_NULL} 下不出现在 JSON 里）。
+     * <p>🔄 <b>2026-09-07 · B-16：{@code value} 已补齐</b>（用户裁定「补」，主线复核为纯加法）。
+     * 来源是 {@link DsValidationError#value} —— 那个共用 DTO 加了字段但
+     * <b>保留了原 4 参构造器</b>，既有调用点一行不改。
+     *
+     * <p>⚠️ <b>{@code value} 仍可能为 null，且 null 是有意义的</b>：sheet 级错误
+     * （「sheet 不属于本数据集」）与表头级错误（「缺少某列」）<b>没有对应的单元格</b>，
+     * 此时留 null（{@code NON_NULL} 下该键不出现），🚫 不编一个值凑上去。
+     * ⇒ 前端渲染该列必须容忍缺键。
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static final class ValidationErrorView {
         public String sheetName;
         public int rowNum;
         public String columnLabel;
-        public String value;      // 恒 null，见类注释
+        public String value;
         public String reason;
     }
 

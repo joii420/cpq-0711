@@ -255,8 +255,9 @@ public class QuotationImportService {
                 // 再报一条「不是本次客户」只会让报告变吵（AC-4 同源纪律）。
                 if (v == null) continue;
                 if (selected.equals(v)) continue;
+                // B-16：value = 文件里出现的那个外来客户编号
                 out.add(new DsValidationError(ps.spec.sheetName, row.excelRow(), CUSTOMER_NO_LABEL,
-                        crossCustomerReason(selected, v, row.excelRow())));
+                        v, crossCustomerReason(selected, v, row.excelRow())));
             }
         }
         return out;

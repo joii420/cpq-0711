@@ -196,15 +196,37 @@ class QuoteImportValidationTest extends QuoteImportAcTestBase {
                 "AC-4：夹具在「客户料号」sheet 放了 2 行非法编号，错误清单应<b>逐条</b>各出一条，"
                         + "实际只有 " + custErrs + " 条 ⇒ 是「只报第一条」。响应：" + body);
 
-        // ── 判据 B（api.md §2 契约）：errors[] 条目应带 value，否则用户看不出是哪个值错了 ──
-        assertTrue(body.contains(P + "NOCUST1") && body.contains(P + "NOCUST2"),
+        // ── 判据 B（api.md §2 契约）：errors[] 条目应带 value 字段 ──
+        // 🚨 这里<b>必须查字段，不能查 body 子串</b>。
+        //    2026-09-07 实测过一次假绿：B-15 落地后，错误 reason 变成
+        //    「…文件中出现其它客户编号：T260907T-NOCUST1（第 3 行）」——
+        //    子串断言 body.contains("T260907T-NOCUST1") 于是<b>通过了</b>，
+        //    但 value 字段其实<b>依然不存在</b>。断言等于在验另一件事。
+        List<Map<String, Object>> errList = errsOf(r, s);
+        assertFalse(errList.isEmpty(), "errors[] 为空 = 判据 B 空跑");
+        long withValue = errList.stream()
+                .filter(e -> e.containsKey("value") && e.get("value") != null).count();
+        assertEquals(errList.size(), withValue,
                 "api.md §2 声明 errors[] 条目形如 {sheetName,rowNum,columnLabel,<b>value</b>,reason}，"
-                        + "但实际响应<b>不含 value 字段</b> ⇒ 前端错误表格只能显示行号与原因，"
-                        + "显示不出「到底填了什么」。这是契约不符，不是 AC-4 的「逐条」不成立"
-                        + "（逐条那条已单独断言并通过）。响应：" + body);
+                        + "但 " + errList.size() + " 条里只有 " + withValue + " 条带 value 字段。"
+                        + "\n  ⇒ 前端错误表格显示不出「用户到底填了什么」，1845 行的文件里排错成本陡增。"
+                        + "\n  📌 这是 api.md 契约不符，<b>不是</b> AC-4 的「逐条」不成立（逐条已单独断言并通过）。"
+                        + "\n  实际 errors：" + errList);
 
         assertCountsUnchanged(before, snapshotCounts(),
                 "AC-4：Phase 1 零写库 —— 校验失败时 16 张表 count 必须逐表相等");
+    }
+
+    /** 取 errors[]：同步 400 直接从响应取，异步则从轮询终态取。 */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> errsOf(Response syncResp, String session) {
+        if (syncResp.statusCode() == 200) {
+            String rec = syncResp.jsonPath().getString("data.importRecordId");
+            List<Map<String, Object>> l = awaitFinal(session, rec).jsonPath().getList("data.errors");
+            return l == null ? List.of() : l;
+        }
+        List<Map<String, Object>> l = syncResp.jsonPath().getList("data.errors");
+        return l == null ? List.of() : l;
     }
 
     // ══════════════════ T1.12 · AC-17 ══════════════════
