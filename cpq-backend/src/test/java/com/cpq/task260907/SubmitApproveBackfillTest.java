@@ -47,8 +47,29 @@ class SubmitApproveBackfillTest extends QuoteImportAcTestBase {
             "annual_discount", "capacity", "element_bom", "element_bom_item",
             "material_bom", "material_bom_item", "plating_scheme", "unit_price");
 
-    /** S-5 交付的 ds 原生模板的页签数（D-34：物料BOM 单独推迟，故是 13 不是 14）。 */
-    private static final int DS_TEMPLATE_TABS = 13;
+    /**
+     * ds 原生模板页签数的<b>下界</b>（不是等值）。
+     *
+     * <h3>🚩 2026-09-07（D-40）由 {@code DS_TEMPLATE_TABS = 13} 改成下界</h3>
+     * 原来是等值断言。它<b>写下的那一刻是对的</b>（D-34：物料BOM 单独推迟 ⇒ 13），
+     * 随后 S-5 补配第 14 个页签 {@code COMP-2254}（D-37）就必红 ——
+     * 而<b>加一个页签是合法交付，不是缺陷</b>。
+     * 改成 14 只是把过期时间往后推一次，下次加页签照样红，
+     * 且下一个人同样分不清「回归」还是「判据过期」。
+     *
+     * <h3>本常量到底在守什么</h3>
+     * 🚩 <b>守的是「有没有挑错模板」，不是「S-5 配了几个页签」。</b>
+     * {@link #dsNativeTemplateId()} 是<b>按特征启发式</b>挑模板的（配置器生成 + PUBLISHED），
+     * 一旦挑中某个只有两三个页签的配置器小模板，AC-10/11/16 整条链会在<b>错误的对象</b>上
+     * 跑出一片<b>假绿</b>。下界正好挡住这种误挑，又不因合法扩容而红。
+     *
+     * <h3>🚫 不要改回等值断言</h3>
+     * 「模板<b>应该</b>有几个页签」的权威判据是 <b>AC-6</b>（逐页签渲染出非空行），不在本类。
+     * 本类的 AC-10③ 要的是<b>不变量</b>「SQL 段数 = 页签数」——
+     * 见 {@link #t1_6_t1_7_t1_11_提交_核价通过_且回填静默降级为noop()}。
+     * 两者判的是不同的事，不要合并成一个数字。
+     */
+    private static final int DS_TEMPLATE_MIN_TABS = 13;
 
     private Response awaitFinal(String s, String rec) {
         long deadline = System.currentTimeMillis() + 180_000;
@@ -75,8 +96,12 @@ class SubmitApproveBackfillTest extends QuoteImportAcTestBase {
      * 🚩 不写死 templateId —— 写死的话模板一重建用例就红，而那不是缺陷。
      */
     private String dsNativeTemplateId() {
-        List<Object> ids = col(
-                "SELECT t.id::text FROM template t"
+        // 🚩 连页签数一起查回来：挑错模板时要能在失败信息里直接看到「候选各有几个页签」，
+        //    否则只报一个 uuid，排查的人还得自己去库里查一遍。
+        List<Object[]> cands = rows(
+                "SELECT t.id::text,"
+                        + " (SELECT count(*) FROM template_component tc2 WHERE tc2.template_id=t.id)"
+                        + " FROM template t"
                         + " WHERE t.template_kind='QUOTATION' AND t.status='PUBLISHED'"
                         + "   AND EXISTS (SELECT 1 FROM template_component tc WHERE tc.template_id=t.id)"
                         // 🚩 builder_version 在 component_sql_view 上，不在 component 上（实查确认）
@@ -86,13 +111,25 @@ class SubmitApproveBackfillTest extends QuoteImportAcTestBase {
                         + "       LEFT JOIN component_sql_view csv ON csv.component_id = c.id"
                         + "     WHERE tc.template_id = t.id AND csv.builder_version IS NULL)"
                         + " ORDER BY t.created_at DESC");
-        assertFalse(ids.isEmpty(),
+        assertFalse(cands.isEmpty(),
                 "库里找不到「全部组件由取数配置器生成」的 PUBLISHED 报价模板 ⇒ S-5 未就绪，"
                         + "AC-10/11/16 的前置不成立（此时跑出来的绿是拿旧模板骗出来的）");
-        String id = String.valueOf(ids.get(0));
-        long tabs = countRows("template_component", "template_id = CAST('" + id + "' AS uuid)");
-        assertEquals(DS_TEMPLATE_TABS, tabs,
-                "ds 原生模板的页签数应为 " + DS_TEMPLATE_TABS + "（D-34：物料BOM 单独推迟），实际 " + tabs);
+
+        StringBuilder diag = new StringBuilder();
+        for (Object[] r : cands) {
+            diag.append(diag.length() == 0 ? "" : " · ").append(r[0]).append("→").append(r[1]).append(" 页签");
+        }
+
+        String id = String.valueOf(cands.get(0)[0]);
+        long tabs = ((Number) cands.get(0)[1]).longValue();
+        // 🚫 这里<b>不做等值断言</b>，理由见 DS_TEMPLATE_MIN_TABS 的注释（D-40）。
+        //    下界只回答一个问题：「挑中的是 S-5 那套正式模板，还是某个配置器小模板？」
+        assertTrue(tabs >= DS_TEMPLATE_MIN_TABS,
+                "挑中的 ds 原生模板只有 " + tabs + " 个页签，低于下界 " + DS_TEMPLATE_MIN_TABS
+                        + " ⇒ 大概率<b>挑错了模板</b>（挑到某个配置器小模板），"
+                        + "此时 AC-10/11/16 全链跑出来的绿是假绿。"
+                        + "\n  挑中：" + id
+                        + "\n  全部候选（按 created_at 倒序，取第一个）：" + diag);
         return id;
     }
 
@@ -187,11 +224,22 @@ class SubmitApproveBackfillTest extends QuoteImportAcTestBase {
                     + " AND submission_snapshot IS NOT NULL");
             assertEquals(1L, snap, "AC-10②：submission_snapshot 必须非空");
 
+            // ══════ AC-10③ · D-40 不变量 ══════
+            // 判据原文：「quotation_component_sql_snapshot 落该单的 SQL 段数 = 该单所用模板的页签数」
+            // 🚫 不写死数字。写死的判据在「合法地加了个页签」时会红（那不是缺陷），
+            //    而不变量在「漏落某个页签的 SQL」这个真故障下照样红 —— 判据没有变宽。
+            long tplTabs = countRows("template_component", "template_id = CAST('" + tpl + "' AS uuid)");
+            // 🚩 非空保护：模板 0 页签时不变量会退化成 0 == 0，断言从未真正执行（testing.md §3）
+            assertTrue(tplTabs > 0,
+                    "该单所用模板 " + tpl + " 一个页签都没有 ⇒ 「段数 = 页签数」退化成 0 == 0 的空验证");
+
             long sqlSnap = countRows("quotation_component_sql_snapshot",
                     "quotation_id = CAST('" + qid + "' AS uuid)");
-            assertEquals(DS_TEMPLATE_TABS, sqlSnap,
-                    "AC-10③：quotation_component_sql_snapshot 应落该单的 " + DS_TEMPLATE_TABS
-                            + " 段 SQL（D-34：13 不是 14），实际 " + sqlSnap);
+            assertEquals(tplTabs, sqlSnap,
+                    "AC-10③（D-40 不变量）：quotation_component_sql_snapshot 落的 SQL 段数应<b>等于该单"
+                            + "所用模板的页签数</b>，模板 " + tpl + " 有 " + tplTabs + " 个页签，实际落了 "
+                            + sqlSnap + " 段。\n  ⚠️ 差值就是被漏落的页签数 ——"
+                            + "去比对 template_component 与本单 sql_snapshot 的 component_id 差集。");
 
             // ══════ AC-16 的跑前基线（必须在核价通过之前取） ══════
             Map<String, String> before = v6Digest();
