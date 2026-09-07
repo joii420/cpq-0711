@@ -53,6 +53,21 @@ public class DatasetMaintenanceResource {
     // 读端点（B-9）
     // ==================================================================
 
+    /**
+     * api.md §1 —— 客户候选（task-260907-产品管理客户过滤 · B-1，服务 AC-1 / AC-2 / AC-14）。
+     *
+     * <p>🚫 无分页、不接受 {@code keyword} —— 候选是全集（量级等同客户数），搜索由前端在
+     * 已加载的候选里做。{@code dataset} 当前仅 {@code quote} 有客户维度，其余（含核价两套、
+     * 任意非法值）统一 400，判定走 Registry 元数据（见
+     * {@link DatasetMaintenanceService#listCustomers}），不硬编码 {@code dataset.equals("quote")}。
+     */
+    @GET
+    @Path("/{dataset}/customers")
+    @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
+    public ApiResponse<DsCustomerCandidates> customers(@PathParam("dataset") String dataset) {
+        return ApiResponse.success(service.listCustomers(dataset));
+    }
+
     /** api.md §2 —— 带版本 sheet 元数据（AC-26：tab 数量与顺序由本端点决定，前端不写死）。 */
     @GET
     @Path("/{dataset}/sheets")

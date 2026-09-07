@@ -196,3 +196,26 @@ export interface CustomerOption {
 export interface CustomerOptionsResult {
   items: CustomerOption[];
 }
+
+// ── 壳页全局客户候选（GET /dataset/{dataset}/customers · task-260907-产品管理客户过滤 A-1）──
+//
+// 🚨 与上面的 `CustomerOption` / `listCustomerPartCustomers` 是**两套不同口径**，不要混用：
+//    · 旧口径（`customer-parts/customers`）= `ds_quote_customer_part` 的 `DISTINCT customer_no`；
+//    · 新口径（本节，`/customers`）= `customer` 主数据表全集 ∪ 报价业务表未建档客户号（并集，AC-2）。
+//    本任务起，壳页全局选择器改调新口径；旧口径端点保留但不再被本页调用（api.md §3）。
+
+/**
+ * 壳页客户选择器的一个候选项。
+ *
+ * `registered=false` 时 `customerName` 恒为 `null`（未建档，仅在报价业务表出现过）——
+ * 🚫 前端不得因 `customerName` 为空而把该候选过滤掉（AC-14③）。
+ */
+export interface CustomerCandidate {
+  customerNo: string;
+  customerName?: string | null;
+  registered: boolean;
+}
+
+export interface CustomerCandidatesResult {
+  items: CustomerCandidate[];
+}

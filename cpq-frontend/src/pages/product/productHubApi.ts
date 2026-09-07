@@ -34,6 +34,7 @@ import type {
   VersionsResult,
   CustomerPartListResult,
   CustomerOptionsResult,
+  CustomerCandidatesResult,
 } from './productHubTypes';
 
 /**
@@ -157,6 +158,27 @@ export async function listCustomerPartCustomers(
 ): Promise<CustomerOptionsResult> {
   const res = await api.get(`${basePath}/customer-parts/customers`);
   return unwrap<CustomerOptionsResult>(res);
+}
+
+/**
+ * 🆕 A-1 壳页全局客户候选（`GET /dataset/{dataset}/customers`，
+ * `task-260907-产品管理客户过滤` F-1，取代上面 `listCustomerPartCustomers` 在**本页**的调用位置）。
+ *
+ * 🚨 **候选口径与上面那个函数不同**（AC-2）：
+ *    `customer` 主数据表全集 **∪** 报价业务表中出现过但未建档的客户号。
+ *    并集让「尚无产品数据的已建档客户也能选到」，同时保留「未建档客户的产品筛得出来」。
+ * 🚫 **不得因 `customerName` 为空/`registered=false` 而过滤候选项**（AC-14③）——
+ *    未建档客户恒 `customerName: null`，前端只管照单全收 + 打「未建档」标记。
+ * 🚫 **无分页、不接受 `keyword`**（api.md §1）—— 全集加载，搜索在前端已加载的候选里做。
+ *
+ * ⚠️ 端点未就绪（404）或请求失败时：调用方降级为「候选只剩『所有客户』，列表照常可用」，
+ *    **不做任何 mock 兜底** —— 塞 mock 会把「后端没就绪」伪装成「这个客户真的没有产品」（fronttask F-1 第 7 条）。
+ */
+export async function listDatasetCustomers(
+  basePath: string = QUOTE_BASE_PATH,
+): Promise<CustomerCandidatesResult> {
+  const res = await api.get(`${basePath}/customers`);
+  return unwrap<CustomerCandidatesResult>(res);
 }
 
 /**

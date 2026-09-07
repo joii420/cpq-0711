@@ -7,19 +7,24 @@
 //    ⇒ 用裸 <Table> 不用 SelectableTable；工具栏须**自套** TOOLBAR_ROW_STYLE
 //      （裸 Table 没有 SelectableTable 的 toolbar 容器）。
 //
-// 🚫 工具栏只有「客户过滤 + 搜索 + 刷新」：无新增 / 编辑 / 删除 / 导入 —— 本页**仍是纯只读**，
+// 🚫 工具栏只有「搜索 + 刷新」：无新增 / 编辑 / 删除 / 导入 —— 本页**仍是纯只读**，
 //    写入通道只有 task-260902 的导入，不产生第二条写入路径（需求文档 ② 明确不做）。
 //
-// 🆕 子任务 `task-260903-产品维护能力增强`（F-1 / AC-1~AC-5、AC-14）：工具栏加**客户过滤下拉**。
-//    子任务只给本页加了「过滤」这一件事，**没有**给本页加任何编辑能力（用户裁决：客户产品页签
-//    是纯列表只读）。
+// 🔄 task-260907-产品管理客户过滤 · F-3（本次改动）：
+//    客户过滤下拉**已摘除**，改由壳页 `ProductHubPage` 统一加载候选 + 持有客户上下文，
+//    本组件只接收 `customerNo` / `customerLabel` / `ready` 三个 props。
+//    ⚠️ 改动面刻意最小：`listCustomerParts` 的调用参数、列定义、渲染逻辑、`rowKey`
+//       一行都没动；三条成文纪律继续有效——照单全收后端 items（不按 customerName 是否
+//       为空再筛）、过滤必须在后端做、`page` 是 0-based（传 `current - 1`）。
+//    🆕 F-7（AC-13）：选中一个没有任何客户产品数据的客户时，空态文案改成
+//       「该客户暂无客户产品数据」，而不是通用的「暂无数据」。
 // ─────────────────────────────────────────────────────────────────────────────
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Table, Input, Button, Space, Empty, Select, message } from 'antd';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Table, Input, Button, Space, Empty, message } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { listCustomerParts, listCustomerPartCustomers } from './productHubApi';
-import type { CustomerPartItem, CustomerOption } from './productHubTypes';
+import { listCustomerParts } from './productHubApi';
+import type { CustomerPartItem } from './productHubTypes';
 import { renderTextCell } from './productHubCells';
 import ZeroTotalFooter from './ZeroTotalFooter';
 import {
@@ -32,46 +37,45 @@ import {
 
 const { Search } = Input;
 
-/**
- * 「所有客户」的哨兵值（AC-1 默认项 / AC-4 切回还原）。
- *
- * 用空串而不是 `undefined`：antd 的 `Select` 拿到 `undefined` 会显示 placeholder 而不是选项文案，
- * 而 AC-1 断言默认值**文案就是「所有客户」**，必须是一个真正被选中的选项。
- * 发请求前再转回 `undefined`（省略该 query ＝ 所有客户）。
- */
+/** 「所有客户」哨兵值，与壳页 `ProductHubPage` 的 `ALL_CUSTOMERS` 同一口径（空串）。 */
 const ALL_CUSTOMERS = '';
 
-/** 过滤下拉宽度，取自原型 `客户产品-过滤器.html` 的 `width:200px` */
-const CUSTOMER_FILTER_WIDTH = 200;
-/** 展开面板宽度，取自原型 `.dd{width:260px}` —— 比选择框宽，长客户编号 + 后缀 + 数量才放得下
- *  （实测 200px 时 `Q13CUST0617（未建档）` 会把右侧数量挤出可视区）。 */
-const CUSTOMER_FILTER_POPUP_WIDTH = 260;
+export interface ProductCustomerPartTabProps {
+  /** 壳页当前选中的客户号；空串 = 所有客户。取代本组件原有的内部 `useState`（F-3）。 */
+  customerNo: string;
+  /**
+   * 客户的展示文案（如 `苏州西门子（CUST-0031）` 或未建档时的 `Q13CUST0617`），
+   * 由壳页根据候选列表算好传入 —— 本组件不持有候选，无法自己拼。仅用于 F-7 空态文案。
+   */
+  customerLabel: string;
+  /**
+   * 壳页的客户上下文是否已就绪（localStorage 读取 + 候选校验完成）。
+   * 🚨 就绪前不发起任何请求——避免「先出全量再过滤」的一闪而过（AC-10②）。
+   */
+  ready: boolean;
+}
 
-/** 未在 `customer` 表建档的客户，下拉后缀文案与配色（原型 `.warn{color:#d46b08}`） */
-const UNREGISTERED_SUFFIX = '（未建档）';
-const WARN_STYLE: React.CSSProperties = { color: '#d46b08' };
-/** 数量提示（原型 `.cnt`） */
-const COUNT_STYLE: React.CSSProperties = { color: 'rgba(0, 0, 0, 0.45)', fontSize: 12 };
-/** 下拉项内的编号与名称之间用全角空格分隔（原型里显示为 `CUST-0004` + 全角空格 + `正泰`）。
- *  写成转义：eslint `no-irregular-whitespace` 禁止源码里出现裸全角空格。 */
-const NBSP_WIDE = '\u3000';
-
-const ProductCustomerPartTab: React.FC = () => {
+const ProductCustomerPartTab: React.FC<ProductCustomerPartTabProps> = ({
+  customerNo, customerLabel, ready,
+}) => {
   const [inputValue, setInputValue] = useState('');
   const [keyword, setKeyword] = useState('');
-  // AC-1：默认「所有客户」
-  const [customerNo, setCustomerNo] = useState<string>(ALL_CUSTOMERS);
-  const [customerOptions, setCustomerOptions] = useState<CustomerOption[]>([]);
   const [items, setItems] = useState<CustomerPartItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1); // antd 的 current，**1-based**
   const [size, setSize] = useState(DEFAULT_PAGE_SIZE);
-  const [loading, setLoading] = useState(false);
+  // 初值 true：避免「上下文未就绪」期间先短暂闪出一个空态表格（见下方 fetchList 的 ready 门槛）
+  const [loading, setLoading] = useState(true);
 
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (debounceTimer.current) clearTimeout(debounceTimer.current); }, []);
 
+  // 切客户时回到第 1 页（fronttask F-1 第 8 条）——否则会停在「上一个客户的第 3 页」，
+  // 而新客户可能只有 1 页，表现为假空态。首次挂载也会命中一次，无害（page 本来就是 1）。
+  useEffect(() => { setPage(1); }, [customerNo]);
+
   const fetchList = useCallback(async () => {
+    if (!ready) return; // AC-10②：客户上下文未就绪前不发请求
     setLoading(true);
     try {
       const r = await listCustomerParts({
@@ -94,28 +98,9 @@ const ProductCustomerPartTab: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [keyword, customerNo, page, size]);
+  }, [keyword, customerNo, page, size, ready]);
 
   useEffect(() => { void fetchList(); }, [fetchList]);
-
-  /**
-   * 过滤器候选（AC-5）。挂载时取一次即可 —— 候选来自数据分布，不随分页/搜索变化。
-   *
-   * 🚨 **照单全收后端返回的 items**：🚫 不得在此按 `customerName` 是否为空再筛一遍。
-   *    `Q13CUST0617` / `C1` 正是没有 `customerName` 的那两个，筛掉就等于把 AC-5 亲手做废。
-   * ⚠️ 端点未就绪（404）时降级为「只有『所有客户』一项」，列表照常可用 ——
-   *    🚫 不做 mock 兜底，那会把「后端没就绪」伪装成「这个客户真的没有产品」。
-   */
-  const loadCustomerOptions = useCallback(async () => {
-    try {
-      const r = await listCustomerPartCustomers();
-      setCustomerOptions(r.items ?? []);
-    } catch {
-      setCustomerOptions([]);
-    }
-  }, []);
-
-  useEffect(() => { void loadCustomerOptions(); }, [loadCustomerOptions]);
 
   const onKeywordChange = (v: string) => {
     setInputValue(v);
@@ -133,55 +118,6 @@ const ProductCustomerPartTab: React.FC = () => {
     setPage(1);
   };
 
-  /**
-   * 下拉候选（AC-1 / AC-5）。第一项恒为「所有客户」，其后按后端返回的顺序原样排列。
-   *
-   * `count` 是可选的（api.md §2 B-2 注明实现可省）：**全部候选都带 count 时**才给「所有客户」
-   * 算合计并显示数量；只要有一个缺就整体不显示 —— 显示一个算不准的合计比不显示更糟。
-   */
-  const filterOptions = useMemo(() => {
-    const opts = customerOptions.map((c) => {
-      const name = c.customerName ?? null;
-      const registered = name !== null && name !== '';
-      return {
-        value: c.customerNo,
-        // 选中框里的文案（纯文本）；下拉项里的富文本由 optionRender 单独画
-        label: registered
-          ? `${c.customerNo}${NBSP_WIDE}${name}`
-          : `${c.customerNo}${UNREGISTERED_SUFFIX}`,
-        customerNo: c.customerNo,
-        customerName: name,
-        registered,
-        count: typeof c.count === 'number' ? c.count : null,
-      };
-    });
-    const allHaveCount = opts.length > 0 && opts.every((o) => o.count !== null);
-    const allCount = allHaveCount
-      ? opts.reduce((sum, o) => sum + (o.count ?? 0), 0)
-      : null;
-    return [
-      {
-        value: ALL_CUSTOMERS,
-        label: '所有客户',
-        customerNo: ALL_CUSTOMERS,
-        customerName: null as string | null,
-        registered: true,
-        count: allCount,
-      },
-      ...opts,
-    ];
-  }, [customerOptions]);
-
-  /**
-   * 切客户（AC-2 / AC-4）。
-   * 🚫 **只重置页码，绝不清空搜索框** —— AC-3 断言「过滤 + 搜索」叠加后清空搜索会回到 11 行
-   *    而不是 17 行，清了搜索这条就永远验不出来。
-   */
-  const onCustomerChange = (v: string) => {
-    setCustomerNo(v);
-    setPage(1);
-  };
-
   // 列顺序即 AC-2，不得调整
   const columns: ColumnsType<CustomerPartItem> = [
     { title: '客户编号', dataIndex: 'customerNo', key: 'customerNo', width: 130, ellipsis: true, render: renderTextCell },
@@ -194,37 +130,30 @@ const ProductCustomerPartTab: React.FC = () => {
     { title: '销售料号', dataIndex: 'materialNo', key: 'materialNo', width: 160, ellipsis: true, render: renderTextCell },
   ];
 
+  // F-7 / AC-13：选中具体客户且确实 0 行时，空态文案带上客户身份；
+  // 「所有客户」态或搜索关键字导致的 0 行仍用通用空态，不冒充「该客户没有数据」。
+  const emptyNode = (customerNo !== ALL_CUSTOMERS && !keyword)
+    ? (
+      <Empty
+        image={Empty.PRESENTED_IMAGE_SIMPLE}
+        description={(
+          <span>
+            该客户暂无客户产品数据
+            <br />
+            <span style={{ fontSize: 12, color: 'rgba(0, 0, 0, 0.45)' }}>
+              客户「{customerLabel}」下还没有导入过报价数据。切换客户或先导入数据。
+            </span>
+          </span>
+        )}
+      />
+    )
+    : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" />;
+
   return (
     <div>
       {/* 工具栏：左＝搜索，右＝刷新。空态下**仍然渲染**，否则用户连「刷新重试」都点不到 */}
       <div style={TOOLBAR_ROW_STYLE}>
         <Space wrap>
-          {/* AC-1：客户过滤在**搜索框左侧**，默认文案「所有客户」（原型「客户产品-过滤器」）。
-              🚨 AC-14：命中 0 行时**过滤器仍可交互** —— 刻意不加 disabled，
-                 否则用户筛出空结果后连「切回所有客户」都点不了，直接卡死。 */}
-          <Select<string>
-            style={{ width: CUSTOMER_FILTER_WIDTH }}
-            popupMatchSelectWidth={CUSTOMER_FILTER_POPUP_WIDTH}
-            value={customerNo}
-            onChange={onCustomerChange}
-            options={filterOptions}
-            optionRender={(option) => {
-              const d = option.data as (typeof filterOptions)[number];
-              return (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                  <span>
-                    {d.customerNo === ALL_CUSTOMERS ? '所有客户' : d.customerNo}
-                    {d.registered && d.customerName ? `${NBSP_WIDE}${d.customerName}` : null}
-                    {/* 未建档：橙色后缀，与列表里客户名称列渲染 `—` 的口径呼应 */}
-                    {d.customerNo !== ALL_CUSTOMERS && !d.registered
-                      ? <span style={WARN_STYLE}>{UNREGISTERED_SUFFIX}</span>
-                      : null}
-                  </span>
-                  {d.count !== null ? <span style={COUNT_STYLE}>{d.count}</span> : null}
-                </div>
-              );
-            }}
-          />
           <Search
             allowClear
             placeholder="搜索客户编号 / 客户产品编号 / 销售料号"
@@ -247,7 +176,7 @@ const ProductCustomerPartTab: React.FC = () => {
         dataSource={items}
         tableLayout="fixed"
         // 🚫 刻意不传 onRow —— 行不可点击、无 cursor:pointer、点任意单元格不弹抽屉（AC-3）
-        locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" /> }}
+        locale={{ emptyText: emptyNode }}
         pagination={{
           ...commonPagination,
           current: page,

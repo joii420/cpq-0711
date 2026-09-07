@@ -281,6 +281,78 @@ public class DatasetMaintenanceService {
     }
 
     // ==================================================================
+    // §1 GET customers —— 客户候选（task-260907-产品管理客户过滤 · B-1，服务 AC-1 / AC-2 / AC-14）
+    // ==================================================================
+
+    /**
+     * 该数据集下<b>带 {@code customer_no} 列的全部表名</b>（去重，保持 Registry 登记顺序）。
+     *
+     * <p>🚫 <b>不写死表名清单</b>（如只扫 {@code ds_quote_customer_part}）——
+     * 复合轴落地后物料表等也会带客户号，写死的清单必然过期（{@code task-260819} 在同一条
+     * AC 上栽过三次的形态）。凡该数据集下有 sheet 建了 {@code customer_no} 列即纳入。
+     *
+     * <p>空列表 = 该数据集没有客户维度（核价两套现状），供 {@link #listCustomers} 判 400 用，
+     * 也供 {@code DatasetMaintenanceService} 未来任何「这个数据集有没有客户维度」的判定复用
+     * —— 判定走 Registry 元数据而非硬编码 {@code dataset.equals("quote")}。
+     */
+    private List<String> customerBearingTables(DatasetRegistry reg) {
+        LinkedHashSet<String> tables = new LinkedHashSet<>();
+        for (SheetDef s : reg.sheets()) {
+            ColumnDef c = s.column("customer_no");
+            if (c != null && c.persisted) tables.add(s.tableName);
+        }
+        return new ArrayList<>(tables);
+    }
+
+    /**
+     * api.md §1 —— 客户候选，口径见 api.md §1「候选口径」：
+     * <pre>
+     * customer 表全集 ∪ 报价业务表中未建档的客户号
+     * </pre>
+     *
+     * <p>🚨 <b>N+1 自检</b>：无论 {@link #customerBearingTables} 扫出几张表，恒 <b>1 条 SQL</b>——
+     * 各表先在一个 CTE 内用 {@code UNION} 聚合去重，外层再和 {@code customer} 全集做一次
+     * {@code UNION ALL}，SQL 条数与表数、客户数均无关。
+     *
+     * <p>{@code dataset} 目前只有报价类数据集有客户维度：判定走
+     * {@link #customerBearingTables} 是否为空（Registry 元数据），🚫 不硬编码
+     * {@code dataset.equals("quote")} —— 核价两套 / 任意非法值统一 400（api.md §1「错误」表）。
+     */
+    public DsCustomerCandidates listCustomers(String dataset) {
+        DatasetRegistry reg = registries.byKey(dataset);
+        List<String> tables = reg == null ? List.of() : customerBearingTables(reg);
+        if (tables.isEmpty()) {
+            throw new BusinessException(400,
+                "数据集不支持客户维度: " + dataset + "（仅报价类数据集有客户维度，核价两套没有 customer_no 列）");
+        }
+
+        StringBuilder businessUnion = new StringBuilder();
+        for (String t : tables) {
+            if (businessUnion.length() > 0) businessUnion.append(" UNION ");
+            businessUnion.append("SELECT DISTINCT customer_no FROM ").append(SqlIdent.of(t))
+                .append(" WHERE customer_no IS NOT NULL");
+        }
+
+        // 已建档在前（true DESC 排在 false 前）、未建档置尾，各自按 customer_no 升序（api.md §1「排序」）。
+        String sql = "WITH business_customers AS (" + businessUnion + ") "
+            + "SELECT code AS customer_no, name AS customer_name, true AS registered FROM customer "
+            + "UNION ALL "
+            + "SELECT b.customer_no, NULL, false FROM business_customers b "
+            + "WHERE b.customer_no NOT IN (SELECT code FROM customer) "
+            + "ORDER BY registered DESC, customer_no ASC";
+
+        Query q = em.createNativeQuery(sql);
+        @SuppressWarnings("unchecked")
+        List<Object[]> raw = q.getResultList();
+        List<DsCustomerCandidates.Item> items = new ArrayList<>(raw.size());
+        // ✅ N+1 自检：本循环是纯内存装配，无 repository 调用、无懒加载 getter、无 SQL。
+        for (Object[] r : raw) {
+            items.add(new DsCustomerCandidates.Item(str(r[0]), str(r[1]), (Boolean) r[2]));
+        }
+        return new DsCustomerCandidates(items);
+    }
+
+    // ==================================================================
     // §4 GET overview —— 抽屉徽标（AC-26 / AC-32）
     // ==================================================================
 
