@@ -14,20 +14,38 @@ public abstract class AbstractDatasetRegistry implements DatasetRegistry {
     private final String axisColumn;
     private final String axisLabel;
     private final String materialTable;
+    /** task-260907 · B-1：本数据集是否带客户维度（报价侧 true，核价两套 false）。 */
+    private final boolean customerScoped;
     private final Map<String, SheetDef> byKey = new LinkedHashMap<>();
 
+    /** 兼容既有三参形态：不带客户维度（核价两套走这条）。 */
     protected AbstractDatasetRegistry(String datasetKey, String datasetLabel, String tablePrefix,
                                       String axisColumn, String axisLabel, String materialTable) {
+        this(datasetKey, datasetLabel, tablePrefix, axisColumn, axisLabel, materialTable, false);
+    }
+
+    protected AbstractDatasetRegistry(String datasetKey, String datasetLabel, String tablePrefix,
+                                      String axisColumn, String axisLabel, String materialTable,
+                                      boolean customerScoped) {
         this.datasetKey = datasetKey;
         this.datasetLabel = datasetLabel;
         this.tablePrefix = tablePrefix;
         this.axisColumn = axisColumn;
         this.axisLabel = axisLabel;
         this.materialTable = materialTable;
+        this.customerScoped = customerScoped;
     }
 
     /** 登记一个 sheet；同名 sheetKey / sheetName / tableName 重复即抛（防复制粘贴漏改）。 */
     protected void reg(SheetDef def) {
+        // task-260907 · B-1/B-2/B-6：登记期注入客户维度开关（必须早于下面的轴列/主键校验）。
+        //  · scoped —— 报价侧且该 sheet 自己没声明 customer_no 业务列（排除「客户料号」表：
+        //    它的 customer_no 来自 Excel、是真 ColumnDef，再叠系统列会在启动自检里出现重复列）。
+        //  · keyed  —— 只有物料表的业务唯一索引扩成 (customer_no, 料号)（B-6）；
+        //    电镀方案表 uq(scheme_no, scheme_version, item_seq) 与客户无关，B-6 明令不动。
+        boolean scoped = customerScoped && def.column(SheetDef.CUSTOMER_COLUMN) == null;
+        def.applyCustomerScope(scoped, scoped && !def.versioned && def.tableName.equals(materialTable));
+
         if (byKey.putIfAbsent(def.sheetKey, def) != null) {
             throw new IllegalStateException(datasetKey + " 重复 sheetKey: " + def.sheetKey);
         }
@@ -72,5 +90,6 @@ public abstract class AbstractDatasetRegistry implements DatasetRegistry {
     @Override public String axisColumn()   { return axisColumn; }
     @Override public String axisLabel()    { return axisLabel; }
     @Override public String materialTable(){ return materialTable; }
+    @Override public boolean customerScoped() { return customerScoped; }
     @Override public List<SheetDef> sheets() { return List.copyOf(byKey.values()); }
 }

@@ -58,7 +58,19 @@ public class SemanticCompiler {
     public static final int CURRENT_VERSION = 1;
 
     private static final String PRICE_FUNC_ALIAS = "cep";
-    private static final String PRICE_FUNC_NODE_KEY = "FUNC_ELEMENT_PRICE";
+    /**
+     * task-260907 · B-8：<b>历史</b>价格函数节点键，只作向后兼容用。
+     *
+     * <p>🚫 <b>不要再拿它当「价格列」的唯一判据</b> —— 价格函数节点已由 V424 换成
+     * {@code FUNC_CUSTOMER_ELEMENT_PRICE}（f_customer_element_price，粒度 = 客户 × 元素）。
+     * 判据改为「锚点那条 PRICE 边指向谁」，见 {@link #isPriceNodeKey}。
+     *
+     * <p>之所以还留着它：实测共享库里有 <b>21 份</b>已保存的 builder 配置，其
+     * {@code sourceNodeKey} 仍写着 {@code FUNC_ELEMENT_PRICE}。判据若只认新键，
+     * 这 21 份会在编译时把价格列当普通列去找路径，报
+     * {@code COMPILE_COLUMN_SOURCE_UNKNOWN} —— 用户视角是「配好的视图突然编译不过」。
+     */
+    private static final String LEGACY_PRICE_FUNC_NODE_KEY = "FUNC_ELEMENT_PRICE";
 
     @Inject
     PhysicalColumnCatalog catalog;
@@ -1300,7 +1312,21 @@ public class SemanticCompiler {
     }
 
     private boolean isPriceColumn(PricePlan plan, BuilderConfig.ColumnConfig col) {
-        return PRICE_FUNC_NODE_KEY.equals(col.sourceNodeKey);
+        return isPriceNodeKey(col.sourceNodeKey, plan == null ? null : plan.funcNode.nodeKey);
+    }
+
+    /**
+     * 这个 {@code sourceNodeKey} 是不是「价格策略列」。
+     *
+     * <p>判据 = <b>锚点 PRICE 边当前指向的那个节点键</b>，外加历史键做向后兼容
+     * （见 {@link #LEGACY_PRICE_FUNC_NODE_KEY}）。
+     * 🚫 不要退回硬编码单一常量 —— 那样换价格函数就必须同时改代码与种子，
+     * 而漏改的症状是「拖得动、编译时才报列找不到」。
+     */
+    private static boolean isPriceNodeKey(String sourceNodeKey, String edgeTargetNodeKey) {
+        if (sourceNodeKey == null) return false;
+        return LEGACY_PRICE_FUNC_NODE_KEY.equals(sourceNodeKey)
+                || (edgeTargetNodeKey != null && edgeTargetNodeKey.equals(sourceNodeKey));
     }
 
     /**
@@ -1308,14 +1334,24 @@ public class SemanticCompiler {
      * {@code effectiveColumns}（AC-2①「7 项」的来源，也是 D-09 原子组"拖一列自动带出"的落地点）。
      */
     private PricePlan resolvePricePlan(Ctx c, List<BuilderConfig.ColumnConfig> effectiveColumns) {
-        boolean priceSelected = effectiveColumns.stream().anyMatch(col -> PRICE_FUNC_NODE_KEY.equals(col.sourceNodeKey));
-        if (!priceSelected) return null;
-
+        // task-260907 · B-8：先顺 PRICE 边解析出「当前的价格函数节点」，再判用户有没有选它的列。
+        // 顺序不能反：判据本身依赖边指向谁（换函数时只改种子、不改代码）。
         SemanticEdge priceEdge = c.snap.edgesFrom(c.anchor.id).stream()
                 .filter(e -> "PRICE".equals(e.edgeKind))
                 .findFirst()
-                .orElseThrow(() -> new BuilderApiException(400, "COMPILE_PRICE_EDGE_NOT_FOUND",
-                        "锚点「" + c.anchor.displayName + "」没有声明价格策略边", Map.of()));
+                .orElse(null);
+        String edgeTargetKey = (priceEdge == null) ? null
+                : (c.snap.nodeById.get(priceEdge.toNodeId) == null ? null
+                        : c.snap.nodeById.get(priceEdge.toNodeId).nodeKey);
+
+        boolean priceSelected = effectiveColumns.stream()
+                .anyMatch(col -> isPriceNodeKey(col.sourceNodeKey, edgeTargetKey));
+        if (!priceSelected) return null;
+
+        if (priceEdge == null) {
+            throw new BuilderApiException(400, "COMPILE_PRICE_EDGE_NOT_FOUND",
+                    "锚点「" + c.anchor.displayName + "」没有声明价格策略边", Map.of());
+        }
         SemanticNode funcNode = c.snap.nodeById.get(priceEdge.toNodeId);
         if (funcNode == null) {
             throw new BuilderApiException(500, "COMPILE_PRICE_FUNC_NODE_MISSING",
@@ -1331,7 +1367,7 @@ public class SemanticCompiler {
         if (ps != null && ps.elementCodeManualField != null && !ps.elementCodeManualField.isBlank()) {
             // 形态 B（AC-23）：元素键改绑手填字段，SQL 不再输出价格策略——既有 element_code_field/
             // element_price_field 运行时定价机制（task-0729）接管，本编译器不生成 JOIN。
-            effectiveColumns.removeIf(col -> PRICE_FUNC_NODE_KEY.equals(col.sourceNodeKey));
+            effectiveColumns.removeIf(col -> isPriceNodeKey(col.sourceNodeKey, funcNode.nodeKey));
             return null;
         }
 
@@ -1342,12 +1378,18 @@ public class SemanticCompiler {
         SemanticEdgeKey codeKey = keys.get(0);
         plan.elementCodeSourceColumn = codeKey.leftColumn;
         String codeExpr = c.anchorAlias + "." + codeKey.leftColumn;
-        String hfExprForJoin = requalifyAnchorExpr(c);
 
         List<String> on = new ArrayList<>();
         on.add(PRICE_FUNC_ALIAS + "." + codeKey.rightColumn + " = " + codeExpr);
-        for (int i = 1; i < keys.size(); i++) {
-            on.add(PRICE_FUNC_ALIAS + "." + keys.get(i).rightColumn + " = " + hfExprForJoin);
+        if (keys.size() > 1) {
+            // ⚠️ requalifyAnchorExpr 会在 anchor_expr 为空时抛 COMPILE_ANCHOR_EXPR_MISSING，
+            //    所以只在真的要用它（多连接键）时才求值。
+            //    task-260907 B-8 后 QUOTE 侧只剩 element_code 一个键（客户 × 元素粒度），
+            //    走不到这里；核价侧若将来接入多键价格边，这段仍然成立。
+            String hfExprForJoin = requalifyAnchorExpr(c);
+            for (int i = 1; i < keys.size(); i++) {
+                on.add(PRICE_FUNC_ALIAS + "." + keys.get(i).rightColumn + " = " + hfExprForJoin);
+            }
         }
         plan.joinClause = "LEFT JOIN " + funcNode.funcSignature + " " + PRICE_FUNC_ALIAS +
                 " ON " + String.join(" AND ", on);

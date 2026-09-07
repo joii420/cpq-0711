@@ -350,9 +350,10 @@ public class ConfigureProductService {
             // 🆕 A-AC-11（2026-09-04 用户裁决）：新建料号的产品分类默认「默认分类」(000000)。
             //    ⚠️ ON CONFLICT DO NOTHING ⇒ 库里早有的外购件料号不会被回填，这是刻意的
             //    （不让选配顺手改写导入侧的数据），A-AC-11 只约束本流程新建的行。
-            dsWriter.upsertMaterial(outNo, meta[0], null, null, null,
+            // 🆕 task-260907 · B-4：客户号从本方法既有的 customerCode 透传（= customer.code）。
+            dsWriter.upsertMaterial(customerCode, outNo, meta[0], null, null, null,
                 SelDsQuoteWriter.TYPE_OUTSOURCED, SelDsQuoteWriter.CATEGORY_DEFAULT, opOf(operatorId));
-            dsWriter.writeOutsourcedSelfRow(outNo, opOf(operatorId));
+            dsWriter.writeOutsourcedSelfRow(customerCode, outNo, opOf(operatorId));
             if (pr.processNos != null && !pr.processNos.isEmpty()) {
                 insertProcessSimpleUnitPriceV6(outNo, pr.processNos, customerCode, cat);
             }
@@ -463,7 +464,7 @@ public class ConfigureProductService {
         //    ⚠️ singleRecipeId 不再有落点 —— 新表没有 material_recipe_id 列。它在 V6 时代的用途
         //    （单材质料号的材质判据）已被 B-18 用户裁决废除，材质权威是 ds_quote_material_bom 的 N 行。
         //    🆕 A-AC-11（2026-09-04 用户裁决）：category_code 一律写「默认分类」000000。
-        dsWriter.upsertMaterial(hfPartNo, pr.name, pr.spec, pr.dimension, pr.unitWeightGrams,
+        dsWriter.upsertMaterial(customerCode, hfPartNo, pr.name, pr.spec, pr.dimension, pr.unitWeightGrams,
             SelDsQuoteWriter.TYPE_PART, SelDsQuoteWriter.CATEGORY_DEFAULT, opOf(operatorId));
         // 🆕 task-260903 · A-2 / A-3 / A-4：物料行与元素行改落 ds_quote_*，停写 V6。
         //
@@ -473,8 +474,8 @@ public class ConfigureProductService {
         // 📌 A-9（A-AC-5）：新料号在库中不存在 ⇒ writeGroup 走 CREATED 分支，version_no 恒为 1。
         //    这也覆盖了原 A-AC-9「复用路径不调写入器」要防的坏后果 —— 复用在上面 hit 分支就
         //    早退了，根本走不到这里。🚫 后人不要在这里加任何版本号干预。
-        dsWriter.writeMaterialBomGroup(hfPartNo, buildRecipeBomRows(hfPartNo, mats), opOf(operatorId));
-        dsWriter.writeElementBomGroup(hfPartNo, buildElementBomRows(hfPartNo, mats), opOf(operatorId));
+        dsWriter.writeMaterialBomGroup(customerCode, hfPartNo, buildRecipeBomRows(hfPartNo, mats), opOf(operatorId));
+        dsWriter.writeElementBomGroup(customerCode, hfPartNo, buildElementBomRows(hfPartNo, mats), opOf(operatorId));
 
         // mat_part_version_log 基线行: PK (customer_product_no NOT NULL, hf_part_no, version)
         // configure 阶段无 customer_product_no (客户产品号在数据导入后才存在)
@@ -1866,14 +1867,14 @@ public class ConfigureProductService {
                     //    🚫 原注释「不许拿『零件』凑数」已作废，不要依据它改回 null ——
                     //       A-AC-7 的判据是：选配铸出的料号里 material_type IS NULL 的行数 = 0。
                     // 🆕 A-AC-11：category_code 一律写「默认分类」000000。
-                    dsWriter.upsertMaterial(parentHfPartNo, null, null, null, null,
+                    dsWriter.upsertMaterial(customerCode, parentHfPartNo, null, null, null, null,
                         SelDsQuoteWriter.TYPE_PART, SelDsQuoteWriter.CATEGORY_DEFAULT, opOf(operatorId));
                     // V6 落库 Phase 2（选配 COMBO 补全，设计 §6 / 用户方案 B1/B2/B3）：统一走
                     // VersionedV6Writer（内容相同复用 / 不同 max+1 升版 / is_current 翻转）。
                     // 🆕 task-260903 · A-2 / A-4（A-AC-6）：父级 BOM 改落 ds_quote_material_bom。
                     // 🚨 ASSEMBLY 行与 RECIPE 行**必须合并成一次 writeGroup** —— V6 时代它们是
                     //    characteristic 区分的两个独立组，新表里同属 material_no 这一个轴值。
-                    dsWriter.writeMaterialBomGroup(parentHfPartNo,
+                    dsWriter.writeMaterialBomGroup(customerCode, parentHfPartNo,
                         buildCompositeBomRows(parentHfPartNo, childHfPartNos, childQtys), opOf(operatorId));
                     insertProcessUnitPriceV6(parentHfPartNo, customerCode, req.parts, childHfPartNos, catalog);
                     insertCompositeProcessCapacityV6(parentHfPartNo, req.compositeProcesses, catalog);
