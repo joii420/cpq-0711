@@ -28,3 +28,51 @@ mvnw -o compile 通过（BUILD SUCCESS）
   差集② 本 worktree 有 / master 无 / 共享库无 = [422]  ⇒ 非空
   ⇒ 起一次 Quarkus dev 就会把 V422 自动落进共享库（migrate-at-start=true）
   ⇒ 🚫 本轮不起服务。V422 合进 master 后再补这段验证。
+
+════════════════════════════════════════════════════════════════════════
+【运行时验证】V422 合 master 后补做  2026-09-07 06:2x  端口 8098
+🚦 无任何 flyway 绕过参数；起服务前安全闸双空（孤儿[] / worktree有master无[]）
+════════════════════════════════════════════════════════════════════════
+
+── 结构证据（比 curl 更强：证明「到不了建单路径」而不只是「这次没走」）──
+javap -p target/classes：
+  public jakarta.ws.rs.core.Response importQuote();          ← 零参
+  public jakarta.ws.rs.core.Response createQuotation();      ← 零参
+  private static jakarta.ws.rs.core.Response goneResponse();
+  public ApiResponse<Map<String,Object>> getResult(java.util.UUID);   ← 保留
+⇒ 两个方法【零参数】：无论请求体是什么，都读不到、也到不了任何业务分支。
+
+方法体各只有一行：
+  public Response importQuote()     { return goneResponse(); }
+  public Response createQuotation() { return goneResponse(); }
+
+字节码级复核（注释不进字节码，比 grep 可靠）：
+  javap -c 里对 CreateQuotationMaterializer / V6QuotationCommitService / QuoteImportService
+  的 invoke 命中 = 0  ⇒ 类内对这三个服务零调用。
+  （源码 grep 曾命中 materializer.materialize 1 次，查证为一条注释；
+    且那条注释是被我的改动搞陈旧的——它还指着已不存在的 :177——已一并修正。）
+
+── 运行时（请求体是【真实存在的 id】，不是随便造一个会被拒的）──────────
+基线                              quotation=272  line_item=11302
+POST /v6/quote/create-quotation   HTTP=410
+  body {"code":410,"message":"报价基础数据导入已迁移至『导入报价数据』"}
+  （请求体 importRecordId=2e428139-…(V6/QUOTE/SUCCESS)、customerId=正泰、
+    customerTemplateId=正泰模板1 —— 全是库里真实存在的行）
+POST /v6/quote（multipart 真 xlsx）HTTP=410  同 body
+GET  /v6/{recordId}               HTTP=200  systemType=QUOTE status=SUCCESS
+                                            file=1800笔产品订单.xlsx   ← ✅ 保留
+事后                              quotation=272  line_item=11302   ← 逐个不变 ✅
+未登录                            两个端点均 401（RoleFilter 先于方法体）
+
+── 回归 ────────────────────────────────────────────────────────────────
+新链路三端点仍工作：导入 SUCCESS → 建单 200
+   quotationId=c5b8a55d-… quotationNumber=QT-20260907-0517 lineItemsCount=3
+B-15 跨客户拒收仍生效，且 errors 带 value="CUST-0001"（B-16 也没被打断）
+AC-15 结构层 sheets 与基线逐字段相同 : True
+
+── V422 落库 ───────────────────────────────────────────────────────────
+Migrating schema "public" to version "422 - task260907 quote ds template seed"
+Successfully applied 1 migration to schema "public", now at version v422 (632ms)
+flyway_schema_history: 422 | success=t
+落库后复核：该 series 模板数=2（v1.0/v1.1）| v1.1 页签=14 | COMP-2254 存在=1
+自检块三条守卫在真实数据上全过（迁移成功本身即证明没 RAISE）
