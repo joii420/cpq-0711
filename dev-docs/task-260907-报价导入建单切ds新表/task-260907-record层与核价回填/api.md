@@ -73,7 +73,7 @@
                 "originId": 161,             // 快照时的主表行 id（已失效）
                 "baseRowFingerprint": "9f2c…",
                 "displayValues": { "项次": "90", "投入料号": "S-1630010773" },
-                "reason": "CROSS_VERSION_FINGERPRINT_MISS"
+                "reason": "CROSS_VERSION_FINGERPRINT_MISS"   // 见下方「行级 reason 全集」，🚫 与 nonParticipating 的 reason 是两套独立枚举
               }
             ],
             "columnScope": {                 // 该页签表征了哪些列 —— AP-60 列维度判据
@@ -93,6 +93,15 @@
   }
 }
 ```
+
+**`unanchoredRows[].reason` 全集**（2026-09-07 补 —— 原文只列了一个，实测后端还会返 `NO_ANCHOR`；前端代理指出）：
+
+| 码 | 什么情形 | 给财务看的中文 |
+|---|---|---|
+| `NO_ANCHOR` | `_record` 这一行**根本没有锚** —— `origin_id` 与 `base_row_fingerprint` 都是空。发生在「只活在 `row_data` 的行」与「用户手工新增的行」上：它们没有经过 driver 展开，主表里本就没有对应行 | 这是报价单上新增的行，基础数据里没有对应记录，确认后按新增写入 |
+| `CROSS_VERSION_FINGERPRINT_MISS` | 有过锚，但**跨版后指纹对不上** —— 本单拍快照之后，该行内容被别的报价单改过 | 本单拍快照后，该行内容已被其他报价单改动，无法在当前版本中定位 |
+
+🚫 **这套 reason 与 `nonParticipating[].reason` 是两套独立枚举，不许混成一个值域** —— 前者是「行为什么锚不上」，后者是「组件为什么不参与」。
 
 **字段语义的三条硬约束**：
 
