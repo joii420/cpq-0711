@@ -110,9 +110,15 @@ ds_quote_sub_component_fee_history
 ## ④ 🔴 最危险的一条：**只加列不扩轴 = 静默删别人的数据**
 
 ```
-ds_quote_* 的 UNIQUE 约束(contype='u') = 0 个
-13 张带版本表：只有 PRIMARY KEY (id)，无任何业务唯一索引
-业务唯一索引仅 3 条，全在免版本表上：
+🚨 口径说明（2026-09-07 由 cpq-46 会话指出，主线复核）：两种查法结果不同，统一用 pg_indexes
+   pg_constraint WHERE contype='u'        → 0 条   ← 单独引用会误导！
+   pg_indexes UNIQUE 非 _pkey             → 3 条   ← 以此为准
+   差异原因：那 3 条是 CREATE UNIQUE INDEX 建的，不是表约束，pg_constraint 查不到
+   ⚠️ 「UNIQUE 约束 = 0」这句单独被引用时，会让人以为 uq_ds_quote_material 不存在
+      —— 而本任务的 B-6 正是要扩它。
+
+13 张带版本表：只有 PRIMARY KEY (id)，无任何业务唯一索引（这条两种口径都成立）
+业务唯一索引 3 条，全在免版本表上：
   uq_ds_quote_customer_part(customer_no, customer_product_no)   ← 已含客户
   uq_ds_quote_material(material_no)                             ← 需扩成 (customer_no, material_no)
   uq_ds_quote_plating_scheme(scheme_no, scheme_version, item_seq)
@@ -181,13 +187,27 @@ VersionedGroupWriter.java:206  "DELETE FROM " + table + " WHERE " + axisCol + " 
 ```
 GET /api/cpq/dataset/{dataset}/parts/{axisValue}/overview?customerNo=CUST-0001
 ```
-受影响的 **4 个端点**（`DatasetMaintenanceResource`）：
+受影响的 **5 个端点**（`DatasetMaintenanceResource`）—— 🔄 **2026-09-07 更正：原写 4 个，漏了列表端点本身**：
 ```
+GET /{dataset}/parts                                      ← 🆕 补：列表本身，销售产品列表的数据源
 GET /{dataset}/parts/{axisValue}/overview
 GET /{dataset}/parts/{axisValue}/sheets/{sheetKey}/rows
 GET /{dataset}/parts/{axisValue}/sheets/{sheetKey}/versions
 PUT /{dataset}/parts/{axisValue}                          (updatePart)
 ```
+> 由 `cpq-46` 会话指出，主线复核：`GET /{dataset}/parts` 只有 `page/size/keyword`，**没有任何客户输入**
+> ⇒ 漏了它，**列表照样混行**。
+
+🔴 **落点页面更正（同上来源，主线复核）**：本节原写「维护端（基础资料查询）」**指向不明**。实测：
+```
+MasterDataHubPage.tsx:37/38  →  DatasetPartListTab dataset="cost-basic" / "cost-detail"
+```
+⇒ **「主数据维护」页的两个 Dataset 页签跑的是核价两套** —— 按用户裁决**不加 `customer_no`，压根不受影响**。
+全工程**没有** `DatasetPartListTab dataset="quote"` 实例 ⇒ **报价数据集的料号列表只有「产品管理页 → 销售产品」页签在用**。
+⚠️ **照本节字面去改 `pages/master-data/dataset/` 会改到一个跑核价数据集的页面上。**
+
+📌 **本块已由 `cpq-46` 承接**，任务号 `task-260907-产品管理客户过滤`（19 条 AC / 12 个任务项 / A0 六条已裁 / 六件套 + 6 份原型图已合 master）。
+其开工时机**卡在本任务的 B-1 DDL + B-2/B-3 复合轴 + B-6 唯一索引扩展合并 master 之后**（用户裁决的时序）。
 **选它的理由**：路径结构不变、**向后兼容**（不传则不过滤，维持现有行为）、前端只需在现有请求上加一个参数。
 
 🚫 **已否决**：① 拆两段路径 `/parts/{customerNo}/{axisValue}` —— 语义最清楚但**破坏性变更**，4 个端点 URL 全变；
