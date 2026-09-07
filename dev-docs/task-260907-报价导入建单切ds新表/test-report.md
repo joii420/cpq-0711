@@ -529,6 +529,21 @@ E2E 导入的 **58 行**夹具也已按前缀清净。
 | **AC-12 ①②③** | 幂等再导 | **第一次导入**：16 张表全部写入（8 张费用表 **0 → 3**，3 张年降表 **0 → 3**，`material` 49→57，`material_bom` 69→75）—— 📌 这一步同时填掉了 AC-6 「现网费用表全 0 行会导致空验证」那个坑<br>**第二次导入同一文件**：所有 `ds_quote_*`（**含 `_history` / `_record`**）行数**逐表不变**<br>**②免版本 3 张表**：业务内容 md5（`to_jsonb(z.*)` 去掉 `id`/四个审计列）**逐表相同** —— `material=e393e308…` `customer_part=079cc534…` `plating_scheme=a2374e01…`；同时实测 `ds_quote_material` 有 **8 行 `updated_at` 被刷新** ⇒ 确实走了 UPDATE，但值没变，正是 AC 原文「允许 UPDATE 但值必须一样」<br>**①带版本表**：`material_bom` / `element_bom` 最大 `version_no` 停在 **3** 未被顶<br>**③建单**：`POST /dataset/quote/create-quotation` → **200**，`QT-20260907-0519`，**`lineItemsCount=3`** |
 | **AC-1** | 建单明细行数 | 同上：**3 行** = 客户料号 sheet 行数，**≠ 物料表 8 个料号** —— 这是 AC-1 真正的判据（拿物料表行数会得到 8） |
 
+| **AC-5** | `import_record` 落库形态 | `system_type=DATASET_QUOTE` · `import_status=SUCCESS` · `total_rows/success_rows` = **58/58**、**55/55** · `metadata.summary` 按 sheet 非空（`{"sheet":"物料","updated":8,"inserted":0,...}`）· `quotation_id` **只在建过单的那条**回写 |
+| **AC-17** | 空 sheet 一行不动 | 导入 `T260907-空sheet-年降系数.xlsx` → 所有 `ds_quote_*` 行数**零变化**。<br>🚫 **非 0→0 空验证**：`ds_quote_annual_discount` 当时 **3 行 / 最大版本 1 / `_history` 0 行**，导入后三者全不变 ⇒「不清空·不升版·不归档」三条各自成立 |
+| **AC-18** | 空客户料号 → 0 明细 | `lineItemsCount=0`，`QT-20260907-0520` 建出 |
+| **AC-21** | 同料号多客户料号建多行 | `T260907T-FG01` 在 `ds_quote_customer_part` 有 **2 条**（`ZT-A001` / `ZT-A001-B`）⇒ 明细建出 **2 行**；`product_part_no_snapshot` 相同、`customer_part_no` 不同；`sort_order` = **0,1,2** 严格递增 |
+| **AC-10** | 提交 | `POST /quotations/{id}/submit` → 200，状态 `DRAFT → SUBMITTED`，`submission_snapshot` 非空，`quotation_component_sql_snapshot` = **14 段**。<br>📌 **AC-10 原文写「11 段」已过期** —— 模板升 v1.1 后是 14 个页签。又一次印证 `task-260819` 的沉淀：**AC 里写具体数字就是埋一个必然过期的判据** |
+| **AC-11** | 核价通过 | 两段式：`GET /costing-approve/preview` → 200 拿 `previewToken`；`POST /costing-approve` 带 token → 200，状态 `SUBMITTED → APPROVED`，不抛异常 |
+| **AC-16 ①②** | 回填静默降级 + V6 逐字不变 | ① 预览 `summary = {'versionedGroups': 0, 'addedRows': 0, 'deletedRows': 0, 'changedRows': 0}` 且 `groups: []` ⇒ **跑了但无可回填**（服务执行过并产出了结构化计数器，不是「没跑」）<br>② **核价通过之后**重算 V6 八张表的行数 + 整行内容 md5，与通过前**逐表逐字相同**：<br>`unit_price 11246` · `material_bom 11499` · `material_bom_item 11155` · `element_bom 11737` · `element_bom_item 24982` · `capacity 22` · `plating_scheme 12` · `annual_discount 1` |
+
+### 🚫 AC-16 上我差点又记一次空验证
+
+第一次跑 `POST /costing-approve` 时**没带 `previewToken`**（两段式契约，老调用方直接 400），返回 **400**、状态仍是 `SUBMITTED`。
+此时我照样跑了 V6 指纹对比，**它当然"逐字不变"，于是打出一个 ✅** —— 但那个绿证明的是「没执行过的操作没有副作用」，**与 AC-16 要证的东西无关**。
+⇒ 补走完整两段式（`GET preview` 拿 token → `POST` 带 token → **HTTP 200 + 状态真的变成 `APPROVED`**）之后重测，才是上表那条。
+📌 **判据沉淀：断言"某操作没有产生副作用"之前，必须先证明该操作真的执行了。**
+
 ### 🔬 AC-12② 的证伪实验（判据自证会红）
 
 ```
