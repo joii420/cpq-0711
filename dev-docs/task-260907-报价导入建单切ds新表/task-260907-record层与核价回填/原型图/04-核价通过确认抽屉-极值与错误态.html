@@ -52,21 +52,21 @@
       <div>共 <b>4 行</b>对不上，分布在 3 张表。确认后这些行按新增写入，库里原有的行不会被删除。</div>
     </div>
 
+    <p class="muted" style="font-size:13px; margin:4px 0 12px">
+      本单命中 <b>13 张表 / 41 个料号组</b>，下面节选前 4 张；其余在抽屉内纵向滚动查看。
+    </p>
+
     <div class="sheet-head">
-      <span class="name">全部 13 张表（节选前 4 张，其余滚动查看）</span>
+      <span class="name">物料BOM</span>
+      <span class="table-name mono muted">ds_quote_material_bom</span>
     </div>
     <div class="tbl-wrap">
       <table>
         <thead>
-          <tr>
-            <th>页签</th><th>销售料号</th><th>版本迁移</th><th>判定</th>
-            <th class="num">整组行数</th><th class="num">本次覆盖</th><th class="num">本次不动</th><th class="num">对不上</th>
-            <th>本次覆盖的列</th><th>原样保留的列</th>
-          </tr>
+          <tr><th>销售料号</th><th>版本迁移</th><th>判定</th><th class="num">整组行数</th><th class="num">本次覆盖</th><th class="num">本次不动</th><th class="num">对不上</th><th>本次覆盖的列</th><th>原样保留的列</th></tr>
         </thead>
         <tbody>
           <tr class="row-warn">
-            <td>物料BOM<div class="mono muted" style="font-size:12px">ds_quote_material_bom</div></td>
             <td class="mono">TEST0813-P01-BD1</td>
             <td><span class="ver"><span class="tag tag-gold">快照 v7</span><span class="arrow">→</span><span class="tag tag-blue">库中 v9</span><span class="arrow">→</span><span class="to">v10</span></span></td>
             <td><span class="tag tag-gold">跨版升版</span></td>
@@ -74,8 +74,21 @@
             <td><span class="tag tag-grey">组成数量</span> <span class="tag tag-grey">材料毛重</span> <span class="tag tag-grey">材料净重</span> <span class="tag tag-grey">材料占比（%）</span></td>
             <td class="muted">项次、投入料号、产出料号类型、重量单位、损耗率、不良率</td>
           </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sheet-head">
+      <span class="name">物料与元素BOM</span>
+      <span class="table-name mono muted">ds_quote_element_bom</span>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>销售料号</th><th>版本迁移</th><th>判定</th><th class="num">整组行数</th><th class="num">本次覆盖</th><th class="num">本次不动</th><th class="num">对不上</th><th>本次覆盖的列</th><th>原样保留的列</th></tr>
+        </thead>
+        <tbody>
           <tr>
-            <td>物料与元素BOM<div class="mono muted" style="font-size:12px">ds_quote_element_bom</div></td>
             <td class="mono">TEST0813-P01-BD1</td>
             <td><span class="ver">v3 <span class="arrow">→</span> <span class="to">v4</span></span></td>
             <td><span class="tag tag-blue">升版</span></td>
@@ -83,8 +96,21 @@
             <td><span class="tag tag-grey">组成含量（%）</span> <span class="tag tag-grey">损耗率%</span> <span class="tag tag-grey">毛用量</span> <span class="tag tag-grey">净用量</span> <span class="tag tag-grey">回收折扣(%)</span> <span class="tag tag-grey">回收量</span></td>
             <td class="muted">材质料号、元素、项次、毛用量单位、净用量单位</td>
           </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sheet-head">
+      <span class="name">组成件其他费用</span>
+      <span class="table-name mono muted">ds_quote_sub_component_fee</span>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>销售料号</th><th>版本迁移</th><th>判定</th><th class="num">整组行数</th><th class="num">本次覆盖</th><th class="num">本次不动</th><th class="num">对不上</th><th>本次覆盖的列</th><th>原样保留的列</th></tr>
+        </thead>
+        <tbody>
           <tr class="row-warn">
-            <td>组成件其他费用<div class="mono muted" style="font-size:12px">ds_quote_sub_component_fee</div></td>
             <td class="mono">0526-2609000004</td>
             <td><span class="ver"><span class="tag tag-gold">快照 v1</span><span class="arrow">→</span><span class="tag tag-blue">库中 v4</span><span class="arrow">→</span><span class="to">v5</span></span></td>
             <td><span class="tag tag-gold">跨版升版</span></td>
@@ -92,8 +118,21 @@
             <td><span class="tag tag-grey">费用金额</span></td>
             <td class="muted">项次、费用名称、币种、备注</td>
           </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sheet-head">
+      <span class="name">年降系数</span>
+      <span class="table-name mono muted">ds_quote_annual_discount</span>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>销售料号</th><th>版本迁移</th><th>判定</th><th class="num">整组行数</th><th class="num">本次覆盖</th><th class="num">本次不动</th><th class="num">对不上</th><th>本次覆盖的列</th><th>原样保留的列</th></tr>
+        </thead>
+        <tbody>
           <tr>
-            <td>年降系数<div class="mono muted" style="font-size:12px">ds_quote_annual_discount</div></td>
             <td class="mono">0526-2609000004</td>
             <td><span class="ver">v2 <span class="arrow">→</span> <span class="muted">v2</span></span></td>
             <td><span class="tag tag-grey">无变更</span></td>
