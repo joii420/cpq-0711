@@ -31,6 +31,32 @@ public class QuoteRegistry extends AbstractDatasetRegistry {
      */
     static final List<String> MATERIAL_TYPE = List.of("零件", "外购件");
 
+    /**
+     * task-260907 第二段 · B-1（S-3）—— 只有这两张的 {@code _record} 多一列
+     * {@code element_price}：建单时算一次的元素实时价快照。
+     *
+     * <p>用户原话：「物料BOM元素 表，在 _record 表中单独增加 element_price 记录报价单使用的
+     * 当时的元素价格」。D-6：🚫 <b>不进主表</b> —— 它是销售报价时的价格快照，不是主数据。
+     */
+    public static final java.util.Set<String> ELEMENT_PRICE_RECORD_SHEETS =
+            java.util.Set.of("MATERIAL_BOM", "ELEMENT_BOM");
+
+    /**
+     * task-260907 第二段 · B-2 —— 报价侧是唯一配 {@code _record} + 「来源报价单 id」的数据集。
+     * 🚫 核价两套必须保持默认 {@code false}（见接口注释：开成 true 会让核价侧启动失败）。
+     */
+    @Override
+    public boolean quoteRecordEnabled() {
+        return true;
+    }
+
+    @Override
+    public java.util.Map<String, String> recordExtraColumns(SheetDef sheet) {
+        return ELEMENT_PRICE_RECORD_SHEETS.contains(sheet.sheetKey)
+                ? java.util.Map.of("element_price", "numeric(26,12)")
+                : java.util.Map.of();
+    }
+
     public QuoteRegistry() {
         super("quote", "报价数据", "ds_quote_",
               "material_no", "销售料号", "ds_quote_material");

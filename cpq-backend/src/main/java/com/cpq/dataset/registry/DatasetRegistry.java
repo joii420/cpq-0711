@@ -41,6 +41,31 @@ public interface DatasetRegistry {
         return out;
     }
 
+    /**
+     * task-260907 第二段 · B-2 —— 本数据集的带版本表是否配 {@code _record} 快照表 +
+     * 「来源报价单 id」系统列。<b>只有报价侧 {@code true}</b>。
+     *
+     * <p>🚨 <b>为什么开关放在 Registry 而不是 {@link SheetDef}</b>：{@code SheetDef} 是三套数据集
+     * 共用的类，把「要不要 {@code _record}」写死在它里面（如按表名前缀判断）等于让核价两套
+     * 的自检也去要求这些列 —— {@code DatasetSchemaSelfCheck} 要求列集<b>完全相等</b>，
+     * 核价侧的库里没有这些列 ⇒ <b>核价侧服务当场起不来</b>。
+     * 数据集级的差异就该由数据集自己声明。
+     */
+    default boolean quoteRecordEnabled() {
+        return false;
+    }
+
+    /**
+     * task-260907 第二段 · B-1（S-3）—— 该 sheet 的 {@code _record} 相对主表的<b>附加业务列</b>，
+     * {@code 列名 → pgType}（有序）。默认无。
+     *
+     * <p>报价侧只有物料BOM / 物料与元素BOM 两张返回 {@code element_price numeric(26,12)}
+     * （用户原话「物料BOM元素 表」，D-6：🚫 不进主表）。
+     */
+    default java.util.Map<String, String> recordExtraColumns(SheetDef sheet) {
+        return java.util.Map.of();
+    }
+
     default SheetDef byKey(String sheetKey) {
         for (SheetDef s : sheets()) if (s.sheetKey.equals(sheetKey)) return s;
         return null;

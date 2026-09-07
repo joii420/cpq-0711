@@ -146,6 +146,13 @@ public class MaterialVersionUpgradeService {
     CardSnapshotService cardSnapshotService;
     @Inject
     LineDiscountService lineDiscountService;
+    /**
+     * task-260907 第二段 · B-8（S-3 / D-29）：同步 {@code ds_quote_*_record.element_price}。
+     * <p>🔑 挂在下面 S3a/S3b 写 {@code snapshot_rows}/{@code row_data} 的<b>同一个写点、同一事务</b> ——
+     * 这是唯一能防「两者分叉」的口径。🚫 不许另起「扫全表同步」的定时任务。
+     */
+    @Inject
+    com.cpq.quotation.service.dsrecord.DsQuoteRecordService dsQuoteRecordService;
 
     /**
      * 单一入口。执行单位 =「报价单 × line item」。
@@ -790,6 +797,24 @@ public class MaterialVersionUpgradeService {
 
         if (updated == 0) {
             return new RowUpdateOutcome(changed, true); // row_version 不匹配 → 冲突
+        }
+
+        // ── task-260907 第二段 · B-8（AC-12）：同写点同事务同步 _record.element_price ──────────
+        // 🔒 位置不可变通：必须在上面那条 UPDATE **成功之后**（updated != 0），
+        //    与它同事务。这样两者要么一起写、要么一起不写：
+        //      · 被 S0 L3 守卫拦下 / 状态不在 ACTIVE_STATUSES 而 SKIPPED 的单 → 根本走不到这里；
+        //      · row_version 冲突（updated == 0）→ 上面已 return，_record 同样不动。
+        // 🚫 不要挪到方法开头或 `changed == 0` 之前 —— 那会让「snapshot_rows 没写而 _record 写了」
+        //    这种分叉重新变得可能，正是 AC-12② 要证伪的形态。
+        // ⚠️ 只把**解得出价**的元素放进 map：ep == null / ep.price == null 语义是「本版无价」，
+        //    与 S3a 的删键分支对应，此时 _record.element_price 保持原值不动。
+        Map<String, java.math.BigDecimal> priceByCode = new java.util.LinkedHashMap<>();
+        for (String code : elementCodesInList) {                 // 🚫 纯内存，无查库
+            ElementPrice ep = versionPrices.get(code);
+            if (ep != null && ep.price != null) priceByCode.put(code, ep.price);
+        }
+        if (!priceByCode.isEmpty()) {
+            dsQuoteRecordService.syncElementPrice(lineItemId, componentId, pbc.elementCodeField, priceByCode);
         }
         return new RowUpdateOutcome(changed, false);
     }

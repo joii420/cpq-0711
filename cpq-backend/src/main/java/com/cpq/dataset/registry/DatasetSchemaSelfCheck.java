@@ -61,6 +61,21 @@ public class DatasetSchemaSelfCheck {
     @ConfigProperty(name = "cpq.dataset.schema-check.enabled", defaultValue = "true")
     boolean enabled;
 
+    /**
+     * task-260907 第二段 · B-4：单独关掉「报价侧 {@code _record} + {@code source_quotation_id}」这一段自检。
+     *
+     * <p><b>唯一合法场景</b>：代码已合入、而 B-1/B-3 两条迁移<b>还没落到目标库</b>的那个窗口
+     * （本段的迁移刻意压在上游 {@code 报价侧加客户维度} 的 DDL 之后，见
+     * {@code db/migration-pending-260907/README.md}）。此时自检会报「表不存在: ds_quote_xxx_record」
+     * 并<b>让服务起不来</b> —— 那是设计如此，不是 bug。
+     *
+     * <p>🚫 迁移落库后必须改回 {@code true}（默认值）。刻意做成<b>比
+     * {@code cpq.dataset.schema-check.enabled} 更窄</b>的开关：关掉这一个只放过新增的 26+13 张表，
+     * 而关掉那个会把 45 张主表 + 39 张 {@code _history} 的漂移一起放回静默状态。
+     */
+    @ConfigProperty(name = "cpq.dataset.record-check.enabled", defaultValue = "true")
+    boolean recordCheckEnabled;
+
     public void onStartup(@Observes StartupEvent ev) {
         if (!enabled) {
             LOG.warn("[dataset] Registry↔DDL 启动自检已被 cpq.dataset.schema-check.enabled=false 关闭 —— 双写漂移不再被拦截");
@@ -69,7 +84,8 @@ public class DatasetSchemaSelfCheck {
         List<String> problems = check();
         if (!problems.isEmpty()) {
             throw new IllegalStateException(
-                    "[dataset] Registry 与数据库 schema 不一致，共 " + problems.size() + " 处（V401~V404 与 "
+                    "[dataset] Registry 与数据库 schema 不一致，共 " + problems.size() + " 处（V401~V404 / "
+                    + "task-260907 第二段的 `_record` 与 source_quotation_id 迁移 与 "
                     + "com.cpq.dataset.registry.* 必须同源）：\n  - " + String.join("\n  - ", problems));
         }
     }
@@ -82,17 +98,41 @@ public class DatasetSchemaSelfCheck {
         Map<String, Set<String>> forbidden = new LinkedHashMap<>();     // 表 → 不得存在的 NAME 列
 
         for (DatasetRegistry reg : registries.all()) {
+            // task-260907 第二段 · B-2/B-4：只有报价侧要求「来源报价单 id」+ `_record`
+            // （核价两套跟着要，它们的库里没这些东西 ⇒ 当场起不来）。
+            boolean rec = reg.quoteRecordEnabled() && recordCheckEnabled;
             for (SheetDef s : reg.sheets()) {
-                expectCols.put(s.tableName, s.expectedTableColumns());
-                expectTypes.put(s.tableName, typesOf(s));
+                expectCols.put(s.tableName, s.expectedTableColumns(rec));
+                Map<String, String> mt = typesOf(s);
+                if (rec && s.versioned) mt.put(SheetDef.SOURCE_QUOTATION_COLUMN, "uuid");
+                expectTypes.put(s.tableName, mt);
                 Set<String> nameCols = new LinkedHashSet<>();
                 for (ColumnDef c : s.nameColumns()) nameCols.add(c.name);
                 if (!nameCols.isEmpty()) forbidden.put(s.tableName, nameCols);
                 if (s.versioned) {
-                    expectCols.put(s.historyTable(), s.expectedHistoryColumns());
+                    expectCols.put(s.historyTable(), s.expectedHistoryColumns(rec));
                     Map<String, String> ht = typesOf(s);
                     ht.put("origin_id", "bigint");
+                    if (rec) ht.put(SheetDef.SOURCE_QUOTATION_COLUMN, "uuid");
                     expectTypes.put(s.historyTable(), ht);
+                }
+                // ── task-260907 第二段 · B-4：`_record` 与 `_history` 同等对待（AC-1⑤）──
+                // 不纳入 = 给自己开后门：本类存在的全部意义就是硬拦「Registry 声明了、DDL 没建」
+                // 这类完全静默的双写漂移。
+                if (rec && s.versioned) {
+                    Map<String, String> extra = reg.recordExtraColumns(s);
+                    expectCols.put(s.recordTable(), s.expectedRecordColumns(extra.keySet()));
+                    Map<String, String> rt = typesOf(s);
+                    rt.remove("version_no");            // `_record` 不带版本列（AC-9：升版归主表）
+                    rt.remove("row_fingerprint");
+                    rt.put("quotation_id", "uuid");
+                    rt.put("origin_id", "bigint");
+                    rt.put("base_row_fingerprint", "char(64)");
+                    rt.put("base_version_no", "integer");
+                    rt.put("extend_column", "jsonb");
+                    rt.put(SheetDef.RECORD_CUSTOMER_COLUMN, "varchar(20)");
+                    rt.putAll(extra);
+                    expectTypes.put(s.recordTable(), rt);
                 }
             }
         }
