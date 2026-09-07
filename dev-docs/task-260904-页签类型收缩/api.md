@@ -74,13 +74,33 @@
 
 停用 6 行（3 方言 × {零件, 外购件}）后，`QUOTE` 方言返回 **11** 项、`COST_BASIC` **10** 项、`COST_DETAIL` **18** 项。
 
-⚠️ **一个数据源可能返回多个字段组**，前端不得假设「一源一组」。实测：QUOTE 材质元素挂 2 组（`ELEMENT_BOM(MAIN)` + `FUNC_ELEMENT_PRICE(AUX)`）；**`COST_BASIC`/`COST_DETAIL` 的全部 5 类页签各挂 2 组**（多一个 `QUOTE_MATERIAL_BRIDGE(AUX)`）；QUOTE 其余各挂 1 组。
+⚠️ **一个数据源可能返回多个字段组**，前端不得假设「一源一组」。
+
+**2026-09-06 主线现网实测**（`dialect=` 逐方言打；master 8081 与本任务 worktree 8089 结果逐字相同）：
+
+| tabType | QUOTE | COST_BASIC | COST_DETAIL |
+|---|---|---|---|
+| `主件` | 1 组 `MATERIAL` | 1 组 | 1 组 |
+| `BOM` / `零件` / `外购件` | 1 组 `MATERIAL_BOM` | 1 组 | 1 组 |
+| `材质元素` | **3 组** `ELEMENT_BOM` + `FUNC_ELEMENT_PRICE` ×2 🔴 | 1 组 `ELEMENT_BOM` | 1 组 `ELEMENT_BOM` |
+
+🔄 本表取代旧说法「`COST_BASIC`/`COST_DETAIL` 全部 5 类各挂 2 组（多一个 `QUOTE_MATERIAL_BRIDGE(AUX)`）」—— 那条写下时正确，现已被 `task-260819` B-50（按 NARROW 边剔除该 AUX）作废。
+
+🔴 **QUOTE「材质元素」返回两个 `FUNC_ELEMENT_PRICE(PRICE)` 分组是缺陷，不是期望形态**（本文档旧版写「挂 2 组」正好可当判据线）。两块 `viewColumn` 不同，只有其中 `元素单价`/`货币`（裸列名）那块与编译器同源；另一块 `_价格策略_元素单价` **视图从不声明**，用户拖它会导致报价单静默空白。
+> **不属本任务范围** —— 归 `task-260819` B-24/D-65，已于 2026-09-06 报送该会话并在 BACKLOG 登记。本任务一行未动。
 
 ### 1.4 错误
 
 | HTTP | code | 触发 |
 |---|---|---|
-| 404 | `COMPILE_TABVIEW_NOT_FOUND` | `(tabType, variantKey)` 查不到 ACTIVE 行。**本次新增触发场景**：传入已停用的「零件」/「外购件」——文案需指出该页签类型已停用，请改选数据源 |
+| 404 | `COMPILE_TABVIEW_NOT_FOUND` | `(tabType, variantKey, dialect)` 三段坐标查不到 ACTIVE 行 |
+
+> 🔄 **2026-09-06 更正（本任务 v3 推翻 v2）**：本表原有一行写「**本次新增触发场景**：传入已停用的「零件」/「外购件」→ 404」。
+> **那是 v2 方案（停用 6 行 `semantic_tab_view`）的产物，v3 已改为不停用任何行**，故该触发场景不存在。
+> **以 AC-25① 为准：传入「零件」/「外购件」仍返回 200。** 主线实测（8081/8089 一致）：`tabType=零件&dialect=QUOTE` → 200，1 组 `MATERIAL_BOM`。
+> 收缩发生在**入口**（`availableSources` 不再列出退役页签，用户选不到），不在**校验**（老组件的存量坐标照常可解析，否则 142 个存量组件会当场打不开）。
+>
+> ⚠️ 相关但**不改**：`TabViewNotFound` 的 404 报文里仍会列出库中全部 6 种 `tab_type`（含退役的两种）。那是**诊断信息**（告诉排查者库里有什么），不是可选项清单，且有 4 处逐字断言依赖它。已评估，保持现状。
 
 ---
 

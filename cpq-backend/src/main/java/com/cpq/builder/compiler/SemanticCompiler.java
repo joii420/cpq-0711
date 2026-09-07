@@ -682,9 +682,18 @@ public class SemanticCompiler {
         }
         if (node.discriminator != null) return node.discriminator;
         if (!"MATERIAL_BOM".equals(node.nodeKey)) return null;
-        // 作为锚点直接使用（外购件 / BOM 树两个页签都以 MATERIAL_BOM 为锚点）
-        if ("外购件".equals(c.tabView.tabType)) return "characteristic = 'OUTSOURCED'";
-        return null; // BOM 树：不过滤（AC-6②）
+        // task-260904 B-3（AC-1，api.md §2）：原此处有一条
+        //     if ("外购件".equals(c.tabView.tabType)) return "characteristic = 'OUTSOURCED'";
+        // 已移除。两条独立理由：
+        //   ① **它是会报错的死代码**：该判别式引用的 characteristic 列在 ds_quote_material_bom
+        //      的 20 个物理列里根本不存在 ⇒ 选「外购件」页签走编译器必 400
+        //      `column dqmb.characteristic does not exist`（2026-09-06 §①ter 实测）；
+        //   ② **「外购件」页签已对新建组件退役**（S-4 / RETIRED_TAB_TYPES）——料号是不是外购件
+        //      是料号自身的属性（ds_quote_material.material_type），不是页签的属性。
+        // ⇒ MATERIAL_BOM 作锚点时**恒不加 characteristic 过滤**，即原 BOM 树行为（AC-6②）。
+        // 🚫 存量那 15 个外购件组件不受影响：它们是**手写 SQL 视图**，压根不经过本编译器
+        //    （其 SQL 走 v_compat_material_bom_item 兼容视图，实测 15/15 取得到数）。
+        return null;
     }
 
     // ---------------- 收窄（B-41：轴收窄 + 核价侧版本谓词；🚫 已无 system_type / customer_no） ----------------

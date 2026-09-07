@@ -33,6 +33,29 @@
  *
  * 📌 证据归档：本 spec 的截图写到 `dev-docs/task-260819-取数配置器/证据/e2e/`，
  *    **不留在 test-results/**（那目录每轮开跑前会被清空 ⇒ 留在那儿等于没有证据，testing.md §2）。
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * 🚦 2026-09-06 · task-260904 改写留痕（用户裁决由 task-260904 这边改）
+ *
+ * 【原断言】AC-115④：在取数配置面板内，「数据集」必须排在**「页签类型」**之前，
+ *           判据 `dsBeforeTab === true`（本文件 :143 附近）。
+ *
+ * 【为什么失效】🚨 **不是回归。** task-260904 把「页签类型」下拉整个换成了「数据源」下拉
+ *   （需求文档 §2.1 S-2，用户 2026-09-06 裁决）⇒ 参照物「页签类型」在面板里**不再存在**，
+ *   原判据会以「DOM 里找不到『页签类型』文本节点」的形式恒红。
+ *   ⚠️ 判它变红时别按回归归因 —— 消失是需求要求的。
+ *
+ * 【改成了什么】🚫 **布局约束本身保留，只换参照物**：
+ *   「数据集」必须排在**「数据源」**之前。
+ *   理由：用户当初提这条要求，要的是「先选数据集、再选源」的**顺序**
+ *   （数据集决定字段面板出哪些表，所以必须先选）—— 这条语义在 task-260904 之后
+ *   一个字都没变，变的只是后面那个控件叫什么。
+ *   🚫 因此不允许把整条断言删掉或弱化成「页面加载成功」。
+ *
+ * 【顺带简化】原判据为绕开「组件详情页顶部配置条里也有一个『页签类型』」而做的
+ *   "最近公共祖先"作用域收敛，现在依然保留 —— 顶部配置条的页签类型下拉虽已被 AC-28 移除，
+ *   但按容器比文档序本来就是更稳的写法，不因参照物换名而回退成整页取下标。
+ * ─────────────────────────────────────────────────────────────────────────
  */
 import { test, expect, Page } from '@playwright/test';
 import * as fs from 'fs';
@@ -72,7 +95,7 @@ test.beforeEach(async ({ page }) => {
 // ═══════════════════════════════════════════════════════════════════════
 // AC-115（单点）数据集选择器三选一
 // ═══════════════════════════════════════════════════════════════════════
-test('AC-115: 新建 SQL 视图时出现数据集选择器，三个选项 报价/基础核价/明细核价，且位于「页签类型」之前', async ({ page }) => {
+test('AC-115: 新建 SQL 视图时出现数据集选择器，三个选项 报价/基础核价/明细核价，且位于「数据源」之前', async ({ page }) => {
   await openBuilderTab(page);
 
   const dsLabel = page.getByText('数据集', { exact: true }).first();
@@ -97,50 +120,56 @@ test('AC-115: 新建 SQL 视图时出现数据集选择器，三个选项 报价
       `\n  多于 3：可能把 _history 或年降表也当成了数据集；少于 3：某一套没接上。`
   ).toBe(3);
 
-  // ④ 位置在「页签类型」之前 —— 原型明写「它决定字段面板出哪些表」，顺序是语义的一部分
+  // ④ 位置在「数据源」之前 —— 原型明写「它决定字段面板出哪些表」，顺序是语义的一部分
   //
-  // 🚦 2026-09-04 校准：原判据在**整页文本**上取 `页签类型` 的首次出现下标，
-  //    但组件详情页顶部的配置条里**也有一个「页签类型」**（和 料号列/名称列/元素列 并排），
-  //    它排在取数配置面板之前 ⇒ 判据恒红（实测 数据集=1029 > 页签类型=897），
-  //    而面板内的真实顺序其实是对的（`数据集 | 报价 | 基础核价 | 明细核价 | 页签类型 | 主件`）。
-  //    这是**判据取错作用域**导致的假红，不是产品缺陷。
-  //    ⇒ 改为：先找到「数据集」标签，向上找到**同时含「页签类型」的最近祖先**（= 取数配置面板），
-  //      在该容器内用 DOM 文档序比较。作用域对了，判据本身没放松。
-  const order = await page.evaluate(() => {
+  // 🚦 2026-09-06 校准（task-260904）：参照物由「页签类型」换成「数据源」。
+  //    布局约束本身**没有放松**：用户要的是「先选数据集、再选源」这个顺序，
+  //    该语义一字未变，变的只是后面那个控件的名字（S-2）。
+  //
+  // 📌 保留 2026-09-04 的作用域收敛写法（先找同时含两个标签的最近祖先，再在容器内比文档序）——
+  //    整页取下标的老写法会被页面别处的同名文本干扰，属于判据取错作用域的假红。
+  const REF_LABEL = '数据源';
+  const order = await page.evaluate((refLabel) => {
     const leaves = (t: string) =>
       Array.from(document.querySelectorAll('body *')).filter(
         (e) => e.childElementCount === 0 && e.textContent?.trim() === t
       );
     const dsEls = leaves('数据集');
-    const tabEls = leaves('页签类型');
+    const refEls = leaves(refLabel);
     if (dsEls.length === 0) return { ok: false, why: 'DOM 里找不到「数据集」文本节点' };
-    if (tabEls.length === 0) return { ok: false, why: 'DOM 里找不到「页签类型」文本节点' };
+    if (refEls.length === 0) {
+      return {
+        ok: false,
+        why: `DOM 里找不到「${refLabel}」文本节点 —— 取数配置面板应有「数据源」下拉（task-260904 S-2）`,
+      };
+    }
     for (const ds of dsEls) {
       let anc: Element | null = ds.parentElement;
       while (anc) {
-        const tabIn = tabEls.filter((t) => anc!.contains(t));
-        if (tabIn.length > 0) {
+        const refIn = refEls.filter((t) => anc!.contains(t));
+        if (refIn.length > 0) {
           // 找到同时含两者的最近容器 = 取数配置面板；在容器内比文档序
-          const pos = ds.compareDocumentPosition(tabIn[0]);
+          const pos = ds.compareDocumentPosition(refIn[0]);
           return {
             ok: true,
-            dsBeforeTab: (pos & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+            dsBeforeRef: (pos & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
             container: (anc as HTMLElement).className || anc.tagName,
-            tabCount: tabEls.length,
+            refCount: refEls.length,
           };
         }
         anc = anc.parentElement;
       }
     }
-    return { ok: false, why: '「数据集」与「页签类型」没有共同祖先 —— DOM 结构与预期不符' };
-  });
+    return { ok: false, why: `「数据集」与「${refLabel}」没有共同祖先 —— DOM 结构与预期不符` };
+  }, REF_LABEL);
   expect(order.ok, `AC-115④ 前置失败：${(order as any).why}`).toBe(true);
   console.log('[AC-115④] 比较容器 =', (order as any).container,
-    '| 页面上「页签类型」文本节点总数 =', (order as any).tabCount,
-    '（>1 说明顶部配置条也有一个，正是原判据取错作用域的原因）');
+    `| 页面上「${REF_LABEL}」文本节点总数 =`, (order as any).refCount);
   expect(
-    (order as any).dsBeforeTab,
-    'AC-115④: 在取数配置面板内，「数据集」必须排在「页签类型」之前（原型 §9.9 / F-30①）'
+    (order as any).dsBeforeRef,
+    `AC-115④: 在取数配置面板内，「数据集」必须排在「${REF_LABEL}」之前`
+      + '（原型 §9.9 / F-30① —— 数据集决定字段面板出哪些表，所以必须先选；'
+      + 'task-260904 只换了参照物名字，约束本身不变）'
   ).toBe(true);
 
   await page.screenshot({ path: path.join(EVIDENCE_DIR, 'AC-115-数据集选择器三选一.png'), fullPage: true });

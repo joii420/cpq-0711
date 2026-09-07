@@ -371,8 +371,17 @@ public class TabSemanticResolver {
      * <p>分支① 专用 —— 入参来自 {@code builder_config.tabType} / 图声明，<b>不是</b>
      * {@code component.tab_type}（那是分支②，见 {@link #isLegacyTreeTabType}）。
      * V417 后两侧取值恰好相同，但来源不同，别把两条判据合并。
+     *
+     * <p>🔓 <b>2026-09-06（task-260904 B-1）改为 public static</b>：{@code FieldTreeBuilder}
+     * 组装 {@code availableSources[].semantic}（api.md §1.2）时必须给出同一个答案 ——
+     * 前端按它分支渲染（树提示 / 价格策略组），后端按它判树（{@link #isTreeTab}）。
+     * 两处若各写一份映射，就会出现「面板说这是树、渲染判它不是树」且两边都不报错。
+     * 🚫 不要在别处再写一份 {@code tab_type → semantic} 的映射。
+     *
+     * @return {@link #SEMANTIC_TREE} / {@link #SEMANTIC_MATERIAL_ELEMENT} /
+     *         {@link #SEMANTIC_PLAIN}（空串，<b>不是 null</b>；JSON 侧要 null 的调用方自行转换）
      */
-    private static String semanticOfGraphTabType(String graphTabType) {
+    public static String semanticOfGraphTabType(String graphTabType) {
         if (TAB_TYPE_TREE.equals(graphTabType)) return SEMANTIC_TREE;
         if (TAB_TYPE_TREE_PRE_V417.equals(graphTabType)) {
             LOG.warnf("[tab-semantic] 图侧 tab_type 仍是 V417 之前的 '%s'（该库的 semantic_tab_view 种子过期，"

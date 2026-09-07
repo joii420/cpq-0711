@@ -138,20 +138,59 @@ export interface FieldTreeGroup {
    *    `semantic_node.dialect`，而 `fields[].sourceNodeKey` 给的是 node_key。
    *    ⇒ 靠 sourceNodeKey 猜数据集是做不到的，AC-116 的过滤**必须**由服务端完成。
    *
-   * ⚠️ 截至本次前端提交，`GET /field-tree` **既不接受方言入参、也不回本字段**（api.md §1.4 与
-   *    `SemanticGraphResource.fieldTree()` 均无），所以缺失时前端保留全部分组（不藏 ——
-   *    把面板变空是更难诊断的失败形态）。这条缺口已向主线报告，由后端补齐。
+   * ✅ **入参与本字段都已就位**（2026-09-06 主线在跑 worktree 代码的临时后端上实测，与 `fetchFieldTree`
+   *    的参数注释同一份证据）：`SemanticGraphResource.fieldTree()` 已声明 `@QueryParam("dialect")`
+   *    且三方言各自收窄（QUOTE 11 · COST_BASIC 10 · COST_DETAIL 18）；后端 `FieldTreeBuilder.Group.dialect`
+   *    也已赋值 —— 实测 `tabType=主件&dialect=QUOTE` 时 `groups[0].dialect === 'QUOTE'`（有值，非 null、非缺键）。
+   *    🚫 本条**取代**旧注释里「既不接受方言入参、也不回本字段 / 缺口待后端补齐」的说法，那已过期。
+   *
+   * ⚠️ **但兜底保留，不要因为字段到位了就删掉它** —— 理由变了、结论没变：本字段声明为可空，
+   *    `detectGroupDataset` 推不出归属（`null`）时前端**保留该分组，不藏**（见 `visibleGroups` 的
+   *    `d === null || d === dataset`）。把面板变空是比多显示一组更难诊断的失败形态，
+   *    所以「推不出来就不臆断」这条一直成立，与服务端做没做过滤无关。
    */
   dialect?: BuilderDataset | null;
+}
+
+/**
+ * task-260904 F-1（api.md §1.2）：**一个可选的数据源**。取数配置器顶部下拉的唯一数据来源。
+ *
+ * 🚨 `(tabType, variantKey, dialect)` 是**三段坐标，缺一不可**（api.md §0）：`semantic_tab_view` 的
+ *    唯一约束实测为 `UNIQUE (tab_type, variant_key, dialect)`，只用前两段反查会命中 3 行
+ *    （QUOTE / COST_BASIC / COST_DETAIL 各一），`findFirst()` 处会静默取到错误方言的声明。
+ *    ⇒ 前端选中一项后必须把三段**原样**回传给 field-tree / compile / preview / inspect / save，
+ *    🚫 不许只回传前两段、也不许对任何一段做本地归一或改写（它们对前端是不透明的定位串）。
+ */
+export interface FieldTreeSource {
+  /** 数据源稳定标识（如 `MATERIAL_BOM` / `SELF_PROCESS_FEE`），仅用作下拉 option 的 value 与 React key。 */
+  sourceKey: string;
+  /** 用户可见的数据源名（如「物料BOM」「自制加工费」），🚫 前端不得据它判语义。 */
+  label: string;
+  /** 三段坐标之一 —— 内部定位串，原样回传。 */
+  tabType: string;
+  /** 三段坐标之一，缺省 `""`/null。 */
+  variantKey?: string | null;
+  /** 三段坐标之一（= 数据集/方言）。 */
+  dialect?: BuilderDataset | null;
+  /**
+   * api.md §1.2 的三态语义：`'TREE'`（BOM 树）/ `'MATERIAL_ELEMENT'`（材质元素）/ `null`（普通平铺）。
+   * 🚫 **前端不得按 `label` 或 `sourceKey` 硬编码判断语义**（F-2 明令），一律读本字段。
+   */
+  semantic?: 'TREE' | 'MATERIAL_ELEMENT' | null;
 }
 
 export interface FieldTreeResponse {
   groups: FieldTreeGroup[];
   /**
-   * **本数据集下可用**的页签类型清单（F-30 起语义收窄，AC-115 ③）。
-   * 🔄 v9 之前它是「6 个页签类型的完整清单」；现在是子集 —— 前端始终渲染完整 6 项（本地常量 `TAB_TYPES`），
-   * 把**不在本清单里**的那些置灰 + 加「（本数据集无）」后缀（原型 `原型-v9-数据集与字段面板.html` 的 `o.disabled`）。
-   * 未提供时前端不置灰任何一项（向后兼容，不会把用户锁死在无法选择的状态）。
+   * task-260904 F-1（api.md §1.2 新增）：**本数据集下可选的数据源清单**，取代 `availableTabTypes`
+   * 成为顶部下拉的数据源。后端 B-1 提供；缺失（B-1 尚未上线 / 旧响应）时前端退化为「只显示当前坐标
+   * 一项」的只读态，🚫 不回退去消费 `availableTabTypes` —— 那会把已退役的「零件 / 外购件」重新放给用户选。
+   */
+  availableSources?: FieldTreeSource[] | null;
+  /**
+   * ⚠️ **已退役字段（task-260904 F-1）**：api.md §1.2 明确「availableTabTypes 移除」。
+   * 保留声明只为兼容后端 B-1 上线前仍带此键的响应，**前端一行代码都不再消费它**
+   * （消费它 = 把「页签类型」这个已收缩掉的概念重新暴露给用户）。
    */
   availableTabTypes?: string[];
   /** 费用类等有 variants 的页签，可选数据来源列表；未提供时「数据来源」下拉不出现。 */
@@ -179,10 +218,18 @@ export const fetchFieldTree = (
     params: {
       // F-30（AC-116）：方言（=数据集）决定字段面板出哪些表。过滤只能在服务端做
       // （`semantic_tab_view` 的唯一键就是 (tab_type, variant_key, dialect)，§9.2），前端只负责传。
-      // ⚠️ 参数名取 `dialect`：全工程（`semantic_node.dialect` / `semantic_tab_view.dialect` /
-      //    `BuilderConfig.dialect`）以及 D-77「不另加 dataset 维度，dialect 直接扩到三值」都用这个词。
-      // ⚠️ 当前后端 `SemanticGraphResource.fieldTree()` 尚未声明本入参 —— JAX-RS 会静默忽略未知
-      //    查询参数，所以现在传了也不生效（不报错）。缺口已报主线。
+      // 🚨 **参数名必须是 `dialect`，不是 `dataset`**：全工程（`semantic_node.dialect` /
+      //    `semantic_tab_view.dialect` / `BuilderConfig.dialect`）以及 D-77「不另加 dataset 维度，
+      //    dialect 直接扩到三值」都用这个词。JAX-RS **静默忽略未知查询参数**，所以发成 `dataset`
+      //    不会报错，只会让三个方言全部按缺省的 QUOTE 返回同一份清单 —— 一个没有任何信号的错。
+      //    （2026-09-06 主线实测踩过一次：按 `dataset=` 打，三方言回了完全相同的 11 条 QUOTE 项。）
+      // ✅ 本入参**已在服务端声明并生效**：`SemanticGraphResource.fieldTree()` 有
+      //    `@QueryParam("dialect") String dialect`。2026-09-06 主线在跑 worktree 代码的临时后端上实测，
+      //    三个方言各自收窄、结果不同：QUOTE 11 条 · COST_BASIC 10 条 · COST_DETAIL 18 条，
+      //    且每份的 `availableSources[].dialect` 恒等于入参。
+      //    ⇒ 🚫 **不要在前端再加一层本地方言过滤** —— 过滤在服务端已经做掉了；
+      //       前端 `visibleSources` / `visibleGroups` 里那层同名判断是**第二道防线**
+      //       （防种子把节点挂错方言），不是因为服务端没做。
       dialect,
       tabType,
       variantKey: variantKey || undefined,

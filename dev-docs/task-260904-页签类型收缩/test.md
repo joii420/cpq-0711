@@ -201,3 +201,178 @@ SELECT id, md5(snapshot_rows::text), md5(row_data::text)
 - 新增 `tabtype-shrink.spec.ts`（覆盖 AC-10 序列 + AC-1/2/3 配置器三态）
 
 ⚠️ E2E 反复跑会把 `admin` 置为 `INACTIVE`，跑前确认账号状态为 `ACTIVE`。
+
+---
+
+# 第二批（AC-1 / 2 / 3 / 10 / 19 / 20 / 29 / 30）
+
+> 2026-09-06 落。第一批的方案与结论在上文，**本节只写第二批**。
+> 🚫 本节用例全部**从 AC 原文派生**，写用例期间未读 `cpq-backend/src/main/java/**` / `cpq-frontend/src/**`；
+> 只在「用例写完之后」为了做证伪实验与校准 E2E 选择器读了实现，**且未据此改动任何断言**。
+
+## 7. 🚨 与 AC 原文不符 / 无法构造的四处（不擅自改写，报主线裁决）
+
+| # | AC | 原文要求 | 实测 | 本套用例的处置 |
+|---|---|---|---|---|
+| **7.1** | **AC-1③** | 「生成的 SQL 含 `WITH RECURSIVE` 与 `UNION ALL` 根分支」 | 语义编译器对 `MATERIAL_BOM` 锚点产出的 SQL **不含**二者。库侧交叉：`bom_recursive_expand=true` 的 **21** 个组件里，`sql_template` 含 `WITH RECURSIVE` 的 **0** 个（含 21 个存量手写视图组件）⇒ **递归展开从来就不在 `$view` SQL 层**，由 `bom_recursive_expand` + 渲染层 BOM union driver 承担（第一批 AC-21② 已取证）。**改动前后一致，非本次引入** | 🚫 **不写成断言**（明知必红，且红的原因是 AC 写错不是代码错）；也🚫不擅自改写成能过的断言。`DataSourceCatalogAcTest#ac1_treeSourceCompilesWithoutRecursiveCte` **只取证 + 打印存档**，另断言 AC-1③ 真正要保护的等价性质（产物 FROM 锚点表 + 带 `:total_material_no` 按单收窄）。**待裁决：改文档还是改实现** |
+| **7.2** | **AC-19③** | 「（改字段名后）保存返回 **409 `IMPACT_CONFIRM_REQUIRED`**」 | 组件被 1 个模板引用时：**改名 → 200**（`affectedTemplates:0`）；**删列 → 409**（`removedColumns:["_物料与元素BOM_组成含量（%）"]`）。影响确认的键是 **`removedColumns`（viewColumn 差集）**，而 **AC-19④ 明确要求 viewColumn 不随改名变** ⇒ **③ 与 ④ 在逻辑上不可能同时成立**，是 AC 内部自相矛盾，不是产品缺陷 | 按 AC-19 自述的目的（「本 AC 是**防止误伤的回归断言**」）改用**删列**这个真实触发动作，验证链路三段完整：409 + 列出受影响模板 + **未确认时不落库** + `confirmedImpact` 重发后落库；并把「纯改名 → 实际 HTTP 几」作为**阴性对照打印存档**。**待裁决** |
+| **7.3** | **AC-20②** | 注「⚠️ 仅 QUOTE 方言成立：`COST_BASIC`/`COST_DETAIL` 的全部 5 类页签各挂 **2** 组，多一个 `QUOTE_MATERIAL_BRIDGE(AUX)`」 | **已过期**（`task-260819` B-50 按 NARROW 边剔除桥之后）。实测**三方言均 1 组**，且 `BOM`/`零件`/`外购件` 三坐标的字段清单（含组结构）**三方言下全部逐字相同** | 按实测断言「三方言下三坐标清单逐字相同」（比原文更强，覆盖面从 1 个方言扩到 3 个），并把各方言实际组结构打印存档。**AC 原文注记需回写** |
+| **7.4** | **AC-20④** | 「主源组末尾的查名展开字段（`syntheticLookupFields`）照常出现」 | 该机制**在实现里存在**（MAIN 组末尾追加），但**当前数据下三方言 39 个数据源产出的查名字段合计为 0**（全库仅 QUOTE/材质元素 的 PRICE 组有 `lookupLib` 非空字段，那是价格策略原子组、不是查名展开）。⇒ 断言「照常出现」只能写成空集断言，正是 testing.md §3「断言从未执行 = 假绿」 | **本套用例不覆盖，显式列为交付缺口**。🚫 不改写成别的可测含义。**待裁决：补数据使其可验，还是删掉该子项** |
+| **7.5** | **AC-29③** | 「C 绑「自制加工费」**只配名称列** → 200」 | **无法构造**：全库语义图**没有任何一列带 `PART_NAME` 角色**（三方言 39 个数据源共 147 个角色标记：`ROW_KEY` 84 / `PART_NO` 39 / `SORT` 24，`PART_NAME` **0**）⇒ 在取数配置器里配不出「只配名称列」 | **本套用例不覆盖**（本次派工范围也只点名 ①+阴性对照）。已列为缺口。**待裁决** |
+
+> 📌 另记一处**派工简报与 AC 原文的出入**：简报把 **AC-10** 描述为「数据源的 `semantic` 三态取值正确」，
+> 而 `需求文档.md` 的 **AC-10 原文是「配置期状态连续性」（序列 AC）**。
+> ⇒ 本套按**原文**写 AC-10（序列），`semantic` 三态则作为 AC-1/2/3 共同依赖的契约在 `ac3_...` 里覆盖。两者都做了。
+
+## 8. 第二批用例清单
+
+用例目录：`cpq-backend/src/test/java/com/cpq/task260904/`（公共基座 `Batch2Base.java`，继承第一批的 `Task260904Base`）
+
+| # | AC | 用例（类·方法） | 层级 | 关键判据 |
+|---|---|---|---|---|
+| 1 | AC-1①、S-4 | `DataSourceCatalogAcTest.ac1_retiredTabTypesAbsentFromCatalogButRowsUntouched` | 接口 | 三方言 `availableSources`/`availableTabTypes` 均不含「零件/外购件」；**清单坐标集合 == 库里 ACTIVE 且非退役的坐标集合**（现算）；**阳性对照**：`semantic_tab_view` 退役 6 行仍 ACTIVE（证明过滤在 API 层，不是把数据删了） |
+| 2 | AC-3、semantic 三态 | `.ac3_catalogScopedByDialectAndSemanticTriState` | 接口 | 每条 `dialect` 恒等于入参；`sourceKey` 方言内唯一；`semantic` 键必在；**TREE 恰好 1 / MATERIAL_ELEMENT 恰好 1 / 其余显式 null**；出现第四种取值直接 fail |
+| 3 | AC-2③、AC-3③ | `.ac2_priceStrategyGroupOnlyUnderMaterialElement` | 接口 | 三方言 **39 个数据源逐个**清点：挂 PRICE 组的 ⊆ `semantic='MATERIAL_ELEMENT'` 的；**空真守卫**：先断言确实存在 PRICE 组与 MATERIAL_ELEMENT 源 |
+| 4 | AC-2④ | `.ac2_priceColumnPullsInJoinAndElementCode` | 接口 | 拖入「元素单价」后产物含 `LEFT JOIN f_material_element_price` + 元素编码列被自动补入；**阴性对照**：不拖单价时二者都不出现（证明断言有分辨力） |
+| 5 | AC-3④ | `.ac3_plainSourcesCompileWithoutRecursiveCte` | 接口 | 9 个 `semantic=null` 普通源逐个编译，均不含 `WITH RECURSIVE`；覆盖数 <3 直接 fail（防空跑） |
+| 6 | AC-1③ | `.ac1_treeSourceCompilesWithoutRecursiveCte` | 接口 | ⚠️ **只取证不断言**，见 §7.1 |
+| 7 | AC-1②、AC-2② | `.ac1and2_readonlyBadgeSourceFields` | 接口 | 三方言下 TREE / MATERIAL_ELEMENT 源的 `label` == 锚点节点 `display_name`（只读回显的数据来源） |
+| 8 | AC-20① | `FieldPanelColumnsAcTest.ac20_namedSourcesExposeAllBusinessColumns` | 接口 | 四个点名源**逐列比名字**（集合相等，不比数量）== 锚点表物理列 − AC 原文系统列；实测 12/12/9/9 与 AC 原文**逐表一致** |
+| 9 | AC-20① 扩展 | `.ac20_everySourceExposesItsBusinessColumns` | 接口 | 39 个源全覆盖：**幻列 0**、非白名单缺列 0（白名单仅视图型锚点的 `is_current`） |
+| 10 | AC-20② | `.ac20_retiredTabTypesShareIdenticalFieldListWithBom` | 接口 | 三方言 `BOM`/`零件`/`外购件` 组签名逐字相同；前置断言退役坐标仍 ACTIVE 且可查（护住 AC-25①） |
+| 11 | AC-20③ | `.ac20_onlyElementBomCarriesPriceGroup` | 接口 | 四源中只有「物料与元素BOM」含 PRICE 组 |
+| 12 | AC-10 | `BuilderStateContinuityAcTest.ac10_builderStateSurvivesSaveReloadRenameSaveReload` | 接口·**序列** | 建 → 选物料BOM 拖 5 列 → 存 → **重读** → 改名 → 再存 → **再重读**；全程 semantic 恒 TREE、5 列与改名逐字保留、`component.tab_type` 始终为空 |
+| 13 | AC-19④⑤ | `.ac19_renameDoesNotTouchViewColumnOrSql` | 接口 | 改名后 `viewColumn` 逐字不变、编译产物与落库 `sql_template` **逐字节相同**；**分辨力守卫**：先断言改名真的落库了（否则三条「不变」全是重言） |
+| 14 | AC-19③ | `.ac19_impactConfirmationStillGuardsColumnRemoval` | 接口 | 见 §7.2：删列 → 409 + 列出模板 + **未确认不落库（仍 2 列）** → `confirmedImpact` → 落库（1 列） |
+| 15 | AC-29①② | `IdentifierColumnGateAcTest.ac29_identifierGateFollowsDataSourceSemantic` | 接口 | A(TREE 无标识列) → **200**；B(普通源同样不配) → **400 `INSPECT_BLOCKED`**，文案含「料号列/名称列/至少」；B 被拒后 `builder_version` 未被写入；**前置守卫**：断言所选列在语义图里确实不带 `PART_NO/PART_NAME/ROW_KEY` 角色 |
+| 16 | AC-30①②③ | `PriceGroupDuplicationAcTest.ac30_priceGroupNotDuplicatedOnQuote` | 接口 | QUOTE 恰好 2 组且 PRICE 组无重复 `groupKey`；保留块 `isCore=true` / `viewColumn='元素单价'`；核价两套仍各 1 组且无 PRICE 组；**前置取证**：QUOTE 的 `FUNC_ELEMENT_PRICE` AUX 挂载仍 1 行（证明修法没走「删 V413 种子」那条禁区） |
+| 17 | AC-30④ | `Sec34PriceStrategyTest`（既有 5 条） | 接口 | 阴性对照，随本批一起跑，5/5 绿 |
+
+**三类覆盖**：单点 11（#1~#11, #15, #16 部分）· **序列 1**（#12 AC-10）· 反向/阴性对照 5（#4 阴性、#10、#13、#14、#17）。
+
+### 8.1 🚨 断言纪律：为什么本批几乎不出现具体数字
+
+主线实测 `availableSources` = QUOTE 11 / COST_BASIC 10 / COST_DETAIL 18。
+**这些是共享 dev 库当前配置数据的快照，不是常量** —— 写死它们，下一次语义图种子迁移就把用例打红，
+而那个红**长得和产品回归一模一样**。
+⇒ 期望值一律**执行期从库里现算**（`semantic_tab_view` / `information_schema.columns`），
+断言的是**结构不变量**（不含退役值 / `dialect` 恒等于入参 / `sourceKey` 唯一 / TREE 恰好 1 个 /
+字段集合 == 物理列 − 系统列），实测数字只**打印**。
+
+**唯一两处写死数字，且都是契约值不是数据快照**：
+- AC-20① 的系统列名单（逐字取自 AC 原文）与四表 12/12/9/9（作**交叉核对**打印，不一致只提示不判失败）；
+- AC-30 的「QUOTE 2 组 / 核价各 1 组」——判据线来自 `api.md §1.3` 声明的**期望形态**。
+
+### 8.2 ⚠️ 环境陷阱（本批实际踩到，写下来省下一个人的时间）
+
+| 陷阱 | 症状 | 处置 |
+|---|---|---|
+| **`node_key` 跨方言撞车** | `MATERIAL_BOM` / `ELEMENT_BOM` 在三方言下**各有一个独立节点、列集合不同**。按 `node_key` 查列会跨方言拿到别的表的列 ⇒ 保存报 `PHYSICAL_EXISTENCE: 该表在数据库里没有这一列` | 一律按 **坐标解析出的锚点节点 id** 查列（`Batch2Base.anchorNodeId/activeColumnsOf/partNoColumnOf`）。本批首轮 2 条失败即此因，**是用例夹具错不是产品缺陷** |
+| **`dialect` 参数名** | 传错名字（如 `dataset`）被 JAX-RS **静默忽略**，三方言全返默认 QUOTE 清单，用例照样绿 | `Batch2Base.assertDialectParamIsHonored` 作阳性对照：**先证明换方言结果确实不同**，再跑按方言分支的断言 |
+| 🚨 **`target/` 与 8089 dev server 争抢** | `NoClassDefFoundError` / `Could not load class with name: XxxTest` —— **这类红不是代码问题，是构建目录被并发改写** | 本批最终结论**全部在隔离副本里跑**（`src/ pom.xml mvnw .mvn` 整体拷出），拷完 `diff -rq` 逐文件确认与 worktree 一致后再跑。🚫 不 `mvnw clean`（会铲掉 8089 脚下的 `target/classes`） |
+| **antd Select 虚拟滚动** | E2E 里 `allInnerTexts()` 只拿得到视口内那几项，选项一多就漏 | `readAllSourceOptions()` 滚动虚拟列表累加，直到无新项 |
+
+## 9. 第二批证伪实验（testing.md §4.4，逐条留档）
+
+**harness 纪律**：每轮先备份目标文件 → 施加破坏 → **先断言 md5 已变（证明干预真的进了文件）** → 跑用例 → 逐字节还原并核对 md5。
+🚫 不用 `git checkout` 还原（工作区有开发代理的未提交改动）。
+
+| # | 注入点 | 干预生效？ | 用例是否变红 | **失败信息说的是那件事吗** |
+|---|---|---|---|---|
+| **F1** · AC-1 | `FieldTreeBuilder` 去掉 `RETIRED_TAB_TYPES` 过滤 | ✅ md5 变 | ✅ 红 | ✅ `availableSources 里仍出现已退役的页签类型…实际命中=[MATERIAL_BOM→零件, MATERIAL_BOM→外购件]` |
+| **F2** · AC-2/3/10 | `src.semantic` 恒为 `null` | ✅ | ✅ 红 ×3 | ✅ `semantic='TREE' 的数据源应恰好 1 个…实际=[]`；`没有任何 semantic='MATERIAL_ELEMENT' 的源`；AC-10 的 `semantic 应为 TREE，实际=null` |
+| **F3** · AC-3 | 去掉 `if (!graphDialect.equals(tv.dialect)) continue;` | ✅ | ✅ 红 ×2 | ✅ 命中的是**阳性对照**：`QUOTE 与 COST_DETAIL 的 availableSources 完全相同 ⇒ dialect 入参很可能没被消费` |
+| **F4** · AC-29 | `BuilderService` 的 `isTreeTab` 恒 `false` | ✅ | ✅ 红 | ✅ `AC-29①：…保存应成功 200…实际=400 INSPECT_BLOCKED` |
+| **F5** · AC-19 | `SemanticCompiler` 别名改用 `col.fieldName` 派生 | ✅ | ✅ 红 | ✅ `AC-19 改名后：保存应成功，实际=409 IMPACT_CONFIRM_REQUIRED, removedColumns:["_物料与元素BOM_组成含量"]`<br>🔑 **这条顺带把 §7.2 坐实了**：viewColumn 一旦跟着 fieldName 走，改名就**真的**会产生 409 —— 说明 AC-19③ 描述的是「viewColumn 跟随 fieldName」那种系统的行为，与 AC-19④ 互斥 |
+| **F6** · AC-20 | 字段组装里跳过 `loss_rate` 一列 | ✅ | ✅ 红 ×2 | ✅ `缺失=[loss_rate]（用户在配置器里配不出这些列）…期望业务列 12 列，实际 11 列` |
+| **F7** · E2E | 前端把「数据源」下拉整块渲染注释掉 | ✅ | ✅ **两个 spec 都红** | ✅ `② 应存在「数据源」下拉（data-role="builder-source"）` / `AC-115④: 「数据集」必须排在「数据源」之前` |
+| **F8** · AC-30 | 去掉 B-23 的 `priceGroupNodeId` 去重过滤 | ✅ | ✅ 红 | ✅ `PRICE 组里出现了重复 groupKey=[FUNC_ELEMENT_PRICE]…实际组=[ELEMENT_BOM[MAIN], FUNC_ELEMENT_PRICE[PRICE], FUNC_ELEMENT_PRICE[PRICE]]` —— 与 B-23 修复前主线实测的 3 组形态**逐字一致** |
+
+**还原自检**：8 轮全部逐字节还原（md5 与备份一致）；全工程 `FALSIFY-INJECT` 残留扫描 **0**。
+
+> ⚠️ **F6 首轮曾以「Could not load class」变红 —— 那是 harness 故障不是用例生效**（`target/` 被 8089 并发改写）。
+> 按 §4.4「看失败信息，不只看退出码」查明后重跑才拿到真结论。**这一次差点被记成「用例有效」。**
+
+## 10. 第二批对既有 E2E spec 的改写（用户 2026-09-06 裁决由本任务改）
+
+两条 `task-260819` 的**已验收** E2E 用例断言的正是本任务移除掉的「页签类型」下拉，必然变红。
+🚨 **这不是回归，是它们编码了一条已被用户推翻的需求。判红时不得按回归归因。**
+
+| spec | 原断言 | 改成什么 |
+|---|---|---|
+| `cpq-frontend/e2e/sql-view-builder.spec.ts` | `AC-25①: 页签类型下拉含6项（主件/材质元素/零件/外购件/费用类/BOM 树）` | 断言**新形态**：① 面板内「页签类型」四字消失；② 「数据源」下拉存在；③ 选项**全部来自服务端 `availableSources`**（运行期现比，🚫 不写死清单）；④ 不含「零件/外购件」；⑤ **label 无重复** |
+| `cpq-frontend/e2e/task260819v9-dataset-selector.spec.ts` | `AC-115④: 「数据集」必须排在「页签类型」之前`（`dsBeforeTab`） | 🚫 **布局约束保留，只换参照物**：「数据集」必须排在**「数据源」**之前。用户当初要的是「先选数据集、再选源」的**顺序**，该语义一字未变 |
+
+**⑤「label 无重复」为什么比「不含零件/外购件」更有分辨力**：
+`BOM 树`/`零件`/`外购件` 三个坐标**共用锚点 `MATERIAL_BOM`**，label 全都是「物料BOM」——
+退役过滤一旦失效，下拉里会冒出**三个「物料BOM」**，而「零件/外购件」这两个字**根本不会出现在 label 里**。
+
+**连带改动（机械必需，非扩范围）**：`sql-view-builder.spec.ts` 的共享 helper
+`createComponentAndOpenBuilderTab` 原本用「页签类型」下拉选类型，且其建组件的选择器
+（`新建|新增` 按钮 + `input[placeholder*="名称"]` + `确定|保存`）**与真实 UI 对不上、在真机上从未走通过**
+（本次实测 `fill` 直接 timeout）。
+⇒ ① 入口动作换成 `task260819v9-dataset-selector.spec.ts` 里**已被真机验证过**的那套
+（选目录 →「新 建」→ `input[placeholder*="投料成本表"]` →「创 建」→「取数配置」）；
+② 第二参数由「页签类型名」改为「数据源名」（`主件→物料`、`材质元素→物料与元素BOM`，同一坐标换名字）。
+**该文件其余 task-260819 用例的断言一个字没动。**
+
+两个 spec 内均已加改写留痕注释（原断言 / 失效原因 / 改成什么）。
+
+## 11. 第二批执行结果
+
+**跑测命令**（🚨 在**隔离副本**里跑，与 worktree 的 8089 dev server 零争抢；拷贝后已 `diff -rq` 逐文件确认一致）：
+
+```bash
+# 1) 拷贝并验明正身
+rsync -a --delete <worktree>/cpq-backend/{src,pom.xml,mvnw,.mvn} <scratch>/isobuild/
+diff -rq <worktree>/cpq-backend/src <scratch>/isobuild/src        # 必须无输出
+# 2) 跑
+cd <scratch>/isobuild
+./mvnw -o test -Dtest='DataSourceCatalogAcTest,FieldPanelColumnsAcTest,IdentifierColumnGateAcTest,\
+BuilderStateContinuityAcTest,PriceGroupDuplicationAcTest,Sec34PriceStrategyTest'
+```
+
+```
+[INFO] Tests run: 5, Failures: 0, Errors: 0 -- Sec34PriceStrategyTest（AC-30④ 阴性对照）
+[INFO] Tests run: 3, Failures: 0, Errors: 0 -- AC-10/AC-19
+[INFO] Tests run: 7, Failures: 0, Errors: 0 -- AC-1/2/3
+[INFO] Tests run: 4, Failures: 0, Errors: 0 -- AC-20
+[INFO] Tests run: 1, Failures: 0, Errors: 0 -- AC-29
+[INFO] Tests run: 1, Failures: 0, Errors: 0 -- AC-30
+[INFO] Tests run: 21, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+```
+
+**E2E**（`PW_BASE_URL=http://localhost:5178` → 临时 vite（worktree 源码）→ `VITE_API_TARGET=8089`）：
+
+```
+AC-1(task-260904)①③④  1 passed (58.0s)
+AC-115（改写后）        1 passed (57.1s)
+```
+
+🔑 **E2E 探活验明正身**（testing.md §4.2：只看 200 会探到别人的实例）：
+
+| 端口 | `availableSources` | `availableTabTypes` |
+|---|---|---|
+| 8081（主仓 master） | **MISSING** | `[主件, 材质元素, 零件, 外购件, 费用类, BOM]` |
+| 8089（本 worktree） | **11** | `[主件, 材质元素, 费用类, BOM]` |
+| **5178（E2E 实际打到的）** | **11** | `[主件, 材质元素, 费用类, BOM]` |
+
+⇒ 5178 确实打在 worktree 后端上；同时这张表本身就是 **A/B 对照**，证明退役过滤是本次改动带来的。
+
+## 12. 第二批夹具残留自检（共享 dev 库）
+
+```
+component(t260904_)           0
+template(t260904_)            0
+orphan_component_sql_view     0
+orphan_template_component     0
+E2E 遗留(SQLVB-E2E-/V9T-)     0   ← 5 个由本次 E2E 产生，已按主键精确删除（删前预检：被模板引用 0）
+semantic_tab_view             45  ← 一行未动（B-2 红线）
+semantic_tab_view 非 ACTIVE    0
+semantic_tab_view_node        46  ← 未动（AC-30 修法禁区②：不改 V413 种子）
+admin                         ACTIVE
+```
+
+🚫 全套用例**无 TRUNCATE / DROP / 无 WHERE 的 DELETE / 清库 / 全局配置重置**；
+每条 DELETE 的命中面被「自建 id / 自建 `customer_no` / `t260904_` 前缀」限死，写在 `@AfterEach`（等价 finally）。
