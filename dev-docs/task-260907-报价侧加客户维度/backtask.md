@@ -248,6 +248,74 @@ application.properties:67  quarkus.flyway.migrate-at-start=true
 
 ---
 
+## 🔢 迁移改号方案（2026-09-07 事故后与并发会话协调的结果，落地前必读）
+
+**起因**：并发会话的 `V423__task260907_customer_element_price_node.sql` 于 09:31:05 落入共享库并已固化
+（checksum 已写入 `flyway_schema_history`，且文件已恢复进 master ⇒ 不可再动）。⇒ **本任务六个迁移整体改号。**
+
+### 最终号段（双方已确认）
+
+| 号 | 归属 |
+|---|---|
+| `V423` | 并发会话（已固化） |
+| `V424` | 并发会话的清理迁移（删第二条 PRICE 边 + 节点，按 `node_key` 删） |
+| **`V425` ~ `V429`** | **本任务的五个** |
+
+### 映射（🚫 注意是 5 个不是 6 个）
+
+```
+V423 ds_quote_customer_no          → V425     DDL，后面几条都依赖它，必须排最前
+V424 func_customer_element_price   → 🗑 删除，不改号
+V425 element_price_candidate_ds    → V426     ⚠️ 只保留 candidate_materials 那段
+V426 quote_tree_customer_param     → V427
+V427 quote_tree_compat_view        → V428
+V428 element_compat_view_customer  → V429
+```
+
+### 为什么砍掉两个东西（不是为了少两个文件）
+
+- 原 `V424` 整条是 **`A0-5` 已裁掉的「换 PRICE 边」方案**
+- 原 `V425` 有**一半**是专门撤销 `V424` 的（改回边指向 / 恢复 `material_no` 键 / 改回 AUX 挂载 / 删节点）
+
+⇒ 这些文件**从没进过 master**，此刻是唯一能干净砍掉的时机。
+🔑 **真正的理由是：迁移历史是给后人读的叙事。** 往里塞一对自我抵消的操作，
+等于在历史里**埋一个假的决策点** —— 下一个人做考古时会以为那是个真实发生过的选择。
+
+✅ 砍完本任务**一条 `semantic_*` 语句都不剩**，语义图完全归并发会话处置，两边不再交叉。
+
+> 📌 **砍「恢复 `material_no` 键」那段的依据是实查，不是推理**：共享库上那条边的 2 个键
+> （`element_code` seq=0 / `material_no` seq=1）**从没被删过** —— 删它的是**本任务自己的 `V424`**，
+> 而它从未在共享库执行。**查状态，不要推动作。**
+
+### 🔴 执行四步，🚫 不许靠「记得清理」
+
+```bash
+W=/home/joii/project/cpq/.claude/worktrees/task-260907-customer-dim
+SRC=$W/cpq-backend/src/main/resources/db/migration
+CLS=$W/cpq-backend/target/classes/db/migration
+
+rm -rf "$CLS"                                   # ① 先清 classpath 产物
+git mv "$SRC/V423__..." "$SRC/V425__..."  …     # ② 改号（git mv 保留历史）
+(cd $W/cpq-backend && ./mvnw -o -q clean test-compile)   # ③ 重编
+comm -13 <(ls "$SRC"|sort) <(ls "$CLS"|sort)    # ④ 差集必须为空
+```
+
+🚨 **第 ① 步是本方案最高危的一处**：改号后旧号文件仍留在 `target/classes/db/migration/`，
+**与新号一起被应用**，而源码树看起来完全正常。且旧号与新号**内容一模一样**
+⇒ `ON CONFLICT DO NOTHING` 会吃掉大部分冲突，剩下的表现是**零散、不成规律**的，比孤儿迁移难查得多。
+
+### ⚠️ 隔离库必须重建
+
+`cpq_t260907_custdim` 已应用旧号 423~428，改号后 Flyway 会判定它们是孤儿 ⇒ 启动即挂。
+⇒ 改号后**重新从共享库 `pg_dump` 克隆一个新库**（约 1 分钟，296 MB），🚫 不要在旧库上跑 `repair`。
+
+### 时序（🚫 不可提前）
+
+**等并发会话的 `V424` 清理落库并通知**，再改号 → 重建隔离库 → 亲验 AC-2 → 广播 → 合并。
+🚫 **不在共享库仍有两条 PRICE 边时合并** —— 两个问题叠在一起后，谁都说不清是谁引起的。
+
+---
+
 ## B-1 · 所有 `ds_quote_*` 业务表及其镜像表加 `customer_no`
 
 **服务的 AC**：AC-2 · AC-3
