@@ -134,11 +134,13 @@
     <table class="tbl">
       <colgroup><col style="width:120px"><col style="width:150px"><col style="width:165px"><col style="width:150px"><col style="width:170px"></colgroup>
       <thead><tr><th>客户编号</th><th>客户名称</th><th>销售料号</th><th>料号名称</th><th>生产料号</th></tr></thead>
-      <tbody>
-        <tr><td class="mono">CUST-0001</td><td>罗克韦尔</td><td class="mono">0526-2609000004</td><td>选配A1</td><td class="muted">—</td></tr>
-        <tr><td class="mono">CUST-0004</td><td>正泰</td><td class="mono">S0001</td><td>示例料号</td><td class="mono">P-S0001</td></tr>
-      </tbody>
     </table>
+    <!-- 🔄 D-7 后：客户必传，候选拿不到就【没有任何客户可选】⇒ 列表区不展示数据 -->
+    <div class="empty">
+      <div class="icon">⚠️</div>
+      <div class="title">客户候选加载失败，无法展示数据</div>
+      <div class="desc">请稍后重试或联系管理员。列表需要先确定客户才能查询。</div>
+    </div>
   </div>
 
   <div class="proto-note" style="max-width:none;margin:16px 0 0">
@@ -148,7 +150,10 @@
     ⚠️ 按 <code>frontend.md §1.2</code>：<b>禁用但可见 + tooltip 说明原因</b>，🚫 不许直接隐藏选择器。<br>
     🚫 <b>不做任何 mock 兜底</b> —— 塞假候选会把「后端没就绪」伪装成「这个客户真的没有产品」，
     这是本项目 <code>productHubApi.ts</code> 已成文的纪律。<br>
-    🔑 <b>状态 C 与状态 A 必须长得不一样</b>：A 是「查过了，确实没有」，C 是「压根没查成」。
+    🔑 <b>状态 C 与状态 A 必须长得不一样</b>：A 是「查过了，确实没有」（图标 🗂 · 文案带客户名），C 是「压根没查成」（图标 ⚠️ · 文案指向重试）。<br>
+    📌 <b>2026-09-07 修正</b>：本屏此前遗留了两行示例数据，与「列表区不展示数据」的文字说明冲突 ——
+    由前端代理照 AC 实现时发现并<b>如实报告、未擅自改原型</b>（符合 <code>fronttask.md</code>「原型与 AC 冲突时以 AC 为准并立即报告」）。
+    该矛盾是第二轮变更时主线改文案漏改表格所致，非原设计错误，已就地修正。
   </div>
 </div>
 

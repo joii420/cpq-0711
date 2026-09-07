@@ -20,9 +20,18 @@
 //   ⚠️ **销售产品页签 `ProductSalesPartTab` 本轮未接客户过滤** ——
 //      那是 F-4（依赖后端 B-2~B-4 的复合轴改造，尚未落地），本轮不做，见回报「F-4~F-6 实现方案」。
 //   localStorage 持久化上次所选客户号 + 失效降级（F-2 / AC-10 / AC-12）。
+//
+// 🔄 2026-09-07 第二轮裁决（D-7~D-12，用户在第一批交付后提出）—— **客户改为必选**：
+//   · 🚫 下拉里**没有「所有客户」选项**了，`customerNo` 恒为一个真实客户号；
+//     原先「空串哨兵表示所有客户」那套已作废，改用「候选未就绪」这个独立布尔态表达"暂不可用"。
+//   · **默认选中候选列表第一项**（`items[0]`，排序是后端契约，前端不重排）。
+//   · **localStorage 失效降级目标**从「所有客户」改成「候选列表第一个客户」。
+//   · **候选端点失败 / 候选为空**：客户是必传的 ⇒ 没有任何客户可选 ⇒ 选择器**禁用**（可见 +
+//     tooltip 说明原因，`frontend.md §1.2`）+ 错误提示条；两个页签的列表区域都不发请求、
+//     直接显示「客户候选加载失败，无法展示数据」，与 AC-13 的"业务性空态"必须长得不一样。
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Tabs, Button, Drawer, Space, Select, Alert } from 'antd';
+import { Tabs, Button, Drawer, Space, Select, Tooltip } from 'antd';
 import { AppstoreOutlined } from '@ant-design/icons';
 import type { DefaultOptionType } from 'antd/es/select';
 import ProductCategoryManagement from '../basicdata/ProductCategoryManagement';
@@ -31,16 +40,7 @@ import ProductSalesPartTab from './ProductSalesPartTab';
 import { listDatasetCustomers } from './productHubApi';
 import type { CustomerCandidate } from './productHubTypes';
 
-/**
- * 「所有客户」的哨兵值（AC-1 默认项）。
- *
- * 用空串而不是 `undefined`：antd 的 `Select` 拿到 `undefined` 会显示 placeholder 而不是选项文案，
- * 而 AC-1 断言默认值**文案就是「所有客户」**，必须是一个真正被选中的选项。
- * 发请求前再转回 `undefined`（省略该 query ＝ 所有客户）——由各页签自己的 API 调用层做。
- */
-const ALL_CUSTOMERS = '';
-
-/** localStorage key（F-2，用户 2026-09-07 裁决 D-4：localStorage 记住上次所选，失效降级「所有客户」）。 */
+/** localStorage key（F-2，用户 2026-09-07 裁决 D-4：localStorage 记住上次所选）。 */
 const CUSTOMER_STORAGE_KEY = 'productHub.customerNo';
 
 /** 未在 `customer` 表建档的客户，后缀文案与配色（原型 `02-客户选择器-展开.html` `.warn{color:#d46b08}`）。 */
@@ -49,6 +49,9 @@ const WARN_STYLE: React.CSSProperties = { color: '#d46b08' };
 /** 下拉项内编号与名称之间用全角空格分隔（原型「CUST-0004 + 全角空格 + 正泰」）。
  *  写成转义：eslint `no-irregular-whitespace` 禁止源码里出现裸全角空格。 */
 const NBSP_WIDE = '\u3000';
+
+/** 候选端点失败 / 候选为空时，选择器禁用态的 tooltip 文案（`frontend.md §1.2`：禁用必须可见+说明原因）。 */
+const CANDIDATES_FAILED_TOOLTIP = '客户候选加载失败，无法选择客户';
 
 interface CustomerLeafOption extends DefaultOptionType {
   value: string;
@@ -64,7 +67,7 @@ interface CustomerGroupOption extends DefaultOptionType {
 }
 
 /**
- * `Select` 的 `options` 既可能是叶子项（「所有客户」/ 具体客户），也可能是分组标题
+ * `Select` 的 `options` 既可能是叶子项（具体客户），也可能是分组标题
  * （原型 `02-客户选择器-展开.html` 的「已建档客户（48）」等）。
  * `filterOption` / `optionRender` 只会在叶子项上被调用——分组标题本身不参与筛选/自定义渲染。
  */
@@ -80,11 +83,7 @@ function readStoredCustomerNo(): string | null {
 }
 function writeStoredCustomerNo(v: string): void {
   try {
-    if (v && v !== ALL_CUSTOMERS) {
-      window.localStorage.setItem(CUSTOMER_STORAGE_KEY, v);
-    } else {
-      window.localStorage.removeItem(CUSTOMER_STORAGE_KEY);
-    }
+    window.localStorage.setItem(CUSTOMER_STORAGE_KEY, v);
   } catch {
     // 隐私窗口 / 站点数据被清 / 浏览器禁用存储：静默放弃持久化，不影响本次交互
   }
@@ -103,14 +102,19 @@ const ProductHubPage: React.FC = () => {
   const [categoryOpen, setCategoryOpen] = useState(false);
 
   // ── F-1/F-2：全局客户选择器状态 ──────────────────────────────────────────
-  const [customerNo, setCustomerNo] = useState<string>(ALL_CUSTOMERS);
+  /** 当前选中的客户号。🔄 D-7 起客户必选——只有在 `candidatesAvailable` 为 true 时才有意义。 */
+  const [customerNo, setCustomerNo] = useState<string>('');
   const [candidates, setCandidates] = useState<CustomerCandidate[]>([]);
-  /** 状态 C（原型 `05-空态与降级.html`）：候选端点未就绪/失败。与「选中客户无数据」的状态 A 必须可区分。 */
+  /**
+   * 状态 C（原型 `05-空态与降级.html`）：候选端点失败，或候选加载成功但**恰好 0 项**
+   * （fronttask F-1 第 9 条：理论上不会发生，但仍要按契约处理，🚫 不许崩溃/静默回退旧的「所有客户」）。
+   * 与「选中客户无数据」的状态 A 必须可区分——两者含义完全不同。
+   */
   const [candidatesFailed, setCandidatesFailed] = useState(false);
   /**
-   * 客户上下文是否已就绪（localStorage 读取 + 候选加载 + 失效校验，三者全部完成）。
-   * 🚨 两个页签的首次列表请求必须等这个变 true 才发——否则会先出一次「所有客户」的全量结果，
-   *    紧接着又因为读到了记住的客户号而重新过滤一次，用户能看到全量数据一闪而过（AC-10②）。
+   * 客户上下文是否已就绪（localStorage 读取 + 候选加载 + 默认值/失效校验，全部完成）。
+   * 🚨 两个页签的首次列表请求必须等这个变 true 才发——AC-10②断言的形态是
+   *    「刷新后第一个 `/parts` 请求就带 customerNo」，不是靠肉眼看闪不闪烁。
    */
   const [customerContextReady, setCustomerContextReady] = useState(false);
 
@@ -123,23 +127,31 @@ const ProductHubPage: React.FC = () => {
         if (cancelled) return;
         const items = r.items ?? [];
         setCandidates(items);
-        setCandidatesFailed(false);
-        if (stored && stored !== ALL_CUSTOMERS && !items.some((c) => c.customerNo === stored)) {
-          // AC-12：记住的客户已不在候选里 → 静默回落「所有客户」+ 清掉那条 localStorage。
-          // 🚫 不弹 message、不 console.error —— 用户没做错任何事。
-          setCustomerNo(ALL_CUSTOMERS);
-          clearStoredCustomerNo();
+        if (items.length === 0) {
+          // fronttask F-1 第 9 条：理论不会发生的边界，仍按"没有可选客户"处理
+          setCandidatesFailed(true);
+          setCustomerNo('');
         } else {
-          setCustomerNo(stored ?? ALL_CUSTOMERS);
+          setCandidatesFailed(false);
+          // 🔄 D-7：默认值 = 候选列表第一项，不是「所有客户」（该选项已不存在）
+          const fallback = items[0].customerNo;
+          if (stored && items.some((c) => c.customerNo === stored)) {
+            setCustomerNo(stored);
+          } else {
+            // AC-12：记住的客户已不在候选里（含 stored 为 null 的首次进入）→ 静默落到候选第一项。
+            // 🚫 不弹 message、不 console.error —— 用户没做错任何事。
+            setCustomerNo(fallback);
+            if (stored) clearStoredCustomerNo();
+          }
         }
       } catch {
-        // 状态 C：候选端点未就绪/失败 → 降级为「候选只剩『所有客户』，列表照常可用」。
-        // 🚫 不做任何 mock 兜底；🚫 不校验/清除 localStorage——端点本身没查成，不能据此判定
-        //    用户记住的客户号是否有效，留着它，下次端点恢复了再校验。
+        // 状态 C：候选端点失败 → 客户必传但没有任何客户可选 ⇒ 选择器禁用 + 错误提示，
+        // 列表区不展示数据。🚫 不做任何 mock 兜底；🚫 不校验/清除 localStorage——
+        // 端点本身没查成，不能据此判定用户记住的客户号是否有效，留着它，下次端点恢复了再校验。
         if (cancelled) return;
         setCandidates([]);
         setCandidatesFailed(true);
-        setCustomerNo(ALL_CUSTOMERS);
+        setCustomerNo('');
       } finally {
         if (!cancelled) setCustomerContextReady(true);
       }
@@ -153,8 +165,9 @@ const ProductHubPage: React.FC = () => {
     writeStoredCustomerNo(v);
   }, []);
 
-  // 分组下拉（原型 `02-客户选择器-展开.html`）：所有客户 → 已建档（编号升序）→ 未建档（编号升序，置尾）。
-  // 后端已按此顺序返回候选（api.md A-1），前端不再重新排序，只按 registered 拆两组加分组标题。
+  // 分组下拉（原型 `02-客户选择器-展开.html`）：已建档（编号升序）→ 未建档（编号升序，置尾）。
+  // 🔄 D-7：不再有「所有客户」/「全部客户」这一档。后端已按此顺序返回候选（api.md A-1），
+  // 前端不再重新排序，只按 registered 拆两组加分组标题。
   const groupedOptions = useMemo(() => {
     const registered = candidates.filter((c) => c.registered);
     const unregistered = candidates.filter((c) => !c.registered);
@@ -167,16 +180,7 @@ const ProductHubPage: React.FC = () => {
       customerName: c.customerName ?? null,
       registered: c.registered,
     });
-    const allOption: CustomerLeafOption = {
-      value: ALL_CUSTOMERS,
-      label: '所有客户',
-      customerNo: ALL_CUSTOMERS,
-      customerName: null,
-      registered: true,
-    };
-    const groups: CustomerGroupOption[] = [
-      { label: '全部客户', options: [allOption] },
-    ];
+    const groups: CustomerGroupOption[] = [];
     if (registered.length > 0) {
       groups.push({ label: `已建档客户（${registered.length}）`, options: registered.map(toLeaf) });
     }
@@ -186,9 +190,11 @@ const ProductHubPage: React.FC = () => {
     return groups;
   }, [candidates]);
 
+  /** 候选列表第一项的客户号——默认值 / 降级目标 / 下拉里「默认选中」标记的判据（原型 02）。 */
+  const defaultCandidateNo = candidates.length > 0 ? candidates[0].customerNo : null;
+
   /** 当前选中客户的展示文案，供两个页签的 F-7 空态文案使用（本组件是唯一持有候选的地方）。 */
   const customerLabel = useMemo(() => {
-    if (customerNo === ALL_CUSTOMERS) return '所有客户';
     const hit = candidates.find((c) => c.customerNo === customerNo);
     if (!hit) return customerNo;
     return hit.registered && hit.customerName
@@ -209,6 +215,10 @@ const ProductHubPage: React.FC = () => {
     );
   }, []);
 
+  // 🔄 D-7：客户必选后，「候选没查成/候选为空」= 没有任何客户可选，选择器必须禁用
+  // （frontend.md §1.2：禁用但可见 + tooltip 说明原因，🚫 不许直接隐藏选择器）。
+  const selectorDisabled = !customerContextReady || candidatesFailed;
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -217,59 +227,59 @@ const ProductHubPage: React.FC = () => {
           {/* F-1：全局客户选择器（原型 `01-壳页-客户产品-默认态.html`）。
               antd Select 无原生「addonBefore」，改用「带背景色标签 + 无边框 Select」的自定义容器
               复刻原型 `.select-group`（组件库能力所限的等价实现）。 */}
-          <div
-            style={{
-              display: 'flex', alignItems: 'center', height: 32,
-              border: '1px solid #d9d9d9', borderRadius: 6, overflow: 'hidden', background: '#fff',
-            }}
-          >
-            <span
+          <Tooltip title={selectorDisabled && candidatesFailed ? CANDIDATES_FAILED_TOOLTIP : undefined}>
+            <div
               style={{
-                padding: '0 11px', height: '100%', display: 'flex', alignItems: 'center',
-                background: '#fafafa', borderRight: '1px solid #d9d9d9',
-                color: 'rgba(0, 0, 0, 0.65)', whiteSpace: 'nowrap', fontSize: 14,
+                display: 'flex', alignItems: 'center', height: 32,
+                border: '1px solid #d9d9d9', borderRadius: 6, overflow: 'hidden',
+                background: selectorDisabled ? 'rgba(0, 0, 0, 0.04)' : '#fff',
               }}
             >
-              客户
-            </span>
-            <Select<string, CustomerSelectOption>
-              variant="borderless"
-              showSearch
-              style={{ minWidth: 220, maxWidth: 320 }}
-              popupMatchSelectWidth={340}
-              value={customerNo}
-              onChange={onCustomerChange}
-              options={groupedOptions}
-              filterOption={filterOption}
-              optionRender={(option) => {
-                // 🚨 只有叶子项（具体客户/「所有客户」）会走到这里，分组标题由 antd 自行渲染
-                const d = option.data as CustomerLeafOption;
-                if (d.customerNo === ALL_CUSTOMERS) return <span>所有客户</span>;
-                return (
-                  <span>
-                    <span>{d.customerNo}</span>
-                    {d.registered && d.customerName ? <span>{NBSP_WIDE}{d.customerName}</span> : null}
-                    {!d.registered ? <span style={WARN_STYLE}>{UNREGISTERED_SUFFIX}</span> : null}
-                  </span>
-                );
-              }}
-            />
-          </div>
+              <span
+                style={{
+                  padding: '0 11px', height: '100%', display: 'flex', alignItems: 'center',
+                  background: '#fafafa', borderRight: '1px solid #d9d9d9',
+                  color: 'rgba(0, 0, 0, 0.65)', whiteSpace: 'nowrap', fontSize: 14,
+                }}
+              >
+                客户
+              </span>
+              <Select<string, CustomerSelectOption>
+                variant="borderless"
+                showSearch
+                disabled={selectorDisabled}
+                placeholder={candidatesFailed ? '加载失败' : '加载中…'}
+                style={{ minWidth: 220, maxWidth: 320 }}
+                popupMatchSelectWidth={340}
+                value={customerNo || undefined}
+                onChange={onCustomerChange}
+                options={groupedOptions}
+                filterOption={filterOption}
+                optionRender={(option) => {
+                  // 🚨 只有叶子项（具体客户）会走到这里，分组标题由 antd 自行渲染
+                  const d = option.data as CustomerLeafOption;
+                  return (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span>
+                        <span>{d.customerNo}</span>
+                        {d.registered && d.customerName ? <span>{NBSP_WIDE}{d.customerName}</span> : null}
+                        {!d.registered ? <span style={WARN_STYLE}>{UNREGISTERED_SUFFIX}</span> : null}
+                      </span>
+                      {/* 原型 02：候选第一项标「默认选中」，帮用户理解"为什么打开页面看到的是它" */}
+                      {d.customerNo === defaultCandidateNo && (
+                        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'rgba(0, 0, 0, 0.45)' }}>默认选中</span>
+                      )}
+                    </span>
+                  );
+                }}
+              />
+            </div>
+          </Tooltip>
           <Button icon={<AppstoreOutlined />} onClick={() => setCategoryOpen(true)}>
             产品分类管理
           </Button>
         </Space>
       </div>
-
-      {/* 状态 C（原型 `05-空态与降级.html`）：候选端点未就绪。可见但不阻断，列表功能不受影响。 */}
-      {candidatesFailed && (
-        <Alert
-          type="warning"
-          showIcon
-          style={{ marginBottom: 12 }}
-          message="客户候选加载失败，当前只能查看全部客户的数据。列表功能不受影响。"
-        />
-      )}
 
       <Tabs
         activeKey={activeTab}
@@ -287,11 +297,12 @@ const ProductHubPage: React.FC = () => {
                 customerNo={customerNo}
                 customerLabel={customerLabel}
                 ready={customerContextReady}
+                available={!candidatesFailed}
               />
             ),
           },
           // ⚠️ 销售产品页签本轮未接客户过滤（F-4 依赖后端复合轴改造，尚未落地）——
-          //    见回报「F-4~F-6 实现方案」，届时会同样接收 customerNo/customerLabel/ready 三个 props。
+          //    见回报「F-4~F-6 实现方案」，届时会同样接收 customerNo/customerLabel/ready/available 四个 props。
           { key: 'sales', label: '销售产品', children: <ProductSalesPartTab /> },
         ]}
       />

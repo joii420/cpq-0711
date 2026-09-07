@@ -12,12 +12,17 @@
 //
 // 🔄 task-260907-产品管理客户过滤 · F-3（本次改动）：
 //    客户过滤下拉**已摘除**，改由壳页 `ProductHubPage` 统一加载候选 + 持有客户上下文，
-//    本组件只接收 `customerNo` / `customerLabel` / `ready` 三个 props。
+//    本组件只接收 `customerNo` / `customerLabel` / `ready` / `available` 四个 props。
 //    ⚠️ 改动面刻意最小：`listCustomerParts` 的调用参数、列定义、渲染逻辑、`rowKey`
 //       一行都没动；三条成文纪律继续有效——照单全收后端 items（不按 customerName 是否
 //       为空再筛）、过滤必须在后端做、`page` 是 0-based（传 `current - 1`）。
-//    🆕 F-7（AC-13）：选中一个没有任何客户产品数据的客户时，空态文案改成
-//       「该客户暂无客户产品数据」，而不是通用的「暂无数据」。
+//
+// 🔄 2026-09-07 第二轮裁决（D-7）：客户改为**必选**，本组件不再有「所有客户」这个态。
+//    `customerNo` 只在 `available=true` 时才是一个真实客户号；`available=false`
+//    （壳页候选端点失败/候选为空）时它是空串，本组件**不发任何请求**，直接展示状态 C 的
+//    「候选加载失败，无法展示数据」——与 AC-13 的"该客户确实没数据"状态 A **必须长得不一样**。
+// 🆕 F-7（AC-13）：选中一个没有任何客户产品数据的客户时，空态文案改成
+//    「该客户暂无客户产品数据」，而不是通用的「暂无数据」。
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Table, Input, Button, Space, Empty, message } from 'antd';
@@ -37,11 +42,14 @@ import {
 
 const { Search } = Input;
 
-/** 「所有客户」哨兵值，与壳页 `ProductHubPage` 的 `ALL_CUSTOMERS` 同一口径（空串）。 */
-const ALL_CUSTOMERS = '';
+/** 状态 C 文案（原型 `05-空态与降级.html`），与 AC-13 状态 A 的业务空态刻意不同措辞。 */
+const CANDIDATES_FAILED_MESSAGE = '客户候选加载失败，无法展示数据';
 
 export interface ProductCustomerPartTabProps {
-  /** 壳页当前选中的客户号；空串 = 所有客户。取代本组件原有的内部 `useState`（F-3）。 */
+  /**
+   * 壳页当前选中的客户号。🔄 D-7 起客户必选——只有 `available=true` 时它才是一个真实客户号；
+   * `available=false` 时为空串，本组件据此判断"没有可查的客户"而不是"发一个空参数请求"。
+   */
   customerNo: string;
   /**
    * 客户的展示文案（如 `苏州西门子（CUST-0031）` 或未建档时的 `Q13CUST0617`），
@@ -49,14 +57,19 @@ export interface ProductCustomerPartTabProps {
    */
   customerLabel: string;
   /**
-   * 壳页的客户上下文是否已就绪（localStorage 读取 + 候选校验完成）。
+   * 壳页的客户上下文是否已就绪（localStorage 读取 + 候选加载 + 默认值/失效校验完成）。
    * 🚨 就绪前不发起任何请求——避免「先出全量再过滤」的一闪而过（AC-10②）。
    */
   ready: boolean;
+  /**
+   * 壳页候选是否可用（候选端点成功且非空）。`false` 时客户必选无从满足——
+   * 本组件不发请求，直接展示状态 C 文案，🚫 不做任何 mock 兜底。
+   */
+  available: boolean;
 }
 
 const ProductCustomerPartTab: React.FC<ProductCustomerPartTabProps> = ({
-  customerNo, customerLabel, ready,
+  customerNo, customerLabel, ready, available,
 }) => {
   const [inputValue, setInputValue] = useState('');
   const [keyword, setKeyword] = useState('');
@@ -75,14 +88,13 @@ const ProductCustomerPartTab: React.FC<ProductCustomerPartTabProps> = ({
   useEffect(() => { setPage(1); }, [customerNo]);
 
   const fetchList = useCallback(async () => {
-    if (!ready) return; // AC-10②：客户上下文未就绪前不发请求
+    if (!ready || !available) return; // AC-10②/状态 C：上下文未就绪或没有可查的客户时不发请求
     setLoading(true);
     try {
       const r = await listCustomerParts({
         keyword: keyword || undefined,
-        // 🚨 过滤**在后端做**（AC-3 原型注解）：前端捞全量自己 filter 会让 total 与翻页错乱。
-        //    空串（所有客户）转 undefined ⇒ axios 不序列化该参数 ＝ 省略 ＝ 不过滤。
-        customerNo: customerNo || undefined,
+        // 🔄 D-7：客户必选，恒传一个真实客户号（不再有 `|| undefined` 的"所有客户"转换）。
+        customerNo,
         // 🚨 契约 page 是 **0-based**，antd current 是 1-based ⇒ 必须减 1，
         //    否则首页取到第二页（api.md 消费方硬约束 1）。
         page: page - 1,
@@ -98,9 +110,19 @@ const ProductCustomerPartTab: React.FC<ProductCustomerPartTabProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [keyword, customerNo, page, size, ready]);
+  }, [keyword, customerNo, page, size, ready, available]);
 
   useEffect(() => { void fetchList(); }, [fetchList]);
+
+  // 状态 C：候选不可用时 `fetchList` 直接短路、永远不会走到 `setLoading(false)`——
+  // 这里补一次，避免表格停在永久 loading（AP-31 缺陷族的典型形态）。
+  useEffect(() => {
+    if (ready && !available) {
+      setItems([]);
+      setTotal(0);
+      setLoading(false);
+    }
+  }, [ready, available]);
 
   const onKeywordChange = (v: string) => {
     setInputValue(v);
@@ -130,10 +152,15 @@ const ProductCustomerPartTab: React.FC<ProductCustomerPartTabProps> = ({
     { title: '销售料号', dataIndex: 'materialNo', key: 'materialNo', width: 160, ellipsis: true, render: renderTextCell },
   ];
 
-  // F-7 / AC-13：选中具体客户且确实 0 行时，空态文案带上客户身份；
-  // 「所有客户」态或搜索关键字导致的 0 行仍用通用空态，不冒充「该客户没有数据」。
-  const emptyNode = (customerNo !== ALL_CUSTOMERS && !keyword)
-    ? (
+  // 三种空态必须可区分（原型 05）：
+  //   状态 C（候选加载失败）> F-7 状态 A（该客户确实没数据）> 通用空态（搜索命中 0 行等）。
+  let emptyNode: React.ReactNode;
+  if (!available) {
+    emptyNode = <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={CANDIDATES_FAILED_MESSAGE} />;
+  } else if (!keyword) {
+    // F-7 / AC-13：选中具体客户且确实 0 行时，空态文案带上客户身份；
+    // 搜索关键字导致的 0 行仍用通用空态，不冒充「该客户没有数据」。
+    emptyNode = (
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
         description={(
@@ -146,8 +173,10 @@ const ProductCustomerPartTab: React.FC<ProductCustomerPartTabProps> = ({
           </span>
         )}
       />
-    )
-    : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" />;
+    );
+  } else {
+    emptyNode = <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" />;
+  }
 
   return (
     <div>
