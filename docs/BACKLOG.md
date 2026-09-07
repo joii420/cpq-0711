@@ -17,6 +17,34 @@
 
 ## 待开发条目
 
+### [报价单渲染 / 数据丢失] BL-0212 · `row_data` 的三个写点没有空覆盖护栏（repair-0729 的覆盖缺口）
+
+- [ ] 待开发 · 优先级 **P1** · 来源：`task-260907-record层与核价回填` 开发期，测试/后端代理观察 + 主线实查（2026-09-07，用户裁决查一轮后登记）
+- **现象**：`saveDraft` 返 200 之后，`quotation_line_component_data` 的 `row_data` 与 `snapshot_rows` 双双变成 `[]`。实测报价单 `QT-20260907-0499` 的 **13 个组件全部 0 长度**，而同一时刻 `ds_quote_element_bom_record` 里有 1 行正确的值 ⇒ **两者已分叉**。
+- 🔬 **实查结论（主线，2026-09-07）**：
+
+  | 存储 | 空覆盖护栏 |
+  |---|---|
+  | `quote_card_values.baseRows` | ✅ `CardSnapshotService` **3 处** |
+  | `quotation_line_component_data.snapshot_rows` | ✅ `ConfigureSnapshotService` **4 处**（Pass1 `:608` / 树 `:660` 等） |
+  | **`quotation_line_component_data.row_data`** | ❌ **三个写点 `:1406`（批量 UPDATE）/ `:1434`（INSERT）/ `:1720`（UPSERT）上文一处护栏都没有** |
+
+- ⇒ **`repair-0729` 的护栏加在了 `snapshot_rows` 与 `baseRows` 上，`row_data` 这条漏了。** 而 `repair-0729` 的**根因 C 恰恰就是** 「`saveDraft` 用渲染态空值覆盖已持久化 `row_data`」。
+- **可达场景（不是只有夹具能撞）**：页签的 driver 展开返 0 行（`AP-38`「0 行 driver 鬼魂行」族），用户手工填了值 → `row_data` 落库 → 后续重算产出 `[]` → **无护栏，直接覆盖**。
+- ✅ **非本次引入**：`task-260907` 第二段 `configure/` 目录 `git diff` 为空。
+- ⚠️ **未证的部分（别当已知）**：主线只证明了「护栏缺失」与「结果分叉」，**没有证明具体是哪一次调用把它写空的**。立项时要先补这一步（建议：在三个写点各加一条「待写值为空且库内现值非空」的 WARN 计数，先观测再决定拦不拦）。
+- 🔑 **与本任务的关系**：`_record` 是从 `row_data` / `snapshot_rows` 投影出来的。**若 `row_data` 会被静默写空，`_record` 就会与报价单分叉**，而核价通过时财务看到的是 `_record`。
+
+### [前端 / UI 规范] BL-0213 · antd v6 下 `Tooltip` 直接包 disabled 按钮可能全站失效
+
+- [ ] 待开发 · 优先级 **P2** · 来源：`task-260907-record层与核价回填` 开发期前端代理报告（2026-09-07，用户裁决登记）
+- **现象**：`cpq-frontend/src/components/.../SelectableTable.tsx:176` 用 `<Tooltip>{disabledButton}</Tooltip>` 直接包禁用按钮。项目实测为 **`antd ^6.3.5`**，而 antd v6 的 `Tooltip` **不再自动包装 disabled 元素** —— 禁用的 `<button>` 不派发 `mouseenter`，tooltip 静默不弹。
+- **影响面**：若成立，`docs/rules/frontend.md` §1.2 的「**禁用但可见 + hover tooltip 说明原因**」在**所有走 `SelectableTable` 的列表页**上事实失效 —— 用户看得到灰按钮，但**看不到为什么用不了**。
+- 🔑 **已验证的可用修法**（本任务前端代理实测有效，可直接复用）：外层套 `<span style={{pointerEvents:'none'}}>` 再包 `Tooltip`，本任务的确认抽屉截图 `04-409错误态与禁用tooltip.png` 已实证弹出。
+- ⚠️ **未证**：主线**没有**逐个列表页复现，只核了 antd 版本与那一处写法。立项时先做一次全站 `grep` 清点（`Tooltip` 包 `disabled` 的所有位置）+ 真浏览器复现一处。
+- 📌 超出 `task-260907` 范围，故不在本任务修。
+
+
 ### [主数据维护 / 报价基础数据] BL-0212 · 「电镀方案」页签的报价侧缺客户过滤
 
 - [ ] 待开发 · 优先级 **P2** · 来源：`task-260907-产品管理客户过滤` 闸门 A0（2026-09-07 用户裁决 `D-5` 登记）
