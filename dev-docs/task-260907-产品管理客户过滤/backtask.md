@@ -111,6 +111,7 @@
 | **共享库** | 测试直连共享开发库 `10.177.152.12:5432/cpq_db_0724`。🚫 **不许跑任何清库型测试**，哪怕写在 `beforeAll` 里 |
 | **夹具前缀** | 本任务线统一用 **`T260907M-`**（与并发三线 `T260907B-` / `T260907Q-` / `T260907T-` 错开）。🚫 清理**一律用主键或完整名精确删**，不许 `LIKE 'T260907%'` —— 那会把别的会话的夹具一起删掉，症状是随机挂且极像业务回归 |
 | **迁移** | 本任务**不写任何迁移**。若发现非写不可，说明前置没满足 ⇒ 停下报主线 |
+| 🚦 **起 Quarkus 前的安全闸**<br>（**本表最容易在不知情下违反的一条**） | `application.properties:67` `quarkus.flyway.migrate-at-start=true`，**dev mode 仍生效** ⇒ **在 worktree 里起一次 Quarkus 服务，就会把该 worktree 里所有 master 上没有的迁移文件自动落进共享库**。<br>🚨 **落库的人自己看不见** —— Flyway 只在启动时校验，肇事者一切正常，而**下一个重启后端的人**（任何会话）会撞 `FlywayValidateException: Detected applied migration not resolved locally`，新检出 / CI 全线起不来。2026-09-07 当天已同型发生 **5 次**（V416/417/418/419/421），其中一次正是**子代理起临时服务自检时无意落的** —— 它回报「未手工执行任何迁移 SQL」**属实，它不知道**。<br>⇒ 🚦 **每次 `./mvnw quarkus:dev` 之前先跑差集检查，非空就停下报主线，🚫 不许先起服务再说**：<br>`comm -23 <(git ls-tree HEAD --name-only cpq-backend/src/main/resources/db/migration/ | grep -o 'V[0-9]*' | sort) <(git ls-tree master --name-only cpq-backend/src/main/resources/db/migration/ | grep -o 'V[0-9]*' | sort)` → **期望空**<br>🚫 撞到 validate 失败**不许**用 `-Dquarkus.flyway.validate-on-migrate=false` 绕过（那关掉的正是唯一的发现信号）；🚫 **更不许**对共享库跑 `flyway repair`（会打掉别人的记录，属 `CLAUDE.md` §3.2 红线）|
 | **N+1** | 单个业务操作的 SQL 条数必须是常数、与 N 无关。循环体里出现查询 = 违规 |
 | **自检** | 完成后必须给出「已自检」一行：编译通过 + 相关测试结果 + 端点实际返回码。没有这行 = 未完成 |
 | **越界** | 发现范围外的问题（如遗留 Modal、其它页面的缺陷）**只报位置，不要顺手改** —— 由主线裁决 |
