@@ -139,7 +139,8 @@
 
 | 字段 | 说明 |
 |---|---|
-| `lineItemsCount` | 建出的明细行数 = 该客户在 `ds_quote_customer_part` 中的行数（见下） |
+| `quotationNumber` | 🆕 **D-31 新增**：报价单号（如 `QT-20260907-0003`）。前端两处要显示；不给的话前端只能额外打一次 `GET /quotations/{id}`，在 1845 行的单上是重载荷请求 |
+| `lineItemsCount` | 建出的明细行数 = **本次导入批次**在该客户下的料号数（见下，🔄 D-26 已改口径） |
 | `materializing` | **恒 `true`**。物化转后台，前端据此去轮询既有 `POST /quotations/{id}/ensure-card-values`。🚫 不要靠 `cardValuesReady==false` 猜（V6 侧 D-5 的教训：区分不了「真失败」和「还没开始算」） |
 
 **明细行候选来源（本任务的核心改动点）**
@@ -149,13 +150,19 @@ SELECT cp.customer_product_no, cp.customer_part_name, cp.material_no, m.material
   FROM ds_quote_customer_part cp
   LEFT JOIN ds_quote_material m ON m.material_no = cp.material_no
  WHERE cp.customer_no = :customerCode
+   AND cp.customer_product_no = ANY(:batchProductNos)   -- 🔄 D-26 新增：本次导入批次
  ORDER BY cp.customer_product_no
 ```
 
-🚫 **不再走 V6 那套** `material_customer_map` + `created_at ±时间窗` + `hfPairs` 写 `metadata`。
-理由：`ds_quote_customer_part` 自带 `customer_no`，一条 JOIN 就能精确框定，不需要靠时间窗近似。
-⚠️ **必须 `LEFT JOIN`** —— `INNER` 会在物料表缺行时静默丢明细行（`task-260903` 立项期实测过同型问题：`customer` 表 17 行有 3 行 JOIN 不到）。
+🔄 **2026-09-07 按 D-26 改口径（原实现会建出该客户的全部历史料号）**
+- **原文错在哪**：本节原写「`ds_quote_customer_part` 自带 `customer_no`，一条 JOIN 就能精确框定，不需要靠时间窗近似」——
+  精确是精确了，但**把「本次批次」这个维度整个丢了**。V6 的 `created_at ±时间窗` 虽是近似，至少表达了批次语义。
+  实证：后端子代理按原文实现后，一份 **3 行**的 Excel 建出了 **15** 行明细（该客户表里另有 12 行历史）。
+- **落地**：Phase 2 写库后，把本批次的 `(customer_no, customer_product_no)` 清单写进
+  `import_record.metadata.batchParts`；建单时取出作为 `:batchProductNos` 过滤。
+- 🚫 **仍然不走 V6 的 `hfPairs` + 时间窗** —— 那是近似；这里是精确的批次清单。
 
+⚠️ **必须 `LEFT JOIN`** —— `INNER` 会在物料表缺行时静默丢明细行。
 **幂等**：同 `importRecordId` 已建过单且单仍在 → 返回既有 `quotationId`，不重复建单建行（对齐 V6 `V6QuotationCommitService` 的幂等重入）。
 
 **错误**
@@ -187,6 +194,24 @@ SELECT cp.customer_product_no, cp.customer_part_name, cp.material_no, m.material
 > **同时，对方「不做」清单第 6 条写着「不动报价侧 `POST /quote` —— 报价侧 V6 导入仍在用」，这条前提被本任务推翻**（本任务正是要摘掉 `QuoteBasicDataImportV6Drawer` 并停用该端点）。
 >
 > 🚦 **须由主线在开工前与对方协调合并顺序**，并明确 `GET /{recordId}` 由谁负责保留 —— 两边都以为对方会留着它，是最容易两边都删掉的形态。
+
+---
+
+## 4.5 🔄 元素单价取数路径（D-27）
+
+新模板「材质元素」页签的元素单价列，**走 `f_customer_element_price(客户, 日期)`**（customer × element）。
+
+🚫 **不走 `f_material_element_price`** —— 其 `candidate_materials` 只从 V6 的 `material_bom_item` ∪ `element_bom_item` 取，
+**新导入的 `ds_quote_*` 料号恒不在候选集里**（实证：`CUST-0004` 返回的 21 个料号中，ds_ 独有的 = **0**）。
+
+**为什么这样在语义上是对的**（用户 2026-09-07 业务规则）：
+> 不会出现「同一客户、同一元素、不同料号价格不同」。**一张报价单中的元素价格是统一的。**
+
+⇒ 料号维度对报价侧的元素价**本来就是冗余的**。且 `f_material_element_price` 的 `realtime` 分支本就是
+`候选料号 CROSS JOIN f_customer_element_price(...)`，价与料号无关 —— 实证 `CUST-0004` 返回 105 行 = 21 料号 × 5 元素。
+
+📌 **本方案唯一放弃的是「价格版本冻结」那一层**（`material_price_version_ref` → `element_price_version_item`），
+实测全库仅 **4 行 / 4 客户 / 4 料号**，`CUST-0004` 为 **0**。已登记 BACKLOG，前置＝`报价侧加客户维度` 落地。
 
 ---
 

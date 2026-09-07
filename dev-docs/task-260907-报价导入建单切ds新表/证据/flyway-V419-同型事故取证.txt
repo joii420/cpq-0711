@@ -1,0 +1,29 @@
+=== ⑤ 撤掉 -Dquarkus.flyway.validate-on-migrate=false 后的原始启动输出（2026-09-07 03:2x）===
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+Caused by: org.flywaydb.core.api.exception.FlywayValidateException: Validate failed: Migrations have failed validation
+Detected applied migration not resolved locally: 419.
+If you removed this migration intentionally, run repair to mark the migration as deleted.
+Need more flexibility with validation rules? Learn more: https://rd.gt/3AbJUZE
+	at org.flywaydb.core.Flyway.lambda$migrate$3(Flyway.java:200)
+	at org.flywaydb.core.FlywayExecutor.execute(FlywayExecutor.java:234)
+--
+	... 1 more
+Caused by: org.flywaydb.core.api.exception.FlywayValidateException: Validate failed: Migrations have failed validation
+Detected applied migration not resolved locally: 419.
+If you removed this migration intentionally, run repair to mark the migration as deleted.
+
+=== 共享库 flyway_schema_history（>=417）===
+417|db/migration/V417__task260819_v9_tab_type_key_value_fix.sql|2026-09-05 02:04:09.267776|t
+418|db/migration/V418__task260907_semantic_graph_customer_part_and_annual.sql|2026-09-07 02:41:01.223606|t
+419|db/migration/V419__task260907_customer_part_customer_scope.sql|2026-09-07 03:19:37.167504|t
+
+=== master 侧 ===
+master HEAD: 8c6077bf Merge V418 迁移文件到 master —— 解除新检出后端起不来的阻塞
+master 迁移目录 >=416:
+cpq-backend/src/main/resources/db/migration/V416__task260819_v9_bridge_narrow_form.sql
+cpq-backend/src/main/resources/db/migration/V417__task260819_v9_tab_type_key_value_fix.sql
+cpq-backend/src/main/resources/db/migration/V418__task260907_semantic_graph_customer_part_and_annual.sql
+
+结论：V419__task260907_customer_part_customer_scope.sql 已应用到共享库，但尚未进 master。
+      ⇒ 任何基于当前 master 的 worktree / 新检出，启动时 Flyway validate 都会挂。
+      ⇒ 这是 2026-09-07 内的第 2 次同型事故（第 1 次是 V418）。

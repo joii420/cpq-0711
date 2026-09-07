@@ -58,7 +58,8 @@
 
 | 编号 | 服务的 AC | 任务内容 |
 |---|---|---|
-| **B-14** | AC-3, AC-22 | ⛔ **开工条件：`task-260907-报价侧加客户维度`（2026-09-07 从 `取数配置器补齐` 拆出）的 28 张表 DDL + 轴模型改造已合 master。未落地前本项不启动，其余 B-x 不受阻。**<br>① **拒收跨客户文件**（AC-3）：Phase 1 校验时比对「客户料号」sheet 的 `customer_no` 与本次导入选定客户，出现其它编号 → 整份拒收，逐行报出；<br>② **注入**（AC-22）：其余 15 个无客户列的 sheet，写入时把选定客户的 `customer_no` 填进每一行。<br>🚨 **注入点必须在本任务新建的 `QuotationImportService`，🚫 不许改共用的 `DatasetImportService`** —— 那条路被【基础资料维护】用着，**没有「选客户」这个输入**，在那里注入会拿不到值或注入错值（N-10 同源理由）。<br>⚠️ **本项护栏只覆盖导入这一条路。** 实测 `VersionedGroupWriter` 有 **6 个调用方**（导入 / 维护端保存 / 分组锁 / 客户产品 / 选配两个），其中 `DatasetMaintenanceService`、`DatasetGroupLock` 的 `customerNo` 引用数**为 0** —— 那两条路上本护栏不会触发，归上游负责。🚫 别以为加了这条就全覆盖了。<br>🚨 **不要自己扩 `VersionedGroupWriter` 的轴** —— 轴模型归上游。若上游落地后发现轴仍是单列 `material_no`，**停下报主线**：那意味着「客户 A 导入料号 X 会静默删掉客户 B 的料号 X」（§4.55a 第 2 条），此时**绝不能开始导入**，否则是不可逆的数据丢失 |
+| **B-15** 🆕 | AC-3 | 🔴 **立即做，不阻塞**（2026-09-07 从 B-14 拆出，见下方「拆分说明」）。**拒收跨客户文件**：Phase 1 校验时比对「客户料号」sheet 的 `customer_no` 与本次导入选定客户，出现其它编号 → **整份拒收**，逐行报出 `{sheetName,rowNum,columnLabel,reason}`。<br>📌 **零 schema 依赖**：只需要「Excel 客户料号 sheet 已有的 `customer_no` 列」+「导入时选定的客户」（D-10 已提供），**与 28 张表的 `customer_no` DDL 无关**。<br>📌 与既有 D-19「客户编号不在 `customer.code` 中整份拒收」**同型不同判据**：D-19 判「存不存在」，本项判「是不是本次这个客户」。两条都要，顺序上 D-19 先。<br>⚠️ 测试代理实测当前行为：跨客户负例导入返 `SUCCESS`、`summary` 里「客户料号」`inserted=4`（`CUST-0001` 那行也写进去了），**必现 2/2**。`importRecordId=9e3214cb-0afc-499a-825d-3d2a59fa7b4c` |
+| **B-14** | AC-22 | ⛔ **开工条件：`task-260907-报价侧加客户维度` 的 28 张表 DDL + 轴模型改造已合 master。未落地前本项不启动，其余 B-x 不受阻。**<br>**注入**：其余 15 个无客户列的 sheet，写入时把选定客户的 `customer_no` 填进每一行。<br>🚨 **注入点必须在本任务新建的 `QuotationImportService`，🚫 不许改共用的 `DatasetImportService`** —— 那条路被【基础资料维护】用着，**没有「选客户」这个输入**，在那里注入会拿不到值或注入错值（N-10 同源理由）。<br>⚠️ **本项护栏只覆盖导入这一条路。** 实测 `VersionedGroupWriter` 有 **6 个调用方**（导入 / 维护端保存 / 分组锁 / 客户产品 / 选配两个），其中 `DatasetMaintenanceService`、`DatasetGroupLock` 的 `customerNo` 引用数**为 0** —— 那两条路上本护栏不会触发，归上游负责。🚫 别以为加了这条就全覆盖了。<br>🚨 **不要自己扩 `VersionedGroupWriter` 的轴** —— 轴模型归上游。若上游落地后发现轴仍是单列 `material_no`，**停下报主线**：那意味着「客户 A 导入料号 X 会静默删掉客户 B 的料号 X」（§4.55a 第 2 条），此时**绝不能开始导入**，否则是不可逆的数据丢失 |
 
 ---
 
@@ -67,6 +68,15 @@
 | 编号 | 服务的 AC | 任务内容 |
 |---|---|---|
 | **B-13** | AC-11, AC-16 | **本项不写业务代码，产出的是实证。** 新单核价通过时 `QuoteBackfillService` 会被调用但应静默降级为 no-op —— 需要**证明它确实是「跑了但降级」而不是「压根没跑」**。<br>**依据链**：新组件 SQL 读 `ds_quote_*` → 不在 `QuotePendingRewriter.WHITELIST_TABLES` → `rewrite()` 的 `anchorInjected=false` → `QuoteBackfillColumnMapper` 返 `NOT_BACKFILLABLE` → `QuoteBackfillCollector:181` 的 `!resolved.backfillable → continue`。<br>**要交的证据**：① 核价通过后端日志里 `QuoteBackfillService` 摘要为 `groups=0,added=0,deleted=0,changed=0`；② V6 八张表跑前跑后**内容 md5 逐表相同**（🚫 只比行数不够，回填改的是 `is_current` 与列值，行数可能不变而内容已变）；③ 无 ERROR 日志。<br>🚫 **不要为了让它「更干净」而去改 `QuoteBackfillService` 加白名单判断** —— 那是 N-7 明确不做的，且现有降级路径已经正确 |
+
+---
+
+> 🔄 **B-14 / B-15 拆分说明（2026-09-07，主线自查出的编排错误）**
+> 原 B-14 把「① 拒收跨客户文件」与「② 注入 `customer_no`」捆在一起并整项标 ⛔ 阻塞。
+> **①**（AC-3）**根本不依赖 28 张表的 DDL** —— 它只用 Excel 里本来就有的客户编号列和导入时选定的客户，是纯 Phase 1 校验逻辑。
+> ⇒ **一个不该阻塞的项被捆到了阻塞项上，导致 AC-3 一直无人实现**，由测试代理第一轮 L1 实测暴露。
+> 📌 **判据沉淀**：把多个交付项捆进同一编号时，**阻塞状态取的是并集**——只要有一项被阻塞，另一项也跟着停摆。
+> **凡编号内出现「①②」枚举，就该检查两项的前置是否相同；不同则必须拆号。**
 
 ---
 
@@ -100,6 +110,7 @@
 | B-11 | AC-6, AC-7, AC-8 |
 | B-12 | AC-7（前置） |
 | B-13 | AC-11, AC-16 |
-| B-14 | AC-3, AC-22（⛔ 阻塞于上游） |
+| B-14 | AC-22（⛔ 阻塞于上游） |
+| B-15 | AC-3 |
 
-✅ 14 项全部有指向，无超范围项。
+✅ 15 项全部有指向，无超范围项。

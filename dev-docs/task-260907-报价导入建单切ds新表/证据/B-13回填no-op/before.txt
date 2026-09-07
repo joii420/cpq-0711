@@ -1,0 +1,9 @@
+# before  2026-09-07T02:46:55-07:00
+unit_price                   rows=11246    md5=ff041da597a47b2169a26c6b4fe36e54
+material_bom                 rows=11499    md5=57dffa7fd1ba4643a606b18c5897b08f
+material_bom_item            rows=11155    md5=52d3f29ecf1f2c2a798b08891fa4012a
+element_bom                  rows=11737    md5=15075c4d50ba523e41c16bb25e2c42a2
+element_bom_item             rows=24982    md5=bf69a0bb46cec630f2bbe11c91535416
+capacity                     rows=22       md5=6d9908d58ce26ae4e76d5c7d8d4cfc7f
+plating_scheme               rows=12       md5=440cc9f588f990a0e4f67097996f9e71
+material_customer_map        rows=1884     md5=f258c76875fd268f3535c9dcf197fbf6
