@@ -396,15 +396,33 @@ D-21 要求「生成的 SQL」右侧常驻、随拖拽实时刷新。这看起�
 1. **入参** `@QueryParam("dialect")`。`semantic_tab_view` 唯一键是 `(tab_type, variant_key, dialect)`，不带方言过滤就无法确定取哪套页签视图 —— 三套并列，`findFirst()` 会**随机取到别的数据集那一行**。
 2. **响应** `groups[].dialect`（服务端权威）。
 
-⚠️ **前端不可能自己推断，这不是"前端偷懒"**：V410 种子实测 `semantic_node.node_key` **跨方言重名** —— `MATERIAL` / `MATERIAL_BOM` / `ELEMENT_BOM` 等 **10 个键在三套数据集里各有一份**，区分它们的是 `physical_table` 与 `semantic_node.dialect`，而字段树只给 `node_key`。
+⚠️ **前端不可能自己推断，这不是"前端偷懒"**：V413 种子实测 `semantic_node.node_key` **跨方言重名** —— `MATERIAL` / `MATERIAL_BOM` / `ELEMENT_BOM` 等 **10 个键在三套数据集里各有一份**，区分它们的是 `physical_table` 与 `semantic_node.dialect`，而字段树只给 `node_key`。
 
 ⇒ **AC-116「另两套的表一张都不出现（不是置灰，是不出现）」的过滤必须在服务端做。** 前端的兜底推断保留为第二道防线，不作主路径。
 
-## v9-3 · 已知的存量跨端不一致（本任务不改，留痕）
+## v9-3 · 🔄🔄 ~~已知的存量跨端不一致~~ → **本任务引入的缺陷，已由 `V417` 修复**（2026-09-05 更正）
 
-**页签类型「BOM」的写法两端不同**：前端本地常量存 `'BOM'`，服务端 `semantic_tab_view.tab_type` 存 **`'BOM 树'`**；实测 `GET /field-tree?tabType=BOM` 返回 **0 个分组**。
+🚨 **本节原文是错的，整段作废重写。** 原文写：
 
-F-30 之前就存在（旧代码直接铺服务端返回的 `availableTabTypes`，把它掩盖了）。**本任务内部绕开并留注释，🚫 不顺手统一** —— 改它等于改契约，超出 v9 范围，另行立项。
+> ~~「页签类型『BOM』的写法两端不同：前端本地常量存 `'BOM'`，服务端 `semantic_tab_view.tab_type` 存 `'BOM 树'`。**F-30 之前就存在**……本任务内部绕开并留注释，🚫 不顺手统一 —— 改它等于改契约，超出 v9 范围。」~~
+
+**两处都错**：
+
+1. ❌ **不是存量问题** —— 是本任务的 `V413` 种子引入的。它把 `semantic_tab_view.tab_type` 写成了**显示名** `'BOM 树'`，违反本任务自己的 `D-39`（该裁决**点名**了这一列属「存储值 = `BOM`」那一侧）。实测佐证：`component.tab_type` 现网 `BOM` 21 行、`'BOM 树'` **0 行**。
+2. ❌ **不是「改它等于改契约」** —— 恰恰相反，**留着它才是破坏契约**。后果实测：`PUT /builder` 传 `tabType="BOM 树"` → `400 Invalid tabType` ⇒ **用配置器配「BOM 树」页签的组件根本存不下来**，这是配置器最核心的那条路径。
+
+**现行契约（`V417` 之后）**：
+
+| 位置 | 取值 |
+|---|---|
+| `semantic_tab_view.tab_type` · `component.tab_type` · `builder_config.tabType` · `ComponentService.VALID_TAB_TYPES` | **`BOM`**（存储值） |
+| Select 的 `label` · 图谱页文案 · 文档正文 | **「BOM 树」**（显示名，前端 `TAB_TYPE_LABEL = { BOM: 'BOM 树' }` 映射） |
+
+⇒ `GET /field-tree?tabType=BOM` **现在返回正常分组**；🚫 **不要再传 `'BOM 树'`**（会得到 `COMPILE_TABVIEW_NOT_FOUND`）。
+
+🔑 **本节为什么值得留碑而不是删掉**：错误的归因（「存量问题、不该改」）**本身就是缺陷的一部分** —— 它让这个 400 在文档里获得了「已知且有意为之」的合法身份，从而绕过了所有人的复核。真正把它挖出来的是并发会话 `task-260904` 的三个独立测试，不是本任务的验收。详见 `需求文档.md` 的 `D-128`。
+
+📌 **配套护栏**：`SemanticGraphKeyValueSelfCheck`（`B-56`）已在**启动期**钉住「种子键值列必须落在合法值域内」，不一致直接启动失败 —— 因为 `D-39` 这条裁决明确、点名到列，仍被违反了两次，说明只活在文档里的裁决挡不住第三次。
 
 ## v9-4 · `GET /field-tree` 的兜底响应（D-97，**既有错误行为变更**）
 
@@ -421,7 +439,7 @@ F-30 之前就存在（旧代码直接铺服务端返回的 `availableTabTypes`�
 
 🔄 **由「6 个页签类型的完整清单」收窄为「本方言下可用的子集」** —— 按 `dialect` 从 `semantic_tab_view` 取 distinct `tab_type`，按标准展示顺序输出。前端据此置灰不在清单里的项并加「（本数据集无）」。
 
-📌 **注意**：`V410` 种子里三套方言各自都有全部 6 个页签类型（零件/外购件/BOM 树共用同一张 `material_bom`）⇒ **置灰分支在生产数据上恒不触发**（D-92），取证只能用合成数据。
+📌 **注意**：`V413` 种子里三套方言各自都有全部 6 个页签类型（零件/外购件/BOM 树共用同一张 `material_bom`）⇒ **置灰分支在生产数据上恒不触发**（D-92），取证只能用合成数据。
 
 ## v9-6 · 输出列名去重（B-47）
 
