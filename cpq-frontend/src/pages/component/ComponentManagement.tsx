@@ -772,7 +772,9 @@ const MasterList: React.FC<MasterListProps> = ({
         </div>
         <div className="cmm-c-code">
           {comp.code}
-          {/* task-0721：页签类型属性(tabType)纯展示，不加编辑入口——编辑走 F2 组件详情表单 */}
+          {/* task-0721：页签类型属性(tabType)纯展示，不加编辑入口。
+              task-260904 F-9（AC-28③）：详情工具栏的编辑入口已移除，此处**保留不动** ——
+              存量组件的 tab_type 仍需可见，只是不能再改。 */}
           {comp.tabType && (
             <Tag
               color={TAB_TYPE_COLOR[comp.tabType]}
@@ -1092,6 +1094,11 @@ const ComponentManagement: React.FC = () => {
   // 「费用类」于 task-260819 F-15/D-36 补入)。
   // 2026-07-21 起与 bomRecursiveExpand 后端联动派生(选 BOM → true；其余 → false)，
   // 前端只维护这一个字段，不再单独暴露渲染开关。
+  // 🚨 task-260904 F-9（AC-28）：编辑入口（详情工具栏的页签类型 Select）已移除，本状态自此
+  //    **只读镜像加载值**（loadComponent / 草稿恢复 / 取数配置保存后回填三处写入），
+  //    不接受用户输入、不随保存提交（与 bomRecursiveExpand 同一形态）。
+  //    仍被读的地方：§1.35 双判据的分支②回退（isTreeComponent）、保存前校验文案
+  //    tabSemanticLabel、以及往下游组件传的 tabType prop —— 存量组件语义靠它，不能删。
   const [tabType, setTabType] = useState<string | undefined>(undefined);
   // task-260904 F-8（AC-24）：该组件绑定的数据源语义 —— §1.35 双判据的分支①输入。
   // undefined = 未绑定数据源（存量组件）→ 所有语义闸门回退读 tabType，行为逐字不变（AC-24②）。
@@ -1181,7 +1188,10 @@ const ComponentManagement: React.FC = () => {
           payload.rowKeyFields = (s.rowKeyFields ?? []).length > 0 ? s.rowKeyFields : undefined;
           // task-0721（2026-07-21 契约变更）：bomRecursiveExpand 不再由前端提交——后端按 tabType
           // 自动派生(BOM→true，其余→false)，前端提交陈旧本地态会覆盖后端的自动派生结果。
-          payload.tabType = s.tabType;
+          // task-260904 F-9（AC-28②）：tabType 同理，也不再提交。编辑入口已移除（详情工具栏的
+          // 页签类型 Select 被删），草稿快照里的 s.tabType 只是加载时的只读镜像，提交它等于
+          // 用陈旧本地态回写后端。不传 → 后端 applyTabType 走 `requestedTabType == null`
+          // 分支 = 不改动 tab_type；🚫 不许改成传 '' / null（会走覆盖分支抹掉存量值，AC-25④）。
           payload.partNoField = s.partNoField;
           payload.partNameField = s.partNameField;
           payload.elementCodeField = s.elementCodeField;
@@ -1539,7 +1549,11 @@ const ComponentManagement: React.FC = () => {
         // task-0721（2026-07-21 契约变更）：bomRecursiveExpand 不再由前端提交——后端按 tabType
         // 自动派生(BOM→true，其余→false)，前端提交陈旧本地态会覆盖后端的自动派生结果，
         // 正是"配了页签类型=BOM 却因未勾另一开关而看不到树"这类 bug 的成因。
-        payload.tabType = tabType;
+        // task-260904 F-9（AC-28②）：tabType 也不再提交 —— 编辑入口已移除，本地 tabType 已退化为
+        // 加载时的只读镜像。请求体不带该键 ⇒ 后端 applyTabType 收到 `requestedTabType == null`
+        // ⇒ 整个覆盖分支被跳过 ⇒ 存量组件的 tab_type 一个都不被改写（AC-25④ / AC-28②③）。
+        // 🚫 绝不能写成 `payload.tabType = tabType ?? ''` 或 `?? null`：空串会被 applyTabType
+        //    normalize 成 null 并**覆盖**，109 个存量组件的 tab_type 会被静默抹掉。
         payload.partNoField = partNoField;
         payload.partNameField = partNameField;
         // task-0729 屏 8：组件级三个角色字段，与 partNoField 平级提交；未接取价函数的组件
@@ -1935,31 +1949,16 @@ const ComponentManagement: React.FC = () => {
               <div className="cmm-acts">
                 {componentType === 'NORMAL' && (
                   <>
-                    {/* task-0721 F2（2026-07-21 契约变更）：用户只配「页签类型」一个字段——
-                        选 BOM 时后端自动置 bomRecursiveExpand=true，改为其他值/清空自动置 false。
-                        前端不再单独暴露 bomRecursiveExpand 开关（用户不需要理解两个字段的关系），
-                        也不再随保存请求提交该字段，避免用陈旧本地态覆盖后端的自动派生结果。 */}
-                    {/* F-15（D-36 裁决，task-260819 第二轮）：5→6 项，新增「费用类」。
-                        📌 D-39（存储值与显示名故意不同，与 D-12「列名=来源、字段名=显示」同源）：
-                        第 5 类 value 必须是 'BOM'（与 SqlViewBuilderTab.tsx 的 TAB_TYPES、后端
-                        VALID_TAB_TYPES 三处逐字一致，现网已有该值数据不可改），label 显示「BOM 树」。 */}
-                    <Tooltip title="页签类型：BOM = 树状页签(选中后核价/报价按 BOM 树渲染)；材质元素/零件/外购件/费用类 = 该页签料号的业务语义(供树上加叶子类型判定用)；主件 = 成品/树根。可空(存量组件无此属性)。若组件已被核价模板引用，改为 BOM 可能返回 400（该组件已被核价模板引用，无法设为 BOM 类型）。">
-                      <Select
-                        allowClear
-                        placeholder="页签类型"
-                        style={{ width: 120 }}
-                        value={tabType}
-                        onChange={(v) => setTabType(v)}
-                        options={[
-                          { value: 'BOM', label: 'BOM 树' },
-                          { value: '材质元素', label: '材质元素' },
-                          { value: '零件', label: '零件' },
-                          { value: '外购件', label: '外购件' },
-                          { value: '主件', label: '主件' },
-                          { value: '费用类', label: '费用类' },
-                        ]}
-                      />
-                    </Tooltip>
+                    {/* task-260904 F-9（AC-28）：🚨「页签类型」下拉已移除 —— 用户不再手工选页签类型，
+                        语义一律由「取数配置」Tab 绑定的数据源推导（§1.35 双判据的分支①）。
+                        ⚠️ 移除的是**编辑入口**，不是可见性：存量组件的 tab_type 仍在左侧列表徽章
+                        （:775 纯展示）与保存前校验文案（tabSemanticLabel）里显示，只是不能再改。
+                        ⚠️ 与之配套：handleSave / doSaveAll 的 payload 都不再携带 tabType，让后端
+                        applyTabType 走 `requestedTabType == null` 分支（= 不改动 tab_type）——
+                        🚫 绝不能改成传 '' 或 null，那会走覆盖分支，把 109 个存量组件的
+                        tab_type 静默抹掉（AC-25④）。
+                        原 task-0721 F2 的 6 项 Select（BOM/材质元素/零件/外购件/主件/费用类）
+                        与其 bomRecursiveExpand 自动派生说明，见 git 历史。 */}
                     {/* task-0721 F2（2026-07-23 修订，需求说明 §4.3 规则一「匹配标识放宽」）：
                         料号列/名称列标识——从该组件已有字段(fields state)中选，不是自由输入。
                         类型判定与加叶子候选采集依据这两个字段显式取值，不再靠字段名/label
