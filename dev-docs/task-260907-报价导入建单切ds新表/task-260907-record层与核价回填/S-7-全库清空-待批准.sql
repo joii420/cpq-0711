@@ -1,0 +1,184 @@
+-- =============================================================================
+-- ⛔⛔⛔ S-7 全库清空 · 脚本草案 —— 🚨 **未获批准，一行都不许执行** 🚨
+--
+-- task-260907 第二段 · B-16 · 服务的 AC：AC-19
+--
+-- 本文件由后端子代理产出，**子代理没有批准权**（CLAUDE.md §3.2）。
+-- 它属于「数据销毁」红线，执行前必须由**主线拿到用户当次明确批准**，且批准不跨操作、不跨会话。
+--
+-- 🚫 后端子代理**没有执行本文件的任何一条语句**，也没有执行任何 DELETE / TRUNCATE / DROP。
+--    下面的行数是 **2026-09-07 只读 SELECT count(*) 实测**（共享库 cpq_db_0724）。
+--
+-- 🚫 本文件**刻意不放在 db/migration/**：它不是迁移，不该被 Flyway 自动执行。
+-- =============================================================================
+
+
+-- =============================================================================
+-- 一、⚠️ 范围未定 —— 这是执行前必须先解决的问题，不是脚本能自己回答的
+-- =============================================================================
+-- 立项文档对 S-7 只写了「全库清空 / 存量清空」，`AC-19` 原文写的是
+--   「断言待批准后补写」。⇒ **清到哪一层没有裁决**。至少有三种互不等价的读法：
+--
+--   读法甲｜只清报价业务单据：quotation 族 + costing_order 族。
+--          基础数据（component/template/V6/ds_quote_*）全留。
+--   读法乙｜甲 + 旧模板与旧组件（component / component_sql_view / template /
+--          template_component）—— 第一段 §4.4 写「全库组件与模板清空后重建」，指向这一层。
+--   读法丙｜乙 + V6 存量主数据（material_bom_item / element_bom_item / unit_price / …）
+--          —— 第一段 N-3 写「存量随 S-7 清空」，指向这一层。
+--
+-- ⚠️ **三种读法的影响面差一个数量级**（见第二节行数）。🚦 主线必须先让用户在三者中裁决，
+--    再决定执行哪几段。本文件把三层拆成 A / B / C 三段，**默认全部被注释掉**。
+--
+-- ⚠️ 另有一个**范围之外但会被顺带打掉**的事实：`ds_quote_*` 主表现在**不是空的**
+--    （material 1902 / material_bom 1920 / element_bom 1903 / customer_part 1871 行），
+--    它们是第一段导入与选配写进去的**新链路数据**。「清空存量」若被理解成「连 ds_quote_* 一起清」，
+--    等于把刚切过去的新体系也一并清掉 —— 本文件把它单列为 D 段，**强烈建议不执行**。
+
+
+-- =============================================================================
+-- 二、影响面（2026-09-07 只读实测，共享库 cpq_db_0724）
+-- =============================================================================
+--   quotation                          259        costing_order                    124
+--   quotation_line_item             11,286        costing_order_version_override     0
+--   quotation_line_component_data   54,291        quotation_approval                43
+--   quotation_view_structure            80        quotation_price_revision           7
+--   quotation_line_process               4        quotation_line_composite_process   1
+--   quotation_comparison_config          4        quotation_withdraw_request         0
+--   quotation_component_sql_snapshot     0        quotation_line_item_snapshot       0
+--
+--   component                          349        component_sql_view               212
+--   template                            31        template_component               220
+--
+--   material_bom_item               11,155        element_bom_item              24,982
+--   material_bom                    11,499        element_bom                   11,737
+--   unit_price                      11,246        material_customer_map          1,884
+--   material_master                  1,893        capacity                          22
+--   plating_scheme                      12        annual_discount                    1
+--
+--   ds_quote_material                1,902        ds_quote_material_bom          1,920
+--   ds_quote_element_bom             1,903        ds_quote_customer_part         1,871
+--   ds_quote_plating_scheme              5        其余 9 张带版本表             各 3 行
+--   ds_quote_material_bom_history       11        其余 12 张 _history           各 0 行
+--
+-- 【外键引用方清单（实测 pg_constraint，字母 = ON DELETE 行为：c=CASCADE / a=NO ACTION / n=SET NULL）】
+--   → quotation：costing_order(a) · import_record(a) · quotation_approval(a) ·
+--     quotation_component_sql_snapshot(c) · quotation_line_item(c) · quotation_view_structure(c) ·
+--     quotation_withdraw_request(a) · quotation_price_revision(c) · material_price_update_job_item(a)
+--   → quotation_line_item：quotation_line_component_data(c) · quotation_line_composite_process(c) ·
+--     quotation_line_item(自引用 parent, c) · quotation_line_item_snapshot(c) · quotation_line_process(c)
+--   → component：component_sql_view(c) · template_component(a)
+--   → template：costing_template(n) · import_mapping_template(a) · import_record(a ×2) ·
+--     product_template_binding(a) · quotation(a + n) · quotation_line_item(a) ·
+--     template_component(c) · template_global_variable_binding(c) · template_sql_view(c) ·
+--     template_component_snapshot(c)
+--   → ds_quote_*：**零个外键引用方**（V408 抬头写明「_history 无外键：主表行会被删除，
+--     外键会挡住归档」；主表侧同理）
+--
+-- 🚨 **NO ACTION(a) 的那几条是硬阻塞**：删 quotation 之前必须先删 costing_order /
+--    import_record / quotation_approval / quotation_withdraw_request /
+--    material_price_update_job_item 里指向它的行，否则整条语句报错回滚（这是好事，不要绕过）。
+-- 🚨 删 template 之前必须先处理 quotation.customer_template_id(a) / quotation_line_item.template_id(a) /
+--    product_template_binding / import_mapping_template / import_record —— 也就是说
+--    **读法乙必须先做完读法甲**，顺序不能反。
+
+
+-- =============================================================================
+-- 三、可恢复性 —— 🚨 逐条读完再决定
+-- =============================================================================
+-- 1. **数据本身不可恢复**：本项目没有为这几张表配置任何自动备份或归档；
+--    `_history` 只归档 ds_quote_* 的版本，**不归档 quotation / component / template / V6**。
+-- 2. **结构可由 Flyway 重建，数据不能**：迁移只建表，不灌业务数据。
+-- 3. **组件与模板有一条例外**：第一段 S-5 的 11 页签报价模板是「可重放」的
+--    （导出成 Flyway 迁移随代码进 master，第一段 AC-7 的守卫），⇒ **那一份**能重建；
+--    但现网 349 个组件 / 31 张模板里**其余的都是手工在 UI 里配的**，
+--    `deploy/cpq-init.sql` 当初不能靠 Flyway 重放正是同一个原因（见 RECORD 该条）。
+-- 4. ⇒ **执行前唯一负责任的做法是先做一次逻辑备份**：
+--       pg_dump -h 10.177.152.12 -U postgres -d cpq_db_0724 -Fc -f cpq_db_0724_before_S7_<日期>.dump
+--    并**当场验证 dump 文件非空、能 pg_restore --list 读出表清单**再动手。
+-- 5. ⚠️ 这是**共享开发库**：清空会打掉所有并发会话正在用的开发数据与 E2E 夹具。
+--    执行窗口必须与所有在途会话对齐（当日至少四条线在同一个库上工作）。
+
+
+-- =============================================================================
+-- 四、脚本（全部注释掉。执行者请**逐段**取消注释，🚫 不要一次性全放开）
+-- =============================================================================
+-- 通则：
+--   · 全部用 DELETE，🚫 **不用 TRUNCATE**（TRUNCATE 不触发 FK 检查、无法逐段回滚、
+--     且在有引用方时要 CASCADE —— 那正是 §3.2 点名的形态）；
+--   · 每段包在一个显式事务里，先 SELECT 计数、执行、再 SELECT 计数，**对不上就 ROLLBACK**；
+--   · 顺序 = 叶 → 根（先删引用方，再删被引用方）。
+
+-- ── A 段｜报价与核价业务单据（读法甲）────────────────────────────────────────
+-- BEGIN;
+-- DELETE FROM quotation_line_component_data;         -- 54,291
+-- DELETE FROM quotation_line_composite_process;      --      1
+-- DELETE FROM quotation_line_process;                --      4
+-- DELETE FROM quotation_line_item_snapshot;          --      0
+-- DELETE FROM quotation_line_item;                   -- 11,286（自引用 parent，CASCADE）
+-- DELETE FROM quotation_component_sql_snapshot;      --      0
+-- DELETE FROM quotation_view_structure;              --     80
+-- DELETE FROM quotation_price_revision;              --      7
+-- DELETE FROM quotation_approval;                    --     43
+-- DELETE FROM quotation_withdraw_request;            --      0
+-- DELETE FROM quotation_comparison_config;           --      4
+-- DELETE FROM costing_order_version_override;        --      0
+-- DELETE FROM costing_order;                         --    124
+-- DELETE FROM material_price_update_job_item;        -- ⚠️ 行数未测，NO ACTION 指向 quotation
+-- DELETE FROM import_record;                         -- ⚠️ 行数未测，NO ACTION 指向 quotation + template
+-- DELETE FROM quotation;                             --    259
+-- -- 🚦 提交前先核对：SELECT count(*) FROM quotation;  -- 期望 0
+-- ROLLBACK;   -- ← 确认无误后手工改成 COMMIT
+
+-- ── B 段｜旧组件与旧模板（读法乙，**必须在 A 段之后**）───────────────────────
+-- ⚠️ 第一段 S-5 的 11 页签模板若已落库，B 段会把它一起删掉，需要重跑那条迁移才能恢复。
+-- BEGIN;
+-- DELETE FROM template_component_snapshot;
+-- DELETE FROM template_global_variable_binding;
+-- DELETE FROM template_sql_view;
+-- DELETE FROM template_component;                    --    220
+-- DELETE FROM product_template_binding;
+-- DELETE FROM import_mapping_template;
+-- UPDATE costing_template SET linked_template = NULL WHERE linked_template IS NOT NULL;  -- SET NULL 的那条
+-- DELETE FROM template;                              --     31
+-- DELETE FROM component_sql_view;                    --    212（CASCADE，可省）
+-- DELETE FROM component;                             --    349
+-- ROLLBACK;   -- ← 确认无误后手工改成 COMMIT
+
+-- ── C 段｜V6 存量主数据（读法丙，风险最高）────────────────────────────────────
+-- 🚨 AP-53 提醒：这些表里有一部分仍被现存视图 / 配置硬依赖（`deploy/cpq-init.sql` 那条记录：
+--    「部署仍须建 mat_* （4 视图 + 33 配置硬依赖）」）。**删数据不删表**，但依赖它们出数的
+--    渲染链路会当场变空 —— 执行前必须先确认没有任何仍在用的模板读它们。
+-- BEGIN;
+-- DELETE FROM element_bom_item;                      -- 24,982
+-- DELETE FROM element_bom;                           -- 11,737
+-- DELETE FROM material_bom_item;                     -- 11,155
+-- DELETE FROM material_bom;                          -- 11,499
+-- DELETE FROM unit_price;                            -- 11,246
+-- DELETE FROM capacity;                              --     22
+-- DELETE FROM plating_scheme;                        --     12
+-- DELETE FROM annual_discount;                       --      1
+-- DELETE FROM material_customer_map;                 --  1,884
+-- -- material_master 是否一并清，取决于是否还有别的消费方（未清点）
+-- ROLLBACK;   -- ← 确认无误后手工改成 COMMIT
+
+-- ── D 段｜ds_quote_* 新表（🚫 **强烈建议不执行**）──────────────────────────────
+-- 这批不是「存量」，是第一段刚切过去的**新链路数据**（material 1902 / material_bom 1920 /
+-- element_bom 1903 / customer_part 1871）。清掉它们等于把本次切换的成果一并清掉，
+-- 且 ds_quote_material_bom_history 里那 11 行归档记录也会消失（唯一的历史痕迹）。
+-- ⇒ 除非用户明确说「连新表一起清」，否则**不要放开这一段**。
+-- BEGIN;
+-- -- （13 张 _record 表若已建，需先删：DELETE FROM ds_quote_xxx_record;）
+-- -- DELETE FROM ds_quote_xxx_history;   × 13
+-- -- DELETE FROM ds_quote_xxx;           × 16
+-- ROLLBACK;
+
+
+-- =============================================================================
+-- 五、执行后必须做的两件事（漏了会出「起不来 / 数据看不到」的怪症状）
+-- =============================================================================
+-- 1. **强制重启后端**（backend.md §3）：ImplicitJoinRewriter.tableColumnsCache /
+--    CachedSqlCompiler / DataLoader.resultCache 等都是进程级缓存，大批量删数据后
+--    会残留空集，症状是「本该返单值的地方返全表」或「页签整体空白」。
+-- 2. **重建 E2E 夹具**：`cpq-frontend/e2e/*.spec.ts` 依赖 苏州西门子 + 报价模板0608 + 10110002
+--    等具体数据（见 RECORD「E2E quotation-flow 测试数据」），A/B 段执行后它们会整体失败，
+--    且失败形态是「Step1 下一步禁用」这类**看起来像回归**的样子 —— 不要误归因。
