@@ -644,9 +644,27 @@ public class BuilderService {
         List<BuilderConfig.ColumnConfig> cols = cfg.columns == null ? List.of() : cfg.columns;
 
         // AC-30：料号列 / 名称列至少一个
+        //
+        // 🔄 task-260904 B-22（AC-29①，用户 2026-09-06 裁决）：**树页签豁免**。
+        //    树页签的料件标识取系统列 __hfPartNo，本就不需要用户配标识列 —— 与
+        //    {@code ComponentService.TAB_TYPES_REQUIRE_PART_NO_FIELD} 不含 "BOM" 是同一口径。
+        //    不加这个前置条件，「绑物料BOM、不配标识列」在**保存前体检**这一关就 400
+        //    INSPECT_BLOCKED，压根走不到 ComponentService 那条按 semantic 判的分支
+        //    （2026-09-06 实测：AC-29① 的 A 用例在真实配置器路径上恒 400）。
+        //
+        // 🚨 同一条业务规则有**两个执行点**（这里的保存前体检 + ComponentService.applyTabType
+        //    的保存期校验），判据必须一致；只改一个 = 上游堵死、下游的放行永远不生效。
+        // 🚫 semantic 一律走 TabSemanticResolver 的唯一映射，**不许在本文件里再写一份**
+        //    tab_type→semantic 的 if/else —— 那会是第三份，而三份各自漂移的失败形态是
+        //    「面板说这是树、体检当它不是树」，两边都不报错。
+        // 📌 cfg.tabType 就是 semantic_tab_view.tab_type 这一段坐标本身（compile 已按
+        //    (tabType, variantKey, dialect) 精确命中该行，命不中会先抛 TabViewNotFound），
+        //    故此处直接映射与「查行后取 tv.tabType 再映射」逐字等价。
+        boolean isTreeTab = com.cpq.component.service.TabSemanticResolver.SEMANTIC_TREE
+                .equals(com.cpq.component.service.TabSemanticResolver.semanticOfGraphTabType(cfg.tabType));
         boolean hasPartNo = cols.stream().anyMatch(c -> c.resolvedRoles != null && c.resolvedRoles.contains("PART_NO"));
         boolean hasPartName = cols.stream().anyMatch(c -> c.resolvedRoles != null && c.resolvedRoles.contains("PART_NAME"));
-        if (!hasPartNo && !hasPartName) {
+        if (!isTreeTab && !hasPartNo && !hasPartName) {
             resp.items.add(new InspectItem("ERR", "INSPECT_BLOCKED",
                     "缺少标识列：料号列与名称列至少要配一个"));
         }

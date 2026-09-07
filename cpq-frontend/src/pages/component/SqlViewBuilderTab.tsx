@@ -14,7 +14,7 @@ import {
   fetchFieldTree, getBuilder, compileBuilder, previewBuilder, inspectBuilder, saveBuilder, detachBuilder,
   type FieldTreeResponse, type FieldTreeColumn, type FieldTreeGroup, type BuilderConfigPayload, type CompileResponse,
   type CompileErrorBody, type PreviewResponse, type InspectResponse, type FieldRole, type SavedBuilderColumn,
-  type BuilderDataset,
+  type BuilderDataset, type FieldTreeSource,
 } from '../../services/sqlViewBuilderService';
 import { customerService } from '../../services/customerService';
 
@@ -91,22 +91,40 @@ function normalizeDataset(v: unknown): BuilderDataset {
 }
 
 /**
- * AC-25：页签类型下拉含 6 项（新增「费用类」，D-34 分立建模）。字段树 availableTabTypes 缺失时的兜底常量。
- * 📌 D-39（存储值与显示名故意不同，与 D-12「列名=来源、字段名=显示」同源）：
- *    `TAB_TYPES` 装的是**存储值**（提交给后端 / 写进 builder_config.tabType 的那个字符串，
- *    与组件详情头部 Select 的 value、后端 VALID_TAB_TYPES 三处口径必须逐字一致），第 6 项是 `'BOM'`。
- *    渲染给用户看的显示名走 `TAB_TYPE_LABEL`——BOM 显示为「BOM 树」，其余 5 类显示名与存储值相同。
- *    🚫 `includes()` / 默认值 / 回填匹配一律用 `TAB_TYPES`（值），不要错拿 label 去比对，
- *    否则会复现「BOM 组件首次打开被误判成主件」那个 bug（F-15 修过一次）。
+ * task-260904 F-1：**页签类型的 6 值硬编码常量（`TAB_TYPES` / `TAB_TYPE_LABEL`）已整体删除。**
+ *
+ * 用户面上不再有「页签类型」这个概念 —— 顶部只有一个「数据源」下拉，选项**全部**来自
+ * `GET /field-tree` 的 `availableSources`（api.md §1.2）。前端手上的 `tabType` / `variantKey` /
+ * `dialect` 退化为**不透明的三段定位串**：从 `availableSources[]` 里取出来、原样存进 state、
+ * 原样回传给 field-tree / compile / preview / inspect / save，🚫 中途不做任何本地比较、归一或改写。
+ *
+ * ⚠️ **唯一保留的一个 tabType 字面量就在下面**，它不是「类型清单」而是**冷启动种子**：
+ *    `GET /field-tree` 的 `tabType` 是必填入参（api.md §1.1，本次不改），而 `availableSources`
+ *    本身正是该接口的返回值 —— 拿不到清单就发不出第一个请求。因此新组件（没有 `initialTabType`、
+ *    也没有已保存的 `builder_config`）需要一个坐标把第一次请求发出去。
+ *    取值 `'主件'` = 改动前 `TAB_TYPES[0]` 的同一个值，冷启动行为与改动前逐字一致；
+ *    §9.2 映射表里三套数据集都有主件，是唯一一个必定可选的落点。
+ *    🚫 不许拿它派生任何下拉选项 / 语义判定 —— 一旦 `availableSources` 到手，它就再无作用。
+ *    📌 已报主线：若 B-1 后续允许「不传 tabType 时只回 availableSources」，本常量即可删除。
  */
-const TAB_TYPES = ['主件', '材质元素', '零件', '外购件', '费用类', 'BOM'] as const;
-/** D-39：仅 BOM 的显示名与存储值不同；其余 5 类未列出时 Select 渲染逻辑回退用存储值本身当显示名。 */
-const TAB_TYPE_LABEL: Record<string, string> = { BOM: 'BOM 树' };
-// 📌 此处原有 `TAB_TYPE_VALUE_BY_LABEL` / `canonTabType` 两种写法归一的比较垫片，
-//    为绕开 V413 种子把 `semantic_tab_view.tab_type` 写成显示名「BOM 树」的缺陷而加；
-//    已由 V417 修复根因后撤销（D-39 / 2026-09-05 用户裁决）。
-//    服务端 `availableTabTypes` 现回**存储值**，与本地 `TAB_TYPES` 逐字一致。
-//    🚫 不要再加回归一层 —— 两边写法本该一致，归一只会掩盖下一次的口径漂移。
+const BOOTSTRAP_TAB_TYPE = '主件';
+
+/**
+ * F-2/F-3：数据源语义的**只读回显**文案（原型 `原型图/取数配置Tab.html` 的 `SEM_TEXT`，逐字一致）。
+ * 🚫 键是后端给的 `semantic` 枚举值，不是 label/sourceKey —— F-2 明令不得按名字硬编码判语义。
+ */
+const SEM_TEXT: Record<'TREE' | 'MATERIAL_ELEMENT', string> = {
+  TREE: 'BOM 树 · 递归展开',
+  MATERIAL_ELEMENT: '材质元素 · 可配价格策略',
+};
+/** F-2：TREE 语义的附加提示，文案取自 api.md §1.2 的「前端行为」列。 */
+const TREE_HINT = '本页签为树形，只读、不参与回填';
+/**
+ * 服务端还没给 `availableSources` 时，下拉里那一项**退化选项**的 value。
+ * 只是个占位 key（`handleSourceChange` 在 `visibleSources` 里查不到它，直接 return，点了不出事），
+ * 🚫 它不是数据源标识，也不会被发给后端。
+ */
+const FALLBACK_SOURCE_KEY = '__current__';
 const ROLE_LABEL: Record<FieldRole, string> = { PART_NO: '料号', PART_NAME: '名称', ROW_KEY: '行键', SORT: '排序' };
 const DATA_TYPE_LABEL: Record<string, string> = { TEXT: '文本', NUMBER: '数字', MONEY: '金额' };
 
@@ -246,8 +264,22 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
 
   /** F-30（AC-115）：当前数据集。它决定字段面板出哪些表，所以在页签类型**之前**选。 */
   const [dataset, setDataset] = useState<BuilderDataset>(DEFAULT_DATASET);
-  const [tabType, setTabType] = useState<string>(TAB_TYPES[0]);
+  /**
+   * task-260904 F-1：`tabType` / `variantKey` 仍是 state，但**语义降级为内部坐标**（api.md §0：
+   * 内部坐标一个字段名都不改，变的只是用户面）。它们的值只有两个来源：① 用户选中的
+   * `availableSources[]` 项；② 已保存的 `builder_config`。🚫 不再有任何本地枚举、比较或改写。
+   */
+  const [tabType, setTabType] = useState<string>(BOOTSTRAP_TAB_TYPE);
   const [variantKey, setVariantKey] = useState<string | null>(null);
+  /**
+   * F-1：数据源下拉的选项来源 —— **服务端 `availableSources` 的最近一份快照**，不是本地常量。
+   *
+   * 为什么要单独存一份而不是每次直接读 `fieldTree.availableSources`：切数据源会先把 `fieldTree`
+   * 置空再重拉（见 handleSourceChange），期间下拉会瞬间空掉、用户刚选的那项从界面上消失
+   * （AC-10「切走再切回 / 刷新后选择仍在」直接观感变差）。这里留住上一份清单，重拉回来再覆盖。
+   * 切数据集（方言）时必须清空 —— 清单是按方言过滤出来的，跨方言不通用。
+   */
+  const [sources, setSources] = useState<FieldTreeSource[]>([]);
   const [sel, setSel] = useState<SelColumn[]>([]);
   const [elemKeyOverrideField, setElemKeyOverrideField] = useState<string | null>(null);
 
@@ -322,6 +354,7 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
     setSel([]);
     setSavedSnapshot(null); // D-55①：基线未知（NEW/BUILDER 分支各自补上；BUILDER 要等 rehydrate 完成 sel 才算数）
     setDataset(DEFAULT_DATASET);
+    setSources([]); // F-1：清单按方言过滤而来，重新装配状态时一律作废，等新的 field-tree 回来再填
     setElemKeyOverrideField(null);
     setStaleInfo(null);
     setStaleDismissed(false);
@@ -338,8 +371,16 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
         setGuideMode(true);
         setHasDriver(true);
       } else if (viewState === 'NEW') {
-        // 全新组件，尚无任何 SQL 视图：直接进入空白拖拽态（页签类型可选、字段面板可用、已选列为空）
-        const initT = initialTabType && (TAB_TYPES as readonly string[]).includes(initialTabType) ? initialTabType : TAB_TYPES[0];
+        // 全新组件，尚无任何 SQL 视图：直接进入空白拖拽态（数据源可选、字段面板可用、已选列为空）
+        //
+        // task-260904 F-1：原来这里拿 `TAB_TYPES.includes(initialTabType)` 做白名单校验 —— 6 值常量
+        // 删除后**不再校验**，理由是前端已无权威的合法值集合（那份权威在服务端语义图里）。
+        // `initialTabType` 是存量组件的 `component.tab_type`，直接当冷启动坐标用：
+        //   · 值有效 → 第一次 field-tree 就落在该组件本来的数据源上（AC-10 重开后回显不变）
+        //   · 值失效（如已退役的「零件/外购件」）→ 服务端回 404 COMPILE_TABVIEW_NOT_FOUND，
+        //     用户看到的是「该页签类型已停用，请改选数据源」这句**有指向的报错**，
+        //     而不是被前端悄悄改写成「主件」后拿着别人的字段面板一路配下去（静默错配更难查）。
+        const initT = initialTabType || BOOTSTRAP_TAB_TYPE;
         setDataset(DEFAULT_DATASET);
         setTabType(initT);
         setVariantKey(null);
@@ -445,6 +486,10 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
         const res = await fetchFieldTree(dataset, tabType, variantKey, selectedConfig);
         if (cancelled) return;
         setFieldTree(res);
+        // F-1：数据源清单只在服务端**真的给了**时才覆盖本地快照——B-1 上线前该键缺失，
+        // 覆盖成空数组会让下拉在每次重拉时闪成空。给了空数组也照收（那是「本方言确实没有数据源」
+        // 这一真实状态，不能当成"没给"来兜底）。
+        if (res.availableSources) setSources(res.availableSources);
         // 默认折叠态照原型（原型 .grp 默认带 collapsed class）——仅首次拿到该 tabType 的分组时设置，
         // 避免每次因 selectedConfig 变化重拉时把用户手动展开的分组又折回去。
         setCollapsed((prev) => {
@@ -658,9 +703,11 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
     if (v === dataset) return;
     const doSwitch = () => {
       setDataset(v);
-      // 页签类型回到「主件」：§9.2 映射表里三套数据集都有主件，是唯一一个必定可选的落点。
-      setTabType(TAB_TYPES[0]);
+      // task-260904 F-1：数据源回到冷启动种子坐标——新数据集的 `availableSources` 要等下一次
+      // field-tree 才知道，此刻手上没有任何合法选项，只能用种子把请求发出去（见 BOOTSTRAP_TAB_TYPE）。
+      setTabType(BOOTSTRAP_TAB_TYPE);
       setVariantKey(null);
+      setSources([]); // 清单按方言过滤而来，跨数据集不通用
       setSel([]);
       setElemKeyOverrideField(null);
       setFieldTree(null);
@@ -675,7 +722,9 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
               从 <b>{datasetLabel(dataset)}</b> 切到 <b>{datasetLabel(v)}</b>，当前已选的 <b>{sel.length}</b> 个输出列将被清空。
             </div>
             <div style={{ marginTop: 10, background: '#fff8c5', border: '1px solid #eed888', borderRadius: 6, padding: '6px 10px', fontSize: 12 }}>
-              跨数据集的表与列<b>完全不通</b>——不像切页签类型还可能留下同名列，这里已选的列一个都保不住。
+              {/* task-260904 F-1：原文写「不像切页签类型还可能留下同名列」——「页签类型」这个
+                  用户面概念已被数据源取代，文案随之改口，否则界面上会出现一个再也找不到的名词。 */}
+              跨数据集的表与列<b>完全不通</b>——不像在同一数据集里换数据源还可能留下同名列，这里已选的列一个都保不住。
             </div>
           </div>
         ),
@@ -683,31 +732,67 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
       });
     } else doSwitch();
   }
-  function handleTabTypeChange(v: string) {
-    if (v === tabType) return;
+  // ── task-260904 F-1/F-2/F-3：数据源下拉（原「页签类型」+「数据来源」两个下拉合并而来）────
+  //
+  // 🚫 原 handleTabTypeChange / handleVariantChange 已删除：用户面上不再存在「页签类型」和
+  //    「数据来源」这两个独立选择——费用类由 2 次选择降为 1 次，其余由「选抽象类型」变为「选表名」
+  //    （需求文档 §2.1 S-2）。两者的清空语义合并进下面这一个入口。
+
+  /** 两段坐标的相等判据：后端可能把「无变体」写成 `null` 或 `""`，一律按空串比。 */
+  const vkEq = (a?: string | null, b?: string | null) => (a ?? '') === (b ?? '');
+
+  /**
+   * 本数据集可选的数据源。第二道防线同 `visibleGroups`：服务端已按 `dialect` 过滤（api.md §1.3），
+   * 这里再挡一次「服务端漏过滤 / 种子把别的方言挂错」的情况。`dialect` 缺省的项一律保留（不藏）。
+   */
+  const visibleSources = useMemo(
+    () => sources.filter((s) => s.dialect == null || s.dialect === dataset),
+    [sources, dataset],
+  );
+  /**
+   * 当前坐标对应的数据源项。三段全比 —— `dialect` 缺省视为匹配（B-1 上线前的宽松档）。
+   * 找不到 = 服务端还没给清单、或当前坐标已从清单里退役（如「零件/外购件」）。
+   */
+  const selectedSource = useMemo(
+    () => visibleSources.find(
+      (s) => s.tabType === tabType && vkEq(s.variantKey, variantKey) && (s.dialect == null || s.dialect === dataset),
+    ) ?? null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visibleSources, tabType, variantKey, dataset],
+  );
+  /**
+   * F-2/F-3：当前数据源的语义。
+   * `undefined` = **还不知道**（服务端未给清单 / 当前坐标不在清单里）——与 `null`（已知是普通数据源）
+   * 严格区分：不知道时一切按「保持现状」处理，🚫 不许拿"不知道"去关掉任何既有能力
+   * （utils/tabSemantic.ts 头注同款三态纪律）。
+   */
+  const semantic: 'TREE' | 'MATERIAL_ELEMENT' | null | undefined =
+    selectedSource ? (selectedSource.semantic ?? null) : undefined;
+
+  /**
+   * F-1：选中一项数据源 —— **`(tabType, variantKey, dialect)` 三段坐标原样落进 state**，
+   * 随后由 configPayloadFor / fetchFieldTree 原样回传。
+   * 🚨 三段缺一不可：`semantic_tab_view` 的唯一约束是 `(tab_type, variant_key, dialect)`，
+   *    少传 `dialect` 会在服务端 `findFirst()` 处静默命中另外两个方言里的同名声明（api.md §0）。
+   */
+  function handleSourceChange(sourceKey: string) {
+    const o = visibleSources.find((s) => s.sourceKey === sourceKey);
+    if (!o) return;
+    if (o.tabType === tabType && vkEq(o.variantKey, variantKey)) return;
     const doSwitch = () => {
-      setTabType(v);
-      setVariantKey(null);
+      setTabType(o.tabType);
+      setVariantKey(o.variantKey ?? null);
+      // 第三段：正常路径下与当前 dataset 相同（选项已按 dataset 过滤），显式跟随是为了让
+      // 「三段原样回传」在代码里成立，而不是靠"它俩碰巧一致"这个隐含假设。
+      if (o.dialect) setDataset(o.dialect);
       setSel([]);
       setElemKeyOverrideField(null);
       setFieldTree(null);
       setCollapsed(new Set());
     };
     if (sel.length) {
-      Modal.confirm({ title: '切换页签类型会清空已选输出列', content: '继续？', okText: '继续切换', cancelText: '取消', onOk: doSwitch });
-    } else doSwitch();
-  }
-  function handleVariantChange(v: string) {
-    if (v === variantKey) return;
-    const doSwitch = () => {
-      setVariantKey(v);
-      setSel([]);
-      setElemKeyOverrideField(null);
-      setFieldTree(null);
-      setCollapsed(new Set());
-    };
-    if (sel.length) {
-      Modal.confirm({ title: '切换数据来源会清空已选输出列', content: '继续？', okText: '继续切换', cancelText: '取消', onOk: doSwitch });
+      // 原型 `取数配置Tab.html`：confirm('切换数据源会清空已选输出列。继续？')
+      Modal.confirm({ title: '切换数据源会清空已选输出列', content: '继续？', okText: '继续切换', cancelText: '取消', onOk: doSwitch });
     } else doSwitch();
   }
 
@@ -954,44 +1039,40 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
     if (!fieldTree) return [] as FieldTreeGroup[];
     return fieldTree.groups.filter((g) => {
       const d = detectGroupDataset(g);
-      return d === null || d === dataset;
+      if (!(d === null || d === dataset)) return false;
+      // task-260904 F-2（AC-2③ / AC-3③）：价格策略原子组**只在 semantic==='MATERIAL_ELEMENT' 时出现**。
+      // 🚫 判据是服务端给的 `semantic`，不是 label / sourceKey / groupName 的字面。
+      // ⚠️ `semantic === undefined`（清单还没到手 / 当前坐标不在清单里）时**不隐藏** —— 那是
+      //    「还不知道」，不是「已知不是材质元素」。拿"不知道"去藏组会在 B-1 上线前把存量
+      //    材质元素组件的价格策略整块弄没（比多显示一组难查得多）。真正的权威在服务端：
+      //    PRICE 边只挂在材质元素锚点上，普通数据源本就不会带 PRICE 组，这里是第二道防线。
+      if (g.groupKind === 'PRICE' && semantic !== undefined && semantic !== 'MATERIAL_ELEMENT') return false;
+      return true;
     });
-  }, [fieldTree, dataset]);
+  }, [fieldTree, dataset, semantic]);
   const totalFieldCount = useMemo(
     () => visibleGroups.reduce((sum, g) => sum + g.fields.length, 0),
     [visibleGroups],
   );
   /**
-   * F-30（AC-115 ③）：本数据集是否没有当前页签类型。判据只用服务端的 `availableTabTypes`
-   * （§9.2 的映射是服务端语义图的事实，前端不复刻那张表）；服务端没给就不判定为"无"。
-   * 📌 D-39：两侧都是**存储值**，逐字比较即可（原 `canonTabType` 归一已随 V417 撤销）。
+   * F-1：数据源下拉的选项 —— **全部来自服务端 `availableSources`**，本地一个都不造。
+   *
+   * 服务端还没给清单（B-1 未上线 / 该方言无数据源）时的退化形态：只放**当前坐标自己**一项，
+   * label 用现有信息拼（费用类走 variant label，否则用 anchorDesc / 内部坐标串兜底）。
+   * 🚫 **不回退去消费 `availableTabTypes`**：那份清单里还有已退役的「零件 / 外购件」，
+   *    拿它当选项等于把本任务刚收缩掉的东西原样放回给用户选（S-4）。
+   * 用户此时**看得见自己现在配的是哪个源、但改不了**（下拉只有一项），比一个空下拉可诊断。
    */
-  const tabTypeMissingInDataset =
-    !!fieldTree?.availableTabTypes
-    && !fieldTree.availableTabTypes.includes(tabType);
-  /**
-   * 页签类型下拉：本数据集有的照常可选，**没有的置灰 + 加「（本数据集无）」后缀**（AC-115 ③）。
-   * 📌 D-39：选项 `value` 一律用本地 `TAB_TYPES` 的**存储值** —— 它就是随 configPayloadFor 提交给
-   *    后端、写进 `builder_config.tabType` 的那个字符串；`label` 走 `TAB_TYPE_LABEL` 只管显示。
-   *    原「value 沿用服务端写法 + canonTabType 归一比较」的兼容层，为绕开 V413 种子把
-   *    `semantic_tab_view.tab_type` 写成显示名「BOM 树」的缺陷而加，已由 V417 修复根因后撤销
-   *    （2026-09-05 用户裁决）。
-   */
-  const tabTypeOptions = useMemo(() => {
-    const avail = fieldTree?.availableTabTypes ?? null;
-    const availSet = new Set(avail ?? []);
-    const known = (TAB_TYPES as readonly string[]).map((t) => {
-      const label = TAB_TYPE_LABEL[t] ?? t;
-      // avail 缺失（后端没给这个字段）时一律不置灰——不能把用户锁死在无法选择的状态
-      const disabled = !!avail && !availSet.has(t);
-      return { value: t, label: disabled ? `${label}（本数据集无）` : label, disabled };
-    });
-    // 服务端多给的类型（本地常量还没跟上）照原样追加，不丢
-    const extra = (avail ?? [])
-      .filter((t) => !(TAB_TYPES as readonly string[]).includes(t))
-      .map((t) => ({ value: t, label: TAB_TYPE_LABEL[t] ?? t, disabled: false }));
-    return [...known, ...extra];
-  }, [fieldTree]);
+  const sourceOptions = useMemo(() => {
+    if (visibleSources.length) {
+      return visibleSources.map((s) => ({ value: s.sourceKey, label: s.label }));
+    }
+    const variantLabel = fieldTree?.variants?.find((v) => vkEq(v.key, variantKey))?.label;
+    return [{ value: FALLBACK_SOURCE_KEY, label: variantLabel || fieldTree?.anchorDesc || tabType }];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleSources, fieldTree, tabType, variantKey]);
+  /** 下拉当前值：清单在 → 选中项的 sourceKey；清单不在 → 那唯一一项退化选项。 */
+  const sourceSelectValue = selectedSource?.sourceKey ?? FALLBACK_SOURCE_KEY;
   const datasetMeta = DATASETS.find((d) => d.key === dataset)!;
 
   // ── 渲染：已选输出列（含价格策略原子组块，F-5）──────────────────────────
@@ -1218,15 +1299,33 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
             onChange={(v) => handleDatasetChange(v as BuilderDataset)}
             options={DATASETS.map((d) => ({ value: d.key, label: d.label }))}
           />
-          <span className="svb-lbl" style={{ marginLeft: 14 }}>页签类型</span>
-          <Select size="small" style={{ width: 168 }} value={tabType} onChange={handleTabTypeChange} options={tabTypeOptions} />
-          {fieldTree?.variants && fieldTree.variants.length > 0 && (
-            <>
-              <span className="svb-lbl" style={{ marginLeft: 14 }}>数据来源</span>
-              <Select size="small" style={{ width: 200 }} value={variantKey ?? fieldTree.variants[0].key} onChange={handleVariantChange} options={fieldTree.variants.map((v) => ({ value: v.key, label: v.label }))} />
-              <span className="svb-hint-i">{fieldTree.variants.find((v) => v.key === (variantKey ?? fieldTree.variants![0].key))?.hint}</span>
-            </>
+          {/* task-260904 F-1（AC-1① / AC-2① / AC-3①）：原「页签类型」+「数据来源」两个下拉
+              合并为这一个「数据源」下拉 —— 界面上**不再出现「页签类型」四个字**。
+              选项来自服务端 availableSources；选中项的 (tabType, variantKey, dialect) 三段坐标
+              原样回传（handleSourceChange）。原型 `原型图/取数配置Tab.html` 的 #srcSel。 */}
+          <span className="svb-lbl" style={{ marginLeft: 14 }}>数据源</span>
+          <Select
+            size="small" style={{ width: 200 }} data-role="builder-source"
+            value={sourceSelectValue}
+            onChange={handleSourceChange}
+            options={sourceOptions}
+            disabled={!visibleSources.length}
+          />
+          {/* F-2/F-3：语义**只读回显**，用户不可改。原型 #semTag。
+              🚫 分支判据是服务端的 `semantic`，不是 label/sourceKey（F-2 明令）。 */}
+          {semantic === 'TREE' || semantic === 'MATERIAL_ELEMENT' ? (
+            <span className="svb-src-pill" data-role="builder-source-semantic">{SEM_TEXT[semantic]}</span>
+          ) : (
+            <span className="svb-hint-i" data-role="builder-source-semantic">普通数据源</span>
           )}
+          {/* F-2：TREE 追加树形只读提示（api.md §1.2「前端行为」列）。 */}
+          {semantic === 'TREE' && <span className="svb-hint-i">{TREE_HINT}</span>}
+          {/* 原型 #varHint：费用类等有变体的源，把它的一句说明跟在语义标记后面（原「数据来源」
+              下拉的 hint，下拉本身已并入数据源，说明文字保留）。 */}
+          {(() => {
+            const vh = fieldTree?.variants?.find((v) => vkEq(v.key, variantKey))?.hint;
+            return vh ? <span className="svb-hint-i">{vh}</span> : null;
+          })()}
         </div>
         <div className="svb-rb-line">
           {/* F-30：数据集身份说明（轴列 / 表前缀 / 版本口径），照原型的 axisInfo 行。
@@ -1248,12 +1347,12 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
           <div className="svb-pane-b">
             {/* AC-116：只渲染 visibleGroups——别套数据集的分组连 DOM 都不生成（不是置灰） */}
             {visibleGroups.map((g) => renderGroup(g))}
-            {/* AC-115 ③：本数据集没有该页签类型时的空态文案（下拉里对应项已置灰） */}
+            {/* 空态文案（AC-115 ③ 的后继形态）：task-260904 F-1 后不再有「页签类型不可选/置灰」
+                这回事 —— 下拉里就只有本数据集真实存在的数据源，所以空态只剩「这个源没有可用字段」
+                一种可能。数据源名优先用服务端 label，退化态用 anchorDesc / 内部坐标。 */}
             {!treeLoading && fieldTree && visibleGroups.length === 0 && (
               <div className="svb-empty-tip">
-                {tabTypeMissingInDataset
-                  ? `本数据集下没有「${TAB_TYPE_LABEL[tabType] ?? tabType}」类型的表 —— 该页签类型不可选（下拉里已置灰）。`
-                  : `「${datasetLabel(dataset)}」数据集在当前页签类型下没有可用字段。`}
+                {`「${datasetLabel(dataset)}」数据集下，数据源「${selectedSource?.label ?? fieldTree.anchorDesc ?? tabType}」没有可用字段。`}
               </div>
             )}
             {/* 原型 render()：deadBlock 只跟在有卡片的 grid 后面，空态分支只渲染 .empty —— 照此对齐 */}

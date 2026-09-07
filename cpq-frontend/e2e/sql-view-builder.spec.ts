@@ -15,6 +15,35 @@
  *
  * 遵循 docs/rules/testing.md §4.3：本文件不改变共享库全局状态（不改用户启停用/角色权限/模板发布态），
  * 新建的测试组件用 SQLVB-E2E- 前缀，不清库、不影响其他用例数据。
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * 🚦 2026-09-06 · task-260904 改写留痕（用户裁决由 task-260904 这边改）
+ *
+ * 【原断言】`AC-25①: 页签类型下拉含6项（主件/材质元素/零件/外购件/费用类/BOM 树）`
+ *           —— 点开「页签类型」combobox，断言恰好 6 项且逐项可见。
+ *
+ * 【为什么失效】🚨 **不是回归，是这条用例编码了一条已被用户推翻的需求。**
+ *   task-260904 把取数配置面板里的「页签类型」下拉整个换成了「数据源」下拉
+ *   （需求文档 §2.1 S-2：用户直接选具体数据源，不再选抽象的页签类型）；
+ *   同时「零件 / 外购件」两类页签对新建组件**已退役**（需求文档 §①ter，用户 2026-09-06 裁决）。
+ *   ⇒ 下拉本身不存在了，「恰好 6 项」这个数字也随之失去意义。
+ *   ⚠️ 判它变红时**别按回归归因** —— 产品行为是按新需求正确变化的。
+ *
+ * 【改成了什么】断言**新形态**，且判据比原来更强：
+ *   ① 配置面板里「页签类型」四个字彻底消失；
+ *   ② 「数据源」下拉存在（`[data-role="builder-source"]`）；
+ *   ③ 下拉选项**全部来自服务端 `availableSources`**（运行期拉 `GET /field-tree` 现比，
+ *      🚫 不写死任何清单和数字 —— 那是配置数据，会随语义图种子漂移）；
+ *   ④ 选项里不出现已退役的「零件 / 外购件」字样；
+ *   ⑤ 选项 label **无重复** —— 这条是 task-260904 AC-1 的 UI 侧体现：
+ *      BOM 树 / 零件 / 外购件三个坐标共用同一个锚点 `MATERIAL_BOM`、label 都叫「物料BOM」，
+ *      退役过滤一旦被移除，下拉里就会出现三个「物料BOM」。⇒ 比原来的「恰好 6 项」更有分辨力。
+ *
+ * 【连带改动】共享 helper `createComponentAndOpenBuilderTab` 的第二参数
+ *   由「页签类型名」改为「数据源名」（同一坐标、换了用户面名字）：
+ *     主件 → 物料 ／ 材质元素 → 物料与元素BOM
+ *   本文件其余 task-260819 用例只跟着改了这个选择动作，**断言一个字没动**。
+ * ─────────────────────────────────────────────────────────────────────────
  */
 import { test, expect, Page } from '@playwright/test';
 import { loginAsAdmin, isBackendUp } from './fixtures/auth';
@@ -31,54 +60,157 @@ test.beforeEach(async ({ page }) => {
   await loginAsAdmin(page);
 });
 
-/** 建一个新组件并打开其"取数配置"Tab，返回组件名（供后续按名定位）。 */
-async function createComponentAndOpenBuilderTab(page: Page, tabTypeLabel?: string): Promise<string> {
+/**
+ * 读出「数据源」下拉当前可选的全部 label。
+ *
+ * 🚨 antd Select 是虚拟滚动的（`cpq-playwright-selector-pitfalls` 四坑之一）：
+ * 直接 `allInnerTexts()` 只拿得到当前视口内那几项，选项一多就会漏。
+ * ⇒ 这里滚动虚拟列表并累加，直到不再有新 label 出现。
+ */
+async function readAllSourceOptions(page: Page): Promise<string[]> {
+  const seen: string[] = [];
+  const holder = page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .rc-virtual-list-holder').first();
+  for (let i = 0; i < 12; i++) {
+    const texts = await page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option')
+      .allInnerTexts();
+    let added = false;
+    for (const t of texts.map((x) => x.trim()).filter(Boolean)) {
+      if (!seen.includes(t)) { seen.push(t); added = true; }
+    }
+    // 滚到底就停；否则继续往下滚一屏
+    const done = await holder.evaluate((el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 1).catch(() => true);
+    if (done && !added) break;
+    await holder.evaluate((el) => { el.scrollTop += el.clientHeight; }).catch(() => {});
+    await page.waitForTimeout(150);
+  }
+  return seen;
+}
+
+/**
+ * 建一个新组件并打开其"取数配置"Tab，返回组件名（供后续按名定位）。
+ *
+ * 🚦 task-260904：第二参数由「页签类型名」改为「数据源名」——
+ * 界面上已经没有「页签类型」下拉了（S-2），选的是同一个坐标、换了用户面名字。
+ */
+async function createComponentAndOpenBuilderTab(page: Page, sourceLabel?: string): Promise<string> {
+  // 🚦 2026-09-06 task-260904 校准：原实现的选择器（`新建|新增` 按钮 + `input[placeholder*="名称"]`
+  //    + `确定|保存`）与真实 UI 对不上，本 helper 在真机上**从未走通过**（本次实测 fill 直接 timeout）。
+  //    ⇒ 改用 `task260819v9-dataset-selector.spec.ts` 里**已被真机验证过**的那套入口动作
+  //    （先选目录 → 「新 建」→ `input[placeholder*="投料成本表"]` → 「创 建」）。
+  //    ⚠️ 两字按钮在 antd 里渲染成「新 建」，必须用 /^新\s*建$/ 匹配（cpq-playwright-selector-pitfalls）。
+  //    这属于「用例随实现细节校准」，**断言本身一个字没动**。
   const name = `${TAG}${Date.now()}`;
   await page.goto('/components');
-  await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: /新建|新增/ }).first().click();
-  await page.waitForTimeout(500);
-  await page.locator('input[placeholder*="名称"]').first().fill(name);
-  // 保存新建组件骨架（具体保存按钮文案待前端落地后核实）
-  await page.getByRole('button', { name: /确定|保存/ }).first().click();
-  await page.waitForTimeout(800);
+  await page.waitForTimeout(6000);
 
-  // 打开该组件，切到「取数配置」Tab
-  await page.getByText(name, { exact: true }).first().click();
-  await page.waitForTimeout(500);
-  await page.getByText('取数配置', { exact: true }).first().click();
-  await page.waitForTimeout(500);
+  const dir = page.getByText('罗克韦尔', { exact: false }).first();
+  await expect(dir, '组件管理页左栏没有任何目录 ⇒ 入口问题，本条【未验证】，不是产品缺陷')
+    .toBeVisible({ timeout: 15_000 });
+  await dir.click();
+  await page.waitForTimeout(2000);
 
-  if (tabTypeLabel) {
-    await page.getByText('页签类型').locator('..').getByRole('combobox').click();
+  const newBtn = page.locator('button').filter({ hasText: /^新\s*建$/ }).first();
+  await expect(newBtn, '工具栏没有「新建」按钮 ⇒ 入口问题，本条【未验证】').toBeVisible({ timeout: 10_000 });
+  await newBtn.click();
+  await page.waitForTimeout(2000);
+
+  const nameInput = page.locator('input[placeholder*="投料成本表"]').first();
+  await expect(nameInput, '点「新建」后没出现「新建组件」内联表单 ⇒ 入口问题，本条【未验证】')
+    .toBeVisible({ timeout: 10_000 });
+  await nameInput.fill(name);
+  await page.waitForTimeout(400);
+  await page.locator('button').filter({ hasText: /^创\s*建$/ }).first().click();
+  await page.waitForTimeout(4000);
+
+  // 切到「取数配置」Tab
+  const tab = page.getByText('取数配置', { exact: true }).first();
+  await expect(tab, '组件已建但没有「取数配置」Tab ⇒ 入口问题，本条【未验证】，不是产品缺陷')
+    .toBeVisible({ timeout: 15_000 });
+  await tab.click();
+  await page.waitForTimeout(4000);
+
+  if (sourceLabel) {
+    await page.locator('[data-role="builder-source"]').first().click();
     await page.waitForTimeout(200);
-    await page.getByText(tabTypeLabel, { exact: true }).click();
+    await page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option')
+      .filter({ hasText: new RegExp(`^${sourceLabel}$`) }).first().click();
     await page.waitForTimeout(300);
   }
   return name;
 }
 
+/** task-260904：旧用例里的「页签类型名」→ 新界面的「数据源名」（同一坐标，换了用户面名字）。 */
+const SOURCE_OF = { 主件: '物料', 材质元素: '物料与元素BOM', 'BOM 树': '物料BOM' } as const;
+
 // ---------------------------------------------------------------------
-// AC-25①：页签类型下拉含6项
+// 原 AC-25①（页签类型下拉含 6 项）→ 2026-09-06 由 task-260904 改写为 AC-1 的 UI 侧断言
+// 改写理由与新旧对照见文件头「改写留痕」。🚫 旧断言不是回归失败，是需求已被推翻。
 // ---------------------------------------------------------------------
-test('AC-25①: 页签类型下拉含6项（主件/材质元素/零件/外购件/费用类/BOM 树）', async ({ page }) => {
+test('AC-1(task-260904)①③④: 面板无「页签类型」；「数据源」下拉选项全部来自服务端 availableSources，'
+  + '不含已退役的零件/外购件，且无重复 label', async ({ page }) => {
   await createComponentAndOpenBuilderTab(page);
-  await page.getByText('页签类型').locator('..').getByRole('combobox').click();
+
+  // ① 配置面板里「页签类型」四个字彻底消失（S-2：用户面不再有这个概念）
+  const panel = page.locator('.svb-recipe-bar').first();
+  await expect(panel, '取数配置面板（.svb-recipe-bar）应渲染出来——不可见则后面的断言全是空跑').toBeVisible();
+  await expect(
+    panel.getByText('页签类型'),
+    '① 取数配置面板里不应再出现「页签类型」——它已被「数据源」下拉取代（需求文档 §2.1 S-2）'
+  ).toHaveCount(0);
+
+  // ② 「数据源」下拉存在
+  const srcSel = page.locator('[data-role="builder-source"]').first();
+  await expect(srcSel, '② 应存在「数据源」下拉（data-role="builder-source"）').toBeVisible();
+
+  // ③ 选项 = 服务端 availableSources。🚫 不写死清单/数字，运行期现比。
+  const resp = await page.request.get(
+    '/api/cpq/config/semantic-graph/field-tree?tabType=' + encodeURIComponent('主件') + '&variantKey=&dialect=QUOTE'
+  );
+  expect(resp.ok(), `③ 前置：field-tree 应 200，实际=${resp.status()}`).toBe(true);
+  const serverLabels: string[] = ((await resp.json()).availableSources ?? []).map((x: any) => x.label);
+  expect(
+    serverLabels.length,
+    '③ 前置：服务端 availableSources 为空 ⇒ 下面所有「选项应等于服务端清单」的断言都会空跑'
+  ).toBeGreaterThan(0);
+
+  await srcSel.click();
   await page.waitForTimeout(300);
-  const options = page.locator('.ant-select-item-option');
-  const count = await options.count();
-  expect(count, '下拉不应为空——若为0说明前端骨架未渲染，非通过条件').toBeGreaterThan(0);
-  expect(count, `页签类型下拉应恰好6项，实际=${count}`).toBe(6);
-  for (const label of ['主件', '材质元素', '零件', '外购件', '费用类', 'BOM 树']) {
-    await expect(page.locator('.ant-select-item-option', { hasText: label }), `下拉应含『${label}』`).toBeVisible();
+  const uiLabels = await readAllSourceOptions(page);
+  expect(uiLabels.length, '③ 下拉一个选项都没渲染出来——非通过条件').toBeGreaterThan(0);
+
+  const phantom = uiLabels.filter((l) => !serverLabels.includes(l));
+  expect(
+    phantom,
+    `③ 下拉里出现了服务端清单之外的选项=${JSON.stringify(phantom)} ⇒ 前端在本地造选项，`
+      + `违反 api.md §1.2「选项全部来自 availableSources」。服务端清单=${JSON.stringify(serverLabels)}`
+  ).toEqual([]);
+
+  // ④ 不出现已退役的页签类型字样
+  for (const retired of ['零件', '外购件']) {
+    expect(
+      uiLabels,
+      `④ 下拉里仍出现「${retired}」—— 该类页签对新建组件已退役（需求文档 §①ter）。实际=${JSON.stringify(uiLabels)}`
+    ).not.toContain(retired);
   }
+
+  // ⑤ label 无重复 —— 退役过滤被移除时的**唯一可见症状**：
+  //    BOM树/零件/外购件三坐标共用锚点 MATERIAL_BOM，label 都是「物料BOM」⇒ 会出现三次。
+  const dup = uiLabels.filter((l, i) => uiLabels.indexOf(l) !== i);
+  expect(
+    dup,
+    `⑤ 数据源下拉出现重复 label=${JSON.stringify(dup)} ⇒ 退役过滤很可能失效`
+      + `（BOM树/零件/外购件共用锚点 MATERIAL_BOM，label 同为「物料BOM」）。实际=${JSON.stringify(uiLabels)}`
+  ).toEqual([]);
+
+  console.log('[AC-1(260904)] 服务端 availableSources =', serverLabels);
+  console.log('[AC-1(260904)] 下拉实际渲染选项       =', uiLabels);
 });
 
 // ---------------------------------------------------------------------
 // AC-4④⑤：查名连线自动生成，界面不出现 JOIN 字样
 // ---------------------------------------------------------------------
 test('AC-4④⑤: 配置器整个界面全文不出现"JOIN"字样', async ({ page }) => {
-  await createComponentAndOpenBuilderTab(page, '材质元素');
+  await createComponentAndOpenBuilderTab(page, SOURCE_OF['材质元素']);
   // 拖入依赖查名连线的列（材质名称/元素名称），走"点击加入"的降级路径（真实拖拽在 Playwright 里
   // 用 dragTo 容易受虚拟滚动影响，若前端提供"双击加入"的等价操作则优先用双击）。
   const materialNameField = page.getByText('材质名称', { exact: true }).first();
@@ -94,7 +226,7 @@ test('AC-4④⑤: 配置器整个界面全文不出现"JOIN"字样', async ({ pa
 // AC-16①②③④：打架的组合在拖拽期就拖不动
 // ---------------------------------------------------------------------
 test('AC-16①②③④: 冲突组合拖拽期整组置灰+悬停提示+无法拖入+移除冲突列后恢复可拖', async ({ page }) => {
-  await createComponentAndOpenBuilderTab(page, '主件');
+  await createComponentAndOpenBuilderTab(page, SOURCE_OF['主件']);
   // 先选中"组装加工费"组的列，制造粒度=成品+工序号
   await page.getByText('组装加工费', { exact: true }).first().dblclick().catch(() => {});
   await page.waitForTimeout(500);
@@ -131,7 +263,7 @@ test('AC-16①②③④: 冲突组合拖拽期整组置灰+悬停提示+无法�
 // AC-47 / AC-48：角色徽章只读，无任何写入回调
 // ---------------------------------------------------------------------
 test('AC-47/AC-48: 角色徽章逐条正确且只读——点击无反应、无写入回调、无角色设置控件', async ({ page }) => {
-  await createComponentAndOpenBuilderTab(page, '主件');
+  await createComponentAndOpenBuilderTab(page, SOURCE_OF['主件']);
   await page.getByText('销售料号', { exact: true }).first().dblclick().catch(() => {});
   await page.waitForTimeout(500);
 
@@ -164,7 +296,7 @@ test('AC-47/AC-48: 角色徽章逐条正确且只读——点击无反应、无�
 // AC-49①②③：SQL 实时面板与体检折叠
 // ---------------------------------------------------------------------
 test('AC-49①②③: 右侧SQL面板常驻非空+拖入后立即刷新+体检区仅显示阻断/告警', async ({ page }) => {
-  await createComponentAndOpenBuilderTab(page, '材质元素');
+  await createComponentAndOpenBuilderTab(page, SOURCE_OF['材质元素']);
 
   const sqlPanel = page.getByText('生成的 SQL', { exact: false }).first();
   await expect(sqlPanel, 'AC-49①: 应存在常驻『生成的SQL（实时·只读）』面板').toBeVisible();
@@ -192,7 +324,7 @@ test('AC-49①②③: 右侧SQL面板常驻非空+拖入后立即刷新+体检�
 // AC-50①②③④：预览常驻与底部动作精简
 // ---------------------------------------------------------------------
 test('AC-50①②③④: 真实预览默认展开+底部动作区仅3项+转手写在⋯菜单内+SQL面板放大图标', async ({ page }) => {
-  await createComponentAndOpenBuilderTab(page, '材质元素');
+  await createComponentAndOpenBuilderTab(page, SOURCE_OF['材质元素']);
 
   await expect(page.getByText('重新执行', { exact: false }).first(), 'AC-50①: 真实预览应默认展开(含"重新执行")').toBeVisible();
 
@@ -248,7 +380,7 @@ test('AC-39: 新建→选类型→拖5列→勾行键/料号→预览→保存�
     if (msg.type() === 'error') jsErrors.push(msg.text());
   });
 
-  const name = await createComponentAndOpenBuilderTab(page, '材质元素');
+  const name = await createComponentAndOpenBuilderTab(page, SOURCE_OF['材质元素']);
 
   const fieldsToAdd = ['材质名称', '元素名称', '组成含量', '损耗率', '毛用量'];
   for (const f of fieldsToAdd) {

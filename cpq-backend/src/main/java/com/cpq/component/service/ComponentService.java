@@ -85,15 +85,25 @@ public class ComponentService {
         java.util.Set.of("材质元素", "零件", "外购件", "主件", "费用类");
 
     /**
-     * task-260904 B-11（AC-15）：页签类型收缩后本集合的适用范围收窄为<b>存量组件</b>。
+     * task-260904 B-11（AC-15）+ <b>B-22（AC-29，2026-09-06 第二批收窄）</b>：
+     * 页签类型收缩后，「料号列 / 名称列至少一个」这条强制校验按<b>组件是否有取数配置器绑定</b>
+     * 分成两条判据，本集合的适用范围收窄为<b>存量组件</b>：
      * <ul>
-     *   <li>🚫 <b>{@code tabType == null} 直接放行的分支必须保留</b> —— 114 个存量未配组件靠它；</li>
-     *   <li>🆕 <b>取数配置器绑定的新模型组件整体跳过本校验</b>：它们的「料号列 / 名称列至少一个」
-     *       由配置器自己的保存前体检把关（{@code BuilderService.inspect}，AC-30），而其
-     *       {@code component.tab_type} 由内部坐标透传（可能是「材质元素」这类值），在这里再拦一道
-     *       会把「体检已放行、料号角色确实解析不出」的合法配置误判成 400 —— 属于弄坏新路径。</li>
+     *   <li>🚫 <b>{@code tabType == null} 直接放行的分支必须保留</b> —— 114 个存量未配组件靠它
+     *       （AC-15 / AC-29④）；</li>
+     *   <li><b>新模型组件（有 builder 绑定）改按数据源语义判</b>，见
+     *       {@link #assertBuilderPartNoFieldRequirement}：{@code semantic=='TREE'} 可不配
+     *       （树页签的料件标识取系统列 {@code __hfPartNo}，与存量 {@code tabType='BOM'} 同口径），
+     *       其余一律要求料号列或名称列至少一个。</li>
      * </ul>
-     * 集合本身<b>一个值都不动</b>：存量 109 个组件的保存期行为逐字不变（AC-25）。
+     *
+     * <p>🔄 <b>第一批的临时措施已在此收窄</b>：第一批为解 (c)（配置器不再写 {@code tab_type}）
+     * 写的是「有 builder 绑定就<b>整体跳过</b>本校验」。那是过宽的 —— 料号列有一个<b>独立于类型
+     * 判定</b>的用途：{@code QuoteBackfillCollector} 用 {@code comp.partNoField} 取值放进
+     * {@code axisHint.code}，决定手工新增行回填到基础资料的哪一行；整体跳过等于让新模型组件
+     * 可以完全不配标识列而静默丢掉回填落点。⇒ 改为按 semantic 判（AC-29）。
+     *
+     * <p>集合本身<b>一个值都不动</b>：存量 109 个组件的保存期行为逐字不变（AC-25）。
      */
 
     /**
@@ -195,10 +205,15 @@ public class ComponentService {
             }
         }
 
-        // task-260904 B-11：新模型（取数配置器绑定）组件整体跳过标识列强制要求，理由见
-        // TAB_TYPES_REQUIRE_PART_NO_FIELD 上的说明。
+        // ── task-260904 B-22（AC-29）：标识列强制校验按「有没有 builder 绑定」分流 ──
+        // 🚫 不要合并成一个判据：两条分支的**输入不同**——存量看 component.tab_type，
+        //    新模型看所绑数据源的 semantic（新模型组件的 tab_type 通常是 NULL）。
         if (builderTree == null) {
+            // 分支②（存量 / 无绑定）：与改动前逐字一致，含 tabType == null 的放行（AC-15、AC-29④）。
             assertPartNoFieldRequirement(component.tabType, component.partNoField, component.partNameField);
+        } else {
+            // 分支①（取数配置器绑定）：semantic=='TREE' 可不配，其余要求料号列或名称列至少一个。
+            assertBuilderPartNoFieldRequirement(builderTree, component.partNoField, component.partNameField);
         }
     }
 
@@ -469,6 +484,40 @@ public class ComponentService {
         if (noField && noNameField) {
             throw new BusinessException(400,
                 "tabType=" + tabType + " 类型页签必须配置料号列或名称列至少一个作为匹配标识，否则该页签无法参与类型判定匹配");
+        }
+    }
+
+    /**
+     * task-260904 B-22（AC-29）：<b>取数配置器绑定</b>的组件的标识列强制校验 ——
+     * 判据是<b>所绑数据源的 semantic</b>，不是 {@code component.tab_type}（新模型组件那一列通常是
+     * NULL，拿它判等于恒放行）。
+     *
+     * <ul>
+     *   <li>{@code semantic == 'TREE'} → <b>放行</b>（AC-29①）：树页签的料件标识取系统列
+     *       {@code __hfPartNo}，与存量 {@code tabType='BOM'} 不在
+     *       {@link #TAB_TYPES_REQUIRE_PART_NO_FIELD} 里是同一口径；</li>
+     *   <li>其余（{@code MATERIAL_ELEMENT} / 普通平铺）→ 料号列或名称列<b>至少一个</b>，
+     *       两者皆缺即 400（AC-29②），只配名称列合法（AC-29③）。</li>
+     * </ul>
+     *
+     * <p>🔑 <b>为什么料号列不能跟着页签类型一起取消</b>：它有一个独立于类型判定的用途 ——
+     * {@code QuoteBackfillCollector} 用 {@code comp.partNoField} 取值放进 {@code axisHint.code}，
+     * 决定手工新增行回填到基础资料的哪一行。页签语义能被推导（数据源决定），
+     * 标识列不能（它是用户 Excel 模板的结构信息，同一张表不同客户列名不同）。
+     *
+     * @param builderTree {@code TRUE} = 所绑数据源 {@code semantic=='TREE'}；
+     *                    {@code FALSE} = 有绑定但不是树。<b>不接受 null</b>（无绑定的走
+     *                    {@link #assertPartNoFieldRequirement}）
+     */
+    private static void assertBuilderPartNoFieldRequirement(Boolean builderTree,
+                                                            String partNoField, String partNameField) {
+        if (Boolean.TRUE.equals(builderTree)) return;   // 树页签：取系统列 __hfPartNo，可不配
+        boolean noField = partNoField == null || partNoField.isBlank();
+        boolean noNameField = partNameField == null || partNameField.isBlank();
+        if (noField && noNameField) {
+            throw new BusinessException(400,
+                "该组件绑定的数据源不是 BOM 树页签，必须配置料号列或名称列至少一个作为匹配标识，"
+                + "否则该页签无法参与类型判定匹配、手工新增行也定不出回填落点");
         }
     }
 

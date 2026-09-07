@@ -56,6 +56,32 @@ public class FieldTreeBuilder {
     static final List<String> ALL_TAB_TYPES =
             List.of("主件", "材质元素", "零件", "外购件", "费用类", "BOM");
 
+    /**
+     * task-260904 S-4 / B-2（AC-1 / AC-3 / AC-20）—— <b>新建组件时不再提供</b>的页签类型。
+     *
+     * <p>「零件」「外购件」两类页签在 v9 下本就是坏的（需求文档 §①ter 实测）：外购件编译产物带
+     * {@code characteristic='OUTSOURCED'} 而 {@code ds_quote_material_bom} 无该列 ⇒ 400；零件的
+     * 编译产物与 BOM 树<b>逐字节相同</b> ⇒ 200 但静默返回全部 BOM 行。更根本的一条：本任务已把
+     * 加叶子的类型判定改读主数据（{@code ds_quote_material.material_type}），「料号是零件还是
+     * 外购件」是<b>料号自身的属性</b>，不是页签的属性 ⇒ 这两类页签存在的理由已经消失。
+     *
+     * <p>🚫 <b>这不是「值域收缩」，是「可选项收缩」</b>，两者必须分开：
+     * <ul>
+     *   <li>{@link #ALL_TAB_TYPES} / {@code ComponentService.VALID_TAB_TYPES} 是<b>存储值</b>的
+     *       权威清单，两侧集合相等由 {@code TabTypeValueDomainSelfCheckTest} 钉死 ——
+     *       🚫 <b>不许从那两个常量里删这两个值</b>（存量 30 个零件/外购件组件的
+     *       {@code component.tab_type} 就是这两个值，删了 {@code assertValidTabType} 会把它们判
+     *       400、启动期 {@code SemanticGraphKeyValueSelfCheck} 会直接让服务起不来）；</li>
+     *   <li>本常量只作用于 {@link #build} 的<b>输出侧</b>，即「新建时给用户看的可选项」。</li>
+     * </ul>
+     *
+     * <p>🚫 <b>{@code semantic_tab_view} 那 6 行数据一行都不动、全部保持 ACTIVE</b>（S-4）：
+     * 30 个存量零件/外购件组件打开配置页时靠 {@code field-tree} 按
+     * {@code (tabType, variantKey, dialect)} 精确查询这 6 行，停用即 404（违反 AC-25①）。
+     * ⇒ 过滤只发生在<b>列可选项</b>时，<b>按坐标查</b>时照常命中。
+     */
+    static final Set<String> RETIRED_TAB_TYPES = Set.of("零件", "外购件");
+
     public static final class Field {
         public String sourceNodeKey;
         public String sourceColumn;
@@ -91,10 +117,44 @@ public class FieldTreeBuilder {
         public List<Field> fields;
     }
 
+    /**
+     * task-260904 B-1（api.md §1.2）—— 「数据源」下拉的一项。取代 {@code availableTabTypes}
+     * 成为前端下拉的数据源：用户选具体数据源（「物料BOM」「自制加工费」…），
+     * 页签语义由后端按锚点推导后放进 {@link #semantic} 只读回显，用户不再选抽象的页签类型。
+     *
+     * <p>{@link #tabType} / {@link #variantKey} / {@link #dialect} 是<b>内部坐标</b>（api.md §0）：
+     * 前端原样回传给 {@code field-tree} / {@code compile}，不展示给用户。
+     * 🚨 <b>三段缺一不可</b>：{@code semantic_tab_view} 唯一约束是
+     * {@code UNIQUE (tab_type, variant_key, dialect)}，只回传前两段会命中 3 行（三方言各一）。
+     */
+    public static final class Source {
+        /** 锚点节点的 {@code node_key}（如 {@code MATERIAL_BOM}）—— 前端的稳定标识，不用 label 判事。 */
+        public String sourceKey;
+        /** 锚点节点的 {@code display_name}（如「物料BOM」）—— 下拉里展示给用户的那一行字。 */
+        public String label;
+        public String tabType;
+        public String variantKey;
+        public String dialect;
+        /**
+         * {@code "TREE"} / {@code "MATERIAL_ELEMENT"} / {@code null}（普通平铺数据源）。
+         * 🚫 前端不得按 label 或 sourceKey 硬编码判语义，一律读本字段（api.md §1.2）。
+         * 取值由 {@code TabSemanticResolver.semanticOfGraphTabType} 唯一给出 —— 与后端判树
+         * （{@code TabSemanticResolver.isTreeTab}）同一份映射，避免「面板说是树、渲染判不是树」。
+         */
+        public String semantic;
+    }
+
     public static final class FieldTreeResponse {
         public String tabType;
         public String variantKey;
         public String anchorDesc;
+        /**
+         * task-260904 B-1/B-2（AC-1 / AC-3 / AC-20，api.md §1.2）：<b>本方言下可新建的数据源清单</b>
+         * —— {@code semantic_tab_view} 里 {@code status='ACTIVE'} 且方言匹配的行，
+         * 逐行取其锚点节点的 {@code node_key} / {@code display_name}，并已剔除
+         * {@link #RETIRED_TAB_TYPES}。实测行数：QUOTE 11 · COST_BASIC 10 · COST_DETAIL 18。
+         */
+        public List<Source> availableSources;
         /**
          * **本数据集下真实可用**的页签类型（AC-115③）——按方言从 {@code semantic_tab_view} 取
          * distinct {@code tab_type}。前端据此把不在清单里的置灰 + 出空态文案。
@@ -141,6 +201,15 @@ public class FieldTreeBuilder {
             empty.variantKey = vk;
             empty.anchorDesc = null;
             empty.availableTabTypes = List.copyOf(ALL_TAB_TYPES);
+            // ⚠️ task-260904 B-2：**本分支的 6 值不做退役过滤**，两个理由（不是遗漏）：
+            //   ① 本分支的语义是「该方言在图里一个页签视图都没有」= 环境坏了，groups 也是空的，
+            //      用户选中任何一项都配不出东西；而 availableSources 在这里必然为空（下一行），
+            //      前端 F-1 改读 availableSources 后，退役页签在本分支<b>根本不可达</b>；
+            //   ② `FieldTreeAndDialectParseSelfCheckTest#emptyDialectFallsBackToAllSixWithFlag`
+            //      （task-260819 的护栏）明确断言本分支返回**全量 6 值** —— 那条断言钉的是
+            //      「兜底 = 全量存储值域」这个契约，与「新建可选项」是两件事。
+            //   ⇒ 退役过滤只作用于下面正常路径的 narrowed 与 availableSources。
+            empty.availableSources = List.of();
             empty.tabTypesFallback = true;
             empty.variants = List.of();
             empty.switches = List.of();
@@ -161,10 +230,20 @@ public class FieldTreeBuilder {
         resp.variantKey = vk;
         resp.anchorDesc = anchor != null ? anchor.displayName : null;
         // AC-115③：按 ALL_TAB_TYPES 的展示顺序收窄（不用图里的偶然顺序）。
-        List<String> narrowed = ALL_TAB_TYPES.stream().filter(inGraph::contains).collect(Collectors.toList());
+        // 🆕 task-260904 B-2（S-4②）：**在输出侧**剔除退役页签。为什么必须也过滤这一份而不是
+        //    只过滤 availableSources —— 前端 SqlViewBuilderTab 的页签类型下拉当前直接消费
+        //    availableTabTypes，只过滤新字段的话用户照样选得到「零件」「外购件」。
+        //    🚫 过滤点在这里、不在 ALL_TAB_TYPES 常量上：那个常量是**存储值权威清单**，
+        //       与 ComponentService.VALID_TAB_TYPES 的集合相等关系由 TabTypeValueDomainSelfCheckTest
+        //       钉死，动它会连带把存量 30 个零件/外购件组件判成非法值域。
+        List<String> narrowed = ALL_TAB_TYPES.stream()
+                .filter(inGraph::contains)
+                .filter(t -> !RETIRED_TAB_TYPES.contains(t))
+                .collect(Collectors.toList());
         // 图里出现了但不在标准 6 值里的（种子写了别名/错别字）也要透出，否则用户看不到自己有这个页签
-        for (String t : inGraph) if (!narrowed.contains(t)) narrowed.add(t);
+        for (String t : inGraph) if (!narrowed.contains(t) && !RETIRED_TAB_TYPES.contains(t)) narrowed.add(t);
         resp.availableTabTypes = narrowed;
+        resp.availableSources = buildAvailableSources(snap, dl);
         resp.tabTypesFallback = false; // 走到这里 inGraph 必非空（上面已提前返回）
         // variants 同样是页签视图查询 —— 不带 dialect 过滤会把另外两套数据集的费用类变体
         // 一起列进下拉，用户选中后编译期才报 COMPILE_TABVIEW_NOT_FOUND。
@@ -209,14 +288,43 @@ public class FieldTreeBuilder {
                 .map(e -> e.toNodeId)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
 
+        // ── task-260904 B-23（2026-09-06 用户裁决转入本任务）：PRICE 边目标不走通用循环 ──
+        // 症状（共享 dev 库实测，master 与本分支逐字相同 ⇒ 非本任务引入）：
+        //     dialect=QUOTE tabType=材质元素 → groups 出 **3** 组，
+        //     FUNC_ELEMENT_PRICE 的 PRICE 组出现两次（api.md 期望 2 组）。
+        // 根因：FUNC_ELEMENT_PRICE 有**两个**出组通道，两个都成立且互不知情 ——
+        //   ① 它以 AUX 挂在 QUOTE/材质元素 的 tab_view_node 上（V413 种子，**有意为之**：
+        //      价格策略要作为附属源出现在字段面板里；Sec34PriceStrategyTest 5 条用例靠它存在）
+        //      ⇒ 下面这个通用 tvns 循环给它出一组，groupKind 由锚点出边算得也是 "PRICE"；
+        //   ② 它是锚点 PRICE 边的目标 ⇒ 本方法末尾的**专用块**再给它出一组。
+        // 只有 QUOTE 复现：COST_BASIC / COST_DETAIL 的材质元素没挂这个 AUX。
+        //
+        // 🚫 **不改种子**（那条 AUX 挂载是有意的，且 V413 已应用到共享库，动它撞契约红线），
+        //    改的是这里的组装逻辑：**谁有专用块，谁就不走通用循环**——这正是 B-49
+        //    nodesWithOwnGroup 那条判据的反向用法（那边是「已自成一组就不再内联」，
+        //    这里是「专用块会出组就不再通用出组」，同一条不变量的两个方向）。
+        //
+        // 为什么保留专用块那一份而不是反过来：专用块的 viewColumn 走
+        // AliasGenerator.bareColumn，与 SemanticCompiler 生成价格列别名的那一处**同源**
+        // （实测编译产物 `cep.unit_price AS "元素单价"`）；通用循环那一份走的是
+        // AliasGenerator.viewColumn（得到 `_价格策略_元素单价`）且 isCore 恒 false ——
+        // 前端的 killsGroup / priceCol 两处原子组判定都认 isCore，认不到就整组语义失效。
+        UUID priceGroupNodeId = (priceEdge != null && snap.nodeById.get(priceEdge.toNodeId) != null)
+                ? priceEdge.toNodeId : null;
+
         List<Group> groups = new ArrayList<>();
         List<SemanticTabViewNode> tvns = snap.tabViewNodesByView.getOrDefault(tv.id, List.of()).stream()
                 .filter(x -> !narrowTargets.contains(x.nodeId))
+                .filter(x -> priceGroupNodeId == null || !priceGroupNodeId.equals(x.nodeId))   // B-23
                 .toList();
         // B-49：本页签视图上"已经自成一组"的节点集合 —— 供 syntheticLookupFields 排除，见该方法注释。
         Set<UUID> nodesWithOwnGroup = tvns.stream()
                 .map(x -> x.nodeId)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
+        // B-23：价格策略节点虽被上面过滤出了 tvns，但它**确实有自己的组**（末尾专用块）——
+        // 这个集合的语义是「本响应里已经自成一组的节点」，故必须补回，否则
+        // syntheticLookupFields 会认为它没组、把它的列内联进 MAIN，等于换个形式再重复一次。
+        if (priceGroupNodeId != null) nodesWithOwnGroup.add(priceGroupNodeId);
         for (SemanticTabViewNode tvn : tvns) {
             SemanticNode node = snap.nodeById.get(tvn.nodeId);
             if (node == null) continue;
@@ -303,6 +411,54 @@ public class FieldTreeBuilder {
         }
         resp.groups = groups;
         return resp;
+    }
+
+    /**
+     * task-260904 B-1/B-2（api.md §1.2 / §1.3）：组装本方言下的「数据源」清单。
+     *
+     * <p>来源 = {@code semantic_tab_view} 中 {@code status='ACTIVE'} 且方言匹配的行，
+     * 逐行取其<b>锚点节点</b>的 {@code node_key}（sourceKey）与 {@code display_name}（label）。
+     * 一行页签视图 = 一个数据源入口：45 行里 {@code MATERIAL_BOM} 锚点占 9 行
+     * （3 方言 × BOM/零件/外购件），其余 36 行锚点互不相同 ⇒ 剔除退役的 6 行后，
+     * 每个方言内 sourceKey 恰好唯一（QUOTE 11 · COST_BASIC 10 · COST_DETAIL 18，2026-09-06 实测）。
+     *
+     * <p><b>B-2 的过滤就是这里的一行 filter</b> —— 🚫 不改 {@code semantic_tab_view} 一行数据：
+     * 30 个存量零件/外购件组件靠 {@code build()} 上面那句<b>按坐标精确查</b>（{@code tv} 查找）
+     * 打开配置页，那条路径不经过本方法，因此仍能命中、不会 404（AC-25①）。
+     *
+     * <p>排序：先按 {@link #ALL_TAB_TYPES} 的展示顺序（与页签类型下拉的既有顺序一致），
+     * 同一页签类型内按 {@code variantKey} 字典序（费用类的多个变体），保证响应稳定可比对。
+     *
+     * <p>N+1：纯内存遍历不可变快照，零查库。
+     */
+    private List<Source> buildAvailableSources(SemanticGraphSnapshot snap, String graphDialect) {
+        List<Source> out = new ArrayList<>();
+        for (SemanticTabView tv : snap.tabViews) {
+            if (!graphDialect.equals(tv.dialect)) continue;
+            if (!"ACTIVE".equals(tv.status)) continue;
+            if (RETIRED_TAB_TYPES.contains(tv.tabType)) continue;   // B-2：退役页签不进可选项
+            SemanticNode anchorNode = snap.nodeById.get(tv.anchorNodeId);
+            if (anchorNode == null) continue;   // 种子残缺：锚点丢了就没有可展示的数据源，跳过而非发半条
+            Source src = new Source();
+            src.sourceKey = anchorNode.nodeKey;
+            src.label = anchorNode.displayName;
+            src.tabType = tv.tabType;
+            src.variantKey = tv.variantKey == null ? "" : tv.variantKey;
+            src.dialect = tv.dialect;
+            // 与后端判树共用同一份映射（🚫 不在这里重写一份 tab_type→semantic 的 if/else）。
+            // PLAIN 在 Java 侧是空串、在 JSON 契约里是 null（api.md §1.2），此处做唯一一次转换。
+            String sem = com.cpq.component.service.TabSemanticResolver.semanticOfGraphTabType(tv.tabType);
+            src.semantic = com.cpq.component.service.TabSemanticResolver.SEMANTIC_PLAIN.equals(sem) ? null : sem;
+            out.add(src);
+        }
+        out.sort(Comparator
+                .<Source>comparingInt(x -> {
+                    int i = ALL_TAB_TYPES.indexOf(x.tabType);
+                    return i < 0 ? ALL_TAB_TYPES.size() : i;   // 种子里的非标值排最后，不丢
+                })
+                .thenComparing(x -> x.variantKey == null ? "" : x.variantKey)
+                .thenComparing(x -> x.sourceKey == null ? "" : x.sourceKey));
+        return out;
     }
 
     private List<String> mergedRoles(SemanticNodeColumn col, List<SemanticTabViewColumn> overrides) {
