@@ -183,6 +183,126 @@ export interface CostingApprovePreviewGlobalShared {
   groupIndexes: number[];
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// task-260907 第二段（api.md §1）：核价通过 → ds_quote_* 基础数据回填升版预览。
+// 老回填（上面的 products / globalShared / groups）保持原样，本段是并列新增的一段，
+// 老单 applicable=false 时前端渲染空态，不渲染比对表格区（AC-15）。
+// ───────────────────────────────────────────────────────────────────────────
+
+/** 「对不上的行」——跨版重锚失败，确认后按新增写入，库里原行保留（AC-20③）。 */
+export interface DsBackfillUnanchoredRow {
+  recordId?: number | string | null;
+  /** 快照时的主表行 id（已失效） */
+  originId?: number | string | null;
+  baseRowFingerprint?: string | null;
+  /** 该行的人类可读身份，键为中文列名（如 { 项次: "90", 投入料号: "S-1630010773" }） */
+  displayValues?: Record<string, string | number | null>;
+  /** 后端原因常量，如 CROSS_VERSION_FINGERPRINT_MISS */
+  reason?: string | null;
+}
+
+/**
+ * AP-60 列维度判据：该页签表征了哪些列（patched）/ 没表征因而原样保留的列（preserved）。
+ * ⚠️ 契约示例给的是物理列名（component_qty），原型图展示的是中文列名（组成数量）——
+ * 前端原样渲染后端下发的字符串，不做映射（见回报「契约疑点」）。
+ */
+export interface DsBackfillColumnScope {
+  patched?: string[];
+  preserved?: string[];
+}
+
+/** 一个「表 × 轴值」组的回填结果预告——描述「将写入什么」，不是「哪些值变了」（AP-60 判据四）。 */
+export interface DsBackfillGroup {
+  /** 轴 = 报价单产品卡片的销售料号（D-3） */
+  axisValue: string;
+  /**
+   * 客户号 = customer.code（如 CUST-0001）。api.md §4 已裁决类型为 string（DB 侧 varchar(20) NOT NULL），
+   * ⚠️ 但上游 DDL 尚未落库 ⇒ 过渡期后端可能返 null，前端必须容忍不报错、渲染成「—」。
+   */
+  customerNo?: string | null;
+  /** _record 拍快照时的版本 */
+  baseVersionNo?: number | null;
+  /** 库里当前版本 */
+  currentVersionNo?: number | null;
+  /** 将升到的版本 = max(current, historyMax) + 1 */
+  targetVersionNo?: number | null;
+  /** baseVersionNo != currentVersionNo → 走指纹重锚 */
+  crossVersion?: boolean;
+  result: 'CREATED' | 'UPGRADED' | 'UNCHANGED';
+  /** 主表当前整组行数（= 基底行数） */
+  baseRowCount?: number;
+  /** 回填后该组行数 */
+  resultRowCount?: number;
+  /** _record 表征并覆盖了列的行数 */
+  patchedRows?: number;
+  /** 🔑 页签没表征、原样保留的行数——AP-60 守卫，必须渲染，不许省 */
+  untouchedRows?: number;
+  unanchoredRows?: DsBackfillUnanchoredRow[];
+  columnScope?: DsBackfillColumnScope;
+}
+
+/** 一张 ds_quote_* 主表（对应报价单一个页签）下的全部料号组。 */
+export interface DsBackfillTable {
+  sheetKey: string;
+  /** 与 Excel sheet 名逐字相等 */
+  sheetName: string;
+  tableName: string;
+  groups: DsBackfillGroup[];
+}
+
+/** 抽屉顶部汇总条五项（AC-5③）。 */
+export interface DsBackfillSummary {
+  tables: number;
+  axes: number;
+  upgradedGroups: number;
+  unchangedGroups: number;
+  /** 🔴 >0 时前端必须显著提示：红色告警条 + 独立明细表 + 主按钮变红 */
+  unanchoredRows: number;
+  /** 🆕 D-33：不参与基础数据升版的组件数。后端未下发时前端按 nonParticipating.length 兜底 */
+  nonParticipatingComponents?: number;
+}
+
+/** 只落 extend_column、不回填主表的字段（AC-3）。sheetName 需由 tables[] 按 sheetKey 反查。 */
+export interface DsBackfillExtendColumnOnly {
+  sheetKey: string;
+  sheetName?: string;
+  fields: string[];
+}
+
+/**
+ * 🆕 D-33：不参与基础数据升版的组件（api.md §1 硬约束 4）。
+ * 实测现网 156/228 个组件视图是手写的（无 builder_config）⇒ 常态非空，
+ * 🚫 前端不许静默：不说，财务会以为本单全覆盖了 —— 与 AP-60 判据四同型的静默。
+ */
+export interface DsBackfillNonParticipating {
+  componentId?: string | null;
+  componentName?: string | null;
+  /**
+   * 八个已知常量：NO_BUILDER_CONFIG / NO_DRIVER_PATH / UNSUPPORTED_DRIVER_PATH /
+   * BUILDER_CONFIG_CORRUPT / NOT_QUOTE_DIALECT / NO_TAB_TYPE / TAB_VIEW_NOT_FOUND /
+   * NOT_VERSIONED_SHEET。⚠️ 后端可能再加 ⇒ 前端必须有未知值兜底，🚫 不许渲染成空白。
+   */
+  reason?: string | null;
+}
+
+/** api.md §1 新增段。 */
+export interface DsBackfillPreview {
+  /** false = 本单不走 ds_ 新回填（老单），前端渲染空态 */
+  applicable: boolean;
+  /** 恒 true —— 财务必须人工确认（D-25） */
+  confirmRequired?: boolean;
+  summary?: DsBackfillSummary;
+  /**
+   * ⚠️ applicable=true 时 tables 也可能是空数组 —— 后端 2026-09-07 放宽语义：
+   * 只要有 nonParticipating 要说就 applicable=true。
+   * 🚫 前端不得因 tables 为空就渲染「本单不涉及…」空态，否则 D-33 的告警会
+   * 恰好在「100% 不参与」这一最常见场景里整块消失。
+   */
+  tables?: DsBackfillTable[];
+  nonParticipating?: DsBackfillNonParticipating[];
+  extendColumnOnly?: DsBackfillExtendColumnOnly[];
+}
+
 /** task-0721（api.md §1.1）：GET costing-approve/preview 响应体。只读、无副作用、幂等。 */
 export interface CostingApprovePreviewResult {
   quotationId: string;
@@ -194,11 +314,18 @@ export interface CostingApprovePreviewResult {
   /** repair-0727 新增：无产品维度的全局共享组视图 */
   globalShared: CostingApprovePreviewGlobalShared;
   groups: CostingApprovePreviewGroup[];
+  /**
+   * task-260907 第二段（api.md §1）：ds_quote_* 新回填预览段。
+   * 可选——后端未发布本段时字段缺失，前端优雅降级为「只渲染老回填」（不报错、不空白）。
+   */
+  dsBackfill?: DsBackfillPreview;
 }
 
 /** task-0721（api.md §1.2）：POST costing-approve 成功响应，除 QuotationDTO 字段外额外带 backfill 汇总。 */
 export interface CostingApproveResult {
   backfill?: CostingApprovePreviewSummary;
+  /** task-260907 第二段（api.md §2）：ds_ 新回填执行摘要，形状同预览的 dsBackfill.summary */
+  dsBackfill?: DsBackfillSummary;
   [key: string]: unknown;
 }
 
