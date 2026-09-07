@@ -358,7 +358,11 @@ public class ComponentImportService {
             c.partNameField = it.partNameField;
             // task-0722 行排序列
             c.sortField = it.sortField;
-            if ("BOM".equals(it.tabType)) {
+            // task-260904 B-18：判据收编到 TabSemanticResolver。此处直接用分支②（存量判据）是
+            // <b>结构上正确</b>而非图省事：bundle 的 SqlView 不携带 builder_config / builder_version
+            // （见 ComponentExportBundle.SqlView 字段清单），导入建出的 component_sql_view 两列恒为
+            // NULL ⇒ 分支① 永远不成立。这样也避免在导入循环里逐个组件查一次 component_sql_view（N+1）。
+            if (TabSemanticResolver.isLegacyTreeTabType(it.tabType)) {
                 c.bomRecursiveExpand = Boolean.TRUE;
             }
             c.fields = nodeToJson(it.fields);
@@ -467,6 +471,9 @@ public class ComponentImportService {
 
                 // task-0803 Task5⑤：同一循环里跑闸①②④（父子取值 tabType 联动 + BOM 禁 PREV），
                 // 不留导入这条路径绕过配置期校验的口子。c.tabType 已在第一遍(persist 前)写入。
+                // task-260904 B-10/B-18：导入 bundle 不携带 builder_config/builder_version
+                // （见 ComponentExportBundle.SqlView 字段清单），导入建出的组件恒走分支②，
+                // 故这里用只按 tab_type 判的重载是结构上正确的，也避免在导入循环里逐个查库（N+1）。
                 componentService.assertTreeTokenGates(c.tabType, c.formulas, c.fields);
             } catch (BusinessException e) {
                 // 校验闸门抛出的是业务语义 400（非结构解析失败），保留原始 code，只加上下文前缀。

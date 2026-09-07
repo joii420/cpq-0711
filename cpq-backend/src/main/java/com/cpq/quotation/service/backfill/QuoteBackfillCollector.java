@@ -65,6 +65,9 @@ public class QuoteBackfillCollector {
     @Inject DataSource dataSource;
     @Inject MaterialMasterRepository materialMasterRepo;
 
+    /** task-260904 B-18：树页签双判据（全工程唯一实现，需求文档 §1.35）。 */
+    @Inject com.cpq.component.service.TabSemanticResolver tabSemanticResolver;
+
     // ======================================================================
     // repair-0727 AC-R8：DB 往返计数（技术总监裁决③——照抄 VersionedV6Writer.Profile 范式，
     // ThreadLocal 计数器，纯计数不改行为；测试直接 reset() → 跑 collect()/preview() → 读计数断言）。
@@ -150,6 +153,13 @@ public class QuoteBackfillCollector {
                 }
             }
 
+            // task-260904 B-18：树页签判据由 "BOM".equals(comp.tabType) 收编为双判据。
+            // N+1 纪律：compById 是上面整单一次 IN 查询的产物，这里整批一次算完（≤2 条 SQL，
+            // 与组件数无关），🚫 不在下面的 compDataRows 循环里逐个判。
+            Map<UUID, String> tabTypeById = new LinkedHashMap<>();
+            for (Component c : compById.values()) tabTypeById.put(c.id, c.tabType);
+            Map<UUID, Boolean> treeFlagByComp = tabSemanticResolver.isTreeTabBatch(tabTypeById);
+
             Map<UUID, QuoteBackfillColumnMapper.Resolved> resolvedByComp = new HashMap<>();
             try (Connection conn = dataSource.getConnection()) {
                 for (Component c : compById.values()) {
@@ -173,7 +183,7 @@ public class QuoteBackfillCollector {
                 if (axisSpec == null) continue;
 
                 QuotationLineItem li = liById.get(lineItemId);
-                boolean tree = "BOM".equals(comp.tabType);
+                boolean tree = Boolean.TRUE.equals(treeFlagByComp.get(componentId));   // task-260904 B-18
                 List<String> rowKeyFieldNames = parseStringArray(comp.rowKeyFields);
                 JsonNode snapshotRows = parseArray((String) r[3]);
                 List<DeletedRowKeys.Tombstone> tombstones = DeletedRowKeys.parse((String) r[5]);
@@ -474,20 +484,23 @@ public class QuoteBackfillCollector {
                 out.add(c);
             } else {
                 // 手工新增树叶子（__manual=true）：material_bom_item 语义特化——
-                // 轴 material_no = 宿主父件（__parentNo），content.component_no = 叶子自身料号，
-                // content.characteristic = __nodeType（addLeaf 已用 BomNodeTypeResolver 算好，
-                // 直接复用，不再按 tabType 重新猜测）。
+                // 轴 material_no = 宿主父件（__parentNo），content.component_no = 叶子自身料号。
+                //
+                // 🚫 task-260904 B-12（AC-9）：**不再回填 content.characteristic**。
+                //    原实现写的是 __nodeType 的中文值（材质/零件/外购件），而 material_bom_item.characteristic
+                //    的现网值域是 RECIPE/ASSEMBLY/OUTSOURCED —— 写中文本身就是脏数据；且料号类型已由主数据
+                //    （ds_quote_material / material_recipe）确定，不需要回填。该列保持为空，由
+                //    deriveMasterFixedColumns 按既有规则从子行集合派生主表固定列（不受本改动影响）。
+                //    ⚠️ ds_quote_material_bom.output_material_type 是用户业务字段，与本流程无关，一列不动。
                 Candidate c = newCandidate("ADD", tabName, componentId, sortOrder, resolved.colToBase);
                 String leafNo = driverRow.path("material_no").asText(null);
                 if (leafNo == null) leafNo = row.path("__hfPartNo").isNull() ? null : row.path("__hfPartNo").asText(null);
                 String hostNo = row.path("__parentNo").isNull() ? null : row.path("__parentNo").asText(null);
-                String nodeType = row.path("__nodeType").isMissingNode() ? null : row.path("__nodeType").asText(null);
                 if ("material_bom_item".equals(resolved.primaryTable)) {
                     c.axisHint.put("system_type", "QUOTE");
                     c.axisHint.put("customer_no", customerNo);
                     c.axisHint.put("material_no", hostNo);
                     c.content.put("component_no", leafNo);
-                    if (nodeType != null) c.content.put("characteristic", nodeType);
                 } else {
                     // 非 material_bom_item 的树页签手工叶子：按通用列映射兜底（无法确定专属轴语义时
                     // 交由通用 mapColumns 处理，已知限制——见交付说明）。

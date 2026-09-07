@@ -3,6 +3,8 @@ import { Button, Space, Tooltip, Typography } from 'antd';
 import type { TabDef } from '../../../services/tabJoinFormulaService';
 import FormulaRichInput, { type FormulaRichInputHandle } from './FormulaRichInput';
 import type { ParenCheckResult } from './formulaBracketCheck';
+// task-260904 F-8（AC-24）：§1.35 双判据的唯一前端实现
+import { isTreeTab, tabSemanticLabel, type BoundTabSemantic } from '../../../utils/tabSemantic';
 
 const { Text } = Typography;
 
@@ -79,6 +81,11 @@ interface Props {
    * （AC-16：非 BOM 页签必须**可见但置灰 + hover 有原因**，不得隐藏）。
    */
   tabType?: string;
+  /**
+   * task-260904 F-8（AC-24 / 需求文档 §1.35 双判据）：该组件绑定数据源的语义。
+   * `undefined` = 未绑定（存量组件）→ 回退读 `tabType === 'BOM'`，行为逐字不变；`null` = 已绑定但非树。
+   */
+  boundSemantic?: BoundTabSemantic;
 }
 
 // ──────────────────────────────────────────────
@@ -98,13 +105,15 @@ const FormulaEditorPanel: React.FC<Props> = ({
   onClearExpression,
   onOpenSumif,
   tabType,
+  boundSemantic,
 }) => {
   // task-0803 F-5：父子取值仅 BOM 类型页签可用。口径与保存前的 checkTreeRefTabTypeGate
   // （TabJoinFormulaDrawer.tsx）保持一致 —— 那边是硬闸（返 400/拦保存），这里是软提示（置灰）。
   // 两处都改时务必同步，否则会出现「按钮可点但保存被拒」或反之。
-  const treeDisabled = tabType !== 'BOM';
+  // task-260904 F-8（AC-24）：判据由 `tabType !== 'BOM'` 升级为 §1.35 双判据。
+  const treeDisabled = !isTreeTab(boundSemantic, tabType);
   const treeDisabledReason = treeDisabled
-    ? `父子取值与树属性仅 BOM 类型页签可用（当前页签类型：${tabType ?? '未配置'}）`
+    ? `父子取值与树属性仅 BOM 类型页签可用（当前页签类型：${tabSemanticLabel(boundSemantic, tabType)}）`
     : null;
 
   // 工具条分组：一组 = 一行标题 + 一行按钮。EXCEL 视图列不解析 tree_ref，故不出「父子取值」组。

@@ -49,8 +49,12 @@ class MaterialAndOutsourcedAcTest extends SelConfigAcTestBase {
     @Test
     @DisplayName("AC-5 外购件候选集合 == SQL 对账集合")
     void ac5_outsourcedCandidatesMatchSqlExactly() {
+        // 🔄 task-260903：listOutsourcedParts 已改读 v_compat_material_master（否则找不到只存在于
+        //    ds_quote_material 的外购件）。对账 SQL 必须**同源**，否则测的是两个不同的集合。
+        //    实测差异样本：S0003 只在 ds_quote_material 里，查 material_master 永远看不到它。
         Set<String> expected = new LinkedHashSet<>(col(
-                "SELECT material_no FROM material_master WHERE material_type='" + OUTSOURCED_TYPE + "' ORDER BY material_no")
+                "SELECT material_no FROM v_compat_material_master WHERE material_type='" + OUTSOURCED_TYPE
+                        + "' ORDER BY material_no")
                 .stream().map(String::valueOf).toList());
         System.out.println("[AC-5] SQL 对账集合=" + expected);
         assertFalse(expected.isEmpty(),
@@ -81,16 +85,24 @@ class MaterialAndOutsourcedAcTest extends SelConfigAcTestBase {
     @Test
     @DisplayName("AC-16 外购件 0 条 → 200 + total=0（不是错误、不是加载中）")
     void ac16_emptyOutsourcedListReturnsEmptyNotError() {
-        List<Object> affected = col("SELECT material_no FROM material_master WHERE material_type='"
+        // 🔄 task-260903：外购件候选来自兼容视图（V6 存量 ∪ ds_quote_material），
+        //    构造「0 条」必须**两侧一起翻**，只翻 V6 侧会剩下新表侧的外购件（实测 S0003）。
+        List<Object> affected = col("SELECT material_no FROM v_compat_material_master WHERE material_type='"
                 + OUTSOURCED_TYPE + "' ORDER BY material_no");
         System.out.println("[AC-16] 将临时改写这些行的 material_type：" + affected);
         assertFalse(affected.isEmpty(), "AC-16 前置：需要至少 1 条外购件才能构造『改成 0 条』的场景");
 
         try {
-            QuarkusTransaction.requiringNew().run(() -> em.createNativeQuery(
-                            "UPDATE material_master SET material_type=:s WHERE material_type=:o")
-                    .setParameter("s", SENTINEL_TYPE).setParameter("o", OUTSOURCED_TYPE).executeUpdate());
-            assertEquals(0, count("SELECT count(*) FROM material_master WHERE material_type='" + OUTSOURCED_TYPE + "'"),
+            QuarkusTransaction.requiringNew().run(() -> {
+                em.createNativeQuery("UPDATE material_master SET material_type=:s WHERE material_type=:o")
+                        .setParameter("s", SENTINEL_TYPE).setParameter("o", OUTSOURCED_TYPE).executeUpdate();
+                // 🚨 新表侧同样要翻。⚠️ 这会临时改到**别人导入的基础数据**（实测 S0003），
+                //    还原写在 finally 且有残留断言兜底 —— 与本用例对 material_master 的既有做法同构。
+                em.createNativeQuery("UPDATE ds_quote_material SET material_type=:s WHERE material_type=:o")
+                        .setParameter("s", SENTINEL_TYPE).setParameter("o", OUTSOURCED_TYPE).executeUpdate();
+            });
+            assertEquals(0, count("SELECT count(*) FROM v_compat_material_master WHERE material_type='"
+                            + OUTSOURCED_TYPE + "'"),
                     "AC-16 构造自检：外购件应已变成 0 条，否则本用例验的不是空态场景（假绿）");
 
             Response res = given().queryParam("page", 1).queryParam("size", 20)
@@ -105,11 +117,17 @@ class MaterialAndOutsourcedAcTest extends SelConfigAcTestBase {
                     "AC-16：items 应为空数组，实际=" + res.asString());
         } finally {
             // 🚨 还原写在 finally：用例中途崩溃也照样还原（testing.md §4.3）
-            QuarkusTransaction.requiringNew().run(() -> em.createNativeQuery(
-                            "UPDATE material_master SET material_type=:o WHERE material_type=:s")
-                    .setParameter("o", OUTSOURCED_TYPE).setParameter("s", SENTINEL_TYPE).executeUpdate());
-            long restored = count("SELECT count(*) FROM material_master WHERE material_type='" + OUTSOURCED_TYPE + "'");
-            long residue = count("SELECT count(*) FROM material_master WHERE material_type='" + SENTINEL_TYPE + "'");
+            QuarkusTransaction.requiringNew().run(() -> {
+                em.createNativeQuery("UPDATE material_master SET material_type=:o WHERE material_type=:s")
+                        .setParameter("o", OUTSOURCED_TYPE).setParameter("s", SENTINEL_TYPE).executeUpdate();
+                em.createNativeQuery("UPDATE ds_quote_material SET material_type=:o WHERE material_type=:s")
+                        .setParameter("o", OUTSOURCED_TYPE).setParameter("s", SENTINEL_TYPE).executeUpdate();
+            });
+            long restored = count("SELECT count(*) FROM v_compat_material_master WHERE material_type='"
+                    + OUTSOURCED_TYPE + "'");
+            // 哨兵残留两侧都查 —— 只查 V6 侧会漏掉新表侧还原失败的情况
+            long residue = count("SELECT count(*) FROM material_master WHERE material_type='" + SENTINEL_TYPE + "'")
+                    + count("SELECT count(*) FROM ds_quote_material WHERE material_type='" + SENTINEL_TYPE + "'");
             System.out.println("[AC-16] 还原自检：外购件 " + restored + " 条，哨兵残留 " + residue + " 条");
             assertEquals(affected.size(), restored, "AC-16 还原自检：外购件条数应还原为 " + affected.size());
             assertEquals(0, residue, "AC-16 还原自检：不得残留哨兵 material_type");
@@ -205,10 +223,11 @@ class MaterialAndOutsourcedAcTest extends SelConfigAcTestBase {
 
         // ① element_bom_item 落 88 / 12
         String partNo = latestLinePartNo(fx);
-        List<Object[]> els = rows("SELECT component_no, content::text FROM element_bom_item "
-                + "WHERE customer_no='" + fx.customerNo() + "' AND material_no='" + partNo + "' AND is_current=true "
-                + "ORDER BY seq_no");
-        System.out.println("[AC-21①] element_bom_item=" + els.stream().map(java.util.Arrays::toString).toList());
+        // 🔄 task-260903 · A-3：element_bom_item → ds_quote_element_bom
+        //    列名：component_no→element_code / content→content_pct / seq_no→item_seq
+        List<Object[]> els = rows("SELECT element_code, content_pct::text FROM ds_quote_element_bom "
+                + "WHERE material_no='" + partNo + "' ORDER BY item_seq");
+        System.out.println("[AC-21①] ds_quote_element_bom=" + els.stream().map(java.util.Arrays::toString).toList());
         assertEquals(2, els.size(), "AC-21①：应落 2 行元素（Ag/Ni），实际 " + els.size() + " —— 0 行会让下面的断言空跑");
         BigDecimal ag = null, ni = null;
         for (Object[] r : els) {

@@ -87,6 +87,75 @@ ls | grep '\.hold$' && echo '❌ 还有残留' || echo '✅ 已还原'
 查**共享库** `flyway_schema_history` 的 `max(version)`，🚫 不要只 `ls` 目录
 （目录里看不到别人已应用未合并的号）。
 
+### ①-b 删掉 V416 的「借用副本」
+
+2026-09-04 测试复跑被 `Detected applied migration not resolved locally: 416` 挡住。
+V416 属 **task-260819**（`feat/task-260819-sql-view-builder`），17:58 从他们分支直接应用到
+共享库，**master 上没有**，所以 `git merge master` 解决不了。
+
+处置：把他们的文件**按未跟踪副本**拷进本 worktree 的 `db/migration/`，仅供本地测试构建解析。
+🚫 **它不属于本任务，绝不能跟着本分支进 master。**
+
+```bash
+rm -f cpq-backend/src/main/resources/db/migration/V416__task260819_v9_bridge_narrow_form.sql
+git status --porcelain -- cpq-backend/src/main/resources/db/migration/   # 应无 V416 任何痕迹
+```
+
+⚠️ 提交一律用 `git commit -- <显式路径>`，**永远不要 `git add -A`** —— 那会把这份借用副本
+连同别人的迁移一起提进本分支。
+
+⚠️ **V416 必须由 task-260819 自己合进 master**。若本任务先合而 V416 仍不在 master，
+master 的 8081 重启会因同样的 validate 失败而起不来（V410/V411 那次事故的同型）。
+合并前查一次：`git ls-tree -r --name-only master -- cpq-backend/src/main/resources/db/migration | grep V416`
+
 ### ② 合并顺序：B 必须先于 A 上线
 
 A 先于 B 上线 = 选配产品在报价单里渲染为空。两者若同批合并，确认 B 的迁移号小于 A。
+
+
+---
+
+## 🚨 迁移与共享库的流程闸（今天栽了三次，必须成为默认动作）
+
+**同一形状的事故在 2026-09-03~04 发生三次：**
+
+| # | 谁的迁移 | 卡住了谁 |
+|---|---|---|
+| ① | 我的 `V401~V404`（task-260902） | 「新料号数据规则」会话不敢合并 |
+| ② | 我的 `V410/V411` | 「产品管理优化」会话冷启动连续 4 次失败；8081 存活 20 小时纯属侥幸 |
+| ③ | 后端代理的 `V414` | 从 master 冷启动 `not resolved locally: 414` |
+
+**根因不是「谁忘了合并」，是流程缺一道闸：**
+
+```
+worktree 里任何一次 mvnw test（@QuarkusTest 会启动实例）
+  → migrate-at-start 自动把迁移写进【共享库】
+  → 无提示、无确认、事后无检查
+  → 而文件还在未合并分支上
+  ⇒ 所有从 master 或其它分支冷启动的后端全部起不来
+```
+
+⚠️ 而 **Flyway 只在启动时校验** —— 已经跑着的进程不会立刻死，所以**故障是延迟引爆的**：
+下一个重启它的人（可能是几小时后的另一条线）才踩到，且现场已经和肇事动作脱钩。
+
+### 三条默认动作
+
+1. **跑测试前**：`git merge master` —— 分支落后于共享库是**常态**，不是异常
+2. **跑测试后**：查一次 `flyway_schema_history` 的 `max(version)`，与本分支迁移文件比对；
+   有新号 = 你刚刚往共享库写了东西，**立刻把 `.sql` 单独合进 master**（不必合整条分支）
+3. **合并前**：用这条扫全工程（`src` 与 `target/classes` 都要扫，`target` 里有编译期复制的副本）
+   ```bash
+   find /home/joii/project/cpq -path "*/db/migration/V4*.sql" | awk -F'/V' '{n=$NF+0; if(n>=409) print}'
+   ```
+
+### 处方（三次都一样）
+
+```bash
+git checkout master
+git checkout <分支> -- cpq-backend/src/main/resources/db/migration/V4xx__*.sql
+git commit -m "fix: 补 V4xx 迁移文件进 master（已应用共享库，缺文件致冷启动 validate 失败）" -- <那个路径>
+# 然后必须真的冷启动一次验证，不能只看文件在不在
+```
+
+🚫 **另外三条路都别走**：删 `flyway_schema_history` 行（§3.2 红线，且 DDL 效果已在库里，删了会重跑撞「对象已存在」）；
+`validate-on-migrate=false`；`baselineVersion` —— 后两条都是改共享配置来掩盖问题。

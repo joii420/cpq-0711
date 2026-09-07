@@ -78,6 +78,18 @@ public class ConfigureProductService {
     @Inject
     VersionedV6Writer versionedWriter;
 
+    /** task-260903 · 阶段 A：选配产出写 {@code ds_quote_*} 新表体系（取代下面那组 {@code *V6} 方法）。 */
+    @Inject
+    SelDsQuoteWriter dsWriter;
+
+    /**
+     * 操作人 UUID → {@code ds_quote_*.created_by/updated_by}（{@code varchar(64)}）。
+     * 🚫 不能用 {@code String.valueOf} —— 它把 null 变成字面量 "null" 存进库。
+     */
+    private static String opOf(UUID operatorId) {
+        return operatorId == null ? null : operatorId.toString();
+    }
+
     /**
      * 选配 Plan 3b (T3): 有效模板解析服务 — buildSalesConfigContext 用于载入
      * enabled 参数类型集 (PROCESS 是否作为槽位), 与 T2 SalesFingerprintCalculator 配合
@@ -264,7 +276,7 @@ public class ConfigureProductService {
 
         // unit_weight from material_master (V6, material_no = hfPartNo)
         List<Object> w = em.createNativeQuery(
-                "SELECT unit_weight FROM material_master WHERE material_no = :p")
+                "SELECT unit_weight FROM v_compat_material_master WHERE material_no = :p")
             .setParameter("p", hfPartNo).getResultList();
         s.unitWeightGrams = (w.isEmpty() || w.get(0) == null)
             ? null
@@ -332,7 +344,15 @@ public class ConfigureProductService {
                 throw com.cpq.configure.exception.MaterialRecipeApiException.badRequest(
                     "OUTSOURCED_PART_REQUIRED", "外购件料号不存在: " + outNo);
             }
-            insertOutsourcedBomItemV6(outNo, customerCode, meta[0]);
+            // 🆕 task-260903 · A-4 / A-5（A-AC-7）：外购件身份 + 自指物料行改落 ds_quote_*。
+            // upsertMaterial 是 ON CONFLICT DO NOTHING —— 外购件料号本就存在于料号库时，
+            // 不会反向覆盖导入侧已有的品名/类型。
+            // 🆕 A-AC-11（2026-09-04 用户裁决）：新建料号的产品分类默认「默认分类」(000000)。
+            //    ⚠️ ON CONFLICT DO NOTHING ⇒ 库里早有的外购件料号不会被回填，这是刻意的
+            //    （不让选配顺手改写导入侧的数据），A-AC-11 只约束本流程新建的行。
+            dsWriter.upsertMaterial(outNo, meta[0], null, null, null,
+                SelDsQuoteWriter.TYPE_OUTSOURCED, SelDsQuoteWriter.CATEGORY_DEFAULT, opOf(operatorId));
+            dsWriter.writeOutsourcedSelfRow(outNo, opOf(operatorId));
             if (pr.processNos != null && !pr.processNos.isEmpty()) {
                 insertProcessSimpleUnitPriceV6(outNo, pr.processNos, customerCode, cat);
             }
@@ -348,7 +368,7 @@ public class ConfigureProductService {
             // 尚未回填 V6 → 此前只查 material_master 会误报"料号不存在"。
             @SuppressWarnings("unchecked")
             List<Object[]> v6rows = em.createNativeQuery(
-                    "SELECT material_recipe_id, unit_weight FROM material_master WHERE material_no = :p")
+                    "SELECT material_recipe_id, unit_weight FROM v_compat_material_master WHERE material_no = :p")
                 .setParameter("p", pr.existingHfPartNo)
                 .getResultList();
             if (v6rows.isEmpty()) {
@@ -438,13 +458,23 @@ public class ConfigureProductService {
             com.cpq.configure.entity.MaterialRecipe only = cat.recipeByCode.get(mats.get(0).recipeCode);
             singleRecipeId = (only == null) ? null : only.id;
         }
-        // B-14：material_master 补写 material_name / specification / dimension（AC-3 断言①）。
-        insertMaterialMasterV6(hfPartNo, MATERIAL_TYPE_PART, pr.unitWeightGrams, singleRecipeId, null,
-            pr.name, pr.spec, pr.dimension);
-        // B-4：元素行按材质分组落库（每材质一组 element_bom + element_bom_item）。
-        insertElementBomV6(hfPartNo, customerCode, mats);
-        // B-3：物料行由 1 行改 N 行（每材质一行 + material_ratio 占比）。
-        insertMaterialBomItemV6(hfPartNo, customerCode, mats, cat);
+        // 🆕 task-260903 · A-1（A-AC-1①）：料号主档改落 ds_quote_material，停写 material_master。
+        //    A-5（A-AC-7）：material_type 写「零件」。
+        //    ⚠️ singleRecipeId 不再有落点 —— 新表没有 material_recipe_id 列。它在 V6 时代的用途
+        //    （单材质料号的材质判据）已被 B-18 用户裁决废除，材质权威是 ds_quote_material_bom 的 N 行。
+        //    🆕 A-AC-11（2026-09-04 用户裁决）：category_code 一律写「默认分类」000000。
+        dsWriter.upsertMaterial(hfPartNo, pr.name, pr.spec, pr.dimension, pr.unitWeightGrams,
+            SelDsQuoteWriter.TYPE_PART, SelDsQuoteWriter.CATEGORY_DEFAULT, opOf(operatorId));
+        // 🆕 task-260903 · A-2 / A-3 / A-4：物料行与元素行改落 ds_quote_*，停写 V6。
+        //
+        // 🚨 与 V6 最关键的形态差异：新表的轴**只有 material_no**，没有 characteristic /
+        //    customer_no 维度。V6 时代同一料号的不同 characteristic 是各自独立的组，可以分多次写；
+        //    这里必须**一次 writeGroup 把整组行全给出**，分两次调 = 第二次把第一次的行当成删除。
+        // 📌 A-9（A-AC-5）：新料号在库中不存在 ⇒ writeGroup 走 CREATED 分支，version_no 恒为 1。
+        //    这也覆盖了原 A-AC-9「复用路径不调写入器」要防的坏后果 —— 复用在上面 hit 分支就
+        //    早退了，根本走不到这里。🚫 后人不要在这里加任何版本号干预。
+        dsWriter.writeMaterialBomGroup(hfPartNo, buildRecipeBomRows(hfPartNo, mats), opOf(operatorId));
+        dsWriter.writeElementBomGroup(hfPartNo, buildElementBomRows(hfPartNo, mats), opOf(operatorId));
 
         // mat_part_version_log 基线行: PK (customer_product_no NOT NULL, hf_part_no, version)
         // configure 阶段无 customer_product_no (客户产品号在数据导入后才存在)
@@ -715,7 +745,7 @@ public class ConfigureProductService {
         // ⑥ 外购件料号
         if (!outsourcedNos.isEmpty()) {
             List<Object[]> rows = em.createNativeQuery(
-                    "SELECT material_no, material_name, material_type FROM material_master WHERE material_no IN (:nos)")
+                    "SELECT material_no, material_name, material_type FROM v_compat_material_master WHERE material_no IN (:nos)")
                 .setParameter("nos", outsourcedNos).getResultList();
             for (Object[] r : rows) {
                 cat.outsourcedByNo.put(r[0].toString(), new String[]{
@@ -1061,209 +1091,99 @@ public class ConfigureProductService {
     // customer_no 用 customer.code（mirror 视图按此过滤）。工序/组合工艺承载 = Phase 2。
     // ─────────────────────────────────────────────────────────────────────
 
-    /** V6: 料号身份 → material_master（不带零件文本的旧签名，COMPOSITE 父料号等场景用）。 */
-    void insertMaterialMasterV6(String partNo, String materialType, BigDecimal unitWeight,
-                                UUID materialRecipeId, String fingerprint) {
-        insertMaterialMasterV6(partNo, materialType, unitWeight, materialRecipeId, fingerprint,
-            null, null, null);
-    }
+    // ═══════════════════════════════════════════════════════════════════════
+    // task-260903 · 阶段 A：ds_quote_* 行集组装（纯内存，循环体内零查库）
+    // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * V6: 料号身份 → {@code material_master}。
+     * A-2（A-AC-1② / A-AC-6）：SIMPLE 零件的材质行 —— 每材质一行，{@code output_material_type='RECIPE'}。
      *
-     * <p><b>task-260902 · B-14</b>：INSERT 列表补 {@code material_name / specification / dimension}
-     * —— A 轮交付缺口，AC-3 断言①「material_master 该料号 material_name='触点'、specification='φ5'、
-     * dimension='5×3×2'」在 A 轮无人认领。
-     *
-     * <p><b>task-260902 · B-9</b>：{@code materialType} 参数的语义由「材质名（recipe.symbol）」
-     * 归位为「<b>料号类型</b>」（{@link #MATERIAL_TYPE_PART} / {@link #MATERIAL_TYPE_FINISHED}）。
-     * 该列的三种历史用法（料号类型 / 材质符号 / 产品结构类型）由本次收敛到第一种；
-     * 材质名的权威落点是 {@code material_bom_item.component_usage_type}。
-     *
-     * <p>{@code ON CONFLICT DO NOTHING} <b>保持不变</b>（不改成 DO UPDATE）：本方法的 partNo 只可能是
-     * 刚 mint 出来的全新报价料号，冲突路径实际不可达；改成 DO UPDATE 会让「选配复用一个导入来的料号」
-     * 这种场景反向覆盖导入侧的品名/规格，风险大于收益。已在回报中登记为待裁决点。
+     * <p>逐列对照被它取代的 {@code insertMaterialBomItemV6}：
+     * <pre>
+     *   V6 seq_no              → item_seq
+     *   V6 component_no        → input_material_no（材质料号 recipe.code，不是销售料号自指）
+     *   V6 component_usage_type→ 【不再存】兼容视图 LEFT JOIN material_recipe ON code=input_material_no
+     *                            取 symbol 现算（B-2）。少了这一列反而消除了一处冗余。
+     *   V6 material_ratio      → material_ratio（numeric(26,12)，A-AC-1② 要求存满 12 位小数）
+     *   V6 characteristic      → output_material_type = 'RECIPE'
+     *   V6 rough_weight / net_weight / weight_unit / scrap_rate / defect_rate
+     *                          → 【刻意留 NULL】选配侧在 V6 时代本来就写 NULL，留 NULL 才是行为等价。
+     *                            🚫 不许"补全"——这些列的语义有「百分比 vs 小数」歧义，硬填制造新 bug。
+     * </pre>
      */
-    void insertMaterialMasterV6(String partNo, String materialType, BigDecimal unitWeight,
-                                UUID materialRecipeId, String fingerprint,
-                                String materialName, String specification, String dimension) {
-        em.createNativeQuery(
-                "INSERT INTO material_master (material_no, material_type, unit_weight, " +
-                "material_recipe_id, config_fingerprint, material_name, specification, dimension) " +
-                "VALUES (:mn, :mt, :uw, :mri, :fp, :nm, :sp, :dm) " +
-                "ON CONFLICT DO NOTHING")
-            .setParameter("mn", partNo)
-            .setParameter("mt", materialType)
-            .setParameter("uw", unitWeight)
-            .setParameter("mri", materialRecipeId)
-            .setParameter("fp", fingerprint)
-            .setParameter("nm", materialName)
-            .setParameter("sp", specification)
-            .setParameter("dm", dimension)
-            .executeUpdate();
-    }
-
-    /**
-     * V6（B2 落库改造，backtask §4/B2.1③）: 元素配比 → {@code element_bom}(头) + {@code element_bom_item}(子)。
-     * 等价导入落库（对齐 {@code Q04ElementBomHandler}）：
-     * <ul>
-     *   <li><b>task-260902 · B-4</b>：按材质分组，<b>每个材质一组</b>（groupKey 里的
-     *       {@code material_part_no} 天然支持多组）—— 三层模型下一个零件有 N 个材质，
-     *       元素行必须按材质分成 N 组，否则前端无法把元素分回各自的材质（AC-3 断言③）。</li>
-     *   <li>头/子 groupKey = (system_type=QUOTE, customer_no, material_no=partNo, material_part_no=材质料号)；
-     *       masterVersionColumn=childVersionColumn="characteristic"（由 {@link VersionedV6Writer} 自动分配，
-     *       首次落 "2000"，与原硬编码值等价，但成为真实可递增的版本列）。</li>
-     *   <li>子行额外带 {@code hf_part_no = partNo}（自指）——渲染基线（AP-53）: {@code v_composite_child_elements}
-     *       / {@code composite_child_elements_mirror} 第一分支要求 {@code hf_part_no IS NOT NULL} 直接按渲染
-     *       料号命中，本料号"成品=材质自身"，hf_part_no 与 material_no 同值。</li>
-     *   <li>{@code scrap_rate}/{@code composition_qty}/{@code issue_unit}/{@code base_qty}（§4 doc 对应列）：
-     *       选配阶段 {@link ConfigureProductRequest} 未采集这些字段，留 NULL（不臆造数值，列均可空）。</li>
-     * </ul>
-     */
-    void insertElementBomV6(String partNo, String customerCode, List<MaterialSelection> materials) {
-        if (customerCode == null || customerCode.isBlank()) return; // 无客户无法满足 customer_no NOT NULL / 渲染过滤
-        if (materials == null || materials.isEmpty()) return;
-
-        // 🚫 B-19④：**不许 for 循环调单组 writeVersionedMasterDetail**（每组约 5 次 DB 往返，
-        //    材质数一多就是线性增长）。走已存在的多组批量重载 writeVersionedMasterDetails，
-        //    DB 往返与组数无关。
-        List<VersionedV6Writer.MasterDetailItem> items = new ArrayList<>(materials.size());
-        for (MaterialSelection ms : materials) {                      // 循环体内零查库：只组装 Map
-            Map<String, Object> masterGk = new LinkedHashMap<>();
-            masterGk.put("system_type", "QUOTE");
-            masterGk.put("customer_no", customerCode);
-            masterGk.put("material_no", partNo);
-            masterGk.put("material_part_no", ms.recipeCode);
-
-            Map<String, Object> childGk = new LinkedHashMap<>(masterGk);
-            childGk.put("hf_part_no", partNo);
-
-            List<Map<String, Object>> rows = new ArrayList<>();
-            int seq = 1;
-            List<ElementOverride> els = ms.elements == null ? List.<ElementOverride>of() : ms.elements;
-            for (ElementOverride eo : els) {                          // 循环体内零查库
-                Map<String, Object> r = new LinkedHashMap<>();
-                r.put("seq_no", seq++);
-                r.put("component_no", eo.elementCode);
-                r.put("content", eo.pct);
-                r.put("scrap_rate", null);
-                r.put("composition_qty", null);
-                r.put("issue_unit", null);
-                r.put("base_qty", null);
-                rows.add(r);
-            }
-            if (rows.isEmpty()) continue;   // writer 拒绝空 childRows（整组下线要走专门 API）
-            items.add(new VersionedV6Writer.MasterDetailItem(masterGk, childGk, rows));
-        }
-        if (items.isEmpty()) return;
-
-        versionedWriter.writeVersionedMasterDetails(
-            "element_bom", "characteristic", Map.of("bom_type", "MATERIAL"),
-            "element_bom_item", "characteristic",
-            List.of("seq_no", "component_no", "content", "scrap_rate", "composition_qty", "issue_unit", "base_qty"),
-            items);
-    }
-
-    /**
-     * V6（B2 落库改造，backtask §3/B2.1②）: 自定义材质料号的物料BOM → {@code material_bom}(头，本次新增) +
-     * {@code material_bom_item}(子，补全列)，1 行「自指物料行」=「选中的材质本身」。
-     *
-     * <p><b>保持既有渲染语义（backtask 明确要求不臆造复杂 BOM）</b>：SIMPLE 单材质料号的物料构成
-     * 就是「该材质自身」，不展开成分子/工艺路线。[选配-材质] mirror（{@code v_composite_child_materials}/
-     * {@code composite_child_materials_mirror}）从 {@code material_bom_item}(characteristic IS DISTINCT
-     * FROM 'ASSEMBLY' + customer_no + 父料号) 取物料行 join material_master；mirror 的 material_name 列 =
-     * COALESCE(component_usage_type, mm.material_type, ...)。
-     *
-     * <p>头表 {@code material_bom}：system_type=QUOTE / customer_no / material_no=partNo /
-     * bom_type=MATERIAL（对齐 {@code MaterialBomMergeHandler} 的 MATERIAL 分支，masterVersionColumn=
-     * "bom_version"，characteristic 不置值 → DB NULL）。
-     *
-     * <p>子表 {@code material_bom_item} 行：seq_no=1 / component_no=materialCode(材质料号 recipe.code，对齐
-     * 报价导入 MaterialBomMergeHandler 的「材质料号」列，非销售料号自指) /
-     * component_usage_type=materialType(recipe.symbol，如 AgSnO₂，供材质名称列渲染) /
-     * {@code rough_weight}/{@code net_weight}/{@code weight_unit}/{@code scrap_rate}/{@code defect_rate}
-     * （§3 doc 对应列）：{@link ConfigureProductRequest} 未采集材料毛重/净重/损耗率/不良率，留 NULL
-     * （列均可空，不臆造数值——若业务需要这些值参与核价，需 architect + 业务另行确认取数来源）。
-     *
-     * <p>幂等复用 {@link VersionedV6Writer#writeVersionedMasterDetail} 的内容比对（子行集不变则不升版不写）。
-     */
-    void insertMaterialBomItemV6(String partNo, String customerCode,
-                                 List<MaterialSelection> materials, ConfigureCatalog cat) {
-        if (customerCode == null || customerCode.isBlank()) return; // customer_no NOT NULL + mirror 按 customer 过滤
-        if (materials == null || materials.isEmpty()) return;
-
-        Map<String, Object> masterGk = bomGroupKey(customerCode, partNo, "bom_type", "MATERIAL");
-        // 三态统一(2026-07-20)：这里写的是**材质行**(component_no=材质料号 recipe.code)，characteristic 应为
-        // RECIPE 而非 NULL。V344 已把存量 QUOTE NULL 行回填成 RECIPE，故 gk 用 RECIPE 正好匹配已迁移数据；
-        // 若继续用 null，flip/loadCurrentGroup 按 IS NOT DISTINCT FROM NULL 将匹配不到任何行 → 双 current。
-        Map<String, Object> childGk = bomGroupKey(customerCode, partNo, "characteristic", BomCharacteristic.RECIPE);
-
-        List<Map<String, Object>> rows = new ArrayList<>(materials.size());
+    List<Map<String, Object>> buildRecipeBomRows(String partNo, List<MaterialSelection> materials) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        if (materials == null) return rows;
         int seq = 1;
-        for (MaterialSelection ms : materials) {                      // 循环体内零查库（recipe 走 catalog）
-            com.cpq.configure.entity.MaterialRecipe recipe = cat.recipeByCode.get(ms.recipeCode);
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("seq_no", seq++);
-            // 2026-07-16 对齐导入(MaterialBomMergeHandler MATERIAL 分支): 材质行 component_no = 材质料号(recipe.code),
-            // 不再存销售料号自指 —— 与 element_bom_item.material_part_no / mc_view+v_composite 的 mr.code=component_no
-            // JOIN 一致(否则视图 chemical_symbol/recipe_id 落空 + ys_view 元素 JOIN 失配)。
-            row.put("component_no", ms.recipeCode);
-            // 🚨 B-9 连带不变量：v_composite_child_materials 的 material_name 列 =
-            //    COALESCE(asy.component_usage_type, mm.material_type, mr.name, mm.material_name)。
-            //    B-9 把 mm.material_type 从「材质名」改成「零件」后，**本列就是材质名的唯一第一顺位来源** ——
-            //    它一旦为空，页签上的材质名会从 AgNi10 变成「零件」。故这里必须写 recipe.symbol。
-            row.put("component_usage_type", recipe == null ? ms.recipeCode : recipe.symbol);
-            // 🆕 B-3：材质占比 —— material_ratio 是 V365 专为「材质占比」加的既有列
-            //    （numeric(24,12)，V386 调过精度，MaterialBomMergeHandler 已在用）⇒ 复用，不新增列。
-            row.put("material_ratio", ms.ratio);
-            row.put("rough_weight", null);
-            row.put("net_weight", null);
-            row.put("weight_unit", null);
-            row.put("scrap_rate", null);
-            row.put("defect_rate", null);
-            rows.add(row);
+        for (MaterialSelection ms : materials) {          // 循环体内零查库：纯内存组装
+            rows.add(SelDsQuoteWriter.materialBomRow(
+                partNo, seq++, ms.recipeCode, SelDsQuoteWriter.OUT_RECIPE, null, ms.ratio));
         }
-
-        versionedWriter.writeVersionedMasterDetail(
-            "material_bom", "bom_version", masterGk, null,
-            "material_bom_item", "bom_version", childGk,
-            List.of("seq_no", "component_no", "component_usage_type", "material_ratio",
-                    "rough_weight", "net_weight", "weight_unit", "scrap_rate", "defect_rate"),
-            rows);
+        return rows;
     }
 
     /**
-     * task-260902 · B-7：外购件的「自指物料行」—— {@code material_bom_item.characteristic='OUTSOURCED'}。
+     * A-3（A-AC-1③）：元素含量行 —— 该料号<b>所有材质</b>的元素行合成一组。
      *
-     * <p>形状与 {@link #insertMaterialBomItemV6} 的材质行同构，只是 {@code component_no} = 外购件料号本身、
-     * {@code component_usage_type} = 外购件品名、{@code characteristic} = {@code OUTSOURCED}。
+     * <p>🚨 V6 时代是「每材质一组」（material_part_no 是组键的一维），新表里 material_part_no
+     * 降级成普通列、轴只剩 material_no ⇒ 必须合并成一次写入。前端仍靠 material_part_no
+     * 把元素分回各自的材质，语义不丢。
      *
-     * <p>📌 实测该 {@code characteristic} 值当前<b>全表 0 行</b>（RECIPE 11095 / ASSEMBLY 49）——
-     * 这是<b>从未落地过的路径</b>，不是「已有但没接」。
-     *
-     * <p>⚠️ 主表 groupKey 显式带上 {@code characteristic='OUTSOURCED'}（对齐 ASSEMBLY 组的做法）：
-     * {@code uq_material_bom_v6 = (system_type, customer_no, material_no, bom_version,
-     * COALESCE(characteristic,''))} <b>不含 bom_type</b>，不带这一维就可能与导入侧已有的
-     * MATERIAL 主表行（characteristic NULL）撞成同一组 → 误升版、扰动导入数据。
+     * <p>{@code item_seq} 跨材质连续编号（它不参与指纹，只决定显示顺序）。
      */
-    void insertOutsourcedBomItemV6(String partNo, String customerCode, String partName) {
-        if (customerCode == null || customerCode.isBlank()) return;
-
-        Map<String, Object> masterGk = bomGroupKey(customerCode, partNo, "bom_type", "MATERIAL");
-        masterGk.put("characteristic", BomCharacteristic.OUTSOURCED);
-        Map<String, Object> childGk = bomGroupKey(customerCode, partNo, "characteristic", BomCharacteristic.OUTSOURCED);
-
-        Map<String, Object> row = new LinkedHashMap<>();
-        row.put("seq_no", 1);
-        row.put("component_no", partNo);
-        row.put("component_usage_type", partName);
-
-        versionedWriter.writeVersionedMasterDetail(
-            "material_bom", "bom_version", masterGk, null,
-            "material_bom_item", "bom_version", childGk,
-            List.of("seq_no", "component_no", "component_usage_type"),
-            List.of(row));
+    List<Map<String, Object>> buildElementBomRows(String partNo, List<MaterialSelection> materials) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        if (materials == null) return rows;
+        int seq = 1;
+        for (MaterialSelection ms : materials) {          // 循环体内零查库
+            List<ElementOverride> els = ms.elements == null ? List.<ElementOverride>of() : ms.elements;
+            for (ElementOverride eo : els) {              // 循环体内零查库
+                rows.add(SelDsQuoteWriter.elementBomRow(partNo, ms.recipeCode, seq++, eo.elementCode, eo.pct));
+            }
+        }
+        return rows;
     }
+
+    /**
+     * A-2 / A-4（A-AC-6）：COMPOSITE 父料号的 BOM —— ASSEMBLY 行与 RECIPE 行<b>合成一组</b>。
+     *
+     * <p>取代 {@code writeCombomaterialBomV6} 的两次 {@code writeVersionedMasterDetail}：
+     * <pre>
+     *   ASSEMBLY 组 → item_seq 1..N，input_material_no=子件料号，component_qty=装配用量
+     *                 （component_qty 经兼容视图映射成 V6 composition_qty，53 段模板引用它）
+     *   RECIPE   组 → item_seq N+1..2N，input_material_no=子件料号
+     * </pre>
+     * 两类行的 {@code output_material_type} 不同 ⇒ 行指纹天然不同，同组共存不会互相吞掉。
+     *
+     * <p>🚩 <b>已知保真度损失（回报已登记）</b>：V6 的 RECIPE 组还存了
+     * {@code component_usage_type = 子件的材质名}（由 {@code readChildMaterialUsageType} 逐子件查库得到，
+     * 那本身是个 N+1）。新表没有这一列，而兼容视图的 {@code component_usage_type} 是按
+     * {@code input_material_no} JOIN {@code material_recipe} 现算的 —— 这里的 input_material_no 是
+     * <b>子件报价料号</b>而非材质料号，JOIN 落空 ⇒ 组合产品父卡片上子件的材质名会从
+     * 「AgNi10」降级到 COALESCE 兜底（子件品名）。🚫 不要为此把材质名硬塞进别的列。
+     */
+    List<Map<String, Object>> buildCompositeBomRows(String parentPartNo, List<String> childPartNos,
+                                                    List<Integer> childQtys) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        if (childPartNos == null) return rows;
+        int seq = 1;
+        for (int i = 0; i < childPartNos.size(); i++) {   // 循环体内零查库
+            int qty = (childQtys != null && i < childQtys.size() && childQtys.get(i) != null
+                       && childQtys.get(i) >= 1) ? childQtys.get(i) : 1;
+            rows.add(SelDsQuoteWriter.materialBomRow(parentPartNo, seq++, childPartNos.get(i),
+                SelDsQuoteWriter.OUT_ASSEMBLY, new BigDecimal(qty), null));
+        }
+        for (String child : childPartNos) {               // 循环体内零查库
+            rows.add(SelDsQuoteWriter.materialBomRow(parentPartNo, seq++, child,
+                SelDsQuoteWriter.OUT_RECIPE, null, null));
+        }
+        return rows;
+    }
+
+
+
+
+
 
     /**
      * 跨客户复用料号时,为当前报价单客户补齐 V6 材质/元素数据(element_bom_item + material_bom_item)。
@@ -1283,6 +1203,22 @@ public class ConfigureProductService {
      */
     void backfillV6MaterialsForCustomer(String partNo, String customerCode) {
         if (customerCode == null || customerCode.isBlank()) return;
+        // 🚨 task-260903 · A-7 的**唯一豁免点**，请勿当成漏改。
+        //
+        // A-7 要求停写 V6 五表，本方法却仍在写 element_bom_item / material_bom_item / material_bom。
+        // 直接删会造成回归：本方法存在的理由是 V6 那两张表**按 customer_no 分片存**，
+        // 跨客户复用一个 V6 时代的老料号时必须为新客户补一份，否则材质/元素页签空
+        // （task-260902 B-17① 刚修过这个 bug）。新表体系没有 customer_no 维度，
+        // 所以对**新体系料号**这套复制根本没有存在意义 —— 但对**存量 V6 料号**仍然必需，
+        // 而存量 V6 数据本任务明确不迁移（需求文档 §5.1）。
+        //
+        // ⇒ 折中：只对「不在 ds_quote_material 里的料号」执行，即纯 V6 存量料号。
+        //    选配 A 阶段起铸的料号一律落 ds_quote_material ⇒ 这里对它们直接返回，
+        //    A-AC-2「V6 五表零新增」在选配新建路径上成立。
+        Object inNewModel = em.createNativeQuery(
+                "SELECT 1 FROM ds_quote_material WHERE material_no = :p LIMIT 1")
+            .setParameter("p", partNo).getResultList().stream().findFirst().orElse(null);
+        if (inNewModel != null) return;   // 新体系料号：无 customer 维度可补，且不许再写 V6
         // 1) 元素: 从任一来源客户复制 → 当前客户(当前客户无该料号元素行时整体复制)
         em.createNativeQuery(
                 "INSERT INTO element_bom_item (system_type, customer_no, hf_part_no, material_no, characteristic, seq_no, component_no, content) " +
@@ -1349,58 +1285,6 @@ public class ConfigureProductService {
     // 渲染 driver 不切（仍读 per-quote / mirror）；本期仅承载 V6 数据。
     // ─────────────────────────────────────────────────────────────────────
 
-    /**
-     * B1: COMBO 的 material_bom 主从版本化写入（替代早期 raw insert 写法）。
-     * 两组主从：
-     *   - ASSEMBLY 组：bom_type=ASSEMBLY / 子行 characteristic='ASSEMBLY'，component_no=子料号 + composition_qty；
-     *   - MATERIAL 组：bom_type=MATERIAL / 子行 characteristic=NULL，component_no=子料号 + component_usage_type=子件材质名。
-     * 主表 material_bom 各补一行（bom_version 2000 起 + is_current）；子表 material_bom_item 升版翻转 + 清残留。
-     */
-    void writeCombomaterialBomV6(String parentHfPartNo, String customerCode,
-                                 List<String> childHfPartNos, List<Integer> childQtys) {
-        if (customerCode == null || customerCode.isBlank()
-                || childHfPartNos == null || childHfPartNos.isEmpty()) return;
-
-        // ── ASSEMBLY 组：子配件清单
-        List<Map<String, Object>> assemblyRows = new ArrayList<>();
-        for (int i = 0; i < childHfPartNos.size(); i++) {
-            int qty = (childQtys != null && i < childQtys.size() && childQtys.get(i) != null
-                       && childQtys.get(i) >= 1) ? childQtys.get(i) : 1;
-            Map<String, Object> r = new LinkedHashMap<>();
-            r.put("seq_no", i + 1);
-            r.put("component_no", childHfPartNos.get(i));
-            r.put("composition_qty", new BigDecimal(qty));
-            assemblyRows.add(r);
-        }
-        // 主表分组键须含 characteristic='ASSEMBLY'：uq_material_bom_v6 = (system_type, customer_no,
-        // material_no, bom_version, COALESCE(characteristic,'')) 不含 bom_type → 仅靠 characteristic 隔离
-        // 同一 COMBO 的 MATERIAL(NULL) / ASSEMBLY 两个主表行（对齐 Q12 import 约定），否则两主表行撞唯一键 → 409。
-        Map<String, Object> asmMasterGk = bomGroupKey(customerCode, parentHfPartNo, "bom_type", "ASSEMBLY");
-        asmMasterGk.put("characteristic", "ASSEMBLY");
-        versionedWriter.writeVersionedMasterDetail(
-            "material_bom", "bom_version",
-            asmMasterGk, null,
-            "material_bom_item", "bom_version",
-            bomGroupKey(customerCode, parentHfPartNo, "characteristic", "ASSEMBLY"),
-            List.of("seq_no", "component_no", "composition_qty"), assemblyRows);
-
-        // ── MATERIAL 组：各子件材质自指（子行 characteristic=NULL，渲染走 materials mirror 的 IS NULL 分支）
-        List<Map<String, Object>> materialRows = new ArrayList<>();
-        for (int i = 0; i < childHfPartNos.size(); i++) {
-            Map<String, Object> r = new LinkedHashMap<>();
-            r.put("seq_no", i + 1);
-            r.put("component_no", childHfPartNos.get(i));
-            r.put("component_usage_type", readChildMaterialUsageType(childHfPartNos.get(i), customerCode));
-            materialRows.add(r);
-        }
-        versionedWriter.writeVersionedMasterDetail(
-            "material_bom", "bom_version",
-            bomGroupKey(customerCode, parentHfPartNo, "bom_type", "MATERIAL"), null,
-            "material_bom_item", "bom_version",
-            // 三态统一：材质行 characteristic=RECIPE（同 insertMaterialBomItemV6，理由见该处注释）。
-            bomGroupKey(customerCode, parentHfPartNo, "characteristic", BomCharacteristic.RECIPE),
-            List.of("seq_no", "component_no", "component_usage_type"), materialRows);
-    }
 
     /** material_bom / material_bom_item 分组键：QUOTE + customer + material_no + 一个区分列（值允许 null）。 */
     private Map<String, Object> bomGroupKey(String customerCode, String materialNo,
@@ -1415,22 +1299,6 @@ public class ConfigureProductService {
 
     /** 读子件自身 is_current 材质自指行 component_usage_type；缺则回退 recipe.symbol / material_type。 */
     @SuppressWarnings("unchecked")
-    String readChildMaterialUsageType(String childPartNo, String customerCode) {
-        List<Object> r = em.createNativeQuery(
-                "SELECT component_usage_type FROM material_bom_item " +
-                // 三态统一：材质行判定由 characteristic IS NULL 改为 = 'RECIPE'
-                // （V344 已把存量 QUOTE NULL 行全部回填，IS NULL 现在恒空 → 材质名会静默降级到兜底）。
-                "WHERE material_no = :p AND customer_no = :cn AND system_type = 'QUOTE' " +
-                "  AND characteristic = 'RECIPE' AND is_current = true LIMIT 1")
-            .setParameter("p", childPartNo).setParameter("cn", customerCode).getResultList();
-        if (!r.isEmpty() && r.get(0) != null && !r.get(0).toString().isBlank()) return r.get(0).toString();
-        List<Object> r2 = em.createNativeQuery(
-                "SELECT COALESCE(mr.symbol, mm.material_type) FROM material_master mm " +
-                "LEFT JOIN material_recipe mr ON mr.id = mm.material_recipe_id " +
-                "WHERE mm.material_no = :p LIMIT 1")
-            .setParameter("p", childPartNo).getResultList();
-        return (!r2.isEmpty() && r2.get(0) != null) ? r2.get(0).toString() : null;
-    }
 
     /**
      * B2: 工序 → unit_price（自制加工费）。每个配件一组版本化：
@@ -1647,6 +1515,13 @@ public class ConfigureProductService {
     private static final String UQ_SPN = "uq_spn_cust_prod";
 
     /**
+     * task-260903 · A-10（A-AC-10）：{@code ds_quote_customer_part} 的唯一索引名。
+     * A-6 停写 {@code sel_product_no} 后，并发同编号的仲裁点从 {@code uq_spn_cust_prod}
+     * 移到这里，23505 归因也必须跟着换 —— 否则并发冲突会漏成 500。
+     */
+    private static final String UQ_DQCP = "uq_ds_quote_customer_part";
+
+    /**
      * task-260902 · B-2（AC-1 / AC-2）：客户产品编号必填 + 占用前置检查。
      *
      * <p>占用口径 = <b>{@code sel_product_no}（选配来的） ∪ {@code material_customer_map}（导入来的）</b>
@@ -1681,6 +1556,12 @@ public class ConfigureProductService {
     @SuppressWarnings("unchecked")
     Object[] findProductNoOwner(String customerCode, String customerProductNo) {
         List<Object[]> rows = em.createNativeQuery(
+                // 🆕 task-260903 · A-6：并上 ds_quote_customer_part（选配新落点）。
+                // sel_product_no 仍留在 UNION 里 —— 它虽已停写，存量 14 行仍是真实占用，
+                // 摘掉会让那些编号被判成「可用」，二次分配给别的料号。
+                "SELECT material_no AS part_no, created_at FROM ds_quote_customer_part " +
+                "WHERE customer_no = :cn AND customer_product_no = :pn " +
+                "UNION ALL " +
                 "SELECT quote_part_no, created_at FROM sel_product_no " +
                 "WHERE customer_no = :cn AND customer_product_no = :pn " +
                 "UNION ALL " +
@@ -1728,19 +1609,18 @@ public class ConfigureProductService {
         if (customerProductNo == null || customerProductNo.isBlank()) return;
         if (quotePartNo == null || quotePartNo.isBlank()) return;
         try {
-            em.createNativeQuery(
-                    "INSERT INTO sel_product_no (customer_no, customer_product_no, customer_product_name, " +
-                    "  quote_part_no, quotation_id, created_by, updated_by) " +
-                    "VALUES (:cn, :pn, :nm, :qp, :qid, :op, :op)")
-                .setParameter("cn", customerCode)
-                .setParameter("pn", customerProductNo)
-                .setParameter("nm", customerProductName)
-                .setParameter("qp", quotePartNo)
-                .setParameter("qid", quotationId)
-                .setParameter("op", operatorId)
-                .executeUpdate();
+            // 🆕 task-260903 · A-6（A-AC-3）：改落 ds_quote_customer_part，sel_product_no 退役
+            //    （保留表与存量数据，仅停写 —— 对齐选配模板下线的做法）。
+            // 🚨 A-10（A-AC-10）：这里必须是**裸 INSERT**。并发同编号时后者阻塞在
+            //    uq_ds_quote_customer_part 上直到前者提交，然后拿到 23505，本方法映射成 409。
+            //    🚫 不许改成 PlainTableWriter / ON CONFLICT DO UPDATE —— 那会让两个并发请求
+            //    都「成功」，后者静默覆盖前者的料号归属，A-AC-10 的「只有 1 行」断言直接失效。
+            // ⚠️ quotation_id 在新表没有对应列（ds_quote_* 是基础资料层，不挂单据维度）。
+            //    该列在 sel_product_no 时代仅供追溯，无消费方，故不迁移。
+            dsWriter.insertCustomerPart(customerCode, customerProductNo, customerProductName,
+                quotePartNo, opOf(operatorId));
         } catch (RuntimeException e) {
-            if (isUniqueViolation(e, UQ_SPN)) {
+            if (isUniqueViolation(e, UQ_DQCP) || isUniqueViolation(e, UQ_SPN)) {
                 Map<String, Object> detail = new LinkedHashMap<>();
                 detail.put("customerProductNo", customerProductNo);
                 throw new com.cpq.configure.exception.MaterialRecipeApiException(
@@ -1794,14 +1674,14 @@ public class ConfigureProductService {
         String where = "material_type = :t"
             + (hasKw ? " AND (material_no ILIKE :kw OR COALESCE(material_name,'') ILIKE :kw)" : "");
 
-        var countQ = em.createNativeQuery("SELECT COUNT(*) FROM material_master WHERE " + where)
+        var countQ = em.createNativeQuery("SELECT COUNT(*) FROM v_compat_material_master WHERE " + where)
             .setParameter("t", MATERIAL_TYPE_OUTSOURCED);
         if (hasKw) countQ.setParameter("kw", pattern);
         long total = ((Number) countQ.getSingleResult()).longValue();
 
         var dataQ = em.createNativeQuery(
                 "SELECT material_no, material_name, specification, unit_weight " +
-                "FROM material_master WHERE " + where + " ORDER BY material_no")
+                "FROM v_compat_material_master WHERE " + where + " ORDER BY material_no")
             .setParameter("t", MATERIAL_TYPE_OUTSOURCED);
         if (hasKw) dataQ.setParameter("kw", pattern);
         dataQ.setFirstResult((safePage - 1) * safeSize);
@@ -1838,7 +1718,7 @@ public class ConfigureProductService {
                 "SELECT mm.material_name, mm.specification, mm.dimension, mm.unit_weight, " +
                 "       (SELECT min(sps.created_at) FROM sel_part_signature sps " +
                 "          WHERE sps.quote_part_no = mm.material_no) " +
-                "FROM material_master mm WHERE mm.material_no = :p")
+                "FROM v_compat_material_master mm WHERE mm.material_no = :p")
             .setParameter("p", hfPartNo).getResultList();
         if (!mm.isEmpty()) {
             Object[] r = mm.get(0);
@@ -1970,15 +1850,31 @@ public class ConfigureProductService {
                     //    —— 那是**产品结构类型**，不是料号类型。B-9 把选配写入侧的 material_type 归位为
                     //    料号类型后，本处必须一并归位，否则 material_type 仍混着第三种语义，
                     //    §S-6 的外购件判据（material_type='外购件'）以及导入侧的类型分布都会被污染。
-                    //    组合产品的父料号 = 可对外报价的**成品**。
+                    //    组合产品的父料号在**业务语义**上是可对外报价的成品；但新表值域里没有「成品」，
+                    //    且 2026-09-04 用户裁决要求主产品入库按「零件」存 ⇒ 落库值 = 零件（见下）。
                     // ⚠️ v_composite_child_materials 的第二 UNION 分支 COALESCE(mm.material_type, mm.material_name)
-                    //    对本料号不生效：writeCombomaterialBomV6 会给父料号写 MATERIAL 组
-                    //    （characteristic=RECIPE）⇒ 父料号命中第一分支，material_name 取
-                    //    component_usage_type（子件材质名），与本改动无关。
-                    insertMaterialMasterV6(parentHfPartNo, MATERIAL_TYPE_FINISHED, null, null, null); // R1
+                    //    对本料号不生效：buildCompositeBomRows 会给父料号写 RECIPE 行
+                    //    ⇒ 父料号命中第一分支。⚠️ task-260903 起 component_usage_type 由兼容视图
+                    //    按 input_material_no JOIN material_recipe 现算，而这里的 input_material_no
+                    //    是子件报价料号 ⇒ JOIN 落空，材质名降级到 COALESCE 兜底（见 buildCompositeBomRows）。
+                    // 🆕 task-260903 · A-1：父料号主档改落 ds_quote_material。
+                    // 🚨 2026-09-04 用户裁决（需求文档 A-AC-7③）**覆盖**了原来的「传 null」处置：
+                    //    用户原话「选配的数据的主产品在入库时,物料表中主产品的类型应该是[零件]」
+                    //    ⇒ 组合产品父料号写 TYPE_PART。
+                    //    🚩 「V6 的第三态『成品』在新表值域（零件/外购件）里没有位置」这个**事实**仍成立，
+                    //       变的是处置：从「留 NULL」改为「按用户裁决归入零件」。
+                    //    🚫 原注释「不许拿『零件』凑数」已作废，不要依据它改回 null ——
+                    //       A-AC-7 的判据是：选配铸出的料号里 material_type IS NULL 的行数 = 0。
+                    // 🆕 A-AC-11：category_code 一律写「默认分类」000000。
+                    dsWriter.upsertMaterial(parentHfPartNo, null, null, null, null,
+                        SelDsQuoteWriter.TYPE_PART, SelDsQuoteWriter.CATEGORY_DEFAULT, opOf(operatorId));
                     // V6 落库 Phase 2（选配 COMBO 补全，设计 §6 / 用户方案 B1/B2/B3）：统一走
                     // VersionedV6Writer（内容相同复用 / 不同 max+1 升版 / is_current 翻转）。
-                    writeCombomaterialBomV6(parentHfPartNo, customerCode, childHfPartNos, childQtys);
+                    // 🆕 task-260903 · A-2 / A-4（A-AC-6）：父级 BOM 改落 ds_quote_material_bom。
+                    // 🚨 ASSEMBLY 行与 RECIPE 行**必须合并成一次 writeGroup** —— V6 时代它们是
+                    //    characteristic 区分的两个独立组，新表里同属 material_no 这一个轴值。
+                    dsWriter.writeMaterialBomGroup(parentHfPartNo,
+                        buildCompositeBomRows(parentHfPartNo, childHfPartNos, childQtys), opOf(operatorId));
                     insertProcessUnitPriceV6(parentHfPartNo, customerCode, req.parts, childHfPartNos, catalog);
                     insertCompositeProcessCapacityV6(parentHfPartNo, req.compositeProcesses, catalog);
                 }

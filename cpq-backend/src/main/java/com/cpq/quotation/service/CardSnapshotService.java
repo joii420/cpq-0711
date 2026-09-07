@@ -121,6 +121,10 @@ public class CardSnapshotService {
     @Inject
     EntityManager em;
 
+    /** task-260904 B-4/B-18：树页签双判据（全工程唯一实现，需求文档 §1.35）。 */
+    @Inject
+    com.cpq.component.service.TabSemanticResolver tabSemanticResolver;
+
     @Inject
     ComponentDriverService componentDriverService;
 
@@ -3862,6 +3866,22 @@ public class CardSnapshotService {
             driverComps = queried;
         }
 
+        // task-260904 B-18：树组件跳过 live $view 的判据由硬编码 "BOM".equals(dc[2]) 收编为双判据。
+        // N+1 纪律：driverComps 已在手（预取或上面一次查询的产物），这里整批一次算完（≤2 条 SQL，
+        // 与组件数无关），🚫 不在下面的 for (Object[] dc : driverComps) 循环里逐个判。
+        Map<UUID, Boolean> treeFlagByComp;
+        {
+            Map<UUID, String> tabTypeById = new LinkedHashMap<>();
+            for (Object[] dc : driverComps) {
+                if (dc == null || dc[0] == null) continue;
+                // dc.length 兜底：核价侧既有调用点传的是旧 2 列数组（无 tab_type），语义等同「非树」
+                // ——该调用点从不含树组件（templateHasTreeTab 已在上游拦截），零回归。
+                if (dc.length <= 2) continue;
+                tabTypeById.put(UUID.fromString(dc[0].toString()), dc[2] == null ? null : dc[2].toString());
+            }
+            treeFlagByComp = tabSemanticResolver.isTreeTabBatch(tabTypeById);
+        }
+
         String compositeType = li.compositeType;
         QuotationIdContext.set(quotationId);
         // task-0806 B17-a：打开模板渲染域，让下方 componentDriverService.expand 内部
@@ -3878,9 +3898,9 @@ public class CardSnapshotService {
                 // 交给调用方 overlayTreeTabsFromFrozenSnapshot 用已冻结的 snapshot_rows 填充）。
                 // dc.length 兜底：driverCompsPrefetch 传入的旧 2 列数组（核价侧既有调用点）天然跳过本判断，
                 // 该调用点从不会含树组件（templateHasTreeTab 已在上游拦截），零回归。
-                if (dc.length > 2 && "BOM".equals(dc[2])) continue;
                 String cidStr = dc[0].toString();
                 UUID compId = UUID.fromString(cidStr);
+                if (Boolean.TRUE.equals(treeFlagByComp.get(compId))) continue;   // task-260904 B-18：双判据结果
                 try {
                     // Phase 2-2'：非递归无行维度组件命中整单合桶(unionByComp)则按 partNo 取,否则逐行 expand 兜底。
                     ExpandDriverResponse exp;

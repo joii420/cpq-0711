@@ -834,7 +834,13 @@ public class BuilderService {
                                                                  CompileResult r, String viewName) {
         CreateComponentRequest compReq = new CreateComponentRequest();
         compReq.dataDriverPath = "$" + viewName;
-        compReq.tabType = req.tabType;
+        // task-260904 (c) 方案（用户 2026-09-05 裁决）：按本任务目标形态，
+        // 组件不再持有页签类型 —— 页签语义由所绑数据源的 semantic 推导（见 TabSemanticResolver）。
+        // 故此处不再写 compReq.tabType：留 null 时 ComponentService.applyTabType 走
+        // 「requestedTabType == null ⇒ 不改动 tab_type」分支，新组件保持 NULL，
+        // 存量组件经配置器重存时其 tab_type 也一个都不会被改写（AC-25④）。
+        // 🚫 本行与「配置器存 BOM 树组件 400」无关：那是 task-260819 的 V413 种子把显示名
+        //    写进了 semantic_tab_view.tab_type 键值列，由其 V417 修复（D-128/S-33）。
 
         List<Map<String, Object>> fields = new ArrayList<>();
         for (BuilderConfig.ColumnConfig col : r.effectiveColumns) {

@@ -36,6 +36,20 @@ class CompatViewEquivalenceTest extends Task260903Base {
             new String[]{COMPAT_MM,  "material_master"},
             new String[]{COMPAT_EBI, "element_bom_item"});
 
+    /**
+     * 每对的<b>计重分组键</b>（用于 {@link #bac1d_noDoubleProjection}）。
+     * ⚠️ 这些不保证是原表的唯一键 —— 正因为不是，所以<b>绝对值无意义</b>，见该方法注释。
+     */
+    private static String groupKey(String v6Table) {
+        return switch (v6Table) {
+            case "material_bom_item" ->
+                    "system_type, customer_no, material_no, component_no, characteristic, seq_no";
+            case "element_bom_item" ->
+                    "system_type, customer_no, material_no, component_no, seq_no";
+            default -> "material_no";
+        };
+    }
+
     @Test
     @DisplayName("B-AC-1a 列名/列序/类型逐字一致")
     void bac1a_columnContractIdentical() {
@@ -95,16 +109,64 @@ class CompatViewEquivalenceTest extends Task260903Base {
             assertEquals(0, onlyInTbl,
                     "B-AC-1c：" + p[1] + " 里有 " + onlyInTbl + " 行在兼容视图里丢了 ⇒ 渲染会缺数据");
             if (onlyInView > 0) {
-                long notTraceable = count(
+                // 🚨 2026-09-04 修正：这里原本判「多出的行 material_no 是否在 ds_quote_material 里」，
+                //    那是一条**恒真**的判据 —— 重叠料号被 UNION ALL 出双份时，那个重复行的
+                //    material_no 当然也在 ds_quote_material 里 ⇒ 它声称能抓的重复投影恰恰抓不到。
+                //    真正的「有没有出双份」判据搬到 bac1d_noDoubleProjection，用按唯一键计重的**差值**。
+                long traceable = count(
                         "SELECT count(*) FROM (SELECT * FROM " + p[0] + " EXCEPT ALL SELECT * FROM " + p[1] + ") x"
-                                + " WHERE x.material_no NOT IN (SELECT material_no FROM ds_quote_material)");
-                assertEquals(0, notTraceable,
-                        "B-AC-1c：" + p[0] + " 多出的 " + onlyInView + " 行里，有 " + notTraceable
-                                + " 行**追溯不到 ds_quote_material** ⇒ 不是新表数据被正确投影，"
-                                + "而是重叠料号被 UNION ALL 出了双份（反连接失效）。");
-                System.out.println("[B-AC-1c] " + p[0] + " 多出 " + onlyInView
-                        + " 行，全部可追溯到 ds_quote_* ✅（新表数据被正确投影，非重复）");
+                                + " WHERE x.material_no IN (SELECT material_no FROM ds_quote_material)");
+                System.out.println("[B-AC-1c] " + p[0] + " 多出 " + onlyInView + " 行，其中 " + traceable
+                        + " 行的料号见于 ds_quote_material（📌 仅供定位，🚫 不作为『没出双份』的判据）");
+                assertEquals(onlyInView, traceable,
+                        "B-AC-1c：" + p[0] + " 多出的行里有 " + (onlyInView - traceable)
+                                + " 行的料号根本不在 ds_quote_material ⇒ 既不是 V6 的、也不是新表的，来源不明。");
             }
+        }
+    }
+
+    /**
+     * <b>B-AC-1d</b>：兼容视图<b>没有把重叠料号投影出双份</b>（反连接生效）。
+     *
+     * <h3>🚨 判据必须用「差值」，绝对值毫无意义 —— 这条注释是本方法存在的理由</h3>
+     * 实测（2026-09-04）：按 {@code (system_type,customer_no,material_no,component_no,characteristic,seq_no)}
+     * 计重，<b>兼容视图有 1851 个重复组，V6 原表也有 1851 个</b>。
+     * 那 1851 组是 {@code material_bom_item} <b>固有的</b> —— 这六列根本不是它的唯一键。
+     * ⇒ 谁看到「视图有 1851 组重复」就喊反连接失效，谁就会要求回滚一个没坏的东西。
+     * <b>只有「视图组数 − 原表组数」才是信号</b>。
+     *
+     * <p>📌 同一个坑踩过两次：一次是分组键漏了 {@code customer_no}（三行分属不同客户被误判成重复），
+     * 一次是拿绝对值 1851 当异常。⇒ 本方法把两侧用<b>同一个分组键</b>各算一遍再相减，
+     * 构造性地消除这两类误判。
+     */
+    @Test
+    @DisplayName("B-AC-1d 反连接生效：重复组数与 V6 原表相等（差值判据，非绝对值）")
+    void bac1d_noDoubleProjection() {
+        requireCompatViews();
+        for (String[] p : PAIRS) {
+            String k = groupKey(p[1]);
+            long dupView = count("SELECT count(*) FROM (SELECT " + k + " FROM " + p[0]
+                    + " GROUP BY " + k + " HAVING count(*) > 1) x");
+            long dupV6 = count("SELECT count(*) FROM (SELECT " + k + " FROM " + p[1]
+                    + " GROUP BY " + k + " HAVING count(*) > 1) x");
+            System.out.println("[B-AC-1d] " + p[0] + " 重复组=" + dupView
+                    + "；" + p[1] + " 重复组=" + dupV6 + "；差值=" + (dupView - dupV6)
+                    + "（分组键：" + k + "）");
+            assertEquals(dupV6, dupView,
+                    "B-AC-1d：" + p[0] + " 的重复组数比 " + p[1] + " 多 " + (dupView - dupV6)
+                            + " 组 ⇒ 与 V6 重叠的料号被 UNION ALL 投影出了双份，即反连接失效。"
+                            + "\n  ⚠️ 注意判据是**差值**：两侧各自的绝对值（" + dupView + " / " + dupV6
+                            + "）里包含原表固有的重复，拿绝对值判断会得出灾难性的错误结论。");
+
+            // 逐行计重也要相等：组数相等仍可能单组内多一行
+            long rowsInDupView = count("SELECT coalesce(sum(c),0) FROM (SELECT count(*) c FROM " + p[0]
+                    + " GROUP BY " + k + " HAVING count(*) > 1) x");
+            long rowsInDupV6 = count("SELECT coalesce(sum(c),0) FROM (SELECT count(*) c FROM " + p[1]
+                    + " GROUP BY " + k + " HAVING count(*) > 1) x");
+            System.out.println("[B-AC-1d] 重复组内行数 视图=" + rowsInDupView + " V6=" + rowsInDupV6);
+            assertEquals(rowsInDupV6, rowsInDupView,
+                    "B-AC-1d：" + p[0] + " 重复组内的总行数比 " + p[1] + " 多 "
+                            + (rowsInDupView - rowsInDupV6) + " 行 ⇒ 组数虽同，但某些组里被多投了行。");
         }
     }
 

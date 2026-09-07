@@ -87,6 +87,14 @@ public class ConfigureSnapshotService {
     @Inject
     com.cpq.template.service.PublishedTemplateReader publishedTemplateReader;
 
+    /** task-260904 B-4：树页签双判据的全工程唯一实现（需求文档 §1.35）。 */
+    @Inject
+    com.cpq.component.service.TabSemanticResolver tabSemanticResolver;
+
+    /** task-260904 B-5：加叶子/物化类型判定的主数据批量取数（2 条 SQL，与料号数无关）。 */
+    @Inject
+    com.cpq.quotation.service.MasterPartTypeService masterPartTypeService;
+
     public static class DriverComp {
         public UUID id;
         public String name;
@@ -102,6 +110,14 @@ public class ConfigureSnapshotService {
         public String fields;
         /** task-0722：多行页签「行排序列」字段名（可空，快照按其数字感知升序排列）。 */
         public String sortField;
+        /**
+         * task-260904 B-4/B-18：该组件是否为报价侧 BOM 树页签 —— <b>双判据</b>的产物
+         * （{@code TabSemanticResolver}：新模型按绑定数据源 semantic=='TREE'，存量回退 tab_type=='BOM'）。
+         *
+         * <p>🚫 <b>不要在消费点重新按 tabType 判</b>：本字段在 {@link #loadDriverComponents} 里
+         * <b>整批一次</b>算好（N+1 纪律：判据本身要查 {@code component_sql_view}，逐个判就是 N+1）。
+         */
+        public boolean treeTab;
     }
 
     /**
@@ -394,14 +410,15 @@ public class ConfigureSnapshotService {
                     buckets = Map.of();
                 }
 
-                // task-0721 B3：树页签(tab_type='BOM') → 整单一次调 BomTreeRenderService.render(usage=QUOTE)，
+                // task-0721 B3：树页签 → 整单一次调 BomTreeRenderService.render(usage=QUOTE)，
                 // 逐 line 复用其 spine + 系统列结果（treeBaseRowsByLine.get(lineItemId).get(compIdStr)）。
-                // 单一路由收口点：BomTreeRenderService.isQuoteTreeTabType（判据 tab_type='BOM'，
-                // 与 bomRecursiveExpand 解耦——2026-07-21 裁决 Q1）。不含树页签的模板 treeComps 恒空，
-                // 下方 getOrDefault 恒查不到 → 逐行走既有平铺路径，零改动零回归。
+                // 单一路由收口点：task-260904 B-4 起为 TabSemanticResolver 的双判据（新模型按数据源
+                // semantic=='TREE'，存量回退 tab_type=='BOM'），结果已在 loadDriverComponents 里整批
+                // 算好落在 DriverComp.treeTab 上；与 bomRecursiveExpand 解耦——2026-07-21 裁决 Q1。
+                // 不含树页签的模板 treeComps 恒空，下方 getOrDefault 恒查不到 → 逐行走既有平铺路径。
                 List<DriverComp> treeComps = new ArrayList<>();
                 for (DriverComp dc : comps) {
-                    if (BomTreeRenderService.isQuoteTreeTabType(dc.tabType)) treeComps.add(dc);
+                    if (dc.treeTab) treeComps.add(dc);   // task-260904 B-18：双判据结果，见 DriverComp.treeTab
                 }
                 Map<UUID, Map<String, ArrayNode>> treeBaseRowsByLine = java.util.Collections.emptyMap();
                 // BL-0030 同款失败哨兵：render 异常不上抛(否则整单快照失败 → 前端无限"加载中…")，
@@ -426,6 +443,29 @@ public class ConfigureSnapshotService {
                         }
                     }
                 }
+
+                // ── task-260904 B-5：主数据类型索引，整单一次预取（N+1 纪律：2 条 SQL，与行数/节点数无关）──
+                // 料号来源 = 上面整单渲染出的全部树行的 __hfPartNo / __parentNo（treeBaseRowsByLine 已在手，
+                // 不为此再查一次树）。无树页签 / 渲染失败 → 空索引，下方 injectNodeTypes 天然 no-op。
+                BomNodeTypeResolver.MasterTypeIndex masterTypeIndex =
+                        BomNodeTypeResolver.MasterTypeIndex.empty();
+                if (!treeComps.isEmpty() && treeRenderError == null && !treeBaseRowsByLine.isEmpty()) {
+                    Set<String> treePartNos = new LinkedHashSet<>();
+                    for (Map<String, ArrayNode> byComp : treeBaseRowsByLine.values()) {
+                        for (ArrayNode rows : byComp.values()) {
+                            collectTreePartNos(rows, treePartNos);
+                        }
+                    }
+                    try {
+                        masterTypeIndex = masterPartTypeService.load(treePartNos);
+                    } catch (Exception e) {
+                        // 主数据取数失败不该让整单快照失败；退化为空索引 = 「全部料号未命中主数据」，
+                        // lenient 模式下 __nodeType 落 null（api.md §0.2 允许），不阻断物化。
+                        LOG.warnf("[add-snapshot] quotation=%s 主数据类型索引预取失败(降级为空索引): %s",
+                                quotationId, e.getMessage());
+                    }
+                }
+                final BomNodeTypeResolver.MasterTypeIndex masterTypeIndexRef = masterTypeIndex;
 
                 // task-260819 B-19：Pass1 逐行 fallback expand（下方 componentDriverService.expand，
                 // buckets 未命中时的回落路径）同样依赖 :total_material_no——独立于上面「合桶预取」
@@ -512,10 +552,12 @@ public class ConfigureSnapshotService {
                     // task-0721 B5：本行的页签命中上下文(仅含树页签时才建,纯逻辑对象,建了也不影响非树行为)。
                     BomNodeTypeResolver.TabHitContext treeTypeCtx =
                             treeComps.isEmpty() ? null : new BomNodeTypeResolver.TabHitContext();
+                    // task-260904 B-5：主数据索引来自整单一次预取（循环外），此处只做内存附加，不查库。
+                    if (treeTypeCtx != null) treeTypeCtx.attachMasterTypes(masterTypeIndexRef);
 
                     // Pass 1：既有平铺组件展开逻辑(逐位不变) —— 跳过树页签(tab_type='BOM'，Pass 2 单独处理)。
                     for (DriverComp comp : comps) {
-                        if (BomTreeRenderService.isQuoteTreeTabType(comp.tabType)) continue;
+                        if (comp.treeTab) continue;   // task-260904 B-18：双判据结果
                         try {
                             ExpandDriverResponse exp;
                             Map<String, ExpandDriverResponse> bucket = buckets.get(comp.id);
@@ -745,7 +787,7 @@ public class ConfigureSnapshotService {
             try {
                 // task-0721 B3：树页签(tab_type='BOM')不进合桶——其行由 BomTreeRenderService 整单渲染
                 // (spine + 边键匹配)提供，不是简单的按 partNo 展开，合桶逻辑对它无意义且会被丢弃浪费。
-                if (BomTreeRenderService.isQuoteTreeTabType(comp.tabType)) {
+                if (comp.treeTab) {   // task-260904 B-18：双判据结果
                     continue;
                 }
                 if (!componentDriverService.eligibleForQuoteBucket(comp.id)) {
@@ -825,7 +867,7 @@ public class ConfigureSnapshotService {
     static List<ExpandDriverResponse.Row> sortRowsBySortField(List<ExpandDriverResponse.Row> rows, DriverComp comp) {
         if (rows == null || rows.size() < 2 || comp == null
                 || comp.sortField == null || comp.sortField.isBlank()) return rows;
-        if (BomTreeRenderService.isQuoteTreeTabType(comp.tabType)) return rows; // 树序为准
+        if (comp.treeTab) return rows; // 树序为准（task-260904 B-18：双判据结果）
         String col = resolveDriverColumn(comp.sortField, comp.fields);
         if (col == null) return rows;
         List<ExpandDriverResponse.Row> sorted = new ArrayList<>(rows);
@@ -887,9 +929,25 @@ public class ConfigureSnapshotService {
         for (JsonNode row : rows) {
             String parentNo = row.path("__parentNo").isNull() ? null : row.path("__parentNo").asText(null);
             String hfPartNo = row.path("__hfPartNo").isNull() ? null : row.path("__hfPartNo").asText(null);
-            if (parentNo != null && !parentNo.isBlank() && hfPartNo != null && !hfPartNo.isBlank()) {
+            if (hfPartNo == null || hfPartNo.isBlank()) continue;
+            if (parentNo != null && !parentNo.isBlank()) {
                 ctx.addChild(parentNo, hfPartNo);
+            } else {
+                // task-260904 B-20 规则五：无父 = 该行树的根 = 成品。改读主数据后成品也在物料表里，
+                // 不登记根就会被判成「零件」而放行挂为他人叶子（AC-26）。
+                ctx.addRoot(hfPartNo);
             }
+        }
+    }
+
+    /** task-260904 B-5：从整单树行里收集全部料号（纯内存遍历，不查库），供主数据索引一次预取。 */
+    private static void collectTreePartNos(ArrayNode rows, Set<String> out) {
+        if (rows == null) return;
+        for (JsonNode row : rows) {
+            String hfPartNo = row.path("__hfPartNo").isNull() ? null : row.path("__hfPartNo").asText(null);
+            if (hfPartNo != null && !hfPartNo.isBlank()) out.add(hfPartNo);
+            String parentNo = row.path("__parentNo").isNull() ? null : row.path("__parentNo").asText(null);
+            if (parentNo != null && !parentNo.isBlank()) out.add(parentNo);
         }
     }
 
@@ -989,6 +1047,7 @@ public class ConfigureSnapshotService {
                 dc.partNameField = s.partNameField;
                 out.add(dc);
             }
+            applyTreeTabFlags(out);
             return out;
         }
 
@@ -1013,7 +1072,23 @@ public class ConfigureSnapshotService {
             dc.partNameField = r[7] != null ? r[7].toString() : null;
             out.add(dc);
         }
+        applyTreeTabFlags(out);
         return out;
+    }
+
+    /**
+     * task-260904 B-4/B-18：给整批 driver 组件算「是不是树页签」（双判据，见
+     * {@link com.cpq.component.service.TabSemanticResolver}）。
+     *
+     * <p><b>N+1 纪律</b>：整批一次调用，SQL 条数固定 ≤2，与组件数无关；现网
+     * {@code builder_version} 全为 NULL ⇒ 第 2 条查询不触发，全部走分支②回退，行为与改动前逐字一致。
+     */
+    private void applyTreeTabFlags(List<DriverComp> comps) {
+        if (comps == null || comps.isEmpty()) return;
+        Map<UUID, String> tabTypeById = new LinkedHashMap<>();
+        for (DriverComp dc : comps) if (dc.id != null) tabTypeById.put(dc.id, dc.tabType);
+        Map<UUID, Boolean> flags = tabSemanticResolver.isTreeTabBatch(tabTypeById);
+        for (DriverComp dc : comps) dc.treeTab = Boolean.TRUE.equals(flags.get(dc.id));
     }
 
     /** task-0721 B3：本报价单的报价（customer）模板 id，供 {@link BomTreeRenderService#render} 用。 */
