@@ -70,7 +70,7 @@
 | AC-7 | 单点 | L2 | T2.1 | **干净库跑完 Flyway 后**（不经任何 UI 操作）：`template_kind='QUOTATION' AND status='PUBLISHED'` ≥ 1；其组件 `builder_version IS NOT NULL` 全真；`template_component` 计数 = **11** |
 | AC-8 | 单点 | L4 | T4.3 | 「材质元素」页签元素单价列**有值**（非全空）。⚠️ 需先确认测试料号的元素在 `element` 主表已建档 + 有行情 + 有价格策略 —— 三者缺一该列本就该空，那不是本任务的 bug（`repair-260830` 的教训：2440 行空是「11 个元素从未建档」，与代码无关） |
 | AC-9 | **序列** | L4 | T4.4 | 改一格 → 保存 → **切走再切回** → **刷新页面**，三个时点值一致且为改后值；页签合计三个时点一致 |
-| AC-10 | 序列 | L1+L2 | T1.6 | 提交后 `status=SUBMITTED`；`quotation.submission_snapshot` 非空；`quotation_component_sql_snapshot` 该单 **11 行** |
+| AC-10 | 序列 | L1+L2 | T1.6 | 提交后 `status=SUBMITTED`；`quotation.submission_snapshot` 非空；`quotation_component_sql_snapshot` 该单行数 **= 该单所用模板的页签数**（🔄 2026-09-07 主线亲验订正：原写「11 行」，实测 **14** —— 模板已升 v1.1；**改成不变量而不是改成 14**，写 14 一样会在下次加页签时过期）|
 | AC-11 | 序列 | L1 | T1.7 | 核价通过返 200，`status=APPROVED`，**不抛异常** |
 | AC-12 | 序列 | L1+L2 | T1.8 | 同文件同客户再导：`summary` 中带版本表全 `unchanged`；`version_no` **逐行不变**；`_history` 行数**零新增**；第二张单内容与第一张一致 |
 | AC-13 | 单点 | L3 | T3.4 | 列表页 DOM 中**不存在**文案「从基础数据导入」；存在「导入报价数据」且可点；工具栏顺序与 `原型图/01` 一致 |
@@ -80,7 +80,7 @@
 | AC-17 | 边界 | L1+L2 | T1.12 | 空 sheet（只表头）导入：该表 `count(*)` / `version_no` / `_history` **三者全不变** |
 | AC-18 | 边界 | L1+L3 | T1.13 / T3.6 | 所选客户 0 行客户料号：建单返 200、`lineItemsCount=0`；前端给出提示文案（与 `原型图/07` 一致），**不是白屏不是 500** |
 | AC-19 | 边界 | L1 | T1.14 | 以 `PRICING_MANAGER` 调三个新端点 → **403**；`quotation` 行数不变 |
-| AC-20 | 边界 | L1+L2 | T1.15 | 1845 行文件：① 导入段异步、同步响应 < 1s；② 建单同步段 < **60s**（前端 axios 超时实取值）；③ 响应 `materializing=true`；④ **建单链路 SQL 条数与料号数无关** —— 用 200 料号 / 1845 料号两次跑，`pg_stat_user_tables` 扫描增量**同量级**（`pg_stat_statements` 未安装且装它属 §3.2 红线，用扫描增量作代理指标） |
+| AC-20 | 边界 | L1+L2 | T1.15 | 1845 行文件：① 导入段异步、同步响应 < 1s；② 建单同步段 < **60s**（前端 axios 超时实取值）；③ 响应 `materializing=true`；④ **建单链路不存在随明细行数线性增长的语句形态** —— 按「动词 + 主表」分组计数，**最高重复次数不随明细行数增长**。<br>🔄 **2026-09-07 主线亲验订正了判据与量具两处**：<br>　**判据**：原写「SQL **条数**与料号数无关」，实测字面不成立（3 明细 **68** 条 vs 200 明细 **119** 条）。但差异不是逐料号查询 —— 200 明细下最高重复 **28** 次（若 N+1 应 ≈200），`select component` / `select component_sql_view` / `insert quotation_line_component_data` **各恰好 14 次 = 页签数**。<br>　**量具**：原计划用 `pg_stat_user_tables` **扫描增量**作代理指标 —— 🚫 **不可用**：共享库上有多条并发会话在写，扫描增量里混着别人的流量，且 PG 的统计收集本身有节流（本项目已在 `task-260825` 栽过一次）。改用 **worktree 服务带 `-Dquarkus.hibernate-orm.log.sql=true`，数日志里 `^[Hibernate]` 行**——只统计本进程、逐条可读、可按形态分组。⚠️ **语句边界是 `[Hibernate]` 行不是时间戳行**，按时间戳数会**恒返 0 却不报错**（我第一版就是这么栽的） |
 | AC-21 | 边界 | L1+L2 | T1.16 | 同 `material_no` 两条客户料号 → 建 **2** 个明细行；两行 `product_part_no_snapshot` 相同、`customer_part_no` 不同；`sort_order` 从 0 严格递增无重复 |
 | AC-22 | 边界 | L1+L2 | T1.17 ⛔ | ⛔ **阻塞于 `task-260907-报价侧加客户维度`**（`customer_no` DDL + 轴模型未合并前不可执行）。以 `CUST-0004` 导一份 → 再以 `CUST-0001` 导同一份：① 15 张无客户列 sheet 的 `customer_no` 全 = 本次所选客户，NULL 行数 = 0；② **`ds_quote_material_bom` 中该料号两个客户的行并存，第一次导入的行未被删除**。<br>🚨 ②是静默删除的守卫 —— 只断言①抓不住，因为①**在删除发生后照样成立** |
 
