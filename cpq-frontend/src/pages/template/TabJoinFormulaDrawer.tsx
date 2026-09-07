@@ -19,6 +19,8 @@ import type { FormulaToken } from '../component/types';
 import { checkParenBalance } from './tabjoin/formulaBracketCheck';
 import type { ExpressionToken, ConditionPredicate, PredicateOperand } from '../../utils/formulaEngine';
 import { serializePredicate } from '../../utils/predicateText';
+// task-260904 F-8（AC-24）：§1.35 双判据的唯一前端实现
+import { isTreeTab, tabSemanticLabel, type BoundTabSemantic } from '../../utils/tabSemantic';
 
 /**
  * task-0803（2026-08-04）：SUMIF 条件里可选的树属性保留字（判**源页签的行**）。
@@ -63,6 +65,12 @@ interface Props {
    * EXCEL 组件不做该项拦截（EXCEL 走 buildColumn 字符串路径，不解析 tree_ref），传或不传均可。
    */
   tabType?: string;
+  /**
+   * task-260904 F-8（AC-24 / 需求文档 §1.35 双判据）：**正在编辑公式的这个组件**绑定数据源的语义。
+   * `undefined` = 未绑定（存量组件）→ 回退读 `tabType === 'BOM'`，行为逐字不变；`null` = 已绑定但非树。
+   * ⚠️ 只覆盖「宿主组件」这一侧；SUMIF「源页签」侧的判据仍读 tabDefs[].tabType，见 sumif 处注释。
+   */
+  boundSemantic?: BoundTabSemantic;
   column: any;
   /**
    * NORMAL/SUBTOTAL 模式下，编辑已有公式时传入原始 FormulaToken[]。
@@ -161,10 +169,15 @@ export function buildSumifText(input: {
 export function checkTreeRefTabTypeGate(
   tokens: FormulaToken[],
   tabType: string | undefined,
+  /**
+   * task-260904 F-8（AC-24 / §1.35 双判据）：组件绑定数据源的语义。
+   * 省略 / `undefined` = 未绑定 → 逐字回退旧判据 `tabType === 'BOM'`（存量组件与既有单测口径不变）。
+   */
+  boundSemantic?: BoundTabSemantic,
 ): string | null {
-  if (tabType === 'BOM') return null;
+  if (isTreeTab(boundSemantic, tabType)) return null;
   if (!containsTreeToken(tokens)) return null;
-  const label = tabType ?? '未配置';
+  const label = tabSemanticLabel(boundSemantic, tabType);
   return `父子取值（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT）与树属性（[层级]/[是否叶子]/[是否根]）仅 BOM 类型页签可用（当前页签类型：${label}）`;
 }
 
@@ -233,6 +246,7 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
   componentType,
   selfRowKeyFields,
   tabType,
+  boundSemantic,
   column,
   initialTokens,
   onClose,
@@ -290,6 +304,10 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
     // 让用户能写 SUMIF([物料BOM.是否叶子]=1, [物料BOM.金额])——只聚合源页签里是叶子的那些行。
     // 值在求值期由 CardSnapshotService.injectTreeAttrsForCrossTab / putCrossTab 物化到源行上，
     // 谓词求值器 arow.get(字段名) 零改动即可读到。非 BOM 源页签不追加（那些行没有树坐标）。
+    // 🚨 task-260904 F-8 未改这一处（**契约缺口，已报主线**）：这里判的是「**源页签**」（另一个组件）
+    // 是不是树，输入只有 tabDefs[].tabType（ComponentTabDefService 只放了 component.tab_type）。
+    // 双判据要的 semantic 需要后端在 tab-defs 响应里补 semantic/isTree 字段，本期 B-x 无此项；
+    // 前端逐个 tab 调 GET /components/{id}/builder 会变成 N+1，且属自行改契约。维持旧判据不动。
     if (sumifSourceTab?.tabType !== 'BOM') return base;
     return [...base, ...TREE_ATTR_SOURCE_FIELDS.filter(a => !base.includes(a))];
   }, [sumifSourceTab, sourceFields]);
@@ -490,7 +508,7 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
     }
 
     // F-2（task-0803）：父子取值仅 BOM 类型页签可用
-    const treeRefGateMsg = checkTreeRefTabTypeGate(tokens, tabType);
+    const treeRefGateMsg = checkTreeRefTabTypeGate(tokens, tabType, boundSemantic);
     if (treeRefGateMsg) {
       message.error(treeRefGateMsg);
       return;
@@ -560,6 +578,7 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
         <div style={{ padding: '14px 16px', overflow: 'auto', maxHeight: '78vh' }}>
           <FormulaEditorPanel
             tabType={tabType}
+            boundSemantic={boundSemantic}
             expression={expression}
             onChange={setExpression}
             tabDefs={tabDefs}

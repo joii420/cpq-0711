@@ -44,6 +44,16 @@ public class GlobalExceptionMapper {
                             "conflicts", rpe.getConflicts())))
                     .build();
         }
+        // task-260904 B-6/B-7：加叶子的两个新增拒绝态（api.md §3.3）。
+        // code 是前端的唯一判定依据（禁止按 message 文本匹配）。
+        if (e instanceof LeafAddRejectedException lare) {
+            return Response.status(e.getCode())
+                    .entity(ApiResponse.error(e.getCode(), e.getMessage(), Map.of(
+                            "code", lare.getErrorCode(),
+                            "partNo", lare.getPartNo() == null ? "" : lare.getPartNo(),
+                            "cyclePath", lare.getCyclePath())))
+                    .build();
+        }
         if (e instanceof TreeConflictException tce) {
             return Response.status(e.getCode())
                     .entity(ApiResponse.error(e.getCode(), e.getMessage(),

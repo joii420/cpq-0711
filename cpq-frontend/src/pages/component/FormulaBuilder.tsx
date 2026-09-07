@@ -6,6 +6,8 @@ import type { FormulaItem, FormulaToken } from './types';
 import { newFormulaRow } from './types';
 import TreeRefDrawer from './TreeRefDrawer';
 import { TREE_REF_FUNC_BUTTONS, treeAttrChipLabel, treeRefDisabledTooltip } from './crossTabText';
+// task-260904 F-8（AC-24）：§1.35 双判据的唯一前端实现
+import { isTreeTab, type BoundTabSemantic } from '../../utils/tabSemantic';
 import './styles.css';
 import type { DecimalString } from '../../utils/precision';
 import { createFormulaNumberToken } from './formulaNumberToken';
@@ -55,6 +57,12 @@ interface FormulaBuilderProps {
    * 禁止用 `if (...) return null` 隐藏（项目 UI 规范硬性要求）。
    */
   tabType?: string;
+  /**
+   * task-260904 F-8（AC-24 / 需求文档 §1.35 双判据）：该组件绑定数据源的语义。
+   * `undefined` = 未绑定（存量组件）→ 回退读 `tabType === 'BOM'`，行为逐字不变（AC-24②）；
+   * `null` = 已绑定但非树语义。两者不可互换，见 utils/tabSemantic.ts。
+   */
+  boundSemantic?: BoundTabSemantic;
 }
 
 const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
@@ -65,6 +73,7 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
   activeFormulaKey,
   onActiveFormulaKeyChange: setActiveFormulaKey,
   tabType,
+  boundSemantic,
 }) => {
   const [numberPopoverOpen, setNumberPopoverOpen] = useState(false);
   const [numberInputValue, setNumberInputValue] = useState<DecimalString | null>(null);
@@ -98,7 +107,9 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
 
   // ── task-0803 F-1~F-8：BOM 页签「父子取值」（PGET/CSUM/CAVG/CMAX/CMIN/CCOUNT + 树属性）──
   // F-2：仅 BOM 组件启用；非 BOM 组件置灰 + tooltip 说明原因（不隐藏，见下方 JSX）。
-  const isBomTab = tabType === 'BOM';
+  // task-260904 F-8（AC-24）：判据由 `tabType === 'BOM'` 升级为 §1.35 双判据（有数据源绑定按
+  // semantic==='TREE'，否则回退 tabType）。变量名保留 isBomTab —— 下游 3 处引用与既有单测口径不变。
+  const isBomTab = isTreeTab(boundSemantic, tabType);
   const treeRefDisabledReason = isBomTab ? undefined : treeRefDisabledTooltip(tabType);
   const treeRefButtonsDisabled = !isBomTab || !activeFormulaKey;
 

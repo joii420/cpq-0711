@@ -36,6 +36,13 @@ import SqlViewListPanel from './SqlViewListPanel';
 import SqlViewBuilderTab, { type SqlViewBuilderTabHandle } from './SqlViewBuilderTab';
 import TabJoinFormulaDrawer, { type TabJoinFormulaSavePayload } from '../template/TabJoinFormulaDrawer';
 import { tokensToDrawerExpression } from './formulaSerialize';
+// task-260904 F-8（AC-24）：§1.35 双判据的唯一前端实现，5 处语义闸门共用，不许各写一份 `tabType === 'BOM'`
+import {
+  isTreeTab, semanticFromTabType, tabSemanticLabel,
+  type BoundTabSemantic,
+} from '../../utils/tabSemantic';
+// 🚫 只 import，不修改 sqlViewBuilderService.ts / SqlViewBuilderTab.tsx（task-260819 正在大改这两个文件）
+import { getBuilder } from '../../services/sqlViewBuilderService';
 import { SortableTable, DragHandle } from '../../components/SortableTable';
 import { runBatch } from '../../components/SelectableTable';
 import './styles.css';
@@ -1086,6 +1093,11 @@ const ComponentManagement: React.FC = () => {
   // 2026-07-21 起与 bomRecursiveExpand 后端联动派生(选 BOM → true；其余 → false)，
   // 前端只维护这一个字段，不再单独暴露渲染开关。
   const [tabType, setTabType] = useState<string | undefined>(undefined);
+  // task-260904 F-8（AC-24）：该组件绑定的数据源语义 —— §1.35 双判据的分支①输入。
+  // undefined = 未绑定数据源（存量组件）→ 所有语义闸门回退读 tabType，行为逐字不变（AC-24②）。
+  // 取值来源见 loadBoundSemantic：GET /components/{id}/builder 的 builderConfig（已有端点，
+  // task-260819 落地，本次只读不改）。
+  const [boundSemantic, setBoundSemantic] = useState<BoundTabSemantic>(undefined);
   // 双保存按钮问题修复（2026-08-22 紧急，主线方案 2）：详情页有「取数配置」Tab 自己的保存按钮，也有
   // 外层这个「保存」——真实事故是用户点了外层、看到"保存成功"，以为取数配置也存了，实际外层保存
   // 走的是 PUT /components/{id}（只存组件基本信息），取数配置一个字节都没落库。
@@ -1327,6 +1339,40 @@ const ComponentManagement: React.FC = () => {
       .catch(() => setTabDefs([]));
   }, [selectedComponent?.id]);
 
+  // ── task-260904 F-8（AC-24 / §1.35 分支①）：载入该组件绑定的数据源语义 ──────────────
+  // 判「新模型 vs 存量」用 builderVersion（与后端 B-4 同一判据：component_sql_view.builder_version
+  // 非 NULL = 本视图由取数配置器产出）；取不到 / 报错 / 存量手写视图 → 一律留 undefined，
+  // 让 5 处闸门回退读 tab_type，存量行为逐字不变（AC-24② / AC-25）。
+  // ⚠️ 本次只能从 builderConfig.tabType 本地推导 semantic（见 utils/tabSemantic.ts 的注释）——
+  //    正规来源 availableSources[].semantic 属后端 B-1（第二批），第一批拿不到。
+  const loadBoundSemantic = useCallback(async (componentId: string): Promise<BoundTabSemantic> => {
+    try {
+      const res = await getBuilder(componentId);
+      const cfg = res?.builderConfig ?? null;
+      const bound = res?.builderVersion != null || cfg != null;
+      if (!bound) return undefined;
+      return semanticFromTabType(cfg?.tabType);
+    } catch {
+      // 端点 404 / 会话过期 / 后端热重载中 —— 一律按「未绑定」处理：宁可回退存量口径，
+      // 也不要因为一次网络抖动把树页签判成非树（那会静默灰掉父子取值）。
+      return undefined;
+    }
+  }, []);
+
+  useEffect(() => {
+    const cid = selectedComponent?.id;
+    if (!cid) { setBoundSemantic(undefined); return; }
+    let cancelled = false;
+    setBoundSemantic(undefined);
+    void loadBoundSemantic(cid).then((sem) => {
+      if (!cancelled) setBoundSemantic(sem);
+    });
+    return () => { cancelled = true; };
+  }, [selectedComponent?.id, loadBoundSemantic]);
+
+  /** §1.35 双判据的求值结果 —— 本页所有语义闸门（校验 / Tooltip / 子组件 prop）唯一入口。 */
+  const isTreeComponent = isTreeTab(boundSemantic, tabType);
+
   // Load component when selected from list
   const handleSelectComponent = async (comp: ComponentItem) => {
     try {
@@ -1457,14 +1503,20 @@ const ComponentManagement: React.FC = () => {
     // task-260819 F-15（D-37）：判据是 `tabType !== 'BOM'`（非枚举白名单），「费用类」自动落进
     // 同一约束，不需要为它单独加分支——已按此核对过一遍，行为符合 D-37「费用类必配料号列或名称列
     // 至少一个」的裁决。
+    // task-260904 F-4 / F-8（AC-15、AC-24）：判据由 `tabType !== 'BOM'` 升级为 §1.35 双判据 ——
+    // 有数据源绑定按 semantic !== 'TREE'，否则回退 tabType !== 'BOM'。
+    // 🚫 「既没绑数据源、也没配页签类型」这一档必须继续放行（114 个存量未配组件靠它，AC-15；
+    //    与后端 B-11 保留 `tabType == null` 放行分支同口径）。
     if (
       selectedComponent.componentType === 'NORMAL'
-      && tabType
-      && tabType !== 'BOM'
+      && (tabType || boundSemantic !== undefined)
+      && !isTreeComponent
       && !partNoField
       && !partNameField
     ) {
-      message.error(`页签类型「${tabType}」需配置「料号列」或「名称列」至少一个作为匹配标识`);
+      message.error(
+        `页签类型「${tabSemanticLabel(boundSemantic, tabType)}」需配置「料号列」或「名称列」至少一个作为匹配标识`,
+      );
       return;
     }
     setSaving(true);
@@ -1701,6 +1753,8 @@ const ComponentManagement: React.FC = () => {
             children: (
               <FieldConfigTable
                 tabType={tabType}
+                /* task-260904 F-8（AC-24）：§1.35 双判据的分支①输入；undefined = 未绑定 → 组件内回退读 tabType */
+                boundSemantic={boundSemantic}
                 fields={fields}
                 formulas={formulas}
                 componentId={selectedComponent?.id}
@@ -1752,6 +1806,9 @@ const ComponentManagement: React.FC = () => {
                   try {
                     const fresh = (await componentService.getById(selectedComponent.id)).data as ComponentItem;
                     setTabType(fresh.tabType as any);
+                    // task-260904 F-8：取数配置刚保存过，绑定的数据源可能变了 —— 双判据的输入必须同步刷新，
+                    // 否则闸门会用上一次的语义（新组件保存完树数据源后父子取值仍是灰的）。
+                    setBoundSemantic(await loadBoundSemantic(selectedComponent.id));
                     setPartNoField(fresh.partNoField);
                     setPartNameField(fresh.partNameField);
                     setElementCodeField(fresh.elementCodeField);
@@ -1910,10 +1967,14 @@ const ComponentManagement: React.FC = () => {
                         非树页签"料号列或名称列至少配一个"即可——不是必须配料号列（有些页签只有
                         名称没有料号，如"外购件/费用"类页签用"料件名称=组成件1"标识）。 */}
                     {(() => {
-                      const identityMissing = !!tabType && tabType !== 'BOM' && !partNoField && !partNameField;
+                      // task-260904 F-8（AC-24）：三处判据统一走 §1.35 双判据（isTreeComponent），
+                      // 不再各写一份 `tabType !== 'BOM'`；「有绑定或有页签类型」才校验，两者皆无 → 放行（AC-15）。
+                      const identityDeclared = !!tabType || boundSemantic !== undefined;
+                      const identityRequired = identityDeclared && !isTreeComponent;
+                      const identityMissing = identityRequired && !partNoField && !partNameField;
                       return (
                         <>
-                          <Tooltip title={tabType && tabType !== 'BOM' ? '该页签哪个字段是料号列（与「名称列」至少配一个作为匹配标识）' : '该页签哪个字段是料号列（BOM 树页签可不配，取系统列料号）'}>
+                          <Tooltip title={identityRequired ? '该页签哪个字段是料号列（与「名称列」至少配一个作为匹配标识）' : '该页签哪个字段是料号列（BOM 树页签可不配，取系统列料号）'}>
                             <Select
                               allowClear
                               placeholder="料号列"
@@ -1924,7 +1985,7 @@ const ComponentManagement: React.FC = () => {
                               options={fieldNameOptions}
                             />
                           </Tooltip>
-                          <Tooltip title={tabType && tabType !== 'BOM' ? '该页签哪个字段是料号名称列（与「料号列」至少配一个作为匹配标识；有些页签只有名称没有料号，可只配这个）' : '该页签哪个字段是料号名称列（可空）'}>
+                          <Tooltip title={identityRequired ? '该页签哪个字段是料号名称列（与「料号列」至少配一个作为匹配标识；有些页签只有名称没有料号，可只配这个）' : '该页签哪个字段是料号名称列（可空）'}>
                             <Select
                               allowClear
                               placeholder="名称列"
@@ -2082,6 +2143,8 @@ const ComponentManagement: React.FC = () => {
           componentType={componentType}
           selfRowKeyFields={rowKeyFields}
           tabType={tabType}
+          /* task-260904 F-8（AC-24）：宿主组件的数据源语义；跨页签「源页签」侧的判据仍缺契约，见回报 */
+          boundSemantic={boundSemantic}
           column={formulaDrawer.column}
           initialTokens={formulaDrawer.initialTokens}
           onClose={() => setFormulaDrawer({ open: false, formulaKey: null, excelColIndex: null, column: null, initialTokens: undefined })}

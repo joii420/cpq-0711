@@ -7,6 +7,7 @@ import com.cpq.template.exception.TemplateNotFrozenException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -129,6 +130,10 @@ public class PublishedTemplateReader {
         return out;
     }
 
+    /** task-260904 B-4/B-18：树页签双判据（全工程唯一实现，需求文档 §1.35）。 */
+    @Inject
+    com.cpq.component.service.TabSemanticResolver tabSemanticResolver;
+
     /** driver 组件（data_driver_path 非空）。委派 {@link #allTabsOf}，不新增查询。 */
     public List<TemplateComponentSnapshot> driverCompsOf(UUID templateId) {
         List<TemplateComponentSnapshot> out = new ArrayList<>();
@@ -138,11 +143,26 @@ public class PublishedTemplateReader {
         return out;
     }
 
-    /** 树页签（tab_type = 'BOM'）。委派 {@link #allTabsOf}，不新增查询。 */
+    /**
+     * 树页签。委派 {@link #allTabsOf}，不新增快照查询。
+     *
+     * <p>task-260904 B-18：判据由硬编码 {@code "BOM".equals(s.tabType)} 收编为
+     * {@link com.cpq.component.service.TabSemanticResolver} 的双判据（新模型按绑定数据源
+     * {@code semantic=='TREE'}，存量回退 {@code tab_type=='BOM'}）。
+     *
+     * <p><b>N+1 纪律</b>：整批一次判（{@code isTreeTabBatch} ≤2 条 SQL，与页签数无关），
+     * 🚫 不在循环里逐个判。现网 {@code builder_version} 全为 NULL ⇒ 全部走分支②，结果与
+     * 改动前逐字相同。
+     */
     public List<TemplateComponentSnapshot> treeTabsOf(UUID templateId) {
+        List<TemplateComponentSnapshot> all = allTabsOf(templateId);
+        if (all.isEmpty()) return List.of();
+        Map<UUID, String> tabTypeById = new LinkedHashMap<>();
+        for (TemplateComponentSnapshot s : all) if (s.componentId != null) tabTypeById.put(s.componentId, s.tabType);
+        Map<UUID, Boolean> flags = tabSemanticResolver.isTreeTabBatch(tabTypeById);
         List<TemplateComponentSnapshot> out = new ArrayList<>();
-        for (TemplateComponentSnapshot s : allTabsOf(templateId)) {
-            if ("BOM".equals(s.tabType)) out.add(s);
+        for (TemplateComponentSnapshot s : all) {
+            if (Boolean.TRUE.equals(flags.get(s.componentId))) out.add(s);
         }
         return out;
     }
