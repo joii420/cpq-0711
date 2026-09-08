@@ -1,0 +1,23 @@
+# 🔴 顺带查到（超出 D-45 范围，未动代码）：树页签的**子行**从来没进过 _record
+# 采集时刻 2026-09-08 03:38 -07:00，库 cpq_db_0724
+
+## 实测
+  SELECT count(*) 树页签组件数 FROM component WHERE bom_recursive_expand;            → 2
+  ds_quote_material_bom_record: 总行 64 / input_material_no IS NULL 64 / 涉及 30 张单
+  ⇒ 该 _record 表 **100% 都是合成根行**，一条真实 BOM 边行都没有。
+
+## 根因（读代码钉死，非推测）
+  DsRecordProjector.resolveAxis 第一优先级取 driverRow.hf_part_no。
+  树页签 $view 的语义是 (parent_no=父件, hf_part_no/material_no=子件)：
+    实测 snapshot_rows: parent_no=T260907T-FG01, hf_part_no=T260907T-RM01,
+                        _物料BOM_销售料号=T260907T-FG01, _物料BOM_投入料号=T260907T-RM01
+  而主表 ds_quote_material_bom 的轴列 material_no = **父件**
+    （证据行 id=12007: material_no=T260907T-RM01 / input_material_no=T260907T-RM03）
+  ⇒ 子行算出的 axisValue = 子件料号（RM01），不在 touchedAxes{FG01,FG02} 里
+  ⇒ DsQuoteRecordService:224  把它们全丢掉。
+  只有根行的 hf_part_no 恰好等于成品料号，所以只有它活了下来 —— 而它恰恰是不该活的那一行。
+
+## 后果
+  D-45 修好之后，ds_quote_material_bom_record 将**恒为 0 行**
+  ⇒ 物料BOM 永远不会被报价单回填。这不是 D-45 造成的，是 D-45 掩盖了它。
+  🚦 修法要动轴解析口径（树页签应取 parent_no / 销售料号列），影响面独立 ⇒ 交主线立项裁决。
