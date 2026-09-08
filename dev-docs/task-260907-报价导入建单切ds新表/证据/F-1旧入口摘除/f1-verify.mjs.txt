@@ -1,0 +1,70 @@
+import { chromium } from '/home/joii/project/cpq/cpq-frontend/node_modules/playwright/index.mjs';
+
+const BASE = 'http://localhost:5196';
+const OUT = '/home/joii/project/cpq/.claude/worktrees/task-260907-quote-import/dev-docs/task-260907-报价导入建单切ds新表/证据/F-1旧入口摘除';
+
+const browser = await chromium.launch({ channel: 'chrome' });
+const ctx = await browser.newContext({ baseURL: BASE, viewport: { width: 1600, height: 1000 }, locale: 'zh-CN' });
+const page = await ctx.newPage();
+
+let ok = true;
+const fail = (m) => { ok = false; console.log('❌ ' + m); };
+
+// 1) 登录
+await page.goto('/login');
+await page.locator('input[placeholder="用户名或邮箱"]').fill('admin');
+await page.locator('input[placeholder="密码"]').fill('Admin@2026');
+await page.locator('button[type="submit"]').click();
+await page.waitForURL(/\/(dashboard|customers|quotations|system|products|change-password)/, { timeout: 20000 });
+console.log('LF-EVAL 登录后 URL =', page.url());
+
+// 2) 报价单列表
+await page.goto('/quotations');
+await page.waitForLoadState('networkidle');
+await page.locator('.ant-card-head-title', { hasText: '报价单管理' }).first().waitFor({ timeout: 20000 });
+// 等表格渲染
+await page.waitForTimeout(1500);
+
+const flat = (await page.content()).replace(/\s+/g, '');
+
+// 3) DOM 断言
+const hasOld = flat.includes('从基础数据导入');
+const hasNew = flat.includes('导入报价数据');
+console.log('LF-EVAL DOM 含「从基础数据导入」 =', hasOld, '  (期望 false)');
+console.log('LF-EVAL DOM 含「导入报价数据」   =', hasNew, '  (期望 true —— 防空验证)');
+if (hasOld) fail('旧入口文案仍在 DOM 中');
+if (!hasNew) fail('「导入报价数据」不在 DOM 中 ⇒ 页面根本没渲染出来，上一条 false 是假绿');
+
+// 4) 工具栏按钮文本序列
+const toolbarBtns = await page.locator('.ant-card-body button').allInnerTexts();
+const seq = toolbarBtns.map(t => t.replace(/\s+/g, '')).filter(Boolean);
+console.log('LF-EVAL 页面按钮文本序列 =', JSON.stringify(seq));
+const head4 = seq.slice(0, 4);
+console.log('LF-EVAL 工具栏前 4 个按钮 =', JSON.stringify(head4));
+const expect4 = ['导入历史', '导入报价数据', '新建报价单'];
+const idxH = seq.indexOf('导入历史'), idxI = seq.indexOf('导入报价数据'), idxN = seq.indexOf('新建报价单');
+console.log('LF-EVAL 下标 导入历史/导入报价数据/新建报价单 =', idxH, idxI, idxN);
+if (!(idxH >= 0 && idxI === idxH + 1 && idxN === idxI + 1)) fail('工具栏顺序不符合 AC-13③');
+
+// 搜索框存在
+const searchCnt = await page.locator('.ant-card-body input[placeholder="搜索报价单号/名称/客户"]').count();
+console.log('LF-EVAL 搜索框数量 =', searchCnt, '(期望 1)');
+if (searchCnt !== 1) fail('搜索框缺失');
+
+await page.screenshot({ path: `${OUT}/01-工具栏-摘除后.png`, fullPage: false });
+await page.locator('.ant-card-body').first().screenshot({ path: `${OUT}/02-工具栏-局部.png` }).catch(()=>{});
+
+// 5) 回归：点「导入报价数据」抽屉能开
+await page.locator('button', { hasText: /导入\s*报价数据/ }).first().click();
+const drawer = page.locator('.ant-drawer.ant-drawer-open').first();
+await drawer.waitFor({ state: 'visible', timeout: 15000 }).catch(() => fail('「导入报价数据」抽屉未打开'));
+const drawerCnt = await page.locator('.ant-drawer.ant-drawer-open').count();
+console.log('LF-EVAL 打开态抽屉数量 =', drawerCnt, '(期望 1)');
+const title = (await page.locator('.ant-drawer-title:visible').first().innerText().catch(()=>'(无)')).replace(/\s+/g,'');
+console.log('LF-EVAL 抽屉标题 =', title);
+if (!title || title === '(无)') fail('抽屉标题读不到');
+await page.screenshot({ path: `${OUT}/03-导入报价数据抽屉-回归.png` });
+
+console.log(ok ? '=== RESULT: PASS ===' : '=== RESULT: FAIL ===');
+await browser.close();
+process.exit(ok ? 0 : 1);

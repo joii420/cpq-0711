@@ -66,6 +66,10 @@ async function inspectCosting(page: Page, tag: string) {
 }
 
 test('新单详情页(只读)核价单开箱渲染核价树, 无「无组件数据」', async ({ page }) => {
+  test.skip(true, '入口依赖：本用例经「从基础数据导入」建单走 V6 链路，该入口已由 task-260907 F-1 下线，' +
+                  '抽屉组件与 service 亦已删除（重建参照见 git history）。' +
+                  '所守的回归线仍有效（RECORD 2026-07-12 task-0712：核价树「加载中」/ 详情页「无组件数据」），' +
+                  '待核价侧切 ds_ 新表后按新入口重写。见 BL-0221。');
   test.skip(!backendUp, '后端未启动');
   expect(fs.existsSync(XLSX)).toBe(true);
   test.setTimeout(180000);

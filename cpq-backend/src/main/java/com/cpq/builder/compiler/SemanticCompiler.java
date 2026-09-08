@@ -58,19 +58,21 @@ public class SemanticCompiler {
     public static final int CURRENT_VERSION = 1;
 
     private static final String PRICE_FUNC_ALIAS = "cep";
-    /**
-     * task-260907 · B-8：<b>历史</b>价格函数节点键，只作向后兼容用。
-     *
-     * <p>🚫 <b>不要再拿它当「价格列」的唯一判据</b> —— 价格函数节点已由 V424 换成
-     * {@code FUNC_CUSTOMER_ELEMENT_PRICE}（f_customer_element_price，粒度 = 客户 × 元素）。
-     * 判据改为「锚点那条 PRICE 边指向谁」，见 {@link #isPriceNodeKey}。
-     *
-     * <p>之所以还留着它：实测共享库里有 <b>21 份</b>已保存的 builder 配置，其
-     * {@code sourceNodeKey} 仍写着 {@code FUNC_ELEMENT_PRICE}。判据若只认新键，
-     * 这 21 份会在编译时把价格列当普通列去找路径，报
-     * {@code COMPILE_COLUMN_SOURCE_UNKNOWN} —— 用户视角是「配好的视图突然编译不过」。
-     */
-    private static final String LEGACY_PRICE_FUNC_NODE_KEY = "FUNC_ELEMENT_PRICE";
+    // 🚫 task-260907 B-17 / B-8 合并：这里原先是 PRICE_FUNC_NODE_KEY = "FUNC_ELEMENT_PRICE" 常量。
+    //    它把「价格函数」这个**角色**钉死成**某一个具体节点**，换价格函数就必须同时改代码与种子，
+    //    而漏改的症状是「拖得动、编译时才报列找不到」或「元素单价整列空且不报错」。
+    //    ⇒ 改为**顺锚点的 PRICE 边**解析，见 resolvePricePlan。角色由图数据表达，不由常量表达。
+    //
+    // 📌 2026-09-07 合并纪要（两条线独立做了同一个泛化，取 B-17 的结构）：
+    //    · B-8 侧曾引入 LEGACY_PRICE_FUNC_NODE_KEY 常量做向后兼容，理由是「价格节点已换成
+    //      FUNC_CUSTOMER_ELEMENT_PRICE，21 份存量配置仍写旧键会编译不过」。
+    //    · 🚨 **该前提已不成立**：D-39 撤回了换节点方案，V424 把 FUNC_CUSTOMER_ELEMENT_PRICE
+    //      连同它的 PRICE 边一并删除。全库现在只有 FUNC_ELEMENT_PRICE 一个价格函数节点，
+    //      边就指向它 ⇒ 精确匹配天然覆盖那 21 份，兼容常量成了**永远为真的冗余判据**。
+    //    · 实测依据：21 份存量配置在「有 LEGACY / 无 LEGACY」两种编译器下产物**逐字节相同**，
+    //      且 21/21 全部编译成功（见本次合并回报）。⇒ 不保留该常量。
+    //    · 🚫 不要再把它加回来：它会让「选了价格函数的列、锚点却没有对应 PRICE 边」这个
+    //      本该报错的情形被判成价格列，从而绕过 resolvePricePlan 里的 COMPILE_PRICE_EDGE_NOT_FOUND。
 
     @Inject
     PhysicalColumnCatalog catalog;
@@ -1311,22 +1313,28 @@ public class SemanticCompiler {
         SemanticNode funcNode;          // B-41：顺 PRICE 边解析出的价格函数节点（替代按 key+"|QUOTE" 反查）
     }
 
-    private boolean isPriceColumn(PricePlan plan, BuilderConfig.ColumnConfig col) {
-        return isPriceNodeKey(col.sourceNodeKey, plan == null ? null : plan.funcNode.nodeKey);
-    }
-
     /**
-     * 这个 {@code sourceNodeKey} 是不是「价格策略列」。
+     * 是否为「价格策略原子组」的输出列。
      *
-     * <p>判据 = <b>锚点 PRICE 边当前指向的那个节点键</b>，外加历史键做向后兼容
-     * （见 {@link #LEGACY_PRICE_FUNC_NODE_KEY}）。
-     * 🚫 不要退回硬编码单一常量 —— 那样换价格函数就必须同时改代码与种子，
-     * 而漏改的症状是「拖得动、编译时才报列找不到」。
+     * <p>判据是 {@code col.sourceNodeKey} 是否等于<b>本次解析出的那个</b>价格函数节点
+     * —— 🚫 不是跟某个常量比。同一份图里可以有多个价格函数节点（当前 QUOTE 方言有两个：
+     * 按料号的 {@code FUNC_ELEMENT_PRICE} 与按客户的 {@code FUNC_CUSTOMER_ELEMENT_PRICE}），
+     * 用常量比会把「另一个」的列漏判成普通列，然后在 resolveColumn 里当作锚点列去找，
+     * 要么报一个语义完全不相干的错，要么静默输出空列。
+     *
+     * <p>{@code plan == null}（没选价格列、或形态 B 已把价格列摘掉）时恒 false。
      */
-    private static boolean isPriceNodeKey(String sourceNodeKey, String edgeTargetNodeKey) {
-        if (sourceNodeKey == null) return false;
-        return LEGACY_PRICE_FUNC_NODE_KEY.equals(sourceNodeKey)
-                || (edgeTargetNodeKey != null && edgeTargetNodeKey.equals(sourceNodeKey));
+    private boolean isPriceColumn(PricePlan plan, BuilderConfig.ColumnConfig col) {
+        // 🚩 `plan != null &&` 这一段不是多余的防御，它是**结构性免疫**：
+        //    判据只由「本次真的解析出来的 plan」决定，plan 为 null 时恒 false。
+        //    合并时 B-8 侧的写法是 isPriceNodeKey(col.sourceNodeKey, plan == null ? null : ...)，
+        //    其中历史键分支在 plan == null 时仍可能返 true ⇒ 上面第一个输出循环
+        //    （`if (isPriceColumn(...)) continue;`）会把该列**静默丢掉**，而第二个循环被
+        //    `if (pricePlan != null)` 挡住不会补输出它。
+        //    实测该形态在 B-8 自己的代码里不可达（见合并回报的可达性分析），但它的不可达
+        //    依赖的是**另一个方法**维持的不变量 —— 那种「今天不可达」不是安全，是欠债。
+        return plan != null && plan.funcNode != null
+                && plan.funcNode.nodeKey.equals(col.sourceNodeKey);
     }
 
     /**
@@ -1334,29 +1342,65 @@ public class SemanticCompiler {
      * {@code effectiveColumns}（AC-2①「7 项」的来源，也是 D-09 原子组"拖一列自动带出"的落地点）。
      */
     private PricePlan resolvePricePlan(Ctx c, List<BuilderConfig.ColumnConfig> effectiveColumns) {
-        // task-260907 · B-8：先顺 PRICE 边解析出「当前的价格函数节点」，再判用户有没有选它的列。
-        // 顺序不能反：判据本身依赖边指向谁（换函数时只改种子、不改代码）。
-        SemanticEdge priceEdge = c.snap.edgesFrom(c.anchor.id).stream()
-                .filter(e -> "PRICE".equals(e.edgeKind))
-                .findFirst()
-                .orElse(null);
-        String edgeTargetKey = (priceEdge == null) ? null
-                : (c.snap.nodeById.get(priceEdge.toNodeId) == null ? null
-                        : c.snap.nodeById.get(priceEdge.toNodeId).nodeKey);
-
-        boolean priceSelected = effectiveColumns.stream()
-                .anyMatch(col -> isPriceNodeKey(col.sourceNodeKey, edgeTargetKey));
-        if (!priceSelected) return null;
-
-        if (priceEdge == null) {
-            throw new BuilderApiException(400, "COMPILE_PRICE_EDGE_NOT_FOUND",
-                    "锚点「" + c.anchor.displayName + "」没有声明价格策略边", Map.of());
+        // ── ① 顺锚点的 PRICE 边，列出「本锚点可用的价格函数节点」
+        //    🚨 这里**绝不能用 findFirst()**。原实现是
+        //        edgesFrom(anchor).filter(PRICE).findFirst()
+        //    —— 同一锚点挂两条 PRICE 边时它按遍历顺序碰运气取一条，取错了也不报错。
+        //    这是本项目反复出现的反模式（refreshSnapshotsByComponent 的 firstResult()、
+        //    semantic_tab_view 三段坐标只用两段）。⇒ 按 builder_config 里列引用的函数节点
+        //    **精确匹配**，多一条少一条都有明确的错误码。
+        Map<String, SemanticEdge> priceEdgeByFuncKey = new LinkedHashMap<>();
+        for (SemanticEdge e : c.snap.edgesFrom(c.anchor.id)) {
+            if (!"PRICE".equals(e.edgeKind)) continue;
+            SemanticNode to = c.snap.nodeById.get(e.toNodeId);
+            if (to == null) {
+                throw new BuilderApiException(500, "COMPILE_PRICE_FUNC_NODE_MISSING",
+                        "价格策略边指向的函数节点不存在（图数据不一致）", Map.of());
+            }
+            SemanticEdge dup = priceEdgeByFuncKey.putIfAbsent(to.nodeKey, e);
+            if (dup != null) {
+                // 同一锚点 → 同一函数节点有两条 PRICE 边：图数据本身有歧义，
+                // 此时无论选哪条都是碰运气 ⇒ 直接拒绝，不许猜。
+                throw new BuilderApiException(400, "COMPILE_PRICE_EDGE_DUPLICATED",
+                        "锚点「" + c.anchor.displayName + "」到价格函数「" + to.nodeKey
+                                + "」存在多条 PRICE 边，无法确定用哪条", Map.of());
+            }
         }
+
+        // ── ② 本次选列引用了哪些价格函数节点
+        LinkedHashSet<String> selectedFuncKeys = new LinkedHashSet<>();
+        for (BuilderConfig.ColumnConfig col : effectiveColumns) {
+            if (col.sourceNodeKey != null && priceEdgeByFuncKey.containsKey(col.sourceNodeKey)) {
+                selectedFuncKeys.add(col.sourceNodeKey);
+            }
+        }
+
+        if (selectedFuncKeys.isEmpty()) {
+            // 没选价格列。但要区分「真没选」和「选了某个 FUNCTION 节点的列、锚点却没有对应 PRICE 边」——
+            // 后者若静默 return null，那列会掉进普通列分支被当成锚点列去找，
+            // 报出来的错与真实原因毫不相干。⇒ 在这里就点名。
+            for (BuilderConfig.ColumnConfig col : effectiveColumns) {
+                if (col.sourceNodeKey == null) continue;
+                SemanticNode n = c.snap.nodeByKeyDialect.get(
+                        col.sourceNodeKey + "|" + c.dialect.graphDialect());
+                if (n != null && "FUNCTION".equals(n.nodeKind)) {
+                    throw new BuilderApiException(400, "COMPILE_PRICE_EDGE_NOT_FOUND",
+                            "锚点「" + c.anchor.displayName + "」没有指向价格函数「"
+                                    + col.sourceNodeKey + "」的价格策略边", Map.of());
+                }
+            }
+            return null;
+        }
+        if (selectedFuncKeys.size() > 1) {
+            // 一个组件同时选两个价格函数的列：JOIN 别名 cep 只有一个，且两组价格语义不同，
+            // 合成一张视图没有业务含义 ⇒ 拒绝，而不是悄悄只生效一个。
+            throw new BuilderApiException(400, "COMPILE_PRICE_MULTI_FUNC",
+                    "同一组件不能同时使用多个价格函数：" + selectedFuncKeys, Map.of());
+        }
+
+        String funcKey = selectedFuncKeys.iterator().next();
+        SemanticEdge priceEdge = priceEdgeByFuncKey.get(funcKey);
         SemanticNode funcNode = c.snap.nodeById.get(priceEdge.toNodeId);
-        if (funcNode == null) {
-            throw new BuilderApiException(500, "COMPILE_PRICE_FUNC_NODE_MISSING",
-                    "价格策略边指向的函数节点不存在（图数据不一致）", Map.of());
-        }
         List<SemanticEdgeKey> keys = c.snap.keysOf(priceEdge.id).stream()
                 .sorted(Comparator.comparingInt(k -> k.seq)).toList();
         if (keys.isEmpty()) {
@@ -1367,7 +1411,7 @@ public class SemanticCompiler {
         if (ps != null && ps.elementCodeManualField != null && !ps.elementCodeManualField.isBlank()) {
             // 形态 B（AC-23）：元素键改绑手填字段，SQL 不再输出价格策略——既有 element_code_field/
             // element_price_field 运行时定价机制（task-0729）接管，本编译器不生成 JOIN。
-            effectiveColumns.removeIf(col -> isPriceNodeKey(col.sourceNodeKey, funcNode.nodeKey));
+            effectiveColumns.removeIf(col -> funcKey.equals(col.sourceNodeKey));
             return null;
         }
 

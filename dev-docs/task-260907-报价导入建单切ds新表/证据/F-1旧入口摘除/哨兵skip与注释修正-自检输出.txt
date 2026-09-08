@@ -1,0 +1,34 @@
+=== 哨兵 spec skip + 陈旧注释修正 自检输出（2026-09-07 09:10:41）===
+--- tsc ---
+APP EXIT=0
+TEST EXIT=0
+
+--- 两个哨兵 spec（期望：collected=2, skipped=2，不是 0 collected）---
+
+Running 2 tests using 1 worker
+
+  -  1 [chromium] › e2e/repro-costing-tree-import.spec.ts:69:1 › 复现: 导入建单后进核价单, 核价树是否"加载中"(不手刷) + 手刷后恢复
+  -  2 [chromium] › e2e/verify-detail-costing-new.spec.ts:68:1 › 新单详情页(只读)核价单开箱渲染核价树, 无「无组件数据」
+
+  2 skipped
+
+--- 删源文件后回归：报价单列表页仍正常 ---
+LF-EVAL 登录后 URL = http://localhost:5196/dashboard
+LF-EVAL DOM 含「从基础数据导入」 = false   (期望 false)
+LF-EVAL DOM 含「导入报价数据」   = true   (期望 true —— 防空验证)
+LF-EVAL 页面按钮文本序列 = ["导入历史","导入报价数据","新建报价单","编辑","复制","提交审批","撤回","发送给客户","客户接受","客户拒绝","删除"]
+LF-EVAL 工具栏前 4 个按钮 = ["导入历史","导入报价数据","新建报价单","编辑"]
+LF-EVAL 下标 导入历史/导入报价数据/新建报价单 = 0 1 2
+LF-EVAL 搜索框数量 = 1 (期望 1)
+LF-EVAL 打开态抽屉数量 = 1 (期望 1)
+LF-EVAL 抽屉标题 = 导入报价数据
+=== RESULT: PASS ===
+
+--- 全工程残留命中（应只剩注释）---
+src/services/quoteDatasetImportService.ts:11:// 🚫 与 `basicDataImportV6Service`（旧「从基础数据导入」）也无关，两条线并行到 S-6 才收敛。
+src/services/quoteDatasetImportService.ts:117:   *    🚫 不许无限轮询转圈。默认 20 分钟，与 V6 侧 `basicDataImportV6Service.pollImportResult`
+src/services/quotationService.ts:306:   * 总等待上限 timeoutMs（默认 20 分钟兜底，同 `basicDataImportV6Service.pollImportResult` 惯例）。
+src/pages/master-data/dataset/DatasetImportDrawer.tsx:9:// 🚫 现有「从基础数据导入」（QuoteBasicDataImportV6Drawer）与本组件**完全无关**，
+src/pages/quotation/QuotationList.tsx:18:// 🪦 配套的抽屉组件 `QuoteBasicDataImportV6Drawer.tsx` 与 `services/basicDataImportV6Service.ts`
+src/pages/quotation/QuotationCreateForm.tsx:3:// 🪦 原另一使用方 QuoteBasicDataImportV6Drawer（「从基础数据导入」）已随 task-260907 F-1 下线并删除，
+e2e/verify260902-quotelist.spec.ts:30:  //    此处原有「点旧按钮 → 断言打开 QuoteBasicDataImportV6Drawer」子步骤，已随入口摘除一并移除。

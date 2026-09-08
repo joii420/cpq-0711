@@ -63,24 +63,24 @@
 |---|---|---|---|---|
 | AC-1 | 单点 | L1+L4 | T1.1 / T4.1 | `quotationId` 非空；`quotation` +1 且 `customer_id` 匹配；`quotation_line_item` 行数 = Excel 中该客户的客户料号行数；编辑页卡片数相等 |
 | AC-2 | 单点 | L1+L3 | T1.2 / T3.1 | 后端：`customerId` 缺失 → 400「customerId 不能为空」；前端：未选客户时上传按钮 `disabled` + tooltip 文案与 `原型图/02` 一致；两侧都验 `ds_quote_*` 11 表 `count(*)` 不变 |
-| AC-3 | 单点 | L1+L2 | T1.3 | 🔄 **2026-09-07 按 D-23 重写**（原断言「两个客户的行都在、HTTP 200」，与裁决相反）：用 `跨客户-负例.xlsx` 选 `CUST-0004` 导入 → **返 400 整份拒收**，错误消息含另一个客户编号与行号；`ds_quote_*` **16 张表 `count(*)` 逐表不变**。<br>⚠️ 负例文件的第二个客户编号必须在 `customer.code` 命中，否则先被 D-19 拦住、测到的是另一条规则 |
+| AC-3 | 单点 | L1+L2 | T1.3 | 🔄 **2026-09-07 按 D-23 重写**（原断言「两个客户的行都在、HTTP 200」，与裁决相反）：用 `跨客户-负例.xlsx` 选 `CUST-0004` 导入 → 同步段 200+`PROCESSING`，**轮询取回 `status=FAILED`**（D-33 订正，🚫 不是 HTTP 400），错误消息含另一个客户编号与行号；`ds_quote_*` **16 张表 `count(*)` 逐表不变**。<br>⚠️ 负例文件的第二个客户编号必须在 `customer.code` 命中，否则先被 D-19 拦住、测到的是另一条规则 |
 | AC-4 | 单点 | L1+L2+L3 | T1.4 / T3.2 | 含非法客户编号 → `status=FAILED` + `errors[]` **逐条**列出（不是只有第一条）；导入前后 **16 张表 `count(*)` 逐表相等**；前端错误表格可滚动、顶部标「本次未写入任何数据」 |
 | AC-5 | 单点 | L1+L3 | T1.5 / T3.3 | 轮询端点返 `status/progress`；关闭抽屉后后台继续；`import_record` 最终 `SUCCESS`；【导入历史】页能列出该记录 |
-| AC-6 | 单点 | **L4** | T4.2 | **11 个页签逐个点开，每个 `tbody` 行数 > 0**，且等于该销售料号在对应表的行数。🚫 空列表 / 0 行 / 「—」/「加载中…」判失败 |
+| AC-6 | 单点 | **L4** | T4.2 | **14 个页签逐个点开，每个 `tbody` 行数 > 0**，且等于该销售料号在对应表的行数。🚫 空列表 / 0 行 / 「—」/「加载中…」判失败 |
 | AC-7 | 单点 | L2 | T2.1 | **干净库跑完 Flyway 后**（不经任何 UI 操作）：`template_kind='QUOTATION' AND status='PUBLISHED'` ≥ 1；其组件 `builder_version IS NOT NULL` 全真；`template_component` 计数 = **11** |
 | AC-8 | 单点 | L4 | T4.3 | 「材质元素」页签元素单价列**有值**（非全空）。⚠️ 需先确认测试料号的元素在 `element` 主表已建档 + 有行情 + 有价格策略 —— 三者缺一该列本就该空，那不是本任务的 bug（`repair-260830` 的教训：2440 行空是「11 个元素从未建档」，与代码无关） |
 | AC-9 | **序列** | L4 | T4.4 | 改一格 → 保存 → **切走再切回** → **刷新页面**，三个时点值一致且为改后值；页签合计三个时点一致 |
-| AC-10 | 序列 | L1+L2 | T1.6 | 提交后 `status=SUBMITTED`；`quotation.submission_snapshot` 非空；`quotation_component_sql_snapshot` 该单 **11 行** |
+| AC-10 | 序列 | L1+L2 | T1.6 | 提交后 `status=SUBMITTED`；`quotation.submission_snapshot` 非空；`quotation_component_sql_snapshot` 该单行数 **= 该单所用模板的页签数**（🔄 2026-09-07 主线亲验订正：原写「11 行」，实测 **14** —— 模板已升 v1.1；**改成不变量而不是改成 14**，写 14 一样会在下次加页签时过期）|
 | AC-11 | 序列 | L1 | T1.7 | 核价通过返 200，`status=APPROVED`，**不抛异常** |
 | AC-12 | 序列 | L1+L2 | T1.8 | 同文件同客户再导：`summary` 中带版本表全 `unchanged`；`version_no` **逐行不变**；`_history` 行数**零新增**；第二张单内容与第一张一致 |
 | AC-13 | 单点 | L3 | T3.4 | 列表页 DOM 中**不存在**文案「从基础数据导入」；存在「导入报价数据」且可点；工具栏顺序与 `原型图/01` 一致 |
 | AC-14 | 单点 | L1 | T1.9 | `POST /basic-data-import/v6/quote/create-quotation` 返 **410**；`quotation` 行数不变 |
-| AC-15 | **回归** | L1+L3 | T1.10 / T3.5 | 🔄 **2026-09-07 改判**（原写「`git diff` 对 5 个共用前端文件为空」，**该判据已失效**：`task-260907-移除料号核价功能` 要把 4 个公共件 `git mv` 到 `master-data/shared/`）。<br>**改用 A/B 内容对照**：B 侧重采后与 `证据/AC-15基线/`（已落盘，`master=a81f2c40`）逐文件 `diff`，差异为 0 才通过；前端侧只允许三类差异（import 路径 / 文件头注释 / `sheetApiFactory.ts` legacy 段删除），第四类即判失败。<br>⏱ **验收时点钉在「本任务改动后、D-22 落地前」** |
+| AC-15 | **回归** | L1+L3 | T1.10 / T3.5 | 🔄 **2026-09-07 按 D-32 改两层判据**（原「逐字一致」在活库上不可执行）：<br>**① 结构层严格** —— B 侧重采与 `证据/AC-15基线/` 比对，**字段集/嵌套结构/HTTP 状态码与错误形状**逐字一致；<br>**② 数据层可归因** —— 内容差异逐条归因到已知写入方（并发夹具/已知迁移/本任务导入），**来路不明即失败**。<br>🚨 **diff 前必须先断言 HTTP 200**（session 过期会让 14/14 全漂移 ⇒ 假红报告）。<br>前端侧：4 个公共件 diff 只允许三类（import 路径 / 文件头注释 / `sheetApiFactory.ts` legacy 段删除） |
 | AC-16 | **回归** | L1+L2 | T1.11 | 核价通过日志中 `QuoteBackfillService` 摘要 `versionedGroups=0, addedRows=0, deletedRows=0, changedRows=0`；**V6 八张表行数与内容逐字不变**（跑前跑后 md5 对比）；无 ERROR 日志 |
 | AC-17 | 边界 | L1+L2 | T1.12 | 空 sheet（只表头）导入：该表 `count(*)` / `version_no` / `_history` **三者全不变** |
 | AC-18 | 边界 | L1+L3 | T1.13 / T3.6 | 所选客户 0 行客户料号：建单返 200、`lineItemsCount=0`；前端给出提示文案（与 `原型图/07` 一致），**不是白屏不是 500** |
 | AC-19 | 边界 | L1 | T1.14 | 以 `PRICING_MANAGER` 调三个新端点 → **403**；`quotation` 行数不变 |
-| AC-20 | 边界 | L1+L2 | T1.15 | 1845 行文件：① 导入段异步、同步响应 < 1s；② 建单同步段 < **60s**（前端 axios 超时实取值）；③ 响应 `materializing=true`；④ **建单链路 SQL 条数与料号数无关** —— 用 200 料号 / 1845 料号两次跑，`pg_stat_user_tables` 扫描增量**同量级**（`pg_stat_statements` 未安装且装它属 §3.2 红线，用扫描增量作代理指标） |
+| AC-20 | 边界 | L1+L2 | T1.15 | 1845 行文件：① 导入段异步、同步响应 < 1s；② 建单同步段 < **60s**（前端 axios 超时实取值）；③ 响应 `materializing=true`；④ **建单链路不存在随明细行数线性增长的语句形态** —— 按「动词 + 主表」分组计数，**最高重复次数不随明细行数增长**。<br>🔄 **2026-09-07 主线亲验订正了判据与量具两处**：<br>　**判据**：原写「SQL **条数**与料号数无关」，实测字面不成立（3 明细 **68** 条 vs 200 明细 **119** 条）。但差异不是逐料号查询 —— 200 明细下最高重复 **28** 次（若 N+1 应 ≈200），`select component` / `select component_sql_view` / `insert quotation_line_component_data` **各恰好 14 次 = 页签数**。<br>　**量具**：原计划用 `pg_stat_user_tables` **扫描增量**作代理指标 —— 🚫 **不可用**：共享库上有多条并发会话在写，扫描增量里混着别人的流量，且 PG 的统计收集本身有节流（本项目已在 `task-260825` 栽过一次）。改用 **worktree 服务带 `-Dquarkus.hibernate-orm.log.sql=true`，数日志里 `^[Hibernate]` 行**——只统计本进程、逐条可读、可按形态分组。⚠️ **语句边界是 `[Hibernate]` 行不是时间戳行**，按时间戳数会**恒返 0 却不报错**（我第一版就是这么栽的） |
 | AC-21 | 边界 | L1+L2 | T1.16 | 同 `material_no` 两条客户料号 → 建 **2** 个明细行；两行 `product_part_no_snapshot` 相同、`customer_part_no` 不同；`sort_order` 从 0 严格递增无重复 |
 | AC-22 | 边界 | L1+L2 | T1.17 ⛔ | ⛔ **阻塞于 `task-260907-报价侧加客户维度`**（`customer_no` DDL + 轴模型未合并前不可执行）。以 `CUST-0004` 导一份 → 再以 `CUST-0001` 导同一份：① 15 张无客户列 sheet 的 `customer_no` 全 = 本次所选客户，NULL 行数 = 0；② **`ds_quote_material_bom` 中该料号两个客户的行并存，第一次导入的行未被删除**。<br>🚨 ②是静默删除的守卫 —— 只断言①抓不住，因为①**在删除发生后照样成立** |
 

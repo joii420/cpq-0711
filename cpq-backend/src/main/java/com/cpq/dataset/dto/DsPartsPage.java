@@ -92,6 +92,25 @@ public final class DsPartsPage {
             dynamic.put("categoryName", value);
         }
 
+        /**
+         * 客户编号（task-260907-产品管理客户过滤 · B-2，api.md §2/A-2）—— 一行 =「一个客户 × 一个销售料号」。
+         *
+         * <p>与 {@link #putProductionNo} 同一套「键的有无由数据集决定」口径：只有该数据集的物料表
+         * 真带 {@code customer_no} 列（当前仅报价）才调用，核价两套整个键不出现（AC-18）。
+         * <p>🚨 <b>无条件下发</b>（AC-5②/D-9）：不因「单客户下每行值相同」而省略。
+         */
+        public void putCustomerNo(String value) {
+            dynamic.put("customerNo", value);
+        }
+
+        /**
+         * 客户名称（api.md §2/A-2）—— 由<b>同一条 SELECT</b> 内 {@code LEFT JOIN customer} 带出，
+         * 🚫 不逐行查（AC-8）。JOIN 不到（未建档客户）时为 {@code null}，前端渲染 {@code —}。
+         */
+        public void putCustomerName(String value) {
+            dynamic.put("customerName", value);
+        }
+
         @JsonAnyGetter
         public Map<String, Object> getDynamic() {
             return dynamic;

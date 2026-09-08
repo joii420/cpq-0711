@@ -1,0 +1,73 @@
+=== A 类 spec 修正后运行原始输出（2026-09-07 08:45:27）临时栈 5196/8096 ===
+--- tsc ---
+APP EXIT=0
+TEST EXIT=0
+
+--- verify260902-quotelist.spec.ts ---
+
+Running 1 test using 1 worker
+
+AC35_TOOLBAR_BUTTONS = ["导入历史","导入报价数据","新建报价单","编辑","复制","提交审批","撤回","发送给客户"]
+AC35_NEW_DRAWER_TITLE = "导入报价数据"
+AC35_NEW_DRAWER_BODY = "1 选客户并上传 2 选模板并建单 客户 请选择客户 导入的数据按销售料号入库；客户决定本次建出哪些产品行。 报价数据 Excel 请先选择客户 支持 .xlsx，需含 16 个 Sheet（物料 / 客户料号 / 物料BOM / 物料与元素BOM / 8 张费用表 / 3 张年降表 / 电镀方案） 未选客户时上传区禁用 —— 前端不许自己放行空客户，后端同样校验。"
+PAGE_ERRORS = []
+  ✓  1 [chromium] › e2e/verify260902-quotelist.spec.ts:14:1 › AC-35 · 报价单管理工具栏 (6.9s)
+
+  1 passed (41.4s)
+
+--- dataset-quote-and-perms.spec.ts ---
+
+Running 4 tests using 1 worker
+
+[TQ-01] 命中的工具栏按钮: [ [32m'导入历史'[39m, [32m'导入报价数据'[39m, [32m'新建报价单'[39m ]
+[screenshot] ac35-toolbar => /home/joii/project/cpq/.claude/worktrees/task-260907-quote-import/dev-docs/task-260902-报价与核价建表与导入方案新规范/证据/e2e/101-ac35-toolbar.png
+  ✓  1 [chromium] › e2e/dataset-quote-and-perms.spec.ts:55:1 › TQ-01 / AC-35(经 task-260907 AC-13 取代)：工具栏依次为 导入历史/导入报价数据/新建报价单 (5.8s)
+[TQ-04] 页签: [ [32m'材质'[39m, [32m'元素'[39m, [32m'工序'[39m, [32m'基础核价'[39m, [32m'详细核价'[39m, [32m'电镀方案'[39m ]
+[screenshot] ac38-no-quote-tab => /home/joii/project/cpq/.claude/worktrees/task-260907-quote-import/dev-docs/task-260902-报价与核价建表与导入方案新规范/证据/e2e/102-ac38-no-quote-tab.png
+  ✓  2 [chromium] › e2e/dataset-quote-and-perms.spec.ts:99:1 › TQ-04 / AC-38：主数据维护里不存在「报价数据」页签 (5.8s)
+  -  3 [chromium] › e2e/dataset-quote-and-perms.spec.ts:118:1 › TE-08 UI 半边 / AC-31：非核价管理员登录 → 保存/新增行/导入核价数据 可见但禁用，hover 提示「需要核价管理员权限」
+  ✘  4 [chromium] › e2e/dataset-quote-and-perms.spec.ts:164:1 › TB-03 UI 半边 / AC-41：两个标签页同料号同 tab，A 先存成功后 B 存 → B 收到冲突提示且未写入 (22.2s)
+
+
+  1) [chromium] › e2e/dataset-quote-and-perms.spec.ts:164:1 › TB-03 UI 半边 / AC-41：两个标签页同料号同 tab，A 先存成功后 B 存 → B 收到冲突提示且未写入 
+
+    Error: AC-41 前置：找不到 TEST-DS-3120014539
+
+    [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: locator('.ant-table-row').filter({ hasText: 'TEST-DS-3120014539' }).first()
+    Expected: visible
+    Timeout: 15000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - AC-41 前置：找不到 TEST-DS-3120014539 with timeout 15000ms[22m
+    [2m  - waiting for locator('.ant-table-row').filter({ hasText: 'TEST-DS-3120014539' }).first()[22m
+
+
+      180 |       await p.waitForTimeout(1200);
+      181 |       const row = p.locator('.ant-table-row', { hasText: AXIS_BASIC }).first();
+    > 182 |       await expect(row, `AC-41 前置：找不到 ${AXIS_BASIC}`).toBeVisible({ timeout: 15_000 });
+          |                                                       ^
+      183 |       await row.click();
+      184 |       await expect(p.locator('.ant-drawer-content')).toBeVisible({ timeout: 10_000 });
+      185 |       await p.locator('.ant-drawer-content .ant-tabs-tab', { hasText: '物料BOM' }).first().click();
+        at open (/home/joii/project/cpq/.claude/worktrees/task-260907-quote-import/cpq-frontend/e2e/dataset-quote-and-perms.spec.ts:182:55)
+        at /home/joii/project/cpq/.claude/worktrees/task-260907-quote-import/cpq-frontend/e2e/dataset-quote-and-perms.spec.ts:190:5
+
+    [31mTest timeout of 120000ms exceeded.[39m
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dataset-quote-and-perms-TB-091b4-，A-先存成功后-B-存-→-B-收到冲突提示且未写入-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/dataset-quote-and-perms-TB-091b4-，A-先存成功后-B-存-→-B-收到冲突提示且未写入-chromium/test-failed-2.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/dataset-quote-and-perms-TB-091b4-，A-先存成功后-B-存-→-B-收到冲突提示且未写入-chromium/error-context.md
+
+  1 failed
+    [chromium] › e2e/dataset-quote-and-perms.spec.ts:164:1 › TB-03 UI 半边 / AC-41：两个标签页同料号同 tab，A 先存成功后 B 存 → B 收到冲突提示且未写入 
+  1 skipped
+  2 passed (3.1m)

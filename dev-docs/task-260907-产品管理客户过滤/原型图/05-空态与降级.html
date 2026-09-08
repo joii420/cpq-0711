@@ -63,8 +63,8 @@
     <div class="head-actions">
       <div class="select-group">
         <span class="addon">客户</span>
-        <!-- 🔑 静默回落「所有客户」，并清掉那条 localStorage -->
-        <span class="select"><span class="val placeholder">所有客户</span><span class="caret">▾</span></span>
+        <!-- 🔑 静默回落到【候选列表第一个客户】，并清掉那条 localStorage（D-7） -->
+        <span class="select"><span class="val filled">8000137　苏州西门子</span><span class="caret">▾</span></span>
       </div>
       <button class="btn">⊞ 产品分类管理</button>
     </div>
@@ -95,7 +95,8 @@
 
   <div class="proto-note" style="max-width:none;margin:16px 0 0">
     🔇 <b>静默降级 —— 页面上看不出发生过什么。</b> 上次记住的客户号已不在本次候选里（客户被停用 / 数据被清），
-    ⇒ 回落「所有客户」+ 清掉那条 localStorage + <b>列表正常展示全量</b>。<br>
+    ⇒ 🔄 <b>回落到候选列表第一个客户</b>（<code>D-7</code>，🚫 不再是「所有客户」——该选项已不存在）+ 清掉那条 localStorage。<br>
+    ⚠️ <b>该客户可能本身就没数据</b>（实测第一个是 <code>8000137</code>，0 行）⇒ 降级后落到<b>状态 A 的空态</b>，这是预期链路。<br>
     <b>断言</b>：console <b>无 error 级输出</b>、不出现红色遮罩。<br>
     🚫 <b>不要弹 message 报错</b> —— 用户没做错任何事，弹窗只会制造困惑。<br>
     ⚠️ localStorage 的读写<b>一律 try/catch</b>：隐私窗口 / 站点数据被清 / 浏览器禁用存储时访问器本身会抛，未捕获会整页白屏。
@@ -109,7 +110,11 @@
     <div class="head-actions">
       <div class="select-group">
         <span class="addon">客户</span>
-        <span class="select"><span class="val placeholder">所有客户</span><span class="caret">▾</span></span>
+        <!-- 🔄 D-7：客户必传 ⇒ 候选拿不到就【没有任何客户可选】，选择器禁用 -->
+        <span class="select disabled" style="background:rgba(0,0,0,.04);cursor:not-allowed;color:rgba(0,0,0,.25)"
+              title="客户候选加载失败，无法选择客户">
+          <span class="val">加载失败</span><span class="caret">▾</span>
+        </span>
       </div>
       <button class="btn">⊞ 产品分类管理</button>
     </div>
@@ -122,25 +127,33 @@
 
   <div class="alert warn">
     <span>⚠️</span>
-    <span>客户候选加载失败，当前只能查看全部客户的数据。列表功能不受影响。</span>
+    <span>客户候选加载失败，无法展示数据。请稍后重试或联系管理员。</span>
   </div>
 
   <div class="table-wrap">
     <table class="tbl">
       <colgroup><col style="width:120px"><col style="width:150px"><col style="width:165px"><col style="width:150px"><col style="width:170px"></colgroup>
       <thead><tr><th>客户编号</th><th>客户名称</th><th>销售料号</th><th>料号名称</th><th>生产料号</th></tr></thead>
-      <tbody>
-        <tr><td class="mono">CUST-0001</td><td>罗克韦尔</td><td class="mono">0526-2609000004</td><td>选配A1</td><td class="muted">—</td></tr>
-        <tr><td class="mono">CUST-0004</td><td>正泰</td><td class="mono">S0001</td><td>示例料号</td><td class="mono">P-S0001</td></tr>
-      </tbody>
     </table>
+    <!-- 🔄 D-7 后：客户必传，候选拿不到就【没有任何客户可选】⇒ 列表区不展示数据 -->
+    <div class="empty">
+      <div class="icon">⚠️</div>
+      <div class="title">客户候选加载失败，无法展示数据</div>
+      <div class="desc">请稍后重试或联系管理员。列表需要先确定客户才能查询。</div>
+    </div>
   </div>
 
   <div class="proto-note" style="max-width:none;margin:16px 0 0">
-    <b>降级为「候选只剩『所有客户』，列表照常可用」</b>，并给一条<b>可见但不阻断</b>的提示条。<br>
+    🔄 <b><code>D-7</code> 后降级形态已变</b>：客户是必传的，候选拿不到就<b>没有任何客户可选</b>
+    ⇒ <b>选择器禁用（hover 显示原因）+ 错误提示条 + 列表区不展示数据</b>。
+    🚫 不能再「降级为所有客户照常可用」——那个选项已不存在，硬走会发出不带客户号的请求。<br>
+    ⚠️ 按 <code>frontend.md §1.2</code>：<b>禁用但可见 + tooltip 说明原因</b>，🚫 不许直接隐藏选择器。<br>
     🚫 <b>不做任何 mock 兜底</b> —— 塞假候选会把「后端没就绪」伪装成「这个客户真的没有产品」，
     这是本项目 <code>productHubApi.ts</code> 已成文的纪律。<br>
-    🔑 <b>状态 C 与状态 A 必须长得不一样</b>：A 是「查过了，确实没有」，C 是「压根没查成」。
+    🔑 <b>状态 C 与状态 A 必须长得不一样</b>：A 是「查过了，确实没有」（图标 🗂 · 文案带客户名），C 是「压根没查成」（图标 ⚠️ · 文案指向重试）。<br>
+    📌 <b>2026-09-07 修正</b>：本屏此前遗留了两行示例数据，与「列表区不展示数据」的文字说明冲突 ——
+    由前端代理照 AC 实现时发现并<b>如实报告、未擅自改原型</b>（符合 <code>fronttask.md</code>「原型与 AC 冲突时以 AC 为准并立即报告」）。
+    该矛盾是第二轮变更时主线改文案漏改表格所致，非原设计错误，已就地修正。
   </div>
 </div>
 

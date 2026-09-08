@@ -1,0 +1,12 @@
+{
+  "code" : 200,
+  "message" : "success",
+  "data" : {
+    "dataset" : "quote",
+    "axisValue" : "T260907M-AC17ANCHOR",
+    "updated" : {
+      "productionNo" : "T260907M-AC17FIXEDVALUE"
+    },
+    "source" : "IMPORT"
+  }
+}

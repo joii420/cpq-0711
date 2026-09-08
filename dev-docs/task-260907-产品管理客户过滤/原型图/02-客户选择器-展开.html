@@ -38,16 +38,13 @@
       </div>
 
       <div class="dd-divider"></div>
-      <div class="dd-group">全部客户</div>
-
-      <div class="dd-item">
-        <span class="no">所有客户</span>
-        <span class="nm">不按客户过滤，展示全量</span>
-      </div>
-
-      <div class="dd-divider"></div>
       <div class="dd-group">已建档客户（48）</div>
 
+      <!-- 🔑 D-7：列表【第一项】就是默认选中值。排序是后端契约，前端不得另写 -->
+      <div class="dd-item">
+        <span class="no mono">8000137</span><span class="nm">苏州西门子</span>
+        <span class="tag grey" style="margin-left:auto">默认选中</span>
+      </div>
       <div class="dd-item"><span class="no mono">CUST-0001</span><span class="nm">罗克韦尔</span></div>
       <div class="dd-item"><span class="no mono">CUST-0002</span><span class="nm">测试客户</span></div>
       <div class="dd-item"><span class="no mono">CUST-0004</span><span class="nm">正泰</span></div>
@@ -99,13 +96,15 @@
 
 <div class="proto-note" style="margin-top:16px">
   <b>还原纪律</b><br>
-  1. <b>分组顺序固定</b>：所有客户 → 已建档（按编号升序）→ 未建档（按编号升序，置尾）。<br>
+  1. 🔄 <b><code>D-7</code>：没有「所有客户」这一项</b>。分组顺序固定：已建档（按编号升序）→ 未建档（按编号升序，置尾）。
+     <b>列表第一项 = 默认选中客户</b>（首次进入 / localStorage 记忆失效时）。<br>
   2. 未建档项<b>必须可见且可选</b>，标记文案「未建档」，配色 <code>#d46b08</code>。
      🚫 不得因 <code>customerName</code> 为 <code>null</code> 就把它筛掉 —— 那等于把后端特意带出来的候选又丢一遍。<br>
   3. <b>搜索匹配编号与名称两者</b>（antd <code>showSearch</code> + 自定义 <code>filterOption</code>）。
      未建档项没有名称，靠编号也要能搜到。<br>
   4. 「暂无产品」标记是<b>可选增强</b>，若实现成本高可省略；但该客户<b>必须出现在候选里</b>（这是并集口径的意义所在）。<br>
-  5. <b>候选端点失败（404 / 500）时的降级</b>：候选只剩「所有客户」一项，列表照常可用。
+  5. 🔄 <b>候选端点失败（404 / 500）时的降级形态已变</b>：客户是必传的，候选拿不到就<b>没有任何客户可选</b>
+     ⇒ <b>选择器禁用 + 错误提示条，列表区显示「客户候选加载失败，无法展示数据」</b>（见图 05 状态 C）。
      🚫 <b>不做任何 mock 兜底</b> —— 塞 mock 会把「后端没就绪」伪装成「这个客户真的没有产品」。
 </div>
 

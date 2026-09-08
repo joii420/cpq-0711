@@ -1,0 +1,15 @@
+{
+ "declaredColumns": [
+  "hf_part_no",
+  "_物料与元素BOM_材质料号"
+ ],
+ "grain": [
+  "物料与元素BOM"
+ ],
+ "requiredVariables": [
+  "total_material_no"
+ ],
+ "rewriterCompatible": true,
+ "sql": "SELECT\n  dqeb.material_no AS hf_part_no,\n  dqeb.material_part_no AS \"_物料与元素BOM_材质料号\"\nFROM ds_quote_element_bom dqeb\nWHERE dqeb.material_no = ANY(:total_material_no)\nORDER BY dqeb.material_no, dqeb.material_part_no, dqeb.element_code, dqeb.item_seq",
+ "warnings": []
+}

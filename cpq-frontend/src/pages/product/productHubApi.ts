@@ -34,6 +34,7 @@ import type {
   VersionsResult,
   CustomerPartListResult,
   CustomerOptionsResult,
+  CustomerCandidatesResult,
 } from './productHubTypes';
 
 /**
@@ -63,14 +64,20 @@ export interface DatasetListParams {
   keyword?: string;
   sortBy?: string;
   sortDir?: 'asc' | 'desc';
+  /**
+   * 🆕 task-260907-产品管理客户过滤 · F-4（api.md A-2）。
+   * 🚨 后端契约「不传 = 不过滤」（`D-11`，保留给核价两套等其它调用方）——
+   *    但**本页面（quoteSheetApi 消费方）恒传**，不做 `|| undefined` 的省略转换。
+   */
+  customerNo?: string;
 }
 
 export interface SheetDatasetApi {
   listParts(params: DatasetListParams): Promise<PartListResult>;
   getSheets(): Promise<SheetsResult>;
-  getOverview(axisValue: string): Promise<PartOverview>;
-  getRows(axisValue: string, sheetKey: string, version?: number): Promise<SheetRowsResult>;
-  getVersions(axisValue: string, sheetKey: string): Promise<VersionsResult>;
+  getOverview(axisValue: string, customerNo?: string): Promise<PartOverview>;
+  getRows(axisValue: string, sheetKey: string, version?: number, customerNo?: string): Promise<SheetRowsResult>;
+  getVersions(axisValue: string, sheetKey: string, customerNo?: string): Promise<VersionsResult>;
 }
 
 /**
@@ -88,21 +95,30 @@ export function createSheetApi(basePath: string): SheetDatasetApi {
       const res = await api.get(`${basePath}/sheets`);
       return unwrap<SheetsResult>(res);
     },
-    async getOverview(axisValue) {
-      const res = await api.get(`${basePath}/parts/${enc(axisValue)}/overview`);
+    // 🆕 F-5（api.md A-3~A-5）：抽屉三端点全部加 customerNo，契约以壳页所选客户为准
+    //    （D-10）——调用方（ProductSalesPartDrawer）传的是壳页 props，不是行携带的值。
+    async getOverview(axisValue, customerNo) {
+      const res = await api.get(
+        `${basePath}/parts/${enc(axisValue)}/overview`,
+        { params: customerNo === undefined ? {} : { customerNo } },
+      );
       return unwrap<PartOverview>(res);
     },
-    async getRows(axisValue, sheetKey, version) {
+    async getRows(axisValue, sheetKey, version, customerNo) {
+      const params: Record<string, string | number> = {};
+      // version 为 undefined 时不序列化该参数 ⇒ 等价于「省略 = 当前版本」
+      if (version !== undefined) params.version = version;
+      if (customerNo !== undefined) params.customerNo = customerNo;
       const res = await api.get(
         `${basePath}/parts/${enc(axisValue)}/sheets/${enc(sheetKey)}/rows`,
-        // version 为 undefined 时 axios 不会序列化该参数 ⇒ 等价于「省略 = 当前版本」
-        { params: version === undefined ? {} : { version } },
+        { params },
       );
       return unwrap<SheetRowsResult>(res);
     },
-    async getVersions(axisValue, sheetKey) {
+    async getVersions(axisValue, sheetKey, customerNo) {
       const res = await api.get(
         `${basePath}/parts/${enc(axisValue)}/sheets/${enc(sheetKey)}/versions`,
+        { params: customerNo === undefined ? {} : { customerNo } },
       );
       return unwrap<VersionsResult>(res);
     },
@@ -160,6 +176,27 @@ export async function listCustomerPartCustomers(
 }
 
 /**
+ * 🆕 A-1 壳页全局客户候选（`GET /dataset/{dataset}/customers`，
+ * `task-260907-产品管理客户过滤` F-1，取代上面 `listCustomerPartCustomers` 在**本页**的调用位置）。
+ *
+ * 🚨 **候选口径与上面那个函数不同**（AC-2）：
+ *    `customer` 主数据表全集 **∪** 报价业务表中出现过但未建档的客户号。
+ *    并集让「尚无产品数据的已建档客户也能选到」，同时保留「未建档客户的产品筛得出来」。
+ * 🚫 **不得因 `customerName` 为空/`registered=false` 而过滤候选项**（AC-14③）——
+ *    未建档客户恒 `customerName: null`，前端只管照单全收 + 打「未建档」标记。
+ * 🚫 **无分页、不接受 `keyword`**（api.md §1）—— 全集加载，搜索在前端已加载的候选里做。
+ *
+ * ⚠️ 端点未就绪（404）或请求失败时：调用方降级为「候选只剩『所有客户』，列表照常可用」，
+ *    **不做任何 mock 兜底** —— 塞 mock 会把「后端没就绪」伪装成「这个客户真的没有产品」（fronttask F-1 第 7 条）。
+ */
+export async function listDatasetCustomers(
+  basePath: string = QUOTE_BASE_PATH,
+): Promise<CustomerCandidatesResult> {
+  const res = await api.get(`${basePath}/customers`);
+  return unwrap<CustomerCandidatesResult>(res);
+}
+
+/**
  * C-1 料号单列更新（`PUT /dataset/{dataset}/parts/{axisValue}`，对方 B-20）。
  *
  * 🚫 **只传要改的字段，绝不整行回传**（子任务 api.md §1 硬约束 1）——
@@ -182,7 +219,19 @@ export interface UpdatePartPayload {
 export async function updateDatasetPart(
   axisValue: string,
   payload: UpdatePartPayload,
+  /**
+   * 🆕 task-260907-产品管理客户过滤 · F-6（api.md A-6）。
+   * 🚨 **恒传所在行的 `customerNo`**（行级，不是壳页当前选中值的概念——虽然客户必选后两者
+   *    恒相等，调用方仍应传"被编辑那一行"的值，语义更精确）。
+   *    复合轴下不传会命中该料号在所有客户下的行，后端已加多行守卫会报错并回滚，
+   *    🚫 不许静默更新多行——但前端不能靠"后端会拦"就省事不传，那等于把安全网当成常规路径。
+   */
+  customerNo?: string,
   basePath: string = QUOTE_BASE_PATH,
 ): Promise<void> {
-  await api.put(`${basePath}/parts/${encodeURIComponent(axisValue)}`, payload);
+  await api.put(
+    `${basePath}/parts/${encodeURIComponent(axisValue)}`,
+    payload,
+    { params: customerNo === undefined ? {} : { customerNo } },
+  );
 }
