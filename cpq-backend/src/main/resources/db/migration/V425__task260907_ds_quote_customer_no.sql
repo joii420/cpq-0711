@@ -39,6 +39,13 @@ BEGIN
         EXECUTE format('ALTER TABLE public.%I ADD COLUMN customer_no varchar(20)', t);
         -- 存量统一回填罗克韦尔（用户裁决）。回填值不承担业务正确性，它只是让隔离逻辑
         -- 【能被真正验证】的载体：所有存量都是 CUST-0001 ⇒ 任何其它客户的查询都不该看到它们。
+        --
+        -- 🚨 【读到这里请务必往下看 V428 / V429】本行是【中间态】，不是最终口径。
+        --    V428 §① 与 V429 §① 会把它按 cust_scope「唯一才推」细化
+        --    （SET customer_no = u.customer_no，推不出客户的才保持 CUST-0001）。
+        --    ⇒ 只读本文件会得出「存量被无差别刷成 CUST-0001」这个【错误结论】——
+        --      2026-09-07 并发会话就是这样差点误报，查了 V428/V429 才没发出去。
+        --    ⇒ 判断存量客户号的最终分布，必须看完 V425 → V428 → V429 三条，不能只看这一条。
         EXECUTE format('UPDATE public.%I SET customer_no = ''CUST-0001'' WHERE customer_no IS NULL', t);
         GET DIAGNOSTICS n = ROW_COUNT;
         EXECUTE format('ALTER TABLE public.%I ALTER COLUMN customer_no SET NOT NULL', t);
