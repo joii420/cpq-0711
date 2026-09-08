@@ -39,6 +39,88 @@ class RecordWriteAcTest extends Task260907RBase {
     }
 
     /**
+     * <b>T-22（AC-22 / D-42）🔴 P0 回归网 —— 真实 UI 形状下 {@code _record} 必须写得出来。</b>
+     *
+     * <h3>它拦的是什么（2026-09-08 主线亲验抓到的 P0）</h3>
+     * {@code saveDraft} 处理 {@code added}/{@code modified} 时会<b>删掉整行组件数据再重建</b>，
+     * 而重建发生在 {@code QuotationResource} 的 {@code snapshotQuotation}（handler 返回<b>之后</b>）。
+     * 原来的 {@code syncRecords} 挂点正落在那个<b>空窗</b>里 ⇒ 查不到组件数据 ⇒
+     * 日志恒打 {@code [ds-record] 命中 1 个轴值但无组件数据，跳过} ⇒
+     * <b>真实 UI 路径下 {@code _record} 永远是 0 行</b>。
+     *
+     * <h3>🚨 为什么此前几十条用例一条都没发现它</h3>
+     * 三条代理线的夹具<b>全都在 {@code saveDraft} 载荷里直接塞 {@code componentData}</b>。
+     * 那种形状下组件数据在 {@code syncRecords} 那一刻<b>事务里是存在的</b> ⇒ 查得到
+     * ⇒ <b>旧代码上也会绿</b>。
+     * 📌 <b>所有的绿都建立在同一个夹具形状上，而那个形状不是用户的形状。</b>
+     * 这正是「亲验必须走用户视角完整路径、不从 API 或单测进」的全部理由。
+     *
+     * <h3>本用例的形状</h3>
+     * {@code added} 只发<b>行本身</b>（{@code tempId}/{@code sortOrder}/{@code productPartNo}/
+     * {@code templateId}/{@code annualVolume}），<b>🚫 不带 {@code componentData}</b> ——
+     * 组件数据交给服务端物化。这才是「+ 添加产品 → 保存」的真实形状。
+     *
+     * <p>🔑 <b>还原实验判据</b>：把挂点改回 {@code QuotationService} 内（即 revert {@code e8be83b0}），
+     * 本用例<b>必须变红</b>（{@code _record} 0 行）。不变红 = 夹具仍验不到它，本用例作废。
+     */
+    @Test
+    @DisplayName("T-22 · 真实 UI 形状（payload 不带 componentData）→ _record 必须写出来")
+    void t22_recordWrittenOnRealUiShape() {
+        requireRecordLayer();
+        Fx fx = newFixture("AC22");
+        String mat = axis("A22");
+
+        // 🔑 主表先要有这一组的 driver 数据，页签物化出来才有行可投影。
+        //    🔬 实测：不种基底时，服务端确实物化了 13 行组件数据，但日志是
+        //       `绑定解析：入参组件 13，命中 12` + `写入 _record：sheets=0 axes=0 rows=0`
+        //       —— 绑定是通的，只是**页签里一行数据都没有**（新料号在主表没有 driver 行）。
+        //    那种 0 行**不是** D-42，是夹具没给数据；混在一起会把两件事验成一件。
+        seedEbomMainGroup(fx, mat, List.of(
+                new EbomRow(1, PREFIX + "E1", "10.0", "1.1"),
+                new EbomRow(2, PREFIX + "E2", "20.0", "2.2")), 1);
+
+        // 阳性对照：动手前本单 _record 必须是 0 行，否则「跑完有行了」可能是别人留下的
+        assertEquals(0L, recCount(fx, mat), "夹具起点不干净：本单 _record 已有行");
+
+        // 🔴 真实 UI 形状：只发行本身，🚫 不带 componentData
+        Response r = saveDraftLineOnly(fx, mat);
+        requireStatusBeforeDiff(r, 200, "T-22 saveDraft（真实 UI 形状，无 componentData）");
+
+        // 前提：服务端确实把组件数据物化出来了（否则下面的 0 行是「压根没建卡片」而非 P0）
+        long compData = count("SELECT count(*) FROM quotation_line_component_data cd "
+                + "JOIN quotation_line_item li ON li.id = cd.line_item_id "
+                + "WHERE li.quotation_id = '" + fx.quotationId() + "'");
+        assertFixtureNonEmpty(compData,
+                "T-22 前提：服务端应把组件数据物化出来（真实 UI 形状下由 snapshotQuotation 建）。"
+                        + "为 0 说明卡片压根没建成 —— 那是夹具问题，不是本条要验的 P0");
+        System.out.println("[T-22] 服务端物化组件数据 " + compData + " 行");
+
+        // 🔑 判据：真实 UI 形状下 _record 必须非空
+        // 前提 2：页签里确实有行（否则 sheets=0 是「没数据可投影」，不是 D-42）
+        long tabRows = count("SELECT coalesce(sum(jsonb_array_length("
+                + "coalesce(cd.snapshot_rows, cd.row_data, '[]'::jsonb))),0) "
+                + "FROM quotation_line_component_data cd "
+                + "JOIN quotation_line_item li ON li.id = cd.line_item_id "
+                + "WHERE li.quotation_id = '" + fx.quotationId() + "'");
+        assertFixtureNonEmpty(tabRows,
+                "T-22 前提：物化出来的页签必须**有行**。为 0 说明主表没有这一组的 driver 数据 "
+                        + "⇒ 后面的 _record=0 是「没数据可投影」而不是 D-42，两件事不能混。");
+        System.out.println("[T-22] 页签总行数 = " + tabRows);
+
+        long rec = count("SELECT count(*) FROM " + EBOM + "_record WHERE quotation_id = '"
+                + fx.quotationId() + "'");
+        System.out.println("[T-22] 本单 " + EBOM + "_record 行数 = " + rec);
+        assertTrue(rec > 0,
+                "🔴 D-42 回归：真实 UI 形状（payload 不带 componentData）下保存后，"
+                        + EBOM + "_record 一行都没有（组件数据已物化 " + compData + " 行）。\n"
+                        + "   这正是主线亲验抓到的 P0：syncRecords 挂在 saveDraft 事务内，"
+                        + "落在「组件数据被删掉、尚未重建」的空窗里 ⇒ 恒打日志"
+                        + "「[ds-record] 命中 N 个轴值但无组件数据，跳过」。\n"
+                        + "   ⚠️ 🚫 不要用「往 payload 里塞 componentData」来让它变绿 —— "
+                        + "那正是让这个 P0 藏了几十条用例的那个夹具形状。");
+    }
+
+    /**
      * <b>T-02（AC-2）</b>：保存时<b>按变更产品增量写</b>，不是整单重写。
      *
      * <p>判据形态取自 AC-2 原文：
@@ -105,6 +187,7 @@ class RecordWriteAcTest extends Task260907RBase {
         //    也漏「行被删了重插、id 换掉」这一整类）
         List<Object> bBefore = recStamp(fx, matB);
         List<Object> aBefore = recContent(fx, matA);
+        List<Object> aStampBefore = recStamp(fx, matA);
         assertFixtureNonEmpty(bBefore.size(), "产品乙 id|updated_at 基线");
         assertFixtureNonEmpty(aBefore.size(), "产品甲内容基线");
 
@@ -116,10 +199,23 @@ class RecordWriteAcTest extends Task260907RBase {
                 "T-02 二次 saveDraft（modified 只带产品甲）");
 
         // ── AC-2①：产品甲的行被更新
+        //
+        // 🚨 2026-09-08 补成对断言（主线 P-2）：只断言②「乙逐字未变」**是不够的** ——
+        //    那在「这次保存压根什么都没写」时**同样成立**（D-42 的 P0 正是这个形态：
+        //    _record 恒 0 行，于是「乙没变」恒真）。
+        //    ⇒ 必须同时断言**甲确实被重写**：id 与 updated_at **双双**变。
+        //    🔑 两条合起来才是「增量写」的判据：一个证明「该写的写了」，一个证明「不该写的没动」。
         List<Object> aAfter = recContent(fx, matA);
         assertFalse(aBefore.equals(aAfter),
                 "AC-2①：产品甲改了值（content_pct 10.0 → 77.5），其 _record 行应被更新，实测逐字未变。"
                         + "before=" + aBefore + " after=" + aAfter);
+        List<Object> aStampAfter = recStamp(fx, matA);
+        assertFalse(aStampBefore.equals(aStampAfter),
+                "🔑 AC-2① 成对断言：产品甲的 _record 必须**确实被重写**（id 与 updated_at 双双变）。"
+                        + "实测逐字未变 ⇒ 本次保存可能一个字节都没写，"
+                        + "而那种情况下断言②「乙没变」是**恒真**的 —— 只有这条配上，②才构成判据。"
+                        + "before=" + aStampBefore + " after=" + aStampAfter);
+        System.out.println("[T-02] AC-2① 成对断言通过：甲被重写 " + aStampBefore + " → " + aStampAfter);
         assertTrue(aAfter.toString().contains("77.5"),
                 "AC-2① 反向：产品甲的新值 77.5 应落进 _record（防止修成「什么都不写」），实际=" + aAfter);
 
@@ -461,6 +557,27 @@ class RecordWriteAcTest extends Task260907RBase {
                 + "\"tabName\":\"" + TAB_ELEMENT_BOM + "\","
                 + "\"rowData\":" + jsonStr(ebomRowData(materialNo, rows)) + ",\"sortOrder\":0}]}],"
                 + "\"removed\":[]}";
+        return putDraft(fx, body);
+    }
+
+    /**
+     * 🔴 <b>真实 UI 形状</b>的 {@code PUT /draft}：{@code added} 只发<b>行本身</b>，
+     * <b>🚫 不带 {@code componentData}</b>，组件数据交给服务端物化。
+     *
+     * <p>与 {@link #saveDraftAddedTwo} 的区别就是这一点，而这一点<b>决定了能不能发现 D-42</b>：
+     * 带 {@code componentData} 的形状在旧代码上也绿。
+     */
+    private Response saveDraftLineOnly(Fx fx, String materialNo) {
+        // 🔑 真实 UI 的 Step1 会选模板 ⇒ customerTemplateId 必须透传，
+        //    否则服务端不知道该物化哪些组件，snapshotQuotation 建不出页签
+        //    （实测：不传时组件数据 0 行，本条的前提守卫会正确地判成「夹具问题」）。
+        String body = "{\"baseVersion\":0,\"customerTemplateId\":\"" + DS_TEMPLATE_ID + "\",\"added\":[{"
+                + "\"id\":null,\"tempId\":\"" + PREFIX + "ui1\","
+                + "\"templateId\":\"" + DS_TEMPLATE_ID + "\","
+                + "\"sortOrder\":0,\"compositeType\":\"SIMPLE\","
+                + "\"productPartNo\":\"" + materialNo + "\","
+                + "\"productName\":\"" + PREFIX + "真实UI形状\",\"annualVolume\":1"
+                + "}],\"modified\":[],\"removed\":[]}";
         return putDraft(fx, body);
     }
 
