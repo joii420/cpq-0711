@@ -93,4 +93,20 @@ public class DsRecordRow {
     public java.util.UUID componentId;
     /** 组件在卡片里的排序（多页签表征同一行时的稳定仲裁序）。 */
     public int sortOrder;
+
+    /**
+     * 🆕 <b>产出本行的产品卡片</b>（{@code quotation_line_item.id}）—— D-43 跨卡片归一的仲裁依据。
+     *
+     * <h3>为什么必须记它（2026-09-08 主线亲验抓到的 P0）</h3>
+     * {@code _record} 的组粒度是 {@code (quotation_id, 轴值)}：同一张单里<b>同一个销售料号有 N 个
+     * 产品行</b>时（一号多客户产品编号，导入建单的常态），{@code DsQuoteRecordService} 会把
+     * <b>N 张卡片</b>的投影全都拼进同一个轴值组，而它们表征的是<b>同一批主表行</b>
+     * ⇒ 每条主表行被投影 N 份 ⇒ {@code anchor()} 的 {@code usedBase} 只让第一份拿到
+     * {@code origin_id}，其余 N-1 份必然 {@code NULL} ⇒ 回填当新增行追加 ⇒ <b>整组 ×N</b>。
+     * <p>🔬 实证（udv=0，用户一个字没改）：{@code 合计 base=43 → result=71}，
+     * FG01 的 12 个组<b>全部翻倍</b>；同单里只有一个产品行的 FG02 则 {@code UNCHANGED}。
+     * <p>⚠️ 这与 {@code C′}（粒度键在<b>基底</b>里重复）<b>不是同一个洞</b>：
+     * 此处基底每个粒度键都只有 1 行，歧义在 {@code _record} 侧 ⇒ {@code blockedGroups=0}，C′ 拦不住。
+     */
+    public java.util.UUID lineItemId;
 }

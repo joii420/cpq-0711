@@ -39,6 +39,14 @@ import java.util.UUID;
  * 该轴值的 {@code _record} 由<b>本单全部持有该轴值的卡片</b>一起重算 ——
  * 否则第二张卡片的投影会在第一张卡片保存时被整组删掉。
  *
+ * <p>🔴 <b>D-43（2026-09-08 主线亲验抓到的 P0）</b>：「一起重算」<b>不等于</b>「把 N 张卡片的
+ * 投影拼起来」。它们表征的是<b>同一批主表行</b> ⇒ 直接拼接会让每条主表行出现 N 份，
+ * 而 {@link DsRecordProjector#anchor} 的 {@code usedBase} 只让第一份认领到 {@code origin_id}，
+ * 其余 N-1 份 {@code origin_id=NULL} ⇒ 回填按新增追加 ⇒ <b>整组 ×N</b>
+ * （实测：合计 {@code base=43 → result=71}，两个产品行的料号 12 个组全部翻倍）。
+ * ⇒ 组装完 {@code byAxis} 后、{@code anchor()} 之前必须过一遍
+ * {@link DsRecordCardDeduper}（见 §⑤-b）。
+ *
  * <h3>🚫 N+1 硬指标</h3>
  * SQL 条数 = 4（单头 + 明细行 + 组件数据 + 客户号）+ 3（绑定解析）
  * + 每张命中 sheet 的 (1 读基底 + 1 整组删 + ceil(行数/500) 批量插)。
@@ -140,15 +148,20 @@ public class DsQuoteRecordService {
         }
 
         // ── ② 明细行 → 轴值（1 条 SQL）──────────────────────────────────────────────
+        //    🔑 D-43：顺带取 sort_order —— 跨卡片归一的仲裁依据。它就在这条本来就要发的 SQL 里，
+        //    🚫 不许为它另发一条（N+1 硬指标：SQL 条数与产品数无关）。
         @SuppressWarnings("unchecked")
         List<Object[]> lines = em.createNativeQuery(
-                        "SELECT id, product_part_no_snapshot FROM quotation_line_item WHERE quotation_id = :qid")
+                        "SELECT id, product_part_no_snapshot, sort_order FROM quotation_line_item "
+                        + "WHERE quotation_id = :qid")
                 .setParameter("qid", quotationId).getResultList();
         if (lines.isEmpty()) return Summary.empty();
 
         Map<UUID, String> axisByLine = new LinkedHashMap<>();
+        Map<UUID, Integer> sortOrderByLine = new LinkedHashMap<>();
         for (Object[] r : lines) {
             axisByLine.put((UUID) r[0], r[1] == null ? null : String.valueOf(r[1]));
+            sortOrderByLine.put((UUID) r[0], r[2] == null ? null : ((Number) r[2]).intValue());
         }
         Set<UUID> changed = changedLineItemIds == null ? axisByLine.keySet() : new LinkedHashSet<>(changedLineItemIds);
         Set<String> touchedAxes = new LinkedHashSet<>();
@@ -208,7 +221,26 @@ public class DsQuoteRecordService {
             Map<String, List<DsRecordRow>> byAxis = bySheet.computeIfAbsent(table, k -> new LinkedHashMap<>());
             for (DsRecordRow row : rows) {
                 if (!touchedAxes.contains(row.axisValue)) continue;   // 别的组的行（BOM 树跨组）不在本次范围
+                row.lineItemId = lineId;                              // D-43：记住是哪张卡片投的
                 byAxis.computeIfAbsent(row.axisValue, k -> new ArrayList<>()).add(row);
+            }
+        }
+
+        // ── ⑤-b 🔴 D-43 跨卡片归一（🚫 必须在 anchor() 之前）───────────────────────
+        //    上面这段是**逐张卡片直接拼接**：同一销售料号有 N 个产品行时（一号多客户产品编号，
+        //    导入建单的常态），同一条主表行会被投影 N 份。
+        //    ⚠️ 在 anchor() **之后**去重就晚了：anchor 的 usedBase 只让第一份拿到 origin_id，
+        //    其余 N-1 份变成 origin_id=NULL —— 那时它们与「真·用户新增行」已经分不开，
+        //    而后者必须保留（D-36）。⇒ 归一只能挂在这里。
+        //    🚫 只跨卡片归一，绝不收敛同一张卡片内部的行（那是 AP-60 的原始形态）。
+        int dedupedRows = 0;
+        for (Map.Entry<String, Map<String, List<DsRecordRow>>> se : bySheet.entrySet()) {
+            Map<String, ColumnDef> dedupColDefs = colDefsOf(sheetByTable.get(se.getKey()));
+            Set<String> dedupMatchCols = scopeColumnsBySheet.getOrDefault(se.getKey(), Set.of());
+            Set<String> dedupGrainCols = grainColumnsBySheet.getOrDefault(se.getKey(), Set.of());
+            for (Map.Entry<String, List<DsRecordRow>> ae : se.getValue().entrySet()) {
+                dedupedRows += DsRecordCardDeduper.dedupe(ae.getValue(), sortOrderByLine,
+                        se.getKey(), ae.getKey(), dedupColDefs, dedupMatchCols, dedupGrainCols);
             }
         }
 
@@ -243,7 +275,8 @@ public class DsQuoteRecordService {
 
         Summary s = new Summary(bySheet.size(), axisCount, totalRows, unanchored);
         LOG.infof("[ds-record] quotation=%s 写入 _record：sheets=%d axes=%d rows=%d unanchored=%d "
-                        + "(sql 与产品数/轴值数无关)", quotationId, s.sheets(), s.axes(), s.rows(), s.unanchoredRows());
+                        + "crossCardDeduped=%d (sql 与产品数/轴值数无关)",
+                quotationId, s.sheets(), s.axes(), s.rows(), s.unanchoredRows(), dedupedRows);
         return s;
     }
 
