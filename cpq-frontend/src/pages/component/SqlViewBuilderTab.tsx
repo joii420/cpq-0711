@@ -181,15 +181,53 @@ interface SelColumn {
 let uidSeq = 0;
 const nextUid = () => `svb-${Date.now()}-${uidSeq++}`;
 
-function toSelColumn(col: FieldTreeColumn, group: FieldTreeGroup, opts?: { autoElem?: boolean }): SelColumn {
+/**
+ * task-260908 F-2（AC-15）：这一列是不是行键列。
+ * 🚫 判据只认字段树声明的 `ROW_KEY` 角色（与 ROLE_LABEL 同源），不按字段名/下标猜。
+ */
+const isRowKeyCol = (s: SelColumn) => s.roles.includes('ROW_KEY');
+/** F-2（AC-15）：✕ 禁用态的 hover 原因文案（frontend.md §1.2：禁用但可见 + 说明原因）。原型 02 状态 1 逐字。 */
+const ROW_KEY_LOCK_TIP = '行键列决定行的身份（删行、回填、保存都靠它匹配），不可移除';
+const ROW_KEY_LOCK_GROUP_TIP = '该价格策略组里含行键列，整组移除会连带删掉行键列，因此不可移除';
+
+/**
+ * task-260908 F-3（AC-17 / AC-18 / AC-19）：**料号列拖入「已选输出列」后的默认字段名**。
+ *
+ * 规则（需求文档 §S-6）：带 `PART_NO` 角色的列，除了本数据集的**轴列**之外，默认名一律统一成「料号」——
+ * 同一个概念在不同页签叫「投入料号 / 组成料号 / 材质料号 / 来料料号」，做出来的模板列名不一致。
+ *   · 报价（QUOTE）：「销售料号」保持原名，其余 → 「料号」
+ *   · 核价（COST_BASIC / COST_DETAIL）：「生产料号」保持原名，其余 → 「料号」
+ *
+ * 📌 **两个判据的选型（fronttask F-3「方言判据」要求二选一并写明理由）**：
+ *   ① 方言 → 用**当前 `dataset` state**（`DATASETS` 的 key，= 后端 CompileDialect 枚举），
+ *      🚫 不从 displayName 反推。dataset 是本地权威三值枚举，不会漂移。
+ *   ② 例外列 → 用 **`displayName`**（「销售料号」/「生产料号」）而**不是** `sourceColumn`
+ *      （material_no / production_no）。理由：规则本身就是按**用户在面板上看到的名字**表述的
+ *      （AC-18/19 的断言原文就是「面板显示 X → 字段名保持 X」），且默认名本来就取自 displayName，
+ *      两者同源；若改判 sourceColumn，会出现「面板写着销售料号、字段名却被改成料号」这种
+ *      与 AC 字面不符的形态。代价：displayName 来自语义图 `display_name`（DB 数据），
+ *      若哪天有人把它改了，本例外会失效 —— 那时改这里一处即可。
+ *
+ * 🚫 只改**默认值**，不是锁定：用户仍可在字段名输入框里改回去（renameColumn 行为不变）。
+ * 🚫 不影响左侧「可用字段」面板的显示名（D-8）—— 那里渲染的是 `col.displayName` 本身。
+ */
+function defaultFieldName(col: FieldTreeColumn, dataset: BuilderDataset): string {
+  if (!(col.roles || []).includes('PART_NO')) return col.displayName;
+  const axisName = dataset === 'QUOTE' ? '销售料号' : '生产料号';
+  return col.displayName === axisName ? col.displayName : '料号';
+}
+
+function toSelColumn(col: FieldTreeColumn, group: FieldTreeGroup, dataset: BuilderDataset, opts?: { autoElem?: boolean }): SelColumn {
   const money = col.dataType === 'MONEY';
   const unitLike = /单价|汇率|费率|比例|系数|基准值/.test(col.displayName);
+  // F-3：默认字段名走 defaultFieldName（料号列统一改名）；其余列仍是 col.displayName，行为不变。
+  const initialName = defaultFieldName(col, dataset);
   return {
     _uid: nextUid(),
     sourceNodeKey: col.sourceNodeKey,
     sourceColumn: col.sourceColumn,
-    fieldName: col.displayName,
-    origFieldName: col.displayName,
+    fieldName: initialName,
+    origFieldName: initialName,
     viewColumn: col.viewColumn || '',
     fieldType: money ? 'INPUT_NUMBER' : 'INPUT_TEXT',
     dataType: col.dataType || 'TEXT',
@@ -553,7 +591,7 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
     const rebuilt: SelColumn[] = pending.columns.map((bc) => {
       const found = allCols.find((x) => x.col.sourceNodeKey === bc.sourceNodeKey && x.col.sourceColumn === bc.sourceColumn);
       if (found) {
-        const s = toSelColumn(found.col, found.group, { autoElem: found.col.elemKey && bc.userAdded === false });
+        const s = toSelColumn(found.col, found.group, normalizeDataset(pending.dialect), { autoElem: found.col.elemKey && bc.userAdded === false });
         return { ...s, fieldName: bc.fieldName, origFieldName: bc.fieldName, viewColumn: bc.viewColumn, isAmount: !!bc.isAmount, inSubtotal: !!bc.inSubtotal, fieldType: bc.fieldType || s.fieldType };
       }
       // 字段树里找不到对应列（罕见：图或存量数据漂移）——仍原样展示，避免保存态丢失，只是缺角色信息。
@@ -591,9 +629,9 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
         for (const c of g.fields) if (c.elemKey) { ek = { col: c, group: g }; break; }
         if (ek) break;
       }
-      if (ek && !isUsed(ek.col.sourceNodeKey, ek.col.sourceColumn)) additions.push(toSelColumn(ek.col, ek.group, { autoElem: true }));
+      if (ek && !isUsed(ek.col.sourceNodeKey, ek.col.sourceColumn)) additions.push(toSelColumn(ek.col, ek.group, dataset, { autoElem: true }));
     }
-    additions.push(toSelColumn(col, group));
+    additions.push(toSelColumn(col, group, dataset));
     setSel((prev) => [...prev, ...additions]);
     return additions;
   }
@@ -601,7 +639,14 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
   function removeColumn(uid: string) {
     const target = sel.find((s) => s._uid === uid);
     if (!target) return;
+    // task-260908 F-2（AC-15）：行键列不可移除 —— 它决定行的身份（删行 / 回填 / 保存都靠它匹配）。
+    // 渲染层已把 ✕ 置成禁用态（见 renderSelRowBody / 价格策略组头），这里是第二道防线：
+    // 禁用态只挡住鼠标，挡不住别的调用路径。
+    if (isRowKeyCol(target)) return;
     const killsGroup = !!(target.isCore || target.elemKey || target.autoElem);
+    // 价格策略原子组是**整组移除**（下面 onOk 里 filter 掉所有 raw/elemKey/autoElem 成员）——
+    // 组里若混进了行键列，从这个入口删就绕过了单行禁用。整组一并挡住（原型 02 状态 5）。
+    if (killsGroup && sel.some((s) => (s.raw || s.elemKey || s.autoElem) && isRowKeyCol(s))) return;
     const extra = killsGroup ? '\n\n⚠ 这是价格策略原子组的核心列，将同时移除整组（元素列 + 元素单价 + 货币）。' : '';
     Modal.confirm({
       title: `移除「${target.fieldName}」？`,
@@ -1077,6 +1122,46 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
     () => visibleGroups.reduce((sum, g) => sum + g.fields.length, 0),
     [visibleGroups],
   );
+
+  /**
+   * task-260908 F-2（AC-14 / AC-16）：**选中 / 切换数据源后，自动带出该源全部行键列**。
+   *
+   * 为什么落在这里而不是 `handleSourceChange` 里：切源时 `fieldTree` 被置空、要等下一轮
+   * `GET /field-tree` 回来才知道新源有哪些列 —— 在 `handleSourceChange` 里填，读到的是**上一个源**
+   * 的字段树（或空）。所以判据是「字段树到手 + 已选列为空」，与「用户是怎么走到这一步的」无关：
+   * 切数据源、切数据集、打开一个还没配过列的新组件，三条路径共用同一份逻辑。
+   *
+   * 🔑 **替换而非追加**（AC-16）：`handleSourceChange` / `handleDatasetChange` 已经 `setSel([])`，
+   *    本效果只在 `sel.length === 0` 时补，所以往返切源恒等于「该源的行键列集合」，不会累积成 4 个。
+   *    填完 sel 非空 ⇒ 后续字段树重拉（本文件的 fetch 依赖里含 sel）不会再次触发。
+   *
+   * 🚫 `pendingRehydrateRef` 非空时必须让路：那是「已保存配置正在回填」，此刻 sel 也是空的，
+   *    抢先填会和 rehydrate 的 `setSel(rebuilt)` 打架（后者整份覆盖，行键列反而丢了角色信息）。
+   * 🚫 行键判据只认 `roles.includes('ROW_KEY')`（服务端字段树声明的角色，ROLE_LABEL 同源），
+   *    不按字段名/下标猜。
+   * 📌 用 `visibleGroups` 而不是 `fieldTree.groups`：与 addColumn 同口径（AC-116），
+   *    不把别套数据集的列塞进已选。
+   */
+  useEffect(() => {
+    if (initLoading || guideMode) return;
+    if (!fieldTree) return;
+    if (pendingRehydrateRef.current) return;
+    if (sel.length) return;
+    const rowKeys: SelColumn[] = [];
+    for (const g of visibleGroups) {
+      for (const c of g.fields) {
+        if ((c.roles || []).includes('ROW_KEY')) rowKeys.push(toSelColumn(c, g, dataset));
+      }
+    }
+    if (!rowKeys.length) return;
+    // 🚨 必须用**函数式更新**，不能 `setSel(rowKeys)`：本效果与上面的 rehydrate 效果都挂在
+    //    `fieldTree` 上，同一轮 commit 里按声明顺序执行，而 rehydrate 声明在前 ——
+    //    它 `setSel(rebuilt)` 之后，本效果闭包里的 `sel` 仍是**这一轮渲染的旧值（空数组）**，
+    //    `pendingRehydrateRef.current` 也已被它同步清成 null ⇒ 上面两个 guard 全部失效。
+    //    直接覆盖会把刚回填好的存量配置整份冲掉（AC-39 回归）。函数式更新拿到的 `prev` 是
+    //    队列里前一个更新的结果（= rebuilt），非空就原样返回，React 也会因引用不变而不重渲染。
+    setSel((prev) => (prev.length ? prev : rowKeys));
+  }, [fieldTree, visibleGroups, dataset, sel.length, initLoading, guideMode]);
   /**
    * F-1：数据源下拉的选项 —— **全部来自服务端 `availableSources`**，本地一个都不造。
    *
@@ -1104,10 +1189,12 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
     return <span className="svb-badges">{s.roles.map((r) => <span key={r} className="svb-rbadge rbadge" title={`${ROLE_LABEL[r]}（角色来自字段树声明，配置器只读，不提供修改入口）`}>{ROLE_LABEL[r]}</span>)}</span>;
   }
   function renderSelRowBody(s: SelColumn) {
+    // task-260908 F-2（AC-15，原型 02 状态 1/2）：行键列锁定态 —— 绿底 + 拖拽手柄置灰 + ✕ 禁用但可见。
+    const locked = isRowKeyCol(s);
     return (
       <>
         <div className="svb-sr-1">
-          <span className="svb-hd">⋮⋮</span>
+          <span className={`svb-hd${locked ? ' off' : ''}`}>⋮⋮</span>
           <Input
             size="small" className="svb-fname" value={s.fieldName}
             onChange={(e) => renameColumn(s._uid, e.target.value)}
@@ -1127,7 +1214,16 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
             <label><Checkbox checked={s.isAmount} onChange={(e) => toggleAmount(s._uid, e.target.checked)} />金额</label>
             <label><Checkbox checked={s.inSubtotal} onChange={(e) => toggleSubtotal(s._uid, e.target.checked)} />小计</label>
           </span>
-          <span className="svb-rm" onClick={() => removeColumn(s._uid)} title="移除">✕</span>
+          {locked ? (
+            /* D-20（主线 2026-09-08 追加 · 可测性）：Tooltip 走 portal 渲染，量具在 ✕ 元素自身上
+               读不到原因文案 ⇒ 同时挂 `title` + `aria-label`，两者与 Tooltip 文案逐字一致。
+               🚫 不是二选一：Tooltip 给人看（有样式、跟随光标），title/aria-label 给量具和读屏。 */
+            <Tooltip title={ROW_KEY_LOCK_TIP}>
+              <span className="svb-rm off" aria-disabled title={ROW_KEY_LOCK_TIP} aria-label={ROW_KEY_LOCK_TIP} data-role="remove-column-disabled">✕</span>
+            </Tooltip>
+          ) : (
+            <span className="svb-rm" onClick={() => removeColumn(s._uid)} title="移除">✕</span>
+          )}
         </div>
       </>
     );
@@ -1174,16 +1270,29 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
                   />
                 </span>
               )}
-              <span className="svb-rm" onClick={() => removeColumn(priceCol ? priceCol._uid : s._uid)} title="移除整组">✕</span>
+              {/* task-260908 F-2（AC-15 / 原型 02 状态 5）：整组移除会 filter 掉全部 raw/elemKey/autoElem
+                  成员 —— 组里若混进行键列，这个入口就绕过了单行的禁用态。同样置成禁用但可见。 */}
+              {pgMembers.some(isRowKeyCol) ? (
+                <Tooltip title={ROW_KEY_LOCK_GROUP_TIP}>
+                  {/* D-20：同上，title/aria-label 与 Tooltip 文案逐字一致 */}
+                  <span className="svb-rm off" aria-disabled title={ROW_KEY_LOCK_GROUP_TIP} aria-label={ROW_KEY_LOCK_GROUP_TIP} data-role="remove-group-disabled">✕</span>
+                </Tooltip>
+              ) : (
+                <span className="svb-rm" onClick={() => removeColumn(priceCol ? priceCol._uid : s._uid)} title="移除整组">✕</span>
+              )}
             </div>
-            {pgMembers.map((m) => <div className="svb-sel-row in-pg" data-role="selected-column" key={m._uid}>{renderSelRowBody(m)}</div>)}
+            {pgMembers.map((m) => <div className={`svb-sel-row in-pg${isRowKeyCol(m) ? ' svb-locked' : ''}`} data-role="selected-column" key={m._uid}>{renderSelRowBody(m)}</div>)}
           </div>,
         );
         return;
       }
       const dropCls = dropIndicator?.uid === s._uid ? ` drop-${dropIndicator.pos}` : '';
+      // task-260908 F-2（AC-15，原型 02 状态 1）：行键列 = 锁定态（绿底）且自身不可拖动 ——
+      // 手柄已置灰，draggable 一并关掉，避免"看着不能拖、拖起来却动了"。
+      // 📌 仍是 drop 目标：别的列可以插到它前后，所以任意相对顺序依然做得到，没有能力被拿走。
+      const locked = isRowKeyCol(s);
       nodes.push(
-        <div key={s._uid} className={`svb-sel-row${dropCls}`} data-role="selected-column" draggable onDragStart={(e) => handleRowDragStart(e, s._uid)} onDragEnd={() => setDropIndicator(null)} onDragOver={(e) => handleBlockDragOver(e, s._uid)} onDrop={(e) => handleBlockDrop(e, s._uid)}>
+        <div key={s._uid} className={`svb-sel-row${locked ? ' svb-locked' : ''}${dropCls}`} data-role="selected-column" draggable={!locked} onDragStart={(e) => handleRowDragStart(e, s._uid)} onDragEnd={() => setDropIndicator(null)} onDragOver={(e) => handleBlockDragOver(e, s._uid)} onDrop={(e) => handleBlockDrop(e, s._uid)}>
           {renderSelRowBody(s)}
         </div>,
       );
@@ -1383,7 +1492,17 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
           </div>
         </div>
         <div className="svb-pane right">
-          <div className="svb-pane-h"><b>已选输出列</b></div>
+          {/* task-260908 F-2（原型 `02-取数配置器-已选输出列.html` 状态 1/2 的 pane-h 副标题）：
+              右侧计数。全部是行键列时点明「均为必选行键」，与 ✕ 的禁用态相互印证 —— 用户看到
+              「删不掉」时，标题栏已经把原因说在前面了。 */}
+          <div className="svb-pane-h">
+            <b>已选输出列</b>
+            {sel.length > 0 && (
+              <span className="svb-sel-count">
+                {sel.length} 列{sel.every(isRowKeyCol) ? ' · 均为必选行键' : ''}
+              </span>
+            )}
+          </div>
           <div className="svb-pane-b">{renderSelected()}</div>
         </div>
         <div className="svb-pane sql">
