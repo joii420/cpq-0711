@@ -102,27 +102,32 @@ export type Anchor = { id: string; tabType: string; variantKey: string; dialect:
  * 先按 id 找；找不到就**按坐标 (tabType, variantKey, dialect) 兜底**（需求文档 §③ 明确「坐标才是判据」）。
  * 两条都空 ⇒ 硬失败并说清这是**夹具缺失**不是产品缺陷。
  */
-export function resolveAnchor(a: Anchor): { id: string; name: string; byId: boolean } {
+export function resolveAnchor(a: Anchor): { id: string; name: string; code: string; byId: boolean } {
+  // 🔧 2026-09-08 执行期 harness 修复（夹具可达性）：组件管理页是「目录树 + 右侧详情」，
+  //    `directory_id IS NULL` 的组件**不出现在树里** ⇒ UI 点不开。实测 AC-5 点名的
+  //    c6a71e5e「T260907-物料」(COMP-2179) 正是 directory_id IS NULL ⇒ 必然搜不到、报成「入口问题」。
+  //    ⇒ 按 id 命中时追加可达性条件；不可达则退到坐标兜底（AC 原文：「坐标才是判据」）。
   const byId = psqlRO(
-    `select c.id::text, c.name from component c join component_sql_view v on v.component_id=c.id ` +
-    `where c.id='${a.id}' and v.builder_config is not null`
+    `select c.id::text, c.name, c.code from component c join component_sql_view v on v.component_id=c.id ` +
+    `where c.id='${a.id}' and v.builder_config is not null and c.directory_id is not null`
   );
   if (byId) {
-    const [id, name] = byId.split('|');
-    return { id, name, byId: true };
+    const [id, name, code] = byId.split('|');
+    return { id, name, code, byId: true };
   }
   const byCoord = psqlRO(
-    `select c.id::text, c.name from component c join component_sql_view v on v.component_id=c.id ` +
+    `select c.id::text, c.name, c.code from component c join component_sql_view v on v.component_id=c.id ` +
     `where v.builder_config->>'dialect'='${a.dialect}' and v.builder_config->>'tabType'='${a.tabType}' ` +
-    `and coalesce(v.builder_config->>'variantKey','')='${a.variantKey}' order by c.name limit 1`
+    `and coalesce(v.builder_config->>'variantKey','')='${a.variantKey}' and c.directory_id is not null ` +
+    `order by c.name limit 1`
   );
   expect(byCoord,
     `夹具缺失：既没有组件 ${a.id}，坐标 (${a.tabType}/${a.variantKey}/${a.dialect}) 下也一个组件都没有。\n` +
     `  ⇒ 本条判【未验证】，不是产品缺陷。请主线补一个该坐标的组件。`
   ).not.toBe('');
-  const [id, name] = byCoord.split('|');
-  console.log(`[anchor] id ${a.id} 已不在库里，按坐标兜底到 ${id} / ${name}`);
-  return { id, name, byId: false };
+  const [id, name, code] = byCoord.split('|');
+  console.log(`[anchor] id ${a.id} 在库里不可达（不存在或未挂目录），按坐标兜底到 ${id} / ${name} / ${code}`);
+  return { id, name, code, byId: false };
 }
 
 /** 组件的 builder 行指纹（builder_config + sql_template）。只读。 */
@@ -207,28 +212,46 @@ export async function switchTab(page: Page, name: string) {
  * 按名字打开既有组件（组件管理页是「目录树 + 右侧详情」，🚫 不是表格 —— `.ant-table-row` 恒 0）。
  * 搜索框 placeholder 实测 = `🔍 搜索组件名 / 编码`。
  */
-export async function openComponentByName(page: Page, name: string) {
+export async function openComponentByName(page: Page, name: string, code?: string) {
   await page.goto('/components');
   await page.waitForLoadState('networkidle');
   await page.waitForTimeout(3000);
   const search = page.locator('input[placeholder*="搜索"]').first();
   await expect(search, '组件管理页应有搜索框（placeholder 含「搜索」）⇒ 取不到判【未验证】')
     .toBeVisible({ timeout: 15_000 });
-  await search.fill(name);
+  // 🔧 2026-09-08 执行期 harness 修复：按 **code** 搜（唯一），🚫 不按 name ——
+  //    「产品」「材质元素」「BOM」这类名字全库重名，按名字搜可能打开**另一个方言的同名组件**，
+  //    那种错误不报错、只会让断言在错的 SQL 上跑（S3 用例已实证并采用 code 口径）。
+  const key = code || name;
+  await search.fill(key);
   await page.waitForTimeout(2500);
-  const hit = page.getByText(name, { exact: true }).first();
-  await expect(hit, `搜不到组件「${name}」⇒ 入口问题（组件可能未挂目录），本条判【未验证】`)
+  // 🔧 2026-09-08 执行期 harness 修复：搜到的卡片可能落在**折叠的目录**里 ——
+  //    实测 AC-5b 的 COMP-2271 在「核价组件」目录下，报错是 `Received: hidden`（元素在、但不可见）。
+  //    ⚠️ hidden 与 not found 是两种完全不同的成因，前者是「没展开」后者才是「不存在」。
+  for (let i = 0; i < 20; i++) {
+    const closed = page.locator('.cmm-dir:not(.open) .cmm-dir-head');
+    if (await closed.count() === 0) break;
+    await closed.first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(250);
+  }
+  await page.waitForTimeout(600);
+  const hit = page.getByText(key, { exact: false }).first();
+  await expect(hit, `搜不到组件「${name}」(${key}) ⇒ 入口/夹具问题（未挂目录或已被清理），本条判【未验证】`)
     .toBeVisible({ timeout: 15_000 });
   await hit.click({ force: true, timeout: 15_000 });
   await page.waitForTimeout(2000);
-  await expect(page.locator('.cm-center-title'), `打开的不是「${name}」`)
+  // 🔧 2026-09-08 执行期 harness 修复：`.cm-center-title` 只存在于 styles.css，
+  //    组件详情的标题实测在 `.cmm-detail-head` 里的 `span.cmm-t`（probe 实证）。
+  //    ⚠️ 这是**量具修正**，断言语义（打开的确实是这个组件）逐字不变。
+  //    同族坏选择器：cross-tab-builder.spec.ts:82 / cross-tab-ref.spec.ts:104（既有失败基线，非本次引入）。
+  await expect(page.locator('.cmm-detail-head'), `打开的不是「${name}」`)
     .toContainText(name, { timeout: 10_000 });
 }
 
 /** 打开某锚点组件的「取数配置」Tab，并确认取数面板渲染出来了（否则后面全是空跑）。 */
 export async function openBuilderOf(page: Page, a: Anchor) {
-  const { id, name } = resolveAnchor(a);
-  await openComponentByName(page, name);
+  const { id, name, code } = resolveAnchor(a);
+  await openComponentByName(page, name, code);
   await switchTab(page, '取数配置');
   await page.waitForTimeout(2500);
   const panel = page.locator('.svb-recipe-bar').first();
@@ -239,7 +262,7 @@ export async function openBuilderOf(page: Page, a: Anchor) {
 
 /** 展开左侧全部字段分组。🚨 折叠是 CSS `display:none`，不展开则 `toBeVisible()` 报 hidden，长得像「字段没渲染」。 */
 export async function expandAllGroups(page: Page): Promise<number> {
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 200; i++) {   // 🔧 上限 30 对核价方言不够（分组数更多）
     const collapsed = page.locator('.svb-grp.collapsed');
     if (await collapsed.count() === 0) break;
     await collapsed.first().locator('.svb-grp-h').click({ timeout: 5000 }).catch(() => {});
@@ -282,12 +305,18 @@ export async function withCompile(page: Page, action: () => Promise<void>, why: 
  * 列名属性由后端决定，做多路兜底；一个都读不到就硬失败并 dump 键名（🚫 不返回空数组）。
  */
 export function compileColumnNames(compileBody: any, why: string): { fieldName: string; viewColumn: string }[] {
-  const cols = deepFind(compileBody, ['columns', 'cols', 'fields']);
+  // 🔧 2026-09-08 执行期 harness 修复：compile 响应的列清单键名实测是 `declaredColumns`
+  //    （顶层键 = ["sql","declaredColumns","requiredVariables","grain","rewriterCompatible","warnings"]），
+  //    原来只试 columns/cols/fields ⇒ 读不到、AC-5b 恒判「未验证」。
+  const cols = deepFind(compileBody, ['declaredColumns', 'columns', 'cols', 'fields']);
   expect(Array.isArray(cols) && cols.length > 0,
     `${why}：compile 响应里读不到 columns 数组 ⇒ 量具未校准，本条判【未验证】。` +
     `顶层键=${compileBody ? JSON.stringify(Object.keys(compileBody)) : '(非 JSON)'}`
   ).toBe(true);
   return (cols as any[]).map((c) => {
+    // 🔧 2026-09-08 执行期 harness 修复：`declaredColumns` 实测是**字符串数组**
+    //    （元素形如 "hf_part_no"），不是对象数组 ⇒ 原来只按对象取键，读不到就硬失败。
+    if (typeof c === 'string') return { fieldName: '', viewColumn: c };
     const viewColumn = c?.viewColumn ?? c?.columnName ?? c?.column ?? c?.alias ?? c?.name ?? c?.key;
     const fieldName = c?.fieldName ?? c?.label ?? c?.title ?? c?.displayName ?? c?.name;
     expect(typeof viewColumn === 'string' && viewColumn.length > 0,
@@ -347,7 +376,11 @@ export async function selectDataset(page: Page, label: string) {
 export async function addField(page: Page, fieldLabel: string): Promise<any | null> {
   const before = await selectedColumnCount(page);
   const compiled = await withCompile(page, async () => {
-    const f = page.locator('.svb-grp').getByText(fieldLabel, { exact: true }).first();
+    // 🔧 2026-09-08 执行期 harness 修复：`材料名` 在**每个数据源分组里各有一份**（实测同页 14 个），
+    //    `.first()` 常落在一个**折叠分组**里 ⇒ 报 hidden。取第一个**可见**的即可
+    //    （AC-7 已单独断言它内联在锚点分组内，这里只负责把列加进去）。
+    const f = page.locator('.svb-grp').getByText(fieldLabel, { exact: true })
+      .locator('visible=true').first();
     await expect(f,
       `字段面板里找不到可见的「${fieldLabel}」（若报 hidden ⇒ 分组没展开，不是字段缺失）`
     ).toBeVisible({ timeout: 10_000 });
@@ -458,6 +491,54 @@ function deepFind(obj: any, keys: string[]): any {
  *    ⇒ 本函数：① 必须抓到 `/builder/preview` 响应；② 必须 2xx；③ 必须能读出 rowCount。
  *      三者任一不满足就硬失败，🚫 不退化成读 DOM 表格行数。
  */
+/**
+ * 预览条的「客户」下拉：没选客户时点「重新执行」不会发请求（实测）。
+ * 优先选 `罗克韦尔`（CUST-0001，2026-09-08 实测 ds_quote_material_bom 85 行 / ds_quote_element_bom 107 行，
+ * 是「有数据的客户」），取不到就选第一项；下拉本身不存在（核价方言）时直接返回。
+ */
+export async function ensurePreviewCustomer(page: Page, why: string, prefer = '罗克韦尔'): Promise<string | null> {
+  const ph = page.getByText('选择预览客户', { exact: false }).first();
+  if (await ph.count() === 0 || !(await ph.isVisible().catch(() => false))) {
+    return null; // 已选过 / 该方言无此下拉
+  }
+  // 🔧 2026-09-08 执行期 harness 修复。三个坑，任何一个都表现为「预览发不出请求 / 预览 0 行」：
+  //   ① 普通 click 被 antd selector 覆盖层吞掉 ⇒ 必须 force
+  //   ② 该 Select **没有 showSearch**（实测 `input.ant-select-selection-search-input` count=0）⇒ 打不了字
+  //   ③ 选项走 **rc-virtual-list 虚拟滚动**，一屏只渲染 10 项（全库 66 个客户）
+  //      ⇒ 目标客户不在首屏 DOM 里，`filter({hasText})` 必然 0 命中，
+  //        然后退回「第一项」= T260902-客户-…（无 BOM 数据）⇒ 预览 rowCount=0，
+  //        而 0 行会让「材料名非空 > 0」这类阳性对照**空跑**。必须滚动找。
+  await ph.click({ force: true, timeout: 10_000 }).catch(() => {});
+  await page.waitForTimeout(1500);
+  const ddSel = '.ant-select-dropdown:not(.ant-select-dropdown-hidden)';
+  const optSel = `${ddSel} .ant-select-item-option`;
+  for (let i = 0; i < 12 && await page.locator(optSel).count() === 0; i++) await page.waitForTimeout(500);
+  if (await page.locator(optSel).count() === 0) {
+    console.log(`[量具] ${why}：客户下拉打开了但一个选项都没有 ⇒ 预览发不出请求，本条判【未验证】。`);
+    await page.keyboard.press('Escape');
+    return null;
+  }
+  const holder = page.locator(`${ddSel} .rc-virtual-list-holder`).first();
+  let hit = page.locator(optSel).filter({ hasText: prefer }).first();
+  for (let i = 0; i < 40 && await hit.count() === 0; i++) {
+    await holder.evaluate((el) => { el.scrollTop += el.clientHeight * 0.8; }).catch(() => {});
+    await page.waitForTimeout(250);
+    hit = page.locator(optSel).filter({ hasText: prefer }).first();
+  }
+  const target = (await hit.count()) > 0 ? hit : page.locator(optSel).first();
+  const found = (await hit.count()) > 0;
+  const label = ((await target.innerText().catch(() => '')) || '').trim();
+  await target.click({ force: true, timeout: 10_000 });
+  await page.waitForTimeout(1200);
+  if (!found) {
+    console.log(`[量具] ${why}：滚了 40 屏也没找到「${prefer}」，退回第一项「${label}」。`
+      + '⚠️ 该客户可能没有数据 ⇒ 预览 0 行会让阳性对照空跑，报告里要写明。');
+  } else {
+    console.log(`[预览] ${why}：已选预览客户「${label}」`);
+  }
+  return label;
+}
+
 export async function runPreview(page: Page, why: string): Promise<PreviewResult> {
   const pending = page
     .waitForResponse((r) => /\/builder\/preview(\?|$)/.test(r.url()), { timeout: 60_000 })
@@ -466,6 +547,10 @@ export async function runPreview(page: Page, why: string): Promise<PreviewResult
   const btn = page.getByText('重新执行', { exact: false }).first();
   await expect(btn, `${why}：找不到「重新执行」按钮（真实预览应默认展开）⇒ 入口问题，本条判【未验证】`)
     .toBeVisible({ timeout: 15_000 });
+  // 🔧 2026-09-08 执行期 harness 修复：预览条上的「客户」下拉不选，点「重新执行」**不发请求**
+  //    （实测：一个 /builder/preview 都抓不到）。AC-2 原文本来就写了「客户选实测有数据的客户」，
+  //    是用例漏了这一步。⚠️ 核价方言下该下拉可能不存在 ⇒ best-effort，不存在就跳过。
+  await ensurePreviewCustomer(page, why);
   await btn.click();
 
   const resp = await pending;
@@ -529,7 +614,7 @@ export function previewColumn(pr: PreviewResult, fieldName: string, why: string)
   if (keys.includes(fieldName)) return pr.rows.map((r) => r[fieldName]);
 
   // ② 通过 columns 元数据把显示名映射到物理键
-  const cols = deepFind(pr.body, ['columns', 'cols', 'fields']);
+  const cols = deepFind(pr.body, ['columns', 'cols', 'fields', 'declaredColumns']);
   if (Array.isArray(cols)) {
     const hit = cols.find((c: any) =>
       c?.fieldName === fieldName || c?.name === fieldName || c?.label === fieldName ||
