@@ -257,9 +257,29 @@ public class DsSheetBindingResolver {
                 if (!fieldToColumn.containsKey(fn)) extend.add(fn);
             }
 
+            // ── 有效粒度列 = 语义节点声明的粒度列 ∩ 本页签**确实表征**的物理列 ──────────────
+            List<String> nodeGrain = grainByTab.getOrDefault(tabType + "|" + variantKey, List.of());
             List<String> grain = new ArrayList<>();
-            for (String g : grainByTab.getOrDefault(tabType + "|" + variantKey, List.of())) {
+            for (String g : nodeGrain) {
                 if (sheet.column(g) != null && fieldToColumn.containsValue(g)) grain.add(g);
+            }
+            if (grain.isEmpty()) {
+                // 🚨 P1-1/A（用户裁决前的最低成本措施）：**只告警，不拦截**。
+                //    有效粒度列为空 ⇒ 四层锚定的第 ③ 层（粒度列兜底）对本组件**静默失效**。
+                //    后果不是报错，是「组每回填一次翻一倍」—— 症状离根因隔两层，
+                //    现场会先怀疑回填逻辑，而真因在语义图配置里。
+                //    ⚠️ 2026-09-07 实查：13 张带版本表的 grain_columns **全部非空**，
+                //       ds 原生模板 12/12 组件的有效粒度列也非空 ⇒ 当下这条不会触发。
+                //       但 semantic_node.grain_columns 可经取数配置器写端点改空，
+                //       改空之后就只剩这条日志能告诉你发生了什么。
+                LOG.warnf("[ds-record] 组件「%s」(%s) 绑定 %s 的**有效粒度列为空** ⇒ 锚定第③层（粒度列兜底）"
+                                + "对它失效，用户改值/跨版后该组可能出现「原行保留+追加一行」的膨胀。"
+                                + "节点声明的粒度列=%s，本页签表征的物理列=%s（两者交集为空）。"
+                                + "排查方向：semantic_node(node_key=%s, dialect=QUOTE).grain_columns "
+                                + "与该组件取数配置里勾选的列。",
+                        name, cid, sheet.tableName,
+                        nodeGrain.isEmpty() ? "(节点未声明)" : nodeGrain,
+                        fieldToColumn.values(), anchor[0]);
             }
             out.put(cid, new DsSheetBinding(cid, sheet, anchor[0],
                     Map.copyOf(fieldToColumn), Map.copyOf(viewColumnByField), List.copyOf(extend),
