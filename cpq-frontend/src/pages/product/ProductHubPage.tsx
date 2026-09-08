@@ -68,7 +68,12 @@ interface CustomerGroupOption extends DefaultOptionType {
 /**
  * `Select` 的 `options` 既可能是叶子项（具体客户），也可能是分组标题
  * （原型 `02-客户选择器-展开.html` 的「已建档客户（48）」等）。
- * `filterOption` / `optionRender` 只会在叶子项上被调用——分组标题本身不参与筛选/自定义渲染。
+ * 🚨 **不要假设回调只在叶子项上被调用。** `filterOption` 实测**会**收到分组节点
+ * （antd `useFilterOptions` 遍历整棵 `options`，分组节点也在内），而分组节点**没有** `customerNo`
+ * ⇒ 直接 `option.customerNo.toLowerCase()` 会 `undefined.toLowerCase()` 让整页崩。
+ * 2026-09-07 真机验收实证：`tsc` / `eslint` / Playwright 截图**三者都没抓到** ——
+ * `tsc` 被 `as` 断言绕过，截图没触发「展开下拉并输入」这个交互。
+ * ⇒ 下面两个回调**一律先做叶子判定**，不靠假设。
  */
 type CustomerSelectOption = CustomerLeafOption | CustomerGroupOption;
 
@@ -204,8 +209,9 @@ const ProductHubPage: React.FC = () => {
   // AC-15：搜索匹配客户编号与客户名称两者；未建档项没有名称，靠编号也要能搜到。
   // 🚨 rc-select 对分组 `options` 结构只会把**叶子项**传进来做过滤，此处按叶子项形状读取即可。
   const filterOption = useCallback((input: string, option?: CustomerSelectOption) => {
-    const leaf = option as CustomerLeafOption | undefined;
-    if (!leaf) return false;
+    // 🚨 分组节点也会进来（见文件头注释）——用 in 做类型守卫，TS 会把联合类型收窄到叶子。
+    if (!option || !('customerNo' in option) || typeof option.customerNo !== 'string') return false;
+    const leaf = option;
     const kw = input.trim().toLowerCase();
     if (!kw) return true;
     return (
@@ -255,8 +261,10 @@ const ProductHubPage: React.FC = () => {
                 options={groupedOptions}
                 filterOption={filterOption}
                 optionRender={(option) => {
-                  // 🚨 只有叶子项（具体客户）会走到这里，分组标题由 antd 自行渲染
-                  const d = option.data as CustomerLeafOption;
+                  // 🚨 同 filterOption：不假设「只在叶子项上被调用」，先判定再用。
+                  const raw = option.data as Partial<CustomerLeafOption> | undefined;
+                  if (!raw || typeof raw.customerNo !== 'string') return option.label ?? null;
+                  const d = raw as CustomerLeafOption;
                   return (
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span>
