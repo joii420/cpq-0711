@@ -46,6 +46,12 @@ import java.util.Set;
 @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
 public class QuotationResource {
 
+    // D-42（甲-1）：saveDraft 路径的 _record 挂点（在 snapshotQuotation 之后）
+    @jakarta.inject.Inject
+    com.cpq.quotation.service.dsrecord.DsQuoteRecordService dsQuoteRecordService;
+    @jakarta.inject.Inject
+    com.cpq.quotation.service.dsrecord.DsRecordStaleService dsRecordStaleService;
+
     private static final org.jboss.logging.Logger LOG =
             org.jboss.logging.Logger.getLogger(QuotationResource.class);
 
@@ -170,6 +176,32 @@ public class QuotationResource {
             // 快照尽力而为
         }
         long _s2 = (System.nanoTime() - _p1) / 1_000_000;
+
+        // ── D-42（甲-1）：写 ds_quote_*_record —— 🔑 必须在 snapshotQuotation **之后** ───────────
+        // 原挂点在 QuotationService.saveDraft 内（em.flush() 之后），实测**永远写不出 _record**：
+        //   saveDraft 对「payload 的 componentId 集合 ≠ 库里的」的行先整行删掉组件数据，
+        //   而重建就发生在上面那句 snapshotQuotation(id, true) 里 —— 即 saveDraft 返回之后。
+        //   ⇒ 事务内任何位置都落在「旧行已删、新行未建」的空窗，读到 0 行、
+        //     打一条「命中 N 个轴值但无组件数据，跳过」就走了（前半句是对的，所以极易被读成「这单没数据」）。
+        // 🚨 两条成因、同一个窗口，本挂点一并覆盖：
+        //   · added    —— 组件数据从来没建过，由 snapshotQuotation 首次创建；
+        //   · modified —— 建过但刚被删掉，重建同样在 snapshotQuotation。
+        // 🔑 增量语义（AC-2②）：传 dto.touchedLineItemIds，🚫 不许传 null 整单重算。
+        //   名单为空（本次无 line payload，例如只改 remarks）⇒ 不调，与原设计一致。
+        // 🚫 N+1：一条保存流程只调一次。
+        // 🔒 本方法**无 @Transactional**（见 :151 注释：放进事务会吃掉 60s Narayana 预算）
+        //   ⇒ 走 syncRecordsForFlow（自带事务外壳），🚫 直调 syncRecords 会因无事务可用而抛。
+        // 🛡️ D-35：失败不阻断保存，但**不许静默** —— 登记「快照过期」标记让预览显式报出。
+        if (dto != null && dto.touchedLineItemIds != null && !dto.touchedLineItemIds.isEmpty()) {
+            try {
+                dsQuoteRecordService.syncRecordsForFlow(id, dto.touchedLineItemIds);
+            } catch (RuntimeException ex) {
+                LOG.warnf(ex, "[ds-record] quotation=%s 写 _record 失败（草稿保存不受影响，本次快照未更新）", id);
+                dsRecordStaleService.markStale(id,
+                        com.cpq.quotation.service.dsrecord.DsRecordStaleService.REASON_WRITE_FAILED,
+                        ex.getClass().getSimpleName() + ": " + ex.getMessage(), null);
+            }
+        }
 
         // task-0729 B10：价格列归位。🔒 插入位置严格不可变通——必须在 row_data 落库/snapshot_rows
         // 重建【之后】、quoteCardValues 的懒重算【之前】：在前会被前端提交值覆盖，在后卡片值算的

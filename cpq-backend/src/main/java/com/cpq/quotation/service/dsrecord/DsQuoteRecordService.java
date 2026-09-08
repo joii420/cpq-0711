@@ -113,6 +113,21 @@ public class DsQuoteRecordService {
         return syncRecords(quotationId, null);
     }
 
+    /**
+     * D-42（甲-1）：带<b>增量名单</b>的流程末尾挂点 —— 供 {@code saveDraft} 那条路使用。
+     *
+     * <p>🔑 {@code changedLineItemIds} 必须是本次真正触碰的行（新增/修改 + 删除），
+     * 🚫 <b>不许图省事传 {@code null}</b>：那是整单重写，会直接打破
+     * {@code AC-2②}「未变更产品的 {@code _record.updated_at} 逐字未变」，
+     * 且大单量下写放大（{@code task-260825} 栽过建单 N+1 超时）。
+     * <p>名单由 {@code QuotationService.saveDraft} 算出、经
+     * {@code SaveDraftResponse#touchedLineItemIds}（{@code @JsonIgnore}，不上线）带出来。
+     */
+    @Transactional
+    public Summary syncRecordsForFlow(UUID quotationId, Collection<UUID> changedLineItemIds) {
+        return syncRecords(quotationId, changedLineItemIds);
+    }
+
     public Summary syncRecords(UUID quotationId, Collection<UUID> changedLineItemIds) {
         if (quotationId == null) return Summary.empty();
         if (changedLineItemIds != null && changedLineItemIds.isEmpty()) return Summary.empty();

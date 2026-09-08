@@ -920,23 +920,24 @@ public class QuotationService {
         //    → 预览从 _record 读到过期/缺失的数据 → 财务照着确认 → **按错的数据回填主表**。
         //    这与 AP-60 判据四同型：预览在撒谎，而且撒得很有说服力。
         //    ⇒ 仍然不回滚，但必须**留一条可查的标记**，由预览显式报给财务。
+        // 🔴 D-42（甲-1，主线 2026-09-07 裁决）：**挂点从这里移走了**，🚫 不要再挪回来。
+        //    原来在此处（em.flush() 之后）调 syncRecords，实测**永远写不出 _record**：
+        //    本方法对「payload 的 componentId 集合 ≠ 库里的」的行会先整行删掉组件数据
+        //    （:2918 batchDeleteComponentDataByIds），而**重建发生在本方法返回之后** ——
+        //    QuotationResource 紧随其后的 snapshotQuotation(id, true)。
+        //    ⇒ 事务内任何位置都落在「旧行已删、新行未建」的空窗里，读到 0 行就跳过。
+        //    ⚠️ 症状极隐蔽：日志「命中 N 个轴值但无组件数据，跳过」前半句是对的，
+        //       读起来像「这单没数据」，实际是「**这一刻**没数据」。
+        //    ⇒ 只在这里**算出并带出** touched，真正的调用点在 QuotationResource
+        //       的 snapshotQuotation 之后（见 SaveDraftResponse#touchedLineItemIds）。
         if (delta.hasLinePayload) {
-            try {
-                em.flush();
-                java.util.List<UUID> touched = new java.util.ArrayList<>();
-                if (delta.writtenIds != null) {
-                    for (UUID wid : delta.writtenIds) if (wid != null) touched.add(wid);
-                }
-                touched.addAll(delta.removedIds);
-                if (!touched.isEmpty()) dsQuoteRecordService.syncRecords(id, touched);
-            } catch (RuntimeException ex) {
-                LOG.warnf(ex, "[ds-record] quotation=%s 写 _record 失败（草稿保存不受影响，本次快照未更新）", id);
-                // D-35：登记「快照过期」标记。REQUIRES_NEW —— 此刻当前事务很可能已被标记
-                // rollback-only，挂在原事务上写标记必然一起没。该方法自身吞异常，不会反噬本次保存。
-                dsRecordStaleService.markStale(id,
-                        com.cpq.quotation.service.dsrecord.DsRecordStaleService.REASON_WRITE_FAILED,
-                        ex.getClass().getSimpleName() + ": " + ex.getMessage(), null);
+            java.util.List<UUID> touched = new java.util.ArrayList<>();
+            if (delta.writtenIds != null) {
+                for (UUID wid : delta.writtenIds) if (wid != null) touched.add(wid);
             }
+            touched.addAll(delta.removedIds);
+            // 🔑 增量语义（AC-2②）靠这份名单保住：🚫 不许在 Resource 侧退化成 null 整单重算。
+            if (!touched.isEmpty()) resp.touchedLineItemIds = touched;
         }
         return resp;
     }
