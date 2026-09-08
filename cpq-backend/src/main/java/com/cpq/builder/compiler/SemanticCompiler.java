@@ -58,11 +58,21 @@ public class SemanticCompiler {
     public static final int CURRENT_VERSION = 1;
 
     private static final String PRICE_FUNC_ALIAS = "cep";
-    // 🚫 task-260907 B-17：这里原先是 PRICE_FUNC_NODE_KEY = "FUNC_ELEMENT_PRICE" 常量。
-    //    它把「价格函数」这个**角色**钉死成了**某一个具体节点**，于是第二个价格函数
-    //    （FUNC_CUSTOMER_ELEMENT_PRICE，D-27：报价侧一单元素价统一、与料号无关）的列
-    //    压根不会被识别成价格列 —— 症状是「元素单价整列空」，且编译不报错。
+    // 🚫 task-260907 B-17 / B-8 合并：这里原先是 PRICE_FUNC_NODE_KEY = "FUNC_ELEMENT_PRICE" 常量。
+    //    它把「价格函数」这个**角色**钉死成**某一个具体节点**，换价格函数就必须同时改代码与种子，
+    //    而漏改的症状是「拖得动、编译时才报列找不到」或「元素单价整列空且不报错」。
     //    ⇒ 改为**顺锚点的 PRICE 边**解析，见 resolvePricePlan。角色由图数据表达，不由常量表达。
+    //
+    // 📌 2026-09-07 合并纪要（两条线独立做了同一个泛化，取 B-17 的结构）：
+    //    · B-8 侧曾引入 LEGACY_PRICE_FUNC_NODE_KEY 常量做向后兼容，理由是「价格节点已换成
+    //      FUNC_CUSTOMER_ELEMENT_PRICE，21 份存量配置仍写旧键会编译不过」。
+    //    · 🚨 **该前提已不成立**：D-39 撤回了换节点方案，V424 把 FUNC_CUSTOMER_ELEMENT_PRICE
+    //      连同它的 PRICE 边一并删除。全库现在只有 FUNC_ELEMENT_PRICE 一个价格函数节点，
+    //      边就指向它 ⇒ 精确匹配天然覆盖那 21 份，兼容常量成了**永远为真的冗余判据**。
+    //    · 实测依据：21 份存量配置在「有 LEGACY / 无 LEGACY」两种编译器下产物**逐字节相同**，
+    //      且 21/21 全部编译成功（见本次合并回报）。⇒ 不保留该常量。
+    //    · 🚫 不要再把它加回来：它会让「选了价格函数的列、锚点却没有对应 PRICE 边」这个
+    //      本该报错的情形被判成价格列，从而绕过 resolvePricePlan 里的 COMPILE_PRICE_EDGE_NOT_FOUND。
 
     @Inject
     PhysicalColumnCatalog catalog;
@@ -1315,6 +1325,14 @@ public class SemanticCompiler {
      * <p>{@code plan == null}（没选价格列、或形态 B 已把价格列摘掉）时恒 false。
      */
     private boolean isPriceColumn(PricePlan plan, BuilderConfig.ColumnConfig col) {
+        // 🚩 `plan != null &&` 这一段不是多余的防御，它是**结构性免疫**：
+        //    判据只由「本次真的解析出来的 plan」决定，plan 为 null 时恒 false。
+        //    合并时 B-8 侧的写法是 isPriceNodeKey(col.sourceNodeKey, plan == null ? null : ...)，
+        //    其中历史键分支在 plan == null 时仍可能返 true ⇒ 上面第一个输出循环
+        //    （`if (isPriceColumn(...)) continue;`）会把该列**静默丢掉**，而第二个循环被
+        //    `if (pricePlan != null)` 挡住不会补输出它。
+        //    实测该形态在 B-8 自己的代码里不可达（见合并回报的可达性分析），但它的不可达
+        //    依赖的是**另一个方法**维持的不变量 —— 那种「今天不可达」不是安全，是欠债。
         return plan != null && plan.funcNode != null
                 && plan.funcNode.nodeKey.equals(col.sourceNodeKey);
     }
@@ -1404,12 +1422,18 @@ public class SemanticCompiler {
         SemanticEdgeKey codeKey = keys.get(0);
         plan.elementCodeSourceColumn = codeKey.leftColumn;
         String codeExpr = c.anchorAlias + "." + codeKey.leftColumn;
-        String hfExprForJoin = requalifyAnchorExpr(c);
 
         List<String> on = new ArrayList<>();
         on.add(PRICE_FUNC_ALIAS + "." + codeKey.rightColumn + " = " + codeExpr);
-        for (int i = 1; i < keys.size(); i++) {
-            on.add(PRICE_FUNC_ALIAS + "." + keys.get(i).rightColumn + " = " + hfExprForJoin);
+        if (keys.size() > 1) {
+            // ⚠️ requalifyAnchorExpr 会在 anchor_expr 为空时抛 COMPILE_ANCHOR_EXPR_MISSING，
+            //    所以只在真的要用它（多连接键）时才求值。
+            //    task-260907 B-8 后 QUOTE 侧只剩 element_code 一个键（客户 × 元素粒度），
+            //    走不到这里；核价侧若将来接入多键价格边，这段仍然成立。
+            String hfExprForJoin = requalifyAnchorExpr(c);
+            for (int i = 1; i < keys.size(); i++) {
+                on.add(PRICE_FUNC_ALIAS + "." + keys.get(i).rightColumn + " = " + hfExprForJoin);
+            }
         }
         plan.joinClause = "LEFT JOIN " + funcNode.funcSignature + " " + PRICE_FUNC_ALIAS +
                 " ON " + String.join(" AND ", on);

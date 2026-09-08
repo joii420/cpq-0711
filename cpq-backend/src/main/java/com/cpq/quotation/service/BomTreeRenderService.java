@@ -4,6 +4,7 @@ import com.cpq.common.exception.BusinessException;
 import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.entity.CostingBomTreeConfig;
 import com.cpq.component.service.ComponentDriverService;
+import com.cpq.customer.entity.Customer;
 import com.cpq.datasource.sqlview.BomTreeVarsContext;
 import com.cpq.datasource.sqlview.TemplateRenderScope;
 import com.cpq.datasource.sqlview.VersionFilterMacro;
@@ -169,9 +170,16 @@ public class BomTreeRenderService {
                     + "树递归 SQL（costing_bom_tree_config 无 usage=" + effUsage + " 且 isActive=true 记录）");
         }
         List<CostingTreeNode> rows;
+        // task-260907 B-7a：闭包口径必须与 renderInternal 的树展开口径同源——它按本单客户递归，
+        // 这里若还按「customer_no 最小的那家」推，同一料号挂多客户时两者会算出不同的闭包
+        // （总料号并集少/多料号 → 页签行凭空多出或整行消失）。故此处也解析本单客户。
+        // N+1 自检：至多 1 条 quotation 查询 + 1 条 customer 查询（后者进程级缓存），
+        // 与 lineItems 条数、与闭包料号数均无关；递归 CTE 仍是固定 1 条。
+        String unionCustomerCode = resolveCustomerCodeFromLines(lineItems);
         BomTreeVarsContext.set(new BomTreeVarsContext.Vars(new ArrayList<>(seed), null));
         try {
-            rows = queryRecursive(cfg.sqlTemplate, new ArrayList<>(seed), java.util.Collections.emptyMap());
+            rows = queryRecursive(cfg.sqlTemplate, new ArrayList<>(seed), java.util.Collections.emptyMap(),
+                    unionCustomerCode);
         } finally {
             BomTreeVarsContext.clear();
         }
@@ -365,7 +373,13 @@ public class BomTreeRenderService {
         List<CostingTreeNode> rows;
         BomTreeVarsContext.set(new BomTreeVarsContext.Vars(new ArrayList<>(seed), null, overrides));
         try {
-            rows = queryRecursive(cfg.sqlTemplate, new ArrayList<>(seed), treeOverrides);
+            // task-260907 B-7c：ctxCustomerId 有值就直接用（整单已查过一次）；为 null 时走
+            // QuotationIdContext 兜底 —— 报价侧主路径喂的是不带 quotationId 的轻量行，
+            // 见 resolveCustomerCodeForTree 的 javadoc。
+            String treeCustomerCode = (ctxCustomerId != null)
+                    ? resolveCustomerCode(ctxCustomerId)
+                    : resolveCustomerCodeForTree(null);
+            rows = queryRecursive(cfg.sqlTemplate, new ArrayList<>(seed), treeOverrides, treeCustomerCode);
         } finally {
             BomTreeVarsContext.clear();
         }
@@ -573,7 +587,87 @@ public class BomTreeRenderService {
      * 一样按<b>出现顺序</b>绑定，而非按类型分组批量绑定（3+1 种占位符可能交替出现）。
      */
     private static final java.util.regex.Pattern TREE_PARAM =
-            java.util.regex.Pattern.compile(":(production_part_nos|__vfPart|__vfVer|pq)\\b");
+            java.util.regex.Pattern.compile(":(production_part_nos|__vfPart|__vfVer|pq|customerCode)\\b");
+
+    /**
+     * 进程级缓存：customer UUID → {@code customer.code}（如 {@code CUST-0001}）。
+     *
+     * <p>与 {@code SqlViewExecutor#customerCodeCache}（:418~438）同款模式：{@code customer.code}
+     * 是业务主键、极少变更，进程级缓存安全，且让「解析客户码」这件事对 SQL 条数是<b>常数</b>
+     * ——不随报价行数 / 闭包料号数增长（N+1 约束）。
+     */
+    private final java.util.concurrent.ConcurrentHashMap<UUID, String> customerCodeCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * task-260907 · B-7a：把本单 customerId(UUID) 解析成递归模板 {@code :customerCode} 要的
+     * {@code customer.code}。
+     *
+     * <p>返回 null 表示「本次调用没有报价单客户上下文」（如 BuilderService 预览用的轻量
+     * {@code QuotationLineItem} 不带 {@code quotationId}）。此时模板里的
+     * {@code COALESCE(:customerCode, <老子查询>)} 会退回改造前的「取 customer_no 最小的那家」，
+     * 与本次改造之前逐位等价 —— 🚫 不要把 null 当错误抛，那会把预览打成 0 行。
+     */
+    private String resolveCustomerCode(UUID customerId) {
+        if (customerId == null) return null;
+        return customerCodeCache.computeIfAbsent(customerId, id -> {
+            Customer c = Customer.findById(id);
+            return (c == null || c.code == null || c.code.isBlank()) ? null : c.code;
+        });
+    }
+
+    /**
+     * 从一批报价行里解析出「本单客户码」。取第一行非空的 {@code quotationId} —— 与
+     * {@link #renderInternal} 的 {@code ctxCustomerId} 完全同款口径（它取的是
+     * {@code lineItems.get(0).quotationId}），保证两条路径算出同一个客户。
+     *
+     * <p>N+1 自检：整批只发 1 条 {@code Quotation.findById}（+ 缓存未命中时 1 条 customer 查询），
+     * 与 {@code lineItems} 条数无关。
+     */
+    private String resolveCustomerCodeFromLines(List<QuotationLineItem> lineItems) {
+        UUID qid = null;
+        if (lineItems != null) {
+            for (QuotationLineItem li : lineItems) {
+                if (li != null && li.quotationId != null) { qid = li.quotationId; break; }
+            }
+        }
+        return resolveCustomerCodeForTree(qid);
+    }
+
+    /**
+     * task-260907 · B-7c：递归 {@code :customerCode} 的客户码解析，带
+     * {@link QuotationIdContext} 兜底。
+     *
+     * <h3>🚨 为什么非要这层兜底（实测，不是防御性编程）</h3>
+     * 报价侧【真实的卡片渲染主路径】喂进来的是<b>不带 {@code quotationId} 的轻量行</b>：
+     * <pre>
+     * ConfigureSnapshotService:383-387   QuotationLineItem lite = new QuotationLineItem();
+     *                                    lite.id = lid; lite.productPartNoSnapshot = pn;   // ← 没有 quotationId
+     *                    :391           collectTotalMaterialNoUnion(liteLines, "QUOTE")
+     *                    :436           bomTreeRenderService.render(customerTemplateId, liteLines, null, "QUOTE")
+     * </pre>
+     * 光按 {@code lineItems.get(0).quotationId} 解析 ⇒ 主路径上恒为 null ⇒ 模板里的
+     * {@code COALESCE(:customerCode, <老子查询>)} <b>静默</b>回落到「customer_no 最小的那家」。
+     * 那正是 B-7a 要消灭的行为，而且不报错、不留痕 —— 单元测试用带 quotationId 的行照样全绿。
+     *
+     * <p>✅ 兜底可行的依据：{@code ConfigureSnapshotService:296} 在这两个调用点<b>外层</b>
+     * {@code QuotationIdContext.set(quotationId)}（:743 clear），区间完整覆盖 :391 与 :436。
+     *
+     * <h3>🚫 为什么不改 {@code liteLines} 去补 quotationId，也不改 ctxCustomerId</h3>
+     * {@code renderInternal} 的 {@code ctxCustomerId} 会作为入参传给
+     * {@code componentDriverService.expandUncached(compId, ctxCustomerId)}（task-0729 真根因修复
+     * 刻意确立的语义）。让它从 null 变成有值，会同时改变<b>全部 $view 的 :customerCode 解析</b> ——
+     * 那是远超 B-7a 的影响面。本方法只服务递归 CTE 这一个绑定点，{@code ctxCustomerId} 一字不动。
+     *
+     * <p>预览路径（{@code BuilderService:447} 的 lite 行）不设 {@link QuotationIdContext}
+     * （全工程 12 个 set 点里没有它）⇒ 这里仍返回 null ⇒ COALESCE 兜底照常，预览行为逐位不变。
+     */
+    private String resolveCustomerCodeForTree(UUID quotationIdOrNull) {
+        UUID qid = quotationIdOrNull != null ? quotationIdOrNull : QuotationIdContext.get();
+        if (qid == null) return null;
+        Quotation q = Quotation.findById(qid);
+        return (q == null) ? null : resolveCustomerCode(q.customerId);
+    }
 
     /**
      * 递归 SQL 直接 JDBC 执行。契约里的绑定变量是 {@code :production_part_nos}（text[]，递归 CTE 常见
@@ -608,7 +702,7 @@ public class BomTreeRenderService {
      * {@code expanded} 原样执行，零回归（AC-17/AC-10）。
      */
     private List<CostingTreeNode> queryRecursive(String sqlTemplate, List<String> seed,
-                                                  Map<String, String> treeOverrides) {
+                                                  Map<String, String> treeOverrides, String customerCode) {
         String expanded = VersionFilterMacro.containsMacro(sqlTemplate)
                 ? VersionFilterMacro.expandForExecution(sqlTemplate) : sqlTemplate;
 
@@ -669,6 +763,21 @@ public class BomTreeRenderService {
                     String name = order.get(i);
                     if ("pq".equals(name)) {
                         ps.setObject(i + 1, pendingQuotationId);
+                        continue;
+                    }
+                    // task-260907 B-7a：:customerCode 是【标量 varchar】，不是数组——与 :pq 同样
+                    // 走「按出现顺序逐个绑定」这套协议（不能像 3 种数组占位符那样落进下面的
+                    // seedArr/partArr/verArr 三选一），否则位置错位会静默绑错值。
+                    // 允许为 null：模板侧用 COALESCE(:customerCode, <老子查询>) 兜底，
+                    // 无报价单上下文（如配置器预览的轻量 lineItem）时逐位退回改造前行为。
+                    if ("customerCode".equals(name)) {
+                        ps.setString(i + 1, customerCode);
+                        // 🔍 task-260907 B-7a：把【实际绑上的值】打出来。
+                        // 模板侧是 COALESCE(:customerCode, <老子查询>)，绑到 null 时会【静默】
+                        // 回落成改造前的「customer_no 最小的那家」——单客户数据下两条路径结果一样，
+                        // 「看起来对」不能当证据。这行日志是现场唯一能区分两者的判据。
+                        LOG.debugf("[costing-tree] bind :customerCode = %s（null = 无报价单上下文，"
+                                + "递归将回落到 customer_no 最小的那家）", customerCode);
                         continue;
                     }
                     java.sql.Array arr = "production_part_nos".equals(name) ? seedArr

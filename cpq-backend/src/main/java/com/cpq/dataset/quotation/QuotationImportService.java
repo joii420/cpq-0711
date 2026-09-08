@@ -140,7 +140,12 @@ public class QuotationImportService {
         // ===== Phase 2：单事务写入，任一异常整体回滚 =====
         List<DatasetSheetSummaryDTO> summary;
         try {
-            summary = importService.writeAll(prepared, operator, new CheckpointProgress(recordId, totalSteps));
+            // 🚩 2026-09-07 合并：必须同时传 customerNo 与 progress。
+            //    合并前本行是三参（只带 progress），而 master 侧把 customer_no 加成了写入维度 ——
+            //    两个三参重载类型不同、编译都过，漏传 customerNo 不会报错，
+            //    症状是报价侧整批数据 customer_no 写成 NULL（AC-4 要拦的正是这个）。
+            summary = importService.writeAll(prepared, operator, customerNo,
+                    new CheckpointProgress(recordId, totalSteps));
         } catch (DatasetValidationException ve) {
             recordWriter.finalizeFailed(recordId, totalRows, ve.getMessage(), ve.getErrors());
             return;

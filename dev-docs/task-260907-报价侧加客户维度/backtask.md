@@ -97,6 +97,40 @@ SRC=<worktree>                                     ← 命中在这
 ⇒ 合并日**不要依赖热重载**，显式重启 8081，让 Flyway 走冷启动路径
 （冷启动的顺序安全性已实证，见下方「合并日操作」；**热重载的顺序未验证**）。
 
+### ①c 🚨 差集必须查 **classpath**，不是源码树（2026-09-07 并发会话真实事故）
+
+```bash
+# Flyway 解析的是 classpath，不是 src/。两个都要查，且以 classpath 为准。
+W=/home/joii/project/cpq/.claude/worktrees/task-260907-customer-dim
+SRC=$W/cpq-backend/src/main/resources/db/migration
+CLS=$W/cpq-backend/target/classes/db/migration
+echo "--- classpath 有而源码树没有的（= 会被静默应用的幽灵）---"
+comm -13 <(ls "$SRC" | sort) <(ls "$CLS" 2>/dev/null | sort)
+```
+
+🚨 **并发会话 2026-09-07 09:31:05 的真实事故**：用户按批准删掉了源文件、该会话也复查过
+「共享库顶版 422 / V423 记录 0」—— **两项都属实**。但 **`target/classes/db/migration/` 里的编译产物没被清**，
+后端代理跑 `mvnw test` 时 Flyway 从残留产物把它落进了共享库，且它**不在 master** ⇒ 孤儿迁移。
+
+⇒ 📌 **判据提炼（对方自己的话，照抄）**：
+> **我查的是代理指标（源文件在不在），不是那个东西本身（classpath 里有没有）。**
+
+这与本文档里「数字对上 ≠ 内容对上」「判据落在恒为 1 的维度上是零证据」是**同一族** ——
+**今天这一族至少咬了双方五次，每次换一个伪装。**
+
+### 🔴 改号（renumber）流程 —— 本坑的最高危形态
+
+**整体改号时，旧号文件仍留在 `target/classes/db/migration/`，与新号一起被应用**（源码树看起来完全正常）。
+且旧号与新号**内容一模一样**，重复执行的症状五花八门（撞唯一键 / 重复插入 / 无害但污染历史）。
+
+⇒ **改号必须按此序，🚫 不许靠「记得清理」**：
+```bash
+rm -rf "$CLS"                      # ① 先清 classpath 产物
+git mv <旧号> <新号>  …            # ② 再改号
+(cd cpq-backend && ./mvnw -o -q clean test-compile)   # ③ 重编
+comm -13 <(ls "$SRC"|sort) <(ls "$CLS"|sort)          # ④ 差集必须为空
+```
+
 ### ①b 兜底守卫：起任何**连共享库**的服务前先比对（不能替代 ①）
 
 ```bash
@@ -177,12 +211,117 @@ application.properties:67  quarkus.flyway.migrate-at-start=true
 |---|---|---|
 | **1** | 🚨 **先把 worktree 的改动全部提交** | 2026-09-07 实查：**16 个已改文件 + 13 个未跟踪**（含 5 个迁移、6 个测试类），而分支只比 master 多 1 个提交。子代理按纪律不 `commit`，**提交责任隐式落到主线**，而「跑了测试」「看了 diff」「查了分支」三项常规前置检查**都发现不了代码没进 git**。⚠️ `git worktree remove` 会**连未跟踪文件一起删**（本项目实证近 13000 行险些丢失） |
 | **2** | 🚨 **合并前广播全部并发会话** | 合并后共享库会有 `customer_no`，而 `DatasetSchemaSelfCheck:116` 是**双向**比对 ⇒ **任何仍在跑旧代码的 worktree，下次启动会撞「多出未声明的列: customer_no」**。广播内容：「重启后端之前先把 master 合进你的 worktree」。用 `ListAgents` 取当时的活跃会话 |
-| **3** | 合并到 master | 文件交集先查一遍（今天这次是 0 交集） |
+| **2.5** | 🚨 **撞号检查（四个维度，缺一即漏）** | 见下方脚本。非空就停下重编号，**不要合** |
+| **3** | 合并到 master | 文件交集先查一遍。⚠️ **已知与 `核价回填` 会话有文本级冲突**（非语义冲突，两组常量互不相干、开关维度不同）：`SheetDef.java`（我加 `CUSTOMER_COLUMNS`，它加 `RECORD_COLUMNS`/`SOURCE_QUOTATION_COLUMN`）· `QuoteRegistry.java`（我传 `customerScoped=true`，它覆写 `quoteRecordEnabled()`）· `DatasetRegistry.java` · `DatasetSchemaSelfCheck.java`。**双方已约定我先合、它后合并由它解冲突**（它还要走亲验，本就在我后面） |
 | **4** | 🚨 **显式重启主仓 8081，🚫 不要依赖热重载** | 主仓 8081 是**长跑进程**（`cwd=/home/joii/project/cpq/cpq-backend`），master 迁移目录一变就会**热重载即迁移**。**已实证的是冷启动下 Flyway 先于自检的顺序，热重载的顺序未验证** ⇒ 走已验证的那条路 |
 | **5** | 验共享库迁移 | `SELECT version,success FROM flyway_schema_history WHERE version::int >= 423` → **423~427 全部 `success=t`** |
 | **6** | 验自检通过 | 启动日志出现 `[dataset] Registry↔DDL 自检通过：N 张表 / M 列`。**没出现 = 自检抛了，服务没起来** |
 | **7** | 验业务端点 | `curl --noproxy '*'` 打 `/api/cpq/components` → **401**（不是 500、不是连不上） |
-| **8** | 通知阻塞方 | `报价数据导入切ds新表` 的 AC-8 阻塞在 `V425` 落共享库、第 14 个页签阻塞在 `V427` |
+| **8** | 通知阻塞方 | **三个会话都要发**，且必须带下面五样（缺一它们就得自己再查一遍） |
+
+#### 第 8 步的通知内容（`核价回填` 会话明确要求，其余两个同样适用）
+
+| # | 内容 | 为什么它需要 |
+|---|---|---|
+| 1 | 合进 master 的**提交 hash** | 它 `git merge master` 前核一眼 |
+| 2 | **实际**落库的迁移号区间 | 🚨 **给真实值，不给预期值** —— 号今天已经是移动靶（`423~428` → `425~429`，且从 6 个变 5 个），对方明说「不想再按预期值去核」 |
+| 3 | 冷启动后 8081 的实际状态 | `/api/cpq/components` → **401** |
+| 4 | `flyway_schema_history` 里该区间**逐条 `success` 的原始输出** | 只说「全成功」它没法复核 |
+| 5 | `[dataset] Registry↔DDL 自检通过：N 张表 / M 列` 那行启动日志 | **没有这行 = 自检抛了、服务没起来**；它据此判断该等我还是可以合 |
+
+🚨 **广播里必须显式写这条顺序**（三个会话都受影响）：
+> **先 `git merge master` 解冲突，然后才重启后端。**
+> 反过来会报「多出未声明的列: customer_no」—— 而那是个**看起来像自己实现坏了**的假红，
+> 对方会花一整轮去查一个根本不存在的缺陷。
+
+> 📌 **一条不要误设的前提**：`核价回填` 的 `S-7 全库清空` 属 §3.2，需其用户当次批准，**尚未发生**。
+> 🚫 不要按「旧单已清空」来排任何验收前提。（本任务的 AC-2 亲验用自造夹具 `MZ-` 前缀，不依赖库干净。）
+
+#### 第 2.5 步的撞号检查脚本（四个维度）
+
+```bash
+cd /home/joii/project/cpq
+export PGPASSWORD=joii5231
+for v in $(git diff master...HEAD --name-only -- cpq-backend/src/main/resources/db/migration/ \
+           | grep -oE 'V[0-9]+' | sort -u); do
+  m=$(git ls-tree master --name-only cpq-backend/src/main/resources/db/migration/ | grep -c "${v}__")
+  d=$(psql -h 10.177.152.12 -U postgres -d cpq_db_0724 -tA \
+      -c "SELECT count(*) FROM flyway_schema_history WHERE version='${v#V}'")
+  [ "$m" != "0" -o "$d" != "0" ] && echo "🚨 $v 已被占用 (master=$m, db=$d)"
+done
+# ③ 别人还没提交的工作区（🚨 前两个维度会把这些号报成「空闲」）
+for w in /home/joii/project/cpq/.claude/worktrees/*/; do
+  ls $w/cpq-backend/src/main/resources/db/migration/ 2>/dev/null | grep -oE '^V[0-9]+' | sort -u \
+    | sed "s|^|  $(basename $w): |"
+done
+# ④ classpath 幽灵（见 §①c）
+comm -13 <(ls "$SRC"|sort) <(ls "$CLS" 2>/dev/null|sort)
+```
+
+🚦 **但这四个维度分属两个不同的检查，🚫 不要合成一条**（`产品管理客户过滤` 会话 2026-09-07 指出，主线采纳）：
+
+| 检查 | 时机 | 回答的问题 | 维度 |
+|---|---|---|---|
+| **§①a/①b/①c 起服务守卫** | **每次起服务前** | 「我这次启动会不会把不该落的东西落进目标库」 | 源码树 ∪ `target/classes` vs master |
+| **本步撞号检查** | **取号时 / 合并前** | 「这个号有没有人已经占了（哪怕还没提交）」 | master · 共享库 · 其它 worktree |
+
+前者**防我自己**，后者**防撞车**。
+🚨 **合成一条的后果**：只写迁移的人和只起服务的人**会各自跳过对方那半** —— 而两者都是今天真实出过事故的。
+（本任务两者都要：要写 5 个迁移，也要起服务。）
+
+#### ⑤ 第五个维度：**比 `script` 字段，不只比号**（并发会话 2026-09-07 实测）
+
+```bash
+# 库里记的 script 与 master 上的真实文件名是否一致（双向）
+psql … -tAc "SELECT version||'|'||script FROM flyway_schema_history WHERE version::int>=420" \
+| while IFS='|' read v s; do
+    fn=$(basename "$s")
+    git ls-tree -r master --name-only -- "$M" | grep -q "/$fn\$" \
+      && echo "  V$v ✅ $fn" || echo "  V$v 🚨 库里记 $fn，master 上无此文件名"
+  done
+```
+
+🚨 **只比号会放行「号对但内容错」**：并发会话实测，它本地的
+`V424__…_func_customer_element_price.sql` 与库里记的 `V424__…_drop_customer_element_price_node.sql`
+**号相同、文件名与内容完全不同**，而它的守卫因为「V424 这个号在 master 上有」就**放行了**。
+⇒ 症状是起服务时 checksum mismatch —— **不污染库，但会让人以为是环境坏了**，排查方向完全错。
+
+> 📌 主线 2026-09-07 双向跑过：`V420~V424` 库里 `script` 与 master 文件名逐条一致、反向也全对得上。
+
+#### ⚠️ 「当前无 java 进程」是**瞬时量**，不是状态（并发会话 2026-09-07 纠正主线）
+
+主线报「该 worktree 当前无 java 进程」时，对方同一时间查到 **PID 1730694 在跑**（几秒后自行退出，是 `mvnw test` 的收尾进程）。
+⇒ **结论没受影响**（确实还来得及），但**判据的可靠性受影响**：
+用它当安全前提时**必须说清采样时刻**，就像对「共享库顶版」的处理一样。
+🚫 不要写「无进程 ⇒ 安全」，要写「**某时刻采样为无进程**」。
+
+**四个维度各挡一类，🚫 不能互相替代**：
+
+| 维度 | 挡什么 | 实证 |
+|---|---|---|
+| `master` 文件 | 已合并的占号 | 09:31 事故后 `V423` 就在这里 |
+| 共享库 `flyway_schema_history` | 已落库的占号 | 同上 |
+| **其它 worktree** | **别人还没提交的占号** | 实测 `task-260907-quote-import` 已占 `V424`，而前两个维度都报「空闲」 |
+| **`target/classes`** | **改号后旧号的幽灵** | 见 §①c，09:31 事故的直接根因 |
+
+> 🔑 **一个防护手段可能同时降低另一类风险的可见性**（`产品管理客户过滤` 会话 2026-09-07 归纳）：
+> 本任务用隔离库避开了「28 张表加列打挂所有人」，但**隔离库不含共享库的 flyway 历史**
+> （它是共享库在 `V422` 时刻的克隆，而对方的 `V423` 是 09:31:05 落的，在克隆之后）
+> ⇒ **本地怎么跑都不会撞号，合并那一刻才爆。**
+> 这不是说隔离库错了，而是说**它挡不住撞号 —— 撞号只能靠合并前比对上面四个维度**。
+
+> ### 🔑 本次协作最值得留下的一条（三方共同归纳，2026-09-07）
+>
+> **今天这一族事故，三个会话各撞上一个变种，三次都是被别人报出来的，没有一次是自己发现的。**
+>
+> 判据不是「有没有认真查」—— **三次的当事人都查了，而且查的都属实**：
+> 主线查了源码树与库顶版（属实）· `报价数据导入` 查了 `V423` 记录数（属实）· `产品管理客户过滤` 查了守卫逻辑（属实）。
+>
+> ⇒ **属实但不完备，而不完备的那个维度恰恰是当事人视角里不存在的**：
+> 主线看不见共享库的 flyway 历史里别人刚落的号 · 对方看不见 `target/classes` 的残留 · 第三方看不见别人未提交的工作区。
+>
+> ⇒ 所以**「盯到就报」不是热心，是这族问题唯一可行的发现机制**。
+> 🚫 **不要指望自检能覆盖它** —— 自检只能覆盖你知道存在的维度。
 
 > ⚠️ **第 4 步与第 2 步的顺序不能换**：先重启会让共享库立刻有 `customer_no`，此时还没广播的会话一重启就挂。
 
@@ -211,6 +350,86 @@ application.properties:67  quarkus.flyway.migrate-at-start=true
 多线并发，前缀撞了的危害不是脏数据是**互删**（两边都按 `LIKE 'T260907%'` 清理，谁先跑谁把对方删了，
 **症状是随机挂且极像业务回归**）。已占用：`T260907B-` / `T260907Q-` / `T260907T-` / `T260907M-`。
 🚫 清理一律用主键或完整名精确删。
+
+---
+
+## 🔢 迁移改号方案（2026-09-07 事故后与并发会话协调的结果，落地前必读）
+
+🚨 **撞号的后果比「checksum 失配」更早也更硬**（2026-09-07 子代理复核后更正主线原记录）：
+
+master 与本分支各有一个 `V423__*.sql`（文件名不同、内容不同）⇒ 合并后 migration 目录里
+**同时存在两个 V423** ⇒ Flyway 在**加载阶段**就报：
+```
+Found more than one migration with version 423
+```
+**不是 checksum mismatch**（那要等到 validate 阶段、且依赖库里已有记录），而是**加载即失败** ——
+⇒ **更早、更硬，且不依赖任何库的状态**。
+🔑 **判据因此也更强：同号冲突在纯文件系统层面就能查出来，不需要连库。**
+⇒ 上面第 2.5 步撞号检查的「master 维度」是**必查**的，不能因为「我没连共享库」就跳过。
+
+**起因**：并发会话的 `V423__task260907_customer_element_price_node.sql` 于 09:31:05 落入共享库并已固化
+（checksum 已写入 `flyway_schema_history`，且文件已恢复进 master ⇒ 不可再动）。⇒ **本任务六个迁移整体改号。**
+
+### 最终号段（双方已确认）
+
+| 号 | 归属 |
+|---|---|
+| `V423` | 并发会话（已固化） |
+| `V424` | 并发会话的清理迁移（删第二条 PRICE 边 + 节点，按 `node_key` 删） |
+| **`V425` ~ `V429`** | **本任务的五个** |
+
+### 映射（🚫 注意是 5 个不是 6 个）
+
+```
+V423 ds_quote_customer_no          → V425     DDL，后面几条都依赖它，必须排最前
+V424 func_customer_element_price   → 🗑 删除，不改号
+V425 element_price_candidate_ds    → V426     ⚠️ 只保留 candidate_materials 那段
+V426 quote_tree_customer_param     → V427
+V427 quote_tree_compat_view        → V428
+V428 element_compat_view_customer  → V429
+```
+
+### 为什么砍掉两个东西（不是为了少两个文件）
+
+- 原 `V424` 整条是 **`A0-5` 已裁掉的「换 PRICE 边」方案**
+- 原 `V425` 有**一半**是专门撤销 `V424` 的（改回边指向 / 恢复 `material_no` 键 / 改回 AUX 挂载 / 删节点）
+
+⇒ 这些文件**从没进过 master**，此刻是唯一能干净砍掉的时机。
+🔑 **真正的理由是：迁移历史是给后人读的叙事。** 往里塞一对自我抵消的操作，
+等于在历史里**埋一个假的决策点** —— 下一个人做考古时会以为那是个真实发生过的选择。
+
+✅ 砍完本任务**一条 `semantic_*` 语句都不剩**，语义图完全归并发会话处置，两边不再交叉。
+
+> 📌 **砍「恢复 `material_no` 键」那段的依据是实查，不是推理**：共享库上那条边的 2 个键
+> （`element_code` seq=0 / `material_no` seq=1）**从没被删过** —— 删它的是**本任务自己的 `V424`**，
+> 而它从未在共享库执行。**查状态，不要推动作。**
+
+### 🔴 执行四步，🚫 不许靠「记得清理」
+
+```bash
+W=/home/joii/project/cpq/.claude/worktrees/task-260907-customer-dim
+SRC=$W/cpq-backend/src/main/resources/db/migration
+CLS=$W/cpq-backend/target/classes/db/migration
+
+rm -rf "$CLS"                                   # ① 先清 classpath 产物
+git mv "$SRC/V423__..." "$SRC/V425__..."  …     # ② 改号（git mv 保留历史）
+(cd $W/cpq-backend && ./mvnw -o -q clean test-compile)   # ③ 重编
+comm -13 <(ls "$SRC"|sort) <(ls "$CLS"|sort)    # ④ 差集必须为空
+```
+
+🚨 **第 ① 步是本方案最高危的一处**：改号后旧号文件仍留在 `target/classes/db/migration/`，
+**与新号一起被应用**，而源码树看起来完全正常。且旧号与新号**内容一模一样**
+⇒ `ON CONFLICT DO NOTHING` 会吃掉大部分冲突，剩下的表现是**零散、不成规律**的，比孤儿迁移难查得多。
+
+### ⚠️ 隔离库必须重建
+
+`cpq_t260907_custdim` 已应用旧号 423~428，改号后 Flyway 会判定它们是孤儿 ⇒ 启动即挂。
+⇒ 改号后**重新从共享库 `pg_dump` 克隆一个新库**（约 1 分钟，296 MB），🚫 不要在旧库上跑 `repair`。
+
+### 时序（🚫 不可提前）
+
+**等并发会话的 `V424` 清理落库并通知**，再改号 → 重建隔离库 → 亲验 AC-2 → 广播 → 合并。
+🚫 **不在共享库仍有两条 PRICE 边时合并** —— 两个问题叠在一起后，谁都说不清是谁引起的。
 
 ---
 

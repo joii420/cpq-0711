@@ -8,6 +8,7 @@ import com.cpq.dataset.exception.DatasetValidationException;
 import com.cpq.dataset.registry.DatasetRegistry;
 import com.cpq.dataset.registry.SheetDef;
 import com.cpq.dataset.support.Headers;
+import com.cpq.dataset.versioning.AxisKey;
 import com.cpq.dataset.versioning.PlainTableWriter;
 import com.cpq.dataset.versioning.VersionedGroupWriter;
 import com.cpq.importexcel.entity.ImportRecord;
@@ -194,21 +195,40 @@ public class DatasetImportService {
      * @param operator 操作人（写 {@code created_by} / {@code updated_by} / {@code archived_by}）
      */
     @Transactional
-    public List<DatasetSheetSummaryDTO> writeAll(Prepared prepared, String operator) {
-        return writeAll(prepared, operator, NO_PROGRESS);
+    public List<DatasetSheetSummaryDTO> writeAll(Prepared prepared, String operator, String customerNo) {
+        return writeAll(prepared, operator, customerNo, NO_PROGRESS);
     }
 
     /**
-     * 带逐 sheet 进度回调的写入（task-260907 · B-4）。语义与
-     * {@link #writeAll(Prepared, String)} <b>完全一致</b>，只是每个 sheet 开写前多回调一次。
+     * 写入的<b>唯一权威实现</b>（四参）。整份一个事务，任一异常整体回滚（R-7 / AC-11）。
      *
-     * <p>⚠️ 两参版本对本方法是 {@code this.} 自调用，CDI 拦截器不会再触发一次 ——
-     * 事务由两参版本上的 {@code @Transactional} 开启，整份仍是<b>一个</b>事务（R-7 / AC-11）。
-     * 本方法自己的 {@code @Transactional} 只服务于「外部直接调三参版本」这条路径。
+     * <h3>🚩 2026-09-07 合并：两条线各自加了一个三参重载，第三参类型不同</h3>
+     * <ul>
+     *   <li>B-4（本分支）：{@code writeAll(Prepared, String, SheetProgress)} —— 逐 sheet 进度回调</li>
+     *   <li>B-8（master）：{@code writeAll(Prepared, String, String customerNo)} —— 客户维度 + 前置校验</li>
+     * </ul>
+     * 两者<b>在 Java 里是合法重载</b>（第三参类型不同），编译得过 —— 这恰恰是危险之处：
+     * 调用方多写一个 {@code progress} 就会静默走到「不校验客户」的那个重载，
+     * 而 {@code customer_no} 会被整批写成 NULL。⇒ <b>合并为一个四参权威实现，两者都必须传</b>。
+     *
+     * <h3>⚠️ 事务语义（AC-11 的依据，不许被重载结构破坏）</h3>
+     * 三参版本对本方法是 {@code this.} <b>自调用</b>，CDI 拦截器不会再触发一次 ——
+     * 事务由三参版本上的 {@code @Transactional} 开启，整份仍是<b>一个</b>事务。
+     * 本方法自己的 {@code @Transactional} 只服务于「外部直接调四参版本」这条路径
+     * （{@code QuotationImportService} 走的就是它）。
+     *
+     * <h3>🚫 原两参 writeAll(Prepared, String) 已移除</h3>
+     * 合并前它在全工程<b>零调用者</b>（实测），且 master 侧早已不存在。
+     * 留着它等于留一个「跳过 {@link #requireCustomerNo} 的后门」——
+     * 对 {@code customerScoped()} 的 registry 而言，那正是 AC-4 要拦的事。
+     *
+     * @param customerNo 本次导入选定客户的 {@code customer.code}；核价两套不带客户维度可传 null
+     * @param progress   逐 sheet 进度回调；不需要时传 {@link #NO_PROGRESS}
      */
     @Transactional
     public List<DatasetSheetSummaryDTO> writeAll(Prepared prepared, String operator,
-                                                 SheetProgress progress) {
+                                                 String customerNo, SheetProgress progress) {
+        requireCustomerNo(prepared.registry(), customerNo);
         List<DatasetSheetSummaryDTO> summary = new ArrayList<>();
         int sheetTotal = prepared.sheets().size();
         int sheetIndex = -1;
@@ -220,22 +240,24 @@ public class DatasetImportService {
                 List<Map<String, Object>> rows = new ArrayList<>(ps.rows.size());
                 for (ParsedRow r : ps.rows) rows.add(r.asRowMap());
                 PlainTableWriter.UpsertResult res =
-                        plainWriter.upsert(spec, rows, VersionedGroupWriter.SOURCE_IMPORT, operator);
+                        plainWriter.upsert(spec, customerNo, rows, VersionedGroupWriter.SOURCE_IMPORT, operator);
                 summary.add(DatasetSheetSummaryDTO.plain(spec.sheetName, res.inserted(), res.updated()));
                 continue;
             }
 
-            // 带版本：按轴值分组（纯内存归并，🚫 循环体内无查询），再一次性批量写入
-            Map<String, List<Map<String, Object>>> byAxis = new LinkedHashMap<>();
+            // 带版本：按【复合轴】分组（纯内存归并，🚫 循环体内无查询），再一次性批量写入。
+            // task-260907 · B-4：一份 Excel 只属于一个客户 ⇒ 全部轴键共用同一个 customerNo。
+            Map<AxisKey, List<Map<String, Object>>> byAxis = new LinkedHashMap<>();
             for (ParsedRow r : ps.rows) {
-                byAxis.computeIfAbsent(r.get(spec.axisColumn), k -> new ArrayList<>()).add(r.asRowMap());
+                byAxis.computeIfAbsent(AxisKey.of(spec, customerNo, r.get(spec.axisColumn)),
+                        k -> new ArrayList<>()).add(r.asRowMap());
             }
             // 空 sheet（只有表头）→ 轴值数 0，一行不动。🚫 空 sheet != 清空（R-6 / AC-39）
             if (byAxis.isEmpty()) {
                 summary.add(DatasetSheetSummaryDTO.versioned(spec.sheetName, 0, 0, 0, 0));
                 continue;
             }
-            Map<String, VersionedGroupWriter.Result> results = versionedWriter.writeGroups(
+            Map<AxisKey, VersionedGroupWriter.Result> results = versionedWriter.writeGroups(
                     spec, byAxis, VersionedGroupWriter.SOURCE_IMPORT,
                     VersionedGroupWriter.REASON_IMPORT_UPGRADE, operator);
             int created = 0, upgraded = 0, unchanged = 0;
@@ -258,10 +280,11 @@ public class DatasetImportService {
 
     /** @param userId 当前登录用户 id（写 {@code import_record.imported_by}） */
     public DatasetImportResultDTO importExcel(DatasetRegistry reg, String fileName, byte[] bytes,
-                                              UUID userId, String operator) {
+                                              UUID userId, String operator, String customerNo) {
+        requireCustomerNo(reg, customerNo);                       // 先拦，别等解析完才发现没客户
         long t0 = System.currentTimeMillis();
         Prepared prepared = parseAndValidate(reg, bytes);         // ← 事务外，零写库
-        List<DatasetSheetSummaryDTO> summary = writeAll(prepared, operator);
+        List<DatasetSheetSummaryDTO> summary = writeAll(prepared, operator, customerNo);
 
         DatasetImportResultDTO out = new DatasetImportResultDTO();
         out.dataset = reg.datasetKey();
@@ -272,6 +295,19 @@ public class DatasetImportService {
         LOG.infof("[dataset-import] dataset=%s file=%s durationMs=%d sheets=%d",
                 reg.datasetKey(), fileName, out.durationMs, summary.size());
         return out;
+    }
+
+    /**
+     * task-260907 · AC-4：报价侧导入<b>必须</b>带客户编号。
+     *
+     * <p>🚫 缺就 400 拒收，不许「先写进去、customer_no 留空」——
+     * 那会让整批数据落在一个没有客户归属的分组里，而后续任何一次同料号导入都会把它整组删掉。
+     * <p>核价两套不带客户维度，此处放行（传了也会在写入器里被拒，防口径漂移）。
+     */
+    private static void requireCustomerNo(DatasetRegistry reg, String customerNo) {
+        if (reg != null && reg.customerScoped() && (customerNo == null || customerNo.isBlank())) {
+            throw new BusinessException(400, "导入" + reg.datasetLabel() + "必须指定客户（customerNo）");
+        }
     }
 
     /** {@code import_record.system_type}：{@code DATASET_QUOTE} / {@code DATASET_COST_BASIC} / {@code DATASET_COST_DETAIL}。 */
