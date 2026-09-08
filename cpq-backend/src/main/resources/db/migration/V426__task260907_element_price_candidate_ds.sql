@@ -1,82 +1,39 @@
--- task-260907 · B-8 —— 元素价格策略闭环：撤销 V424 的换边方案，改为给候选料号集补 ds_ 支
+-- task-260907 · B-8 —— 元素价格策略闭环：给 f_material_element_price 的候选料号集补 ds_ 支
 --
 -- 服务的 AC：AC-8（用户 2026-09-07 裁决「加上，让元素价格策略闭环」）
 --
--- ============ 🚦 为什么撤销 V424（用户 2026-09-07 改判，🚫 不要走回头路） ============
--- V424 把 ELEMENT_BOM(QUOTE) 的 PRICE 边从 f_material_element_price 改指 f_customer_element_price。
--- 主线全客户实测证明这是【真回归】，不是等价替换：
+-- ============ 🚦 本迁移【只做一件事】，语义图一条语句都没有 ============
+-- 早期草案里本文件还带着「撤销我们自己那条 V424（把 PRICE 边改指 f_customer_element_price）」的
+-- 四段语句。2026-09-07 改号定案时那条 V424 被【整个删除】（git rm，从未在共享库执行过），
+-- ⇒ 无物可撤，四段随之砍掉。
 --
+-- 🔑 砍掉的依据是【实查共享库现状】，不是推理（复核于 2026-09-07）：
+--     semantic_edge 5b1bfc30-…  : ELEMENT_BOM --PRICE--> FUNC_ELEMENT_PRICE (ACTIVE)
+--     semantic_edge_key         : seq0 element_code | seq1 material_no      ← 2 个都在，没被删过
+--     semantic_node             : 只有 FUNC_ELEMENT_PRICE，无 FUNC_CUSTOMER_ELEMENT_PRICE
+--     semantic_tab_view_node    : 38921742-… → FUNC_ELEMENT_PRICE / AUX
+--   ⇒ 那条边从未被改动过，动过它的只有我们自己那条已删除的 V424。
+-- ⇒ 本任务【不再触碰任何 semantic_*】，语义图完全归并发会话处置。
+--
+-- ============ 🚦 为什么修的是候选集，不是换 PRICE 边（用户裁决，🚫 不要走回头路）============
+-- 换边（把 PRICE 边改指 f_customer_element_price）是【真回归】，不是等价替换：
 --   f_material_element_price(customer, date) 是 UNION 的两支
 --     versioned : material_price_version_ref → element_price_version_item   ← 按【料号】钉的版本价
 --     realtime  : candidate_materials CROSS JOIN f_customer_element_price   ← 客户级实时价，纯扇出
 --   ⇒ 改指 f_customer_element_price 等于把 versioned 整支丢掉。
 --
---   实测（cpq_t260907_custdim，逐客户扫而不是抽一个客户下全称结论）：
+--   实测（逐客户扫，而不是抽一个客户就下全称结论）：
 --     SELECT c.code, (SELECT count(*) FROM (
 --         SELECT element_code FROM f_material_element_price(c.code, CURRENT_DATE)
 --         GROUP BY element_code HAVING count(DISTINCT unit_price) > 1) z)
 --     FROM customer c;
 --     → CUST-0002 = 1 · CUST-0729-QA = 1 · 其余全 0
---   CUST-0002 有 1 个料号把 Ag 钉在 3500，而客户级实时价是 3000
+--   CUST-0002 有 1 个料号把 Ag 钉在 3500，客户级实时价是 3000
 --   ⇒ 换边会让它【静默从 3500 掉到 3000】，且引用 FUNC_ELEMENT_PRICE 的 21 个存量视图全走这条路。
 --
 -- ⇒ 真正的缺口不在「哪个函数」，在【候选料号集】：candidate_materials 只读 V6 的
 --   material_bom_item / element_bom_item，ds_quote_* 独有的料号根本进不了候选集，
 --   realtime 那支的 CROSS JOIN 就带不出它们（实测 ds_ 独有料号 = 8 个）。
---
--- ============ 🚦 为什么是新增 V425 而不是改写 V424 ============
--- V424 已应用到隔离库 cpq_t260907_custdim（flyway_schema_history success=true）。
--- 改写它 = checksum 失配，已应用库下次启动直接挂；且违反「schema 变更一律新建迁移脚本」。
--- 追加式的决定性好处：全新库跑 V424→V425、已应用库只跑 V425，【两条路径收敛到同一状态】。
-
--- ============================================================================
--- 1. 撤销 V424 ①：PRICE 边改回指向 FUNC_ELEMENT_PRICE
---    老节点 ddc7fafa-0fd3-5c47-a86c-e3f8b86b0f76 = FUNC_ELEMENT_PRICE(QUOTE)，V424 未删，原样还在。
---    note 逐字还原成 V413 seed 的原文，避免留下「改过又改回来」的半截状态。
--- ============================================================================
-UPDATE semantic_edge
-SET to_node_id = 'ddc7fafa-0fd3-5c47-a86c-e3f8b86b0f76',
-    note = '双条件 JOIN；cep.material_no 必须与 hf_part_no 表达式逐字一致（AC-1⑤）',
-    updated_by = 'seed',
-    updated_at = now()
-WHERE id = '5b1bfc30-551b-511c-bb2b-42becb609a06';
-
--- ============================================================================
--- 2. 撤销 V424 ②：恢复被删掉的料号连接键（seq=1）
---    🚨 这一步不能漏：V424 删它是因为 f_customer_element_price 没有 material_no 列；
---    边改回 f_material_element_price 之后，少了这个键 JOIN 就只剩 element_code 单条件，
---    同一元素会跨全部料号笛卡尔扇出 —— 单价看着有值、但行数与归属全错，且不报错。
---    id 沿用 V413 seed 的原 id，让「撤销」在主键层面也是真正的还原。
--- ============================================================================
-INSERT INTO semantic_edge_key (id, edge_id, left_column, right_column, seq)
-VALUES ('8d31087a-b15a-5a9a-bc45-2a02fd221efe',
-        '5b1bfc30-551b-511c-bb2b-42becb609a06',
-        'material_no', 'material_no', 1)
-ON CONFLICT DO NOTHING;
-
--- ============================================================================
--- 3. 撤销 V424 ④：QUOTE/材质元素 上的 AUX 挂载改回老节点
---    漏了这一步，老节点不再等于 priceGroupNodeId，会从 FieldTreeBuilder 的通用 tvns 循环里
---    再冒出一组，groupKind='PRICE' 组数从 1 变 2（正是 取数配置器补齐 AC-30 的成因）。
--- ============================================================================
-UPDATE semantic_tab_view_node
-SET node_id = 'ddc7fafa-0fd3-5c47-a86c-e3f8b86b0f76',
-    updated_by = 'seed',
-    updated_at = now()
-WHERE id = '38921742-f391-53b9-8d10-0326bf7cc189';
-
--- ============================================================================
--- 4. 删除 V424 新建的节点及其 3 个节点列
---    ⚠️ 顺序：先列后节点（semantic_node_column.node_id 外键指向 semantic_node）。
---    ⚠️ 必须在 1/3 之后：边与挂载都还指着它时删节点会被外键挡住。
---    两条 DELETE 都带精确 WHERE，命中面 = V424 自己插入的 1 个节点 + 3 个列，
---    不存在「无 WHERE 全表删」的形态。
--- ============================================================================
-DELETE FROM semantic_node_column
-WHERE node_id IN (SELECT id FROM semantic_node WHERE node_key = 'FUNC_CUSTOMER_ELEMENT_PRICE');
-
-DELETE FROM semantic_node
-WHERE node_key = 'FUNC_CUSTOMER_ELEMENT_PRICE';
 
 -- ============================================================================
 -- 5. 真正的修复：给 f_material_element_price(text,date,uuid) 的候选料号集补 ds_ 两支
@@ -163,10 +120,11 @@ SELECT r.material_no, r.element_code, r.unit_price, r.currency, r.price_unit
 $function$;
 
 -- ============================================================================
--- 6. 落地后应成立的不变量（供人工复核；🚫 不在此处断言，迁移不做业务校验）
---    ① SELECT count(*) FROM semantic_node WHERE node_key='FUNC_CUSTOMER_ELEMENT_PRICE'  → 0
---    ② ELEMENT_BOM(QUOTE) 出边里 edge_kind='PRICE' 的条数 = 1，to_node = FUNC_ELEMENT_PRICE
---    ③ 该边的 semantic_edge_key = 2 行（element_code seq=0 / material_no seq=1）
---    ④ 材质元素/QUOTE 的 semantic_tab_view_node 仍是 2 行，AUX 指回 FUNC_ELEMENT_PRICE
---    ⑤ 除 ds_ 侧新增料号的客户外，f_material_element_price 逐客户 md5 不变
+-- 落地后应成立的不变量（供人工复核；🚫 不在此处断言，迁移不做业务校验）
+--   ① 值中性：改动前后逐客户跑 EXCEPT ALL 双向差集，「只在旧」必须全为 0（纯加法）
+--      🚫 不要用 md5(string_agg(..., ',' ORDER BY 1,2)) —— 聚合里的 1,2 是常量不是列序号，
+--         排序键恒定 ⇒ 输出序 = 执行计划顺序，加 UNION 支会造成【行数不变而 md5 变】的假阳性。
+--   ② 闭环：ds_ 独有料号至少 1 个能取到非空单价
+--   ③ 语义图零影响：QUOTE/材质元素 的 groupKind='PRICE' 组数 = 1、
+--      PRICE 边指向 FUNC_ELEMENT_PRICE、连接键 2 条 —— 本迁移不碰 semantic_*，应逐条不变
 -- ============================================================================
