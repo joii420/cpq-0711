@@ -6,6 +6,8 @@
  *   - AC-14 ③ 判定为 UNCHANGED 的组仍出现在表格里（🚫 不许过滤）+ 顶部提示条文案
  *   - AC-20 ③ 「对不上的行」明细区必须直出（🚫 不许折叠进「更多」）+ 主按钮变红、文案「仍然确认并核价通过」
  *   - AC-21 🆕 `result === 'BLOCKED'`（本次跳过回填、一个字节不写，但**不阻断确认**）
+ *   - 🆕 `noRecordSnapshot` —— 整单没有比对快照（导入建单绕开了写快照的路径）⇒ 确认后一个字节不写。
+ *           本期只让它**可见**，不补写入能力（用户 2026-09-07 裁决）。
  *   - D-35  🆕 `recordStale.stale === true` 时必须显著提示「此刻预览的内容可能不是报价单的最新数据」
  *           （api.md §1 硬约束 4：🚫 不许折叠、🚫 不许静默、🚫 不许把 detail 异常原文给财务看）
  *
@@ -643,6 +645,152 @@ test.describe('task-260907R · 核价通过确认抽屉', () => {
     await expect(primary).toHaveClass(/ant-btn-dangerous/);
     await expect(primary, 'D-35：🚫 仍然不许禁用').toBeEnabled();
   });
+
+  /**
+   * 🆕 T-39 `noRecordSnapshot`：**整单没有比对快照** ⇒ 确认后一个字节都不会写。
+   *
+   * 防的是什么：写快照只挂在报价页面的保存路径上，而**导入建单绕开了它** ⇒
+   * 导入出来的单只要没人手工保存过就一行快照都没有。现在的表现是**静默 no-op**——
+   * 核价通过照常返 200、主表一个字节不写，**界面上与「本来就没什么要回填」长得一模一样**。
+   * ⇒ 本用例守的就是「这个 no-op 必须说出来」。
+   *
+   * 🚨 三条容易写成假绿的地方，逐条钉死：
+   *   ① 本条**必然伴随 `tables=[]`** ⇒ 断言必须在「一张表都没有」的夹具上成立
+   *      （把它挂在 hasTables 上会让告警恰好在唯一会出现的场景里消失 —— 本任务踩过两次）；
+   *   ② 与 `recordStale` **必须能被财务区分开**：两条都说「让销售保存一次」，
+   *      ⇒ 断言首句差异，而不是只断言「有个红条」；
+   *   ③ 🚫 不许出现内部术语。
+   */
+  test('T-39 · noRecordSnapshot：整单没有快照必须显式报出，且与 recordStale 可区分', async ({ page }) => {
+    await stubPreview(page, noRecordSnapshotFixture({ participatingComponents: 3 }));
+    await openCostingApproveDrawer(page);
+
+    const drawer = page.locator('.ant-drawer').filter({ hasText: '核价通过' });
+    await expect(drawer).toBeVisible();
+
+    const alert = drawer.locator('[data-testid="ds-backfill-no-record-snapshot-alert"]');
+    await expect(
+      alert,
+      'noRecordSnapshot：整单零写入必须显式报出，🚫 不许静默 —— 静默正是本缺口现在的表现',
+    ).toBeVisible();
+
+    // ① tables=[] 仍然要渲染（本条唯一会出现的场景就是没有表）
+    await expect(
+      drawer.locator('[data-testid="ds-backfill-group-row"]'),
+      '前置校验：本夹具 tables=[] ⇒ 一个料号组都不该渲染。若这里 >0，说明夹具没造对，' +
+        '下面「tables 为空时告警仍在」的判据就没验到。',
+    ).toHaveCount(0);
+
+    // ② 结论 + 成因 + 处置，三件事都要说到
+    await expect(
+      alert,
+      'noRecordSnapshot：必须说清后果 —— 确认后不会写入任何基础数据',
+    ).toContainText('不会写入任何基础数据');
+    await expect(
+      alert,
+      'noRecordSnapshot：必须说清常见成因（导入建出来的单，从未在报价页面保存过）',
+    ).toContainText('没有在报价页面保存过');
+    await expect(
+      alert,
+      'noRecordSnapshot：必须给出处置动作 —— 让销售打开这张报价单保存一次',
+    ).toContainText('保存一次');
+    await expect(
+      alert,
+      'noRecordSnapshot：participatingComponents > 0 时应说明「有 N 个页签本该写回」，' +
+        '否则财务不知道漏掉的是多大一块',
+    ).toContainText('3');
+
+    // 🚫 ③ 不许出现内部术语
+    for (const term of ['_record', 'syncRecords', 'saveDraft']) {
+      await expect(
+        drawer.getByText(term, { exact: false }),
+        `noRecordSnapshot：🚫 不许把内部术语「${term}」摆给财务看`,
+      ).toHaveCount(0);
+    }
+
+    /**
+     * 🚨 反向：🚫 不许同屏出现「本单没有需要写回基础数据的页签」。
+     * 那是 tables=[] 时的既有空态文案，而它与本告警**直接矛盾** ——
+     * 告警说「有 3 个页签本该写回、现在一个都写不了」，那句说「没有需要写回的页签」，
+     * 财务只会记住后者（它在下面、更像结论）。
+     */
+    await expect(
+      drawer.getByText('本单没有需要写回基础数据的页签', { exact: false }),
+      'noRecordSnapshot：🚫 空态文案与本告警矛盾，本条为真时不许渲染',
+    ).toHaveCount(0);
+
+    // ② 与 recordStale 可区分：本屏 recordStale 未触发 ⇒ 那条红条不该出现
+    await expect(
+      drawer.locator('[data-testid="ds-backfill-record-stale-alert"]'),
+      'noRecordSnapshot：🚫 不许顺带点亮 recordStale —— 两者是两件事（从来没写过 vs 写过但失败）',
+    ).toHaveCount(0);
+
+    // 主按钮：本轮方案 = 不变红、不禁用，但把后果写进文案（主线待裁）
+    const primary = drawer.getByRole('button', { name: '确认核价通过（不写入基础数据）' });
+    await expect(
+      primary,
+      'noRecordSnapshot：按钮文案必须写明后果 —— 真正的风险是「点了会以为回填生效了」',
+    ).toBeVisible();
+    await expect(
+      primary,
+      'noRecordSnapshot：🚫 不变红 —— 确认的后果是零写入零伤害，涂红是假警报，会稀释真警报',
+    ).not.toHaveClass(/ant-btn-dangerous/);
+    await expect(primary, 'noRecordSnapshot：🚫 不禁用 —— 核价通过改的是报价单状态（业务流程）').toBeEnabled();
+
+    await expect(
+      drawer.locator('.ant-drawer-footer'),
+      'noRecordSnapshot：页脚必须同步说明',
+    ).toContainText('没有比对快照');
+  });
+
+  /**
+   * 🆕 T-39b **阴性对照**：`participatingComponents === 0` ⇒ 🚫 不许报。
+   *
+   * 那是「本单本来就没有要写回基础数据的组件」，属**正常态**，不是本缺口。
+   * 报了 = 把一句吓人的话说给一张完全正常的单。
+   * 🔑 没有这条，T-39 无法排除「我只是无条件渲染了一个红条」。
+   */
+  test('T-39b · 阴性对照：participatingComponents=0 时🚫 不许报', async ({ page }) => {
+    await stubPreview(page, noRecordSnapshotFixture({ participatingComponents: 0 }));
+    await openCostingApproveDrawer(page);
+
+    const drawer = page.locator('.ant-drawer').filter({ hasText: '核价通过' });
+    await expect(drawer).toBeVisible();
+    await expect(
+      drawer.locator('[data-testid="ds-backfill-no-record-snapshot-alert"]'),
+      '阴性对照：participatingComponents=0 是「本来就没什么要回填」的正常态，🚫 不许报',
+    ).toHaveCount(0);
+    await expect(
+      drawer.getByText('没有可供比对的数据快照', { exact: false }),
+      '阴性对照：🚫 整条文案都不许出现（testid 没了但文字还在，等于没修）',
+    ).toHaveCount(0);
+    // 🚫 也不许把按钮文案改成「不写入基础数据」那一版
+    await expect(
+      drawer.getByRole('button', { name: '确认核价通过（不写入基础数据）' }),
+      '阴性对照：🚫 按钮文案不许被本条影响',
+    ).toHaveCount(0);
+  });
+
+  /**
+   * 🆕 T-39c **取并**：只给 `summary.noRecordSnapshot` 布尔位、顶层对象整个不发时，告警仍必须出现。
+   * 与 D-35 的 T-35b 同型 —— 上一轮已证明「只信一个出口」会让告警在另一形态下整块消失。
+   * ⚠️ 本形态下拿不到 participatingComponents ⇒ **字段缺失 🚫 不许当 0 处理**
+   *    （当 0 就会走进阴性对照分支，告警在这条路径上静默消失）。
+   */
+  test('T-39c · 只给 summary.noRecordSnapshot 布尔位时，告警仍必须出现', async ({ page }) => {
+    await stubPreview(page, noRecordSnapshotFixture({ summaryOnly: true }));
+    await openCostingApproveDrawer(page);
+
+    const drawer = page.locator('.ant-drawer').filter({ hasText: '核价通过' });
+    await expect(
+      drawer.locator('[data-testid="ds-backfill-no-record-snapshot-alert"]'),
+      '取并：顶层对象缺失、只有 summary 布尔位时，告警**仍必须出现**（🚫 字段缺失不许当 0）',
+    ).toBeVisible();
+    await expect(
+      drawer.locator('[data-testid="ds-backfill-no-record-snapshot-alert"]'),
+      '取并：reason 缺失时走「未说明原因」兜底，🚫 不许渲染空白',
+    ).toContainText('未说明原因');
+  });
 });
 
 // ═══════════════════════ 夹具 ═══════════════════════
@@ -896,6 +1044,51 @@ function recordStalePreviewFixture(opts: { viaSummaryOnly: boolean }) {
     delete base.dsBackfill.recordStale;
   }
   return base;
+}
+
+/**
+ * 🆕 T-39 夹具：**整单没有比对快照**。
+ *
+ * 🔑 `tables: []` 是本情形的**必然形态**（一行快照都没有 ⇒ 一个组都算不出来）——
+ *    🚫 不许为了「让屏幕上有点东西」硬造几张表，那会把最该守的判据（tables 为空时告警仍在）验没。
+ * ⚠️ `applicable` 仍是 `true`：主线已裁 api.md 的定义为「三者全空才 false」。
+ *
+ * @param opts.participatingComponents 显式计数；`0` 即阴性对照（本来就没什么要回填）
+ * @param opts.summaryOnly            只发 summary 布尔位、顶层对象整个不发（守取并）
+ */
+function noRecordSnapshotFixture(opts: { participatingComponents?: number; summaryOnly?: boolean }) {
+  const ds: any = {
+    applicable: true,
+    confirmRequired: true,
+    summary: {
+      tables: 0,
+      axes: 0,
+      upgradedGroups: 0,
+      unchangedGroups: 0,
+      unanchoredRows: 0,
+      noRecordSnapshot: true,
+    },
+    tables: [],
+  };
+  if (!opts.summaryOnly) {
+    ds.noRecordSnapshot = {
+      reason: 'NEVER_WRITTEN',
+      participatingComponents: opts.participatingComponents ?? 3,
+      recordRows: 0,
+    };
+    // 阴性对照：契约「恒发」下，真的没有此情形时布尔位也该是 false。
+    // 夹具照这个口径造，否则验的就不是产品而是我自己造的矛盾输入。
+    if (opts.participatingComponents === 0) ds.summary.noRecordSnapshot = false;
+  }
+  return {
+    quotationId: STUB_QUOTATION_ID,
+    previewToken: `${PREFIX}token-nosnapshot`,
+    summary: { versionedGroups: 0, addedRows: 0, deletedRows: 0, changedRows: 0, affectedProducts: 0 },
+    products: [],
+    globalShared: { groupIndexes: [] },
+    groups: [],
+    dsBackfill: ds,
+  };
 }
 
 /**

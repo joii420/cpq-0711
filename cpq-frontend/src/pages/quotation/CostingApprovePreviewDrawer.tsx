@@ -318,7 +318,14 @@ const CostingApprovePreviewDrawer: React.FC<Props> = ({
     subtitleParts.push(`客户 ${effectiveCustomerNo ?? '—'}`);
   }
   // 原型 03 上半屏（全部无变更）的副标题只有「报价单 … · 客户 …」两段，不带尾段。
-  if (dsFlags.recordStale) {
+  if (dsFlags.noRecordSnapshot) {
+    /**
+     * 🆕 排在 recordStale 之前：本条是**确定**结论（整单零写入），recordStale 是**可能**结论。
+     * ⚠️ 也排在 `!applicable` 之前 —— 本条必然伴随 tables=[]，若被空态类分支抢先，
+     *    副标题就会在唯一该说话的场景里说别的。
+     */
+    subtitleParts.push('⚠️ 本单没有比对快照，确认后不会写入任何基础数据');
+  } else if (dsFlags.recordStale) {
     /**
      * 🆕 D-35 排在最前：它说的是「**这份预览本身可能不可信**」，
      * 比下面任何一条（哪些组会升版 / 有几行对不上 / 有几组跳过）都更靠前一层 ——
@@ -391,7 +398,33 @@ const CostingApprovePreviewDrawer: React.FC<Props> = ({
    *    ⇒ 🚫 谁都不许把 recordStale / unanchoredRows 塞进下面的 disabledReason。
    */
   const dangerConfirm = dsFlags.unanchoredRows > 0 || dsFlags.recordStale;
-  const confirmLabel = dangerConfirm ? '仍然确认并核价通过' : '确认并核价通过';
+
+  /**
+   * 🆕 `noRecordSnapshot` 的主按钮形态 —— **前端提方案，主线待裁**（2026-09-07）。
+   *
+   * 选择：**不变红、不禁用，但把后果写进按钮文案** ⇒「确认核价通过（不写入基础数据）」。
+   *
+   * 三条理由：
+   *  1. **变红是假警报**。危险态该跟「确认会造成什么」挂钩，而本条确认的后果是**零写入、零伤害**。
+   *     本任务刚用 `isShrinking` 的 BLOCKED 豁免消灭掉一个同型假警报（缺字段 ⇒ 误报
+   *     「行数会减少，请联系技术人员核查」）——再自己造一个，等于把那次修白做。
+   *  2. 「**仍然**」是有限资源：它表示「你已被警告、后果由你承担」，只该出现在确认**真会造成
+   *     不可逆后果**时（`unanchoredRows` 会按新增写入 / `recordStale` 可能写错数据）。
+   *     这里没有后果，用「仍然」等于把这个词用废，下次真有后果时它就不响了。
+   *  3. 真正的风险不是「点了会出事」，而是「**点了会以为回填生效了**」——
+   *     治它的办法是**把后果写进按钮**（点击前最后看到的东西），不是把按钮涂红。
+   *
+   * 🚫 不禁用：核价通过改的是报价单状态（业务流程）；且按成因，**导入建单是常见路径**，
+   *    禁用会把一大批单据卡死在核价环节，代价远大于收益。
+   *
+   * 🔧 若主线改裁「与 recordStale 同档（红 +「仍然」）」：把 `dsFlags.noRecordSnapshot`
+   *    并进上面的 `dangerConfirm`，本三元的中间支随之失效 —— **改动面一行**。
+   */
+  const confirmLabel = dangerConfirm
+    ? '仍然确认并核价通过'
+    : dsFlags.noRecordSnapshot
+      ? '确认核价通过（不写入基础数据）'
+      : '确认并核价通过';
 
   const confirmBtn = (
     <Button
@@ -412,7 +445,10 @@ const CostingApprovePreviewDrawer: React.FC<Props> = ({
   if (dsFlags.present) {
     /* 🆕 D-35 单独一支并**直接短路**：其余各支说的都是「会写什么」，
        而本条说的是「这些结论可能算错了」—— 两者并列会让财务把它当成又一条补充说明。 */
-    if (dsFlags.recordStale) {
+    if (dsFlags.noRecordSnapshot) {
+      footerNote = '⚠️ 本单没有比对快照 —— 确认后不会写入任何基础数据。请先让销售打开这张报价单保存一次。';
+      footerDanger = true;
+    } else if (dsFlags.recordStale) {
       footerNote = '⚠️ 预览数据可能已过期 —— 请先不要确认，让销售重新保存这张报价单后重新预览。';
       footerDanger = true;
     } else if (!dsFlags.applicable) {
@@ -432,7 +468,7 @@ const CostingApprovePreviewDrawer: React.FC<Props> = ({
      * 🚫 不设 footerDanger：BLOCKED 不是错误态，也**不阻断确认** ——
      *    页脚变红会和「有 N 行对不上」那条混为一谈，而那条是另一种后果（会写，且组会变大）。
      */
-    if (dsFlags.blockedGroups > 0 && !dsFlags.recordStale) {
+    if (dsFlags.blockedGroups > 0 && !dsFlags.recordStale && !dsFlags.noRecordSnapshot) {
       footerNote = (
         <>
           {footerNote}

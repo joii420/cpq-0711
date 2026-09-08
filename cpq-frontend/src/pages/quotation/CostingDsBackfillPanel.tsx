@@ -30,6 +30,7 @@ import type { ColumnsType } from 'antd/es/table';
 import type {
   DsBackfillCollidingRow,
   DsBackfillGroup,
+  DsBackfillNoRecordSnapshot,
   DsBackfillNonParticipating,
   DsBackfillPreview,
   DsBackfillRecordStale,
@@ -64,6 +65,11 @@ export interface DsBackfillFlags {
    * 取 `recordStale.stale` 与 `summary.recordStale` 的**并**，🚫 不许只信其中一个。
    */
   recordStale: boolean;
+  /**
+   * 🆕 整单没有比对快照 ⇒ **确认后一个字节都不会写**。
+   * ⚠️ 它**必然**伴随 `tables=[]`，🚫 任何消费方都不许把它挂在 `hasTables` 上。
+   */
+  noRecordSnapshot: boolean;
   /** 🆕 D-33：不参与升版的组件数（summary 未下发时按数组长度兜底） */
   nonParticipatingComponents: number;
   /** 🆕 applicable=true 但一张表都没有 —— 只有 nonParticipating 要说的场景 */
@@ -93,6 +99,7 @@ export const deriveDsFlags = (ds?: DsBackfillPreview | null): DsBackfillFlags =>
     allUnchanged: ds?.applicable === true && upgraded === 0 && unchanged > 0,
     blockedGroups: s?.blockedGroups ?? countBlockedGroups(ds),
     recordStale: isRecordStale(ds),
+    noRecordSnapshot: isNoRecordSnapshot(ds),
     nonParticipatingComponents: s?.nonParticipatingComponents ?? (ds?.nonParticipating?.length ?? 0),
     hasTables: (ds?.tables?.length ?? 0) > 0,
   };
@@ -222,6 +229,84 @@ const RecordStaleAlert: React.FC<{ stale?: DsBackfillRecordStale | null }> = ({ 
     }
   />
 );
+
+/**
+ * 🆕「从来没拍过比对快照」的原因常量（**单据级**）。
+ * 🚫 本文件里的**第五套**独立值域。五套分别回答：
+ *    行级 = 这一行为什么锚不上 · 组件级 = 这个组件为什么不参与 · 组级 = 这一组为什么整组跳过 ·
+ *    单据级(recordStale) = 这份预览为什么可能不可信 · **单据级(本条) = 为什么整单一个字节都不会写**。
+ * 🚫 与 recordStale **尤其**不许合并 —— 一个是「写过但失败」，一个是「从来没写过」，
+ *    财务要做的动作虽然相同（让销售保存一次），但她得知道现在到底是哪一种。
+ */
+const NO_RECORD_SNAPSHOT_REASON_TEXT: Record<string, string> = {
+  NEVER_WRITTEN: '这张报价单从建单到现在，没有在报价页面保存过 —— 常见于导入建出来的单',
+};
+
+/** 未知常量原样透出（带上原码），兜底形态与另外四套保持一致。 */
+const noRecordSnapshotReasonText = (reason?: string | null): string => {
+  if (!reason) return '未说明原因';
+  return NO_RECORD_SNAPSHOT_REASON_TEXT[reason] ?? `未知原因（${reason}）`;
+};
+
+/**
+ * 🚨 判据：顶层 `noRecordSnapshot` 对象与 `summary.noRecordSnapshot` 布尔位取**并**
+ * （与 recordStale 同型，上一轮已证伪过「只信一个」会让告警在另一形态下整块消失）。
+ *
+ * ⚠️ **唯一的例外**：顶层对象在、且 `participatingComponents` 显式为 `0` ⇒ **不报**。
+ *    那是「本单本来就没有要写回基础数据的组件」，属正常态，不是本缺口；
+ *    报了等于把一句吓人的话说给一张完全正常的单。
+ * 🔑 但「字段缺失」🚫 **不**当 0 处理 —— summary-only 形态下根本没有这个计数，
+ *    把 undefined 当 0 会让告警在那条路径上静默消失，正是取并要防的事。
+ */
+const isNoRecordSnapshot = (ds?: DsBackfillPreview | null): boolean => {
+  const obj = ds?.noRecordSnapshot;
+  const signalled = !!obj || ds?.summary?.noRecordSnapshot === true;
+  if (!signalled) return false;
+  if (obj && typeof obj.participatingComponents === 'number' && obj.participatingComponents === 0) {
+    return false;
+  }
+  return true;
+};
+
+/**
+ * 🆕「整单没有比对快照」告警条。**红档（error）**，与 recordStale 同级。
+ *
+ * 📌 定档理由（2026-09-07 由前端判、主线裁）：档位表达的是「该不该停下来处理」，不是「结论有多不确定」。
+ *    本条的影响面是**整单零写入**，比 BLOCKED（某一组跳过）大一个量级 ——
+ *    把它放到 BLOCKED 的橙档之下，等于让「整单都不写」看起来比「有一组不写」更轻，是倒的。
+ *    ⚠️ 与 recordStale 的混淆风险靠**首句差异**消除，不靠降档：
+ *       recordStale →「此刻预览的内容**可能**不是最新数据」（不确定 / 数据旧）
+ *       本条       →「这张报价单**没有**可供比对的数据快照」（确定 / 什么都不写）
+ * 🚫 不许折叠、🚫 不许静默、🚫 不许出现内部术语（快照表名 / 保存方法名）。
+ */
+const NoRecordSnapshotAlert: React.FC<{ info?: DsBackfillNoRecordSnapshot | null }> = ({ info }) => {
+  const n = info?.participatingComponents;
+  return (
+    <Alert
+      type="error"
+      showIcon
+      style={{ marginBottom: 16 }}
+      data-testid="ds-backfill-no-record-snapshot-alert"
+      title={<b>这张报价单没有可供比对的数据快照，确认后不会写入任何基础数据。</b>}
+      description={
+        <>
+          {noRecordSnapshotReasonText(info?.reason)}。
+          {typeof n === 'number' && n > 0 && (
+            <>
+              本单有 <b>{n}</b> 个页签本该把数据写回基础数据，现在<b>一个都写不了</b>。
+            </>
+          )}
+          <br />
+          <b>请先不要确认</b> —— 让销售打开这张报价单<b>保存一次</b>，再回到这里重新预览。
+          <br />
+          <span style={{ color: MUTED, fontSize: 13 }}>
+            确认本身不会损坏任何数据（它一个字节都不写），但也<b>不会</b>把这张单的数据写回基础数据。
+          </span>
+        </>
+      }
+    />
+  );
+};
 
 const num = (v: number | null | undefined): number => (typeof v === 'number' ? v : 0);
 
@@ -770,6 +855,13 @@ const CostingDsBackfillPanel: React.FC<{ ds: DsBackfillPreview }> = ({ ds }) => 
           与 D-33「100% 不参与时告警被空态顶掉」是同一个坑，本任务已经踩过一次。
           ⇒ 这里先渲染告警，再渲染空态。代价是一段几乎不会执行的代码，收益是不会静默。
         */}
+        {/*
+          🆕 同一条防御位：主线已把 api.md 的 applicable 裁为「三者全空才 false」，
+          但那是**后端的承诺**，不是前端的保证。本条恰恰只在「一行快照都没有」时出现 ——
+          若它被 applicable 或空态顶掉，就是在唯一该说话的场景里闭嘴。
+          （本任务已在 D-33 上踩过一次、在 recordStale 上防过一次，这是第三次。）
+        */}
+        {flags.noRecordSnapshot && <NoRecordSnapshotAlert info={ds.noRecordSnapshot} />}
         {flags.recordStale && <RecordStaleAlert stale={ds.recordStale} />}
         <Empty
           image={<div style={{ fontSize: 40, lineHeight: 1 }}>📄</div>}
@@ -860,6 +952,13 @@ const CostingDsBackfillPanel: React.FC<{ ds: DsBackfillPreview }> = ({ ds }) => 
         ── 🆕 D-35：`_record` 快照可能过期 ⇒ **整份预览的可信度**存疑（api.md §1 硬约束 4）。
            置于**最顶端**是刻意的：它限定的是下面所有内容，排在汇总条之后就退化成「众多提示之一」。
            🚫 不许折叠、🚫 不许静默、🚫 不许把 detail 的异常原文给财务看。 ── */}
+      {/*
+        ── 🆕 排在 recordStale **之前**：两条都是红档、都要求「让销售保存一次」，但
+           本条是**确定**且**总量**的结论（整单零写入），recordStale 是**可能**的（数据也许旧）。
+           确定的结论排在可能的结论前面。
+           ⚠️ 两者**可以同时出现**（写快照时抛异常 ⇒ 既「写失败过」又「一行都没有」），
+              此时两条红条并列 —— 那是对的，🚫 不许择一显示。 ── */}
+      {flags.noRecordSnapshot && <NoRecordSnapshotAlert info={ds.noRecordSnapshot} />}
       {flags.recordStale && <RecordStaleAlert stale={ds.recordStale} />}
 
       {/* ── 汇总条五项（AC-5③）：最后一项 >0 时标红 ── */}
@@ -1021,9 +1120,16 @@ const CostingDsBackfillPanel: React.FC<{ ds: DsBackfillPreview }> = ({ ds }) => 
 
       {/* ── 逐表逐组比对（UNCHANGED 组也在，🚫 不过滤）── */}
       {tables.length === 0 ? (
-        // 🚫 这里不能是空态：applicable=true 且 tables=[] 是「100% 组件不参与」的常态场景，
-        //    渲染空态会把上面那条 D-33 告警的语境顶掉。只有连告警都没有时才补这句。
-        nonParticipatingCount > 0 ? null : (
+        /*
+         * 🚫 这里不能是空态：applicable=true 且 tables=[] 是「100% 组件不参与」的常态场景，
+         *    渲染空态会把上面那条 D-33 告警的语境顶掉。只有连告警都没有时才补这句。
+         *
+         * 🚨 2026-09-07 追加 noRecordSnapshot：**这句话与那条新告警是直接矛盾的**。
+         *    告警说「本单有 3 个页签本该写回，现在一个都写不了」，这句说「本单没有需要写回的页签」——
+         *    同一屏两句话互相打架，而财务只会记住后者（它在下面、更像结论）。
+         *    ⇒ 本条为真时一律不渲染这句：原因已由告警说清，空白比一句错话好。
+         */
+        nonParticipatingCount > 0 || flags.noRecordSnapshot ? null : (
           <Empty description="本单没有需要写回基础数据的页签" />
         )
       ) : (

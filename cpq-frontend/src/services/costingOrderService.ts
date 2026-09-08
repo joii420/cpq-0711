@@ -300,6 +300,12 @@ export interface DsBackfillSummary {
    * 而这条告警**漏报的代价是财务照着过期数据确认回填**。
    */
   recordStale?: boolean;
+  /**
+   * 🆕 布尔便捷位，与顶层 `noRecordSnapshot` 是同一件事的两个出口。恒发（无此情形时 false）。
+   * ⚠️ 前端取**两者的并** —— 与 `recordStale` 同型，上一轮已用证伪实验证明只信一个会在
+   * 另一形态下让告警整块消失。
+   */
+  noRecordSnapshot?: boolean;
   /** 🆕 D-33：不参与基础数据升版的组件数。后端未下发时前端按 nonParticipating.length 兜底 */
   nonParticipatingComponents?: number;
 }
@@ -345,6 +351,28 @@ export interface DsBackfillRecordStale {
   detectedAt?: string | null;
 }
 
+/**
+ * 🆕 「这张单从来没拍过比对快照」（`reason: NEVER_WRITTEN`）。
+ *
+ * 成因（2026-09-07 定位）：写快照的动作只挂在报价页面的保存路径上，而**导入建单绕开了它** ⇒
+ * 导入出来的单只要没人手工保存过，就一行快照都没有。
+ * 现在的表现是**静默 no-op**：核价通过照常返 200、主表一个字节不写，
+ * **界面上与「本来就没什么要回填」长得一模一样**。
+ *
+ * ⚠️ 与 `recordStale` 是**两件事**，🚫 不许合并：
+ *    `recordStale` = 写过、但那次写失败了 ⇒ 结论**可能是错的**；
+ *    本条         = **从来没写过**       ⇒ 结论是对的（确实什么都不写），但整单零写入。
+ * 🚦 用户 2026-09-07 裁决：**本期只让它可见，不补写入能力。**
+ */
+export interface DsBackfillNoRecordSnapshot {
+  /** 原因常量，目前唯一值 NEVER_WRITTEN。🚫 未知码必须兜底，不许渲染空白 */
+  reason?: string | null;
+  /** 解析成功、本该产出快照的组件数。⚠️ 显式 0 = 本来就没什么要回填，**不是**本缺口 */
+  participatingComponents?: number;
+  /** 实际拿到的快照行数（本情形恒 0） */
+  recordRows?: number;
+}
+
 /** api.md §1 新增段。 */
 export interface DsBackfillPreview {
   /** false = 本单不走 ds_ 新回填（老单），前端渲染空态 */
@@ -364,6 +392,12 @@ export interface DsBackfillPreview {
    * 🚫 前端因此不得把该告警挂在「有表才渲染」的前提上，否则它恰好在最该出现时整块消失（同 D-33）。
    */
   recordStale?: DsBackfillRecordStale | null;
+  /**
+   * 🆕 恒发：无此情形时后端返 `null`。
+   * ⚠️ 本条**必然伴随 `tables=[]`**（一行快照都没有 ⇒ 一个组都算不出来）⇒
+   * 🚫 渲染它的条件绝不能带「有表才渲染」的前提，否则它恰好在唯一会出现的场景里整块消失。
+   */
+  noRecordSnapshot?: DsBackfillNoRecordSnapshot | null;
   nonParticipating?: DsBackfillNonParticipating[];
   extendColumnOnly?: DsBackfillExtendColumnOnly[];
 }

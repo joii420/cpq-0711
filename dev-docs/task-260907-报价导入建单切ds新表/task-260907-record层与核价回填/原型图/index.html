@@ -12,7 +12,7 @@
   <div class="muted">task-260907 第二段 · <span class="mono">_record</span> 数据层 + 核价通过回填升版　｜　2026-09-07</div>
 
   <div class="baseline">
-    📌 <b>当前基准</b> —— 本页面（核价通过确认交互）此刻的视觉标准，前端照这 6 张 1:1 还原。
+    📌 <b>当前基准</b> —— 本页面（核价通过确认交互）此刻的视觉标准，前端照这 7 张 1:1 还原。
   </div>
 
   <div class="alert alert-warn" style="margin-bottom:20px">
@@ -84,9 +84,18 @@
       </div>
       <div class="acs">服务 D-35（api.md §1 硬约束 4）｜ 认领 F-8　·　主按钮红档不禁用（2026-09-07 主线裁决）</div>
     </li>
+    <li>
+      <a href="07-核价通过确认抽屉-整单没有比对快照.html">07 · 整单没有比对快照（<span class="mono">noRecordSnapshot = NEVER_WRITTEN</span>）</a>
+      <div class="desc">
+        写快照只挂在报价页面的保存路径上，<b>导入建单绕开了它</b> ⇒ 导入出来的单没人保存过就一行快照都没有。
+        现在是<b>静默 no-op</b>（返 200、一个字节不写、界面与「本来就没什么要回填」无从分辨）。
+        红档告警置顶 + 汇总条全 0 + <b>刻意不渲染</b>与之矛盾的空态文案；主按钮不变红不禁用、把后果写进文案。
+      </div>
+      <div class="acs">服务 noRecordSnapshot（本期只让它可见，不补写入能力 —— 用户 2026-09-07 裁决）｜ 认领 F-9</div>
+    </li>
   </ul>
 
-  <h2 style="font-size:16px; margin:28px 0 8px">还原时的五条硬要求</h2>
+  <h2 style="font-size:16px; margin:28px 0 8px">还原时的六条硬要求</h2>
   <ul>
     <li>
       <div class="desc">
@@ -129,6 +138,18 @@
         🔴 <b>主按钮与「有 N 行对不上」同档</b>：变红 + 文案「仍然确认并核价通过」。
         🚫 <b>但不禁用、不阻断</b> —— 红条写「请先不要确认」而按钮还是蓝色，等于同一屏给出两个相反的信号；
         而硬阻断又会让数据层的可信度问题卡死业务流程。「<b>仍然</b>」两个字承担的正是「你已被警告，这是你的决定」。
+      </div>
+    </li>
+    <li>
+      <div class="desc">
+        <b>6. 🆕 <span class="mono">noRecordSnapshot</span>：静默 no-op 必须说出来，且不许与空态文案打架。</b>
+        本条<b>必然伴随 <span class="mono">tables=[]</span></b> ⇒ 🚫 渲染条件绝不能带「有表才渲染」的前提，
+        否则它恰好在唯一会出现的场景里消失（本任务已在 D-33 与 <span class="mono">recordStale</span> 上踩过两次）。<br>
+        🚨 <b>既有空态文案「本单没有需要写回基础数据的页签」与本告警直接矛盾</b> —— 本条为真时一律不渲染那句：
+        <b>空白比一句错话好</b>。<br>
+        ⚠️ 判据同样取<b>两个出口的并</b>；<b>唯一例外</b>是顶层对象在且
+        <span class="mono">participatingComponents</span> <b>显式为 0</b> ⇒ 不报（那是「本来就没什么要回填」的正常态）。
+        🚫 但<b>字段缺失不许当 0</b> —— 那会让告警在 summary-only 形态下静默消失。
       </div>
     </li>
   </ul>

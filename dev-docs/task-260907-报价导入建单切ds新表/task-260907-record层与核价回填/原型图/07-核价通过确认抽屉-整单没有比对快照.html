@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>核价通过确认抽屉 · 整单没有比对快照（noRecordSnapshot） —— task-260907 第二段</title>
+<link rel="stylesheet" href="_style.css">
+</head>
+<body>
+
+<div class="page-hint">
+  📌 <b>当前基准</b> · 状态 <b>7/7：整单没有比对快照（<code>noRecordSnapshot.reason = NEVER_WRITTEN</code>）</b>。<br>
+  成因：写快照的动作只挂在报价页面的保存路径上，<b>导入建单绕开了它</b> ⇒ 导入出来的单只要没人手工保存过，就一行快照都没有。<br>
+  现在的表现是<b>静默 no-op</b>：核价通过照常返 200、主表一个字节不写，<b>界面上与「本来就没什么要回填」长得一模一样</b>。
+  🚦 用户裁决：<b>本期只让它可见，不补写入能力</b> ⇒ 本屏就是对这条缺口的全部交付。
+</div>
+
+<div class="behind">
+  <h2>报价单 QT-20260907-0447 · 待核价</h2>
+  <div class="card">客户：正泰（CUST-0004）　｜　产品：3 个　｜　金额：¥203,910.00　｜　来源：Excel 导入建单</div>
+</div>
+
+<div class="mask"></div>
+<div class="drawer">
+
+  <div class="drawer-header">
+    <div>
+      <div class="drawer-title">核价通过 —— 确认基础数据升版</div>
+      <div class="drawer-sub">报价单 QT-20260907-0447　·　客户 正泰（CUST-0004）　·　⚠️ 本单没有比对快照，确认后不会写入任何基础数据</div>
+    </div>
+    <button class="drawer-close">✕</button>
+  </div>
+
+  <div class="drawer-body">
+
+    <!--
+      ── 红档（error），置于面板最顶端，排在 recordStale **之前**。
+         📌 定档理由：档位表达的是「该不该停下来处理」，不是「结论有多不确定」。
+            本条影响面是**整单零写入**，比 BLOCKED（某一组跳过）大一个量级；
+            放到橙档之下等于让「整单都不写」看起来比「有一组不写」更轻，是倒的。
+         ⚠️ 与 recordStale 的混淆风险靠**首句差异**消除，不靠降档：
+            recordStale →「此刻预览的内容**可能**不是最新数据」（不确定 / 数据旧）
+            本条       →「这张报价单**没有**可供比对的数据快照」（确定 / 什么都不写）
+         🚫 不许折叠、🚫 不许静默、🚫 不许出现内部术语（快照表名 / 保存方法名）。
+    -->
+    <div class="alert alert-error">
+      <span>🚫</span>
+      <div>
+        <b>这张报价单没有可供比对的数据快照，确认后不会写入任何基础数据。</b><br>
+        这张报价单从建单到现在，没有在报价页面保存过 —— 常见于导入建出来的单。
+        本单有 <b>3</b> 个页签本该把数据写回基础数据，现在<b>一个都写不了</b>。<br>
+        <b>请先不要确认</b> —— 让销售打开这张报价单<b>保存一次</b>，再回到这里重新预览。<br>
+        <span class="muted" style="font-size:13px">确认本身不会损坏任何数据（它一个字节都不写），但也<b>不会</b>把这张单的数据写回基础数据。</span>
+      </div>
+    </div>
+
+    <!--
+      汇总条照常渲染（全 0）：数字本身是对的 —— 确实没有表、没有组、不升版。
+      🚫 但它**不能单独存在** —— 单看这一排 0，与「本来就没什么要回填」无从分辨，
+         那正是本缺口现在的样子。上面那条红条就是把这排 0 的**原因**说出来的东西。
+    -->
+    <div class="summary">
+      <div class="item"><div class="k">涉及表</div><div class="v">0</div></div>
+      <div class="item"><div class="k">涉及料号组</div><div class="v">0</div></div>
+      <div class="item"><div class="k">将升版</div><div class="v">0</div></div>
+      <div class="item"><div class="k">无变更</div><div class="v">0</div></div>
+      <div class="item"><div class="k">无法对齐的行</div><div class="v">0</div></div>
+    </div>
+
+    <!--
+      🚨 这里**刻意什么都不渲染**。
+      既有的 tables=[] 空态文案是「本单没有需要写回基础数据的页签」——
+      它与上面那条告警**直接矛盾**（告警说「有 3 个页签本该写回、现在一个都写不了」）。
+      同一屏两句话打架，财务只会记住下面那句（更像结论）。
+      ⇒ 本条为真时一律不渲染那句空态：**空白比一句错话好**。
+    -->
+
+  </div>
+
+  <!--
+    页脚：文案转红并给出处置指令。
+    ⚠️ 主按钮 —— **不变红、不禁用，但把后果写进文案**（前端提案，主线待裁）：
+       ① 变红是**假警报** —— 确认的后果是零写入零伤害；假警报会稀释 unanchoredRows / recordStale 那两处真警报；
+       ② 「仍然」是有限资源，只该出现在确认真会造成不可逆后果时，这里没有后果；
+       ③ 真正的风险是「**点了会以为回填生效了**」⇒ 治它的办法是把后果写进按钮，不是涂红。
+       🚫 不禁用：核价通过改的是报价单状态（业务流程），且导入建单是常见路径，禁用会卡死一大批单。
+  -->
+  <div class="drawer-footer">
+    <span class="footer-note" style="color:#d4380d">⚠️ 本单没有比对快照 —— 确认后不会写入任何基础数据。请先让销售打开这张报价单保存一次。</span>
+    <button class="btn">取消</button>
+    <button class="btn btn-primary">确认核价通过（不写入基础数据）</button>
+  </div>
+
+</div>
+
+</body>
+</html>
