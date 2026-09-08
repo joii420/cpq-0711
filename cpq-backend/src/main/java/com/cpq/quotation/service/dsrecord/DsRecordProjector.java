@@ -248,7 +248,16 @@ public final class DsRecordProjector {
         //    有歧义 → 不认，让它进 unanchoredRows 被财务看见（宁可显式上报，也不写到错的行上）。
         if (grainColumns == null || grainColumns.isEmpty()) return;
         List<DsRecordRow> pending = new ArrayList<>();
-        for (DsRecordRow r : rows) if (r.originId == null) pending.add(r);
+        for (DsRecordRow r : rows) {
+            if (r.originId != null) continue;
+            // D-36（与读侧 DsBackfillCollector#grainFallbackEligible 同一条纪律）：
+            // 🚨 没有 driver 侧的行（纯 INPUT 行 / 手工行）在**组已存在**时，是「用户新加的一行」，
+            //    不是「主表某一行的投影」。给它做粒度兜底会把它认成既有行的 patch
+            //    ⇒ 用户新增的行消失、既有行被覆盖（AP-60 原始形态）。
+            // ⚠️ 组不存在（version == 0）时不设限：那时整组行都还没有，任何行都谈不上「新增覆盖既有」。
+            if (r.anchorValues.isEmpty() && version > 0) continue;
+            pending.add(r);
+        }
         if (pending.isEmpty()) return;
 
         Map<String, List<DsMainTableReader.BaseRow>> baseByGrain = new LinkedHashMap<>();

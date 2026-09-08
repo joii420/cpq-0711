@@ -109,3 +109,66 @@
 - `mvnw test` 全量跑有大批既有失败类，主因 `relation "mat_part" does not exist`（V44 老表随 V6 迁移停用，属 `AP-53` / `BL-0069`）。
 - **判据**：任何失败都要做 **A/B 同型对比**（改动前后各跑一次），逐字相同即非本次引入。🚫 不许凭「看起来像老问题」下结论。
 - E2E `quotation-flow.spec.ts` 在干净 master 上即有既有失败（夹具漂移），同样按 A/B 归因。
+
+---
+
+## 八、🚫 禁用夹具清单（后端子代理 2026-09-07 实查提供）
+
+> **写在这一节的料号，🚫 不许拿来做核价通过的验收或冒烟**，直到 `C′`（歧义膨胀收敛）获用户裁决并落地。
+
+### 8.1 为什么
+
+这些轴值组的**粒度键在组内重复**（`semantic_node.grain_columns` 不唯一）。一旦它们走一次核价通过升到 `v2`：
+`tier①` 的 `id` 全失效 → `tier②` 的指纹全失效 → `tier③` 撞歧义、按「两侧都恰好一条」判据**不认**
+⇒ **整组锚不上 ⇒ 全部追加 ⇒ 组翻倍**，而预览显示「本次覆盖 0 / 本次不动 N」。
+
+### 8.2 清单（2026-09-07 实查共享库 `cpq_db_0724`）
+
+| 表 | 轴值 | 重复的粒度键 | 重复行数 |
+|---|---|---|---|
+| `ds_quote_element_bom` | `VS-RM01` | `00005 / C`、`00005 / Ni`、`00005 / Ag` | 各 **4** 行 ⚠️ 最坏：一次通过 12 行 → 24 行 |
+| `ds_quote_element_bom` | `VS-RM02` | `00256 / Cu` | 4 行 |
+| `ds_quote_element_bom` | `VS-RM05` | `00256 / Cu` | 3 行 |
+| `ds_quote_material_bom` | `0526-2609000005` | `0526-2609000004`、`TEST-Q13-CODE` | 各 2 行 |
+| `ds_quote_material_bom` | `VS-FG01` | `3120011203`、`VS-SA02` | 各 2 行 |
+| `ds_quote_material_bom` | `VS-SA02` | `VS-RM03` | 2 行 |
+
+📌 面：`element_bom` 14 个轴值组里 **4 个**有歧义（28.6%）；`material_bom` 25 个里 **3 个**（12%）。
+📌 当下**不会**触发：有歧义的组从未跨版，已跨版的 2 组（`T260907-M1` v3 / `S-3120014539` v2）**无歧义**，交集 = 0。
+⚠️ 但触发条件只是「两张单先后核价通过同一个料号」—— 那正是 `AC-10` 的常规流程。
+
+---
+
+## 九、AC-4 / T-12 的自造组件说明（后端子代理提供，测试侧照做）
+
+### 9.1 🚨 先说为什么不能用现成的
+
+- **ds 原生模板（`df379593-…`）的 `T260907-物料BOM` 与 `T260907-物料与元素BOM` 两个组件，
+  `element_code_field` / `element_price_field` / `element_currency_field` 三个字段全是 `NULL`**
+  ⇒ `_record.element_price` 在该模板上**恒为 NULL**，AC-4 与 T-12 在它上面**根本不可达**。直接接线 = 空验证。
+- 主线已裁：**测试侧自造组件**（🚫 不改现网配置、🚫 不用真实客户组件）。
+
+### 9.2 自造组件要配什么（照这个配才会真落值）
+
+| 要素 | 值 | 为什么 |
+|---|---|---|
+| 组件的 `element_price_field` | 指向 `fields[]` 里那个价格列的 **`name`**（如 `元素单价`） | `DsRecordProjector` 用 `binding.elementPriceField()` 直接按**字段名**取值 |
+| 该字段的 `field_type` | **`INPUT_NUMBER`** | 现网 21 个组件走的就是这条；实测其值落在 `snapshot_rows[i].driverRow` 里（16/16 样本） |
+| 该字段的 `default_source` | `{"type":"BASIC_DATA","path":"$<视图名>.元素单价"}` | 让首次渲染把实时价物化进来；物化后随快照冻结，不再随渲染漂（AC-4 的「建单时刻」由此守住） |
+| 组件的 `element_code_field` | 指向元素编码列的 `name`（如 `元素`） | `syncElementPrice` 要靠它把「元素编码 → 物理列」映射出来；映射不出会**跳过并只打 DEBUG** |
+| 绑定的 sheet | 必须是 **`ds_quote_material_bom`** 或 **`ds_quote_element_bom`** | 只有这两张的 `_record` 有 `element_price` 列（S-3 / `QuoteRegistry.ELEMENT_PRICE_RECORD_SHEETS`） |
+| `builder_config` | 必须非空且 `dialect=QUOTE` | 否则判 `NO_BUILDER_CONFIG` → 不参与 `_record`（`D-33`） |
+
+**取值路径**（`DsRecordProjector#pick` 的三级兜底，按序）：
+`row_data[字段名]` → `driverRow[字段名]` → `driverRow[builder_config.columns[].viewColumn]`
+
+### 9.3 ⚠️ 警告栏
+
+1. 🚫 **不要把价格列配成 `field_type = BASIC_DATA`** —— `pick()` **不读 `basicDataValues`**，
+   值会**静默变 NULL**，那就是又一个空验证。现网那 3 个 `BASIC_DATA` 组件恰好都是手写视图、
+   走不到 `_record`，所以这个洞至今没暴露。
+2. ⚠️ **`element_price` 不是「建单时算一次就冻住」**：每次 `saveDraft` 都会按当时页签值重投影一遍
+   （取值不变，因为源是已物化的快照），价格调整链路 (`syncElementPrice`) 是**另一条**独立写路径。
+3. ⚠️ **`dryRun` 的语义是「整个事务最终回滚」，不是「跳过写库」**
+   （`MaterialVersionUpgradeService` 类注释 `:68-71`）⇒ `syncElementPrice` 在 dryRun 下**会执行**，
+   只是最后整体回滚。**事务外观察不到，事务内观察得到** —— 用例若在同事务里断言会看到写入。

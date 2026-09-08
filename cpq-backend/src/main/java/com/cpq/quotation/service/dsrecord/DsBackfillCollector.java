@@ -235,6 +235,7 @@ public class DsBackfillCollector {
                 Map<String, List<RecordRow>> recByGrain = new LinkedHashMap<>();
                 for (RecordRow r : records) {
                     if (consumed.contains(r)) continue;
+                    if (!grainFallbackEligible(r)) continue;      // 🚨 见 grainFallbackEligible 的注释
                     recByGrain.computeIfAbsent(
                             DsRecordProjector.contentKey(r.values, colDefsOf(sheet), grain),
                             k -> new ArrayList<>()).add(r);
@@ -319,6 +320,39 @@ public class DsBackfillCollector {
             }
         }
         return g;
+    }
+
+    /**
+     * 该 {@code _record} 行是否<b>有资格</b>走第③层（粒度列兜底）。—— D-36
+     *
+     * <h3>🚨 修的是什么</h3>
+     * 原实现对**所有**未锚定的行一视同仁地做粒度兜底，包括「两个锚都为空」的行。
+     * 而两个锚都为空<b>有两种完全相反的成因</b>：
+     * <pre>
+     *   甲｜拍快照时**整组还不存在**（base_version_no = 0），之后别的单把这组建了出来。
+     *      ⇒ 这一行本来就是主表那一行的投影，**必须**兜底，否则组翻倍（AC-14 就栽在这）。
+     *   乙｜拍快照时**组已存在**（base_version_no > 0），用户在组里**新加了一行**。
+     *      ⇒ 这是真新增。若它的粒度键恰好与某条既有行相同、且基底中该键只有一条，
+     *        兜底会把它认成那条既有行的 patch ⇒ **用户新增的行消失、既有行被覆盖**。
+     *        方向与 AP-60 原始形态一致（写到错的行上）。
+     * </pre>
+     *
+     * <h3>为什么判据是 {@code base_version_no}，而不是「reason == NO_ANCHOR 就不兜底」</h3>
+     * 后者是最直觉的写法，但它**会把甲一起禁掉** —— 实测：AC-14 的决定性用例里，
+     * tier③ 命中的那两行日志原文就是「{@code origin_id/指纹都对不上}」（即 NO_ANCHOR），
+     * 一刀切禁掉之后 AC-14 立刻回到 {@code base=2 → result=4} 的翻倍态。
+     * {@code base_version_no} 是唯一能把甲乙分开的信号，且它是本表已有的列，不需要新增字段。
+     *
+     * <h3>与 AC-20③ 的关系</h3>
+     * AC-20③ 写的是「跨版 且 指纹已变但粒度列未变」。甲的 {@code base_version_no=0}
+     * 与当前版本必然不等 ⇒ {@code crossVersion=true}，落在 AC 描述之内；
+     * 乙是同版新增，本就不该由第③层处理 ⇒ 本方法让实现回到 AC 原意。
+     *
+     * @return true = 允许兜底（曾经有锚，或拍快照时整组不存在）
+     */
+    private static boolean grainFallbackEligible(RecordRow r) {
+        if (r.originId != null || r.baseRowFingerprint != null) return true;   // 曾经有锚，只是丢了
+        return r.baseVersionNo == 0;                                           // 甲：拍快照时整组不存在
     }
 
     /**
