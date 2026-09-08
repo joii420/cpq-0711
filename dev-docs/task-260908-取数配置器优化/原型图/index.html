@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>原型图导航 · task-260908 取数配置器优化</title>
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; padding:28px; background:#f5f5f5; font-size:14px; line-height:1.5715;
+         font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif; color:rgba(0,0,0,.88); }
+  .wrap { max-width:1080px; margin:0 auto; }
+  .card { background:#fff; border-radius:8px; padding:20px 24px; margin-bottom:18px;
+          box-shadow:0 1px 2px rgba(0,0,0,.03),0 1px 6px -1px rgba(0,0,0,.02); }
+  h1 { font-size:22px; margin:0 0 4px; font-weight:600; }
+  h2 { font-size:16px; margin:0 0 12px; font-weight:600; }
+  .sub { color:rgba(0,0,0,.45); font-size:13px; margin-bottom:10px; }
+  .tag { display:inline-block; padding:1px 9px; font-size:12px; border-radius:4px;
+         border:1px solid #91caff; color:#0958d9; background:#e6f4ff; margin-right:6px; }
+  .tag.gray  { border-color:#d9d9d9; color:rgba(0,0,0,.65); background:#fafafa; }
+  .tag.green { border-color:#b7eb8f; color:#389e0d; background:#f6ffed; }
+  .tag.gold  { border-color:#ffd591; color:#d46b08; background:#fff7e6; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { border:1px solid #f0f0f0; padding:8px 10px; text-align:left; vertical-align:top; }
+  th { background:#fafafa; font-weight:600; }
+  a { color:#1677ff; text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  code, .mono { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; }
+  .note { margin-top:12px; padding:10px 12px; border-radius:6px; font-size:13px;
+          background:#e6f4ff; border:1px solid #91caff; color:#0958d9; }
+  .note.warn { background:#fffbe6; border-color:#ffe58f; color:#874d00; }
+  .note.err  { background:#fff2f0; border-color:#ffccc7; color:#a8071a; }
+</style>
+</head>
+<body><div class="wrap">
+
+<div class="card">
+  <h1>原型图 · task-260908 取数配置器优化</h1>
+  <div class="sub">2026-09-08 · 闸门 A 前置产物 · 定稿后即 1:1 还原的验收基准</div>
+  <span class="tag">📌 当前基准 —— 仅本页列出的两个局部</span>
+  <span class="tag gray">2 份 · 覆盖 F-1 / F-2 / F-3</span>
+  <div class="note warn">
+    ⚠️ <b>本次是「局部基准」，不是整页基准。</b><br>
+    本任务只动了两个页面里的各一块区域，所以原型只画那两块。<b>这两块以外的部分，基准仍在上游任务</b>（见下方「与上游原型的关系」）。
+    还原时两份都要看：本页管这块区域，上游那份管其余。
+  </div>
+</div>
+
+<div class="card">
+  <h2>本次原型（照这两份做）</h2>
+  <table>
+    <thead><tr><th style="width:280px">原型</th><th style="width:150px">覆盖区域</th><th>关键视觉决策</th><th style="width:130px">服务的 AC</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><a href="01-组件绑定区.html">01-组件绑定区.html</a></td>
+        <td>组件管理页<br>「匹配标识与元素绑定」区</td>
+        <td>
+          ① 元素列/元素单价列<b>条件渲染</b>，货币列<b>整块不渲染 DOM</b>（不是置灰）<br>
+          ② 少两个下拉时<b>不重排布局</b> —— 料号列/名称列位置宽度不变<br>
+          ③ 存量组件有元素值时<b>仍显示</b>（否则成僵尸值）
+        </td>
+        <td>AC-10 / AC-11<br>AC-12 / AC-13<br>AC-25</td>
+      </tr>
+      <tr>
+        <td><a href="02-取数配置器-已选输出列.html">02-取数配置器-已选输出列.html</a></td>
+        <td>取数配置 Tab<br>「已选输出列」面板</td>
+        <td>
+          ① 行键列<b>绿底 + ✕ 禁用</b>，禁用态给 tooltip 原因（不是不渲染）<br>
+          ② 切源是<b>重置后再填充</b>，不是追加<br>
+          ③ 料号列拖入后字段名默认「料号」，<b>视图列名不受影响</b><br>
+          ④ 行键列若落进价格策略原子组，<b>整组移除的 ✕ 也要挡住</b>
+        </td>
+        <td>AC-14 / AC-15<br>AC-16 / AC-17<br>AC-18 / AC-19</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>四项前端改动的原型触发判定</h2>
+  <table>
+    <thead><tr><th style="width:60px">项</th><th style="width:230px">改动性质</th><th style="width:90px">触发？</th><th>依据</th></tr></thead>
+    <tbody>
+      <tr><td><b>F-1</b></td><td>绑定区表单字段条件增删</td><td><span class="tag green">✅ 出</span></td>
+          <td>§1.3「布局与信息架构改动」。<b>有真实视觉决策</b>：少两个下拉时要不要重排、货币列是隐藏还是置灰、存量值怎么办</td></tr>
+      <tr><td><b>F-2</b></td><td>已选输出列自动填充 + 禁用移除</td><td><span class="tag green">✅ 出</span></td>
+          <td>§1.3「交互流程改动」。<b>有真实视觉决策</b>：锁定态长什么样、禁用原因怎么说、与原子组怎么共处</td></tr>
+      <tr><td><b>F-3</b></td><td>拖入后的默认字段名</td><td><span class="tag gray">并入 02</span></td>
+          <td>本身是纯逻辑（默认值），§1.3 不触发。但它的效果<b>直接显示在已选输出列里</b>，画进 02 的状态 1/2/4 更省事，不单独成份</td></tr>
+      <tr><td><b>F-4</b></td><td>树列表头「料号」→「BOM」</td><td><span class="tag gray">不触发</span></td>
+          <td>§1.3 明确列在不触发清单里的<b>纯文案</b>改动。一个 <code>&lt;th&gt;</code> 的文字，无布局无交互变化。由 AC-20/21/22 的截图证据约束</td></tr>
+    </tbody>
+  </table>
+  <div class="note">
+    🚫 <b>不为 F-4 编一份原型。</b> 上一个任务（task-260907）在这件事上翻过车：给不触发的项凭想象补原型，编出了实际不存在的字段名与页面结构，
+    结果是<b>一份会误导开发的错误基准</b>。「判不准就出」的前提是出的是真东西。
+  </div>
+</div>
+
+<div class="card">
+  <h2>与上游原型的关系（还原时一起看）</h2>
+  <table>
+    <thead><tr><th style="width:330px">上游原型</th><th style="width:110px">身份</th><th>关系</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="mono">task-260904-页签类型收缩/原型图/组件管理.html</td>
+        <td><span class="tag gold">🕰️ 局部被取代</span></td>
+        <td>该页<b>「匹配标识与元素绑定」区</b>已由本任务 <code>01</code> 取代（本次移除货币列、条件显示元素列）。
+            <b>该区域以外</b>（组件列表、目录卡片、徽章）仍以那份为基准</td>
+      </tr>
+      <tr>
+        <td class="mono">task-260907-取数配置器补齐/原型图/取数配置Tab-F1-物料双表.html<br>
+            task-260904-页签类型收缩/原型图/取数配置Tab.html</td>
+        <td><span class="tag gold">🕰️ 局部被取代</span></td>
+        <td>取数配置 Tab 的<b>「已选输出列」面板</b>已由本任务 <code>02</code> 取代。
+            <b>数据集/数据源下拉、左侧可用字段面板、SQL 面板、体检区、预览区</b>仍以那两份为基准</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="note err">
+    🚨 <b>本次新增的「材料名」字段出现在左侧可用字段面板里，而那块的基准在上游那两份原型上，本次没有重画。</b><br>
+    它<b>内联在锚点分组内</b>（不另起分组）、带 <code>lookupLib</code> 徽标 —— 形态与上游原型里已有的查名字段一致，
+    所以不需要新的视觉决策。这条写在这里，是为了让还原时不会以为「面板多了东西却没有基准」。
+    该形态的断言在 <b>AC-7</b>。
+  </div>
+</div>
+
+</div></body>
+</html>
