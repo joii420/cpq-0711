@@ -14,11 +14,16 @@
    立项文档记录同日 02:40 采到「齐平 V417」，03:30 就变成「齐平 V419」——50 分钟过期一次。
    ⇒ **取号必须在落库那一刻实取** `max(db/migration 目录最大号, 共享库 flyway_schema_history 最大号) + 1`，
    两个都不能单独信（文件先落库后进 master ⇒ 目录偏小；迁移写完没跑 ⇒ 共享库偏小）。
-2. **上游的主表 `customer_no` DDL 尚未落库**：列定义已由 `报价侧加客户维度` 的 `A0-1` 裁决为
-   `varchar(20) NOT NULL`（取值 = `customer.code`），本目录的 `_record` 建表已按此写死；
-   但 2026-09-07 实测 **0 张带版本表已有 `customer_no`** ⇒ 主表侧 DDL 还没到。
-   `_record` 由本段自己写入、不经 `VersionedGroupWriter`，所以「本表有、主表无」是允许的过渡态；
-   但 `backtask.md` 硬时序 1 仍要求本目录的建表排在上游「DDL + 轴模型同批合并」之后。
+2. ~~**上游的主表 `customer_no` DDL 尚未落库**~~ → ✅ **2026-09-07 17:54 已落库**：
+   上游 `V425~V429` 已应用到共享库（逐条 `success=t`），实测 **42 张 `ds_quote_%` 带 `customer_no`**；
+   列定义 `varchar(20) NOT NULL` 无默认、取值 = `customer.code`，与本目录 SQL 里写的一致。
+   本段的 13 张 `_record` 也已由 **`V420`** 建成（`success=t`）。
+   ⇒ **本目录里 `V___task260907_ds_quote_record_tables.sql` 已成历史草稿**（内容 = 已落库的 `V420`）。
+   ⛔ **真正还压着的只有本目录另外两条：`V___task260907_ds_quote_source_quotation_id.sql`（B-3）与
+   `V___task260907_ds_quote_record_stale.sql`（D-35）** —— 实测 `source_quotation_id` 仍为 **0 张**。
+   它们压着的原因是**落库窗口由主线统一开**（见任务目录 `scripts/RUNBOOK-B3-D35-落库.md`），
+   🚫 **不是「等上游」**，两个洞不要混成一个。
+   <sub>原文（已作废，留痕）：「上游的主表 `customer_no` DDL 尚未落库 …… 2026-09-07 实测 0 张带版本表已有 `customer_no` ⇒ 主表侧 DDL 还没到。」</sub>
 
 ## 落库时要做的三步（顺序不能反）
 

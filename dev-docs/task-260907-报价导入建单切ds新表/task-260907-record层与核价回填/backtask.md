@@ -16,7 +16,7 @@
 
 ## 🚦 三条硬时序（不可跳）
 
-1. **B-1 / B-3 的 `CREATE TABLE` / `ALTER TABLE` 必须排在 `task-260907-报价侧加客户维度` 的「DDL + 轴模型同批合并」之后。** 其 `customer_no` 的列定义（尤其是否 `NOT NULL`）由该任务 `A0-1` 裁决，⛔ **当前未裁决 —— 不许猜着建表**。
+1. ~~**B-1 / B-3 的 `CREATE TABLE` / `ALTER TABLE` 必须排在 `task-260907-报价侧加客户维度` 的「DDL + 轴模型同批合并」之后。**~~<br>✅ **2026-09-07 17:54 该时序已满足并解除**：上游 `V425~V429` 已应用（逐条 `success=t`，实测 42 张 `ds_quote_%` 带 `customer_no`）；`customer_no` 列定义已裁定为 **`varchar(20) NOT NULL` 无默认、取值 = `customer.code`**，本段迁移已按此填实；**B-1 的 13 张 `_record` 已由 `V420` 建成**（`success=t`）。<br>⛔ **仍未落库的只剩 B-3（`source_quotation_id`，实测 0 张）与 D-35（`ds_quote_record_stale`）** ——这两条是**本段自己的迁移**，压着的原因是**落库窗口由主线统一开**（步骤见 `scripts/RUNBOOK-B3-D35-落库.md`），**不是「等上游」**。🚫 **两个洞不要混成一个。**
 2. **挂 B-11（新回填）之前，主线必须先通知第一段会话。** 其 `AC-16` 断言「核价通过时 `QuoteBackfillService` 摘要恒 `0/0/0/0`」，挂上之后即不成立，需其抢先验掉。
 3. **迁移号取 `max(目录, 共享库) + 1`，且在落库那一刻实取。** 🚫 不许预取、🚫 不许只看目录、🚫 不许只看共享库 —— 两个都可能偏小（文件先落库后进 master ⇒ 目录小；迁移写完没跑 ⇒ 共享库小）。
    - 📌 2026-09-07 03:30 实测：共享库 = **V419**，master 目录 = **V419**，齐平无孤儿 ⇒ 下一个是 V420。
@@ -40,7 +40,7 @@
 | `quotation_id` | uuid **非空** | 来源报价单 |
 | `base_version_no` | integer **非空** | 拍快照时主表该组的 `version_no`；主表当时无该组则为 `0` |
 | `extend_column` | jsonb | 主表对不齐的字段（自定义列 / 公式列）。`D-5`：不回填、不参与升版与比对 |
-| `customer_no` | ⛔ **待上游裁决** | 见硬时序 1 |
+| `customer_no` | `varchar(20)` **NOT NULL** 无默认 | ✅ 上游 `A0-1` 已裁决（取值 = `customer.code`）；已随 `V420` 建成。~~待上游裁决~~ |
 | 系统列 | | 与主表一致：`source` / `created_at` / `created_by` / `updated_at` / `updated_by` |
 
 - **`element_price numeric(26,12)` 只加在两张**：`ds_quote_material_bom_record` / `ds_quote_element_bom_record`（`S-3`；用户原话「物料BOM元素 表」）。
