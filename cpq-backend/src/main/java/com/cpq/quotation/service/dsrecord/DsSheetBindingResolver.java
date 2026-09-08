@@ -169,14 +169,16 @@ public class DsSheetBindingResolver {
         // ── ③ 语义图：(tab_type, variant_key) → (node_key, physical_table)（1 条 SQL）──
         @SuppressWarnings("unchecked")
         List<Object[]> tabViews = em.createNativeQuery(
-                        "SELECT v.tab_type, v.variant_key, n.node_key, n.physical_table " +
+                        "SELECT v.tab_type, v.variant_key, n.node_key, n.physical_table, n.grain_columns " +
                         "FROM semantic_tab_view v JOIN semantic_node n ON n.id = v.anchor_node_id " +
                         "WHERE v.dialect = 'QUOTE' AND v.status = 'ACTIVE' AND n.status = 'ACTIVE'")
                 .getResultList();
         Map<String, String[]> anchorByTab = new LinkedHashMap<>();          // "tabType|variantKey" → [nodeKey, table]
+        Map<String, List<String>> grainByTab = new LinkedHashMap<>();        // → 该节点的粒度列
         for (Object[] r : tabViews) {
-            anchorByTab.put(str(r[0]) + "|" + (r[1] == null ? "" : str(r[1])),
-                    new String[]{str(r[2]), str(r[3])});
+            String k = str(r[0]) + "|" + (r[1] == null ? "" : str(r[1]));
+            anchorByTab.put(k, new String[]{str(r[2]), str(r[3])});
+            grainByTab.put(k, pgTextArray(r[4]));
         }
 
         Map<String, SheetDef> sheetByTable = versionedSheetByTable();
@@ -255,9 +257,14 @@ public class DsSheetBindingResolver {
                 if (!fieldToColumn.containsKey(fn)) extend.add(fn);
             }
 
+            List<String> grain = new ArrayList<>();
+            for (String g : grainByTab.getOrDefault(tabType + "|" + variantKey, List.of())) {
+                if (sheet.column(g) != null && fieldToColumn.containsValue(g)) grain.add(g);
+            }
             out.put(cid, new DsSheetBinding(cid, sheet, anchor[0],
                     Map.copyOf(fieldToColumn), Map.copyOf(viewColumnByField), List.copyOf(extend),
-                    elementPriceField.get(cid), rowKeyFields.getOrDefault(cid, List.of())));
+                    elementPriceField.get(cid), rowKeyFields.getOrDefault(cid, List.of()),
+                    List.copyOf(grain)));
         }
         skipped.sort(java.util.Comparator.comparing(
                 (NonParticipating n) -> n.componentName() == null ? "" : n.componentName()));
@@ -282,6 +289,17 @@ public class DsSheetBindingResolver {
         } catch (Exception ignore) {
             // 字段定义读不出来只影响 extend_column 的完整性，不影响主表列映射 —— 安全降级
         }
+        return out;
+    }
+
+    /** PG {@code text[]} → List（JDBC 可能给 {@code String[]} 或 {@code java.sql.Array}）。 */
+    private static List<String> pgTextArray(Object raw) {
+        List<String> out = new ArrayList<>();
+        if (raw == null) return out;
+        try {
+            Object[] arr = (raw instanceof java.sql.Array a) ? (Object[]) a.getArray() : (Object[]) raw;
+            for (Object o : arr) if (o != null && !String.valueOf(o).isBlank()) out.add(String.valueOf(o));
+        } catch (Exception ignore) { /* 粒度列读不出只影响兜底锚的可用性，不影响主路径 */ }
         return out;
     }
 

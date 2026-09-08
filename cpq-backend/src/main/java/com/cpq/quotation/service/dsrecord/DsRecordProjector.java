@@ -45,6 +45,13 @@ import java.util.Map;
  * 本类改用<b>内容对位</b>：拿页签表征列的 <b>driver 原值</b>（= 展开那一刻从主表读出来的值，
  * 尚未被用户编辑）去匹配基底行的同名列，命中即消费（同内容多行时按出现序逐个消费）。
  *
+ * <h3>🚨 锚点键<b>不能</b>用「叠加了用户编辑的整行内容」（实测教训）</h3>
+ * 原实现拿 {@code columnValues}（driver 值 ⊕ {@code row_data} 覆盖）当身份键，后果是：
+ * <b>用户改任意一个数值 → 那一行就锚不上 → 回填把它当新增追加，原行原样保留 ⇒ 该组翻倍。</b>
+ * 财务在界面上看到的却是「本次覆盖 0 / 本次不动 2」—— 与 {@code AP-60} 是镜像形态
+ * （那次静默删行，这次静默翻倍）。⇒ 第 1 趟锚点键一律取 {@link DsRecordRow#anchorValues}
+ * （拍快照那一刻的 driver 原值），第 2 趟用粒度列兜底。
+ *
  * <h3>🚨 已知缺口（必须写在这里，别让下一个人以为它已解决）</h3>
  * 取数配置器编译出的 SQL <b>不输出主表行 id</b>（{@code SemanticCompiler} 只发 {@code hf_part_no}
  * + 业务列），而 {@code QuotePendingRewriter.WHITELIST_TABLES} 里<b>零个</b> {@code ds_quote_*} 表
@@ -150,8 +157,16 @@ public final class DsRecordProjector {
 
         for (Map.Entry<String, String> e : binding.fieldToColumn().entrySet()) {
             JsonNode v = pick(binding, driverRow, flatRow, e.getKey());
-            if (v == null || v.isMissingNode()) continue;
-            row.columnValues.put(e.getValue(), v.isNull() ? null : nodeToJava(v));
+            if (v != null && !v.isMissingNode()) {
+                row.columnValues.put(e.getValue(), v.isNull() ? null : nodeToJava(v));
+            }
+            // 🔑 锚点键只取 driver 原值：叠加了用户编辑的值不能当行身份（见 DsRecordRow#anchorValues）
+            if (driverRow != null) {
+                JsonNode dv = pick(binding, driverRow, null, e.getKey());
+                if (dv != null && !dv.isMissingNode()) {
+                    row.anchorValues.put(e.getValue(), dv.isNull() ? null : nodeToJava(dv));
+                }
+            }
         }
         // B-6：主表对不齐的字段一律进 extend_column（自定义列 / 公式列 / 常量列 / 查名列）。
         // 现网 1257 个字段里 396 个无 default_source + 64 个 FORMULA ⇒ 这是常态不是异常。
@@ -190,27 +205,120 @@ public final class DsRecordProjector {
      * 回填时它们会被显式列进 {@code unanchoredRows}，🚫 不静默丢弃、也不静默当新增行插进去。
      */
     public static void anchor(List<DsRecordRow> rows, DsMainTableReader.BaseGroup base,
-                              Map<String, ColumnDef> colDefs, java.util.Collection<String> matchColumns) {
+                              Map<String, ColumnDef> colDefs, java.util.Collection<String> matchColumns,
+                              java.util.Collection<String> grainColumns) {
         int version = base == null ? 0 : base.versionNo;
-        Map<String, Deque<DsMainTableReader.BaseRow>> byKey = new LinkedHashMap<>();
-        if (base != null) {
-            for (DsMainTableReader.BaseRow br : base.rows) {
-                byKey.computeIfAbsent(contentKey(br.values, colDefs, matchColumns), k -> new ArrayDeque<>()).add(br);
-            }
+        for (DsRecordRow r : rows) r.baseVersionNo = version;
+        if (base == null || base.rows.isEmpty()) return;
+
+        java.util.Set<DsMainTableReader.BaseRow> usedBase =
+                java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+        // ── 第 1 趟：整行内容精确对位 ────────────────────────────────────────────────
+        //    键取「拍快照那一刻的 driver 原值」（anchorValues）；没有 driver 侧的行退回 columnValues
+        //    —— 那类行本来就只活在 row_data 里，它的当前值就是它唯一的内容。
+        Map<String, Deque<DsMainTableReader.BaseRow>> byContent = new LinkedHashMap<>();
+        for (DsMainTableReader.BaseRow br : base.rows) {
+            byContent.computeIfAbsent(contentKey(br.values, colDefs, matchColumns),
+                    k -> new ArrayDeque<>()).add(br);
         }
         for (DsRecordRow r : rows) {
-            r.baseVersionNo = version;
-            Deque<DsMainTableReader.BaseRow> q = byKey.get(contentKey(r.columnValues, colDefs, matchColumns));
-            DsMainTableReader.BaseRow hit = (q == null || q.isEmpty()) ? null : q.pollFirst();
+            Map<String, Object> key = r.anchorValues.isEmpty() ? r.columnValues : r.anchorValues;
+            Deque<DsMainTableReader.BaseRow> q = byContent.get(contentKey(key, colDefs, matchColumns));
+            DsMainTableReader.BaseRow hit = null;
+            while (q != null && !q.isEmpty()) {
+                DsMainTableReader.BaseRow c = q.pollFirst();
+                if (!usedBase.contains(c)) { hit = c; break; }
+            }
             if (hit != null) {
+                usedBase.add(hit);
                 r.originId = hit.id;
                 r.baseRowFingerprint = hit.rowFingerprint;
+            }
+        }
+
+        // ── 第 2 趟：粒度列兜底 ──────────────────────────────────────────────────────
+        // 🔑 为什么必须有这一趟：第 1 趟拿**整行内容**当身份键，于是「用户改了一个数值」的行
+        //    必然对不上 ⇒ 回填会把它当新增追加，而原行原样保留 ⇒ **组每回填一次就翻一倍**。
+        //    那是 AP-60 的镜像形态（那次静默删行，这次静默翻倍），且生产上改一个数就会触发。
+        // 🚫 但**不放宽内容比对**（例如忽略数值精度 / 全走 toRawString）—— 那会让内容真的不同的行
+        //    也锚上，后果更重：变成「覆盖到错的行上」，正是 AP-60 的原始形态。
+        // ⇒ 改用**独立于值的行身份**：语义节点声明的粒度列（semantic_node.grain_columns）。
+        // ⚠️ 需求文档 §⑥ 实测这些键**不保证唯一**，所以只在「两侧该键都唯一」时才认；
+        //    有歧义 → 不认，让它进 unanchoredRows 被财务看见（宁可显式上报，也不写到错的行上）。
+        if (grainColumns == null || grainColumns.isEmpty()) return;
+        List<DsRecordRow> pending = new ArrayList<>();
+        for (DsRecordRow r : rows) if (r.originId == null) pending.add(r);
+        if (pending.isEmpty()) return;
+
+        Map<String, List<DsMainTableReader.BaseRow>> baseByGrain = new LinkedHashMap<>();
+        for (DsMainTableReader.BaseRow br : base.rows) {
+            if (usedBase.contains(br)) continue;
+            baseByGrain.computeIfAbsent(contentKey(br.values, colDefs, grainColumns),
+                    k -> new ArrayList<>()).add(br);
+        }
+        Map<String, List<DsRecordRow>> recByGrain = new LinkedHashMap<>();
+        for (DsRecordRow r : pending) {
+            Map<String, Object> key = r.anchorValues.isEmpty() ? r.columnValues : r.anchorValues;
+            recByGrain.computeIfAbsent(contentKey(key, colDefs, grainColumns), k -> new ArrayList<>()).add(r);
+        }
+        for (Map.Entry<String, List<DsRecordRow>> e : recByGrain.entrySet()) {
+            List<DsMainTableReader.BaseRow> cands = baseByGrain.get(e.getKey());
+            // 🚨 只认「两侧都恰好一条」——任一侧有歧义就整组不认
+            if (cands == null || cands.size() != 1 || e.getValue().size() != 1) continue;
+            DsMainTableReader.BaseRow br = cands.get(0);
+            if (usedBase.contains(br)) continue;
+            usedBase.add(br);
+            DsRecordRow r = e.getValue().get(0);
+            r.originId = br.id;
+            r.baseRowFingerprint = br.rowFingerprint;
+            LOG.debugf("[ds-record][anchor] 粒度列兜底命中 baseRowId=%d grainKey=%s（整行内容不同 = 用户改过值）",
+                    br.id, e.getKey().replace('\u001F', '|'));
+        }
+
+        logAnchorMiss(rows, base, colDefs, matchColumns);
+    }
+
+    /**
+     * 两趟都没锚上时，把两侧<b>逐列</b>打出来（DEBUG）。
+     *
+     * <h3>🚨 别删这段（有两次实证）</h3>
+     * 「锚不上」这三个字<b>本身不解释原因</b>。不打这一枪就只能靠猜 —— 实测中主线与我
+     * <b>各误判过一次</b>：都把「主表某几列本来就是 NULL」当成了别的原因
+     * （一次猜「{@code colDefs} 取不到 def 退化成 {@code toRawString}」，
+     * 一次猜「夹具只带部分表征列」）。这段日志把两次误读当场证伪。
+     * <p>标记：{@code ≠} = 该列两侧不同；{@code ⚠️} = {@code colDefs} 里没有这一列
+     * （那才是真的会退化成 {@code toRawString} 的情形）。
+     */
+    private static void logAnchorMiss(List<DsRecordRow> rows, DsMainTableReader.BaseGroup base,
+                                      Map<String, ColumnDef> colDefs,
+                                      java.util.Collection<String> matchColumns) {
+        if (!LOG.isDebugEnabled() || base == null) return;
+        List<String> cols = new ArrayList<>(matchColumns);
+        java.util.Collections.sort(cols);
+        for (DsRecordRow r : rows) {
+            if (r.originId != null) continue;
+            Map<String, Object> key = r.anchorValues.isEmpty() ? r.columnValues : r.anchorValues;
+            for (DsMainTableReader.BaseRow br : base.rows) {
+                StringBuilder sb = new StringBuilder();
+                for (String c : cols) {
+                    ColumnDef def = colDefs.get(c);
+                    String bv = def == null ? ValueNormalizer.toRawString(br.values.get(c))
+                            : ValueNormalizer.normalize(br.values.get(c), def.type, def.scale);
+                    String rv = def == null ? ValueNormalizer.toRawString(key.get(c))
+                            : ValueNormalizer.normalize(key.get(c), def.type, def.scale);
+                    sb.append("\n      ").append(bv.equals(rv) ? "  " : "\u2260 ").append(c)
+                      .append(" : base=[").append(bv).append("] record=[").append(rv).append(']')
+                      .append(def == null ? "   \u26a0\ufe0f colDefs 无此列 \u2192 退化 toRawString" : "");
+                }
+                LOG.debugf("[ds-record][anchor-miss] recordAxis=%s baseRowId=%d 逐列对照：%s",
+                        r.axisValue, br.id, sb);
             }
         }
     }
 
     /** 内容键：只取页签表征的列，按列名字典序、走与行指纹同一套 {@link ValueNormalizer} 归一。 */
-    static String contentKey(Map<String, Object> values, Map<String, ColumnDef> colDefs,
+    public static String contentKey(Map<String, Object> values, Map<String, ColumnDef> colDefs,
                              java.util.Collection<String> matchColumns) {
         List<String> cols = new ArrayList<>(matchColumns);
         java.util.Collections.sort(cols);

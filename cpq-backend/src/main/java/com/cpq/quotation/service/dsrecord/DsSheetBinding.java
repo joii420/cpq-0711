@@ -46,6 +46,13 @@ import java.util.UUID;
  *                          仅物料BOM / 物料与元素BOM 两张的 {@code _record} 用它填 {@code element_price}
  * @param rowKeyFieldNames  组件行键字段名（{@code component.row_key_fields}），用于按
  *                          {@code deleted_row_keys} 墓碑剔除用户删掉的行；可空
+ * @param grainColumns      锚点语义节点的<b>粒度列</b>（{@code semantic_node.grain_columns}，
+ *                          已过滤成「本页签确实表征的物理列」）。
+ *                          <p>🔑 用途只有一个：{@code DsRecordProjector.anchor} 的<b>兜底</b>对位 ——
+ *                          用户改了某个数值之后，整行内容键必然不同，但它<b>还是同一行</b>。
+ *                          <p>⚠️ {@code 需求文档} §⑥ 实测这些键<b>不保证唯一</b>
+ *                          （{@code ds_quote_element_bom} 的 {@code (material_no, item_seq)} 有 14 组重复），
+ *                          所以只在「两侧该键都唯一」时才认，有歧义一律退回 {@code NO_ANCHOR}
  */
 public record DsSheetBinding(UUID componentId,
                              SheetDef sheet,
@@ -54,5 +61,6 @@ public record DsSheetBinding(UUID componentId,
                              Map<String, String> viewColumnByField,
                              List<String> extendFields,
                              String elementPriceField,
-                             List<String> rowKeyFieldNames) {
+                             List<String> rowKeyFieldNames,
+                             List<String> grainColumns) {
 }

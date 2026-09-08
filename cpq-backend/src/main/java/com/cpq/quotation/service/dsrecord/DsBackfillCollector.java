@@ -109,10 +109,13 @@ public class DsBackfillCollector {
         // （bindings 为空时这个循环不执行，plan.tables 保持空，但 nonParticipating 仍会呈现）
         Map<String, SheetDef> sheetByTable = new LinkedHashMap<>();
         Map<String, Set<String>> scopeByTable = new LinkedHashMap<>();
+        Map<String, Set<String>> grainByTable = new LinkedHashMap<>();
         for (DsSheetBinding b : bindings.values()) {
             sheetByTable.putIfAbsent(b.sheet().tableName, b.sheet());
             scopeByTable.computeIfAbsent(b.sheet().tableName, k -> new LinkedHashSet<>())
                     .addAll(b.fieldToColumn().values());
+            grainByTable.computeIfAbsent(b.sheet().tableName, k -> new LinkedHashSet<>())
+                    .addAll(b.grainColumns());
             if (!b.extendFields().isEmpty()) {
                 plan.extendColumnOnly.computeIfAbsent(b.sheet().sheetKey, k -> new LinkedHashSet<>())
                         .addAll(b.extendFields());
@@ -126,6 +129,7 @@ public class DsBackfillCollector {
         for (Map.Entry<String, SheetDef> se : sheetByTable.entrySet()) {
             SheetDef sheet = se.getValue();
             Set<String> scope = scopeByTable.getOrDefault(se.getKey(), Set.of());
+            Set<String> grain = grainByTable.getOrDefault(se.getKey(), Set.of());
 
             List<RecordRow> records = readRecords(sheet, quotationId, plan.customerNo);   // 1 条 SQL
             if (records.isEmpty()) continue;
@@ -142,7 +146,7 @@ public class DsBackfillCollector {
             t.sheet = sheet;
             for (Map.Entry<String, List<RecordRow>> ae : byAxis.entrySet()) {
                 // 纯内存（🚫 循环体内无查询）
-                t.groups.add(buildGroup(sheet, scope, ae.getKey(), ae.getValue(),
+                t.groups.add(buildGroup(sheet, scope, grain, ae.getKey(), ae.getValue(),
                         base.get(ae.getKey()), predicted.getOrDefault(ae.getKey(), 1), plan.customerNo));
             }
             if (!t.groups.isEmpty()) plan.tables.add(t);
@@ -160,7 +164,7 @@ public class DsBackfillCollector {
      * @param predictedVersionNo {@code VersionedGroupWriter.predictNextVersion} 给出的「真写会拿到的版本号」
      *                           （D-31）。🚫 本方法不许自己算版本号。
      */
-    private DsBackfillPlan.Group buildGroup(SheetDef sheet, Set<String> scope, String axisValue,
+    private DsBackfillPlan.Group buildGroup(SheetDef sheet, Set<String> scope, Set<String> grain, String axisValue,
                                             List<RecordRow> records, DsMainTableReader.BaseGroup base,
                                             int predictedVersionNo, String customerNo) {
         DsBackfillPlan.Group g = new DsBackfillPlan.Group();
@@ -187,18 +191,20 @@ public class DsBackfillCollector {
             }
         }
         Set<RecordRow> consumed = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        Map<Long, RecordRow> pairing = new java.util.HashMap<>();           // 基底行 id → 命中的 _record 行
 
-        // 🚨 遍历主轴 = 基底行。禁止「遍历 _record 生成行」。
+        // ── 配对（三支路，全部纯内存）——🔑 必须先配完再建 resultRows，否则第 3 支路命中的行
+        //    会因为基底行早已 emit 而补不上 patch。
         if (base != null) {
             for (DsMainTableReader.BaseRow br : base.rows) {
                 RecordRow hit = null;
                 if (!g.crossVersion) {
-                    // 同版：origin_id 精确对位，零歧义
+                    // ① 同版：origin_id 精确对位，零歧义
                     RecordRow cand = byOrigin.get(br.id);
                     if (cand != null && !consumed.contains(cand)) hit = cand;
                 } else {
-                    // 跨版：主表行 id 已全部失效（UPGRADED = 归档→整组 DELETE→重新 INSERT），
-                    // 改用拍快照时的整行指纹在当前组内重锚。
+                    // ② 跨版：主表行 id 已全部失效（UPGRADED = 归档→整组 DELETE→重新 INSERT），
+                    //    改用拍快照时的整行指纹在当前组内重锚。
                     Deque<RecordRow> q = br.rowFingerprint == null ? null
                             : byFingerprint.get(br.rowFingerprint.trim());
                     while (q != null && !q.isEmpty()) {
@@ -206,10 +212,53 @@ public class DsBackfillCollector {
                         if (!consumed.contains(cand)) { hit = cand; break; }
                     }
                 }
+                if (hit != null) { consumed.add(hit); pairing.put(br.id, hit); }
+            }
+
+            // ── ③ 粒度列兜底（与写入侧 DsRecordProjector.anchor 同一条纪律）───────────────
+            // 🔑 为什么必须有：①② 都可能整体失效 —— 拍快照时主表还没有这一组（origin_id/指纹全 NULL），
+            //    之后别的单把这一组建了出来。此时 _record 的每一行都锚不上 ⇒ 回填把它们当新增追加，
+            //    而基底行原样保留 ⇒ **该组每回填一次就翻一倍**。实测：v1 的 2 行 → 回填后 4 行，
+            //    而财务在界面上看到的是「本次覆盖 0 / 本次不动 2」——AP-60 的镜像形态（静默翻倍）。
+            // 🚫 不放宽 ①② 的比对（那会写到错的行上，是 AP-60 的原始形态）；
+            //    改用**独立于值的行身份** = 语义节点声明的粒度列。
+            // ⚠️ 需求文档 §⑥ 实证这些键**不保证唯一** ⇒ 只在「两侧都恰好一条」时才认，
+            //    有歧义一律不认，让它进 unanchoredRows 被财务看见。
+            if (grain != null && !grain.isEmpty()) {
+                Map<String, List<DsMainTableReader.BaseRow>> baseByGrain = new LinkedHashMap<>();
+                for (DsMainTableReader.BaseRow br : base.rows) {
+                    if (pairing.containsKey(br.id)) continue;
+                    baseByGrain.computeIfAbsent(
+                            DsRecordProjector.contentKey(br.values, colDefsOf(sheet), grain),
+                            k -> new ArrayList<>()).add(br);
+                }
+                Map<String, List<RecordRow>> recByGrain = new LinkedHashMap<>();
+                for (RecordRow r : records) {
+                    if (consumed.contains(r)) continue;
+                    recByGrain.computeIfAbsent(
+                            DsRecordProjector.contentKey(r.values, colDefsOf(sheet), grain),
+                            k -> new ArrayList<>()).add(r);
+                }
+                for (Map.Entry<String, List<RecordRow>> e : recByGrain.entrySet()) {
+                    List<DsMainTableReader.BaseRow> cands = baseByGrain.get(e.getKey());
+                    if (cands == null || cands.size() != 1 || e.getValue().size() != 1) continue;
+                    DsMainTableReader.BaseRow br = cands.get(0);
+                    if (pairing.containsKey(br.id)) continue;
+                    RecordRow r = e.getValue().get(0);
+                    consumed.add(r);
+                    pairing.put(br.id, r);
+                    LOG.debugf("[ds-backfill][anchor] 粒度列兜底命中 baseRowId=%d（origin_id/指纹都对不上）", br.id);
+                }
+            }
+        }
+
+        // 🚨 遍历主轴 = 基底行。禁止「遍历 _record 生成行」。
+        if (base != null) {
+            for (DsMainTableReader.BaseRow br : base.rows) {
+                RecordRow hit = pairing.get(br.id);
 
                 Map<String, Object> out = new LinkedHashMap<>(br.values);   // 基底整行，逐列保留
                 if (hit != null) {
-                    consumed.add(hit);
                     // 🚨 列级 patch：只覆盖该页签表征的列。
                     //    scope 之外的列一个字节不碰（AP-60 列维度共因：REBUILD 只写页签暴露的列，
                     //    其余物理列写 NULL ⇒ 每次通过静默抹一批列）。
@@ -263,12 +312,50 @@ public class DsBackfillCollector {
             if (com.cpq.dataset.fingerprint.RowFingerprints.sameMultiset(dbFps, newFps)) {
                 g.result = com.cpq.dataset.versioning.VersionedGroupWriter.UNCHANGED;
                 g.targetVersionNo = g.currentVersionNo;   // 一行不写，连 updated_at 都不动（AC-14）
+                applyUnchangedContract(g, sheet);         // 🔑 四项计数必须回填成「什么都不写」
             } else {
                 g.result = com.cpq.dataset.versioning.VersionedGroupWriter.UPGRADED;
                 g.targetVersionNo = predictedVersionNo;  // D-31：规则只有一份，在 writer 里
             }
         }
         return g;
+    }
+
+    /**
+     * {@code UNCHANGED} 的组：把四项计数回填成「一个字节都不写」（AC-14③ / api.md §1 硬约束 3）。
+     *
+     * <h3>🚨 为什么必须在这里收口，而不是在行循环里分支</h3>
+     * 行循环（上面 {@code patchedRows++} / {@code untouchedRows++} 那段）跑的时候
+     * <b>还不知道 result</b> —— 判定要等整组 {@code resultRows} 拼完、与基底比完指纹多重集才出来。
+     * 于是那四项描述的是「我<b>打算</b>怎么 patch」，而 {@code UNCHANGED} 的含义恰恰是
+     * 「这些 patch 最终<b>一个字节都不会写</b>」。不回填 = <b>四项全部反向</b>：
+     * <pre>
+     *   实测（修复前）：result=UNCHANGED 却报 patchedRows=2 / untouchedRows=0
+     *                  / columnScope.patched=[全部 12 列] / preserved=[]
+     * </pre>
+     *
+     * <h3>🚨 这是 AP-60 判据四的反向形态</h3>
+     * <ul>
+     *   <li>{@code repair-0727}：预览显示「0 变更」，实际<b>删了 3 行</b>；</li>
+     *   <li><b>本条</b>：预览显示「覆盖 2 行 / 12 列」，实际<b>一个字节不写</b>。</li>
+     * </ul>
+     * 两者都让财务<b>无法据预览判断后果</b>。我们为这条判据加了「本次不动」列、「回填后行数」列、
+     * 「组会变小」告警 —— 而最基础的那一格自己在说谎。
+     * <p>连带：财务点确认后去查库会发现什么都没变，界面却说改了 2 行
+     * （{@code VersionedGroupWriter} 的 UNCHANGED 契约是「一行不写，连 {@code updated_at} 都不许动」）。
+     *
+     * <p>📌 <b>一处收口</b>：将来再加计数字段也在这里补，🚫 不要散回行循环里去分支 ——
+     * 那里永远不知道 result，散一次就漏一个。
+     */
+    private static void applyUnchangedContract(DsBackfillPlan.Group g, SheetDef sheet) {
+        g.patchedRows = 0;                    // 本次覆盖 0 行
+        g.untouchedRows = g.baseRowCount;     // 整组原样保留
+        g.patchedColumns.clear();             // 一列都不写
+        g.preservedColumns.clear();
+        for (ColumnDef c : sheet.persistedColumns()) g.preservedColumns.add(c.name);
+        // ⚠️ unanchoredRows 在 UNCHANGED 下必然为空：锚不上的行会被追加进 resultRows，
+        //    行数一变指纹多重集就不可能相等 ⇒ 判不出 UNCHANGED。这里不清空，
+        //    真出现了就让它露出来（那意味着判定逻辑坏了，🚫 不许拿清空来掩盖）。
     }
 
     // ==================================================================
@@ -317,6 +404,10 @@ public class DsBackfillCollector {
         return out;
     }
 
+
+    private static Map<String, ColumnDef> colDefsOf(SheetDef sheet) {
+        return com.cpq.quotation.service.dsrecord.DsQuoteRecordService.colDefsOf(sheet);
+    }
 
     /** 给财务看的识别列：轴列之外，取 Registry 里前几个 SUBDIM/VALUE 列（纯展示，不参与任何判定）。 */
     private static List<String> displayColumns(SheetDef sheet) {

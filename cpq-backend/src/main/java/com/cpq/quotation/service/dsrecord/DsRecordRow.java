@@ -27,6 +27,17 @@ public class DsRecordRow {
     /** 主表对不齐的字段（自定义列 / 公式列 / 常量列 / 查名列）→ 值。D-5：不回填、不参与升版与比对。 */
     public final Map<String, Object> extendValues = new LinkedHashMap<>();
 
+    /**
+     * 🔑 <b>拍快照那一刻的 driver 原值</b>（未叠加用户编辑），只用于 {@code anchor()} 对位。
+     *
+     * <p>A0-1 的锚点语义是「<b>拍快照时</b>主表那一行」—— driver 行本来就是从主表读出来的，
+     * 所以它才是身份键的正确来源。
+     * <p>🚨 <b>不能拿 {@link #columnValues} 当身份键</b>：那是叠加过 {@code row_data} 的值，
+     * 用户改任意一个数就会让「同一行」算出不同的键 ⇒ 回填变成「原行保留 + 追加一行」⇒ <b>组翻倍</b>。
+     * <p>空 = 这一行只活在 {@code row_data} 里（纯 INPUT 页签行 / 手工行），没有 driver 侧。
+     */
+    public final Map<String, Object> anchorValues = new LinkedHashMap<>();
+
     /** 元素实时价快照（S-3）；仅物料BOM / 物料与元素BOM 两张有，其余为 null。 */
     public BigDecimal elementPrice;
 

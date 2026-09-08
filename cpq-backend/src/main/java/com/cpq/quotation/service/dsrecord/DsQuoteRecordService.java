@@ -149,6 +149,7 @@ public class DsQuoteRecordService {
         Map<String, SheetDef> sheetByTable = new LinkedHashMap<>();
         Map<String, Map<String, List<DsRecordRow>>> bySheet = new LinkedHashMap<>();
         Map<String, Set<String>> scopeColumnsBySheet = new LinkedHashMap<>();
+        Map<String, Set<String>> grainColumnsBySheet = new LinkedHashMap<>();
         for (Object[] r : compData) {
             UUID lineId = (UUID) r[0];
             UUID compId = (UUID) r[1];
@@ -162,6 +163,7 @@ public class DsQuoteRecordService {
             String table = b.sheet().tableName;
             sheetByTable.putIfAbsent(table, b.sheet());
             scopeColumnsBySheet.computeIfAbsent(table, k -> new LinkedHashSet<>()).addAll(b.fieldToColumn().values());
+            grainColumnsBySheet.computeIfAbsent(table, k -> new LinkedHashSet<>()).addAll(b.grainColumns());
             Map<String, List<DsRecordRow>> byAxis = bySheet.computeIfAbsent(table, k -> new LinkedHashMap<>());
             for (DsRecordRow row : rows) {
                 if (!touchedAxes.contains(row.axisValue)) continue;   // 别的组的行（BOM 树跨组）不在本次范围
@@ -180,10 +182,11 @@ public class DsQuoteRecordService {
                     mainTableReader.readGroups(sheet, byAxis.keySet(), customerNo);   // 1 条 SQL
             Map<String, ColumnDef> colDefs = colDefsOf(sheet);
             Set<String> matchCols = scopeColumnsBySheet.getOrDefault(se.getKey(), Set.of());
+            Set<String> grainCols = grainColumnsBySheet.getOrDefault(se.getKey(), Set.of());
 
             for (Map.Entry<String, List<DsRecordRow>> ae : byAxis.entrySet()) {
                 // 纯内存锚定（🚫 无查询）
-                DsRecordProjector.anchor(ae.getValue(), base.get(ae.getKey()), colDefs, matchCols);
+                DsRecordProjector.anchor(ae.getValue(), base.get(ae.getKey()), colDefs, matchCols, grainCols);
                 for (DsRecordRow row : ae.getValue()) if (row.originId == null) unanchored++;
                 totalRows += ae.getValue().size();
                 axisCount++;
