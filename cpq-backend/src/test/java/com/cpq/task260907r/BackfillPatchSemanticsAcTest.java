@@ -276,18 +276,32 @@ class BackfillPatchSemanticsAcTest extends Task260907RBase {
 
         // 三类动作的判据词 —— 各自都是「自己实现」才会出现的写法
         Map<String, List<String>> forbidden = new LinkedHashMap<>();
-        forbidden.put("自己算 row_fingerprint", List.of("row_fingerprint\\s*=", "sha256", "MessageDigest"));
+        // ⚠️ row_fingerprint 必须加词边界：_record 的列 `base_row_fingerprint`（存**基底行**的指纹，
+        //    是拷贝不是计算）含 `row_fingerprint=` 子串，不加边界必然假阳性。
+        //    🚫 version_no / versionNo **刻意不加**边界 —— `targetVersionNo + 1` 同样是「自己定版本号」，
+        //       加了边界反而会漏掉它（收窄判据时要逐条问「这个前缀变体该不该放过」，不能一把全加）。
+        forbidden.put("自己算 row_fingerprint",
+                List.of("(?<![A-Za-z0-9_])row_fingerprint\\s*=", "sha256", "MessageDigest"));
         forbidden.put("自己写 _history", List.of("INSERT\\s+INTO\\s+\\w*_history", "_history\\s*\\("));
         forbidden.put("自己定 version_no", List.of("version_no\\s*\\+\\s*1", "versionNo\\s*\\+\\s*1"));
 
         Map<String, List<String>> offenders = new LinkedHashMap<>();
         for (String f : newFiles) {
-            String body = readFile(f);
+            // 🚨 必须剥注释再扫：注释里出现这些词是**在描述行为**，不是在实现行为。
+            //    2026-09-08 实证：DsRecordProjector 的 Javadoc 写「base_row_fingerprint=NULL」
+            //    就把 AC-9 打红了一次，而该文件 sha256/MessageDigest/fingerprint( 全 0 命中。
+            String code = stripComments(readFile(f));
+            String[] lines = code.split("\n", -1);
             for (var e : forbidden.entrySet()) {
                 for (String pat : e.getValue()) {
-                    if (java.util.regex.Pattern.compile(pat).matcher(body).find()) {
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile(pat).matcher(code);
+                    if (m.find()) {
+                        // 🔑 带上行号与该行原文 —— 只报「文件+模式」时，判断「真违规还是判据过宽」
+                        //    还得人工再 grep 一次（本次就是这么浪费掉一轮的）。
+                        int ln = 1 + (int) code.substring(0, m.start()).chars().filter(c -> c == '\n').count();
+                        String txt = ln - 1 < lines.length ? lines[ln - 1].trim() : "";
                         offenders.computeIfAbsent(e.getKey(), k -> new java.util.ArrayList<>())
-                                .add(f + " 命中 /" + pat + "/");
+                                .add(f + ":" + ln + " 命中 /" + pat + "/ → " + txt);
                     }
                 }
             }
@@ -364,6 +378,59 @@ class BackfillPatchSemanticsAcTest extends Task260907RBase {
 
     private String shortId(Fx fx) {
         return fx.quotationId().toString().substring(0, 6);
+    }
+
+    /**
+     * 去掉 Java 注释（{@code //}、{@code /*…*\/}、Javadoc），<b>保留字符串与字符字面量</b>。
+     *
+     * <h3>为什么不能用「先 split 行再判断以 // 开头」这种简写</h3>
+     * 真正的违规（{@code "INSERT INTO x_history ("}）就活在<b>字符串字面量</b>里 ——
+     * 任何把字面量一起抹掉的剥法都会制造<b>假阴性</b>，而假阴性比假阳性坏得多：
+     * 假阳性你会去看，假阴性你以为它在守着。
+     *
+     * <p>🔑 注释里的换行原样保留，好让报出来的行号仍与源文件对得上。
+     * <p>📌 文本块 {@code """…"""} 单列一态：不单独处理的话，三个引号会被当成
+     * 「进串-出串-进串」，块内的 {@code //} 之后全被误判。
+     */
+    private static String stripComments(String src) {
+        StringBuilder out = new StringBuilder(src.length());
+        final int CODE = 0, LINE_C = 1, BLOCK_C = 2, STR = 3, CHR = 4, TEXT_BLOCK = 5;
+        int st = CODE, i = 0, n = src.length();
+        while (i < n) {
+            char c = src.charAt(i);
+            char d = i + 1 < n ? src.charAt(i + 1) : '\0';
+            if (st == CODE) {
+                if (c == '/' && d == '/') { st = LINE_C; i += 2; continue; }
+                if (c == '/' && d == '*') { st = BLOCK_C; i += 2; continue; }
+                if (c == '"' && d == '"' && i + 2 < n && src.charAt(i + 2) == '"') {
+                    st = TEXT_BLOCK; out.append("\"\"\""); i += 3; continue;
+                }
+                if (c == '"') { st = STR; out.append(c); i++; continue; }
+                if (c == '\'') { st = CHR; out.append(c); i++; continue; }
+                out.append(c); i++; continue;
+            }
+            if (st == LINE_C) {
+                if (c == '\n') { st = CODE; out.append(c); }
+                i++; continue;
+            }
+            if (st == BLOCK_C) {
+                if (c == '*' && d == '/') { st = CODE; i += 2; continue; }
+                if (c == '\n') out.append(c);      // 保住行号
+                i++; continue;
+            }
+            if (st == TEXT_BLOCK) {
+                if (c == '"' && d == '"' && i + 2 < n && src.charAt(i + 2) == '"') {
+                    st = CODE; out.append("\"\"\""); i += 3; continue;
+                }
+                out.append(c); i++; continue;
+            }
+            // STR / CHR：字面量原样保留，转义整体跳过
+            out.append(c);
+            if (c == '\\' && i + 1 < n) { out.append(d); i += 2; continue; }
+            if ((st == STR && c == '"') || (st == CHR && c == '\'')) st = CODE;
+            i++;
+        }
+        return out.toString();
     }
 
     private String readFile(String path) {
