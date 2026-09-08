@@ -1,0 +1,26 @@
+# D-45 端到端（QT-20260908-0615 / 0fa33239-bb50-4f0c-82ab-99490efd3e75）
+# 采集时刻 2026-09-08 03:33~03:35 -07:00，实例=本 worktree @QuarkusTest 随机端口（🚫 未碰 8099），HEAD=dc2a5a7f
+# 🚫 只跑 preview + 重算 _record，未执行 costing-approve
+
+## 非空守卫
+  树页签组：物料BOM snapshot_rows 14 行全带 __nodeId，其中 3 行为合成根行（SQL 实测，见 04）
+  元素BOM 组：_record 5 行、主表基底 FG01=3 / FG02=2，均非空
+
+## 投影侧：修复生效（3 条留痕，= FG01 两张卡 + FG02 一张卡）
+  2026-09-08 03:34:03.488 INFO  [com.cpq.quo.ser.dsr.DsRecordProjector] (main) [ds-record] component=f6d51727-bd1e-4cc3-a839-94208cc12f41 axis=T260907T-FG01 syntheticRootSkipped=1 nodeIds=[T260907T-FG01] —— 树页签合成根行（spine 根 = 成品本身，主表无对应边行），🚫 这不是数据丢失，是不该写进去的渲染构件
+  2026-09-08 03:34:03.490 INFO  [com.cpq.quo.ser.dsr.DsRecordProjector] (main) [ds-record] component=f6d51727-bd1e-4cc3-a839-94208cc12f41 axis=T260907T-FG01 syntheticRootSkipped=1 nodeIds=[T260907T-FG01] —— 树页签合成根行（spine 根 = 成品本身，主表无对应边行），🚫 这不是数据丢失，是不该写进去的渲染构件
+  2026-09-08 03:34:03.491 INFO  [com.cpq.quo.ser.dsr.DsRecordProjector] (main) [ds-record] component=f6d51727-bd1e-4cc3-a839-94208cc12f41 axis=T260907T-FG02 syntheticRootSkipped=1 nodeIds=[T260907T-FG02] —— 树页签合成根行（spine 根 = 成品本身，主表无对应边行），🚫 这不是数据丢失，是不该写进去的渲染构件
+
+## 元素BOM 组 base/result —— 前后逐字未变（契约③反向证据）
+  [BEFORE] ds_quote_element_bom     axis=T260907T-FG01    result=UNCHANGED  base=3 result=3 patched=0 untouched=3 unanchored=0
+  [BEFORE] ds_quote_element_bom     axis=T260907T-FG02    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+  [AFTER] ds_quote_element_bom     axis=T260907T-FG01    result=UNCHANGED  base=3 result=3 patched=0 untouched=3 unanchored=0
+  [AFTER] ds_quote_element_bom     axis=T260907T-FG02    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+
+## 物料BOM 组 —— 🔴 仍未达期望（见 03，D-45 残留）
+  [BEFORE] ds_quote_material_bom    axis=T260907T-FG01    result=UPGRADED   base=3 result=4 patched=0 untouched=3 unanchored=1
+  [BEFORE] ds_quote_material_bom    axis=T260907T-FG02    result=UPGRADED   base=2 result=3 patched=0 untouched=2 unanchored=1
+  [AFTER] ds_quote_material_bom    axis=T260907T-FG01    result=UPGRADED   base=3 result=4 patched=0 untouched=3 unanchored=1
+  [AFTER] ds_quote_material_bom    axis=T260907T-FG02    result=UPGRADED   base=2 result=3 patched=0 untouched=2 unanchored=1
+
+## 全 13 表 26 组 BEFORE vs AFTER diff：空（一个字节没变）
