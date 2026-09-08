@@ -451,7 +451,10 @@ class RecordWriteAcTest extends Task260907RBase {
         Fx fx = newFixtureForCustomer("AC4", owner);
         // 🔑 走**真实 UI 形状**（payload 不带 componentData，交服务端物化）——
         //    saveDraftAdded 那条路只落 row_data、不产生 snapshot_rows，闸① 必然拦下。
-        requireStatusBeforeDiff(saveDraftLineOnly(fx, mat), 200, "T-04 saveDraft（真实 UI 形状）");
+        // 🔑 必须用**冻结了含价格列视图**的那一版模板（实查 v1.2 才有；v1.0/v1.1 的冻结视图 13 列、无价格 JOIN）
+        java.util.UUID tpl = templateWithPricedElementView();
+        requireStatusBeforeDiff(saveDraftLineOnly(fx, mat, tpl), 200,
+                "T-04 saveDraft（真实 UI 形状，模板 " + tpl + "）");
 
         // ══ 闸① driver 确实物化了 ══
         long snapLen = count("SELECT coalesce(max(jsonb_array_length(cd.snapshot_rows)),0) "
@@ -692,6 +695,22 @@ class RecordWriteAcTest extends Task260907RBase {
         return e.toString();
     }
 
+    /**
+     * 取「其冻结视图含 {@code 元素单价} 列」的报价模板。
+     * 🚫 <b>不按 version 硬编 v1.2</b> —— 版本号是移动靶；按<b>能力</b>选：
+     * 冻结快照里该组件的视图定义含 {@code 元素单价} 就是它。
+     */
+    private java.util.UUID templateWithPricedElementView() {
+        Object id = scalar("SELECT id FROM template "
+                + "WHERE template_kind='QUOTATION' AND status='PUBLISHED' "
+                + "  AND (sql_views_snapshot->'" + COMP_ELEMENT_BOM + "::builder_196aadeeb89f')::text "
+                + "      LIKE '%元素单价%' "
+                + "ORDER BY version DESC LIMIT 1");
+        assertNotNull(id, "T-04 前置：找不到任何「冻结视图含元素单价列」的已发布报价模板 "
+                + "⇒ 换库/换配置后此前提要重验（实查仅 v1.2 满足，v1.0/v1.1 的冻结视图无该列）");
+        return java.util.UUID.fromString(id.toString());
+    }
+
     private String axis(String tag) {
         return PREFIX + tag + "-" + java.util.UUID.randomUUID().toString().substring(0, 6);
     }
@@ -822,12 +841,34 @@ class RecordWriteAcTest extends Task260907RBase {
     }
 
     private Response saveDraftLineOnly(Fx fx, String materialNo) {
+        return saveDraftLineOnly(fx, materialNo, DS_TEMPLATE_ID);
+    }
+
+    /**
+     * @param templateId 指定报价模板。
+     *
+     * <h3>🚨 为什么必须能指定，而不是一律用 {@code DS_TEMPLATE_ID}</h3>
+     * 视图定义是<b>按模板冻结</b>的（{@code template.sql_views_snapshot}），
+     * 同一个组件在不同模板版本里冻的是<b>不同的视图</b>：
+     * <pre>
+     *   v1.0 / v1.1 冻结的 builder_196aadeeb89f：13 列，**无** 元素单价 / 货币、**无** 价格 JOIN（1871 字符）
+     *   v1.2        冻结的 同一个视图：          15 列，**有** 上述两列与价格 JOIN（2250 字符）
+     * </pre>
+     * ⇒ 用 v1.0 建的单，driverRow 恒 13 键，{@code element_price} 必然取不到 ——
+     * <b>那是夹具选错了模板，不是取价坏了。</b>
+     *
+     * <p>🕰️ 我在这里栽过一次：先前查「冻结快照假设」时查的是 <b>v1.2</b>（有列），
+     * 据此判「快照不是分辨点」，却<b>没查我夹具真正在用的 v1.0</b>。
+     * 📌 教训与上一条同族：<b>维度选对了，对象选错了</b> —— 断言「X 解释不了差异」之前，
+     * 要确认查的 X 就是这次执行真正用到的那一个。
+     */
+    private Response saveDraftLineOnly(Fx fx, String materialNo, java.util.UUID templateId) {
         // 🔑 真实 UI 的 Step1 会选模板 ⇒ customerTemplateId 必须透传，
         //    否则服务端不知道该物化哪些组件，snapshotQuotation 建不出页签
         //    （实测：不传时组件数据 0 行，本条的前提守卫会正确地判成「夹具问题」）。
-        String body = "{\"baseVersion\":0,\"customerTemplateId\":\"" + DS_TEMPLATE_ID + "\",\"added\":[{"
+        String body = "{\"baseVersion\":0,\"customerTemplateId\":\"" + templateId + "\",\"added\":[{"
                 + "\"id\":null,\"tempId\":\"" + PREFIX + "ui1\","
-                + "\"templateId\":\"" + DS_TEMPLATE_ID + "\","
+                + "\"templateId\":\"" + templateId + "\","
                 + "\"sortOrder\":0,\"compositeType\":\"SIMPLE\","
                 + "\"productPartNo\":\"" + materialNo + "\","
                 + "\"productName\":\"" + PREFIX + "真实UI形状\",\"annualVolume\":1"
