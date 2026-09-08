@@ -553,10 +553,26 @@ class RecordWriteAcTest extends Task260907RBase {
     @DisplayName("T-12 · 价格调整后 _record.element_price 与 snapshot_rows 不分叉；SKIPPED 单两者同时不变")
     void t12_priceAdjustKeepsRecordAndSnapshotInSync() {
         requireRecordLayer();
-        String customerNo = PRICED_CUSTOMER;
+        // ══ 闸④（AC-12 专有，2026-09-08 加）：该客户的调价策略必须 enabled，
+        //    且本用例用的元素必须**在清单内**。
+        //    🔑 不加这道闸，升版作业会「返回 SUCCESS 但一行都不改」
+        //       （loadElementCodesInList 在策略未启用时返空集 ⇒ upgradeComponentRows 每行都 continue），
+        //       而 AC-12① 与 AC-12② **条条成立** ⇒ 又是一条什么都没验到的绿。
+        //    ⚠️ 它比前三道更隐蔽：前三道失败时数据明显缺，这一道失败时**作业返回 SUCCESS**。
+        //    📌 守卫①（价格必须真的变过）本来就会拦住它；闸④ 的价值是把**为什么没变**直接说出来 ——
+        //       守卫说「没变」，闸说「因为策略没启用/元素不在清单」。两者都要。
+        AdjustableTarget target = adjustableTarget();
+        String customerNo = target.customerNo();
+        String element = target.element();
         Object custId = scalar("SELECT id FROM customer WHERE code = '" + customerNo + "'");
-        assertNotNull(custId, "T-12 前置：找不到有价格策略的客户 " + customerNo);
-        String element = pricedElementOf(customerNo);
+        assertNotNull(custId, "T-12 前置：找不到客户 " + customerNo);
+        assertFixtureNonEmpty(count("SELECT count(*) FROM customer_price_adjust_strategy s "
+                        + "JOIN customer_price_adjust_element e ON e.strategy_id = s.id "
+                        + "WHERE s.customer_no = '" + customerNo + "' AND s.enabled = true "
+                        + "  AND e.element_code = '" + element + "'"),
+                "🚨 闸④：客户 " + customerNo + " 的调价策略必须 enabled=true 且元素 " + element
+                        + " 在 customer_price_adjust_element 清单内");
+        System.out.println("[T-12] 闸④ 通过：可调价目标 = (" + customerNo + ", " + element + ")");
         java.util.UUID tpl = templateWithPricedElementView();
         Fx owner = new Fx((java.util.UUID) custId, customerNo, null, null);
 
@@ -750,6 +766,38 @@ class RecordWriteAcTest extends Task260907RBase {
     }
 
     // ═══════════════════════ T-02 专用工具（ds 原生链路，2026-09-07 接实现）═══════════════════════
+
+    /** 「策略启用 + 该元素在清单内 + 该元素有价」三者同时成立的一组 (客户, 元素)。 */
+    protected record AdjustableTarget(String customerNo, String element) {}
+
+    /**
+     * 按<b>能力</b>选可调价的 (客户, 元素)，🚫 不硬编 {@code CUST-0002}/{@code Ag}。
+     *
+     * <h3>为什么必须是「能力」而不是名字</h3>
+     * 客户与元素清单都是<b>可变的业务配置</b>：今天 CUST-0002 有 Ag，明天可能被移出清单
+     * （代码注释里就有现网 Zn 被移出清单的实证）。写死名字 ⇒ 配置一动就假红，
+     * 而且红的是判据不是被测功能 —— 与 {@link #templateWithPricedElementView} 同一条规则。
+     *
+     * <p>🚫 <b>找不到时硬失败，绝不「顺手把某个客户的 enabled 改成 true」</b> ——
+     * 那是改别人的业务配置，比造几行数据严重得多。
+     */
+    private AdjustableTarget adjustableTarget() {
+        List<Object[]> rs = rows("SELECT s.customer_no, e.element_code "
+                + "FROM customer_price_adjust_strategy s "
+                + "JOIN customer_price_adjust_element e ON e.strategy_id = s.id "
+                + "WHERE s.enabled = true "
+                + "  AND EXISTS (SELECT 1 FROM f_customer_element_price(s.customer_no, CURRENT_DATE) f "
+                + "              WHERE f.element_code = e.element_code) "
+                + "ORDER BY s.customer_no, e.element_code LIMIT 1");
+        assertFalse(rs.isEmpty(),
+                "T-12 前置：找不到任何满足「调价策略 enabled=true ∧ 元素在 customer_price_adjust_element "
+                        + "清单内 ∧ 该元素在 f_customer_element_price 里有价」的 (客户, 元素)。\\n"
+                        + "  ⇒ 升版作业会「返回 SUCCESS 但改写 0 行」，AC-12 的两条断言会**条条成立**"
+                        + "（什么都没验到的全绿）。\\n"
+                        + "  🚫 不许为了跑通去改任何既有客户的 enabled 或往其清单里塞元素 —— 那是改别人的业务配置。"
+                        + "要么等配置具备，要么自建客户+策略+清单（自建的记得 @AfterEach 清）。");
+        return new AdjustableTarget(String.valueOf(rs.get(0)[0]), String.valueOf(rs.get(0)[1]));
+    }
 
     /** 实查配了元素价格策略的客户（laneb 全库仅 4 个）。🚫 不改它的任何价格数据。 */
     private static final String PRICED_CUSTOMER = "CUST-0001";
