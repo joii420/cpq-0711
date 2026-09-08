@@ -6,85 +6,77 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * <b>T-B9 · AC-16</b>（同料号跨客户，两行并存且各自独立）—— 后端侧证据。
+ * <b>T-B9 · AC-16②「后端层」</b>（同料号跨客户，两行并存且各自独立）—— 后端侧证据。
  *
- * <p>需求文档.md §③ AC-16：
- * ① 列表出现两行同料号；② 两行的 {@code rowKey} 不同（前端职责，本类验其后端前提：
- * 响应里 {@code (customerNo, axisValue)} 复合键必须唯一，前端才能据此构造不同的 rowKey；
- * 仍用 axisValue 单独当 key 会让 React 认为是同一行）；③ 分别点开两行的抽屉内容互不包含对方 ——
- * 已由 {@code Ac6DrawerCustomerScopeTest} 覆盖，此处不重复。
+ * <h3>🔄 2026-09-07 用户变更（D-8）：客户必选后拆两层验证</h3>
+ * 客户必选后列表永远单客户，「两行同屏」在 UI 上不再可见，因此不能再靠「所有客户」模式验证。
+ * 拆成两层：
+ * <ul>
+ *   <li><b>① UI 层</b>（E2E，见 T-F13）：壳页选 A → 看到该料号且客户列=A；切到 B → 仍看到该料号但
+ *       客户列=B，且两次的行内容不同（生产料号 A/B 各不相同）——证明看到的是各自的数据。</li>
+ *   <li><b>② 后端层</b>（本类）：直接调 {@code ?customerNo=A} 与 {@code ?customerNo=B}，
+ *       断言<b>两个客户的行都存在于库中、互不覆盖</b>。</li>
+ * </ul>
+ * 🔑 两层合起来才能证伪「静默删掉别人的行」——只验 UI 单客户可见，抓不住「B 的行其实已被 A 的导入删掉了」；
+ * 只验后端存在，抓不住「用户实际看不到自己的数据」。
  *
- * <p>🔑 <b>test.md X-2 证伪实验的关联点</b>：X-2 要求把前端 rowKey 改回 {@code axisValue} 后
- * {@code T-F13} 必须变红。本类在后端侧提供该证伪实验成立的<b>前提证据</b>——
- * 如果后端本身就没有把两行都返回（或返回时 customerNo 缺失/重复），
- * 前端 rowKey 改造再正确也测不出问题，因为数据源头就已经把两行合并成一行了。
+ * <p>🚨 {@code rowKey} 仍必须是 {@code `${customerNo}|${axisValue}`}——虽然单客户下不会同屏出现两行，
+ * 但切换客户时 React 复用行组件，key 不含客户号会导致切换后仍显示上一个客户的单元格值（前端 E2E 验证）。
+ * 本类只提供后端侧的前提证据：两行的 {@code (customerNo, axisValue)} 复合键在响应里各自可寻址、值不同。
  */
-@DisplayName("task-260907-产品管理客户过滤 · AC-16 同料号跨客户两行并存（后端证据）")
+@DisplayName("task-260907-产品管理客户过滤 · AC-16②后端层：两客户同料号行各自独立存在")
 @QuarkusTest
 class Ac16DuplicateMaterialTest extends PfTestBase {
 
     private static final String X = FX + "DUPX16";
+    private static final String PROD_A = FX + "PRODA16";
+    private static final String PROD_B = FX + "PRODB16";
 
     @BeforeEach
     void setUpFixture() {
         assumeMaterialUniqueIndexComposite("AC-16");
-        insertMaterialRow(X, CUST_A, FX + "PRODA16");
-        insertMaterialRow(X, CUST_B, FX + "PRODB16");
+        insertMaterialRow(X, CUST_A, PROD_A);
+        insertMaterialRow(X, CUST_B, PROD_B);
     }
 
     @Test
-    @DisplayName("AC-16①②：所有客户下同料号出现两行，(customerNo, axisValue) 复合键在响应里唯一")
-    void twoRowsWithDistinctCompositeKey() {
-        Response r = PfApi.parts(adminSession(), PfApi.QUOTE, null, 0, 500, X);
-        assertEquals(200, r.statusCode(), "body=" + r.asString());
-        List<Map<String, Object>> items = r.jsonPath().getList("data.items");
-        assertNotNull(items, "AC-16：响应缺 data.items");
-        assertFalse(items.isEmpty(), "AC-16：keyword=" + X + " 搜不到任何行 ⇒ 断言空跑");
+    @DisplayName("AC-16②：customerNo=A 与 customerNo=B 分别查询，同料号 X 在两侧都存在且各自的生产料号不同（互不覆盖）")
+    void bothCustomersRowsCoexistIndependently() {
+        Response ra = PfApi.parts(adminSession(), PfApi.QUOTE, CUST_A, 0, 50, X);
+        assertEquals(200, ra.statusCode(), "parts(A) body=" + ra.asString());
+        List<Map<String, Object>> itemsA = ra.jsonPath().getList("data.items");
+        assertNotNull(itemsA, "AC-16②：parts(A) 响应缺 data.items");
+        assertFalse(itemsA.isEmpty(), "AC-16②：customerNo=A 搜不到 " + X + " ⇒ 断言空跑（客户 A 的行应该存在）");
+        assertEquals(1, itemsA.size(), "AC-16②：customerNo=A 应恰好命中 1 行，实际=" + itemsA.size());
+        Map<String, Object> rowA = itemsA.get(0);
+        assertEquals(CUST_A, String.valueOf(rowA.get("customerNo")), "AC-16②：行=" + rowA);
+        assertEquals(PROD_A, String.valueOf(rowA.get("productionNo")),
+                "AC-16②🚨：客户 A 的生产料号被覆盖了，期望=" + PROD_A + " 实际=" + rowA.get("productionNo"));
 
-        List<Map<String, Object>> matching = items.stream()
-                .filter(it -> X.equals(String.valueOf(it.get("axisValue"))) || X.equals(String.valueOf(it.get("materialNo"))))
-                .toList();
-        System.out.println("[AC-16] 命中 " + matching.size() + " 行：" + matching);
-        assertEquals(2, matching.size(), "AC-16①：同料号 " + X + " 跨两客户应恰好出现两行，实际=" + matching.size());
+        Response rb = PfApi.parts(adminSession(), PfApi.QUOTE, CUST_B, 0, 50, X);
+        assertEquals(200, rb.statusCode(), "parts(B) body=" + rb.asString());
+        List<Map<String, Object>> itemsB = rb.jsonPath().getList("data.items");
+        assertNotNull(itemsB, "AC-16②：parts(B) 响应缺 data.items");
+        assertFalse(itemsB.isEmpty(), "AC-16②🚨：customerNo=B 搜不到 " + X + " ⇒ 客户 B 的行可能已被客户 A 的操作静默删除"
+                + "（这正是本条 AC 要防的失败形态）");
+        assertEquals(1, itemsB.size(), "AC-16②：customerNo=B 应恰好命中 1 行，实际=" + itemsB.size());
+        Map<String, Object> rowB = itemsB.get(0);
+        assertEquals(CUST_B, String.valueOf(rowB.get("customerNo")), "AC-16②：行=" + rowB);
+        assertEquals(PROD_B, String.valueOf(rowB.get("productionNo")),
+                "AC-16②🚨：客户 B 的生产料号被覆盖了，期望=" + PROD_B + " 实际=" + rowB.get("productionNo"));
 
-        Set<String> compositeKeys = new HashSet<>();
-        Set<String> customerNos = new HashSet<>();
-        for (Map<String, Object> it : matching) {
-            Object axis = it.containsKey("axisValue") ? it.get("axisValue") : it.get("materialNo");
-            Object cn = it.get("customerNo");
-            assertNotNull(cn, "AC-16②：某行缺 customerNo ⇒ 前端无法据此构造不同的 rowKey，行=" + it);
-            compositeKeys.add(cn + "|" + axis);
-            customerNos.add(String.valueOf(cn));
-        }
-        assertEquals(2, compositeKeys.size(), "AC-16②：两行的 (customerNo, axisValue) 复合键应各不相同，"
-                + "实际去重后只剩 " + compositeKeys.size() + " 个 —— 若为 1，说明两行被后端/序列化层合并成了一行"
-                + "（前端拿到的将只有一行数据，rowKey 改造再对也没用）");
-        assertEquals(Set.of(CUST_A, CUST_B), customerNos, "AC-16②：两行的 customerNo 应恰为 {"
-                + CUST_A + "," + CUST_B + "}，实际=" + customerNos);
-    }
-
-    @Test
-    @DisplayName("AC-16 阳性对照：单独按某一个客户过滤时应只剩一行（证明两行不是重复数据而是两个真实客户维度）")
-    void filteringByOneCustomerCollapsesToOneRow() {
-        Response r = PfApi.parts(adminSession(), PfApi.QUOTE, CUST_A, 0, 500, X);
-        assertEquals(200, r.statusCode());
-        List<Map<String, Object>> items = r.jsonPath().getList("data.items");
-        assertNotNull(items);
-        List<Map<String, Object>> matching = items.stream()
-                .filter(it -> X.equals(String.valueOf(it.get("axisValue"))) || X.equals(String.valueOf(it.get("materialNo"))))
-                .toList();
-        assertEquals(1, matching.size(), "AC-16 对照：按 customerNo=" + CUST_A + " 过滤后应只剩 1 行，实际=" + matching.size());
-        assertTrue(matching.get(0).get("customerNo").equals(CUST_A), "过滤后剩下的那一行 customerNo 应为 " + CUST_A);
+        // 两行内容必须不同——证明不是"同一行换了个客户标签"，而是两条独立数据
+        assertNotEquals(rowA.get("productionNo"), rowB.get("productionNo"),
+                "AC-16②：客户 A、B 的生产料号应不同，实际相同 —— 说明两行数据被合并/覆盖成了一份");
+        System.out.println("[AC-16②] ✅ 客户 A 行=" + rowA + "\n         客户 B 行=" + rowB);
     }
 }

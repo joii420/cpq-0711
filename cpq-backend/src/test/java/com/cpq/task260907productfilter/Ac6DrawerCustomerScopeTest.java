@@ -67,7 +67,7 @@ class Ac6DrawerCustomerScopeTest extends PfTestBase {
     @Test
     @DisplayName("AC-6①②强检查：物料 sheet 的 rows(customerNo=A) 只含 A 的行，不含 B 的行")
     void rowsScopedToRowCustomer() {
-        String sheetKey = resolveSheetKey(PfApi.QUOTE, "物料");
+        String sheetKey = resolveSheetKey(PfApi.QUOTE, "物料BOM");
 
         Response ra = PfApi.rows(adminSession(), PfApi.QUOTE, X, sheetKey, CUST_A, null);
         assertEquals(200, ra.statusCode(), "rows(A) body=" + ra.asString());

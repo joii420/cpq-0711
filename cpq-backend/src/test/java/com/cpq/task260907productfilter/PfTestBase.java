@@ -1,5 +1,6 @@
 package com.cpq.task260907productfilter;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
@@ -16,10 +17,14 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -283,6 +288,160 @@ public abstract class PfTestBase {
         System.out.println("[" + key + "] A(md5=" + am5 + ") vs B(md5=" + bm5 + ")");
         assertTrue(am5.equals(bm5), because + "：与 A 侧基线不逐字一致。\n  A(md5=" + am5 + "):\n" + baseline
                 + "\n  B(md5=" + bm5 + "):\n" + current);
+    }
+
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    /**
+     * 🚨 <b>D-12 判据</b>（AC-17 与 AC-5② 矛盾的裁决落地）：AC-17 真正要保的是<b>过滤行为没变</b>，
+     * 不是<b>字节没变</b> —— 换判据对象而不是打豁免补丁。
+     *
+     * <p>比对三件事：① {@code data.total} 与改动前完全一致；② 返回的行集合（{@code axisValue} 全集）
+     * 与改动前完全一致；③ 交集内每个 {@code axisValue}，剔除 {@code ignoredKeys} 后其余键值逐字未变。
+     * {@code ignoredKeys} 传本次契约新增的键（{@code customerNo}/{@code customerName}），它们不参与比对。
+     *
+     * <p>第一次调用（基线文件不存在）：捕获当前响应为基线并<b>让用例失败</b>——理由同
+     * {@link #assertByteIdenticalToBaseline}：捕获动作本身不构成一次真正的比较。
+     */
+    @SuppressWarnings("unchecked")
+    protected void assertPartsRowSetAndKeysUnchanged(String baselineKey, Response current, Set<String> ignoredKeys,
+                                                      String because) {
+        Map<String, Object> body;
+        try {
+            body = JSON.readValue(current.asString(), Map.class);
+        } catch (Exception e) {
+            throw new AssertionError(because + "：响应不是合法 JSON。body=" + current.asString(), e);
+        }
+        Map<String, Object> data = (Map<String, Object>) body.get("data");
+        assertNotNull(data, because + "：响应缺 data。body=" + current.asString());
+        Object totalObj = data.get("total");
+        List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("items");
+        assertNotNull(items, because + "：响应缺 data.items");
+        assertFalse(items.isEmpty(), because + "：data.items 为空 ⇒ 比对退化成空集比空集（假绿）");
+
+        Map<String, Map<String, Object>> byAxis = new LinkedHashMap<>();
+        for (Map<String, Object> it : items) {
+            Map<String, Object> stripped = new LinkedHashMap<>(it);
+            for (String k : ignoredKeys) {
+                stripped.remove(k);
+            }
+            byAxis.put(String.valueOf(it.get("axisValue")), stripped);
+        }
+
+        File f = new File(baselineDir(), baselineKey + ".json");
+        if (!f.isFile()) {
+            Map<String, Object> baseline = new LinkedHashMap<>();
+            baseline.put("total", totalObj);
+            baseline.put("itemsByAxis", byAxis);
+            try {
+                JSON.writerWithDefaultPrettyPrinter().writeValue(f, baseline);
+            } catch (IOException e) {
+                throw new AssertionError(because + "：写基线文件失败 " + f, e);
+            }
+            throw new AssertionError(because + "：基线文件不存在，本次调用已将当前响应（剔除 " + ignoredKeys
+                    + " 后）捕获为 A 侧基线 → " + f
+                    + "\n🚨 这不构成「验证通过」——请确认这份基线确实采于『本任务改动之前』后，重新执行本用例做真正比对。");
+        }
+
+        Map<String, Object> baseline;
+        try {
+            baseline = JSON.readValue(f, Map.class);
+        } catch (IOException e) {
+            throw new AssertionError(because + "：读基线文件失败 " + f, e);
+        }
+        Object baseTotal = baseline.get("total");
+        Map<String, Map<String, Object>> baseByAxis = (Map<String, Map<String, Object>>) baseline.get("itemsByAxis");
+        assertNotNull(baseByAxis, because + "：基线文件格式异常，缺 itemsByAxis。文件=" + f);
+        assertFalse(baseByAxis.isEmpty(), because + "：基线 itemsByAxis 为空 ⇒ 比对是假绿。文件=" + f);
+
+        assertEquals(String.valueOf(baseTotal), String.valueOf(totalObj),
+                because + "：D-12① total 不一致，基线=" + baseTotal + " 当前=" + totalObj);
+
+        Set<String> baseAxes = baseByAxis.keySet();
+        Set<String> nowAxes = byAxis.keySet();
+        assertEquals(baseAxes, nowAxes, because + "：D-12① 行集合(axisValue)不一致。\n  基线=" + baseAxes
+                + "\n  当前=" + nowAxes);
+
+        List<String> diffs = new ArrayList<>();
+        for (String axis : baseAxes) {
+            Map<String, Object> b = baseByAxis.get(axis);
+            Map<String, Object> n = byAxis.get(axis);
+            if (!Objects.equals(b, n)) {
+                diffs.add(axis + ":\n    基线=" + b + "\n    当前=" + n);
+            }
+        }
+        assertTrue(diffs.isEmpty(), because + "：D-12② 存量键值发生了变化（新增键 " + ignoredKeys + " 已排除在比对之外）：\n"
+                + String.join("\n", diffs));
+    }
+
+    /**
+     * 🚨 <b>通用 JSON 响应比对（剔除易变字段）</b>——与 D-12 同一类判据修正手法，用在响应体
+     * 天然含服务端时间戳等字段的场景（如 {@code updatedAt}/{@code lastUpdatedAt}）：
+     * 这些字段<b>每次调用都会不同</b>，与「过滤行为有没有变」无关，若不剔除会把
+     * 「这条用例本身在写数据」误判成「响应变了」。
+     * <p>实证（2026-09-08）：{@code Ac17BackwardCompatTest} 的 PUT 用例把 {@code updatedAt} 计入了
+     * 逐字比对，同一份夹具两次真实调用因为时间戳不同而必然报"不一致"——这本身就是
+     * 「把某一时刻的快照当判据」的同一类错误，只是換了个字段而非換了个 AC。
+     * <p>剔除是<b>递归</b>的（任意层级、key 名匹配即删），首次调用捕获基线并强制失败，规则同
+     * {@link #assertByteIdenticalToBaseline}。
+     */
+    @SuppressWarnings("unchecked")
+    protected void assertJsonUnchangedIgnoringKeys(String baselineKey, String currentRawJson, Set<String> ignoredKeys,
+                                                    String because) {
+        assertFalse(currentRawJson == null || currentRawJson.isBlank(), because + "：当前响应为空 ⇒ 比对无意义");
+        Object current;
+        try {
+            current = JSON.readValue(currentRawJson, Object.class);
+        } catch (Exception e) {
+            throw new AssertionError(because + "：响应不是合法 JSON。body=" + currentRawJson, e);
+        }
+        Object strippedCurrent = stripKeysDeep(current, ignoredKeys);
+
+        File f = new File(baselineDir(), baselineKey + ".json");
+        if (!f.isFile()) {
+            try {
+                JSON.writerWithDefaultPrettyPrinter().writeValue(f, strippedCurrent);
+            } catch (IOException e) {
+                throw new AssertionError(because + "：写基线文件失败 " + f, e);
+            }
+            throw new AssertionError(because + "：基线文件不存在，本次调用已将响应（剔除 " + ignoredKeys
+                    + " 后）捕获为 A 侧基线 → " + f
+                    + "\n🚨 这不构成「验证通过」——请重新执行本用例做真正比对。");
+        }
+        Object baseline;
+        try {
+            baseline = JSON.readValue(f, Object.class);
+        } catch (IOException e) {
+            throw new AssertionError(because + "：读基线文件失败 " + f, e);
+        }
+        System.out.println("[" + baselineKey + "] 基线(剔除" + ignoredKeys + ")=" + baseline);
+        System.out.println("[" + baselineKey + "] 当前(剔除" + ignoredKeys + ")=" + strippedCurrent);
+        assertEquals(baseline, strippedCurrent, because + "：剔除 " + ignoredKeys + " 后与 A 侧基线不一致。\n  基线="
+                + baseline + "\n  当前=" + strippedCurrent);
+    }
+
+    /** 递归剔除任意层级里 key 名命中 {@code keys} 的条目，用于 {@link #assertJsonUnchangedIgnoringKeys}。 */
+    @SuppressWarnings("unchecked")
+    private static Object stripKeysDeep(Object node, Set<String> keys) {
+        if (node instanceof Map) {
+            Map<String, Object> out = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> e : ((Map<?, ?>) node).entrySet()) {
+                String k = String.valueOf(e.getKey());
+                if (keys.contains(k)) {
+                    continue;
+                }
+                out.put(k, stripKeysDeep(e.getValue(), keys));
+            }
+            return out;
+        }
+        if (node instanceof List) {
+            List<Object> out = new ArrayList<>();
+            for (Object o : (List<?>) node) {
+                out.add(stripKeysDeep(o, keys));
+            }
+            return out;
+        }
+        return node;
     }
 
     /** 从 GET /sheets 拿 sheetName → sheetKey（不猜实现里的枚举名，沿用 task260902 的既有手法）。 */

@@ -179,7 +179,5 @@ export async function selectCustomer(page: Page, labelOrCode: string) {
   await page.waitForTimeout(800);
 }
 
-/** 选回「所有客户」。 */
-export async function selectAllCustomers(page: Page) {
-  await selectCustomer(page, '所有客户');
-}
+// 🔄 2026-09-07 D-7：客户改为必选，UI 上取消「所有客户」选项 —— `selectAllCustomers` 已随之废弃并移除。
+// 需要"当前客户全量"语义的用例改用 `selectCustomer(page, <某个具体客户号>)`。

@@ -23,7 +23,7 @@ import {
   FX, CUST_A, CUST_B, CUST_UNREG_1, CUST_ABSENT,
   sql, sqlOne, materialHasCustomerNo, materialUniqueIndexIsComposite,
   insertMaterialRow, cleanupMaterialRow,
-  shot, evidence, customerSelector, customerSelectorText, selectCustomer, selectAllCustomers,
+  shot, evidence, customerSelector, customerSelectorText, selectCustomer,
 } from './task260907-pf.helpers';
 
 test.beforeAll(() => {
@@ -34,7 +34,19 @@ test.describe('task-260907 产品管理客户过滤', () => {
 
   // ═══════════════════ T-F1 · AC-1 壳页客户选择器就位 ═══════════════════
 
-  test('T-F1/AC-1：壳页标题行右侧出现客户选择器，默认「所有客户」；两个页签不再各自持有下拉', async ({ page }) => {
+  test('T-F1/AC-1（D-7）：壳页客户选择器就位，默认选中候选第一个客户，下拉里不存在「所有客户」', async ({ page }) => {
+    // D-7：默认值 = 候选列表第一个客户（不是「所有客户」——该选项已被取消）。
+    // 🚨 不猜第一个客户是谁，实测拿：先打接口拿候选顺序（后端排序：registered 升序在前、
+    // unregistered 升序置尾），第一项即默认值。test.md §0 已知第一个候选当前是 8000137（0 行数据）。
+    const api = await apiAs('SYSTEM_ADMIN');
+    const candRes = await api.get('/api/cpq/dataset/quote/customers');
+    expect(candRes.ok(), '候选接口应 200').toBeTruthy();
+    const candBody = await candRes.json();
+    const candItems: Array<{ customerNo: string }> = candBody?.data?.items ?? [];
+    expect(candItems.length, 'AC-1 前置：候选为空 ⇒ 无法确定默认值').toBeGreaterThan(0);
+    const firstCandidate = candItems[0].customerNo;
+    console.log('[AC-1] 候选第一项(默认应选中)=', firstCandidate);
+
     await loginAs(page, 'SYSTEM_ADMIN');
     await gotoProductHub(page);
 
@@ -42,13 +54,20 @@ test.describe('task-260907 产品管理客户过滤', () => {
     await expect(sel, 'AC-1①：壳页应有客户选择器（带「客户」addon）').toBeVisible({ timeout: 10_000 });
     const text = await customerSelectorText(page);
     console.log('[AC-1] 选择器默认文案=', text);
-    expect(text, 'AC-1①：默认值应为「所有客户」').toMatch(/所有客户/);
-    await shot(page, 'AC-01-壳页选择器');
+    expect(text, 'AC-1②：默认值应为候选第一个客户 ' + firstCandidate).toContain(firstCandidate);
+    await shot(page, 'AC-01-壳页选择器默认第一个客户');
 
-    // AC-1②：两个页签各自内部不再有独立客户下拉 —— 壳页的那一个是唯一的 combobox
+    // AC-1②🚫：下拉里不应再有「所有客户」这个选项（客户必选，D-7）
+    await sel.click();
+    await page.waitForTimeout(400);
+    const allCustomersOption = page.locator('.ant-select-item-option', { hasText: '所有客户' });
+    await expect(allCustomersOption, 'AC-1②🚫：下拉不应再有「所有客户」选项——客户已改为必选').toHaveCount(0);
+    await page.keyboard.press('Escape');
+
+    // AC-1③：两个页签各自内部不再有独立客户下拉 —— 壳页的那一个是唯一的 combobox
     await switchTab(page, '客户产品');
     const combosInCustomerTab = await page.getByRole('combobox').count();
-    console.log('[AC-1②] 客户产品页签下 combobox 总数（含壳页那个）=', combosInCustomerTab);
+    console.log('[AC-1③] 客户产品页签下 combobox 总数（含壳页那个）=', combosInCustomerTab);
     // 若页签内部还留了一个独立下拉，combobox 数至少应为 2（壳页 1 + 页签内 1）
     // 这里只做弱断言：不追求精确基数，避免与页面里其它无关 combobox 产生假红，
     // 但记录数字供人工核对（<=1 视为"看起来只有壳页那一个"）。
@@ -146,25 +165,33 @@ test.describe('task-260907 产品管理客户过滤', () => {
     await shot(page, 'AC-04-客户产品同上下文过滤');
   });
 
-  // ═══════════════════ T-F5 · AC-5 所有客户=全量+客户列 ═══════════════════
+  // ═══════════════════ T-F5 · AC-5（D-7 改版）列表恒等于当前客户全集 + 客户列仍在 ═══════════════════
 
-  test('T-F5/AC-5：所有客户模式下，销售产品列表总数=count(*)，含客户编号/名称两列，夹具两行都出现', async ({ page }) => {
+  test('T-F5/AC-5（D-7）：选中客户 A 后，销售产品列表总数=count(*) WHERE customer_no=A，含客户两列，'
+    + '不出现客户 B 的同料号行', async ({ page }) => {
     test.skip(!materialHasCustomerNo() || !materialUniqueIndexIsComposite(),
       'AC-5：外部依赖尚未落地');
     const X = FX + 'E2EDUPX5';
     insertMaterialRow(X, CUST_A, FX + 'PRODA-E2E5');
     insertMaterialRow(X, CUST_B, FX + 'PRODB-E2E5');
     try {
-      const dbTotal = Number(sqlOne('SELECT count(*) FROM ds_quote_material'));
+      const dbForA = Number(sqlOne(`SELECT count(*) FROM ds_quote_material WHERE customer_no = '${CUST_A}'`));
+      const dbFull = Number(sqlOne('SELECT count(*) FROM ds_quote_material'));
+      console.log('[AC-5① 前置] 库(customer_no=A)=', dbForA, ' 库(全量)=', dbFull);
+      expect(dbForA, 'AC-5① 前置：客户 A 的行数不应等于全量，否则判据无判别力').toBeLessThan(dbFull);
+
       await loginAs(page, 'SYSTEM_ADMIN');
       await gotoProductHub(page);
-      await selectAllCustomers(page);
+      // 🚨 test.md §0 第二个空跑形态：默认客户(候选第一个)大概率 0 行数据 —— 必须显式切到自己的夹具客户
+      await selectCustomer(page, CUST_A);
       await switchTab(page, '销售产品');
       await page.waitForTimeout(800);
 
       const uiTotal = await totalCount(page);
-      console.log('[AC-5①] UI total=', uiTotal, ' 库 count(*)=', dbTotal);
-      expect(uiTotal, 'AC-5①：所有客户模式下总数应恒等于 count(*)').toBe(dbTotal);
+      console.log('[AC-5①] UI total=', uiTotal, ' 库(customer_no=A)=', dbForA);
+      // 断言前先断言非空——test.md §0 强制对策②
+      expect(uiTotal, 'AC-5① 前置：total 不应为 0/null ⇒ 断言会在空列表上空跑').not.toBeNull();
+      expect(uiTotal, 'AC-5①：总数应恒等于 count(*) WHERE customer_no=A（不是全量）').toBe(dbForA);
 
       const headers = await headerTexts(page);
       console.log('[AC-5②] 表头=', headers);
@@ -172,10 +199,16 @@ test.describe('task-260907 产品管理客户过滤', () => {
       expect(headers.some(h => h.includes('客户名称'))).toBeTruthy();
 
       await search(page, X);
+      const rows = page.locator('.ant-table-tbody tr.ant-table-row');
+      await expect(rows, 'AC-5③：搜到的行不应为空 ⇒ 断言空跑').not.toHaveCount(0);
       const n = await rowCount(page);
       console.log('[AC-5③] keyword=', X, ' 命中行数=', n);
-      expect(n, 'AC-5③：同料号跨两客户应出现两行').toBe(2);
-      await shot(page, 'AC-05-所有客户全量含客户列');
+      expect(n, 'AC-5③：选中客户 A 时，同料号只应出现【客户 A 自己的那一行】，不是两行同屏').toBe(1);
+      const custCell = await cellByHeader(page, rows.first(), '客户编号');
+      await expect(custCell, 'AC-5③：唯一那行的客户编号应为 A').toContainText(CUST_A);
+      const bodyText = await page.locator('.ant-table-tbody').innerText();
+      expect(bodyText, 'AC-5③🚨：不应出现客户 B 的编号').not.toContain(CUST_B);
+      await shot(page, 'AC-05-当前客户全集含客户列');
       await clearSearch(page);
     } finally {
       cleanupMaterialRow(X, CUST_A);
@@ -183,7 +216,7 @@ test.describe('task-260907 产品管理客户过滤', () => {
     }
   });
 
-  test('T-F5/AC-5④：未建档客户所在行的客户名称列显示「—」而不是空白', async ({ page }) => {
+  test('T-F5/AC-5④：选中未建档客户时，其行的客户名称列显示「—」而不是空白', async ({ page }) => {
     test.skip(!materialHasCustomerNo(), 'AC-5④：外部依赖尚未落地');
     const X = FX + 'E2EUNREG5';
     const unregCust = FX + 'UNREGC5E2E';
@@ -191,10 +224,16 @@ test.describe('task-260907 产品管理客户过滤', () => {
     try {
       await loginAs(page, 'SYSTEM_ADMIN');
       await gotoProductHub(page);
-      await selectAllCustomers(page);
+      // unregCust 是自造的、候选接口原本不认识的客户号 —— 通过 URL/localStorage 直接指定当前客户上下文，
+      // 而不是尝试从下拉里搜它（它本来就不在候选并集里，因为夹具是本用例临时插入的，未经候选端点重新聚合）。
+      await page.evaluate((v) => localStorage.setItem('productHub.customerNo', v), unregCust);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await gotoProductHub(page);
       await switchTab(page, '销售产品');
       await search(page, X);
-      const row = page.locator('.ant-table-tbody tr.ant-table-row').first();
+      const rows = page.locator('.ant-table-tbody tr.ant-table-row');
+      await expect(rows, 'AC-5④ 前置：应搜到夹具行 ⇒ 断言空跑').not.toHaveCount(0);
+      const row = rows.first();
       const nameCell = await cellByHeader(page, row, '客户名称');
       const text = (await nameCell.innerText()).trim();
       console.log('[AC-5④] 未建档客户所在行客户名称列文案=', JSON.stringify(text));
@@ -204,9 +243,9 @@ test.describe('task-260907 产品管理客户过滤', () => {
     }
   });
 
-  // ═══════════════════ T-F6 · AC-6 抽屉按行客户取数 ═══════════════════
+  // ═══════════════════ T-F6 · AC-6（D-10）抽屉的客户上下文 = 壳页所选客户 ═══════════════════
 
-  test('T-F6/AC-6：所有客户模式下点开某一行抽屉，只显示该行客户的数据，标题带客户标签', async ({ page }) => {
+  test('T-F6/AC-6（D-10）：选中客户 A 后点开该料号的抽屉，抽屉内容 = 壳页所选客户(A)的数据，不含客户 B 的行', async ({ page }) => {
     test.skip(!materialHasCustomerNo() || !materialUniqueIndexIsComposite(),
       'AC-6：外部依赖尚未落地');
     const X = FX + 'E2EDUPX6';
@@ -215,27 +254,26 @@ test.describe('task-260907 产品管理客户过滤', () => {
     try {
       await loginAs(page, 'SYSTEM_ADMIN');
       await gotoProductHub(page);
-      await selectAllCustomers(page);
+      // D-10：抽屉上下文 = 壳页所选客户（不是行携带的值）—— 显式选 A，不依赖默认值
+      await selectCustomer(page, CUST_A);
       await switchTab(page, '销售产品');
       await search(page, X);
       const rows = page.locator('.ant-table-tbody tr.ant-table-row');
-      await expect(rows).toHaveCount(2, { timeout: 10_000 });
+      await expect(rows, 'AC-6 前置：客户必选后应只看到客户 A 自己的这一行 ⇒ 断言空跑').not.toHaveCount(0);
+      await expect(rows).toHaveCount(1, { timeout: 10_000 });
 
-      // 点第一行（应携带其自身的 customerNo，而不是壳页当前的「所有客户」空值）
       const firstRow = rows.first();
       const custCellA = await cellByHeader(page, firstRow, '客户编号');
-      const rowCustomer = (await custCellA.innerText()).trim();
-      console.log('[AC-6] 点开第一行，该行 customerNo=', rowCustomer);
+      await expect(custCellA, 'AC-6 前置：唯一可见行应属于客户 A').toContainText(CUST_A);
       await firstRow.click();
       const drawer = page.locator('.ant-drawer').first();
       await expect(drawer, 'AC-6：点行应滑出抽屉').toBeVisible({ timeout: 10_000 });
       await page.waitForTimeout(1200);
 
       const drawerText = await drawer.innerText();
-      expect(drawerText, 'AC-6④：抽屉标题/正文应带客户标识').toContain(rowCustomer);
-      const otherCustomer = rowCustomer === CUST_A ? CUST_B : CUST_A;
-      expect(drawerText, `AC-6②：抽屉内不应出现另一个客户号 ${otherCustomer}`).not.toContain(otherCustomer);
-      await shot(page, 'AC-06-抽屉按行客户取数');
+      expect(drawerText, 'AC-6④：抽屉标题/正文应带客户 A 的标识').toContain(CUST_A);
+      expect(drawerText, 'AC-6②：抽屉内不应出现客户 B 的编号').not.toContain(CUST_B);
+      await shot(page, 'AC-06-抽屉客户上下文取自壳页');
       await closeDrawer(page);
     } finally {
       cleanupMaterialRow(X, CUST_A);
@@ -309,9 +347,20 @@ test.describe('task-260907 产品管理客户过滤', () => {
     await shot(page, 'AC-10-刷新后');
   });
 
-  // ═══════════════════ T-F9 · AC-12 记忆失效降级（边界） ═══════════════════
+  // ═══════════════════ T-F9 · AC-12（D-7 改版）记忆失效降级 → 候选第一个客户 ═══════════════════
 
-  test('T-F9/AC-12：localStorage 里的客户号不在候选中时，静默降级为所有客户，无 console error', async ({ page }) => {
+  test('T-F9/AC-12（D-7）：localStorage 里的客户号不在候选中时，静默降级为候选第一个客户（不是「所有客户」），'
+    + '无 console error', async ({ page }) => {
+    // D-7：降级目标 = 候选列表第一个客户；该客户可能本身没数据 ⇒ 走 AC-13 空态，这是预期链路，不是失败。
+    const api = await apiAs('SYSTEM_ADMIN');
+    const candRes = await api.get('/api/cpq/dataset/quote/customers');
+    expect(candRes.ok(), '候选接口应 200').toBeTruthy();
+    const candBody = await candRes.json();
+    const candItems: Array<{ customerNo: string }> = candBody?.data?.items ?? [];
+    expect(candItems.length, 'AC-12 前置：候选为空 ⇒ 无法确定降级目标').toBeGreaterThan(0);
+    const firstCandidate = candItems[0].customerNo;
+    console.log('[AC-12] 候选第一项(降级目标)=', firstCandidate);
+
     const errs = collectConsoleErrors(page);
     await loginAs(page, 'SYSTEM_ADMIN');
     await gotoProductHub(page);
@@ -323,7 +372,8 @@ test.describe('task-260907 产品管理客户过滤', () => {
 
     const text = await customerSelectorText(page);
     console.log('[AC-12] 降级后选择器文案=', text);
-    expect(text, 'AC-12①：应回落到「所有客户」').toMatch(/所有客户/);
+    expect(text, 'AC-12①：应回落到候选第一个客户 ' + firstCandidate + '（不是「所有客户」——该选项已不存在）')
+      .toContain(firstCandidate);
 
     const redOverlay = await page.locator('#vite-error-overlay, [data-plugin-id]').count();
     expect(redOverlay, 'AC-12④：不应出现红色遮罩').toBe(0);
@@ -333,8 +383,8 @@ test.describe('task-260907 产品管理客户过滤', () => {
 
     const ls = await page.evaluate(() => localStorage.getItem('productHub.customerNo'));
     console.log('[AC-12] 降级后 localStorage=', ls);
-    expect(ls, 'AC-12：失效的记忆应被清掉').not.toBe(CUST_ABSENT);
-    await shot(page, 'AC-12-记忆失效降级');
+    expect(ls, 'AC-12：失效的记忆应被清掉（不再是那个候选中不存在的值）').not.toBe(CUST_ABSENT);
+    await shot(page, 'AC-12-记忆失效降级到候选第一个');
   });
 
   // ═══════════════════ T-F10 · AC-13 无数据客户空态（边界） ═══════════════════
@@ -412,36 +462,62 @@ test.describe('task-260907 产品管理客户过滤', () => {
     await shot(page, 'AC-15-极值不撑破布局');
   });
 
-  // ═══════════════════ T-F13 · AC-16 同料号跨客户两行独立（rowKey） ═══════════════════
+  // ═══════════════════ T-F13 · AC-16（D-8 改版）UI 层：切客户各自看到自己那行且内容不同 ═══════════════════
 
-  test('T-F13/AC-16：同料号跨客户两行渲染独立，勾选一行不会连带勾中另一行（rowKey 正确性的行为证据）', async ({ page }) => {
+  test('T-F13/AC-16①UI层（D-8）：选客户 A 看到该料号且客户列=A；切到 B 仍看到该料号但客户列=B，'
+    + '且两次的行内容不同（证明不是同一行换了个标签，rowKey 切换时未复用出脏值）', async ({ page }) => {
     test.skip(!materialHasCustomerNo() || !materialUniqueIndexIsComposite(), 'AC-16：外部依赖尚未落地');
     const X = FX + 'E2EDUPX16';
-    insertMaterialRow(X, CUST_A, FX + 'PRODA-E2E16');
-    insertMaterialRow(X, CUST_B, FX + 'PRODB-E2E16');
+    const PROD_A = FX + 'PRODA-E2E16';
+    const PROD_B = FX + 'PRODB-E2E16';
+    insertMaterialRow(X, CUST_A, PROD_A);
+    insertMaterialRow(X, CUST_B, PROD_B);
     try {
       await loginAs(page, 'SYSTEM_ADMIN');
       await gotoProductHub(page);
-      await selectAllCustomers(page);
       await switchTab(page, '销售产品');
-      await search(page, X);
-      const rows = page.locator('.ant-table-tbody tr.ant-table-row');
-      await expect(rows, 'AC-16①：同料号应出现两行').toHaveCount(2, { timeout: 10_000 });
-      await shot(page, 'AC-16-两行并存');
 
-      // 🚨 rowKey 正确性证据：勾选第一行的复选框，第二行不应被连带勾中
-      const cb0 = rows.nth(0).locator('input[type="checkbox"]');
-      const cb1 = rows.nth(1).locator('input[type="checkbox"]');
-      if (await cb0.count()) {
-        await cb0.check();
-        await page.waitForTimeout(300);
-        const cb1Checked = await cb1.isChecked().catch(() => false);
-        console.log('[AC-16②] 勾选第一行后，第二行 checked=', cb1Checked);
-        expect(cb1Checked, 'AC-16②：勾选一行不应连带勾中同料号的另一行（rowKey 若仍用 axisValue 会误判成同一行）')
-          .toBe(false);
-      } else {
-        console.log('[AC-16②] 列表未渲染复选框（工具栏可能不支持批量操作），本条弱验证跳过');
-      }
+      // ① 选客户 A
+      await selectCustomer(page, CUST_A);
+      await search(page, X);
+      let rows = page.locator('.ant-table-tbody tr.ant-table-row');
+      await expect(rows, 'AC-16①前置：客户 A 应能搜到该料号 ⇒ 断言空跑').not.toHaveCount(0);
+      await expect(rows).toHaveCount(1, { timeout: 10_000 });
+      let custCell = await cellByHeader(page, rows.first(), '客户编号');
+      await expect(custCell, 'AC-16①：客户 A 视角下客户列应显示 A').toContainText(CUST_A);
+      let prodCellA = await cellByHeader(page, rows.first(), '生产料号');
+      const prodTextA = (await prodCellA.innerText()).trim();
+      console.log('[AC-16①] 客户 A 视角：生产料号=', prodTextA);
+      await shot(page, 'AC-16-客户A视角');
+
+      // ② 切到客户 B（同一料号，同一次 search 关键字）—— 🚨 rowKey 若未含 customerNo，
+      //    这里最容易出现"React 复用了行组件、单元格值还是上一个客户的"这种脏渲染
+      await selectCustomer(page, CUST_B);
+      await search(page, X);
+      rows = page.locator('.ant-table-tbody tr.ant-table-row');
+      await expect(rows, 'AC-16①：切到客户 B 后应仍能看到该料号（不是被"删掉"了）⇒ 断言空跑').not.toHaveCount(0);
+      await expect(rows).toHaveCount(1, { timeout: 10_000 });
+      custCell = await cellByHeader(page, rows.first(), '客户编号');
+      await expect(custCell, 'AC-16①：客户 B 视角下客户列应显示 B（不应仍显示 A）').toContainText(CUST_B);
+      const prodCellB = await cellByHeader(page, rows.first(), '生产料号');
+      const prodTextB = (await prodCellB.innerText()).trim();
+      console.log('[AC-16①] 客户 B 视角：生产料号=', prodTextB);
+      await shot(page, 'AC-16-客户B视角');
+
+      // 🔑 两次内容必须不同 —— 证明看到的是各自的数据，不是同一行换了个客户标签渲染
+      expect(prodTextB, 'AC-16①🚨：客户 A、B 视角下的生产料号应不同，实际相同 —— 说明行内容没有随客户切换真正刷新'
+        + '（rowKey 未含 customerNo 导致 React 复用了上一个客户的单元格值）').not.toBe(prodTextA);
+      expect(prodTextA).toContain(PROD_A.slice(-6));
+      expect(prodTextB).toContain(PROD_B.slice(-6));
+
+      // ③ 切回 A，验证数据仍完整（不是被 B 的查看动作意外改写）
+      await selectCustomer(page, CUST_A);
+      await search(page, X);
+      rows = page.locator('.ant-table-tbody tr.ant-table-row');
+      await expect(rows).toHaveCount(1, { timeout: 10_000 });
+      const prodCellA2 = await cellByHeader(page, rows.first(), '生产料号');
+      const prodTextA2 = (await prodCellA2.innerText()).trim();
+      expect(prodTextA2, 'AC-16①：切回客户 A 后生产料号应与第一次一致').toBe(prodTextA);
     } finally {
       cleanupMaterialRow(X, CUST_A);
       cleanupMaterialRow(X, CUST_B);
