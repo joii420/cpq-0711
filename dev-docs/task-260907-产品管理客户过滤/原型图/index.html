@@ -33,6 +33,15 @@
     此刻的视觉标准，<b>照这几张做</b>。
   </p>
 
+  <div class="alert info" style="margin-top:16px">
+    <span>🔄</span>
+    <span>
+      <b>2026-09-07 第二轮用户变更已并入本组（<code>D-7</code>~<code>D-12</code>）</b> —— 客户由「可不选（所有客户）」改为
+      <b>必选</b>，默认选中<b>候选列表第一个客户</b>；抽屉内容取自<b>壳页所选客户</b>；<code>AC-16</code> 拆成 UI + 后端两层验证。
+      <br>⚠️ 已知后果（用户知情裁决）：候选第一个是 <code>8000137</code>（0 行数据）⇒ <b>首次进入会看到空列表</b>，见图 01 的 A 屏。
+    </span>
+  </div>
+
   <div class="alert warn" style="margin-top:16px">
     <span>⚠️</span>
     <span>
@@ -61,9 +70,9 @@
         <span class="tag blue">AC-2</span><span class="tag blue">AC-14</span></div>
     </a>
 
-    <a class="idx-card" href="03-销售产品-所有客户.html">
-      <div class="t">03 · 销售产品「所有客户」态 <span class="tag warn">关键</span></div>
-      <div class="d">行语义变更为「客户 × 料号」；新增客户两列；同料号跨客户两行并存；<code>rowKey</code> 改造</div>
+    <a class="idx-card" href="03-销售产品-当前客户.html">
+      <div class="t">03 · 销售产品「当前客户」态 <span class="tag warn">关键</span></div>
+      <div class="d">行语义仍是「客户 × 料号」，但客户必选 ⇒ 列表恒单客户；新增客户两列；<code>rowKey</code> 仍须含客户号（切客户时 React 会复用行组件）</div>
       <div class="ac"><span class="tag grey">F-4</span>
         <span class="tag blue">AC-3</span><span class="tag blue">AC-5</span><span class="tag blue">AC-16</span></div>
     </a>
@@ -124,7 +133,7 @@
       <tr>
         <td rowspan="4"><a href="../../task-260903-产品管理页重做/原型图/index.html">task-260903-产品管理页重做 · 8 份</a></td>
         <td>壳页标题行：仅「产品分类管理」按钮</td>
-        <td>新增<b>全局客户选择器</b>（带「客户」addon，默认「所有客户」）</td>
+        <td>新增<b>全局客户选择器</b>（带「客户」addon，<b>客户必选</b>，默认 = 候选列表第一个）</td>
         <td>本任务 F-1</td>
       </tr>
       <tr>

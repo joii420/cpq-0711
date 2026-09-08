@@ -123,7 +123,7 @@ public class DatasetMaintenanceService {
      * {@code UNION ALL} 的聚合子查询一次算出，条数与料号数、sheet 数都无关。
      */
     public DsPartsPage listParts(String dataset, String keyword, int page, int size,
-                                 String sortBy, String sortDir, Boolean configured) {
+                                 String sortBy, String sortDir, Boolean configured, String customerNo) {
         DatasetRegistry reg = registry(dataset);
         List<SheetDef> vs = reg.versionedSheets();
         String axis = SqlIdent.of(reg.axisColumn());
@@ -138,32 +138,41 @@ public class DatasetMaintenanceService {
         // api.md §3 / 需求文档 R-1.7（D-27）：产品分类【只有报价侧】的物料表建了这一列。
         // 核价两套没有 ⇒ categoryCode / categoryName 两个键整个不出现（AC-61 后半段专门验）。
         boolean hasCategory = hasNonAxisColumn(reg, "category_code");
+        // task-260907-产品管理客户过滤 · B-2（AC-5②/AC-18）：客户两列是否出现由 Registry 判定
+        // （物料表是否带 customer_no 静态系统列），🚫 不写死 dataset.equals("quote") ——
+        // 核价两套没有客户维度，customerNo 参数被整个忽略（B-5），既不下发两列也不参与过滤。
+        boolean hasCustomer = materialSheet(reg).customerScoped();
+        boolean hasCustomerFilter = hasCustomer && customerNo != null && !customerNo.isBlank();
         int pg = Math.max(0, page);
         int sz = Math.min(Math.max(1, size), 200);
         boolean hasKw = keyword != null && !keyword.isBlank();
 
         String cfgAgg = "(SELECT av, COUNT(DISTINCT sk) AS c, MAX(uat) AS u FROM ("
-            + configuredUnion(vs, axis, null) + ") cfg WHERE av IS NOT NULL GROUP BY av)";
+            + configuredUnion(vs, axis, null, null) + ") cfg WHERE av IS NOT NULL GROUP BY av)";
         String from = " FROM " + matTable + " m LEFT JOIN " + cfgAgg + " a ON a.av = m." + axis;
-        // 🚫 N+1（AC-61 附加判据）：分类名必须在【同一条 SELECT】里 JOIN 带出，不得逐行查
+        // 🚫 N+1（AC-8 / AC-61）：分类名 / 客户名都必须在【同一条 SELECT】里 JOIN 带出，不得逐行查
         //    —— 逐行查会让 SQL 条数变成 2 + 料号数，正是 backend.md 的硬指标反面。
-        //    product_category.code 有 UNIQUE 约束 ⇒ LEFT JOIN 不会放大行数。
+        //    product_category.code / customer.code 均有 UNIQUE 约束 ⇒ LEFT JOIN 不会放大行数。
         //    只挂在分页查询上、不挂 count：总数与 JOIN 无关，少一次连接更省。
-        String fromPage = from + (hasCategory ? " LEFT JOIN product_category pc ON pc.code = m.category_code" : "");
+        String fromPage = from + (hasCategory ? " LEFT JOIN product_category pc ON pc.code = m.category_code" : "")
+            + (hasCustomer ? " LEFT JOIN customer cust ON cust.code = m.customer_no" : "");
         String lastUpdated = "GREATEST(a.u, COALESCE(m.updated_at, m.created_at))";
 
         // 过滤条件收集：count 与 page 是两条独立 SQL，必须共用同一份 where + 同一份绑定，
         // 否则「总数」与「本页数据」会对不上，翻页数字直接错。
-        List<String> preds = new ArrayList<>(2);
+        List<String> preds = new ArrayList<>(3);
         if (hasKw) preds.add("m." + axis + " ILIKE :kw OR COALESCE(m.material_name,'') ILIKE :kw");
         // B-15 / AC-25「配置状态」：configuredCount == totalSheetCount 即已配齐。
         // a.c 是 COUNT(DISTINCT sk)，恒 ≤ 带版本 sheet 数，故 >= 等价于 ==（用 >= 更抗未来加表）。
         // 🚫 SQL 侧过滤，不在内存里筛 —— 内存筛会让 total 变成「过滤前的数」，分页整体错位。
         if (configured != null) preds.add(configured ? "COALESCE(a.c, 0) >= :totalSheets" : "COALESCE(a.c, 0) < :totalSheets");
+        // AC-3③：过滤必须在 SQL 里做（硬约束 2）。不传 customerNo（或该数据集没有客户维度）= 不过滤，
+        // SQL 与改动前逐字相同（AC-17 向后兼容）。
+        if (hasCustomerFilter) preds.add("m.customer_no = :customerNo");
         String where = andWhere(preds);
 
         Query cq = em.createNativeQuery("SELECT COUNT(*)" + from + where);
-        bindPartsFilters(cq, hasKw, keyword, configured, vs.size());
+        bindPartsFilters(cq, hasKw, keyword, configured, vs.size(), hasCustomerFilter, customerNo);
         long total = ((Number) cq.getSingleResult()).longValue();
 
         Query pq = em.createNativeQuery(
@@ -172,10 +181,11 @@ public class DatasetMaintenanceService {
                 + (hasProductionNo ? ", m.production_no" : "")
                 + (hasMaterialType ? ", m.material_type" : "")
                 + (hasCategory ? ", m.category_code, pc.name" : "")
+                + (hasCustomer ? ", m.customer_no, cust.name" : "")
                 + fromPage + where
                 + partsOrderBy(sortBy, sortDir, axis, lastUpdated)
                 + " LIMIT :lim OFFSET :off");
-        bindPartsFilters(pq, hasKw, keyword, configured, vs.size());
+        bindPartsFilters(pq, hasKw, keyword, configured, vs.size(), hasCustomerFilter, customerNo);
         pq.setParameter("lim", sz);
         pq.setParameter("off", (long) pg * sz);
 
@@ -203,6 +213,10 @@ public class DatasetMaintenanceService {
                 it.putCategoryCode(str(r[dyn++]));
                 it.putCategoryName(str(r[dyn++]));   // ← 来自 LEFT JOIN，不是第二条查询
             }
+            if (hasCustomer) {
+                it.putCustomerNo(str(r[dyn++]));
+                it.putCustomerName(str(r[dyn++]));   // ← 来自 LEFT JOIN，不是第二条查询（AC-8）
+            }
             items.add(it);
         }
         return new DsPartsPage(total, items);
@@ -228,9 +242,11 @@ public class DatasetMaintenanceService {
     }
 
     /** count 与 page 两条 SQL 共用的参数绑定 —— 两处必须逐字一致，否则总数与分页对不上。 */
-    private void bindPartsFilters(Query q, boolean hasKw, String keyword, Boolean configured, int totalSheets) {
+    private void bindPartsFilters(Query q, boolean hasKw, String keyword, Boolean configured, int totalSheets,
+                                  boolean hasCustomerFilter, String customerNo) {
         if (hasKw) q.setParameter("kw", "%" + keyword.trim() + "%");
         if (configured != null) q.setParameter("totalSheets", totalSheets);
+        if (hasCustomerFilter) q.setParameter("customerNo", customerNo);
     }
 
     /**
@@ -269,16 +285,99 @@ public class DatasetMaintenanceService {
      *
      * <p>零 N+1 的要害：把「每个 sheet 查一次」压成<b>一条</b> SQL。表名、列名来自 Registry
      * （编译期常量，且过 {@link SqlIdent} 白名单），轴值一律走绑定参数。
+     *
+     * @param customerParam task-260907-产品管理客户过滤 · B-3（AC-6）：客户号绑定参数名，
+     *                      {@code null} = 不加客户谓词（AC-17 向后兼容，SQL 与改动前逐字相同）。
+     *                      按<b>每张 sheet 自己的</b> {@link SheetDef#customerScoped()} 判定是否追加
+     *                      —— 不写死「报价侧就一定都加」，与 {@code hasNonAxisColumn} 同一套 Registry
+     *                      元数据纪律。
      */
-    private String configuredUnion(List<SheetDef> sheets, String axis, String axisParam) {
+    private String configuredUnion(List<SheetDef> sheets, String axis, String axisParam, String customerParam) {
         List<String> segs = new ArrayList<>(sheets.size());
-        String w = axisParam == null ? "" : " WHERE " + axis + " = :" + axisParam;
         for (SheetDef s : sheets) {
+            List<String> preds = new ArrayList<>(2);
+            if (axisParam != null) preds.add(axis + " = :" + axisParam);
+            if (customerParam != null && s.customerScoped()) {
+                preds.add(SheetDef.CUSTOMER_COLUMN + " = :" + customerParam);
+            }
+            String w = preds.isEmpty() ? "" : " WHERE " + String.join(" AND ", preds);
             segs.add("SELECT " + axis + " AS av, '" + s.sheetKey + "' AS sk,"
                 + " COALESCE(updated_at, created_at) AS uat, version_no AS ver, source AS src"
                 + " FROM " + SqlIdent.of(s.tableName) + w);
         }
         return String.join("\n UNION ALL \n", segs);
+    }
+
+    // ==================================================================
+    // §1 GET customers —— 客户候选（task-260907-产品管理客户过滤 · B-1，服务 AC-1 / AC-2 / AC-14）
+    // ==================================================================
+
+    /**
+     * 该数据集下<b>带 {@code customer_no} 列的全部表名</b>（去重，保持 Registry 登记顺序）。
+     *
+     * <p>🚫 <b>不写死表名清单</b>（如只扫 {@code ds_quote_customer_part}）——
+     * 复合轴落地后物料表等也会带客户号，写死的清单必然过期（{@code task-260819} 在同一条
+     * AC 上栽过三次的形态）。凡该数据集下有 sheet 建了 {@code customer_no} 列即纳入。
+     *
+     * <p>空列表 = 该数据集没有客户维度（核价两套现状），供 {@link #listCustomers} 判 400 用，
+     * 也供 {@code DatasetMaintenanceService} 未来任何「这个数据集有没有客户维度」的判定复用
+     * —— 判定走 Registry 元数据而非硬编码 {@code dataset.equals("quote")}。
+     */
+    private List<String> customerBearingTables(DatasetRegistry reg) {
+        LinkedHashSet<String> tables = new LinkedHashSet<>();
+        for (SheetDef s : reg.sheets()) {
+            ColumnDef c = s.column("customer_no");
+            if (c != null && c.persisted) tables.add(s.tableName);
+        }
+        return new ArrayList<>(tables);
+    }
+
+    /**
+     * api.md §1 —— 客户候选，口径见 api.md §1「候选口径」：
+     * <pre>
+     * customer 表全集 ∪ 报价业务表中未建档的客户号
+     * </pre>
+     *
+     * <p>🚨 <b>N+1 自检</b>：无论 {@link #customerBearingTables} 扫出几张表，恒 <b>1 条 SQL</b>——
+     * 各表先在一个 CTE 内用 {@code UNION} 聚合去重，外层再和 {@code customer} 全集做一次
+     * {@code UNION ALL}，SQL 条数与表数、客户数均无关。
+     *
+     * <p>{@code dataset} 目前只有报价类数据集有客户维度：判定走
+     * {@link #customerBearingTables} 是否为空（Registry 元数据），🚫 不硬编码
+     * {@code dataset.equals("quote")} —— 核价两套 / 任意非法值统一 400（api.md §1「错误」表）。
+     */
+    public DsCustomerCandidates listCustomers(String dataset) {
+        DatasetRegistry reg = registries.byKey(dataset);
+        List<String> tables = reg == null ? List.of() : customerBearingTables(reg);
+        if (tables.isEmpty()) {
+            throw new BusinessException(400,
+                "数据集不支持客户维度: " + dataset + "（仅报价类数据集有客户维度，核价两套没有 customer_no 列）");
+        }
+
+        StringBuilder businessUnion = new StringBuilder();
+        for (String t : tables) {
+            if (businessUnion.length() > 0) businessUnion.append(" UNION ");
+            businessUnion.append("SELECT DISTINCT customer_no FROM ").append(SqlIdent.of(t))
+                .append(" WHERE customer_no IS NOT NULL");
+        }
+
+        // 已建档在前（true DESC 排在 false 前）、未建档置尾，各自按 customer_no 升序（api.md §1「排序」）。
+        String sql = "WITH business_customers AS (" + businessUnion + ") "
+            + "SELECT code AS customer_no, name AS customer_name, true AS registered FROM customer "
+            + "UNION ALL "
+            + "SELECT b.customer_no, NULL, false FROM business_customers b "
+            + "WHERE b.customer_no NOT IN (SELECT code FROM customer) "
+            + "ORDER BY registered DESC, customer_no ASC";
+
+        Query q = em.createNativeQuery(sql);
+        @SuppressWarnings("unchecked")
+        List<Object[]> raw = q.getResultList();
+        List<DsCustomerCandidates.Item> items = new ArrayList<>(raw.size());
+        // ✅ N+1 自检：本循环是纯内存装配，无 repository 调用、无懒加载 getter、无 SQL。
+        for (Object[] r : raw) {
+            items.add(new DsCustomerCandidates.Item(str(r[0]), str(r[1]), (Boolean) r[2]));
+        }
+        return new DsCustomerCandidates(items);
     }
 
     // ==================================================================
@@ -291,21 +390,29 @@ public class DatasetMaintenanceService {
      * 前端据此渲染空态，而不是错误页 / 红色遮罩（{@code AP-31} / {@code AP-38} 族教训）。
      *
      * <p>N+1 自检：物料信息 1 条 + 跨 sheet 聚合 1 条 = <b>2 条</b>，与 sheet 数无关。
+     *
+     * <p>task-260907-产品管理客户过滤 · B-3（AC-6①②）：{@code customerNo} 非必填，语义同 A-2 ——
+     * 不传（或该数据集没有客户维度）= 不过滤，SQL 与改动前逐字相同（AC-17）；传了则物料信息查询与
+     * 跨 sheet 聚合查询都收窄到该客户，🚫 不许只改其中一处。
      */
-    public DsOverview overview(String dataset, String axisValue) {
+    public DsOverview overview(String dataset, String axisValue, String customerNo) {
         DatasetRegistry reg = registry(dataset);
         List<SheetDef> vs = reg.versionedSheets();
         String axis = SqlIdent.of(reg.axisColumn());
+        boolean scoped = reg.customerScoped() && customerNo != null && !customerNo.isBlank();
 
         Query mq = em.createNativeQuery(
-            "SELECT material_name FROM " + SqlIdent.of(reg.materialTable()) + " WHERE " + axis + " = :av");
+            "SELECT material_name FROM " + SqlIdent.of(reg.materialTable()) + " WHERE " + axis + " = :av"
+                + (scoped ? " AND " + SheetDef.CUSTOMER_COLUMN + " = :cn" : ""));
         mq.setParameter("av", axisValue);
+        if (scoped) mq.setParameter("cn", customerNo);
         List<?> mrows = mq.getResultList();
 
         Query q = em.createNativeQuery(
             "SELECT sk, COUNT(*) AS n, MAX(ver) AS v, MAX(uat) AS u, MAX(src) AS s FROM ("
-                + configuredUnion(vs, axis, "av") + ") x GROUP BY sk");
+                + configuredUnion(vs, axis, "av", scoped ? "cn" : null) + ") x GROUP BY sk");
         q.setParameter("av", axisValue);
+        if (scoped) q.setParameter("cn", customerNo);
         @SuppressWarnings("unchecked")
         List<Object[]> raw = q.getResultList();
         Map<String, Object[]> bySk = new HashMap<>();
@@ -350,13 +457,20 @@ public class DatasetMaintenanceService {
      *
      * <p>N+1 自检：当前版本 1 条 + 行数据 1 条 = <b>2 条</b>，与行数、NAME 列数均无关
      * （多个 NAME 列共用同一个 JOIN，见 {@link #buildNameJoins}）。
+     *
+     * <p>task-260907-产品管理客户过滤 · B-3（AC-6①②）：{@code customerNo} 非必填，不传 =
+     * 跨客户口径（{@link VersionedGroupWriter#currentVersionAnyCustomer}，SQL 与改动前逐字相同，
+     * AC-17）；传了则当前版本判定与行查询都收窄到该客户（{@link VersionedGroupWriter#currentVersion}）。
      */
-    public DsRows readRows(String dataset, String axisValue, String sheetKey, Integer version) {
+    public DsRows readRows(String dataset, String axisValue, String sheetKey, Integer version, String customerNo) {
         DatasetRegistry reg = registry(dataset);
         SheetDef sd = versionedSheet(reg, sheetKey);
-        // task-260907：读路径暂无客户上下文（客户选择器由 task-260907-产品管理客户过滤 承接），
-        // 走跨客户口径 —— SQL 与改动前逐字相同，既有读行为零变化。
-        int current = writer.currentVersionAnyCustomer(sd, axisValue);   // 0 = 从未有过数据
+        boolean scoped = sd.customerScoped() && customerNo != null && !customerNo.isBlank();
+        // task-260907：scoped=false（未传客户号 / 该数据集无客户维度）时走跨客户口径 ——
+        // SQL 与改动前逐字相同，既有读行为零变化（AC-17）。
+        int current = scoped
+            ? writer.currentVersion(sd, AxisKey.of(sd, customerNo, axisValue))
+            : writer.currentVersionAnyCustomer(sd, axisValue);          // 0 = 从未有过数据
 
         boolean latest = (version == null) || (current > 0 && version == current);
         DsRows dto = new DsRows();
@@ -391,13 +505,17 @@ public class DatasetMaintenanceService {
         int srcIdx = aliases.size();
         selects.add("t.source");
 
+        // scoped 时该 sheet 必然带 customer_no 系统列（AbstractDatasetRegistry 的启动期断言保证），
+        // 谓词直接落在主表/_history 表自身列上，不需要额外 JOIN。
         Query q = em.createNativeQuery(
             "SELECT " + String.join(", ", selects)
                 + " FROM " + table + " t" + joins
                 + " WHERE t." + SqlIdent.of(reg.axisColumn()) + " = :av AND t.version_no = :ver"
+                + (scoped ? " AND t." + SheetDef.CUSTOMER_COLUMN + " = :cn" : "")
                 + orderBy(sd, idCol));
         q.setParameter("av", axisValue);
         q.setParameter("ver", targetVersion);
+        if (scoped) q.setParameter("cn", customerNo);
         @SuppressWarnings("unchecked")
         List<Object[]> raw = q.getResultList();
 
@@ -488,13 +606,21 @@ public class DatasetMaintenanceService {
      * （api.md §6 示例 {@code "updatedBy": "admin"}）；查不到用户则原样回显，不丢信息。
      *
      * <p>N+1 自检：<b>1 条</b> SQL（主表 + 历史表 UNION ALL 后一次聚合），与版本数无关。
+     *
+     * <p>🚨 task-260907-产品管理客户过滤 · B-3（AC-6③ 优先级最高的一条）：两个 {@code UNION ALL}
+     * 分支（主表 / {@code _history}）的 {@code WHERE} <b>都要加</b>客户谓词 —— 漏改一个就会让
+     * 两个客户的版本号混排（版本号按 {@code (customer_no, axisValue)} 各自独立递增，见 api.md §2/A-3~A-5）。
+     * 不传 {@code customerNo}（或该数据集无客户维度）= 不过滤，SQL 与改动前逐字相同（AC-17）。
      */
-    public DsVersions versions(String dataset, String axisValue, String sheetKey) {
+    public DsVersions versions(String dataset, String axisValue, String sheetKey, String customerNo) {
         DatasetRegistry reg = registry(dataset);
         SheetDef sd = versionedSheet(reg, sheetKey);
         String axis = SqlIdent.of(reg.axisColumn());
         String table = SqlIdent.of(sd.tableName);
         String hist = SqlIdent.of(sd.historyTable());
+        boolean scoped = sd.customerScoped() && customerNo != null && !customerNo.isBlank();
+        // 🚨 两处都要拼这同一个谓词 —— 这正是 AC-6③ 要防的失败形态：只改一个分支会让版本号混排。
+        String custPred = scoped ? " AND " + SheetDef.CUSTOMER_COLUMN + " = :cn" : "";
 
         String sql =
             "SELECT x.ver, x.latest, x.n, x.arch_at, x.arch_by, x.arch_reason, x.uat, x.ub, x.src, u.username"
@@ -503,17 +629,18 @@ public class DatasetMaintenanceService {
                 + "         NULL::timestamptz AS arch_at, NULL::varchar AS arch_by, NULL::varchar AS arch_reason,"
                 + "         MAX(COALESCE(updated_at, created_at)) AS uat,"
                 + "         MAX(COALESCE(updated_by, created_by)) AS ub, MAX(source) AS src"
-                + "  FROM " + table + " WHERE " + axis + " = :av GROUP BY version_no"
+                + "  FROM " + table + " WHERE " + axis + " = :av" + custPred + " GROUP BY version_no"
                 + "  UNION ALL"
                 + "  SELECT version_no, FALSE, COUNT(*),"
                 + "         MAX(archived_at), MAX(archived_by), MAX(archive_reason),"
                 + "         MAX(COALESCE(updated_at, created_at)),"
                 + "         MAX(COALESCE(updated_by, created_by)), MAX(source)"
-                + "  FROM " + hist + " WHERE " + axis + " = :av GROUP BY version_no"
+                + "  FROM " + hist + " WHERE " + axis + " = :av" + custPred + " GROUP BY version_no"
                 + ") x LEFT JOIN \"user\" u ON u.id::text = x.ub"
                 + " ORDER BY x.ver DESC";
         Query q = em.createNativeQuery(sql);
         q.setParameter("av", axisValue);
+        if (scoped) q.setParameter("cn", customerNo);
         @SuppressWarnings("unchecked")
         List<Object[]> raw = q.getResultList();
 
@@ -960,6 +1087,16 @@ public class DatasetMaintenanceService {
         int affected = q.executeUpdate();
         if (affected == 0) {
             throw new BusinessException(404, "料号不存在: " + axisValue);
+        }
+        // task-260907-产品管理客户过滤 · B-4（AC-7 多行守卫，X-3 证伪目标）：🚨 显式守卫必须在
+        // 回读【之前】——不能依赖「回读命中多行 → NonUniqueResultException → 事务回滚」这种巧合。
+        // 那个巧合本身就是易碎的保护：谁把回读优化掉、或改成 getResultList().get(0)，保护就无声消失，
+        // 而 UPDATE 已经真实执行在多个客户的行上（本方法 @Transactional，抛异常才会回滚）。
+        // 复合轴下 scoped=false 且该料号跨了多个客户时，WHERE material_no=? 命中所有客户的同料号行——
+        // 这正是「一次编辑改掉多个客户的数据，页面上看不出来」的核心风险场景。
+        if (affected > 1) {
+            throw new BusinessException(409, "料号「" + axisValue + "」在多个客户下存在（命中 " + affected
+                + " 行），无法定位唯一行，请携带客户号（customerNo）后重试");
         }
 
         // 回读审计信息（第 2 条也是最后一条 SQL）

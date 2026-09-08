@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ProductSalesPartDrawer —— 销售产品抽屉（task-260903 · F-4，本任务核心）
+// ProductSalesPartDrawer —— 销售产品抽屉（task-260903 · F-4；task-260907 · F-5 再改）
 //
 // 右侧 Drawer；左侧竖排 tab（数量与顺序**由 `GET /dataset/quote/sheets` 决定，
 // 🚫 前端不写死 13**）；每 tab 内 = 版本下拉 + **平铺表格（不是树）**。
@@ -18,10 +18,22 @@
 //    task-260902 实测新旧抽屉 UI 逐项不同，改为零触碰 legacy + 新建
 //    `pages/master-data/dataset/DatasetSheetDrawer.tsx`（该目录当前尚未合入 master，无从参照）。
 //    ⇒ 维持本地平行实现；日后若要收敛，本文件整体替换即可，列表页无需改动。
+//
+// 🔄 task-260907-产品管理客户过滤 · F-5（本次改动，`D-10`）：
+//    用户原话「销售产品抽屉内的内容都是产品管理选择的客户的数据」。
+//    🚨 **抽屉的客户上下文 = 壳页所选客户（`customerNo` props），不是行携带的值**
+//       （不是 `activeRow.customerNo`）。客户必选后两者恒相等，但契约以壳页为准——
+//       实现**不得依赖「行里碰巧有这个值」**，那是巧合不是契约：将来列表若再支持跨客户
+//       展示（如恢复「所有客户」态），依赖行值的实现会静默出错。
+//       ⇒ 本文件从 `ProductSalesPartTab` 接收的是壳页 state，`getOverview` / `getRows` /
+//       `getVersions` 三个调用**全部**带上它，🚫 不读 `axisValue` 对应行的任何客户字段。
+//    · 标题加客户标签 + 正文加提示条（原型 `04-销售产品-选中客户与抽屉.html`）。
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Drawer, Tabs, Select, Space, Tag, Spin, Empty, Typography, message } from 'antd';
-import { LockOutlined } from '@ant-design/icons';
+import {
+  Drawer, Tabs, Select, Space, Tag, Spin, Empty, Typography, Alert, message,
+} from 'antd';
+import { LockOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import ReadonlySheetTable from './ReadonlySheetTable';
 import { quoteSheetApi } from './productHubApi';
 import type {
@@ -56,11 +68,15 @@ function fmtDate(iso?: string | null): string {
 // ── 单个 sheet 面板（切到才挂载：Tabs destroyOnHidden）─────────────────────────
 interface SheetPanelProps {
   axisValue: string;
+  /** 🆕 F-5：壳页所选客户号——`overview`/`rows`/`versions` 三个请求过滤口径必须一致 */
+  customerNo: string;
   sheet: SheetMeta;
   overviewSheet?: OverviewSheet;
 }
 
-const SheetPanel: React.FC<SheetPanelProps> = ({ axisValue, sheet, overviewSheet }) => {
+const SheetPanel: React.FC<SheetPanelProps> = ({
+  axisValue, customerNo, sheet, overviewSheet,
+}) => {
   // versionNo === null ⇒ 该 sheet 该轴值**从未有过数据**（api.md 硬约束 6）。
   // 此时**一次请求都不发**，直接空态 —— 这是 AP-31「加载中永久占位族」的正面防线：
   // 不发请求就不可能停在「加载中…」。
@@ -75,7 +91,8 @@ const SheetPanel: React.FC<SheetPanelProps> = ({ axisValue, sheet, overviewSheet
   const loadRows = useCallback(async (version?: number) => {
     setLoading(true);
     try {
-      const r = await quoteSheetApi.getRows(axisValue, sheet.sheetKey, version);
+      // 🔄 F-5：customerNo 取自壳页 props，不取行值——见文件头注释
+      const r = await quoteSheetApi.getRows(axisValue, sheet.sheetKey, version, customerNo);
       setRows(r.rows ?? []);
       setSource(r.source ?? null);
       // 服务端回的 versionNo 才是权威（省略 version 参数时它是「当前版本」）
@@ -87,17 +104,19 @@ const SheetPanel: React.FC<SheetPanelProps> = ({ axisValue, sheet, overviewSheet
       // finally 保证任何分支都退出 loading，不留「加载中…」死态
       setLoading(false);
     }
-  }, [axisValue, sheet.sheetKey]);
+  }, [axisValue, sheet.sheetKey, customerNo]);
 
   const loadVersions = useCallback(async () => {
     try {
-      const r = await quoteSheetApi.getVersions(axisValue, sheet.sheetKey);
+      // 🚨 版本号按 (customer_no, axisValue) 各自独立递增，不传 customerNo 会把
+      //    两个客户的版本号混排（api.md A-3~A-5）
+      const r = await quoteSheetApi.getVersions(axisValue, sheet.sheetKey, customerNo);
       setVersions(r.versions ?? []);
     } catch {
       // 版本列表失败不致命：表格数据已单独取，下拉降级为空即可
       setVersions([]);
     }
-  }, [axisValue, sheet.sheetKey]);
+  }, [axisValue, sheet.sheetKey, customerNo]);
 
   useEffect(() => {
     if (!hasData) {
@@ -167,11 +186,18 @@ interface Props {
   axisValue: string | null;
   /** 列表行上已有的品名，用于 overview 返回前先把副标题填上（避免标题跳动） */
   fallbackMaterialName?: string | null;
+  /**
+   * 🆕 F-5（`D-10`）：壳页当前选中的客户号。🚨 **契约以此为准**，不得改读
+   * `axisValue` 对应行携带的客户号——即使客户必选后两者恒相等，见文件头注释。
+   */
+  customerNo: string;
+  /** 客户展示文案，用于标题标签与正文提示条（原型 `04`）。 */
+  customerLabel: string;
   onClose: () => void;
 }
 
 const ProductSalesPartDrawer: React.FC<Props> = ({
-  open, axisValue, fallbackMaterialName, onClose,
+  open, axisValue, fallbackMaterialName, customerNo, customerLabel, onClose,
 }) => {
   const [sheets, setSheets] = useState<SheetMeta[]>(SHEETS_CACHE ?? []);
   const [overview, setOverview] = useState<PartOverview | null>(null);
@@ -196,7 +222,8 @@ const ProductSalesPartDrawer: React.FC<Props> = ({
         setSheets(metaSheets);
         // AC-11 步骤⑦：每次打开抽屉都重置到**第一个 tab**，不保留上次停留位置
         setActiveKey(metaSheets.length > 0 ? metaSheets[0].sheetKey : '');
-        const ov = await quoteSheetApi.getOverview(axisValue);
+        // 🔄 F-5：customerNo 取自壳页 props
+        const ov = await quoteSheetApi.getOverview(axisValue, customerNo);
         if (!cancelled) setOverview(ov);
       } catch (e) {
         if (!cancelled) message.error((e as Error)?.message ?? '加载失败');
@@ -205,7 +232,7 @@ const ProductSalesPartDrawer: React.FC<Props> = ({
       }
     })();
     return () => { cancelled = true; };
-  }, [open, axisValue]);
+  }, [open, axisValue, customerNo]);
 
   const overviewMap = useMemo(() => {
     const m = new Map<string, OverviewSheet>();
@@ -228,17 +255,21 @@ const ProductSalesPartDrawer: React.FC<Props> = ({
         </Space>
       ),
       children: axisValue ? (
-        <SheetPanel axisValue={axisValue} sheet={sheet} overviewSheet={ov} />
+        <SheetPanel axisValue={axisValue} customerNo={customerNo} sheet={sheet} overviewSheet={ov} />
       ) : null,
     };
-  }), [sheets, overviewMap, axisValue]);
+  }), [sheets, overviewMap, axisValue, customerNo]);
 
   const materialName = overview?.materialName ?? fallbackMaterialName ?? null;
 
   const title = (
     <div>
       {/* AC-5：标题必须原样含轴值（如 S-3120014539） */}
-      <div style={{ fontSize: 16, fontWeight: 600 }}>销售产品 · {axisValue ?? ''}</div>
+      <div style={{ fontSize: 16, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span>销售产品 · {axisValue ?? ''}</span>
+        {/* 🆕 F-5：标题显式带客户标签，让用户确认自己在看谁的数据（原型 04） */}
+        <Tag color="blue">{customerLabel}</Tag>
+      </div>
       <div style={{ fontSize: 12, color: 'rgba(0, 0, 0, 0.45)', marginTop: 2 }}>
         {materialName ? `${materialName}${SEP}` : ''}以销售料号为轴的报价数据
       </div>
@@ -257,6 +288,18 @@ const ProductSalesPartDrawer: React.FC<Props> = ({
       destroyOnHidden
       extra={<Tag color="success" icon={<LockOutlined />}>只读</Tag>}
     >
+      {/* 🆕 F-5（原型 04）：正文提示条，明确当前展示的是哪个客户的数据 */}
+      <Alert
+        type="info"
+        showIcon
+        icon={<InfoCircleOutlined />}
+        style={{ marginBottom: 12 }}
+        message={(
+          <span>
+            当前展示 <b>{customerLabel}</b> 的数据。同一料号在其它客户下的数据需回到列表切换客户查看。
+          </span>
+        )}
+      />
       {loading && sheets.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
       ) : sheets.length === 0 ? (
