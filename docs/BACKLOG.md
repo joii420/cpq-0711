@@ -807,5 +807,11 @@ pickQualifiedCustomer({ needsTakenProductNo? })
     `template.sql_views_snapshot`（已发布模板不回落实时表）⇒ 改视图定义不会自动生效，须 `new-draft` + `publish` 升版
   - 修法方向：取数配置器编译器在锚点节点是带 `customer_no` 的 `ds_quote_*` 表时，
     自动补 `AND <alias>.customer_no = :customerCode` 谓词；存量已发布模板需重新发布一版
+  - ⚠️ **清点口径修正（2026-09-08，`task-260908-取数配置器优化` 会话实测后指出）**：🚫 **不能用 `grep :customerCode` 清点客户维度的落实情况**。
+    该会话本期新增的 46 条查名边走的是**列对列**而非参数，例如
+    `LEFT JOIN ds_quote_material dqm ON dqm.material_no = dqiof.input_material_no AND dqm.customer_no = dqiof.customer_no`
+    —— 关联的是**锚点行自己的 `customer_no`** ⇒ 即使主表 `WHERE` 缺客户过滤、返回了跨客户的行，
+    每一行的查名结果仍取自它自己那个客户，**不会串号**，且在 BL-0229 修好之后**仍然正确**。
+    ⇒ 清点时必须能区分**三种**形态：① 没有客户维度（本条要修的）② 有客户维度、走 `:customerCode` 参数 ③ 有客户维度、走列对列（安全，别误报）
   - 归属：取数配置器（`task-260819-取数配置器` / `取数配置器补齐`）+ 客户维度铺开，🚫 不属 `_record` 层
   - 优先级：**P1**（静默串客户数据；当前只因数据年轻未爆发）｜ 预估规模：M（编译器改动 + 存量模板重发布）
