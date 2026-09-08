@@ -1,0 +1,61 @@
+# AC-1 组件 04375490-927f-4802-bcc7-4156df4fc27d / T260907-来料其他费用
+# 坐标 费用类/INCOMING_OTHER_FEE/QUOTE
+
+## 加「材料名」之前
+ds_quote_
+_来料其他费用_销售料号
+_来料其他费用_项次
+_来料其他费用_投入料号
+_来料其他费用_要素项次
+_来料其他费用_要素名称
+_来料其他费用_值
+_来料其他费用_比例（%）
+_来料其他费用_货币
+_来料其他费用_计价单位
+SELECT
+  dqiof.material_no AS hf_part_no,
+  dqiof.material_no AS "_来料其他费用_销售料号",
+  dqiof.item_seq AS "_来料其他费用_项次",
+  dqiof.input_material_no AS "_来料其他费用_投入料号",
+  dqiof.element_item_seq AS "_来料其他费用_要素项次",
+  dqiof.element_name AS "_来料其他费用_要素名称",
+  dqiof.value AS "_来料其他费用_值",
+  dqiof.ratio_pct AS "_来料其他费用_比例（%）",
+  dqiof.currency AS "_来料其他费用_货币",
+  dqiof.pricing_unit AS "_来料其他费用_计价单位"
+FROM ds_quote_incoming_other_fee dqiof
+WHERE dqiof.material_no = ANY(:total_material_no)
+ORDER BY dqiof.material_no, dqiof.input_material_no, dqiof.item_seq
+
+## 加「材料名」之后
+ds_quote_
+_来料其他费用_销售料号
+_来料其他费用_项次
+_来料其他费用_投入料号
+_来料其他费用_要素项次
+_来料其他费用_要素名称
+_来料其他费用_值
+_来料其他费用_比例（%）
+_来料其他费用_货币
+_来料其他费用_计价单位
+_物料_材料名
+SELECT
+  dqiof.material_no AS hf_part_no,
+  dqiof.material_no AS "_来料其他费用_销售料号",
+  dqiof.item_seq AS "_来料其他费用_项次",
+  dqiof.input_material_no AS "_来料其他费用_投入料号",
+  dqiof.element_item_seq AS "_来料其他费用_要素项次",
+  dqiof.element_name AS "_来料其他费用_要素名称",
+  dqiof.value AS "_来料其他费用_值",
+  dqiof.ratio_pct AS "_来料其他费用_比例（%）",
+  dqiof.currency AS "_来料其他费用_货币",
+  dqiof.pricing_unit AS "_来料其他费用_计价单位",
+  dqm.material_name AS "_物料_材料名"
+FROM ds_quote_incoming_other_fee dqiof
+  LEFT JOIN ds_quote_material dqm ON dqm.material_no = dqiof.input_material_no AND dqm.customer_no = dqiof.customer_no
+WHERE dqiof.material_no = ANY(:total_material_no)
+ORDER BY dqiof.material_no, dqiof.input_material_no, dqiof.item_seq
+
+## 命中的查名 JOIN
+别名=dqm
+ON=dqm.material_no = dqiof.input_material_no AND dqm.customer_no = dqiof.customer_no

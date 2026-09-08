@@ -3282,7 +3282,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                       <>
                         {/* 料号列按内容自适应宽度（task-0721 2026-07-22）：width:1 + nowrap 使列收缩到
                             料号+树缩进的最小内容宽，不再贪婪吸走整行剩余宽度，剩余宽由业务列分摊。 */}
-                        <th style={{ width: 1, whiteSpace: 'nowrap' }}>料号</th>
+                        {/* task-260908 F-4（AC-20 / AC-22）：表头文案「料号」→「BOM」——树结构列占用了
+                            「料号」这个名字，与取数配置器里料号列的默认字段名撞名（F-3）。
+                            🚫 只改文案：样式、条件、紧随其后的 COSTING 版本列分支一律不动。
+                            🚨 只读页 ReadonlyProductCard.tsx 的同一表头必须同步改（AP-50 同族事故）。 */}
+                        <th style={{ width: 1, whiteSpace: 'nowrap' }}>BOM</th>
                         {cardSide === 'COSTING' && <th style={{ minWidth: 90 }}>版本</th>}
                       </>
                     )}

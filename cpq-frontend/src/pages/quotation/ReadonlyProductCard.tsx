@@ -623,7 +623,10 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         {/* repair-071501（Bug1 版本列过宽）：系统列必须给显式 width，否则在
                             table-layout:auto + width:100% 下会独吞全部剩余水平空间被撑爆
                             （字段列都有显式 width，无 width 列成唯一 slack 吸收者）。 */}
-                        <th style={{ width: 130, minWidth: 120 }}>料号</th>
+                        {/* task-260908 F-4（AC-21 / AC-22）：表头文案「料号」→「BOM」，与编辑页
+                            QuotationStep2.tsx 同步改（上面那条 repair-0814 注释记的正是「只改编辑页、
+                            漏改本只读页」的事故）。🚫 只改文案，宽度与 isCosting 版本列分支不动。 */}
+                        <th style={{ width: 130, minWidth: 120 }}>BOM</th>
                         {isCosting && <th style={{ width: 100, minWidth: 90 }}>版本</th>}
                       </>
                     )}
