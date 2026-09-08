@@ -293,17 +293,35 @@ class AnchorFourTiersAcTest extends Task260907RBase {
                 new EbomRow(1, dupEl, "88.8", "1.1"),
                 new EbomRow(2, dupEl, "99.9", "1.1")));
 
-        // 🚨 前置（AC-21 前置②）：B 的这两行必须是 **driver 行**，🚫 不能是用户手工新增行。
-        //    手工行（row_data 带 _origin:'manual'）按设计被 C′ 排除 ⇒ 造错类型就验不到本条。
-        //    ⚠️ 先断言，别造完才发现造错了 —— 造错时症状是「C′ 没命中」，与产品缺陷同形。
+        // 🚨 前置（AC-21 前置②）：B 的这两行必须是 **driver 行**，🚫 不能是 userAdded 行。
+        //
+        // 📌 provenance 是**写入侧的内存枚举，不落库**（本期未做那次迁移）⇒ 读侧只能推断。
+        //    四态：DRIVER / DRIVER_NOT_MATERIALIZED / ROW_DATA_TAIL / MANUAL，
+        //    其中 userAdded() = ROW_DATA_TAIL || MANUAL，**两者都被 C′ 排除**。
+        //    ⇒ 要排两条，排一条不够：
+        //      ① MANUAL      —— row_data 上带 _origin='manual'（前端「+ 添加行」的唯一入口打的）
+        //      ② ROW_DATA_TAIL —— snapshot_rows 已物化但是**空数组** `[]`
+        //         （driver 真返 0 行的 AP-38 形态 ⇒ 那些行是用户自己录的）
+        //    snapshot_rows 为 NULL（从未物化）才是 DRIVER_NOT_MATERIALIZED，属 driver 侧，允许。
+        //
+        // ⚠️ 先断言，别造完才发现造错了 —— 造错时症状是「C′ 没命中」，与产品缺陷同形。
         long manualRows = count("SELECT count(*) FROM quotation_line_component_data cd "
                 + "JOIN quotation_line_item li ON li.id = cd.line_item_id "
                 + "WHERE li.quotation_id = '" + b.quotationId() + "' "
                 + "  AND cd.row_data::text LIKE '%_origin%'");
         assertEquals(0L, manualRows,
-                "🚨 AC-21 前置②：B 的行必须是 driver 行（provenance ∈ {DRIVER, DRIVER_NOT_MATERIALIZED}），"
-                        + "实测有 " + manualRows + " 行组件数据带 _origin 标记 ⇒ 造成了手工新增行，"
-                        + "而手工行按设计被 C′ 排除，本用例验不到 AC-20④/AC-21 的那个场景。");
+                "🚨 AC-21 前置② · 排除 MANUAL：实测有 " + manualRows + " 行组件数据带 _origin 标记 "
+                        + "⇒ 造成了手工新增行，而手工行按设计被 C′ 排除，本用例验不到该场景。");
+        long tailRows = count("SELECT count(*) FROM quotation_line_component_data cd "
+                + "JOIN quotation_line_item li ON li.id = cd.line_item_id "
+                + "WHERE li.quotation_id = '" + b.quotationId() + "' "
+                + "  AND cd.component_id = '" + COMP_ELEMENT_BOM + "' "
+                + "  AND cd.snapshot_rows = '[]'::jsonb");
+        assertEquals(0L, tailRows,
+                "🚨 AC-21 前置② · 排除 ROW_DATA_TAIL：实测有 " + tailRows + " 行的 snapshot_rows 是空数组 [] "
+                        + "⇒ driver 真返 0 行、那些行算用户自己录的（userAdded），同样被 C′ 排除。"
+                        + "（snapshot_rows 为 NULL 才是 DRIVER_NOT_MATERIALIZED，属 driver 侧、允许。）");
+        System.out.println("[T-20d] AC-21 前置② 通过：无 _origin 标记、snapshot_rows 非空数组 ⇒ driver 行");
 
         Set<Long> idsBefore = idSet(EBOM, "material_no", mat);
 

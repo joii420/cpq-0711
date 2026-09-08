@@ -115,6 +115,17 @@ class SelectionChainRegressionAcTest extends SelConfigAcTestBase {
         mintedPartNos.add(partB);
         mintedPartNos.add(partA);
         System.out.println("[T-17] 铸出销售料号：B(master)=" + partB + "  A(本分支)=" + partA);
+        // 🔬 与 t17b 的对照量：同样先绑了 customer_template_id，这里 line_item.template_id 是什么？
+        System.out.println("[T-17·对照] quotation.customer_template_id="
+                + scalar("SELECT coalesce(customer_template_id::text,'<NULL>') FROM quotation WHERE id = '"
+                        + fxA.quotationId() + "'")
+                + " | line_item.template_id="
+                + scalar("SELECT coalesce(template_id::text,'<NULL>') FROM quotation_line_item "
+                        + "WHERE quotation_id = '" + fxA.quotationId() + "' LIMIT 1")
+                + " | 组件数据行数="
+                + count("SELECT count(*) FROM quotation_line_component_data cd "
+                        + "JOIN quotation_line_item li ON li.id = cd.line_item_id "
+                        + "WHERE li.quotation_id = '" + fxA.quotationId() + "'"));
 
         // ══ 🚨 A/B 阳性对照：两侧确实是两份代码 ══
         //    同一张单（fxA）：master 侧的预览**不含** dsBackfill，本进程侧**必含**。
@@ -352,6 +363,47 @@ class SelectionChainRegressionAcTest extends SelConfigAcTestBase {
         System.out.println("[T-17b] A 侧 dsBackfill.tables=" + tables
                 + " nonParticipating=" + (nonPart == null ? 0 : nonPart.size())
                 + " summary=" + pv.jsonPath().getMap("data.dsBackfill.summary"));
+        // ══ 🔬 三跳定位：DsBackfillCollector 的三个静默早退**产出形状一模一样**
+        //    （都是 tables=0 且 nonParticipating=0），不逐跳量就分不清卡在哪。
+        //      :95  lineIds      —— 本单的 line_item
+        //      :101 compIds      —— SELECT DISTINCT component_id FROM quotation_line_component_data
+        //                          WHERE line_item_id IN (:ids) AND component_id IS NOT NULL
+        //      :104 resolveAll(compIds)
+        long hop1 = count("SELECT count(*) FROM quotation_line_item WHERE quotation_id = '"
+                + fxA.quotationId() + "'");
+        long hop2 = count("SELECT count(DISTINCT cd.component_id) FROM quotation_line_component_data cd "
+                + "JOIN quotation_line_item li ON li.id = cd.line_item_id "
+                + "WHERE li.quotation_id = '" + fxA.quotationId() + "' AND cd.component_id IS NOT NULL");
+        long compDataRows = count("SELECT count(*) FROM quotation_line_component_data cd "
+                + "JOIN quotation_line_item li ON li.id = cd.line_item_id "
+                + "WHERE li.quotation_id = '" + fxA.quotationId() + "'");
+        Object boundTpl = scalar("SELECT coalesce(customer_template_id::text,'<NULL>') FROM quotation "
+                + "WHERE id = '" + fxA.quotationId() + "'");
+        Object lineTpl = scalar("SELECT coalesce(template_id::text,'<NULL>') FROM quotation_line_item "
+                + "WHERE quotation_id = '" + fxA.quotationId() + "' LIMIT 1");
+        // 🔬 再钉一枪：物化读的是**冻结快照**还是 template_component？
+        //    与 ds 原生模板逐项对照（后者能物化出 14 行）。
+        for (String tblName : List.of("template_component", "template_component_snapshot")) {
+            if (count("SELECT count(*) FROM information_schema.tables WHERE table_schema='public'"
+                    + " AND table_name='" + tblName + "'") == 0) {
+                System.out.println("[T-17b·快照] 表 " + tblName + " 不存在");
+                continue;
+            }
+            System.out.println("[T-17b·快照] " + tblName
+                    + "：自造模板=" + count("SELECT count(*) FROM " + tblName
+                        + " WHERE template_id = '" + tplA + "'")
+                    + "  ds原生(a2228dae)=" + count("SELECT count(*) FROM " + tblName
+                        + " WHERE template_id = 'a2228dae-7a54-4921-a66f-da4eed41a6c1'"));
+        }
+        System.out.println("[T-17b·三跳] hop1 lineIds=" + hop1
+                + " | hop2 compIds(非空 component_id 去重)=" + hop2
+                + " | 组件数据行数=" + compDataRows
+                + " | quotation.customer_template_id=" + boundTpl
+                + " | line_item.template_id=" + lineTpl
+                + "  ⇒ 卡点：" + (hop1 == 0 ? "第 1 跳（本单没有 line_item）"
+                    : hop2 == 0 ? "第 2 跳（组件数据的 component_id 全为空或无组件数据）"
+                    : "第 3 跳（compIds 非空但 resolveAll 一个都没解出来）"));
+
         assertNonEmpty(tables,
                 "🚨 T-17b 的命门：自造模板绑了 builder_config 非空的组件，A 侧 dsBackfill.tables 却仍为空。\n"
                         + "   ⇒ **这是夹具错，不是通过** —— builder 组件没被选配链路用上"

@@ -209,8 +209,14 @@ class RecordWriteAcTest extends Task260907RBase {
 
         // ④ 🚫 **中间刻意没有 saveDraft** —— 有它 D-42 的挂点就把 _record 补上了，本条就验不到 D-43
         // 🔑 <b>结构性证据</b>（主线送的量具）：{@code bumpUserDataVersion} 是 saveDraft 的**唯一**自增点
-        //    ⇒ 编辑与提交前后 user_data_version **不变**，就证明中间确实没走 saveDraft。
+        //    ⇒ 编辑与提交前后 user_data_version **不变**，就证明中间没走过**带载荷的** saveDraft。
         //    这比「我没调那个接口」强 —— 后者靠自觉，前者靠不变量。
+        //    ⚠️ 精确口径（2026-09-08 主线读实现后收窄）：自增条件是
+        //       `delta.hasLinePayload || requestTouchesHeader(request)`
+        //       ——「请求带了明细（**哪怕三数组都是空**）或带了任何单头字段」才 bump。
+        //       ⇒ 只有字面空 body `{}` 的纯探活调用不自增。
+        //       所以这条证明的是「**没走过任何带载荷的 saveDraft**」，
+        //       🚫 不要读成「绝对没调过 /draft」。对本用例完全够用：这条路径根本没调 /draft。
         long udvBefore = count("SELECT coalesce(user_data_version,0) FROM quotation WHERE id = '"
                 + fx.quotationId() + "'");
         requireStatusBeforeDiff(submit(fx), 200, "T-23 直接提交（中间无 saveDraft）");
@@ -218,7 +224,7 @@ class RecordWriteAcTest extends Task260907RBase {
                 + fx.quotationId() + "'");
         assertEquals(udvBefore, udvAfter,
                 "🔑 T-23 的形状证据：user_data_version 在「编辑 → 提交」前后必须不变（都应是 "
-                        + udvBefore + "）。变了 ⇒ 中间走过 saveDraft ⇒ D-42 的挂点会把 _record 补上，"
+                        + udvBefore + "）。变了 ⇒ 中间走过**带载荷的** saveDraft ⇒ D-42 的挂点会把 _record 补上，"
                         + "本用例就退化成验不到 D-43 的空壳。实测 " + udvBefore + " → " + udvAfter);
         System.out.println("[T-23] 形状证据：user_data_version 提交前后均为 " + udvAfter
                 + " ⇒ 中间确实没有 saveDraft");
