@@ -93,7 +93,10 @@ public class VersionedGroupWriter {
      * @param versionNo 写入后该组的<b>当前</b>版本号（UNCHANGED 时为原版本号）
      * @param rowCount  写入后该组的当前行数
      */
-    public record Result(String axisValue, String result, int versionNo, int rowCount) {}
+    public record Result(AxisKey axis, String result, int versionNo, int rowCount) {
+        /** 原轴值（料号）。客户号见 {@link #axis()}。 */
+        public String axisValue() { return axis == null ? null : axis.axisValue(); }
+    }
 
     // ==================================================================
     // 公开 API
@@ -110,11 +113,11 @@ public class VersionedGroupWriter {
      * @param archiveReason {@link #REASON_IMPORT_UPGRADE} / {@link #REASON_MANUAL_UPGRADE}
      * @param operator      操作人（写 {@code created_by} / {@code updated_by} / {@code archived_by}），可为 null
      */
-    public Result writeGroup(SheetDef sheet, String axisValue, List<Map<String, Object>> rows,
+    public Result writeGroup(SheetDef sheet, AxisKey axis, List<Map<String, Object>> rows,
                              String source, String archiveReason, String operator) {
-        Map<String, List<Map<String, Object>>> one = new LinkedHashMap<>();
-        one.put(axisValue, rows == null ? List.of() : rows);
-        return writeGroups(sheet, one, source, archiveReason, operator).get(axisValue);
+        Map<AxisKey, List<Map<String, Object>>> one = new LinkedHashMap<>();
+        one.put(axis, rows == null ? List.of() : rows);
+        return writeGroups(sheet, one, source, archiveReason, operator).get(axis);
     }
 
     /**
@@ -123,45 +126,52 @@ public class VersionedGroupWriter {
      * @param rowsByAxis 轴值 → 该轴值的整组全量行
      * @return 轴值 → 结果（顺序与入参一致）
      */
-    public Map<String, Result> writeGroups(SheetDef sheet,
-                                           Map<String, List<Map<String, Object>>> rowsByAxis,
+    public Map<AxisKey, Result> writeGroups(SheetDef sheet,
+                                           Map<AxisKey, List<Map<String, Object>>> rowsByAxis,
                                            String source, String archiveReason, String operator) {
-        Map<String, Result> results = new LinkedHashMap<>();
+        Map<AxisKey, Result> results = new LinkedHashMap<>();
         if (rowsByAxis == null || rowsByAxis.isEmpty()) return results;
         if (!sheet.versioned) {
             throw new IllegalArgumentException("免版本表不得走版本化写入器: " + sheet.tableName);
         }
         String table = SqlIdent.of(sheet.tableName);
         String axisCol = SqlIdent.of(sheet.axisColumn);
-        List<String> axes = new ArrayList<>(rowsByAxis.keySet());
+        List<AxisKey> axes = new ArrayList<>(rowsByAxis.keySet());
+        // task-260907 · AC-4：轴键与本表的客户维度必须对齐。
+        // 🚫 客户号为空绝不允许静默写 NULL —— 那正是「隔离看起来生效、实际每次导入都在删别人数据」的形态。
+        for (AxisKey k : axes) requireAxisMatchesSheet(sheet, k);
 
         // ── ① 并发串行化：表级 advisory lock（事务级，提交/回滚自动释放；同事务内可重入）。
         //    key 与 DatasetGroupLock 逐字一致 —— 维护端保存先取同一把锁再读版本，才能让 AC-41 的乐观锁真正生效。
         DatasetGroupLock.acquire(em, table);
 
         // ── ② 一次读全部相关轴值的现状（1 条 SQL，与轴值数无关）
-        Map<String, List<String>> dbFingerprints = new LinkedHashMap<>();
-        Map<String, Integer> dbVersions = new HashMap<>();
+        //    task-260907 · B-3：谓词按【复合轴】拼；单列时逐字退化成原来的 "axisCol IN (:axes)"，
+        //    核价两套的 SQL 与改动前一模一样（AC-6）。
+        AxisPredicate pred = axisPredicate(sheet, axes, "a");
+        String axisSelect = String.join(", ", sqlIdents(sheet.axisColumns()));
+        int axisArity = sheet.axisColumns().size();
+        Map<AxisKey, List<String>> dbFingerprints = new LinkedHashMap<>();
+        Map<AxisKey, Integer> dbVersions = new HashMap<>();
         @SuppressWarnings("unchecked")
-        List<Object[]> cur = em.createNativeQuery(
-                        "SELECT " + axisCol + ", version_no, row_fingerprint FROM " + table
-                                + " WHERE " + axisCol + " IN (:axes)")
-                .setParameter("axes", axes)
+        List<Object[]> cur = pred.bind(em.createNativeQuery(
+                        "SELECT " + axisSelect + ", version_no, row_fingerprint FROM " + table
+                                + " WHERE " + pred.sql))
                 .getResultList();
         for (Object[] r : cur) {
-            String axis = str(r[0]);
-            dbFingerprints.computeIfAbsent(axis, k -> new ArrayList<>()).add(str(r[2]));
-            dbVersions.merge(axis, ((Number) r[1]).intValue(), Math::max);
+            AxisKey axis = readAxis(sheet, r, axisArity);
+            dbFingerprints.computeIfAbsent(axis, k -> new ArrayList<>()).add(str(r[axisArity + 1]));
+            dbVersions.merge(axis, ((Number) r[axisArity]).intValue(), Math::max);
         }
 
         // ── ③ 纯内存判定（🚫 循环体内无任何查询：N+1 自检点）
         List<FpColumn> fpCols = DatasetFingerprints.columnsOf(sheet);   // 列定义只解析一次
-        Map<String, List<Map<String, Object>>> toInsert = new LinkedHashMap<>();
-        Map<String, List<String>> newFingerprints = new LinkedHashMap<>();
-        Set<String> toCreate = new LinkedHashSet<>();
-        Set<String> toUpgrade = new LinkedHashSet<>();
-        for (Map.Entry<String, List<Map<String, Object>>> e : rowsByAxis.entrySet()) {
-            String axis = e.getKey();
+        Map<AxisKey, List<Map<String, Object>>> toInsert = new LinkedHashMap<>();
+        Map<AxisKey, List<String>> newFingerprints = new LinkedHashMap<>();
+        Set<AxisKey> toCreate = new LinkedHashSet<>();
+        Set<AxisKey> toUpgrade = new LinkedHashSet<>();
+        for (Map.Entry<AxisKey, List<Map<String, Object>>> e : rowsByAxis.entrySet()) {
+            AxisKey axis = e.getKey();
             List<Map<String, Object>> rows = e.getValue() == null ? List.of() : e.getValue();
             List<String> fps = new ArrayList<>(rows.size());
             for (Map<String, Object> row : rows) fps.add(RowFingerprints.compute(fpCols, row));  // 纯内存 SHA-256
@@ -186,34 +196,37 @@ public class VersionedGroupWriter {
         }
 
         // ── ④ 归档 + 删除（各 1 条 SQL，一次覆盖全部待升版轴值）
-        Map<String, Integer> newVersions = new HashMap<>();
-        for (String axis : toCreate) newVersions.put(axis, 1);
+        Map<AxisKey, Integer> newVersions = new HashMap<>();
+        for (AxisKey axis : toCreate) newVersions.put(axis, 1);
         if (!toUpgrade.isEmpty()) {
-            List<String> upAxes = new ArrayList<>(toUpgrade);
-            Map<String, Integer> histMax = historyMaxVersions(sheet, axisCol, upAxes);
-            for (String axis : upAxes) {
+            List<AxisKey> upAxes = new ArrayList<>(toUpgrade);
+            AxisPredicate upPred = axisPredicate(sheet, upAxes, "u");
+            Map<AxisKey, Integer> histMax = historyMaxVersions(sheet, axisSelect, axisArity, upPred);
+            for (AxisKey axis : upAxes) {
                 // ⚠️ max(历史最大, 当前) + 1，不是「当前 + 1」——规则本体见 nextVersionNo(...)
                 newVersions.put(axis, nextVersionNo(dbVersions.getOrDefault(axis, 0),
                         histMax.getOrDefault(axis, 0)));
             }
-            archive(sheet, table, axisCol, upAxes, archiveReason, operator);
-            em.createNativeQuery("DELETE FROM " + table + " WHERE " + axisCol + " IN (:axes)")
-                    .setParameter("axes", upAxes)
+            archive(sheet, table, upPred, archiveReason, operator);
+            // 🚨 task-260907 · B-3 本任务最要紧的一行：删除必须按【复合轴】。
+            //    少一维 = 客户 A 导入料号 X 会把客户 B 的料号 X 整组删掉，不报错、不撞键、不留痕
+            //    （13 张带版本表只有 PRIMARY KEY(id)，没有任何业务唯一索引兜底）。
+            upPred.bind(em.createNativeQuery("DELETE FROM " + table + " WHERE " + upPred.sql))
                     .executeUpdate();
         }
 
         // ── ⑤ 插入（多行 VALUES 合批；条数 = ceil(总行数/500)，与轴值数无关）
         insertAll(sheet, table, toInsert, newVersions, newFingerprints, source, operator);
 
-        for (String axis : toCreate) {
+        for (AxisKey axis : toCreate) {
             results.put(axis, new Result(axis, CREATED, 1, toInsert.getOrDefault(axis, List.of()).size()));
         }
-        for (String axis : toUpgrade) {
+        for (AxisKey axis : toUpgrade) {
             results.put(axis, new Result(axis, UPGRADED, newVersions.get(axis),
                     toInsert.getOrDefault(axis, List.of()).size()));
         }
-        Map<String, Result> ordered = new LinkedHashMap<>();        // 保持入参顺序
-        for (String axis : axes) if (results.containsKey(axis)) ordered.put(axis, results.get(axis));
+        Map<AxisKey, Result> ordered = new LinkedHashMap<>();        // 保持入参顺序
+        for (AxisKey axis : axes) if (results.containsKey(axis)) ordered.put(axis, results.get(axis));
         return ordered;
     }
 
@@ -227,66 +240,104 @@ public class VersionedGroupWriter {
      * 实测曾出现第二实现：预览层为了给财务显示「将升到 v3」自己算了一遍
      * ⇒ 将来改规则时预览会<b>静默显示错的目标版本号</b>，而财务正照着它做判断。
      * 预览一律走 {@link #predictNextVersion}。
+     *
+     * <p>📌 <b>2026-09-07 合并 {@code customer_dim} 时的复核</b>：上游把轴改成复合
+     * {@link AxisKey} 后，一度把本方法 inline 回 {@code Math.max(...)+1}。
+     * 合并时恢复提取 —— D-31 的目的就是「规则只有一份」，
+     * 而这次「规则真的变了（多了一维）」恰恰是它要防的那种时刻。
      */
     static int nextVersionNo(int currentVersionNo, int historyMaxVersionNo) {
         return Math.max(currentVersionNo, historyMaxVersionNo) + 1;
     }
 
-    /** 读 {@code _history} 里各轴值的最大版本号（1 条 SQL，与轴值数无关）。写路径与预测路径共用。 */
-    private Map<String, Integer> historyMaxVersions(SheetDef sheet, String axisCol, List<String> axes) {
-        Map<String, Integer> histMax = new HashMap<>();
-        if (axes.isEmpty()) return histMax;
+    /**
+     * 读 {@code _history} 里各<b>复合轴</b>的最大版本号（1 条 SQL，与轴值数无关）。
+     * <b>写路径与预测路径共用</b> —— 两边必须用同一个谓词口径，否则预测会与真写分叉。
+     */
+    private Map<AxisKey, Integer> historyMaxVersions(SheetDef sheet, String axisSelect, int axisArity,
+                                                     AxisPredicate pred) {
+        Map<AxisKey, Integer> histMax = new HashMap<>();
         @SuppressWarnings("unchecked")
-        List<Object[]> hist = em.createNativeQuery(
-                        "SELECT " + axisCol + ", max(version_no) FROM " + sheet.historyTable()
-                                + " WHERE " + axisCol + " IN (:axes) GROUP BY " + axisCol)
-                .setParameter("axes", axes)
+        List<Object[]> hist = pred.bind(em.createNativeQuery(
+                        "SELECT " + axisSelect + ", max(version_no) FROM " + sheet.historyTable()
+                                + " WHERE " + pred.sql + " GROUP BY " + axisSelect))
                 .getResultList();
-        for (Object[] r : hist) histMax.put(str(r[0]), ((Number) r[1]).intValue());
+        for (Object[] r : hist) histMax.put(readAxis(sheet, r, axisArity), ((Number) r[axisArity]).intValue());
         return histMax;
     }
 
     /**
-     * <b>只读</b>预测：这些轴值组「如果现在写一次」会拿到哪个版本号（task-260907 第二段 · D-31）。
+     * <b>只读</b>预测：这些<b>复合轴</b>组「如果现在写一次」会拿到哪个版本号（D-31）。
      *
      * <p>用途唯一 —— 核价通过确认界面要给财务看「快照基版 v1 / 库当前 v2 / <b>将升到 v3</b>」
      * （{@code AC-10①}）。dry-run 只能预测，但预测<b>必须与真写共用同一条规则</b>
-     * （{@link #nextVersionNo}），否则规则一改预览就静默说谎。
+     * （{@link #nextVersionNo}）与<b>同一个轴谓词</b>（{@link #axisPredicate}）。
+     *
+     * <p>🚨 <b>绝不能退化成 {@link #currentVersionAnyCustomer} 的跨客户口径</b>：
+     * 那会让同一料号在客户 A 下显示出客户 B 的版本号，而<b>财务正照着这个数字做确认判断</b>。
+     * 它比乐观锁判错更隐蔽 —— 乐观锁会报冲突，这里只是<b>安静地显示一个错的数</b>。
      *
      * <p>返回值语义 = {@code writeGroups} 真写时会赋给该组的 {@code version_no}：
-     * 库里与 {@code _history} 里都没有该轴值 ⇒ 返回 {@code 1}（与 {@code CREATED} 一致）。
+     * 库里与 {@code _history} 里都没有该轴 ⇒ 返回 {@code 1}（与 {@code CREATED} 一致）。
      * <p>⚠️ 判定为 {@code UNCHANGED} 的组<b>一行不写</b>，其版本号维持原值 ——
      * 那种情形调用方不该用本方法的返回值。本方法<b>不做</b> CREATED/UPGRADED/UNCHANGED 判定。
      *
      * <p>🚫 <b>无副作用</b>：不取锁、不归档、不写任何表。SQL 恒 2 条，与轴值数无关。
      */
-    public Map<String, Integer> predictNextVersion(SheetDef sheet, java.util.Collection<String> axes) {
-        Map<String, Integer> out = new LinkedHashMap<>();
+    public Map<AxisKey, Integer> predictNextVersion(SheetDef sheet, java.util.Collection<AxisKey> axes) {
+        Map<AxisKey, Integer> out = new LinkedHashMap<>();
         if (axes == null || axes.isEmpty()) return out;
         if (!sheet.versioned) {
             throw new IllegalArgumentException("免版本表没有版本号可预测: " + sheet.tableName);
         }
-        List<String> list = new ArrayList<>(new LinkedHashSet<>(axes));
-        String axisCol = SqlIdent.of(sheet.axisColumn);
+        List<AxisKey> list = new ArrayList<>(new LinkedHashSet<>(axes));
+        for (AxisKey k : list) requireAxisMatchesSheet(sheet, k);      // 与写路径同一道校验
+        String axisSelect = String.join(", ", sqlIdents(sheet.axisColumns()));
+        int axisArity = sheet.axisColumns().size();
+        AxisPredicate pred = axisPredicate(sheet, list, "p");
 
-        Map<String, Integer> current = new HashMap<>();
+        Map<AxisKey, Integer> current = new HashMap<>();
         @SuppressWarnings("unchecked")
-        List<Object[]> cur = em.createNativeQuery(
-                        "SELECT " + axisCol + ", max(version_no) FROM " + SqlIdent.of(sheet.tableName)
-                                + " WHERE " + axisCol + " IN (:axes) GROUP BY " + axisCol)
-                .setParameter("axes", list)
+        List<Object[]> cur = pred.bind(em.createNativeQuery(
+                        "SELECT " + axisSelect + ", max(version_no) FROM " + SqlIdent.of(sheet.tableName)
+                                + " WHERE " + pred.sql + " GROUP BY " + axisSelect))
                 .getResultList();
-        for (Object[] r : cur) current.put(str(r[0]), r[1] == null ? 0 : ((Number) r[1]).intValue());
+        for (Object[] r : cur) {
+            current.put(readAxis(sheet, r, axisArity), r[axisArity] == null ? 0 : ((Number) r[axisArity]).intValue());
+        }
 
-        Map<String, Integer> histMax = historyMaxVersions(sheet, axisCol, list);
-        for (String axis : list) {                      // 🚫 纯内存，循环体内无查询
+        Map<AxisKey, Integer> histMax = historyMaxVersions(sheet, axisSelect, axisArity, pred);
+        for (AxisKey axis : list) {                     // 🚫 纯内存，循环体内无查询
             out.put(axis, nextVersionNo(current.getOrDefault(axis, 0), histMax.getOrDefault(axis, 0)));
         }
         return out;
     }
 
-    /** 该轴值当前版本号；0 表示该轴值在本 sheet 中<b>从未有过数据</b>（api.md §4 的 versionNo=null）。 */
-    public int currentVersion(SheetDef sheet, String axisValue) {
+    /**
+     * 该<b>复合轴</b>当前版本号；0 表示从未有过数据（api.md §4 的 versionNo=null）。
+     * <p>写入路径（维护端保存的乐观锁）必须走这个重载 —— 它与 {@link #writeGroups} 的删除口径同源。
+     */
+    public int currentVersion(SheetDef sheet, AxisKey axis) {
+        requireAxisMatchesSheet(sheet, axis);
+        AxisPredicate pred = axisPredicate(sheet, List.of(axis), "v");
+        Object v = pred.bind(em.createNativeQuery(
+                        "SELECT coalesce(max(version_no), 0) FROM " + SqlIdent.of(sheet.tableName)
+                                + " WHERE " + pred.sql))
+                .getSingleResult();
+        return v == null ? 0 : ((Number) v).intValue();
+    }
+
+    /**
+     * 该轴值<b>跨全部客户</b>的当前版本号 —— 只给还没有客户上下文的<b>读</b>路径用
+     * （维护端 {@code GET rows} / {@code GET versions}，客户选择器由
+     * {@code task-260907-产品管理客户过滤} 承接）。
+     *
+     * <p>🚫 <b>写路径不许用它</b>：它跨客户取 max，与整组删除的口径不一致，
+     * 拿它做乐观锁比对会在同料号跨客户时判错。写路径一律走 {@link #currentVersion(SheetDef, AxisKey)}。
+     *
+     * <p>SQL 与 task-260907 之前逐字相同 ⇒ 核价两套与报价读端的既有行为零变化。
+     */
+    public int currentVersionAnyCustomer(SheetDef sheet, String axisValue) {
         Object v = em.createNativeQuery(
                         "SELECT coalesce(max(version_no), 0) FROM " + SqlIdent.of(sheet.tableName)
                                 + " WHERE " + SqlIdent.of(sheet.axisColumn) + " = :a")
@@ -296,45 +347,131 @@ public class VersionedGroupWriter {
     }
 
     // ==================================================================
+    // 复合轴谓词（task-260907 · B-2 / B-3）
+    // ==================================================================
+
+    /**
+     * 轴谓词 + 它的绑定参数。
+     *
+     * <p>单列轴退化成 {@code axis_col IN (:a_axes)}，与改动前<b>同形</b>（核价两套零行为变化，AC-6）；
+     * 复合轴用 PG 的行构造器 {@code (customer_no, axis_col) IN ((:a0_0,:a0_1), ...)}，
+     * 一条语句覆盖全部轴值 —— <b>SQL 条数仍与轴值数无关</b>（backend.md N+1 硬指标）。
+     */
+    private static final class AxisPredicate {
+        final String sql;
+        final Map<String, Object> params;
+        AxisPredicate(String sql, Map<String, Object> params) { this.sql = sql; this.params = params; }
+        Query bind(Query q) {
+            for (Map.Entry<String, Object> e : params.entrySet()) q.setParameter(e.getKey(), e.getValue());
+            return q;
+        }
+    }
+
+    /** @param tag 参数名前缀 —— 同一条语句里可能同时出现多个谓词，前缀防撞名。 */
+    private static AxisPredicate axisPredicate(SheetDef sheet, List<AxisKey> axes, String tag) {
+        List<String> cols = sqlIdents(sheet.axisColumns());
+        Map<String, Object> params = new LinkedHashMap<>();
+        if (cols.size() == 1) {
+            List<String> vals = new ArrayList<>(axes.size());
+            for (AxisKey k : axes) vals.add(k.axisValue());
+            params.put(tag + "_axes", vals);
+            return new AxisPredicate(cols.get(0) + " IN (:" + tag + "_axes)", params);
+        }
+        StringBuilder sb = new StringBuilder("(").append(String.join(", ", cols)).append(") IN (");
+        for (int i = 0; i < axes.size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append("(:").append(tag).append(i).append("_c, :").append(tag).append(i).append("_a)");
+            params.put(tag + i + "_c", axes.get(i).customerNo());
+            params.put(tag + i + "_a", axes.get(i).axisValue());
+        }
+        sb.append(')');
+        return new AxisPredicate(sb.toString(), params);
+    }
+
+    private static List<String> sqlIdents(List<String> cols) {
+        List<String> out = new ArrayList<>(cols.size());
+        for (String c : cols) out.add(SqlIdent.of(c));
+        return out;
+    }
+
+    /** 从结果行前 {@code arity} 列读回轴键（列顺序 = {@link SheetDef#axisColumns()}）。 */
+    private static AxisKey readAxis(SheetDef sheet, Object[] row, int arity) {
+        return arity == 1 ? new AxisKey(null, str(row[0])) : new AxisKey(str(row[0]), str(row[1]));
+    }
+
+    /**
+     * AC-4：轴键与本表的客户维度必须对齐，对不上<b>立刻抛</b>。
+     *
+     * <p>🚫 报价侧客户号为空时<b>绝不允许静默写 NULL</b> —— 那正是「列建了、值恒 NULL」的失败形态：
+     * 自检过、导入不报错，隔离却完全没生效。
+     */
+    private static void requireAxisMatchesSheet(SheetDef sheet, AxisKey axis) {
+        if (axis == null) throw new IllegalArgumentException("轴键不能为 null: " + sheet.tableName);
+        if (axis.axisValue() == null || axis.axisValue().isBlank()) {
+            throw new IllegalArgumentException("轴值不能为空: " + sheet.tableName);
+        }
+        if (sheet.customerScoped()) {
+            if (!axis.scoped()) {
+                throw new IllegalArgumentException(
+                        "报价侧写入必须提供客户编号（customer_no），本次为空: " + sheet.tableName
+                                + " 轴值=" + axis.axisValue());
+            }
+        } else if (axis.customerNo() != null) {
+            throw new IllegalArgumentException(
+                    "本表无客户维度，不得传客户编号: " + sheet.tableName + " customerNo=" + axis.customerNo());
+        }
+    }
+
+    // ==================================================================
     // 内部
     // ==================================================================
 
     /** 归档：整行复制进 {@code _history}（主表 {@code id} → {@code origin_id}），1 条 INSERT…SELECT。 */
-    private void archive(SheetDef sheet, String table, String axisCol, List<String> axes,
+    private void archive(SheetDef sheet, String table, AxisPredicate pred,
                          String archiveReason, String operator) {
         List<String> cols = new ArrayList<>();
         for (ColumnDef c : sheet.persistedColumns()) cols.add(SqlIdent.of(c.name));
         cols.addAll(ARCHIVE_SYS_COLUMNS);
+        // 🚨 task-260907 · B-1 ④：customer_no 是静态系统列、不在 persistedColumns 里，
+        //    归档时必须显式复制。漏了它 = _history 那一列恒 NULL，而这条不会报任何错。
+        if (sheet.customerScoped()) cols.addAll(SheetDef.CUSTOMER_COLUMNS);
         String colList = String.join(", ", cols);
-        em.createNativeQuery("INSERT INTO " + sheet.historyTable()
+        pred.bind(em.createNativeQuery("INSERT INTO " + sheet.historyTable()
                         + " (origin_id, " + colList + ", archived_by, archive_reason)"
                         + " SELECT id, " + colList + ", :by, :reason FROM " + table
-                        + " WHERE " + axisCol + " IN (:axes)")
+                        + " WHERE " + pred.sql))
                 .setParameter("by", operator)
                 .setParameter("reason", archiveReason)
-                .setParameter("axes", axes)
                 .executeUpdate();
     }
 
     /** 多行 VALUES 合批插入。分批只按<b>总行数</b>切，不按轴值切。 */
     private void insertAll(SheetDef sheet, String table,
-                           Map<String, List<Map<String, Object>>> toInsert,
-                           Map<String, Integer> newVersions,
-                           Map<String, List<String>> fingerprints,
+                           Map<AxisKey, List<Map<String, Object>>> toInsert,
+                           Map<AxisKey, Integer> newVersions,
+                           Map<AxisKey, List<String>> fingerprints,
                            String source, String operator) {
         if (toInsert.isEmpty()) return;
+        boolean scoped = sheet.customerScoped();
         List<ColumnDef> dbCols = sheet.persistedColumns();
         List<String> allCols = new ArrayList<>();
         for (ColumnDef c : dbCols) allCols.add(SqlIdent.of(c.name));
         allCols.addAll(INSERT_SYS_COLUMNS);
+        // 🚨 task-260907 · B-1 ④：customer_no 是静态系统列、不在 persistedColumns 里，
+        //    插入时必须显式带上。漏了它 = 列建好了、自检过了、导入也不报错，【值永远 NULL】——
+        //    届时「NULL 行数 = 0」的验收会红，但排查方向极易跑偏到 DDL 上（「列不是加了吗？」）。
+        if (scoped) allCols.addAll(SheetDef.CUSTOMER_COLUMNS);
 
         // 展平（🚫 循环体内无查询）
-        List<Object[]> flat = new ArrayList<>();       // [rowMap, versionNo, fingerprint]
-        for (Map.Entry<String, List<Map<String, Object>>> e : toInsert.entrySet()) {
-            int ver = newVersions.getOrDefault(e.getKey(), 1);
-            List<String> fps = fingerprints.get(e.getKey());
+        List<Object[]> flat = new ArrayList<>();       // [rowMap, versionNo, fingerprint, customerNo]
+        for (Map.Entry<AxisKey, List<Map<String, Object>>> e : toInsert.entrySet()) {
+            AxisKey axis = e.getKey();
+            int ver = newVersions.getOrDefault(axis, 1);
+            List<String> fps = fingerprints.get(axis);
             List<Map<String, Object>> rows = e.getValue();
-            for (int i = 0; i < rows.size(); i++) flat.add(new Object[]{rows.get(i), ver, fps.get(i)});
+            for (int i = 0; i < rows.size(); i++) {
+                flat.add(new Object[]{rows.get(i), ver, fps.get(i), axis.customerNo()});
+            }
         }
 
         java.time.OffsetDateTime now = java.time.OffsetDateTime.now();
@@ -365,7 +502,8 @@ public class VersionedGroupWriter {
                 q.setParameter("p" + i + "_" + c++, source);              // source
                 q.setParameter("p" + i + "_" + c++, operator);            // created_by
                 q.setParameter("p" + i + "_" + c++, now);                 // updated_at
-                q.setParameter("p" + i + "_" + c, operator);              // updated_by
+                q.setParameter("p" + i + "_" + c++, operator);            // updated_by
+                if (scoped) q.setParameter("p" + i + "_" + c, flat.get(i)[3]);   // customer_no
             }
             q.executeUpdate();
         }

@@ -188,6 +188,9 @@ public class DatasetSchemaSelfCheck {
         m.put("source", "varchar(16)");
         m.put("created_by", "varchar(64)");
         m.put("updated_by", "varchar(64)");
+        // task-260907 · B-1：报价侧的 customer_no 静态系统列。口径照抄 ds_quote_customer_part
+        // 那一列的实查结果（varchar(20) NOT NULL 无默认值），🚫 不要自己另定类型。
+        if (s.customerScoped()) m.put(SheetDef.CUSTOMER_COLUMN, "varchar(20)");
         return m;
     }
 

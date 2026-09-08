@@ -40,6 +40,12 @@ final class FieldMatrixSpec {
             "version_no", "row_fingerprint"));
 
     /** {@code _history} 表额外追加的三列归档信息（需求文档 R-5）。 */
+    /**
+     * task-260907 · B-1：<b>报价侧</b>客户维度静态系统列。
+     * 与生产侧 {@code SheetDef.CUSTOMER_COLUMNS} 逐字对应（核价两套不带，故不进 SYSTEM_COLUMNS）。
+     */
+    static final Set<String> CUSTOMER_COLUMNS = new LinkedHashSet<>(List.of("customer_no"));
+
     static final Set<String> ARCHIVE_COLUMNS = new LinkedHashSet<>(List.of(
             "archived_at", "archived_by", "archive_reason"));
 
@@ -75,12 +81,35 @@ final class FieldMatrixSpec {
             return tableName + "_history";
         }
 
-        /** AC-2 的期望列集合：矩阵建字段 ∪ 系统列 ∪（带版本再并上版本列）。 */
+        /**
+         * AC-2 的期望列集合：矩阵建字段 ∪ 系统列 ∪（带版本再并上版本列）
+         * ∪（<b>报价侧</b>再并上客户维度静态系统列）。
+         *
+         * <h3>task-260907：为什么 {@code customer_no} 进的是这里，而不是矩阵的建字段</h3>
+         * 本任务给报价侧 28 张表（15 主表 + 13 {@code _history}）加了 {@code customer_no}，
+         * 它<b>不来自 Excel</b>（来自导入时选的客户下拉），所以在
+         * {@code SheetDef} 里是<b>静态系统列</b>而不是 {@code ColumnDef}
+         * （见 {@code SheetDef.CUSTOMER_COLUMNS} 与 {@code expectedTableColumns()}）——
+         * 判据这边必须用同一口径表达，否则本该合法的 DDL 会被判成「多出未声明的列」。
+         *
+         * <p>🚫 <b>刻意不把断言从「相等」放宽成「包含」</b>：放宽之后这条用例就再也发现不了
+         * 真正的结构漂移（多建一列、少建一列都会静默通过）。这里加的是<b>一条精确的期望</b>，
+         * 不是一个豁免。
+         *
+         * <p>⚠️ 例外 {@code ds_quote_customer_part}：它的 {@code customer_no} <b>来自 Excel</b>、
+         * 在矩阵里是真建字段，已经落在 {@code builtColumns} 里。生产侧
+         * {@code AbstractDatasetRegistry.reg()} 正是用「该 sheet 有没有自己声明 customer_no」
+         * 来决定要不要叠系统列的（{@code scoped}）。这里用 {@code Set} 的幂等并集表达同一件事：
+         * 已经有了就不会重复，判据与生产逻辑<b>同源而非各写一套</b>。
+         */
         Set<String> expectedColumns() {
             Set<String> s = new LinkedHashSet<>(builtColumns);
             s.addAll(SYSTEM_COLUMNS);
             if (versioned) {
                 s.addAll(VERSION_COLUMNS);
+            }
+            if ("quote".equals(dataset)) {
+                s.addAll(CUSTOMER_COLUMNS);   // task-260907 · B-1：报价侧客户维度静态系统列
             }
             return s;
         }

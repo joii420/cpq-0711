@@ -2,6 +2,7 @@ package com.cpq.configure.service;
 
 import com.cpq.dataset.registry.QuoteRegistry;
 import com.cpq.dataset.registry.SheetDef;
+import com.cpq.dataset.versioning.AxisKey;
 import com.cpq.dataset.versioning.VersionedGroupWriter;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -109,15 +110,20 @@ public class SelDsQuoteWriter {
      * （例如库里早有的外购件料号）。A-AC-7 / A-AC-11 约束的是「本流程新建的行」，
      * 存量行的补齐属数据治理，不由选配顺手改写别人导入的数据。
      */
-    public void upsertMaterial(String materialNo, String materialName, String specification,
+    public void upsertMaterial(String customerNo, String materialNo, String materialName, String specification,
                                String dimension, BigDecimal unitWeight, String materialType,
                                String categoryCode, String operator) {
         if (materialNo == null || materialNo.isBlank()) return;
+        requireCustomer(customerNo, "ds_quote_material", materialNo);
+        // 🆕 task-260907 · B-1/B-6：customer_no 进列清单，冲突目标随
+        //    uq_ds_quote_material 一同扩成 (customer_no, material_no) ——
+        //    同一料号在不同客户下各自一行，🚫 不再被对方的 DO NOTHING 吞掉。
         em.createNativeQuery(
-                "INSERT INTO ds_quote_material (material_no, material_name, specification, dimension, "
+                "INSERT INTO ds_quote_material (customer_no, material_no, material_name, specification, dimension, "
               + "  unit_weight, material_type, category_code, source, created_by, updated_at, updated_by) "
-              + "VALUES (:mn, :nm, :sp, :dm, :uw, :mt, :cc, :src, :op, now(), :op) "
-              + "ON CONFLICT (material_no) DO NOTHING")
+              + "VALUES (:cust, :mn, :nm, :sp, :dm, :uw, :mt, :cc, :src, :op, now(), :op) "
+              + "ON CONFLICT (customer_no, material_no) DO NOTHING")
+            .setParameter("cust", customerNo)
             .setParameter("mn", materialNo)
             .setParameter("nm", materialName)
             .setParameter("sp", specification)
@@ -216,9 +222,11 @@ public class SelDsQuoteWriter {
      * {@code version_no} 恒为 1（{@code VersionedGroupWriter} 里硬编码），选配阶段不会升版。
      * 本方法<b>不做任何版本号干预</b>，后人也不要加。
      */
-    public VersionedGroupWriter.Result writeMaterialBomGroup(String materialNo, List<Map<String, Object>> rows,
+    public VersionedGroupWriter.Result writeMaterialBomGroup(String customerNo, String materialNo,
+                                                            List<Map<String, Object>> rows,
                                                             String operator) {
-        return versionedWriter.writeGroup(sheet("MATERIAL_BOM"), materialNo,
+        SheetDef sd = sheet("MATERIAL_BOM");
+        return versionedWriter.writeGroup(sd, AxisKey.of(sd, customerNo, materialNo),
             rows == null ? List.of() : rows, SOURCE, REASON, operator);
     }
 
@@ -240,11 +248,15 @@ public class SelDsQuoteWriter {
      * @return {@code null} 表示已存在、未写；否则为 {@code writeGroup} 的结果
      */
     @SuppressWarnings("unchecked")
-    public VersionedGroupWriter.Result writeOutsourcedSelfRow(String materialNo, String operator) {
+    public VersionedGroupWriter.Result writeOutsourcedSelfRow(String customerNo, String materialNo, String operator) {
         if (materialNo == null || materialNo.isBlank()) return null;
+        requireCustomer(customerNo, "ds_quote_material_bom", materialNo);
+        // 🆕 task-260907 · B-3：读现状必须按【复合轴】收窄。
+        //    只按 material_no 读 = 把别的客户的行读进来，再整组重写到本客户名下 —— 双向串数据。
         List<Object[]> cur = em.createNativeQuery(
                 "SELECT item_seq, input_material_no, output_material_type, component_qty, material_ratio "
-              + "FROM ds_quote_material_bom WHERE material_no = :mn ORDER BY item_seq")
+              + "FROM ds_quote_material_bom WHERE customer_no = :cust AND material_no = :mn ORDER BY item_seq")
+            .setParameter("cust", customerNo)
             .setParameter("mn", materialNo)
             .getResultList();
 
@@ -264,7 +276,7 @@ public class SelDsQuoteWriter {
             rows.add(row);
         }
         rows.add(materialBomRow(materialNo, maxSeq + 1, materialNo, OUT_OUTSOURCED, null, null));
-        return writeMaterialBomGroup(materialNo, rows, operator);
+        return writeMaterialBomGroup(customerNo, materialNo, rows, operator);
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -295,9 +307,23 @@ public class SelDsQuoteWriter {
      * <p>🚨 同 {@link #writeMaterialBomGroup}：{@code rows} 是该料号<b>所有材质</b>的元素行合起来，
      * 不能按材质分多次调 —— 新表的轴只有 {@code material_no}，分次调后一次会抹掉前一次。
      */
-    public VersionedGroupWriter.Result writeElementBomGroup(String materialNo, List<Map<String, Object>> rows,
+    public VersionedGroupWriter.Result writeElementBomGroup(String customerNo, String materialNo,
+                                                           List<Map<String, Object>> rows,
                                                            String operator) {
-        return versionedWriter.writeGroup(sheet("ELEMENT_BOM"), materialNo,
+        SheetDef sd = sheet("ELEMENT_BOM");
+        return versionedWriter.writeGroup(sd, AxisKey.of(sd, customerNo, materialNo),
             rows == null ? List.of() : rows, SOURCE, REASON, operator);
+    }
+
+    /**
+     * task-260907 · AC-4：报价侧写入必须带客户号，🚫 不许静默写 NULL。
+     * <p>选配链路的客户号来源是 {@code salesCtx.customerNo} / {@code customerCode}（= {@code customer.code}），
+     * 与导入端「选客户」同源。
+     */
+    private static void requireCustomer(String customerNo, String table, String materialNo) {
+        if (customerNo == null || customerNo.isBlank()) {
+            throw new IllegalArgumentException(
+                "报价侧写入必须提供客户编号（customer_no）: " + table + " 料号=" + materialNo);
+        }
     }
 }

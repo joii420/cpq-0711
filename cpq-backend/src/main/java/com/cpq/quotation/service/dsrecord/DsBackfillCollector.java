@@ -144,8 +144,21 @@ public class DsBackfillCollector {
 
             Map<String, DsMainTableReader.BaseGroup> base =
                     mainTableReader.readGroups(sheet, byAxis.keySet(), plan.customerNo);  // 1 条 SQL
-            // D-31：目标版本号问 writer（只读、2 条 SQL、与轴值数无关），🚫 不在本类里再算一遍规则
-            Map<String, Integer> predicted = versionedGroupWriter.predictNextVersion(sheet, byAxis.keySet());
+            // D-31：目标版本号问 writer（只读、2 条 SQL、与轴值数无关），🚫 不在本类里再算一遍规则。
+            // 🚨 2026-09-07 合并 customer_dim：轴已是复合键 ⇒ **必须带客户维度**。
+            //    漏掉客户号 = 同一料号在客户 A 下显示出客户 B 的版本号，而财务正照着这个数字确认。
+            //    🚫 绝不能退化成 currentVersionAnyCustomer 的跨客户 max（writer 的 javadoc 点名禁止）。
+            //    AxisKey.of(sheet, ...) 自带 arity 判断：核价两套无客户维度时自动丢弃客户号。
+            Map<String, com.cpq.dataset.versioning.AxisKey> axisKeys = new LinkedHashMap<>();
+            for (String av : byAxis.keySet()) {
+                axisKeys.put(av, com.cpq.dataset.versioning.AxisKey.of(sheet, plan.customerNo, av));
+            }
+            Map<com.cpq.dataset.versioning.AxisKey, Integer> predictedByKey =
+                    versionedGroupWriter.predictNextVersion(sheet, axisKeys.values());
+            Map<String, Integer> predicted = new LinkedHashMap<>();
+            for (Map.Entry<String, com.cpq.dataset.versioning.AxisKey> e : axisKeys.entrySet()) {
+                predicted.put(e.getKey(), predictedByKey.getOrDefault(e.getValue(), 1));
+            }
 
             DsBackfillPlan.Table t = new DsBackfillPlan.Table();
             t.sheet = sheet;

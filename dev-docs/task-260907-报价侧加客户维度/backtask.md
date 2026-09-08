@@ -269,6 +269,32 @@ comm -13 <(ls "$SRC"|sort) <(ls "$CLS" 2>/dev/null|sort)
 🚨 **合成一条的后果**：只写迁移的人和只起服务的人**会各自跳过对方那半** —— 而两者都是今天真实出过事故的。
 （本任务两者都要：要写 5 个迁移，也要起服务。）
 
+#### ⑤ 第五个维度：**比 `script` 字段，不只比号**（并发会话 2026-09-07 实测）
+
+```bash
+# 库里记的 script 与 master 上的真实文件名是否一致（双向）
+psql … -tAc "SELECT version||'|'||script FROM flyway_schema_history WHERE version::int>=420" \
+| while IFS='|' read v s; do
+    fn=$(basename "$s")
+    git ls-tree -r master --name-only -- "$M" | grep -q "/$fn\$" \
+      && echo "  V$v ✅ $fn" || echo "  V$v 🚨 库里记 $fn，master 上无此文件名"
+  done
+```
+
+🚨 **只比号会放行「号对但内容错」**：并发会话实测，它本地的
+`V424__…_func_customer_element_price.sql` 与库里记的 `V424__…_drop_customer_element_price_node.sql`
+**号相同、文件名与内容完全不同**，而它的守卫因为「V424 这个号在 master 上有」就**放行了**。
+⇒ 症状是起服务时 checksum mismatch —— **不污染库，但会让人以为是环境坏了**，排查方向完全错。
+
+> 📌 主线 2026-09-07 双向跑过：`V420~V424` 库里 `script` 与 master 文件名逐条一致、反向也全对得上。
+
+#### ⚠️ 「当前无 java 进程」是**瞬时量**，不是状态（并发会话 2026-09-07 纠正主线）
+
+主线报「该 worktree 当前无 java 进程」时，对方同一时间查到 **PID 1730694 在跑**（几秒后自行退出，是 `mvnw test` 的收尾进程）。
+⇒ **结论没受影响**（确实还来得及），但**判据的可靠性受影响**：
+用它当安全前提时**必须说清采样时刻**，就像对「共享库顶版」的处理一样。
+🚫 不要写「无进程 ⇒ 安全」，要写「**某时刻采样为无进程**」。
+
 **四个维度各挡一类，🚫 不能互相替代**：
 
 | 维度 | 挡什么 | 实证 |
@@ -328,6 +354,18 @@ comm -13 <(ls "$SRC"|sort) <(ls "$CLS" 2>/dev/null|sort)
 ---
 
 ## 🔢 迁移改号方案（2026-09-07 事故后与并发会话协调的结果，落地前必读）
+
+🚨 **撞号的后果比「checksum 失配」更早也更硬**（2026-09-07 子代理复核后更正主线原记录）：
+
+master 与本分支各有一个 `V423__*.sql`（文件名不同、内容不同）⇒ 合并后 migration 目录里
+**同时存在两个 V423** ⇒ Flyway 在**加载阶段**就报：
+```
+Found more than one migration with version 423
+```
+**不是 checksum mismatch**（那要等到 validate 阶段、且依赖库里已有记录），而是**加载即失败** ——
+⇒ **更早、更硬，且不依赖任何库的状态**。
+🔑 **判据因此也更强：同号冲突在纯文件系统层面就能查出来，不需要连库。**
+⇒ 上面第 2.5 步撞号检查的「master 维度」是**必查**的，不能因为「我没连共享库」就跳过。
 
 **起因**：并发会话的 `V423__task260907_customer_element_price_node.sql` 于 09:31:05 落入共享库并已固化
 （checksum 已写入 `flyway_schema_history`，且文件已恢复进 master ⇒ 不可再动）。⇒ **本任务六个迁移整体改号。**

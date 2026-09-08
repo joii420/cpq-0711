@@ -32,6 +32,17 @@ public interface DatasetRegistry {
     /** 该数据集的<b>物料表</b>（免版本，列表页数据源，api.md §3）。 */
     String materialTable();
 
+    /**
+     * task-260907 · B-1：本数据集的表是否带 {@code customer_no} 维度。
+     *
+     * <p>报价侧 = {@code true}（用户 2026-09-07 裁决「将所有报价侧的表都增加 customer_no 字段」）；
+     * 核价两套 = {@code false}（裁决只针对报价侧）。
+     *
+     * <p>它同时决定三件事：① 启动自检期望列集要不要含 {@code customer_no}；
+     * ② 版本化写入的轴是不是复合轴；③ 导入端点是否<b>强制</b>要求客户号。
+     */
+    default boolean customerScoped() { return false; }
+
     /** 全部 sheet，按 Excel 顺序（sortOrder 升序）。 */
     List<SheetDef> sheets();
 

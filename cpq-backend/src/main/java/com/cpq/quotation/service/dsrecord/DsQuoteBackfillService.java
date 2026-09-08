@@ -262,7 +262,11 @@ public class DsQuoteBackfillService {
 
         for (DsBackfillPlan.Table t : plan.tables) {
             // 🚫 严禁 for 循环里逐轴值调 writeGroup —— 整张 sheet 一次性交给批量入口。
-            Map<String, List<Map<String, Object>>> rowsByAxis = new LinkedHashMap<>();
+            // 🚨 2026-09-07 合并 customer_dim：writeGroups 的键已是复合 AxisKey。
+            //    漏掉客户维度 = 客户 A 的回填会把客户 B 的同料号整组删掉（整组 DELETE 按轴谓词走），
+            //    不报错、不撞键、不留痕（13 张带版本表只有 PRIMARY KEY(id)）。
+            Map<com.cpq.dataset.versioning.AxisKey, List<Map<String, Object>>> rowsByAxis = new LinkedHashMap<>();
+            Map<String, com.cpq.dataset.versioning.AxisKey> keyByAxisValue = new LinkedHashMap<>();
             for (DsBackfillPlan.Group g : t.groups) {
                 // 🚨 C′（D-37）：BLOCKED 组**一个字节不写** —— 连 rowsByAxis 都不放进去，
                 //    因为 VersionedGroupWriter 的增量语义是「只碰入参里出现的轴值」，
@@ -270,7 +274,10 @@ public class DsQuoteBackfillService {
                 //    ⚠️ 核价通过本身照常进行：C′ 的目的是「别写坏」，不是「别通过」
                 //    （主线 2026-09-07 裁决：不拿业务流程给数据层的边界情况陪葬）。
                 if (DsBackfillCollector.BLOCKED.equals(g.result)) continue;
-                rowsByAxis.put(g.axisValue, g.resultRows);
+                com.cpq.dataset.versioning.AxisKey ak =
+                        com.cpq.dataset.versioning.AxisKey.of(t.sheet, g.customerNo, g.axisValue);
+                keyByAxisValue.put(g.axisValue, ak);
+                rowsByAxis.put(ak, g.resultRows);
             }
             if (rowsByAxis.isEmpty()) {                                   // 整张表都被 BLOCKED
                 sum.tables++;
@@ -282,13 +289,13 @@ public class DsQuoteBackfillService {
                 continue;
             }
 
-            Map<String, VersionedGroupWriter.Result> results = versionedGroupWriter.writeGroups(
+            Map<com.cpq.dataset.versioning.AxisKey, VersionedGroupWriter.Result> results = versionedGroupWriter.writeGroups(
                     t.sheet, rowsByAxis, SOURCE_QUOTE_BACKFILL, REASON_QUOTE_BACKFILL, operator);
 
             // 本次真的写了的轴值（UNCHANGED 的组一行不写，连 updated_at 都不许动 —— AC-14①）
             List<String> writtenAxes = new ArrayList<>();
-            for (Map.Entry<String, VersionedGroupWriter.Result> e : results.entrySet()) {
-                if (!VersionedGroupWriter.UNCHANGED.equals(e.getValue().result())) writtenAxes.add(e.getKey());
+            for (Map.Entry<com.cpq.dataset.versioning.AxisKey, VersionedGroupWriter.Result> e : results.entrySet()) {
+                if (!VersionedGroupWriter.UNCHANGED.equals(e.getValue().result())) writtenAxes.add(e.getKey().axisValue());
             }
             stampSourceQuotation(t.sheet, quotationId, plan.customerNo, writtenAxes);   // ≤2 条 SQL / 表
 
@@ -296,7 +303,7 @@ public class DsQuoteBackfillService {
             for (DsBackfillPlan.Group g : t.groups) {
                 sum.axes++;
                 if (DsBackfillCollector.BLOCKED.equals(g.result)) { sum.blockedGroups++; sum.unanchoredRows += g.unanchoredRows.size(); continue; }
-                VersionedGroupWriter.Result r = results.get(g.axisValue);
+                VersionedGroupWriter.Result r = results.get(keyByAxisValue.get(g.axisValue));
                 String actual = r == null ? g.result : r.result();
                 if (VersionedGroupWriter.UNCHANGED.equals(actual)) sum.unchangedGroups++;
                 else sum.upgradedGroups++;
