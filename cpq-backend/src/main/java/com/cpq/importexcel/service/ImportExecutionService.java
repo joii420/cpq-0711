@@ -47,6 +47,12 @@ public class ImportExecutionService {
     @Inject
     com.cpq.quotation.service.CardSnapshotService cardSnapshotService;
 
+    // D-40：导入建单末尾补写 _record（用户 2026-09-07 改裁「本期补写入」）
+    @Inject
+    com.cpq.quotation.service.dsrecord.DsQuoteRecordService dsQuoteRecordService;
+    @Inject
+    com.cpq.quotation.service.dsrecord.DsRecordStaleService dsRecordStaleService;
+
     /** Task 3.1: 列定义统一从 EXCEL 组件解析（import_settings 仍读 excelViewConfig 不变）。 */
     @Inject
     com.cpq.quotation.service.ExcelColumnResolver excelColumnResolver;
@@ -295,6 +301,41 @@ public class ImportExecutionService {
 
         LOG.infof("Import complete: file=%s total=%d success=%d matched=%d status=%s",
                 fileName, totalRows, successRows, matchedRows, importStatus);
+
+        // ── D-40：导入建单末尾补写 _record（AC-2④ v3 · 用户 2026-09-07 改裁）─────────────
+        // 🔑 为什么挂在这里而不是 `new QuotationLineComponentData()` 那两处：
+        //    那两处写的是 **component_id = NULL 的导入原始行留痕**（tab_name='Import'），
+        //    而 DsBackfillCollector 第二跳的 WHERE 带 `AND component_id IS NOT NULL`
+        //    ⇒ 挂在那里等于空跑（「代码跑了、日志也有、就是没数据」）。
+        //    真正的页签组件数据由循环里的 cardSnapshotService.ensureStructure/snapshotLineValues 产出，
+        //    所以挂点必须在**循环之后**。
+        // 🚫 N+1：整条流程只调一次，传 null = 本单全部明细行一次算完（🚫 不许按行调）。
+        // 🚫 不用 syncRecordsForFlow：本方法带 @Transactional，明细行尚未提交，
+        //    REQUIRES_NEW 的新事务看不见它们 ⇒ 必须加入当前事务，直调无注解的 syncRecords。
+        // 🛡️ 失败不阻断建单（D-35 同款）：syncRecords 无事务注解 ⇒ 无拦截器 ⇒ 异常不会把
+        //    本事务标 rollback-only，catch 住即可；再登记「快照过期」标记让它可见。
+        // 🚨 必须先把**调用方自己的**待写实体 flush 掉，再进 try（2026-09-07 A/B 实测教训）：
+        //    syncRecords 走原生 SQL，Hibernate 会在执行前自动 flush 本事务里所有待写实体。
+        //    若那次 flush 因**导入自己的**约束违规而抛（实测：li.product_id 是 templateId 占位值，
+        //    撞 quotation_line_item_product_id_fkey），异常会落进下面的 catch 被当成
+        //    「_record 写失败」吞掉 ⇒ 事务已被标 rollback-only，方法却照常返回
+        //    ⇒ **接口返 200 而整单静默回滚**。实测 A/B：挂点停用=500，挂点启用=200 且一行没落。
+        //    🚫 那正是本任务修过的 saveDraft 事故形态，绝不许由这个挂点再造一次。
+        //    ⇒ 显式先 flush：导入自己的写失败照旧**响亮地抛出去**，catch 里只剩真正的 _record 故障。
+        io.quarkus.hibernate.orm.panache.Panache.flush();
+        // ⚠️ 本方法里报价单是 UUID 变量 quotationId（:126 赋值），且**可能为 null**
+        //    （整份文件一行都没匹配上时不建单）⇒ 必须判空，否则 syncRecords 白跑一趟。
+        if (quotationId != null) {
+            try {
+                dsQuoteRecordService.syncRecords(quotationId, null);
+            } catch (RuntimeException ex) {
+                LOG.warnf(ex, "[ds-record] 导入建单 quotation=%s 写 _record 失败（导入本身不受影响）", quotationId);
+                dsRecordStaleService.markStale(quotationId,
+                        com.cpq.quotation.service.dsrecord.DsRecordStaleService.REASON_WRITE_FAILED,
+                        ex.getClass().getSimpleName() + ": " + ex.getMessage(), null);
+            }
+        }
+
 
         ImportRecordDTO dto = ImportRecordDTO.from(record);
         dto.customerName = customer.name;
@@ -696,6 +737,37 @@ public class ImportExecutionService {
 
         LOG.infof("ImportV3 confirmed: template=%s total=%d success=%d matched=%d status=%s",
                 request.templateId, rows.size(), successRows, matchedRows, importStatus);
+
+        // ── D-40：导入建单末尾补写 _record（AC-2④ v3 · 用户 2026-09-07 改裁）─────────────
+        // 🔑 为什么挂在这里而不是 `new QuotationLineComponentData()` 那两处：
+        //    那两处写的是 **component_id = NULL 的导入原始行留痕**（tab_name='Import'），
+        //    而 DsBackfillCollector 第二跳的 WHERE 带 `AND component_id IS NOT NULL`
+        //    ⇒ 挂在那里等于空跑（「代码跑了、日志也有、就是没数据」）。
+        //    真正的页签组件数据由循环里的 cardSnapshotService.ensureStructure/snapshotLineValues 产出，
+        //    所以挂点必须在**循环之后**。
+        // 🚫 N+1：整条流程只调一次，传 null = 本单全部明细行一次算完（🚫 不许按行调）。
+        // 🚫 不用 syncRecordsForFlow：本方法带 @Transactional，明细行尚未提交，
+        //    REQUIRES_NEW 的新事务看不见它们 ⇒ 必须加入当前事务，直调无注解的 syncRecords。
+        // 🛡️ 失败不阻断建单（D-35 同款）：syncRecords 无事务注解 ⇒ 无拦截器 ⇒ 异常不会把
+        //    本事务标 rollback-only，catch 住即可；再登记「快照过期」标记让它可见。
+        // 🚨 必须先把**调用方自己的**待写实体 flush 掉，再进 try（2026-09-07 A/B 实测教训）：
+        //    syncRecords 走原生 SQL，Hibernate 会在执行前自动 flush 本事务里所有待写实体。
+        //    若那次 flush 因**导入自己的**约束违规而抛（实测：li.product_id 是 templateId 占位值，
+        //    撞 quotation_line_item_product_id_fkey），异常会落进下面的 catch 被当成
+        //    「_record 写失败」吞掉 ⇒ 事务已被标 rollback-only，方法却照常返回
+        //    ⇒ **接口返 200 而整单静默回滚**。实测 A/B：挂点停用=500，挂点启用=200 且一行没落。
+        //    🚫 那正是本任务修过的 saveDraft 事故形态，绝不许由这个挂点再造一次。
+        //    ⇒ 显式先 flush：导入自己的写失败照旧**响亮地抛出去**，catch 里只剩真正的 _record 故障。
+        io.quarkus.hibernate.orm.panache.Panache.flush();
+        try {
+            dsQuoteRecordService.syncRecords(quotation.id, null);
+        } catch (RuntimeException ex) {
+            LOG.warnf(ex, "[ds-record] 导入建单 quotation=%s 写 _record 失败（导入本身不受影响）", quotation.id);
+            dsRecordStaleService.markStale(quotation.id,
+                    com.cpq.quotation.service.dsrecord.DsRecordStaleService.REASON_WRITE_FAILED,
+                    ex.getClass().getSimpleName() + ": " + ex.getMessage(), null);
+        }
+
 
         ImportRecordDTO dto = ImportRecordDTO.from(record);
         dto.customerName = customer.name;

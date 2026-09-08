@@ -87,6 +87,32 @@ public class DsQuoteRecordService {
     //    ⚠️ 这比 D-35 要消灭的静默更严重：那条丢的是派生数据，这条丢的是**用户刚写的正文**。
     //    ⚠️ 对比：{@link #syncElementPrice} 保留 MANDATORY 是**故意**的 ——
     //       D-29 要求它与 snapshot_rows「同写点同事务」，那里失败就该一起回滚。
+    /**
+     * <b>建单流程末尾的挂点</b>（D-40 · 用户 2026-09-07 改裁「本期补写入」）。
+     *
+     * <h3>🚨 它与直接调 {@link #syncRecords} 的区别，以及为什么两侧挂法必须不同</h3>
+     * <ul>
+     *   <li><b>导入侧</b>（{@code ImportExecutionService.executeImport / confirmImport}）本身带
+     *       {@code @Transactional} ⇒ 明细行还在<b>未提交</b>的外层事务里。
+     *       🚫 <b>绝不能用 {@code REQUIRES_NEW}</b> —— 新事务走另一条连接，<b>看不见未提交的行</b>，
+     *       结果是「调了、没报错、就是没数据」的空实现。⇒ 那侧<b>直接调无注解的
+     *       {@link #syncRecords}</b>，加入外层事务。
+     *       <p>🔑 无注解正是关键：没有拦截器 ⇒ 异常<b>不会</b>把调用方事务标 rollback-only
+     *       ⇒ 调用点 catch 住就真的不阻断（这正是早前 {@code saveDraft} 那次
+     *       「返 200 而整单回滚、草稿静默丢失」事故的修法）。</li>
+     *   <li><b>选配侧</b>挂在 {@code ConfigureProductResource}（Resource 层<b>没有事务</b>，
+     *       且此刻 service 的写入<b>已提交</b>）⇒ 必须由本方法开一个事务，否则原生
+     *       {@code INSERT} 无事务可用直接抛。</li>
+     * </ul>
+     * <p>🚫 <b>不是第二套投影</b>：本方法只是事务外壳，投影一律走 {@link #syncRecords}（D-31）。
+     * <p>🚫 <b>N+1</b>：整条流程<b>只许调一次</b>，{@code changedLineItemIds} 传 {@code null}
+     * = 本单全部明细行一次算完。🚫 不许按行/按明细调。
+     */
+    @Transactional
+    public Summary syncRecordsForFlow(UUID quotationId) {
+        return syncRecords(quotationId, null);
+    }
+
     public Summary syncRecords(UUID quotationId, Collection<UUID> changedLineItemIds) {
         if (quotationId == null) return Summary.empty();
         if (changedLineItemIds != null && changedLineItemIds.isEmpty()) return Summary.empty();
