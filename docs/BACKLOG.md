@@ -695,3 +695,44 @@ pickQualifiedCustomer({ needsTakenProductNo? })
   3. 考虑加一条启动期漂移哨兵：同 series 多个 PUBLISHED 时 WARN（不阻断，因为这是合法状态）。
 - ⚠️ **同型历史**：`task-260904` 的「`semantic_tab_view` 三段坐标只用前两段反查，`findFirst()` 静默取错方言」
   （实测命中 3 行、三方言各一）。**同一族：判据在某个维度上退化，而观测结果看起来完全正常。**
+
+---
+
+### [由 task-260907 排查暴露·已取证] BL-0223 · `forceRealignSnapshots` 只刷两份快照漏刷 `sql_views_snapshot`，且 `affectedTemplates` 反馈会误导用户以为改动已生效
+
+- [ ] 待开发 · 优先级 **P1** · 来源：`task-260907-报价导入建单切ds新表` 的 `AC-8` 排查（2026-09-07 用户裁决登记）
+- **现象**：在取数配置器里改一个**已发布模板**所用的视图并保存，`PUT /builder` 返回 `{"affectedTemplates": 2}`、
+  `template_component_snapshot.fields` 也确实更新了 —— **但渲染层拿不到新列，整列空，且不报任何错**。
+- 🔑 **根因（已定位到确切一行）**：`BuilderService.java:841` → `TemplateService.java:1097` 的
+  `forceRealignSnapshots` 只做两件事：
+  ```
+  ① DELETE + INSERT template_component_snapshot      （fields 刷新了）
+  ② UPDATE template SET components_snapshot = …      （组件结构刷新了）
+  ❌ 没有刷 template.sql_views_snapshot                （渲染取 SQL 读的正是这份）
+  ```
+  而 `ComponentSqlViewService.lookupForResolver` 的三层优先级是
+  「报价单冻结快照 → **模板 `sql_views_snapshot`** → 实时表」，且第三层明写
+  **「已发布模板不允许回落实时读取」** ⇒ 模板一旦 `PUBLISHED`，渲染永远读不到改后的 SQL。
+- 🚨 **真正的缺陷不是「冻结」本身，是两处**：
+  1. **两份快照语义不一致** —— 字段冻结被打破（fields 被刷新了），SQL 冻结保持。同一个「已发布模板」，
+     一半按快照走、一半按实时走。
+  2. **反馈误导** —— `affectedTemplates: 2` 让人以为改动生效了。**主线就是被它骗的**：
+     配完看到 2 以为成了，一路到渲染整列空才发现，中间排查掉了一整轮（还先后走进两个错误假设）。
+- **实测数据（主线全库普查，只读）**：
+  ```
+  PUBLISHED 模板 × 视图 配对 = 222
+  其中「快照 SQL ≠ 活表 SQL」= 171 条，涉及 28 个模板   （77%）
+  ```
+  ⚠️ **这 171 条大部分很可能是「冻结正常工作」的正常状态，不是 171 个 bug。**
+  要区分二者，须逐条判断「该差异是否是发布后的有意改动」。**本条不主张批量订正。**
+- **候选修法（需先答一个产品问题）**：
+  | 修法 | 影响面 | 风险 |
+  |---|---|---|
+  | 甲 | `forceRealignSnapshots` 补刷 `sql_views_snapshot`，与 ①② 同事务 | 只动一处；受益面 = 所有「发布后改视图」场景 | **会改已发布模板的冻结内容** —— 冻结语义是否允许被刷新，是产品决策 |
+  | 乙 | 保持不刷，但**保存时明确提示「需重新发布模板才生效」**，并让 `affectedTemplates` 不再误导 | 零风险，治的是误导 | 把不变量交给人工纪律 |
+  | 丙 | 两份快照语义统一：要么都刷、要么都不刷 | 最彻底 | 改动面最大 |
+  🚫 **不要改 `SqlViewExecutor.PATH_PATTERN`** —— 排查期一度以为是它（列名段 `[a-z_][a-z0-9_]*` 不认中文），
+  **实测推翻**：`$mc_view.元素单价` 同样不匹配该正则，而 `COMP-0314` 用它跑出 **20,795 行 / 5,168 行有值**。
+  正常列走 `evaluatePath` 的 `containsKey` 短路、**根本不进 `SqlViewExecutor`**，只有 driverRow 缺键才回落到它。
+  **改正则只会把「报错」变成「静默返 null」，症状更隐蔽而缺列一个不少。**
+- 📌 **真正的裁决点是「冻结的边界到底在哪」**，不是「补一行 UPDATE」。
