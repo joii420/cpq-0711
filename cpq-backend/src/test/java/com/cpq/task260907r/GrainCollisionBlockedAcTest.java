@@ -64,34 +64,43 @@ class GrainCollisionBlockedAcTest extends Task260907RBase {
     void t37a_grainCollisionBlocksTheGroup() {
         requireRecordLayer();
         String mat = axis("C1");
-        String dup = PREFIX + "DUP";   // 同 material_part_no + 同 element_code ⇒ grain 相同
+        String dup = PREFIX + "DUP";
 
-        // 基底：两行 grain 完全相同（歧义）
+        // 🕰️ 2026-09-08 夹具重构：原写法「基底就是歧义的 → A 升版 → B 撞键」**自相矛盾**。
+        //    C′ 生效后，基底一歧义，**A 自己也会被 BLOCKED** ⇒ A 根本升不了版
+        //    ⇒ 前置断言「升版前后主表 id 交集为空」当场失败（实测 before=after=[12562,12563]）。
+        //    🔑 那个红**不是缺陷，恰恰是 C′ 生效的证据** —— 但用例读不出来。
+        // ⇒ 改成：基底**先不歧义**，由 A 在升版时**引入重复粒度键**，B 再拿旧快照撞上去。
+        //    这样 A 能正常升版（它面对的基底是干净的），B 才真正落在 C′ 的判据上。
         seedMainViaCreatedOrder("c1Seed", mat, List.of(
-                new EbomRow(1, dup, "10.0", "1.1"),
-                new EbomRow(2, dup, "20.0", "2.2")));
+                new EbomRow(1, PREFIX + "E1", "10.0", "1.1"),
+                new EbomRow(2, PREFIX + "E2", "20.0", "2.2")));
+        assertEquals(0L, count("SELECT count(*) FROM (SELECT material_part_no, element_code "
+                        + "FROM " + EBOM + " WHERE material_no = '" + mat + "' "
+                        + "GROUP BY material_part_no, element_code HAVING count(*) > 1) s"),
+                "C′ 前置：基底此刻必须**不歧义**，否则 A 自己就会被拦、升不了版");
 
-        // 🚨 前提阳性对照 1：歧义真的存在，否则本条验的根本不是撞键路径
-        long dupGroups = count("SELECT count(*) FROM (SELECT material_part_no, element_code "
-                + "FROM " + EBOM + " WHERE material_no = '" + mat + "' "
-                + "GROUP BY material_part_no, element_code HAVING count(*) > 1) s");
-        assertFixtureNonEmpty(dupGroups,
-                "🚨 前提未成立：夹具没造出 grain 重复的行（grain = material_part_no + element_code）"
-                        + " ⇒ C′ 根本不会被触发，本用例会验成别的支路还以为过了");
-
-        // B 基于 v1 拍快照
+        // B 基于 v1 拍快照（此刻基底还不歧义）
         Fx b = newSubmittedOrder("c1B", mat, List.of(
-                new EbomRow(1, dup, "88.8", "1.1"),
-                new EbomRow(2, dup, "99.9", "2.2")));
+                new EbomRow(1, PREFIX + "E1", "88.8", "1.1"),
+                new EbomRow(2, PREFIX + "E2", "99.9", "2.2")));
         Set<Long> idsBefore = idSet(EBOM, "material_no", mat);
 
-        // A 升版并改值 ⇒ origin_id 失效 + 指纹变 ⇒ 只剩粒度列，而粒度列有歧义
+        // A 升版并**把两行的 element_code 改成同一个** ⇒ 升版后基底出现重复粒度键
         Fx a = newSubmittedOrder("c1A", mat, List.of(
                 new EbomRow(1, dup, "55.5", "1.1"),
                 new EbomRow(2, dup, "44.4", "2.2")));
         approveWithPreview(a, "c1A");
-        // 🚨 前提阳性对照 2：origin_id 真的失效了（否则走不到粒度列这一层）
         assertIdSetsDisjoint(idsBefore, idSet(EBOM, "material_no", mat), "C′ 阳性组 " + mat);
+
+        // 🚨 前提阳性对照：歧义现在真的存在了（由 A 引入）
+        long dupGroups = count("SELECT count(*) FROM (SELECT material_part_no, element_code "
+                + "FROM " + EBOM + " WHERE material_no = '" + mat + "' "
+                + "GROUP BY material_part_no, element_code HAVING count(*) > 1) s");
+        assertFixtureNonEmpty(dupGroups,
+                "🚨 前提未成立：A 升版后基底应出现重复粒度键（grain = material_part_no + element_code）"
+                        + " ⇒ C′ 根本不会被触发，本用例会验成别的支路还以为过了");
+        System.out.println("[C′-1] A 升版后基底歧义已造出：grain 重复组数 = " + dupGroups);
 
         JsonNode g = group(b, mat);
         System.out.println("[C′-1] B 的预览组 = " + g);
@@ -176,10 +185,13 @@ class GrainCollisionBlockedAcTest extends Task260907RBase {
                 "阴性对照前提：新增行的 element_code 必须是基底里没有的，否则它就撞键了");
 
         // B 表征基底两行（原样）+ 一行真新增
+        // 🔴 第 3 行必须 .asManual()：D-36 的保护按**行来源**判定（row_data 的 _origin:'manual'）。
+        //    不打标记的话它会被当 driver 行走兜底锚定 ⇒ 验的是**阳性路径**，
+        //    而本条要验的是**阴性路径**（用户新增行不被吞掉）—— 结果照样绿，但验错了靶子。
         Fx b = newSubmittedOrder("c2B", mat, List.of(
                 new EbomRow(1, PREFIX + "E1", "10.0", "1.1"),
                 new EbomRow(2, PREFIX + "E2", "20.0", "2.2"),
-                new EbomRow(3, newEl, "33.3", "3.3")));
+                new EbomRow(3, newEl, "33.3", "3.3").asManual()));
 
         JsonNode g = group(b, mat);
         System.out.println("[C′-2] B 的预览组 = " + g);
@@ -208,6 +220,87 @@ class GrainCollisionBlockedAcTest extends Task260907RBase {
                         + "' AND element_code = '" + newEl + "'"),
                 "新增行 " + newEl + " 在主表中的落地行数");
         System.out.println("[C′-2] ✅ 未拦 + 新增行落库（" + rowsBefore + " → " + rowsAfter + " 行）");
+    }
+
+    /**
+     * <b>D-36 阴性路径</b>：带 {@code _origin:'manual'} 的行 = 用户在 UI 点「+ 添加行」新增的行
+     * ⇒ <b>按新增追加，既有行必须还在</b>，🚫 不许被兜底锚定吞掉。
+     *
+     * <p>🔑 与 {@link #t36b_driverRowIsPatchedOntoExistingRow} 构成<b>成对对照</b>：
+     * <b>同样的内容</b>，只差一个 {@code _origin} 标记，结果必须<b>不同</b>。
+     * 两条同时绿 ⇒ 标记根本没被读到，判据没执行，两条都作废。
+     */
+    @Test
+    @DisplayName("D-36 阴性 · 带 _origin:manual 的行按新增追加（既有行还在）")
+    void t36a_manualOriginRowIsAppendedNotSwallowed() {
+        requireRecordLayer();
+        String mat = axis("D36A");
+        String el = PREFIX + "ELX";
+        seedMainViaCreatedOrder("d36aSeed", mat, List.of(new EbomRow(1, el, "11.1", "1.1")));
+
+        // 用户「+ 添加行」加了一行：同 element_code（grain 相同）、不同值
+        Fx b = newSubmittedOrder("d36aB", mat, List.of(
+                new EbomRow(1, el, "11.1", "1.1"),
+                new EbomRow(2, el, "99.9", "2.2").asManual()));
+
+        JsonNode g = group(b, mat);
+        System.out.println("[D-36 阴性] 预览组 = " + g);
+        int base = g.path("baseRowCount").asInt(-1);
+        int result = g.path("resultRowCount").asInt(-1);
+        assertFixtureNonEmpty(base, "D-36 阴性的基底行数");
+        assertTrue(result > base,
+                "🔑 D-36 阴性：手工新增行应**按新增追加** ⇒ resultRowCount 必须大于 baseRowCount。"
+                        + "实际 base=" + base + " result=" + result
+                        + " ⇒ 相等说明它被兜底锚定**吞掉**了（patch 到既有行上），"
+                        + "那正是 D-36 要防的形态。group=" + g);
+
+        approveWithPreview(b, "d36aB");
+        java.util.Map<Integer, String> after = ebomBusinessRowsBySeq(mat);
+        System.out.println("[D-36 阴性] 确认后主表 = " + after);
+        assertTrue(after.toString().contains("11.1"),
+                "🔑 D-36 阴性：既有行（11.1）必须还在。🚫 只验「新行写进去了」在既有行被覆盖之后"
+                        + "照样成立，所以那不是判据。实际=" + after);
+        assertTrue(after.toString().contains("99.9"),
+                "D-36 阴性 反向：新增行（99.9）应确实落库，实际=" + after);
+    }
+
+    /**
+     * <b>D-36 阳性路径（对照）</b>：<b>不带</b> {@code _origin} 的同内容行 = driver 未物化行
+     * ⇒ 走兜底锚定，<b>patch 到既有行上</b>，组行数不变。
+     *
+     * <p>🚨 本条的价值全在「与 {@link #t36a_manualOriginRowIsAppendedNotSwallowed} 结果不同」上。
+     * 若两条都得到同一个结果，说明 {@code _origin} 压根没参与判定 —— 那时
+     * <b>两条都不构成证据</b>，无论红绿。
+     */
+    @Test
+    @DisplayName("D-36 阳性对照 · 不带 _origin 的同内容行 patch 到既有行（组不膨胀）")
+    void t36b_driverRowIsPatchedOntoExistingRow() {
+        requireRecordLayer();
+        String mat = axis("D36B");
+        String el = PREFIX + "ELX";
+        seedMainViaCreatedOrder("d36bSeed", mat, List.of(new EbomRow(1, el, "11.1", "1.1")));
+
+        // 与阴性完全同样的内容，唯一差别：**不打 _origin 标记**
+        Fx b = newSubmittedOrder("d36bB", mat, List.of(
+                new EbomRow(1, el, "99.9", "1.1")));
+
+        JsonNode g = group(b, mat);
+        System.out.println("[D-36 阳性] 预览组 = " + g);
+        int base = g.path("baseRowCount").asInt(-1);
+        int result = g.path("resultRowCount").asInt(-1);
+        assertFixtureNonEmpty(base, "D-36 阳性的基底行数");
+        assertEquals(base, result,
+                "🔑 D-36 阳性对照：driver 行（无 _origin）应 patch 到既有行上 ⇒ 组行数不变。"
+                        + "实际 base=" + base + " result=" + result
+                        + " ⇒ 变多说明连 driver 行也被当成新增了，那会让「改一个数就翻倍」复发。group=" + g);
+
+        approveWithPreview(b, "d36bB");
+        java.util.Map<Integer, String> after = ebomBusinessRowsBySeq(mat);
+        System.out.println("[D-36 阳性] 确认后主表 = " + after);
+        assertEquals(1, after.size(),
+                "D-36 阳性对照：整组仍应 1 行，实际 " + after.size() + " → " + after);
+        assertTrue(after.toString().contains("99.9"),
+                "D-36 阳性对照：新值应 patch 上去，实际=" + after);
     }
 
     // ─────────────────────────── 工具 ───────────────────────────

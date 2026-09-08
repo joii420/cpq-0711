@@ -661,8 +661,39 @@ public abstract class Task260907RBase {
     /** 本套 AC 用例的被测主表（轴列 material_no）。 */
     public static final String EBOM = "ds_quote_element_bom";
 
-    /** 一行元素BOM 的业务值（字段名 = 组件 fields 的 name，实测与主表 12 个业务列 1:1）。 */
-    protected record EbomRow(int itemSeq, String elementCode, String contentPct, String netUsage) {}
+    /**
+     * 一行元素BOM 的业务值（字段名 = 组件 fields 的 name，实测与主表 12 个业务列 1:1）。
+     *
+     * @param manualOrigin 🔴 <b>这一行是否模拟「用户在 UI 上点『+ 添加行』新增的行」</b>。
+     *
+     * <h3>🚨 为什么这个 flag 必须存在（2026-09-08 主线通报「修法甲」后补）</h3>
+     * 后端 {@code D-36} 的保护（用户手工新增行不许被兜底锚定吞掉）改为
+     * <b>按行来源（provenance）判定</b>，判据是 {@code row_data} 里的 {@code _origin:'manual'} ——
+     * 真实前端 {@code QuotationStep2.handleAddRow}（「+ 添加行」的<b>唯一</b>入口）必打这个标记。
+     *
+     * <p>⇒ 夹具若绕开前端手工拼 {@code row_data} 而<b>不带</b> {@code _origin}，那一行会被当成
+     * <b>driver 行</b>处理：
+     * <ul>
+     *   <li>你以为在验「用户新增行不被吞掉」（D-36 <b>阴性</b>路径）；</li>
+     *   <li>实际走的是「driver 行兜底锚定」（<b>阳性</b>路径）；</li>
+     *   <li><b>结果是绿的，但验的不是你要验的那件事。</b></li>
+     * </ul>
+     * 这正是本项目的头号形态：<b>断言执行了，只是执行在错的靶子上</b>。
+     *
+     * <p>🔑 用法：{@code new EbomRow(3, "E3", "33.3", "3.3").asManual()}。
+     * 默认 {@code false} —— 表征既有 driver 行时<b>不要</b>打标记，那才是对的。
+     */
+    protected record EbomRow(int itemSeq, String elementCode, String contentPct, String netUsage,
+                             boolean manualOrigin) {
+        protected EbomRow(int itemSeq, String elementCode, String contentPct, String netUsage) {
+            this(itemSeq, elementCode, contentPct, netUsage, false);
+        }
+
+        /** 标成「用户手工新增行」——{@code row_data} 会带 {@code _origin:'manual'}。 */
+        protected EbomRow asManual() {
+            return new EbomRow(itemSeq, elementCode, contentPct, netUsage, true);
+        }
+    }
 
     /** 造主表整组（committed），版本号自定。轴 = {@code material_no}。 */
     /**
@@ -730,7 +761,10 @@ public abstract class Task260907RBase {
               .append("\",\"组成含量（%）\":\"").append(r.contentPct())
               .append("\",\"损耗率%\":\"1\",\"毛用量\":\"2.5\",\"毛用量单位\":\"kg\"")
               .append(",\"净用量\":\"").append(r.netUsage())
-              .append("\",\"净用量单位\":\"kg\",\"回收折扣(%)\":\"10\",\"回收量\":\"0.1\"}");
+              .append("\",\"净用量单位\":\"kg\",\"回收折扣(%)\":\"10\",\"回收量\":\"0.1\"")
+              // 🔴 真实前端「+ 添加行」必打的行来源标记 —— D-36 的保护认它。
+              .append(r.manualOrigin() ? ",\"_origin\":\"manual\"" : "")
+              .append("}");
         }
         return sb.append(']').toString();
     }

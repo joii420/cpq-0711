@@ -365,11 +365,30 @@ class PartialColumnScopeAcTest extends Task260907RBase {
                     .setParameter("tid", newTemplateId).setParameter("cid", newComponentId).executeUpdate();
         });
 
+        // 🕰️ 2026-09-08 改成不变量（原写死 13L / 12L）。
+        //    上游给 ds 原生组件加了字段（元素单价那批）⇒ 源组件从 12 个字段变成 14 个，
+        //    「应有 13 个」当场变红 —— 而红的是**判据**，不是被测功能。
+        //    🚫 也不许改成 15L：那只是把同一个雷往后挪一格，下次加字段再炸一次。
+        //    ✅ 判据写成「自造组件 = 源组件 + 恰好 1 个自定义字段」「builder 列数与源组件一致」
+        //       —— 这才是本用例真正依赖的性质（多出来那个字段没有物理列 ⇒ 只能进 extend_column）。
+        long srcFields = count("SELECT jsonb_array_length(fields) FROM component WHERE id = '"
+                + SRC_COMPONENT + "'");
+        long srcCols = count("SELECT jsonb_array_length(builder_config->'columns') FROM component_sql_view "
+                + "WHERE sql_view_name = '" + SRC_VIEW + "'");
+        assertFixtureNonEmpty(srcFields, "源组件的字段数");
+        assertFixtureNonEmpty(srcCols, "源组件 builder_config.columns 列数");
         long nf = count("SELECT jsonb_array_length(fields) FROM component WHERE id = '" + newComponentId + "'");
         long nc = count("SELECT jsonb_array_length(builder_config->'columns') FROM component_sql_view "
                 + "WHERE sql_view_name = '" + newViewName + "'");
-        assertEquals(13L, nf, "自造组件应有 13 个字段（12 映射 + 1 自定义），实际 " + nf);
-        assertEquals(12L, nc, "builder_config.columns 应仍是 12 列，实际 " + nc);
+        assertEquals(srcFields + 1, nf,
+                "自造组件的字段数应 = 源组件(" + srcFields + ") + 1 个自定义字段，实际 " + nf);
+        assertEquals(srcCols, nc,
+                "builder_config.columns 应与源组件一致(" + srcCols + ")——自定义字段没有物理列，"
+                        + "不该出现在 columns 里。实际 " + nc);
+        assertTrue(nf > nc,
+                "🔑 本用例的核心前提：字段数必须**严格多于** builder 列数，"
+                        + "多出来的那个才是「没有物理列、只能进 extend_column」的字段。"
+                        + "实际 fields=" + nf + " columns=" + nc);
         System.out.println("[T-03] 已造组件：fields=" + nf + " / builder columns=" + nc
                 + " ⇒ 多出的「" + EXTRA_FIELD + "」没有物理列");
     }
