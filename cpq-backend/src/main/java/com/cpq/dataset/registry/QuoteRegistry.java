@@ -32,8 +32,9 @@ public class QuoteRegistry extends AbstractDatasetRegistry {
     static final List<String> MATERIAL_TYPE = List.of("零件", "外购件");
 
     public QuoteRegistry() {
+        // task-260907 · B-1：最后一个 true = 报价侧带 customer_no 维度（核价两套为 false）。
         super("quote", "报价数据", "ds_quote_",
-              "material_no", "销售料号", "ds_quote_material");
+              "material_no", "销售料号", "ds_quote_material", true);
 
         // ── 01 · sheet「物料」 → ds_quote_material（免版本）
         reg(SheetDef.unversioned("MATERIAL", "物料", "ds_quote_material", 1,

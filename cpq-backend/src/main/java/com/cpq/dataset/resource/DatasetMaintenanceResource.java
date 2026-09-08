@@ -189,9 +189,10 @@ public class DatasetMaintenanceResource {
     public ApiResponse<DsPartPatchResult> updatePart(
             @PathParam("dataset") String dataset,
             @PathParam("axisValue") String axisValue,
+            @QueryParam("customerNo") String customerNo,
             Map<String, Object> patch) {
         String operator = sessionHelper.getCurrentUserIdOrFallback(httpRequest).toString();
-        return ApiResponse.success(service.updatePart(dataset, axisValue, patch, operator));
+        return ApiResponse.success(service.updatePart(dataset, axisValue, patch, operator, customerNo));
     }
 
     /**
@@ -212,10 +213,11 @@ public class DatasetMaintenanceResource {
             @PathParam("dataset") String dataset,
             @PathParam("axisValue") String axisValue,
             @PathParam("sheetKey") String sheetKey,
+            @QueryParam("customerNo") String customerNo,
             DsSaveRowsRequest req) {
         String operator = sessionHelper.getCurrentUserIdOrFallback(httpRequest).toString();
         try {
-            DsSaveRowsResult result = service.saveRows(dataset, axisValue, sheetKey, req, operator);
+            DsSaveRowsResult result = service.saveRows(dataset, axisValue, sheetKey, req, operator, customerNo);
             return Response.ok(ApiResponse.success(result)).build();
         } catch (DatasetVersionConflictException e) {
             // AC-41：{"message": "数据已被他人更新至 v{n}，请刷新后重试",
