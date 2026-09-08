@@ -12,7 +12,19 @@
   <div class="muted">task-260907 第二段 · <span class="mono">_record</span> 数据层 + 核价通过回填升版　｜　2026-09-07</div>
 
   <div class="baseline">
-    📌 <b>当前基准</b> —— 本页面（核价通过确认交互）此刻的视觉标准，前端照这 4 张 1:1 还原。
+    📌 <b>当前基准</b> —— 本页面（核价通过确认交互）此刻的视觉标准，前端照这 6 张 1:1 还原。
+  </div>
+
+  <div class="alert alert-warn" style="margin-bottom:20px">
+    <span>🆕</span>
+    <div>
+      <b>2026-09-07 增补第 5 屏：<code>result = BLOCKED</code>（本次跳过的组）。</b>
+      契约里 <span class="mono">dsBackfill.tables[].groups[].result</span> 由三值（<span class="mono">CREATED</span> /
+      <span class="mono">UPGRADED</span> / <span class="mono">UNCHANGED</span>）扩到四值。
+      <b>BLOCKED 组本次跳过回填、一个字节不写，但核价通过照常进行</b> —— 🚫 不阻断确认、主按钮不变红、不禁用，
+      需财务<b>事后人工处理</b>。⇒ 它<b>不是错误态</b>，视觉分级落在「无变更（灰）」与「异常（红）」之间的<b>橙档</b>。<br>
+      01~04 四屏<b>逐字未改</b> —— BLOCKED 复用既有列集，没有新增列，因此四屏的表头与判据全部原样有效。
+    </div>
   </div>
 
   <div class="alert alert-info" style="margin-bottom:20px">
@@ -54,9 +66,27 @@
       <div class="desc">13 张表 / 41 组 / 单组 18 行 / 超长客户名与料号；以及提交时撞 409「预览后数据已变化」的错误态与「重新预览」出口。</div>
       <div class="acs">服务 AC-18 ｜ 认领 F-4、F-6</div>
     </li>
+    <li>
+      <a href="05-核价通过确认抽屉-本次跳过的组.html">05 · 本次跳过的组（<span class="mono">result = BLOCKED</span>）</a>
+      <div class="desc">
+        粒度键歧义 ⇒ 整组跳过回填、一个字节不写，但<b>核价通过照常进行</b>（主按钮仍是普通主色、不禁用）。
+        含橙档「本次跳过」判定标签、「不升版」终点、汇总条「本次跳过的组」，
+        以及与「对不上的行」<b>并列而非合并</b>的「本次跳过的组」明细表（粒度键取值 + 两侧行数）。
+      </div>
+      <div class="acs">服务 AC-21（新增，后端在写）｜ 认领 F-7</div>
+    </li>
+    <li>
+      <a href="06-核价通过确认抽屉-预览数据可能已过期.html">06 · 预览数据可能已过期（<span class="mono">recordStale.stale = true</span>，D-35）</a>
+      <div class="desc">
+        <span class="mono">_record</span> 快照写失败过 ⇒ <b>这份预览本身可能不可信</b>。
+        红色告警条<b>置于面板最顶端</b>（它限定下面所有结论的可信度）+ 副标题与页脚同步给出「先不要确认」的指令。
+        🚫 后端 <span class="mono">detail</span> 里的异常原文不得渲染给财务，只出按 <span class="mono">reason</span> 映射的中文。
+      </div>
+      <div class="acs">服务 D-35（api.md §1 硬约束 4）｜ 认领 F-8　·　主按钮红档不禁用（2026-09-07 主线裁决）</div>
+    </li>
   </ul>
 
-  <h2 style="font-size:16px; margin:28px 0 8px">还原时的三条硬要求</h2>
+  <h2 style="font-size:16px; margin:28px 0 8px">还原时的五条硬要求</h2>
   <ul>
     <li>
       <div class="desc">
@@ -75,6 +105,30 @@
       <div class="desc">
         <b>3. 「对不上的行」不许折叠进「更多」。</b>
         <span class="mono">unanchoredRows &gt; 0</span> 时主按钮变红并改文案「仍然确认并核价通过」，页脚左侧显著提示条数。
+      </div>
+    </li>
+    <li>
+      <div class="desc">
+        <b>4. 🆕 <span class="mono">BLOCKED</span> 组不许阻断确认，也不许被当成「没事」。</b>
+        它<b>本次一个字节不写</b>但<b>核价通过照常进行</b>：🚫 不禁用确认按钮、🚫 主按钮不变红、🚫 不用 error 告警条；
+        同时 🚫 也不许只用灰标签混在「无变更」里 —— 财务必须能一眼看出「这几组我没写，你事后要处理」。
+        ⇒ 统一橙档：判定标签 <span class="tag tag-orange">本次跳过</span>、行底 <span class="mono">#fff7e6</span>、
+        warning 告警条、汇总条「本次跳过的组」、以及独立的「本次跳过的组」明细表。<br>
+        ⚠️ 版本迁移列的终点必须写「<b>不升版</b>」，🚫 不许显示「→ v3」—— 那是本次根本不会发生的迁移。
+      </div>
+    </li>
+    <li>
+      <div class="desc">
+        <b>5. 🆕 <span class="mono">recordStale</span> 的告警必须排在最顶端，且不许静默。</b>
+        它说的不是「会写什么」，而是「<b>下面这些结论可能算错了</b>」—— 排到汇总条之后就退化成「众多提示之一」。
+        分级：BLOCKED 是橙（warning），本条是<b>红（error）</b>。<br>
+        🚫 <span class="mono">detail</span> 是异常原文（<span class="mono">IllegalStateException: …</span>），
+        <span class="mono">api.md</span> 明写<b>不得</b>当用户文案渲染；财务只看按 <span class="mono">reason</span> 映射的中文，未知码带原码兜底。<br>
+        ⚠️ 判据取 <span class="mono">recordStale.stale</span> 与 <span class="mono">summary.recordStale</span> 的<b>并</b> ——
+        只信其中一个，遇到另一个出口时告警会整块消失，而<b>漏报的代价是财务照着过期数据确认回填</b>。<br>
+        🔴 <b>主按钮与「有 N 行对不上」同档</b>：变红 + 文案「仍然确认并核价通过」。
+        🚫 <b>但不禁用、不阻断</b> —— 红条写「请先不要确认」而按钮还是蓝色，等于同一屏给出两个相反的信号；
+        而硬阻断又会让数据层的可信度问题卡死业务流程。「<b>仍然</b>」两个字承担的正是「你已被警告，这是你的决定」。
       </div>
     </li>
   </ul>

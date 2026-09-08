@@ -318,10 +318,30 @@ const CostingApprovePreviewDrawer: React.FC<Props> = ({
     subtitleParts.push(`客户 ${effectiveCustomerNo ?? '—'}`);
   }
   // 原型 03 上半屏（全部无变更）的副标题只有「报价单 … · 客户 …」两段，不带尾段。
-  if (!dsFlags.applicable) {
+  if (dsFlags.recordStale) {
+    /**
+     * 🆕 D-35 排在最前：它说的是「**这份预览本身可能不可信**」，
+     * 比下面任何一条（哪些组会升版 / 有几行对不上 / 有几组跳过）都更靠前一层 ——
+     * 那些结论全都建立在「预览数据是最新的」这个前提上，而本条正是说该前提不成立。
+     * ⚠️ 连 `!applicable` 都排在它后面：api.md 承诺 recordStale 非空时 applicable 恒 true，
+     *    但万一后端违约，副标题也不该把这句话吞掉。
+     */
+    // ⚠️ 用 ⚠️ 而不是 🚨：实测无头 Chrome 的字体栈里 🚨 渲染成豆腐块（□），⚠️ 正常。
+    //    副标题上一个渲染不出来的字符，比没有这个字符更糟。
+    subtitleParts.push('⚠️ 预览数据可能已过期，确认前请先看抽屉顶部的红色提示');
+  } else if (!dsFlags.applicable) {
     subtitleParts.push('该单建于基础数据切换之前');
   } else if (dsFlags.unanchoredRows > 0) {
     subtitleParts.push('⚠️ 部分料号在本单提交后已被其他报价单改动');
+  } else if (dsFlags.blockedGroups > 0) {
+    /**
+     * 🆕 BLOCKED 排在最后一句「确认后将按下表…升版」**之前**，是为了堵一个具体的谎：
+     * 全组皆 BLOCKED 时 upgraded=0 且 unchanged=0 ⇒ allUnchanged 为 false，
+     * 会落到下面那句，向财务承诺一次**本次根本不会发生**的写回。
+     * 🚫 刻意不改成「upgradedGroups > 0 才显示末句」—— 那会误伤 CREATED-only 的单
+     * （summary 只统计 upgraded/unchanged，CREATED 组两个数都不进，末句会整个消失）。
+     */
+    subtitleParts.push(`⚠️ 有 ${dsFlags.blockedGroups} 个料号组本次跳过回填，需事后人工处理`);
   } else if (dsFlags.hasTables && !dsFlags.allUnchanged) {
     subtitleParts.push('确认后将按下表把报价单数据写回基础数据并升版');
   }
@@ -357,7 +377,20 @@ const CostingApprovePreviewDrawer: React.FC<Props> = ({
             ? '预览尚未加载，请稍候'
             : null;
 
-  const dangerConfirm = dsFlags.unanchoredRows > 0;
+  /**
+   * 主按钮的危险态。两个场景同档（2026-09-07 主线裁决把 recordStale 接进这条既有通道）：
+   *   - `unanchoredRows > 0` —— 有行对不上，确认后会按新增写入
+   *   - `recordStale`        —— 预览可能基于过期数据算出来的
+   *
+   * 🔑 **为什么必须接进来**：抽屉顶部红条写着「请先不要确认」，主按钮却是蓝色的「确认并核价通过」——
+   *    同一屏给出两个相反的信号，财务照哪个做都不算错，那是设计没想清。
+   *
+   * 🚫 **变红但不禁用、不阻断**（与 BLOCKED 组「跳过但不阻断核价通过」同一条理由）：
+   *    `doCostingApprove` 改的是报价单状态，那是业务流程，不该被数据层的可信度问题卡死。
+   *    「**仍然**」两个字承担的正是「你已被警告，这是你的决定」。
+   *    ⇒ 🚫 谁都不许把 recordStale / unanchoredRows 塞进下面的 disabledReason。
+   */
+  const dangerConfirm = dsFlags.unanchoredRows > 0 || dsFlags.recordStale;
   const confirmLabel = dangerConfirm ? '仍然确认并核价通过' : '确认并核价通过';
 
   const confirmBtn = (
@@ -377,7 +410,12 @@ const CostingApprovePreviewDrawer: React.FC<Props> = ({
   let footerNote: React.ReactNode = null;
   let footerDanger = false;
   if (dsFlags.present) {
-    if (!dsFlags.applicable) {
+    /* 🆕 D-35 单独一支并**直接短路**：其余各支说的都是「会写什么」，
+       而本条说的是「这些结论可能算错了」—— 两者并列会让财务把它当成又一条补充说明。 */
+    if (dsFlags.recordStale) {
+      footerNote = '⚠️ 预览数据可能已过期 —— 请先不要确认，让销售重新保存这张报价单后重新预览。';
+      footerDanger = true;
+    } else if (!dsFlags.applicable) {
       footerNote = '—';
     } else if (dsFlags.unanchoredRows > 0) {
       footerNote = `⚠️ 有 ${dsFlags.unanchoredRows} 行对不上，确认前请先看上方明细。`;
@@ -388,6 +426,20 @@ const CostingApprovePreviewDrawer: React.FC<Props> = ({
       footerNote = '本次确认不写入任何基础数据，仅将报价单状态置为「已核准」。';
     } else {
       footerNote = `确认后不可撤销：${dsFlags.upgradedGroups} 个料号组将升版，旧版本进入历史可查。`;
+    }
+    /**
+     * 🆕 BLOCKED 追加一句，**不改上面任何一支**（上面几支说的都还是对的，只是不完整）。
+     * 🚫 不设 footerDanger：BLOCKED 不是错误态，也**不阻断确认** ——
+     *    页脚变红会和「有 N 行对不上」那条混为一谈，而那条是另一种后果（会写，且组会变大）。
+     */
+    if (dsFlags.blockedGroups > 0 && !dsFlags.recordStale) {
+      footerNote = (
+        <>
+          {footerNote}
+          {footerNote ? ' ' : ''}
+          另有 {dsFlags.blockedGroups} 个料号组本次跳过回填，需事后人工处理。
+        </>
+      );
     }
   }
 

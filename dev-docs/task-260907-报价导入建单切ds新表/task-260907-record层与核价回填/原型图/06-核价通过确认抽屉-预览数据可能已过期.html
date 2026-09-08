@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>核价通过确认抽屉 · 预览数据可能已过期（D-35） —— task-260907 第二段</title>
+<link rel="stylesheet" href="_style.css">
+</head>
+<body>
+
+<div class="page-hint">
+  📌 <b>当前基准</b> · 状态 <b>6/6：预览数据可能已过期（<code>recordStale.stale = true</code>，D-35）</b> ——
+  本屏与其余五屏的差别不在「会写什么」，而在「<b>下面这些结论本身可不可信</b>」。
+  <code>_record</code> 快照写失败过 ⇒ 预览可能是<b>基于过期的报价单数据</b>算出来的。
+  ⇒ 分级<b>高于 BLOCKED</b>：BLOCKED 是「这组我没敢写」（橙），本条是「<b>我给你看的东西可能是错的</b>」（红），且**置于面板最顶端**。
+</div>
+
+<div class="behind">
+  <h2>报价单 QT-20260907-0431 · 待核价</h2>
+  <div class="card">客户：正泰（CUST-0004）　｜　产品：2 个　｜　金额：¥112,760.00</div>
+</div>
+
+<div class="mask"></div>
+<div class="drawer">
+
+  <div class="drawer-header">
+    <div>
+      <div class="drawer-title">核价通过 —— 确认基础数据升版</div>
+      <div class="drawer-sub">报价单 QT-20260907-0431　·　客户 正泰（CUST-0004）　·　⚠️ 预览数据可能已过期，确认前请先看抽屉顶部的红色提示</div>
+    </div>
+    <button class="drawer-close">✕</button>
+  </div>
+
+  <div class="drawer-body">
+
+    <!--
+      ── D-35 告警条：**必须是本面板的第一个元素**（排在汇总条之前）。
+         理由：它限定的是下面**所有**结论的可信度；排到汇总条之后就退化成「众多提示中的一条」。
+         🚫 不许折叠、🚫 不许静默。
+         🚫 后端 recordStale.detail 是异常原文（IllegalStateException: …），
+            api.md 明写**不得**当用户文案渲染 —— 财务只看下面这段按 reason 映射出来的中文。
+    -->
+    <div class="alert alert-error">
+      <span>🚨</span>
+      <div>
+        <b>此刻预览的内容可能不是报价单的最新数据。</b><br>
+        这张报价单最后一次保存时，用于比对的数据快照没有写成功，
+        因此<b>下面列出的比对结果可能是基于过期的报价单数据算出来的</b>。<br>
+        <b>请先不要确认</b> —— 让销售重新打开这张报价单并保存一次，再回到这里重新预览。
+        <div class="muted" style="font-size:12px; margin-top:4px">检测时间：2026-09-07T06:17:29Z</div>
+      </div>
+    </div>
+
+    <div class="summary">
+      <div class="item"><div class="k">涉及表</div><div class="v">1</div></div>
+      <div class="item"><div class="k">涉及料号组</div><div class="v">2</div></div>
+      <div class="item"><div class="k">将升版</div><div class="v">1</div></div>
+      <div class="item"><div class="k">无变更</div><div class="v">1</div></div>
+      <div class="item"><div class="k">无法对齐的行</div><div class="v">0</div></div>
+    </div>
+
+    <div class="alert alert-info">
+      <span>ℹ️</span>
+      <div>
+        下表列的是<b>确认后基础数据会变成什么样</b>，不是「哪些值变了」。
+        「<b>本次不动</b>」那一列是本页签没有表征的行 —— 它们会<b>原样保留</b>，不会被删除、不会被置空。<br>「<b>回填后行数</b>」与「整组行数」不同时会标色：<span style="color:#389e0d;font-weight:600">绿色</span>=整组新建，<span style="color:#d4380d;font-weight:600">红色</span>=有对不上的行按新增写入、组会变大。
+      </div>
+    </div>
+
+    <!-- ── 比对内容照常渲染：🚫 不许因为「可能过期」就把表藏起来。
+           财务需要同时看到「结论是什么」和「这个结论可能不可信」，藏掉表等于只留半句话。 ── -->
+    <div class="sheet-head">
+      <span class="name">物料BOM</span>
+      <span class="table-name mono muted">ds_quote_material_bom</span>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>销售料号</th><th>版本迁移</th><th>判定</th>
+            <th class="num">整组行数</th><th class="num">回填后行数</th><th class="num">本次覆盖</th><th class="num">本次不动</th>
+            <th>本次覆盖的列</th><th>原样保留的列</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="mono">S-3120014539</td>
+            <td><span class="ver">v2 <span class="arrow">→</span> <span class="to">v3</span></span></td>
+            <td><span class="tag tag-blue">升版</span></td>
+            <td class="num">9</td><td class="num">9</td><td class="num">2</td><td class="num">7</td>
+            <td><span class="tag tag-grey">组成数量</span> <span class="tag tag-grey">单重</span></td>
+            <td class="muted">项次、投入料号、产出料号类型、材料毛重、材料净重、重量单位、材料占比、损耗率、不良率</td>
+          </tr>
+          <tr>
+            <td class="mono">S-2120011659</td>
+            <td><span class="ver">v1 <span class="arrow">→</span> <span class="to muted" style="color:rgba(0,0,0,.45);font-weight:400">v1</span></span></td>
+            <td><span class="tag tag-grey">无变更</span></td>
+            <td class="num">4</td><td class="num">4</td><td class="num">0</td><td class="num">4</td>
+            <td class="muted">—</td>
+            <td class="muted">整组不写，连更新时间都不会动</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!--
+    页脚：文案转红 + **主按钮转危险态并改文案「仍然确认并核价通过」**（2026-09-07 主线裁决）。
+    由来：初稿是「红条写『请先不要确认』+ 蓝色的『确认并核价通过』」——
+    <b>同一屏给出两个相反的信号</b>，财务照哪个做都不算错，那是设计没想清。
+    ⇒ 与「有 N 行对不上」同档：变红 + 「仍然」。
+    🚫 **但不禁用、不阻断**：核价通过改的是报价单状态（业务流程），不该被数据层的可信度问题卡死；
+       与「BLOCKED 组跳过但不阻断核价通过」同一条理由。「仍然」两个字承担的正是
+       「你已被警告，这是你的决定」。
+  -->
+  <div class="drawer-footer">
+    <span class="footer-note" style="color:#d4380d">⚠️ 预览数据可能已过期 —— 请先不要确认，让销售重新保存这张报价单后重新预览。</span>
+    <button class="btn">取消</button>
+    <button class="btn btn-danger">仍然确认并核价通过</button>
+  </div>
+
+</div>
+
+</body>
+</html>

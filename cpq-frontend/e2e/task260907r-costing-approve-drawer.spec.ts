@@ -5,6 +5,9 @@
  *   - AC-5  ① 抽屉形态（placement=right / width=1200，🚫 不是 Modal）+ ③ 汇总条五项 + ④「本次不动」必须渲染
  *   - AC-14 ③ 判定为 UNCHANGED 的组仍出现在表格里（🚫 不许过滤）+ 顶部提示条文案
  *   - AC-20 ③ 「对不上的行」明细区必须直出（🚫 不许折叠进「更多」）+ 主按钮变红、文案「仍然确认并核价通过」
+ *   - AC-21 🆕 `result === 'BLOCKED'`（本次跳过回填、一个字节不写，但**不阻断确认**）
+ *   - D-35  🆕 `recordStale.stale === true` 时必须显著提示「此刻预览的内容可能不是报价单的最新数据」
+ *           （api.md §1 硬约束 4：🚫 不许折叠、🚫 不许静默、🚫 不许把 detail 异常原文给财务看）
  *
  * ─────────────────────────────────────────────────────────────────
  * 🚫 全程只读：本 spec **绝不点「确认并核价通过」**。
@@ -23,7 +26,19 @@
  * ⛔ 执行前置：前端 F-x 落地 + 一张 SUBMITTED 的新链路报价单可进入核价通过入口。
  */
 import { test, expect, Page } from '@playwright/test';
+import * as fs from 'fs';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
 import { loginAsAdmin } from './fixtures/auth';
+
+/**
+ * 🚨 AP-43 原样复发（2026-09-07 修）：本文件原来在 readPrototypeGroupTableHeader() 里用
+ * `require('fs')` + `__dirname`，而本项目 e2e 跑在 **ESM** 下（package.json type=module；
+ * 同目录 `fixtures/auth.ts` 自己就用 fileURLToPath(import.meta.url)）⇒ 两个都不存在。
+ * **四条用例全部经过那个函数** ⇒ 一旦入口接通，会同时倒在一个与业务无关的 ReferenceError 上，
+ * 而那种失败长得和「实现坏了」一模一样。⇒ 改为顶层 import + import.meta.url。
+ */
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 /** 🚨 本任务统一夹具前缀（test.md §二）。收尾核对按它查；查出 0 条 = 查错了前缀，不是「很干净」。 */
 const PREFIX = 'T260907R-';
@@ -54,14 +69,14 @@ const COL_RESULT = '判定';
  *   c. `unanchoredRows > 0` 的屏必须有「对不上」列
  *   d. 判定恒 `UNCHANGED` 的屏可省 b 的两列（此时无意义）—— 这解释了 `03` 的 7 列不是漏画
  *
- * @param screen         该屏对应的原型编号（'01' | '02' | '03'），用于「逐字一致」比对
+ * @param screen         该屏对应的原型编号（'01' | '02' | '03' | '05'），用于「逐字一致」比对
  * @param expectUnanchored 本屏的 fixture 是否含 unanchoredRows > 0（不变量 c 的前件）
  * @param allUnchanged   本屏的组是否全部判定为 UNCHANGED（不变量 d 的前件）
  */
 async function assertAc5ColumnInvariants(
   page: Page,
   drawer: ReturnType<Page['locator']>,
-  screen: '01' | '02' | '03',
+  screen: '01' | '02' | '03' | '05',
   expectUnanchored: boolean,
   allUnchanged: boolean,
 ): Promise<void> {
@@ -150,11 +165,9 @@ async function assertAc5ColumnInvariants(
  *
  * ⚠️ 原型是任务文档的一部分（`原型图/`），读它是允许的；读的是**需求侧素材**，不是实现代码。
  */
-function readPrototypeGroupTableHeader(screen: '01' | '02' | '03'): string[] {
-  const fs = require('fs') as typeof import('fs');
-  const path = require('path') as typeof import('path');
+function readPrototypeGroupTableHeader(screen: '01' | '02' | '03' | '05'): string[] {
   const dir = path.resolve(
-    __dirname,
+    HERE,
     '../../dev-docs/task-260907-报价导入建单切ds新表/task-260907-record层与核价回填/原型图',
   );
   const file = fs.readdirSync(dir).find((f) => f.startsWith(`${screen}-`) && f.endsWith('.html'));
@@ -201,10 +214,20 @@ test.describe('task-260907R · 核价通过确认抽屉', () => {
       'AC-5①：🚫 不许用 Modal 承载确认界面（AC 原文明写）',
     ).toHaveCount(0);
 
-    // AC-5③：汇总条五项
+    /**
+     * AC-5③：汇总条五项。
+     * ⚠️ 2026-09-07 修（接通入口后第一次真跑就撞到）：原来是
+     * `drawer.getByText(label, { exact: false })` —— **范围没收窄**，而抽屉里别处也有同样的字：
+     *   「将升版」→ 页脚「确认后不可撤销：1 个料号组将升版，旧版本进入历史可查。」
+     *   「无变更」→ 判定列的 <Tag>无变更</Tag>
+     * ⇒ 命中多个元素，以 **strict mode violation** 的面目失败，而那长得像「汇总条没渲染」。
+     * ⇒ 先按 data-testid 收窄到汇总条，再 exact 匹配标签。
+     */
+    const summaryBar = drawer.locator('[data-testid="ds-backfill-summary"]');
+    await expect(summaryBar, 'AC-5③：汇总条整块必须渲染').toBeVisible();
     for (const label of SUMMARY_LABELS) {
       await expect(
-        drawer.getByText(label, { exact: false }),
+        summaryBar.getByText(label, { exact: true }),
         `AC-5③：汇总条缺「${label}」（与原型 01 逐字一致）`,
       ).toBeVisible();
     }
@@ -212,8 +235,12 @@ test.describe('task-260907R · 核价通过确认抽屉', () => {
     // 🚨 AC-5④：「本次不动」必须渲染 —— AP-60 判据四的直接产物。
     //    预览只描述「哪些值变了」会漏掉「不写 = 删除」这一整类后果；
     //    repair-0727 的真实事故正是预览显示「0 变更」而执行删了 3 行。
+    // ⚠️ 2026-09-07 修（同一族的第三次）：`getByText('本次不动')` 在抽屉里命中 **3 个**元素 ——
+    //    ① 顶部说明条里的 <b>本次不动</b>、② 组表列头 <th>、③ 一个同文本的 <div>
+    //    ⇒ strict mode violation，失败长得像「这一列没渲染」。
+    //    本条断言要验的是**这一列在不在**，所以判据就该是「列头」，而不是「页面上有没有这四个字」。
     await expect(
-      drawer.getByText('本次不动', { exact: false }),
+      drawer.getByRole('columnheader', { name: '本次不动' }).first(),
       'AC-5④ / AP-60：「本次不动」列必须渲染，财务要能看见「这一组有 N 行本次不动」',
     ).toBeVisible();
     // 阳性对照：不仅表头在，值也要出得来（表头在而恒空同样等于没渲染）
@@ -255,7 +282,15 @@ test.describe('task-260907R · 核价通过确认抽屉', () => {
     //    「无变更」出现 9 次 / 「将升版」6 次，而 `UNCHANGED` / `UPGRADED` **出现 0 次**。
     //    ⇒ 那个匹配永远命中不了，用例会以「组没渲染」的面目失败，而实际是我匹配错了。
     //    改用 data-result 属性选择器：它是语义钩子，不随文案与语言变化。
-    const unchangedRow = rows.filter({ has: page.locator('[data-result="UNCHANGED"]') }).first();
+    /**
+     * ⚠️ 2026-09-07 修（与 T-21 同款，实测撞到）：`data-result` 挂在 `<tr>` **自己**身上，
+     * 而 `filter({ has })` 匹配的是**后代** ⇒ 恒 0 命中，用例会以「UNCHANGED 组没渲染」的
+     * 面目失败 —— 那是选择器错，不是实现错，但两者长得一模一样。
+     * ⇒ 属性直接拼在同一个选择器上。
+     */
+    const unchangedRow = drawer
+      .locator('[data-testid="ds-backfill-group-row"][data-result="UNCHANGED"]')
+      .first();
     await expect(
       unchangedRow,
       'AC-14③：判定为 UNCHANGED 的组必须仍出现在表格里（带「本次覆盖 = 0」），🚫 不许过滤掉',
@@ -321,6 +356,293 @@ test.describe('task-260907R · 核价通过确认抽屉', () => {
 
     // 🚫 到此为止：**绝不点这个按钮**。点一次就在共享 dev 库上真的升版了（§3.2 不可逆）。
   });
+
+  /**
+   * 🆕 AC-21（2026-09-07 契约扩到四值，后端在写）：`result === 'BLOCKED'`。
+   *
+   * 本用例的判据分成**两半**，缺一半这条就是假绿：
+   *   A. 正向 —— BLOCKED 必须**可见且可读**：橙档判定标签「本次跳过」、汇总条「本次跳过的组」、
+   *      warning 告警条、独立的「本次跳过的组」明细表（粒度键取值 + 两侧行数）。
+   *   B. 🚨 反向 —— BLOCKED **不许**表现成错误：
+   *      ① 主按钮仍是「确认并核价通过」且**没有** `ant-btn-dangerous`；
+   *      ② 主按钮**不禁用**（`BLOCKED` 不阻断确认）；
+   *      ③ **不许**误报「该组行数会减少 —— 按设计不应发生」——
+   *         夹具刻意让 BLOCKED 组的 `resultRowCount` 缺失（后端过渡期完全可能不给），
+   *         此时 `num()` 得 0、`0 < baseRowCount` 恒真，**旧判据会点亮顶部红条**。
+   *         这一条守的就是那个假警报：它长得和真缺陷一模一样，读报告的人会去查后端。
+   */
+  test('T-21 · AC-21 BLOCKED：橙档可见 + 明细表直出，且🚫 不阻断确认、🚫 不误报「行数会减少」', async ({ page }) => {
+    await stubPreview(page, blockedPreviewFixture());
+    await openCostingApproveDrawer(page);
+
+    const drawer = page.locator('.ant-drawer').filter({ hasText: '核价通过' });
+    await expect(drawer).toBeVisible();
+
+    // ── A①：汇总条出现「本次跳过的组」，且值 = 2（不是表头在而值恒空）
+    const blockedSummary = drawer.locator('[data-testid="ds-backfill-blocked-summary"]');
+    await expect(
+      blockedSummary,
+      'AC-21：汇总条必须出现「本次跳过的组」一项（口径同「不参与的组件」，>0 才出现）',
+    ).toBeVisible();
+    await expect(blockedSummary).toContainText('本次跳过的组');
+    await expect(
+      blockedSummary,
+      'AC-21：汇总条的 BLOCKED 组数应为 2（夹具两组），只有标题没有数字等于没渲染',
+    ).toContainText('2');
+
+    // ── A②：warning 告警条（🚫 不是 error）
+    const blockedAlert = drawer.locator('[data-testid="ds-backfill-blocked-alert"]');
+    await expect(blockedAlert, 'AC-21：BLOCKED 必须有顶部告警条，🚫 不许静默').toBeVisible();
+    await expect(
+      blockedAlert,
+      'AC-21：BLOCKED 不是错误态 —— 告警条应为 warning（antd .ant-alert-warning），🚫 不许用 error',
+    ).toHaveClass(/ant-alert-warning/);
+    await expect(
+      blockedAlert,
+      'AC-21：告警条必须说清「本次一个字节都不写」这个结论',
+    ).toContainText('一个字节都不写');
+    await expect(
+      blockedAlert,
+      'AC-21：告警条必须说清「核价通过照常进行」—— 否则财务会以为自己被卡住了',
+    ).toContainText('核价通过照常进行');
+
+    // ── A③：组表里的 BLOCKED 行 —— 属性钩子 + 用户可见中文，两侧都要断言
+    const rows = drawer.locator('[data-testid="ds-backfill-group-row"]');
+    expect(
+      await rows.count(),
+      '🚨 空验证守卫：一个料号组都没渲染 ⇒ 下面所有断言会空跑',
+    ).toBeGreaterThan(0);
+    /**
+     * ⚠️ antd 选择器坑（本轮实测撞到）：`data-result` 挂在 `<tr>` **自己**身上，
+     * 而 `filter({ has })` 匹配的是**后代** ⇒ 恒 0 命中，症状是「一个 BLOCKED 组都没渲染」。
+     * 那是**选择器错**不是产品错，但两者长得一模一样。⇒ 属性直接拼在同一个选择器上。
+     * 📌 同一写法在本文件 T-14（UNCHANGED）里也在用，见回报「发现但没动的问题」。
+     */
+    const blockedRow = drawer
+      .locator('[data-testid="ds-backfill-group-row"][data-result="BLOCKED"]')
+      .first();
+    await expect(
+      blockedRow,
+      'AC-21：判定为 BLOCKED 的组必须出现在表格里（理由同 UNCHANGED 不许过滤）',
+    ).toBeVisible();
+    await expect(
+      blockedRow,
+      'AC-21：判定列应向财务渲染中文「本次跳过」，而不只是挂着 data-result 属性',
+    ).toContainText('本次跳过');
+    await expect(
+      blockedRow,
+      'AC-21：版本迁移列的终点必须是「不升版」—— 🚫 不许显示一个本次不会发生的目标版本',
+    ).toContainText('不升版');
+
+    // ── A④：独立明细表直出（🚫 不折叠），且带得出粒度键取值与两侧行数
+    const panel = drawer.locator('[data-testid="ds-backfill-blocked-panel"]');
+    await expect(panel, 'AC-21：必须有独立的「本次跳过的组」明细区').toBeVisible();
+    await expect(
+      panel.locator('.ant-collapse-item:not(.ant-collapse-item-active)'),
+      'AC-21：🚫 明细区不许折叠进「更多」，必须直出',
+    ).toHaveCount(0);
+    await expect(
+      panel.getByText('00005', { exact: false }),
+      'AC-21：明细区必须列出粒度键取值，否则财务不知道是哪一条撞了',
+    ).toBeVisible();
+    // 明细行顺序 = tables[] × groups[] × collidingRows[] 的展开顺序：
+    //   第 0 行 = MATERIAL_BOM/M2（基底 2 / 报价单 1），第 1 行 = ELEMENT_BOM/E1（基底 4 / 报价单 1）
+    await expect(
+      panel.locator('[data-testid="ds-backfill-colliding-base"]').nth(0),
+      'AC-21：明细区必须给出「基础数据里的行数」，只有表头没有值等于没渲染',
+    ).toHaveText('2');
+    await expect(
+      panel.locator('[data-testid="ds-backfill-colliding-base"]').nth(1),
+      'AC-21：第二条冲突的基底行数应为 4',
+    ).toHaveText('4');
+    await expect(
+      panel.locator('[data-testid="ds-backfill-colliding-record"]').nth(1),
+      'AC-21：明细区必须给出「报价单里的行数」——冲突可能出在任一侧，两个数缺一不可判',
+    ).toHaveText('1');
+
+    // 🚫 反向：与「对不上的行」是两套，🚫 不许被并进同一张表
+    await expect(
+      drawer.locator('[data-testid="ds-backfill-unanchored-panel"]'),
+      'AC-21：本屏 unanchoredRows=0 ⇒ 🚫 不许出现「对不上的行」明细区（两者语义与后果相反，不许混用同一区）',
+    ).toHaveCount(0);
+
+    // ── B①②：主按钮不变红、不禁用 —— BLOCKED 不阻断确认
+    const primary = drawer.getByRole('button', { name: '确认并核价通过' });
+    await expect(
+      primary,
+      'AC-21：BLOCKED 不阻断确认 ⇒ 主按钮文案应仍是「确认并核价通过」，🚫 不许变成「仍然确认并核价通过」',
+    ).toBeVisible();
+    await expect(
+      primary,
+      'AC-21：BLOCKED 不是错误态 ⇒ 主按钮 🚫 不许带 .ant-btn-dangerous（那是「有行对不上」才用的）',
+    ).not.toHaveClass(/ant-btn-dangerous/);
+    await expect(
+      primary,
+      'AC-21：🚫 BLOCKED 不许禁用确认按钮 —— 核价通过本身照常进行',
+    ).toBeEnabled();
+
+    // ── B③：🚨 不许误报「组会变小」
+    await expect(
+      drawer.locator('[data-testid="ds-backfill-shrink-alert"]'),
+      'AC-21：BLOCKED 组的 resultRowCount 缺失时 🚫 不许触发「行数会减少 —— 按设计不应发生」的红条。' +
+        '那是假警报，且长得和真缺陷一模一样。',
+    ).toHaveCount(0);
+    await expect(
+      drawer.getByText('该组行数会减少', { exact: false }),
+      'AC-21：BLOCKED 行内也 🚫 不许出现「该组行数会减少」的小注',
+    ).toHaveCount(0);
+
+    // ── AC-5② 列级不变量：本屏无对不上、含 UPGRADED 组 ⇒ 九列，与原型 05 逐字一致
+    await assertAc5ColumnInvariants(page, drawer, '05', /*expectUnanchored*/ false, /*allUnchanged*/ false);
+
+    // 🚫 到此为止：**绝不点这个按钮**（同上，共享库不可逆）。
+  });
+
+  /**
+   * 🆕 D-35（api.md §1 硬约束 4）：`_record` 快照写失败过 ⇒ **这份预览本身可能不可信**。
+   *
+   * 防的是什么（需求文档 D-35 后果链）：保存成功 → 快照没更新 → 预览读到过期 `_record`
+   * → 财务照着确认 → **按错的数据回填主表**。⇒ 与 AP-60 判据四同族：预览在撒谎，且撒得很有说服力。
+   *
+   * 判据四条：① 红档（error，比 BLOCKED 的 warning 更重）；② **排在面板最顶端**（它限定下面所有结论的
+   * 可信度，排在汇总条之后就退化成「众多提示之一」）；③ 🚫 不许折叠；④ 🚫 不许把 `detail` 的异常原文
+   * 渲染给财务（api.md 明写）。
+   */
+  test('T-35 · D-35 recordStale：红档置顶不折叠，且🚫 不许把异常原文给财务看', async ({ page }) => {
+    await stubPreview(page, recordStalePreviewFixture({ viaSummaryOnly: false }));
+    await openCostingApproveDrawer(page);
+
+    const drawer = page.locator('.ant-drawer').filter({ hasText: '核价通过' });
+    await expect(drawer).toBeVisible();
+
+    const alert = drawer.locator('[data-testid="ds-backfill-record-stale-alert"]');
+    // ① 存在且可见（🚫 不折叠 —— 判据：不做任何点击就可见，且不在收起态折叠面板里）
+    await expect(
+      alert,
+      'D-35：recordStale.stale=true 时必须有显著提示，🚫 不许静默',
+    ).toBeVisible();
+    await expect(
+      alert.locator('.ant-collapse-item:not(.ant-collapse-item-active)'),
+      'D-35：🚫 不许折叠',
+    ).toHaveCount(0);
+
+    // ① 红档（比 BLOCKED 的 warning 更重）
+    await expect(
+      alert,
+      'D-35：它说的是「我给你看的东西可能是错的」⇒ 必须是 error 档（antd .ant-alert-error），' +
+        '🚫 不许降到 warning —— 那是 BLOCKED 那一档',
+    ).toHaveClass(/ant-alert-error/);
+
+    // api.md 原文那句必须出现
+    await expect(
+      alert,
+      'D-35：文案须含 api.md 原文「此刻预览的内容可能不是报价单的最新数据」',
+    ).toContainText('此刻预览的内容可能不是报价单的最新数据');
+    // reason 必须被映射成中文，🚫 不许把常量码直接摆给财务
+    await expect(
+      alert,
+      'D-35：reason 必须映射成财务读得懂的中文',
+    ).toContainText('快照没有写成功');
+    await expect(
+      alert,
+      'D-35：🚫 不许把 reason 常量码原样渲染（未知码才带原码兜底，已知码必须译成中文）',
+    ).not.toContainText('WRITE_FAILED');
+
+    // 🚨 ④ 反向：detail 是异常原文，api.md 明写**不得**渲染给财务
+    await expect(
+      drawer.getByText('IllegalStateException', { exact: false }),
+      'D-35：🚫 `detail` 是排障用的异常原文，api.md 明写不得直接当用户文案渲染',
+    ).toHaveCount(0);
+    await expect(
+      drawer.getByText('NullPointerException', { exact: false }),
+      'D-35：🚫 同上（换一个异常名做交叉核对，防止只躲过某一个字符串）',
+    ).toHaveCount(0);
+
+    // ② 位置：必须排在汇总条**之前**（DOM 序）
+    const beforeSummary = await drawer.evaluate((root) => {
+      const a = root.querySelector('[data-testid="ds-backfill-record-stale-alert"]');
+      // ⚠️ 2026-09-07 修：原来按「含『涉及料号组』字样的第一个 div」找汇总条 ——
+      //    那会先命中一个**祖先容器**（它也包含告警条），compareDocumentPosition 返回的是
+      //    CONTAINS 而不是 FOLLOWING ⇒ 判据恒 false，失败长得像「实现把顺序放错了」。
+      //    ⇒ 改用汇总条自己的 data-testid，两者必为兄弟关系。
+      const sum = root.querySelector('[data-testid="ds-backfill-summary"]');
+      if (!a || !sum) return null;
+      // Node.DOCUMENT_POSITION_FOLLOWING = 4 ⇒ sum 在 a 之后
+      return (a.compareDocumentPosition(sum) & 4) !== 0;
+    });
+    expect(
+      beforeSummary,
+      'D-35：🚨 定位失败（拿不到告警条或汇总条）⇒ 下面这条位置断言会空跑',
+    ).not.toBeNull();
+    expect(
+      beforeSummary,
+      'D-35②：告警条必须排在汇总条之前 —— 它限定的是下面所有结论的可信度，' +
+        '排到中间就退化成「众多提示之一」。',
+    ).toBe(true);
+
+    // 页脚必须同步提示（🚫 不许只在正文说一句就算了）
+    await expect(
+      drawer.locator('.ant-drawer-footer'),
+      'D-35：页脚必须同步给出「先不要确认」的指令',
+    ).toContainText('预览数据可能已过期');
+
+    /**
+     * 🆕 2026-09-07 主线裁决：recordStale 与 unanchoredRows **同档** —— 主按钮变红 + 文案「仍然确认并核价通过」。
+     * 由来：顶部红条写「请先不要确认」而主按钮是蓝色的「确认并核价通过」⇒ **同一屏给了两个相反的信号**，
+     * 财务照哪个做都不算错。⇒ 三条断言分别钉死「变红 / 换文案 / 但不禁用」，
+     * 少任何一条，下次有人把它改回蓝色都不会有东西变红。
+     */
+    const primary = drawer.getByRole('button', { name: '仍然确认并核价通过' });
+    await expect(
+      primary,
+      'D-35：recordStale 时主按钮文案必须是「仍然确认并核价通过」——「仍然」承担的是「你已被警告，这是你的决定」',
+    ).toBeVisible();
+    await expect(
+      primary,
+      'D-35：主按钮必须是危险态（antd .ant-btn-dangerous）—— 🚫 不许顶部红条说「请先不要确认」而按钮还是蓝色',
+    ).toHaveClass(/ant-btn-dangerous/);
+    // 🚫 反向：变红 ≠ 阻断
+    await expect(
+      primary,
+      'D-35：🚫 变红但**不禁用** —— 核价通过改的是报价单状态（业务流程），' +
+        '不该被数据层的可信度问题卡死（同 BLOCKED「跳过但不阻断」的理由）',
+    ).toBeEnabled();
+    await expect(
+      drawer.getByRole('button', { name: '确认并核价通过', exact: true }),
+      'D-35：🚫 不许再出现普通蓝色态的「确认并核价通过」（两个信号并存正是本次要消灭的东西）',
+    ).toHaveCount(0);
+  });
+
+  /**
+   * 🆕 D-35 的**第二个出口**：`summary.recordStale`（api.md :51「便于前端直接做红条」）。
+   * 本用例刻意**只**给 summary 的布尔位、顶层 `recordStale` 整个不发 ——
+   * 前端若只信顶层对象，告警就整块消失，而**漏报的代价是财务照着过期数据确认回填**。
+   * ⇒ 判据必须是「两个出口取并」，这条用例守的就是这个并。
+   */
+  test('T-35b · D-35 只给 summary.recordStale 布尔位时，告警仍必须出现', async ({ page }) => {
+    await stubPreview(page, recordStalePreviewFixture({ viaSummaryOnly: true }));
+    await openCostingApproveDrawer(page);
+
+    const drawer = page.locator('.ant-drawer').filter({ hasText: '核价通过' });
+    await expect(
+      drawer.locator('[data-testid="ds-backfill-record-stale-alert"]'),
+      'D-35：顶层 recordStale 缺失、只有 summary.recordStale=true 时，告警**仍必须出现**' +
+        '（两个出口取并，🚫 不许只信其中一个）',
+    ).toBeVisible();
+    await expect(
+      drawer.locator('[data-testid="ds-backfill-record-stale-alert"]'),
+      'D-35：reason 缺失时走「未说明原因」兜底，🚫 不许渲染空白',
+    ).toContainText('未说明原因');
+
+    // 危险态由 flags.recordStale 驱动 ⇒ **两个出口都得点亮它**，🚫 不许只在顶层对象那条路上变红
+    const primary = drawer.getByRole('button', { name: '仍然确认并核价通过' });
+    await expect(
+      primary,
+      'D-35：只给 summary.recordStale 布尔位时，主按钮**同样**必须变红改文案（危险态与告警条同源）',
+    ).toBeVisible();
+    await expect(primary).toHaveClass(/ant-btn-dangerous/);
+    await expect(primary, 'D-35：🚫 仍然不许禁用').toBeEnabled();
+  });
 });
 
 // ═══════════════════════ 夹具 ═══════════════════════
@@ -333,20 +655,53 @@ test.describe('task-260907R · 核价通过确认抽屉', () => {
  *    （`BackfillPreviewContractTest`），两边不可互相替代 —— 报告里必须分开写。
  */
 async function stubPreview(page: Page, body: unknown) {
+  // 🚨 阳性对照：**在 route handler 里**记命中次数。
+  //    ⚠️ 2026-09-07 修：原来监听 page.on('response') 判「有没有这个 URL 的响应」——
+  //    那在拦截**没生效**、请求打到真实后端时同样为真 ⇒ 该对照证明不了任何事。
+  //    命中计数只有拦截真的执行了才会 +1，这才是能证伪的写法。
+  (page as any).__previewStubHits = 0;
   await page.route('**/api/cpq/quotations/*/costing-approve/preview', async (route) => {
+    (page as any).__previewStubHits += 1;
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ code: 200, message: 'ok', data: body }),
     });
   });
-  // 🚨 阳性对照：确认拦截真的挂上了。拦截没生效时页面会打真实后端，
-  //    渲染出来的东西看着也「正常」，于是断言全绿却验错了对象。
-  let intercepted = false;
-  page.on('response', (r) => {
-    if (r.url().includes('/costing-approve/preview')) intercepted = true;
+}
+
+/** 本 spec 自造的核价单 id —— 只存在于拦截层，🚫 库里没有、也绝不会写进库。 */
+const STUB_COID = '00000000-0000-0000-0000-0000000000c1';
+const STUB_QUOTATION_ID = '00000000-0000-0000-0000-0000000000a1';
+
+/**
+ * 拦截核价单详情端点，造出一张 `status='PENDING'` 的核价单 —— 这是「核价通过」按钮出现的前提
+ * （`CostingReviewPage` 的 `canReview` = 角色 ∈ {PRICING_MANAGER, SYSTEM_ADMIN} && status === 'PENDING'）。
+ *
+ * 🚫 为什么不用库里的真单：① 本 spec 全程只读，不依赖库里此刻有没有合适的数据；
+ *    ② 共享库正在等一次全库清空，任何「找一张真单」的路径都会在清空后失效。
+ * ⚠️ `frozenDto` 给最小可解析对象即可：`buildFrozenView` 解不出 lineItems 时页面走降级提示，
+ *    而本 spec 只需要页面渲染出操作栏与「核价通过」按钮。
+ */
+async function stubCostingOrder(page: Page) {
+  await page.route(`**/api/cpq/costing-orders/${STUB_COID}`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 200,
+        message: 'ok',
+        data: {
+          costingOrderId: STUB_COID,
+          quotationId: STUB_QUOTATION_ID,
+          costingOrderNumber: `CO-${PREFIX}0001`,
+          status: 'PENDING',
+          createdAt: '2026-09-07T10:00:00Z',
+          frozenDto: JSON.stringify({ quotationNumber: 'QT-20260907-0431', lineItems: [] }),
+        },
+      }),
+    });
   });
-  (page as any).__previewIntercepted = () => intercepted;
 }
 
 function previewFixture(opts: { withUnanchored: boolean; unchangedOnly: boolean }) {
@@ -415,15 +770,164 @@ function previewFixture(opts: { withUnanchored: boolean; unchangedOnly: boolean 
 }
 
 /**
- * ⛔ 待接前端：从核价评审入口打开「核价通过确认抽屉」。
+ * 🆕 AC-21 夹具：一张含 **BLOCKED 组**的预览（形状照 `api.md §1` 的四值 `result` 扩展）。
  *
- * 🚫 刻意不返回空实现 —— 空实现会让上面的断言在「抽屉压根没打开」的情况下跑完，
- *    而 `expect(...).toBeVisible()` 会以 timeout 的面目失败，读报告的人会去查业务代码。
+ * 三个刻意的设计：
+ *   1. **混编**（1 个 UPGRADED + 2 个 BLOCKED）——「只有 BLOCKED」的屏验不出「BLOCKED 不该影响
+ *      正常组的渲染」，也验不出九列列集；
+ *   2. **BLOCKED 组不给 `resultRowCount`** —— 后端过渡期完全可能不给，而那正是「组会变小」假警报的触发条件；
+ *   3. `unanchoredRows` 恒空 —— BLOCKED 与「对不上的行」是两套东西，同屏出现会让反向断言失去意义。
  */
-async function openCostingApproveDrawer(_page: Page): Promise<void> {
-  throw new Error(
-    '⛔ 待接前端（**不是被测功能的结论**）：需要「从核价评审页进入某张 SUBMITTED 的新链路报价单 → ' +
-      '点核价通过 → 抽屉打开」的稳定路径与选择器。' +
-      '缺的信息（入口页面路由、按钮可访问名、抽屉与各单元格的 data-testid）已列在测试回报的「缺什么」清单里。',
-  );
+function blockedPreviewFixture() {
+  const upgraded = {
+    axisValue: `${PREFIX}M1`,
+    customerNo: 'CUST-0001',
+    baseVersionNo: 2,
+    currentVersionNo: 2,
+    targetVersionNo: 3,
+    crossVersion: false,
+    result: 'UPGRADED',
+    baseRowCount: 9,
+    resultRowCount: 9,
+    patchedRows: 2,
+    untouchedRows: 7,
+    unanchoredRows: [],
+    columnScope: {
+      patched: ['component_qty', 'unit_weight'],
+      preserved: ['item_seq', 'input_material_no', 'output_material_type'],
+    },
+  };
+
+  /** ⚠️ 刻意不带 resultRowCount：守 T-21 的 B③（假警报）。 */
+  const blockedSameVersion = {
+    axisValue: `${PREFIX}M2`,
+    customerNo: 'CUST-0001',
+    baseVersionNo: 1,
+    currentVersionNo: 1,
+    targetVersionNo: 1,
+    crossVersion: false,
+    result: 'BLOCKED',
+    blockedReason: 'GRAIN_KEY_COLLISION',
+    baseRowCount: 4,
+    patchedRows: 0,
+    untouchedRows: 4,
+    unanchoredRows: [],
+    collidingRows: [
+      { grainKey: { input_material_no: 'S-3110520790' }, baseRowCount: 2, recordRowCount: 1 },
+    ],
+    columnScope: { patched: [], preserved: ['item_seq', 'input_material_no'] },
+  };
+
+  /** 跨版 + BLOCKED：版本迁移列必须仍以「不升版」收尾。 */
+  const blockedCrossVersion = {
+    axisValue: `${PREFIX}E1`,
+    customerNo: 'CUST-0001',
+    baseVersionNo: 1,
+    currentVersionNo: 2,
+    targetVersionNo: 3,
+    crossVersion: true,
+    result: 'BLOCKED',
+    blockedReason: 'GRAIN_KEY_COLLISION',
+    baseRowCount: 6,
+    patchedRows: 0,
+    untouchedRows: 6,
+    unanchoredRows: [],
+    collidingRows: [
+      { grainKey: { material_part_no: '00005', element_code: 'C' }, baseRowCount: 4, recordRowCount: 1 },
+    ],
+    columnScope: { patched: [], preserved: ['material_part_no', 'element_code'] },
+  };
+
+  return {
+    quotationId: '00000000-0000-0000-0000-0000000000a1',
+    previewToken: 'T260907R-token-blocked',
+    summary: { versionedGroups: 0, addedRows: 0, deletedRows: 0, changedRows: 0 },
+    products: [],
+    globalShared: {},
+    groups: [],
+    dsBackfill: {
+      applicable: true,
+      confirmRequired: true,
+      summary: {
+        tables: 2,
+        axes: 3,
+        upgradedGroups: 1,
+        unchangedGroups: 0,
+        blockedGroups: 2,
+        unanchoredRows: 0,
+      },
+      tables: [
+        {
+          sheetKey: 'MATERIAL_BOM',
+          sheetName: '物料BOM',
+          tableName: 'ds_quote_material_bom',
+          groups: [upgraded, blockedSameVersion],
+        },
+        {
+          sheetKey: 'ELEMENT_BOM',
+          sheetName: '物料与元素BOM',
+          tableName: 'ds_quote_element_bom',
+          groups: [blockedCrossVersion],
+        },
+      ],
+    },
+  };
+}
+
+/**
+ * 🆕 D-35 夹具。两种投递形态各一：
+ *   `viaSummaryOnly=false` → 顶层 `recordStale` 对象（api.md :88 的主形态，含 detail 异常原文）
+ *   `viaSummaryOnly=true`  → **只**给 `summary.recordStale` 布尔位（api.md :51 的便捷位）
+ * ⚠️ `detail` 刻意塞真实异常原文，好让 T-35 的「🚫 不许渲染给财务」那条**有东西可证伪**——
+ *    detail 若是空串，那条断言恒真，等于没验。
+ */
+function recordStalePreviewFixture(opts: { viaSummaryOnly: boolean }) {
+  const base = previewFixture({ withUnanchored: false, unchangedOnly: false }) as any;
+  base.dsBackfill.summary.recordStale = true;
+  if (!opts.viaSummaryOnly) {
+    base.dsBackfill.recordStale = {
+      stale: true,
+      reason: 'WRITE_FAILED',
+      detail: 'IllegalStateException: ds_quote_material_bom_record write failed at DsRecordProjector.project',
+      detectedAt: '2026-09-07T06:17:29Z',
+    };
+  } else {
+    // 顶层对象整个不发 —— 守「两个出口取并」
+    delete base.dsBackfill.recordStale;
+  }
+  return base;
+}
+
+/**
+ * 从核价评审页打开「核价通过确认抽屉」——**走用户视角的完整路径**：
+ * 进核价评审页 → 点「核价通过」→ 抽屉打开。
+ *
+ * 🕰️ 2026-09-07 接通（此前是「⛔ 待接前端」的抛错桩，整个 spec 跑不起来）。
+ * 两个端点都被拦截，因此：🚫 不写库、🚫 不依赖库里有没有合适的数据、🚫 不受即将到来的全库清空影响。
+ *
+ * ⚠️ 顺序要紧：`stubCostingOrder` 必须在 `page.goto` **之前**注册，否则详情请求会漏出去打真实后端，
+ *    页面拿到 404/401 就渲染「核价单不存在」，而下面所有断言会以 timeout 的面目失败。
+ */
+async function openCostingApproveDrawer(page: Page): Promise<void> {
+  await stubCostingOrder(page);
+  await page.goto(`/costing-orders/${STUB_COID}/review`);
+
+  const approveBtn = page.getByRole('button', { name: '核价通过' });
+  await expect(
+    approveBtn,
+    '⛔ 前置未满足：核价评审页没渲染出「核价通过」按钮 ⇒ 抽屉根本打不开，下面的断言全部会以 timeout 的面目失败。' +
+      '先查：① 详情拦截是否生效（status 必须是 PENDING）；② 登录角色是否 PRICING_MANAGER / SYSTEM_ADMIN。',
+  ).toBeVisible();
+  await approveBtn.click();
+
+  // 🚨 阳性对照：预览拦截**真的执行过**。没执行 = 页面打了真实后端，
+  //    此时渲染出来的东西看着也「正常」，断言会全绿却验错了对象（最隐蔽的一类假绿）。
+  await expect
+    .poll(() => (page as any).__previewStubHits, {
+      message:
+        '🚨 阳性对照失败：预览端点的拦截一次都没命中 ⇒ 本次渲染的不是夹具数据，' +
+        '后面所有断言即使全绿也不构成证据。',
+      timeout: 15_000,
+    })
+    .toBeGreaterThan(0);
 }

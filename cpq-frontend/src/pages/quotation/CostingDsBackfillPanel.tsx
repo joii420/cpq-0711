@@ -11,6 +11,14 @@
  *   2. result === 'UNCHANGED' 的组仍要列出（本次覆盖 = 0），不许过滤 ——
  *      否则分不清「这张表没变」和「这张表根本没被算进去」。
  *   3. 「对不上的行」不许折叠进「更多」：红色告警条 + 独立明细表 + 主按钮变红 + 页脚提示条数。
+ *   4. 🆕 `result === 'BLOCKED'`（2026-09-07 契约由两值扩到四值）：该组**本次跳过回填、一个字节不写**，
+ *      但**核价通过照常进行** —— 🚫 不阻断、不禁用确认按钮、主按钮不变红。
+ *      ⇒ 它不是错误态，是「这组我没敢写，你来看一眼」：视觉上**比 UNCHANGED 显眼、比报错克制**，
+ *      本组件统一用橙档（Tag color=orange / 行底 #fff7e6 / warning 告警条）承载，
+ *      并在**独立的**「本次跳过的组」明细表里给出 grainKey 与两侧行数（🚫 不并进「对不上的行」，理由见 BlockedSection）。
+ *
+ * ⚠️ 本文件里有**三套互不相干的 reason 值域**（行级 unanchored / 组件级 nonParticipating / 组级 blocked），
+ *    🚫 任何情况下都不许合并成一张映射表 —— 它们回答的是三个不同的问题，后果也各不相同。
  *
  * ⚠️ 列集与原型的偏差：AC-5② 规定表头固定九列（销售料号 / 版本迁移 / 判定 / 整组行数 / 本次覆盖 /
  *    本次不动 / 对不上 / 本次覆盖的列 / 原样保留的列），原型 01 少画「对不上」、02/04 少画「原样保留的列」。
@@ -20,9 +28,11 @@ import React from 'react';
 import { Alert, Empty, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type {
+  DsBackfillCollidingRow,
   DsBackfillGroup,
   DsBackfillNonParticipating,
   DsBackfillPreview,
+  DsBackfillRecordStale,
   DsBackfillTable,
   DsBackfillUnanchoredRow,
 } from '../../services/costingOrderService';
@@ -44,11 +54,31 @@ export interface DsBackfillFlags {
   unanchoredRows: number;
   /** 全部判定 UNCHANGED（AC-14③：顶部绿色提示条 + 页脚文案改变） */
   allUnchanged: boolean;
+  /**
+   * 🆕 判定为 BLOCKED 的组数（本次跳过回填，一个字节不写，须事后人工处理）。
+   * 🚫 它**不阻断确认** —— 抽屉的禁用逻辑与红色主按钮一律不看这个数。
+   */
+  blockedGroups: number;
+  /**
+   * 🆕 D-35：`_record` 快照可能过期 ⇒ **这份预览本身可能不可信**。
+   * 取 `recordStale.stale` 与 `summary.recordStale` 的**并**，🚫 不许只信其中一个。
+   */
+  recordStale: boolean;
   /** 🆕 D-33：不参与升版的组件数（summary 未下发时按数组长度兜底） */
   nonParticipatingComponents: number;
   /** 🆕 applicable=true 但一张表都没有 —— 只有 nonParticipating 要说的场景 */
   hasTables: boolean;
 }
+
+/**
+ * 🆕 BLOCKED 组计数。summary 未下发 `blockedGroups` 时按实际渲染出来的组兜底 ——
+ * 口径同 `nonParticipatingComponents`：🚫 不许因 summary 缺字段就当 0，那正是「静默」本身。
+ */
+const countBlockedGroups = (ds?: DsBackfillPreview | null): number =>
+  (ds?.tables ?? []).reduce(
+    (n, t) => n + (t.groups ?? []).filter((g) => g.result === 'BLOCKED').length,
+    0,
+  );
 
 export const deriveDsFlags = (ds?: DsBackfillPreview | null): DsBackfillFlags => {
   const s = ds?.summary;
@@ -61,6 +91,8 @@ export const deriveDsFlags = (ds?: DsBackfillPreview | null): DsBackfillFlags =>
     unchangedGroups: unchanged,
     unanchoredRows: s?.unanchoredRows ?? 0,
     allUnchanged: ds?.applicable === true && upgraded === 0 && unchanged > 0,
+    blockedGroups: s?.blockedGroups ?? countBlockedGroups(ds),
+    recordStale: isRecordStale(ds),
     nonParticipatingComponents: s?.nonParticipatingComponents ?? (ds?.nonParticipating?.length ?? 0),
     hasTables: (ds?.tables?.length ?? 0) > 0,
   };
@@ -77,6 +109,14 @@ const UNANCHORED_REASON_TEXT: Record<string, string> = {
   NO_ANCHOR: '这是报价单上新增的行，基础数据里没有对应记录，确认后按新增写入',
   // 有过锚，但跨版后指纹对不上
   CROSS_VERSION_FINGERPRINT_MISS: '本单拍快照后，该行内容已被其他报价单改动，无法在当前版本中定位',
+  /**
+   * 🆕 2026-09-07 主线定稿。api.md :146 说行级实测有三个值，而同文件上方的「全集」表只列了两个 ——
+   * 缺的就是这一条，它此前会以「未知原因（SAME_VERSION_ORIGIN_MISS）」摆给财务看。
+   * 📌 措辞要点：「版本号未变」是它区别于 CROSS_VERSION_FINGERPRINT_MISS 的**唯一可见特征**
+   *    （财务在同一张明细表里会同时看到两种，得能分辨）；「可能被…」是推测故留「可能」，🚫 不写成断言。
+   */
+  SAME_VERSION_ORIGIN_MISS:
+    '快照记录的那一行已不在基础数据中（版本号未变，可能被直接删除或替换），无法定位',
 };
 
 /**
@@ -112,6 +152,77 @@ const nonParticipatingReasonText = (reason?: string | null): string => {
   return NON_PARTICIPATING_REASON_TEXT[reason] ?? `未知原因（${reason}）`;
 };
 
+/**
+ * 🆕 BLOCKED「本次跳过回填」的原因常量（**组级**）。
+ * 🚫 这是本文件里的**第三套**独立值域，与上面两套（行级 unanchored / 组件级 nonParticipating）
+ *    互不相干，🚫 不许合并成一张映射表 —— 三者分别回答「这一行为什么锚不上」「这个组件为什么不参与」
+ *    「这一组为什么整组跳过」，后果也不同（前者会写、中者不写、后者不写但需人工处理）。
+ * 📌 目前后端只有 GRAIN_KEY_COLLISION 一个值，仍按枚举处理：未知码走兜底，🚫 不吞不空白。
+ */
+const BLOCKED_REASON_TEXT: Record<string, string> = {
+  GRAIN_KEY_COLLISION:
+    '这一组里有多行的粒度键取值相同，系统无法确定报价单的数据该写到哪一行，因此整组跳过',
+};
+
+/** 未知常量原样透出（带上原码），兜底形态与另外两套保持一致。 */
+const blockedReasonText = (reason?: string | null): string => {
+  if (!reason) return '未说明原因';
+  return BLOCKED_REASON_TEXT[reason] ?? `未知原因（${reason}）`;
+};
+
+/**
+ * 🆕 D-35「`_record` 快照可能过期」的原因常量（**单据级**，api.md §1 硬约束 4）。
+ * 🚫 这是本文件里的**第四套**独立值域。四套分别回答：
+ *    行级 = 这一行为什么锚不上 · 组件级 = 这个组件为什么不参与 ·
+ *    组级 = 这一组为什么整组跳过 · **单据级 = 这份预览为什么可能不可信**。
+ * 🚫 后端 `recordStale.detail` 是异常原文（`IllegalStateException: …`），
+ *    **api.md 明写不得当用户文案渲染** —— 财务看的只能是这里的映射。
+ */
+const RECORD_STALE_REASON_TEXT: Record<string, string> = {
+  WRITE_FAILED: '这张报价单最后一次保存时，用于比对的数据快照没有写成功',
+};
+
+/** 未知常量原样透出（带上原码），兜底形态与另外三套保持一致。 */
+const recordStaleReasonText = (reason?: string | null): string => {
+  if (!reason) return '未说明原因';
+  return RECORD_STALE_REASON_TEXT[reason] ?? `未知原因（${reason}）`;
+};
+
+/**
+ * 🚨 D-35 判据：`summary.recordStale`（布尔便捷位）与顶层 `recordStale.stale` 取**并**。
+ * 🚫 不许只信其中一个 —— 两个出口来自同一件事，任一被裁掉/漏发都会让告警整块消失，
+ *    而这条告警**漏报的代价是财务照着过期数据确认回填**（D-35 后果链）。
+ */
+const isRecordStale = (ds?: DsBackfillPreview | null): boolean =>
+  ds?.recordStale?.stale === true || ds?.summary?.recordStale === true;
+
+/**
+ * 🆕 D-35 告警条。**红档（error），且置于面板最顶端** —— 它限定的是**下面所有内容的可信度**，
+ * 放在汇总条之后就变成了「众多提示中的一条」。
+ * 分级理由：BLOCKED 是「这组我没敢写」（warning），本条是「**我给你看的东西可能是错的**」（error）。
+ * 🚫 不许折叠、🚫 不许静默、🚫 不许渲染 detail 原文。
+ */
+const RecordStaleAlert: React.FC<{ stale?: DsBackfillRecordStale | null }> = ({ stale }) => (
+  <Alert
+    type="error"
+    showIcon
+    style={{ marginBottom: 16 }}
+    data-testid="ds-backfill-record-stale-alert"
+    title={<b>此刻预览的内容可能不是报价单的最新数据。</b>}
+    description={
+      <>
+        {recordStaleReasonText(stale?.reason)}，
+        因此<b>下面列出的比对结果可能是基于过期的报价单数据算出来的</b>。
+        <br />
+        <b>请先不要确认</b> —— 让销售重新打开这张报价单并保存一次，再回到这里重新预览。
+        {stale?.detectedAt && (
+          <div style={{ fontSize: 12, color: MUTED, marginTop: 4 }}>检测时间：{stale.detectedAt}</div>
+        )}
+      </>
+    }
+  />
+);
+
 const num = (v: number | null | undefined): number => (typeof v === 'number' ? v : 0);
 
 /**
@@ -119,7 +230,15 @@ const num = (v: number | null | undefined): number => (typeof v === 'number' ? v
  * 判据抽成函数：判定标签 / 行底色 / 汇总条 / 顶部告警条四处必须同源，
  * 🚫 不许各处各写一遍 `result < base` —— 那正是「同一件事多套实现」的起点。
  */
-const isShrinking = (g: DsBackfillGroup): boolean => num(g.resultRowCount) < num(g.baseRowCount);
+const isShrinking = (g: DsBackfillGroup): boolean =>
+  // 🚨 BLOCKED 组豁免：整组跳过、一行不写 ⇒ 后端可能把 resultRowCount 留空/给 0，
+  //    此时 num() 会得到 0，`0 < baseRowCount` 恒真 ⇒ 会误报「该组行数会减少 —— 按设计不应发生」，
+  //    并连带点亮顶部红条与汇总条。那是**假警报**，且长得和真缺陷一模一样。
+  //    ⇒ 判据前置一道 result 闸，🚫 不许只靠「后端一定会返 baseRowCount」这个假设。
+  g.result !== 'BLOCKED' && num(g.resultRowCount) < num(g.baseRowCount);
+
+/** 本次跳过回填（整组不写，但核价通过照常进行）。 */
+const isBlocked = (g: DsBackfillGroup): boolean => g.result === 'BLOCKED';
 
 /** 汇总条一项（原型 .summary .item）。 */
 const SummaryItem: React.FC<{ label: string; value: number; warn?: boolean }> = ({ label, value, warn }) => (
@@ -139,6 +258,29 @@ const SummaryItem: React.FC<{ label: string; value: number; warn?: boolean }> = 
 const VersionCell: React.FC<{ g: DsBackfillGroup }> = ({ g }) => {
   const arrow = <span style={{ color: 'rgba(0,0,0,.25)' }}>→</span>;
   const wrap: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' };
+  /**
+   * 🆕 BLOCKED：整组跳过 ⇒ **不升版**。
+   * 🚫 这里绝不能落到下面的 crossVersion / 默认分支去显示「→ v3」——
+   *    那会向财务承诺一个本次根本不会发生的版本迁移（同 AP-60 判据四的「说了做不到」形态）。
+   *    跨版信息仍保留（她需要知道库里已经变过），但终点明写「不升版」。
+   */
+  if (isBlocked(g)) {
+    return (
+      <span style={wrap}>
+        {g.crossVersion ? (
+          <>
+            <Tag color="gold" style={{ marginInlineEnd: 0 }}>快照 v{g.baseVersionNo ?? '?'}</Tag>
+            {arrow}
+            <Tag color="blue" style={{ marginInlineEnd: 0 }}>库中 v{g.currentVersionNo ?? '?'}</Tag>
+          </>
+        ) : (
+          <span>v{g.currentVersionNo ?? '?'}</span>
+        )}
+        {arrow}
+        <span style={{ color: '#d46b08', fontWeight: 600 }}>不升版</span>
+      </span>
+    );
+  }
   if (g.crossVersion) {
     return (
       <span style={wrap}>
@@ -173,10 +315,16 @@ const VersionCell: React.FC<{ g: DsBackfillGroup }> = ({ g }) => {
   );
 };
 
-/** 判定标签。三态与原型 01 一致：新建（绿）/ 升版（蓝）/ 跨版升版（金）/ 无变更（灰）。 */
+/**
+ * 判定标签。原型 01/02：新建（绿）/ 升版（蓝）/ 跨版升版（金）/ 无变更（灰）/ 异常（红）。
+ * 🆕 本次跳过（橙）—— 视觉分级刻意落在**灰与红之间**：
+ *    比「无变更」显眼（它需要财务事后处理，不是「什么事都没有」），
+ *    比「异常」克制（它不阻断确认，也不是缺陷信号）。
+ */
 const resultTag = (g: DsBackfillGroup): React.ReactNode => {
   // 变小优先于一切正常判定 —— 这一行此刻的要紧事不是「升了几版」，而是「它不该变小」
   if (isShrinking(g)) return <Tag color="red">异常</Tag>;
+  if (isBlocked(g)) return <Tag color="orange">本次跳过</Tag>;
   if (g.result === 'UNCHANGED') return <Tag>无变更</Tag>;
   if (g.result === 'CREATED') return <Tag color="green">新建</Tag>;
   return g.crossVersion ? <Tag color="gold">跨版升版</Tag> : <Tag color="blue">升版</Tag>;
@@ -231,6 +379,22 @@ const buildGroupColumns = (showUnanchored: boolean, showColumnScope: boolean): C
       //    后端口径一改前端就静默说谎（本任务刚用 D-31 消灭过一次这种形态）。
       const base = num(g.baseRowCount);
       const result = num(g.resultRowCount);
+      /**
+       * 🆕 BLOCKED：整组跳过 ⇒ 回填后这一组**保持原样**。
+       * 🚫 这里刻意**不**把 baseRowCount 顶上来当结果值 —— 那就是「前端自己推 resultRowCount」，
+       *    正是上面那条禁令要防的事。后端给了数就渲染那个数，没给就渲染「—」，
+       *    再用一行小注把「本次不写」这个结论说死；两种情况都不套色（不是绿、不是红）。
+       */
+      if (isBlocked(g)) {
+        return (
+          <span style={{ color: MUTED }}>
+            {typeof g.resultRowCount === 'number' ? result : '—'}
+            <div style={{ fontSize: 12, whiteSpace: 'nowrap', color: '#d46b08' }}>
+              本次跳过，该组保持原样
+            </div>
+          </span>
+        );
+      }
       if (result > base) {
         // base === 0 → 整组新建（绿）；base > 0 → 组会变大（红，多为「对不上的行按新增写入」）
         const color = base === 0 ? '#389e0d' : '#d4380d';
@@ -280,12 +444,22 @@ const buildGroupColumns = (showUnanchored: boolean, showColumnScope: boolean): C
         {
           title: '本次覆盖的列',
           key: 'patchedCols',
-          render: (_, g) => (g.result === 'UNCHANGED' ? <Text type="secondary">—</Text> : columnTags(g.columnScope?.patched)),
+          render: (_, g) =>
+            // BLOCKED 与 UNCHANGED 一样「一列都不覆盖」，但两者的**原因与后续动作**不同，
+            // 差别由右边那一列与判定标签承担，这里统一显示「—」。
+            g.result === 'UNCHANGED' || isBlocked(g)
+              ? <Text type="secondary">—</Text>
+              : columnTags(g.columnScope?.patched),
         },
         {
           title: '原样保留的列',
           key: 'preservedCols',
           render: (_, g) => {
+            if (isBlocked(g)) {
+              return (
+                <Text type="secondary">整组跳过，本次一行不写 —— 需事后人工处理</Text>
+              );
+            }
             if (g.result === 'UNCHANGED') return <Text type="secondary">整组不写，连更新时间都不会动</Text>;
             // CREATED：基底为空，没有「原样保留」可言（原型 01 的原文）
             if (g.result === 'CREATED') return <Text type="secondary">该料号在基础数据里还没有，本次整组新建</Text>;
@@ -338,11 +512,17 @@ const SheetSection: React.FC<{ t: DsBackfillTable; showUnanchored: boolean; show
           // 验收用例按 [data-result="UNCHANGED"] 定位，两边不互相迁就。
           'data-result': g.result,
           style: {
+            // 三档底色，优先级从高到低：
+            //   红 #fff2f0 = 不该出现的状态（组会变小）
+            //   橙 #fff7e6 = 本次跳过（需事后人工处理，比黄档更要紧）
+            //   黄 #fffbe6 = 跨版 / 有对不上的行（正常但需留意）
             background: isShrinking(g)
-              ? '#fff2f0' // 红底：不该出现的状态，压过下面那档黄底
-              : (g.unanchoredRows?.length ?? 0) > 0 || g.crossVersion
-                ? '#fffbe6'
-                : undefined,
+              ? '#fff2f0'
+              : isBlocked(g)
+                ? '#fff7e6'
+                : (g.unanchoredRows?.length ?? 0) > 0 || g.crossVersion
+                  ? '#fffbe6'
+                  : undefined,
           },
         } as React.HTMLAttributes<HTMLElement>)}
       />
@@ -402,6 +582,95 @@ const UnanchoredSection: React.FC<{ rows: FlatUnanchored[] }> = ({ rows }) => {
           pagination={false}
           scroll={{ x: 'max-content' }}
           onRow={() => ({ style: { background: '#fff2f0' } })}
+        />
+      </div>
+    </div>
+  );
+};
+
+interface FlatColliding extends DsBackfillCollidingRow {
+  __key: string;
+  __sheetName: string;
+  __axisValue: string;
+  __reason?: string | null;
+}
+
+/**
+ * 🆕「本次跳过的组」冲突明细（BLOCKED / GRAIN_KEY_COLLISION）。
+ *
+ * 🚦 **为什么另起一区、不并进上面的「对不上的行」**（本次的设计决定，理由记在这里以免下次被"顺手合并"）：
+ *   1. **层级不同**：`unanchoredRows` 是**行**级（这一行认不出）；`collidingRows` 是**组**级
+ *      （整组因粒度键歧义而跳过）。合并后「N 行」这个计数会同时指两种东西。
+ *   2. **后果相反**：对不上的行**确认后会按新增写入**（组会变大）；BLOCKED 组**一个字节都不写**。
+ *      同一张表里放两种相反后果的行，是 AP-52「语义错配」的标准起手式。
+ *   3. **列不同**：前者的动态列是 `displayValues`（行的业务身份，如 项次/投入料号）；
+ *      后者是 `grainKey`（粒度键取值）+ 两侧行数。硬塞一张表要么列错位、要么两个概念被读成一个。
+ *   4. **视觉分级不同**：前者红（error），后者橙（warning）—— 合并就必须二选一，等于抹掉分级。
+ */
+const BlockedSection: React.FC<{ rows: FlatColliding[]; groupCount: number }> = ({ rows, groupCount }) => {
+  // grainKey 是后端下发的动态 map（不同页签的粒度列不同：报价侧 MATERIAL_BOM 只有
+  // input_material_no，ELEMENT_BOM 是 {material_part_no, element_code}）⇒ 列按首次出现顺序取并集。
+  const grainKeys: string[] = [];
+  rows.forEach((r) => {
+    Object.keys(r.grainKey ?? {}).forEach((k) => {
+      if (!grainKeys.includes(k)) grainKeys.push(k);
+    });
+  });
+
+  const columns: ColumnsType<FlatColliding> = [
+    { title: '页签', dataIndex: '__sheetName', key: '__sheetName' },
+    {
+      title: '销售料号',
+      dataIndex: '__axisValue',
+      key: '__axisValue',
+      render: (v: string) => <span style={{ fontFamily: MONO, fontSize: 13 }}>{v}</span>,
+    },
+    ...grainKeys.map((k) => ({
+      title: k,
+      key: `gk-${k}`,
+      render: (_: unknown, r: FlatColliding) => {
+        const v = r.grainKey?.[k];
+        return v === null || v === undefined || v === ''
+          ? <Text type="secondary">—</Text>
+          : <span style={{ fontFamily: MONO, fontSize: 13 }}>{String(v)}</span>;
+      },
+    })),
+    {
+      title: '基础数据里的行数',
+      key: 'baseRowCount',
+      align: 'right',
+      onCell: () => ({ 'data-testid': 'ds-backfill-colliding-base' } as React.TdHTMLAttributes<HTMLElement>),
+      render: (_: unknown, r: FlatColliding) => num(r.baseRowCount),
+    },
+    {
+      title: '报价单里的行数',
+      key: 'recordRowCount',
+      align: 'right',
+      onCell: () => ({ 'data-testid': 'ds-backfill-colliding-record' } as React.TdHTMLAttributes<HTMLElement>),
+      render: (_: unknown, r: FlatColliding) => num(r.recordRowCount),
+    },
+    {
+      title: '原因',
+      key: 'reason',
+      render: (_: unknown, r: FlatColliding) => blockedReasonText(r.__reason),
+    },
+  ];
+
+  return (
+    <div data-testid="ds-backfill-blocked-panel">
+      <SheetHead
+        name={`本次跳过的组（${groupCount}）`}
+        note="这些组本次一个字节都不写，核价通过照常进行，需事后人工处理"
+      />
+      <div style={tableWrapStyle}>
+        <Table<FlatColliding>
+          size="small"
+          rowKey="__key"
+          columns={columns}
+          dataSource={rows}
+          pagination={false}
+          scroll={{ x: 'max-content' }}
+          onRow={() => ({ style: { background: '#fff7e6' } })}
         />
       </div>
     </div>
@@ -494,6 +763,14 @@ const CostingDsBackfillPanel: React.FC<{ ds: DsBackfillPreview }> = ({ ds }) => 
   if (!flags.applicable) {
     return (
       <div style={{ padding: '40px 0' }}>
+        {/*
+          🚨 D-35 防御位：api.md 说「recordStale 非空时 applicable 恒 true」，
+          但那是**后端的承诺**，不是前端的保证。万一后端违约（或将来改了口径），
+          把告警挂在 applicable 上就等于让它恰好在最该出现时整块消失 ——
+          与 D-33「100% 不参与时告警被空态顶掉」是同一个坑，本任务已经踩过一次。
+          ⇒ 这里先渲染告警，再渲染空态。代价是一段几乎不会执行的代码，收益是不会静默。
+        */}
+        {flags.recordStale && <RecordStaleAlert stale={ds.recordStale} />}
         <Empty
           image={<div style={{ fontSize: 40, lineHeight: 1 }}>📄</div>}
           styles={{ image: { height: 44 } }}
@@ -521,8 +798,16 @@ const CostingDsBackfillPanel: React.FC<{ ds: DsBackfillPreview }> = ({ ds }) => 
   const allUnchangedScreen = allGroups.length > 0 && allGroups.every((g) => g.result === 'UNCHANGED');
   // 🚨 D-34：回填只增不删 ⇒ 一个组都不该变小。>0 就是缺陷信号，三处联动（汇总条 / 顶部红条 / 行内）
   const shrinkingGroups = allGroups.filter(isShrinking).length;
+  /**
+   * 🆕 BLOCKED 组：**按实际渲染出来的组数**，不看 summary。
+   * 理由同 allUnchangedScreen：summary 与 tables 万一不一致时，
+   * 汇总条上的数字必须跟眼睛在下面表格里能数出来的那份走，否则财务会去找那个数不出来的组。
+   * （summary 的 blockedGroups 仍在 deriveDsFlags 里用于抽屉页脚，两处口径差异见 flags 注释。）
+   */
+  const blockedGroupCount = allGroups.filter(isBlocked).length;
 
   const unanchoredFlat: FlatUnanchored[] = [];
+  const collidingFlat: FlatColliding[] = [];
   const crossVersionNotes: string[] = [];
   tables.forEach((t) => {
     (t.groups ?? []).forEach((g, gi) => {
@@ -532,6 +817,17 @@ const CostingDsBackfillPanel: React.FC<{ ds: DsBackfillPreview }> = ({ ds }) => 
           __key: `${t.tableName}::${g.axisValue}::${gi}::${ri}`,
           __sheetName: t.sheetName || t.sheetKey,
           __axisValue: g.axisValue,
+        });
+      });
+      (g.collidingRows ?? []).forEach((c, ci) => {
+        collidingFlat.push({
+          ...c,
+          __key: `${t.tableName}::${g.axisValue}::${gi}::c${ci}`,
+          __sheetName: t.sheetName || t.sheetKey,
+          __axisValue: g.axisValue,
+          // 原因挂在**组**上（blockedReason），明细表逐行显示 —— 同一组的每条冲突原因相同，
+          // 但财务是按行看的，逐行给比让她回头去组表里对更省事。
+          __reason: g.blockedReason,
         });
       });
       if (g.crossVersion && num(g.untouchedRows) > 0) {
@@ -560,8 +856,19 @@ const CostingDsBackfillPanel: React.FC<{ ds: DsBackfillPreview }> = ({ ds }) => 
 
   return (
     <>
+      {/*
+        ── 🆕 D-35：`_record` 快照可能过期 ⇒ **整份预览的可信度**存疑（api.md §1 硬约束 4）。
+           置于**最顶端**是刻意的：它限定的是下面所有内容，排在汇总条之后就退化成「众多提示之一」。
+           🚫 不许折叠、🚫 不许静默、🚫 不许把 detail 的异常原文给财务看。 ── */}
+      {flags.recordStale && <RecordStaleAlert stale={ds.recordStale} />}
+
       {/* ── 汇总条五项（AC-5③）：最后一项 >0 时标红 ── */}
       <div
+        // 验收用例按此定位汇总条。**必须有**：汇总条上的标签（「将升版」「无变更」）与抽屉里
+        // 别处的文案会撞 —— 页脚有「…个料号组将升版…」、判定列有 <Tag>无变更</Tag> ⇒
+        // 不限定范围的 getByText 会命中多个元素、以 strict mode violation 的面目失败，
+        // 而那种失败长得像「汇总条没渲染」。（2026-09-07 接通入口后实测撞到）
+        data-testid="ds-backfill-summary"
         style={{
           display: 'flex',
           gap: 32,
@@ -581,6 +888,13 @@ const CostingDsBackfillPanel: React.FC<{ ds: DsBackfillPreview }> = ({ ds }) => 
           后两项**只在 >0 时出现**（AC-5③「🚫 不锁项数」）—— 四份原型逐一实测印证该规则：
           01 有「不参与的组件=2」无「行数会减少的组」；02 反过来；03/04 两项都没有（两者都是 0）。
         */}
+        {/* 🆕 BLOCKED 组计数。同样只在 >0 时出现 —— 恒显示会在绝大多数单子上留下一行
+            僵尸「本次跳过的组 0」，那是噪声不是信息（AC-5③「🚫 不锁项数」的同一条理由）。 */}
+        {blockedGroupCount > 0 && (
+          <div data-testid="ds-backfill-blocked-summary">
+            <SummaryItem label="本次跳过的组" value={blockedGroupCount} warn />
+          </div>
+        )}
         {nonParticipatingCount > 0 && (
           <SummaryItem label="不参与的组件" value={nonParticipatingCount} warn />
         )}
@@ -635,6 +949,31 @@ const CostingDsBackfillPanel: React.FC<{ ds: DsBackfillPreview }> = ({ ds }) => 
               以下料号组在本单拍快照时的版本已经落后于库里当前版本：{crossVersionGroups.join('、')}。
               <br />
               本次确认会以<b>库里当前版本为底</b>再叠加本单的改动，<b>不会把别人改的内容退回去</b>。
+            </>
+          }
+        />
+      )}
+
+      {/*
+        🆕 BLOCKED 告警条。**warning 不是 error**，这是刻意的：
+          - 比「无变更」显眼 —— 它需要财务事后动手，不是「什么都没发生」；
+          - 比报错克制 —— 它**不阻断核价通过**，主按钮不变红、不禁用（🚫 别照着「对不上的行」那条抄）。
+        文案回答三件事：写不写（不写）／通过还能不能继续（能）／接下来谁做什么（事后人工处理）。
+      */}
+      {blockedGroupCount > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          data-testid="ds-backfill-blocked-alert"
+          title={<b>有 {blockedGroupCount} 个料号组本次跳过回填。</b>}
+          description={
+            <>
+              这些组里存在<b>粒度键取值相同的多行</b>，系统无法确定报价单的数据该写到哪一行，
+              因此本次<b>一个字节都不写</b>，它们在基础数据里<b>保持原样</b>。
+              <br />
+              <b>核价通过照常进行</b> —— 这些组不阻断本次确认；但它们需要<b>事后人工核对处理</b>
+              {collidingFlat.length > 0 ? '，逐组明细见下方「本次跳过的组」。' : '。'}
             </>
           }
         />
@@ -717,6 +1056,14 @@ const CostingDsBackfillPanel: React.FC<{ ds: DsBackfillPreview }> = ({ ds }) => 
 
       {/* ── 对不上的行明细表 ── */}
       {unanchoredFlat.length > 0 && <UnanchoredSection rows={unanchoredFlat} />}
+
+      {/* ── 🆕「本次跳过的组」明细表，与上面那张**并列**不合并（理由见 BlockedSection 头注）。
+             空态守卫：没有 BLOCKED 组时整块不渲染，🚫 不留「0 组」的僵尸区块。
+             ⚠️ 前件用 collidingFlat.length 而非 blockedGroupCount —— 后端给了 BLOCKED 组却没给
+             collidingRows 时渲染一张空表，等于用一个空壳冒充证据（顶部告警条仍在，信息不丢）。 ── */}
+      {collidingFlat.length > 0 && (
+        <BlockedSection rows={collidingFlat} groupCount={blockedGroupCount} />
+      )}
 
       {/* ── 跨版「本次不动」补充说明 ── */}
       {crossVersionNotes.length > 0 && (

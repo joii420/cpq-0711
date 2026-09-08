@@ -211,6 +211,21 @@ export interface DsBackfillColumnScope {
   preserved?: string[];
 }
 
+/**
+ * 🆕 BLOCKED 组的粒度键冲突明细（api.md §1，2026-09-07 主线钉死的契约）。
+ * 一条 = 一个撞上了的粒度键取值，以及它在**主表基底**与 **`_record`** 两侧各有几行。
+ * ⚠️ 冲突可能出在任一侧（基底 4 行 vs `_record` 1 行、或反过来）⇒ 两个计数都要给财务看。
+ */
+export interface DsBackfillCollidingRow {
+  /** 粒度键取值，键为列名（如 { material_part_no: '00005', element_code: 'C' }）。
+   *  ⚠️ 契约给的是物理列名，前端原样渲染不做中文映射（同 columnScope 的既有口径）。 */
+  grainKey?: Record<string, string | number | null>;
+  /** 该粒度键在主表基底里有几行 */
+  baseRowCount?: number;
+  /** 该粒度键在 _record 里有几行 */
+  recordRowCount?: number;
+}
+
 /** 一个「表 × 轴值」组的回填结果预告——描述「将写入什么」，不是「哪些值变了」（AP-60 判据四）。 */
 export interface DsBackfillGroup {
   /** 轴 = 报价单产品卡片的销售料号（D-3） */
@@ -228,7 +243,21 @@ export interface DsBackfillGroup {
   targetVersionNo?: number | null;
   /** baseVersionNo != currentVersionNo → 走指纹重锚 */
   crossVersion?: boolean;
-  result: 'CREATED' | 'UPGRADED' | 'UNCHANGED';
+  /**
+   * 🆕 2026-09-07 由两值扩到四值：新增 `BLOCKED`。
+   * `BLOCKED` = 该组**本次跳过回填，一个字节不写**；核价通过本身照常进行（🚫 不阻断确认），
+   * 需财务**事后人工处理**。⇒ 它不是错误态，视觉上应比 `UNCHANGED` 显眼、比报错克制。
+   */
+  result: 'CREATED' | 'UPGRADED' | 'UNCHANGED' | 'BLOCKED';
+  /**
+   * 🆕 result==='BLOCKED' 时的原因常量。目前只有 `GRAIN_KEY_COLLISION` 一种，
+   * 但**按枚举处理**：后端加值时前端必须原码兜底，🚫 不许渲染空白。
+   * 🚫 这是**第三套**独立值域 —— 与 `unanchoredRows[].reason`（行级）、
+   *    `nonParticipating[].reason`（组件级）互不相干，🚫 不许合并成一张映射表。
+   */
+  blockedReason?: string | null;
+  /** 🆕 result==='BLOCKED' 时的冲突明细（哪个粒度键撞了、两侧各几行） */
+  collidingRows?: DsBackfillCollidingRow[];
   /** 主表当前整组行数（= 基底行数） */
   baseRowCount?: number;
   /** 回填后该组行数 */
@@ -256,8 +285,21 @@ export interface DsBackfillSummary {
   axes: number;
   upgradedGroups: number;
   unchangedGroups: number;
+  /**
+   * 🆕 判定为 BLOCKED 的组数（本次跳过回填，一个字节不写）。
+   * ⚠️ 后端未下发时前端按 `tables[].groups` 里 result==='BLOCKED' 的条数兜底 ——
+   * 口径与 `nonParticipatingComponents` 的兜底一致，🚫 不许因 summary 缺字段就当 0（那等于静默）。
+   */
+  blockedGroups?: number;
   /** 🔴 >0 时前端必须显著提示：红色告警条 + 独立明细表 + 主按钮变红 */
   unanchoredRows: number;
+  /**
+   * 🆕 D-35 布尔便捷位（api.md :51「便于前端直接做红条」）。
+   * ⚠️ 与顶层 `recordStale.stale` 是同一件事的两个出口 —— 前端取**两者的并**（任一为真即提示），
+   * 🚫 不许只信其中一个：只信 summary 会漏掉 summary 没发的场景，只信顶层会漏掉顶层被裁掉的场景，
+   * 而这条告警**漏报的代价是财务照着过期数据确认回填**。
+   */
+  recordStale?: boolean;
   /** 🆕 D-33：不参与基础数据升版的组件数。后端未下发时前端按 nonParticipating.length 兜底 */
   nonParticipatingComponents?: number;
 }
@@ -285,6 +327,24 @@ export interface DsBackfillNonParticipating {
   reason?: string | null;
 }
 
+/**
+ * 🆕 D-35（api.md §1 硬约束 4）：本单的 `_record` 快照**写失败过** ⇒ 预览内容可能不是最新。
+ *
+ * 后果链（需求文档 D-35 原文）：保存成功 → 快照没更新 → 核价通过时预览读到**过期或缺失**的 `_record`
+ * → 财务照着确认 → **按错的数据回填主表**。⇒ 与 AP-60 判据四同族：**预览在撒谎，而且撒得很有说服力**。
+ *
+ * 🚫 `detail` 是异常原文，**仅供排障，绝不许当用户文案渲染**（api.md 明写）。
+ */
+export interface DsBackfillRecordStale {
+  /** true = 快照可能过期，前端必须显著提示（🚫 不许折叠、不许静默） */
+  stale: boolean;
+  /** 原因常量，实测目前只有 WRITE_FAILED。⚠️ 第四套独立值域，🚫 不许与另外三套合并 */
+  reason?: string | null;
+  /** 🚫 异常原文，仅排障。前端**不得**直接渲染给财务 */
+  detail?: string | null;
+  detectedAt?: string | null;
+}
+
 /** api.md §1 新增段。 */
 export interface DsBackfillPreview {
   /** false = 本单不走 ds_ 新回填（老单），前端渲染空态 */
@@ -299,6 +359,11 @@ export interface DsBackfillPreview {
    * 恰好在「100% 不参与」这一最常见场景里整块消失。
    */
   tables?: DsBackfillTable[];
+  /**
+   * 🆕 D-35。⚠️ api.md §1 硬约束 4：`recordStale` 非空时 `applicable` **恒 true**（即使 `tables=[]`）——
+   * 🚫 前端因此不得把该告警挂在「有表才渲染」的前提上，否则它恰好在最该出现时整块消失（同 D-33）。
+   */
+  recordStale?: DsBackfillRecordStale | null;
   nonParticipating?: DsBackfillNonParticipating[];
   extendColumnOnly?: DsBackfillExtendColumnOnly[];
 }
