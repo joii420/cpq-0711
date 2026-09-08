@@ -197,7 +197,7 @@ public class DsQuoteBackfillService {
                     gd.collidingRows.add(cr);
                 }
                 gd.baseRowCount = g.baseRowCount;
-                gd.resultRowCount = g.resultRows.size();
+                gd.resultRowCount = g.resultRowCount;   // 「不写」两态已被收口成 baseRowCount
                 gd.patchedRows = g.patchedRows;
                 gd.untouchedRows = g.untouchedRows;          // 🔑 AP-60 守卫，必须出现
                 gd.columnScope.patched = new ArrayList<>(g.patchedColumns);

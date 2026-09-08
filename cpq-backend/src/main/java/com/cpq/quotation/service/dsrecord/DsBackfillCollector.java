@@ -333,13 +333,14 @@ public class DsBackfillCollector {
             if (com.cpq.dataset.fingerprint.RowFingerprints.sameMultiset(dbFps, newFps)) {
                 g.result = com.cpq.dataset.versioning.VersionedGroupWriter.UNCHANGED;
                 g.targetVersionNo = g.currentVersionNo;   // 一行不写，连 updated_at 都不动（AC-14）
-                applyUnchangedContract(g, sheet);         // 🔑 四项计数必须回填成「什么都不写」
+                applyNoWriteContract(g, sheet);           // 🔑 计数必须回填成「什么都不写」
             } else {
                 g.result = com.cpq.dataset.versioning.VersionedGroupWriter.UPGRADED;
                 g.targetVersionNo = predictedVersionNo;  // D-31：规则只有一份，在 writer 里
             }
         }
-        applyCollisionGuard(g, sheet, grain, base, unanchoredRecs);   // C′（D-37）
+        g.resultRowCount = g.resultRows.size();                       // 默认口径
+        applyCollisionGuard(g, sheet, grain, base, unanchoredRecs);   // C′（D-37）：命中会覆盖成 baseRowCount
         return g;
     }
 
@@ -419,6 +420,10 @@ public class DsBackfillCollector {
             g.result = BLOCKED;
             g.blockedReason = BLOCKED_GRAIN_KEY_COLLISION;
             g.targetVersionNo = g.currentVersionNo;      // 跳过回填 ⇒ 版本不动
+            // 🚨 BLOCKED 与 UNCHANGED 同属「一个字节不写」⇒ 计数走同一个收口。
+            //    不收口的话会重演刚修过的那个缺陷：预览说「本次覆盖 2 行 / 12 列」，实际一字未写。
+            //    resultRowCount 尤其不能缺省 —— 前端「组会变小」判据是裸比较，缺省取 0 会误报红条。
+            applyNoWriteContract(g, sheet);
             LOG.warnf("[ds-backfill] 组 %s/%s 判 BLOCKED（%s）：%d 个粒度键「本该锚上却没锚上、"
                             + "而该键在基底里确实存在」⇒ 再写下去就是组翻倍，本组跳过回填。"
                             + "🔑 核价通过本身不受影响。", sheet.tableName, g.axisValue,
@@ -468,7 +473,8 @@ public class DsBackfillCollector {
     }
 
     /**
-     * {@code UNCHANGED} 的组：把四项计数回填成「一个字节都不写」（AC-14③ / api.md §1 硬约束 3）。
+     * <b>「一个字节不写」两态</b>（{@code UNCHANGED} / {@code BLOCKED}）的计数回填
+     * （AC-14③ / AC-21 / api.md §1 硬约束 3）。
      *
      * <h3>🚨 为什么必须在这里收口，而不是在行循环里分支</h3>
      * 行循环（上面 {@code patchedRows++} / {@code untouchedRows++} 那段）跑的时候
@@ -493,9 +499,10 @@ public class DsBackfillCollector {
      * <p>📌 <b>一处收口</b>：将来再加计数字段也在这里补，🚫 不要散回行循环里去分支 ——
      * 那里永远不知道 result，散一次就漏一个。
      */
-    private static void applyUnchangedContract(DsBackfillPlan.Group g, SheetDef sheet) {
+    private static void applyNoWriteContract(DsBackfillPlan.Group g, SheetDef sheet) {
         g.patchedRows = 0;                    // 本次覆盖 0 行
         g.untouchedRows = g.baseRowCount;     // 整组原样保留
+        g.resultRowCount = g.baseRowCount;    // 一个字节不写 ⇒ 结果行数**事实上**等于基底行数
         g.patchedColumns.clear();             // 一列都不写
         g.preservedColumns.clear();
         for (ColumnDef c : sheet.persistedColumns()) g.preservedColumns.add(c.name);

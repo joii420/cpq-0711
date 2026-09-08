@@ -40,7 +40,7 @@
   "groups": [ … ],                   // 既有
 
   "dsBackfill": {                    // 🆕 本次新增
-    "applicable": true,              // false = 本单不走 ds_ 新回填（老单），前端不渲染该区
+    "applicable": true,              // 见下「applicable 的判定（主线 2026-09-07 裁决）」
     "confirmRequired": true,         // 恒 true —— 财务必须人工确认（D-25）
     "summary": {
       "tables": 5,                   // 将被触碰的表数
@@ -48,6 +48,9 @@
       "upgradedGroups": 2,           // 判定为 UPGRADED 的组数
       "unchangedGroups": 1,          // 判定为 UNCHANGED 的组数（一行不写）
       "unanchoredRows": 1,           // 🔴 「无法对齐」的行数，>0 时前端必须显著提示
+      "blockedGroups": 0,            // 🆕 D-37：判定为 BLOCKED（跳过回填）的组数。**后端恒发**，>0 时前端必须显式提示
+      "nonParticipatingComponents": 0, // 🆕 D-33：不参与基础数据升版的组件数。**后端恒发**
+      "recordStale": false,          // 🆕 D-35：本单 _record 快照是否过期。**后端恒发**（标记表未落库时恒 false）
       "recordStale": false           // 🆕 D-35 布尔，便于前端直接做红条
     },
     "tables": [
@@ -63,9 +66,11 @@
             "currentVersionNo": 2,           // 库里当前版本
             "targetVersionNo": 3,            // 将升到的版本 = max(current, historyMax) + 1
             "crossVersion": true,            // baseVersionNo != currentVersionNo → 走指纹重锚
-            "result": "UPGRADED",            // CREATED / UPGRADED / UNCHANGED
+            "result": "UPGRADED",            // CREATED / UPGRADED / UNCHANGED / BLOCKED（🆕 D-37）
+            "blockedReason": null,           // 🆕 D-37：result=BLOCKED 时非空。枚举，目前唯一取值 GRAIN_KEY_COLLISION
+            "collidingRows": [],             // 🆕 D-37：result=BLOCKED 时非空，见下方「collidingRows」
             "baseRowCount": 9,               // 主表当前整组行数（= 基底行数）
-            "resultRowCount": 9,             // 回填后该组行数
+            "resultRowCount": 9,             // 回填后该组行数。**后端恒发，🚫 绝不缺省**（见硬约束 7）
             "patchedRows": 2,                // _record 表征并覆盖了列的行数
             "untouchedRows": 7,              // 🔑 页签没表征、原样保留的行数
             "unanchoredRows": [              // 🔴 锚不上的行（A0-1 第三支路）
@@ -77,6 +82,12 @@
                 "reason": "CROSS_VERSION_FINGERPRINT_MISS"   // 见下方「行级 reason 全集」，🚫 与 nonParticipating 的 reason 是两套独立枚举
               }
             ],
+            // 🆕 D-37 · result=BLOCKED 时的明细（其余情况为空数组）
+            // "collidingRows": [
+            //   { "grainKey": {"material_part_no":"00005","element_code":"C"},  // 物理列名，与 columnScope 同口径
+            //     "baseRowCount": 4,        // 该粒度键在**基底**里有几行（>1 = 歧义源头）
+            //     "recordRowCount": 1 }     // 该粒度键在 _record 里有几行
+            // ],
             "columnScope": {                 // 该页签表征了哪些列 —— AP-60 列维度判据
               "patched": ["component_qty", "unit_weight"],
               "preserved": ["item_seq", "input_material_no", "output_material_type", "…"]
@@ -110,6 +121,19 @@
 
 🚫 **这套 reason 与 `nonParticipating[].reason` 是两套独立枚举，不许混成一个值域** —— 前者是「行为什么锚不上」，后者是「组件为什么不参与」。
 
+### `applicable` 的判定（主线 2026-09-07 裁决）
+
+```
+applicable = false  当且仅当  tables == []  且  recordStale == null  且  nonParticipating == []
+```
+只要三者之一非空，恒为 `true`。
+
+⚠️ 原文「`false` = 本单不走 ds_ 新回填（老单），前端不渲染该区」**太窄**，与本节硬约束 4/6 自相矛盾：
+一张 100% 手写视图的老单 `tables` 为空，但它恰恰有 `nonParticipating` 要给财务看 ——
+若此时 `applicable=false` 让前端整块不渲染，**警告就在最该出现的场景里消失了**。
+⇒ `applicable=false` 的含义收窄为「**真的没什么可说**」；
+`applicable=true` + `tables=[]` 是**合法组合**，前端必须能渲染。
+
 **字段语义的三条硬约束**：
 
 1. `untouchedRows` **必须出现在响应里**，且前端**必须渲染**。它是 `AP-60` 的守卫：财务要能看见「这一组有 7 行本次不动」，否则「不写 = 删除」这类后果就永远不在她的视野里。
@@ -120,6 +144,26 @@
    ⚠️ `recordStale` 非空时 `applicable` 恒 `true`（即使 `tables=[]`）—— 否则警告恰好在最该出现时整块不渲染，与 `D-33` 同理。
 5. 🆕 **`unanchoredRows[].reason` 与 `nonParticipating[].reason` 是两套独立值域**（后端实测交集为空，定义在两个不同的类）。
    🚫 **前端不许合并成一张映射表。** 行级实测有三个值：`NO_ANCHOR` / `CROSS_VERSION_FINGERPRINT_MISS` / **`SAME_VERSION_ORIGIN_MISS`**（同版但 `origin_id` 没命中）。
+7. 🆕 🚨 **`resultRowCount` 后端恒发，前端不得依赖缺省**（`D-37` 配套）。
+   语义 = **回填后该组会有多少行**。「一个字节不写」的两态（`UNCHANGED` / `BLOCKED`）恒等于 `baseRowCount`，
+   **不是「未知」也不是 0**。
+   ⚠️ 实证：前端「组会变小」告警判据是裸的 `resultRowCount < baseRowCount`，字段缺失时取 0 ⇒ `0 < 4` 恒真
+   ⇒ **正常单据被点亮红条「该组行数会减少，请先不要确认」** —— 一个缺失字段把正常单据卡住，
+   且症状与真缺陷同形。后端已收口（`applyNoWriteContract`），前端的前置闸保留作纵深防御。
+
+8. 🆕 **`result: "BLOCKED"` 的语义是「这一组跳过回填」，🚫 不是「核价通过被拒」**（`D-37`）。
+   `BLOCKED` 组一个字节不写（不升版、不归档、不删除），但 **`POST /costing-approve` 照常返回 200、
+   报价单照常转 `APPROVED`**。C′ 的目的是「别写坏」，不是「别通过」——
+   不拿业务流程给数据层的边界情况陪葬。
+   ⇒ 前端必须把 `BLOCKED` 组**显式列出**并说明「本组跳过，需人工处理」，
+   🚫 不许折叠、🚫 不许因此禁用确认按钮。
+   与「只能整体确认/取消」（`D-26`）不冲突：那条约束的是财务不能挑组确认，不是「有一组异常就整单否决」。
+
+9. 🆕 **`recordStale` 后端恒发**（`D-35`）：无过期标记时为 `null` 且 `summary.recordStale = false`。
+   ⚠️ **标记表 `ds_quote_record_stale` 尚未落库期间**，后端有 `information_schema` 探针 ⇒
+   `find`/`markStale`/`clearStale` **整体 no-op** ⇒ 该字段**恒为 `null`**、`summary.recordStale` **恒为 `false`**。
+   ⇒ 这段窗口内前端的「过期提示」拿不到数据是**预期**，不是前端漏实现；落库后自动开始有值。
+
 6. 🆕 **`nonParticipating` 非空时前端必须显式告知**（`D-33`）：「本单有 N 个组件不参与基础数据升版」。🚫 不许静默 —— 实测现网 156/228 个组件视图是手写的（无 `builder_config`），财务会以为全覆盖了。这与 `AP-60` 判据四（「不写 = 删除」不在 diff 模型里）是同型的静默。
 
 ### 错误码

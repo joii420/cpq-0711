@@ -65,6 +65,17 @@ public class DsBackfillPlan {
 
         /** 主表当前整组行数（= 基底行数）。 */
         public int baseRowCount;
+        /**
+         * 回填后该组行数。默认 = {@link #resultRows} 的行数；
+         * <b>「一个字节不写」的两态（{@code UNCHANGED} / {@code BLOCKED}）覆盖成 {@link #baseRowCount}</b>。
+         *
+         * <p>🚨 <b>为什么必须显式发这个字段、且不能让它缺省</b>（前端实证）：
+         * 前端的「组会变小」告警判据是裸的 {@code resultRowCount < baseRowCount}，
+         * 字段缺失时取 0 ⇒ {@code 0 < 4} 恒真 ⇒ 正常单据被点亮红条
+         * 「该组行数会减少 —— 请先不要确认，联系技术人员核查」。
+         * <b>一个缺失字段把正常单据卡住，且症状与真缺陷同形。</b>
+         */
+        public int resultRowCount;
         /** {@code _record} 表征并覆盖了列的行数。 */
         public int patchedRows;
         /** 🔑 页签没表征、本次原样保留的行数 —— AP-60 的守卫，必须出现在预览里。 */
