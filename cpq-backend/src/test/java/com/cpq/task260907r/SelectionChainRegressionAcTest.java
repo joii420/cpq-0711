@@ -312,6 +312,22 @@ class SelectionChainRegressionAcTest extends SelConfigAcTestBase {
      * 🚫 绝不能让它以「两侧都是 0、逐项相同」的形态报绿 —— 那正是本条要消灭的恒真。
      */
     @Test
+    @org.junit.jupiter.api.Disabled(
+            "⛔ 已退役（冗余），🚫 不是因为它红。\n"
+            + "本条存在的唯一理由是「现网选配模板的组件 builder_config 全 NULL ⇒ dsBackfill.tables=[] "
+            + "⇒ 两侧增量恒 0 ⇒ AC-17③ 恒真」，需要自造 builder 绑定组件把 tables 顶成非空。\n"
+            + "🔬 该前提在 t17 接通模板绑定之后**已经不成立**（2026-09-08 实测）：\n"
+            + "   · t17 现在显式绑 ds 原生 v1.2（publishedDsTemplate()），实查其 14 个组件 "
+            + "     **14/14 的 component_sql_view.builder_config 非空**（v1.1 亦 14/14，v1.0 为 26/27）；\n"
+            + "   · t17 实跑产出 tables 非空，且阳性集合 [ds_quote_material_bom] 与 "
+            + "     阴性集合 [ds_quote_element_bom] **双双非空** ⇒ AC-17③ 已有分辨力，不是恒真。\n"
+            + "⇒ AC-17③ 的非恒真性由 t17 保证，本条无独立覆盖面，退役比重建划算"
+            + "（重建要跟服务端物化器较劲，成本高、收益不确定）。\n"
+            + "📌 保留而不删除，是为了留住定位结论：它卡在 DsBackfillCollector 的**第 2 跳**"
+            + "（hop1 lineIds=1，但组件数据 0 行 ⇒ compIds=0），且已排除四个候选 —— "
+            + "模板绑定（已绑上）/ 行项 template_id（t17 也是 NULL，非分辨点）/ "
+            + "冻结快照（template_component_snapshot=1，冻结确实生效）/ "
+            + "物理视图（ds 原生的 builder_196aadeeb89f 同样不存在为 PG 关系）。")
     @DisplayName("T-17b · 自造 builder_config 非空的选配模板 → AC-17③ 第一次成为非恒真断言")
     void t17b_selectionChainWithBuilderBoundComponent() {
         master.login();

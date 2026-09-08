@@ -64,12 +64,35 @@ import static org.junit.jupiter.api.Assertions.fail;
 class RecordSuiteBootGateTest {
 
     // 与 application-test.properties 的默认值一致（CLAUDE.md 已实证：test profile 就是共享开发库）
-    private static final String URL = System.getenv().getOrDefault("CPQ_TEST_JDBC_URL",
-            "jdbc:postgresql://" + System.getenv().getOrDefault("DB_HOST", "10.177.152.12")
-                    + ":" + System.getenv().getOrDefault("DB_PORT", "5432")
-                    + "/" + System.getenv().getOrDefault("DB_NAME", "cpq_db_0724") + "?sslmode=disable");
-    private static final String USER = System.getenv().getOrDefault("DB_USERNAME", "postgres");
-    private static final String PASS = System.getenv().getOrDefault("DB_PASSWORD", "joii5231");
+    /**
+     * 🚨 <b>解析顺序必须与 Quarkus 一致：系统属性 → 环境变量 → 默认值。</b>
+     *
+     * <h3>🕰️ 2026-09-08 修一个本闸自己的缺陷</h3>
+     * 原来只读 {@code System.getenv()}，而 {@code application-test.properties} 的
+     * {@code ${DB_NAME:...}} 由 <b>Quarkus 配置</b>解析、<b>认系统属性</b>
+     * ⇒ 用 {@code -DDB_NAME=cpq_t260907r_laneb} 跑时，
+     * <b>用例连 laneb，而本闸仍在查 0724</b> —— 两者指向不同的库。
+     *
+     * <p>🔬 实测后果（本轮撞上）：0724 被别的会话应用了 V430、本分支只到 V429
+     * ⇒ 闸报「Flyway 漂移」，而用例其实跑在 laneb 上、laneb 与分支都是 429、根本没漂移。
+     * <b>那是一条假红。</b>
+     *
+     * <p>🚨 但真正危险的是<b>镜像情形</b>：用例跑 0724、闸查 laneb ⇒
+     * <b>闸绿而用例撞漂移</b> —— 那正是本闸存在的全部意义所在的那种假绿。
+     * ⇒ 守卫与被守卫者<b>必须看同一个库</b>，否则守卫本身就是个谎。
+     */
+    private static String cfg(String key, String dflt) {
+        String v = System.getProperty(key);
+        if (v == null || v.isBlank()) v = System.getenv(key);
+        return (v == null || v.isBlank()) ? dflt : v;
+    }
+
+    private static final String URL = cfg("CPQ_TEST_JDBC_URL",
+            "jdbc:postgresql://" + cfg("DB_HOST", "10.177.152.12")
+                    + ":" + cfg("DB_PORT", "5432")
+                    + "/" + cfg("DB_NAME", "cpq_db_0724") + "?sslmode=disable");
+    private static final String USER = cfg("DB_USERNAME", "postgres");
+    private static final String PASS = cfg("DB_PASSWORD", "joii5231");
 
     /**
      * 迁移目录。<b>默认就是真实路径</b>；可用 {@code -Dcpq.gate.migrationDir=…} 覆盖。
@@ -143,7 +166,7 @@ class RecordSuiteBootGateTest {
                     + "\n"
                     + "📌 合并完成前跑出来的红**一律不作数**，🚫 不许据此下「实现坏了 / 有回归」的结论。");
         }
-        System.out.println("[GATE-A1] ✅ Flyway 未漂移：共享库已应用 " + applied.size()
+        System.out.println("[GATE-A1] ✅ Flyway 未漂移（库=" + URL.replaceAll(".*/([^?]+).*", "$1") + "）：已应用 " + applied.size()
                 + " 个迁移，本工作区文件 " + local.size() + " 个，缺口 0");
     }
 

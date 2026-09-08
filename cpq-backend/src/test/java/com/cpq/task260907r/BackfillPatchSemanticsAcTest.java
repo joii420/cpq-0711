@@ -192,24 +192,56 @@ class BackfillPatchSemanticsAcTest extends Task260907RBase {
      */
     @Test
     @DisplayName("T-08 · 主表新行记来源报价单 id；且既有 Excel 仍能导入（证明它不是 ColumnDef）")
+    @org.junit.jupiter.api.Disabled(
+            "⛔ 被前置挡住，🚫 不是用例坏了、也不是实现坏了。\n"
+            + "① 本条现在能跑完整条链路：建单 → 改值 → 升版 → 内容发现法扫主表 21 列，"
+            + "   失败点是真实前置 —— **一列都没有装得下来源报价单 id**（实测命中 0 列）。\n"
+            + "② 原因：B-3 的 `source_quotation_id`（26 张表 ALTER）刻意未落（本期迁移冻结）。"
+            + "   实查 ds_quote_* 全族该列 **0 处存在**。\n"
+            + "③ 落库后本条**应自动可跑**：判据用内容发现法、不钉死列名，列一出现就能命中。\n"
+            + "🕰️ 2026-09-08 顺带修掉一个会误导人的夹具错：原 seedMainGroup 往 ds_quote_material_bom 插、"
+            + "   却拿 MBOM(=ds_quote_element_bom) 去数 ⇒ 恒 0 行，失败在「空验证守卫」上，"
+            + "   **看着像被 B-3 挡住，其实和它无关**（本条全文 grep source_quotation_id 0 命中）。"
+            + "   已改走 EBOM 单表路径。⇒ 现在这条红才真的指向 B-3。\n"
+            + "⚠️ 另：AC-8 的反向半边 assertExistingQuoteExcelStillImports() 仍是桩，需一份既有报价 Excel 夹具。")
     void t08_sourceQuotationIdRecordedButNotAColumnDef() {
         requireRecordLayer();
 
-        Fx fx = newFixture("AC8");
-        String mat = PREFIX + "G8-" + shortId(fx);
-        seedMainGroup(fx.customerNo(), mat, 3);
-        snapshotRecordCoveringRowsAndColumns(fx, mat, List.copyOf(groupSnapshot(mat).keySet()),
-                new LinkedHashSet<>(List.of("component_qty")));
-        changeRecordValues(fx, mat, List.copyOf(groupSnapshot(mat).keySet()), Map.of("component_qty", "42"));
-        approve(fx);
+        // 🕰️ 2026-09-08 夹具修复：原写法 seedMainGroup → insertMaterialBomRow 往
+        //    **ds_quote_material_bom** 插，却拿 MBOM(= EBOM = ds_quote_element_bom) 去数
+        //    ⇒ 恒 0 行，失败在「空验证守卫」上。
+        //    ⚠️ 那个症状看着像「被 B-3 前置挡住」，实际是**夹具的表对错了** ——
+        //       t08 全文 grep `source_quotation_id` 0 命中，与该迁移无关。
+        //    ⇒ 改走已跑通的 EBOM 路径（writer 自己算指纹），全程一张表。
+        String mat = axis("G8");
+        Fx seeder = seedMainViaCreatedOrder("AC8seed", mat, List.of(
+                new EbomRow(1, PREFIX + "E1", "10.0", "1.1"),
+                new EbomRow(2, PREFIX + "E2", "20.0", "2.2"),
+                new EbomRow(3, PREFIX + "E3", "30.0", "3.3")));
+        // 同客户（复合轴 (customer_no, material_no)），改一行的值以触发升版
+        Fx fx = newSubmittedOrderForCustomer("AC8", seeder, mat, List.of(
+                new EbomRow(1, PREFIX + "E1", "10.0", "1.1"),
+                new EbomRow(2, PREFIX + "E2", "42.0", "2.2"),
+                new EbomRow(3, PREFIX + "E3", "30.0", "3.3")));
+        int verBefore = intOf("SELECT max(version_no) FROM " + EBOM
+                + " WHERE material_no = '" + mat + "'");
+        approveWithPreview(fx, "AC8");
+        assertEquals(verBefore + 1, intOf("SELECT max(version_no) FROM " + EBOM
+                        + " WHERE material_no = '" + mat + "'"),
+                "AC-8 前置：改了值应升一版，否则「升版后的新行」不存在，下面的发现法会空跑");
+        assertFixtureNonEmpty(count("SELECT count(*) FROM " + EBOM
+                        + " WHERE material_no = '" + mat + "'"),
+                "AC-8 前置：升版后主表该组行数");
 
-        // ── 内容发现法：找出值等于本次报价单 id 的列
+        // ── 内容发现法：找出值等于本次报价单 id 的列（🚫 不钉死列名 —— AC-8 原文未给列名）
         List<String> hits = new java.util.ArrayList<>();
-        for (String c : allColumns(MBOM)) {
-            long n = count("SELECT count(*) FROM " + MBOM + " WHERE material_no = '" + mat + "' "
+        for (String c : allColumns(EBOM)) {
+            long n = count("SELECT count(*) FROM " + EBOM + " WHERE material_no = '" + mat + "' "
                     + "AND " + c + "::text = '" + fx.quotationId() + "'");
             if (n > 0) hits.add(c + "(" + n + " 行)");
         }
+        System.out.println("[T-08] 内容发现法：扫描 " + allColumns(EBOM).size()
+                + " 列，命中 = " + hits);
         assertEquals(1, hits.size(),
                 "AC-8：升版后主表该组新行里应恰好有一列 = 本次报价单 id " + fx.quotationId()
                         + "，实际命中 " + hits.size() + " 列：" + hits
@@ -266,6 +298,16 @@ class BackfillPatchSemanticsAcTest extends Task260907RBase {
     }
 
     // ═══════════════════════ 工具 ═══════════════════════
+
+    private String axis(String tag) {
+        return PREFIX + tag + "-" + java.util.UUID.randomUUID().toString().substring(0, 6);
+    }
+
+    private int intOf(String sql) {
+        Object v = scalar(sql);
+        assertNotNull(v, "查询无结果，断言会空跑：" + sql);
+        return ((Number) v).intValue();
+    }
 
     private void seedMainGroup(String customerNo, String materialNo, int rows) {
         inTx(() -> {
