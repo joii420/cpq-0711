@@ -59,6 +59,19 @@ import java.util.Map;
  * 完全同内容的重复行（{@code 需求文档} §⑥ 实测：{@code VS-FG01} 有两行连
  * {@code input_material_no} 都一样）之间的分配是任意的 —— 但它们的<b>表征列内容相同</b>，
  * patch 结果对这些列等价；差异只可能出现在页签未表征的列上，而那些列本来就<b>原样保留</b>。
+ *
+ * <h3>🔴 D-45：树页签的<b>合成根行</b>不进 {@code _record}（2026-09-08 主线亲验抓到，用户裁决甲）</h3>
+ * 树页签的行主轴是 <b>spine 节点</b>而不是业务行（{@code BomTreeRenderService#render} ⑤：
+ * 「树页签：以卡片的 spine 节点为行主轴，缺数据补空行」）。其中<b>根节点</b>是渲染构件 ——
+ * 它代表的是<b>成品本身</b>，而不是一条 BOM 边，主表里根本没有与之对应的行
+ * ⇒ 四层锚定全部落空 ⇒ 回填按「新增行」追加 ⇒ <b>该组每回填一次就多一行</b>。
+ * <p>🔬 实证（{@code QT-20260908-0615}，用户一个字没改）：{@code _record(material_bom)} 只有 1 行、
+ * {@code input_material_no=NULL}、{@code origin_id=NULL}、{@code base_row_fingerprint=NULL}，
+ * 而主表 {@code T260907T-FG01} 组有 3 行（{@code RM01/RM02/SC01}）；
+ * {@code ds_quote_material_bom} 全表 103 行里 9 行 {@code input_material_no IS NULL}，
+ * 其中 <b>8 行 {@code source=QUOTE_BACKFILL}</b>（就是这么长出来的）。
+ * <p>⇒ 挂点在<b>投影侧</b>（本类），🚫 不在回填侧过滤 —— 乙案（回填侧丢弃）被用户否掉，
+ * 理由是「{@code _record} 本身仍脏，别的消费者照样中招」。判定见 {@link #representsNoBaseRow}。
  */
 public final class DsRecordProjector {
 
@@ -90,6 +103,7 @@ public final class DsRecordProjector {
         if ((snap == null || snap.size() == 0) && (flat == null || flat.size() == 0)) return out;
         List<DeletedRowKeys.Tombstone> tombstones = DeletedRowKeys.parse(deletedKeys);
         List<String> rkfNames = binding.rowKeyFieldNames();
+        List<String> syntheticNodeIds = new ArrayList<>();   // D-45：本次跳过的合成根行（日志留痕用）
 
         // ── 两路位置化取数（照 RowKeyUniquenessService 的既有口径，🚫 不另造一套）──────────
         //    row_data 先按 `_origin` 拆两路：非 manual 的按下标与 snapshot_rows 对位；
@@ -117,6 +131,14 @@ public final class DsRecordProjector {
         // ── ① driver 展开行：snapshot_rows 为主轴，按下标 overlay row_data ────────────────
         for (int i = 0; i < snapSize; i++) {
             JsonNode node = snap.get(i);
+            // ── 🔴 D-45（用户裁决甲）：树页签的合成根行不表征任何主表行 ⇒ 不进 _record ──
+            //    🚨 这是 representsNoBaseRow 的**唯一**调用点（🚫 不许在别的分支再判一次）。
+            //    ②③ 两路（只活在 row_data 的行 / 手动行）没有 snapshot 侧节点，结构上不可能是
+            //    合成根行，所以那里不判也不会漏。日志在下面统一打 —— 谓词本身零副作用。
+            if (representsNoBaseRow(node)) {
+                syntheticNodeIds.add(String.valueOf(text(node, "__nodeId")));
+                continue;
+            }
             JsonNode driverRow = node.path("driverRow");
             if (!tombstones.isEmpty()) {
                 String fp = DeletedRowKeys.rowFingerprint(rkfNames, driverRow);
@@ -147,7 +169,85 @@ public final class DsRecordProjector {
             addRow(out, binding, sheetAxisColumn, null, mr, fallbackAxis, sortOrder,
                     DsRecordRow.Provenance.MANUAL);
         }
+        // D-45 留痕：🚫 不许静默跳过 —— 静默会让「这行为什么没进 _record」变成查不出原因的哑谜。
+        // 口径与 DsQuoteRecordService 的 crossCardDeduped=%d 对齐（都是「本次少了几行、为什么」）。
+        if (!syntheticNodeIds.isEmpty()) {
+            LOG.infof("[ds-record] component=%s axis=%s syntheticRootSkipped=%d nodeIds=%s"
+                            + " —— 树页签合成根行（spine 根 = 成品本身，主表无对应边行），"
+                            + "🚫 这不是数据丢失，是不该写进去的渲染构件",
+                    binding.componentId(), fallbackAxis, syntheticNodeIds.size(), syntheticNodeIds);
+        }
         return out;
+    }
+
+    /**
+     * <b>这一行是不是「不表征任何主表行」的渲染构件</b>（D-45 · 甲）。
+     *
+     * <h3>判据（两个<b>结构</b>信号的合取，🚫 不看任何业务列的值）</h3>
+     * <ol>
+     *   <li><b>它是树页签的行</b> —— 携带 spine 节点身份 {@code __nodeId}。
+     *       这是本工程判「树行」的既有权威口径：{@code TreeRelations#isTreeRows}、
+     *       {@code CardSnapshotService} 的剪枝、{@code injectTreeAttrsForCrossTab} 全都只认它；</li>
+     *   <li><b>它是 spine 的根</b> —— 没有父边（{@code __parentId} 与 {@code __parentNo} 皆空）。
+     *       两个都要求空是<b>刻意从严</b>：{@code TreeRelations} 按 {@code __parentId} 连边，
+     *       {@code ConfigureSnapshotService}（「无父 = 该行树的根 = 成品」）按 {@code __parentNo} 判根，
+     *       两个权威口径都说是根，才跳过。有分歧 → 不跳过（宁可留一行脏，也不误伤真实行）。</li>
+     * </ol>
+     *
+     * <h3>为什么「根节点」⇒「主表里没有这一行」</h3>
+     * 树页签的行主轴是 spine 节点，每个节点的业务行按<b>边键</b>取
+     * （{@code BomTreeRenderService#edgeKey(parentNo, materialNo)}）；主表存的就是这些<b>边</b>
+     * ——实测 {@code ds_quote_material_bom} 的 {@code (material_no, input_material_no)}
+     * 即 {@code (父件, 子件)}（证据行：{@code id=12007} 的 {@code material_no=T260907T-RM01} /
+     * {@code input_material_no=T260907T-RM03}，可见 {@code material_no} 是<b>父件</b>而非成品）。
+     * 根节点<b>没有父</b> ⇒ 它不是任何一条边 ⇒ 主表不可能有它。
+     *
+     * <h3>🚨 为什么<b>不能</b>写成「粒度列为 NULL」（用户裁决的硬约束）</h3>
+     * 两者在 {@code MATERIAL_BOM}（{@code grain_columns={input_material_no}}）上<b>恰好重合</b>，
+     * 但它们不是同一件事，字面判据有两个方向的错：
+     * <ul>
+     *   <li><b>误杀</b>：某张表的粒度列若合法可空，真实行会被当成构件丢掉；</li>
+     *   <li><b>更隐蔽的误杀</b>：用户在界面上把一条<b>真实边行</b>的「投入料号」清空，
+     *       按字面判据它当场变成「构件」被跳过 ⇒ <b>静默吞掉用户的编辑</b>。
+     *       结构信号不看值：用户改什么都不会让一行变成/不再是 spine 根。</li>
+     * </ul>
+     * 另外两者<b>同源性</b>也不同：{@code __nodeId/__parentId} 由唯一产出点
+     * {@code BomTreeRenderService#treeRowNode} 写死；粒度列来自 {@code semantic_node.grain_columns}，
+     * 是<b>可被取数配置器改的配置数据</b>，拿它当行身份判据等于把判据交给配置。
+     *
+     * <h3>🔑 升级路径（本期迁移冻结，只留形状）</h3>
+     * 甲的代价是<b>静默的结构性丢失</b>：事后从 {@code _record} 看不出「这里本来有一行根行」。
+     * 将来 {@code DsRecordRow.Provenance} 落到 {@code _record} 的列上
+     * （{@code DsBackfillCollector#grainFallbackEligible} 的 Javadoc 记的那个已知残留），
+     * 应当把<b>唯一调用点</b>从「跳过不写」改成「写入并标记 {@code SYNTHETIC}」，
+     * 回填侧改按该标记过滤。一个列同时解决三件事：
+     * ① 本缺陷不再污染主表；② {@code _record} 将来若当渲染源，拿得到根行；
+     * ③ 读侧 {@code grainFallbackEligible} 不必再靠「两个锚是否都空」<b>推断</b>行来源。
+     * <p>⚠️ 改的时候只动本谓词的<b>那一个</b>调用点即可 —— 这正是它被抽成单一谓词的原因。
+     *
+     * @param snapshotRow {@code snapshot_rows[i]} 的<b>顶层</b>节点（系统列挂在顶层，
+     *                    <b>不</b>在 {@code driverRow} 里 —— 见 {@code TreeRelations} 类注释）
+     * @return true = 渲染构件，不表征任何主表行
+     */
+    static boolean representsNoBaseRow(JsonNode snapshotRow) {
+        if (snapshotRow == null || !snapshotRow.isObject()) return false;
+        if (text(snapshotRow, "__nodeId") == null) return false;              // 信号①：不是树页签行
+        return text(snapshotRow, "__parentId") == null                        // 信号②：没有父边 = spine 根
+                && text(snapshotRow, "__parentNo") == null;
+    }
+
+    /**
+     * 取文本；缺失 / JSON null / 空白 一律返 null。
+     * <p>对齐 {@code TreeRelations#text}（该方法判的是 {@code isEmpty}）——本方法把<b>纯空白串</b>
+     * 也算空，比它<b>略严</b>，方向与 {@code ConfigureSnapshotService} 判根用的
+     * {@code parentNo != null && !parentNo.isBlank()} 一致。
+     */
+    private static String text(JsonNode node, String field) {
+        if (node == null) return null;
+        JsonNode v = node.get(field);
+        if (v == null || v.isNull()) return null;
+        String s = v.asText(null);
+        return (s == null || s.isBlank()) ? null : s;
     }
 
     /**
