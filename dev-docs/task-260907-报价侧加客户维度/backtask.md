@@ -329,6 +329,18 @@ comm -13 <(ls "$SRC"|sort) <(ls "$CLS" 2>/dev/null|sort)
 
 ## 🔢 迁移改号方案（2026-09-07 事故后与并发会话协调的结果，落地前必读）
 
+🚨 **撞号的后果比「checksum 失配」更早也更硬**（2026-09-07 子代理复核后更正主线原记录）：
+
+master 与本分支各有一个 `V423__*.sql`（文件名不同、内容不同）⇒ 合并后 migration 目录里
+**同时存在两个 V423** ⇒ Flyway 在**加载阶段**就报：
+```
+Found more than one migration with version 423
+```
+**不是 checksum mismatch**（那要等到 validate 阶段、且依赖库里已有记录），而是**加载即失败** ——
+⇒ **更早、更硬，且不依赖任何库的状态**。
+🔑 **判据因此也更强：同号冲突在纯文件系统层面就能查出来，不需要连库。**
+⇒ 上面第 2.5 步撞号检查的「master 维度」是**必查**的，不能因为「我没连共享库」就跳过。
+
 **起因**：并发会话的 `V423__task260907_customer_element_price_node.sql` 于 09:31:05 落入共享库并已固化
 （checksum 已写入 `flyway_schema_history`，且文件已恢复进 master ⇒ 不可再动）。⇒ **本任务六个迁移整体改号。**
 
