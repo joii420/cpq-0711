@@ -19,7 +19,7 @@
 | 前置 | 判据（自己跑一遍，不要凭文档相信） |
 |---|---|
 | 28 张表已加 `customer_no` | 🔑 **查 `master` 的迁移文件**，不是查共享库：`git ls-tree master --name-only cpq-backend/src/main/resources/db/migration/ \| grep -E 'V42[3-9]\|V4[3-9][0-9]'` 中能看到对方那笔加列迁移；**并且**下一行的轴模型判据同时成立（两者必须同批合并，见 `需求文档.md` §④） |
-| 轴模型已复合 | `SheetDef.axisColumn` 不再是单列 `String` |
+| 轴模型已复合 | ⚠️ **判据已更正（2026-09-07）**：原写「`SheetDef.axisColumn` 不再是单列 `String`」——**错的**。实际实现是**保留单列字段 + 新增复合方法**：<br>`grep -c 'List<String> axisColumns()' SheetDef.java` → **≥1**，且其实现为 `customerScoped ? List.of(CUSTOMER_COLUMN, axisColumn) : List.of(axisColumn)`；<br>整组删除走 `VersionedGroupWriter:220` 的 `axisPredicate()` → `sheet.axisColumns()`。<br>🔑 原判据假设了「改复合 = 删掉单列字段」这一具体形态，而实现选了另一种等价形态 ⇒ **判据必须描述能力，不能描述形态**（同 `规则升级提议` ④）。 |
 | 物料表唯一索引已扩 | `uq_ds_quote_material` 的定义含 `customer_no` |
 
 🚫 **任一不满足，不要自己去加列、不要自己改轴模型** —— 那是另一个任务的交付物，重复实现必然冲突。**停下，报主线。**

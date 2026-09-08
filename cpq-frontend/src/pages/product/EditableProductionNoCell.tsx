@@ -70,12 +70,27 @@ function readableError(e: unknown): string {
   if (status === 403) return '当前账号无权修改生产料号';
   if (status === 400) return msg || '生产料号不合法，请检查后重试';
   if (status === 404) return '该销售料号不存在或已被删除，请刷新列表';
+  // 🆕 task-260907-产品管理客户过滤 · F-6（api.md A-6）：复合轴下不传/传错 customerNo
+  //    命中该料号在多个客户下的行时，后端加了多行守卫会报错（4xx + 明确消息）。
+  //    ⚠️ 派工时点未最终敲定该守卫具体用哪个状态码（400 已在上面处理；也可能是 409/422），
+  //       故此处**不锁定某一个状态码**，而是对"未被上面分支单独处理、但确实是 4xx 且带
+  //       后端消息"的情况一律透传该消息 —— 无论后端最终选哪个状态码，只要带了明确文案
+  //       就不会被吞进下面的兜底「保存失败，请稍后重试」（那样会把「改错了别人客户的数据」
+  //       误报成看不出原因的通用失败）。**联调后如状态码已定，可把这里收窄成显式分支。**
+  if (status !== undefined && status >= 400 && status < 500 && msg) return msg;
   return msg && msg !== 'Network error' ? msg : '保存失败，请稍后重试';
 }
 
 export interface EditableProductionNoCellProps {
   /** 轴值 = 销售料号，作为 `PUT parts/{axisValue}` 的路径参数 */
   axisValue: string;
+  /**
+   * 🆕 task-260907-产品管理客户过滤 · F-6（api.md A-6）。
+   * 🚨 **恒传所在行的客户号**（行级维度，不是壳页当前选中的客户）——复合轴下不传会命中
+   *    该料号在所有客户下的行，后端多行守卫会报错。这是本组件与抽屉（F-5，取壳页值）
+   *    唯一的口径差异，见 `ProductSalesPartDrawer.tsx` 顶部注释。
+   */
+  customerNo: string;
   /** 当前值。后端未补齐该字段时为 undefined ⇒ 与空值同样渲染 `—`，不得崩溃 */
   value?: string | null;
   /** 保存成功后回写列表本地状态，避免整表重取（也避免翻页/搜索态被刷掉） */
@@ -83,7 +98,7 @@ export interface EditableProductionNoCellProps {
 }
 
 const EditableProductionNoCell: React.FC<EditableProductionNoCellProps> = ({
-  axisValue, value, onSaved,
+  axisValue, customerNo, value, onSaved,
 }) => {
   const [state, setState] = useState<CellState>('view');
   const [draft, setDraft] = useState('');
@@ -148,7 +163,7 @@ const EditableProductionNoCell: React.FC<EditableProductionNoCellProps> = ({
     setState('saving');
     try {
       // 🚫 只传 productionNo —— 不整行回传、不传 source（api.md §1 硬约束 1 / 2）
-      await updateDatasetPart(axisValue, { productionNo: next });
+      await updateDatasetPart(axisValue, { productionNo: next }, customerNo);
       if (!aliveRef.current) return;
       setState('view');
       onSaved(next);
@@ -166,7 +181,7 @@ const EditableProductionNoCell: React.FC<EditableProductionNoCellProps> = ({
       }, FAIL_HINT_MS);
       message.error(readableError(e));
     }
-  }, [draft, current, axisValue, onSaved]);
+  }, [draft, current, axisValue, customerNo, onSaved]);
 
   // 🚨 整个单元格吞掉点击：`ProductSalesPartTab` 的 `onRow.onClick` 会开抽屉，
   //    不吞的话「双击进编辑」会先被解释成两次开抽屉，编辑根本进不去。

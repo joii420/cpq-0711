@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ProductHubPage —— 产品管理壳页（task-260903 · F-1，重写；task-260907 · F-1/F-2 再改）
+// ProductHubPage —— 产品管理壳页（task-260903 · F-1，重写；task-260907 · F-1/F-2/F-4/F-5/F-6 再改）
 //
 // 两个页签 [客户产品][销售产品]，默认选中**客户产品**（AC-1）。
 // 路由 `/products-hub` 不变（书签 / 直链 / E2E 不挂）。
@@ -16,9 +16,8 @@
 // 🆕 task-260907-产品管理客户过滤 · F-1 / F-2（本次改动）：
 //   标题行新增**全局客户选择器**（AC-1），候选取自 `GET /dataset/quote/customers`（A-1，
 //   `customer` 主数据表全集 ∪ 报价业务表未建档客户号，AC-2）。客户上下文是壳页 state，
-//   经 props 下发给客户产品页签（`ProductCustomerPartTab`，F-3）。
-//   ⚠️ **销售产品页签 `ProductSalesPartTab` 本轮未接客户过滤** ——
-//      那是 F-4（依赖后端 B-2~B-4 的复合轴改造，尚未落地），本轮不做，见回报「F-4~F-6 实现方案」。
+//   经 props 下发给客户产品页签（`ProductCustomerPartTab`，F-3）与销售产品页签
+//   （`ProductSalesPartTab`，F-4/F-5/F-6——本轮已接入，依赖的后端 B-2~B-4 复合轴改造已合并 master）。
 //   localStorage 持久化上次所选客户号 + 失效降级（F-2 / AC-10 / AC-12）。
 //
 // 🔄 2026-09-07 第二轮裁决（D-7~D-12，用户在第一批交付后提出）—— **客户改为必选**：
@@ -301,9 +300,20 @@ const ProductHubPage: React.FC = () => {
               />
             ),
           },
-          // ⚠️ 销售产品页签本轮未接客户过滤（F-4 依赖后端复合轴改造，尚未落地）——
-          //    见回报「F-4~F-6 实现方案」，届时会同样接收 customerNo/customerLabel/ready/available 四个 props。
-          { key: 'sales', label: '销售产品', children: <ProductSalesPartTab /> },
+          // 🆕 task-260907 · F-4/F-5/F-6（本次改动）：销售产品页签接客户过滤，
+          //    与客户产品页签同一套四个 props（customerNo/customerLabel/ready/available）。
+          {
+            key: 'sales',
+            label: '销售产品',
+            children: (
+              <ProductSalesPartTab
+                customerNo={customerNo}
+                customerLabel={customerLabel}
+                ready={customerContextReady}
+                available={!candidatesFailed}
+              />
+            ),
+          },
         ]}
       />
       <Drawer

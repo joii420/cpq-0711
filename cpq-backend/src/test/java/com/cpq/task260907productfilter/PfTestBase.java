@@ -525,12 +525,24 @@ public abstract class PfTestBase {
      * {@code row_fingerprint} 为 {@code CHAR(64) NOT NULL}，用调用方传入的短串即可（Postgres 自动补空格）。
      */
     protected void insertMaterialBomRow(String materialNo, String customerNo, int versionNo, String fingerprint) {
+        insertMaterialBomRow(materialNo, customerNo, 1, versionNo, fingerprint, materialNo);
+    }
+
+    /**
+     * 同上，但可指定 {@code itemSeq}（同一 material_no+customer_no+version_no 下插多行时用不同 itemSeq
+     * 区分）与 {@code inputMaterialNo}（「投入料号」——sheet 定义里 {@code role=VALUE, compared=true}
+     * 的业务列，两个客户传不同值即可造出"内容可区分"的夹具，供 overview/rows 的隔离断言使用）。
+     */
+    protected void insertMaterialBomRow(String materialNo, String customerNo, int itemSeq, int versionNo,
+                                         String fingerprint, String inputMaterialNo) {
         QuarkusTransaction.requiringNew().run(() ->
                 em.createNativeQuery("INSERT INTO ds_quote_material_bom "
                         + "(material_no, item_seq, input_material_no, customer_no, version_no, row_fingerprint, "
                         + "source, created_at) "
-                        + "VALUES (:mn, 1, :mn, :cn, :ver, :fp, 'IMPORT', now())")
+                        + "VALUES (:mn, :seq, :input, :cn, :ver, :fp, 'IMPORT', now())")
                         .setParameter("mn", materialNo)
+                        .setParameter("seq", itemSeq)
+                        .setParameter("input", inputMaterialNo)
                         .setParameter("cn", customerNo)
                         .setParameter("ver", versionNo)
                         .setParameter("fp", fingerprint)

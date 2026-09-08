@@ -97,18 +97,26 @@ public class DatasetMaintenanceResource {
             @QueryParam("keyword") String keyword,
             @QueryParam("sortBy") String sortBy,
             @QueryParam("sortDir") @DefaultValue("asc") String sortDir,
-            @QueryParam("configured") Boolean configured) {
-        return ApiResponse.success(service.listParts(dataset, keyword, page, size, sortBy, sortDir, configured));
+            @QueryParam("configured") Boolean configured,
+            @QueryParam("customerNo") String customerNo) {
+        return ApiResponse.success(
+            service.listParts(dataset, keyword, page, size, sortBy, sortDir, configured, customerNo));
     }
 
-    /** api.md §4 —— 抽屉徽标。无数据的 sheet 也会出现在数组里（{@code versionNo=null}，AC-32）。 */
+    /**
+     * api.md §4 —— 抽屉徽标。无数据的 sheet 也会出现在数组里（{@code versionNo=null}，AC-32）。
+     *
+     * <p>task-260907-产品管理客户过滤 · B-3（AC-6）：{@code customerNo} 非必填，语义同 {@code parts}——
+     * 不传 = 不过滤（AC-17 向后兼容）；传了则只统计该客户的配置计数。
+     */
     @GET
     @Path("/{dataset}/parts/{axisValue}/overview")
     @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
     public ApiResponse<DsOverview> overview(
             @PathParam("dataset") String dataset,
-            @PathParam("axisValue") String axisValue) {
-        return ApiResponse.success(service.overview(dataset, axisValue));
+            @PathParam("axisValue") String axisValue,
+            @QueryParam("customerNo") String customerNo) {
+        return ApiResponse.success(service.overview(dataset, axisValue, customerNo));
     }
 
     /**
@@ -117,6 +125,9 @@ public class DatasetMaintenanceResource {
      * <p>{@code version} 省略 = 当前版本；给历史版本号则读 {@code _history} 并置
      * {@code isLatest=false} / {@code readOnly=true}（AC-29）。
      * 该轴值从未有过数据 → {@code rows=[]} + {@code versionNo=null}，🚫 不是 404（AC-32）。
+     *
+     * <p>task-260907-产品管理客户过滤 · B-3（AC-6）：{@code customerNo} 非必填，不传即跨客户
+     * （改动前行为逐字不变，AC-17）；传了则只返回该客户的行，且乐观锁/当前版本判定也按该客户口径。
      */
     @GET
     @Path("/{dataset}/parts/{axisValue}/sheets/{sheetKey}/rows")
@@ -125,19 +136,26 @@ public class DatasetMaintenanceResource {
             @PathParam("dataset") String dataset,
             @PathParam("axisValue") String axisValue,
             @PathParam("sheetKey") String sheetKey,
-            @QueryParam("version") Integer version) {
-        return ApiResponse.success(service.readRows(dataset, axisValue, sheetKey, version));
+            @QueryParam("version") Integer version,
+            @QueryParam("customerNo") String customerNo) {
+        return ApiResponse.success(service.readRows(dataset, axisValue, sheetKey, version, customerNo));
     }
 
-    /** api.md §6 —— 版本列表（倒序，最新在前；历史版读自 {@code _history}）。 */
+    /**
+     * api.md §6 —— 版本列表（倒序，最新在前；历史版读自 {@code _history}）。
+     *
+     * <p>task-260907-产品管理客户过滤 · B-3（AC-6③）：🚨 两个 {@code UNION ALL} 分支（主表 + _history）
+     * 都必须按 {@code customerNo} 收窄，漏改一个就会把两个客户的版本号混排。
+     */
     @GET
     @Path("/{dataset}/parts/{axisValue}/sheets/{sheetKey}/versions")
     @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
     public ApiResponse<DsVersions> versions(
             @PathParam("dataset") String dataset,
             @PathParam("axisValue") String axisValue,
-            @PathParam("sheetKey") String sheetKey) {
-        return ApiResponse.success(service.versions(dataset, axisValue, sheetKey));
+            @PathParam("sheetKey") String sheetKey,
+            @QueryParam("customerNo") String customerNo) {
+        return ApiResponse.success(service.versions(dataset, axisValue, sheetKey, customerNo));
     }
 
     /**

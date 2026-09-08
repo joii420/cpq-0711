@@ -68,6 +68,17 @@ export interface SheetsResult {
  */
 export interface PartListItem {
   axisValue: string;
+  /**
+   * 🆕 task-260907-产品管理客户过滤 · F-4（api.md A-2）：复合轴落地后一行 = 「客户 × 销售料号」。
+   * 🚨 **这是行身份的一部分**，`ProductSalesPartTab` 的 `rowKey` 必须含它——
+   *    仅按 `axisValue` 会让切客户时 React 复用行组件，显示上一个客户的单元格值（AC-16②）。
+   */
+  customerNo: string;
+  /**
+   * 由后端**同一条 SELECT** 内 `LEFT JOIN customer ON customer.code = m.customer_no` 带出。
+   * JOIN 不到（未建档客户，如 `C1`）时为 `null` ⇒ 渲染 `—`，**不是空白**（AC-5④）。
+   */
+  customerName?: string | null;
   materialName?: string | null;
   specification?: string | null;
   dimension?: string | null;
