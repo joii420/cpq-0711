@@ -71,13 +71,15 @@
 
 | **BL-0184** 大单量报价单打开后 `batch-evaluate` 风暴 | 🔴 **P0 · 另立任务待查** | 1845 行的单打不开：`POST /formulas/batch-evaluate` **517 次 / 40.3MB / 29.2 分钟不收敛**，「下一步」同时卡死。**不是分块**（前端 `BATCH_EVALUATE_CHUNK=5000`，注释称「正常报价单 1 个 HTTP 搞定」）、**不是实例爆炸**（`LinkedExcelView` 仅渲染 2 处）→ 是 `useLinkedExcelRows.ts:274` 的 effect 反复重入。**`task-260825` 未改过这三个文件**（`git diff master` 为空），属既有代码、只是从未在 1845 行量级跑过。疑与「打开触发 autosave 风暴」同族 |
 
-### 未合并分支（**3 条**）· 快照 2026-09-07（本次结案时重采）
+### 未合并分支（**4 条**）· 快照 2026-09-08（新增 `task-260908` 一条；其余 3 条为 2026-09-07 结案时重采）
 
 > 判据：`git rev-list --count master..<branch>`（**领先 master 的提交数**），不是凭印象。
 > ⚠️ **上一版（2026-09-06 快照）已过期**：它列了 5 条，其中 4 条实测领先 **0 笔**（早已合入），只是分支指针还在。
 > 按 `CLAUDE.md` §2.3「过期的态势表比没有更危险 —— 它让人以为自己看过了」，本次结案顺手重采。
 
 | 分支 | worktree | 领先 master | 状态 |
+|---|---|---|---|
+| `feat/task-260908-sqlvb-lookup` | `.claude/worktrees/task-260908-sqlvb-lookup` | **0 笔**（2026-09-08 建分支那一刻登记）| 🟢 **开发中** —— `task-260908-取数配置器优化`。基于 `6934f3e2`（立项文档提交）。<br>**拟占 Flyway `V430`**（建分支时四方核对：共享库 / master / 本分支 / `target/classes` 最大均为 `V429`）。⚠️ 后端代理写迁移前**必须重新四方核对**，并发线可能已抢号。<br>改动面：语义图迁移 1 个（7 节点 + 46 边，**Java 零改动**）· 前端 4 个文件（`SqlViewBuilderTab.tsx` / `ComponentManagement.tsx` / `QuotationStep2.tsx:3285` / `ReadonlyProductCard.tsx:626`）。<br>🚨 **与 `feat/task-260907-record-backfill` 单向依赖**：本任务 `AC-8`（材料名落 `extend_column`）需要对方的 `DsRecordProjector` 在 master 上；对方**不依赖本任务**。若对方未先合，`AC-8` 降级为结构断言。 |
 |---|---|---|---|
 | `feat/task-260907-record-backfill` | `.claude/worktrees/task-260907-record-backfill` | **20 笔**（2026-09-07 20:07 重采，仍在动） | 🔵 **开发中**（核价回填线，2026-09-07 执行了共享库 S-7 清空） |
 | `fix/repair-260829-f4` | `.claude/worktrees/repair-260829-f4` | **1 笔** | 🟡 悬挂 |
