@@ -1,0 +1,5 @@
+AC-15 判据②：以下文件逐字不等，需在 test-report 中逐条归因（来路不明即判失败）
+已知写入方前缀：[T260907-, T260907T-, TEST-DS-]
+天然易变字段：[lastUpdatedAt, updatedAt, createdAt, total, frozenAt]
+
+02-parts-p1.json

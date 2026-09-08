@@ -63,6 +63,69 @@ public class DatasetImportService {
     /** Phase 1 的产物：已解析且已通过校验的 sheet 集合。 */
     public record Prepared(DatasetRegistry registry, List<ParsedSheet> sheets) {}
 
+    /**
+     * Phase 2 的逐 sheet 进度回调（task-260907 · B-4，<b>纯加法</b>）。
+     *
+     * <p>加它的唯一理由：新链路（{@code QuotationImportService}）要把 {@code progress.current}
+     * 报成<b>正在写的 sheet 名</b>（api.md §2），而 {@link #writeAll} 是单事务整体写完的，
+     * 从外面看不到 sheet 边界。
+     *
+     * <p>🚫 <b>本回调不改变任何既有行为</b>：{@link #writeAll(Prepared, String)} 两参版本原样保留，
+     * 内部传 {@link #NO_PROGRESS}（空实现）。{@code POST /dataset/{dataset}/import}
+     * （【基础资料维护】共用，AC-15）走的就是两参版本，一个字节的行为差异都没有。
+     *
+     * <p>🚫 实现方<b>不许在此回调里做重活</b>（它跑在 Phase 2 的事务线程上）——
+     * 节流判据必须由实现方自己把握，见 {@code QuotationImportService} 的检查点分桶。
+     */
+    @FunctionalInterface
+    public interface SheetProgress {
+        /**
+         * @param index      当前 sheet 的下标（0 起）
+         * @param total      本次 Phase 2 要写的 sheet 总数
+         * @param sheetName  当前 sheet 的中文名
+         */
+        void onSheetStart(int index, int total, String sheetName);
+    }
+
+    /** 空实现：既有两参 {@link #writeAll(Prepared, String)} 用它，等价于「没有这个回调」。 */
+    public static final SheetProgress NO_PROGRESS = (i, t, n) -> {};
+
+    /**
+     * Phase 1 的<b>追加校验</b>钩子（task-260907 · B-15，<b>纯加法</b>）。
+     *
+     * <p>加它的唯一理由：有些校验规则<b>本类拿不到判据</b>。
+     * B-15 要判「客户料号 sheet 的 {@code customer_no} 是不是本次导入选定的那个客户」，
+     * 而「本次选定客户」是<b>建单链路独有的输入</b>（D-10/D-15）——
+     * {@code POST /dataset/{dataset}/import}（【基础资料维护】共用）压根没有这个入参。
+     * ⇒ 判据只能由调用方提供，本类负责的是<b>把它并进同一批错误里</b>。
+     *
+     * <h3>🚨 为什么是钩子，而不是让调用方自己在 parseAndValidate 之后再查一遍</h3>
+     * 「错误一次列全」（AC-4 / task-260902 AC-10）要求整份文件的<b>全部</b>问题一次报出。
+     * 若追加校验在 {@code parseAndValidate} <b>抛出之后</b>才跑，那它永远跑不到 ——
+     * 用户会先看到 D-19 的错、改完重传、才看到 B-15 的错，改一次传一次。
+     * 挂成钩子才能让两类错误<b>同批返回</b>。
+     *
+     * <p>🚫 <b>不改变任何既有行为</b>：{@link #parseAndValidate(DatasetRegistry, byte[])} 两参版本
+     * 原样保留，内部传 {@link #NO_EXTRA_VALIDATION}（恒返空表）。维护端走的就是两参版本，
+     * 一个字节的行为差异都没有（AC-15）。
+     *
+     * <p>🚫 实现方<b>不许在这里查库</b> —— Phase 1 的铁律是<b>绝对零写库</b>且循环体内零查询
+     * （AC-4「16 张表 count(*) 逐表相等」靠的就是它）。需要主数据比对的走
+     * {@code DatasetImportValidator} 的批量预取，不要在这里逐行查。
+     */
+    @FunctionalInterface
+    public interface ExtraValidation {
+        /**
+         * @param reg    本次数据集 Registry
+         * @param sheets 已解析的全部 sheet（<b>只读</b>，🚫 不要在这里改行值）
+         * @return 追加的错误；空表示无追加问题
+         */
+        List<DsValidationError> validate(DatasetRegistry reg, List<ParsedSheet> sheets);
+    }
+
+    /** 空实现：既有两参 {@link #parseAndValidate(DatasetRegistry, byte[])} 用它。 */
+    public static final ExtraValidation NO_EXTRA_VALIDATION = (reg, sheets) -> List.of();
+
     // ==================================================================
     // Phase 1 —— 事务外，零写库
     // ==================================================================
@@ -73,6 +136,21 @@ public class DatasetImportService {
      * @throws DatasetValidationException 校验未通过，携带<b>全部</b>错误（不是第一条，AC-10）
      */
     public Prepared parseAndValidate(DatasetRegistry reg, byte[] bytes) {
+        return parseAndValidate(reg, bytes, NO_EXTRA_VALIDATION);
+    }
+
+    /**
+     * 解析 + 全量校验 + <b>调用方追加的校验</b>（task-260907 · B-15）。
+     *
+     * <p>语义与 {@link #parseAndValidate(DatasetRegistry, byte[])} 完全一致，只是在抛出<b>之前</b>
+     * 把 {@code extra} 产出的错误并进同一批 —— 保证「错误一次列全」跨两类校验都成立。
+     *
+     * <p>顺序：先本类的标准校验（含 D-19「客户编号是否存在」），再 {@code extra}
+     * （含 B-15「是不是本次这个客户」）。两条同型不同判据，报告里标准校验在前。
+     *
+     * @throws DatasetValidationException 校验未通过，携带<b>全部</b>错误（不是第一条，AC-4）
+     */
+    public Prepared parseAndValidate(DatasetRegistry reg, byte[] bytes, ExtraValidation extra) {
         Map<String, SheetDef> byName = new LinkedHashMap<>();
         for (SheetDef s : reg.sheets()) byName.put(Headers.normalize(s.sheetName), s);
 
@@ -95,7 +173,11 @@ public class DatasetImportService {
             throw new BusinessException(400, "Excel 解析失败：" + e.getMessage());
         }
 
-        List<DsValidationError> errors = validator.validate(reg, parsed, unknown);
+        // 标准校验（含 D-19「客户编号是否存在于 customer.code」）
+        List<DsValidationError> errors = new ArrayList<>(validator.validate(reg, parsed, unknown));
+        // 调用方追加的校验（含 B-15「是不是本次导入选定的那个客户」）。
+        // 🚨 必须在 throw 之前并进来 —— 放到 throw 之后就永远跑不到（见 ExtraValidation javadoc）。
+        errors.addAll(extra.validate(reg, parsed));
         if (!errors.isEmpty()) {
             throw new DatasetValidationException(
                     "导入校验未通过，共 " + errors.size() + " 处问题，本次未写入任何数据", errors);
@@ -114,10 +196,45 @@ public class DatasetImportService {
      */
     @Transactional
     public List<DatasetSheetSummaryDTO> writeAll(Prepared prepared, String operator, String customerNo) {
+        return writeAll(prepared, operator, customerNo, NO_PROGRESS);
+    }
+
+    /**
+     * 写入的<b>唯一权威实现</b>（四参）。整份一个事务，任一异常整体回滚（R-7 / AC-11）。
+     *
+     * <h3>🚩 2026-09-07 合并：两条线各自加了一个三参重载，第三参类型不同</h3>
+     * <ul>
+     *   <li>B-4（本分支）：{@code writeAll(Prepared, String, SheetProgress)} —— 逐 sheet 进度回调</li>
+     *   <li>B-8（master）：{@code writeAll(Prepared, String, String customerNo)} —— 客户维度 + 前置校验</li>
+     * </ul>
+     * 两者<b>在 Java 里是合法重载</b>（第三参类型不同），编译得过 —— 这恰恰是危险之处：
+     * 调用方多写一个 {@code progress} 就会静默走到「不校验客户」的那个重载，
+     * 而 {@code customer_no} 会被整批写成 NULL。⇒ <b>合并为一个四参权威实现，两者都必须传</b>。
+     *
+     * <h3>⚠️ 事务语义（AC-11 的依据，不许被重载结构破坏）</h3>
+     * 三参版本对本方法是 {@code this.} <b>自调用</b>，CDI 拦截器不会再触发一次 ——
+     * 事务由三参版本上的 {@code @Transactional} 开启，整份仍是<b>一个</b>事务。
+     * 本方法自己的 {@code @Transactional} 只服务于「外部直接调四参版本」这条路径
+     * （{@code QuotationImportService} 走的就是它）。
+     *
+     * <h3>🚫 原两参 writeAll(Prepared, String) 已移除</h3>
+     * 合并前它在全工程<b>零调用者</b>（实测），且 master 侧早已不存在。
+     * 留着它等于留一个「跳过 {@link #requireCustomerNo} 的后门」——
+     * 对 {@code customerScoped()} 的 registry 而言，那正是 AC-4 要拦的事。
+     *
+     * @param customerNo 本次导入选定客户的 {@code customer.code}；核价两套不带客户维度可传 null
+     * @param progress   逐 sheet 进度回调；不需要时传 {@link #NO_PROGRESS}
+     */
+    @Transactional
+    public List<DatasetSheetSummaryDTO> writeAll(Prepared prepared, String operator,
+                                                 String customerNo, SheetProgress progress) {
         requireCustomerNo(prepared.registry(), customerNo);
         List<DatasetSheetSummaryDTO> summary = new ArrayList<>();
+        int sheetTotal = prepared.sheets().size();
+        int sheetIndex = -1;
         for (ParsedSheet ps : prepared.sheets()) {
             SheetDef spec = ps.spec;
+            progress.onSheetStart(++sheetIndex, sheetTotal, spec.sheetName);
 
             if (!spec.versioned) {
                 List<Map<String, Object>> rows = new ArrayList<>(ps.rows.size());

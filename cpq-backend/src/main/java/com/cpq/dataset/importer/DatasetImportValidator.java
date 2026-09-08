@@ -261,7 +261,9 @@ public class DatasetImportValidator {
                 if (anyBlank) continue;
                 Integer first = firstRowOf.putIfAbsent(key.toString(), row.excelRow());
                 if (first != null) {
+                    // B-16：value = 复合主键的值，与 column 的复合列名（「A + B」）同口径
                     errors.add(new DsValidationError(spec.sheetName, row.excelRow(), labels.toString(),
+                            shown.toString(),
                             DatasetValidationReasons.duplicateKey(shown.toString(), first, row.excelRow())));
                 }
             }
@@ -318,7 +320,8 @@ public class DatasetImportValidator {
             SheetDef sd = (SheetDef) at[0];
             ParsedRow row = (ParsedRow) at[1];
             ColumnDef col = (ColumnDef) at[2];
-            out.add(new DsValidationError(sd.sheetName, row.excelRow(), col.label,
+            // B-16：value = 未登记的那个轴值本身（用户最需要的正是它）
+            out.add(new DsValidationError(sd.sheetName, row.excelRow(), col.label, axis,
                     DatasetValidationReasons.AXIS_NOT_REGISTERED));
         }
         return out;
@@ -348,7 +351,22 @@ public class DatasetImportValidator {
                 : DatasetValidationReasons.MASTER_MISSING;
     }
 
+    /**
+     * 行级错误。<b>task-260907 · B-16</b>：带上出错单元格的原始值（{@code api.md §2} 的 {@code value}）。
+     *
+     * <p>取值时机很重要：本方法在调用点<b>就地</b>读 {@code row.get(col.name)}，
+     * 而产品分类列（{@code categoryRef}）会在报错<b>之后</b>被改写成 code
+     * （见上方 {@code row.values().put(...)} 两处）——
+     * 报错先于改写发生，所以这里读到的是<b>用户填的原值</b>，不是改写后的值。
+     * 🚫 不要把取值挪成「先收集行、最后统一取」，那样会取到改写后的值，
+     * 用户会看到一个自己没填过的编码。
+     *
+     * <p>空值留 {@code null} 而不是空串：「必填项为空」这类错误本来就没有值可报，
+     * {@code NON_NULL} 下该字段直接不出现，比出一个 {@code ""} 更清楚。
+     */
     private DsValidationError err(SheetDef spec, ParsedRow row, ColumnDef col, String reason) {
-        return new DsValidationError(spec.sheetName, row.excelRow(), col.label, reason);
+        String raw = row.get(col.name);
+        String value = ValueNormalizer.isBlank(raw) ? null : ValueNormalizer.toRawString(raw);
+        return new DsValidationError(spec.sheetName, row.excelRow(), col.label, value, reason);
     }
 }

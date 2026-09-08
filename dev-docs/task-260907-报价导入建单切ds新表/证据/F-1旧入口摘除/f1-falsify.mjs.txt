@@ -1,0 +1,20 @@
+// 证伪实验：同一段 DOM 断言，打到「未改动」的主工作区 5174（仍带旧按钮）
+// 若那边同样报 false，说明我的断言是结构性瞎的（假绿）；必须报 true 才可信。
+import { chromium } from '/home/joii/project/cpq/cpq-frontend/node_modules/playwright/index.mjs';
+const BASE = 'http://localhost:5174';
+const browser = await chromium.launch({ channel: 'chrome' });
+const page = await (await browser.newContext({ baseURL: BASE, viewport:{width:1600,height:1000}, locale:'zh-CN' })).newPage();
+await page.goto('/login');
+await page.locator('input[placeholder="用户名或邮箱"]').fill('admin');
+await page.locator('input[placeholder="密码"]').fill('Admin@2026');
+await page.locator('button[type="submit"]').click();
+await page.waitForURL(/\/(dashboard|customers|quotations|system|products|change-password)/, { timeout: 20000 });
+await page.goto('/quotations');
+await page.waitForLoadState('networkidle');
+await page.locator('.ant-card-head-title', { hasText: '报价单管理' }).first().waitFor({ timeout: 20000 });
+await page.waitForTimeout(1500);
+const flat = (await page.content()).replace(/\s+/g,'');
+console.log('[对照 5174 主工作区] DOM 含「从基础数据导入」 =', flat.includes('从基础数据导入'), ' (期望 true ⇒ 断言有效)');
+const seq = (await page.locator('.ant-card-body button').allInnerTexts()).map(t=>t.replace(/\s+/g,'')).filter(Boolean);
+console.log('[对照 5174 主工作区] 按钮序列 =', JSON.stringify(seq.slice(0,5)));
+await browser.close();
