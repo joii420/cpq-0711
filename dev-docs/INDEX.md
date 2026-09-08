@@ -78,13 +78,15 @@
 
 | 分支 | worktree | 领先 master | 状态 |
 |---|---|---|---|
-| `feat/task-260907-record-backfill` | `.claude/worktrees/task-260907-record-backfill` | **18 笔** | 🔵 **开发中**（核价回填线，2026-09-07 执行了共享库 S-7 清空） |
+| `feat/task-260907-record-backfill` | `.claude/worktrees/task-260907-record-backfill` | **20 笔**（2026-09-07 20:07 重采，仍在动） | 🔵 **开发中**（核价回填线，2026-09-07 执行了共享库 S-7 清空） |
 | `fix/repair-260829-f4` | `.claude/worktrees/repair-260829-f4` | **1 笔** | 🟡 悬挂 |
 | `feat/quote-material-no` | 无 | **1 笔** | 🟡 悬挂（内容仅 `BACKLOG.md` +15 行零代码，技术债已转 [[BL-0175]]，见 §8.3） |
 
-> 📌 **其余 23 个分支实测领先 0 笔**（已全部并入 master，仅剩分支指针）。本次结案已清理
-> `feat/task-260907-product-customer-filter` 的 worktree；分支指针的删除属 `CLAUDE.md` §3.2
-> 红线【历史销毁】，需用户逐次批准，未批准的一律保留。
+> 📌 **其余 23 个分支实测领先 0 笔**（已全部并入 master，仅剩分支指针）。共 26 个 `feat/`+`fix/` 分支。
+> 本次（`报价侧加客户维度` 结案）清理 `feat/task-260907-customer-dim` 与 `feat/task-260907-builder-gaps`
+> 两个分支及其 worktree —— 删除前逐个实测：**未合提交 0 · 未跟踪文件 0 · 已改未提交 0 · 无运行中 java 进程**。
+> ⚠️ **`git worktree remove` 会连未跟踪文件一起删**（本项目实证近 13000 行险些丢失），故「未跟踪 = 0」是必查项。
+> 分支指针的删除属 `CLAUDE.md` §3.2 红线【历史销毁】，需用户逐次批准，未批准的一律保留。
 
 <details><summary>上一版快照（2026-09-06，已过期，保留备查）</summary>
 
