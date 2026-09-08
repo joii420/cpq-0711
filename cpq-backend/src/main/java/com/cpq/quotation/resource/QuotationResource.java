@@ -431,7 +431,41 @@ public class QuotationResource {
                 id, e.getMessage());
         }
         awaitWarmBeforeSubmit(id);
-        return ApiResponse.success(quotationService.submit(id, currentUserId));
+        com.cpq.quotation.dto.QuotationDTO submitted = quotationService.submit(id, currentUserId);
+
+        // ── D-43（乙）：提交那一刻把 _record 同步到最新 row_data ─────────────────────────────
+        // 🔑 为什么这条路径需要单独一个挂点：
+        //   用户在 UI 改一格值走 PUT /line-items/{id}/quote-card-edit，它**会**把值写进 row_data
+        //   （editCardValue → materializeWholeLineRowData，task-260901 B-3d），但**不触发 syncRecords**；
+        //   而 2026-06-01 用户决议**取消了定时 autosave**，前端 handleSubmit 里也只有
+        //   `await waitForPendingEdits(); await submit(...)` —— **中间没有 saveDraft**。
+        //   ⇒ 「改一格 → 直接提交」这条最常见的路径上，_record 停在编辑前的值，
+        //     核价通过就按旧值回填。实测 A 态：row_data=77.7 而主表回填仍是 11.1/22.2。
+        // 🚫 为什么不挂在 editCardValue（候选甲）：syncRecords 是「整组删+重插」，失焦频率下
+        //   每格一次组重写（连改 10 格 = 10 次），而 _record 的**唯一消费者是核价通过预览/回填**，
+        //   必然在提交之后 ⇒ 编辑期的即时性没有消费者，甲付出的写放大换不到任何东西。
+        // 🚫 为什么不挂进 quotationService.submit 的事务内：本类 :440 的不变量①点名了那个死锁环
+        //   （T_submit 持 quotation 行锁等 advisory；T_warm 持 advisory 等行锁）。
+        //   syncRecordsForFlow 是 @Transactional(REQUIRED)，挂进去就是加入 submit 的事务 ⇒ 正好踩环。
+        //   ⇒ 只能挂在 Resource 层（本类无 @Transactional），由 syncRecordsForFlow 自开事务。
+        // 🔑 为什么在 submit **之后**而不是之前：之前挂，若 submit 回滚就会留下
+        //   「提交失败、快照却更新了」；之后挂 ⇒ 只有真提交成功才更新。
+        //   （submit 对 row_data 只读不写 —— :1042~:1221 里 cd.rowData 仅用于组装提交快照。）
+        // ⚠️ 已知且刻意的副作用：提交传的是**全量**（Resource 层没有 saveDraft 那种 touched 名单），
+        //   ⇒ 提交那一刻本单**所有**轴值组的 _record.updated_at 都会变。
+        //   AC-2② 约束的是 saveDraft 的增量语义，提交不在其射程内；
+        //   🚫 但不要据此写「提交后未变更产品 _record 不变」的断言 —— 那会红，且不是缺陷。
+        // 🚫 N+1：一次提交只调一次；SQL 条数 = 6 + 2×sheets + 行数/500，与明细行数无关。
+        // 🛡️ 失败不阻断提交（单据已经提交成功了），但不静默：WARN + markStale（D-35）。
+        try {
+            dsQuoteRecordService.syncRecordsForFlow(id);
+        } catch (RuntimeException ex) {
+            LOG.warnf(ex, "[ds-record] quotation=%s 提交时同步 _record 失败（提交本身已成功）", id);
+            dsRecordStaleService.markStale(id,
+                    com.cpq.quotation.service.dsrecord.DsRecordStaleService.REASON_WRITE_FAILED,
+                    ex.getClass().getSimpleName() + ": " + ex.getMessage(), null);
+        }
+        return ApiResponse.success(submitted);
     }
 
     /** 提交前等 warm 让锁的预算（ms）。见 {@link #awaitWarmBeforeSubmit} 的取值依据。 */
