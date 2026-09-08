@@ -395,63 +395,125 @@ class RecordWriteAcTest extends Task260907RBase {
      * 且等于建单时刻该元素的实时价；主表 {@code ds_quote_element_bom} <b>无</b> {@code element_price} 列
      * （D-6：它是销售报价时的元素实时价格快照，不是主数据）。
      */
+    /**
+     * <b>T-04（AC-4）</b>：{@code _record.element_price} 建单时算一次。
+     *
+     * <p>AC 原文两条：① 非空<b>且等于建单时刻该元素的实时价</b>；
+     * ② 主表 {@code ds_quote_element_bom} <b>无</b> {@code element_price} 列。
+     * 🔑 「等于实时价」必须有<b>对照源</b> —— 只断言非空不够。
+     *
+     * <h3>🚨 三道前置阳性对照（不加这道闸，夹具问题会被报成产品缺陷）</h3>
+     * {@code element_price} 的取值链是
+     * {@code driver 展开 → driverRow['元素单价'] → _record.element_price}。
+     * 链上任一环没数据，结果都是 NULL，而<b>三种 NULL 长得一模一样</b>：
+     * <ol>
+     *   <li>{@code snapshot_rows} 为 NULL / 空 ⇒ driver 根本没物化；</li>
+     *   <li>{@code driverRow} 缺 {@code 元素单价} 键 ⇒ 该列没进展开结果
+     *       （此时才会回落 {@code SqlViewExecutor}，即 {@code AP-38} 那一族的 {@code #ERROR}）；</li>
+     *   <li>该元素在 {@code f_material_element_price} 里<b>本来就没价</b>
+     *       ⇒ 「等于实时价」退化成 {@code NULL vs NULL}，恒真。</li>
+     * </ol>
+     * ⇒ 三条都先断言，再谈 {@code element_price}。
+     * 📌 与 AC-22 那三条闸同源：2026-09-08 主线漏传 {@code customerTemplateId} ⇒ {@code _record}=0
+     * ⇒ 差点报成「挂点没生效」，正是同一个形状。
+     *
+     * <h3>夹具为什么挂既有客户</h3>
+     * 价格来自 {@code f_customer_element_price(customer_no, date)}，实查 laneb 全库<b>只有 4 个客户</b>
+     * 配了元素价格策略；新建客户恒返 0 行 ⇒ 第③条闸必然拦下。
+     * ⇒ 挂既有客户（主数据），<b>轴值仍是自己的 {@code T260907R-} 前缀</b>，清理只删自己的轴值。
+     * 🚫 不改该客户的任何价格策略。
+     */
     @Test
-    @DisplayName("T-04 · _record.element_price 非空且=建单时刻实时价；主表无该列")
+    @DisplayName("T-04 · _record.element_price 非空且等于建单时刻实时价；主表无该列")
     void t04_elementPriceSnapshotAtQuoteTime() {
         requireRecordLayer();
 
-        // ── 反向断言先做：主表不得有 element_price 列（不依赖任何夹具，恒可执行）
-        long onMain = count("SELECT count(*) FROM information_schema.columns "
-                + "WHERE table_schema='public' AND table_name='ds_quote_element_bom' "
-                + "  AND column_name='element_price'");
-        assertEquals(0L, onMain,
-                "AC-4：主表 ds_quote_element_bom 不应有 element_price 列（D-6：它是报价时的价格快照，不是主数据）");
+        // ── AC-4②：主表**无** element_price 列（与①无依赖，先验，失败也便宜）
+        assertEquals(0L, count("SELECT count(*) FROM information_schema.columns "
+                        + "WHERE table_schema='public' AND table_name='" + EBOM + "' "
+                        + "  AND column_name='element_price'"),
+                "AC-4②：主表 " + EBOM + " **不该**有 element_price 列（它只属于 _record）");
+        assertFixtureNonEmpty(count("SELECT count(*) FROM information_schema.columns "
+                        + "WHERE table_schema='public' AND table_name='" + EBOM + "_record' "
+                        + "  AND column_name='element_price'"),
+                "AC-4 前置：_record 上应有 element_price 列");
 
-        long onRecord = count("SELECT count(*) FROM information_schema.columns "
-                + "WHERE table_schema='public' AND table_name='" + EBOM_REC + "' AND column_name='element_price'");
-        assertEquals(1L, onRecord,
-                "AC-4 / S-3：" + EBOM_REC + " 应有 element_price 列，实测 " + onRecord + " 列");
+        // ── 夹具：挂有价格策略的既有客户，轴值自己造
+        String customerNo = PRICED_CUSTOMER;
+        Object custId = scalar("SELECT id FROM customer WHERE code = '" + customerNo + "'");
+        assertNotNull(custId, "T-04 前置：找不到有价格策略的客户 " + customerNo
+                + "（实查 laneb 仅 4 个客户配了元素价格策略；换库时此前提要重验）");
+        String element = pricedElementOf(customerNo);
+        String mat = axis("P4");
+        Fx owner = new Fx((java.util.UUID) custId, customerNo, null, null);
+        // 🔑 先把 driver 数据种进主表：没有它，页签物化出来是 0 行，闸① 会拦下（实测过一次）。
+        seedEbomMainGroup(owner, mat, List.of(new EbomRow(1, element, "50.0", "2.4")), 1);
+        Fx fx = newFixtureForCustomer("AC4", owner);
+        // 🔑 走**真实 UI 形状**（payload 不带 componentData，交服务端物化）——
+        //    saveDraftAdded 那条路只落 row_data、不产生 snapshot_rows，闸① 必然拦下。
+        requireStatusBeforeDiff(saveDraftLineOnly(fx, mat), 200, "T-04 saveDraft（真实 UI 形状）");
 
-        // ── 正向：本次夹具建出的 _record 行，element_price 必须非空且 = 建单时刻实时价
-        Fx fx = newFixture("AC4");
-        String mat = PREFIX + "E-" + shortId(fx);
-        seedElementBomGroup(mat);
-        createQuotationWithElementBom(fx, mat);
+        // ══ 闸① driver 确实物化了 ══
+        long snapLen = count("SELECT coalesce(max(jsonb_array_length(cd.snapshot_rows)),0) "
+                + "FROM quotation_line_component_data cd "
+                + "JOIN quotation_line_item li ON li.id = cd.line_item_id "
+                + "WHERE li.quotation_id = '" + fx.quotationId() + "' "
+                + "  AND cd.component_id = '" + COMP_ELEMENT_BOM + "'");
+        assertFixtureNonEmpty(snapLen,
+                "🚨 闸①：snapshot_rows 为空/NULL ⇒ driver 根本没物化。"
+                        + "此时 element_price 必然 NULL，那是**夹具问题**，🚫 不是 AC-4 失败。");
 
-        long rowsForFx = count("SELECT count(*) FROM " + EBOM_REC
-                + " WHERE quotation_id = '" + fx.quotationId() + "'");
-        assertFixtureNonEmpty(rowsForFx, "本单在 " + EBOM_REC + " 的行数");
+        // ══ 闸② driver 展开结果里确实有「元素单价」这一列 ══
+        //    🔑 量的是 snapshot_rows —— **投影真正读的那一份**。
+        //    🚫 不量 quote_card_values.baseRows[].driverRow：那份要先调 ensure-card-values 才有，
+        //       不调时它是空的，闸② 会以「没有该键」的面目失败，而真正的原因是「那份根本没建」
+        //       —— 又一个「三种 NULL 长得一样」（实测踩过一次）。
+        long hasKey = count("SELECT count(*) FROM quotation_line_component_data cd "
+                + "JOIN quotation_line_item li ON li.id = cd.line_item_id, "
+                + "  LATERAL jsonb_array_elements(coalesce(cd.snapshot_rows,'[]'::jsonb)) r "
+                + "WHERE li.quotation_id = '" + fx.quotationId() + "' "
+                + "  AND cd.component_id = '" + COMP_ELEMENT_BOM + "' "
+                + "  AND jsonb_exists(r->'driverRow', '元素单价')");
+        for (Object k : col("SELECT DISTINCT string_agg(kk, ', ' ORDER BY kk) "
+                + "FROM quotation_line_component_data cd "
+                + "JOIN quotation_line_item li ON li.id = cd.line_item_id, "
+                + "  LATERAL jsonb_array_elements(coalesce(cd.snapshot_rows,'[]'::jsonb)) r, "
+                + "  LATERAL jsonb_object_keys(r->'driverRow') kk "
+                + "WHERE li.quotation_id = '" + fx.quotationId() + "' "
+                + "  AND cd.component_id = '" + COMP_ELEMENT_BOM + "'")) {
+            System.out.println("[T-04·诊断] snapshot_rows[].driverRow 的键 = " + k);
+        }
+        assertFixtureNonEmpty(hasKey,
+                "🚨 闸②：driver 展开结果（snapshot_rows）里没有「元素单价」这一列 ⇒ 该列没进展开。"
+                        + "此时取值会回落 SqlViewExecutor（AP-38 那一族的 #ERROR），"
+                        + "结果同样是 NULL —— 那是**夹具/配置问题**，🚫 不是 AC-4 失败。");
 
-        long nullPrice = count("SELECT count(*) FROM " + EBOM_REC
-                + " WHERE quotation_id = '" + fx.quotationId() + "' AND element_price IS NULL");
-        assertEquals(0L, nullPrice,
-                "AC-4：本单 " + EBOM_REC + " 有 " + nullPrice + " / " + rowsForFx
-                        + " 行 element_price 为空。⚠️ 「非空」这条不能靠「一行都没有」来满足 —— "
-                        + "上面的非空守卫已先证明本单确有 " + rowsForFx + " 行。");
+        // ══ 闸③ 该元素**确实有价**（否则「等于实时价」是 NULL vs NULL，恒真）══
+        Object livePrice = scalar("SELECT unit_price FROM f_material_element_price('"
+                + customerNo + "', CURRENT_DATE) WHERE material_no = '" + mat
+                + "' AND element_code = '" + element + "' LIMIT 1");
+        assertNotNull(livePrice,
+                "🚨 闸③：元素 " + element + " 在 f_material_element_price('" + customerNo
+                        + "') 里没有价 ⇒ 「等于建单时刻实时价」退化成 NULL vs NULL，**恒真**。"
+                        + "此刻的绿不构成任何证据。");
+        System.out.println("[T-04] 三道闸通过：snapshot_rows 最长 " + snapLen + " 行 / driverRow 含元素单价 "
+                + hasKey + " 行 / 实时价 = " + livePrice);
 
-        // 与建单时刻实时价一致：逐行比对 _record.element_price 与价格来源的当时取值
-        List<Object[]> mismatch = rows(
-                "SELECT r.id, r.element_price, p.price FROM " + EBOM_REC + " r "
-                        + "JOIN " + liveElementPriceSource() + " p ON p.element_no = r.element_no "
-                        + "WHERE r.quotation_id = '" + fx.quotationId() + "' "
-                        + "  AND r.element_price IS DISTINCT FROM p.price");
-        assertTrue(mismatch.isEmpty(),
-                "AC-4：以下行的 _record.element_price 与建单时刻实时价不一致（id / record 值 / 实时价）："
-                        + fmt(mismatch));
+        // ══ AC-4①：非空 且 等于建单时刻的实时价 ══
+        Object recPrice = scalar("SELECT element_price FROM " + EBOM + "_record "
+                + "WHERE quotation_id = '" + fx.quotationId() + "' AND material_no = '" + mat + "' "
+                + "  AND element_code = '" + element + "' LIMIT 1");
+        assertNotNull(recPrice,
+                "AC-4①：_record.element_price 不该为空（三道闸已证明 driver 物化了、"
+                        + "driverRow 有该键、该元素有价 " + livePrice + "）");
+        assertEquals(0, dec(livePrice).compareTo(dec(recPrice)),
+                "🔑 AC-4①：_record.element_price 应**等于建单时刻该元素的实时价**。"
+                        + "实时价=" + livePrice + " _record=" + recPrice
+                        + "（用 BigDecimal.compareTo 比值，🚫 不比字面量 —— 标度不同不算不等）");
+        System.out.println("[T-04] AC-4① 通过：_record.element_price=" + recPrice
+                + " == 实时价 " + livePrice);
     }
 
-    /**
-     * <b>T-12（AC-12）</b>：价格调整改价后 {@code _record.element_price} 与 {@code snapshot_rows}
-     * <b>不分叉</b>。
-     *
-     * <p>AC-12 原文：状态取 {@code MaterialVersionUpgradeService.ACTIVE_STATUSES}
-     * （{@code {DRAFT, SUBMITTED, APPROVED, REJECTED, COSTING_REJECTED}}）中的<b>每一种各一张单</b>；
-     * ① 每张单两处取值相同；② 被 {@code SKIPPED} 的单（状态不在 {@code ACTIVE_STATUSES}）
-     * <b>两者同时都不变</b> —— 🚫 不许出现「一个变了一个没变」。
-     *
-     * <p>🔑 断言②的形态很关键：它不是「都变」也不是「都不变」，而是<b>两者的变/不变必须一致</b>。
-     * 这正是 E-6 证伪实验的靶子（只写 {@code snapshot_rows} 不写 {@code _record} → 本条必须变红）。
-     */
     @Test
     @DisplayName("T-12 · ACTIVE_STATUSES 五态各一单；_record.element_price 与 snapshot_rows 不分叉")
     void t12_priceAdjustKeepsRecordAndSnapshotInSync() {
@@ -618,6 +680,17 @@ class RecordWriteAcTest extends Task260907RBase {
     }
 
     // ═══════════════════════ T-02 专用工具（ds 原生链路，2026-09-07 接实现）═══════════════════════
+
+    /** 实查配了元素价格策略的客户（laneb 全库仅 4 个）。🚫 不改它的任何价格数据。 */
+    private static final String PRICED_CUSTOMER = "CUST-0001";
+
+    /** 该客户下**确实有价**的一个元素码 —— 从价格函数实取，🚫 不硬编元素名。 */
+    private String pricedElementOf(String customerNo) {
+        Object e = scalar("SELECT element_code FROM f_customer_element_price('"
+                + customerNo + "', CURRENT_DATE) ORDER BY element_code LIMIT 1");
+        assertNotNull(e, "T-04 前置：客户 " + customerNo + " 名下没有任何有价元素 ⇒ 换库后此前提需重验");
+        return e.toString();
+    }
 
     private String axis(String tag) {
         return PREFIX + tag + "-" + java.util.UUID.randomUUID().toString().substring(0, 6);
