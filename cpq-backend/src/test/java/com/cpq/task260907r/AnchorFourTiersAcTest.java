@@ -292,6 +292,19 @@ class AnchorFourTiersAcTest extends Task260907RBase {
         Fx b = newSubmittedOrder("20dB", mat, List.of(
                 new EbomRow(1, dupEl, "88.8", "1.1"),
                 new EbomRow(2, dupEl, "99.9", "1.1")));
+
+        // 🚨 前置（AC-21 前置②）：B 的这两行必须是 **driver 行**，🚫 不能是用户手工新增行。
+        //    手工行（row_data 带 _origin:'manual'）按设计被 C′ 排除 ⇒ 造错类型就验不到本条。
+        //    ⚠️ 先断言，别造完才发现造错了 —— 造错时症状是「C′ 没命中」，与产品缺陷同形。
+        long manualRows = count("SELECT count(*) FROM quotation_line_component_data cd "
+                + "JOIN quotation_line_item li ON li.id = cd.line_item_id "
+                + "WHERE li.quotation_id = '" + b.quotationId() + "' "
+                + "  AND cd.row_data::text LIKE '%_origin%'");
+        assertEquals(0L, manualRows,
+                "🚨 AC-21 前置②：B 的行必须是 driver 行（provenance ∈ {DRIVER, DRIVER_NOT_MATERIALIZED}），"
+                        + "实测有 " + manualRows + " 行组件数据带 _origin 标记 ⇒ 造成了手工新增行，"
+                        + "而手工行按设计被 C′ 排除，本用例验不到 AC-20④/AC-21 的那个场景。");
+
         Set<Long> idsBefore = idSet(EBOM, "material_no", mat);
 
         // A 只改**无关行** ⇒ 它唯一命中、升得动；升版后 id 全换 ⇒ B 的 origin_id 失效
@@ -300,37 +313,66 @@ class AnchorFourTiersAcTest extends Task260907RBase {
         approveWithPreview(a, "20dA");
         assertIdSetsDisjoint(idsBefore, idSet(EBOM, "material_no", mat), "第四层的料号组 " + mat);
 
-        // ── ④ 必须进 NO_ANCHOR 并显式上报
+        // ══ AC-20④ 与 AC-21（C′）在这个场景上会互相遮挡，先说清分工 ══
+        //
+        //   · AC-20④ 要的是：粒度列对不上 / 两侧有歧义 ⇒ 退回 NO_ANCHOR 且进 unanchoredRows，
+        //     **且主表原行未被静默删除**；
+        //   · AC-21（C′）要的是：该组存在 r ∈ unanchoredRows 使 grainKey(r) ∈ grainKeys(baseRows)
+        //     ⇒ 整组 BLOCKED、一个字节不写。
+        //
+        //   ⇒ C′ 命中时**整组零写入**，但 unanchoredRows **仍应有内容**。
+        //     所以 AC-20④ 的判据必须落在「**unanchoredRows 非空 + 主表原行仍在**」，
+        //     🚫 而不是落在「写入结果」上 —— 零写入下任何「写入结果」断言都失去分辨力。
+        //
+        // 🚨 且 unanchoredRows 的非空守卫**必须在前**：
+        //     零写入使「原行仍在」**恒真**，没有这道守卫，本用例在「C′ 把什么都拦掉、
+        //     连 unanchoredRows 都是空」的坏法下照样全绿。
         JsonNode g = group(b, mat);
         JsonNode un = g.path("unanchoredRows");
         System.out.println("[T-20d] 预览组 = " + g);
+
+        // ── 守卫（必须最先）：unanchoredRows 非空
         assertTrue(un.isArray() && un.size() > 0,
-                "🚨 AC-20④：粒度列有歧义（两侧不是「恰好一条」）⇒ 应整组不认、退回 NO_ANCHOR 并显式上报，"
-                        + "🚫 不许静默处理。实际 unanchoredRows=" + un + "，group=" + g);
+                "🚨 AC-20④ 守卫：粒度列有歧义（两侧不是「恰好一条」）⇒ 应退回 NO_ANCHOR 并**显式上报**，"
+                        + "🚫 不许静默处理。unanchoredRows 为空时，下面「原行仍在」在零写入下恒真，"
+                        + "整条用例失去分辨力。实际 unanchoredRows=" + un + "，group=" + g);
         for (JsonNode u : un) {
             for (String k : List.of("recordId", "originId", "baseRowFingerprint", "displayValues", "reason")) {
                 assertTrue(u.has(k), "api.md §1：unanchoredRows 元素缺字段 " + k + "，实际=" + u);
             }
             assertFalse(u.path("displayValues").isEmpty(),
                     "AC-20④：displayValues 为空，财务看不出这是哪一行。实际=" + u);
+            assertEquals("NO_ANCHOR", u.path("reason").asText(),
+                    "AC-20④：歧义导致的锚不上，reason 应为 NO_ANCHOR，实际 " + u.path("reason") + "（" + u + "）");
         }
+        System.out.println("[T-20d] AC-20④ 守卫通过：unanchoredRows " + un.size()
+                + " 条，reason 全为 NO_ANCHOR");
 
-        // ── 🔑 原行必须还在（唯一不能省的那条）
+        // ── 🔑 主表原行未被静默删除（AC-20④ 唯一不能省的那条）
         Map<Integer, String> before = ebomBusinessRowsBySeq(mat);
+        String digestBefore = scopedDigest(EBOM, "material_no", List.of(mat), "AC-20④ 确认前主表组");
         long rowsBefore = count("SELECT count(*) FROM " + EBOM + " WHERE material_no = '" + mat + "'");
+        assertFixtureNonEmpty(rowsBefore, "AC-20④ 确认前主表该组行数");
+
         approveWithPreview(b, "20dB");
+
         Map<Integer, String> after = ebomBusinessRowsBySeq(mat);
         long rowsAfter = count("SELECT count(*) FROM " + EBOM + " WHERE material_no = '" + mat + "'");
         System.out.println("[T-20d] 确认前 " + rowsBefore + " 行 " + before
                 + "；确认后 " + rowsAfter + " 行 " + after);
 
-        assertTrue(after.values().stream().anyMatch(v -> v != null && v.contains("55.5"))
-                        && after.values().stream().anyMatch(v -> v != null && v.contains("44.4")),
-                "🔑 AC-20④：A 在 v2 写的两行（55.5 / 44.4）必须都还在。"
-                        + "🚫 只验「B 的新行写进去了」在原行被删之后照样成立，所以那不是判据。"
+        assertEquals(before, after,
+                "🔑 AC-20④：锚不上的行**不许把主表原行静默删掉/改掉**。实测整组内容变了。"
                         + "确认前=" + before + " 确认后=" + after);
         assertTrue(rowsAfter >= rowsBefore,
-                "AC-20④：锚不上的行按新增写入，行数不应减少（" + rowsBefore + " → " + rowsAfter + "）");
+                "AC-20④：行数不应减少（" + rowsBefore + " → " + rowsAfter + "）");
+        assertEquals(digestBefore, scopedDigest(EBOM, "material_no", List.of(mat), "AC-20④ 确认后主表组"),
+                "AC-20④ + AC-21：C′ 命中 ⇒ 整组零写入，主表该组应逐字未变。");
+
+        // ── 与 AC-21 的衔接（记录，不是本条的判据）：本场景应被 C′ 拦下
+        System.out.println("[T-20d] 与 AC-21 的衔接：result=" + g.path("result").asText()
+                + " blockedReason=" + g.path("blockedReason").asText()
+                + " ⇒ 零写入由 C′ 承担，AC-20④ 的判据落在 unanchoredRows 非空 + 原行仍在");
     }
 
     // ═══════════════════════ 日志捕获（AC-20③ 的机制证实手段）═══════════════════════
