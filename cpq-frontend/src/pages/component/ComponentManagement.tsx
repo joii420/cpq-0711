@@ -1390,6 +1390,27 @@ const ComponentManagement: React.FC = () => {
   /** §1.35 双判据的求值结果 —— 本页所有语义闸门（校验 / Tooltip / 子组件 prop）唯一入口。 */
   const isTreeComponent = isTreeTab(boundSemantic, tabType);
 
+  /**
+   * task-260908 F-1（AC-10 / AC-11 / AC-13 / AC-25）：绑定区是否显示「元素列 / 元素单价列」。
+   *
+   * 🚨 判据是**两条的「或」**，第二条不能省：
+   *   ① `boundSemantic === 'MATERIAL_ELEMENT'` —— 绑了「物料与元素BOM」这类材质元素数据源的组件；
+   *      语义来自 utils/tabSemantic.ts 的三态 + 未绑定态（`undefined` = 存量组件，无 builder_config）。
+   *   ② `elementCodeField / elementPriceField 已有值` —— **存量组件的兜底**。只按 ① 一刀切，会把
+   *      未绑数据源却已配了元素列的组件的**已生效配置藏起来**：值还在参与后端取价与保存期校验
+   *      （COMPONENT_ELEMENT_BINDING_REQUIRED），界面上却看不见、改不了 = 僵尸值，比多显示两个下拉危险得多。
+   *
+   * 🚫 这里**不判 `boundSemantic === undefined`**：已绑定的普通数据源（semantic === null）若历史上
+   *    配过元素列，同样要显示出来 —— 判据只问「有没有值」，不问「为什么会有值」。
+   *
+   * 货币列（elementCurrencyField）**在任何分支下都不再渲染**（D-4 / AC-12）：只删 UI，
+   * state / 加载 / 提交 payload 一行不动 —— 见 handleSave 里 `payload.elementCurrencyField = elementCurrencyField`
+   * 的注释，存量值原样回传，后端 `if (request.elementCurrencyField != null)` 不会被清空。
+   * 🚫 但**不再产生新值**（D-21）：handleFetchElementSuggest 里的货币列预填已删除，见那里的注释。
+   */
+  const shouldShowElementBinding =
+    boundSemantic === 'MATERIAL_ELEMENT' || !!elementCodeField || !!elementPriceField;
+
   // Load component when selected from list
   const handleSelectComponent = async (comp: ComponentItem) => {
     try {
@@ -1476,7 +1497,12 @@ const ComponentManagement: React.FC = () => {
       if (suggested) {
         if (!elementCodeField && suggested.elementCodeField) setElementCodeField(suggested.elementCodeField);
         if (!elementPriceField && suggested.elementPriceField) setElementPriceField(suggested.elementPriceField);
-        if (!elementCurrencyField && suggested.elementCurrencyField) setElementCurrencyField(suggested.elementCurrencyField);
+        // 🚫 task-260908 D-21（主线 2026-09-08 裁决）：**不再预填 elementCurrencyField**。
+        //    F-1 把货币列下拉从 UI 拿掉后，这行会写入一个「用户看不见、也清不掉」的值 ——
+        //    那是比 AC-13 防的那批更糟的僵尸值（那批至少是用户自己配的、且看得见）。
+        //    ⚠️ 这不违反 D-4：D-4 保护的是**存量值不被清空**（所以 payload 照传、loadComponent
+        //    照回填，见 handleSave / :1441），它没有授权「继续写入新的不可见值」。
+        //    ⇒ 现在货币列是**只读遗留字段**：读得到、原样带回后端，但前端不再产生新值。
       }
       setElementSuggestHint({ confidence: data?.confidence ?? 'LOW', warnings: data?.warnings ?? [] });
       if (!suggested) {
@@ -2009,48 +2035,52 @@ const ComponentManagement: React.FC = () => {
                         组件级三个角色字段，同一行同一模式，从字段中选（不是自由输入）。视图若接了
                         f_customer_element_price/f_material_element_price 取价函数，后端保存期校验
                         元素列+元素单价列必填（400 COMPONENT_ELEMENT_BINDING_REQUIRED）；未接取价
-                        函数的组件三项留空可正常保存，前端不自行强制必填。 */}
-                    <Tooltip title="该组件视图若接了客户取价函数，须指定元素列（与「元素单价列」同必填条件）；未接取价函数可留空">
-                      <Select
-                        allowClear
-                        placeholder="元素列"
-                        style={{ width: 110 }}
-                        status={elementBindingMissing.has('elementCodeField') ? 'error' : undefined}
-                        value={elementCodeField}
-                        onChange={(v) => {
-                          setElementCodeField(v);
-                          setElementBindingMissing((s) => { if (!s.has('elementCodeField')) return s; const n = new Set(s); n.delete('elementCodeField'); return n; });
-                        }}
-                        options={fieldNameOptions}
-                      />
-                    </Tooltip>
-                    <Tooltip title="元素单价列（与「元素列」同必填条件）">
-                      <Select
-                        allowClear
-                        placeholder="元素单价列"
-                        style={{ width: 120 }}
-                        status={elementBindingMissing.has('elementPriceField') ? 'error' : undefined}
-                        value={elementPriceField}
-                        onChange={(v) => {
-                          setElementPriceField(v);
-                          setElementBindingMissing((s) => { if (!s.has('elementPriceField')) return s; const n = new Set(s); n.delete('elementPriceField'); return n; });
-                        }}
-                        options={fieldNameOptions}
-                      />
-                    </Tooltip>
-                    <Tooltip title="货币列（可空）">
-                      <Select
-                        allowClear
-                        placeholder="货币列"
-                        style={{ width: 100 }}
-                        value={elementCurrencyField}
-                        onChange={(v) => setElementCurrencyField(v)}
-                        options={fieldNameOptions}
-                      />
-                    </Tooltip>
-                    <Tooltip title="按该组件视图 SQL 推导元素列/元素单价列/货币列的推荐值（迁移期辅助，只预填当前为空的字段，不覆盖已有配置）">
-                      <Button size="small" icon={<BulbOutlined />} loading={elementSuggestLoading} onClick={handleFetchElementSuggest}>推荐</Button>
-                    </Tooltip>
+                        函数的组件三项留空可正常保存，前端不自行强制必填。
+
+                        🚨 task-260908 F-1（AC-10/11/12/13/25，原型 `01-组件绑定区.html`）：
+                        · 元素列 / 元素单价列 / 「推荐」按钮 → 由 `shouldShowElementBinding` 条件渲染
+                          （判据两条的「或」，见该常量处的注释；🚫 不许简化成只看 semantic）。
+                        · **货币列的 Tooltip+Select 整块已删除**（D-4：只删渲染）——
+                          `elementCurrencyField` 的 state / 加载 / 草稿恢复 / 提交 payload 全部保留原样，
+                          存量值（实测唯一一个：196aadee-… 的 '货币'）不受影响。
+                          🚫 不许改成提交空串：ComponentService 的写法是
+                          `if (request.elementCurrencyField != null) ...`，空串会**清空**存量值。
+                        · 少两个下拉时**不重排布局**：料号列/名称列的位置、宽度、文案逐字不变。 */}
+                    {shouldShowElementBinding && (
+                      <>
+                      <Tooltip title="该组件视图若接了客户取价函数，须指定元素列（与「元素单价列」同必填条件）；未接取价函数可留空">
+                        <Select
+                          allowClear
+                          placeholder="元素列"
+                          style={{ width: 110 }}
+                          status={elementBindingMissing.has('elementCodeField') ? 'error' : undefined}
+                          value={elementCodeField}
+                          onChange={(v) => {
+                            setElementCodeField(v);
+                            setElementBindingMissing((s) => { if (!s.has('elementCodeField')) return s; const n = new Set(s); n.delete('elementCodeField'); return n; });
+                          }}
+                          options={fieldNameOptions}
+                        />
+                      </Tooltip>
+                      <Tooltip title="元素单价列（与「元素列」同必填条件）">
+                        <Select
+                          allowClear
+                          placeholder="元素单价列"
+                          style={{ width: 120 }}
+                          status={elementBindingMissing.has('elementPriceField') ? 'error' : undefined}
+                          value={elementPriceField}
+                          onChange={(v) => {
+                            setElementPriceField(v);
+                            setElementBindingMissing((s) => { if (!s.has('elementPriceField')) return s; const n = new Set(s); n.delete('elementPriceField'); return n; });
+                          }}
+                          options={fieldNameOptions}
+                        />
+                      </Tooltip>
+                      <Tooltip title="按该组件视图 SQL 推导元素列/元素单价列的推荐值（迁移期辅助，只预填当前为空的字段，不覆盖已有配置）">
+                        <Button size="small" icon={<BulbOutlined />} loading={elementSuggestLoading} onClick={handleFetchElementSuggest}>推荐</Button>
+                      </Tooltip>
+                      </>
+                    )}
                   </>
                 )}
                 <Button size="small" onClick={() => setGuideOpen(true)}>配置帮助</Button>
