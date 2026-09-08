@@ -53,7 +53,7 @@
 | AC-1②③ | `T-01b` | DB | `_record` 列集 = 主表业务列 + 6 个附加列；免版本三表**无** `_record` | — |
 | AC-1④⑤ | `T-01c` | DB | 迁移 `success=t`；**后端能起来**（自检不过就起不来） | 风险点 4 |
 | AC-2 | `T-02` | 服务层 | 改产品甲的一行 → 产品乙的 `_record.updated_at` **逐字未变** | 自造两产品夹具 |
-| AC-3 | `T-03` | 服务层 | 自定义/公式列进 `extend_column`；**只改它们再通过 → 该组判 `UNCHANGED`、`version_no` 不变** | 自造含自定义列的组件 |
+| AC-3 | `T-03` = `PartialColumnScopeAcTest.t03` | 服务层 | 自定义/公式列进 `extend_column`；**只改它们再通过 → 该组判 `UNCHANGED`、`version_no` 不变** | 自造含自定义列的组件。<br>🕰️ **2026-09-07 主线裁决三去重**：`RecordWriteAcTest.t03` 是同名同断言的第二份，挂在 `ds_quote_material_bom` 上（ds 原生模板无物料BOM组件 ⇒ 拍不出 `_record` ⇒ 恒 pending），**已删除**。留着它会让同一条 AC 一边报「⛔ 待接实现」一边报「✅ 全绿」，读报告的人分不清哪个是真的 —— 与 T-20a/b/c 迁出本包的理由同源 |
 | AC-4 | `T-04` | 服务层 | `_record.element_price` 非空且等于建单时刻实时价；主表**无**该列 | — |
 | AC-5 | `T-05` | 契约 + E2E | 预览后主表 `version_no` **逐字未变**；响应含 `untouchedRows` 与 `columnScope.preserved` | — |
 | AC-6 | `T-06` | 服务层 | 基底=主表原整组；表征列被覆盖；**未表征的行与列逐字保留**；旧版进 `_history`；新版号 = `max(当前, 历史最大)+1` | 自造 9 行组，只表征其中 2 行 2 列 |
@@ -65,9 +65,9 @@
 | AC-12 | `T-12` | 服务层 | `ACTIVE_STATUSES` 五态各一张单，`_record.element_price` 与 `snapshot_rows` 取值相同；被 `SKIPPED` 的单**两者同时不变** | 自造 5 张不同状态的单 |
 | AC-13 | `T-13` | 服务层 | 只表征部分行 + 部分列的页签 → 未表征的行仍在、未暴露的列**不写 NULL**；**反向**：确实表征并改了的列确实变了 | 🚨 `AP-60` 守卫，自造带 `WHERE` 谓词的页签。<br>⚠️ **本条用平铺页签造投影，不是树页签** —— 树页签的端到端渲染卡在 `报价侧加客户维度` 的 `B-7`（`costing_bom_tree_config` 递归仍读 V6 `material_bom_item`），该任务连闸门 A 都没走。🚫 **用例与报告里必须显式标注这一句**，不许以「已验证树页签」的形态留下（并发会话 2026-09-07 提醒） |
 | AC-14 | `T-14` | 服务层 + E2E | 零变更 → 判 `UNCHANGED`、`updated_at` 不变、`_history` 无新增；**界面仍列出该组**且有明确文案 | — |
-| AC-15 | `T-15` | 静态 + 回归 | 三个老回填文件 `git diff` 为空；**同一张**老单的回填摘要四个数字改动前后相同（同时刻窗口 A/B） | 老单在 S-7 执行前采样；风险点 5 |
+| AC-15 | `T-15①` = `LegacyBackfillUntouchedGuardTest`<br>`T-15②` = `ReverseRegressionAcTest.t15` | 静态 + 回归 | 三个老回填文件 `git diff` 为空；**同一张**老单的回填摘要四个数字改动前后相同（同时刻窗口 A/B） | 🅱️ **B 侧取自 `localhost:8081`（跑 master、连同一个库），A 侧为进程内本分支**，同一条用例里背靠背调用 ⇒「同一张单 + 同一时刻窗口 + 改动前后」三条件同时成立。<br>✅ **已验收 · 证据采于 S-7 全库清空前**（2026-09-07 17:51，存量老单 `bbcb566f`，两侧同为 `{versionedGroups:5537, addedRows:0, deletedRows:0, changedRows:0}`，基线非空）。<br>⛔ **此后不可重跑**：S-7 清空删掉了 `quotation` 族与旧模板，现网再无 `versionedGroups > 0` 的存量老单，且无法自造（老回填只对走老链路的单产出非零摘要）。用户已裁决**不保留靶子** |
 | AC-16 | `T-16` | 反向回归 | **两层**：结构层（字段集/嵌套/状态码）逐字相同 + 数据层差异**逐条可归因**；范围收窄到本次夹具写入的行 | 同一份夹具 A/B；风险点 5、6 |
-| AC-17 | `T-17` | 反向回归 | 选配写 `ds_quote_*` **在本次夹具行范围内**逐行相同；页签数与每页签行数改动前后相同；版本号增量相同 | 风险点 5 |
+| AC-17 | `T-17` = `SelectionChainRegressionAcTest.t17` | 反向回归 | 选配写 `ds_quote_*` **在本次夹具行范围内**逐行相同；页签数与每页签行数改动前后相同；版本号增量相同 | 风险点 5。<br>🕰️ **2026-09-07 迁出 `ReverseRegressionAcTest`**：T-17 需选配链路全套夹具，而 `com/cpq/task260902/SelConfigAcTestBase.java` 已有一份成熟实现（含 `@AfterEach` 精确还原 + `assertNoResidue`），Java 单继承 ⇒ 复用它就不能同时继承 `Task260907RBase`。原类里的 pending 桩**已删**，理由同 AC-3 去重：同一条 AC 被两个类覆盖会一边报「待接实现」一边报结论，读报告的人分不清哪个真。<br>🚦 **AC-17③ 现网恒真式成立（非通过）**：实测选配单 5 个组件的 `component_sql_view.builder_config` **全为 NULL** ⇒ `dsBackfill.tables=[]` ⇒ 两侧版本号增量都是 0。⇒ 用例保留 `assertNonEmpty` 硬失败，并**另造**「绑 `builder_config` 非空组件」的选配模板夹具，那份才是真守卫 |
 | AC-18 | `T-18` | 边界 | 两会话同时确认 → 只有一个成功；`version_no` 只 +1、`_history` 只多一份 | 并发用例 |
 | AC-20 | `T-20a/b/c` | 边界 | **三支路各一条**：同版按 `origin_id` 对位 / 跨版按指纹重锚 / 锚不上进「无法对齐」区且**原行未被静默删除** | 风险点 2、3 |
 | AC-19 | — | ⛔ | S-7 红线，待用户单独批准后补用例 | — |

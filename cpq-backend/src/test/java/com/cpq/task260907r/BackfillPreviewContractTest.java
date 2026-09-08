@@ -2,6 +2,8 @@ package com.cpq.task260907r;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.RestAssured;
+import io.restassured.http.ContentType;
 import io.restassured.response.Response;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -213,14 +215,69 @@ class BackfillPreviewContractTest extends Task260907RBase {
     }
 
     /**
-     * ⛔ 待接实现：预览之后改一次本单的 {@code _record}（模拟「销售在财务确认前又保存了一次」）。
-     * 🚫 刻意不返回空实现 —— 空实现会让上面的 409 断言在「什么都没改」的情况下跑，
-     * 那时返 409 与否都不构成证据。
+     * 预览之后改一次本单的 {@code _record} —— 模拟「<b>销售在财务确认前又保存了一次</b>」（{@code D-32}）。
+     *
+     * <h3>🔑 走的是<b>真实用户路径</b>，不是直接 UPDATE 表</h3>
+     * 🚫 刻意<b>不</b>用 SQL 直接改 {@code _record}：那样绕开了 {@code saveDraft} 这条唯一写入路径，
+     * 验出来的 409 只能证明「token 对 _record 的当前内容敏感」，
+     * <b>证明不了</b>「销售真的又保存一次时保护会生效」—— 而后者才是 D-32 描述的场景。
+     *
+     * <p>序列（每一跳都断言状态码，🚫 不许静默失败）：
+     * <ol>
+     *   <li>{@code POST /begin-edit} → 回到 {@code DRAFT}。
+     *       🔬 实测：{@code SUBMITTED} 下直接 {@code PUT /draft} 返
+     *       {@code 400 "Only DRAFT quotations can be edited"} ⇒ 这一跳是<b>序列的一环</b>，不是绕过；</li>
+     *   <li>{@code PUT /draft}（改一个数值列）→ 触发 {@code _record} 重投影；</li>
+     *   <li>{@code POST /submit} → 回到 {@code SUBMITTED}，
+     *       否则确认端点会先撞「状态不是 SUBMITTED」的 400，
+     *       那样拿到的就<b>不是</b> D-32 要验的那个 409（错的原因给出对的状态码 = 假绿）。</li>
+     * </ol>
      */
     private void mutateRecordAfterPreview(Fx fx) {
-        throw new UnsupportedOperationException(
-                "⛔ 待接实现（**不是被测功能的结论**）：在预览之后修改 " + fx.quotationNo()
-                        + " 的 _record（走 saveDraft，模拟销售又保存了一次），用于验 D-32 的 409 保护。");
+        String mat = axisOf(fx);
+
+        // 🔬 实测口径修正（2026-09-07 干净库首跑）：
+        //    `POST /begin-edit` 在 **SUBMITTED** 下返 400「仅已驳回的报价单可进入编辑转草稿」
+        //    —— 它只服务「驳回后再编辑」那条路（T-11 用的就是那条，所以那边是对的）。
+        //    D-32 的场景是「**尚未确认**、销售又改了一次」，对应的真实动作是**撤回**。
+        //    ⇒ 改走 `POST /withdraw`。🚫 不用 SQL 直接改状态：那样绕开了状态机，
+        //       验出的 409 证明不了真实用户路径上保护会生效。
+        Response begin = RestAssured.given().cookies(adminCookies()).contentType(ContentType.JSON)
+                .when().post("/api/cpq/quotations/" + fx.quotationId() + "/withdraw").thenReturn();
+        requireStatusBeforeDiff(begin, 200, "D-32 销售撤回（SUBMITTED → 可编辑）");
+        assertEquals("DRAFT", String.valueOf(scalar(
+                        "SELECT status FROM quotation WHERE id = '" + fx.quotationId() + "'")),
+                "D-32：撤回后应回到 DRAFT 才能改值；实际状态见左值");
+
+        // 改一个数值列（55.5 → 66.6）⇒ _record 必然重投影出不同内容
+        List<EbomRow> changed = List.of(
+                new EbomRow(1, PREFIX + "EL1", "66.6", "2.4"),
+                new EbomRow(2, PREFIX + "EL2", "44.5", "1.2"));
+        Object liId = scalar("SELECT id FROM quotation_line_item WHERE quotation_id = '"
+                + fx.quotationId() + "' LIMIT 1");
+        assertTrue(liId != null, "D-32 前置：找不到 line item ⇒ 夹具没建成");
+        long ver = count("SELECT coalesce(user_data_version,0) FROM quotation WHERE id = '"
+                + fx.quotationId() + "'");
+        String body = "{\"baseVersion\":" + ver + ",\"added\":[],\"modified\":[{"
+                + "\"id\":\"" + liId + "\",\"templateId\":\"" + DS_TEMPLATE_ID + "\","
+                + "\"sortOrder\":0,\"compositeType\":\"SIMPLE\","
+                + "\"productPartNo\":\"" + mat + "\",\"annualVolume\":1,"
+                + "\"componentData\":[{\"componentId\":\"" + COMP_ELEMENT_BOM + "\","
+                + "\"tabName\":\"" + TAB_ELEMENT_BOM + "\","
+                + "\"rowData\":" + jsonStr(ebomRowData(mat, changed)) + ",\"sortOrder\":0}]}],"
+                + "\"removed\":[]}";
+        Response save = RestAssured.given().cookies(adminCookies()).contentType(ContentType.JSON)
+                .body(body).when().put("/api/cpq/quotations/" + fx.quotationId() + "/draft").thenReturn();
+        requireStatusBeforeDiff(save, 200, "D-32 销售再次保存");
+
+        Response resubmit = RestAssured.given().cookies(adminCookies()).contentType(ContentType.JSON)
+                .when().post("/api/cpq/quotations/" + fx.quotationId() + "/submit").thenReturn();
+        requireStatusBeforeDiff(resubmit, 200, "D-32 再次提交");
+        assertEquals("SUBMITTED", String.valueOf(scalar(
+                        "SELECT status FROM quotation WHERE id = '" + fx.quotationId() + "'")),
+                "D-32：再次提交后应回到 SUBMITTED —— 否则确认端点会先撞「状态不是 SUBMITTED」的 400，"
+                        + "拿到的就不是 D-32 要验的那个 409（错的原因给出对的状态码 = 假绿）");
+        System.out.println("[D-32] 销售已在预览后改值并重新提交（55.5 → 66.6），准备用**旧 token** 确认");
     }
 
     /**
@@ -238,11 +295,36 @@ class BackfillPreviewContractTest extends Task260907RBase {
     @DisplayName("T-14 · 零变更判 UNCHANGED、updated_at 不变、仍列在抽屉里")
     void t14_unchangedWritesNothingButStaysVisible() {
         requireRecordLayer();
-        Fx fx = newSubmittedQuotationWithGroup("AC14");
-        String mat = axisOf(fx);
+
+        // ═══ 🕰️ 2026-09-07 修夹具缺陷 2：🚫 不再自造主表行 ═══
+        //
+        // 原写法先用 seedEbomMainGroup 灌主表、再拿同样的值建单，期望判 UNCHANGED。**它永远判不出来**：
+        //   夹具用 contentFingerprint(...) 自己造 row_fingerprint 写进主表，
+        //   而 VersionedGroupWriter 的 UNCHANGED 判据是 sameMultiset(dbFps, newFps) ——
+        //   它用**自己那套** RowFingerprints.compute(fpCols, row) 重算。
+        //   ⇒ 自造指纹与 writer 算的必然不同 ⇒ 就算 12 列全对齐，UNCHANGED 也判不出来。
+        //
+        // ⇒ 改成「两张单」：让 **writer 自己**把主表那一版造出来（连同它自己的指纹），
+        //    第二张单原样再来一遍。这既绕开自造指纹，又更贴 AC-14 的真实语义
+        //    ——「用户什么都没改就提交」。
+        String mat = PREFIX + "AC14-" + UUID.randomUUID().toString().substring(0, 6);
+        List<EbomRow> rows = List.of(
+                new EbomRow(1, PREFIX + "EL1", "55.5", "2.4"),
+                new EbomRow(2, PREFIX + "EL2", "44.5", "1.2"));
+
+        // ── 第 1 张单：主表本来没有这一组 ⇒ CREATED，由 writer 落 v1 + writer 自己的指纹
+        Fx first = newSubmittedOrder("AC14a", mat, rows);
+        approveWithPreview(first, "AC14a");
+        long mainRows = count("SELECT count(*) FROM " + MBOM + " WHERE material_no = '" + mat + "'");
+        assertEquals(2L, mainRows, "前置：第 1 张单确认后主表该组应有 2 行，实际 " + mainRows);
+        int verAfterFirst = intOf("SELECT max(version_no) FROM " + MBOM + " WHERE material_no = '" + mat + "'");
+        System.out.println("[T-14] 前置就绪：主表 " + mat + " = " + mainRows + " 行 v" + verAfterFirst
+                + "（指纹由 VersionedGroupWriter 自己算）");
+
+        // ── 第 2 张单：一模一样的 rowData，什么都不改
+        Fx fx = newSubmittedOrder("AC14b", mat, rows);
         List<String> axes = List.of(mat);
 
-        // 保存后不改任何值 ⇒ _record 内容 == 主表内容
         List<Object> beforeRows = col("SELECT id || '|' || version_no || '|' || coalesce(updated_at::text,'<NULL>') "
                 + "FROM " + MBOM + " WHERE material_no = '" + mat + "' ORDER BY id");
         assertFixtureNonEmpty(beforeRows.size(), "零变更用例的主表基线行数");
@@ -252,31 +334,40 @@ class BackfillPreviewContractTest extends Task260907RBase {
         requireStatusBeforeDiff(pv, 200, "AC-14 预览");
         JsonNode ds = dsBackfill(ok(pv, "AC-14 预览"));
 
-        // ── AC-14③：UNCHANGED 的组仍出现在列表里
         JsonNode group = findGroup(ds, MBOM, mat);
         assertTrue(group != null,
                 "AC-14③：判定为 UNCHANGED 的组被过滤掉了 —— 轴值 " + mat + " 没出现在 dsBackfill.tables 里。"
                         + "🚫 不许过滤：过滤掉之后财务分不清「这张表没变」与「这张表根本没被算进去」。"
                         + "实际 tables=" + ds.path("tables"));
         assertEquals("UNCHANGED", group.path("result").asText(),
-                "AC-14①：零变更的组应判 UNCHANGED，实际 " + group.path("result").asText() + "，group=" + group);
+                "AC-14①：第 2 张单一个字没改，该组应判 UNCHANGED。实际 " + group.path("result").asText()
+                        + "。⚠️ 若 unanchoredRows 非空，先看后端的 [ds-record][anchor-miss] 逐列诊断"
+                        + "再下结论（我和主线各自都把「主表某几列为 NULL」误读过一次）。group=" + group);
+        System.out.println("[T-14] UNCHANGED 组实际形状 = " + group);
         assertEquals(0, group.path("patchedRows").asInt(-1),
-                "AC-14③：UNCHANGED 的组应带 patchedRows = 0，实际 " + group.path("patchedRows"));
+                "AC-14③ / api.md §1 硬约束 3：result=UNCHANGED 的组应带 patchedRows = 0"
+                        + "（AC 原文「本次覆盖 = 0」）。实际 " + group.path("patchedRows")
+                        + " ⇒ 财务会看到「本次覆盖 2」，而 UNCHANGED 的契约是**一行不写** —— "
+                        + "这正好是 AC-14③ 要防的那种「看不出发生了什么」。group=" + group);
+        assertEquals(group.path("baseRowCount").asInt(-1), group.path("resultRowCount").asInt(-2),
+                "AC-14①：零变更时回填后行数必须与基底相同（🚨 不相同 = 组被静默翻倍/删减）。group=" + group);
 
-        // ── 确认执行
         Response ap = postApprove(fx.quotationId(), ds(pv, "previewToken"), PREFIX + "AC14");
         requireStatusBeforeDiff(ap, 200, "AC-14 确认核价通过");
 
-        // ── AC-14①：version_no 与 updated_at 逐字不变（🔑 E-7 靶子）
         List<Object> afterRows = col("SELECT id || '|' || version_no || '|' || coalesce(updated_at::text,'<NULL>') "
                 + "FROM " + MBOM + " WHERE material_no = '" + mat + "' ORDER BY id");
         assertEquals(beforeRows, afterRows,
                 "AC-14①：UNCHANGED 契约是「一行不写，连 updated_at 都不许动」。"
                         + "before=" + beforeRows + " after=" + afterRows);
-
-        // ── AC-14②：_history 无新增
         assertEquals(histBefore, count("SELECT count(*) FROM " + MBOM + "_history WHERE material_no = '" + mat + "'"),
                 "AC-14②：UNCHANGED 不应往 _history 写行");
+        assertEquals(0L, scopedCount(MBOM, mat) - 2L,
+                "AC-14：主表该组仍应是 2 行，实际 " + scopedCount(MBOM, mat));
+    }
+
+    private long scopedCount(String table, String axis) {
+        return count("SELECT count(*) FROM " + sqlSafe(table) + " WHERE material_no = '" + axis + "'");
     }
 
     /**
@@ -401,13 +492,16 @@ class BackfillPreviewContractTest extends Task260907RBase {
         List<EbomRow> mainRows = List.of(
                 new EbomRow(1, PREFIX + "EL1", "55.5", "2.4"),
                 new EbomRow(2, PREFIX + "EL2", "44.5", "1.2"));
-        // 🔑 先造主表整组 —— 否则轴值在主表不存在，回填判 CREATED，
-        //    而本类的用例（T-05/07/14/18）验的是「已有组」的语义。
-        seedEbomMainGroup(mat, mainRows, 1);
+        // 🚨 2026-09-07 顺序调整（合并 master 后轴变复合 (customer_no, material_no)）：
+        //    必须**先有客户**，主表组才知道自己归谁；再让同一个 Fx 去表征它。
+        //    原写法先 seed 再 newSubmittedOrder，两边客户不同 ⇒ 是**两个组** ⇒
+        //    预览恒返 baseRowCount:0 / CREATED，而症状伪装成「锚定坏了」。
+        Fx fx = newFixture(label);
+        seedEbomMainGroup(fx, mat, mainRows, 1);
         List<EbomRow> orderRows = orderDiffersFromMain
                 ? List.of(new EbomRow(1, PREFIX + "EL1", "77.7", "2.4"),
                           new EbomRow(2, PREFIX + "EL2", "44.5", "1.2"))
                 : mainRows;
-        return newSubmittedOrder(label, mat, orderRows);
+        return submitOrderOn(fx, label, mat, orderRows);
     }
 }

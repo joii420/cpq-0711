@@ -104,6 +104,51 @@ public abstract class Task260907RBase {
     @Inject
     protected EntityManager em;
 
+    /**
+     * 🚨 <b>轴归属登记：{@code material_no → 该组所属的 customer_no / Fx}</b>。
+     *
+     * <h3>为什么必须有它（2026-09-07 合并 master 后实测倒逼）</h3>
+     * 上游把报价侧的轴从 {@code material_no} 一维改成<b>复合轴 {@code (customer_no, material_no)}</b>。
+     * ⇒ 本套用例里最常见的那个形态 —— <b>先造主表组、再另建一张单去表征它</b> —— 在<b>换了客户</b>之后
+     * 就<b>不再指向同一个组</b>了。
+     *
+     * <p>🔬 实测症状（{@code AnchorFourTiersAcTest} 4 条全红）：预览返
+     * {@code baseVersionNo:0 / currentVersionNo:0 / result:CREATED / unanchoredRows 全 NO_ANCHOR}
+     * —— <b>主表那一组根本查不到</b>。
+     * ⚠️ 这个症状看起来<b>非常像</b>「锚定机制坏了」，实际是<b>夹具指错了组</b>。
+     * 不显式登记轴归属，下一个人还会再踩一次，而且大概率会去修实现。
+     *
+     * <p>⇒ {@link #newSubmittedOrder} 在建单前先查这张表：该料号已有归属客户 ⇒ <b>复用它</b>；
+     * 没有 ⇒ 新建客户并登记。这样「同一个 materialNo」在一个用例里<b>恒等于同一个轴</b>，
+     * 而不依赖每个调用点自己记得传对客户。
+     * <p>🔑 要<b>故意</b>造跨客户的两个组时，显式用 {@link #newFixture} + {@link #submitOrderOn}，
+     * 🚫 不要绕过本登记表。
+     */
+    private final Map<String, Fx> axisOwner = new LinkedHashMap<>();
+
+    /**
+     * 🚨 <b>本进程自己造过的轴值</b>（{@code material_no}）—— {@link #cleanupOwnDatasetRows} 只删这些。
+     *
+     * <h3>🕰️ 2026-09-07 收窄（差点酿事故）</h3>
+     * 原来清理写的是 {@code DELETE ... WHERE material_no LIKE 'T260907R-%'} —— <b>整前缀全清</b>。
+     * 那在「只有我一个人用这个前缀」时是对的，但主线已告知：<b>后端代理同期也在用
+     * {@code T260907R-} 前缀</b>做 C′ 证据，且我俩在同一个 worktree、同一个共享库。
+     * ⇒ 我每跑完一条用例，就会把它正在用的夹具<b>连带删掉</b>，
+     * 而症状会出现在<b>它那边</b>，表现为「夹具莫名其妙没了 / 断言空跑」——
+     * 极难归因到「另一个进程的 @AfterEach」。
+     *
+     * <p>🔑 判据从<b>「前缀是我的命名空间」</b>改成<b>「这一行是我这个进程亲手造的」</b>。
+     * 前者在多方共用同一前缀时<b>不再成立</b>；后者永远成立。
+     * ⚠️ 代价是「没登记到的行会残留」—— <b>残留远好过误删别人的在途夹具</b>：
+     * 残留是可见的、可事后清的；误删是沉默的、且对方正在用。
+     */
+    private final Set<String> createdAxisValues = new LinkedHashSet<>();
+
+    /** 登记一个本进程造出来的轴值。所有会往 {@code ds_quote_*} 写行的入口都要调它。 */
+    protected void trackAxis(String materialNo) {
+        if (materialNo != null && !materialNo.isBlank()) createdAxisValues.add(materialNo);
+    }
+
     /** 本轮 committed 夹具登记，{@link #cleanupOwnFixtures} 只按前缀删这些。 */
     protected final List<UUID> createdQuotations = new ArrayList<>();
     protected final List<UUID> createdCustomers = new ArrayList<>();
@@ -411,13 +456,28 @@ public abstract class Task260907RBase {
         return new Fx(customerId, customerNo, quotationId, qno);
     }
 
-    /** 造一行 {@code ds_quote_material_bom}（committed）。指纹按内容算，跨版重锚要靠它。 */
-    protected void insertMaterialBomRow(String materialNo, int itemSeq, String inputMaterialNo,
-                                        String componentQty, int versionNo) {
+    /**
+     * 造一行 {@code ds_quote_material_bom}（committed）。指纹按内容算，跨版重锚要靠它。
+     *
+     * <h3>🕰️ 2026-09-07 补 {@code customer_no}（上游 V425）</h3>
+     * 上游 {@code V425__task260907_ds_quote_customer_no} 把 {@code customer_no} 建成
+     * <b>{@code NOT NULL} 且无 default</b>（只读查证：{@code pg_attribute.attnotnull = t}）。
+     * 原来这条 INSERT 不带该列 ⇒ 合并后<b>24 次 {@code ConstraintViolation}</b> 全出自这里与
+     * {@link #seedEbomMainGroup}。
+     * ⚠️ 那是<b>夹具欠上游 DDL</b>，🚫 不是被测实现的回归 —— 归因时别弄反。
+     *
+     * <p>🔑 {@code customerNo} 现在是<b>轴的一维</b>（轴 = {@code (customer_no, material_no)}）
+     * ⇒ 它<b>不是随便填的占位值</b>：要让后续某张单表征这一组，那张单的客户必须是同一个。
+     * 见 {@link #newSubmittedOrder} 的轴归属登记。
+     */
+    protected void insertMaterialBomRow(String customerNo, String materialNo, int itemSeq,
+                                        String inputMaterialNo, String componentQty, int versionNo) {
+        trackAxis(materialNo);
         em.createNativeQuery(
                         "INSERT INTO ds_quote_material_bom "
-                                + "(material_no,item_seq,input_material_no,component_qty,version_no,row_fingerprint,source,created_at) "
-                                + "VALUES (:mn,:seq,:in,CAST(:q AS numeric),:v,:fp,'TEST',now())")
+                                + "(customer_no,material_no,item_seq,input_material_no,component_qty,version_no,row_fingerprint,source,created_at) "
+                                + "VALUES (:cn,:mn,:seq,:in,CAST(:q AS numeric),:v,:fp,'TEST',now())")
+                .setParameter("cn", customerNo)
                 .setParameter("mn", materialNo)
                 .setParameter("seq", itemSeq)
                 .setParameter("in", inputMaterialNo)
@@ -481,6 +541,8 @@ public abstract class Task260907RBase {
         });
         createdQuotations.clear();
         createdCustomers.clear();
+        axisOwner.clear();
+        createdAxisValues.clear();
     }
 
     /**
@@ -508,6 +570,7 @@ public abstract class Task260907RBase {
      * ⇒ 判据只能用<b>我独占的命名空间（前缀）</b>，🚫 不能用「我以为我会写成什么样」的标记。
      */
     protected void cleanupOwnDatasetRows() {
+        if (createdAxisValues.isEmpty()) return;
         @SuppressWarnings("unchecked")
         List<String> tables = (List<String>) (List<?>) em.createNativeQuery(
                         "SELECT c.table_name FROM information_schema.columns c "
@@ -516,18 +579,29 @@ public abstract class Task260907RBase {
                                 + "ORDER BY 1")
                 .getResultList();
         if (tables.isEmpty()) return;
+        List<String> axes = List.copyOf(createdAxisValues);
         inTx(() -> {
             for (String t : tables) {
                 sqlSafe(t);
                 // §3.2 第一步：先量化命中面，说不出数字就不删
-                long n = count("SELECT count(*) FROM " + t
-                        + " WHERE material_no LIKE '" + PREFIX + "%'");
+                long n = count("SELECT count(*) FROM " + t + " WHERE material_no IN ("
+                        + inList(axes) + ")");
                 if (n == 0) continue;
-                em.createNativeQuery("DELETE FROM " + t + " WHERE material_no LIKE :p")
-                        .setParameter("p", PREFIX + "%").executeUpdate();
-                System.out.println("[" + PREFIX + "cleanup] " + t + " 清掉本轮夹具 " + n + " 行");
+                em.createNativeQuery("DELETE FROM " + t + " WHERE material_no IN (:p)")
+                        .setParameter("p", axes).executeUpdate();
+                System.out.println("[" + PREFIX + "cleanup] " + t + " 清掉本进程自造轴值 " + n + " 行");
             }
         });
+    }
+
+    /** 把轴值拼成 SQL 字面量列表（只用于 count；DELETE 走绑定参数）。 */
+    private static String inList(List<String> values) {
+        StringBuilder sb = new StringBuilder();
+        for (String v : values) {
+            if (sb.length() > 0) sb.append(',');
+            sb.append('\'').append(v.replace("'", "''")).append('\'');
+        }
+        return sb.toString();
     }
 
     /**
@@ -591,20 +665,48 @@ public abstract class Task260907RBase {
     protected record EbomRow(int itemSeq, String elementCode, String contentPct, String netUsage) {}
 
     /** 造主表整组（committed），版本号自定。轴 = {@code material_no}。 */
-    protected void seedEbomMainGroup(String materialNo, List<EbomRow> rows, int versionNo) {
+    /**
+     * 造主表整组（committed）。轴 = {@code material_no}。
+     *
+     * <h3>🕰️ 2026-09-07 修缺陷 1：必须灌满 12 列</h3>
+     * 原来只 INSERT 6 列，而 {@link #ebomRowData} 给 12 列 ⇒ 另 6 列主表是 NULL、报价单有值
+     * ⇒ <b>两侧数据是真的不同</b>，判 {@code UPGRADED} 是对的，是我的夹具制造了差异。
+     * 🔬 后端的 {@code [ds-record][anchor-miss]} 逐列诊断把它打了出来：
+     * <pre>
+     *   ≠ gross_usage : base=[]  record=[2.5]
+     *   ≠ loss_rate   : base=[]  record=[1]
+     *   …（6 列全是「主表空 / 报价单有值」）
+     * </pre>
+     * ⇒ 夹具两侧的列集合必须对齐，否则「零变更」这个前提根本不成立。
+     */
+    protected void seedEbomMainGroup(Fx owner, String materialNo, List<EbomRow> rows, int versionNo) {
+        registerAxisOwner(materialNo, owner);
+        trackAxis(materialNo);
+        String customerNo = owner.customerNo();
         inTx(() -> {
             for (EbomRow r : rows) {
                 em.createNativeQuery(
-                                "INSERT INTO " + EBOM + " (material_no,material_part_no,item_seq,element_code,"
-                                        + "content_pct,net_usage,version_no,row_fingerprint,source,created_at) "
-                                        + "VALUES (:mn,:mp,:seq,:ec,CAST(:cp AS numeric),CAST(:nu AS numeric),"
+                                "INSERT INTO " + EBOM + " (customer_no,material_no,material_part_no,item_seq,element_code,"
+                                        + "content_pct,loss_rate,gross_usage,gross_usage_unit,"
+                                        + "net_usage,net_usage_unit,recovery_discount,recovery_qty,"
+                                        + "version_no,row_fingerprint,source,created_at) "
+                                        + "VALUES (:cn,:mn,:mp,:seq,:ec,CAST(:cp AS numeric),CAST(:lr AS numeric),"
+                                        + "CAST(:gu AS numeric),:guu,CAST(:nu AS numeric),:nuu,"
+                                        + "CAST(:rd AS numeric),CAST(:rq AS numeric),"
                                         + ":v,:fp,'TEST',now())")
+                        .setParameter("cn", customerNo)
                         .setParameter("mn", materialNo)
                         .setParameter("mp", PREFIX + "MAT")
                         .setParameter("seq", r.itemSeq())
                         .setParameter("ec", r.elementCode())
                         .setParameter("cp", r.contentPct())
+                        .setParameter("lr", "1")
+                        .setParameter("gu", "2.5")
+                        .setParameter("guu", "kg")
                         .setParameter("nu", r.netUsage())
+                        .setParameter("nuu", "kg")
+                        .setParameter("rd", "10")
+                        .setParameter("rq", "0.1")
                         .setParameter("v", versionNo)
                         .setParameter("fp", contentFingerprint(materialNo, r.itemSeq(), r.elementCode(),
                                 r.contentPct(), r.netUsage()))
@@ -648,14 +750,121 @@ public abstract class Task260907RBase {
                 .when().put("/api/cpq/quotations/" + fx.quotationId() + "/draft").thenReturn();
     }
 
+    /**
+     * 预览 → 取 {@code previewToken} → 确认核价通过。
+     *
+     * <p>🚨 {@code previewToken} 必填（缺失 400，api.md §2）⇒ 必须先预览。
+     */
+    protected void approveWithPreview(Fx fx, String what) {
+        Response pv = getPreview(fx.quotationId());
+        requireStatusBeforeDiff(pv, 200, what + " 预览");
+        JsonNode tok = json(pv).path("data").path("previewToken");
+        assertTrue(!tok.isMissingNode() && !tok.isNull() && !tok.asText().isBlank(),
+                what + "：预览响应缺 previewToken，无法确认。data=" + json(pv).path("data"));
+        Response ap = postApprove(fx.quotationId(), tok.asText(), PREFIX + what);
+        requireStatusBeforeDiff(ap, 200, what + " 确认核价通过");
+    }
+
+    /**
+     * 用一张「走 CREATED 的报价单」把主表某组造出来 —— <b>指纹由 {@code VersionedGroupWriter} 自己算</b>。
+     *
+     * <h3>🚨 为什么不用 {@link #seedEbomMainGroup} 直接 INSERT</h3>
+     * 夹具自造的 {@code row_fingerprint} 与 writer 的 {@code RowFingerprints.compute} <b>必然不同</b>，
+     * 而 {@code UNCHANGED} 判据是 {@code sameMultiset(dbFps, newFps)}
+     * ⇒ 手工摆的主表<b>永远判不出 UNCHANGED</b>，而且它<b>不报错、只是永远不相等</b>（极隐蔽）。
+     * ⇒ 凡是后续要比对「变没变」的用例，主表基线一律用本方法造。
+     * {@link #seedEbomMainGroup} 只留给「不关心指纹、只要有行」的场景。
+     *
+     * @return 造这一组用掉的那张单（已 APPROVED）
+     */
+    protected Fx seedMainViaCreatedOrder(String label, String materialNo, List<EbomRow> rows) {
+        Fx seeder = newSubmittedOrder(label, materialNo, rows);
+        approveWithPreview(seeder, label);
+        long n = count("SELECT count(*) FROM " + EBOM + " WHERE material_no = '" + materialNo + "'");
+        assertEquals((long) rows.size(), n,
+                label + " 前置：主表该组应有 " + rows.size() + " 行，实际 " + n);
+        return seeder;
+    }
+
+    /** 主表该组「业务列元组」按 {@code item_seq} 索引 —— 🚫 不含随升版正常变化的系统/版本列。 */
+    protected Map<Integer, String> ebomBusinessRowsBySeq(String materialNo) {
+        Map<Integer, String> out = new LinkedHashMap<>();
+        for (Object[] r : rows("SELECT item_seq, "
+                + "coalesce(element_code,'~') || '|' || coalesce(content_pct::text,'~') || '|' "
+                + "|| coalesce(net_usage::text,'~') || '|' || coalesce(loss_rate::text,'~') || '|' "
+                + "|| coalesce(gross_usage::text,'~') || '|' || coalesce(recovery_qty::text,'~') "
+                + "FROM " + EBOM + " WHERE material_no = '" + materialNo.replace("'", "''") + "' "
+                + "ORDER BY item_seq, id")) {
+            out.merge(((Number) r[0]).intValue(), String.valueOf(r[1]), (a, b) -> a + " ;; " + b);
+        }
+        return out;
+    }
+
     protected Response submit(Fx fx) {
         return RestAssured.given().cookies(adminCookies()).contentType(ContentType.JSON)
                 .when().post("/api/cpq/quotations/" + fx.quotationId() + "/submit").thenReturn();
     }
 
-    /** 建一张 <b>SUBMITTED</b> 的新链路报价单，其元素BOM 页签表征 {@code materialNo} 这一组。 */
+    /**
+     * 登记「这个料号组归哪个客户」。
+     * 🚫 <b>刻意要求传整个 {@link Fx} 而不是一个 {@code customerNo} 字符串</b>：
+     * 后续 {@link #newSubmittedOrderForCustomer} 建单要用 {@code customerId}，
+     * 只登记字符串会让登记表里躺着 {@code customerId=null} 的半个对象，
+     * 而它会在<b>很远的地方</b>以「INSERT 违反 NOT NULL」的面目炸掉。
+     */
+    protected void registerAxisOwner(String materialNo, Fx owner) {
+        assertNotNull(owner.customerId(), "轴归属登记必须带真实客户（customerId 不能为 null）");
+        axisOwner.putIfAbsent(materialNo, owner);
+    }
+
+    /**
+     * 建一张 <b>SUBMITTED</b> 的新链路报价单，其元素BOM 页签表征 {@code materialNo} 这一组。
+     *
+     * <p>🚨 <b>轴感知</b>（2026-09-07）：该料号若已有归属客户（{@link #axisOwner}），
+     * <b>复用同一个客户</b> —— 否则轴 {@code (customer_no, material_no)} 不同，
+     * 建出来的是<b>另一个组</b>，而症状会伪装成「锚定机制坏了」。
+     */
     protected Fx newSubmittedOrder(String label, String materialNo, List<EbomRow> rows) {
+        Fx owner = axisOwner.get(materialNo);
+        if (owner != null) {
+            System.out.println("[axis] " + label + " 复用料号 " + materialNo + " 的归属客户 "
+                    + owner.customerNo() + "（轴 = (customer_no, material_no)，换客户就是另一个组）");
+            return newSubmittedOrderForCustomer(label, owner, materialNo, rows);
+        }
         Fx fx = newFixture(label);
+        axisOwner.put(materialNo, fx);
+        return submitOrderOn(fx, label, materialNo, rows);
+    }
+
+    /**
+     * 在<b>已存在</b>的 {@code owner} 客户名下建一张 SUBMITTED 单（AC-10 前置「A、B 同客户」，
+     * 以及复合轴下「表征同一组」的通用要求）。
+     */
+    protected Fx newSubmittedOrderForCustomer(String label, Fx owner, String materialNo, List<EbomRow> rows) {
+        UUID qid = UUID.randomUUID();
+        String qno = PREFIX + "QT-" + qid.toString().substring(0, 8);
+        inTx(() -> {
+            Object admin = scalar("SELECT id FROM \"user\" WHERE username='admin' LIMIT 1");
+            assertNotNull(admin, "前置：admin 用户应存在（V1 迁移种子）");
+            em.createNativeQuery(
+                            "INSERT INTO quotation (id,quotation_number,customer_id,name,sales_rep_id,status,tax_rate,"
+                                    + "tax_amount,bound_global_variables_snapshot,user_data_version,created_at,updated_at) "
+                                    + "VALUES (:id,:qno,:cid,:qname,CAST(:uid AS uuid),'DRAFT',0,0,'{}'::jsonb,0,NOW(),NOW())")
+                    .setParameter("id", qid).setParameter("qno", qno)
+                    .setParameter("cid", owner.customerId())
+                    .setParameter("qname", PREFIX + "报价单-" + label)
+                    .setParameter("uid", admin.toString())
+                    .executeUpdate();
+        });
+        createdQuotations.add(qid);
+        Fx fx = new Fx(owner.customerId(), owner.customerNo(), qid, qno);
+        if (!axisOwner.containsKey(materialNo)) axisOwner.put(materialNo, fx);
+        return submitOrderOn(fx, label, materialNo, rows);
+    }
+
+    /** 在给定 Fx 上 saveDraft + submit，并断言 {@code _record} 非空（否则后续断言空跑）。 */
+    protected Fx submitOrderOn(Fx fx, String label, String materialNo, List<EbomRow> rows) {
+        trackAxis(materialNo);
         requireStatusBeforeDiff(saveDraftAdded(fx, materialNo, rows), 200, label + " saveDraft");
         requireStatusBeforeDiff(submit(fx), 200, label + " submit");
         assertEquals("SUBMITTED", String.valueOf(scalar(

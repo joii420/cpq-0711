@@ -1,5 +1,6 @@
 package com.cpq.task260907r;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.quarkus.test.junit.QuarkusTest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -32,7 +33,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisplayName("AC-6/8/9/13 · 回填 patch 语义与 AP-60 守卫")
 class BackfillPatchSemanticsAcTest extends Task260907RBase {
 
-    private static final String MBOM = "ds_quote_material_bom";
+    /** 🔑 被测主表改为 ds_quote_element_bom：本模板 13 组件里没有物料BOM，那张表造不出 _record。 */
+    private static final String MBOM = EBOM;
 
     @AfterEach
     void tearDown() {
@@ -40,189 +42,140 @@ class BackfillPatchSemanticsAcTest extends Task260907RBase {
     }
 
     /**
-     * <b>T-06（AC-6）</b>：确认 → 按 patch 语义升版。
+     * <b>T-06（AC-6）+ T-13（AC-13）🚨 AP-60 行维度守卫</b>
      *
-     * <p>夹具形态照 {@code test.md} §四指定：<b>自造 9 行组，只表征其中 2 行 2 列</b>。
+     * <p>造 5 行组 → 第二张单只表征其中 2 行（其中 1 行改值）→ 核价通过确认。
      *
-     * <p>断言逐条对应 AC-6 原文：
-     * ① 主表该组 = <b>主表原整组行为基底</b>，{@code _record} 表征的列被覆盖，
-     *    <b>未表征的行与列逐字保留</b>；
-     * ② 旧版整组进 {@code _history}，{@code archive_reason} = 本次回填的原因常量；
-     * ③ 新版 {@code version_no} = {@code max(主表当前, _history 最大) + 1}（🚫 不是「当前 + 1」）；
-     * ④ 报价单状态 → {@code APPROVED}。
+     * <p>断言（AC-6① / AC-13①③）：
+     * <ol>
+     *   <li><b>未被页签表征的 3 行仍在主表，逐列未变</b> —— 🚨 这是 {@code repair-0727} 的事故形状
+     *       （4 行被「对齐」成 1 行）；</li>
+     *   <li>组的总行数不减 —— 防「静默吞行」；也不翻倍 —— 防上一轮抓到的「锚不上就追加」；</li>
+     *   <li><b>反向</b>：确实表征并改了值的那一行，确实变了（防修成「什么都不写」）；</li>
+     *   <li>AC-6③ 新版号 = {@code max(主表当前, _history 最大) + 1}；AC-6② 旧版整组进 {@code _history}。</li>
+     * </ol>
+     *
+     * <h3>⛔ 列维度（AC-13②）在现有夹具下<b>不可阳性验证</b>，本条<b>不覆盖</b>它</h3>
+     * 实查：组件「T260907-物料与元素BOM」有 <b>12</b> 个字段，主表 {@code ds_quote_element_bom} 有
+     * <b>12</b> 个业务列 ⇒ <b>「页签未暴露的列」集合为空</b>，
+     * 断言它「逐字未变」会 0 次循环恒真 —— 那是假绿，不是覆盖。
+     * 佐证：{@code UPGRADED} 组的 {@code columnScope.preserved} 实测恒为 {@code []}。
+     * ⇒ 要验 AC-13② 需要<b>一个只暴露主表部分列的 ds 组件</b>，现网没有。
+     * {@code test-report.md} 的 AC-13② 须标 <b>⛔ 缺阳性夹具</b>，🚫 不许写「通过」。
+     *
+     * <h3>⚠️ 覆盖边界（同上一轮）：本条用平铺页签替代树页签</h3>
+     * {@code B-7}（BOM 树递归换表）未落地 ⇒ 验不到 {@code AP-60} 的<b>闭包放大</b>那一层。
      */
     @Test
-    @DisplayName("T-06 · 9 行组只表征 2 行 2 列 → 其余 7 行与未表征列逐字保留")
-    void t06_patchOnBaseOfFullGroup() {
+    @DisplayName("T-06+T-13 · [行维度·平铺页签] 5 行组只表征 2 行 → 未表征的 3 行逐列保留，改的那行确实变")
+    void t06t13_ap60RowDimensionGuard() {
         requireRecordLayer();
 
-        Fx fx = newFixture("AC6");
-        String mat = PREFIX + "G6-" + shortId(fx);
-        seedMainGroup(mat, 9);
+        String mat = PREFIX + "G6-" + java.util.UUID.randomUUID().toString().substring(0, 6);
+        List<EbomRow> fullGroup = List.of(
+                new EbomRow(1, PREFIX + "EL1", "10.0", "1.1"),
+                new EbomRow(2, PREFIX + "EL2", "20.0", "2.2"),
+                new EbomRow(3, PREFIX + "EL3", "30.0", "3.3"),
+                new EbomRow(4, PREFIX + "EL4", "40.0", "4.4"),
+                new EbomRow(5, PREFIX + "EL5", "50.0", "5.5"));
 
-        int mainVerBefore = maxVersion(MBOM, mat);
+        // ── 前置：让 writer 自己把 5 行 v1 造出来（🚫 不手工 INSERT，见 seedMainViaCreatedOrder 注释）
+        seedMainViaCreatedOrder("AC6seed", mat, fullGroup);
+        Map<Integer, String> before = ebomBusinessRowsBySeq(mat);
+        assertEquals(5, before.size(), "前置：主表该组应为 5 行，实际 " + before.size() + " → " + before);
+        int mainVerBefore = maxVersion(mat);
         int histVerBefore = maxHistoryVersion(mat);
-        Map<Long, String> baseRows = groupSnapshot(mat);
-        assertEquals(9, baseRows.size(), "夹具应造出 9 行，实际 " + baseRows.size());
 
-        // 只表征第 2、5 行的 component_qty / unit_weight 两列
-        List<Long> patched = List.copyOf(baseRows.keySet()).subList(1, 2);
-        List<Long> patchedIds = List.of(nth(baseRows, 1), nth(baseRows, 4));
-        Set<String> patchedCols = new LinkedHashSet<>(List.of("component_qty", "unit_weight"));
-        snapshotRecordCoveringRowsAndColumns(fx, mat, patchedIds, patchedCols);
-        changeRecordValues(fx, mat, patchedIds, Map.of("component_qty", "999.5", "unit_weight", "8.25"));
+        // ── 第二张单：只表征 seq=2 与 seq=4 两行，且把 seq=2 的 content_pct 改掉
+        List<EbomRow> represented = List.of(
+                new EbomRow(2, PREFIX + "EL2", "99.9", "2.2"),   // 改值
+                new EbomRow(4, PREFIX + "EL4", "40.0", "4.4"));  // 原样
+        Fx fx = newSubmittedOrder("AC6", mat, represented);
 
-        approve(fx);
+        JsonNode g = findGroup(dsBackfill(ok(getPreview(fx.quotationId()), "T-06 预览")), MBOM, mat);
+        assertNotNull(g, "预览里应出现轴值 " + mat + " 的组");
+        System.out.println("[T-06+13] 预览组形状 = " + g);
 
-        // ── AC-6④
-        assertEquals("APPROVED", String.valueOf(scalar(
-                        "SELECT status FROM quotation WHERE id = '" + fx.quotationId() + "'")),
-                "AC-6④：确认后报价单状态应为 APPROVED");
+        approveWithPreview(fx, "AC6");
 
-        // ── AC-6③：新版号 = max(主表当前, _history 最大) + 1
-        int expectedVer = Math.max(mainVerBefore, histVerBefore) + 1;
-        assertEquals(expectedVer, maxVersion(MBOM, mat),
-                "AC-6③：新版号应 = max(主表当前 " + mainVerBefore + ", _history 最大 " + histVerBefore + ") + 1 = "
-                        + expectedVer + "（🚫 不是「当前 + 1」）");
-
-        // ── AC-6①：基底是主表原整组 —— 行数必须仍是 9（🚨 AP-60 的核心：不许被「对齐」成 2 行）
-        Map<Long, String> after = groupSnapshot(mat);
-        assertEquals(9, after.size(),
-                "🚨 AC-6① / AP-60：主表该组原有 9 行，回填后应仍是 9 行（基底 = 主表原整组）。"
-                        + "实际 " + after.size() + " 行 ⇒ 页签投影被当成了该组全部行，"
-                        + "这正是 repair-0727 的事故形状（4 行被对齐成 1 行）。回填后内容=" + after.values());
-
-        // ── AC-6①：未表征的 7 行逐字保留
+        // ── 🚨 AC-13① / AP-60：未表征的 3 行必须仍在且逐列未变
+        Map<Integer, String> after = ebomBusinessRowsBySeq(mat);
+        List<String> vanished = new java.util.ArrayList<>();
         List<String> drifted = new java.util.ArrayList<>();
-        for (Map.Entry<Long, String> e : baseRows.entrySet()) {
-            if (patchedIds.contains(e.getKey())) continue;
-            String now = businessTupleOfOriginRow(mat, e.getKey());
-            if (!e.getValue().equals(now)) drifted.add("origin#" + e.getKey() + ": " + e.getValue() + " → " + now);
+        for (Map.Entry<Integer, String> e : before.entrySet()) {
+            if (e.getKey() == 2 || e.getKey() == 4) continue;      // 被表征的两行另行断言
+            String now = after.get(e.getKey());
+            if (now == null) vanished.add("seq=" + e.getKey());
+            else if (!e.getValue().equals(now)) drifted.add("seq=" + e.getKey() + ": " + e.getValue() + " → " + now);
         }
-        assertTrue(drifted.isEmpty(),
-                "AC-6①：未被页签表征的 7 行必须逐字保留，实测 " + drifted.size() + " 行发生变化 —— " + drifted);
-
-        // ── AC-6①反向：确实表征并改了的列确实变了（防止修成「什么都不写」）
-        for (Long id : patchedIds) {
-            String now = businessTupleOfOriginRow(mat, id);
-            assertFalse(baseRows.get(id).equals(now),
-                    "AC-6① 反向：表征并改了值的行 origin#" + id + " 应当变化，实测逐字未变 —— "
-                            + "这说明回填被修成了「什么都不写」，那同样不满足 AC。值=" + now);
-        }
-
-        // ── AC-6②：旧版整组进 _history，且 archive_reason 是本次回填的原因常量
-        long archived = count("SELECT count(*) FROM " + MBOM + "_history WHERE material_no = '" + mat
-                + "' AND version_no = " + mainVerBefore);
-        assertEquals(9L, archived,
-                "AC-6②：旧版 v" + mainVerBefore + " 应<b>整组</b> 9 行进 _history，实际 " + archived + " 行"
-                        + " ⇒ 只归档「变过的行」= 旧版查不回来了");
-        List<Object> reasons = col("SELECT DISTINCT archive_reason FROM " + MBOM + "_history "
-                + "WHERE material_no = '" + mat + "' AND version_no = " + mainVerBefore);
-        assertEquals(1, reasons.size(),
-                "AC-6②：同一次归档的 archive_reason 应唯一，实际 " + reasons);
-        assertNotNull(reasons.get(0), "AC-6②：archive_reason 不应为 NULL");
-        // 列长约束：archive_reason varchar(32)（需求文档 §4.1 实测）
-        assertTrue(reasons.get(0).toString().length() <= 32,
-                "AC-6②：archive_reason 超出 varchar(32)，实际 '" + reasons.get(0) + "' 长度 "
-                        + reasons.get(0).toString().length());
-        System.out.println("[T-06] archive_reason 实际取值 = " + reasons.get(0));
-    }
-
-    /**
-     * <b>T-13（AC-13）🚨 AP-60 守卫</b>：页签只表征<b>部分行</b>（带 {@code WHERE} 谓词收窄）
-     * 且只暴露<b>部分列</b>。
-     *
-     * <p>断言：
-     * ① 未被页签表征的行在主表中<b>仍存在，逐列未变</b>；
-     * ② 被表征行里页签没暴露的列<b>逐字未变</b>（🚫 不得写 NULL）；
-     * ③ 反向：页签确实表征并改了值的列，确实变了。
-     *
-     * <p>依据 {@code AP-60} 事故实证：4 行被对齐成 1 行、{@code element_bom_item.base_qty}
-     * 由 {@code 0.624610} 变 NULL，而预览显示 0 变更。
-     *
-     * <p>本用例是 <b>E-1</b>（遍历主轴改成 {@code _record} 行）与 <b>E-2</b>（未暴露的列写 NULL）
-     * 两个证伪实验的靶子 —— 任一注入都必须让它变红。
-     *
-     * <h3>🚨 覆盖边界：本条用<b>平铺页签</b>替代<b>树页签</b>，因 B-7（BOM 树递归换表）未落地</h3>
-     * {@code costing_bom_tree_config} 的递归目前仍读 V6 老表 {@code material_bom_item}，
-     * 改读新表那件事在另一个任务（{@code task-260907-报价侧加客户维度} 的 B-7）里，且那个任务尚未走闸门 A
-     * ⇒ 树页签的端到端渲染现在跑不通。本用例改用<b>平铺页签 + {@code WHERE} 谓词收窄行 + 只暴露部分列</b>
-     * 来构造同型投影。
-     *
-     * <p>⚠️ <b>因此本条不能被读成「树页签已验证」</b>：{@code AP-60} 的真实事故
-     * （{@code repair-0727}）恰恰发生在树页签场景 —— 闭包让一个页签横跨多个组、每组只被部分表征。
-     * 平铺投影能验到<b>行维度与列维度</b>的基本守卫，但<b>验不到闭包放大那一层</b>。
-     * ⇒ {@code test-report.md} 的 AC-13 行须归入<b>「未完全覆盖」</b>，🚫 不是「已通过」。
-     */
-    @Test
-    @DisplayName("T-13 · [平铺页签替代树页签·B-7未落地] 未表征的行仍在且逐列未变；未暴露的列不写 NULL；表征的列确实变了")
-    void t13_ap60GuardRowsAndColumns() {
-        requireRecordLayer();
-
-        Fx fx = newFixture("AC13");
-        String mat = PREFIX + "G13-" + shortId(fx);
-        seedMainGroup(mat, 6);
-
-        Map<Long, String> before = groupSnapshot(mat);
-        assertEquals(6, before.size(), "夹具应造出 6 行，实际 " + before.size());
-
-        // 页签用 WHERE 谓词只收窄到 item_seq <= 2 的两行；且只暴露 component_qty 一列
-        List<Long> represented = List.of(nth(before, 0), nth(before, 1));
-        Set<String> exposed = new LinkedHashSet<>(List.of("component_qty"));
-        // 「未暴露」的列 —— 它们必须逐字未变（E-2 靶子）
-        Set<String> notExposed = new LinkedHashSet<>(businessColumns(MBOM));
-        notExposed.removeAll(exposed);
-        notExposed.remove("material_no");   // 轴列本身
-        assertFixtureNonEmpty(notExposed.size(),
-                "「页签未暴露的列」集合（阳性对照：为空 ⇒ 断言② 0 次循环恒真）");
-
-        snapshotRecordCoveringRowsAndColumns(fx, mat, represented, exposed);
-        changeRecordValues(fx, mat, represented, Map.of("component_qty", "1234.5"));
-
-        approve(fx);
-
-        Map<Long, String> after = groupSnapshot(mat);
-
-        // ── AC-13①：未表征的 4 行仍在，逐列未变
-        Set<Long> missingOrigins = new LinkedHashSet<>();
-        List<String> drifted = new java.util.ArrayList<>();
-        for (Map.Entry<Long, String> e : before.entrySet()) {
-            if (represented.contains(e.getKey())) continue;
-            String now = businessTupleOfOriginRow(mat, e.getKey());
-            if (now == null) { missingOrigins.add(e.getKey()); continue; }
-            if (!e.getValue().equals(now)) drifted.add("origin#" + e.getKey() + ": " + e.getValue() + " → " + now);
-        }
-        assertTrue(missingOrigins.isEmpty(),
-                "🚨 AC-13① / AP-60：页签没表征的行被删掉了 —— 消失的原行 " + missingOrigins
+        assertTrue(vanished.isEmpty(),
+                "🚨 AC-13① / AP-60：页签没表征的行被删掉了 —— 消失的 " + vanished
                         + "。这正是 repair-0727 的事故形状（4 行被对齐成 1 行）。"
-                        + "回填前 " + before.size() + " 行，回填后 " + after.size() + " 行");
+                        + "回填前 " + before.size() + " 行 " + before + "；回填后 " + after.size() + " 行 " + after);
         assertTrue(drifted.isEmpty(),
                 "AC-13①：未表征的行必须逐列未变，实测漂移 " + drifted);
 
-        // ── AC-13②：被表征行里，页签没暴露的列逐字未变（🚫 不得写 NULL）
-        List<String> nulled = new java.util.ArrayList<>();
-        for (Long id : represented) {
-            Map<String, String> b = columnValuesOfOriginRow(mat, id, notExposed, before);
-            Map<String, String> a = columnValuesOfOriginRow(mat, id, notExposed, after);
-            for (String c : notExposed) {
-                if (!java.util.Objects.equals(b.get(c), a.get(c))) {
-                    nulled.add("origin#" + id + "." + c + ": " + b.get(c) + " → " + a.get(c));
-                }
+        // ── 行数既不减也不增（防静默吞行 / 防锚不上就追加）
+        assertEquals(before.size(), after.size(),
+                "AC-6①：整组行数应保持 " + before.size() + "，实际 " + after.size()
+                        + " ⇒ 变少=静默吞行；变多=锚定失效被当成新增。after=" + after);
+
+        // ── 反向（AC-13③）：表征并改了的那一行确实变了；表征但没改的那行不变
+        assertFalse(before.get(2).equals(after.get(2)),
+                "AC-13③ 反向：seq=2 表征并把 content_pct 改成 99.9，应当变化，实测逐字未变 —— "
+                        + "回填被修成了「什么都不写」同样不满足 AC。值=" + after.get(2));
+        assertTrue(String.valueOf(after.get(2)).contains("99.9"),
+                "AC-13③ 反向：seq=2 应写入 99.9，实际 " + after.get(2));
+        assertEquals(before.get(4), after.get(4),
+                "AC-6①：seq=4 被表征但值没改，应逐字未变。before=" + before.get(4) + " after=" + after.get(4));
+
+        // ── AC-6③ 版本号 = max(主表当前, _history 最大) + 1
+        int expectedVer = Math.max(mainVerBefore, histVerBefore) + 1;
+        assertEquals(expectedVer, maxVersion(mat),
+                "AC-6③：新版号应 = max(主表当前 " + mainVerBefore + ", _history 最大 " + histVerBefore
+                        + ") + 1 = " + expectedVer + "（🚫 不是「当前 + 1」）");
+
+        // ── AC-6② 旧版**整组** 5 行进 _history + archive_reason 唯一且在 varchar(32) 内
+        long archived = count("SELECT count(*) FROM " + MBOM + "_history WHERE material_no = '" + mat
+                + "' AND version_no = " + mainVerBefore);
+        assertEquals(5L, archived,
+                "AC-6②：旧版 v" + mainVerBefore + " 应<b>整组</b> 5 行进 _history（只归档变过的行 = 旧版查不回来），实际 "
+                        + archived);
+        List<Object> reasons = col("SELECT DISTINCT archive_reason FROM " + MBOM + "_history "
+                + "WHERE material_no = '" + mat + "' AND version_no = " + mainVerBefore);
+        assertEquals(1, reasons.size(), "AC-6②：同一次归档的 archive_reason 应唯一，实际 " + reasons);
+        assertNotNull(reasons.get(0), "AC-6②：archive_reason 不应为 NULL");
+        assertTrue(reasons.get(0).toString().length() <= 32,
+                "AC-6②：archive_reason 超出 varchar(32)：'" + reasons.get(0) + "'");
+        System.out.println("[T-06+13] archive_reason = " + reasons.get(0)
+                + "；版本 " + mainVerBefore + " → " + maxVersion(mat));
+
+        assertEquals("APPROVED", String.valueOf(scalar(
+                        "SELECT status FROM quotation WHERE id = '" + fx.quotationId() + "'")),
+                "AC-6④：确认后报价单状态应为 APPROVED");
+    }
+
+    private int maxVersion(String materialNo) {
+        Object v = scalar("SELECT max(version_no) FROM " + MBOM + " WHERE material_no = '" + materialNo + "'");
+        assertNotNull(v, "主表上找不到轴值 " + materialNo);
+        return ((Number) v).intValue();
+    }
+
+    private int maxHistoryVersion(String materialNo) {
+        Object v = scalar("SELECT coalesce(max(version_no),0) FROM " + MBOM + "_history "
+                + "WHERE material_no = '" + materialNo + "'");
+        return ((Number) v).intValue();
+    }
+
+    private com.fasterxml.jackson.databind.JsonNode findGroup(
+            com.fasterxml.jackson.databind.JsonNode ds, String tableName, String axisValue) {
+        for (com.fasterxml.jackson.databind.JsonNode t : ds.path("tables")) {
+            if (!tableName.equals(t.path("tableName").asText())) continue;
+            for (com.fasterxml.jackson.databind.JsonNode g : t.path("groups")) {
+                if (axisValue.equals(g.path("axisValue").asText())) return g;
             }
         }
-        assertTrue(nulled.isEmpty(),
-                "🚨 AC-13②：被表征行里页签没暴露的列必须逐字未变（🚫 不得写 NULL）。"
-                        + "实测 " + nulled.size() + " 处变化 —— " + nulled
-                        + "。AP-60 实证：element_bom_item.base_qty 由 0.624610 变 NULL 而预览显示 0 变更。");
-
-        // ── AC-13③ 反向：表征并改了的列确实变了（防止修成「什么都不写」）
-        for (Long id : represented) {
-            String nowQty = String.valueOf(scalar("SELECT component_qty FROM " + MBOM
-                    + " WHERE material_no = '" + mat + "' AND " + originIdPredicate(id)));
-            assertTrue(nowQty.startsWith("1234.5"),
-                    "AC-13③ 反向：页签表征并改了 component_qty=1234.5 的行 origin#" + id
-                            + " 实际值为 " + nowQty + " ⇒ 回填被修成了「什么都不写」，同样不满足 AC");
-        }
+        return null;
     }
 
     /**
@@ -244,7 +197,7 @@ class BackfillPatchSemanticsAcTest extends Task260907RBase {
 
         Fx fx = newFixture("AC8");
         String mat = PREFIX + "G8-" + shortId(fx);
-        seedMainGroup(mat, 3);
+        seedMainGroup(fx.customerNo(), mat, 3);
         snapshotRecordCoveringRowsAndColumns(fx, mat, List.copyOf(groupSnapshot(mat).keySet()),
                 new LinkedHashSet<>(List.of("component_qty")));
         changeRecordValues(fx, mat, List.copyOf(groupSnapshot(mat).keySet()), Map.of("component_qty", "42"));
@@ -314,10 +267,10 @@ class BackfillPatchSemanticsAcTest extends Task260907RBase {
 
     // ═══════════════════════ 工具 ═══════════════════════
 
-    private void seedMainGroup(String materialNo, int rows) {
+    private void seedMainGroup(String customerNo, String materialNo, int rows) {
         inTx(() -> {
             for (int i = 1; i <= rows; i++) {
-                insertMaterialBomRow(materialNo, i, PREFIX + "IN-" + i, String.valueOf(i * 10), 1);
+                insertMaterialBomRow(customerNo, materialNo, i, PREFIX + "IN-" + i, String.valueOf(i * 10), 1);
             }
         });
         assertFixtureNonEmpty(count("SELECT count(*) FROM " + MBOM + " WHERE material_no = '" + materialNo + "'"),
@@ -361,19 +314,6 @@ class BackfillPatchSemanticsAcTest extends Task260907RBase {
     private List<String> allColumns(String table) {
         return (List<String>) (List<?>) col("SELECT column_name FROM information_schema.columns "
                 + "WHERE table_schema='public' AND table_name='" + sqlSafe(table) + "' ORDER BY ordinal_position");
-    }
-
-    private int maxVersion(String table, String materialNo) {
-        Object v = scalar("SELECT max(version_no) FROM " + sqlSafe(table)
-                + " WHERE material_no = '" + materialNo + "'");
-        assertNotNull(v, "主表 " + table + " 上找不到轴值 " + materialNo);
-        return ((Number) v).intValue();
-    }
-
-    private int maxHistoryVersion(String materialNo) {
-        Object v = scalar("SELECT coalesce(max(version_no), 0) FROM " + MBOM + "_history "
-                + "WHERE material_no = '" + materialNo + "'");
-        return ((Number) v).intValue();
     }
 
     private static Long nth(Map<Long, String> m, int i) {

@@ -1,6 +1,9 @@
 package com.cpq.task260907r;
 
 import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.RestAssured;
+import io.restassured.http.ContentType;
+import io.restassured.response.Response;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,8 +16,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * <b>T-02 / T-03 / T-04 / T-12 —— {@code _record} 的写入语义</b>
- * （AC-2 增量写 · AC-3 {@code extend_column} 只留痕 · AC-4 {@code element_price} · AC-12 价格同步不分叉）
+ * <b>T-02 / T-04 / T-12 —— {@code _record} 的写入语义</b>
+ * （T-03/AC-3 已按主线裁决三去重，统一由 {@link PartialColumnScopeAcTest#t03_extendColumnLeavesNoTraceInMainTable} 覆盖）
+ * （AC-2 增量写 · AC-4 {@code element_price} · AC-12 价格同步不分叉）
  *
  * <p>⛔ <b>执行前置</b>：13 张 {@code _record} 表须已建成（B-1/B-3 迁移落库）。
  * 未落库时 {@link #requireRecordLayer} 会以「环境前置未满足」的名义<b>硬失败</b> ——
@@ -22,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * （{@code test.md} 风险点 4 的形态）。
  */
 @QuarkusTest
-@DisplayName("AC-2/3/4/12 · _record 写入语义")
+@DisplayName("AC-2/4/12 · _record 写入语义")
 class RecordWriteAcTest extends Task260907RBase {
 
     private static final String MBOM = "ds_quote_material_bom";
@@ -45,8 +49,21 @@ class RecordWriteAcTest extends Task260907RBase {
      * <p>🔑 <b>断言②才是这条 AC 的判据</b>。只断言①（「第 1 个产品写进去了」）在整单重写的实现下
      * <b>照样成立</b> —— 同型判据教训见 AC-10 的 🔑 注记与第一段 AC-22。
      *
-     * <p>🚨 空验证对策：断言前先证明<b>两个产品的 {@code _record} 行都存在且非空</b>，
-     * 否则「第 2 个产品 updated_at 未变」在它压根没有行的时候恒真。
+     * <h3>🕰️ 2026-09-07 重写：从 {@code ds_quote_material_bom} 改挂 {@code ds_quote_element_bom}</h3>
+     * 原版用 {@code ds_quote_material_bom} + 三个 {@code pending()} 桩。
+     * 「报价模板 · ds 原生 v1.0」的 13 个组件里<b>没有物料BOM</b>（{@link Task260907RBase} 类注释实查）
+     * ⇒ 那条路根本走不出 {@code _record}，桩永远接不上。
+     * 本条改走已实测跑通的 {@code T260907-物料与元素BOM} → {@code ds_quote_element_bom}。
+     *
+     * <h3>🚨 空验证对策 + 灵敏度对照（本条不可省）</h3>
+     * <ul>
+     *   <li>断言前先证明<b>两个产品的 {@code _record} 行都存在且非空</b> ——
+     *       否则「产品乙 updated_at 未变」在它压根没有行的时候<b>恒真</b>。</li>
+     *   <li>断言②通过之后，再做一次<b>阳性对照（还原实验）</b>：把产品乙也放进 {@code modified}
+     *       <b>并真的改掉它的值</b>，断言此时乙的 {@code id|updated_at} 快照<b>必须变</b>。
+     *       🔑 少了这一枪，「乙没变」与「我的查询/比对压根观测不到变化」<b>在结果上分不开</b> ——
+     *       后者会让本用例在任何实现下都绿。</li>
+     * </ul>
      */
     @Test
     @DisplayName("T-02 · 只改产品甲 → 产品乙的 _record.updated_at 逐字未变")
@@ -54,119 +71,96 @@ class RecordWriteAcTest extends Task260907RBase {
         requireRecordLayer();
         Fx fx = newFixture("AC2");
 
-        String matA = PREFIX + "A-" + fx.quotationNo().substring(fx.quotationNo().length() - 6);
-        String matB = PREFIX + "B-" + fx.quotationNo().substring(fx.quotationNo().length() - 6);
+        String matA = axis("A2A");
+        String matB = axis("A2B");
+        List<EbomRow> rowsA = List.of(
+                new EbomRow(1, PREFIX + "EA1", "10.0", "1.1"),
+                new EbomRow(2, PREFIX + "EA2", "20.0", "2.2"));
+        List<EbomRow> rowsB = List.of(
+                new EbomRow(1, PREFIX + "EB1", "30.0", "3.3"),
+                new EbomRow(2, PREFIX + "EB2", "40.0", "4.4"));
 
-        // ── 前置：两个产品卡片各自的主表整组 + _record 快照
-        seedMainGroup(matA, 3);
-        seedMainGroup(matB, 3);
-        int verA = mainVersionOf(MBOM, matA);
-        int verB = mainVersionOf(MBOM, matB);
-        seedRecordFromMain(fx, matA, verA);
-        seedRecordFromMain(fx, matB, verB);
+        // ── 前置：两个产品各自的主表整组（v1）—— AC-2③ 的对照源
+        seedEbomMainGroup(fx, matA, rowsA, 1);
+        seedEbomMainGroup(fx, matB, rowsB, 1);
 
-        long nA = count("SELECT count(*) FROM " + MBOM_REC + " WHERE material_no = '" + matA + "'");
-        long nB = count("SELECT count(*) FROM " + MBOM_REC + " WHERE material_no = '" + matB + "'");
+        // ── 操作 0：一次 saveDraft 建出**两个**产品卡片（AC-2 前置「含 ≥2 个产品卡片」）
+        requireStatusBeforeDiff(saveDraftAddedTwo(fx, matA, rowsA, matB, rowsB), 200,
+                "T-02 首次 saveDraft（两个产品卡片）");
+
+        long nA = recCount(fx, matA);
+        long nB = recCount(fx, matB);
         assertFixtureNonEmpty(nA, "产品甲 " + matA + " 的 _record 行数");
         assertFixtureNonEmpty(nB, "产品乙 " + matB + " 的 _record 行数");
+        System.out.println("[T-02] 夹具就位：甲 " + matA + " _record " + nA + " 行；乙 " + matB + " _record " + nB + " 行");
 
         // ── AC-2③：base_version_no = 拍快照时主表该轴值的 version_no
-        assertEquals(verA, intOf("SELECT DISTINCT base_version_no FROM " + MBOM_REC
-                        + " WHERE material_no = '" + matA + "'"),
-                "AC-2③：产品甲 _record.base_version_no 应 = 拍快照时主表 " + MBOM + " 该轴值的 version_no");
+        assertEquals(1, baseVersionOf(fx, matA),
+                "AC-2③：主表 " + EBOM + " 上 " + matA + " 当前 version_no=1，"
+                        + "故产品甲 _record.base_version_no 应为 1");
+        assertEquals(1, baseVersionOf(fx, matB),
+                "AC-2③：产品乙 _record.base_version_no 应 = 拍快照时主表该轴值的 version_no");
 
-        // ── 采基线：产品乙的 updated_at 逐字快照（🚫 只取 max 会漏「一部分行被重写」）
-        List<Object> bBefore = col("SELECT id || '|' || coalesce(updated_at::text,'<NULL>') FROM "
-                + MBOM_REC + " WHERE material_no = '" + matB + "' ORDER BY id");
-        List<Object> aBefore = col("SELECT id || '|' || coalesce(component_qty::text,'<NULL>') FROM "
-                + MBOM_REC + " WHERE material_no = '" + matA + "' ORDER BY id");
-        assertFixtureNonEmpty(bBefore.size(), "产品乙 updated_at 基线");
+        // ── 采基线：逐行 id|updated_at（🚫 只取 max(updated_at) 会漏「一部分行被重写」，
+        //    也漏「行被删了重插、id 换掉」这一整类）
+        List<Object> bBefore = recStamp(fx, matB);
+        List<Object> aBefore = recContent(fx, matA);
+        assertFixtureNonEmpty(bBefore.size(), "产品乙 id|updated_at 基线");
+        assertFixtureNonEmpty(aBefore.size(), "产品甲内容基线");
 
-        // ── 操作：只改产品甲的一行的一个数值列，走 saveDraft 的三数组协议 + baseVersion
-        //    ⚠️ 本步依赖 saveDraft 把 _record 写入挂上（api.md §3：_record 由 saveDraft 内部写，
-        //       前端无感知 ⇒ AC-2 由 DB 断言验证，不由接口验证）。
-        long recIdA = longOf("SELECT min(id) FROM " + MBOM_REC + " WHERE material_no = '" + matA + "'");
-        saveDraftModifyOneCell(fx, matA, recIdA, "component_qty", "77.5");
+        // ── 操作：只把**产品甲**放进 modified（三数组协议的增量语义），改一个数值列
+        List<EbomRow> rowsAChanged = List.of(
+                new EbomRow(1, PREFIX + "EA1", "77.5", "1.1"),      // ← 只改这一个数值
+                new EbomRow(2, PREFIX + "EA2", "20.0", "2.2"));
+        requireStatusBeforeDiff(saveDraftModifiedOnly(fx, matA, rowsAChanged), 200,
+                "T-02 二次 saveDraft（modified 只带产品甲）");
 
         // ── AC-2①：产品甲的行被更新
-        List<Object> aAfter = col("SELECT id || '|' || coalesce(component_qty::text,'<NULL>') FROM "
-                + MBOM_REC + " WHERE material_no = '" + matA + "' ORDER BY id");
+        List<Object> aAfter = recContent(fx, matA);
         assertFalse(aBefore.equals(aAfter),
-                "AC-2①：产品甲改了值，其 _record 行应被更新，实测逐字未变。before=" + aBefore + " after=" + aAfter);
+                "AC-2①：产品甲改了值（content_pct 10.0 → 77.5），其 _record 行应被更新，实测逐字未变。"
+                        + "before=" + aBefore + " after=" + aAfter);
+        assertTrue(aAfter.toString().contains("77.5"),
+                "AC-2① 反向：产品甲的新值 77.5 应落进 _record（防止修成「什么都不写」），实际=" + aAfter);
 
-        // ── AC-2②：产品乙逐字未变（🔑 这条才是「增量」的判据）
-        List<Object> bAfter = col("SELECT id || '|' || coalesce(updated_at::text,'<NULL>') FROM "
-                + MBOM_REC + " WHERE material_no = '" + matB + "' ORDER BY id");
+        // ── 🔑 AC-2②：产品乙逐字未变（这条才是「增量」的判据）
+        List<Object> bAfter = recStamp(fx, matB);
         assertEquals(bBefore, bAfter,
-                "AC-2②：只改了产品甲，产品乙的 _record.updated_at 必须逐字未变（增量写，不是整单重写）。"
-                        + "实测 before=" + bBefore + " after=" + bAfter
+                "🔑 AC-2②：只改了产品甲，产品乙的 _record 行（id|updated_at）必须逐字未变 ——"
+                        + " 增量写，不是整单重写。实测 before=" + bBefore + " after=" + bAfter
                         + " ⇒ 若这里变了，说明保存把整单的 _record 全重写了一遍。");
+        System.out.println("[T-02] AC-2② 通过：乙 " + matB + " 逐字未变 = " + bAfter);
+
+        // ══ 🚨 阳性对照（还原实验）：证明断言②**能够**变红 ══
+        //    把产品乙也放进 modified 并**真的改掉它的值**。此时乙必须变。
+        //    不变 ⇒ 说明我的查询/比对根本观测不到变化 ⇒ 上面那个「相等」是空验证，本用例作废。
+        List<EbomRow> rowsBChanged = List.of(
+                new EbomRow(1, PREFIX + "EB1", "88.8", "3.3"),
+                new EbomRow(2, PREFIX + "EB2", "40.0", "4.4"));
+        requireStatusBeforeDiff(saveDraftModifiedOnly(fx, matB, rowsBChanged), 200,
+                "T-02 阳性对照 saveDraft（modified 带产品乙且真的改了值）");
+        List<Object> bControl = recStamp(fx, matB);
+        assertFalse(bBefore.equals(bControl),
+                "🚨 灵敏度对照失败：产品乙的值真的被改了（30.0 → 88.8），但它的 _record id|updated_at 快照"
+                        + "仍逐字未变 ⇒ 本用例的判据**观测不到变化**，上面 AC-2② 的「相等」是空验证，"
+                        + "这条用例不构成任何证据。before=" + bBefore + " control=" + bControl);
+        System.out.println("[T-02] 灵敏度对照通过：乙真改值后 id|updated_at 确实变了 = " + bControl);
     }
 
-    /**
-     * <b>T-03（AC-3）</b>：{@code extend_column} 只留痕，<b>不参与任何写主表的动作</b>。
-     *
-     * <p>三条断言逐条对应 AC-3 原文：
-     * ① 自定义列 / 公式列的值出现在 {@code _record.extend_column} 的 jsonb 里；
-     * ② 主表没有新增列，也没有任何一列被这些值写入；
-     * ③ 这些值不进 {@code row_fingerprint} —— <b>只改自定义列再保存再通过 → 该组判 {@code UNCHANGED}、
-     * {@code version_no} 不变</b>。
-     *
-     * <p>🔑 断言③是 E-5 证伪实验的靶子（把 {@code extend_column} 塞进指纹 → 本条必须变红）。
-     */
-    @Test
-    @DisplayName("T-03 · 自定义/公式列进 extend_column；只改它们 → UNCHANGED、version_no 不变")
-    void t03_extendColumnLeavesNoTraceInMainTable() {
-        requireRecordLayer();
-        Fx fx = newFixture("AC3");
-        String mat = PREFIX + "C-" + shortId(fx);
-
-        seedMainGroup(mat, 3);
-        int ver0 = mainVersionOf(MBOM, mat);
-        seedRecordFromMain(fx, mat, ver0);
-
-        // 主表列集基线 —— AC-3② 的「主表没有新增列」
-        List<Object> mainColsBefore = col("SELECT column_name FROM information_schema.columns "
-                + "WHERE table_schema='public' AND table_name='" + MBOM + "' ORDER BY column_name");
-        assertFixtureNonEmpty(mainColsBefore.size(), "主表列集基线");
-
-        // ── 在自定义列 / 公式列上填值并保存
-        String customValue = PREFIX + "自定义值-" + shortId(fx);
-        String formulaValue = "123.456";
-        saveDraftFillExtendColumns(fx, mat, java.util.Map.of(
-                "自定义列A", customValue,
-                "毛利率(公式)", formulaValue));
-
-        // ── AC-3①：值出现在 extend_column jsonb 里
-        long hit = count("SELECT count(*) FROM " + MBOM_REC + " WHERE material_no = '" + mat + "' "
-                + "AND extend_column::text LIKE '%" + customValue + "%'");
-        assertFixtureNonEmpty(hit,
-                "AC-3①：自定义列的值 '" + customValue + "' 应出现在 " + MBOM_REC + ".extend_column 里，命中行数");
-
-        // ── AC-3②：主表列集没变，且主表没有任何一列被这些值写入
-        List<Object> mainColsAfter = col("SELECT column_name FROM information_schema.columns "
-                + "WHERE table_schema='public' AND table_name='" + MBOM + "' ORDER BY column_name");
-        assertEquals(mainColsBefore, mainColsAfter,
-                "AC-3②：主表 " + MBOM + " 不应因自定义列而新增列");
-        long leaked = count("SELECT count(*) FROM " + MBOM + " x WHERE x.material_no = '" + mat + "' "
-                + "AND to_jsonb(x)::text LIKE '%" + customValue + "%'");
-        assertEquals(0L, leaked,
-                "AC-3②：自定义列的值渗进了主表 " + MBOM + " 的某一列（命中 " + leaked + " 行）"
-                        + " —— extend_column 应当只留痕，不写主表");
-
-        // ── AC-3③：只改自定义列 → 核价通过后判 UNCHANGED、version_no 不变
-        int verBefore = mainVersionOf(MBOM, mat);
-        long histBefore = count("SELECT count(*) FROM " + MBOM + "_history WHERE material_no = '" + mat + "'");
-
-        submitAndApprove(fx);
-
-        assertEquals(verBefore, mainVersionOf(MBOM, mat),
-                "AC-3③：只改了自定义列（不进 row_fingerprint），该组应判 UNCHANGED、version_no 不变。"
-                        + "实测由 " + verBefore + " 变成 " + mainVersionOf(MBOM, mat)
-                        + " ⇒ extend_column 被算进指纹了（E-5 靶子）");
-        assertEquals(histBefore, count("SELECT count(*) FROM " + MBOM + "_history WHERE material_no = '" + mat + "'"),
-                "AC-3③：UNCHANGED 的组不应往 _history 写任何行");
-    }
+    // ═══════════════════════ T-03（AC-3）已删除 —— 🚫 不是放弃覆盖，是去重 ═══════════════════════
+    //
+    // 🕰️ 2026-09-07 主线裁决三：AC-3 的覆盖统一由
+    //    {@link PartialColumnScopeAcTest#t03_extendColumnLeavesNoTraceInMainTable} 承担。
+    //
+    // 为什么删这一份而不是那一份：
+    //   · 本份挂在 **ds_quote_material_bom** 上 —— 「报价模板 · ds 原生 v1.0」的 13 个组件里
+    //     没有物料BOM，这条路根本拍不出 _record ⇒ 它**恒 pending，永远接不上**；
+    //   · PartialColumnScopeAcTest 那份走的是**自造部分列组件** + ds 原生链路，已实测跑通并绿。
+    //
+    // 🚨 为什么「留着一个永远 pending 的同名同断言用例」本身是缺陷：
+    //    同一条 AC 被两个类覆盖，报告里一边写「⛔ 待接实现」、一边写「✅ 全绿」，
+    //    读报告的人**无法判断哪个是真的**，而 pending 那份看起来像真实的覆盖缺口。
+    //    这与 T-20a/b/c 从本包迁出时的理由是同一个（见 BackfillAnchorAndSequenceAcTest 的迁出注记）。
 
     /**
      * <b>T-04（AC-4）</b>：{@code element_price} 建单时算一次。
@@ -305,10 +299,10 @@ class RecordWriteAcTest extends Task260907RBase {
     //       ⇒ 需要真实模板 + 组件 + 页签夹具，不是造几行 SQL 能替代的）
     //    ④ 价格调整作业的触发入口（AC-12 只引用 MaterialVersionUpgradeService.ACTIVE_STATUSES）
 
-    private void seedMainGroup(String materialNo, int rows) {
+    private void seedMainGroup(String customerNo, String materialNo, int rows) {
         inTx(() -> {
             for (int i = 1; i <= rows; i++) {
-                insertMaterialBomRow(materialNo, i, PREFIX + "IN-" + i, String.valueOf(i * 10), 1);
+                insertMaterialBomRow(customerNo, materialNo, i, PREFIX + "IN-" + i, String.valueOf(i * 10), 1);
             }
         });
         assertFixtureNonEmpty(count("SELECT count(*) FROM " + MBOM + " WHERE material_no = '" + materialNo + "'"),
@@ -358,10 +352,6 @@ class RecordWriteAcTest extends Task260907RBase {
                 + " 的 record#" + recordId + "." + column + " = " + value);
     }
 
-    private void saveDraftFillExtendColumns(Fx fx, String materialNo, java.util.Map<String, String> values) {
-        throw pending("在 " + materialNo + " 的自定义列/公式列上填值并保存：" + values);
-    }
-
     private void seedElementBomGroup(String materialNo) {
         throw pending("造 ds_quote_element_bom 夹具组 " + materialNo + "（含可解析实时价的元素）");
     }
@@ -399,6 +389,84 @@ class RecordWriteAcTest extends Task260907RBase {
     private String snapshotPrices(Fx fx) {
         throw pending("从 " + fx.quotationNo() + " 的 quotation_line_component_data.snapshot_rows 里"
                 + "取对应的元素价格字段（AC-12① 的对照侧）");
+    }
+
+    // ═══════════════════════ T-02 专用工具（ds 原生链路，2026-09-07 接实现）═══════════════════════
+
+    private String axis(String tag) {
+        return PREFIX + tag + "-" + java.util.UUID.randomUUID().toString().substring(0, 6);
+    }
+
+    private long recCount(Fx fx, String materialNo) {
+        return count("SELECT count(*) FROM " + EBOM + "_record WHERE quotation_id = '"
+                + fx.quotationId() + "' AND material_no = '" + materialNo + "'");
+    }
+
+    /** 逐行 {@code id|updated_at} —— 「行被 touch」与「行被删了重插（id 换）」两类都抓得到。 */
+    private List<Object> recStamp(Fx fx, String materialNo) {
+        return col("SELECT id || '|' || coalesce(updated_at::text,'<NULL>') FROM " + EBOM + "_record "
+                + "WHERE quotation_id = '" + fx.quotationId() + "' AND material_no = '" + materialNo
+                + "' ORDER BY id");
+    }
+
+    /** 逐行业务内容（不含 id / 时间戳）—— 用于「值确实写进去了」这一侧。 */
+    private List<Object> recContent(Fx fx, String materialNo) {
+        return col("SELECT coalesce(item_seq::text,'~') || '|' || coalesce(element_code,'~') || '|' "
+                + "|| coalesce(content_pct::text,'~') || '|' || coalesce(net_usage::text,'~') "
+                + "FROM " + EBOM + "_record WHERE quotation_id = '" + fx.quotationId()
+                + "' AND material_no = '" + materialNo + "' ORDER BY item_seq, id");
+    }
+
+    private int baseVersionOf(Fx fx, String materialNo) {
+        Object v = scalar("SELECT DISTINCT base_version_no FROM " + EBOM + "_record "
+                + "WHERE quotation_id = '" + fx.quotationId() + "' AND material_no = '" + materialNo + "'");
+        assertNotNull(v, "本单在 _record 上没有轴值 " + materialNo + " 的行 ⇒ 快照没拍成，断言会空跑");
+        return ((Number) v).intValue();
+    }
+
+    /** 一次 {@code PUT /draft} 建出<b>两个</b>产品卡片（AC-2 前置「含 ≥2 个产品卡片」）。 */
+    private Response saveDraftAddedTwo(Fx fx, String matA, List<EbomRow> rowsA,
+                                       String matB, List<EbomRow> rowsB) {
+        String body = "{\"baseVersion\":0,\"added\":["
+                + addedLine("t1", 0, matA, rowsA) + "," + addedLine("t2", 1, matB, rowsB)
+                + "],\"modified\":[],\"removed\":[]}";
+        return putDraft(fx, body);
+    }
+
+    private String addedLine(String tempId, int sortOrder, String materialNo, List<EbomRow> rows) {
+        return "{\"id\":null,\"tempId\":\"" + PREFIX + tempId + "\","
+                + "\"templateId\":\"" + DS_TEMPLATE_ID + "\","
+                + "\"sortOrder\":" + sortOrder + ",\"compositeType\":\"SIMPLE\","
+                + "\"productPartNo\":\"" + materialNo + "\",\"annualVolume\":1,"
+                + "\"componentData\":[{\"componentId\":\"" + COMP_ELEMENT_BOM + "\","
+                + "\"tabName\":\"" + TAB_ELEMENT_BOM + "\","
+                + "\"rowData\":" + jsonStr(ebomRowData(materialNo, rows)) + ",\"sortOrder\":0}]}";
+    }
+
+    /**
+     * {@code modified} 数组里<b>只放一个</b>产品卡片 —— 三数组协议的增量语义。
+     * 🔑 T-02 的判据完全建立在这一点上：客户端只发变更的那个产品，服务端就<b>只该</b>动那个产品的 {@code _record}。
+     */
+    private Response saveDraftModifiedOnly(Fx fx, String materialNo, List<EbomRow> rows) {
+        Object liId = scalar("SELECT id FROM quotation_line_item WHERE quotation_id = '"
+                + fx.quotationId() + "' AND product_part_no_snapshot = '" + materialNo + "' LIMIT 1");
+        assertNotNull(liId, "找不到 " + materialNo + " 的 line item ⇒ 夹具没建成，后面的断言会空跑");
+        long ver = count("SELECT coalesce(user_data_version,0) FROM quotation WHERE id = '"
+                + fx.quotationId() + "'");
+        String body = "{\"baseVersion\":" + ver + ",\"added\":[],\"modified\":[{"
+                + "\"id\":\"" + liId + "\",\"templateId\":\"" + DS_TEMPLATE_ID + "\","
+                + "\"sortOrder\":0,\"compositeType\":\"SIMPLE\","
+                + "\"productPartNo\":\"" + materialNo + "\",\"annualVolume\":1,"
+                + "\"componentData\":[{\"componentId\":\"" + COMP_ELEMENT_BOM + "\","
+                + "\"tabName\":\"" + TAB_ELEMENT_BOM + "\","
+                + "\"rowData\":" + jsonStr(ebomRowData(materialNo, rows)) + ",\"sortOrder\":0}]}],"
+                + "\"removed\":[]}";
+        return putDraft(fx, body);
+    }
+
+    private Response putDraft(Fx fx, String jsonBody) {
+        return RestAssured.given().cookies(adminCookies()).contentType(ContentType.JSON).body(jsonBody)
+                .when().put("/api/cpq/quotations/" + fx.quotationId() + "/draft").thenReturn();
     }
 
     private static UnsupportedOperationException pending(String what) {
