@@ -14,7 +14,7 @@
   而主表 ds_quote_material_bom 的轴列 material_no = **父件**
     （证据行 id=12007: material_no=T260907T-RM01 / input_material_no=T260907T-RM03）
   ⇒ 子行算出的 axisValue = 子件料号（RM01），不在 touchedAxes{FG01,FG02} 里
-  ⇒ DsQuoteRecordService:224  把它们全丢掉。
+  ⇒ DsQuoteRecordService:224 的 if (!touchedAxes.contains(row.axisValue)) continue; 把它们全丢掉。
   只有根行的 hf_part_no 恰好等于成品料号，所以只有它活了下来 —— 而它恰恰是不该活的那一行。
 
 ## 后果
