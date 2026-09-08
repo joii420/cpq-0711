@@ -47,6 +47,31 @@ import java.util.UUID;
  * ⇒ 组装完 {@code byAxis} 后、{@code anchor()} 之前必须过一遍
  * {@link DsRecordCardDeduper}（见 §⑤-b）。
  *
+ * <h3>🔴 D-46：写入面 = 产品轴值 ∪ <b>树闭包派生轴</b>（2026-09-08 主线亲验抓到的第三个洞）</h3>
+ * 原来 §⑤ 里那句 {@code if (!touchedAxes.contains(row.axisValue)) continue;}（注释写着
+ * 「别的组的行（BOM 树跨组）不在本次范围」）是<b>故意</b>丢树行的。配上
+ * {@link DsRecordProjector#resolveAxis} 反了的优先级，后果是
+ * <b>{@code ds_quote_material_bom_record} 实测 64 行 100% 是合成根行，一条真实 BOM 边行都没有</b>
+ * ⇒ 物料BOM 从来没有被报价单回填过（涉 30 张单）。
+ * <p>新语义：<b>本单卡片投影出来的轴值都是本单表征的</b>（它们来自本单的 {@code snapshot_rows}），
+ * 🚫 不因为「不是产品料号」被丢。树页签行主轴是 spine 节点、轴值 = <b>父件料号</b>，
+ * 深度 ≥3 的行父件是中间件 ⇒ 那些组（{@code treeDerivedAxes}）本次一并重写。
+ *
+ * <h4>唯一护栏：轴值恰好是本单<b>另一个产品</b>的销售料号 ⇒ 跳过</h4>
+ * 那个组归它自己的卡片管，而那张卡片<b>不在本次 {@code scopeLines} 里</b>
+ * ⇒ 放行会让 {@code deleteGroups} 整组删掉它的投影、只写回本卡片这一份 ⇒ 静默丢行
+ * （正是 {@code scopeLines} 当初要防的形态）。⇒ 等那个产品自己被保存时再写，日志
+ * {@code crossProductAxisSkipped=%d}。
+ *
+ * <h4>⚠️ 已知残留（本轮<b>刻意不修</b>，交主线裁决）</h4>
+ * 中间件被<b>两个产品共用</b>时（实测数据里 {@code RM01} 就同时挂在 {@code FG01} 与 {@code FG02} 下），
+ * 只保存 {@code FG01} 会让 {@code RM01} 组只由 {@code FG01} 的卡片写回。
+ * 实践中无害 —— 两张卡片投的是<b>同一批 BOM 边</b>（同一个 {@code RM01} 的 BOM），内容相同；
+ * 且真有分歧时 {@link DsRecordCardDeduper} 本来就按 {@code sort_order} 仲裁成一份。
+ * <p>要彻底闭合得把 {@code scopeLines} 从「共享产品轴值的卡片」扩成「<b>贡献到任一 effective 轴值</b>
+ * 的卡片」—— 那需要先投影完才知道是哪些卡片，即<b>两轮投影</b>（第二轮多 1 条常数 SQL 取剩余卡片的
+ * 组件数据）。🚦 那是增量重算语义的扩张，<b>未经用户裁决不许自行做</b>。
+ *
  * <h3>🚫 N+1 硬指标</h3>
  * SQL 条数 = 4（单头 + 明细行 + 组件数据 + 客户号）+ 3（绑定解析）
  * + 每张命中 sheet 的 (1 读基底 + 1 整组删 + ceil(行数/500) 批量插)。
@@ -175,6 +200,12 @@ public class DsQuoteRecordService {
         for (Map.Entry<UUID, String> e : axisByLine.entrySet()) {
             if (e.getValue() != null && touchedAxes.contains(e.getValue())) scopeLines.add(e.getKey());
         }
+        // 🔴 D-46：本单**其它产品**的销售料号 —— 派生轴的护栏，见 §⑤ 的 acceptAxis 注释。
+        //    数据就在上面那条已发的 SQL 里（axisByLine 覆盖本单**全部**明细行），🚫 不新增查询。
+        Set<String> otherProductAxes = new LinkedHashSet<>();
+        for (String a : axisByLine.values()) {
+            if (a != null && !a.isBlank() && !touchedAxes.contains(a)) otherProductAxes.add(a);
+        }
 
         // ── ③ 组件数据（1 条 SQL）───────────────────────────────────────────────────
         @SuppressWarnings("unchecked")
@@ -204,6 +235,11 @@ public class DsQuoteRecordService {
         Map<String, Map<String, List<DsRecordRow>>> bySheet = new LinkedHashMap<>();
         Map<String, Set<String>> scopeColumnsBySheet = new LinkedHashMap<>();
         Map<String, Set<String>> grainColumnsBySheet = new LinkedHashMap<>();
+        // D-46 留痕：派生轴（树闭包）与被护栏挡下的轴。🚫 不许静默 —— 这两个数字就是本次
+        //           写入面比「产品轴值」多出/少掉多少的唯一可观测量。
+        Set<String> derivedAxes = new LinkedHashSet<>();
+        Set<String> crossProductSkippedAxes = new LinkedHashSet<>();
+        int crossProductSkippedRows = 0;
         for (Object[] r : compData) {
             UUID lineId = (UUID) r[0];
             UUID compId = (UUID) r[1];
@@ -220,7 +256,12 @@ public class DsQuoteRecordService {
             grainColumnsBySheet.computeIfAbsent(table, k -> new LinkedHashSet<>()).addAll(b.grainColumns());
             Map<String, List<DsRecordRow>> byAxis = bySheet.computeIfAbsent(table, k -> new LinkedHashMap<>());
             for (DsRecordRow row : rows) {
-                if (!touchedAxes.contains(row.axisValue)) continue;   // 别的组的行（BOM 树跨组）不在本次范围
+                if (!acceptAxis(row.axisValue, touchedAxes, otherProductAxes)) {
+                    crossProductSkippedRows++;
+                    crossProductSkippedAxes.add(row.axisValue);
+                    continue;
+                }
+                if (!touchedAxes.contains(row.axisValue)) derivedAxes.add(row.axisValue);
                 row.lineItemId = lineId;                              // D-43：记住是哪张卡片投的
                 byAxis.computeIfAbsent(row.axisValue, k -> new ArrayList<>()).add(row);
             }
@@ -275,8 +316,27 @@ public class DsQuoteRecordService {
 
         Summary s = new Summary(bySheet.size(), axisCount, totalRows, unanchored);
         LOG.infof("[ds-record] quotation=%s 写入 _record：sheets=%d axes=%d rows=%d unanchored=%d "
-                        + "crossCardDeduped=%d (sql 与产品数/轴值数无关)",
-                quotationId, s.sheets(), s.axes(), s.rows(), s.unanchoredRows(), dedupedRows);
+                        + "crossCardDeduped=%d treeDerivedAxes=%d%s crossProductAxisSkipped=%d%s"
+                        + " (sql 与产品数/轴值数无关)",
+                quotationId, s.sheets(), s.axes(), s.rows(), s.unanchoredRows(), dedupedRows,
+                derivedAxes.size(), derivedAxes.isEmpty() ? "" : " " + derivedAxes,
+                crossProductSkippedRows,
+                crossProductSkippedAxes.isEmpty() ? "" : " " + crossProductSkippedAxes);
+        // D-46：派生轴 = 本次写入面比「产品销售料号」多出来的组。财务在回填预览里会看到它们
+        //       （预览的组直接来自 _record 的轴值，见 DsBackfillCollector#readRecords）
+        //       ⇒ 🚫 不是静默扩大写入面。这条单独打是为了让「多出来的到底是哪几个」可查。
+        if (!derivedAxes.isEmpty()) {
+            LOG.infof("[ds-record] quotation=%s treeDerivedAxes=%d %s —— BOM 树闭包的**中间件**轴值组"
+                            + "（树页签行主轴是 spine 节点、轴值=父件料号）。这些组本次一并重写，"
+                            + "核价通过时会随本单一起回填升版。",
+                    quotationId, derivedAxes.size(), derivedAxes);
+        }
+        if (crossProductSkippedRows > 0) {
+            LOG.infof("[ds-record] quotation=%s crossProductAxisSkipped=%d 行 axes=%s —— 轴值是本单"
+                            + "**另一个产品**的销售料号，那个组归它自己的卡片管（本次不在 scopeLines 里）"
+                            + "⇒ 本次不写，等那张卡片自己保存时写。🚫 这不是数据丢失。",
+                    quotationId, crossProductSkippedRows, crossProductSkippedAxes);
+        }
         return s;
     }
 
@@ -370,6 +430,37 @@ public class DsQuoteRecordService {
                         "SELECT c.code FROM quotation q JOIN customer c ON c.id = q.customer_id WHERE q.id = :id")
                 .setParameter("id", quotationId).getResultList();
         return r.isEmpty() || r.get(0) == null ? null : String.valueOf(r.get(0));
+    }
+
+    /**
+     * <b>这个轴值组，本次要不要重写</b>（D-46 · 本次写入面的唯一判据）。
+     *
+     * <h3>三条规则，按序</h3>
+     * <ol>
+     *   <li>{@code axis ∈ touchedAxes} —— 本次变更产品（及同料号同伴卡片）的组。<b>必写</b>；</li>
+     *   <li>{@code axis ∈ otherProductAxes} —— 轴值恰好是本单<b>另一个产品</b>的销售料号
+     *       （该产品既是成品、又是本产品的下阶件）。<b>不写</b>：那个组归它自己的卡片管，
+     *       而那张卡片不在本次 {@code scopeLines} 里 ⇒ 放行会让 {@code deleteGroups}
+     *       整组删掉它的投影、只写回本卡片这一份 ⇒ <b>静默丢它的行</b>
+     *       （正是 {@code scopeLines} 当初要防的形态）。等那个产品自己被保存时再写；</li>
+     *   <li>其余 —— <b>树闭包派生轴</b>（中间件料号）。<b>必写</b>：这些行是本单卡片从本单
+     *       {@code snapshot_rows} 投出来的，🚫 不该因为「不是产品料号」被丢 ——
+     *       丢了就是 D-46（物料BOM 从来没被回填过）。</li>
+     * </ol>
+     *
+     * <h3>🚨 ②③ 的先后不许调换</h3>
+     * 一个轴值可以同时是「另一个产品的销售料号」和「本产品的树闭包派生轴」——
+     * 组合产品单里这恰恰是<b>常态</b>。此时必须走 ②（不写），因为该组的<b>权威贡献者</b>
+     * 是那张不在 scope 里的卡片；按 ③ 放行等于用局部投影覆盖整组。
+     *
+     * @param axis             投影行算出的轴值（{@code DsRecordProjector#resolveAxis}）
+     * @param touchedAxes      本次变更明细行的产品销售料号
+     * @param otherProductAxes 本单<b>其余</b>明细行的产品销售料号（已剔除 touchedAxes）
+     */
+    static boolean acceptAxis(String axis, Set<String> touchedAxes, Set<String> otherProductAxes) {
+        if (axis == null || axis.isBlank()) return false;
+        if (touchedAxes.contains(axis)) return true;
+        return !otherProductAxes.contains(axis);
     }
 
     static Map<String, ColumnDef> colDefsOf(SheetDef sheet) {

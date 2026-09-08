@@ -254,9 +254,7 @@ public final class DsRecordProjector {
      * 组装一行 {@link DsRecordRow}。{@code driverRow} 可为 null（只活在 {@code row_data} 里的行：
      * 纯 INPUT 页签行 / 手动新增行）。
      *
-     * <p>轴值取值顺序：{@code driverRow.hf_part_no} → {@code row_data.hf_part_no}
-     * → 页签表征的轴列值 → 产品卡片销售料号。
-     * <b>后两级是给「只活在 row_data 的行」准备的</b> —— 它们没有 driver 侧，拿不到 {@code hf_part_no}。
+     * <p>轴值取值顺序见 {@link #resolveAxis}（D-46 后：<b>本 sheet 轴列的实际值优先</b>）。
      */
     private static void addRow(List<DsRecordRow> out, DsSheetBinding binding, String axisColumn,
                                JsonNode driverRow, JsonNode flatRow, String fallbackAxis, int sortOrder,
@@ -297,14 +295,52 @@ public final class DsRecordProjector {
         out.add(row);
     }
 
+    /**
+     * 这一行落在哪个<b>轴值组</b>（{@code _record} 的组粒度 = {@code (quotation_id, 客户号, 轴值)}）。
+     *
+     * <h3>🔴 D-46：优先级原本是反的（2026-09-08 主线亲验抓到，第三个洞）</h3>
+     * 原顺序是 {@code driverRow.hf_part_no} → {@code row_data.hf_part_no} → <b>轴列实际值</b> → 兜底。
+     * <p>🔑 权威的是「<b>这一行在本 sheet 的轴列上填的是什么</b>」——
+     * {@code _record} 要落进 {@code sheet.axisColumn} 的就是这个值（见
+     * {@code DsQuoteRecordService#insertRows}：轴列一律写 {@code row.axisValue}）。
+     * {@code hf_part_no} 只是 driver 视图的<b>通用</b>列，它跟轴列是不是同一回事，<b>由页签语义决定</b>。
+     *
+     * <h3>实证：两者在 13 个页签上恒等，只有树页签分叉</h3>
+     * <pre>
+     *   QT-20260908-0615 全部组件 snapshot_rows 逐行比对 hf_part_no vs 「*_销售料号」：
+     *     物料BOM(树)      同 0 / 异 14   ← 唯一分叉点
+     *     物料与元素BOM     同 8 / 异 0
+     *     其余 11 个页签    同 5 / 异 0（每个）
+     * </pre>
+     * 树页签的 driver 语义是 {@code (parent_no=父件, hf_part_no=子件)}，而主表
+     * {@code ds_quote_material_bom} 的轴列 {@code material_no} 是<b>父件</b>
+     * （实测边行 {@code (material_no=T260907T-RM01, input_material_no=T260907T-RM03)}）
+     * ⇒ 老顺序把每条 BOM 边行的轴值算成<b>子件</b>，全部落在别的组里
+     * ⇒ 被 {@code DsQuoteRecordService} 的组过滤丢掉
+     * ⇒ {@code ds_quote_material_bom_record} 实测 <b>64 行 100% 是合成根行</b>
+     * （{@code input_material_no} 全 NULL，涉 30 张单），<b>一条真实 BOM 边行都没有</b>
+     * ⇒ 物料BOM 从来没有被报价单回填过。D-45 堵掉根行之后它会恒为 0 行 ——
+     * <b>不是 D-45 造成的，是 D-45 掩盖了它</b>。
+     *
+     * <h3>为什么取 {@code columnValues} 而不是 {@code anchorValues}</h3>
+     * {@code anchorValues}（driver 原值）是<b>行身份</b>键（见类注释「锚点键不能用叠加编辑的整行内容」）；
+     * 「这一行属于哪个组」问的是<b>当前状态</b>，与 {@code insertRows} 真正写进轴列的值必须是同一个。
+     * 🚫 两者不许混用：身份键用当前值会让改数的行锚不上（已实证的翻倍事故），
+     * 组键用原值则会让行写进 A 组、轴列却显示 B 值。
+     *
+     * <p>后两级（{@code hf_part_no} / {@code fallbackAxis}）现在是<b>纯兜底</b>：
+     * 页签没表征轴列时（{@code fieldToColumn} 里没有 {@code axisColumn}）才会走到，
+     * 「只活在 {@code row_data} 的行」也靠它们。
+     */
     private static String resolveAxis(JsonNode driverRow, JsonNode flatRow, DsRecordRow row,
                                       String axisColumn, String fallbackAxis) {
+        // 🔑 D-46：本 sheet 轴列在这一行上的实际值 = 权威。🚫 不许再把 hf_part_no 提到它前面。
+        Object axis = axisColumn == null ? null : row.columnValues.get(axisColumn);
+        if (axis != null && !String.valueOf(axis).isBlank()) return String.valueOf(axis);
         String hf = driverRow == null ? null : driverRow.path("hf_part_no").asText(null);
         if (hf != null && !hf.isBlank()) return hf;
         hf = flatRow == null ? null : flatRow.path("hf_part_no").asText(null);
         if (hf != null && !hf.isBlank()) return hf;
-        Object axis = axisColumn == null ? null : row.columnValues.get(axisColumn);
-        if (axis != null && !String.valueOf(axis).isBlank()) return String.valueOf(axis);
         return fallbackAxis;
     }
 

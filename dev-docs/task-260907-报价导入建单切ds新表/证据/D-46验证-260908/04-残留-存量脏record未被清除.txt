@@ -1,0 +1,23 @@
+# 残留（本轮**未处理**，与 D-45 的 03 号残留同源，交主线裁决）
+# 采集时刻 2026-09-08 04:18 -07:00，库 cpq_db_0724
+
+SELECT count(*) 总行,
+       count(*) FILTER (WHERE input_material_no IS NULL)     合成根行,
+       count(*) FILTER (WHERE input_material_no IS NOT NULL) 真实边行,
+       count(DISTINCT quotation_id) 涉及单数
+FROM ds_quote_material_bom_record;
+
+ 总行 | 合成根行 | 真实边行 | 涉及单数
+------+----------+----------+----------
+   68 |       62 |        6 |       30
+
+  其中「真实边行 6」= 本次重算的 QT-20260908-0615 一张单（该单已 0 合成根行）；
+  「合成根行 62」= 其余 29 张单的**存量脏行**，由老代码写入，本次代码改动**不会自动清掉**
+  —— 只有那些单再被保存/重算一次才会被 deleteGroups 整组覆盖。
+  ⚠️ 这些行 input_material_no IS NULL 且 origin_id IS NULL，
+     核价通过时会被当「新增行」追加进 ds_quote_material_bom（D-45 已实证的形态）。
+  ⇒ 是否要为存量单做一次性重算 / 清理，本轮未动、无批准权，报主线。
+
+# 对照组（健康）：
+SELECT count(*), count(*) FILTER (WHERE material_no IS NULL), count(DISTINCT quotation_id)
+FROM ds_quote_element_bom_record;   →  186 | 0 | 72
