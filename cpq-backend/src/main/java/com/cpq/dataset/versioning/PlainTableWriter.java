@@ -43,15 +43,31 @@ public class PlainTableWriter {
     /** @param inserted 新增行数 @param updated 覆盖行数 */
     public record UpsertResult(int inserted, int updated) {}
 
-    public UpsertResult upsert(SheetDef sheet, List<Map<String, Object>> rows,
+    /**
+     * task-260907 · B-1/B-4：{@code customerNo} 是<b>报价侧</b>免版本表的客户维度值
+     * （来源 = 导入时选的客户，不来自 Excel）。
+     *
+     * <p>核价两套（{@code sheet.customerScoped() == false}）<b>原样忽略</b>该入参，
+     * 生成的 SQL 与改动前逐字相同（AC-6）。
+     * <p>🚫 报价侧传空 = 立刻抛，不许静默写 NULL（AC-4）。
+     */
+    public UpsertResult upsert(SheetDef sheet, String customerNo, List<Map<String, Object>> rows,
                                String source, String operator) {
         if (rows == null || rows.isEmpty()) return new UpsertResult(0, 0);
         if (sheet.versioned) {
             throw new IllegalArgumentException("带版本表不得走覆盖写入器: " + sheet.tableName);
         }
+        boolean scoped = sheet.customerScoped();
+        if (scoped && (customerNo == null || customerNo.isBlank())) {
+            throw new BusinessException(400,
+                    "报价侧写入必须提供客户编号（customer_no）: " + sheet.tableName);
+        }
         String table = SqlIdent.of(sheet.tableName);
 
-        List<String> pk = sheet.primaryKeyColumns;
+        // ⚠️ ON CONFLICT 目标取 conflictKeyColumns()（B-6 后 = uq_ds_quote_material 的
+        //    (customer_no, material_no)），🚫 不是 primaryKeyColumns —— 后者还被 Phase 1 的
+        //    「同一份 Excel 内主键重复」校验按 Excel 列取值，掺进 customer_no 会让那条校验整表跳过。
+        List<String> pk = sheet.conflictKeyColumns();
         if (pk.isEmpty()) {
             // 明确报错好过静默重复插入：免版本表没主键 = Registry 漏了 R-2
             throw new BusinessException(500,
@@ -65,10 +81,12 @@ public class PlainTableWriter {
         //    已经把「同一份 Excel 内主键重复」整份拒收了（原来的静默丢行是 D-28 要修的 bug）。
         //    保留本段是兜底：维护端保存等非导入调用方仍可能传进重复行，去重比让 PG 抛 500 好。
         //    🚫 别把它当成「重复是允许的」—— 允许与否由 Phase 1 说了算。
+        // 去重键仍按【Excel 里的业务主键】—— 一次导入的全部行同属一个客户，
+        // 掺进 customer_no 不改变结果，反而让去重口径与 Phase 1 的查重口径分叉。
         Map<String, Map<String, Object>> deduped = new LinkedHashMap<>();
         for (Map<String, Object> r : rows) {
             StringBuilder key = new StringBuilder();
-            for (String c : pk) key.append(KEY_SEP).append(String.valueOf(r.get(c)));
+            for (String c : sheet.primaryKeyColumns) key.append(KEY_SEP).append(String.valueOf(r.get(c)));
             deduped.put(key.toString(), r);
         }
         List<Map<String, Object>> flat = new ArrayList<>(deduped.values());
@@ -77,6 +95,9 @@ public class PlainTableWriter {
         List<String> allCols = new ArrayList<>();
         for (ColumnDef c : dbCols) allCols.add(SqlIdent.of(c.name));
         allCols.addAll(SYS_COLUMNS);
+        // 🚨 task-260907 · B-1 ④：customer_no 是静态系统列、不在 persistedColumns 里，
+        //    这里不显式加 = 列建了、值恒 NULL（而且 NOT NULL 会让整条 INSERT 失败）。
+        if (scoped) allCols.addAll(SheetDef.CUSTOMER_COLUMNS);
 
         List<String> setClauses = new ArrayList<>();
         for (ColumnDef c : dbCols) {
@@ -95,6 +116,11 @@ public class PlainTableWriter {
         setClauses.add("source = EXCLUDED.source");
         setClauses.add("updated_at = now()");
         setClauses.add("updated_by = EXCLUDED.updated_by");
+        // customer_no 若已在冲突目标里（物料表，B-6）则不更新；若不在（电镀方案表，其 uq 与客户无关，
+        // B-6 明令不动），按免版本表「整行覆盖」的既有语义随行更新。
+        if (scoped && !pk.contains(SheetDef.CUSTOMER_COLUMN)) {
+            setClauses.add(SheetDef.CUSTOMER_COLUMN + " = EXCLUDED." + SheetDef.CUSTOMER_COLUMN);
+        }
 
         java.time.OffsetDateTime now = java.time.OffsetDateTime.now();
         int inserted = 0, updated = 0;
@@ -126,7 +152,8 @@ public class PlainTableWriter {
                 q.setParameter("p" + i + "_" + c++, source);
                 q.setParameter("p" + i + "_" + c++, operator);
                 q.setParameter("p" + i + "_" + c++, now);
-                q.setParameter("p" + i + "_" + c, operator);
+                q.setParameter("p" + i + "_" + c++, operator);
+                if (scoped) q.setParameter("p" + i + "_" + c, customerNo);
             }
             @SuppressWarnings("unchecked")
             List<Object> flags = q.getResultList();

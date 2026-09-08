@@ -306,7 +306,10 @@ class DatasetStructureAcTest extends DatasetAcTestBase {
         //    **客户编号 + 客户产品编号**（与现有 uq_mcm_quote_cust_prod 对齐，防跨客户串号），
         //    不再是旧稿的「客户产品编号 + 销售料号」。
         List<Pk> pks = List.of(
-                new Pk("ds_quote_material", List.of("material_no")),
+                // task-260907 · B-6：uq_ds_quote_material 由 (material_no) 扩成
+                // (customer_no, material_no)。这里同步收紧期望 —— 🚫 不是放宽：
+                // 探针仍然必须被唯一性拦住，只是拦的键多了一维。
+                new Pk("ds_quote_material", List.of("customer_no", "material_no")),
                 new Pk("ds_cost_basic_material", List.of("production_no")),
                 new Pk("ds_cost_detail_material", List.of("production_no")),
                 new Pk("ds_quote_customer_part", List.of("customer_no", "customer_product_no")),
@@ -434,6 +437,15 @@ class DatasetStructureAcTest extends DatasetAcTestBase {
         // source 有默认值，其余可空列不填；用 seq 制造「非键列不同」以证明拦的是键而不是整行
         cols.add("source");
         vals.add("'IMPORT'");
+        // task-260907 · B-1：报价侧表新增 customer_no（NOT NULL 无默认值）。
+        // 不补值的话探针会先撞 not-null 约束，rootMessage 里根本看不到 "duplicate key"
+        // ⇒ 本用例会以「抛出的不是唯一性冲突」的形态红掉 —— 那是探针没写对，不是唯一性坏了。
+        // 🚫 两条探针必须用【同一个】客户号：不同客户号在复合唯一键下本来就不该冲突，
+        //    那样第二条会插入成功，用例转而报「唯一性未生效」—— 同样是假红。
+        if (!cols.contains("customer_no") && columnExists(table, "customer_no")) {
+            cols.add("customer_no");
+            vals.add("'" + P + "UQPROBE'");
+        }
         if (columnExists(table, "material_name")) {
             cols.add("material_name");
             vals.add("'探针" + seq + "'");

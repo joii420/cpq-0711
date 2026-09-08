@@ -52,7 +52,15 @@ public class CostingTreeSqlValidator {
         } catch (IllegalArgumentException e) {
             return new Result(false, "递归 SQL 的 :versionFilter 宏语法错误: " + e.getMessage());
         }
-        String probe = "SELECT * FROM (" + forValidation.replace(":production_part_nos", "ARRAY[]::text[]") + ") q LIMIT 0";
+        // task-260907 · B-7a：:customerCode 同样要加桩。dry-run 走裸 JDBC，模板里留一个未绑定的
+        // :customerCode 会让 PG 直接报语法错（`:` 在 PG 里不是占位符语法），保存报价树配置当场失败——
+        // 而报出来的错长得像「SQL 写错了」，排查方向会整个跑偏到模板上。
+        // 桩值用 NULL::varchar 而不是某个具体客户码：dry-run 只验「可执行 + 输出列齐」，
+        // 外层还有 LIMIT 0，不产生也不需要真实数据行。
+        String probe = "SELECT * FROM ("
+                + forValidation.replace(":production_part_nos", "ARRAY[]::text[]")
+                              .replace(":customerCode", "NULL::varchar")
+                + ") q LIMIT 0";
         try (Connection c = dataSource.getConnection();
              PreparedStatement ps = c.prepareStatement(probe);
              ResultSet rs = ps.executeQuery()) {

@@ -14,6 +14,7 @@ import com.cpq.dataset.support.DatasetGroupLock;
 import com.cpq.dataset.support.DatasetValues;
 import com.cpq.dataset.support.DsMasterTables;
 import com.cpq.dataset.support.SqlIdent;
+import com.cpq.dataset.versioning.AxisKey;
 import com.cpq.dataset.versioning.VersionedGroupWriter;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -425,7 +426,9 @@ public class DatasetMaintenanceService {
     public DsRows readRows(String dataset, String axisValue, String sheetKey, Integer version) {
         DatasetRegistry reg = registry(dataset);
         SheetDef sd = versionedSheet(reg, sheetKey);
-        int current = writer.currentVersion(sd, axisValue);   // 0 = 从未有过数据
+        // task-260907：读路径暂无客户上下文（客户选择器由 task-260907-产品管理客户过滤 承接），
+        // 走跨客户口径 —— SQL 与改动前逐字相同，既有读行为零变化。
+        int current = writer.currentVersionAnyCustomer(sd, axisValue);   // 0 = 从未有过数据
 
         boolean latest = (version == null) || (current > 0 && version == current);
         DsRows dto = new DsRows();
@@ -737,9 +740,14 @@ public class DatasetMaintenanceService {
      */
     @Transactional
     public DsSaveRowsResult saveRows(String dataset, String axisValue, String sheetKey,
-                                     DsSaveRowsRequest req, String operator) {
+                                     DsSaveRowsRequest req, String operator, String customerNo) {
         DatasetRegistry reg = registry(dataset);
         SheetDef sd = versionedSheet(reg, sheetKey);
+        // task-260907 · B-4 / AC-4：报价侧保存必须带客户号，缺了就 400 —— 🚫 不许静默写 NULL。
+        if (sd.customerScoped() && (customerNo == null || customerNo.isBlank())) {
+            throw new BusinessException(400, "保存" + reg.datasetLabel() + "必须指定客户（customerNo）");
+        }
+        AxisKey axisKey = AxisKey.of(sd, customerNo, axisValue);
         List<Map<String, Object>> body = (req == null || req.rows == null) ? List.of() : req.rows;
 
         // 护栏：整组清空会让主表该轴值当前版本消失（版本号只剩在 _history 里），
@@ -757,7 +765,8 @@ public class DatasetMaintenanceService {
 
         // 步骤 2~4：先入临界区，再读当前版本、再比对 —— 顺序不可调换（见方法注释）。
         DatasetGroupLock.acquire(em, sd.tableName);
-        int current = writer.currentVersion(sd, axisValue);            // 0 = 从未有过数据
+        // 🚨 乐观锁必须与整组删除【同一口径】——写路径一律走复合轴，不能用跨客户的 max。
+        int current = writer.currentVersion(sd, axisKey);              // 0 = 从未有过数据
         int base = (req == null || req.baseVersion == null) ? 0 : req.baseVersion;
         if (base != current) {
             throw new DatasetVersionConflictException(
@@ -768,7 +777,7 @@ public class DatasetMaintenanceService {
         List<Map<String, Object>> rows = new ArrayList<>(body.size());
         for (Map<String, Object> src : body) rows.add(buildRow(reg, sd, axisValue, src));
 
-        VersionedGroupWriter.Result r = writer.writeGroup(sd, axisValue, rows,
+        VersionedGroupWriter.Result r = writer.writeGroup(sd, axisKey, rows,
             VersionedGroupWriter.SOURCE_MANUAL, VersionedGroupWriter.REASON_MANUAL_UPGRADE, operator);
         return new DsSaveRowsResult(r.result(), r.versionNo(), r.rowCount(),
             resultMessage(r.result(), r.versionNo()));
@@ -966,11 +975,17 @@ public class DatasetMaintenanceService {
      */
     @Transactional
     public DsPartPatchResult updatePart(String dataset, String axisValue,
-                                        Map<String, Object> patch, String operator) {
+                                        Map<String, Object> patch, String operator, String customerNo) {
         DatasetRegistry reg = registry(dataset);
         SheetDef material = materialSheet(reg);
         String table = SqlIdent.of(material.tableName);
         String axis = SqlIdent.of(reg.axisColumn());
+        // task-260907：报价侧物料表的唯一键已是 (customer_no, material_no)（B-6）⇒ 同一料号可能
+        // 在多个客户下各有一行。传了客户号就按它收窄；没传则维持改动前的行为（跨客户）。
+        // ⚠️ 不传时若该料号确实跨了多个客户，下面的回读会抛 NonUniqueResult —— 这正是
+        //    task-260907-产品管理客户过滤 要补的客户选择器所解决的问题，本任务只负责能接收并透传。
+        boolean scoped = material.customerScoped() && customerNo != null && !customerNo.isBlank();
+        String custPred = scoped ? " AND " + SheetDef.CUSTOMER_COLUMN + " = :cust" : "";
 
         if (axisValue == null || axisValue.isBlank()) {
             throw new BusinessException(400, "缺少料号");
@@ -1008,21 +1023,23 @@ public class DatasetMaintenanceService {
 
         // 🚫 刻意不写 source —— 保持原值（AC-65 ④）。updated_at / updated_by 是审计列，必须更新。
         String sql = "UPDATE " + table + " SET " + String.join(", ", setSql)
-                   + ", updated_at = now(), updated_by = :op WHERE " + axis + " = :axis";
+                   + ", updated_at = now(), updated_by = :op WHERE " + axis + " = :axis" + custPred;
         Query q = em.createNativeQuery(sql);
         for (Map.Entry<String, Object> b : bind.entrySet()) q.setParameter(b.getKey(), b.getValue());
         q.setParameter("op", operator);
         q.setParameter("axis", axisValue);
+        if (scoped) q.setParameter("cust", customerNo);
         int affected = q.executeUpdate();
         if (affected == 0) {
             throw new BusinessException(404, "料号不存在: " + axisValue);
         }
 
         // 回读审计信息（第 2 条也是最后一条 SQL）
-        Object[] back = (Object[]) em.createNativeQuery(
-                "SELECT updated_at, source FROM " + table + " WHERE " + axis + " = :axis")
-            .setParameter("axis", axisValue)
-            .getSingleResult();
+        Query bq = em.createNativeQuery(
+                "SELECT updated_at, source FROM " + table + " WHERE " + axis + " = :axis" + custPred)
+            .setParameter("axis", axisValue);
+        if (scoped) bq.setParameter("cust", customerNo);
+        Object[] back = (Object[]) bq.getSingleResult();
 
         DsPartPatchResult out = new DsPartPatchResult();
         out.dataset = reg.datasetKey();

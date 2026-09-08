@@ -60,13 +60,19 @@ public class DatasetImportResource {
      * <p>返回类型是 {@link Response} 而不是 {@code ApiResponse}：校验失败要返回 400 <b>并带上
      * 逐条错误清单</b>，而项目现有的 {@code GlobalExceptionMapper} 只认它自己登记过的异常子类。
      * 就地组装 Response 可以完全不碰那个现有文件（D-13）。
+     *
+     * <p><b>task-260907 · B-4</b>：新增 multipart 字段 {@code customerNo}（{@code customer.code}，
+     * 如 {@code CUST-0001}）。<b>报价侧必填</b>，缺失 400；核价两套忽略该字段，契约不变。
+     * 🚩 这是本任务对 HTTP 契约的<b>唯一</b>加法 —— 报价侧写入没有它就无法确定客户维度，
+     * 而「先写进去、customer_no 留空」正是必须避免的失败形态。
      */
     @POST
     @Path("/{dataset}/import")
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     @RoleAllowed({"PRICING_MANAGER", "SYSTEM_ADMIN"})
     public Response importExcel(@PathParam("dataset") String dataset,
-                                @RestForm("file") FileUpload file) {
+                                @RestForm("file") FileUpload file,
+                                @RestForm("customerNo") String customerNo) {
         DatasetRegistry reg = registries.byKey(dataset);
         if (reg == null) throw new BusinessException(404, "数据集不存在: " + dataset);
         if (file == null) throw new BusinessException(400, "file 不能为空");
@@ -85,7 +91,7 @@ public class DatasetImportResource {
 
         try {
             DatasetImportResultDTO result =
-                    importService.importExcel(reg, file.fileName(), bytes, userId, operator);
+                    importService.importExcel(reg, file.fileName(), bytes, userId, operator, customerNo);
             return Response.ok(ApiResponse.success(result)).build();
         } catch (DatasetValidationException ve) {
             // Phase 1 拒收：一行未写，返回全部错误（AC-6/7/8/9/10/34/40/45/46）
