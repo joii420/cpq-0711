@@ -875,6 +875,38 @@ public abstract class Task260907RBase {
      * 以及复合轴下「表征同一组」的通用要求）。
      */
     protected Fx newSubmittedOrderForCustomer(String label, Fx owner, String materialNo, List<EbomRow> rows) {
+        Fx fx = newFixtureForCustomer(label, owner);
+        if (!axisOwner.containsKey(materialNo)) axisOwner.put(materialNo, fx);
+        return submitOrderOn(fx, label, materialNo, rows);
+    }
+
+    /**
+     * 在<b>已存在</b>的 {@code owner} 客户名下建一张 <b>DRAFT</b> 报价单（不 saveDraft、不 submit）。
+     *
+     * <h3>🚨 什么时候必须用它，而不是 {@link #newFixture}</h3>
+     * 轴是复合的 {@code (customer_no, material_no)}。凡是<b>先用别的单把主表基底组种出来、
+     * 再建一张单去表征它</b>的用例，两张单<b>必须同客户</b>，否则它们指向<b>两个不同的组</b>。
+     *
+     * <p>🔬 <b>2026-09-08 实证，代价很大，值得写在这里</b>：
+     * {@code PartialColumnScopeAcTest} 的 t13b/t03 用 {@code seedMainViaCreatedOrder}（客户甲）
+     * 种基底，却用 {@code newFixture}（<b>客户乙</b>）建表征单 ⇒ 复合轴不同 ⇒
+     * {@code DsMainTableReader} 按 {@code customer_no} 收窄后<b>查不到基底组</b> ⇒
+     * {@code baseRowCount=0} ⇒ 判 {@code CREATED} ⇒ 新组只由 {@code _record} 拼出来，
+     * 而 {@code _record} 只含页签暴露的 5 列 ⇒ <b>未暴露的 7 列必然 NULL</b>。
+     *
+     * <p>⚠️ 症状是「AC-13② 的 AP-60 列维度守卫红了」，且时间线完美吻合
+     * （合并前无客户过滤 ⇒ 绿；合并后收窄 ⇒ 红）——
+     * <b>我、主线、后端三方最初都判成了产品回归</b>。
+     * 🔑 <b>「合并前绿、合并后红」既可能是产品回归，也可能是夹具的隐含前提被合并打破了，
+     * 两者在症状上分不开。</b>
+     * 🚨 更贵的是：若真去「修」实现（把 7 列塞进 {@code _record} / 放宽取列范围），
+     * 断言会变绿而 <b>AC-13② 从此恒真</b> —— 一个夹具问题被改成产品缺陷，还全绿。
+     *
+     * <p>🚫 {@link #newSubmittedOrderForCustomer} 在此不适用：那个会 saveDraft + submit 走标准模板，
+     * 而 t13b/t03 要的是挂<b>自造部分列模板</b>的 DRAFT 单。
+     */
+    protected Fx newFixtureForCustomer(String label, Fx owner) {
+        assertNotNull(owner.customerId(), "newFixtureForCustomer 需要一个带真实客户的 owner");
         UUID qid = UUID.randomUUID();
         String qno = PREFIX + "QT-" + qid.toString().substring(0, 8);
         inTx(() -> {
@@ -891,9 +923,7 @@ public abstract class Task260907RBase {
                     .executeUpdate();
         });
         createdQuotations.add(qid);
-        Fx fx = new Fx(owner.customerId(), owner.customerNo(), qid, qno);
-        if (!axisOwner.containsKey(materialNo)) axisOwner.put(materialNo, fx);
-        return submitOrderOn(fx, label, materialNo, rows);
+        return new Fx(owner.customerId(), owner.customerNo(), qid, qno);
     }
 
     /** 在给定 Fx 上 saveDraft + submit，并断言 {@code _record} 非空（否则后续断言空跑）。 */

@@ -74,7 +74,7 @@ class PartialColumnScopeAcTest extends Task260907RBase {
         // ══ 前置 1：先用**现网全列模板**把主表这一组造出来（12 列都有值）
         //    ⇒ 之后才谈得上「未暴露的 7 列有没有被抹掉」。全 NULL 的话断言仍是空跑。
         String mat = PREFIX + "COL-" + UUID.randomUUID().toString().substring(0, 6);
-        seedMainViaCreatedOrder("AC13bSeed", mat, List.of(
+        Fx seeder = seedMainViaCreatedOrder("AC13bSeed", mat, List.of(
                 new EbomRow(1, PREFIX + "EL1", "10.0", "1.1"),
                 new EbomRow(2, PREFIX + "EL2", "20.0", "2.2")));
 
@@ -90,11 +90,17 @@ class PartialColumnScopeAcTest extends Task260907RBase {
         buildPartialColumnTemplate();
 
         // ══ 操作：用部分列模板建单，只改 content_pct（5 列里的一个），提交并确认
-        Fx fx = newFixture("AC13b");
+        // 🔴 2026-09-08 修：必须建在**基底组的归属客户**名下。
+        //    原写 newFixture(...) 会新建客户 ⇒ 复合轴 (customer_no, material_no) 不同
+        //    ⇒ 查不到基底组 ⇒ baseRowCount=0 判 CREATED ⇒ 新组只由 _record 拼出来，
+        //       而 _record 只含页签暴露的 5 列 ⇒ **未暴露的 7 列必然 NULL**。
+        //    症状恰好长得和「AP-60 列维度守卫失效」一模一样，我据此报过一次产品缺陷 —— 报错了。
+        Fx fx = newFixtureForCustomer("AC13b", seeder);
         requireStatusBeforeDiff(saveDraftPartial(fx, mat), 200, "T-13② saveDraft（部分列模板）");
         requireStatusBeforeDiff(submit(fx), 200, "T-13② submit");
 
         JsonNode g = findGroup(dsBackfill(ok(getPreview(fx.quotationId()), "T-13② 预览")), EBOM, mat);
+        assertBaseGroupWasFound(g, "T-13② 的料号组 " + mat);
         assertNotNull(g, "T-13②：预览里应出现轴值 " + mat + " 的组（组件没绑上则说明自造模板不成立）");
         System.out.println("[T-13②] 预览组形状 = " + g);
 
@@ -137,6 +143,40 @@ class PartialColumnScopeAcTest extends Task260907RBase {
     // ─────────────────────────── 自造配置 ───────────────────────────
 
     /** 复制源组件 → 砍到 5 列 → 建专属模板并挂上。🚫 全程不修改源组件/源模板。 */
+    /**
+     * 🚨 <b>前提阳性对照（后端建议、主线要求，本类两条用例都必须先过这一关）。</b>
+     *
+     * <p>判据：{@code baseRowCount > 0} <b>且</b> {@code result != "CREATED"}。
+     *
+     * <h3>不打这一枪会怎样（2026-09-08 实证，代价很大）</h3>
+     * 夹具跨客户时复合轴 {@code (customer_no, material_no)} 对不上 ⇒ <b>查不到基底组</b>
+     * ⇒ {@code baseRowCount=0} ⇒ 判 {@code CREATED} ⇒ 新组只由 {@code _record} 拼出来。
+     * 此时：
+     * <ul>
+     *   <li>「未暴露的 7 列被写 NULL」<b>必然发生</b> —— 因为<b>根本没有基底可以「原样保留」</b>；</li>
+     *   <li>而这个症状与「AP-60 列维度守卫真的失效」<b>完全同形</b>；</li>
+     *   <li>🚨 更贵的是：顺着「产品缺陷」去修（把 7 列塞进 {@code _record} / 放宽取列范围），
+     *       断言会<b>变绿</b>，而 <b>AC-13② 从此恒真</b> —— 夹具问题被改成产品缺陷，还全绿。</li>
+     * </ul>
+     * ⇒ 本方法把「基底组真的被找到了」变成<b>显式前件</b>，让夹具错以夹具错的面目失败。
+     */
+    private void assertBaseGroupWasFound(JsonNode g, String what) {
+        int base = g.path("baseRowCount").asInt(-1);
+        String result = g.path("result").asText();
+        if (base <= 0 || "CREATED".equals(result)) {
+            org.junit.jupiter.api.Assertions.fail(
+                    "⛔ 前提未成立（**这是夹具错，不是产品缺陷**）：" + what
+                            + " 的基底组没被找到 —— baseRowCount=" + base + " result=" + result + "。\n"
+                            + "   最常见的原因：**表征单与基底组不同客户** ⇒ 复合轴 (customer_no, material_no)"
+                            + " 对不上 ⇒ readGroups 查不到基底 ⇒ 判 CREATED。\n"
+                            + "   ⇒ 用 newFixtureForCustomer(label, seeder) 建单，🚫 不要用 newFixture。\n"
+                            + "🚨 此时「未暴露的列被写 NULL」**必然发生**（没有基底可保留），"
+                            + "与 AP-60 守卫失效完全同形；\n"
+                            + "   🚫 **不许顺着这个症状去改实现** —— 把列塞进 _record 或放宽取列范围会让断言变绿，"
+                            + "而 AC-13② 从此恒真。group=" + g);
+        }
+    }
+
     private void buildPartialColumnTemplate() {
         newComponentId = UUID.randomUUID();
         newTemplateId = UUID.randomUUID();
@@ -268,7 +308,7 @@ class PartialColumnScopeAcTest extends Task260907RBase {
 
         String mat = PREFIX + "EXT-" + UUID.randomUUID().toString().substring(0, 6);
         List<EbomRow> rows = List.of(new EbomRow(1, PREFIX + "EL1", "10.0", "1.1"));
-        seedMainViaCreatedOrder("AC3Seed", mat, rows);
+        Fx seeder = seedMainViaCreatedOrder("AC3Seed", mat, rows);
 
         int verBefore = intVal("SELECT max(version_no) FROM " + EBOM + " WHERE material_no = '" + mat + "'");
         List<Object> mainColsBefore = col("SELECT column_name FROM information_schema.columns "
@@ -279,7 +319,8 @@ class PartialColumnScopeAcTest extends Task260907RBase {
         buildComponentWithExtraField();
 
         String customValue = PREFIX + "自定义值-" + UUID.randomUUID().toString().substring(0, 6);
-        Fx fx = newFixture("AC3");
+        // 🔴 同 t13b：必须与基底组同客户，否则复合轴不同、查不到基底组，判 CREATED
+        Fx fx = newFixtureForCustomer("AC3", seeder);
         requireStatusBeforeDiff(saveDraftWithExtra(fx, mat, customValue), 200, "T-03 saveDraft");
 
         // ══ 🚨 阳性对照：extend_column 必须非空，否则本条整体是空跑 ══
@@ -306,6 +347,7 @@ class PartialColumnScopeAcTest extends Task260907RBase {
         // ══ AC-3③：只改自定义列 ⇒ 该组判 UNCHANGED、version_no 不变 ══
         requireStatusBeforeDiff(submit(fx), 200, "T-03 submit");
         JsonNode g = findGroup(dsBackfill(ok(getPreview(fx.quotationId()), "T-03 预览")), EBOM, mat);
+        assertBaseGroupWasFound(g, "T-03 的料号组 " + mat);
         assertNotNull(g, "T-03：预览里应出现轴值 " + mat + " 的组");
         System.out.println("[T-03] 预览组 = " + g);
         assertEquals("UNCHANGED", g.path("result").asText(),

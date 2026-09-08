@@ -85,6 +85,11 @@ class SelectionChainRegressionAcTest extends SelConfigAcTestBase {
         touchedQuotationIds.add(fxB.quotationId().toString());
         touchedQuotationIds.add(fxA.quotationId().toString());
 
+        // 🔑 报价模板必须由调用方显式绑（服务端不做匹配，见 bindQuoteTemplate 的说明）
+        UUID dsTpl = publishedDsTemplate();
+        bindQuoteTemplateMaster(fxB, dsTpl, "T-17 B 侧");
+        bindQuoteTemplate(fxA, dsTpl, "T-17 A 侧");
+
         Map<String, Object> body = submitBody(PREFIX + "T17", newPart(
                 "触点", "φ5", "5×3×2", "10",
                 List.of(material(RECIPE_A, CONFIG_A, "70"), material(RECIPE_B, CONFIG_B, "30")),
@@ -217,8 +222,10 @@ class SelectionChainRegressionAcTest extends SelConfigAcTestBase {
         //    ⇒ 选配单建出来了但**一个页签都没有**（dsBackfill.tables=0 且 nonParticipating=0，
         //       后者为 0 正是「压根没有组件被看到」的signature，不是「组件不参与」）。
         //    ⇒ 每个夹具客户各绑一张模板。
-        buildBuilderBoundTemplate(categoryId, fxB.customerId());
-        buildBuilderBoundTemplate(categoryId, fxA.customerId());
+        UUID tplB = buildBuilderBoundTemplate(categoryId, fxB.customerId());
+        UUID tplA = buildBuilderBoundTemplate(categoryId, fxA.customerId());
+        bindQuoteTemplateMaster(fxB, tplB, "T-17b B 侧");
+        bindQuoteTemplate(fxA, tplA, "T-17b A 侧");
         touchedQuotationIds.add(fxB.quotationId().toString());
         touchedQuotationIds.add(fxA.quotationId().toString());
 
@@ -291,7 +298,7 @@ class SelectionChainRegressionAcTest extends SelConfigAcTestBase {
      * {@code tabType / variantKey / dialect} 等坐标一律不动 —— 改了就解不出锚表。
      * <p>🚫 <b>全程只新增行，不改任何现网配置</b>（不动源组件、不动源模板、不动现网选配模板）。
      */
-    private void buildBuilderBoundTemplate(UUID categoryId, UUID customerId) {
+    private UUID buildBuilderBoundTemplate(UUID categoryId, UUID customerId) {
         boolean firstTime = (builderComponentId == null);
         if (firstTime) {
             builderComponentId = UUID.randomUUID();
@@ -363,8 +370,19 @@ class SelectionChainRegressionAcTest extends SelConfigAcTestBase {
         assertEquals(1L, nonNull,
                 "构造自检失败：自造组件的 component_sql_view.builder_config 应非空，实际非空行数 " + nonNull
                         + " ⇒ 后面「绑了 builder 组件」这个前提不成立，本用例什么都验不到");
+        // 🔑 自造模板必须**冻结**，否则绑定时返
+        //    409 TEMPLATE_NOT_FROZEN「该模板的渲染配置冻结快照为空」。
+        //    main-api.md §【模板】首次冻结：POST /templates/{id}/freeze，
+        //    🔒 零行守卫 —— 仅当 template_component_snapshot 行数为 0 时可用
+        //    ⇒ 结构上不可能覆盖已有快照，对现网模板无副作用。
+        Response fz = given().contentType(io.restassured.http.ContentType.JSON)
+                .post("/api/cpq/templates/" + templateId + "/freeze").thenReturn();
+        assertEquals(200, fz.statusCode(),
+                "T-17b：自造模板 " + templateId + " 冻结失败（HTTP " + fz.statusCode() + "）⇒ "
+                        + "后续绑定会返 409 TEMPLATE_NOT_FROZEN。body=" + fz.asString());
         System.out.println("[T-17b] 已造 builder 组件 " + builderComponentId + " / 视图 " + builderViewName
-                + " / 模板 " + templateId + " → 分类 " + categoryId + " · 客户 " + customerId);
+                + " / 模板 " + templateId + "（已冻结）→ 分类 " + categoryId + " · 客户 " + customerId);
+        return templateId;
     }
 
     /** 清掉自造的配置行（组件 / 视图 / 模板 / 挂载），🚫 只删本轮自己建的那几个 id。 */
@@ -390,6 +408,64 @@ class SelectionChainRegressionAcTest extends SelConfigAcTestBase {
             builderComponentId = null;
             builderTemplateIds.clear();
         }
+    }
+
+    /**
+     * 🔑 <b>把报价模板显式绑到报价单上 —— 这是唯一能生效的途径。</b>
+     *
+     * <h3>🕰️ 2026-09-08 主线查实现给出的答案（我此前三个假设全部建立在错的前提上）</h3>
+     * {@code ConfigureProductService} <b>根本不解析报价模板</b> —— 它的 import 只有
+     * {@code com.cpq.seltemplate.*}（<b>选配</b>模板），不碰 {@code com.cpq.template}（<b>报价</b>模板）。
+     * 报价模板是<b>调用方在请求体里显式传进来</b>的：
+     * {@code SaveDraftRequest.customerTemplateId} → {@code QuotationService:314-316}
+     * {@code validateTemplateBinding(id, "QUOTATION", null)} → {@code q.customerTemplateId = …}。
+     *
+     * <p>⇒ 我此前试的三条（只绑 {@code category_id} / 每客户一张 / 独立 {@code template_series_id}）
+     * <b>全部不可能成立</b>：{@code categoryId} 在该实现里命中 <b>0</b> 次。
+     * 📌 教训：<b>「挂不上」时先确认「到底有没有人在做匹配」，再去猜匹配键</b> ——
+     * 我连猜三轮，猜的是一个不存在的机制。
+     *
+     * <p>⚠️ 走真实的 {@code PUT /draft}（🚫 不用 SQL 直接 UPDATE）：那条路会过
+     * {@code validateTemplateBinding}，模板 {@code template_kind} 不对会在这里被明确拒绝，
+     * 而不是变成后面「一个页签都没有」的哑谜。
+     */
+    private void bindQuoteTemplate(Fx fx, UUID templateId, String what) {
+        String body = "{\"baseVersion\":0,\"customerTemplateId\":\"" + templateId + "\","
+                + "\"added\":[],\"modified\":[],\"removed\":[]}";
+        Response r = given().contentType(io.restassured.http.ContentType.JSON).body(body)
+                .put("/api/cpq/quotations/" + fx.quotationId() + "/draft").thenReturn();
+        assertEquals(200, r.statusCode(),
+                what + "：绑定报价模板 " + templateId + " 失败（HTTP " + r.statusCode() + "）。"
+                        + "⚠️ 若是 validateTemplateBinding 拒的，报错里会写清原因（多半是 template_kind "
+                        + "不是 QUOTATION）—— **先读它，别再猜匹配键**。body=" + r.asString());
+        Object bound = scalar("SELECT customer_template_id FROM quotation WHERE id = '"
+                + fx.quotationId() + "'");
+        assertEquals(String.valueOf(templateId), String.valueOf(bound),
+                what + "：绑定后 quotation.customer_template_id 应等于 " + templateId + "，实际 " + bound);
+    }
+
+    /** master 侧同样要绑（两侧必须用同一套模板，否则 A/B 比的是两个东西）。 */
+    private void bindQuoteTemplateMaster(Fx fx, UUID templateId, String what) {
+        String body = "{\"baseVersion\":0,\"customerTemplateId\":\"" + templateId + "\","
+                + "\"added\":[],\"modified\":[],\"removed\":[]}";
+        MasterSideHttp.R r = master.put("/api/cpq/quotations/" + fx.quotationId() + "/draft", body);
+        assertEquals(200, r.status(),
+                what + "：B 侧绑定报价模板失败（HTTP " + r.status() + "）。body="
+                        + MasterSideHttp.trim(r.body()));
+    }
+
+    /**
+     * 现网「能用的那一版」ds 原生报价模板。
+     * 🚨 <b>按 {@code version} 取，🚫 绝不按 {@code name}</b> —— 三张模板 {@code name} 一模一样
+     * （都写着 v1.0），按 name 会随机拿到 13 页签那版。
+     */
+    private UUID publishedDsTemplate() {
+        String id = scalar("SELECT id FROM template WHERE version = 'v1.2' AND status = 'PUBLISHED' "
+                + "AND template_kind = 'QUOTATION' ORDER BY updated_at DESC LIMIT 1");
+        assertTrue(id != null,
+                "前置：找不到 version='v1.2' 的 PUBLISHED 报价模板 —— 现网模板集变了，"
+                        + "本用例的夹具前提不成立（🚫 不要退而按 name 取）");
+        return UUID.fromString(id);
     }
 
     // ─────────────────────────── 归一化与计数 ───────────────────────────
@@ -479,7 +555,9 @@ class SelectionChainRegressionAcTest extends SelConfigAcTestBase {
     }
 
     private void approveInProcess(Fx fx) {
-        Response s = given().post("/api/cpq/quotations/" + fx.quotationId() + "/submit").thenReturn();
+        // ⚠️ 不带 Content-Type 会返 415（实测），不是业务错
+        Response s = given().contentType(io.restassured.http.ContentType.JSON)
+                .post("/api/cpq/quotations/" + fx.quotationId() + "/submit").thenReturn();
         assertEquals(200, s.statusCode(), "T-17 A 侧提交应 200。body=" + s.asString());
         Response pv = given().get("/api/cpq/quotations/" + fx.quotationId()
                 + "/costing-approve/preview").thenReturn();

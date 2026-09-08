@@ -65,42 +65,43 @@ class GrainCollisionBlockedAcTest extends Task260907RBase {
         requireRecordLayer();
         String mat = axis("C1");
         String dup = PREFIX + "DUP";
+        String other = PREFIX + "OTHER";
 
-        // 🕰️ 2026-09-08 夹具重构：原写法「基底就是歧义的 → A 升版 → B 撞键」**自相矛盾**。
-        //    C′ 生效后，基底一歧义，**A 自己也会被 BLOCKED** ⇒ A 根本升不了版
-        //    ⇒ 前置断言「升版前后主表 id 交集为空」当场失败（实测 before=after=[12562,12563]）。
-        //    🔑 那个红**不是缺陷，恰恰是 C′ 生效的证据** —— 但用例读不出来。
-        // ⇒ 改成：基底**先不歧义**，由 A 在升版时**引入重复粒度键**，B 再拿旧快照撞上去。
-        //    这样 A 能正常升版（它面对的基底是干净的），B 才真正落在 C′ 的判据上。
+        // 🕰️ 2026-09-08 第三次构造（前两次都撞同一个死结，留痕以免有人再走一遍）：
+        //   ① 「基底一开始就歧义」⇒ **A 自己也被 C′ 拦**，升不了版 ⇒ 跨版造不出来
+        //      （实测 A 的 approve 返 200 却一个字节没写，before=after=[12562,12563]）。
+        //   ② 「基底先干净、A 升版时引入重复键」⇒ A 升得动，但 B 的快照行（E1/E2）
+        //      **各自唯一命中**、锚得上 ⇒ 不进 unanchoredRows ⇒ C′ 的前件 `∃ r ∈ unanchoredRows`
+        //      根本不成立 ⇒ 判 UPGRADED **是对的**（实测 base 4 → result 4, unanchored []）。
+        //   ⇒ ③ 本版：基底放**两行内容完全相同**的行（指纹也歧义）+ 一行无关行；
+        //      A **只表征那行无关行**并改它 ⇒ A 的行唯一命中、升得动；
+        //      B 拿 v1 快照表征那对相同行 ⇒ origin_id 已死 + 指纹歧义 + 粒度键歧义
+        //      ⇒ NO_ANCHOR，且其 grainKey 在基底有 2 行 ⇒ 命中 C′。
         seedMainViaCreatedOrder("c1Seed", mat, List.of(
-                new EbomRow(1, PREFIX + "E1", "10.0", "1.1"),
-                new EbomRow(2, PREFIX + "E2", "20.0", "2.2")));
-        assertEquals(0L, count("SELECT count(*) FROM (SELECT material_part_no, element_code "
-                        + "FROM " + EBOM + " WHERE material_no = '" + mat + "' "
-                        + "GROUP BY material_part_no, element_code HAVING count(*) > 1) s"),
-                "C′ 前置：基底此刻必须**不歧义**，否则 A 自己就会被拦、升不了版");
+                new EbomRow(1, dup, "10.0", "1.1"),
+                new EbomRow(2, dup, "10.0", "1.1"),      // ← 与上一行**业务值完全相同**
+                new EbomRow(3, other, "30.0", "3.3")));
 
-        // B 基于 v1 拍快照（此刻基底还不歧义）
-        Fx b = newSubmittedOrder("c1B", mat, List.of(
-                new EbomRow(1, PREFIX + "E1", "88.8", "1.1"),
-                new EbomRow(2, PREFIX + "E2", "99.9", "2.2")));
-        Set<Long> idsBefore = idSet(EBOM, "material_no", mat);
-
-        // A 升版并**把两行的 element_code 改成同一个** ⇒ 升版后基底出现重复粒度键
-        Fx a = newSubmittedOrder("c1A", mat, List.of(
-                new EbomRow(1, dup, "55.5", "1.1"),
-                new EbomRow(2, dup, "44.4", "2.2")));
-        approveWithPreview(a, "c1A");
-        assertIdSetsDisjoint(idsBefore, idSet(EBOM, "material_no", mat), "C′ 阳性组 " + mat);
-
-        // 🚨 前提阳性对照：歧义现在真的存在了（由 A 引入）
+        // 🚨 前提阳性对照 1：基底真有 grain 重复（≥2 行），这是 C′ 放宽后的判据维度
         long dupGroups = count("SELECT count(*) FROM (SELECT material_part_no, element_code "
                 + "FROM " + EBOM + " WHERE material_no = '" + mat + "' "
                 + "GROUP BY material_part_no, element_code HAVING count(*) > 1) s");
         assertFixtureNonEmpty(dupGroups,
-                "🚨 前提未成立：A 升版后基底应出现重复粒度键（grain = material_part_no + element_code）"
-                        + " ⇒ C′ 根本不会被触发，本用例会验成别的支路还以为过了");
-        System.out.println("[C′-1] A 升版后基底歧义已造出：grain 重复组数 = " + dupGroups);
+                "🚨 前提未成立：基底没有重复粒度键 ⇒ C′ 不会被触发，本用例会验成别的支路还以为过了");
+
+        // B 基于 v1 拍快照，表征那对**相同**的行
+        Fx b = newSubmittedOrder("c1B", mat, List.of(
+                new EbomRow(1, dup, "88.8", "1.1"),
+                new EbomRow(2, dup, "99.9", "1.1")));
+        Set<Long> idsBefore = idSet(EBOM, "material_no", mat);
+
+        // A **只表征那行无关行**并改它 ⇒ A 的行唯一命中，升得动（不会被 C′ 拦）
+        Fx a = newSubmittedOrder("c1A", mat, List.of(
+                new EbomRow(3, other, "77.7", "3.3")));
+        approveWithPreview(a, "c1A");
+        // 🚨 前提阳性对照 2：A 确实升了版、id 全换（否则跨版不成立，B 会照 origin_id 直接锚上）
+        assertIdSetsDisjoint(idsBefore, idSet(EBOM, "material_no", mat), "C′ 阳性组 " + mat);
+        System.out.println("[C′-1] A 已升版（只改无关行 " + other + "），基底 grain 重复组数 = " + dupGroups);
 
         JsonNode g = group(b, mat);
         System.out.println("[C′-1] B 的预览组 = " + g);
@@ -141,7 +142,10 @@ class GrainCollisionBlockedAcTest extends Task260907RBase {
         int verBefore = maxVer(mat);
         long histBefore = count("SELECT count(*) FROM " + EBOM + "_history WHERE material_no = '" + mat + "'");
 
-        approveWithPreview(b, "c1B");   // 内部已断言核价通过返 200
+        // 🔑 AC-21 正向证据：BLOCKED **不阻断核价通过本身**。
+        //    上一版实测「approve 返 200 却一个字节没写」当时被我读成失败，
+        //    其实那正是 C′ 生效的实物证据 —— 这里把它变成一条显式断言，别再浪费。
+        approveWithPreview(b, "c1B");   // 内部已断言预览 200 + 确认 200
 
         assertEquals(digestBefore, scopedDigest(EBOM, "material_no", List.of(mat), "C′ 确认后主表组"),
                 "🔑 C′：BLOCKED 组必须一个字节不写，实测主表该组内容变了。");

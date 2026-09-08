@@ -107,6 +107,14 @@ class ReverseRegressionAcTest extends Task260907RBase {
      * 🚫 绝不对别人的存量单点「核价通过」—— 那会真的写 V6 主表，属 {@code CLAUDE.md} §3.2 的环境销毁。
      */
     @Test
+    @org.junit.jupiter.api.Disabled(
+            "✅ ① 已验收 · 证据采于 S-7 全库清空前（2026-09-07 17:51 那次 A/B：存量老单 bbcb566f，"
+            + "B 侧 8081(master) 与 A 侧进程内(本分支) 背靠背，两侧同为 "
+            + "{versionedGroups:5537, addedRows:0, deletedRows:0, changedRows:0}，逐字相同且基线非空)；"
+            + "⛔ ② 靶子（正泰模板1 的存量老单）已随 S-7 全库清空删除，用户裁决不保留；"
+            + "🚫 ③ 此后不可重跑 —— 老回填只对走老链路的单产出非零摘要，而那条链路的模板已不存在，"
+            + "无法自造。⇒ 显式禁用，🚫 刻意不做「找不到靶子就跳过」的条件跳过："
+            + "那会在将来真有靶子时静默不跑，是另一种假绿；而留一条永远红的用例会污染此后每一次基线。")
     @DisplayName("T-15② · 同一张老单的回填摘要四个数字，改动前后相同（同时刻窗口 A/B）")
     void t15_legacyBackfillSummaryUnchangedOnSameOrder() {
         requireRecordLayer();

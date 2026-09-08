@@ -230,11 +230,18 @@ class RecordSuiteBootGateTest {
                 bootFailures.add(f.getName());
                 if (firstCause == null) firstCause = extractRootCause(text);
             }
-            Matcher m = Pattern.compile("Skipped:\\s*(\\d+)").matcher(text);
-            while (m.find()) {
-                if (Integer.parseInt(m.group(1)) > 0) {
-                    skipStorms.add(f.getName() + "(skipped=" + m.group(1) + ")");
-                    break;
+            // 🕰️ 2026-09-08 收窄：原来「只要有 skip 就算风暴」，被自己的 @Disabled 误伤。
+            //    T-15② 按裁决显式禁用后，本闸当场把它读成「Quarkus 没起来」——
+            //    🔑 **守卫误报的代价和漏报一样贵**：它会让每一轮基线都带一条假红，
+            //       而假红看多了就没人看真红了。
+            //    ⇒ 判据改成读 XML：@Disabled 的 skip 带**非空 message**（就是 reason），
+            //       而 Quarkus 启动失败导致的 skip 没有 reason。二者由此可区分。
+            int skipped = countSkipped(f);
+            if (skipped > 0) {
+                int explained = countExplainedSkips(f);
+                if (explained < skipped) {
+                    skipStorms.add(f.getName() + "(skipped=" + skipped
+                            + "，其中仅 " + explained + " 条有 @Disabled reason)");
                 }
             }
         }
@@ -255,6 +262,33 @@ class RecordSuiteBootGateTest {
     }
 
     // ─────────────────────────── 归类与处置 ───────────────────────────
+
+    /** 该类报告里的 skip 数（{@code Tests run: … Skipped: N}）。 */
+    private static int countSkipped(File txt) throws IOException {
+        Matcher m = Pattern.compile("Skipped:\\s*(\\d+)")
+                .matcher(Files.readString(txt.toPath(), StandardCharsets.UTF_8));
+        int max = 0;
+        while (m.find()) max = Math.max(max, Integer.parseInt(m.group(1)));
+        return max;
+    }
+
+    /**
+     * <b>有解释的</b> skip 数 —— 即 XML 里 {@code <skipped message="…"/>} 且 message 非空。
+     *
+     * <p>🔑 {@code @Disabled("reason")} 会把 reason 写进 message；
+     * 而 Quarkus 启动失败导致的 skip <b>没有</b> reason。
+     * ⇒ 「skip 数 > 有解释的 skip 数」才是真风暴。
+     */
+    private static int countExplainedSkips(File txt) throws IOException {
+        String name = txt.getName().replaceFirst("\\.txt$", "");
+        File xml = new File(txt.getParentFile(), "TEST-" + name + ".xml");
+        if (!xml.isFile()) return 0;
+        Matcher m = Pattern.compile("<skipped\\s+message=\"([^\"]{1,})\"")
+                .matcher(Files.readString(xml.toPath(), StandardCharsets.UTF_8));
+        int n = 0;
+        while (m.find()) n++;
+        return n;
+    }
 
     /** 把启动异常原文归成四类，各给<b>可直接执行</b>的处置 —— 🚫 不写「请检查配置」这种无动作文案。 */
     private static String classify(String cause) {

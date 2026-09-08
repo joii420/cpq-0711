@@ -270,9 +270,15 @@ class AnchorFourTiersAcTest extends Task260907RBase {
         String mat = axis("A20d");
         String dupEl = PREFIX + "DUP";   // 两行同 element_code + 同 material_part_no ⇒ grain 相同
 
+        // 🕰️ 2026-09-08 夹具重构（与 GrainCollisionBlockedAcTest.t37a 同一个死结）：
+        //    C′ 生效后，基底一歧义，**升版者自己也会被拦** ⇒ A 升不了版 ⇒ 跨版前置造不出来。
+        //    ⇒ 基底放「两行内容完全相同（指纹也歧义）+ 一行无关行」，
+        //       A **只改那行无关行**来制造跨版；B 再拿旧快照撞那对相同行。
+        String otherEl = PREFIX + "OTHER";
         seedMainViaCreatedOrder("20dSeed", mat, List.of(
                 new EbomRow(1, dupEl, "10.0", "1.1"),
-                new EbomRow(2, dupEl, "20.0", "2.2")));
+                new EbomRow(2, dupEl, "10.0", "1.1"),
+                new EbomRow(3, otherEl, "30.0", "3.3")));
 
         // 🚨 阳性对照：先证明歧义真的存在（两行 grain 相同），否则本条验的根本不是第四层
         long dupGroups = count("SELECT count(*) FROM (SELECT material_part_no, element_code "
@@ -285,13 +291,12 @@ class AnchorFourTiersAcTest extends Task260907RBase {
 
         Fx b = newSubmittedOrder("20dB", mat, List.of(
                 new EbomRow(1, dupEl, "88.8", "1.1"),
-                new EbomRow(2, dupEl, "99.9", "2.2")));
+                new EbomRow(2, dupEl, "99.9", "1.1")));
         Set<Long> idsBefore = idSet(EBOM, "material_no", mat);
 
-        // A 升版并改值 ⇒ origin_id 失效 + 指纹变 ⇒ 只剩粒度列，而粒度列有歧义
+        // A 只改**无关行** ⇒ 它唯一命中、升得动；升版后 id 全换 ⇒ B 的 origin_id 失效
         Fx a = newSubmittedOrder("20dA", mat, List.of(
-                new EbomRow(1, dupEl, "55.5", "1.1"),
-                new EbomRow(2, dupEl, "44.4", "2.2")));
+                new EbomRow(3, otherEl, "77.7", "3.3")));
         approveWithPreview(a, "20dA");
         assertIdSetsDisjoint(idsBefore, idSet(EBOM, "material_no", mat), "第四层的料号组 " + mat);
 
