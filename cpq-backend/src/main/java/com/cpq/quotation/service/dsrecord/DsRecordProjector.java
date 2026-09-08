@@ -82,6 +82,10 @@ public final class DsRecordProjector {
                                             String deletedKeys, String fallbackAxis, int sortOrder) {
         List<DsRecordRow> out = new ArrayList<>();
         JsonNode snap = parseArray(snapshotRows);
+        // 🔑 D-38 修法甲：NULL/空串 ⇒ **从未物化**（driver 还没展开，row_data 里就是 driver 行）；
+        //    `[]` ⇒ **已物化、driver 确实返 0 行**（AP-38 形态），那时 row_data 里的行是用户自己录的。
+        //    两者在 parseArray 之后只差「返回 null」与「返回 size==0 的数组」，🚫 不许再合并处理。
+        final boolean snapshotMaterialized = snap != null;
         JsonNode flat = parseArray(rowDataJson);
         if ((snap == null || snap.size() == 0) && (flat == null || flat.size() == 0)) return out;
         List<DeletedRowKeys.Tombstone> tombstones = DeletedRowKeys.parse(deletedKeys);
@@ -121,7 +125,8 @@ public final class DsRecordProjector {
                 if (DeletedRowKeys.isDeleted(fp, nodeId, tombstones)) continue;   // 用户删掉的行不进 _record
             }
             JsonNode flatRow = (overlaySafe && i < driverDataRows.size()) ? driverDataRows.get(i) : null;
-            addRow(out, binding, sheetAxisColumn, driverRow, flatRow, fallbackAxis, sortOrder);
+            addRow(out, binding, sheetAxisColumn, driverRow, flatRow, fallbackAxis, sortOrder,
+                    DsRecordRow.Provenance.DRIVER);
         }
 
         // ── ② 只存在于 row_data 的行 —— 🔴 本轮修的就是这一段 ────────────────────────────
@@ -131,12 +136,16 @@ public final class DsRecordProjector {
         //    ⇒ AC-2（输入值）/ AC-3（自定义列）在这类页签上永远不可满足。
         //    这里不存在错位风险：这些下标在 snapshot 侧根本没有对应行，不是「配错」而是「只有一侧」。
         for (int i = snapSize; i < driverDataRows.size(); i++) {
-            addRow(out, binding, sheetAxisColumn, null, driverDataRows.get(i), fallbackAxis, sortOrder);
+            // D-38 甲：来源取决于 snapshot **有没有物化过**，🚫 不是「有没有 driver 值」。
+            addRow(out, binding, sheetAxisColumn, null, driverDataRows.get(i), fallbackAxis, sortOrder,
+                    snapshotMaterialized ? DsRecordRow.Provenance.ROW_DATA_TAIL
+                                         : DsRecordRow.Provenance.DRIVER_NOT_MATERIALIZED);
         }
 
         // ── ③ 手动新增行（`_origin='manual'`，先例：追加末尾）────────────────────────────
         for (JsonNode mr : manualRows) {
-            addRow(out, binding, sheetAxisColumn, null, mr, fallbackAxis, sortOrder);
+            addRow(out, binding, sheetAxisColumn, null, mr, fallbackAxis, sortOrder,
+                    DsRecordRow.Provenance.MANUAL);
         }
         return out;
     }
@@ -150,10 +159,12 @@ public final class DsRecordProjector {
      * <b>后两级是给「只活在 row_data 的行」准备的</b> —— 它们没有 driver 侧，拿不到 {@code hf_part_no}。
      */
     private static void addRow(List<DsRecordRow> out, DsSheetBinding binding, String axisColumn,
-                               JsonNode driverRow, JsonNode flatRow, String fallbackAxis, int sortOrder) {
+                               JsonNode driverRow, JsonNode flatRow, String fallbackAxis, int sortOrder,
+                               DsRecordRow.Provenance provenance) {
         DsRecordRow row = new DsRecordRow();
         row.componentId = binding.componentId();
         row.sortOrder = sortOrder;
+        row.provenance = provenance;
 
         for (Map.Entry<String, String> e : binding.fieldToColumn().entrySet()) {
             JsonNode v = pick(binding, driverRow, flatRow, e.getKey());
@@ -250,12 +261,17 @@ public final class DsRecordProjector {
         List<DsRecordRow> pending = new ArrayList<>();
         for (DsRecordRow r : rows) {
             if (r.originId != null) continue;
-            // D-36（与读侧 DsBackfillCollector#grainFallbackEligible 同一条纪律）：
-            // 🚨 没有 driver 侧的行（纯 INPUT 行 / 手工行）在**组已存在**时，是「用户新加的一行」，
-            //    不是「主表某一行的投影」。给它做粒度兜底会把它认成既有行的 patch
-            //    ⇒ 用户新增的行消失、既有行被覆盖（AP-60 原始形态）。
+            // ── D-36 的闸 + D-38 修法甲（用户 2026-09-07 裁决）─────────────────────────
+            // D-36 要防的是：用户在**已存在的组**里新增一行，其粒度键与某既有行相同且基底恰好一条
+            //   ⇒ 兜底把它认成那条既有行的 patch ⇒ 新增行消失、既有行被覆盖（AP-60 原始形态）。
+            // 🚨 D-38：原判据写的是 `anchorValues.isEmpty()`，而它**同时命中 driver 未物化的行** ——
+            //    `_record` 唯一写点是 saveDraft，saveDraft 只保留、不生成 snapshot_rows
+            //    ⇒ 「新建产品行 → 首存 → 提交」这条常规路径上，整张单的行都没有 driver 侧。
+            //    后果：用户改过值的行第 1 趟必 miss、第 2 趟又被这道闸拦掉 ⇒ 双 null
+            //    ⇒ 回填按新增追加 ⇒ **组每回填一次就变大**（A/B/C 三态实测：2→3 行 vs 2→2 行）。
+            // ⇒ 改按**行来源**判定（见 DsRecordRow.Provenance）：只关掉真·用户新增行。
             // ⚠️ 组不存在（version == 0）时不设限：那时整组行都还没有，任何行都谈不上「新增覆盖既有」。
-            if (r.anchorValues.isEmpty() && version > 0) continue;
+            if (r.provenance.userAdded() && version > 0) continue;
             pending.add(r);
         }
         if (pending.isEmpty()) return;

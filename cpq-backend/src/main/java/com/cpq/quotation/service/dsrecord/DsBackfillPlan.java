@@ -119,6 +119,43 @@ public class DsBackfillPlan {
     public DsRecordStaleService.Stale recordStale;
 
     /**
+     * 🆕 D-39：本单<b>从来没拍过 {@code _record} 快照</b>；null = 不适用。
+     *
+     * <h3>它与 {@link #recordStale} 是姐妹，但 🚫 不许合并</h3>
+     * {@code recordStale} = 「写过、但上次写失败了 ⇒ 内容过期」；
+     * 本字段 = 「<b>一次都没写过</b>」。处置也不同：前者让销售重存一次即可覆盖，
+     * 后者重存<b>确实能解决</b>，但用户得先知道要这么做。
+     *
+     * <h3>为什么会出现（实证）</h3>
+     * {@code _record} 的<b>唯一</b>写点是 {@code QuotationService#saveDraft}。
+     * 而 {@code ImportExecutionService} 直接 new 出 {@code QuotationLineComponentData}
+     * （2 处）<b>不经 saveDraft</b> ⇒ 导入建的单 {@code _record} 恒空
+     * ⇒ 核价通过时 {@code readRecords} 返空、该 sheet 直接 {@code continue}
+     * ⇒ {@code tables=[]}、{@code summary} 全 0、主表一个字节不写，
+     * 而界面上与「本来就没什么要回填」<b>长得一模一样</b>。
+     * <p>🚦 用户 2026-09-07 裁决：<b>本期只让它可见，不补写入</b>。
+     */
+    public NoRecordSnapshot noRecordSnapshot;
+
+    /**
+     * 「从未拍过快照」的明细。
+     *
+     * <p>🔑 判定<b>两个条件缺一不可</b>：{@code participatingComponents > 0}
+     * <b>且</b> {@code recordRows == 0}。这正是「本单没拍过快照」与「本来就没什么要回填」的分水岭
+     * —— 组件全部 {@code nonParticipating} 的单第一个条件不成立，🚫 不该报，
+     * 否则告警会在正常场景刷屏，很快就没人看了。
+     */
+    public static final class NoRecordSnapshot {
+        /** 枚举，目前唯一值。 */
+        public static final String NEVER_WRITTEN = "NEVER_WRITTEN";
+        public String reason = NEVER_WRITTEN;
+        /** binding 解析成功、本该产出 {@code _record} 的组件数。 */
+        public int participatingComponents;
+        /** 实际读到的 {@code _record} 行数（判定成立时恒为 0）。 */
+        public int recordRows;
+    }
+
+    /**
      * 🆕 D-33：本单里<b>不参与</b>基础数据升版的组件（手写视图无 {@code builder_config} 等）。
      *
      * <p>🚫 <b>不许静默丢弃</b>。实测现网 156/228 个组件视图是手写的 ⇒ 不告知，财务会以为

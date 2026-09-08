@@ -51,7 +51,8 @@
       "blockedGroups": 0,            // 🆕 D-37：判定为 BLOCKED（跳过回填）的组数。**后端恒发**，>0 时前端必须显式提示
       "nonParticipatingComponents": 0, // 🆕 D-33：不参与基础数据升版的组件数。**后端恒发**
       "recordStale": false,          // 🆕 D-35：本单 _record 快照是否过期。**后端恒发**（标记表未落库时恒 false）
-      "recordStale": false           // 🆕 D-35 布尔，便于前端直接做红条
+      "recordStale": false,          // 🆕 D-35 布尔，便于前端直接做红条
+      "noRecordSnapshot": false      // 🆕 D-39：本单是否从未拍过 _record 快照。**后端恒发**，true 时必须显著提示
     },
     "tables": [
       {
@@ -102,6 +103,11 @@
       "detail": "IllegalStateException: …",   // 🚫 仅排障，前端**不得**直接当用户文案渲染
       "detectedAt": "2026-09-07T06:17:29Z"
     },
+    "noRecordSnapshot": {            // 🆕 D-39：本单**从来没拍过** _record 快照；null = 不适用（恒发）
+      "reason": "NEVER_WRITTEN",     // 枚举，目前唯一值
+      "participatingComponents": 3,  // binding 解析成功、本该产出 _record 的组件数
+      "recordRows": 0                // 实际 _record 行数（判定成立时恒为 0）
+    },
     "nonParticipating": [            // 🆕 D-33：不参与基础数据升版的组件（手写视图，无 builder_config）
       { "componentId": "…", "componentName": "投料", "reason": "NO_BUILDER_CONFIG" }
     ],
@@ -125,8 +131,9 @@
 
 ```
 applicable = false  当且仅当  tables == []  且  recordStale == null  且  nonParticipating == []
+                     且  noRecordSnapshot == null                     ← 🆕 D-39
 ```
-只要三者之一非空，恒为 `true`。
+只要四者之一非空，恒为 `true`。
 
 ⚠️ 原文「`false` = 本单不走 ds_ 新回填（老单），前端不渲染该区」**太窄**，与本节硬约束 4/6 自相矛盾：
 一张 100% 手写视图的老单 `tables` 为空，但它恰恰有 `nonParticipating` 要给财务看 ——
@@ -163,6 +170,18 @@ applicable = false  当且仅当  tables == []  且  recordStale == null  且  n
    ⚠️ **标记表 `ds_quote_record_stale` 尚未落库期间**，后端有 `information_schema` 探针 ⇒
    `find`/`markStale`/`clearStale` **整体 no-op** ⇒ 该字段**恒为 `null`**、`summary.recordStale` **恒为 `false`**。
    ⇒ 这段窗口内前端的「过期提示」拿不到数据是**预期**，不是前端漏实现；落库后自动开始有值。
+
+10. 🆕 **`noRecordSnapshot` 后端恒发**（`D-39`）：无此情形时为 `null` 且 `summary.noRecordSnapshot = false`。
+    **判定 = `participatingComponents > 0` 且 `recordRows == 0`，两个条件缺一不可。**
+    🔑 这是「本单没拍过快照」与「本来就没什么要回填」的分水岭 —— 组件全 `nonParticipating` 的单
+    第一个条件不成立 ⇒ **不报**，否则告警会在正常场景刷屏，很快就没人看了。
+    🚨 非空时前端**必须显著提示**：本单没有任何快照可回填，**确认后主表一个字节都不会写**
+    —— 这与「本来就没什么要回填」在界面上无法区分，只能由后端点破。
+    ⚠️ 🚫 **不许与 `recordStale` 合并成一个提示**：那条是「写过但过期」，这条是「从来没写过」；
+    处置动作不同（前者重存一次即覆盖；后者重存**确实能解决**，但用户得先知道要这么做）。
+    这是**第五套**独立 reason 值域。
+    📌 已纳入 `previewToken`（`#nosnap=` 段）：预览时报了、确认前销售补存一次让它消失 ⇒ token 失效、需重看。
+    📌 最常见成因：**导入建单不经 `saveDraft`**（`_record` 的唯一写点），本期只可见、不补写入（`D-39`）。
 
 6. 🆕 **`nonParticipating` 非空时前端必须显式告知**（`D-33`）：「本单有 N 个组件不参与基础数据升版」。🚫 不许静默 —— 实测现网 156/228 个组件视图是手写的（无 `builder_config`），财务会以为全覆盖了。这与 `AP-60` 判据四（「不写 = 删除」不在 diff 模型里）是同型的静默。
 

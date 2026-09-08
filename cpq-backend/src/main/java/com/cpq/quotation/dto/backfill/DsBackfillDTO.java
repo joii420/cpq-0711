@@ -42,6 +42,15 @@ public class DsBackfillDTO {
     public RecordStale recordStale;
 
     /**
+     * 🆕 D-39：本单<b>从来没拍过 {@code _record} 快照</b>；null = 不适用（恒发，🚫 不许缺省）。
+     * <p>🚨 非空时前端<b>必须显著提示</b>：本单没有任何快照可回填，确认后主表<b>一个字节都不会写</b>
+     * —— 这与「本来就没什么要回填」在界面上无法区分，所以必须由后端点破。
+     * <p>⚠️ 与 {@link #recordStale} <b>不是一回事</b>：那条是「写过但过期」，这条是「从来没写过」。
+     * 🚫 前端不许把两者合并成一个提示，处置动作不同。
+     */
+    public NoRecordSnapshot noRecordSnapshot;
+
+    /**
      * 🆕 D-33（api.md §1）：不参与基础数据升版的组件。
      * <p>🚨 非空时前端<b>必须显式告知</b>「本单有 N 个组件不参与基础数据升版」，🚫 不许静默。
      */
@@ -66,6 +75,18 @@ public class DsBackfillDTO {
         public boolean recordStale;
         /** 🆕 D-37：判定为 {@code BLOCKED}（跳过回填）的组数。&gt;0 时前端必须显式提示。 */
         public int blockedGroups;
+        /** 🆕 D-39：本单是否从未拍过 {@code _record} 快照。恒发（无此情形为 false），true 时必须显著提示。 */
+        public boolean noRecordSnapshot;
+    }
+
+    /** 🆕 D-39：「从未拍过快照」明细。判定 = {@code participatingComponents > 0 && recordRows == 0}。 */
+    public static class NoRecordSnapshot {
+        /** 枚举，目前唯一值 {@code NEVER_WRITTEN}。 */
+        public String reason;
+        /** binding 解析成功、本该产出 {@code _record} 的组件数。 */
+        public int participatingComponents;
+        /** 实际 {@code _record} 行数（判定成立时恒为 0）。 */
+        public int recordRows;
     }
 
     public static class Table {

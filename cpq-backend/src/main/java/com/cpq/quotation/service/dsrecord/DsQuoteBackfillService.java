@@ -112,7 +112,10 @@ public class DsQuoteBackfillService {
      */
     String canonicalize(DsBackfillPlan plan) {
         if (plan == null) return "";
-        if (!plan.applicable) return plan.recordStale == null ? "" : "#stale=" + plan.recordStale.reason();
+        if (!plan.applicable) {
+            return (plan.recordStale == null ? "" : "#stale=" + plan.recordStale.reason())
+                    + (plan.noRecordSnapshot == null ? "" : "#nosnap=" + plan.noRecordSnapshot.reason);
+        }
         StringBuilder sb = new StringBuilder();
 
         List<DsBackfillPlan.Table> tables = new ArrayList<>(plan.tables);
@@ -153,6 +156,9 @@ public class DsQuoteBackfillService {
         sb.append("#nonparticipating=").append(String.join(",", np));
         // D-35：过期标记是财务确认时看到的内容的一部分 —— 预览后它出现/消失都应让 token 失效。
         sb.append("#stale=").append(plan.recordStale == null ? "" : plan.recordStale.reason());
+        // D-39：同理 —— 预览时报了「从未拍过快照」、确认前销售补存了一次让它消失，
+        //       财务看到的内容就变了，token 必须失效。
+        sb.append("#nosnap=").append(plan.noRecordSnapshot == null ? "" : plan.noRecordSnapshot.reason);
         return sb.toString();
     }
 
@@ -169,6 +175,16 @@ public class DsQuoteBackfillService {
                     : plan.recordStale.detectedAt().toString();
             dto.recordStale = rs;
             dto.summary.recordStale = true;
+        }
+        // D-39：同样必须在 early return **之前** —— 「从未拍过快照」的单最可能正是
+        //       applicable=false / tables 为空的那一批，放在后面就恰好永远报不出来。
+        if (plan.noRecordSnapshot != null) {
+            DsBackfillDTO.NoRecordSnapshot ns = new DsBackfillDTO.NoRecordSnapshot();
+            ns.reason = plan.noRecordSnapshot.reason;
+            ns.participatingComponents = plan.noRecordSnapshot.participatingComponents;
+            ns.recordRows = plan.noRecordSnapshot.recordRows;
+            dto.noRecordSnapshot = ns;
+            dto.summary.noRecordSnapshot = true;
         }
         if (!plan.applicable) return dto;
 
@@ -258,6 +274,7 @@ public class DsQuoteBackfillService {
         DsBackfillPlan plan = collector.collect(quotationId);
         sum.nonParticipatingComponents = plan.nonParticipating.size();
         sum.recordStale = plan.recordStale != null;
+        sum.noRecordSnapshot = plan.noRecordSnapshot != null;   // D-39：恒发
         if (!plan.applicable || plan.tables.isEmpty()) return sum;
 
         for (DsBackfillPlan.Table t : plan.tables) {

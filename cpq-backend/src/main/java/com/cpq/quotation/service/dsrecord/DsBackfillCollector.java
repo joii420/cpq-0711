@@ -131,12 +131,14 @@ public class DsBackfillCollector {
         plan.applicable = true;
 
         // ── ② 逐 sheet 组装（sheet 数固定 ≤13，与轴值数无关）───────────────────────
+        int totalRecordRows = 0;   // D-39：判「从未拍过快照」用，🚫 不能只看 tables 是否为空
         for (Map.Entry<String, SheetDef> se : sheetByTable.entrySet()) {
             SheetDef sheet = se.getValue();
             Set<String> scope = scopeByTable.getOrDefault(se.getKey(), Set.of());
             Set<String> grain = grainByTable.getOrDefault(se.getKey(), Set.of());
 
             List<RecordRow> records = readRecords(sheet, quotationId, plan.customerNo);   // 1 条 SQL
+            totalRecordRows += records.size();
             if (records.isEmpty()) continue;
 
             Map<String, List<RecordRow>> byAxis = new LinkedHashMap<>();
@@ -168,6 +170,20 @@ public class DsBackfillCollector {
                         base.get(ae.getKey()), predicted.getOrDefault(ae.getKey(), 1), plan.customerNo));
             }
             if (!t.groups.isEmpty()) plan.tables.add(t);
+        }
+        // ── D-39：「本单从来没拍过 _record 快照」──────────────────────────────────────
+        // 🔑 两个条件缺一不可：有组件本该产出 _record（participating > 0）**且** 一行都没读到。
+        //    组件全 nonParticipating 的单第一个条件不成立 ⇒ 🚫 不报，否则正常场景刷屏。
+        // 🚨 判据用的是 totalRecordRows 而不是 plan.tables.isEmpty()：后者在「读到了行、
+        //    但每组都没分出 group」时同样为空，那是另一回事，混起来会误报。
+        if (!bindings.isEmpty() && totalRecordRows == 0) {
+            DsBackfillPlan.NoRecordSnapshot n = new DsBackfillPlan.NoRecordSnapshot();
+            n.participatingComponents = bindings.size();
+            n.recordRows = 0;
+            plan.noRecordSnapshot = n;
+            LOG.warnf("[ds-backfill] quotation=%s 有 %d 个组件本该产出 _record，却一行都没有 "
+                    + "⇒ 本单从未拍过快照（最常见成因：导入建单不经 saveDraft）。"
+                    + "确认后主表一个字节都不会写。", quotationId, bindings.size());
         }
         LOG.debugf("[ds-backfill] quotation=%s 计划：tables=%d（sql 与轴值数无关）",
                 quotationId, plan.tables.size());
@@ -365,10 +381,14 @@ public class DsBackfillCollector {
      *   <li><b>粒度列为空 / 粒度键退化为空</b>：直接<b>不适用</b>。否则空键会与基底里任何一个
      *       空键行「相等」，把整组误判成 BLOCKED —— 那是把一个诊断不足的场景升级成阻断。
      *       判据是「grain 非空 <b>且</b> 该行至少有一个粒度列取值非空」。</li>
-     *   <li><b>真新增行撞键不该拦</b>：区分点<b>不在粒度键，在它有没有过锚</b> ——
-     *       复用 {@link #grainFallbackEligible}：{@code NO_ANCHOR}（两个锚都空）且
-     *       {@code base_version_no > 0} = 组已存在、用户新加的一行 ⇒ <b>排除在 C′ 之外</b>。
-     *       这与 D-36 的闸是<b>同一个谓词</b>，两处不会漂。</li>
+     *   <li><b>真新增行撞键不该拦</b>（D-38 已收窄）：默认仍靠 {@link #grainFallbackEligible}
+     *       排除「两个锚都空 + {@code base_version_no > 0}」的行，<b>但该键在基底里有 ≥2 行时例外</b>。
+     *       🚨 否则会把 C′ 唯一要拦的那一类（写入侧因粒度歧义没锚上的行）恰好排除掉 —— 它在
+     *       {@code _record} 里与真新增行<b>无法区分</b>，两者只能靠「基底侧该键几行」分开：
+     *       恰好 1 行 = D-36 的形状（保护新增行），≥2 行 = 歧义（C′ 的形状）。
+     *       <p>⚠️ <b>甲的已知残留</b>：粒度列为空 / 键退化的组（边界①）仍然拦不住，
+     *       因为那时连「撞没撞」都判不出来。用户在选修法甲时已知情，
+     *       🚫 下一个人不要以为这是没想到。</li>
      *   <li><b>UNCHANGED 不会进 BLOCKED</b>：本方法只在 result != UNCHANGED 时改判，
      *       且 UNCHANGED 意味着指纹多重集相等 ⇒ 一行都没追加 ⇒ unanchoredRecs 必空。
      *       两者任一成立即可，这里<b>两条都断言</b>（不一致时打 ERROR 而不是掩盖）。</li>
@@ -401,9 +421,18 @@ public class DsBackfillCollector {
         Map<String, Integer> recCountByGrain = new LinkedHashMap<>();
         Map<String, RecordRow> sampleByGrain = new LinkedHashMap<>();
         for (RecordRow r : unanchoredRecs) {                                   // 🚫 无查询
-            if (!grainFallbackEligible(r)) continue;                           // 边界②：真新增行不参与
             if (isDegenerate(r.values, grain)) continue;                       // 边界①
             String k = DsRecordProjector.contentKey(r.values, defs, grain);
+            // ── 边界②（D-38 收窄）：真新增行原则上不参与，但「该键在基底里有 ≥2 行」除外 ────
+            // 🚨 为什么必须开这个口子：写入侧因**粒度键有歧义**而没锚上的行，在 _record 里与
+            //    真新增行长得一模一样（两个锚都空 + base_version_no > 0）⇒ 只看
+            //    grainFallbackEligible 会把 C′ 唯一要拦的那一类恰好排除掉，C′ 等于是瞎的。
+            // 🔑 而歧义与 D-36 的形状**天然互斥**：D-36 要保护的是「该键在基底里恰好 1 行」
+            //    （那才谈得上「被认成那条既有行的 patch」）；≥2 行时任何行都锚不上，
+            //    再追加只会让同键行数继续涨 —— 那正是 C′ 存在的理由。
+            // ⚠️ 代价（已知、可接受）：真新增行若撞上一个基底里已有 ≥2 行的键，本组也会判 BLOCKED。
+            //    方向是「宁可停下来让人看一眼」，不是静默膨胀。
+            if (!grainFallbackEligible(r) && baseCountByGrain.getOrDefault(k, 0) < 2) continue;
             recCountByGrain.merge(k, 1, Integer::sum);
             sampleByGrain.putIfAbsent(k, r);
         }
@@ -466,6 +495,15 @@ public class DsBackfillCollector {
      * 乙是同版新增，本就不该由第③层处理 ⇒ 本方法让实现回到 AC 原意。
      *
      * @return true = 允许兜底（曾经有锚，或拍快照时整组不存在）
+     */
+    /**
+     * 这一行「本来就该有锚」吗 —— 供 tier③({@code :256}) 与 C′ 边界②共用。
+     *
+     * <p>⚠️ <b>D-38 起它不再是 C′ 的唯一判据</b>：C′ 还会看「该粒度键在基底里几行」，
+     * ≥2 行时即便本方法返回 false 也参与拦截（见 {@link #applyCollisionGuard} 边界②）。
+     * <p>🚨 本方法<b>推断</b>行来源（靠两个锚是否都空），而写入侧 D-38 之后是<b>显式记录</b>的
+     * （{@code DsRecordRow.Provenance}）。两者口径不同是<b>已知残留</b>：provenance 没有落到
+     * {@code _record} 的列上（那需要一次迁移，本期未落），所以读侧只能推断。
      */
     private static boolean grainFallbackEligible(RecordRow r) {
         if (r.originId != null || r.baseRowFingerprint != null) return true;   // 曾经有锚，只是丢了
