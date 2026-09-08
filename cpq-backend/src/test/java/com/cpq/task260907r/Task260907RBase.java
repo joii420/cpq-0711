@@ -570,7 +570,18 @@ public abstract class Task260907RBase {
      * ⇒ 判据只能用<b>我独占的命名空间（前缀）</b>，🚫 不能用「我以为我会写成什么样」的标记。
      */
     protected void cleanupOwnDatasetRows() {
-        if (createdAxisValues.isEmpty()) return;
+        // 🚨 先把「登记了几个轴值」打出来 —— 🚫 不许静默返回。
+        //    「清掉 3 行」和「登记了 3 个轴值、清掉 3 行」在**漏登记**时长得一模一样，
+        //    而漏登记的后果是每轮永久留一行 _record 孤儿（_record 外键数 = 0，
+        //    deleteReferencingRows 够不到它）。⇒ 沉默正是它能悄悄累积的原因。
+        //    2026-09-08 实证：RecordFixtureSelfTest 三条用例各漏 1 行，累积到 E/E2/E3 各 7 行。
+        System.out.println("[" + PREFIX + "cleanup] 本进程登记轴值 " + createdAxisValues.size()
+                + " 个：" + createdAxisValues);
+        if (createdAxisValues.isEmpty()) {
+            System.out.println("[" + PREFIX + "cleanup] ⚠️ 登记 0 个轴值 ⇒ 不清任何 ds_quote_* 行。"
+                    + "若本用例其实写过 ds 行，就是漏调 trackAxis()，那些行会永久留在库里。");
+            return;
+        }
         @SuppressWarnings("unchecked")
         List<String> tables = (List<String>) (List<?>) em.createNativeQuery(
                         "SELECT c.table_name FROM information_schema.columns c "
@@ -589,7 +600,8 @@ public abstract class Task260907RBase {
                 if (n == 0) continue;
                 em.createNativeQuery("DELETE FROM " + t + " WHERE material_no IN (:p)")
                         .setParameter("p", axes).executeUpdate();
-                System.out.println("[" + PREFIX + "cleanup] " + t + " 清掉本进程自造轴值 " + n + " 行");
+                System.out.println("[" + PREFIX + "cleanup] " + t + " 清掉本进程自造轴值 " + n
+                        + " 行（登记轴值 " + axes.size() + " 个）");
             }
         });
     }

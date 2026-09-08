@@ -74,6 +74,11 @@ class RecordFixtureSelfTest extends Task260907RBase {
 
         Fx fx = newFixture("FX01");
         String partNo = PREFIX + "E-" + fx.quotationId().toString().substring(0, 6);
+        // 🚨 必须登记：cleanupOwnDatasetRows() **只删 trackAxis 登记过的轴值**，
+        //    而 _record 表外键数 = 0 ⇒ deleteReferencingRows()（清单从 pg_constraint 派生）
+        //    永远够不到它 ⇒ 不登记 = 每跑一轮在库里永久留一行 _record 孤儿（父单已删）。
+        //    2026-09-08 实证：本类三条用例各漏 1 行，E/E2/E3 三族已累积到各 7 行。
+        trackAxis(partNo);
 
         // ── 阳性对照：动手前，本单在 _record 上必须是 0 行。
         //    不先证明这一点，「跑完有行了」可能是别的会话/上一轮留下的。
@@ -167,6 +172,11 @@ class RecordFixtureSelfTest extends Task260907RBase {
     void fx02_snapshotRowsIsTheMissingInput() {
         Fx fx = newFixture("FX02");
         String partNo = PREFIX + "E2-" + fx.quotationId().toString().substring(0, 6);
+        // 🚨 必须登记：cleanupOwnDatasetRows() **只删 trackAxis 登记过的轴值**，
+        //    而 _record 表外键数 = 0 ⇒ deleteReferencingRows()（清单从 pg_constraint 派生）
+        //    永远够不到它 ⇒ 不登记 = 每跑一轮在库里永久留一行 _record 孤儿（父单已删）。
+        //    2026-09-08 实证：本类三条用例各漏 1 行，E/E2/E3 三族已累积到各 7 行。
+        trackAxis(partNo);
         String rowData = elementBomRowData(partNo);
 
         Response r1 = putDraft(fx.quotationId(), draftBodyAdded(partNo, rowData));
@@ -222,6 +232,11 @@ class RecordFixtureSelfTest extends Task260907RBase {
     void fx03_probeFullChain() {
         Fx fx = newFixture("FX03");
         String partNo = PREFIX + "E3-" + fx.quotationId().toString().substring(0, 6);
+        // 🚨 必须登记：cleanupOwnDatasetRows() **只删 trackAxis 登记过的轴值**，
+        //    而 _record 表外键数 = 0 ⇒ deleteReferencingRows()（清单从 pg_constraint 派生）
+        //    永远够不到它 ⇒ 不登记 = 每跑一轮在库里永久留一行 _record 孤儿（父单已删）。
+        //    2026-09-08 实证：本类三条用例各漏 1 行，E/E2/E3 三族已累积到各 7 行。
+        trackAxis(partNo);
 
         Response r1 = putDraft(fx.quotationId(), draftBodyAdded(partNo, elementBomRowData(partNo)));
         requireStatusBeforeDiff(r1, 200, "FX-03 saveDraft");
