@@ -188,6 +188,14 @@ public class DsQuoteBackfillService {
                 gd.targetVersionNo = g.targetVersionNo;
                 gd.crossVersion = g.crossVersion;
                 gd.result = g.result;
+                gd.blockedReason = g.blockedReason;                       // D-37
+                for (DsBackfillPlan.Colliding c : g.collidingRows) {
+                    DsBackfillDTO.CollidingRow cr = new DsBackfillDTO.CollidingRow();
+                    cr.grainKey = c.grainKey;
+                    cr.baseRowCount = c.baseRowCount;
+                    cr.recordRowCount = c.recordRowCount;
+                    gd.collidingRows.add(cr);
+                }
                 gd.baseRowCount = g.baseRowCount;
                 gd.resultRowCount = g.resultRows.size();
                 gd.patchedRows = g.patchedRows;
@@ -205,7 +213,8 @@ public class DsQuoteBackfillService {
                 }
                 td.groups.add(gd);
                 dto.summary.axes++;
-                if (VersionedGroupWriter.UNCHANGED.equals(g.result)) dto.summary.unchangedGroups++;
+                if (DsBackfillCollector.BLOCKED.equals(g.result)) dto.summary.blockedGroups++;
+                else if (VersionedGroupWriter.UNCHANGED.equals(g.result)) dto.summary.unchangedGroups++;
                 else dto.summary.upgradedGroups++;
                 dto.summary.unanchoredRows += g.unanchoredRows.size();
             }
@@ -254,7 +263,24 @@ public class DsQuoteBackfillService {
         for (DsBackfillPlan.Table t : plan.tables) {
             // 🚫 严禁 for 循环里逐轴值调 writeGroup —— 整张 sheet 一次性交给批量入口。
             Map<String, List<Map<String, Object>>> rowsByAxis = new LinkedHashMap<>();
-            for (DsBackfillPlan.Group g : t.groups) rowsByAxis.put(g.axisValue, g.resultRows);
+            for (DsBackfillPlan.Group g : t.groups) {
+                // 🚨 C′（D-37）：BLOCKED 组**一个字节不写** —— 连 rowsByAxis 都不放进去，
+                //    因为 VersionedGroupWriter 的增量语义是「只碰入参里出现的轴值」，
+                //    不放 = 该轴值组不升版、不归档、不删除，是最干净的「跳过」。
+                //    ⚠️ 核价通过本身照常进行：C′ 的目的是「别写坏」，不是「别通过」
+                //    （主线 2026-09-07 裁决：不拿业务流程给数据层的边界情况陪葬）。
+                if (DsBackfillCollector.BLOCKED.equals(g.result)) continue;
+                rowsByAxis.put(g.axisValue, g.resultRows);
+            }
+            if (rowsByAxis.isEmpty()) {                                   // 整张表都被 BLOCKED
+                sum.tables++;
+                for (DsBackfillPlan.Group g : t.groups) {
+                    sum.axes++;
+                    if (DsBackfillCollector.BLOCKED.equals(g.result)) sum.blockedGroups++;
+                    sum.unanchoredRows += g.unanchoredRows.size();
+                }
+                continue;
+            }
 
             Map<String, VersionedGroupWriter.Result> results = versionedGroupWriter.writeGroups(
                     t.sheet, rowsByAxis, SOURCE_QUOTE_BACKFILL, REASON_QUOTE_BACKFILL, operator);
@@ -269,6 +295,7 @@ public class DsQuoteBackfillService {
             sum.tables++;
             for (DsBackfillPlan.Group g : t.groups) {
                 sum.axes++;
+                if (DsBackfillCollector.BLOCKED.equals(g.result)) { sum.blockedGroups++; sum.unanchoredRows += g.unanchoredRows.size(); continue; }
                 VersionedGroupWriter.Result r = results.get(g.axisValue);
                 String actual = r == null ? g.result : r.result();
                 if (VersionedGroupWriter.UNCHANGED.equals(actual)) sum.unchangedGroups++;

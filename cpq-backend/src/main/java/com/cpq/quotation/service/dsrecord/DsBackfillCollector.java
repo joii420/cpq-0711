@@ -54,6 +54,11 @@ public class DsBackfillCollector {
     static final String REASON_CROSS_VERSION_FP_MISS = "CROSS_VERSION_FINGERPRINT_MISS";
     static final String REASON_NO_ANCHOR = "NO_ANCHOR";
 
+    /** C′（D-37）：该组存在撞键的「本该锚上却没锚上」的行 ⇒ 整组跳过回填。 */
+    public static final String BLOCKED = "BLOCKED";
+    /** 目前 {@link #BLOCKED} 的唯一原因；做成常量以便扩。 */
+    public static final String BLOCKED_GRAIN_KEY_COLLISION = "GRAIN_KEY_COLLISION";
+
     @Inject EntityManager em;
     @Inject DsSheetBindingResolver bindingResolver;
     @Inject DsMainTableReader mainTableReader;
@@ -277,8 +282,10 @@ public class DsBackfillCollector {
         }
 
         // ── 锚不上的 _record 行：显式上报 + 按新增追加（AC-20 第三支路③）──────────────
+        List<RecordRow> unanchoredRecs = new ArrayList<>();
         for (RecordRow r : records) {
             if (consumed.contains(r)) continue;
+            unanchoredRecs.add(r);
             DsBackfillPlan.Unanchored u = new DsBackfillPlan.Unanchored();
             u.recordId = r.recordId;
             u.originId = r.originId;
@@ -319,7 +326,99 @@ public class DsBackfillCollector {
                 g.targetVersionNo = predictedVersionNo;  // D-31：规则只有一份，在 writer 里
             }
         }
+        applyCollisionGuard(g, sheet, grain, base, unanchoredRecs);   // C′（D-37）
         return g;
+    }
+
+    /**
+     * <b>C′ · 歧义膨胀拦截</b>（D-37，用户 2026-09-07 裁决本期落地）。
+     *
+     * <h3>判据（不变量，🚫 无任何数字阈值）</h3>
+     * <pre>
+     *   该组存在 r ∈ unanchoredRows，使得 grainKey(r) ∈ grainKeys(baseRows)
+     *   ⇒ 整组判 BLOCKED，跳过回填
+     * </pre>
+     * <b>为什么这个式子就够</b>：真正的新增行，其粒度键在基底里<b>不存在</b>；
+     * 粒度键已经在基底里、却没锚上，只有一种解释 —— <b>本该锚上却没锚上</b>
+     * （多半是该键在组内重复、第③层按「两侧都恰好一条」不敢认）。再写下去就是
+     * 「原行保留 + 追加一份」⇒ <b>组翻倍</b>，而预览显示「本次覆盖 0 / 本次不动 N」。
+     * <p>🚫 <b>刻意不写「连续 N 次」「超过 K 倍」这类阈值</b>：本项目在「判据写具体数字」上
+     * 栽过三次（{@code AC-113}/{@code AC-122} 同一条 AC 上三处数字全过期）。而且阈值式的本质是
+     * 「允许坏事发生 N 次之后才拦」。
+     *
+     * <h3>三个边界（逐条对应主线的追问）</h3>
+     * <ol>
+     *   <li><b>粒度列为空 / 粒度键退化为空</b>：直接<b>不适用</b>。否则空键会与基底里任何一个
+     *       空键行「相等」，把整组误判成 BLOCKED —— 那是把一个诊断不足的场景升级成阻断。
+     *       判据是「grain 非空 <b>且</b> 该行至少有一个粒度列取值非空」。</li>
+     *   <li><b>真新增行撞键不该拦</b>：区分点<b>不在粒度键，在它有没有过锚</b> ——
+     *       复用 {@link #grainFallbackEligible}：{@code NO_ANCHOR}（两个锚都空）且
+     *       {@code base_version_no > 0} = 组已存在、用户新加的一行 ⇒ <b>排除在 C′ 之外</b>。
+     *       这与 D-36 的闸是<b>同一个谓词</b>，两处不会漂。</li>
+     *   <li><b>UNCHANGED 不会进 BLOCKED</b>：本方法只在 result != UNCHANGED 时改判，
+     *       且 UNCHANGED 意味着指纹多重集相等 ⇒ 一行都没追加 ⇒ unanchoredRecs 必空。
+     *       两者任一成立即可，这里<b>两条都断言</b>（不一致时打 ERROR 而不是掩盖）。</li>
+     * </ol>
+     *
+     * <h3>🚫 N+1</h3>
+     * 纯内存：基底粒度键建一次 Map，未锚定行遍历一次。<b>循环体内零查询</b>。
+     */
+    private static void applyCollisionGuard(DsBackfillPlan.Group g, SheetDef sheet,
+                                            Set<String> grain, DsMainTableReader.BaseGroup base,
+                                            List<RecordRow> unanchoredRecs) {
+        if (com.cpq.dataset.versioning.VersionedGroupWriter.UNCHANGED.equals(g.result)) {
+            if (!unanchoredRecs.isEmpty()) {
+                // 边界③ 的断言：理论上不可能（追加了行，指纹多重集就不可能相等）。
+                LOG.errorf("[ds-backfill] 不变式违反：组 %s 判 UNCHANGED 却有 %d 行未锚定 —— "
+                        + "判定逻辑或指纹口径出问题了，🚫 不要靠这里掩盖", g.axisValue, unanchoredRecs.size());
+            }
+            return;
+        }
+        if (grain == null || grain.isEmpty() || base == null || base.rows.isEmpty()) return;  // 边界①
+        if (unanchoredRecs.isEmpty()) return;
+
+        Map<String, ColumnDef> defs = colDefsOf(sheet);
+        Map<String, Integer> baseCountByGrain = new LinkedHashMap<>();
+        for (DsMainTableReader.BaseRow br : base.rows) {                       // 🚫 无查询
+            String k = DsRecordProjector.contentKey(br.values, defs, grain);
+            if (isDegenerate(br.values, grain)) continue;                      // 边界①
+            baseCountByGrain.merge(k, 1, Integer::sum);
+        }
+        Map<String, Integer> recCountByGrain = new LinkedHashMap<>();
+        Map<String, RecordRow> sampleByGrain = new LinkedHashMap<>();
+        for (RecordRow r : unanchoredRecs) {                                   // 🚫 无查询
+            if (!grainFallbackEligible(r)) continue;                           // 边界②：真新增行不参与
+            if (isDegenerate(r.values, grain)) continue;                       // 边界①
+            String k = DsRecordProjector.contentKey(r.values, defs, grain);
+            recCountByGrain.merge(k, 1, Integer::sum);
+            sampleByGrain.putIfAbsent(k, r);
+        }
+        for (Map.Entry<String, Integer> e : recCountByGrain.entrySet()) {      // 🚫 无查询
+            Integer inBase = baseCountByGrain.get(e.getKey());
+            if (inBase == null) continue;                                      // 键不在基底 ⇒ 真新增，放行
+            DsBackfillPlan.Colliding c = new DsBackfillPlan.Colliding();
+            for (String col : grain) c.grainKey.put(col, sampleByGrain.get(e.getKey()).values.get(col));
+            c.baseRowCount = inBase;
+            c.recordRowCount = e.getValue();
+            g.collidingRows.add(c);
+        }
+        if (!g.collidingRows.isEmpty()) {
+            g.result = BLOCKED;
+            g.blockedReason = BLOCKED_GRAIN_KEY_COLLISION;
+            g.targetVersionNo = g.currentVersionNo;      // 跳过回填 ⇒ 版本不动
+            LOG.warnf("[ds-backfill] 组 %s/%s 判 BLOCKED（%s）：%d 个粒度键「本该锚上却没锚上、"
+                            + "而该键在基底里确实存在」⇒ 再写下去就是组翻倍，本组跳过回填。"
+                            + "🔑 核价通过本身不受影响。", sheet.tableName, g.axisValue,
+                    BLOCKED_GRAIN_KEY_COLLISION, g.collidingRows.size());
+        }
+    }
+
+    /** 粒度键是否退化（全部粒度列取值为空）—— 退化的键不参与 C′，见边界①。 */
+    private static boolean isDegenerate(Map<String, Object> values, Set<String> grain) {
+        for (String c : grain) {
+            if (!com.cpq.dataset.fingerprint.ValueNormalizer.isBlank(values.get(c))) return false;
+        }
+        return true;
     }
 
     /**

@@ -64,6 +64,8 @@ public class DsBackfillDTO {
         public int nonParticipatingComponents;
         /** 🆕 D-35：本单的 {@code _record} 快照是否过期（上次写失败）。true 时前端必须显著提示。 */
         public boolean recordStale;
+        /** 🆕 D-37：判定为 {@code BLOCKED}（跳过回填）的组数。&gt;0 时前端必须显式提示。 */
+        public int blockedGroups;
     }
 
     public static class Table {
@@ -87,8 +89,17 @@ public class DsBackfillDTO {
         public int targetVersionNo;
         /** {@code baseVersionNo != currentVersionNo} → 走指纹重锚。 */
         public boolean crossVersion;
-        /** CREATED / UPGRADED / UNCHANGED。 */
+        /** CREATED / UPGRADED / UNCHANGED / <b>BLOCKED</b>（C′，D-37）。 */
         public String result;
+        /**
+         * 🆕 D-37：{@code BLOCKED} 时非空。目前只有 {@code GRAIN_KEY_COLLISION}。
+         * <p>语义：该组存在「本该锚上却没锚上、而其粒度键在基底里确实存在」的行
+         * ⇒ 再写下去就是<b>组翻倍</b>（原行保留 + 追加一份），所以整组<b>跳过回填</b>。
+         * ⚠️ <b>核价通过本身照常进行</b> —— C′ 的目的是「别写坏」，不是「别通过」。
+         */
+        public String blockedReason;
+        /** 🆕 D-37：触发 C′ 判据的粒度键明细，🚫 非空时前端必须显式列出（同 unanchoredRows 纪律）。 */
+        public List<CollidingRow> collidingRows = new ArrayList<>();
         /** 主表当前整组行数（= 基底行数）。 */
         public int baseRowCount;
         /** 回填后该组行数。 */
@@ -109,6 +120,15 @@ public class DsBackfillDTO {
         public Map<String, Object> displayValues = new LinkedHashMap<>();
         /** SAME_VERSION_ORIGIN_MISS / CROSS_VERSION_FINGERPRINT_MISS / NO_ANCHOR。 */
         public String reason;
+    }
+
+    /** D-37：一个撞键的粒度键。 */
+    public static class CollidingRow {
+        public Map<String, Object> grainKey = new LinkedHashMap<>();
+        /** 该粒度键在基底里有几行（&gt;1 = 歧义源头）。 */
+        public int baseRowCount;
+        /** 该粒度键在 {@code _record} 里有几行。 */
+        public int recordRowCount;
     }
 
     /** AP-60 列维度判据：这个页签表征了哪些列、哪些列原样保留。 */

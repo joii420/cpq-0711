@@ -56,8 +56,12 @@ public class DsBackfillPlan {
         public int targetVersionNo;
         /** {@code baseVersionNo != currentVersionNo} —— 库里已被别的单改过，走指纹重锚。 */
         public boolean crossVersion;
-        /** {@code CREATED} / {@code UPGRADED} / {@code UNCHANGED}（预测，与 writer 同一套指纹口径）。 */
+        /** {@code CREATED} / {@code UPGRADED} / {@code UNCHANGED} / {@code BLOCKED}（C′，D-37）。 */
         public String result;
+        /** {@code BLOCKED} 时非空。目前只有 {@code GRAIN_KEY_COLLISION}，做成枚举以便扩。 */
+        public String blockedReason;
+        /** {@code BLOCKED} 时非空：触发 C′ 判据的那些粒度键。 */
+        public final List<Colliding> collidingRows = new ArrayList<>();
 
         /** 主表当前整组行数（= 基底行数）。 */
         public int baseRowCount;
@@ -80,6 +84,15 @@ public class DsBackfillPlan {
          * <p>🚫 <b>不是</b>「遍历 {@code _record} 生成行」—— 那正是 AP-60 的事故形状。
          */
         public final List<Map<String, Object>> resultRows = new ArrayList<>();
+    }
+
+    /** C′（D-37）：一个「本该锚上却没锚上、而其粒度键在基底里确实存在」的粒度键。 */
+    public static class Colliding {
+        public final Map<String, Object> grainKey = new LinkedHashMap<>();
+        /** 该粒度键在**基底**里有几行 —— &gt;1 就是歧义源头。 */
+        public int baseRowCount;
+        /** 该粒度键在 {@code _record} 里有几行。 */
+        public int recordRowCount;
     }
 
     public static class Table {
