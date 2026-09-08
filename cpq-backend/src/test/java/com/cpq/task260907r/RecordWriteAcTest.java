@@ -1,5 +1,6 @@
 package com.cpq.task260907r;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
@@ -170,9 +171,15 @@ class RecordWriteAcTest extends Task260907RBase {
         assertNotNull(lineItemId, "T-23 前提：找不到 line item");
 
         // ③ quote-card-edit 改一格：seq1 的「组成含量（%）」11.1 → 77.7
-        //    🔑 rowKey = row_key_fields 三个字段的**值**（实查该组件 = ["销售料号","材质料号","元素"]），
-        //       🚫 不是「料号#项次」。
-        String rowKey = mat + "|" + PREFIX + "MAT" + "|" + el1;
+        //
+        // 🔑 rowKey **从装配结果里读**，🚫 不在用例里硬编分隔符。
+        //    实测分隔符是**双竖线** `||`（我首版拼成单竖线 `|`，于是 200 + 静默 no-op），
+        //    但那是 FormulaCalculator.buildRawRowKeys 的**内部约定**：
+        //    同族的 uniquifyRowKeys 撞键消歧还会追加 `#序号`，硬编接不住。
+        //    ⇒ 写死等于把用例绑在一个可以合法变的实现细节上。
+        String rowKey = authoritativeRowKey(fx, el1);
+        System.out.println("[T-23] 权威 rowKey（取自 quoteCardValues.tabs[].formulaResults[].rowKey）= " + rowKey);
+
         String editBody = "{\"componentId\":\"" + COMP_ELEMENT_BOM + "\","
                 + "\"rowKey\":" + jsonStr(rowKey) + ","
                 + "\"fieldName\":\"组成含量（%）\",\"value\":\"77.7\"}";
@@ -181,31 +188,11 @@ class RecordWriteAcTest extends Task260907RBase {
                 .put("/api/cpq/quotations/line-items/" + lineItemId + "/quote-card-edit").thenReturn();
         requireStatusBeforeDiff(edit, 200, "T-23 quote-card-edit（rowKey=" + rowKey + "）");
 
-        // 🔬 诊断：把 quote_card_values 的真实行键结构打出来（rowKey 格式是本条唯一的未知数）
-        for (Object d : col("SELECT jsonb_object_keys(t.tab->'baseRows'->0) "
-                + "FROM quotation_line_item li, jsonb_array_elements(li.quote_card_values->'tabs') t(tab) "
-                + "WHERE li.quotation_id = '" + fx.quotationId() + "' "
-                + "  AND t.tab->>'componentId' = '" + COMP_ELEMENT_BOM + "' "
-                + "  AND jsonb_array_length(t.tab->'baseRows') > 0")) {
-            System.out.println("[T-23·诊断] baseRows[0] 的键 = " + d);
-        }
-        for (Object d : col("SELECT t.tab->'baseRows'->0->>'rowKey' "
-                + "FROM quotation_line_item li, jsonb_array_elements(li.quote_card_values->'tabs') t(tab) "
-                + "WHERE li.quotation_id = '" + fx.quotationId() + "' "
-                + "  AND t.tab->>'componentId' = '" + COMP_ELEMENT_BOM + "'")) {
-            System.out.println("[T-23·诊断] baseRows[0].rowKey = " + d);
-        }
-        for (Object[] d : rows("SELECT cd.component_id, left(coalesce(cd.row_data::text,'<NULL>'),400) "
-                + "FROM quotation_line_component_data cd JOIN quotation_line_item li ON li.id = cd.line_item_id "
-                + "WHERE li.quotation_id = '" + fx.quotationId() + "' AND cd.component_id = '"
-                + COMP_ELEMENT_BOM + "'")) {
-            System.out.println("[T-23·诊断] row_data(" + d[0] + ") = " + d[1]);
-        }
-
-        // 🚨 干预必须先被证明生效：row_data 里确实出现了 77.7。
-        //    不证这一步，「主表还是旧值」可能只是**我这一格压根没改上**（rowKey 拼错就会这样），
-        //    那会把「夹具错」报成 D-43 复发。
-        //    📌 顺带回答主线的问题：后端内容键格式与本 rowKey 拼法**逐字对得上**（对不上这里就 0 命中）。
+        // 🚨 干预必须先被证明生效。
+        //    ⚠️ 这一步不可省：quote-card-edit 对**匹配不上的 rowKey 返 200 且零效果**
+        //    （CardSnapshotService.editCardValue 会新建一条 editRows 项，重算时挂不到任何 baseRow）
+        //    ⇒ 不证生效的话，「主表还是旧值」可能只是这一格压根没改上，
+        //       那会把**夹具错**报成 D-43 复发。
         long inRowData = count("SELECT count(*) FROM quotation_line_component_data cd "
                 + "JOIN quotation_line_item li ON li.id = cd.line_item_id "
                 + "WHERE li.quotation_id = '" + fx.quotationId() + "' "
@@ -213,17 +200,28 @@ class RecordWriteAcTest extends Task260907RBase {
         long inCardValues = count("SELECT count(*) FROM quotation_line_item "
                 + "WHERE quotation_id = '" + fx.quotationId() + "' "
                 + "  AND quote_card_values::text LIKE '%77.7%'");
-        System.out.println("[T-23·诊断] 77.7 落点：row_data=" + inRowData
-                + " 行 / quote_card_values=" + inCardValues + " 行");
-        long hit = inRowData + inCardValues;
-        assertFixtureNonEmpty(hit,
-                "🚨 干预未生效：quote-card-edit 返 200，但 row_data 里找不到 77.7 ⇒ "
-                        + "这一格没改上（rowKey 拼法与后端内容键不一致？rowKey=" + rowKey + "）。"
-                        + "此时「主表是旧值」是**夹具错**，🚫 不许报成 D-43 复发。");
-        System.out.println("[T-23] 干预已生效：row_data 命中 77.7 的组件数据 " + hit + " 行；rowKey=" + rowKey);
+        System.out.println("[T-23] 干预落点：row_data=" + inRowData + " 行 / quote_card_values="
+                + inCardValues + " 行");
+        assertFixtureNonEmpty(inRowData + inCardValues,
+                "🚨 干预未生效：quote-card-edit 返 200，但 77.7 哪儿都没落 ⇒ 这一格没改上"
+                        + "（rowKey=" + rowKey + "）。此时「主表是旧值」是**夹具错**，"
+                        + "🚫 不许报成 D-43 复发。");
 
         // ④ 🚫 **中间刻意没有 saveDraft** —— 有它 D-42 的挂点就把 _record 补上了，本条就验不到 D-43
+        // 🔑 <b>结构性证据</b>（主线送的量具）：{@code bumpUserDataVersion} 是 saveDraft 的**唯一**自增点
+        //    ⇒ 编辑与提交前后 user_data_version **不变**，就证明中间确实没走 saveDraft。
+        //    这比「我没调那个接口」强 —— 后者靠自觉，前者靠不变量。
+        long udvBefore = count("SELECT coalesce(user_data_version,0) FROM quotation WHERE id = '"
+                + fx.quotationId() + "'");
         requireStatusBeforeDiff(submit(fx), 200, "T-23 直接提交（中间无 saveDraft）");
+        long udvAfter = count("SELECT coalesce(user_data_version,0) FROM quotation WHERE id = '"
+                + fx.quotationId() + "'");
+        assertEquals(udvBefore, udvAfter,
+                "🔑 T-23 的形状证据：user_data_version 在「编辑 → 提交」前后必须不变（都应是 "
+                        + udvBefore + "）。变了 ⇒ 中间走过 saveDraft ⇒ D-42 的挂点会把 _record 补上，"
+                        + "本用例就退化成验不到 D-43 的空壳。实测 " + udvBefore + " → " + udvAfter);
+        System.out.println("[T-23] 形状证据：user_data_version 提交前后均为 " + udvAfter
+                + " ⇒ 中间确实没有 saveDraft");
 
         // ⑤ 核价通过并确认
         approveWithPreview(fx, "AC23");
@@ -693,6 +691,57 @@ class RecordWriteAcTest extends Task260907RBase {
      * <p>与 {@link #saveDraftAddedTwo} 的区别就是这一点，而这一点<b>决定了能不能发现 D-42</b>：
      * 带 {@code componentData} 的形状在旧代码上也绿。
      */
+    /**
+     * 从<b>装配结果</b>里取权威 {@code rowKey}。
+     *
+     * <p>路径：{@code GET /api/cpq/quotations/{id}} → {@code data.lineItems[].quoteCardValues}
+     * （<b>字符串</b>，要再 parse 一次）→ {@code .tabs[]} 按 {@code componentId} 命中 →
+     * {@code .formulaResults[].rowKey} —— <b>系统自己算出来的那个值</b>。
+     *
+     * <p>🚫 <b>刻意不在用例里硬编分隔符</b>。实测是双竖线（如 {@code S-3110520789||00006||Ag}），
+     * 但那是 {@code FormulaCalculator.buildRawRowKeys} 的内部约定，
+     * 且同族的 {@code uniquifyRowKeys} 撞键消歧还会追加 {@code #序号} —— 硬编接不住。
+     * ⇒ 从产物里读，实现怎么变都跟得上。
+     *
+     * @param elementCode 用来在多行里认出目标行（rowKey 含它）
+     */
+    private String authoritativeRowKey(Fx fx, String elementCode) {
+        Response r = RestAssured.given().cookies(adminCookies())
+                .when().get("/api/cpq/quotations/" + fx.quotationId()).thenReturn();
+        requireStatusBeforeDiff(r, 200, "T-23 取装配结果");
+        JsonNode lineItems = json(r).path("data").path("lineItems");
+        assertTrue(lineItems.isArray() && lineItems.size() > 0,
+                "T-23：装配结果里没有 lineItems。body=" + r.asString());
+        List<String> all = new java.util.ArrayList<>();
+        for (JsonNode li : lineItems) {
+            JsonNode qcvNode = li.path("quoteCardValues");
+            if (qcvNode.isMissingNode() || qcvNode.isNull()) continue;
+            JsonNode qcv;
+            try {
+                // quoteCardValues 是**字符串**，需要再 parse 一次
+                qcv = qcvNode.isTextual() ? MAPPER.readTree(qcvNode.asText()) : qcvNode;
+            } catch (Exception e) {
+                throw new AssertionError("T-23：quoteCardValues 不是合法 JSON：" + qcvNode, e);
+            }
+            for (JsonNode tab : qcv.path("tabs")) {
+                if (!COMP_ELEMENT_BOM.toString().equals(tab.path("componentId").asText())) continue;
+                for (JsonNode fr : tab.path("formulaResults")) {
+                    String rk = fr.path("rowKey").asText(null);
+                    if (rk != null && !rk.isBlank()) all.add(rk);
+                }
+            }
+        }
+        assertFixtureNonEmpty(all.size(),
+                "T-23：在 quoteCardValues.tabs[componentId=" + COMP_ELEMENT_BOM
+                        + "].formulaResults[].rowKey 里一个 rowKey 都没取到 ⇒ "
+                        + "要么页签没装配出来，要么该结构变了。🚫 不要退回硬编分隔符。");
+        List<String> hit = all.stream().distinct().filter(k -> k.contains(elementCode)).toList();
+        assertEquals(1, hit.size(),
+                "T-23：按元素 " + elementCode + " 应恰好命中 1 个 rowKey，实际 " + hit
+                        + "（全部 = " + all.stream().distinct().toList() + "）");
+        return hit.get(0);
+    }
+
     private Response saveDraftLineOnly(Fx fx, String materialNo) {
         // 🔑 真实 UI 的 Step1 会选模板 ⇒ customerTemplateId 必须透传，
         //    否则服务端不知道该物化哪些组件，snapshotQuotation 建不出页签
