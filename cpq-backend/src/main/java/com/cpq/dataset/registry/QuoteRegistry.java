@@ -142,7 +142,13 @@ public class QuoteRegistry extends AbstractDatasetRegistry {
                 col("ratio_pct", "比例（%）", "VALUE", "DECIMAL", "numeric(26,12)", false, true),
                 col("currency", "货币", "VALUE", "ENUM", "varchar(128)", false, true).options(CURRENCY),
                 col("pricing_unit", "计价单位", "VALUE", "ENUM", "varchar(128)", false, true).options(UNIT),
-                col("follow_material_price", "是否随材料价格波动", "VALUE", "STRING", "boolean", false, true),
+                // 🚨 D-47：这一列的 type 必须是 BOOLEAN，不能是 STRING。
+                //    DB 物理类型是 boolean，而 ValueNormalizer.isBooleanType 只认字面 "BOOLEAN" ⇒
+                //    声明成 STRING 会绕过 normalizeBoolean 的「宽进严出」：导入侧指纹里存 Excel 原文「是」，
+                //    读回侧 JDBC 返 Boolean → String.valueOf → "true"，两边永不相等 ⇒
+                //    值一个字节没变也判 UPGRADED，核价通过每次空转升一版（违反 AC-14）。
+                //    该类错配现由 DatasetSchemaSelfCheck#checkTypeCoherence 在启动期硬拦。
+                col("follow_material_price", "是否随材料价格波动", "VALUE", "BOOLEAN", "boolean", false, true),
                 col("material_increase_ratio", "材料结算涨幅比例（%）", "VALUE", "DECIMAL", "numeric(26,12)", false, true),
                 col("material_increase_value", "材料固定的涨幅值", "VALUE", "DECIMAL", "numeric(26,12)", false, true),
                 col("increase_currency", "涨幅货币", "VALUE", "ENUM", "varchar(128)", false, true).options(CURRENCY),

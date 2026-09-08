@@ -79,6 +79,16 @@ public class DatasetSchemaSelfCheck {
     boolean recordCheckEnabled;
 
     public void onStartup(@Observes StartupEvent ev) {
+        // ── D-47：类型自洽先查，且**不受 enabled 开关管**──────────────────────────
+        // 这一段是纯内存的（只读 Registry，不碰库），不可能因为「迁移还没落到目标库」而误报 ——
+        // 而那正是 enabled=false 的唯一合法场景。放在开关外面，才不会被排障用的开关顺手关掉。
+        List<String> typeProblems = checkTypeCoherence();
+        if (!typeProblems.isEmpty()) {
+            throw new IllegalStateException(
+                    "[dataset] Registry 声明类型(type) 与建表类型(pgType) 不自洽，共 " + typeProblems.size()
+                    + " 处（D-47：错配会让该列绕过对应的指纹规范化，造成「值没变也升版」且完全静默）：\n  - "
+                    + String.join("\n  - ", typeProblems));
+        }
         if (!enabled) {
             LOG.warn("[dataset] Registry↔DDL 启动自检已被 cpq.dataset.schema-check.enabled=false 关闭 —— 双写漂移不再被拦截");
             return;
@@ -90,6 +100,69 @@ public class DatasetSchemaSelfCheck {
                     + "task-260907 第二段的 `_record` 与 source_quotation_id 迁移 与 "
                     + "com.cpq.dataset.registry.* 必须同源）：\n  - " + String.join("\n  - ", problems));
         }
+    }
+
+    /**
+     * D-47 · 声明类型 ↔ 建表类型 自洽（<b>纯内存，不碰库</b>）。
+     *
+     * <h3>为什么单独立一条</h3>
+     * {@link #check()} 比的是「Registry 说有这一列 / 库里也有这一列，且 {@code pgType} 一致」——
+     * 它<b>完全看不到</b> {@link ColumnDef#type} 这个字段，因为那一列在库里根本没有对应物。
+     * 而 {@code type} 决定的是<b>指纹怎么规范化</b>（{@link com.cpq.dataset.fingerprint.ValueNormalizer}），
+     * 声明错了 DDL 一样对得上、启动一样成功、导入一样不报错，只是<b>值没变也升版</b>。
+     *
+     * <h3>实际事故（D-47）</h3>
+     * {@code ds_quote_incoming_fixed_fee.follow_material_price} 物理类型是 {@code boolean}，
+     * 却声明成 {@code type="STRING"} ⇒ 绕过 {@code normalizeBoolean} 的「宽进严出」：
+     * 导入侧指纹存 Excel 原文「是」，读回侧 JDBC 返 {@code Boolean} → {@code "true"}，
+     * 两边<b>永不相等</b> ⇒ 12 个业务列逐字节相同（md5 一致）却每次核价通过都空转升一版。
+     *
+     * <h3>规则（按 pgType 的物理族反查合法的 type 族）</h3>
+     * <ul>
+     *   <li>{@code boolean}                          ⟺ {@code BOOLEAN}</li>
+     *   <li>{@code numeric/integer/bigint/smallint}  ⟺ {@code ValueNormalizer.isDecimalType}（NUMBER / DECIMAL / …）</li>
+     *   <li>{@code varchar/char/text}                ⟹ 既不是布尔也不是数值（STRING / ENUM）</li>
+     *   <li>其它物理类型                              ⟹ <b>直接报</b>。新加一种物理类型（date / uuid / jsonb …）
+     *       必须先想清楚它的指纹规范化走哪条分支，🚫 不许靠「默认落文本」蒙混过去。</li>
+     * </ul>
+     *
+     * @return 全部不自洽的描述；空列表 = 自洽。可被测试直接调用（无需起 Quarkus）。
+     */
+    public List<String> checkTypeCoherence() {
+        List<String> problems = new ArrayList<>();
+        // 🚫 N+1 自检：三层循环全是内存遍历 Registry 声明，无任何查询 / 懒加载。
+        for (DatasetRegistry reg : registries.all()) {
+            for (SheetDef s : reg.sheets()) {
+                for (ColumnDef c : s.persistedColumns()) {
+                    String problem = typeCoherenceProblem(c);
+                    if (problem != null) problems.add(s.tableName + "." + c.name + " " + problem);
+                }
+            }
+        }
+        return problems;
+    }
+
+    /** @return null = 自洽；否则为差异描述（不含表名列名前缀）。 */
+    static String typeCoherenceProblem(ColumnDef c) {
+        String pg = c.pgType == null ? "" : c.pgType.trim().toLowerCase();
+        String declared = c.type == null ? "(null)" : c.type;
+        String suffix = "：pgType=" + c.pgType + " type=" + declared;
+        boolean isBool = com.cpq.dataset.fingerprint.ValueNormalizer.isBooleanType(c.type);
+        boolean isNum = com.cpq.dataset.fingerprint.ValueNormalizer.isDecimalType(c.type);
+
+        if (pg.startsWith("boolean")) {
+            return isBool ? null : "物理列是 boolean，type 必须声明为 BOOLEAN" + suffix;
+        }
+        if (pg.startsWith("numeric") || pg.startsWith("integer")
+                || pg.startsWith("bigint") || pg.startsWith("smallint")) {
+            return isNum ? null : "物理列是数值，type 必须是数值族（NUMBER / DECIMAL / INTEGER）" + suffix;
+        }
+        if (pg.startsWith("varchar") || pg.startsWith("char") || pg.startsWith("text")) {
+            if (isBool) return "物理列是字符型，却声明成 BOOLEAN（会把非 true 字面量一律归一成 false）" + suffix;
+            if (isNum) return "物理列是字符型，却声明成数值族（会对文本做 BigDecimal 归一）" + suffix;
+            return null;
+        }
+        return "未识别的建表类型 —— 请先确定它的指纹规范化分支，再把它加进 typeCoherenceProblem" + suffix;
     }
 
     /** @return 全部差异描述；空列表 = 一致。可被测试直接调用。 */

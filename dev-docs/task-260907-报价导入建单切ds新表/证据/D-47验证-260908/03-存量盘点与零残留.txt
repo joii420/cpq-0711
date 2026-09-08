@@ -1,0 +1,26 @@
+# D-47 存量盘点（只读）+ 零残留核对
+# 口径：全库扫 ds_quote_incoming_fixed_fee 每个轴值组，比对「库中 row_fingerprint」vs「读回主表真实行重算」
+#      —— 这正是 DsBackfillCollector:347-350 判 UNCHANGED/UPGRADED 的那条判据
+
+## BEFORE(改回去) vs AFTER(修复在) 逐行 diff
+(diff 为空 —— 存量 7 行 / 6 组的预览判定，本次改动前后一字未变)
+
+[D47][SCAN] cust=CUST-0001 axis=S0001 v1 rows=1 → UPGRADED(指纹漂移)
+[D47][SCAN] cust=CUST-0001 axis=S0004 v1 rows=1 → UPGRADED(指纹漂移)
+[D47][SCAN] cust=CUST-0001 axis=S0008 v1 rows=1 → UPGRADED(指纹漂移)
+[D47][SCAN] cust=CUST-0001 axis=S0012 v1 rows=1 → UPGRADED(指纹漂移)
+[D47][SCAN] cust=CUST-0004 axis=T260907T-FG01 v4 rows=2 → UNCHANGED
+[D47][SCAN] cust=CUST-0004 axis=T260907T-FG02 v4 rows=1 → UNCHANGED
+[D47][SCAN] 汇总 组数=6 行数=7 一致=2 漂移=4
+[D47][SCAN] 汇总 组数=6 行数=7 一致=2 漂移=4
+
+## 结论：本次改动对**存量已落库数据**的预览判定影响 = 0 组
+   读回侧两种声明都归一成 "true"/"false"（toRawString(Boolean) 已是 "true"），故重算指纹逐字相同。
+   4 组漂移（CUST-0001 / S0001·S0004·S0008·S0012，各 1 行）是**改动前就已存在**的 D-47 存量症状，
+   不是本次引入；2 组一致（CUST-0004 / T260907T-FG01·FG02，v4）是主线回填实验写的，两侧都一致。
+
+## 零残留核对（2026-09-08 06:04:45 PDT）
+  ds_quote_incoming_fixed_fee      WHERE material_no|customer_no LIKE 'T260907D47%' → 0
+  ds_quote_incoming_fixed_fee_history                                  同上 → 0
+  ds_quote_material_bom                                                同上 → 0
+  ds_quote_incoming_fixed_fee 全表行数 = 7（与测试前一致）
