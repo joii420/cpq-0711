@@ -9,9 +9,16 @@
 
 本任务**全部**后端改动都建立在 `task-260907-报价侧加客户维度` 的交付物上：
 
+> 🚨 **判据锚点已更正（2026-09-07）：看 `master`，不要看共享开发库。**
+> 对方的 `V423`（28 张表加 `customer_no` + 收紧 `NOT NULL`）**一旦落进共享库 `cpq_db_0724`，所有会话的后端下次启动全部失败** ——
+> 因为 `DatasetSchemaSelfCheck.java:116`/`:73` 是**双向**比对，**DB 多出一列同样抛 `IllegalStateException`**，
+> 挂的不是它那个分支，是**所有人**。⇒ 对方已改为在隔离库 `cpq_t260907_custdim`（共享库全量克隆）验证，
+> **在它合并 master 之前，共享开发库不会有任何变化**。
+> ⇒ 🚫 **因此「查共享库 `information_schema` 返回 0」这个判据在合并前恒为假**，用它会得出「前置永远不满足」的错误结论。
+
 | 前置 | 判据（自己跑一遍，不要凭文档相信） |
 |---|---|
-| 28 张表已加 `customer_no` | `SELECT count(*) FROM information_schema.tables t WHERE t.table_name LIKE 'ds_quote_%' AND NOT EXISTS(SELECT 1 FROM information_schema.columns c WHERE c.table_name=t.table_name AND c.column_name='customer_no')` → **0** |
+| 28 张表已加 `customer_no` | 🔑 **查 `master` 的迁移文件**，不是查共享库：`git ls-tree master --name-only cpq-backend/src/main/resources/db/migration/ \| grep -E 'V42[3-9]\|V4[3-9][0-9]'` 中能看到对方那笔加列迁移；**并且**下一行的轴模型判据同时成立（两者必须同批合并，见 `需求文档.md` §④） |
 | 轴模型已复合 | `SheetDef.axisColumn` 不再是单列 `String` |
 | 物料表唯一索引已扩 | `uq_ds_quote_material` 的定义含 `customer_no` |
 
@@ -122,10 +129,10 @@
 
 ```bash
 # 在仓库根目录执行。检查不通过就【不会】启动 —— 这是控制流，不是提示。
-M=cpq-backend/src/main/resources/db/migration/
+M=cpq-backend/src/main/resources/db/migration
 DIFF=$(comm -23 \
-  <(git ls-tree HEAD   --name-only "$M" | grep -o 'V[0-9]*' | sort -u) \
-  <(git ls-tree master --name-only "$M" | grep -o 'V[0-9]*' | sort -u))
+  <(ls "$M"                    | grep -oE '^V[0-9]+' | sort -u) \
+  <(git ls-tree master --name-only "$M/" | grep -oE  'V[0-9]+' | sort -u))
 
 if [ -n "$DIFF" ]; then
   echo "🚨 本分支有 master 上没有的迁移：$DIFF"
@@ -146,3 +153,33 @@ fi
 ⇒ 唯一可靠的形态是**把检查绑进它必然要执行的那个动作里**，让「跳过检查」需要额外动作才能做到。
 
 🚫 **本项目另一条实证教训**（`RECORD.md` 2026-09-06 规则升级提议④）：**脚本里的红线守卫必须是控制流，不能是打印**。曾写过 `[ -e "$DST" ] && echo "已存在，停手"` —— **打印了「停手」却继续执行**，覆盖了未读过的文件。上面这段用的是 `if/else`，检查不过**根本不会走到启动那一支**。
+
+### ⚠️ 这条命令本身踩过的两个坑（都由实测暴露，不要「优化」回去）
+
+**坑 1 · 左边必须扫文件系统，不能用 `git ls-tree HEAD`。**
+`Flyway 读的是文件系统，不是 git` ⇒ **写好但还没 `commit` 的迁移会从守卫底下整个溜过去**：守卫报「无差异」→ 照常启动 → 照常落库。
+📌 由 `页签属性的标签优化` 会话 2026-09-07 实测发现（其未跟踪的 `V423`/`V424` 被旧守卫放行），本会话在隔离仓库复现确认：
+```
+旧守卫（左 = git ls-tree HEAD） → ✅ 放行  ← 未提交的 V4 溜过去了
+新守卫（左 = ls 文件系统）      → 🚨 拦下
+```
+
+**坑 2 · 右边的 `git ls-tree` 路径必须带尾斜杠 `"$M/"`。**
+`git ls-tree` 对尾斜杠敏感：**不带**尾斜杠时它只返回**目录条目本身**（`.../db/migration` 一行），`grep 'V[0-9]+'` 命中 **0** 条
+⇒ 右边恒为空集 ⇒ **左边所有迁移都被判成差集 ⇒ 守卫每次都拦，服务永远起不来**。
+🚨 这个假阳性的危害不亚于漏放：**一个「每次都拦」的守卫，会在第二天就被人直接注释掉**。
+```
+git ls-tree master --name-only .../migration    → .../migration            （1 行，目录本身）
+git ls-tree master --name-only .../migration/   → .../migration/V1__a.sql …（列内容，正确）
+```
+
+**验证过的行为**（隔离仓库实测，非推演）：
+
+| 场景 | 期望 | 实测 |
+|---|---|---|
+| 本分支有已提交但 master 没有的迁移（V3） | 拦 | 🚨 拦下 |
+| 本分支有**未提交**的迁移（V4） | 拦 | 🚨 拦下 |
+| 两者都合进 master 后 | 放行 | ✅ 放行 |
+
+> 🔑 **一条方法论**（对方指出，我认同）：先前那轮 `HEAD~40` 基线的 4/4 证伪实验**结构上不可能暴露坑 1** —— 它用的全是**已提交**的迁移。
+> **证伪实验只能证明守卫抓得住你想到的那一类。** 它降低风险，但不构成「守卫是完备的」的证据。

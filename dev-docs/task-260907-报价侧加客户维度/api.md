@@ -41,3 +41,38 @@ writeGroups(spec, byAxis, ...)          // byAxis 的 key 是单个轴值
 - 维护端 5 个端点的现有行为（**在 `产品管理客户过滤` 加 query 参数之前**）
 - 核价两套（`COST_BASIC`/`COST_DETAIL`）的导入与维护端保存 —— **逐行 md5 相同**（AC-6）
 - 选配链路（`ConfigureProductService` / `SelDsQuoteWriter`）写入行为（AC-7）
+
+---
+
+## 🚨 契约补漏（2026-09-07 —— 这两处原本没写，测试代理是靠 400 报文反推出来的）
+
+> 📌 **「靠报错反推契约」本身就是契约缺口的证据。** 记在这里，让下一个人不用再反推一次。
+
+### 导入端：`customerNo` 走 **multipart 表单字段**，🚫 不是 query 参数
+
+```
+POST /api/cpq/dataset/{dataset}/import
+Content-Type: multipart/form-data
+  file       : <xlsx>
+  customerNo : CUST-0001        ← 表单字段，必填
+```
+按 query 参数发会得到：
+```json
+{"code":400,"message":"导入报价数据必须指定客户（customerNo）"}
+```
+
+### 维护端：`PUT .../sheets/{sheetKey}/rows` **强制**要 `customerNo`（query 参数）
+
+```
+PUT /api/cpq/dataset/{dataset}/parts/{axisValue}/sheets/{sheetKey}/rows?customerNo=CUST-0001
+```
+与 `A0-2` 裁决一致（客户走 query 参数），但**这一条是强制的**，与其余端点「不传则不过滤」的向后兼容口径不同。
+
+### ⚠️ 两个已知的契约不一致（本文件记录，修复归属见 `需求文档.md` A0-7）
+
+1. 🔴 **读端点 `GET .../sheets/{sheetKey}/rows` 收下 `customerNo` 却不按它过滤** ——
+   传了客户号仍返回全部客户的行；照原样保存会把对方客户的行**复制成自己的**（实测 CUST-0004 由 1 行变 2 行）。
+   ⇒ 🚚 已转 `task-260907-产品管理客户过滤`。
+   **注意区分两种形态**：「不传 = 不过滤」是有意的向后兼容；「**传了也不过滤**」是缺陷。
+2. ⚠️ **缺 `customerNo` 时的 400 响应没有 `data.errors`**，违反本文件 §1「400 必须带 `data.errors`」。
+   实测红的用例：`DatasetCustomerPartAcTest.tc01` / `tc02`。
