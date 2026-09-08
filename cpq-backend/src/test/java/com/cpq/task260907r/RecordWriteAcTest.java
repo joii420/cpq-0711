@@ -1,7 +1,9 @@
 package com.cpq.task260907r;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.cpq.priceadjust.service.MaterialVersionUpgradeService;
 import io.quarkus.test.junit.QuarkusTest;
+import jakarta.inject.Inject;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
@@ -30,6 +32,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @QuarkusTest
 @DisplayName("AC-2/4/12 · _record 写入语义")
 class RecordWriteAcTest extends Task260907RBase {
+
+    /** AC-12 的「价格调整升版作业」入口。按**行项**调用 ⇒ 命中面收窄到本轮夹具。 */
+    @Inject
+    MaterialVersionUpgradeService upgradeService;
 
     private static final String MBOM = "ds_quote_material_bom";
     private static final String MBOM_REC = "ds_quote_material_bom_record";
@@ -517,69 +523,130 @@ class RecordWriteAcTest extends Task260907RBase {
                 + " == 实时价 " + livePrice);
     }
 
+    /**
+     * <b>T-12（AC-12）</b>：价格调整改价 → {@code _record.element_price} 与 {@code snapshot_rows} 不分叉。
+     *
+     * <p>前置：{@code MaterialVersionUpgradeService.ACTIVE_STATUSES}（<b>自行 grep 复核</b> =
+     * {@code {DRAFT, SUBMITTED, APPROVED, REJECTED, COSTING_REJECTED}}）中的<b>每一种各一张单</b>。
+     * 操作：跑一次价格调整升版作业。
+     * 断言：① 每张单两处取值相同；② 被 {@code SKIPPED} 的单<b>两者同时都不变</b>。
+     *
+     * <h3>🚨 三条守卫（缺一条就有恒真的口子）</h3>
+     * <ol>
+     *   <li><b>阳性对照</b>：升版作业<b>确实改动了价格</b> —— 价格没变的话「两者相同」在任何实现下都成立。
+     *       ⇒ 先断言至少一张 ACTIVE 单的 {@code element_price} <b>发生了变化</b>，再断言一致性。</li>
+     *   <li><b>阴性对照的非空守卫</b>：那张状态不在集合里的单<b>必须真的存在且真的被 SKIPPED</b>
+     *       （0 张 ⇒ ② 循环 0 次恒真）。</li>
+     *   <li><b>比值用 {@code BigDecimal.compareTo}</b>，🚫 不用 {@code equals} —— 标度不同不算不等
+     *       （T-04 已踩过同一个坑）。</li>
+     * </ol>
+     *
+     * <p>🔑 <b>② 的措辞是不变量，不是「仍然相等」</b>：断言两个值<b>各自逐字未变</b>。
+     * 「两者仍然相等」在「两个都被改成同一个新值」时照样成立 —— 而那正是它要拦的坏情况。
+     *
+     * <h3>命中面（🚨 共享库纪律）</h3>
+     * 价格版本是<b>按客户</b>的，但 {@code material_price_version_ref} 是<b>按客户 × 料号</b>的
+     * ⇒ 只把<b>我自己的轴值</b>指向新版本，别的料号一行不受影响。
+     * 新建的 {@code element_price_version} 带 {@code T260907R-} 版本号，未被引用即惰性。
+     */
     @Test
-    @DisplayName("T-12 · ACTIVE_STATUSES 五态各一单；_record.element_price 与 snapshot_rows 不分叉")
+    @DisplayName("T-12 · 价格调整后 _record.element_price 与 snapshot_rows 不分叉；SKIPPED 单两者同时不变")
     void t12_priceAdjustKeepsRecordAndSnapshotInSync() {
         requireRecordLayer();
+        String customerNo = PRICED_CUSTOMER;
+        Object custId = scalar("SELECT id FROM customer WHERE code = '" + customerNo + "'");
+        assertNotNull(custId, "T-12 前置：找不到有价格策略的客户 " + customerNo);
+        String element = pricedElementOf(customerNo);
+        java.util.UUID tpl = templateWithPricedElementView();
+        Fx owner = new Fx((java.util.UUID) custId, customerNo, null, null);
 
+        String mat = axis("P12");
+        seedEbomMainGroup(owner, mat, List.of(new EbomRow(1, element, "50.0", "2.4")), 1);
+
+        // ── 每种 ACTIVE 状态各一张单 + 一张阴性对照（状态**不在**集合里）
         List<String> activeStatuses = List.of("DRAFT", "SUBMITTED", "APPROVED", "REJECTED", "COSTING_REJECTED");
-        // SKIPPED 对照组：取一个明确不在 ACTIVE_STATUSES 里的状态
-        String skippedStatus = "SENT";
+        String skippedStatus = "SENT";   // 不在 ACTIVE_STATUSES 里
+        assertFalse(activeStatuses.contains(skippedStatus),
+                "T-12 前置：阴性对照的状态必须**不在** ACTIVE_STATUSES 里");
 
-        java.util.Map<String, Fx> fxs = new java.util.LinkedHashMap<>();
+        Map<String, Fx> orders = new java.util.LinkedHashMap<>();
         for (String st : activeStatuses) {
-            Fx fx = newFixture("AC12-" + st);
-            String mat = PREFIX + "P-" + st + "-" + shortId(fx);
-            seedElementBomGroup(mat);
-            createQuotationWithElementBom(fx, mat);
-            setQuotationStatus(fx, st);
-            fxs.put(st, fx);
+            orders.put(st, newPricedOrder(owner, mat, tpl, st));
         }
-        Fx skipped = newFixture("AC12-SKIPPED");
-        String skippedMat = PREFIX + "P-SKIP-" + shortId(skipped);
-        seedElementBomGroup(skippedMat);
-        createQuotationWithElementBom(skipped, skippedMat);
-        setQuotationStatus(skipped, skippedStatus);
+        Fx skipped = newPricedOrder(owner, mat, tpl, skippedStatus);
+        assertFixtureNonEmpty(orders.size(), "T-12 的 ACTIVE 单数");
+        // 守卫②：阴性对照单真的存在且状态真的是集合外的那个
+        assertEquals(skippedStatus, String.valueOf(scalar(
+                        "SELECT status FROM quotation WHERE id = '" + skipped.quotationId() + "'")),
+                "🚨 守卫②：阴性对照单必须真的处于集合外状态，否则 ② 会循环 0 次恒真");
 
-        // ── 采基线（🚨 先证明每张单两处都有值，否则「相同」会在双空时恒真）
-        java.util.Map<String, String> recBefore = new java.util.LinkedHashMap<>();
-        java.util.Map<String, String> snapBefore = new java.util.LinkedHashMap<>();
-        for (var e : fxs.entrySet()) {
-            recBefore.put(e.getKey(), recordPrices(e.getValue()));
-            snapBefore.put(e.getKey(), snapshotPrices(e.getValue()));
+        // ── 采基线（两处各自的值，🚫 不只采「是否相等」）
+        Map<String, String> recBefore = new java.util.LinkedHashMap<>();
+        Map<String, String> snapBefore = new java.util.LinkedHashMap<>();
+        for (var e : orders.entrySet()) {
+            recBefore.put(e.getKey(), recordPrice(e.getValue(), mat));
+            snapBefore.put(e.getKey(), snapshotPrice(e.getValue()));
             assertNotNull(recBefore.get(e.getKey()), e.getKey() + " 单的 _record.element_price 基线为空");
             assertNotNull(snapBefore.get(e.getKey()), e.getKey() + " 单的 snapshot_rows 价格基线为空");
         }
-        String skRecBefore = recordPrices(skipped);
-        String skSnapBefore = snapshotPrices(skipped);
-        assertNotNull(skRecBefore, "SKIPPED 对照单的 _record 价格基线为空 ⇒ 「两者同时不变」会恒真");
-        assertNotNull(skSnapBefore, "SKIPPED 对照单的 snapshot_rows 价格基线为空 ⇒ 同上");
+        String skRecBefore = recordPrice(skipped, mat);
+        String skSnapBefore = snapshotPrice(skipped);
+        assertNotNull(skRecBefore, "🚨 守卫②：阴性对照单的 _record 价格基线为空 ⇒「两者同时不变」恒真");
+        assertNotNull(skSnapBefore, "🚨 守卫②：阴性对照单的 snapshot_rows 价格基线为空 ⇒ 同上");
+        System.out.println("[T-12] 基线 _record=" + recBefore + " / snapshot=" + snapBefore
+                + " ；阴性对照(" + skippedStatus + ") _record=" + skRecBefore + " snapshot=" + skSnapBefore);
 
-        // ── 操作：跑一次价格调整升版作业
-        runPriceAdjustJob();
+        // ── 造一个**改了价**的价格版本，并只把我自己的轴值指过去
+        java.math.BigDecimal oldPrice = dec(recBefore.values().iterator().next());
+        java.math.BigDecimal newPrice = oldPrice.add(new java.math.BigDecimal("111.111"));
+        java.util.UUID versionId = seedPriceVersion(customerNo, mat, element, oldPrice, newPrice);
 
-        // ── AC-12①：每张 ACTIVE 单，两处取值相同
-        for (var e : fxs.entrySet()) {
-            String rec = recordPrices(e.getValue());
-            String snap = snapshotPrices(e.getValue());
-            assertEquals(snap, rec,
-                    "AC-12①：状态 " + e.getKey() + " 的单，_record.element_price 与 snapshot_rows 里的元素价格分叉了。"
-                            + "snapshot=" + snap + " record=" + rec);
+        // ── 跑升版作业（按行项，命中面 = 我自己的单）
+        for (var e : orders.entrySet()) runUpgrade(e.getValue(), versionId, e.getKey());
+        runUpgrade(skipped, versionId, skippedStatus);
+
+        // ══ 守卫①（阳性对照）：作业**确实改动了价格** ══
+        Map<String, String> recAfter = new java.util.LinkedHashMap<>();
+        Map<String, String> snapAfter = new java.util.LinkedHashMap<>();
+        for (var e : orders.entrySet()) {
+            recAfter.put(e.getKey(), recordPrice(e.getValue(), mat));
+            snapAfter.put(e.getKey(), snapshotPrice(e.getValue()));
+        }
+        System.out.println("[T-12] 作业后 _record=" + recAfter + " / snapshot=" + snapAfter);
+        boolean anyChanged = orders.keySet().stream()
+                .anyMatch(k -> recBefore.get(k) != null && !recBefore.get(k).equals(recAfter.get(k)));
+        assertTrue(anyChanged,
+                "🚨 守卫①（阳性对照）：升版作业**没有改动任何 ACTIVE 单的 element_price**"
+                        + "（" + oldPrice + " → 期望 " + newPrice + "）⇒ 「两者取值相同」在价格没变时"
+                        + "在任何实现下都成立，此刻的绿不构成任何证据。before=" + recBefore + " after=" + recAfter);
+
+        // ══ AC-12①：每张 ACTIVE 单两处取值相同 ══
+        for (String st : activeStatuses) {
+            java.math.BigDecimal r = dec(recAfter.get(st));
+            java.math.BigDecimal sp = dec(snapAfter.get(st));
+            assertNotNull(r, "AC-12①：状态 " + st + " 的单 _record.element_price 为空");
+            assertNotNull(sp, "AC-12①：状态 " + st + " 的单 snapshot_rows 价格为空");
+            assertEquals(0, r.compareTo(sp),
+                    "AC-12①：状态 " + st + " 的单，_record.element_price 与 snapshot_rows 里的元素价格分叉了。"
+                            + "snapshot=" + sp + " record=" + r
+                            + "（用 BigDecimal.compareTo 比值，标度不同不算不等）");
         }
 
-        // ── AC-12②：SKIPPED 的单，两者「变/不变」必须一致
-        String skRecAfter = recordPrices(skipped);
-        String skSnapAfter = snapshotPrices(skipped);
-        boolean recChanged = !skRecBefore.equals(skRecAfter);
-        boolean snapChanged = !skSnapBefore.equals(skSnapAfter);
-        assertEquals(snapChanged, recChanged,
-                "AC-12②：被 SKIPPED（状态 " + skippedStatus + "）的单出现了「一个变了一个没变」——"
-                        + " snapshot_rows 变化=" + snapChanged + "（" + skSnapBefore + " → " + skSnapAfter + "）；"
-                        + " _record.element_price 变化=" + recChanged + "（" + skRecBefore + " → " + skRecAfter + "）");
-        assertFalse(recChanged,
-                "AC-12②：被 SKIPPED 的单两者都应不变，实测 _record.element_price 变了："
-                        + skRecBefore + " → " + skRecAfter);
+        // ══ AC-12②：SKIPPED 的单**两者各自逐字未变** ══
+        //    🔑 不是「两者仍然相等」—— 后者在「两个都被改成同一个新值」时照样成立。
+        String skRecAfter = recordPrice(skipped, mat);
+        String skSnapAfter = snapshotPrice(skipped);
+        System.out.println("[T-12] 阴性对照 作业后 _record=" + skRecAfter + " snapshot=" + skSnapAfter);
+        assertEquals(skRecBefore, skRecAfter,
+                "AC-12②：状态 " + skippedStatus + " 不在 ACTIVE_STATUSES 里、应被 SKIPPED ⇒ "
+                        + "_record.element_price 必须**逐字未变**。" + skRecBefore + " → " + skRecAfter);
+        assertEquals(skSnapBefore, skSnapAfter,
+                "AC-12②：同上，snapshot_rows 里的元素价格必须**逐字未变**。"
+                        + skSnapBefore + " → " + skSnapAfter);
+        System.out.println("[T-12] AC-12 通过：5 种 ACTIVE 状态两处一致；"
+                + skippedStatus + " 单两者各自逐字未变");
     }
+
 
     // ═══════════════════════ 夹具与操作（⛔ 待实现落地后按 api.md 补实现体）═══════════════════════
     //
@@ -706,9 +773,137 @@ class RecordWriteAcTest extends Task260907RBase {
                 + "  AND (sql_views_snapshot->'" + COMP_ELEMENT_BOM + "::builder_196aadeeb89f')::text "
                 + "      LIKE '%元素单价%' "
                 + "ORDER BY version DESC LIMIT 1");
-        assertNotNull(id, "T-04 前置：找不到任何「冻结视图含元素单价列」的已发布报价模板 "
-                + "⇒ 换库/换配置后此前提要重验（实查仅 v1.2 满足，v1.0/v1.1 的冻结视图无该列）");
+        assertNotNull(id, "T-04 前置：找不到任何「冻结视图含元素单价列」的已发布报价模板。\n"
+                + "  探测口径：template.sql_views_snapshot 的键 '" + COMP_ELEMENT_BOM
+                + "::builder_196aadeeb89f'，值里 LIKE '%元素单价%'。\n"
+                + "  ⚠️ 组件 id 与视图名是**拼进 jsonb 路径**的：该组件若被换掉，这里会静默返 0 行"
+                + "并走到本分支 —— 那时要查的是**组件/视图有没有换**，不是「模板都不合格」。\n"
+                + "  实查（2026-09-08 laneb）：仅 v1.2 满足；v1.0/v1.1 冻结的是 13 列旧视图、无价格 JOIN。");
         return java.util.UUID.fromString(id.toString());
+    }
+
+    // ═══════════════════════ T-12 夹具 ═══════════════════════
+
+    /** 建一张挂 {@code owner} 客户、指定状态、含有价元素的单。 */
+    private Fx newPricedOrder(Fx owner, String mat, java.util.UUID tpl, String status) {
+        Fx fx = newFixtureForCustomer("AC12-" + status, owner);
+        requireStatusBeforeDiff(saveDraftLineOnly(fx, mat, tpl), 200, "T-12 建单(" + status + ")");
+        setQuotationStatus(fx, status);
+        return fx;
+    }
+
+    private String recordPrice(Fx fx, String mat) {
+        Object v = scalar("SELECT element_price FROM " + EBOM + "_record WHERE quotation_id = '"
+                + fx.quotationId() + "' AND material_no = '" + mat + "' LIMIT 1");
+        return v == null ? null : v.toString();
+    }
+
+    /** {@code snapshot_rows[].driverRow.元素单价} —— AC-12① 的对照侧。 */
+    private String snapshotPrice(Fx fx) {
+        Object v = scalar("SELECT r->'driverRow'->>'元素单价' "
+                + "FROM quotation_line_component_data cd "
+                + "JOIN quotation_line_item li ON li.id = cd.line_item_id, "
+                + "  LATERAL jsonb_array_elements(coalesce(cd.snapshot_rows,'[]'::jsonb)) r "
+                + "WHERE li.quotation_id = '" + fx.quotationId() + "' "
+                + "  AND cd.component_id = '" + COMP_ELEMENT_BOM + "' "
+                + "  AND jsonb_exists(r->'driverRow','元素单价') LIMIT 1");
+        return v == null ? null : v.toString();
+    }
+
+    /**
+     * 造一个改了价的元素价格版本，并<b>只把本轮的轴值</b>指过去。
+     *
+     * <p>🔑 {@code status} 用 {@code SUPERSEDED} 而不是 {@code PENDING}：
+     * {@code chk_epv_status} 只允许这两个值，而 {@code uq_epv_customer_pending}
+     * 限定<b>每客户至多一个 PENDING</b> —— 用 PENDING 会与该客户既有的 PENDING 版本撞唯一键，
+     * 那是<b>污染别人的数据</b>。价格函数按 {@code material_price_version_ref} 取版本、<b>不看 status</b>，
+     * 所以 SUPERSEDED 同样生效（下面的「干预生效」断言会当场证明这一点）。
+     *
+     * <p>🚨 命中面：{@code element_price_version} 按客户建（带 {@code T260907R-} 版本号，
+     * 未被引用即惰性），而 {@code material_price_version_ref} 是<b>客户 × 料号</b>
+     * ⇒ <b>只有我自己的轴值</b>会读到新价，别的料号一行不受影响。
+     */
+    private java.util.UUID seedPriceVersion(String customerNo, String mat, String element,
+                                            java.math.BigDecimal oldPrice,
+                                            java.math.BigDecimal newPrice) {
+        java.util.UUID vid = java.util.UUID.randomUUID();
+        // version_no 是 varchar(20)：截到 20，🚫 不能直接 substring(0,20)（原串可能不足 20 位）
+        String raw = PREFIX + vid.toString().substring(0, 6);
+        String vno = raw.length() <= 20 ? raw : raw.substring(0, 20);
+        inTx(() -> {
+            em.createNativeQuery("INSERT INTO element_price_version "
+                            + "(id,customer_no,version_no,base_date,status,trigger_type,created_at) "
+                            + "VALUES (:id,:c,:v,CURRENT_DATE,'SUPERSEDED','MANUAL',now())")
+                    .setParameter("id", vid).setParameter("c", customerNo).setParameter("v", vno)
+                    .executeUpdate();
+            em.createNativeQuery("INSERT INTO element_price_version_item "
+                            + "(id,version_id,element_code,current_price,previous_price,change_rate,"
+                            + " currency,price_unit,no_price,inherited_from_previous,created_at) "
+                            + "VALUES (gen_random_uuid(),:vid,:e,CAST(:p AS numeric),CAST(:pp AS numeric),"
+                            + "        CAST(:cr AS numeric),'CNY','kg',false,false,now())")
+                    .setParameter("vid", vid).setParameter("e", element)
+                    .setParameter("p", newPrice.toPlainString())
+                    // 🔑 previous_price / change_rate：作业日志打的是「版本明细 1 条（**含无价**）」，
+                    //    说明它把「明细里有没有价」当成一个**分支条件** —— 只填 current_price 时
+                    //    它仍判「含无价」且改写 0 行。这两个字段是本次要证伪/证实的那一项。
+                    .setParameter("pp", oldPrice.toPlainString())
+                    .setParameter("cr", newPrice.subtract(oldPrice)
+                            .divide(oldPrice, 12, java.math.RoundingMode.HALF_UP).toPlainString())
+                    .executeUpdate();
+            em.createNativeQuery("INSERT INTO material_price_version_ref (customer_no,material_no,version_id) "
+                            + "VALUES (:c,:m,:vid) "
+                            + "ON CONFLICT (customer_no,material_no) DO UPDATE SET version_id = EXCLUDED.version_id")
+                    .setParameter("c", customerNo).setParameter("m", mat).setParameter("vid", vid)
+                    .executeUpdate();
+        });
+        createdPriceVersions.add(vid);
+        createdPriceRefMaterials.add(mat);
+        // 🚨 干预生效证明：新价必须真的能从价格函数读出来，否则「作业改了价」无从谈起
+        Object live = scalar("SELECT unit_price FROM f_material_element_price('" + customerNo
+                + "', CURRENT_DATE) WHERE material_no = '" + mat + "' AND element_code = '"
+                + element + "' LIMIT 1");
+        assertNotNull(live, "T-12 干预未生效：新价格版本建好后，f_material_element_price 仍取不到价");
+        assertEquals(0, newPrice.compareTo(dec(live)),
+                "T-12 干预未生效：价格函数返回的仍不是新价（期望 " + newPrice + "，实际 " + live
+                        + "）⇒ 后面「作业改了价」无从谈起");
+        System.out.println("[T-12] 干预已生效：新价格版本 " + vno + "，f_material_element_price 返 " + live);
+        return vid;
+    }
+
+    /** 跑一次价格调整升版作业（按行项，命中面 = 这张单）。 */
+    private void runUpgrade(Fx fx, java.util.UUID versionId, String what) {
+        for (Object li : col("SELECT id FROM quotation_line_item WHERE quotation_id = '"
+                + fx.quotationId() + "'")) {
+            var r = upgradeService.upgrade(java.util.UUID.fromString(li.toString()), versionId, false);
+            System.out.println("[T-12] 升版(" + what + ") lineItem=" + li + " → " + r.status
+                    + (r.message == null ? "" : " / " + r.message));
+        }
+    }
+
+    private final List<java.util.UUID> createdPriceVersions = new java.util.ArrayList<>();
+    private final List<String> createdPriceRefMaterials = new java.util.ArrayList<>();
+
+    /** 清掉本轮造的价格版本与指针（只删自己建的 id / 自己的轴值）。 */
+    @AfterEach
+    void cleanupPriceFixtures() {
+        if (createdPriceVersions.isEmpty() && createdPriceRefMaterials.isEmpty()) return;
+        try {
+            inTx(() -> {
+                for (String m : createdPriceRefMaterials) {
+                    em.createNativeQuery("DELETE FROM material_price_version_ref WHERE material_no = :m")
+                            .setParameter("m", m).executeUpdate();
+                }
+                for (java.util.UUID v : createdPriceVersions) {
+                    em.createNativeQuery("DELETE FROM element_price_version_item WHERE version_id = :v")
+                            .setParameter("v", v).executeUpdate();
+                    em.createNativeQuery("DELETE FROM element_price_version WHERE id = :v AND version_no LIKE :p")
+                            .setParameter("v", v).setParameter("p", PREFIX + "%").executeUpdate();
+                }
+            });
+        } finally {
+            createdPriceVersions.clear();
+            createdPriceRefMaterials.clear();
+        }
     }
 
     private String axis(String tag) {
