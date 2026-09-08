@@ -70,6 +70,24 @@
 
 | **BL-0184** 大单量报价单打开后 `batch-evaluate` 风暴 | 🔴 **P0 · 另立任务待查** | 1845 行的单打不开：`POST /formulas/batch-evaluate` **517 次 / 40.3MB / 29.2 分钟不收敛**，「下一步」同时卡死。**不是分块**（前端 `BATCH_EVALUATE_CHUNK=5000`，注释称「正常报价单 1 个 HTTP 搞定」）、**不是实例爆炸**（`LinkedExcelView` 仅渲染 2 处）→ 是 `useLinkedExcelRows.ts:274` 的 effect 反复重入。**`task-260825` 未改过这三个文件**（`git diff master` 为空），属既有代码、只是从未在 1845 行量级跑过。疑与「打开触发 autosave 风暴」同族 |
 
+### 未合并分支（**3 条**）· 快照 2026-09-07（本次结案时重采）
+
+> 判据：`git rev-list --count master..<branch>`（**领先 master 的提交数**），不是凭印象。
+> ⚠️ **上一版（2026-09-06 快照）已过期**：它列了 5 条，其中 4 条实测领先 **0 笔**（早已合入），只是分支指针还在。
+> 按 `CLAUDE.md` §2.3「过期的态势表比没有更危险 —— 它让人以为自己看过了」，本次结案顺手重采。
+
+| 分支 | worktree | 领先 master | 状态 |
+|---|---|---|---|
+| `feat/task-260907-record-backfill` | `.claude/worktrees/task-260907-record-backfill` | **18 笔** | 🔵 **开发中**（核价回填线，2026-09-07 执行了共享库 S-7 清空） |
+| `fix/repair-260829-f4` | `.claude/worktrees/repair-260829-f4` | **1 笔** | 🟡 悬挂 |
+| `feat/quote-material-no` | 无 | **1 笔** | 🟡 悬挂（内容仅 `BACKLOG.md` +15 行零代码，技术债已转 [[BL-0175]]，见 §8.3） |
+
+> 📌 **其余 23 个分支实测领先 0 笔**（已全部并入 master，仅剩分支指针）。本次结案已清理
+> `feat/task-260907-product-customer-filter` 的 worktree；分支指针的删除属 `CLAUDE.md` §3.2
+> 红线【历史销毁】，需用户逐次批准，未批准的一律保留。
+
+<details><summary>上一版快照（2026-09-06，已过期，保留备查）</summary>
+
 ### 未合并分支（5 条）· 快照 2026-09-06
 
 > 判据：`git log master..<branch> --oneline | wc -l`（**领先 master 的提交数**），不是凭印象。
@@ -81,6 +99,8 @@
 | `feat/task-260902-dataset-tables-import` | `.claude/worktrees/task-260902-dataset-import` | **0 笔**（建于 `2aa02faa`） | 🔵 **开发中** —— `task-260902-报价与核价建表与导入方案新规范`（闸门 A 2026-09-03 放行）。84 张新表（`ds_quote_*` / `ds_cost_basic_*` / `ds_cost_detail_*`）+ 通用升版写入器 + 两阶段导入器 + 两个新页签。**B-1~B-13 / F-1~F-9 已派 5 个子代理**。⚠️ 迁移从 **V405** 起。🚩 **建分支时实取的 V400 是错的** —— 那是**主仓目录**最大号；实查**共享库** `flyway_schema_history` 已到 **V404**（`task-260902-选配流程重构` 的 V401~V404 已应用但未合并进 master，故目录看不到）。由后端子代理主动查库发现，用户 2026-09-03 批准改名 V401~V404 → V405~V408（文件从未应用、从未提交，零风险）。**教训：查迁移号必须查共享库的 `flyway_schema_history`，不能只 `ls` 目录。**合并前须回写 `dev-docs/main-api.md`（新增 8 个端点） |
 | `feat/quote-material-no` | 无 | **1 笔** | 🟡 悬挂（内容仅 `BACKLOG.md` +15 行零代码，技术债已转 [[BL-0175]]，见 §8.3） |
 | `fix/repair-260829-skeleton-lock` | `.claude/worktrees/repair-260829-skeleton-lock` | **0 笔**（建于 `cf76bb8e`） | 🔵 **开发中** —— `repair-260829-卡片值算早了骨架值锁死`，闸门 A 已放行（2026-08-29）。B-1 产物自检为主体，B-4 `MaterializeRegistry` 供并发会话消费 |
+
+</details>
 
 **已全部并入 master、仅剩分支指针与 worktree 的（7 条，可清理）**：
 
