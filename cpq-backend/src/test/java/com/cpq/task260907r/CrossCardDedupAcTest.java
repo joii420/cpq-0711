@@ -217,6 +217,152 @@ class CrossCardDedupAcTest extends Task260907RBase {
     }
 
     // ══════════════════════════════════════════════════════════════════
+    // 契约⑦：卡片 2 独有的行 🚫 绝不许被吃掉
+    // ══════════════════════════════════════════════════════════════════
+
+    /**
+     * 🔴 <b>契约⑦ · 卡片 2 独有的行不许被吃掉</b>（2026-09-08 补的那一格）。
+     *
+     * <h3>🚨 为什么 t01 / t03b 都拦不住它</h3>
+     * 设想一种坏实现：跨卡片归一时<b>整张卡片 2 直接丢弃</b>（而不是按行归一）。
+     * <ul>
+     *   <li>{@link #t01_twoCardsSameAxis_recordHasOneRowPerBaseRow} 的<b>每一条</b>断言仍然成立
+     *       —— 每条主表行恰好 1 条 ✅、{@code origin_id} 全非空 ✅、{@code result==base} ✅；</li>
+     *   <li>{@link #t03b_sameCardDuplicateGrainKey_twoCards} 也拦不住 —— 它两张卡片<b>完全同构</b>，
+     *       卡片 2 里没有任何独有行可丢。</li>
+     * </ul>
+     * ⇒ <b>「仲裁」解决的是冲突，不是「后来的一律丢弃」，而这句话此前没有网。</b>
+     *
+     * <h3>三格一次验完（缺一不可）</h3>
+     * <table>
+     *   <tr><td>行身份</td><td>卡片1（{@code sort_order}=0）</td><td>卡片2（=1）</td><td>期望</td><td>契约</td></tr>
+     *   <tr><td>共有行 {@code D43-SH}</td><td>有（{@code content_pct}=11.1）</td><td>有（=99.9）</td>
+     *       <td>留 <b>1</b> 条，取值 = <b>卡片1 的 11.1</b></td><td>①②（仲裁按 {@code line_item.sort_order}）</td></tr>
+     *   <tr><td><b>卡片2 独有行 {@code D43-ONLY2}</b></td><td>无</td><td>有</td>
+     *       <td><b>必须留下</b></td><td><b>⑦（本次要补的）</b></td></tr>
+     *   <tr><td>卡片1 内粒度键重复的两行 {@code D43-DUP}</td><td>两行都在</td><td>无</td>
+     *       <td><b>两行都留</b></td><td>③（AP-60 防线）</td></tr>
+     * </table>
+     *
+     * <h3>🚨 三条断言都必须先过非空守卫</h3>
+     * 「独有行没被吃掉」在 {@code _record} 零行时<b>恒真</b>；
+     * 「共有行只留一条」在共有行压根没造出来时<b>也恒真</b>。
+     * ⇒ 守卫要证明的不是「有数据」，而是<b>「我以为的那三种行，在报价单侧真的按我以为的分布存在」</b>。
+     *
+     * <p>📌 刻意<b>不</b>播种主表基底（与 t03a/t03b 同）：本条验的是<b>投影归一</b>那一段，
+     * 不是锚定/回填。掺进基底会引入 {@code AC-21}（粒度键撞车整组 {@code BLOCKED}）的干扰 ——
+     * {@code D43-DUP} 两行同粒度键，一旦基底里也有它，整组会被 C′ 拦成零写入，
+     * 于是本条的判据全部失去分辨力。
+     */
+    @Test
+    @DisplayName("t04 · 两张卡片行集不同：卡片2 独有行必须留下（契约⑦）；共有行归一取卡片1 的值；同卡重复两行都留")
+    void t04_cardTwoUniqueRowSurvivesDedup() {
+        requireRecordLayer();
+
+        final String EL_SHARED = "D43-SH";
+        final String EL_DUP = "D43-DUP";
+        final String EL_ONLY2 = "D43-ONLY2";
+
+        // 卡片1（sortOrder=0）：共有行（值 X=11.1）+ 同卡粒度键重复的两行
+        List<EbomRow> card1 = List.of(
+                new EbomRow(1, EL_SHARED, "11.1", "1.1"),
+                new EbomRow(2, EL_DUP, "22.2", "2.2"),
+                new EbomRow(3, EL_DUP, "33.3", "3.3"));
+        // 卡片2（sortOrder=1）：共有行（值 Y=99.9≠X）+ **卡片2 独有行**
+        List<EbomRow> card2 = List.of(
+                new EbomRow(1, EL_SHARED, "99.9", "9.9"),
+                new EbomRow(4, EL_ONLY2, "44.4", "4.4"));
+
+        String mat = PREFIX + "D43D-" + UUID.randomUUID().toString().substring(0, 6);
+        Fx fx = newFixture("D43D-asym");
+        trackAxis(mat);
+        requireStatusBeforeDiff(putDraftWithCards(fx, mat, card1, card2), 200,
+                "t04 saveDraft（2 个产品行，行集**不同**）");
+
+        // ══ 守卫①：两个产品行确实建出来了，且 sort_order 就是 0 / 1（仲裁维度靠它）══
+        // ⚠️ 单列 native query 返回的是标量 List，🚫 不是 List<Object[]> —— 用 col() 不用 rows()。
+        List<Object> lis = col("SELECT sort_order FROM quotation_line_item WHERE quotation_id = '"
+                + fx.quotationId() + "' AND product_part_no_snapshot = '" + mat + "' ORDER BY sort_order");
+        System.out.println("[t04·守卫①] 产品行 sort_order = " + lis);
+        assertEquals(2, lis.size(),
+                "🚨 夹具前置未成立：本单同轴值的产品行应为 2 个，实际 " + lis.size()
+                        + " ⇒ 跨卡片的形状没造出来，本用例的绿不构成任何证据。");
+        assertEquals("0", String.valueOf(lis.get(0)),
+                "🚨 仲裁按 line_item.sort_order，卡片1 必须是 0，否则「取卡片1 的值」这条判据在验别的东西");
+        assertEquals("1", String.valueOf(lis.get(1)),
+                "🚨 卡片2 的 sort_order 必须是 1");
+
+        // ══ 守卫②③：三种行在**报价单侧**真的按我以为的分布存在 ══
+        //   🔑 尤其是「独有行确实只在卡片2 里」—— 不证明这一点，
+        //      「独有行没被吃掉」就可能只是因为它压根没造进卡片2。
+        long shInCard1 = cardRowDataHits(fx, mat, 0, EL_SHARED);
+        long shInCard2 = cardRowDataHits(fx, mat, 1, EL_SHARED);
+        long onlyInCard1 = cardRowDataHits(fx, mat, 0, EL_ONLY2);
+        long onlyInCard2 = cardRowDataHits(fx, mat, 1, EL_ONLY2);
+        long dupInCard1 = cardRowDataHits(fx, mat, 0, EL_DUP);
+        System.out.println("[t04·守卫②③] 报价单侧分布：共有行 卡1=" + shInCard1 + " 卡2=" + shInCard2
+                + "；独有行 卡1=" + onlyInCard1 + " 卡2=" + onlyInCard2 + "；重复行 卡1=" + dupInCard1);
+        assertEquals(1L, shInCard1, "🚨 守卫②：共有行 " + EL_SHARED + " 应在卡片1 里恰好 1 次");
+        assertEquals(1L, shInCard2, "🚨 守卫②：共有行 " + EL_SHARED + " 应在卡片2 里恰好 1 次"
+                + " —— 它不在，「归一成一条」就是废话（本来就只有一条）");
+        assertEquals(0L, onlyInCard1, "🚨 守卫③：" + EL_ONLY2 + " 必须**不在**卡片1 里，否则它不是「卡片2 独有行」");
+        assertEquals(1L, onlyInCard2, "🚨 守卫③：" + EL_ONLY2 + " 必须真的在卡片2 里 —— "
+                + "它不在，「独有行没被吃掉」在零行时**恒真**，本条什么都验不到");
+        assertEquals(2L, dupInCard1, "🚨 守卫：卡片1 里 " + EL_DUP + " 应有 2 行（AP-60 那一格的靶子）");
+
+        // ══ 🔬 无断言探针：先把 _record 全貌打出来，断言先失败的话这些数字就再也看不到了 ══
+        List<Object[]> rec = rows("SELECT item_seq, element_code, content_pct, net_usage, origin_id "
+                + "FROM " + EBOM + "_record WHERE quotation_id = '" + fx.quotationId() + "' "
+                + "ORDER BY element_code, item_seq");
+        System.out.println("[t04·探针] _record 逐行（quotation=" + fx.quotationId()
+                + "，期望 4 行 = 共有1 + 重复2 + 独有1）：");
+        for (Object[] x : rec) {
+            System.out.println("    item_seq=" + x[0] + " element_code=" + x[1]
+                    + " content_pct=" + x[2] + " net_usage=" + x[3] + " origin_id=" + x[4]);
+        }
+        assertFixtureNonEmpty(rec.size(), "t04 的 _record 行数");
+
+        // ══ 判据⑦（本条的主判据，放最前）：卡片2 独有的行必须留下 ══
+        List<Object[]> only2 = pick(rec, EL_ONLY2);
+        assertEquals(1, only2.size(),
+                "🔴 契约⑦：卡片2 独有的行 " + EL_ONLY2 + " 在 _record 里应恰好 1 条，实际 " + only2.size()
+                        + " 条。\n"
+                        + "  · 0 条 ⇒ **整张卡片2 被丢弃了** —— 仲裁被写成了「后来的一律丢弃」，"
+                        + "而 t01 / t03b 对这种坏法**条条全绿**（t01 的三条断言都成立；t03b 两卡同构、无独有行）。\n"
+                        + "  · >1 条 ⇒ 独有行被重复投影（D-43 本体）。\n"
+                        + "  实际 _record = " + dump(rec));
+        assertEquals(0, new java.math.BigDecimal("44.4")
+                        .compareTo((java.math.BigDecimal) only2.get(0)[2]),
+                "🔴 契约⑦：留下来的独有行取值应是卡片2 写的 44.4（它只有卡片2 一个来源），实际 "
+                        + only2.get(0)[2] + " ⇒ 行留下了但值不是它自己的。");
+
+        // ══ 判据③（AP-60 防线）：同卡片内粒度键重复的两行都要留 ══
+        List<Object[]> dups = pick(rec, EL_DUP);
+        assertEquals(2, dups.size(),
+                "🚨 AP-60 守卫：卡片1 里两行粒度键相同是**合法形状**，必须都留下，实际 " + dups.size()
+                        + " 条。塌缩成 1 = 静默删数据。实际 _record = " + dump(rec));
+        Set<String> dupSeqs = new LinkedHashSet<>();
+        for (Object[] x : dups) dupSeqs.add(String.valueOf(x[0]));
+        assertEquals(Set.of("2", "3"), dupSeqs,
+                "🚨 AP-60 守卫：两行应仍是项次 2 和 3，实际 " + dupSeqs);
+
+        // ══ 判据①②：共有行归一为 1 条，且取 sort_order 小的卡片1 的值 ══
+        List<Object[]> sh = pick(rec, EL_SHARED);
+        assertEquals(1, sh.size(),
+                "🔴 契约①②：两张卡片都有的行应归一为 1 条，实际 " + sh.size()
+                        + " 条（2 = 没归一，值不同就当成两行了）。实际 _record = " + dump(rec));
+        assertEquals(0, new java.math.BigDecimal("11.1")
+                        .compareTo((java.math.BigDecimal) sh.get(0)[2]),
+                "🔴 契约①②：仲裁按 line_item.sort_order ⇒ 应取卡片1（sort_order=0）的 11.1，"
+                        + "实际 " + sh.get(0)[2] + "（99.9 = 取了卡片2 的值，仲裁方向反了）。");
+
+        // ══ 总数（分辨力最弱，放最后）══
+        assertEquals(4, rec.size(),
+                "🔴 _record 应恰好 4 行 = 共有1 + 同卡重复2 + 卡片2 独有1，实际 " + rec.size()
+                        + " 行：" + dump(rec));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
     // 工具
     // ══════════════════════════════════════════════════════════════════
 
@@ -293,5 +439,42 @@ class CrossCardDedupAcTest extends Task260907RBase {
                 + " unanchored=" + hit.path("unanchoredRows").size()
                 + " verdict=" + hit.path("result").asText());
         return hit;
+    }
+
+    /**
+     * 卡片（按 {@code line_item.sort_order} 定位）的 {@code row_data} 里，某个元素编码出现<b>几次</b>。
+     *
+     * <p>🔑 用 {@code jsonb_array_elements} 逐行展开而不是 {@code row_data::text LIKE}：
+     * 后者对「同一张卡片里同一个元素出现两次」只会返回 1（命中的是<b>组件数据行</b>，不是<b>业务行</b>），
+     * 于是 AP-60 那一格的守卫会在「两行被塌缩成一行」时<b>照样通过</b>。
+     */
+    private long cardRowDataHits(Fx fx, String axisValue, int sortOrder, String elementCode) {
+        return count("SELECT count(*) FROM quotation_line_component_data cd "
+                + "JOIN quotation_line_item li ON li.id = cd.line_item_id "
+                + "CROSS JOIN LATERAL jsonb_array_elements(cd.row_data) r "
+                + "WHERE li.quotation_id = '" + fx.quotationId() + "' "
+                + "  AND li.product_part_no_snapshot = '" + axisValue + "' "
+                + "  AND li.sort_order = " + sortOrder + " "
+                + "  AND cd.component_id = '" + COMP_ELEMENT_BOM + "' "
+                + "  AND r->>'元素' = '" + elementCode + "'");
+    }
+
+    /** 从 {@code _record} 快照里挑出某个元素编码的全部行（列序见调用点的 SELECT）。 */
+    private List<Object[]> pick(List<Object[]> rec, String elementCode) {
+        List<Object[]> out = new ArrayList<>();
+        for (Object[] x : rec) if (elementCode.equals(String.valueOf(x[1]))) out.add(x);
+        return out;
+    }
+
+    /** 失败消息里把 {@code _record} 全貌带上 —— 只写「实际 3 条」的断言，修的人还得自己再跑一遍。 */
+    private String dump(List<Object[]> rec) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < rec.size(); i++) {
+            Object[] x = rec.get(i);
+            if (i > 0) sb.append(", ");
+            sb.append("{seq=").append(x[0]).append(", el=").append(x[1])
+              .append(", content_pct=").append(x[2]).append(", origin_id=").append(x[4]).append('}');
+        }
+        return sb.append(']').toString();
     }
 }
