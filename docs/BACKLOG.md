@@ -777,3 +777,35 @@ pickQualifiedCustomer({ needsTakenProductNo? })
   - 🚫 **本期不扩范围去改 DTO**：只在 `CostingApprovePreviewDrawer` 里容忍缺失（渲染「—」，不报错），原型 07 已去掉客户段并注明「待 DTO 补齐后再加」
   - 修法：`CostingOrderDetailDTO` 或 `QuotationDTO` 补 `customerName`（只读字段，无写路径），前端副标题随之恢复
   - 优先级：P2（纯展示，不影响回填正确性）｜ 预估规模：S
+
+- [ ] **BL-0229 · ds 原生模板的取数视图主表 `WHERE` 无客户谓词 ⇒ 同一料号跨客户时页签串行**
+  - 来源：`task-260907` 第二段 主线亲验 AC-22 时撞到（2026-09-08），用户裁决登记 BACKLOG（不在本期修）
+  - 现象：走导入建单造单后**提交返 422**「行键重复：组件『物料』行键 `[T260907-M1]` 在第 1,2 行重复」。
+    真因不在提交守卫 —— 是**物料页签的取数视图返了另一个客户的行**
+  - 实测（22 个 `builder_*` 视图全扫）：**主表 `WHERE` 一律只有 `material_no = ANY(:total_material_no)`**，
+    `:customerCode` **只出现在 LEFT JOIN**（`ds_quote_customer_part` 查客户料号 / `f_material_element_price` 查价），
+    **没有一个视图过滤主表的客户维度**。样例：
+
+    ```sql
+    -- builder_c6a71e5e217a（T260907-物料）
+    FROM ds_quote_material dqm
+    WHERE dqm.material_no = ANY(:total_material_no)      -- 🚫 无 customer_no
+    -- builder_7277969cc41c（产品）
+    FROM ds_quote_material dqm
+      LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode
+    WHERE dqm.material_no = ANY(:total_material_no)      -- :customerCode 只在 JOIN 上，不收窄主表
+    ```
+
+  - 🔑 **两侧不对称**：`_record` 读侧**已经有**客户维度（`DsMainTableReader:117-118` 的 `AND customer_no = :cust`，
+    由 `报价侧加客户维度` 合入），而**卡片 driver 视图没有** ⇒ 复合轴 `(customer_no, material_no)` 只落实了一半
+  - 症状分两档：**PLAIN 表**（物料，每客户 1 行）→ 行键重复 → **422 响亮失败**；
+    **VERSIONED 表**（元素BOM / 物料BOM）→ 另一客户的行**静默混进卡片** ⇒ 更危险
+  - 影响面（2026-09-08 08:0x 采样，非预测）：`ds_quote_material` / `ds_quote_material_bom` 各 **2 个**料号跨客户
+    （都是 `T260907-M1/M2` 测试夹具），`ds_quote_element_bom` **0 个**
+    ⚠️ **暴露面小是「数据年轻」不是「结构安全」** —— 复合轴的设计恰恰让不同客户共用同一销售料号**合法**
+  - ⚠️ **非本任务引入**：这些视图由取数配置器在客户维度落地**之前**生成，且已随 v1.2 冻结进
+    `template.sql_views_snapshot`（已发布模板不回落实时表）⇒ 改视图定义不会自动生效，须 `new-draft` + `publish` 升版
+  - 修法方向：取数配置器编译器在锚点节点是带 `customer_no` 的 `ds_quote_*` 表时，
+    自动补 `AND <alias>.customer_no = :customerCode` 谓词；存量已发布模板需重新发布一版
+  - 归属：取数配置器（`task-260819-取数配置器` / `取数配置器补齐`）+ 客户维度铺开，🚫 不属 `_record` 层
+  - 优先级：**P1**（静默串客户数据；当前只因数据年轻未爆发）｜ 预估规模：M（编译器改动 + 存量模板重发布）
