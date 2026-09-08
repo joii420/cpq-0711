@@ -454,7 +454,19 @@ const CostingApprovePreviewDrawer: React.FC<Props> = ({
     } else if (!dsFlags.applicable) {
       footerNote = '—';
     } else if (dsFlags.unanchoredRows > 0) {
-      footerNote = `⚠️ 有 ${dsFlags.unanchoredRows} 行对不上，确认前请先看上方明细。`;
+      /**
+       * 🚨 2026-09-07 主线判定后改：这里原来是**二选一** —— 有行对不上就只说「有 N 行对不上」，
+       * 「确认后不可撤销 + M 个组将升版」整条消失。优先级判断没错（对不上更紧急），
+       * 但代价是**越异常的态，越把「不可撤销」拿掉了**，而那恰恰是财务点下去之前最该看到的一句。
+       * ⇒ 改成**两句并存**。
+       * ⚠️ 仍然守住 `upgradedGroups > 0` 这道闸：为 0 时（全 UNCHANGED / 一张表都没有）
+       *    不许拼出「0 个料号组将升版」这种既没信息又像结论的话 —— 与下面那支同源。
+       */
+      footerNote =
+        `⚠️ 有 ${dsFlags.unanchoredRows} 行对不上，确认前请先看上方明细。` +
+        (dsFlags.upgradedGroups > 0
+          ? `确认后不可撤销：${dsFlags.upgradedGroups} 个料号组将升版。`
+          : '');
       footerDanger = true;
     } else if (dsFlags.allUnchanged || dsFlags.upgradedGroups === 0) {
       // upgradedGroups=0 含两种：全 UNCHANGED，以及「一张表都没有（组件全不参与）」——

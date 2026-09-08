@@ -356,6 +356,29 @@ test.describe('task-260907R · 核价通过确认抽屉', () => {
     //   🕰️ 「原样保留的列」正是 2026-09-07 在原型 02 上补回来的那一列 —— 本条守着它别再掉。
     await assertAc5ColumnInvariants(page, drawer, '02', /*expectUnanchored*/ true, /*allUnchanged*/ false);
 
+    /**
+     * 🚨 2026-09-07 主线判定后新增：`unanchoredRows > 0 且 upgradedGroups > 0` 时，
+     * 页脚**必须同时包含**「对不上」与「将升版」两段，🚫 不许二选一。
+     *
+     * 由来：原实现是互斥 if/else —— 一旦有行对不上，「确认后不可撤销 + M 个组将升版」
+     * 整条消失。**越是异常态，越不该把「不可撤销」拿掉** —— 那正是财务点下去之前
+     * 最该看到的一句。两段缺任何一段，本条都要红。
+     */
+    const footer = drawer.locator('.ant-drawer-footer');
+    await expect(
+      footer,
+      'AC-20③：页脚必须保留「有 N 行对不上」这一段',
+    ).toContainText('行对不上');
+    await expect(
+      footer,
+      '🚨 页脚必须**同时**保留「确认后不可撤销 / M 个料号组将升版」这一段 —— ' +
+        '🚫 不许因为「有行对不上」就把「不可撤销」整条吞掉',
+    ).toContainText('确认后不可撤销');
+    await expect(
+      footer,
+      '🚨 「将升版」的组数必须出得来（只有「不可撤销」四个字而没有数字，等于没说完）',
+    ).toContainText('个料号组将升版');
+
     // 🚫 到此为止：**绝不点这个按钮**。点一次就在共享 dev 库上真的升版了（§3.2 不可逆）。
   });
 

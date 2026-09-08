@@ -25,7 +25,14 @@
   <div class="drawer-header">
     <div>
       <div class="drawer-title">核价通过 —— 确认基础数据升版</div>
-      <div class="drawer-sub">报价单 QT-20260907-0447　·　客户 正泰（CUST-0004）　·　⚠️ 本单没有比对快照，确认后不会写入任何基础数据</div>
+      <!--
+        🕰️ 2026-09-07 修订：原画「客户 正泰（CUST-0004）」，但**实现拿不到客户名** ——
+        `CostingOrderDetailDTO` / `QuotationDTO` 都不含 `customerName`，调用方无从传入；
+        `customerNo` 只存在于 group 层（`DsBackfillDTO` 的 group 字段），本屏 tables=[] 时连它也没有。
+        ⇒ 与「tables 是否为空」无关，是**同一个缺失的两种表现**。本图去掉客户段，
+        待 DTO 补齐 customerName 后再加回（已登记 BACKLOG）。
+      -->
+      <div class="drawer-sub">报价单 QT-20260907-0447　·　⚠️ 本单没有比对快照，确认后不会写入任何基础数据</div>
     </div>
     <button class="drawer-close">✕</button>
   </div>

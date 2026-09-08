@@ -768,3 +768,12 @@ pickQualifiedCustomer({ needsTakenProductNo? })
   - 递归 SQL 校验失败属**用户输入错误**，应是 400 + 可读消息
   - ⚠️ **预先存在，非本任务引入**。本任务只是在给 `CostingTreeSqlValidator` 加 `:customerCode` 桩时撞到它
   - 优先级：P2 ｜ 预估规模：S
+
+- [ ] **BL-0228 · 核价通过确认抽屉的副标题拿不到客户名（`customerName` 不在任何可用 DTO 里）**
+  - 来源：`task-260907` 第二段 前端逐屏比对亲验（2026-09-07），主线判定后登记
+  - 现象：抽屉副标题设计为「报价单 QT-… · 客户 正泰（CUST-0001） · …」，实现只能渲染出「客户 —」或整段缺失
+  - 根因：`CostingOrderDetailDTO` 与 `frozenDto`（`QuotationDTO`）**都不含 `customerName`**，调用方 `CostingReviewPage` 无从传入；`customerNo` 只存在于 `DsBackfillDTO` 的 **group 层**，因此 `tables=[]` 的屏（`noRecordSnapshot` / 组件全不参与）连客户号也没有
+  - ⚠️ **不是「tables 为空导致的」** —— 客户名从来就拿不到，`tables=[]` 只是同一个缺失的第二种表现（前端代理最初归因于此，主线更正）
+  - 🚫 **本期不扩范围去改 DTO**：只在 `CostingApprovePreviewDrawer` 里容忍缺失（渲染「—」，不报错），原型 07 已去掉客户段并注明「待 DTO 补齐后再加」
+  - 修法：`CostingOrderDetailDTO` 或 `QuotationDTO` 补 `customerName`（只读字段，无写路径），前端副标题随之恢复
+  - 优先级：P2（纯展示，不影响回填正确性）｜ 预估规模：S
