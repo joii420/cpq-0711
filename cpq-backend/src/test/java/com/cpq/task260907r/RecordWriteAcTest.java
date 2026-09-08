@@ -9,6 +9,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -118,6 +119,131 @@ class RecordWriteAcTest extends Task260907RBase {
                         + "「[ds-record] 命中 N 个轴值但无组件数据，跳过」。\n"
                         + "   ⚠️ 🚫 不要用「往 payload 里塞 componentData」来让它变绿 —— "
                         + "那正是让这个 P0 藏了几十条用例的那个夹具形状。");
+    }
+
+    /**
+     * <b>T-23（D-43）🔴 第三种夹具形状 —— 「改一格 → 直接提交」这条路上的回归网。</b>
+     *
+     * <h3>它拦的是什么</h3>
+     * 用户在卡片上改一格值后<b>直接提交</b>（前端 {@code handleSubmit} 在
+     * {@code waitForPendingEdits()} 之后<b>直接 submit，中间没有 saveDraft</b>），
+     * 而 {@code quote-card-edit} 只写 {@code row_data}、<b>不触发 {@code syncRecords}</b>
+     * ⇒ 这条路上根本没有挂点 ⇒ {@code _record} 停在旧值
+     * ⇒ <b>核价通过回填写进主表的是「改之前的旧值」</b>。
+     *
+     * <h3>🚨 为什么 T-22 也验不到它（同型的第二次）</h3>
+     * {@code AC-22} 系列的夹具<b>都在 {@code saveDraft} 里做完编辑</b> ⇒ D-42 的挂点会接住
+     * ⇒ <b>在缺陷态代码上也会绿</b>。
+     * ⇒ 必须有<b>第三种形状</b>：{@code ensure-card-values → quote-card-edit → 【直接 submit】
+     * → costing-approve}，🚫 中间不许有 {@code saveDraft}。
+     *
+     * <h3>🔑 判据落在<b>主表</b>，不是 {@code _record}</h3>
+     * {@code _record} 有没有新值只是中间态；这条缺陷的<b>实际后果</b>是「回填用旧值」。
+     * ⇒ 断言写在「核价通过后主表该行是不是用户改的那个值」上。
+     * <p>配对反向：<b>未编辑的那一行必须不受影响</b> —— 只验「新值写进去了」在
+     * 「整组被重刷一遍」时照样成立。
+     */
+    @Test
+    @DisplayName("T-23 · 改一格 → 直接提交（无 saveDraft）→ 回填必须写用户改的新值")
+    void t23_editThenSubmitDirectlyBackfillsNewValue() {
+        requireRecordLayer();
+        String mat = axis("A23");
+        String el1 = PREFIX + "E1";
+
+        // 基底：主表两行（指纹由 writer 自己算）
+        Fx seeder = seedMainViaCreatedOrder("23Seed", mat, List.of(
+                new EbomRow(1, el1, "11.1", "1.1"),
+                new EbomRow(2, PREFIX + "E2", "22.2", "2.2")));
+        Fx fx = newFixtureForCustomer("AC23", seeder);
+
+        // ① 真实 UI 形状建卡片（payload 不带 componentData）
+        requireStatusBeforeDiff(saveDraftLineOnly(fx, mat), 200, "T-23 建卡片");
+
+        // ② ensure-card-values —— 🚨 不先调它，quote-card-edit 返 400
+        //    「非草稿态或数据缺失」，而那句话把两个原因并在一起，极易被误判成状态问题。
+        Response ensure = RestAssured.given().cookies(adminCookies()).contentType(ContentType.JSON)
+                .when().post("/api/cpq/quotations/" + fx.quotationId() + "/ensure-card-values").thenReturn();
+        requireStatusBeforeDiff(ensure, 200, "T-23 ensure-card-values");
+
+        Object lineItemId = scalar("SELECT id FROM quotation_line_item WHERE quotation_id = '"
+                + fx.quotationId() + "' LIMIT 1");
+        assertNotNull(lineItemId, "T-23 前提：找不到 line item");
+
+        // ③ quote-card-edit 改一格：seq1 的「组成含量（%）」11.1 → 77.7
+        //    🔑 rowKey = row_key_fields 三个字段的**值**（实查该组件 = ["销售料号","材质料号","元素"]），
+        //       🚫 不是「料号#项次」。
+        String rowKey = mat + "|" + PREFIX + "MAT" + "|" + el1;
+        String editBody = "{\"componentId\":\"" + COMP_ELEMENT_BOM + "\","
+                + "\"rowKey\":" + jsonStr(rowKey) + ","
+                + "\"fieldName\":\"组成含量（%）\",\"value\":\"77.7\"}";
+        Response edit = RestAssured.given().cookies(adminCookies()).contentType(ContentType.JSON)
+                .body(editBody).when()
+                .put("/api/cpq/quotations/line-items/" + lineItemId + "/quote-card-edit").thenReturn();
+        requireStatusBeforeDiff(edit, 200, "T-23 quote-card-edit（rowKey=" + rowKey + "）");
+
+        // 🔬 诊断：把 quote_card_values 的真实行键结构打出来（rowKey 格式是本条唯一的未知数）
+        for (Object d : col("SELECT jsonb_object_keys(t.tab->'baseRows'->0) "
+                + "FROM quotation_line_item li, jsonb_array_elements(li.quote_card_values->'tabs') t(tab) "
+                + "WHERE li.quotation_id = '" + fx.quotationId() + "' "
+                + "  AND t.tab->>'componentId' = '" + COMP_ELEMENT_BOM + "' "
+                + "  AND jsonb_array_length(t.tab->'baseRows') > 0")) {
+            System.out.println("[T-23·诊断] baseRows[0] 的键 = " + d);
+        }
+        for (Object d : col("SELECT t.tab->'baseRows'->0->>'rowKey' "
+                + "FROM quotation_line_item li, jsonb_array_elements(li.quote_card_values->'tabs') t(tab) "
+                + "WHERE li.quotation_id = '" + fx.quotationId() + "' "
+                + "  AND t.tab->>'componentId' = '" + COMP_ELEMENT_BOM + "'")) {
+            System.out.println("[T-23·诊断] baseRows[0].rowKey = " + d);
+        }
+        for (Object[] d : rows("SELECT cd.component_id, left(coalesce(cd.row_data::text,'<NULL>'),400) "
+                + "FROM quotation_line_component_data cd JOIN quotation_line_item li ON li.id = cd.line_item_id "
+                + "WHERE li.quotation_id = '" + fx.quotationId() + "' AND cd.component_id = '"
+                + COMP_ELEMENT_BOM + "'")) {
+            System.out.println("[T-23·诊断] row_data(" + d[0] + ") = " + d[1]);
+        }
+
+        // 🚨 干预必须先被证明生效：row_data 里确实出现了 77.7。
+        //    不证这一步，「主表还是旧值」可能只是**我这一格压根没改上**（rowKey 拼错就会这样），
+        //    那会把「夹具错」报成 D-43 复发。
+        //    📌 顺带回答主线的问题：后端内容键格式与本 rowKey 拼法**逐字对得上**（对不上这里就 0 命中）。
+        long inRowData = count("SELECT count(*) FROM quotation_line_component_data cd "
+                + "JOIN quotation_line_item li ON li.id = cd.line_item_id "
+                + "WHERE li.quotation_id = '" + fx.quotationId() + "' "
+                + "  AND cd.row_data::text LIKE '%77.7%'");
+        long inCardValues = count("SELECT count(*) FROM quotation_line_item "
+                + "WHERE quotation_id = '" + fx.quotationId() + "' "
+                + "  AND quote_card_values::text LIKE '%77.7%'");
+        System.out.println("[T-23·诊断] 77.7 落点：row_data=" + inRowData
+                + " 行 / quote_card_values=" + inCardValues + " 行");
+        long hit = inRowData + inCardValues;
+        assertFixtureNonEmpty(hit,
+                "🚨 干预未生效：quote-card-edit 返 200，但 row_data 里找不到 77.7 ⇒ "
+                        + "这一格没改上（rowKey 拼法与后端内容键不一致？rowKey=" + rowKey + "）。"
+                        + "此时「主表是旧值」是**夹具错**，🚫 不许报成 D-43 复发。");
+        System.out.println("[T-23] 干预已生效：row_data 命中 77.7 的组件数据 " + hit + " 行；rowKey=" + rowKey);
+
+        // ④ 🚫 **中间刻意没有 saveDraft** —— 有它 D-42 的挂点就把 _record 补上了，本条就验不到 D-43
+        requireStatusBeforeDiff(submit(fx), 200, "T-23 直接提交（中间无 saveDraft）");
+
+        // ⑤ 核价通过并确认
+        approveWithPreview(fx, "AC23");
+
+        // ══ 🔑 判据落在主表 ══
+        Map<Integer, String> after = ebomBusinessRowsBySeq(mat);
+        System.out.println("[T-23] 核价通过后主表 = " + after);
+        assertTrue(String.valueOf(after.get(1)).contains("77.7"),
+                "🔴 D-43 回归：用户改一格（11.1 → 77.7）后**直接提交**（中间无 saveDraft），"
+                        + "核价通过回填进主表的应当是**用户改的新值 77.7**，实际第 1 行 = " + after.get(1)
+                        + "。\n   出现旧值 11.1 = quote-card-edit 那条路上没有 syncRecords 挂点，"
+                        + "_record 停在旧值 ⇒ 回填用旧值。\n"
+                        + "   ⚠️ 🚫 不要靠「在中间补一次 saveDraft」让它变绿 —— 那正是让这个缺陷"
+                        + "藏在 AC-22 夹具背后的那个形状。");
+        assertFalse(String.valueOf(after.get(1)).contains("11.1"),
+                "D-43 回归 配对：主表第 1 行不该还留着旧值 11.1。实际 " + after.get(1));
+        assertTrue(String.valueOf(after.get(2)).contains("22.2"),
+                "D-43 反向：未编辑的第 2 行必须不受影响（仍为 22.2）。"
+                        + "🚫 只验「新值写进去了」在整组被重刷一遍时照样成立，所以本条不能省。"
+                        + "实际 " + after.get(2));
     }
 
     /**
