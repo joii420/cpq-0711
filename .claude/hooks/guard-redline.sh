@@ -102,6 +102,16 @@ scan=$(printf '%s' "$cmd_nomsg" | tr '\n' ';' | sed -E 's/&&/;/g; s/\|\|/;/g; s/
 danger=""
 OLD_IFS=$IFS; IFS=';'
 for seg in $scan; do
+  # 🚨 先剥掉**命令词的路径前缀**（/usr/bin/grep → grep），再判白名单。
+  #    不剥会同时造成两种错，方向相反、后者致命：
+  #      · 误报：`/usr/bin/grep "DROP TABLE" f` 的 verb 是 `/usr/bin/grep`，
+  #        匹配不上只读白名单 → 整段进 danger → 被 sql-drop 拒。
+  #        而 CLAUDE.md §5 恰恰**要求**用 `/usr/bin/grep -a` 复核 ugrep 别名问题。
+  #      · 漏报：rm-rf 等规则的模式锚在 `(^|[;&|[:space:]])rm`，
+  #        `/usr/bin/rm -rf x` 的 rm 前面是 `/` 不在该字符类里 → **红线整条失效**。
+  #    所以剥的是 seg 本身而不只是 verb —— 只修 verb 只能治误报，治不了漏报。
+  #    只动第一个词的目录前缀，参数原样保留（迁移文件、worktree 落点等规则匹配的是参数）。
+  seg=$(printf '%s' "$seg" | sed -E 's#^([[:space:]]*)[^[:space:]]*/([^[:space:]/]+)#\1\2#')
   verb=$(printf '%s' "$seg" | sed -E 's/^[[:space:]]*//; s/[[:space:]].*//')
   case "$verb" in
     # 纯读取类：整段丢弃（注意 sed/awk 不在此列 —— sed -i 会写文件）

@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>原型 · 已选输出列：行键必选与默认命名（F-2 / F-3）</title>
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; padding:24px; background:#f5f5f5; font-size:14px; line-height:1.5715;
+         font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif; color:rgba(0,0,0,.88); }
+  h1 { font-size:20px; margin:0 0 4px; font-weight:600; }
+  .sub { color:rgba(0,0,0,.45); font-size:13px; margin-bottom:20px; }
+  .state { background:#fff; border-radius:8px; padding:20px 24px; margin-bottom:18px;
+           box-shadow:0 1px 2px rgba(0,0,0,.03),0 1px 6px -1px rgba(0,0,0,.02); }
+  .state-h { display:flex; align-items:center; gap:10px; margin-bottom:6px; flex-wrap:wrap; }
+  .state-t { font-size:15px; font-weight:600; }
+  .state-d { color:rgba(0,0,0,.45); font-size:13px; margin-bottom:14px; }
+  .tag { display:inline-block; padding:0 8px; height:22px; line-height:20px; font-size:12px;
+         border-radius:4px; border:1px solid; }
+  .tag-blue { color:#0958d9; background:#e6f4ff; border-color:#91caff; }
+  .tag-green{ color:#389e0d; background:#f6ffed; border-color:#b7eb8f; }
+  .tag-gold { color:#d46b08; background:#fff7e6; border-color:#ffd591; }
+  .ac { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; color:#0958d9; }
+  .pane { border:1px solid #f0f0f0; border-radius:8px; overflow:hidden; }
+  .pane-h { background:#fafafa; border-bottom:1px solid #f0f0f0; padding:8px 12px;
+            font-size:13px; font-weight:600; display:flex; justify-content:space-between; }
+  .pane-h span.n { font-weight:400; color:rgba(0,0,0,.45); }
+  .pane-b { padding:10px; background:#fff; }
+  .selrow { border:1px solid #f0f0f0; border-radius:6px; padding:8px 10px; margin-bottom:8px; background:#fff; }
+  .selrow.locked { background:#f6ffed; border-color:#b7eb8f; }
+  .sr1 { display:flex; align-items:center; gap:8px; }
+  .sr2 { display:flex; align-items:center; gap:10px; margin-top:6px; padding-left:20px; }
+  .hd { color:rgba(0,0,0,.25); cursor:grab; font-size:13px; }
+  .hd.off { color:rgba(0,0,0,.12); cursor:not-allowed; }
+  .fname { width:150px; height:26px; border:1px solid #d9d9d9; border-radius:4px;
+           padding:0 8px; font-size:13px; display:flex; align-items:center; background:#fff; }
+  .fname.hl { border-color:#1677ff; box-shadow:0 0 0 2px rgba(5,145,255,.1); font-weight:600; }
+  .vcol { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; color:rgba(0,0,0,.45);
+          background:#f5f5f5; border-radius:3px; padding:2px 6px; }
+  .t2 { font-size:12px; color:rgba(0,0,0,.45); }
+  .rb { display:inline-block; padding:0 6px; height:20px; line-height:18px; font-size:11px;
+        border-radius:3px; border:1px solid #91caff; color:#0958d9; background:#e6f4ff; }
+  .rb.key { border-color:#b7eb8f; color:#389e0d; background:#f6ffed; }
+  .rb.lk  { border-color:#ffd591; color:#d46b08; background:#fff7e6; }
+  .cb { font-size:12px; color:rgba(0,0,0,.65); display:inline-flex; align-items:center; gap:4px; }
+  .box { width:14px; height:14px; border:1px solid #d9d9d9; border-radius:3px; display:inline-block; }
+  .rm { margin-left:auto; color:rgba(0,0,0,.45); cursor:pointer; font-size:13px; padding:0 4px; }
+  .rm.off { color:rgba(0,0,0,.18); cursor:not-allowed; }
+  .tip { display:inline-block; background:rgba(0,0,0,.85); color:#fff; font-size:12px;
+         padding:6px 8px; border-radius:6px; max-width:400px; margin:6px 0 0 20px; }
+  .note { margin-top:14px; padding:10px 12px; border-radius:6px; font-size:13px; }
+  .note-info { background:#e6f4ff; border:1px solid #91caff; color:#0958d9; }
+  .note-warn { background:#fffbe6; border:1px solid #ffe58f; color:#874d00; }
+  .note-err  { background:#fff2f0; border:1px solid #ffccc7; color:#a8071a; }
+  .empty { color:rgba(0,0,0,.25); text-align:center; padding:30px; font-size:13px;
+           border:1px dashed #d9d9d9; border-radius:6px; }
+  .flow { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:10px 0 14px; }
+  .step { background:#fafafa; border:1px solid #f0f0f0; border-radius:6px; padding:8px 12px; font-size:12px; }
+  .arr { color:rgba(0,0,0,.25); }
+  table.nm { width:100%; border-collapse:collapse; font-size:13px; }
+  table.nm th, table.nm td { border:1px solid #f0f0f0; padding:7px 10px; text-align:left; }
+  table.nm th { background:#fafafa; font-weight:600; }
+  code { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; }
+</style>
+</head>
+<body>
+
+<h1>取数配置器 · 已选输出列</h1>
+<div class="sub">F-2 / F-3 · 服务 <span class="ac">AC-14 / AC-15 / AC-16 / AC-17 / AC-18 / AC-19</span> · 落点 <span class="ac">SqlViewBuilderTab.tsx（addColumn:581 / removeColumn:601 / handleSourceChange:800 / fieldName:191）</span></div>
+
+<!-- 状态 1 -->
+<div class="state">
+  <div class="state-h">
+    <span class="state-t">状态 1 · 刚选中数据源「物料BOM」，未做任何拖拽</span>
+    <span class="tag tag-blue">AC-14</span>
+    <span class="tag tag-blue">AC-15</span>
+    <span class="tag tag-green">默认态</span>
+  </div>
+  <div class="state-d">行键列自动带出（实测 MATERIAL_BOM/QUOTE 有 2 个 ROW_KEY 列），✕ 为禁用态</div>
+  <div class="pane">
+    <div class="pane-h"><b>已选输出列</b><span class="n">2 列 · 均为必选行键</span></div>
+    <div class="pane-b">
+      <div class="selrow locked">
+        <div class="sr1">
+          <span class="hd off">⋮⋮</span>
+          <div class="fname">销售料号</div>
+          <span class="vcol">_物料BOM_销售料号</span>
+          <span class="t2">文本</span>
+        </div>
+        <div class="sr2">
+          <span class="rb key">行键</span>
+          <span class="cb"><i class="box"></i>金额</span>
+          <span class="cb"><i class="box"></i>小计</span>
+          <span class="rm off" title="行键列不可移除">✕</span>
+        </div>
+      </div>
+      <div class="selrow locked">
+        <div class="sr1">
+          <span class="hd off">⋮⋮</span>
+          <div class="fname hl">料号</div>
+          <span class="vcol">_物料BOM_投入料号</span>
+          <span class="t2">文本</span>
+        </div>
+        <div class="sr2">
+          <span class="rb">料号</span>
+          <span class="rb key">行键</span>
+          <span class="cb"><i class="box"></i>金额</span>
+          <span class="cb"><i class="box"></i>小计</span>
+          <span class="rm off" title="行键列不可移除">✕</span>
+        </div>
+      </div>
+      <div class="tip">行键列决定行的身份（删行、回填、保存都靠它匹配），不可移除</div>
+    </div>
+  </div>
+  <div class="note note-info">
+    ① 绿底 + ✕ 置灰 = 行键列。<b>禁用而不是不渲染</b>（frontend.md §1.2：禁用但可见 + 说明原因）。<br>
+    ② 第 2 行字段名已按 F-3 改成 <b>「料号」</b>（原「投入料号」），而视图列名 <code>_物料BOM_投入料号</code> <b>不受影响</b>。
+  </div>
+</div>
+
+<!-- 状态 2 -->
+<div class="state">
+  <div class="state-h">
+    <span class="state-t">状态 2 · 拖入业务列与查名列之后</span>
+    <span class="tag tag-blue">AC-17</span>
+    <span class="tag tag-green">默认态</span>
+  </div>
+  <div class="state-d">行键列仍锁定；新拖入的列 ✕ 正常可点</div>
+  <div class="pane">
+    <div class="pane-h"><b>已选输出列</b><span class="n">4 列</span></div>
+    <div class="pane-b">
+      <div class="selrow locked">
+        <div class="sr1"><span class="hd off">⋮⋮</span><div class="fname">销售料号</div>
+          <span class="vcol">_物料BOM_销售料号</span><span class="t2">文本</span></div>
+        <div class="sr2"><span class="rb key">行键</span><span class="rm off">✕</span></div>
+      </div>
+      <div class="selrow locked">
+        <div class="sr1"><span class="hd off">⋮⋮</span><div class="fname hl">料号</div>
+          <span class="vcol">_物料BOM_投入料号</span><span class="t2">文本</span></div>
+        <div class="sr2"><span class="rb">料号</span><span class="rb key">行键</span><span class="rm off">✕</span></div>
+      </div>
+      <div class="selrow">
+        <div class="sr1"><span class="hd">⋮⋮</span><div class="fname">材料名</div>
+          <span class="vcol">_物料_材料名</span><span class="t2">文本</span>
+          <span class="rb lk">物料（查名）</span></div>
+        <div class="sr2"><span class="rb">名称</span>
+          <span class="cb"><i class="box"></i>金额</span><span class="cb"><i class="box"></i>小计</span>
+          <span class="rm">✕</span></div>
+      </div>
+      <div class="selrow">
+        <div class="sr1"><span class="hd">⋮⋮</span><div class="fname">材料毛重</div>
+          <span class="vcol">_物料BOM_材料毛重</span><span class="t2">数字</span></div>
+        <div class="sr2">
+          <span class="cb"><i class="box"></i>金额</span><span class="cb"><i class="box"></i>小计</span>
+          <span class="rm">✕</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="note note-info">
+    第 3 行的「材料名」带 <span class="rb lk">物料（查名）</span> 徽标 —— 它来自 LOOKUP 查名节点，由 B-1/B-2 的语义图边产生，
+    在左侧面板中<b>内联在锚点分组内</b>（AC-7），不另起分组。
+  </div>
+</div>
+
+<!-- 状态 3 -->
+<div class="state">
+  <div class="state-h">
+    <span class="state-t">状态 3 · 切源往返（序列）</span>
+    <span class="tag tag-blue">AC-16</span>
+    <span class="tag tag-gold">序列态</span>
+  </div>
+  <div class="state-d">切换数据源 = 重置已选列，然后重新自动带出该源的行键列</div>
+  <div class="flow">
+    <span class="step">物料BOM<br><b>2 个行键列</b></span><span class="arr">→</span>
+    <span class="step">手动拖入<br>「材料毛重」<b>共 3 列</b></span><span class="arr">→</span>
+    <span class="step">切到<br>来料其他费用<br><b>该源行键列</b></span><span class="arr">→</span>
+    <span class="step">切回<br>物料BOM<br><b>仍是 2 列</b></span>
+  </div>
+  <div class="note note-err">
+    🚫 <b>两个必红的错误形态</b>：<br>
+    ① 切回后变成 <b>4 列</b> —— 自动填充跑在重置之前，行键列被重复追加。<br>
+    ② 切回后仍残留「材料毛重」—— 上一个源的列没被清掉，而它在新源里根本不存在，编译必然失败。
+  </div>
+</div>
+
+<!-- 状态 4 -->
+<div class="state">
+  <div class="state-h">
+    <span class="state-t">状态 4 · 默认命名规则一览</span>
+    <span class="tag tag-blue">AC-17</span><span class="tag tag-blue">AC-18</span><span class="tag tag-blue">AC-19</span>
+  </div>
+  <div class="state-d">只影响<b>拖入后</b>的字段名；左侧「可用字段」面板显示名保持原样（D-8）</div>
+  <table class="nm">
+    <tr><th>方言</th><th>面板显示名（不变）</th><th>拖入后字段名</th><th>涉及数据源数</th></tr>
+    <tr><td rowspan="4">报价</td><td>销售料号</td><td><b>销售料号</b>（例外，保持）</td><td>6</td></tr>
+    <tr><td>投入料号</td><td><b>料号</b></td><td>6</td></tr>
+    <tr><td>材质料号</td><td><b>料号</b></td><td>1</td></tr>
+    <tr><td>组成件料号</td><td><b>料号</b></td><td>1</td></tr>
+    <tr><td rowspan="3">核价<br>（两套）</td><td>生产料号</td><td><b>生产料号</b>（例外，保持）</td><td>18</td></tr>
+    <tr><td>组成料号</td><td><b>料号</b></td><td>2</td></tr>
+    <tr><td>来料料号 / 材质料号</td><td><b>料号</b></td><td>8</td></tr>
+  </table>
+  <div class="note note-warn">
+    改的是<b>默认值</b>不是锁定 —— 用户仍可在字段名输入框里手动改成别的。
+  </div>
+</div>
+
+<!-- 状态 5 -->
+<div class="state">
+  <div class="state-h">
+    <span class="state-t">状态 5 · 空态与价格策略组</span>
+    <span class="tag tag-gold">空数据态</span>
+    <span class="tag tag-gold">边界</span>
+  </div>
+  <div class="state-d">左：尚未选数据源时；右：材质元素源下行键列落进价格策略原子组</div>
+  <div class="pane">
+    <div class="pane-h"><b>已选输出列</b><span class="n">尚未选择数据源</span></div>
+    <div class="pane-b"><div class="empty">请先在上方选择数据源</div></div>
+  </div>
+  <div class="note note-warn">
+    ⚠️ <b>与价格策略原子组的交互（必须实测材质元素数据源）</b>：已选输出列里有一块整组拖动 / 整组移除的
+    <code>svb-pgrp</code> 区块。若某个行键列落进该组，<b>「移除整组」的 ✕ 也必须挡住</b> ——
+    否则用户绕过单行禁用、从整组入口把行键列删掉了。
+  </div>
+</div>
+
+</body>
+</html>

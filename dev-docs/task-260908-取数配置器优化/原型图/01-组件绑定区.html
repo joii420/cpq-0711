@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>原型 · 组件绑定区按数据源条件显示（F-1）</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; padding:24px; background:#f5f5f5; font-size:14px; line-height:1.5715;
+         font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif; color:rgba(0,0,0,.88); }
+  h1 { font-size:20px; margin:0 0 4px; font-weight:600; }
+  .sub { color:rgba(0,0,0,.45); font-size:13px; margin-bottom:20px; }
+  .state { background:#fff; border-radius:8px; padding:20px 24px; margin-bottom:18px;
+           box-shadow:0 1px 2px rgba(0,0,0,.03),0 1px 6px -1px rgba(0,0,0,.02); }
+  .state-h { display:flex; align-items:center; gap:10px; margin-bottom:6px; }
+  .state-t { font-size:15px; font-weight:600; }
+  .tag { display:inline-block; padding:0 8px; height:22px; line-height:20px; font-size:12px;
+         border-radius:4px; border:1px solid; }
+  .tag-blue { color:#0958d9; background:#e6f4ff; border-color:#91caff; }
+  .tag-green{ color:#389e0d; background:#f6ffed; border-color:#b7eb8f; }
+  .tag-gold { color:#d46b08; background:#fff7e6; border-color:#ffd591; }
+  .state-d { color:rgba(0,0,0,.45); font-size:13px; margin-bottom:16px; }
+  .ac { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; color:#0958d9; }
+  .bindbar { border:1px solid #f0f0f0; border-radius:6px; padding:16px; background:#fafafa; }
+  .bindbar-t { font-size:13px; font-weight:600; margin-bottom:12px; color:rgba(0,0,0,.65); }
+  .row { display:flex; flex-wrap:wrap; gap:12px 16px; align-items:flex-end; }
+  .fld { display:flex; flex-direction:column; gap:6px; }
+  .lbl { font-size:13px; color:rgba(0,0,0,.65); }
+  .lbl .req { color:#ff4d4f; margin-right:2px; }
+  .sel { width:180px; height:32px; border:1px solid #d9d9d9; border-radius:6px; background:#fff;
+         display:flex; align-items:center; justify-content:space-between; padding:0 11px; }
+  .sel.ph { color:rgba(0,0,0,.25); }
+  .sel .arw { color:rgba(0,0,0,.25); font-size:11px; }
+  .btn { height:32px; padding:0 15px; border:1px solid #d9d9d9; border-radius:6px; background:#fff;
+         display:inline-flex; align-items:center; font-size:14px; cursor:pointer; }
+  .removed { position:relative; }
+  .removed .sel { border-style:dashed; border-color:#ffccc7; background:#fff2f0; color:#cf1322; }
+  .strike { text-decoration:line-through; opacity:.6; }
+  .note { margin-top:14px; padding:10px 12px; border-radius:6px; font-size:13px; }
+  .note-warn { background:#fffbe6; border:1px solid #ffe58f; color:#874d00; }
+  .note-info { background:#e6f4ff; border:1px solid #91caff; color:#0958d9; }
+  .note-err  { background:#fff2f0; border:1px solid #ffccc7; color:#a8071a; }
+  .meta { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px;
+          color:rgba(0,0,0,.45); margin-bottom:12px; }
+  .tip { display:inline-block; background:rgba(0,0,0,.85); color:#fff; font-size:12px;
+         padding:6px 8px; border-radius:6px; max-width:340px; margin-top:6px; }
+  .empty { color:rgba(0,0,0,.25); text-align:center; padding:24px; font-size:13px; }
+</style>
+</head>
+<body>
+
+<h1>组件绑定区 · 按数据源条件显示</h1>
+<div class="sub">F-1 · 服务 <span class="ac">AC-10 / AC-11 / AC-12 / AC-13 / AC-25</span> · 落点 <span class="ac">ComponentManagement.tsx:1962~2110</span></div>
+
+<!-- 状态 1 -->
+<div class="state">
+  <div class="state-h">
+    <span class="state-t">状态 1 · 物料与元素BOM 数据源</span>
+    <span class="tag tag-blue">AC-10</span>
+    <span class="tag tag-green">默认态</span>
+  </div>
+  <div class="state-d">判据 <code>boundSemantic === 'MATERIAL_ELEMENT'</code> ⇒ 显示 4 个下拉</div>
+  <div class="meta">示例组件：dc3297cc-e9a3-4184-8bc8-bb61db2a07d2 「材质元素」 · 数据源「物料与元素BOM」</div>
+  <div class="bindbar">
+    <div class="bindbar-t">匹配标识与元素绑定</div>
+    <div class="row">
+      <div class="fld"><span class="lbl">料号列</span><div class="sel"><span>材质料号</span><span class="arw">▾</span></div></div>
+      <div class="fld"><span class="lbl">名称列</span><div class="sel"><span>材料名</span><span class="arw">▾</span></div></div>
+      <div class="fld"><span class="lbl">元素列</span><div class="sel"><span>元素</span><span class="arw">▾</span></div></div>
+      <div class="fld"><span class="lbl">元素单价列</span><div class="sel"><span>元素单价</span><span class="arw">▾</span></div></div>
+      <div class="fld"><button class="btn">按 SQL 推导元素绑定</button></div>
+    </div>
+  </div>
+  <div class="note note-info">「按 SQL 推导元素绑定」按钮跟随元素列一起显示 / 隐藏 —— 它推导的就是这两个字段。</div>
+</div>
+
+<!-- 状态 2 -->
+<div class="state">
+  <div class="state-h">
+    <span class="state-t">状态 2 · 其余任一数据源（物料BOM / 物料 / 费用类）</span>
+    <span class="tag tag-blue">AC-11</span>
+    <span class="tag tag-blue">AC-12</span>
+  </div>
+  <div class="state-d">判据不成立 ⇒ 只显示 2 个下拉。元素列 / 元素单价列 / 货币列均<b>不渲染 DOM</b>（不是置灰）</div>
+  <div class="meta">示例组件：f6d51727-bd1e-4cc3-a839-94208cc12f41 「T260907-物料BOM」 · 04375490-927f-4802-bcc7-4156df4fc27d 「T260907-来料其他费用」</div>
+  <div class="bindbar">
+    <div class="bindbar-t">匹配标识</div>
+    <div class="row">
+      <div class="fld"><span class="lbl">料号列</span><div class="sel"><span>料号</span><span class="arw">▾</span></div></div>
+      <div class="fld"><span class="lbl">名称列</span><div class="sel"><span>材料名</span><span class="arw">▾</span></div></div>
+    </div>
+  </div>
+  <div class="note note-warn">
+    ⚠️ 与状态 1 的差异只有「少了两个下拉」，<b>不是布局重排</b> —— 料号列/名称列的位置、宽度、标签文案保持逐字不变。
+  </div>
+</div>
+
+<!-- 状态 3 -->
+<div class="state">
+  <div class="state-h">
+    <span class="state-t">状态 3 · 货币列（本次移除的对象）</span>
+    <span class="tag tag-blue">AC-12</span>
+    <span class="tag tag-gold">对照用 · 不实现</span>
+  </div>
+  <div class="state-d">下面是<b>改动前</b>的样子，画出来是为了讲清「移除到什么程度」</div>
+  <div class="bindbar">
+    <div class="row">
+      <div class="fld"><span class="lbl">元素列</span><div class="sel"><span>元素</span><span class="arw">▾</span></div></div>
+      <div class="fld"><span class="lbl">元素单价列</span><div class="sel"><span>元素单价</span><span class="arw">▾</span></div></div>
+      <div class="fld removed">
+        <span class="lbl strike">货币列</span>
+        <div class="sel"><span class="strike">货币</span><span class="arw">▾</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="note note-err">
+    🚫 <b>只删渲染，不删数据。</b> 后端 <code>component.element_currency_field</code>、<code>ComponentDTO.elementCurrencyField</code>、
+    以及 <code>MaterialVersionUpgradeService</code> / <code>TemplateFreezeDriftService</code> 等 8 个消费点<b>全部保留</b>（D-4）。<br>
+    存量组件 <code>196aadee-…</code>「T260907-物料与元素BOM」的该字段值 <code>'货币'</code> 必须原样还在。
+  </div>
+</div>
+
+<!-- 状态 4 -->
+<div class="state">
+  <div class="state-h">
+    <span class="state-t">状态 4 · 存量组件：未绑数据源、但已配元素列</span>
+    <span class="tag tag-blue">AC-13</span>
+    <span class="tag tag-gold">边界态</span>
+  </div>
+  <div class="state-d"><code>boundSemantic === undefined</code>（无 builder_config）但 <code>elementCodeField</code> 有值 ⇒ <b>仍要显示</b></div>
+  <div class="bindbar">
+    <div class="row">
+      <div class="fld"><span class="lbl">料号列</span><div class="sel"><span>料号</span><span class="arw">▾</span></div></div>
+      <div class="fld"><span class="lbl">名称列</span><div class="sel ph"><span>名称列</span><span class="arw">▾</span></div></div>
+      <div class="fld"><span class="lbl">元素列</span><div class="sel"><span>元素</span><span class="arw">▾</span></div></div>
+      <div class="fld"><span class="lbl">元素单价列</span><div class="sel"><span>元素单价</span><span class="arw">▾</span></div></div>
+    </div>
+  </div>
+  <div class="note note-err">
+    🚨 判据必须是 <code>semantic === 'MATERIAL_ELEMENT' <b>||</b> 已有元素值</code>。<br>
+    只看 semantic 会把这些<b>已生效的配置藏起来</b> —— 值还在参与计算，界面上却看不见、改不了。
+  </div>
+</div>
+
+<!-- 状态 5 -->
+<div class="state">
+  <div class="state-h">
+    <span class="state-t">状态 5 · 空态：未绑数据源、也没配元素列</span>
+    <span class="tag tag-blue">AC-25</span>
+    <span class="tag tag-gold">空数据态</span>
+  </div>
+  <div class="state-d">两个条件都不成立 ⇒ 只显示 2 个下拉，且都是 placeholder</div>
+  <div class="meta">示例组件：010a2589-dfa4-4606-9a3d-9917bc0c2380 「BOM」</div>
+  <div class="bindbar">
+    <div class="row">
+      <div class="fld"><span class="lbl">料号列</span><div class="sel ph"><span>料号列</span><span class="arw">▾</span></div></div>
+      <div class="fld"><span class="lbl">名称列</span><div class="sel ph"><span>名称列</span><span class="arw">▾</span></div></div>
+    </div>
+  </div>
+  <div class="note note-info">页面正常渲染，无红色遮罩、无控制台异常。与 AC-13 配对，把判据两侧都钉住。</div>
+</div>
+
+<!-- 状态 6 -->
+<div class="state">
+  <div class="state-h">
+    <span class="state-t">状态 6 · 最长文案 / 禁用态</span>
+    <span class="tag tag-gold">极值</span>
+  </div>
+  <div class="state-d">字段名可能很长；下拉在「该组件尚无字段」时为禁用态</div>
+  <div class="bindbar">
+    <div class="row">
+      <div class="fld">
+        <span class="lbl">料号列</span>
+        <div class="sel" style="overflow:hidden">
+          <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">组成件料号（供应商侧编码）</span><span class="arw">▾</span>
+        </div>
+      </div>
+      <div class="fld">
+        <span class="lbl">名称列</span>
+        <div class="sel" style="background:rgba(0,0,0,.04);color:rgba(0,0,0,.25);cursor:not-allowed">
+          <span>该组件尚无字段</span><span class="arw">▾</span>
+        </div>
+        <span class="tip">该组件还没有任何字段，请先在「字段配置」中添加字段后再指定名称列</span>
+      </div>
+    </div>
+  </div>
+  <div class="note note-warn">超长字段名用 <code>text-overflow:ellipsis</code> 截断，🚫 不许撑破布局。禁用态必须给出原因（frontend.md §1.2）。</div>
+</div>
+
+</body>
+</html>
