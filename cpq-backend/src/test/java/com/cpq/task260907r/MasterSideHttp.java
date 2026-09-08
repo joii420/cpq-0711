@@ -43,7 +43,27 @@ import static org.junit.jupiter.api.Assertions.fail;
  */
 final class MasterSideHttp {
 
-    static final String BASE = "http://localhost:8081";
+    /**
+     * 🚨 <b>B 侧基址：必须显式指定，刻意不给默认值。</b>
+     *
+     * <p>原实现硬编码 {@code http://localhost:8081} —— 那是<b>共享 dev server + {@code cpq_db_0724}</b>，
+     * 而本类<b>有写操作</b>（{@link #put} / {@link #post}）。⇒ 默认值会让不知情的人
+     * <b>静默往共享库写</b>，而症状（共享库多出数据）出现在<b>别人</b>那边，几乎不可能归因回来。
+     *
+     * <p>⇒ 2026-09-08 用户裁决：把这个静默陷阱换成<b>响亮失败</b>。
+     * 代价是此后跑 T-16/T-17 必须显式给基址 —— <b>那正是要的</b>。
+     * 📌 这不是判据变更（一个断言都没改），是环境前置从「默认可用」改成「必须声明」。
+     */
+    static final String BASE = System.getProperty("cpq.master.base");
+
+    static {
+        if (BASE == null || BASE.isBlank()) {
+            throw new IllegalStateException(
+                    "🚨 MasterSideHttp 需要显式指定 B 侧基址：-Dcpq.master.base=http://localhost:<port>\n"
+                  + "   🚫 刻意不给默认值 —— 原默认 8081 = 共享 dev server + cpq_db_0724，"
+                  + "而本类有写操作(put/post)，默认值会让不知情的人静默写共享库。");
+        }
+    }
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final HttpClient client = HttpClient.newBuilder()

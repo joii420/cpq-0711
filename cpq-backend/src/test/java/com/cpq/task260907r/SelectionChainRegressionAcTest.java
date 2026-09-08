@@ -13,6 +13,8 @@ import java.util.LinkedHashMap;
 import java.util.UUID;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -162,18 +164,45 @@ class SelectionChainRegressionAcTest extends SelConfigAcTestBase {
                 "AC-17②：每页签行数改动前后应逐项相同。B=" + tabsB + "  A=" + tabsA);
         System.out.println("[T-17] AC-17② 通过：页签数=" + tabsB.size() + "，每页签行数=" + tabsB);
 
-        // ══ AC-17③：核价通过后 APPROVED，且料号组版本号增量相同 ══
+        // ══ AC-17③（🚦 2026-09-08 用户裁决：换成更强的不变量）══
+        //
+        // 🕰️ 原判据：「A/B 两侧版本号增量**相同**」。它写在 D-40/D-41 之前 ——
+        //    那两条给建单流程补了 _record 写入 ⇒ 选配单现在**有 _record**
+        //    ⇒ 它会真的参与回填 ⇒ A 侧升版而 master 侧对新链路 no-op。
+        //    ⇒ 原判据被本期新功能推翻（实测两轮：A={material_bom=1} vs B={material_bom=0}）。
+        //    🚫 这不是缺陷，是预期结果 —— 详见 需求文档.md AC-17③ 的留痕。
+        //
+        // 🔑 新判据：**A 侧多出的升版，必须恰好对应预览 dsBackfill 里判 UPGRADED 的那些组；
+        //    B 侧（master，无回填能力）恒 0。**
+        //    比原判据强在哪：原判据只「禁止变化」，新判据验证「新功能真的按预览说的那样写」——
+        //    预览说升哪几组就必须恰好升那几组，**预览说谎会被它抓住**，原判据抓不住。
+        //
+        // 🚫 判据里刻意**不写任何具体表名/数字**（本项目在写死数字上栽过三次）：
+        //    写的是「恰好等于预览判 UPGRADED 的集合」，不是「material_bom 增量 = 1」。
         Map<String, Integer> verB0 = groupVersions(partB);
         Map<String, Integer> verA0 = groupVersions(partA);
         System.out.println("[T-17] 核价通过前版本：B=" + verB0 + "  A=" + verA0);
 
         approveMasterSide(fxB);
-        approveInProcess(fxA);
+        // 🔑 必须拿**用于本次通过的那一份预览**（token 同源），否则「预览说的」与「实际写的」
+        //    可能来自两次不同的重算，比对就失去意义。
+        io.restassured.path.json.JsonPath approvePv = approveInProcess(fxA);
 
         assertEquals("APPROVED", quotationStatus(fxB.quotationId().toString()),
                 "AC-17③：B 侧核价通过后状态应为 APPROVED");
         assertEquals("APPROVED", quotationStatus(fxA.quotationId().toString()),
                 "AC-17③：A 侧核价通过后状态应为 APPROVED");
+
+        Map<String, List<String>> pvResults = dsBackfillResults(approvePv);
+        Set<String> upgradedTables = new TreeSet<>();
+        Set<String> unchangedOnlyTables = new TreeSet<>();
+        for (Map.Entry<String, List<String>> e : pvResults.entrySet()) {
+            if (e.getValue().contains("UPGRADED")) upgradedTables.add(e.getKey());
+            else if (!e.getValue().isEmpty()) unchangedOnlyTables.add(e.getKey());
+        }
+        System.out.println("[T-17] A 侧预览 dsBackfill 逐表判定：" + pvResults);
+        System.out.println("[T-17] 预览判 UPGRADED 的表=" + upgradedTables
+                + "  预览判无 UPGRADED（阴性对照用）的表=" + unchangedOnlyTables);
 
         Map<String, Integer> verB1 = groupVersions(partB);
         Map<String, Integer> verA1 = groupVersions(partA);
@@ -182,13 +211,76 @@ class SelectionChainRegressionAcTest extends SelConfigAcTestBase {
         System.out.println("[T-17] 核价通过后版本：B=" + verB1 + "  A=" + verA1);
         System.out.println("[T-17] 版本号增量：B(master)=" + dB + "  A(本分支)=" + dA);
         assertNonEmpty(dB.size(), "AC-17③ 参与比对的料号组数");
-        assertEquals(dB, dA,
-                "🔑 AC-17③：核价通过后，该单涉及的料号组**版本号增量**应与改动前相同。"
-                        + "B 侧(master)=" + dB + "  A 侧(本分支)=" + dA + "。\n"
-                        + "⚠️ 若这里红了，先别当回归：本段新增的正是「核价通过 → 回填升版」，"
-                        + "master 侧对新链路单是 no-op ⇒ 两侧增量不同**可能是设计如此**。"
-                        + "该冲突已在测试回报里列为待主线裁决项，🚫 用例不自行改判据去凑绿。");
-        System.out.println("[T-17] AC-17③ 通过：两侧状态均 APPROVED，版本号增量一致 = " + dA);
+
+        // ── ① B 侧（master，无回填能力）增量恒 0 ──────────────────────────────
+        for (Map.Entry<String, Integer> e : dB.entrySet()) {
+            assertEquals(0, e.getValue().intValue(),
+                    "🔑 AC-17③-①：B 侧(master) 没有 ds 回填能力，任何表的版本号增量都应为 0，"
+                            + "但 " + e.getKey() + " 增了 " + e.getValue() + "。完整 dB=" + dB);
+        }
+
+        // ── 🚨 阳性对照：预览必须真的判出至少一个 UPGRADED 组 ─────────────────
+        //    否则 upgradedTables 为空 ⇒ ② 退化成「空集 == 空集」、③ 循环 0 次，两条恒真。
+        assertNonEmpty(upgradedTables.size(),
+                "AC-17③ 阳性对照：预览 dsBackfill 判 UPGRADED 的表集合（逐表判定=" + pvResults + "）");
+
+        // ── ② A 侧非零增量的表集合 **恰好等于** 预览判 UPGRADED 的表集合 ──────
+        //    🚫 不是「⊇」：多升了没预告的组，和少升了预告过的组，都必须红。
+        Set<String> changedA = new TreeSet<>();
+        for (Map.Entry<String, Integer> e : dA.entrySet()) {
+            if (e.getValue() != 0) changedA.add(e.getKey());
+        }
+        assertEquals(upgradedTables, changedA,
+                "🔑 AC-17③-②：A 侧实际升版的表集合应**恰好**等于预览判 UPGRADED 的表集合。"
+                        + "预览说要升=" + upgradedTables + "  实际升了=" + changedA
+                        + "。左多右少 ⇒ 预告了却没写；左少右多 ⇒ 写了没预告（财务看不到）。"
+                        + "预览逐表判定=" + pvResults + "  dA=" + dA);
+
+        // ── ③ 每个升版的表，增量恰好 1（一次核价通过只升一版）────────────────
+        for (String t : upgradedTables) {
+            assertEquals(1, dA.getOrDefault(t, 0).intValue(),
+                    "🔑 AC-17③-③：一次核价通过对同一张表只应升一版，但 " + t
+                            + " 的增量是 " + dA.get(t) + "。dA=" + dA);
+        }
+
+        // ── 🚨 阴性对照：预览判 UNCHANGED（该表无任何 UPGRADED 组）的表，A 侧增量必须 0 ──
+        //    与 ②③ 成对：只有 ②③ 绿而本条也绿，才说明判据分得清「该升的」和「不该升的」。
+        assertNonEmpty(unchangedOnlyTables.size(),
+                "AC-17③ 阴性对照：预览里**没有** UPGRADED 组的表集合 —— 一张都没有时本条循环 0 次、"
+                        + "恒真恒通过，那样的绿不构成证据。预览逐表判定=" + pvResults);
+        for (String t : unchangedOnlyTables) {
+            assertEquals(0, dA.getOrDefault(t, 0).intValue(),
+                    "🔑 AC-17③ 阴性对照：预览没说要升 " + t + "（判定=" + pvResults.get(t)
+                            + "），A 侧却把它升了 " + dA.get(t) + " 版。dA=" + dA);
+        }
+        System.out.println("[T-17] AC-17③ 通过：B 侧增量全 0；A 侧升版表集合 " + changedA
+                + " 恰好 == 预览判 UPGRADED 的集合，每张 +1；阴性对照 " + unchangedOnlyTables
+                + " 增量全 0");
+    }
+
+    /**
+     * 预览响应里 {@code dsBackfill.tables[]} 的「表名 → 该表各组的 result 列表」。
+     *
+     * <p>result 取值见 {@code api.md}：{@code CREATED / UPGRADED / UNCHANGED / BLOCKED}。
+     * 🚫 刻意返回<b>整个列表</b>而不是布尔：调用方要能在失败消息里把原始判定打出来，
+     * 否则红了只知道「集合不等」，不知道预览到底说了什么。
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, List<String>> dsBackfillResults(io.restassured.path.json.JsonPath pv) {
+        Map<String, List<String>> out = new LinkedHashMap<>();
+        List<Map<String, Object>> tables = pv.getList("data.dsBackfill.tables");
+        if (tables == null) return out;
+        for (Map<String, Object> t : tables) {
+            List<String> rs = new ArrayList<>();
+            Object gs = t.get("groups");
+            if (gs instanceof List<?> list) {
+                for (Object g : list) {
+                    if (g instanceof Map<?, ?> gm) rs.add(String.valueOf(gm.get("result")));
+                }
+            }
+            out.put(String.valueOf(t.get("tableName")), rs);
+        }
+        return out;
     }
 
     /**
@@ -385,9 +477,12 @@ class SelectionChainRegressionAcTest extends SelConfigAcTestBase {
         return templateId;
     }
 
-    /** 清掉自造的配置行（组件 / 视图 / 模板 / 挂载），🚫 只删本轮自己建的那几个 id。 */
-    @AfterEach
-    void cleanupBuilderConfig() {
+    /**
+     * ③ 清掉自造的配置行（组件 / 视图 / 模板 / 挂载），🚫 只删本轮自己建的那几个 id。
+     * <p>📌 必须排在 {@link #teardownOwnQuotations()} <b>之后</b>：模板被本轮报价单的
+     * {@code customer_template_id} 引用着，报价单没删掉时这里的 {@code DELETE FROM template} 会抛 FK。
+     */
+    private void cleanupBuilderConfig() {
         if (builderComponentId == null && builderTemplateIds.isEmpty()) return;
         try {
             QuarkusTransaction.requiringNew().run(() -> {
@@ -554,7 +649,12 @@ class SelectionChainRegressionAcTest extends SelConfigAcTestBase {
         assertEquals(200, ap.status(), "T-17 B 侧核价通过应 200。body=" + MasterSideHttp.trim(ap.body()));
     }
 
-    private void approveInProcess(Fx fx) {
+    /**
+     * A 侧（本分支进程内）核价通过。
+     * @return 本次通过所用的那一份<b>预览</b>响应（token 同源）—— AC-17③ 要拿它的
+     *         {@code dsBackfill} 判定与实际落库结果对账，🚫 不能另起一次预览。
+     */
+    private io.restassured.path.json.JsonPath approveInProcess(Fx fx) {
         // ⚠️ 不带 Content-Type 会返 415（实测），不是业务错
         Response s = given().contentType(io.restassured.http.ContentType.JSON)
                 .post("/api/cpq/quotations/" + fx.quotationId() + "/submit").thenReturn();
@@ -568,6 +668,7 @@ class SelectionChainRegressionAcTest extends SelConfigAcTestBase {
                 .body(Map.of("comment", PREFIX + "T17-A", "previewToken", token))
                 .post("/api/cpq/quotations/" + fx.quotationId() + "/costing-approve").thenReturn();
         assertEquals(200, ap.statusCode(), "T-17 A 侧核价通过应 200。body=" + ap.asString());
+        return pv.jsonPath();
     }
 
     private String quotationStatus(String quotationId) {
@@ -588,8 +689,108 @@ class SelectionChainRegressionAcTest extends SelConfigAcTestBase {
      * <b>先 count 再删</b>（{@code CLAUDE.md} §3.2 第一步）。🚫 绝不按表清。
      * <p>📌 JUnit 5：子类 {@code @AfterEach} 先于父类执行 ⇒ 这里跑时报价单还在，料号还查得到。
      */
+    /**
+     * 🚦 <b>本类唯一的 {@code @AfterEach} 编排器（2026-09-08 新增，用户裁决 §2）。</b>
+     *
+     * <h3>为什么要合并成一个、并且显式定序</h3>
+     * 原来本类有<b>两个</b> {@code @AfterEach}（{@code cleanupRecordAndHistory} /
+     * {@code cleanupBuilderConfig}）。同一个类里多个 {@code @AfterEach} 的执行次序
+     * <b>JUnit 5 不作保证</b>，而本轮的红<b>恰恰是次序问题</b> ⇒ 必须自己定序。
+     *
+     * <h3>🔬 实测根因（2026-09-07 三轮逐字一致，🚫 不是「偶发」）</h3>
+     * 症状是超类 {@code SelConfigAcTestBase.assertNoResidue} 报
+     * 「{@code sel_part_signature} 仍有 {@code T2609xxxx} 的残留」。
+     * <b>但那不是根因</b> —— 超类<b>确实</b>执行了 {@code DELETE FROM sel_part_signature}，
+     * 只是它整个 per-fixture 清理跑在<b>一个事务</b>里，后面某条语句抛了 FK 异常
+     * ⇒ <b>整段回滚</b> ⇒ 那条 DELETE 被撤销。原始异常两条：
+     * <pre>
+     * t17 ：ERROR: update or delete on table "quotation" violates foreign key constraint
+     *       "costing_order_quotation_id_fkey" on table "costing_order"
+     * t17b：ERROR: update or delete on table "customer" violates foreign key constraint
+     *       "template_customer_id_fkey" on table "template"
+     *       （其 Suppressed：template 又被 quotation.customer_template_id 挡着删不掉）
+     * </pre>
+     * <b>两个阻塞都是本段自己造出来的</b>，超类没理由认识它们：
+     * ① {@code costing_order} 是<b>核价通过</b>建的 —— 选配用例原本不走核价通过；
+     * ② 那张 {@code template} 是 {@code T-17b} 自造的 builder 模板，且被本轮报价单引用。
+     *
+     * <p>🚫 <b>因此「直接删 {@code sel_part_signature}」治不了</b>：删掉它，超类的下一条断言
+     * （{@code customer} 残留）立刻接着红 —— 红只是换个地方，而且更难归因。
+     * ⇒ 正解是<b>把我自己造出来的两个 FK 阻塞先拆掉</b>，让超类原本就写好的清理跑得完。
+     *
+     * <p>⚠️ <b>这是补超类的清理缺口，根治应在 {@code SelConfigAcTestBase}</b>
+     * （它的 per-fixture 清理应当按 FK 拓扑序、或每步独立事务）。
+     * 🚫 本轮不动别人的基类（跨任务）。下一个人不要以为这是本用例特有的需求。
+     */
     @AfterEach
-    void cleanupRecordAndHistory() {
+    void cleanupOwnFixturesInOrder() {
+        try {
+            cleanupRecordAndHistory();     // ① _record / _history（超类不认识的两类）
+            teardownOwnQuotations();       // ② 报价单 + 其全部下游（拆掉 costing_order 这个 FK 阻塞）
+            cleanupBuilderConfig();        // ③ 自造 builder 组件/视图/模板（拆掉 template 这个 FK 阻塞）
+        } finally {
+            // 🚨 状态清空必须在**编排器**这一层，🚫 不能留在 ① 里 ——
+            //    2026-09-08 实测踩过：① 的 finally 先把 touchedQuotationIds 清了，
+            //    ② 拿到空列表直接 return，于是「② 一行日志都不打」而红照旧。
+            //    症状（残留没消）与「② 压根没跑」长得一模一样，正是 testing.md 说的假象。
+            mintedPartNos.clear();
+            touchedQuotationIds.clear();
+        }
+    }
+
+    /**
+     * ② 删掉<b>本轮自己造的报价单</b>及其全部下游行。
+     *
+     * <p>🔑 超类也删报价单，但它删在<b>自己那个事务里、且在 {@code costing_order} 之后没有兜底</b>；
+     * 而核价通过建出的 {@code costing_order} 会把 {@code DELETE FROM quotation} 顶回去。
+     * ⇒ 在这里先删干净，超类那几条 DELETE 就退化成 no-op，它的事务不再回滚。
+     *
+     * <p>🚨 收窄条件 = {@code touchedQuotationIds}（<b>只有本用例自己建的单</b>），<b>先 count 再删</b>。
+     * 🚫 绝不按表清、绝不按前缀扫全库。
+     * <p>下游表清单<b>动态派生</b>（🚫 不硬编码 —— 硬编码在「以后又多一张下游表」时会沉默地漏清）。
+     */
+    private void teardownOwnQuotations() {
+        if (touchedQuotationIds.isEmpty()) return;
+        List<String> downstream = col("SELECT c.table_name FROM information_schema.columns c "
+                + "JOIN information_schema.tables t ON t.table_name = c.table_name "
+                + "  AND t.table_schema = 'public' AND t.table_type = 'BASE TABLE' "
+                + "WHERE c.table_schema = 'public' AND c.column_name = 'quotation_id' "
+                + "  AND c.table_name <> 'quotation' ORDER BY 1")
+                .stream().map(String::valueOf).toList();
+        for (String qid : List.copyOf(touchedQuotationIds)) {
+            try {
+                QuarkusTransaction.requiringNew().run(() -> {
+                    // 先删挂在 line_item 上的子表（它们按 line_item_id 关联，不带 quotation_id 列）
+                    for (String t : List.of("quotation_line_process", "quotation_line_item_snapshot",
+                            "quotation_line_component_data")) {
+                        if (!tableExists(t)) continue;
+                        em.createNativeQuery("DELETE FROM " + safeIdent(t) + " WHERE line_item_id IN "
+                                        + "(SELECT id FROM quotation_line_item WHERE quotation_id = CAST(:q AS uuid))")
+                                .setParameter("q", qid).executeUpdate();
+                    }
+                    for (String t : downstream) {
+                        String s = safeIdent(t);
+                        long n = count("SELECT count(*) FROM " + s + " WHERE quotation_id = '" + qid + "'");
+                        if (n == 0) continue;
+                        em.createNativeQuery("DELETE FROM " + s + " WHERE quotation_id = CAST(:q AS uuid)")
+                                .setParameter("q", qid).executeUpdate();
+                        System.out.println("[T-17 还原] " + t + " 清掉下游 " + n + " 行（quotation=" + qid + "）");
+                    }
+                    long n = count("SELECT count(*) FROM quotation WHERE id = '" + qid + "'");
+                    if (n > 0) {
+                        em.createNativeQuery("DELETE FROM quotation WHERE id = CAST(:q AS uuid)")
+                                .setParameter("q", qid).executeUpdate();
+                        System.out.println("[T-17 还原] quotation 清掉 " + n + " 行（" + qid + "）");
+                    }
+                });
+            } catch (RuntimeException e) {
+                // 🚫 不吞：清理失败必须可见，否则下一轮会以「业务缺陷」的面目出现
+                System.out.println("[T-17 还原] ⚠️ 报价单 " + qid + " 拆除失败（清理问题，非业务结论）：" + e);
+            }
+        }
+    }
+
+    private void cleanupRecordAndHistory() {
         if (mintedPartNos.isEmpty() && touchedQuotationIds.isEmpty()) return;
         try {
             QuarkusTransaction.requiringNew().run(() -> {
@@ -622,10 +823,10 @@ class SelectionChainRegressionAcTest extends SelConfigAcTestBase {
                     }
                 }
             });
-        } finally {
-            mintedPartNos.clear();
-            touchedQuotationIds.clear();
+        } catch (RuntimeException e) {
+            System.out.println("[T-17 还原] ⚠️ _record/_history 清理失败（清理问题，非业务结论）：" + e);
         }
+        // 🚫 刻意不在这里 clear —— 见 cleanupOwnFixturesInOrder 的 finally
     }
 
     // ─────────────────────────── 小工具 ───────────────────────────
