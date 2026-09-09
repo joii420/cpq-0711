@@ -2184,6 +2184,17 @@ public class QuotationService {
             // NO ACTION 阻塞型，删除序列此前没有覆盖，导致任何被调价 job 扫过的 DRAFT 单裸报 500
             // （FK 违反）。见方法 javadoc。
             cleanupPriceAdjustJobItems(id);
+            // task-260907 第二段 · D-48（2026-09-08 主线亲验抓到）：删单必须清掉本单在全部
+            // ds_quote_*_record 上的投影行 —— 这些表**外键数 = 0**（设计如此，_record 是投影
+            // 不是从属实体）⇒ 数据库不会级联；而唯一的 _record DELETE
+            // （DsQuoteRecordService.deleteGroups）按 (quotation_id, customer_no, axis IN ...)
+            // 收窄且只在重算时跑，够不到「单已经没了」这个场景 ⇒ 孤儿行按删单次数累积
+            // （实测 cpq_db_0724：ds_quote_element_bom_record 孤儿 27 / 总 206 = 13%）。
+            // 🔒 与删单同事务（两个方法都是 MANDATORY）：半清半删会留下更难查的中间态。
+            // 🚫 表清单从 Registry 派生，不硬编表名 —— 见 deleteByQuotation 的 javadoc。
+            dsQuoteRecordService.deleteByQuotation(id);
+            // D-35 的过期标记同样只挂 quotation_id、无外键：单没了它就没有消费者，一并删。
+            dsRecordStaleService.deleteByQuotation(id);
             // costing_sheet has ON DELETE CASCADE (V30) — auto-deleted with quotation
             q.delete();
             // repair-0803（BL-0108 ②）：强制在本方法体内同步 flush，让任何遗留的阻塞型 FK（含上面
