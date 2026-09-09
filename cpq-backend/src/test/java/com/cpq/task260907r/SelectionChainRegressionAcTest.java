@@ -190,6 +190,27 @@ class SelectionChainRegressionAcTest extends SelConfigAcTestBase {
         //
         // 🚫 判据里刻意**不写任何具体表名/数字**（本项目在写死数字上栽过三次）：
         //    写的是「恰好等于预览判 UPGRADED 的集合」，不是「material_bom 增量 = 1」。
+        //
+        // ══ 🚨 阳性对照必须由夹具**制造**出来（2026-09-08 补）══
+        //
+        //  为什么非造不可：选配链路**零编辑** ⇒ _record 与主表本就一致 ⇒ 判 UNCHANGED 是**正确行为**。
+        //  历史上这里能冒出 UPGRADED，靠的是 D-45 的病灶：树页签的合成根行锚不上，
+        //  回填按新增行追加进 ds_quote_material_bom ⇒ 版本 +1。
+        //  D-45 修好后那个现象消失，阳性对照随之为空。
+        //
+        //  🔑 这是一种独立的假绿形态：**判据本身没问题，是它赖以成立的现象消失了 ——
+        //     而那个现象是缺陷。** 当一条 AC 的阳性对照来自被测系统的缺陷时，
+        //     修好缺陷会让这条 AC 失去分辨力。守卫报「此刻的绿不构成任何证据」是对的，
+        //     🚫 正确处置是把对照造出来，不是把守卫改绿。
+        //
+        //  ⇒ 走真实用户路径改一格（ensure-card-values → quote-card-edit），
+        //    让 A 侧真的产生一处差异；提交时 D-43 的挂点把它同步进 _record，
+        //    预览才会判出 UPGRADED。
+        //  🚫 只改 A 侧：B 侧必须保持零增量，那是 AC-17③-① 的阴性对照。
+        //  ⚠️ 位置刻意在 AC-17① / ② **之后** —— 那两条比的是 A 与 B 逐行/逐页签相同，
+        //     先改就把它们打红了。
+        editOneCellOnASideToCreatePositiveControl(fxA);
+
         Map<String, Integer> verB0 = groupVersions(partB);
         Map<String, Integer> verA0 = groupVersions(partA);
         System.out.println("[T-17] 核价通过前版本：B=" + verB0 + "  A=" + verA0);
@@ -657,6 +678,139 @@ class SelectionChainRegressionAcTest extends SelConfigAcTestBase {
     }
 
     /** {@code 页签名 → 行数} —— AC-17② 要的「具体计数」。 */
+    /** 阳性对照用的哨兵值：夹具里任何地方都不会自然出现，便于证明「这一格真的改上了」。 */
+    private static final String AC17_SENTINEL = "63.5";
+
+    /**
+     * 在 <b>A 侧</b>走真实用户路径改一格，制造出 AC-17③ 需要的 {@code UPGRADED} 组。
+     *
+     * <h3>三步都不能省</h3>
+     * <ol>
+     *   <li>{@code ensure-card-values} —— 不先调它，{@code quote-card-edit} 返 400
+     *       「非草稿态或数据缺失」，而那句话把两个原因并在一起，极易被误判成状态问题；</li>
+     *   <li>{@code rowKey} <b>从装配结果里读</b>（{@code quoteCardValues.tabs[].formulaResults[].rowKey}）——
+     *       🚫 不在用例里硬编分隔符：那是 {@code FormulaCalculator.buildRawRowKeys} 的内部约定，
+     *       且撞键消歧还会追加 {@code #序号}，硬编接不住；</li>
+     *   <li><b>证明干预生效</b> —— {@code quote-card-edit} 对匹配不上的 {@code rowKey}
+     *       <b>返 200 且零效果</b>。不证生效的话，「预览判 UNCHANGED」可能只是这一格压根没改上，
+     *       那会把<b>夹具错</b>报成产品缺陷。</li>
+     * </ol>
+     */
+    private void editOneCellOnASideToCreatePositiveControl(Fx fx) {
+        // ① ensure-card-values
+        Response ensure = given().contentType(io.restassured.http.ContentType.JSON)
+                .post("/api/cpq/quotations/" + fx.quotationId() + "/ensure-card-values").thenReturn();
+        assertEquals(200, ensure.statusCode(),
+                "AC-17③ 夹具：ensure-card-values 应 200（不先调它 quote-card-edit 会返 400）。body="
+                        + ensure.asString());
+
+        // 🚨 干预前：哨兵值必须**尚未出现**，否则「改上了」无从判断
+        long before = count("SELECT count(*) FROM quotation_line_component_data cd "
+                + "JOIN quotation_line_item li ON li.id = cd.line_item_id "
+                + "WHERE li.quotation_id = '" + fx.quotationId() + "' "
+                + "  AND cd.row_data::text LIKE '%" + AC17_SENTINEL + "%'");
+        assertEquals(0L, before,
+                "AC-17③ 夹具：干预前 row_data 里就已经有哨兵值 " + AC17_SENTINEL
+                        + " ⇒ 它不再能证明「这一格是我改的」，换一个哨兵值。");
+
+        // ② 取权威 rowKey
+        //
+        // 🚨 2026-09-08 实测的坑：**存储的 quote_card_values 里 rowKey 是下标**（0,1,2…），
+        //    而 quote-card-edit 只认**复合 rowKey**（形如 `<销售料号>||<材质料号>||<元素>`）——
+        //    后者只在 edit 自己触发的那次重算之后才出现在响应里。
+        //    ⇒ 直接拿 GET 回来的 rowKey 去 edit：**返 200、零效果、静默**（T-23 记过同一形状）。
+        //    ⇒ 必须先发一次**注定匹配不上的探针 edit** 触发重算，从它的**响应**里取权威 rowKey，
+        //      再用权威 rowKey 发真正的那一次。
+        //    🚫 不硬编分隔符：探针只负责让系统把它自己算的 rowKey 吐出来。
+        String comp = Task260907RBase.COMP_ELEMENT_BOM.toString();
+        Object lineItemId = scalarLineItemId(fx, comp);
+
+        Response probe = quoteCardEdit(lineItemId, comp, "__T17_PROBE_NO_MATCH__", AC17_SENTINEL);
+        assertEquals(200, probe.statusCode(),
+                "AC-17③ 夹具：探针 edit 应 200。body=" + probe.asString());
+        // 🔑 探针必须**确实没改上**，否则它就不是探针，而是一次计划外的写入
+        long afterProbe = sentinelHits(fx);
+        assertEquals(0L, afterProbe,
+                "AC-17③ 夹具：探针 edit 用的是匹配不上的 rowKey，本应零效果，"
+                        + "但哨兵值已经落了 " + afterProbe + " 处 ⇒ 它污染了夹具，判据不再干净。");
+
+        String rowKey = authoritativeRowKeyFrom(probe, comp);
+        System.out.println("[T-17] 阳性对照·权威 rowKey（取自探针 edit 响应的 formulaResults）= " + rowKey
+                + "  lineItem=" + lineItemId);
+
+        // ③ 改一格（用权威 rowKey）
+        Response edit = quoteCardEdit(lineItemId, comp, rowKey, AC17_SENTINEL);
+        assertEquals(200, edit.statusCode(),
+                "AC-17③ 夹具：quote-card-edit 应 200（rowKey=" + rowKey + "）。body=" + edit.asString());
+
+        // 🚨 证明干预生效（返 200 不等于改上了）
+        long landed = sentinelHits(fx);
+        System.out.println("[T-17] 阳性对照·干预落点：哨兵值命中 " + landed + " 处");
+        assertNonEmpty((int) landed,
+                "🚨 AC-17③ 夹具：quote-card-edit 返 200，但哨兵值 " + AC17_SENTINEL
+                        + " 哪儿都没落 ⇒ 这一格没改上（rowKey=" + rowKey + "，fieldName=组成含量（%））。"
+                        + "此时预览判 UNCHANGED 是**夹具错**，🚫 不许报成产品缺陷。");
+    }
+
+    /** {@code row_data} + {@code quote_card_values} 两处里哨兵值的命中数。 */
+    private long sentinelHits(Fx fx) {
+        return count("SELECT count(*) FROM quotation_line_component_data cd "
+                + "JOIN quotation_line_item li ON li.id = cd.line_item_id "
+                + "WHERE li.quotation_id = '" + fx.quotationId() + "' "
+                + "  AND cd.row_data::text LIKE '%" + AC17_SENTINEL + "%'")
+                + count("SELECT count(*) FROM quotation_line_item "
+                + "WHERE quotation_id = '" + fx.quotationId() + "' "
+                + "  AND quote_card_values::text LIKE '%" + AC17_SENTINEL + "%'");
+    }
+
+    private Object scalarLineItemId(Fx fx, String comp) {
+        List<Object> ids = col("SELECT li.id FROM quotation_line_item li "
+                + "JOIN quotation_line_component_data cd ON cd.line_item_id = li.id "
+                + "WHERE li.quotation_id = '" + fx.quotationId() + "' "
+                + "  AND cd.component_id = '" + comp + "' LIMIT 1");
+        assertNonEmpty(ids.size(), "AC-17③ 夹具：带元素BOM 组件的 line item");
+        return ids.get(0);
+    }
+
+    private Response quoteCardEdit(Object lineItemId, String comp, String rowKey, String value) {
+        return given().contentType(io.restassured.http.ContentType.JSON)
+                .body(Map.of("componentId", comp, "rowKey", rowKey,
+                        "fieldName", "组成含量（%）", "value", value))
+                .put("/api/cpq/quotations/line-items/" + lineItemId + "/quote-card-edit").thenReturn();
+    }
+
+    /**
+     * 从 {@code quote-card-edit} 的<b>响应</b>里取权威 {@code rowKey}（该响应带的是刚重算过的
+     * {@code quoteCardValues}）。🚫 不接受形如 {@code 0}/{@code 1} 的纯数字下标 ——
+     * 那是尚未套用 {@code row_key_fields} 的回退形态，拿它去 edit 会静默无效。
+     */
+    private String authoritativeRowKeyFrom(Response editResp, String comp) {
+        String qcvStr = editResp.jsonPath().getString("data.quoteCardValues");
+        assertTrue(qcvStr != null && !qcvStr.isBlank(),
+                "AC-17③ 夹具：edit 响应里没有 data.quoteCardValues。body=" + editResp.asString());
+        io.restassured.path.json.JsonPath qcv = new io.restassured.path.json.JsonPath(qcvStr);
+        List<Map<String, Object>> tabs = qcv.getList("tabs");
+        assertTrue(tabs != null && !tabs.isEmpty(), "AC-17③ 夹具：quoteCardValues.tabs 为空");
+        List<String> all = new ArrayList<>();
+        for (Map<String, Object> tab : tabs) {
+            if (!comp.equals(String.valueOf(tab.get("componentId")))) continue;
+            Object frs = tab.get("formulaResults");
+            if (!(frs instanceof List<?> list)) continue;
+            for (Object fr : list) {
+                if (fr instanceof Map<?, ?> m) {
+                    Object rk = m.get("rowKey");
+                    if (rk != null && !String.valueOf(rk).isBlank()) all.add(String.valueOf(rk));
+                }
+            }
+        }
+        assertNonEmpty(all.size(), "AC-17③ 夹具：componentId=" + comp + " 的 formulaResults[].rowKey");
+        List<String> real = all.stream().filter(k -> !k.matches("\\d+")).toList();
+        assertNonEmpty(real.size(),
+                "AC-17③ 夹具：拿到的 rowKey 全是纯数字下标 " + all
+                        + " ⇒ row_key_fields 还没套用，用它去 edit 会**返 200 且静默无效**。");
+        return real.get(0);
+    }
+
     private Map<String, Integer> tabRowCounts(Fx fx) {
         Map<String, Integer> out = new LinkedHashMap<>();
         for (Object[] r : rows("SELECT cd.tab_name, "

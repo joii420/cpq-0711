@@ -94,7 +94,9 @@ class RecordSchemaAcTest extends Task260907RBase {
             //   🚫 但不是简单放宽 —— 见下面 ①' ，把「被替换掉」这件事正面断言出来，比原来更严。
             Set<String> missingInRecord = new LinkedHashSet<>(mainCols.keySet());
             missingInRecord.removeAll(recCols.keySet());
-            missingInRecord.removeAll(VERSION_COLUMNS);
+            // 🚫 只放过「按设计不镜像」的系统列（版本列 + source_quotation_id），
+            //    业务列缺失仍然必须红 —— 权威口径见 RECORD_NOT_MIRRORED 的注释。
+            missingInRecord.removeAll(RECORD_NOT_MIRRORED);
             if (!missingInRecord.isEmpty()) {
                 problems.add(rec + " 缺主表列 " + missingInRecord);
             }
@@ -136,7 +138,7 @@ class RecordSchemaAcTest extends Task260907RBase {
                 String[] r = recCols.get(e.getKey());
                 if (r == null) continue;                       // 已在 ① 报过
                 if ("id".equals(e.getKey())) continue;          // _record 有自己的主键序列
-                if (VERSION_COLUMNS.contains(e.getKey())) continue;  // 已在 ①' 单独断言
+                if (RECORD_NOT_MIRRORED.contains(e.getKey())) continue;  // 版本列已在 ①' 单独断言
                 if (!e.getValue()[0].equals(r[0])) {
                     problems.add(rec + "." + e.getKey() + " 类型不一致：主表=" + e.getValue()[0] + " / _record=" + r[0]);
                 }
@@ -238,6 +240,29 @@ class RecordSchemaAcTest extends Task260907RBase {
      */
     private static final Set<String> VERSION_COLUMNS =
             new LinkedHashSet<>(List.of("version_no", "row_fingerprint"));
+
+    /**
+     * {@code _record} <b>刻意不镜像</b>的主表列 = 版本列 + {@code source_quotation_id}。
+     *
+     * <h3>🕰️ 2026-09-08 补进 source_quotation_id（V431 落库后本条 13 张全红）</h3>
+     * 权威出处是 {@link SheetDef#expectedRecordColumns} 的 Javadoc 原文：
+     * <blockquote>🚫 <b>没有</b> {@code version_no} / {@code row_fingerprint} /
+     * {@code SOURCE_QUOTATION_COLUMN}：前两者属主表的版本化语义（AC-9 要求一律由
+     * {@code VersionedGroupWriter} 负责），<b>后者是「主表这一版由哪张单写的」——
+     * 而 {@code _record} 自己就有 {@code quotation_id}</b>。</blockquote>
+     *
+     * <p>🔑 <b>本条红过是因为对照面取错了</b>：它拿 {@code information_schema} 里主表的
+     * <b>物理列</b>当期望集，而 V431 给物理主表加了一列 ⇒ 差集凭空多一项。
+     * 物理 schema 不是「_record 该有哪些列」的权威，{@link SheetDef} 才是。
+     * ⚠️ 这与上面 {@code VERSION_COLUMNS} 是同一个坑的第二次发作 ——
+     * <b>每新增一个「主表有、_record 按设计没有」的系统列，这里都要同步。</b>
+     *
+     * <p>🚫 排除口径只放过<b>系统列</b>：任何<b>业务列</b>在 {@code _record} 里缺失
+     * 仍然必须红（见 t01b 的证伪实验）。
+     */
+    private static final Set<String> RECORD_NOT_MIRRORED =
+            new LinkedHashSet<>(List.of("version_no", "row_fingerprint",
+                    com.cpq.dataset.registry.SheetDef.SOURCE_QUOTATION_COLUMN));
 
     /** 版本列在 {@code _record} 里的承载列（AC-1② 点名 {@code base_version_no}；指纹侧为 {@code base_row_fingerprint}）。 */
     private static final Map<String, String> VERSION_TO_BASE = Map.of(
