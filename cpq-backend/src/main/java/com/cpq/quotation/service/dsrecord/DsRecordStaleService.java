@@ -143,6 +143,43 @@ public class DsRecordStaleService {
         }
     }
 
+    /**
+     * <b>D-48</b>：删报价单时一并删掉该单的过期标记。<b>1 条 SQL</b>。
+     *
+     * <h3>为什么这里是「删行」，而 {@link #clearStale} 是「置 {@code cleared_at} 不删行」</h3>
+     * 两处不矛盾，因为<b>留痕的主体不一样</b>：
+     * <ul>
+     *   <li>{@code clearStale} 的场景是<b>单还在</b> —— 「这张单曾经写失败过」将来还能被翻出来看，
+     *       翻的入口就是那张单本身 ⇒ 有留痕价值；</li>
+     *   <li>本方法的场景是<b>单已经不存在了</b>。标记表<b>无外键、无单号冗余</b>，
+     *       只有一个 {@code quotation_id} ⇒ 单删掉之后这行既<b>没有消费者</b>
+     *       （唯一读点 {@link #find} 按 {@code quotation_id} 收窄，
+     *       预览只会在打开某张单时调），也<b>没有可读性</b>（一个再也 JOIN 不上任何东西的 uuid）。
+     *       留着它就是在 D-48 刚补上的那个缺口旁边<b>再开一个同型的</b>：
+     *       按删单次数只增不减的孤儿行。</li>
+     * </ul>
+     * <p>⚠️ 另一条独立理由：{@code uq_ds_quote_record_stale_open} 是
+     * {@code unique(quotation_id) WHERE cleared_at IS NULL} 的<b>部分唯一索引</b>。
+     * 留下未清除的孤儿标记，等于给一个已经死掉的 {@code quotation_id} 长期占着一个唯一槽位。
+     * <p>⚠️ 第三条：只有 {@code DRAFT} 报价单能被删（{@code QuotationService.delete} 的守卫）
+     * ⇒ 这些标记从未参与过任何提交 / 核价 / 回填，<b>不具备财务审计价值</b>。
+     *
+     * <p>🔒 {@code MANDATORY}：与删单同事务 —— 与 {@code _record} 本体同口径，🚫 不许半清半删。
+     * <p>🛡️ 表未落库 → no-op（与本类其余三个方法同降级约定）。
+     */
+    @Transactional(Transactional.TxType.MANDATORY)
+    public int deleteByQuotation(UUID quotationId) {
+        if (quotationId == null || !ready()) return 0;
+        int n = em.createNativeQuery("DELETE FROM " + TABLE + " WHERE quotation_id = :qid")
+                .setParameter("qid", quotationId)
+                .executeUpdate();
+        if (n > 0) {
+            LOG.infof("[ds-record] quotation=%s 删单一并清掉 %d 条「_record 快照过期」标记"
+                    + "（单已不存在 ⇒ 标记无消费者、无可读性）", quotationId, n);
+        }
+        return n;
+    }
+
     /** 读该单未清除的标记；无标记 / 表未落库 → null。<b>1 条 SQL</b>。 */
     @Transactional(Transactional.TxType.SUPPORTS)
     public Stale find(UUID quotationId) {

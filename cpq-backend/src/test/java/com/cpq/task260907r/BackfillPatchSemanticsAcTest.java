@@ -192,18 +192,12 @@ class BackfillPatchSemanticsAcTest extends Task260907RBase {
      */
     @Test
     @DisplayName("T-08 · 主表新行记来源报价单 id；且既有 Excel 仍能导入（证明它不是 ColumnDef）")
-    @org.junit.jupiter.api.Disabled(
-            "⛔ 被前置挡住，🚫 不是用例坏了、也不是实现坏了。\n"
-            + "① 本条现在能跑完整条链路：建单 → 改值 → 升版 → 内容发现法扫主表 21 列，"
-            + "   失败点是真实前置 —— **一列都没有装得下来源报价单 id**（实测命中 0 列）。\n"
-            + "② 原因：B-3 的 `source_quotation_id`（26 张表 ALTER）刻意未落（本期迁移冻结）。"
-            + "   实查 ds_quote_* 全族该列 **0 处存在**。\n"
-            + "③ 落库后本条**应自动可跑**：判据用内容发现法、不钉死列名，列一出现就能命中。\n"
-            + "🕰️ 2026-09-08 顺带修掉一个会误导人的夹具错：原 seedMainGroup 往 ds_quote_material_bom 插、"
-            + "   却拿 MBOM(=ds_quote_element_bom) 去数 ⇒ 恒 0 行，失败在「空验证守卫」上，"
-            + "   **看着像被 B-3 挡住，其实和它无关**（本条全文 grep source_quotation_id 0 命中）。"
-            + "   已改走 EBOM 单表路径。⇒ 现在这条红才真的指向 B-3。\n"
-            + "⚠️ 另：AC-8 的反向半边 assertExistingQuoteExcelStillImports() 仍是桩，需一份既有报价 Excel 夹具。")
+    // 🕰️ 2026-09-08 摘掉 @Disabled：B-3 的 source_quotation_id 已随 V431 落库
+    //    （ds_quote_* 里带该列的表 = 26 张，0724 与 laneb 均已应用）。
+    //    原 @Disabled 理由第③条写的就是「落库后本条应自动可跑：判据用内容发现法、
+    //    不钉死列名，列一出现就能命中」⇒ 条件已具备，条件具备就该摘。
+    //    ⚠️ 遗留：AC-8 的反向半边 assertExistingQuoteExcelStillImports() 仍是桩，
+    //       需一份既有报价 Excel 夹具（不影响正向半边）。
     void t08_sourceQuotationIdRecordedButNotAColumnDef() {
         requireRecordLayer();
 
@@ -451,10 +445,26 @@ class BackfillPatchSemanticsAcTest extends Task260907RBase {
      * —— 那正是本任务要防的假绿形态（{@code RECORD.md} 有同型实证：
      * 「子代理不 commit」把提交责任隐式转给主线，而三项常规前置检查都发现不了代码没进 git）。
      */
+    /**
+     * AC-9 扫描范围的<b>基线提交</b>：本段第二段代码开工前的那一点
+     * （{@code fix(migration): V430 补进 master}）。
+     *
+     * <h3>🚫 为什么不能用 {@code master}（2026-09-08 实测踩了）</h3>
+     * 原来写的是 {@code git diff --diff-filter=A master}。分支<b>合并进 master 之后</b>，
+     * {@code master} 就包含了被测代码本身 ⇒ 「本分支新增」<b>塌成空集</b> ⇒ 扫描 0 次循环、
+     * 判据恒真。本条的空验证守卫如实拦下了它，但**判据的寿命天然截止于合并那一刻**。
+     * <p>🔑 与「阳性对照来自被测系统缺陷」是同源形态：<b>判据本身没问题，
+     * 是它赖以成立的前提消失了</b>。⇒ 基线必须钉一个<b>历史里不会再动的点</b>，
+     * 🚫 不许钉 {@code master}（移动靶），也🚫 不许钉分支名（会随分支推进而漂）。
+     * <p>📌 实测：以本基线取到 12 个文件（{@code Ds*} 全族 11 个 + D-43 的
+     * {@code DsRecordCardDeduper}）；用 {@code master} 取到 <b>0</b> 个。
+     */
+    private static final String AC9_BASELINE_COMMIT = "0ec3946a";
+
     private List<String> newlyAddedBackendSources() {
         java.io.File repoRoot = new java.io.File(System.getProperty("user.dir")).getParentFile();
         Set<String> rel = new LinkedHashSet<>();
-        rel.addAll(gitLines(repoRoot, "diff", "--name-only", "--diff-filter=A", "master", "--",
+        rel.addAll(gitLines(repoRoot, "diff", "--name-only", "--diff-filter=A", AC9_BASELINE_COMMIT, "--",
                 "cpq-backend/src/main/java"));
         rel.addAll(gitLines(repoRoot, "ls-files", "--others", "--exclude-standard", "--",
                 "cpq-backend/src/main/java"));

@@ -1,6 +1,8 @@
 package com.cpq.quotation.service.dsrecord;
 
 import com.cpq.dataset.registry.ColumnDef;
+import com.cpq.dataset.registry.DatasetRegistries;
+import com.cpq.dataset.registry.DatasetRegistry;
 import com.cpq.dataset.registry.SheetDef;
 import com.cpq.dataset.support.DatasetValues;
 import com.cpq.dataset.support.SqlIdent;
@@ -91,6 +93,8 @@ public class DsQuoteRecordService {
     private static final int INSERT_CHUNK = 500;
 
     @Inject EntityManager em;
+    /** D-48：删单清 {@code _record} 时，表清单从 Registry 派生（🚫 不许硬编表名）。 */
+    @Inject DatasetRegistries registries;
     @Inject DsSheetBindingResolver bindingResolver;
     @Inject DsMainTableReader mainTableReader;
     /** D-35：写成功时清「快照过期」标记。 */
@@ -467,6 +471,72 @@ public class DsQuoteRecordService {
         Map<String, ColumnDef> m = new LinkedHashMap<>();
         for (ColumnDef c : sheet.persistedColumns()) m.put(c.name, c);
         return m;
+    }
+
+    /**
+     * <b>D-48（2026-09-08 主线亲验抓到）</b>：删报价单时，清掉该单在<b>全部</b>
+     * {@code ds_quote_*_record} 上的行。
+     *
+     * <h3>为什么必须显式删（而不是靠数据库）</h3>
+     * {@code ds_quote_*_record} 的<b>外键数 = 0</b>（两个库实测）⇒ 数据库不会级联。
+     * 🚫 <b>不许为了「修」它去加 FK</b>：{@code _record} 是<b>投影</b>不是从属实体，
+     * 加 FK 等于把投影的生命周期绑死在 {@code quotation} 上（回填 / 归档等场景会被 FK 反噬），
+     * 零外键是设计不是遗漏。
+     *
+     * <p>在此之前，全工程唯一的 {@code _record} DELETE 是 {@link #deleteGroups}，它按
+     * {@code (quotation_id, customer_no, axis IN (...))} 三重收窄、<b>只在重算时跑</b>
+     * ⇒ 够不到「报价单已经没了」这个场景。后果是<b>孤儿行按删单次数累积</b>
+     * （实测 {@code cpq_db_0724}：{@code ds_quote_element_bom_record} 孤儿 27 / 总 206 = 13%）。
+     * ⚠️ 危害是数据累积而<b>不是正确性</b>：{@code DsBackfillCollector.readRecords} 按
+     * {@code quotation_id} 收窄，孤儿行不会被任何活单读到。但这是本段自己交付的
+     * {@code _record} 生命周期缺口 ——「谁交付谁收口」。
+     *
+     * <h3>表清单从 Registry 派生（🚫 不许硬编 13 张表名）</h3>
+     * {@code registries.all()} → {@link DatasetRegistry#quoteRecordEnabled()}（只有报价侧 true）
+     * → {@link DatasetRegistry#versionedSheets()} → {@link SheetDef#recordTable()}
+     * （免版本三表返回 {@code null}，天然被跳过）。
+     * <p>⇒ <b>以后加一张带版本表，它的 {@code _record} 自动被清到。</b>
+     * 本项目在「判据/清单写死具体数字或名字」上栽过多次（{@code BL-0225}：
+     * {@code ts01_tableCounts} 钉死 84 张表被合法建表推翻）。
+     *
+     * <h3>🔒 事务：{@code MANDATORY}，与删单同生共死</h3>
+     * 半清半删会留下比现在更难查的中间态（单没了、投影还在，且再也没有 {@code quotation_id}
+     * 能把它们找回来）。
+     * <p>⚠️ 这与 {@link #syncRecords} <b>刻意不加注解</b>的理由不冲突，两者调用形态相反：
+     * 那条路的调用方（{@code saveDraft}）会 {@code catch} 住并继续返回 200，
+     * 加拦截器会把外层事务标成 rollback-only ⇒ 用户正文静默丢失；
+     * 而本方法的调用方 {@code QuotationService.delete} <b>不 catch、直接向上抛</b>，
+     * 删不干净就该整个删单失败。
+     *
+     * <h3>🚫 N+1</h3>
+     * SQL 条数 = 带版本 sheet 数（13）条 DELETE，<b>常数级、与孤儿行数/轴值数/产品数无关</b>。
+     * 🚫 不许按行、按轴值、按客户号循环发 SQL。
+     *
+     * @return 实际删除的总行数
+     */
+    @Transactional(Transactional.TxType.MANDATORY)
+    public int deleteByQuotation(UUID quotationId) {
+        if (quotationId == null) return 0;
+        int tables = 0, rows = 0;
+        List<String> hits = new ArrayList<>();
+        for (DatasetRegistry reg : registries.all()) {
+            if (!reg.quoteRecordEnabled()) continue;          // 核价两套没有 _record
+            for (SheetDef sheet : reg.versionedSheets()) {
+                String table = sheet.recordTable();
+                if (table == null) continue;                   // 免版本表不建 _record
+                tables++;
+                int n = em.createNativeQuery(
+                                "DELETE FROM " + SqlIdent.of(table) + " WHERE quotation_id = :qid")
+                        .setParameter("qid", quotationId)
+                        .executeUpdate();
+                rows += n;
+                if (n > 0) hits.add(table + "=" + n);
+            }
+        }
+        // 🚫 不许静默 —— 「静默」正是它累积到 13% 才被发现的原因（D-48）。
+        LOG.infof("[ds-record] quotation=%s 删单清理 _record：扫描 %d 张表，命中 %d 行%s",
+                quotationId, tables, rows, hits.isEmpty() ? "（本单无快照行）" : " " + hits);
+        return rows;
     }
 
     /**
