@@ -1675,8 +1675,15 @@ public class ConfigureProductService {
      * 该判据依赖 B-9（选配写入侧不再把材质名塞进 {@code material_type}）落地，否则同一列里
      * 混着材质名，判据不成立。
      *
-     * <p>⚠️ 返回 0 条是<b>正常业务状态</b>（AC-16）—— 实测当前库只有 1 条
-     * （{@code TEST-Q13-CODE / 组成件1}，规格与单重均为空），前端必须渲染空态而非「加载中…」（AP-31 族）。
+     * <p>⚠️ 返回 0 条是<b>正常业务状态</b>（AC-16）—— 候选条数完全取决于基础数据里有多少料号被
+     * 标成「外购件」，共享开发库上它随导入随时变（2026-09-09 一天之内实测到过 1 / 8 / 6 条）。
+     * ⇒ 🚫 <b>不要把某个具体条数写进判据或断言</b>；前端必须渲染空态而非「加载中…」（AP-31 族）。
+     *
+     * <p>🔑 repair-260908 · C-1：本方法查的 {@code v_compat_material_master} 是 V6 兼容视图，
+     * <b>没有客户维度</b>（{@code material_master} 本身就没有客户列），而本端点的签名
+     * {@code (keyword, page, size)} 也<b>拿不到客户上下文</b> —— 所以「按客户过滤掉重复」在这里
+     * 物理上办不到。跨客户重号必须在<b>视图层</b>收敛（V435 的 {@code DISTINCT ON}）。
+     * 🚫 不要在本方法里加 {@code DISTINCT} 打补丁：那只治了这一个消费点，另外 7 个照样出双份。
      */
     @SuppressWarnings("unchecked")
     public Map<String, Object> listOutsourcedParts(String keyword, int page, int size) {
