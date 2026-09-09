@@ -27,6 +27,28 @@
 
 ---
 
+
+## 📋 变更记录
+
+| 日期 | 动作 | 触发 | 内容 |
+|---|---|---|---|
+| 2026-09-09 07:12 | 初版交付 | 合 master `82be1dd9` | 10 表引用面 · 41 写点 · 8 视图闭包 · 配置层 16 列 · T-5 四形态 |
+| **2026-09-09 08:41+** | **`AC-10②` 到期刷新** | 并发任务 `task-260909-已有产品抽屉数据源收敛` 合 master **`f678c9be`**（08:41，晚于本任务 merge 1.5 小时） | 三处在途标注刷新为最终形态，见下 |
+
+**`AC-10②` 刷新详情**（实测对照，非转述）：
+
+| 引用点 | 审计基线 `25b106e2` | 刷新后（`f678c9be` 之后的 master） | 判定 |
+|---|---|---|---|
+| `material_customer_map` | `:123` `FROM material_customer_map mcm` + `:180` `FROM material_customer_map mcm2` —— **两处真实 SQL** | **SQL 里一处不剩**，仅余 `:24` 一行 Javadoc 追溯 | ✅ **「活 → 已移除」，`AC-10②` 的预测被证实** |
+| `v_compat_material_master` | `:140` `:157` —— **两处 `LEFT JOIN`** | `:91` —— **一处** | ✅ 按对方 `D-3` 显式保留（🚫 不许直连 `ds_quote_material`） |
+| 文件路径 | `com/cpq/quotation/service/ExistingProductService.java` | **`com/cpq/existingproduct/service/ExistingProductService.java`** | ⚠️ **整个包变更**，基线之外的额外漂移 |
+
+📌 **`D-3` 为什么必须保留、不是保守**：直连 `ds_quote_material` 会**静默改值** —— `v_compat_material_master` 是「老表遮蔽新表」语义，实测遮蔽面 42 个料号，切换后 3 个单元格值变、6 个料号整个消失（`0526-2609000001/2/3`、`0028-2609000012`、`3110520422`、`3120011203`）。这些全落在品名/规格列，在对方 18 条 AC 的覆盖范围之外。**该切换属退役任务的切换点，不属任何一个当前任务。**
+
+⚠️ **本次刷新同时印证了「`文件:行` 不是稳定标识」这条**：1.5 小时内，同一文件的**包路径、引用处数、行号**三者全变。清单的行号基线声明（见文首）不是形式主义。
+
+---
+
 ## §0 量具口径（先定义，否则后面所有数字不可复核）
 
 ### 0.1 检索工具
@@ -367,7 +389,7 @@ MaterialCustomerMap.<MaterialCustomerMap>find("materialNo in ?1", salesPartNos).
 | `configure/service/ConfigureProductService.java:277 / 1236` | — | 注释（`unit_weight from material_master` / 已移除实现的历史说明） | 死（纯注释） | — | 无 |
 | `configure/dto/MaterialRecipeDTO.java:51` | — | 注释（`partCount` 来源说明） | 死（纯注释） | — | 无 |
 | `priceadjust/service/PriceAdjustStrategyService.java:203` | R | 价格调整策略「物料列表」 `LEFT JOIN material_master` | 活（`PriceAdjustStrategyResource:66`） | `ds_quote_material` | 无 |
-| `existingproduct/service/ExistingProductService.java:124` | R | 已有产品抽屉 `LEFT JOIN material_master` | 活 ⏳ **在途** | 对方 D-3 硬约束：**必须走 `v_compat_material_master`，禁止直连 `ds_quote_material`** | ⏳ 归 `task-260909-已有产品抽屉数据源收敛` B-1 |
+| `existingproduct/service/ExistingProductService.java:91` | R | 已有产品抽屉 `LEFT JOIN v_compat_material_master` 取品名/规格 | 活 | `ds_quote_material.material_name/specification/dimension`（🚫 **对方 `D-3` 明令不许现在直连**，见阻塞列） | 🔄 **2026-09-09 08:41 已刷新**（`f678c9be`）：基线 `25b106e2` 记 `:140`/`:157` **两处**，B-1 收敛后为 `:91` **一处**；文件同时由 `quotation/service/` 移到 `existingproduct/service/`。**保留是对方 `D-3` 的显式裁决**——直连 `ds_quote_material` 会静默改值（42 料号遮蔽面 / 3 单元格变值 / 6 料号消失），属退役任务的切换点，不属本任务 |
 | `dataset/support/DsMasterTables.java:24` | R | **C6 通道**：`GET lookup/{masterType}` 的 `material` → `material_master`；实际 SQL 在 `DatasetMaintenanceService.lookup():686`（`FROM ` + 变量表名） | 活 | `ds_quote_material.{material_no,material_name}` | 无 |
 | `dataset/registry/CostBasicRegistry.java:84-86,99-101,114-116,128-130,154-156,166-168`（18 行） | R | **C5 通道**：核价「基础」数据集名称列，运行期 `LEFT JOIN material_master ON production_no` 带出品名/规格/尺寸 | 活（`DatasetMaintenanceService.buildNameJoins():551`） | `ds_quote_material.{material_name,specification,dimension}` + `production_no` 桥 | 无 |
 | `dataset/registry/CostDetailRegistry.java:82-84,96-98,110-112,124-126,138-140,157-159,171-173,187-189,202-204,217-219,231-233,270-272,282-284`（39 行） | R | **C5 通道**：核价「详细」数据集名称列，同上 | 活 | 同上 | 无 |
@@ -709,7 +731,7 @@ MaterialCustomerMap.<MaterialCustomerMap>find("materialNo in ?1", salesPartNos).
 | `quotation/service/backfill/QuoteBackfillService.java:145` | **W** | `flipMaterialCustomerMap()` — 核价通过后占号转正（`UPDATE … pending_quotation_id = NULL`） | 活（`:85`） | **无对应** | 🔴 pending |
 | `quotation/service/backfill/QuoteBackfillService.java:35`、`PendingHygieneService.java:58`、`QuotationService.java:2324`、`QuoteImportService.java:302`、`V6QuotationCommitService.java:154` | W | pending 表清单（→ **C4**） | 活 | — | 🔴 pending |
 | `priceadjust/service/PriceAdjustStrategyService.java:203` | R | 价格调整策略物料列表主表 | 活 | `ds_quote_customer_part` | 无 |
-| `existingproduct/service/ExistingProductService.java:123 / 180` | R | 已有产品抽屉主表 + `mcm2` 子查询 | 活 ⏳ **在途** | 对方 B-1 将**删掉这一支** | ⏳ 归 `task-260909-已有产品抽屉数据源收敛` B-1 |
+| ~~`existingproduct/service/ExistingProductService.java:123 / 180`~~ | ~~R~~ | ~~已有产品抽屉主表 + `mcm2` 子查询~~ | ✅ **已移除** | — | 🔄 **2026-09-09 08:41 已刷新**（`f678c9be`）：对方 B-1 把三支 `UNION ALL` 收敛为单表 `ds_quote_customer_part` ⇒ **`material_customer_map` 在本文件的 SQL 里一处不剩**，仅余 `:24` 一行 Javadoc 追溯。**`AC-10②` 预测的「活 → 已移除」被证实** |
 | `configure/service/ConfigureProductService.java:1569` | R | `findProductNoOwner()` — 客户产品号占用检查 | 活（`checkProductNo` → REST） | `ds_quote_customer_part` | 无 |
 | 🚨 `modelconfig/service/ModelConfigService.java:304` | R | `MaterialCustomerMap.<MaterialCustomerMap>find("materialNo in ?1", salesPartNos).list()` —— 3D 模型配置按销售料号反查客户映射。**Panache 静态查询，整行无表名字面量**（T-5d 同族，靠实体符号反查才发现） | 活 | `ds_quote_customer_part.material_no` | 无 |
 | 🚨 `configure/service/ConfigureProductService.java:428`（SIMPLE）· `:1831`（COMPOSITE） | **W** | `quoteAllocator.mintAndRegister(...)` —— 选配下单**占号**（W41，**T-5d**） | 活 | `ds_quote_customer_part` | 🔴 全局唯一占号语义 |
@@ -1157,7 +1179,7 @@ FROM ds_quote_…
 
 | # | 问题 | 证据 | 建议 | 归属 |
 |---|---|---|---|---|
-| R1 | ⏳ **在途引用点**：`ExistingProductService.java:123`（读 `material_customer_map`）与 `:124`（`LEFT JOIN v_compat_material_master`） | §2.1 / §2.10 已标注 | 对方 B-1 合并后刷新这两行（AC-10） | `task-260909-已有产品抽屉数据源收敛` B-1 —— **本任务只记录未改动** |
+| R1 | ✅ **已闭合（`AC-10②` 刷新完成）**：两个在途引用点的最终形态已实测确认 —— `material_customer_map` 支**整支消失**（基线 `:123`/`:180` → SQL 零引用，仅余 `:24` 注释）；`v_compat_material_master` 支**由两处收敛为一处**（基线 `:140`/`:157` → `:91`），按对方 `D-3` 保留。文件路径同时由 `quotation/service/` 变更为 `existingproduct/service/`。对方 merge `f678c9be`（2026-09-09 08:41），晚于本任务 merge `82be1dd9`（07:12）1.5 小时 ⇒ 结案时按 `AC-10③` 保留「在途」标注成立，本次为到期刷新 | 已闭合，无需裁决 |
 | R2 | 🚨 **`annual_discount` 的 pending 行不会被回填清理** | `QuoteBackfillService.PENDING_TABLES:34-35` 与 `PendingHygieneService.PENDING_TABLES:57-58` **均不含 `annual_discount`**，只有 `QuotationService.B8_PENDING_TABLES:2324` 含它；实测 13 行里 **12 行 `pending_quotation_id IS NOT NULL`** | 三份清单应同源。`PendingHygieneService.inspect()` 的 `unmanagedTables` 告警（BL-0092）**恰好就是为发现这类漂移设计的**，但 `annual_discount` 因为在 `B8` 里、不在 `PendingHygiene` 里，是**反向漏项**，现有告警抓不到 | 未定；建议登记 BACKLOG |
 | R3 | 🚨 **`costing_bom_tree_config` 有一行直连老表** | `82612f2b-558a-4b13-b052-af08100573ac` → `FROM material_bom_item`（另一行已走 `v_compat_*`） | V411 表名替换的漏项。退役前必须改，否则核价 BOM 树直接断链 | 未定；配置数据修正，非代码 |
 | R4 | ⚠️ **AC-9 原文的一处事实性偏差** | AC-9 写「`ds_quote_material` 无 pending 概念（仅 `version_no`/`source`）」。实测 `ds_quote_material` 的列里**没有 `version_no`**，只有 `source`（另有 `category_code` / `customer_no`） | **结论不受影响**（`pending_quotation_id` 确实无对应列），但 AC 原文的括号内描述需更正 | 报主线裁决 |
