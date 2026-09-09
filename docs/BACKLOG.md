@@ -911,3 +911,64 @@ pickQualifiedCustomer({ needsTakenProductNo? })
     而 `application-test.properties:24` 的默认值就是 `cpq_db_0724`（= dev 库本身，`CLAUDE.md` 已实证更正过一次）
   - ⚠️ 与 `CLAUDE.md §3.2`「测试也算」同源：共享库上不许跑会清库的测试
   - 优先级：**P1**（不修则退役方案无法保证正确性）｜ 预估规模：S（配置改动 + 验证测试仍能跑）
+
+---
+
+### repair-260908 页签重复行与跨客户串号 · 结案登记（2026-09-09，用户闸门 B 时裁决「全部 8 条都登」）
+
+- [ ] **BL-0233 · `assertParentNoPresent` 守卫把「合法纯根层」与「视图漏 `parent_no` 列」混成同一信号**
+  - 来源：`repair-260908` 的 `AC-13`（用户 2026-09-08 裁决**本期不修**）
+  - **缺陷本身**：守卫无法区分两件事 —— ①这个料号本来就没有子件边（合法，38 个料号属此类）
+    ②视图确实漏配了 `parent_no` 列（真缺陷）。两种情况给同一个信号 ⇒ 报警既不可信也不可关
+  - **归因已查清**：守卫与树根分支**在 master 上就有**，`repair-260908` 只加了一条 `LOG.warnf`；
+    新增暴露面 = **1 个测试夹具料号 `T260907-M1`，零个业务料号**
+  - 🔑 这是「判据落在一个无论好坏都给同一答案的维度上」故障族的又一例
+  - 优先级：**P2**｜规模：S
+
+- [ ] **BL-0234 · `saveDraft` 与 `editCardValue` 之间没有任何锁序约束 ⇒ PG 死锁**
+  - 来源：`repair-260908` `F-1` 开发期，前端代理复现 409 时撞出（`D-26②`）
+  - **实证**：`ERROR: deadlock detected / while updating tuple in relation "quotation_line_item"`
+    → `PessimisticLockException @ QuotationService.processBatchStage1:3223 ← saveDraft:475`，
+    HTTP **500**。⚠️ **已命中真实现场单 `QT-20260909-0659`**（2026-09-09 04:35:30），不是只在测试里
+  - `F-1` 只消除了「保存草稿」这一条触发路径（前端先排空在飞编辑）。**别的并发入口
+    （如 autoSave 与单元格编辑）仍可能撞** —— 后端两侧的加锁顺序没有约定
+  - 优先级：**P1**（用户可见 500 + 数据写入失败）｜规模：M（要定锁序并穷举写入点）
+
+- [ ] **BL-0235 · 存量报价单第③层（已物化 `snapshot_rows` / `row_data`）没有任何自愈路径**
+  - 来源：`repair-260908` `AC-18` 亲验暴露（`D-27`），`D-3` 原文已据此改口
+  - **两条路都实测不成立**：
+    | 路径 | 实测 |
+    |---|---|
+    | 「刷新基础数据」`refresh-snapshot` | **不重建报价侧卡片值**（`D-20`） |
+    | 「保存草稿」`saveDraft` | 走 `snapshotLines(skipRowsWithSnapshot=true)`，契约原文「复用行已有完整 `snapshot_rows` 时**整行跳过** expand + materialize」⇒ 永不重算 |
+  - **实测**：`QT-20260908-0625` 产品页签 6 行（3 料号 × 2 客户），保存草稿后**仍是 6 行**，
+    孪生行的 `旧料号=12133` 原样还在
+  - ⚠️ 该跳过是首存性能优化的既有行为，**非 `repair-260908` 引入**。用户已裁决「存量单不管了」，
+    但这意味着**任何取数口径修复都救不了存量单**，下次做同类修复前必须先解决这个
+  - 优先级：**P1**（影响所有未来的口径修复方案设计）｜规模：M
+
+- [ ] **BL-0236 · `handleSaveDraft` 里的 `lineItems` 是 render 闭包值，`await` 之后不刷新**
+  - 来源：`repair-260908` `F-1` 代理报出（`D-26①`），主线未改
+  - `F-1` 加了 `await waitForPendingEdits()` 之后，`diffLineItems` 用的仍是**编辑响应回灌之前**
+    的那份 `lineItems` ⇒ 理论上存在「用旧行内容覆盖刚提交的格子编辑」的窗口
+  - 本次 409 与它无关（修后实测 200 且数据正常），**既有行为、非本次引入**
+  - 优先级：**P2**｜规模：S
+
+- [ ] **BL-0237 · `/preview` 不传 `customerCode` 返 500（产品路径不可达）**
+  - 来源：`repair-260908` 开发期（`B-2` 把未绑定从静默 `NULL` 改成硬阻断之后）
+  - 优先级：**P2**｜规模：S
+
+- [ ] **BL-0238 · `v_composite_child_elements` 有 2 条真重复（`0526-2609000006` 的 Ag / Ni）**
+  - 来源：`repair-260908` 跨客户隐患扫描期实测
+  - 优先级：**P2**｜规模：S
+
+- [ ] **BL-0239 · `DatasetMaintenanceService.overview` 的同型缺陷**
+  - 来源：`repair-260908` `C-5` 修复期发现的同族点（`C-5` 本身已修）
+  - 优先级：**P2**｜规模：S
+
+- [ ] **BL-0240 · `ExistingProductService` 的 `DISTINCT ON` 缺 tie-break**
+  - 来源：`repair-260908` 跨客户隐患扫描期
+  - `DISTINCT ON` 不带完整 `ORDER BY` 时，留下哪一行由堆序决定 ⇒ 结果不确定
+  - 🔑 与 `C-1`（`v_compat_material_master`）同族：那处已由 `V435` 用
+    `DISTINCT ON (material_no) ... ORDER BY material_no, customer_no` 定序修掉
+  - 优先级：**P2**｜规模：S
