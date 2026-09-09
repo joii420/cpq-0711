@@ -384,6 +384,23 @@ public class ConfigureSnapshotService {
                     QuotationLineItem lite = new QuotationLineItem();
                     lite.id = lid;
                     lite.productPartNoSnapshot = pn;
+                    // 🔴 repair-260908（主线亲验抓到的真回归）：**必须带上 quotationId**。
+                    //
+                    // 这些是**就地 new 出来的轻量壳**（只为传料号），此前 quotationId 恒 null，
+                    // 而下游 BomTreeRenderService 的两处客户解析**都以它为唯一入口**：
+                    //   · renderInternal §④：lineItems.get(0).quotationId → Quotation.customerId
+                    //       → expandUncached(compId, ctxCustomerId) → :customerCode
+                    //   · collectTotalMaterialNoUnion：resolveCustomerCodeFromLines(lineItems)
+                    //       → 递归闭包 SQL 的客户谓词（task-260907 B-7a）
+                    // ⇒ 壳里没有 quotationId，两处**同时**静默退化成"无客户"。
+                    //
+                    // 🔑 为什么以前没人发现：B-2 之前 :customerCode 未绑定会降级成字面量 NULL，
+                    //    客户料号那条 LEFT JOIN 只是恒不命中（客户名列空着），没人当回事；
+                    //    闭包少了客户谓词同样只是"多带回一些别家料号"。B-2 把前者变成 400 之后，
+                    //    整棵树 4 个组件同时抛异常、报文逐字相同 —— 这才把它照出来。
+                    //    **不是闸太严，是调用方从来没给过参数。**（task-0729 那次只修了核价侧，
+                    //    核价侧传的是真实 QuotationLineItem 实体，天然带 quotationId。）
+                    lite.quotationId = quotationId;
                     liteLines.add(lite);
                 }
                 BomTreeRenderService.MaterialUnionResult quoteUnion = null;
