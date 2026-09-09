@@ -11,12 +11,13 @@
 import { test, expect, APIRequestContext, Locator, Page } from '@playwright/test';
 import { loginAsAdmin } from './fixtures/auth';
 import {
-  BACKEND_URL, CUSTOMERS, EXPECTED_COLUMNS,
+  BACKEND_URL, BASE_URL, CUSTOMERS, EXPECTED_COLUMNS,
   apiContext, createTestQuotation, cleanupTestQuotations,
-  sqlRaw, sqlScalar, distinctMaterialCount, pickEmptyDataCustomerWithTemplate,
+  sqlRaw, sqlScalar, distinctMaterialCount, pickEmptyDataCustomerWithTemplate, assertBackendVariant,
   gotoStep2, openExistingProductDrawer, clickDrawerSearch,
   readDrawerHeaders, readDrawerRows, fillDrawerFilter,
   readPagerCurrent, readPagerTotal, gotoPage, checkRow, confirmAdd, shot,
+  gitRaw, gitDiffLines, MODEL_CONFIG_FILES, CHANGED_FILE_CONTROL,
 } from './fixtures/task260909';
 
 let api: APIRequestContext;
@@ -24,7 +25,6 @@ const q: Record<string, string> = {};
 /** AC-12 用的空数据客户 code，beforeAll 里运行时解析。 */
 let emptyCustomer = '';
 
-test.describe.configure({ mode: 'serial' });
 test.setTimeout(180_000);
 
 test.beforeAll(async () => {
@@ -42,6 +42,27 @@ test.beforeAll(async () => {
   q['EMPTY'] = (await createTestQuotation(api, emptyCustomer, 'UI-EMPTY')).id;
   // AC-11 单独一张单，避免它写入的明细行污染其他只读用例
   q['AC11'] = (await createTestQuotation(api, CUSTOMERS.CHINT, 'UI-AC11')).id;
+
+  // 🚨 第一层：直连 PW_BACKEND_URL 验正身。
+  await assertBackendVariant(api, BACKEND_URL, q[CUSTOMERS.CHINT], 'changed');
+
+  // 🚨 第二层（2026-09-09 第二次事故补的）：**验浏览器实际走的那条路**。
+  //
+  //    上一条只证明了「我直连的那个后端是对的」，而浏览器根本不直连后端 ——
+  //    它请求 PW_BASE_URL 的 `/api`，由 Vite proxy 转发到 `API_TARGET`。
+  //    实测 5202 的 proxy 指向的是 **master 后端**，于是：
+  //      · 直连 8123 → total=2662, 有 customerDrawingNo   （我验的那条路，对的）
+  //      · 经 5202  → total=1,    有 has3d/thumbnailUrl   （浏览器真正走的路，旧代码）
+  //    结果 UI 档 15 条里 13 条红，且红得像产品缺陷。
+  //
+  //    🔑 教训与 8098 那次同源，只是上移了一层：
+  //       **验「我talk的后端」不等于验「页面talk的后端」。要验就验实际链路。**
+  const viaFrontend = await apiContext(BASE_URL);
+  try {
+    await assertBackendVariant(viaFrontend, `${BASE_URL} (Vite proxy → 后端)`, q[CUSTOMERS.CHINT], 'changed');
+  } finally {
+    await viaFrontend.dispose();
+  }
 });
 
 test.afterAll(async () => {
@@ -54,6 +75,14 @@ async function openDrawerFor(page: Page, quotationId: string, clickSearch = true
   await loginAsAdmin(page);
   await gotoStep2(page, quotationId);
   return openExistingProductDrawer(page, clickSearch);
+}
+
+/** 点「保存草稿」并等落库。antd 会给按钮插空格，用正则规避。 */
+async function saveDraft(page: Page) {
+  const btn = page.locator('button').filter({ hasText: /保\s*存\s*草\s*稿/ }).first();
+  await expect(btn, '编辑页应有「保存草稿」按钮').toBeVisible({ timeout: 30_000 });
+  await btn.click();
+  await page.waitForTimeout(8000);
 }
 
 /** 过滤到某个销售料号并取回该行；带非空保护与诊断输出。 */
@@ -218,7 +247,11 @@ test('T12 · AC-7① · 抽屉内无 3D 预览面板与缩略图', async ({ page
   expect(rows.length, '需要有数据的抽屉才能验"面板不存在"（空抽屉里什么都不存在，恒真）').toBeGreaterThan(0);
 
   await expect(drawer.getByText(/交互查看/), '抽屉不应有「⤢ 交互查看」按钮').toHaveCount(0);
-  await expect(drawer.getByText(/3D|预览/), '抽屉不应有 3D / 预览相关文案').toHaveCount(0);
+  // 🚫 这里**不能**用 `getByText(/3D|预览/)` 做兜底断言（2026-09-09 实证）：
+  //    getByText 对 <tr> 匹配的是**所有单元格拼接后**的文本，相邻两格
+  //    `ZTPERF-00003` + `DWG-BULK-00003` 在接缝处凑出了字面量 "3D" ⇒ 误报。
+  //    而且这条本来就**超出 AC-7① 的要求**（AC 只说：无预览面板 / 无缩略图 / 无「⤢ 交互查看」）。
+  //    自行加严的断言一旦误报，红得和产品缺陷一模一样。
   expect(await drawer.locator('img').count(), '抽屉不应有缩略图 img 节点').toBe(0);
   expect(await drawer.locator('canvas').count(), '抽屉不应有 3D canvas').toBe(0);
   await shot(page, 'AC-7-无3D预览面板');
@@ -256,24 +289,47 @@ test('T13 · AC-7② · 连续切换 5 行不发任何 /model-configs/current �
 // AC-8 3D 模型管理页无回归（🚫 只验可用性，不真跑上传/设为当前版本 —— 那会改全局配置状态）
 // ──────────────────────────────────────────────────────────────────────────
 
-test('T15 · AC-8 · 3D 模型配置页可打开、列表有数据、操作入口可用', async ({ page }) => {
+test('T15 · AC-8 · 3D 模型管理无回归（git diff 为空 + 页面可打开 + 接口 200）', async ({ page }) => {
+  // 🚦 AC-8 于 2026-09-09 由用户裁决改写。原断言「列表有数据」在本库**不可验证**
+  //    （model_config / model_config_file 实测 0 行，从来没有过数据），而且它比目标弱：
+  //    即使有数据通过，也只证明「这一刻能查出东西」，证明不了「本次没碰它」。
+  //    ⇒ 改用**结构性证据**：三类 3D 管理源码在本分支相对 master 一行未改。
+
+  // ── ① 主断言：8 个 3D 管理文件 diff 全空 ──
+  // 🚨 先断言文件存在再断言 diff 为空：`git diff -- <不存在的路径>` **同样返回空**，
+  //    路径写错会得到一条恒真的假绿（CLAUDE.md §5「grep 空结果 ≠ 不存在」同族）。
+  for (const f of MODEL_CONFIG_FILES) {
+    const tracked = gitRaw(`ls-files -- "${f}"`).trim();
+    expect(tracked, `文件未被 git 跟踪或路径写错：${f} —— 路径错会让 diff 恒空，假绿`).toBe(f);
+    expect(gitDiffLines(f), `3D 管理文件被本次改动碰过：${f}（AC-8 要求无回归）`).toBe(0);
+  }
+
+  // ── ② 阳性对照：本次确实改过的文件，diff 必须非空 ──
+  //    没有它，「diff 为空」可能只是 git 命令根本没生效（分支名错、cwd 错、参数错）。
+  const controlLines = gitDiffLines(CHANGED_FILE_CONTROL);
+  expect(controlLines,
+    `阳性对照失败：${CHANGED_FILE_CONTROL} 本次明确改过，diff 却是空的 —— ` +
+    `说明 git diff 判据本身没生效，上面 8 个「为空」不算证据`,
+  ).toBeGreaterThan(0);
+  console.log(`[T15] 8 个 3D 文件 diff 全为 0 行；阳性对照 ${CHANGED_FILE_CONTROL} = ${controlLines} 行`);
+
+  // ── ③ 页面可打开，无红色遮罩 / 无「加载中…」滞留 ──
   await loginAsAdmin(page);
   await page.goto('/model-configs');
   await page.waitForLoadState('networkidle');
   await page.waitForTimeout(2000);
-
-  // 无红色遮罩 / 无「加载中…」滞留
   await expect(page.locator('#vite-error-overlay, .vite-error-overlay'), '页面不应出现红色错误遮罩').toHaveCount(0);
   await expect(page.getByText('加载中…'), '不应残留「加载中…」永久占位').toHaveCount(0);
 
-  const rows = page.locator('.ant-table-row');
-  await expect(rows.first(), '3D 模型配置列表应有数据行（非空保护）').toBeVisible({ timeout: 30_000 });
-  expect(await rows.count(), '列表数据行数应 > 0').toBeGreaterThan(0);
+  // ── ④ 接口 200（空包络也算通过）──
+  const res = await api.get('/api/cpq/model-configs?page=0&size=5');
+  expect(res.status(), `GET /model-configs 应返回 200，实际 ${res.status()}`).toBe(200);
+  const body = await res.json();
+  expect(Array.isArray(body?.data?.content), '响应应含 data.content 数组（空数组也算通过）').toBe(true);
+  console.log(`[T15] GET /model-configs → 200, totalElements=${body?.data?.totalElements}`);
 
-  // 🚫 只断言入口可用，不点击 —— 上传/设为当前版本会改全局配置状态（testing.md §4.3）
-  const upload = page.getByRole('button', { name: /上\s*传/ }).first();
-  await expect(upload, '「上传」入口应存在且可用').toBeEnabled({ timeout: 15_000 });
-  await shot(page, 'AC-8-3D模型配置页无回归');
+  // 🚫 不真跑上传 / 设为当前版本 —— 那会写公共配置状态（testing.md §4.3）。
+  await shot(page, 'AC-8-3D模型管理无回归');
 });
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -303,7 +359,14 @@ test('T17 · AC-10 · 序列：翻页 → 过滤 → 清空过滤 → 翻页', a
 
   // ② 过滤 S000
   await fillDrawerFilter(page, drawer, '销售料号', 'S000');
-  expect(await readPagerCurrent(drawer), '步骤②：过滤后页码应自动回到第 1 页').toBe(1);
+  // ⚠️ 过滤后命中数（实测 3）≤ 每页 20 条时，antd **整体隐藏分页器**，
+  //    `.ant-pagination-item-active` 不存在 ⇒ readPagerCurrent 返回 null。
+  //    这与 AC-12「total <= PAGE_SIZE 时分页器不显示」是同一个行为，不是缺陷。
+  //    所以「回到第 1 页」要按"可观测的形态"断言：分页器隐藏(null) 或 current===1，
+  //    再用"列表内容恰好是过滤结果全集"来证明确实停在第一页。
+  const curAfterFilter = await readPagerCurrent(drawer);
+  expect(curAfterFilter === null || curAfterFilter === 1,
+    `步骤②：过滤后应停在第 1 页（分页器隐藏或 current=1），实际 current=${curAfterFilter}`).toBe(true);
   const filteredExpected = sqlScalar(
     `SELECT count(DISTINCT material_no) FROM ds_quote_customer_part ` +
     `WHERE customer_no='${CUSTOMERS.CHINT}' AND material_no ILIKE '%S000%'`,
@@ -348,42 +411,52 @@ test('T18 · AC-11 · 序列：勾选 2 行加入报价单，再次加入按既�
   await checkRow(page, drawer, 1);
   await confirmAdd(page, drawer);
 
-  // 断言：两个产品进了报价单明细，且 customerProductNo 已回填
-  const lineNos = sqlRaw(
-    `SELECT string_agg(DISTINCT product_part_no, ',' ORDER BY product_part_no) ` +
-    `FROM quotation_line_item WHERE quotation_id='${q['AC11']}'`,
-  );
-  expect(lineNos, '加入后报价单应有明细行（非空保护）').toBeTruthy();
-  for (const p of picked) {
-    expect(lineNos.split(',').some((x) => x === p),
-      `料号 ${p} 应已加入报价单明细，实际明细 = ${lineNos}`).toBe(true);
+  // ── ① UI 层断言（AC-11 原文就是「观察报价单 Step2」）──
+  // 🚨 加入报价单**只改前端状态，不立刻落库**（2026-09-09 实证：加入后 line_item=0，
+  //    存草稿后才变 2）。所以先验 UI，再存草稿验库 —— 直接查库会得到"明细为空"的假红。
+  const cards = page.locator('div.qt-product-card');
+  await expect(cards, '加入后 Step2 应出现 2 张产品卡').toHaveCount(2, { timeout: 60_000 });
+  const bodyText = await page.locator('body').innerText();
+  for (const p0 of picked) {
+    expect(bodyText, `Step2 应能看到刚加入的料号 ${p0}`).toContain(p0);
   }
-  const cpnFilled = sqlScalar(
-    `SELECT count(*) FROM quotation_line_item WHERE quotation_id='${q['AC11']}' ` +
-    `AND NULLIF(customer_product_no,'') IS NOT NULL`,
-  );
-  expect(cpnFilled, 'customerProductNo 应正确回填到明细行').toBeGreaterThan(0);
   await shot(page, 'AC-11-加入报价单后Step2');
 
-  // 再次打开抽屉，勾选同样 2 行 + 1 个新行 → 同 productPartNo 只保留一份（以现有为准）
+  // ── ② 存草稿后验落库 + customerProductNo 回填 ──
+  await saveDraft(page);
+  const landed = sqlRaw(
+    `SELECT string_agg(DISTINCT product_part_no_snapshot, ',' ORDER BY product_part_no_snapshot) ` +
+    `FROM quotation_line_item WHERE quotation_id='${q['AC11']}'`,
+  );
+  expect(landed, '存草稿后报价单应有明细行（非空保护）').toBeTruthy();
+  for (const p0 of picked) {
+    expect(landed.split(',').includes(p0), `料号 ${p0} 应已落库，实际明细 = ${landed}`).toBe(true);
+  }
+  const cpn = sqlScalar(
+    `SELECT count(*) FROM quotation_line_item WHERE quotation_id='${q['AC11']}' ` +
+    `AND NULLIF(customer_part_no,'') IS NOT NULL`,
+  );
+  expect(cpn, 'customerProductNo 应正确回填到明细行').toBeGreaterThan(0);
+
+  // ── ③ 回归：再次加入同样 2 个 + 1 个新的，同料号只保留一份 ──
   const drawer2 = await openExistingProductDrawer(page);
   const rows2 = await readDrawerRows(drawer2);
-  const idxOf = (no: string) => rows2.findIndex((r) => r['销售料号'] === no);
   for (const no of [...picked, third]) {
-    const i = idxOf(no);
+    const i = rows2.findIndex((r) => r['销售料号'] === no);
     expect(i, `第二次打开抽屉时应仍能找到 ${no}`).toBeGreaterThanOrEqual(0);
     await checkRow(page, drawer2, i);
   }
   await confirmAdd(page, drawer2);
+  await expect(cards, '去重后 Step2 应为 3 张卡（原 2 + 新 1，同料号只留一份）')
+    .toHaveCount(3, { timeout: 60_000 });
 
+  await saveDraft(page);
   const finalCount = sqlScalar(
-    `SELECT count(DISTINCT product_part_no) FROM quotation_line_item WHERE quotation_id='${q['AC11']}'`,
+    `SELECT count(DISTINCT product_part_no_snapshot) FROM quotation_line_item WHERE quotation_id='${q['AC11']}'`,
   );
-  const dupCount = sqlScalar(
-    `SELECT count(*) FROM quotation_line_item WHERE quotation_id='${q['AC11']}'`,
-  );
-  expect(finalCount, `去重后应有 3 个不同料号（原 2 个 + 新增 1 个）`).toBe(3);
-  expect(dupCount, `同 productPartNo 只保留一份 —— 明细总行数应为 3，实际 ${dupCount}（重复加入未去重？）`).toBe(3);
+  const totalRows = sqlScalar(`SELECT count(*) FROM quotation_line_item WHERE quotation_id='${q['AC11']}'`);
+  expect(finalCount, '去重后应有 3 个不同料号').toBe(3);
+  expect(totalRows, `同料号只保留一份 —— 明细总行数应为 3，实际 ${totalRows}`).toBe(3);
 });
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -442,18 +515,26 @@ test('T20 · AC-13 · 一料号多编号只出一行，带「等 N 个」Tag 且
   const drawer = await openDrawerFor(page, q[CUSTOMERS.ROCKWELL]);
   await fillDrawerFilter(page, drawer, '客户产品编号', allNos[0]);
   const rows = await readDrawerRows(drawer);
-  expect(rows.length, `按编号 ${allNos[0]} 过滤后应恰好命中 1 行（DISTINCT ON 去重）`).toBe(1);
-  expect(rows[0]['销售料号'], `命中行的料号应为 ${target}`).toBe(target);
-  expect(rows[0]['客户产品编号'], `应显示代表编号 ${allNos[0]}`).toContain(allNos[0]);
-  expect(rows[0]['客户产品编号'], `应带「等 ${n} 个」Tag（不因列宽截断而消失）`)
+  expect(rows.length, `按编号 ${allNos[0]} 过滤后列表不应为空`).toBeGreaterThan(0);
+  // ⚠️ 过滤是模糊匹配（ILIKE %v%）：用 `T260907R-SEL-D40` 会连带命中 D40B / D40C，
+  //    因而返回多个**不同料号**。AC-13 要求的是「**该料号**只出现一行」，
+  //    不是「过滤结果只有一行」—— 按后者写会假红。
+  const mine = rows.filter((r) => r['销售料号'] === target);
+  expect(mine.length, `料号 ${target} 应只出现一行（DISTINCT ON 去重），实际 ${mine.length} 行；` +
+    `本次过滤命中的全部料号 = ${JSON.stringify(rows.map((r) => r['销售料号']))}`).toBe(1);
+  expect(mine[0]['客户产品编号'], `应显示代表编号 ${allNos[0]}`).toContain(allNos[0]);
+  expect(mine[0]['客户产品编号'], `应带「等 ${n} 个」Tag（不因列宽截断而消失）`)
     .toMatch(new RegExp(`等\\s*${n}\\s*个`));
 
   // hover Tag 看 tooltip 是否列出全部编号
-  const tag = drawer.locator('.ant-table-row').first().locator('.ant-tag').filter({ hasText: /等\s*\d+\s*个/ }).first();
+  const tag = drawer.locator('.ant-table-row').filter({ hasText: target })
+    .locator('.ant-tag').filter({ hasText: /等\s*\d+\s*个/ }).first();
   await expect(tag, '「等 N 个」Tag 应可见').toBeVisible({ timeout: 15_000 });
   await tag.hover();
   await page.waitForTimeout(1200);
-  const tip = page.locator('.ant-tooltip-inner').last();
+  // ⚠️ 本项目 antd 版本下 tooltip 内容容器**不是** `.ant-tooltip-inner`（实测该选择器命中 0），
+  //    而 `.ant-tooltip` / `[role=tooltip]` 各命中 1 ⇒ 用 role 取，别锁 antd 内部类名。
+  const tip = page.locator('[role=tooltip]').last();
   await expect(tip, 'hover 后应出现 tooltip').toBeVisible({ timeout: 10_000 });
   const tipText = await tip.innerText();
   for (const no of allNos) {

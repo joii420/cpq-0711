@@ -16,11 +16,19 @@
  */
 
 import { execSync } from 'child_process';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+import * as nodePath from 'path';
+import { fileURLToPath } from 'url';
+const __dirname = nodePath.dirname(fileURLToPath(import.meta.url));
 import { expect, Locator, Page, APIRequestContext, request } from '@playwright/test';
 
 // ──────────────────────────────────────────────────────────────────────────
 // 0. 环境坐标
 // ──────────────────────────────────────────────────────────────────────────
+
+/** 被测前端 = worktree 临时 vite。⚠️ 它的 `/api` 由 Vite proxy 转发，**目标未必是 PW_BACKEND_URL**。 */
+export const BASE_URL = process.env.PW_BASE_URL || 'http://localhost:5174';
 
 /** 被测后端 = worktree 临时实例（已含 B-1~B-5 改动）。 */
 export const BACKEND_URL = process.env.PW_BACKEND_URL || 'http://localhost:8081';
@@ -84,6 +92,40 @@ export function sqlRaw(sql: string): string {
   return out.trim();
 }
 
+/**
+ * 跑一条**只读** git 命令（仅允许 diff / rev-parse / ls-files），返回 stdout。
+ * 🚫 白名单同 sqlRaw：历史销毁类命令（reset/push -f/clean 等）属 §3.2 红线，夹具层直接拒。
+ */
+export function gitRaw(args: string): string {
+  if (!/^(diff|rev-parse|ls-files)\b/.test(args.trim())) {
+    throw new Error(`[task260909] 夹具只允许只读 git 命令，拒绝执行：git ${args}`);
+  }
+  const path = require('path');
+  const repoRoot = path.resolve(__dirname, '..', '..', '..');
+  return execSync(`git -C "${repoRoot}" ${args}`, { encoding: 'utf-8', shell: '/bin/bash' });
+}
+
+/** 该路径在本分支相对 master 的 diff 行数。 */
+export function gitDiffLines(file: string): number {
+  const out = gitRaw(`diff master...HEAD -- "${file}"`);
+  return out.trim() === '' ? 0 : out.trim().split('\n').length;
+}
+
+/** 3D 模型管理的全部源码文件（AC-8 的「无回归」主断言就打在它们上）。 */
+export const MODEL_CONFIG_FILES = [
+  'cpq-backend/src/main/java/com/cpq/modelconfig/dto/ModelConfigDTO.java',
+  'cpq-backend/src/main/java/com/cpq/modelconfig/entity/ModelConfigFile.java',
+  'cpq-backend/src/main/java/com/cpq/modelconfig/entity/ModelConfig.java',
+  'cpq-backend/src/main/java/com/cpq/modelconfig/resource/ModelConfigResource.java',
+  'cpq-backend/src/main/java/com/cpq/modelconfig/service/ModelConfigService.java',
+  'cpq-frontend/src/pages/config/ModelConfigManagement.tsx',
+  'cpq-frontend/src/services/modelConfigService.ts',
+  'cpq-frontend/src/types/modelConfig.ts',
+] as const;
+
+/** 本次**确实改过**的文件，用作 git diff 判据的阳性对照。 */
+export const CHANGED_FILE_CONTROL = 'cpq-frontend/src/pages/quotation/AddProductModal.tsx';
+
 /** 取一个整数不变量。用于所有"当场对账"的断言。 */
 export function sqlScalar(sql: string): number {
   const raw = sqlRaw(sql);
@@ -120,6 +162,47 @@ export async function apiContext(baseURL: string, username = 'admin', password =
   const login = await ctx.post('/api/cpq/auth/login', { data: { username, password } });
   expect(login.ok(), `登录 ${baseURL} 失败：${login.status()} ${await login.text()}`).toBe(true);
   return ctx;
+}
+
+/**
+ * 🚨 实例正身断言：确认某个后端 URL 上跑的**确实是**你以为的那份代码。
+ *
+ * 📌 2026-09-09 事故（本函数因此存在）：主线给的 `PW_BACKEND_URL=8098` 实际被
+ *    **另一个 worktree（repair-260908-tab-dup-rows）** 的 Quarkus 占用（03:46 起），
+ *    主线自己起的实例根本没绑上端口（日志有 `Port 8098 seems to be in use`）。
+ *    探活只看到 401 就放行了 —— 而 **401 只证明「有个 Quarkus 在跑、鉴权正常」，
+ *    证明不了「它跑的是我的代码」**。结果 A/B 两侧都是旧代码，
+ *    `beforeTotal=1, afterTotal=1`，看起来像"修复没生效"的产品缺陷。
+ *
+ * 🔑 判据用**字段集**而不是端口号：字段集是代码形态的直接证据，端口只是地址。
+ *    「两个端口不同」完全可以「两个都不是你要测的实例」。
+ *
+ * @param variant 'changed' = 本次改动后（含 customerDrawingNo，无 has3d/thumbnailUrl）
+ *                'unchanged' = 改动前的 master（反之）
+ */
+export async function assertBackendVariant(
+  ctx: APIRequestContext, url: string, quotationId: string, variant: 'changed' | 'unchanged',
+) {
+  const pg = await fetchExistingProducts(ctx, quotationId, { page: 0, size: 1 });
+  expect(pg.content.length,
+    `实例正身无法判定：${url} 对该报价单返回 0 行，取不到字段集。请换一个有数据的客户的报价单。`,
+  ).toBeGreaterThan(0);
+  const keys = Object.keys(pg.content[0]).sort();
+  const has = (k: string) => keys.includes(k);
+  const diag =
+    `\n  URL = ${url}\n  期望形态 = ${variant}\n  实际字段集 = ${JSON.stringify(keys)}\n` +
+    `  🚨 环境指向错误 —— 本轮结论**全部无效**，不要按产品缺陷解读，先修环境。`;
+
+  if (variant === 'changed') {
+    expect(has('customerDrawingNo'), `${url} 不是「改动后」实例：响应缺 customerDrawingNo。${diag}`).toBe(true);
+    expect(has('has3d'), `${url} 不是「改动后」实例：响应仍含 has3d（本次应删）。${diag}`).toBe(false);
+    expect(has('thumbnailUrl'), `${url} 不是「改动后」实例：响应仍含 thumbnailUrl（本次应删）。${diag}`).toBe(false);
+  } else {
+    expect(has('has3d'), `${url} 不是「改动前」实例：响应缺 has3d，看起来已是改动后的代码。${diag}`).toBe(true);
+    expect(has('customerDrawingNo'), `${url} 不是「改动前」实例：响应已含 customerDrawingNo。${diag}`).toBe(false);
+  }
+  console.log(`[task260909] 实例正身 ✅ ${url} = ${variant}；字段集 = ${JSON.stringify(keys)}`);
+  return keys;
 }
 
 export interface ExistingProductRow {

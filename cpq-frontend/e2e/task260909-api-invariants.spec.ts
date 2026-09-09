@@ -12,14 +12,13 @@ import { test, expect, APIRequestContext } from '@playwright/test';
 import {
   BACKEND_URL, MASTER_BACKEND_URL, CUSTOMERS,
   apiContext, fetchExistingProducts, createTestQuotation, cleanupTestQuotations,
-  sqlRaw, sqlScalar, distinctMaterialCount,
+  sqlRaw, sqlScalar, distinctMaterialCount, assertBackendVariant,
 } from './fixtures/task260909';
 
 let api: APIRequestContext;
 /** 每个客户一张自建报价单，全套复用（只读接口，复用不影响隔离）。 */
 const q: Record<string, string> = {};
 
-test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
   api = await apiContext(BACKEND_URL);
@@ -28,6 +27,10 @@ test.beforeAll(async () => {
   // 苏州西门子名下实测 0 个报价模板 ⇒ 造不出能进 Step2 的单。
   // 本 spec 全是接口用例，不走 UI，故 needStep2=false（AC-2 只要求接口层不变量断言）。
   q[CUSTOMERS.SIEMENS] = (await createTestQuotation(api, CUSTOMERS.SIEMENS, 'API-SIE', false)).id;
+
+  // 🚨 跑任何断言之前先验实例正身。见 fixtures 里 assertBackendVariant 的事故说明：
+  //    探活返 401 只证明「有个 Quarkus 在跑」，证明不了「跑的是本次改动的代码」。
+  await assertBackendVariant(api, BACKEND_URL, q[CUSTOMERS.CHINT], 'changed');
 });
 
 test.afterAll(async () => {
@@ -82,6 +85,29 @@ test('T0 · 夹具自检 · sqlRaw 只读守卫会硬拒非只读语句', () => 
   expect(sqlScalar('SELECT 1'), '阳性对照：SELECT 1 应能正常执行并返回 1').toBe(1);
 });
 
+test('T0b · 守卫证伪 · 正身断言指向「改动前」实例时必须硬失败', async () => {
+  // 🚨 首次 PASS 证明不了守卫接上了 —— 必须故意破坏它保护的条件，确认它硬失败。
+  //    这里拿 master（改动前）冒充「改动后」实例，assertBackendVariant 必须抛错。
+  //    🚫 全程只对 master 发 GET，不建任何单据（主线纪律：8081 是共享实例，只读）。
+  const masterApi = await apiContext(MASTER_BACKEND_URL);
+  try {
+    let threw = false;
+    try {
+      await assertBackendVariant(masterApi, MASTER_BACKEND_URL, q[CUSTOMERS.CHINT], 'changed');
+    } catch {
+      threw = true;
+    }
+    expect(threw,
+      `证伪失败：把「改动前」实例 ${MASTER_BACKEND_URL} 当成「改动后」来断言，守卫居然通过了 —— ` +
+      `说明这条正身断言是恒真的，挡不住 2026-09-09 那类"端口被别的会话占用"事故`,
+    ).toBe(true);
+    // 阳性对照：同一实例按正确形态断言必须通过，证明守卫不是"全拒"
+    await assertBackendVariant(masterApi, MASTER_BACKEND_URL, q[CUSTOMERS.CHINT], 'unchanged');
+  } finally {
+    await masterApi.dispose();
+  }
+});
+
 // ──────────────────────────────────────────────────────────────────────────
 // T1 · AC-1 核心：改动前 vs 改动后 A/B 对照
 // ──────────────────────────────────────────────────────────────────────────
@@ -96,6 +122,10 @@ test('T1 · AC-1 · 正泰导入产品可见 —— master vs worktree 同库 A/
 
   const masterApi = await apiContext(MASTER_BACKEND_URL);
   try {
+    // 🚨 URL 不同远远不够 —— 两个不同端口完全可以都不是你要测的实例（2026-09-09 实证）。
+    //    必须按**字段集**验两侧各自的正身，验不过就硬失败，别产出"看似合理"的红/绿。
+    await assertBackendVariant(masterApi, MASTER_BACKEND_URL, q[CUSTOMERS.CHINT], 'unchanged');
+
     // 改动前一侧：同一个 quotationId、同一个客户、同一个库
     const before = await fetchExistingProducts(masterApi, q[CUSTOMERS.CHINT], { page: 0, size: 20 });
     const after = await fetchExistingProducts(api, q[CUSTOMERS.CHINT], { page: 0, size: 20 });
