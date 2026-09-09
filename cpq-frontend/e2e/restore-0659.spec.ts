@@ -17,15 +17,22 @@ test('restore row key', async ({ page }) => {
     .forEach(b => (b as HTMLElement).click()));
   await page.waitForTimeout(3000);
 
-  const bad = page.locator(`table tr input[value="${BAD}"]`);
-  const n = await bad.count();
-  console.log(`[复原] 找到值为 "${BAD}" 的格子 ${n} 个`);
-  expect(n, `找不到 "${BAD}" ⇒ 没有可复原的目标（可能已被复原或量具选择器失效）`).toBe(1);
+  // 🚨 v1 的坑：用 `input[value="${BAD}"]` 定位 —— Playwright 每个动作都会**重新求值** locator，
+  //    值一改就再也匹配不上 ⇒ pressSequentially 卡到超时。改用「与写入时同一条选择器 + 按
+  //    inputValue() 找下标」，拿到稳定的 nth() 之后就不再依赖值本身。
+  const all = page.locator('table tr:has(input) input:not([disabled]):not([readonly])');
+  const n = await all.count();
+  const vals0 = await all.evaluateAll(es => es.map(e => (e as HTMLInputElement).value));
+  const idx = vals0.indexOf(BAD);
+  console.log(`[复原] 可输入格 ${n} 个；"${BAD}" 在下标 ${idx}`);
+  expect(idx, `找不到 "${BAD}" ⇒ 没有可复原的目标（可能已被复原）`).toBeGreaterThanOrEqual(0);
 
-  await bad.first().click();
-  await bad.first().press('Control+a');
-  await bad.first().pressSequentially(GOOD, { delay: 60 });
-  await bad.first().press('Tab');
+  const bad = all.nth(idx);
+  await bad.click();
+  await bad.press('Control+a');
+  await bad.pressSequentially(GOOD, { delay: 60 });
+  await bad.press('Tab');
+  console.log(`[复原] 写入后回读 = "${await bad.inputValue()}"`);
   await page.waitForTimeout(4000);
   await page.getByRole('button', { name: /保\s*存\s*草\s*稿/ }).first().click();
   await page.waitForTimeout(20000);

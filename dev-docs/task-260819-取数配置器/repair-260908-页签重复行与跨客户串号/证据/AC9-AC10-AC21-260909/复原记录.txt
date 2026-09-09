@@ -1,0 +1,30 @@
+[global-setup] Saved auth state for admin → /home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-frontend/e2e/.auth/admin.json
+[global-setup] Could not save auth state for alice: page.waitForURL: Timeout 15000ms exceeded.
+=========================== logs ===========================
+waiting for navigation until "load"
+============================================================
+    at saveStorageState (/home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-frontend/e2e/global-setup.ts:72:16)
+    at globalSetup (/home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-frontend/e2e/global-setup.ts:106:3) {
+  name: 'TimeoutError'
+}
+[global-setup] Could not save auth state for bob: page.waitForURL: Timeout 15000ms exceeded.
+=========================== logs ===========================
+waiting for navigation until "load"
+============================================================
+    at saveStorageState (/home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-frontend/e2e/global-setup.ts:72:16)
+    at globalSetup (/home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-frontend/e2e/global-setup.ts:107:3) {
+  name: 'TimeoutError'
+}
+
+Running 1 test using 1 worker
+
+[1/1] e2e/restore-0659.spec.ts:6:1 › restore row key
+e2e/restore-0659.spec.ts:6:1 › restore row key
+[复原] 可输入格 32 个；"QY615055" 在下标 0
+
+[复原] 写入后回读 = "S0001"
+
+[复原] 重开后 "S0001" 在 = true ; "QY615055" 还在 = false
+
+  1 passed (1.6m)
+EXIT=0
