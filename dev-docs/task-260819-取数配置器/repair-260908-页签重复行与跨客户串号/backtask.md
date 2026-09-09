@@ -40,6 +40,7 @@
 | **B-3** | AC-7 | `CompileResult` 新增 `axisScope` 字段（`SELF` / `CLOSURE`）；`SemanticCompiler` 按 `tabType` 是否等于 `ROOT_SOURCE_TAB_TYPE`（`"主件"`，`:148`）赋值。**三个方言都产出**，不按方言分叉 | 二 |
 | **B-4** | AC-7, AC-8, AC-11 | 落盘与读回：`BuilderService.save()`（`:820` 附近）把 `axisScope` 并进 `component_sql_view.builder_config`；`ComponentSqlViewService` 冻结快照时写 `axis_scope` 键、`lookup*`（`:361`/`:393`/`:479`）读回。**无 DDL**。🔑 **缺键必须退回 `CLOSURE`** | 二 |
 | **B-5** | AC-1, AC-3, AC-9, AC-10, AC-13 | `ComponentDriverService` 两处加宽点按 `axisScope` 分支：单卡 `_widenedHfPartNos`（`:426`）`SELF` ⇒ `null`；合桶 `widenedPartNos`（`:744`）`SELF` ⇒ 不并入 `totalMaterialNo` | 二 |
+| **B-8** | AC-18 | 🆕 `D-14`：刷新路径检测 `rowKey` 失配 ⇒ **响亮失败**。现行行为是**匹配不上就新建一条 `editRows`、HTTP 200、零效果、不报错**。改为：收集失配条目（`rowKey` + 原值摘要）并显式返回/记录。🚫 **不做按内容迁移** —— `#0`/`#1` 是两个客户的两行，合并时保留哪一条没有唯一正确答案 | 二 |
 | **B-6** | AC-14, AC-15 | 扩展**已有**端点 `POST /api/cpq/config-center/refresh-all-snapshots`（`ConfigCenterResource:126`）加可选 body 字段 `recompile`（缺省 `false`，行为逐位不变）：为 `true` 时先按各视图 `builder_config` 重放 `SemanticCompiler` 写回 `sql_template` + `builder_version`，再走既有 `TemplateService.forceRealignSnapshots`。契约见 `./api.md` | 一、二各跑一次 |
 
 ---
