@@ -819,6 +819,13 @@ public class BuilderService {
             com.fasterxml.jackson.databind.node.ObjectNode node =
                     (com.fasterxml.jackson.databind.node.ObjectNode) MAPPER.valueToTree(req);
             node.remove("confirmedImpact");
+            // repair-260908 B-4（AC-7）：把**编译产物**里的轴范围声明并进 builder_config。
+            // 🔑 它是**产物**不是**输入** —— 故不进 BuilderConfig 类（那是请求体的形状），
+            //    只作为 jsonb 的一个键落库；BuilderConfig 有 @JsonIgnoreProperties(ignoreUnknown=true)，
+            //    下次读回来重编译时会被安全忽略，不会撞 Unrecognized field。
+            // 🚫 不要反过来把它做成用户可填字段：那样"页签类型"与"轴范围"就成了两个可以互相矛盾
+            //    的真相源，而矛盾时谁赢是隐式的。
+            node.put("axisScope", r.axisScope);
             persisted.builderConfig = MAPPER.writeValueAsString(node);
         } catch (Exception e) {
             throw new BuilderApiException(500, "BUILDER_CONFIG_SERIALIZE_FAILED", e.getMessage(), Map.of());

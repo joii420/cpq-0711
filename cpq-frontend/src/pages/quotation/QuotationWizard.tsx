@@ -1585,6 +1585,19 @@ const QuotationWizard: React.FC = () => {
         if (!silent) message.success('无改动，无需保存');
         return;   // finally 里照常复位 savingRef / 关提示
       }
+      // ── repair-260909:取版本基线之前必须先排空在飞编辑 ─────────────────────────
+      // 病灶:用户改完一个格子(blur ⇒ quote-card-edit 起飞)立刻点「保存草稿」,这里不等它落地就
+      //   读基线 ⇒ 拿到的是响应回来**之前**的旧版本 N;而后端 editCardValue 已把
+      //   user_data_version 涨到 N+1 ⇒ 本次 saveDraft 带 baseVersion=N 必撞 409 STALE_VERSION,
+      //   用户看到的是"这张报价单已被他人修改"——明明只有他自己在改。
+      //   实测(2026-09-09,QT-20260908-0625):baseVersion=18 但库中 user_data_version=19 → 409;
+      //   把两条请求压到同一毫秒时还会 `deadlock detected` on quotation_line_item ⇒ 500。
+      // 为什么放在这里而不是函数入口:上面那道「无改动」闸要先放行——用户什么都没改点一下保存,
+      //   不该被在飞编辑拖住;真要发请求了才需要这份时序保证。
+      // 为什么放在 requireVersionBaseline **之前**:排空后 quote-card-edit 的响应已被
+      //   noteUserDataVersion 跟进本地基线(QuotationStep2#handleSnapshotCellEdit),此刻读到的
+      //   才是最新版本号。挪到之后 = 白排空。
+      await waitForPendingEdits();
       // 版本基线未知 ⇒ 这一发必然 400 且会被 catch 吞成「已保存到本地」,直接拦下(见 requireVersionBaseline)。
       //   🔑 位置不可变通:必须在**上面那道「无改动」闸之后**——否则用户什么都没改点一下保存,
       //   会拿到「页面数据不完整」而不是「无改动，无需保存」,反而更吓人;
@@ -1672,15 +1685,20 @@ const QuotationWizard: React.FC = () => {
       //   所以这里这次纯属重复劳动 + 自己跟自己抢锁，去掉即可。
       //   ⚠️ 改这行前先看：dev-docs/task-0729-客户价格调整策略和价格版本/
       //      方向3-总价单一来源改造-开发计划.md §四 T1 实施结果 C（提交时序 / 拿不到锁改抛 409）。
-      await handleSaveDraft(false, { skipWarm: true });
-      // task-260901:上一步撞了 STALE_VERSION(弹层已在等用户点「刷新页面」)⇒ 本页面数据已过期,
-      //   继续提交等于拿陈旧快照闯闸门。这里直接中止,不再发 submit。
-      if (staleVersionRef.current) return;
       // task-0806 D15：前端提交前必须先完成一次对账上报再发 submit（前端串行保证）——
       // 阶段① 后端 assertLineSettled 的 WRITE_IN_FLIGHT 判据恒 false，唯一生效的
       // RECONCILE_PENDING 以"该行最近一次对账上报"为准；此处排空在飞的编辑链
       // （含其内部 reconcile-report 上报），避免拿着上一轮陈旧对账结果去闯闸门。
+      // ── repair-260909:本行必须在 handleSaveDraft 之前 ──────────────────────────
+      // 原先它排在 saveDraft **之后**:提交路径里那次内部 saveDraft 同样在"编辑还在飞"时
+      //   读版本基线 ⇒ 撞 409 STALE_VERSION、staleVersionRef 置位、提交直接中止(下面那道闸),
+      //   用户点「提交审批」看到的是"已被他人修改"。handleSaveDraft 内部现在也自排空,
+      //   但顺序本身仍须表达正确意图——否则下一个人重构时会把它挪回去,且不报错。
       await waitForPendingEdits();
+      await handleSaveDraft(false, { skipWarm: true });
+      // task-260901:上一步撞了 STALE_VERSION(弹层已在等用户点「刷新页面」)⇒ 本页面数据已过期,
+      //   继续提交等于拿陈旧快照闯闸门。这里直接中止,不再发 submit。
+      if (staleVersionRef.current) return;
       await quotationSnapshotService.submit(quotationId);
       message.success('报价单已提交审批');
       // Reload to get updated status

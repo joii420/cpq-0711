@@ -2,6 +2,7 @@ package com.cpq.component.service;
 
 import com.cpq.component.dto.ComponentSqlViewDTO;
 import com.cpq.component.dto.CreateComponentSqlViewRequest;
+import com.cpq.builder.compiler.CompileResult;
 import com.cpq.component.dto.DryRunSqlViewResponse;
 import com.cpq.component.entity.Component;
 import com.cpq.component.entity.ComponentSqlView;
@@ -130,6 +131,9 @@ public class ComponentSqlViewService {
         entry.put("required_variables", v.requiredVariables == null
                 ? List.of() : Arrays.asList(v.requiredVariables));
         entry.put("scope", v.scope);
+        // repair-260908 B-4（AC-8）：轴范围随快照一起冻结。渲染期读的就是这份冻结副本
+        // （已发布模板恒命中它、不回落实时表），不冻进来 = 驱动层永远看不到 SELF。
+        entry.put("axis_scope", axisScopeOf(v));
         result.put(key, entry);
     }
 
@@ -463,6 +467,13 @@ public class ComponentSqlViewService {
                     .getResultList();
             if (rows.isEmpty()) return Optional.empty();
             Object[] r = rows.get(0);
+            // 🚨 repair-260908 B-4 已知边界（不是遗漏，是刻意不做，已报主线）：
+            //    quotation_component_sql_snapshot 只有 6 列（quotation_id / sql_view_key /
+            //    sql_template / declared_columns / required_variables / frozen_at），**没有地方放
+            //    axis_scope**，加列要 DDL 迁移，超出本次「无 DDL」边界。
+            //    ⇒ 这条路（已冻结的报价单：SUBMITTED / APPROVED / PUBLISHED）拿到的
+            //      axisScope 恒为 CLOSURE = 改动前行为。对"冻结即不可变"来说这是**正确**的默认，
+            //      但要知道它意味着：B-5 的收窄对**已冻结单**不生效，只对读模板快照的在编单生效。
             return Optional.of(buildDetachedFromSnapshot(
                     (String) r[0], (String) r[1], r[2], r[3]));
         } catch (Exception e) {
@@ -503,7 +514,8 @@ public class ComponentSqlViewService {
                         key,
                         entry.has("sql_template") ? entry.get("sql_template").asText() : "",
                         entry.has("declared_columns") ? entry.get("declared_columns") : "[]",
-                        entry.has("required_variables") ? entry.get("required_variables") : null
+                        entry.has("required_variables") ? entry.get("required_variables") : null,
+                        entry.has("axis_scope") ? entry.get("axis_scope").asText() : null
                 ));
             }
             return Optional.empty();
@@ -514,10 +526,41 @@ public class ComponentSqlViewService {
     }
 
     /**
+     * 取一条 SQL 视图的<b>轴范围声明</b>（repair-260908 B-4）：{@code SELF} / {@code CLOSURE}。
+     *
+     * <p>两个来源按优先级：① 从**快照**反序列化出来的 detached 实例，值已在
+     * {@link ComponentSqlView#axisScope} 上；② 实时表实例，从
+     * {@code builder_config->>'axisScope'} 解析。
+     *
+     * <p>🔑 <b>任何取不到的情况一律返回 {@code CLOSURE}</b>（AC-11 零回归兜底）：
+     * 存量快照没有该键、手写视图没有 builder_config、jsonb 解析失败 —— 三种都退回改动前行为。
+     * 🚫 不要改成抛异常或返 null：这条兜底是"缺键不改变既有渲染"这条 AC 的**唯一**实现处，
+     * 它一旦响亮失败，受影响的是全部存量已发布模板。
+     */
+    public String axisScopeOf(ComponentSqlView v) {
+        if (v == null) return CompileResult.AXIS_SCOPE_CLOSURE;
+        if (v.axisScope != null && !v.axisScope.isBlank()) return v.axisScope;
+        if (v.builderConfig == null || v.builderConfig.isBlank()) return CompileResult.AXIS_SCOPE_CLOSURE;
+        try {
+            JsonNode n = MAPPER.readTree(v.builderConfig).get("axisScope");
+            if (n != null && n.isTextual() && !n.asText().isBlank()) return n.asText();
+        } catch (Exception e) {
+            LOG.debugf("[axisScopeOf] builder_config 解析失败，按 CLOSURE 兜底: %s", e.getMessage());
+        }
+        return CompileResult.AXIS_SCOPE_CLOSURE;
+    }
+
+    /**
      * 从 snapshot 数据构造 detached ComponentSqlView（非持久化，仅用于 lookupForResolver 返回）。
      */
     private ComponentSqlView buildDetachedFromSnapshot(
             String sqlViewKey, String sqlTemplate, Object declaredColumns, Object requiredVariables) {
+        return buildDetachedFromSnapshot(sqlViewKey, sqlTemplate, declaredColumns, requiredVariables, null);
+    }
+
+    private ComponentSqlView buildDetachedFromSnapshot(
+            String sqlViewKey, String sqlTemplate, Object declaredColumns, Object requiredVariables,
+            String axisScope) {
         ComponentSqlView v = new ComponentSqlView();
         // 从 key 反解 componentId + name
         int idx = sqlViewKey.indexOf("::");
@@ -532,6 +575,9 @@ public class ComponentSqlViewService {
         v.requiredVariables = toStringArray(requiredVariables);
         v.status = "ACTIVE";   // snapshot 项视作 ACTIVE 回放
         v.scope = "COMPONENT"; // snapshot 时已闭包，scope 无运行时意义
+        // repair-260908 B-4：缺键 ⇒ CLOSURE（存量快照全都没有这个键，必须逐位维持改动前行为）
+        v.axisScope = (axisScope == null || axisScope.isBlank())
+                ? CompileResult.AXIS_SCOPE_CLOSURE : axisScope;
         return v;
     }
 

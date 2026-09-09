@@ -300,6 +300,22 @@ public class BomTreeRenderService {
             Quotation _q = Quotation.findById(_seedQid);
             if (_q != null) ctxCustomerId = _q.customerId;
         }
+        // 🚨 repair-260908：解析不到客户就**说出来**。
+        //
+        // 这段代码本身没问题，问题一直出在**调用方给的 lineItems 里 quotationId 是 null**
+        // （报价侧 ConfigureSnapshotService 就地 new 的轻量壳，2026-09-08 实证）。
+        // 而它失败的方式是纯静默的：ctxCustomerId 留 null → expandUncached 拿不到客户
+        // → :customerCode 无处可解 →（B-2 之前）降级成字面量 NULL → 客户相关列恒空。
+        // 一条日志都没有，所以这个洞活了很久。
+        // 🚫 这里刻意**不抛异常**：真有无客户的合法调用方时抛会把渲染整条打死；
+        //    响亮失败那一档由 B-2 在执行层承担（它已经证明有效）。这里只负责**留下线索**，
+        //    让下一次排查一眼看到「是哪个调用方没给 quotationId」，而不是从 SQL 报文往回猜。
+        if (ctxCustomerId == null) {
+            LOG.warnf("[bom-tree render] usage=%s templateId=%s 解析不到本单客户"
+                    + "（seedQuotationId=%s，lineItems[0].id=%s）—— 依赖 :customerCode 的 $view "
+                    + "将无参可绑。调用方必须在 lineItems 上带 quotationId。",
+                    usage, templateId, _seedQid, lineItems.get(0).id);
+        }
         Map<UUID, Map<String, String>> overrides =
                 (overridesByComponent != null) ? overridesByComponent : java.util.Collections.emptyMap();
 

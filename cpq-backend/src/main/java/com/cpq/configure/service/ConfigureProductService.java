@@ -1209,17 +1209,30 @@ public class ConfigureProductService {
         // A-7 要求停写 V6 五表，本方法却仍在写 element_bom_item / material_bom_item / material_bom。
         // 直接删会造成回归：本方法存在的理由是 V6 那两张表**按 customer_no 分片存**，
         // 跨客户复用一个 V6 时代的老料号时必须为新客户补一份，否则材质/元素页签空
-        // （task-260902 B-17① 刚修过这个 bug）。新表体系没有 customer_no 维度，
-        // 所以对**新体系料号**这套复制根本没有存在意义 —— 但对**存量 V6 料号**仍然必需，
-        // 而存量 V6 数据本任务明确不迁移（需求文档 §5.1）。
+        // （task-260902 B-17① 刚修过这个 bug）。但对**新体系料号**这套复制没有存在意义
+        // —— 它们的材质/元素由 ds_quote_material_bom / ds_quote_element_bom 经兼容视图供数 ——
+        // 而**存量 V6 料号**仍然必需，且存量 V6 数据本任务明确不迁移（需求文档 §5.1）。
         //
         // ⇒ 折中：只对「不在 ds_quote_material 里的料号」执行，即纯 V6 存量料号。
         //    选配 A 阶段起铸的料号一律落 ds_quote_material ⇒ 这里对它们直接返回，
         //    A-AC-2「V6 五表零新增」在选配新建路径上成立。
+        //
+        // 🚨 repair-260908 · C-4：下面这条判定<b>刻意不带 customer_no</b>，别当成漏改。
+        //    （原注释写着「新表体系没有 customer_no 维度」——那句话已被 V425 推翻，故删除；
+        //      留着过期的**理由**比留着过期的断言更危险，下一个人会照它做判断。）
+        //    它问的不是「这个客户有没有这个料号」，而是「这个料号属于哪个体系」——**体系归属是
+        //    料号级属性，不是客户级属性**，所以跨客户命中正是想要的：
+        //      ① 只要该料号在新体系里存在过，它的材质/元素就该由 ds_quote_* 供数；
+        //         此时当前客户缺数据，正确修法是补 ds_quote_* 行，而不是往 V6 写（那违反 A-7）；
+        //      ② 更硬的理由：兼容视图 v_compat_material_bom_item / v_compat_element_bom_item 的
+        //         反连接是 `NOT EXISTS (… x.material_no = b.material_no AND x.customer_no = cs.customer_no)`
+        //         —— 一旦这里为 (客户B, 料号P) 写下 V6 行，视图对 (客户B, 料号P) 的**整段新表投影会被
+        //         直接吞掉**，材质/元素页签反而从「有数据」变成「只剩那几行 V6 补丁」。
+        //         即：加客户条件不是变严，是把渲染打坏。
         Object inNewModel = em.createNativeQuery(
                 "SELECT 1 FROM ds_quote_material WHERE material_no = :p LIMIT 1")
             .setParameter("p", partNo).getResultList().stream().findFirst().orElse(null);
-        if (inNewModel != null) return;   // 新体系料号：无 customer 维度可补，且不许再写 V6
+        if (inNewModel != null) return;   // 新体系料号：由 ds_quote_* 供数，不许再写 V6（见上方 C-4 说明）
         // 1) 元素: 从任一来源客户复制 → 当前客户(当前客户无该料号元素行时整体复制)
         em.createNativeQuery(
                 "INSERT INTO element_bom_item (system_type, customer_no, hf_part_no, material_no, characteristic, seq_no, component_no, content) " +
@@ -1662,8 +1675,15 @@ public class ConfigureProductService {
      * 该判据依赖 B-9（选配写入侧不再把材质名塞进 {@code material_type}）落地，否则同一列里
      * 混着材质名，判据不成立。
      *
-     * <p>⚠️ 返回 0 条是<b>正常业务状态</b>（AC-16）—— 实测当前库只有 1 条
-     * （{@code TEST-Q13-CODE / 组成件1}，规格与单重均为空），前端必须渲染空态而非「加载中…」（AP-31 族）。
+     * <p>⚠️ 返回 0 条是<b>正常业务状态</b>（AC-16）—— 候选条数完全取决于基础数据里有多少料号被
+     * 标成「外购件」，共享开发库上它随导入随时变（2026-09-09 一天之内实测到过 1 / 8 / 6 条）。
+     * ⇒ 🚫 <b>不要把某个具体条数写进判据或断言</b>；前端必须渲染空态而非「加载中…」（AP-31 族）。
+     *
+     * <p>🔑 repair-260908 · C-1：本方法查的 {@code v_compat_material_master} 是 V6 兼容视图，
+     * <b>没有客户维度</b>（{@code material_master} 本身就没有客户列），而本端点的签名
+     * {@code (keyword, page, size)} 也<b>拿不到客户上下文</b> —— 所以「按客户过滤掉重复」在这里
+     * 物理上办不到。跨客户重号必须在<b>视图层</b>收敛（V435 的 {@code DISTINCT ON}）。
+     * 🚫 不要在本方法里加 {@code DISTINCT} 打补丁：那只治了这一个消费点，另外 7 个照样出双份。
      */
     @SuppressWarnings("unchecked")
     public Map<String, Object> listOutsourcedParts(String keyword, int page, int size) {

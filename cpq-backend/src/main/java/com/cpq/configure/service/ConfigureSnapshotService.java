@@ -384,6 +384,23 @@ public class ConfigureSnapshotService {
                     QuotationLineItem lite = new QuotationLineItem();
                     lite.id = lid;
                     lite.productPartNoSnapshot = pn;
+                    // 🔴 repair-260908（主线亲验抓到的真回归）：**必须带上 quotationId**。
+                    //
+                    // 这些是**就地 new 出来的轻量壳**（只为传料号），此前 quotationId 恒 null，
+                    // 而下游 BomTreeRenderService 的两处客户解析**都以它为唯一入口**：
+                    //   · renderInternal §④：lineItems.get(0).quotationId → Quotation.customerId
+                    //       → expandUncached(compId, ctxCustomerId) → :customerCode
+                    //   · collectTotalMaterialNoUnion：resolveCustomerCodeFromLines(lineItems)
+                    //       → 递归闭包 SQL 的客户谓词（task-260907 B-7a）
+                    // ⇒ 壳里没有 quotationId，两处**同时**静默退化成"无客户"。
+                    //
+                    // 🔑 为什么以前没人发现：B-2 之前 :customerCode 未绑定会降级成字面量 NULL，
+                    //    客户料号那条 LEFT JOIN 只是恒不命中（客户名列空着），没人当回事；
+                    //    闭包少了客户谓词同样只是"多带回一些别家料号"。B-2 把前者变成 400 之后，
+                    //    整棵树 4 个组件同时抛异常、报文逐字相同 —— 这才把它照出来。
+                    //    **不是闸太严，是调用方从来没给过参数。**（task-0729 那次只修了核价侧，
+                    //    核价侧传的是真实 QuotationLineItem 实体，天然带 quotationId。）
+                    lite.quotationId = quotationId;
                     liteLines.add(lite);
                 }
                 BomTreeRenderService.MaterialUnionResult quoteUnion = null;
@@ -457,7 +474,13 @@ public class ConfigureSnapshotService {
                         }
                     }
                     try {
-                        masterTypeIndex = masterPartTypeService.load(treePartNos);
+                        // repair-260908 · C-3：必须带客户号（ds_quote_material 唯一键含 customer_no，
+                        // 不带 = 顺序不保证的 last-wins）。customerId 由本方法开头 self.loadCustomerId 取得。
+                        com.cpq.customer.entity.Customer _cust =
+                                customerId == null ? null : com.cpq.customer.entity.Customer.findById(customerId);
+                        String _custNo = (_cust == null || _cust.code == null || _cust.code.isBlank())
+                                ? null : _cust.code;
+                        masterTypeIndex = masterPartTypeService.load(_custNo, treePartNos);
                     } catch (Exception e) {
                         // 主数据取数失败不该让整单快照失败；退化为空索引 = 「全部料号未命中主数据」，
                         // lenient 模式下 __nodeType 落 null（api.md §0.2 允许），不阻断物化。

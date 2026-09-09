@@ -74,18 +74,60 @@ class V9CompileArtifactTest extends V9TestBase {
     // AC-107（单点）不发 V6 收窄
     // AC 原文：用 COST_BASIC 编译「主件」→ 产物 SQL 不含 system_type、不含 customer_no
     // （🔄 D-84 后 is_current / versionFilter 应当出现，改由 AC-109 正向断言，本条不再管它们）
+    //
+    // 🔄 2026-09-08（repair-260908 B-7 / D-9）：customer_no 那半条断言**已收窄**，理由一并更正。
+    //
+    // 原理由写的是「仅 ds_quote_customer_part 有该列，而它不进图（N-19）」——
+    // 🚫 **这条理由已被 V425 推翻**：task-260907 给 28 张 ds_quote_* 普遍加了 customer_no，
+    // 复合轴变成 (customer_no, material_no)。留着过期理由比留着过期断言更危险：
+    // 下一个人会照它再做一次「ds_quote_* 没有客户列」的错判断。
+    //
+    // 现在的正确口径（repair-260908 AC-16，判据是**物理表有没有这一列**，不是方言）：
+    //   · **外层锚点** ds_cost_basic_* —— 逐表实测 55 张 ds_cost_* 的 customer_no 列数 = 0
+    //     ⇒ 仍然一条客户谓词都不许有，这半条断言原样保留；
+    //   · **NARROW 桥的子查询** —— 它 FROM 的是 ds_quote_material（有 customer_no 且此前从不过滤），
+    //     缺陷①在核价侧正是以这种桥接形态存在的 ⇒ 桥子查询里出现 customer_no 是**要求**，不是违规。
+    // ⇒ 断言从「整段文本不含」收窄为「**剔掉桥子查询之后**不含」。
     // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * 桥半连接子查询的形态：{@code IN (SELECT … )}，用于把它整段从产物里剔掉。
+     *
+     * <p>🚨 <b>必须允许一层嵌套括号</b>（{@code [^()]*(\(...\)[^()]*)*}）：子查询里含
+     * {@code = ANY(:total_material_no)}。若照抄 {@code SemanticCompiler.BRIDGE_SEMI_JOIN} 的
+     * 「禁止括号」写法，正则会在 {@code ANY(} 处走不下去 ⇒ <b>一处都匹不到</b> ⇒ 剔除等于没剔，
+     * 断言退回「整段文本不含 customer_no」的老口径（2026-09-08 首跑实测踩到）。
+     * 那边禁止括号是为了把匹配锁死在同一层、避免假报警；这边要的是整段剔除，目标不同。
+     */
+    private static final java.util.regex.Pattern BRIDGE_SUBQUERY = java.util.regex.Pattern.compile(
+            "\\bIN\\s*\\(\\s*SELECT\\b[^()]*(?:\\([^()]*\\)[^()]*)*\\)",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+
     @Test
     @Order(107)
-    @DisplayName("AC-107: COST_BASIC 编译「主件」，产物不含 system_type、不含 customer_no")
+    @DisplayName("AC-107: COST_BASIC 编译「主件」，外层锚点不含 system_type / customer_no（桥子查询里含客户谓词属正确）")
     void ac107_noV6ScopePredicates() {
         String sql = compileMainTab(COST_BASIC).sql;
         System.out.println("[AC-107] COST_BASIC 主件产物 SQL:\n" + sql);
 
         assertFalse(sql.toLowerCase().contains("system_type"),
                 "AC-107: 产物不得含 system_type —— ds_* 45 张表没有这一列（B-41①）。SQL=\n" + sql);
-        assertFalse(sql.toLowerCase().contains("customer_no"),
-                "AC-107: 产物不得含 customer_no —— 仅 ds_quote_customer_part 有该列，而它不进图（N-19）。SQL=\n" + sql);
+
+        // 剔掉桥子查询，剩下的就是「外层锚点自己的部分」
+        String outer = BRIDGE_SUBQUERY.matcher(sql).replaceAll(" IN (<桥子查询已剔除>)");
+        assertFalse(outer.toLowerCase().contains("customer_no"),
+                "AC-107: **外层锚点**不得含 customer_no —— ds_cost_* 55 张表逐表实测该列数 = 0，"
+                        + "出现它说明谓词加错了位置（判据应是列存在性，不是方言）。"
+                        + "\n剔除桥子查询后的外层=\n" + outer + "\n完整 SQL=\n" + sql);
+
+        // 🔑 正向那一半（repair-260908 AC-16 结构断言）：桥确实在、且桥里确实带了客户谓词。
+        //    没有这一句，上面的「剔除后不含」在**桥整个消失**时也会绿 —— 那是最典型的空跑。
+        assertTrue(BRIDGE_SUBQUERY.matcher(sql).find(),
+                "AC-107 前置：COST_BASIC 主件产物里找不到 NARROW 桥子查询 ⇒ 上面的『剔除后不含 customer_no』"
+                        + "会变成恒真的空断言。SQL=\n" + sql);
+        assertTrue(sql.contains("customer_no = :customerCode"),
+                "repair-260908 AC-16: 桥子查询必须带 customer_no = :customerCode —— 桥 FROM 的 "
+                        + "ds_quote_material 有该列且此前从不过滤，缺陷①在核价侧就是以这种形态存在的。SQL=\n" + sql);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -303,8 +345,15 @@ class V9CompileArtifactTest extends V9TestBase {
         // ③ 传销售料号执行 → 非空，且行确实落在 P 上
         Map<String, Object> pv = new LinkedHashMap<>(configForMainTab(COST_BASIC));
         pv.put("partNo", salesNo);
+        // repair-260908 B-7：产物含 :customerCode ⇒ 预览必须带客户（见 customerOfSales 注释）
+        String custCode = customerOfSales(salesNo);
+        assertNotNull(custCode, notReady("AC-111③",
+                "销售料号 " + salesNo + " 在 ds_quote_material 上没有 customer_no —— "
+                        + "带客户谓词的产物无从预览", "灌数据方 / BL-0226"));
+        pv.put("customerCode", custCode);
         Response p = preview(componentId, pv);
-        System.out.println("[AC-111③] preview(partNo=" + salesNo + " 销售料号) → HTTP " + p.statusCode()
+        System.out.println("[AC-111③] preview(partNo=" + salesNo + " 销售料号, customerCode=" + custCode
+                + ") → HTTP " + p.statusCode()
                 + " body=" + trunc(p.asString()));
         assertEquals(200, p.statusCode(), "AC-111③: preview 应 200，body=" + p.asString());
         Integer rc = p.jsonPath().getObject("rowCount", Integer.class);
@@ -386,6 +435,8 @@ class V9CompileArtifactTest extends V9TestBase {
         for (String salesNo : salesNos) {
             Map<String, Object> pv = new LinkedHashMap<>(cfg);
             pv.put("partNo", salesNo);
+            // repair-260908 B-7：逐个销售料号取**它自己的**客户号，🚫 不写死（复合轴 (customer_no, material_no)）
+            pv.put("customerCode", customerOfSales(salesNo));
             Response p = preview(componentId, pv);
             System.out.println("[AC-112①] preview(销售料号=" + salesNo + ", 页签=" + tabType + ") → HTTP "
                     + p.statusCode() + " rowCount=" + p.jsonPath().getObject("rowCount", Integer.class));
@@ -446,6 +497,13 @@ class V9CompileArtifactTest extends V9TestBase {
 
         Map<String, Object> pv = new LinkedHashMap<>(configForMainTab(COST_BASIC));
         pv.put("partNo", ghost);
+        // repair-260908 B-7：幽灵料号当然查不到自己的客户，这里取库里任一真实客户号即可 ——
+        // 本用例要证的是「料号不存在 ⇒ 0 行且不抛异常」，客户号只需让 bindLiterals 有东西可替换。
+        List<String> anyCust = strList("SELECT customer_no FROM ds_quote_material "
+                + "WHERE customer_no IS NOT NULL ORDER BY 1 LIMIT 1");
+        assertFalse(anyCust.isEmpty(), notReady("AC-112②",
+                "ds_quote_material 里一个 customer_no 都没有 —— 带客户谓词的产物无从预览", "灌数据方"));
+        pv.put("customerCode", anyCust.get(0));
         Response p = preview(componentId, pv);
         System.out.println("[AC-112②] preview(partNo=" + ghost + ") → HTTP " + p.statusCode()
                 + " body=" + trunc(p.asString()));
@@ -616,6 +674,25 @@ class V9CompileArtifactTest extends V9TestBase {
                 "SELECT q.material_no, q.production_no FROM ds_quote_material q "
                         + "JOIN ds_cost_basic_material m ON m.production_no = q.production_no "
                         + "WHERE q.production_no IS NOT NULL AND q.production_no <> '' ORDER BY 1 LIMIT 1");
+        return r.isEmpty() ? null : r.get(0);
+    }
+
+    /**
+     * 该销售料号自己的客户号 —— repair-260908 B-7 起 {@code /preview} 必须带 {@code customerCode}。
+     *
+     * <p><b>为什么原来不用传、现在要传</b>：B-1/B-1b 之后编译产物普遍含 {@code :customerCode}
+     * （锚点谓词 或 NARROW 桥子查询里的客户收窄），而 {@code BuilderService.bindLiterals} 只在
+     * {@code customerCode != null} 时做字面量替换 ⇒ 不传就撞既有守卫 {@code PREVIEW_UNBOUND_PLACEHOLDER}
+     * 返 500。产品侧不受影响（{@code SqlViewBuilderTab.tsx} 有「请先选择预览客户」硬门），
+     * 是本套<b>夹具</b>没传。
+     *
+     * <p>🚫 <b>不许在这里写死一个客户号</b>：复合轴是 {@code (customer_no, material_no)}，
+     * 写死会在「该料号不属于那个客户」时返 0 行 —— AC-111③ 的 {@code rc > 0} 会变成假失败，
+     * AC-112① 的「各销售料号行数彼此相同」会退化成 0==0 的假通过。⇒ 按料号紧邻取它自己的客户。
+     */
+    private String customerOfSales(String salesNo) {
+        List<String> r = strList("SELECT customer_no FROM ds_quote_material "
+                + "WHERE material_no=?1 AND customer_no IS NOT NULL ORDER BY 1 LIMIT 1", salesNo);
         return r.isEmpty() ? null : r.get(0);
     }
 

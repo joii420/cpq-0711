@@ -1,5 +1,6 @@
 package com.cpq.datasource.sqlview;
 
+import com.cpq.builder.compiler.CompileResult;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.template.entity.TemplateSqlView;
 import com.cpq.template.service.TemplateSqlViewService;
@@ -105,6 +106,25 @@ public class SqlViewExecutor {
      * 「调用方忘了 open BomTreeVarsContext」伪装成「这个客户/料号没有数据」（AP-31/37/53 同类故障）。
      */
     private static final String TOTAL_MATERIAL_NO_PARAM = "total_material_no";
+
+    /**
+     * repair-260908 B-2（AC-5）：{@code :customerCode} 与 {@code :total_material_no} 同款硬阻断。
+     *
+     * <p>B-1 起，凡锚点物理表含 {@code customer_no} 列的取数配置器产物都会带
+     * {@code <别名>.customer_no = :customerCode}。该参数一旦走下面 {@link #rewriteNamedParams}
+     * 通用的「未绑定 → 字面量 NULL」安全降级，就变成 {@code customer_no = NULL} —— PG 三值逻辑下
+     * <b>恒为 UNKNOWN</b>，整个页签返 0 行且不报错，把「调用方没传客户」伪装成「这个客户没有数据」。
+     *
+     * <p>🔎 三条<b>不</b>经本分支的路径（各自做字面量替换，不受影响，AC-5 反向断言）：
+     * {@code BuilderService.bindLiterals()}（{@code /preview}）· {@code QuoteViewValidationService}
+     * · {@code CostingTreeSqlValidator}；保存期 dry-run 走
+     * {@code SqlViewValidator.bindWithNullPlaceholders} 同样不经这里。
+     *
+     * <p>⚠️ 正常渲染链路不需要显式传它：{@link #enrichCustomerCode} 会从 {@code :customerId}(UUID)
+     * 解析 {@code customer.code} 补上。走到这条 400 说明**连 customerId 都没有**（或该 customer 行
+     * 查不到），那正是必须响亮失败的场景。
+     */
+    private static final String CUSTOMER_CODE_PARAM = "customerCode";
 
     @Inject
     DataSource dataSource;
@@ -233,6 +253,41 @@ public class SqlViewExecutor {
         if (path == null) return false;
         String s = path.trim();
         return DRIVER_PATH_PATTERN.matcher(s).matches();
+    }
+
+    /**
+     * 取某个 driver 路径所指视图的<b>轴范围声明</b>（repair-260908 B-5 的唯一读入口）：
+     * {@code SELF} / {@code CLOSURE}。
+     *
+     * <p>🔑 <b>刻意放在本类</b>：{@code DRIVER_PATH_PATTERN} 与 {@code lookupForResolver}
+     * 的三层 fallback（报价单快照 &gt; 模板快照 &gt; 实时表）都在这里。放到调用方去实现，
+     * 就会多出<b>第二份路径解析</b>和<b>第二条取视图的路</b> —— 两份解析漂移的后果是
+     * 「同一个 $view，执行时取到 A、判轴范围时取到 B」，且不报错。
+     *
+     * <p>🔑 <b>任何异常/找不到一律 {@code CLOSURE}</b>：本方法只用来决定「要不要加宽」，
+     * 判不出来就退回改动前行为（AC-11）。🚫 不许抛 —— 抛了会把「取数正常但元数据缺失」
+     * 变成整卡渲染失败。
+     *
+     * <p>⚠️ 依赖 {@code SqlViewRuntimeContext} 已被调用方 set（{@code componentId} 用来定位本组件
+     * 视图、{@code templateId}/{@code quotationId} 决定读哪一层快照）。
+     * {@code ComponentDriverService} 的两处加宽点都在其 {@code setNested(...)} 窗口内。
+     */
+    public String resolveDriverAxisScope(String path) {
+        try {
+            if (path == null || path.isBlank()) return CompileResult.AXIS_SCOPE_CLOSURE;
+            Matcher m = DRIVER_PATH_PATTERN.matcher(path.trim());
+            if (!m.matches()) return CompileResult.AXIS_SCOPE_CLOSURE;
+            boolean isCross = m.group(1) != null;
+            String componentCode = isCross ? m.group(1) : null;
+            String viewName = isCross ? m.group(2) : m.group(3);
+            UUID currentComponentId = SqlViewRuntimeContext.get().componentId;
+            return sqlViewService.lookupForResolver(currentComponentId, viewName, isCross, componentCode)
+                    .map(sqlViewService::axisScopeOf)
+                    .orElse(CompileResult.AXIS_SCOPE_CLOSURE);
+        } catch (Exception e) {
+            LOG.debugf("[resolveDriverAxisScope] 判不出轴范围，按 CLOSURE 兜底 path=%s: %s", path, e.getMessage());
+            return CompileResult.AXIS_SCOPE_CLOSURE;
+        }
     }
 
     /**
@@ -613,6 +668,9 @@ public class SqlViewExecutor {
      * 把 SQL 中所有 {@code :xxx} 命名占位符替换为 {@code ?}，按出现顺序收集对应值。
      *
      * <p>注意：未在 namedParams 中提供的占位符会被替换为 NULL（保留语义合法但运行时可能查不到行）。
+     * <b>两个例外</b>：{@code :total_material_no}（task-260819 B-20）与 {@code :customerCode}
+     * （repair-260908 B-2）是**收窄谓词**的入参，未绑定一律抛 400 而不是降级 —— 降级后它们分别
+     * 变成 {@code x = ANY(NULL)} / {@code customer_no = NULL}，两者都静默返回 0 行。
      *
      * <p>task-0725 根因 2：定位前先 {@link SqlTextMask#mask(String)} 屏蔽字符串字面量 / {@code --}
      * 行注释 / {@code /* *&#47;} 块注释，避免注释里写的 {@code :customerCode} 等 token 被误当占位符
@@ -633,14 +691,23 @@ public class SqlViewExecutor {
             String name = m.group(1);
             Object value = namedParams.get(name);
             if (value == null) {
-                // task-260819 B-20（D-53/AC-59）：仅收窄 :total_material_no 这一个参数的降级行为——
-                // 其余占位符（:versionFilter 相关的 __vfPart/__vfVer 之外，如 :customerCode/:hfPartNos
-                // 等）继续沿用下面的「未绑定 → 字面量 NULL」既有约定，不在此一并改掉。
+                // task-260819 B-20（D-53/AC-59）：收窄 :total_material_no 的降级行为。
+                // 🔄 repair-260908 B-2（AC-5）：:customerCode 一并进入硬阻断名单——B-1 起它同样是
+                // **收窄谓词**（customer_no = :customerCode），降级成 NULL 就是静默 0 行。
+                // 其余占位符（:hfPartNos、:versionFilter 的 __vfPart/__vfVer 等）继续沿用下面的
+                // 「未绑定 → 字面量 NULL」既有约定，不在此一并改掉。
                 if (TOTAL_MATERIAL_NO_PARAM.equals(name)) {
                     throw new BusinessException(400,
                         "SQL 视图引用了 :total_material_no 但当前渲染上下文未提供该参数"
                         + "（BomTreeVarsContext 未 open 或 totalMaterialNo 为空）——已阻断执行，"
                         + "避免 x = ANY(NULL) 静默返回 0 行伪装成\"无数据\"");
+                }
+                // repair-260908 B-2（AC-5）：客户谓词同款硬阻断，理由见 CUSTOMER_CODE_PARAM 注释。
+                if (CUSTOMER_CODE_PARAM.equals(name)) {
+                    throw new BusinessException(400,
+                        "SQL 视图引用了 :customerCode 但当前渲染上下文未提供该参数"
+                        + "（namedParams 里既没有 customerCode，也没有能反查出 customer.code 的 customerId）"
+                        + "——已阻断执行，避免 customer_no = NULL 恒为 UNKNOWN 静默返回 0 行伪装成\"无数据\"");
                 }
                 // 安全降级：未绑定的占位符替换为 NULL
                 out.append("NULL");

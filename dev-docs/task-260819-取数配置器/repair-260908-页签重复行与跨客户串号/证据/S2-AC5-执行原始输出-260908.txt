@@ -1,0 +1,112 @@
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.cpq.repair260908.CustomerCodeUnboundGuardAcTest
+2026-09-08 19:49:24.239 INFO  [org.hib.orm.jpa] (main) HHH008540: Processing PersistenceUnitInfo [name: <default>]
+2026-09-08 19:49:24.268 INFO  [org.hib.orm.core] (main) HHH000001: Hibernate ORM core version 7.2.9.Final
+2026-09-08 19:49:24.431 INFO  [org.hib.orm.con.pooling] (main) HHH10001005: Database info:
+	Database JDBC URL [undefined/unknown]
+	Database driver: undefined/unknown
+	Database dialect: PostgreSQLDialect
+	Database version: 13.0
+	Default catalog/schema: unknown/unknown
+	Autocommit mode: undefined/unknown
+	Isolation level: <unknown>
+	JDBC fetch size: undefined/unknown
+	Pool: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-09-08 19:49:24.975 INFO  [org.hib.val.int.uti.Version] (main) HV000001: Hibernate Validator 9.1.0.Final
+2026-09-08 19:49:25.122 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-09-08 19:49:25.367 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-09-08 19:49:25.497 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-09-08 19:49:25.951 INFO  [org.fly.cor.FlywayExecutor] (main) Database: jdbc:postgresql://10.177.152.12:5432/cpq_db_0724?sslmode=disable (PostgreSQL 16.13)
+2026-09-08 19:49:26.255 INFO  [org.fly.cor.int.com.DbValidate] (main) Successfully validated 416 migrations (execution time 00:00.165s)
+2026-09-08 19:49:26.528 INFO  [org.fly.cor.int.com.DbMigrate] (main) Current version of schema "public": 433
+2026-09-08 19:49:26.528 WARN  [org.fly.cor.int.com.DbMigrate] (main) outOfOrder mode is active. Migration of schema "public" may not be reproducible.
+2026-09-08 19:49:26.544 INFO  [org.fly.cor.int.com.DbMigrate] (main) Schema "public" is up to date. No migration necessary.
+2026-09-08 19:49:26.631 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-09-08 19:49:26.631 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-09-08 19:49:27.153 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-09-08 19:49:27.352 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 52 entries upserted
+2026-09-08 19:49:27.427 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-09-08 19:49:27.539 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1765 列（3 套数据集）
+2026-09-08 19:49:27.935 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=55 edges=76 tabViews=48
+2026-09-08 19:49:27.965 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-09-08 19:49:27.978 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-08 19:49:28.019 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：55 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-08 19:49:28.019 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 151 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-09-08 19:49:28.114 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (executor-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-09-08 19:49:28.209 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-09-08 19:49:28.277 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 8.864s. Listening on: http://localhost:58854
+2026-09-08 19:49:28.278 INFO  [io.quarkus] (main) Profile test activated. 
+2026-09-08 19:49:28.278 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+[S-2·fixture] component=07cce138-a344-4de5-8f97-83809dc2e546 view=$r260908s2_b3dfd8 料号前缀=R260908S2b3dfd8 myCust=R260908S2Cb3dfd8 otherCust=R260908S2Xb3dfd8
+---- AC-5 反面② QuoteViewValidationService ----
+  total=1 failed=0 (全局数字仅供报告，不作断言)
+[S-2] ✅ 反面② 通过：$r260908s2_b3dfd8 未出现在失败清单中
+[S-2·residue] unit_price=0 sql_view=0 component=0
+[S-2·fixture] component=a9349544-e60f-492e-8fdb-3f4be89fef0d view=$r260908s2_b3dfd8 料号前缀=R260908S2b3dfd8 myCust=R260908S2Cb3dfd8 otherCust=R260908S2Xb3dfd8
+2026-09-08 19:49:29.250 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (main) [SqlViewExecutor] driver path=$r260908s2_b3dfd8 rows=2
+---- AC-5 量具自证：绑 customerCode=R260908S2Cb3dfd8 ----
+  {_销售料号=R260908S2b3dfd8A, hf_part_no=R260908S2b3dfd8A, _单价=11.000000000000, _客户编号=R260908S2Cb3dfd8}
+  {_销售料号=R260908S2b3dfd8B, hf_part_no=R260908S2b3dfd8B, _单价=22.000000000000, _客户编号=R260908S2Cb3dfd8}
+[S-2] ✅ 量具自证通过：完整参数下 2 行，全部属 R260908S2Cb3dfd8
+[S-2·residue] unit_price=0 sql_view=0 component=0
+[S-2·fixture] component=f0e74930-ad90-43cd-accf-aff75ddd343a view=$r260908s2_b3dfd8 料号前缀=R260908S2b3dfd8 myCust=R260908S2Cb3dfd8 otherCust=R260908S2Xb3dfd8
+---- AC-5 反面③ CostingTreeSqlValidator ----
+  含 :customerCode ⇒ ok=true message=ok
+  量具自证（缺输出列）⇒ ok=false message=递归 SQL 缺输出列: bom_version
+[S-2] ✅ 反面③ 通过（且量具已验明正身：校验器会红）
+[S-2·residue] unit_price=0 sql_view=0 component=0
+[S-2·fixture] component=e3cda497-7e73-4432-ac58-376f17c57e7c view=$r260908s2_b3dfd8 料号前缀=R260908S2b3dfd8 myCust=R260908S2Cb3dfd8 otherCust=R260908S2Xb3dfd8
+2026-09-08 19:49:29.759 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (main) [SqlViewExecutor] driver path=$r260908s2_b3dfd8 rows=2
+[S-2·AC-5 第1步] 完整参数 ⇒ 2 行（量具已验明正身）
+---- AC-5 【形态①：RuntimeContext 无 quotation 上下文】----
+  exception = com.cpq.common.exception.BusinessException
+  status    = 400
+  message   = BusinessException: SQL 视图引用了 :customerCode 但当前渲染上下文未提供该参数（namedParams 里既没有 customerCode，也没有能反查出 customer.code 的 customerId）——已阻断执行，避免 customer_no = NULL 恒为 UNKNOWN 静默返回 0 行伪装成"无数据" | 
+---- AC-5 【形态②：有 quotation 上下文但 customerCode=null】----
+  exception = com.cpq.common.exception.BusinessException
+  status    = 400
+  message   = BusinessException: SQL 视图引用了 :customerCode 但当前渲染上下文未提供该参数（namedParams 里既没有 customerCode，也没有能反查出 customer.code 的 customerId）——已阻断执行，避免 customer_no = NULL 恒为 UNKNOWN 静默返回 0 行伪装成"无数据" | 
+[S-2·residue] unit_price=0 sql_view=0 component=0
+[S-2·fixture] component=a228c713-bf39-4432-bf21-4312c845b389 view=$r260908s2_b3dfd8 料号前缀=R260908S2b3dfd8 myCust=R260908S2Cb3dfd8 otherCust=R260908S2Xb3dfd8
+[S-2] ✅ 状态码解析器已标定
+[S-2·residue] unit_price=0 sql_view=0 component=0
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 6.594 s -- in com.cpq.repair260908.CustomerCodeUnboundGuardAcTest
+[INFO] Running com.cpq.repair260908.PreviewLiteralBindingAcTest
+[S-2·AC-5①] 坐标 QUOTE/主件/ node=MATERIAL partNoCol=material_no
+2026-09-08 19:49:31.337 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-1) User logged in: admin role=SYSTEM_ADMIN
+2026-09-08 19:49:31.376 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-1) Session created for user: admin
+2026-09-08 19:49:31.541 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=null requestedTabType=null currentTabType=null builderTreeFlag=null
+2026-09-08 19:49:31.557 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Created component id=8d439bff-da89-490a-a637-814cc18b8d9c code=COMP-2308
+---- AC-5 反面① 编译产物 ----
+SELECT
+  dqm.material_no AS hf_part_no,
+  dqm.material_no AS "_物料_销售料号"
+FROM ds_quote_material dqm
+WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode
+ORDER BY dqm.material_no
+2026-09-08 19:49:32.163 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-1) [costing-tree] bind :customerCode = null（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+---- AC-5 反面① preview 响应 ----
+  status=200
+  body={"rowCount":1,"columns":["hf_part_no","_物料_销售料号"],"rows":[{"hf_part_no":"R260908S285e63bP","_物料_销售料号":"R260908S285e63bP"}],"elapsedMs":21,"diagnostics":[]}
+[S-2] ✅ AC-5 反面① 通过：编译产物含 :customerCode，preview 传全参 200 且含 R260908S285e63bP（共 1 行）
+2026-09-08 19:49:32.369 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-1) [costing-tree] bind :customerCode = null（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+2026-09-08 19:49:32.390 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: 预览无法执行：编译产物里的占位符「customerCode」没有被预览路径绑定。这是预览路径（裸 JDBC）与渲染路径（SqlViewExecutor）能力不对等导致的，属后端缺陷，请连同本条信息报告开发
+[S-2·诊断] preview 不传 customerCode ⇒ status=500 body={"code":"PREVIEW_UNBOUND_PLACEHOLDER","message":"预览无法执行：编译产物里的占位符「customerCode」没有被预览路径绑定。这是预览路径（裸 JDBC）与渲染路径（SqlViewExecutor）能力不对等导致的，属后端缺陷，请连同本条信息报告开发","placeholders":"customerCode"}
+  ↑ 仅供报告：这是 /preview 自己的缺变量提示，不是 B-2 的硬阻断，本类不据此断言。
+[S-2·residue] ds_quote_material=0 component=0
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.217 s -- in com.cpq.repair260908.PreviewLiteralBindingAcTest
+2026-09-08 19:49:32.490 INFO  [io.quarkus] (main) cpq-backend stopped in 0.022s
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  25.002 s
+[INFO] Finished at: 2026-09-08T19:49:32-07:00
+[INFO] ------------------------------------------------------------------------

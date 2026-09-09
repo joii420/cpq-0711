@@ -1,0 +1,643 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------------------< com.cpq:cpq-backend >-------------------------
+[INFO] Building cpq-backend 1.0.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[WARNING] The artifact io.quarkus:quarkus-junit5:jar:3.34.3 has been relocated to io.quarkus:quarkus-junit:jar:3.34.3: Update the artifactId in your project build file. Refer to https://github.com/quarkusio/quarkus/wiki/Migration-Guide-3.31 for more information.
+[WARNING] The artifact io.quarkus:quarkus-junit5-mockito:jar:3.34.3 has been relocated to io.quarkus:quarkus-junit-mockito:jar:3.34.3: Update the artifactId in your project build file. Refer to https://github.com/quarkusio/quarkus/wiki/Migration-Guide-3.31 for more information.
+[INFO] 
+[INFO] --- antlr4:4.13.1:antlr4 (antlr4-generate) @ cpq-backend ---
+[INFO] No grammars to process
+[INFO] ANTLR 4: Processing source directory /home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-backend/src/main/antlr4
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ cpq-backend ---
+[INFO] Copying 423 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- quarkus:3.34.3:generate-code (default) @ cpq-backend ---
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ cpq-backend ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 979 source files with javac [debug parameters release 21] to target/classes
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/MaterialCustomerMapRepository.java:[208,16] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/MaterialCustomerMapRepository.java:[385,16] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/QuoteMaterialNoAllocator.java:[39,19] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/QuoteMaterialNoAllocator.java:[79,17] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/ElementRecoveryDiscountRepository.java:[56,33] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/ElementRecoveryDiscountRepository.java:[121,17] deprecated item is not annotated with @Deprecated
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/Q02CustomerMapHandler.java: Some input files use or override a deprecated API.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/Q02CustomerMapHandler.java: Recompile with -Xlint:deprecation for details.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/V6QuotationCommitService.java: Some input files use unchecked or unsafe operations.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/V6QuotationCommitService.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- quarkus:3.34.3:generate-code-tests (default) @ cpq-backend ---
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ cpq-backend ---
+[INFO] Copying 22 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ cpq-backend ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 663 source files with javac [debug parameters release 21] to target/test-classes
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/ElementRecoveryBatchUpdateEquivTest.java: Some input files use or override a deprecated API.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/ElementRecoveryBatchUpdateEquivTest.java: Recompile with -Xlint:deprecation for details.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-backend/src/test/java/com/cpq/basicdata/v6/pricing/P01P02PricingPriceVersioningTest.java: Some input files use unchecked or unsafe operations.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-backend/src/test/java/com/cpq/basicdata/v6/pricing/P01P02PricingPriceVersioningTest.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ cpq-backend ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.cpq.repair260908.Ac11AxisScopeMissingFallbackTest
+2026-09-09 01:03:25.779 INFO  [org.hib.orm.jpa] (main) HHH008540: Processing PersistenceUnitInfo [name: <default>]
+2026-09-09 01:03:25.804 INFO  [org.hib.orm.core] (main) HHH000001: Hibernate ORM core version 7.2.9.Final
+2026-09-09 01:03:25.937 INFO  [org.hib.orm.con.pooling] (main) HHH10001005: Database info:
+	Database JDBC URL [undefined/unknown]
+	Database driver: undefined/unknown
+	Database dialect: PostgreSQLDialect
+	Database version: 13.0
+	Default catalog/schema: unknown/unknown
+	Autocommit mode: undefined/unknown
+	Isolation level: <unknown>
+	JDBC fetch size: undefined/unknown
+	Pool: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-09-09 01:03:26.413 INFO  [org.hib.val.int.uti.Version] (main) HV000001: Hibernate Validator 9.1.0.Final
+2026-09-09 01:03:26.497 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-09-09 01:03:26.758 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-09-09 01:03:26.868 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-09-09 01:03:27.240 INFO  [org.fly.cor.FlywayExecutor] (main) Database: jdbc:postgresql://10.177.152.12:5432/cpq_db_0724?sslmode=disable (PostgreSQL 16.13)
+2026-09-09 01:03:27.544 INFO  [org.fly.cor.int.com.DbValidate] (main) Successfully validated 416 migrations (execution time 00:00.144s)
+2026-09-09 01:03:27.774 INFO  [org.fly.cor.int.com.DbMigrate] (main) Current version of schema "public": 433
+2026-09-09 01:03:27.774 WARN  [org.fly.cor.int.com.DbMigrate] (main) outOfOrder mode is active. Migration of schema "public" may not be reproducible.
+2026-09-09 01:03:27.799 INFO  [org.fly.cor.int.com.DbMigrate] (main) Schema "public" is up to date. No migration necessary.
+2026-09-09 01:03:27.927 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-09-09 01:03:27.927 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-09-09 01:03:28.453 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-09-09 01:03:28.612 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 52 entries upserted
+2026-09-09 01:03:28.672 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-09-09 01:03:28.755 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1765 列（3 套数据集）
+2026-09-09 01:03:29.162 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=55 edges=76 tabViews=48
+2026-09-09 01:03:29.195 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-09-09 01:03:29.221 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-09 01:03:29.243 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：55 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-09 01:03:29.244 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 151 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-09-09 01:03:29.448 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-09-09 01:03:29.520 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 8.447s. Listening on: http://localhost:8094
+2026-09-09 01:03:29.520 INFO  [io.quarkus] (main) Profile test activated. 
+2026-09-09 01:03:29.520 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+[S-3·fixture] A11SELF comp=f6bcf07b-8f8a-48cd-aec9-dbcffbbe18ff view=r260908s3_a879a8_a11self tpl=3f163994-3262-425a-980d-4d61d3aa8c4e quo=ef8a65f4-547b-47fb-8cca-2f1e126e81dd part=S0001 liveAxis=SELF snapAxis=SELF
+2026-09-09 01:03:31.756 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-2) User logged in: admin role=SYSTEM_ADMIN
+2026-09-09 01:03:31.806 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-2) Session created for user: admin
+2026-09-09 01:03:32.157 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=f6bcf07b-8f8a-48cd-aec9-dbcffbbe18ff coord=(主件,,QUOTE) hit graphTabType=主件 -> semantic=PLAIN
+2026-09-09 01:03:32.157 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=eb834021-ed65-4fc9-a57f-6b1662279d5d coord=(BOM,,QUOTE) hit graphTabType=BOM -> semantic=TREE
+2026-09-09 01:03:32.158 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=ba81142a-5ddb-4987-898f-8912d07f1095 coord=(材质元素,,QUOTE) hit graphTabType=材质元素 -> semantic=MATERIAL_ELEMENT
+2026-09-09 01:03:32.158 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=9cc11850-f425-45b7-8d4b-70705fde7dcf coord=(费用类,SELF_PROCESS_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-09 01:03:32.328 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver cache] evictAll called, estimated entries before evict=0
+2026-09-09 01:03:32.399 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] bind :customerCode = CUST-0004（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+2026-09-09 01:03:32.648 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=3f163994-3262-425a-980d-4d61d3aa8c4e name=r260908s3_a879a8_a11self
+2026-09-09 01:03:32.648 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver 合桶] axisScope=SELF ⇒ 不加宽 partNos（1 个根料号原样用），component=R260908S3_a879a8_A11SELF
+2026-09-09 01:03:32.650 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=3f163994-3262-425a-980d-4d61d3aa8c4e name=r260908s3_a879a8_a11self
+2026-09-09 01:03:32.695 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$r260908s3_a879a8_a11self rows=1
+2026-09-09 01:03:32.701 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=f6bcf07b-8f8a-48cd-aec9-dbcffbbe18ff eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:32.731 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=3f163994-3262-425a-980d-4d61d3aa8c4e name=builder_ba81142a5ddb
+2026-09-09 01:03:32.732 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=3f163994-3262-425a-980d-4d61d3aa8c4e name=builder_ba81142a5ddb
+2026-09-09 01:03:32.765 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_ba81142a5ddb rows=2
+2026-09-09 01:03:32.768 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=ba81142a-5ddb-4987-898f-8912d07f1095 eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:32.796 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=3f163994-3262-425a-980d-4d61d3aa8c4e name=builder_9cc11850f425
+2026-09-09 01:03:32.797 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=3f163994-3262-425a-980d-4d61d3aa8c4e name=builder_9cc11850f425
+2026-09-09 01:03:32.812 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_9cc11850f425 rows=1
+2026-09-09 01:03:32.813 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=9cc11850-f425-45b7-8d4b-70705fde7dcf eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:32.813 INFO  [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] quotation=ef8a65f4-547b-47fb-8cca-2f1e126e81dd eligibleComps=3 totalComps=4 distinctParts=1
+2026-09-09 01:03:32.830 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [task-0806 B18] driverComps via PublishedTemplateReader templateId=3f163994-3262-425a-980d-4d61d3aa8c4e status=PUBLISHED count=4
+2026-09-09 01:03:32.845 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] bind :customerCode = CUST-0004（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+2026-09-09 01:03:33.003 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=f6bcf07b-8f8a-48cd-aec9-dbcffbbe18ff code=R260908S3_a879a8_A11SELF dataDriverPath=$r260908s3_a879a8_a11self (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:33.003 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$r260908s3_a879a8_a11self
+2026-09-09 01:03:33.006 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=3f163994-3262-425a-980d-4d61d3aa8c4e name=r260908s3_a879a8_a11self
+2026-09-09 01:03:33.038 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$r260908s3_a879a8_a11self rows=3
+2026-09-09 01:03:33.039 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=f6bcf07b-8f8a-48cd-aec9-dbcffbbe18ff code=R260908S3_a879a8_A11SELF rows=3 partVersion=null
+2026-09-09 01:03:33.040 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 f6bcf07b-8f8a-48cd-aec9-dbcffbbe18ff 的 $view 返回 3 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:33.055 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=eb834021-ed65-4fc9-a57f-6b1662279d5d code=COMP-2294 dataDriverPath=$builder_eb834021ed65 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:33.055 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_eb834021ed65
+2026-09-09 01:03:33.056 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=3f163994-3262-425a-980d-4d61d3aa8c4e name=builder_eb834021ed65
+2026-09-09 01:03:33.070 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_eb834021ed65 rows=5
+2026-09-09 01:03:33.070 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=eb834021-ed65-4fc9-a57f-6b1662279d5d code=COMP-2294 rows=5 partVersion=null
+2026-09-09 01:03:33.071 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=ba81142a-5ddb-4987-898f-8912d07f1095 code=COMP-2295 dataDriverPath=$builder_ba81142a5ddb (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:33.071 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_ba81142a5ddb
+2026-09-09 01:03:33.072 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=3f163994-3262-425a-980d-4d61d3aa8c4e name=builder_ba81142a5ddb
+2026-09-09 01:03:33.100 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_ba81142a5ddb rows=2
+2026-09-09 01:03:33.100 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=ba81142a-5ddb-4987-898f-8912d07f1095 code=COMP-2295 rows=2 partVersion=null
+2026-09-09 01:03:33.100 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 ba81142a-5ddb-4987-898f-8912d07f1095 的 $view 返回 2 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:33.101 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=9cc11850-f425-45b7-8d4b-70705fde7dcf code=COMP-2296 dataDriverPath=$builder_9cc11850f425 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:33.101 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_9cc11850f425
+2026-09-09 01:03:33.101 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=3f163994-3262-425a-980d-4d61d3aa8c4e name=builder_9cc11850f425
+2026-09-09 01:03:33.115 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_9cc11850f425 rows=1
+2026-09-09 01:03:33.116 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=9cc11850-f425-45b7-8d4b-70705fde7dcf code=COMP-2296 rows=1 partVersion=null
+2026-09-09 01:03:33.116 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 9cc11850-f425-45b7-8d4b-70705fde7dcf 的 $view 返回 1 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:33.180 DEBUG [com.cpq.quo.ser.MasterPartTypeService] (executor-thread-2) [master-part-type] parts=4 recipeHit=1 materialHit=3 sql=2
+[S-3·render] A11SELF → HTTP 200 body={"lineItems":[],"fingerprintMatched":false,"reusedHfPartNos":[],"productType":null,"reusedProductInfo":null,"structureVersion":null,"editRowMismatchCount":0,"editRowMismatches":[],"editRowMismatchTruncated":false}
+[S-3·fixture] A11CLO comp=0352977e-6a7a-4940-aee1-7c12c95d972a view=r260908s3_a879a8_a11clo tpl=c343b8fc-07c6-405b-96b7-aab89163b373 quo=b695c262-6cd6-4a8b-b38c-2e0a978296f7 part=S0001 liveAxis=CLOSURE snapAxis=CLOSURE
+2026-09-09 01:03:34.390 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=0352977e-6a7a-4940-aee1-7c12c95d972a coord=(主件,,QUOTE) hit graphTabType=主件 -> semantic=PLAIN
+2026-09-09 01:03:34.390 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=eb834021-ed65-4fc9-a57f-6b1662279d5d coord=(BOM,,QUOTE) hit graphTabType=BOM -> semantic=TREE
+2026-09-09 01:03:34.390 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=ba81142a-5ddb-4987-898f-8912d07f1095 coord=(材质元素,,QUOTE) hit graphTabType=材质元素 -> semantic=MATERIAL_ELEMENT
+2026-09-09 01:03:34.390 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=9cc11850-f425-45b7-8d4b-70705fde7dcf coord=(费用类,SELF_PROCESS_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-09 01:03:34.487 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver cache] evictAll called, estimated entries before evict=0
+2026-09-09 01:03:34.522 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] bind :customerCode = CUST-0004（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+2026-09-09 01:03:34.735 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=c343b8fc-07c6-405b-96b7-aab89163b373 name=r260908s3_a879a8_a11clo
+2026-09-09 01:03:34.736 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=c343b8fc-07c6-405b-96b7-aab89163b373 name=r260908s3_a879a8_a11clo
+2026-09-09 01:03:34.760 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$r260908s3_a879a8_a11clo rows=3
+2026-09-09 01:03:34.761 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=0352977e-6a7a-4940-aee1-7c12c95d972a eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:34.817 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=c343b8fc-07c6-405b-96b7-aab89163b373 name=builder_ba81142a5ddb
+2026-09-09 01:03:34.817 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=c343b8fc-07c6-405b-96b7-aab89163b373 name=builder_ba81142a5ddb
+2026-09-09 01:03:34.848 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_ba81142a5ddb rows=2
+2026-09-09 01:03:34.849 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=ba81142a-5ddb-4987-898f-8912d07f1095 eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:34.878 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=c343b8fc-07c6-405b-96b7-aab89163b373 name=builder_9cc11850f425
+2026-09-09 01:03:34.879 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=c343b8fc-07c6-405b-96b7-aab89163b373 name=builder_9cc11850f425
+2026-09-09 01:03:34.908 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_9cc11850f425 rows=1
+2026-09-09 01:03:34.909 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=9cc11850-f425-45b7-8d4b-70705fde7dcf eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:34.909 INFO  [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] quotation=b695c262-6cd6-4a8b-b38c-2e0a978296f7 eligibleComps=3 totalComps=4 distinctParts=1
+2026-09-09 01:03:34.928 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [task-0806 B18] driverComps via PublishedTemplateReader templateId=c343b8fc-07c6-405b-96b7-aab89163b373 status=PUBLISHED count=4
+2026-09-09 01:03:34.940 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] bind :customerCode = CUST-0004（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+2026-09-09 01:03:35.106 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=0352977e-6a7a-4940-aee1-7c12c95d972a code=R260908S3_a879a8_A11CLO dataDriverPath=$r260908s3_a879a8_a11clo (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:35.106 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$r260908s3_a879a8_a11clo
+2026-09-09 01:03:35.107 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=c343b8fc-07c6-405b-96b7-aab89163b373 name=r260908s3_a879a8_a11clo
+2026-09-09 01:03:35.117 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$r260908s3_a879a8_a11clo rows=3
+2026-09-09 01:03:35.118 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=0352977e-6a7a-4940-aee1-7c12c95d972a code=R260908S3_a879a8_A11CLO rows=3 partVersion=null
+2026-09-09 01:03:35.118 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 0352977e-6a7a-4940-aee1-7c12c95d972a 的 $view 返回 3 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:35.125 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=eb834021-ed65-4fc9-a57f-6b1662279d5d code=COMP-2294 dataDriverPath=$builder_eb834021ed65 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:35.126 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_eb834021ed65
+2026-09-09 01:03:35.126 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=c343b8fc-07c6-405b-96b7-aab89163b373 name=builder_eb834021ed65
+2026-09-09 01:03:35.144 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_eb834021ed65 rows=5
+2026-09-09 01:03:35.145 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=eb834021-ed65-4fc9-a57f-6b1662279d5d code=COMP-2294 rows=5 partVersion=null
+2026-09-09 01:03:35.145 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=ba81142a-5ddb-4987-898f-8912d07f1095 code=COMP-2295 dataDriverPath=$builder_ba81142a5ddb (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:35.145 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_ba81142a5ddb
+2026-09-09 01:03:35.145 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=c343b8fc-07c6-405b-96b7-aab89163b373 name=builder_ba81142a5ddb
+2026-09-09 01:03:35.175 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_ba81142a5ddb rows=2
+2026-09-09 01:03:35.176 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=ba81142a-5ddb-4987-898f-8912d07f1095 code=COMP-2295 rows=2 partVersion=null
+2026-09-09 01:03:35.176 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 ba81142a-5ddb-4987-898f-8912d07f1095 的 $view 返回 2 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:35.176 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=9cc11850-f425-45b7-8d4b-70705fde7dcf code=COMP-2296 dataDriverPath=$builder_9cc11850f425 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:35.176 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_9cc11850f425
+2026-09-09 01:03:35.177 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=c343b8fc-07c6-405b-96b7-aab89163b373 name=builder_9cc11850f425
+2026-09-09 01:03:35.193 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_9cc11850f425 rows=1
+2026-09-09 01:03:35.193 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=9cc11850-f425-45b7-8d4b-70705fde7dcf code=COMP-2296 rows=1 partVersion=null
+2026-09-09 01:03:35.194 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 9cc11850-f425-45b7-8d4b-70705fde7dcf 的 $view 返回 1 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:35.212 DEBUG [com.cpq.quo.ser.MasterPartTypeService] (executor-thread-2) [master-part-type] parts=4 recipeHit=1 materialHit=3 sql=2
+[S-3·render] A11CLO → HTTP 200 body={"lineItems":[],"fingerprintMatched":false,"reusedHfPartNos":[],"productType":null,"reusedProductInfo":null,"structureVersion":null,"editRowMismatchCount":0,"editRowMismatches":[],"editRowMismatchTruncated":false}
+[AC-11·量具自证] SELF    → 1 行 [S0001]
+[AC-11·量具自证] CLOSURE → 3 行 [S0001, S0002, S0003]
+[S-3·fixture] A11K1 comp=e12fe17f-45b2-4539-a067-42aadb113758 view=r260908s3_a879a8_a11k1 tpl=3ce50c94-d770-46c6-a08b-fa0f04a39d20 quo=4d0d5210-732c-4901-b71f-61b12d45c067 part=S0001 liveAxis=SELF snapAxis=SELF
+2026-09-09 01:03:36.770 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=e12fe17f-45b2-4539-a067-42aadb113758 coord=(主件,,QUOTE) hit graphTabType=主件 -> semantic=PLAIN
+2026-09-09 01:03:36.770 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=eb834021-ed65-4fc9-a57f-6b1662279d5d coord=(BOM,,QUOTE) hit graphTabType=BOM -> semantic=TREE
+2026-09-09 01:03:36.770 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=ba81142a-5ddb-4987-898f-8912d07f1095 coord=(材质元素,,QUOTE) hit graphTabType=材质元素 -> semantic=MATERIAL_ELEMENT
+2026-09-09 01:03:36.770 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=9cc11850-f425-45b7-8d4b-70705fde7dcf coord=(费用类,SELF_PROCESS_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-09 01:03:36.915 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver cache] evictAll called, estimated entries before evict=0
+2026-09-09 01:03:36.944 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] bind :customerCode = CUST-0004（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+2026-09-09 01:03:37.190 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=3ce50c94-d770-46c6-a08b-fa0f04a39d20 name=r260908s3_a879a8_a11k1
+2026-09-09 01:03:37.190 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver 合桶] axisScope=SELF ⇒ 不加宽 partNos（1 个根料号原样用），component=R260908S3_a879a8_A11K1
+2026-09-09 01:03:37.191 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=3ce50c94-d770-46c6-a08b-fa0f04a39d20 name=r260908s3_a879a8_a11k1
+2026-09-09 01:03:37.220 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$r260908s3_a879a8_a11k1 rows=1
+2026-09-09 01:03:37.221 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=e12fe17f-45b2-4539-a067-42aadb113758 eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:37.248 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=3ce50c94-d770-46c6-a08b-fa0f04a39d20 name=builder_ba81142a5ddb
+2026-09-09 01:03:37.249 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=3ce50c94-d770-46c6-a08b-fa0f04a39d20 name=builder_ba81142a5ddb
+2026-09-09 01:03:37.285 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_ba81142a5ddb rows=2
+2026-09-09 01:03:37.286 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=ba81142a-5ddb-4987-898f-8912d07f1095 eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:37.335 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=3ce50c94-d770-46c6-a08b-fa0f04a39d20 name=builder_9cc11850f425
+2026-09-09 01:03:37.335 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=3ce50c94-d770-46c6-a08b-fa0f04a39d20 name=builder_9cc11850f425
+2026-09-09 01:03:37.344 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_9cc11850f425 rows=1
+2026-09-09 01:03:37.345 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=9cc11850-f425-45b7-8d4b-70705fde7dcf eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:37.345 INFO  [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] quotation=4d0d5210-732c-4901-b71f-61b12d45c067 eligibleComps=3 totalComps=4 distinctParts=1
+2026-09-09 01:03:37.360 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [task-0806 B18] driverComps via PublishedTemplateReader templateId=3ce50c94-d770-46c6-a08b-fa0f04a39d20 status=PUBLISHED count=4
+2026-09-09 01:03:37.374 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] bind :customerCode = CUST-0004（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+2026-09-09 01:03:37.532 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=e12fe17f-45b2-4539-a067-42aadb113758 code=R260908S3_a879a8_A11K1 dataDriverPath=$r260908s3_a879a8_a11k1 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:37.533 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$r260908s3_a879a8_a11k1
+2026-09-09 01:03:37.533 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=3ce50c94-d770-46c6-a08b-fa0f04a39d20 name=r260908s3_a879a8_a11k1
+2026-09-09 01:03:37.546 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$r260908s3_a879a8_a11k1 rows=3
+2026-09-09 01:03:37.547 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=e12fe17f-45b2-4539-a067-42aadb113758 code=R260908S3_a879a8_A11K1 rows=3 partVersion=null
+2026-09-09 01:03:37.547 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 e12fe17f-45b2-4539-a067-42aadb113758 的 $view 返回 3 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:37.560 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=eb834021-ed65-4fc9-a57f-6b1662279d5d code=COMP-2294 dataDriverPath=$builder_eb834021ed65 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:37.560 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_eb834021ed65
+2026-09-09 01:03:37.561 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=3ce50c94-d770-46c6-a08b-fa0f04a39d20 name=builder_eb834021ed65
+2026-09-09 01:03:37.576 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_eb834021ed65 rows=5
+2026-09-09 01:03:37.576 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=eb834021-ed65-4fc9-a57f-6b1662279d5d code=COMP-2294 rows=5 partVersion=null
+2026-09-09 01:03:37.576 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=ba81142a-5ddb-4987-898f-8912d07f1095 code=COMP-2295 dataDriverPath=$builder_ba81142a5ddb (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:37.577 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_ba81142a5ddb
+2026-09-09 01:03:37.577 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=3ce50c94-d770-46c6-a08b-fa0f04a39d20 name=builder_ba81142a5ddb
+2026-09-09 01:03:37.606 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_ba81142a5ddb rows=2
+2026-09-09 01:03:37.606 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=ba81142a-5ddb-4987-898f-8912d07f1095 code=COMP-2295 rows=2 partVersion=null
+2026-09-09 01:03:37.606 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 ba81142a-5ddb-4987-898f-8912d07f1095 的 $view 返回 2 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:37.607 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=9cc11850-f425-45b7-8d4b-70705fde7dcf code=COMP-2296 dataDriverPath=$builder_9cc11850f425 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:37.607 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_9cc11850f425
+2026-09-09 01:03:37.607 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=3ce50c94-d770-46c6-a08b-fa0f04a39d20 name=builder_9cc11850f425
+2026-09-09 01:03:37.622 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_9cc11850f425 rows=1
+2026-09-09 01:03:37.622 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=9cc11850-f425-45b7-8d4b-70705fde7dcf code=COMP-2296 rows=1 partVersion=null
+2026-09-09 01:03:37.622 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 9cc11850-f425-45b7-8d4b-70705fde7dcf 的 $view 返回 1 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:37.653 DEBUG [com.cpq.quo.ser.MasterPartTypeService] (executor-thread-2) [master-part-type] parts=4 recipeHit=1 materialHit=3 sql=2
+[S-3·render] A11K1 → HTTP 200 body={"lineItems":[],"fingerprintMatched":false,"reusedHfPartNos":[],"productType":null,"reusedProductInfo":null,"structureVersion":null,"editRowMismatchCount":0,"editRowMismatches":[],"editRowMismatchTruncated":false}
+[S-3·fixture] A11K0 comp=933e3758-dfa0-42c5-bdd2-8471876d3935 view=r260908s3_a879a8_a11k0 tpl=aa1973e5-9a51-4a4d-838d-a07083e770bf quo=c9f4b27c-cb08-4663-9c01-f1b0252a66b9 part=S0001 liveAxis=SELF snapAxis=null
+2026-09-09 01:03:39.104 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=933e3758-dfa0-42c5-bdd2-8471876d3935 coord=(主件,,QUOTE) hit graphTabType=主件 -> semantic=PLAIN
+2026-09-09 01:03:39.104 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=eb834021-ed65-4fc9-a57f-6b1662279d5d coord=(BOM,,QUOTE) hit graphTabType=BOM -> semantic=TREE
+2026-09-09 01:03:39.104 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=ba81142a-5ddb-4987-898f-8912d07f1095 coord=(材质元素,,QUOTE) hit graphTabType=材质元素 -> semantic=MATERIAL_ELEMENT
+2026-09-09 01:03:39.104 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=9cc11850-f425-45b7-8d4b-70705fde7dcf coord=(费用类,SELF_PROCESS_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-09 01:03:39.349 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver cache] evictAll called, estimated entries before evict=0
+2026-09-09 01:03:39.381 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] bind :customerCode = CUST-0004（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+2026-09-09 01:03:39.581 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=aa1973e5-9a51-4a4d-838d-a07083e770bf name=r260908s3_a879a8_a11k0
+2026-09-09 01:03:39.582 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=aa1973e5-9a51-4a4d-838d-a07083e770bf name=r260908s3_a879a8_a11k0
+2026-09-09 01:03:39.611 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$r260908s3_a879a8_a11k0 rows=3
+2026-09-09 01:03:39.612 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=933e3758-dfa0-42c5-bdd2-8471876d3935 eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:39.642 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=aa1973e5-9a51-4a4d-838d-a07083e770bf name=builder_ba81142a5ddb
+2026-09-09 01:03:39.642 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=aa1973e5-9a51-4a4d-838d-a07083e770bf name=builder_ba81142a5ddb
+2026-09-09 01:03:39.674 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_ba81142a5ddb rows=2
+2026-09-09 01:03:39.675 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=ba81142a-5ddb-4987-898f-8912d07f1095 eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:39.699 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=aa1973e5-9a51-4a4d-838d-a07083e770bf name=builder_9cc11850f425
+2026-09-09 01:03:39.699 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=aa1973e5-9a51-4a4d-838d-a07083e770bf name=builder_9cc11850f425
+2026-09-09 01:03:39.715 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_9cc11850f425 rows=1
+2026-09-09 01:03:39.715 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=9cc11850-f425-45b7-8d4b-70705fde7dcf eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:39.715 INFO  [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] quotation=c9f4b27c-cb08-4663-9c01-f1b0252a66b9 eligibleComps=3 totalComps=4 distinctParts=1
+2026-09-09 01:03:39.731 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [task-0806 B18] driverComps via PublishedTemplateReader templateId=aa1973e5-9a51-4a4d-838d-a07083e770bf status=PUBLISHED count=4
+2026-09-09 01:03:39.743 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] bind :customerCode = CUST-0004（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+2026-09-09 01:03:39.907 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=933e3758-dfa0-42c5-bdd2-8471876d3935 code=R260908S3_a879a8_A11K0 dataDriverPath=$r260908s3_a879a8_a11k0 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:39.908 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$r260908s3_a879a8_a11k0
+2026-09-09 01:03:39.908 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=aa1973e5-9a51-4a4d-838d-a07083e770bf name=r260908s3_a879a8_a11k0
+2026-09-09 01:03:39.922 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$r260908s3_a879a8_a11k0 rows=3
+2026-09-09 01:03:39.923 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=933e3758-dfa0-42c5-bdd2-8471876d3935 code=R260908S3_a879a8_A11K0 rows=3 partVersion=null
+2026-09-09 01:03:39.923 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 933e3758-dfa0-42c5-bdd2-8471876d3935 的 $view 返回 3 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:39.937 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=eb834021-ed65-4fc9-a57f-6b1662279d5d code=COMP-2294 dataDriverPath=$builder_eb834021ed65 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:39.937 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_eb834021ed65
+2026-09-09 01:03:39.937 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=aa1973e5-9a51-4a4d-838d-a07083e770bf name=builder_eb834021ed65
+2026-09-09 01:03:39.954 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_eb834021ed65 rows=5
+2026-09-09 01:03:39.954 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=eb834021-ed65-4fc9-a57f-6b1662279d5d code=COMP-2294 rows=5 partVersion=null
+2026-09-09 01:03:39.955 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=ba81142a-5ddb-4987-898f-8912d07f1095 code=COMP-2295 dataDriverPath=$builder_ba81142a5ddb (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:39.955 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_ba81142a5ddb
+2026-09-09 01:03:39.955 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=aa1973e5-9a51-4a4d-838d-a07083e770bf name=builder_ba81142a5ddb
+2026-09-09 01:03:39.984 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_ba81142a5ddb rows=2
+2026-09-09 01:03:39.985 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=ba81142a-5ddb-4987-898f-8912d07f1095 code=COMP-2295 rows=2 partVersion=null
+2026-09-09 01:03:39.985 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 ba81142a-5ddb-4987-898f-8912d07f1095 的 $view 返回 2 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:39.985 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=9cc11850-f425-45b7-8d4b-70705fde7dcf code=COMP-2296 dataDriverPath=$builder_9cc11850f425 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:39.985 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_9cc11850f425
+2026-09-09 01:03:39.986 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=aa1973e5-9a51-4a4d-838d-a07083e770bf name=builder_9cc11850f425
+2026-09-09 01:03:39.999 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_9cc11850f425 rows=1
+2026-09-09 01:03:40.000 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=9cc11850-f425-45b7-8d4b-70705fde7dcf code=COMP-2296 rows=1 partVersion=null
+2026-09-09 01:03:40.000 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 9cc11850-f425-45b7-8d4b-70705fde7dcf 的 $view 返回 1 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:40.032 DEBUG [com.cpq.quo.ser.MasterPartTypeService] (executor-thread-2) [master-part-type] parts=4 recipeHit=1 materialHit=3 sql=2
+[S-3·render] A11K0 → HTTP 200 body={"lineItems":[],"fingerprintMatched":false,"reusedHfPartNos":[],"productType":null,"reusedProductInfo":null,"structureVersion":null,"editRowMismatchCount":0,"editRowMismatches":[],"editRowMismatchTruncated":false}
+[AC-11] 快照键=SELF   → 1 行 [S0001]
+[AC-11] 快照键=<缺失> → 3 行 [S0001, S0002, S0003]
+[S-3·fixture] A11B1 comp=5d5891a2-9f1f-4ab7-a1ec-2f3cbe968c1f view=r260908s3_a879a8_a11b1 tpl=fd0efb1e-9e43-469e-b28e-3ad97362d49c quo=941687ce-e6d2-4313-bee4-d51dcbbb190b part=S0001 liveAxis=SELF snapAxis=CLOSURE
+2026-09-09 01:03:41.343 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=5d5891a2-9f1f-4ab7-a1ec-2f3cbe968c1f coord=(主件,,QUOTE) hit graphTabType=主件 -> semantic=PLAIN
+2026-09-09 01:03:41.343 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=eb834021-ed65-4fc9-a57f-6b1662279d5d coord=(BOM,,QUOTE) hit graphTabType=BOM -> semantic=TREE
+2026-09-09 01:03:41.344 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=ba81142a-5ddb-4987-898f-8912d07f1095 coord=(材质元素,,QUOTE) hit graphTabType=材质元素 -> semantic=MATERIAL_ELEMENT
+2026-09-09 01:03:41.344 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=9cc11850-f425-45b7-8d4b-70705fde7dcf coord=(费用类,SELF_PROCESS_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-09 01:03:41.485 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver cache] evictAll called, estimated entries before evict=0
+2026-09-09 01:03:41.513 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] bind :customerCode = CUST-0004（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+2026-09-09 01:03:41.746 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=fd0efb1e-9e43-469e-b28e-3ad97362d49c name=r260908s3_a879a8_a11b1
+2026-09-09 01:03:41.747 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=fd0efb1e-9e43-469e-b28e-3ad97362d49c name=r260908s3_a879a8_a11b1
+2026-09-09 01:03:41.774 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$r260908s3_a879a8_a11b1 rows=3
+2026-09-09 01:03:41.774 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=5d5891a2-9f1f-4ab7-a1ec-2f3cbe968c1f eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:41.810 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=fd0efb1e-9e43-469e-b28e-3ad97362d49c name=builder_ba81142a5ddb
+2026-09-09 01:03:41.810 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=fd0efb1e-9e43-469e-b28e-3ad97362d49c name=builder_ba81142a5ddb
+2026-09-09 01:03:41.839 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_ba81142a5ddb rows=2
+2026-09-09 01:03:41.840 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=ba81142a-5ddb-4987-898f-8912d07f1095 eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:41.864 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=fd0efb1e-9e43-469e-b28e-3ad97362d49c name=builder_9cc11850f425
+2026-09-09 01:03:41.865 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=fd0efb1e-9e43-469e-b28e-3ad97362d49c name=builder_9cc11850f425
+2026-09-09 01:03:41.877 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_9cc11850f425 rows=1
+2026-09-09 01:03:41.878 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=9cc11850-f425-45b7-8d4b-70705fde7dcf eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:41.878 INFO  [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] quotation=941687ce-e6d2-4313-bee4-d51dcbbb190b eligibleComps=3 totalComps=4 distinctParts=1
+2026-09-09 01:03:41.903 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [task-0806 B18] driverComps via PublishedTemplateReader templateId=fd0efb1e-9e43-469e-b28e-3ad97362d49c status=PUBLISHED count=4
+2026-09-09 01:03:41.916 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] bind :customerCode = CUST-0004（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+2026-09-09 01:03:42.084 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=5d5891a2-9f1f-4ab7-a1ec-2f3cbe968c1f code=R260908S3_a879a8_A11B1 dataDriverPath=$r260908s3_a879a8_a11b1 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:42.084 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$r260908s3_a879a8_a11b1
+2026-09-09 01:03:42.085 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=fd0efb1e-9e43-469e-b28e-3ad97362d49c name=r260908s3_a879a8_a11b1
+2026-09-09 01:03:42.100 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$r260908s3_a879a8_a11b1 rows=3
+2026-09-09 01:03:42.101 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=5d5891a2-9f1f-4ab7-a1ec-2f3cbe968c1f code=R260908S3_a879a8_A11B1 rows=3 partVersion=null
+2026-09-09 01:03:42.101 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 5d5891a2-9f1f-4ab7-a1ec-2f3cbe968c1f 的 $view 返回 3 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:42.114 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=eb834021-ed65-4fc9-a57f-6b1662279d5d code=COMP-2294 dataDriverPath=$builder_eb834021ed65 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:42.114 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_eb834021ed65
+2026-09-09 01:03:42.115 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=fd0efb1e-9e43-469e-b28e-3ad97362d49c name=builder_eb834021ed65
+2026-09-09 01:03:42.129 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_eb834021ed65 rows=5
+2026-09-09 01:03:42.130 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=eb834021-ed65-4fc9-a57f-6b1662279d5d code=COMP-2294 rows=5 partVersion=null
+2026-09-09 01:03:42.130 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=ba81142a-5ddb-4987-898f-8912d07f1095 code=COMP-2295 dataDriverPath=$builder_ba81142a5ddb (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:42.130 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_ba81142a5ddb
+2026-09-09 01:03:42.130 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=fd0efb1e-9e43-469e-b28e-3ad97362d49c name=builder_ba81142a5ddb
+2026-09-09 01:03:42.160 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_ba81142a5ddb rows=2
+2026-09-09 01:03:42.160 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=ba81142a-5ddb-4987-898f-8912d07f1095 code=COMP-2295 rows=2 partVersion=null
+2026-09-09 01:03:42.160 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 ba81142a-5ddb-4987-898f-8912d07f1095 的 $view 返回 2 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:42.161 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=9cc11850-f425-45b7-8d4b-70705fde7dcf code=COMP-2296 dataDriverPath=$builder_9cc11850f425 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:42.161 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_9cc11850f425
+2026-09-09 01:03:42.161 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=fd0efb1e-9e43-469e-b28e-3ad97362d49c name=builder_9cc11850f425
+2026-09-09 01:03:42.176 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_9cc11850f425 rows=1
+2026-09-09 01:03:42.177 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=9cc11850-f425-45b7-8d4b-70705fde7dcf code=COMP-2296 rows=1 partVersion=null
+2026-09-09 01:03:42.177 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 9cc11850-f425-45b7-8d4b-70705fde7dcf 的 $view 返回 1 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:42.210 DEBUG [com.cpq.quo.ser.MasterPartTypeService] (executor-thread-2) [master-part-type] parts=4 recipeHit=1 materialHit=3 sql=2
+[S-3·render] A11B1 → HTTP 200 body={"lineItems":[],"fingerprintMatched":false,"reusedHfPartNos":[],"productType":null,"reusedProductInfo":null,"structureVersion":null,"editRowMismatchCount":0,"editRowMismatches":[],"editRowMismatchTruncated":false}
+[S-3·fixture] A11B0 comp=be590c29-1e5f-4d63-a9bd-7dc5c6b3d58d view=r260908s3_a879a8_a11b0 tpl=1efd32af-8a8c-46dd-ac99-84ad6abd345f quo=ec7e09a1-d0e9-47f5-b8c1-8637d72f378c part=S0001 liveAxis=SELF snapAxis=null
+2026-09-09 01:03:43.601 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=be590c29-1e5f-4d63-a9bd-7dc5c6b3d58d coord=(主件,,QUOTE) hit graphTabType=主件 -> semantic=PLAIN
+2026-09-09 01:03:43.601 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=eb834021-ed65-4fc9-a57f-6b1662279d5d coord=(BOM,,QUOTE) hit graphTabType=BOM -> semantic=TREE
+2026-09-09 01:03:43.601 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=ba81142a-5ddb-4987-898f-8912d07f1095 coord=(材质元素,,QUOTE) hit graphTabType=材质元素 -> semantic=MATERIAL_ELEMENT
+2026-09-09 01:03:43.602 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=9cc11850-f425-45b7-8d4b-70705fde7dcf coord=(费用类,SELF_PROCESS_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-09 01:03:43.706 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver cache] evictAll called, estimated entries before evict=0
+2026-09-09 01:03:43.734 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] bind :customerCode = CUST-0004（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+2026-09-09 01:03:43.951 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=1efd32af-8a8c-46dd-ac99-84ad6abd345f name=r260908s3_a879a8_a11b0
+2026-09-09 01:03:43.951 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=1efd32af-8a8c-46dd-ac99-84ad6abd345f name=r260908s3_a879a8_a11b0
+2026-09-09 01:03:43.978 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$r260908s3_a879a8_a11b0 rows=3
+2026-09-09 01:03:43.978 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=be590c29-1e5f-4d63-a9bd-7dc5c6b3d58d eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:44.006 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=1efd32af-8a8c-46dd-ac99-84ad6abd345f name=builder_ba81142a5ddb
+2026-09-09 01:03:44.006 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=1efd32af-8a8c-46dd-ac99-84ad6abd345f name=builder_ba81142a5ddb
+2026-09-09 01:03:44.036 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_ba81142a5ddb rows=2
+2026-09-09 01:03:44.037 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=ba81142a-5ddb-4987-898f-8912d07f1095 eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:44.064 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=1efd32af-8a8c-46dd-ac99-84ad6abd345f name=builder_9cc11850f425
+2026-09-09 01:03:44.064 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=1efd32af-8a8c-46dd-ac99-84ad6abd345f name=builder_9cc11850f425
+2026-09-09 01:03:44.077 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_9cc11850f425 rows=1
+2026-09-09 01:03:44.078 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=9cc11850-f425-45b7-8d4b-70705fde7dcf eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:44.078 INFO  [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] quotation=ec7e09a1-d0e9-47f5-b8c1-8637d72f378c eligibleComps=3 totalComps=4 distinctParts=1
+2026-09-09 01:03:44.094 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [task-0806 B18] driverComps via PublishedTemplateReader templateId=1efd32af-8a8c-46dd-ac99-84ad6abd345f status=PUBLISHED count=4
+2026-09-09 01:03:44.107 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] bind :customerCode = CUST-0004（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+2026-09-09 01:03:44.260 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=be590c29-1e5f-4d63-a9bd-7dc5c6b3d58d code=R260908S3_a879a8_A11B0 dataDriverPath=$r260908s3_a879a8_a11b0 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:44.260 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$r260908s3_a879a8_a11b0
+2026-09-09 01:03:44.261 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=1efd32af-8a8c-46dd-ac99-84ad6abd345f name=r260908s3_a879a8_a11b0
+2026-09-09 01:03:44.321 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$r260908s3_a879a8_a11b0 rows=3
+2026-09-09 01:03:44.322 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=be590c29-1e5f-4d63-a9bd-7dc5c6b3d58d code=R260908S3_a879a8_A11B0 rows=3 partVersion=null
+2026-09-09 01:03:44.322 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 be590c29-1e5f-4d63-a9bd-7dc5c6b3d58d 的 $view 返回 3 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:44.336 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=eb834021-ed65-4fc9-a57f-6b1662279d5d code=COMP-2294 dataDriverPath=$builder_eb834021ed65 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:44.337 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_eb834021ed65
+2026-09-09 01:03:44.337 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=1efd32af-8a8c-46dd-ac99-84ad6abd345f name=builder_eb834021ed65
+2026-09-09 01:03:44.357 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_eb834021ed65 rows=5
+2026-09-09 01:03:44.358 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=eb834021-ed65-4fc9-a57f-6b1662279d5d code=COMP-2294 rows=5 partVersion=null
+2026-09-09 01:03:44.358 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=ba81142a-5ddb-4987-898f-8912d07f1095 code=COMP-2295 dataDriverPath=$builder_ba81142a5ddb (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:44.358 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_ba81142a5ddb
+2026-09-09 01:03:44.358 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=1efd32af-8a8c-46dd-ac99-84ad6abd345f name=builder_ba81142a5ddb
+2026-09-09 01:03:44.388 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_ba81142a5ddb rows=2
+2026-09-09 01:03:44.388 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=ba81142a-5ddb-4987-898f-8912d07f1095 code=COMP-2295 rows=2 partVersion=null
+2026-09-09 01:03:44.388 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 ba81142a-5ddb-4987-898f-8912d07f1095 的 $view 返回 2 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:44.389 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=9cc11850-f425-45b7-8d4b-70705fde7dcf code=COMP-2296 dataDriverPath=$builder_9cc11850f425 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:44.389 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_9cc11850f425
+2026-09-09 01:03:44.389 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=1efd32af-8a8c-46dd-ac99-84ad6abd345f name=builder_9cc11850f425
+2026-09-09 01:03:44.402 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_9cc11850f425 rows=1
+2026-09-09 01:03:44.402 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=9cc11850-f425-45b7-8d4b-70705fde7dcf code=COMP-2296 rows=1 partVersion=null
+2026-09-09 01:03:44.402 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 9cc11850-f425-45b7-8d4b-70705fde7dcf 的 $view 返回 1 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:44.430 DEBUG [com.cpq.quo.ser.MasterPartTypeService] (executor-thread-2) [master-part-type] parts=4 recipeHit=1 materialHit=3 sql=2
+[S-3·render] A11B0 → HTTP 200 body={"lineItems":[],"fingerprintMatched":false,"reusedHfPartNos":[],"productType":null,"reusedProductInfo":null,"structureVersion":null,"editRowMismatchCount":0,"editRowMismatches":[],"editRowMismatchTruncated":false}
+[AC-11·逐位] 显式 CLOSURE → 3 行
+[AC-11·逐位] 缺键        → 3 行
+[S-3·fixture] A11X1 comp=890975de-0b4c-414a-8843-4d001ce5542c view=r260908s3_a879a8_a11x1 tpl=2a3d6c80-817f-4047-becc-5971b446de9e quo=ac728e5b-bd5b-46b5-a650-e95fb8282978 part=S0001 liveAxis=CLOSURE snapAxis=SELF
+2026-09-09 01:03:45.759 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=890975de-0b4c-414a-8843-4d001ce5542c coord=(主件,,QUOTE) hit graphTabType=主件 -> semantic=PLAIN
+2026-09-09 01:03:45.760 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=eb834021-ed65-4fc9-a57f-6b1662279d5d coord=(BOM,,QUOTE) hit graphTabType=BOM -> semantic=TREE
+2026-09-09 01:03:45.760 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=ba81142a-5ddb-4987-898f-8912d07f1095 coord=(材质元素,,QUOTE) hit graphTabType=材质元素 -> semantic=MATERIAL_ELEMENT
+2026-09-09 01:03:45.760 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=9cc11850-f425-45b7-8d4b-70705fde7dcf coord=(费用类,SELF_PROCESS_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-09 01:03:45.870 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver cache] evictAll called, estimated entries before evict=0
+2026-09-09 01:03:45.921 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] bind :customerCode = CUST-0004（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+2026-09-09 01:03:46.140 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2a3d6c80-817f-4047-becc-5971b446de9e name=r260908s3_a879a8_a11x1
+2026-09-09 01:03:46.140 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver 合桶] axisScope=SELF ⇒ 不加宽 partNos（1 个根料号原样用），component=R260908S3_a879a8_A11X1
+2026-09-09 01:03:46.141 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2a3d6c80-817f-4047-becc-5971b446de9e name=r260908s3_a879a8_a11x1
+2026-09-09 01:03:46.165 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$r260908s3_a879a8_a11x1 rows=1
+2026-09-09 01:03:46.165 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=890975de-0b4c-414a-8843-4d001ce5542c eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:46.178 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2a3d6c80-817f-4047-becc-5971b446de9e name=builder_ba81142a5ddb
+2026-09-09 01:03:46.179 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2a3d6c80-817f-4047-becc-5971b446de9e name=builder_ba81142a5ddb
+2026-09-09 01:03:46.210 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_ba81142a5ddb rows=2
+2026-09-09 01:03:46.210 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=ba81142a-5ddb-4987-898f-8912d07f1095 eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:46.275 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2a3d6c80-817f-4047-becc-5971b446de9e name=builder_9cc11850f425
+2026-09-09 01:03:46.276 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2a3d6c80-817f-4047-becc-5971b446de9e name=builder_9cc11850f425
+2026-09-09 01:03:46.289 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_9cc11850f425 rows=1
+2026-09-09 01:03:46.290 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=9cc11850-f425-45b7-8d4b-70705fde7dcf eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:46.290 INFO  [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] quotation=ac728e5b-bd5b-46b5-a650-e95fb8282978 eligibleComps=3 totalComps=4 distinctParts=1
+2026-09-09 01:03:46.311 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [task-0806 B18] driverComps via PublishedTemplateReader templateId=2a3d6c80-817f-4047-becc-5971b446de9e status=PUBLISHED count=4
+2026-09-09 01:03:46.332 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] bind :customerCode = CUST-0004（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+2026-09-09 01:03:46.490 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=890975de-0b4c-414a-8843-4d001ce5542c code=R260908S3_a879a8_A11X1 dataDriverPath=$r260908s3_a879a8_a11x1 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:46.490 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$r260908s3_a879a8_a11x1
+2026-09-09 01:03:46.491 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2a3d6c80-817f-4047-becc-5971b446de9e name=r260908s3_a879a8_a11x1
+2026-09-09 01:03:46.503 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$r260908s3_a879a8_a11x1 rows=3
+2026-09-09 01:03:46.504 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=890975de-0b4c-414a-8843-4d001ce5542c code=R260908S3_a879a8_A11X1 rows=3 partVersion=null
+2026-09-09 01:03:46.504 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 890975de-0b4c-414a-8843-4d001ce5542c 的 $view 返回 3 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:46.523 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=eb834021-ed65-4fc9-a57f-6b1662279d5d code=COMP-2294 dataDriverPath=$builder_eb834021ed65 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:46.524 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_eb834021ed65
+2026-09-09 01:03:46.524 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2a3d6c80-817f-4047-becc-5971b446de9e name=builder_eb834021ed65
+2026-09-09 01:03:46.540 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_eb834021ed65 rows=5
+2026-09-09 01:03:46.540 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=eb834021-ed65-4fc9-a57f-6b1662279d5d code=COMP-2294 rows=5 partVersion=null
+2026-09-09 01:03:46.540 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=ba81142a-5ddb-4987-898f-8912d07f1095 code=COMP-2295 dataDriverPath=$builder_ba81142a5ddb (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:46.541 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_ba81142a5ddb
+2026-09-09 01:03:46.541 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2a3d6c80-817f-4047-becc-5971b446de9e name=builder_ba81142a5ddb
+2026-09-09 01:03:46.571 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_ba81142a5ddb rows=2
+2026-09-09 01:03:46.571 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=ba81142a-5ddb-4987-898f-8912d07f1095 code=COMP-2295 rows=2 partVersion=null
+2026-09-09 01:03:46.571 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 ba81142a-5ddb-4987-898f-8912d07f1095 的 $view 返回 2 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:46.572 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=9cc11850-f425-45b7-8d4b-70705fde7dcf code=COMP-2296 dataDriverPath=$builder_9cc11850f425 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:46.572 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_9cc11850f425
+2026-09-09 01:03:46.572 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2a3d6c80-817f-4047-becc-5971b446de9e name=builder_9cc11850f425
+2026-09-09 01:03:46.579 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_9cc11850f425 rows=1
+2026-09-09 01:03:46.580 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=9cc11850-f425-45b7-8d4b-70705fde7dcf code=COMP-2296 rows=1 partVersion=null
+2026-09-09 01:03:46.580 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 9cc11850-f425-45b7-8d4b-70705fde7dcf 的 $view 返回 1 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:46.615 DEBUG [com.cpq.quo.ser.MasterPartTypeService] (executor-thread-2) [master-part-type] parts=4 recipeHit=1 materialHit=3 sql=2
+[S-3·render] A11X1 → HTTP 200 body={"lineItems":[],"fingerprintMatched":false,"reusedHfPartNos":[],"productType":null,"reusedProductInfo":null,"structureVersion":null,"editRowMismatchCount":0,"editRowMismatches":[],"editRowMismatchTruncated":false}
+[S-3·fixture] A11X2 comp=6f6f27c3-e8e4-49dc-b2b3-5cbbc3aaa53f view=r260908s3_a879a8_a11x2 tpl=2a7179d3-383a-4f3e-b015-af1778e8f510 quo=3cc5858d-8ffd-46d6-9785-fc068fc04439 part=S0001 liveAxis=SELF snapAxis=CLOSURE
+2026-09-09 01:03:48.120 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=6f6f27c3-e8e4-49dc-b2b3-5cbbc3aaa53f coord=(主件,,QUOTE) hit graphTabType=主件 -> semantic=PLAIN
+2026-09-09 01:03:48.120 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=eb834021-ed65-4fc9-a57f-6b1662279d5d coord=(BOM,,QUOTE) hit graphTabType=BOM -> semantic=TREE
+2026-09-09 01:03:48.120 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=ba81142a-5ddb-4987-898f-8912d07f1095 coord=(材质元素,,QUOTE) hit graphTabType=材质元素 -> semantic=MATERIAL_ELEMENT
+2026-09-09 01:03:48.120 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=9cc11850-f425-45b7-8d4b-70705fde7dcf coord=(费用类,SELF_PROCESS_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-09 01:03:48.273 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver cache] evictAll called, estimated entries before evict=0
+2026-09-09 01:03:48.319 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] bind :customerCode = CUST-0004（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+2026-09-09 01:03:48.536 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2a7179d3-383a-4f3e-b015-af1778e8f510 name=r260908s3_a879a8_a11x2
+2026-09-09 01:03:48.537 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2a7179d3-383a-4f3e-b015-af1778e8f510 name=r260908s3_a879a8_a11x2
+2026-09-09 01:03:48.586 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$r260908s3_a879a8_a11x2 rows=3
+2026-09-09 01:03:48.587 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=6f6f27c3-e8e4-49dc-b2b3-5cbbc3aaa53f eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:48.616 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2a7179d3-383a-4f3e-b015-af1778e8f510 name=builder_ba81142a5ddb
+2026-09-09 01:03:48.617 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2a7179d3-383a-4f3e-b015-af1778e8f510 name=builder_ba81142a5ddb
+2026-09-09 01:03:48.649 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_ba81142a5ddb rows=2
+2026-09-09 01:03:48.650 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=ba81142a-5ddb-4987-898f-8912d07f1095 eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:48.683 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2a7179d3-383a-4f3e-b015-af1778e8f510 name=builder_9cc11850f425
+2026-09-09 01:03:48.684 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2a7179d3-383a-4f3e-b015-af1778e8f510 name=builder_9cc11850f425
+2026-09-09 01:03:48.699 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_9cc11850f425 rows=1
+2026-09-09 01:03:48.700 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=9cc11850-f425-45b7-8d4b-70705fde7dcf eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:48.700 INFO  [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] quotation=3cc5858d-8ffd-46d6-9785-fc068fc04439 eligibleComps=3 totalComps=4 distinctParts=1
+2026-09-09 01:03:48.720 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [task-0806 B18] driverComps via PublishedTemplateReader templateId=2a7179d3-383a-4f3e-b015-af1778e8f510 status=PUBLISHED count=4
+2026-09-09 01:03:48.735 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] bind :customerCode = CUST-0004（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+2026-09-09 01:03:48.894 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=6f6f27c3-e8e4-49dc-b2b3-5cbbc3aaa53f code=R260908S3_a879a8_A11X2 dataDriverPath=$r260908s3_a879a8_a11x2 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:48.894 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$r260908s3_a879a8_a11x2
+2026-09-09 01:03:48.895 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2a7179d3-383a-4f3e-b015-af1778e8f510 name=r260908s3_a879a8_a11x2
+2026-09-09 01:03:48.911 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$r260908s3_a879a8_a11x2 rows=3
+2026-09-09 01:03:48.911 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=6f6f27c3-e8e4-49dc-b2b3-5cbbc3aaa53f code=R260908S3_a879a8_A11X2 rows=3 partVersion=null
+2026-09-09 01:03:48.912 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 6f6f27c3-e8e4-49dc-b2b3-5cbbc3aaa53f 的 $view 返回 3 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:48.925 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=eb834021-ed65-4fc9-a57f-6b1662279d5d code=COMP-2294 dataDriverPath=$builder_eb834021ed65 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:48.925 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_eb834021ed65
+2026-09-09 01:03:48.926 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2a7179d3-383a-4f3e-b015-af1778e8f510 name=builder_eb834021ed65
+2026-09-09 01:03:48.940 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_eb834021ed65 rows=5
+2026-09-09 01:03:48.941 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=eb834021-ed65-4fc9-a57f-6b1662279d5d code=COMP-2294 rows=5 partVersion=null
+2026-09-09 01:03:48.941 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=ba81142a-5ddb-4987-898f-8912d07f1095 code=COMP-2295 dataDriverPath=$builder_ba81142a5ddb (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:48.941 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_ba81142a5ddb
+2026-09-09 01:03:48.941 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2a7179d3-383a-4f3e-b015-af1778e8f510 name=builder_ba81142a5ddb
+2026-09-09 01:03:48.980 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_ba81142a5ddb rows=2
+2026-09-09 01:03:48.981 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=ba81142a-5ddb-4987-898f-8912d07f1095 code=COMP-2295 rows=2 partVersion=null
+2026-09-09 01:03:48.982 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 ba81142a-5ddb-4987-898f-8912d07f1095 的 $view 返回 2 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:48.982 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=9cc11850-f425-45b7-8d4b-70705fde7dcf code=COMP-2296 dataDriverPath=$builder_9cc11850f425 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:48.982 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_9cc11850f425
+2026-09-09 01:03:48.982 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2a7179d3-383a-4f3e-b015-af1778e8f510 name=builder_9cc11850f425
+2026-09-09 01:03:49.002 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_9cc11850f425 rows=1
+2026-09-09 01:03:49.003 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=9cc11850-f425-45b7-8d4b-70705fde7dcf code=COMP-2296 rows=1 partVersion=null
+2026-09-09 01:03:49.003 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 9cc11850-f425-45b7-8d4b-70705fde7dcf 的 $view 返回 1 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:49.022 DEBUG [com.cpq.quo.ser.MasterPartTypeService] (executor-thread-2) [master-part-type] parts=4 recipeHit=1 materialHit=3 sql=2
+[S-3·render] A11X2 → HTTP 200 body={"lineItems":[],"fingerprintMatched":false,"reusedHfPartNos":[],"productType":null,"reusedProductInfo":null,"structureVersion":null,"editRowMismatchCount":0,"editRowMismatches":[],"editRowMismatchTruncated":false}
+[AC-11·权威归属] live=CLOSURE / snap=SELF    → 1 行 [S0001]
+[AC-11·权威归属] live=SELF    / snap=CLOSURE → 3 行 [S0001, S0002, S0003]
+── [S-3] 清理后残留核验（本轮命名空间 a879a8）──
+   quotation = 0
+   template = 0
+   template_component = 0
+   template_component_snapshot = 0
+   component = 0
+   component_sql_view = 0
+   ds_quote_material = 0
+   ds_quote_material_bom = 0
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 24.47 s -- in com.cpq.repair260908.Ac11AxisScopeMissingFallbackTest
+[INFO] Running com.cpq.repair260908.Ac13NoBomChildTest
+[S-3·fixture] A13 comp=b848d8f5-71ed-4b77-869f-7418184be6f8 view=r260908s3_a879a8_a13 tpl=2b89f858-ccc3-484d-a7ac-cb3eebb00972 quo=8b1d475f-3195-4ead-bdf0-ec42d2e6e3ff part=R260908S3_a879a8L liveAxis=SELF snapAxis= KEEP
+2026-09-09 01:03:50.782 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=b848d8f5-71ed-4b77-869f-7418184be6f8 coord=(主件,,QUOTE) hit graphTabType=主件 -> semantic=PLAIN
+2026-09-09 01:03:50.782 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=eb834021-ed65-4fc9-a57f-6b1662279d5d coord=(BOM,,QUOTE) hit graphTabType=BOM -> semantic=TREE
+2026-09-09 01:03:50.782 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=ba81142a-5ddb-4987-898f-8912d07f1095 coord=(材质元素,,QUOTE) hit graphTabType=材质元素 -> semantic=MATERIAL_ELEMENT
+2026-09-09 01:03:50.782 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=9cc11850-f425-45b7-8d4b-70705fde7dcf coord=(费用类,SELF_PROCESS_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-09 01:03:50.889 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver cache] evictAll called, estimated entries before evict=0
+2026-09-09 01:03:50.912 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] bind :customerCode = CUST-0004（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+2026-09-09 01:03:51.129 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2b89f858-ccc3-484d-a7ac-cb3eebb00972 name=r260908s3_a879a8_a13
+2026-09-09 01:03:51.129 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver 合桶] axisScope=SELF ⇒ 不加宽 partNos（1 个根料号原样用），component=R260908S3_a879a8_A13
+2026-09-09 01:03:51.130 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2b89f858-ccc3-484d-a7ac-cb3eebb00972 name=r260908s3_a879a8_a13
+2026-09-09 01:03:51.157 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$r260908s3_a879a8_a13 rows=1
+2026-09-09 01:03:51.158 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=b848d8f5-71ed-4b77-869f-7418184be6f8 eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:51.189 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2b89f858-ccc3-484d-a7ac-cb3eebb00972 name=builder_ba81142a5ddb
+2026-09-09 01:03:51.189 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2b89f858-ccc3-484d-a7ac-cb3eebb00972 name=builder_ba81142a5ddb
+2026-09-09 01:03:51.206 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_ba81142a5ddb rows=0
+2026-09-09 01:03:51.206 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=ba81142a-5ddb-4987-898f-8912d07f1095 eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:51.230 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2b89f858-ccc3-484d-a7ac-cb3eebb00972 name=builder_9cc11850f425
+2026-09-09 01:03:51.230 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2b89f858-ccc3-484d-a7ac-cb3eebb00972 name=builder_9cc11850f425
+2026-09-09 01:03:51.236 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_9cc11850f425 rows=0
+2026-09-09 01:03:51.236 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] comp=9cc11850-f425-45b7-8d4b-70705fde7dcf eligible eligible parts=1 bucketEntries=1
+2026-09-09 01:03:51.236 INFO  [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [quote-bucket] quotation=8b1d475f-3195-4ead-bdf0-ec42d2e6e3ff eligibleComps=3 totalComps=4 distinctParts=1
+2026-09-09 01:03:51.254 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [task-0806 B18] driverComps via PublishedTemplateReader templateId=2b89f858-ccc3-484d-a7ac-cb3eebb00972 status=PUBLISHED count=4
+2026-09-09 01:03:51.264 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] bind :customerCode = CUST-0004（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+2026-09-09 01:03:51.416 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=b848d8f5-71ed-4b77-869f-7418184be6f8 code=R260908S3_a879a8_A13 dataDriverPath=$r260908s3_a879a8_a13 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:51.416 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$r260908s3_a879a8_a13
+2026-09-09 01:03:51.417 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2b89f858-ccc3-484d-a7ac-cb3eebb00972 name=r260908s3_a879a8_a13
+2026-09-09 01:03:51.437 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$r260908s3_a879a8_a13 rows=1
+2026-09-09 01:03:51.438 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=b848d8f5-71ed-4b77-869f-7418184be6f8 code=R260908S3_a879a8_A13 rows=1 partVersion=null
+2026-09-09 01:03:51.438 WARN  [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree] 组件 b848d8f5-71ed-4b77-869f-7418184be6f8 的 $view 返回 1 行但无有效 material_no（可能未输出 material_no 列），该页签数据全部落选
+2026-09-09 01:03:51.463 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=eb834021-ed65-4fc9-a57f-6b1662279d5d code=COMP-2294 dataDriverPath=$builder_eb834021ed65 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:51.463 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_eb834021ed65
+2026-09-09 01:03:51.464 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2b89f858-ccc3-484d-a7ac-cb3eebb00972 name=builder_eb834021ed65
+2026-09-09 01:03:51.480 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_eb834021ed65 rows=1
+2026-09-09 01:03:51.480 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=eb834021-ed65-4fc9-a57f-6b1662279d5d code=COMP-2294 rows=1 partVersion=null
+2026-09-09 01:03:51.481 ERROR [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-2) [costing-tree-render] expand comp=eb834021-ed65-4fc9-a57f-6b1662279d5d failed: 树页签组件 eb834021-ed65-4fc9-a57f-6b1662279d5d 的 $view 未输出 parent_no 列（1 行全无父件列）：树页签按 (parent_no, material_no) 边键匹配，缺该列会退化为只命中根层空父 → 该页签业务数据全部落空（渲染成满屏空行）。请让树页签 $view 同时输出 parent_no 与 material_no 两列。: com.cpq.common.exception.BusinessException: 树页签组件 eb834021-ed65-4fc9-a57f-6b1662279d5d 的 $view 未输出 parent_no 列（1 行全无父件列）：树页签按 (parent_no, material_no) 边键匹配，缺该列会退化为只命中根层空父 → 该页签业务数据全部落空（渲染成满屏空行）。请让树页签 $view 同时输出 parent_no 与 material_no 两列。
+	at com.cpq.quotation.service.BomTreeRenderService.assertParentNoPresent(BomTreeRenderService.java:583)
+	at com.cpq.quotation.service.BomTreeRenderService.renderInternal(BomTreeRenderService.java:489)
+	at com.cpq.quotation.service.BomTreeRenderService.render(BomTreeRenderService.java:270)
+	at com.cpq.quotation.service.BomTreeRenderService_ClientProxy.render(Unknown Source)
+	at com.cpq.configure.service.ConfigureSnapshotService.snapshotLines(ConfigureSnapshotService.java:453)
+	at com.cpq.configure.service.ConfigureSnapshotService.snapshotQuotation(ConfigureSnapshotService.java:161)
+	at com.cpq.configure.service.ConfigureSnapshotService.snapshotQuotation(ConfigureSnapshotService.java:150)
+	at com.cpq.configure.service.ConfigureSnapshotService_ClientProxy.snapshotQuotation(Unknown Source)
+	at com.cpq.configure.resource.ConfigureProductResource.refreshSnapshot(ConfigureProductResource.java:127)
+	at com.cpq.configure.resource.ConfigureProductResource$quarkusrestinvoker$refreshSnapshot_fa2a1fe54f31f3b18dbe5a757cec3579f22af71e.invoke(Unknown Source)
+	at org.jboss.resteasy.reactive.server.handlers.InvocationHandler.handle(InvocationHandler.java:29)
+	at io.quarkus.resteasy.reactive.server.runtime.QuarkusResteasyReactiveRequestContext.invokeHandler(QuarkusResteasyReactiveRequestContext.java:190)
+	at org.jboss.resteasy.reactive.common.core.AbstractResteasyReactiveContext.run(AbstractResteasyReactiveContext.java:147)
+	at io.quarkus.vertx.core.runtime.VertxCoreRecorder$15.runWith(VertxCoreRecorder.java:677)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at org.jboss.threads.DelegatingRunnable.run(DelegatingRunnable.java:11)
+	at org.jboss.threads.ThreadLocalResettingRunnable.run(ThreadLocalResettingRunnable.java:11)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+
+2026-09-09 01:03:51.482 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=ba81142a-5ddb-4987-898f-8912d07f1095 code=COMP-2295 dataDriverPath=$builder_ba81142a5ddb (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:51.482 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_ba81142a5ddb
+2026-09-09 01:03:51.482 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2b89f858-ccc3-484d-a7ac-cb3eebb00972 name=builder_ba81142a5ddb
+2026-09-09 01:03:51.495 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_ba81142a5ddb rows=0
+2026-09-09 01:03:51.496 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=ba81142a-5ddb-4987-898f-8912d07f1095 code=COMP-2295 rows=0 partVersion=null
+2026-09-09 01:03:51.496 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] componentId=9cc11850-f425-45b7-8d4b-70705fde7dcf code=COMP-2296 dataDriverPath=$builder_9cc11850f425 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-09 01:03:51.496 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_9cc11850f425
+2026-09-09 01:03:51.496 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-2) [lookupForResolver] hit template snapshot templateId=2b89f858-ccc3-484d-a7ac-cb3eebb00972 name=builder_9cc11850f425
+2026-09-09 01:03:51.504 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-2) [SqlViewExecutor] driver path=$builder_9cc11850f425 rows=0
+2026-09-09 01:03:51.505 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-2) [Y1.5 expand-driver] expanded: id=9cc11850-f425-45b7-8d4b-70705fde7dcf code=COMP-2296 rows=0 partVersion=null
+2026-09-09 01:03:51.505 ERROR [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-2) [add-snapshot] quotation=8b1d475f-3195-4ead-bdf0-ec42d2e6e3ff 报价树整单渲染失败 → 落失败哨兵透出前端: 核价树渲染失败：1 个组件 expand 抛异常（eb834021-ed65-4fc9-a57f-6b1662279d5d=BusinessException: 树页签组件 eb834021-ed65-4fc9-a57f-6b1662279d5d 的 $view 未输出 parent_no 列（1 行全无父件列）：树页签按 (parent_no, material_no) 边键匹配，缺该列会退化为只命中根层空父 → 该页签业务数据全部落空（渲染成满屏空行）。请让树页签 $view 同时输出 parent_no 与 material_no 两列。），为避免残缺数据冒充成功，本次渲染整体失败
+[S-3·render] A13 → HTTP 200 body={"lineItems":[],"fingerprintMatched":false,"reusedHfPartNos":[],"productType":null,"reusedProductInfo":null,"structureVersion":null,"editRowMismatchCount":0,"editRowMismatches":[],"editRowMismatchTruncated":false}
+[AC-13] 主件页签 → 1 行 [R260908S3_a879a8L]
+── [S-3] 清理后残留核验（本轮命名空间 a879a8）──
+   quotation = 0
+   template = 0
+   template_component = 0
+   template_component_snapshot = 0
+   component = 0
+   component_sql_view = 0
+   ds_quote_material = 0
+   ds_quote_material_bom = 0
+[ERROR] Tests run: 3, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 2.657 s <<< FAILURE! -- in com.cpq.repair260908.Ac13NoBomChildTest
+[ERROR] com.cpq.repair260908.Ac13NoBomChildTest.t02_leafPart_bFamilyEmpty_noHardBlock -- Time elapsed: 0.028 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: AC-13：渲染结果里出现了 __renderError 占位 —— 属于『0 行把渲染打断了』，HTTP 200 这个信号对它恒为真、抓不到（R-1 实证） ==> expected: <false> but was: <true>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:158)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:139)
+	at org.junit.jupiter.api.AssertFalse.failNotFalse(AssertFalse.java:69)
+	at org.junit.jupiter.api.AssertFalse.assertFalse(AssertFalse.java:41)
+	at org.junit.jupiter.api.Assertions.assertFalse(Assertions.java:255)
+	at com.cpq.repair260908.Ac13NoBomChildTest.t02_leafPart_bFamilyEmpty_noHardBlock(Ac13NoBomChildTest.java:126)
+
+[INFO] Running com.cpq.repair260908.Ac3CrossCustomerRowDeltaTest
+[AC-3·量具自证] [ON 保留] … dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode WHERE dqm…
+[AC-3·量具自证] [WHERE→TRUE] …terial_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode ORDER BY …
+[AC-3·量具自证] BOM/builder_eb834021ed65 WHERE 摘掉 2 处，JOIN 保留 0 处
+      [WHERE→TRUE] …terial_no = ANY(:total_material_no) AND dqmb.customer_no = :customerCode UNION ALL…
+      [WHERE→TRUE] …terial_no = ANY(:total_material_no) AND dqm2.customer_no = :customerCode   AND NOT…
+[AC-3·量具自证] 材质元素/builder_ba81142a5ddb WHERE 摘掉 1 处，JOIN 保留 0 处
+      [WHERE→TRUE] …terial_no = ANY(:total_material_no) AND dqeb.customer_no = :customerCode ORDER BY …
+[AC-3·量具自证] 加工费/builder_9cc11850f425 WHERE 摘掉 1 处，JOIN 保留 0 处
+      [WHERE→TRUE] …terial_no = ANY(:total_material_no) AND dqspf.customer_no = :customerCode ORDER BY …
+[AC-3] 目标单闭包 14 个料号 = [S0001, S0002, S0003, S0004, S0005, S0006, S0007, S0008, S0009, S0010, S0011, S0012, S0013, S0014]
+[AC-3] 候选客户集 = [CUST-0001, CUST-0004]
+[AC-3] BOM/A → 14 行
+[AC-3] BOM/B(缺陷①形态) → 28 行
+[AC-3] BOM/A_CUST-0001 → 14 行
+[AC-3] BOM/A_CUST-0004 → 14 行
+[AC-3] 材质元素/A → 13 行
+[AC-3] 材质元素/B(缺陷①形态) → 26 行
+[AC-3] 材质元素/A_CUST-0001 → 13 行
+[AC-3] 材质元素/A_CUST-0004 → 13 行
+[AC-3] 加工费/A → 5 行
+[AC-3] 加工费/B(缺陷①形态) → 10 行
+[AC-3] 加工费/A_CUST-0001 → 5 行
+[AC-3] 加工费/A_CUST-0004 → 5 行
+── [AC-3] B 族页签行数分解（本轮实测，非写死）──
+BOM    builder_eb834021ed65   改动前  28 → 改动后  14 ｜ 差  14 ｜ 跨客户  14 ｜ 卡片数 14
+材质元素   builder_ba81142a5ddb   改动前  26 → 改动后  13 ｜ 差  13 ｜ 跨客户  13 ｜ 卡片数 6
+加工费    builder_9cc11850f425   改动前  10 → 改动后   5 ｜ 差   5 ｜ 跨客户   5 ｜ 卡片数 4
+
+[AC-3] BOM/A → 14 行
+[AC-3·来料明细] 视图非根行 = 10 ｜ 物理表 ds_quote_material_bom 本家闭包内边数 = 10
+[AC-3] 证伪/缺陷①未修 → 28 行
+[AC-3] 证伪/A_CUST-0001 → 14 行
+[AC-3·证伪] 缺陷① 未修时 A=B=28 行，跨客户 14 行 ⇒ 两条判据均按预期变红：
+    ③ 差值判据 ==> expected: <14> but was: <0>
+    分辨力 分辨力判据 ==> expected: <true> but was: <false>
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.791 s -- in com.cpq.repair260908.Ac3CrossCustomerRowDeltaTest
+2026-09-09 01:03:53.130 INFO  [io.quarkus] (main) cpq-backend stopped in 0.021s
+[INFO] 
+[INFO] Results:
+[INFO] 
+[ERROR] Failures: 
+[ERROR]   Ac13NoBomChildTest.t02_leafPart_bFamilyEmpty_noHardBlock:126 AC-13：渲染结果里出现了 __renderError 占位 —— 属于『0 行把渲染打断了』，HTTP 200 这个信号对它恒为真、抓不到（R-1 实证） ==> expected: <false> but was: <true>
+[INFO] 
+[ERROR] Tests run: 12, Failures: 1, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  43.780 s
+[INFO] Finished at: 2026-09-09T01:03:53-07:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.4:test (default-test) on project cpq-backend: There are test failures.
+[ERROR] 
+[ERROR] See /home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-backend/target/surefire-reports for the individual test results.
+[ERROR] See dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException
