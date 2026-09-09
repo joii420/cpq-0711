@@ -1,5 +1,11 @@
-// 报价单 · 从已有产品添加 — 类型（task-0712 B3，api.md §2；对齐后端 com.cpq.existingproduct.dto.ExistingProductDTO）
-// 数据源 material_customer_map，按本报价单客户过滤（后端从 quotation 派生 customer_no，前端不传客户）。
+// 报价单 · 从已有产品添加 — 类型（对齐后端 com.cpq.existingproduct.dto.ExistingProductDTO）
+//
+// 数据源（task-260909 收敛后）：**单表 `ds_quote_customer_part`**，LEFT JOIN `v_compat_material_master`
+// 取品名/规格；按本报价单客户过滤（后端从 quotation 派生 customer_no，前端不传客户）。
+// 🚫 不再是老的客户料号映射表（mcm）—— 那是 task-0712 时代的读法。历史上曾并过三支
+//    （mcm ∪ sel_product_no ∪ ds_quote_customer_part），task-260909 收敛回单表：
+//    旧写入方 mcm（其写入端点 Q02 恒 410）/ sel_product_no 均已停写，
+//    导入与选配今天都只落 ds_quote_customer_part。
 
 /**
  * 分页包络（真实后端类 com.cpq.common.dto.PageResult）：content/totalElements/page/size/totalPages，
@@ -15,7 +21,7 @@ export interface PageResult<T> {
 
 /** `GET /quotations/{quotationId}/existing-products` 列表行。 */
 export interface ExistingProductDTO {
-  /** 销售料号（= material_customer_map.material_no）。 */
+  /** 销售料号（= ds_quote_customer_part.material_no）。 */
   materialNo: string;
   /**
    * 客户产品编号 —— **代表编号**（后端 `DISTINCT ON (material_no)` 取 `created_at` 最早的那个）。
@@ -36,16 +42,28 @@ export interface ExistingProductDTO {
    *    宁可显示旧值，也不要空占位）。
    */
   customerProductNos?: string[] | null;
-  /** 品名（= customer_material_name）。 */
+  /**
+   * 🆕 task-260909 · AC-4：客户图号（= `ds_quote_customer_part.customer_drawing_no`）。
+   * 可空（实测正泰 2663 行里 11 行为空）⇒ 渲染方必须落 `—`，🚫 不许空白 / undefined / null。
+   */
+  customerDrawingNo?: string | null;
+  /**
+   * 品名 —— **主数据侧名称**（= `v_compat_material_master.material_name`）。
+   *
+   * ⚠️ task-260909 · AC-5 起与 `customerMaterialName` **不再同源**（改动前后端两字段同取一列，
+   *    两列必然渲染成同一个值，这正是本次要修掉的）。语义见 api.md §1.3。
+   * 兜底：后端为空时回退 `material_no`（保证品名列不空白），
+   * 🚫 **不回退到 `customerMaterialName`** —— 那会让两列又变回相同，等于 AC-5 白修。
+   */
   productName?: string | null;
-  /** 规格：COALESCE(NULLIF(material_master.specification,''), dimension)（架构决策 3-A）。 */
+  /** 规格：COALESCE(NULLIF(v_compat_material_master.specification,''), dimension)（架构决策 3-A）。 */
   spec?: string | null;
-  /** 客户物料名称（与 productName 同源，供前端分别映射到 CustomerPartCandidate 两个槽位）。 */
+  /**
+   * 客户物料名 —— **客户侧名称**（= `ds_quote_customer_part.customer_part_name`）。
+   * ⚠️ task-260909 · AC-5 起与 `productName` 取两个不同的列，两列显示两个不同的值
+   *    （如 `罗克韦尔触桥组件A` vs `触桥组件A`）。为空时后端返回 null，前端渲染 `—`。
+   */
   customerMaterialName?: string | null;
-  /** 该料号是否配了当前版本 3D 模型（model_config is_current 命中）。 */
-  has3d: boolean;
-  /** 3D 缩略图 URL；无则 null。 */
-  thumbnailUrl?: string | null;
   /** 来源（A 方案）：EXISTING=真·已有产品（有客户产品号）；CONFIGURED=选配发号（客户产品号待导入分配）。 */
   source?: 'EXISTING' | 'CONFIGURED' | string | null;
   /** 选配产品类型：SIMPLE | COMPOSITE（仅 source=CONFIGURED 有值）。 */

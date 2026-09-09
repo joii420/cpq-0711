@@ -3654,6 +3654,53 @@
 
 ---
 
+### 4.3 ExistingProductResource（报价单「从已有产品添加」抽屉列表）
+
+- **类级 @Path**：`/api/cpq/quotations/{quotationId}/existing-products`
+- **类级鉴权**：`@RoleAllowed({"SALES_REP","SALES_MANAGER","PRICING_MANAGER","SYSTEM_ADMIN"})`
+- **产出**：`application/json`
+- **背景**：报价单 Step2「添加产品 ▾ → 从已有产品添加」抽屉的数据源。
+
+#### `GET /api/cpq/quotations/{quotationId}/existing-products`
+
+服务端从 `quotationId` 派生 `customer.code`（**前端不传客户**），列出该客户名下可选的已有产品。
+
+**查询参数**（全部可选、AND 组合、`ILIKE %v%` 模糊）：
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| `customerProductNo` | String | 客户产品编号 |
+| `salesPartNo` | String | 销售料号 |
+| `productName` | String | 品名 |
+| `spec` | String | 规格 |
+| `page` | int | 默认 0，**0-based** |
+| `size` | int | 默认 20 |
+
+⚠️ **过滤谓词在 `DISTINCT ON` 去重之前生效** —— 保证「按任一客户产品编号都能搜到该料号」与「该料号只出现一行」同时成立。副作用：**代表行随过滤条件变化**（搜哪个编号就以哪一行为代表），整行字段始终同源。
+
+**响应**：`ApiResponse<PageResult<ExistingProductDTO>>`，包络字段为 `content` / `totalElements` / `page` / `size` / `totalPages`（🚫 不是 `items` / `total`）。
+
+| DTO 字段 | 类型 | 来源 |
+|---|---|---|
+| `materialNo` | String | `ds_quote_customer_part.material_no`（销售料号） |
+| `customerProductNo` | String? | 代表编号（`DISTINCT ON` 选中行的） |
+| `customerProductNos` | String[]? | 该料号名下**全部**编号，按 `created_at, customer_product_no` 升序 |
+| `customerDrawingNo` | String? | `customer_drawing_no`（与代表编号**同行**） |
+| `customerMaterialName` | String? | `customer_part_name`（与代表编号**同行**） |
+| `productName` | String? | `COALESCE(NULLIF(v_compat_material_master.material_name,''), material_no)` |
+| `spec` | String? | `COALESCE(NULLIF(specification,''), dimension)` |
+| `source` | String | `IMPORT`→`"EXISTING"`；其余→`"CONFIGURED"`（**按来源列判定**） |
+| `configProductType` | String? | `SIMPLE`/`COMPOSITE`，取自 `sel_part_signature` 最近一条；非选配为 null |
+
+**数据来源**：单表 `ds_quote_customer_part` + `LEFT JOIN v_compat_material_master`（取品名/规格）。
+🚫 **不直连 `ds_quote_material`**：该兼容视图是「老表遮蔽新表」语义，绕过会让 42 个料号走老表值、6 个料号消失。
+
+**错误码**：404 报价单不存在；400 报价单未绑定客户；401 未认证；403 角色不在白名单。
+
+> 来源任务：`task-260909-已有产品抽屉数据源收敛`｜回写日期：2026-09-09
+
+---
+
 ### 4.4 QuotationRefDataResource（报价单引用数据，全局变量视图）
 
 - **类级 @Path**：`/api/cpq/quotations/{qid}/ref-data`

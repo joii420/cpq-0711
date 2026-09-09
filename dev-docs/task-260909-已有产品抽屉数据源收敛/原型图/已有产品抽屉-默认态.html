@@ -19,7 +19,7 @@
   /* ── 抽屉外壳（AntD Drawer placement=right） ── */
   .mask { position: relative; height: 780px; background: rgba(0,0,0,.45); overflow: hidden; }
   .drawer {
-    position: absolute; top: 0; right: 0; bottom: 0; width: 1180px;
+    position: absolute; top: 0; right: 0; bottom: 0; width: 960px;  /* 与实现一致，2026-09-09 由 1180 订正 */
     background: #fff; display: flex; flex-direction: column;
     box-shadow: -6px 0 16px rgba(0,0,0,.08);
   }
@@ -90,7 +90,11 @@
 <div class="note">
   <b>📌 当前基准</b> · task-260909 「从已有产品添加」抽屉 · <b>默认态（有数据）</b><br>
   数据为 <code>cpq_db_0724</code> 2026-09-09 真实数据。客户 = <b>罗克韦尔 CUST-0001</b>（该客户数据字段最全，便于展示 7 列）。<br>
-  相对改动前：❌ 移除右侧 3D 预览区（表格占满全宽） ｜ 🆕 新增「客户图号」列 ｜ 🔧「品名」与「客户物料名」拆成两个真实不同的值。
+  相对改动前：❌ 移除右侧 3D 预览区（表格占满全宽） ｜ 🆕 新增「客户图号」列 ｜ 🔧「品名」与「客户物料名」拆成两个真实不同的值。<br>
+  <b>⚠️ 2026-09-09 订正三处</b>（前端逐屏比对时发现，均为本原型的错，非实现问题）：
+  ① 画布宽度 1180 → <b>960</b>（实现的实际抽屉宽度，`需求文档.md` 明确本次不改宽度）；
+  ② 列宽总和按 960 重标（原 866 是按 1180 画布标的，放进 960 会溢出 —— 实测「规格」列只剩 6px，表头被压成竖排「规 格」）；
+  ③ 底部按钮文案「确定添加」→ <b>「加入报价单」</b>（实现的既有文案，本次不改文案）。
 </div>
 
 <div class="mask">
@@ -114,12 +118,12 @@
         <thead>
           <tr>
             <th style="width:40px"><input type="checkbox" class="ck"></th>
-            <th style="width:96px">来源</th>
-            <th style="width:200px">客户产品编号</th>
-            <th style="width:130px">客户图号</th>
-            <th style="width:160px">客户物料名</th>
-            <th style="width:150px">销售料号</th>
-            <th style="width:130px">品名</th>
+            <th style="width:76px">来源</th>
+            <th style="width:168px">客户产品编号</th>
+            <th style="width:112px">客户图号</th>
+            <th style="width:132px">客户物料名</th>
+            <th style="width:136px">销售料号</th>
+            <th style="width:112px">品名</th>
             <th>规格</th>
           </tr>
         </thead>
@@ -235,18 +239,22 @@
         </tbody>
       </table>
 
-      <div class="pagination">
-        <span class="pg-total">共 10 条</span>
-        <span class="pg dis">‹</span>
-        <span class="pg cur">1</span>
-        <span class="pg dis">›</span>
+      <!-- 🚫 total=10 ≤ PAGE_SIZE(20)：**不渲染分页器**（现有逻辑 total > PAGE_SIZE 才显示，本次不改）。
+           ⚠️ 2026-09-09 订正：本文件原先在此画了「共 10 条 + 页码」，与同套「空态与边界」①
+           「total ≤ 20 不显示分页器」自相矛盾 —— 两份定稿原型对同一条件给了相反画法。
+           以「不显示」为准（与实现一致）。分页器的真实样式见下方说明。 -->
+      <div style="margin-top:16px;padding:10px 12px;background:#fffbe6;border-left:3px solid #faad14;
+                  font-size:12px;color:#874d00;border-radius:4px;">
+        <b>分页器在此处不渲染</b>（当前 total=10 ≤ PAGE_SIZE=20）。<br>
+        total &gt; 20 时才出现，形如：<code>共 2662 条</code> + 页码，靠右排列。
+        <b>「共 N 条」这段文案是 AC-10 的断言依据</b>（测试按它解析 total），不是装饰。
       </div>
     </div>
 
     <div class="drawer-footer">
-      <span class="selected-hint">已选择 2 项</span>
+      <span class="selected-hint">已选 2 项</span>
       <button class="btn">取消</button>
-      <button class="btn btn-primary">确定添加</button>
+      <button class="btn btn-primary">加入报价单</button>
     </div>
   </div>
 </div>

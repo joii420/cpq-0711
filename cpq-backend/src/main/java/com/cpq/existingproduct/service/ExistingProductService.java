@@ -15,15 +15,30 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * 报价单「从已有产品添加」列表服务（task-0712 B3，backtask.md B3 / api.md §2.1）。
+ * 报价单「从已有产品添加」列表服务（task-260909 B-1，api.md §1）。
  *
- * <p>服务端从 {@code quotation.customer_id} 派生 {@code customer.code}（前端不传客户），
- * 查该客户在 {@code material_customer_map} 下的产品，两条 {@code LEFT JOIN}（{@code material_master}
- * 取规格、{@code model_config} 取 3D）一次带出，<b>单条 SQL，禁逐行查</b>（N+1 硬指标）。
+ * <p><b>数据源 = 单表 {@code ds_quote_customer_part}</b>（按本报价单客户过滤）。
+ * 服务端从 {@code quotation.customer_id} 派生 {@code customer.code}，前端不传客户。
  *
- * <p><b>F005（P0）</b>：{@code QuoteMaterialNoAllocator.mintAndRegister} 每次选配发号会往
- * {@code material_customer_map} 插 {@code customer_product_no=NULL} 的占位组件行 —— 本查询强制
- * {@code WHERE customer_product_no IS NOT NULL}，防止选配副作用污染"已有产品"列表。
+ * <p><b>为什么是单表</b>（task-260909 收敛，D-1）：该列表原读三支 {@code UNION ALL}
+ * （{@code material_customer_map} ∪ {@code sel_product_no} ∪ {@code ds_quote_customer_part}），
+ * 是选配产出落点被换过三次的沉积，且第三支带一句 {@code source <> 'IMPORT'}，
+ * 把导入进来的 2662 行客户产品整批挡在列表外。今天的写入侧只有一条路径：
+ * <ul>
+ *   <li>导入 {@code POST /api/cpq/dataset/quote/quotation-import} → {@code source='IMPORT'}；</li>
+ *   <li>选配 {@code SelDsQuoteWriter.insertCustomerPart} → {@code source='MANUAL'}。</li>
+ * </ul>
+ * 两者都落 {@code ds_quote_customer_part}，故读侧收敛为单表。{@code source} 从「过滤器」
+ * 降级为「标签」：{@code IMPORT→EXISTING}（已有）/ 其余→{@code CONFIGURED}（选配）。
+ *
+ * <p>🚨 {@code LEFT JOIN v_compat_material_master} <b>刻意保留、不许直连 {@code ds_quote_material}</b>
+ * （D-3 裁决）：该视图不是普通 UNION ALL，第二支带 {@code NOT EXISTS} ⇒ <b>老表遮蔽新表</b>。
+ * 实测直连新表会让 42 个料号改走新表值（3 个单元格显示值变化）、6 个老表独有料号整个消失 ——
+ * 全部落在品名/规格列，且在本次 AC 覆盖范围之外。它是「老表退役」任务的未来切换点。
+ *
+ * <p><b>N+1 硬指标</b>：单次请求恒为 3 条 SQL（1 条 resolveCustomerNo + 1 条 COUNT + 1 条分页数据），
+ * 与返回行数无关。全部编号（{@link ExistingProductDTO#customerProductNos}）走
+ * {@code array_agg} 聚合子查询一次 LEFT JOIN 带出，🚫 禁逐行查（backtask B-19 治过的 N+1）。
  */
 @ApplicationScoped
 public class ExistingProductService {
@@ -39,163 +54,83 @@ public class ExistingProductService {
         int safePage = Math.max(page, 0);
         int safeSize = size <= 0 ? 20 : size;
 
-        // ═══════════════════════════════════════════════════════════════════
-        // task-260902 · B-16b：列表 = material_customer_map（导入来的） ∪ sel_product_no（选配来的）
-        //
-        // 方案甲下选配<b>不再写 mcm</b>（B-8），所以「从产品库添加」必须并上 sel_product_no，
-        // 否则选配产品在列表里彻底消失。
-        //
-        // 🔄 source 语义随之简化（评审 P2-17）：现状 `CASE WHEN mcm.customer_product_no IS NULL
-        //    THEN 'CONFIGURED' ELSE 'EXISTING' END` 会被 B-8 静默翻转（选配产品从此有编号了）——
-        //    改为**按来源表判定**：来自 sel_product_no → CONFIGURED，来自 mcm → EXISTING。
-        //    语义更准，且不再依赖「编号是否为空」这个易变判据。
-        //
-        // ⚠️ AC-12b④「该产品只出现一次（不因两行映射而重复）」：一个销售料号可以对多个客户产品编号
-        //    （sel_product_no 的 quote_part_no 刻意不唯一，那正是 AC-12b 要的），
-        //    但列表必须按销售料号**去重成一行** —— 故最外层用 DISTINCT ON (material_no)，
-        //    取 created_at 最早的那个编号作代表。筛选谓词在去重之前生效，
-        //    所以「按任一编号都能搜到该产品」与「只出现一次」两个断言同时成立。
-        //    ✅ 用户裁决（2026-09-03，AC-12b⑤-b）：**去重对，少显示不对，两者不冲突** ——
-        //       行按料号去重保留，同时用 customerProductNos 数组把该料号名下**全部编号**带出来。
-        //       否则用第二个编号的销售打开列表看到的是别人的编号，会「认不出这是自己的产品」，
-        //       那是本任务要修的问题的另一面（从**找不到**变成**认不出**）。
-        //    另：编号已进 spn 的料号不再从 mcm 出一次（mcm 侧的 NOT EXISTS 谓词）。
-        //
-        // 🚫 保留 mcm 侧那句 `OR EXISTS (SELECT 1 FROM sel_part_signature …)` 兜底不动 ——
-        //    它本是为「选配料号在 mcm 里编号为空」打的补丁，B-8 落地后可退役，
-        //    但**退不退由主线裁定**（backtask B-16b 明确要求不要顺手删）。
-        // ═══════════════════════════════════════════════════════════════════
-        StringBuilder where = new StringBuilder(
-                "mcm.system_type = 'QUOTE' AND mcm.customer_no = :customerNo " +
-                "AND mcm.pending_quotation_id IS NULL " +
-                "AND (mcm.customer_product_no IS NOT NULL " +
-                "     OR EXISTS (SELECT 1 FROM sel_part_signature sps WHERE sps.quote_part_no = mcm.material_no AND sps.customer_no = mcm.customer_no)) " +
-                // 编号已被 sel_product_no 收录的，由 spn 分支出行，避免同一 (料号, 编号) 出两行
-                "AND NOT EXISTS (SELECT 1 FROM sel_product_no spn0 WHERE spn0.customer_no = mcm.customer_no " +
-                "     AND spn0.quote_part_no = mcm.material_no) " +
-                // 🆕 task-260903 · P1：同理挡住已被 ds_quote_customer_part 收录的料号
-                "AND NOT EXISTS (SELECT 1 FROM ds_quote_customer_part dq0 WHERE dq0.customer_no = mcm.customer_no " +
-                "     AND dq0.material_no = mcm.material_no AND dq0.source <> 'IMPORT')");
-        StringBuilder spnWhere = new StringBuilder("spn.customer_no = :customerNo");
-        // 🆕 task-260903 · P1（A-6 的读侧配套）：选配产出改落 ds_quote_customer_part 后，
-        // 不并上这一支，选配产品会从「从产品库添加」列表里彻底消失。
-        // 🚩 只取 source <> 'IMPORT' 的行 = 选配产出，与原 sel_product_no 分支口径一一对应。
-        //    导入来的 ds_quote_customer_part 行**刻意不并进来** —— 那批产品今天由 mcm 分支负责，
-        //    把它们也并进来会让列表凭空多出用户从没在这里见过的产品，属超范围的行为变更。
-        //    （占用判重 findProductNoOwner 则相反：那里必须认全部行，导入占的号同样是占号。）
-        StringBuilder dqcpWhere = new StringBuilder("dqcp.customer_no = :customerNo AND dqcp.source <> 'IMPORT'");
+        // 显示值表达式：过滤谓词与 SELECT 列必须用同一个表达式，否则「搜得到的和看到的」对不上。
+        // 🚫 productName 的兜底链里不许出现 customer_part_name（AC-5b）——
+        //    那会让「品名」与「客户物料名」两列在客户名有值时又变回相同，等于 AC-5 白修。
+        final String productNameExpr = "COALESCE(NULLIF(v.material_name,''), d.material_no)";
+        final String specExpr = "COALESCE(NULLIF(v.specification,''), v.dimension)";
+
+        StringBuilder where = new StringBuilder("d.customer_no = :customerNo");
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("customerNo", customerNo);
 
+        // ⚠️ 四个过滤谓词在 DISTINCT ON 去重**之前**生效（都在内层 WHERE 上），
+        //    保证「按任一客户产品编号都能搜到该料号」(AC-14) 与「该料号只出现一行」(AC-13) 同时成立。
         if (notBlank(customerProductNo)) {
-            where.append(" AND mcm.customer_product_no ILIKE :customerProductNo");
-            spnWhere.append(" AND spn.customer_product_no ILIKE :customerProductNo");
-            dqcpWhere.append(" AND dqcp.customer_product_no ILIKE :customerProductNo");
+            where.append(" AND d.customer_product_no ILIKE :customerProductNo");
             params.put("customerProductNo", likePattern(customerProductNo));
         }
         if (notBlank(salesPartNo)) {
-            where.append(" AND mcm.material_no ILIKE :salesPartNo");
-            spnWhere.append(" AND spn.quote_part_no ILIKE :salesPartNo");
-            dqcpWhere.append(" AND dqcp.material_no ILIKE :salesPartNo");
+            where.append(" AND d.material_no ILIKE :salesPartNo");
             params.put("salesPartNo", likePattern(salesPartNo));
         }
         if (notBlank(productName)) {
-            where.append(" AND mcm.customer_material_name ILIKE :productName");
-            spnWhere.append(" AND COALESCE(NULLIF(spn.customer_product_name,''), smm.material_name) ILIKE :productName");
-            dqcpWhere.append(" AND COALESCE(NULLIF(dqcp.customer_part_name,''), dmm.material_name) ILIKE :productName");
+            where.append(" AND ").append(productNameExpr).append(" ILIKE :productName");
             params.put("productName", likePattern(productName));
         }
         if (notBlank(spec)) {
-            where.append(" AND COALESCE(NULLIF(mm.specification,''), mm.dimension) ILIKE :spec");
-            spnWhere.append(" AND COALESCE(NULLIF(smm.specification,''), smm.dimension) ILIKE :spec");
-            dqcpWhere.append(" AND COALESCE(NULLIF(dmm.specification,''), dmm.dimension) ILIKE :spec");
+            where.append(" AND ").append(specExpr).append(" ILIKE :spec");
             params.put("spec", likePattern(spec));
         }
 
-        // 两侧共用的行构造（列顺序必须逐位对齐，UNION ALL 按位置配对）。
-        String mcmSelect =
-                "SELECT mcm.material_no, mcm.customer_product_no, mcm.created_at AS src_created_at, " +
-                "       COALESCE(NULLIF(mcm.customer_material_name,''), mm.material_name, mm.material_type, mcm.material_no) AS product_name, " +
-                "       COALESCE(NULLIF(mm.specification,''), mm.dimension) AS spec, " +
-                "       (model3d.id IS NOT NULL) AS has3d, model3d.thumbnail_url, " +
-                "       'EXISTING' AS source, " +
-                "       (SELECT sps.product_type FROM sel_part_signature sps WHERE sps.quote_part_no = mcm.material_no AND sps.customer_no = mcm.customer_no ORDER BY sps.created_at DESC LIMIT 1) AS config_product_type " +
-                "FROM material_customer_map mcm " +
-                "LEFT JOIN material_master mm ON mm.material_no = mcm.material_no " +
-                "LEFT JOIN model_config model3d " +
-                "       ON model3d.subject_type = 'SALES_PART' " +
-                "      AND model3d.subject_key = mcm.material_no " +
-                "      AND model3d.is_current = true " +
-                "WHERE " + where;
+        // ❗ 只放 JOIN，不拼 WHERE —— dedupSql 还要在它后面再接一个 agg 的 LEFT JOIN，
+        //    WHERE 必须排在所有 JOIN 之后（拼反了是语法错，不是静默失效）。
+        String joinSql =
+                "FROM ds_quote_customer_part d "
+                // 🚨 D-3：保留兼容视图，🚫 不许直连 ds_quote_material（理由见类 javadoc）。
+                + "LEFT JOIN v_compat_material_master v ON v.material_no = d.material_no ";
 
-        String spnSelect =
-                "SELECT spn.quote_part_no AS material_no, spn.customer_product_no, spn.created_at AS src_created_at, " +
-                "       COALESCE(NULLIF(spn.customer_product_name,''), smm.material_name, spn.quote_part_no) AS product_name, " +
-                "       COALESCE(NULLIF(smm.specification,''), smm.dimension) AS spec, " +
-                "       (smodel3d.id IS NOT NULL) AS has3d, smodel3d.thumbnail_url, " +
-                "       'CONFIGURED' AS source, " +
-                "       (SELECT sps.product_type FROM sel_part_signature sps WHERE sps.quote_part_no = spn.quote_part_no AND sps.customer_no = spn.customer_no ORDER BY sps.created_at DESC LIMIT 1) AS config_product_type " +
-                "FROM sel_product_no spn " +
-                // task-260903：选配料号 A 阶段起只落 ds_quote_material，改读兼容视图才带得出品名/规格
-                "LEFT JOIN v_compat_material_master smm ON smm.material_no = spn.quote_part_no " +
-                "LEFT JOIN model_config smodel3d " +
-                "       ON smodel3d.subject_type = 'SALES_PART' " +
-                "      AND smodel3d.subject_key = spn.quote_part_no " +
-                "      AND smodel3d.is_current = true " +
-                "WHERE " + spnWhere;
-
-        // 🆕 task-260903 · P1：ds_quote_customer_part 分支（选配产出的新落点）。
-        // 列顺序必须与上面两支逐位对齐 —— UNION ALL 按位置配对，错位不报错只串值。
-        String dqcpSelect =
-                "SELECT dqcp.material_no, dqcp.customer_product_no, dqcp.created_at AS src_created_at, " +
-                "       COALESCE(NULLIF(dqcp.customer_part_name,''), dmm.material_name, dqcp.material_no) AS product_name, " +
-                "       COALESCE(NULLIF(dmm.specification,''), dmm.dimension) AS spec, " +
-                "       (dmodel3d.id IS NOT NULL) AS has3d, dmodel3d.thumbnail_url, " +
-                "       'CONFIGURED' AS source, " +
-                "       (SELECT sps.product_type FROM sel_part_signature sps WHERE sps.quote_part_no = dqcp.material_no AND sps.customer_no = dqcp.customer_no ORDER BY sps.created_at DESC LIMIT 1) AS config_product_type " +
-                "FROM ds_quote_customer_part dqcp " +
-                "LEFT JOIN v_compat_material_master dmm ON dmm.material_no = dqcp.material_no " +
-                "LEFT JOIN model_config dmodel3d " +
-                "       ON dmodel3d.subject_type = 'SALES_PART' " +
-                "      AND dmodel3d.subject_key = dqcp.material_no " +
-                "      AND dmodel3d.is_current = true " +
-                "WHERE " + dqcpWhere;
-
-        String unionSql = "(" + mcmSelect + ") UNION ALL (" + spnSelect + ") UNION ALL (" + dqcpSelect + ")";
-
-        // AC-12b⑤-b：该 (customer_no, material_no) 名下的全部客户产品编号，按 created_at 升序。
-        // 🚫 **不逐行查**（那是 backtask B-19 刚治过的 N+1）：这里是一个 GROUP BY 聚合子查询，
-        //    与主查询一次 LEFT JOIN 完成，SQL 条数与行数无关。
+        // AC-13：该 (customer_no, material_no) 名下的**全部**客户产品编号，按 created_at 升序。
+        // 🚫 不逐行查（N+1）：GROUP BY 聚合子查询，与主查询一次 LEFT JOIN 完成，SQL 条数与行数无关。
+        //
+        // ⚠️ 排序键必须与 dedupSql 的 ORDER BY **逐位一致**（created_at, customer_product_no）：
+        //    只按 created_at 排会在「同料号多编号且 created_at 相同」时退化为不确定序
+        //    —— 实测正泰 T260907-M1 两行 created_at 完全相同，漏掉第二排序键会让数组回来是
+        //    ["T260907-CP2","T260907-CP1"]，代表编号(CP1)反而排在后面，与 AC-4b 的「整行同源、
+        //    代表行优先」直接打架，且每次执行结果还可能不同（假绿/假红两头跳）。
         String aggSql =
-                "SELECT a.material_no, array_agg(a.customer_product_no ORDER BY a.created_at) AS all_product_nos "
-                + "FROM ( "
-                + "  SELECT spn.quote_part_no AS material_no, spn.customer_product_no, spn.created_at "
-                + "    FROM sel_product_no spn WHERE spn.customer_no = :customerNo "
-                + "  UNION ALL "
-                // 🆕 task-260903 · P1：全部编号也要认新表，否则「一料号多编号」在选配产品上只显示旧的
-                + "  SELECT dqcp2.material_no, dqcp2.customer_product_no, dqcp2.created_at "
-                + "    FROM ds_quote_customer_part dqcp2 WHERE dqcp2.customer_no = :customerNo "
-                + "  UNION ALL "
-                + "  SELECT mcm2.material_no, mcm2.customer_product_no, mcm2.created_at "
-                + "    FROM material_customer_map mcm2 "
-                + "   WHERE mcm2.system_type = 'QUOTE' AND mcm2.customer_no = :customerNo "
-                + "     AND mcm2.customer_product_no IS NOT NULL "
-                + ") a GROUP BY a.material_no";
+                "SELECT a.material_no, array_agg(a.customer_product_no ORDER BY a.created_at, a.customer_product_no) AS all_product_nos "
+                + "FROM ds_quote_customer_part a "
+                + "WHERE a.customer_no = :customerNo "
+                + "GROUP BY a.material_no";
 
-        // DISTINCT ON 按销售料号去重（AC-12b④），代表行取 created_at 最早的那条。
-        String dedupSql = "SELECT DISTINCT ON (u.material_no) u.material_no, u.customer_product_no, "
-                + "u.product_name, u.spec, u.has3d, u.thumbnail_url, u.source, u.config_product_type, "
-                + "agg.all_product_nos "
-                + "FROM (" + unionSql + ") u "
-                + "LEFT JOIN (" + aggSql + ") agg ON agg.material_no = u.material_no "
-                + "ORDER BY u.material_no, u.src_created_at, u.customer_product_no";
+        // DISTINCT ON 按销售料号去重（AC-13），代表行取 created_at 最早的那条编号。
+        String dedupSql =
+                "SELECT DISTINCT ON (d.material_no) "
+                + "       d.material_no, d.customer_product_no, d.customer_drawing_no, d.customer_part_name, "
+                + "       " + productNameExpr + " AS product_name, "
+                + "       " + specExpr + " AS spec, "
+                // AC-6：按来源列判定，不再按「客户产品编号是否为空」这个易变判据。
+                + "       CASE WHEN d.source = 'IMPORT' THEN 'EXISTING' ELSE 'CONFIGURED' END AS source, "
+                + "       (SELECT sps.product_type FROM sel_part_signature sps "
+                + "          WHERE sps.quote_part_no = d.material_no AND sps.customer_no = d.customer_no "
+                + "          ORDER BY sps.created_at DESC LIMIT 1) AS config_product_type, "
+                + "       agg.all_product_nos "
+                + joinSql
+                + "LEFT JOIN (" + aggSql + ") agg ON agg.material_no = d.material_no "
+                + "WHERE " + where + " "
+                + "ORDER BY d.material_no, d.created_at, d.customer_product_no";
 
-        // ── 总数（1 条 SQL） ──
-        Query countQuery = em.createNativeQuery("SELECT COUNT(*) FROM (" + dedupSql + ") d");
+        // ── 总数（1 条 SQL）──
+        // 与 dedupSql 同口径：DISTINCT 料号数。agg / sel_part_signature 是每料号唯一的
+        // LEFT JOIN，不影响行数，故 COUNT 侧省掉，少一次聚合扫描。
+        Query countQuery = em.createNativeQuery(
+                "SELECT COUNT(*) FROM (SELECT DISTINCT d.material_no " + joinSql
+                + "WHERE " + where + ") t");
         params.forEach(countQuery::setParameter);
         long total = ((Number) countQuery.getSingleResult()).longValue();
 
-        // ── 分页数据（1 条 SQL，LEFT JOIN 一次带出规格 + 3D，禁逐行查） ──
+        // ── 分页数据（1 条 SQL；服务端分页，🚫 不全量拉回内存切）──
         Query dataQuery = em.createNativeQuery(
                 "SELECT * FROM (" + dedupSql + ") d ORDER BY d.material_no");
         params.forEach(dataQuery::setParameter);
@@ -203,25 +138,25 @@ public class ExistingProductService {
         dataQuery.setMaxResults(safeSize);
         List<Object[]> rows = dataQuery.getResultList();
 
+        // ⚠️ 纯内存映射，循环体内无任何查询（N+1 自检点）。
         List<ExistingProductDTO> content = new ArrayList<>(rows.size());
         for (Object[] r : rows) {
             ExistingProductDTO dto = new ExistingProductDTO();
             dto.materialNo = (String) r[0];
             dto.customerProductNo = (String) r[1];
-            dto.productName = (String) r[2]; // COALESCE 兜底名(客户物料名→材质名→材质类型→料号),选配产品无客户名时也有可读名
-            dto.customerMaterialName = (String) r[2];
-            dto.spec = (String) r[3];
-            dto.has3d = r[4] != null && (Boolean) r[4];
-            dto.thumbnailUrl = (String) r[5];
-            dto.source = (String) r[6];            // EXISTING(真·已有,有客户产品号) | CONFIGURED(选配发号)
-            dto.configProductType = (String) r[7]; // SIMPLE | COMPOSITE(仅选配产品), 非选配为 null
-            dto.customerProductNos = toStringList(r[8]);   // AC-12b⑤-b：全部编号
+            dto.customerDrawingNo = (String) r[2];      // AC-4
+            dto.customerMaterialName = (String) r[3];   // AC-5：客户怎么叫这个件
+            dto.productName = (String) r[4];            // AC-5：主数据品名，空则回退销售料号（AC-5b）
+            dto.spec = (String) r[5];
+            dto.source = (String) r[6];                 // EXISTING(导入) | CONFIGURED(选配)
+            dto.configProductType = (String) r[7];      // SIMPLE | COMPOSITE(仅选配产品)，非选配为 null
+            dto.customerProductNos = toStringList(r[8]); // AC-13：全部编号
             content.add(dto);
         }
         return new PageResult<>(content, safePage, safeSize, total);
     }
 
-    /** quotationId → customer.code（material_customer_map.customer_no 用编码字符串，非 UUID）。 */
+    /** quotationId → customer.code（ds_quote_customer_part.customer_no 用编码字符串，非 UUID）。 */
     @SuppressWarnings("unchecked")
     private String resolveCustomerNo(UUID quotationId) {
         List<Object> rows = em.createNativeQuery(

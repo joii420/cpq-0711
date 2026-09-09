@@ -18,6 +18,9 @@ import static org.hamcrest.Matchers.equalTo;
  * <p>与 {@link ExistingProductServiceTest}（DB 断言主力）互补：本类走真实 HTTP，验证
  * 路由 / quotationId 路径参数解析 / 查询参数过滤 / {@code ApiResponse<PageResult<...>>} 信封序列化。
  *
+ * <p>🔧 <b>task-260909 B-1</b>：数据源由 {@code material_customer_map} 迁至
+ * {@code ds_quote_customer_part}，<b>断言一字未改</b> —— 本类验的是路由/参数/信封，与来源表是哪张无关。
+ *
  * <p>REST 调用与测试方法不在同一事务，数据须真实提交，故用 {@link UserTransaction} + RUN_ID 后缀隔离
  * + {@code @AfterAll} 清理（对齐 {@code ModelConfigResourceTest} 同款风格，防共享 DB 并发撞键/长期堆积）。
  */
@@ -66,16 +69,19 @@ class ExistingProductResourceTest {
                 .setParameter("cid", customerId).setParameter("uid", adminId).executeUpdate();
 
         matA = "EPRA" + RUN_ID;
+        // task-260909：品名(productName)现在取 v_compat_material_master.material_name，
+        // 不再取客户物料名 ⇒ 「阀体R」这个过滤断言要成立，必须把它放进 material_master.material_name。
         em.createNativeQuery(
-                "INSERT INTO material_master (material_no, specification, created_at, updated_at) " +
-                "VALUES (:m, 'DN80', NOW(), NOW())")
+                "INSERT INTO material_master (material_no, material_name, specification, created_at, updated_at) " +
+                "VALUES (:m, '阀体R', 'DN80', NOW(), NOW())")
                 .setParameter("m", matA).executeUpdate();
+        // task-260909 B-1：数据源由 material_customer_map 迁至 ds_quote_customer_part，断言不变。
         em.createNativeQuery(
-                "INSERT INTO material_customer_map " +
-                "(material_no, customer_no, customer_material_name, customer_product_no, system_type, created_at, updated_at) " +
-                "VALUES (:m, :c, :name, :cpn, 'QUOTE', NOW(), NOW())")
+                "INSERT INTO ds_quote_customer_part " +
+                "(customer_no, material_no, customer_part_name, customer_product_no, source, created_at, updated_at) " +
+                "VALUES (:c, :m, :name, :cpn, 'IMPORT', NOW(), NOW())")
                 .setParameter("m", matA).setParameter("c", customerCode)
-                .setParameter("name", "阀体R").setParameter("cpn", "CPN-R-" + RUN_ID)
+                .setParameter("name", "客户阀体R").setParameter("cpn", "CPN-R-" + RUN_ID)
                 .executeUpdate();
 
         utx.commit();
@@ -120,7 +126,9 @@ class ExistingProductResourceTest {
     void cleanup() throws Exception {
         utx.begin();
         em.joinTransaction();
-        em.createNativeQuery("DELETE FROM material_customer_map WHERE customer_no = :c")
+        // task-260909：夹具改插 ds_quote_customer_part，清理必须跟着换表，
+        // 否则每跑一次就在共享库留一行孤儿客户产品（customer 行在下面被删掉，dqcp 行却留着）。
+        em.createNativeQuery("DELETE FROM ds_quote_customer_part WHERE customer_no = :c")
                 .setParameter("c", customerCode).executeUpdate();
         em.createNativeQuery("DELETE FROM material_master WHERE material_no = :m")
                 .setParameter("m", matA).executeUpdate();

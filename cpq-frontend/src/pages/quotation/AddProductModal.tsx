@@ -1,16 +1,26 @@
 /**
- * AddProductModal — 报价单 Step2「添加产品 ▾ → 从已有产品添加」抽屉（task-0712 F4）。
+ * AddProductModal — 报价单 Step2「添加产品 ▾ → 从已有产品添加」抽屉。
  *
- * 1:1 复刻 dev-docs/task-0712-选配模板和报价单选配功能/prototypes/原型-报价单-从已有产品添加.html：
- * 抽屉(960) → 顶部 4 过滤(客户产品编号/销售料号/品名/规格 + 查询/重置) → 左列表(多选+全选) +
- * 右 3D 预览(单击行切换，无 3D 占位"该料号未配置 3D 模型") → 底部"已选 N 项" + 取消/加入报价单。
+ * 🎨 视觉基准（task-260909 定稿，取代 task-0712 那份历史快照）：
+ *    dev-docs/task-260909-已有产品抽屉数据源收敛/原型图/已有产品抽屉-默认态.html
+ *                                              /已有产品抽屉-空态与边界.html
+ * 抽屉(960，宽度不变) → 顶部 4 过滤(客户产品编号/销售料号/品名/规格 + 查询/重置)
+ *   → **占满全宽**的 7 列列表(多选+全选)：来源 / 客户产品编号 / 客户图号 / 客户物料名 /
+ *     销售料号 / 品名 / 规格
+ *   → 底部"已选 N 项" + 取消/加入报价单。
  *
- * 语义变更（D8，取代旧"三步向导：选产品→选工序→选模板"）：直接加成品销售料号（可多选批量），
- * 套报价单已绑客户报价模板渲染，不再走材质/工序配置。数据源 material_customer_map，按本报价单
- * 客户过滤（服务端从 quotation 派生 customer_no，前端不传客户，见 api.md §2.1）。
+ * 🚫 **不再有右侧 3D 预览区**（task-260909 · AC-7，用户 2026-09-09 裁决「先暂时移除，只显示列表」）：
+ *    预览面板 / 缩略图 /「⤢ 交互查看」/ 随选中行实时拉 `/model-configs/current` 的 effect 整块删除。
+ *    ⚠️ `activeRow` **保留** —— 它今天只承担「行选中高亮」，不再驱动任何取数。
+ *    3D 模型管理功能本身（配置中心 → 3D 模型配置）不在本次范围，端点与服务层原样保留。
  *
- * 落库：不新建端点（backtask B4 已核对），复用 BulkImportPartsDrawer.buildLineItemFromTemplate
- * 把 ExistingProductDTO 映射成 LineItem，父组件(QuotationWizard)负责去重追加 + 既有 saveDraft 落库。
+ * 语义（D8，取代旧"三步向导：选产品→选工序→选模板"）：直接加成品销售料号（可多选批量），
+ * 套报价单已绑客户报价模板渲染，不再走材质/工序配置。
+ * 数据源（task-260909 收敛后）：**单表 `ds_quote_customer_part`**，按本报价单客户过滤
+ * （服务端从 quotation 派生 customer_no，前端不传客户，见 api.md §1.1）。
+ *
+ * 落库：不新建端点，复用 BulkImportPartsDrawer.buildLineItemFromTemplate 把 ExistingProductDTO
+ * 映射成 LineItem，父组件(QuotationWizard)负责去重追加 + 既有 saveDraft 落库。
  */
 import React, { useEffect, useState } from 'react';
 import { Drawer, Table, Input, Button, Empty, Tooltip, message, Tag } from 'antd';
@@ -19,13 +29,11 @@ import type { LineItem } from './QuotationStep2';
 import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
 import { quotationService } from '../../services/quotationService';
 import { templateService } from '../../services/templateService';
-import { modelConfigService } from '../../services/modelConfigService';
 import type { ExistingProductDTO, ExistingProductQueryParams } from '../../types/existingProduct';
-import type { ModelConfigDTO } from '../../types/modelConfig';
 
 export interface AddProductModalProps {
   open: boolean;
-  /** 查候选/3D 都要（api.md §2.1 服务端从 quotation 派生客户）。Step2 打开此抽屉时报价单已创建，恒非空。 */
+  /** 查候选用（api.md §1.1 服务端从 quotation 派生客户）。Step2 打开此抽屉时报价单已创建，恒非空。 */
   quotationId: string | undefined;
   /** 已绑定的客户报价模板 id；用于「加入报价单」时展开 LineItem。 */
   customerTemplateId: string | undefined;
@@ -67,15 +75,15 @@ const AddProductModal: React.FC<AddProductModalProps> = ({
   const [list, setList] = useState<ExistingProductDTO[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
+  /**
+   * 当前高亮行。task-260909 起**只用于行选中高亮**（`onRow` 背景色），
+   * 🚫 不再驱动任何取数 —— 原来挂在它身上的 3D 预览 effect 已随 AC-7 整块删除。
+   */
   const [activeRow, setActiveRow] = useState<ExistingProductDTO | null>(null);
-
-  const [preview, setPreview] = useState<ModelConfigDTO | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [zoomHint, setZoomHint] = useState(false);
 
   const [confirming, setConfirming] = useState(false);
 
-  // 每次打开重置为初始态（对齐原型 openDrawer()：过滤条 + 选中态 + 预览目标全部重置）。
+  // 每次打开重置为初始态（过滤条 + 选中态 + 高亮行全部重置）。
   useEffect(() => {
     if (!open) return;
     // task-260902：有预置过滤条时用它开局（否则与改动前一致，回落全空）
@@ -85,7 +93,6 @@ const AddProductModal: React.FC<AddProductModalProps> = ({
     setPage(0);
     setSelectedRowKeys([]);
     setActiveRow(null);
-    setZoomHint(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -101,7 +108,7 @@ const AddProductModal: React.FC<AddProductModalProps> = ({
         const content = res.content || [];
         setList(content);
         setTotal(res.totalElements || 0);
-        // 若当前预览目标不在新结果集中（切换过滤/翻页），回退到结果首行；对齐原型 applyFilter()。
+        // 若当前高亮行不在新结果集中（切换过滤/翻页），回退到结果首行。
         setActiveRow((prev) => {
           if (prev && content.some((p) => p.materialNo === prev.materialNo)) return prev;
           return content[0] ?? null;
@@ -122,32 +129,13 @@ const AddProductModal: React.FC<AddProductModalProps> = ({
     };
   }, [open, quotationId, appliedFilters, page]);
 
-  // 右侧 3D 预览：随 activeRow(销售料号) 切换，实时查 model-configs/current（D3/D15）。
-  // 防抖/取消：连续切行时用 AbortController 丢弃过期响应，避免预览图闪回旧值。
-  useEffect(() => {
-    setZoomHint(false);
-    if (!activeRow) {
-      setPreview(null);
-      setPreviewLoading(false);
-      return;
-    }
-    const controller = new AbortController();
-    setPreviewLoading(true);
-    modelConfigService
-      .current({ subjectType: 'SALES_PART', subjectKey: activeRow.materialNo }, controller.signal)
-      .then((data) => {
-        if (controller.signal.aborted) return;
-        setPreview(data);
-      })
-      .catch((e: any) => {
-        if (controller.signal.aborted || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') return;
-        setPreview(null);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setPreviewLoading(false);
-      });
-    return () => controller.abort();
-  }, [activeRow]);
+  /**
+   * 当前是否带着过滤条件在查（只看 4 个过滤字段，🚫 不看 page/size —— 那些恒有值，
+   * 一起算进来会让空态永远走"过滤没命中"分支，AC-12 的「暂无数据」就再也出不来）。
+   */
+  const hasActiveFilter = (['customerProductNo', 'salesPartNo', 'productName', 'spec'] as const).some(
+    (k) => !!appliedFilters[k] && String(appliedFilters[k]).trim() !== '',
+  );
 
   const handleQuery = () => {
     setPage(0);
@@ -198,7 +186,7 @@ const AddProductModal: React.FC<AddProductModalProps> = ({
       title: '来源',
       dataIndex: 'source',
       key: 'source',
-      width: 96,
+      width: 76,
       render: (v: string | null, row: ExistingProductDTO) => v === 'CONFIGURED'
         ? <Tag color="purple">选配{row.configProductType === 'COMPOSITE' ? '·组合' : row.configProductType === 'SIMPLE' ? '·单件' : ''}</Tag>
         : <Tag>已有</Tag>,
@@ -207,7 +195,7 @@ const AddProductModal: React.FC<AddProductModalProps> = ({
       title: '客户产品编号',
       dataIndex: 'customerProductNo',
       key: 'customerProductNo',
-      width: 220,
+      width: 168,
       /*
        * task-260902 · AC-12b⑤-b：一个销售料号可以对应**多个**客户产品编号
        * （方案甲下 `sel_product_no.quote_part_no` 刻意不唯一），后端列表用
@@ -243,156 +231,50 @@ const AddProductModal: React.FC<AddProductModalProps> = ({
         );
       },
     },
-    { title: '销售料号', dataIndex: 'materialNo', key: 'materialNo' },
-    { title: '品名', dataIndex: 'productName', key: 'productName', render: (v: string | null) => v || '—' },
-    { title: '规格', dataIndex: 'spec', key: 'spec', render: (v: string | null) => v || '—' },
     {
+      // 🆕 task-260909 · AC-4：客户图号。实测正泰第一页 20 行里有 11 行图号为空
+      // （`0028-*` 系列按料号升序恰好排最前）⇒ **整屏都是 `—` 是正常现象，不是 bug**。
+      // 🚫 空值必须落 `—`，不许渲染成空白 / undefined / null（AP-31 族：宁可占位也不要空白）。
+      title: '客户图号',
+      dataIndex: 'customerDrawingNo',
+      key: 'customerDrawingNo',
+      /*
+       * ⚠️ 列宽为何与原型标的不一致（唯一一处刻意偏差，AC 优先于原型）：
+       *   原型两份 HTML 标的是 96/200/130/160/150/130，但那是在**自身 1180px 画布**上标的；
+       *   本抽屉按需求文档 §「抽屉宽度调整 ❌」保持 **960**，可用宽度只有约 912-40=872px。
+       *   照搬 866px 固定列 ⇒ 只剩 6px 给「规格」，实测表头被压成竖排「规 格」、
+       *   销售料号/品名换行。⇒ 按同一比例收敛为 76/168/112/132/136/112（合计 736），
+       *   给「规格」留约 136px。列**顺序与构成完全不变**（AC-3 断言的是那个，不是像素）。
+       */
+      width: 112,
+      render: (v: string | null) => v || '—',
+    },
+    {
+      // task-260909 · AC-5：**客户侧**名称（后端取 ds_quote_customer_part.customer_part_name）。
+      // 与「品名」是两个不同的列、两个不同的值，🚫 不许再共用一个字段。
       title: '客户物料名',
       dataIndex: 'customerMaterialName',
       key: 'customerMaterialName',
+      width: 132,
       render: (v: string | null) => v || '—',
     },
+    { title: '销售料号', dataIndex: 'materialNo', key: 'materialNo', width: 136 },
+    {
+      // task-260909 · AC-5：**主数据侧**品名（后端取 v_compat_material_master.material_name）。
+      //
+      // AC-5b 兜底：品名为空时显示**销售料号**（如 `0028-2609000001`），
+      //   🚫 不显示 `—`，更 🚫 不回退到 `customerMaterialName` —— 回退到客户名会让两列
+      //   又变回相同的值，等于 AC-5 白修。
+      // ⚠️ 后端（api.md §1.3）已做同样的兜底；这里再兜一层是**渲染层护栏**：
+      //   AC-5b 断言的是「用户看到什么」，不能只依赖上游某一层不为空。
+      title: '品名',
+      dataIndex: 'productName',
+      key: 'productName',
+      width: 112,
+      render: (v: string | null, row: ExistingProductDTO) => v || row.materialNo || '—',
+    },
+    { title: '规格', dataIndex: 'spec', key: 'spec', render: (v: string | null) => v || '—' },
   ];
-
-  const renderPreviewBox = () => {
-    if (!activeRow) {
-      return (
-        <div
-          style={{
-            aspectRatio: '1/1',
-            background: '#fafafa',
-            color: '#c0c4cc',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            fontSize: 13,
-            textAlign: 'center',
-            padding: '0 16px',
-          }}
-        >
-          <div style={{ fontSize: 30 }}>🧊</div>
-          <div>请选择左侧产品行以预览 3D</div>
-        </div>
-      );
-    }
-    if (previewLoading) {
-      return (
-        <div
-          style={{
-            aspectRatio: '1/1',
-            background: '#fafafa',
-            color: '#c0c4cc',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            fontSize: 13,
-          }}
-        >
-          <div style={{ fontSize: 30 }}>🧊</div>
-          <div>加载中…</div>
-        </div>
-      );
-    }
-    if (preview) {
-      return (
-        <div
-          style={{
-            aspectRatio: '1/1',
-            background: preview.thumbnailUrl
-              ? `url(${preview.thumbnailUrl}) center/cover no-repeat`
-              : 'linear-gradient(135deg,#e6f0ff,#dfe7f5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#7a8aa8',
-            fontSize: 34,
-            position: 'relative',
-          }}
-        >
-          {!preview.thumbnailUrl && '🧊'}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setZoomHint(true);
-              window.setTimeout(() => setZoomHint(false), 2000);
-            }}
-            style={{
-              position: 'absolute',
-              top: 8,
-              right: 8,
-              padding: '3px 9px',
-              fontSize: 12,
-              background: '#fff',
-              border: '1px solid #dcdfe6',
-              borderRadius: 4,
-              cursor: 'pointer',
-              color: '#606266',
-            }}
-          >
-            ⤢ 交互查看
-          </button>
-          <div
-            style={{
-              position: 'absolute',
-              left: 10,
-              right: 10,
-              bottom: 10,
-              background: 'rgba(0,0,0,.72)',
-              color: '#fff',
-              fontSize: 12,
-              padding: '7px 10px',
-              borderRadius: 4,
-              opacity: zoomHint ? 1 : 0,
-              pointerEvents: 'none',
-              transition: 'opacity .2s',
-              textAlign: 'center',
-            }}
-          >
-            （可旋转 3D 模型，增强项）
-          </div>
-        </div>
-      );
-    }
-    return (
-      <div
-        style={{
-          aspectRatio: '1/1',
-          background: '#fafafa',
-          color: '#c0c4cc',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 8,
-          fontSize: 13,
-          textAlign: 'center',
-          padding: '0 16px',
-        }}
-      >
-        <div style={{ fontSize: 30 }}>🚫</div>
-        <div>该料号未配置 3D 模型</div>
-      </div>
-    );
-  };
-
-  const renderPreviewCap = () => {
-    if (!activeRow) return null;
-    if (preview) {
-      return (
-        <>
-          销售料号: {activeRow.materialNo}
-          <br />
-          模型: {preview.label || '—'}
-        </>
-      );
-    }
-    return <>销售料号: {activeRow.materialNo}</>;
-  };
 
   return (
     <Drawer
@@ -422,131 +304,114 @@ const AddProductModal: React.FC<AddProductModalProps> = ({
         </div>
       }
     >
-      {/* 过滤条 */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 12,
-          alignItems: 'flex-end',
-          flexWrap: 'wrap',
-          marginBottom: 16,
-          paddingBottom: 16,
-          borderBottom: '1px solid #f0f0f0',
-        }}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <label style={{ fontSize: 12, color: '#909399' }}>客户产品编号</label>
-          <Input
-            style={{ width: 150 }}
-            placeholder="如 CP-SIE-2201"
-            value={filters.customerProductNo}
-            onChange={(e) => setFilters((f) => ({ ...f, customerProductNo: e.target.value }))}
-            onKeyDown={handleFilterKeyDown}
-          />
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <label style={{ fontSize: 12, color: '#909399' }}>销售料号</label>
-          <Input
-            style={{ width: 150 }}
-            placeholder="如 SP-10110001"
-            value={filters.salesPartNo}
-            onChange={(e) => setFilters((f) => ({ ...f, salesPartNo: e.target.value }))}
-            onKeyDown={handleFilterKeyDown}
-          />
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <label style={{ fontSize: 12, color: '#909399' }}>品名</label>
-          <Input
-            style={{ width: 150 }}
-            placeholder="如 传动轴"
-            value={filters.productName}
-            onChange={(e) => setFilters((f) => ({ ...f, productName: e.target.value }))}
-            onKeyDown={handleFilterKeyDown}
-          />
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <label style={{ fontSize: 12, color: '#909399' }}>规格</label>
-          <Input
-            style={{ width: 150 }}
-            placeholder="如 Φ20×150mm"
-            value={filters.spec}
-            onChange={(e) => setFilters((f) => ({ ...f, spec: e.target.value }))}
-            onKeyDown={handleFilterKeyDown}
-          />
-        </div>
+      {/*
+        * 过滤条 —— 对齐原型「默认态」`.filters`：**4 个裸 Input 平铺 + 查询/重置**，
+        * `gap:8`、每个 `width:180`、无字段标签、无下边框。
+        *
+        * 🔧 task-260909 改动：placeholder 由示例值（`如 SP-10110001`）改为**字段名本身**
+        *   （`销售料号`），并去掉上方的 `<label>` —— 原型的 4 个 input 就是
+        *   `placeholder="客户产品编号|销售料号|品名|规格"`，字段名在 placeholder 里而不在标签里。
+        * ⚠️ 这不只是观感：过滤框的**可定位性**挂在 placeholder 上 ——
+        *   按字段名找输入框是 AC-10/AC-14 的操作前提，改前四个 placeholder 全是示例值，
+        *   按「销售料号」根本定位不到，那种失败长得像产品 bug，实则是实现与原型不一致。
+        */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
+        <Input
+          style={{ width: 180 }}
+          placeholder="客户产品编号"
+          value={filters.customerProductNo}
+          onChange={(e) => setFilters((f) => ({ ...f, customerProductNo: e.target.value }))}
+          onKeyDown={handleFilterKeyDown}
+        />
+        <Input
+          style={{ width: 180 }}
+          placeholder="销售料号"
+          value={filters.salesPartNo}
+          onChange={(e) => setFilters((f) => ({ ...f, salesPartNo: e.target.value }))}
+          onKeyDown={handleFilterKeyDown}
+        />
+        <Input
+          style={{ width: 180 }}
+          placeholder="品名"
+          value={filters.productName}
+          onChange={(e) => setFilters((f) => ({ ...f, productName: e.target.value }))}
+          onKeyDown={handleFilterKeyDown}
+        />
+        <Input
+          style={{ width: 180 }}
+          placeholder="规格"
+          value={filters.spec}
+          onChange={(e) => setFilters((f) => ({ ...f, spec: e.target.value }))}
+          onKeyDown={handleFilterKeyDown}
+        />
         <Button type="primary" onClick={handleQuery}>
           查询
         </Button>
         <Button onClick={handleReset}>重置</Button>
       </div>
 
-      {/* 左列表 + 右 3D 预览 */}
-      <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
-        <div style={{ flex: '0 0 62%', maxWidth: '62%', minWidth: 0 }}>
-          <div style={{ border: '1px solid #f0f0f0', borderRadius: 4, overflow: 'hidden' }}>
-            <Table<ExistingProductDTO>
-              rowKey="materialNo"
-              size="small"
-              loading={loading}
-              columns={columns}
-              dataSource={list}
-              pagination={
-                total > PAGE_SIZE
-                  ? {
-                      current: page + 1,
-                      pageSize: PAGE_SIZE,
-                      total,
-                      size: 'small',
-                      showSizeChanger: false,
-                      onChange: (p) => setPage(p - 1),
-                    }
-                  : false
+      {/*
+        * 产品列表 —— task-260909 · AC-7 起**占满抽屉全宽**（原右侧 3D 预览区整块移除）。
+        * 🚫 抽屉宽度保持 960 不变：腾出来的空间正好给新增的「客户图号」列。
+        */}
+      <Table<ExistingProductDTO>
+        rowKey="materialNo"
+        size="small"
+        loading={loading}
+        columns={columns}
+        dataSource={list}
+        pagination={
+          total > PAGE_SIZE
+            ? {
+                current: page + 1,
+                pageSize: PAGE_SIZE,
+                total,
+                size: 'small',
+                showSizeChanger: false,
+                /*
+                 * task-260909：补「共 N 条」总数文案，对齐原型「默认态」分页条左侧的
+                 * `.pg-total`（`<span class="pg-total">共 10 条</span>`）—— 改动前 AntD
+                 * 默认不渲染任何总数，这块是原型画了而实现没有的 1:1 还原缺口。
+                 * ⚠️ 只补文案，🚫 不动 `total > PAGE_SIZE` 的渲染门槛，也不动 PAGE_SIZE：
+                 *   「total ≤ 20 不显示分页器」是原型「空态与边界」①明确要求「保持不变」的。
+                 */
+                showTotal: (t) => `共 ${t} 条`,
+                onChange: (p) => setPage(p - 1),
               }
-              rowSelection={{
-                selectedRowKeys,
-                onChange: (keys) => setSelectedRowKeys(keys as string[]),
-                preserveSelectedRowKeys: true,
-              }}
-              onRow={(record) => ({
-                onClick: () => setActiveRow(record),
-                style: {
-                  cursor: 'pointer',
-                  background: activeRow?.materialNo === record.materialNo ? '#e6f7ff' : undefined,
-                },
-              })}
-              locale={{
-                emptyText: (
-                  <Empty
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description="未查到匹配的产品，请调整过滤条件后重试"
-                    style={{ padding: '36px 0' }}
-                  />
-                ),
-              }}
+            : false
+        }
+        rowSelection={{
+          selectedRowKeys,
+          onChange: (keys) => setSelectedRowKeys(keys as string[]),
+          preserveSelectedRowKeys: true,
+        }}
+        onRow={(record) => ({
+          // 单击整行 = 高亮该行（原型「默认态」的 tr.active 底色 #e6f4ff）。
+          // 🚫 它**不再触发任何请求** —— 3D 预览已随 AC-7 移除。
+          onClick: () => setActiveRow(record),
+          style: {
+            cursor: 'pointer',
+            background: activeRow?.materialNo === record.materialNo ? '#e6f4ff' : undefined,
+          },
+        })}
+        /*
+         * 空态 = AntD 标准 <Empty>（原型「空态与边界」①，AC-12）。
+         * 🚫 绝不能是红色遮罩，也不能是永久「加载中…」占位（AP-31 族）——
+         *   加载中由 Table 自带的 `loading` 承担，且它会随 finally 结束。
+         * 文案分两种，因为「这个客户没产品」和「过滤没命中」是两件事，不该长得一样：
+         *   · 无过滤条件（AC-12 那一屏）→ 原型文案「暂无数据」
+         *   · 有过滤条件            → 保留既有引导文案（改动前行为，未回归）
+         */
+        locale={{
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={hasActiveFilter ? '未查到匹配的产品，请调整过滤条件后重试' : '暂无数据'}
+              style={{ padding: '36px 0' }}
             />
-          </div>
-        </div>
-
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ border: '1px solid #e4e7ed', borderRadius: 8, overflow: 'hidden' }}>
-            {renderPreviewBox()}
-            <div
-              style={{
-                padding: '8px 10px',
-                fontSize: 12.5,
-                color: '#606266',
-                borderTop: '1px solid #f0f0f0',
-                lineHeight: 1.6,
-              }}
-            >
-              {renderPreviewCap()}
-            </div>
-          </div>
-          <div style={{ fontSize: 12, color: '#909399', marginTop: 8, lineHeight: 1.6 }}>
-            单击左侧产品行可切换预览；「⤢ 交互查看」为增强项占位。
-          </div>
-        </div>
-      </div>
+          ),
+        }}
+      />
     </Drawer>
   );
 };
