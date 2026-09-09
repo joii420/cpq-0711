@@ -18,6 +18,28 @@
 这类断言 —— 并发线随时可能建新视图，会被打红而且**红得像业务回归**。
 一律断言「我自己造的那些对象」。
 
+🚨 **同一 worktree 内不得并发跑 `mvnw`（S-2 2026-09-08 实证，主线定为硬纪律）**
+
+S-1 与 S-2 共用同一棵树的 `target/`，两个 maven 同时跑会**互相清写 class 文件**。
+S-2 头两轮的 4 项失败全部由此而来，且**每次症状都不一样**：
+
+```
+第 1 轮  NoClassDefFoundError: SqlViewRuntimeContext$Snapshot / CostingTreeSqlValidator$Result
+         （嵌套类加载不到，但文件明明在）
+第 2 轮  Could not load class PreviewLiteralBindingAcTest（自己的类没了）
+等 S-1 的 maven 退出后复跑同一份代码 → 6/6 绿
+```
+
+⇒ **根因在共享临时目录，不在业务代码**，但它**长得像回归**（`testing.md §4`「随机挂一条、每次挂的还不一样」）。
+**处置：主线按片串行解锁，同一时刻只有一个分片在跑 `mvnw`。** 🚫 不采用「给一片隔离副本」——
+那会引入第二棵树，与「任务文档只在一个地方改」同型的分叉风险。
+
+🚨 **证伪实验若需改动实现文件，测试员必须先报主线**（S-2 2026-09-08 自曝）
+
+`testing.md §4.4` 要求每片做还原实验，但改实现文件越过了「测试员不写业务代码」（`CLAUDE.md §4.0`）那条线。
+S-2 这次做得干净（约 60 秒窗口、仅一行、还原后 `git status` 空 + 与副本 `diff` 逐字节一致 + 复跑 6/6 绿），
+**且它自己报了备** —— 但纪律要写死：**改实现做证伪 ⇒ 先报主线**，由主线决定是自己改、派后端配合、还是授权测试员改。
+
 🚫 **S-全局 的 `confirm=true` 不由子代理执行。** 子代理只跑 `confirm=false` 预览、把影响面数字交回；
 真执行属 `CLAUDE.md §3.2` 边缘，由**主线报用户批准后**进行。失败时**保留现场不回滚**。
 
@@ -125,6 +147,25 @@
 
 冷启动检查项：干净启动 8081 后，① Flyway `migrate-at-start` 无 `Detected applied migration not resolved locally`；
 ② 随机打开一张在用报价单，各页签正常渲染；③ `component_sql_view` 无 `builder_version < CURRENT_VERSION` 残留。
+
+---
+
+## 6.5 已执行分片的结果与覆盖面限定
+
+### S-2（执行器）：**AC-5 正反两面 6/6 通过**（2026-09-08）
+
+证据：`证据/S2-AC5-执行原始输出-260908.txt` + 两份 `S2-surefire-*.txt`
+证伪实验：短路 `SqlViewExecutor:670` 的 `customerCode` 分支 ⇒ **红**（且第 1 步「完整参数 ⇒ 2 行」在实验中仍绿
+⇒ 红只可能来自缺参数那一步，**不是路径坏了**）；已逐字节还原。
+共享库净副作用 **0**：4 次 JVM 启动 Flyway 均 `Schema "public" is up to date. No migration necessary.`
+⇒ `afterMigrate` 回调**根本没触发**，批准时估的「净影响 1 行」实测是 **0 行**，还原 `UPDATE` 未执行（执行它本身就是一次不必要的全局写）。
+
+⚠️ **两条覆盖面限定，闸门 B 汇报时不许省略**：
+
+| 限定 | 内容 |
+|---|---|
+| **反面② 的覆盖面比看上去窄** | `QuoteViewValidationService` 启动日志是 `total=0 ok=0（未命中白名单表的视图…已跳过）`，用例里 `total=1` —— **那 1 个就是 S-2 自己造的视图**。⇒ 它证明的是「`B-2` 不破坏含 `:customerCode` 的视图走该校验路径」（`AC-5` 反面②的字面要求），**没有覆盖任何存量视图**（当前共享库落在白名单表上的视图 = 0）。🚫 不许读成「全库视图都验过了」 |
+| **`/preview` 不传 `customerCode` 现在返 500** | `B-1` 之后每张物料锚点视图都带 `:customerCode` ⇒ 撞既有守卫 `PREVIEW_UNBOUND_PLACEHOLDER`（报文自称「属后端缺陷」）。**产品路径不可达**：主线实测 `previewBuilder` 全工程**唯一调用点**在 `SqlViewBuilderTab.tsx:913`，其上一行 `:910` 有硬门 `if (!previewCustomerCode) { message.warning('请先选择预览客户'); return; }`。⇒ 只有直接打 API 才撞得到。**本期不修**，闸门 B 单独说明 + 拟登 BACKLOG（待用户采纳） |
 
 ---
 
