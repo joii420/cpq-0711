@@ -1108,13 +1108,43 @@ public class SemanticCompiler {
         c.treeRootWhere.add(rootNarrowPredicate(c, rootAlias, rootAxis, root));
         c.requiredVars.add("total_material_no");
 
+        // 🚨 repair-260908 B-1c(a)（AC-2 / AC-2b）：根分支的**外层** WHERE 同样要按客户收窄。
+        //
+        // 根分支不经 applyFullScope（它 FROM 的是另一张表、WHERE 是本方法自己拼的）⇒ B-1 覆盖不到。
+        // 报价侧根表就是 ds_quote_material，**有 customer_no 且此前完全没过滤** ——
+        // 实测 QT-20260908-0624 的 BOM 页签根分支现状 8 行、加谓词后 4 行，另 4 行是别家客户的根行。
+        // 这是**活故障**，不是结构隐患。判据同 B-1：按根表物理列存在性，不按方言。
+        if (rootCols.contains(CUSTOMER_SCOPE_COLUMN)) {
+            c.treeRootWhere.add(rootAlias + "." + CUSTOMER_SCOPE_COLUMN + " = :customerCode");
+            c.requiredVars.add("customerCode");
+        }
+
+        // 🚨 repair-260908 B-1c(b)（AC-17）：NOT EXISTS 的「有没有父边」判定也要限定同一个客户。
+        //
+        // ⚠️ **本条的失败方向与本任务其余全部相反 —— 是少行，不是多行**：不带客户约束时，
+        // 某成品只要在**别的客户**下挂过 BOM 边，就会被判成「非树根」而从根分支**消失**，
+        // 树顶那一行直接空白。⇒ 🚫 不许拿行数验它（全库实测「只在别客户下有父边」的料号 = 0 行，
+        // 拿数据验会得到一个**恒绿的判据**，与 AC-16 同性质），只能用结构断言。
+        //
+        // 🔑 写成**列对列**（子.customer_no = 根.customer_no）而不是 = :customerCode：
+        // 根别名那一侧已由上面 (a) 钉死到 :customerCode 上，列对列在语义上等价，
+        // 却额外表达了「父边与成品必须属于同一个客户」这条不变量本身 —— 将来 (a) 若因故不发，
+        // 这条仍然成立，不会退化成「拿本客户的成品去和任意客户的父边比」。
+        String rootParentScope = "";
+        Set<String> anchorCols = c.columnCatalog.getOrDefault(c.anchor.physicalTable, Set.of());
+        if (anchorCols.contains(CUSTOMER_SCOPE_COLUMN) && rootCols.contains(CUSTOMER_SCOPE_COLUMN)) {
+            rootParentScope = " AND " + notExistsAlias + "." + CUSTOMER_SCOPE_COLUMN
+                    + " = " + rootAlias + "." + CUSTOMER_SCOPE_COLUMN;
+        }
+
         return "UNION ALL\n"
                 + "-- 根分支：本单闭包里无父边的成品自身（树根，parent_no 恒 NULL）\n"
                 + "SELECT\n  " + String.join(",\n  ", exprs) + "\n"
                 + "FROM " + root.physicalTable + " " + rootAlias + "\n"
                 + "WHERE " + String.join(" AND ", c.treeRootWhere) + "\n"
                 + "  AND NOT EXISTS (SELECT 1 FROM " + c.anchor.physicalTable + " " + notExistsAlias
-                + " WHERE " + notExistsAlias + "." + c.treeChildColumn + " = " + selfExpr + ")\n";
+                + " WHERE " + notExistsAlias + "." + c.treeChildColumn + " = " + selfExpr
+                + rootParentScope + ")\n";
     }
 
     /**
@@ -1152,9 +1182,20 @@ public class SemanticCompiler {
         }
         String sub = allocAlias(c, bridge.physicalTable);
         String inputCol = CompileDialect.QUOTE.axisColumn();   // 桥的入参恒是销售料号
+        // 🚨 repair-260908 B-1c（AC-16 同款）：核价侧根分支**自己另拼了一座桥**（同样
+        //    FROM ds_quote_material），与 emitNarrowPredicate 那座是两处独立代码 ——
+        //    只改那一处、漏掉这一处，就会出现「主分支按客户收窄、根分支不收」的半截状态。
+        //    同一判据（桥的物理表含 customer_no 列）一并覆盖。
+        Set<String> bridgeCols = c.columnCatalog.getOrDefault(bridge.physicalTable, Set.of());
+        String bridgeCustomerScope = "";
+        if (bridgeCols.contains(CUSTOMER_SCOPE_COLUMN)) {
+            bridgeCustomerScope = " AND " + sub + "." + CUSTOMER_SCOPE_COLUMN + " = :customerCode";
+            c.requiredVars.add("customerCode");
+        }
         return selfExpr + " IN (SELECT " + sub + "." + keys.get(0).rightColumn
                 + " FROM " + bridge.physicalTable + " " + sub
-                + " WHERE " + sub + "." + inputCol + " = ANY(:total_material_no))";
+                + " WHERE " + sub + "." + inputCol + " = ANY(:total_material_no)"
+                + bridgeCustomerScope + ")";
     }
 
     /**
