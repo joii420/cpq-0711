@@ -94,7 +94,28 @@ productName          ← COALESCE(NULLIF(v.material_name,''), d.material_no)
 
 **新增字段**：`public String customerDrawingNo;`（AC-4）
 
-⚠️ 这是**跨端契约变更**。前端 `cpq-frontend/src/types/existingProduct.ts` 由 `F-4` 同步，两边必须一致——但你**不要去改前端文件**，那是 `cpq-frontend` 的活。
+⚠️ 这是**跨端契约变更**。前端 `cpq-frontend/src/types/existingProduct.ts` 由 `F-3` 同步，两边必须一致——但你**不要去改前端文件**，那是 `cpq-frontend` 的活。
+
+### 🚨 B-3b · 删字段后必须清理**后端侧**引用面（2026-09-09 补，原文漏写致硬阻塞）
+
+删 DTO 字段不是删两行就完了 —— **谁删的字段，谁负责它在后端的全部引用点**。
+
+实测遗漏后果：`ExistingProductServiceTest#has3dAndThumbnailFromModelConfigIsCurrent`
+仍在断言这两个字段 ⇒ `mvnw test-compile` **4 处编译错误** ⇒ 该 worktree 里**任何测试都跑不起来**，
+测试工程师直接撞墙。这不是下游的问题，是本次改动的收尾没做完。
+
+必做：
+1. 删已作废的测试方法 + 其专用辅助方法（先确认没有别的测试在用）
+2. 清理相关 javadoc 里对该字段的描述
+3. `./mvnw -q -o test-compile` → **0 错误**
+4. 全量扫一遍残留引用：
+   ```bash
+   /usr/bin/grep -rn "has3d\|thumbnailUrl" cpq-backend/src/
+   ```
+   🚫 **必须用 `/usr/bin/grep -a`** —— 本环境 `grep` 是 ugrep，中文注释多的源文件会被**静默判为二进制返空**，
+   得到「零命中」的假象（`cpq-grep-ugrep-binary-pitfall`）。
+
+🚫 **只跑 `test-compile`，不要跑 `mvnw test`**（会打共享库）。
 
 ---
 
