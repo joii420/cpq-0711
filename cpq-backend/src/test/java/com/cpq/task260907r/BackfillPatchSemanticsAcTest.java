@@ -536,9 +536,224 @@ class BackfillPatchSemanticsAcTest extends Task260907RBase {
                 + "（升版会换 id，须走 _history.origin_id 链或内容锚）");
     }
 
+    // ─────────── AC-8 反向半边：既有报价 Excel 仍能导入 ───────────
+
+    /** B-3 迁移 D-28 明令「绝不能声明成 ColumnDef」的那一列。 */
+    private static final String SRC_QID = "source_quotation_id";
+
+    /**
+     * 既有报价 Excel（表头里<b>没有</b>来源报价单 id 这一列）仍能整份导入
+     * ⇒ 证明 {@code source_quotation_id} <b>不是 {@code ColumnDef}</b>（AC-8 反向半边）。
+     *
+     * <h3>机制（判据为什么成立）</h3>
+     * {@code DatasetSheetParser} 逐个 {@code spec.persistedColumns()} 去 Excel 表头里找 label，
+     * 找不到就进 {@code missingHeaders}；{@code missingHeaders} 非空则<b>整张 sheet 拒收</b>
+     * （{@code api.md §2}：「整份拒收，一行未写」，{@code status=FAILED}）。
+     * ⇒ 该列一旦被声明成 {@code ColumnDef}，<b>所有存量报价 Excel 会当场导不进去</b>。
+     *
+     * <h3>🚨 三条守卫（少一条这用例就有恒真的口子）</h3>
+     * <ol>
+     *   <li><b>前提守卫</b>：先断言主表<b>当下确实带</b> {@code source_quotation_id} 列。
+     *       V431 没落到本库时，「导入成功」什么都证不出 —— 本判据验的正是
+     *       「<b>有</b>这列，但它<b>不是</b> ColumnDef」。缺列必须硬失败，🚫 不许静默通过。</li>
+     *   <li>🔑 <b>机制守卫</b>：判据不只落在「导入成功」这个<b>结果</b>上，还落在
+     *       「该列不在任何 sheet 的<b>已声明列</b>里」这个<b>机制</b>上。
+     *       只断言「导入成功」的话，将来有人给 Excel 模板<b>补上</b>这一列表头，
+     *       导入照样成功，而 ColumnDef 化<b>已经发生了</b> —— 判据会静默失效。
+     *       已声明列走 {@code api.md §5} 的 {@code GET /dataset/quote/sheets}（零改动端点），
+     *       它的 {@code columns[].name} 就是 sheet 规格的契约投影
+     *       （实证：{@code 物料BOM} 的 13 个 label 与主文件夹具表头逐字逐序一致）。</li>
+     *   <li><b>非空守卫</b>：{@code SUCCESS} 但 0 行时「没报缺表头」<b>恒真</b>。
+     *       故须断言<b>本次导入</b>真的处理了行 —— 用 {@code totalRows}/{@code successRows}
+     *       与 {@code summary} 里目标 sheet 的三态计数，🚫 不用「表里有多少行」
+     *       （那会被<b>导入前就存在</b>的行满足）。</li>
+     * </ol>
+     */
     private void assertExistingQuoteExcelStillImports() {
-        throw pending("拿一张既有报价 Excel（不含「来源报价单 id」表头）走导入，断言不进 missingHeaders、"
-                + "整份 sheet 不被拒收 —— 这是 AC-8「该列不是 ColumnDef」的反向判据");
+        // ── 守卫①（前提）：主表当下确实带 source_quotation_id ─────────────
+        long tablesWithCol = count("SELECT count(*) FROM information_schema.columns "
+                + "WHERE table_schema='public' AND table_name LIKE 'ds\\_quote\\_%' "
+                + "AND column_name = '" + SRC_QID + "'");
+        System.out.println("[T-08 反向] 带 " + SRC_QID + " 的 ds_quote_* 表数 = " + tablesWithCol);
+        assertTrue(tablesWithCol > 0,
+                "⛔ 环境前置未满足（**不是被测功能的结论**）：当前库里没有任何 ds_quote_* 表带 "
+                        + SRC_QID + " 列 ⇒ B-3/V431 未落到本库。"
+                        + "此时「既有 Excel 仍能导入」什么都证不出 —— 本判据验的正是"
+                        + "「有这列、但它不是 ColumnDef」。");
+        assertEquals(1L, count("SELECT count(*) FROM information_schema.columns "
+                        + "WHERE table_schema='public' AND table_name='" + EBOM + "' "
+                        + "AND column_name = '" + SRC_QID + "'"),
+                "⛔ 环境前置：本判据下游要断言的 sheet「物料与元素BOM」落在 " + EBOM
+                        + "，该表必须带 " + SRC_QID + " 列，否则证明链断在中间");
+
+        // ── 守卫②（机制）：该列不在任何 sheet 的已声明列里 ────────────────
+        io.restassured.response.Response sheetsR = io.restassured.RestAssured
+                .given().cookies(adminCookies())
+                .when().get("/api/cpq/dataset/quote/sheets").thenReturn();
+        JsonNode sheets = ok(sheetsR, "GET /dataset/quote/sheets（api.md §5 零改动端点）").path("sheets");
+        assertTrue(sheets.isArray(), "api.md §5 契约：sheets 应是数组，实际=" + sheets);
+        assertFixtureNonEmpty(sheets.size(), "GET /dataset/quote/sheets 返回的 sheet 数");
+        List<String> offenders = new java.util.ArrayList<>();
+        int declaredCols = 0;
+        for (JsonNode sh : sheets) {
+            for (JsonNode c : sh.path("columns")) {
+                declaredCols++;
+                if (SRC_QID.equals(c.path("name").asText())) {
+                    offenders.add(sh.path("sheetKey").asText() + "." + SRC_QID);
+                }
+            }
+        }
+        System.out.println("[T-08 反向] 扫 " + sheets.size() + " 张 sheet / " + declaredCols
+                + " 个已声明列，" + SRC_QID + " 命中 = " + offenders);
+        // 🚨 0 列 ⇒ 上面的循环压根没跑，offenders 恒空 ⇒ 断言空跑照样报绿
+        assertFixtureNonEmpty(declaredCols, "各 sheet 已声明列（columns[]）总数");
+        assertTrue(offenders.isEmpty(),
+                "AC-8 反向半边：" + SRC_QID + " 被声明成了 ColumnDef —— 命中 " + offenders
+                        + "。B-3 迁移 D-28 明令该列绝不能声明成 ColumnDef："
+                        + "DatasetSheetParser 会要求每个 persistedColumns() 的 label 都出现在 Excel 表头，"
+                        + "缺一个则整张 sheet 拒收 ⇒ 所有存量报价 Excel 会当场导不进去。");
+
+        // ── 正向：既有报价 Excel 走真实导入端点 ─────────────────────────
+        java.nio.file.Path xlsx = fixtureXlsx(LEGACY_QUOTE_XLSX);
+        byte[] bytes;
+        try {
+            bytes = java.nio.file.Files.readAllBytes(xlsx);
+        } catch (java.io.IOException e) {
+            throw new AssertionError("读夹具失败（用例环境问题，不是业务结论）：" + xlsx, e);
+        }
+        assertFixtureNonEmpty(bytes.length, "夹具 " + LEGACY_QUOTE_XLSX + " 的字节数");
+        String custId = requireCustomerId(LEGACY_QUOTE_CUSTOMER);
+
+        io.restassured.response.Response impR = io.restassured.RestAssured
+                .given().cookies(adminCookies())
+                .multiPart("customerId", custId)
+                .multiPart("file", LEGACY_QUOTE_XLSX, bytes,
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                .when().post("/api/cpq/dataset/quote/quotation-import").thenReturn();
+        String recId = ok(impR, "POST /dataset/quote/quotation-import（api.md §1）")
+                .path("importRecordId").asText(null);
+        assertNotNull(recId, "api.md §1 契约：响应必须含 importRecordId，实际=" + impR.asString());
+        System.out.println("[T-08 反向] importRecordId = " + recId);
+
+        try {
+            JsonNode fin = awaitImportFinal(recId);
+            String status = fin.path("status").asText();
+            // 🚩 缺表头会以「整份拒收 + errors」的形态出现 —— 失败时必须把 errors 原文带出来，
+            //    否则「导入失败」三个字既可能是 AC-8 破了，也可能是夹具/主数据缺失，无从归因。
+            assertEquals("SUCCESS", status,
+                    "AC-8 反向半边：既有报价 Excel「" + LEGACY_QUOTE_XLSX + "」应能整份导入，实际 status="
+                            + status + "。若 errors 里出现「缺少列/表头」类原因 ⇒ "
+                            + SRC_QID + " 已被 ColumnDef 化，AC-8 反向半边破；"
+                            + "若是主数据/客户编号类原因 ⇒ 是夹具或库环境问题，不是 AC-8 的结论。"
+                            + " 完整响应=" + fin);
+
+            // ── 守卫③（非空）：本次导入真的处理了行 ─────────────────────
+            long totalRows = fin.path("totalRows").asLong(0);
+            long successRows = fin.path("successRows").asLong(0);
+            System.out.println("[T-08 反向] totalRows=" + totalRows + " successRows=" + successRows
+                    + " failedRows=" + fin.path("failedRows").asLong(0));
+            assertFixtureNonEmpty(totalRows, "本次导入的 totalRows（0 行时「没报缺表头」恒真）");
+            assertFixtureNonEmpty(successRows, "本次导入的 successRows");
+
+            // 目标 sheet 真的写了行 —— 🚫 不查「表里有多少行」（导入前就存在的行会满足它）
+            JsonNode summary = fin.path("summary");
+            assertTrue(summary.isArray(), "api.md §2 契约：SUCCESS 时应有 summary 数组，实际=" + fin);
+            assertFixtureNonEmpty(summary.size(), "summary 条目数");
+            JsonNode target = null;
+            for (JsonNode s : summary) {
+                if (TARGET_SHEET.equals(s.path("sheetName").asText())) {
+                    target = s;
+                }
+            }
+            assertNotNull(target, "summary 里没有目标 sheet「" + TARGET_SHEET + "」⇒ 它压根没被处理，"
+                    + "「仍能导入」无从谈起。summary=" + summary);
+            long touched = target.path("axisCount").asLong(0)
+                    + target.path("created").asLong(0)
+                    + target.path("upgraded").asLong(0)
+                    + target.path("unchanged").asLong(0)
+                    + target.path("inserted").asLong(0)
+                    + target.path("updated").asLong(0);
+            System.out.println("[T-08 反向] 目标 sheet「" + TARGET_SHEET + "」summary = " + target);
+            assertFixtureNonEmpty(touched, "目标 sheet「" + TARGET_SHEET + "」本次导入的三态计数合计");
+
+            System.out.println("[T-08 反向] ✅ AC-8 反向半边成立：" + EBOM + " 带 " + SRC_QID
+                    + " 列，但它不在任何 sheet 的已声明列里，既有报价 Excel 整份导入 SUCCESS（"
+                    + successRows + " 行）");
+        } finally {
+            // 只删本用例自己建的那一条 import_record，按 id 精确删。
+            // 🚫 不按条件批量删，🚫 不碰 ds_quote_* 数据（那是共享夹具轴，见回报「残留」一节）
+            dropImportRecord(recId);
+        }
+    }
+
+    /** 既有报价 Excel 夹具 —— 表头里没有「来源报价单 id」，正是 AC-8 反向半边要的那种。 */
+    private static final String LEGACY_QUOTE_XLSX = "T260907-主文件-CUST0004.xlsx";
+    private static final String LEGACY_QUOTE_CUSTOMER = "CUST-0004";
+    /** 该夹具里落到 {@link #EBOM}（唯一被前提守卫证明带 source_quotation_id 的表）的那张 sheet。 */
+    private static final String TARGET_SHEET = "物料与元素BOM";
+
+    private java.nio.file.Path fixtureXlsx(String name) {
+        java.nio.file.Path cur = java.nio.file.Path.of("").toAbsolutePath();
+        for (int i = 0; i < 6 && cur != null; i++) {
+            java.nio.file.Path p = cur.resolve("dev-docs")
+                    .resolve("task-260907-报价导入建单切ds新表").resolve("测试数据").resolve(name);
+            if (java.nio.file.Files.isRegularFile(p)) {
+                return p;
+            }
+            cur = cur.getParent();
+        }
+        throw new AssertionError("找不到夹具 " + name + "（用例环境问题，不是业务结论），cwd="
+                + java.nio.file.Path.of("").toAbsolutePath());
+    }
+
+    private String requireCustomerId(String code) {
+        Object v = scalar("SELECT id::text FROM customer WHERE code = '" + code + "'");
+        assertNotNull(v, "⛔ 环境前置：客户 " + code + " 不存在于本库 ⇒ 导入必然失败在客户校验上，"
+                + "与 AC-8 无关。请换库或补夹具客户。");
+        return v.toString();
+    }
+
+    /** 轮询到终态；🚫 超时不当通过 —— 超时就是超时。 */
+    private JsonNode awaitImportFinal(String recordId) {
+        long deadline = System.currentTimeMillis() + 180_000L;
+        io.restassured.response.Response last = null;
+        while (System.currentTimeMillis() < deadline) {
+            last = io.restassured.RestAssured.given().cookies(adminCookies())
+                    .when().get("/api/cpq/dataset/quote/quotation-import/{id}", recordId).thenReturn();
+            assertEquals(200, last.statusCode(),
+                    "api.md §2 轮询应 200，实际 " + last.statusCode() + "：" + last.asString());
+            JsonNode data = json(last).path("data");
+            String st = data.path("status").asText();
+            if ("SUCCESS".equals(st) || "FAILED".equals(st)) {
+                return data;
+            }
+            try {
+                Thread.sleep(500L);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        throw new AssertionError("180s 未到终态 —— 这是超时不是通过。最后响应："
+                + (last == null ? "null" : last.asString()));
+    }
+
+    /** 按 id 精确删本用例建的 import_record（先解 quotation 外键引用）。 */
+    private void dropImportRecord(String recordId) {
+        if (recordId == null || recordId.isBlank()) {
+            return;
+        }
+        try {
+            inTx(() -> {
+                em.createNativeQuery("UPDATE import_record SET quotation_id = NULL "
+                        + "WHERE id = CAST(:id AS uuid)").setParameter("id", recordId).executeUpdate();
+                em.createNativeQuery("DELETE FROM import_record WHERE id = CAST(:id AS uuid)")
+                        .setParameter("id", recordId).executeUpdate();
+            });
+        } catch (RuntimeException e) {
+            // 清理失败不许盖掉用例真正的失败原因
+            System.out.println("[T-08 反向] ⚠️ 清理 import_record " + recordId + " 失败：" + e);
+        }
     }
 
     private static UnsupportedOperationException pending(String what) {
