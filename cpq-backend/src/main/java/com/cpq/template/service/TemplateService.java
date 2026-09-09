@@ -297,7 +297,98 @@ public class TemplateService {
 
         LOG.infof("[perf] renderTemplate publish templateId=%s tabs=%d sql=constant(batched)", id, tcs.size());
         LOG.infof("Published template id=%s version=%s", id, template.version);
-        return TemplateDTO.from(template, tcs);
+        TemplateDTO dto = TemplateDTO.from(template, tcs);
+        // task-260909 B-7：混方言告警。🚫 只告警不拦——必须放在状态已置 PUBLISHED **之后**、
+        // 且实现里一行异常都不许抛（见 collectCrossDatasetTabWarnings 的 javadoc）。
+        dto.warnings = collectCrossDatasetTabWarnings(template, snapshotRows, compById);
+        return dto;
+    }
+
+    /**
+     * task-260909 B-7（AC-16，用户裁决 D-3/D-7）：模板含<b>非本数据集页签</b>时的发布期告警。
+     *
+     * <p><b>判定基准 = 该模板【树页签组件】的方言</b>（{@code component_sql_view.builder_config
+     * ->> 'dialect'}）。树页签由 {@link #assertAtMostOneTreeTab} 保证至多 1 个，故基准是单值。
+     * 无树页签 / 无取数页签 → 返回<b>空数组</b>（不是 null），不判。
+     *
+     * <p>🚫 <b>只告警不拦</b>：{@code publish} 仍返 200，本方法<b>不得</b>抛任何异常。
+     * <ul>
+     *   <li>为什么不硬拦：用户 2026-09-09 明确裁决只管树页签、混方言不拦（D-3/D-7）。
+     *       硬拦会把「加工费页签方言选错」这种可事后修的配置问题变成"模板发不出去"。</li>
+     *   <li>为什么整段包 try/catch：本方法是<b>发布主流程末尾的附加信息</b>，
+     *       它自己出错（比如某组件视图数据异常）绝不能把一次<b>已经成功的发布</b>打回失败 ——
+     *       那正是「只告警不拦」这条裁决要防的事，只是失败源换成了告警器自己。</li>
+     * </ul>
+     *
+     * <p>⚠️ <b>N+1 自检</b>：整次调用<b>最多 1 条</b>额外 SQL（按组件 id 数组一次 IN 查方言），
+     * 与页签数无关；{@code compById} 由 {@code publish} 已经预载，循环体内零查库。
+     */
+    private List<String> collectCrossDatasetTabWarnings(Template template,
+                                                        List<TemplateComponentSnapshot> snapshotRows,
+                                                        Map<UUID, Component> compById) {
+        List<String> warnings = new ArrayList<>();
+        try {
+            if (snapshotRows == null || snapshotRows.isEmpty()) return warnings;
+
+            // ① 取数页签 = data_driver_path 非空的组件（纯内存过滤，compById 已预载）
+            List<TemplateComponentSnapshot> driverTabs = new ArrayList<>();
+            List<UUID> driverCompIds = new ArrayList<>();
+            for (TemplateComponentSnapshot s : snapshotRows) {
+                Component comp = compById.get(s.componentId);
+                if (comp == null) continue;
+                String ddp = comp.dataDriverPath;
+                if (ddp == null || ddp.isBlank()) continue;
+                driverTabs.add(s);
+                if (!driverCompIds.contains(s.componentId)) driverCompIds.add(s.componentId);
+            }
+            if (driverTabs.isEmpty()) return warnings;
+
+            // ② 一次 IN 查全部取数组件的方言（本方法唯一一条 SQL）
+            Map<UUID, String> dialectByComp = new LinkedHashMap<>();
+            @SuppressWarnings("unchecked")
+            List<Object[]> rows = em.createNativeQuery(
+                            "SELECT csv.component_id, csv.builder_config ->> 'dialect' FROM component_sql_view csv "
+                                    + "WHERE csv.component_id = ANY(:ids) AND csv.status = 'ACTIVE' "
+                                    + "AND csv.builder_config IS NOT NULL "
+                                    + "AND (csv.builder_config ->> 'dialect') IS NOT NULL")
+                    .setParameter("ids", driverCompIds.toArray(new UUID[0]))
+                    .getResultList();
+            for (Object[] r : rows) {
+                if (r == null || r[0] == null || r[1] == null) continue;
+                UUID cid = (r[0] instanceof UUID u) ? u : UUID.fromString(r[0].toString());
+                dialectByComp.putIfAbsent(cid, r[1].toString());
+            }
+
+            // ③ 基准方言 = 树页签组件的方言；树页签没有方言（手写视图）或没有树页签 → 不判
+            String baseDialect = null;
+            for (TemplateComponentSnapshot s : driverTabs) {
+                if (Boolean.TRUE.equals(s.bomRecursiveExpand)) {
+                    baseDialect = dialectByComp.get(s.componentId);
+                    break;
+                }
+            }
+            if (baseDialect == null || baseDialect.isBlank()) return warnings;
+
+            // ④ 逐个取数页签比对（纯内存，零查库）
+            List<String> offenders = new ArrayList<>();
+            for (TemplateComponentSnapshot s : driverTabs) {
+                String d = dialectByComp.get(s.componentId);
+                // 方言解析不出来的页签（手写视图）不计入：它没有声明自己属于哪个数据集，
+                // 判它"不同"是猜。宁可漏报也不误报——这是告警不是护栏。
+                if (d == null || d.isBlank() || d.equals(baseDialect)) continue;
+                String tabName = (s.tabName != null && !s.tabName.isBlank()) ? s.tabName : s.componentName;
+                offenders.add(tabName + "(" + d + ")");
+            }
+            if (!offenders.isEmpty()) {
+                String msg = "本模板含 " + offenders.size() + " 个非本数据集页签：" + String.join("、", offenders);
+                warnings.add(msg);
+                LOG.warnf("[task-260909 B-7] 模板 %s（%s）发布：%s（基准数据集=%s，只告警不拦）",
+                        template.id, template.name, msg, baseDialect);
+            }
+        } catch (Exception e) {
+            LOG.warnf("[task-260909 B-7] 混方言告警计算失败（发布不受影响）: %s", e.getMessage());
+        }
+        return warnings;
     }
 
     // task-0806 B6：refreshSnapshotsByComponent（H1）整体退役。

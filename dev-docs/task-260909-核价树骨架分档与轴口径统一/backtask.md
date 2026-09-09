@@ -132,6 +132,16 @@
   4. 递归体走 `v_ds_cost_basic_material_bom_all`（`production_no` = 父、`component_no` = 子），带 `:versionFilter(...)` 宏
   5. `bom_version` 取 `version_no::text`
   6. 带 `CYCLE material_no SET is_cyc USING cyc_path` 防环
+  7. 🚨 **`root_no` 必须留在【销售料号】空间（种子原值，不翻译）** —— 2026-09-09 主线写参照实现时发现并实查补入：
+     | 列 | 空间 | 示例 |
+     |---|---|---|
+     | `root_no` | **销售料号** | `S0001` |
+     | `material_no` / `parent_no` / `node_path` | **生产料号** | `300012` / `300001` |
+     依据：`BomTreeRenderService:447-454` 的 `rootToLineItemIds` 按 `li.productPartNoSnapshot`（销售料号）建键；
+     `:665-667` 用它去 `g.cardMaterialNo.getOrDefault(root, 空集)`；`CostingTreeGrouping:24` 按 SQL 的 `root_no` 分组。
+     ⇒ `root_no` 若输出生产料号，`getOrDefault("S0001")` 返回空集 ⇒ **该卡片一行都渲不出来且不报错**（静默空）
+     —— 正是本任务要消灭的那类故障，别在修它的过程中又造一个。
+     做法：种子那一支同时选出 `material_no`(销售) 与 `production_no`(生产)，`root_no` 取前者并在递归中原样传播 `b.root_no`。
 - 自验：用 seed `ARRAY['S0001','S0004','S0008','S0012']` + `customerCode='CUST-0004'` 跑出 **10 行**（S0001 族 7 行 + 其余 3 个各 1 行），且 `S0001` 族最大 `lvl=4`
 
 ## B-10 · 测试与回归

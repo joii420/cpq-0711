@@ -358,39 +358,60 @@ class CompilerV9DialectSelfCheckTest {
         return new Object[]{snapshot, stub};
     }
 
-    /** 核心：NARROW 产出 WHERE 半连接，且**不再**有对桥的 LEFT JOIN（扇出根源被拆掉）。 */
+    /**
+     * 核心：核价方言下**桥整个不发** —— 既没有 FROM 项，也没有 WHERE 半连接；
+     * 收窄直接落在方言轴列上。
+     */
     @Test
     void narrowEmitsSemiJoinInsteadOfLeftJoin() {
+        // task-260909 D-6（方案甲）：核价侧轴统一为生产料号，COST_* 不再发 ds_quote_material 桥。
+        // 本断言原属 task-260819 AC-111/AC-112，其前提「轴值是销售料号」已被 D-6 取消。
+        //
+        // 🔄 原断言是「必须产出 WHERE 半连接」。D-6 之后 :total_material_no 装的就是生产料号，
+        //    桥（销售→生产的翻译）失去存在前提 ⇒ 翻面成「一处桥都不许有 + 必须有直接轴谓词」。
+        //    🚫 没有退化成"只删不加"：正向那一半由下面的直接轴谓词断言顶上，产物仍然必须收窄。
         Object[] g = bridgeGraph("NARROW", true, true);
         CompileResult r = compilerWith((StubCatalog) g[1]).compile(
                 (SemanticGraphSnapshot) g[0], cfg("主件", "COST_BASIC", "COST_MAIN", "part_name"),
                 CompileDialect.COST_BASIC);
-        System.out.println("---- B-50 NARROW 产物 ----\n" + r.sql);
+        System.out.println("---- D-6 停桥后的 COST_BASIC 产物 ----\n" + r.sql);
 
-        assertFalse(r.sql.contains("LEFT JOIN ds_quote_material"), "桥不许再出现在 FROM 侧：\n" + r.sql);
+        assertFalse(r.sql.contains("LEFT JOIN ds_quote_material"), "桥不许出现在 FROM 侧：\n" + r.sql);
         assertFalse(r.sql.contains("JOIN ds_quote_material"), "桥不许产出任何 FROM 项：\n" + r.sql);
-        assertTrue(r.sql.contains(
-                "dcbm.production_no IN (SELECT dqm.production_no FROM ds_quote_material dqm"
-                        + " WHERE dqm.material_no = ANY(:total_material_no))"), r.sql);
-        // 桥的列一个都不许进 SELECT
+        assertFalse(r.sql.contains("ds_quote_material"),
+                "D-6：核价产物里**任何位置**都不该再出现 ds_quote_material（半连接也算）：\n" + r.sql);
+        assertTrue(r.sql.contains("dcbm.production_no = ANY(:total_material_no)"),
+                "D-6：停桥后收窄必须直接落在方言轴列 production_no 上，"
+                        + "否则整条 SQL 完全不收窄 = 整表全捞：\n" + r.sql);
+        // 桥的列一个都不许进 SELECT（这条与桥发不发无关，原样保留）
         assertFalse(r.declaredColumns.contains("material_no"), r.declaredColumns.toString());
         assertTrue(r.requiredVariables.contains("total_material_no"), r.requiredVariables.toString());
     }
 
     /**
-     * 正确性关键：有 NARROW 时**不许再发**直接轴谓词。
-     * :total_material_no 装的是销售料号，而轴列是 production_no —— 两条 AND 在一起恒 0 行，
-     * 且"看起来只是没数据"，不报任何错。
+     * 正确性关键：{@code :total_material_no} 只许被<b>一种</b>语义消费 —— 恰好一处收窄入口。
+     *
+     * <p>两条谓词共存（桥要销售料号、轴列要生产料号）会让交集恒空 ⇒ 0 行且不报错（B-52 的形态）。
+     * D-6 之后桥没了，唯一的那一处就是直接轴谓词本身。
      */
     @Test
     void narrowSuppressesDirectAxisPredicate() {
+        // task-260909 D-6（方案甲）：核价侧轴统一为生产料号，COST_* 不再发 ds_quote_material 桥。
+        // 本断言原属 task-260819 AC-111/AC-112，其前提「轴值是销售料号」已被 D-6 取消。
+        //
+        // 🔄 原断言是「有 NARROW 时不许发直接轴谓词」（因为当时数组装的是销售料号）。
+        //    D-6 后数组装生产料号、桥停发 ⇒ 直接轴谓词从"错误形态"变成"唯一正确形态"，断言翻面。
+        //    🔑 「恰好 1 处」这条**一个字没动** —— 它才是这个用例真正的不变量。
         Object[] g = bridgeGraph("NARROW", true, true);
         CompileResult r = compilerWith((StubCatalog) g[1]).compile(
                 (SemanticGraphSnapshot) g[0], cfg("主件", "COST_BASIC", "COST_MAIN", "part_name"),
                 CompileDialect.COST_BASIC);
-        assertFalse(r.sql.contains("dcbm.production_no = ANY(:total_material_no)"),
-                "销售料号不能直接拿去比生产料号：\n" + r.sql);
-        assertEquals(1, countOf(r.sql, ":total_material_no"), "收窄入口应只有半连接这一处：\n" + r.sql);
+        assertTrue(r.sql.contains("dcbm.production_no = ANY(:total_material_no)"),
+                "D-6：数组装的就是生产料号，收窄必须直接落在 production_no 上：\n" + r.sql);
+        assertFalse(r.sql.contains("IN (SELECT"),
+                "D-6：不该再有桥半连接 —— 与上面那条直接轴谓词共存就是 B-52 的『两种号段要求相反 ⇒ "
+                        + "交集恒空 ⇒ 静默 0 行』：\n" + r.sql);
+        assertEquals(1, countOf(r.sql, ":total_material_no"), "收窄入口应恰好一处：\n" + r.sql);
     }
 
     /** 零回归：没有 NARROW 边时，轴收窄行为逐字不变。 */
@@ -432,20 +453,41 @@ class CompilerV9DialectSelfCheckTest {
         assertEquals(List.of("COST_MAIN"), keys, "桥不该是可拖分组：" + keys);
     }
 
-    /** 桥表缺入参列时必须报错 —— 静默不发 = 完全不收窄 = 全表数据。 */
+    /**
+     * 桥表缺入参列 —— 这条用例守的是「不收窄 = 全表数据」这个后果，而不是某一个错误码。
+     *
+     * <p>D-6 之前：桥是核价侧唯一的收窄手段，桥发不出去就必须<b>响亮失败</b>。
+     * <p>D-6 之后：核价侧压根不发桥，收窄由直接轴谓词承担 ⇒ 一个坏桥声明<b>不该再阻断编译</b>，
+     * 但<b>产物仍然必须收窄</b> —— 断言因此从「必抛 COMPILE_NARROW_INPUT_COLUMN_MISSING」
+     * 翻成「不抛，且轴谓词在」。后果这一头一个字没放松。
+     */
     @Test
     void narrowWithoutInputColumnFailsLoudly() {
-        Object[] g = bridgeGraph("NARROW", true, false);
-        BuilderApiException ex = assertThrows(BuilderApiException.class, () ->
+        // task-260909 D-6（方案甲）：核价侧轴统一为生产料号，COST_* 不再发 ds_quote_material 桥。
+        // 本断言原属 task-260819 AC-111/AC-112，其前提「轴值是销售料号」已被 D-6 取消。
+        Object[] g = bridgeGraph("NARROW", true, false);   // 桥表故意缺 material_no 入参列
+        CompileResult r = assertDoesNotThrow(() ->
                 compilerWith((StubCatalog) g[1]).compile((SemanticGraphSnapshot) g[0],
-                        cfg("主件", "COST_BASIC", "COST_MAIN", "part_name"), CompileDialect.COST_BASIC));
-        assertEquals("COMPILE_NARROW_INPUT_COLUMN_MISSING", ex.getErrorCode());
-        assertTrue(ex.getMessage().contains("material_no"), ex.getMessage());
+                        cfg("主件", "COST_BASIC", "COST_MAIN", "part_name"), CompileDialect.COST_BASIC),
+                "D-6：核价侧不再发桥 ⇒ 坏桥声明不该再阻断编译");
+        System.out.println("---- D-6 坏桥声明下的 COST_BASIC 产物 ----\n" + r.sql);
+        assertFalse(r.sql.contains("ds_quote_material"), "坏桥更不该被发出去：\n" + r.sql);
+        assertTrue(r.sql.contains("dcbm.production_no = ANY(:total_material_no)"),
+                "🚨 这条才是本用例的本体：桥发不发都好，**产物绝不许一点收窄都没有**"
+                        + "（不收窄 = 全表数据）：\n" + r.sql);
     }
 
-    /** B-52：skipNarrowPredicates=true 时不发半连接，且**恢复**直接轴收窄（两者是一对，不能只关一半）。 */
+    /**
+     * B-52：{@code skipNarrowPredicates=true} 时不发半连接，且**恢复**直接轴收窄
+     * （两者是一对，不能只关一半）。
+     *
+     * <p>D-6 之后核价方言在<b>两个重载下都不发桥</b>，故本用例还多了一条对照：
+     * skip 与默认产出的收窄形态<b>一致</b>——这正是「翻译已上移到骨架种子处」的可观测结果。
+     */
     @Test
     void skipNarrowRestoresDirectAxisPredicate() {
+        // task-260909 D-6（方案甲）：核价侧轴统一为生产料号，COST_* 不再发 ds_quote_material 桥。
+        // 本断言原属 task-260819 AC-111/AC-112，其前提「轴值是销售料号」已被 D-6 取消。
         Object[] g = bridgeGraph("NARROW", true, true);
         CompileResult skipped = compilerWith((StubCatalog) g[1]).compile(
                 (SemanticGraphSnapshot) g[0], cfg("主件", "COST_BASIC", "COST_MAIN", "part_name"),
@@ -455,11 +497,17 @@ class CompilerV9DialectSelfCheckTest {
         assertTrue(skipped.sql.contains("dcbm.production_no = ANY(:total_material_no)"),
                 "跳过桥后必须恢复直接轴收窄，否则整条 SQL 完全不收窄：\n" + skipped.sql);
 
-        // 默认重载（三参）行为不变 —— 保存/编译/体检走的是它
+        // 默认重载（三参）—— 保存/编译/体检走的是它。
+        // 🔄 原断言「默认必须带桥」已被 D-6 取消：核价侧默认重载同样不发桥。
         CompileResult normal = compilerWith((StubCatalog) bridgeGraph("NARROW", true, true)[1]).compile(
                 (SemanticGraphSnapshot) bridgeGraph("NARROW", true, true)[0],
                 cfg("主件", "COST_BASIC", "COST_MAIN", "part_name"), CompileDialect.COST_BASIC);
-        assertTrue(normal.sql.contains("IN (SELECT"), "默认必须带桥：\n" + normal.sql);
+        System.out.println("---- D-6 默认重载（核价侧同样不发桥）----\n" + normal.sql);
+        assertFalse(normal.sql.contains("IN (SELECT"),
+                "D-6：默认重载在核价方言下也不许带桥（落库的 sql_template 走的就是它）：\n" + normal.sql);
+        assertFalse(normal.sql.contains("ds_quote_material"), "同上，任何位置都不许有：\n" + normal.sql);
+        assertTrue(normal.sql.contains("dcbm.production_no = ANY(:total_material_no)"),
+                "默认重载同样必须有直接轴收窄：\n" + normal.sql);
     }
 
     private static int countOf(String s, String needle) {

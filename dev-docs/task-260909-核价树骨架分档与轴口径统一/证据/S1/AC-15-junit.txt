@@ -1,0 +1,25 @@
+# AC-15 后端单测原始输出（S1 片）
+采样时刻: 2026-09-09T11:20:47-07:00
+pwd     : /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/cpq-backend
+命令    : ./mvnw -o test -Dtest=Task260909RowPartNoBucketTest -DfailIfNoSpecifiedTests=false
+契约    : BomTreeRenderService#flatBucketKey(Map<String,Object>) : String (static, 包级可见)
+
+== 复跑（加入 flatBucketKey 后）==
+[INFO] Running AC-15 非树页签行归属键：hf_part_no 优先，material_no 回落，都无则落选
+[AC-15] 行归属键解析方法 = BomTreeRenderService#flatBucketKey(Map) : String
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.132 s -- in AC-15 非树页签行归属键：hf_part_no 优先，material_no 回落，都无则落选
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+
+== 证伪实验（testing.md §4.4：首次 PASS 证明不了守卫接上了）==
+干预：把 AC-15① 的期望值临时改成 "__FALSIFY__"，其余一字不动
+结果：BUILD FAILURE / Tests run: 7, Failures: 1
+      expected: <__FALSIFY__> but was: <300013>
+判读：`but was: <300013>` 证明 flatBucketKey **确实被调用并返回了真实值**，
+      断言不是被反射/异常吞掉的空跑。
+还原：已还原并复跑 → Tests run: 7, Failures: 0（文件与干预前逐字节相同）
+
+== 天然 A/B（主线提供）==
+改动前（CANDIDATES 无 flatBucketKey）：7/7 全红，报契约缺口提示
+改动后（仅改 CANDIDATES 一行常量）  ：7/7 全绿
+⇒ 红→绿的唯一变量是方法名寻址，断言语义一字未动

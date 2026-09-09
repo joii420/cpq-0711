@@ -22,9 +22,13 @@
     </div>
     <div class="spacer"></div>
     <button class="btn primary">＋ 新增</button>
-    <button class="btn" disabled>设为生效<span class="tip">请先选择一条配置</span></button>
-    <button class="btn" disabled>编辑<span class="tip">请先选择一条配置</span></button>
-    <button class="btn danger" disabled>删除<span class="tip">请先选择一条配置</span></button>
+  </div>
+  <!-- 🔧 2026-09-09 修正：SelectableTable 的既有版式是两行（标题+切换+新增 / 动作条），
+       动作顺序与禁用文案也沿用既有实现。原型初稿按理想态画，与既有实现不符 —— 属原型缺陷，就地修。 -->
+  <div class="toolbar" style="margin-top:-4px">
+    <button class="btn" disabled>编 辑<span class="tip">请选择一条</span></button>
+    <button class="btn" disabled>设为生效<span class="tip">请选择一条</span></button>
+    <button class="btn danger" disabled>删 除<span class="tip">请选择</span></button>
   </div>
 
   <table>
@@ -51,7 +55,7 @@
   <div class="note">
     <b>本页要画到的状态（开发按此逐项还原）：</b><br>
     ① <b>切换三项且默认落「基础核价」</b>——顺序固定为 报价 / 基础核价 / 详细核价，用词与「主数据维护」页逐字一致。<br>
-    ② <b>禁用态可见 + 说明原因</b>——未选行时「设为生效 / 编辑 / 删除」保持可见但禁用，hover 出 tooltip「请先选择一条配置」。🚫 不许隐藏按钮。<br>
+    ② <b>禁用态可见 + 说明原因</b>——未选行时「编辑 / 设为生效 / 删除」保持可见但禁用，hover 出 tooltip（沿用 <code>SelectableTable</code> 既有文案：前两个「请选择一条」、删除「请选择」）。🚫 不许隐藏按钮。<br>&nbsp;&nbsp;&nbsp;<i>🔧 2026-09-09 修正记录：初稿把顺序画成「设为生效→编辑→删除」、tooltip 画成「请先选择一条配置」，与 <code>task-0721</code> 起的既有实现不符，且无任何 AC 覆盖这两项 ⇒ 判为<b>原型缺陷</b>（不是实现漂移），就地修原型、不改代码。</i><br>
     ③ <b>最长文案</b>——第 2 行是极值样例：超长配置名单行截断 + 悬浮显示全名，<b>不得撑破表格或换行</b>。<br>
     ④ 「生效中」绿标每套<b>至多一条</b>；切换到别的数据集时本页只换查看范围，不影响其它套的生效项。
   </div>

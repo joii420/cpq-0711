@@ -32,9 +32,20 @@ public class CostingBomTreeConfig extends PanacheEntityBase {
     public boolean isActive = false;
 
     /**
-     * task-0721 B2：递归 SQL 配置的用途维度 —— {@code QUOTE}(报价侧) / {@code COSTING}(核价侧,默认)。
-     * 每个 usage 至多一条 {@code isActive=true}（DB 部分唯一索引 {@code uq_bom_tree_config_active_per_usage}
-     * 按 usage 分别约束，见 V346）。
+     * 递归 SQL 配置的<b>数据集维度</b>。每个 usage 至多一条 {@code isActive=true}
+     * （DB 部分唯一索引 {@code uq_bom_tree_config_active_per_usage} 按 usage 分别约束，见 V346）。
+     *
+     * <p>task-260909 B-2 值域（{@code api.md §1.1}）：
+     * {@code QUOTE}(报价) / {@code COST_BASIC}(基础核价) / {@code COST_DETAIL}(详细核价)；
+     * {@code COSTING} 是 {@code COST_BASIC} 的<b>只读兼容别名</b>，<b>不可再写入</b>。
+     *
+     * <p>🚨 <b>本列没有 DB 层 CHECK 约束</b>（2026-09-09 实测 {@code pg_constraint} 仅有主键）——
+     * 值域<b>只由 {@link com.cpq.component.service.CostingBomTreeConfigService#normalizeUsage} 一处把关</b>。
+     * 绕过 Service 直接 {@code persist()} / 直接 SQL 写入不会有任何报错，写进去的野值会让
+     * {@link #findActive(String)} 永远找不到它 —— 症状是"配置明明在列表里，渲染却说未配置"。
+     *
+     * <p>⚠️ 字段名 {@code usage} 在 Java 侧不是保留字，但 {@code java.lang.Record#usage} 之类联想会误导；
+     * 列名与字段名逐字相同，改名会同时打断前端 DTO 契约与本列的部分唯一索引语义，不要动。
      */
     @Column(nullable = false, length = 16)
     public String usage = "COSTING";
@@ -62,9 +73,11 @@ public class CostingBomTreeConfig extends PanacheEntityBase {
     /**
      * 当前生效配置（按 usage 维度）；无 → null。
      *
-     * <p>task-0721 B2：原全局唯一 active 改为「每个 usage 至多一条」。核价侧调用方传
-     * {@code "COSTING"}（行为逐位不变，因存量配置迁移时已 {@code DEFAULT 'COSTING'}）；
-     * 报价侧调用方传 {@code "QUOTE"}。
+     * <p>🚨 <b>入参必须是已归一的 canonical usage</b>（{@code QUOTE} / {@code COST_BASIC} /
+     * {@code COST_DETAIL}）—— 本方法做的是<b>字面量</b>相等匹配，传 {@code "COSTING"} 只会去找
+     * {@code usage='COSTING'} 的行，<b>不会</b>命中 {@code COST_BASIC} 的生效配置。
+     * 归一唯一入口是 {@link com.cpq.component.service.CostingBomTreeConfigService#normalizeUsage}，
+     * 调用方（{@code BomTreeRenderService}）必须先过它再进来。
      */
     public static CostingBomTreeConfig findActive(String usage) {
         return find("isActive = true and usage = ?1", usage).firstResult();

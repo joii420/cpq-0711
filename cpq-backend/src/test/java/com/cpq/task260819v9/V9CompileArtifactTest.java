@@ -120,14 +120,24 @@ class V9CompileArtifactTest extends V9TestBase {
                         + "出现它说明谓词加错了位置（判据应是列存在性，不是方言）。"
                         + "\n剔除桥子查询后的外层=\n" + outer + "\n完整 SQL=\n" + sql);
 
-        // 🔑 正向那一半（repair-260908 AC-16 结构断言）：桥确实在、且桥里确实带了客户谓词。
-        //    没有这一句，上面的「剔除后不含」在**桥整个消失**时也会绿 —— 那是最典型的空跑。
-        assertTrue(BRIDGE_SUBQUERY.matcher(sql).find(),
-                "AC-107 前置：COST_BASIC 主件产物里找不到 NARROW 桥子查询 ⇒ 上面的『剔除后不含 customer_no』"
-                        + "会变成恒真的空断言。SQL=\n" + sql);
-        assertTrue(sql.contains("customer_no = :customerCode"),
-                "repair-260908 AC-16: 桥子查询必须带 customer_no = :customerCode —— 桥 FROM 的 "
-                        + "ds_quote_material 有该列且此前从不过滤，缺陷①在核价侧就是以这种形态存在的。SQL=\n" + sql);
+        // task-260909 D-6（方案甲）：核价侧轴统一为生产料号，COST_* 不再发 ds_quote_material 桥。
+        // 本断言原属 task-260819 AC-111/AC-112，其前提「轴值是销售料号」已被 D-6 取消。
+        //
+        // 🔄 原来这里断言「桥确实在」，理由是：桥若整个消失，上面那句『剔除桥子查询后不含 customer_no』
+        //    会退化成空跑。D-6 之后桥**本来就该不在**，那个空跑风险改由下面这条正向断言堵住：
+        //    产物**整段**（不是"剔除后的残余"）都不含 customer_no —— 断言作用面反而更大，不是更小。
+        assertFalse(BRIDGE_SUBQUERY.matcher(sql).find(),
+                "AC-107（D-6 后）：COST_BASIC 主件产物**不得**再有 NARROW 桥子查询 —— "
+                        + "销售→生产的翻译已整体移到 costing_bom_tree_config 骨架 SQL 的种子处（只发生一次）。"
+                        + "桥回来了就说明 SemanticCompiler 的 emitNarrow 门被改回去了。SQL=\n" + sql);
+        assertFalse(sql.toLowerCase().contains("ds_quote_material"),
+                "AC-107（D-6 后）：COST_BASIC 产物**任何位置**都不该再出现 ds_quote_material。SQL=\n" + sql);
+        assertFalse(sql.contains(":customerCode"),
+                "AC-107（D-6 后）：桥是核价主件产物里 :customerCode 的唯一来源（ds_cost_* 55 张表实测无 "
+                        + "customer_no 列）；桥停发后该占位符也应随之消失 —— 客户隔离由骨架种子承担。SQL=\n" + sql);
+        // 正向非空：证明上面三条 assertFalse 不是打在一段空 SQL 上（避免整组退化成空跑）
+        assertTrue(sql.contains("= ANY(:total_material_no)"),
+                "AC-107（D-6 后）：停桥后必须恢复直接轴收窄，否则整条 SQL 完全不收窄 = 整表全捞。SQL=\n" + sql);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -333,33 +343,38 @@ class V9CompileArtifactTest extends V9TestBase {
                 "AC-111①: 桥已改为『输入收窄』，产物**不得**再含对 ds_quote_material 的 LEFT JOIN（D-110）。"
                         + "\n  老形态会让「一个生产料号对应多个销售料号」时行数翻倍 —— 那正是 AC-112① 要守的。SQL=\n" + c.sql);
 
-        // ② WHERE 里要有经桥解析的收窄：既提到 ds_quote_material，又落在轴列上
-        assertTrue(flat.toLowerCase().contains("ds_quote_material"),
-                "AC-111②: 产物必须经 ds_quote_material 解析销售料号→生产料号（D-76 料号桥）。SQL=\n" + c.sql);
-        assertTrue(flat.matches("(?i).*\\bproduction_no\\b.*ds_quote_material.*")
-                        || flat.matches("(?i).*ds_quote_material.*\\bproduction_no\\b.*"),
-                "AC-111②: 桥的收窄必须落在 production_no 上。SQL=\n" + c.sql);
+        // ② task-260909 D-6（方案甲）：核价侧轴统一为生产料号，COST_* 不再发 ds_quote_material 桥。
+        //    本断言原属 task-260819 AC-111/AC-112，其前提「轴值是销售料号」已被 D-6 取消。
+        //    ⇒ 断言翻面：收窄必须**直接**落在方言轴列上，且产物里一处桥都不许有。
+        assertFalse(flat.toLowerCase().contains("ds_quote_material"),
+                "AC-111②（D-6 后）: 产物**不得**再经 ds_quote_material —— 销售→生产的翻译已整体移到 "
+                        + "costing_bom_tree_config 骨架 SQL 的种子处，全树只发生一次。SQL=\n" + c.sql);
+        assertTrue(flat.contains("production_no = ANY(:total_material_no)"),
+                "AC-111②（D-6 后）: 收窄必须直接落在方言轴列 production_no 上（CompileDialect.COST_BASIC"
+                        + ".axisColumn() 本来就声明的就是它）。SQL=\n" + c.sql);
         assertTrue(flat.contains(":total_material_no"),
-                "AC-111②: 收窄的入参应是 :total_material_no（传进来的是销售料号）。SQL=\n" + c.sql);
+                "AC-111②: 收窄的入参仍是 :total_material_no —— 变的是它**装什么号段**"
+                        + "（D-6 后装生产料号），不是它的名字。SQL=\n" + c.sql);
 
-        // ③ 传销售料号执行 → 非空，且行确实落在 P 上
+        // ③ 执行 → 非空，且行确实落在 P 上
+        // 🔄 task-260909 D-6：入参号段随轴口径一起翻转 —— 核价侧 preview 的 partNo 现在是
+        //    **生产料号**（BuilderService#bindTotalMaterialNo 对 isCosting() 是把 partNo 原样
+        //    塞进 ARRAY[...] 喂给 production_no = ANY(...)）。停桥后再传销售料号必然 0 行且不报错，
+        //    那正是本任务在消灭的静默形态，所以这里改传 P 而不是 S。
         Map<String, Object> pv = new LinkedHashMap<>(configForMainTab(COST_BASIC));
-        pv.put("partNo", salesNo);
-        // repair-260908 B-7：产物含 :customerCode ⇒ 预览必须带客户（见 customerOfSales 注释）
+        pv.put("partNo", prodNo);
+        // D-6 后核价主件产物已不含 :customerCode（桥是它的唯一来源），customerCode 仅作无害透传
         String custCode = customerOfSales(salesNo);
-        assertNotNull(custCode, notReady("AC-111③",
-                "销售料号 " + salesNo + " 在 ds_quote_material 上没有 customer_no —— "
-                        + "带客户谓词的产物无从预览", "灌数据方 / BL-0226"));
         pv.put("customerCode", custCode);
         Response p = preview(componentId, pv);
-        System.out.println("[AC-111③] preview(partNo=" + salesNo + " 销售料号, customerCode=" + custCode
-                + ") → HTTP " + p.statusCode()
+        System.out.println("[AC-111③] preview(partNo=" + prodNo + " 生产料号〔D-6 后入参号段〕, customerCode="
+                + custCode + ") → HTTP " + p.statusCode()
                 + " body=" + trunc(p.asString()));
         assertEquals(200, p.statusCode(), "AC-111③: preview 应 200，body=" + p.asString());
         Integer rc = p.jsonPath().getObject("rowCount", Integer.class);
         assertNotNull(rc, "AC-111③: 响应缺 rowCount。body=" + p.asString());
-        assertTrue(rc > 0, "AC-111③: 传销售料号 " + salesNo + " 应返回 P=" + prodNo
-                + " 对应的行，实际 rowCount=" + rc + "。🚫 0 行不算通过。诊断=" + p.jsonPath().getString("diagnostics"));
+        assertTrue(rc > 0, "AC-111③: 传生产料号 " + prodNo + " 应返回其对应的行，"
+                + "实际 rowCount=" + rc + "。🚫 0 行不算通过。诊断=" + p.jsonPath().getString("diagnostics"));
 
         List<Map<String, Object>> rows = p.jsonPath().getList("rows");
         assertNotNull(rows, "AC-111③: 响应缺 rows");
@@ -400,87 +415,59 @@ class V9CompileArtifactTest extends V9TestBase {
         String nodeKey = String.valueOf(tab[1]);
         String nodeId = String.valueOf(tab[3]);
 
-        // 不带桥的基准：直接查主表（当前版本）
-        long baseline = scalarLong(
-                "SELECT count(*) FROM ds_cost_basic_material_bom WHERE production_no=?1", prodNo);
-        System.out.println("[AC-112①] 紧邻取基准（不带桥）：SELECT count(*) FROM ds_cost_basic_material_bom "
-                + "WHERE production_no='" + prodNo + "' → " + baseline + " 行");
-        assertTrue(baseline > 0, notReady("AC-112①",
-                "该生产料号在 ds_cost_basic_material_bom 上 0 行 —— 『不翻倍』会退化成 0==0 的假通过",
-                "主线（V9T-FIXTURE 夹具）"));
-
         Object[] col = someColumnById(nodeId);
         assertNotNull(col, notReady("AC-112①", "节点 " + nodeKey + " 无列声明", "cpq-backend #2 / B-42"));
         Map<String, Object> cfg = config(COST_BASIC, tabType, null,
                 List.of(column(nodeKey, String.valueOf(col[0]), "测试字段")));
 
-        // 🔄 task-260907 B-3（用户 2026-09-07 裁决）：本页签**可能是 BOM 树页签**。
-        //   pickTabByMainTable 按 tab_type 排序取第一个，'BOM' 恰好排在最前 ⇒ 实际命中的就是树页签。
-        //   树页签的行集语义已经变了：从「父件 = 本料号的边」改成「**子件**属于本单闭包的边 + 根分支」，
-        //   而上面的 baseline 是按 `WHERE production_no=?`（**父件**口径）数出来的 ⇒ 两者天然不等。
-        //   🚫 **不能因此把 baseline 断言删掉** —— 它在非树页签上仍然是 D-110 的主判据。
-        //   ⇒ 拆成两层：
-        //     · 第 1 层（**所有页签都查**）= AC-112① 真正的不变量：N 个销售料号各自的行数**必须彼此相同**。
-        //       扇出的特征就是「行数随销售料号个数放大」，这一层足以证伪它，且与页签语义无关。
-        //     · 第 2 层（**仅非树页签**）= 原来的强判据：行数还必须等于不带桥的基准。
-        boolean treeTab = com.cpq.component.service.TabSemanticResolver.SEMANTIC_TREE.equals(
-                com.cpq.component.service.TabSemanticResolver.semanticOfGraphTabType(tabType));
-        if (treeTab) {
-            System.out.println("[AC-112①] 命中的是 BOM 树页签（task-260907 B-3 后行集口径 = 子件在本单闭包 + 根分支），"
-                    + "不带桥基准 " + baseline + " 是父件口径、不可比 ⇒ 本轮只查『各销售料号行数彼此相同』这一层");
-        }
+        // task-260909 D-6（方案甲）：核价侧轴统一为生产料号，COST_* 不再发 ds_quote_material 桥。
+        // 本断言原属 task-260819 AC-111/AC-112，其前提「轴值是销售料号」已被 D-6 取消。
+        //
+        // 🔄 **判据整体上移一层，不是被削弱**：
+        //   · 原判据是【行为式】的 —— 逐个销售料号跑 preview，看行数会不会随销售料号个数放大。
+        //     它成立的前提是「销售料号会进到 SQL 里」。D-6 之后核价侧 :total_material_no 装的就是
+        //     生产料号，**销售料号根本不参与编译产物** ⇒ 同一 prodNo 的 N 个销售料号喂进去得到的是
+        //     逐字相同的一条 SQL，原判据退化成 rc==rc==rc 的恒真比较（正是本文件到处在防的空跑）。
+        //   · 新判据是【结构式】的 —— 直接断言「产生扇出的那个东西（对桥的 LEFT JOIN / 半连接）
+        //     在产物里一处都没有」。扇出因此**在结构上不可能发生**，比数行数更强，
+        //     且 SemanticCompiler 的 emitNarrow 门一旦被改回去立刻变红。
+        Compiled cc = compileTab(COST_BASIC, tabType, nodeKey, nodeId);
+        String ccFlat = flatten(cc.sql);
+        System.out.println("[AC-112①] COST_BASIC/" + tabType + " 产物 SQL:\n" + cc.sql);
 
-        StringBuilder err = new StringBuilder();
-        Map<String, Integer> rcBySales = new LinkedHashMap<>();
-        for (String salesNo : salesNos) {
-            Map<String, Object> pv = new LinkedHashMap<>(cfg);
-            pv.put("partNo", salesNo);
-            // repair-260908 B-7：逐个销售料号取**它自己的**客户号，🚫 不写死（复合轴 (customer_no, material_no)）
-            pv.put("customerCode", customerOfSales(salesNo));
-            Response p = preview(componentId, pv);
-            System.out.println("[AC-112①] preview(销售料号=" + salesNo + ", 页签=" + tabType + ") → HTTP "
-                    + p.statusCode() + " rowCount=" + p.jsonPath().getObject("rowCount", Integer.class));
-            if (p.statusCode() != 200) {
-                err.append("\n  ").append(salesNo).append(": HTTP ").append(p.statusCode())
-                        .append(" body=").append(p.asString());
-                continue;
-            }
-            Integer rc = p.jsonPath().getObject("rowCount", Integer.class);
-            if (rc == null) {
-                err.append("\n  ").append(salesNo).append(": 响应缺 rowCount");
-                continue;
-            }
-            rcBySales.put(salesNo, rc);
-            if (!treeTab && rc != baseline) {
-                err.append("\n  ").append(salesNo).append(": 行数=").append(rc)
-                        .append("，与不带桥的基准 ").append(baseline).append(" 不同");
-                if (rc == baseline * salesNos.size()) {
-                    err.append("  🚨 恰好 = 基准 × 销售料号个数(").append(salesNos.size())
-                            .append(") ⇒ **这就是桥扇出**（老 LEFT JOIN 形态的特征），D-110 要消灭的正是它");
-                }
-            }
-        }
+        assertFalse(ccFlat.toLowerCase().contains("ds_quote_material"),
+                "AC-112①（D-6 后）: 产物**任何位置**都不得再出现 ds_quote_material —— 桥是唯一的扇出源"
+                        + "（生产料号 " + prodNo + " 对应 " + salesNos.size() + " 个销售料号 " + salesNos
+                        + "，老 LEFT JOIN 形态会把行数放大 " + salesNos.size() + " 倍）。"
+                        + "桥没了，扇出在结构上就不可能。SQL=\n" + cc.sql);
+        assertFalse(ccFlat.matches("(?i).*\\bleft\\s+(outer\\s+)?join\\s+ds_quote_material\\b.*"),
+                "AC-112①: 老 LEFT JOIN 形态（D-110 推翻的那个）绝不许回来。SQL=\n" + cc.sql);
+        assertTrue(ccFlat.contains("= ANY(:total_material_no)"),
+                "AC-112①（D-6 后）: 停桥后必须有直接轴收窄，否则整条 SQL 完全不收窄 = 整表全捞 —— "
+                        + "那比扇出更糟。SQL=\n" + cc.sql);
 
-        // 第 1 层：各销售料号行数必须彼此相同（扇出的直接判据，树/非树都查）
-        long distinctRc = rcBySales.values().stream().distinct().count();
-        if (distinctRc > 1) {
-            err.append("\n  🚨 各销售料号的行数彼此不同 ").append(rcBySales)
-                    .append(" ⇒ 行数随销售料号变化，**这就是桥扇出**（D-110 要消灭的正是它）");
-        }
-        // 🚨 全 0 时「彼此相同」恒成立 ⇒ 会退化成假通过，必须单独挡掉
-        boolean allZero = !rcBySales.isEmpty() && rcBySales.values().stream().allMatch(v -> v == 0);
-        assertFalse(allZero, notReady("AC-112①",
-                "全部销售料号预览都是 0 行 —— 『行数彼此相同』退化成 0==0 的假通过，本条判定为【未验证】",
-                "主线（V9T-FIXTURE 夹具）/ task-260907 B-7 递归换表"));
+        // 正向非空层（防上面三条 assertFalse 打在一段查不出东西的 SQL 上）：
+        // 用**生产料号**跑一次 preview —— D-6 后核价侧 preview 的 partNo 号段就是它
+        // （BuilderService#bindTotalMaterialNo 对 isCosting() 把 partNo 原样喂给 production_no = ANY(...)）。
+        Map<String, Object> pv = new LinkedHashMap<>(cfg);
+        pv.put("partNo", prodNo);
+        pv.put("customerCode", customerOfSales(salesNos.get(0)));
+        Response p = preview(componentId, pv);
+        Integer rc = p.jsonPath().getObject("rowCount", Integer.class);
+        System.out.println("[AC-112①] preview(生产料号=" + prodNo + ", 页签=" + tabType + ") → HTTP "
+                + p.statusCode() + " rowCount=" + rc);
+        assertEquals(200, p.statusCode(), "AC-112①: preview 应 200，body=" + p.asString());
+        assertNotNull(rc, "AC-112①: 响应缺 rowCount。body=" + p.asString());
+        assertTrue(rc > 0, notReady("AC-112①",
+                "生产料号 " + prodNo + " 在页签 " + tabType + " 上预览 0 行 —— 上面的结构断言会退化成"
+                        + "『打在一段查不出东西的 SQL 上』，本条判定为【未验证】",
+                "主线（V9T-FIXTURE 夹具）"));
 
-        assertEquals("", err.toString(),
-                "AC-112①: 桥是输入收窄，一个生产料号对应多个销售料号时行数**不得随销售料号个数放大**"
-                        + (treeTab ? "（本轮命中树页签，仅查『彼此相同』层）"
-                                   : "，且必须与不带桥相同（基准=" + baseline + "）")
-                        + "：" + err);
-        System.out.println("[AC-112① ✅] 生产料号 " + prodNo + " 的 " + salesNos.size()
-                + " 个销售料号各自预览行数 " + rcBySales + " —— 未扇出（老形态会是 "
-                + (baseline * salesNos.size()) + " 行）");
+        // 🚫 原「不带桥的基准 baseline」已随桥一起失去意义：产物本来就不带桥，
+        //    「带桥 vs 不带桥」这个对照组不再存在，故不再计算 baseline。
+        System.out.println("[AC-112① ✅] 生产料号 " + prodNo + " 对应 " + salesNos.size()
+                + " 个销售料号 " + salesNos + " —— 产物无桥，扇出在结构上不可能；"
+                + "生产料号预览 " + rc + " 行（非空，断言未空跑）");
     }
 
     // ═══════════════════════════════════════════════════════════════

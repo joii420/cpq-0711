@@ -4,6 +4,7 @@ import com.cpq.common.exception.BusinessException;
 import com.cpq.component.dto.ExpandDriverResponse;
 import com.cpq.component.entity.CostingBomTreeConfig;
 import com.cpq.component.service.ComponentDriverService;
+import com.cpq.component.service.CostingBomTreeConfigService;
 import com.cpq.customer.entity.Customer;
 import com.cpq.datasource.sqlview.BomTreeVarsContext;
 import com.cpq.datasource.sqlview.TemplateRenderScope;
@@ -58,9 +59,17 @@ import java.util.UUID;
  * 若一张报价单跨多个模板，调用方需按 {@code templateId} 分组后逐组调用本方法（Task 3.1 决定）。
  *
  * <p><b>契约回顾</b>：递归 SQL 输入 {@code :production_part_nos}（text[]），页签 SQL（组件 $view）
- * 输入 {@code :total_material_no}（text[]）、输出必含 {@code material_no} 列。匹配键仅
- * {@code material_no}；落选行（{@code material_no} 不属任何卡）丢弃；同料号多 occurrence 保留；
- * 树页签 = 勾了 {@code bom_recursive_expand} 的组件。
+ * 输入 {@code :total_material_no}（text[]）。
+ *
+ * <p>🔑 <b>行归属键（task-260909 B-6 / D-9 口径基线）：统一按 {@code hf_part_no} 归属行，
+ * 料号空间由方言决定</b>（{@code QUOTE}=销售料号、{@code COST_*}=生产料号）。
+ * <ul>
+ *   <li><b>普通页签</b>：桶键 = {@code hf_part_no}，缺失时回落 {@code material_no}
+ *       （仅为保护全库唯一 1 个非配置器视图）；两者都无 ⇒ 该行落选、不计入 {@code kept}。</li>
+ *   <li><b>树页签</b>：桶键 = {@code (parent_no, material_no)} 边键，<b>不动</b> ——
+ *       树行上 {@code hf_part_no ≡ material_no}（{@code SemanticCompiler:334}）。</li>
+ * </ul>
+ * 落选行丢弃；同料号多 occurrence 保留；树页签 = 勾了 {@code bom_recursive_expand} 的组件。
  */
 @ApplicationScoped
 public class BomTreeRenderService {
@@ -163,11 +172,13 @@ public class BomTreeRenderService {
         if (seed.isEmpty()) {
             return new MaterialUnionResult(new ArrayList<>(), new LinkedHashMap<>(), new LinkedHashMap<>());
         }
-        String effUsage = (usage == null || usage.isBlank()) ? "COSTING" : usage;
+        // task-260909 B-3：与 renderInternal **同一份**解析（见 resolveSkeletonUsage 的 javadoc）。
+        // 本方法没有 templateId/树组件上下文（签名里就没有），故恒走三级回落的第 2 级
+        // ——「用调用方传入的 usage 实参」，与改造前逐位等价。
+        String effUsage = resolveSkeletonUsage(null, usage);
         CostingBomTreeConfig cfg = CostingBomTreeConfig.findActive(effUsage);
         if (cfg == null) {
-            throw new BusinessException(400, "未配置生效的" + ("QUOTE".equals(effUsage) ? "报价" : "核价")
-                    + "树递归 SQL（costing_bom_tree_config 无 usage=" + effUsage + " 且 isActive=true 记录）");
+            throw skeletonMissing(effUsage);
         }
         List<CostingTreeNode> rows;
         // task-260907 B-7a：闭包口径必须与 renderInternal 的树展开口径同源——它按本单客户递归，
@@ -202,6 +213,118 @@ public class BomTreeRenderService {
             materialsByRoot.put(e.getKey(), new ArrayList<>(e.getValue()));
         }
         return new MaterialUnionResult(new ArrayList<>(g.totalMaterialNo), rootsByMaterial, materialsByRoot);
+    }
+
+    // ─── task-260909 B-3 / B-4：骨架配置的 usage 解析（渲染期按树页签方言分档） ───────────
+
+    /**
+     * 解析「本次渲染该用哪条骨架配置」的 usage —— <b>三级回落，缺一级就是静默走错分支</b>。
+     *
+     * <ol>
+     *   <li><b>解析到树页签组件的方言</b>（{@code component_sql_view.builder_config ->> 'dialect'}）
+     *       → 用它。方言值域与 usage 值域同名同形（{@code QUOTE} / {@code COST_BASIC} /
+     *       {@code COST_DETAIL}，见 {@link com.cpq.builder.compiler.CompileDialect}），
+     *       故映射是<b>恒等</b>的，🚫 不要在这里另写一张对照表 —— 那会变成第二个事实来源。</li>
+     *   <li><b>解析不到</b>（组件无 {@code builder_config}，如手写 $view；或模板没有树页签）
+     *       → 用调用方传入的 {@code usage} 实参，即改造前的行为。</li>
+     *   <li>该 usage 无生效配置 → 交给 {@link #skeletonMissing} 报错，
+     *       🚫 <b>不许再回落到别的 usage</b>：回落的失败形态是「详细核价模板悄悄用了基础核价的树」，
+     *       渲染得出来、不报错、数据是别的数据集的。</li>
+     * </ol>
+     *
+     * <p>⚠️ <b>N+1 纪律</b>：整次渲染最多 <b>1 条</b>额外 SQL（{@link #queryTreeTabDialect}），
+     * 与报价行数、闭包料号数、driver 组件数<b>全都无关</b>。
+     * 🚫 不许挪进 {@code for (Object[] dc : driverComps)} 循环里逐个查。
+     *
+     * <p>🔑 归一走 {@link CostingBomTreeConfigService#normalizeUsage}（唯一入口）：
+     * 调用方传的旧字面量 {@code "COSTING"} 在这里被归一成 {@code COST_BASIC}，
+     * 因为 {@code CostingBomTreeConfig#findActive} 做的是字面量匹配。
+     *
+     * @param treeComponentIdOrNull 本模板的树页签组件 id（{@code bom_recursive_expand=true}，
+     *                              由 {@code assertAtMostOneTreeTab} 保证至多 1 个）；
+     *                              null = 无树页签上下文 ⇒ 直接走第 2 级
+     * @param usageArg              调用方传入的 usage 实参（第 2 级回落值）
+     */
+    private String resolveSkeletonUsage(UUID treeComponentIdOrNull, String usageArg) {
+        String fallback = CostingBomTreeConfigService.normalizeUsage(
+                (usageArg == null || usageArg.isBlank())
+                        ? CostingBomTreeConfigService.LEGACY_USAGE_ALIAS : usageArg);
+        if (treeComponentIdOrNull == null) {
+            return fallback;
+        }
+        String dialect = queryTreeTabDialect(treeComponentIdOrNull);
+        String resolved = mapDialectToUsage(dialect, fallback);
+        if (!resolved.equals(fallback)) {
+            LOG.infof("[bom-tree render] 骨架 usage 按树页签方言解析：组件 %s dialect=%s ⇒ usage=%s"
+                    + "（调用方实参为 %s，以方言为准）", treeComponentIdOrNull, dialect, resolved, fallback);
+        }
+        return resolved;
+    }
+
+    /**
+     * {@link #resolveSkeletonUsage} 的<b>纯函数内核</b>（包级可见仅为可测：它决定"用哪套数据集的树"，
+     * 判错了不会报错、只会渲染出另一个数据集的数据）。
+     *
+     * <p>方言值域与 usage 值域同名同形 ⇒ 映射<b>恒等</b>，🚫 不要在这里另写对照表。
+     *
+     * @param dialectOrNull 树页签组件的 {@code builder_config.dialect}；null/空 = 解析不到（第 2 级回落）
+     * @param fallback      已归一的调用方实参（第 2 级回落值）
+     * @return 第 1 级（方言）或第 2 级（实参）的结果，恒为 canonical usage
+     */
+    static String mapDialectToUsage(String dialectOrNull, String fallback) {
+        if (dialectOrNull == null || dialectOrNull.isBlank()) {
+            return fallback;   // 第 2 级：组件无 builder_config（手写视图）/ 模板无树页签
+        }
+        try {
+            return CostingBomTreeConfigService.normalizeUsage(
+                    com.cpq.builder.compiler.CompileDialect.parse(dialectOrNull).name());
+        } catch (Exception e) {
+            // 图里存了个编译器不认的方言值 —— 🚫 不拿它猜（猜错=渲染另一个数据集的树且不报错），
+            // 退回调用方实参并留下线索。
+            LOG.warnf("[bom-tree render] builder_config.dialect=「%s」无法识别（%s），"
+                    + "骨架 usage 回落到调用方实参 %s", dialectOrNull, e.getMessage(), fallback);
+            return fallback;
+        }
+    }
+
+    /**
+     * 取树页签组件绑定的取数视图方言。<b>整次渲染只发这 1 条</b>（N+1 约束）。
+     *
+     * <p>读的是<b>活表</b> {@code component_sql_view} 而不是模板冻结快照：
+     * {@code template.sql_views_snapshot} 只冻了 {@code sql_template}/{@code declared_columns}/
+     * {@code required_variables} 三项，<b>压根没有 {@code builder_config}</b>
+     * （见 {@code ComponentSqlViewService#addSnapshotEntry}）—— 方言在快照里无处可取。
+     * 方言是「这个组件属于哪个数据集」的身份标识、不是可版本化的渲染配置，活表读取语义正确。
+     */
+    private String queryTreeTabDialect(UUID componentId) {
+        try {
+            @SuppressWarnings("unchecked")
+            List<Object> rows = em.createNativeQuery(
+                            "SELECT csv.builder_config ->> 'dialect' FROM component_sql_view csv "
+                                    + "WHERE csv.component_id = :cid AND csv.status = 'ACTIVE' "
+                                    + "AND csv.builder_config IS NOT NULL "
+                                    + "AND (csv.builder_config ->> 'dialect') IS NOT NULL "
+                                    + "ORDER BY csv.updated_at DESC NULLS LAST LIMIT 1")
+                    .setParameter("cid", componentId)
+                    .getResultList();
+            return rows.isEmpty() || rows.get(0) == null ? null : rows.get(0).toString();
+        } catch (Exception e) {
+            LOG.warnf("[bom-tree render] 读取树页签组件 %s 的方言失败（%s），骨架 usage 走回落",
+                    componentId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * task-260909 B-4：骨架未配置的报错 —— 文案带上<b>实际解析出的数据集名</b>。
+     *
+     * <p>改动前文案恒为「核价…无 usage=COSTING…」，三套并存后这句话会把人指向错的那条配置：
+     * 明明是详细核价没配，报出来却说 COSTING 没配，而 COSTING 那条还好端端生效着。
+     */
+    private static BusinessException skeletonMissing(String effUsage) {
+        return new BusinessException(400, "未配置生效的「"
+                + CostingBomTreeConfigService.usageDisplayName(effUsage)
+                + "」树递归 SQL（costing_bom_tree_config 无 usage=" + effUsage + " 且 isActive=true 记录）");
     }
 
     /**
@@ -378,12 +501,15 @@ public class BomTreeRenderService {
                 ? overrides.getOrDefault(treeComponentId, java.util.Collections.emptyMap())
                 : java.util.Collections.emptyMap();
 
-        // ② 当前 usage 维度生效的递归 SQL 配置（task-0721 B2：按 usage 取，核价/报价互不干扰）
-        String effUsage = (usage == null || usage.isBlank()) ? "COSTING" : usage;
+        // ② 生效的递归 SQL 配置。
+        // task-0721 B2：按 usage 取，核价/报价互不干扰。
+        // task-260909 B-3：usage 不再直接用调用方传的字面量，而是**先按树页签组件的方言解析**
+        //   （三级回落见 resolveSkeletonUsage）——基础核价 / 详细核价两套模板各用各的骨架，
+        //   否则它们会静默抢用同一条配置、渲染出对方数据集的树而不报错。
+        String effUsage = resolveSkeletonUsage(treeComponentId, usage);
         CostingBomTreeConfig cfg = CostingBomTreeConfig.findActive(effUsage);
         if (cfg == null) {
-            throw new BusinessException(400, "未配置生效的" + ("QUOTE".equals(effUsage) ? "报价" : "核价")
-                    + "树递归 SQL（costing_bom_tree_config 无 usage=" + effUsage + " 且 isActive=true 记录）");
+            throw skeletonMissing(effUsage);
         }
 
         List<CostingTreeNode> rows;
@@ -430,7 +556,9 @@ public class BomTreeRenderService {
                     treeTabCompIds.add(cidStr);
                 }
                 UUID compId = UUID.fromString(cidStr);
-                // 分桶键语义按组件类型不同：树页签 = (parent_no, material_no) 边键；普通页签 = material_no。
+                // 分桶键语义按组件类型不同：
+                //   · 树页签   = (parent_no, material_no) 边键（树契约专用两列）；
+                //   · 普通页签 = hf_part_no 行归属键（task-260909 B-6，material_no 仅作存量回落）。
                 Map<String, List<ExpandDriverResponse.Row>> byKey = new LinkedHashMap<>();
                 try {
                     // 见类注释「跑组件 $view 的入口」说明：partNo/partVersion/lineItemId 继续传 null，
@@ -446,47 +574,72 @@ public class BomTreeRenderService {
                     if (resp != null && resp.rows != null) {
                         int total = 0;
                         int kept = 0;
-                        int missingParent = 0;
+                        int missingParentCol = 0;
                         for (ExpandDriverResponse.Row r : resp.rows) {
                             if (r == null || r.driverRow == null) {
                                 continue;
                             }
                             total++;
-                            Object mn = r.driverRow.get("material_no");
-                            if (mn == null) {
-                                continue; // 落选行（无 material_no）丢弃
-                            }
-                            kept++;
                             if (recursive) {
                                 // 树页签：按 (parent_no, material_no) 边键分桶，让每个树节点只挂到
                                 // 它自己那条「父→子」边的业务行（同一子件挂多父时不再重复/挂错父）。
+                                // 🚫 树页签的边键**不动**（task-260909 B-6 明确否决改 hf_part_no）：
+                                //    树行上 hf_part_no ≡ material_no（SemanticCompiler:334 树的
+                                //    hf_part_no 取子件），改了等价但无收益、徒增风险。
+                                Object mn = r.driverRow.get("material_no");
+                                if (mn == null) {
+                                    continue; // 落选行（无 material_no）丢弃
+                                }
+                                kept++;
                                 Object pn = r.driverRow.get("parent_no");
-                                if (pn == null) missingParent++;
+                                // 🚨 task-260909 B-1：判据是「列在不在」而**不是**「值是不是 null」。
+                                //    守卫的语义一字未改（「整个视图没输出这一列 = 配置错误」），
+                                //    换的只是能真正表达该语义的那个判据 —— 见 lacksParentNoColumn。
+                                if (lacksParentNoColumn(r.driverRow)) missingParentCol++;
                                 byKey.computeIfAbsent(
                                         edgeKey(pn == null ? null : pn.toString(), mn.toString()),
                                         k -> new ArrayList<>()).add(r);
                             } else {
-                                // 普通页签：按 material_no 料号维度分桶（不变）。
-                                byKey.computeIfAbsent(mn.toString(), k -> new ArrayList<>()).add(r);
+                                // ── task-260909 B-6：普通页签按 hf_part_no 归属行 ──────────────
+                                // 这是压在本文件上的契约，改之前先读完这四条依据：
+                                //   ① SemanticCompiler:339 `declaredColumns.add(0, "hf_part_no")`
+                                //      —— **无条件第 0 列**，树/非树都发；
+                                //   ② material_no / parent_no 只在 `if (treeContract)` 分支才加
+                                //      ⇒ 它们是**树契约专用的边键，非树页签本就不该有**；
+                                //   ③ SqlViewExecutor:342/410 平台外层过滤用的就是
+                                //      `inner_q.hf_part_no = ANY(:hfPartNos)` —— 行归属键平台侧早已是它；
+                                //   ④ 全库实测 42 个生效视图：41 个有 hf_part_no、仅 5 个有 material_no
+                                //      （正好是 5 个树页签）。
+                                // ⇒ 原先写死 material_no 的后果不是报错，是**恒 0 行**（kept=0，
+                                //   守卫按设计不判，连红都不红）。
+                                // material_no 回落只为保护全库唯一 1 个非配置器视图，🚫 不是主路径。
+                                String bucket = flatBucketKey(r.driverRow);
+                                if (bucket == null) {
+                                    continue; // 落选行（hf_part_no / material_no 都没有）丢弃
+                                }
+                                kept++;
+                                byKey.computeIfAbsent(bucket, k -> new ArrayList<>()).add(r);
                             }
                         }
                         if (total > 0 && kept == 0) {
-                            LOG.warnf("[costing-tree] 组件 %s 的 $view 返回 %d 行但无有效 material_no"
-                                            + "（可能未输出 material_no 列），该页签数据全部落选",
+                            LOG.warnf("[costing-tree] 组件 %s 的 $view 返回 %d 行但无有效行归属键"
+                                            + "（树页签需 material_no；非树页签需 hf_part_no，"
+                                            + "缺失时回落 material_no），该页签数据全部落选",
                                     cidStr, total);
                         }
                         // repair-0814 D-3（原 BL-0172）：原先这里只 LOG.warnf，渲染照常返回 200，
                         // 该页签渲染成满屏空行而用户侧零提示。改为显式失败——与本方法下方
                         // failedComponents 块「不能带着残缺数据静默"成功"」的既定口径统一。
                         //
-                        // 触发条件保持不变，不得放宽：kept > 0 且【全部】行都没有父件列 = 配置错误
+                        // 触发条件保持不变，不得放宽：kept > 0 且【全部】行都不含父件**列** = 配置错误
                         // （树页签 $view 漏输出 parent_no 列）。部分行缺 parent_no 不在此拦——那是
                         // 数据问题不是配置问题，原样放行以免误伤。
                         //
-                        // 强度依据（2026-08-14 全库扫描 cpq_db_0724）：18 个 bom_recursive_expand=true
-                        // 的组件，其 component_sql_view.sql_template 全部含 parent_no（18/18），
-                        // 零合法反例，故硬拦不误伤存量。
-                        assertParentNoPresent(cidStr, recursive, kept, missingParent);
+                        // 🚨 task-260909 B-1：判据由「值为 NULL」改为「列不存在」。原判据把**根行的
+                        //    合法 NULL 父件**当成缺列 —— 配置器自 2026-09-07 起生成的树页签 SQL 带一支
+                        //    根分支（parent_no 恒 NULL 是设计），闭包无边时 100% 的行都是根行 ⇒ 必然误报。
+                        //    守卫 2026-08-14 立规矩时依据的「18/18 零反例」已于 24 天后失效。
+                        assertParentNoPresent(cidStr, recursive, kept, missingParentCol);
                     }
                 } catch (Exception e) {
                     LOG.errorf(e, "[costing-tree-render] expand comp=%s failed: %s", cidStr, e.getMessage());
@@ -533,7 +686,13 @@ public class BomTreeRenderService {
                             }
                         }
                     } else {
-                        // 普通页签：卡片料号集合命中的行平铺（按 material_no,不变）
+                        // 普通页签：卡片料号集合命中的行平铺。
+                        // task-260909 B-6：桶键已改 hf_part_no（见 §④），这里的查找集合 cardMaterials
+                        // 无需改动 —— 它是本卡片的 BOM 闭包料号集合，而闭包与页签行的料号空间
+                        // **由方言统一决定**（QUOTE=销售料号、COST_*=生产料号），两侧同号段：
+                        //   · QUOTE 视图的 hf_part_no 取锚点自身料号列（销售料号）；
+                        //   · COST_* 视图的 hf_part_no 同样取锚点自身料号列（生产料号），
+                        //     而 COST_* 的闭包自 task-260909 B-5/B-9 起也是生产料号（方案甲）。
                         for (String mat : cardMaterials) {
                             List<ExpandDriverResponse.Row> bizRows = byKey.get(mat);
                             if (bizRows != null) {
@@ -552,6 +711,74 @@ public class BomTreeRenderService {
     }
 
     /**
+     * task-260909 B-1：这一行的 {@code driverRow} 里<b>压根没有 {@code parent_no} 这个键</b>吗？
+     *
+     * <p>🚨 <b>{@code containsKey} 而不是 {@code get()==null}</b> —— 两者相差的正是本次修的那个缺陷：
+     * <ul>
+     *   <li>{@code containsKey==true && get()==null} = <b>列存在、值为 NULL</b>。
+     *       树页签 SQL 的<b>根分支</b>（配置器自 2026-09-07 起必产）就是这个形态，
+     *       {@code parent_no} 恒 NULL 是<b>设计</b>，绝不是配置错误。</li>
+     *   <li>{@code containsKey==false} = <b>整个视图没输出这一列</b>，才是守卫要拦的配置错误。</li>
+     * </ul>
+     * 前提（2026-09-09 逐段实证）：{@code SqlViewExecutor} 逐列 {@code row.put(label, rs.getObject(c))}
+     * —— NULL 也 put；{@code DataLoader#stableSort} 只 copy List 不碰 Map；
+     * {@code ComponentDriverService} 对 {@code row.driverRow} 是引用直赋 ⇒ 这条链路上
+     * <b>没有任何一处会把 null 值的键丢掉</b>，所以 containsKey 区分得开。
+     */
+    static boolean lacksParentNoColumn(Map<String, Object> driverRow) {
+        return driverRow == null || !driverRow.containsKey("parent_no");
+    }
+
+    /**
+     * task-260909 B-6：<b>非树页签</b>这一行归属哪个卡片料号 —— 桶键 {@code hf_part_no}，
+     * 缺失时回落 {@code material_no}；两者都没有返回 {@code null}（该行落选、不计入 {@code kept}）。
+     * 「没有」= 键不存在 <b>或</b> 值为 null / 空串 / 纯空白（见 {@link #nonBlankPartNo}）。
+     *
+     * <p>为什么主键是 {@code hf_part_no}（这是压在本文件上的契约，改之前先读完）：
+     * <ol>
+     *   <li>{@code SemanticCompiler:339} {@code declaredColumns.add(0, "hf_part_no")}
+     *       —— <b>无条件第 0 列</b>，树/非树都发；</li>
+     *   <li>{@code material_no} / {@code parent_no} 只在 {@code if (treeContract)} 分支才加
+     *       ⇒ 它们是<b>树契约专用的边键，非树页签本就不该有</b>；</li>
+     *   <li>{@code SqlViewExecutor:342/410} 平台外层过滤用的就是
+     *       {@code inner_q.hf_part_no = ANY(:hfPartNos)} —— 行归属键在平台侧早已是它；</li>
+     *   <li>全库实测（2026-09-09，42 个 {@code status='ACTIVE'} 的视图）：
+     *       <b>41 个有 {@code hf_part_no}、仅 5 个有 {@code material_no}</b>（正好是 5 个树页签）。</li>
+     * </ol>
+     * ⇒ 原先写死 {@code material_no} 的后果不是报错，是<b>恒 0 行</b>（{@code kept==0}，
+     * {@code assertParentNoPresent} 按设计不判，连红都不红）。
+     *
+     * <p>🚫 {@code material_no} 回落<b>只为保护全库唯一 1 个非配置器视图</b>，不是主路径，
+     * 更不是"两个键都试试"的容错 —— 新视图一律出 {@code hf_part_no}。
+     *
+     * <p>🚫 <b>不要把这个键用在树页签上</b>：树页签按 {@code (parent_no, material_no)} 边键分桶
+     * （见 {@link #edgeKey}），树行上 {@code hf_part_no ≡ material_no}，改了等价但无收益。
+     */
+    static String flatBucketKey(Map<String, Object> driverRow) {
+        if (driverRow == null) return null;
+        String hf = nonBlankPartNo(driverRow.get("hf_part_no"));
+        return hf != null ? hf : nonBlankPartNo(driverRow.get("material_no"));
+    }
+
+    /**
+     * 料号值的「有效性」判据：{@code null} / 空串 / 纯空白一律当作<b>没有</b>。
+     *
+     * <p>🚨 <b>「键存在」不等于「有值」</b>——这两处必须都按空白判，否则各错一头：
+     * <ul>
+     *   <li>把空串当"有值" ⇒ 所有空行挤进同一个 {@code ""} 假桶，它永远配不上任何卡片料号，
+     *       表现为整片行<b>静默落选</b>而 {@code kept} 却是满的（守卫因此也不会响）；</li>
+     *   <li>{@code hf_part_no} 为空白时不触发回落 ⇒ 本该由 {@code material_no} 兜住的行一起丢掉。</li>
+     * </ul>
+     * <p>📌 返回<b>原值</b>而不是 trim 后的值：桶键要和递归 SQL 输出的料号<b>逐字节</b>相等，
+     * trim 只用于判空，不参与取值。
+     */
+    private static String nonBlankPartNo(Object v) {
+        if (v == null) return null;
+        String s = v.toString();
+        return s.trim().isEmpty() ? null : s;
+    }
+
+    /**
      * repair-0814 D-3（原 {@code BL-0172}）：树页签 {@code $view} 必须输出 {@code parent_no} 列。
      *
      * <p><b>改动前是一行 {@code LOG.warnf}</b>：渲染照常返回 200、该页签渲染成<b>满屏空行</b>，
@@ -559,27 +786,46 @@ public class BomTreeRenderService {
      * {@code render()} 里 {@code failedComponents} 块「不能带着残缺数据静默"成功"」的既定口径统一
      * （该块注释记载的真实事故：272 次异常全被吞、17 个 tab 清零、job 却全报 SUCCESS）。
      *
-     * <p><b>触发条件不得放宽</b>：{@code recursive} 且 {@code kept > 0} 且 <b>全部</b>行都没有父件列。
+     * <h3>🚨 task-260909 B-1：判据换了，语义没换</h3>
+     * 本守卫要表达的一直是<b>「整个视图根本没输出 parent_no 这一列」</b>（配置错误）。
+     * 原实现用 {@code driverRow.get("parent_no") == null} 统计，那表达的却是<b>「值为 NULL」</b> ——
+     * 两者在 2026-08-14 立规矩时恰好等价（当时全部树视图都不产根行），24 天后就不等价了：
+     * 取数配置器自 {@code 888bb6b0}（2026-09-07 · task-260907 B-3）起生成的树页签 SQL 带一支
+     * <b>根分支</b>，其 {@code parent_no} 恒为 {@code NULL} 是<b>设计</b>。
+     * 闭包无边时 100% 的行都是根行 ⇒ 旧判据<b>必然</b>误报，整卡片红框。
+     *
+     * <p>✅ 新判据 {@code !driverRow.containsKey("parent_no")} 能真正区分两者，依据是执行链路上
+     * <b>没有任何一处会把 NULL 值的键丢掉</b>（2026-09-09 逐段核对）：
+     * <ol>
+     *   <li>{@code SqlViewExecutor:375-380} 逐列 {@code row.put(meta.getColumnLabel(c), rs.getObject(c))}
+     *       —— 每列都 put，NULL 也 put，落进 {@code HashMap}（允许 null 值，{@code containsKey} 为 true）；</li>
+     *   <li>{@code DataLoader#stableSort} 只 copy <b>List</b>、不碰 Map；</li>
+     *   <li>{@code ComponentDriverService:686} {@code row.driverRow = driverRow} 是<b>引用直赋</b>，无过滤拷贝；</li>
+     *   <li>本类与 {@code ComponentDriverService} 同进程直调，中间<b>没有 JSON 序列化</b>
+     *       （Jackson 的 NON_NULL 之类只影响出网报文，不影响这条内存链路）。</li>
+     * </ol>
+     * ⇒ 「列存在但值为 NULL」在 {@code driverRow} 里表现为 {@code containsKey==true && get()==null}，
+     * 「列不存在」才是 {@code containsKey==false}。
+     *
+     * <p><b>触发条件不得放宽</b>：{@code recursive} 且 {@code kept > 0} 且 <b>全部</b>行都不含父件列。
      * <ul>
      *   <li>{@code kept == 0}（一行都没留下）→ 不判，那是"无数据"不是"缺列"；</li>
-     *   <li>{@code missingParent < kept}（只有部分行缺）→ 不判，那是<b>数据</b>问题不是<b>配置</b>问题；</li>
-     *   <li>{@code !recursive}（普通页签按 material_no 分桶）→ 与 parent_no 无关，不判。</li>
+     *   <li>{@code missingParentCol < kept}（只有部分行不含该列）→ 不判。同一个结果集的所有行列集相同，
+     *       出现这种不齐说明来源不是单一 {@code $view}，此时判不出是不是配置问题，不猜；</li>
+     *   <li>{@code !recursive}（普通页签按 {@code hf_part_no} 分桶）→ 与 parent_no 无关，不判。</li>
      * </ul>
-     *
-     * <p><b>硬拦而非告警的依据</b>（2026-08-14 全库扫描 {@code cpq_db_0724}）：18 个
-     * {@code bom_recursive_expand=true} 的组件，其 {@code component_sql_view.sql_template}
-     * <b>全部</b>含 {@code parent_no}（18/18），零合法反例，故硬拦不误伤存量。
      *
      * <p>抽成独立方法是为了让这条判据可被单测直接覆盖（{@code BomTreeParentNoGuardTest}）——
      * 原先内联在 {@code render()} 的深层循环里，要测它得搭一整套 driver/$view 夹具。
      *
-     * @param componentId   组件 id（仅用于错误文案）
-     * @param recursive     该页签是否树页签（{@code bom_recursive_expand}）
-     * @param kept          有效行数（有 {@code material_no} 的行）
-     * @param missingParent 其中缺 {@code parent_no} 的行数
+     * @param componentId      组件 id（仅用于错误文案）
+     * @param recursive        该页签是否树页签（{@code bom_recursive_expand}）
+     * @param kept             有效行数（有 {@code material_no} 的行）
+     * @param missingParentCol 其中 {@code driverRow} <b>不含 {@code parent_no} 这个键</b>的行数
+     *                         （🚫 不是「值为 NULL」的行数 —— 传错语义就退回旧缺陷）
      */
-    static void assertParentNoPresent(String componentId, boolean recursive, int kept, int missingParent) {
-        if (!recursive || kept <= 0 || missingParent != kept) return;
+    static void assertParentNoPresent(String componentId, boolean recursive, int kept, int missingParentCol) {
+        if (!recursive || kept <= 0 || missingParentCol != kept) return;
         throw new BusinessException(400, "树页签组件 " + componentId + " 的 $view 未输出 parent_no 列（"
                 + kept + " 行全无父件列）：树页签按 (parent_no, material_no) 边键匹配，"
                 + "缺该列会退化为只命中根层空父 → 该页签业务数据全部落空（渲染成满屏空行）。"
