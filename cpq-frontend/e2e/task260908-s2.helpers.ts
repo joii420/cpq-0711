@@ -320,13 +320,20 @@ export async function newComponentInBuilder(page: Page, suffix: string): Promise
  *
  * 🚨 范围必须收进弹层容器。整页找 `确定` 会命中工具栏 / 别的表单上的同名按钮，
  *    点下去做了别的事，而症状会出现在**后面某条断言**上，极难归因。
+ *
+ * 🚨 **主按钮文案不止「确定/确认」**（repair-260908 实证，2026-09-08）：
+ *    切**数据集**的弹层是「**确认切换**」，切**数据源**的弹层是「**继续切换**」。
+ *    只匹配 `确定|确认` 时按钮点不到、弹层留在页面上，`.ant-modal-wrap` 随后拦掉一切 pointer 事件 ⇒
+ *    失败点落在**下一步**（如 `selectSource`），报「数据源下拉里找不到 X」，**长得像产品缺陷**。
+ *    🚫 也不要用 Escape 兜底：Escape 等于点「取消」，切换会被**静默撤销**而页面看上去一切正常。
  */
 async function confirmIfAsked(page: Page) {
   // 用 `.filter({ visible: true })`（本仓既有 spec 的写法），🚫 不用 `:visible` 伪类混在逗号选择器里
   const scope = page.locator('.ant-modal-wrap, .ant-popconfirm, .ant-modal-confirm')
     .filter({ visible: true });
   if (await scope.count() === 0) return;
-  const btn = scope.locator('button').filter({ hasText: /^确\s*定$|^确\s*认$/ }).first();
+  const btn = scope.locator('button')
+    .filter({ hasText: /继\s*续\s*切\s*换|确\s*认\s*切\s*换|^确\s*定$|^确\s*认$/ }).first();
   if (await btn.isVisible().catch(() => false)) {
     await btn.click();
     await page.waitForTimeout(800);
@@ -355,11 +362,40 @@ export async function selectSource(page: Page, label: string) {
   ).toBeVisible({ timeout: 15_000 });
   await sel.click();
   await page.waitForTimeout(400);
-  const opt = page
-    .locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option')
+  const dropdown = page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden)').first();
+  const opt = dropdown
+    .locator('.ant-select-item-option')
     .filter({ hasText: new RegExp(`^${label}$`) })
     .first();
-  await expect(opt, `数据源下拉里找不到「${label}」`).toBeVisible({ timeout: 10_000 });
+
+  // 🚨 虚拟滚动兜底（repair-260908 实证，2026-09-08）：数据源下拉有 20+ 项，antd 用
+  //    rc-virtual-list **只渲染可视区** —— 可视区外的选项（如明细核价的「模具工装成本」）
+  //    在 DOM 里根本不存在，直接断言会报「数据源下拉里找不到 X」，**长得像「这个源没配上」的产品缺陷**，
+  //    其实是量具够不着。⇒ 先试搜索框过滤，再退化为滚动 holder；都试过还找不到，才是真缺陷。
+  const search = sel.locator('input.ant-select-selection-search-input').first();
+  if (await search.count()) {
+    await search.fill(label).catch(() => {});
+    await page.waitForTimeout(700);
+  }
+  if (!(await opt.isVisible().catch(() => false))) {
+    const holder = dropdown.locator('.rc-virtual-list-holder').first();
+    for (let i = 0; i < 25; i++) {
+      if (await opt.isVisible().catch(() => false)) break;
+      if (await holder.count()) {
+        await holder.evaluate((el) => { (el as HTMLElement).scrollTop += 200; }).catch(() => {});
+      } else {
+        await dropdown.hover().catch(() => {});
+        await page.mouse.wheel(0, 200);
+      }
+      await page.waitForTimeout(200);
+    }
+  }
+  const visibleOpts = await dropdown.locator('.ant-select-item-option').allInnerTexts().catch(() => []);
+  await expect(
+    opt,
+    `数据源下拉里找不到「${label}」（已试搜索框过滤 + 滚动 25 次）。`
+    + `当前可见选项=${JSON.stringify(visibleOpts)}`,
+  ).toBeVisible({ timeout: 10_000 });
   await opt.click();
   await confirmIfAsked(page);
   await page.waitForTimeout(2500);

@@ -824,7 +824,22 @@ pickQualifiedCustomer({ needsTakenProductNo? })
     ⚠️ **本条原文有两处需订正**：① 修法不止 `applyFullScope` —— `NARROW` 桥（`SemanticCompiler:585`）**直接拼 `anchorWhere` 不经该方法**，
     其子查询里的 `ds_quote_material` 同样缺客户过滤（3 个 `COST_BASIC` 视图全走这条；实测当前 0 行影响，是结构隐患）；
     ② 「存量模板重发布」**行不通** —— `new-draft` + `publish` 产生新 `template.id`，存量 `quotation_line_item.template_id` 仍指旧版，
-    必须**原地改写冻结快照**（既有端点 `POST /api/cpq/config-center/refresh-all-snapshots`）
+    必须**原地改写冻结快照**。
+    🚨 **订正（2026-09-08 20:2x 主线读码实证，本条原先指错了端点）**：
+      `POST /api/cpq/config-center/refresh-all-snapshots` → `TemplateService.forceRealignSnapshots:1096`，
+      它写的是 **`template_component_snapshot` + `template.components_snapshot`**（组件**配置**快照），
+      🚫 **一个字都不碰 `template.sql_views_snapshot`**（SQL 视图快照）。
+      ⇒ 调它对本缺陷**无效**，而且会给出三个全绿信号：`HTTP 200` · `refreshedTemplates=5` ·
+      `template.updated_at` **确实变了**（`:1138` 那条 `UPDATE` 带 `updated_at = now()`）。
+      **实证**：2026-09-08 20:19:45 执行后，30 个实时 `builder_*` 视图 30/30 已含客户谓词，
+      而 5 个 PUBLISHED 模板的 `sql_views_snapshot` 里含谓词条目 = **0**（ds 原生三版 13/14/14 条全旧）。
+      ⇒ 正确写点是 `ComponentSqlViewService.snapshotForComponents()`（`:96` javadoc：
+      「模板 DRAFT → PUBLISHED 时由 TemplateService 调，写入 `template.sql_views_snapshot`」）。
+      📌 另有一列 `template.template_sql_views_snapshot`（模板**自有**视图，`Template.java:85`）——
+      实测这 5 个模板该列均为空对象 `{}` ⇒ 本次不必一并处理，但改快照的代码要知道它存在。
+    ⚠️ **我是怎么指错的**：按端点名与 javadoc 里的「快照」二字推断它写哪张表，**没读方法体**。
+      与本条下面记的另两次（文本 grep 不分子句 / 正则匹到子查询）**同一形态**：
+      **拿一个名字当结论，而那个名字在两种事实下都成立。**
   - 🚨 **更正四条（2026-09-08 并发会话 `客户产品数据行重复` 提出，主线独立实测复核后采纳）**：
     ① **判据不是「28 个视图全补」，是「锚点物理表有没有 `customer_no` 列」** ——
       实测：`ds_cost_*` 共 **55 张表，0 张**带 `customer_no`。对它们补谓词 = 一编译就 `column does not exist`，

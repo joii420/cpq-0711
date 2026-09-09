@@ -1,0 +1,538 @@
+id,sql_view_name,component_id,builder_version,md5,sql_template,declared_columns,required_variables,updated_at
+3ac4bb89-195c-4a98-bb65-5171967451cc,builder_04375490927f,04375490-927f-4802-bcc7-4156df4fc27d,1,aba4344a06b1b9d31af72e4c614469e1,"SELECT
+  dqiof.material_no AS hf_part_no,
+  dqiof.material_no AS ""_来料其他费用_销售料号"",
+  dqiof.item_seq AS ""_来料其他费用_项次"",
+  dqiof.input_material_no AS ""_来料其他费用_投入料号"",
+  dqiof.element_item_seq AS ""_来料其他费用_要素项次"",
+  dqiof.element_name AS ""_来料其他费用_要素名称"",
+  dqiof.value AS ""_来料其他费用_值"",
+  dqiof.ratio_pct AS ""_来料其他费用_比例（%）"",
+  dqiof.currency AS ""_来料其他费用_货币"",
+  dqiof.pricing_unit AS ""_来料其他费用_计价单位""
+FROM ds_quote_incoming_other_fee dqiof
+WHERE dqiof.material_no = ANY(:total_material_no)
+ORDER BY dqiof.material_no, dqiof.input_material_no, dqiof.item_seq","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_来料其他费用_销售料号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_来料其他费用_项次"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_来料其他费用_投入料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_来料其他费用_要素项次"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_来料其他费用_要素名称"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_来料其他费用_值"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_来料其他费用_比例（%）"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_来料其他费用_货币"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_来料其他费用_计价单位"", ""dataType"": ""varchar"", ""nullable"": true}]",{total_material_no},2026-09-07 04:35:45.080162
+93906480-f162-4dce-9c7d-a872dbae1c42,builder_196aadeeb89f,196aadee-b89f-4f81-984b-4c6747b59149,1,7657b3f06382942a65fe92712269e2b7,"SELECT
+  dqeb.material_no AS hf_part_no,
+  dqeb.material_no AS ""_物料与元素BOM_销售料号"",
+  dqeb.material_part_no AS ""_物料与元素BOM_材质料号"",
+  dqeb.item_seq AS ""_物料与元素BOM_项次"",
+  dqeb.element_code AS ""_物料与元素BOM_元素"",
+  dqeb.content_pct AS ""_物料与元素BOM_组成含量（%）"",
+  dqeb.loss_rate AS ""_物料与元素BOM_损耗率%"",
+  dqeb.gross_usage AS ""_物料与元素BOM_毛用量"",
+  dqeb.gross_usage_unit AS ""_物料与元素BOM_毛用量单位"",
+  dqeb.net_usage AS ""_物料与元素BOM_净用量"",
+  dqeb.net_usage_unit AS ""_物料与元素BOM_净用量单位"",
+  dqeb.recovery_discount AS ""_物料与元素BOM_回收折扣(%)"",
+  dqeb.recovery_qty AS ""_物料与元素BOM_回收量"",
+  cep.unit_price AS ""元素单价"",
+  cep.currency AS ""货币""
+FROM ds_quote_element_bom dqeb
+  LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep ON cep.element_code = dqeb.element_code AND cep.material_no = dqeb.material_no
+WHERE dqeb.material_no = ANY(:total_material_no)
+ORDER BY dqeb.material_no, dqeb.material_part_no, dqeb.element_code, dqeb.item_seq","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_物料与元素BOM_销售料号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_物料与元素BOM_材质料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_项次"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_物料与元素BOM_元素"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_组成含量（%）"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_损耗率%"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_毛用量"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_毛用量单位"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_净用量"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_净用量单位"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_回收折扣(%)"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_回收量"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""元素单价"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""货币"", ""dataType"": ""varchar"", ""nullable"": true}]","{customerCode,priceBaseDate,total_material_no}",2026-09-07 18:25:53.143663
+fbe1ffe3-602c-4876-a654-19085d50a764,builder_32ab8212df6c,32ab8212-df6c-4844-9721-ac7dc41d6cf2,1,ad9fe9f0ec3939f73bea7823d9da6c34,"-- 树契约: material_no=子 / parent_no=父 + :total_material_no; 边式全子件 + 根分支
+SELECT
+  vdcbmba.component_no AS material_no,
+  vdcbmba.production_no AS parent_no,
+  vdcbmba.component_no AS hf_part_no,
+  vdcbmba.production_no AS ""production_no"",
+  vdcbmba.item_seq AS ""item_seq"",
+  vdcbmba.component_no AS ""component_no"",
+  COALESCE(dcbm.material_name, mr.symbol) AS ""material_name"",
+  vdcbmba.operation_no AS ""operation_no"",
+  vdcbmba.usage_characteristic AS ""usage_characteristic"",
+  vdcbmba.component_qty AS ""component_qty"",
+  vdcbmba.component_qty_unit AS ""component_qty_unit"",
+  vdcbmba.base_qty AS ""base_qty"",
+  vdcbmba.base_qty_unit AS ""base_qty_unit"",
+  vdcbmba.material_loss_rate AS ""material_loss_rate"",
+  vdcbmba.material_fixed_loss AS ""material_fixed_loss"",
+  vdcbmba.version_no::text AS view_version
+FROM v_ds_cost_basic_material_bom_all vdcbmba
+  LEFT JOIN ds_cost_basic_material dcbm ON dcbm.production_no = vdcbmba.component_no
+  LEFT JOIN material_recipe mr ON mr.code = vdcbmba.component_no
+WHERE vdcbmba.component_no IN (SELECT dqm.production_no FROM ds_quote_material dqm WHERE dqm.material_no = ANY(:total_material_no)) AND :versionFilter(vdcbmba.is_current, vdcbmba.version_no::text, vdcbmba.production_no)
+UNION ALL
+-- 根分支：本单闭包里无父边的成品自身（树根，parent_no 恒 NULL）
+SELECT
+  dcbm2.production_no,
+  NULL::text,
+  dcbm2.production_no,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL::text
+FROM ds_cost_basic_material dcbm2
+WHERE dcbm2.production_no IN (SELECT dqm2.production_no FROM ds_quote_material dqm2 WHERE dqm2.material_no = ANY(:total_material_no))
+  AND NOT EXISTS (SELECT 1 FROM v_ds_cost_basic_material_bom_all vdcbmba2 WHERE vdcbmba2.component_no = dcbm2.production_no)
+ORDER BY parent_no, material_no, ""item_seq""","[{""name"": ""material_no"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""parent_no"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""production_no"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""item_seq"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""component_no"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""material_name"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""operation_no"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""usage_characteristic"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""component_qty"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""component_qty_unit"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""base_qty"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""base_qty_unit"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""material_loss_rate"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""material_fixed_loss"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""view_version"", ""dataType"": ""text"", ""nullable"": true}]",{total_material_no},2026-09-08 17:54:32.883152
+e4e927e7-b75c-4db3-957d-6e66d4c88b23,builder_39c738327543,39c73832-7543-484b-b1d1-3f1a7eb9b9bb,1,152219a628f6ead7f0f620a535412712,"SELECT
+  dqia.material_no AS hf_part_no,
+  dqia.material_no AS ""_来料年降_销售料号"",
+  dqia.item_seq AS ""_来料年降_项次"",
+  dqia.input_material_no AS ""_来料年降_投入料号"",
+  dqia.discount_seq AS ""_来料年降_年降顺序"",
+  dqia.discount_rate AS ""_来料年降_年降系数（%）"",
+  dqia.fixed_discount_value AS ""_来料年降_单次固定年降值"",
+  dqia.currency AS ""_来料年降_货币"",
+  dqia.pricing_unit AS ""_来料年降_计价单位"",
+  dqia.discount_times AS ""_来料年降_降价次数""
+FROM ds_quote_incoming_annual dqia
+WHERE dqia.material_no = ANY(:total_material_no)
+ORDER BY dqia.material_no, dqia.input_material_no, dqia.discount_seq, dqia.item_seq","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_来料年降_销售料号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_来料年降_项次"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_来料年降_投入料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_来料年降_年降顺序"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_来料年降_年降系数（%）"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_来料年降_单次固定年降值"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_来料年降_货币"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_来料年降_计价单位"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_来料年降_降价次数"", ""dataType"": ""int4"", ""nullable"": true}]",{total_material_no},2026-09-07 04:35:48.251787
+7566674c-7705-49b6-a2fa-7ba1fb810e82,builder_42dd870ccd17,42dd870c-cd17-48aa-819c-15a1f781e516,1,ff5f77f64e983c581b1fcb1971651863,"SELECT
+  dqpf.material_no AS hf_part_no,
+  dqpf.material_no AS ""_电镀费用_销售料号"",
+  dqpf.plating_scheme_no AS ""_电镀费用_电镀方案编号"",
+  dqpf.plating_version AS ""_电镀费用_版本编号"",
+  dqpf.plating_process_fee AS ""_电镀费用_电镀加工费"",
+  dqpf.plating_material_fee AS ""_电镀费用_电镀材料费"",
+  dqpf.currency AS ""_电镀费用_货币"",
+  dqpf.pricing_unit AS ""_电镀费用_计价单位"",
+  dqpf.defect_rate AS ""_电镀费用_不良率（%）""
+FROM ds_quote_plating_fee dqpf
+WHERE dqpf.material_no = ANY(:total_material_no)
+ORDER BY dqpf.material_no, dqpf.plating_scheme_no, dqpf.plating_version","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_电镀费用_销售料号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_电镀费用_电镀方案编号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_电镀费用_版本编号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_电镀费用_电镀加工费"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_电镀费用_电镀材料费"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_电镀费用_货币"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_电镀费用_计价单位"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_电镀费用_不良率（%）"", ""dataType"": ""numeric"", ""nullable"": true}]",{total_material_no},2026-09-07 04:35:47.800435
+e71ec0c1-67bf-48dd-8fd0-4062cbccc587,builder_452bbdbe13f7,452bbdbe-13f7-4b74-9ed7-af13fac6716e,1,fa7dda91ca50a14072494cdf35a45cb6,"-- 树契约: material_no=子 / parent_no=父 + :total_material_no; 边式全子件 + 根分支
+SELECT
+  dqmb.input_material_no AS material_no,
+  dqmb.material_no AS parent_no,
+  dqmb.input_material_no AS hf_part_no,
+  dqmb.material_no AS ""_物料BOM_销售料号"",
+  dqmb.item_seq AS ""_物料BOM_项次"",
+  dqmb.input_material_no AS ""_物料BOM_投入料号"",
+  dqmb.output_material_type AS ""_物料BOM_产出料号类型"",
+  dqmb.component_qty AS ""_物料BOM_组成数量"",
+  dqmb.gross_weight AS ""_物料BOM_材料毛重"",
+  dqmb.net_weight AS ""_物料BOM_材料净重"",
+  dqmb.weight_unit AS ""_物料BOM_重量单位"",
+  dqmb.loss_rate AS ""_物料BOM_损耗率（%）""
+FROM ds_quote_material_bom dqmb
+WHERE dqmb.input_material_no = ANY(:total_material_no)
+UNION ALL
+-- 根分支：本单闭包里无父边的成品自身（树根，parent_no 恒 NULL）
+SELECT
+  dqm.material_no,
+  NULL::text,
+  dqm.material_no,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL
+FROM ds_quote_material dqm
+WHERE dqm.material_no = ANY(:total_material_no)
+  AND NOT EXISTS (SELECT 1 FROM ds_quote_material_bom dqmb2 WHERE dqmb2.input_material_no = dqm.material_no)
+ORDER BY parent_no, material_no, ""_物料BOM_项次""","[{""name"": ""material_no"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""parent_no"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料BOM_销售料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料BOM_项次"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_物料BOM_投入料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料BOM_产出料号类型"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料BOM_组成数量"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料BOM_材料毛重"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料BOM_材料净重"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料BOM_重量单位"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料BOM_损耗率（%）"", ""dataType"": ""numeric"", ""nullable"": true}]",{total_material_no},2026-09-07 19:26:53.299445
+b77b7157-0020-4f28-b218-ed43ce4c72e4,builder_661e1a387f89,661e1a38-7f89-411f-b8e2-5f883366ebbc,1,7657b3f06382942a65fe92712269e2b7,"SELECT
+  dqeb.material_no AS hf_part_no,
+  dqeb.material_no AS ""_物料与元素BOM_销售料号"",
+  dqeb.material_part_no AS ""_物料与元素BOM_材质料号"",
+  dqeb.item_seq AS ""_物料与元素BOM_项次"",
+  dqeb.element_code AS ""_物料与元素BOM_元素"",
+  dqeb.content_pct AS ""_物料与元素BOM_组成含量（%）"",
+  dqeb.loss_rate AS ""_物料与元素BOM_损耗率%"",
+  dqeb.gross_usage AS ""_物料与元素BOM_毛用量"",
+  dqeb.gross_usage_unit AS ""_物料与元素BOM_毛用量单位"",
+  dqeb.net_usage AS ""_物料与元素BOM_净用量"",
+  dqeb.net_usage_unit AS ""_物料与元素BOM_净用量单位"",
+  dqeb.recovery_discount AS ""_物料与元素BOM_回收折扣(%)"",
+  dqeb.recovery_qty AS ""_物料与元素BOM_回收量"",
+  cep.unit_price AS ""元素单价"",
+  cep.currency AS ""货币""
+FROM ds_quote_element_bom dqeb
+  LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep ON cep.element_code = dqeb.element_code AND cep.material_no = dqeb.material_no
+WHERE dqeb.material_no = ANY(:total_material_no)
+ORDER BY dqeb.material_no, dqeb.material_part_no, dqeb.element_code, dqeb.item_seq","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_物料与元素BOM_销售料号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_物料与元素BOM_材质料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_项次"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_物料与元素BOM_元素"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_组成含量（%）"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_损耗率%"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_毛用量"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_毛用量单位"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_净用量"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_净用量单位"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_回收折扣(%)"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_回收量"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""元素单价"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""货币"", ""dataType"": ""varchar"", ""nullable"": true}]","{customerCode,priceBaseDate,total_material_no}",2026-09-07 20:51:53.853561
+2343de18-4600-42f0-afa1-caa6629df61a,builder_6c093d714565,6c093d71-4565-45c8-90b2-08afbb9a56cd,1,4d2494c07098c6691f07a1683aad9a08,"SELECT
+  dqeb.material_no AS hf_part_no,
+  dqeb.material_part_no AS ""_物料与元素BOM_材质料号"",
+  dqeb.content_pct AS ""_物料与元素BOM_组成含量（%）"",
+  dqeb.loss_rate AS ""_物料与元素BOM_损耗率%""
+FROM ds_quote_element_bom dqeb
+WHERE dqeb.material_no = ANY(:total_material_no) AND dqeb.customer_no = :customerCode
+ORDER BY dqeb.material_no, dqeb.material_part_no, dqeb.element_code, dqeb.item_seq","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_物料与元素BOM_材质料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_组成含量（%）"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_损耗率%"", ""dataType"": ""numeric"", ""nullable"": true}]","{total_material_no,customerCode}",2026-09-08 19:53:02.645064
+8ece3312-9c02-4735-a5c6-d48916959a1d,builder_6c4acfecbe39,6c4acfec-be39-4e71-8ff2-17606618dfd8,1,f5a74ed0f96a3834093678f700ecc623,"SELECT
+  dqaf.material_no AS hf_part_no,
+  dqaf.material_no AS ""_组装加工费_销售料号"",
+  dqaf.item_seq AS ""_组装加工费_项次"",
+  dqaf.assembly_operation AS ""_组装加工费_组装工序"",
+  dqaf.assembly_fee AS ""_组装加工费_组装加工费"",
+  dqaf.currency AS ""_组装加工费_货币"",
+  dqaf.pricing_unit AS ""_组装加工费_计价单位"",
+  dqaf.defect_rate AS ""_组装加工费_拒收率/不良率（%）""
+FROM ds_quote_assembly_fee dqaf
+WHERE dqaf.material_no = ANY(:total_material_no)
+ORDER BY dqaf.material_no, dqaf.assembly_operation, dqaf.item_seq","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_组装加工费_销售料号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_组装加工费_项次"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_组装加工费_组装工序"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_组装加工费_组装加工费"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_组装加工费_货币"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_组装加工费_计价单位"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_组装加工费_拒收率/不良率（%）"", ""dataType"": ""numeric"", ""nullable"": true}]",{total_material_no},2026-09-07 04:35:46.982185
+12d39328-3a1a-4bc2-8396-94c8bbf94c55,builder_7277969cc41c,7277969c-c41c-47d3-b949-8fbf51d1a5fb,1,954c474cdd73749b89850dd5ee3e0817,"SELECT
+  dqm.material_no AS hf_part_no,
+  dqcp.customer_product_no AS ""_客户料号_客户产品编号"",
+  dqcp.customer_part_name AS ""_客户料号_客户料号名称"",
+  dqm.material_no AS ""_物料_销售料号"",
+  dqm.specification AS ""_物料_规格"",
+  dqm.dimension AS ""_物料_尺寸"",
+  dqm.material_name AS ""_物料_品名"",
+  dqm.unit_weight AS ""_物料_单重"",
+  dqm.production_no AS ""_物料_生产料号""
+FROM ds_quote_material dqm
+  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode
+WHERE dqm.material_no = ANY(:total_material_no)
+ORDER BY dqm.material_no","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_客户料号_客户产品编号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_客户料号_客户料号名称"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料_销售料号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_物料_规格"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料_尺寸"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料_品名"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料_单重"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料_生产料号"", ""dataType"": ""varchar"", ""nullable"": true}]","{customerCode,total_material_no}",2026-09-07 19:26:05.607343
+afe97806-23dd-44ca-9170-fe8b59ece917,builder_9291b050b6a9,9291b050-b6a9-42c7-8c56-d3066c3c2369,1,ada1299aaa6c78b81983565bddcb3425,"SELECT
+  vdcbeba.production_no AS hf_part_no,
+  vdcbeba.production_no AS ""production_no"",
+  mr.symbol AS ""symbol"",
+  vdcbeba.material_part_no AS ""material_part_no"",
+  vdcbeba.item_seq AS ""item_seq"",
+  vdcbeba.element_code AS ""element_code"",
+  vdcbeba.content_pct AS ""content_pct"",
+  vdcbeba.loss_rate AS ""loss_rate"",
+  vdcbeba.version_no::text AS view_version
+FROM v_ds_cost_basic_element_bom_all vdcbeba
+  LEFT JOIN material_recipe mr ON mr.code = vdcbeba.material_part_no
+WHERE vdcbeba.production_no IN (SELECT dqm.production_no FROM ds_quote_material dqm WHERE dqm.material_no = ANY(:total_material_no)) AND :versionFilter(vdcbeba.is_current, vdcbeba.version_no::text, vdcbeba.production_no)
+ORDER BY vdcbeba.production_no, vdcbeba.material_part_no, vdcbeba.element_code, vdcbeba.item_seq","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""production_no"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""symbol"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""material_part_no"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""item_seq"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""element_code"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""content_pct"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""loss_rate"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""view_version"", ""dataType"": ""text"", ""nullable"": true}]",{total_material_no},2026-09-08 17:55:32.381535
+57a42990-bde8-4527-acbf-1f99c8670b70,builder_9cc11850f425,9cc11850-f425-45b7-8d4b-70705fde7dcf,1,3a9f10a1a471eb9e44c8da1832cb0bed,"SELECT
+  dqspf.material_no AS hf_part_no,
+  dqspf.material_no AS ""_自制加工费_销售料号"",
+  dqspf.item_seq AS ""_自制加工费_项次"",
+  dqspf.input_material_no AS ""_自制加工费_投入料号"",
+  dqm.material_name AS ""_物料_材料名"",
+  dqspf.operation_item_seq AS ""_自制加工费_工序项次"",
+  dqspf.operation_no AS ""_自制加工费_工序编号"",
+  dqspf.value AS ""_自制加工费_值"",
+  dqspf.ratio_pct AS ""_自制加工费_比例（%）""
+FROM ds_quote_self_process_fee dqspf
+  LEFT JOIN ds_quote_material dqm ON dqm.material_no = dqspf.input_material_no AND dqm.customer_no = dqspf.customer_no
+WHERE dqspf.material_no = ANY(:total_material_no)
+ORDER BY dqspf.material_no, dqspf.input_material_no, dqspf.item_seq","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_自制加工费_销售料号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_自制加工费_项次"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_自制加工费_投入料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料_材料名"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_自制加工费_工序项次"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_自制加工费_工序编号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_自制加工费_值"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_自制加工费_比例（%）"", ""dataType"": ""numeric"", ""nullable"": true}]",{total_material_no},2026-09-08 17:28:43.759515
+407fb43a-a490-4dad-962f-a47977175d57,builder_a2e1bb386be1,a2e1bb38-6be1-4734-af29-bc4c138f9bf3,1,3752620ac788f0dfa1b9b5021892a1d5,"SELECT
+  dqafa.material_no AS hf_part_no,
+  dqafa.material_no AS ""_组装加工费年降_销售料号"",
+  dqafa.item_seq AS ""_组装加工费年降_项次"",
+  dqafa.assembly_operation AS ""_组装加工费年降_组装工序"",
+  dqafa.discount_seq AS ""_组装加工费年降_年降顺序"",
+  dqafa.discount_rate AS ""_组装加工费年降_年降系数（%）"",
+  dqafa.fixed_discount_value AS ""_组装加工费年降_单次固定年降值"",
+  dqafa.currency AS ""_组装加工费年降_货币"",
+  dqafa.pricing_unit AS ""_组装加工费年降_计价单位"",
+  dqafa.discount_times AS ""_组装加工费年降_降价次数""
+FROM ds_quote_assembly_fee_annual dqafa
+WHERE dqafa.material_no = ANY(:total_material_no)
+ORDER BY dqafa.material_no, dqafa.assembly_operation, dqafa.discount_seq, dqafa.item_seq","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_组装加工费年降_销售料号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_组装加工费年降_项次"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_组装加工费年降_组装工序"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_组装加工费年降_年降顺序"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_组装加工费年降_年降系数（%）"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_组装加工费年降_单次固定年降值"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_组装加工费年降_货币"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_组装加工费年降_计价单位"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_组装加工费年降_降价次数"", ""dataType"": ""int4"", ""nullable"": true}]",{total_material_no},2026-09-07 04:35:47.381829
+1471f703-8c57-459c-adca-e1c20336e3af,builder_a515014e6ed3,a515014e-6ed3-4c4c-a7b0-0b82e326a7e8,1,9243ea3f967246959d32638586ddcdad,"SELECT
+  dcbm.production_no AS hf_part_no,
+  dcbm.production_no AS ""production_no"",
+  dcbm.material_name AS ""material_name"",
+  dcbm.specification AS ""specification"",
+  dcbm.dimension AS ""dimension"",
+  dcbm.old_material_no AS ""old_material_no"",
+  dcbm.unit_weight AS ""unit_weight""
+FROM ds_cost_basic_material dcbm
+WHERE dcbm.production_no IN (SELECT dqm.production_no FROM ds_quote_material dqm WHERE dqm.material_no = ANY(:total_material_no))
+ORDER BY dcbm.production_no","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""production_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""material_name"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""specification"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""dimension"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""old_material_no"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""unit_weight"", ""dataType"": ""numeric"", ""nullable"": true}]",{total_material_no},2026-09-08 17:53:40.89361
+74317571-9519-4207-baff-46875e88dd11,builder_a71947b68d50,a71947b6-8d50-4e04-8bf0-f2d4244b3cfe,1,dd447a2f7cfe54af967bea7f24df263a,"SELECT
+  dqm.material_no AS hf_part_no,
+  dqm.material_no AS ""_物料_销售料号"",
+  dqm.production_no AS ""_物料_生产料号"",
+  dqcp.customer_product_no AS ""_客户料号_客户产品编号"",
+  dqcp.customer_part_name AS ""_客户料号_客户料号名称"",
+  dqm.category_code AS ""_物料_产品分类"",
+  dqm.material_name AS ""_物料_品名"",
+  dqm.specification AS ""_物料_规格"",
+  dqm.dimension AS ""_物料_尺寸"",
+  dqm.old_material_no AS ""_物料_旧料号"",
+  dqm.material_type AS ""_物料_类型""
+FROM ds_quote_material dqm
+  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode
+WHERE dqm.material_no = ANY(:total_material_no)
+ORDER BY dqm.material_no","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_物料_销售料号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_物料_生产料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_客户料号_客户产品编号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_客户料号_客户料号名称"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料_产品分类"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料_品名"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料_规格"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料_尺寸"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料_旧料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料_类型"", ""dataType"": ""varchar"", ""nullable"": true}]","{customerCode,total_material_no}",2026-09-08 17:26:19.654738
+f8d28fe3-7f99-4e3c-9b4e-ab9c7960b5ca,builder_ae4e0034dac1,ae4e0034-dac1-4706-a5c9-974d9efd22cb,1,727c4ae3b41ca1097e3c07a6a22a4681,"SELECT
+  dqfof.material_no AS hf_part_no,
+  dqfof.material_no AS ""_成品其他费用_销售料号"",
+  dqfof.element_name AS ""_成品其他费用_要素名称"",
+  dqm.material_name AS ""_物料_材料名"",
+  dqfof.ratio_pct AS ""_成品其他费用_比例（%）"",
+  dqfof.pricing_unit AS ""_成品其他费用_计价单位""
+FROM ds_quote_finished_other_fee dqfof
+  LEFT JOIN ds_quote_material dqm ON dqm.material_no = dqfof.material_no AND dqm.customer_no = dqfof.customer_no
+WHERE dqfof.material_no = ANY(:total_material_no)
+ORDER BY dqfof.material_no, dqfof.element_name, dqfof.item_seq","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_成品其他费用_销售料号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_成品其他费用_要素名称"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料_材料名"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_成品其他费用_比例（%）"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_成品其他费用_计价单位"", ""dataType"": ""varchar"", ""nullable"": true}]",{total_material_no},2026-09-08 20:03:19.35986
+cf205837-1146-4fb8-8d59-7ae6534027dd,builder_b9126e2bdef8,b9126e2b-def8-4442-bf4a-ed80e273e006,1,7657b3f06382942a65fe92712269e2b7,"SELECT
+  dqeb.material_no AS hf_part_no,
+  dqeb.material_no AS ""_物料与元素BOM_销售料号"",
+  dqeb.material_part_no AS ""_物料与元素BOM_材质料号"",
+  dqeb.item_seq AS ""_物料与元素BOM_项次"",
+  dqeb.element_code AS ""_物料与元素BOM_元素"",
+  dqeb.content_pct AS ""_物料与元素BOM_组成含量（%）"",
+  dqeb.loss_rate AS ""_物料与元素BOM_损耗率%"",
+  dqeb.gross_usage AS ""_物料与元素BOM_毛用量"",
+  dqeb.gross_usage_unit AS ""_物料与元素BOM_毛用量单位"",
+  dqeb.net_usage AS ""_物料与元素BOM_净用量"",
+  dqeb.net_usage_unit AS ""_物料与元素BOM_净用量单位"",
+  dqeb.recovery_discount AS ""_物料与元素BOM_回收折扣(%)"",
+  dqeb.recovery_qty AS ""_物料与元素BOM_回收量"",
+  cep.unit_price AS ""元素单价"",
+  cep.currency AS ""货币""
+FROM ds_quote_element_bom dqeb
+  LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep ON cep.element_code = dqeb.element_code AND cep.material_no = dqeb.material_no
+WHERE dqeb.material_no = ANY(:total_material_no)
+ORDER BY dqeb.material_no, dqeb.material_part_no, dqeb.element_code, dqeb.item_seq","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_物料与元素BOM_销售料号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_物料与元素BOM_材质料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_项次"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_物料与元素BOM_元素"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_组成含量（%）"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_损耗率%"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_毛用量"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_毛用量单位"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_净用量"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_净用量单位"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_回收折扣(%)"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_回收量"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""元素单价"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""货币"", ""dataType"": ""varchar"", ""nullable"": true}]","{customerCode,priceBaseDate,total_material_no}",2026-09-08 00:23:51.705881
+9df29123-dd00-4f65-a523-821bf1941caf,builder_ba7c13ca994f,ba7c13ca-994f-48fe-9e41-11f4a7c99408,1,da37adaf2e7ab65165e02b5b92b0f78a,"SELECT
+  dqir.material_no AS hf_part_no,
+  dqir.material_no AS ""_来料回收折扣_销售料号"",
+  dqir.item_seq AS ""_来料回收折扣_项次"",
+  dqir.input_material_no AS ""_来料回收折扣_投入料号"",
+  dqir.recovery_discount AS ""_来料回收折扣_回收折扣（%）"",
+  dqir.recovery_value AS ""_来料回收折扣_回收值"",
+  dqir.recovery_source AS ""_来料回收折扣_回收来源""
+FROM ds_quote_incoming_recovery dqir
+WHERE dqir.material_no = ANY(:total_material_no)
+ORDER BY dqir.material_no, dqir.input_material_no, dqir.item_seq","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_来料回收折扣_销售料号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_来料回收折扣_项次"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_来料回收折扣_投入料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_来料回收折扣_回收折扣（%）"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_来料回收折扣_回收值"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_来料回收折扣_回收来源"", ""dataType"": ""varchar"", ""nullable"": true}]",{total_material_no},2026-09-07 04:35:45.452624
+e567c567-05ef-4844-b738-5603e23ed66b,builder_ba81142a5ddb,ba81142a-5ddb-4987-898f-8912d07f1095,1,a4c7e13d0e0d5d9818f9e7f2077da5fd,"SELECT
+  dqeb.material_no AS hf_part_no,
+  dqeb.material_no AS ""_物料与元素BOM_销售料号"",
+  dqeb.material_part_no AS ""_物料与元素BOM_材质料号"",
+  mr.symbol AS ""_材质_材料名"",
+  dqeb.item_seq AS ""_物料与元素BOM_项次"",
+  dqeb.element_code AS ""_物料与元素BOM_元素"",
+  dqeb.content_pct AS ""_物料与元素BOM_组成含量（%）"",
+  dqeb.loss_rate AS ""_物料与元素BOM_损耗率%"",
+  dqeb.gross_usage AS ""_物料与元素BOM_毛用量"",
+  dqeb.gross_usage_unit AS ""_物料与元素BOM_毛用量单位"",
+  dqeb.net_usage AS ""_物料与元素BOM_净用量"",
+  dqeb.net_usage_unit AS ""_物料与元素BOM_净用量单位"",
+  dqeb.recovery_discount AS ""_物料与元素BOM_回收折扣(%)"",
+  cep.unit_price AS ""元素单价""
+FROM ds_quote_element_bom dqeb
+  LEFT JOIN material_recipe mr ON mr.code = dqeb.material_part_no
+  LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep ON cep.element_code = dqeb.element_code AND cep.material_no = dqeb.material_no
+WHERE dqeb.material_no = ANY(:total_material_no)
+ORDER BY dqeb.material_no, dqeb.material_part_no, dqeb.element_code, dqeb.item_seq","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_物料与元素BOM_销售料号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_物料与元素BOM_材质料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_材质_材料名"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_物料与元素BOM_项次"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_物料与元素BOM_元素"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_组成含量（%）"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_损耗率%"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_毛用量"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_毛用量单位"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_净用量"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_净用量单位"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_回收折扣(%)"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""元素单价"", ""dataType"": ""numeric"", ""nullable"": true}]","{customerCode,priceBaseDate,total_material_no}",2026-09-08 17:28:02.395975
+be5dd78f-ffe8-40d5-b3c9-b1246914593a,builder_bc018fbefa1b,bc018fbe-fa1b-4cd0-b2ea-335bbcda8671,1,7657b3f06382942a65fe92712269e2b7,"SELECT
+  dqeb.material_no AS hf_part_no,
+  dqeb.material_no AS ""_物料与元素BOM_销售料号"",
+  dqeb.material_part_no AS ""_物料与元素BOM_材质料号"",
+  dqeb.item_seq AS ""_物料与元素BOM_项次"",
+  dqeb.element_code AS ""_物料与元素BOM_元素"",
+  dqeb.content_pct AS ""_物料与元素BOM_组成含量（%）"",
+  dqeb.loss_rate AS ""_物料与元素BOM_损耗率%"",
+  dqeb.gross_usage AS ""_物料与元素BOM_毛用量"",
+  dqeb.gross_usage_unit AS ""_物料与元素BOM_毛用量单位"",
+  dqeb.net_usage AS ""_物料与元素BOM_净用量"",
+  dqeb.net_usage_unit AS ""_物料与元素BOM_净用量单位"",
+  dqeb.recovery_discount AS ""_物料与元素BOM_回收折扣(%)"",
+  dqeb.recovery_qty AS ""_物料与元素BOM_回收量"",
+  cep.unit_price AS ""元素单价"",
+  cep.currency AS ""货币""
+FROM ds_quote_element_bom dqeb
+  LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep ON cep.element_code = dqeb.element_code AND cep.material_no = dqeb.material_no
+WHERE dqeb.material_no = ANY(:total_material_no)
+ORDER BY dqeb.material_no, dqeb.material_part_no, dqeb.element_code, dqeb.item_seq","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_物料与元素BOM_销售料号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_物料与元素BOM_材质料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_项次"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_物料与元素BOM_元素"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_组成含量（%）"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_损耗率%"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_毛用量"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_毛用量单位"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_净用量"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_净用量单位"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_回收折扣(%)"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_回收量"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""元素单价"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""货币"", ""dataType"": ""varchar"", ""nullable"": true}]","{customerCode,priceBaseDate,total_material_no}",2026-09-07 23:36:15.264748
+2a664a6c-1ac7-4353-95df-b27e4d80603b,builder_c127b4ddb20e,c127b4dd-b20e-480b-aea8-68366607636c,1,4056ff13b984cecfccaf1f29effa800b,"SELECT
+  dqad.material_no AS hf_part_no,
+  dqad.material_no AS ""_年降系数_销售料号"",
+  dqad.discount_seq AS ""_年降系数_年降顺序"",
+  dqad.discount_rate AS ""_年降系数_年降系数（%/年）"",
+  dqad.fixed_discount_value AS ""_年降系数_单次固定年降金额"",
+  dqad.currency AS ""_年降系数_货币"",
+  dqad.pricing_unit AS ""_年降系数_计价单位"",
+  dqad.discount_times AS ""_年降系数_降价次数""
+FROM ds_quote_annual_discount dqad
+WHERE dqad.material_no = ANY(:total_material_no)
+ORDER BY dqad.material_no, dqad.discount_seq","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_年降系数_销售料号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_年降系数_年降顺序"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_年降系数_年降系数（%/年）"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_年降系数_单次固定年降金额"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_年降系数_货币"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_年降系数_计价单位"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_年降系数_降价次数"", ""dataType"": ""int4"", ""nullable"": true}]",{total_material_no},2026-09-07 04:35:48.657769
+730b46ca-c617-47ac-a1b1-39b70dc829fa,builder_c6a71e5e217a,c6a71e5e-217a-49ab-8cce-a9cee88469a4,1,2054694c7063d5bff9e1166e86d0a58c,"SELECT
+  dqm.material_no AS hf_part_no,
+  dqm.material_no AS ""_物料_销售料号"",
+  dqm.material_name AS ""_物料_品名"",
+  dqm.specification AS ""_物料_规格"",
+  dqm.dimension AS ""_物料_尺寸"",
+  dqm.old_material_no AS ""_物料_旧料号"",
+  dqm.unit_weight AS ""_物料_单重"",
+  dqm.production_no AS ""_物料_生产料号"",
+  dqm.material_type AS ""_物料_类型"",
+  dqm.category_code AS ""_物料_产品分类""
+FROM ds_quote_material dqm
+WHERE dqm.material_no = ANY(:total_material_no)
+ORDER BY dqm.material_no","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_物料_销售料号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_物料_品名"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料_规格"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料_尺寸"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料_旧料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料_单重"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料_生产料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料_类型"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料_产品分类"", ""dataType"": ""varchar"", ""nullable"": true}]",{total_material_no},2026-09-07 04:35:44.289888
+b9045fbe-5f3e-4b1f-a7cb-12f1ce217711,builder_ca66ea9a93aa,ca66ea9a-93aa-4e42-8cd9-ef59f1ac7d48,1,cc86517738d52b47caace594b54cff88,"SELECT
+  dqiff.material_no AS hf_part_no,
+  dqiff.material_no AS ""_来料固定加工费_销售料号"",
+  dqiff.input_material_no AS ""_来料固定加工费_投入料号"",
+  dqiff.base_value AS ""_来料固定加工费_基准值"",
+  dqiff.ratio_pct AS ""_来料固定加工费_比例（%）""
+FROM ds_quote_incoming_fixed_fee dqiff
+WHERE dqiff.material_no = ANY(:total_material_no)
+ORDER BY dqiff.material_no, dqiff.input_material_no, dqiff.item_seq","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_来料固定加工费_销售料号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_来料固定加工费_投入料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_来料固定加工费_基准值"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_来料固定加工费_比例（%）"", ""dataType"": ""numeric"", ""nullable"": true}]",{total_material_no},2026-09-07 04:35:43.88719
+0daddbd9-91ec-4429-8faa-2db4cf44398f,builder_cb4c1af4eabf,cb4c1af4-eabf-469e-bfbd-706ef2d33902,1,7657b3f06382942a65fe92712269e2b7,"SELECT
+  dqeb.material_no AS hf_part_no,
+  dqeb.material_no AS ""_物料与元素BOM_销售料号"",
+  dqeb.material_part_no AS ""_物料与元素BOM_材质料号"",
+  dqeb.item_seq AS ""_物料与元素BOM_项次"",
+  dqeb.element_code AS ""_物料与元素BOM_元素"",
+  dqeb.content_pct AS ""_物料与元素BOM_组成含量（%）"",
+  dqeb.loss_rate AS ""_物料与元素BOM_损耗率%"",
+  dqeb.gross_usage AS ""_物料与元素BOM_毛用量"",
+  dqeb.gross_usage_unit AS ""_物料与元素BOM_毛用量单位"",
+  dqeb.net_usage AS ""_物料与元素BOM_净用量"",
+  dqeb.net_usage_unit AS ""_物料与元素BOM_净用量单位"",
+  dqeb.recovery_discount AS ""_物料与元素BOM_回收折扣(%)"",
+  dqeb.recovery_qty AS ""_物料与元素BOM_回收量"",
+  cep.unit_price AS ""元素单价"",
+  cep.currency AS ""货币""
+FROM ds_quote_element_bom dqeb
+  LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep ON cep.element_code = dqeb.element_code AND cep.material_no = dqeb.material_no
+WHERE dqeb.material_no = ANY(:total_material_no)
+ORDER BY dqeb.material_no, dqeb.material_part_no, dqeb.element_code, dqeb.item_seq","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_物料与元素BOM_销售料号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_物料与元素BOM_材质料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_项次"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_物料与元素BOM_元素"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_组成含量（%）"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_损耗率%"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_毛用量"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_毛用量单位"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_净用量"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_净用量单位"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_回收折扣(%)"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_回收量"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""元素单价"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""货币"", ""dataType"": ""varchar"", ""nullable"": true}]","{customerCode,priceBaseDate,total_material_no}",2026-09-08 00:36:35.893615
+fecd9fa7-3557-420f-a5ed-3bc0d665b6b6,builder_d277107524d3,d2771075-24d3-4b0c-9265-7dd732cf4849,1,a7bb99716893470ec287a2b0f8fa63be,"SELECT
+  dqfof.material_no AS hf_part_no,
+  dqfof.material_no AS ""_成品其他费用_销售料号"",
+  dqfof.item_seq AS ""_成品其他费用_项次"",
+  dqfof.element_name AS ""_成品其他费用_要素名称"",
+  dqfof.value AS ""_成品其他费用_值"",
+  dqfof.ratio_pct AS ""_成品其他费用_比例（%）"",
+  dqfof.currency AS ""_成品其他费用_货币"",
+  dqfof.pricing_unit AS ""_成品其他费用_计价单位""
+FROM ds_quote_finished_other_fee dqfof
+WHERE dqfof.material_no = ANY(:total_material_no)
+ORDER BY dqfof.material_no, dqfof.element_name, dqfof.item_seq","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_成品其他费用_销售料号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_成品其他费用_项次"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_成品其他费用_要素名称"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_成品其他费用_值"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_成品其他费用_比例（%）"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_成品其他费用_货币"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_成品其他费用_计价单位"", ""dataType"": ""varchar"", ""nullable"": true}]",{total_material_no},2026-09-07 04:35:46.224701
+f9d3a7e4-948c-4075-8e20-eea1760288d6,builder_dc3297cce9a3,dc3297cc-e9a3-4184-8bc8-bb61db2a07d2,1,f0832c59841bf54004fc97a6420a45aa,"SELECT
+  dqeb.material_no AS hf_part_no,
+  dqeb.material_no AS ""_物料与元素BOM_销售料号"",
+  dqeb.material_part_no AS ""_物料与元素BOM_材质料号"",
+  dqeb.item_seq AS ""_物料与元素BOM_项次"",
+  dqeb.element_code AS ""_物料与元素BOM_元素"",
+  dqeb.content_pct AS ""_物料与元素BOM_组成含量（%）"",
+  dqeb.gross_usage AS ""_物料与元素BOM_毛用量"",
+  dqeb.gross_usage_unit AS ""_物料与元素BOM_毛用量单位"",
+  dqeb.net_usage AS ""_物料与元素BOM_净用量"",
+  dqeb.net_usage_unit AS ""_物料与元素BOM_净用量单位"",
+  dqeb.recovery_discount AS ""_物料与元素BOM_回收折扣(%)"",
+  dqeb.recovery_qty AS ""_物料与元素BOM_回收量"",
+  cep.unit_price AS ""元素单价""
+FROM ds_quote_element_bom dqeb
+  LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep ON cep.element_code = dqeb.element_code AND cep.material_no = dqeb.material_no
+WHERE dqeb.material_no = ANY(:total_material_no)
+ORDER BY dqeb.material_no, dqeb.material_part_no, dqeb.element_code, dqeb.item_seq","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_物料与元素BOM_销售料号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_物料与元素BOM_材质料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_项次"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_物料与元素BOM_元素"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_组成含量（%）"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_毛用量"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_毛用量单位"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_净用量"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_净用量单位"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料与元素BOM_回收折扣(%)"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料与元素BOM_回收量"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""元素单价"", ""dataType"": ""numeric"", ""nullable"": true}]","{customerCode,priceBaseDate,total_material_no}",2026-09-07 19:27:37.094461
+1fefdd80-6d72-4cd7-bf97-2f965dfd8fcf,builder_ea992eb4216d,ea992eb4-216d-4a06-9174-d41c2ecb82b5,1,919e3e224cf07d169d1f447e820f7ea5,"SELECT
+  dqspf.material_no AS hf_part_no,
+  dqspf.material_no AS ""_自制加工费_销售料号"",
+  dqspf.item_seq AS ""_自制加工费_项次"",
+  dqspf.input_material_no AS ""_自制加工费_投入料号"",
+  dqspf.operation_item_seq AS ""_自制加工费_工序项次"",
+  dqspf.operation_no AS ""_自制加工费_工序编号"",
+  dqspf.value AS ""_自制加工费_值"",
+  dqspf.ratio_pct AS ""_自制加工费_比例（%）"",
+  dqspf.currency AS ""_自制加工费_货币"",
+  dqspf.pricing_unit AS ""_自制加工费_计价单位""
+FROM ds_quote_self_process_fee dqspf
+WHERE dqspf.material_no = ANY(:total_material_no)
+ORDER BY dqspf.material_no, dqspf.input_material_no, dqspf.item_seq","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_自制加工费_销售料号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_自制加工费_项次"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_自制加工费_投入料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_自制加工费_工序项次"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_自制加工费_工序编号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_自制加工费_值"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_自制加工费_比例（%）"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_自制加工费_货币"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_自制加工费_计价单位"", ""dataType"": ""varchar"", ""nullable"": true}]",{total_material_no},2026-09-07 04:35:45.829841
+289172f9-548b-4ece-b800-9565b1f27032,builder_eb834021ed65,eb834021-ed65-4fc9-a57f-6b1662279d5d,1,84037e58ae2d402b9d0a06284fdab169,"-- 树契约: material_no=子 / parent_no=父 + :total_material_no; 边式全子件 + 根分支
+SELECT
+  dqmb.input_material_no AS material_no,
+  dqmb.material_no AS parent_no,
+  dqmb.input_material_no AS hf_part_no,
+  dqmb.material_no AS ""_物料BOM_销售料号"",
+  dqmb.item_seq AS ""_物料BOM_项次"",
+  dqmb.input_material_no AS ""_物料BOM_投入料号"",
+  dqm.production_no AS ""_物料_生产料号"",
+  dqmb.component_qty AS ""_物料BOM_组成数量"",
+  dqmb.gross_weight AS ""_物料BOM_材料毛重"",
+  dqmb.net_weight AS ""_物料BOM_材料净重"",
+  dqmb.weight_unit AS ""_物料BOM_重量单位"",
+  dqmb.loss_rate AS ""_物料BOM_损耗率（%）""
+FROM ds_quote_material_bom dqmb
+  LEFT JOIN ds_quote_material dqm ON dqm.material_no = dqmb.material_no AND dqm.customer_no = dqmb.customer_no
+WHERE dqmb.input_material_no = ANY(:total_material_no)
+UNION ALL
+-- 根分支：本单闭包里无父边的成品自身（树根，parent_no 恒 NULL）
+SELECT
+  dqm2.material_no,
+  NULL::text,
+  dqm2.material_no,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL
+FROM ds_quote_material dqm2
+WHERE dqm2.material_no = ANY(:total_material_no)
+  AND NOT EXISTS (SELECT 1 FROM ds_quote_material_bom dqmb2 WHERE dqmb2.input_material_no = dqm2.material_no)
+ORDER BY parent_no, material_no, ""_物料BOM_项次""","[{""name"": ""material_no"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""parent_no"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料BOM_销售料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料BOM_项次"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_物料BOM_投入料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料_生产料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料BOM_组成数量"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料BOM_材料毛重"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料BOM_材料净重"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料BOM_重量单位"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料BOM_损耗率（%）"", ""dataType"": ""numeric"", ""nullable"": true}]",{total_material_no},2026-09-08 17:27:12.563066
+d51fcd1e-bb6b-4c37-97a0-657d413505f9,builder_f6d51727bd1e,f6d51727-bd1e-4cc3-a839-94208cc12f41,1,f089d39a2f70bb84984481fd65ae3f17,"-- 树契约: material_no=子 / parent_no=父 + :total_material_no; 边式全子件 + 根分支
+SELECT
+  dqmb.input_material_no AS material_no,
+  dqmb.material_no AS parent_no,
+  dqmb.input_material_no AS hf_part_no,
+  dqmb.material_no AS ""_物料BOM_销售料号"",
+  dqmb.item_seq AS ""_物料BOM_项次"",
+  dqmb.input_material_no AS ""_物料BOM_投入料号"",
+  dqmb.unit_weight AS ""_物料BOM_单重"",
+  dqmb.output_material_type AS ""_物料BOM_产出料号类型"",
+  dqmb.component_qty AS ""_物料BOM_组成数量"",
+  dqmb.gross_weight AS ""_物料BOM_材料毛重"",
+  dqmb.net_weight AS ""_物料BOM_材料净重"",
+  dqmb.weight_unit AS ""_物料BOM_重量单位"",
+  dqmb.material_ratio AS ""_物料BOM_材料占比（%）"",
+  dqmb.loss_rate AS ""_物料BOM_损耗率（%）"",
+  dqmb.defect_rate AS ""_物料BOM_不良率（%）""
+FROM ds_quote_material_bom dqmb
+WHERE dqmb.input_material_no = ANY(:total_material_no)
+UNION ALL
+-- 根分支：本单闭包里无父边的成品自身（树根，parent_no 恒 NULL）
+SELECT
+  dqm.material_no,
+  NULL::text,
+  dqm.material_no,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL
+FROM ds_quote_material dqm
+WHERE dqm.material_no = ANY(:total_material_no)
+  AND NOT EXISTS (SELECT 1 FROM ds_quote_material_bom dqmb2 WHERE dqmb2.input_material_no = dqm.material_no)
+ORDER BY parent_no, material_no, ""_物料BOM_项次""","[{""name"": ""material_no"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""parent_no"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料BOM_销售料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料BOM_项次"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_物料BOM_投入料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料BOM_单重"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料BOM_产出料号类型"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料BOM_组成数量"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料BOM_材料毛重"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料BOM_材料净重"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料BOM_重量单位"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_物料BOM_材料占比（%）"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料BOM_损耗率（%）"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_物料BOM_不良率（%）"", ""dataType"": ""numeric"", ""nullable"": true}]",{total_material_no},2026-09-07 06:08:08.72348
+519691fc-1c4b-4ef8-be93-29b80331b241,builder_fb378075db5d,fb378075-db5d-4119-a518-ddc0a6a9784f,1,ac10be908a80e2295f6442ef22f195c6,"SELECT
+  dqscf.material_no AS hf_part_no,
+  dqscf.material_no AS ""_组成件其他费用_销售料号"",
+  dqscf.item_seq AS ""_组成件其他费用_项次"",
+  dqscf.sub_component_no AS ""_组成件其他费用_组成件料号"",
+  dqscf.supplier_no AS ""_组成件其他费用_供应商编号"",
+  dqscf.supplier_name AS ""_组成件其他费用_供应商名称"",
+  dqscf.element_item_seq AS ""_组成件其他费用_要素项次"",
+  dqscf.element_name AS ""_组成件其他费用_要素名称"",
+  dqscf.value AS ""_组成件其他费用_值"",
+  dqscf.currency AS ""_组成件其他费用_货币"",
+  dqscf.pricing_unit AS ""_组成件其他费用_计价单位""
+FROM ds_quote_sub_component_fee dqscf
+WHERE dqscf.material_no = ANY(:total_material_no)
+ORDER BY dqscf.material_no, dqscf.sub_component_no, dqscf.supplier_no, dqscf.supplier_name, dqscf.item_seq","[{""name"": ""hf_part_no"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_组成件其他费用_销售料号"", ""dataType"": ""varchar"", ""nullable"": false}, {""name"": ""_组成件其他费用_项次"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_组成件其他费用_组成件料号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_组成件其他费用_供应商编号"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_组成件其他费用_供应商名称"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_组成件其他费用_要素项次"", ""dataType"": ""int4"", ""nullable"": true}, {""name"": ""_组成件其他费用_要素名称"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_组成件其他费用_值"", ""dataType"": ""numeric"", ""nullable"": true}, {""name"": ""_组成件其他费用_货币"", ""dataType"": ""varchar"", ""nullable"": true}, {""name"": ""_组成件其他费用_计价单位"", ""dataType"": ""varchar"", ""nullable"": true}]",{total_material_no},2026-09-07 04:35:46.622364
