@@ -4538,6 +4538,42 @@ E2E:
 
 ---
 
+## [2026-09-09] 报价单「从已有产品添加」抽屉 - 数据源收敛为单表 | task-260909
+
+**症状**：正泰 CUST-0004 库里 2662 个客户产品，抽屉只显示 1 个；Q13CUST0617、C1 恒为 0。
+
+**根因（三支 UNION 的历史沉积）**：`ExistingProductService.list()` 并了三张表 ——
+① `material_customer_map`（task-0712）② `sel_product_no`（task-260902 B-16b）
+③ `ds_quote_customer_part`（task-260903 P1）。选配落点换过三次，**旧支从未退役**。
+③ 支上的 `AND source <> 'IMPORT'` 注释理由「那批产品由 mcm 分支负责」**早已失效** ——
+实测 mcm 全库 QUOTE 仅 46 行、只有 1 行有 `customer_product_no`（其余 45 行是发号占位）
+⇒ 2662 行卡在「①说我这没有、③说那是①的」中间。
+
+**修法**：读侧收敛回单表 `ds_quote_customer_part`（`source` 从过滤器降级为标签）；
+移除 3D 预览；新增客户图号列；拆开「品名/客户物料名」两列同值（原后端两字段同取一列）。
+
+**涉及文件**：`ExistingProductService.java` `ExistingProductDTO.java` `AddProductModal.tsx`
+`existingProduct.ts` `quotationService.ts` + V436 索引迁移 + 4 个测试类
+
+**关键决策**：
+- D-2 老选配存量**不迁**（用户裁决）⇒ 正泰是「1 行消失 + 2662 行出现」，
+  消失的 `0028-2609000012` 恰是改动前唯一可见的那 1 行
+- D-3 **保留** `v_compat_material_master` 的 JOIN，不直连 `ds_quote_material` ——
+  该视图是「老表遮蔽新表」（`NOT EXISTS`），绕过会让 42 料号走老表值、6 料号消失，
+  全在本次 AC 覆盖之外。V435 后复测基线未变
+
+**开发期实测修复**：`aggSql` 的 `array_agg` 只按 `created_at` 排序，而主查询 ORDER BY 有
+第三键 `customer_product_no` —— 同料号多编号且时间戳相同时（`T260907-M1`）退化为**不确定序**，
+代表编号会排到数组第二位。补齐排序键。**该缺陷是 AC-4b 才让它暴露的**。
+
+**遗留代价（须转 task-0721）**：删 `ExistingProductGateTest` 后，AC-4「未审核占用料号不外泄」
+在后端无自动化守卫 —— 新表无 `pending_quotation_id` 列，前提消失。业务规则是否仍需执行属需求侧。
+
+**已知不绿**（均非本次引入，已登记 BACKLOG）：`ExistingProductResourceTest` 3/3 红（401 无鉴权，
+A/B 对照证明 HEAD 原版同样红）；`RenderRegressionAcTest` r6 夹具已迁但不跑（清理白名单只清 MANUAL）。
+
+---
+
 ## [2026-07-29] 报价单模板绑定(task-0729) - 服务层三重不变量：存在 / 类型 / 状态
 
 **问题**：`QuotationService` 对模板绑定的服务层校验强度层层递减 —— `create` 的 `customerTemplateId` 零校验、`costingTemplateId` 只校验存在性（查不到静默忽略）+ 类型/状态；`saveDraft` 两字段完全不查；`copy` 换模板不查。绕过 UI 的调用可把报价单绑到 DRAFT/ARCHIVED/错误 kind 的模板，进而在模板被删除时触发 `costing_card_template_id` 的 `ON DELETE SET NULL`，核价侧关联静默置空且不可溯源。
