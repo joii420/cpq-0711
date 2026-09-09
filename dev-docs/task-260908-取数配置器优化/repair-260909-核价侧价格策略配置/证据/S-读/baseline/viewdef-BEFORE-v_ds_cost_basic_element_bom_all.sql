@@ -1,0 +1,33 @@
+ SELECT ds_cost_basic_element_bom.id,
+    ds_cost_basic_element_bom.production_no,
+    ds_cost_basic_element_bom.material_part_no,
+    ds_cost_basic_element_bom.item_seq,
+    ds_cost_basic_element_bom.element_code,
+    ds_cost_basic_element_bom.content_pct,
+    ds_cost_basic_element_bom.loss_rate,
+    ds_cost_basic_element_bom.version_no,
+    ds_cost_basic_element_bom.row_fingerprint,
+    ds_cost_basic_element_bom.source,
+    ds_cost_basic_element_bom.created_at,
+    ds_cost_basic_element_bom.created_by,
+    ds_cost_basic_element_bom.updated_at,
+    ds_cost_basic_element_bom.updated_by,
+    true AS is_current
+   FROM ds_cost_basic_element_bom
+UNION ALL
+ SELECT ds_cost_basic_element_bom_history.id,
+    ds_cost_basic_element_bom_history.production_no,
+    ds_cost_basic_element_bom_history.material_part_no,
+    ds_cost_basic_element_bom_history.item_seq,
+    ds_cost_basic_element_bom_history.element_code,
+    ds_cost_basic_element_bom_history.content_pct,
+    ds_cost_basic_element_bom_history.loss_rate,
+    ds_cost_basic_element_bom_history.version_no,
+    ds_cost_basic_element_bom_history.row_fingerprint,
+    ds_cost_basic_element_bom_history.source,
+    ds_cost_basic_element_bom_history.created_at,
+    ds_cost_basic_element_bom_history.created_by,
+    ds_cost_basic_element_bom_history.updated_at,
+    ds_cost_basic_element_bom_history.updated_by,
+    false AS is_current
+   FROM ds_cost_basic_element_bom_history;
