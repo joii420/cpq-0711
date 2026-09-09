@@ -209,6 +209,17 @@ class RenderRegressionAcTest extends SelConfigAcTestBase {
      * <b>R-6</b>：{@code ExistingProductService} 的 {@code source} 判据从
      * 「{@code customer_product_no} 是否为空」改为「按<b>来源表</b>判定」（B-16b）后，
      * <b>既有导入产品的 {@code source} 仍必须是 {@code EXISTING}</b>。
+     *
+     * <p>2026-09-09（task-260909 B-1）：数据源由 {@code material_customer_map} 迁至
+     * {@code ds_quote_customer_part}，断言不变 —— R-6 守的是「导入产品可见 + source=EXISTING」，
+     * 与来源表是哪张无关。两条断言恰好与本次任务的 AC-1（导入产品必须可见）、
+     * AC-6（{@code IMPORT → EXISTING}）逐字对应。
+     *
+     * <p>🚨 <b>残留告警（未解决）</b>：{@code SelConfigAcTestBase#restoreFixtures} 对
+     * {@code ds_quote_customer_part} 的清理是<b>白名单</b> ——
+     * {@code WHERE customer_no=:c AND source='MANUAL'}，<b>不含 IMPORT</b>。
+     * 本用例造的正是 {@code source='IMPORT'} 行 ⇒ 跑完会在共享库留下一行孤儿客户产品
+     * （{@code customer} 行会被清掉，这行留着）。跑本用例前需先补上该清理，否则每跑一次多一行孤儿。
      */
     @Test
     @DisplayName("R-6 既有导入产品的 source 仍为 EXISTING（判据改写不回归）")
@@ -220,8 +231,10 @@ class RenderRegressionAcTest extends SelConfigAcTestBase {
             em.createNativeQuery("INSERT INTO material_master (id,material_no,material_name,material_type,created_at,updated_at) "
                             + "VALUES (gen_random_uuid(),:p,:n,'零件',NOW(),NOW())")
                     .setParameter("p", partNo).setParameter("n", PREFIX + "导入产品").executeUpdate();
-            em.createNativeQuery("INSERT INTO material_customer_map (id,system_type,material_no,customer_no,customer_product_no,created_at,updated_at) "
-                            + "VALUES (gen_random_uuid(),'QUOTE',:p,:c,:pn,NOW(),NOW())")
+            // task-260909 B-1：导入产品的落点已从 material_customer_map 迁到 ds_quote_customer_part。
+            // source='IMPORT' 是本用例的断言对象本身（AC-6：IMPORT → DTO.source=EXISTING），不可改成 MANUAL。
+            em.createNativeQuery("INSERT INTO ds_quote_customer_part (customer_no,material_no,customer_product_no,source,created_at,updated_at) "
+                            + "VALUES (:c,:p,:pn,'IMPORT',NOW(),NOW())")
                     .setParameter("p", partNo).setParameter("c", fx.customerNo())
                     .setParameter("pn", productNo).executeUpdate();
         });
