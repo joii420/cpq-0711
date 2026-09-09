@@ -192,18 +192,12 @@ class BackfillPatchSemanticsAcTest extends Task260907RBase {
      */
     @Test
     @DisplayName("T-08 · 主表新行记来源报价单 id；且既有 Excel 仍能导入（证明它不是 ColumnDef）")
-    @org.junit.jupiter.api.Disabled(
-            "⛔ 被前置挡住，🚫 不是用例坏了、也不是实现坏了。\n"
-            + "① 本条现在能跑完整条链路：建单 → 改值 → 升版 → 内容发现法扫主表 21 列，"
-            + "   失败点是真实前置 —— **一列都没有装得下来源报价单 id**（实测命中 0 列）。\n"
-            + "② 原因：B-3 的 `source_quotation_id`（26 张表 ALTER）刻意未落（本期迁移冻结）。"
-            + "   实查 ds_quote_* 全族该列 **0 处存在**。\n"
-            + "③ 落库后本条**应自动可跑**：判据用内容发现法、不钉死列名，列一出现就能命中。\n"
-            + "🕰️ 2026-09-08 顺带修掉一个会误导人的夹具错：原 seedMainGroup 往 ds_quote_material_bom 插、"
-            + "   却拿 MBOM(=ds_quote_element_bom) 去数 ⇒ 恒 0 行，失败在「空验证守卫」上，"
-            + "   **看着像被 B-3 挡住，其实和它无关**（本条全文 grep source_quotation_id 0 命中）。"
-            + "   已改走 EBOM 单表路径。⇒ 现在这条红才真的指向 B-3。\n"
-            + "⚠️ 另：AC-8 的反向半边 assertExistingQuoteExcelStillImports() 仍是桩，需一份既有报价 Excel 夹具。")
+    // 🕰️ 2026-09-08 摘掉 @Disabled：B-3 的 source_quotation_id 已随 V431 落库
+    //    （ds_quote_* 里带该列的表 = 26 张，0724 与 laneb 均已应用）。
+    //    原 @Disabled 理由第③条写的就是「落库后本条应自动可跑：判据用内容发现法、
+    //    不钉死列名，列一出现就能命中」⇒ 条件已具备，条件具备就该摘。
+    //    ⚠️ 遗留：AC-8 的反向半边 assertExistingQuoteExcelStillImports() 仍是桩，
+    //       需一份既有报价 Excel 夹具（不影响正向半边）。
     void t08_sourceQuotationIdRecordedButNotAColumnDef() {
         requireRecordLayer();
 
