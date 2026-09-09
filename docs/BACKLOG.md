@@ -813,7 +813,10 @@ pickQualifiedCustomer({ needsTakenProductNo? })
     —— 关联的是**锚点行自己的 `customer_no`** ⇒ 即使主表 `WHERE` 缺客户过滤、返回了跨客户的行，
     每一行的查名结果仍取自它自己那个客户，**不会串号**，且在 BL-0229 修好之后**仍然正确**。
     ⇒ 清点时必须能区分**三种**形态：① 没有客户维度（本条要修的）② 有客户维度、走 `:customerCode` 参数 ③ 有客户维度、走列对列（安全，别误报）
-  - 归属：取数配置器（`task-260819-取数配置器` / `取数配置器补齐`）+ 客户维度铺开，🚫 不属 `_record` 层
+  - **归属（2026-09-08 两会话当面确认，不是推测）**：落地方 = `dev-docs/task-260819-取数配置器/repair-260908-页签重复行与跨客户串号/`（会话 `客户产品数据行重复`）。
+    编译器层（`SemanticCompiler`）与存量快照对齐层（`refresh-all-snapshots`）**两层均归它**；
+    `task-260907-record层与核价回填` 只作**报告方与复验方**，🚫 不碰视图与模板（两边同改会互相覆盖）
+  - 🚫 **不属 `_record` 层** —— `_record` 读侧本就已有客户维度（`DsMainTableReader:117-118`），它是不对称的**完好那一半**
   - 🔴 **状态更新（2026-09-08）：已爆发，已立项修复** —— 用户报「报价单产品卡片各页签重复行越来越多」（`QT-20260908-0624`），
     并发会话 `task-260907-record层与核价回填` 同日撞到提交返「行键重复」9 处（`QT-20260908-0625`）。
     ⇒ 落地任务 **`dev-docs/task-260819-取数配置器/repair-260908-页签重复行与跨客户串号/`**（路径 A · 标准档）。
@@ -822,6 +825,22 @@ pickQualifiedCustomer({ needsTakenProductNo? })
     其子查询里的 `ds_quote_material` 同样缺客户过滤（3 个 `COST_BASIC` 视图全走这条；实测当前 0 行影响，是结构隐患）；
     ② 「存量模板重发布」**行不通** —— `new-draft` + `publish` 产生新 `template.id`，存量 `quotation_line_item.template_id` 仍指旧版，
     必须**原地改写冻结快照**（既有端点 `POST /api/cpq/config-center/refresh-all-snapshots`）
+  - 🚨 **更正四条（2026-09-08 并发会话 `客户产品数据行重复` 提出，主线独立实测复核后采纳）**：
+    ① **判据不是「28 个视图全补」，是「锚点物理表有没有 `customer_no` 列」** ——
+      实测：`ds_cost_*` 共 **55 张表，0 张**带 `customer_no`。对它们补谓词 = 一编译就 `column does not exist`，
+      从「静默串号」换成「全面编译失败」。编译器必须按 `cols.contains("customer_no")` 逐表判，不能无条件补
+    ② **`LOOKUP` 的列对列谓词绝不得挪进 `WHERE`** —— `AND dqm.customer_no = dqiof.customer_no` 写在 `LEFT JOIN` 上
+      是**正确且必要**的（它关的是锚点行自己的客户）；挪进 `WHERE` 会把 `LEFT JOIN` 退化成 `INNER`，**静默丢行**
+    ③ **`NARROW` 桥子查询要单独补** —— 3 个 `COST_BASIC` 视图的**外层 `FROM` 是 `ds_cost_basic_*` / `v_ds_cost_basic_*`**（无客户列），
+      要补的是它们 `WHERE` 里那个套着 `ds_quote_material` 的桥子查询（`SemanticCompiler:585` 直拼 `anchorWhere`，不经 `applyFullScope`）
+    ④ **`SqlViewExecutor.rewriteNamedParams:643` 需硬阻断** —— 未绑定的命名参数会被替成**字面 `NULL`**，
+      ⇒ `customer_no = NULL` 恒为假 ⇒ **静默返 0 行**。补了谓词却没传 `:customerCode` 时，症状从「串号」变成「全空」，
+      且**不报错** ⇒ 必须在执行器层把未绑定变成响亮失败
+  - ⚠️ **主线自己在这条上踩过两次，写在这里防下一个人重踩**：
+    ・ 用「该视图 SQL 文本里含不含 `customer_no = :customerCode`」清点，得出「4 个已经有了」——
+      四个全是把它写在 **`LEFT JOIN` 上**的，且其中 3 个正是实际出故障的组件。**要区分“写在哪一子句”，不是“出不出现”**
+    ・ 用 `FROM\s+(ds_quote_\w+)` 正则定外层主表，它先匹到了 `WHERE` 里的 `NARROW` 桥子查询，
+      把 3 个 `COST_BASIC` 视图归错了主表。🚨 **错判断碰巧指对了地方，比明显的错更危险** —— 它会自洽
   - 优先级：**P1**（静默串客户数据；~~当前只因数据年轻未爆发~~ **2026-09-08 已爆发**）｜ 预估规模：M（编译器改动 + 存量重编译与快照对齐）
 
 - [ ] **BL-0230 · `_record` 落 `provenance` 列 —— 一个列同时解三个问题（含「合成行被静默丢弃」）**

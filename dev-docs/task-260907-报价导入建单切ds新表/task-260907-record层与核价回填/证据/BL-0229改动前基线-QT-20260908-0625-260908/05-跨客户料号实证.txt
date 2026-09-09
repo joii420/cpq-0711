@@ -1,0 +1,10 @@
+          tbl          | material_no | n_cust |        custs        | n_rows 
+-----------------------+-------------+--------+---------------------+--------
+ ds_quote_element_bom  | S0002       |      2 | CUST-0001,CUST-0004 |      4
+ ds_quote_material     | S0001       |      2 | CUST-0001,CUST-0004 |      2
+ ds_quote_material     | S0002       |      2 | CUST-0001,CUST-0004 |      2
+ ds_quote_material     | S0003       |      2 | CUST-0001,CUST-0004 |      2
+ ds_quote_material_bom | S0001       |      2 | CUST-0001,CUST-0004 |      4
+ ds_quote_material_bom | S0002       |      2 | CUST-0001,CUST-0004 |      2
+(6 rows)
+

@@ -1,0 +1,8 @@
+   code    |   name   |        rowkey        | occurrences 
+-----------+----------+----------------------+-------------
+ COMP-2293 | 产品     | <null>               |           6
+ COMP-2294 | BOM      | <null>|<null>        |           8
+ COMP-2295 | 材质元素 | <null>|<null>|<null> |           4
+ COMP-2296 | 加工费   | <null>|<null>        |           2
+(4 rows)
+
