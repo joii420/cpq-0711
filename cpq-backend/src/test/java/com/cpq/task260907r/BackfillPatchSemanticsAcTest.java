@@ -613,10 +613,25 @@ class BackfillPatchSemanticsAcTest extends Task260907RBase {
                         + "DatasetSheetParser 会要求每个 persistedColumns() 的 label 都出现在 Excel 表头，"
                         + "缺一个则整张 sheet 拒收 ⇒ 所有存量报价 Excel 会当场导不进去。");
 
-        // ── 守卫④（污染前置）：导入前该轴必须是 0 行 ─────────────────
-        assertLegacyAxisPristine();
+        // ── 守卫④（污染前置）+ 正向导入 + 收尾，统一收进一个 try/finally ──
+        // 🚨 <b>显式标志位</b>：只有守卫④ <b>真的通过</b>，finally 才允许按前缀清理。
+        //    🚫 不许靠「没抛异常」推断 —— 守卫④ 失败时 finally <b>照样会执行</b>，
+        //       而那时库里的 T260907T- 行**不是本次运行造的**，删它们就等于
+        //       把守卫刚拦下来的「别人的数据」在收尾时删掉（CLAUDE.md §3.2）。
+        //       ⇒ 默认 false，且**只在守卫内部断言全过之后**才被赋值。
+        boolean axisPristine = false;
+        String[] recIdHolder = new String[1];   // 抛异常时仍要能在 finally 里拿到 recId
+        try {
+            axisPristine = assertLegacyAxisPristine();
+            runLegacyImportAndAssert(recIdHolder);
+        } finally {
+            dropImportRecord(recIdHolder[0]);
+            cleanupLegacyAxis(axisPristine);
+        }
+    }
 
-        // ── 正向：既有报价 Excel 走真实导入端点 ─────────────────────────
+    /** 正向半边的本体：导入既有报价 Excel 并断言三条守卫之外的结果。 */
+    private void runLegacyImportAndAssert(String[] recIdHolder) {
         java.nio.file.Path xlsx = fixtureXlsx(LEGACY_QUOTE_XLSX);
         byte[] bytes;
         try {
@@ -636,9 +651,10 @@ class BackfillPatchSemanticsAcTest extends Task260907RBase {
         String recId = ok(impR, "POST /dataset/quote/quotation-import（api.md §1）")
                 .path("importRecordId").asText(null);
         assertNotNull(recId, "api.md §1 契约：响应必须含 importRecordId，实际=" + impR.asString());
+        recIdHolder[0] = recId;
         System.out.println("[T-08 反向] importRecordId = " + recId);
 
-        try {
+        {
             JsonNode fin = awaitImportFinal(recId);
             String status = fin.path("status").asText();
             // 🚩 缺表头会以「整份拒收 + errors」的形态出现 —— 失败时必须把 errors 原文带出来，
@@ -682,10 +698,6 @@ class BackfillPatchSemanticsAcTest extends Task260907RBase {
             System.out.println("[T-08 反向] ✅ AC-8 反向半边成立：" + EBOM + " 带 " + SRC_QID
                     + " 列，但它不在任何 sheet 的已声明列里，既有报价 Excel 整份导入 SUCCESS（"
                     + successRows + " 行）");
-        } finally {
-            // 只删本用例自己建的那一条 import_record，按 id 精确删。
-            // 🚫 不按条件批量删，🚫 不碰 ds_quote_* 数据（那是共享夹具轴，见回报「残留」一节）
-            dropImportRecord(recId);
         }
     }
 
@@ -720,13 +732,10 @@ class BackfillPatchSemanticsAcTest extends Task260907RBase {
      * 发现非 0 <b>只报不清</b>：清掉就等于删别人的行（{@code CLAUDE.md §3.2 环境销毁}），
      * 而本用例<b>没有批准权</b>。也<b>不许</b>改成 skip —— skip 在 surefire 汇总里长得和通过一样。
      */
-    private void assertLegacyAxisPristine() {
-        @SuppressWarnings("unchecked")
-        List<String> tables = (List<String>) (List<?>) col(
-                "SELECT table_name FROM information_schema.columns "
-                        + "WHERE table_schema='public' AND table_name LIKE 'ds\\_quote\\_%' "
-                        + "  AND table_name NOT LIKE '%\\_history' AND table_name NOT LIKE '%\\_record' "
-                        + "  AND column_name='material_no' ORDER BY 1");
+    private boolean assertLegacyAxisPristine() {
+        // 🔑 与收尾清理**共用同一份清单**（主表 + _history + _record）：
+        //    扫描面必须 ⊇ 清理面，否则会删到没被证明过归属的行。
+        List<String> tables = legacyAxisTables();
         // 🚨 扫到 0 张表 ⇒ 下面的循环空跑，守卫恒真。先证明扫描面非空。
         assertFixtureNonEmpty(tables.size(),
                 "带 material_no 的 ds_quote_* 主表数（0 张则本守卫恒真、等于没有）");
@@ -752,6 +761,58 @@ class BackfillPatchSemanticsAcTest extends Task260907RBase {
                         + " ⇒ 请换一个该轴为空的库，或换一套轴值。"
                         + " 🚫 不要清掉这些行来让用例变绿 —— 那可能是别人的数据（CLAUDE.md §3.2），"
                         + "本用例没有批准权。");
+        return true;   // ← 只有上面每一条断言都过了，才执行得到这里
+    }
+
+    /**
+     * 收尾：清掉<b>本次运行</b>在 {@link #LEGACY_AXIS_PREFIX} 轴上造的行（主表 + {@code _history} + {@code _record}）。
+     *
+     * <h3>为什么这里按前缀删是安全的</h3>
+     * 单看「按前缀删」是不安全的 —— 前缀是<b>命名空间</b>，不标识所有权。
+     * 让它变安全的是<b>守卫④ 的前提</b>：它已经证明<b>进场时该轴 0 行</b>，
+     * ⇒ 此刻按前缀命中的每一行，都只可能是本次运行造的。
+     * <b>守卫把「按前缀删」从不安全操作变成了有前提的安全操作</b> —— 前提没成立就不许删。
+     *
+     * <h3>🚨 不清的那一支才是重点</h3>
+     * {@code axisPristine=false} 意味着<b>守卫④ 拦下了别人的数据</b>。
+     * 此时若照删，等于「守卫拦下来、收尾又删掉」，比没有守卫更坏。
+     */
+    private void cleanupLegacyAxis(boolean axisPristine) {
+        if (!axisPristine) {
+            System.out.println("[T260907T-cleanup] 🚫 守卫④ 未通过 ⇒ 一行都不删。"
+                    + "库里的 " + LEGACY_AXIS_PREFIX + " 行不是本次运行造的，"
+                    + "删它们就是把守卫刚拦下来的「别人的数据」在收尾时删掉（CLAUDE.md §3.2）。");
+            return;
+        }
+        try {
+            inTx(() -> {
+                for (String t : legacyAxisTables()) {
+                    int n = em.createNativeQuery("DELETE FROM " + sqlSafe(t)
+                            + " WHERE material_no LIKE '" + LEGACY_AXIS_PREFIX + "%'").executeUpdate();
+                    if (n > 0) {
+                        System.out.println("[T260907T-cleanup] " + t + " 清掉 " + n + " 行");
+                    }
+                }
+            });
+        } catch (RuntimeException e) {
+            // 清理失败不许盖掉用例真正的失败原因
+            System.out.println("[T260907T-cleanup] ⚠️ 清理失败：" + e);
+        }
+    }
+
+    /**
+     * 守卫④ 与收尾清理<b>共用同一份表清单</b>。
+     *
+     * <p>🚨 <b>刻意抽成一个方法</b>：两边各写一份 SQL 时，扫描面与清理面会悄悄漂移 ——
+     * 守卫只看主表、清理却删到 {@code _history}（删了没证明过归属的行），
+     * 或反过来（清理漏表，下一轮被自己的残留拦住）。两种都完全静默。
+     */
+    @SuppressWarnings("unchecked")
+    private List<String> legacyAxisTables() {
+        return (List<String>) (List<?>) col(
+                "SELECT table_name FROM information_schema.columns "
+                        + "WHERE table_schema='public' AND table_name LIKE 'ds\\_quote\\_%' "
+                        + "  AND column_name='material_no' ORDER BY 1");
     }
 
     private java.nio.file.Path fixtureXlsx(String name) {
