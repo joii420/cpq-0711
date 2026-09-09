@@ -34,6 +34,12 @@ import java.util.UUID;
 @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
 public class ConfigureProductResource {
 
+    // D-40：选配建单末尾补写 _record（用户 2026-09-07 改裁「本期补写入」）
+    @jakarta.inject.Inject
+    com.cpq.quotation.service.dsrecord.DsQuoteRecordService dsQuoteRecordService;
+    @jakarta.inject.Inject
+    com.cpq.quotation.service.dsrecord.DsRecordStaleService dsRecordStaleService;
+
     @Inject
     ConfigureProductService service;
 
@@ -80,6 +86,22 @@ public class ConfigureProductResource {
             }
         } catch (Exception e) {
             // 尽力而为，不影响加产品
+        }
+        // ── D-40：选配建单末尾补写 _record（AC-2④ v3 · 用户 2026-09-07 改裁）───────────────
+        // 🔑 挂点必须在**上面两段物化之后**：此刻 snapshot_rows 已落库（实测选配单 14/14 行
+        //    snapshot_rows + row_data + snapshot_at 三者皆有）⇒ 投影走路径① DRIVER，
+        //    anchorValues 非空、第 1 趟内容对位即命中，不依赖 D-38 的 DRIVER_NOT_MATERIALIZED 兜底。
+        // 🚫 N+1：整条流程只调一次（🚫 不许放进上面那个 per-line 循环）。
+        // 🔒 走 syncRecordsForFlow 而不是直调 syncRecords：Resource 层**没有事务**，
+        //    而此刻 service 的写入**已提交** ⇒ 由它开一个事务；直调会因无事务可用而抛。
+        //    （导入侧相反 —— 那边行还没提交，必须加入外层事务，见 DsQuoteRecordService 注释。）
+        // 🛡️ 失败不阻断加产品（与上面两段同款降级）。
+        try {
+            dsQuoteRecordService.syncRecordsForFlow(quotationId);
+        } catch (RuntimeException ex) {
+            dsRecordStaleService.markStale(quotationId,
+                    com.cpq.quotation.service.dsrecord.DsRecordStaleService.REASON_WRITE_FAILED,
+                    ex.getClass().getSimpleName() + ": " + ex.getMessage(), null);
         }
         return resp;
     }

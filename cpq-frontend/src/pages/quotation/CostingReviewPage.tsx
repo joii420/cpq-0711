@@ -313,6 +313,10 @@ const CostingReviewPage: React.FC = () => {
       <CostingApprovePreviewDrawer
         open={approvePreviewOpen}
         quotationId={detail.quotationId}
+        /* task-260907 F-1：抽屉副标题「报价单 QT-… · 客户 …」。
+           ⚠️ customerName 当前拿不到——CostingOrderDetailDTO 与 frozenDto(QuotationDTO) 都不含该字段，
+           只有 CostingOrderListItemDTO 有；不为了一个副标题额外发请求，故先只传单号。 */
+        quotationNumber={frozen?.quotationNumber}
         onClose={() => setApprovePreviewOpen(false)}
         onApproved={handleApproved}
       />

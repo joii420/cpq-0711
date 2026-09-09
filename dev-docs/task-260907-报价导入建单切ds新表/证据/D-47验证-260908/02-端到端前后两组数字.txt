@@ -1,0 +1,50 @@
+# D-47 端到端 前后两组数字（真库 cpq_db_0724，@QuarkusTest 随机端口 -Dquarkus.http.test-port=0）
+# 🚫 全程未碰 8099（未发任何请求）；🚫 未执行 costing-approve，只跑写入判定 + 预览判据
+# 🚫 零残留：全部 @TestTransaction 回滚；事后实测 T260907D47% 行数 = 0（见 03）
+
+## E2E-2 十三张带版本表 逐表判定 —— BEFORE(改回去) vs AFTER(修复在) 逐行 diff
+7c7
+< [D47][E2E-2] ds_quote_incoming_fixed_fee=UPGRADED/v2
+---
+> [D47][E2E-2] ds_quote_incoming_fixed_fee=UNCHANGED/v1
+(diff 只有 incoming_fixed_fee 一行；其余 12 张逐字未变)
+
+## AFTER 全量（修复在）
+[D47][E2E-2] ds_quote_annual_discount=UNCHANGED/v1
+[D47][E2E-2] ds_quote_assembly_fee=UNCHANGED/v1
+[D47][E2E-2] ds_quote_assembly_fee_annual=UNCHANGED/v1
+[D47][E2E-2] ds_quote_element_bom=UNCHANGED/v1
+[D47][E2E-2] ds_quote_finished_other_fee=UNCHANGED/v1
+[D47][E2E-2] ds_quote_incoming_annual=UNCHANGED/v1
+[D47][E2E-2] ds_quote_incoming_fixed_fee=UNCHANGED/v1
+[D47][E2E-2] ds_quote_incoming_other_fee=UNCHANGED/v1
+[D47][E2E-2] ds_quote_incoming_recovery=UNCHANGED/v1
+[D47][E2E-2] ds_quote_material_bom=UNCHANGED/v1
+[D47][E2E-2] ds_quote_plating_fee=UNCHANGED/v1
+[D47][E2E-2] ds_quote_self_process_fee=UNCHANGED/v1
+[D47][E2E-2] ds_quote_sub_component_fee=UNCHANGED/v1
+
+## BEFORE 全量（改回去）
+[D47][E2E-2] ds_quote_annual_discount=UNCHANGED/v1
+[D47][E2E-2] ds_quote_assembly_fee=UNCHANGED/v1
+[D47][E2E-2] ds_quote_assembly_fee_annual=UNCHANGED/v1
+[D47][E2E-2] ds_quote_element_bom=UNCHANGED/v1
+[D47][E2E-2] ds_quote_finished_other_fee=UNCHANGED/v1
+[D47][E2E-2] ds_quote_incoming_annual=UNCHANGED/v1
+[D47][E2E-2] ds_quote_incoming_fixed_fee=UPGRADED/v2
+[D47][E2E-2] ds_quote_incoming_other_fee=UNCHANGED/v1
+[D47][E2E-2] ds_quote_incoming_recovery=UNCHANGED/v1
+[D47][E2E-2] ds_quote_material_bom=UNCHANGED/v1
+[D47][E2E-2] ds_quote_plating_fee=UNCHANGED/v1
+[D47][E2E-2] ds_quote_self_process_fee=UNCHANGED/v1
+[D47][E2E-2] ds_quote_sub_component_fee=UNCHANGED/v1
+
+## E2E-1 明细（同一夹具，Excel「是」「否」两行）
+AFTER : [D47][E2E-1] 库中指纹  = [b8e49cb8ffa8, aa0a8e61468a]
+        [D47][E2E-1] 重算指纹  = [b8e49cb8ffa8, aa0a8e61468a]
+        [D47][E2E-1] 二次写入判定 = UNCHANGED v1
+BEFORE: [D47][E2E-1] 库中指纹  = [dc93075cdcb1, dea0f4f6c0e2]
+        [D47][E2E-1] 重算指纹  = [b8e49cb8ffa8, aa0a8e61468a]
+org.opentest4j.AssertionFailedError: 值一个字节没变，重算指纹却与库中不同 ⇒ 预览会判 UPGRADED（D-47 原形） ==> expected: <true> but was: <false>
+[ERROR]   DatasetFingerprintRoundTripQuarkusTest.importedGroupPreviewsAsUnchanged:111 值一个字节没变，重算指纹却与库中不同 ⇒ 预览会判 UPGRADED（D-47 原形） ==> expected: <true> but was: <false>
+        ⇒ 值一个字节没变（同一份 resultRows），指纹却分叉 = D-47 原形

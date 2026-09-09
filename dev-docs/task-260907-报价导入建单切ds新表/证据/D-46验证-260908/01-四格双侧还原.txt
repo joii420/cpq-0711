@@ -1,0 +1,48 @@
+# D-46 四格双侧还原（后端工程师，2026-09-08 04:10~04:18 -07:00）
+# 实例/构建：worktree task-260907-record-backfill，HEAD=a98b0974（改动未提交时采集）
+# 用例：cpq-backend/src/test/java/com/cpq/quotation/service/dsrecord/TreeAxisResolutionAcTest.java
+# 两个病灶各自可单独还原：
+#   病灶一 DsRecordProjector.resolveAxis        —— hf_part_no 提回第一优先级
+#   病灶二 DsQuoteRecordService.acceptAxis      —— 改回 touchedAxes.contains(axis)
+
+## 格①②｜修复在（源码 md5：Projector ca1aed76d53bd97656138586b7145e42 / Service 2d6508c91ca51029d0c96d6bfb65e5ad）
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0 -- TreeAxisResolutionAcTest   BUILD SUCCESS (MVN_EXIT=0)
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0 -- SyntheticRootSkipAcTest（D-45 网，未受影响）
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0 -- CrossCardDedupAcTest（D-44 网，未受影响）
+[INFO] Tests run: 16, Failures: 0, Errors: 0, Skipped: 0  BUILD SUCCESS
+
+## 干预确认（git diff 证明改动真的生效，🚫 不是空实验）
+-        // 🔑 D-46：本 sheet 轴列在这一行上的实际值 = 权威。
+-        Object axis = axisColumn == null ? null : row.columnValues.get(axisColumn);
+-        if (axis != null && !String.valueOf(axis).isBlank()) return String.valueOf(axis);
+-        String hf = driverRow == null ? null : driverRow.path("hf_part_no").asText(null);
++        // [还原实验 D-46 病灶一] 把 hf_part_no 提回第一优先级
++        String hf = driverRow == null ? null : driverRow.path("hf_part_no").asText(null);
+   ...
+-        if (axis == null || axis.isBlank()) return false;
+-        if (touchedAxes.contains(axis)) return true;
+-        return !otherProductAxes.contains(axis);
++        // [还原实验 D-46 病灶二] 只认产品轴值，树闭包派生轴一律丢
++        return axis != null && !axis.isBlank() && touchedAxes.contains(axis);
+
+## 格③④｜两个病灶同时还原
+[ERROR] Tests run: 8, Failures: 5, Errors: 0, Skipped: 0 -- TreeAxisResolutionAcTest   BUILD FAILURE (MVN_EXIT=1)
+[ERROR]   treeRowsUseParentAsAxis:144   轴值取的必须是本 sheet 轴列(material_no ← _BOM_销售料号)的实际值 = 父件
+                                        ==> expected: <[FG01, FG01, RM01]> but was: <[RM01, SC01, RM03]>   ← 病灶一原形
+[ERROR]   projectThenFilterKeepsAllEdges:233  写入面 = 产品轴值 FG01 ∪ 树闭包派生轴 RM01
+                                        ==> expected: <[RM01, FG01]> but was: <[]>                          ← 病灶二原形：0 组 0 行
+[ERROR]   derivedTreeAxisAccepted:213   expected: <true> but was: <false>
+[ERROR]   otherProductAxisSkipped:251   expected: <true> but was: <false>
+[ERROR]   fullSyncHasNoGuardEffect:264  expected: <true> but was: <false>
+
+  树页签（物料BOM）   → 红 ✅（5 项全部是树侧断言）
+  非树页签（元素BOM） → 绿 ✅（T3 flatTabAxisUnchanged / T3b fallbackChainStillWorks **不在失败列表里**
+                              = 改动的边界，元素BOM 逐行不变）
+  D-45 网 SyntheticRootSkipAcTest 4/4 绿（还原的是 D-46，没波及 D-45）
+
+## 复原核对
+cp 备份回原位后 md5 逐字相同：
+  ca1aed76d53bd97656138586b7145e42  DsRecordProjector.java
+  2d6508c91ca51029d0c96d6bfb65e5ad  DsQuoteRecordService.java
+grep '还原实验' src/main/java/.../dsrecord/*.java → (无残留)
+复原后重跑 16/16 绿 BUILD SUCCESS

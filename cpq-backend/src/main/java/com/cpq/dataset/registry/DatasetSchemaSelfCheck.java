@@ -63,7 +63,32 @@ public class DatasetSchemaSelfCheck {
     @ConfigProperty(name = "cpq.dataset.schema-check.enabled", defaultValue = "true")
     boolean enabled;
 
+    /**
+     * task-260907 第二段 · B-4：单独关掉「报价侧 {@code _record} + {@code source_quotation_id}」这一段自检。
+     *
+     * <p><b>唯一合法场景</b>：代码已合入、而 B-1/B-3 两条迁移<b>还没落到目标库</b>的那个窗口
+     * （本段的迁移刻意压在上游 {@code 报价侧加客户维度} 的 DDL 之后，见
+     * {@code db/migration-pending-260907/README.md}）。此时自检会报「表不存在: ds_quote_xxx_record」
+     * 并<b>让服务起不来</b> —— 那是设计如此，不是 bug。
+     *
+     * <p>🚫 迁移落库后必须改回 {@code true}（默认值）。刻意做成<b>比
+     * {@code cpq.dataset.schema-check.enabled} 更窄</b>的开关：关掉这一个只放过新增的 26+13 张表，
+     * 而关掉那个会把 45 张主表 + 39 张 {@code _history} 的漂移一起放回静默状态。
+     */
+    @ConfigProperty(name = "cpq.dataset.record-check.enabled", defaultValue = "true")
+    boolean recordCheckEnabled;
+
     public void onStartup(@Observes StartupEvent ev) {
+        // ── D-47：类型自洽先查，且**不受 enabled 开关管**──────────────────────────
+        // 这一段是纯内存的（只读 Registry，不碰库），不可能因为「迁移还没落到目标库」而误报 ——
+        // 而那正是 enabled=false 的唯一合法场景。放在开关外面，才不会被排障用的开关顺手关掉。
+        List<String> typeProblems = checkTypeCoherence();
+        if (!typeProblems.isEmpty()) {
+            throw new IllegalStateException(
+                    "[dataset] Registry 声明类型(type) 与建表类型(pgType) 不自洽，共 " + typeProblems.size()
+                    + " 处（D-47：错配会让该列绕过对应的指纹规范化，造成「值没变也升版」且完全静默）：\n  - "
+                    + String.join("\n  - ", typeProblems));
+        }
         if (!enabled) {
             LOG.warn("[dataset] Registry↔DDL 启动自检已被 cpq.dataset.schema-check.enabled=false 关闭 —— 双写漂移不再被拦截");
             return;
@@ -71,9 +96,73 @@ public class DatasetSchemaSelfCheck {
         List<String> problems = check();
         if (!problems.isEmpty()) {
             throw new IllegalStateException(
-                    "[dataset] Registry 与数据库 schema 不一致，共 " + problems.size() + " 处（V401~V404 与 "
+                    "[dataset] Registry 与数据库 schema 不一致，共 " + problems.size() + " 处（V401~V404 / "
+                    + "task-260907 第二段的 `_record` 与 source_quotation_id 迁移 与 "
                     + "com.cpq.dataset.registry.* 必须同源）：\n  - " + String.join("\n  - ", problems));
         }
+    }
+
+    /**
+     * D-47 · 声明类型 ↔ 建表类型 自洽（<b>纯内存，不碰库</b>）。
+     *
+     * <h3>为什么单独立一条</h3>
+     * {@link #check()} 比的是「Registry 说有这一列 / 库里也有这一列，且 {@code pgType} 一致」——
+     * 它<b>完全看不到</b> {@link ColumnDef#type} 这个字段，因为那一列在库里根本没有对应物。
+     * 而 {@code type} 决定的是<b>指纹怎么规范化</b>（{@link com.cpq.dataset.fingerprint.ValueNormalizer}），
+     * 声明错了 DDL 一样对得上、启动一样成功、导入一样不报错，只是<b>值没变也升版</b>。
+     *
+     * <h3>实际事故（D-47）</h3>
+     * {@code ds_quote_incoming_fixed_fee.follow_material_price} 物理类型是 {@code boolean}，
+     * 却声明成 {@code type="STRING"} ⇒ 绕过 {@code normalizeBoolean} 的「宽进严出」：
+     * 导入侧指纹存 Excel 原文「是」，读回侧 JDBC 返 {@code Boolean} → {@code "true"}，
+     * 两边<b>永不相等</b> ⇒ 12 个业务列逐字节相同（md5 一致）却每次核价通过都空转升一版。
+     *
+     * <h3>规则（按 pgType 的物理族反查合法的 type 族）</h3>
+     * <ul>
+     *   <li>{@code boolean}                          ⟺ {@code BOOLEAN}</li>
+     *   <li>{@code numeric/integer/bigint/smallint}  ⟺ {@code ValueNormalizer.isDecimalType}（NUMBER / DECIMAL / …）</li>
+     *   <li>{@code varchar/char/text}                ⟹ 既不是布尔也不是数值（STRING / ENUM）</li>
+     *   <li>其它物理类型                              ⟹ <b>直接报</b>。新加一种物理类型（date / uuid / jsonb …）
+     *       必须先想清楚它的指纹规范化走哪条分支，🚫 不许靠「默认落文本」蒙混过去。</li>
+     * </ul>
+     *
+     * @return 全部不自洽的描述；空列表 = 自洽。可被测试直接调用（无需起 Quarkus）。
+     */
+    public List<String> checkTypeCoherence() {
+        List<String> problems = new ArrayList<>();
+        // 🚫 N+1 自检：三层循环全是内存遍历 Registry 声明，无任何查询 / 懒加载。
+        for (DatasetRegistry reg : registries.all()) {
+            for (SheetDef s : reg.sheets()) {
+                for (ColumnDef c : s.persistedColumns()) {
+                    String problem = typeCoherenceProblem(c);
+                    if (problem != null) problems.add(s.tableName + "." + c.name + " " + problem);
+                }
+            }
+        }
+        return problems;
+    }
+
+    /** @return null = 自洽；否则为差异描述（不含表名列名前缀）。 */
+    static String typeCoherenceProblem(ColumnDef c) {
+        String pg = c.pgType == null ? "" : c.pgType.trim().toLowerCase();
+        String declared = c.type == null ? "(null)" : c.type;
+        String suffix = "：pgType=" + c.pgType + " type=" + declared;
+        boolean isBool = com.cpq.dataset.fingerprint.ValueNormalizer.isBooleanType(c.type);
+        boolean isNum = com.cpq.dataset.fingerprint.ValueNormalizer.isDecimalType(c.type);
+
+        if (pg.startsWith("boolean")) {
+            return isBool ? null : "物理列是 boolean，type 必须声明为 BOOLEAN" + suffix;
+        }
+        if (pg.startsWith("numeric") || pg.startsWith("integer")
+                || pg.startsWith("bigint") || pg.startsWith("smallint")) {
+            return isNum ? null : "物理列是数值，type 必须是数值族（NUMBER / DECIMAL / INTEGER）" + suffix;
+        }
+        if (pg.startsWith("varchar") || pg.startsWith("char") || pg.startsWith("text")) {
+            if (isBool) return "物理列是字符型，却声明成 BOOLEAN（会把非 true 字面量一律归一成 false）" + suffix;
+            if (isNum) return "物理列是字符型，却声明成数值族（会对文本做 BigDecimal 归一）" + suffix;
+            return null;
+        }
+        return "未识别的建表类型 —— 请先确定它的指纹规范化分支，再把它加进 typeCoherenceProblem" + suffix;
     }
 
     /** @return 全部差异描述；空列表 = 一致。可被测试直接调用。 */
@@ -84,17 +173,41 @@ public class DatasetSchemaSelfCheck {
         Map<String, Set<String>> forbidden = new LinkedHashMap<>();     // 表 → 不得存在的 NAME 列
 
         for (DatasetRegistry reg : registries.all()) {
+            // task-260907 第二段 · B-2/B-4：只有报价侧要求「来源报价单 id」+ `_record`
+            // （核价两套跟着要，它们的库里没这些东西 ⇒ 当场起不来）。
+            boolean rec = reg.quoteRecordEnabled() && recordCheckEnabled;
             for (SheetDef s : reg.sheets()) {
-                expectCols.put(s.tableName, s.expectedTableColumns());
-                expectTypes.put(s.tableName, typesOf(s));
+                expectCols.put(s.tableName, s.expectedTableColumns(rec));
+                Map<String, String> mt = typesOf(s);
+                if (rec && s.versioned) mt.put(SheetDef.SOURCE_QUOTATION_COLUMN, "uuid");
+                expectTypes.put(s.tableName, mt);
                 Set<String> nameCols = new LinkedHashSet<>();
                 for (ColumnDef c : s.nameColumns()) nameCols.add(c.name);
                 if (!nameCols.isEmpty()) forbidden.put(s.tableName, nameCols);
                 if (s.versioned) {
-                    expectCols.put(s.historyTable(), s.expectedHistoryColumns());
+                    expectCols.put(s.historyTable(), s.expectedHistoryColumns(rec));
                     Map<String, String> ht = typesOf(s);
                     ht.put("origin_id", "bigint");
+                    if (rec) ht.put(SheetDef.SOURCE_QUOTATION_COLUMN, "uuid");
                     expectTypes.put(s.historyTable(), ht);
+                }
+                // ── task-260907 第二段 · B-4：`_record` 与 `_history` 同等对待（AC-1⑤）──
+                // 不纳入 = 给自己开后门：本类存在的全部意义就是硬拦「Registry 声明了、DDL 没建」
+                // 这类完全静默的双写漂移。
+                if (rec && s.versioned) {
+                    Map<String, String> extra = reg.recordExtraColumns(s);
+                    expectCols.put(s.recordTable(), s.expectedRecordColumns(extra.keySet()));
+                    Map<String, String> rt = typesOf(s);
+                    rt.remove("version_no");            // `_record` 不带版本列（AC-9：升版归主表）
+                    rt.remove("row_fingerprint");
+                    rt.put("quotation_id", "uuid");
+                    rt.put("origin_id", "bigint");
+                    rt.put("base_row_fingerprint", "char(64)");
+                    rt.put("base_version_no", "integer");
+                    rt.put("extend_column", "jsonb");
+                    rt.put(SheetDef.RECORD_CUSTOMER_COLUMN, "varchar(20)");
+                    rt.putAll(extra);
+                    expectTypes.put(s.recordTable(), rt);
                 }
             }
         }

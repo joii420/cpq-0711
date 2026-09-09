@@ -183,6 +183,225 @@ export interface CostingApprovePreviewGlobalShared {
   groupIndexes: number[];
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// task-260907 第二段（api.md §1）：核价通过 → ds_quote_* 基础数据回填升版预览。
+// 老回填（上面的 products / globalShared / groups）保持原样，本段是并列新增的一段，
+// 老单 applicable=false 时前端渲染空态，不渲染比对表格区（AC-15）。
+// ───────────────────────────────────────────────────────────────────────────
+
+/** 「对不上的行」——跨版重锚失败，确认后按新增写入，库里原行保留（AC-20③）。 */
+export interface DsBackfillUnanchoredRow {
+  recordId?: number | string | null;
+  /** 快照时的主表行 id（已失效） */
+  originId?: number | string | null;
+  baseRowFingerprint?: string | null;
+  /** 该行的人类可读身份，键为中文列名（如 { 项次: "90", 投入料号: "S-1630010773" }） */
+  displayValues?: Record<string, string | number | null>;
+  /** 后端原因常量，如 CROSS_VERSION_FINGERPRINT_MISS */
+  reason?: string | null;
+}
+
+/**
+ * AP-60 列维度判据：该页签表征了哪些列（patched）/ 没表征因而原样保留的列（preserved）。
+ * ⚠️ 契约示例给的是物理列名（component_qty），原型图展示的是中文列名（组成数量）——
+ * 前端原样渲染后端下发的字符串，不做映射（见回报「契约疑点」）。
+ */
+export interface DsBackfillColumnScope {
+  patched?: string[];
+  preserved?: string[];
+}
+
+/**
+ * 🆕 BLOCKED 组的粒度键冲突明细（api.md §1，2026-09-07 主线钉死的契约）。
+ * 一条 = 一个撞上了的粒度键取值，以及它在**主表基底**与 **`_record`** 两侧各有几行。
+ * ⚠️ 冲突可能出在任一侧（基底 4 行 vs `_record` 1 行、或反过来）⇒ 两个计数都要给财务看。
+ */
+export interface DsBackfillCollidingRow {
+  /** 粒度键取值，键为列名（如 { material_part_no: '00005', element_code: 'C' }）。
+   *  ⚠️ 契约给的是物理列名，前端原样渲染不做中文映射（同 columnScope 的既有口径）。 */
+  grainKey?: Record<string, string | number | null>;
+  /** 该粒度键在主表基底里有几行 */
+  baseRowCount?: number;
+  /** 该粒度键在 _record 里有几行 */
+  recordRowCount?: number;
+}
+
+/** 一个「表 × 轴值」组的回填结果预告——描述「将写入什么」，不是「哪些值变了」（AP-60 判据四）。 */
+export interface DsBackfillGroup {
+  /** 轴 = 报价单产品卡片的销售料号（D-3） */
+  axisValue: string;
+  /**
+   * 客户号 = customer.code（如 CUST-0001）。api.md §4 已裁决类型为 string（DB 侧 varchar(20) NOT NULL），
+   * ⚠️ 但上游 DDL 尚未落库 ⇒ 过渡期后端可能返 null，前端必须容忍不报错、渲染成「—」。
+   */
+  customerNo?: string | null;
+  /** _record 拍快照时的版本 */
+  baseVersionNo?: number | null;
+  /** 库里当前版本 */
+  currentVersionNo?: number | null;
+  /** 将升到的版本 = max(current, historyMax) + 1 */
+  targetVersionNo?: number | null;
+  /** baseVersionNo != currentVersionNo → 走指纹重锚 */
+  crossVersion?: boolean;
+  /**
+   * 🆕 2026-09-07 由两值扩到四值：新增 `BLOCKED`。
+   * `BLOCKED` = 该组**本次跳过回填，一个字节不写**；核价通过本身照常进行（🚫 不阻断确认），
+   * 需财务**事后人工处理**。⇒ 它不是错误态，视觉上应比 `UNCHANGED` 显眼、比报错克制。
+   */
+  result: 'CREATED' | 'UPGRADED' | 'UNCHANGED' | 'BLOCKED';
+  /**
+   * 🆕 result==='BLOCKED' 时的原因常量。目前只有 `GRAIN_KEY_COLLISION` 一种，
+   * 但**按枚举处理**：后端加值时前端必须原码兜底，🚫 不许渲染空白。
+   * 🚫 这是**第三套**独立值域 —— 与 `unanchoredRows[].reason`（行级）、
+   *    `nonParticipating[].reason`（组件级）互不相干，🚫 不许合并成一张映射表。
+   */
+  blockedReason?: string | null;
+  /** 🆕 result==='BLOCKED' 时的冲突明细（哪个粒度键撞了、两侧各几行） */
+  collidingRows?: DsBackfillCollidingRow[];
+  /** 主表当前整组行数（= 基底行数） */
+  baseRowCount?: number;
+  /** 回填后该组行数 */
+  resultRowCount?: number;
+  /** _record 表征并覆盖了列的行数 */
+  patchedRows?: number;
+  /** 🔑 页签没表征、原样保留的行数——AP-60 守卫，必须渲染，不许省 */
+  untouchedRows?: number;
+  unanchoredRows?: DsBackfillUnanchoredRow[];
+  columnScope?: DsBackfillColumnScope;
+}
+
+/** 一张 ds_quote_* 主表（对应报价单一个页签）下的全部料号组。 */
+export interface DsBackfillTable {
+  sheetKey: string;
+  /** 与 Excel sheet 名逐字相等 */
+  sheetName: string;
+  tableName: string;
+  groups: DsBackfillGroup[];
+}
+
+/** 抽屉顶部汇总条五项（AC-5③）。 */
+export interface DsBackfillSummary {
+  tables: number;
+  axes: number;
+  upgradedGroups: number;
+  unchangedGroups: number;
+  /**
+   * 🆕 判定为 BLOCKED 的组数（本次跳过回填，一个字节不写）。
+   * ⚠️ 后端未下发时前端按 `tables[].groups` 里 result==='BLOCKED' 的条数兜底 ——
+   * 口径与 `nonParticipatingComponents` 的兜底一致，🚫 不许因 summary 缺字段就当 0（那等于静默）。
+   */
+  blockedGroups?: number;
+  /** 🔴 >0 时前端必须显著提示：红色告警条 + 独立明细表 + 主按钮变红 */
+  unanchoredRows: number;
+  /**
+   * 🆕 D-35 布尔便捷位（api.md :51「便于前端直接做红条」）。
+   * ⚠️ 与顶层 `recordStale.stale` 是同一件事的两个出口 —— 前端取**两者的并**（任一为真即提示），
+   * 🚫 不许只信其中一个：只信 summary 会漏掉 summary 没发的场景，只信顶层会漏掉顶层被裁掉的场景，
+   * 而这条告警**漏报的代价是财务照着过期数据确认回填**。
+   */
+  recordStale?: boolean;
+  /**
+   * 🆕 布尔便捷位，与顶层 `noRecordSnapshot` 是同一件事的两个出口。恒发（无此情形时 false）。
+   * ⚠️ 前端取**两者的并** —— 与 `recordStale` 同型，上一轮已用证伪实验证明只信一个会在
+   * 另一形态下让告警整块消失。
+   */
+  noRecordSnapshot?: boolean;
+  /** 🆕 D-33：不参与基础数据升版的组件数。后端未下发时前端按 nonParticipating.length 兜底 */
+  nonParticipatingComponents?: number;
+}
+
+/** 只落 extend_column、不回填主表的字段（AC-3）。sheetName 需由 tables[] 按 sheetKey 反查。 */
+export interface DsBackfillExtendColumnOnly {
+  sheetKey: string;
+  sheetName?: string;
+  fields: string[];
+}
+
+/**
+ * 🆕 D-33：不参与基础数据升版的组件（api.md §1 硬约束 4）。
+ * 实测现网 156/228 个组件视图是手写的（无 builder_config）⇒ 常态非空，
+ * 🚫 前端不许静默：不说，财务会以为本单全覆盖了 —— 与 AP-60 判据四同型的静默。
+ */
+export interface DsBackfillNonParticipating {
+  componentId?: string | null;
+  componentName?: string | null;
+  /**
+   * 八个已知常量：NO_BUILDER_CONFIG / NO_DRIVER_PATH / UNSUPPORTED_DRIVER_PATH /
+   * BUILDER_CONFIG_CORRUPT / NOT_QUOTE_DIALECT / NO_TAB_TYPE / TAB_VIEW_NOT_FOUND /
+   * NOT_VERSIONED_SHEET。⚠️ 后端可能再加 ⇒ 前端必须有未知值兜底，🚫 不许渲染成空白。
+   */
+  reason?: string | null;
+}
+
+/**
+ * 🆕 D-35（api.md §1 硬约束 4）：本单的 `_record` 快照**写失败过** ⇒ 预览内容可能不是最新。
+ *
+ * 后果链（需求文档 D-35 原文）：保存成功 → 快照没更新 → 核价通过时预览读到**过期或缺失**的 `_record`
+ * → 财务照着确认 → **按错的数据回填主表**。⇒ 与 AP-60 判据四同族：**预览在撒谎，而且撒得很有说服力**。
+ *
+ * 🚫 `detail` 是异常原文，**仅供排障，绝不许当用户文案渲染**（api.md 明写）。
+ */
+export interface DsBackfillRecordStale {
+  /** true = 快照可能过期，前端必须显著提示（🚫 不许折叠、不许静默） */
+  stale: boolean;
+  /** 原因常量，实测目前只有 WRITE_FAILED。⚠️ 第四套独立值域，🚫 不许与另外三套合并 */
+  reason?: string | null;
+  /** 🚫 异常原文，仅排障。前端**不得**直接渲染给财务 */
+  detail?: string | null;
+  detectedAt?: string | null;
+}
+
+/**
+ * 🆕 「这张单从来没拍过比对快照」（`reason: NEVER_WRITTEN`）。
+ *
+ * 成因（2026-09-07 定位）：写快照的动作只挂在报价页面的保存路径上，而**导入建单绕开了它** ⇒
+ * 导入出来的单只要没人手工保存过，就一行快照都没有。
+ * 现在的表现是**静默 no-op**：核价通过照常返 200、主表一个字节不写，
+ * **界面上与「本来就没什么要回填」长得一模一样**。
+ *
+ * ⚠️ 与 `recordStale` 是**两件事**，🚫 不许合并：
+ *    `recordStale` = 写过、但那次写失败了 ⇒ 结论**可能是错的**；
+ *    本条         = **从来没写过**       ⇒ 结论是对的（确实什么都不写），但整单零写入。
+ * 🚦 用户 2026-09-07 裁决：**本期只让它可见，不补写入能力。**
+ */
+export interface DsBackfillNoRecordSnapshot {
+  /** 原因常量，目前唯一值 NEVER_WRITTEN。🚫 未知码必须兜底，不许渲染空白 */
+  reason?: string | null;
+  /** 解析成功、本该产出快照的组件数。⚠️ 显式 0 = 本来就没什么要回填，**不是**本缺口 */
+  participatingComponents?: number;
+  /** 实际拿到的快照行数（本情形恒 0） */
+  recordRows?: number;
+}
+
+/** api.md §1 新增段。 */
+export interface DsBackfillPreview {
+  /** false = 本单不走 ds_ 新回填（老单），前端渲染空态 */
+  applicable: boolean;
+  /** 恒 true —— 财务必须人工确认（D-25） */
+  confirmRequired?: boolean;
+  summary?: DsBackfillSummary;
+  /**
+   * ⚠️ applicable=true 时 tables 也可能是空数组 —— 后端 2026-09-07 放宽语义：
+   * 只要有 nonParticipating 要说就 applicable=true。
+   * 🚫 前端不得因 tables 为空就渲染「本单不涉及…」空态，否则 D-33 的告警会
+   * 恰好在「100% 不参与」这一最常见场景里整块消失。
+   */
+  tables?: DsBackfillTable[];
+  /**
+   * 🆕 D-35。⚠️ api.md §1 硬约束 4：`recordStale` 非空时 `applicable` **恒 true**（即使 `tables=[]`）——
+   * 🚫 前端因此不得把该告警挂在「有表才渲染」的前提上，否则它恰好在最该出现时整块消失（同 D-33）。
+   */
+  recordStale?: DsBackfillRecordStale | null;
+  /**
+   * 🆕 恒发：无此情形时后端返 `null`。
+   * ⚠️ 本条**必然伴随 `tables=[]`**（一行快照都没有 ⇒ 一个组都算不出来）⇒
+   * 🚫 渲染它的条件绝不能带「有表才渲染」的前提，否则它恰好在唯一会出现的场景里整块消失。
+   */
+  noRecordSnapshot?: DsBackfillNoRecordSnapshot | null;
+  nonParticipating?: DsBackfillNonParticipating[];
+  extendColumnOnly?: DsBackfillExtendColumnOnly[];
+}
+
 /** task-0721（api.md §1.1）：GET costing-approve/preview 响应体。只读、无副作用、幂等。 */
 export interface CostingApprovePreviewResult {
   quotationId: string;
@@ -194,11 +413,18 @@ export interface CostingApprovePreviewResult {
   /** repair-0727 新增：无产品维度的全局共享组视图 */
   globalShared: CostingApprovePreviewGlobalShared;
   groups: CostingApprovePreviewGroup[];
+  /**
+   * task-260907 第二段（api.md §1）：ds_quote_* 新回填预览段。
+   * 可选——后端未发布本段时字段缺失，前端优雅降级为「只渲染老回填」（不报错、不空白）。
+   */
+  dsBackfill?: DsBackfillPreview;
 }
 
 /** task-0721（api.md §1.2）：POST costing-approve 成功响应，除 QuotationDTO 字段外额外带 backfill 汇总。 */
 export interface CostingApproveResult {
   backfill?: CostingApprovePreviewSummary;
+  /** task-260907 第二段（api.md §2）：ds_ 新回填执行摘要，形状同预览的 dsBackfill.summary */
+  dsBackfill?: DsBackfillSummary;
   [key: string]: unknown;
 }
 

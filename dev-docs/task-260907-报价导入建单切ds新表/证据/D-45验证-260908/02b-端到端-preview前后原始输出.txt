@@ -1,0 +1,195 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------------------< com.cpq:cpq-backend >-------------------------
+[INFO] Building cpq-backend 1.0.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[WARNING] The artifact io.quarkus:quarkus-junit5:jar:3.34.3 has been relocated to io.quarkus:quarkus-junit:jar:3.34.3: Update the artifactId in your project build file. Refer to https://github.com/quarkusio/quarkus/wiki/Migration-Guide-3.31 for more information.
+[WARNING] The artifact io.quarkus:quarkus-junit5-mockito:jar:3.34.3 has been relocated to io.quarkus:quarkus-junit-mockito:jar:3.34.3: Update the artifactId in your project build file. Refer to https://github.com/quarkusio/quarkus/wiki/Migration-Guide-3.31 for more information.
+[INFO] 
+[INFO] --- antlr4:4.13.1:antlr4 (antlr4-generate) @ cpq-backend ---
+[INFO] No grammars to process
+[INFO] ANTLR 4: Processing source directory /home/joii/project/cpq/.claude/worktrees/task-260907-record-backfill/cpq-backend/src/main/antlr4
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ cpq-backend ---
+[INFO] Copying 420 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- quarkus:3.34.3:generate-code (default) @ cpq-backend ---
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ cpq-backend ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 977 source files with javac [debug parameters release 21] to target/classes
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-260907-record-backfill/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/MaterialCustomerMapRepository.java:[208,16] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-260907-record-backfill/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/MaterialCustomerMapRepository.java:[385,16] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-260907-record-backfill/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/QuoteMaterialNoAllocator.java:[39,19] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-260907-record-backfill/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/QuoteMaterialNoAllocator.java:[79,17] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-260907-record-backfill/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/ElementRecoveryDiscountRepository.java:[56,33] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-260907-record-backfill/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/ElementRecoveryDiscountRepository.java:[121,17] deprecated item is not annotated with @Deprecated
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-260907-record-backfill/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/Q02CustomerMapHandler.java: Some input files use or override a deprecated API.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-260907-record-backfill/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/Q02CustomerMapHandler.java: Recompile with -Xlint:deprecation for details.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-260907-record-backfill/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/V6QuotationCommitService.java: Some input files use unchecked or unsafe operations.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-260907-record-backfill/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/V6QuotationCommitService.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- quarkus:3.34.3:generate-code-tests (default) @ cpq-backend ---
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ cpq-backend ---
+[INFO] Copying 22 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ cpq-backend ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 645 source files with javac [debug parameters release 21] to target/test-classes
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-260907-record-backfill/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/ElementRecoveryBatchUpdateEquivTest.java: Some input files use or override a deprecated API.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-260907-record-backfill/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/ElementRecoveryBatchUpdateEquivTest.java: Recompile with -Xlint:deprecation for details.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-260907-record-backfill/cpq-backend/src/test/java/com/cpq/basicdata/v6/pricing/P01P02PricingPriceVersioningTest.java: Some input files use unchecked or unsafe operations.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-260907-record-backfill/cpq-backend/src/test/java/com/cpq/basicdata/v6/pricing/P01P02PricingPriceVersioningTest.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ cpq-backend ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.cpq.quotation.service.dsrecord.D45E2eEvidenceTest
+2026-09-08 03:33:57.152 INFO  [org.hib.orm.jpa] (main) HHH008540: Processing PersistenceUnitInfo [name: <default>]
+2026-09-08 03:33:57.175 INFO  [org.hib.orm.core] (main) HHH000001: Hibernate ORM core version 7.2.9.Final
+2026-09-08 03:33:57.322 INFO  [org.hib.orm.con.pooling] (main) HHH10001005: Database info:
+	Database JDBC URL [undefined/unknown]
+	Database driver: undefined/unknown
+	Database dialect: PostgreSQLDialect
+	Database version: 13.0
+	Default catalog/schema: unknown/unknown
+	Autocommit mode: undefined/unknown
+	Isolation level: <unknown>
+	JDBC fetch size: undefined/unknown
+	Pool: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-09-08 03:33:57.831 INFO  [org.hib.val.int.uti.Version] (main) HV000001: Hibernate Validator 9.1.0.Final
+2026-09-08 03:33:57.994 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-09-08 03:33:58.249 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-09-08 03:33:58.373 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-09-08 03:33:58.809 INFO  [org.fly.cor.FlywayExecutor] (main) Database: jdbc:postgresql://10.177.152.12:5432/cpq_db_0724?sslmode=disable (PostgreSQL 16.13)
+2026-09-08 03:33:59.136 INFO  [org.fly.cor.int.com.DbValidate] (main) Successfully validated 413 migrations (execution time 00:00.155s)
+2026-09-08 03:33:59.354 INFO  [org.fly.cor.int.com.DbMigrate] (main) Current version of schema "public": 430
+2026-09-08 03:33:59.354 WARN  [org.fly.cor.int.com.DbMigrate] (main) outOfOrder mode is active. Migration of schema "public" may not be reproducible.
+2026-09-08 03:33:59.362 INFO  [org.fly.cor.int.com.DbMigrate] (main) Schema "public" is up to date. No migration necessary.
+2026-09-08 03:33:59.456 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-09-08 03:33:59.456 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-09-08 03:34:00.003 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-09-08 03:34:00.148 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 52 entries upserted
+2026-09-08 03:34:00.216 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-09-08 03:34:00.217 WARN  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 启动自检已被 cpq.dataset.schema-check.enabled=false 关闭 —— 双写漂移不再被拦截
+2026-09-08 03:34:00.626 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=55 edges=76 tabViews=48
+2026-09-08 03:34:00.659 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-09-08 03:34:00.678 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-08 03:34:00.702 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：55 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-08 03:34:00.703 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 151 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-09-08 03:34:00.861 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-09-08 03:34:00.939 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 8.837s. Listening on: http://0.0.0.0:57740
+2026-09-08 03:34:00.940 INFO  [io.quarkus] (main) Profile test activated. 
+2026-09-08 03:34:00.940 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+========== BEFORE（_record 仍是修复前投影） ==========
+[BEFORE] ds_quote_material_bom_record     axis=T260907T-FG01    rows=1 originNull=1
+[BEFORE] ds_quote_material_bom_record     axis=T260907T-FG02    rows=1 originNull=1
+[BEFORE] ds_quote_element_bom_record      axis=T260907T-FG01    rows=3 originNull=0
+[BEFORE] ds_quote_element_bom_record      axis=T260907T-FG02    rows=2 originNull=0
+2026-09-08 03:34:01.292 WARN  [com.cpq.quo.ser.dsr.DsRecordStaleService] (main) [ds-record] 标记表 ds_quote_record_stale 尚未落库 ⇒ D-35「_record 写失败可见」暂不生效（写失败仍只有 WARN）。迁移见 db/migration-pending-260907/
+2026-09-08 03:34:01.487 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (main) [ds-record] 绑定解析：入参组件 14，命中 13，不参与 1（sql=3，与组件数无关）
+2026-09-08 03:34:03.330 DEBUG [com.cpq.quo.ser.dsr.DsBackfillCollector] (main) [ds-backfill] quotation=0fa33239-bb50-4f0c-82ab-99490efd3e75 计划：tables=13（sql 与轴值数无关）
+[BEFORE] applicable=true tables=13 axes=26 unanchoredRows=2 blocked=0
+[BEFORE] ds_quote_finished_other_fee axis=T260907T-FG01    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+[BEFORE] ds_quote_finished_other_fee axis=T260907T-FG02    result=UNCHANGED  base=1 result=1 patched=0 untouched=1 unanchored=0
+[BEFORE] ds_quote_material_bom    axis=T260907T-FG01    result=UPGRADED   base=3 result=4 patched=0 untouched=3 unanchored=1
+[BEFORE]     ↳ UNANCHORED recordId=112 reason=NO_ANCHOR display={material_no=T260907T-FG01}
+[BEFORE] ds_quote_material_bom    axis=T260907T-FG02    result=UPGRADED   base=2 result=3 patched=0 untouched=2 unanchored=1
+[BEFORE]     ↳ UNANCHORED recordId=113 reason=NO_ANCHOR display={material_no=T260907T-FG02}
+[BEFORE] ds_quote_incoming_recovery axis=T260907T-FG01    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+[BEFORE] ds_quote_incoming_recovery axis=T260907T-FG02    result=UNCHANGED  base=1 result=1 patched=0 untouched=1 unanchored=0
+[BEFORE] ds_quote_assembly_fee_annual axis=T260907T-FG01    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+[BEFORE] ds_quote_assembly_fee_annual axis=T260907T-FG02    result=UNCHANGED  base=1 result=1 patched=0 untouched=1 unanchored=0
+[BEFORE] ds_quote_incoming_other_fee axis=T260907T-FG01    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+[BEFORE] ds_quote_incoming_other_fee axis=T260907T-FG02    result=UNCHANGED  base=1 result=1 patched=0 untouched=1 unanchored=0
+[BEFORE] ds_quote_self_process_fee axis=T260907T-FG01    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+[BEFORE] ds_quote_self_process_fee axis=T260907T-FG02    result=UNCHANGED  base=1 result=1 patched=0 untouched=1 unanchored=0
+[BEFORE] ds_quote_incoming_annual axis=T260907T-FG01    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+[BEFORE] ds_quote_incoming_annual axis=T260907T-FG02    result=UNCHANGED  base=1 result=1 patched=0 untouched=1 unanchored=0
+[BEFORE] ds_quote_annual_discount axis=T260907T-FG01    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+[BEFORE] ds_quote_annual_discount axis=T260907T-FG02    result=UNCHANGED  base=1 result=1 patched=0 untouched=1 unanchored=0
+[BEFORE] ds_quote_assembly_fee    axis=T260907T-FG01    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+[BEFORE] ds_quote_assembly_fee    axis=T260907T-FG02    result=UNCHANGED  base=1 result=1 patched=0 untouched=1 unanchored=0
+[BEFORE] ds_quote_incoming_fixed_fee axis=T260907T-FG01    result=UPGRADED   base=2 result=2 patched=2 untouched=0 unanchored=0
+[BEFORE] ds_quote_incoming_fixed_fee axis=T260907T-FG02    result=UPGRADED   base=1 result=1 patched=1 untouched=0 unanchored=0
+[BEFORE] ds_quote_sub_component_fee axis=T260907T-FG01    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+[BEFORE] ds_quote_sub_component_fee axis=T260907T-FG02    result=UNCHANGED  base=1 result=1 patched=0 untouched=1 unanchored=0
+[BEFORE] ds_quote_plating_fee     axis=T260907T-FG01    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+[BEFORE] ds_quote_plating_fee     axis=T260907T-FG02    result=UNCHANGED  base=1 result=1 patched=0 untouched=1 unanchored=0
+[BEFORE] ds_quote_element_bom     axis=T260907T-FG01    result=UNCHANGED  base=3 result=3 patched=0 untouched=3 unanchored=0
+[BEFORE] ds_quote_element_bom     axis=T260907T-FG02    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+========== 重算 _record（走含修复的投影） ==========
+2026-09-08 03:34:03.484 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (main) [ds-record] 绑定解析：入参组件 14，命中 13，不参与 1（sql=3，与组件数无关）
+2026-09-08 03:34:03.488 INFO  [com.cpq.quo.ser.dsr.DsRecordProjector] (main) [ds-record] component=f6d51727-bd1e-4cc3-a839-94208cc12f41 axis=T260907T-FG01 syntheticRootSkipped=1 nodeIds=[T260907T-FG01] —— 树页签合成根行（spine 根 = 成品本身，主表无对应边行），🚫 这不是数据丢失，是不该写进去的渲染构件
+2026-09-08 03:34:03.490 INFO  [com.cpq.quo.ser.dsr.DsRecordProjector] (main) [ds-record] component=f6d51727-bd1e-4cc3-a839-94208cc12f41 axis=T260907T-FG01 syntheticRootSkipped=1 nodeIds=[T260907T-FG01] —— 树页签合成根行（spine 根 = 成品本身，主表无对应边行），🚫 这不是数据丢失，是不该写进去的渲染构件
+2026-09-08 03:34:03.491 INFO  [com.cpq.quo.ser.dsr.DsRecordProjector] (main) [ds-record] component=f6d51727-bd1e-4cc3-a839-94208cc12f41 axis=T260907T-FG02 syntheticRootSkipped=1 nodeIds=[T260907T-FG02] —— 树页签合成根行（spine 根 = 成品本身，主表无对应边行），🚫 这不是数据丢失，是不该写进去的渲染构件
+2026-09-08 03:34:03.493 INFO  [com.cpq.quo.ser.dsr.DsRecordCardDeduper] (main) [ds-record][dedupe] ds_quote_finished_other_fee 轴值=T260907T-FG01：2 张卡片共 4 行投影 → 归一为 2 行（丢弃 2 行重复投影；身份键=[element_name]）。🔑 同一条主表行只留 sort_order 最小的那张卡片贡献的那一份，否则 anchor 只会认领一份、其余 origin_id=NULL ⇒ 回填按新增追加 ⇒ 整组 ×N。
+2026-09-08 03:34:03.494 INFO  [com.cpq.quo.ser.dsr.DsRecordCardDeduper] (main) [ds-record][dedupe] ds_quote_assembly_fee 轴值=T260907T-FG01：2 张卡片共 4 行投影 → 归一为 2 行（丢弃 2 行重复投影；身份键=[assembly_operation]）。🔑 同一条主表行只留 sort_order 最小的那张卡片贡献的那一份，否则 anchor 只会认领一份、其余 origin_id=NULL ⇒ 回填按新增追加 ⇒ 整组 ×N。
+2026-09-08 03:34:03.494 INFO  [com.cpq.quo.ser.dsr.DsRecordCardDeduper] (main) [ds-record][dedupe] ds_quote_assembly_fee_annual 轴值=T260907T-FG01：2 张卡片共 4 行投影 → 归一为 2 行（丢弃 2 行重复投影；身份键=[assembly_operation, discount_seq]）。🔑 同一条主表行只留 sort_order 最小的那张卡片贡献的那一份，否则 anchor 只会认领一份、其余 origin_id=NULL ⇒ 回填按新增追加 ⇒ 整组 ×N。
+2026-09-08 03:34:03.494 INFO  [com.cpq.quo.ser.dsr.DsRecordCardDeduper] (main) [ds-record][dedupe] ds_quote_plating_fee 轴值=T260907T-FG01：2 张卡片共 4 行投影 → 归一为 2 行（丢弃 2 行重复投影；身份键=[plating_scheme_no, plating_version]）。🔑 同一条主表行只留 sort_order 最小的那张卡片贡献的那一份，否则 anchor 只会认领一份、其余 origin_id=NULL ⇒ 回填按新增追加 ⇒ 整组 ×N。
+2026-09-08 03:34:03.494 INFO  [com.cpq.quo.ser.dsr.DsRecordCardDeduper] (main) [ds-record][dedupe] ds_quote_incoming_annual 轴值=T260907T-FG01：2 张卡片共 4 行投影 → 归一为 2 行（丢弃 2 行重复投影；身份键=[input_material_no, discount_seq]）。🔑 同一条主表行只留 sort_order 最小的那张卡片贡献的那一份，否则 anchor 只会认领一份、其余 origin_id=NULL ⇒ 回填按新增追加 ⇒ 整组 ×N。
+2026-09-08 03:34:03.494 INFO  [com.cpq.quo.ser.dsr.DsRecordCardDeduper] (main) [ds-record][dedupe] ds_quote_incoming_other_fee 轴值=T260907T-FG01：2 张卡片共 4 行投影 → 归一为 2 行（丢弃 2 行重复投影；身份键=[input_material_no]）。🔑 同一条主表行只留 sort_order 最小的那张卡片贡献的那一份，否则 anchor 只会认领一份、其余 origin_id=NULL ⇒ 回填按新增追加 ⇒ 整组 ×N。
+2026-09-08 03:34:03.494 INFO  [com.cpq.quo.ser.dsr.DsRecordCardDeduper] (main) [ds-record][dedupe] ds_quote_incoming_recovery 轴值=T260907T-FG01：2 张卡片共 4 行投影 → 归一为 2 行（丢弃 2 行重复投影；身份键=[input_material_no]）。🔑 同一条主表行只留 sort_order 最小的那张卡片贡献的那一份，否则 anchor 只会认领一份、其余 origin_id=NULL ⇒ 回填按新增追加 ⇒ 整组 ×N。
+2026-09-08 03:34:03.494 INFO  [com.cpq.quo.ser.dsr.DsRecordCardDeduper] (main) [ds-record][dedupe] ds_quote_annual_discount 轴值=T260907T-FG01：2 张卡片共 4 行投影 → 归一为 2 行（丢弃 2 行重复投影；身份键=[discount_seq]）。🔑 同一条主表行只留 sort_order 最小的那张卡片贡献的那一份，否则 anchor 只会认领一份、其余 origin_id=NULL ⇒ 回填按新增追加 ⇒ 整组 ×N。
+2026-09-08 03:34:03.494 INFO  [com.cpq.quo.ser.dsr.DsRecordCardDeduper] (main) [ds-record][dedupe] ds_quote_sub_component_fee 轴值=T260907T-FG01：2 张卡片共 4 行投影 → 归一为 2 行（丢弃 2 行重复投影；身份键=[sub_component_no, supplier_no, supplier_name]）。🔑 同一条主表行只留 sort_order 最小的那张卡片贡献的那一份，否则 anchor 只会认领一份、其余 origin_id=NULL ⇒ 回填按新增追加 ⇒ 整组 ×N。
+2026-09-08 03:34:03.494 INFO  [com.cpq.quo.ser.dsr.DsRecordCardDeduper] (main) [ds-record][dedupe] ds_quote_self_process_fee 轴值=T260907T-FG01：2 张卡片共 4 行投影 → 归一为 2 行（丢弃 2 行重复投影；身份键=[input_material_no]）。🔑 同一条主表行只留 sort_order 最小的那张卡片贡献的那一份，否则 anchor 只会认领一份、其余 origin_id=NULL ⇒ 回填按新增追加 ⇒ 整组 ×N。
+2026-09-08 03:34:03.494 INFO  [com.cpq.quo.ser.dsr.DsRecordCardDeduper] (main) [ds-record][dedupe] ds_quote_incoming_fixed_fee 轴值=T260907T-FG01：2 张卡片共 4 行投影 → 归一为 2 行（丢弃 2 行重复投影；身份键=[input_material_no]）。🔑 同一条主表行只留 sort_order 最小的那张卡片贡献的那一份，否则 anchor 只会认领一份、其余 origin_id=NULL ⇒ 回填按新增追加 ⇒ 整组 ×N。
+2026-09-08 03:34:03.494 INFO  [com.cpq.quo.ser.dsr.DsRecordCardDeduper] (main) [ds-record][dedupe] ds_quote_element_bom 轴值=T260907T-FG01：2 张卡片共 6 行投影 → 归一为 3 行（丢弃 3 行重复投影；身份键=[material_part_no, element_code]）。🔑 同一条主表行只留 sort_order 最小的那张卡片贡献的那一份，否则 anchor 只会认领一份、其余 origin_id=NULL ⇒ 回填按新增追加 ⇒ 整组 ×N。
+2026-09-08 03:34:03.986 INFO  [com.cpq.quo.ser.dsr.DsQuoteRecordService] (main) [ds-record] quotation=0fa33239-bb50-4f0c-82ab-99490efd3e75 写入 _record：sheets=13 axes=24 rows=38 unanchored=0 crossCardDeduped=25 (sql 与产品数/轴值数无关)
+syncRecords => Summary[sheets=13, axes=24, rows=38, unanchoredRows=0]
+========== AFTER ==========
+[AFTER] ds_quote_material_bom_record     axis=T260907T-FG01    rows=1 originNull=1
+[AFTER] ds_quote_material_bom_record     axis=T260907T-FG02    rows=1 originNull=1
+[AFTER] ds_quote_element_bom_record      axis=T260907T-FG01    rows=3 originNull=0
+[AFTER] ds_quote_element_bom_record      axis=T260907T-FG02    rows=2 originNull=0
+2026-09-08 03:34:04.109 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (main) [ds-record] 绑定解析：入参组件 14，命中 13，不参与 1（sql=3，与组件数无关）
+2026-09-08 03:34:04.627 DEBUG [com.cpq.quo.ser.dsr.DsBackfillCollector] (main) [ds-backfill] quotation=0fa33239-bb50-4f0c-82ab-99490efd3e75 计划：tables=13（sql 与轴值数无关）
+[AFTER] applicable=true tables=13 axes=26 unanchoredRows=2 blocked=0
+[AFTER] ds_quote_finished_other_fee axis=T260907T-FG01    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+[AFTER] ds_quote_finished_other_fee axis=T260907T-FG02    result=UNCHANGED  base=1 result=1 patched=0 untouched=1 unanchored=0
+[AFTER] ds_quote_material_bom    axis=T260907T-FG01    result=UPGRADED   base=3 result=4 patched=0 untouched=3 unanchored=1
+[AFTER]     ↳ UNANCHORED recordId=112 reason=NO_ANCHOR display={material_no=T260907T-FG01}
+[AFTER] ds_quote_material_bom    axis=T260907T-FG02    result=UPGRADED   base=2 result=3 patched=0 untouched=2 unanchored=1
+[AFTER]     ↳ UNANCHORED recordId=113 reason=NO_ANCHOR display={material_no=T260907T-FG02}
+[AFTER] ds_quote_incoming_recovery axis=T260907T-FG01    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+[AFTER] ds_quote_incoming_recovery axis=T260907T-FG02    result=UNCHANGED  base=1 result=1 patched=0 untouched=1 unanchored=0
+[AFTER] ds_quote_assembly_fee_annual axis=T260907T-FG01    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+[AFTER] ds_quote_assembly_fee_annual axis=T260907T-FG02    result=UNCHANGED  base=1 result=1 patched=0 untouched=1 unanchored=0
+[AFTER] ds_quote_incoming_other_fee axis=T260907T-FG01    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+[AFTER] ds_quote_incoming_other_fee axis=T260907T-FG02    result=UNCHANGED  base=1 result=1 patched=0 untouched=1 unanchored=0
+[AFTER] ds_quote_self_process_fee axis=T260907T-FG01    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+[AFTER] ds_quote_self_process_fee axis=T260907T-FG02    result=UNCHANGED  base=1 result=1 patched=0 untouched=1 unanchored=0
+[AFTER] ds_quote_incoming_annual axis=T260907T-FG01    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+[AFTER] ds_quote_incoming_annual axis=T260907T-FG02    result=UNCHANGED  base=1 result=1 patched=0 untouched=1 unanchored=0
+[AFTER] ds_quote_annual_discount axis=T260907T-FG01    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+[AFTER] ds_quote_annual_discount axis=T260907T-FG02    result=UNCHANGED  base=1 result=1 patched=0 untouched=1 unanchored=0
+[AFTER] ds_quote_assembly_fee    axis=T260907T-FG01    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+[AFTER] ds_quote_assembly_fee    axis=T260907T-FG02    result=UNCHANGED  base=1 result=1 patched=0 untouched=1 unanchored=0
+[AFTER] ds_quote_incoming_fixed_fee axis=T260907T-FG01    result=UPGRADED   base=2 result=2 patched=2 untouched=0 unanchored=0
+[AFTER] ds_quote_incoming_fixed_fee axis=T260907T-FG02    result=UPGRADED   base=1 result=1 patched=1 untouched=0 unanchored=0
+[AFTER] ds_quote_sub_component_fee axis=T260907T-FG01    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+[AFTER] ds_quote_sub_component_fee axis=T260907T-FG02    result=UNCHANGED  base=1 result=1 patched=0 untouched=1 unanchored=0
+[AFTER] ds_quote_plating_fee     axis=T260907T-FG01    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+[AFTER] ds_quote_plating_fee     axis=T260907T-FG02    result=UNCHANGED  base=1 result=1 patched=0 untouched=1 unanchored=0
+[AFTER] ds_quote_element_bom     axis=T260907T-FG01    result=UNCHANGED  base=3 result=3 patched=0 untouched=3 unanchored=0
+[AFTER] ds_quote_element_bom     axis=T260907T-FG02    result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 8.117 s -- in com.cpq.quotation.service.dsrecord.D45E2eEvidenceTest
+2026-09-08 03:34:04.707 INFO  [io.quarkus] (main) cpq-backend stopped in 0.024s
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  24.330 s
+[INFO] Finished at: 2026-09-08T03:34:04-07:00
+[INFO] ------------------------------------------------------------------------

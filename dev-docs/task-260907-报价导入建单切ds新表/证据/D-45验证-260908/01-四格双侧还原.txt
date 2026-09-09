@@ -1,0 +1,26 @@
+# D-45 四格双侧还原（后端工程师，2026-09-08 03:30~03:31 -07:00）
+# 实例/构建：worktree task-260907-record-backfill，HEAD=dc2a5a7f
+# 用例：cpq-backend/src/test/java/com/cpq/quotation/service/dsrecord/SyntheticRootSkipAcTest.java
+
+## 格①②｜修复在（源码 md5 e5fccb616462d99416326210af66e6a0）
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0  BUILD SUCCESS   (MVN_EXIT=0)
+  T1 树页签 treeTabSkipsSyntheticRoot  → 绿
+  T2 非树页签 flatTabUntouched         → 绿
+  运行时留痕: [ds-record] ... syntheticRootSkipped=1 nodeIds=[FG01]
+
+## 干预确认（git diff 证明改动真的生效，🚫 不是空实验）
+-            if (representsNoBaseRow(node)) {
+-                syntheticNodeIds.add(String.valueOf(text(node, "__nodeId")));
+-                continue;
+-            }
++            // [还原实验] D-45 调用点已摘除
+
+## 格③④｜把调用点摘除（谓词本身保留，只摘调用）
+[ERROR] Tests run: 4, Failures: 1, Errors: 0, Skipped: 0   BUILD FAILURE  (MVN_EXIT=1)
+[ERROR] SyntheticRootSkipAcTest.treeTabSkipsSyntheticRoot:120
+        合成根行必须被跳过：3 行 snapshot 只应投影出 2 行真实边行 ==> expected: <2> but was: <3>
+  T1 树页签   → 红 ✅（唯一失败项）
+  T2 非树页签 → 绿 ✅（不在失败列表里 = 改动的边界，元素BOM 一行没动）
+
+## 复原核对
+md5 e5fccb616462d99416326210af66e6a0（与备份逐字相同）；git diff 对该文件为空；复原后重跑 4/4 绿 BUILD SUCCESS

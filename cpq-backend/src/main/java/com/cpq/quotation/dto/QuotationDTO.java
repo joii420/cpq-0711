@@ -106,6 +106,12 @@ public class QuotationDTO {
      */
     public com.cpq.quotation.service.backfill.QuoteBackfillService.Summary backfill;
 
+    /**
+     * 🆕 task-260907 第二段（api.md §2 响应体）：ds_ 新回填摘要，形状同预览的
+     * {@code dsBackfill.summary}。{@code backfill}（老回填）保持原样，两者并存互不覆盖。
+     */
+    public com.cpq.quotation.dto.backfill.DsBackfillDTO.Summary dsBackfill;
+
     public static QuotationDTO from(Quotation q) {
         QuotationDTO dto = new QuotationDTO();
         dto.id = q.id;

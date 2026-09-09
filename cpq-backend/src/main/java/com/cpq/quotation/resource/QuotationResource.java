@@ -46,6 +46,12 @@ import java.util.Set;
 @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
 public class QuotationResource {
 
+    // D-42（甲-1）：saveDraft 路径的 _record 挂点（在 snapshotQuotation 之后）
+    @jakarta.inject.Inject
+    com.cpq.quotation.service.dsrecord.DsQuoteRecordService dsQuoteRecordService;
+    @jakarta.inject.Inject
+    com.cpq.quotation.service.dsrecord.DsRecordStaleService dsRecordStaleService;
+
     private static final org.jboss.logging.Logger LOG =
             org.jboss.logging.Logger.getLogger(QuotationResource.class);
 
@@ -170,6 +176,32 @@ public class QuotationResource {
             // 快照尽力而为
         }
         long _s2 = (System.nanoTime() - _p1) / 1_000_000;
+
+        // ── D-42（甲-1）：写 ds_quote_*_record —— 🔑 必须在 snapshotQuotation **之后** ───────────
+        // 原挂点在 QuotationService.saveDraft 内（em.flush() 之后），实测**永远写不出 _record**：
+        //   saveDraft 对「payload 的 componentId 集合 ≠ 库里的」的行先整行删掉组件数据，
+        //   而重建就发生在上面那句 snapshotQuotation(id, true) 里 —— 即 saveDraft 返回之后。
+        //   ⇒ 事务内任何位置都落在「旧行已删、新行未建」的空窗，读到 0 行、
+        //     打一条「命中 N 个轴值但无组件数据，跳过」就走了（前半句是对的，所以极易被读成「这单没数据」）。
+        // 🚨 两条成因、同一个窗口，本挂点一并覆盖：
+        //   · added    —— 组件数据从来没建过，由 snapshotQuotation 首次创建；
+        //   · modified —— 建过但刚被删掉，重建同样在 snapshotQuotation。
+        // 🔑 增量语义（AC-2②）：传 dto.touchedLineItemIds，🚫 不许传 null 整单重算。
+        //   名单为空（本次无 line payload，例如只改 remarks）⇒ 不调，与原设计一致。
+        // 🚫 N+1：一条保存流程只调一次。
+        // 🔒 本方法**无 @Transactional**（见 :151 注释：放进事务会吃掉 60s Narayana 预算）
+        //   ⇒ 走 syncRecordsForFlow（自带事务外壳），🚫 直调 syncRecords 会因无事务可用而抛。
+        // 🛡️ D-35：失败不阻断保存，但**不许静默** —— 登记「快照过期」标记让预览显式报出。
+        if (dto != null && dto.touchedLineItemIds != null && !dto.touchedLineItemIds.isEmpty()) {
+            try {
+                dsQuoteRecordService.syncRecordsForFlow(id, dto.touchedLineItemIds);
+            } catch (RuntimeException ex) {
+                LOG.warnf(ex, "[ds-record] quotation=%s 写 _record 失败（草稿保存不受影响，本次快照未更新）", id);
+                dsRecordStaleService.markStale(id,
+                        com.cpq.quotation.service.dsrecord.DsRecordStaleService.REASON_WRITE_FAILED,
+                        ex.getClass().getSimpleName() + ": " + ex.getMessage(), null);
+            }
+        }
 
         // task-0729 B10：价格列归位。🔒 插入位置严格不可变通——必须在 row_data 落库/snapshot_rows
         // 重建【之后】、quoteCardValues 的懒重算【之前】：在前会被前端提交值覆盖，在后卡片值算的
@@ -399,7 +431,41 @@ public class QuotationResource {
                 id, e.getMessage());
         }
         awaitWarmBeforeSubmit(id);
-        return ApiResponse.success(quotationService.submit(id, currentUserId));
+        com.cpq.quotation.dto.QuotationDTO submitted = quotationService.submit(id, currentUserId);
+
+        // ── D-43（乙）：提交那一刻把 _record 同步到最新 row_data ─────────────────────────────
+        // 🔑 为什么这条路径需要单独一个挂点：
+        //   用户在 UI 改一格值走 PUT /line-items/{id}/quote-card-edit，它**会**把值写进 row_data
+        //   （editCardValue → materializeWholeLineRowData，task-260901 B-3d），但**不触发 syncRecords**；
+        //   而 2026-06-01 用户决议**取消了定时 autosave**，前端 handleSubmit 里也只有
+        //   `await waitForPendingEdits(); await submit(...)` —— **中间没有 saveDraft**。
+        //   ⇒ 「改一格 → 直接提交」这条最常见的路径上，_record 停在编辑前的值，
+        //     核价通过就按旧值回填。实测 A 态：row_data=77.7 而主表回填仍是 11.1/22.2。
+        // 🚫 为什么不挂在 editCardValue（候选甲）：syncRecords 是「整组删+重插」，失焦频率下
+        //   每格一次组重写（连改 10 格 = 10 次），而 _record 的**唯一消费者是核价通过预览/回填**，
+        //   必然在提交之后 ⇒ 编辑期的即时性没有消费者，甲付出的写放大换不到任何东西。
+        // 🚫 为什么不挂进 quotationService.submit 的事务内：本类 :440 的不变量①点名了那个死锁环
+        //   （T_submit 持 quotation 行锁等 advisory；T_warm 持 advisory 等行锁）。
+        //   syncRecordsForFlow 是 @Transactional(REQUIRED)，挂进去就是加入 submit 的事务 ⇒ 正好踩环。
+        //   ⇒ 只能挂在 Resource 层（本类无 @Transactional），由 syncRecordsForFlow 自开事务。
+        // 🔑 为什么在 submit **之后**而不是之前：之前挂，若 submit 回滚就会留下
+        //   「提交失败、快照却更新了」；之后挂 ⇒ 只有真提交成功才更新。
+        //   （submit 对 row_data 只读不写 —— :1042~:1221 里 cd.rowData 仅用于组装提交快照。）
+        // ⚠️ 已知且刻意的副作用：提交传的是**全量**（Resource 层没有 saveDraft 那种 touched 名单），
+        //   ⇒ 提交那一刻本单**所有**轴值组的 _record.updated_at 都会变。
+        //   AC-2② 约束的是 saveDraft 的增量语义，提交不在其射程内；
+        //   🚫 但不要据此写「提交后未变更产品 _record 不变」的断言 —— 那会红，且不是缺陷。
+        // 🚫 N+1：一次提交只调一次；SQL 条数 = 6 + 2×sheets + 行数/500，与明细行数无关。
+        // 🛡️ 失败不阻断提交（单据已经提交成功了），但不静默：WARN + markStale（D-35）。
+        try {
+            dsQuoteRecordService.syncRecordsForFlow(id);
+        } catch (RuntimeException ex) {
+            LOG.warnf(ex, "[ds-record] quotation=%s 提交时同步 _record 失败（提交本身已成功）", id);
+            dsRecordStaleService.markStale(id,
+                    com.cpq.quotation.service.dsrecord.DsRecordStaleService.REASON_WRITE_FAILED,
+                    ex.getClass().getSimpleName() + ": " + ex.getMessage(), null);
+        }
+        return ApiResponse.success(submitted);
     }
 
     /** 提交前等 warm 让锁的预算（ms）。见 {@link #awaitWarmBeforeSubmit} 的取值依据。 */

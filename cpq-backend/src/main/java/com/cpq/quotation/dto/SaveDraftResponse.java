@@ -27,6 +27,31 @@ import java.util.UUID;
  */
 public class SaveDraftResponse {
 
+    /**
+     * 🆕 <b>D-42（甲-1）· 本次带 line payload 保存所触碰的明细行 id</b>（新增/修改 + 删除）。
+     *
+     * <h3>🚫 它不上线（{@code @JsonIgnore}），这是刻意的</h3>
+     * {@code api.md §1.3} 的作用域表要求 <b>modified 行恰好 6 个键</b>（多回一个即违约，T-16）。
+     * 本字段只在<b>进程内</b>从 {@code QuotationService.saveDraft} 传到 {@code QuotationResource}，
+     * 供后者在 {@code snapshotQuotation(id, true)} <b>之后</b>调 {@code syncRecords} 时保住<b>增量语义</b>。
+     *
+     * <h3>为什么必须带出来，而不是在 Resource 里传 null 整单重算</h3>
+     * {@code AC-2②} 断言「未变更产品的 {@code _record.updated_at} 逐字未变」。
+     * 传 null = 整单重写 ⇒ 直接打破该 AC，且大单量下写放大（{@code task-260825} 栽过建单 N+1 超时）。
+     *
+     * <h3>🚨 为什么挂点不能留在 saveDraft 里面（D-42 实证）</h3>
+     * {@code saveDraft} 对「payload 的 componentId 集合 ≠ 库里的」的行会<b>先整行删掉</b>组件数据
+     * （{@code QuotationService#batchDeleteComponentDataByIds}），而重建发生在
+     * {@code QuotationResource} 里紧随其后的 {@code snapshotQuotation(id, true)} ——
+     * 即 {@code saveDraft} <b>返回之后</b>。⇒ 事务内任何位置调 {@code syncRecords} 都落在
+     * 「旧行已删、新行未建」的空窗里，读到 0 行、打一条
+     * 「命中 N 个轴值但<b>无组件数据</b>，跳过」就走了，<b>{@code _record} 永远写不出来</b>。
+     * <p>⚠️ 三条代理线全部没碰到，是因为它们的夹具都在 payload 里直接塞 {@code componentData}
+     * （那一刻数据在事务里存在）—— <b>而那不是用户的形状</b>。
+     */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    public transient java.util.List<UUID> touchedLineItemIds;
+
     // ── 单头（与 QuotationDTO.from 同集合）────────────────────────────────────────────────────
     public UUID id;
     public String quotationNumber;

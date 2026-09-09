@@ -53,7 +53,7 @@
 | AC-1②③ | `T-01b` | DB | `_record` 列集 = 主表业务列 + 6 个附加列；免版本三表**无** `_record` | — |
 | AC-1④⑤ | `T-01c` | DB | 迁移 `success=t`；**后端能起来**（自检不过就起不来） | 风险点 4 |
 | AC-2 | `T-02` | 服务层 | 改产品甲的一行 → 产品乙的 `_record.updated_at` **逐字未变** | 自造两产品夹具 |
-| AC-3 | `T-03` | 服务层 | 自定义/公式列进 `extend_column`；**只改它们再通过 → 该组判 `UNCHANGED`、`version_no` 不变** | 自造含自定义列的组件 |
+| AC-3 | `T-03` = `PartialColumnScopeAcTest.t03` | 服务层 | 自定义/公式列进 `extend_column`；**只改它们再通过 → 该组判 `UNCHANGED`、`version_no` 不变** | 自造含自定义列的组件。<br>🕰️ **2026-09-07 主线裁决三去重**：`RecordWriteAcTest.t03` 是同名同断言的第二份，挂在 `ds_quote_material_bom` 上（ds 原生模板无物料BOM组件 ⇒ 拍不出 `_record` ⇒ 恒 pending），**已删除**。留着它会让同一条 AC 一边报「⛔ 待接实现」一边报「✅ 全绿」，读报告的人分不清哪个是真的 —— 与 T-20a/b/c 迁出本包的理由同源 |
 | AC-4 | `T-04` | 服务层 | `_record.element_price` 非空且等于建单时刻实时价；主表**无**该列 | — |
 | AC-5 | `T-05` | 契约 + E2E | 预览后主表 `version_no` **逐字未变**；响应含 `untouchedRows` 与 `columnScope.preserved` | — |
 | AC-6 | `T-06` | 服务层 | 基底=主表原整组；表征列被覆盖；**未表征的行与列逐字保留**；旧版进 `_history`；新版号 = `max(当前, 历史最大)+1` | 自造 9 行组，只表征其中 2 行 2 列 |
@@ -65,9 +65,9 @@
 | AC-12 | `T-12` | 服务层 | `ACTIVE_STATUSES` 五态各一张单，`_record.element_price` 与 `snapshot_rows` 取值相同；被 `SKIPPED` 的单**两者同时不变** | 自造 5 张不同状态的单 |
 | AC-13 | `T-13` | 服务层 | 只表征部分行 + 部分列的页签 → 未表征的行仍在、未暴露的列**不写 NULL**；**反向**：确实表征并改了的列确实变了 | 🚨 `AP-60` 守卫，自造带 `WHERE` 谓词的页签。<br>⚠️ **本条用平铺页签造投影，不是树页签** —— 树页签的端到端渲染卡在 `报价侧加客户维度` 的 `B-7`（`costing_bom_tree_config` 递归仍读 V6 `material_bom_item`），该任务连闸门 A 都没走。🚫 **用例与报告里必须显式标注这一句**，不许以「已验证树页签」的形态留下（并发会话 2026-09-07 提醒） |
 | AC-14 | `T-14` | 服务层 + E2E | 零变更 → 判 `UNCHANGED`、`updated_at` 不变、`_history` 无新增；**界面仍列出该组**且有明确文案 | — |
-| AC-15 | `T-15` | 静态 + 回归 | 三个老回填文件 `git diff` 为空；**同一张**老单的回填摘要四个数字改动前后相同（同时刻窗口 A/B） | 老单在 S-7 执行前采样；风险点 5 |
+| AC-15 | `T-15①` = `LegacyBackfillUntouchedGuardTest`<br>`T-15②` = `ReverseRegressionAcTest.t15` | 静态 + 回归 | 三个老回填文件 `git diff` 为空；**同一张**老单的回填摘要四个数字改动前后相同（同时刻窗口 A/B） | 🅱️ **B 侧取自 `localhost:8081`（跑 master、连同一个库），A 侧为进程内本分支**，同一条用例里背靠背调用 ⇒「同一张单 + 同一时刻窗口 + 改动前后」三条件同时成立。<br>✅ **已验收 · 证据采于 S-7 全库清空前**（2026-09-07 17:51，存量老单 `bbcb566f`，两侧同为 `{versionedGroups:5537, addedRows:0, deletedRows:0, changedRows:0}`，基线非空）。<br>⛔ **此后不可重跑**：S-7 清空删掉了 `quotation` 族与旧模板，现网再无 `versionedGroups > 0` 的存量老单，且无法自造（老回填只对走老链路的单产出非零摘要）。用户已裁决**不保留靶子**。<br>🚫 **2026-09-08 起用例已 `@Disabled`**（reason 里写全上述三条）。理由：**一条永远红的用例会污染此后每一次基线**，久了没人看，而「没人看的红」比没有更糟。🚫 刻意**不**改成「找不到靶子就跳过」的条件跳过 —— 那会在将来真有靶子时静默不跑，是另一种假绿 |
 | AC-16 | `T-16` | 反向回归 | **两层**：结构层（字段集/嵌套/状态码）逐字相同 + 数据层差异**逐条可归因**；范围收窄到本次夹具写入的行 | 同一份夹具 A/B；风险点 5、6 |
-| AC-17 | `T-17` | 反向回归 | 选配写 `ds_quote_*` **在本次夹具行范围内**逐行相同；页签数与每页签行数改动前后相同；版本号增量相同 | 风险点 5 |
+| AC-17 | `T-17` = `SelectionChainRegressionAcTest.t17` | 反向回归 | 选配写 `ds_quote_*` **在本次夹具行范围内**逐行相同；页签数与每页签行数改动前后相同；版本号增量相同 | 风险点 5。<br>🕰️ **2026-09-07 迁出 `ReverseRegressionAcTest`**：T-17 需选配链路全套夹具，而 `com/cpq/task260902/SelConfigAcTestBase.java` 已有一份成熟实现（含 `@AfterEach` 精确还原 + `assertNoResidue`），Java 单继承 ⇒ 复用它就不能同时继承 `Task260907RBase`。原类里的 pending 桩**已删**，理由同 AC-3 去重：同一条 AC 被两个类覆盖会一边报「待接实现」一边报结论，读报告的人分不清哪个真。<br>🚦 **AC-17③ 现网恒真式成立（非通过）**：实测选配单 5 个组件的 `component_sql_view.builder_config` **全为 NULL** ⇒ `dsBackfill.tables=[]` ⇒ 两侧版本号增量都是 0。⇒ 用例保留 `assertNonEmpty` 硬失败，并**另造**「绑 `builder_config` 非空组件」的选配模板夹具，那份才是真守卫 |
 | AC-18 | `T-18` | 边界 | 两会话同时确认 → 只有一个成功；`version_no` 只 +1、`_history` 只多一份 | 并发用例 |
 | AC-20 | `T-20a/b/c` | 边界 | **三支路各一条**：同版按 `origin_id` 对位 / 跨版按指纹重锚 / 锚不上进「无法对齐」区且**原行未被静默删除** | 风险点 2、3 |
 | AC-19 | — | ⛔ | S-7 红线，待用户单独批准后补用例 | — |
@@ -109,3 +109,66 @@
 - `mvnw test` 全量跑有大批既有失败类，主因 `relation "mat_part" does not exist`（V44 老表随 V6 迁移停用，属 `AP-53` / `BL-0069`）。
 - **判据**：任何失败都要做 **A/B 同型对比**（改动前后各跑一次），逐字相同即非本次引入。🚫 不许凭「看起来像老问题」下结论。
 - E2E `quotation-flow.spec.ts` 在干净 master 上即有既有失败（夹具漂移），同样按 A/B 归因。
+
+---
+
+## 八、🚫 禁用夹具清单（后端子代理 2026-09-07 实查提供）
+
+> **写在这一节的料号，🚫 不许拿来做核价通过的验收或冒烟**，直到 `C′`（歧义膨胀收敛）获用户裁决并落地。
+
+### 8.1 为什么
+
+这些轴值组的**粒度键在组内重复**（`semantic_node.grain_columns` 不唯一）。一旦它们走一次核价通过升到 `v2`：
+`tier①` 的 `id` 全失效 → `tier②` 的指纹全失效 → `tier③` 撞歧义、按「两侧都恰好一条」判据**不认**
+⇒ **整组锚不上 ⇒ 全部追加 ⇒ 组翻倍**，而预览显示「本次覆盖 0 / 本次不动 N」。
+
+### 8.2 清单（2026-09-07 实查共享库 `cpq_db_0724`）
+
+| 表 | 轴值 | 重复的粒度键 | 重复行数 |
+|---|---|---|---|
+| `ds_quote_element_bom` | `VS-RM01` | `00005 / C`、`00005 / Ni`、`00005 / Ag` | 各 **4** 行 ⚠️ 最坏：一次通过 12 行 → 24 行 |
+| `ds_quote_element_bom` | `VS-RM02` | `00256 / Cu` | 4 行 |
+| `ds_quote_element_bom` | `VS-RM05` | `00256 / Cu` | 3 行 |
+| `ds_quote_material_bom` | `0526-2609000005` | `0526-2609000004`、`TEST-Q13-CODE` | 各 2 行 |
+| `ds_quote_material_bom` | `VS-FG01` | `3120011203`、`VS-SA02` | 各 2 行 |
+| `ds_quote_material_bom` | `VS-SA02` | `VS-RM03` | 2 行 |
+
+📌 面：`element_bom` 14 个轴值组里 **4 个**有歧义（28.6%）；`material_bom` 25 个里 **3 个**（12%）。
+📌 当下**不会**触发：有歧义的组从未跨版，已跨版的 2 组（`T260907-M1` v3 / `S-3120014539` v2）**无歧义**，交集 = 0。
+⚠️ 但触发条件只是「两张单先后核价通过同一个料号」—— 那正是 `AC-10` 的常规流程。
+
+---
+
+## 九、AC-4 / T-12 的自造组件说明（后端子代理提供，测试侧照做）
+
+### 9.1 🚨 先说为什么不能用现成的
+
+- **ds 原生模板（`df379593-…`）的 `T260907-物料BOM` 与 `T260907-物料与元素BOM` 两个组件，
+  `element_code_field` / `element_price_field` / `element_currency_field` 三个字段全是 `NULL`**
+  ⇒ `_record.element_price` 在该模板上**恒为 NULL**，AC-4 与 T-12 在它上面**根本不可达**。直接接线 = 空验证。
+- 主线已裁：**测试侧自造组件**（🚫 不改现网配置、🚫 不用真实客户组件）。
+
+### 9.2 自造组件要配什么（照这个配才会真落值）
+
+| 要素 | 值 | 为什么 |
+|---|---|---|
+| 组件的 `element_price_field` | 指向 `fields[]` 里那个价格列的 **`name`**（如 `元素单价`） | `DsRecordProjector` 用 `binding.elementPriceField()` 直接按**字段名**取值 |
+| 该字段的 `field_type` | **`INPUT_NUMBER`** | 现网 21 个组件走的就是这条；实测其值落在 `snapshot_rows[i].driverRow` 里（16/16 样本） |
+| 该字段的 `default_source` | `{"type":"BASIC_DATA","path":"$<视图名>.元素单价"}` | 让首次渲染把实时价物化进来；物化后随快照冻结，不再随渲染漂（AC-4 的「建单时刻」由此守住） |
+| 组件的 `element_code_field` | 指向元素编码列的 `name`（如 `元素`） | `syncElementPrice` 要靠它把「元素编码 → 物理列」映射出来；映射不出会**跳过并只打 DEBUG** |
+| 绑定的 sheet | 必须是 **`ds_quote_material_bom`** 或 **`ds_quote_element_bom`** | 只有这两张的 `_record` 有 `element_price` 列（S-3 / `QuoteRegistry.ELEMENT_PRICE_RECORD_SHEETS`） |
+| `builder_config` | 必须非空且 `dialect=QUOTE` | 否则判 `NO_BUILDER_CONFIG` → 不参与 `_record`（`D-33`） |
+
+**取值路径**（`DsRecordProjector#pick` 的三级兜底，按序）：
+`row_data[字段名]` → `driverRow[字段名]` → `driverRow[builder_config.columns[].viewColumn]`
+
+### 9.3 ⚠️ 警告栏
+
+1. 🚫 **不要把价格列配成 `field_type = BASIC_DATA`** —— `pick()` **不读 `basicDataValues`**，
+   值会**静默变 NULL**，那就是又一个空验证。现网那 3 个 `BASIC_DATA` 组件恰好都是手写视图、
+   走不到 `_record`，所以这个洞至今没暴露。
+2. ⚠️ **`element_price` 不是「建单时算一次就冻住」**：每次 `saveDraft` 都会按当时页签值重投影一遍
+   （取值不变，因为源是已物化的快照），价格调整链路 (`syncElementPrice`) 是**另一条**独立写路径。
+3. ⚠️ **`dryRun` 的语义是「整个事务最终回滚」，不是「跳过写库」**
+   （`MaterialVersionUpgradeService` 类注释 `:68-71`）⇒ `syncElementPrice` 在 dryRun 下**会执行**，
+   只是最后整体回滚。**事务外观察不到，事务内观察得到** —— 用例若在同事务里断言会看到写入。

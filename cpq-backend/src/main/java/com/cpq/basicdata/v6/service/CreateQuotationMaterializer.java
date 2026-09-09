@@ -40,6 +40,12 @@ public class CreateQuotationMaterializer {
     private static final String FAIL_MARK = "__cardValueFailed";
 
     @Inject ConfigureSnapshotService snapshotService;
+
+    // D-40：建单后置物化完成后补写 _record（用户 2026-09-07 改裁「本期补写入」）
+    @Inject
+    com.cpq.quotation.service.dsrecord.DsQuoteRecordService dsQuoteRecordService;
+    @Inject
+    com.cpq.quotation.service.dsrecord.DsRecordStaleService dsRecordStaleService;
     @Inject CardSnapshotService cardSnapshotService;
     @Inject MaterializeRegistry materializeRegistry;
 
@@ -155,6 +161,29 @@ public class CreateQuotationMaterializer {
             LOG.infof("[create-quotation-timing] quotation=%s ①snapshotQuotation=%dms ②ensureStructure=%dms " +
                     "③ensureCardValues=%dms ④ensureExcelValues=%dms 总计=%dms",
                 qid, (t1 - t0), (t2 - t1), (t3 - t2), (t4 - t3), (t4 - t0));
+
+            // ── ⑤ D-40：物化完成后补写 _record（用户 2026-09-07 改裁「本期补写入」）─────────
+            // 🔑 为什么挂在这里，而不是建单那一步：
+            //    本链路是「**同步建单建行 + 异步物化**」。真正产出带 component_id 的页签组件数据
+            //    与 snapshot_rows 的是上面第 ① 步 snapshotQuotation；建单事务里那一刻还没有。
+            //    ⇒ 挂在①之前 = 投影恒空（「代码跑了、日志也有、就是没数据」）。
+            //    ⇒ 挂在这里 ⇒ snapshot 已就绪，投影走路径① DRIVER，锚定最准。
+            // 🎯 本方法**同时**服务两条建单链路（新 ds_ 链路 QuotationImportResource:245 与
+            //    V6 老链路 BasicDataImportV6Resource），⇒ 一个挂点覆盖两条，🚫 不必各挂一次。
+            // 🚫 N+1：整条流程只调一次，传 null = 本单全量（🚫 不许按行调）。
+            // 🔒 本方法在**异步线程、无事务**上下文里跑 ⇒ 必须走 syncRecordsForFlow（自带事务外壳）；
+            //    直调 syncRecords 会因无事务可用而抛。
+            // 🛡️ 自带 try/catch：🚫 不许落进外层那个 catch —— 那里会往 warnings 追加
+            //    「卡片值物化失败」，而卡片值其实是好的，那条提示会把人引到错的地方。
+            try {
+                dsQuoteRecordService.syncRecordsForFlow(qid);
+            } catch (RuntimeException ex) {
+                LOG.warnf(ex, "[ds-record] 建单后置物化 quotation=%s 写 _record 失败"
+                        + "（建单与卡片值不受影响，回填侧会以 noRecordSnapshot / recordStale 显式报出）", qid);
+                dsRecordStaleService.markStale(qid,
+                        com.cpq.quotation.service.dsrecord.DsRecordStaleService.REASON_WRITE_FAILED,
+                        ex.getClass().getSimpleName() + ": " + ex.getMessage(), null);
+            }
         } catch (Exception e) {
             long tErr = System.currentTimeMillis();
             r.cardValuesReady = false;

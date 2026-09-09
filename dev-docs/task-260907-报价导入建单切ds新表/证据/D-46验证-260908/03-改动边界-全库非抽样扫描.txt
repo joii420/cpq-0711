@@ -1,0 +1,28 @@
+# 「resolveAxis 优先级调换只影响树页签」—— 全库非抽样实测
+# 采集时刻 2026-09-08 04:18 -07:00，库 cpq_db_0724
+# 口径：扫全库所有 quotation_line_component_data.snapshot_rows 的每一行 driverRow，
+#       比对 hf_part_no（老口径第一优先级）与「*_销售料号」（新口径第一优先级 = 轴列值）
+
+WITH rows AS (
+  SELECT c.bom_recursive_expand tree, r->'driverRow' dr
+  FROM quotation_line_component_data cd JOIN component c ON c.id = cd.component_id,
+  LATERAL jsonb_array_elements(cd.snapshot_rows) r WHERE cd.snapshot_rows IS NOT NULL
+), kv AS (
+  SELECT tree, dr->>'hf_part_no' hf, v FROM rows, LATERAL jsonb_each_text(dr) AS e(k,v) WHERE k LIKE '%销售料号'
+)
+SELECT tree AS 树页签, count(*) 总行,
+       count(*) FILTER (WHERE hf IS NOT DISTINCT FROM v) 轴值不变,
+       count(*) FILTER (WHERE hf IS DISTINCT FROM v)     轴值会变
+FROM kv GROUP BY 1 ORDER BY 1;
+
+ 树页签 | 总行 | 轴值不变 | 轴值会变
+--------+------+----------+----------
+ f      |  426 |      426 |        0      ← 非树页签：优先级调换 **一行都不会变**
+ t      |  122 |        0 |      122      ← 树页签：全部改正（老口径算成子件）
+
+⇒ 本次 resolveAxis 改动的影响面在全库层面恰好等于「树页签的行」，与元素BOM 及其余 11 张表无关。
+
+# 单张单的同口径细分（QT-20260908-0615，14 个组件）：
+#   T260907-物料BOM(树)   同 0 / 异 14   ← 唯一分叉点
+#   T260907-物料与元素BOM 同 8 / 异 0
+#   其余 12 个组件        同 5 或 14 / 异 0

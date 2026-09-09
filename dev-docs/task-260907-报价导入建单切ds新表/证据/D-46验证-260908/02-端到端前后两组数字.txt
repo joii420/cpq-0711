@@ -1,0 +1,55 @@
+# D-46 端到端（QT-20260908-0615 / 0fa33239-bb50-4f0c-82ab-99490efd3e75）
+# 采集时刻 2026-09-08 04:17:12（BEFORE） / 04:17:55（AFTER） -07:00
+# 实例 = 本 worktree @QuarkusTest 随机端口（-Dquarkus.http.test-port=0），🚫 全程未碰 8099
+# 实例代码版本：BEFORE = 两个病灶均已还原的本地树；AFTER = 修复在的本地树（md5 见 01）
+# 🚫 只跑 syncRecords(整单) + DsBackfillCollector.collect(预览)，**未执行 costing-approve**
+
+## 非空守卫（先证明「有东西可验」）
+  [GUARD1] 树页签带父边的子行数 = 11  （> 0 ⇒「出现真实边行」不是恒真）
+  [GUARD2] ds_quote_element_bom 基底行数 = 5 （> 0 ⇒「未被误伤」不是恒真）
+
+## ⚠️ 为什么用「本趟是否重写」而不是清场后比行数
+  BEFORE 跑在 AFTER 之后，而还原态下 material_bom 的 byAxis 为空 ⇒ deleteGroups **根本不会被调用**
+  ⇒ 上一趟的 6 行原样留着。若只看行数会得出「BEFORE 也有 6 行」的假象。
+  🚫 不用 DELETE 清场（§3.2）⇒ 改测「这一趟 sync 有没有重写过这张表」= max(updated_at) 是否变化。
+
+## BEFORE（两个病灶还原）
+  [BEAT-PRE ] material_bom_record rows=6 max(updated_at)=2026-09-08T11:14:49.343556Z
+  [BEAT-POST] material_bom_record rows=6 max(updated_at)=2026-09-08T11:14:49.343556Z  本趟是否重写=false  ← 🔴 一行都没写
+  [BEAT-POST] element_bom_record  rows=5 max(updated_at)=2026-09-08T11:17:12.146413Z  本趟是否重写=true   ← 对照：sync 确实跑了
+  [ds-record] 写入 _record：sheets=13 axes=24 rows=38 unanchored=0 crossCardDeduped=25
+              treeDerivedAxes=0 crossProductAxisSkipped=11
+              [T260907T-SC01, T260907T-RM02, T260907T-RM01, T260907T-RM03, T260907T-SC02]
+              ⇒ 11 条树边行（3 张卡片）全部被丢；轴值全算成**子件**料号
+
+## AFTER（修复在）
+  [BEAT-PRE ] material_bom_record max(updated_at)=2026-09-08T11:14:49.343556Z
+  [BEAT-POST] material_bom_record rows=6 max(updated_at)=2026-09-08T11:17:55.013367Z  本趟是否重写=true   ← ✅
+  [ds-record] 写入 _record：sheets=13 axes=27 rows=44 unanchored=0 crossCardDeduped=30
+              treeDerivedAxes=1 [T260907T-RM01] crossProductAxisSkipped=0
+  [ds-record] treeDerivedAxes=1 [T260907T-RM01] —— BOM 树闭包的**中间件**轴值组…核价通过时会随本单一起回填升版。
+  Δ = 轴值组 24→27（+3：物料BOM 的 FG01/FG02/RM01）、行 38→44（+6：6 条真实 BOM 边行）
+
+## AFTER · ds_quote_material_bom_record 六行明细（全部真实边行，全部锚上）
+  axis=T260907T-FG01  input_material_no=T260907T-RM01  origin_id=12002  fp=true
+  axis=T260907T-FG01  input_material_no=T260907T-RM02  origin_id=12003  fp=true
+  axis=T260907T-FG01  input_material_no=T260907T-SC01  origin_id=12004  fp=true
+  axis=T260907T-FG02  input_material_no=T260907T-RM01  origin_id=12005  fp=true
+  axis=T260907T-FG02  input_material_no=T260907T-SC02  origin_id=12006  fp=true
+  axis=T260907T-RM01  input_material_no=T260907T-RM03  origin_id=12007  fp=true   ← 树闭包派生轴（父件=中间件）
+  input_material_no IS NULL 行数 = 0        （原缺陷：64/64 全 NULL）
+  轴值 = 父件料号，与主表 ds_quote_material_bom 的 (material_no, input_material_no) = (父件, 子件) 一致
+
+## AFTER · 预览（🚫 未执行）：物料BOM 三组全部 base == result、unanchoredRows 为空
+  ds_quote_material_bom  axis=T260907T-FG01  result=UNCHANGED  base=3 result=3 patched=0 untouched=3 unanchored=0
+  ds_quote_material_bom  axis=T260907T-FG02  result=UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+  ds_quote_material_bom  axis=T260907T-RM01  result=UNCHANGED  base=1 result=1 patched=0 untouched=1 unanchored=0
+  （原缺陷形态：FG01 base=3 result=4 unanchored=1 / FG02 base=2 result=3 unanchored=1 —— 合成根行当新增行追加）
+  ⇒ 派生轴 RM01 这一组**出现在预览里**，财务看得到它会被升版（预览的组直接来自 _record 的轴值）
+
+## 元素BOM 反向证据（改动边界）
+  _record 5 行逐行不变，origin_id 13306/13307/13308/13309/13310 一字未改
+  预览 BEFORE/AFTER 逐字相同：
+    ds_quote_element_bom  axis=T260907T-FG01  UNCHANGED  base=3 result=3 patched=0 untouched=3 unanchored=0
+    ds_quote_element_bom  axis=T260907T-FG02  UNCHANGED  base=2 result=2 patched=0 untouched=2 unanchored=0
+  全 13 表 27 组预览 BEFORE vs AFTER：diff **为空**（逐行 sort 后 diff，0 行差异）

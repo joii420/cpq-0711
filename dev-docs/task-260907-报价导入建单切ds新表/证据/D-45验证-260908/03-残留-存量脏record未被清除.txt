@@ -1,0 +1,24 @@
+# 🔴 D-45 残留（后端工程师在验证中抓到，2026-09-08 03:35 -07:00）
+
+## 现象
+  重算 _record 后，物料BOM 组仍 base=3 → result=4 / unanchored=1 / recordId=112，逐字未变。
+
+## 根因（已钉死，非推测）
+  DsQuoteRecordService:216   if (rows.isEmpty()) continue;
+  修复后树页签只剩合成根行时投影出 0 行 ⇒ 该 sheet 根本不进 bySheet
+  ⇒ deleteGroups 不会对它执行 ⇒ **存量脏 _record 行永远留在库里**。
+
+## 量化证据
+  syncRecords => Summary[sheets=13, axes=24, rows=38, unanchoredRows=0]   ← axes=24
+  同一时刻 preview 报 tables=13 axes=26                                    ← 差的 2 个就是物料BOM 两组
+  ds_quote_material_bom_record id=112/113  created_at=2026-09-08 09:02:01Z（原始 saveDraft，未被重写）
+  ds_quote_element_bom_record  id=2297~2301 created_at=2026-09-08 10:34:06Z（本次重写，全新 id）
+  ⇒ 重写确实跑了、确实动了元素BOM，唯独没动物料BOM。
+
+## 影响面
+  新单：不再写入合成根行 ✅ 已修
+  存量单（_record 里已有合成根行的）：下一次核价通过照样追加幻影行 ❌ 未修
+
+## 🚦 未自行修复的理由
+  改法要动 DsQuoteRecordService:216 的组作用域语义（空投影是否也要删组），
+  影响面超出用户裁决的甲，且会波及「driver 本次返 0 行」等无关形状 ⇒ 交主线裁决。

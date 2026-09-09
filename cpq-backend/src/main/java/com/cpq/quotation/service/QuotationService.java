@@ -123,6 +123,17 @@ public class QuotationService {
     @Inject
     com.cpq.quotation.service.backfill.QuoteBackfillService quoteBackfillService;
 
+    /** task-260907 第二段 · B-5/B-11：ds_ 新链路的 `_record` 写入与回填。 */
+    @jakarta.inject.Inject
+    com.cpq.quotation.service.dsrecord.DsQuoteRecordService dsQuoteRecordService;
+
+    @jakarta.inject.Inject
+    com.cpq.quotation.service.dsrecord.DsQuoteBackfillService dsQuoteBackfillService;
+
+    /** task-260907 第二段 · D-35：「_record 快照过期」标记。 */
+    @jakarta.inject.Inject
+    com.cpq.quotation.service.dsrecord.DsRecordStaleService dsRecordStaleService;
+
     @Inject
     com.cpq.quotation.service.backfill.QuoteBackfillPreviewService quoteBackfillPreviewService;
 
@@ -896,6 +907,38 @@ public class QuotationService {
             em.flush();
             resp.lineItems = loadChangedLinesLight(changedIds, tempIdById);
         }
+
+        // ── task-260907 第二段 · B-5/B-6/B-7：写 ds_quote_*_record（AC-2 / AC-3 / AC-4 / AC-11）──
+        // 🔑 **增量**：只重算本次变更产品对应的轴值组；未变更产品的 _record 行一个字节不动
+        //    （AC-2② 断言它们的 updated_at 逐字未变）。🚫 不许整单重写 —— autoSave 频率下会写放大，
+        //    task-260901 已为 row_data 那条 jsonb 路付过 43 秒保存的账。
+        // 🔒 必须在 em.flush() 之后：下面走的是原生查询，读的是本次刚写进去的 component_data。
+        // 🛡️ 整段包 try/catch：_record 是**派生数据**，它写失败不该让用户的草稿保存整单回滚。
+        //    （🚫 回填那一侧相反 —— 见 doCostingApprove，那里必须同事务、失败整体回滚。）
+        // 🚨 D-35（用户 2026-09-07 裁决）：**不回滚是对的，但「吞掉」走过头了**。
+        //    只留一条没人看的 WARN，后果链是：保存成功 → 快照没更新 → 提交 → 核价通过
+        //    → 预览从 _record 读到过期/缺失的数据 → 财务照着确认 → **按错的数据回填主表**。
+        //    这与 AP-60 判据四同型：预览在撒谎，而且撒得很有说服力。
+        //    ⇒ 仍然不回滚，但必须**留一条可查的标记**，由预览显式报给财务。
+        // 🔴 D-42（甲-1，主线 2026-09-07 裁决）：**挂点从这里移走了**，🚫 不要再挪回来。
+        //    原来在此处（em.flush() 之后）调 syncRecords，实测**永远写不出 _record**：
+        //    本方法对「payload 的 componentId 集合 ≠ 库里的」的行会先整行删掉组件数据
+        //    （:2918 batchDeleteComponentDataByIds），而**重建发生在本方法返回之后** ——
+        //    QuotationResource 紧随其后的 snapshotQuotation(id, true)。
+        //    ⇒ 事务内任何位置都落在「旧行已删、新行未建」的空窗里，读到 0 行就跳过。
+        //    ⚠️ 症状极隐蔽：日志「命中 N 个轴值但无组件数据，跳过」前半句是对的，
+        //       读起来像「这单没数据」，实际是「**这一刻**没数据」。
+        //    ⇒ 只在这里**算出并带出** touched，真正的调用点在 QuotationResource
+        //       的 snapshotQuotation 之后（见 SaveDraftResponse#touchedLineItemIds）。
+        if (delta.hasLinePayload) {
+            java.util.List<UUID> touched = new java.util.ArrayList<>();
+            if (delta.writtenIds != null) {
+                for (UUID wid : delta.writtenIds) if (wid != null) touched.add(wid);
+            }
+            touched.addAll(delta.removedIds);
+            // 🔑 增量语义（AC-2②）靠这份名单保住：🚫 不许在 Resource 侧退化成 null 整单重算。
+            if (!touched.isEmpty()) resp.touchedLineItemIds = touched;
+        }
         return resp;
     }
 
@@ -1605,8 +1648,35 @@ public class QuotationService {
     }
 
     private QuotationDTO doCostingApprove(UUID id, String comment, UUID currentUserId) {
+        // ── task-260907 第二段 · B-11（AC-18）：悲观写锁，串行化同单并发「核价通过」──────────
+        // 🔒 <b>位置不可变通</b>：必须在状态校验<b>之前</b>取锁 —— 与 saveDraft:375 那段同一条纪律。
+        //    在锁内 → 状态校验与后面的回填/状态翻转之间没有别的事务能挤进来。
+        //
+        // 【不加锁的实测后果】两个财务同时点确认：两个请求在各自事务里都读到 SUBMITTED、
+        //    都通过下面这道 `!"SUBMITTED".equals(q.status)` 闸、都往下执行回填 ——
+        //    实测 `codes=[200, 200]`，第 1 个 `upgradedGroups=1`、第 2 个 `unchangedGroups=1`，
+        //    **回填跑了两遍**。那次没造成双份升版是运气（第二遍恰好判 UNCHANGED），
+        //    两遍之间数据一变就是真写两次。
+        //
+        // 🚫 不要改成乐观锁 / 自建版本号：同文件的 saveDraft 已有现成手法（PESSIMISTIC_WRITE），
+        //    第二套实现必然与它漂移。
+        // ⚠️ VersionedGroupWriter 内部的 DatasetGroupLock 是<b>表级</b> advisory lock，
+        //    它只保证同一张表的写不交错，<b>拦不住「同一张单被执行两次回填」</b> ——
+        //    两次会先后拿到同一把表锁，各自都写。单据级串行化只能在这里做。
+        //
+        // 🚨 <b>为什么是 refresh(…, PESSIMISTIC_WRITE) 而不是 findById(id, PESSIMISTIC_WRITE)</b>
+        //    （这一条踩过，别改回去）：本方法之前，同一事务里 {@code QuoteBackfillCollector:127}
+        //    已经 {@code Quotation.findById(quotationId)} 把该实体载进持久化上下文了
+        //    （{@code costingApprove} → {@code verifyToken} → {@code collector.collect}，
+        //    后者是 {@code @Transactional(SUPPORTS)}，加入调用方事务）。
+        //    此时再 {@code findById(id, PESSIMISTIC_WRITE)}：**行锁拿到了，但返回的是缓存里的旧实例，
+        //    Hibernate 不会重读**  ⇒ 后到的那个事务在锁内看到的仍是它自己早先读到的 SUBMITTED
+        //    ⇒ 状态闸形同虚设。实测：加锁前 codes=[200,200]，只加锁不重读<b>仍然</b> codes=[200,200]，
+        //    主表被连升两版（v1→v2→v3）、_history 多出两份、quotation_approval 写了 2 条。
+        //    {@code em.refresh(q, PESSIMISTIC_WRITE)} 是「上锁 + 重读」二合一，锁内读到的才是权威值。
         Quotation q = Quotation.findById(id);
         if (q == null) throw new BusinessException(404, "Quotation not found: " + id);
+        em.refresh(q, LockModeType.PESSIMISTIC_WRITE);
         if (!"SUBMITTED".equals(q.status)) throw new BusinessException(400, "仅待核价(SUBMITTED)可核价通过");
         if (!isFinanceOrAdmin(currentUserId)) throw new BusinessException(403, "仅财务/管理员可核价");
 
@@ -1614,6 +1684,17 @@ public class QuotationService {
         // 与状态机翻转同一事务（失败整体回滚，报价单保持 SUBMITTED，pending 保留可重试，backtask B5.4）。
         com.cpq.quotation.service.backfill.QuoteBackfillService.Summary backfillSummary =
             quoteBackfillService.execute(id, currentUserId);
+
+        // ── task-260907 第二段 · B-11：ds_ 新链路回填升版（AC-6 / AC-9 / AC-18）────────────
+        // 追加在老回填**之后**：老回填对新单是安全 no-op（第一段 AC-16 实证摘要恒 0/0/0/0），
+        // 两条路径互不覆盖。
+        // 🔒 与状态机翻转**同一事务**：失败整体回滚，报价单保持 SUBMITTED（沿用既有语义）。
+        //    🚫 这里不能像 saveDraft 那样 try/catch 吞掉 —— 回填是**主数据写入**，
+        //    吞掉异常就会出现「报价单显示已通过、主数据其实没回填」的静默不一致。
+        // 🔒 AC-18 并发：上面的 !"SUBMITTED".equals(q.status) 状态闸 + VersionedGroupWriter 内部
+        //    取的表级 advisory lock（DatasetGroupLock，与维护端逐字同一把锁）共同保证只有一个成功。
+        com.cpq.quotation.dto.backfill.DsBackfillDTO.Summary dsBackfillSummary =
+            dsQuoteBackfillService.execute(id, currentUserId == null ? null : currentUserId.toString());
 
         q.status = "APPROVED";
         CostingOrder coApprove = CostingOrder.findActiveByQuotation(id);
@@ -1629,6 +1710,7 @@ public class QuotationService {
         QuotationDTO dto = QuotationDTO.from(q);
         dto.lineItems = loadLineItems(id);
         dto.backfill = backfillSummary;
+        dto.dsBackfill = dsBackfillSummary;        // task-260907 第二段（api.md §2 响应体）
         return dto;
     }
 

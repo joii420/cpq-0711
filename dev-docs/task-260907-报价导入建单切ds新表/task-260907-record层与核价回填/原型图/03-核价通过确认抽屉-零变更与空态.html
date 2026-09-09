@@ -39,6 +39,14 @@
       <div class="item"><div class="k">无法对齐的行</div><div class="v">0</div></div>
     </div>
 
+    <!--
+      🕰️ 2026-09-07 补注（主线逐屏比对后判定：不是实现偏差，是本图缺一条说明）：
+      实现的**老单空态屏**（下半屏 applicable=false）除了下面这块空态，还会多渲染一条
+      蓝色 info 提示「本次通过无基础数据变更，仅完成审核状态流转」——
+      那条来自 **老回填链路**（task-0721 / repair-0727 的 `noImpact` 分支），**不属于本段 ds_ 新回填**。
+      本图刻意不画它（本段原型只覆盖 dsBackfill 区），但必须在此注明，
+      否则下一轮逐屏比对还会把它当成实现多出来的东西再报一次。
+    -->
     <div class="alert alert-success">
       <span>✓</span>
       <div>

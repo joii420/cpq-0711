@@ -768,3 +768,67 @@ pickQualifiedCustomer({ needsTakenProductNo? })
   - 递归 SQL 校验失败属**用户输入错误**，应是 400 + 可读消息
   - ⚠️ **预先存在，非本任务引入**。本任务只是在给 `CostingTreeSqlValidator` 加 `:customerCode` 桩时撞到它
   - 优先级：P2 ｜ 预估规模：S
+
+- [ ] **BL-0228 · 核价通过确认抽屉的副标题拿不到客户名（`customerName` 不在任何可用 DTO 里）**
+  - 来源：`task-260907` 第二段 前端逐屏比对亲验（2026-09-07），主线判定后登记
+  - 现象：抽屉副标题设计为「报价单 QT-… · 客户 正泰（CUST-0001） · …」，实现只能渲染出「客户 —」或整段缺失
+  - 根因：`CostingOrderDetailDTO` 与 `frozenDto`（`QuotationDTO`）**都不含 `customerName`**，调用方 `CostingReviewPage` 无从传入；`customerNo` 只存在于 `DsBackfillDTO` 的 **group 层**，因此 `tables=[]` 的屏（`noRecordSnapshot` / 组件全不参与）连客户号也没有
+  - ⚠️ **不是「tables 为空导致的」** —— 客户名从来就拿不到，`tables=[]` 只是同一个缺失的第二种表现（前端代理最初归因于此，主线更正）
+  - 🚫 **本期不扩范围去改 DTO**：只在 `CostingApprovePreviewDrawer` 里容忍缺失（渲染「—」，不报错），原型 07 已去掉客户段并注明「待 DTO 补齐后再加」
+  - 修法：`CostingOrderDetailDTO` 或 `QuotationDTO` 补 `customerName`（只读字段，无写路径），前端副标题随之恢复
+  - 优先级：P2（纯展示，不影响回填正确性）｜ 预估规模：S
+
+- [ ] **BL-0229 · ds 原生模板的取数视图主表 `WHERE` 无客户谓词 ⇒ 同一料号跨客户时页签串行**
+  - 来源：`task-260907` 第二段 主线亲验 AC-22 时撞到（2026-09-08），用户裁决登记 BACKLOG（不在本期修）
+  - 现象：走导入建单造单后**提交返 422**「行键重复：组件『物料』行键 `[T260907-M1]` 在第 1,2 行重复」。
+    真因不在提交守卫 —— 是**物料页签的取数视图返了另一个客户的行**
+  - 实测（22 个 `builder_*` 视图全扫）：**主表 `WHERE` 一律只有 `material_no = ANY(:total_material_no)`**，
+    `:customerCode` **只出现在 LEFT JOIN**（`ds_quote_customer_part` 查客户料号 / `f_material_element_price` 查价），
+    **没有一个视图过滤主表的客户维度**。样例：
+
+    ```sql
+    -- builder_c6a71e5e217a（T260907-物料）
+    FROM ds_quote_material dqm
+    WHERE dqm.material_no = ANY(:total_material_no)      -- 🚫 无 customer_no
+    -- builder_7277969cc41c（产品）
+    FROM ds_quote_material dqm
+      LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode
+    WHERE dqm.material_no = ANY(:total_material_no)      -- :customerCode 只在 JOIN 上，不收窄主表
+    ```
+
+  - 🔑 **两侧不对称**：`_record` 读侧**已经有**客户维度（`DsMainTableReader:117-118` 的 `AND customer_no = :cust`，
+    由 `报价侧加客户维度` 合入），而**卡片 driver 视图没有** ⇒ 复合轴 `(customer_no, material_no)` 只落实了一半
+  - 症状分两档：**PLAIN 表**（物料，每客户 1 行）→ 行键重复 → **422 响亮失败**；
+    **VERSIONED 表**（元素BOM / 物料BOM）→ 另一客户的行**静默混进卡片** ⇒ 更危险
+  - 影响面（2026-09-08 08:0x 采样，非预测）：`ds_quote_material` / `ds_quote_material_bom` 各 **2 个**料号跨客户
+    （都是 `T260907-M1/M2` 测试夹具），`ds_quote_element_bom` **0 个**
+    ⚠️ **暴露面小是「数据年轻」不是「结构安全」** —— 复合轴的设计恰恰让不同客户共用同一销售料号**合法**
+  - ⚠️ **非本任务引入**：这些视图由取数配置器在客户维度落地**之前**生成，且已随 v1.2 冻结进
+    `template.sql_views_snapshot`（已发布模板不回落实时表）⇒ 改视图定义不会自动生效，须 `new-draft` + `publish` 升版
+  - 修法方向：取数配置器编译器在锚点节点是带 `customer_no` 的 `ds_quote_*` 表时，
+    自动补 `AND <alias>.customer_no = :customerCode` 谓词；存量已发布模板需重新发布一版
+  - ⚠️ **清点口径修正（2026-09-08，`task-260908-取数配置器优化` 会话实测后指出）**：🚫 **不能用 `grep :customerCode` 清点客户维度的落实情况**。
+    该会话本期新增的 46 条查名边走的是**列对列**而非参数，例如
+    `LEFT JOIN ds_quote_material dqm ON dqm.material_no = dqiof.input_material_no AND dqm.customer_no = dqiof.customer_no`
+    —— 关联的是**锚点行自己的 `customer_no`** ⇒ 即使主表 `WHERE` 缺客户过滤、返回了跨客户的行，
+    每一行的查名结果仍取自它自己那个客户，**不会串号**，且在 BL-0229 修好之后**仍然正确**。
+    ⇒ 清点时必须能区分**三种**形态：① 没有客户维度（本条要修的）② 有客户维度、走 `:customerCode` 参数 ③ 有客户维度、走列对列（安全，别误报）
+  - 归属：取数配置器（`task-260819-取数配置器` / `取数配置器补齐`）+ 客户维度铺开，🚫 不属 `_record` 层
+  - 优先级：**P1**（静默串客户数据；当前只因数据年轻未爆发）｜ 预估规模：M（编译器改动 + 存量模板重发布）
+
+- [ ] **BL-0230 · `_record` 落 `provenance` 列 —— 一个列同时解三个问题（含「合成行被静默丢弃」）**
+  - 来源：`task-260907` 第二段，用户 2026-09-08 追问「将来 `_record` 若作为报价单快照的读取源，`D-45` 修法甲（跳过合成树根行）会不会有影响」引出
+  - **现状**：`DsRecordRow.Provenance` 有四态（`DRIVER` / `DRIVER_NOT_MATERIALIZED` / `ROW_DATA_TAIL` / `MANUAL`），**写入侧有、从不落库**。
+    `DsBackfillCollector:505` 原文：「provenance 没有落到 `_record` 的列上（那需要一次迁移，**本期未落**），所以读侧只能推断」
+  - **落库后加一个 `SYNTHETIC` 态，可同时解决三件事**：
+    1. **`D-45`**：树页签的合成根行**写入并标记**，而不是丢掉 ⇒ 回填按标记跳过，不再污染主表
+    2. **未来快照用途**：`_record` 若成为报价单快照的读取源，根行仍在（当前修法甲是**静默丢弃**，事后从数据里看不出「这里本来有一行」；日志能看见，但日志不可查询、不随数据走）
+    3. **读侧推断消歧**：`DsBackfillCollector.grainFallbackEligible` 不必再靠「两个锚是否都空」**推断**行来源 —— 那是与写入侧「显式记录」口径不一致的已知残留
+  - ⚠️ **但这不等于 `_record` 就能当渲染源**：实测树页签渲染需要 `层级` / `__nodeId` / `是否根` / `是否叶子` 四个键，
+    **`_record` 里一个都没有**（其列集按定义 = 主表业务列 + `origin_id`/`base_row_fingerprint`/`base_version_no`/`extend_column`/`element_price`）。
+    ⇒ 「让 `_record` 当快照源」本身还需要另一次 schema 扩展，🚫 别把本条当成那件事的全部前置
+  - 📌 **概念澄清（比修法本身重要）**：**树根行不是基础数据，是渲染构件**。`_record` 的定义是「该报价单看到的**基础数据**」，
+    根行在主表里没有对应物 ⇒ 它进 `_record` 本来就越界，`D-45` 的病症（被回填当真数据写回主表）是这个越界的后果
+  - **落地路径**：`D-45` 的修法甲已按「判定抽成单一具名谓词 + Javadoc 写明升级路径」实现
+    ⇒ 本条落地时**只需改该谓词的调用点**（「跳过不写」→「写入并标记 `SYNTHETIC`」）+ 回填侧按标记过滤
+  - 优先级：**P2**（当前有甲兜着，不影响正确性；影响的是可追溯性与未来扩展）｜ 预估规模：S（一次迁移 + 一处调用点 + 一处回填过滤）

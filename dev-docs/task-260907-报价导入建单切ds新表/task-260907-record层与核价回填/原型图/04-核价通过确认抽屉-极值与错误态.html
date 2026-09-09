@@ -150,11 +150,22 @@
 
   </div>
 
+  <!--
+    🕰️ 2026-09-07 修订（主线逐屏比对后判定，两处都是本图过期、不是实现偏差）：
+      ① 主按钮：原画 `btn btn-primary` +「确认并核价通过」。
+         本图画于主线把 `recordStale` 并进 `dangerConfirm` **之前**；现行口径是
+         `unanchoredRows > 0 || recordStale` ⇒ 危险态 + 「**仍然**确认并核价通过」。
+         本屏 unanchoredRows=4 ⇒ 应为 `btn-danger` + 「仍然…」。禁用是 409 之后的独立状态，保留。
+      ② 页脚：原画「⚠️ 38 个料号组将升版，其中 4 行对不上。」，
+         而实现按主线判定已改为**两句并存**（先说对不上、再说不可撤销），理由是
+         「越异常的态越不该把『不可撤销』拿掉」。本图同步到新结构，
+         否则下一轮逐屏比对会把它再报一次偏差。
+  -->
   <div class="drawer-footer">
-    <span class="footer-note" style="color:#d4380d">⚠️ 38 个料号组将升版，其中 4 行对不上。</span>
+    <span class="footer-note" style="color:#d4380d">⚠️ 有 4 行对不上，确认前请先看上方明细。确认后不可撤销：38 个料号组将升版。</span>
     <button class="btn">取消</button>
     <span class="tip">
-      <button class="btn btn-primary" disabled>确认并核价通过</button>
+      <button class="btn btn-danger" disabled>仍然确认并核价通过</button>
       <span class="tip-text">比对结果已过期，请先点「重新预览」</span>
     </span>
   </div>

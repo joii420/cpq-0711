@@ -29,8 +29,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisplayName("task-260902 · A 组 建表结构（AC-1~AC-5）")
 class DatasetStructureAcTest extends DatasetAcTestBase {
 
-    /** 45 主表 + 39 history = 84（需求文档 ① 的合计表）。 */
-    private static final int EXPECT_TOTAL_TABLES = 84;
+    // 🕰️ 2026-09-07 · D-30：原有 `EXPECT_TOTAL_TABLES = 84` 已删除，改由 TS-01 内部从
+    //    FieldMatrixSpec 推导。理由见 TS-01 的注释（判据不许写具体数字）。
     private static final int EXPECT_HISTORY_TABLES = 39;
     private static final int EXPECT_MAIN_TABLES = 45;
 
@@ -83,18 +83,57 @@ class DatasetStructureAcTest extends DatasetAcTestBase {
 
     @Test
     @Order(1)
-    @DisplayName("TS-01 / AC-1：ds_% 表共 84 张，其中 %_history 39 张")
+    @DisplayName("TS-01 / AC-1：ds_% 表数 = 矩阵主表数 + 带版本表数（🚫 不含 _record）")
     void ts01_tableCounts() {
+        // ═══ 🕰️ 2026-09-07 · D-30 两处修正（用户裁决，🚫 不回滚 V420）═══
+        //
+        // 【修正一】查询排除 %_record。
+        //   本条 AC 验的是「**task-260902 交付了哪些表**」。而 ds_quote_*_record 是
+        //   task-260907 第二段（V420）的交付物，**不是 task-260902 交付的** ——
+        //   把它算进来，等于让别人任务的 AC 去承担我们的交付物，本条就再也说不清它在验谁。
+        //   ⚠️ 实测：V420 落库后 ds_% 从 84 变成 97（+13 张 _record），本条被打红。
+        //      🚫 那**不是** task-260902 的回归，也不是 B-3 打红的（B-3 尚未落库）。
+        //
+        // 【修正二】判据由字面量改为不变量。
+        //   原来写死 `EXPECT_TOTAL_TABLES = 84`。数字是**移动靶**：任何人往 ds_ 家族加一张表，
+        //   这条 AC 就红一次，而红的是判据不是实现。
+        //   ⇒ 依据 RECORD.md 2026-09-06 规则升级提议①：
+        //     「**AC 判据不许写具体数字；数字属于实测记录，不属于判据**」
+        //     （实证：task-260819 在同一条 AC 上因锁数字栽了三次）。
+        //   ⇒ 期望值改为**从 `字段矩阵.md` 推导**：主表数 + 带版本表数（每张带版本表配一张 _history）。
+        //     数字仍然打印出来（下面的 printf），但它是**实测记录**，不是判据。
+        //   🔑 判据右边来自需求侧文档（字段矩阵），左边来自 DDL —— 两边不同源，这才验得出东西。
+
+        long expectMain = SPECS.size();
+        long expectHistory = SPECS.stream().filter(s -> s.versioned).count();
+        long expectTotal = expectMain + expectHistory;
+
+        // 🚨 阳性对照：矩阵解析为空时，expectTotal = 0，而库里若也恰好查不到表，断言会以「0 == 0」
+        //    的形态恒真通过。TD-00 已经守了解析，这里再补一枪，因为本条的判据完全依赖它。
+        assertTrue(expectMain > 0 && expectHistory > 0,
+                "判据自身失效：从字段矩阵推导出的主表数=" + expectMain + "、带版本表数=" + expectHistory
+                        + " ⇒ 期望值退化成 0，断言会恒真。这是判据坏了，不是建表坏了。");
+
         long total = count("SELECT count(*) FROM pg_tables "
-                + "WHERE schemaname='public' AND tablename LIKE 'ds\\_%'");
+                + "WHERE schemaname='public' AND tablename LIKE 'ds\\_%' "
+                + "  AND tablename NOT LIKE '%\\_record'");
         long history = count("SELECT count(*) FROM pg_tables "
-                + "WHERE schemaname='public' AND tablename LIKE 'ds\\_%' AND tablename LIKE '%\\_history'");
+                + "WHERE schemaname='public' AND tablename LIKE 'ds\\_%' "
+                + "  AND tablename NOT LIKE '%\\_record' AND tablename LIKE '%\\_history'");
+        long recordExcluded = count("SELECT count(*) FROM pg_tables "
+                + "WHERE schemaname='public' AND tablename LIKE 'ds\\_%\\_record'");
 
-        System.out.printf("[TS-01] 实际 ds_%% = %d，其中 _history = %d%n", total, history);
+        // 实测记录（🚫 这些数字不是判据，判据在上面的 expect* 里）
+        System.out.printf("[TS-01] 实际 ds_%%（排除 _record）= %d，其中 _history = %d；"
+                        + "另有 _record %d 张已排除（task-260907 V420 的交付物，不属本任务）%n",
+                total, history, recordExcluded);
 
-        assertEquals(EXPECT_TOTAL_TABLES, total,
-                "AC-1：ds_% 表数量不是 84。缺失的表：" + missingTables());
-        assertEquals(EXPECT_HISTORY_TABLES, history, "AC-1：_history 表数量不是 39");
+        assertEquals(expectTotal, total,
+                "AC-1：ds_% 表数（排除 _record）应 = 矩阵主表 " + expectMain
+                        + " + 带版本表 " + expectHistory + " = " + expectTotal
+                        + "，实际 " + total + "。缺失的表：" + missingTables());
+        assertEquals(expectHistory, history,
+                "AC-1：_history 表数应 = 矩阵带版本表数 " + expectHistory + "，实际 " + history);
     }
 
     private List<String> missingTables() {

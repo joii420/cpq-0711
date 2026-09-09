@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>核价通过确认抽屉 · 本次跳过的组（BLOCKED） —— task-260907 第二段</title>
+<link rel="stylesheet" href="_style.css">
+</head>
+<body>
+
+<div class="page-hint">
+  📌 <b>当前基准</b> · 状态 <b>5/5：本次跳过的组（<code>result = BLOCKED</code>）</b> ——
+  2026-09-07 契约由三值扩到四值后新增的一屏。<b>该组本次跳过回填、一个字节不写</b>，
+  但 <b>核价通过照常进行</b>（🚫 不阻断确认、主按钮不变红、不禁用），需财务<b>事后人工处理</b>。
+  ⇒ 它<b>不是错误态</b>，视觉分级刻意落在「无变更（灰）」与「异常（红）」之间：<b>橙档</b>。
+</div>
+
+<div class="behind">
+  <h2>报价单 QT-20260907-0431 · 待核价</h2>
+  <div class="card">客户：正泰（CUST-0004）　｜　产品：2 个　｜　金额：¥112,760.00</div>
+</div>
+
+<div class="mask"></div>
+<div class="drawer">
+
+  <div class="drawer-header">
+    <div>
+      <div class="drawer-title">核价通过 —— 确认基础数据升版</div>
+      <div class="drawer-sub">报价单 QT-20260907-0431　·　客户 正泰（CUST-0004）　·　⚠️ 有 2 个料号组本次跳过回填，需事后人工处理</div>
+    </div>
+    <button class="drawer-close">✕</button>
+  </div>
+
+  <div class="drawer-body">
+
+    <!-- 汇总条：「本次跳过的组」只在 >0 时出现（同「不参与的组件」「行数会减少的组」的口径，🚫 不锁项数、🚫 不留 0 的僵尸行） -->
+    <div class="summary">
+      <div class="item"><div class="k">涉及表</div><div class="v">2</div></div>
+      <div class="item"><div class="k">涉及料号组</div><div class="v">4</div></div>
+      <div class="item"><div class="k">将升版</div><div class="v">1</div></div>
+      <div class="item"><div class="k">无变更</div><div class="v">1</div></div>
+      <div class="item"><div class="k">无法对齐的行</div><div class="v">0</div></div>
+      <div class="item"><div class="k">本次跳过的组</div><div class="v warn">2</div></div>
+    </div>
+
+    <div class="alert alert-info">
+      <span>ℹ️</span>
+      <div>
+        下表列的是<b>确认后基础数据会变成什么样</b>，不是「哪些值变了」。
+        「<b>本次不动</b>」那一列是本页签没有表征的行 —— 它们会<b>原样保留</b>，不会被删除、不会被置空。<br>「<b>回填后行数</b>」与「整组行数」不同时会标色：<span style="color:#389e0d;font-weight:600">绿色</span>=整组新建，<span style="color:#d4380d;font-weight:600">红色</span>=有对不上的行按新增写入、组会变大。
+      </div>
+    </div>
+
+    <!-- ── BLOCKED 告警条：warning 不是 error（不阻断确认）。文案回答三件事：写不写 / 还能不能通过 / 接下来谁做什么 ── -->
+    <div class="alert alert-warn">
+      <span>⚠️</span>
+      <div>
+        <b>有 2 个料号组本次跳过回填。</b>
+        这些组里存在<b>粒度键取值相同的多行</b>，系统无法确定报价单的数据该写到哪一行，
+        因此本次<b>一个字节都不写</b>，它们在基础数据里<b>保持原样</b>。<br>
+        <b>核价通过照常进行</b> —— 这些组不阻断本次确认；但它们需要<b>事后人工核对处理</b>，逐组明细见下方「本次跳过的组」。
+      </div>
+    </div>
+
+    <!-- ── 物料BOM ── -->
+    <div class="sheet-head">
+      <span class="name">物料BOM</span>
+      <span class="table-name mono muted">ds_quote_material_bom</span>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>销售料号</th><th>版本迁移</th><th>判定</th>
+            <th class="num">整组行数</th><th class="num">回填后行数</th><th class="num">本次覆盖</th><th class="num">本次不动</th>
+            <th>本次覆盖的列</th><th>原样保留的列</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="mono">S-3120014539</td>
+            <td><span class="ver">v2 <span class="arrow">→</span> <span class="to">v3</span></span></td>
+            <td><span class="tag tag-blue">升版</span></td>
+            <td class="num">9</td><td class="num">9</td><td class="num">2</td><td class="num">7</td>
+            <td><span class="tag tag-grey">组成数量</span> <span class="tag tag-grey">单重</span></td>
+            <td class="muted">项次、投入料号、产出料号类型、材料毛重、材料净重、重量单位、材料占比、损耗率、不良率</td>
+          </tr>
+          <!-- BLOCKED（同版）：终点明写「不升版」，🚫 不许显示「→ v2」——那是本次根本不会发生的迁移 -->
+          <tr class="row-blocked">
+            <td class="mono">S-2120011659</td>
+            <td><span class="ver">v1 <span class="arrow">→</span> <span style="color:#d46b08;font-weight:600">不升版</span></span></td>
+            <td><span class="tag tag-orange">本次跳过</span></td>
+            <td class="num">4</td>
+            <td class="num muted">4<div style="font-size:12px;white-space:nowrap;color:#d46b08">本次跳过，该组保持原样</div></td>
+            <td class="num">0</td><td class="num">4</td>
+            <td class="muted">—</td>
+            <td class="muted">整组跳过，本次一行不写 —— 需事后人工处理</td>
+          </tr>
+          <tr>
+            <td class="mono">VS-FG01</td>
+            <td><span class="ver">v1 <span class="arrow">→</span> <span class="to muted" style="color:rgba(0,0,0,.45);font-weight:400">v1</span></span></td>
+            <td><span class="tag tag-grey">无变更</span></td>
+            <td class="num">5</td><td class="num">5</td><td class="num">0</td><td class="num">5</td>
+            <td class="muted">—</td>
+            <td class="muted">整组不写，连更新时间都不会动</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="muted" style="font-size:12px; margin:-12px 0 20px">
+      📌 上表 BLOCKED 行的「回填后行数」画的是 <b>后端给了 <span class="mono">resultRowCount</span> 时</b>的样子（此处 4）。
+      后端**没给**该字段时（过渡期完全可能）显示「<b>—</b>」，小注不变 ——
+      🚫 前端刻意<b>不</b>拿 <span class="mono">baseRowCount</span> 顶上来假装是结果值，那等于前端自己推算 <span class="mono">resultRowCount</span>。
+    </div>
+
+    <!-- ── 物料与元素BOM ── -->
+    <div class="sheet-head">
+      <span class="name">物料与元素BOM</span>
+      <span class="table-name mono muted">ds_quote_element_bom</span>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>销售料号</th><th>版本迁移</th><th>判定</th>
+            <th class="num">整组行数</th><th class="num">回填后行数</th><th class="num">本次覆盖</th><th class="num">本次不动</th>
+            <th>本次覆盖的列</th><th>原样保留的列</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- BLOCKED（跨版）：跨版信息保留（财务要知道库里已经变过），但终点仍是「不升版」 -->
+          <tr class="row-blocked">
+            <td class="mono">S-3120014539</td>
+            <td>
+              <span class="ver">
+                <span class="tag tag-gold">快照 v1</span>
+                <span class="arrow">→</span>
+                <span class="tag tag-blue">库中 v2</span>
+                <span class="arrow">→</span>
+                <span style="color:#d46b08;font-weight:600">不升版</span>
+              </span>
+            </td>
+            <td><span class="tag tag-orange">本次跳过</span></td>
+            <td class="num">6</td>
+            <td class="num muted">6<div style="font-size:12px;white-space:nowrap;color:#d46b08">本次跳过，该组保持原样</div></td>
+            <td class="num">0</td><td class="num">6</td>
+            <td class="muted">—</td>
+            <td class="muted">整组跳过，本次一行不写 —— 需事后人工处理</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="alert alert-warn">
+      <span>⚠️</span>
+      <div>
+        <b>元素价格不写回基础数据。</b>报价单里用到的元素实时价（<span class="mono">element_price</span>）
+        只记录在报价单自己的快照里，供后续价格调整对照用；基础数据的元素价格由「客户价格调整策略」维护，本次确认不会碰它。
+      </div>
+    </div>
+
+    <!--
+      ── 「本次跳过的组」明细：与「对不上的行」**并列一个新区，不合并**。四条理由：
+         ① 层级不同（对不上=行级 / 跳过=组级）；② 后果相反（前者确认后按新增写入、组会变大，后者一个字节不写）；
+         ③ 列不同（displayValues 是行的业务身份 / grainKey 是粒度键取值 + 两侧行数）；④ 视觉分级不同（红 / 橙）。
+         粒度键列按各页签 grain_columns 取并集：报价侧 MATERIAL_BOM = {input_material_no}，
+         ELEMENT_BOM = {material_part_no, element_code}；某行没有的键渲染「—」。
+    -->
+    <div class="sheet-head">
+      <span class="name">本次跳过的组（2）</span>
+      <span class="table-name muted">这些组本次一个字节都不写，核价通过照常进行，需事后人工处理</span>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>页签</th><th>销售料号</th>
+            <th>input_material_no</th><th>material_part_no</th><th>element_code</th>
+            <th class="num">基础数据里的行数</th><th class="num">报价单里的行数</th><th>原因</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="row-blocked">
+            <td>物料BOM</td>
+            <td class="mono">S-2120011659</td>
+            <td class="mono">S-3110520790</td>
+            <td class="muted">—</td>
+            <td class="muted">—</td>
+            <td class="num">2</td><td class="num">1</td>
+            <td>这一组里有多行的粒度键取值相同，系统无法确定报价单的数据该写到哪一行，因此整组跳过</td>
+          </tr>
+          <tr class="row-blocked">
+            <td>物料与元素BOM</td>
+            <td class="mono">S-3120014539</td>
+            <td class="muted">—</td>
+            <td class="mono">00005</td>
+            <td class="mono">C</td>
+            <td class="num">4</td><td class="num">1</td>
+            <td>这一组里有多行的粒度键取值相同，系统无法确定报价单的数据该写到哪一行，因此整组跳过</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- 页脚：主按钮仍是普通主色 + 文案「确认并核价通过」（🚫 不变红、🚫 不禁用）——BLOCKED 不阻断确认 -->
+  <div class="drawer-footer">
+    <span class="footer-note">确认后不可撤销：1 个料号组将升版，旧版本进入历史可查。 另有 2 个料号组本次跳过回填，需事后人工处理。</span>
+    <button class="btn">取消</button>
+    <button class="btn btn-primary">确认并核价通过</button>
+  </div>
+
+</div>
+
+</body>
+</html>

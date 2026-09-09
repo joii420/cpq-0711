@@ -43,13 +43,28 @@ public class QuoteBackfillPreviewService {
     private static final Logger LOG = Logger.getLogger(QuoteBackfillPreviewService.class);
 
     @Inject QuoteBackfillCollector collector;
+    /**
+     * task-260907 第二段 · B-10：ds_ 新链路预览。
+     * <p>🚫 <b>不动本类之外的老回填三件套</b>（{@code QuoteBackfillService} /
+     * {@code QuoteBackfillCollector} / {@code QuoteBackfillColumnMapper} 的 git diff 必须为空，AC-15）——
+     * 挂载点选在本类，因为 A0-3 裁决「复用现有 costingApprovePreview + previewToken 机制」，
+     * 🚫 不另起一套预览（否则财务点一次看两个弹层）。
+     */
+    @Inject com.cpq.quotation.service.dsrecord.DsQuoteBackfillService dsQuoteBackfillService;
     @Inject BackfillLabelResolver labelResolver;
     @Inject EntityManager em;
 
     @Transactional(Transactional.TxType.SUPPORTS)
     public BackfillPreviewDTO preview(UUID quotationId) {
         QuoteBackfillPlan plan = collector.collect(quotationId);
-        return toDTO(plan);
+        BackfillPreviewDTO dto = toDTO(plan);
+        // task-260907 第二段 · B-10：ds_ 新回填段。只读、无副作用、幂等（AC-7 取消路径靠这条）。
+        var ds = dsQuoteBackfillService.previewWithToken(quotationId);
+        dto.dsBackfill = ds.dto();
+        // 🔧 D-32：token 必须把 ds_ 侧算进去（否则「预览后 _record 又变了」这个保护对新链路完全失效）。
+        //    ⚠️ toDTO(plan) 里已按老口径填过一次 previewToken，这里**覆盖**成含 ds 的版本。
+        dto.previewToken = computeToken(plan, ds.tokenPart());
+        return dto;
     }
 
     /** 核价通过入口用：重算当前有效状态的 token，与提交携带的 token 比对。 */
@@ -57,7 +72,9 @@ public class QuoteBackfillPreviewService {
     public boolean verifyToken(UUID quotationId, String submittedToken) {
         if (submittedToken == null || submittedToken.isBlank()) return false;
         QuoteBackfillPlan plan = collector.collect(quotationId);
-        return computeToken(plan).equals(submittedToken);
+        // 🔧 D-32：必须与 preview() 逐字同口径 —— 少算 ds 这一段，提交时会永远算出另一个值 ⇒ 恒 409。
+        String dsPart = dsQuoteBackfillService.previewWithToken(quotationId).tokenPart();
+        return computeToken(plan, dsPart).equals(submittedToken);
     }
 
     private BackfillPreviewDTO toDTO(QuoteBackfillPlan plan) {
@@ -320,7 +337,20 @@ public class QuoteBackfillPreviewService {
 
     // ── previewToken 计算：固定排序 + 数值归一 + NULL 稳定序列化，SHA-256（repair-0727 不动算法本身）──
 
+    /**
+     * 老口径（不含 ds_ 段）。⚠️ <b>仅供 {@link #toDTO} 内部填占位用</b> ——
+     * {@link #preview} 会立刻用含 ds 的版本覆盖掉。🚫 新代码不要调它。
+     */
     private String computeToken(QuoteBackfillPlan plan) {
+        return computeToken(plan, "");
+    }
+
+    /**
+     * 🔧 task-260907 第二段 D-32：token = 老回填状态 + <b>ds_ 回填将写入什么</b>。
+     *
+     * @param dsTokenPart {@code DsQuoteBackfillService#canonicalize} 的规范串；空串 = 本单不走新回填
+     */
+    private String computeToken(QuoteBackfillPlan plan, String dsTokenPart) {
         List<QuoteBackfillPlan.GroupChange> sorted = new ArrayList<>(plan.groups);
         sorted.sort(Comparator.comparing((QuoteBackfillPlan.GroupChange g) -> g.table)
             .thenComparing(g -> canonAxis(g.groupKeyAxis)));
@@ -351,6 +381,9 @@ public class QuoteBackfillPreviewService {
         List<String> stubKeys = new ArrayList<>(plan.newMaterialStubs.keySet());
         Collections.sort(stubKeys);
         sb.append("#stubs=").append(String.join(",", stubKeys));
+        // 🔧 D-32：ds_ 新回填段。⚠️ 标签 "#ds=" 与上面两个标签同纪律 —— 一旦发布就不要改文本，
+        //    改了会让所有在途 preview token 与重算结果不一致 → 部署后旧 token 提交全部误报 409。
+        sb.append("#ds=").append(dsTokenPart == null ? "" : dsTokenPart);
 
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");

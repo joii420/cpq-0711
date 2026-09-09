@@ -13,19 +13,29 @@
  * rowLabel + 中文列名展示；无产品维度的表（如电镀方案）单独进 globalShared 红色警示区。
  * 本次只重做展示层，加载/错误/提交交互契约不变（见下方错误处理说明）。
  *
- * 错误处理（api.md §1.2 错误码表）：
- *   - 409（previewToken 漂移）：message.error 提示后自动重新拉 preview 刷新抽屉内容，不关闭。
- *   - 400/403：按 message 提示，不关抽屉。
- *   - 500：按 message 提示，关闭抽屉（整体失败，提示重试）。
+ * task-260907 第二段（F-1~F-6）：本抽屉承接「核价通过 —— 基础数据升版确认」。
+ *   - 打开时只调 GET .../costing-approve/preview（只读），🚫 不在打开前调 POST costing-approve；
+ *   - 新增 dsBackfill 段由 CostingDsBackfillPanel 渲染（逐表逐组九列比对 / 对不上的行 / 空态）；
+ *   - 老回填（products / globalShared / groups）保持原样：dsBackfill.applicable=true 且老回填 0 组时
+ *     不再重复渲染其「无变更」提示（新单老回填恒 0/0/0/0，两条提示并列会自相矛盾）；
+ *     老单（applicable≠true）或老回填仍有组时，老回填区逐字照旧渲染（AC-15）。
+ *
+ * 错误处理（api.md §1.2 错误码表 + 本段 fronttask F-6）：
+ *   - 409（previewToken 漂移）：抽屉内红色错误条 + 「重新预览」按钮，主按钮禁用并给出原因，
+ *     🚫 不关抽屉、🚫 不用全局 message 一闪而过；
+ *   - 400/403：抽屉内红色错误条，文案取后端原文，不关抽屉；
+ *   - 500：按 message 提示，关闭抽屉（整体失败，提示重试）—— 沿用既有行为，原型未改动此路径。
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   Drawer, Button, Space, Card, Collapse, Tag,
-  Spin, Alert, Typography, message,
+  Spin, Alert, Tooltip, Typography, message,
 } from 'antd';
 import type { CollapseProps } from 'antd';
 import { PlusOutlined, MinusOutlined, EditOutlined } from '@ant-design/icons';
 import { costingOrderService } from '../../services/costingOrderService';
+import { useAuthStore } from '../../stores/authStore';
+import CostingDsBackfillPanel, { deriveDsFlags } from './CostingDsBackfillPanel';
 import type {
   CostingApprovePreviewResult,
   CostingApprovePreviewGroup,
@@ -42,6 +52,14 @@ interface Props {
   quotationId: string | undefined;
   /** 提交时附带的审批意见（可选，沿用现有 approve 入参） */
   comment?: string;
+  /** task-260907 F-1：抽屉副标题用（原型 01 头部「报价单 QT-… · 客户 …」）。缺失时该段不渲染。 */
+  quotationNumber?: string | null;
+  /**
+   * task-260907 F-1：客户名。⚠️ 当前 CostingOrderDetailDTO / QuotationDTO 都不含 customerName，
+   * 调用方拿不到 → 副标题的「客户 …」段暂缺（见回报「与原型图的偏差清单」）。
+   */
+  customerName?: string | null;
+  customerNo?: string | null;
   onClose: () => void;
   /** 提交成功回调，拿到 approve 响应（含 backfill 汇总） */
   onApproved: (result: CostingApproveResult) => void;
@@ -191,16 +209,25 @@ const GlobalSharedCard: React.FC<{ globalShared: CostingApprovePreviewGlobalShar
   );
 };
 
-const CostingApprovePreviewDrawer: React.FC<Props> = ({ open, quotationId, comment, onClose, onApproved }) => {
+const CostingApprovePreviewDrawer: React.FC<Props> = ({
+  open, quotationId, comment, quotationNumber, customerName, customerNo, onClose, onApproved,
+}) => {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [preview, setPreview] = useState<CostingApprovePreviewResult | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** task-260907 F-6：提交失败在抽屉内展示，🚫 不用全局 message 一闪而过 */
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  /** task-260907 F-6：撞 409 后比对结果已过期 —— 主按钮禁用 + tooltip 说明，须先「重新预览」 */
+  const [stale, setStale] = useState(false);
+  const role = useAuthStore((st) => st.user?.role);
 
   const loadPreview = useCallback(async () => {
     if (!quotationId) return;
     setLoading(true);
     setLoadError(null);
+    setSubmitError(null);
+    setStale(false);
     try {
       const res = await costingOrderService.previewApprove(quotationId);
       setPreview(res.data);
@@ -216,6 +243,8 @@ const CostingApprovePreviewDrawer: React.FC<Props> = ({ open, quotationId, comme
     if (open) {
       setPreview(null);
       setLoadError(null);
+      setSubmitError(null);
+      setStale(false);
       loadPreview();
     }
   }, [open, loadPreview]);
@@ -223,6 +252,7 @@ const CostingApprovePreviewDrawer: React.FC<Props> = ({ open, quotationId, comme
   const handleConfirm = async () => {
     if (!quotationId || !preview) return;
     setSubmitting(true);
+    setSubmitError(null);
     try {
       const res = await costingOrderService.approve(quotationId, preview.previewToken, comment);
       message.success('核价通过');
@@ -230,13 +260,17 @@ const CostingApprovePreviewDrawer: React.FC<Props> = ({ open, quotationId, comme
       onClose();
     } catch (e: any) {
       if (e?.httpStatus === 409) {
-        message.error('报价数据在预览后发生变化，请重新预览');
-        await loadPreview();
+        // F-6：抽屉内红条 + 「重新预览」出口，🚫 不关抽屉、🚫 不自动重拉（自动重拉会让财务
+        // 看不见「刚才那次被拒了、基础数据一个字节没动」这句结论）
+        setSubmitError(e?.message || '报价数据在预览后发生变化，请重新预览');
+        setStale(true);
       } else if (e?.httpStatus === 500) {
+        // 沿用既有行为：整体失败，关抽屉提示重试（原型未画此路径，不自行改动）
         message.error(e?.message || '核价通过失败，请重试');
         onClose();
       } else {
-        message.error(e?.message || '操作失败');
+        // 400 / 403：文案取后端原文，抽屉内展示
+        setSubmitError(e?.message || '操作失败');
       }
     } finally {
       setSubmitting(false);
@@ -263,26 +297,228 @@ const CostingApprovePreviewDrawer: React.FC<Props> = ({ open, quotationId, comme
     .map((g, idx) => ({ g, idx }))
     .filter(({ idx }) => !coveredIndexes.has(idx));
 
+  // ── task-260907 第二段：ds_quote_* 新回填段（F-1~F-6）──────────────────────
+  const ds = preview?.dsBackfill;
+  const dsFlags = deriveDsFlags(ds);
+
+  /**
+   * 客户号：调用方拿不到时退到 dsBackfill 里的 customerNo（api.md §4：string = customer.code）。
+   * ⚠️ 上游 DDL 未落库前后端可能返 null —— 必须容忍，渲染成「—」，🚫 不报错、🚫 不空白。
+   */
+  const dsCustomerNo =
+    (ds?.tables ?? []).flatMap((t) => t.groups ?? []).find((g) => !!g.customerNo)?.customerNo ?? null;
+  const effectiveCustomerNo = customerNo ?? dsCustomerNo;
+
+  /** 抽屉标题（原型 01/03/04 头部）。后端未下发 dsBackfill 时保持既有标题，行为不变。 */
+  const subtitleParts: string[] = [];
+  if (quotationNumber) subtitleParts.push(`报价单 ${quotationNumber}`);
+  if (customerName) {
+    subtitleParts.push(`客户 ${customerName}${effectiveCustomerNo ? `（${effectiveCustomerNo}）` : ''}`);
+  } else if (dsFlags.applicable) {
+    subtitleParts.push(`客户 ${effectiveCustomerNo ?? '—'}`);
+  }
+  // 原型 03 上半屏（全部无变更）的副标题只有「报价单 … · 客户 …」两段，不带尾段。
+  if (dsFlags.noRecordSnapshot) {
+    /**
+     * 🆕 排在 recordStale 之前：本条是**确定**结论（整单零写入），recordStale 是**可能**结论。
+     * ⚠️ 也排在 `!applicable` 之前 —— 本条必然伴随 tables=[]，若被空态类分支抢先，
+     *    副标题就会在唯一该说话的场景里说别的。
+     */
+    subtitleParts.push('⚠️ 本单没有比对快照，确认后不会写入任何基础数据');
+  } else if (dsFlags.recordStale) {
+    /**
+     * 🆕 D-35 排在最前：它说的是「**这份预览本身可能不可信**」，
+     * 比下面任何一条（哪些组会升版 / 有几行对不上 / 有几组跳过）都更靠前一层 ——
+     * 那些结论全都建立在「预览数据是最新的」这个前提上，而本条正是说该前提不成立。
+     * ⚠️ 连 `!applicable` 都排在它后面：api.md 承诺 recordStale 非空时 applicable 恒 true，
+     *    但万一后端违约，副标题也不该把这句话吞掉。
+     */
+    // ⚠️ 用 ⚠️ 而不是 🚨：实测无头 Chrome 的字体栈里 🚨 渲染成豆腐块（□），⚠️ 正常。
+    //    副标题上一个渲染不出来的字符，比没有这个字符更糟。
+    subtitleParts.push('⚠️ 预览数据可能已过期，确认前请先看抽屉顶部的红色提示');
+  } else if (!dsFlags.applicable) {
+    subtitleParts.push('该单建于基础数据切换之前');
+  } else if (dsFlags.unanchoredRows > 0) {
+    subtitleParts.push('⚠️ 部分料号在本单提交后已被其他报价单改动');
+  } else if (dsFlags.blockedGroups > 0) {
+    /**
+     * 🆕 BLOCKED 排在最后一句「确认后将按下表…升版」**之前**，是为了堵一个具体的谎：
+     * 全组皆 BLOCKED 时 upgraded=0 且 unchanged=0 ⇒ allUnchanged 为 false，
+     * 会落到下面那句，向财务承诺一次**本次根本不会发生**的写回。
+     * 🚫 刻意不改成「upgradedGroups > 0 才显示末句」—— 那会误伤 CREATED-only 的单
+     * （summary 只统计 upgraded/unchanged，CREATED 组两个数都不进，末句会整个消失）。
+     */
+    subtitleParts.push(`⚠️ 有 ${dsFlags.blockedGroups} 个料号组本次跳过回填，需事后人工处理`);
+  } else if (dsFlags.hasTables && !dsFlags.allUnchanged) {
+    subtitleParts.push('确认后将按下表把报价单数据写回基础数据并升版');
+  }
+  // hasTables=false（applicable=true 但一张表都没有，只有 D-33 告警要说）时不带尾段 ——
+  // 说「按下表…升版」会与「下面根本没有表」自相矛盾。
+  const titleNode: React.ReactNode = dsFlags.present ? (
+    <div>
+      <div style={{ fontSize: 16, fontWeight: 600 }}>
+        {dsFlags.applicable ? '核价通过 —— 确认基础数据升版' : '核价通过'}
+      </div>
+      <div style={{ fontSize: 13, fontWeight: 400, color: 'rgba(0,0,0,.45)', marginTop: 2 }}>
+        {subtitleParts.join('　·　')}
+      </div>
+    </div>
+  ) : (
+    '核价通过预览'
+  );
+
+  /**
+   * 主按钮禁用原因 —— 必须可见 + hover tooltip 说明原因（frontend.md §1.2）。
+   * 🚫 禁止 `if (...) return null` 把按钮藏掉。
+   */
+  const canApproveRole = ['PRICING_MANAGER', 'SYSTEM_ADMIN'].includes(role ?? '');
+  const disabledReason: string | null = !canApproveRole
+    ? '当前登录角色不是财务或管理员，无权核价'
+    : stale
+      ? '比对结果已过期，请先点「重新预览」'
+      : loading
+        ? '正在计算比对结果，请稍候'
+        : loadError
+          ? '预览加载失败，请先点「重试」'
+          : !preview
+            ? '预览尚未加载，请稍候'
+            : null;
+
+  /**
+   * 主按钮的危险态。两个场景同档（2026-09-07 主线裁决把 recordStale 接进这条既有通道）：
+   *   - `unanchoredRows > 0` —— 有行对不上，确认后会按新增写入
+   *   - `recordStale`        —— 预览可能基于过期数据算出来的
+   *
+   * 🔑 **为什么必须接进来**：抽屉顶部红条写着「请先不要确认」，主按钮却是蓝色的「确认并核价通过」——
+   *    同一屏给出两个相反的信号，财务照哪个做都不算错，那是设计没想清。
+   *
+   * 🚫 **变红但不禁用、不阻断**（与 BLOCKED 组「跳过但不阻断核价通过」同一条理由）：
+   *    `doCostingApprove` 改的是报价单状态，那是业务流程，不该被数据层的可信度问题卡死。
+   *    「**仍然**」两个字承担的正是「你已被警告，这是你的决定」。
+   *    ⇒ 🚫 谁都不许把 recordStale / unanchoredRows 塞进下面的 disabledReason。
+   */
+  const dangerConfirm = dsFlags.unanchoredRows > 0 || dsFlags.recordStale;
+
+  /**
+   * 🆕 `noRecordSnapshot` 的主按钮形态 —— **前端提方案，主线待裁**（2026-09-07）。
+   *
+   * 选择：**不变红、不禁用，但把后果写进按钮文案** ⇒「确认核价通过（不写入基础数据）」。
+   *
+   * 三条理由：
+   *  1. **变红是假警报**。危险态该跟「确认会造成什么」挂钩，而本条确认的后果是**零写入、零伤害**。
+   *     本任务刚用 `isShrinking` 的 BLOCKED 豁免消灭掉一个同型假警报（缺字段 ⇒ 误报
+   *     「行数会减少，请联系技术人员核查」）——再自己造一个，等于把那次修白做。
+   *  2. 「**仍然**」是有限资源：它表示「你已被警告、后果由你承担」，只该出现在确认**真会造成
+   *     不可逆后果**时（`unanchoredRows` 会按新增写入 / `recordStale` 可能写错数据）。
+   *     这里没有后果，用「仍然」等于把这个词用废，下次真有后果时它就不响了。
+   *  3. 真正的风险不是「点了会出事」，而是「**点了会以为回填生效了**」——
+   *     治它的办法是**把后果写进按钮**（点击前最后看到的东西），不是把按钮涂红。
+   *
+   * 🚫 不禁用：核价通过改的是报价单状态（业务流程）；且按成因，**导入建单是常见路径**，
+   *    禁用会把一大批单据卡死在核价环节，代价远大于收益。
+   *
+   * 🔧 若主线改裁「与 recordStale 同档（红 +「仍然」）」：把 `dsFlags.noRecordSnapshot`
+   *    并进上面的 `dangerConfirm`，本三元的中间支随之失效 —— **改动面一行**。
+   */
+  const confirmLabel = dangerConfirm
+    ? '仍然确认并核价通过'
+    : dsFlags.noRecordSnapshot
+      ? '确认核价通过（不写入基础数据）'
+      : '确认并核价通过';
+
+  const confirmBtn = (
+    <Button
+      type="primary"
+      danger={dangerConfirm}
+      loading={submitting}
+      disabled={!!disabledReason}
+      style={disabledReason ? { pointerEvents: 'none' } : undefined}
+      onClick={handleConfirm}
+    >
+      {confirmLabel}
+    </Button>
+  );
+
+  /** 页脚左侧提示（原型 01/02/03 footer-note）。 */
+  let footerNote: React.ReactNode = null;
+  let footerDanger = false;
+  if (dsFlags.present) {
+    /* 🆕 D-35 单独一支并**直接短路**：其余各支说的都是「会写什么」，
+       而本条说的是「这些结论可能算错了」—— 两者并列会让财务把它当成又一条补充说明。 */
+    if (dsFlags.noRecordSnapshot) {
+      footerNote = '⚠️ 本单没有比对快照 —— 确认后不会写入任何基础数据。请先让销售打开这张报价单保存一次。';
+      footerDanger = true;
+    } else if (dsFlags.recordStale) {
+      footerNote = '⚠️ 预览数据可能已过期 —— 请先不要确认，让销售重新保存这张报价单后重新预览。';
+      footerDanger = true;
+    } else if (!dsFlags.applicable) {
+      footerNote = '—';
+    } else if (dsFlags.unanchoredRows > 0) {
+      /**
+       * 🚨 2026-09-07 主线判定后改：这里原来是**二选一** —— 有行对不上就只说「有 N 行对不上」，
+       * 「确认后不可撤销 + M 个组将升版」整条消失。优先级判断没错（对不上更紧急），
+       * 但代价是**越异常的态，越把「不可撤销」拿掉了**，而那恰恰是财务点下去之前最该看到的一句。
+       * ⇒ 改成**两句并存**。
+       * ⚠️ 仍然守住 `upgradedGroups > 0` 这道闸：为 0 时（全 UNCHANGED / 一张表都没有）
+       *    不许拼出「0 个料号组将升版」这种既没信息又像结论的话 —— 与下面那支同源。
+       */
+      footerNote =
+        `⚠️ 有 ${dsFlags.unanchoredRows} 行对不上，确认前请先看上方明细。` +
+        (dsFlags.upgradedGroups > 0
+          ? `确认后不可撤销：${dsFlags.upgradedGroups} 个料号组将升版。`
+          : '');
+      footerDanger = true;
+    } else if (dsFlags.allUnchanged || dsFlags.upgradedGroups === 0) {
+      // upgradedGroups=0 含两种：全 UNCHANGED，以及「一张表都没有（组件全不参与）」——
+      // 两种都是「一个字节不写基础数据」，🚫 不能落到下面那句「N 个料号组将升版」。
+      footerNote = '本次确认不写入任何基础数据，仅将报价单状态置为「已核准」。';
+    } else {
+      footerNote = `确认后不可撤销：${dsFlags.upgradedGroups} 个料号组将升版，旧版本进入历史可查。`;
+    }
+    /**
+     * 🆕 BLOCKED 追加一句，**不改上面任何一支**（上面几支说的都还是对的，只是不完整）。
+     * 🚫 不设 footerDanger：BLOCKED 不是错误态，也**不阻断确认** ——
+     *    页脚变红会和「有 N 行对不上」那条混为一谈，而那条是另一种后果（会写，且组会变大）。
+     */
+    if (dsFlags.blockedGroups > 0 && !dsFlags.recordStale && !dsFlags.noRecordSnapshot) {
+      footerNote = (
+        <>
+          {footerNote}
+          {footerNote ? ' ' : ''}
+          另有 {dsFlags.blockedGroups} 个料号组本次跳过回填，需事后人工处理。
+        </>
+      );
+    }
+  }
+
   return (
     <Drawer
-      title="核价通过预览"
+      title={titleNode}
       placement="right"
-      width={1000}
+      width={1200}
       open={open}
       onClose={onClose}
       destroyOnClose
-      extra={
-        <Space>
-          <Button onClick={onClose}>取消</Button>
-          <Button
-            type="primary"
-            loading={submitting}
-            disabled={loading || !preview}
-            onClick={handleConfirm}
+      footer={
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span
+            style={{
+              marginRight: 'auto',
+              fontSize: 13,
+              color: footerDanger ? '#d4380d' : 'rgba(0,0,0,.45)',
+            }}
           >
-            确认通过
-          </Button>
-        </Space>
+            {footerNote}
+          </span>
+          <Button onClick={onClose}>取消</Button>
+          {disabledReason ? (
+            <Tooltip title={disabledReason}>
+              <span style={{ display: 'inline-block', cursor: 'not-allowed' }}>{confirmBtn}</span>
+            </Tooltip>
+          ) : (
+            confirmBtn
+          )}
+        </div>
       }
     >
       {loading && (
@@ -303,36 +539,72 @@ const CostingApprovePreviewDrawer: React.FC<Props> = ({ open, quotationId, comme
 
       {!loading && !loadError && preview && (
         <>
-          <div style={{ marginBottom: 16, fontSize: 14 }}>
-            <Space split={<Text type="secondary">·</Text>} wrap>
-              <Text>影响 <Text strong>{summary?.affectedProducts ?? 0}</Text> 个产品</Text>
-              <Text>新增 <Text strong style={{ color: '#52c41a' }}>{summary?.addedRows ?? 0}</Text> 行</Text>
-              <Text>删除 <Text strong style={{ color: '#ff4d4f' }}>{summary?.deletedRows ?? 0}</Text> 行</Text>
-              <Text>改值 <Text strong style={{ color: '#fa8c16' }}>{summary?.changedRows ?? 0}</Text> 行</Text>
-            </Space>
-          </div>
-
-          {noImpact ? (
+          {/* ── F-6：提交失败在抽屉内展示（409 带「重新预览」出口），🚫 不关抽屉 ── */}
+          {submitError && (
             <Alert
-              type="info"
+              type="error"
               showIcon
-              message="本次通过无基础数据变更，仅完成审核状态流转"
               style={{ marginBottom: 16 }}
+              title={<b>提交失败：{submitError}</b>}
+              description={
+                stale ? (
+                  <>
+                    <div style={{ fontSize: 13 }}>
+                      你打开本页之后，该报价单或其引用的基础数据又被改动了（可能是另一位财务同时在处理这张单）。
+                      为避免按过期的比对结果写入，本次提交已被拒绝，<b>基础数据一个字节都没有改动</b>。
+                    </div>
+                    <div style={{ marginTop: 10 }}>
+                      <Button size="small" onClick={loadPreview}>重新预览</Button>
+                    </div>
+                  </>
+                ) : undefined
+              }
             />
-          ) : (
+          )}
+
+          {/* ── task-260907 第二段：ds_quote_* 基础数据升版比对（F-1~F-5）── */}
+          {ds && <CostingDsBackfillPanel ds={ds} />}
+
+          {/* ── 老回填链路（task-0721 / repair-0727）：行为原样保留（AC-15）。
+                 唯一差异：ds 新回填已接管本单时（applicable=true）且老回填 0 组，不再重复渲染其
+                 「无变更」提示——新单老回填恒 0/0/0/0，两条提示并列会自相矛盾。 ── */}
+          {(!dsFlags.applicable || groups.length > 0) && (
             <>
-              {products.map((p) => (
-                <ProductCard key={`${p.productNo}-${p.customerNo}`} product={p} groups={groups} />
-              ))}
-              {globalShared && <GlobalSharedCard globalShared={globalShared} groups={groups} />}
-              {orphanGroups.length > 0 && (
-                <Card
-                  size="small"
-                  style={{ marginBottom: 16, borderColor: '#faad14' }}
-                  title={<Tag color="orange">未归类变更</Tag>}
-                >
-                  {sectionCollapse(orphanGroups.map(({ g, idx }) => buildSectionItem(g, 'orphan', idx)))}
-                </Card>
+              {dsFlags.applicable && groups.length > 0 && (
+                <div style={{ fontSize: 15, fontWeight: 600, margin: '4px 0 10px' }}>老回填链路变更（V6 旧表）</div>
+              )}
+              <div style={{ marginBottom: 16, fontSize: 14 }}>
+                <Space split={<Text type="secondary">·</Text>} wrap>
+                  <Text>影响 <Text strong>{summary?.affectedProducts ?? 0}</Text> 个产品</Text>
+                  <Text>新增 <Text strong style={{ color: '#52c41a' }}>{summary?.addedRows ?? 0}</Text> 行</Text>
+                  <Text>删除 <Text strong style={{ color: '#ff4d4f' }}>{summary?.deletedRows ?? 0}</Text> 行</Text>
+                  <Text>改值 <Text strong style={{ color: '#fa8c16' }}>{summary?.changedRows ?? 0}</Text> 行</Text>
+                </Space>
+              </div>
+
+              {noImpact ? (
+                <Alert
+                  type="info"
+                  showIcon
+                  message="本次通过无基础数据变更，仅完成审核状态流转"
+                  style={{ marginBottom: 16 }}
+                />
+              ) : (
+                <>
+                  {products.map((p) => (
+                    <ProductCard key={`${p.productNo}-${p.customerNo}`} product={p} groups={groups} />
+                  ))}
+                  {globalShared && <GlobalSharedCard globalShared={globalShared} groups={groups} />}
+                  {orphanGroups.length > 0 && (
+                    <Card
+                      size="small"
+                      style={{ marginBottom: 16, borderColor: '#faad14' }}
+                      title={<Tag color="orange">未归类变更</Tag>}
+                    >
+                      {sectionCollapse(orphanGroups.map(({ g, idx }) => buildSectionItem(g, 'orphan', idx)))}
+                    </Card>
+                  )}
+                </>
               )}
             </>
           )}

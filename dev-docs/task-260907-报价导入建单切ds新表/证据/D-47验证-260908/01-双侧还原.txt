@@ -1,0 +1,41 @@
+# D-47 双侧还原（后端工程师，2026-09-08 05:52~06:04 -07:00）
+# worktree=task-260907-record-backfill  HEAD=be27df87（改动未提交时采集）
+# 源码 md5： 修复在 QuoteRegistry=18e0eac6a2e70e731b496b8c18500645  SelfCheck=9373b2d714b105a129212b970e52e9e5
+#            还原态 QuoteRegistry=5012e3eef1c9d6c6bf03d56718e4a293
+
+## 干预确认（证明改动真的生效，不是空实验）
+还原态 QuoteRegistry.java:151
+  col("follow_material_price", "是否随材料价格波动", /*[还原实验 D-47]*/ "VALUE", "STRING", "boolean", false, true),
+阶段B 另外关掉新守卫（否则 checkTypeCoherence 在启动期直接拦死，跑不到判定那一步）：
+  DatasetSchemaSelfCheck.java:85  List<String> typeProblems = java.util.List.of(); // [还原实验 D-47]
+
+## 格① 修复在 · 纯内存用例 RegistryTypeCoherenceAcTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.012 s -- in com.cpq.dataset.registry.RegistryTypeCoherenceAcTest
+
+## 格② 改回去 · 纯内存用例（MVN_EXIT=1）
+[ERROR] Tests run: 7, Failures: 4, Errors: 0, Skipped: 0, Time elapsed: 0.080 s <<< FAILURE! -- in com.cpq.dataset.registry.RegistryTypeCoherenceAcTest
+[ERROR]   RegistryTypeCoherenceAcTest.everyColumnTypeMatchesItsPhysicalType:83 存在 type/pgType 错配的列（每一处都是一个静默的虚假升版源） ==> expected: <[]> but was: <[ds_quote_incoming_fixed_fee.follow_material_price 物理列是 boolean，type 必须声明为 BOOLEAN：pgType=boolean type=STRING]>
+[ERROR]   RegistryTypeCoherenceAcTest.excelSpellingSurvivesDbRoundTrip:144 以下 Excel 写法在「落库 → 读回」后指纹分叉 —— 每一个都会让该组每次核价通过空转升一版 ==> expected: <[]> but was: <[是 → excelFp=dc93075cdcb1 dbFp=b8e49cb8ffa8, 否 → excelFp=dea0f4f6c0e2 dbFp=aa0a8e61468a, TRUE → excelFp=1258b6d606af dbFp=b8e49cb8ffa8, False → excelFp=c9cf7204e3cb dbFp=aa0a8e61468a, 1 → excelFp=cd0d0652f348 dbFp=b8e49cb8ffa8, 0 → excelFp=51d0cd8ea169 dbFp=aa0a8e61468a, Y → excelFp=e25af3fc866c dbFp=b8e49cb8ffa8, N → excelFp=a8a5e4b3d54f dbFp=aa0a8e61468a, yes → excelFp=489e87fc2093 dbFp=b8e49cb8ffa8, no → excelFp=d18461f9fed5 dbFp=aa0a8e61468a, t → excelFp=aa052156a638 dbFp=b8e49cb8ffa8]>
+[ERROR]   RegistryTypeCoherenceAcTest.nonBooleanColumnsUnaffected:180 expected: <BOOLEAN> but was: <STRING>
+[ERROR]   RegistryTypeCoherenceAcTest.onlyOneBooleanColumnInQuoteRegistry:203 三套 Registry 里的布尔物理列清单 —— 多出一列就说明改动面比登记的大 ==> expected: <[ds_quote_incoming_fixed_fee.follow_material_price=BOOLEAN]> but was: <[ds_quote_incoming_fixed_fee.follow_material_price=STRING]>
+[ERROR] Tests run: 7, Failures: 4, Errors: 0, Skipped: 0
+
+## 格③ 修复在 · 真库端到端（MVN_EXIT=0）
+[D47][E2E-1] 库中指纹  = [b8e49cb8ffa8, aa0a8e61468a]
+[D47][E2E-1] 重算指纹  = [b8e49cb8ffa8, aa0a8e61468a]
+[D47][E2E-1] 二次写入判定 = UNCHANGED v1
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.953 s -- in com.cpq.dataset.registry.DatasetFingerprintRoundTripQuarkusTest
+
+## 格④ 改回去 · 真库端到端（MVN_EXIT=1，原缺陷复现）
+[D47][E2E-1] 库中指纹  = [dc93075cdcb1, dea0f4f6c0e2]
+[D47][E2E-1] 重算指纹  = [b8e49cb8ffa8, aa0a8e61468a]
+[ERROR] Tests run: 3, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 6.444 s <<< FAILURE! -- in com.cpq.dataset.registry.DatasetFingerprintRoundTripQuarkusTest
+[ERROR]   DatasetFingerprintRoundTripQuarkusTest.everyVersionedSheetRoundTripsUnchanged:158 以下表「写进去再读回来」判定不是 UNCHANGED —— 每一张都会空转升版 ==> expected: <[]> but was: <[ds_quote_incoming_fixed_fee=UPGRADED/v2]>
+[ERROR]   DatasetFingerprintRoundTripQuarkusTest.importedGroupPreviewsAsUnchanged:111 值一个字节没变，重算指纹却与库中不同 ⇒ 预览会判 UPGRADED（D-47 原形） ==> expected: <true> but was: <false>
+[ERROR] Tests run: 3, Failures: 2, Errors: 0, Skipped: 0
+
+## 复原核对（cp 备份回原位后 md5 逐字相同）
+18e0eac6a2e70e731b496b8c18500645  cpq-backend/src/main/java/com/cpq/dataset/registry/QuoteRegistry.java
+9373b2d714b105a129212b970e52e9e5  cpq-backend/src/main/java/com/cpq/dataset/registry/DatasetSchemaSelfCheck.java
+/usr/bin/grep -arn '还原实验 D-47' cpq-backend/src/ → (无残留)
+复原后重跑 37/37 绿 BUILD SUCCESS（本次 2 个用例 + D-44/45/46 三张既有网 + ValueNormalizerTest）

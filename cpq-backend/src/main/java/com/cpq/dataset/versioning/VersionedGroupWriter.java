@@ -201,17 +201,11 @@ public class VersionedGroupWriter {
         if (!toUpgrade.isEmpty()) {
             List<AxisKey> upAxes = new ArrayList<>(toUpgrade);
             AxisPredicate upPred = axisPredicate(sheet, upAxes, "u");
-            @SuppressWarnings("unchecked")
-            List<Object[]> hist = upPred.bind(em.createNativeQuery(
-                            "SELECT " + axisSelect + ", max(version_no) FROM " + sheet.historyTable()
-                                    + " WHERE " + upPred.sql + " GROUP BY " + axisSelect))
-                    .getResultList();
-            Map<AxisKey, Integer> histMax = new HashMap<>();
-            for (Object[] r : hist) histMax.put(readAxis(sheet, r, axisArity), ((Number) r[axisArity]).intValue());
+            Map<AxisKey, Integer> histMax = historyMaxVersions(sheet, axisSelect, axisArity, upPred);
             for (AxisKey axis : upAxes) {
-                // ⚠️ max(历史最大, 当前) + 1，不是「当前 + 1」
-                int base = Math.max(dbVersions.getOrDefault(axis, 0), histMax.getOrDefault(axis, 0));
-                newVersions.put(axis, base + 1);
+                // ⚠️ max(历史最大, 当前) + 1，不是「当前 + 1」——规则本体见 nextVersionNo(...)
+                newVersions.put(axis, nextVersionNo(dbVersions.getOrDefault(axis, 0),
+                        histMax.getOrDefault(axis, 0)));
             }
             archive(sheet, table, upPred, archiveReason, operator);
             // 🚨 task-260907 · B-3 本任务最要紧的一行：删除必须按【复合轴】。
@@ -234,6 +228,89 @@ public class VersionedGroupWriter {
         Map<AxisKey, Result> ordered = new LinkedHashMap<>();        // 保持入参顺序
         for (AxisKey axis : axes) if (results.containsKey(axis)) ordered.put(axis, results.get(axis));
         return ordered;
+    }
+
+    /**
+     * <b>升版号规则的唯一实现</b>：{@code max(当前版本, _history 最大版本) + 1}。
+     *
+     * <p>⚠️ 取 <b>max 而非「当前 + 1」</b>：{@code _history} 里可能已有更大的号
+     * （{@code RECORD.md}「BOM 主子表版本失步致导入撞 uq」的教训）。
+     *
+     * <p>🚫 <b>不许在任何别的地方再写一遍这个表达式</b>（task-260907 第二段 D-31）。
+     * 实测曾出现第二实现：预览层为了给财务显示「将升到 v3」自己算了一遍
+     * ⇒ 将来改规则时预览会<b>静默显示错的目标版本号</b>，而财务正照着它做判断。
+     * 预览一律走 {@link #predictNextVersion}。
+     *
+     * <p>📌 <b>2026-09-07 合并 {@code customer_dim} 时的复核</b>：上游把轴改成复合
+     * {@link AxisKey} 后，一度把本方法 inline 回 {@code Math.max(...)+1}。
+     * 合并时恢复提取 —— D-31 的目的就是「规则只有一份」，
+     * 而这次「规则真的变了（多了一维）」恰恰是它要防的那种时刻。
+     */
+    static int nextVersionNo(int currentVersionNo, int historyMaxVersionNo) {
+        return Math.max(currentVersionNo, historyMaxVersionNo) + 1;
+    }
+
+    /**
+     * 读 {@code _history} 里各<b>复合轴</b>的最大版本号（1 条 SQL，与轴值数无关）。
+     * <b>写路径与预测路径共用</b> —— 两边必须用同一个谓词口径，否则预测会与真写分叉。
+     */
+    private Map<AxisKey, Integer> historyMaxVersions(SheetDef sheet, String axisSelect, int axisArity,
+                                                     AxisPredicate pred) {
+        Map<AxisKey, Integer> histMax = new HashMap<>();
+        @SuppressWarnings("unchecked")
+        List<Object[]> hist = pred.bind(em.createNativeQuery(
+                        "SELECT " + axisSelect + ", max(version_no) FROM " + sheet.historyTable()
+                                + " WHERE " + pred.sql + " GROUP BY " + axisSelect))
+                .getResultList();
+        for (Object[] r : hist) histMax.put(readAxis(sheet, r, axisArity), ((Number) r[axisArity]).intValue());
+        return histMax;
+    }
+
+    /**
+     * <b>只读</b>预测：这些<b>复合轴</b>组「如果现在写一次」会拿到哪个版本号（D-31）。
+     *
+     * <p>用途唯一 —— 核价通过确认界面要给财务看「快照基版 v1 / 库当前 v2 / <b>将升到 v3</b>」
+     * （{@code AC-10①}）。dry-run 只能预测，但预测<b>必须与真写共用同一条规则</b>
+     * （{@link #nextVersionNo}）与<b>同一个轴谓词</b>（{@link #axisPredicate}）。
+     *
+     * <p>🚨 <b>绝不能退化成 {@link #currentVersionAnyCustomer} 的跨客户口径</b>：
+     * 那会让同一料号在客户 A 下显示出客户 B 的版本号，而<b>财务正照着这个数字做确认判断</b>。
+     * 它比乐观锁判错更隐蔽 —— 乐观锁会报冲突，这里只是<b>安静地显示一个错的数</b>。
+     *
+     * <p>返回值语义 = {@code writeGroups} 真写时会赋给该组的 {@code version_no}：
+     * 库里与 {@code _history} 里都没有该轴 ⇒ 返回 {@code 1}（与 {@code CREATED} 一致）。
+     * <p>⚠️ 判定为 {@code UNCHANGED} 的组<b>一行不写</b>，其版本号维持原值 ——
+     * 那种情形调用方不该用本方法的返回值。本方法<b>不做</b> CREATED/UPGRADED/UNCHANGED 判定。
+     *
+     * <p>🚫 <b>无副作用</b>：不取锁、不归档、不写任何表。SQL 恒 2 条，与轴值数无关。
+     */
+    public Map<AxisKey, Integer> predictNextVersion(SheetDef sheet, java.util.Collection<AxisKey> axes) {
+        Map<AxisKey, Integer> out = new LinkedHashMap<>();
+        if (axes == null || axes.isEmpty()) return out;
+        if (!sheet.versioned) {
+            throw new IllegalArgumentException("免版本表没有版本号可预测: " + sheet.tableName);
+        }
+        List<AxisKey> list = new ArrayList<>(new LinkedHashSet<>(axes));
+        for (AxisKey k : list) requireAxisMatchesSheet(sheet, k);      // 与写路径同一道校验
+        String axisSelect = String.join(", ", sqlIdents(sheet.axisColumns()));
+        int axisArity = sheet.axisColumns().size();
+        AxisPredicate pred = axisPredicate(sheet, list, "p");
+
+        Map<AxisKey, Integer> current = new HashMap<>();
+        @SuppressWarnings("unchecked")
+        List<Object[]> cur = pred.bind(em.createNativeQuery(
+                        "SELECT " + axisSelect + ", max(version_no) FROM " + SqlIdent.of(sheet.tableName)
+                                + " WHERE " + pred.sql + " GROUP BY " + axisSelect))
+                .getResultList();
+        for (Object[] r : cur) {
+            current.put(readAxis(sheet, r, axisArity), r[axisArity] == null ? 0 : ((Number) r[axisArity]).intValue());
+        }
+
+        Map<AxisKey, Integer> histMax = historyMaxVersions(sheet, axisSelect, axisArity, pred);
+        for (AxisKey axis : list) {                     // 🚫 纯内存，循环体内无查询
+            out.put(axis, nextVersionNo(current.getOrDefault(axis, 0), histMax.getOrDefault(axis, 0)));
+        }
+        return out;
     }
 
     /**
