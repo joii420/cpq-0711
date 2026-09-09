@@ -1,0 +1,4 @@
+# repair-260908 S-1 · AC-4 归档基线（改动前编译产物）
+# 采集时间: 2026-09-09T04:55:54.448625535
+# 语义图指纹（semantic_node_column|node|edge|tab_view，按 ctid 排序）:
+366:31163332c48d2a2c421d7e7eda135190 | 57:9deebab8cedcdf5ef8ebc42dfde21486 | 78:664cd5e54835d60e7ac35ccb14d109f5 | 48:18fd1c8136f4d3b662611fcaaddad5dd
