@@ -106,6 +106,25 @@ public class SqlViewExecutor {
      */
     private static final String TOTAL_MATERIAL_NO_PARAM = "total_material_no";
 
+    /**
+     * repair-260908 B-2（AC-5）：{@code :customerCode} 与 {@code :total_material_no} 同款硬阻断。
+     *
+     * <p>B-1 起，凡锚点物理表含 {@code customer_no} 列的取数配置器产物都会带
+     * {@code <别名>.customer_no = :customerCode}。该参数一旦走下面 {@link #rewriteNamedParams}
+     * 通用的「未绑定 → 字面量 NULL」安全降级，就变成 {@code customer_no = NULL} —— PG 三值逻辑下
+     * <b>恒为 UNKNOWN</b>，整个页签返 0 行且不报错，把「调用方没传客户」伪装成「这个客户没有数据」。
+     *
+     * <p>🔎 三条<b>不</b>经本分支的路径（各自做字面量替换，不受影响，AC-5 反向断言）：
+     * {@code BuilderService.bindLiterals()}（{@code /preview}）· {@code QuoteViewValidationService}
+     * · {@code CostingTreeSqlValidator}；保存期 dry-run 走
+     * {@code SqlViewValidator.bindWithNullPlaceholders} 同样不经这里。
+     *
+     * <p>⚠️ 正常渲染链路不需要显式传它：{@link #enrichCustomerCode} 会从 {@code :customerId}(UUID)
+     * 解析 {@code customer.code} 补上。走到这条 400 说明**连 customerId 都没有**（或该 customer 行
+     * 查不到），那正是必须响亮失败的场景。
+     */
+    private static final String CUSTOMER_CODE_PARAM = "customerCode";
+
     @Inject
     DataSource dataSource;
 
@@ -613,6 +632,9 @@ public class SqlViewExecutor {
      * 把 SQL 中所有 {@code :xxx} 命名占位符替换为 {@code ?}，按出现顺序收集对应值。
      *
      * <p>注意：未在 namedParams 中提供的占位符会被替换为 NULL（保留语义合法但运行时可能查不到行）。
+     * <b>两个例外</b>：{@code :total_material_no}（task-260819 B-20）与 {@code :customerCode}
+     * （repair-260908 B-2）是**收窄谓词**的入参，未绑定一律抛 400 而不是降级 —— 降级后它们分别
+     * 变成 {@code x = ANY(NULL)} / {@code customer_no = NULL}，两者都静默返回 0 行。
      *
      * <p>task-0725 根因 2：定位前先 {@link SqlTextMask#mask(String)} 屏蔽字符串字面量 / {@code --}
      * 行注释 / {@code /* *&#47;} 块注释，避免注释里写的 {@code :customerCode} 等 token 被误当占位符
@@ -633,14 +655,23 @@ public class SqlViewExecutor {
             String name = m.group(1);
             Object value = namedParams.get(name);
             if (value == null) {
-                // task-260819 B-20（D-53/AC-59）：仅收窄 :total_material_no 这一个参数的降级行为——
-                // 其余占位符（:versionFilter 相关的 __vfPart/__vfVer 之外，如 :customerCode/:hfPartNos
-                // 等）继续沿用下面的「未绑定 → 字面量 NULL」既有约定，不在此一并改掉。
+                // task-260819 B-20（D-53/AC-59）：收窄 :total_material_no 的降级行为。
+                // 🔄 repair-260908 B-2（AC-5）：:customerCode 一并进入硬阻断名单——B-1 起它同样是
+                // **收窄谓词**（customer_no = :customerCode），降级成 NULL 就是静默 0 行。
+                // 其余占位符（:hfPartNos、:versionFilter 的 __vfPart/__vfVer 等）继续沿用下面的
+                // 「未绑定 → 字面量 NULL」既有约定，不在此一并改掉。
                 if (TOTAL_MATERIAL_NO_PARAM.equals(name)) {
                     throw new BusinessException(400,
                         "SQL 视图引用了 :total_material_no 但当前渲染上下文未提供该参数"
                         + "（BomTreeVarsContext 未 open 或 totalMaterialNo 为空）——已阻断执行，"
                         + "避免 x = ANY(NULL) 静默返回 0 行伪装成\"无数据\"");
+                }
+                // repair-260908 B-2（AC-5）：客户谓词同款硬阻断，理由见 CUSTOMER_CODE_PARAM 注释。
+                if (CUSTOMER_CODE_PARAM.equals(name)) {
+                    throw new BusinessException(400,
+                        "SQL 视图引用了 :customerCode 但当前渲染上下文未提供该参数"
+                        + "（namedParams 里既没有 customerCode，也没有能反查出 customer.code 的 customerId）"
+                        + "——已阻断执行，避免 customer_no = NULL 恒为 UNKNOWN 静默返回 0 行伪装成\"无数据\"");
                 }
                 // 安全降级：未绑定的占位符替换为 NULL
                 out.append("NULL");

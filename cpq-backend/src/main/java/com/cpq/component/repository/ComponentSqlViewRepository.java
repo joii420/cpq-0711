@@ -46,4 +46,16 @@ public class ComponentSqlViewRepository implements PanacheRepositoryBase<Compone
     public List<ComponentSqlView> listAllGlobal() {
         return list("scope = 'GLOBAL' AND status = 'ACTIVE' ORDER BY sqlViewName");
     }
+
+    /**
+     * 取数配置器托管的全部 ACTIVE 视图（{@code builder_config IS NOT NULL}）——
+     * repair-260908 B-6 的存量重编译清单。
+     *
+     * <p>{@code builderConfig IS NULL} 的是**存量手写视图**（AC-32 要求行为逐字不变），
+     * 重编译无从谈起，天然排除在外。ORDER BY 固定，保证预览与执行两次跑的顺序一致
+     * （否则报「28 个里 22 个会变」之后再执行，用户无法逐条对上是哪 22 个）。
+     */
+    public List<ComponentSqlView> listBuilderManaged() {
+        return list("builderConfig IS NOT NULL AND status = 'ACTIVE' ORDER BY componentId, sqlViewName");
+    }
 }

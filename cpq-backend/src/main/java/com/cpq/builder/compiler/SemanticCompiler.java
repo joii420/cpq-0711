@@ -147,6 +147,16 @@ public class SemanticCompiler {
      */
     private static final String ROOT_SOURCE_TAB_TYPE = "主件";
 
+    /**
+     * 客户维度列名（repair-260908 B-1 / B-1b）。
+     *
+     * <p>唯一判据：{@code c.columnCatalog} 里这张物理表**有没有这一列**
+     * （{@link PhysicalColumnCatalog} 真查 {@code information_schema.columns}，不是猜表名）。
+     * 🚫 不要改成按方言、按视图名前缀或按 SQL 文本正则判 —— 那三种写法都能"碰巧对"，
+     * 而碰巧对比明确错更危险（并发线 2026-09-08 实证，见任务目录 ./证据/材料-并发线交接-260908.md）。
+     */
+    private static final String CUSTOMER_SCOPE_COLUMN = "customer_no";
+
     public CompileResult compile(SemanticGraphSnapshot snap, BuilderConfig cfg, CompileDialect dialect) {
         return compile(snap, cfg, dialect, false);
     }
@@ -582,9 +592,30 @@ public class SemanticCompiler {
         String right = keys.stream().map(k -> sub + "." + k.rightColumn)
                 .reduce((a, b) -> a + ", " + b).orElseThrow();
 
+        // 🚨 repair-260908 B-1b（AC-16）：桥的**子查询**同样要按客户收窄。
+        //
+        // 本谓词直接拼进 c.anchorWhere，**不经 applyFullScope** ⇒ B-1 覆盖不到它。
+        // 桥的 target 是 ds_quote_material（有 customer_no 且此前完全没过滤）：外层锚点是
+        // ds_cost_basic_*（无该列、B-1 不发），所以缺陷①在核价侧是**以桥接形态存在**的
+        // （D-2b：「核价侧天然不适用」那句话不完整）。判据仍是列存在性，不是方言。
+        //
+        // ⚠️ 这是**结构隐患不是活故障**：实测 ds_quote_material 里 16 个料号跨客户，但
+        // count(distinct production_no) > 1 的组数 = 0；且 x IN (SELECT ...) 是集合成员判定，
+        // 子查询多出重复值不会让外层翻倍 ⇒ 拿行数验它会得到一个恒绿的判据（AC-16 因此写成结构断言）。
+        //
+        // 📌 位置刻意放在 `= ANY(:total_material_no)` **之后**：B-53 护栏的 BRIDGE_SEMI_JOIN 正则
+        //    用 [^()] 锁死在同一层子查询、匹配到 ANY(:total_material_no) 为止，追加在其后不影响
+        //    「产物里数出的桥 vs 结构化认出的桥」对账（谓词原文仍是 anchorWhere 里那一条的逐字子串）。
+        String bridgeCustomerScope = "";
+        if (targetCols.contains(CUSTOMER_SCOPE_COLUMN)) {
+            bridgeCustomerScope = " AND " + sub + "." + CUSTOMER_SCOPE_COLUMN + " = :customerCode";
+            c.requiredVars.add("customerCode");
+        }
+
         c.anchorWhere.add(left + " IN (SELECT " + right
                 + " FROM " + target.physicalTable + " " + sub
-                + " WHERE " + sub + "." + inputCol + " = ANY(:total_material_no))");
+                + " WHERE " + sub + "." + inputCol + " = ANY(:total_material_no)"
+                + bridgeCustomerScope + ")");
         c.requiredVars.add("total_material_no");
         // 轴收窄的职责就此移交给本谓词，applyFullScope 不再另发一条（见该方法注释）
         c.narrowedByBridge = true;
@@ -936,6 +967,32 @@ public class SemanticCompiler {
         if (!c.narrowedByBridge && cols.contains(effectiveAxis)) {
             where.add(alias + "." + effectiveAxis + " = ANY(:total_material_no)");
             c.requiredVars.add("total_material_no");
+        }
+
+        // 🚨 repair-260908 B-1（AC-1b / AC-2 / AC-2b / AC-12 / AC-12b）：客户维度收窄。
+        //
+        // 缺陷原文：本方法此前一条客户谓词都不发，:customerCode 只出现在 LOOKUP 边的
+        // JOIN ... ON 上（见 ensureLeftJoin 的 fixedPredicate 分支）⇒ **主表一行都不过滤**。
+        // 而 task-260907（V425~V429）已给 28 张 ds_quote_* 加了 customer_no 并把轴模型改成
+        // 复合轴 (customer_no, material_no)，编译器侧没跟上 ⇒ 复合轴只落实了一半：
+        // 同一个销售料号在两个客户下各有一行，卡片就把别人客户的行**静默**并进来
+        // （实测「产品」页签闭包 14 个料号返 28 行，另一半全是 CUST-0001 的）。
+        //
+        // 🔑 判据是**列存在性**，不是方言、不是视图数量、不是从 SQL 文本里正则抽出来的表名：
+        //   · ds_cost_* 55 张表逐表实测 customer_no 列数 = 0（核价按生产料号建模，本无客户维度）
+        //     ⇒ 核价两方言的锚点/GRAIN/SUB 目标天然一条都不发（AC-4 零改动）；
+        //   · 反过来，凡表上真有这一列的（含 QUOTE 侧 SUB / GRAIN 目标）一律要发 ——
+        //     「28 个视图全加」那种按数量的写法会得到 column "customer_no" does not exist。
+        //   · 并发线曾用正则 FROM\s+(ds_quote_\w+) 抽主表，3 条 COST_BASIC 视图匹到的是
+        //     NARROW 桥**子查询里**的 ds_quote_material —— 用错误的判据碰巧碰对了位置，
+        //     那个位置由 B-1b 单独处理（见 emitNarrowPredicate），不是本处。
+        //
+        // 🚫 刻意**不碰 ensureLeftJoin()**：LOOKUP 边的客户维度走 fixedPredicate + 列对列连接键
+        //    （task-260908 那 46 条查名边就是 ON dqm.customer_no = dqiof.customer_no），
+        //    把它挪进 WHERE 会把 LEFT JOIN 收成 INNER、静默丢行（AC-6）。
+        if (cols.contains(CUSTOMER_SCOPE_COLUMN)) {
+            where.add(alias + "." + CUSTOMER_SCOPE_COLUMN + " = :customerCode");
+            c.requiredVars.add("customerCode");
         }
     }
 
