@@ -58,3 +58,20 @@
   ⇒ 直接在本 worktree 起服务会被 Flyway 拦：
   `Detected applied migration not resolved locally: 421`。
   正解是**主线把 master 并进本分支**；🚫 不要 `flyway repair`、🚫 不要把别人的迁移文件抄进来。
+
+---
+
+## ✅ 2026-09-08：两条已取号落库
+
+- `B-3`（`source_quotation_id`，26 条 ALTER）→ **V431**
+- `D-35`（`ds_quote_record_stale` 建表）→ **V432**
+
+取号那一刻**三方齐平 V430**（本分支目录 / 共享库 `flyway_schema_history` / master 目录），实取 max+1、max+2。
+
+🚦 **落库方式 = 主线重启 8081 让 Flyway 自跑**，🚫 未手工 `psql -f`（`backend.md §4` + `RECORD.md` 两次同型事故）。
+
+📌 **本目录的原件刻意保留、未移动未改名** —— `CLAUDE.md §3.2`「契约销毁」的护栏按「改名/移动迁移文件」拦截，
+虽然它守的是**已应用**的迁移（实测共享库里这两条记录 = 0），但**用「新建副本」替代「移动」同样达成目的且不触红线**，
+没有理由去绕护栏。⇒ `db/migration/` 里的是权威副本，本目录三份均为历史草稿，仅留追溯。
+
+⚠️ **落库后并发会话必须 `git merge master` 再重启**，否则撞「多出未声明的列 `source_quotation_id` ×26」。
