@@ -24,4 +24,28 @@ public class ConfigureProductResponse {
      * 便于前端与排查时对账「这个料号是用哪一版指纹口径算出来的」。
      */
     public String structureVersion;
+
+    /**
+     * repair-260908 B-8（AC-18）：本次刷新中<b>行键对不上、因而被丢弃的 {@code editRows} 条数</b>。
+     *
+     * <p>缺陷① 修好后行键必然变化（跨客户重复行消失 ⇒ {@code #N} 消歧后缀消失），
+     * 而 {@code CardSnapshotService#filterEditRowsToNewBaseRows} 对匹配不上的 editRows 是
+     * <b>直接丢弃</b>：不记日志、不计数、不报错、HTTP 200 —— 用户手填的值就这么没了。
+     *
+     * <p>🚫 <b>判据不是「刷新成功」</b>（那是恒真信号）：要看的就是这个数字和下面的明细。
+     * 🚫 也**不做**按内容迁移（D-14）—— {@code #0}/{@code #1} 是两个客户的两行，
+     * 合并时保留哪一条没有唯一正确答案，猜错 = 把别家客户的编辑值写进本家。
+     *
+     * <p>仅 {@code refresh-snapshot} 端点填充；其余端点为 {@code null}（加法式，存量调用方零影响）。
+     */
+    public Integer editRowMismatchCount;
+
+    /**
+     * 失配明细（{@code componentId} / {@code rowKey} / 原值摘要），最多 200 条。
+     * {@code editRowMismatchTruncated=true} 表示条数多于明细数，以 {@link #editRowMismatchCount} 为准。
+     */
+    public java.util.List<java.util.Map<String, Object>> editRowMismatches;
+
+    /** 明细是否被截断（总数 &gt; 明细条数）。 */
+    public Boolean editRowMismatchTruncated;
 }

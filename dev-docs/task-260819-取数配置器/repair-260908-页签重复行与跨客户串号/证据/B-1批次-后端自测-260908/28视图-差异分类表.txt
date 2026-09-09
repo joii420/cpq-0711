@@ -1,0 +1,32 @@
+视图                    分类           备注
+builder_04375490927f  仅客户谓词         +1 条谓词
+builder_196aadeeb89f  仅客户谓词         +1 条谓词
+builder_32ab8212df6c  仅客户谓词         +2 条谓词
+builder_39c738327543  仅客户谓词         +1 条谓词
+builder_42dd870ccd17  仅客户谓词         +1 条谓词
+builder_452bbdbe13f7  仅客户谓词         +3 条谓词
+builder_661e1a387f89  仅客户谓词         +1 条谓词
+builder_6c093d714565  NO_CHANGE     
+builder_6c4acfecbe39  仅客户谓词         +1 条谓词
+builder_7277969cc41c  仅客户谓词         +1 条谓词
+builder_9291b050b6a9  仅客户谓词         +1 条谓词
+builder_9cc11850f425  仅客户谓词         +1 条谓词
+builder_a2e1bb386be1  仅客户谓词         +1 条谓词
+builder_a515014e6ed3  仅客户谓词         +1 条谓词
+builder_a71947b68d50  仅客户谓词         +1 条谓词
+builder_b9126e2bdef8  仅客户谓词         +1 条谓词
+builder_ba7c13ca994f  仅客户谓词         +1 条谓词
+builder_ba81142a5ddb  仅客户谓词         +1 条谓词
+builder_bc018fbefa1b  仅客户谓词         +1 条谓词
+builder_c127b4ddb20e  仅客户谓词         +1 条谓词
+builder_c6a71e5e217a  仅客户谓词         +1 条谓词
+builder_ca66ea9a93aa  仅客户谓词         +1 条谓词
+builder_cb4c1af4eabf  仅客户谓词         +1 条谓词
+builder_d277107524d3  仅客户谓词         +1 条谓词
+builder_dc3297cce9a3  仅客户谓词         +1 条谓词
+builder_ea992eb4216d  仅客户谓词         +1 条谓词
+builder_eb834021ed65  仅客户谓词         +3 条谓词
+builder_f6d51727bd1e  仅客户谓词         +3 条谓词
+builder_fb378075db5d  仅客户谓词         +1 条谓词
+
+汇总: {'仅客户谓词': 28, 'NO_CHANGE': 1}

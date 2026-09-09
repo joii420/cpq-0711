@@ -1,0 +1,584 @@
+builder_04375490927f
+SELECT
+  dqiof.material_no AS hf_part_no,
+  dqiof.material_no AS "_来料其他费用_销售料号",
+  dqiof.item_seq AS "_来料其他费用_项次",
+  dqiof.input_material_no AS "_来料其他费用_投入料号",
+  dqiof.element_item_seq AS "_来料其他费用_要素项次",
+  dqiof.element_name AS "_来料其他费用_要素名称",
+  dqiof.value AS "_来料其他费用_值",
+  dqiof.ratio_pct AS "_来料其他费用_比例（%）",
+  dqiof.currency AS "_来料其他费用_货币",
+  dqiof.pricing_unit AS "_来料其他费用_计价单位"
+FROM ds_quote_incoming_other_fee dqiof
+WHERE dqiof.material_no = ANY(:total_material_no) AND dqiof.customer_no = :customerCode
+ORDER BY dqiof.material_no, dqiof.input_material_no, dqiof.item_seq
+---8<---
+builder_196aadeeb89f
+SELECT
+  dqeb.material_no AS hf_part_no,
+  dqeb.material_no AS "_物料与元素BOM_销售料号",
+  dqeb.material_part_no AS "_物料与元素BOM_材质料号",
+  dqeb.item_seq AS "_物料与元素BOM_项次",
+  dqeb.element_code AS "_物料与元素BOM_元素",
+  dqeb.content_pct AS "_物料与元素BOM_组成含量（%）",
+  dqeb.loss_rate AS "_物料与元素BOM_损耗率%",
+  dqeb.gross_usage AS "_物料与元素BOM_毛用量",
+  dqeb.gross_usage_unit AS "_物料与元素BOM_毛用量单位",
+  dqeb.net_usage AS "_物料与元素BOM_净用量",
+  dqeb.net_usage_unit AS "_物料与元素BOM_净用量单位",
+  dqeb.recovery_discount AS "_物料与元素BOM_回收折扣(%)",
+  dqeb.recovery_qty AS "_物料与元素BOM_回收量",
+  cep.unit_price AS "元素单价",
+  cep.currency AS "货币"
+FROM ds_quote_element_bom dqeb
+  LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep ON cep.element_code = dqeb.element_code AND cep.material_no = dqeb.material_no
+WHERE dqeb.material_no = ANY(:total_material_no) AND dqeb.customer_no = :customerCode
+ORDER BY dqeb.material_no, dqeb.material_part_no, dqeb.element_code, dqeb.item_seq
+---8<---
+builder_32ab8212df6c
+-- 树契约: material_no=子 / parent_no=父 + :total_material_no; 边式全子件 + 根分支
+SELECT
+  vdcbmba.component_no AS material_no,
+  vdcbmba.production_no AS parent_no,
+  vdcbmba.component_no AS hf_part_no,
+  vdcbmba.production_no AS "production_no",
+  vdcbmba.item_seq AS "item_seq",
+  vdcbmba.component_no AS "component_no",
+  COALESCE(dcbm.material_name, mr.symbol) AS "material_name",
+  vdcbmba.operation_no AS "operation_no",
+  vdcbmba.usage_characteristic AS "usage_characteristic",
+  vdcbmba.component_qty AS "component_qty",
+  vdcbmba.component_qty_unit AS "component_qty_unit",
+  vdcbmba.base_qty AS "base_qty",
+  vdcbmba.base_qty_unit AS "base_qty_unit",
+  vdcbmba.material_loss_rate AS "material_loss_rate",
+  vdcbmba.material_fixed_loss AS "material_fixed_loss",
+  vdcbmba.version_no::text AS view_version
+FROM v_ds_cost_basic_material_bom_all vdcbmba
+  LEFT JOIN ds_cost_basic_material dcbm ON dcbm.production_no = vdcbmba.component_no
+  LEFT JOIN material_recipe mr ON mr.code = vdcbmba.component_no
+WHERE vdcbmba.component_no IN (SELECT dqm.production_no FROM ds_quote_material dqm WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode) AND :versionFilter(vdcbmba.is_current, vdcbmba.version_no::text, vdcbmba.production_no)
+UNION ALL
+-- 根分支：本单闭包里无父边的成品自身（树根，parent_no 恒 NULL）
+SELECT
+  dcbm2.production_no,
+  NULL::text,
+  dcbm2.production_no,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL::text
+FROM ds_cost_basic_material dcbm2
+WHERE dcbm2.production_no IN (SELECT dqm2.production_no FROM ds_quote_material dqm2 WHERE dqm2.material_no = ANY(:total_material_no) AND dqm2.customer_no = :customerCode)
+  AND NOT EXISTS (SELECT 1 FROM v_ds_cost_basic_material_bom_all vdcbmba2 WHERE vdcbmba2.component_no = dcbm2.production_no)
+ORDER BY parent_no, material_no, "item_seq"
+---8<---
+builder_39c738327543
+SELECT
+  dqia.material_no AS hf_part_no,
+  dqia.material_no AS "_来料年降_销售料号",
+  dqia.item_seq AS "_来料年降_项次",
+  dqia.input_material_no AS "_来料年降_投入料号",
+  dqia.discount_seq AS "_来料年降_年降顺序",
+  dqia.discount_rate AS "_来料年降_年降系数（%）",
+  dqia.fixed_discount_value AS "_来料年降_单次固定年降值",
+  dqia.currency AS "_来料年降_货币",
+  dqia.pricing_unit AS "_来料年降_计价单位",
+  dqia.discount_times AS "_来料年降_降价次数"
+FROM ds_quote_incoming_annual dqia
+WHERE dqia.material_no = ANY(:total_material_no) AND dqia.customer_no = :customerCode
+ORDER BY dqia.material_no, dqia.input_material_no, dqia.discount_seq, dqia.item_seq
+---8<---
+builder_42dd870ccd17
+SELECT
+  dqpf.material_no AS hf_part_no,
+  dqpf.material_no AS "_电镀费用_销售料号",
+  dqpf.plating_scheme_no AS "_电镀费用_电镀方案编号",
+  dqpf.plating_version AS "_电镀费用_版本编号",
+  dqpf.plating_process_fee AS "_电镀费用_电镀加工费",
+  dqpf.plating_material_fee AS "_电镀费用_电镀材料费",
+  dqpf.currency AS "_电镀费用_货币",
+  dqpf.pricing_unit AS "_电镀费用_计价单位",
+  dqpf.defect_rate AS "_电镀费用_不良率（%）"
+FROM ds_quote_plating_fee dqpf
+WHERE dqpf.material_no = ANY(:total_material_no) AND dqpf.customer_no = :customerCode
+ORDER BY dqpf.material_no, dqpf.plating_scheme_no, dqpf.plating_version
+---8<---
+builder_452bbdbe13f7
+-- 树契约: material_no=子 / parent_no=父 + :total_material_no; 边式全子件 + 根分支
+SELECT
+  dqmb.input_material_no AS material_no,
+  dqmb.material_no AS parent_no,
+  dqmb.input_material_no AS hf_part_no,
+  dqmb.material_no AS "_物料BOM_销售料号",
+  dqmb.item_seq AS "_物料BOM_项次",
+  dqmb.input_material_no AS "_物料BOM_投入料号",
+  dqmb.output_material_type AS "_物料BOM_产出料号类型",
+  dqmb.component_qty AS "_物料BOM_组成数量",
+  dqmb.gross_weight AS "_物料BOM_材料毛重",
+  dqmb.net_weight AS "_物料BOM_材料净重",
+  dqmb.weight_unit AS "_物料BOM_重量单位",
+  dqmb.loss_rate AS "_物料BOM_损耗率（%）"
+FROM ds_quote_material_bom dqmb
+WHERE dqmb.input_material_no = ANY(:total_material_no) AND dqmb.customer_no = :customerCode
+UNION ALL
+-- 根分支：本单闭包里无父边的成品自身（树根，parent_no 恒 NULL）
+SELECT
+  dqm.material_no,
+  NULL::text,
+  dqm.material_no,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL
+FROM ds_quote_material dqm
+WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode
+  AND NOT EXISTS (SELECT 1 FROM ds_quote_material_bom dqmb2 WHERE dqmb2.input_material_no = dqm.material_no AND dqmb2.customer_no = dqm.customer_no)
+ORDER BY parent_no, material_no, "_物料BOM_项次"
+---8<---
+builder_661e1a387f89
+SELECT
+  dqeb.material_no AS hf_part_no,
+  dqeb.material_no AS "_物料与元素BOM_销售料号",
+  dqeb.material_part_no AS "_物料与元素BOM_材质料号",
+  dqeb.item_seq AS "_物料与元素BOM_项次",
+  dqeb.element_code AS "_物料与元素BOM_元素",
+  dqeb.content_pct AS "_物料与元素BOM_组成含量（%）",
+  dqeb.loss_rate AS "_物料与元素BOM_损耗率%",
+  dqeb.gross_usage AS "_物料与元素BOM_毛用量",
+  dqeb.gross_usage_unit AS "_物料与元素BOM_毛用量单位",
+  dqeb.net_usage AS "_物料与元素BOM_净用量",
+  dqeb.net_usage_unit AS "_物料与元素BOM_净用量单位",
+  dqeb.recovery_discount AS "_物料与元素BOM_回收折扣(%)",
+  dqeb.recovery_qty AS "_物料与元素BOM_回收量",
+  cep.unit_price AS "元素单价",
+  cep.currency AS "货币"
+FROM ds_quote_element_bom dqeb
+  LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep ON cep.element_code = dqeb.element_code AND cep.material_no = dqeb.material_no
+WHERE dqeb.material_no = ANY(:total_material_no) AND dqeb.customer_no = :customerCode
+ORDER BY dqeb.material_no, dqeb.material_part_no, dqeb.element_code, dqeb.item_seq
+---8<---
+builder_6c093d714565
+SELECT
+  dqeb.material_no AS hf_part_no,
+  dqeb.material_part_no AS "_物料与元素BOM_材质料号",
+  dqeb.content_pct AS "_物料与元素BOM_组成含量（%）",
+  dqeb.loss_rate AS "_物料与元素BOM_损耗率%"
+FROM ds_quote_element_bom dqeb
+WHERE dqeb.material_no = ANY(:total_material_no) AND dqeb.customer_no = :customerCode
+ORDER BY dqeb.material_no, dqeb.material_part_no, dqeb.element_code, dqeb.item_seq
+---8<---
+builder_6c4acfecbe39
+SELECT
+  dqaf.material_no AS hf_part_no,
+  dqaf.material_no AS "_组装加工费_销售料号",
+  dqaf.item_seq AS "_组装加工费_项次",
+  dqaf.assembly_operation AS "_组装加工费_组装工序",
+  dqaf.assembly_fee AS "_组装加工费_组装加工费",
+  dqaf.currency AS "_组装加工费_货币",
+  dqaf.pricing_unit AS "_组装加工费_计价单位",
+  dqaf.defect_rate AS "_组装加工费_拒收率/不良率（%）"
+FROM ds_quote_assembly_fee dqaf
+WHERE dqaf.material_no = ANY(:total_material_no) AND dqaf.customer_no = :customerCode
+ORDER BY dqaf.material_no, dqaf.assembly_operation, dqaf.item_seq
+---8<---
+builder_7277969cc41c
+SELECT
+  dqm.material_no AS hf_part_no,
+  dqcp.customer_product_no AS "_客户料号_客户产品编号",
+  dqcp.customer_part_name AS "_客户料号_客户料号名称",
+  dqm.material_no AS "_物料_销售料号",
+  dqm.specification AS "_物料_规格",
+  dqm.dimension AS "_物料_尺寸",
+  dqm.material_name AS "_物料_品名",
+  dqm.unit_weight AS "_物料_单重",
+  dqm.production_no AS "_物料_生产料号"
+FROM ds_quote_material dqm
+  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode
+WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode
+ORDER BY dqm.material_no
+---8<---
+builder_9291b050b6a9
+SELECT
+  vdcbeba.production_no AS hf_part_no,
+  vdcbeba.production_no AS "production_no",
+  mr.symbol AS "symbol",
+  vdcbeba.material_part_no AS "material_part_no",
+  vdcbeba.item_seq AS "item_seq",
+  vdcbeba.element_code AS "element_code",
+  vdcbeba.content_pct AS "content_pct",
+  vdcbeba.loss_rate AS "loss_rate",
+  vdcbeba.version_no::text AS view_version
+FROM v_ds_cost_basic_element_bom_all vdcbeba
+  LEFT JOIN material_recipe mr ON mr.code = vdcbeba.material_part_no
+WHERE vdcbeba.production_no IN (SELECT dqm.production_no FROM ds_quote_material dqm WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode) AND :versionFilter(vdcbeba.is_current, vdcbeba.version_no::text, vdcbeba.production_no)
+ORDER BY vdcbeba.production_no, vdcbeba.material_part_no, vdcbeba.element_code, vdcbeba.item_seq
+---8<---
+builder_9cc11850f425
+SELECT
+  dqspf.material_no AS hf_part_no,
+  dqspf.material_no AS "_自制加工费_销售料号",
+  dqspf.item_seq AS "_自制加工费_项次",
+  dqspf.input_material_no AS "_自制加工费_投入料号",
+  dqm.material_name AS "_物料_材料名",
+  dqspf.operation_item_seq AS "_自制加工费_工序项次",
+  dqspf.operation_no AS "_自制加工费_工序编号",
+  dqspf.value AS "_自制加工费_值",
+  dqspf.ratio_pct AS "_自制加工费_比例（%）"
+FROM ds_quote_self_process_fee dqspf
+  LEFT JOIN ds_quote_material dqm ON dqm.material_no = dqspf.input_material_no AND dqm.customer_no = dqspf.customer_no
+WHERE dqspf.material_no = ANY(:total_material_no) AND dqspf.customer_no = :customerCode
+ORDER BY dqspf.material_no, dqspf.input_material_no, dqspf.item_seq
+---8<---
+builder_a2e1bb386be1
+SELECT
+  dqafa.material_no AS hf_part_no,
+  dqafa.material_no AS "_组装加工费年降_销售料号",
+  dqafa.item_seq AS "_组装加工费年降_项次",
+  dqafa.assembly_operation AS "_组装加工费年降_组装工序",
+  dqafa.discount_seq AS "_组装加工费年降_年降顺序",
+  dqafa.discount_rate AS "_组装加工费年降_年降系数（%）",
+  dqafa.fixed_discount_value AS "_组装加工费年降_单次固定年降值",
+  dqafa.currency AS "_组装加工费年降_货币",
+  dqafa.pricing_unit AS "_组装加工费年降_计价单位",
+  dqafa.discount_times AS "_组装加工费年降_降价次数"
+FROM ds_quote_assembly_fee_annual dqafa
+WHERE dqafa.material_no = ANY(:total_material_no) AND dqafa.customer_no = :customerCode
+ORDER BY dqafa.material_no, dqafa.assembly_operation, dqafa.discount_seq, dqafa.item_seq
+---8<---
+builder_a515014e6ed3
+SELECT
+  dcbm.production_no AS hf_part_no,
+  dcbm.production_no AS "production_no",
+  dcbm.material_name AS "material_name",
+  dcbm.specification AS "specification",
+  dcbm.dimension AS "dimension",
+  dcbm.old_material_no AS "old_material_no",
+  dcbm.unit_weight AS "unit_weight"
+FROM ds_cost_basic_material dcbm
+WHERE dcbm.production_no IN (SELECT dqm.production_no FROM ds_quote_material dqm WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode)
+ORDER BY dcbm.production_no
+---8<---
+builder_a71947b68d50
+SELECT
+  dqm.material_no AS hf_part_no,
+  dqm.material_no AS "_物料_销售料号",
+  dqm.production_no AS "_物料_生产料号",
+  dqcp.customer_product_no AS "_客户料号_客户产品编号",
+  dqcp.customer_part_name AS "_客户料号_客户料号名称",
+  dqm.category_code AS "_物料_产品分类",
+  dqm.material_name AS "_物料_品名",
+  dqm.specification AS "_物料_规格",
+  dqm.dimension AS "_物料_尺寸",
+  dqm.old_material_no AS "_物料_旧料号",
+  dqm.material_type AS "_物料_类型"
+FROM ds_quote_material dqm
+  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode
+WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode
+ORDER BY dqm.material_no
+---8<---
+builder_b9126e2bdef8
+SELECT
+  dqeb.material_no AS hf_part_no,
+  dqeb.material_no AS "_物料与元素BOM_销售料号",
+  dqeb.material_part_no AS "_物料与元素BOM_材质料号",
+  dqeb.item_seq AS "_物料与元素BOM_项次",
+  dqeb.element_code AS "_物料与元素BOM_元素",
+  dqeb.content_pct AS "_物料与元素BOM_组成含量（%）",
+  dqeb.loss_rate AS "_物料与元素BOM_损耗率%",
+  dqeb.gross_usage AS "_物料与元素BOM_毛用量",
+  dqeb.gross_usage_unit AS "_物料与元素BOM_毛用量单位",
+  dqeb.net_usage AS "_物料与元素BOM_净用量",
+  dqeb.net_usage_unit AS "_物料与元素BOM_净用量单位",
+  dqeb.recovery_discount AS "_物料与元素BOM_回收折扣(%)",
+  dqeb.recovery_qty AS "_物料与元素BOM_回收量",
+  cep.unit_price AS "元素单价",
+  cep.currency AS "货币"
+FROM ds_quote_element_bom dqeb
+  LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep ON cep.element_code = dqeb.element_code AND cep.material_no = dqeb.material_no
+WHERE dqeb.material_no = ANY(:total_material_no) AND dqeb.customer_no = :customerCode
+ORDER BY dqeb.material_no, dqeb.material_part_no, dqeb.element_code, dqeb.item_seq
+---8<---
+builder_ba7c13ca994f
+SELECT
+  dqir.material_no AS hf_part_no,
+  dqir.material_no AS "_来料回收折扣_销售料号",
+  dqir.item_seq AS "_来料回收折扣_项次",
+  dqir.input_material_no AS "_来料回收折扣_投入料号",
+  dqir.recovery_discount AS "_来料回收折扣_回收折扣（%）",
+  dqir.recovery_value AS "_来料回收折扣_回收值",
+  dqir.recovery_source AS "_来料回收折扣_回收来源"
+FROM ds_quote_incoming_recovery dqir
+WHERE dqir.material_no = ANY(:total_material_no) AND dqir.customer_no = :customerCode
+ORDER BY dqir.material_no, dqir.input_material_no, dqir.item_seq
+---8<---
+builder_ba81142a5ddb
+SELECT
+  dqeb.material_no AS hf_part_no,
+  dqeb.material_no AS "_物料与元素BOM_销售料号",
+  dqeb.material_part_no AS "_物料与元素BOM_材质料号",
+  mr.symbol AS "_材质_材料名",
+  dqeb.item_seq AS "_物料与元素BOM_项次",
+  dqeb.element_code AS "_物料与元素BOM_元素",
+  dqeb.content_pct AS "_物料与元素BOM_组成含量（%）",
+  dqeb.loss_rate AS "_物料与元素BOM_损耗率%",
+  dqeb.gross_usage AS "_物料与元素BOM_毛用量",
+  dqeb.gross_usage_unit AS "_物料与元素BOM_毛用量单位",
+  dqeb.net_usage AS "_物料与元素BOM_净用量",
+  dqeb.net_usage_unit AS "_物料与元素BOM_净用量单位",
+  dqeb.recovery_discount AS "_物料与元素BOM_回收折扣(%)",
+  cep.unit_price AS "元素单价"
+FROM ds_quote_element_bom dqeb
+  LEFT JOIN material_recipe mr ON mr.code = dqeb.material_part_no
+  LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep ON cep.element_code = dqeb.element_code AND cep.material_no = dqeb.material_no
+WHERE dqeb.material_no = ANY(:total_material_no) AND dqeb.customer_no = :customerCode
+ORDER BY dqeb.material_no, dqeb.material_part_no, dqeb.element_code, dqeb.item_seq
+---8<---
+builder_bc018fbefa1b
+SELECT
+  dqeb.material_no AS hf_part_no,
+  dqeb.material_no AS "_物料与元素BOM_销售料号",
+  dqeb.material_part_no AS "_物料与元素BOM_材质料号",
+  dqeb.item_seq AS "_物料与元素BOM_项次",
+  dqeb.element_code AS "_物料与元素BOM_元素",
+  dqeb.content_pct AS "_物料与元素BOM_组成含量（%）",
+  dqeb.loss_rate AS "_物料与元素BOM_损耗率%",
+  dqeb.gross_usage AS "_物料与元素BOM_毛用量",
+  dqeb.gross_usage_unit AS "_物料与元素BOM_毛用量单位",
+  dqeb.net_usage AS "_物料与元素BOM_净用量",
+  dqeb.net_usage_unit AS "_物料与元素BOM_净用量单位",
+  dqeb.recovery_discount AS "_物料与元素BOM_回收折扣(%)",
+  dqeb.recovery_qty AS "_物料与元素BOM_回收量",
+  cep.unit_price AS "元素单价",
+  cep.currency AS "货币"
+FROM ds_quote_element_bom dqeb
+  LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep ON cep.element_code = dqeb.element_code AND cep.material_no = dqeb.material_no
+WHERE dqeb.material_no = ANY(:total_material_no) AND dqeb.customer_no = :customerCode
+ORDER BY dqeb.material_no, dqeb.material_part_no, dqeb.element_code, dqeb.item_seq
+---8<---
+builder_c127b4ddb20e
+SELECT
+  dqad.material_no AS hf_part_no,
+  dqad.material_no AS "_年降系数_销售料号",
+  dqad.discount_seq AS "_年降系数_年降顺序",
+  dqad.discount_rate AS "_年降系数_年降系数（%/年）",
+  dqad.fixed_discount_value AS "_年降系数_单次固定年降金额",
+  dqad.currency AS "_年降系数_货币",
+  dqad.pricing_unit AS "_年降系数_计价单位",
+  dqad.discount_times AS "_年降系数_降价次数"
+FROM ds_quote_annual_discount dqad
+WHERE dqad.material_no = ANY(:total_material_no) AND dqad.customer_no = :customerCode
+ORDER BY dqad.material_no, dqad.discount_seq
+---8<---
+builder_c6a71e5e217a
+SELECT
+  dqm.material_no AS hf_part_no,
+  dqm.material_no AS "_物料_销售料号",
+  dqm.material_name AS "_物料_品名",
+  dqm.specification AS "_物料_规格",
+  dqm.dimension AS "_物料_尺寸",
+  dqm.old_material_no AS "_物料_旧料号",
+  dqm.unit_weight AS "_物料_单重",
+  dqm.production_no AS "_物料_生产料号",
+  dqm.material_type AS "_物料_类型",
+  dqm.category_code AS "_物料_产品分类"
+FROM ds_quote_material dqm
+WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode
+ORDER BY dqm.material_no
+---8<---
+builder_ca66ea9a93aa
+SELECT
+  dqiff.material_no AS hf_part_no,
+  dqiff.material_no AS "_来料固定加工费_销售料号",
+  dqiff.input_material_no AS "_来料固定加工费_投入料号",
+  dqiff.base_value AS "_来料固定加工费_基准值",
+  dqiff.ratio_pct AS "_来料固定加工费_比例（%）"
+FROM ds_quote_incoming_fixed_fee dqiff
+WHERE dqiff.material_no = ANY(:total_material_no) AND dqiff.customer_no = :customerCode
+ORDER BY dqiff.material_no, dqiff.input_material_no, dqiff.item_seq
+---8<---
+builder_cb4c1af4eabf
+SELECT
+  dqeb.material_no AS hf_part_no,
+  dqeb.material_no AS "_物料与元素BOM_销售料号",
+  dqeb.material_part_no AS "_物料与元素BOM_材质料号",
+  dqeb.item_seq AS "_物料与元素BOM_项次",
+  dqeb.element_code AS "_物料与元素BOM_元素",
+  dqeb.content_pct AS "_物料与元素BOM_组成含量（%）",
+  dqeb.loss_rate AS "_物料与元素BOM_损耗率%",
+  dqeb.gross_usage AS "_物料与元素BOM_毛用量",
+  dqeb.gross_usage_unit AS "_物料与元素BOM_毛用量单位",
+  dqeb.net_usage AS "_物料与元素BOM_净用量",
+  dqeb.net_usage_unit AS "_物料与元素BOM_净用量单位",
+  dqeb.recovery_discount AS "_物料与元素BOM_回收折扣(%)",
+  dqeb.recovery_qty AS "_物料与元素BOM_回收量",
+  cep.unit_price AS "元素单价",
+  cep.currency AS "货币"
+FROM ds_quote_element_bom dqeb
+  LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep ON cep.element_code = dqeb.element_code AND cep.material_no = dqeb.material_no
+WHERE dqeb.material_no = ANY(:total_material_no) AND dqeb.customer_no = :customerCode
+ORDER BY dqeb.material_no, dqeb.material_part_no, dqeb.element_code, dqeb.item_seq
+---8<---
+builder_d277107524d3
+SELECT
+  dqfof.material_no AS hf_part_no,
+  dqfof.material_no AS "_成品其他费用_销售料号",
+  dqfof.item_seq AS "_成品其他费用_项次",
+  dqfof.element_name AS "_成品其他费用_要素名称",
+  dqfof.value AS "_成品其他费用_值",
+  dqfof.ratio_pct AS "_成品其他费用_比例（%）",
+  dqfof.currency AS "_成品其他费用_货币",
+  dqfof.pricing_unit AS "_成品其他费用_计价单位"
+FROM ds_quote_finished_other_fee dqfof
+WHERE dqfof.material_no = ANY(:total_material_no) AND dqfof.customer_no = :customerCode
+ORDER BY dqfof.material_no, dqfof.element_name, dqfof.item_seq
+---8<---
+builder_dc3297cce9a3
+SELECT
+  dqeb.material_no AS hf_part_no,
+  dqeb.material_no AS "_物料与元素BOM_销售料号",
+  dqeb.material_part_no AS "_物料与元素BOM_材质料号",
+  dqeb.item_seq AS "_物料与元素BOM_项次",
+  dqeb.element_code AS "_物料与元素BOM_元素",
+  dqeb.content_pct AS "_物料与元素BOM_组成含量（%）",
+  dqeb.gross_usage AS "_物料与元素BOM_毛用量",
+  dqeb.gross_usage_unit AS "_物料与元素BOM_毛用量单位",
+  dqeb.net_usage AS "_物料与元素BOM_净用量",
+  dqeb.net_usage_unit AS "_物料与元素BOM_净用量单位",
+  dqeb.recovery_discount AS "_物料与元素BOM_回收折扣(%)",
+  dqeb.recovery_qty AS "_物料与元素BOM_回收量",
+  cep.unit_price AS "元素单价"
+FROM ds_quote_element_bom dqeb
+  LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep ON cep.element_code = dqeb.element_code AND cep.material_no = dqeb.material_no
+WHERE dqeb.material_no = ANY(:total_material_no) AND dqeb.customer_no = :customerCode
+ORDER BY dqeb.material_no, dqeb.material_part_no, dqeb.element_code, dqeb.item_seq
+---8<---
+builder_ea992eb4216d
+SELECT
+  dqspf.material_no AS hf_part_no,
+  dqspf.material_no AS "_自制加工费_销售料号",
+  dqspf.item_seq AS "_自制加工费_项次",
+  dqspf.input_material_no AS "_自制加工费_投入料号",
+  dqspf.operation_item_seq AS "_自制加工费_工序项次",
+  dqspf.operation_no AS "_自制加工费_工序编号",
+  dqspf.value AS "_自制加工费_值",
+  dqspf.ratio_pct AS "_自制加工费_比例（%）",
+  dqspf.currency AS "_自制加工费_货币",
+  dqspf.pricing_unit AS "_自制加工费_计价单位"
+FROM ds_quote_self_process_fee dqspf
+WHERE dqspf.material_no = ANY(:total_material_no) AND dqspf.customer_no = :customerCode
+ORDER BY dqspf.material_no, dqspf.input_material_no, dqspf.item_seq
+---8<---
+builder_eb834021ed65
+-- 树契约: material_no=子 / parent_no=父 + :total_material_no; 边式全子件 + 根分支
+SELECT
+  dqmb.input_material_no AS material_no,
+  dqmb.material_no AS parent_no,
+  dqmb.input_material_no AS hf_part_no,
+  dqmb.material_no AS "_物料BOM_销售料号",
+  dqmb.item_seq AS "_物料BOM_项次",
+  dqmb.input_material_no AS "_物料BOM_投入料号",
+  dqm.production_no AS "_物料_生产料号",
+  dqmb.component_qty AS "_物料BOM_组成数量",
+  dqmb.gross_weight AS "_物料BOM_材料毛重",
+  dqmb.net_weight AS "_物料BOM_材料净重",
+  dqmb.weight_unit AS "_物料BOM_重量单位",
+  dqmb.loss_rate AS "_物料BOM_损耗率（%）"
+FROM ds_quote_material_bom dqmb
+  LEFT JOIN ds_quote_material dqm ON dqm.material_no = dqmb.material_no AND dqm.customer_no = dqmb.customer_no
+WHERE dqmb.input_material_no = ANY(:total_material_no) AND dqmb.customer_no = :customerCode
+UNION ALL
+-- 根分支：本单闭包里无父边的成品自身（树根，parent_no 恒 NULL）
+SELECT
+  dqm2.material_no,
+  NULL::text,
+  dqm2.material_no,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL
+FROM ds_quote_material dqm2
+WHERE dqm2.material_no = ANY(:total_material_no) AND dqm2.customer_no = :customerCode
+  AND NOT EXISTS (SELECT 1 FROM ds_quote_material_bom dqmb2 WHERE dqmb2.input_material_no = dqm2.material_no AND dqmb2.customer_no = dqm2.customer_no)
+ORDER BY parent_no, material_no, "_物料BOM_项次"
+---8<---
+builder_f6d51727bd1e
+-- 树契约: material_no=子 / parent_no=父 + :total_material_no; 边式全子件 + 根分支
+SELECT
+  dqmb.input_material_no AS material_no,
+  dqmb.material_no AS parent_no,
+  dqmb.input_material_no AS hf_part_no,
+  dqmb.material_no AS "_物料BOM_销售料号",
+  dqmb.item_seq AS "_物料BOM_项次",
+  dqmb.input_material_no AS "_物料BOM_投入料号",
+  dqmb.unit_weight AS "_物料BOM_单重",
+  dqmb.output_material_type AS "_物料BOM_产出料号类型",
+  dqmb.component_qty AS "_物料BOM_组成数量",
+  dqmb.gross_weight AS "_物料BOM_材料毛重",
+  dqmb.net_weight AS "_物料BOM_材料净重",
+  dqmb.weight_unit AS "_物料BOM_重量单位",
+  dqmb.material_ratio AS "_物料BOM_材料占比（%）",
+  dqmb.loss_rate AS "_物料BOM_损耗率（%）",
+  dqmb.defect_rate AS "_物料BOM_不良率（%）"
+FROM ds_quote_material_bom dqmb
+WHERE dqmb.input_material_no = ANY(:total_material_no) AND dqmb.customer_no = :customerCode
+UNION ALL
+-- 根分支：本单闭包里无父边的成品自身（树根，parent_no 恒 NULL）
+SELECT
+  dqm.material_no,
+  NULL::text,
+  dqm.material_no,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL,
+  NULL
+FROM ds_quote_material dqm
+WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode
+  AND NOT EXISTS (SELECT 1 FROM ds_quote_material_bom dqmb2 WHERE dqmb2.input_material_no = dqm.material_no AND dqmb2.customer_no = dqm.customer_no)
+ORDER BY parent_no, material_no, "_物料BOM_项次"
+---8<---
+builder_fb378075db5d
+SELECT
+  dqscf.material_no AS hf_part_no,
+  dqscf.material_no AS "_组成件其他费用_销售料号",
+  dqscf.item_seq AS "_组成件其他费用_项次",
+  dqscf.sub_component_no AS "_组成件其他费用_组成件料号",
+  dqscf.supplier_no AS "_组成件其他费用_供应商编号",
+  dqscf.supplier_name AS "_组成件其他费用_供应商名称",
+  dqscf.element_item_seq AS "_组成件其他费用_要素项次",
+  dqscf.element_name AS "_组成件其他费用_要素名称",
+  dqscf.value AS "_组成件其他费用_值",
+  dqscf.currency AS "_组成件其他费用_货币",
+  dqscf.pricing_unit AS "_组成件其他费用_计价单位"
+FROM ds_quote_sub_component_fee dqscf
+WHERE dqscf.material_no = ANY(:total_material_no) AND dqscf.customer_no = :customerCode
+ORDER BY dqscf.material_no, dqscf.sub_component_no, dqscf.supplier_no, dqscf.supplier_name, dqscf.item_seq
+---8<---

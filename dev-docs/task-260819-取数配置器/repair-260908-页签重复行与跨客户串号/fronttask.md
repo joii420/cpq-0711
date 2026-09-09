@@ -4,7 +4,52 @@
 
 ---
 
-## 结论：前端零改动
+## ⚠️ 结论已被 `D-23` 推翻：本任务有 1 项前端改动
+
+> **2026-09-09 更新**：用户真机撞到「改完格子点保存草稿必报 409」，根因在前端
+> （`waitForPendingEdits()` 只接进提交路径、没接进保存草稿路径），用户裁决**纳入本任务修**。
+> ⇒ **原「前端零改动」的判定不再成立**，下方 §1 的判定依据仅对**取数口径改动本身**有效。
+
+| 编号 | 服务的 AC | 任务内容 |
+|---|---|---|
+| **F-1** ✅ | AC-21 | 🆕 `D-23`：① `handleSaveDraft`（`QuotationWizard.tsx:1542`）在取 `baseVersion` **之前**加 `await waitForPendingEdits()`；② `handleSubmit` 把 `waitForPendingEdits()`（`:1683`）**移到 `handleSaveDraft()`（`:1675`）之前**。<br>🚨 **必须先复现 409 再修**，并做证伪（注释掉改动后 409 必须回来） |
+
+### F-1 交付实证（commit `8e4d8587`，单文件 22+/4-，主线已独立核验）
+
+**复现（修前）** —— 自然时序拿到的是**另一副面孔**：
+
+```
+[11:52:12.857] REQ PUT /quote-card-edit      [11:52:12.921] REQ PUT /draft baseVersion=16   ← 同 tick
+[11:52:14.207] RES 500 /draft
+后端：ERROR: deadlock detected / while updating tuple in relation "quotation_line_item"
+      → PessimisticLockException @ QuotationService.processBatchStage1:3223 ← saveDraft:475
+```
+
+确定性的 409 要求窗口 = 「edit **已提交**、响应**尚未回到前端**」。用 Playwright `page.route`
+只扣住 `quote-card-edit` 的**响应**（请求照常打后端、事务照常提交，不改任何前端代码路径）：
+
+```
+[11:55:10.648] GATE 后端已提交 edit#1（版本已 +1），响应扣住 4000ms 不交付
+[11:55:10.710] REQ  PUT /draft
+[11:55:10.791] RES  409 {"reason":"STALE_VERSION","currentVersion":19}
+后端：[saveDraft-stale] baseVersion=18 但库中 user_data_version=19 → 409
+```
+
+**A/B/A 证伪**（主线读 `b6-8098.log` 原始日志独立核验，非采信汇报）：
+
+| 时刻 | 事件 | `saveDraft-stale` |
+|---|---|---|
+| 04:55:10 | 修前门控复现 | **有** |
+| 04:58 | 修后 | 无 |
+| 04:59:50 | 注释掉 `await waitForPendingEdits()` | **有** |
+| 05:01 / 05:03 | 恢复后 | 无 |
+
+⇒ 判据既不恒真也不恒假。自然时序版复跑时**死锁 500 也一并消失**。
+
+
+---
+
+## 原判定（对取数口径改动本身仍然有效）：前端零改动
 
 **本次没有 `F-x` 任务项。** 这不是"暂缓"，是**本任务范围内前端确实没有需要改的东西**。
 

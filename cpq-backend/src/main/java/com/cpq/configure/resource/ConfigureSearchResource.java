@@ -129,8 +129,9 @@ public class ConfigureSearchResource {
      * <p>{@code GET /api/cpq/quotations/configure/outsourced-parts?keyword=&page=1&size=20}
      * <p>判据（闸门 A0 已裁决）：{@code WHERE material_master.material_type = '外购件'}。
      *
-     * <p>⚠️ <b>返回 0 条是正常业务状态</b>（AC-16）：实测当前库仅 1 条
-     * （{@code TEST-Q13-CODE / 组成件1}，规格与单重均空）。前端必须渲染空态而非「加载中…」（AP-31 族）。
+     * <p>⚠️ <b>返回 0 条是正常业务状态</b>（AC-16）：候选完全取决于基础数据里有多少料号被标成
+     * 「外购件」，共享开发库上这个数字随导入随时变（2026-09-09 一天之内实测到过 1 / 8 / 6 条）。
+     * ⇒ 🚫 <b>不要把某个具体条数写进判据或断言</b>；前端必须渲染空态而非「加载中…」（AP-31 族）。
      */
     @GET
     @Path("/outsourced-parts")

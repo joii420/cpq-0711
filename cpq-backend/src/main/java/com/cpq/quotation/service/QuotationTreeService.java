@@ -333,6 +333,22 @@ public class QuotationTreeService {
         return b;
     }
 
+    /**
+     * repair-260908 · C-3：本单客户号（{@code customer.code}），供
+     * {@link MasterPartTypeService#load} 收窄 {@code ds_quote_material}。
+     *
+     * <p>N+1 自检：每次 addLeaf 恒 1 次（Panache 按 id 取，同事务内还走一级缓存），与树节点数无关。
+     *
+     * <p>🚫 取不到不返回 null 兜底 —— 返 null 会让下游退回「不过滤」，即改造前的 last-wins 静默错值。
+     */
+    private String resolveCustomerNo(Quotation q) {
+        com.cpq.customer.entity.Customer c = com.cpq.customer.entity.Customer.findById(q.customerId);
+        if (c == null || c.code == null || c.code.isBlank()) {
+            throw new BusinessException(400, "报价单未绑定有效客户，无法判定料号类型: " + q.id);
+        }
+        return c.code;
+    }
+
     // =========================================================================
     // B6 — 加叶子
     // =========================================================================
@@ -361,7 +377,11 @@ public class QuotationTreeService {
         // 全程只读内存索引，不再查库。
         java.util.Set<String> masterLookupKeys = new LinkedHashSet<>(b.ctx.allKnownPartNos());
         if (partNo != null && !partNo.isBlank()) masterLookupKeys.add(partNo);
-        BomNodeTypeResolver.MasterTypeIndex master = masterPartTypeService.load(masterLookupKeys);
+        // repair-260908 · C-3：主数据取数必须带客户号 —— ds_quote_material 的业务唯一键是
+        // (customer_no, material_no)，不带客户号是顺序不保证的 last-wins（详见 MasterPartTypeService 类注释）。
+        // 客户号来自本单，恒可解析（quotation.customer_id NOT NULL + FK；customer.code NOT NULL）。
+        BomNodeTypeResolver.MasterTypeIndex master =
+                masterPartTypeService.load(resolveCustomerNo(q), masterLookupKeys);
         b.ctx.attachMasterTypes(master);
 
         // ① 校验宿主节点存在 + 判定宿主类型

@@ -147,6 +147,16 @@ public class SemanticCompiler {
      */
     private static final String ROOT_SOURCE_TAB_TYPE = "主件";
 
+    /**
+     * 客户维度列名（repair-260908 B-1 / B-1b）。
+     *
+     * <p>唯一判据：{@code c.columnCatalog} 里这张物理表**有没有这一列**
+     * （{@link PhysicalColumnCatalog} 真查 {@code information_schema.columns}，不是猜表名）。
+     * 🚫 不要改成按方言、按视图名前缀或按 SQL 文本正则判 —— 那三种写法都能"碰巧对"，
+     * 而碰巧对比明确错更危险（并发线 2026-09-08 实证，见任务目录 ./证据/材料-并发线交接-260908.md）。
+     */
+    private static final String CUSTOMER_SCOPE_COLUMN = "customer_no";
+
     public CompileResult compile(SemanticGraphSnapshot snap, BuilderConfig cfg, CompileDialect dialect) {
         return compile(snap, cfg, dialect, false);
     }
@@ -443,6 +453,12 @@ public class SemanticCompiler {
         result.rewriterCompatible = checkRewriterCompatible(finalSql, c.anchor.physicalTable);
         result.anchorTable = c.anchor.physicalTable;
         result.axisColumn = c.dialect.axisColumn();
+        // repair-260908 B-3（AC-7）：轴范围声明。判据 = 页签类型是不是「主件」，
+        // 取 c.tabView.tabType（图里的权威值）而不是 cfg.tabType（请求体的自述值）——
+        // resolveTabView 已按 (tab_type, variant_key, dialect) 三段坐标解析过，图里那份才作数。
+        // 🚫 三个方言一律产出，不按方言分叉：分叉会让「核价侧有没有这个键」变成又一个隐式约定。
+        result.axisScope = ROOT_SOURCE_TAB_TYPE.equals(c.tabView.tabType)
+                ? CompileResult.AXIS_SCOPE_SELF : CompileResult.AXIS_SCOPE_CLOSURE;
         return result;
     }
 
@@ -582,9 +598,30 @@ public class SemanticCompiler {
         String right = keys.stream().map(k -> sub + "." + k.rightColumn)
                 .reduce((a, b) -> a + ", " + b).orElseThrow();
 
+        // 🚨 repair-260908 B-1b（AC-16）：桥的**子查询**同样要按客户收窄。
+        //
+        // 本谓词直接拼进 c.anchorWhere，**不经 applyFullScope** ⇒ B-1 覆盖不到它。
+        // 桥的 target 是 ds_quote_material（有 customer_no 且此前完全没过滤）：外层锚点是
+        // ds_cost_basic_*（无该列、B-1 不发），所以缺陷①在核价侧是**以桥接形态存在**的
+        // （D-2b：「核价侧天然不适用」那句话不完整）。判据仍是列存在性，不是方言。
+        //
+        // ⚠️ 这是**结构隐患不是活故障**：实测 ds_quote_material 里 16 个料号跨客户，但
+        // count(distinct production_no) > 1 的组数 = 0；且 x IN (SELECT ...) 是集合成员判定，
+        // 子查询多出重复值不会让外层翻倍 ⇒ 拿行数验它会得到一个恒绿的判据（AC-16 因此写成结构断言）。
+        //
+        // 📌 位置刻意放在 `= ANY(:total_material_no)` **之后**：B-53 护栏的 BRIDGE_SEMI_JOIN 正则
+        //    用 [^()] 锁死在同一层子查询、匹配到 ANY(:total_material_no) 为止，追加在其后不影响
+        //    「产物里数出的桥 vs 结构化认出的桥」对账（谓词原文仍是 anchorWhere 里那一条的逐字子串）。
+        String bridgeCustomerScope = "";
+        if (targetCols.contains(CUSTOMER_SCOPE_COLUMN)) {
+            bridgeCustomerScope = " AND " + sub + "." + CUSTOMER_SCOPE_COLUMN + " = :customerCode";
+            c.requiredVars.add("customerCode");
+        }
+
         c.anchorWhere.add(left + " IN (SELECT " + right
                 + " FROM " + target.physicalTable + " " + sub
-                + " WHERE " + sub + "." + inputCol + " = ANY(:total_material_no))");
+                + " WHERE " + sub + "." + inputCol + " = ANY(:total_material_no)"
+                + bridgeCustomerScope + ")");
         c.requiredVars.add("total_material_no");
         // 轴收窄的职责就此移交给本谓词，applyFullScope 不再另发一条（见该方法注释）
         c.narrowedByBridge = true;
@@ -937,6 +974,32 @@ public class SemanticCompiler {
             where.add(alias + "." + effectiveAxis + " = ANY(:total_material_no)");
             c.requiredVars.add("total_material_no");
         }
+
+        // 🚨 repair-260908 B-1（AC-1b / AC-2 / AC-2b / AC-12 / AC-12b）：客户维度收窄。
+        //
+        // 缺陷原文：本方法此前一条客户谓词都不发，:customerCode 只出现在 LOOKUP 边的
+        // JOIN ... ON 上（见 ensureLeftJoin 的 fixedPredicate 分支）⇒ **主表一行都不过滤**。
+        // 而 task-260907（V425~V429）已给 28 张 ds_quote_* 加了 customer_no 并把轴模型改成
+        // 复合轴 (customer_no, material_no)，编译器侧没跟上 ⇒ 复合轴只落实了一半：
+        // 同一个销售料号在两个客户下各有一行，卡片就把别人客户的行**静默**并进来
+        // （实测「产品」页签闭包 14 个料号返 28 行，另一半全是 CUST-0001 的）。
+        //
+        // 🔑 判据是**列存在性**，不是方言、不是视图数量、不是从 SQL 文本里正则抽出来的表名：
+        //   · ds_cost_* 55 张表逐表实测 customer_no 列数 = 0（核价按生产料号建模，本无客户维度）
+        //     ⇒ 核价两方言的锚点/GRAIN/SUB 目标天然一条都不发（AC-4 零改动）；
+        //   · 反过来，凡表上真有这一列的（含 QUOTE 侧 SUB / GRAIN 目标）一律要发 ——
+        //     「28 个视图全加」那种按数量的写法会得到 column "customer_no" does not exist。
+        //   · 并发线曾用正则 FROM\s+(ds_quote_\w+) 抽主表，3 条 COST_BASIC 视图匹到的是
+        //     NARROW 桥**子查询里**的 ds_quote_material —— 用错误的判据碰巧碰对了位置，
+        //     那个位置由 B-1b 单独处理（见 emitNarrowPredicate），不是本处。
+        //
+        // 🚫 刻意**不碰 ensureLeftJoin()**：LOOKUP 边的客户维度走 fixedPredicate + 列对列连接键
+        //    （task-260908 那 46 条查名边就是 ON dqm.customer_no = dqiof.customer_no），
+        //    把它挪进 WHERE 会把 LEFT JOIN 收成 INNER、静默丢行（AC-6）。
+        if (cols.contains(CUSTOMER_SCOPE_COLUMN)) {
+            where.add(alias + "." + CUSTOMER_SCOPE_COLUMN + " = :customerCode");
+            c.requiredVars.add("customerCode");
+        }
     }
 
     // ---------------- task-260907 B-3：树页签边式契约的解析与产出 ----------------
@@ -1051,13 +1114,43 @@ public class SemanticCompiler {
         c.treeRootWhere.add(rootNarrowPredicate(c, rootAlias, rootAxis, root));
         c.requiredVars.add("total_material_no");
 
+        // 🚨 repair-260908 B-1c(a)（AC-2 / AC-2b）：根分支的**外层** WHERE 同样要按客户收窄。
+        //
+        // 根分支不经 applyFullScope（它 FROM 的是另一张表、WHERE 是本方法自己拼的）⇒ B-1 覆盖不到。
+        // 报价侧根表就是 ds_quote_material，**有 customer_no 且此前完全没过滤** ——
+        // 实测 QT-20260908-0624 的 BOM 页签根分支现状 8 行、加谓词后 4 行，另 4 行是别家客户的根行。
+        // 这是**活故障**，不是结构隐患。判据同 B-1：按根表物理列存在性，不按方言。
+        if (rootCols.contains(CUSTOMER_SCOPE_COLUMN)) {
+            c.treeRootWhere.add(rootAlias + "." + CUSTOMER_SCOPE_COLUMN + " = :customerCode");
+            c.requiredVars.add("customerCode");
+        }
+
+        // 🚨 repair-260908 B-1c(b)（AC-17）：NOT EXISTS 的「有没有父边」判定也要限定同一个客户。
+        //
+        // ⚠️ **本条的失败方向与本任务其余全部相反 —— 是少行，不是多行**：不带客户约束时，
+        // 某成品只要在**别的客户**下挂过 BOM 边，就会被判成「非树根」而从根分支**消失**，
+        // 树顶那一行直接空白。⇒ 🚫 不许拿行数验它（全库实测「只在别客户下有父边」的料号 = 0 行，
+        // 拿数据验会得到一个**恒绿的判据**，与 AC-16 同性质），只能用结构断言。
+        //
+        // 🔑 写成**列对列**（子.customer_no = 根.customer_no）而不是 = :customerCode：
+        // 根别名那一侧已由上面 (a) 钉死到 :customerCode 上，列对列在语义上等价，
+        // 却额外表达了「父边与成品必须属于同一个客户」这条不变量本身 —— 将来 (a) 若因故不发，
+        // 这条仍然成立，不会退化成「拿本客户的成品去和任意客户的父边比」。
+        String rootParentScope = "";
+        Set<String> anchorCols = c.columnCatalog.getOrDefault(c.anchor.physicalTable, Set.of());
+        if (anchorCols.contains(CUSTOMER_SCOPE_COLUMN) && rootCols.contains(CUSTOMER_SCOPE_COLUMN)) {
+            rootParentScope = " AND " + notExistsAlias + "." + CUSTOMER_SCOPE_COLUMN
+                    + " = " + rootAlias + "." + CUSTOMER_SCOPE_COLUMN;
+        }
+
         return "UNION ALL\n"
                 + "-- 根分支：本单闭包里无父边的成品自身（树根，parent_no 恒 NULL）\n"
                 + "SELECT\n  " + String.join(",\n  ", exprs) + "\n"
                 + "FROM " + root.physicalTable + " " + rootAlias + "\n"
                 + "WHERE " + String.join(" AND ", c.treeRootWhere) + "\n"
                 + "  AND NOT EXISTS (SELECT 1 FROM " + c.anchor.physicalTable + " " + notExistsAlias
-                + " WHERE " + notExistsAlias + "." + c.treeChildColumn + " = " + selfExpr + ")\n";
+                + " WHERE " + notExistsAlias + "." + c.treeChildColumn + " = " + selfExpr
+                + rootParentScope + ")\n";
     }
 
     /**
@@ -1095,9 +1188,20 @@ public class SemanticCompiler {
         }
         String sub = allocAlias(c, bridge.physicalTable);
         String inputCol = CompileDialect.QUOTE.axisColumn();   // 桥的入参恒是销售料号
+        // 🚨 repair-260908 B-1c（AC-16 同款）：核价侧根分支**自己另拼了一座桥**（同样
+        //    FROM ds_quote_material），与 emitNarrowPredicate 那座是两处独立代码 ——
+        //    只改那一处、漏掉这一处，就会出现「主分支按客户收窄、根分支不收」的半截状态。
+        //    同一判据（桥的物理表含 customer_no 列）一并覆盖。
+        Set<String> bridgeCols = c.columnCatalog.getOrDefault(bridge.physicalTable, Set.of());
+        String bridgeCustomerScope = "";
+        if (bridgeCols.contains(CUSTOMER_SCOPE_COLUMN)) {
+            bridgeCustomerScope = " AND " + sub + "." + CUSTOMER_SCOPE_COLUMN + " = :customerCode";
+            c.requiredVars.add("customerCode");
+        }
         return selfExpr + " IN (SELECT " + sub + "." + keys.get(0).rightColumn
                 + " FROM " + bridge.physicalTable + " " + sub
-                + " WHERE " + sub + "." + inputCol + " = ANY(:total_material_no))";
+                + " WHERE " + sub + "." + inputCol + " = ANY(:total_material_no)"
+                + bridgeCustomerScope + ")";
     }
 
     /**

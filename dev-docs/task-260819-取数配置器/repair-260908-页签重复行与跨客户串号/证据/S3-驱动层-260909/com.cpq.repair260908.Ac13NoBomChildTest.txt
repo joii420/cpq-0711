@@ -1,0 +1,13 @@
+-------------------------------------------------------------------------------
+Test set: com.cpq.repair260908.Ac13NoBomChildTest
+-------------------------------------------------------------------------------
+Tests run: 3, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 2.657 s <<< FAILURE! -- in com.cpq.repair260908.Ac13NoBomChildTest
+com.cpq.repair260908.Ac13NoBomChildTest.t02_leafPart_bFamilyEmpty_noHardBlock -- Time elapsed: 0.028 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: AC-13：渲染结果里出现了 __renderError 占位 —— 属于『0 行把渲染打断了』，HTTP 200 这个信号对它恒为真、抓不到（R-1 实证） ==> expected: <false> but was: <true>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:158)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:139)
+	at org.junit.jupiter.api.AssertFalse.failNotFalse(AssertFalse.java:69)
+	at org.junit.jupiter.api.AssertFalse.assertFalse(AssertFalse.java:41)
+	at org.junit.jupiter.api.Assertions.assertFalse(Assertions.java:255)
+	at com.cpq.repair260908.Ac13NoBomChildTest.t02_leafPart_bFamilyEmpty_noHardBlock(Ac13NoBomChildTest.java:126)
+

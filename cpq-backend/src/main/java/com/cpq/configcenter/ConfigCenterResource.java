@@ -2,6 +2,7 @@ package com.cpq.configcenter;
 
 import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.security.RoleAllowed;
+import com.cpq.builder.service.BuilderRecompileService;
 import com.cpq.common.security.SessionHelper;
 import com.cpq.component.entity.Component;
 import com.cpq.datasource.resolver.DataSourceResolverRegistry;
@@ -53,6 +54,10 @@ public class ConfigCenterResource {
 
     @Inject
     TemplateService templateService;
+
+    /** repair-260908 B-6：{@code recompile=true} 时的存量视图重编译（api.md §2）。 */
+    @Inject
+    BuilderRecompileService builderRecompileService;
 
     /** task-0806 B11：预览路径算 fieldDriftCount 用。 */
     @Inject
@@ -117,9 +122,27 @@ public class ConfigCenterResource {
      * （{@code O(N_template × N_component)}，本身违反 CLAUDE.md N+1 铁律）；新实现委派
      * {@link TemplateService#forceRealignSnapshots}，3 条参数化 SQL，与模板数/组件数无关。
      *
-     * <p>Body: {@code { "templateIds": ["uuid1","uuid2"], "confirm": false } }——
+     * <p>Body: {@code { "templateIds": ["uuid1","uuid2"], "confirm": false, "recompile": false } }——
      * {@code templateIds} 不传/空 = 全部 PUBLISHED+ARCHIVED；{@code confirm} 缺省 {@code false}
      * = 仅预览零写入，{@code true} 才真正执行并写 {@code operation_log} 审计（按受影响模板各写一行）。
+     *
+     * <p>🆕 repair-260908 B-6（api.md §2）：{@code recompile} 缺省 {@code false}，<b>不传时行为逐位不变</b>。
+     * 置 {@code true} 时在快照对齐<b>之前</b>先按各视图的 {@code component_sql_view.builder_config}
+     * 重放 {@code SemanticCompiler}，写回 {@code sql_template} + {@code builder_version}——
+     * 编译器改了口径（如 B-1 的客户谓词）只对将来保存的视图生效，存量 28 个 {@code builder_*} 的
+     * SQL 文本是当年落库的快照，不重放就永远是旧口径。
+     *
+     * <p>🚨 <b>「快照」在本端点里指两张不同的表，别混</b>（2026-09-08 事故的直接成因）：
+     * <ul>
+     *   <li>{@code template_component_snapshot} — <b>组件配置</b>快照，由
+     *       {@link TemplateService#forceRealignSnapshots} 推；</li>
+     *   <li>{@code template.sql_views_snapshot} — <b>SQL 视图</b>冻结快照，<b>渲染期读的就是它</b>，
+     *       由 {@code BuilderRecompileService#realignSqlViewsSnapshots} 推。</li>
+     * </ul>
+     * 上一版把 {@code forceRealignSnapshots} 当成后者，结果实时视图写成功、模板快照原样不动、
+     * 却返 200（{@code refreshedTemplates} 与 {@code updated_at} 都"对"）。现已两层都推，
+     * 并在执行后按**内容 md5**自证，不一致即整体回滚。三个动作同生共死，见
+     * {@link BuilderRecompileService#recompileAndRealign}。
      */
     @POST
     @Path("/refresh-all-snapshots")
@@ -134,11 +157,63 @@ public class ConfigCenterResource {
                     .collect(Collectors.toList());
         }
         boolean confirm = body != null && Boolean.TRUE.equals(body.get("confirm"));
+        // repair-260908 B-6（api.md §2）：新增**可选**字段，缺省 false ⇒ 不传时行为逐位不变。
+        boolean recompile = body != null && Boolean.TRUE.equals(body.get("recompile"));
 
         List<UUID> resolvedIds = templateService.resolvePublishedOrArchivedTemplateIds(requestedIds);
 
         if (!confirm) {
-            return ApiResponse.success(buildPreview(resolvedIds));
+            Map<String, Object> preview = buildPreview(resolvedIds);
+            // 预览必须给出「有多少个视图会被改写」这个数字——CLAUDE.md §3.2 第 1 步「先量化影响面」
+            // 拿不到它，用户就没有可批准的依据（AC-14）。recompile=false 时恒 0，不做无谓编译。
+            BuilderRecompileService.RecompileOutcome rc = recompile
+                    ? builderRecompileService.previewRecompile(resolvedIds)
+                    : new BuilderRecompileService.RecompileOutcome();
+            preview.put("recompile", recompile);
+            preview.put("recompileViews", rc.views);
+            preview.put("recompileChanged", rc.changed);
+            preview.put("recompileChangedViewNames", rc.changedViewNames);
+            // 🔑 2026-09-08 返工新增：第二层（template.sql_views_snapshot）也必须在预览里可见。
+            //    上一版预览只有第一层数字，「第二层根本没生效」因此毫无征兆地通过了预览。
+            preview.put("snapshotTemplates", rc.snapshotTemplates);
+            preview.put("snapshotEntries", rc.snapshotEntriesRewritten);
+            preview.put("snapshotEntriesStale", rc.snapshotEntriesStale);
+            preview.put("axisScopeToWrite", rc.axisScopeWritten);
+            preview.put("snapshotStaleSamples", rc.snapshotMismatchSamples);
+            return ApiResponse.success(preview);
+        }
+
+        if (recompile) {
+            // 重编译 + 快照对齐 + 审计三者同生共死，全部委派给单一 @Transactional 方法
+            // （跨 bean 调用，拦截器正常生效；本类内部自调用会静默跳过拦截器）。
+            UUID recompileOperatorId = sessionHelper.getCurrentUserIdOrFallback(httpRequest);
+            Map<String, Object> done =
+                    builderRecompileService.recompileAndRealign(resolvedIds, recompileOperatorId);
+
+            @SuppressWarnings("unchecked")
+            List<String> rcLogIds = (List<String>) done.get("operationLogIds");
+            Map<String, Object> rcOut = new LinkedHashMap<>();
+            rcOut.put("preview", false);
+            rcOut.put("recompile", true);
+            rcOut.put("recompileViews", done.get("recompileViews"));
+            rcOut.put("recompileChanged", done.get("recompileChanged"));
+            rcOut.put("recompileChangedViewNames", done.get("recompiledViewNames"));
+            // 第二层（SQL 视图冻结快照）的真实结果 —— snapshotMismatchAfterWrite 必为 0，
+            // 非 0 时 BuilderRecompileService 已抛异常整体回滚，根本走不到这里。
+            rcOut.put("snapshotTemplates", done.get("snapshotTemplates"));
+            rcOut.put("snapshotEntriesRewritten", done.get("snapshotEntriesRewritten"));
+            rcOut.put("snapshotMismatchAfterWrite", done.get("snapshotMismatchAfterWrite"));
+            rcOut.put("templateOwnedSnapshotNonEmpty", done.get("templateOwnedSnapshotNonEmpty"));
+            rcOut.put("axisScopeWritten", done.get("axisScopeWritten"));
+            rcOut.put("refreshedTemplates", done.get("refreshedTemplates"));
+            rcOut.put("refreshedRows", done.get("refreshedRows"));
+            rcOut.put("operationLogId",
+                    (rcLogIds == null || rcLogIds.isEmpty()) ? null : rcLogIds.get(rcLogIds.size() - 1));
+            rcOut.put("operationLogIds", rcLogIds);
+            LOG.warnf("[admin-backdoor] refresh-all-snapshots(recompile=true) 已执行："
+                    + "重编译 %s 个视图 + 已破坏 %d 个模板的不可变性",
+                    done.get("recompileViews"), resolvedIds.size());
+            return ApiResponse.success(rcOut);
         }
 
         // 快照重写 + operation_log 审计必须同生共死——委派 TemplateService 的单一
