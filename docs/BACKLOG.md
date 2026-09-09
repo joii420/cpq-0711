@@ -1055,3 +1055,31 @@ pickQualifiedCustomer({ needsTakenProductNo? })
     实测两表已分叉：basic 23 条边 / detail 14 条边，正泰那一族 9 条边**只在 basic 里有**
 - 前置条件：业务建出第一张详细核价（`COST_DETAIL`）模板，且导入过对应的核价 BOM 数据
 - 优先级：**P1**｜规模：S（一条 SQL 配置 + 一轮验证，无代码改动）
+
+---
+
+### task-260909 V6 老表退役 · 立项登记（2026-09-09，用户裁「立」）
+
+- [ ] **BL-0233 · V6 老表退役 批次 0~3（不含 `DROP TABLE`）**
+  - 来源：`task-260909-V6老表引用面审计` 结案后用户裁决 `D-1 = c`（摘除 pending 占号机制，由 `_record` 承担）
+  - **为什么现在能做**：`_record` 机制已就位并接管 —— `DatasetQuotationCommitService:40` 类注释明写
+    「不做 pending 过户：`ds_quote_*` 29 张表无一张有 `pending_quotation_id` 列」，13 张 `_record` 表已有数据
+    （最大 `ds_quote_material_bom_record` 9559 行）；`QuotationService:1685-1697` 两条回填并存，
+    注释自述老回填对新单是安全 no-op
+  - 范围：批次 0 关测试写共享库 · 1 退 3 个 `v_compat_*`（须先改写 3 个 `v_composite_child_*` + `costing_bom_tree_config` 2 行）
+    · 2 `v_ds_cost_*_all` 的桥换 `ds_quote_material`（实测逐值等价，须与 `CostAllVersionViewSelfCheck` 守卫同批）
+    · 3 摘 pending 机制 + 3 处用户可见文案改指向 `ds_`
+  - 🚫 **不含 `DROP TABLE`**（用户裁 `D-2`：单独立项，交付后跑一段时间再删）；🚫 不改 `deploy/cpq-init.sql`（裁 `D-5`：随 DROP 一起改）
+  - 🚦 **开工前置 P-1 未闭合**：410 于 2026-09-07 上线，而 `annual_discount` 有 12 行 pending 创建于 **09-08**（410 之后）。
+    形状像夹具（同事务 / `created_by` NULL / 料号 `S0001,S0004` / `is_current=false` / 无业务伴生对象），
+    但**当前 master 里找不到能产生它的测试**。**说不出是谁写的就不能宣告「没有任何路径会产生 pending」**
+  - ⚠️ **前置 P-2**：预实验的「建单臂」是空验证 —— 3 次建单对 10 张表**全表增量为 0**、单 0 明细行
+    （所选批次 `batchParts=0`）。需造真批次重做或显式作废
+  - 优先级：**P1** ｜ 预估规模：L（视图 5 个 + 41 写点的 pending 部分 + 守卫重做）
+
+- [ ] **BL-0234 · 18 个 `fixtures/bundles/*.json` 内嵌 `sql_template` 冻结副本仍引用老表**
+  - 来源：`task-260909-V6老表引用面审计` 交付期发现（`AC-8` 未覆盖的第 17 面），用户裁定不在该任务补 AC
+  - 实测作表名位命中：`material_master` 16 · `unit_price` 14 · `material_bom_item` 14 · `element_bom_item` 7 · `material_customer_map` 7 · `capacity` 6
+  - 🔑 **关键在于夹具不随库变**：退役后库里模板改了、bundle 里的老表 SQL 还在 ⇒ 出现「扫了库里的 `sql_template`、
+    漏了固化在夹具里的同一批 SQL」的缺口
+  - 优先级：**P2** ｜ 预估规模：S
