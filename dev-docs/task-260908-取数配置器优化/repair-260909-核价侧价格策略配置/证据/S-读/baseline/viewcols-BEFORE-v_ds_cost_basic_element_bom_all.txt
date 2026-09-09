@@ -1,0 +1,16 @@
+ordinal_position|column_name|data_type
+1|id|bigint
+2|production_no|character varying
+3|material_part_no|character varying
+4|item_seq|integer
+5|element_code|character varying
+6|content_pct|numeric
+7|loss_rate|numeric
+8|version_no|integer
+9|row_fingerprint|character
+10|source|character varying
+11|created_at|timestamp with time zone
+12|created_by|character varying
+13|updated_at|timestamp with time zone
+14|updated_by|character varying
+15|is_current|boolean

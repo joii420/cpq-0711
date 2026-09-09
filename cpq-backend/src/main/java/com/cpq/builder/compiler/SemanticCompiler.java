@@ -1530,13 +1530,24 @@ public class SemanticCompiler {
         List<String> on = new ArrayList<>();
         on.add(PRICE_FUNC_ALIAS + "." + codeKey.rightColumn + " = " + codeExpr);
         if (keys.size() > 1) {
-            // ⚠️ requalifyAnchorExpr 会在 anchor_expr 为空时抛 COMPILE_ANCHOR_EXPR_MISSING，
-            //    所以只在真的要用它（多连接键）时才求值。
-            //    task-260907 B-8 后 QUOTE 侧只剩 element_code 一个键（客户 × 元素粒度），
-            //    走不到这里；核价侧若将来接入多键价格边，这段仍然成立。
-            String hfExprForJoin = requalifyAnchorExpr(c);
+            // repair-260909 B-1（AC-P2 / AC-R1）：第 2..N 键的左侧改用 leftColumn，
+            // 与同方法 key[0] 的 codeExpr、以及普通边 ensureLeftJoin（:502）的
+            // `alias.rightColumn = anchorAlias.leftColumn` 三处彻底对齐。
+            //
+            // 🔑 这是抹掉一处不一致，不是加机制：原实现把左侧写死成 anchor_expr，
+            //    leftColumn 被完全忽略 ⇒ 连接键只能是锚点自身的那一列。
+            //
+            // ⚠️ 原处注释写着「task-260907 B-8 后 QUOTE 侧只剩 element_code 一个键，
+            //    走不到这里」—— **该注释已过期**：2026-09-09 实测共享库，报价侧
+            //    semantic_edge_key 就是 2 行（element_code / material_no），8 个已配价格列的
+            //    组件全部天天走这条分支。🚫 不要相信那句话而跳过报价侧回归。
+            //
+            // ✅ 报价侧字节等价已实测（AC-R1）：key[1].leftColumn='material_no'、
+            //    anchor_expr='dqeb.material_no'、anchorAlias='dqeb' ⇒ 两种写法同串 SQL；
+            //    8/8 样本 diff 为空，且先做过灵敏度实验（故意写错列名 ⇒ diff 出 40 行）。
             for (int i = 1; i < keys.size(); i++) {
-                on.add(PRICE_FUNC_ALIAS + "." + keys.get(i).rightColumn + " = " + hfExprForJoin);
+                on.add(PRICE_FUNC_ALIAS + "." + keys.get(i).rightColumn
+                        + " = " + c.anchorAlias + "." + keys.get(i).leftColumn);
             }
         }
         plan.joinClause = "LEFT JOIN " + funcNode.funcSignature + " " + PRICE_FUNC_ALIAS +

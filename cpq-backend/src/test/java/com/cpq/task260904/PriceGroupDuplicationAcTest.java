@@ -25,7 +25,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li><b>QUOTE 恰好返回 2 组</b> {@code [ELEMENT_BOM/MAIN, FUNC_ELEMENT_PRICE/PRICE]}
  *       —— 改动前为 3 组（{@code FUNC_ELEMENT_PRICE} 出现两次）；</li>
  *   <li>保留下来的那块必须是 <b>{@code isCore=true} / {@code viewColumn='元素单价'}</b> 的那个；</li>
- *   <li>阴性对照：{@code COST_BASIC} / {@code COST_DETAIL} 仍各 <b>1 组</b>（本就不复现，不得被顺带改坏）；</li>
+ *   <li>阴性对照：{@code COST_BASIC} / {@code COST_DETAIL} 各 <b>2 组</b>且<b>恰好 1 个 PRICE 组</b>
+ *       （🪦→🚦 repair-260909 起：原为「各 1 组、无 PRICE 组」，该前提已被用户裁决 A0-1 有意推翻；
+ *       原意「不得被顺带改坏」不变 —— 0 个或 2 个 PRICE 组仍会红）；</li>
  *   <li>阴性对照：{@code Sec34PriceStrategyTest} 的 5 条用例仍绿（🚫 不在本类跑，由执行命令带上）。</li>
  * </ol>
  *
@@ -62,8 +64,30 @@ class PriceGroupDuplicationAcTest extends Batch2Base {
 
     /** 判据线来自 api.md §1.3「QUOTE 材质元素挂 2 组」——期望形态，非现网快照。 */
     private static final int QUOTE_EXPECTED_GROUPS = 2;
-    /** 阴性对照：核价两套本就各 1 组（task-260819 B-50 按 NARROW 边剔除桥之后）。 */
-    private static final int COSTING_EXPECTED_GROUPS = 1;
+    /**
+     * 🪦→🚦 <b>本常量编码的前提已被有意推翻，期望值 1 → 2</b>（repair-260909）。
+     *
+     * <p>[原前提] 「核价侧本就没有价格策略组」—— 那是 {@code task-260904} 建图时显式划下的设计边界
+     * （{@code FUNC_ELEMENT_PRICE} 节点只挂 QUOTE 方言，node.note 写着「核价侧锚点是生产料号，
+     * 语义对不上，不硬接」），核价两套因此各只有 1 组 {@code ELEMENT_BOM[MAIN]}。
+     *
+     * <p>[为什么被推翻] 用户 2026-09-09 裁决 {@code A0-1}：<b>核价与报价对同一 (客户, 料号, 元素)
+     * 必须给出同一个元素价格</b>。{@code repair-260909} 据此给核价两方言补了
+     * {@code FUNC_ELEMENT_PRICE} 节点与 {@code ELEMENT_BOM --PRICE--> } 边，
+     * 销售料号由视图内 {@code sales_material_no} 桥接列提供。
+     * ⇒ 核价侧现在<b>应当</b>是 2 组 {@code [ELEMENT_BOM(MAIN), FUNC_ELEMENT_PRICE(PRICE)]}。
+     * 详见 {@code dev-docs/task-260908-取数配置器优化/repair-260909-核价侧价格策略配置/问题说明.md}。
+     *
+     * <p>🔑 <b>本条阴性对照的原意（「修 QUOTE 时不许误伤核价」）必须原样保住</b>，所以断言
+     * 改成的是<b>恰好 2 组 + 恰好 1 个 PRICE 组</b>，🚫 不是 {@code >=1} ——
+     * 核价侧变 0 个 PRICE 组（边被误删/误过滤）或 2 个（重蹈 B-23 的重复出组）<b>都照样变红</b>。
+     *
+     * <p>🚫 这不是「改数字让测试变绿」：正当性有两条，缺一不可 ——
+     * ① 它编码的前提已被<b>用户裁决</b>推翻；② 改后在<b>真故障</b>时仍会红。
+     */
+    private static final int COSTING_EXPECTED_GROUPS = 2;
+    /** 核价侧应有的 PRICE 组个数（repair-260909）。🔑 恰好 1 个：0 或 2 都是缺陷。 */
+    private static final int COSTING_EXPECTED_PRICE_GROUPS = 1;
 
     private static final String PRICE_NODE = "FUNC_ELEMENT_PRICE";
     private static final String EXPECTED_CORE_VIEW_COLUMN = "元素单价";
@@ -129,17 +153,26 @@ class PriceGroupDuplicationAcTest extends Batch2Base {
                 .map(f -> f.get("sourceColumn") + "(isCore=" + f.get("isCore")
                         + ", viewColumn=" + f.get("viewColumn") + ", lookupLib=" + f.get("lookupLib") + ")").toList());
 
-        // ── ③ 阴性对照：核价两套仍各 1 组，且都不含 PRICE 组 ──
-        //    只有 QUOTE 在 semantic_tab_view_node 里挂了 FUNC_ELEMENT_PRICE/AUX，故只有 QUOTE 复现。
-        //    这条锁住「修 QUOTE 时不许把另两套本来就对的形态顺带改坏」。
+        // ── ③ 阴性对照：核价两套各【2】组，且【恰好 1 个】PRICE 组 ──
+        //    🪦→🚦 repair-260909：原文是「各 1 组、且都不含 PRICE 组」，编码的是
+        //    「核价侧本就没有价格策略」这条设计边界 —— 该前提已被用户裁决 A0-1 有意推翻
+        //    （核价与报价必须看到同一个元素价格），见 COSTING_EXPECTED_GROUPS 的 Javadoc。
+        //
+        //    🔑 本条的【原意没变】，仍然是「修 QUOTE 时不许把另两套顺带改坏」：
+        //       · 断言恰好 2 组      ⇒ 多出或少掉任何一组都红
+        //       · 断言恰好 1 个 PRICE ⇒ 0 个（边被误删/误过滤）与 2 个（重蹈 B-23 重复出组）都红
+        //       🚫 不许松成 >= 1 —— 那才是把这条阴性对照废掉。
         for (String costing : List.of("COST_BASIC", "COST_DETAIL")) {
             List<Group> gs = byDialect.get(costing);
             assertEquals(COSTING_EXPECTED_GROUPS, gs.size(), "AC-30③ 阴性对照：" + costing
-                    + "/材质元素 应仍为 " + COSTING_EXPECTED_GROUPS + " 组（本就不复现该缺陷），实际="
+                    + "/材质元素 应为 " + COSTING_EXPECTED_GROUPS + " 组"
+                    + "（repair-260909 起 = ELEMENT_BOM(MAIN) + FUNC_ELEMENT_PRICE(PRICE)），实际="
                     + gs.stream().map(g -> g.groupKey() + "[" + g.groupKind() + "]").toList()
-                    + " ⇒ 若变了，说明 B-23 的修法误伤了另两套方言。");
-            assertTrue(priceGroups(gs).isEmpty(), "AC-30③ 阴性对照：" + costing
-                    + "/材质元素 本不应有 PRICE 组，实际=" + priceGroups(gs).stream().map(Group::groupKey).toList());
+                    + " ⇒ 变了说明要么 B-23 的修法误伤了核价方言，要么 repair-260909 的 PRICE 边没生效。");
+            assertEquals(COSTING_EXPECTED_PRICE_GROUPS, priceGroups(gs).size(), "AC-30③ 阴性对照："
+                    + costing + "/材质元素 应恰好 " + COSTING_EXPECTED_PRICE_GROUPS + " 个 PRICE 组，实际="
+                    + priceGroups(gs).stream().map(Group::groupKey).toList()
+                    + " ⇒ 0 个 = repair-260909 的 PRICE 边丢了；2 个 = 重蹈 task-260904 B-23 的重复出组缺陷。");
         }
 
         // ── 前置事实取证：QUOTE 确实挂了那行 AUX，且种子一行未动（🚫 修法禁区②：不改 V413 种子）──

@@ -1,0 +1,200 @@
+[
+ {
+  "conflict": false,
+  "conflictReason": null,
+  "dialect": "QUOTE",
+  "dims": [],
+  "fields": [
+   {
+    "dataType": "TEXT",
+    "displayName": "销售料号",
+    "elemKey": false,
+    "isCore": false,
+    "lookupLib": null,
+    "roles": [
+     "ROW_KEY"
+    ],
+    "sourceColumn": "material_no",
+    "sourceNodeKey": "ELEMENT_BOM",
+    "viewColumn": "_物料与元素BOM_销售料号"
+   },
+   {
+    "dataType": "TEXT",
+    "displayName": "材质料号",
+    "elemKey": false,
+    "isCore": false,
+    "lookupLib": null,
+    "roles": [
+     "PART_NO",
+     "ROW_KEY"
+    ],
+    "sourceColumn": "material_part_no",
+    "sourceNodeKey": "ELEMENT_BOM",
+    "viewColumn": "_物料与元素BOM_材质料号"
+   },
+   {
+    "dataType": "TEXT",
+    "displayName": "材料名",
+    "elemKey": false,
+    "isCore": false,
+    "lookupLib": "材质（查名）",
+    "roles": [
+     "PART_NAME"
+    ],
+    "sourceColumn": "symbol",
+    "sourceNodeKey": "RECIPE_NAME_LK",
+    "viewColumn": "_材质_材料名"
+   },
+   {
+    "dataType": "NUMBER",
+    "displayName": "项次",
+    "elemKey": false,
+    "isCore": false,
+    "lookupLib": null,
+    "roles": [
+     "SORT"
+    ],
+    "sourceColumn": "item_seq",
+    "sourceNodeKey": "ELEMENT_BOM",
+    "viewColumn": "_物料与元素BOM_项次"
+   },
+   {
+    "dataType": "TEXT",
+    "displayName": "元素",
+    "elemKey": true,
+    "isCore": false,
+    "lookupLib": null,
+    "roles": [
+     "ROW_KEY"
+    ],
+    "sourceColumn": "element_code",
+    "sourceNodeKey": "ELEMENT_BOM",
+    "viewColumn": "_物料与元素BOM_元素"
+   },
+   {
+    "dataType": "NUMBER",
+    "displayName": "组成含量（%）",
+    "elemKey": false,
+    "isCore": false,
+    "lookupLib": null,
+    "roles": [],
+    "sourceColumn": "content_pct",
+    "sourceNodeKey": "ELEMENT_BOM",
+    "viewColumn": "_物料与元素BOM_组成含量（%）"
+   },
+   {
+    "dataType": "NUMBER",
+    "displayName": "损耗率%",
+    "elemKey": false,
+    "isCore": false,
+    "lookupLib": null,
+    "roles": [],
+    "sourceColumn": "loss_rate",
+    "sourceNodeKey": "ELEMENT_BOM",
+    "viewColumn": "_物料与元素BOM_损耗率%"
+   },
+   {
+    "dataType": "NUMBER",
+    "displayName": "毛用量",
+    "elemKey": false,
+    "isCore": false,
+    "lookupLib": null,
+    "roles": [],
+    "sourceColumn": "gross_usage",
+    "sourceNodeKey": "ELEMENT_BOM",
+    "viewColumn": "_物料与元素BOM_毛用量"
+   },
+   {
+    "dataType": "TEXT",
+    "displayName": "毛用量单位",
+    "elemKey": false,
+    "isCore": false,
+    "lookupLib": null,
+    "roles": [],
+    "sourceColumn": "gross_usage_unit",
+    "sourceNodeKey": "ELEMENT_BOM",
+    "viewColumn": "_物料与元素BOM_毛用量单位"
+   },
+   {
+    "dataType": "NUMBER",
+    "displayName": "净用量",
+    "elemKey": false,
+    "isCore": false,
+    "lookupLib": null,
+    "roles": [],
+    "sourceColumn": "net_usage",
+    "sourceNodeKey": "ELEMENT_BOM",
+    "viewColumn": "_物料与元素BOM_净用量"
+   },
+   {
+    "dataType": "TEXT",
+    "displayName": "净用量单位",
+    "elemKey": false,
+    "isCore": false,
+    "lookupLib": null,
+    "roles": [],
+    "sourceColumn": "net_usage_unit",
+    "sourceNodeKey": "ELEMENT_BOM",
+    "viewColumn": "_物料与元素BOM_净用量单位"
+   },
+   {
+    "dataType": "NUMBER",
+    "displayName": "回收折扣(%)",
+    "elemKey": false,
+    "isCore": false,
+    "lookupLib": null,
+    "roles": [],
+    "sourceColumn": "recovery_discount",
+    "sourceNodeKey": "ELEMENT_BOM",
+    "viewColumn": "_物料与元素BOM_回收折扣(%)"
+   },
+   {
+    "dataType": "TEXT",
+    "displayName": "回收量",
+    "elemKey": false,
+    "isCore": false,
+    "lookupLib": null,
+    "roles": [],
+    "sourceColumn": "recovery_qty",
+    "sourceNodeKey": "ELEMENT_BOM",
+    "viewColumn": "_物料与元素BOM_回收量"
+   }
+  ],
+  "groupKey": "ELEMENT_BOM",
+  "groupKind": "MAIN",
+  "groupName": "物料与元素BOM"
+ },
+ {
+  "conflict": false,
+  "conflictReason": null,
+  "dialect": "QUOTE",
+  "dims": [],
+  "fields": [
+   {
+    "dataType": "MONEY",
+    "displayName": "元素单价",
+    "elemKey": false,
+    "isCore": true,
+    "lookupLib": "价格策略",
+    "roles": [],
+    "sourceColumn": "unit_price",
+    "sourceNodeKey": "FUNC_ELEMENT_PRICE",
+    "viewColumn": "元素单价"
+   },
+   {
+    "dataType": "TEXT",
+    "displayName": "货币",
+    "elemKey": false,
+    "isCore": false,
+    "lookupLib": "价格策略",
+    "roles": [],
+    "sourceColumn": "currency",
+    "sourceNodeKey": "FUNC_ELEMENT_PRICE",
+    "viewColumn": "货币"
+   }
+  ],
+  "groupKey": "FUNC_ELEMENT_PRICE",
+  "groupKind": "PRICE",
+  "groupName": "价格策略"
+ }
+]
