@@ -1,0 +1,3 @@
+===== 改动后(worktree代码) =====
+AC-R1（材料名紧邻最后一个 PART_NO 之后）: PASS=42 FAIL=0 / 锚点=42
+AC-R2（仍在 MAIN 组内 + 无独立查名分组）: PASS=42 FAIL=0 / 锚点=42
