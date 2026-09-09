@@ -11,13 +11,18 @@ import com.cpq.component.repository.ComponentSqlViewRepository;
 import com.cpq.component.service.ComponentSqlViewService;
 import com.cpq.semanticgraph.service.SemanticGraphLoader;
 import com.cpq.semanticgraph.service.SemanticGraphSnapshot;
+import com.cpq.template.entity.Template;
+import com.cpq.template.entity.TemplateComponent;
 import com.cpq.template.service.TemplateService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -63,17 +68,41 @@ public class BuilderRecompileService {
     private static final Logger LOG = Logger.getLogger(BuilderRecompileService.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    @Inject EntityManager em;
     @Inject SemanticGraphLoader loader;
     @Inject SemanticCompiler compiler;
     @Inject ComponentSqlViewRepository sqlViewRepository;
     @Inject ComponentSqlViewService componentSqlViewService;
     @Inject TemplateService templateService;
 
-    /** 一次重编译的账：扫了几个、其中几个 sql_template 真的会变、变的都是谁。 */
+    /** 一次重编译的账：扫了几个、其中几个 sql_template 真的会变、变的都是谁 + 第二层快照的账。 */
     public static final class RecompileOutcome {
+        // ── 第一层：实时 component_sql_view
         public int views;
         public int changed;
         public final List<String> changedViewNames = new ArrayList<>();
+        // ── 第二层：template.sql_views_snapshot（🚨 2026-09-08 返工新增，见 realignSqlViewsSnapshots）
+        /** 目标模板数。 */
+        public int snapshotTemplates;
+        /** 第二层实际写入（执行）/ 当前持有（预览）的快照条目总数。 */
+        public int snapshotEntriesRewritten;
+        /** 预览专用：与「重编译后应有文本」不一致的快照条目数 —— 这就是第二层要修的东西有多少。 */
+        public int snapshotEntriesStale;
+        /** 执行专用：**写完之后**自证仍不一致的条目数。🚨 必须为 0，非 0 直接抛异常整体回滚。 */
+        public int snapshotMismatchAfterWrite;
+        /** 不一致条目的明细（模板 id + 条目 key），最多记 20 条，够定位即可。 */
+        public final List<String> snapshotMismatchSamples = new ArrayList<>();
+        /**
+         * 目标模板里 {@code template_sql_views_snapshot}（<b>另一列</b>，模板自有 SQL 视图的冻结快照）
+         * <b>非空</b>的个数。2026-09-08 实测 5/5 全是 {@code {}} ⇒ 本期无事可做；
+         * 但它必须**被数出来、报出来**，否则将来某个模板有了自有视图时，同一个洞会换个列名再来一次。
+         */
+        public int templateOwnedSnapshotNonEmpty;
+        /**
+         * {@code componentId::sqlViewName} → <b>本次重编译产物</b>。仅预览路径用来预测第二层
+         * （🚫 预览不写库 ⇒ 实时表这时还是旧文本，只跟实时表比会漏报）。不进响应体。
+         */
+        public final Map<String, String> newSqlByKey = new LinkedHashMap<>();
     }
 
     /**
@@ -82,8 +111,13 @@ public class BuilderRecompileService {
      * <p>🚫 不加 {@code @Transactional}：本方法不写库，加了反而会把「预览」和「执行」两条路径的
      * 事务语义搞成一样，将来有人在这里加一行写操作就不会被 review 注意到。
      */
-    public RecompileOutcome previewRecompile() {
-        return runRecompile(false);
+    public RecompileOutcome previewRecompile(List<UUID> templateIds) {
+        RecompileOutcome outcome = runRecompile(false);
+        // 🔑 2026-09-08 返工新增：预览必须把**第二层**也算出来。
+        //    上一版预览只报 recompileChanged（第一层），第二层完全不可见 ——
+        //    于是「执行完第二层根本没动」这个故障，预览阶段一点征兆都看不到。
+        predictSnapshotStaleness(templateIds, outcome.newSqlByKey, outcome);
+        return outcome;
     }
 
     /**
@@ -102,20 +136,216 @@ public class BuilderRecompileService {
     public Map<String, Object> recompileAndRealign(List<UUID> templateIds, UUID operatorId) {
         RecompileOutcome outcome = runRecompile(true);
 
-        // 🚨 flush 不是保险，是必需：forceRealignSnapshots 用**原生 SQL** 从 component_sql_view
-        //    读取 sql_template 再 INSERT ... SELECT 进快照。上面的写入还在持久化上下文里没落地时，
-        //    原生查询读到的就是**旧文本** ⇒ 视图新了、快照还是旧的，且全程不报错。
+        // 🚨 flush 不是保险，是必需：下面两步都用**原生 SQL / 另一条服务链**从 component_sql_view
+        //    读取 sql_template。上面的写入还在持久化上下文里没落地时，它们读到的就是**旧文本**
+        //    ⇒ 视图新了、快照还是旧的，且全程不报错。
         sqlViewRepository.flush();
 
+        // ── 第一层旁支：template_component_snapshot（**组件配置**快照）
+        // 🚨 2026-09-08 返工纪要：这一步**不是**「把实时视图推进冻结快照」。
+        //    forceRealignSnapshots 的实现是 DELETE + INSERT template_component_snapshot，
+        //    **一个字都不碰 template.sql_views_snapshot**。名字里都叫「快照」，推的却是两张表。
+        //    上一版把它当成第二层，结果是：实时视图写成功、模板快照原样不动、HTTP 200、
+        //    连 template.updated_at 都变了（forceRealign 会动模板行）—— 典型的
+        //    「写了、没报错、写的不是那张表」。保留它（组件配置那一层本来也该推），
+        //    但它**不能替代**下面的 realignSqlViewsSnapshots。
         Map<String, Object> realign = templateService.forceRealignSnapshotsWithAudit(templateIds, operatorId);
+
+        // ── 第二层：template.sql_views_snapshot（**SQL 视图**冻结快照）—— 缺陷①要救的存量单读的就是它
+        realignSqlViewsSnapshots(templateIds, outcome);
+        em.flush();
+
+        // ── 🚨 执行后自证：判据落在**内容**上，不是 updated_at、不是 refreshedTemplates
+        //    （这次事故里那两个都是"对"的，内容却是旧的）。不一致 ⇒ 抛异常整体回滚，不许返 200。
+        assertSnapshotsMatchLive(templateIds, outcome);
 
         Map<String, Object> out = new LinkedHashMap<>(realign);
         out.put("recompileViews", outcome.views);
         out.put("recompileChanged", outcome.changed);
         out.put("recompiledViewNames", outcome.changedViewNames);
-        LOG.warnf("[admin-backdoor] recompile+realign 已执行：重编译 %d 个视图（其中 %d 个 sql_template 变化）",
-                outcome.views, outcome.changed);
+        out.put("snapshotTemplates", outcome.snapshotTemplates);
+        out.put("snapshotEntriesRewritten", outcome.snapshotEntriesRewritten);
+        out.put("snapshotMismatchAfterWrite", outcome.snapshotMismatchAfterWrite);
+        out.put("templateOwnedSnapshotNonEmpty", outcome.templateOwnedSnapshotNonEmpty);
+        LOG.warnf("[admin-backdoor] recompile+realign 已执行：重编译 %d 个视图（%d 个 sql_template 变化）；"
+                        + "第二层重写 %d 个模板的 %d 条 sql_views_snapshot 条目，写后自证不一致 %d 条",
+                outcome.views, outcome.changed, outcome.snapshotTemplates,
+                outcome.snapshotEntriesRewritten, outcome.snapshotMismatchAfterWrite);
         return out;
+    }
+
+    /**
+     * 第二层：把实时 {@code component_sql_view} 重新冻结进 {@code template.sql_views_snapshot}。
+     *
+     * <p><b>为什么必须单独做</b>：报价渲染读 SQL 视图的优先级是
+     * 「报价单 snapshot &gt; <b>模板 snapshot</b> &gt; 实时 component_sql_view」
+     * （{@code Template#sqlViewsSnapshot} 注释）—— 已发布模板恒命中第二档，
+     * 实时视图改成什么样它都看不见。⇒ 不推这一层，存量单永远是旧口径，B-6 等于没做。
+     *
+     * <p><b>怎么推</b>：与 {@code TemplateService#publish()}「阶段 2」**同一条构建路径**
+     * （逐模板取其 {@code template_component} 的 componentIds → {@code snapshotForComponents}
+     * → 写回 {@code sqlViewsSnapshot}）。🚫 不另写一套序列化：另写一套就会出现
+     * 「发布出来的快照」与「重对齐出来的快照」两种形态，而它们的差异要到渲染期才暴露。
+     *
+     * <p>⚠️ <b>这是整份重建，不是逐条打补丁</b>：模板发布后若组件的视图有增删，
+     * 重建结果会跟着变（多/少条目），不只是 sql_template 变。这本就是本端点
+     * 「明确破坏不可变性」的语义，但报告时要说清，别让人以为只动了谓词。
+     *
+     * <p><b>N+1 说明</b>：循环体是「一个模板 = 一个工作单元」，每单元 1 条 template_component 查询
+     * + {@code snapshotForComponents}（其内部按 componentId 逐个 {@code listByComponent}，是**既有实现**，
+     * publish() 走的也是它）。⇒ 条数为 O(模板数 × 该模板组件数)，与任何业务表数据量无关。
+     * 🚫 不在这里另写一版批量的 snapshotForComponents —— 那就回到「两种形态」的老问题上了。
+     */
+    private void realignSqlViewsSnapshots(List<UUID> templateIds, RecompileOutcome outcome) {
+        if (templateIds == null || templateIds.isEmpty()) return;
+        for (UUID tid : templateIds) {
+            Template t = Template.findById(tid);
+            if (t == null) continue;
+            List<UUID> componentIds = TemplateComponent.<TemplateComponent>list("templateId", tid)
+                    .stream().map(tc -> tc.componentId).distinct().toList();
+            Map<String, Map<String, Object>> snap =
+                    componentSqlViewService.snapshotForComponents(componentIds);
+            try {
+                t.sqlViewsSnapshot = MAPPER.writeValueAsString(snap);
+            } catch (Exception e) {
+                // 🚫 不吞：序列化失败却继续，会留下「一部分模板新口径、一部分旧口径」的混合态
+                throw new BuilderApiException(500, "SNAPSHOT_SERIALIZE_FAILED",
+                        "模板「" + t.name + "」(" + tid + ") 的 sql_views_snapshot 序列化失败，已整体中止: "
+                                + e.getMessage(), Map.of("templateId", String.valueOf(tid)));
+            }
+            t.persist();
+            outcome.snapshotTemplates++;
+            outcome.snapshotEntriesRewritten += snap.size();
+            // 🚨 另一列的存在感（见 RecompileOutcome#templateOwnedSnapshotNonEmpty）：
+            //    template_sql_views_snapshot 冻结的是**模板自有** SQL 视图（template_sql_view，手写），
+            //    不由本次重编译产生，故本方法不动它。但非空就必须报出来 ——
+            //    「有另一层没人推」这件事只要不可见，就会以另一个列名重演一次。
+            if (t.templateSqlViewsSnapshot != null
+                    && !t.templateSqlViewsSnapshot.isBlank()
+                    && !"{}".equals(t.templateSqlViewsSnapshot.trim())) {
+                outcome.templateOwnedSnapshotNonEmpty++;
+                LOG.warnf("[admin-backdoor] 模板 %s 的 template_sql_views_snapshot 非空 —— "
+                        + "本端点不推该列（它冻结的是模板自有手写视图）。若它也需要对齐，须另立任务。", tid);
+            }
+        }
+    }
+
+    /**
+     * 🚨 写后自证：逐条比对「模板快照条目的 {@code sql_template}」与「实时 ACTIVE 视图的
+     * {@code sql_template}」的 <b>md5</b>，不一致即抛异常（{@code @Transactional} 整体回滚）。
+     *
+     * <p><b>判据为什么必须落在内容上</b>（2026-09-08 事故的直接教训）：上一版返 200 时
+     * {@code refreshedTemplates=5} 是对的、{@code template.updated_at} 也确实变了，
+     * <b>但快照内容是旧的</b>。⇒ 任何以「调用成功 / 行数对 / 时间戳变了」为判据的自检，
+     * 对这个故障形态全部无效。只有把两边的文本摘要拿来比，才可能失败。
+     *
+     * <p>🚫 <b>{@code template.updated_at} 恒为真，永远不许当成功判据</b>：
+     * {@code TemplateService#forceRealignSnapshots} 自己那条
+     * {@code UPDATE template SET components_snapshot = sub.snap, updated_at = now()} 就会把它刷新
+     * —— 它推的是 {@code template_component_snapshot} / {@code components_snapshot}，
+     * 与本层 {@code sql_views_snapshot} 写没写对**毫无关系**。
+     *
+     * <p>🚫 <b>刻意不做文本/正则断言</b>（如「快照里含 {@code customer_no = :customerCode}」）：
+     * 那是**假阳性**。客户维度有三态 —— ① 没有（要修的）② 走 {@code :customerCode} 参数
+     * ③ 走列对列（安全，见 BL-0229）—— 而 {@code LEFT JOIN ds_quote_customer_part dqcp
+     * ON … AND dqcp.customer_no = :customerCode} 属形态②、**本来就该在那儿**，
+     * 文本含判会把「主表 WHERE 根本没客户谓词」的页签判成「已修好」而跳过检查
+     * （2026-09-08 主线实测：取值测试模板2 的产品页签正是重复行最多的那个，却会被判成已修）。
+     * 同日已有两条正则骗过人（并发线的 {@code FROM\s+(ds_quote_\w+)} 匹到 NARROW 桥子查询；
+     * 主线的 {@code like '%customer_no = :customerCode%'} 匹到 LEFT JOIN）。
+     * <b>md5 相等不需要理解 SQL 语义，因而骗不过去</b>：它只问「写进去的是不是就是刚编译出来的那份」，
+     * 而这正是第二层唯一该保证的事。
+     *
+     * <p><b>为什么从 DB 读回而不是比对内存里的 map</b>：比内存 map 等于自己跟自己比，
+     * 恒真。必须 {@code flush()} 之后走原生 SQL 读**落库后的** jsonb。
+     *
+     * <p>条目在实时表里找不到对应 ACTIVE 视图（{@code v.id IS NULL}）同样算不一致 ——
+     * 那说明快照引用了一个已被停用/删除的视图，属于同一类「快照与实时不同源」的问题。
+     */
+    @SuppressWarnings("unchecked")
+    private void assertSnapshotsMatchLive(List<UUID> templateIds, RecompileOutcome outcome) {
+        if (templateIds == null || templateIds.isEmpty()) return;
+        List<Object[]> bad = em.createNativeQuery(
+                "SELECT t.id::text, e.key, md5(e.value->>'sql_template'), md5(v.sql_template) "
+                        + "FROM template t "
+                        + "CROSS JOIN LATERAL jsonb_each(t.sql_views_snapshot) e "
+                        + "LEFT JOIN component_sql_view v "
+                        + "  ON v.component_id = split_part(e.key,'::',1)::uuid "
+                        + " AND v.sql_view_name = split_part(e.key,'::',2) "
+                        + " AND v.status = 'ACTIVE' "
+                        + "WHERE t.id = ANY(:tids) "
+                        + "  AND (v.id IS NULL "
+                        + "   OR md5(e.value->>'sql_template') IS DISTINCT FROM md5(v.sql_template))")
+                .setParameter("tids", templateIds.toArray(new UUID[0]))
+                .getResultList();
+        outcome.snapshotMismatchAfterWrite = bad.size();
+        for (Object[] r : bad) {
+            if (outcome.snapshotMismatchSamples.size() >= 20) break;
+            outcome.snapshotMismatchSamples.add(r[0] + " :: " + r[1]
+                    + "（快照 md5=" + r[2] + " / 实时 md5=" + r[3] + "）");
+        }
+        if (!bad.isEmpty()) {
+            throw new BuilderApiException(500, "SNAPSHOT_REALIGN_VERIFY_FAILED",
+                    "第二层写后自证失败：" + bad.size() + " 条 template.sql_views_snapshot 条目的 sql_template "
+                            + "与实时 component_sql_view 不一致 —— 已整体回滚，🚫 不返 200。"
+                            + "（本自证专为 2026-09-08 那种「写了、没报错、写的不是那张表」的形态而设："
+                            + "updated_at 与 refreshedTemplates 当时都是对的。）明细="
+                            + outcome.snapshotMismatchSamples,
+                    Map.of("mismatchCount", bad.size(), "samples", outcome.snapshotMismatchSamples));
+        }
+    }
+
+    /**
+     * 预览专用：预测第二层会改多少条 —— 🔑 <b>没有它，第二层对预览完全不可见</b>，
+     * 而这正是 2026-09-08 那次「预览看着挺好、执行完第二层根本没动」能瞒过去的原因。
+     *
+     * <p>比对口径：快照条目现存的 {@code sql_template} vs <b>重编译后应有的文本</b>
+     * （该视图是配置器托管的 ⇒ 用本次编译产物；否则 ⇒ 用实时表现值）。
+     * 🚫 不能只跟实时表比：预览路径不写库，实时表这时候还是旧文本，那样比会漏报。
+     */
+    @SuppressWarnings("unchecked")
+    private void predictSnapshotStaleness(List<UUID> templateIds, Map<String, String> newSqlByKey,
+                                          RecompileOutcome outcome) {
+        if (templateIds == null || templateIds.isEmpty()) return;
+        List<Object[]> rows = em.createNativeQuery(
+                "SELECT t.id::text, e.key, md5(e.value->>'sql_template'), md5(v.sql_template) "
+                        + "FROM template t "
+                        + "CROSS JOIN LATERAL jsonb_each(t.sql_views_snapshot) e "
+                        + "LEFT JOIN component_sql_view v "
+                        + "  ON v.component_id = split_part(e.key,'::',1)::uuid "
+                        + " AND v.sql_view_name = split_part(e.key,'::',2) "
+                        + " AND v.status = 'ACTIVE' "
+                        + "WHERE t.id = ANY(:tids)")
+                .setParameter("tids", templateIds.toArray(new UUID[0]))
+                .getResultList();
+        outcome.snapshotTemplates = templateIds.size();
+        outcome.snapshotEntriesRewritten = rows.size();
+        for (Object[] r : rows) {
+            String key = String.valueOf(r[1]);
+            String snapMd5 = r[2] == null ? null : String.valueOf(r[2]);
+            String liveMd5 = r[3] == null ? null : String.valueOf(r[3]);
+            String expected = newSqlByKey.get(key);
+            String expectedMd5 = expected != null ? md5(expected) : liveMd5;
+            if (expectedMd5 == null || !expectedMd5.equals(snapMd5)) {
+                outcome.snapshotEntriesStale++;
+                if (outcome.snapshotMismatchSamples.size() < 20) {
+                    outcome.snapshotMismatchSamples.add(r[0] + " :: " + key
+                            + "（快照 md5=" + snapMd5 + " / 重编译后应为 " + expectedMd5 + "）");
+                }
+            }
+        }
+    }
+
+    /** 与 PG 的 {@code md5(text)} 同口径（UTF-8 字节的 MD5，小写十六进制）。 */
+    private static String md5(String s) {
+        try {
+            byte[] d = MessageDigest.getInstance("MD5").digest(s.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(32);
+            for (byte b : d) sb.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
+            return sb.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException("MD5 不可用", e);
+        }
     }
 
     /**
@@ -155,6 +385,8 @@ public class BuilderRecompileService {
                         "视图「" + v.sqlViewName + "」重编译失败，已整体中止: " + e.getMessage(),
                         Map.of("sqlViewName", v.sqlViewName, "componentId", String.valueOf(v.componentId)));
             }
+
+            outcome.newSqlByKey.put(v.componentId + "::" + v.sqlViewName, r.sql);
 
             boolean textChanged = !Objects.equals(r.sql, v.sqlTemplate);
             if (textChanged) {
