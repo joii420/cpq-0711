@@ -7,7 +7,7 @@
 
 ## B-1 · `ExistingProductService.list()` 三支 UNION 收敛为单表
 
-**服务的 AC**：AC-1, AC-2, AC-9, AC-10, AC-13, AC-14, AC-15
+**服务的 AC**：AC-1, AC-2, AC-4b, AC-9, AC-10, AC-13, AC-14, AC-15
 
 **文件**：`cpq-backend/src/main/java/com/cpq/existingproduct/service/ExistingProductService.java`
 
@@ -33,7 +33,22 @@
 
 **聚合子查询同步收窄**：`aggSql` 现在 UNION 了 spn + dqcp + mcm 三处编号，改为**只查 `ds_quote_customer_part`**，与主查询同源。
 
-### 🚨 `v_compat_material_master` 这个 JOIN 必须原样保留，🚫 不许顺手直连 `ds_quote_material`
+### 🚨 `v_compat_material_master`：JOIN 原样保留，🚫 不许直连 `ds_quote_material`，🚫 也不许改视图定义
+
+
+#### 🚫 第二个夹带姿势：不许「修」视图定义
+
+你读 `v_compat_material_master` 的定义时会看到新表侧有一句：
+
+```sql
+DISTINCT ON (material_no) ... ORDER BY material_no, customer_no
+```
+
+看起来像 bug（同一料号跨客户被"随便"挑了一个）。**不要动它。**
+视图定义归并发会话「老表退役」的退役任务，不归本任务。改它同样是**夹带一个没人验收的数据变更** ——
+本次 18 条 AC 里没有任何一条在验跨客户折叠行为，改了没人兜底。
+
+发现它确实有问题 → **报告我**，我转给那个任务，🚫 不要自己修。
 
 ```sql
 LEFT JOIN v_compat_material_master v ON v.material_no = d.material_no   -- ← 保持不动
@@ -129,7 +144,7 @@ CREATE INDEX IF NOT EXISTS idx_ds_quote_customer_part_customer_no
 
 | 任务 | 指回的 AC |
 |---|---|
-| B-1 | AC-1, AC-2, AC-9, AC-10, AC-13, AC-14, AC-15 |
+| B-1 | AC-1, AC-2, AC-4b, AC-9, AC-10, AC-13, AC-14, AC-15 |
 | B-2 | AC-5, AC-5b |
 | B-3 | AC-7（删字段）, AC-4（加字段） |
 | B-4 | AC-15（性能）, AC-16 |
