@@ -1,0 +1,38 @@
+[global-setup] Saved auth state for admin → /home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-frontend/e2e/.auth/admin.json
+[global-setup] Could not save auth state for alice: page.waitForURL: Timeout 15000ms exceeded.
+=========================== logs ===========================
+waiting for navigation until "load"
+============================================================
+    at saveStorageState (/home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-frontend/e2e/global-setup.ts:72:16)
+    at globalSetup (/home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-frontend/e2e/global-setup.ts:106:3) {
+  name: 'TimeoutError'
+}
+[global-setup] Could not save auth state for bob: page.waitForURL: Timeout 15000ms exceeded.
+=========================== logs ===========================
+waiting for navigation until "load"
+============================================================
+    at saveStorageState (/home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-frontend/e2e/global-setup.ts:72:16)
+    at globalSetup (/home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-frontend/e2e/global-setup.ts:107:3) {
+  name: 'TimeoutError'
+}
+
+Running 1 test using 1 worker
+
+[1/1] e2e/ac18-rowdata-preserve.spec.ts:22:1 › AC-18 保存草稿后 row_data 收敛且用户编辑值不丢
+e2e/ac18-rowdata-preserve.spec.ts:22:1 › AC-18 保存草稿后 row_data 收敛且用户编辑值不丢
+[AC-18] 保存前「产品」页签数据行 = 6
+
+[AC-18] 触发编辑：下标 1（原值 "300001"）→ "AC18-651477"
+
+[AC-18] /draft = ["200"]；出现「已被他人修改」= false
+
+[AC-18] 保存后「产品」页签数据行 = 6
+
+[AC-18] 本轮标记 "AC18-651477" 仍在 = true
+
+[AC-18] 既有用户编辑 "12139" 仍在 = true；被它取代的原值 "12133" 出现 = true
+
+[AC-18] 保存后全部值 = ["S0001","AC18-651477","A002","示例客户料号","000000","铆钉","Φ50","1×3","12139","零件","S0001","300001","A002","示例客户料号","000000","铆钉","Φ50","1×3","12133","零件","S0002","300002","","","000000","铆钉配件","Φ30","1×3","12134","零件","S0002","300002","","","000000","铆钉配件","Φ30","1×3","12134","零件","S0003","300003","","","000000","铆钉配件","Φ20","1×3","12135","外购件","S0003","300003","","","000000","铆钉配件","Φ20","1×3","12135","外购件"]
+
+  1 passed (1.8m)
+EXIT=0
