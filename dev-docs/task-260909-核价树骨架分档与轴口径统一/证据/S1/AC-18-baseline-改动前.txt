@@ -1,0 +1,29 @@
+# AC-18b 改动前基线（S1 片采集，供改动后 A/B 对照）
+# 采样时刻: 2026-09-09T18:20~18:21Z（本地 11:20 -07:00）
+# 后端    : http://localhost:8081 = 主仓 /home/joii/project/cpq/cpq-backend，pid 344109，Sep 8 19:00 启动（**未含 B-8**）
+# 账号    : t260909tree_smgr (SALES_MANAGER, ACTIVE, forceChangePassword=true)
+# 鉴权    : Cookie 会话 CPQ_SESSION（🚨 不是 Bearer token）
+# 写端点一律用不存在的 UUID 00000000-0000-0000-0000-000000000000
+
+admin             GET    /api/cpq/costing-bom-tree-config                      → 200
+t260909tree_smgr  GET    /api/cpq/costing-bom-tree-config                      → 200   ← 改动后必须变 403
+t260909tree_smgr  POST   /api/cpq/costing-bom-tree-config                      → 500   ← 改动后必须变 403
+t260909tree_smgr  PUT    /api/cpq/costing-bom-tree-config/{NOPE}               → 500   ← 改动后必须变 403
+t260909tree_smgr  POST   /api/cpq/costing-bom-tree-config/{NOPE}/activate      → 500   ← 改动后必须变 403
+t260909tree_smgr  DELETE /api/cpq/costing-bom-tree-config/{NOPE}               → 200   ← 改动后必须变 403
+
+## 判读
+1. 5 条全部「不是 403」⇒ 这是**天然还原实验**：改动后仍有任一条不是 403，
+   就是「改动没生效 / 测的是旧代码」，不是「测试写错了」。
+2. ⚠️ DELETE 一个**不存在**的 id 返 **200**（静默幂等）——
+   若实现漏收紧 DELETE，弱断言（"不是 200"）抓不到它变成 403 之外的其它码；
+   本片用的是硬断言 `toBe(403)`，能抓到。
+3. ⚠️ 写端点现返 **500** 而非 400/404，与 api.md 登记的 `BL-0227` 同族；
+   改动后应由角色注解在业务逻辑**之前**拦成 403。仍是 500 ⇒ 注解没生效。
+
+## 🚨 披露：本次基线采集**发出过写请求**
+AC-18 原文要求验 4 个写端点，故 POST/PUT/DELETE 是必要动作。
+缓解：全部指向不存在的 UUID。**实测影响面 = 0**：
+  采集后 costing_bom_tree_config 仍恰好 2 行；
+  usage=COSTING 行 md5=784e51ed0f9584261d97b388924b2f2c / updated_at=2026-07-27 01:13:36+00 —— 与进场采样逐字节相同。
+（改动落地后此片恢复为纯只读：5 条全 403，不进业务逻辑。）
