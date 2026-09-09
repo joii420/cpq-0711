@@ -147,9 +147,34 @@ public class DatasetMaintenanceService {
         int sz = Math.min(Math.max(1, size), 200);
         boolean hasKw = keyword != null && !keyword.isBlank();
 
-        String cfgAgg = "(SELECT av, COUNT(DISTINCT sk) AS c, MAX(uat) AS u FROM ("
-            + configuredUnion(vs, axis, null, null) + ") cfg WHERE av IS NOT NULL GROUP BY av)";
-        String from = " FROM " + matTable + " m LEFT JOIN " + cfgAgg + " a ON a.av = m." + axis;
+        // repair-260908 · C-5：「已配置」聚合必须<b>带客户维度</b>。
+        // 改造前 cfgAgg 只按轴值（料号）GROUP BY、JOIN 也只对 av ⇒ A 客户配过的页签会让
+        // B 客户名下的同料号一并显示「已配置 n/17」。不扇出行数，错的是**状态**，
+        // 表现为徽标/筛选（configured=true/false）全体错判，页面一切正常 —— 典型的静默错值。
+        // ⇒ hasCustomer 时把 customer_no 并进 GROUP BY 与 JOIN 条件；
+        //    核价两套没有客户维度（materialSheet(reg).customerScoped()==false），SQL 与改动前逐字相同。
+        //
+        // 🚨 前置不变量：报价这类 customerScoped 数据集里，**带版本的 sheet 必然都带客户列** ——
+        //    AbstractDatasetRegistry 在启动时就拦死了「带版本 + 自带 customer_no 业务列」的组合，
+        //    剩下的带版本 sheet 一律由系统列注入 customer_no ⇒ scoped=true。
+        //    这里仍显式复核一次：万一将来这条不变量被改掉，宁可启动即响，也不要让配置数静默少算。
+        if (hasCustomer) {
+            for (SheetDef s : vs) {
+                if (!s.customerScoped()) {
+                    throw new IllegalStateException(
+                        "数据集 " + reg.datasetKey() + " 的物料表带客户维度，但带版本 sheet ["
+                        + s.sheetKey + " / " + s.tableName + "] 没有 —— 「已配置」聚合无法按客户分组，"
+                        + "继续下去会让该表的配置数静默少算（repair-260908 · C-5）");
+                }
+            }
+        }
+        String cfgAgg = hasCustomer
+            ? "(SELECT av, cn, COUNT(DISTINCT sk) AS c, MAX(uat) AS u FROM ("
+                + configuredUnion(vs, axis, null, null, true) + ") cfg WHERE av IS NOT NULL GROUP BY av, cn)"
+            : "(SELECT av, COUNT(DISTINCT sk) AS c, MAX(uat) AS u FROM ("
+                + configuredUnion(vs, axis, null, null) + ") cfg WHERE av IS NOT NULL GROUP BY av)";
+        String from = " FROM " + matTable + " m LEFT JOIN " + cfgAgg + " a ON a.av = m." + axis
+            + (hasCustomer ? " AND a.cn = m." + SheetDef.CUSTOMER_COLUMN : "");
         // 🚫 N+1（AC-8 / AC-61）：分类名 / 客户名都必须在【同一条 SELECT】里 JOIN 带出，不得逐行查
         //    —— 逐行查会让 SQL 条数变成 2 + 料号数，正是 backend.md 的硬指标反面。
         //    product_category.code / customer.code 均有 UNIQUE 约束 ⇒ LEFT JOIN 不会放大行数。
@@ -293,6 +318,18 @@ public class DatasetMaintenanceService {
      *                      元数据纪律。
      */
     private String configuredUnion(List<SheetDef> sheets, String axis, String axisParam, String customerParam) {
+        return configuredUnion(sheets, axis, axisParam, customerParam, false);
+    }
+
+    /**
+     * @param emitCustomer repair-260908 · C-5：为 true 时每段多投影一列 {@code cn}（= {@code customer_no}），
+     *                     供外层把「已配置」聚合按 <b>(料号, 客户)</b> 而不是只按料号分组。
+     *                     🚫 只允许在<b>每一个</b> sheet 都 {@code customerScoped()} 时开启 ——
+     *                     混进一张没有客户列的表，那张表的行会带着 {@code cn = NULL} 与物料行永远匹配不上，
+     *                     表现为「配置数悄悄少算」，比现在的跨客户共享更难发现。调用方须先自查（见 {@code listParts}）。
+     */
+    private String configuredUnion(List<SheetDef> sheets, String axis, String axisParam,
+                                   String customerParam, boolean emitCustomer) {
         List<String> segs = new ArrayList<>(sheets.size());
         for (SheetDef s : sheets) {
             List<String> preds = new ArrayList<>(2);
@@ -302,6 +339,7 @@ public class DatasetMaintenanceService {
             }
             String w = preds.isEmpty() ? "" : " WHERE " + String.join(" AND ", preds);
             segs.add("SELECT " + axis + " AS av, '" + s.sheetKey + "' AS sk,"
+                + (emitCustomer ? " " + SheetDef.CUSTOMER_COLUMN + " AS cn," : "")
                 + " COALESCE(updated_at, created_at) AS uat, version_no AS ver, source AS src"
                 + " FROM " + SqlIdent.of(s.tableName) + w);
         }

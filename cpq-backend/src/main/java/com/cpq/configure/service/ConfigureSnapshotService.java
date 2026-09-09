@@ -474,7 +474,13 @@ public class ConfigureSnapshotService {
                         }
                     }
                     try {
-                        masterTypeIndex = masterPartTypeService.load(treePartNos);
+                        // repair-260908 · C-3：必须带客户号（ds_quote_material 唯一键含 customer_no，
+                        // 不带 = 顺序不保证的 last-wins）。customerId 由本方法开头 self.loadCustomerId 取得。
+                        com.cpq.customer.entity.Customer _cust =
+                                customerId == null ? null : com.cpq.customer.entity.Customer.findById(customerId);
+                        String _custNo = (_cust == null || _cust.code == null || _cust.code.isBlank())
+                                ? null : _cust.code;
+                        masterTypeIndex = masterPartTypeService.load(_custNo, treePartNos);
                     } catch (Exception e) {
                         // 主数据取数失败不该让整单快照失败；退化为空索引 = 「全部料号未命中主数据」，
                         // lenient 模式下 __nodeType 落 null（api.md §0.2 允许），不阻断物化。
