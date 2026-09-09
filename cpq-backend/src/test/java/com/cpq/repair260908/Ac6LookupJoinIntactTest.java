@@ -54,6 +54,7 @@ class Ac6LookupJoinIntactTest extends S1CompileTestBase {
 
         List<String> err = new ArrayList<>();
         List<String> orderInfo = new ArrayList<>();
+        List<String> outOfScope = new ArrayList<>();
         int totalJoins = 0;
         int viewsWithJoin = 0;
 
@@ -63,10 +64,21 @@ class Ac6LookupJoinIntactTest extends S1CompileTestBase {
                 err.add("\n  " + v.viewName() + ": 库内 sql_template 为空，没有基线可比");
                 continue;
             }
-            // 🚨 基线新鲜度：B-6 跑过之后库内模板就是「改动后」的，比出来必然全绿 = 假绿
-            if (baseline.contains(":customerCode") && !baselineHasOnlyJoinCustomerCode(baseline)) {
-                err.add("\n  " + v.viewName() + ": 库内基线的 **WHERE** 里已出现 :customerCode ⇒ B-6 已跑过，"
-                        + "基线不再是『改动前』。🚫 拿改动后比改动后必然全绿，本条应判『未验证』。");
+            // 🚨 基线新鲜度：库内模板若已是「改动后」的，比出来必然全绿 = 假绿
+            if (!baselineHasOnlyJoinCustomerCode(baseline)) {
+                String why = v.viewName() + "（" + v.dialect() + "/" + v.tabType() + "）"
+                        + "库内 sql_template 的 **WHERE** 里已含 :customerCode ⇒ 它是**改动后**编译出来的，"
+                        + "没有『改动前』基线可比。";
+                if (HANDOFF_28.contains(v.viewName())) {
+                    // 在册视图变成这样 ⇒ B-6 已经跑过，本条 AC 的比对前提没了，必须硬失败
+                    err.add("\n  🔴 " + why + "\n     它在交接清单 28 个之内 ⇒ B-6 已执行，"
+                            + "AC-6 的『改动前 vs 改动后』前提不再成立，本条判『未验证』。"
+                            + "\n     🚫 拿改动后比改动后必然全绿，那是假绿不是通过。");
+                } else {
+                    // 🚫 共库纪律：并发线新建的视图天生就是改动后产物，把它算进来会红得像业务回归
+                    outOfScope.add(v.viewName() + "(" + v.dialect() + "/" + v.tabType()
+                            + "，created 于我方基线快照之后)");
+                }
                 continue;
             }
 
@@ -97,6 +109,14 @@ class Ac6LookupJoinIntactTest extends S1CompileTestBase {
                         + "\n  2026-09-08 实测：至少 builder_a71947b68d50 / builder_9cc11850f425 / "
                         + "builder_196aadeeb89f 各有 1 条 LEFT JOIN。", null));
         System.out.println("[AC-6①] 比对了 " + viewsWithJoin + " 个含 JOIN 的视图，共 " + totalJoins + " 条 JOIN");
+        if (!outOfScope.isEmpty()) {
+            System.out.println("[AC-6① INFO] 以下视图**不在 AC-6 作用域**：它们由并发线在我方基线快照之后新建，"
+                    + "库内模板本身就是改动后产物，没有『改动前』可比 ⇒ 排除出比对，🚫 不判红。"
+                    + "\n              " + outOfScope
+                    + "\n              ✅ 顺带的正向证据：新视图存盘时锚点上**已带**客户谓词 ⇒ "
+                    + "B-1 在 save 路径上也生效了，不只在 compile 路径。"
+                    + "\n              （AC-2b / AC-16 / AC-17(b) 是无基线的结构断言，仍然覆盖它们。）");
+        }
         if (!orderInfo.isEmpty()) {
             System.out.println("[AC-6① INFO] 以下视图 JOIN **顺序**变了但集合一致（多半是 semantic_edge 堆序漂移，"
                     + "🚫 不判红）：" + orderInfo);

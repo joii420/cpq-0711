@@ -81,6 +81,58 @@ public final class SqlShape {
                 Pattern.CASE_INSENSITIVE).matcher(text).find();
     }
 
+
+
+    /** {@code text} 里是否以完整标识符出现 {@code <alias>.}（用来判断相关子查询引用了哪个外层别名）。 */
+    public static boolean mentionsAlias(String text, String alias) {
+        if (text == null || alias == null) {
+            return false;
+        }
+        return Pattern.compile("(?<![" + IDENT_CHARS + "])" + Pattern.quote(alias) + "\\s*\\.",
+                Pattern.CASE_INSENSITIVE).matcher(text).find();
+    }
+
+    /**
+     * {@code text} 里是否含<b>列对列</b>客户相关谓词 {@code <a>.customer_no = <b>.customer_no}
+     * （任一方向）。
+     *
+     * <p>🔑 {@code B-1c} 给根分支的 {@code NOT EXISTS} 子查询加的是<b>相关谓词</b>
+     * （{@code dqmb2.customer_no = dqm.customer_no}），<b>不是</b> {@code = :customerCode} ——
+     * 拿 {@link #hasCustomerCodePredicate} 去验它会恒为 false，AC-17(b) 直接变空跑。
+     */
+    public static boolean hasCustomerCorrelation(String text, String innerAlias, String outerAlias) {
+        if (text == null || innerAlias == null || outerAlias == null) {
+            return false;
+        }
+        String a = Pattern.quote(innerAlias) + "\\s*\\.\\s*customer_no";
+        String b = Pattern.quote(outerAlias) + "\\s*\\.\\s*customer_no";
+        String bd = "(?<![" + IDENT_CHARS + "])";
+        return Pattern.compile(bd + a + "\\s*=\\s*" + bd + b, Pattern.CASE_INSENSITIVE).matcher(text).find()
+            || Pattern.compile(bd + b + "\\s*=\\s*" + bd + a, Pattern.CASE_INSENSITIVE).matcher(text).find();
+    }
+
+    /**
+     * {@code AC-4} 用：把<b>本次允许出现的两种客户谓词片段</b>从 SQL 里抹掉。
+     *
+     * <h3>🚨 必须两边都抹（2026-09-08 后端实证的坑）</h3>
+     * 后端的同型分类器<b>首跑误报 4 例</b>，根因是<b>只抹 after 没抹 before</b> ——
+     * 那 4 个视图的 before 里本来就有 {@code LEFT JOIN … ON … customer_no = :customerCode}
+     * （客户维度形态③），只抹一边等于人为制造差异。
+     * ⇒ 调用方一律 {@code strip(before)} vs {@code strip(after)}。
+     */
+    public static String stripAllowedCustomerPredicates(String sql) {
+        if (sql == null) {
+            return null;
+        }
+        String ident = "[A-Za-z_][A-Za-z0-9_]*";
+        String out = sql.replaceAll(
+                "(?i)\\s+AND\\s+" + ident + "\\s*\\.\\s*customer_no\\s*=\\s*:customerCode", "");
+        out = out.replaceAll(
+                "(?i)\\s+AND\\s+" + ident + "\\s*\\.\\s*customer_no\\s*=\\s*"
+                        + ident + "\\s*\\.\\s*customer_no", "");
+        return out;
+    }
+
     /** 压平空白，便于逐字比对时忽略排版差异。🚫 不改变语义。 */
     public static String flatten(String sql) {
         return sql == null ? "" : sql.replaceAll("\\s+", " ").trim();

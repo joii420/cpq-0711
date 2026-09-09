@@ -68,9 +68,6 @@ class Ac4CostDialectArtifactStableTest extends S1CompileTestBase {
     private static final String CAPTURE_FLAG = "cpq.s1.capture";
     private static final String MANIFEST = "_manifest.txt";
 
-    /** B-1b 允许出现的<b>唯一</b>新增片段形态（用于把它抹掉后再比对）。 */
-    private static final java.util.regex.Pattern ALLOWED_BRIDGE_DELTA = java.util.regex.Pattern.compile(
-            "\\s+AND\\s+[A-Za-z_][A-Za-z0-9_]*\\s*\\.\\s*customer_no\\s*=\\s*:customerCode");
 
     // ═══════════════ 量具自证：diff 比较器（test.md §3 强制） ═══════════════
 
@@ -99,10 +96,11 @@ class Ac4CostDialectArtifactStableTest extends S1CompileTestBase {
     void ac4a_costBasicOnlyBridgeDeltaAllowed() {
         String fp0 = graphFingerprint();
         List<ViewRow> cost = costBasicViews();
-        assertEquals(AC16_VIEWS.size(), cost.size(),
-                "AC-4①: 应恰有 " + AC16_VIEWS.size() + " 个 COST_BASIC 的 builder_* 视图（AC-16 点名的那 3 个），实得="
-                        + cost.stream().map(ViewRow::viewName).toList()
-                        + "\n  ⚠️ 数量变了说明并发线动过 component_sql_view，先弄清再判。");
+        // 🚫 共库纪律：不断言总数，只断言「AC-16 点名的 3 个我都扫到了」
+        List<String> names = cost.stream().map(ViewRow::viewName).toList();
+        assertTrue(names.containsAll(AC16_VIEWS),
+                "AC-4①: AC-16 点名的 3 个 COST_BASIC 视图应全部扫到，实得=" + names);
+        System.out.println("[AC-4①] 扫到核价方言 builder_* 共 " + cost.size() + " 个：" + names);
 
         List<String> err = new ArrayList<>();
         Map<String, Object> report = new LinkedHashMap<>();
@@ -119,13 +117,17 @@ class Ac4CostDialectArtifactStableTest extends S1CompileTestBase {
                     null));
 
             String now = recompile(v);
-            String stripped = ALLOWED_BRIDGE_DELTA.matcher(now).replaceAll("");
-            report.put(v.viewName(), "基线 md5=" + md5(baseline) + " / 抹除后 md5=" + md5(stripped)
-                    + " / 现产物 md5=" + md5(now));
-            if (!md5(baseline).equals(md5(stripped))) {
-                err.add("\n  " + v.viewName() + ": 抹掉桥客户谓词后仍与基线不同 ⇒ 出现了 B-1b 之外的产物变化。"
-                        + "\n    基线=\n" + baseline + "\n    现产物=\n" + now
-                        + "\n    抹除后=\n" + stripped);
+            // 🚨 两边都抹（后端同型分类器首跑误报 4 例的根因就是只抹了 after）：
+            //    before 里本来就有 `LEFT JOIN … ON … customer_no = :customerCode`（客户维度形态③），
+            //    只抹一边等于人为制造差异，然后把它读成「产物变了」。
+            String strippedBase = SqlShape.stripAllowedCustomerPredicates(baseline);
+            String stripped = SqlShape.stripAllowedCustomerPredicates(now);
+            report.put(v.viewName(), "基线 md5=" + md5(baseline) + " / 基线抹除后=" + md5(strippedBase)
+                    + " / 现产物 md5=" + md5(now) + " / 现抹除后=" + md5(stripped));
+            if (!md5(strippedBase).equals(md5(stripped))) {
+                err.add("\n  " + v.viewName() + ": **两侧同样抹除**客户谓词后仍不同 ⇒ 出现了 B-1b/B-1c 之外的产物变化。"
+                        + "\n    基线=\n" + baseline + "\n    基线抹除后=\n" + strippedBase
+                        + "\n    现产物=\n" + now + "\n    现抹除后=\n" + stripped);
             }
             // 反向：现产物必须真的与基线不同（3 个视图都有桥，B-1b 后必然变）——
             // 若完全没变，说明 B-1b 没生效，而 AC-16 会独立报红；这里只提示，不重复判红。
@@ -198,9 +200,15 @@ class Ac4CostDialectArtifactStableTest extends S1CompileTestBase {
 
         assertTrue(Files.isDirectory(dir), notReady("AC-4②",
                 "归档基线目录不存在：" + dir
-                        + "\n  采集方式：在**改动前**的代码上跑 `./mvnw test -Dtest=Ac4CostDialectArtifactStableTest -D"
-                        + CAPTURE_FLAG + "=true`"
-                        + "\n  🚫 没有基线时本条一律判『未验证』——"
+                        + "\n  🔴 **采集窗口已关闭**：归档基线必须在 B-1/B-1b/B-1c 落地**之前**采集，"
+                        + "而本片解锁时它们已经提交进分支 ⇒ 现在跑 -D" + CAPTURE_FLAG
+                        + "=true 采到的是『改动后』产物，拿它当基线就是把假绿写进仓库。"
+                        + "\n  ✅ COST_DETAIL 的实质覆盖已由 **AC-4③**（结构不变量，无需基线）承担，"
+                        + "COST_BASIC 的逐字节覆盖已由 **AC-4①**（基线 = 库内 sql_template，B-6 未跑仍是改动前）承担。"
+                        + "\n  👉 若要补齐 COST_DETAIL 的**逐字节**这一半，需要主线开一个短窗口："
+                        + "把 B-1/B-1b/B-1c 临时还原 → 我跑 capture → 复原。"
+                        + "改实现文件越过了『测试员不写业务代码』那条线，**我不自行操作**。"
+                        + "\n  🚫 在此之前本条一律判『未验证』——"
                         + "绝不允许退化成「没有基线 ⇒ 没有差异 ⇒ 通过」（那正是两个空文件比出相同的翻版）。", null));
 
         Map<String, String> baseline = readBaseline(dir);
@@ -242,6 +250,83 @@ class Ac4CostDialectArtifactStableTest extends S1CompileTestBase {
                 + "（synchronize_seqscans），归因为并发/实现侧未加 ORDER BY，🚫 不是本次改动的核价回归。");
     }
 
+    // ═══════════════ AC-4③ COST_DETAIL 结构不变量（基线窗口已关闭时的实质覆盖） ═══════════════
+
+    @Test
+    @DisplayName("AC-4③: COST_DETAIL 全页签 —— 客户谓词只许出现在『target 含 customer_no 的子查询』里，"
+            + "外层锚点一条都不许有（基线窗口关闭后，这是 COST_DETAIL 的实质覆盖）")
+    void ac4c_costDetailStructuralInvariant() {
+        String fp0 = graphFingerprint();
+        List<Object[]> tabs = rowList("SELECT dialect, tab_type, coalesce(variant_key,''), anchor_node_id::text "
+                + "FROM semantic_tab_view WHERE status='ACTIVE' AND dialect='COST_DETAIL' "
+                + "ORDER BY tab_type, coalesce(variant_key,'')");
+        assertFalse(tabs.isEmpty(), notReady("AC-4③",
+                "semantic_tab_view 里没有 COST_DETAIL 的 ACTIVE 页签 —— 断言空跑", null));
+
+        String componentId = pickAnyComponentId();
+        List<String> err = new ArrayList<>();
+        int compiled = 0;
+        int outerChecked = 0;
+        Map<String, Object> report = new LinkedHashMap<>();
+
+        for (Object[] t : tabs) {
+            String tabType = String.valueOf(t[1]);
+            String variant = t[2] == null ? "" : String.valueOf(t[2]);
+            String cfg = synthConfig("COST_DETAIL", tabType, variant, String.valueOf(t[3]));
+            if (cfg == null) {
+                continue;
+            }
+            Response r = RestAssured.given().cookie("CPQ_SESSION", session())
+                    .contentType(ContentType.JSON).body(cfg)
+                    .when().post("/api/cpq/components/{cid}/builder/compile", componentId);
+            assertEquals(200, r.statusCode(), notReady("AC-4③",
+                    "编译 COST_DETAIL/" + tabType + "/" + variant + " 返 " + r.statusCode()
+                            + "，body=" + trunc(r.asString()), null));
+            String sql = r.jsonPath().getString("sql");
+            compiled++;
+            String key = tabType + "/" + (variant.isEmpty() ? "-" : variant);
+
+            for (SqlShape.Block b : SqlShape.outerBlocks(sql)) {
+                if (b.from() == null) {
+                    continue;
+                }
+                outerChecked++;
+                String alias = b.from().alias();
+                String where = b.whereTop() == null ? "" : b.whereTop();
+                boolean anchorHasCol = hasCustomerNo(b.from().table());
+                report.put(key + " / 外层 " + b.from().table() + " " + alias,
+                        "含customer_no列=" + anchorHasCol + " ｜ WHERE=" + where);
+                if (!anchorHasCol && SqlShape.mentionsCustomerNo(where, alias)) {
+                    err.add("\n  COST_DETAIL/" + key + ": 外层锚点 " + b.from().table()
+                            + " 没有 customer_no 列，WHERE 却出现 `" + alias
+                            + ".customer_no` ⇒ 真实执行会报 column does not exist。WHERE=" + where);
+                }
+            }
+            for (SqlShape.Block b : SqlShape.subBlocks(sql)) {
+                if (b.from() == null) {
+                    continue;
+                }
+                String alias = b.from().alias();
+                String where = b.whereTop() == null ? "" : b.whereTop();
+                if (!hasCustomerNo(b.from().table()) && SqlShape.mentionsCustomerNo(where, alias)) {
+                    err.add("\n  COST_DETAIL/" + key + ": 子查询 " + b.from().table()
+                            + " 没有 customer_no 列，WHERE 却出现 `" + alias + ".customer_no`。WHERE=" + where);
+                }
+                if (hasCustomerNo(b.from().table())) {
+                    report.put(key + " / 子查询桥 " + b.from().table() + " " + alias,
+                            "含客户谓词=" + SqlShape.hasCustomerCodePredicate(where, alias) + " ｜ WHERE=" + where);
+                }
+            }
+        }
+
+        dump("AC-4③ COST_DETAIL 结构实录", report);
+        assertTrue(compiled > 0, notReady("AC-4③", "一个 COST_DETAIL 页签都没编译成功 —— 断言空跑", null));
+        assertTrue(outerChecked > 0, notReady("AC-4③", "一个外层块都没检查到 —— 断言空跑", null));
+        System.out.println("[AC-4③] 编译 " + compiled + " 个 COST_DETAIL 页签，检查 " + outerChecked + " 个外层块");
+        assertGraphStable("AC-4③", fp0, "COST_DETAIL 全页签");
+        assertEquals("", String.join("", err), "AC-4③ 不符：" + String.join("", err));
+    }
+
     // ═══════════════ 证伪设计（test.md §4）═══════════════
     //  · 把 B-1b 的桥谓词注释掉 ⇒ AC-4① 仍绿（它只允许、不强制该差异），
     //    但 Ac16CostBasicBridgeTest 报红 —— 两条分工明确，不重复判。
@@ -259,8 +344,14 @@ class Ac4CostDialectArtifactStableTest extends S1CompileTestBase {
         }
     }
 
+    /**
+     * 全部核价方言的 {@code builder_*} 视图。
+     * ⚠️ 2026-09-08 主线更正：<b>{@code COST_DETAIL} 的桥同样会变</b>，🚫 别只给一个方言开口。
+     * 库里当前没有 {@code COST_DETAIL} 的 builder 视图，将来有了本方法自动纳入。
+     */
     private List<ViewRow> costBasicViews() {
-        return builderViews().stream().filter(v -> "COST_BASIC".equals(v.dialect())).toList();
+        return builderViews().stream()
+                .filter(v -> v.dialect() != null && v.dialect().startsWith("COST_")).toList();
     }
 
     /** {@code (dialect, tab_type, variant_key, anchor_node_id)}，仅两个核价方言。 */

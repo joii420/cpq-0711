@@ -229,21 +229,31 @@ class PreviewLiteralBindingAcTest {
     private static Map<String, String> SESSION;
 
     /**
-     * test profile 里 {@code cpq.security.rbac.enabled=false}（见 {@code src/test/resources/application.properties}），
-     * 正常情况下裸 {@code given()} 即可。仅当真的被 401 挡住时才走一次登录。
+     * 🚨 <b>一律用它起手，🚫 不要用裸 {@code RestAssured.given()}</b>。
+     *
+     * <h4>2026-09-08 首跑实证：为什么必须<b>主动</b>登录，不能「被 401 之后再登录」</h4>
+     * 首跑时本方法写的是「先裸打，401 了再 {@code login()} 并让本次失败、提示重跑」——
+     * 结果 {@code SESSION} 是 JVM 内静态字段，<b>下一轮是全新 JVM，静态字段重置</b>
+     * ⇒ 每一轮都在第一个请求上 401、每一轮都提示「请重跑」，<b>永远跑不到业务断言</b>。
+     * 更糟的是它长得像「端点鉴权有问题」，而实际上 test profile 里 admin 登录一次就通
+     * （首跑日志：{@code User logged in: admin role=SYSTEM_ADMIN}）。
+     * ⇒ 改成<b>第一次用就先建会话</b>。
+     *
      * <p>🚫 刻意<b>不</b>执行「解锁 admin / 改 admin 状态」之类的 UPDATE —— 那是共享库全局状态
      * （{@code testing.md §4.3}），本片是私有写片，不许碰。
      */
     private RequestSpecification given() {
+        if (SESSION == null) login();
         return SESSION == null ? RestAssured.given() : RestAssured.given().cookies(SESSION);
     }
 
     /** 🚨 假绿守卫：鉴权/路由把请求挡在业务层之外时，「断言非 200」会照样通过。 */
     private void assertReachedBusinessLayer(Response res, String when) {
         if (res.statusCode() == 401 || res.statusCode() == 403) {
-            login();   // 只在真被挡住时才尝试，且失败即硬报「基础设施故障」
             throw new AssertionError(when + "：请求被鉴权拦下（" + res.statusCode()
-                    + "）—— 这是 harness 故障不是 AC 结论。已尝试建立会话，请重跑。body=" + res.asString());
+                    + "）—— 这是 harness 故障不是 AC 结论，🚫 不许据此判 AC-5 反面① 通过或不通过。"
+                    + "会话建立情况：" + (SESSION == null ? "未拿到 cookie（登录失败）" : "已拿到 cookie 但仍被拦")
+                    + "。body=" + res.asString());
         }
         assertFalse(res.statusCode() == 404 && res.asString().contains("RESTEASY"),
                 when + "：端点 404 ⇒ 路径与 api.md 不一致或端点未实现。body=" + res.asString());

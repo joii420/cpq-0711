@@ -156,11 +156,11 @@ class Ac2bAnchorCustomerPredicateTest extends S1CompileTestBase {
         assertEquals("", String.join("", err), "AC-2b 不符（共 " + err.size() + " 处）：" + String.join("", err));
     }
 
-    // ═══════════════ 派生加严：UNION 根分支（AC 原文未覆盖，见 test-report 的「AC 问题」） ═══════════════
+    // ═══════════════ AC-2b(根分支)：UNION ALL 根分支（D-7 升格为正式判据 / B-1c(a)） ═══════════════
 
     @Test
-    @DisplayName("AC-2b 派生🔴: UNION 根分支的 FROM 也是外层锚点 —— 它若漏加谓词，BOM 页签的根行仍跨客户"
-            + "（AC 原文只写『锚点』，本条超出原文，红了请主线裁决是补 B-1 还是改 AC）")
+    @DisplayName("AC-2b(根分支): UNION ALL 根分支的外层 FROM 同样按锚点判 —— 漏加则 BOM 页签树根行仍跨客户"
+            + "（2026-09-08 D-7 裁决：由本片的派生观察升格为 AC-2b 正式判据，实现见 B-1c(a)）")
     void ac2bDerived_unionRootBranchAlsoNarrowed() {
         List<String> err = new ArrayList<>();
         int checked = 0;
@@ -191,10 +191,8 @@ class Ac2bAnchorCustomerPredicateTest extends S1CompileTestBase {
                         + "\n  2026-09-08 实测应有 3 个（QUOTE 侧 3 个 BOM 视图的根分支 FROM ds_quote_material）", null));
         assertEquals("", String.join("", err),
                 "AC-2b 派生断言不符：" + String.join("", err)
-                        + "\n\n  🔴 报主线：AC-2b 原文只约束「锚点」，未提 UNION 根分支。"
-                        + "\n     若判定根分支也该收窄 ⇒ B-1 需覆盖根分支生成路径；"
-                        + "\n     若判定不该 ⇒ 请明确写进 AC，并说明树根行跨客户为何可接受。"
-                        + "\n     🚫 我不自行改 AC。");
+                        + "\n\n  🔑 D-7 实测（QT-20260908-0624 的 BOM 页签根分支）：现状 8 行 | 加客户谓词后 4 行 | 串进来的别家根行 4 行。"
+                        + "\n     ⇒ 本条不是理论隐患，是活故障；实现见 B-1c(a)。");
     }
 
     // ═══════════════ 证伪设计（test.md §4）═══════════════

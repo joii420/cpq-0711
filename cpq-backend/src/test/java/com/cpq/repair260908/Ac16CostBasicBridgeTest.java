@@ -167,35 +167,73 @@ class Ac16CostBasicBridgeTest extends S1CompileTestBase {
         assertEquals("", String.join("", err), "AC-16② 不符：" + String.join("", err));
     }
 
-    // ═══════════════ 观察项：非桥子查询（NOT EXISTS）—— 报主线，本轮不判红 ═══════════════
+    // ═══════════════ AC-17(b) 根分支 NOT EXISTS 的客户相关谓词（由本片的观察项升格） ═══════════════
 
+    /**
+     * <b>AC-17(b)</b> —— 2026-09-08 由本片的观察项升格为正式判据（{@code D-7} / {@code B-1c}(b)）。
+     *
+     * <h3>🚨 必须是结构断言，与 AC-16 同理</h3>
+     * 全库「只在别客户下有父边」的料号 = <b>0 行</b> ⇒ 加不加这条相关谓词，<b>行数一个都不差</b>。
+     * 且它的失败方向是<b>少行</b>（成品被误判成「非树根」而从根分支消失），
+     * 拿行数验既恒绿、方向还反着。⇒ 一行数据都不查。
+     *
+     * <h3>🔑 判据是「列对列相关」不是「= :customerCode」</h3>
+     * {@code B-1c}(b) 加的是 {@code dqmb2.customer_no = dqm.customer_no}（相关子查询要跟外层同一个客户），
+     * <b>不是</b> {@code = :customerCode}。用 {@link SqlShape#hasCustomerCodePredicate} 去验它会<b>恒 false</b>，
+     * 整条 AC 直接变空跑 —— 这正是本轮量具自证要防的那一族。
+     */
     @Test
-    @DisplayName("AC-16 观察🔎: 根分支的 NOT EXISTS 子查询若落在含 customer_no 的表上，B-1b 判据是否覆盖它？（只记录，不判红）")
-    void ac16_observe_nonBridgeSubqueriesOnCustomerTables() {
-        Map<String, Object> obs = new LinkedHashMap<>();
+    @DisplayName("AC-17(b): 根分支 NOT EXISTS 子查询若落在含 customer_no 的表上，必须带 <子别名>.customer_no = <外层别名>.customer_no 相关谓词")
+    void ac17b_notExistsSubqueryCorrelatesCustomer() {
+        List<String> err = new ArrayList<>();
+        Map<String, Object> report = new LinkedHashMap<>();
+        int checked = 0;
+
         for (ViewRow v : builderViews()) {
-            for (SqlShape.Block b : SqlShape.subBlocks(recompile(v))) {
-                if (b.from() == null || isBridge(b)) {
+            String sql = recompile(v);
+            List<SqlShape.Block> outer = SqlShape.outerBlocks(sql);
+            for (SqlShape.Block sub : SqlShape.subBlocks(sql)) {
+                if (sub.from() == null || isBridge(sub) || !hasCustomerNo(sub.from().table())) {
+                    continue;   // 桥归 AC-16；表没有客户列的不适用
+                }
+                // 相关子查询的「外层」= 与它同在一个产物、且表也含 customer_no 的外层块
+                SqlShape.Block host = outer.stream()
+                        .filter(b -> b.from() != null && hasCustomerNo(b.from().table()))
+                        .filter(b -> sub.whereFull() != null
+                                && SqlShape.mentionsAlias(sub.whereFull(), b.from().alias()))
+                        .findFirst().orElse(null);
+                if (host == null) {
+                    report.put(v.viewName() + " / 非桥子查询 " + sub.from().table() + " " + sub.from().alias(),
+                            "找不到与之相关的外层块（非相关子查询？）WHERE=" + sub.whereTop());
                     continue;
                 }
-                if (hasCustomerNo(b.from().table())) {
-                    obs.put(v.viewName() + " / 非桥子查询 " + b.from().table() + " " + b.from().alias(),
-                            "WHERE=" + b.whereTop()
-                                    + " ｜ 含客户谓词=" + SqlShape.hasCustomerCodePredicate(
-                                    b.whereTop(), b.from().alias()));
+                checked++;
+                String innerAlias = sub.from().alias();
+                String outerAlias = host.from().alias();
+                boolean ok = SqlShape.hasCustomerCorrelation(sub.whereTop(), innerAlias, outerAlias);
+                report.put(v.viewName() + " / NOT EXISTS " + sub.from().table() + " " + innerAlias
+                        + " ↔ 外层 " + outerAlias, "带客户相关谓词=" + ok + " ｜ WHERE=" + sub.whereTop());
+                if (!ok) {
+                    err.add("\n  " + v.viewName() + ": 根分支的 NOT EXISTS 子查询 `FROM "
+                            + sub.from().table() + " " + innerAlias + "` 缺 `" + innerAlias
+                            + ".customer_no = " + outerAlias + ".customer_no`（B-1c(b)）。"
+                            + "\n    实得 WHERE(本层)=" + sub.whereTop()
+                            + "\n    🔑 该子查询判「本料号有没有父边」。不带客户相关 ⇒ 某成品在**别的客户**下有 BOM 边时，"
+                            + "会被判成『非树根』而从根分支**消失**（失败方向是少行，不是多行）。"
+                            + "\n    ⚠️ 全库「只在别客户下有父边」的料号 = 0 行 ⇒ 行数验不出来，只有结构断言能抓。");
                 }
             }
         }
-        dump("AC-16 观察 · 落在含 customer_no 表上的非桥子查询", obs);
-        System.out.println("""
-                🔎 报主线（不判红，因为 AC 原文没约束它）：
-                   QUOTE 侧 3 个 BOM 视图的根分支里有 `NOT EXISTS (SELECT 1 FROM ds_quote_material_bom … )`。
-                   ds_quote_material_bom **含 customer_no**。该子查询判断「本料号有没有父边」——
-                   若不带客户过滤，某成品在**别的客户**下有 BOM 边，就会被判成「非树根」而从根分支里消失。
-                   B-1b 的判据写的是「桥的 target 物理表含 customer_no」，NOT EXISTS 不是桥 ⇒ 落在判据之外。
-                   👉 请主线裁决：这属于 E-1 的覆盖范围，还是本期明确不做。🚫 我不自行扩 AC。
-                """);
-        assertTrue(true);   // 观察项，恒绿；结论走报告，不走断言
+
+        dump("AC-17(b) 非桥相关子查询实录", report);
+        // 🚨 空跑防护：认不出对象 ⇒ 循环 0 次 ⇒ 报绿
+        assertTrue(checked >= 3, notReady("AC-17(b)",
+                "只检查到 " + checked + " 个「落在含 customer_no 表上的相关子查询」，少于实测的 3 个。"
+                        + "\n  2026-09-08 实测：QUOTE 侧 3 个 BOM 视图的根分支各有 1 处 "
+                        + "`NOT EXISTS (SELECT 1 FROM ds_quote_material_bom dqmb2 …)`。"
+                        + "\n  🚫 认不出就是断言空跑，绝不能当通过。", null));
+        System.out.println("[AC-17(b)] 共检查 " + checked + " 处非桥相关子查询");
+        assertEquals("", String.join("", err), "AC-17(b) 不符：" + String.join("", err));
     }
 
     // ═══════════════ 证伪设计（test.md §4）═══════════════
@@ -206,4 +244,8 @@ class Ac16CostBasicBridgeTest extends S1CompileTestBase {
     //      → AC-16② 报红（外层 ds_cost_basic_material 没有 customer_no 列）。
     //  · 只给 builder_32ab8212df6c 的**第一处**桥加谓词、漏掉 UNION 根分支的 dqm2
     //      → AC-16① 报红（bridgesChecked=4，其中 1 处缺）—— 这条专门防「只验第一处」的漏网。
+    //  · 注释掉 B-1c(b) 给 NOT EXISTS 加的 `dqmb2.customer_no = dqm.customer_no`
+    //      → AC-17(b) 报红；AC-16①/② 仍绿（桥与相关子查询分工正确）。
+    //  · 把 AC-17(b) 的判据误写成 `= :customerCode`
+    //      → checked>=3 仍成立但全部报缺 ⇒ 立刻暴露判据写错，而不是静默恒绿。
 }
