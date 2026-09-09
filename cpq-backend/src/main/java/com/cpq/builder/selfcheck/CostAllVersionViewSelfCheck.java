@@ -35,6 +35,18 @@ import java.util.TreeSet;
  * 三条加起来 = <b>零信号的静默故障</b>，与本任务反复在修的那一族同型。所以这道防线只能建在这里，
  * 而且必须"不一致 = 起不来"，不能降级成日志。
  *
+ * <p>🚦 <b>repair-260909 补充（用户 2026-09-09 裁决「走甲」）—— 上面那段一个字没删，仍然成立</b>：
+ * 本守卫防的<b>始终是</b>「{@code task-260902} 改了 {@code ds_cost_*} 主表的列而视图没跟上」这类<b>漂移</b>。
+ * 但视图里也可能出现一种<b>不是漂移</b>的多余列：<b>有意为之的派生列</b>——
+ * 譬如 {@code sales_material_no}，它是元素BOM视图内经 {@code material_master} 桥接算出来的连接键，
+ * 主表里本就不该有（底表由导入器写，加物理列 = 多一处写入点 + 被归进锚点语义）。
+ *
+ * <p>⇒ 判据从「{@code is_current} 之外一律不许多」收窄为「<b>{@code is_current} 与
+ * {@link #REGISTERED_DERIVED_COLUMNS} 逐张视图点名登记过的派生列</b>之外一律不许多」。
+ * <b>登记在案 = 声明意图，未登记 = 漂移，照旧当场起不来。</b>
+ * 这是<b>登记制</b>，不是开口子：登记表按<b>视图</b>而非全局生效，同名列出现在别的
+ * {@code v_%_all} 上仍然打挂；往登记表加一条需要立项 + 用户裁决。
+ *
  * <p>📌 对方明确<b>不</b>把这些视图纳入他们的自检 —— 那会让 {@code com.cpq.dataset} 依赖
  * {@code com.cpq.builder} 的产物，依赖方向反了。这是正确的架构判断，不是推诿。
  *
@@ -59,8 +71,36 @@ public class CostAllVersionViewSelfCheck {
     /** 视图命名约定：{@code v_<主表>_all}。改这里等于改 V409 迁移的生成规则，两边必须同时改。 */
     private static final String VIEW_PREFIX = "v_";
     private static final String VIEW_SUFFIX = "_all";
-    /** 视图相对主表唯一允许多出的列（派生常量，见 V409 的 COMMENT ON COLUMN）。 */
+    /** 每张视图都<b>必须</b>有的派生列（V409 的 COMMENT ON COLUMN）——:versionFilter 宏靠它展开。 */
     private static final String DERIVED_COLUMN = "is_current";
+
+    /**
+     * 🚦 <b>具名派生列登记表</b>（repair-260909，用户 2026-09-09 裁决「走甲」）。
+     *
+     * <p><b>语义是「登记制」，不是「放开」</b>：只有下表<b>逐张视图逐列</b>点名的派生列才被豁免；
+     * 任何<b>未登记</b>的多余列照旧当场 {@link IllegalStateException} 打挂启动。
+     * 🚫 不许改成日志、不许加开关绕过 —— 那正是本守卫存在的理由。
+     *
+     * <p><b>为什么按视图登记而不是全局集合</b>：{@code sales_material_no} 只在两张<b>元素BOM</b>视图上
+     * 是有意为之的桥接列；它若出现在 {@code v_ds_cost_basic_material_bom_all} 等别的视图上，
+     * 那就是真漂移，必须照打不误。全局集合会把这种情况一并放行 —— 按视图登记是<b>更强</b>的判据，
+     * 也更贴合本守卫「逐张视图列集合相等」的原意。
+     *
+     * <p>⚠️ <b>登记表只「允许」不「要求」</b>：登记了但列还没建出来，不产生任何新约束。
+     * 这条性质让守卫改动可以<b>先于</b>建列的迁移进 master（repair-260909 的两阶段落库顺序即依赖它）。
+     *
+     * <p>🚫 <b>往这里加一条 = 削弱哨兵，必须走任务立项 + 用户裁决，不许开发期顺手加</b>
+     * （与 {@code Sec31CompileCorrectnessTest.REGISTERED_LOOKUP_NODE_KEYS} 同口径）。
+     * 每条都必须写清：哪张视图、为什么是派生列、谁引入的。
+     */
+    private static final Map<String, Set<String>> REGISTERED_DERIVED_COLUMNS = Map.of(
+            // ── repair-260909（用户裁决 A0-1：核价与报价对同一 (客户,料号,元素) 必须给出同一个数）──
+            //    核价侧锚点是【生产料号】，而 f_material_element_price 按【销售料号】取价。
+            //    sales_material_no 是视图内经 material_master 桥接（LEFT JOIN LATERAL … LIMIT 1）
+            //    派生出来的连接键，**主表里不存在也不该存在**：底表由导入器写入，
+            //    加物理列就多一处写入点，且会被归进锚点语义（backtask B-2 明令禁止）。
+            "v_ds_cost_basic_element_bom_all",  Set.of("sales_material_no"),
+            "v_ds_cost_detail_element_bom_all", Set.of("sales_material_no"));
 
     /**
      * 关掉自检的唯一合法场景：迁移尚未落到目标库的一次性排障。
@@ -131,10 +171,16 @@ public class CostAllVersionViewSelfCheck {
                     problems.add(view + " 缺列 " + c + "（" + main + " 加了列而视图没跟上 —— 该列在取数配置器里永远查不到）");
                 }
             }
+            Set<String> registeredDerived = REGISTERED_DERIVED_COLUMNS.getOrDefault(view, Set.of());
             for (String c : viewCols) {
                 if (DERIVED_COLUMN.equals(c)) continue;
+                // 🚦 登记在案的派生列 = 声明意图，不是漂移（repair-260909）。
+                //    未登记的照旧打挂 —— 这一行是「登记制」与「放开」的唯一分界。
+                if (registeredDerived.contains(c)) continue;
                 if (!mainCols.contains(c)) {
-                    problems.add(view + " 多出未在主表 " + main + " 出现的列 " + c);
+                    problems.add(view + " 多出未在主表 " + main + " 出现的列 " + c
+                            + "（既不是主表列，也不在 REGISTERED_DERIVED_COLUMNS 登记表里 ——"
+                            + " 若确为有意新增的派生列，须走立项 + 用户裁决后登记，🚫 不许开发期顺手加）");
                 }
             }
             if (!viewCols.contains(DERIVED_COLUMN)) {
