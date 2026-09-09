@@ -385,7 +385,30 @@ public class FieldTreeBuilder {
             }
 
             if (isMain) {
-                fields.addAll(syntheticLookupFields(snap, dialect, anchor, nodesWithOwnGroup));
+                // 🔄 repair-260908 B-1（AC-R1/R2/R3）：查名字段由「追加到组末尾」改为
+                // 「插到**最后一个带 PART_NO 角色的列之后**」。
+                //
+                // 为什么原来是末尾：本方法此前在现网**产出 0 个字段**（BL-0213 缺口 G-A），
+                // 这段 addAll 事实上不可达，位置问题从未显现；task-260908 新增 46 条查名边
+                // 让它有了产出，「材料名」就掉到了锚点全部物理列之后。
+                //
+                // 🚫 判据用**角色**不用列名：实测存在「方案编号」这类带 PART_NO 角色但名字
+                //    不含「料号」的列，也存在名字含「料号」却无该角色的列 —— 按 display_name
+                //    匹配会同时产生漏插与错插，且两者都静默。
+                //
+                // 🚫 不改 syntheticLookupFields 自身的返回内容与顺序（它的 coalesceGroup 去重
+                //    与 AC-7「不另起分组」都依赖现状），本次**只改插入位置**。
+                //
+                // 边界（AC-R3）：锚点组内没有任何 PART_NO 列时 lastPartNo = -1，
+                // 走 fields.size() 分支 ⇒ 退化成原来的追加语义，行为逐字节不变。
+                List<Field> lookups = syntheticLookupFields(snap, dialect, anchor, nodesWithOwnGroup);
+                if (!lookups.isEmpty()) {
+                    int lastPartNo = -1;
+                    for (int i = 0; i < fields.size(); i++) {
+                        if (fields.get(i).roles != null && fields.get(i).roles.contains("PART_NO")) lastPartNo = i;
+                    }
+                    fields.addAll(lastPartNo < 0 ? fields.size() : lastPartNo + 1, lookups);
+                }
             }
             g.fields = fields;
             groups.add(g);
