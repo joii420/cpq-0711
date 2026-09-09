@@ -1,0 +1,101 @@
+[
+ {
+  "conflict": false,
+  "conflictReason": null,
+  "dialect": "COST_DETAIL",
+  "dims": [],
+  "fields": [
+   {
+    "dataType": "TEXT",
+    "displayName": "生产料号",
+    "elemKey": false,
+    "isCore": false,
+    "lookupLib": null,
+    "roles": [
+     "ROW_KEY"
+    ],
+    "sourceColumn": "production_no",
+    "sourceNodeKey": "ELEMENT_BOM",
+    "viewColumn": "production_no"
+   },
+   {
+    "dataType": "TEXT",
+    "displayName": "材质料号",
+    "elemKey": false,
+    "isCore": false,
+    "lookupLib": null,
+    "roles": [
+     "PART_NO",
+     "ROW_KEY"
+    ],
+    "sourceColumn": "material_part_no",
+    "sourceNodeKey": "ELEMENT_BOM",
+    "viewColumn": "material_part_no"
+   },
+   {
+    "dataType": "TEXT",
+    "displayName": "材料名",
+    "elemKey": false,
+    "isCore": false,
+    "lookupLib": "材质（查名）",
+    "roles": [
+     "PART_NAME"
+    ],
+    "sourceColumn": "symbol",
+    "sourceNodeKey": "RECIPE_NAME_LK",
+    "viewColumn": "symbol"
+   },
+   {
+    "dataType": "NUMBER",
+    "displayName": "项次",
+    "elemKey": false,
+    "isCore": false,
+    "lookupLib": null,
+    "roles": [
+     "SORT"
+    ],
+    "sourceColumn": "item_seq",
+    "sourceNodeKey": "ELEMENT_BOM",
+    "viewColumn": "item_seq"
+   },
+   {
+    "dataType": "TEXT",
+    "displayName": "元素代码",
+    "elemKey": false,
+    "isCore": false,
+    "lookupLib": null,
+    "roles": [
+     "ROW_KEY"
+    ],
+    "sourceColumn": "element_code",
+    "sourceNodeKey": "ELEMENT_BOM",
+    "viewColumn": "element_code"
+   },
+   {
+    "dataType": "NUMBER",
+    "displayName": "组成含量（%）",
+    "elemKey": false,
+    "isCore": false,
+    "lookupLib": null,
+    "roles": [],
+    "sourceColumn": "content_pct",
+    "sourceNodeKey": "ELEMENT_BOM",
+    "viewColumn": "content_pct"
+   },
+   {
+    "dataType": "NUMBER",
+    "displayName": "损耗率（%）",
+    "elemKey": false,
+    "isCore": false,
+    "lookupLib": null,
+    "roles": [],
+    "sourceColumn": "loss_rate",
+    "sourceNodeKey": "ELEMENT_BOM",
+    "viewColumn": "loss_rate"
+   }
+  ],
+  "groupKey": "ELEMENT_BOM",
+  "groupKind": "MAIN",
+  "groupName": "物料与元素BOM"
+ }
+]

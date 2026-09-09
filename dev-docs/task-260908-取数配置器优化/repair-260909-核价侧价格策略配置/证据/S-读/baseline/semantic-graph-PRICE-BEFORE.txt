@@ -1,0 +1,137 @@
+=== [4a] semantic_node with node_key FUNC_ELEMENT_PRICE (all dialects) ===
+                  id                  | dialect |      node_key      | node_kind |                     func_signature                      | created_by |         created_at         |                                                                     note                                                                      
+--------------------------------------+---------+--------------------+-----------+---------------------------------------------------------+------------+----------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------
+ ddc7fafa-0fd3-5c47-a86c-e3f8b86b0f76 | QUOTE   | FUNC_ELEMENT_PRICE | FUNCTION  | f_material_element_price(:customerCode, :priceBaseDate) | seed       | 2026-09-03 23:12:25.660569 | 别名固定为 cep（AC-1 铁律）；不是 f_customer_element_price。只挂 QUOTE 方言：函数按**销售料号**取价，核价侧锚点是生产料号，语义对不上，不硬接
+
+=== [4b] all FUNCTION-kind nodes (any key) ===
+                  id                  | dialect |      node_key      | node_kind |                     func_signature                      
+--------------------------------------+---------+--------------------+-----------+---------------------------------------------------------
+ ddc7fafa-0fd3-5c47-a86c-e3f8b86b0f76 | QUOTE   | FUNC_ELEMENT_PRICE | FUNCTION  | f_material_element_price(:customerCode, :priceBaseDate)
+
+=== [4c] all edges with edge_kind PRICE (any endpoint) ===
+               edge_id                | dialect |  from_key   |       to_key       | edge_kind | cardinality 
+--------------------------------------+---------+-------------+--------------------+-----------+-------------
+ 5b1bfc30-551b-511c-bb2b-42becb609a06 | QUOTE   | ELEMENT_BOM | FUNC_ELEMENT_PRICE | PRICE     | MANY_TO_ONE
+
+=== [4d] edge keys of every edge pointing at FUNC_ELEMENT_PRICE ===
+               edge_id                | dialect |  from_key   | edge_kind | seq | left_column  | right_column 
+--------------------------------------+---------+-------------+-----------+-----+--------------+--------------
+ 5b1bfc30-551b-511c-bb2b-42becb609a06 | QUOTE   | ELEMENT_BOM | PRICE     |   0 | element_code | element_code
+ 5b1bfc30-551b-511c-bb2b-42becb609a06 | QUOTE   | ELEMENT_BOM | PRICE     |   1 | material_no  | material_no
+
+=== [4e] ELEMENT_BOM nodes across dialects (anchor_expr etc) ===
+psql:/tmp/claude-1000/-home-joii-project-cpq/09963988-db80-408d-b39e-d112329df9d8/scratchpad/baseline4_graph.sql:38: ERROR:  column "physical_name" does not exist
+LINE 1: ...CT id, dialect, node_key, node_kind, anchor_expr, physical_n...
+                                                             ^
+HINT:  Perhaps you meant to reference the column "semantic_node.physical_table".
+=== [4f] semantic_node_column of ELEMENT_BOM nodes ===
+psql:/tmp/claude-1000/-home-joii-project-cpq/09963988-db80-408d-b39e-d112329df9d8/scratchpad/baseline4_graph.sql:45: ERROR:  column c.column_name does not exist
+LINE 1: SELECT n.dialect, n.node_key, c.column_name, c.display_name,...
+                                      ^
+=== [4g] semantic_node_column of FUNC_ELEMENT_PRICE nodes ===
+psql:/tmp/claude-1000/-home-joii-project-cpq/09963988-db80-408d-b39e-d112329df9d8/scratchpad/baseline4_graph.sql:52: ERROR:  column c.column_name does not exist
+LINE 1: SELECT n.dialect, n.node_key, c.column_name, c.display_name,...
+                                      ^
+=== [4h] semantic_tab_view rows for 材质元素 ===
+                  id                  | tab_type | variant_key | variant_label |            anchor_node_id            | switches |   dialect   | created_by |         created_at         | updated_by |         updated_at         | status 
+--------------------------------------+----------+-------------+---------------+--------------------------------------+----------+-------------+------------+----------------------------+------------+----------------------------+--------
+ 1584453d-6f8c-50cb-b0cf-570ff1f4b9bb | 材质元素 |             |               | 531951d0-cb82-5925-a127-706821bfc8d1 | {}       | COST_BASIC  | seed       | 2026-09-03 23:12:25.660569 |            | 2026-09-03 23:12:25.660569 | ACTIVE
+ 76b7dd2a-d4f4-5152-ba9f-9fae6991a5b9 | 材质元素 |             |               | 52784f35-2b0f-5aa1-a0f8-a6f0346eb025 | {}       | COST_DETAIL | seed       | 2026-09-03 23:12:25.660569 |            | 2026-09-03 23:12:25.660569 | ACTIVE
+ f4ac17fa-c95f-5cac-88e9-dbf2c99ddd45 | 材质元素 |             |               | e77545bb-55a9-5a52-be7f-b7be932020ea | {}       | QUOTE       | seed       | 2026-09-03 23:12:25.660569 |            | 2026-09-03 23:12:25.660569 | ACTIVE
+
+=== [4i] flyway head (last 8) ===
+ installed_rank | version |               description               | success |        installed_on        
+----------------+---------+-----------------------------------------+---------+----------------------------
+             79 | 433     | repair260908 costing row key roles      | t       | 2026-09-08 18:34:04.065433
+             78 | 432     | task260907 ds quote record stale        | t       | 2026-09-08 17:09:05.278084
+             77 | 431     | task260907 ds quote source quotation id | t       | 2026-09-08 17:09:03.491782
+             76 | 430     | task260908 lookup name nodes and edges  | t       | 2026-09-08 01:42:08.452569
+             75 | 429     | task260907 element compat view customer | t       | 2026-09-07 17:54:59.822571
+             74 | 428     | task260907 quote tree compat view       | t       | 2026-09-07 17:54:59.544851
+             73 | 427     | task260907 quote tree customer param    | t       | 2026-09-07 17:54:59.303633
+             72 | 426     | task260907 element price candidate ds   | t       | 2026-09-07 17:54:59.086197
+
+=== [4e] ELEMENT_BOM nodes across dialects ===
+                  id                  |   dialect   |  node_key   | node_kind |          physical_table          |      anchor_expr      |          grain_columns          | status 
+--------------------------------------+-------------+-------------+-----------+----------------------------------+-----------------------+---------------------------------+--------
+ 531951d0-cb82-5925-a127-706821bfc8d1 | COST_BASIC  | ELEMENT_BOM | SHEET     | v_ds_cost_basic_element_bom_all  | vdcbeba.production_no | {material_part_no,element_code} | ACTIVE
+ 52784f35-2b0f-5aa1-a0f8-a6f0346eb025 | COST_DETAIL | ELEMENT_BOM | SHEET     | v_ds_cost_detail_element_bom_all | vdcdeba.production_no | {material_part_no,element_code} | ACTIVE
+ e77545bb-55a9-5a52-be7f-b7be932020ea | QUOTE       | ELEMENT_BOM | SHEET     | ds_quote_element_bom             | dqeb.material_no      | {material_part_no,element_code} | ACTIVE
+
+=== [4f] semantic_node_column of ELEMENT_BOM nodes ===
+   dialect   | sort_order |     db_column     | display_name  | data_type |       roles       | is_code | status 
+-------------+------------+-------------------+---------------+-----------+-------------------+---------+--------
+ COST_BASIC  |          0 | production_no     | 生产料号      | TEXT      | {ROW_KEY}         | t       | ACTIVE
+ COST_BASIC  |          1 | material_part_no  | 材质料号      | TEXT      | {PART_NO,ROW_KEY} | t       | ACTIVE
+ COST_BASIC  |          2 | item_seq          | 项次          | NUMBER    | {SORT}            | f       | ACTIVE
+ COST_BASIC  |          3 | element_code      | 元素代码      | TEXT      | {ROW_KEY}         | t       | ACTIVE
+ COST_BASIC  |          4 | content_pct       | 组成含量（%） | NUMBER    | {}                | f       | ACTIVE
+ COST_BASIC  |          5 | loss_rate         | 损耗率（%）   | NUMBER    | {}                | f       | ACTIVE
+ COST_DETAIL |          0 | production_no     | 生产料号      | TEXT      | {ROW_KEY}         | t       | ACTIVE
+ COST_DETAIL |          1 | material_part_no  | 材质料号      | TEXT      | {PART_NO,ROW_KEY} | t       | ACTIVE
+ COST_DETAIL |          2 | item_seq          | 项次          | NUMBER    | {SORT}            | f       | ACTIVE
+ COST_DETAIL |          3 | element_code      | 元素代码      | TEXT      | {ROW_KEY}         | t       | ACTIVE
+ COST_DETAIL |          4 | content_pct       | 组成含量（%） | NUMBER    | {}                | f       | ACTIVE
+ COST_DETAIL |          5 | loss_rate         | 损耗率（%）   | NUMBER    | {}                | f       | ACTIVE
+ QUOTE       |          0 | material_no       | 销售料号      | TEXT      | {ROW_KEY}         | t       | ACTIVE
+ QUOTE       |          1 | material_part_no  | 材质料号      | TEXT      | {PART_NO,ROW_KEY} | t       | ACTIVE
+ QUOTE       |          2 | item_seq          | 项次          | NUMBER    | {SORT}            | f       | ACTIVE
+ QUOTE       |          3 | element_code      | 元素          | TEXT      | {ROW_KEY}         | t       | ACTIVE
+ QUOTE       |          4 | content_pct       | 组成含量（%） | NUMBER    | {}                | f       | ACTIVE
+ QUOTE       |          5 | loss_rate         | 损耗率%       | NUMBER    | {}                | f       | ACTIVE
+ QUOTE       |          6 | gross_usage       | 毛用量        | NUMBER    | {}                | f       | ACTIVE
+ QUOTE       |          7 | gross_usage_unit  | 毛用量单位    | TEXT      | {}                | f       | ACTIVE
+ QUOTE       |          8 | net_usage         | 净用量        | NUMBER    | {}                | f       | ACTIVE
+ QUOTE       |          9 | net_usage_unit    | 净用量单位    | TEXT      | {}                | f       | ACTIVE
+ QUOTE       |         10 | recovery_discount | 回收折扣(%)   | NUMBER    | {}                | f       | ACTIVE
+ QUOTE       |         11 | recovery_qty      | 回收量        | TEXT      | {}                | f       | ACTIVE
+
+=== [4g] semantic_node_column of FUNC_ELEMENT_PRICE nodes ===
+ dialect | sort_order | db_column  | display_name | data_type | roles | is_code | status 
+---------+------------+------------+--------------+-----------+-------+---------+--------
+ QUOTE   |          0 | unit_price | 元素单价     | MONEY     | {}    | f       | ACTIVE
+ QUOTE   |          1 | currency   | 货币         | TEXT      | {}    | f       | ACTIVE
+
+=== [4j] anchor nodes referenced by semantic_tab_view 材质元素 ===
+   dialect   | tab_type |  node_key   | display_name  |      anchor_expr      |          physical_table          
+-------------+----------+-------------+---------------+-----------------------+----------------------------------
+ COST_BASIC  | 材质元素 | ELEMENT_BOM | 物料与元素BOM | vdcbeba.production_no | v_ds_cost_basic_element_bom_all
+ COST_DETAIL | 材质元素 | ELEMENT_BOM | 物料与元素BOM | vdcdeba.production_no | v_ds_cost_detail_element_bom_all
+ QUOTE       | 材质元素 | ELEMENT_BOM | 物料与元素BOM | dqeb.material_no      | ds_quote_element_bom
+
+=== [4k] all tab_types per dialect (for AC-N1 sample selection) ===
+   dialect   | tab_type |       variant_key        | status 
+-------------+----------+--------------------------+--------
+ COST_BASIC  | BOM      |                          | ACTIVE
+ COST_BASIC  | 主件     |                          | ACTIVE
+ COST_BASIC  | 外购件   |                          | ACTIVE
+ COST_BASIC  | 材质元素 |                          | ACTIVE
+ COST_BASIC  | 费用类   | OUTSOURCED_PROCESS       | ACTIVE
+ COST_BASIC  | 费用类   | FINISHED_RATIO_FEE       | ACTIVE
+ COST_BASIC  | 费用类   | FINISHED_FIXED_FEE       | ACTIVE
+ COST_BASIC  | 费用类   | INCOMING_OTHER_FIXED_FEE | ACTIVE
+ COST_BASIC  | 费用类   | PROCESS_ASSEMBLY_FEE     | ACTIVE
+ COST_BASIC  | 费用类   | INCOMING_OTHER_FEE       | ACTIVE
+ COST_BASIC  | 费用类   | INCOMING_PROCESS_FEE     | ACTIVE
+ COST_BASIC  | 零件     |                          | ACTIVE
+ COST_DETAIL | BOM      |                          | ACTIVE
+ COST_DETAIL | 主件     |                          | ACTIVE
+ COST_DETAIL | 外购件   |                          | ACTIVE
+ COST_DETAIL | 材质元素 |                          | ACTIVE
+ COST_DETAIL | 费用类   | FINISHED_FIXED_FEE       | ACTIVE
+ COST_DETAIL | 费用类   | CAPACITY                 | ACTIVE
+ COST_DETAIL | 费用类   | DEPRECIATION             | ACTIVE
+ COST_DETAIL | 费用类   | PRODUCTION_ENERGY        | ACTIVE
+ COST_DETAIL | 费用类   | AUXILIARY_ENERGY         | ACTIVE
+ COST_DETAIL | 费用类   | TOOLING                  | ACTIVE
+ COST_DETAIL | 费用类   | CONSUMABLE               | ACTIVE
+ COST_DETAIL | 费用类   | PACKAGING                | ACTIVE
+ COST_DETAIL | 费用类   | INCOMING_PROCESS_FEE     | ACTIVE
+ COST_DETAIL | 费用类   | INCOMING_OTHER_FEE       | ACTIVE
+ COST_DETAIL | 费用类   | INCOMING_OTHER_FIXED_FEE | ACTIVE
+ COST_DETAIL | 费用类   | PROCESS_ASSEMBLY_FEE     | ACTIVE
+ COST_DETAIL | 费用类   | OUTSOURCED_PROCESS       | ACTIVE
+ COST_DETAIL | 费用类   | PLATING_COST             | ACTIVE
+ COST_DETAIL | 费用类   | FINISHED_RATIO_FEE       | ACTIVE
+ COST_DETAIL | 零件     |                          | ACTIVE
+

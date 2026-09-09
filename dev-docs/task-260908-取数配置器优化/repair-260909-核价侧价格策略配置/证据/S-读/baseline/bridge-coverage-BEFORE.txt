@@ -1,0 +1,21 @@
+=== [B1-a] distinct production_no in v_ds_cost_basic_element_bom_all + bridge status ===
+production_no|bom_rows|bridge_cnt
+300013|6|0
+300015|2|0
+3120014539|7|1
+
+=== [B1-b] same for COST_DETAIL ===
+production_no|bom_rows|bridge_cnt
+3120014539|7|1
+
+=== [B1-c] the 4 named samples 300001/300012/300013/300015 ===
+pn|mm_rows|basic_bom_rows|detail_bom_rows
+300001|0|0|0
+300012|0|0|0
+300013|0|6|0
+300015|0|2|0
+
+=== [B1-d] 1 production_no -> N material_no distribution (AC-B2 sample) ===
+sales_per_prod|n_prod|samples
+1|21|1630010773, 2120011658, 2120011659, 3110520789, 3110520790, 3111320634, 3111320635, 3111320636, 3111320637, 3120014539, 3120018220, SC3120011203, SCVS-FG01, SCVS-RM01, SCVS-RM02, SCVS-RM03, SCVS-RM04, SCVS-RM05, SCVS-RM06, SCVS-SA02, SCVS-SA03
+2|1|TEST0813-P01-PROD
