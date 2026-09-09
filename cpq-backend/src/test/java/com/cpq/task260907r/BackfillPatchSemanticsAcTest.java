@@ -613,6 +613,9 @@ class BackfillPatchSemanticsAcTest extends Task260907RBase {
                         + "DatasetSheetParser 会要求每个 persistedColumns() 的 label 都出现在 Excel 表头，"
                         + "缺一个则整张 sheet 拒收 ⇒ 所有存量报价 Excel 会当场导不进去。");
 
+        // ── 守卫④（污染前置）：导入前该轴必须是 0 行 ─────────────────
+        assertLegacyAxisPristine();
+
         // ── 正向：既有报价 Excel 走真实导入端点 ─────────────────────────
         java.nio.file.Path xlsx = fixtureXlsx(LEGACY_QUOTE_XLSX);
         byte[] bytes;
@@ -691,6 +694,65 @@ class BackfillPatchSemanticsAcTest extends Task260907RBase {
     private static final String LEGACY_QUOTE_CUSTOMER = "CUST-0004";
     /** 该夹具里落到 {@link #EBOM}（唯一被前提守卫证明带 source_quotation_id 的表）的那张 sheet。 */
     private static final String TARGET_SHEET = "物料与元素BOM";
+
+    /** 夹具里所有销售料号共用的前缀 —— 本守卫的扫描轴。 */
+    private static final String LEGACY_AXIS_PREFIX = "T260907T-";
+
+    /**
+     * <b>守卫④ · 污染前置：导入前 {@link #LEGACY_AXIS_PREFIX} 轴必须是 0 行。</b>
+     *
+     * <h3>🔑 它和上面三条守卫方向相反</h3>
+     * 守卫①②③ 是<b>让用例在功能坏了时红</b>；本条是<b>让用例在自己会造成污染时红</b>。
+     * 🚫 不要把它当成「让用例更绿」的一环 —— 它只会让用例更容易红，那正是它的目的。
+     *
+     * <h3>为什么必须有</h3>
+     * 本夹具打的是 <b>VERSIONED</b> 表（{@code 物料与元素BOM} 的 summary 就带
+     * {@code created/upgraded/unchanged} 三态）。若在一个<b>已经存在该轴行</b>的库上跑：
+     * <ul>
+     *   <li>导入<b>不会报错</b>，而是把别人的行<b>升一版</b>；</li>
+     *   <li>本用例的断言（{@code SUCCESS} + 行数 + 不在 persistedColumns）<b>照样全绿</b>；</li>
+     *   <li>症状是「别人的数据莫名多了一版」，几个月后才被发现，且极难归因。</li>
+     * </ul>
+     * ⇒ 「导入前该轴 0 行」是这一次的<b>事实</b>，不是这个用例的<b>性质</b>；
+     * 不把它写成断言，性质就只是运气。
+     *
+     * <h3>🚫 不清、不跳</h3>
+     * 发现非 0 <b>只报不清</b>：清掉就等于删别人的行（{@code CLAUDE.md §3.2 环境销毁}），
+     * 而本用例<b>没有批准权</b>。也<b>不许</b>改成 skip —— skip 在 surefire 汇总里长得和通过一样。
+     */
+    private void assertLegacyAxisPristine() {
+        @SuppressWarnings("unchecked")
+        List<String> tables = (List<String>) (List<?>) col(
+                "SELECT table_name FROM information_schema.columns "
+                        + "WHERE table_schema='public' AND table_name LIKE 'ds\\_quote\\_%' "
+                        + "  AND table_name NOT LIKE '%\\_history' AND table_name NOT LIKE '%\\_record' "
+                        + "  AND column_name='material_no' ORDER BY 1");
+        // 🚨 扫到 0 张表 ⇒ 下面的循环空跑，守卫恒真。先证明扫描面非空。
+        assertFixtureNonEmpty(tables.size(),
+                "带 material_no 的 ds_quote_* 主表数（0 张则本守卫恒真、等于没有）");
+
+        List<String> dirty = new java.util.ArrayList<>();
+        long total = 0;
+        for (String t : tables) {
+            long n = count("SELECT count(*) FROM " + sqlSafe(t)
+                    + " WHERE material_no LIKE '" + LEGACY_AXIS_PREFIX + "%'");
+            if (n > 0) {
+                dirty.add(t + "=" + n + " 行");
+                total += n;
+            }
+        }
+        System.out.println("[T-08 反向] 守卫④ 污染前置：扫 " + tables.size() + " 张主表，轴 "
+                + LEGACY_AXIS_PREFIX + " 实测 " + total + " 行" + (dirty.isEmpty() ? "（干净 ✅）" : " " + dirty));
+        assertEquals(0L, total,
+                "⛔ 污染前置未满足（**不是被测功能的结论**）：本库已存在 " + LEGACY_AXIS_PREFIX
+                        + " 轴数据，共 " + total + " 行 —— " + dirty
+                        + "。本用例的夹具打的是 VERSIONED 表，在这种库上导入**不会报错**，"
+                        + "而是把这些行**升一版**；届时本用例的断言照样全绿，"
+                        + "污染要几个月后才会以「别人的数据莫名多了一版」的形态暴露出来。"
+                        + " ⇒ 请换一个该轴为空的库，或换一套轴值。"
+                        + " 🚫 不要清掉这些行来让用例变绿 —— 那可能是别人的数据（CLAUDE.md §3.2），"
+                        + "本用例没有批准权。");
+    }
 
     private java.nio.file.Path fixtureXlsx(String name) {
         java.nio.file.Path cur = java.nio.file.Path.of("").toAbsolutePath();
