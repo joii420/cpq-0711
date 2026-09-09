@@ -89,7 +89,14 @@ type TreeFixture = { id: string; name: string; status: string; tab: string };
  *    首列压根不是树结构列 ⇒ 断言「表头=BOM」验的是另一个东西（testing.md §5.5 形态③）。
  *
  * 🚫 排除 `T260908-` 前缀 —— 那是 S2 / S-全局 正在造的数据，跨片串扰源。
- * 排序取 `created_at ASC`（最老 = 最稳），🚫 不取"最新一张"（最新的往往是别的会话正在跑的在途单）。
+ *
+ * 🚨 2026-09-09 改判据：原来按 `created_at ASC`（「最老 = 最稳」）选，
+ *    结果选中的恰恰是**只有根节点**的早期单 ⇒ 下面第②条断言「展开箭头 ≥ 1」**恒红**，
+ *    而红的原因是**夹具选错**，看起来却像产品缺陷（亲验记录里 AC-20/21 那条「诚实标注」就是它）。
+ *    ⇒ 改为要求 `parentId` 非空 + 按 `nodeId` 出现次数 DESC 取树最深的一张。
+ *    📌 通则：夹具的选取判据必须包含「**这张夹具能让断言真的动起来**」——
+ *       「合法样本」不够，只有根节点的单是完全合法的 BOM，但它验不动东西。
+ *    次级排序用 `q.id ASC`（稳定、可复现），🚫 不用 created_at（最新那张常是在途单）。
  */
 function resolveQuoteTreeFixture(): TreeFixture {
   const envId = process.env.PW_T260908_QUOTE_QID;
@@ -111,8 +118,18 @@ function resolveQuoteTreeFixture(): TreeFixture {
       `join component_sql_view v on v.component_id=tc.component_id and v.builder_config->>'tabType'='BOM' ` +
       `join quotation_line_item li on li.quotation_id=q.id ` +
       `where q.name not like 'T260908-%' and li.quote_card_values::text like '%nodeId%' ` +
-      `group by q.id, q.name, q.status, tc.tab_name, q.created_at ` +
-      `order by (q.status='DRAFT') desc, q.created_at asc limit 1`
+      // 🚨 判「这张单的树有子节点」要用 **__parentNo 非空**，不是 __parentId。
+      //    2026-09-09 实测：`__parentId` 在全库 1972 行 quote_card_values 里**全是 null**，
+      //    拿它当判据要么恒空、要么（写错转义时）碰巧给对答案 —— 两种都不可信。
+      //    `__parentNo` 干净分开：QT-20260907-0557=0（只有根节点）／0623、0627=8（真多层）。
+      // 🚫 不要在这里写字面双引号：roSql 走 `psql -c "..."`，shell 先吃掉一层转义，
+      //    实测把正则打成残句直接报 `Command failed` ——**是命令红不是断言红**，极易误读成环境挂了。
+      //    ⇒ 一律用 chr(34) 拼。
+      `and li.quote_card_values::text like '%__parentNo'||chr(34)||': '||chr(34)||'%' ` +
+      `group by q.id, q.name, q.status, tc.tab_name ` +
+      `order by (q.status='DRAFT') desc, ` +
+      `max((select count(*) from regexp_matches(li.quote_card_values::text,'nodeId','g'))) desc, ` +
+      `q.id asc limit 1`
   );
   expect(
     row,
@@ -127,11 +144,23 @@ function resolveQuoteTreeFixture(): TreeFixture {
 /**
  * 核价侧夹具。
  *
- * 🚨 2026-09-08 实测（只读采样）：
- *    `select count(*) filter (where costing_card_template_id is not null) from quotation` = **0 / 68**；
- *    `quotation_view_structure` 里只有 `QUOTE_CARD` / `QUOTE_EXCEL` 两种 view_kind，**一行 COSTING_CARD 都没有**。
- *    ⇒ **当前库里没有任何一张带核价卡片的单，AC-22 无样本可验。**
- *    本函数因此会**硬失败**并说明缺口 —— 🚫 不用 test.skip，跳过看起来和通过一模一样。
+ * ⚠️ 2026-09-08 的那段注释（「全库 0/68 张带核价模板、AC-22 无样本」）**已于 2026-09-09 作废**，
+ *    因为它背后的判断是错的：以为核价卡片需要独立的 COSTING 模板实体。实测
+ *    `quotation_costing_card_template_fk → REFERENCES template(id)` 指向**普通 template 表**，
+ *    且核价卡片编辑页只依赖 `costing_card_template_id` + 该模板的 componentsSnapshot，
+ *    **不经过 quotation_view_structure**。⇒ 造夹具 = 一条 UPDATE。
+ *
+ * ✅ 夹具种子（幂等，带 --rollback）：
+ *    `bash dev-docs/task-260908-取数配置器优化/夹具/seed-ac22-costing-card.sh`
+ *
+ * 🚨 但**必须显式指定 QID**：2026-09-09 实测没有一张单同时满足两侧 ——
+ *    · `03e79d02`（报价模板·ds 原生）核价视图渲染成功，但 BOM 只有根节点（箭头断言会红）
+ *    · `438f10f4`（正泰测试模板1）树有 24 节点，但核价侧 expand 硬失败：
+ *      「树页签组件的 $view 未输出 parent_no 列」——**核价侧树的展开链路与报价侧不是同一套**，
+ *      它按 (parent_no, material_no) 边键匹配。同一组件报价侧正常、核价侧失败。
+ *    ⇒ 跑 AC-22 用 `PW_T260908_COSTING_QID=03e79d02-352b-4fcd-baa4-9aeb0b343008`。
+ *
+ * 仍然：找不到样本时**硬失败**并说明缺口 —— 🚫 不用 test.skip，跳过看起来和通过一模一样。
  */
 function resolveCostingTreeFixture(): TreeFixture {
   const envId = process.env.PW_T260908_COSTING_QID;
