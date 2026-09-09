@@ -47,8 +47,12 @@ import static org.junit.jupiter.api.Assertions.*;
  *       <td><b>v9 图里一条查名边都没有</b>（2026-09-05 实测：{@code semantic_edge.edge_kind} 的 distinct 值
  *           只有 {@code NARROW}(28) 与 {@code PRICE}(1)，{@code LOOKUP} = 0）——
  *           新数据集一表一 sheet、列自带中文名，不再需要「按码查名」这一层</td>
- *       <td>无（判据随对象一并消失）。防线由 {@link #retiredCompileAcs_tombstone_premiseStillHolds()} 守着：
- *           一旦 {@code LOOKUP}/{@code AUX} 边回来，本条变红要求重新评估</td></tr>
+ *       <td>无（判据随对象一并消失）。防线原由 {@link #retiredCompileAcs_tombstone_premiseStillHolds()} 守着。
+ *           <br>🚦 <b>2026-09-08 更新（task-260908 R-3，用户裁决 {@code A0-7}）</b>：查名边确实回来了
+ *           （46 条），守卫按其原文给的第二个选项处置 —— <b>ac4 的三件事已由 task-260908 的
+ *           {@code AC-2}（COALESCE 双路径）/{@code AC-3}（别名不冲突）/{@code AC-5}（同表只 JOIN 一次）
+ *           逐条承接并亲验通过</b>；守卫本身改为钉住「指向<b>未登记</b>查名节点的边」，仍会当场变红。
+ *           论证与 AC 对照表见守卫方法内注释</td></tr>
  *   <tr><td>{@code ac5_auxSourceAsScalarSubquery}</td>
  *       <td>附属源列编译为<b>相关标量子查询</b>（{@code (SELECT … LIMIT 1)}）而不是 {@code LEFT JOIN}，
  *           因而行粒度不被附属源改变（拖入前后 {@code grain} 相等）</td>
@@ -144,29 +148,49 @@ class Sec31CompileCorrectnessTest {
         return ((Number) em.createNativeQuery(sql).getSingleResult()).longValue();
     }
 
+    /**
+     * 🚦 <b>task-260908 R-3（用户 2026-09-08 裁决 {@code A0-7}，按 A 做）登记在案的三个「查名节点」</b>。
+     * <p>它们只用来取 {@code symbol} / 名称，<b>不是取数主源</b>；下面两条断言据此按<b>用途</b>（而非表名）豁免它们。
+     * 🚫 往这个清单里加东西 = 放宽哨兵，必须走任务立项 + 用户裁决，不许开发期顺手加。
+     */
+    private static final List<String> REGISTERED_LOOKUP_NODE_KEYS =
+            List.of("MAT_NAME_LK", "MAT_PROD_LK", "RECIPE_NAME_LK");
+
+    /** 把身份清单拼成可内联进原生 SQL 的 {@code 'A','B'} 形式（清单是编译期常量，无注入面）。 */
+    private static String quotedCsv(List<String> keys) {
+        return keys.stream().map(k -> "'" + k + "'").collect(java.util.stream.Collectors.joining(","));
+    }
+
     // ===================================================================
     // 🪦 作废前提守卫（会真的执行；前提被推翻就变红）
     // ===================================================================
     @Test
     @Order(1)
-    @DisplayName("🪦 作废前提守卫: V6 物理源全部出图 + 查名/附属边为 0 + 判别式为 0 + 无二跳路径")
+    @DisplayName("🪦 作废前提守卫: V6 表不作取数主源 + 无未登记查名/附属边 + AUX SHEET 仅登记例外 + 判别式为 0 + 无二跳路径")
     void retiredCompileAcs_tombstone_premiseStillHolds() {
         long activeNodes = scalar("SELECT count(*) FROM semantic_node WHERE status='ACTIVE'");
-        long v6Nodes = scalar("SELECT count(*) FROM semantic_node WHERE physical_table IN ("
-                + "'element_bom_item','material_bom_item','unit_price','capacity','material_master',"
-                + "'material_customer_map','material_recipe','element','plating_scheme','annual_discount')");
+        // V6 物理表清单（判据只看「有没有被当成取数主源」，见下方 v6SourceNodes 断言处的长注释）
+        final String v6Tables = "'element_bom_item','material_bom_item','unit_price','capacity','material_master',"
+                + "'material_customer_map','material_recipe','element','plating_scheme','annual_discount'";
+        long v6SourceNodes = scalar("SELECT count(*) FROM semantic_node "
+                + "WHERE node_kind <> 'LOOKUP' AND physical_table IN (" + v6Tables + ")");
+        long v6LookupNodes = scalar("SELECT count(*) FROM semantic_node "
+                + "WHERE node_kind = 'LOOKUP' AND physical_table IN (" + v6Tables + ")");
         long lookupOrAuxEdges = scalar("SELECT count(*) FROM semantic_edge WHERE edge_kind IN ('LOOKUP','AUX')");
         long auxSheetNodes = scalar("SELECT count(*) FROM semantic_tab_view_node tvn "
                 + "JOIN semantic_node n ON n.id = tvn.node_id "
                 + "WHERE tvn.role='AUX' AND n.node_kind='SHEET' AND tvn.status='ACTIVE'");
-        // task-260907（用户 2026-09-07 裁决）登记的例外身份 —— 见本方法下方两条断言的说明
+        // task-260907 / task-260908 登记的例外身份 —— 见本方法下方两条断言的说明。
+        // 🚦 task-260908 R-3：**剔除指向已登记查名节点的边**后，剩下的才是「未登记的查名/附属边」。
         @SuppressWarnings("unchecked")
         List<String> lookupOrAuxEdgeIds = (List<String>) em.createNativeQuery(
                 "SELECT f.node_key||'/'||f.dialect||' --'||e.edge_kind||'--> '||t.node_key "
                         + "FROM semantic_edge e "
                         + "JOIN semantic_node f ON f.id = e.from_node_id "
                         + "JOIN semantic_node t ON t.id = e.to_node_id "
-                        + "WHERE e.edge_kind IN ('LOOKUP','AUX') ORDER BY 1").getResultList();
+                        + "WHERE e.edge_kind IN ('LOOKUP','AUX') "
+                        + "AND t.node_key NOT IN (" + quotedCsv(REGISTERED_LOOKUP_NODE_KEYS) + ") "
+                        + "ORDER BY 1").getResultList();
         @SuppressWarnings("unchecked")
         List<String> auxSheetIds = (List<String>) em.createNativeQuery(
                 "SELECT v.dialect||'/'||v.tab_type||COALESCE(NULLIF('/'||v.variant_key,'/'),'')||' AUX '||n.node_key "
@@ -179,31 +203,64 @@ class Sec31CompileCorrectnessTest {
         long twoHopPaths = scalar("SELECT count(*) FROM semantic_edge e1 JOIN semantic_edge e2 "
                 + "ON e2.from_node_id = e1.to_node_id WHERE e1.status='ACTIVE' AND e2.status='ACTIVE'");
 
-        System.out.println("[🪦 Sec31 留碑] ACTIVE 节点=" + activeNodes + " · V6 物理源节点=" + v6Nodes
-                + " · LOOKUP/AUX 边=" + lookupOrAuxEdges + " · AUX 挂 SHEET=" + auxSheetNodes
+        System.out.println("[🪦 Sec31 留碑] ACTIVE 节点=" + activeNodes
+                + " · V6 取数主源节点=" + v6SourceNodes + "（V6 查名节点=" + v6LookupNodes + "，已登记豁免）"
+                + " · LOOKUP/AUX 边=" + lookupOrAuxEdges + "（剔除登记查名节点后剩 "
+                + lookupOrAuxEdgeIds.size() + " 条：" + lookupOrAuxEdgeIds + "）"
+                + " · AUX 挂 SHEET=" + auxSheetNodes
                 + " · 带 discriminator 节点=" + withDiscriminator + " · 二跳路径=" + twoHopPaths);
 
         assertTrue(activeNodes > 0, "🚨 语义图为空（ACTIVE 节点 " + activeNodes + " 个）——"
                 + "这不是「作废前提成立」，是种子没就位。本条判定为【未验证】，🚫 不许当成通过。");
 
-        assertEquals(0L, v6Nodes,
-                "🚦 AC-1/4/5/6/7/8 的作废前提被推翻：V6 物理源又回到语义图里了（命中 " + v6Nodes + " 个节点）。\n"
+        // 🪦→🚦 task-260908 R-3（用户 2026-09-08 裁决 A0-7）：**前提已被本任务有意推翻**，判据由「表名」收窄为「用途」。
+        //   [前提为什么被推翻] 用户裁决「物料 BOM 元素连接的是材质表」，V430 让 material_recipe 重新进入语义图
+        //     （RECIPE_NAME_LK ×3），并带回 46 条查名边 —— 即本条与下一条的断言对象都回来了。
+        //   [为什么可以按用途收窄，而不是「放宽让它绿」] AC-1/4/5/6/7/8 在 2026-09-05 被 D-123 作废，其实质前提是
+        //     「V6 表不再**供数**」，不是「V6 这几个表名不许出现」。查名节点只取 symbol/名称，不做取数主源；
+        //     同批 V430 落在 ds_* 上的 MAT_NAME_LK×3 + MAT_PROD_LK 本就无害，正说明判据该按**用途**而非**表名**。
+        //   ⇒ 收窄为：V6 物理表不得作为**取数主源**（node_kind='SHEET'/'FUNCTION' 等），查名节点（LOOKUP）豁免。
+        // 🚫 **不许把这条断言删掉，也不许把 0 改成 3** —— 两种改法都会让哨兵对「V6 表又被当成主源拖回来」放行。
+        assertEquals(0L, v6SourceNodes,
+                "🚦 AC-1/4/5/6/7/8 的作废前提被推翻：V6 物理表又被当成**取数主源**拖回语义图了（命中 "
+                        + v6SourceNodes + " 个非 LOOKUP 节点）。\n"
                         + "  这些用例是 2026-09-05 按 D-123（技术前提 D-77/D-78 + V413 删 V6 图）作废的，"
                         + "唯一理由就是「断言对象整个消失」。\n"
-                        + "  对象回来了 ⇒ 必须重新评估：要么把对应用例接回来（历史实现见本类 git 历史），"
+                        + "  ⚠️ 本条已按 task-260908 R-3 收窄为『不得作为取数主源』：查名节点（node_kind='LOOKUP'，"
+                        + "只取 symbol/名称）已豁免，当前豁免掉 " + v6LookupNodes + " 个。\n"
+                        + "  取数主源回来了 ⇒ 必须重新评估：要么把对应用例接回来（历史实现见本类 git 历史），"
                         + "要么解释清楚新回来的 V6 节点为什么不需要这些编译产物断言。");
 
         // 🪦→🚦 task-260907 B-1（用户 2026-09-07 裁决）：**前提已被本任务有意推翻**，不再是 0。
         //   客户料号 ds_quote_customer_part 接入语义图，必须声明成 LOOKUP —— SemanticCompiler 里
         //   只有 LOOKUP 编译成 LEFT JOIN（edge_kind='JOIN' 走 emitMandatoryJoin，出的是 INNER JOIN，
         //   会把没有客户料号的物料整行丢掉，违反 AC-2②）。
-        // 🚫 **不许把断言删掉，也不许把 0 改成 1** —— 两种改法都会让哨兵对「又多出一个」放行。
-        //   改为钉住**违例的身份集合**：再冒出第二条 LOOKUP/AUX 边，本条照样当场变红。
+        //
+        // 🪦→🚦 task-260908 R-3（用户 2026-09-08 裁决 A0-7）：**第二次被有意推翻** —— 本任务按 S-1 给
+        //   45 个 SHEET 铺了 46 条「按码查名」边（→ MAT_NAME_LK 39 / RECIPE_NAME_LK 6 / MAT_PROD_LK 1），
+        //   总数从 1 变成 47。改法 = 把**已登记的三个查名节点**（REGISTERED_LOOKUP_NODE_KEYS）作为边的
+        //   终点豁免掉，剩下的仍必须**恰好等于**登记的那一条例外。
+        //
+        //   [ac4 那道防线由谁承接 —— 这是守卫原文给的第二个选项，可逐条论证，不是免责声明]
+        //     ac4 原本要防三件事，本任务的 AC 逐条覆盖且已亲验通过（对照表见
+        //     dev-docs/task-260908-取数配置器优化/repair-260908-核价侧行键与材料名位置/问题说明.md §⑨）：
+        //       · 查名连线自动生成 COALESCE 双路径合并 → 本任务 **AC-2**
+        //         （COALESCE(dqm.material_name, mr.symbol) + 双 LEFT JOIN 并存，预览实测两个源的值同列出现）
+        //       · 同一张表只 JOIN 一次、别名不重复     → 本任务 **AC-5**
+        //         （ds_quote_material 按标识符边界恰 1 次、无自连接）
+        //       · 别名不冲突                          → 本任务 **AC-3**（比 ac4 更强：ds_quote_material 出现
+        //         2 次时别名 dqm/dqm2 不同、ON 键不同，钉的是 ensureLeftJoin 的别名缓存不会把两条边吞并）
+        //
+        // 🚫 **不许把断言删掉，也不许把期望数字改掉（0→1、1→47 都不行）** —— 那会让哨兵对「又多出一个」放行。
+        //   改为钉住**违例的身份集合**：再冒出一条指向**未登记**节点的 LOOKUP/AUX 边，本条照样当场变红。
         assertEquals(List.of("MATERIAL/QUOTE --LOOKUP--> CUSTOMER_PART"), lookupOrAuxEdgeIds,
-                "🚦 LOOKUP/AUX 边的集合与登记的例外不符（实际 " + lookupOrAuxEdges + " 条）。\n"
-                        + "  唯一登记在案的例外 = task-260907 B-1 的『物料 → 客户料号』左连边。\n"
+                "🚦 LOOKUP/AUX 边里出现了**未登记**的查名/附属边（全图共 " + lookupOrAuxEdges
+                        + " 条，剔除指向已登记查名节点 " + REGISTERED_LOOKUP_NODE_KEYS + " 的边后剩 "
+                        + lookupOrAuxEdgeIds.size() + " 条）。\n"
+                        + "  登记在案的例外只有两组：① task-260907 B-1 的『物料 → 客户料号』左连边；"
+                        + "② task-260908 R-3 的三个查名节点（只取 symbol/名称，不是取数主源）。\n"
                         + "  出现别的查名边 ⇒ 「自动生成的查名 JOIN 会不会重复/别名冲突」这道防线必须重新接上"
-                        + "（AC-4 历史实现见本类 git 历史）。");
+                        + "（AC-4 历史实现见本类 git 历史；当前承接者 = task-260908 的 AC-2/AC-3/AC-5，见上方注释）。");
 
         assertEquals(List.of("QUOTE/主件 AUX CUSTOMER_PART"), auxSheetIds,
                 "🚦 以 AUX 角色挂在页签视图上的 SHEET 节点集合与登记的例外不符（实际 " + auxSheetNodes + " 个）。\n"
