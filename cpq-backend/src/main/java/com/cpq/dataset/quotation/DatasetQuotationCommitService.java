@@ -75,11 +75,23 @@ public class DatasetQuotationCommitService {
      * {@code import_record.metadata.batchParts}（Phase 2 成功时由本次解析结果精确写入）。
      * <p>🚫 <b>仍然不走 V6 的 {@code hfPairs + created_at ±时间窗}</b>：那是近似，并发导入
      * 与补导会互相串；这里是精确清单。
+     *
+     * <p>🔴 <b>repair-260908 · 缺陷① 形态④（建单路径的 JOIN 扇出，2026-09-09 用户真机撞出）</b>：
+     * 这条 {@code LEFT JOIN} 原本<b>只按 {@code material_no} 连</b>，没有客户条件。
+     * {@code V425} 之后 {@code ds_quote_material} 的轴是 <b>{@code (customer_no, material_no)} 复合轴</b> ——
+     * 同一料号<b>每个客户一行</b> ⇒ 一行客户料号 JOIN 出 N 行物料 ⇒ 候选翻倍 ⇒ 明细行翻倍 ⇒
+     * <b>同一个产品出两张卡片</b>（实证 {@code QT-20260909-0631} / {@code CUST-0004}：
+     * 4 个料号被 JOIN 成 8 条候选、8 行明细）。
+     * <p>🔑 <b>必须是列对列 {@code m.customer_no = cp.customer_no}，不是参数 {@code = :customerCode}</b>：
+     * 关联的是<b>锚点行自己的客户</b>，语义更准，且不依赖调用方是否传参
+     * （与 {@code task-260908} 那 46 条查名边同款 —— {@code BL-0229} 客户维度<b>形态③</b>）。
+     * <p>🚫 {@code WHERE cp.customer_no = :customerCode} 那条<b>本来就对</b>（形态②），不要动。
      */
     private static final String CANDIDATE_SQL =
             "SELECT cp.customer_product_no, cp.customer_part_name, cp.material_no, m.material_name " +
             "  FROM ds_quote_customer_part cp " +
             "  LEFT JOIN ds_quote_material m ON m.material_no = cp.material_no " +
+            "                              AND m.customer_no = cp.customer_no " +
             " WHERE cp.customer_no = :customerCode " +
             "   AND cp.customer_product_no = ANY(:batchProductNos) " +
             " ORDER BY cp.customer_product_no";
