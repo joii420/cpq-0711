@@ -445,10 +445,26 @@ class BackfillPatchSemanticsAcTest extends Task260907RBase {
      * —— 那正是本任务要防的假绿形态（{@code RECORD.md} 有同型实证：
      * 「子代理不 commit」把提交责任隐式转给主线，而三项常规前置检查都发现不了代码没进 git）。
      */
+    /**
+     * AC-9 扫描范围的<b>基线提交</b>：本段第二段代码开工前的那一点
+     * （{@code fix(migration): V430 补进 master}）。
+     *
+     * <h3>🚫 为什么不能用 {@code master}（2026-09-08 实测踩了）</h3>
+     * 原来写的是 {@code git diff --diff-filter=A master}。分支<b>合并进 master 之后</b>，
+     * {@code master} 就包含了被测代码本身 ⇒ 「本分支新增」<b>塌成空集</b> ⇒ 扫描 0 次循环、
+     * 判据恒真。本条的空验证守卫如实拦下了它，但**判据的寿命天然截止于合并那一刻**。
+     * <p>🔑 与「阳性对照来自被测系统缺陷」是同源形态：<b>判据本身没问题，
+     * 是它赖以成立的前提消失了</b>。⇒ 基线必须钉一个<b>历史里不会再动的点</b>，
+     * 🚫 不许钉 {@code master}（移动靶），也🚫 不许钉分支名（会随分支推进而漂）。
+     * <p>📌 实测：以本基线取到 12 个文件（{@code Ds*} 全族 11 个 + D-43 的
+     * {@code DsRecordCardDeduper}）；用 {@code master} 取到 <b>0</b> 个。
+     */
+    private static final String AC9_BASELINE_COMMIT = "0ec3946a";
+
     private List<String> newlyAddedBackendSources() {
         java.io.File repoRoot = new java.io.File(System.getProperty("user.dir")).getParentFile();
         Set<String> rel = new LinkedHashSet<>();
-        rel.addAll(gitLines(repoRoot, "diff", "--name-only", "--diff-filter=A", "master", "--",
+        rel.addAll(gitLines(repoRoot, "diff", "--name-only", "--diff-filter=A", AC9_BASELINE_COMMIT, "--",
                 "cpq-backend/src/main/java"));
         rel.addAll(gitLines(repoRoot, "ls-files", "--others", "--exclude-standard", "--",
                 "cpq-backend/src/main/java"));
