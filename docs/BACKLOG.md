@@ -966,9 +966,63 @@ pickQualifiedCustomer({ needsTakenProductNo? })
   - 来源：`repair-260908` `C-5` 修复期发现的同族点（`C-5` 本身已修）
   - 优先级：**P2**｜规模：S
 
-- [ ] **BL-0240 · `ExistingProductService` 的 `DISTINCT ON` 缺 tie-break**
+- [x] **BL-0240 · `ExistingProductService` 的不确定序** ✅ **2026-09-09 由 `task-260909` 闭合**
   - 来源：`repair-260908` 跨客户隐患扫描期
-  - `DISTINCT ON` 不带完整 `ORDER BY` 时，留下哪一行由堆序决定 ⇒ 结果不确定
-  - 🔑 与 `C-1`（`v_compat_material_master`）同族：那处已由 `V435` 用
-    `DISTINCT ON (material_no) ... ORDER BY material_no, customer_no` 定序修掉
+  - 🚨 **原描述指错了位置，已订正**：本条原写「`DISTINCT ON` 缺 tie-break」，
+    实测改动前 `dedupSql` 的 `ORDER BY u.material_no, u.src_created_at, u.customer_product_no`
+    **本来就是三键完整的**；真正缺 tie-break 的是 **`aggSql` 的 `array_agg`**：
+    ```
+    改动前： array_agg(a.customer_product_no ORDER BY a.created_at)          ← 只有一键
+    改动后： array_agg(a.customer_product_no ORDER BY a.created_at, a.customer_product_no)
+    ```
+  - ⚠️ **按原文去查会得出「误报，关闭」而漏掉真隐患** —— 查 `DISTINCT ON` 会发现它没问题，
+    然后停在那里。这类「条目描述指向邻近但错误的位置」比描述模糊更危险
+  - 实际症状：同料号多编号且 `created_at` 相同时（正泰 `T260907-M1` 两行时间戳逐字节相同），
+    代表编号会排到 `customerProductNos` 数组第二位，且每次执行结果可能不同
+  - 📌 **是 `AC-4b` 才让它暴露的** —— 没有「图号/物料名必须与代表编号同行」这条 AC，
+    这个不确定序不会有人去看
+
+### 报价单「从已有产品添加」抽屉（task-260909 结案登记）
+
+- [ ] **BL-0241 · `ExistingProductResourceTest` 3/3 红（401 无鉴权）**
+  - 来源：`task-260909` 引用面收尾时发现
+  - 该类全部 `given().when().get(...)` 从不带认证，而端点有
+    `@RoleAllowed({SALES_REP,SALES_MANAGER,PRICING_MANAGER,SYSTEM_ADMIN})`
+  - 🔑 **A/B 对照已证非本次引入**：把改动 `git checkout` 回 HEAD 原版跑，同样 3/3 红、同样 401
+  - `task-260909` 已把夹具迁到 `ds_quote_customer_part`（消掉「查不到数据」那半个红因），
+    剩下的「加认证」属新写测试代码，未做
+  - 优先级：**P2**｜规模：S
+
+- [ ] **BL-0242 · `SelConfigAcTestBase` 清理白名单漏 `source='IMPORT'`**
+  - 来源：`task-260909` 处理 `RenderRegressionAcTest` r6 时发现
+  - `restoreFixtures` 只清 `DELETE FROM ds_quote_customer_part WHERE customer_no=:c AND source='MANUAL'`，
+    而 r6 造的行必须是 `IMPORT`（那正是 AC-6 的断言对象）⇒ **跑一次留一行孤儿客户产品**
+  - ⚠️ 该基类被 **8 个测试类继承，跨 task-260902/260903/260907r 三个任务**，改动影响面须评估
+  - 📌 `task-260909` 因此**未跑 r6**（夹具已迁、语义已被 AC-1/AC-6 覆盖）
+  - 优先级：**P2**｜规模：S
+
+- [ ] **BL-0243 · task-0721 AC-4「未审核占用料号不外泄」后端守卫真空**
+  - 来源：`task-260909` 删除 `ExistingProductGateTest` 所致
+  - 该测试是 `task-0721 · B7` 的闸门自测，验「`pending_quotation_id` 非空的料号不出现在列表」
+  - **前提消失**：读侧收敛到 `ds_quote_customer_part` 后，该表**没有 `pending_quotation_id` 列**
+  - 🚨 **这不只是删了一个测试**：那条业务规则本身是否还需要执行、由谁执行，属**需求侧**，
+    须转 `task-0721` 负责人确认。文件可从 commit `29f5f9c9` 恢复
+  - 前置条件：需求侧先确认规则去留
+  - 优先级：**P1**｜规模：S
+
+- [ ] **BL-0244 · `Q13CUST0617` / `C1` 的 dqcp 孤儿数据来源追查**
+  - 来源：`task-260909` 写 AC-2 时实查发现
+  - `ds_quote_customer_part` 里有这两个 `customer_no` 的 3 行数据，但 **`customer` 表里没有对应客户**
+  - 后果：接口按 `quotationId → customer.code` 派生客户 ⇒ 无客户则无报价单 ⇒ **这 3 行永远查不到**，
+    也无法通过任何 UI 路径验证
+  - 追查方向：谁写进去的、写入路径是否还活着（若还活着会持续产生新孤儿）
+  - 优先级：**P2**｜规模：S
+
+- [ ] **BL-0245 · `ds_quote_customer_part` 冗余索引评估**
+  - 来源：`task-260909` 的 `B-4` 建索引后，测试代理在写 AC-16 时质疑
+  - `idx_ds_quote_customer_part_customer_no (customer_no)` 是既有唯一索引
+    `uq_ds_quote_customer_part (customer_no, customer_product_no)` 的**前缀**，当前冗余
+  - 📌 用户 `D-8` 已裁决**保留**：`DROP INDEX` 属 §3.2 红线，不值得为一个无害的冗余索引开红线；
+    且未来若唯一索引因业务变更调整列序，这个单列索引就不再冗余
+  - 触发条件：表量级显著增长、或唯一索引列序变更时重新评估
   - 优先级：**P2**｜规模：S
