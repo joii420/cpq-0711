@@ -1,0 +1,48 @@
+[global-setup] Saved auth state for admin → /home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-frontend/e2e/.auth/admin.json
+[global-setup] Could not save auth state for alice: page.waitForURL: Timeout 15000ms exceeded.
+=========================== logs ===========================
+waiting for navigation until "load"
+============================================================
+    at saveStorageState (/home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-frontend/e2e/global-setup.ts:72:16)
+    at globalSetup (/home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-frontend/e2e/global-setup.ts:106:3) {
+  name: 'TimeoutError'
+}
+[global-setup] Could not save auth state for bob: page.waitForURL: Timeout 15000ms exceeded.
+=========================== logs ===========================
+waiting for navigation until "load"
+============================================================
+    at saveStorageState (/home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-frontend/e2e/global-setup.ts:72:16)
+    at globalSetup (/home/joii/project/cpq/.claude/worktrees/repair-260908-tab-dup-rows/cpq-frontend/e2e/global-setup.ts:107:3) {
+  name: 'TimeoutError'
+}
+
+Running 1 test using 1 worker
+
+[1/1] e2e/ac9-ac10-v2.spec.ts:49:1 › AC-9 + AC-10 + AC-21 ·「产品」页签
+e2e/ac9-ac10-v2.spec.ts:49:1 › AC-9 + AC-10 + AC-21 ·「产品」页签
+[量具] 页签按钮 12 个；「产品」页签命中 4 个卡片
+
+[AC-9] 时点1 首次进入   = [1,1,1,1]
+
+[量具] 对照 BOM 页签     = [4,6,6,5]  ← 必须 ≠ 产品，否则判据恒定
+
+[AC-9] 时点2 切走再切回 = [1,1,1,1]
+
+[AC-9] 时点3 F5 刷新后   = [1,1,1,1]
+
+[AC-9] 时点4 再切回     = [1,1,1,1]
+
+[AC-10]「产品」页签可输入格 = 32
+
+[AC-10] 目标格 type=text 原值="S0001" → 写入 "QY615055"
+
+[AC-21] /draft 响应状态 = ["200"]
+
+[AC-21] 页面出现「已被他人修改」= false
+
+[AC-10] userDataVersion  6 → 9
+
+[AC-10] 重开后行数 = [1,1,1,1]；写入值仍在 = true
+
+  1 passed (2.2m)
+EXIT=0
