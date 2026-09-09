@@ -1,0 +1,59 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>核价树配置 · 基础核价（默认态）</title><link rel="stylesheet" href="_style.css"></head><body>
+<div class="page">
+  <h2 class="page-title">组件管理</h2>
+  <div class="tabs">
+    <div class="tab">组件</div><div class="tab">数据源</div><div class="tab">全局变量</div>
+    <div class="tab active">核价树配置</div>
+  </div>
+
+  <div class="alert">
+    <div class="ico">i</div>
+    <div>
+      <div class="msg">当前管理「基础核价」的递归 SQL 配置</div>
+      <div class="desc">报价、基础核价、详细核价三套各自独立维护、独立生效（active），互不影响：切换上方开关只改变本页面查看/操作的范围，激活某一套的配置不会下线另外两套的现役配置。</div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <h3>基础核价树配置</h3>
+    <div class="seg">
+      <span>报价</span><span class="on">基础核价</span><span>详细核价</span>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn primary">＋ 新增</button>
+    <button class="btn" disabled>设为生效<span class="tip">请先选择一条配置</span></button>
+    <button class="btn" disabled>编辑<span class="tip">请先选择一条配置</span></button>
+    <button class="btn danger" disabled>删除<span class="tip">请先选择一条配置</span></button>
+  </div>
+
+  <table>
+    <thead><tr>
+      <th style="width:48px"><span class="ck"></span></th>
+      <th>名称</th><th style="width:110px">状态</th><th style="width:190px">更新时间</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="ck"></span></td>
+        <td><span class="link">基础核价BOM树-COST_BASIC-v1</span></td>
+        <td><span class="tag green">生效中</span></td>
+        <td>2026-09-09 10:12:33</td>
+      </tr>
+      <tr>
+        <td><span class="ck"></span></td>
+        <td><span class="link trunc" title="基础核价BOM树-COST_BASIC-v0-废弃-仅保留回溯用-勿激活-2026-07-27-旧口径查V6老表material_bom_item">基础核价BOM树-COST_BASIC-v0-废弃-仅保留回溯用-勿激活-2026-07-27-旧口径查V6老表material_bom_item</span></td>
+        <td><span class="tag grey">未生效</span></td>
+        <td>2026-07-27 09:13:36</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <b>本页要画到的状态（开发按此逐项还原）：</b><br>
+    ① <b>切换三项且默认落「基础核价」</b>——顺序固定为 报价 / 基础核价 / 详细核价，用词与「主数据维护」页逐字一致。<br>
+    ② <b>禁用态可见 + 说明原因</b>——未选行时「设为生效 / 编辑 / 删除」保持可见但禁用，hover 出 tooltip「请先选择一条配置」。🚫 不许隐藏按钮。<br>
+    ③ <b>最长文案</b>——第 2 行是极值样例：超长配置名单行截断 + 悬浮显示全名，<b>不得撑破表格或换行</b>。<br>
+    ④ 「生效中」绿标每套<b>至多一条</b>；切换到别的数据集时本页只换查看范围，不影响其它套的生效项。
+  </div>
+</div>
+</body></html>

@@ -1,0 +1,48 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>核价树配置 · 详细核价（空态）</title><link rel="stylesheet" href="_style.css"></head><body>
+<div class="page">
+  <h2 class="page-title">组件管理</h2>
+  <div class="tabs">
+    <div class="tab">组件</div><div class="tab">数据源</div><div class="tab">全局变量</div>
+    <div class="tab active">核价树配置</div>
+  </div>
+
+  <div class="alert">
+    <div class="ico">i</div>
+    <div>
+      <div class="msg">当前管理「详细核价」的递归 SQL 配置</div>
+      <div class="desc">报价、基础核价、详细核价三套各自独立维护、独立生效（active），互不影响：切换上方开关只改变本页面查看/操作的范围，激活某一套的配置不会下线另外两套的现役配置。</div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <h3>详细核价树配置</h3>
+    <div class="seg">
+      <span>报价</span><span>基础核价</span><span class="on">详细核价</span>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn primary">＋ 新增</button>
+    <button class="btn" disabled>设为生效<span class="tip">请先选择一条配置</span></button>
+    <button class="btn" disabled>编辑<span class="tip">请先选择一条配置</span></button>
+    <button class="btn danger" disabled>删除<span class="tip">请先选择一条配置</span></button>
+  </div>
+
+  <table>
+    <thead><tr>
+      <th style="width:48px"><span class="ck"></span></th>
+      <th>名称</th><th style="width:110px">状态</th><th style="width:190px">更新时间</th>
+    </tr></thead>
+    <tbody>
+      <tr><td colspan="4" style="border-bottom:0;padding:0">
+        <div class="empty"><div class="box"></div>暂无详细核价树配置</div>
+      </td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <b>为什么空态是本期的主状态：</b>库里 <code>COST_DETAIL</code> 方言的组件实测 <b>0 个</b>，详细核价的骨架 SQL 本期<b>只交付「能配」不交付「配好」</b>（<code>需求文档.md §② 明确不做</code>）。<br>
+    ⇒ 用户切到这一档时<b>必然先看到空态</b>，它不是边角状态。<br><br>
+    <b>硬要求：</b>空态下「＋ 新增」<b>保持可点</b>（不禁用、不隐藏）——否则用户没有任何入口去配置详细核价那一套。其余三个动作照常禁用并给 tooltip。
+  </div>
+</div>
+</body></html>

@@ -1,0 +1,30 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>组件管理 · 非管理员视角（3 个页签）</title><link rel="stylesheet" href="_style.css"></head><body>
+<div class="page">
+  <h2 class="page-title">组件管理</h2>
+  <div class="tabs">
+    <div class="tab active">组件</div><div class="tab">数据源</div><div class="tab">全局变量</div>
+  </div>
+
+  <div class="alert">
+    <div class="ico">i</div>
+    <div>
+      <div class="msg">以 SALES_MANAGER（示例账号 test1）登录时看到的组件管理页</div>
+      <div class="desc">「核价树配置」页签整项不渲染 —— 不是渲染出来再隐藏、也不是渲染成禁用态。该页签管理的是全局单例的递归 SQL 配置，删错一条会直接让对应数据集的 BOM 树渲不出来。</div>
+    </div>
+  </div>
+
+  <div style="padding:48px 0;text-align:center;color:rgba(0,0,0,.45);border:1px dashed #d9d9d9;border-radius:6px">
+    （此处为既有「组件」页签内容，本次不改动）
+  </div>
+
+  <div class="note">
+    <b>本页的验收要点：</b><br>
+    ① 页签栏<b>只有 3 项</b>：组件 / 数据源 / 全局变量。<b>不含</b>「核价树配置」。<br>
+    ② 以 <code>admin</code>（SYSTEM_ADMIN）登录时是 <b>4 项</b>（见 <code>01-核价树配置-基础核价.html</code>）。<br>
+    ③ ⚠️ <b>前端隐藏不构成权限</b>：后端 <code>CostingBomTreeConfigResource</code> 类级角色同步收紧为 <code>{SYSTEM_ADMIN}</code>，
+    SALES_MANAGER 直接调接口（含 <code>GET</code>）一律 <b>403</b>。两处都改才算这条做完。<br>
+    ④ 组件管理页本身<b>仍对 SALES_MANAGER 开放</b>（<code>MainLayout.tsx</code> 的菜单角色不变），本次只收紧页签内的这一项。
+  </div>
+</div>
+</body></html>

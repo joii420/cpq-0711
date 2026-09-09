@@ -1032,3 +1032,26 @@ pickQualifiedCustomer({ needsTakenProductNo? })
     且未来若唯一索引因业务变更调整列序，这个单列索引就不再冗余
   - 触发条件：表量级显著增长、或唯一索引列序变更时重新评估
   - 优先级：**P2**｜规模：S
+
+---
+
+### [由 task-260909 拆出 · 本期明确不做] BL-0246 · 详细核价（`COST_DETAIL`）的 BOM 树骨架递归 SQL 尚未配置
+
+- [ ] 待开发 · 优先级 **P1** · 来源：`task-260909-核价树骨架分档与轴口径统一` 闸门 A（2026-09-09 用户裁决登记）
+- **背景**：`task-260909` 把核价树骨架配置的维度由 2 值（`QUOTE` / `COSTING`）对齐到数据集
+  （`QUOTE` / `COST_BASIC` / `COST_DETAIL`），并交付了「机制 + 界面能配 + 空态正确」。
+  但**只配出了 `COST_BASIC` 那一条骨架 SQL**，`COST_DETAIL` 那一条是空的。
+- **为什么本期不配**：实测库里 `builder_config.dialect='COST_DETAIL'` 的组件 **0 个**、
+  `template_kind='COSTING'` 的模板只有 1 张且是 `COST_BASIC` ⇒ **没有可验的模板**，
+  配出来的 SQL 无法用任何 AC 验证，属「无正向数据的遗留会掩盖未实现」那一类。
+- **症状预告**（不配的后果）：一旦业务建出第一张详细核价模板，其 BOM 页签会报
+  `未配置生效的「详细核价」树递归 SQL（costing_bom_tree_config 无 usage=COST_DETAIL 且 isActive=true 记录）`。
+  **这是 `task-260909` 的 `B-4` 特意做出来的可读报错**，不是新缺陷。
+- **怎么做**（照抄 `COST_BASIC` 那条换表即可，两张表列结构逐字相同）：
+  - 递归体由 `v_ds_cost_basic_material_bom_all` 换成 `v_ds_cost_detail_material_bom_all`
+  - 种子翻译仍走 `ds_quote_material` + `:customerCode`（销售料号 → 生产料号，只翻一次）
+  - 输出五列 `root_no / material_no / bom_version / parent_no / node_path`（`CostingTreeSqlValidator` 强制）
+  - ⚠️ **两套 BOM 数据是独立维护的，不许 UNION 也不许共用一条**（用户 2026-09-09 裁决 `D-2`：两棵树各自维护）。
+    实测两表已分叉：basic 23 条边 / detail 14 条边，正泰那一族 9 条边**只在 basic 里有**
+- 前置条件：业务建出第一张详细核价（`COST_DETAIL`）模板，且导入过对应的核价 BOM 数据
+- 优先级：**P1**｜规模：S（一条 SQL 配置 + 一轮验证，无代码改动）
