@@ -1,0 +1,26 @@
+--- AC-R4 · 七类数据源 × 方言 = 12 个断言 ---
+[PASS] COST_BASIC  MATERIAL_BOM               期望='生产料号 | 组成料号'  实际='生产料号 | 组成料号'
+[PASS] COST_DETAIL MATERIAL_BOM               期望='生产料号 | 组成料号'  实际='生产料号 | 组成料号'
+[PASS] COST_BASIC  FINISHED_RATIO_FEE         期望='生产料号 | 要素名称'  实际='生产料号 | 要素名称'
+[PASS] COST_DETAIL FINISHED_RATIO_FEE         期望='生产料号 | 要素名称'  实际='生产料号 | 要素名称'
+[PASS] COST_BASIC  FINISHED_FIXED_FEE         期望='生产料号 | 要素名称'  实际='生产料号 | 要素名称'
+[PASS] COST_DETAIL FINISHED_FIXED_FEE         期望='生产料号 | 要素名称'  实际='生产料号 | 要素名称'
+[PASS] COST_BASIC  INCOMING_OTHER_FEE         期望='生产料号 | 来料料号 | 要素名称'  实际='生产料号 | 来料料号 | 要素名称'
+[PASS] COST_DETAIL INCOMING_OTHER_FEE         期望='生产料号 | 来料料号 | 要素名称'  实际='生产料号 | 来料料号 | 要素名称'
+[PASS] COST_BASIC  INCOMING_OTHER_FIXED_FEE   期望='生产料号 | 来料料号 | 要素名称'  实际='生产料号 | 来料料号 | 要素名称'
+[PASS] COST_DETAIL INCOMING_OTHER_FIXED_FEE   期望='生产料号 | 来料料号 | 要素名称'  实际='生产料号 | 来料料号 | 要素名称'
+[PASS] COST_DETAIL PLATING_COST               期望='生产料号'  实际='生产料号'
+[PASS] COST_DETAIL TOOLING                    期望='生产料号 | 工序编号'  实际='生产料号 | 工序编号'
+--- 反向期望③ · 两方言一致 ---
+[PASS] ELEMENT_BOM                BASIC='生产料号 | 材质料号 | 元素代码' DETAIL='生产料号 | 材质料号 | 元素代码'
+[PASS] FINISHED_FIXED_FEE         BASIC='生产料号 | 要素名称' DETAIL='生产料号 | 要素名称'
+[PASS] FINISHED_RATIO_FEE         BASIC='生产料号 | 要素名称' DETAIL='生产料号 | 要素名称'
+[PASS] INCOMING_OTHER_FEE         BASIC='生产料号 | 来料料号 | 要素名称' DETAIL='生产料号 | 来料料号 | 要素名称'
+[PASS] INCOMING_OTHER_FIXED_FEE   BASIC='生产料号 | 来料料号 | 要素名称' DETAIL='生产料号 | 来料料号 | 要素名称'
+[PASS] INCOMING_PROCESS_FEE       BASIC='生产料号 | 来料料号' DETAIL='生产料号 | 来料料号'
+[PASS] MATERIAL                   BASIC='生产料号' DETAIL='生产料号'
+[PASS] MATERIAL_BOM               BASIC='生产料号 | 组成料号' DETAIL='生产料号 | 组成料号'
+[PASS] OUTSOURCED_PROCESS         BASIC='生产料号 | 工序编号' DETAIL='生产料号 | 工序编号'
+[PASS] PROCESS_ASSEMBLY_FEE       BASIC='生产料号 | 工序编号' DETAIL='生产料号 | 工序编号'
+
+=== AC-R4 结论: 全部通过 （断言总数=12+两方言一致项）

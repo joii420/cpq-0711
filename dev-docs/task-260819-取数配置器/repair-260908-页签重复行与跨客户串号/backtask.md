@@ -34,6 +34,8 @@
 |---|---|---|---|
 | **B-1** | AC-1b, AC-2, AC-2b, AC-12, AC-12b | `SemanticCompiler.applyFullScope()`：物理表含 `customer_no` 列时，追加谓词 `<别名>.customer_no = :customerCode` 并把 `customerCode` 记入 `requiredVars`。该方法 3 个调用点（锚点 `:344` / SUB `:780` / GRAIN `:815`）自动全覆盖。🚫 **不得改 `ensureLeftJoin()`（`:751`）** | 一 |
 | **B-1b** | AC-16 | `SemanticCompiler` 的 `NARROW` 桥（`:585-587`，直接拼 `anchorWhere`，**不经 `applyFullScope`**）：桥的 target 物理表含 `customer_no` 时，子查询 `WHERE` 追加 `AND <桥别名>.customer_no = :customerCode` | 一 |
+| **B-1c** | AC-2, AC-2b, AC-17 | 🆕 `D-7`：`buildTreeRootBranch()` / `rootNarrowPredicate()`（约 `:1050-1105`）**同样不经 `applyFullScope`**。**(a)** 根分支外层 `WHERE` 补 `AND <根别名>.customer_no = :customerCode`（**活故障**，`QT-20260908-0624` 实测 8→4 行、串进来 4 行）；**(b)** `NOT EXISTS` 的父边判定补同客户约束（**结构隐患**，全库 0 行）。🚫 **(b) 的失败方向是「少行」不是「多行」** —— 某成品若在别客户下有父边，会被判成非树根而从根分支消失 | 一 |
+| **B-7** | AC-16 | 🆕 `D-9`：改既有 `V9CompileArtifactTest.ac107_noV6ScopePredicates` —— 断言收窄成「**外层锚点**不得含 `customer_no`；**桥子查询**含则合法」，**并改掉它注释里「仅 `ds_quote_customer_part` 有该列」那句**（已被 `V425` 推翻）。🔑 留着过期理由比留着过期断言更危险：下一个人会照它再做一次错判断 | 一 |
 | **B-2** | AC-5 | `SqlViewExecutor.rewriteNamedParams()`（`:626-652`）：`customerCode` 未绑定时抛 400，不再静默替换成字面量 `NULL`。实现照抄同方法 `:637-646` 的 `total_material_no` 分支 | 一 |
 | **B-3** | AC-7 | `CompileResult` 新增 `axisScope` 字段（`SELF` / `CLOSURE`）；`SemanticCompiler` 按 `tabType` 是否等于 `ROOT_SOURCE_TAB_TYPE`（`"主件"`，`:148`）赋值。**三个方言都产出**，不按方言分叉 | 二 |
 | **B-4** | AC-7, AC-8, AC-11 | 落盘与读回：`BuilderService.save()`（`:820` 附近）把 `axisScope` 并进 `component_sql_view.builder_config`；`ComponentSqlViewService` 冻结快照时写 `axis_scope` 键、`lookup*`（`:361`/`:393`/`:479`）读回。**无 DDL**。🔑 **缺键必须退回 `CLOSURE`** | 二 |
@@ -77,6 +79,22 @@
 6. 🚨 **迁移号四方核对**：本任务**预期不需要迁移**（B-3/B-4 都是既有 jsonb 列加键）。
    若确实需要，动手前核对 `共享库 flyway_schema_history × master × 当前分支 × target/classes/db/migration`
    （第四方双向看），且**迁移一落共享库，文件必须当场进 master**。
+6.5 🔴 **`B-6` 的重编译有一个前置依赖，不满足就不要跑**（2026-09-08 由并发会话 `优化组件管理` 交底，已独立确认存在）：
+   `SemanticGraphLoader:58` 的 `SemanticNodeColumn.listAll()` **无 `ORDER BY`**，
+   `SemanticGraphSnapshot:65` 的 `groupingBy(c -> c.nodeId)` 也不排序
+   ⇒ 编译期遍历 `columnsOf(nodeId)` 走的是 **PG 堆顺序**，而**任何对 `semantic_node_column` 的 `UPDATE`
+   都会重排该节点的字段顺序**（MVCC 把行的新版本写到别的页面）。
+   实测：V433 只 `UPDATE` 了 11 行 `roles`，就让 11 个核价数据源的字段面板顺序错位。
+
+   **对本任务的两处直接影响**：
+   - 重编译产出的 `SELECT` 列顺序会跟着变 ⇒ `declared_columns` 变 ⇒ 模板快照对不齐
+   - `SemanticCompiler` 里有**四处对无序列表取 `findFirst`**（`pickColumnByRole` / `resolveTreeChildColumn` /
+     `findSortColumn` / `filter(!isCode).findFirst`）⇒ 堆顺序一变，**取哪一列可能静默翻转**
+
+   对方已在做修法 A（`loadSnapshot()` 加 `Sort.by("nodeId").and("sortOrder")`，1 行治本）。
+   🚦 **`B-6` 的重编译必须等该修法进 master 之后再跑**，否则编出来的是当前这个乱的堆顺序。
+   `B-1`/`B-1b`/`B-2` **不受影响**（加谓词与列顺序无关），可以照常做。
+
 7. **表名匹配一律用标识符边界** `(?<![A-Za-z0-9_])<表名>(?![A-Za-z0-9_])` ——
    `ds_quote_material` 是 `ds_quote_material_bom` 的前缀，裸 substring 会让断言两个方向同时出错。
 8. **并发**：提交一律 `git commit -- <明确路径>`；起/重启共享端口（8081 / 5174）**前**先广播；
