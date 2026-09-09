@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>从已有产品添加 · 默认态 — task-260909</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #f0f2f5;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 14px; color: rgba(0,0,0,.88); line-height: 1.5715;
+  }
+  .note {
+    background: #e6f4ff; border-left: 3px solid #1677ff; padding: 10px 16px;
+    font-size: 13px; color: #003a8c;
+  }
+  .note code { background: rgba(0,0,0,.06); padding: 1px 5px; border-radius: 3px; }
+
+  /* ── 抽屉外壳（AntD Drawer placement=right） ── */
+  .mask { position: relative; height: 780px; background: rgba(0,0,0,.45); overflow: hidden; }
+  .drawer {
+    position: absolute; top: 0; right: 0; bottom: 0; width: 1180px;
+    background: #fff; display: flex; flex-direction: column;
+    box-shadow: -6px 0 16px rgba(0,0,0,.08);
+  }
+  .drawer-header {
+    padding: 16px 24px; border-bottom: 1px solid rgba(5,5,5,.06);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .drawer-title { font-size: 16px; font-weight: 600; }
+  .close { color: rgba(0,0,0,.45); cursor: pointer; font-size: 16px; }
+  .drawer-body { padding: 24px; flex: 1; overflow: auto; }
+  .drawer-footer {
+    padding: 10px 16px; border-top: 1px solid rgba(5,5,5,.06);
+    display: flex; justify-content: flex-end; gap: 8px; align-items: center;
+  }
+  .selected-hint { margin-right: auto; color: rgba(0,0,0,.45); font-size: 14px; }
+
+  /* ── 过滤条 ── */
+  .filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .inp {
+    height: 32px; padding: 4px 11px; border: 1px solid #d9d9d9; border-radius: 6px;
+    font-size: 14px; width: 180px; background: #fff; color: rgba(0,0,0,.88);
+  }
+  .inp::placeholder { color: rgba(0,0,0,.25); }
+  .btn {
+    height: 32px; padding: 4px 15px; border-radius: 6px; border: 1px solid #d9d9d9;
+    background: #fff; cursor: pointer; font-size: 14px; color: rgba(0,0,0,.88);
+  }
+  .btn-primary { background: #1677ff; border-color: #1677ff; color: #fff; }
+  .btn:disabled { color: rgba(0,0,0,.25); background: rgba(0,0,0,.04); cursor: not-allowed; border-color: #d9d9d9; }
+
+  /* ── 表格 ── */
+  table { width: 100%; border-collapse: separate; border-spacing: 0; }
+  thead th {
+    background: #fafafa; font-weight: 600; text-align: left;
+    padding: 12px 8px; border-bottom: 1px solid rgba(5,5,5,.06);
+    white-space: nowrap; color: rgba(0,0,0,.88);
+  }
+  tbody td { padding: 12px 8px; border-bottom: 1px solid rgba(5,5,5,.06); vertical-align: middle; }
+  tbody tr:hover { background: #fafafa; }
+  tbody tr.active { background: #e6f4ff; }
+  .ck { width: 16px; height: 16px; accent-color: #1677ff; }
+  .ellipsis { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .muted { color: rgba(0,0,0,.25); }
+
+  .tag {
+    display: inline-block; padding: 0 7px; font-size: 12px; line-height: 20px;
+    border-radius: 4px; border: 1px solid #d9d9d9; background: #fafafa; color: rgba(0,0,0,.88);
+  }
+  .tag-purple { background: #f9f0ff; border-color: #d3adf7; color: #531dab; }
+
+  .multi { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .multi > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .multi .tag { flex: none; }
+
+  /* ── 分页 ── */
+  .pagination { margin-top: 16px; display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+  .pg-total { margin-right: auto; color: rgba(0,0,0,.65); }
+  .pg {
+    min-width: 32px; height: 32px; line-height: 30px; text-align: center;
+    border: 1px solid #d9d9d9; border-radius: 6px; cursor: pointer; padding: 0 6px; background:#fff;
+  }
+  .pg.cur { border-color: #1677ff; color: #1677ff; }
+  .pg.dis { color: rgba(0,0,0,.25); cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<div class="note">
+  <b>📌 当前基准</b> · task-260909 「从已有产品添加」抽屉 · <b>默认态（有数据）</b><br>
+  数据为 <code>cpq_db_0724</code> 2026-09-09 真实数据。客户 = <b>罗克韦尔 CUST-0001</b>（该客户数据字段最全，便于展示 7 列）。<br>
+  相对改动前：❌ 移除右侧 3D 预览区（表格占满全宽） ｜ 🆕 新增「客户图号」列 ｜ 🔧「品名」与「客户物料名」拆成两个真实不同的值。
+</div>
+
+<div class="mask">
+  <div class="drawer">
+    <div class="drawer-header">
+      <span class="drawer-title">添加产品 — 从已有产品</span>
+      <span class="close">✕</span>
+    </div>
+
+    <div class="drawer-body">
+      <div class="filters">
+        <input class="inp" placeholder="客户产品编号">
+        <input class="inp" placeholder="销售料号">
+        <input class="inp" placeholder="品名">
+        <input class="inp" placeholder="规格">
+        <button class="btn btn-primary">查询</button>
+        <button class="btn">重置</button>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th style="width:40px"><input type="checkbox" class="ck"></th>
+            <th style="width:96px">来源</th>
+            <th style="width:200px">客户产品编号</th>
+            <th style="width:130px">客户图号</th>
+            <th style="width:160px">客户物料名</th>
+            <th style="width:150px">销售料号</th>
+            <th style="width:130px">品名</th>
+            <th>规格</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="active">
+            <td><input type="checkbox" class="ck" checked></td>
+            <td><span class="tag">已有</span></td>
+            <td>A002</td>
+            <td>4332243</td>
+            <td>示例客户料号</td>
+            <td>S0001</td>
+            <td>铆钉</td>
+            <td>Φ50</td>
+          </tr>
+          <tr>
+            <td><input type="checkbox" class="ck"></td>
+            <td><span class="tag">已有</span></td>
+            <td>RW-A004</td>
+            <td>DWG-A004</td>
+            <td>罗克韦尔触桥组件A</td>
+            <td>S0004</td>
+            <td>触桥组件A</td>
+            <td>Φ12</td>
+          </tr>
+          <tr>
+            <td><input type="checkbox" class="ck" checked></td>
+            <td><span class="tag">已有</span></td>
+            <td>TC-B008</td>
+            <td>DWG-B008</td>
+            <td>测试客户铆钉组件B</td>
+            <td>S0008</td>
+            <td>铆钉组件B</td>
+            <td>Φ20</td>
+          </tr>
+          <tr>
+            <td><input type="checkbox" class="ck"></td>
+            <td><span class="tag">已有</span></td>
+            <td>ZT-C012</td>
+            <td>DWG-C012</td>
+            <td>正泰端子组件C</td>
+            <td>S0012</td>
+            <td>端子组件C</td>
+            <td>Φ25</td>
+          </tr>
+
+          <!-- 选配来源 + 一料号多编号（AC-6 / AC-13） -->
+          <tr>
+            <td><input type="checkbox" class="ck"></td>
+            <td><span class="tag tag-purple">选配·单件</span></td>
+            <td>
+              <div class="multi" title="T260907R-SEL-D40&#10;T260907R-SEL-D40B">
+                <span>T260907R-SEL-D40</span><span class="tag">等 2 个</span>
+              </div>
+            </td>
+            <td class="muted">—</td>
+            <td>T260907R产品</td>
+            <td>0526-2609000006</td>
+            <td>触点</td>
+            <td>φ5</td>
+          </tr>
+          <tr>
+            <td><input type="checkbox" class="ck"></td>
+            <td><span class="tag tag-purple">选配·单件</span></td>
+            <td>T260907R-SEL-D40C</td>
+            <td class="muted">—</td>
+            <td>T260907R产品</td>
+            <td>0526-2609000007</td>
+            <td>触点</td>
+            <td>φ7</td>
+          </tr>
+          <tr>
+            <td><input type="checkbox" class="ck"></td>
+            <td><span class="tag tag-purple">选配·组合</span></td>
+            <td>T260907R-SEL-M2</td>
+            <td class="muted">—</td>
+            <td>T260907R产品</td>
+            <td>0526-2609000008</td>
+            <td>触点</td>
+            <td>φ9</td>
+          </tr>
+          <tr>
+            <td><input type="checkbox" class="ck"></td>
+            <td><span class="tag tag-purple">选配</span></td>
+            <td>2222222</td>
+            <td class="muted">—</td>
+            <td>测试选配</td>
+            <td>0526-2609000005</td>
+            <td>0526-2609000005</td>
+            <td class="muted">—</td>
+          </tr>
+
+          <!-- 导入但主数据缺失（AC-4 空值态 / AC-5b 品名兜底） -->
+          <tr>
+            <td><input type="checkbox" class="ck"></td>
+            <td><span class="tag">已有</span></td>
+            <td>CP-S-80011</td>
+            <td class="muted">—</td>
+            <td class="muted">—</td>
+            <td>S-80011</td>
+            <td>S-80011</td>
+            <td class="muted">—</td>
+          </tr>
+          <tr>
+            <td><input type="checkbox" class="ck"></td>
+            <td><span class="tag">已有</span></td>
+            <td>CP-W-1001</td>
+            <td class="muted">—</td>
+            <td class="muted">—</td>
+            <td>W-1001</td>
+            <td>W-1001</td>
+            <td class="muted">—</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="pagination">
+        <span class="pg-total">共 10 条</span>
+        <span class="pg dis">‹</span>
+        <span class="pg cur">1</span>
+        <span class="pg dis">›</span>
+      </div>
+    </div>
+
+    <div class="drawer-footer">
+      <span class="selected-hint">已选择 2 项</span>
+      <button class="btn">取消</button>
+      <button class="btn btn-primary">确定添加</button>
+    </div>
+  </div>
+</div>
+
+<div class="note" style="background:#fffbe6;border-left-color:#faad14;color:#874d00">
+  <b>⚠️ 实现纪律（对应 AC）</b><br>
+  · <b>AC-4 / AC-5b</b>：空值一律渲染 <code>—</code>，🚫 不许出现空白单元格、<code>undefined</code>、<code>null</code>。<br>
+  · <b>AC-5</b>：「客户物料名」与「品名」是<b>两个不同的值</b>（如 <code>罗克韦尔触桥组件A</code> vs <code>触桥组件A</code>）。
+    主数据无品名时品名<b>回退销售料号</b>（如 <code>S-80011</code>），🚫 不许回退到客户物料名。<br>
+  · <b>AC-13</b>：一料号多编号时只出一行，代表编号 + <code>等 N 个</code> Tag；
+    编号本身可省略号截断，<b>Tag 必须 <code>flex:none</code> 不被截掉</b>。<br>
+  · <b>AC-7</b>：抽屉内<b>不存在</b>任何 3D 预览面板、缩略图、「⤢ 交互查看」按钮。
+</div>
+
+</body>
+</html>

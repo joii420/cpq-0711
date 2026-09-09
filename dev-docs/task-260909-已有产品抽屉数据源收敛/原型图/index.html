@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>原型导航 — task-260909 已有产品抽屉数据源收敛</title>
+<style>
+  body {
+    margin:0; padding:32px; background:#f0f2f5; line-height:1.7;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    color:rgba(0,0,0,.88);
+  }
+  .wrap { max-width: 940px; margin: 0 auto; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color: rgba(0,0,0,.45); margin-bottom: 24px; }
+  .badge {
+    display:inline-block; background:#f6ffed; border:1px solid #b7eb8f; color:#389e0d;
+    padding:2px 10px; border-radius:4px; font-size:13px; font-weight:600;
+  }
+  .card {
+    background:#fff; border-radius:8px; padding:20px 24px; margin-bottom:16px;
+    box-shadow:0 1px 2px rgba(0,0,0,.06);
+  }
+  .card h2 { font-size:16px; margin:0 0 6px; }
+  .card a { color:#1677ff; text-decoration:none; font-size:15px; }
+  .card a:hover { text-decoration:underline; }
+  .card p { margin:6px 0 0; color:rgba(0,0,0,.65); font-size:14px; }
+  table { width:100%; border-collapse:collapse; margin-top:12px; font-size:14px; }
+  th,td { border:1px solid #f0f0f0; padding:8px 12px; text-align:left; vertical-align:top; }
+  th { background:#fafafa; font-weight:600; }
+  code { background:rgba(0,0,0,.06); padding:1px 5px; border-radius:3px; font-size:13px; }
+  .warn { background:#fffbe6; border-left:3px solid #faad14; padding:12px 16px; color:#874d00; border-radius:4px; }
+  .del { color:#cf1322; }
+  .add { color:#389e0d; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>「从已有产品添加」抽屉 · 原型</h1>
+  <div class="sub">
+    <span class="badge">📌 当前基准</span>
+    &nbsp;task-260909 已有产品抽屉数据源收敛 ｜ 定稿日 2026-09-09
+  </div>
+
+  <div class="card">
+    <h2><a href="./已有产品抽屉-默认态.html">① 默认态（有数据）</a></h2>
+    <p>7 列完整布局 · 真实数据（罗克韦尔 CUST-0001）· 来源标签 · 一料号多编号「等 N 个」· 已移除 3D 预览区</p>
+  </div>
+
+  <div class="card">
+    <h2><a href="./已有产品抽屉-空态与边界.html">② 空态与边界</a></h2>
+    <p>空数据 · 加载态 · 错误态 · 最长文案/极值 · 禁用态（含 tooltip 文案）</p>
+  </div>
+
+  <h2 style="margin-top:32px">与上一版原型的关系</h2>
+
+  <div class="warn">
+    <b>上一版</b>：<code>dev-docs/task-260712-选配模板和报价单选配功能/prototypes/原型-报价单-从已有产品添加.html</code><br>
+    该份自 2026-09-09 起转为 <b>🕰️ 历史快照</b>，已在其同目录 <code>README-原型身份说明.md</code> 中标注。
+    🚫 <b>原 HTML 一字未改</b> —— 历史快照是那次交付的验收记录，不回改。<br>
+    <b>照哪份做：本目录。</b>
+  </div>
+
+  <table>
+    <tr><th style="width:150px">维度</th><th>上一版（task-260712）</th><th>本版（task-260909）</th></tr>
+    <tr>
+      <td><b>表格列</b></td>
+      <td>5 列：客户产品编号 / 销售料号 / 品名 / 规格 / 客户物料名</td>
+      <td>7 列：来源 / 客户产品编号 / <span class="add">客户图号（新增）</span> / 客户物料名 / 销售料号 / 品名 / 规格</td>
+    </tr>
+    <tr>
+      <td><b>3D 预览区</b></td>
+      <td>右侧固定预览面板 + 缩略图 + 「⤢ 交互查看」按钮，随选中行实时拉 <code>/model-configs/current</code></td>
+      <td class="del">❌ 整块移除，表格占满全宽（用户 2026-09-09 裁决「先暂时移除，只显示列表」）</td>
+    </tr>
+    <tr>
+      <td><b>品名 / 客户物料名</b></td>
+      <td>两列渲染<b>同一个值</b>（后端两字段同取一列）</td>
+      <td>拆成两个真实不同的值：客户物料名 ← <code>customer_part_name</code>，品名 ← 主数据 <code>material_name</code></td>
+    </tr>
+    <tr>
+      <td><b>来源标签</b></td>
+      <td>无此列</td>
+      <td>「已有」/「选配·单件」/「选配·组合」，按 <code>source</code> 列判定</td>
+    </tr>
+    <tr>
+      <td><b>数据来源</b></td>
+      <td><code>material_customer_map</code> 单表</td>
+      <td><code>ds_quote_customer_part</code> 单表（中间经历过三支 UNION 的阶段，本次收敛回单表）</td>
+    </tr>
+    <tr>
+      <td><b>抽屉宽度 / 分页</b></td>
+      <td>右侧抽屉，服务端分页 20/页</td>
+      <td><b>不变</b>（移除预览区腾出的宽度正好给新增的图号列）</td>
+    </tr>
+  </table>
+
+  <h2 style="margin-top:32px">还原纪律</h2>
+  <div class="card">
+    <p>
+      🎨 实现须 <b>1:1 还原</b>本目录原型。主线亲验时会<b>逐屏比对</b>并附对照截图，
+      偏差逐条列出 —— 只允许「组件库能力所限的等价实现」这一类。<br><br>
+      ⚠️ 两份原型都要比对，<b>空态/禁用态/极值那几屏尤其容易被跳过</b>：
+      它们恰恰是最容易被随手实现成红色遮罩或永久「加载中…」的地方（AP-31 族）。
+    </p>
+  </div>
+
+</div>
+</body>
+</html>
