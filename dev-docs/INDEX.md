@@ -83,6 +83,7 @@
 
 | 分支 | worktree | 领先 master | 状态 |
 |---|---|---|---|
+| `feat/task-260909-v6-legacy-audit` | `.claude/worktrees/task-260909-v6-audit` | **0 笔**（2026-09-09 建分支那一刻登记，`git-worktree.md §5`） | 🟢 **开发中** —— `task-260909-V6老表引用面审计`（纯审计，`AC-15` 断言 `src` 下 `git diff` 必须为空 ⇒ **本分支预期只含 `dev-docs/` 下的 Markdown**）。三路子代理已并行派出 |
 | `feat/task-260908-sqlvb-lookup` | `.claude/worktrees/task-260908-sqlvb-lookup` | **0 笔**（2026-09-08 建分支那一刻登记）| 🟢 **开发中** —— `task-260908-取数配置器优化`。基于 `6934f3e2`（立项文档提交）。<br>**拟占 Flyway `V430`**（建分支时四方核对：共享库 / master / 本分支 / `target/classes` 最大均为 `V429`）。⚠️ 后端代理写迁移前**必须重新四方核对**，并发线可能已抢号。<br>改动面：语义图迁移 1 个（7 节点 + 46 边，**Java 零改动**）· 前端 4 个文件（`SqlViewBuilderTab.tsx` / `ComponentManagement.tsx` / `QuotationStep2.tsx:3285` / `ReadonlyProductCard.tsx:626`）。<br>🚨 **与 `feat/task-260907-record-backfill` 单向依赖**：本任务 `AC-8`（材料名落 `extend_column`）需要对方的 `DsRecordProjector` 在 master 上；对方**不依赖本任务**。若对方未先合，`AC-8` 降级为结构断言。 |
 | ~~`fix/repair-260909-costing-price`~~ | ~~`.claude/worktrees/repair-260909-costing-price`~~ | **已合并** | ✅ **2026-09-09 合 master `676d4081`**（8 提交）。占用 Flyway **V434**（已落共享库 `success=t` @ `02:34:26`）。worktree 待结案后清理。 |
 |---|---|---|---|
