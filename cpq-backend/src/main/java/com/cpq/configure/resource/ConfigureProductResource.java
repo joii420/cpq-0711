@@ -34,6 +34,9 @@ import java.util.UUID;
 @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
 public class ConfigureProductResource {
 
+    private static final org.jboss.logging.Logger LOG =
+            org.jboss.logging.Logger.getLogger(ConfigureProductResource.class);
+
     // D-40：选配建单末尾补写 _record（用户 2026-09-07 改裁「本期补写入」）
     @jakarta.inject.Inject
     com.cpq.quotation.service.dsrecord.DsQuoteRecordService dsQuoteRecordService;
@@ -114,16 +117,51 @@ public class ConfigureProductResource {
     @POST
     @Path("/quotations/{quotationId}/refresh-snapshot")
     public ConfigureProductResponse refreshSnapshot(@PathParam("quotationId") UUID quotationId) {
-        snapshotService.snapshotQuotation(quotationId);
-        // 核价 BOM 递归展开（P1）：刷新时一并重算核价卡片 → 存量核价单刷出整棵 BOM 树（仅 COSTING，不碰报价侧）
+        // 🚨 repair-260908 B-8（AC-18）：开启「editRows 行键失配」收集窗口。
+        //    刷新是**唯一**会大规模重算行键的用户动作，也正是缺陷① 修复后 #N 消歧后缀消失、
+        //    旧 editRows 集体对不上的那一刻。不在这里报出来，用户的手工编辑就静默没了。
+        //    try/finally 保证异常路径也清 ThreadLocal（否则会污染同线程的下一个请求）。
+        com.cpq.quotation.rowkey.EditRowMismatchContext.begin();
+        java.util.Map<String, Object> mismatch;
         try {
-            cardSnapshotService.refreshCostingCardValues(quotationId);
-        } catch (Exception ignore) {
-            // 尽力而为，不影响刷新主流程
+            snapshotService.snapshotQuotation(quotationId);
+            // 核价 BOM 递归展开（P1）：刷新时一并重算核价卡片 → 存量核价单刷出整棵 BOM 树（仅 COSTING，不碰报价侧）
+            try {
+                cardSnapshotService.refreshCostingCardValues(quotationId);
+            } catch (Exception ignore) {
+                // 尽力而为，不影响刷新主流程
+            }
+        } finally {
+            mismatch = com.cpq.quotation.rowkey.EditRowMismatchContext.drainAll();
         }
+
         ConfigureProductResponse resp = new ConfigureProductResponse();
         resp.lineItems = java.util.List.of();
         resp.reusedHfPartNos = java.util.List.of();
+        int mismatchCount = ((Number) mismatch.getOrDefault("count", 0)).intValue();
+        resp.editRowMismatchCount = mismatchCount;
+        resp.editRowMismatchTruncated = Boolean.TRUE.equals(mismatch.get("truncated"));
+        java.util.List<java.util.Map<String, Object>> items = new java.util.ArrayList<>();
+        @SuppressWarnings("unchecked")
+        java.util.List<com.cpq.quotation.rowkey.EditRowMismatchContext.Mismatch> raw =
+                (java.util.List<com.cpq.quotation.rowkey.EditRowMismatchContext.Mismatch>) mismatch.get("items");
+        if (raw != null) {
+            for (com.cpq.quotation.rowkey.EditRowMismatchContext.Mismatch m : raw) {
+                java.util.Map<String, Object> one = new java.util.LinkedHashMap<>();
+                one.put("componentId", m.componentId);
+                one.put("rowKey", m.rowKey);
+                one.put("values", m.values);
+                items.add(one);
+            }
+        }
+        resp.editRowMismatches = items;
+        if (mismatchCount > 0) {
+            // 🔑 端点侧再记一条：服务端日志里必须能按报价单号定位到「这一单刷新时丢了多少条编辑」，
+            //    而 CardSnapshotService 那条日志只带 componentId、没有 quotationId。
+            LOG.warnf("[refresh-snapshot] quotationId=%s 本次刷新有 %d 条 editRows 行键失配（用户编辑值被丢弃），"
+                    + "明细已随响应返回%s", quotationId, mismatchCount,
+                    Boolean.TRUE.equals(resp.editRowMismatchTruncated) ? "（明细已截断）" : "");
+        }
         return resp;
     }
 

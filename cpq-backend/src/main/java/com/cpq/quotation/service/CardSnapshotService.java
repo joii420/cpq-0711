@@ -11,6 +11,7 @@ import com.cpq.quotation.entity.Quotation;
 import com.cpq.quotation.entity.QuotationLineItem;
 import com.cpq.quotation.entity.QuotationViewStructure;
 import com.cpq.quotation.rowkey.DeletedRowKeys;
+import com.cpq.quotation.rowkey.EditRowMismatchContext;
 import com.cpq.template.exception.TemplateNotFrozenException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -3531,8 +3532,45 @@ public class CardSnapshotService {
                     formulaCalculator.buildRawRowKeys(rkf, fieldsDef, baseRows, del)));
 
             ArrayNode kept = MAPPER.createArrayNode();
+            // 🚨 repair-260908 B-8（AC-18）：对不上的 editRows **收集并报出**，不再静默消失。
+            //
+            // 现行行为（本次未改）：rowKey 不在 newKeys 里 ⇒ 这一条**直接被丢掉** ——
+            // 不记日志、不计数、不报错、HTTP 200。用户手填的值就这么没了，界面上看不出来。
+            // 🔑 缺陷① 修好后行键**必然会变**：跨客户重复行消失 ⇒ 撞键消失 ⇒ uniquifyRowKeys 的
+            //    #N 消歧后缀跟着消失（实测 QT-20260908-0624 一单 196 条带后缀：#0/#1 各 96、#2/#3 各 2）。
+            //    ⇒ 不报出来，这次修复会顺手抹掉一批用户编辑，且无人知晓。
+            // 🚫 **不做按内容迁移**（D-14）：#0/#1 是两个客户的两行，合并时保留哪一条没有唯一正确
+            //    答案，猜错 = 把别家客户的编辑值写进本家，比丢值更坏。
+            // 🚫 **本次一行去留都不改** —— 只观察，不干预。否则「不带后缀的 editRows 照常匹配、
+            //    值不变」这条反向要求就无从保证了。
+            List<EditRowMismatchContext.Mismatch> unmatchedOfTab = new ArrayList<>();
             for (JsonNode er : oldEdits) {
-                if (newKeys.contains(er.path("rowKey").asText(""))) kept.add(er);
+                String erKey = er.path("rowKey").asText("");
+                if (newKeys.contains(erKey)) {
+                    kept.add(er);
+                    continue;
+                }
+                Map<String, String> summary = new LinkedHashMap<>();
+                JsonNode vals = er.path("values");
+                if (vals != null && vals.isObject()) {
+                    java.util.Iterator<String> it = vals.fieldNames();
+                    while (it.hasNext()) {
+                        String fn = it.next();
+                        JsonNode v = vals.get(fn);
+                        summary.put(fn, EditRowMismatchContext.abbreviate(
+                                v == null || v.isNull() ? null : v.asText()));
+                    }
+                }
+                EditRowMismatchContext.record(cid, erKey, summary);
+                unmatchedOfTab.add(new EditRowMismatchContext.Mismatch(cid, erKey, summary));
+            }
+            if (!unmatchedOfTab.isEmpty()) {
+                // 🔑 日志**不受收集窗口约束、恒生效**：别的调用路径（保存草稿、打开单据）上的失配
+                //    同样要留痕，只是不进 HTTP 响应体。
+                LOG.warnf("[edit-rows 失配] comp=%s 有 %d 条 editRows 的 rowKey 在新 baseRows 里不存在，"
+                        + "**这些用户编辑值本次被丢弃**（保留 %d 条）。前 5 条=%s",
+                        cid, unmatchedOfTab.size(), kept.size(),
+                        unmatchedOfTab.subList(0, Math.min(5, unmatchedOfTab.size())));
             }
             if (kept.size() > 0) filtered.put(cid, kept);
         }
