@@ -71,6 +71,10 @@ public class ComponentDriverService {
     @Inject
     jakarta.persistence.EntityManager em;
 
+    /** repair-260908 B-5：读 driver 视图的轴范围声明（SELF / CLOSURE）的唯一入口。 */
+    @Inject
+    com.cpq.datasource.sqlview.SqlViewExecutor sqlViewExecutor;
+
     private static final ObjectMapper SNAPSHOT_MAPPER = new ObjectMapper();
 
     /** V190+: 合成 key 前缀, 标识 basicDataValues �?全局变量行级�?条目 (避免�?BNF path key 冲突) */
@@ -414,19 +418,6 @@ public class ComponentDriverService {
             throw new BusinessException(404, "Component not found: " + componentId);
         }
 
-        // task-260819 D-58（B+ wrap 修法·单料号路径）：这一个成品自己的 BOM 闭包（含自身），供
-        // 下方 5 处 dataLoader.loadByPath(...) 调用点加宽 outer hfPartNos 过滤器用——只查一次
-        // BomTreeVarsContext.get()，5 处复用同一个值（不重复取，不是各自现查）。
-        // 🚨 只能用 materialsByRoot（这一个成品自己的闭包），绝不能用 totalMaterialNo（整单料号池）
-        // ——单料号路径没有 rootsByMaterial 那样的回分步骤，加宽到整单池会把别的成品的行带进这一卡
-        // （D-58 明令）。未提供该映射（如未接线本链路的旧调用点）时为 null，5 处调用点各自退化为
-        // List.of(partNo)，与改动前逐位相同（AC-10 零回归）。
-        com.cpq.datasource.sqlview.BomTreeVarsContext.Vars _singlePartWrapVars =
-                com.cpq.datasource.sqlview.BomTreeVarsContext.get();
-        List<String> _widenedHfPartNos = (_singlePartWrapVars != null && _singlePartWrapVars.materialsByRoot != null)
-                ? _singlePartWrapVars.materialsByRoot.get(partNo)
-                : null;
-
         // EXCEL 组件不参与 driver expand：它无 dataDriverPath，但仍可能含 BASIC_DATA 字段，
         // 若不显式拦截会落入下方「产品级单行虚拟 driver」分支被误展开。Excel 视图渲染走独立通道(Phase 3)。
         if ("EXCEL".equals(component.componentType)) {
@@ -443,6 +434,49 @@ public class ComponentDriverService {
                 ? overrideDataDriverPath : component.dataDriverPath;
         String effectiveFieldsJson = (overrideFieldsJson != null && !overrideFieldsJson.isBlank())
                 ? overrideFieldsJson : component.fields;
+
+        // task-260819 D-58（B+ wrap 修法·单料号路径）：这一个成品自己的 BOM 闭包（含自身），供
+        // 下方 5 处 dataLoader.loadByPath(...) 调用点加宽 outer hfPartNos 过滤器用——只查一次
+        // BomTreeVarsContext.get()，5 处复用同一个值（不重复取，不是各自现查）。
+        // 🚨 只能用 materialsByRoot（这一个成品自己的闭包），绝不能用 totalMaterialNo（整单料号池）
+        // ——单料号路径没有 rootsByMaterial 那样的回分步骤，加宽到整单池会把别的成品的行带进这一卡
+        // （D-58 明令）。未提供该映射（如未接线本链路的旧调用点）时为 null，5 处调用点各自退化为
+        // List.of(partNo)，与改动前逐位相同（AC-10 零回归）。
+        //
+        // 🚨 repair-260908 B-5（缺陷②，AC-1/AC-3/AC-9/AC-10/AC-13）：轴范围为 SELF 时**不加宽**。
+        //    「主件」页签描述的是**卡片自己那个成品**，加宽到该卡 BOM 闭包会把后代料号的行也带进来
+        //    （实测：卡片 S0001 的产品页签 3 行 = S0001/S0002/S0003，应为 1 行）。
+        //    置 null ⇒ 下游 5 处调用点各自退化为 List.of(partNo)，正是我们要的「只出自己那一行」，
+        //    且**复用的是既有的 null 分支**，没有新增第二条代码路径。
+        //    🚫 SELF 只可能来自 tabType='主件'（见 SemanticCompiler B-3）——B 族 15 个页签恒 CLOSURE，
+        //       它们的来料/子件明细本来就在同一行的 input_material_no 列里，一行都不会少。
+        //    ⚠️ 本判定必须在 effectiveDriverPath 求出**之后**：轴范围是挂在**视图**上的，
+        //       而 V195 override 可能让本次用的视图不是组件自己的 dataDriverPath。
+        //       （原先这段代码在上方、早于 override 解析，故本次一并下移。）
+        com.cpq.datasource.sqlview.BomTreeVarsContext.Vars _singlePartWrapVars =
+                com.cpq.datasource.sqlview.BomTreeVarsContext.get();
+        List<String> _widenedHfPartNos = (_singlePartWrapVars != null && _singlePartWrapVars.materialsByRoot != null)
+                ? _singlePartWrapVars.materialsByRoot.get(partNo)
+                : null;
+        // ⚡ 短路：本来就没东西可加宽时不去查轴范围 —— SELF 与 CLOSURE 在这种情况下产出完全相同
+        //    （都退化为 List.of(partNo)），却要多一次 lookupForResolver（读模板快照 = 一次
+        //    Template.findById + 整份 jsonb 解析）。expand 是渲染热路径，白查没有收益。
+        //    🚫 这不是"跳过检查"：跳过的是一次**结果不影响输出**的查询。
+        //
+        // 🔑 <b>它同时是 D-2「缺陷②只做报价侧」的结构性保障，不要"顺手优化掉"</b>：
+        //    核价树渲染走 BomTreeRenderService → expandUncached(compId, customerId)（:349），
+        //    该重载把 partNo 恒传 null ⇒ materialsByRoot.get(null) = null ⇒ _widenedHfPartNos 为 null
+        //    ⇒ 本分支**根本进不来**。核价侧因此不可能被 SELF 收窄
+        //    （D-2：核价按 spine 全节点渲染，没有"当前卡片料号"这个维度，强行收窄会让非根节点全空
+        //     并撞 repair-0814 D-3 的硬拦）。COST_BASIC 的「主件」视图照样会被编译成 SELF（B-3 三方言
+        //    统一产出），但驱动层这一侧读不到、也用不上 —— 保证靠的是这个 null，不是靠"记得别用"。
+        if (_widenedHfPartNos != null
+                && com.cpq.builder.compiler.CompileResult.AXIS_SCOPE_SELF
+                        .equals(sqlViewExecutor.resolveDriverAxisScope(effectiveDriverPath))) {
+            LOG.infof("[Y1.5 expand-driver] axisScope=SELF ⇒ 不加宽 hfPartNos（只出卡片自身料号 %s），component=%s",
+                    partNo, component.code);
+            _widenedHfPartNos = null;
+        }
 
         LOG.infof("[Y1.5 expand-driver] componentId=%s code=%s dataDriverPath=%s (override=%s) partNo=%s customerId=%s partVersion=%s lineItemId=%s compositeType=%s",
                 componentId, component.code, effectiveDriverPath,
@@ -742,7 +776,20 @@ public class ComponentDriverService {
                 com.cpq.datasource.sqlview.BomTreeVarsContext.Vars _wrapVars =
                         com.cpq.datasource.sqlview.BomTreeVarsContext.get();
                 List<String> widenedPartNos = partNos;
-                if (_wrapVars != null && _wrapVars.totalMaterialNo != null && !_wrapVars.totalMaterialNo.isEmpty()) {
+                // 🚨 repair-260908 B-5（合桶路径）：轴范围 SELF ⇒ 不并入整单料号池，就用本桶的根料号集合。
+                //    下面的 rootsByMaterial 回分照常正确 —— 它按行的 hf_part_no 找归属，
+                //    少查回来的那些后代行本来就不该出现在「主件」页签上。
+                // ⚡ 同款短路：没有整单料号池可并入时，查不查轴范围结果都一样
+                boolean _hasWidenSource = _wrapVars != null && _wrapVars.totalMaterialNo != null
+                        && !_wrapVars.totalMaterialNo.isEmpty();
+                boolean _selfScope = _hasWidenSource
+                        && com.cpq.builder.compiler.CompileResult.AXIS_SCOPE_SELF
+                                .equals(sqlViewExecutor.resolveDriverAxisScope(effectiveDriverPath));
+                if (_selfScope) {
+                    LOG.infof("[expand-driver 合桶] axisScope=SELF ⇒ 不加宽 partNos（%d 个根料号原样用），component=%s",
+                            partNos.size(), component.code);
+                }
+                if (!_selfScope && _hasWidenSource) {
                     java.util.LinkedHashSet<String> widened = new java.util.LinkedHashSet<>(partNos);
                     widened.addAll(_wrapVars.totalMaterialNo);
                     widenedPartNos = new ArrayList<>(widened);

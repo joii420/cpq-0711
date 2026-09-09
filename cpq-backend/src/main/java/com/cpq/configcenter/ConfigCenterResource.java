@@ -178,6 +178,7 @@ public class ConfigCenterResource {
             preview.put("snapshotTemplates", rc.snapshotTemplates);
             preview.put("snapshotEntries", rc.snapshotEntriesRewritten);
             preview.put("snapshotEntriesStale", rc.snapshotEntriesStale);
+            preview.put("axisScopeToWrite", rc.axisScopeWritten);
             preview.put("snapshotStaleSamples", rc.snapshotMismatchSamples);
             return ApiResponse.success(preview);
         }
@@ -203,6 +204,7 @@ public class ConfigCenterResource {
             rcOut.put("snapshotEntriesRewritten", done.get("snapshotEntriesRewritten"));
             rcOut.put("snapshotMismatchAfterWrite", done.get("snapshotMismatchAfterWrite"));
             rcOut.put("templateOwnedSnapshotNonEmpty", done.get("templateOwnedSnapshotNonEmpty"));
+            rcOut.put("axisScopeWritten", done.get("axisScopeWritten"));
             rcOut.put("refreshedTemplates", done.get("refreshedTemplates"));
             rcOut.put("refreshedRows", done.get("refreshedRows"));
             rcOut.put("operationLogId",

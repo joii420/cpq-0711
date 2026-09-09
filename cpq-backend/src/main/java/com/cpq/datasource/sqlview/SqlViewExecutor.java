@@ -1,5 +1,6 @@
 package com.cpq.datasource.sqlview;
 
+import com.cpq.builder.compiler.CompileResult;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.template.entity.TemplateSqlView;
 import com.cpq.template.service.TemplateSqlViewService;
@@ -252,6 +253,41 @@ public class SqlViewExecutor {
         if (path == null) return false;
         String s = path.trim();
         return DRIVER_PATH_PATTERN.matcher(s).matches();
+    }
+
+    /**
+     * 取某个 driver 路径所指视图的<b>轴范围声明</b>（repair-260908 B-5 的唯一读入口）：
+     * {@code SELF} / {@code CLOSURE}。
+     *
+     * <p>🔑 <b>刻意放在本类</b>：{@code DRIVER_PATH_PATTERN} 与 {@code lookupForResolver}
+     * 的三层 fallback（报价单快照 &gt; 模板快照 &gt; 实时表）都在这里。放到调用方去实现，
+     * 就会多出<b>第二份路径解析</b>和<b>第二条取视图的路</b> —— 两份解析漂移的后果是
+     * 「同一个 $view，执行时取到 A、判轴范围时取到 B」，且不报错。
+     *
+     * <p>🔑 <b>任何异常/找不到一律 {@code CLOSURE}</b>：本方法只用来决定「要不要加宽」，
+     * 判不出来就退回改动前行为（AC-11）。🚫 不许抛 —— 抛了会把「取数正常但元数据缺失」
+     * 变成整卡渲染失败。
+     *
+     * <p>⚠️ 依赖 {@code SqlViewRuntimeContext} 已被调用方 set（{@code componentId} 用来定位本组件
+     * 视图、{@code templateId}/{@code quotationId} 决定读哪一层快照）。
+     * {@code ComponentDriverService} 的两处加宽点都在其 {@code setNested(...)} 窗口内。
+     */
+    public String resolveDriverAxisScope(String path) {
+        try {
+            if (path == null || path.isBlank()) return CompileResult.AXIS_SCOPE_CLOSURE;
+            Matcher m = DRIVER_PATH_PATTERN.matcher(path.trim());
+            if (!m.matches()) return CompileResult.AXIS_SCOPE_CLOSURE;
+            boolean isCross = m.group(1) != null;
+            String componentCode = isCross ? m.group(1) : null;
+            String viewName = isCross ? m.group(2) : m.group(3);
+            UUID currentComponentId = SqlViewRuntimeContext.get().componentId;
+            return sqlViewService.lookupForResolver(currentComponentId, viewName, isCross, componentCode)
+                    .map(sqlViewService::axisScopeOf)
+                    .orElse(CompileResult.AXIS_SCOPE_CLOSURE);
+        } catch (Exception e) {
+            LOG.debugf("[resolveDriverAxisScope] 判不出轴范围，按 CLOSURE 兜底 path=%s: %s", path, e.getMessage());
+            return CompileResult.AXIS_SCOPE_CLOSURE;
+        }
     }
 
     /**

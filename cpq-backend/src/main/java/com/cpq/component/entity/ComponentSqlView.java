@@ -82,6 +82,25 @@ public class ComponentSqlView extends PanacheEntityBase {
     @Column(name = "builder_version")
     public Integer builderVersion;
 
+    /**
+     * 轴范围声明（repair-260908 B-4，AC-7/AC-8/AC-11）：{@code SELF} / {@code CLOSURE}。
+     *
+     * <p>🔑 <b>{@code @Transient} —— 没有物理列，也不该有</b>：它的权威出处有两个，
+     * 都在既有 jsonb 里，本次<b>零 DDL</b>：
+     * <ul>
+     *   <li>实时视图 → {@code builder_config->>'axisScope'}（{@code BuilderService.save} 写）；</li>
+     *   <li>冻结快照 → {@code template.sql_views_snapshot} 各条目的 {@code axis_scope} 键。</li>
+     * </ul>
+     * 本字段只在 {@code ComponentSqlViewService} 从**快照**反序列化出 detached 实例时被填上
+     * （快照里没有 {@code builder_config} 列可读）。⇒ 读取一律走
+     * {@code ComponentSqlViewService#axisScopeOf(ComponentSqlView)}，
+     * 🚫 不要直接读本字段：实时表那条路上它恒为 null，直接读会静默得到"没有声明"。
+     *
+     * <p>🔑 <b>缺键 ⇒ CLOSURE</b>（= 改动前行为），存量零回归（AC-11）。
+     */
+    @jakarta.persistence.Transient
+    public String axisScope;
+
     @Column(name = "created_by")
     public UUID createdBy;
 

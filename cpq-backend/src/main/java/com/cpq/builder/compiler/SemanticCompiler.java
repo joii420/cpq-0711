@@ -453,6 +453,12 @@ public class SemanticCompiler {
         result.rewriterCompatible = checkRewriterCompatible(finalSql, c.anchor.physicalTable);
         result.anchorTable = c.anchor.physicalTable;
         result.axisColumn = c.dialect.axisColumn();
+        // repair-260908 B-3（AC-7）：轴范围声明。判据 = 页签类型是不是「主件」，
+        // 取 c.tabView.tabType（图里的权威值）而不是 cfg.tabType（请求体的自述值）——
+        // resolveTabView 已按 (tab_type, variant_key, dialect) 三段坐标解析过，图里那份才作数。
+        // 🚫 三个方言一律产出，不按方言分叉：分叉会让「核价侧有没有这个键」变成又一个隐式约定。
+        result.axisScope = ROOT_SOURCE_TAB_TYPE.equals(c.tabView.tabType)
+                ? CompileResult.AXIS_SCOPE_SELF : CompileResult.AXIS_SCOPE_CLOSURE;
         return result;
     }
 

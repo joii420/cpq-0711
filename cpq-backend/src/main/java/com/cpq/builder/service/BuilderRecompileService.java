@@ -98,6 +98,10 @@ public class BuilderRecompileService {
          * 但它必须**被数出来、报出来**，否则将来某个模板有了自有视图时，同一个洞会换个列名再来一次。
          */
         public int templateOwnedSnapshotNonEmpty;
+        /** repair-260908 B-4/B-6：builder_config 里 {@code axisScope} 被新写/改写的视图数。 */
+        public int axisScopeWritten;
+        /** {@code componentId::sqlViewName} → 本次编译产出的轴范围（预览预测第二层用）。 */
+        public final Map<String, String> newAxisScopeByKey = new LinkedHashMap<>();
         /**
          * {@code componentId::sqlViewName} → <b>本次重编译产物</b>。仅预览路径用来预测第二层
          * （🚫 预览不写库 ⇒ 实时表这时还是旧文本，只跟实时表比会漏报）。不进响应体。
@@ -167,6 +171,7 @@ public class BuilderRecompileService {
         out.put("snapshotEntriesRewritten", outcome.snapshotEntriesRewritten);
         out.put("snapshotMismatchAfterWrite", outcome.snapshotMismatchAfterWrite);
         out.put("templateOwnedSnapshotNonEmpty", outcome.templateOwnedSnapshotNonEmpty);
+        out.put("axisScopeWritten", outcome.axisScopeWritten);
         LOG.warnf("[admin-backdoor] recompile+realign 已执行：重编译 %d 个视图（%d 个 sql_template 变化）；"
                         + "第二层重写 %d 个模板的 %d 条 sql_views_snapshot 条目，写后自证不一致 %d 条",
                 outcome.views, outcome.changed, outcome.snapshotTemplates,
@@ -266,7 +271,9 @@ public class BuilderRecompileService {
     private void assertSnapshotsMatchLive(List<UUID> templateIds, RecompileOutcome outcome) {
         if (templateIds == null || templateIds.isEmpty()) return;
         List<Object[]> bad = em.createNativeQuery(
-                "SELECT t.id::text, e.key, md5(e.value->>'sql_template'), md5(v.sql_template) "
+                "SELECT t.id::text, e.key, md5(e.value->>'sql_template'), md5(v.sql_template), "
+                        + "       COALESCE(e.value->>'axis_scope','<缺键>'), "
+                        + "       COALESCE(v.builder_config->>'axisScope','<缺键>') "
                         + "FROM template t "
                         + "CROSS JOIN LATERAL jsonb_each(t.sql_views_snapshot) e "
                         + "LEFT JOIN component_sql_view v "
@@ -275,14 +282,21 @@ public class BuilderRecompileService {
                         + " AND v.status = 'ACTIVE' "
                         + "WHERE t.id = ANY(:tids) "
                         + "  AND (v.id IS NULL "
-                        + "   OR md5(e.value->>'sql_template') IS DISTINCT FROM md5(v.sql_template))")
+                        + "   OR md5(e.value->>'sql_template') IS DISTINCT FROM md5(v.sql_template) "
+                        // repair-260908 B-4（AC-8）：轴范围也必须逐条对得上。
+                        // 🚫 不加这一维就会重演 2026-09-08 的同型事故：第一层（builder_config）写对了、
+                        //    第二层（快照 axis_scope）没跟上，而只比 sql_template 的自证照样全绿。
+                        //    两侧都按「缺键 = CLOSURE」归一，否则「都没有这个键」会被判成不一致。
+                        + "   OR COALESCE(e.value->>'axis_scope','CLOSURE') "
+                        + "      IS DISTINCT FROM COALESCE(v.builder_config->>'axisScope','CLOSURE'))")
                 .setParameter("tids", templateIds.toArray(new UUID[0]))
                 .getResultList();
         outcome.snapshotMismatchAfterWrite = bad.size();
         for (Object[] r : bad) {
             if (outcome.snapshotMismatchSamples.size() >= 20) break;
             outcome.snapshotMismatchSamples.add(r[0] + " :: " + r[1]
-                    + "（快照 md5=" + r[2] + " / 实时 md5=" + r[3] + "）");
+                    + "（快照 md5=" + r[2] + " / 实时 md5=" + r[3]
+                    + "；快照 axis_scope=" + r[4] + " / 实时 axisScope=" + r[5] + "）");
         }
         if (!bad.isEmpty()) {
             throw new BuilderApiException(500, "SNAPSHOT_REALIGN_VERIFY_FAILED",
@@ -308,7 +322,9 @@ public class BuilderRecompileService {
                                           RecompileOutcome outcome) {
         if (templateIds == null || templateIds.isEmpty()) return;
         List<Object[]> rows = em.createNativeQuery(
-                "SELECT t.id::text, e.key, md5(e.value->>'sql_template'), md5(v.sql_template) "
+                "SELECT t.id::text, e.key, md5(e.value->>'sql_template'), md5(v.sql_template), "
+                        + "       COALESCE(e.value->>'axis_scope','CLOSURE'), "
+                        + "       COALESCE(v.builder_config->>'axisScope','CLOSURE') "
                         + "FROM template t "
                         + "CROSS JOIN LATERAL jsonb_each(t.sql_views_snapshot) e "
                         + "LEFT JOIN component_sql_view v "
@@ -326,13 +342,69 @@ public class BuilderRecompileService {
             String liveMd5 = r[3] == null ? null : String.valueOf(r[3]);
             String expected = newSqlByKey.get(key);
             String expectedMd5 = expected != null ? md5(expected) : liveMd5;
-            if (expectedMd5 == null || !expectedMd5.equals(snapMd5)) {
+            // 轴范围同理：配置器托管的用本次编译产物，其余用实时值；两侧缺键都已在 SQL 里归一成 CLOSURE
+            String snapScope = String.valueOf(r[4]);
+            String expectedScope = outcome.newAxisScopeByKey.getOrDefault(key, String.valueOf(r[5]));
+            boolean sqlStale = (expectedMd5 == null || !expectedMd5.equals(snapMd5));
+            boolean scopeStale = !expectedScope.equals(snapScope);
+            if (sqlStale || scopeStale) {
                 outcome.snapshotEntriesStale++;
                 if (outcome.snapshotMismatchSamples.size() < 20) {
                     outcome.snapshotMismatchSamples.add(r[0] + " :: " + key
-                            + "（快照 md5=" + snapMd5 + " / 重编译后应为 " + expectedMd5 + "）");
+                            + "（" + (sqlStale ? "sql md5 " + snapMd5 + "→" + expectedMd5 + " " : "")
+                            + (scopeStale ? "axis_scope " + snapScope + "→" + expectedScope : "") + "）");
                 }
             }
+        }
+    }
+
+    /** {@code builder_config} 里到底**有没有** {@code axisScope} 这个键（与它的值是什么无关）。 */
+    private boolean hasAxisScopeKey(ComponentSqlView v) {
+        if (v.builderConfig == null || v.builderConfig.isBlank()) return false;
+        try {
+            com.fasterxml.jackson.databind.JsonNode n = MAPPER.readTree(v.builderConfig);
+            return n != null && n.isObject() && n.has("axisScope") && n.get("axisScope").isTextual();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** 读实时视图 {@code builder_config->>'axisScope'}；缺键/解析失败一律 {@code CLOSURE}（AC-11）。 */
+    private String currentAxisScope(ComponentSqlView v) {
+        if (v.builderConfig == null || v.builderConfig.isBlank()) return CompileResult.AXIS_SCOPE_CLOSURE;
+        try {
+            com.fasterxml.jackson.databind.JsonNode n = MAPPER.readTree(v.builderConfig).get("axisScope");
+            if (n != null && n.isTextual() && !n.asText().isBlank()) return n.asText();
+        } catch (Exception ignored) { /* 落 CLOSURE */ }
+        return CompileResult.AXIS_SCOPE_CLOSURE;
+    }
+
+    /**
+     * 把轴范围声明并进既有 {@code builder_config} jsonb（**加键，不重建**）。
+     *
+     * <p>🚫 不要整份重写成 {@code MAPPER.valueToTree(cfg)} —— 那会把 {@code builder_config} 里
+     * 本轮 {@link BuilderConfig} 类不认识的任何键**悄悄抹掉**（该类带
+     * {@code @JsonIgnoreProperties(ignoreUnknown = true)}，读时忽略、写时就丢）。
+     * 存量 jsonb 里有什么不是本方法该决定的事。
+     */
+    private void writeAxisScopeIntoBuilderConfig(ComponentSqlView v, String axisScope) {
+        try {
+            com.fasterxml.jackson.databind.JsonNode root =
+                    (v.builderConfig == null || v.builderConfig.isBlank())
+                            ? MAPPER.createObjectNode() : MAPPER.readTree(v.builderConfig);
+            if (!root.isObject()) {
+                throw new BuilderApiException(500, "RECOMPILE_CONFIG_NOT_OBJECT",
+                        "视图「" + v.sqlViewName + "」的 builder_config 不是 JSON 对象，无法并入 axisScope",
+                        Map.of("sqlViewName", v.sqlViewName));
+            }
+            ((com.fasterxml.jackson.databind.node.ObjectNode) root).put("axisScope", axisScope);
+            v.builderConfig = MAPPER.writeValueAsString(root);
+        } catch (BuilderApiException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BuilderApiException(500, "RECOMPILE_CONFIG_WRITE_FAILED",
+                    "视图「" + v.sqlViewName + "」写 axisScope 失败，已整体中止: " + e.getMessage(),
+                    Map.of("sqlViewName", v.sqlViewName));
         }
     }
 
@@ -386,15 +458,35 @@ public class BuilderRecompileService {
                         Map.of("sqlViewName", v.sqlViewName, "componentId", String.valueOf(v.componentId)));
             }
 
-            outcome.newSqlByKey.put(v.componentId + "::" + v.sqlViewName, r.sql);
+            String viewKey = v.componentId + "::" + v.sqlViewName;
+            outcome.newSqlByKey.put(viewKey, r.sql);
+            outcome.newAxisScopeByKey.put(viewKey, r.axisScope);
+
+            // repair-260908 B-4/B-6：轴范围声明也要回写进存量的 builder_config ——
+            // 🔑 它与 sql_template **各自独立地**可能过期：本次 28 个存量视图的 SQL 文本一个字没变
+            //    （客户谓词那轮已经写进去了），但 axisScope 键**一个都没有** ⇒ 只按 sql_template
+            //    判「变没变」会一个都不写，AC-7「每个 builder_config 都含 axisScope」永远不达标。
+            // 🚨 判据是「**键缺失** 或 值不同」，不是只看值不同：
+            //    currentAxisScope 对缺键返回 CLOSURE（AC-11 的兜底），而绝大多数视图的编译产物
+            //    正好也是 CLOSURE ⇒ 只比值会得出「没变」，键**一个都不会被写进去**，
+            //    而 AC-7 要的是「**每个** builder_config 都含 axisScope 键」。
+            //    这类「兜底默认值把『没有』伪装成『相等』」是本任务已经踩过的同型坑。
+            boolean axisScopeChanged = !hasAxisScopeKey(v) || !Objects.equals(r.axisScope, currentAxisScope(v));
 
             boolean textChanged = !Objects.equals(r.sql, v.sqlTemplate);
             if (textChanged) {
                 outcome.changed++;
                 outcome.changedViewNames.add(v.sqlViewName);
             }
+            if (textChanged || axisScopeChanged) {
+                if (!write) { if (axisScopeChanged) outcome.axisScopeWritten++; }
+            }
             if (!write) continue;
 
+            if (axisScopeChanged) {
+                writeAxisScopeIntoBuilderConfig(v, r.axisScope);
+                outcome.axisScopeWritten++;
+            }
             if (textChanged) {
                 // 走与配置器 save 完全同一条写入路径（ComponentSqlViewService.update）：
                 //   ① 保存期 dry-run 会在写共享库**之前**验一遍新 SQL 真的能跑（LIMIT 0 探针）；
