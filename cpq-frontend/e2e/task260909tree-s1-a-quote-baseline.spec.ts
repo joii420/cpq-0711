@@ -62,16 +62,28 @@ test('T-A1 / AC-22：usage=QUOTE 的生效配置 id + sql_template 逐字节不�
   appendEvidence('AC-22-quote-config.txt',
     `${new Date().toISOString()} ${JSON.stringify(got)}\n`);
 
-  // 立项期实测基线（2026-09-09 10:xx，本片进场采样）：
-  //   id  = d6defaa0-354f-4e92-8e89-4bc8454888c3
-  //   md5 = d0e8fb6f750c7af36b5d078a6fac0ec3
   // 🚨 允许 env 覆盖，但**默认值必须是硬编码的**——写成「取当前值再和当前值比」
   //    就是典型的零证据自证（`testing.md §5.5`），永远绿。
+  //
+  // ── 基线重锚（2026-09-09，有出处，不是自证）────────────────────────────
+  //  · 立项/进场采样（本片 10:16）：md5 = d0e8fb6f750c7af36b5d078a6fac0ec3
+  //                                 updated_at = 2026-09-08 00:54:59
+  //  · **并发任务 `task-260909-v6-retire` 的 V437** 里有一条
+  //    `UPDATE costing_bom_tree_config` 打在 QUOTE 生效行 `d6defaa0` 上
+  //    （骨架由读 `v_compat_material_bom_item` 改成读 `ds_quote_material_bom`），
+  //    已于 2026-09-09 17:59 应用到共享库并提交 master（`d5169d47`）。
+  //  · ⇒ AC-22 的「交付前」应取 **V437 之后**的值：
+  //    md5 = 1c089ee61054d18b9151c8f03d23bacb / updated_at = 2026-09-09 17:59:16
+  //  出处：`证据/配置动作-还原点.md` §「基线重采」（主线独立复核后裁定）。
+  //
+  // ⚠️ 这是**重锚不是放宽**：AC-22 判的是「本次交付前后不变」，
+  //    别人的合法改动发生在交付前 ⇒ 用旧值判红会把它记成我们的回归。
+  //    🚫 `id` 一侧一个字没动（`d6defaa0` 自始至终未变）。
   const expectId = process.env.PW_QUOTE_CFG_ID || 'd6defaa0-354f-4e92-8e89-4bc8454888c3';
-  const expectMd5 = process.env.PW_QUOTE_CFG_MD5 || 'd0e8fb6f750c7af36b5d078a6fac0ec3';
+  const expectMd5 = process.env.PW_QUOTE_CFG_MD5 || '1c089ee61054d18b9151c8f03d23bacb';
 
   expect(got.id, `AC-22：QUOTE 生效配置 id 变了（改动前=${expectId}）`).toBe(expectId);
-  expect(got.md5, `AC-22：QUOTE 生效配置 sql_template 变了（改动前 md5=${expectMd5}）`).toBe(expectMd5);
+  expect(got.md5, `AC-22：QUOTE 生效配置 sql_template 变了（交付前基线 md5=${expectMd5}，见 证据/配置动作-还原点.md）`).toBe(expectMd5);
 });
 
 test('T-A2 / AC-21：报价侧 S0001 五个页签行数与基线逐位相同（兼定位器阳性对照）', async ({ page }) => {

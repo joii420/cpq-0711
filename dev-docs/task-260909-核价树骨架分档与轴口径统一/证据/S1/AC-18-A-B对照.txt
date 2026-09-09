@@ -1,0 +1,27 @@
+# AC-18 权限收紧 —— 改动前 / 改动后 A/B 对照（同一账号、同一命令、同一 DB）
+
+账号   : t260909tree_smgr (SALES_MANAGER, ACTIVE)
+鉴权   : Cookie 会话 CPQ_SESSION
+写端点 : 目标一律为不存在的 UUID 00000000-0000-0000-0000-000000000000
+
+| 端点 | 改动前 (8081 主仓, Sep 8 19:00 启动) | 改动后 (8131 worktree, Sep 9 11:23 启动) |
+|---|---|---|
+| admin GET  /costing-bom-tree-config              | 200 | **200** ✅ |
+| smgr  GET  /costing-bom-tree-config              | 200 | **403** ✅ |
+| smgr  POST /costing-bom-tree-config              | 500 | **403** ✅ |
+| smgr  PUT  /costing-bom-tree-config/{NOPE}       | 500 | **403** ✅ |
+| smgr  POST /costing-bom-tree-config/{NOPE}/activate | 500 | **403** ✅ |
+| smgr  DELETE /costing-bom-tree-config/{NOPE}     | 200 | **403** ✅ |
+
+## 为什么这组是**有效证据**而不是空验证
+1. 改动前 5 条**没有一条**是 403 ⇒ 全部翻转是天然还原实验，不是「本来就绿」。
+2. 特别是 `DELETE`：改动前返 **200**（对不存在的 id 静默幂等）。
+   若实现漏收紧 DELETE，弱断言（"不是 200"）抓不到；本用例用硬断言 `toBe(403)`。
+3. 写端点改动前返 **500**（进了业务逻辑才炸，`BL-0227` 同族），改动后返 **403**
+   ⇒ 证明角色注解在**业务逻辑之前**拦下，不是靠校验器碰巧报错。
+
+## 实例正身（防「测了旧代码」）
+5212 前端 pid=1440050 cwd=.../worktrees/task-260909-costing-tree/cpq-frontend  started Sep 9 11:28:31
+8131 后端 pid=1432570 cwd=.../worktrees/task-260909-costing-tree/cpq-backend   started Sep 9 11:23:34
+经 5212 与直连 8131 两条路径**结果逐条相同** ⇒ 5212 的 /api 代理确实指向 8131（不是 8081）。
+两端 `GET /quotations?page=1&size=1` 的 totalElements = 132 = `SELECT count(*) FROM quotation` ⇒ 同一个库 cpq_db_0724。

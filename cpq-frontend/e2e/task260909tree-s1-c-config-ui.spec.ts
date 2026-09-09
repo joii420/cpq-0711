@@ -15,7 +15,7 @@
 import { test, expect, Page, Locator } from '@playwright/test';
 import { loginAs } from './fixtures/auth';
 import {
-  ADMIN, salesManagerCred, cjkBtn, shot, writeEvidence,
+  ADMIN, salesManagerCred, cjkBtn, shot, writeEvidence, appendEvidence,
 } from './fixtures/task260909tree';
 
 test.describe.configure({ mode: 'serial' });
@@ -129,11 +129,18 @@ test('T-C2 / AC-2：切到「详细核价」→ 0 行 + 空态文案「暂无详
   expect(await addBtn.isEnabled(), 'AC-2：「新增」按钮在空态下必须仍可点（不禁用）').toBe(true);
 
   // ③ 页面不报错
-  const errs = await pane.locator('.ant-alert-error, text=渲染失败').count();
-  expect(errs, 'AC-2：详细核价空态页面不应报错').toBe(0);
+  // 🚨 2026-09-09 实跑修正：原写成 `.ant-alert-error, text=渲染失败` ——
+  //    Playwright **不允许把 `text=` 引擎混进 CSS 选择器列表**，直接抛
+  //    `Unexpected token "=" while parsing css selector`。
+  //    ⚠️ 它以「用例失败」的形式出现，长得和产品缺陷一模一样，实为量具语法错。
+  const errAlert = await pane.locator('.ant-alert-error').count();
+  const errText = await pane.getByText('渲染失败', { exact: false }).count();
+  console.log(`[AC-2] .ant-alert-error=${errAlert}  「渲染失败」文本=${errText}`);
+  expect(errAlert + errText, 'AC-2：详细核价空态页面不应报错').toBe(0);
 
   writeEvidence('AC-02-empty-state.txt',
-    `标题=详细核价树配置\n空态文案「暂无详细核价树配置」可见=true\n数据行=${n}\n新增按钮 enabled=true\n错误块=${errs}\n`);
+    `标题=详细核价树配置\n空态文案「暂无详细核价树配置」可见=true\n数据行=${n}\n新增按钮 enabled=true\n` +
+    `错误块: .ant-alert-error=${errAlert} 「渲染失败」文本=${errText}\n`);
 });
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -143,7 +150,9 @@ test('T-C3 / AC-17a：admin（SYSTEM_ADMIN）打开 /components 应见 4 个页�
   const names = await topTabNames(page);
   console.log('[AC-17a] admin 顶层页签 =', JSON.stringify(names));
   await shot(page, 'AC-17a-admin-4tabs');
-  writeEvidence('AC-17-tabs.txt', `admin 顶层页签=${JSON.stringify(names)}\n`);
+  // 🚨 必须 append：本文件由 T-C3(admin) 与 T-C4(smgr) **两条**用例共同写入，
+  //    用 writeEvidence 会让后跑的那条把前一条的证据覆盖掉（首轮实测已发生）。
+  appendEvidence('AC-17-tabs.txt', `admin 顶层页签=${JSON.stringify(names)}\n`);
 
   expect(names, 'AC-17：admin 应看到 4 个页签：组件 / 数据源 / 全局变量 / 核价树配置')
     .toEqual(['组件', '数据源', '全局变量', TREE_TAB]);
@@ -159,7 +168,7 @@ test('T-C4 / AC-17b：test1（SALES_MANAGER）打开 /components 应见 3 个页
     const names = await topTabNames(page);
     console.log(`[AC-17b] ${sm.username} 顶层页签 =`, JSON.stringify(names));
     await shot(page, 'AC-17b-salesmanager-3tabs');
-    writeEvidence('AC-17-tabs.txt', `${sm.username} 顶层页签=${JSON.stringify(names)}\n`);
+    appendEvidence('AC-17-tabs.txt', `${sm.username} 顶层页签=${JSON.stringify(names)}\n`);
 
     expect(names, `AC-17：${sm.username}（SALES_MANAGER）应只看到 3 个页签`)
       .toEqual(['组件', '数据源', '全局变量']);

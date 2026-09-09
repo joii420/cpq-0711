@@ -143,8 +143,13 @@ export function sqlScalar(sql: string): string {
  */
 export function recordBackendIdentity(): string {
   let pid = '', cwd = '', started = '';
+  // 🚨 2026-09-09 自查修正：这里原本把端口**写死成 8081**，而 `BACKEND_URL` 是可覆盖的。
+  //    临时栈（8131）跑起来时，它照样去查 8081 的进程，于是打印出
+  //    「url=8131 但 cwd=主仓、started=前一天」这种**自相矛盾却看着很像证据**的行 ——
+  //    正是「判据本身零证据」（`testing.md §5.5`）。端口必须从 BACKEND_URL 推。
+  const port = (BACKEND_URL.match(/:(\d+)/) || [])[1] || '8081';
   try {
-    const ss = execSync(`ss -ltnp 2>/dev/null | /usr/bin/grep -a ':8081 ' || true`,
+    const ss = execSync(`ss -ltnp 2>/dev/null | /usr/bin/grep -a ':${port} ' || true`,
       { shell: '/bin/bash', encoding: 'utf-8' });
     pid = (ss.match(/pid=(\d+)/) || [])[1] || '';
     if (pid) {
@@ -154,7 +159,7 @@ export function recordBackendIdentity(): string {
         { shell: '/bin/bash', encoding: 'utf-8' }).trim();
     }
   } catch { /* 采样失败不阻断，但下面会打印空值，人一眼看得出来 */ }
-  const line = `[backend-identity] url=${BACKEND_URL} pid=${pid || '?'} cwd=${cwd || '?'} started="${started || '?'}"`;
+  const line = `[backend-identity] url=${BACKEND_URL} port=${port} pid=${pid || '?'} cwd=${cwd || '?'} started="${started || '?'}"`;
   console.log(line);
   // ⚠️「当前采样为 X」是瞬时量，不是状态（CLAUDE.md §5）——所以写进证据时带时刻。
   appendEvidence('00-backend-identity.txt', `${new Date().toISOString()} ${line}\n`);
@@ -334,18 +339,32 @@ export async function cardOf(page: Page, partNo: string): Promise<Locator> {
   const n = await all.count();
   const heads: string[] = [];
   const hits: number[] = [];
-  // 卡片头未必显示生产料号 —— 本单 4 行的别名（销售料号 / 客户料号 / 品名）取自
-  // `quotation_line_item` 的快照字段，属**业务数据**不是实现代码。
-  const alias = (PRODUCT_ALIASES[partNo] || []).concat(partNo);
+  // 🚨 2026-09-09 实跑修正：原来拿**品名别名**做子串匹配，`"铆钉"` 命中了
+  //    `"铆钉组件B"`（S0008）⇒ S0001 命中 2 张卡片。
+  //    子串匹配在「短名是长名前缀」的料号集上必然误命中，而误命中的后果是
+  //    **在错卡片上做对断言**（最难查的一类假绿）。
+  //    实跑拿到的真实卡片头是 `铆钉 / 料号: S0001 / 料号信息 / 料号: S0001 / 删除 / 产品`
+  //    ⇒ 改用带前缀的**受限匹配** `料号[:：] <partNo>` + 词边界，别名只作零命中时的兜底。
+  const headOf = async (i: number) =>
+    (await all.nth(i).innerText().catch(() => '')).split('\n').slice(0, 6).join(' / ');
+  const strict = new RegExp(`料号[:：]\\s*${partNo}(?![0-9A-Za-z_])`);
   for (let i = 0; i < n; i++) {
-    // 只看卡片头部区域，避免表格行里的同名料号造成误命中
-    const head = (await all.nth(i).innerText().catch(() => '')).split('\n').slice(0, 6).join(' / ');
+    const head = await headOf(i);
     heads.push(`[${i}] ${head.slice(0, 160)}`);
-    if (alias.some((a) => head.includes(a))) hits.push(i);
+    if (strict.test(head)) hits.push(i);
+  }
+  if (hits.length === 0) {
+    // 兜底：卡片头不带「料号:」前缀时才用别名，且要求**词边界**，不做裸子串
+    const alias = (PRODUCT_ALIASES[partNo] || []).concat(partNo);
+    for (let i = 0; i < n; i++) {
+      const head = heads[i];
+      if (alias.some((a) => new RegExp(`(^|[^0-9A-Za-z_\\u4e00-\\u9fa5])${a}(?![0-9A-Za-z_\\u4e00-\\u9fa5])`).test(head))) hits.push(i);
+    }
   }
   if (hits.length !== 1) {
     throw new Error(
-      `按料号 ${partNo}（别名 ${JSON.stringify(alias)}）定位产品卡片失败：命中 ${hits.length} 张（共 ${n} 张）。\n` +
+      `按料号 ${partNo}（严格式「料号: ${partNo}」，别名兜底 ${JSON.stringify(PRODUCT_ALIASES[partNo] || [])}）` +
+        `定位产品卡片失败：命中 ${hits.length} 张（共 ${n} 张）。\n` +
         `卡片头部快照：\n${heads.join('\n')}\n` +
         '🚨 这是**定位/入口**问题（或卡片压根没渲染），本条判【未验证】。',
     );
