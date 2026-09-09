@@ -1,0 +1,14 @@
+ANNUAL_DISCOUNT|年降顺序
+ASSEMBLY_FEE|销售料号|组装工序
+ASSEMBLY_FEE_ANNUAL|销售料号|组装工序|年降顺序
+ELEMENT_BOM|销售料号|材质料号|元素
+FINISHED_OTHER_FEE|销售料号|要素名称
+INCOMING_ANNUAL|销售料号|投入料号|年降顺序
+INCOMING_FIXED_FEE|销售料号|投入料号
+INCOMING_OTHER_FEE|销售料号|投入料号
+INCOMING_RECOVERY|销售料号|投入料号
+MATERIAL|销售料号
+MATERIAL_BOM|销售料号|投入料号
+PLATING_FEE|销售料号|电镀方案编号|版本编号
+SELF_PROCESS_FEE|销售料号|投入料号
+SUB_COMPONENT_FEE|销售料号|组成件料号|供应商编号|供应商名称
