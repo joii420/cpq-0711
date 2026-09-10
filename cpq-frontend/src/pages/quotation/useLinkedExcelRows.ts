@@ -119,7 +119,13 @@ export function resolveVariable(
     'product_id': li.productId,
     'specification': li.hfPartInfo?.specification,
     'size_info': li.hfPartInfo?.sizeInfo,
-    'status_code': li.hfPartInfo?.statusCode,
+    // task-260910(F-5 收尾)：原有 'status_code': li.hfPartInfo?.statusCode 已删。
+    //   hfPartInfo 换源到 ds_cost_basic_material ∪ ds_cost_detail_material 后不再有 statusCode 字段；
+    //   主线实查全库 6 处 Excel 列绑定存储位（component.excel_columns / customer_excel_template.excel_columns /
+    //   template_component_snapshot.excel_columns / template.excel_view_config /
+    //   quotation_line_item.excel_view_snapshot / .quote_excel_values），{STATUS_CODE} 均 0 命中，
+    //   且原本就恒为 null（旧源 internal_material 全表 0 行）⇒ 直接删，不用 oldMaterialNo 顶替（语义不同）。
+    //   ⚠️ 上面 `const li = lineItem as any` 会遮蔽此类字段错配，编译期抓不到 —— 删字段时必须手工回扫本表。
     'subtotal': li.subtotal,
   };
   if (Object.prototype.hasOwnProperty.call(liMap, code)) return liMap[code];

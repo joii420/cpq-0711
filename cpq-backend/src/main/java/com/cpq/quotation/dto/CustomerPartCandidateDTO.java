@@ -50,16 +50,20 @@ public class CustomerPartCandidateDTO {
      *  避免初次从 import 跳转过来时 partVersion 缺省导致 ImplicitJoinRewriter 不注入版本过滤. */
     public Integer currentVersion;
 
-    /** 「生产料号管理」(internal_material) 视角的料号详情——供产品卡片右侧 popover 用。
-     *  数据源：internal_material 按 material_no = part_no 反查；缺失时为 null。
+    /** 生产料号详情——供选品候选行的「生产料号」浮层用；缺失（未绑生产料号）时为 null。
+     *  task-260910 · B-4 换源：与报价单卡片走**同一个** {@code ProductionPartInfoService}
+     *  （ds_quote_material → ds_cost_basic_material ∪ ds_cost_detail_material）。
+     *  旧源 internal_material（全表 0 行）已停用。
      */
     public HfPartInfo hfPartInfo;
 
+    /** ⚠️ 契约变更（task-260910）：删 statusCode，加 oldMaterialNo。partNo = 生产料号。 */
     public static class HfPartInfo {
+        /** 生产料号 ds_quote_material.production_no */
         public String partNo;
         public String partName;
         public String specification;
         public String sizeInfo;
-        public String statusCode;
+        public String oldMaterialNo;
     }
 }

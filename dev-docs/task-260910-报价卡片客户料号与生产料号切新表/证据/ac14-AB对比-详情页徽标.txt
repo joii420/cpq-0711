@@ -1,0 +1,14 @@
+单=QT-20260909-0794
+A(master 5174)={
+ "cards": 5,
+ "tplBadges": [],
+ "anyCategoryText": false,
+ "firstCardLeft": "铆钉 料号: S0001"
+}
+B(worktree 5211)={
+ "cards": 5,
+ "tplBadges": [],
+ "anyCategoryText": false,
+ "firstCardLeft": "示例客户料号 客户产品编号: A002 料号: S0001"
+}
+结论：master 徽标数=0，worktree 徽标数=0

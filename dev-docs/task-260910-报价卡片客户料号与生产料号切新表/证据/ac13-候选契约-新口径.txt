@@ -1,0 +1,18 @@
+扫描候选=3，无绑定(断言 hfPartInfo=null)=2，有绑定且非空=1
+CUST-0001: 1 个候选 → [{"partNo":"3120011203","hf":null}]
+CUST-0004: 1 个候选 → [{"partNo":"3120011203","hf":{"partNo":"T260910-P-AAA","partName":"T260910-零件-AAA","specification":"T260910-规格-A","sizeInfo":"T260910-尺寸-A","oldMaterialNo":"T260910-旧-A"}}]
+CUST-0058: 1 个候选 → [{"partNo":"3120011203","hf":null}]
+非空样本=[
+ {
+  "cust": "CUST-0004",
+  "partNo": "3120011203",
+  "bound": "T260910-P-AAA",
+  "hf": {
+   "partNo": "T260910-P-AAA",
+   "partName": "T260910-零件-AAA",
+   "specification": "T260910-规格-A",
+   "sizeInfo": "T260910-尺寸-A",
+   "oldMaterialNo": "T260910-旧-A"
+  }
+ }
+]

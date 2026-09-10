@@ -21,7 +21,6 @@ import { evaluateCondition } from '../../utils/conditionEngine';
 import LinkedExcelView from './LinkedExcelView';
 import ComparisonBoard from './ComparisonBoard';
 import { datasourceService } from '../../services/datasourceService';
-import { materialMappingService } from '../../services/materialMappingService';
 import ComponentCell from './components/ComponentCell';
 import type { CellContext } from './components/ComponentCell';
 import { buildLineItemFromTemplate } from './BulkImportPartsDrawer';
@@ -206,21 +205,25 @@ export interface LineItem {
   productId: string;
   productName: string;
   productPartNo: string;
-  /** PRD: 产品卡片优先用"客户视角"展示——customer_part_name + customer_product_no
-   *  来自 mat_customer_part_mapping 按 (customerId, hfPartNo) 反查；缺失则回退 productName/productPartNo。 */
+  /** 卡片头部左侧的"客户视角"展示——customer_part_name + customer_product_no。
+   *  task-260910(B-1)：数据源已从 material_customer_map 换成 ds_quote_customer_part
+   *  （按 customer_no + customer_product_no / material_no 反查）。两者皆空时头部左侧整块不渲染。 */
   customerPartName?: string;
   customerProductNo?: string;
   customerDrawingNo?: string;
-  /** PRD: 卡片右侧"生产料号"小卡片——按 productPartNo 查 mat_part 主档 */
+  /** 卡片右侧「销售料号」徽标点开的"生产料号"浮层。
+   *  task-260910(B-2/F-2)：数据源 = ds_quote_material.production_no
+   *  → ds_cost_basic_material ∪ ds_cost_detail_material。
+   *  🚫 统一契约变更：删 statusCode、加 oldMaterialNo（后端 QuotationDTO.HfPartInfo 同步）。
+   *  hfPartInfo 为空 / partNo 为空 = 该销售料号未绑定生产料号。 */
   hfPartInfo?: {
     partNo?: string;
     partName?: string;
     specification?: string;
     sizeInfo?: string;
-    statusCode?: string;
+    oldMaterialNo?: string;
   };
   templateId: string;
-  templateName: string;
   productAttributeValues: Record<string, any>;
   productAttributes?: { name: string; field_type: string; required: boolean; default_value?: string; source?: string }[];
   componentData: ComponentDataItem[];
@@ -2248,37 +2251,14 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
   const [activeTab, setActiveTab] = useState(0);
   const [dsLoading, setDsLoading] = useState<Record<string, boolean>>({});
   const [dsErrors, setDsErrors] = useState<Record<string, string>>({});
-  // Material match state for border coloring
-  const [matchStatus, setMatchStatus] = useState<'MATCHED_Y' | 'MATCHED_N' | 'NO_MATCH' | null>(null);
-  const [matchInfo, setMatchInfo] = useState<any>(null);
   // 树表折叠态(仅 treeConfig 组件使用,非树表组件零开销)
   const treeCollapse = useTreeCollapse();
 
-  // Match customerPartNo when customerId is available
-  useEffect(() => {
-    const customerPartNo = (item as any).customerPartNo;
-    if (!customerId || !customerPartNo) return;
-    let cancelled = false;
-    // 用 cached 版本: 同 (customerId, partNo) 并发/重复调用复用 1 个 in-flight Promise → 1 次 HTTP
-    materialMappingService.matchCached(customerId, customerPartNo)
-      .then((res: any) => {
-        if (cancelled) return;
-        const matched = res.data || res;
-        if (matched && matched.materialNo) {
-          const status = matched.statusCode === 'Y' ? 'MATCHED_Y' : 'MATCHED_N';
-          setMatchStatus(status);
-          setMatchInfo(matched);
-        } else {
-          setMatchStatus('NO_MATCH');
-          setMatchInfo(null);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) { setMatchStatus('NO_MATCH'); setMatchInfo(null); }
-      });
-    return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customerId, (item as any).customerPartNo]);
+  // task-260910(F-3)：原先此处有一个 customerPartNo → /material-mappings/match 的 useEffect，
+  // 拿返回的 statusCode 给卡片边框着色（绿/红）。customer_material_mapping 全表 0 行，
+  // 该请求恒返回空 ⇒ 匹配态恒 NO_MATCH ⇒ 只要行上有客户料号边框就一定是红的。
+  // 该信号已完全失效，整条链路（state / useEffect / borderColor / 「料号信息」Popover）删除，
+  // 卡片边框回落到 quotation.css 的默认 `2px solid #e0e0e0`。以后有需求再重做。
 
   // V160/V161 修订: 自动清理 driver 之外的陈旧持久化行.
   // 历史 BUMP 链路若在视图未暴露 part_version 时跑过, autoSave 会把多版本叠加的 N+M 行
@@ -3053,101 +3033,76 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
   // Dynamic product attribute fields from template definition
   const attrFields = item.productAttributes || [];
 
-  const borderColor =
-    matchStatus === 'MATCHED_Y' ? '#52c41a' :
-    matchStatus === 'MATCHED_N' ? '#ff4d4f' :
-    matchStatus === 'NO_MATCH' ? '#ff4d4f' :
-    undefined;
-
-  const matchPopoverContent = matchInfo ? (
-    <div style={{ minWidth: 200 }}>
-      <div><b>内部料号:</b> {matchInfo.materialNo}</div>
-      <div><b>名称:</b> {matchInfo.name || matchInfo.materialName}</div>
-      <div><b>规格:</b> {matchInfo.specification || '-'}</div>
-      <div><b>状态:</b> {matchInfo.statusCode === 'Y' ? '可生产' : '停产'}</div>
+  // task-260910(F-2)：销售料号徽标点开的「生产料号」浮层。
+  //   partNo 为空（hfPartInfo 缺失 / ds_quote_material.production_no 为空）→ 单行「未绑定生产料号」，
+  //   🚫 不摆一副全是「—」的五行骨架（那会被读成加载失败）。原型图状态 4。
+  //   partNo 有值但核价两表无该行 → 第一行正常、其余四行「—」。原型图状态 3，是现网绝大多数情况。
+  const hfPartNo = item.hfPartInfo?.partNo;
+  const hfRows: { label: string; value?: string; mono?: boolean }[] = [
+    { label: '料号：', value: hfPartNo, mono: true },
+    { label: '名称：', value: item.hfPartInfo?.partName },
+    { label: '规格：', value: item.hfPartInfo?.specification },
+    { label: '尺寸：', value: item.hfPartInfo?.sizeInfo },
+    { label: '旧料号：', value: item.hfPartInfo?.oldMaterialNo, mono: true },
+  ];
+  const hfPartPopoverContent = hfPartNo ? (
+    <div style={{ minWidth: 280, fontSize: 13 }}>
+      {hfRows.map((r, i) => (
+        <div key={r.label} style={{ marginBottom: i === hfRows.length - 1 ? 0 : 8, display: 'flex' }}>
+          <span style={{ color: '#8c8c8c', width: 62, flexShrink: 0 }}>{r.label}</span>
+          <span
+            style={
+              r.value
+                ? { fontFamily: r.mono ? 'ui-monospace, Menlo, Consolas, monospace' : undefined }
+                : { color: 'rgba(0,0,0,.35)' }
+            }
+          >
+            {r.value || '—'}
+          </span>
+        </div>
+      ))}
     </div>
   ) : (
-    <div>未找到匹配的内部料号</div>
+    <div style={{ minWidth: 180, fontSize: 13, color: 'rgba(0,0,0,.45)' }}>未绑定生产料号</div>
   );
 
   return (
-    <div
-      className="qt-product-card"
-      style={borderColor ? { border: `2px solid ${borderColor}`, borderRadius: 6 } : undefined}
-    >
-      {/* Card Header — 客户视角优先 */}
+    // task-260910(F-3)：🚫 不要再给这个 div 加内联 border —— 边框恒走 quotation.css
+    // 的 `.qt-product-card { border: 2px solid #e0e0e0 }`（AC-4 会断言无内联 border）。
+    <div className="qt-product-card">
+      {/* Card Header — task-260910(F-1)：左 [客户料号名称][客户产品编号]，右 [产品名][销售料号][删除] */}
       <div className="qt-card-header">
-        <div className="qt-card-header-left">
-          <span className="qt-product-name">
-            {item.customerPartName || item.productName || `产品 ${index + 1}`}
-          </span>
-          {(item.customerProductNo || item.productPartNo) && (
-            <span className="qt-sku-badge">
-              {item.customerProductNo
-                ? <>客户产品编号: {highlightText(item.customerProductNo, highlightTerm)}</>
-                : <>料号: {highlightText(item.productPartNo, highlightTerm)}</>}
+        {/* 左侧客户视角区：两者皆空则整块不渲染（不留空徽标、不显示「—」，原型图状态 5）。
+            容器 div 保留 —— .qt-card-header 是 justify-content: space-between，
+            去掉它右侧整块会滑到左边。 */}
+        <div className="qt-card-header-left qt-card-header-left--edit">
+          {item.customerPartName && (
+            <span className="qt-cust-part-name" title={item.customerPartName}>
+              {item.customerPartName}
             </span>
           )}
-          {item.templateName && (
-            <span className="qt-template-badge">模板: {item.templateName}</span>
-          )}
-          {matchStatus && (
-            <Popover content={matchPopoverContent} title="料号信息" trigger="click">
-              <Button
-                size="small"
-                type="link"
-                style={{ padding: '0 4px', color: borderColor, fontSize: 12 }}
-              >
-                料号信息
-              </Button>
-            </Popover>
+          {item.customerProductNo && (
+            <span className="qt-sku-badge">
+              客户产品编号: {highlightText(item.customerProductNo, highlightTerm)}
+            </span>
           )}
         </div>
-        <div className="qt-card-header-right" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div className="qt-card-header-right">
+          <span
+            className="qt-product-name qt-product-name--secondary"
+            title={item.productName || undefined}
+          >
+            {item.productName || `产品 ${index + 1}`}
+          </span>
           {item.productPartNo && (
             <Popover
               title="生产料号"
               trigger="click"
               placement="bottomRight"
-              content={
-                <div style={{ minWidth: 280, fontSize: 13 }}>
-                  <div style={{ marginBottom: 6 }}>
-                    <span style={{ color: '#8c8c8c' }}>料号：</span>
-                    <span style={{ fontFamily: 'monospace' }}>{item.hfPartInfo?.partNo || item.productPartNo}</span>
-                  </div>
-                  <div style={{ marginBottom: 6 }}>
-                    <span style={{ color: '#8c8c8c' }}>名称：</span>
-                    <span>{item.hfPartInfo?.partName || '—'}</span>
-                  </div>
-                  <div style={{ marginBottom: 6 }}>
-                    <span style={{ color: '#8c8c8c' }}>规格：</span>
-                    <span>{item.hfPartInfo?.specification || '—'}</span>
-                  </div>
-                  <div style={{ marginBottom: 6 }}>
-                    <span style={{ color: '#8c8c8c' }}>尺寸：</span>
-                    <span>{item.hfPartInfo?.sizeInfo || '—'}</span>
-                  </div>
-                  <div>
-                    <span style={{ color: '#8c8c8c' }}>生产状态：</span>
-                    <span>{item.hfPartInfo?.statusCode || '—'}</span>
-                  </div>
-                </div>
-              }
+              content={hfPartPopoverContent}
             >
-              <span
-                style={{
-                  background: '#e6f4ff',
-                  color: '#0958d9',
-                  border: '1px solid #91caff',
-                  borderRadius: 4,
-                  padding: '2px 10px',
-                  fontSize: 12,
-                  fontFamily: 'monospace',
-                  cursor: 'pointer',
-                }}
-                title="点击查看生产料号详情"
-              >
-                料号: {highlightText(item.productPartNo, highlightTerm)}
+              <span className="qt-part-badge" title="点击查看生产料号详情">
+                销售料号: {highlightText(item.productPartNo, highlightTerm)}
               </span>
             </Popover>
           )}

@@ -1,0 +1,98 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>选配 · 绑定已有销售料号（搜索面板）</title>
+<link rel="stylesheet" href="_base.css"></head><body><div class="wrap">
+<h1>② 绑定料号搜索面板 —— 新面板</h1>
+<div class="sub">位置：选中第三张卡后的第二步。服务 <b>AC-18</b>（<code>F-3</code>）。
+数据源 <code>GET /quotations/configure/search-parts?customerNo=…&q=…</code>（<code>api.md §2.1</code>）—— <b>与「已有零件」同一端点</b>，区别是选中即完成、不采集材质与工序。</div>
+
+<div class="state"><h2>默认态 · 有搜索结果<span class="tag">按客户过滤（AC-7）</span></div>
+<div class="body"><div class="drawer">
+  <div class="dh">添加配件 — 直接绑定已有销售料号<span class="x">✕</span></div>
+  <div class="dc">
+    <div class="steps"><div class="done"><span class="n">✓</span>选择类型</div><div class="on"><span class="n">2</span>选择销售料号</div><div class="muted"><span class="n">3</span>—</div></div>
+    <div class="row"><input class="inp" value="触点" style="flex:1"><button class="btn">搜索</button>
+      <span style="font-size:12px;color:rgba(0,0,0,.45);white-space:nowrap">客户 <code>CUST-0004</code> 名下 · 共 3 条</span></div>
+    <table>
+      <thead><tr><th style="width:150px">销售料号</th><th>品名</th><th style="width:80px">规格</th><th style="width:90px">尺寸</th><th>材质</th></tr></thead>
+      <tbody>
+        <tr class="sel"><td><code>S0004</code></td><td>触点组件</td><td>φ5</td><td>5×3×2</td>
+          <td><span class="tag2">AgNi10</span><span class="tag2">铜基</span></td></tr>
+        <tr><td><code>S0008</code></td><td>触点座</td><td>φ7</td><td>6×4×2</td><td><span class="tag2">AgNi10</span></td></tr>
+        <tr><td><code>S0012</code></td><td>触点支架</td><td>φ9</td><td>8×5×3</td>
+          <td><span class="tag2">AgNi10</span><span class="tag2">AgCu90</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="df"><button class="btn">上一步</button><button class="btn pri">确定绑定 S0004</button></div>
+</div>
+<div class="note">🔑 <b>选中即完成</b> —— 不进入材质/工序步骤。确定后回到步骤 2 主界面（见原型 01 第四态）。<br>
+🔑 材质列复用原型 03 的多值展示；此处**只读展示**，不可编辑。</div>
+</div></div>
+
+<div class="state"><h2>空数据态 · 搜索无结果<span class="tag">AC-7 的可观测出口</span></div>
+<div class="body"><div class="drawer">
+  <div class="dh">添加配件 — 直接绑定已有销售料号<span class="x">✕</span></div>
+  <div class="dc">
+    <div class="steps"><div class="done"><span class="n">✓</span>选择类型</div><div class="on"><span class="n">2</span>选择销售料号</div><div class="muted"><span class="n">3</span>—</div></div>
+    <div class="row"><input class="inp" value="T260910B-C1ONLY" style="flex:1"><button class="btn">搜索</button>
+      <span style="font-size:12px;color:rgba(0,0,0,.45);white-space:nowrap">客户 <code>CUST-0004</code> 名下 · 共 0 条</span></div>
+    <div class="empty"><div class="ic">🔍</div>
+      <div class="t">没有匹配「T260910B-C1ONLY」的销售料号</div>
+      <div class="h">该料号可能属于其它客户 —— 本列表只显示<b>当前客户</b>名下的料号</div>
+      <button class="btn">清空搜索</button></div>
+  </div>
+  <div class="df"><button class="btn">上一步</button><button class="btn pri dis">确定绑定</button></div>
+</div>
+<div class="note">🚨 <b>空态不是错误、更不是「加载中…」</b>（AP-31 族）。<br>
+🔑 空态文案要点明「只显示当前客户名下的料号」—— 这是 <b>AC-7</b> 的语义变更（现状是跨客户搜索），不解释用户会以为系统坏了。</div>
+</div></div>
+
+<div class="state"><h2>未选客户 · 不发请求<span class="tag">F-1 的边界</span></div>
+<div class="body"><div class="drawer">
+  <div class="dh">添加配件 — 直接绑定已有销售料号<span class="x">✕</span></div>
+  <div class="dc">
+    <div class="steps"><div class="done"><span class="n">✓</span>选择类型</div><div class="on"><span class="n">2</span>选择销售料号</div><div class="muted"><span class="n">3</span>—</div></div>
+    <div class="empty"><div class="ic">👤</div><div class="t">请先为报价单选择客户</div>
+      <div class="h">料号按客户隔离，未选客户无法检索</div></div>
+  </div>
+  <div class="df"><button class="btn">上一步</button><button class="btn pri dis">确定绑定</button></div>
+</div>
+<div class="note">⚠️ <code>customerNo</code> 为 <code>undefined</code> 时<b>不要发请求</b>（后端会 400）—— 渲染此空态即可。</div>
+</div></div>
+
+<div class="state"><h2>最长文案 / 极值<span class="tag">撑破布局的预演</span></div>
+<div class="body"><div class="drawer">
+  <div class="dh">添加配件 — 直接绑定已有销售料号<span class="x">✕</span></div>
+  <div class="dc">
+    <table>
+      <thead><tr><th style="width:150px">销售料号</th><th>品名</th><th style="width:80px">规格</th><th style="width:90px">尺寸</th><th>材质</th></tr></thead>
+      <tbody>
+        <tr><td><code>T260910-VERYLONG-MATERIAL-NO-0001</code></td>
+          <td>银镍复合触点组件（含铆钉与弹簧片总成）超长品名测试用例</td><td>φ12.5×3.2</td><td>12.5×8.4×3.2</td>
+          <td><span class="tag2">AgNi10</span><span class="tag2">AgCu90</span><span class="tag2">AgZnO12/Cu</span><span class="tag2">铜基</span></td></tr>
+        <tr><td><code>S0003</code></td><td>铆钉配件</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="df"><button class="btn">上一步</button><button class="btn pri dis">确定绑定</button></div>
+</div>
+<div class="note">🔑 三处极值：<b>超长料号</b>用 <code>&lt;code&gt;</code> 等宽体不换行会撑表 ⇒ 允许换行；<b>超长品名</b>允许两行；<b>4 个材质</b>的 tag 自动折行。<br>
+🔑 <b>无材质的料号</b>（外购件 <code>S0003</code>）材质列显示 <code>—</code>，🚫 不是空白也不是「加载中…」（AC-9）。</div>
+</div></div>
+
+<div class="state"><h2>错误态 · 绑定失败<span class="tag">AC-19</span></div>
+<div class="body"><div class="drawer">
+  <div class="dh">添加产品 — 选配<span class="x">✕</span></div>
+  <div class="dc">
+    <div class="alert err">❌ <b>该编号已存在，请从产品库添加</b><br>
+      <span style="font-size:12px">客户产品编号 <code>T260910-BIND-01</code> 已绑定到销售料号 <code>S0004</code>（2026-09-10 创建）</span>
+      <div style="margin-top:8px"><button class="btn">→ 打开产品库并定位</button></div></div>
+    <div class="alert err">❌ <b>所选销售料号在当前客户下不存在</b><br>
+      <span style="font-size:12px">错误码 <code>BIND_MATERIAL_NOT_FOUND</code> —— 请重新检索</span></div>
+  </div>
+  <div class="df"><button class="btn">取消</button><button class="btn pri">重试</button></div>
+</div>
+<div class="note">🚫 <b>沿用既有错误码解析规则</b>（<code>ConfigureProductDrawer.tsx:259</code>）：只把「非纯数字的字符串」当业务码 —— 现网信封的 <code>code</code> 有时装 HTTP 状态码数字，退回去会显示「错误码 400」这种无意义文案。</div>
+</div></div>
+
+</div></body></html>

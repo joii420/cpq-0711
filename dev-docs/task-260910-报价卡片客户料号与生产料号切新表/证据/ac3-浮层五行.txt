@@ -1,0 +1,14 @@
+核价侧期望={"production_no":"300001","material_name":"零件1","spec":"—","dim":"3.5×3.5×0.6","oldno":"8DLX.550.653"}
+销售侧(取错源特征)={"material_name":"铆钉","specification":"Φ50","dimension":"1×3","old_material_no":"12133"}
+浮层原文:
+生产料号
+料号：
+300001
+名称：
+零件1
+规格：
+—
+尺寸：
+3.5×3.5×0.6
+旧料号：
+8DLX.550.653

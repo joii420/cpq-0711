@@ -4552,6 +4552,59 @@ E2E:
 
 ---
 
+## [2026-09-10] 报价单产品卡片 · 客户料号与生产料号切 ds_* 新体系 | task-260910
+
+**症状（用户 2026-09-09 反馈，三条）**：① 卡片上没有客户料号 ② 「生产料号」浮层除料号外全是「—」，且料号显示的是**销售料号** ③ 产品卡片边框恒为红色。
+
+**根因 —— 三张脸，一个病灶（`docs/反模式.md` AP-17 写入位与读取位错配）**：
+卡片头部这一圈 UI 全挂在旧表上，而数据早已迁到取数配置器的 `ds_*` 数据集表 —— **同一张卡片上两套数据源**
+（表格走新体系视图 `builder_221dc7668ab6` 一直是对的，头部走旧表）。
+
+| 元素 | 旧读侧 | 实测 |
+|---|---|---|
+| 客户产品编号 | `material_customer_map` | 正泰 14 行**全是 pending 占号影子行**，无 `S0001` ⇒ 恒空 |
+| 客户料号名称 | — | 头部**根本没有这个渲染位** |
+| 生产料号浮层 | 用**销售料号**查 `internal_material` → 兜底 `material_master` | 前者全表 **0 行**、后者无 `S0001` ⇒ `hfPartInfo=null` ⇒ 前端回退成 `productPartNo` ⇒ **标题写「生产料号」值却是销售料号** |
+| 红框 | `customer_material_mapping` | 全表 **0 行** ⇒ 恒 `NO_MATCH` ⇒ **只要行上有客户料号就一定红**，信号已完全失效 |
+
+**新链路**：`customer.code` → `ds_quote_customer_part`（客户料号名称/客户产品编号，按 `customer_part_no` 精确消歧、空则按 `material_no` 回退）·
+`ds_quote_material.production_no` → `ds_cost_basic_material ∪ ds_cost_detail_material`（basic 优先 + 逐列 COALESCE，删 `statusCode` 加 `oldMaterialNo`）。
+📌 **业务模型经用户逐条确认**：绑定关系由**报价侧**决定（`ds_quote_material.production_no`），核价侧只提供生产料号明细；生产料号无客户维度。
+
+**涉及文件**：后端 `ProductionPartInfoService.java`(新) · `QuotationService.java` · `CustomerPartCandidateService.java` · `QuotationDTO.java` · `CustomerPartCandidateDTO.java`；
+前端 `QuotationStep2.tsx` · `quotation.css` · `QuotationWizard.tsx` · `BulkImportPartsDrawer.tsx` · `useLinkedExcelRows.ts` · `materialMasterService.ts` · 删 `CustomerMaterialMappingTab.tsx`/`internalMaterialService.ts`/`materialMappingService.ts`。
+**零 Flyway 迁移、零新增端点**，`main-api.md` 已回写。
+
+**关键决策**：
+- 🚨 **`material_customer_map` 不是废弃表** —— `task-260909-V6老表退役` 仍在用它（pending 占号/引用守卫/过户/转正/回收，其 `AC-10` 断言 61 行不变）。本次**只停止从它读客户视角字段**，表与其他用途一行未动
+- 用户裁决删「模板: xxx」徽标（`F-6`）—— 实证它全前端唯一赋值点是 `BulkImportPartsDrawer.tsx:240`，另两个添加入口从不设该字段，保存后重开即消失 ⇒ **现网基本看不到**
+- 用户裁决删已无 UI 入口的 `BulkImportPartsDrawer` 组件本体（`F-7`）—— `<BulkImportPartsDrawer` 全工程 **0 命中**；保留同文件两个 `export function`（**7 个引用方**）
+- 候选列表**行主轴不换**（仍 `material_master ∩ material_customer_map`），属扩范围；代价已写进文档
+
+**⚠️ 一个必须记住的现网事实**：`ds_cost_basic_material` 仅 **11 行**、`ds_cost_detail_material` **5 行**，而 `ds_quote_material` **2727 行**
+⇒ **2688/2696** 个有生产料号的产品在核价侧查不到明细，浮层只有第一行有值**是正确降级**（已写成正式 `AC-9`），不是没修好。
+
+🚩 **本任务最大的过程缺陷是主线自己写错了 4 条 AC，全是同一个病 —— 引用了「看着合理」但没实查的事实**：
+`AC-13` 写错抽屉入口（三层错：那个抽屉走别的 service · `S0001` 不在它候选里 · **它根本没有 UI 入口**）·
+`AC-15` 把「7 个引用方」写成「三处 import」（漏掉 `enrichComponentData.ts`，会误导下次清理删掉另一个函数）·
+`AC-8` 抄原型图时漏了「且客户料号表无匹配」半句，与 `AC-6` 直接矛盾（现网有实存反例 `0794/0028-2609000014`）·
+`AC-14` 被主线改写 `AC-13` 的脚本**整段误删**（替换区间吃到了下一条 AC）。
+**四次全部由子代理或用户撞出来，没有一次是自检抓到的。**
+
+🔬 **子代理的三处高质量发现**：测试片独立报出 `AC-6`/`AC-8` 矛盾与 `AC-12`/`AC-14` 分片错（前置动作会写库）；
+后端片实证 **`mvnw test` 的库已不是共享 dev 库**（`application-test.properties:32` 被 `task-260909` 批次 0 改成 `cpq_db_test`），已回写 `CLAUDE.md` profile 表（该行**被改错两次**，本次是第 3 版并加了「动它之前先实查配置文件」的告诫）。
+
+🚨 **值得进规则的一条**：**Vite dev server 对不存在的路径走 SPA fallback 照样返 200** —— 只看 `%{http_code}` 会把「文件已删」读成「模块正常」。
+判据必须看 `Content-Type`：`text/javascript` = 真转译 · `text/html` = fallback。`frontend.md §2.1` 现行文字只写「必须 HTTP 200」。
+
+**验证**：测试四片 **16 用例 16 绿 · 0 产品缺陷**（含 3 个自己踩到并修掉的量具 bug，都「长得像产品缺陷」）；
+主线亲验环境正身两条不变式 + API 层 + 系统 Chrome 走完整 UI 路径 + 自跑后端单测 + 逐屏比对原型图。
+**未达成如实列出**：`AC-14②` 行为断言不可验（全库 `product_category` **0 行非空**，该徽标改动前就从未显示过）· `AC-5`/`AC-6` 字面口径部分验证 · E2E `quotation-flow` 未跑。
+
+**已交付**：合 master `a60de7d1`（+ 亲验证据 `6226d1c4`），共享 8081 已热重载生效并复验（`hfPartInfo.partNo=300001`、无 `statusCode` 键）。**待闸门 B 用户验收。**
+
+---
+
 ## [2026-09-09] 报价单「从已有产品添加」抽屉 - 数据源收敛为单表 | task-260909
 
 **症状**：正泰 CUST-0004 库里 2662 个客户产品，抽屉只显示 1 个；Q13CUST0617、C1 恒为 0。

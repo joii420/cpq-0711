@@ -1,0 +1,7 @@
+ds_quote_material: before=3 after=0 ok=true
+ds_quote_customer_part: before=1 after=0 ok=true
+ds_cost_basic_material: before=2 after=0 ok=true
+[afterAll 2026-09-10T09:25:46.923Z]
+ds_quote_material: before=0 after=0 ok=true
+ds_quote_customer_part: before=0 after=0 ok=true
+ds_cost_basic_material: before=0 after=0 ok=true

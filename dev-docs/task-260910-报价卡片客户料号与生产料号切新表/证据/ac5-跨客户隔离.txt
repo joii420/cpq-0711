@@ -1,0 +1,42 @@
+=== 阶段A（只有 T260910-C2 有绑定）===
+[T5.1a] QT-20260907-0592 卡片=[[]]
+[T5.1b] T260907T-B00001 浮层=
+生产料号
+未绑定生产料号
+[T5.1c 阶段A] 候选 3120011203 = {"partNo":"3120011203","partName":"触头支架总成","unitWeight":"8.6","customerSpecific":false}
+
+=== 阶段B（本客户 CUST-0004 也有绑定）===
+候选={
+ "partNo": "3120011203",
+ "partName": "触头支架总成",
+ "unitWeight": "8.6",
+ "customerSpecific": false,
+ "hfPartInfo": {
+  "partNo": "T260910-P-AAA",
+  "partName": "T260910-零件-AAA",
+  "specification": "T260910-规格-A",
+  "sizeInfo": "T260910-尺寸-A",
+  "oldMaterialNo": "T260910-旧-A"
+ }
+}
+=== 阶段A（只有 T260910-C2 有绑定）===
+[T5.1a] QT-20260907-0592 卡片=[[]]
+[T5.1b] T260907T-B00001 浮层=
+生产料号
+未绑定生产料号
+[T5.1c 阶段A] 候选 3120011203 = {"partNo":"3120011203","partName":"触头支架总成","unitWeight":"8.6","customerSpecific":false}
+
+=== 阶段B（本客户 CUST-0004 也有绑定）===
+候选={
+ "partNo": "3120011203",
+ "partName": "触头支架总成",
+ "unitWeight": "8.6",
+ "customerSpecific": false,
+ "hfPartInfo": {
+  "partNo": "T260910-P-AAA",
+  "partName": "T260910-零件-AAA",
+  "specification": "T260910-规格-A",
+  "sizeInfo": "T260910-尺寸-A",
+  "oldMaterialNo": "T260910-旧-A"
+ }
+}

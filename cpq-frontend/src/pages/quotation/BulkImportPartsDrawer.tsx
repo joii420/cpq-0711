@@ -1,43 +1,34 @@
 /**
- * BulkImportPartsDrawer
+ * BulkImportPartsDrawer —— ⚠️ 组件本体已删，本文件现在只是工具函数的载体。
  *
- * 报价单 Step2 — 「批量从基础数据导入产品」抽屉。
+ * 历史：这里原本是报价单 Step2 的「批量从基础数据导入产品」抽屉
+ * （候选料号列表 → 按客户报价模板批量生成 LineItem）。
  *
- * 流程:
- *   1. 进抽屉 → 调 GET /api/cpq/quotations/customer-part-candidates 拿候选料号
- *   2. 列表显示(客户专属优先,可搜索 + 多选 + 全选)
- *   3. 用户确认 → 用 quotation.customerTemplateId 读模板 → 为每个选中料号生成 LineItem
- *   4. 回调 onConfirm 把 lineItems 数组传给父组件
+ * task-260910(F-7)：用户问「这个功能入口在哪」，实查发现
+ * `<BulkImportPartsDrawer` 在整个 src/ 零命中 —— 组件本体无人渲染、`export default` 无消费者，
+ * Step2 的「+ 添加产品」下拉只有「从已有产品添加」/「选配添加」两项，从来没有批量导入这一项。
+ * ⇒ 删组件本体 + `export default` + 只被它用到的 import / Props / hooks。
  *
- * 设计依据:Phase 4(基于已绑定客户报价模板的"批量料号 + 模板展开"短路径)
+ * 🚫 文件本身不能删 —— 下面两个 `export function` 仍是活的公共构件：
+ *   · buildComponentDataFromTemplate  ← enrichComponentData.ts
+ *                                       + templateSnapshot.precision.test.ts / formulaIdCarry.repair0805.test.ts
+ *   · buildLineItemFromTemplate       ← QuotationStep2.tsx / QuotationWizard.tsx / AddProductModal.tsx
+ *                                       + keyPresenceAuthority.test.ts
+ * 同理 `CustomerPartCandidate` 也保留 —— 它是 buildLineItemFromTemplate 的入参类型。
+ *
+ * 🚫 也不要顺手动 `quotationService.listCustomerPartCandidates`：
+ *   删掉的组件不是它唯一的调用方，QuotationWizard.tsx 里「导入报价数据后自动建单」仍在调它（无 UI 列表）。
+ *
+ * 文件名与 .tsx 扩展名保持不变 —— 三个源文件 + 三个测试按 './BulkImportPartsDrawer' 导入，改名是另一件事。
  */
-import React, { useEffect, useMemo, useState } from 'react';
-import {
-  Drawer,
-  Table,
-  Input,
-  Tag,
-  Button,
-  Alert,
-  message,
-  Space,
-  Spin,
-  Empty,
-  Typography,
-} from 'antd';
-import { SearchOutlined } from '@ant-design/icons';
-import type { ColumnsType } from 'antd/es/table';
-import { quotationService } from '../../services/quotationService';
-import { templateService } from '../../services/templateService';
 import type { LineItem, ComponentDataItem, ComponentField, ComponentFormula } from './QuotationStep2';
 import { genUUID } from '../../utils/uuid';
-import { formatNumber } from '../../utils/formatNumber';
 import type { DecimalString } from '../../utils/precision';
 import { tryParseSnapshotJsonLossless } from '../../utils/losslessJson';
 import { parseTemplateComponentsSnapshot } from './templateSnapshot';
 
-const { Text } = Typography;
-
+/** buildLineItemFromTemplate 的入参类型 —— 后端 CustomerPartCandidateDTO 的前端镜像。
+ *  🚫 不要跟着组件一起删：它是仍在服役的工具函数签名的一部分。 */
 interface CustomerPartCandidate {
   partNo: string;
   partName?: string;
@@ -47,29 +38,20 @@ interface CustomerPartCandidate {
   customerPartName?: string;
   customerDrawingNo?: string;
   baseCurrency?: string;
-  /** 「生产料号管理」(internal_material) 视角的料号详情 */
+  /** 生产料号详情。task-260910(B-4/F-5)：换源到
+   *  ds_quote_material.production_no → ds_cost_basic_material ∪ ds_cost_detail_material，
+   *  字段集与 QuotationDTO.HfPartInfo 对齐（删 statusCode、加 oldMaterialNo）。 */
   hfPartInfo?: {
     partNo?: string;
     partName?: string;
     specification?: string;
     sizeInfo?: string;
-    statusCode?: string;
+    oldMaterialNo?: string;
   };
   quoteCurrency?: string;
   customerSpecific: boolean;
   /** mat_customer_part_mapping.current_version — 后端 V161+ 透传, 用于初始化 LineItem.partVersionLocked */
   currentVersion?: number;
-}
-
-interface Props {
-  open: boolean;
-  onClose: () => void;
-  customerId: string;
-  /** 已绑定的客户报价模板 id;无模板时不允许进入抽屉 */
-  customerTemplateId: string | undefined;
-  /** 当前已加入报价单的料号集合(避免重复添加) */
-  existingPartNos: string[];
-  onConfirm: (lineItems: LineItem[]) => void;
 }
 
 // ─── helpers(简化版,只做必要字段映射) ──────────────────────────────────────
@@ -237,7 +219,9 @@ export function buildLineItemFromTemplate(tmpl: any, part: CustomerPartCandidate
     // 生产料号管理 视角详情（卡片右侧 popover 用）—— 候选 API 已 LEFT JOIN internal_material 返回
     hfPartInfo: part.hfPartInfo,
     templateId: tmpl.id,
-    templateName: tmpl.name + (tmpl.version ? ` ${tmpl.version}` : ''),
+    // task-260910(F-6)：原先这里还设 templateName，供卡片头部「模板: xxx」徽标显示。
+    // 用户裁决不需要该徽标 ⇒ 徽标与 LineItem.templateName 字段一并删除。
+    // 该字段从未进过 saveDraft payload（payload 只送 templateId），删除不影响持久化。
     productAttributeValues,
     productAttributes,
     componentData,
@@ -248,192 +232,3 @@ export function buildLineItemFromTemplate(tmpl: any, part: CustomerPartCandidate
     seedProcessesFromBase: true,
   };
 }
-
-// ─── 主组件 ───────────────────────────────────────────────────────────────
-
-const BulkImportPartsDrawer: React.FC<Props> = ({
-  open,
-  onClose,
-  customerId,
-  customerTemplateId,
-  existingPartNos,
-  onConfirm,
-}) => {
-  const [candidates, setCandidates] = useState<CustomerPartCandidate[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState('');
-  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
-  const [importing, setImporting] = useState(false);
-
-  const existingSet = useMemo(() => new Set(existingPartNos), [existingPartNos]);
-
-  useEffect(() => {
-    if (!open || !customerId) return;
-    setLoading(true);
-    setSelectedKeys([]);
-    setSearch('');
-    quotationService.listCustomerPartCandidates(customerId)
-      .then((res) => setCandidates(res.data || []))
-      .catch((e: any) => {
-        message.error(e?.message || '加载料号候选失败');
-        setCandidates([]);
-      })
-      .finally(() => setLoading(false));
-  }, [open, customerId]);
-
-  const filtered = useMemo(() => {
-    if (!search.trim()) return candidates;
-    const kw = search.trim().toLowerCase();
-    return candidates.filter((c) =>
-      (c.partNo && c.partNo.toLowerCase().includes(kw)) ||
-      (c.partName && c.partName.toLowerCase().includes(kw)) ||
-      (c.customerProductNo && c.customerProductNo.toLowerCase().includes(kw)) ||
-      (c.customerPartName && c.customerPartName.toLowerCase().includes(kw))
-    );
-  }, [candidates, search]);
-
-  const handleConfirm = async () => {
-    if (!customerTemplateId) {
-      message.error('当前报价单未绑定客户报价模板,无法批量加产品');
-      return;
-    }
-    if (selectedKeys.length === 0) {
-      message.warning('请至少选择 1 个料号');
-      return;
-    }
-    setImporting(true);
-    try {
-      const tplRes = await templateService.getById(customerTemplateId);
-      const tmpl = tplRes.data;
-      const selectedParts = candidates.filter((c) => selectedKeys.includes(c.partNo));
-      const lineItems = selectedParts.map((p) => buildLineItemFromTemplate(tmpl, p));
-      onConfirm(lineItems);
-      message.success(`已添加 ${lineItems.length} 个产品`);
-      onClose();
-    } catch (e: any) {
-      message.error(e?.message || '加载模板失败');
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  const columns: ColumnsType<CustomerPartCandidate> = [
-    {
-      title: '料号',
-      dataIndex: 'partNo',
-      key: 'partNo',
-      width: 140,
-      render: (v: string, row) => (
-        <Space size={4}>
-          <Text style={{ fontFamily: 'monospace' }}>{v}</Text>
-          {row.customerSpecific && <Tag color="purple" style={{ fontSize: 10, padding: '0 4px' }}>专属</Tag>}
-          {existingSet.has(v) && <Tag color="default" style={{ fontSize: 10, padding: '0 4px' }}>已添加</Tag>}
-        </Space>
-      ),
-    },
-    { title: '料号名称', dataIndex: 'partName', key: 'partName', ellipsis: true },
-    {
-      title: '单重',
-      dataIndex: 'unitWeight',
-      key: 'unitWeight',
-      width: 100,
-      render: (v, row) => v != null ? `${formatNumber(v) ?? '—'} ${row.weightUnit ?? ''}` : '—',
-    },
-    {
-      title: '客户产品编号',
-      dataIndex: 'customerProductNo',
-      key: 'customerProductNo',
-      width: 140,
-      render: (v) => v ? <Text style={{ fontFamily: 'monospace', fontSize: 12 }}>{v}</Text> : <Text type="secondary">—</Text>,
-    },
-    {
-      title: '客户图号',
-      dataIndex: 'customerDrawingNo',
-      key: 'customerDrawingNo',
-      width: 120,
-      render: (v) => v || <Text type="secondary">—</Text>,
-    },
-  ];
-
-  return (
-    <Drawer
-      title="批量从基础数据导入产品"
-      placement="right"
-      width={1100}
-      open={open}
-      onClose={onClose}
-      footer={
-        <div style={{ textAlign: 'right' }}>
-          <Button onClick={onClose} style={{ marginRight: 8 }} disabled={importing}>取消</Button>
-          <Button
-            type="primary"
-            loading={importing}
-            disabled={selectedKeys.length === 0 || !customerTemplateId}
-            onClick={handleConfirm}
-          >
-            添加 {selectedKeys.length} 个产品
-          </Button>
-        </div>
-      }
-    >
-      {!customerTemplateId && (
-        <Alert
-          type="warning"
-          showIcon
-          message="未绑定客户报价模板"
-          description="该报价单创建时没有自动匹配到客户报价模板,无法批量导入。请先去「模板配置」配置一个适用模板,或用「+添加产品」按钮单独添加。"
-          style={{ marginBottom: 12 }}
-        />
-      )}
-
-      {customerTemplateId && (
-        <Alert
-          type="info"
-          showIcon
-          message="基于已绑定模板批量生成产品行"
-          description="选中的每个料号都会按当前报价单已匹配的「客户报价模板」生成一行产品(含组件/字段/公式结构),后续可在产品卡片视图编辑。"
-          style={{ marginBottom: 12 }}
-        />
-      )}
-
-      <Input
-        placeholder="搜索料号 / 名称 / 客户产品编号"
-        prefix={<SearchOutlined />}
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        style={{ marginBottom: 12 }}
-        allowClear
-      />
-
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: '60px 0' }}>
-          <Spin size="large" tip="加载候选料号..." />
-        </div>
-      ) : filtered.length === 0 ? (
-        <Empty description={candidates.length === 0 ? '该客户暂无关联料号(需先导入基础数据)' : '无匹配料号'} />
-      ) : (
-        <Table
-          rowKey="partNo"
-          columns={columns}
-          dataSource={filtered}
-          size="small"
-          pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: ['20', '50', '100'] }}
-          rowSelection={{
-            selectedRowKeys: selectedKeys,
-            onChange: (keys) => setSelectedKeys(keys as string[]),
-            getCheckboxProps: (r) => ({ disabled: existingSet.has(r.partNo) }),
-          }}
-          scroll={{ x: 'max-content' }}
-        />
-      )}
-
-      <div style={{ marginTop: 8, color: '#8c8c8c', fontSize: 12 }}>
-        已选 {selectedKeys.length} / 共 {candidates.length} 个候选料号
-        {candidates.filter((c) => c.customerSpecific).length > 0 &&
-          `(其中 ${candidates.filter((c) => c.customerSpecific).length} 个客户专属)`}
-      </div>
-    </Drawer>
-  );
-};
-
-export default BulkImportPartsDrawer;

@@ -3040,7 +3040,10 @@
 | quoteCurrency | String | 报价货币 |
 | customerSpecific | boolean | 是否客户专属（true=有 mapping） |
 | currentVersion | Integer | 客户映射当前版本，透传到 line_item.part_version_locked |
-| hfPartInfo | HfPartInfo | 生产料号详情（partNo/partName/specification/sizeInfo/statusCode），缺失为 null |
+| hfPartInfo | HfPartInfo | 生产料号详情（partNo/partName/specification/sizeInfo/**oldMaterialNo**），未绑定生产料号时为 null |
+
+> 🔄 **task-260910 换源**：`partNo` 现在是**生产料号**（`ds_quote_material.production_no`），不再是销售料号；明细取自 `ds_cost_basic_material ∪ ds_cost_detail_material`（basic 优先 + 逐列 COALESCE）。**删 `statusCode`、加 `oldMaterialNo`** —— 两张核价表都没有状态列。旧源 `internal_material`（全表 0 行）与 `material_master` 兜底已停用。
+> 来源任务：`task-260910-报价卡片客户料号与生产料号切新表`｜回写日期：2026-09-10
 
 #### 4.1.5 保存草稿
 - **功能**: 全量保存报价单草稿（表头 + 行项 + 组件数据），保存后按新行重建 snapshot_rows。含分段耗时埋点 `[draft-profile]`
@@ -3565,14 +3568,17 @@
 | driftedRecords | DriftedRecordDTO[] | 漂移明细（hasDrift=true 时） |
 | cardValuesWarming | boolean | 卡片值 warm 在飞标志，默认 false |
 
-`QuotationDTO.LineItemDTO`（行项）主要字段：`id`、`productId`、`templateId`、`productPartNo`、`productName`、`customerPartNo`、`customerPartName`、`customerProductNo`、`customerDrawingNo`、`hfPartInfo`(生产料号详情)、`productAttributeValues`、`subtotal`、`systemDiscountRate`、`finalDiscountRate`、`discountAdjustmentReason`、`isManuallyAdjusted`、`sortOrder`、`processes`(ProcessDTO[])、`compositeProcesses`(List<Map> 组合工艺步骤)、`componentData`(ComponentDataDTO[])、`snapshot`(SnapshotDTO)、`partVersionLocked`、`productType`(SIMPLE/COMPOSITE)、`compositeType`(SIMPLE/COMPOSITE/PART)、`parentLineItemId`、`quoteCardValues`/`quoteExcelValues`/`costingCardValues`/`costingExcelValues`(4 份值 JSON 字符串)、以及 Step3 行级折扣字段 `annualVolume`/`discountSource`/`discountBaseAmount`/`discountRateApplied`/`lineDiscountAmount`/`lineUnitPrice`/`lineFinalPrice`/`lineTotalAmount`/`discountRuleCode`。
+`QuotationDTO.LineItemDTO`（行项）主要字段：`id`、`productId`、`templateId`、`productPartNo`、`productName`、`customerPartNo`、`customerPartName`、`customerProductNo`、`customerDrawingNo`（🔄 task-260910 换源 `material_customer_map` → `ds_quote_customer_part`，按 `customer_part_no` 精确消歧、空则按 `material_no` 回退）、`hfPartInfo`(生产料号详情)、`productAttributeValues`、`subtotal`、`systemDiscountRate`、`finalDiscountRate`、`discountAdjustmentReason`、`isManuallyAdjusted`、`sortOrder`、`processes`(ProcessDTO[])、`compositeProcesses`(List<Map> 组合工艺步骤)、`componentData`(ComponentDataDTO[])、`snapshot`(SnapshotDTO)、`partVersionLocked`、`productType`(SIMPLE/COMPOSITE)、`compositeType`(SIMPLE/COMPOSITE/PART)、`parentLineItemId`、`quoteCardValues`/`quoteExcelValues`/`costingCardValues`/`costingExcelValues`(4 份值 JSON 字符串)、以及 Step3 行级折扣字段 `annualVolume`/`discountSource`/`discountBaseAmount`/`discountRateApplied`/`lineDiscountAmount`/`lineUnitPrice`/`lineFinalPrice`/`lineTotalAmount`/`discountRuleCode`。
 
 嵌套子结构：
 - `ProcessDTO`：`id`、`processId`
 - `ComponentDataDTO`：`id`、`componentId`、`tabName`、`rowData`、`deletedRowKeys`(墓碑数组 JSON，默认"[]")、`subtotal`、`sortOrder`
 - `SnapshotDTO`：`id`、`productPartNo`、`productCategory`、`productSpecification`
 - `ApprovalDTO`：`id`、`approverId`、`approverName`、`action`、`comment`、`actedAt`、`createdAt`
-- `HfPartInfo`：`partNo`、`partName`、`specification`、`sizeInfo`、`statusCode`
+- `HfPartInfo`：`partNo`(生产料号)、`partName`、`specification`、`sizeInfo`、`oldMaterialNo`
+  > 🔄 task-260910：删 `statusCode`、加 `oldMaterialNo`；数据源 `ds_quote_material` → `ds_cost_basic/detail_material`。
+  > **`CustomerPartCandidateDTO.HfPartInfo` 字段集与本条完全一致**（同一个 `ProductionPartInfoService`）。
+  > 来源任务：`task-260910-报价卡片客户料号与生产料号切新表`｜回写日期：2026-09-10
 
 ---
 
