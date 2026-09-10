@@ -50,6 +50,8 @@ import java.util.regex.Pattern;
 @ApplicationScoped
 public class BuilderService {
 
+    private static final org.jboss.logging.Logger LOG =
+            org.jboss.logging.Logger.getLogger(BuilderService.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final Pattern NAMED_VAR = Pattern.compile("(?<!:):([a-zA-Z_][a-zA-Z0-9_]*)");
 
@@ -108,6 +110,8 @@ public class BuilderService {
         } catch (Exception e) {
             throw new BuilderApiException(500, "BUILDER_CONFIG_CORRUPT", "builder_config 解析失败: " + e.getMessage(), Map.of());
         }
+        // task-260909 B-5①（AC-15，api.md §1.6）：fieldType 为空的列，回填 component.fields[] 里的**真实值**。
+        backfillFieldTypesFromComponent(resp.builderConfig, component);
         resp.builderVersion = view.builderVersion;
         resp.viewState = "BUILDER";
         resp.isLegacyHandwritten = false;
@@ -151,6 +155,162 @@ public class BuilderService {
      */
     private static CompileDialect resolveDialect(BuilderConfig cfg) {
         return CompileDialect.parse(cfg == null ? null : cfg.dialect);
+    }
+
+    // ---------------- 字段类型（task-260909 B-1 / B-2，api.md §1.2~§1.4） ----------------
+
+    /**
+     * 配置器可产出的 {@code field_type} 值域（task-260909 D-4，api.md §1.2）—— <b>恰好 3 个</b>。
+     *
+     * <p>🚫 <b>不要按 {@code ComponentService.VALID_FIELD_TYPES}（6 个）放宽</b>：那是"组件字段这一层
+     * 允许存在什么类型"，本集合是"<b>取数配置器这一条产线能产出什么类型</b>"，两者是包含关系不是同一件事。
+     * 差集里的 {@code FORMULA} / {@code FIXED_VALUE} / {@code LIST_FORMULA} 分别还需要
+     * {@code formula_id} / {@code content} / {@code conditional_formula} 才是完整字段，而<b>配置器根本
+     * 不收集这些</b> —— 放它们进来只会产出「存得下、但必然坏」的字段：下游 {@code ComponentService}
+     * 的白名单会照样放行（{@code FORMULA} 在它的 6 个里），于是<b>全程不报错</b>，
+     * 到渲染期才表现为空值/"—"。这正是本任务要堵的那个静默故障面。
+     */
+    static final List<String> ALLOWED_FIELD_TYPES = List.of("BASIC_DATA", "INPUT_TEXT", "INPUT_NUMBER");
+
+    /**
+     * 保存请求里显式传来的 {@code fieldType} 必须落在 {@link #ALLOWED_FIELD_TYPES} 内，否则 400
+     * （task-260909 B-1，AC-8）。
+     *
+     * <p><b>不传 / null / 空串 → 放行</b>，交给 {@link #defaultFieldType} 按方言推（AC-9 向后兼容门禁：
+     * 旧客户端不发这个字段，不能因此碎掉）。空串按"未传"处理，与
+     * {@link CompileDialect#parse} 对 {@code dialect} 的 {@code isBlank()} 口径一致 ——
+     * 两处都是"外部可选字符串"，判据不该各自漂移。
+     *
+     * <p>只校验<b>用户请求里的列</b>（{@code cfg.columns}）：编译器为价格策略自动补出的成员
+     * （{@code SemanticCompiler#resolvePricePlan} 往 {@code effectiveColumns} 里 add 的那个编码列）
+     * {@code fieldType} 恒为 null，本来就走默认，没有可校验的用户输入。
+     */
+    private static void assertValidFieldTypes(BuilderConfig cfg) {
+        if (cfg == null || cfg.columns == null) return;
+        for (BuilderConfig.ColumnConfig col : cfg.columns) {
+            if (col == null || col.fieldType == null || col.fieldType.isBlank()) continue;
+            if (!ALLOWED_FIELD_TYPES.contains(col.fieldType)) {
+                throw new BuilderApiException(400, "BUILDER_FIELD_TYPE_UNKNOWN",
+                        "非法 fieldType: " + col.fieldType + "，合法值："
+                                + String.join(" / ", ALLOWED_FIELD_TYPES),
+                        Map.of("received", col.fieldType,
+                                "fieldName", col.fieldName == null ? "" : col.fieldName,
+                                "allowed", ALLOWED_FIELD_TYPES));
+            }
+        }
+    }
+
+    /**
+     * 列没显式指定 {@code fieldType} 时的默认值（task-260909 B-2 / D-2，api.md §1.3）。
+     *
+     * <ul>
+     *   <li><b>核价两套</b>（{@code COST_BASIC} / {@code COST_DETAIL}）→ {@code BASIC_DATA}：这些列的
+     *       语义是"从 SQL 视图取来的展示值"，不是用户输入。原先恒推 {@code INPUT_*} 的后果是核价页签
+     *       渲染出可编辑 {@code <input>}，而核价侧根本没有增量写路径
+     *       （{@code useSnapEdit = cardSide === 'QUOTE'}）⇒ 用户打字、失焦、刷新就没了，<b>全程不报错</b>。</li>
+     *   <li><b>报价侧</b>（{@code QUOTE}）→ 维持按数据类型推（{@code TEXT → INPUT_TEXT}，其余
+     *       {@code INPUT_NUMBER}），<b>逐位不变</b>（AC-5 零回归门禁）—— 那边用户确实要填数。</li>
+     * </ul>
+     *
+     * <p>🔑 用 {@link CompileDialect#isCosting()} 判，<b>不要逐个枚举值写 {@code ==}</b>
+     * （该方法 javadoc 明写：漏一个就是静默走错分支）。
+     *
+     * <p>🚫 <b>这里改的是 {@code field_type} 的「初值」，不是绑定键的「规则」。</b>
+     * 绑定键仍在 {@code buildComponentUpdateRequest} 里<b>跟 {@code field_type} 走</b>
+     * （{@code BASIC_DATA → 顶层 basic_data_path}，{@code INPUT_* → default_source.path}），
+     * D-73/B-30 的「不跟报价/核价侧走」不变量原样保留 —— 别把本方法误读成"按侧决定绑定键"回潮，
+     * 那正是 {@link CompileDialect} 里已被删除的 {@code bindingKeyName()} 干的事。
+     *
+     * <p>⚠️ <b>前端 {@code SqlViewBuilderTab} 里有一份同规则的副本</b>（新拖入列的初值），
+     * 这是<b>有意的双写</b>：前端算是为了"用户看到的就是将要保存的"，后端算是为了"旧客户端不传时
+     * 仍正确"（AC-9）。🚫 不要"顺手收敛成一处"——收掉哪一边都会丢掉它各自负责的那件事；
+     * 但两边规则必须同步改。
+     */
+    static String defaultFieldType(CompileDialect dialect, String resolvedDataType) {
+        if (dialect != null && dialect.isCosting()) return "BASIC_DATA";
+        return "TEXT".equals(resolvedDataType) ? "INPUT_TEXT" : "INPUT_NUMBER";
+    }
+
+    /**
+     * 把 effective 值回填进 {@code columns[].fieldType}，使其落进 {@code builder_config} 后不再为空
+     * （task-260909 B-5②，AC-16，api.md §1.6）。
+     *
+     * <p>🔑 <b>为什么必须在 {@code doCompile} 之后、序列化 {@code builder_config} 之前调</b>：
+     * 默认值要用编译器回填的 {@code resolvedDataType}（编译前它是 null，报价侧会全推成
+     * {@code INPUT_NUMBER}）；而 {@code builder_config} 的序列化早于
+     * {@code buildComponentUpdateRequest}，等到那里再回填就来不及了。
+     *
+     * <p>📌 入参传 {@code r.effectiveColumns} 即可覆盖 {@code req.columns}：两者是<b>同一批对象引用</b>
+     * （{@code SemanticCompiler} 只是 {@code new ArrayList<>(cfg.columns)} 浅拷贝了列表），
+     * 编译器正是靠这一点把 {@code viewColumn} / {@code resolvedDataType} 回填给请求体的。
+     * 价格策略自动补出的那一列不在 {@code req.columns} 里，不会被写进 {@code builder_config}（本就不该写）。
+     *
+     * <p>🚫 <b>规则不在这里第二次实现</b> —— 恒调 {@link #defaultFieldType}，与
+     * {@code buildComponentUpdateRequest} 同一个真源。两处调用点都在，是因为它们各自守着不同的东西：
+     * 本方法保证「<b>存进 builder_config 的 == 生效的</b>」（AC-16），那边保证「即便有人绕过本方法，
+     * 落库的 field_type 仍然对」。
+     */
+    private static void applyEffectiveFieldTypes(List<BuilderConfig.ColumnConfig> columns,
+                                                 CompileDialect dialect) {
+        if (columns == null) return;
+        for (BuilderConfig.ColumnConfig col : columns) {
+            if (col == null) continue;
+            if (col.fieldType == null || col.fieldType.isBlank()) {
+                col.fieldType = defaultFieldType(dialect, col.resolvedDataType);
+            }
+        }
+    }
+
+    /**
+     * {@code GET /builder} 的回填（task-260909 B-5①，AC-15，api.md §1.6）：
+     * {@code builder_config.columns[].fieldType} 为空时，取 {@code component.fields[]} 里<b>同名字段</b>
+     * 的真实 {@code field_type} 返回。
+     *
+     * <p>🚨 <b>没有这一步，{@code F-3}（前端开始发 fieldType）就是在 42 个存量组件上埋雷</b>：
+     * 存量 {@code builder_config.fieldType} 全为 null（实测 351/387 列），前端只能显示兜底值，
+     * 用户「打开 → 什么都不改 → 保存」就把兜底值写进了 {@code field_type} ——
+     * NUMBER 列降级成文本，或核价侧被静默改成 {@code BASIC_DATA}。
+     * <b>不变量：界面回填显示的 == 实际生效的。</b>
+     *
+     * <p>⚠️ <b>按字段名匹配，🚫 不按下标</b>：列可以被拖拽排序，两边顺序不保证一致 ——
+     * 按下标匹配会把类型串到别的列上，而且<b>不报错</b>（{@code AP-54} 同族：过滤/重排后的下标当原下标用）。
+     *
+     * <p>⚠️ <b>读回的值不过滤、不校验</b>：实测存量里有 {@code FORMULA}（{@code COMP-2300}）——
+     * 那是公式字段，独立管理，本就不是配置器的列，前端不会为它渲染选择器。
+     * 在读路径上按 3 值白名单过滤或报错，只会让「打得开的组件」变成「打不开的组件」。
+     * 白名单是<b>写路径</b>的守卫（{@link #assertValidFieldTypes}），不是读路径的。
+     *
+     * <p>N+1 自检：{@code component.fields} 是该组件自己的 jsonb 列（已随实体加载），
+     * 本方法先把它解析成一张 name→field_type 的内存 Map <b>再</b>遍历列，
+     * <b>零 SQL、与列数无关</b>；🚫 不要改成在列循环里逐个去查字段。
+     */
+    private void backfillFieldTypesFromComponent(BuilderConfig cfg, Component component) {
+        if (cfg == null || cfg.columns == null || cfg.columns.isEmpty()) return;
+        boolean anyMissing = cfg.columns.stream()
+                .anyMatch(c -> c != null && (c.fieldType == null || c.fieldType.isBlank()));
+        if (!anyMissing) return;
+
+        Map<String, String> realTypeByName = new HashMap<>();
+        try {
+            com.fasterxml.jackson.databind.JsonNode arr = MAPPER.readTree(
+                    component.fields == null || component.fields.isBlank() ? "[]" : component.fields);
+            for (com.fasterxml.jackson.databind.JsonNode f : arr) {
+                String name = f.path("name").asText(null);
+                String ft = f.path("field_type").asText(null);
+                if (name != null && ft != null && !ft.isBlank()) realTypeByName.putIfAbsent(name, ft);
+            }
+        } catch (Exception e) {
+            // 🚫 读路径不因为字段 jsonb 解析失败就 500 —— 那会让组件直接打不开。
+            //    回填是"锦上添花"，拿不到就维持原样（前端仍走它自己的兜底），不放大故障面。
+            LOG.warnf(e, "builder GET: 解析 component.fields 失败，跳过 fieldType 回填 componentId=%s", component.id);
+            return;
+        }
+
+        for (BuilderConfig.ColumnConfig col : cfg.columns) {
+            if (col == null || !(col.fieldType == null || col.fieldType.isBlank())) continue;
+            String real = realTypeByName.get(col.fieldName);
+            if (real != null) col.fieldType = real;   // 同名字段找不到（列被改名/新拖入未保存）→ 保持 null
+        }
     }
 
     /**
@@ -765,6 +925,12 @@ public class BuilderService {
     public SaveResponse save(UUID componentId, SaveRequest req, String operatorId) {
         Component component = requireComponent(componentId);
 
+        // task-260909 B-1（AC-8）：fieldType 白名单校验。
+        // 🔑 **必须是 save() 的第一件事**（早于 inspect / doCompile / 任何 persist）——
+        //    AC-8 断言"校验失败时库中不发生变更"。虽然 BuilderApiException 是 RuntimeException、
+        //    @Transactional 会回滚，但把校验放在**任何写之前**才是不依赖回滚语义的证明。
+        assertValidFieldTypes(req);
+
         InspectResponse inspect = inspect(componentId, req);
         if (inspect.blocked) {
             Map<String, Object> extra = new LinkedHashMap<>();
@@ -776,6 +942,11 @@ public class BuilderService {
         }
 
         CompileResult r = doCompile(req);
+
+        // task-260909 B-5②（AC-16）：把 effective fieldType 回填进请求体的列，使下面落进
+        // builder_config 的值 == 实际生效的值。必须在 doCompile 之后（要 resolvedDataType）、
+        // 在 builder_config 序列化之前（就在下面几行）。详见 applyEffectiveFieldTypes 的 javadoc。
+        applyEffectiveFieldTypes(r.effectiveColumns, resolveDialect(req));
 
         String viewName = resolveOrGenerateViewName(component);
         ComponentSqlView existing = sqlViewRepository.findAnyByComponentAndName(componentId, viewName).orElse(null);
@@ -867,6 +1038,10 @@ public class BuilderService {
         // 🚫 本行与「配置器存 BOM 树组件 400」无关：那是 task-260819 的 V413 种子把显示名
         //    写进了 semantic_tab_view.tab_type 键值列，由其 V417 修复（D-128/S-33）。
 
+        // task-260909 B-2：默认 field_type 按数据集方言分叉（见 defaultFieldType 的 javadoc）。
+        // 循环外解一次——resolveDialect 是纯函数解析请求体字符串，不查库，但没有理由在循环里重复解。
+        CompileDialect dialect = resolveDialect(req);
+
         List<Map<String, Object>> fields = new ArrayList<>();
         for (BuilderConfig.ColumnConfig col : r.effectiveColumns) {
             Map<String, Object> f = new LinkedHashMap<>();
@@ -877,8 +1052,13 @@ public class BuilderService {
             boolean inSubtotal = Boolean.TRUE.equals(col.inSubtotal);
             f.put("is_amount", isAmount);
             f.put("is_subtotal", inSubtotal);
-            String fieldType = "TEXT".equals(col.resolvedDataType) ? "INPUT_TEXT" : "INPUT_NUMBER";
-            String effectiveFieldType = col.fieldType != null ? col.fieldType : fieldType;
+            // 显式传值恒优先于默认（api.md §1.3）；不传/空串才按方言推（B-2）。
+            // 空串按"未传"处理，与 assertValidFieldTypes 的放行口径必须一致——否则空串会绕过
+            // 校验、又不走默认，最后原样落成一个空的 field_type。
+            boolean explicit = col.fieldType != null && !col.fieldType.isBlank();
+            String effectiveFieldType = explicit
+                    ? col.fieldType
+                    : defaultFieldType(dialect, col.resolvedDataType);
             f.put("field_type", effectiveFieldType);
             f.put("sort_order", fields.size());
             // B-30 (D-73, task-260819)：绑定键跟 field_type 走，不跟报价/核价侧走——
