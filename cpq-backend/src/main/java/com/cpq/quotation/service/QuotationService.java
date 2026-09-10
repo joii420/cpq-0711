@@ -89,6 +89,10 @@ public class QuotationService {
     @Inject
     EntityManager em;
 
+    /** task-260910 · B-2：销售料号 → 生产料号详情的唯一取数入口（与选品候选共用） */
+    @Inject
+    ProductionPartInfoService productionPartInfoService;
+
     @Inject
     ObjectMapper objectMapper;
 
@@ -3507,33 +3511,51 @@ public class QuotationService {
         List<QuotationLineItem> items = QuotationLineItem.list("quotationId = ?1 ORDER BY sortOrder ASC", quotationId);
         if (items.isEmpty()) return List.of();
 
-        // task-0723 B2: 一次性按 (customer.code, material_no) 批量查 V6 material_customer_map，避免 N+1。
-        // customerId 来自 quotation；hf_part_no 列表来自 lineItems 的 product_part_no_snapshot
-        // 或 product 表反查。前端"客户视角"展示这两个字段（PRD：产品卡片显示客户料号名称 + 客户产品编号）
-        // 全键严格匹配 (customer.code, material_no)，不做仅料号降级（防跨客户串号，见需求说明 Q5）。
+        // task-260910 · B-1：客户视角字段（客户料号名称 / 客户产品编号 / 客户图号）换源到
+        // ds_quote_customer_part。旧源 material_customer_map 在本客户下实测全是 pending 占号影子行
+        // （material_no=0028-26090000xx，其余列全空）⇒ 该链路恒空。
+        //   · 唯一键 (customer_no, customer_product_no)；customer_no 存的是 customer.code 不是 UUID
+        //   · 🚨 WHERE 必须含 customer_no = :cc —— 同一销售料号在不同客户下各存一行，漏过滤即跨客户串号
+        //   · 消歧优先级：customer_product_no = line_item.customer_part_no 精确匹配优先；
+        //     该列为空时才回退按 material_no 取一条，且回退路径带确定性 ORDER BY（实测存在
+        //     同 (customer_no, material_no) 对应 2 条不同 customer_product_no 的数据）
+        // 🚫 只是停止从 material_customer_map **读客户视角字段**；它的 pending 占号 / 引用守卫 /
+        //    过户·转正·回收机制仍在服役（task-260909 V6 老表退役 AC-10），本次一律不动。
         UUID customerId = items.get(0).quotationId == null ? null : (Quotation.findById(quotationId) instanceof Quotation q ? q.customerId : null);
-        Map<String, Object[]> customerMappingByHfPartNo = new HashMap<>();
-        Map<String, Object[]> matPartByHfPartNo = new HashMap<>();
+        String customerCode = productionPartInfoService.resolveCustomerCode(customerId);
+        Map<String, Object[]> customerPartByProductNo = new HashMap<>();   // customer_product_no → row
+        Map<String, Object[]> customerPartByMaterialNo = new HashMap<>();  // material_no → row（确定性首行）
         List<String> hfPartNos = new ArrayList<>();
+        List<String> customerPartNos = new ArrayList<>();
         for (QuotationLineItem li : items) {
             String hfpn = resolveHfPartNo(li);
             if (hfpn != null && !hfpn.isBlank() && !hfPartNos.contains(hfpn)) {
                 hfPartNos.add(hfpn);
             }
+            if (li.customerPartNo != null && !li.customerPartNo.isBlank()
+                    && !customerPartNos.contains(li.customerPartNo)) {
+                customerPartNos.add(li.customerPartNo);
+            }
         }
-        if (customerId != null && !hfPartNos.isEmpty()) {
+        if (customerCode != null && (!hfPartNos.isEmpty() || !customerPartNos.isEmpty())) {
+            List<String> ors = new ArrayList<>();
+            if (!hfPartNos.isEmpty()) ors.add("v.material_no IN (:mats)");
+            if (!customerPartNos.isEmpty()) ors.add("v.customer_product_no IN (:cpns)");
+            var q0 = em.createNativeQuery(
+                    "SELECT v.material_no, v.customer_part_name, v.customer_product_no, v.customer_drawing_no " +
+                    "FROM ds_quote_customer_part v " +
+                    "WHERE v.customer_no = :cc AND (" + String.join(" OR ", ors) + ") " +
+                    // 回退路径的确定性排序：同 (customer_no, material_no) 多行时恒取 customer_product_no 最小的那条
+                    "ORDER BY v.material_no, v.customer_product_no")
+                    .setParameter("cc", customerCode);
+            if (!hfPartNos.isEmpty()) q0.setParameter("mats", hfPartNos);
+            if (!customerPartNos.isEmpty()) q0.setParameter("cpns", customerPartNos);
             @SuppressWarnings("unchecked")
-            List<Object[]> rows = em.createNativeQuery(
-                    "SELECT v.material_no, v.customer_material_name, v.customer_product_no, v.customer_drawing_no " +
-                    "FROM material_customer_map v JOIN customer c ON c.code = v.customer_no " +
-                    "WHERE c.id = :cid AND v.material_no IN (:pns)")
-                    .setParameter("cid", customerId)
-                    .setParameter("pns", hfPartNos)
-                    .getResultList();
+            List<Object[]> rows = q0.getResultList();
             for (Object[] r : rows) {
-                if (r != null && r[0] != null) {
-                    customerMappingByHfPartNo.putIfAbsent(r[0].toString(), r);
-                }
+                if (r == null) continue;
+                if (r[2] != null) customerPartByProductNo.putIfAbsent(r[2].toString(), r);
+                if (r[0] != null) customerPartByMaterialNo.putIfAbsent(r[0].toString(), r);
             }
         }
         // 批量查 product_type — 供前端 ProductCard 按产品类型条件渲染 Tab
@@ -3556,39 +3578,14 @@ public class QuotationService {
             }
         }
 
-        // 同时一次性拉「生产料号管理」(internal_material) 数据；前端卡片右侧 popover 用。
-        // 用 internal_material 而不是 mat_part：生产料号管理是用户在产品-生产料号管理页维护的，
-        // 包含 name / specification / size / status_code，与 popover 字段一一对应。
-        // 缺失时回退到 mat_part 主档，避免没维护过的料号 popover 全空。
-        if (!hfPartNos.isEmpty()) {
-            @SuppressWarnings("unchecked")
-            List<Object[]> rows = em.createNativeQuery(
-                    "SELECT material_no, name, specification, size, status_code " +
-                    "FROM internal_material WHERE material_no IN (:pns)")
-                    .setParameter("pns", hfPartNos)
-                    .getResultList();
-            for (Object[] r : rows) {
-                if (r != null && r[0] != null) {
-                    matPartByHfPartNo.putIfAbsent(r[0].toString(), r);
-                }
-            }
-            // 回退：internal_material 没维护到的，从 material_master（V6 替代 mat_part）兜底
-            List<String> missing = new ArrayList<>();
-            for (String pn : hfPartNos) if (!matPartByHfPartNo.containsKey(pn)) missing.add(pn);
-            if (!missing.isEmpty()) {
-                @SuppressWarnings("unchecked")
-                List<Object[]> fbRows = em.createNativeQuery(
-                        "SELECT material_no AS part_no, material_name AS part_name, specification, " +
-                        "  dimension AS size_info, NULL AS status_code FROM material_master WHERE material_no IN (:pns)")
-                        .setParameter("pns", missing)
-                        .getResultList();
-                for (Object[] r : fbRows) {
-                    if (r != null && r[0] != null) {
-                        matPartByHfPartNo.putIfAbsent(r[0].toString(), r);
-                    }
-                }
-            }
-        }
+        // task-260910 · B-2：「生产料号」浮层换源。旧链路用**销售料号**查 internal_material
+        // （全表 0 行）→ 兜底 material_master（无该销售料号）⇒ hfPartInfo 恒 null，
+        // 前端只好回退显示销售料号（标题写"生产料号"值却是 S0001，这是本次修掉的核心 bug）。
+        // 新链路：ds_quote_material(customer_no, material_no) → production_no
+        //        → ds_cost_basic_material ∪ ds_cost_detail_material（basic 优先 + 逐列取非空）。
+        // 与选品候选（CustomerPartCandidateService）共用同一个 ProductionPartInfoService（AP-17 防重复实现）。
+        Map<String, ProductionPartInfoService.ProductionPartInfo> productionInfoByMaterialNo =
+                productionPartInfoService.loadByMaterialNos(customerCode, hfPartNos);
 
         // getById N+1 融合(kill switch cpq.getbyid-batch,默认 ON):4 类子表整单一次 IN 查 + 内存按
         // lineItemId 分组,替代 stream 内每行 4 条 WHERE line_item_id=? (680→4)。OFF=逐行(原行为)。
@@ -3638,7 +3635,10 @@ public class QuotationService {
 
             // 注入客户视角字段（前端优先展示）
             String hfpn = resolveHfPartNo(li);
-            Object[] mapping = hfpn != null ? customerMappingByHfPartNo.get(hfpn) : null;
+            // B-1 消歧：line_item.customer_part_no 精确命中 customer_product_no 优先；空则按 material_no 回退
+            Object[] mapping = (li.customerPartNo != null && !li.customerPartNo.isBlank())
+                    ? customerPartByProductNo.get(li.customerPartNo) : null;
+            if (mapping == null && hfpn != null) mapping = customerPartByMaterialNo.get(hfpn);
             if (mapping != null) {
                 dto.customerPartName = mapping[1] != null ? mapping[1].toString() : null;
                 dto.customerProductNo = mapping[2] != null ? mapping[2].toString() : null;
@@ -3648,15 +3648,17 @@ public class QuotationService {
             if (hfpn != null) {
                 dto.productType = productTypeByHfPartNo.get(hfpn);
             }
-            // 注入生产料号详情
-            Object[] mp = hfpn != null ? matPartByHfPartNo.get(hfpn) : null;
-            if (mp != null) {
+            // 注入生产料号详情（partNo = production_no，不是销售料号）。
+            // production_no 为空 → 这里取不到 → hfPartInfo 保持 null（前端显示「未绑定生产料号」）。
+            ProductionPartInfoService.ProductionPartInfo pi =
+                    hfpn != null ? productionInfoByMaterialNo.get(hfpn) : null;
+            if (pi != null) {
                 QuotationDTO.HfPartInfo info = new QuotationDTO.HfPartInfo();
-                info.partNo = mp[0] != null ? mp[0].toString() : null;
-                info.partName = mp[1] != null ? mp[1].toString() : null;
-                info.specification = mp[2] != null ? mp[2].toString() : null;
-                info.sizeInfo = mp[3] != null ? mp[3].toString() : null;
-                info.statusCode = mp[4] != null ? mp[4].toString() : null;
+                info.partNo = pi.productionNo;
+                info.partName = pi.partName;
+                info.specification = pi.specification;
+                info.sizeInfo = pi.sizeInfo;
+                info.oldMaterialNo = pi.oldMaterialNo;
                 dto.hfPartInfo = info;
             }
 

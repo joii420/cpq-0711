@@ -1,0 +1,40 @@
+期望=[
+ {
+  "sort_order": "0",
+  "customer_part_no": "T260907-CP1",
+  "customer_part_name": "客户件A-1"
+ },
+ {
+  "sort_order": "1",
+  "customer_part_no": "T260907-CP1",
+  "customer_part_name": "客户件A-1"
+ },
+ {
+  "sort_order": "2",
+  "customer_part_no": "T260907-CP2",
+  "customer_part_name": "客户件A-2"
+ },
+ {
+  "sort_order": "3",
+  "customer_part_no": "T260907-CP2",
+  "customer_part_name": "客户件A-2"
+ },
+ {
+  "sort_order": "4",
+  "customer_part_no": "T260907-CP3",
+  "customer_part_name": "客户件B"
+ },
+ {
+  "sort_order": "5",
+  "customer_part_no": "T260907-CP3",
+  "customer_part_name": "客户件B"
+ }
+]
+实际左侧=[
+ "客户件A-1 | 客户产品编号: T260907-CP1",
+ "客户件A-1 | 客户产品编号: T260907-CP1",
+ "客户件A-2 | 客户产品编号: T260907-CP2",
+ "客户件A-2 | 客户产品编号: T260907-CP2",
+ "客户件B | 客户产品编号: T260907-CP3",
+ "客户件B | 客户产品编号: T260907-CP3"
+]

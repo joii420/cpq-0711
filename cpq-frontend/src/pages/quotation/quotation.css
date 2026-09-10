@@ -49,6 +49,8 @@
   font-weight: 500;
 }
 
+/* ⚠️ .qt-template-badge 仍在服役：报价单编辑页的「模板: xxx」徽标已于 task-260910(F-6) 删除，
+   但详情页 ReadonlyProductCard 的「产品分类」徽标复用同一个类。🚫 不要删这条规则。 */
 .qt-template-badge {
   background: #f3e5f5;
   color: #6a1b9a;
@@ -56,6 +58,58 @@
   border-radius: 4px;
   font-size: 12px;
   font-weight: 500;
+}
+
+/* ── task-260910(F-1/F-2)：报价单【编辑页】产品卡片头部重排 ──────────────────
+   基准 = dev-docs/task-260910-.../原型图/报价单产品卡片.html
+   ⚠️ .qt-product-name / .qt-card-header-left / .qt-sku-badge 是与【详情页】
+      ReadonlyProductCard 共用的类，就地改会连带改掉详情页布局（AC-10 要求详情页布局不变），
+      所以本次新语汇一律走独立类名 / 后代选择器，对详情页零影响。 */
+.qt-card-header-left--edit {
+  min-width: 0;
+}
+
+.qt-card-header-left--edit .qt-sku-badge {
+  flex-shrink: 0;
+}
+
+/* 左侧主标题：客户料号名称 */
+.qt-cust-part-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: #333;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 右侧次级标题：产品名（编辑页专用降级形态，详情页仍用裸 .qt-product-name） */
+.qt-product-name--secondary {
+  font-size: 14px;
+  font-weight: 600;
+  color: #555;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 右侧「销售料号」徽标 —— 点击展开生产料号浮层 */
+.qt-part-badge {
+  background: #e6f4ff;
+  color: #0958d9;
+  border: 1px solid #91caff;
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.qt-part-badge:hover {
+  background: #bae0ff;
 }
 
 .qt-product-attrs {

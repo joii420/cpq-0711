@@ -1,0 +1,3 @@
+渲染期间 match 请求数=0（期望 0）
+阳性对照后=1（期望 1，证明监听器抓得到）
+命中URL=http://localhost:5211/api/cpq/customers/1f5818d8-b934-44be-b1c3-47df7053cff4/material-mappings/match?partNo=A002
