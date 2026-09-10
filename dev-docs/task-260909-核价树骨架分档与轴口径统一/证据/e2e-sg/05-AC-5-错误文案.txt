@@ -1,0 +1,11 @@
+AC-5 取证
+  停用方式：PUT isActive=false [HTTP 200] → 未生效，改用 DELETE 自有配置 [HTTP 200]
+  错误文案原文：
+    核价渲染失败
+    核价渲染失败: 未配置生效的「基础核价」树递归 SQL（costing_bom_tree_config 无 usage=COST_BASIC 且 isActive=true 记录）
+    核价渲染失败
+    核价渲染失败: 未配置生效的「基础核价」树递归 SQL（costing_bom_tree_config 无 usage=COST_BASIC 且 isActive=true 记录）
+    核价渲染失败
+    核价渲染失败: 未配置生效的「基础核价」树递归 SQL（costing_bom_tree_config 无 usage=COST_BASIC 且 isActive=true 记录）
+    核价渲染失败
+    核价渲染失败: 未配置生效的「基础核价」树递归 SQL（costing_bom_tree_config 无 usage=COST_BASIC 且 isActive=true 记录）

@@ -38,3 +38,16 @@
   ✓  3 [chromium] › e2e/task260909tree-s1-d-contract.spec.ts:212:1 › T-D4 / AC-18a：admin 调 GET /costing-bom-tree-config → 200 (338ms)
   ✓  4 [chromium] › e2e/task260909tree-s1-d-contract.spec.ts:220:1 › T-D5 / AC-18b：SALES_MANAGER 调 GET + 4 个写端点一律 403 (585ms)
   4 passed (35.7s)
+
+════════ 收尾自查：一个不影响结论、但会误导「还在跑吗」判断的量具坑 ════════
+症状：三轮跑完后 `pgrep -f "playwright test -c e2e"` 仍报「有进程」，看起来像测试没结束。
+真因：**pgrep -f 自匹配** —— 我用来等待的 shell，其命令行里就含
+      `playwright test -c e2e` 这个字面量，于是 pgrep 匹配到**等待循环自己**，
+      条件永远为真、循环永不退出，同时把「测试还在跑」这个假象一直维持下去。
+      实测 11 个「命中」里，**0 个是真的 playwright/node/chrome**，全是我自己的等待 shell。
+判读：与本轮 AC 结论**无关**（三轮结果早已落盘），但它是同一族问题的又一个实例 ——
+      **判据本身是零证据**：`pgrep` 确实"查了"，结果也"属实"，但它答的不是我问的那个问题。
+处置：已按命令行特征精确清理 10 个空转的等待 shell；
+      清理后复核四个服务全部存活：5212=200 / 8131=401 / 5174=200 / 8081=401（未误伤）。
+规避：等待外部进程时，pgrep 模式必须排除自身（`pgrep -f pat | grep -v ^$$`），
+      或改用「进程存在性以外」的判据（如输出文件里出现 `N passed` 汇总行）。

@@ -67,3 +67,32 @@ WHERE c.code IN ('COMP-2299','COMP-2300','COMP-2319') GROUP BY c.code;
 | D-1 | AC-3 的配置名加了 `T260909-` 前缀 | 分片造数纪律要求，判据（`GROUP BY` 计数 + QUOTE id 逐字不变）不受影响 |
 | D-2 | AC-4 若返 500 而非 400 | `BL-0227` 已登记的已知缺陷，`test.md §5` 已写明不算本任务回归 |
 | D-3 | 模板副本用「归档」而非删除回收 | 保守侧；`DELETE` 属 §3.2 红线，测试员无批准权。副本 id 进闸门 B 待回收清单 |
+
+---
+
+## E 类 · 开发期发现的「非本次范围」问题（🚦 待用户裁决是否登记 BACKLOG）
+
+> `CLAUDE.md §7` / `task-docs.md §9 规则一`：**写入 BACKLOG 前必须问用户是否采纳，不许自动写。**
+> 用户在睡觉 ⇒ 以下逐条列在这里，闸门 B 时一次性请示。
+
+| # | 问题 | 归属 | 主线处置 |
+|---|---|---|---|
+| **E-1** | 「核价树配置」列表的**更新时间列渲染成原始 ISO**（`2026-09-09T18:25:01.620222Z`），可读性差 | **既有行为**：`dataIndex:'updatedAt'` 无 `render`，master 上一直如此，本分支未动该列（`git diff` 实证） | 🚫 不改代码（无 AC 覆盖 = 超范围）。**已修原型使其与实现一致**并留修正记录。改进项待裁决 |
+| **E-2** | `SemanticCompiler` 的经桥分支随 D-6 变为**不可达代码**：`emitNarrowPredicate` 整个方法 + 4 个错误码、`rootNarrowPredicate` 的 `narrowEdge != null` 分支 + 2 个错误码、`checkAxisParamSingleSemantic` 的 `COMPILE_AXIS_NARROW_CONFLICT` 分支 | 本次 `B-5` 造成 | 🚫 **一行没删**（清理型改动指不回任何 AC = 超范围）。`Ctx#narrowedByBridge` / `narrowEdge` 后端建议**刻意保留**（报价侧将来若真加桥，它仍是"谁负责收窄"的唯一开关）。退役与否待裁决 |
+| **E-3** | `/preview` 对 `COST_*` 的 `partNo` 入参号段随 D-6 翻转成**生产料号**，而 `BuilderService#bindTotalMaterialNo` 的注释还写着「传进来的是销售料号（桥会翻译）」—— **注释已过期、行为已变**。取数配置器预览框里填销售料号会 **0 行且不报错** | 本次 `B-5` 的连带效果 | 🚫 未改 `BuilderService`（"要不要在预览种子处也翻译一次"是产品决策）。后端只在测试注释里钉住了事实。**三个候选**：① 接受（口径自洽）② 预览种子处也翻译 ③ 至少把 `zeroRowsHint` 的核价文案改成提示"这里要填生产料号"。待裁决 |
+| **E-4** | `e2e/global-setup.ts` 每轮跑 `UPDATE "user" SET locked_until=NULL, failed_login_attempts=0, is_first_login=false WHERE username IN ('admin','alice','bob')` —— 是**全局状态写入**，而 `test.md` 原写「S1 写入面：无」 | 既有 harness 行为 | ✅ **已如实登记**进 S1 写入面；**未改分片**（幂等、只清锁定计数、命中对象与本任务被测对象及 S-全局 三类写入面均不重叠 ⇒ 不构成片间冲突） |
+| **E-5** | `task260909tree-probe-dom.spec.ts` 是**量具探针**，不是 AC 用例、不进追溯矩阵 | S1 产物 | 留删待裁决。主线倾向**保留**（它是排查选择器问题的现成工具），但需在 `test.md` 注明其非验收用例身份 |
+
+## F 类 · 测试员自查抓到的量具缺陷（不是产品问题，但值得记进拦截点统计）
+
+| # | 量具缺陷 | 为什么危险 |
+|---|---|---|
+| F-1 | `cardOf` 用**品名子串**匹配：`"铆钉"` 命中 `"铆钉组件B"` ⇒ S0001 命中 2 张卡片 | 会给出**「错卡片上的正确断言」** |
+| F-2 | `.ant-alert-error, text=渲染失败` —— Playwright 不允许把 `text=` 引擎混进 CSS 列表 | 抛 `Unexpected token "="`，长得像产品坏了 |
+| F-3 | 正身探针把端口**写死成 8081**，而 `BACKEND_URL` 可覆盖 | 输出一行**自相矛盾却看着很像证据**的记录（`url=8131 但 cwd=主仓`）—— 判据本身零证据 |
+| F-4 | 鉴权是 **Cookie 不是 Bearer token**，原 `loginApi()` 按 token 写 | 会在登录**成功（200）**时抛「取不到 token」，**长得像产品鉴权契约变了** |
+| F-5 | `pgrep -f "playwright test -c e2e"` **自匹配**（等待 shell 自己的命令行含该字面量） | 循环永不退出，维持「测试还在跑」的假象；11 个「命中」0 个是真进程 |
+| F-6 | AC-17 两条用例 `writeEvidence` 写同一文件，后跑的**覆盖**前一条 | 证据静默丢失 |
+
+📌 **F 类全部由测试员自己抓出并修掉**，无一被误报成产品缺陷。
+S1 首轮 3 红全是量具 —— 这验证了**阳性对照设计**（把「修复前就该绿」的 AC-21 排在最前当量具体检）的价值。

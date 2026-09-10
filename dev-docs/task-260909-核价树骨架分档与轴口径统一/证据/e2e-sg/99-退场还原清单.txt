@@ -1,0 +1,23 @@
+退场还原清单执行记录
+  ① COST_BASIC: 已是进场 id（537d2267-ccf2-4453-bc30-a9cee741e153），无需动作
+  ① QUOTE: 已是进场 id（d6defaa0-354f-4e92-8e89-4bc8454888c3），无需动作
+  ② config fc64efcf-76ad-4222-8446-0e08ee3448f7: DELETE [HTTP 200] ⇒ 残留 0 行 ✅
+  ② config 799bf135-f67b-427b-8609-d5c9b5403998: DELETE [HTTP 200] ⇒ 残留 0 行 ✅
+  ② config c256e35e-6e3a-46d0-ba7b-8648eff11e78: 已不存在
+  ② 前缀残留复查：0 条 ✅
+  ③ T260909- 前缀模板全库复查：5 条
+      0a60248e-c95b-4092-a493-935bbc0bde0b | T260909-同方言验证 | ARCHIVED | COSTING
+      fdda236e-1322-4900-8160-a9195879fa29 | T260909-混方言验证 | PUBLISHED | COSTING
+      b3a62467-0787-4412-afa4-42761f812a04 | T260909-混方言验证 | ARCHIVED | COSTING
+      3b8a1a51-6ee7-48f7-8fcf-213b8120937e | T260909-同方言验证 | PUBLISHED | COSTING
+      fd6db113-532c-4bc1-a9e3-0b2fce249455 | T260909-混方言验证 | ARCHIVED | COSTING
+  ③ 模板副本归档：
+      fdda236e-1322-4900-8160-a9195879fa29 | T260909-混方言验证 | ARCHIVED
+      3b8a1a51-6ee7-48f7-8fcf-213b8120937e | T260909-同方言验证 | ARCHIVED
+  ③ ⚠️ 归档≠删除：这 2 份 T260909- 副本仍在库里（含其 template_component 行），已写进 test-report.md 的「待回收清单」交主线裁决 —— DELETE 属 §3.2 红线，测试无批准权。
+  ④ 本轮未改动 QT-0661 卡片值快照（SG_AC5_ALLOW_REFRESH 未开、AC-20 挂起）⇒ 不做任何重算 ✅
+  ⑤ 退场生效配置：{"COST_BASIC":"537d2267-ccf2-4453-bc30-a9cee741e153","COSTING":"82612f2b-558a-4b13-b052-af08100573ac","QUOTE":"d6defaa0-354f-4e92-8e89-4bc8454888c3"}
+  ⑤ 进场生效配置：{"COST_BASIC":"537d2267-ccf2-4453-bc30-a9cee741e153","COSTING":"82612f2b-558a-4b13-b052-af08100573ac","QUOTE":"d6defaa0-354f-4e92-8e89-4bc8454888c3"}
+
+本轮记录的偏差 / 已知缺陷：
+  · AC-4 🟡 已知缺陷 BL-0227 命中：期望 400，实际 HTTP 500。响应片段={"code":500,"message":"Internal server error"}。按派工书 §h 记录为已知缺陷，不算本任务回归。⚠️ 但「不新增记录」与「拒绝保存」两条已独立断言通过。
