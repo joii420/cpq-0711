@@ -59,6 +59,34 @@ export const DB = {
 /** 本片造数前缀 —— 跨片/跨会话防串扰的唯一依据（派工书 §d）。 */
 export const PREFIX = 'T260909-';
 
+/** SALES_MANAGER 账号（主线 2026-09-09 下发）——用于「角色收紧」这条**行为型**正身判据。 */
+export const SMGR_USER = process.env.PW_USER_SMGR || '';
+export const SMGR_PWD = process.env.PW_PWD_SMGR || '';
+
+/**
+ * 🚨 交付物（**不是本片造数**）——主线 2026-09-09 补配，退场必须把生效权交还给它。
+ * 🚫 不许删除、不许改名、不许当成上一轮残留清掉。
+ */
+export const DELIVERED_COST_BASIC_ID = '537d2267-ccf2-4453-bc30-a9cee741e153';
+export const DELIVERED_QUOTE_ID = 'd6defaa0-354f-4e92-8e89-4bc8454888c3';
+
+/**
+ * 🚨 本片必须跑在**临时栈**上（worktree 代码）。
+ * 5174/8081 服务的是主工作区已合并代码，看不到本 worktree 的 B-1~B-10 ⇒ 拿它跑 = 假绿；
+ * 而且本片会写全局生效配置，打共享栈等于污染主线亲验用的环境。
+ */
+export function assertIsolatedEnv() {
+  if (process.env.SG_ALLOW_SHARED === '1') {
+    console.warn('[SG] ⚠️ SG_ALLOW_SHARED=1：已放行共享栈，出问题请先怀疑这一条');
+    return;
+  }
+  const bad = [/:8081(\/|$)/.test(BACKEND_URL), /:5174(\/|$)/.test(BASE_URL)];
+  expect(bad.some(Boolean),
+    `🚨 本片拒绝跑在共享 dev 栈上：BACKEND_URL=${BACKEND_URL} / BASE_URL=${BASE_URL}\n` +
+    `   请用主线下发的临时栈：PW_BASE_URL=http://localhost:5212 PW_BACKEND_URL=http://localhost:8131`,
+  ).toBe(false);
+}
+
 /** 统一测试单据（需求文档 §③ 前置）。 */
 export const QUOTATION_NO = 'QT-20260909-0661';
 export const QUOTATION_ID = '3c38bfb7-6af3-4f39-9c6d-f127e02d8712';
@@ -197,6 +225,15 @@ export function saveEvidence(name: string, content: string): string {
 
 export const CFG_PATH = '/api/cpq/costing-bom-tree-config';   // ⚠️ 单数，见 api.md §1
 
+/**
+ * 建一个已登录的 APIRequestContext。
+ *
+ * 🚨 **鉴权是 Cookie 不是 Bearer token**：`POST /auth/login` 的响应体里没有 token，
+ *    身份在 `Set-Cookie: CPQ_SESSION=<uuid>; HttpOnly; SameSite=Lax`。
+ *    ⇒ 这里**只判 login 成功**、后续请求靠 APIRequestContext 自带的 cookie jar，
+ *      🚫 不去响应体里挖 token（那会在"登录成功 200"时抛"取不到 token"，
+ *      失败长得像产品鉴权契约变了 —— S1 片已踩过）。
+ */
 export async function apiContext(
   baseURL = BACKEND_URL, username = 'admin', password = 'Admin@2026',
 ): Promise<APIRequestContext> {
@@ -272,6 +309,17 @@ export async function deleteConfig(api: APIRequestContext, id: string) {
   return { status: res.status(), text, json: safeJson(text) };
 }
 
+/**
+ * 从 psql 输出里挖第一个 uuid。
+ * 🚨 `psql -t -A -c "INSERT … RETURNING id"` 的 stdout 是**两行**：`<uuid>\nINSERT 0 1`
+ *    —— 直接拿整串去比 uuid 正则会失败，而那时候行**已经插进库了**（run#1 实证：
+ *    留下一份没人认领的 T260909- 孤儿模板）。
+ */
+export function firstUuid(out: string): string {
+  const m = out.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  return m ? m[0] : '';
+}
+
 export function safeJson(text: string): any {
   try { return JSON.parse(text); } catch { return null; }
 }
@@ -300,6 +348,7 @@ export function messageOf(text: string): string {
  * 判定：P3 必须成立（否则本片 6 条 AC 全都没有前置）；P1/P2 至少一条成立。
  */
 export async function assertShardPreconditions(api: APIRequestContext) {
+  assertIsolatedEnv();
   const lines: string[] = [];
 
   // 环境指纹（不是断言，是让报告能复核"这一轮跑在哪"）
@@ -332,16 +381,24 @@ export async function assertShardPreconditions(api: APIRequestContext) {
   lines.push(`P1 ${p1 ? '✅' : '❌'} GET /templates/{核价模板1} 的 data ${p1 ? '含' : '不含'} warnings 键；` +
     `实际键集=${dJson?.data ? JSON.stringify(Object.keys(dJson.data).sort()) : '(解析不出)'}`);
 
-  // ── P2：角色收紧 ──
+  // ── P2：角色收紧（**行为型**正身判据，主线指定用它而不是配置）──
+  //     smgr GET /costing-bom-tree-config：新代码 403 / 旧代码(8081) 200。
+  //     返 200 就说明打错了实例 —— 这条比"端口号对不对"可靠得多。
   let p2: boolean | null = null;
-  const sm = await tryApiContext('test1', 'Admin@2026');
-  if (!sm) {
-    lines.push('P2 ⏭ test1/Admin@2026 登录失败 —— 探针跳过（不影响判定，密码请向主线确认）');
+  if (!SMGR_USER || !SMGR_PWD) {
+    lines.push('P2 ⏭ 未提供 PW_USER_SMGR / PW_PWD_SMGR —— 行为型正身判据缺席');
   } else {
-    const r = await sm.get(CFG_PATH);
-    p2 = r.status() === 403;
-    lines.push(`P2 ${p2 ? '✅' : '❌'} test1(SALES_MANAGER) GET ${CFG_PATH} → ${r.status()}（期望 403）`);
-    await sm.dispose();
+    const sm = await tryApiContext(SMGR_USER, SMGR_PWD);
+    if (!sm) {
+      lines.push(`P2 ❌ ${SMGR_USER} 登录失败（凭据不对，或打到了没有这个账号的实例）`);
+      p2 = false;
+    } else {
+      const r = await sm.get(CFG_PATH);
+      p2 = r.status() === 403;
+      lines.push(`P2 ${p2 ? '✅' : '❌'} ${SMGR_USER}(SALES_MANAGER) GET ${CFG_PATH} → ${r.status()}` +
+        `（期望 403；返 200 = 打到了旧代码实例，本轮结论全部无效）`);
+      await sm.dispose();
+    }
   }
 
   const banner = `[SG] 实例正身与前置探针\n${lines.join('\n')}`;
@@ -454,7 +511,9 @@ export async function enterCostingCard(page: Page): Promise<void> {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(2000);
   }
-  const costing = page.locator('.ant-segmented-item').filter({ hasText: /^\s*核价单\s*$/ }).first();
+  // ⚠️ 实测 segmented 文案带 emoji 前缀：["📝 报价单","📊 核价单","📈 比对视图","📋 产品卡片","📑 Excel 视图"]
+  //    ⇒ 锚定正则 /^核价单$/ 永远匹配不上，症状是纯 timeout，长得像"进不了核价单视图"的产品缺陷。
+  const costing = page.locator('.ant-segmented-item').filter({ hasText: /核价单/ }).first();
   if (await costing.count() === 0) {
     const dump = await dumpCandidates(page, '找不到「核价单」切换项', ['.ant-segmented-item', '.ant-tabs-tab']);
     await shot(page, 'ERR-找不到核价单切换项');
@@ -462,7 +521,7 @@ export async function enterCostingCard(page: Page): Promise<void> {
   }
   await costing.click();
   await page.waitForTimeout(1500);
-  const cardSeg = page.locator('.ant-segmented-item').filter({ hasText: /^\s*产品卡片\s*$/ }).first();
+  const cardSeg = page.locator('.ant-segmented-item').filter({ hasText: /产品卡片/ }).first();
   if (await cardSeg.count() > 0) { await cardSeg.click().catch(() => {}); await page.waitForTimeout(1200); }
   await page.waitForTimeout(2500);
 }
@@ -506,15 +565,40 @@ export async function switchTabInCard(card: Locator, tabName: string): Promise<L
  * 读某页签的行数**并打印每行首列**。
  * 🚨 testing.md §3：行数断言前必须能看到实际值，否则 0 行和"断言空跑"分不开。
  */
-export async function readTabRows(card: Locator, tabName: string): Promise<{ count: number; firstCells: string[] }> {
+export async function readTabRows(
+  card: Locator, tabName: string,
+): Promise<{ count: number; firstCells: string[]; fullTexts: string[]; nonEmpty: number }> {
   const rows = await switchTabInCard(card, tabName);
   const count = await rows.count();
   const firstCells: string[] = [];
+  const fullTexts: string[] = [];
+  // ⚠️ 一个页签可能被拆成**多张 .qt-cost-table**（冻结列 + 滚动列）。
+  //    只读第一张时，行数是对的、内容却只有冻结那几列 —— 拿它当"非空"证据会严重高估。
+  //    ⇒ 同一行索引把卡片内所有表的该行文本拼起来。
+  const tables = card.locator('.qt-cost-table');
+  const tableCount = await tables.count();
   for (let i = 0; i < count; i++) {
     firstCells.push((await rows.nth(i).locator('td').first().innerText().catch(() => '')).replace(/\s+/g, '').trim());
+    const parts: string[] = [];
+    for (let t = 0; t < tableCount; t++) {
+      const r = tables.nth(t).locator('tbody tr').nth(i);
+      if (await r.count() === 0) continue;
+      const txt = (await r.innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+      // 🚨 单元格多是 <input>，`innerText` **读不到它们的值** —— 只靠文本判"非空"会把
+      //    一整行可编辑的真数据读成空行（run 实证：BOM 行文本只有 "▼ 300001 3 🔗"）。
+      const vals = (await r.locator('input, select, textarea')
+        .evaluateAll((els: any[]) => els.map((e) => String(e.value ?? '')).filter((v) => v !== ''))
+        .catch(() => [] as string[]));
+      parts.push(vals.length ? `${txt} 〔值: ${vals.join(', ')}〕` : txt);
+    }
+    fullTexts.push(parts.join(' ‖ ').trim());
   }
-  console.log(`[SG][ui] 页签「${tabName}」行数=${count}，首列=${JSON.stringify(firstCells)}`);
-  return { count, firstCells };
+  // 🚨 「有 N 行」≠「有 N 行数据」：baseRows 为空时表格仍会渲空壳行。
+  //    行数对上、内容全空的那种绿，是四类假绿里最像真的一种 ⇒ 这里把非空行数也算出来。
+  const nonEmpty = fullTexts.filter((t) => t.replace(/[\s—\-|]/g, '') !== '').length;
+  console.log(`[SG][ui] 页签「${tabName}」行数=${count}（非空 ${nonEmpty}，卡片内表数=${tableCount}），首列=${JSON.stringify(firstCells)}`);
+  fullTexts.forEach((t, i) => console.log(`[SG][ui]   #${i} ${t}`));
+  return { count, firstCells, fullTexts, nonEmpty };
 }
 
 /** 页面上「核价渲染失败」红框的数量与文案。 */
@@ -539,7 +623,7 @@ export async function clickRefreshBasicData(page: Page): Promise<boolean> {
     const btn = page.locator('[data-testid="refresh-basic-data-btn"]');
     if (!(await btn.isVisible().catch(() => false))) {
       // 按钮可能只挂在「报价单」侧工具栏 ⇒ 切过去点，再切回来
-      const quote = page.locator('.ant-segmented-item').filter({ hasText: /^\s*报价单\s*$/ }).first();
+      const quote = page.locator('.ant-segmented-item').filter({ hasText: /报价单/ }).first();
       if (await quote.count() > 0) { await quote.click(); await page.waitForTimeout(1500); }
     }
     await btn.waitFor({ state: 'visible', timeout: 15_000 });
@@ -558,4 +642,27 @@ export async function clickRefreshBasicData(page: Page): Promise<boolean> {
   } finally {
     page.off('response', onResp);
   }
+}
+
+
+// ─────────────────────────── 7. UI 登录（不复用 .auth/ storageState）───────────────────────────
+
+/**
+ * 每次都走 UI 登录。
+ * 🚫 刻意**不用** `fixtures/auth.ts` 的 storageState 分支：那份 state 是仓库 globalSetup
+ *    在 **5174/8081** 上存的，而 Cookie 不区分端口 —— 拿到临时栈 5212 上可能"看起来登上了"
+ *    却是另一实例的会话，属最难查的一类环境串扰。
+ */
+export async function uiLogin(page: Page, username = 'admin', password = 'Admin@2026') {
+  await page.context().clearCookies();
+  await page.goto('/login');
+  await page.locator('input[placeholder="用户名或邮箱"]').fill(username);
+  await page.locator('input[placeholder="密码"]').fill(password);
+  await page.locator('button[type="submit"]').click();
+  await page.waitForURL(/\/(dashboard|customers|quotations|system|products|components|change-password)/, { timeout: 20_000 });
+  if (page.url().includes('/change-password')) {
+    await page.goto('/dashboard');
+    await page.waitForLoadState('networkidle');
+  }
+  expect(page.url(), `UI 登录后仍停在 /login（${username}）`).not.toContain('/login');
 }

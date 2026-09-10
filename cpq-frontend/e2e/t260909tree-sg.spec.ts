@@ -26,13 +26,13 @@
  * ⚠️ 本片**串行殿后**：S1 只读片全绿之前不许开跑（一动生效配置，S1 当场全红）。
  */
 import { test, expect, APIRequestContext, Page } from '@playwright/test';
-import { loginAsAdmin } from './fixtures/auth';
 import {
   BACKEND_URL, PREFIX, QUOTATION_NO, QUOTATION_ID, TPL_MIXED, TPL_SAME,
+  DELIVERED_COST_BASIC_ID, DELIVERED_QUOTE_ID, uiLogin,
   AC7_BOM_ROWS, AC10_ELEMENT_ROWS,
   sqlRead, sqlNum, sqlRowsF, sqlWrite, registerOwnedId,
   apiContext, postConfig, putConfig, activateConfig, deleteConfig, messageOf, safeJson,
-  activeIdOf, activeConfigRows, activeCountByUsage, activeCountByUsageRaw, configTotalCount,
+  activeIdOf, activeConfigRows, activeCountByUsage, activeCountByUsageRaw, configTotalCount, firstUuid,
   assertShardPreconditions, costingTemplateId,
   evidenceDir, shot, saveEvidence, dumpCandidates,
   gotoTreeConfigTab, selectUsage, readConfigTableRows,
@@ -59,6 +59,13 @@ const OWNED = {
   templateIds: [] as string[],     // template 副本（归档回收，🚫 不 DELETE）
 };
 
+/**
+ * QT-0661 的卡片值快照是否被本轮弄脏。
+ * 🚨 只有真弄脏了才在退场时重算 —— AC-20 本轮**挂起**（主线 2026-09-09 裁决），
+ *    它之后要用**干净前置**跑，无缘无故 refresh 一次反而把前置搅了。
+ */
+let SNAPSHOT_DIRTY = false;
+
 /** 记录本轮观测到的已知缺陷 / 偏差，afterAll 汇总落证据文件。 */
 const NOTES: string[] = [];
 function note(s: string) { console.log(`[SG][note] ${s}`); NOTES.push(s); }
@@ -78,6 +85,17 @@ test.beforeAll(async () => {
   expect(ENTRY.costBasicSql.length,
     '生效 COST_BASIC 配置的 sql_template 读出来是空的 —— 造数会失去"必过 validator"的保证，请报主线',
   ).toBeGreaterThan(50);
+
+  // 🚨 进场生效配置必须是**主线交付的那两条**（2026-09-09 下发的 id）。
+  //    对不上说明有人动过生效权 —— 此时"还原"会把错的状态固化下来，必须先停。
+  expect(ENTRY.activeByUsage['COST_BASIC'],
+    `进场 COST_BASIC 生效配置应是交付物 ${DELIVERED_COST_BASIC_ID}（基础核价BOM树-COST_BASIC-v1），` +
+    `实际 ${ENTRY.activeByUsage['COST_BASIC']} —— 有人动过生效权，请报主线，🚫 不要按这个状态继续跑`,
+  ).toBe(DELIVERED_COST_BASIC_ID);
+  expect(ENTRY.activeByUsage['QUOTE'],
+    `进场 QUOTE 生效配置应是 ${DELIVERED_QUOTE_ID}（报价BOM树-QUOTE口径v1），` +
+    `实际 ${ENTRY.activeByUsage['QUOTE']}`,
+  ).toBe(DELIVERED_QUOTE_ID);
 
   const banner =
     `进场快照（afterAll 按此还原）\n` +
@@ -138,10 +156,13 @@ test.afterAll(async () => {
     log.push('  ③ 本片未派生模板副本');
   }
 
-  // ── ④ 快照兜底：AC-20 未跑到 / 跑失败时，也要把 QT-0661 的卡片值重算回来 ──
+  // ── ④ 快照兜底：**只在真弄脏了**才重算 ──
+  //     AC-20 本轮挂起（主线裁决），它之后要用干净前置；没弄脏就什么都别做。
   const bomOk = NOTES.some((n) => n.startsWith('AC-20 完成'));
-  if (!bomOk) {
-    log.push('  ④ AC-20 未成功收尾 ⇒ 用接口兜底重算 QT-0661 卡片值快照');
+  if (!SNAPSHOT_DIRTY) {
+    log.push('  ④ 本轮未改动 QT-0661 卡片值快照（SG_AC5_ALLOW_REFRESH 未开、AC-20 挂起）⇒ 不做任何重算 ✅');
+  } else if (!bomOk) {
+    log.push('  ④ 快照被本轮弄脏且 AC-20 未成功收尾 ⇒ 用接口兜底重算 QT-0661 卡片值快照');
     for (const p of [`/api/cpq/quotations/${QUOTATION_ID}/refresh-card-snapshot`,
                      `/api/cpq/quotations/${QUOTATION_ID}/refresh-snapshot`,
                      `/api/cpq/configure-product/quotations/${QUOTATION_ID}/refresh-snapshot`]) {
@@ -284,7 +305,7 @@ test('AC-19 序列：新增 A → 设为生效 → 切「报价」确认未变 �
   const quoteActiveName = sqlRead(
     `SELECT name FROM costing_bom_tree_config WHERE id='${ENTRY.activeByUsage['QUOTE']}'`);
 
-  await loginAsAdmin(page);
+  await uiLogin(page);
   await gotoTreeConfigTab(page);
   await selectUsage(page, '基础核价');
   await shot(page, 'AC-19-01-基础核价初始');
@@ -307,6 +328,8 @@ test('AC-19 序列：新增 A → 设为生效 → 切「报价」确认未变 �
       `UI 保存后库里查不到名为 ${A_NAME} 的配置 —— 保存没落库（真缺陷）或名字被改写。\n` +
       `  提示：本片其余用例已证明 POST 端点可用（AC-3 拿到过 2xx），所以这不是接口层的问题。`,
     ).toMatch(/^[0-9a-f-]{36}$/);
+    const aUsage = sqlRead(`SELECT usage FROM costing_bom_tree_config WHERE id='${aId}'`);
+    expect(aUsage, `AC-19 要求在「基础核价」下新增，实际落库 usage=${aUsage}`).toBe('COST_BASIC');
   }
   OWNED.configIds.push(aId); registerOwnedId(aId);
   await shot(page, 'AC-19-02-A已新增');
@@ -381,16 +404,38 @@ async function createConfigViaUI(page: Page, name: string, sql: string) {
   // antd 6.3.5 起 .ant-drawer-content 类名没了 ⇒ 用 .ant-drawer / .ant-modal
   const panel = page.locator('.ant-modal:visible, .ant-drawer:visible').first();
   const scope = (await panel.count()) > 0 ? panel : page.locator('body');
-  const nameInput = scope.locator('input:not([type="checkbox"]):not([type="radio"])').first();
+
+  // 🚨 run#1 实证：表单里第一个 <input> 不是名称框，而是 antd Select（usage 选择器）的
+  //    只读搜索框 `#usage[readonly][role=combobox]` ⇒ `.first()` 落在它身上，
+  //    fill 报 "element is not editable"，**纯 timeout**，长得像产品缺陷。
+  //    ⇒ 先按 id 取，再按"可编辑的非 combobox input"兜底。
+  let nameInput = scope.locator('input#name');
+  if (await nameInput.count() === 0) {
+    nameInput = scope.locator(
+      'input:not([readonly]):not([type="checkbox"]):not([type="radio"]):not([role="combobox"])').first();
+  }
   const sqlArea = scope.locator('textarea').first();
   if (!(await nameInput.isVisible().catch(() => false)) || !(await sqlArea.isVisible().catch(() => false))) {
-    const dump = await dumpCandidates(page, '新增表单定位失败',
-      ['.ant-modal', '.ant-drawer', 'input', 'textarea', 'button']);
+    const inputs = await scope.locator('input').evaluateAll((els) =>
+      els.map((e: any) => ({ id: e.id, ph: e.placeholder, ro: e.readOnly, role: e.getAttribute('role') })));
+    const dump = await dumpCandidates(page, '新增表单定位失败', ['.ant-modal', '.ant-drawer', 'textarea', 'button']);
     await shot(page, 'ERR-AC19-新增表单');
-    throw new Error(`🚨 新增表单里定位不到「名称输入框」或「SQL 文本域」。\n${dump}`);
+    throw new Error(`🚨 新增表单里定位不到「名称输入框」或「SQL 文本域」。\n` +
+      `  表单内 input 清单=${JSON.stringify(inputs)}\n${dump}`);
   }
   await nameInput.fill(name);
   await sqlArea.fill(sql);
+
+  // 表单里若另有 usage 选择器，显式选「基础核价」——不靠它默认跟随外层切换控件
+  const usageSel = scope.locator('#usage');
+  if (await usageSel.count() > 0) {
+    await usageSel.click();
+    await page.waitForTimeout(500);
+    const opt = page.locator('.ant-select-item-option').filter({ hasText: /^\s*基础核价\s*$/ }).first();
+    if (await opt.count() > 0) { await opt.scrollIntoViewIfNeeded(); await opt.click(); }
+    else { console.warn('[SG] 表单 usage 下拉里没找到「基础核价」选项，沿用其默认值'); }
+    await page.waitForTimeout(400);
+  }
   await shot(page, 'AC-19-02a-新增表单已填');
 
   // antd 两字按钮渲染成「保 存」⇒ 必须用 /保\s*存/
@@ -399,7 +444,14 @@ async function createConfigViaUI(page: Page, name: string, sql: string) {
   await page.waitForTimeout(2500);
 }
 
-/** UI 上把某一行「设为生效」。可能是行内按钮，也可能藏在「更多」下拉里。 */
+/**
+ * UI 上把某一行「设为生效」。
+ *
+ * 🚨 run#2 实证：本页遵循 `docs/列表操作规范.md` —— 动作**不在行内**，而在表格上方的工具栏，
+ *    且**未勾选行时全部 disabled**（截图里写着「未选择行  编 辑 | 设为生效 … 删 除」）。
+ *    我第一版按"行内按钮 / 更多下拉"找，报「该行可用动作=["T260909-AC19-A"]」——
+ *    那是**选择器没对上**，不是产品少了功能。这类失败长得和产品缺陷一模一样。
+ */
 async function activateRowViaUI(page: Page, rowKeyText: string) {
   const row = page.locator('.ant-table-tbody tr.ant-table-row').filter({ hasText: rowKeyText }).first();
   if (!(await row.isVisible().catch(() => false))) {
@@ -407,29 +459,35 @@ async function activateRowViaUI(page: Page, rowKeyText: string) {
     await shot(page, 'ERR-AC19-找不到目标行');
     throw new Error(`🚨 列表里找不到「${rowKeyText}」行。实际各行：\n${rows.map((r) => '   ' + r.text).join('\n')}`);
   }
-  const inline = row.getByRole('button', { name: /设为生效|生\s*效|启\s*用/ }).first();
-  if (await inline.isVisible().catch(() => false)) {
-    await inline.click();
-  } else {
-    const link = row.locator('a, .ant-btn-link').filter({ hasText: /设为生效|生\s*效|启\s*用/ }).first();
-    if (await link.isVisible().catch(() => false)) {
-      await link.click();
-    } else {
-      const more = row.locator('button, a').filter({ hasText: /更多|\.\.\.|···/ }).first();
-      if (!(await more.isVisible().catch(() => false))) {
-        const acts = await row.locator('button, a').allInnerTexts().catch(() => [] as string[]);
-        await shot(page, 'ERR-AC19-找不到设为生效');
-        throw new Error(`🚨 目标行里找不到「设为生效」。该行可用动作=${JSON.stringify(acts.map((t) => t.trim()))}`);
-      }
-      await more.click(); await page.waitForTimeout(600);
-      await page.locator('.ant-dropdown-menu-item').filter({ hasText: /设为生效|生\s*效|启\s*用/ }).first().click();
-    }
+
+  // ① 勾选该行（点 .ant-checkbox 外壳，不点 input —— 后者常被样式盖住）
+  const box = row.locator('.ant-checkbox, input[type="checkbox"]').first();
+  if (!(await box.isVisible().catch(() => false))) {
+    await shot(page, 'ERR-AC19-找不到行勾选框');
+    throw new Error(`🚨 目标行「${rowKeyText}」上找不到勾选框 —— 工具栏动作要靠它解禁。`);
   }
+  await box.click();
   await page.waitForTimeout(800);
-  // 可能有二次确认
-  const ok = page.locator('.ant-modal-confirm-btns button, .ant-popconfirm button')
-    .filter({ hasText: /确\s*定|确\s*认|是/ }).first();
-  if (await ok.isVisible().catch(() => false)) { await ok.click(); await page.waitForTimeout(1200); }
+
+  // ② 点工具栏「设为生效」（勾选后才 enabled）
+  const btn = page.getByRole('button', { name: /设\s*为\s*生\s*效/ }).first();
+  if (!(await btn.isVisible().catch(() => false))) {
+    const dump = await dumpCandidates(page, '找不到工具栏「设为生效」', ['button']);
+    await shot(page, 'ERR-AC19-找不到设为生效');
+    throw new Error(`🚨 工具栏里找不到「设为生效」按钮。\n${dump}`);
+  }
+  const enabled = await btn.isEnabled().catch(() => false);
+  expect(enabled,
+    `勾选「${rowKeyText}」后工具栏「设为生效」仍是 disabled —— ` +
+    `要么勾选没生效（选择器问题），要么按钮的解禁条件有缺陷。已截图存证。`).toBe(true);
+  await btn.click();
+  await page.waitForTimeout(1000);
+
+  // ③ 可能有二次确认
+  const ok = page.locator('.ant-modal-confirm-btns button, .ant-modal-footer button, .ant-popconfirm button')
+    .filter({ hasText: /确\s*定|确\s*认|生\s*效|是/ }).first();
+  if (await ok.isVisible().catch(() => false)) { await ok.click(); }
+  await page.waitForTimeout(2000);
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -465,7 +523,7 @@ test('AC-5 无生效 COST_BASIC 配置时错误文案出现 usage=COST_BASIC（�
   let didBreakSnapshot = false;
   try {
     // ── 3. 重新渲染核价单 ──
-    await loginAsAdmin(page);
+    await uiLogin(page);
     await enterCostingCard(page);
     let errs = await renderErrors(page);
     await shot(page, 'AC-5-01-无生效配置时渲染');
@@ -473,7 +531,7 @@ test('AC-5 无生效 COST_BASIC 配置时错误文案出现 usage=COST_BASIC（�
     if (errs.length === 0 && process.env.SG_AC5_ALLOW_REFRESH === '1') {
       note('AC-5 ⚠️ 首次加载未见错误框，按 SG_AC5_ALLOW_REFRESH=1 强制「刷新基础数据」重算（会重写 QT-0661 快照）');
       await clickRefreshBasicData(page);
-      didBreakSnapshot = true;
+      didBreakSnapshot = true; SNAPSHOT_DIRTY = true;
       await enterCostingCard(page);
       errs = await renderErrors(page);
       await shot(page, 'AC-5-01b-强制重算后');
@@ -522,44 +580,80 @@ test('AC-16 发布派生副本：混方言副本 200 且 warnings 含 1 条；�
   // ── 解析源模板页签方言（判定基准 = 树页签组件的方言，api.md §3）──
   const tabs = sqlRowsF(
     `SELECT tc.id, tc.sort_order::text, tc.tab_name, c.code, ` +
-    `coalesce(csv.builder_config->>'dialect','(无)') ` +
+    `coalesce(csv.builder_config->>'dialect','(无)'), c.id ` +
     `FROM template_component tc JOIN component c ON c.id=tc.component_id ` +
     `LEFT JOIN component_sql_view csv ON csv.component_id=c.id AND csv.status='ACTIVE' ` +
     `WHERE tc.template_id='${srcId}' ORDER BY tc.sort_order`);
   console.log(`[SG] 源模板「核价模板1」页签：\n${tabs.map((t) => '   ' + t.join(' | ')).join('\n')}`);
   expect(tabs.length, '源模板页签数为 0，AC-16 无前置').toBeGreaterThan(0);
 
+  /**
+   * ⚠️ 本段的构造方式随库里模板形态**自适应**，原因是它被改过两次：
+   *
+   *   ① AC-16 原文写「5 个页签**原样**，其中加工费组件方言为 QUOTE」，与交付项 10
+   *      （COMP-2319 方言改回 COST_BASIC）自相矛盾 —— 两件事做完就不混方言了。
+   *      主线 2026-09-09 裁决：采纳「副本里**显式指定**加工费页签绑哪个组件」，
+   *      AC 的可观测断言（200 + warnings 逐字文案 + 空数组非 null）一字不变，
+   *      变的只是**前置状态的构造方式**；已列为待用户确认项进闸门 B。
+   *   ② 2026-09-09 晚，用户裁决「把加工费删了，后面重新配模板」，主线经
+   *      `delete-tcs` 从 `核价模板1` 删掉了该页签（模板由 5 页签变 4 页签），
+   *      `COMP-2319` 组件本身保留（ACTIVE / QUOTE 方言）。
+   *      ⇒ 源模板里**已经没有**加工费页签可供改绑，混方言副本必须**自己补一个**。
+   *
+   * 所以：源模板有加工费页签 → 改绑；没有 → 在副本里补一个 tab_name='加工费' 的页签。
+   * 两条路的**断言完全相同**，差别只在前置怎么搭出来。
+   */
   const procTab = tabs.find((t) => t[2] === '加工费');
-  expect(procTab, `源模板里找不到「加工费」页签（AC-16 的告警文案就以它为例）。实际页签=${JSON.stringify(tabs.map((t) => t[2]))}`).toBeTruthy();
-  const procTcId = procTab![0];
+  const procTcId = procTab ? procTab[0] : '';
 
-  // 混方言副本要一个 **QUOTE 方言**的「加工费」组件
+  // 混方言副本要一个 **QUOTE 方言**的「加工费」组件（优先 COMP-2319 —— AC 原文点名的那个）
   const quoteProcId = sqlRead(
     `SELECT c.id FROM component c JOIN component_sql_view csv ON csv.component_id=c.id AND csv.status='ACTIVE' ` +
-    `WHERE c.name='加工费' AND csv.builder_config->>'dialect'='QUOTE' ORDER BY c.code LIMIT 1`);
-  expect(quoteProcId, '库里找不到 QUOTE 方言的「加工费」组件 —— 混方言副本造不出来，请报主线').toMatch(/^[0-9a-f-]{36}$/);
+    `WHERE c.name='加工费' AND csv.builder_config->>'dialect'='QUOTE' ` +
+    `ORDER BY (c.code='COMP-2319') DESC, c.code LIMIT 1`);
+  expect(quoteProcId,
+    '库里找不到 QUOTE 方言的「加工费」组件 —— 混方言副本造不出来，请报主线').toMatch(/^[0-9a-f-]{36}$/);
+  const quoteProcCode = sqlRead(`SELECT code || ' / ' || name FROM component WHERE id='${quoteProcId}'`);
 
-  // 同方言副本要一个 **COST_BASIC 方言**的「加工费」组件（= 交付项 10 把 COMP-2319 改回来）
-  const basicProcId = sqlRead(
-    `SELECT c.id FROM component c JOIN component_sql_view csv ON csv.component_id=c.id AND csv.status='ACTIVE' ` +
-    `WHERE c.name='加工费' AND csv.builder_config->>'dialect'='COST_BASIC' ORDER BY c.code LIMIT 1`);
-  expect(basicProcId,
-    `库里找不到 COST_BASIC 方言的「加工费」组件。\n` +
-    `  ⇒ 交付项 10（COMP-2319 方言由 QUOTE 改回 COST_BASIC 并重编译）尚未执行，\n` +
-    `     AC-16 后半段（warnings=[]）没有可验前置。**请报主线补配置**，这不是产品缺陷。`,
-  ).toMatch(/^[0-9a-f-]{36}$/);
+  // 同方言副本：源里若还有加工费页签，把它改绑到一个 COST_BASIC 非树组件；没有就原样复制
+  const treeCompId = (tabs.find((t) => t[2] === 'BOM') ?? [])[5] ?? '00000000-0000-0000-0000-000000000000';
+  let basicProcId = '';
+  let basicProcCode = '(源模板已无加工费页签，同方言副本原样复制)';
+  if (procTab) {
+    expect(procTab[4],
+      `源模板还留着「加工费」页签时，混方言副本靠"它当前就是 QUOTE 方言"来构造。实际方言=${procTab[4]}`,
+    ).toBe('QUOTE');
+    basicProcId = sqlRead(
+      `SELECT c.id FROM component c JOIN component_sql_view csv ON csv.component_id=c.id AND csv.status='ACTIVE' ` +
+      `WHERE csv.builder_config->>'dialect'='COST_BASIC' AND c.id <> '${treeCompId}' ` +
+      `ORDER BY (c.name='加工费') DESC, ` +
+      `(c.id NOT IN (SELECT component_id FROM template_component WHERE template_id='${srcId}')) DESC, c.code LIMIT 1`);
+    expect(basicProcId, '找不到可用的 COST_BASIC 非树组件 —— AC-16 后半段无前置，请报主线').toMatch(/^[0-9a-f-]{36}$/);
+    basicProcCode = sqlRead(`SELECT code || ' / ' || name FROM component WHERE id='${basicProcId}'`);
+  } else {
+    // 源模板已全是 COST_BASIC（+ 无方言的小计）⇒ 原样复制天然就是"同方言"
+    const nonBasic = tabs.filter((t) => t[4] !== 'COST_BASIC' && t[4] !== '(无)');
+    expect(nonBasic.length,
+      `源模板已无加工费页签，同方言副本靠"原样复制"成立；但源里还有非 COST_BASIC 页签：` +
+      `${JSON.stringify(nonBasic.map((t) => `${t[2]}(${t[4]})`))} —— 那样 warnings 不会是 []，请报主线`,
+    ).toBe(0);
+  }
+  console.log(`[SG] 混方言副本的加工费页签 → ${quoteProcCode}（QUOTE 方言，${procTab ? '改绑既有页签' : '副本内新增页签'}）`);
+  console.log(`[SG] 同方言副本的加工费页签 → ${basicProcCode}`);
 
-  // ⚠️ AC 原文写「5 个页签原样，其中加工费组件方言为 QUOTE」——
-  //    但交付项 10 已把 COMP-2319 改成 COST_BASIC，"原样"派生就不再混方言了（AC 自相矛盾，已上报主线）。
-  //    这里按 AC 的**意图**（一份混方言、一份同方言）显式指定加工费页签绑哪个组件。
-  const mixedId = await deriveDraftCopy(srcId, TPL_MIXED, procTcId, quoteProcId);
-  const sameId = await deriveDraftCopy(srcId, TPL_SAME, procTcId, basicProcId);
+  const mixedId = await deriveDraftCopy(
+    srcId, TPL_MIXED, procTcId, quoteProcId,
+    procTab ? undefined : { tabName: '加工费', componentId: quoteProcId, sortOrder: 3 });
+  const sameId = await deriveDraftCopy(srcId, TPL_SAME, procTcId, basicProcId || treeCompId);
 
   const pub1 = await publishAndRead(mixedId, TPL_MIXED);
   const pub2 = await publishAndRead(sameId, TPL_SAME);
 
   saveEvidence('06-AC-16-publish-warnings',
-    `AC-16 取证\n源模板页签：\n${tabs.map((t) => '  ' + t.join(' | ')).join('\n')}\n\n` +
+    `AC-16 取证\n源模板页签（tcId | sort | tab_name | code | dialect | componentId）：\n` +
+    `${tabs.map((t) => '  ' + t.join(' | ')).join('\n')}\n` +
+    `混方言副本的加工费页签 → ${quoteProcCode}（${procTab ? '改绑既有页签' : '副本内新增页签'}）\n` +
+    `同方言副本的加工费页签 → ${basicProcCode}\n\n` +
     `【混方言副本 ${TPL_MIXED}】id=${mixedId}\n  HTTP ${pub1.status}\n  响应体原文：\n${pub1.text}\n\n` +
     `【同方言副本 ${TPL_SAME}】id=${sameId}\n  HTTP ${pub2.status}\n  响应体原文：\n${pub2.text}\n`);
 
@@ -592,8 +686,11 @@ test('AC-16 发布派生副本：混方言副本 200 且 warnings 含 1 条；�
  *    「publish 的 warnings」，派生只是前置 ⇒ 用 SQL 造前置是可接受的（判据：我的 AC 验的是什么）。
  *    造完立刻用 `GET /templates/{id}` 做**阳性对照**，证明应用确实认得这份副本。
  */
-async function deriveDraftCopy(srcId: string, newName: string, procTcId: string, procCompId: string): Promise<string> {
-  const newId = sqlWrite(
+async function deriveDraftCopy(
+  srcId: string, newName: string, procTcId: string, procCompId: string,
+  extraTab?: { tabName: string; componentId: string; sortOrder: number },
+): Promise<string> {
+  const rawOut = sqlWrite(
     `INSERT INTO template (id, template_series_id, name, version, category, description, usage_note, ` +
     `product_attributes, subtotal_formula, components_snapshot, status, created_by, published_at, ` +
     `excel_view_config, customer_id, category_id, template_kind, formulas, is_default, ` +
@@ -603,27 +700,39 @@ async function deriveDraftCopy(srcId: string, newName: string, procTcId: string,
     `product_attributes, subtotal_formula, NULL, 'DRAFT', created_by, NULL, ` +
     `excel_view_config, customer_id, category_id, template_kind, formulas, false, ` +
     `referenced_variables, NULL, '{}'::jsonb FROM template WHERE id='${srcId}' RETURNING id`,
-    `派生 DRAFT 副本 ${newName}`).trim();
+    `派生 DRAFT 副本 ${newName}`);
+  const newId = firstUuid(rawOut);        // psql 的 RETURNING 输出还带一行 "INSERT 0 1"
   // 🔑 先登记再断言：万一 id 解析不出，也不能让一份已插进库的副本变成没人认领的孤儿行
   if (/^[0-9a-f-]{36}$/.test(newId)) { OWNED.templateIds.push(newId); registerOwnedId(newId); }
   expect(newId,
-    `派生副本失败，没拿到 id（${newName}）。原始输出：${JSON.stringify(newId)}\n` +
+    `派生副本失败，没拿到 id（${newName}）。psql 原始输出：${JSON.stringify(rawOut)}\n` +
     `  ⚠️ 若库里已多出一行同名模板，请手工归档 —— 本用例已失去它的 id。`,
   ).toMatch(/^[0-9a-f-]{36}$/);
 
+  const rebind = procTcId
+    ? `CASE WHEN tc.id='${procTcId}' THEN '${procCompId}'::uuid ELSE tc.component_id END`
+    : `tc.component_id`;
   sqlWrite(
     `INSERT INTO template_component (id, template_id, component_id, tab_name, sort_order, preset_rows, ` +
     `formula_assignments, data_driver_path_override, fields_override) ` +
-    `SELECT gen_random_uuid(), '${newId}', ` +
-    `CASE WHEN tc.id='${procTcId}' THEN '${procCompId}'::uuid ELSE tc.component_id END, ` +
+    `SELECT gen_random_uuid(), '${newId}', ${rebind}, ` +
     `tc.tab_name, tc.sort_order, tc.preset_rows, tc.formula_assignments, tc.data_driver_path_override, ` +
     `tc.fields_override FROM template_component tc WHERE tc.template_id='${srcId}'`,
-    `复制 ${newName} 的页签绑定（加工费改绑 ${procCompId}）`);
+    `复制 ${newName} 的页签绑定${procTcId ? `（加工费改绑 ${procCompId}）` : ''}`);
+  if (extraTab) {
+    sqlWrite(
+      `INSERT INTO template_component (id, template_id, component_id, tab_name, sort_order, preset_rows, ` +
+      `formula_assignments, data_driver_path_override, fields_override) ` +
+      `VALUES (gen_random_uuid(), '${newId}', '${extraTab.componentId}'::uuid, '${extraTab.tabName}', ` +
+      `${extraTab.sortOrder}, '[]'::jsonb, '{}'::jsonb, NULL, NULL)`,
+      `${newName} 补一个「${extraTab.tabName}」页签（源模板已无此页签）`);
+  }
 
   // 阳性对照：应用必须认得这份副本（否则"publish 没告警"可能只是因为副本是残的）
   const res = await api.get(`/api/cpq/templates/${newId}`);
   const j = safeJson(await res.text());
-  const srcTabs = sqlNum(`SELECT count(*) FROM template_component WHERE template_id='${srcId}'`);
+  const srcTabs = sqlNum(`SELECT count(*) FROM template_component WHERE template_id='${srcId}'`)
+    + (extraTab ? 1 : 0);
   const cpTabs = sqlNum(`SELECT count(*) FROM template_component WHERE template_id='${newId}'`);
   expect(res.status(), `派生副本 ${newName} 读不回来（HTTP ${res.status()}）`).toBe(200);
   expect(j?.data?.status, `派生副本 ${newName} 应为 DRAFT`).toBe('DRAFT');
@@ -645,11 +754,20 @@ async function publishAndRead(templateId: string, label: string) {
 // AC-20（序列）BOM 7 → 材质元素 4 → 切回 7 → 刷新基础数据 → 仍 7 / 4
 // ════════════════════════════════════════════════════════════════════════
 test('AC-20 序列：BOM 7 行 → 材质元素 4 行 → 切回 BOM 仍 7 行 → 刷新基础数据后仍 7 / 4 且无红框', async ({ page }) => {
+  // 🛑 主线 2026-09-09 裁决：本条**挂起**，不跑。
+  //    原因不是实现没做，是一个待用户批准的操作卡着：`核价模板1` 是 PUBLISHED，渲染取 SQL 读
+  //    `template.sql_views_snapshot`（冻结快照），已发布模板禁止回落实时表 ⇒ B-5 重编译出的
+  //    无桥 SQL 到不了渲染层。实测 baseRows：产品 0 / BOM 7 / 材质元素 0 / 加工费 0，
+  //    而 UI 在 baseRows 空时仍渲一行空壳（产品 1 / 材质元素 1）。
+  //    ⇒ 现在跑只会得到「阻塞」不是「结论」。解锁后用 SG_RUN_AC20=1 开跑。
+  test.skip(process.env.SG_RUN_AC20 !== '1',
+    '主线挂起：材质元素当前 baseRows=0（PUBLISHED 模板 sql_views_snapshot 未对齐，待用户批准），跑了只会得到阻塞不是结论');
+
   // 前置：生效配置必须是进场那条（前面每条用例都做了局部还原，这里再确认一次）
   expect(activeIdOf('COST_BASIC'),
     'AC-20 前置：COST_BASIC 生效配置必须是进场那条，否则重算出来的是别的树').toBe(ENTRY.activeByUsage['COST_BASIC']);
 
-  await loginAsAdmin(page);
+  await uiLogin(page);
   await enterCostingCard(page);
   expect((await renderErrors(page)).length, 'AC-20 起手：不应有「核价渲染失败」红框').toBe(0);
 
@@ -665,6 +783,12 @@ test('AC-20 序列：BOM 7 行 → 材质元素 4 行 → 切回 BOM 仍 7 行 �
   expect(el1.count,
     `AC-20 第 2 步：材质元素页签应 ${AC10_ELEMENT_ROWS} 行，实际 ${el1.count}，首列=${JSON.stringify(el1.firstCells)}`,
   ).toBe(AC10_ELEMENT_ROWS);
+  // 🚨 防"空壳行"假绿：行数对上但每行都是空的，看起来和真数据一模一样。
+  //    （主线 2026-09-09 实测：baseRows 为空时表格仍渲一行空壳）
+  expect(el1.nonEmpty,
+    `AC-20：材质元素的 ${el1.count} 行必须都有业务内容，实际非空 ${el1.nonEmpty} 行。\n` +
+    el1.fullTexts.map((t, i) => `    #${i} ${t}`).join('\n')).toBe(AC10_ELEMENT_ROWS);
+  expect(bom1.nonEmpty, `AC-20：BOM 的 ${bom1.count} 行必须都有业务内容，实际非空 ${bom1.nonEmpty} 行`).toBe(AC7_BOM_ROWS);
 
   const bom2 = await readTabRows(card, 'BOM');
   await shot(page, 'AC-20-03-切回BOM');
@@ -674,6 +798,7 @@ test('AC-20 序列：BOM 7 行 → 材质元素 4 行 → 切回 BOM 仍 7 行 �
   expect(bom2.firstCells, 'AC-20：切走再切回，BOM 的行内容也应一致（不只是行数）').toEqual(bom1.firstCells);
 
   // ── 刷新基础数据（本片登记的第 ③ 类全局状态写入面）──
+  SNAPSHOT_DIRTY = true;                       // 本步骤会重写快照
   const fired = await clickRefreshBasicData(page);
   expect(fired, '「刷新基础数据」确认后应发出刷新请求（没发出说明确认框/按钮没点到，属选择器问题）').toBe(true);
   await shot(page, 'AC-20-04-刷新完成');
@@ -692,15 +817,23 @@ test('AC-20 序列：BOM 7 行 → 材质元素 4 行 → 切回 BOM 仍 7 行 �
   expect(el2.count,
     `AC-20 第 4 步：刷新后材质元素应仍 ${AC10_ELEMENT_ROWS} 行，实际 ${el2.count}，首列=${JSON.stringify(el2.firstCells)}`,
   ).toBe(AC10_ELEMENT_ROWS);
+  expect(el2.nonEmpty,
+    `AC-20：刷新后材质元素的 ${el2.count} 行必须仍都有业务内容，实际非空 ${el2.nonEmpty} 行。\n` +
+    el2.fullTexts.map((t, i) => `    #${i} ${t}`).join('\n')).toBe(AC10_ELEMENT_ROWS);
+  expect(bom3.nonEmpty, `AC-20：刷新后 BOM 的 ${bom3.count} 行必须仍都有业务内容，实际非空 ${bom3.nonEmpty} 行`).toBe(AC7_BOM_ROWS);
 
   saveEvidence('07-AC-20-序列',
     `AC-20 取证（单据 ${QUOTATION_NO} / 卡片 S0001）\n` +
-    `  ① BOM 首次        ${bom1.count} 行  ${JSON.stringify(bom1.firstCells)}\n` +
-    `  ② 材质元素        ${el1.count} 行  ${JSON.stringify(el1.firstCells)}\n` +
-    `  ③ 切回 BOM        ${bom2.count} 行  ${JSON.stringify(bom2.firstCells)}\n` +
-    `  ④ 刷新后 BOM      ${bom3.count} 行  ${JSON.stringify(bom3.firstCells)}\n` +
-    `  ④ 刷新后材质元素  ${el2.count} 行  ${JSON.stringify(el2.firstCells)}\n` +
-    `  红框数：全程 0`);
+    `  ① BOM 首次        ${bom1.count} 行（非空 ${bom1.nonEmpty}）  ${JSON.stringify(bom1.firstCells)}\n` +
+    `  ② 材质元素        ${el1.count} 行（非空 ${el1.nonEmpty}）  ${JSON.stringify(el1.firstCells)}\n` +
+    `  ③ 切回 BOM        ${bom2.count} 行（非空 ${bom2.nonEmpty}）  ${JSON.stringify(bom2.firstCells)}\n` +
+    `  ④ 刷新后 BOM      ${bom3.count} 行（非空 ${bom3.nonEmpty}）  ${JSON.stringify(bom3.firstCells)}\n` +
+    `  ④ 刷新后材质元素  ${el2.count} 行（非空 ${el2.nonEmpty}）  ${JSON.stringify(el2.firstCells)}\n` +
+    `  红框数：全程 0\n\n` +
+    `  ── 逐行全文（防"行数对上但全是空壳行"的假绿）──\n` +
+    `  ② 材质元素首次：\n${el1.fullTexts.map((t, i) => `      #${i} ${t}`).join('\n')}\n` +
+    `  ④ 刷新后材质元素：\n${el2.fullTexts.map((t, i) => `      #${i} ${t}`).join('\n')}\n` +
+    `  ④ 刷新后 BOM：\n${bom3.fullTexts.map((t, i) => `      #${i} ${t}`).join('\n')}`);
 
   note('AC-20 完成 —— QT-0661 卡片值快照已由本用例的「刷新基础数据」重算，afterAll 无需兜底');
 });

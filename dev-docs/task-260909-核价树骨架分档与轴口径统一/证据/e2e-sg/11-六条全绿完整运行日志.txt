@@ -1,0 +1,241 @@
+
+Running 6 tests using 1 worker
+
+[SG] 实例正身与前置探针
+BASE_URL=http://localhost:5212  BACKEND_URL=http://localhost:8131  DB=10.177.152.12/cpq_db_0724
+最早后端连接建立时间（近似"后端启动时刻"）= 2026-09-09 06:34:49
+costing_bom_tree_config 全表：
+  COST_BASIC | 537d2267-ccf2-4453-bc30-a9cee741e153 | 基础核价BOM树-COST_BASIC-v1 | true
+  COSTING | 82612f2b-558a-4b13-b052-af08100573ac | 核价BOM树-PRICING口径v1(versionFilter 版本感知) | true
+  QUOTE | d6defaa0-354f-4e92-8e89-4bc8454888c3 | 报价BOM树-QUOTE口径v1 | true
+P3 ✅ usage=COST_BASIC 生效配置 id=537d2267-ccf2-4453-bc30-a9cee741e153
+P1 ✅ GET /templates/{核价模板1} 的 data 含 warnings 键；实际键集=["category","categoryId","categoryName","components","componentsSnapshot","createdAt","createdBy","customerId","customerName","description","excelViewConfig","id","name","productAttributes","publishedAt","status","subtotalFormula","templateKind","templateSeriesId","updatedAt","usageNote","version","warnings"]
+P2 ✅ t260909tree_smgr(SALES_MANAGER) GET /api/cpq/costing-bom-tree-config → 403（期望 403；返 200 = 打到了旧代码实例，本轮结论全部无效）
+[SG][证据] 00-实例正身与前置探针 → /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/dev-docs/task-260909-核价树骨架分档与轴口径统一/证据/e2e-sg/00-实例正身与前置探针.txt
+[SG] 进场快照（afterAll 按此还原）
+  生效配置：{
+  "COST_BASIC": "537d2267-ccf2-4453-bc30-a9cee741e153",
+  "COSTING": "82612f2b-558a-4b13-b052-af08100573ac",
+  "QUOTE": "d6defaa0-354f-4e92-8e89-4bc8454888c3"
+}
+  GROUP BY 原始输出：
+usagecount
+COST_BASIC1
+COSTING1
+QUOTE1
+(3 rows)
+  COST_BASIC sql_template 长度 = 2311 字符
+  单据 = QT-20260909-0661 (3c38bfb7-6af3-4f39-9c6d-f127e02d8712)
+[SG][证据] 01-进场快照 → /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/dev-docs/task-260909-核价树骨架分档与轴口径统一/证据/e2e-sg/01-进场快照.txt
+[SG][证据] 02-AC-3-生效配置分档 → /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/dev-docs/task-260909-核价树骨架分档与轴口径统一/证据/e2e-sg/02-AC-3-生效配置分档.txt
+AC-3 取证
+  操作前 SELECT usage,count(*) FROM costing_bom_tree_config WHERE is_active GROUP BY 1：
+usagecount
+COST_BASIC1
+COSTING1
+QUOTE1
+(3 rows)
+  操作后：
+usagecount
+COST_BASIC1
+COSTING1
+QUOTE1
+(3 rows)
+  新建并生效的配置 id = 3936bff7-56c7-42bd-b3e5-3d62a3a9ac79（name=T260909-基础核价BOM树-v1）
+  QUOTE 生效 id：操作前 d6defaa0-354f-4e92-8e89-4bc8454888c3 → 操作后 d6defaa0-354f-4e92-8e89-4bc8454888c3
+  ✓  1 [chromium] › e2e/t260909tree-sg.spec.ts:203:1 › AC-3 新增 COST_BASIC 配置并设为生效后：COST_BASIC=1 且 QUOTE=1，QUOTE 生效 id 逐字不变 (1.5s)
+[SG][证据] 03-AC-4-缺列校验 → /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/dev-docs/task-260909-核价树骨架分档与轴口径统一/证据/e2e-sg/03-AC-4-缺列校验.txt
+AC-4 取证
+  请求 usage=COST_BASIC name=T260909-AC4-缺node_path
+  提交的 sqlTemplate（外层投影缺 node_path）：
+SELECT root_no, material_no, bom_version, parent_no FROM (
+-- 基础核价 BOM 树骨架（usage=COST_BASIC，task-260909 B-9）
+--
+-- 三列的料号空间不同，改之前先看清楚：
+--   root_no                 = 销售料号（种子原值，恒不翻译）
+--   material_no / parent_no = 生产料号（翻译后）
+--   node_path               = 生产料号拼接
+-- root_no 必须留在销售料号空间：BomTreeRenderService 的 rootToLineItemIds 按
+-- quotation_line_item.product_part_no_snapshot（销售料号）建键，CostingTreeGrouping 又按本 SQL
+-- 输出的 root_no 分组 —— 输出成生产料号会让该卡片的料号集合变成空集，整张卡片一行都渲不出来，
+-- 而且不报任何错。
+--
+-- 客户隔离只在种子处发生一次（子查询里的 customer_no 等值条件）：核价三张基础表本身没有
+-- customer_no 维度，销售到生产的翻译是全树唯一的客户接触点。
+--
+-- 注意：版本宏的名字不要出现在注释里 —— VersionFilterMacro 是在【原文】上扫描的（不屏蔽注释），
+-- 注释里写一次就会被当成一处真实宏去解析实参，直接把整段 SQL 解坏。
+WITH RECURSIVE bom AS (
+  -- 种子：本单成品的销售料号 → 生产料号，整棵树里唯一一次翻译
+  SELECT
+    s.sales_no                                     AS root_no,
+    s.production_no::text                          AS material_no,
+    (SELECT bv.version_no::text
+       FROM v_ds_cost_basic_material_bom_all bv
+      WHERE bv.production_no = s.production_no
+        AND :versionFilter(bv.is_current, bv.version_no::text, bv.production_no)
+      LIMIT 1)                                     AS bom_version,
+    NULL::text                                     AS parent_no,
+    s.production_no::text                          AS node_path
+  FROM (
+    SELECT DISTINCT p::text AS sales_no, dqm.production_no
+      FROM unnest(:production_part_nos) AS p
+      JOIN ds_quote_material dqm
+        ON dqm.material_no = p
+       AND dqm.customer_no = :customerCode
+     WHERE dqm.production_no IS NOT NULL
+  ) s
+
+  UNION ALL
+
+  -- 递归体：父 = production_no，子 = component_no（核价 BOM 全程生产料号，无客户维度）
+  -- bom_version 取【这条边所属 BOM 的版本】= ch.version_no，与版本宏的版本维度（按父件
+  -- production_no 分档）同源；不要改成"子件自己那张 BOM 的版本"，那会让版本列与版本切换的
+  -- 作用对象对不上。
+  SELECT
+    b.root_no,
+    ch.component_no::text                          AS material_no,
+    ch.version_no::text                            AS bom_version,
+    ch.production_no::text                         AS parent_no,
+    (b.node_path || '/' || ch.component_no)::text  AS node_path
+  FROM v_ds_cost_basic_material_bom_all ch
+  JOIN bom b ON ch.production_no = b.material_no
+  WHERE :versionFilter(ch.is_current, ch.version_no::text, ch.production_no)
+    AND ch.component_no IS NOT NULL
+) CYCLE material_no SET is_cyc USING cyc_path
+SELECT root_no, material_no, bom_version, parent_no, node_path
+FROM bom
+) AS sg_missing_node_path
+
+  HTTP 500
+  响应体原文：
+{"code":500,"message":"Internal server error"}
+
+  costing_bom_tree_config 记录数：操作前 4 → 操作后 4
+[SG][note] AC-4 🟡 已知缺陷 BL-0227 命中：期望 400，实际 HTTP 500。响应片段={"code":500,"message":"Internal server error"}。按派工书 §h 记录为已知缺陷，不算本任务回归。⚠️ 但「不新增记录」与「拒绝保存」两条已独立断言通过。
+  ✓  2 [chromium] › e2e/t260909tree-sg.spec.ts:253:1 › AC-4 保存缺 node_path 输出列的递归 SQL：400「递归 SQL 缺输出列: node_path」且不新增记录 (320ms)
+[SG][证据] AC-19-01-基础核价初始 → /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/dev-docs/task-260909-核价树骨架分档与轴口径统一/证据/e2e-sg/01-AC-19-01-基础核价初始.png
+[SG][ui] 配置列表 2 行：
+   #0 active=true | 基础核价BOM树-COST_BASIC-v1 生效中 2026-09-10T00:31:47.699368Z
+   #1 active=false | T260909-基础核价BOM树-v1 未生效 2026-09-10T00:31:47.683225Z
+[SG][证据] AC-19-02a-新增表单已填 → /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/dev-docs/task-260909-核价树骨架分档与轴口径统一/证据/e2e-sg/02-AC-19-02a-新增表单已填.png
+[SG][证据] AC-19-02-A已新增 → /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/dev-docs/task-260909-核价树骨架分档与轴口径统一/证据/e2e-sg/03-AC-19-02-A已新增.png
+[SG][证据] AC-19-03-A已设为生效 → /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/dev-docs/task-260909-核价树骨架分档与轴口径统一/证据/e2e-sg/04-AC-19-03-A已设为生效.png
+[SG][ui] 配置列表 1 行：
+   #0 active=true | 报价BOM树-QUOTE口径v1 生效中 2026-09-09T17:59:16.237803Z
+[SG][证据] AC-19-04-报价页签 → /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/dev-docs/task-260909-核价树骨架分档与轴口径统一/证据/e2e-sg/05-AC-19-04-报价页签.png
+[SG][ui] 配置列表 3 行：
+   #0 active=false | 基础核价BOM树-COST_BASIC-v1 未生效 2026-09-10T00:32:03.649403Z
+   #1 active=false | T260909-基础核价BOM树-v1 未生效 2026-09-10T00:31:47.683225Z
+   #2 active=true | T260909-AC19-A 生效中 2026-09-10T00:32:03.680357Z
+[SG][证据] AC-19-05-刷新整页后 → /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/dev-docs/task-260909-核价树骨架分档与轴口径统一/证据/e2e-sg/06-AC-19-05-刷新整页后.png
+[SG][证据] 04-AC-19-序列 → /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/dev-docs/task-260909-核价树骨架分档与轴口径统一/证据/e2e-sg/04-AC-19-序列.txt
+  ✓  3 [chromium] › e2e/t260909tree-sg.spec.ts:303:1 › AC-19 序列：新增 A → 设为生效 → 切「报价」确认未变 → 切回 → 刷新整页，A 仍生效且恰好 1 条 (35.5s)
+[SG] AC-5 停用方式：PUT isActive=false [HTTP 200] → 未生效，改用 DELETE 自有配置 [HTTP 200]
+[SG][证据] AC-5-01-无生效配置时渲染 → /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/dev-docs/task-260909-核价树骨架分档与轴口径统一/证据/e2e-sg/07-AC-5-01-无生效配置时渲染.png
+[SG][证据] 05-AC-5-错误文案 → /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/dev-docs/task-260909-核价树骨架分档与轴口径统一/证据/e2e-sg/05-AC-5-错误文案.txt
+[SG][证据] AC-5-02-恢复生效后 → /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/dev-docs/task-260909-核价树骨架分档与轴口径统一/证据/e2e-sg/08-AC-5-02-恢复生效后.png
+[SG][ui] 页签「BOM」行数=7（非空 7，卡片内表数=1），首列=["▼300001","▼300012","▼300015","992","▼300013","991","300014"]
+[SG][ui]   #0 ▼ 300001 3 🔗 〔值: 3〕
+[SG][ui]   #1 ▼ 300012 3 🔗 〔值: 3, 300001, 10, 300012, 零件12, Z002, 0, 1, PCS, 1, PCS, 0, 0〕
+[SG][ui]   #2 ▼ 300015 1 🔗 〔值: 1, 300012, 10, 300015, 零件15, Z002, 0, 1, PCS, 1, PCS, 0, 0〕
+[SG][ui]   #3 992 1 🔗 〔值: 1, 300015, 10, 992, AgNi11#-Ⅰ, 0, 12.3, KG, 1, KG, 0, 0〕
+[SG][ui]   #4 ▼ 300013 3 🔗 〔值: 3, 300001, 20, 300013, 零件13, Z002, 0, 1, PCS, 1, PCS, 0, 0〕
+[SG][ui]   #5 991 1 🔗 〔值: 1, 300013, 10, 991, 991, 0, 3.5, KG, 1, KG, 0, 0〕
+[SG][ui]   #6 300014 3 🔗 〔值: 3, 300001, 30, 300014, 外购件1, Z002, 0, 1, PCS, 1, PCS, 0, 0〕
+  ✓  4 [chromium] › e2e/t260909tree-sg.spec.ts:496:1 › AC-5 无生效 COST_BASIC 配置时错误文案出现 usage=COST_BASIC（而非 COSTING），恢复后错误消失 (35.1s)
+[SG] 源模板「核价模板1」页签：
+   eca27921-9110-4930-98af-dbb7d0034ecf | 0 | 产品 | COMP-2298 | COST_BASIC | a515014e-6ed3-4c4c-a7b0-0b82e326a7e8
+   43f737a5-cb5a-49b0-a785-2174e47968b7 | 1 | BOM | COMP-2299 | COST_BASIC | 32ab8212-df6c-4844-9721-ac7dc41d6cf2
+   58ef5351-cbc3-40e1-9973-718e87432424 | 2 | 材质元素 | COMP-2300 | COST_BASIC | 9291b050-b6a9-42c7-8c56-d3066c3c2369
+   65ddb441-8d58-42e9-9e13-1639131cfedf | 4 | 小计 | COMP-2412 | (无) | 94214135-ad87-445f-8826-5a7163c22955
+[SG] 混方言副本的加工费页签 → COMP-2319 / 加工费（QUOTE 方言，副本内新增页签）
+[SG] 同方言副本的加工费页签 → (源模板已无加工费页签，同方言副本原样复制)
+[SG][write] 派生 DRAFT 副本 T260909-混方言验证
+[SG][write] 复制 T260909-混方言验证 的页签绑定
+[SG][write] T260909-混方言验证 补一个「加工费」页签（源模板已无此页签）
+[SG] 派生副本 T260909-混方言验证 = 84cb58fe-29d8-40b5-ac2d-75a8a56a7c98（5 页签，DRAFT）
+[SG][write] 派生 DRAFT 副本 T260909-同方言验证
+[SG][write] 复制 T260909-同方言验证 的页签绑定
+[SG] 派生副本 T260909-同方言验证 = 5854cf4f-9f2e-438b-bc84-d244af7f1206（4 页签，DRAFT）
+[SG] publish T260909-混方言验证 → HTTP 200
+{"code":200,"message":"success","data":{"id":"84cb58fe-29d8-40b5-ac2d-75a8a56a7c98","templateSeriesId":"add27785-c2ae-48c7-af1a-b22e449f165d","name":"T260909-混方言验证","version":"v1.0","category":null,"customerId":null,"customerName":null,"categoryId":"2c4b8ed8-59ce-4125-b7f7-86ab59ca4bc3","categoryName":"默认分类","description":"T260909-混方言验证 —— task-260909 S-全局片 AC-16 派生副本，跑完归档","usageNote":null,"productAttributes":[],"subtotalFormula":[],"componentsSnapshot":"[{\"id\":\"7c474691-b1f1-4fe1-a535-2433f1c7b1ac\",\"componentId\":\"a515014e-6ed3-4c4c-a7b0-0b82e326a7e8\",\"componentName\":\"产品\",\"componentCode\":\"COMP-2298\",\"componentType\":\"NORMAL\",\"excelColumns\":[],\"tabName\":\"产品\",\"sortOrder\":0,\"fields\":[{\"name\":\"生产料号\",\"notes\":\"\",\"content\":\"\",\"is_amount\":false,\"field_type\":\"INPUT_TEXT\",\"sort_order\":0,\"is_subtotal\":false,\"default_source\":{\"path\":\"$builder_a515014e6ed3.production_no\",\"type\":\"BASIC_DATA\"}},{\"name\":\"品名\",\"notes\":\"\",\"content\":\"\",\"is_amount\":false,\"field_type\":\"INPUT_TEXT\",\"sort_order\":1,\"is_subtotal\":false,\"default_source\":{\"path\":\"$builder_a515014e6ed3.material_name\",\"type\":\"BASIC_DATA\"}},{\"name\":\"
+[SG] publish T260909-同方言验证 → HTTP 200
+{"code":200,"message":"success","data":{"id":"5854cf4f-9f2e-438b-bc84-d244af7f1206","templateSeriesId":"9e4eaad8-cee1-42f1-87df-d07d44ea6c82","name":"T260909-同方言验证","version":"v1.0","category":null,"customerId":null,"customerName":null,"categoryId":"2c4b8ed8-59ce-4125-b7f7-86ab59ca4bc3","categoryName":"默认分类","description":"T260909-同方言验证 —— task-260909 S-全局片 AC-16 派生副本，跑完归档","usageNote":null,"productAttributes":[],"subtotalFormula":[],"componentsSnapshot":"[{\"id\":\"1737ee3b-18ac-4b31-9e27-9c2b025072eb\",\"componentId\":\"a515014e-6ed3-4c4c-a7b0-0b82e326a7e8\",\"componentName\":\"产品\",\"componentCode\":\"COMP-2298\",\"componentType\":\"NORMAL\",\"excelColumns\":[],\"tabName\":\"产品\",\"sortOrder\":0,\"fields\":[{\"name\":\"生产料号\",\"notes\":\"\",\"content\":\"\",\"is_amount\":false,\"field_type\":\"INPUT_TEXT\",\"sort_order\":0,\"is_subtotal\":false,\"default_source\":{\"path\":\"$builder_a515014e6ed3.production_no\",\"type\":\"BASIC_DATA\"}},{\"name\":\"品名\",\"notes\":\"\",\"content\":\"\",\"is_amount\":false,\"field_type\":\"INPUT_TEXT\",\"sort_order\":1,\"is_subtotal\":false,\"default_source\":{\"path\":\"$builder_a515014e6ed3.material_name\",\"type\":\"BASIC_DATA\"}},{\"name\":\"
+[SG][证据] 06-AC-16-publish-warnings → /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/dev-docs/task-260909-核价树骨架分档与轴口径统一/证据/e2e-sg/06-AC-16-publish-warnings.txt
+  ✓  5 [chromium] › e2e/t260909tree-sg.spec.ts:577:1 › AC-16 发布派生副本：混方言副本 200 且 warnings 含 1 条；同方言副本 200 且 warnings 为 [] (2.6s)
+[SG][ui] 页签「BOM」行数=7（非空 7，卡片内表数=1），首列=["▼300001","▼300012","▼300015","992","▼300013","991","300014"]
+[SG][ui]   #0 ▼ 300001 3 🔗 〔值: 3〕
+[SG][ui]   #1 ▼ 300012 3 🔗 〔值: 3, 300001, 10, 300012, 零件12, Z002, 0, 1, PCS, 1, PCS, 0, 0〕
+[SG][ui]   #2 ▼ 300015 1 🔗 〔值: 1, 300012, 10, 300015, 零件15, Z002, 0, 1, PCS, 1, PCS, 0, 0〕
+[SG][ui]   #3 992 1 🔗 〔值: 1, 300015, 10, 992, AgNi11#-Ⅰ, 0, 12.3, KG, 1, KG, 0, 0〕
+[SG][ui]   #4 ▼ 300013 3 🔗 〔值: 3, 300001, 20, 300013, 零件13, Z002, 0, 1, PCS, 1, PCS, 0, 0〕
+[SG][ui]   #5 991 1 🔗 〔值: 1, 300013, 10, 991, 991, 0, 3.5, KG, 1, KG, 0, 0〕
+[SG][ui]   #6 300014 3 🔗 〔值: 3, 300001, 30, 300014, 外购件1, Z002, 0, 1, PCS, 1, PCS, 0, 0〕
+[SG][证据] AC-20-01-BOM首次 → /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/dev-docs/task-260909-核价树骨架分档与轴口径统一/证据/e2e-sg/09-AC-20-01-BOM首次.png
+[SG][ui] 页签「材质元素」行数=4（非空 4，卡片内表数=1），首列=["","","",""]
+[SG][ui]   #0 0 🔗 〔值: 300013, 991, 991, 1, Cu, 22, 5〕
+[SG][ui]   #1 0 🔗 〔值: 300013, 991, 991, 2, 301, 78, 2〕
+[SG][ui]   #2 0 🔗 〔值: 300015, AgNi11#-Ⅰ, 992, 2, Cu, 30〕
+[SG][ui]   #3 0 🔗 〔值: 300015, AgNi11#-Ⅰ, 992, 1, Ag, 70〕
+[SG][证据] AC-20-02-材质元素 → /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/dev-docs/task-260909-核价树骨架分档与轴口径统一/证据/e2e-sg/10-AC-20-02-材质元素.png
+[SG][ui] 页签「BOM」行数=7（非空 7，卡片内表数=1），首列=["▼300001","▼300012","▼300015","992","▼300013","991","300014"]
+[SG][ui]   #0 ▼ 300001 3 🔗 〔值: 3〕
+[SG][ui]   #1 ▼ 300012 3 🔗 〔值: 3, 300001, 10, 300012, 零件12, Z002, 0, 1, PCS, 1, PCS, 0, 0〕
+[SG][ui]   #2 ▼ 300015 1 🔗 〔值: 1, 300012, 10, 300015, 零件15, Z002, 0, 1, PCS, 1, PCS, 0, 0〕
+[SG][ui]   #3 992 1 🔗 〔值: 1, 300015, 10, 992, AgNi11#-Ⅰ, 0, 12.3, KG, 1, KG, 0, 0〕
+[SG][ui]   #4 ▼ 300013 3 🔗 〔值: 3, 300001, 20, 300013, 零件13, Z002, 0, 1, PCS, 1, PCS, 0, 0〕
+[SG][ui]   #5 991 1 🔗 〔值: 1, 300013, 10, 991, 991, 0, 3.5, KG, 1, KG, 0, 0〕
+[SG][ui]   #6 300014 3 🔗 〔值: 3, 300001, 30, 300014, 外购件1, Z002, 0, 1, PCS, 1, PCS, 0, 0〕
+[SG][证据] AC-20-03-切回BOM → /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/dev-docs/task-260909-核价树骨架分档与轴口径统一/证据/e2e-sg/11-AC-20-03-切回BOM.png
+[SG][ui] 刷新基础数据请求：["200 http://localhost:5212/api/cpq/quotations/3c38bfb7-6af3-4f39-9c6d-f127e02d8712/refresh-card-snapshot"]
+[SG][证据] AC-20-04-刷新完成 → /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/dev-docs/task-260909-核价树骨架分档与轴口径统一/证据/e2e-sg/12-AC-20-04-刷新完成.png
+[SG][ui] 页签「BOM」行数=7（非空 7，卡片内表数=1），首列=["▼300001","▼300012","▼300015","992","▼300013","991","300014"]
+[SG][ui]   #0 ▼ 300001 3 🔗 〔值: 3〕
+[SG][ui]   #1 ▼ 300012 3 🔗 〔值: 3, 300001, 10, 300012, 零件12, Z002, 0, 1, PCS, 1, PCS, 0, 0〕
+[SG][ui]   #2 ▼ 300015 1 🔗 〔值: 1, 300012, 10, 300015, 零件15, Z002, 0, 1, PCS, 1, PCS, 0, 0〕
+[SG][ui]   #3 992 1 🔗 〔值: 1, 300015, 10, 992, AgNi11#-Ⅰ, 0, 12.3, KG, 1, KG, 0, 0〕
+[SG][ui]   #4 ▼ 300013 3 🔗 〔值: 3, 300001, 20, 300013, 零件13, Z002, 0, 1, PCS, 1, PCS, 0, 0〕
+[SG][ui]   #5 991 1 🔗 〔值: 1, 300013, 10, 991, 991, 0, 3.5, KG, 1, KG, 0, 0〕
+[SG][ui]   #6 300014 3 🔗 〔值: 3, 300001, 30, 300014, 外购件1, Z002, 0, 1, PCS, 1, PCS, 0, 0〕
+[SG][证据] AC-20-05-刷新后BOM → /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/dev-docs/task-260909-核价树骨架分档与轴口径统一/证据/e2e-sg/13-AC-20-05-刷新后BOM.png
+[SG][ui] 页签「材质元素」行数=4（非空 4，卡片内表数=1），首列=["","","",""]
+[SG][ui]   #0 0 🔗 〔值: 300013, 991, 991, 1, Cu, 22, 5〕
+[SG][ui]   #1 0 🔗 〔值: 300013, 991, 991, 2, 301, 78, 2〕
+[SG][ui]   #2 0 🔗 〔值: 300015, AgNi11#-Ⅰ, 992, 2, Cu, 30〕
+[SG][ui]   #3 0 🔗 〔值: 300015, AgNi11#-Ⅰ, 992, 1, Ag, 70〕
+[SG][证据] AC-20-06-刷新后材质元素 → /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/dev-docs/task-260909-核价树骨架分档与轴口径统一/证据/e2e-sg/14-AC-20-06-刷新后材质元素.png
+[SG][证据] 07-AC-20-序列 → /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/dev-docs/task-260909-核价树骨架分档与轴口径统一/证据/e2e-sg/07-AC-20-序列.txt
+[SG][note] AC-20 完成 —— QT-0661 卡片值快照已由本用例的「刷新基础数据」重算，afterAll 无需兜底
+[SG][write] 归档本片派生的模板副本 2 份
+[SG]
+退场还原清单执行记录
+  ① COST_BASIC: 已是进场 id（537d2267-ccf2-4453-bc30-a9cee741e153），无需动作
+  ① QUOTE: 已是进场 id（d6defaa0-354f-4e92-8e89-4bc8454888c3），无需动作
+  ② config 3936bff7-56c7-42bd-b3e5-3d62a3a9ac79: DELETE [HTTP 200] ⇒ 残留 0 行 ✅
+  ② config ee42ffc4-9d94-4dc2-8fc4-cd6571994521: DELETE [HTTP 200] ⇒ 残留 0 行 ✅
+  ② config d325ff6e-cab2-47fb-994b-710191cb1a23: 已不存在
+  ② 前缀残留复查：0 条 ✅
+  ③ T260909- 前缀模板全库复查：7 条
+      0a60248e-c95b-4092-a493-935bbc0bde0b | T260909-同方言验证 | ARCHIVED | COSTING
+      fdda236e-1322-4900-8160-a9195879fa29 | T260909-混方言验证 | ARCHIVED | COSTING
+      5854cf4f-9f2e-438b-bc84-d244af7f1206 | T260909-同方言验证 | PUBLISHED | COSTING
+      b3a62467-0787-4412-afa4-42761f812a04 | T260909-混方言验证 | ARCHIVED | COSTING
+      3b8a1a51-6ee7-48f7-8fcf-213b8120937e | T260909-同方言验证 | ARCHIVED | COSTING
+      fd6db113-532c-4bc1-a9e3-0b2fce249455 | T260909-混方言验证 | ARCHIVED | COSTING
+      84cb58fe-29d8-40b5-ac2d-75a8a56a7c98 | T260909-混方言验证 | PUBLISHED | COSTING
+  ③ 模板副本归档：
+      5854cf4f-9f2e-438b-bc84-d244af7f1206 | T260909-同方言验证 | ARCHIVED
+      84cb58fe-29d8-40b5-ac2d-75a8a56a7c98 | T260909-混方言验证 | ARCHIVED
+  ③ ⚠️ 归档≠删除：这 2 份 T260909- 副本仍在库里（含其 template_component 行），已写进 test-report.md 的「待回收清单」交主线裁决 —— DELETE 属 §3.2 红线，测试无批准权。
+  ④ AC-20 已跑完并自带重算，无需兜底
+  ⑤ 退场生效配置：{"COST_BASIC":"537d2267-ccf2-4453-bc30-a9cee741e153","COSTING":"82612f2b-558a-4b13-b052-af08100573ac","QUOTE":"d6defaa0-354f-4e92-8e89-4bc8454888c3"}
+  ⑤ 进场生效配置：{"COST_BASIC":"537d2267-ccf2-4453-bc30-a9cee741e153","COSTING":"82612f2b-558a-4b13-b052-af08100573ac","QUOTE":"d6defaa0-354f-4e92-8e89-4bc8454888c3"}
+
+本轮记录的偏差 / 已知缺陷：
+  · AC-4 🟡 已知缺陷 BL-0227 命中：期望 400，实际 HTTP 500。响应片段={"code":500,"message":"Internal server error"}。按派工书 §h 记录为已知缺陷，不算本任务回归。⚠️ 但「不新增记录」与「拒绝保存」两条已独立断言通过。
+  · AC-20 完成 —— QT-0661 卡片值快照已由本用例的「刷新基础数据」重算，afterAll 无需兜底
+[SG][证据] 99-退场还原清单 → /home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/dev-docs/task-260909-核价树骨架分档与轴口径统一/证据/e2e-sg/99-退场还原清单.txt
+  ✓  6 [chromium] › e2e/t260909tree-sg.spec.ts:756:1 › AC-20 序列：BOM 7 行 → 材质元素 4 行 → 切回 BOM 仍 7 行 → 刷新基础数据后仍 7 / 4 且无红框 (49.4s)
+
+  6 passed (2.2m)
