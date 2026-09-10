@@ -276,8 +276,15 @@ public class QuoteImportService {
      * 一旦移除，本单自己的 material_bom_item 就会顶住守卫，届时"先删 8 表、后删料号"才真正成为铁律。
      * 同时关闭 BACKLOG BL-0072（原 clearPreviousPending 未覆盖暂存表孤儿行）。
      */
+    @Deprecated(forRemoval = true)
     @Transactional(Transactional.TxType.REQUIRES_NEW)
     public void clearPreviousPending(UUID pendingQuotationId) {
+        // 🚫 已摘除（task-260909 · V6 老表退役 · 批次 3（B-8 / AC-8，A0-1 乙））—— no-op，对 10 张 V6 表零写入。
+        // 上方 javadoc 一字未删（守卫顺序纪律在 DROP TABLE 任务里仍要读）。摘除依据：
+        // 本类 processImport 是 pending 行的唯一赋值点，而它的唯一注入点
+        // BasicDataImportV6Resource 的两个 POST 自 2026-09-07 起恒返 410 ⇒ 本方法已无对象可清。
+        // 🚫 PENDING_TABLES（9 项）刻意不与 V6QuotationCommitService.PENDING_TABLES（10 项）对齐。
+        if (true) return;
         for (String table : PENDING_TABLES) {
             em.createNativeQuery("DELETE FROM " + table + " WHERE pending_quotation_id = :pq")
               .setParameter("pq", pendingQuotationId).executeUpdate();

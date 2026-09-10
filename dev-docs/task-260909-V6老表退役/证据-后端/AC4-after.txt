@@ -1,0 +1,5 @@
+命中0断言(QUOTE行): 含 v_compat_ 的行数|0
+阳性对照: 含 ds_quote_material_bom 的行数|1
+COSTING 行(82612f2b)现状: 仍 FROM material_bom_item —— 已挂起等用户裁决|1
+逐行 FROM 首表|82612f2b-558a-4b13-b052-af08100573ac [COSTING] FROM material_bom_item
+逐行 FROM 首表|d6defaa0-354f-4e92-8e89-4bc8454888c3 [QUOTE] FROM ds_quote_material_bom

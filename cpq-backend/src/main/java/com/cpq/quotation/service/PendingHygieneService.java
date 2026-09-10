@@ -157,7 +157,17 @@ public class PendingHygieneService {
         return ((Number) n).longValue();
     }
 
+    /**
+     * 🚫 <b>已摘除（task-260909 · V6 老表退役 · 批次 3（B-8 / AC-8，A0-1 乙））—— 本方法现为 no-op，恒返 0。</b>
+     *
+     * <p>与 {@code MaterialMasterRepository#deleteOrphanPendingWithGuard} 同批摘除：
+     * 本期在共享库上<b>不执行任何 DELETE</b>，孤儿 pending 行留到 {@code DROP TABLE} 任务
+     * 随表一并消失。{@link #countOrphans} 是只读的，<b>保持可用</b> ——
+     * inspect 端点仍能如实报出还剩多少孤儿。
+     */
+    @Deprecated(forRemoval = true)
     private int deleteOrphans(String table) {
+        if (true) return 0; // no-op：见 javadoc
         return em.createNativeQuery(
                 "DELETE FROM " + table + " x "
                 + "WHERE x.pending_quotation_id IS NOT NULL "

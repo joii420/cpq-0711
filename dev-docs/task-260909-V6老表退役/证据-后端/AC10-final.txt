@@ -1,0 +1,10 @@
+material_master|48
+material_bom_item|85
+element_bom_item|64
+material_bom|429
+element_bom|667
+unit_price|185
+capacity|22
+plating_scheme|12
+annual_discount|13
+material_customer_map|61

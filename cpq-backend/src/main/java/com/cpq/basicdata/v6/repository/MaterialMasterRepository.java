@@ -320,13 +320,21 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
     // =========================================================================
 
     /** repair-0726 B2.2：核价通过——本单 pending 料号转正（不改其余列）。返回转正行数。 */
+    /**
+     * 🚫 <b>已摘除（task-260909 · V6 老表退役 · 批次 3（B-8 / AC-8，A0-1 乙））—— 本方法现为 no-op，恒返 0。</b>
+     *
+     * <p>原语义：核价通过时把本单 pending 料号转正（{@code pending_quotation_id} 置 NULL）。
+     * 摘除依据同 {@code V6QuotationCommitService#repointPendingOwnership}：pending 行的唯一
+     * 产生路径（V6 导入端点）自 2026-09-07 起恒返 410，新单不再产生 pending 行，转正无对象。
+     *
+     * <p>⚠️ 签名与调用点保留（A0-1 乙）；<b>{@code pending_quotation_id} 列本期不动</b>（A0-2 甲），
+     * 物理删除留到 {@code DROP TABLE} 任务。
+     *
+     * @return 恒为 0
+     */
+    @Deprecated(forRemoval = true)
     public int flipPending(UUID quotationId) {
-        if (quotationId == null) return 0;
-        return em.createNativeQuery(
-                "UPDATE material_master SET pending_quotation_id = NULL, updated_at = NOW() " +
-                "WHERE pending_quotation_id = :qid")
-            .setParameter("qid", quotationId)
-            .executeUpdate();
+        return 0; // no-op：见 javadoc
     }
 
     /**
@@ -340,8 +348,16 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
      * 每处检查都排除本单自己的 pending 行（{@code <> :qid}）——见调用方 javadoc 的顺序说明。
      * 返回删除行数。
      */
+    @Deprecated(forRemoval = true)
     public int deletePendingWithGuard(UUID quotationId) {
-        if (quotationId == null) return 0;
+        // 🚫 已摘除（task-260909 · V6 老表退役 · 批次 3（B-8 / AC-8，A0-1 乙））—— no-op，恒返 0。
+        // 原语义（上方 javadoc 一字未删，仍是理解 DROP TABLE 任务的必要背景）：删除本单 pending
+        // 料号行，带三处引用守卫。摘除后**只会少删，不会多删** —— 这是刻意选的方向：
+        // 本任务在数据层零不可逆操作，宁可留下 14 行孤儿 pending（A0-3 决定读侧过滤照旧保留，
+        // 维护页看不到它们），也不在"系统还没经过真实使用验证"时保留一条 DELETE 路径。
+        // ⚠️ 不许因为它现在不写库就删掉守卫里的 `<> :qid`：DROP TABLE 任务若决定回滚本条，
+        //    守卫语义必须原样可用。
+        if (true) return 0;
         return em.createNativeQuery(
                 "DELETE FROM material_master mm " +
                 "WHERE mm.pending_quotation_id = :qid " +
@@ -372,7 +388,12 @@ public class MaterialMasterRepository implements PanacheRepositoryBase<MaterialM
      *
      * @return 实际删除行数（被守卫拦下的不计入，调用方应再查一次剩余量并告警）
      */
+    @Deprecated(forRemoval = true)
     public int deleteOrphanPendingWithGuard() {
+        // 🚫 已摘除（task-260909 · V6 老表退役 · 批次 3（B-8 / AC-8，A0-1 乙））—— no-op，恒返 0。理由同
+        // deletePendingWithGuard：孤儿 pending 行保留到 DROP TABLE 任务一并处理，
+        // 本期不在共享库上执行任何 DELETE。
+        if (true) return 0;
         return em.createNativeQuery(
                 "DELETE FROM material_master mm " +
                 "WHERE mm.pending_quotation_id IS NOT NULL " +

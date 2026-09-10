@@ -58,14 +58,14 @@
         ]
       }
     ],
-    "PostCompact": [
+    "PreCompact": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/post-compact.sh\"",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/pre-compact.sh\"",
             "timeout": 10,
-            "statusMessage": "压缩后重锚：指回 AC 原文与分册…"
+            "statusMessage": "给压缩摘要点菜…"
           }
         ]
       }

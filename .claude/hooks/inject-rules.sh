@@ -15,7 +15,7 @@ set -uo pipefail
 
 ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
 RULES="$ROOT/docs/rules"
-log(){ printf '%s\tinject-rules\t%s\t%s\n' "$(date -Is)" "$1" "$2" >> "$ROOT/.claude/hooks.log" 2>/dev/null || true; }
+log(){ printf '%s\tinject-rules\t%s\t%s\n' "$(date -Is)" "$1" "$2" 2>/dev/null >> "$ROOT/.claude/hooks.log" || true; }
 
 payload=$(cat)
 fp=$(printf '%s' "$payload" | jq -r '.tool_input.file_path // empty' 2>/dev/null)

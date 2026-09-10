@@ -2323,7 +2323,21 @@ public class QuotationService {
         "unit_price", "material_bom", "material_bom_item", "element_bom", "element_bom_item",
         "capacity", "plating_scheme", "annual_discount", "material_customer_map");
 
+    /**
+     * 🚫 <b>已摘除（task-260909 · V6 老表退役 · 批次 3（B-8 / AC-8，A0-1 乙））—— 本方法现为 no-op，对 10 张 V6 表零写入。</b>
+     *
+     * <p>上方 javadoc 一字未删：它记录的守卫顺序纪律（{@code <> :qid} 为什么不能移除）
+     * 在 {@code DROP TABLE} 任务回收这段代码时仍然必须被读到。
+     *
+     * <p>摘除依据：pending 行的唯一产生路径（V6 导入端点 {@code BasicDataImportV6Resource}）
+     * 自 2026-09-07 起两个 POST 恒返 410 ⇒ 新单不再产生 pending 行 ⇒ 删单时无 pending 可回收。
+     * 🚫 <b>{@link #B8_PENDING_TABLES}（9 项）刻意不与
+     * {@code V6QuotationCommitService.PENDING_TABLES}（10 项）对齐</b> —— 差的那张
+     * {@code material_master} 的删除必须走引用守卫，"顺手对齐成一样长"会引入真 bug。
+     */
+    @Deprecated(forRemoval = true)
     private void cleanupPendingV6Data(UUID quotationId) {
+        if (true) return; // no-op：见 javadoc。下方原实现保留以便 DROP TABLE 任务回收/回滚。
         for (String table : B8_PENDING_TABLES) {
             em.createNativeQuery("DELETE FROM " + table + " WHERE pending_quotation_id = :qid")
               .setParameter("qid", quotationId)

@@ -104,8 +104,11 @@ public class BnfPathLinter {
                 String era = isV76 ? "V76" : "V44";
                 String msg = "路径含 " + era + " 废弃表 " + deprecated + "（AP-53 规定禁用直引）。"
                         + "错误码：SQL_VIEW_DEPRECATED_TABLE。";
-                String suggestion = "新建本模板 SQL 视图，SQL 使用对应 V6 表（material_bom_item / element_bom_item / "
-                        + "fee_config / unit_price / plating_scheme 等），路径改为 $<view>." + extractColumn(p);
+                // task-260909（D-4）：原 suggestion 推荐 material_bom_item / element_bom_item ——
+                // 那正是本次退役的 V6 老表；不改则这条建议本身变成新的 AP-53。
+                String suggestion = "新建本模板 SQL 视图，SQL 使用报价侧 ds_quote_* / 核价侧 "
+                        + "ds_cost_basic_* · ds_cost_detail_* 新表（如 ds_quote_material_bom / "
+                        + "ds_quote_element_bom / ds_cost_basic_material_bom 等），路径改为 $<view>." + extractColumn(p);
                 // PUBLISHED 状态强 ERROR；DRAFT 状态降级 WARN（给迁移窗口）
                 if ("PUBLISHED".equals(status)) {
                     return LintResult.error(msg, suggestion);

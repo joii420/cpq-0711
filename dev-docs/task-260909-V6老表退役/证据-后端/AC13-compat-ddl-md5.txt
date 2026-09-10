@@ -1,0 +1,3 @@
+v_compat_element_bom_item|64116a232a98e34f4dbe7c4a5804aef8
+v_compat_material_bom_item|40f7b710b79e09f9c062b720d112a3a2
+v_compat_material_master|aaf2464d9df839c8cf6aabac88a071fc

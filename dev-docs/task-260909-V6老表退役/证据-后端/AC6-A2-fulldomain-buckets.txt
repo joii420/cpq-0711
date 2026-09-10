@@ -1,0 +1,14 @@
+                       bucket                        |  n   
+-----------------------------------------------------+------
+ B_same_value                                        |   21
+ C_new_resolves_more (old NULL -> new value)         | 2660
+ D_new_loses (old value -> new NULL)  <== REGRESSION |    1
+(3 rows)
+
+ production_no |  old_bridge  |  new_bridge  | verdict 
+---------------+--------------+--------------+---------
+ 300013        | <NULL>       | <NULL>       | SAME
+ 300015        | <NULL>       | <NULL>       | SAME
+ 3120014539    | S-3120014539 | S-3120014539 | SAME
+(3 rows)
+

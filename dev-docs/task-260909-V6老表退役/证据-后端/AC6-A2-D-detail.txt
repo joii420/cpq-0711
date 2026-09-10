@@ -1,0 +1,9 @@
+ production_no | old_bridge | new_bridge 
+---------------+------------+------------
+ SC3120011203  | 3120011203 | 
+(1 row)
+
+ds_cost_basic_element_bom|0
+ds_cost_basic_element_bom_history|0
+ds_cost_detail_element_bom|0
+ds_cost_detail_element_bom_history|0

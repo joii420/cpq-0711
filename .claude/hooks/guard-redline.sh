@@ -39,7 +39,7 @@ ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
 logline() { # $1=decision  $2=规则名 —— 只写审计行，不作裁决、不退出
   printf '%s\tguard-redline\t%s\t%s\t%s\n' "$(date -Is)" "$1" \
     "$(printf '%s' "$cmd" | head -c 120 | tr '\t\n' '  ')" "${2:-未命名}" \
-    >> "$ROOT/.claude/hooks.log" 2>/dev/null || true
+    2>/dev/null >> "$ROOT/.claude/hooks.log" || true
 }
 
 emit() { # $1=allow|deny|ask  $2=规则名  $3=reason

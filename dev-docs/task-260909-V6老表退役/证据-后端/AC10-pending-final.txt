@@ -1,0 +1,10 @@
+mm|2
+mbi|0
+ebi|0
+mb|0
+eb|0
+up|0
+cap|0
+ps|0
+ad|12
+mcm|0
