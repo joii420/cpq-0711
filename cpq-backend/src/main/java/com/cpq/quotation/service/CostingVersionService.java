@@ -76,14 +76,19 @@ public class CostingVersionService {
      * 查询某料号在某页签的可选版本（api.md §2）。列出模式（{@code :versionFilter}→TRUE）+
      * partNo 限定，独立轻查、不走带缓存的 {@code expand}（守 AP-37 串号）。
      *
-     * <p><b>树组件特例</b>（发现于实现期，非既定设计）：主树/子配件类组件的 $view（如 pj_view/
-     * zpj_view）是「边」形态（一行 = 一条 parent→child 边），其 {@code :total_material_no}
-     * 收窄谓词过滤的是<b>边的子端</b>（{@code component_no}），而版本下拉问的是「这个 partNo
-     * 自己的 BOM 有哪些版本」——这个问题的答案落在<b>边的父端</b>（{@code material_no}），与
-     * {@code total_material_no} 的语义正交，通用的 {@code expandUncached} 整视图扫描找不到
-     * 任何以 partNo 为父端的边（除非恰好也是别人的子件）。故树组件直接查 material_bom_item
-     * 本表的 distinct bom_version（与 R1 递归 SQL 本就硬编码同一张表/同一组常量一致，未新增
-     * 耦合）；非树（材质/工序/元素/组合工艺）组件走通用 $view 扫描路径。
+     * <p><b>树组件特例</b>（发现于实现期，非既定设计）：主树/子配件类组件的 $view 是「边」形态
+     * （一行 = 一条 parent→child 边），其 {@code :total_material_no} 收窄谓词过滤的是<b>边的子端</b>
+     * （{@code component_no}），而版本下拉问的是「这个 partNo <b>自己那张 BOM</b> 有哪些版本」——
+     * 这个问题的答案落在<b>边的父端</b>（{@code production_no}），与 {@code total_material_no}
+     * 的语义正交，通用的 {@code expandUncached} 整视图扫描答不了。故树组件走
+     * {@link #treeVersionViewOf} 解析出的核价数据集全版本视图直查；非树（材质/工序/元素/组合工艺）
+     * 组件走 {@code dsCostBaseTableOf} 专用查询或通用 $view 扫描路径。
+     *
+     * <p>⚠️ <b>repair-260910</b>：本方法的树分支原先硬编码查 V6 老表 {@code material_bom_item}
+     * （{@code system_type='PRICING'} / {@code customer_no='_GLOBAL_'}）。核价数据迁到
+     * {@code ds_cost_*} 数据集后老表不再接收新料号 ⇒ <b>候选集恒空</b>，而「当前版本」显示值来自
+     * 骨架 SQL（已迁）⇒ 出现「能显示当前版本、却给不出候选」这种极具欺骗性的形态。
+     * 🚫 <b>不要再把物理表名写死在这里</b>：视图名一律由组件方言解析（与骨架配置同源）。
      */
     public VersionOptionsResponseDTO listVersionOptions(UUID coid, UUID lineItemId, UUID componentId, String partNo) {
         CostingOrder co = CostingOrder.findById(coid);
@@ -101,22 +106,46 @@ public class CostingVersionService {
 
             // task-260819 v9 · B-44④：非空 = 该组件的驱动视图是 builder 编译出来的 ds_cost_* 产物，
             // 走专用版本查询；null = V6 存量手写视图/报价侧，行为逐字不变（零回归）。
-            // 树组件走 material_bom_item 硬编码分支，不需要这次解析，故短路掉（省 1 条 SQL）。
+            //
+            // repair-260910 B-1：树组件<b>不再</b>被短路成"无数据集"——它改由
+            // {@link #treeVersionViewOf} 按<b>方言</b>解析出自己那套 BOM 全版本视图；
+            // 非树分支的解析入口（dsCostBaseTableOf）与取值口径逐字不变（AC-11 门禁）。
             boolean tree = isTreeComponent(componentId);
+            String treeVersionView = tree ? treeVersionViewOf(componentId) : null;
             String dsCostBase = tree ? null : dsCostBaseTableOf(componentId);
 
             if (tree) {
-                @SuppressWarnings("unchecked")
-                List<Object[]> rows = em.createNativeQuery(
-                                "SELECT bom_version, is_current FROM material_bom_item " +
-                                        "WHERE system_type='PRICING' AND customer_no='_GLOBAL_' AND material_no=:p " +
-                                        "AND bom_version IS NOT NULL")
-                        .setParameter("p", partNo).getResultList();
-                for (Object[] r : rows) {
-                    if (r[0] == null) continue;
-                    String v = r[0].toString();
-                    options.add(v);
-                    if (r[1] instanceof Boolean b && b) isCurrentVersion = v;
+                // repair-260910 B-1（AC-3/4/5/10）：原实现硬编码查 V6 老表
+                // material_bom_item(system_type='PRICING', customer_no='_GLOBAL_')，
+                // 而核价数据早已迁到 ds_cost_* 数据集 ⇒ 候选集恒空（问题说明 ④ E-1：树内 7 个料号全 0 行）。
+                //
+                // 业务模型（用户 2026-09-10 定死）：BOM 一行 = 「父件 X 的第 N 版清单里包含子件 Y」，
+                // 版本号描述的是 **X 那张清单** ⇒ 一个料号的版本 = 它<b>自己作为 production_no</b>
+                // 的那些版本，与它挂在谁下面无关。
+                // 🚫 不许按 component_no（子件）查：实测 300015 同挂 300012(v1) 与 300001(v2)，
+                //    按子件查会给出它自己清单里并不存在的版本 2（违反 AC-4 / E-6，repair-0590 前科）。
+                //
+                // N+1：**一条** SQL。视图定义本身即「主表 UNION ALL _history」⇒ 历史版本 + 当前版本
+                // 一次拿全，🚫 不要在 Java 侧再 UNION 一次；条数与版本数/行数/页签数均无关。
+                if (treeVersionView != null) {
+                    @SuppressWarnings("unchecked")
+                    List<Object[]> rows = em.createNativeQuery(
+                                    "SELECT version_no::text, is_current FROM " + treeVersionView +
+                                            " WHERE production_no = :p AND version_no IS NOT NULL")
+                            .setParameter("p", partNo).getResultList();
+                    for (Object[] r : rows) {
+                        if (r[0] == null) continue;
+                        String v = r[0].toString();
+                        options.add(v);
+                        // is_current=true 那条 = override 缺失时的兜底 currentVersion，
+                        // 与老表 is_current 语义一一对应（同构替换）。
+                        if (r[1] instanceof Boolean b && b) isCurrentVersion = v;
+                    }
+                } else {
+                    // 解析不到核价数据集（组件无 builder_config 的手写 $view / 报价方言）⇒ 无候选。
+                    // 🚫 不回落 basic 视图（AC-10），🚫 不回落 V6 老表（那就是本次修的 bug）。
+                    LOG.warnf("[costing-version] 树组件 %s 解析不到核价数据集方言，版本候选返回空列表"
+                            + "（不回落 basic 视图、不回落 V6 老表）", componentId);
                 }
             } else if (dsCostBase != null) {
                 // task-260819 v9 · B-44④（D-86 / AC-124）：新 ds_cost_* 数据集的组件走**专用查询**，
@@ -209,6 +238,10 @@ public class CostingVersionService {
      * 用缓存 baseRows），成本 rollup 落后端（{@code buildCostingCardValues}
      * {@code assembleTabsWithFormulaResults} 已有的公式引擎），不回写
      * {@code quotation_line_item.costing_card_values}。
+     *
+     * <p><b>repair-260910 B-2</b>：树组件新增「叶子」守卫 —— 传入的料号在 BOM 里查不到以它为
+     * {@code production_no} 的记录（= 它没有自己那张清单）时返回 <b>400</b>。既有的
+     * <b>403</b>{@code 仅待核价(PENDING)可切换版本} 顺序与语义逐字不变。
      */
     @Transactional
     public VersionSwitchResponseDTO switchVersion(UUID coid, VersionSwitchRequest req) {
@@ -239,6 +272,28 @@ public class CostingVersionService {
         try {
             // 校验 componentId 存在 + 是否为主树组件（bom_recursive_expand）
             boolean isTreeComponent = isTreeComponent(req.componentId);
+
+            // ── repair-260910 B-2（AC-8）：树组件的「叶子」守卫 ─────────────────────────────
+            //   叶子 = 该料号在 BOM 里查不到以它为 production_no 的记录 ⇒ 它没有自己那张清单
+            //   ⇒ 没有版本可切。UI 侧本就不给叶子渲染下拉，本守卫防的是绕过 UI 直调接口：
+            //   放过去只会写出一条永远不生效的 override 行（脏数据），且用户无从察觉。
+            //   🚫 放在 PENDING 校验之后、upsert 之前——403 的既有语义与顺序逐字不变（AC-9 门禁）。
+            //   ⚠️ 只对树组件生效：非树分支自有 repair-0590 的 0 行守卫，行为逐位不变（AC-11 门禁）。
+            //   N+1：一条 SQL（EXISTS 探测），与版本数/行数无关；解析不到数据集时不设卡（存量行为）。
+            if (isTreeComponent) {
+                String treeVersionView = treeVersionViewOf(req.componentId);
+                if (treeVersionView != null) {
+                    @SuppressWarnings("unchecked")
+                    List<Object> hit = em.createNativeQuery(
+                                    "SELECT 1 FROM " + treeVersionView + " WHERE production_no = :p LIMIT 1")
+                            .setParameter("p", req.partNo).getResultList();
+                    if (hit.isEmpty()) {
+                        throw new BusinessException(400, "料号 " + req.partNo
+                                + " 没有自己的 BOM（在 " + treeVersionView
+                                + " 中查不到以它为 production_no 的记录），不可切换版本");
+                    }
+                }
+            }
 
             // ── upsert override + flush（先落库，让下面的重查读到最新覆盖）──────────────────
             CostingOrderVersionOverride ov = CostingOrderVersionOverride.find(coid, req.componentId, req.partNo);
@@ -502,6 +557,77 @@ public class CostingVersionService {
             if (v.matches()) return v.group(1);
         }
         return null;
+    }
+
+    // =========================================================================
+    // repair-260910 B-1 / B-2：树组件的 BOM 版本源解析（按方言，与骨架配置同源）
+    // =========================================================================
+
+    /**
+     * 树组件的「BOM 全版本视图」——{@code 主表 UNION ALL _history}，按<b>数据集方言</b>分档。
+     *
+     * <p><b>为什么按方言而不是按组件自己视图的 FROM 文本</b>：版本下拉的候选<b>必须与「版本」列的
+     * 显示值同源</b>，而显示值来自骨架 SQL（{@code costing_bom_tree_config.sql_template}），骨架
+     * 走哪一条又是由 {@code BomTreeRenderService#resolveSkeletonUsage} 按<b>同一个</b>
+     * {@code builder_config ->> 'dialect'} 决定的。两处共用同一个判据 ⇒ 同源是可证的；
+     * 若改按 FROM 文本推，两者就成了两个事实来源，能各自漂移且不报错。
+     *
+     * <p><b>解析不到就返回 {@code null}</b>（组件无 {@code builder_config} 的手写 $view / 报价方言 /
+     * 方言值编译器不认）⇒ 调用方返回空候选。🚫 <b>不回落 basic 视图</b>（AC-10：回落的失败形态是
+     * 「详细核价悄悄用了基础核价的版本列表」，能渲染、不报错、数据是别的数据集的），
+     * 🚫 <b>更不回落 V6 老表</b>（那正是本次修掉的 bug）。
+     *
+     * <p>N+1：一条 SQL，与版本数/行数/页签数无关。
+     */
+    private String treeVersionViewOf(UUID componentId) {
+        String dialect;
+        try {
+            @SuppressWarnings("unchecked")
+            List<Object> rows = em.createNativeQuery(
+                            "SELECT csv.builder_config ->> 'dialect' FROM component_sql_view csv "
+                                    + "WHERE csv.component_id = :cid AND csv.status = 'ACTIVE' "
+                                    + "AND csv.builder_config IS NOT NULL "
+                                    + "AND (csv.builder_config ->> 'dialect') IS NOT NULL "
+                                    + "ORDER BY csv.updated_at DESC NULLS LAST LIMIT 1")
+                    .setParameter("cid", componentId).getResultList();
+            dialect = rows.isEmpty() || rows.get(0) == null ? null : rows.get(0).toString();
+        } catch (Exception e) {
+            LOG.warnf("[costing-version] 读取树组件 %s 的方言失败（%s），版本候选按空处理",
+                    componentId, e.getMessage());
+            return null;
+        }
+        return treeVersionViewOfDialect(dialect);
+    }
+
+    /**
+     * {@link #treeVersionViewOf} 的<b>纯函数内核</b>（包级可见仅为可测：它决定「查哪个数据集的版本」，
+     * 判错了不会报错、只会给出另一个数据集的候选）。
+     *
+     * <p>返回值恒为常量字面量之一或 {@code null}，<b>不含任何外部输入</b> ⇒ 调用方拼接进 SQL 是安全的。
+     *
+     * @param dialectOrNull {@code component_sql_view.builder_config ->> 'dialect'}
+     * @return {@code COST_BASIC → v_ds_cost_basic_material_bom_all}、
+     *         {@code COST_DETAIL → v_ds_cost_detail_material_bom_all}；
+     *         其余（{@code QUOTE} / null / 空 / 不可识别）一律 {@code null}
+     */
+    static String treeVersionViewOfDialect(String dialectOrNull) {
+        // 🚫 不能直接调 CompileDialect.parse：它对 null/空<b>静默返回 QUOTE</b>（"不传 = 报价侧"），
+        //    那会把「解析不到」变成「报价侧」，进而变成一个我们答不上来的问题被当成答上了。
+        if (dialectOrNull == null || dialectOrNull.isBlank()) return null;
+        com.cpq.builder.compiler.CompileDialect d;
+        try {
+            d = com.cpq.builder.compiler.CompileDialect.parse(dialectOrNull);
+        } catch (Exception e) {
+            LOG.warnf("[costing-version] builder_config.dialect=「%s」无法识别（%s），版本候选按空处理",
+                    dialectOrNull, e.getMessage());
+            return null;
+        }
+        return switch (d) {
+            case COST_BASIC -> "v_ds_cost_basic_material_bom_all";
+            case COST_DETAIL -> "v_ds_cost_detail_material_bom_all";
+            // 报价侧的树不走核价版本切换（本服务只挂 costing-order 端点），无候选。
+            case QUOTE -> null;
+        };
     }
 
     /** 行的「本行归属料号」：优先 hf_part_no（flat 组件标准键），退化 material_no（树/pj_view 等）。 */

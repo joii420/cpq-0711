@@ -861,7 +861,19 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                           const bomSys = activeComponentBomTree ? (__sys as import('./useDriverExpansions').BomSysCols | undefined) : undefined;
                           // task-0713（F2/F4）：树页签版本切换 —— 仅 COSTING + 有 coid + 该节点有料号时可下拉；
                           // editable=false 时纯文本只读展示（不显示交互控件，同下方非树分支同款判断）。
-                          const canSwitchTreeVersion = isCosting && !!coid && !!bomSys?.hfPartNo;
+                          //
+                          // repair-260910 F-1（AC-2）：叶子节点不挂下拉。
+                          // 业务模型：BOM 表一行 = 「父件 X 的第 N 版清单里包含子件 Y」，版本号描述的是 X 那张清单
+                          // ⇒ 一个料号有没有版本，取决于它自己有没有一张清单。叶子节点（无下级组成）没有自己的
+                          // 清单，后端骨架 SQL（改动 1）之后其 bom_version 天然为 NULL。
+                          // 🚫 前端不自行推断层级 / 不数 children / 不判断「是不是叶子」—— 那是后端已经算好的信息，
+                          //    这里只消费 bomVersion 是否为空这一条判据（_hasChildren 是折叠箭头用的展示态，
+                          //    受折叠/过滤影响，不能当叶子性权威）。
+                          // 🚫 不许因「候选只有一个版本」而隐藏下拉（E-7：只有 1 版时照常显示该单项）——
+                          //    候选数量在这里根本不可见，隐藏判据只有「bom_version 为空」这一条。
+                          const treeBomVersion = bomSys?.bomVersion;
+                          const hasOwnBomVersion = treeBomVersion != null && String(treeBomVersion).trim() !== '';
+                          const canSwitchTreeVersion = isCosting && !!coid && !!bomSys?.hfPartNo && hasOwnBomVersion;
                           return (
                           <tr key={ri}>
                             {/* BOM 递归展开（task-0712，只读版）：系统固定列，料号列承载树缩进/折叠箭头；
@@ -895,7 +907,9 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                                         onSwitched={onVersionSwitched}
                                       />
                                     ) : (
-                                      bomSys?.bomVersion ?? '—'
+                                      // repair-260910 F-1（AC-2）：与上面 hasOwnBomVersion 同一「空」口径，
+                                      // 空串也落 '—'（原 `?? '—'` 只兜 null/undefined，空串会渲染成空单元格）。
+                                      hasOwnBomVersion ? String(treeBomVersion) : '—'
                                     )}
                                   </td>
                                 )}

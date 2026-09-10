@@ -1,0 +1,28 @@
+{
+  /*
+   * repair-260910 · S1 片用例的**类型检查**专用 TS 项目。
+   *
+   * 🚨 存在理由（2026-09-10 证伪实验实测）：仓库根 `npx tsc --noEmit` 走的是
+   *    tsconfig.app/test/node 三个 project，**`e2e/` 不在任何一个的 include 里**。
+   *    往 e2e 文件里注入一个故意的类型错误后 `tsc --noEmit` 依旧 0 输出 ——
+   *    也就是说「前端 tsc 0 错误」对 e2e 用例而言是**空验证**。
+   *    ⇒ 本片用例的类型检查必须走这份 config：
+   *        cd cpq-frontend && npx tsc -p e2e/tsconfig.r260910.json
+   *
+   * 🚫 刻意**不改**仓库既有 tsconfig —— 那是构建配置，不在测试员的改动面内（已报主线）。
+   */
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "esnext",
+    "types": ["node"],
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "strict": true,
+    "noUnusedLocals": true
+  },
+  "include": ["r260910*.ts"]
+}
