@@ -14,8 +14,13 @@
 //       `ApiResponse<List<NodeDTO>>` 是 B-4 阶段的过渡实现，B-7 落地后预期会替换/包一层）
 //   · compile/preview/inspect/save 的请求体一律是 { tabType, variantKey?, switches?, columns: [...] }
 //     包在顶层，**不带 envelope**（不是 { data: ... }，是响应体本身）；列用扁平角色布尔位
-//     isPartNo/isPartName/isRowKey/isSort/isAmount/inSubtotal，不是 roles 数组；不传 viewColumn/fieldType
-//     （后端算，AC-11）；priceStrategy 只在「形态 B 手填字段覆盖」时才需要显式传
+//     isPartNo/isPartName/isRowKey/isSort/isAmount/inSubtotal，不是 roles 数组；
+//     ⚠️ **2026-09-09（task-260909）更正**：原文写「不传 viewColumn/fieldType（后端算，AC-11）」——
+//     **`fieldType` 这半句已作废，本次起前端显式发送**（api.md §1.2，值域恰好 BASIC_DATA /
+//     INPUT_TEXT / INPUT_NUMBER 三个，后端加了同一份白名单，非法值 400）。
+//     🚫 **`viewColumn` 仍然不传**（它是后端按 (Sheet,列) 的纯函数产物，前端只读展示）——
+//     本次只解禁 fieldType 一个，不要照着这条把 viewColumn 也一起发了。
+//     priceStrategy 只在「形态 B 手填字段覆盖」时才需要显式传
 //     { elementCodeSource:'MANUAL_FIELD', elementCodeField }，正常路径完全由 columns 内容反推，不传此键
 //   · GET /builder 直接给 isLegacyHandwritten / isStale / currentCompilerVersion 三个布尔/数字，
 //     不需要前端自己比较版本号推导
@@ -252,6 +257,17 @@ export interface BuilderColumnInput {
   inSubtotal?: boolean;
   /** AC-24：true = 用户手动拖入（非价格策略自动带出）——删除元素单价时不回收该列。 */
   userAdded?: boolean;
+  /**
+   * task-260909（api.md §1.2）：**这一列落库后的 `component.fields[].field_type`。**
+   * 值域**恰好三个**：`'BASIC_DATA'`（只读展示，落库写顶层 `basic_data_path`）/
+   * `'INPUT_TEXT'` / `'INPUT_NUMBER'`（可输入，落库写 `default_source.path`）。
+   *
+   * - **可选**：不传 / null → 后端按数据集方言取默认（`api.md §1.3`：`COST_BASIC`/`COST_DETAIL`
+   *   → `BASIC_DATA`；`QUOTE` → 按数据类型推 `INPUT_*`），**不报错**（AC-9 向后兼容旧客户端）。
+   * - 传了非法值（`FORMULA` / `DATA_SOURCE` / `FIXED_VALUE` / 垃圾串）→ 后端 **400**，且**不落库**。
+   * - 🚫 绑定键的分派规则本次**不动**（`D-73/B-30`：绑定键跟 `field_type` 走，不跟报价/核价侧走）。
+   */
+  fieldType?: string;
 }
 
 /** 形态 B（AC-23）：元素键改绑手填字段时才需要显式传本结构；正常路径完全不传（省略整个 priceStrategy 键）。 */
@@ -285,10 +301,16 @@ export interface BuilderConfigPayload {
   priceStrategy?: PriceStrategyOverride | null;
 }
 
-/** GET /builder 返回的已保存列（多了后端生成的 viewColumn/fieldType，供 AC-39 刷新后原样回填）。 */
+/**
+ * GET /builder 返回的已保存列（多了后端生成的 `viewColumn`，供 AC-39 刷新后原样回填）。
+ * 📌 `fieldType` 已上提到 `BuilderColumnInput`（task-260909 起它是**读写双向**的字段，不再只在读端出现），
+ *    此处不再重复声明。
+ * ⚠️ **存量行没有 `fieldType` 键**：改动前前端从不发它，`builder_config` JSONB 里就没有这一项 ——
+ *    回填时必须按「后端旧规则」补（见 `SqlViewBuilderTab.tsx` 的 `legacyFieldTypeOf`），
+ *    🚫 不能用新的方言默认去填，否则存量核价组件一打开就显示成「基础数据」（库里其实是 `INPUT_*`）。
+ */
 export interface SavedBuilderColumn extends BuilderColumnInput {
   viewColumn: string;
-  fieldType?: string;
 }
 export interface SavedBuilderConfig extends Omit<BuilderConfigPayload, 'columns'> {
   builderVersion: number;

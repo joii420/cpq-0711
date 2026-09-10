@@ -143,6 +143,71 @@ const FALLBACK_SOURCE_KEY = '__current__';
 const ROLE_LABEL: Record<FieldRole, string> = { PART_NO: '料号', PART_NAME: '名称', ROW_KEY: '行键', SORT: '排序' };
 const DATA_TYPE_LABEL: Record<string, string> = { TEXT: '文本', NUMBER: '数字', MONEY: '金额' };
 
+/**
+ * task-260909 F-1（AC-1）：字段类型的值域 —— **恰好 3 个**，与 `api.md §1.2` 逐字一致。
+ *
+ * 🚫 **不含 `FORMULA` / `DATA_SOURCE` / `FIXED_VALUE`**：它们分别需要 `formula_id` / `binding` /
+ *    `content`，取数配置器**根本不收集这三样** ⇒ 放进选项只会让人配出必然坏的字段（落库后
+ *    渲染层取不到值、静默回退成空）。后端本次也加了同一份白名单（`api.md §1.4`，非法值 400）。
+ */
+type BuilderFieldType = 'BASIC_DATA' | 'INPUT_TEXT' | 'INPUT_NUMBER';
+/** 选项文案逐字取自原型 `原型图/02-选择器展开态.html`（含 `基础数据` 的副标「只读展示」）。 */
+const FIELD_TYPE_OPTIONS: ReadonlyArray<{ value: BuilderFieldType; label: string; hint?: string }> = [
+  { value: 'BASIC_DATA', label: '基础数据', hint: '只读展示' },
+  { value: 'INPUT_TEXT', label: '文本输入' },
+  { value: 'INPUT_NUMBER', label: '数字输入' },
+];
+
+/**
+ * task-260909 F-4（AC-3 / AC-4 / AC-5）：**新拖入列的默认字段类型 —— 按数据集方言分派。**
+ *
+ * | dialect | 默认 |
+ * |---|---|
+ * | `COST_BASIC` / `COST_DETAIL` | `BASIC_DATA`（核价侧的列是从 SQL 视图取的展示值，不是用户输入） |
+ * | `QUOTE` | 按数据类型推 `INPUT_TEXT` / `INPUT_NUMBER`（**现状不变**，报价侧用户确实要填数） |
+ *
+ * 🚨 **本函数是前端侧「默认字段类型」的唯一实现，三个调用点共用**（task-260909 F-7 追加第 3 个）：
+ *    1. `toSelColumn`  —— 新拖入的列的初值（F-4）
+ *    2. `fromSavedColumn` —— 已保存列回填、且**后端没给出** `fieldType` 时（F-7；下同）
+ *    3. rehydrate 分支 —— 同 2，只是这条能拿到字段树里真实的 `dataType`
+ *    🚫 **三处必须同规则** —— 分叉过一次就会出现「新建的列和打开后看到的列类型不一样」，
+ *       而这种不一致不报错、只在保存后才显形。
+ *
+ * 🔑 **前后端各自算一次默认值是有意的双写，🚫 不要"顺手收敛到后端一处"**：
+ *    · 前端算 → 用户在界面上**一眼看到的就是将要保存的值**（选择器不是必填项，默认即正确）；
+ *      收敛到后端就意味着"界面上先显示一个假值、保存后才变成真值"，那正是本任务要消灭的静默面。
+ *    · 后端算（`BuilderService#defaultFieldType`）→ **旧客户端不传 `fieldType` 时仍然正确**（AC-9）。
+ *    两边规则必须逐位一致，改一边必须同步改另一边（`api.md §1.3` 是两边共同的契约）。
+ *
+ * 🚨 **`QUOTE` 分支的判据是 `dataType !== 'TEXT'` 而不是"是不是 MONEY"**（2026-09-09 修正）：
+ *    后端原文是 `"TEXT".equals(col.resolvedDataType) ? "INPUT_TEXT" : "INPUT_NUMBER"` ⇒ **`NUMBER` 走
+ *    `INPUT_NUMBER`**。而本文件此前的本地初值写的是 `money ? 'INPUT_NUMBER' : 'INPUT_TEXT'`
+ *    （`money` = `dataType === 'MONEY'`），把 `NUMBER` 判成了 `INPUT_TEXT` —— 改动前它**从不发给后端**，
+ *    所以这个分歧一直是死的；本次开始发送后，若照抄旧式就会把 `NUMBER` 列由 `INPUT_NUMBER`
+ *    悄悄改成 `INPUT_TEXT`，正好踩掉 AC-5「与改动前逐位一致」。
+ */
+function defaultFieldTypeFor(dataset: BuilderDataset, dataType: string | undefined): BuilderFieldType {
+  if (dataset === 'COST_BASIC' || dataset === 'COST_DETAIL') return 'BASIC_DATA';
+  return dataType === 'TEXT' ? 'INPUT_TEXT' : 'INPUT_NUMBER';
+}
+
+/**
+ * task-260909 F-7（AC-15）：**回填时后端没给 `fieldType`** 该显示什么。
+ *
+ * 🚨 **权威值来自后端，不是这里**：`api.md §1.6`（B-5）规定 `GET /builder` 在
+ *    `builder_config.columns[].fieldType` 为空时，**按字段名回填 `component.fields[].field_type`
+ *    的真实值**再返回 —— 不变量是「界面回填显示的 == 实际生效的」。
+ *    ⇒ 正常路径下本兜底**不会触发**；它只兜「builder_config 有这一列、而 component.fields 里没有」
+ *    这类漂移。
+ *
+ * 🚫 **改动前这里是无条件 `|| 'INPUT_TEXT'`，那是一颗雷**：后端一旦返空，`NUMBER` 列会被
+ *    静默降级成文本，而用户"什么都没改、只是打开看了一眼再保存"。
+ * ✅ 现在与新列走**同一个** `defaultFieldTypeFor`（F-7 要求的三处同规则）。
+ *
+ * ⚠️ **本兜底的正确性依赖 B-5 已落地**：B-5 缺席时，存量**核价**组件（`builder_config.fieldType`
+ *    全为 null、而库里是 `INPUT_*`）会被这条兜底显示成「基础数据」，不改就保存即翻转 —— 已报主线。
+ */
+
 const colKey = (sourceNodeKey: string, sourceColumn: string) => `${sourceNodeKey}::${sourceColumn}`;
 
 // ── 已选输出列的本地展示态 ──────────────────────────────────────────────
@@ -189,6 +254,12 @@ const isRowKeyCol = (s: SelColumn) => s.roles.includes('ROW_KEY');
 /** F-2（AC-15）：✕ 禁用态的 hover 原因文案（frontend.md §1.2：禁用但可见 + 说明原因）。原型 02 状态 1 逐字。 */
 const ROW_KEY_LOCK_TIP = '行键列决定行的身份（删行、回填、保存都靠它匹配），不可移除';
 const ROW_KEY_LOCK_GROUP_TIP = '该价格策略组里含行键列，整组移除会连带删掉行键列，因此不可移除';
+/**
+ * task-260909 F-2：「应用到全部列」在**一列都没选**时的禁用原因（frontend.md §1.2：禁用但可见 + 说明原因）。
+ * 与保存按钮的同款空态文案（`saveDisabledReason` 的第一分支）保持一致口径。
+ * 📌 D-20 同款可测性：Tooltip 走 portal，量具在按钮元素上读不到文案 ⇒ 同时挂 title + aria-label，三者逐字一致。
+ */
+const BULK_FIELD_TYPE_EMPTY_TIP = '尚未选择任何输出列，请从左侧拖入字段';
 
 /**
  * task-260908 F-3（AC-17 / AC-18 / AC-19）：**料号列拖入「已选输出列」后的默认字段名**。
@@ -229,7 +300,8 @@ function toSelColumn(col: FieldTreeColumn, group: FieldTreeGroup, dataset: Build
     fieldName: initialName,
     origFieldName: initialName,
     viewColumn: col.viewColumn || '',
-    fieldType: money ? 'INPUT_NUMBER' : 'INPUT_TEXT',
+    // F-4（AC-3/4/5）：按方言分派，见 defaultFieldTypeFor 的注释（含"为什么判据是 !== TEXT"）。
+    fieldType: defaultFieldTypeFor(dataset, col.dataType),
     dataType: col.dataType || 'TEXT',
     isAmount: money,
     // 小计默认值仅是 UI 便利预填（用户可改），量纲类列不预勾——与体检区 WARN 文案（R7）口径一致，
@@ -247,7 +319,7 @@ function toSelColumn(col: FieldTreeColumn, group: FieldTreeGroup, dataset: Build
 }
 
 /** GET /builder 返回的已保存列 → 本地展示态（AC-39 刷新后原样回填）。字段树尚未加载完成时先用最小信息占位。 */
-function fromSavedColumn(bc: SavedBuilderColumn): SelColumn {
+function fromSavedColumn(bc: SavedBuilderColumn, dataset: BuilderDataset): SelColumn {
   const roles: FieldRole[] = [];
   if (bc.isPartNo) roles.push('PART_NO');
   if (bc.isPartName) roles.push('PART_NAME');
@@ -260,7 +332,9 @@ function fromSavedColumn(bc: SavedBuilderColumn): SelColumn {
     fieldName: bc.fieldName,
     origFieldName: bc.fieldName,
     viewColumn: bc.viewColumn,
-    fieldType: bc.fieldType || 'INPUT_TEXT',
+    // F-7（AC-15）：后端给了就用后端的（api.md §1.6 的真实 field_type）；没给才按方言 + dataType 推。
+    // 🚫 不再无条件兜 'INPUT_TEXT'。本分支是"字段树还没加载完"的最小信息占位，dataType 只能先当 TEXT。
+    fieldType: bc.fieldType || defaultFieldTypeFor(dataset, 'TEXT'),
     dataType: 'TEXT',
     isAmount: !!bc.isAmount,
     inSubtotal: !!bc.inSubtotal,
@@ -335,6 +409,12 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
   const [sources, setSources] = useState<FieldTreeSource[]>([]);
   const [sel, setSel] = useState<SelColumn[]>([]);
   const [elemKeyOverrideField, setElemKeyOverrideField] = useState<string | null>(null);
+  /**
+   * task-260909 F-2（AC-2）：「整列批量设为…」下拉**当前选中的值**（还没应用）。
+   * 🚫 它不进 `configPayloadFor` / dirty 快照 —— 只是个待应用的输入，点了「应用到全部列」
+   *    才会写进 `sel`，那一步才算改动。
+   */
+  const [bulkFieldType, setBulkFieldType] = useState<BuilderFieldType>(defaultFieldTypeFor(DEFAULT_DATASET, 'TEXT'));
 
   const [fieldTree, setFieldTree] = useState<FieldTreeResponse | null>(null);
   const [treeLoading, setTreeLoading] = useState(false);
@@ -497,6 +577,13 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
   const elemKeyCol = sel.find((s) => s.elemKey || s.autoElem);
   const isUsed = (sourceNodeKey: string, sourceColumn: string) => sel.some((s) => s.sourceNodeKey === sourceNodeKey && s.sourceColumn === sourceColumn);
 
+  // F-2：数据集变了，批量下拉的**待应用值**跟着回到该方言的默认（原型 01 的基础核价页画的就是
+  // 「整列批量设为 [基础数据]」，原型 03 的报价页对照 [文本输入]）。切数据集本就会清空已选列
+  // （handleDatasetChange 的 Modal.confirm），所以这里不会与用户手选的值打架。
+  useEffect(() => {
+    setBulkFieldType(defaultFieldTypeFor(dataset, 'TEXT'));
+  }, [dataset]);
+
   // ── 编译请求体（BuilderConfigPayload：扁平角色布尔位，见 sqlViewBuilderService.ts 头注） ──
   // D-51：不再写 switches 字段（子件闭包开关整体移除，AC-60——builder_config.switches 中不再写入
   // 内部枚举名或 includeChildParts 这一类键）。
@@ -521,6 +608,11 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
         isSort: s.roles.includes('SORT') || undefined,
         isAmount: s.isAmount || undefined,
         inSubtotal: s.inSubtotal || undefined,
+        // task-260909 F-3（AC-3/4/5/8/9，api.md §1.2）：本次起**显式发送** fieldType。
+        // 🚫 `viewColumn` 仍然不发（后端按 (Sheet,列) 纯函数生成，前端只读展示）——本次只解禁这一个。
+        // 📌 恒发不省略：值本来就恒为三个合法值之一，省略会退回后端默认（AC-9 的旧客户端路径），
+        //    那样用户在界面上选的东西就静默不生效了。
+        fieldType: s.fieldType,
         // AC-24：元素符号列若非自动带出（用户手动先拖），显式标记 userAdded，价格策略回收时后端不删它
         userAdded: (s.elemKey && !s.autoElem) || undefined,
       })),
@@ -592,10 +684,10 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
       const found = allCols.find((x) => x.col.sourceNodeKey === bc.sourceNodeKey && x.col.sourceColumn === bc.sourceColumn);
       if (found) {
         const s = toSelColumn(found.col, found.group, normalizeDataset(pending.dialect), { autoElem: found.col.elemKey && bc.userAdded === false });
-        return { ...s, fieldName: bc.fieldName, origFieldName: bc.fieldName, viewColumn: bc.viewColumn, isAmount: !!bc.isAmount, inSubtotal: !!bc.inSubtotal, fieldType: bc.fieldType || s.fieldType };
+        return { ...s, fieldName: bc.fieldName, origFieldName: bc.fieldName, viewColumn: bc.viewColumn, isAmount: !!bc.isAmount, inSubtotal: !!bc.inSubtotal, fieldType: bc.fieldType || defaultFieldTypeFor(normalizeDataset(pending.dialect), s.dataType) };
       }
       // 字段树里找不到对应列（罕见：图或存量数据漂移）——仍原样展示，避免保存态丢失，只是缺角色信息。
-      return fromSavedColumn(bc);
+      return fromSavedColumn(bc, normalizeDataset(pending.dialect));
     });
     setSel(rebuilt);
     // F-17（D-61 / AC-23 形态 B）：elemKeyOverrideField 随 builderConfig.priceStrategy 回填——
@@ -668,6 +760,17 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
   }
   function toggleSubtotal(uid: string, checked: boolean) {
     setSel((prev) => prev.map((s) => (s._uid === uid ? { ...s, inSubtotal: checked } : s)));
+  }
+  /** task-260909 F-1（AC-1/AC-12）：改单列的字段类型。按 `_uid` 定位，不用下标（AP-54 教训）。 */
+  function setFieldType(uid: string, value: BuilderFieldType) {
+    setSel((prev) => prev.map((s) => (s._uid === uid ? { ...s, fieldType: value } : s)));
+  }
+  /**
+   * task-260909 F-2（AC-2）：整列批量设置 —— 应用到当前**全部**列（含价格策略原子组的成员），
+   * 逐列选择器随之同步变更。两步交互（先选值、再点"应用到全部列"），避免下拉一动就改掉全部。
+   */
+  function applyFieldTypeToAll(value: BuilderFieldType) {
+    setSel((prev) => prev.map((s) => ({ ...s, fieldType: value })));
   }
 
   // ── 拖拽重排（原生 HTML5 DnD，与项目内既有页面同款手法）───────────────────
@@ -1203,6 +1306,23 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
           <code className="svb-viewcol" title={s.viewColumn ? `视图列名由系统按【数据来源】自动生成，用户不可改。绑定路径 $view.${s.viewColumn} 跟着它，永远逐字对齐` : '拖拽变化后 300ms 内自动编译并回填视图列名'}>
             {s.viewColumn || '（编译后可见）'}
           </code>
+          {/* task-260909 F-1（AC-1，原型 01/02）：字段类型选择器 —— 位置紧挨「数据类型」之前，
+              宽度固定 132px（原型注 ⑤：🚫 不跟内容伸缩，否则三种标签宽度不同会让整列左右跳动）。 */}
+          <Select<BuilderFieldType>
+            size="small" className="svb-ftype" value={s.fieldType as BuilderFieldType}
+            onChange={(v) => setFieldType(s._uid, v)}
+            /* 稳定测试钩子（主线 2026-09-09 批）：测试看不到实现代码，只能靠约定定位；
+               靠 DOM 结构兜底的选择器一旦失效，症状是 timeout —— 长得像产品坏了。 */
+            data-role="field-type-select"
+            aria-label="字段类型"
+            data-field-name={s.fieldName}
+            options={FIELD_TYPE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            optionRender={(opt) => {
+              const hint = FIELD_TYPE_OPTIONS.find((o) => o.value === opt.value)?.hint;
+              return <span>{opt.label}{hint && <span className="svb-ftype-hint">{hint}</span>}</span>;
+            }}
+            title="字段类型：基础数据=只读展示（落库写顶层 basic_data_path）；文本/数字输入=可填写（落库写 default_source.path）"
+          />
           <span className="svb-t2">{DATA_TYPE_LABEL[s.dataType]}</span>
           {s.groupLabel && s.groupKind === 'SUB' && <span className="svb-badge-aux" title={`来自「${s.groupLabel}」，编译为相关标量子查询`}>⚠{s.groupLabel}</span>}
           {s.groupLabel && ['GRAIN', 'JOIN', 'SAME'].includes(s.groupKind || '') && <span className="svb-badge-join" title={`来自「${s.groupLabel}」`}>{s.groupLabel}</span>}
@@ -1496,12 +1616,42 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
               右侧计数。全部是行键列时点明「均为必选行键」，与 ✕ 的禁用态相互印证 —— 用户看到
               「删不掉」时，标题栏已经把原因说在前面了。 */}
           <div className="svb-pane-h">
-            <b>已选输出列</b>
-            {sel.length > 0 && (
-              <span className="svb-sel-count">
-                {sel.length} 列{sel.every(isRowKeyCol) ? ' · 均为必选行键' : ''}
-              </span>
-            )}
+            <span className="svb-ph-l">
+              <b>已选输出列</b>
+              {sel.length > 0 && (
+                <span className="svb-sel-count">
+                  {sel.length} 列{sel.every(isRowKeyCol) ? ' · 均为必选行键' : ''}
+                </span>
+              )}
+            </span>
+            {/* task-260909 F-2（AC-2，原型 01 的 toolbar）：整列批量设置。两步 —— 先选值，再点
+                「应用到全部列」。🚫 一列都没有时按钮**禁用但可见 + hover 说明原因**
+                （frontend.md §1.2），不许 return null 藏掉：藏了用户就不知道有这个能力。 */}
+            <span className="svb-ftype-bulk">
+              <span className="svb-hint-i">整列批量设为</span>
+              <Select<BuilderFieldType>
+                size="small" className="svb-ftype" value={bulkFieldType}
+                onChange={(v) => setBulkFieldType(v)}
+                data-role="bulk-field-type"
+                aria-label="整列批量设为"
+                options={FIELD_TYPE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+                optionRender={(opt) => {
+                  const hint = FIELD_TYPE_OPTIONS.find((o) => o.value === opt.value)?.hint;
+                  return <span>{opt.label}{hint && <span className="svb-ftype-hint">{hint}</span>}</span>;
+                }}
+              />
+              <Tooltip title={sel.length ? undefined : BULK_FIELD_TYPE_EMPTY_TIP}>
+                <span>
+                  <Button
+                    size="small" disabled={!sel.length}
+                    title={sel.length ? undefined : BULK_FIELD_TYPE_EMPTY_TIP}
+                    aria-label={sel.length ? undefined : BULK_FIELD_TYPE_EMPTY_TIP}
+                    data-role="apply-field-type-all"
+                    onClick={() => applyFieldTypeToAll(bulkFieldType)}
+                  >应用到全部列</Button>
+                </span>
+              </Tooltip>
+            </span>
           </div>
           <div className="svb-pane-b">{renderSelected()}</div>
         </div>

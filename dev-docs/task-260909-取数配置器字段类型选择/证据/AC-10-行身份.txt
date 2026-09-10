@@ -1,0 +1,3 @@
+T260909FT-BASIC.part_no_field = 料号（field_type=BASIC_DATA）
+行数：BASIC=4 / INPUT(对照组)=4
+BASIC 首行=["300013","991","991","1","Cu","22","5","—","🔗"]

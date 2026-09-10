@@ -1,0 +1,7 @@
+component = 94695759-96a2-4eb7-8ed0-4f32c8c8d692
+sql_view_name = builder_9469575996a2
+- 生产料号 | field_type=BASIC_DATA | basic_data_path="$builder_9469575996a2.production_no" | default_source=null
+- 单重 | field_type=BASIC_DATA | basic_data_path="$builder_9469575996a2.unit_weight" | default_source=null
+- 材料名 | field_type=BASIC_DATA | basic_data_path="$builder_9469575996a2.material_name" | default_source=null
+- 品名 | field_type=BASIC_DATA | basic_data_path="$builder_9469575996a2.material_name_物料" | default_source=null
+- 规格 | field_type=BASIC_DATA | basic_data_path="$builder_9469575996a2.specification" | default_source=null

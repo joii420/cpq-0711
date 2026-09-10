@@ -765,6 +765,28 @@
 .svb-viewcol { font-size:11px; color:var(--svb-sub); background:#f0f1f3; border:1px dashed var(--svb-border);
   border-radius:4px; padding:1px 6px; white-space:nowrap; font-family:ui-monospace,Menlo,Consolas,monospace; }
 .svb-t2 { color:var(--svb-sub); font-size:11px; margin-left:2px; }
+/* task-260909 F-1（AC-1，原型 `01-列配置-基础核价默认.html` 注 ⑤）：字段类型选择器。
+   宽度**固定 132px**——🚫 不许跟着内容伸缩，否则「基础数据/文本输入/数字输入」三种标签宽度不同，
+   整列会左右跳动。同一个类名给行内选择器与面板头的批量选择器共用，两处宽度必须一致。 */
+.svb-ftype { flex:0 0 auto; width:132px; }
+/* 展开态里 `基础数据` 后面的副标「只读展示」（原型 02 的 `.dd .sel-on` 灰色小字）。 */
+.svb-ftype-hint { color:rgba(0,0,0,.45); font-size:12px; margin-left:8px; }
+/* task-260909 F-2（AC-2）：面板头的「整列批量设为 … / 应用到全部列」。
+   pane-h 原是 space-between 的两个直接子元素，这里把标题+计数收进 .svb-ph-l 一组，
+   批量控件作为第二组靠右——不改 .svb-pane-h 自身规则，`.svb-pane-h .svb-sel-count` 仍是后代选择器，照旧生效。 */
+.svb-ph-l { display:flex; align-items:center; gap:8px; min-width:0; }
+.svb-ftype-bulk { display:flex; align-items:center; gap:6px; flex:0 0 auto; margin-left:auto; }
+/* 🚨 三栏布局下「已选输出列」这一栏只有约 330px（左栏 300px 固定 + SQL 栏 34%），
+   而原型 01 的工具栏是画在 1180px 单栏页上的。**不许让它溢出**（实测第一版直接压到 SQL 面板上），
+   所以这里允许换行：窄栏时批量控件整体掉到第二行，仍然可见、顺序不变。
+   🚫 只作用于右栏的 pane-h，不动另外两栏的表头规则。 */
+.svb-pane.right .svb-pane-h { flex-wrap:wrap; row-gap:6px; }
+/* 批量下拉比行内的窄一点：原型注 ⑤ 的「固定 132px」约束的是**列内**选择器（防止整列左右跳动），
+   工具栏这一个不参与列对齐，窄一点能少触发一次换行。 */
+.svb-ftype-bulk .svb-ftype { width:104px; }
+/* 同理：行内一行放不下时换行，🚫 不缩 .svb-ftype 的 132px（缩了三种标签宽度不同又会让整列跳动）。 */
+.svb-sr-1 { flex-wrap:wrap; row-gap:4px; }
+.svb-viewcol { max-width:150px; overflow:hidden; text-overflow:ellipsis; }
 .svb-badges { display:flex; gap:4px; }
 .svb-rbadge { font-size:10.5px; padding:1px 7px; border-radius:9px; cursor:default; user-select:none;
   border:1px solid var(--svb-border); color:var(--svb-blue); background:var(--svb-blue-bg); font-weight:600; }

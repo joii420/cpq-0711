@@ -72,6 +72,31 @@
 
 ---
 
+## §1.6 🔑 回填一致性（2026-09-09 开工后并入，用户裁决）
+
+**问题**：`builder_config.columns[].fieldType` 存的是**客户端发来的原值**，而 `component.fields[].field_type`
+是**推导后的有效值**。存量实测 **42 个组件 / 344 字段**的 `builder_config.fieldType` **全为 `null`**
+（前端此前从不发送），而库里真实是 `INPUT_TEXT` / `INPUT_NUMBER`。
+
+⇒ 前端一旦开始发送（§1.1），「打开存量组件 → 什么都不改 → 保存」会把**兜底值**写进 `field_type`，
+**静默损坏 42 个存量组件**（NUMBER 列降级为 TEXT，或核价侧被改成 `BASIC_DATA`）。
+
+### 契约
+
+| 路径 | 规定 |
+|---|---|
+| **`GET /builder`（回读）** | `builder_config.columns[].fieldType` 为空/null 时，**回填 `component.fields[]` 里同名字段的真实 `field_type`** 再返回。匹配键是**字段名**，🚫 不是下标。读回的值**可能不在 3 值白名单内**（实测有 `FORMULA`）⇒ **原样返回，不过滤不报错** |
+| **`POST/PUT` 保存** | 落 `builder_config` 之前把 **effective 值**回填进 `columns[].fieldType`，使其之后不再为空 |
+
+⇒ **不变量：界面回填显示的 `fieldType` == 实际生效的 `component.fields[].field_type`。**
+
+📌 「产物并进 `builder_config`」是既有做法（`viewColumn` / `axisScope` 同款），不是新模式。
+
+⚠️ **副作用（知情）**：本项会让 `QUOTE` 侧 `builder_config` 的字节变化（`null` → 有值）。
+`AC-5` 的「逐位一致」断言对象是 **`component.fields[]`**，不是 `builder_config` ⇒ 不冲突。
+
+---
+
 ## §2 无契约变更但受影响的读端点（供测试取证）
 
 | 端点 | 说明 |
