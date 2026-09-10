@@ -586,10 +586,11 @@ const QuotationWizard: React.FC = () => {
         customerPartName: li.customerPartName || '',
         customerProductNo: li.customerProductNo || '',
         customerDrawingNo: li.customerDrawingNo || '',
-        // 生产料号详情（mat_part 主档）—— 卡片右侧 popover 用
+        // 生产料号详情 —— 卡片右侧「销售料号」徽标浮层用。
+        // task-260910(B-2)：后端已换源 ds_quote_material → ds_cost_basic/detail_material。
         hfPartInfo: li.hfPartInfo || undefined,
         templateId: li.templateId || '',
-        templateName: li.templateName || '',
+        // task-260910(F-6)：templateName 随「模板: xxx」徽标一并删除（不在 saveDraft payload 里）。
         productAttributeValues: rawAttrs,
         componentData: li.componentData || [],
         subtotal: isDecimalString(li.subtotal) ? normalizeDecimalString(li.subtotal) : '0',
@@ -1834,7 +1835,7 @@ const QuotationWizard: React.FC = () => {
         customerDrawingNo: li.customerDrawingNo || '',
         hfPartInfo: li.hfPartInfo || undefined,
         templateId: li.templateId || customerTemplateId || '',
-        templateName: li.templateName || '',
+        // task-260910(F-6)：templateName 随「模板: xxx」徽标一并删除（不在 saveDraft payload 里）。
         productAttributeValues: rawAttrs,
         componentData: li.componentData || [],
         subtotal: li.subtotal || 0,

@@ -4,7 +4,8 @@ import { isDecimalString, normalizeDecimalString, type DecimalString } from '../
 /**
  * V6 料号主数据 API — material_master 表
  *
- * 替代旧的 internalMaterialService(/internal-materials → internal_material 表)。
+ * 替代旧的 /internal-materials 端点(→ internal_material 表)。
+ * （该端点本身保留；它的前端 service 文件已于 task-260910(F-4) 随死组件一并删除。）
  * 「产品管理 → 产品主数据」UI 切换数据源到 V6 主表。
  */
 

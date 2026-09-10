@@ -11,7 +11,7 @@ import type { LineItem } from './QuotationStep2';
  */
 const li = (over: Partial<LineItem>): LineItem => ({
   id: 'L1', productPartNo: 'P1', productName: 'p', productId: 'pid',
-  templateId: 't', templateName: 'tn', productAttributeValues: {},
+  templateId: 't', productAttributeValues: {},
   componentData: [], subtotal: 0, ...over,
 } as LineItem);
 
