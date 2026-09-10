@@ -171,9 +171,23 @@ relname ~ '^(_bak|bak_|zz_|tmp_|temp_)'
 
 | 库 | 用途 | 谁指向它 | 纪律 |
 |---|---|---|---|
-| **`cpq_db_0910`** | 用户的**真机验证库** | 手工连（Navicat / `DB_NAME` 覆盖） | ✅ 可读写排查 · 🚫 **不做批量/自动化测试、不造数** |
+| **`cpq_db_0910`** | 用户的**真机验证库** | `application-uat.properties`（合于 `5a294c35`）+ Navicat 手工连 | ✅ 可读写排查 · 🚫 **不做批量/自动化测试、不造数** |
 | **`cpq_db_0724`** | 开发共享库 | `application.properties` | dev server(8081) + 各会话调试 |
 | **`cpq_db_test`** | 自动化测试库 | `application-test.properties`（合于 `b40d725a`） | `mvnw test` 打这里 |
+
+### uat profile 怎么起（连 `cpq_db_0910`）
+
+```bash
+cd cpq-backend && ./mvnw quarkus:dev -Dquarkus.profile=uat      # 端口 8091
+VITE_API_TARGET=http://localhost:8091 npm run dev               # 前端指过来
+```
+
+⚠️ **端口是 8091，不是 8081** —— 项目里 5 个既有 profile **全写 `quarkus.http.port=8081`**，
+端口实际不由 profile 决定（平时靠 `-Dquarkus.http.port=` 覆盖）。uat 直接把默认值写成
+`${UAT_HTTP_PORT:8091}`，这样它能与 dev server(8081) **同时在跑**而不抢端口。
+
+📌 启动日志里的 `missing table [mat_composite_process]` 是**既有问题不是本 profile 的**：
+`cpq_db_0910` 与 `cpq_db_0724` 的 `mat_*` 表数**均为 0**（记忆 `mat-tables-frozen-since-0602`），不阻止启动。
 
 ⚠️ **隔离依赖环境变量未被覆盖**：配置写的是 `${DB_NAME:cpq_db_test}`，**只是默认值**。
 谁 `export DB_NAME=cpq_db_0724`，测试照样打开发库。临时要打回共享库用
@@ -206,3 +220,4 @@ bash deploy/db/refresh-test-db.sh --yes    # 跳过确认（明确授权时）
 |---|---|---|
 | 2026-09-09 | 建立目录 + 首版全量 | `cpq-init-empty.sql`，基线 V439，251 表 / 29 视图。排除 3 个 `v_compat_*` 与 10 张人工备份表 |
 | 2026-09-09 | 三层库隔离落地 | `application-test.properties` 改指 `cpq_db_test`（合 `b40d725a`）；新增 `refresh-test-db.sh` 定期同步脚本；§⑧ 记录隔离口径 |
+| 2026-09-09 | uat profile 落地 | 新增 `application-uat.properties`（合 `5a294c35`）连 `cpq_db_0910`，端口 8091；已实测启动（Flyway `up to date`、业务端点 401）|
