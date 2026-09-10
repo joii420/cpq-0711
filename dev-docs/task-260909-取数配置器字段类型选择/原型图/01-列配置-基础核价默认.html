@@ -1,0 +1,58 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>列配置 · 基础核价默认态</title><link rel="stylesheet" href="_style.css"></head><body>
+<div class="page">
+  <h2 class="page-title">组件管理 · SQL 视图配置</h2>
+  <div class="tabs">
+    <div class="tab">组件</div><div class="tab">数据源</div><div class="tab">全局变量</div>
+    <div class="tab active">SQL 视图配置</div><div class="tab">核价树配置</div>
+  </div>
+
+  <div class="alert">
+    <div class="ico">i</div>
+    <div>
+      <div class="msg">数据集：<span class="ds-badge">基础核价 COST_BASIC</span>　页签类型：物料BOM</div>
+      <div class="desc">核价两套数据集的字段<b>默认为「基础数据」</b>——它们是从 SQL 视图取的展示值，不是用户输入。需要某列可输入时，用下面的「字段类型」单独改。</div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <h3>已选列（6）</h3>
+    <div class="spacer"></div>
+    <span class="hint">整列批量设为</span>
+    <div class="sel">基础数据 <span class="caret">▾</span></div>
+    <button class="btn">应用到全部列</button>
+    <button class="btn primary">保 存</button>
+  </div>
+
+  <table>
+    <thead><tr>
+      <th style="width:44px"></th><th>来源列</th><th>字段名</th>
+      <th style="width:132px">字段类型</th><th style="width:96px">数据类型</th><th>角色</th>
+    </tr></thead>
+    <tbody>
+      <tr><td>⠿</td><td>production_no</td><td>生产料号</td>
+          <td><div class="sel">基础数据 <span class="caret">▾</span></div></td><td>TEXT</td><td><span class="role">料号列</span></td></tr>
+      <tr><td>⠿</td><td>item_seq</td><td>项次</td>
+          <td><div class="sel">基础数据 <span class="caret">▾</span></div></td><td>NUMBER</td><td><span class="role">排序列</span></td></tr>
+      <tr><td>⠿</td><td>component_no</td><td>料号</td>
+          <td><div class="sel">基础数据 <span class="caret">▾</span></div></td><td>TEXT</td><td><span class="role">行键</span></td></tr>
+      <tr><td>⠿</td><td>material_name</td><td>材料名</td>
+          <td><div class="sel">基础数据 <span class="caret">▾</span></div></td><td>TEXT</td><td><span class="role">名称列</span></td></tr>
+      <tr><td>⠿</td><td>component_qty</td><td>组成用量</td>
+          <td><div class="sel">基础数据 <span class="caret">▾</span></div></td><td>NUMBER</td><td></td></tr>
+      <tr><td>⠿</td><td>material_fixed_loss</td>
+          <td><span class="trunc" title="材料固定损耗量（含工艺补偿与批次修正系数）">材料固定损耗量（含工艺补偿与批次修正系数）</span></td>
+          <td><div class="sel">基础数据 <span class="caret">▾</span></div></td><td>NUMBER</td><td></td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <b>本页要画到的状态（开发按此逐项还原）：</b><br>
+    ① <b>默认即正确</b>——数据集是 <code>COST_BASIC</code>／<code>COST_DETAIL</code> 时，新加入的列字段类型默认<b>「基础数据」</b>，用户<b>一个都不用选</b>。<br>
+    ② <b>选择器是例外开关</b>，不是必填项。真要某列可输入时才动它。<br>
+    ③ <b>整列批量设置</b>放工具栏右侧，先选值再点「应用到全部列」（两步，避免误触一次改掉全部）。<br>
+    ④ <b>最长文案</b>——第 6 行是极值样例：超长字段名单行截断 + 悬浮显示全名，<b>不得撑破表格或换行</b>。<br>
+    ⑤ 「字段类型」列宽固定 132px；🚫 不要让它跟着内容伸缩，否则三种标签宽度不同会让整表跳动。
+  </div>
+</div>
+</body></html>

@@ -1,0 +1,35 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>原型索引 · 取数配置器字段类型选择</title><link rel="stylesheet" href="_style.css"></head><body>
+<div class="page">
+  <h2 class="page-title">📌 当前基准 · 取数配置器列配置区（task-260909-取数配置器字段类型选择）</h2>
+  <div class="alert">
+    <div class="ico">i</div>
+    <div>
+      <div class="msg">身份标记：📌 当前基准</div>
+      <div class="desc">本目录是「组件管理 → SQL 视图配置」<b>列配置区</b>的当前视觉基准，定稿于闸门 A。
+      本次是该区域<b>首次建原型</b>（此前无图），故无旧标记需摘除。下一个改动此区域的任务须把本份改标 🕰️ 并补偏差清单。</div>
+    </div>
+  </div>
+
+  <table>
+    <thead><tr><th style="width:56px">#</th><th>原型</th><th>覆盖的状态</th><th style="width:200px">对应 AC</th></tr></thead>
+    <tbody>
+      <tr><td>01</td><td><a class="link" href="01-列配置-基础核价默认.html">列配置 · 基础核价默认态</a></td>
+          <td>默认态（全「基础数据」）· 整列批量设置 · 最长文案截断</td><td>AC-1、AC-2、AC-3、AC-4</td></tr>
+      <tr><td>02</td><td><a class="link" href="02-选择器展开态.html">字段类型选择器 · 展开态</a></td>
+          <td>展开态（恰好 3 项）· 选中态 · 错误态说明</td><td>AC-1、AC-8、AC-11、AC-12</td></tr>
+      <tr><td>03</td><td><a class="link" href="03-列配置-报价方言对照.html">列配置 · 报价方言（对照）</a></td>
+          <td>零回归基准（默认仍 `INPUT_*`）</td><td>AC-5、AC-14</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <b>还原纪律：</b>布局结构、控件类型与顺序、文案、默认值<b>逐项对齐</b>。
+    允许的偏差只有一类 —— <b>组件库能力所限的等价实现</b>（原型手写的下拉换成 AntD <code>Select</code>），且要在回报里列出来。
+    🚫 原型没画到的地方不许自由发挥，停下来问主线。<br><br>
+    <b>空态为什么不单独出图</b>：列配置区在「未选任何列」时本就是既有空态，<b>本次不改它</b>。<br>
+    <b>禁用态为什么不单独出图</b>：三个选项在任何状态下都可选，本次不引入任何禁用条件。
+    真要引入（比如"料号列不许配成数字输入"），那是新增约束，须回主线确认后补图 + 补 AC。
+  </div>
+</div>
+</body></html>

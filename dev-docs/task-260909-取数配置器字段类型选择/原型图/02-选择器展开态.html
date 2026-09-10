@@ -1,0 +1,52 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>字段类型选择器 · 展开态</title><link rel="stylesheet" href="_style.css"></head><body>
+<div class="page">
+  <h2 class="page-title">组件管理 · SQL 视图配置</h2>
+  <div class="tabs">
+    <div class="tab">组件</div><div class="tab">数据源</div><div class="tab">全局变量</div>
+    <div class="tab active">SQL 视图配置</div><div class="tab">核价树配置</div>
+  </div>
+
+  <div class="alert">
+    <div class="ico">i</div>
+    <div>
+      <div class="msg">字段类型选择器 · 展开态（值域<b>恰好 3 项</b>）</div>
+      <div class="desc">🚫 不出现 FORMULA / DATA_SOURCE / FIXED_VALUE —— 它们分别需要 formula_id / binding / content，配置器不收集这些，放进选项只会让人配出必然坏的字段。</div>
+    </div>
+  </div>
+
+  <table>
+    <thead><tr>
+      <th style="width:44px"></th><th>来源列</th><th>字段名</th>
+      <th style="width:132px">字段类型</th><th style="width:96px">数据类型</th><th>角色</th>
+    </tr></thead>
+    <tbody>
+      <tr><td>⠿</td><td>production_no</td><td>生产料号</td>
+          <td><div class="sel">基础数据 <span class="caret">▾</span></div></td><td>TEXT</td><td><span class="role">料号列</span></td></tr>
+      <tr class="sel"><td>⠿</td><td>component_qty</td><td>组成用量</td>
+          <td style="position:relative">
+            <div class="sel on">基础数据 <span class="caret">▾</span></div>
+            <div class="dd" style="top:30px;left:0">
+              <div class="sel-on">基础数据　<span style="color:rgba(0,0,0,.45);font-size:12px">只读展示</span></div>
+              <div>文本输入</div>
+              <div>数字输入</div>
+            </div>
+          </td><td>NUMBER</td><td></td></tr>
+      <tr><td>⠿</td><td>material_name</td><td>材料名</td>
+          <td><div class="sel">基础数据 <span class="caret">▾</span></div></td><td>TEXT</td><td><span class="role">名称列</span></td></tr>
+    </tbody>
+  </table>
+
+  <div style="height:70px"></div>
+
+  <div class="note">
+    <b>三个选项的文案与语义（逐字照此）：</b><br>
+    ・<b>基础数据</b>（<code>BASIC_DATA</code>）——只读展示。落库写<b>顶层 <code>basic_data_path</code></b>。<br>
+    ・<b>文本输入</b>（<code>INPUT_TEXT</code>）——可输入。落库写 <code>default_source.path</code>。<br>
+    ・<b>数字输入</b>（<code>INPUT_NUMBER</code>）——可输入。落库写 <code>default_source.path</code>。<br><br>
+    <b>⚠️ 绑定键跟字段类型走，不跟报价/核价侧走</b>（<code>D-73/B-30</code> 的不变量）——本次只改<b>默认值</b>，不动这条规则。<br>
+    <b>错误态</b>：非法值由后端返 400（<code>非法 fieldType: X，合法值：BASIC_DATA / INPUT_TEXT / INPUT_NUMBER</code>），
+    走既有 <code>message.error</code> 全局提示，本次不改其形态，故不单独出图。
+  </div>
+</div>
+</body></html>

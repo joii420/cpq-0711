@@ -1,0 +1,40 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>列配置 · 报价方言（对照，现状不变）</title><link rel="stylesheet" href="_style.css"></head><body>
+<div class="page">
+  <h2 class="page-title">组件管理 · SQL 视图配置</h2>
+  <div class="tabs">
+    <div class="tab">组件</div><div class="tab">数据源</div><div class="tab">全局变量</div>
+    <div class="tab active">SQL 视图配置</div><div class="tab">核价树配置</div>
+  </div>
+
+  <div class="alert">
+    <div class="ico">i</div>
+    <div>
+      <div class="msg">数据集：<span class="ds-badge" style="background:#e6f4ff;border-color:#91caff;color:#1677ff">报价 QUOTE</span>　—— 本页是<b>对照，现状逐位不变</b></div>
+      <div class="desc">报价侧用户确实要填数，所以默认仍按数据类型推「文本输入 / 数字输入」。选择器同样可用，但默认值与改动前一致。</div>
+    </div>
+  </div>
+
+  <table>
+    <thead><tr>
+      <th style="width:44px"></th><th>来源列</th><th>字段名</th>
+      <th style="width:132px">字段类型</th><th style="width:96px">数据类型</th><th>角色</th>
+    </tr></thead>
+    <tbody>
+      <tr><td>⠿</td><td>material_no</td><td>销售料号</td>
+          <td><div class="sel">文本输入 <span class="caret">▾</span></div></td><td>TEXT</td><td><span class="role">料号列</span></td></tr>
+      <tr><td>⠿</td><td>material_name</td><td>品名</td>
+          <td><div class="sel">文本输入 <span class="caret">▾</span></div></td><td>TEXT</td><td><span class="role">名称列</span></td></tr>
+      <tr><td>⠿</td><td>unit_weight</td><td>单重</td>
+          <td><div class="sel">数字输入 <span class="caret">▾</span></div></td><td>NUMBER</td><td></td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <b>这一页存在的意义是「零回归的可视基准」</b>：<br>
+    本次改动很容易被顺手做成"所有方言都默认基础数据"。<b>报价侧不能那样</b> —— 那边的字段就是给用户填的。<br>
+    ⇒ 开发时把这一页和 <code>01</code> 并排看：<b>同样的界面、同样的选择器，只有默认值不同</b>。<br><br>
+    对应 <code>AC-5</code>（落库写 <code>default_source.path</code>、<code>field_type</code> 为 <code>INPUT_*</code>）与 <code>AC-14</code>（报价侧仍可编辑可保存）。
+  </div>
+</div>
+</body></html>
