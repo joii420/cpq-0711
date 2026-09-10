@@ -1,0 +1,304 @@
+2026-09-10T03:55:07.441Z 归档组件 T260909FT-AC16-1789012505559#rzup4e → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='f2d33a8f-18bb-4ac4-b571-8c8930993be6'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T03:55:07.697Z 归档组件 T260909FT-AC16-1789012506339#rzup4e → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='a7470acb-389e-45b2-998d-ee8e94c05db6'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:01:21.945Z 归档组件 T260909FT-AC1-1789012794592#r00w79 → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='5b8a2f24-4fd5-4dac-bda7-39e60846d210'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:05:20.879Z 归档组件 T260909FT-AC2-1789012885888#r02uo4 → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='8cf675af-6b4a-4e9d-89a6-77cb0dc93522'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:05:21.104Z 归档组件 T260909FT-AC11-1789012977803#r02uo4 → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='b438205b-c499-4fab-9d70-5271069e4c80'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:08:28.559Z 归档组件 T260909FT-AC1-1789013215709#r09x4e → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='6edd7f18-527c-4772-9088-65eb2b8a6674'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:10:41.814Z 归档组件 T260909FT-AC1-1789013338085#r0cjja → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='55f4d269-6d62-409f-aaf2-b3d31da6e3e3'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:13:31.935Z 归档组件 T260909FT-AC1-1789013520860#r0ggkk → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='70666c99-338d-46e0-a916-1225c0868240'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:17:29.945Z 归档组件 T260909FT-AC2-1789013615875#r0ihxu → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='c889da32-002a-4207-b0ea-a14ba0a40e52'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:17:30.284Z 归档组件 T260909FT-AC11-1789013707056#r0ihxu → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='7f0b7037-8066-4c52-b986-6bc77785a250'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:19:20.436Z 归档组件 T260909FT-AC1-1789013869099#r0nxbt → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='f332dff2-92ba-4ff0-b69c-df15b9819e6d'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:21:14.735Z 归档组件 T260909FT-AC1-1789013984160#r0qe48 → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='a32938fe-0a95-4c18-a6cf-b5f7feca1c27'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:23:03.260Z 归档组件 T260909FT-AC3-1789014091687#r0sp5g → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='d2d8a98d-62e9-4ac6-ba9c-1d1f5b48804c'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:25:36.905Z 归档组件 T260909FT-AC4-1789014187124#r0uqrj → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='223e9984-2f75-41da-8abd-5b0d46adb902'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:25:37.007Z 归档组件 T260909FT-AC5-1789014281399#r0uqrj → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='3233bd25-bf45-4de8-8ee6-3a848f01b3d2'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:30:23.938Z 归档组件 T260909FT-AC3-1789014378510#r0yuew → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='ed49cd3b-88a0-48ef-adc8-a9823d120a19'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:30:24.177Z 归档组件 T260909FT-AC4-1789014473118#r0yuew → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='ce73d89a-9c18-41c6-93aa-43e670e075bd'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:30:24.373Z 归档组件 T260909FT-AC5-1789014567463#r0yuew → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='0b5b8b75-7b8e-4ec7-9d6a-2ccc467dd965'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:32:07.386Z 归档组件 T260909FT-AC5-1789014671676#r154l7 → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='6a89348e-e758-4098-bf25-a4cbac24984c'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:32:20.380Z 归档组件 T260909FT-PROBE-1789014735836#r16kbj → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='446c6927-8524-4109-817d-214aba2eafe1'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:32:20.588Z 归档组件 T260909FT-AC8-1789014736274#r16kbj → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='d2b0925f-b1a4-4613-9d87-a28279c2a70d'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:32:20.794Z 归档组件 T260909FT-AC9-COST_BASIC-1789014738282#r16kbj → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='013a1f12-e61a-4447-bf8f-bc2cf2dddcad'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:32:21.033Z 归档组件 T260909FT-AC9-COST_DETAIL-1789014738981#r16kbj → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='a9f33708-22bf-4f82-bc0a-ef242be5e539'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:32:21.259Z 归档组件 T260909FT-AC9-QUOTE-1789014739635#r16kbj → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='c996a299-fec5-41f6-a045-cad8cb91c2f4'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:33:20.730Z 归档组件 T260909FT-PROBE-1789014796417#r17v24 → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='71615254-6b24-4e47-b56c-b24ce6499814'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:33:20.922Z 归档组件 T260909FT-AC8-1789014796944#r17v24 → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='619e8d40-f7ed-49f6-96c9-56564cd7f581'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:33:21.127Z 归档组件 T260909FT-AC9-COST_BASIC-1789014798748#r17v24 → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='006655f3-d641-47ee-ae69-9131f3938400'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:33:21.330Z 归档组件 T260909FT-AC9-COST_DETAIL-1789014799369#r17v24 → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='7dc4f435-436b-4e61-83c1-a1a9a01102a1'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:33:21.538Z 归档组件 T260909FT-AC9-QUOTE-1789014800005#r17v24 → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='89a3a232-614e-4010-9679-07d2bf886c29'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:34:01.017Z 归档组件 T260909FT-AC9-COST_BASIC-1789014837920#r18r9t → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='6814c1b7-128a-42f9-8383-9ac05c1a1e0f'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:34:01.222Z 归档组件 T260909FT-AC9-COST_DETAIL-1789014838616#r18r9t → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='ae51367b-4a60-4320-bab3-02497ed2ffa9'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:34:01.468Z 归档组件 T260909FT-AC9-QUOTE-1789014839276#r18r9t → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='6ebe9e04-230d-4571-9c42-c5132d3c1455'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:34:01.708Z 归档组件 T260909FT-AC9-OVERRIDE-1789014840030#r18r9t → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='24f24d6e-a501-48b3-a26e-6baafea8364e'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:36:07.405Z 归档组件 T260909FT-BASIC#r1bey4 → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='c8645ad0-ddb2-4d74-ab06-2b5080021f3c'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:36:07.621Z 归档组件 T260909FT-INPUT#r1bey4 → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='03985f52-0a3e-4c2c-b187-fe6beb7b51af'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:36:07.913Z 归档组件 T260909FT-QUOTE#r1bey4 → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='24bef172-35f8-4a00-93fc-17fa65fe20e2'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:36:40.994Z 建 DRAFT 核价模板 T260909FT-模板#r1c4l5 → 3e62eb36-c9d5-434d-81fd-9eb9cf3d9c16 / INSERT 0 1
+  SQL: INSERT INTO template (id, template_series_id, name, version, category, description, usage_note,
+       product_attributes, subtotal_formula, components_snapshot, status, created_by, published_at,
+       created_at, updated_at, excel_view_config, customer_id, category_id, template_kind, formulas,
+       is_default, referenced_variables, sql_views_snapshot, template_sql_views_snapshot)
+     VALUES (gen_random_uuid(), gen_random_uuid(), 'T260909FT-模板#r1c4l5', 'v1.0', NULL, 'task-260909 字段类型选择 E2E 自建（DRAFT）', NULL,
+       '[]'::jsonb, NULL, NULL, 'DRAFT', NULL, NULL,
+       now(), now(), NULL, NULL, '2c4b8ed8-59ce-4125-b7f7-86ab59ca4bc3'::uuid, 'COSTING', '[]'::jsonb,
+       false, NULL, NULL, '{}'::jsonb)
+     RETURNING id
+2026-09-10T04:36:41.094Z 模板 T260909FT-模板#r1c4l5 绑页签「FT基础数据」→ 79c7a791-7627-4d7e-a620-15ab14ec7241 → INSERT 0 1
+  SQL: INSERT INTO template_component (id, template_id, component_id, tab_name, sort_order, preset_rows,
+         formula_assignments, data_driver_path_override, fields_override)
+       VALUES (gen_random_uuid(), '3e62eb36-c9d5-434d-81fd-9eb9cf3d9c16'::uuid, '79c7a791-7627-4d7e-a620-15ab14ec7241'::uuid, 'FT基础数据', 0, '[]'::jsonb,
+         '{}'::jsonb, NULL, NULL)
+2026-09-10T04:36:41.203Z 模板 T260909FT-模板#r1c4l5 绑页签「FT输入框」→ 0ab85a28-cf85-4660-9211-1c83c209df04 → INSERT 0 1
+  SQL: INSERT INTO template_component (id, template_id, component_id, tab_name, sort_order, preset_rows,
+         formula_assignments, data_driver_path_override, fields_override)
+       VALUES (gen_random_uuid(), '3e62eb36-c9d5-434d-81fd-9eb9cf3d9c16'::uuid, '0ab85a28-cf85-4660-9211-1c83c209df04'::uuid, 'FT输入框', 1, '[]'::jsonb,
+         '{}'::jsonb, NULL, NULL)
+2026-09-10T04:36:42.398Z 绑核价模板 3e62eb36-c9d5-434d-81fd-9eb9cf3d9c16 → 报价单 ff6231f2-773b-4174-bc2b-95dd7fbb89ab → UPDATE 1
+  SQL: UPDATE quotation SET costing_card_template_id='3e62eb36-c9d5-434d-81fd-9eb9cf3d9c16'::uuid, updated_at=now()
+      WHERE id='ff6231f2-773b-4174-bc2b-95dd7fbb89ab'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:36:57.950Z 归档组件 T260909FT-BASIC#r1c4l5 → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='79c7a791-7627-4d7e-a620-15ab14ec7241'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:36:58.200Z 归档组件 T260909FT-INPUT#r1c4l5 → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='0ab85a28-cf85-4660-9211-1c83c209df04'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:36:58.425Z 归档组件 T260909FT-QUOTE#r1c4l5 → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='7a7b3d85-fba0-478f-9de1-db9bdd6bf87f'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:36:58.659Z 归档模板 T260909FT-模板#r1c4l5 → UPDATE 1
+  SQL: UPDATE template SET status='ARCHIVED', updated_at=now()
+                      WHERE id='3e62eb36-c9d5-434d-81fd-9eb9cf3d9c16'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:43:27.056Z 归档组件 T260909FT-PROBE-1789015404207#r1kw3n → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='05aefd27-ec1f-4409-bbf8-6c1876c6b2ee'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:43:27.305Z 归档组件 T260909FT-AC8-1789015404472#r1kw3n → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='6bbf659e-9062-4bbc-b028-a6a931b55acc'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:43:27.486Z 归档组件 T260909FT-AC9-COST_BASIC-1789015405168#r1kw3n → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='dbb24826-5a13-48a4-a3ef-0b0113bc9949'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:43:27.667Z 归档组件 T260909FT-AC9-COST_DETAIL-1789015405481#r1kw3n → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='1c0f75d2-21ad-49bd-a3cb-f329a38386c3'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:43:27.876Z 归档组件 T260909FT-AC9-QUOTE-1789015405740#r1kw3n → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='f2de3807-c126-4f49-81db-fef3c8264558'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:43:28.115Z 归档组件 T260909FT-AC9-OVERRIDE-1789015406022#r1kw3n → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='c39c0f87-e175-455a-8287-577b5fe840d8'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:46:23.701Z 归档组件 T260909FT-AC3-1789015411598#r1kw3n → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='65c2f7d8-0f81-4167-9ea3-94da947829c0'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:46:23.904Z 归档组件 T260909FT-AC4-1789015469767#r1kw3n → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='8fced7e7-0854-42e7-b4a8-56f6c386e247'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:46:24.115Z 归档组件 T260909FT-AC5-1789015527805#r1kw3n → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='7aae5a94-1bc0-4431-ae31-7115f81d9ca2'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:51:29.528Z 归档组件 T260909FT-AC1-1789015651824#r1kw3n → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='b0156512-a202-4213-9895-73fc0666bd18'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:55:28.012Z 归档组件 T260909FT-AC2-1789015893443#r1vbc4 → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='252f5bc6-1a39-419b-95c4-90f3637a11ee'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T04:55:28.250Z 归档组件 T260909FT-AC11-1789015985723#r1vbc4 → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='bf227af2-9bf0-477b-b24f-ea333b0a907f'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T05:04:55.182Z 归档组件 T260909FT-AC1-1789016604445#r2ajtu → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='8c6e0592-97e2-4b7e-91c9-2ec4843922df'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T05:06:29.836Z 归档组件 T260909FT-AC1-1789016699105#r2ckze → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='8a007757-bb5e-48ee-a031-8b581e7227e5'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T05:08:04.588Z 归档组件 T260909FT-AC1-1789016793773#r2em0v → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='311ffced-7787-4220-977d-d0fb440bc64e'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T05:21:57.858Z 归档组件 T260909FT-AC16-1789017716020#r2xutv → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='68fd80e4-feb2-457a-a083-ddef44728c08'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T05:21:58.065Z 归档组件 T260909FT-AC16-1789017716841#r2xutv → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='5fd53c5f-e899-4c2a-b9fe-97f14040d92b'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T05:23:02.606Z 归档组件 T260909FT-PROBE-1789017776905#r2zqtv → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='33a9b046-9bc8-4450-9cbf-8571ba39aaf6'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T05:23:02.830Z 归档组件 T260909FT-AC8-1789017777339#r2zqtv → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='e4846f6b-068f-4902-a74b-82292d31c42b'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T05:23:03.068Z 归档组件 T260909FT-AC9-COST_BASIC-1789017779333#r2zqtv → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='612bc5ba-6893-41f4-97c5-b48f6c0d75f3'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T05:23:03.263Z 归档组件 T260909FT-AC9-COST_DETAIL-1789017780082#r2zqtv → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='fa78ab0a-3937-4bf8-923a-ea94138706f7'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T05:23:03.475Z 归档组件 T260909FT-AC9-QUOTE-1789017780755#r2zqtv → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='5ae1a018-eef2-4c4f-bef7-976eb70daa60'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T05:23:03.694Z 归档组件 T260909FT-AC9-OVERRIDE-1789017781472#r2zqtv → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='2ac4c932-6d30-4a9f-9ace-4863da21e060'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T05:26:00.733Z 归档组件 T260909FT-AC3-1789017787176#r2zqtv → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='4993a976-eec6-4378-a96e-e7d95f62ca3e'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T05:26:00.923Z 归档组件 T260909FT-AC4-1789017845620#r2zqtv → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='94695759-96a2-4eb7-8ed0-4f32c8c8d692'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T05:26:01.175Z 归档组件 T260909FT-AC5-1789017903890#r2zqtv → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='6d15e6ea-1a2a-45ea-bb68-d8e554c556d5'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T05:27:32.102Z 归档组件 T260909FT-AC1-1789018032942#r34oil → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='835cf838-ab2f-486b-859f-335a35ebc584'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T05:27:54.445Z 归档组件 T260909FT-AC2-1789018053875#r35nzs → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='c5b5b690-6d2f-4558-95da-b41c500f92c9'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T05:41:08.221Z 归档组件 T260909FT-AC1-1789018539195#r3g0s4 → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='9a0a3dc8-0f6b-49fd-9a17-8197d4d85508'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T05:41:08.419Z 归档组件 T260909FT-AC2-1789018632580#r3g0s4 → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='9ae06df4-3ac9-487a-b0a1-cc2b9b06556b'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T05:41:08.619Z 归档组件 T260909FT-AC11-1789018724564#r3g0s4 → UPDATE 1
+  SQL: UPDATE component SET status='DISABLED', updated_at=now()
+                      WHERE id='1d9d0fd2-d579-48f4-a290-efea6ce3bdd2'::uuid AND name LIKE 'T260909FT-%'
+2026-09-10T05:46:36.752Z 建自建报价模板 T260909FT-报价模板#r3u62r → 49dad219-8bcd-40b6-a6b5-e4487e882df1 / INSERT 0 1
+  SQL: INSERT INTO template (id, template_series_id, name, version, category, description, usage_note,
+         product_attributes, subtotal_formula, components_snapshot, status, created_by, published_at,
+         created_at, updated_at, excel_view_config, customer_id, category_id, template_kind, formulas,
+         is_default, referenced_variables, sql_views_snapshot, template_sql_views_snapshot)
+       SELECT gen_random_uuid(), gen_random_uuid(), 'T260909FT-报价模板#r3u62r', 'v1.0', t.category,
+         'task-260909 AC-14 自建（复制自源模板形状）', t.usage_note,
+         t.product_attributes, t.subtotal_formula, NULL, 'DRAFT', NULL, NULL,
+         now(), now(), t.excel_view_config, t.customer_id, t.category_id, 'QUOTATION', t.formulas,
+         false, t.referenced_variables, NULL, '{}'::jsonb
+       FROM template t WHERE t.id='6dedb30b-a3f2-49db-ba11-9570613a66f7'::uuid
+       RETURNING id
+2026-09-10T05:46:36.861Z 复制源模板页签 → T260909FT-报价模板#r3u62r → INSERT 0 6
+  SQL: INSERT INTO template_component (id, template_id, component_id, tab_name, sort_order, preset_rows,
+         formula_assignments, data_driver_path_override, fields_override)
+       SELECT gen_random_uuid(), '49dad219-8bcd-40b6-a6b5-e4487e882df1'::uuid, tc.component_id, tc.tab_name, tc.sort_order, tc.preset_rows,
+         tc.formula_assignments, tc.data_driver_path_override, tc.fields_override
+       FROM template_component tc WHERE tc.template_id='6dedb30b-a3f2-49db-ba11-9570613a66f7'::uuid
+2026-09-10T05:46:37.025Z 追加我的报价页签「T260909FT-报价输入」→ COMP-2424 → INSERT 0 1
+  SQL: INSERT INTO template_component (id, template_id, component_id, tab_name, sort_order, preset_rows,
+         formula_assignments, data_driver_path_override, fields_override)
+       VALUES (gen_random_uuid(), '49dad219-8bcd-40b6-a6b5-e4487e882df1'::uuid, 'b2b718fe-930a-4d3e-a49b-ecfc7947a156'::uuid, 'T260909FT-报价输入', 99, '[]'::jsonb,
+         '{}'::jsonb, NULL, NULL)
+2026-09-10T05:46:38.597Z 复制 1 行产品行 → 自建单 QT-20260909-0798 → INSERT 0 1
+  SQL: INSERT INTO quotation_line_item
+         (id, quotation_id, product_id, template_id, product_attribute_values, subtotal, sort_order,
+          created_at, customer_part_no, product_name_snapshot, product_part_no_snapshot,
+          part_version_locked, annual_volume, composite_type, row_version)
+       SELECT gen_random_uuid(), 'bf4bfa05-025f-4736-848d-457e5498a5de'::uuid, li.product_id, '49dad219-8bcd-40b6-a6b5-e4487e882df1'::uuid, li.product_attribute_values,
+              li.subtotal, 0, now(), li.customer_part_no, li.product_name_snapshot,
+              li.product_part_no_snapshot, li.part_version_locked, li.annual_volume,
+              coalesce(li.composite_type,'SIMPLE'), 0
+         FROM quotation_line_item li
+        WHERE li.quotation_id='56bb60e2-3718-4dc0-97cf-2c340ec45fb4'::uuid AND li.product_part_no_snapshot='S0001'
+2026-09-10T05:49:05.094Z 建自建报价模板 T260909FT-报价模板#r3xck1 → 748bd9f7-2e09-4dde-ab81-83efc90899b2 / INSERT 0 1
+  SQL: INSERT INTO template (id, template_series_id, name, version, category, description, usage_note,
+         product_attributes, subtotal_formula, components_snapshot, status, created_by, published_at,
+         created_at, updated_at, excel_view_config, customer_id, category_id, template_kind, formulas,
+         is_default, referenced_variables, sql_views_snapshot, template_sql_views_snapshot)
+       SELECT gen_random_uuid(), gen_random_uuid(), 'T260909FT-报价模板#r3xck1', 'v1.0', t.category,
+         'task-260909 AC-14 自建（复制自源模板形状）', t.usage_note,
+         t.product_attributes, t.subtotal_formula, NULL, 'DRAFT', NULL, NULL,
+         now(), now(), t.excel_view_config, t.customer_id, t.category_id, 'QUOTATION', t.formulas,
+         false, t.referenced_variables, NULL, '{}'::jsonb
+       FROM template t WHERE t.id='49dad219-8bcd-40b6-a6b5-e4487e882df1'::uuid
+       RETURNING id
+2026-09-10T05:49:05.205Z 复制源模板页签 → T260909FT-报价模板#r3xck1 → INSERT 0 7
+  SQL: INSERT INTO template_component (id, template_id, component_id, tab_name, sort_order, preset_rows,
+         formula_assignments, data_driver_path_override, fields_override)
+       SELECT gen_random_uuid(), '748bd9f7-2e09-4dde-ab81-83efc90899b2'::uuid, tc.component_id, tc.tab_name, tc.sort_order, tc.preset_rows,
+         tc.formula_assignments, tc.data_driver_path_override, tc.fields_override
+       FROM template_component tc WHERE tc.template_id='49dad219-8bcd-40b6-a6b5-e4487e882df1'::uuid
+2026-09-10T05:49:05.327Z 追加我的报价页签「T260909FT-报价输入」→ COMP-2424 → INSERT 0 1
+  SQL: INSERT INTO template_component (id, template_id, component_id, tab_name, sort_order, preset_rows,
+         formula_assignments, data_driver_path_override, fields_override)
+       VALUES (gen_random_uuid(), '748bd9f7-2e09-4dde-ab81-83efc90899b2'::uuid, 'b2b718fe-930a-4d3e-a49b-ecfc7947a156'::uuid, 'T260909FT-报价输入', 99, '[]'::jsonb,
+         '{}'::jsonb, NULL, NULL)
+2026-09-10T05:49:06.762Z 复制 1 行产品行 → 自建单 QT-20260909-0799 → INSERT 0 1
+  SQL: INSERT INTO quotation_line_item
+         (id, quotation_id, product_id, template_id, product_attribute_values, subtotal, sort_order,
+          created_at, customer_part_no, product_name_snapshot, product_part_no_snapshot,
+          part_version_locked, annual_volume, composite_type, row_version)
+       SELECT gen_random_uuid(), '3b0c4b1d-0880-47c3-a570-26ec276ed510'::uuid, li.product_id, '748bd9f7-2e09-4dde-ab81-83efc90899b2'::uuid, li.product_attribute_values,
+              li.subtotal, 0, now(), li.customer_part_no, li.product_name_snapshot,
+              li.product_part_no_snapshot, li.part_version_locked, li.annual_volume,
+              coalesce(li.composite_type,'SIMPLE'), 0
+         FROM quotation_line_item li
+        WHERE li.quotation_id='bf4bfa05-025f-4736-848d-457e5498a5de'::uuid AND li.product_part_no_snapshot='S0001'

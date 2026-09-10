@@ -1,0 +1,17 @@
+组件 = T260909FT-AC8-1789017777339#r2zqtv / e4846f6b-068f-4902-a74b-82292d31c42b
+基线指纹 = f0eff2c01b19ad8a4691fc60a2628486/568
+
+① fieldType="FORMULA" → HTTP 400
+   响应体原文: {"code":"BUILDER_FIELD_TYPE_UNKNOWN","message":"非法 fieldType: FORMULA，合法值：BASIC_DATA / INPUT_TEXT / INPUT_NUMBER","received":"FORMULA","fieldName":"生产料号","allowed":["BASIC_DATA","INPUT_TEXT","INPUT_NUMBER"]}
+② fieldType="XXX" → HTTP 400
+   响应体原文: {"code":"BUILDER_FIELD_TYPE_UNKNOWN","message":"非法 fieldType: XXX，合法值：BASIC_DATA / INPUT_TEXT / INPUT_NUMBER","received":"XXX","fieldName":"材料名","allowed":["BASIC_DATA","INPUT_TEXT","INPUT_NUMBER"]}
+③ fieldType="DATA_SOURCE" → HTTP 400
+   响应体原文: {"code":"BUILDER_FIELD_TYPE_UNKNOWN","message":"非法 fieldType: DATA_SOURCE，合法值：BASIC_DATA / INPUT_TEXT / INPUT_NUMBER","received":"DATA_SOURCE","fieldName":"生产料号","allowed":["BASIC_DATA","INPUT_TEXT","INPUT_NUMBER"]}
+③ fieldType="FIXED_VALUE" → HTTP 400
+   响应体原文: {"code":"BUILDER_FIELD_TYPE_UNKNOWN","message":"非法 fieldType: FIXED_VALUE，合法值：BASIC_DATA / INPUT_TEXT / INPUT_NUMBER","received":"FIXED_VALUE","fieldName":"生产料号","allowed":["BASIC_DATA","INPUT_TEXT","INPUT_NUMBER"]}
+
+校验后指纹 = f0eff2c01b19ad8a4691fc60a2628486/568
+
+⑤ 接线阳性对照：同一端点传**合法** fieldType="INPUT_TEXT" → HTTP 200
+   合法保存后指纹 = 365b6ff96299832a319bfd2c82347716/661
+   合法保存后 field_type = ["INPUT_TEXT","INPUT_TEXT","INPUT_TEXT"]

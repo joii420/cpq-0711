@@ -1,0 +1,6 @@
+选项原文（第 1 列）= [
+  "基础数据",
+  "文本输入",
+  "数字输入"
+]
+逐列当前值 = ["BASIC_DATA","BASIC_DATA","BASIC_DATA","BASIC_DATA"]

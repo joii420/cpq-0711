@@ -1,0 +1,42 @@
+# 改动前基线（需求文档 §④）
+{
+  "COST_BASIC": {
+    "FORMULA": 1,
+    "INPUT_NUMBER": 12,
+    "INPUT_TEXT": 21
+  },
+  "QUOTE": {
+    "BASIC_DATA": 1,
+    "FORMULA": 3,
+    "INPUT_NUMBER": 136,
+    "INPUT_TEXT": 171
+  }
+}
+
+# 交付后实测（已排除本片自建的 T260909FT- 前缀组件）
+{
+  "COST_BASIC": {
+    "FORMULA": 1,
+    "INPUT_NUMBER": 12,
+    "INPUT_TEXT": 21
+  },
+  "QUOTE": {
+    "BASIC_DATA": 1,
+    "FORMULA": 3,
+    "INPUT_NUMBER": 136,
+    "INPUT_TEXT": 171
+  }
+}
+
+# 组件数
+COST_BASIC = 4
+QUOTE = 38
+
+# 明细
+COST_BASIC | FORMULA | 1
+COST_BASIC | INPUT_NUMBER | 12
+COST_BASIC | INPUT_TEXT | 21
+QUOTE | BASIC_DATA | 1
+QUOTE | FORMULA | 3
+QUOTE | INPUT_NUMBER | 136
+QUOTE | INPUT_TEXT | 171

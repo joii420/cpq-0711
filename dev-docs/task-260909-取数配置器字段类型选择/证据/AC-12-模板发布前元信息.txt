@@ -1,0 +1,3 @@
+id|name|version|status|template_series_id|snap_md5|snap_len|updated_at
+9659ea42-194e-4551-ab9f-a8a2897eae12|T260909FT-模板|v1.0|PUBLISHED|83f6a446-7614-48ce-8d73-d2b7aed2b75e|de01352d28bf0fdb018bfdb6507117dc|7|2026-09-10 05:21:52.144602+00
+(1 row)

@@ -1,0 +1,7 @@
+component = 6d15e6ea-1a2a-45ea-bb68-d8e554c556d5
+sql_view_name = builder_6d15e6ea1a2a
+- 销售料号 | field_type=INPUT_TEXT | basic_data_path=null | default_source={"path":"$builder_6d15e6ea1a2a._物料_销售料号","type":"BASIC_DATA"}
+- 单重 | field_type=INPUT_NUMBER | basic_data_path=null | default_source={"path":"$builder_6d15e6ea1a2a._物料_单重","type":"BASIC_DATA"}
+- 材料名 | field_type=INPUT_TEXT | basic_data_path=null | default_source={"path":"$builder_6d15e6ea1a2a._物料_材料名","type":"BASIC_DATA"}
+- 品名 | field_type=INPUT_TEXT | basic_data_path=null | default_source={"path":"$builder_6d15e6ea1a2a._物料_品名","type":"BASIC_DATA"}
+- 规格 | field_type=INPUT_TEXT | basic_data_path=null | default_source={"path":"$builder_6d15e6ea1a2a._物料_规格","type":"BASIC_DATA"}

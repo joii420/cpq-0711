@@ -1,0 +1,16 @@
+2026-09-10T04:32:15.800Z [db-identity] api=134 db=134
+2026-09-10T04:32:15.836Z [backend-identity] BASE_URL=http://localhost:5175 BACKEND_URL=http://localhost:8099 port=8099 pid=1679561 cwd=/home/joii/project/cpq/.claude/worktrees/task-260909-field-type/cpq-backend started="Wed Sep  9 20:26:16 2026"
+2026-09-10T04:32:16.254Z [probe] 传 fieldType="FORMULA" → HTTP 400；组件 T260909FT-PROBE-1789014735836#r16kbj 落库 fields 长度=2
+        响应={"code":"BUILDER_FIELD_TYPE_UNKNOWN","message":"非法 fieldType: FORMULA，合法值：BASIC_DATA / INPUT_TEXT / INPUT_NUMBER","received":"FORMULA","fieldName":"生产料号","allowed":["BASIC_DATA","INPUT_TEXT","INPUT_NUMBER"]}
+2026-09-10T04:33:16.381Z [db-identity] api=134 db=134
+2026-09-10T04:33:16.417Z [backend-identity] BASE_URL=http://localhost:5175 BACKEND_URL=http://localhost:8099 port=8099 pid=1679561 cwd=/home/joii/project/cpq/.claude/worktrees/task-260909-field-type/cpq-backend started="Wed Sep  9 20:26:16 2026"
+2026-09-10T04:33:16.930Z [probe] 传 fieldType="FORMULA" → HTTP 400；组件 T260909FT-PROBE-1789014796417#r17v24 落库 fields 长度=2
+        响应={"code":"BUILDER_FIELD_TYPE_UNKNOWN","message":"非法 fieldType: FORMULA，合法值：BASIC_DATA / INPUT_TEXT / INPUT_NUMBER","received":"FORMULA","fieldName":"生产料号","allowed":["BASIC_DATA","INPUT_TEXT","INPUT_NUMBER"]}
+2026-09-10T04:43:24.172Z [db-identity] api=135 db=135
+2026-09-10T04:43:24.206Z [backend-identity] BASE_URL=http://localhost:5175 BACKEND_URL=http://localhost:8099 port=8099 pid=1679561 cwd=/home/joii/project/cpq/.claude/worktrees/task-260909-field-type/cpq-backend started="Wed Sep  9 20:26:16 2026"
+2026-09-10T04:43:24.457Z [probe] 传 fieldType="FORMULA" → HTTP 400；组件 T260909FT-PROBE-1789015404207#r1kw3n 落库 fields 长度=2
+        响应={"code":"BUILDER_FIELD_TYPE_UNKNOWN","message":"非法 fieldType: FORMULA，合法值：BASIC_DATA / INPUT_TEXT / INPUT_NUMBER","received":"FORMULA","fieldName":"生产料号","allowed":["BASIC_DATA","INPUT_TEXT","INPUT_NUMBER"]}
+2026-09-10T05:22:56.872Z [db-identity] api=135 db=135
+2026-09-10T05:22:56.905Z [backend-identity] BASE_URL=http://localhost:5175 BACKEND_URL=http://localhost:8099 port=8099 pid=1679561 cwd=/home/joii/project/cpq/.claude/worktrees/task-260909-field-type/cpq-backend started="Wed Sep  9 20:26:16 2026"
+2026-09-10T05:22:57.325Z [probe] 传 fieldType="FORMULA" → HTTP 400；组件 T260909FT-PROBE-1789017776905#r2zqtv 落库 fields 长度=2
+        响应={"code":"BUILDER_FIELD_TYPE_UNKNOWN","message":"非法 fieldType: FORMULA，合法值：BASIC_DATA / INPUT_TEXT / INPUT_NUMBER","received":"FORMULA","fieldName":"生产料号","allowed":["BASIC_DATA","INPUT_TEXT","INPUT_NUMBER"]}
