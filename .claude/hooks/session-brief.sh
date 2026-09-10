@@ -70,7 +70,7 @@ fi
 
 printf '%s\tsession-brief\tinjected\tINDEX=%s BACKLOG_todo=%s\n' \
   "$(date -Is)" "$([ -f "$IDX" ] && echo yes || echo missing)" "${n:-0}" \
-  >> "$ROOT/.claude/hooks.log" 2>/dev/null || true
+  2>/dev/null >> "$ROOT/.claude/hooks.log" || true
 
 out="${out}
 ⚠️ 以上是 hook 注入的**摘要**，不替代原文：排查 bug 时仍须按 §6 走「INDEX 按症状反查 → docs/反模式.md → 才动手复现」。

@@ -16,7 +16,7 @@
 set -uo pipefail
 
 ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"
-log(){ printf '%s\tcheck-selfcheck\t%s\t%s\n' "$(date -Is)" "$1" "${2:-}${3:+ $3}" >> "$ROOT/.claude/hooks.log" 2>/dev/null || true; }
+log(){ printf '%s\tcheck-selfcheck\t%s\t%s\n' "$(date -Is)" "$1" "${2:-}${3:+ $3}" 2>/dev/null >> "$ROOT/.claude/hooks.log" || true; }
 
 payload=$(cat)
 
