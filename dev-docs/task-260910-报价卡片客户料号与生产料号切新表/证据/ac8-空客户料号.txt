@@ -1,0 +1,19 @@
+样本=[{"mat":"S-3110520789","pname":"亲验-AC10"}]
+实际卡片=[
+ {
+  "leftChildCount": 0,
+  "leftTexts": [],
+  "rightTexts": [
+   "亲验-AC10",
+   "销售料号: S-3110520789",
+   "删除"
+  ],
+  "inlineStyle": null,
+  "borderTopColor": "rgb(224, 224, 224)",
+  "hasPartInfoBtn": false,
+  "templateBadgeTexts": [],
+  "domOrderOk": true
+ }
+]
+加载中计数=0
+pageerror=[]

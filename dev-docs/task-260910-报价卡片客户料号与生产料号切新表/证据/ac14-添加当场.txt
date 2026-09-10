@@ -1,0 +1,21 @@
+自建单=QT-20260910-0804
+抽屉候选行数=20
+添加后卡片=[
+ {
+  "leftChildCount": 1,
+  "leftTexts": [
+   "客户产品编号: CP-0028-2609000001"
+  ],
+  "rightTexts": [
+   "0028-2609000001",
+   "销售料号: 0028-2609000001",
+   "删除"
+  ],
+  "inlineStyle": null,
+  "borderTopColor": "rgb(224, 224, 224)",
+  "hasPartInfoBtn": false,
+  "templateBadgeTexts": [],
+  "domOrderOk": true
+ }
+]
+模板徽标计数=0

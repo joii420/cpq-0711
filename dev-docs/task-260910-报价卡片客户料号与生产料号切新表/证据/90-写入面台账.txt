@@ -1,0 +1,61 @@
+2026-09-10T09:13:25.363Z decoy: ds_quote_customer_part @T260910-C2 → INSERT 0 1
+  SQL: INSERT INTO ds_quote_customer_part (customer_no, customer_part_name, customer_product_no, customer_drawing_no, material_no, source, created_by)
+     VALUES ('T260910-C2','T260910-客户料号-B','T260910-CP-B','T260910-DWG-B','S-3110520789','IMPORT','t260910-tester')
+2026-09-10T09:13:25.472Z decoy: ds_cost_basic_material T260910-P-BBB → INSERT 0 1
+  SQL: INSERT INTO ds_cost_basic_material (production_no, material_name, specification, dimension, old_material_no, source, created_by)
+     VALUES ('T260910-P-BBB','T260910-零件-BBB','T260910-规格-B','T260910-尺寸-B','T260910-旧-B','IMPORT','t260910-tester')
+2026-09-10T09:13:25.583Z decoy: ds_quote_material @T260910-C2 / T260907T-B00001 → INSERT 0 1
+  SQL: INSERT INTO ds_quote_material (customer_no, material_no, production_no, source, created_by)
+     VALUES ('T260910-C2','T260907T-B00001','T260910-P-BBB','IMPORT','t260910-tester')
+2026-09-10T09:13:25.801Z decoy: ds_quote_material @T260910-C2 / 3120011203 → INSERT 0 1
+  SQL: INSERT INTO ds_quote_material (customer_no, material_no, production_no, source, created_by)
+     VALUES ('T260910-C2','3120011203','T260910-P-BBB','IMPORT','t260910-tester')
+2026-09-10T09:14:24.905Z ds_cost_basic_material T260910-P-AAA → INSERT 0 1
+  SQL: INSERT INTO ds_cost_basic_material (production_no, material_name, specification, dimension, old_material_no, source, created_by)
+     VALUES ('T260910-P-AAA','T260910-零件-AAA','T260910-规格-A','T260910-尺寸-A','T260910-旧-A','IMPORT','t260910-tester')
+2026-09-10T09:14:25.003Z ds_quote_material @CUST-0004 / 3120011203 → AAA → INSERT 0 1
+  SQL: INSERT INTO ds_quote_material (customer_no, material_no, production_no, source, created_by)
+     VALUES ('CUST-0004','3120011203','T260910-P-AAA','IMPORT','t260910-tester')
+2026-09-10T09:14:26.956Z [cleanup-precount] ds_quote_material WHERE customer_no LIKE 'T260910-%' OR material_no LIKE 'T260910-%' OR production_no LIKE 'T260910-%' → 3 行
+2026-09-10T09:14:27.227Z [cleanup] ds_quote_material 3 → 0
+2026-09-10T09:14:27.315Z [cleanup-precount] ds_quote_customer_part WHERE customer_no LIKE 'T260910-%' OR material_no LIKE 'T260910-%' OR customer_product_no LIKE 'T260910-%' → 1 行
+2026-09-10T09:14:27.610Z [cleanup] ds_quote_customer_part 1 → 0
+2026-09-10T09:14:27.691Z [cleanup-precount] ds_cost_basic_material WHERE production_no LIKE 'T260910-%' → 2 行
+2026-09-10T09:14:27.876Z [cleanup] ds_cost_basic_material 2 → 0
+2026-09-10T09:25:06.834Z decoy: ds_quote_customer_part @T260910-C2 → INSERT 0 1
+  SQL: INSERT INTO ds_quote_customer_part (customer_no, customer_part_name, customer_product_no, customer_drawing_no, material_no, source, created_by)
+     VALUES ('T260910-C2','T260910-客户料号-B','T260910-CP-B','T260910-DWG-B','S-3110520789','IMPORT','t260910-tester')
+2026-09-10T09:25:06.953Z decoy: ds_cost_basic_material T260910-P-BBB → INSERT 0 1
+  SQL: INSERT INTO ds_cost_basic_material (production_no, material_name, specification, dimension, old_material_no, source, created_by)
+     VALUES ('T260910-P-BBB','T260910-零件-BBB','T260910-规格-B','T260910-尺寸-B','T260910-旧-B','IMPORT','t260910-tester')
+2026-09-10T09:25:07.047Z decoy: ds_quote_material @T260910-C2 / T260907T-B00001 → INSERT 0 1
+  SQL: INSERT INTO ds_quote_material (customer_no, material_no, production_no, source, created_by)
+     VALUES ('T260910-C2','T260907T-B00001','T260910-P-BBB','IMPORT','t260910-tester')
+2026-09-10T09:25:07.141Z decoy: ds_quote_material @T260910-C2 / 3120011203 → INSERT 0 1
+  SQL: INSERT INTO ds_quote_material (customer_no, material_no, production_no, source, created_by)
+     VALUES ('T260910-C2','3120011203','T260910-P-BBB','IMPORT','t260910-tester')
+2026-09-10T09:25:45.140Z ds_cost_basic_material T260910-P-AAA → INSERT 0 1
+  SQL: INSERT INTO ds_cost_basic_material (production_no, material_name, specification, dimension, old_material_no, source, created_by)
+     VALUES ('T260910-P-AAA','T260910-零件-AAA','T260910-规格-A','T260910-尺寸-A','T260910-旧-A','IMPORT','t260910-tester')
+2026-09-10T09:25:45.193Z ds_quote_material @CUST-0004 / 3120011203 → AAA → INSERT 0 1
+  SQL: INSERT INTO ds_quote_material (customer_no, material_no, production_no, source, created_by)
+     VALUES ('CUST-0004','3120011203','T260910-P-AAA','IMPORT','t260910-tester')
+2026-09-10T09:25:46.080Z [cleanup-precount] ds_quote_material WHERE customer_no LIKE 'T260910-%' OR material_no LIKE 'T260910-%' OR production_no LIKE 'T260910-%' → 3 行
+2026-09-10T09:25:46.178Z [cleanup] ds_quote_material 3 → 0
+2026-09-10T09:25:46.435Z [cleanup-precount] ds_quote_customer_part WHERE customer_no LIKE 'T260910-%' OR material_no LIKE 'T260910-%' OR customer_product_no LIKE 'T260910-%' → 1 行
+2026-09-10T09:25:46.557Z [cleanup] ds_quote_customer_part 1 → 0
+2026-09-10T09:25:46.603Z [cleanup-precount] ds_cost_basic_material WHERE production_no LIKE 'T260910-%' → 2 行
+2026-09-10T09:25:46.751Z [cleanup] ds_cost_basic_material 2 → 0
+2026-09-10T09:25:46.816Z [cleanup-precount] ds_quote_material WHERE customer_no LIKE 'T260910-%' OR material_no LIKE 'T260910-%' OR production_no LIKE 'T260910-%' → 0 行
+2026-09-10T09:25:46.864Z [cleanup-precount] ds_quote_customer_part WHERE customer_no LIKE 'T260910-%' OR material_no LIKE 'T260910-%' OR customer_product_no LIKE 'T260910-%' → 0 行
+2026-09-10T09:25:46.922Z [cleanup-precount] ds_cost_basic_material WHERE production_no LIKE 'T260910-%' → 0 行
+2026-09-10T09:55:48.395Z AC-12 夹具: ds_cost_basic_material T260910-P-SEQ → INSERT 0 1
+  SQL: INSERT INTO ds_cost_basic_material (production_no, material_name, specification, dimension, old_material_no, source, created_by)
+       VALUES ('T260910-P-SEQ','T260910-零件-SEQ','T260910-规格-SEQ','T260910-尺寸-SEQ','T260910-旧-SEQ','IMPORT','t260910-tester')
+2026-09-10T09:55:48.452Z AC-12 夹具: ds_quote_material @CUST-0004 / 0028-2609000001 → T260910-P-SEQ → INSERT 0 1
+  SQL: INSERT INTO ds_quote_material (customer_no, material_no, production_no, source, created_by)
+       VALUES ('CUST-0004','0028-2609000001','T260910-P-SEQ','IMPORT','t260910-tester')
+2026-09-10T09:56:43.323Z [cleanup-precount] ds_quote_material WHERE production_no LIKE 'T260910-%' → 1 行
+2026-09-10T09:56:43.524Z [cleanup] ds_quote_material 1 → 0
+2026-09-10T09:56:43.614Z [cleanup-precount] ds_cost_basic_material WHERE production_no LIKE 'T260910-%' → 1 行
+2026-09-10T09:56:43.807Z [cleanup] ds_cost_basic_material 1 → 0
