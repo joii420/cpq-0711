@@ -1,0 +1,9 @@
+annual_discount|12|0
+capacity|0|0
+element_bom|0|0
+element_bom_item|0|0
+material_bom|0|0
+material_bom_item|0|0
+material_customer_map|0|0
+plating_scheme|0|0
+unit_price|0|0

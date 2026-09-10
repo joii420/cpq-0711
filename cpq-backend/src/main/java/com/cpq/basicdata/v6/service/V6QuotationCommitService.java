@@ -133,12 +133,33 @@ public class V6QuotationCommitService {
      * 全部改为 {@code pending_quotation_id = quotationId}（单表 UPDATE，无 N+1，同调用方事务内）。
      * importRecordId == quotationId（理论不会发生，两者来自不同序列）时天然 no-op。
      */
-    private void repointPendingOwnership(UUID importRecordId, UUID quotationId) {
-        if (importRecordId == null || quotationId == null || importRecordId.equals(quotationId)) return;
-        for (String table : PENDING_TABLES) {
-            em.createNativeQuery("UPDATE " + table + " SET pending_quotation_id = :qid WHERE pending_quotation_id = :rid")
-              .setParameter("qid", quotationId).setParameter("rid", importRecordId).executeUpdate();
-        }
+    /**
+     * 🚫 <b>已摘除（task-260909 · V6 老表退役 · 批次 3（B-8 / AC-8，A0-1 乙））—— 本方法现为 no-op。</b>
+     *
+     * <p>原语义（保留在上方 javadoc）：把 10 张 V6 表里 {@code pending_quotation_id = importRecordId}
+     * 的行过户到 {@code quotationId}。摘除依据：
+     * <ul>
+     *   <li>pending 行的<b>唯一</b>赋值点是 {@code QuoteImportService#processImport}，
+     *       而其唯一注入点 {@code BasicDataImportV6Resource} 的两个 POST 自 2026-09-07 起恒返 410
+     *       ⇒ 新单不再产生 pending 行；</li>
+     *   <li>实测（2026-09-09）：4 张主表中挂在<b>存在的 import_record</b> 上的 pending 行数全为 0
+     *       ⇒ 本方法当前命中面已经是 0，摘除不改变任何一行数据；</li>
+     *   <li>新体系 {@code ds_quote_*} 29 张表<b>无一张有</b> {@code pending_quotation_id} 列，
+     *       设计上就不要 pending 这个概念（见 {@code DatasetQuotationCommitService} 类注释）。</li>
+     * </ul>
+     *
+     * <p>⚠️ <b>方法签名与调用点刻意保留</b>（A0-1 乙）：留一层可回滚的壳，
+     * <b>物理删除留到 {@code DROP TABLE} 那个后续任务</b>，届时上下文更完整。
+     * 🚫 不许顺手改 {@link #PENDING_TABLES}（10 项）去对齐删除侧的 9 项清单 —— 两者故意不等长。
+     * <p>🔬 <b>可见性由 {@code private} 放宽为包级</b>（task-260909 · AC-8/A2）：本方法是本次摘除
+     * 里<b>唯一有判别力的行为面验证点</b> —— 只有直调它、断言 pending 归属未被改写，才能区分
+     * 「代码已 no-op」与「老代码碰巧没命中」（老代码的 {@code WHERE pending_quotation_id =
+     * :importRecordId} 当前命中面本来就是 0，跑建单流程恒绿，验不出任何东西）。
+     * <b>方法名/参数/返回值一字未改</b>，A0-1 乙的「签名仍在」仍然成立。
+     */
+    @Deprecated(forRemoval = true)
+    void repointPendingOwnership(UUID importRecordId, UUID quotationId) {
+        // no-op：pending 占号机制已随 task-260909 摘除，改由 ds_quote_*_record 承担。
     }
 
     /** 8 张版本化表 + 占号表 + material_master（repair-0726 B3 并入；过户是同列名 UPDATE，

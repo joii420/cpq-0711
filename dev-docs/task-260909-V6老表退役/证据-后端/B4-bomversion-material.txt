@@ -1,0 +1,34 @@
+===== B-4 素材 · 报价 BOM 树 bom_version 变化面（costing_bom_tree_config d6defaa0 / QUOTE）=====
+                                  口径                                   | 总行数 | bom_version有值行数 | 涉及料号数 
+-------------------------------------------------------------------------+--------+---------------------+------------
+ 改前：v_compat_material_bom_item QUOTE 当前行                           |   2706 |                  17 |          9
+ 改后：ds_quote_material_bom（无 bom_version 列，模板已写死 NULL::text） |   2748 |                   0 |          0
+(2 rows)
+
+--- 改前有 bom_version 的那 17 行是谁（全部来自老表 material_bom_item）---
+   material_no   | customer_no |  component_no   | bom_version 
+-----------------+-------------+-----------------+-------------
+ 0028-2609000012 | CUST-0004   | 00257           | 2000
+ 0028-2609000012 | CUST-0004   | 00262           | 2000
+ 0526-2609000001 | CUST-0001   | 00006           | 2000
+ 0526-2609000002 | CUST-0001   | 00006           | 2000
+ 0526-2609000002 | CUST-0001   | 00123           | 2000
+ 0526-2609000003 | CUST-0001   | 0526-2609000002 | 2000
+ 0526-2609000003 | CUST-0001   | 0526-2609000002 | 2000
+ 0526-2609000003 | CUST-0001   | TEST-Q13-CODE   | 2000
+ 0526-2609000003 | CUST-0001   | TEST-Q13-CODE   | 2000
+ 3110520422      | CUST-0002   | 00255           | 2018
+ 3110520422      | CUST-0002   | 00256           | 2018
+ 3110520422      | CUST-0002   | 00257           | 2018
+ 3120011203      | CUST-0002   | 00144           | 2018
+ 3120011203      | CUST-0002   | 3110520422      | 2018
+ S-3120014539    | CUST-0001   |                 | 2010
+ S-80011         | CUST-0001   | 00002           | 2009
+ TEST-Q13-CODE   | CUST-0001   | TEST-Q13-CODE   | 2000
+(17 rows)
+
+--- 下游消费：BomTreeRenderService 对 bomVersion=null 已有兜底 ---
+885:        if (node.bomVersion == null) {
+886-            rowNode.putNull("__bomVersion");
+887-        } else {
+888-            rowNode.put("__bomVersion", node.bomVersion);

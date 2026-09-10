@@ -103,8 +103,14 @@ public class SqlViewValidator {
                 return DryRunSqlViewResponse.fail(
                         "SQL 视图 sql_template 不允许引用 " + era + " 已废弃表 `" + token
                         + "`（AP-53，错误码 SQL_VIEW_DEPRECATED_TABLE）。"
-                        + "请改用对应 V6 表（material_master / material_bom_item / element_bom_item / "
-                        + "fee_config / unit_price / plating_scheme 等）。"
+                        // task-260909（D-4）：原文案推荐 material_master / material_bom_item /
+                        // element_bom_item —— 这三张正是本次退役的 V6 老表。不改的话，这条
+                        // "把用户从 V44 引导到 V6" 的建议本身就变成下一个 AP-53：系统拿着
+                        // 过期推荐清单把用户导向下一批即将不存在的表。
+                        // 🚫 错误码 SQL_VIEW_DEPRECATED_TABLE 保持不变（前端走错误码分支，不匹配文案）。
+                        + "请改用报价侧 ds_quote_* / 核价侧 ds_cost_basic_* · ds_cost_detail_* 新表"
+                        + "（如 ds_quote_material / ds_quote_material_bom / ds_quote_element_bom / "
+                        + "ds_cost_basic_material_bom / ds_cost_detail_element_bom 等）。"
                         + "详见 docs/方案制定前必读.md §V6 基础资料表使用规则。"
                 );
             }

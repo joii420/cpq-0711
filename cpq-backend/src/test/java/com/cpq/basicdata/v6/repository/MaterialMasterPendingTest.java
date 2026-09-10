@@ -30,6 +30,18 @@ import static org.junit.jupiter.api.Assertions.*;
  *       {@code deletePendingWithGuard}（无引用删、别单引用不删）。</li>
  * </ol>
  *
+ * <p>🔴 <b>task-260909 · V6 老表退役（`A0-1` 乙）：本类有 3 条用例的断言方向已反转为「no-op」。</b>
+ * <ul>
+ *   <li>{@link #flipPendingClearsMarkerRowStays}：{@code flipPending} 恒返 0、标记不被清空</li>
+ *   <li>{@link #deletePendingWithGuardDeletesUnreferenced_KeepsReferencedByOtherQuotation}：{@code deletePendingWithGuard} 恒返 0、两行都保留</li>
+ *   <li>{@link #t4_deletePendingWithGuard_ownQuotationReferenceDoesNotBlockRecycling}：同上，行不再被回收</li>
+ * </ul>
+ * 每条方法 Javadoc 里都逐字记录了<b>原断言语义</b>。这 3 条现在是 `AC-8`（pending 写点全部 no-op）的
+ * <b>常驻守卫</b>：有人把 no-op 改回写入实现就会变红。
+ * 🚫 <b>不要因为「断言 0 看起来没意义」而删除或 {@code @Disabled}</b> —— 那会让这条行为契约在
+ * `DROP TABLE` 任务里静默消失。物理删除（连同被测方法签名）留到 `DROP TABLE` 任务。
+ * <p>📌 其余 5 条用例（{@code pendingWriteLandsInRealTableWithMarker} / T1 / T2 / T3 / T5）语义未变，仍绿。
+ *
  * <p><b>B7.2 新增用例</b>（T1~T5，见各方法 javadoc）。
  *
  * <p>每个用例用独立随机后缀的 material_no，配合 {@code @TestTransaction}（方法结束自动回滚），
@@ -67,6 +79,22 @@ class MaterialMasterPendingTest {
         assertEquals(0, new BigDecimal("1.500000").compareTo(mm.get().unitWeight));
     }
 
+    /**
+     * 🔴 <b>task-260909 · A0-1 乙：断言已由「转正」反转为「no-op」。</b>
+     *
+     * <p><b>原断言</b>（repair-0726 B7.1）：{@code flipPending(qid)} 返回 <b>1</b>（本单 pending 料号转正 1 行），
+     * 且事后 {@code pendingQuotationId} 被<b>清空为 null</b>、行仍在。
+     *
+     * <p><b>现断言</b>：{@code flipPending} 已随 {@code task-260909}（`A0-1` 乙 · pending 机制摘除）改为
+     * 空实现 ⇒ 返回 <b>0</b>，且 {@code pendingQuotationId} <b>保持原值不被改写</b>。
+     *
+     * <p>🔑 <b>本用例现在是 `AC-8`（pending 写点全部 no-op）的常驻守卫</b>：
+     * 若有人把 {@code flipPending} 的写入逻辑改回去，这里会立刻变红。
+     * 🚫 <b>不要因为「它断言 0 看起来没意义」就删掉或 {@code @Disabled}</b> ——
+     * 那样这条行为契约会在 `DROP TABLE` 任务里静默消失，没人知道曾经有过它。
+     *
+     * <p>物理删除（连同方法签名一起去掉）留到 `DROP TABLE` 任务，届时本用例一并移除。
+     */
     @Test
     @TestTransaction
     void flipPendingClearsMarkerRowStays() {
@@ -80,7 +108,9 @@ class MaterialMasterPendingTest {
         assertEquals(qid, before.pendingQuotationId, "通过前应仍带 pending 标记");
 
         int flipped = repo.flipPending(qid);
-        assertEquals(1, flipped, "核价通过：本单 pending 料号应转正 1 行");
+        assertEquals(0, flipped,
+            "【设计如此·非缺陷】flipPending 已随 task-260909（A0-1 乙）摘除写入，应恒返 0。"
+            + "原断言为 1（转正 1 行）。若这里得到非 0，说明 no-op 被改回了写入实现 —— 那是 AC-8 的回归。");
 
         // flipPending 是原生 SQL UPDATE，绕过 Hibernate 一级缓存：上面 before 那次 find 已把该行
         // 实体装进本事务的持久化上下文身份映射，若不 clear() 直接再 find，会拿到 find 时刻缓存的
@@ -88,11 +118,28 @@ class MaterialMasterPendingTest {
         // 本用例最初就是这样假绿/误红过一次，实测确认必须 clear() 才能读到 flipPending 后的真实状态。
         em.clear();
         var after = repo.findByMaterialNo(materialNo);
-        assertTrue(after.isPresent(), "flipPending 只清标记，不删行");
-        assertNull(after.get().pendingQuotationId, "转正后标记应清空");
-        assertEquals(0, new BigDecimal("2.750000").compareTo(after.get().unitWeight), "转正不改其余列");
+        assertTrue(after.isPresent(), "flipPending 不删行（no-op 前后都成立）");
+        assertEquals(qid, after.get().pendingQuotationId,
+            "【设计如此·非缺陷】no-op 后标记应保持原值不被改写。原断言为 assertNull（转正后标记清空）。");
+        assertEquals(0, new BigDecimal("2.750000").compareTo(after.get().unitWeight), "其余列始终不变");
     }
 
+    /**
+     * 🔴 <b>task-260909 · A0-1 乙：断言已由「删无引用行」反转为「no-op」。</b>
+     *
+     * <p><b>原断言</b>（repair-0726 B7.1，取代更早的 {@code clearStagingRemovesAll}）：
+     * {@code deletePendingWithGuard(qid)} 返回 <b>1</b> —— 本单 2 条 pending 行里，
+     * 无阻塞引用的 {@code unrefNo} <b>被删除</b>，被别单引用的 {@code refNo} <b>保留</b>。
+     *
+     * <p><b>现断言</b>：{@code deletePendingWithGuard} 已随 {@code task-260909}（`A0-1` 乙）改为空实现
+     * ⇒ 返回 <b>0</b>，<b>两行都保留</b>。
+     *
+     * <p>⚠️ 注意「{@code refNo} 保留」这半条在 no-op 前后<b>都成立</b>，因此它<b>不具判别力</b>；
+     * 真正钉住 no-op 的是「{@code unrefNo} 也不再被删」这半条。
+     *
+     * <p>🔑 本用例现在是 `AC-8` 的常驻守卫。🚫 不要删除或 {@code @Disabled}。
+     * 物理删除留到 `DROP TABLE` 任务。
+     */
     @Test
     @TestTransaction
     void deletePendingWithGuardDeletesUnreferenced_KeepsReferencedByOtherQuotation() {
@@ -110,9 +157,14 @@ class MaterialMasterPendingTest {
         insertBomItemReference(refNo, "T9CD-PARENT-CUST", "T9CD-PARENT-MAT", otherQid);
 
         int deleted = repo.deletePendingWithGuard(qid);
-        assertEquals(1, deleted, "本单 2 条 pending 行里只有 unrefNo 无阻塞引用，应删 1 条");
-        assertTrue(repo.findByMaterialNo(unrefNo).isEmpty(), "无引用应被删除（原 clearStaging 语义的等价物）");
-        assertTrue(repo.findByMaterialNo(refNo).isPresent(), "被别单引用的行应保留，不能粗暴清空");
+        assertEquals(0, deleted,
+            "【设计如此·非缺陷】deletePendingWithGuard 已随 task-260909（A0-1 乙）摘除写入，应恒返 0。"
+            + "原断言为 1（删掉无引用的 unrefNo）。若这里得到非 0，说明 no-op 被改回了删除实现 —— 那是 AC-8 的回归。");
+        assertTrue(repo.findByMaterialNo(unrefNo).isPresent(),
+            "【设计如此·非缺陷】no-op 后无引用行也不再被删。原断言为 isEmpty()（无引用应被删除）。"
+            + "⇐ 这半条才是本用例对 no-op 的判别力所在。");
+        assertTrue(repo.findByMaterialNo(refNo).isPresent(),
+            "被别单引用的行保留 —— ⚠️ 此断言在 no-op 前后都成立，不具判别力，仅作回归护栏");
     }
 
     // =====================================================================
@@ -233,6 +285,14 @@ class MaterialMasterPendingTest {
      * 已在 {@link #t3_deletePendingWithGuard_blockedByOtherQuotationBomItemReference} 里验证。
      * 若未来 SQL 改成不排除本单自己的引用（比如误删了 {@code <> :qid}），本用例的
      * {@code assertEquals(1, deleted)} 会失败，从而守住这条真正的不变量。
+     *
+     * <p>🔴 <b>task-260909 订正：上面这段推理是 repair-0726 时的历史结论，现已不再适用。</b>
+     * {@code deletePendingWithGuard} 已随 {@code task-260909}（`A0-1` 乙）改为空实现 ⇒
+     * <b>原断言 {@code assertEquals(1, deleted)} 已改为 {@code assertEquals(0, deleted)}</b>，
+     * <b>原断言「料号行应被回收」({@code isEmpty}) 已改为「行仍在」({@code isPresent})</b>。
+     * ⚠️ 因此 {@code <> :qid} 这条不变量<b>已不再由本用例守护</b> —— 整段守卫 SQL 随 pending 机制一起停用。
+     * 本用例的新职责是 `AC-8` 的常驻守卫：<b>若有人把 no-op 改回写入实现，它会变红</b>。
+     * 🚫 不要删除或 {@code @Disabled}；物理删除留到 `DROP TABLE` 任务。
      */
     @Test
     @TestTransaction
@@ -246,11 +306,13 @@ class MaterialMasterPendingTest {
         insertBomItemReference(materialNo, "T9I-PARENT-CUST", "T9I-PARENT-MAT", qid);
 
         int deleted = repo.deletePendingWithGuard(qid);
-        assertEquals(1, deleted,
-            "本单自己的引用行不应顶住回收（守卫 <> :qid 子句已排除同单引用）——" +
-            "若此断言失败说明顺序确实是必要条件，需要回去改写本用例为"
-            + "\"先删引用行再删料号\"并如实更正 javadoc 结论");
-        assertTrue(repo.findByMaterialNo(materialNo).isEmpty(), "料号行应被回收");
+        assertEquals(0, deleted,
+            "【设计如此·非缺陷】deletePendingWithGuard 已随 task-260909（A0-1 乙）摘除写入，应恒返 0。"
+            + "原断言为 1（本单自己的引用行不顶住回收，守卫 <> :qid 已排除同单引用）。"
+            + "⚠️ 摘除后 `<> :qid` 这条不变量已不再由本用例守护 —— 它随整段 SQL 一起停用，"
+            + "物理删除时（DROP TABLE 任务）本用例与该 SQL 一并移除。");
+        assertTrue(repo.findByMaterialNo(materialNo).isPresent(),
+            "【设计如此·非缺陷】no-op 后料号行不再被回收。原断言为 isEmpty()（料号行应被回收）。");
     }
 
     /** T5：listPending 排序稳定 —— 两次调用返回顺序一致，且严格等于 ORDER BY material_no。 */

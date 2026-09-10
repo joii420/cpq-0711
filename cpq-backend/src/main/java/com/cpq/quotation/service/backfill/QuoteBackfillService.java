@@ -140,7 +140,24 @@ public class QuoteBackfillService {
         // 该组 pending 行随 cleanupPending 统一清理（DELETE ... WHERE pending_quotation_id=:qid）。
     }
 
+    /**
+     * 🚫 <b>已摘除（task-260909 · V6 老表退役 · 批次 3 / B-8 · A0-1 乙）—— 本方法现为 no-op。</b>
+     *
+     * <p>原语义：核价通过时把占号表 {@code material_customer_map} 的 pending 行转正
+     * （{@code pending_quotation_id} 置 NULL），与回填同事务，避免「数据生效但产品还看不见」的中间态。
+     *
+     * <p><b>摘除时的命中面实测 = 0</b>（2026-09-09 11:09 采样，共享库 {@code cpq_db_0724}）：
+     * {@code material_customer_map} <b>全表 pending 非空行数 = 0</b>，其中挂在<b>存在的 quotation</b>
+     * 上的更是 0 ⇒ 本方法当前一行也改不到，摘除不改变任何数据。
+     * 根因同族：pending 行的唯一赋值点 {@code QuoteImportService#processImport} 已不可达
+     * （V6 导入端点自 2026-09-07 起恒返 410）。
+     *
+     * <p>⚠️ 签名保留（A0-1 乙），原实现留在 {@code if (true) return;} 之后，
+     * <b>物理删除留到 {@code DROP TABLE} 任务</b>。
+     */
+    @Deprecated(forRemoval = true)
     private void flipMaterialCustomerMap(UUID quotationId) {
+        if (true) return; // no-op：见 javadoc（摘除时命中面实测为 0）
         em.createNativeQuery(
                 "UPDATE material_customer_map SET pending_quotation_id = NULL WHERE pending_quotation_id = :qid")
             .setParameter("qid", quotationId)
@@ -166,8 +183,26 @@ public class QuoteBackfillService {
      * {@code QuoteBackfillFlatAcceptanceTest#deleteRoute_tombstonedRowExcluded_oldRowPhysicallyRetained}
      * 里断言留存的是 {@code delOfficial} 而不是 {@code delPending}）——这条规则只保护"曾经真实生效过"
      * 的行，不适用于本方法清理的这批"从未生效过"的草稿行，两者不是同一件事，不要混为一谈。
+     * <p>🚫 <b>已摘除（task-260909 · V6 老表退役 · 批次 3 / B-8 · A0-1 乙）—— 本方法现为 no-op。</b>
+     * 上面整段 javadoc <b>一字未删</b>：它区分「从未生效过的纯 pending 草稿行」与「曾经 is_current=true
+     * 的官方墓碑行」的那套论证，是 {@code DROP TABLE} 任务回收这段代码时必须读到的背景。
+     *
+     * <p><b>摘除时的命中面实测 = 0</b>（2026-09-09 11:09 采样，共享库 {@code cpq_db_0724}）：
+     * 本方法 {@link #PENDING_TABLES} 里 8 张表的 pending 非空行数<b>全部为 0</b>；
+     * 全库仅剩的 14 行 pending（{@code material_master} 2 行 / {@code annual_discount} 12 行）
+     * <b>都不在这张清单里</b>，且其 {@code pending_quotation_id} 在 {@code quotation} 与
+     * {@code import_record} 两张表里<b>都查不到</b>（P-1 已判定为进程内直调写入，非业务路径）。
+     *
+     * <p>🚫 <b>{@link #PENDING_TABLES} 是 8 项，与 {@code QuotationService.B8_PENDING_TABLES}（9 项）、
+     * {@code QuoteImportService.PENDING_TABLES}（9 项）、
+     * {@code V6QuotationCommitService.PENDING_TABLES}（10 项）三者都不等长，这是有意的</b>：
+     * 本清单少 {@code annual_discount}（repair-0804 只把它并进了删单/重导两条清理链），
+     * 也少 {@code material_master}（它由上面的 {@code flipPending} 转正，不走删除）。
+     * <b>「顺手对齐成一样长」会引入真 bug。</b>
      */
+    @Deprecated(forRemoval = true)
     private void cleanupPending(UUID quotationId) {
+        if (true) return; // no-op：见 javadoc（摘除时命中面实测为 0）
         for (String table : PENDING_TABLES) {
             em.createNativeQuery("DELETE FROM " + table + " WHERE pending_quotation_id = :qid")
                 .setParameter("qid", quotationId)

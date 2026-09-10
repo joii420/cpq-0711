@@ -1,0 +1,6 @@
+basic_rows|15
+basic_nonnull|7
+basic_md5|84927a15f7cbf7a077cf903135f2d4d9
+detail_rows|7
+detail_nonnull|7
+detail_md5|dc1d85705d524b0e0517d8d5df29bda3

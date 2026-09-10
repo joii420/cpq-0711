@@ -1,0 +1,5 @@
+  relname   | n_tup_ins | n_tup_del 
+------------+-----------+-----------
+ unit_price |       191 |         6
+(1 row)
+

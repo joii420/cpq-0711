@@ -1,0 +1,45 @@
+ SELECT e.id,
+    e.production_no,
+    e.material_part_no,
+    e.item_seq,
+    e.element_code,
+    e.content_pct,
+    e.loss_rate,
+    e.version_no,
+    e.row_fingerprint,
+    e.source,
+    e.created_at,
+    e.created_by,
+    e.updated_at,
+    e.updated_by,
+    true AS is_current,
+    mm.material_no AS sales_material_no
+   FROM ds_cost_basic_element_bom e
+     LEFT JOIN LATERAL ( SELECT m.material_no
+           FROM material_master m
+          WHERE m.production_no::text = e.production_no::text
+          ORDER BY m.material_no
+         LIMIT 1) mm ON true
+UNION ALL
+ SELECT h.id,
+    h.production_no,
+    h.material_part_no,
+    h.item_seq,
+    h.element_code,
+    h.content_pct,
+    h.loss_rate,
+    h.version_no,
+    h.row_fingerprint,
+    h.source,
+    h.created_at,
+    h.created_by,
+    h.updated_at,
+    h.updated_by,
+    false AS is_current,
+    mm.material_no AS sales_material_no
+   FROM ds_cost_basic_element_bom_history h
+     LEFT JOIN LATERAL ( SELECT m.material_no
+           FROM material_master m
+          WHERE m.production_no::text = h.production_no::text
+          ORDER BY m.material_no
+         LIMIT 1) mm ON true;

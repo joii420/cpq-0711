@@ -1,0 +1,34 @@
+### v_composite_child_materials
+1|hf_part_no|character varying|20
+2|child_hf_part_no|character varying|20
+3|child_part_name|character varying|
+4|child_seq|integer|
+5|recipe_id|uuid|
+6|material_code|character varying|
+7|chemical_symbol|character varying|
+8|material_name|character varying|
+9|spec_label|character varying|
+10|recipe_type|character varying|
+11|customer_id|uuid|
+12|quotation_line_item_id|uuid|
+### v_composite_child_elements
+1|hf_part_no|character varying|20
+2|child_hf_part_no|character varying|20
+3|child_part_name|character varying|
+4|child_seq|integer|
+5|seq_no|integer|
+6|element_name|character varying|20
+7|composition_pct|numeric|
+8|customer_id|uuid|
+9|quotation_line_item_id|uuid|
+10|material_part_no|character varying|32
+### v_composite_child_processes
+1|hf_part_no|character varying|20
+2|child_hf_part_no|character varying|20
+3|child_part_name|character varying|
+4|child_seq|integer|
+5|seq_no|bigint|
+6|process_code|character varying|20
+7|assembly_process|character varying|
+8|customer_id|uuid|
+9|quotation_line_item_id|uuid|
