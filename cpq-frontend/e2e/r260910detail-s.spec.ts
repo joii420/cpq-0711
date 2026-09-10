@@ -14,7 +14,7 @@
  *   QT-20260907-0592  CUST-0001 罗克韦尔 customer_part_no IS NULL 且客户料号表无匹配 → AC-R5
  */
 import { test, expect } from '@playwright/test';
-import * as H from './r260910.helpers';
+import * as H from './r260910detail.helpers';
 
 const Q_MAIN = 'QT-20260909-0799';
 const Q_MULTI = 'QT-20260909-0794';

@@ -1,0 +1,40 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>task-260910 原型图导航</title><link rel="stylesheet" href="_base.css"></head><body><div class="wrap">
+<h1>task-260910 · 选配切 ds 新表 + 已有料号绑定 —— 原型图</h1>
+<div class="alert" style="margin-bottom:20px">
+📌 <b>当前基准</b>（2026-09-10 立项，闸门 A 定稿后即验收基准）<br>
+<span style="font-size:12px">本目录覆盖本任务<b>全部 3 处界面改动</b>。定稿后开发按 1:1 还原，主线亲验时<b>逐屏比对并附对照截图</b>，偏差逐条列出（只允许「组件库能力所限的等价实现」这一类）。</span>
+</div>
+
+<div class="state"><h2>原型清单<span class="tag">按 fronttask.md 的 F-x 逐一对应</span></div>
+<div class="body"><table>
+  <thead><tr><th style="width:60px">#</th><th>原型</th><th style="width:90px">服务的 AC</th><th style="width:70px">任务</th><th>覆盖的状态</th></tr></thead>
+  <tbody>
+    <tr><td>01</td><td><a href="01-配件类型选择-加第三张卡.html"><b>配件类型选择</b> —— 加第三张卡</a></td>
+      <td>AC-18<br>AC-20</td><td>F-3</td><td>默认 · 选中 · <b>禁用+tooltip</b> · 反向禁用</td></tr>
+    <tr><td>02</td><td><a href="02-绑定料号搜索面板.html"><b>绑定料号搜索面板</b> —— 新面板</a></td>
+      <td>AC-18<br>AC-19</td><td>F-3<br>F-4</td><td>默认 · <b>空数据</b> · 未选客户 · <b>最长文案</b> · <b>错误态</b></td></tr>
+    <tr><td>03</td><td><a href="03-已有零件-材质列多值.html"><b>已有零件面板</b> —— 材质列单值→多值</a></td>
+      <td>AC-8<br>AC-9</td><td>F-2</td><td>现状对照 · 方案甲/乙 · <b>空数据</b> · <b>最长文案</b></td></tr>
+  </tbody></table>
+<div class="note">📌 <b>不出原型的界面改动</b>：<code>F-1</code>（两个端点透传 <code>customerNo</code>）是纯取数改动，无视觉变化 ⇒ 按 <code>frontend.md §1.3</code>「不触发」；<code>F-5</code> 是零改动的回归确认清单。</div>
+</div></div>
+
+<div class="state"><h2>🚦 闸门 A 需定稿的一项</h2>
+<div class="body" style="font-size:13px;line-height:1.8">
+<b>R-2 · 材质列的展示形态</b>（原型 03）——<br>
+· <b>方案甲（推荐）</b>：多 tag。<code>materials[]</code> 数组渲染成 N 个 tag。<br>
+· <b>方案乙</b>：单串 <code>A / B</code>。⚠️ 已知风险：<code>material_recipe.symbol</code> 含 <code>/</code> 的实测有 <b>74 条</b>（如 <code>AgZnO12/Cu</code>）⇒ 「一个材质」与「两个材质」渲染出同一串，肉眼无法区分。<br>
+⇒ <b>建议选甲</b>；定稿后同步 <code>api.md §2.1</code> 并通知在跑的子代理（<code>task-docs.md §4</code> 四步）。
+</div></div>
+
+<div class="state"><h2>原型自身的合规自检<span class="tag">frontend.md §1.3</span></div>
+<div class="body" style="font-size:13px;line-height:1.9">
+✅ 双击即可打开，不依赖构建 / dev server / 网络（样式为同目录 <code>_base.css</code>，图标用字符）<br>
+✅ 真实文案 + 真实数据（料号 <code>S0003/S0004/S0008/S0012/PERF0909-B00001</code>、材质 <code>AgNi10/AgCu90/AgZnO12&#47;Cu</code>、客户 <code>CUST-0004</code> 均为库内实测值，🚫 无 lorem ipsum、无灰色占位块）<br>
+✅ 视觉语汇对齐 AntD（#1890ff 主色 · 32px 控件高 · 6px 圆角 · 表格与按钮形态）<br>
+✅ 五类状态齐全：默认 / <b>空数据</b> / <b>禁用态（含 hover tooltip 文案）</b> / <b>最长文案与极值</b> / <b>错误态</b><br>
+✅ 守 §1.1（用抽屉与内嵌面板，🚫 无弹窗）与 §1.2（禁用但可见 + tooltip 写明原因）
+</div></div>
+
+</div></body></html>

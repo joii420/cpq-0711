@@ -1,0 +1,6 @@
+[R260910] 环境正身
+BASE_URL=http://localhost:5178  BACKEND_URL=http://localhost:8097  DB=10.177.152.12/cpq_db_0724
+直连后端   : HTTP 200 {"code":200,"message":"success","data":{"componentId":"32ab8212-df6c-4844-9721-ac7dc41d6cf2","partNo":"300001","currentVersion":"3","options":["3","2","1"]}}
+经前端代理 : HTTP 200 {"code":200,"message":"success","data":{"componentId":"32ab8212-df6c-4844-9721-ac7dc41d6cf2","partNo":"300001","currentVersion":"3","options":["3","2","1"]}}
+生效 COST_BASIC 配置: 基础核价BOM树-COST_BASIC-v1 md5=0b69d87d5c0a2755ac0db2c64a5bad8c len=2521  递归体已取"自己那张清单" = true
+树分支候选(300001) 非空 = true（改动后应为 true；若 false 且 AC-3~AC-5 全红，**先怀疑打到了未改动的后端**再怀疑产品）

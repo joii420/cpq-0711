@@ -1,0 +1,74 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>选配 · 配件类型选择（新增「直接绑定已有销售料号」）</title>
+<link rel="stylesheet" href="_base.css"></head><body><div class="wrap">
+<h1>① 配件类型选择 —— 新增第三张卡</h1>
+<div class="sub">位置：选配抽屉 → 步骤 2「添加配件」→ 点「+ 添加配件」弹出的子面板（<code>AddPartSubDrawer</code>）第一步。
+服务 <b>AC-18 / AC-20</b>（<code>F-3</code>）。📌 现状只有前两张卡。</div>
+
+<div class="state"><h2>默认态<span class="tag">三张卡并列，未选中</span></div>
+<div class="body"><div class="drawer">
+  <div class="dh">添加配件<span class="x">✕</span></div>
+  <div class="dc">
+    <div class="steps"><div class="on"><span class="n">1</span>选择类型</div><div><span class="n">2</span>选择来源</div><div><span class="n">3</span>填写内容</div></div>
+    <div class="cards">
+      <div class="card"><div class="ic">🔧</div><div class="t">零件</div><div class="d">新建或选用已有零件<br>需配材质与工序</div></div>
+      <div class="card"><div class="ic">🛒</div><div class="t">外购件</div><div class="d">从料号库选<br>类型为「外购件」</div></div>
+      <div class="card new"><div class="ic">🔗</div><div class="t">直接绑定已有销售料号</div><div class="d">客户产品编号绑到<br>一个已有销售料号</div><div class="badge">最简：无需配材质/工序</div></div>
+    </div>
+  </div>
+  <div class="df"><button class="btn">取消</button><button class="btn pri dis">下一步</button></div>
+</div>
+<div class="note">🔑 第三张卡用虚线边框 + 绿色 badge 区分「捷径」性质。未选类型时「下一步」禁用（§1.2：禁用但可见）。</div>
+</div></div>
+
+<div class="state"><h2>选中第三张卡<span class="tag">进入料号搜索（见原型 02）</span></div>
+<div class="body"><div class="drawer">
+  <div class="dh">添加配件<span class="x">✕</span></div>
+  <div class="dc">
+    <div class="steps"><div class="on"><span class="n">1</span>选择类型</div><div><span class="n">2</span>选择销售料号</div><div class="muted"><span class="n">3</span>—</div></div>
+    <div class="cards">
+      <div class="card"><div class="ic">🔧</div><div class="t">零件</div><div class="d">新建或选用已有零件<br>需配材质与工序</div></div>
+      <div class="card"><div class="ic">🛒</div><div class="t">外购件</div><div class="d">从料号库选<br>类型为「外购件」</div></div>
+      <div class="card new sel"><div class="ic">🔗</div><div class="t">直接绑定已有销售料号</div><div class="d">客户产品编号绑到<br>一个已有销售料号</div><div class="badge">最简：无需配材质/工序</div></div>
+    </div>
+  </div>
+  <div class="df"><button class="btn">取消</button><button class="btn pri">下一步</button></div>
+</div>
+<div class="note">⚠️ 选中第三张卡后，步骤条第 3 步置灰为「—」—— 该路径<b>不采集材质与工序</b>。</div>
+</div></div>
+
+<div class="state"><h2>禁用态 · 已加配件后第三张卡不可选<span class="tag">AC-20 互斥（hover tooltip）</span></div>
+<div class="body"><div class="drawer">
+  <div class="dh">添加配件<span class="x">✕</span></div>
+  <div class="dc">
+    <div class="steps"><div class="on"><span class="n">1</span>选择类型</div><div><span class="n">2</span>选择来源</div><div><span class="n">3</span>填写内容</div></div>
+    <div class="cards">
+      <div class="card"><div class="ic">🔧</div><div class="t">零件</div><div class="d">新建或选用已有零件<br>需配材质与工序</div></div>
+      <div class="card"><div class="ic">🛒</div><div class="t">外购件</div><div class="d">从料号库选<br>类型为「外购件」</div></div>
+      <div class="tip" style="flex:1;display:flex">
+        <span class="tt">已添加 1 个配件，不能再改为「直接绑定」—— 两种方式互斥，请先移除已加的配件</span>
+        <div class="card new dis" style="flex:1;background:#f5f5f5;border-color:#d9d9d9;color:rgba(0,0,0,.25);cursor:not-allowed">
+          <div class="ic">🔗</div><div class="t">直接绑定已有销售料号</div><div class="d" style="color:rgba(0,0,0,.25)">客户产品编号绑到<br>一个已有销售料号</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="df"><button class="btn">取消</button><button class="btn pri dis">下一步</button></div>
+</div>
+<div class="note">🚫 <b>互斥规则</b>（<code>api.md §2.3</code>）：<code>bindExistingMaterialNo</code> 与 <code>parts</code> 同时非空 → 400 <code>BIND_AND_PARTS_EXCLUSIVE</code>。UI 层提前禁用，不让用户走到 400。</div>
+</div></div>
+
+<div class="state"><h2>反向：选了绑定后，「+ 添加配件」禁用<span class="tag">步骤 2 主界面</span></div>
+<div class="body"><div class="drawer">
+  <div class="dh">添加产品 — 选配<span class="x">✕</span></div>
+  <div class="dc">
+    <div class="steps"><div class="done"><span class="n">✓</span>客户产品编号</div><div class="on"><span class="n">2</span>添加配件</div><div><span class="n">3</span>组合工序</div><div><span class="n">4</span>确认并添加</div></div>
+    <div class="alert ok">🔗 已选择<b>直接绑定</b>销售料号 <code>S0004</code>（触点组件 φ5）—— 该产品将沿用此料号的既有 BOM 与材质数据，无需再配零件。<a href="#" style="margin-left:8px">更换料号</a></div>
+    <div class="tip"><span class="tt">已选择「直接绑定已有销售料号」，不能再添加配件</span>
+      <button class="btn dis" style="width:100%;height:40px;border-style:dashed">+ 添加配件</button></div>
+  </div>
+  <div class="df"><button class="btn">取消</button><button class="btn">上一步</button><button class="btn pri">下一步</button></div>
+</div>
+<div class="note">✅ <b>AC-20 的正向断言</b>：此状态下「下一步」与最终「添加到报价单」<b>均可点</b> —— 现状 <code>ConfigureProductDrawer.tsx:204</code> 的「请至少添加一个配件」会拦住，必须改成「已选绑定 <b>或</b> 已加配件」二者之一。</div>
+</div></div>
+
+</div></body></html>
