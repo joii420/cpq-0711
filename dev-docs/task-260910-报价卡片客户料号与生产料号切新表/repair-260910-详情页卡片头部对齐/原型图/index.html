@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><title>原型图导航 — repair-260910</title>
+<style>body{margin:0;padding:40px;background:#f0f2f5;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px}
+.wrap{max-width:880px;margin:0 auto}.badge{display:inline-block;background:#f6ffed;border:1px solid #b7eb8f;color:#389e0d;border-radius:4px;padding:3px 10px;font-size:13px;font-weight:600;margin-bottom:14px}
+h1{font-size:22px;margin:0 0 6px}.meta{color:rgba(0,0,0,.45);font-size:13px;margin-bottom:26px}
+.card{background:#fff;border:1px solid #f0f0f0;border-radius:10px;padding:20px 24px;margin-bottom:16px}
+.card a{font-size:16px;font-weight:600;color:#1677ff;text-decoration:none}ul{margin:10px 0 0;padding-left:20px;color:rgba(0,0,0,.65);font-size:13px}li{margin-bottom:4px}
+.note{background:#e6f4ff;border:1px solid #91caff;border-radius:8px;padding:14px 18px;font-size:13px;color:#003a8c}</style></head>
+<body><div class="wrap">
+<div class="badge">📌 当前基准</div>
+<h1>详情页产品卡片 — 头部对齐编辑页</h1>
+<div class="meta">repair-260910-详情页卡片头部对齐 · 2026-09-10 · 返修对象 task-260910（闸门 B 验收未通过）</div>
+<div class="card">
+  <a href="详情页产品卡片.html">详情页产品卡片.html</a>
+  <ul>
+    <li>改动前现状（三项全挤左块、产品名不显示、销售料号点不动）</li>
+    <li>状态 1 · 改动后默认态（左右分区，<b>无删除按钮</b>）</li>
+    <li>状态 2 · 生产料号浮层（用户明确要求详情页也要有）</li>
+    <li>状态 3 · 两种降级</li>
+    <li>状态 4 · 客户料号两路都取不到</li>
+    <li>状态 5 · 产品分类徽标（必须保留，但现网恒不显示）</li>
+    <li>附：本次删除元素 + 三件不动的事</li>
+  </ul>
+</div>
+<div class="note">
+  <b>与主任务原型图的关系</b>：主任务 <code>原型图/报价单产品卡片.html</code> 是<b>编辑页</b>基准，仍然有效；
+  本份是<b>详情页</b>基准。两者头部布局一致，差别只有：详情页<b>无删除按钮</b>、多一个<b>产品分类徽标</b>、
+  产品名<b>回退链更长</b>（<code>attrValues['产品名称'] → attrValues['名称'] → productName → snapshot.productPartNo</code>）。
+</div>
+</div></body></html>

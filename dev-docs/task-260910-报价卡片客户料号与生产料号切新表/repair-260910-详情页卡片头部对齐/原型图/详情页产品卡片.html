@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>详情页产品卡片 — 头部对齐编辑页</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;padding:32px;background:#f0f2f5;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;color:rgba(0,0,0,.88);line-height:1.5715}
+  .wrap{max-width:1320px;margin:0 auto}
+  h1{font-size:20px;font-weight:600;margin:0 0 4px}
+  .sub{color:rgba(0,0,0,.45);margin-bottom:28px;font-size:13px}
+  .sec{margin-bottom:36px}
+  .sec-title{font-size:15px;font-weight:600;margin-bottom:6px;padding-left:10px;border-left:3px solid #1677ff}
+  .sec-note{color:rgba(0,0,0,.45);font-size:12px;margin-bottom:14px;padding-left:13px}
+  .sec-note b{color:#d4380d;font-weight:600}
+  .qt-product-card{background:#fff;border:2px solid #e0e0e0;border-radius:12px;padding:24px;position:relative}
+  .qt-card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;padding-bottom:12px;border-bottom:2px solid #f0f0f0}
+  .qt-card-header-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0}
+  .qt-card-header-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+  .qt-cust-part-name{font-size:16px;font-weight:700;color:#333;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .qt-product-name{font-size:16px;font-weight:700;color:#333;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .qt-sku-badge{background:#e3f2fd;color:#1565c0;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:500}
+  .qt-template-badge{background:#f3e5f5;color:#6a1b9a;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:500}
+  .qt-part-badge{background:#e6f4ff;color:#0958d9;border:1px solid #91caff;border-radius:4px;padding:2px 10px;font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace;cursor:pointer}
+  .qt-part-badge:hover{background:#bae0ff}
+  .pop-anchor{position:relative;display:inline-block}
+  .popover{position:absolute;top:calc(100% + 8px);right:0;z-index:20;background:#fff;border-radius:8px;min-width:300px;box-shadow:0 6px 16px rgba(0,0,0,.08),0 3px 6px -4px rgba(0,0,0,.12),0 9px 28px 8px rgba(0,0,0,.05)}
+  .popover::before{content:'';position:absolute;top:-5px;right:28px;width:10px;height:10px;background:#fff;transform:rotate(45deg);box-shadow:-2px -2px 5px rgba(0,0,0,.06)}
+  .pop-title{font-weight:600;font-size:14px;padding:10px 16px;border-bottom:1px solid #f0f0f0}
+  .pop-body{padding:12px 16px;font-size:13px}
+  .pop-row{margin-bottom:8px;display:flex}.pop-row:last-child{margin-bottom:0}
+  .pop-label{color:#8c8c8c;width:62px;flex-shrink:0}
+  .pop-value{color:rgba(0,0,0,.88)}.pop-value.mono{font-family:ui-monospace,Menlo,Consolas,monospace}.pop-value.dash{color:rgba(0,0,0,.35)}
+  .pop-empty{padding:14px 16px;color:rgba(0,0,0,.45);font-size:13px}
+  .tabs{display:flex;gap:4px;margin-bottom:16px}
+  .tab{padding:8px 18px;border-radius:8px 8px 0 0;font-size:14px;background:#fafafa;color:rgba(0,0,0,.65);border:1px solid #f0f0f0;border-bottom:none}
+  .tab.active{background:#1677ff;color:#fff;border-color:#1677ff;font-weight:500}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{background:#fafafa;text-align:left;padding:10px 12px;font-weight:600;border:1px solid #f0f0f0}
+  td{padding:8px 12px;border:1px solid #f0f0f0;color:rgba(0,0,0,.75)}
+  .before{background:#fff2f0;border:1px solid #ffccc7;border-radius:8px;padding:16px 20px;margin-bottom:12px}
+  .before .lbl{font-size:12px;font-weight:600;color:#cf1322;margin-bottom:10px}
+  .gone{display:inline-block;text-decoration:line-through;color:#bfbfbf;background:#fafafa;border:1px dashed #d9d9d9;border-radius:4px;padding:2px 8px;font-size:12px}
+  .callout{background:#fffbe6;border:1px solid #ffe58f;border-radius:6px;padding:10px 14px;font-size:12.5px;color:#614700;margin-top:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>详情页产品卡片 — 头部对齐编辑页</h1>
+  <div class="sub">repair-260910 · 📌 当前基准 · 数据取自 <b>QT-20260909-0799</b>（正泰 CUST-0004 / S0001），2026-09-10 实查</div>
+
+  <div class="sec">
+    <div class="sec-title">改动前（现状，用户验收未通过）</div>
+    <div class="sec-note">三个元素<b>全挤在左块</b>；产品名「铆钉」被客户料号名称顶掉不显示；<b>销售料号点不动、无浮层</b>。</div>
+    <div class="before">
+      <div class="lbl">现状</div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="qt-cust-part-name">示例客户料号</span>
+        <span class="qt-sku-badge">客户产品编号: A002</span>
+        <span class="qt-sku-badge" style="background:#e6f4ff;color:#0958d9;border:1px solid #91caff;">料号: S0001</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-title">状态 1 · 改动后默认态</div>
+    <div class="sec-note">左 <b>[客户料号名称][客户产品编号]</b>；右 <b>[产品名][销售料号]</b>。<b>详情页是只读页，右侧没有「删除」按钮</b>。</div>
+    <div class="qt-product-card">
+      <div class="qt-card-header">
+        <div class="qt-card-header-left">
+          <span class="qt-cust-part-name">示例客户料号</span>
+          <span class="qt-sku-badge">客户产品编号: A002</span>
+        </div>
+        <div class="qt-card-header-right">
+          <span class="qt-product-name">铆钉</span>
+          <span class="qt-part-badge">销售料号: S0001</span>
+        </div>
+      </div>
+      <div class="tabs"><div class="tab active">产品</div><div class="tab">BOM</div><div class="tab">材质元素</div><div class="tab">加工费</div></div>
+      <table>
+        <thead><tr><th>销售料号</th><th>客户产品编号</th><th>生产料号</th><th>品名</th><th>规格</th><th>尺寸</th></tr></thead>
+        <tbody><tr><td>S0001</td><td>A002</td><td>300001</td><td>铆钉</td><td>Φ50</td><td>1×3</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-title">状态 2 · 点销售料号 → 生产料号浮层（用户 2026-09-10 明确要求详情页也要有）</div>
+    <div class="sec-note">与编辑页同款：五行 = 料号 / 名称 / 规格 / 尺寸 / 旧料号。第一行是<b>生产料号 300001</b>，不是销售料号。</div>
+    <div class="qt-product-card">
+      <div class="qt-card-header">
+        <div class="qt-card-header-left">
+          <span class="qt-cust-part-name">示例客户料号</span>
+          <span class="qt-sku-badge">客户产品编号: A002</span>
+        </div>
+        <div class="qt-card-header-right">
+          <span class="qt-product-name">铆钉</span>
+          <span class="pop-anchor">
+            <span class="qt-part-badge" style="background:#bae0ff;">销售料号: S0001</span>
+            <div class="popover">
+              <div class="pop-title">生产料号</div>
+              <div class="pop-body">
+                <div class="pop-row"><span class="pop-label">料号：</span><span class="pop-value mono">300001</span></div>
+                <div class="pop-row"><span class="pop-label">名称：</span><span class="pop-value">零件1</span></div>
+                <div class="pop-row"><span class="pop-label">规格：</span><span class="pop-value dash">—</span></div>
+                <div class="pop-row"><span class="pop-label">尺寸：</span><span class="pop-value">3.5×3.5×0.6</span></div>
+                <div class="pop-row"><span class="pop-label">旧料号：</span><span class="pop-value mono">8DLX.550.653</span></div>
+              </div>
+            </div>
+          </span>
+        </div>
+      </div>
+      <div style="height:150px"></div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-title">状态 3 · 两种降级（与编辑页同款）</div>
+    <div class="sec-note">未绑定生产料号（现网 31/2727）→ 单行文案；核价侧无明细（现网 <b>2688/2696</b>）→ 首行有值其余「—」。</div>
+    <div style="display:flex;gap:20px;flex-wrap:wrap;">
+      <div class="popover" style="position:relative;top:0;min-width:240px;">
+        <div class="pop-title">生产料号</div><div class="pop-empty">未绑定生产料号</div>
+      </div>
+      <div class="popover" style="position:relative;top:0;">
+        <div class="pop-title">生产料号</div>
+        <div class="pop-body">
+          <div class="pop-row"><span class="pop-label">料号：</span><span class="pop-value mono">300021</span></div>
+          <div class="pop-row"><span class="pop-label">名称：</span><span class="pop-value dash">—</span></div>
+          <div class="pop-row"><span class="pop-label">规格：</span><span class="pop-value dash">—</span></div>
+          <div class="pop-row"><span class="pop-label">尺寸：</span><span class="pop-value dash">—</span></div>
+          <div class="pop-row"><span class="pop-label">旧料号：</span><span class="pop-value dash">—</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-title">状态 4 · 客户料号两路都取不到（现网存量）</div>
+    <div class="sec-note">左块<b>整块不渲染</b>（不留空徽标、不显示「—」）；<b>右块仍正常</b>。</div>
+    <div class="qt-product-card">
+      <div class="qt-card-header">
+        <div class="qt-card-header-left"></div>
+        <div class="qt-card-header-right">
+          <span class="qt-product-name">铆钉</span>
+          <span class="qt-part-badge">销售料号: S-3110520789</span>
+        </div>
+      </div>
+      <div style="height:60px"></div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-title">状态 5 · 产品分类徽标（必须保留，但现网恒不显示）</div>
+    <div class="sec-note"><b>⚠️ 实测全库 <code>quotation_line_item_snapshot.product_category</code> 零行非空</b> —— 这个徽标在现网从来没显示过。
+      🚫 <b>不得因为「页面上看不到」就顺手删掉它的渲染分支</b>（AC-R6 用源码级判据把守）。下图是它<b>有数据时</b>该长的样子。</div>
+    <div class="qt-product-card">
+      <div class="qt-card-header">
+        <div class="qt-card-header-left">
+          <span class="qt-cust-part-name">示例客户料号</span>
+          <span class="qt-sku-badge">客户产品编号: A002</span>
+          <span class="qt-template-badge">默认分类</span>
+        </div>
+        <div class="qt-card-header-right">
+          <span class="qt-product-name">铆钉</span>
+          <span class="qt-part-badge">销售料号: S0001</span>
+        </div>
+      </div>
+      <div style="height:60px"></div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-title">本次删除的元素</div>
+    <div class="qt-product-card" style="border-style:dashed;">
+      <div><span class="gone">左块里并列的蓝色「料号: S0001」徽标</span> &nbsp;→&nbsp; 职能被右块的「销售料号: S0001」接管（并获得浮层）</div>
+    </div>
+    <div class="callout">
+      🚫 <b>不动的三件事</b>：产品分类徽标渲染分支（状态 5）· 详情页只读性（不加任何按钮/输入框）· 编辑页 <code>QuotationStep2.tsx</code>（本次零改动）
+    </div>
+  </div>
+</div>
+</body>
+</html>
