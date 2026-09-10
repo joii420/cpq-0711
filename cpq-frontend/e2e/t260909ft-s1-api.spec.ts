@@ -33,6 +33,23 @@ const SAMPLE: FT.BuilderConfigBody = {
   ],
 };
 
+/**
+ * 🩹 执行轮 2026-09-10：`SAMPLE` 的列取自 **COST_BASIC** 的数据源节点（`MATERIAL`/`production_no`）。
+ * 把它原样换个 `dialect: 'QUOTE'` 送出去，那些列在 QUOTE 下**根本不存在** ⇒ 角色解析不出
+ * `PART_NO`/`PART_NAME`，后端保存前体检返 400「缺少标识列：料号列与名称列至少要配一个」。
+ * 那是**用例 payload 无效**，与 AC-9 要验的「不传 fieldType 不报错」无关（症状却长得一模一样）。
+ * ⇒ QUOTE 单独给一组该方言下真实存在的列（形状照抄库里已跑通的 QUOTE 组件 `T260909FT-QUOTE-NEW`）。
+ * TEXT 与 NUMBER **两种都放**，否则「按数据类型推」只验一半。
+ */
+const QUOTE_COLUMNS: FT.BuilderConfigBody['columns'] = [
+  { sourceNodeKey: 'SELF_PROCESS_FEE', sourceColumn: 'input_material_no', fieldName: '料号',
+    dataType: 'TEXT', roles: ['PART_NO', 'ROW_KEY'], isPartNo: true, isRowKey: true },
+  { sourceNodeKey: 'SELF_PROCESS_FEE', sourceColumn: 'material_no', fieldName: '销售料号',
+    dataType: 'TEXT', roles: ['ROW_KEY'], isRowKey: true },
+  { sourceNodeKey: 'SELF_PROCESS_FEE', sourceColumn: 'item_seq', fieldName: '项次',
+    dataType: 'NUMBER', roles: [] },
+];
+
 test.beforeAll(async () => {
   try {
     const r = await fetch(`${FT.BACKEND_URL}/api/cpq/health`, { signal: AbortSignal.timeout(4000) });
@@ -146,9 +163,16 @@ test('AC-9 边界·向后兼容: 保存请求不传 fieldType（旧客户端）�
   for (const dialect of ['COST_BASIC', 'COST_DETAIL', 'QUOTE'] as const) {
     const { id, name } = await FT.createComponent(cookie, `AC9-${dialect}-${Date.now()}`);
     // 🚨 逐列**删掉** fieldType 键（不是传 null 也不是传 ""），精确模拟「旧客户端不发这个字段」
+    // QUOTE 的锚点/页签形态也与 COST_BASIC 不同：沿用 `tabType:'主件'` 会得到
+    // 400 `COMPILE_PATH_NOT_FOUND: 锚点「物料」没有到「自制加工费」的声明边` ——
+    // 同样是**用例 payload 无效**，不是 AC-9 要验的东西。照抄已跑通的 QUOTE 组件的口径。
+    const baseCols = dialect === 'QUOTE' ? QUOTE_COLUMNS : SAMPLE.columns;
+    const shape = dialect === 'QUOTE'
+      ? { tabType: '费用类', variantKey: 'SELF_PROCESS_FEE' }
+      : { tabType: SAMPLE.tabType, variantKey: SAMPLE.variantKey };
     const body: FT.BuilderConfigBody = {
-      ...SAMPLE, dialect,
-      columns: SAMPLE.columns.map(({ fieldType, ...rest }) => rest),
+      ...SAMPLE, ...shape, dialect,
+      columns: baseCols.map(({ fieldType, ...rest }) => rest),
     };
     const r = await FT.saveBuilder(cookie, id, body);
     const fields = FT.dbFieldsOf(id);

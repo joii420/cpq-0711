@@ -37,10 +37,32 @@ const TAB_BASIC = 'FT基础数据';
 const TAB_INPUT = 'FT输入框';
 const TAB_QUOTE = 'FT报价输入';
 
+/**
+ * 🩹 执行轮 2026-09-10：`COLUMNS` 用的是 **COST_BASIC** 的数据源节点（MATERIAL/production_no）。
+ * 同一组列换个 `dialect:'QUOTE'` 送出去，那些列在 QUOTE 下根本不存在 ⇒ 解析不出料号/名称列，
+ * 后端保存前体检返 400「缺少标识列」；`tabType:'主件'` 在 QUOTE 下还会报
+ * `COMPILE_PATH_NOT_FOUND: 锚点「物料」没有到「自制加工费」的声明边`。
+ * 两者都是**用例 payload 无效**，与本次要验的 field_type 无关。
+ * ⇒ QUOTE 单独给一组该方言下真实存在的列（形状照抄库里已跑通的 QUOTE 组件 T260909FT-QUOTE-NEW），
+ *   TEXT / NUMBER 两种都放，保证 AC-14 的 INPUT_TEXT 与 INPUT_NUMBER 都能被渲染到。
+ */
+const QUOTE_COLUMNS: Omit<FT.BuilderColumn, 'fieldType'>[] = [
+  { sourceNodeKey: 'SELF_PROCESS_FEE', sourceColumn: 'input_material_no', fieldName: '料号',
+    dataType: 'TEXT', roles: ['PART_NO', 'ROW_KEY'], isPartNo: true, isRowKey: true },
+  { sourceNodeKey: 'SELF_PROCESS_FEE', sourceColumn: 'material_no', fieldName: '销售料号',
+    dataType: 'TEXT', roles: ['ROW_KEY'], isRowKey: true },
+  { sourceNodeKey: 'SELF_PROCESS_FEE', sourceColumn: 'item_seq', fieldName: '项次',
+    dataType: 'NUMBER', roles: [] },
+];
+
 function cfg(dialect: 'COST_BASIC' | 'QUOTE', ft: FT.FieldType | 'AUTO'): FT.BuilderConfigBody {
+  const cols = dialect === 'QUOTE' ? QUOTE_COLUMNS : COLUMNS;
+  const shape = dialect === 'QUOTE'
+    ? { tabType: '费用类', variantKey: 'SELF_PROCESS_FEE' }
+    : { tabType: '主件', variantKey: '' };
   return {
-    tabType: '主件', variantKey: '', dialect,
-    columns: COLUMNS.map((c) => (ft === 'AUTO'
+    ...shape, dialect,
+    columns: cols.map((c) => (ft === 'AUTO'
       ? { ...c }
       : { ...c, fieldType: ft === 'BASIC_DATA' ? 'BASIC_DATA' : (c.dataType === 'NUMBER' ? 'INPUT_NUMBER' : 'INPUT_TEXT') })),
   };
@@ -133,6 +155,10 @@ async function buildScene(page: Page): Promise<Scene> {
     { componentId: b.id, tabName: TAB_BASIC },
     { componentId: i.id, tabName: TAB_INPUT },
   ]);
+
+  // 🩹 执行轮 2026-09-10：按订正后的 AC 口径（用户裁决）把自建模板**发布**掉 ——
+  //    DRAFT 的 `components_snapshot` 恒为 NULL，核价卡片建不出结构、渲染不出来。
+  await FT.publishOwnTemplate(cookie, templateId);
 
   // ③ 自建报价单 + 绑模板
   const { id: qid, number } = await FT.createQuotation(cookie, fixture, 'RENDER');

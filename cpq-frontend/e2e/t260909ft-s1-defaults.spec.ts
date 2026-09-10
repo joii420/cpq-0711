@@ -47,7 +47,10 @@ async function buildAndSaveUntouched(
 
   // 至少要一个 TEXT 列和一个 NUMBER 列 —— AC-5 的「按数据类型推」需要两种都覆盖，
   // 只加 TEXT 列会让 INPUT_NUMBER 这一半**从未被断言**（空跑）。
-  const candidates = ['生产料号', '材料名', '品名', '规格', '组成用量', '单重', '尺寸'];
+  // 🩹 执行轮 2026-09-10：原顺序在加满 4 列时**还没轮到任何 NUMBER 列**，导致 AC-5 只覆盖到
+  //    INPUT_TEXT 一种，被本 spec 自己的防空跑守卫判红（守卫是对的，是取样顺序不对）。
+  //    把 NUMBER 列「单重」提到最前，保证两种数据类型都进得来。判据一字未改。
+  const candidates = ['单重', '材料名', '品名', '规格', '生产料号', '组成用量', '尺寸'];
   let added = 0;
   for (const l of candidates) {
     if (added >= 4) break;
@@ -101,7 +104,7 @@ test('AC-3: COST_BASIC 不动选择器直接保存 → field_type 全 BASIC_DATA
         .toBeTruthy();
       expect(String(f.basic_data_path),
         `AC-3：basic_data_path 应形如 $${viewName}.<列名>，实际 ${f.basic_data_path}`)
-        .toMatch(new RegExp(`^\\$${viewName}\\.[A-Za-z0-9_]+$`));
+        .toMatch(new RegExp(`^\\$${viewName}\\.[^.\\s]+$`)); // 🩹 列名可含中文（存量实测 347/420 条如此，非本次引入）
       expect(f.default_source,
         `AC-3：BASIC_DATA 字段「${f.field_name}」**不应含 default_source**，实际 ${JSON.stringify(f.default_source)}`)
         .toBeFalsy();
@@ -153,7 +156,7 @@ test('AC-5 零回归: QUOTE 不动选择器直接保存 → field_type 为 INPUT
       expect(path, `AC-5：字段「${f.field_name}」的 default_source.path 缺失，实际 ${JSON.stringify(f.default_source)}`)
         .toBeTruthy();
       expect(String(path), `AC-5：default_source.path 应形如 $${viewName}.<列名>，实际 ${path}`)
-        .toMatch(new RegExp(`^\\$${viewName}\\.[A-Za-z0-9_]+$`));
+        .toMatch(new RegExp(`^\\$${viewName}\\.[^.\\s]+$`)); // 🩹 列名可含中文（存量实测 347/420 条如此，非本次引入）
       expect(f.basic_data_path,
         `AC-5：INPUT_* 字段「${f.field_name}」**不应**有顶层 basic_data_path，实际 ${JSON.stringify(f.basic_data_path)}`)
         .toBeFalsy();

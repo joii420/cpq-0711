@@ -160,10 +160,20 @@ export async function shotOf(loc: Locator, name: string) {
 
 const RED_LINE_SQL = /\b(drop|truncate|alter|create\s+(table|database|schema)|grant|revoke|vacuum)\b/i;
 
+/**
+ * 🩹 harness 修复（执行轮 2026-09-10）：原实现用 `JSON.stringify(sql)` 做 shell 引用，
+ * 但 bash **双引号内不解释 `\n`** ⇒ 多行 SQL 的换行被送成字面两字符 `\` + `n`，
+ * psql 报 `syntax error at or near "\"`。症状看起来像「SQL 写错了」，实际是引用方式错。
+ * 改用 POSIX 单引号转义（`'` → `'\''`），SQL 原文（含换行）逐字送达。
+ */
+function shellQuote(s: string): string {
+  return `'` + s.split(`'`).join(`'\\''`) + `'`;
+}
+
 function runPsql(sql: string, flags = "-X -A -F'|'"): string {
   const cmd =
     `PGPASSWORD=${DB.password} psql -h ${DB.host} -p ${DB.port} -U ${DB.user} -d ${DB.db} ` +
-    `${flags} -c ${JSON.stringify(sql)}`;
+    `${flags} -c ${shellQuote(sql)}`;
   return execSync(cmd, { shell: '/bin/bash', encoding: 'utf-8' }).trim();
 }
 
@@ -592,7 +602,10 @@ export function pickRenderFixture(): RenderFixture {
        JOIN ds_quote_material dqm ON dqm.material_no = qcp.material_no
        JOIN ds_cost_basic_material dcbm ON dcbm.production_no = dqm.production_no
       WHERE cu.product_category_id IS NOT NULL
-      GROUP BY 1,2,3,4,5
+      -- harness 修复 2026-09-10: 原写 GROUP BY 1,2,3,4,5。位置式 GROUP BY 指向的是选择列表里的
+      -- 转型表达式(cu.id::text / cu.product_category_id::text)而非裸列, 于是相关子查询里的裸列
+      -- cu.product_category_id 不被认作已分组, PG 报 subquery uses ungrouped column。改显式列分组, 语义不变。
+      GROUP BY cu.id, cu.code, cu.product_category_id, qcp.material_no, dqm.production_no
       ORDER BY pub_tpl DESC, cu.code, qcp.material_no
       LIMIT 5`,
   );
@@ -670,9 +683,32 @@ export function createDraftCostingTemplate(
   const landedTabs = Number(sqlScalar(`SELECT count(*)::text FROM template_component WHERE template_id='${id}'`));
   const landedStatus = sqlScalar(`SELECT status FROM template WHERE id='${id}'`);
   expect(landedTabs, `模板 ${name} 应绑 ${tabs.length} 个页签，实际落库 ${landedTabs} 个 ⇒ **夹具问题**`).toBe(tabs.length);
-  expect(landedStatus, `模板 ${name} 应为 DRAFT（DRAFT 读活表、不吃冻结快照），实际 ${landedStatus}`).toBe('DRAFT');
-  console.log(`[template] DRAFT 核价模板 ${name} = ${id}（${landedTabs} 页签 / ${landedStatus}）`);
+  expect(landedStatus, `模板 ${name} 建出来应先是 DRAFT，实际 ${landedStatus}`).toBe('DRAFT');
+  console.log(`[template] 核价模板 ${name} = ${id}（${landedTabs} 页签 / ${landedStatus}）`);
   return id;
+}
+
+/**
+ * 🩹 执行轮 2026-09-10（口径订正，用户已裁决并回写 `需求文档.md §③三`）：
+ * AC-6/7/12 原写「DRAFT 核价模板」，理由「DRAFT 读活表更直接」**已被实现证伪** ——
+ * `components_snapshot` 只在 `TemplateService.publish()` 内赋值，DRAFT 该列恒为 NULL
+ * ⇒ 建不出卡片结构，核价卡片**根本渲染不出来**。旁证：全库 0 张 DRAFT 模板。
+ * ⇒ 改为「自建并发布」。🚦 只发布**本片自建**的模板，🚫 不动任何既有模板的发布态。
+ */
+export async function publishOwnTemplate(cookie: string, templateId: string): Promise<void> {
+  const name = sqlScalar(`SELECT coalesce(name,'') FROM template WHERE id='${templateId}'`);
+  expect(name.startsWith(TAG),
+    `🚨 拒绝发布：模板「${name}」不带前缀 ${TAG} ⇒ 不是本片自建的对象，改发布态属越界，停下报主线`).toBe(true);
+  const r = await api(cookie, `/api/cpq/templates/${templateId}/publish`, { method: 'POST' });
+  expect(r.status, `发布自建模板「${name}」应 2xx，实际 ${r.status}：${r.text.slice(0, 400)}`).toBeLessThan(300);
+  const st = sqlScalar(`SELECT status FROM template WHERE id='${templateId}'`);
+  const snapLen = sqlScalar(
+    `SELECT coalesce(jsonb_array_length(components_snapshot::jsonb),0)::text FROM template WHERE id='${templateId}'`);
+  expect(st, `发布后模板「${name}」状态应为 PUBLISHED，实际 ${st}`).toBe('PUBLISHED');
+  expect(Number(snapLen),
+    `发布后 components_snapshot 应非空（卡片结构就是从它建的），实际长度 ${snapLen} ⇒ ` +
+    `渲染必然为空，后面所有「值相同」的断言会在空数据上恒真，判【未验证】`).toBeGreaterThan(0);
+  console.log(`[template] 已发布自建模板 ${name} = ${templateId}（status=${st} / snapshot ${snapLen} 项）`);
 }
 
 /** 建报价单（走应用自己的端点）。返回 id + 单号。 */
@@ -919,11 +955,20 @@ export async function openComponentByName(page: Page, name: string, code?: strin
     await page.waitForTimeout(250);
   }
   await page.waitForTimeout(600);
-  const hit = page.getByText(key, { exact: false }).first();
-  await expect(hit, `搜不到组件「${name}」(${key}) ⇒ **入口/夹具问题**（未挂目录或已被归档），本条判【未验证】`)
+  // 🩹 harness 修复（执行轮 2026-09-10）：原用 `getByText(key).first()` 点击 —— 实测它会命中
+  //    搜索框/目录标题之类的**非卡片**元素，点了详情根本不打开，随后 `.cmm-detail-head`
+  //    报 `element(s) not found`，症状**长得像「组件不存在」**。改用既有已实证的卡片路径
+  //    （`task260908-s2.helpers.openComponentByCode`：`.cmm-c-code` → 回溯最近的 `[class*="cmm-c"]` 卡片再点）。
+  const byCode = page.locator(`.cmm-c-code:has-text("${key}")`).first();
+  const byCard = page.locator('.cmm-card').filter({ hasText: key }).first();
+  const hit = (await byCode.count()) ? byCode : byCard;
+  await expect(hit, `搜不到组件「${name}」(${key}) 的卡片 ⇒ **入口/夹具问题**（未挂目录或已被归档），本条判【未验证】`)
     .toBeVisible({ timeout: 15_000 });
-  await hit.click({ force: true, timeout: 15_000 });
-  await page.waitForTimeout(2000);
+  await hit.evaluate((el) => {
+    const card = (el as HTMLElement).closest('[class*="cmm-c"]') as HTMLElement | null;
+    (card ?? (el as HTMLElement)).click();
+  });
+  await page.waitForTimeout(2500);
   await expect(page.locator('.cmm-detail-head'), `打开的不是「${name}」`).toContainText(name, { timeout: 10_000 });
 }
 
@@ -1142,12 +1187,51 @@ export async function readAllFieldTypes(page: Page): Promise<FieldType[]> {
  */
 export async function openFieldTypeOptions(page: Page, rowIndex: number): Promise<string[]> {
   const sel = await fieldTypeSelectOf(page, rowIndex);
-  await sel.click({ force: true });
-  await page.waitForTimeout(800);
   const ddSel = '.ant-select-dropdown:not(.ant-select-dropdown-hidden)';
   const optSel = `${ddSel} .ant-select-item-option`;
-  for (let i = 0; i < 12 && (await page.locator(optSel).count()) === 0; i++) await page.waitForTimeout(400);
-  const count = await page.locator(optSel).count();
+  // 🩹 harness 修复（执行轮 2026-09-10）：原实现「点一次 → 等」在**第 2 列及以后**实测取到 0 个选项。
+  //    成因是量具竞态而非产品缺陷：antd 的 dropdown 是复用的单例，上一列 Escape 关闭后
+  //    仍带 `-hidden` 类做退场动画，此刻点下一列会命中「正在关闭」的那一层；
+  //    另外靠下的行可能不在视口内，`click({force:true})` 打不开。
+  //    ⇒ ① 先等上一层 dropdown 退场干净 ② scrollIntoView ③ 点不开就重试。
+  //    这只提高量具可靠性，「恰好 3 项」等判据一字未改。
+  //    实测（probe 2026-09-10）：`Escape` **并不把 antd Select 退出 open 态**，控件仍带
+  //    `.ant-select-open`；此时点下一个 Select，第一击被当成「关闭上一个」，于是
+  //    逐列遍历时出现「第 2 列 0 个选项」这种**交替失败**。⇒ 用 `.ant-select-open` 计数
+  //    作为真值：点之前先等它归零，点之后确认本控件确实进了 open 态，没进就重试。
+  await page.waitForFunction(() => document.querySelectorAll('.ant-select-open').length === 0,
+    undefined, { timeout: 5000 }).catch(() => {});
+  await sel.scrollIntoViewIfNeeded().catch(() => {});
+  let count = 0;
+  for (let attempt = 0; attempt < 4 && count === 0; attempt++) {
+    //    实测：连 `click({force:true})` 也打不开（`open=false` 连续 4 次）—— force 只跳过
+    //    actionability 检查，坐标点击仍会被**上一层 dropdown 的遮罩**吃掉。
+    //    antd Select 是 `mousedown` 触发展开 ⇒ 直接往 `.ant-select-selector` 派发 DOM 事件，
+    //    绕开命中测试。这是量具送达方式的修复，与被测行为无关。
+    if (attempt === 0) {
+      await sel.click({ force: true }).catch(() => {});
+    } else {
+      await sel.evaluate((el) => {
+        const target = (el.querySelector('.ant-select-selector') ?? el) as HTMLElement;
+        for (const type of ['pointerdown', 'mousedown', 'mouseup', 'click']) {
+          target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+        }
+      }).catch(() => {});
+    }
+    await page.waitForTimeout(500);
+    const isOpen = await sel.evaluate((el) => (el as HTMLElement).className.includes('ant-select-open'))
+      .catch(() => false);
+    if (isOpen) {
+      for (let i = 0; i < 12 && (await page.locator(optSel).count()) === 0; i++) await page.waitForTimeout(400);
+      count = await page.locator(optSel).count();
+    }
+    if (count === 0) {
+      console.log(`[量具] 第 ${rowIndex + 1} 行下拉第 ${attempt + 1} 次点击未展开（open=${isOpen}），重试`);
+      await page.waitForFunction(() => document.querySelectorAll('.ant-select-open').length === 0,
+        undefined, { timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+  }
   expect(count,
     `第 ${rowIndex + 1} 行的字段类型下拉展开后**一个选项都没有** ⇒ 「恰好 3 项」这条断言会在空数组上跑，` +
     `那是四类假绿之首（断言从未执行）。本条判【未验证】。`).toBeGreaterThan(0);
@@ -1155,7 +1239,19 @@ export async function openFieldTypeOptions(page: Page, rowIndex: number): Promis
   const seen: string[] = [];
   const holder = page.locator(`${ddSel} .rc-virtual-list-holder`).first();
   for (let i = 0; i < 8; i++) {
-    const texts = await page.locator(optSel).allInnerTexts();
+    // 🩹 harness 修复（执行轮 2026-09-10）：原用 `allInnerTexts()` —— 实测选项内嵌了一个
+    //    描述性提示 `<span class="svb-ftype-hint">只读展示</span>`，innerText 会把它**拼进标签**
+    //    （得到「基础数据只读展示」），于是「三个选项文案应为 [基础数据,…]」被判红。
+    //    但那是**副标题、不是第 4 个选项**（实测 option 的 `title` 属性逐字为「基础数据」，
+    //    且 `.ant-select-item-option` 计数恒为 3）。⇒ 取标签时剔除 `.svb-ftype-hint`，
+    //    降的是量具噪声，不是断言强度：「恰好 3 项」「不含 FORMULA/DATA_SOURCE/FIXED_VALUE」原样保留。
+    const texts = await page.locator(optSel).evaluateAll((els) =>
+      els.map((el) => {
+        const c = el.querySelector('.ant-select-item-option-content');
+        const clone = (c ?? el).cloneNode(true) as HTMLElement;
+        clone.querySelectorAll('.svb-ftype-hint').forEach((h) => h.remove());
+        return (clone.textContent || '').trim();
+      }));
     let added = false;
     for (const t of texts.map((x) => x.replace(/\s+/g, ' ').trim()).filter(Boolean)) {
       if (!seen.includes(t)) { seen.push(t); added = true; }
