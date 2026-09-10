@@ -66,12 +66,18 @@
 
 **写入面（逐项登记）**：
 1. 自建的 `component` + `component_sql_view`（配置器保存产生）
-2. 自建的 DRAFT `template` + `template_component`
+2. 自建的 `template` + `template_component`（**自建模板需 publish**，见下方订正说明）
 3. 自建的 `quotation` + `quotation_line_item`（用于渲染取证）
 
 **三项全部是「只写自己造的」** ⇒ 按 `testing.md §4.5` 属**私有写片**，且本任务**没有任何 `S-全局` 写入面**：
 - 🚫 不动生效配置（`costing_bom_tree_config` 一个字节不碰）
-- 🚫 不动任何模板的发布态（自建模板全程 DRAFT）
+- 🚫 不动**存量**模板的发布态
+  > 🔄 **开工后订正（2026-09-09，用户裁决）**：本行原写「自建模板全程 DRAFT」，已不成立 ——
+  > `components_snapshot` 只在 `TemplateService.publish()` 内赋值，DRAFT 模板该列恒为 NULL ⇒
+  > `CardSnapshotService.buildCardStructure` 建不出卡片结构，**DRAFT 核价模板根本渲染不出来**
+  > （旁证：全库 0 张 DRAFT 模板、0 张单绑 DRAFT 核价模板 —— 这条路径生产上同样不可达）。
+  > ⇒ 自建模板**需要 publish** 才能承载 AC-6/7/12 的渲染取证。
+  > 本条的实质约束「不碰存量已发布模板（尤以 `核价模板1` / `QT-20260909-0661` 为最）」**不受影响**。
 - 🚫 不动既有单据的快照
 
 ⇒ **切成多片没有隔离收益，只增加片间冲突裁决成本。**（`testing.md §4.5`：片数由写入面决定，不由并行欲望决定）
@@ -83,7 +89,7 @@
 
 **🔒 `finally` 清理清单**：
 - 自建报价单 → 删除或归档（🚦 `DELETE` 属 §3.2 红线 ⇒ **优先归档**，id 进 `test-report.md` 待回收清单）
-- 自建 DRAFT 模板 + `template_component` → 同上
+- 自建模板（已 publish）+ `template_component` → 同上
 - 自建组件 + `component_sql_view` → 同上
 - 🚫 **不许清库、不许 `DROP`、不许动任何非 `T260909FT-` 前缀的对象**
 

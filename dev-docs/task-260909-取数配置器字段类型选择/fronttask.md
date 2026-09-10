@@ -70,7 +70,8 @@
 因为它们决定本任务是否成立，而失败点在一个你改不到的地方。
 
 - **AC-6 渲染等价**：用配置器建**同源双组件**（同一 `$view`、同样的列、同样的字段名），
-  一个全配 `BASIC_DATA`、一个全配 `INPUT_*`，放进同一张 DRAFT 核价模板渲染。
+  一个全配 `BASIC_DATA`、一个全配 `INPUT_*`，放进同一张**自建并已 publish 的**核价模板渲染。
+  > 🔄 开工后订正（2026-09-09 用户裁决）：原写 DRAFT，因 DRAFT 模板 `components_snapshot` 恒 NULL 而渲染不出，详见 `需求文档.md` AC-6 上方说明。
   **两个页签逐行逐列的可见值必须逐字相同。**
   🔑 风险在键格式：`basic_data_path` 存 `$view.col`，而 `basicDataValues` 的键是 `{$view.col}`（**带花括号**），
   中间隔着 `bnfDriverLookupKey()`。数据面已实测就位，**转换对不对得上必须你实测**。
