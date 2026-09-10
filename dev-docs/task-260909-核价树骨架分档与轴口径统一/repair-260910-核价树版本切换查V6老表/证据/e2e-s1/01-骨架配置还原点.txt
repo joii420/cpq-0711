@@ -1,0 +1,6 @@
+生效 COST_BASIC: 基础核价BOM树-COST_BASIC-v1
+  id  = 537d2267-ccf2-4453-bc30-a9cee741e153
+  md5 = 0b69d87d5c0a2755ac0db2c64a5bad8c   (改动落地后应为 = 0b69d87d5c0a2755ac0db2c64a5bad8c)
+  长度 = 2521 字节（改动前 2521）
+  递归体是否已取"自己那张清单"（SQL 侧正则判定） = true
+生效 QUOTE 配置: 报价BOM树-QUOTE口径v1 md5=1c089ee61054d18b9151c8f03d23bacb   (基线 = 1c089ee61054d18b9151c8f03d23bacb)

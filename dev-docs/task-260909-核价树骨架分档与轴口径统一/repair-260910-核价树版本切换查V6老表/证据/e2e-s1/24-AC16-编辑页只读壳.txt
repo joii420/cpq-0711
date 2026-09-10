@@ -1,0 +1,9 @@
+300001	native=1(disabled 1)	antd=0	version="3"
+300012	native=1(disabled 1)	antd=0	version="1"
+300015	native=1(disabled 1)	antd=0	version="1"
+992	native=0(disabled 0)	antd=0	version="—"
+300013	native=1(disabled 1)	antd=0	version="1"
+991	native=0(disabled 0)	antd=0	version="—"
+300014	native=0(disabled 0)	antd=0	version="—"
+
+③ 判空口径（版本 "0"）：本轮无 "0" 值 ⇒ **未验证**，需 version_no=0 的造数前置。

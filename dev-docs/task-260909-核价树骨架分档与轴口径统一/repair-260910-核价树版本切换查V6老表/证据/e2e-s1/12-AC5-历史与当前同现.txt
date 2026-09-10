@@ -1,0 +1,4 @@
+主表版本=["3"]
+历史表版本=["1","2"]
+接口候选=["3","2","1"]
+{"code":200,"message":"success","data":{"componentId":"32ab8212-df6c-4844-9721-ac7dc41d6cf2","partNo":"300001","currentVersion":"3","options":["3","2","1"]}}

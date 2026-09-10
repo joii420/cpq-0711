@@ -1,0 +1,11 @@
+树:
+  300001 lvl=1 parent=(root) ver=3
+  300001/300012 lvl=2 parent=300001 ver=1
+  300001/300013 lvl=2 parent=300001 ver=1
+  300001/300014 lvl=2 parent=300001 ver=(null)
+  300001/300012/300015 lvl=3 parent=300012 ver=1
+  300001/300013/991 lvl=3 parent=300013 ver=(null)
+  300001/300012/300015/992 lvl=4 parent=300015 ver=(null)
+进场 override=[{"componentId":"32ab8212-df6c-4844-9721-ac7dc41d6cf2","partNo":"300001","viewVersion":"3"},{"componentId":"9291b050-b6a9-42c7-8c56-d3066c3c2369","partNo":"300013","viewVersion":"2"}]
+退场 override=[{"componentId":"32ab8212-df6c-4844-9721-ac7dc41d6cf2","partNo":"300001","viewVersion":"3"},{"componentId":"9291b050-b6a9-42c7-8c56-d3066c3c2369","partNo":"300013","viewVersion":"2"}]
+本片新增 override 行（→ 待回收清单）=[]
