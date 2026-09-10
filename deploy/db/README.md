@@ -165,8 +165,44 @@ relname ~ '^(_bak|bak_|zz_|tmp_|temp_)'
 
 ---
 
+---
+
+## ⑧ 三层库隔离与 `cpq_db_test` 的定期同步
+
+| 库 | 用途 | 谁指向它 | 纪律 |
+|---|---|---|---|
+| **`cpq_db_0910`** | 用户的**真机验证库** | 手工连（Navicat / `DB_NAME` 覆盖） | ✅ 可读写排查 · 🚫 **不做批量/自动化测试、不造数** |
+| **`cpq_db_0724`** | 开发共享库 | `application.properties` | dev server(8081) + 各会话调试 |
+| **`cpq_db_test`** | 自动化测试库 | `application-test.properties`（合于 `b40d725a`） | `mvnw test` 打这里 |
+
+⚠️ **隔离依赖环境变量未被覆盖**：配置写的是 `${DB_NAME:cpq_db_test}`，**只是默认值**。
+谁 `export DB_NAME=cpq_db_0724`，测试照样打开发库。临时要打回共享库用
+`DB_NAME=cpq_db_0724 ./mvnw test`，🚫 **不要改回配置文件**。
+
+### `cpq_db_test` 会漂移，需要定期重克隆
+
+它是某个时点从 `cpq_db_0724` 克隆的快照 —— **schema 由 Flyway `migrate-at-start` 自动跟进，
+但数据不会同步**。时间一长，测试跑在越来越陈旧的数据上。
+
+```bash
+bash deploy/db/refresh-test-db.sh          # 交互确认后执行
+bash deploy/db/refresh-test-db.sh --yes    # 跳过确认（明确授权时）
+```
+
+**脚本内置的护栏（已实测生效，不是写了就算）**：
+- 目标库**白名单**：只允许 `cpq_db_test`，写成别的名字直接拒
+- 源库 ≠ 目标库；`cpq_db_0910` **不允许作为克隆源**
+- 执行前查 `pg_stat_activity`，**目标库有连接就拒**（防止有人正在跑测试）
+- 源库表数 < 100 视为连错库，中止
+- 按 §3.2 打印影响面数字与可恢复路径，非 `--yes` 时要求输入 `yes`
+- 克隆后**六项验证**（表/视图/序列/函数/flyway 最高版本/用户数），任一不一致即失败退出
+
+🚨 **本脚本会销毁 `cpq_db_test` 全部内容**（§3.2【数据销毁】）。它按定义是一次性测试库、无独有数据，
+**脚本本身即恢复手段**（重跑一次即可）。
+
 ## ⑦ 变更记录
 
 | 日期 | 动作 | 内容 |
 |---|---|---|
 | 2026-09-09 | 建立目录 + 首版全量 | `cpq-init-empty.sql`，基线 V439，251 表 / 29 视图。排除 3 个 `v_compat_*` 与 10 张人工备份表 |
+| 2026-09-09 | 三层库隔离落地 | `application-test.properties` 改指 `cpq_db_test`（合 `b40d725a`）；新增 `refresh-test-db.sh` 定期同步脚本；§⑧ 记录隔离口径 |
