@@ -1,0 +1,12 @@
+[identity 2026-09-10T11:39:45.273Z] BASE=http://localhost:5174 BACKEND=http://localhost:8081 pid=344109 cwd=/home/joii/project/cpq/cpq-backend started="Tue Sep  8 19:00:31 2026"
+[negative-control] 跳过 worktree 正身断言（本轮仅作证伪实验）
+[db-identity] api=143 db=143
+[identity 2026-09-10T11:45:01.320Z] BASE=http://localhost:5174 BACKEND=http://localhost:8081 pid=344109 cwd=/home/joii/project/cpq/cpq-backend started="Tue Sep  8 19:00:31 2026"
+[negative-control] 跳过 worktree 正身断言（本轮仅作证伪实验）
+[db-identity] api=143 db=143
+[identity 2026-09-10T11:50:17.042Z] BASE=http://localhost:5174 BACKEND=http://localhost:8081 pid=344109 cwd=/home/joii/project/cpq/cpq-backend started="Tue Sep  8 19:00:31 2026"
+[negative-control] 跳过 worktree 正身断言（本轮仅作证伪实验）
+[db-identity] api=143 db=143
+[identity 2026-09-10T11:50:50.578Z] BASE=http://localhost:5174 BACKEND=http://localhost:8081 pid=344109 cwd=/home/joii/project/cpq/cpq-backend started="Tue Sep  8 19:00:31 2026"
+[negative-control] 跳过 worktree 正身断言（本轮仅作证伪实验）
+[db-identity] api=143 db=143

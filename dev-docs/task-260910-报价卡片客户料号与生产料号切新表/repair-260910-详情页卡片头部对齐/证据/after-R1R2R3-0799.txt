@@ -1,0 +1,40 @@
+单=QT-20260909-0799
+DB前置=[{"sort_order":"0","customer_part_no":"A002","ppn":"S0001","pns":"铆钉","cpname":"示例客户料号"}]
+浮层数据源={"prod":"300001","detail":{"production_no":"300001","material_name":"零件1","specification":"","dimension":"3.5×3.5×0.6","old_material_no":"8DLX.550.653"}}
+卡片=[
+ {
+  "idx": 0,
+  "hasHeader": true,
+  "hasRight": true,
+  "leftChildCount": 2,
+  "rightChildCount": 2,
+  "leftTexts": [
+   "示例客户料号",
+   "客户产品编号: A002"
+  ],
+  "rightTexts": [
+   "铆钉",
+   "销售料号: S0001"
+  ],
+  "leftRaw": "示例客户料号 客户产品编号: A002",
+  "rightRaw": "铆钉 销售料号: S0001",
+  "rightButtonCount": 0,
+  "templateBadgeCount": 0,
+  "headerRaw": "示例客户料号 客户产品编号: A002 铆钉 销售料号: S0001",
+  "cardHeadText": "示例客户料号 客户产品编号: A002 铆钉 销售料号: S0001 产品 BOM 材质元素 加工费 自制加工费 T260909FT-报价输入 T260909FT-报价输入 销售料号 客户产品编号 生产料号 品名 规格 尺寸 旧料号 单重 S0001 A002 300001 铆钉 Φ50 1×3 12133 15.8 产品小计 ¥ 0",
+  "domOrderOk": true
+ }
+]
+浮层原文=
+生产料号
+料号：
+300001
+名称：
+零件1
+规格：
+—
+尺寸：
+3.5×3.5×0.6
+旧料号：
+8DLX.550.653
+pageerror=[]
