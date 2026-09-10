@@ -114,7 +114,7 @@ cd cpq-backend && ./mvnw quarkus:dev
   |---------|----------|------|
   | **默认（不带 `-Dquarkus.profile`）** | **`10.177.152.12:5432/cpq_db_0724`** | ✅ **当前开发环境，日常开发用这个** |
   | `jh` | `localhost:5432/cpq_db`（本机 docker PG16） | 备用本地库，当前不使用 |
-  | `test` | 🚨 **`10.177.152.12:5432/cpq_db_0724` —— 就是 dev 库本身** | 后端自动化测试（`mvnw test` 走这个）。**2026-09-02 实证更正**：本行原写 `cpq_db` 且注「与 dev 库不同」，**说反了** —— `application-test.properties:24` 的默认值就是 `cpq_db_0724`。⇒ **`mvnw test` 直接写共享开发库**：① 夹具会在 dev 库留残留（实证：陈旧 worktree 的旧 `DemoMaterialRecipeFixture` 持续生成 `material_recipe_element.config_id IS NULL` 孤儿行，清掉还会再生）；② **任何清库型测试都会打掉正在用的开发数据**（§3.2「测试也算」）|
+  | `test` | **`10.177.152.12:5432/cpq_db_test`**（专用测试库，定期从 dev 库重克隆） | 后端自动化测试（`mvnw test` 走这个）。**2026-09-10 实证再更正（本行第 3 版，前两版都错，务必看清）**：`application-test.properties:32` 现默认 **`cpq_db_test`** —— 由 `task-260909-V6老表退役` 批次 0（`BL-0232`）改掉，该文件 `:27` 留了注释「需要临时打回共享库时用环境变量覆盖：`DB_NAME=cpq_db_0724 ./mvnw test`（**不要改回本文件**）」。⇒ **`mvnw test` 已不再直写共享开发库**，前两版基于「直写 dev 库」的风险推论（夹具残留、清库打掉开发数据）**对 test profile 已失效**。<br>⚠️ 但两件事没变：① 用 `DB_NAME=` 覆盖打回 `cpq_db_0724` 时，全部旧风险原样回来；② **主线亲验/临时后端若用默认 profile（不带 `-Dquarkus.profile`），连的仍是 `cpq_db_0724` 共享开发库** —— §3.2「测试也算」在那条路径上依然生效。<br>📌 历史：v1 写 `cpq_db` 注「与 dev 库不同」（错）→ v2「2026-09-02 实证更正」改 `cpq_db_0724` 注「就是 dev 库本身」（当时对，现已过期）→ v3 本行。**这一行被改错两次，下次动它之前先 `grep -n DB_NAME cpq-backend/src/main/resources/application-test.properties` 实查，不要凭本文件的记载。** |
 
 - 凭据 `${DB_USERNAME:postgres}` / `${DB_PASSWORD:joii5231}`，可用环境变量覆盖；各 profile 配置见 `cpq-backend/src/main/resources/application-<profile>.properties`。
 - 连库自检：`PGPASSWORD=joii5231 psql -h 10.177.152.12 -U postgres -d cpq_db_0724 -c '\conninfo'`

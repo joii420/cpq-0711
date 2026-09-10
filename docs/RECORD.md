@@ -1,6 +1,20 @@
 
 # CPQ 系统开发记录
 
+[2026-09-10] 取数配置器字段类型选择（task-260909-取数配置器字段类型选择） - **✅ 已交付合 master `2371592a` · 用户验收通过** | 涉及文件：`BuilderService.java`(+184) / `SqlViewBuilderTab.tsx`(+172) / `sqlViewBuilderService.ts` / `styles.css` + 测试 `FieldTypeWhitelistAndDialectDefaultSelfCheckTest`(597) + e2e 若干 | **AC 16/16 全部主线独立亲验达成**。
+
+**做了什么**：取数配置器每列暴露「字段类型」选择器（**3 值白名单** `BASIC_DATA`/`INPUT_TEXT`/`INPUT_NUMBER`）+ 整列批量入口；核价两方言（`COST_BASIC`/`COST_DETAIL`）**默认 `BASIC_DATA`**（=只读展示），报价侧 `QUOTE` 行为逐位不变。绑定键跟 `field_type` 走（`BASIC_DATA`→顶层 `basic_data_path`；`INPUT_*`→`default_source.path`），`D-73/B-30` 不变量原样保留。
+
+🔑 **本次最值钱的一条：一个「分歧一直存在、但因为不发送所以是死的」的口径差**。前端本地初值是 `money ? INPUT_NUMBER : INPUT_TEXT`（`money = dataType==='MONEY'`），后端是 `"TEXT".equals(resolvedDataType) ? INPUT_TEXT : INPUT_NUMBER` ⇒ **`NUMBER` 两边判得不一样**。改动前前端从不发 `fieldType`，分歧无害；**本次一开始发送，所有 NUMBER 列会被静默降级成文本**。前端子代理建第三个对照组 `T260909FT-QUOTE-NAIVE` 用旧口径实测：**9 列翻转 4 列**。⇒ **规范：让一个此前不发送的字段开始发送，等于把两侧沉睡的口径差一次性激活；必须先做「两侧默认值逐位比对」，不能假定"反正以前也这么算"。**
+
+🔑 **`DRAFT` 核价模板根本渲染不出来（推翻 AC 前提）**：`components_snapshot` **只在 `TemplateService.publish()` 内赋值**（`:196` 方法体 `:233`），DRAFT 该列恒 NULL ⇒ `CardSnapshotService.buildCardStructure` 建不出卡片结构。旁证：全库 `template` **0 张 DRAFT**、绑 DRAFT 核价模板的报价单 **0 张** ⇒ 该路径生产上同样不可达。由前端与测试两条独立路径同时报出，主线核实源码后确认，用户裁决把 AC-6/7/12 载体改为**自建并 publish 的模板**。
+
+⚠️ **主线自身失误（教训已提议升级为规则）**：给测试员搭环境时，5175 上跑的是一个**未带 `VITE_API_TARGET` 的旧 vite 实例**（kill 后只 `sleep 1` 就重起，端口未释放完 → `--strictPort` 让新实例**静默退出**）。我只做了「直连 8099」的接线确证，**恰好绕过了出问题的那一段**，导致测试员整轮 UI 断言打在 master 上、报出**假红 AC-15**。⇒ **规范：UI 走哪条链路就必须验哪条链路，直连后端不能替代代理链路的验明正身。**
+
+⚠️ **测试造数以 PUBLISHED 状态流入用户模板选择列表 → 用户验收期 409**：AC-14 需要报价侧渲染载体，测试员用 API 建了 `T260909FT-报价模板#r3xck1` 并 publish，建的时候把 `COMP-2424` **追加了两次**；用户重新建单时选到它 ⇒ `saveDraft` payload 有两条相同 `component_id` ⇒ 撞 `uq_qlcd_line_component(line_item_id, component_id)` → **409**。实证：全库 19 张存量业务模板**零重复**，有重复的 3 张全是本次两个任务造的测试模板。⇒ **规范：测试造数若必须 PUBLISHED 才能验，结案前必须下架（`ARCHIVED`），否则它会出现在用户的业务选择列表里。**
+
+📌 **还原实验的判据被实测订正**：`test.md` 原写「去掉白名单后 AC-8 会 200 并落库」，实际 master 上**已有更宽的 6 值枚举**（`[LIST_FORMULA, INPUT_NUMBER, FORMULA, FIXED_VALUE, BASIC_DATA, INPUT_TEXT]`）⇒ 本次白名单的真实价值是「**6 值收窄到 3 值**」而非从无到有；`FORMULA`（撞 `BL-0098` 公式绑定校验）与 `XXX`（撞 6 值枚举）**两侧都 400、无法区分**，必须用 `FIXED_VALUE` 才能干净证伪（8099 拦下且库不变 vs 8081 返 200 且 5 字段全落库）。**还原实验手法**：用 `8081`(master) 当「还原态」，两端口同库，落库差异直接归因到代码版本 —— 比改源码更干净（不污染栈、无「忘了改回来」风险）。
+
 [2026-09-09] V6 老表引用面全量审计（task-260909-V6老表引用面审计） - **已交付合 master `82be1dd9` · 待闸门 B 验收** | 涉及文件：**零代码改动**（`AC-15` 断言 `src` 下 `git diff` 与 `git status` 均空，已实测）。产出 `dev-docs/task-260909-V6老表引用面审计/` 5 份共 3468 行（`任务.md` / `清单-后端与DB.md` 1208 · `清单-测试侧.md` 835 · `test-report.md` 663 · `清单-前端.md` 392）| **AC 15/15 达成**，主线亲验通过（独立用更宽口径复核，0 个遗漏引用点）。
 
 🚨 **本次最值钱的一条：新立量具陷阱族 `T-5` —— 表名以字符串常量拼进 SQL，纯正则检索让数字「归零」**。实测 `annual_discount` / `element_bom` / `plating_scheme` 在「表名位」正则（`(FROM|JOIN|INTO|UPDATE)\s+<表>`）下 **0 命中**，而三者全都在被 DELETE —— 成因是表名先进常量清单再在循环里拼接（`QuotationService:2322` 的 `B8_PENDING_TABLES` + `:2326` `"DELETE FROM " + table`）。
