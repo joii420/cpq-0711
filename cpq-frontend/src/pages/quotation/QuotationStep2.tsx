@@ -3618,6 +3618,12 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                       .map(r => ({ ...r.item, _depth: r.depth, _hasChildren: r.hasChildren, _nodeKey: r.nodeKey, _isPrimaryNode: true }));
                   })().map(({ row, rowIndex, realRowIndex, rowKey, basicDataValues, driverRow, isDriverBound, isManualRow: isManualRowFlag, isListFormulaBound, formulaCache, formulaErrors, listFormulaItem, listFormulaField, __sys, _depth, _hasChildren, _nodeKey, _isDupKey, _isPrimaryNode }) => {
                     const bomSys = activeComponentBomTree ? (__sys as import('./useDriverExpansions').BomSysCols | undefined) : undefined;
+                    // repair-260910 F-2（AC-16）：版本列判空口径，与详情页 ReadonlyProductCard.tsx
+                    // 的 hasOwnBomVersion 逐字同款（AP-50 同族：编辑页 / 详情页两处渲染必须同口径）。
+                    // 叶子节点（没有自己那张 BOM 清单）后端返 NULL ⇒ 这里渲染 '—' 纯文本，不出 <select> 空壳。
+                    // 🚫 不许写成 `!!bomSys?.bomVersion` —— 版本 "0" 是合法值，会被真值判断静默吞掉。
+                    const stepBomVersion = bomSys?.bomVersion;
+                    const hasOwnBomVersion = stepBomVersion != null && String(stepBomVersion).trim() !== '';
                     return (
                     // AP-54: React key 必须用稳定行标识 rowKey(撞键行经 #序号 消歧唯一)，
                     // 不能用位置下标 rowIndex —— 否则删中间行时 React 按位置复用 DOM，
@@ -3663,11 +3669,17 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           {cardSide === 'COSTING' && (
                             <td>
                               {/* 版本下拉占位：P1 仅展示当前版本，不可切换（版本切换二期开放） */}
-                              <select value={bomSys?.bomVersion ?? ''} disabled
-                                      title="版本切换二期开放（P2）"
-                                      style={{ width: '100%', minWidth: 70, color: '#555', background: '#f5f5f5', cursor: 'not-allowed' }}>
-                                <option value={bomSys?.bomVersion ?? ''}>{bomSys?.bomVersion ?? '—'}</option>
-                              </select>
+                              {/* repair-260910 F-2（AC-16）：叶子节点无自有 BOM ⇒ 纯文本 '—'，不出 <select> 空壳
+                                  （与详情页 ReadonlyProductCard 同一行的呈现对齐）。非叶子行仍是既有只读壳。 */}
+                              {hasOwnBomVersion ? (
+                                <select value={String(stepBomVersion)} disabled
+                                        title="版本切换二期开放（P2）"
+                                        style={{ width: '100%', minWidth: 70, color: '#555', background: '#f5f5f5', cursor: 'not-allowed' }}>
+                                  <option value={String(stepBomVersion)}>{String(stepBomVersion)}</option>
+                                </select>
+                              ) : (
+                                <span style={{ color: '#999' }}>—</span>
+                              )}
                             </td>
                           )}
                         </>
