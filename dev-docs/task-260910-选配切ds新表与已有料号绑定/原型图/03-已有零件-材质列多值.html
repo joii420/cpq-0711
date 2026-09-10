@@ -1,0 +1,71 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>选配 · 已有零件面板（材质列单值→多值）</title>
+<link rel="stylesheet" href="_base.css"></head><body><div class="wrap">
+<h1>③ 已有零件面板 —— 材质列单值 → 多值</h1>
+<div class="sub">位置：选配抽屉 → 步骤 2 → 「零件」→「已有」（<code>ExistingPartPanel.tsx</code>）。服务 <b>AC-8 / AC-9</b>（<code>F-2</code>）。
+<br>🚦 <b>R-2 待定项</b>：本原型给出 <b>方案甲（多 tag）</b> 与 <b>方案乙（单串）</b> 两版，闸门 A 定稿后 <code>api.md §2.1</code> 同步。</div>
+
+<div class="state"><h2>🔴 现状（对照）<span class="tag">材质信息几乎从来没有过</span></div>
+<div class="body"><table>
+  <thead><tr><th style="width:150px">销售料号</th><th>品名</th><th>材质编号</th><th>材质符号</th><th>材质名称</th></tr></thead>
+  <tbody>
+    <tr><td><code>S0004</code></td><td>触点组件</td><td class="muted">—</td><td>1.银点类</td><td>1.银点类</td></tr>
+    <tr><td><code>S0012</code></td><td>触点支架</td><td class="muted">—</td><td>1.银点类</td><td>1.银点类</td></tr>
+  </tbody></table>
+<div class="note">🔴 <b>实测</b>：<code>material_master.material_recipe_id</code> 全表 48 行<b>只有 1 行非空（2%）</b> ⇒ 材质三列对 47/48 行全靠 <code>COALESCE(…, mm.material_type)</code> 兜底成<b>料号类型字符串</b>（「1.银点类」）。<br>
+⇒ 现状不是「多材质显示不全」，是<b>材质信息几乎从来就没有过</b>。</div>
+</div></div>
+
+<div class="state"><h2>✅ 方案甲（推荐）· 多 tag<span class="tag">默认态</span></div>
+<div class="body">
+  <div class="row"><input class="inp" value="触点" style="flex:1"><button class="btn">搜索</button>
+    <span style="font-size:12px;color:rgba(0,0,0,.45);white-space:nowrap">客户 <code>CUST-0004</code> 名下 · 共 3 条</span></div>
+  <table>
+  <thead><tr><th style="width:140px">销售料号</th><th>品名</th><th style="width:70px">规格</th><th>材质</th></tr></thead>
+  <tbody>
+    <tr class="sel"><td><code>S0004</code></td><td>触点组件</td><td>φ5</td>
+      <td><span class="tag2">AgNi10</span><span class="tag2">铜基</span></td></tr>
+    <tr><td><code>S0008</code></td><td>触点座</td><td>φ7</td><td><span class="tag2">AgNi10</span></td></tr>
+    <tr><td><code>S0012</code></td><td>触点支架</td><td>φ9</td>
+      <td><span class="tag2">AgNi10</span><span class="tag2">AgCu90</span></td></tr>
+  </tbody></table>
+<div class="note">🔑 tag 上 hover 显示 <code>材质编号 · 材质名称 · 规格</code>（如 <code>00006 · 银镍10 · φ5</code>）。<br>
+🔑 <b>判据是 JOIN 命中</b>（AC-9）：材质 = <code>ds_quote_material_bom.input_material_no</code> 能在 <code>material_recipe.code</code> 找到的那些，🚫 不看 <code>output_material_type</code>。</div>
+</div></div>
+
+<div class="state"><h2>方案乙 · 单串<span class="tag">列宽紧张时的备选</span></div>
+<div class="body"><table>
+  <thead><tr><th style="width:140px">销售料号</th><th>品名</th><th style="width:70px">规格</th><th>材质</th></tr></thead>
+  <tbody>
+    <tr><td><code>S0004</code></td><td>触点组件</td><td>φ5</td><td>AgNi10 / 铜基</td></tr>
+    <tr><td><code>S0012</code></td><td>触点支架</td><td>φ9</td><td>AgNi10 / AgCu90</td></tr>
+  </tbody></table>
+<div class="note">⚠️ <b>方案乙的已知风险</b>：分隔符 <code>/</code> 与材质符号本身冲突 —— 实测 <code>material_recipe.symbol</code> 含 <code>/</code> 的有 <b>74 条</b>（如 <code>AgZnO12/Cu</code>）⇒ 「<code>AgZnO12/Cu</code> 一个材质」与「<code>AgZnO12</code> + <code>Cu</code> 两个材质」渲染出同一串，<b>肉眼无法区分</b>。<br>
+🔑 这与指纹侧 <code>PART=</code> 改用长度前缀编码是<b>同一个教训</b>（`需求文档` 引用的调研报告 §5.1）。⇒ <b>推荐方案甲</b>。</div>
+</div></div>
+
+<div class="state"><h2>空数据态 · 该料号无材质<span class="tag">AC-9 的正常状态</span></div>
+<div class="body"><table>
+  <thead><tr><th style="width:140px">销售料号</th><th>品名</th><th style="width:70px">规格</th><th>材质</th></tr></thead>
+  <tbody>
+    <tr><td><code>S0003</code></td><td>铆钉配件</td><td class="muted">—</td><td class="muted">—</td></tr>
+    <tr><td><code>PERF0909-B00001</code></td><td>性能测试主件</td><td class="muted">—</td><td class="muted">—</td></tr>
+  </tbody></table>
+<div class="note">🚨 <b>空是正常业务状态，不是错误、更不是「加载中…」</b>（AP-31 族）：<br>
+· <code>S0003</code> 是<b>外购件</b>，没有材质行；<br>
+· <code>PERF0909-B00001</code> 的 BOM 行 <code>output_material_type='成品'</code>、<code>input_material_no='T260907T-RM01'</code> —— 那是个<b>零件料号，JOIN 材质库落空</b> ⇒ 材质必须为空。<br>
+🔴 <b>反例警示</b>：现状 <code>v_composite_child_materials</code> 会把这一行当材质吐出来（<code>material_code=T260907T-RM01</code>、符号名称规格全空的<b>僵尸行</b>）—— 本任务 <b>🚫 不许复刻这个行为</b>。</div>
+</div></div>
+
+<div class="state"><h2>最长文案 / 极值<span class="tag">4 个材质 + 超长符号</span></div>
+<div class="body"><table>
+  <thead><tr><th style="width:140px">销售料号</th><th>品名</th><th style="width:70px">规格</th><th>材质</th></tr></thead>
+  <tbody>
+    <tr><td><code>T260910-MULTI4</code></td><td>四材质复合触点</td><td>φ12.5</td>
+      <td><span class="tag2">AgNi10</span><span class="tag2">AgCu90</span><span class="tag2">AgZnO12/Cu</span><span class="tag2">Ag15CuP</span></td></tr>
+  </tbody></table>
+<div class="note">🔑 实测存在 <b>4 个材质</b>的料号 2 个、<b>2 个材质</b>的 7 个（共 9/28 料号是多材质，占 <b>32%</b>）⇒ 多值不是边缘场景。<br>
+🔑 tag 自动折行，🚫 不许横向撑破表格（表格外层 <code>overflow-x:auto</code> 兜底）。</div>
+</div></div>
+
+</div></body></html>
