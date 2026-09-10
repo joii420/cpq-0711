@@ -31,6 +31,10 @@ public class CustomerPartCandidateService {
     @Inject
     EntityManager em;
 
+    /** task-260910 · B-4：与报价单卡片共用的生产料号取数入口（🚫 不许另写一套，AP-17） */
+    @Inject
+    ProductionPartInfoService productionPartInfoService;
+
     /**
      * 列出该客户可选的所有料号候选(客户专属 + 全局),按客户专属优先排序。
      *
@@ -58,14 +62,12 @@ public class CustomerPartCandidateService {
         //   customer_no 匹配本客户 → customer_specific=true; 其余产品作为全局候选(false)。
         //   按批次过滤(importRecordId)已由上面的 listCandidatesV6 经 metadata.hfPairs 实现,
         //   且 V6 表无 import_record_id 列, 故此回退路径不再按导入批次过滤。
-        //   internal_material 视角(生产料号管理)保留, 供前端 popover 详情直接展示。
+        //   生产料号详情由 ProductionPartInfoService 批量补齐(task-260910 B-4)。
         String sql =
             "SELECT DISTINCT p.material_no, p.material_name, p.unit_weight, p.standard_unit, " +
             "       m.customer_product_no, m.customer_material_name, m.customer_drawing_no, " +
             "       m.base_currency, m.quote_currency, " +
             "       (m.id IS NOT NULL) AS customer_specific, " +
-            "       im.name AS im_name, im.specification AS im_spec, " +
-            "       im.size AS im_size, im.status_code AS im_status, " +
             "       NULL::int AS current_version " +
             "FROM material_master p " +
             "LEFT JOIN material_customer_map m " +
@@ -73,8 +75,8 @@ public class CustomerPartCandidateService {
             "      AND m.customer_no = (SELECT code FROM customer WHERE id = :customerId) " +
             "      AND m.system_type = 'QUOTE' " +
             "      AND m.pending_quotation_id IS NULL " +
-            "LEFT JOIN internal_material im " +
-            "       ON im.material_no = p.material_no " +
+            // task-260910 · B-4：删 internal_material JOIN（全表 0 行的死链路）。
+            // 生产料号详情改由 ProductionPartInfoService 在下面一次性批量补齐。
             // task-0721 B7 闸门：未审核报价单占用的料号不出现在候选里（单表谓词，零 N+1，AC-4）。
             "WHERE p.material_no IN (SELECT material_no FROM material_customer_map " +
             "                        WHERE system_type = 'QUOTE' AND customer_product_no IS NOT NULL " +
@@ -97,21 +99,42 @@ public class CustomerPartCandidateService {
             dto.baseCurrency      = (String) row[7];
             dto.quoteCurrency     = (String) row[8];
             dto.customerSpecific  = row[9] != null && (Boolean) row[9];
-            // internal_material（生产料号管理）视角；缺失时退回 mat_part 的 partName，规格/尺寸留空
-            CustomerPartCandidateDTO.HfPartInfo info = new CustomerPartCandidateDTO.HfPartInfo();
-            info.partNo = dto.partNo;
-            info.partName = row[10] != null ? (String) row[10] : dto.partName;
-            info.specification = row[11] != null ? (String) row[11] : null;
-            info.sizeInfo = row[12] != null ? (String) row[12] : null;
-            info.statusCode = row[13] != null ? (String) row[13] : null;
-            dto.hfPartInfo = info;
             // V161+ 修复: 透传 mapping.current_version → 前端 buildLineItemFromTemplate
             // 写入 LineItem.partVersionLocked, 首次自动展开就带正确版本号 → driver 注入 part_version=N
-            dto.currentVersion    = row[14] != null ? ((Number) row[14]).intValue() : null;
+            dto.currentVersion    = row[10] != null ? ((Number) row[10]).intValue() : null;
             result.add(dto);
         }
+        fillProductionPartInfo(customerId, result);
         LOG.debugf("listCandidates(customerId=%s) → %d rows", customerId, result.size());
         return result;
+    }
+
+    /**
+     * task-260910 · B-4：批量补生产料号详情（AC-13）。
+     *
+     * <p>两条 SQL（在 {@link ProductionPartInfoService} 内），与候选行数 N 无关；
+     * 本方法自身的循环是**纯内存分发，无查库**（AC-7 N+1 守恒）。
+     */
+    private void fillProductionPartInfo(UUID customerId, List<CustomerPartCandidateDTO> result) {
+        if (result.isEmpty()) return;
+        String customerCode = productionPartInfoService.resolveCustomerCode(customerId);
+        List<String> materialNos = new ArrayList<>(result.size());
+        for (CustomerPartCandidateDTO d : result) {
+            if (d.partNo != null && !d.partNo.isBlank()) materialNos.add(d.partNo);
+        }
+        var infos = productionPartInfoService.loadByMaterialNos(customerCode, materialNos);
+        if (infos.isEmpty()) return;
+        for (CustomerPartCandidateDTO d : result) {
+            ProductionPartInfoService.ProductionPartInfo pi = d.partNo == null ? null : infos.get(d.partNo);
+            if (pi == null) continue;   // 未绑生产料号 → hfPartInfo 保持 null
+            CustomerPartCandidateDTO.HfPartInfo info = new CustomerPartCandidateDTO.HfPartInfo();
+            info.partNo = pi.productionNo;
+            info.partName = pi.partName;
+            info.specification = pi.specification;
+            info.sizeInfo = pi.sizeInfo;
+            info.oldMaterialNo = pi.oldMaterialNo;
+            d.hfPartInfo = info;
+        }
     }
 
     /**
@@ -151,7 +174,7 @@ public class CustomerPartCandidateService {
             return java.util.Collections.emptyList();
         }
 
-        // 3. 按 hf 集合 JOIN V6 表 material_master + material_customer_map + internal_material
+        // 3. 按 hf 集合 JOIN V6 表 material_master + material_customer_map
         //    (AP-53) V6「从基础数据导入」写入 material_master / material_customer_map(新表),
         //    旧 V44 表 mat_part / mat_customer_part_mapping 已废弃且不会被 V6 导入写入。
         //    此前查旧表 → 新导入料号查不到 → 候选返 0 → 报价单自动展开 0 个产品。
@@ -163,8 +186,6 @@ public class CustomerPartCandidateService {
             "       m.customer_product_no, m.customer_material_name, m.customer_drawing_no, " +
             "       m.base_currency, m.quote_currency, " +
             "       (m.id IS NOT NULL) AS customer_specific, " +
-            "       im.name AS im_name, im.specification AS im_spec, " +
-            "       im.size AS im_size, im.status_code AS im_status, " +
             "       NULL::int AS current_version " +
             "FROM material_master p " +
             "LEFT JOIN material_customer_map m " +
@@ -174,8 +195,7 @@ public class CustomerPartCandidateService {
             // task-0721 B7：customer_specific 判定不应被「同客户下其它未审核报价单」的 pending
             // 占号行误判为 true（防御性一致性；本查询本身已按 hfSet 精确框定"本批导入"，主 WHERE 不受影响）。
             "      AND m.pending_quotation_id IS NULL " +
-            "LEFT JOIN internal_material im " +
-            "       ON im.material_no = p.material_no " +
+            // task-260910 · B-4：删 internal_material JOIN，生产料号详情改走 ProductionPartInfoService
             "WHERE p.material_no IN :hfs " +
             "ORDER BY (m.id IS NOT NULL) DESC, p.material_no ASC";
         List<Object[]> rows = em.createNativeQuery(sql)
@@ -196,17 +216,11 @@ public class CustomerPartCandidateService {
             dto.baseCurrency      = (String) row[7];
             dto.quoteCurrency     = (String) row[8];
             dto.customerSpecific  = row[9] != null && (Boolean) row[9];
-            CustomerPartCandidateDTO.HfPartInfo info = new CustomerPartCandidateDTO.HfPartInfo();
-            info.partNo = dto.partNo;
-            info.partName = row[10] != null ? (String) row[10] : dto.partName;
-            info.specification = row[11] != null ? (String) row[11] : null;
-            info.sizeInfo = row[12] != null ? (String) row[12] : null;
-            info.statusCode = row[13] != null ? (String) row[13] : null;
-            dto.hfPartInfo = info;
             // V161+ 修复: V6 路径同样透传 current_version
-            dto.currentVersion    = row[14] != null ? ((Number) row[14]).intValue() : null;
+            dto.currentVersion    = row[10] != null ? ((Number) row[10]).intValue() : null;
             result.add(dto);
         }
+        fillProductionPartInfo(customerId, result);
         LOG.infof("V6 listCandidates(customerId=%s, importRecordId=%s) → %d 行 (hfPairs=%d)",
                 customerId, importRecordId, result.size(), hfSet.size());
         return result;

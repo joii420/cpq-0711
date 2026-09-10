@@ -167,12 +167,13 @@ public class QuotationDTO {
         public String productPartNo;
         public String productName;
         public String customerPartNo;
-        // PRD：产品卡片"客户视角"展示——从 mat_customer_part_mapping 按 (customerId, hfPartNo)
-        // 反查得到。前端有这两个字段时优先于 productName / productPartNo 展示。
+        // 产品卡片"客户视角"展示——task-260910 B-1 起从 ds_quote_customer_part 按
+        // (customer.code, customer_product_no) 精确 / (customer.code, material_no) 回退取得。
+        // 前端有这两个字段时优先于 productName / productPartNo 展示。
         public String customerPartName;
         public String customerProductNo;
         public String customerDrawingNo;
-        // PRD：产品卡片右侧"生产料号"详情卡片——按 productPartNo (=hf_part_no) 查 mat_part 主档
+        // 产品卡片「生产料号」浮层——task-260910 B-2 起走 ds_quote_material → 两张核价表 union
         public HfPartInfo hfPartInfo;
         public String productAttributeValues;
         public BigDecimal subtotal;
@@ -267,15 +268,23 @@ public class QuotationDTO {
     }
 
     /**
-     * 生产料号（HF 主档）信息——给前端"客户料号 → 生产料号"小卡片用。
-     * 数据来源：mat_part 表 by hf_part_no。
+     * 生产料号信息——给前端「销售料号 → 生产料号」浮层用（五行：料号/名称/规格/尺寸/旧料号）。
+     *
+     * <p>task-260910 · B-2 换源：
+     * {@code ds_quote_material (customer_no, material_no) → production_no}
+     * → {@code ds_cost_basic_material ∪ ds_cost_detail_material}（basic 优先 + 逐列取非空）。
+     * 取数唯一入口是 {@code ProductionPartInfoService}。
+     *
+     * <p>🚫 {@link #partNo} 填的是**生产料号 production_no**，不是销售料号。
+     * <p>⚠️ 契约变更：删 {@code statusCode}（生产状态行已下线），加 {@link #oldMaterialNo}。
      */
     public static class HfPartInfo {
+        /** 生产料号 ds_quote_material.production_no */
         public String partNo;
         public String partName;
         public String specification;
         public String sizeInfo;
-        public String statusCode;
+        public String oldMaterialNo;
     }
 
     public static class ProcessDTO {
