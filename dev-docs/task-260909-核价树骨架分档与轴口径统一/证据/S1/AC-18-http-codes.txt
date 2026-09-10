@@ -1,0 +1,12 @@
+admin  GET    /api/cpq/costing-bom-tree-config  → 200
+t260909tree_smgr  GET    /api/cpq/costing-bom-tree-config  → 403
+t260909tree_smgr  POST   /api/cpq/costing-bom-tree-config  → 403
+t260909tree_smgr  PUT    /api/cpq/costing-bom-tree-config/00000000-0000-0000-0000-000000000000  → 403
+t260909tree_smgr  POST   /api/cpq/costing-bom-tree-config/00000000-0000-0000-0000-000000000000/activate  → 403
+t260909tree_smgr  DELETE /api/cpq/costing-bom-tree-config/00000000-0000-0000-0000-000000000000  → 403
+admin  GET    /api/cpq/costing-bom-tree-config  → 200
+t260909tree_smgr  GET    /api/cpq/costing-bom-tree-config  → 403
+t260909tree_smgr  POST   /api/cpq/costing-bom-tree-config  → 403
+t260909tree_smgr  PUT    /api/cpq/costing-bom-tree-config/00000000-0000-0000-0000-000000000000  → 403
+t260909tree_smgr  POST   /api/cpq/costing-bom-tree-config/00000000-0000-0000-0000-000000000000/activate  → 403
+t260909tree_smgr  DELETE /api/cpq/costing-bom-tree-config/00000000-0000-0000-0000-000000000000  → 403

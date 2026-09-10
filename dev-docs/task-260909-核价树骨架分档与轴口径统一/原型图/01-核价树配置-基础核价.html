@@ -22,9 +22,13 @@
     </div>
     <div class="spacer"></div>
     <button class="btn primary">＋ 新增</button>
-    <button class="btn" disabled>设为生效<span class="tip">请先选择一条配置</span></button>
-    <button class="btn" disabled>编辑<span class="tip">请先选择一条配置</span></button>
-    <button class="btn danger" disabled>删除<span class="tip">请先选择一条配置</span></button>
+  </div>
+  <!-- 🔧 2026-09-09 修正：SelectableTable 的既有版式是两行（标题+切换+新增 / 动作条），
+       动作顺序与禁用文案也沿用既有实现。原型初稿按理想态画，与既有实现不符 —— 属原型缺陷，就地修。 -->
+  <div class="toolbar" style="margin-top:-4px">
+    <button class="btn" disabled>编 辑<span class="tip">请选择一条</span></button>
+    <button class="btn" disabled>设为生效<span class="tip">请选择一条</span></button>
+    <button class="btn danger" disabled>删 除<span class="tip">请选择</span></button>
   </div>
 
   <table>
@@ -37,13 +41,13 @@
         <td><span class="ck"></span></td>
         <td><span class="link">基础核价BOM树-COST_BASIC-v1</span></td>
         <td><span class="tag green">生效中</span></td>
-        <td>2026-09-09 10:12:33</td>
+        <td>2026-09-09T18:25:01.620222Z</td>
       </tr>
       <tr>
         <td><span class="ck"></span></td>
         <td><span class="link trunc" title="基础核价BOM树-COST_BASIC-v0-废弃-仅保留回溯用-勿激活-2026-07-27-旧口径查V6老表material_bom_item">基础核价BOM树-COST_BASIC-v0-废弃-仅保留回溯用-勿激活-2026-07-27-旧口径查V6老表material_bom_item</span></td>
         <td><span class="tag grey">未生效</span></td>
-        <td>2026-07-27 09:13:36</td>
+        <td>2026-07-27T01:13:36.230598Z</td>
       </tr>
     </tbody>
   </table>
@@ -51,9 +55,11 @@
   <div class="note">
     <b>本页要画到的状态（开发按此逐项还原）：</b><br>
     ① <b>切换三项且默认落「基础核价」</b>——顺序固定为 报价 / 基础核价 / 详细核价，用词与「主数据维护」页逐字一致。<br>
-    ② <b>禁用态可见 + 说明原因</b>——未选行时「设为生效 / 编辑 / 删除」保持可见但禁用，hover 出 tooltip「请先选择一条配置」。🚫 不许隐藏按钮。<br>
+    ② <b>禁用态可见 + 说明原因</b>——未选行时「编辑 / 设为生效 / 删除」保持可见但禁用，hover 出 tooltip（沿用 <code>SelectableTable</code> 既有文案：前两个「请选择一条」、删除「请选择」）。🚫 不许隐藏按钮。<br>&nbsp;&nbsp;&nbsp;<i>🔧 2026-09-09 修正记录：初稿把顺序画成「设为生效→编辑→删除」、tooltip 画成「请先选择一条配置」，与 <code>task-0721</code> 起的既有实现不符，且无任何 AC 覆盖这两项 ⇒ 判为<b>原型缺陷</b>（不是实现漂移），就地修原型、不改代码。</i><br>
     ③ <b>最长文案</b>——第 2 行是极值样例：超长配置名单行截断 + 悬浮显示全名，<b>不得撑破表格或换行</b>。<br>
-    ④ 「生效中」绿标每套<b>至多一条</b>；切换到别的数据集时本页只换查看范围，不影响其它套的生效项。
+    ④ <b>「更新时间」列按既有实现原样输出 ISO 字符串</b>（<code>dataIndex:'updatedAt'</code> 无 render 函数，master 上一直如此，本任务未改动该列）。<br>
+    &nbsp;&nbsp;&nbsp;<i>🔧 2026-09-09 修正记录：初稿画成 <code>2026-09-09 10:12:33</code>（理想态），已改为与实现一致。「格式化为本地时间」属<b>可选改进</b>、无任何 AC 覆盖 ⇒ 本期不改，登记待用户裁决。</i><br>
+    ⑤ 「生效中」绿标每套<b>至多一条</b>；切换到别的数据集时本页只换查看范围，不影响其它套的生效项。
   </div>
 </div>
 </body></html>

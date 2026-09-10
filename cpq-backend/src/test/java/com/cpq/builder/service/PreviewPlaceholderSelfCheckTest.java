@@ -127,8 +127,20 @@ class PreviewPlaceholderSelfCheckTest {
     }
 
     /**
-     * B-52 接线守卫：**带桥的图**下，preview 的编译入口必须按"有没有 partNo"决定经不经桥。
-     * 🔑 打的是 {@code compileForPreview}（preview 真正调的那个），不是判定函数本身 ——
+     * B-52 接线守卫：**带桥的图**下，preview 的编译入口必须产出一条<b>真的会收窄</b>的 SQL。
+     *
+     * <p>🔄 <b>task-260909 D-6 后本用例守的东西变了，故在此说清我选了哪条路</b>：
+     * <ul>
+     *   <li>原语义「按有没有 partNo 决定经不经桥」在核价方言下<b>已整体失去意义</b> ——
+     *       D-6 停发 COST_* 的桥后，有没有 partNo 两条分支产出的都是<b>无桥 + 直接轴收窄</b>，
+     *       "经桥/不经桥"这个对照组不存在了。</li>
+     *   <li>但 B-52 真正要防的那件事<b>仍然存在且仍然值得守</b>：
+     *       {@code isUnrestrictedPreview → skipNarrowPredicates} 这条接线一旦断掉，
+     *       症状是<b>预览恒 0 行或整表全捞</b>，两头都是静默的。
+     *       ⇒ 保留本用例，把断言从「有 partNo 必须经桥」改成
+     *       <b>「两条分支都必须无桥、且都必须带直接轴收窄」</b>。</li>
+     * </ul>
+     * 🔑 仍然打 {@code compileForPreview}（preview 真正调的那个）而不是判定函数本身 ——
      * 后者测不到接线，删掉接线照样全绿（干预 L 第一次就是这样溜过去的）。
      */
     @Test
@@ -149,8 +161,17 @@ class PreviewPlaceholderSelfCheckTest {
         BuilderDTOs.PreviewRequest withPart = req("COST_BASIC", "TEST0813-P01", null);
         withPart.columns = com.cpq.builder.compiler.B52BridgeFixture.columns();
         String sqlWithPart = svc.compileForPreview(withPart).sql;
-        System.out.println("---- B-52 接线守卫 · 有 partNo ----\n" + sqlWithPart);
-        assertTrue(sqlWithPart.contains("IN (SELECT"), "有 partNo 必须经桥：\n" + sqlWithPart);
+        System.out.println("---- D-6 后 · 有 partNo ----\n" + sqlWithPart);
+        // task-260909 D-6（方案甲）：核价侧轴统一为生产料号，COST_* 不再发 ds_quote_material 桥。
+        // 本断言原属 task-260819 AC-111/AC-112，其前提「轴值是销售料号」已被 D-6 取消。
+        // 🔄 原断言「有 partNo 必须经桥」翻面：有没有 partNo 都不经桥，但**都必须收窄**。
+        assertFalse(sqlWithPart.contains("IN (SELECT"),
+                "D-6：有 partNo 也不再经桥（翻译已上移到骨架种子处）：\n" + sqlWithPart);
+        assertFalse(sqlWithPart.contains("ds_quote_material"),
+                "D-6：任何位置都不该再出现 ds_quote_material：\n" + sqlWithPart);
+        assertTrue(sqlWithPart.contains("= ANY(:total_material_no)"),
+                "🚨 本用例的本体：接线断了的症状是『预览恒 0 行或整表全捞』，两头都静默 —— "
+                        + "所以两条分支都必须留有直接轴收窄：\n" + sqlWithPart);
 
         // 报价侧恒不跳过（零回归）
         assertFalse(svc.isUnrestrictedPreview(req("QUOTE", null, "C")), "报价侧永远不走不经桥分支");

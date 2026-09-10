@@ -14,18 +14,54 @@ import java.util.UUID;
 /**
  * 核价/报价树递归 SQL 配置的 CRUD + 设为生效编排。
  *
- * <p>task-0721 B2：新增 {@code usage} 维度（{@code QUOTE}/{@code COSTING}）。同一 usage 同一时刻
- * 最多一条 {@code isActive=true}（DB 部分唯一索引 {@code uq_bom_tree_config_active_per_usage} 按
- * usage 分别约束，{@link #setActive(UUID)} 单事务内只下线<b>同 usage</b> 的旧生效配置，
- * <b>不影响另一侧</b>——保证激活 QUOTE 配置不下线核价侧现役 COSTING 配置（AC-10 零回归门禁）。
+ * <p>task-0721 B2：新增 {@code usage} 维度。同一 usage 同一时刻最多一条 {@code isActive=true}
+ * （DB 部分唯一索引 {@code uq_bom_tree_config_active_per_usage} 按 usage 分别约束，
+ * {@link #setActive(UUID)} 单事务内只下线<b>同 usage</b> 的旧生效配置，<b>不影响另一侧</b>）。
+ *
+ * <p>🔄 <b>task-260909 B-2：值域由 2 值扩到 4 值</b>（{@code api.md §1.1}）——
+ * {@code QUOTE}(报价) / {@code COST_BASIC}(基础核价) / {@code COST_DETAIL}(详细核价)，
+ * 外加 {@code COSTING} 作为 {@code COST_BASIC} 的<b>只读兼容别名</b>。
+ * <ul>
+ *   <li><b>零 DDL</b>：{@code usage} 列已是 {@code varchar(16)} 且<b>无 CHECK 约束</b>，
+ *       唯一索引按 usage 分组 ⇒ 扩值天然生效，<b>不新增任何迁移文件</b>（2026-09-09 实测
+ *       {@code information_schema} + {@code pg_constraint} 确认）。</li>
+ *   <li><b>为什么写入要拒绝 {@code COSTING}</b>：三套并存后再留一个"等价别名"可写，等于允许
+ *       同一份配置有两种存法 —— 一半记录 {@code usage='COSTING'}、一半 {@code 'COST_BASIC'}，
+ *       而唯一索引按<b>字面量</b>分组 ⇒ 两条同时 {@code isActive} 也不冲突，
+ *       渲染期取哪条全看归一化写在谁那里。故写入侧一律 400。</li>
+ *   <li><b>为什么 {@code POST} 未传 usage 不再兜底</b>：兜底的失败形态是"用户选了详细核价、
+ *       系统写成基础核价"，且全程不报错（{@code api.md §1.1}）。</li>
+ * </ul>
+ * ⚠️ 存量 {@code usage='QUOTE'} 记录<b>一个字节不动</b>（AC-22 零回归门禁）：本次没有任何
+ * 迁移、也没有任何代码路径会去规范化它。
  */
 @ApplicationScoped
 public class CostingBomTreeConfigService {
 
     private static final Logger LOG = Logger.getLogger(CostingBomTreeConfigService.class);
 
-    /** 值域：QUOTE(报价侧) / COSTING(核价侧,默认)。非法值兜底为 COSTING，与列默认值一致。 */
-    private static final java.util.Set<String> VALID_USAGES = java.util.Set.of("QUOTE", "COSTING");
+    /** 已停用的旧值 —— 只读兼容别名，等价 {@link #CANONICAL_COSTING_USAGE}。 */
+    public static final String LEGACY_USAGE_ALIAS = "COSTING";
+    /** {@link #LEGACY_USAGE_ALIAS} 的归一目标。 */
+    public static final String CANONICAL_COSTING_USAGE = "COST_BASIC";
+
+    /** 可<b>读</b>值域（含只读兼容别名 {@code COSTING}）。 */
+    private static final java.util.Set<String> READABLE_USAGES =
+            java.util.Set.of("QUOTE", "COST_BASIC", "COST_DETAIL", LEGACY_USAGE_ALIAS);
+    /** 可<b>写</b>值域（api.md §1.1：{@code COSTING} 已停用）。 */
+    public static final java.util.List<String> WRITABLE_USAGES =
+            java.util.List.of("QUOTE", "COST_BASIC", "COST_DETAIL");
+
+    /** usage → 中文数据集名（B-4 报错文案 / 日志用）。 */
+    public static String usageDisplayName(String usage) {
+        if (usage == null) return "未知";
+        return switch (usage.trim().toUpperCase(java.util.Locale.ROOT)) {
+            case "QUOTE" -> "报价";
+            case "COST_BASIC", LEGACY_USAGE_ALIAS -> "基础核价";
+            case "COST_DETAIL" -> "详细核价";
+            default -> usage;
+        };
+    }
 
     @Inject
     CostingTreeSqlValidator validator;
@@ -40,29 +76,65 @@ public class CostingBomTreeConfigService {
         return CostingBomTreeConfig.listAll();
     }
 
-    /** task-0721 B2：按 usage 过滤；usage 为 null/blank → 返回全部（向后兼容，api.md §2.1）。 */
+    /**
+     * task-0721 B2：按 usage 过滤；usage 为 null/blank → 返回全部（向后兼容，api.md §1.1）。
+     *
+     * <p>task-260909 B-2：{@code ?usage=COSTING} 按 {@code COST_BASIC} 处理并返回其记录
+     * （只读兼容别名，存量客户端不会碎）。
+     */
     public List<CostingBomTreeConfig> list(String usage) {
         if (usage == null || usage.isBlank()) return list();
         return CostingBomTreeConfig.list("usage", normalizeUsage(usage));
     }
 
-    private static String normalizeUsage(String usage) {
-        if (usage == null || usage.isBlank()) return "COSTING";
-        String u = usage.trim().toUpperCase();
-        if (!VALID_USAGES.contains(u)) {
-            throw new RuntimeException("非法 usage: " + usage + "，必须是 QUOTE 或 COSTING");
+    /**
+     * <b>读路径</b>归一（task-260909 B-2）：{@code COSTING → COST_BASIC}；非四值之一 → 400。
+     *
+     * <p>🔑 公开静态是刻意的：{@code BomTreeRenderService} 的骨架取用点必须与本类走
+     * <b>同一份归一规则</b>（`backtask §0-2`：确认无第二处硬编码 {@code "COSTING"}）——
+     * 各写一份的失败形态是「界面上存进 COST_BASIC、渲染期照 COSTING 找、找不到就报未配置」。
+     */
+    public static String normalizeUsage(String usage) {
+        if (usage == null || usage.isBlank()) {
+            throw new com.cpq.common.exception.BusinessException(400,
+                    "usage 必填，合法值：" + String.join(" / ", WRITABLE_USAGES));
         }
-        return u;
+        String u = usage.trim().toUpperCase(java.util.Locale.ROOT);
+        if (!READABLE_USAGES.contains(u)) {
+            throw new com.cpq.common.exception.BusinessException(400,
+                    "非法 usage: " + usage + "，合法值：" + String.join(" / ", WRITABLE_USAGES));
+        }
+        return LEGACY_USAGE_ALIAS.equals(u) ? CANONICAL_COSTING_USAGE : u;
     }
 
+    /**
+     * <b>写路径</b>归一：在 {@link #normalizeUsage} 之上额外拒绝只读兼容别名 {@code COSTING}
+     * （api.md §1.1）。
+     */
+    private static String normalizeUsageForWrite(String usage) {
+        if (usage != null && LEGACY_USAGE_ALIAS.equalsIgnoreCase(usage.trim())) {
+            throw new com.cpq.common.exception.BusinessException(400,
+                    "COSTING 已停用，请选择 COST_BASIC 或 COST_DETAIL");
+        }
+        return normalizeUsage(usage);
+    }
+
+    /**
+     * 2 参便利重载 —— <b>不是端点路径</b>（端点侧 {@code POST} 未传 usage 必须 400，
+     * 见 {@link #create(String, String, String)}）。默认落 {@link #CANONICAL_COSTING_USAGE}，
+     * 原默认值 {@code COSTING} 自 task-260909 起不可写。
+     */
     @Transactional
     public CostingBomTreeConfig create(String name, String sqlTemplate) {
-        return create(name, sqlTemplate, "COSTING");
+        return create(name, sqlTemplate, CANONICAL_COSTING_USAGE);
     }
 
-    /** task-0721 B2：usage 必填（api.md §2.2）。旧 2 参重载零破坏，默认 COSTING。 */
+    /** task-0721 B2 / task-260909 B-2：usage 必填且必须是三个可写值之一（api.md §1.1）。 */
     @Transactional
     public CostingBomTreeConfig create(String name, String sqlTemplate, String usage) {
+        // 🔑 usage 校验放在 SQL 校验**之前**：SQL 校验要连库 dry-run，非法 usage 没必要付这笔开销，
+        //    且先报"usage 非法"比先报"SQL 无法执行"更贴近用户实际做错的那件事。
+        String normalized = normalizeUsageForWrite(usage);
         CostingTreeSqlValidator.Result r = validator.validate(sqlTemplate);
         if (!r.ok) {
             throw new RuntimeException("递归 SQL 校验失败: " + r.message);
@@ -71,7 +143,7 @@ public class CostingBomTreeConfigService {
         e.name = name;
         e.sqlTemplate = sqlTemplate;
         e.isActive = false;
-        e.usage = normalizeUsage(usage);
+        e.usage = normalized;
         e.persist();
         return e;
     }
@@ -95,7 +167,7 @@ public class CostingBomTreeConfigService {
         e.name = name;
         e.sqlTemplate = sqlTemplate;
         if (usage != null && !usage.isBlank()) {
-            e.usage = normalizeUsage(usage);
+            e.usage = normalizeUsageForWrite(usage);
         }
         // §10 失效钩子（Task 3.1 集成阶段接入，见 invalidateTreeTabCostingCardValues 注释）：
         // update() 改的是"当前配置的 SQL 内容"——只有它已经是 isActive=true 时才会被下次渲染实际读取。

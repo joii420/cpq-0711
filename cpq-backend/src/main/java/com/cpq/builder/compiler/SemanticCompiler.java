@@ -242,7 +242,30 @@ public class SemanticCompiler {
 
         // B-50：NARROW 半连接收窄。同样"无论是否被选列引用都必须出现"——它是**入参收窄**，
         // 不是可选的取列方式（用户根本选不到它的列，见 resolveColumn 的 NARROW 分支）。
-        if (!skipNarrowPredicates) {
+        //
+        // ── 🚨 task-260909 B-5（用户裁决 D-6，方案甲）：核价两套**停发料号桥** ─────────────
+        // 桥（`锚点.production_no IN (SELECT production_no FROM ds_quote_material
+        //      WHERE material_no = ANY(:total_material_no) …)`）存在的**唯一前提**是
+        // 「:total_material_no 装的是销售料号」。本次把核价侧的轴口径统一成**生产料号**：
+        // 销售→生产的翻译只在 costing_bom_tree_config 骨架 SQL 的**种子处发生一次**
+        // （带 :customerCode，见 backtask B-9）⇒ 前提被取消，桥失去意义。
+        //
+        // 🔑 它不只是"多余"，是**错的**：核价 BOM 的子件（如 300012/300013）在 ds_quote_material
+        //    里根本没有销售料号（2026-09-09 实测 0 行）⇒ 桥把它们全滤掉 ⇒ 边分支恒 0 行，
+        //    材质元素等挂在子件上的页签**整页恒空**，且不报错。
+        //
+        // 🚫 QUOTE 方言一个字节不动（AC-21 零回归门禁）——实测全库 28 条 NARROW 边
+        //    **全部**从 COST_BASIC/COST_DETAIL 出发指向 QUOTE_MATERIAL_BRIDGE，QUOTE 侧 0 条，
+        //    故这条 if 对报价侧产物没有任何影响；判据仍写成方言而不是"反正没有"，
+        //    是为了让将来给报价侧加 NARROW 边的人撞到这条注释而不是撞到一个静默的号段错配。
+        //
+        // ⇒ 桥不发 ⇒ c.narrowedByBridge 保持 false ⇒ applyFullScope 恢复直接轴收窄
+        //   `<别名>.<轴列(或树子件列)> = ANY(:total_material_no)`；树页签根分支同理走
+        //   rootNarrowPredicate 的 `c.narrowEdge == null` 分支（直接轴收窄）。
+        //   护栏 assertAxisParamSingleSemantic 随之对账「产物 0 处桥 / 结构化认出 0 处桥」——
+        //   **这是登记口径随实现同步归零，不是放宽判据**：剔干净后照样不许有残留。
+        boolean emitNarrow = !skipNarrowPredicates && !dialect.isCosting();
+        if (emitNarrow) {
             for (SemanticEdge e : snap.edgesFrom(c.anchor.id)) {
                 if (!"NARROW".equals(e.edgeKind)) continue;
                 emitNarrowPredicate(c, e);
@@ -944,12 +967,16 @@ public class SemanticCompiler {
             }
         }
 
-        // B-50：锚点声明了 NARROW 边时，**不再直接发轴谓词**。
-        // 🚨 这不是优化，是正确性：:total_material_no 装的是**销售料号**，而核价侧的轴列是
-        // production_no —— 两者是不同号段，直接 `production_no = ANY(:total_material_no)` 会
-        // 恒不命中（0 行），且与半连接 AND 在一起时"看起来只是没数据"，不会报任何错。
-        // 收窄职责整体交给半连接：它挂在锚点上，SUB/GRAIN 目标通过各自的连接键与锚点相关联，
-        // 因而是被间接收窄的，不需要各自再发一条。
+        // B-50：锚点声明了 NARROW 边时（即 narrowedByBridge），**不再直接发轴谓词**。
+        // 当年的理由：:total_material_no 装的是**销售料号**，而核价侧的轴列是 production_no，
+        // 两者号段不同，直接 `production_no = ANY(:total_material_no)` 恒不命中（0 行且不报错）。
+        //
+        // 🔄 <b>task-260909 B-5（D-6 方案甲）：该前提已被取消</b>——核价侧的 :total_material_no
+        //    现在装的就是**生产料号**（翻译只在骨架 SQL 的种子处发生一次），且 compile() 已停发
+        //    核价侧的桥 ⇒ narrowedByBridge 在核价两套上恒为 false ⇒ 走下面的直接轴收窄，
+        //    这正是本次要的形态。
+        // 📌 本标志位与这条 if **原样保留**：它是"谁负责收窄"的唯一开关，报价侧将来若真加了桥
+        //    仍要靠它避免两条谓词共存；删掉等于把 B-52 那类静默 0 行的防线一并拆了。
         // 🌳 task-260907 B-3②：树页签的轴收窄落在**子件列**，不是父件（轴）列 ——
         //    与存量 $bom_view 的 `mbi.component_no = ANY(:total_material_no)` 逐字同口径。
         //
@@ -1104,12 +1131,12 @@ public class SemanticCompiler {
         List<String> exprs = new ArrayList<>(rootExprs.size());
         for (String e : rootExprs) exprs.add(TREE_ROOT_SELF_EXPR.equals(e) ? selfExpr : e);
 
-        // 🚨 根分支的收窄必须与主分支**同一套机制**，否则不是恒 0 行就是全表扫：
-        //   · 报价侧（无桥）：直接轴收窄 `<根表>.material_no = ANY(:total_material_no)`；
-        //   · 核价两套（有桥）：经**同一座料号桥**做半连接。
-        //     🚫 这里绝不能退回直接轴收窄 —— 核价的轴是生产料号、:total_material_no 装的是
-        //        销售料号，`production_no = ANY(销售料号[])` 恒不命中（0 行且不报错）；
-        //     🚫 更不能干脆不发收窄 —— 那是把整张主档表全扫进来。
+        // 🚨 根分支的收窄必须与主分支**同一套机制**，否则不是恒 0 行就是全表扫。
+        // task-260909 B-5（D-6 方案甲）后三个方言统一走**直接轴收窄**
+        //   `<根表>.<轴列> = ANY(:total_material_no)`：核价侧的数组现在装的就是生产料号，
+        //   与根表轴列 production_no 同号段。桥分支（rootNarrowPredicate 的 c.narrowEdge != null）
+        //   保留为报价侧将来若真声明 NARROW 边时的通路，当前核价两套走不到它。
+        // 🚫 无论走哪一支，都**不能干脆不发收窄** —— 那是把整张主档表全扫进来。
         c.treeRootWhere.clear();
         c.treeRootWhere.add(rootNarrowPredicate(c, rootAlias, rootAxis, root));
         c.requiredVars.add("total_material_no");
@@ -1155,6 +1182,10 @@ public class SemanticCompiler {
 
     /**
      * 根分支的收窄谓词：有料号桥就经桥，没有就直接轴收窄。
+     *
+     * <p>🔄 <b>task-260909 B-5</b>：核价两套已停发料号桥（{@code compile()} 里的
+     * {@code emitNarrow} 判据），故 {@code c.narrowEdge} 在三个方言下当前均为 {@code null}
+     * ⇒ 实际走的是下面第一支「直接轴收窄」。经桥那一支保留但当前无产物走到。
      *
      * <p><b>经桥时为什么可以把桥的左列换成根表的轴列</b>：桥的左列声明在**锚点**上，
      * 而根分支 FROM 的是另一张表。只有当两者是同一个号段时替换才成立 ——

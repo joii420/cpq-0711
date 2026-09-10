@@ -1,0 +1,10 @@
+[SG] 实例正身与前置探针
+BASE_URL=http://localhost:5212  BACKEND_URL=http://localhost:8131  DB=10.177.152.12/cpq_db_0724
+最早后端连接建立时间（近似"后端启动时刻"）= 2026-09-09 06:34:49
+costing_bom_tree_config 全表：
+  COST_BASIC | 537d2267-ccf2-4453-bc30-a9cee741e153 | 基础核价BOM树-COST_BASIC-v1 | true
+  COSTING | 82612f2b-558a-4b13-b052-af08100573ac | 核价BOM树-PRICING口径v1(versionFilter 版本感知) | true
+  QUOTE | d6defaa0-354f-4e92-8e89-4bc8454888c3 | 报价BOM树-QUOTE口径v1 | true
+P3 ✅ usage=COST_BASIC 生效配置 id=537d2267-ccf2-4453-bc30-a9cee741e153
+P1 ✅ GET /templates/{核价模板1} 的 data 含 warnings 键；实际键集=["category","categoryId","categoryName","components","componentsSnapshot","createdAt","createdBy","customerId","customerName","description","excelViewConfig","id","name","productAttributes","publishedAt","status","subtotalFormula","templateKind","templateSeriesId","updatedAt","usageNote","version","warnings"]
+P2 ✅ t260909tree_smgr(SALES_MANAGER) GET /api/cpq/costing-bom-tree-config → 403（期望 403；返 200 = 打到了旧代码实例，本轮结论全部无效）

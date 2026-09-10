@@ -1,0 +1,7 @@
+# AC-17 组件管理页签可见性（两条用例、两个账号）
+# 环境：5212 前端 / 8131 后端（worktree 代码）；2026-09-09 11:45~11:46
+
+admin（SYSTEM_ADMIN）    顶层页签 = ["组件","数据源","全局变量","核价树配置"]   ← 4 项 ✅
+t260909tree_smgr（SALES_MANAGER） 顶层页签 = ["组件","数据源","全局变量"]        ← 3 项、不含「核价树配置」 ✅
+
+截图：AC-17a-admin-4tabs.png / AC-17b-salesmanager-3tabs.png

@@ -1,0 +1,53 @@
+# S1 片 · Playwright 原始输出（三轮）
+环境：PW_BASE_URL=http://localhost:5212  PW_BACKEND_URL=http://localhost:8131
+
+════════ 第 1 轮（首跑，含 3 个量具 bug）════════
+  ✓   1 [chromium] › e2e/task260909tree-s1-a-quote-baseline.spec.ts:44:1 › T-A0 环境正身：记录后端进程 + 实测它连的确实是 cpq_db_0724 (436ms)
+  ✓   2 [chromium] › e2e/task260909tree-s1-a-quote-baseline.spec.ts:51:1 › T-A1 / AC-22：usage=QUOTE 的生效配置 id + sql_template 逐字节不变 (50ms)
+  ✘   3 [chromium] › e2e/task260909tree-s1-a-quote-baseline.spec.ts:89:1 › T-A2 / AC-21：报价侧 S0001 五个页签行数与基线逐位相同（兼定位器阳性对照） (15.1s)
+  -   4 [chromium] › e2e/task260909tree-s1-a-quote-baseline.spec.ts:122:1 › T-A3 / AC-21 扩展：S0004 / S0008 / S0012 报价侧行数与改动前基线逐位相同
+  ✘   5 [chromium] › e2e/task260909tree-s1-b-costing-render.spec.ts:155:1 › T-B3 / AC-8：S0004/S0008/S0012 的 BOM 页签各 1 行且业务列为「—」 (17.0s)
+  ✓   6 [chromium] › e2e/task260909tree-s1-c-config-ui.spec.ts:78:1 › T-C1 / AC-1：核价树配置页三项切换、默认选中「基础核价」、标题「基础核价树配置」 (10.1s)
+  ✘   7 [chromium] › e2e/task260909tree-s1-c-config-ui.spec.ts:100:1 › T-C2 / AC-2：切到「详细核价」→ 0 行 + 空态文案「暂无详细核价树配置」+ 新增仍可点 (12.9s)
+  -   8 [chromium] › e2e/task260909tree-s1-c-config-ui.spec.ts:140:1 › T-C3 / AC-17a：admin（SYSTEM_ADMIN）打开 /components 应见 4 个页签
+  -   9 [chromium] › e2e/task260909tree-s1-c-config-ui.spec.ts:152:1 › T-C4 / AC-17b：test1（SALES_MANAGER）打开 /components 应见 3 个页签且不含「核价树配置」
+  ✓  10 [chromium] › e2e/task260909tree-s1-d-contract.spec.ts:212:1 › T-D4 / AC-18a：admin 调 GET /costing-bom-tree-config → 200 (335ms)
+  ✓  11 [chromium] › e2e/task260909tree-s1-d-contract.spec.ts:220:1 › T-D5 / AC-18b：SALES_MANAGER 调 GET + 4 个写端点一律 403 (338ms)
+  3 failed
+  3 did not run
+  5 passed (7.5m)
+
+════════ 第 2 轮（修掉量具 bug 后重跑）════════
+  ✓  1 [chromium] › e2e/task260909tree-probe-dom.spec.ts:13:1 › PROBE：报价侧 / 核价侧 产品卡片内的表格结构 (36.4s)
+  ✓  2 [chromium] › e2e/task260909tree-s1-a-quote-baseline.spec.ts:89:1 › T-A2 / AC-21：报价侧 S0001 五个页签行数与基线逐位相同（兼定位器阳性对照） (27.2s)
+  ✓  3 [chromium] › e2e/task260909tree-s1-a-quote-baseline.spec.ts:122:1 › T-A3 / AC-21 扩展：S0004 / S0008 / S0012 报价侧行数与改动前基线逐位相同 (54.2s)
+  ✘  4 [chromium] › e2e/task260909tree-s1-b-costing-render.spec.ts:155:1 › T-B3 / AC-8：S0004/S0008/S0012 的 BOM 页签各 1 行且业务列为「—」 (17.4s)
+  ✓  5 [chromium] › e2e/task260909tree-s1-c-config-ui.spec.ts:78:1 › T-C1 / AC-1：核价树配置页三项切换、默认选中「基础核价」、标题「基础核价树配置」 (10.0s)
+  ✓  6 [chromium] › e2e/task260909tree-s1-c-config-ui.spec.ts:100:1 › T-C2 / AC-2：切到「详细核价」→ 0 行 + 空态文案「暂无详细核价树配置」+ 新增仍可点 (12.6s)
+  ✓  7 [chromium] › e2e/task260909tree-s1-c-config-ui.spec.ts:147:1 › T-C3 / AC-17a：admin（SYSTEM_ADMIN）打开 /components 应见 4 个页签 (7.3s)
+  ✓  8 [chromium] › e2e/task260909tree-s1-c-config-ui.spec.ts:159:1 › T-C4 / AC-17b：test1（SALES_MANAGER）打开 /components 应见 3 个页签且不含「核价树配置」 (8.9s)
+  1 failed
+  7 passed (5.5m)
+
+════════ 第 3 轮（刷新实例正身 + 复跑 AC-18/AC-22）════════
+[backend-identity] url=http://localhost:8131 port=8131 pid=1432570 cwd=/home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/cpq-backend started="Wed Sep  9 11:23:34 2026"
+[db-identity] api.totalElements=132  db.count(*)=132
+[backend-identity] url=http://localhost:8131 port=8131 pid=1432570 cwd=/home/joii/project/cpq/.claude/worktrees/task-260909-costing-tree/cpq-backend started="Wed Sep  9 11:23:34 2026"
+  ✓  1 [chromium] › e2e/task260909tree-s1-a-quote-baseline.spec.ts:44:1 › T-A0 环境正身：记录后端进程 + 实测它连的确实是 cpq_db_0724 (623ms)
+  ✓  2 [chromium] › e2e/task260909tree-s1-a-quote-baseline.spec.ts:51:1 › T-A1 / AC-22：usage=QUOTE 的生效配置 id + sql_template 逐字节不变 (96ms)
+  ✓  3 [chromium] › e2e/task260909tree-s1-d-contract.spec.ts:212:1 › T-D4 / AC-18a：admin 调 GET /costing-bom-tree-config → 200 (338ms)
+  ✓  4 [chromium] › e2e/task260909tree-s1-d-contract.spec.ts:220:1 › T-D5 / AC-18b：SALES_MANAGER 调 GET + 4 个写端点一律 403 (585ms)
+  4 passed (35.7s)
+
+════════ 收尾自查：一个不影响结论、但会误导「还在跑吗」判断的量具坑 ════════
+症状：三轮跑完后 `pgrep -f "playwright test -c e2e"` 仍报「有进程」，看起来像测试没结束。
+真因：**pgrep -f 自匹配** —— 我用来等待的 shell，其命令行里就含
+      `playwright test -c e2e` 这个字面量，于是 pgrep 匹配到**等待循环自己**，
+      条件永远为真、循环永不退出，同时把「测试还在跑」这个假象一直维持下去。
+      实测 11 个「命中」里，**0 个是真的 playwright/node/chrome**，全是我自己的等待 shell。
+判读：与本轮 AC 结论**无关**（三轮结果早已落盘），但它是同一族问题的又一个实例 ——
+      **判据本身是零证据**：`pgrep` 确实"查了"，结果也"属实"，但它答的不是我问的那个问题。
+处置：已按命令行特征精确清理 10 个空转的等待 shell；
+      清理后复核四个服务全部存活：5212=200 / 8131=401 / 5174=200 / 8081=401（未误伤）。
+规避：等待外部进程时，pgrep 模式必须排除自身（`pgrep -f pat | grep -v ^$$`），
+      或改用「进程存在性以外」的判据（如输出文件里出现 `N passed` 汇总行）。

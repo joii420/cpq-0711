@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Button, Drawer, Form, Input, Segmented, Select, Space, Tag, message } from 'antd';
+import { Alert, Button, Drawer, Empty, Form, Input, Segmented, Select, Space, Tag, message } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import {
   costingBomTreeConfigService,
@@ -10,14 +10,34 @@ import SelectableTable, { type ToolbarAction } from '../../components/Selectable
 
 const { TextArea } = Input;
 
+/**
+ * task-260909 F-1：三档标签。
+ * 🔑 用词与全站逐字一致 —— 取自 `src/pages/master-data/dataset/datasetConfig.ts` 的
+ *    `DATASETS['cost-basic'].label = '基础核价'` / `DATASETS['cost-detail'].label = '详细核价'`。
+ *    🚫 不要自创「明细核价」等变体。
+ */
 const USAGE_LABEL: Record<BomTreeConfigUsage, string> = {
-  QUOTE: '报价侧',
-  COSTING: '核价侧',
+  QUOTE: '报价',
+  COST_BASIC: '基础核价',
+  COST_DETAIL: '详细核价',
 };
 
+/** 切换控件的选项顺序 = 原型图 `01-核价树配置-基础核价.html` 的顺序，勿调换。 */
+const USAGE_OPTIONS: { label: string; value: BomTreeConfigUsage }[] = [
+  { label: USAGE_LABEL.QUOTE, value: 'QUOTE' },
+  { label: USAGE_LABEL.COST_BASIC, value: 'COST_BASIC' },
+  { label: USAGE_LABEL.COST_DETAIL, value: 'COST_DETAIL' },
+];
+
+/** 三套口径的说明文案（Alert description + 抽屉提示共用同一口径，避免两处漂移）。 */
+const USAGE_SCOPE_DESC =
+  '报价、基础核价、详细核价三套各自独立维护、独立生效（active），互不影响：' +
+  '切换上方开关只改变本页面查看/操作的范围，激活某一套的配置不会下线另外两套的现役配置。';
+
 const CostingBomTreeConfigTab: React.FC = () => {
-  // task-0721 F6：usage 维度切换 —— 报价侧 / 核价侧配置分列管理，各自独立 active。
-  const [usage, setUsage] = useState<BomTreeConfigUsage>('COSTING');
+  // task-0721 F6 / task-260909 F-2：usage 维度切换 —— 三套配置分列管理，各自独立 active。
+  // 默认落「基础核价」（AC-1）。
+  const [usage, setUsage] = useState<BomTreeConfigUsage>('COST_BASIC');
   const [list, setList] = useState<CostingBomTreeConfig[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -86,7 +106,7 @@ const CostingBomTreeConfigTab: React.FC = () => {
   const handleActivate = async (record: CostingBomTreeConfig) => {
     try {
       await costingBomTreeConfigService.activate(record.id);
-      message.success(`已设为生效（仅影响${USAGE_LABEL[usage]}，不影响另一侧配置）`);
+      message.success(`已设为生效（仅影响${USAGE_LABEL[usage]}，不影响另外两套配置）`);
       fetchData(usage);
     } catch (err: any) {
       message.error(err?.message ?? '设为生效失败');
@@ -149,7 +169,7 @@ const CostingBomTreeConfigTab: React.FC = () => {
       enabledWhen: (rows) => (rows.length >= 1 ? true : '请选择'),
       needsConfirm: true,
       confirmTitle: '确认删除选中的 {N} 条递归 SQL 配置？',
-      confirmDescription: '删除后不可恢复，若删除的是生效中的配置将导致对应侧（报价/核价）BOM 树无法渲染。',
+      confirmDescription: '删除后不可恢复，若删除的是生效中的配置将导致对应数据集（报价/基础核价/详细核价）BOM 树无法渲染。',
       onClick: (rows) => handleDelete(rows),
     },
   ];
@@ -157,14 +177,11 @@ const CostingBomTreeConfigTab: React.FC = () => {
   const toolbar = (
     <>
       <h3 style={{ margin: 0 }}>{USAGE_LABEL[usage]}树配置</h3>
-      {/* task-0721 F6：usage 维度切换 —— 报价侧 / 核价侧各自独立管理 + 独立 active */}
+      {/* task-260909 F-2：usage 维度切换 —— 报价 / 基础核价 / 详细核价各自独立管理 + 独立 active */}
       <Segmented
         value={usage}
         onChange={(v) => setUsage(v as BomTreeConfigUsage)}
-        options={[
-          { label: '报价侧', value: 'QUOTE' },
-          { label: '核价侧', value: 'COSTING' },
-        ]}
+        options={USAGE_OPTIONS}
       />
       <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
         新增
@@ -179,7 +196,7 @@ const CostingBomTreeConfigTab: React.FC = () => {
         showIcon
         style={{ marginBottom: 12 }}
         message={`当前管理「${USAGE_LABEL[usage]}」的递归 SQL 配置`}
-        description="报价侧与核价侧各自独立维护、独立生效（active），互不影响：切换上方开关只改变本页面查看/操作的范围，激活某一侧的配置不会下线另一侧现役配置。"
+        description={USAGE_SCOPE_DESC}
       />
       <SelectableTable<CostingBomTreeConfig>
         rowKey="id"
@@ -187,6 +204,16 @@ const CostingBomTreeConfigTab: React.FC = () => {
         dataSource={list}
         loading={loading}
         pagination={{ pageSize: 50 }}
+        locale={{
+          // task-260909 F-3（AC-2）：空态文案按当前数据集动态生成，如「暂无详细核价树配置」。
+          // 🚫 空态下「新增」按钮保持可点 —— 它在 toolbar 里，不受 SelectableTable 的选中态影响。
+          emptyText: (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={`暂无${USAGE_LABEL[usage]}树配置`}
+            />
+          ),
+        }}
         toolbar={toolbar}
         actions={actions}
         rowLabel={(r) => `${r.name}${r.isActive ? '（生效中）' : ''}`}
@@ -220,7 +247,7 @@ const CostingBomTreeConfigTab: React.FC = () => {
             lineHeight: 1.7,
           }}
         >
-          每个用途（报价侧/核价侧）各自至多一条「生效中」的递归 SQL：输入参数 <code>:production_part_nos</code>（text[]），
+          每个用途（报价 / 基础核价 / 详细核价）各自至多一条「生效中」的递归 SQL：输入参数 <code>:production_part_nos</code>（text[]），
           输出必须包含 5 列 <code>root_no / material_no / bom_version / parent_no / node_path</code>。
           保存时后端会对递归 SQL 做 dry-run 校验，失败会返回具体错误原因。
         </div>
@@ -229,14 +256,9 @@ const CostingBomTreeConfigTab: React.FC = () => {
             name="usage"
             label="用途"
             rules={[{ required: true, message: '请选择用途' }]}
-            tooltip="创建/编辑时必须指定用途；激活仅影响当前用途，不影响另一侧配置"
+            tooltip="创建/编辑时必须指定用途；激活仅影响当前用途，不影响另外两套配置"
           >
-            <Select
-              options={[
-                { value: 'QUOTE', label: '报价侧' },
-                { value: 'COSTING', label: '核价侧' },
-              ]}
-            />
+            <Select options={USAGE_OPTIONS} />
           </Form.Item>
           <Form.Item
             name="name"

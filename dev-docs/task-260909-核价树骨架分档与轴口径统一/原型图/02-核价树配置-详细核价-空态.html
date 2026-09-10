@@ -22,9 +22,13 @@
     </div>
     <div class="spacer"></div>
     <button class="btn primary">＋ 新增</button>
-    <button class="btn" disabled>设为生效<span class="tip">请先选择一条配置</span></button>
-    <button class="btn" disabled>编辑<span class="tip">请先选择一条配置</span></button>
-    <button class="btn danger" disabled>删除<span class="tip">请先选择一条配置</span></button>
+  </div>
+  <!-- 🔧 2026-09-09 修正：SelectableTable 的既有版式是两行（标题+切换+新增 / 动作条），
+       动作顺序与禁用文案也沿用既有实现。原型初稿按理想态画，与既有实现不符 —— 属原型缺陷，就地修。 -->
+  <div class="toolbar" style="margin-top:-4px">
+    <button class="btn" disabled>编 辑<span class="tip">请选择一条</span></button>
+    <button class="btn" disabled>设为生效<span class="tip">请选择一条</span></button>
+    <button class="btn danger" disabled>删 除<span class="tip">请选择</span></button>
   </div>
 
   <table>
