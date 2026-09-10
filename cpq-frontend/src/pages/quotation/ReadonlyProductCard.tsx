@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { Popover } from 'antd';
 import type { ComponentDataItem, ComponentField } from './QuotationStep2';
 import {
   computeAllFormulas, computeProductSubtotal, buildSnapshotExpansions, buildCrossTabRows, EMPTY_LINEITEMS,
@@ -530,37 +531,93 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   const activeComponentVersionable = isCosting && !activeComponentBomTree
     && !!activeDriverExpansion?.rows?.some((r: any) => r?.driverRow?.view_version != null);
 
+  // repair-260910(RF-3)：详情页销售料号徽标点开的「生产料号」浮层 —— 与编辑页
+  //   QuotationStep2.tsx 同款（AP-50：详情页/编辑页渲染层必须同步，别再各写一套）。
+  //   判据用 hfPartInfo?.partNo 而非 hfPartInfo == null：覆盖「整个对象缺失」与
+  //   「对象在但 production_no 为空」两种未绑定形态。
+  //   🚫 partNo 不许回退 lineItem.productPartNo —— 那是销售料号，回退回去正是主任务修掉的核心 bug。
+  //   partNo 为空 → 单行「未绑定生产料号」（原型图状态 3 左），不摆一副全是「—」的五行骨架；
+  //   partNo 有值但核价两表无该行 → 首行有值、其余四行「—」（原型图状态 3 右，现网 2688/2696 属此类）。
+  const hfPartNo: string | undefined = lineItem.hfPartInfo?.partNo;
+  const hfRows: { label: string; value?: string; mono?: boolean }[] = [
+    { label: '料号：', value: hfPartNo, mono: true },
+    { label: '名称：', value: lineItem.hfPartInfo?.partName },
+    { label: '规格：', value: lineItem.hfPartInfo?.specification },
+    { label: '尺寸：', value: lineItem.hfPartInfo?.sizeInfo },
+    { label: '旧料号：', value: lineItem.hfPartInfo?.oldMaterialNo, mono: true },
+  ];
+  const hfPartPopoverContent = hfPartNo ? (
+    <div style={{ minWidth: 280, fontSize: 13 }}>
+      {hfRows.map((r, i) => (
+        <div key={r.label} style={{ marginBottom: i === hfRows.length - 1 ? 0 : 8, display: 'flex' }}>
+          <span style={{ color: '#8c8c8c', width: 62, flexShrink: 0 }}>{r.label}</span>
+          <span
+            style={
+              r.value
+                ? { fontFamily: r.mono ? 'ui-monospace, Menlo, Consolas, monospace' : undefined }
+                : { color: 'rgba(0,0,0,.35)' }
+            }
+          >
+            {r.value || '—'}
+          </span>
+        </div>
+      ))}
+    </div>
+  ) : (
+    <div style={{ minWidth: 180, fontSize: 13, color: 'rgba(0,0,0,.45)' }}>未绑定生产料号</div>
+  );
+
+  // repair-260910(RF-2)：右块产品名。走【详情页原有的完整回退链】，只摘掉链首的
+  //   customerPartName（它已移到左块，留着两边会重复显示同一个值）。
+  //   🚫 不许简化成编辑页那条 `productName || 产品 N` 短链（AC-R7 专门验这个）。
+  const displayProductName = attrValues['产品名称']
+    || attrValues['名称']
+    || lineItem.productName
+    || lineItem.snapshot?.productPartNo
+    || `产品 ${index + 1}`;
+  // 销售料号：详情页快照单据里 productPartNo 可能只存在于 snapshot 上，保留原有的两路取值。
+  const displaySalesPartNo: string | undefined = lineItem.productPartNo || lineItem.snapshot?.productPartNo;
+
   return (
     <div className="qt-product-card">
+      {/* Card Header — repair-260910(RF-1)：对齐编辑页 QuotationStep2.tsx 的左右分区。
+          左 [客户料号名称][客户产品编号][产品分类]，右 [产品名][销售料号]。
+          🚫 右块不放「删除」或任何按钮 —— 详情页是只读页（E-7）。 */}
       <div className="qt-card-header">
+        {/* 左侧客户视角区：两者皆空则整块零子元素（不留空徽标、不显示「—」，原型图状态 4）。
+            容器 div 保留 —— .qt-card-header 是 justify-content: space-between，
+            去掉它右侧整块会滑到左边。 */}
         <div className="qt-card-header-left">
-          <span className="qt-product-name">
-            {/* 与 QuotationStep2 编辑卡片对齐：客户视角优先（customerPartName）→ HF 名 → 快照 partNo → 产品 N */}
-            {lineItem.customerPartName
-              || attrValues['产品名称']
-              || attrValues['名称']
-              || lineItem.productName
-              || lineItem.snapshot?.productPartNo
-              || `产品 ${index + 1}`}
-          </span>
-          {(lineItem.customerProductNo || lineItem.productPartNo || lineItem.snapshot?.productPartNo) && (
-            <span className="qt-sku-badge">
-              {lineItem.customerProductNo
-                ? `客户产品编号: ${lineItem.customerProductNo}`
-                : `料号: ${lineItem.productPartNo || lineItem.snapshot?.productPartNo}`}
+          {lineItem.customerPartName && (
+            <span className="qt-cust-part-name" title={lineItem.customerPartName}>
+              {lineItem.customerPartName}
             </span>
           )}
-          {lineItem.productPartNo && lineItem.customerProductNo && (
-            // 同时存在客户产品编号与生产料号时，两者并列显示便于审阅人对照
-            <span
-              className="qt-sku-badge"
-              style={{ background: '#e6f4ff', color: '#0958d9', border: '1px solid #91caff' }}
-            >
-              料号: {lineItem.productPartNo}
-            </span>
+          {lineItem.customerProductNo && (
+            <span className="qt-sku-badge">客户产品编号: {lineItem.customerProductNo}</span>
           )}
+          {/* 🚫 产品分类徽标不许删（AC-R6，原型图状态 5）。它在现网恒不显示
+              —— 实测全库 quotation_line_item_snapshot.product_category 零行非空 ——
+              「页面上看不到」不是删它的理由，判据只能是源码级。 */}
           {lineItem.snapshot?.productCategory && (
             <span className="qt-template-badge">{lineItem.snapshot.productCategory}</span>
+          )}
+        </div>
+        <div className="qt-card-header-right">
+          <span className="qt-product-name" title={displayProductName}>
+            {displayProductName}
+          </span>
+          {displaySalesPartNo && (
+            <Popover
+              title="生产料号"
+              trigger="click"
+              placement="bottomRight"
+              content={hfPartPopoverContent}
+            >
+              <span className="qt-part-badge" title="点击查看生产料号详情">
+                销售料号: {displaySalesPartNo}
+              </span>
+            </Popover>
           )}
         </div>
       </div>
