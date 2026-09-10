@@ -61,6 +61,28 @@ grep 一律用 `/usr/bin/grep -a`（本环境 `grep` 是 `ugrep -I` 别名，会
 - 🚫 **不许跑全量 `mvnw test`**（`mat_*` 夹具恒红，非本任务引入）
 - 🔬 **还原实验**：把 B-2 的方言分支改回「恒按数据类型推」，AC-3 / AC-4 必须变红
 
+## B-5 · 回填一致性（开工后并入 —— 没有它 `F-3` 就是引入回归）
+
+**服务的 AC**：AC-15, AC-16
+
+**两处都要改，只改一处不解决问题**：
+
+1. **GET 回填**（`BuilderService` 的 `/builder` 读路径，`:107` 一带）
+   `builder_config.columns[].fieldType` 为空/null 时，**从该组件 `component.fields[]` 按字段名读回真实 `field_type`** 再返回。
+   ⚠️ 匹配键用**字段名**（`fieldName` ↔ `fields[].name`），🚫 不要按下标 —— 列可能被拖拽排序过（`AP-54` 同族教训）。
+   ⚠️ 读回的值可能**不在 3 值白名单内**（实测 `COMP-2300` 库里有 `FORMULA`）—— **原样返回，不要过滤、不要报错**。
+   那类字段不是配置器的列（公式字段独立管理），前端不会为它渲染选择器。
+
+2. **save 落库**（`save()` 序列化 `builder_config` 之前）
+   把 `effectiveFieldType` **回填进 `req.columns[].fieldType`**，使 `builder_config` 之后不再为空。
+   📌 与 `viewColumn` / `axisScope` 同款「**产物并进 builder_config**」的既有做法，不是新模式。
+
+🚦 **对 AC-5「逐位一致」的影响须说清**：本项会让 `QUOTE` 侧 `builder_config` 的字节变化（`null` → 有值）。
+`AC-5` 断言的对象是 **`component.fields[]`**（`field_type` + 绑定键位置），**不是 `builder_config`** ⇒ 不冲突。
+若你发现有任何断言实际比的是 `builder_config` 字节，**停下报主线**，不要自行放宽。
+
+🔬 **还原实验**：把 GET 回填那一处去掉 → **AC-15 必须变红**（存量组件打开后显示兜底值，保存即改类型）。
+
 ## B-4 · 存量零影响与行身份的实证
 
 **服务的 AC**：AC-10, AC-13
