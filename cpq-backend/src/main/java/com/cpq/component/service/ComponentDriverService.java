@@ -671,6 +671,10 @@ public class ComponentDriverService {
                 throw new BusinessException("driver 路径查询失败: " + e.getMessage());
             }
             if (driverRows == null) driverRows = List.of();
+            // 📌 task-260910 · D-14：这里曾有一个 _record patch 合并层（原 B-14 / 方案甲 D-8），
+            //    用来救「方案 ② 下选配 BOM 只写 _record、主表 0 行 ⇒ 卡片整片空」。
+            //    D-14 让选配回到直写主表 ⇒ 主表本就有数据、树骨架能递归，patch 层无存在理由，已摘除。
+            //    🚫 卡片空不要再靠加 patch 层来救 —— 那是「主表没写进去」的症状，去查写入侧。
             resp.rowCount = driverRows.size();
 
             // 2. �?BASIC_DATA 字段路径列表 + V190 default_source GLOBAL_VARIABLE 解析任务
@@ -801,6 +805,9 @@ public class ComponentDriverService {
                     throw new BusinessException("driver 多值路径查询失败: " + e.getMessage());
                 }
                 if (mergedRows == null) mergedRows = List.of();
+                // 📌 task-260910 · D-14：这里曾是 _record patch 层的第二个挂点（合桶路径，
+                //    冻结走的正是这条路）。选配已回到直写主表 ⇒ 两个挂点一并摘除。
+                //    🚫 别只摘一个 —— 单料号路径与合桶路径必须同进同退。
 
                 List<String> basicDataPaths = parseBasicDataPaths(effectiveFieldsJson);
                 List<GvarDefaultTask> gvarTasks = parseGvarDefaultTasks(effectiveFieldsJson);

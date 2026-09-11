@@ -10,9 +10,18 @@ import type {
 } from '../types/configure';
 
 export const configureProductService = {
-  async searchParts(q: string, size = 50): Promise<SearchPartResult[]> {
+  /**
+   * `GET /quotations/configure/search-parts`（task-260910 · api.md §2.1，AC-5 / AC-7 / AC-8 / AC-9）。
+   *
+   * 🆕 **`customerNo` 必填**（`customer.code`）：后端已按客户维度隔离，缺参直接 400
+   *    `CUSTOMER_NO_REQUIRED`（🚫 不许静默跨客户查，D-2）。
+   *    ⇒ 声明成**必填位置参数**就是为了让漏传在 `tsc` 阶段就红，而不是运行时 400。
+   *    调用方拿不到客户号时**不要调本方法**，渲染「请先为报价单选择客户」空态。
+   * 🔄 返回的材质字段已由单值改多值 `materials[]`；**空数组是正常状态**（外购件 / 组合父料号）。
+   */
+  async searchParts(customerNo: string, q: string, size = 50): Promise<SearchPartResult[]> {
     const res = await api.get('/quotations/configure/search-parts', {
-      params: { q, size },
+      params: { customerNo, q, size },
     });
     return (res as unknown as SearchPartResult[]) ?? [];
   },
@@ -33,17 +42,29 @@ export const configureProductService = {
   },
 
   /**
-   * `GET /quotations/configure/outsourced-parts`（task-260902 · api.md §2.2，AC-5 / AC-16）。
+   * `GET /quotations/configure/outsourced-parts`（task-260910 · api.md §2.2，AC-6）。
    *
-   * ⚠️ 实测该条件当前只命中 1 条，**返回 0 条是正常业务状态**，不是错误 —— 调用方必须渲染
-   *    空态而不是「加载中…」永久占位（AP-31 族）。
+   * 🆕 **`customerNo` 必填**：数据源已从 `v_compat_material_master` 改为
+   *    `ds_quote_material WHERE customer_no = :customerNo AND material_type = '外购件'`。
+   *    🔑 不带客户过滤会**列表出双份** —— 实测 5 个外购件料号同时挂 `CUST-0001` 与
+   *    `CUST-0004`（共 10 行）；兼容视图原先靠 `DISTINCT ON` 收敛，直连新表等于绕过那次修复。
+   *    ⇒ 同上：声明成**必填字段**，漏传在 `tsc` 阶段就红。
+   *
+   * ⚠️ **返回 0 条是正常业务状态**，不是错误 —— 调用方必须渲染空态而不是「加载中…」永久占位（AP-31 族）。
+   * ⚠️ **分页本期仍不接**（api.md §2.2）：调用方 `page` 恒 1 / `size` 恒 20 / `pagination={false}`，
+   *    候选超 20 个时选不到第 21 个，现被数据量掩盖（实测 5 条），已登记 BACKLOG。
    * 形状兜底只做形状，不做语义：字段缺省给 `{ total: 0, items: [] }`。
    */
   async listOutsourcedParts(
-    params: { keyword?: string; page?: number; size?: number } = {},
+    params: { customerNo: string; keyword?: string; page?: number; size?: number },
   ): Promise<OutsourcedPartPage> {
     const res = await api.get('/quotations/configure/outsourced-parts', {
-      params: { keyword: params.keyword || undefined, page: params.page ?? 1, size: params.size ?? 20 },
+      params: {
+        customerNo: params.customerNo,
+        keyword: params.keyword || undefined,
+        page: params.page ?? 1,
+        size: params.size ?? 20,
+      },
     });
     const page = res as unknown as OutsourcedPartPage | null;
     return { total: page?.total ?? 0, items: page?.items ?? [] };

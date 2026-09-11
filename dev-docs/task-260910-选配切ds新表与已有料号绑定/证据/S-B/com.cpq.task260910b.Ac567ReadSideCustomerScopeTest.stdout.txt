@@ -1,0 +1,27 @@
+[S-B·seed 14d0d5] 对照料号已就绪：T260910B-C1ONLY(CUST-0001) / T260910B-MULTI(CUST-0004,2材质+1落空) / T260910B-OUTDUAL(双客户) / T260910B-OUTC1(CUST-0001)
+2026-09-10 05:02:17.797 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: 已有零件搜索必须携带客户编号(customerNo)
+[TC-B3b 实际] 不带 customerNo q=T260910B-C1ONLY → HTTP 400 body={"code":400,"message":"已有零件搜索必须携带客户编号(customerNo)","data":{"code":"CUSTOMER_NO_REQUIRED"},"detail":{"bizCode":"CUSTOMER_NO_REQUIRED"}}
+[S-B·cleanup 14d0d5] 残留 ds_quote_material=0 ds_quote_material_bom=0 customer=0
+
+[S-B·seed 14d0d5] 对照料号已就绪：T260910B-C1ONLY(CUST-0001) / T260910B-MULTI(CUST-0004,2材质+1落空) / T260910B-OUTDUAL(双客户) / T260910B-OUTC1(CUST-0001)
+2026-09-10 05:02:18.366 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: 外购件候选必须携带客户编号(customerNo)
+[TC-B2b 实际] 不带 customerNo → HTTP 400 body={"code":400,"message":"外购件候选必须携带客户编号(customerNo)","data":{"code":"CUSTOMER_NO_REQUIRED"},"detail":{"bizCode":"CUSTOMER_NO_REQUIRED"}}
+[S-B·cleanup 14d0d5] 残留 ds_quote_material=0 ds_quote_material_bom=0 customer=0
+
+[S-B·seed 14d0d5] 对照料号已就绪：T260910B-C1ONLY(CUST-0001) / T260910B-MULTI(CUST-0004,2材质+1落空) / T260910B-OUTDUAL(双客户) / T260910B-OUTC1(CUST-0001)
+[S-B·FT-2 反事实] T260910B-OUTDUAL 不带客户谓词=2 行；带 CUST-0001=1 行；带 CUST-0004=1 行
+[TC-B2 实际] CUST-0001 total=7 items=[S0003, S0007, S0011, S0014, T260907-M2, T260910B-OUTC1, T260910B-OUTDUAL]
+[TC-B2 实际] CUST-0004 total=6 items=[S0003, S0007, S0011, S0014, T260907-M2, T260910B-OUTDUAL]
+[TC-B2 total 自洽] CUST-0001 api=7 db=7 ; CUST-0004 api=6 db=6
+[S-B·cleanup 14d0d5] 残留 ds_quote_material=0 ds_quote_material_bom=0 customer=0
+
+[S-B·seed 14d0d5] 对照料号已就绪：T260910B-C1ONLY(CUST-0001) / T260910B-MULTI(CUST-0004,2材质+1落空) / T260910B-OUTDUAL(双客户) / T260910B-OUTC1(CUST-0001)
+[TC-B3 阳性①] customerNo=CUST-0001 q=T260910B-C1ONLY → [T260910B-C1ONLY]
+[TC-B3 阳性②] customerNo=CUST-0004 q=T260910B-MULTI → [T260910B-MULTI]
+[TC-B3 主断言] customerNo=CUST-0004 q=T260910B-C1ONLY → 0 条：[]
+[S-B·cleanup 14d0d5] 残留 ds_quote_material=0 ds_quote_material_bom=0 customer=0
+
+[S-B·seed 14d0d5] 对照料号已就绪：T260910B-C1ONLY(CUST-0001) / T260910B-MULTI(CUST-0004,2材质+1落空) / T260910B-OUTDUAL(双客户) / T260910B-OUTC1(CUST-0001)
+[TC-B1 前提] T260907M-AC17ANCHOR ds_quote_material=1 行（customer_no=CUST-0001）; material_master=0 行
+[TC-B1 实际] customerNo=CUST-0001 q=T260907M-AC17ANCHOR → 1 条：[T260907M-AC17ANCHOR]
+[S-B·cleanup 14d0d5] 残留 ds_quote_material=0 ds_quote_material_bom=0 customer=0

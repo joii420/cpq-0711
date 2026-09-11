@@ -94,11 +94,21 @@ public class ConfigureProductResource {
         // 🔑 挂点必须在**上面两段物化之后**：此刻 snapshot_rows 已落库（实测选配单 14/14 行
         //    snapshot_rows + row_data + snapshot_at 三者皆有）⇒ 投影走路径① DRIVER，
         //    anchorValues 非空、第 1 趟内容对位即命中，不依赖 D-38 的 DRIVER_NOT_MATERIALIZED 兜底。
+        // 🚨 task-260910 · D-21（用户 2026-09-10 裁决）：B-13 曾把这段**上移**到 configure 之后，
+        //    现已回退到本处。🚫 不要再上移到 configure 之后 —— 那样本行的
+        //    quotation_line_component_data 还不存在，投影会被空 compData 早退跳过
+        //    ⇒ 本行的 _record 恒慢一个写请求（D-21 实测：line ...022 建于 14:49:48.917，
+        //    而本单唯一 _record 却属**上一个**料号、建于 14:49:49.143）。
+        //    B-13 的原始理由（方案②/D-7 下带版本表只写 _record、冻结必须先读到 _record）
+        //    已随 D-14 消失 —— 主表现在直写、有数据，冻结不需要 _record。
+        // 📌 导入侧同向：CreateQuotationMaterializer 的 ensureCardValues 早于 syncRecordsForFlow。
         // 🚫 N+1：整条流程只调一次（🚫 不许放进上面那个 per-line 循环）。
         // 🔒 走 syncRecordsForFlow 而不是直调 syncRecords：Resource 层**没有事务**，
         //    而此刻 service 的写入**已提交** ⇒ 由它开一个事务；直调会因无事务可用而抛。
         //    （导入侧相反 —— 那边行还没提交，必须加入外层事务，见 DsQuoteRecordService 注释。）
-        // 🛡️ 失败不阻断加产品（与上面两段同款降级）。
+        // 🚨 D-40 的教训仍然生效，🚫 不要「顺手」给 syncRecords 补 @Transactional(MANDATORY)：
+        //    那会让异常把**调用方**的事务标成 rollback-only ⇒ 接口返 200 而整单静默回滚。
+        // 🛡️ 失败不阻断加产品（与上面两段同款降级），只落「快照过期」标记。
         try {
             dsQuoteRecordService.syncRecordsForFlow(quotationId);
         } catch (RuntimeException ex) {

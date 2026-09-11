@@ -92,8 +92,45 @@ public class CardSnapshotService {
         }
     }
 
+    /**
+     * 失败哨兵的<b>唯一显式标记</b>。两种哨兵形态（{@link #CARD_VALUE_FAILED_SENTINEL} 与
+     * {@link #failedSentinelWithError}）都带它，Java 侧判定（{@link #isAuthoritativeCardValues}）
+     * 与 SQL 侧判定（{@link #sqlNeedsRecompute}）共用这一个常量。
+     *
+     * <p>🔑 <b>为什么判据必须是这个标记、不能是「tabs 为空」</b>（task-260910 B-24 / AC-25）：
+     * 「合法的空卡片」（模板确实没有可渲染行）同样是空 {@code tabs}，用空 tabs 当判据会把它
+     * 一并拖进无限重算。显式标记只在 build <b>确定性失败</b>时写入，语义不重叠。
+     */
+    public static final String CARD_VALUE_FAILED_MARK = "__cardValueFailed";
+
     /** 卡片值 build 确定性失败时落库的非 NULL 哨兵（防前端「全有或全无」gate 把整侧打回实时风暴）。 */
     public static final String CARD_VALUE_FAILED_SENTINEL = "{\"tabs\":[],\"__cardValueFailed\":true}";
+
+    /**
+     * task-260910 B-24（AC-25，D-30 用户裁决）：<b>「这一列需要（重）算」的 SQL 谓词单一收口点</b>。
+     *
+     * <h3>改了什么</h3>
+     * 原谓词只认 {@code <col> IS NULL}。失败哨兵是<b>非 NULL</b> 的 ⇒ 一旦落库就<b>永不再被选中</b>，
+     * 用户事后补绑模板 / 修好配置也不自愈（实测 A/B：{@code compData} 已 0→14，
+     * {@code quote_card_values} 仍是 {@code {"tabs": [], "__cardValueFailed": true}}）。
+     * 现在加一条并列条件：<b>带失败标记的行也要重选</b>。
+     *
+     * <h3>🔒 为什么用 {@code position(mark in col::text) > 0} 而不是 LIKE</h3>
+     * {@code LIKE '%__cardValueFailed%'} 里的 {@code _} 是<b>单字符通配符</b>，会顺带匹配
+     * {@code xYcardValueFailed} 这类子串；{@code position(...)} 是<b>精确子串</b>查找，与 Java 侧
+     * {@link #isAuthoritativeCardValues} 的 {@code String#contains} 逐字同语义。
+     * <p>🔒 {@code ::text} 是必须的：列是 {@code jsonb}，{@code btrim(jsonb)} 之类的文本函数直接抛错
+     * （那正是本谓词最初只敢写 {@code IS NULL} 的原因，见 {@link #ensureCardValues(UUID)} javadoc）。
+     *
+     * <h3>🚫 不覆盖什么</h3>
+     * <b>「算早了的全空骨架值」不在本谓词范围内</b>（那是合法 JSON、不带失败标记）——它由
+     * {@code repair-260829} 的落库前产物自检（{@link #isEarlySkeletonRender}）+
+     * {@code MaterializeRegistry} 在<b>落库之前</b>拦住，不靠事后重选。两者治的是不同的面。
+     */
+    private static String sqlNeedsRecompute(String col) {
+        return "( " + col + " IS NULL OR position('" + CARD_VALUE_FAILED_MARK
+                + "' in " + col + "::text) > 0 )";
+    }
 
     private static final String QUOTATION_CALCULATION_LOCK_KEY_SQL =
         "('x'||substr(md5(:q),1,16))::bit(64)::bigint";
@@ -111,7 +148,7 @@ public class CardSnapshotService {
         try {
             ObjectNode n = MAPPER.createObjectNode();
             n.putArray("tabs");
-            n.put("__cardValueFailed", true);
+            n.put(CARD_VALUE_FAILED_MARK, true);
             n.put("__errorMsg", errMsg);
             return MAPPER.writeValueAsString(n);
         } catch (Exception e) {
@@ -735,8 +772,13 @@ public class CardSnapshotService {
             OffsetDateTime now = OffsetDateTime.now();
             SubtotalOverrideCounter counter = new SubtotalOverrideCounter();
             for (QuotationLineItem li : lines) {
-                // build 确定性失败(null)→ 落非 NULL 哨兵,而非 NULL：前端「全有或全无」gate 不被打回实时风暴,
-                // 且 ensureCardValues 的 IS NULL 谓词下次不再重选该行(自愈、不无限重算)。失败非静默——warn 记下哪侧。
+                // build 确定性失败(null)→ 落非 NULL 哨兵,而非 NULL：前端「全有或全无」gate 不被打回实时风暴。
+                // 失败非静默——warn 记下哪侧。
+                // 🔴 task-260910 B-24（AC-25）更正：原注释此处写「ensureCardValues 的 IS NULL 谓词下次不再
+                //    重选该行(自愈、不无限重算)」—— 那正是 D-30 要修的缺陷本身（哨兵粘死：用户事后补绑模板
+                //    /修好配置也不自愈）。现在 missing 谓词按显式标记 CARD_VALUE_FAILED_MARK 重选哨兵行
+                //    （见 sqlNeedsRecompute），哨兵的作用退回到它唯一正当的那一条：给前端一个「渲染失败」
+                //    的显式态，而不是「永久不再重算」的锁。
                 if (quoteVals.get(li.id) == null)
                     LOG.warnf("[cardvalues-sentinel] quote build 失败 line=%s → 落失败哨兵", li.id);
                 if (costingVals.containsKey(li.id) && costingVals.get(li.id) == null)
@@ -751,7 +793,8 @@ public class CardSnapshotService {
                 // repair-260829 B-1：落库前产物自检——只在 build 未抛异常(quoteVals 非 null 且不在
                 // quoteErrors 里)时才可能判定"算早了"，与既有失败哨兵语义(上两行 warn)互不重叠(E-7)。
                 // 命中 isEarlySkeletonRender 则跳过本次 assignQuoteCardValues：li.quoteCardValues
-                // 保持其从 DB 读入时的原值(本方法只处理 IS NULL 谓词选中的行，通常即为 NULL)，
+                // 保持其从 DB 读入时的原值(本方法处理 missing 谓词选中的行：NULL 或失败哨兵，B-24 之后
+                // 哨兵也会被重选，此处「保持原值」= 保持那个哨兵，下次再自愈)，
                 // 不落一次性写死的骨架值——留给下次 ensureCardValues 的 IS NULL 判据重算自愈(AC-3)。
                 List<com.cpq.quotation.entity.QuotationLineComponentData> cdsForLine = cdByLine.get(li.id);
                 boolean quoteBuiltOk = !quoteErrors.containsKey(li.id) && quoteVals.get(li.id) != null;
@@ -999,7 +1042,7 @@ public class CardSnapshotService {
      * 都带 {@code __cardValueFailed} 标记，用它统一判定。
      */
     private static boolean isAuthoritativeCardValues(String json) {
-        return json != null && !json.isBlank() && !json.contains("__cardValueFailed");
+        return json != null && !json.isBlank() && !json.contains(CARD_VALUE_FAILED_MARK);
     }
 
     /**
@@ -1442,7 +1485,10 @@ public class CardSnapshotService {
      * 由调用方决定等待/重试,<b>不重复补算</b>。<b>加锁必须早于</b>下面"缺失行 SELECT" —— 否则两事务都读到 NULL
      * 会双重补算(这是顺序正确性约束,非可调换)。
      *
-     * <p><b>缺失谓词</b>:仅用 {@code IS NULL}(列是 jsonb,{@code btrim(jsonb)} 会抛错——原始 bug);核价侧仅当
+     * <p><b>缺失谓词</b>（{@link #sqlNeedsRecompute} 单一收口）:{@code IS NULL} <b>或</b>带失败标记
+     * {@code __cardValueFailed}（task-260910 B-24 / AC-25 新增——哨兵是非 NULL 的，只认 IS NULL 会让它
+     * <b>永久粘死</b>）。🚫 仍然<b>不能</b>写成 {@code btrim(jsonb)} 之类的文本函数（列是 jsonb，直接抛错
+     * ——原始 bug），要走 {@code ::text} + {@code position(...)}。核价侧仅当
      * 该单挂了核价模板({@code hasCostingTpl})时才纳入判断。复用 {@link #precomputeCostingDriverUnion} +
      * {@link #precomputeCardValuesPrefetch} + {@link #snapshotNewLinesCardValues}(与"首存就算"同款 build → 逐位等价)。
      *
@@ -1601,8 +1647,8 @@ public class CardSnapshotService {
             ? "SELECT id FROM quotation_line_item WHERE quotation_id = :q" +
               " ORDER BY sort_order NULLS LAST, id"
             : "SELECT id FROM quotation_line_item WHERE quotation_id = :q " +
-              "AND ( quote_card_values IS NULL" +
-              (hasCostingTpl ? " OR costing_card_values IS NULL" : "") + " )" +
+              "AND ( " + sqlNeedsRecompute("quote_card_values") +
+              (hasCostingTpl ? " OR " + sqlNeedsRecompute("costing_card_values") : "") + " )" +
               " ORDER BY sort_order NULLS LAST, id";
         @SuppressWarnings("unchecked")
         java.util.List<Object> rawIds = em.createNativeQuery(sql)
@@ -1838,6 +1884,23 @@ public class CardSnapshotService {
      * <p>🔒 <b>核价侧计数口径与 {@link #ensureCardValues} 的选行谓词强制保持一致</b>——两处共享同一个
      * "是否含核价模板"判定（{@code q.costingCardTemplateId != null}），不各写一份。若不一致会导致
      * 报价单没配核价模板时 {@code done} 永远算不出 true（核价侧恒判"未就绪"）。
+     *
+     * <h3>🔴 task-260910 B-24：本方法<b>刻意不跟</b> {@link #sqlNeedsRecompute} 一起改（失败哨兵维度）</h3>
+     * B-24 让 {@code ensureCardValues} 的 missing 谓词<b>额外</b>选中带 {@code __cardValueFailed} 的
+     * 哨兵行（可重算 ⇒ 可自愈）。本方法的 {@code ready} 仍<b>只</b>按 {@code IS NULL} 取反，
+     * 即<b>哨兵行照旧计入 ready</b>。两者从此在这一个维度上<b>故意分叉</b>，原因是它们回答的
+     * 不是同一个问题：
+     * <table border="1">
+     *   <tr><th></th><th>问的是</th><th>哨兵行算哪边</th></tr>
+     *   <tr><td>{@code ensureCardValues} 的 missing</td><td>"这行<b>还值不值得再算一次</b>"</td>
+     *       <td>算 —— 外部条件可能已修好（补绑模板 / 改好配置）</td></tr>
+     *   <tr><td>本方法的 {@code ready}</td><td>"这行<b>还会不会自己变</b>（前端该不该继续等）"</td>
+     *       <td>不会 —— 它已有终值，前端会显式渲染「渲染失败」</td></tr>
+     * </table>
+     * 🚨 <b>如果把哨兵行从 ready 里剔掉</b>：{@code isDone()} 对确定性失败的单<b>永远为 false</b>
+     * ⇒ 前端 {@code pollMaterializeStatus}（默认 {@code timeoutMs=20min}、每 30s 触发一次
+     * "自愈" {@code ensure-card-values}）会空转满 20 分钟、把同一个注定失败的 build 重算约 40 次，
+     * 最后抛超时错——比原缺陷更坏。⇒ <b>这不是漏改，是裁决</b>；改本方法前先想清这一条。
      */
     public MaterializeStatus materializeStatus(UUID quotationId) {
         if (quotationId == null) return new MaterializeStatus(0, 0);

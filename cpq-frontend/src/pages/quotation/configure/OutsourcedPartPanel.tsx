@@ -15,6 +15,16 @@
  *
  * ⚠️ 唯一那条外购件 `TEST-Q13-CODE / 组成件1` 的**规格与单重都是空的** ⇒ 列宽与空值处理按它设计，
  *    🚫 不得假设这两列有值（`fixture基线.md §3.1`）。
+ *
+ * ── task-260910 · F-1（服务 AC-6）────────────────────────────────────────────────
+ *  🆕 **按客户过滤**：数据源从 `v_compat_material_master` 改为
+ *     `ds_quote_material WHERE customer_no = :customerNo AND material_type = '外购件'`，
+ *     `customerNo` 已是**必填**参数 ⇒ 本面板必须透传。
+ *  🔑 **为什么必须带客户**（AC-6 阳性可证伪）：实测 5 个外购件料号（`S0003` / `S0007` /
+ *     `S0011` / `S0014` / `T260907-M2`）**同时挂 `CUST-0001` 与 `CUST-0004`，共 10 行**。
+ *     不带客户过滤 ⇒ **列表出双份**。兼容视图原先靠 `DISTINCT ON` 收敛（V435 /
+ *     `repair-260908 C-1`），直连新表等于绕过那次修复 ⇒ 客户过滤是它的替代物，不是可选优化。
+ *  ⚠️ 拿不到客户号时**不发请求**（后端会 400），渲染 `NoCustomerEmpty` 空态。
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button, Input, Table } from 'antd';
@@ -26,10 +36,15 @@ import type { ConfigurePart, OutsourcedPartDTO, SelectedProcess } from '../../..
 import { genUUID } from '../../../utils/uuid';
 import { trimTrailingZeros } from '../../../utils/precision';
 import ProcessSection from './ProcessSection';
-import { EmptyBlock, Ellipsis, Mono, NoteBlock, ReasonedButton } from './configureUi';
+import { EmptyBlock, Ellipsis, Mono, NoCustomerEmpty, NoteBlock, ReasonedButton } from './configureUi';
 
 interface Props {
   initial: ConfigurePart | null;
+  /**
+   * 客户编码（`customer.code`）。**必须透传** —— `outsourced-parts` 已按客户维度隔离（AC-6）。
+   * `undefined` 时本面板**不发请求**，渲染「请先为报价单选择客户」空态（F-1 的边界）。
+   */
+  customerNo: string | undefined;
   processCandidates: SelParamCandidate[];
   processLoading?: boolean;
   processError?: string | null;
@@ -43,7 +58,8 @@ interface Props {
 const PAGE_SIZE = 20;
 
 const OutsourcedPartPanel: React.FC<Props> = ({
-  initial, processCandidates, processLoading, processError, onConfirm, onBack, onCancel, onSwitchToPart,
+  initial, customerNo, processCandidates, processLoading, processError,
+  onConfirm, onBack, onCancel, onSwitchToPart,
 }) => {
   const [keyword, setKeyword] = useState('');
   const [appliedKeyword, setAppliedKeyword] = useState('');
@@ -60,18 +76,21 @@ const OutsourcedPartPanel: React.FC<Props> = ({
   const [processes, setProcesses] = useState<SelectedProcess[]>(initial?.processes ?? []);
 
   const load = (q: string) => {
+    // 🚨 F-1 边界：没有客户号就**不发请求**（后端会 400 `CUSTOMER_NO_REQUIRED`）。
+    if (!customerNo) { setItems([]); setTotal(0); setLoading(false); setLoadError(null); setAppliedKeyword(q); return; }
     setLoading(true);
     setLoadError(null);
     setAppliedKeyword(q);
-    configureProductService.listOutsourcedParts({ keyword: q, page: 1, size: PAGE_SIZE })
+    configureProductService.listOutsourcedParts({ customerNo, keyword: q, page: 1, size: PAGE_SIZE })
       .then((res) => { setItems(res.items); setTotal(res.total); })
       .catch((e: any) => { setItems([]); setTotal(0); setLoadError(e?.message || '加载外购件列表失败'); })
       // 🚨 finally 保证**任何**结局都关掉 loading —— 少了它，一次异常就变成永久「加载中…」
       .finally(() => setLoading(false));
   };
 
-  // 空依赖是有意的：只在挂载时拉一次，之后由「搜索」按钮驱动。
-  useEffect(() => { load(''); }, []);
+  // 依赖只有 customerNo：客户变了要重查，其余由「搜索」按钮驱动。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(''); }, [customerNo]);
 
   const columns: ColumnsType<OutsourcedPartDTO> = [
     {
@@ -101,6 +120,8 @@ const OutsourcedPartPanel: React.FC<Props> = ({
   ];
 
   const body = useMemo(() => {
+    // 顺序即优先级：未选客户 > 出错 > 真的在请求 > 空 > 有数据（五个分支各自独立，AP-31）。
+    if (!customerNo) return <NoCustomerEmpty />;
     if (loadError) {
       return (
         <EmptyBlock
@@ -122,14 +143,15 @@ const OutsourcedPartPanel: React.FC<Props> = ({
           <EmptyBlock
             icon="🔍"
             title={`没有匹配「${appliedKeyword.trim()}」的外购件`}
-            hint="换个关键词，或清空搜索看全部外购件"
+            /* 🔑 AC-6 的语义变更：只列当前客户名下的外购件 —— 不解释用户会以为系统坏了 */
+            hint="该料号可能属于其它客户 —— 本列表只显示当前客户名下的外购件。换个关键词，或清空搜索看全部"
             actions={<Button onClick={() => { setKeyword(''); load(''); }}>清空搜索</Button>}
           />
         ) : (
           <EmptyBlock
             icon="🛒"
-            title="料号库里还没有外购件"
-            hint={<>外购件需要先在<b>料号维护</b>里录入，并把「料号类型」设为<b>外购件</b></>}
+            title="该客户名下还没有外购件"
+            hint={<>本列表只显示<b>当前客户</b>名下的料号。外购件需要先在<b>料号维护</b>里录入，并把「料号类型」设为<b>外购件</b></>}
             actions={(
               <>
                 <Button onClick={() => window.open('/materials', '_blank')}>→ 打开料号维护</Button>
@@ -151,7 +173,7 @@ const OutsourcedPartPanel: React.FC<Props> = ({
       />
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, loadError, items, selected, appliedKeyword]);
+  }, [loading, loadError, items, selected, appliedKeyword, customerNo]);
 
   const confirmReason = selected ? null : '请先选择一个外购件';
   const confirm = () => {
@@ -181,13 +203,23 @@ const OutsourcedPartPanel: React.FC<Props> = ({
             allowClear
             placeholder="搜索料号或品名"
             value={keyword}
+            /* 未选客户时检索无从谈起 —— 禁用但可见（§1.2），原因写在下面的空态里 */
+            disabled={!customerNo}
             style={{ maxWidth: 280 }}
             onChange={(e) => setKeyword(e.target.value)}
             onPressEnter={() => load(keyword)}
           />
-          <Button onClick={() => load(keyword)}>搜索</Button>
+          <ReasonedButton
+            reason={customerNo ? null : '请先为报价单选择客户 —— 料号按客户隔离'}
+            onClick={() => load(keyword)}
+          >
+            搜索
+          </ReasonedButton>
           <div style={{ flex: 1 }} />
-          <span style={{ fontSize: 12, color: '#909399' }}>共 {total} 条</span>
+          {/* AC-6 的可观测出口：点明「哪个客户名下」+ total（实测每个客户各 5 条，不是 10 条） */}
+          <span style={{ fontSize: 12, color: '#909399', whiteSpace: 'nowrap' }}>
+            {customerNo ? <>客户 <Mono muted>{customerNo}</Mono> 名下 · </> : null}共 {total} 条
+          </span>
         </div>
 
         {body}
@@ -211,7 +243,8 @@ const OutsourcedPartPanel: React.FC<Props> = ({
         />
 
         <NoteBlock>
-          列表只列 <code>material_master.material_type = &apos;外购件&apos;</code> 的料号（闸门 A0 裁决）。
+          列表只列<b>当前客户</b>名下 <code>ds_quote_material.material_type = &apos;外购件&apos;</code> 的料号
+          （task-260910 · api.md §2.2；原先读 <code>v_compat_material_master</code>，跨客户）。
           该列语义是<b>料号类型</b>，现网取值分布 = 零件 / NULL / 外购件（共享库会漂移）。
         </NoteBlock>
       </div>

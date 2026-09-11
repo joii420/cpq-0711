@@ -27,9 +27,23 @@
  *         只有这里有，`effectiveValues` 只给得出 `{key,label}`。
  *   工序：`GET /sel-param-types/PROCESS/candidates`（**信封 `{code,data}`**）。
  *   🚨 同一个后端两种包装格式，🚫 不要假设统一（2026-09-02 实调 8081 确认）。
+ *
+ * ── task-260910 · F-3 / F-4：直接绑定已有销售料号（AC-18 / AC-19 / AC-20）─────────────
+ *   第三条路：客户产品编号 → **绑到一个已有销售料号** → 提交。不铸新号、不进指纹、
+ *   不写 BOM/元素，落库只有 `ds_quote_customer_part` + `quotation_line_item` 各 1 行。
+ *
+ *   🚫 **与「加配件」双向互斥**（`api.md §2.3` 两者同时非空 → 400 `BIND_AND_PARTS_EXCLUSIVE`）：
+ *     ① 已加配件 ⇒ 第三张类型卡禁用（`bindDisabledReason`）；
+ *     ② 已选绑定 ⇒ 「+ 添加配件」禁用，且子面板只能进 `bind` 阶段。
+ *     ⇒ 两个方向都在 UI 层拦住 ⇒ **那个 400 从界面上走不到**。
+ *     📌 出口是提示条上的「移除绑定」—— 没有它，互斥就成了没有退路的死结
+ *        （原型 01 第四态只画了「更换料号」，这一颗是补上的出口，已在回报里列为偏差）。
+ *
+ *   🚨 **放行判据是「二者之一」不是「必须有配件」**（AC-20）：
+ *      原来写死 `parts.length === 0 ? '请至少添加一个配件' : null` 会把这条路整个拦住。
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Drawer, Steps, message } from 'antd';
+import { Alert, Button, Drawer, Steps, message } from 'antd';
 import { configureProductService } from '../../services/configureProductService';
 import { selTemplateService } from '../../services/selTemplateService';
 import { materialRecipeService, type MaterialRecipeLite } from '../../services/materialRecipeService';
@@ -39,6 +53,7 @@ import type {
 } from '../../types/configure';
 import { genUUID } from '../../utils/uuid';
 import AddPartSubDrawer from './configure/AddPartSubDrawer';
+import type { BoundMaterial } from './configure/BindExistingPartPanel';
 import CompositeProcessStep from './configure/CompositeProcessStep';
 import ConfirmStep, { type FingerprintPreview, type SubmitFailure } from './configure/ConfirmStep';
 import CustomerProductNoStep, {
@@ -46,7 +61,7 @@ import CustomerProductNoStep, {
 } from './configure/CustomerProductNoStep';
 import PartCardList from './configure/PartCardList';
 import { buildConfigureParts } from './configure/configurePartsRequest';
-import { ReasonedButton } from './configure/configureUi';
+import { Mono, ReasonedButton } from './configure/configureUi';
 
 interface Props {
   open: boolean;
@@ -74,8 +89,16 @@ const ConfigureProductDrawer: React.FC<Props> = ({
 
   // 步骤 2
   const [parts, setParts] = useState<ConfigurePart[]>([]);
+  /**
+   * 🆕 S-7（AC-18）：直接绑定的销售料号。**与 `parts` 互斥**，同一时刻最多一个非空。
+   * 🚫 不要把它塞进 `parts` 当成一种 partType —— 它产出的不是配件，
+   *    提交时走的是 `bindExistingMaterialNo` 而不是 `parts[]`，混在一起会让互斥判据无处安放。
+   */
+  const [bound, setBound] = useState<BoundMaterial | null>(null);
   const [subOpen, setSubOpen] = useState(false);
   const [editingUid, setEditingUid] = useState<string | null>(null);
+  /** 打开子面板时是否直接跳到 bind 阶段（「更换料号」用）。 */
+  const [subStageBind, setSubStageBind] = useState(false);
   /**
    * 子面板的「第几次打开」。**它进 `key` 的唯一目的是强制每次打开都重新挂载。**
    *
@@ -86,8 +109,9 @@ const ConfigureProductDrawer: React.FC<Props> = ({
    *    编辑同一个配件两次也是同一个坑。
    */
   const [subSession, setSubSession] = useState(0);
-  const openSubPanel = (uid: string | null) => {
+  const openSubPanel = (uid: string | null, stageBind = false) => {
     setEditingUid(uid);
+    setSubStageBind(stageBind);
     setSubSession((n) => n + 1);
     setSubOpen(true);
   };
@@ -112,7 +136,8 @@ const ConfigureProductDrawer: React.FC<Props> = ({
   const resetState = () => {
     setStep(0);
     setProductNo(''); setProductName(''); setCheck(IDLE_CHECK);
-    setParts([]); setSubOpen(false); setEditingUid(null); setSubSession(0);
+    setParts([]); setBound(null); setSubOpen(false); setEditingUid(null);
+    setSubStageBind(false); setSubSession(0);
     setComposites([]);
     setPreview({ checking: false, matched: false });
     setSubmitting(false); setResult(null); setFailure(null);
@@ -166,7 +191,8 @@ const ConfigureProductDrawer: React.FC<Props> = ({
   // 只在进到步骤 4 时跑，防抖 500ms；`seq` 丢弃过期响应。
   const previewSeq = useRef(0);
   useEffect(() => {
-    if (step !== 3 || parts.length === 0 || !customerNo || result) {
+    // 🚫 绑定路径**不进指纹**（AC-18：`fingerprintMatched` 恒 false）⇒ 不查、也不显示指纹提示条。
+    if (step !== 3 || parts.length === 0 || bound || !customerNo || result) {
       return;
     }
     const custNo = customerNo;
@@ -196,15 +222,23 @@ const ConfigureProductDrawer: React.FC<Props> = ({
         });
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [step, parts, composites, customerNo, result]);
+  }, [step, parts, composites, customerNo, result, bound]);
 
   // ── 步骤放行判据（每一步的「下一步」禁用原因；null = 放行）──
   const stepReasons = useMemo<(string | null)[]>(() => [
     productNoStepReason(productNo, check),                              // AC-1 / AC-2
-    parts.length === 0 ? '请至少添加一个配件' : null,                     // AC-14 的产品层对应物
+    /*
+     * 🚨 AC-20：判据是「**已选绑定 或 已加配件**」二者之一，不是「必须有配件」。
+     *    原来写死 `parts.length === 0 ? '请至少添加一个配件' : null` —— 走绑定路径时
+     *    `parts` 本来就该是空的（api.md §2.3 要求空数组），这条判据会把整条路拦死，
+     *    「下一步」与「添加到报价单」双双点不动。
+     */
+    parts.length === 0 && !bound
+      ? '请至少添加一个配件，或选择「直接绑定已有销售料号」'
+      : null,
     null,                                                               // 组合工序不是必填
     null,
-  ], [productNo, check, parts.length]);
+  ], [productNo, check, parts.length, bound]);
 
   /** 可跳到的最远步骤：从头往后扫，遇到第一个不放行的就停在那儿。 */
   const maxReachableStep = useMemo(() => {
@@ -217,6 +251,14 @@ const ConfigureProductDrawer: React.FC<Props> = ({
   const editingPart = editingUid ? parts.find((p) => p.uid === editingUid) ?? null : null;
 
   const upsertPart = (part: ConfigurePart) => {
+    // 🚫 互斥的第二道防线：绑定态下子面板只允许 bind 阶段，理论上到不了这里；
+    //    真到了也不许静默把绑定丢掉 —— 直接忽略并提示，宁可什么都不发生，
+    //    也不要悄悄地把两者凑成 400 `BIND_AND_PARTS_EXCLUSIVE` 的 payload。
+    if (bound) {
+      message.warning('已选择「直接绑定已有销售料号」，请先移除绑定再添加配件');
+      setSubOpen(false); setEditingUid(null);
+      return;
+    }
     setParts((prev) => {
       const idx = prev.findIndex((p) => p.uid === part.uid);
       if (idx >= 0) { const next = [...prev]; next[idx] = part; return next; }
@@ -224,6 +266,15 @@ const ConfigureProductDrawer: React.FC<Props> = ({
     });
     setSubOpen(false);
     setEditingUid(null);
+  };
+
+  /** 绑定路径的出口（AC-18）：选中即完成，回到步骤 2 主界面显示提示条。 */
+  const confirmBind = (next: BoundMaterial) => {
+    setBound(next);
+    setParts([]);                 // 互斥：绑定态下 `parts` 必须是空数组（api.md §2.3）
+    setSubOpen(false);
+    setEditingUid(null);
+    setSubStageBind(false);
   };
 
   const submit = async () => {
@@ -238,14 +289,29 @@ const ConfigureProductDrawer: React.FC<Props> = ({
         ...p,
         quotationLineItemId: productType === 'SIMPLE' ? tempId : genUUID(),
       }));
-      const resp = await configureProductService.configureProduct(quotationId, {
-        productType,
-        tempId,
-        customerProductNo: productNo.trim(),
-        customerProductName: productName.trim() || undefined,
-        parts: partsReq,
-        compositeProcesses,
-      });
+      /*
+       * 🆕 S-7 绑定路径（api.md §2.3）：`bindExistingMaterialNo` 非空时
+       *    **`parts` 必须为空数组**、`productType` 为 `SIMPLE`、`compositeProcesses` 不发。
+       *    🚫 两者同时非空 → 400 `BIND_AND_PARTS_EXCLUSIVE`；`bound` 非空时 `parts` 已被
+       *      `confirmBind` 清空，这里再显式传 `[]` 是第三道防线（改动上面任一处都不会静默出错）。
+       */
+      const resp = await configureProductService.configureProduct(quotationId, bound
+        ? {
+            productType: 'SIMPLE',
+            tempId,
+            customerProductNo: productNo.trim(),
+            customerProductName: productName.trim() || undefined,
+            bindExistingMaterialNo: bound.materialNo,
+            parts: [],
+          }
+        : {
+            productType,
+            tempId,
+            customerProductNo: productNo.trim(),
+            customerProductName: productName.trim() || undefined,
+            parts: partsReq,
+            compositeProcesses,
+          });
       setResult(resp);
     } catch (e: any) {
       /*
@@ -363,14 +429,59 @@ const ConfigureProductDrawer: React.FC<Props> = ({
           />
         )}
 
-        {step === 1 && (
+        {step === 1 && (bound ? (
+          /*
+           * 绑定态的步骤 2（1:1 对齐 `原型图/01-配件类型选择-加第三张卡.html` 第四态）：
+           * 一条提示条说明「沿用此料号的既有 BOM 与材质数据」+ 一颗**禁用但可见**的
+           * 「+ 添加配件」（§1.2：禁用要写明原因）。
+           */
+          <div>
+            <Alert
+              type="success"
+              showIcon
+              icon={<span>🔗</span>}
+              message={(
+                <span>
+                  已选择<b>直接绑定</b>销售料号 <Mono>{bound.materialNo}</Mono>
+                  {bound.partName || bound.specification
+                    ? `（${[bound.partName, bound.specification].filter(Boolean).join(' ')}）`
+                    : ''}
+                </span>
+              )}
+              description={(
+                <div>
+                  该产品将沿用此料号的既有 BOM 与材质数据，无需再配零件。
+                  <div style={{ marginTop: 8, display: 'flex', gap: 12 }}>
+                    <a onClick={() => openSubPanel(null, true)}>更换料号</a>
+                    {/*
+                      📌 原型 01 第四态只画了「更换料号」。但互斥若只有单向禁用而没有出口，
+                         用户选错一次就只能关掉整个抽屉重来 ⇒ 补一颗「移除绑定」。
+                         已在回报里列为「原型未画到、实现补上」的偏差。
+                    */}
+                    <a onClick={() => { setBound(null); setSubStageBind(false); }}>移除绑定</a>
+                  </div>
+                </div>
+              )}
+            />
+            <div style={{ marginTop: 12 }}>
+              <ReasonedButton
+                reason="已选择「直接绑定已有销售料号」，不能再添加配件"
+                type="primary"
+                block
+                style={{ height: 40, borderStyle: 'dashed' }}
+              >
+                + 添加配件
+              </ReasonedButton>
+            </div>
+          </div>
+        ) : (
           <PartCardList
             parts={parts}
             onAdd={() => openSubPanel(null)}
             onEdit={(uid) => openSubPanel(uid)}
             onRemove={(uid) => setParts((prev) => prev.filter((p) => p.uid !== uid))}
           />
-        )}
+        ))}
 
         {step === 2 && (
           <CompositeProcessStep parts={parts} value={composites} onChange={setComposites} />
@@ -380,6 +491,7 @@ const ConfigureProductDrawer: React.FC<Props> = ({
           <ConfirmStep
             customerProductNo={productNo.trim()}
             customerProductName={productName.trim()}
+            bound={bound}
             parts={parts}
             composites={composites}
             preview={preview}
@@ -396,6 +508,13 @@ const ConfigureProductDrawer: React.FC<Props> = ({
         key={`${editingUid ?? '__new__'}#${subSession}`}
         open={subOpen}
         editing={editingPart}
+        customerNo={customerNo}
+        boundMaterial={bound}
+        /* 互斥方向①：已加配件 ⇒ 第三张卡禁用 + tooltip 写明原因（原型 01 第三态） */
+        bindDisabledReason={parts.length > 0
+          ? `已添加 ${parts.length} 个配件，不能再改为「直接绑定」—— 两种方式互斥，请先移除已加的配件`
+          : null}
+        initialStageOverride={subStageBind ? 'bind' : undefined}
         materials={materials}
         materialsLoading={materialsLoading}
         materialsError={materialsError}
@@ -403,7 +522,8 @@ const ConfigureProductDrawer: React.FC<Props> = ({
         processLoading={processLoading}
         processError={processError}
         onConfirm={upsertPart}
-        onCancel={() => { setSubOpen(false); setEditingUid(null); }}
+        onBind={confirmBind}
+        onCancel={() => { setSubOpen(false); setEditingUid(null); setSubStageBind(false); }}
       />
     </Drawer>
   );

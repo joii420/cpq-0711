@@ -1,0 +1,4 @@
+2026-09-10 18:00:11.069 INFO  [io.qua.dep.dev.RuntimeUpdatesProcessor] (vert.x-worker-thread-1) Restarting quarkus due to changes in CostingTreeGrouping$Result.class, CostingTreeGrouping.class.
+2026-09-10 18:00:17.326 INFO  [io.qua.dep.dev.RuntimeUpdatesProcessor] (vert.x-worker-thread-1) Live reload total time: 6.960s 
+2026-09-10 18:00:45.076 INFO  [io.qua.dep.dev.RuntimeUpdatesProcessor] (vert.x-worker-thread-5) Restarting quarkus due to changes in CostingTreeGrouping$Result.class, CostingTreeGrouping.class.
+2026-09-10 18:00:49.083 INFO  [io.qua.dep.dev.RuntimeUpdatesProcessor] (vert.x-worker-thread-5) Live reload total time: 4.165s 

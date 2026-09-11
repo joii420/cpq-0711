@@ -158,6 +158,93 @@ final class DsRecordCardDeduper {
     }
 
     /**
+     * <b>task-260910 · B-17（AC-16 / AC-17）</b>：丢掉<b>同一张卡片内</b>「锚不上、且与一条已锚定行
+     * 逐列相同」的 DRIVER 行 —— 即<b>渲染重影</b>。
+     *
+     * <h3>缺陷（2026-09-10 实证，与 D-43 不是同一个洞）</h3>
+     * D-43 修的是<b>跨卡片</b>重复投影（{@link #dedupe}）。但实测复现单
+     * {@code 08c99680-1359-4b1b-be98-7b93aabc71e4} 的重复<b>发生在同一张卡片内部</b>：
+     * <pre>
+     *   卡片 f69cad35（S0001）的 snapshot_rows = 8 行，逐行看是 4 组**两两完全相同**的行：
+     *     [1]=[2] __nodeId=S0001            (合成根行)
+     *     [3]=[4] __nodeId=S0001/S0003
+     *     [5]=[6] __nodeId=S0001/S0002
+     *     [7]=[8] __nodeId=S0001/S0002/992
+     *   另一张卡片 cb2ce85c（同料号 S0001）也是同样的 8 行。
+     *   ⇒ 投影出的行 anchor 时每条主表行只被认领一次（usedBase）
+     *   ⇒ 每组里一条拿到 origin_id、另一条 origin_id=NULL
+     *   ⇒ 回填按新增追加 ⇒ 该组翻倍（AC-17 的失败形态）。
+     *   实测 _record 侧 17 组 (material_no,item_seq,input_material_no) 各 2 行，
+     *   {NULL, 12013} / {NULL, 12014} … 逐组一 NULL 一锚定。
+     * </pre>
+     * 🚩 <b>真正的病根在上游</b>：{@code snapshot_rows} 本身把每个 spine 节点渲染了两遍
+     * （卡片上用户也看得见双份行）。那属于树骨架/渲染层，<b>不在本任务范围</b>，已单独报主线。
+     * 本方法是 {@code _record} 侧的止血：<b>让重影不要传染到主表</b>。
+     *
+     * <h3>为什么必须挂在 {@code anchor()} 之<b>后</b>（与 {@link #dedupe} 相反）</h3>
+     * 判据的核心就是「<b>其中一条锚上了、另一条没锚上</b>」——
+     * 而「谁锚上了」只有 {@code anchor()} 跑完才知道。
+     * <p>🔑 这个判据顺带解决了「主表本来就有两条一样的行」这个合法情形：那时
+     * {@code usedBase} 会让两条投影行<b>各自</b>认领一条基底行 ⇒ 两条都有 {@code origin_id}
+     * ⇒ 本方法一行都不丢。🚫 换成「按内容去重」就会在那种情形下静默删主表的一行（AP-60 的形态）。
+     *
+     * <h3>三条收窄，缺一不可</h3>
+     * <ol>
+     *   <li><b>同一 {@code lineItemId}</b> —— 跨卡片那部分归 {@link #dedupe}，两者不许互相代劳；</li>
+     *   <li><b>两条都是 {@code DRIVER}</b> —— {@code ROW_DATA_TAIL} / {@code MANUAL} 是<b>用户新增行</b>，
+     *       D-36 明令必须保留；{@code DRIVER_NOT_MATERIALIZED} 从严排除（那条路没有 driver 侧原值，
+     *       身份判据本来就弱）；</li>
+     *   <li><b>表征列逐列相同</b> —— 用当前值 {@code columnValues}（含用户编辑覆盖）。
+     *       用户只改了其中一条 ⇒ 内容不同 ⇒ 不丢，宁可留一行脏也不吞用户的编辑。</li>
+     * </ol>
+     *
+     * <h3>🚫 N+1</h3>
+     * 纯内存，零 SQL。
+     *
+     * @return 丢弃的重影行数（0 = 本组没有重影）
+     */
+    static int dropAnchorShadows(List<DsRecordRow> rows, String table, String axisValue,
+                                 Map<String, ColumnDef> colDefs, Collection<String> matchColumns) {
+        if (rows == null || rows.size() < 2) return 0;
+        if (matchColumns == null || matchColumns.isEmpty()) return 0;
+
+        Set<String> anchored = new LinkedHashSet<>();
+        for (DsRecordRow r : rows) {
+            if (r.originId == null || r.provenance != DsRecordRow.Provenance.DRIVER) continue;
+            anchored.add(shadowKey(r, colDefs, matchColumns));
+        }
+        if (anchored.isEmpty()) return 0;
+
+        List<DsRecordRow> keep = new ArrayList<>(rows.size());
+        List<String> droppedKeys = new ArrayList<>();
+        for (DsRecordRow r : rows) {
+            if (r.originId == null && r.provenance == DsRecordRow.Provenance.DRIVER
+                    && anchored.contains(shadowKey(r, colDefs, matchColumns))) {
+                droppedKeys.add(String.valueOf(r.lineItemId));
+                continue;
+            }
+            keep.add(r);
+        }
+        if (droppedKeys.isEmpty()) return 0;
+        rows.clear();
+        rows.addAll(keep);
+        // 🚫 不许静默：这条日志是「本次少写了几行、为什么」的唯一线索，也是上游重影缺陷的可观测出口。
+        LOG.warnf("[ds-record][shadow] %s 轴值=%s：丢弃 %d 行**同卡片渲染重影**"
+                        + "（锚不上、且与同一张卡片里一条已锚定行逐列相同 ⇒ 主表没有第二条这样的行）。"
+                        + "🚩 病根在上游：该卡片的 snapshot_rows 把同一个行渲染了多份（卡片上也是双份行），"
+                        + "本方法只防它传染到主表。涉及卡片=%s",
+                table, axisValue, droppedKeys.size(), new LinkedHashSet<>(droppedKeys));
+        return droppedKeys.size();
+    }
+
+    /** 重影身份键：卡片 + 组件 + 表征列内容（🚫 不含出现序 —— 重影正是「同一行出现多次」）。 */
+    private static String shadowKey(DsRecordRow r, Map<String, ColumnDef> colDefs,
+                                    Collection<String> matchColumns) {
+        return r.lineItemId + String.valueOf(SEP) + r.componentId + SEP
+                + DsRecordProjector.contentKey(r.columnValues, colDefs, matchColumns);
+    }
+
+    /**
      * 「本卡片内该粒度键的第几次出现」的分组键 —— <b>含 {@code lineItemId}</b>。
      *
      * <p>🚨 这是「🚫 不许收敛同一张卡片内部的行」的<b>结构性</b>保证：出现序按卡片各算各的，

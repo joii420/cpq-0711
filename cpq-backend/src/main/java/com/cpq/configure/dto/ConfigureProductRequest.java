@@ -25,4 +25,20 @@ public class ConfigureProductRequest {
 
     /** task-260902（AC-1）：客户产品名称，选填 → {@code sel_product_no.customer_product_name}（🚫 不写 mcm）。 */
     public String customerProductName;
+
+    /**
+     * <b>task-260910 · B-18（AC-18 / AC-20，api.md §2.3）</b>：直接绑定已有销售料号。
+     *
+     * <p>场景（用户 2026-09-10 原话）：「客户的产品编号在我们客户料号表中不存在，所以需要选配新增，
+     * 此时可以选择一个已有的销售料号进行直接绑定，这样子最简单，直接不用零件选配」。
+     *
+     * <p>非空 ⇒ 走<b>绑定路径</b>（{@code ConfigureProductService#configureByBinding}）：
+     * <b>不铸新号、不进指纹、不写 BOM / 元素</b>，只写 {@code ds_quote_customer_part}
+     * + {@code quotation_line_item}。
+     *
+     * <p>🚫 与 {@link #parts} <b>互斥</b>：两者同时非空 → 400 {@code BIND_AND_PARTS_EXCLUSIVE}。
+     * <p>🚫 料号不在<b>该客户</b>的 {@code ds_quote_material} 里 → 400 {@code BIND_MATERIAL_NOT_FOUND}。
+     * <p>📌 加法式字段：{@code null} / 空 = 老 payload，行为逐字不变。
+     */
+    public String bindExistingMaterialNo;
 }

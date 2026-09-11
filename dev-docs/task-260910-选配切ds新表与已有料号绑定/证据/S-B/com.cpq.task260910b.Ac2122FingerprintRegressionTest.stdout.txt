@@ -1,0 +1,210 @@
+2026-09-10 05:02:05.379 INFO  [org.hib.orm.jpa] (main) HHH008540: Processing PersistenceUnitInfo [name: <default>]
+2026-09-10 05:02:05.434 INFO  [org.hib.orm.core] (main) HHH000001: Hibernate ORM core version 7.2.9.Final
+2026-09-10 05:02:05.692 INFO  [org.hib.orm.con.pooling] (main) HHH10001005: Database info:
+	Database JDBC URL [undefined/unknown]
+	Database driver: undefined/unknown
+	Database dialect: PostgreSQLDialect
+	Database version: 13.0
+	Default catalog/schema: unknown/unknown
+	Autocommit mode: undefined/unknown
+	Isolation level: <unknown>
+	JDBC fetch size: undefined/unknown
+	Pool: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-09-10 05:02:06.560 INFO  [org.hib.val.int.uti.Version] (main) HV000001: Hibernate Validator 9.1.0.Final
+2026-09-10 05:02:06.748 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-09-10 05:02:07.188 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-09-10 05:02:07.336 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-09-10 05:02:07.789 INFO  [org.fly.cor.FlywayExecutor] (main) Database: jdbc:postgresql://10.177.152.12:5432/cpq_db_test?sslmode=disable (PostgreSQL 16.13)
+2026-09-10 05:02:08.062 INFO  [org.fly.cor.int.com.DbValidate] (main) Successfully validated 422 migrations (execution time 00:00.160s)
+2026-09-10 05:02:08.154 INFO  [org.fly.cor.int.com.DbMigrate] (main) Current version of schema "public": 439
+2026-09-10 05:02:08.155 WARN  [org.fly.cor.int.com.DbMigrate] (main) outOfOrder mode is active. Migration of schema "public" may not be reproducible.
+2026-09-10 05:02:08.163 INFO  [org.fly.cor.int.com.DbMigrate] (main) Schema "public" is up to date. No migration necessary.
+2026-09-10 05:02:08.233 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-09-10 05:02:08.233 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-09-10 05:02:09.060 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-09-10 05:02:09.220 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-09-10 05:02:09.258 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-09-10 05:02:09.319 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1765 列（3 套数据集）
+2026-09-10 05:02:09.811 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=57 edges=78 tabViews=48
+2026-09-10 05:02:09.834 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-09-10 05:02:09.847 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-10 05:02:09.866 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：57 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-10 05:02:09.867 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 153 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-09-10 05:02:10.088 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-09-10 05:02:10.217 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 11.181s. Listening on: http://localhost:8096
+2026-09-10 05:02:10.217 INFO  [io.quarkus] (main) Profile test activated. 
+2026-09-10 05:02:10.217 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+[S-B·fx] AC21 customerNo=T2610B391f4a63 quotation=458c94c6-32f5-42dd-9fa2-abea00dbd5e0
+2026-09-10 05:02:11.908 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-1) User logged in: admin role=SYSTEM_ADMIN
+2026-09-10 05:02:11.963 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-1) Session created for user: admin
+[S-B] admin 登录成功，role=SYSTEM_ADMIN
+2026-09-10 05:02:13.134 WARN  [com.cpq.con.ser.SelDsQuoteWriter] (executor-thread-1) [sel-ds] 无 SelQuotationScope（拿不到报价单 id）⇒ ds_quote_material_bom 料号=1009-2609000001 退回直写主表（方案② 只在选配请求内生效）
+2026-09-10 05:02:13.194 WARN  [com.cpq.con.ser.SelDsQuoteWriter] (executor-thread-1) [sel-ds] 无 SelQuotationScope（拿不到报价单 id）⇒ ds_quote_element_bom 料号=1009-2609000001 退回直写主表（方案② 只在选配请求内生效）
+2026-09-10 05:02:13.610 DEBUG [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] quotation=458c94c6-32f5-42dd-9fa2-abea00dbd5e0 命中 1 个轴值但无组件数据，跳过
+[TC-B6 第一次] {"lineItems":[{"productPartNo":"1009-2609000001","parentLineItemId":null,"processNos":["Z100","Z101"],"id":"c31c96e9-3ed4-4e52-9cca-b78188f2c87c","compositeType":"SIMPLE"}],"fingerprintMatched":false,"reusedHfPartNos":[],"productType":"SIMPLE","reusedProductInfo":null,"structureVersion":"v2","editRowMismatchCount":null,"editRowMismatches":null,"editRowMismatchTruncated":null}
+[TC-B6 第一次落库] 料号=1009-2609000001 ds_quote_material=1 行, ds_quote_customer_part=1 行
+2026-09-10 05:02:14.253 WARN  [org.hib.orm.jdb.error] (executor-thread-1) HHH000247: ErrorCode: 0, SQLState: 42P01
+2026-09-10 05:02:14.253 WARN  [org.hib.orm.jdb.error] (executor-thread-1) ERROR: relation "v_compat_material_master" does not exist
+  Position: 194
+2026-09-10 05:02:14.270 ERROR [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Unexpected error: org.hibernate.exception.SQLGrammarException: JDBC exception executing SQL [ERROR: relation "v_compat_material_master" does not exist
+  Position: 194] [SELECT mm.material_name, mm.specification, mm.dimension, mm.unit_weight,        (SELECT min(sps.created_at) FROM sel_part_signature sps           WHERE sps.quote_part_no = mm.material_no) FROM v_compat_material_master mm WHERE mm.material_no = ?]
+	at org.hibernate.exception.internal.SQLStateConversionDelegate.convert(SQLStateConversionDelegate.java:63)
+	at org.hibernate.exception.internal.StandardSQLExceptionConverter.convert(StandardSQLExceptionConverter.java:34)
+	at org.hibernate.engine.jdbc.spi.SqlExceptionHelper.convert(SqlExceptionHelper.java:115)
+	at org.hibernate.sql.results.jdbc.internal.DeferredResultSetAccess.executeQuery(DeferredResultSetAccess.java:290)
+	at org.hibernate.sql.results.jdbc.internal.DeferredResultSetAccess.getResultSet(DeferredResultSetAccess.java:190)
+	at org.hibernate.sql.results.jdbc.internal.AbstractResultSetAccess.getResultSetMetaData(AbstractResultSetAccess.java:52)
+	at org.hibernate.sql.results.jdbc.internal.AbstractResultSetAccess.getColumnCount(AbstractResultSetAccess.java:66)
+	at org.hibernate.query.results.internal.ResultSetMappingImpl.resolve(ResultSetMappingImpl.java:188)
+	at org.hibernate.sql.exec.internal.JdbcSelectExecutorStandardImpl.resolveJdbcValues(JdbcSelectExecutorStandardImpl.java:409)
+	at org.hibernate.sql.exec.internal.JdbcSelectExecutorStandardImpl.resolveJdbcValuesSource(JdbcSelectExecutorStandardImpl.java:349)
+	at org.hibernate.sql.exec.internal.JdbcSelectExecutorStandardImpl.doExecuteQuery(JdbcSelectExecutorStandardImpl.java:143)
+	at org.hibernate.sql.exec.internal.JdbcSelectExecutorStandardImpl.executeQuery(JdbcSelectExecutorStandardImpl.java:100)
+	at org.hibernate.sql.exec.spi.JdbcSelectExecutor.executeQuery(JdbcSelectExecutor.java:63)
+	at org.hibernate.sql.exec.spi.JdbcSelectExecutor.list(JdbcSelectExecutor.java:137)
+	at org.hibernate.sql.exec.spi.JdbcSelectExecutor.list(JdbcSelectExecutor.java:114)
+	at org.hibernate.sql.exec.spi.JdbcSelectExecutor.list(JdbcSelectExecutor.java:104)
+	at org.hibernate.query.sql.internal.NativeSelectQueryPlanImpl.performList(NativeSelectQueryPlanImpl.java:138)
+	at org.hibernate.query.sql.internal.NativeQueryImpl.doList(NativeQueryImpl.java:756)
+	at org.hibernate.query.spi.AbstractSelectionQuery.list(AbstractSelectionQuery.java:153)
+	at org.hibernate.query.Query.getResultList(Query.java:121)
+	at com.cpq.configure.service.ConfigureProductService.buildReusedProductInfo(ConfigureProductService.java:1802)
+	at com.cpq.configure.service.ConfigureProductService.configure(ConfigureProductService.java:1993)
+	at com.cpq.configure.service.ConfigureProductService_Subclass.configure$$superforward(Unknown Source)
+	at com.cpq.configure.service.ConfigureProductService_Subclass$0.apply(Unknown Source)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:73)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:62)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:136)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:107)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequired.doIntercept(TransactionalInterceptorRequired.java:38)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.intercept(TransactionalInterceptorBase.java:61)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequired.intercept(TransactionalInterceptorRequired.java:32)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequired_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.perform(AroundInvokeInvocationContext.java:30)
+	at io.quarkus.arc.impl.InvocationContexts.performAroundInvoke(InvocationContexts.java:27)
+	at com.cpq.configure.service.ConfigureProductService_Subclass.configure(Unknown Source)
+	at com.cpq.configure.service.ConfigureProductService_ClientProxy.configure(Unknown Source)
+	at com.cpq.configure.resource.ConfigureProductResource.configureProduct(ConfigureProductResource.java:69)
+	at com.cpq.configure.resource.ConfigureProductResource$quarkusrestinvoker$configureProduct_46a192cc96dcbe411fb4dc85f5d4d7b627651c9f.invoke(Unknown Source)
+	at org.jboss.resteasy.reactive.server.handlers.InvocationHandler.handle(InvocationHandler.java:29)
+	at io.quarkus.resteasy.reactive.server.runtime.QuarkusResteasyReactiveRequestContext.invokeHandler(QuarkusResteasyReactiveRequestContext.java:190)
+	at org.jboss.resteasy.reactive.common.core.AbstractResteasyReactiveContext.run(AbstractResteasyReactiveContext.java:147)
+	at io.quarkus.vertx.core.runtime.VertxCoreRecorder$15.runWith(VertxCoreRecorder.java:677)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at org.jboss.threads.DelegatingRunnable.run(DelegatingRunnable.java:11)
+	at org.jboss.threads.ThreadLocalResettingRunnable.run(ThreadLocalResettingRunnable.java:11)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+Caused by: org.postgresql.util.PSQLException: ERROR: relation "v_compat_material_master" does not exist
+  Position: 194
+	at org.postgresql.core.v3.QueryExecutorImpl.receiveErrorResponse(QueryExecutorImpl.java:2875)
+	at org.postgresql.core.v3.QueryExecutorImpl.processResults(QueryExecutorImpl.java:2560)
+	at org.postgresql.core.v3.QueryExecutorImpl.execute(QueryExecutorImpl.java:429)
+	at org.postgresql.jdbc.PgStatement.executeInternal(PgStatement.java:526)
+	at org.postgresql.jdbc.PgStatement.execute(PgStatement.java:436)
+	at org.postgresql.jdbc.PgPreparedStatement.executeWithFlags(PgPreparedStatement.java:196)
+	at org.postgresql.jdbc.PgPreparedStatement.executeQuery(PgPreparedStatement.java:139)
+	at io.agroal.pool.wrapper.PreparedStatementWrapper.executeQuery(PreparedStatementWrapper.java:80)
+	at org.hibernate.sql.results.jdbc.internal.DeferredResultSetAccess.executeQuery(DeferredResultSetAccess.java:271)
+	... 47 more
+
+[S-B·cleanup] sel_part_signature 删 1 行 (cust=T2610B391f4a63)
+[S-B·cleanup] ds_quote_customer_part 删 1 行 (cust=T2610B391f4a63)
+[S-B·cleanup] ds_quote_material 删 1 行 (cust=T2610B391f4a63)
+[S-B·cleanup] ds_quote_material_bom 删 1 行 (cust=T2610B391f4a63)
+[S-B·cleanup] ds_quote_element_bom 删 2 行 (cust=T2610B391f4a63)
+[S-B·cleanup] ds_quote_self_process_fee 删 2 行 (cust=T2610B391f4a63)
+[S-B·cleanup] material_customer_map 删 1 行 (cust=T2610B391f4a63)
+[S-B·cleanup] quote_customer_code 删 1 行 (cust=T2610B391f4a63)
+[S-B·cleanup 14d0d5] 残留 ds_quote_material=0 ds_quote_material_bom=0 customer=0
+
+[S-B·fx] AC22 customerNo=T2610Bbd107ed9 quotation=dae64545-5f75-44ad-917a-d939db9d7d73
+2026-09-10 05:02:15.696 WARN  [com.cpq.con.ser.SelDsQuoteWriter] (executor-thread-1) [sel-ds] 无 SelQuotationScope（拿不到报价单 id）⇒ ds_quote_material_bom 料号=1010-2609000001 退回直写主表（方案② 只在选配请求内生效）
+2026-09-10 05:02:15.723 WARN  [com.cpq.con.ser.SelDsQuoteWriter] (executor-thread-1) [sel-ds] 无 SelQuotationScope（拿不到报价单 id）⇒ ds_quote_element_bom 料号=1010-2609000001 退回直写主表（方案② 只在选配请求内生效）
+2026-09-10 05:02:16.012 DEBUG [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] quotation=dae64545-5f75-44ad-917a-d939db9d7d73 命中 1 个轴值但无组件数据，跳过
+[TC-B7 前置] 料号=1010-2609000001 提交顺序=[Z100, Z101]
+[TC-B7 落库对照] ds_quote_self_process_fee=[Z100, Z101] / unit_price(自制加工费)=[]
+2026-09-10 05:02:16.522 WARN  [org.hib.orm.jdb.error] (executor-thread-1) HHH000247: ErrorCode: 0, SQLState: 42P01
+2026-09-10 05:02:16.522 WARN  [org.hib.orm.jdb.error] (executor-thread-1) ERROR: relation "v_compat_material_master" does not exist
+  Position: 194
+2026-09-10 05:02:16.531 ERROR [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Unexpected error: org.hibernate.exception.SQLGrammarException: JDBC exception executing SQL [ERROR: relation "v_compat_material_master" does not exist
+  Position: 194] [SELECT mm.material_name, mm.specification, mm.dimension, mm.unit_weight,        (SELECT min(sps.created_at) FROM sel_part_signature sps           WHERE sps.quote_part_no = mm.material_no) FROM v_compat_material_master mm WHERE mm.material_no = ?]
+	at org.hibernate.exception.internal.SQLStateConversionDelegate.convert(SQLStateConversionDelegate.java:63)
+	at org.hibernate.exception.internal.StandardSQLExceptionConverter.convert(StandardSQLExceptionConverter.java:34)
+	at org.hibernate.engine.jdbc.spi.SqlExceptionHelper.convert(SqlExceptionHelper.java:115)
+	at org.hibernate.sql.results.jdbc.internal.DeferredResultSetAccess.executeQuery(DeferredResultSetAccess.java:290)
+	at org.hibernate.sql.results.jdbc.internal.DeferredResultSetAccess.getResultSet(DeferredResultSetAccess.java:190)
+	at org.hibernate.sql.results.jdbc.internal.AbstractResultSetAccess.getResultSetMetaData(AbstractResultSetAccess.java:52)
+	at org.hibernate.sql.results.jdbc.internal.AbstractResultSetAccess.getColumnCount(AbstractResultSetAccess.java:66)
+	at org.hibernate.query.results.internal.ResultSetMappingImpl.resolve(ResultSetMappingImpl.java:188)
+	at org.hibernate.sql.exec.internal.JdbcSelectExecutorStandardImpl.resolveJdbcValues(JdbcSelectExecutorStandardImpl.java:409)
+	at org.hibernate.sql.exec.internal.JdbcSelectExecutorStandardImpl.resolveJdbcValuesSource(JdbcSelectExecutorStandardImpl.java:349)
+	at org.hibernate.sql.exec.internal.JdbcSelectExecutorStandardImpl.doExecuteQuery(JdbcSelectExecutorStandardImpl.java:143)
+	at org.hibernate.sql.exec.internal.JdbcSelectExecutorStandardImpl.executeQuery(JdbcSelectExecutorStandardImpl.java:100)
+	at org.hibernate.sql.exec.spi.JdbcSelectExecutor.executeQuery(JdbcSelectExecutor.java:63)
+	at org.hibernate.sql.exec.spi.JdbcSelectExecutor.list(JdbcSelectExecutor.java:137)
+	at org.hibernate.sql.exec.spi.JdbcSelectExecutor.list(JdbcSelectExecutor.java:114)
+	at org.hibernate.sql.exec.spi.JdbcSelectExecutor.list(JdbcSelectExecutor.java:104)
+	at org.hibernate.query.sql.internal.NativeSelectQueryPlanImpl.performList(NativeSelectQueryPlanImpl.java:138)
+	at org.hibernate.query.sql.internal.NativeQueryImpl.doList(NativeQueryImpl.java:756)
+	at org.hibernate.query.spi.AbstractSelectionQuery.list(AbstractSelectionQuery.java:153)
+	at org.hibernate.query.Query.getResultList(Query.java:121)
+	at com.cpq.configure.service.ConfigureProductService.buildReusedProductInfo(ConfigureProductService.java:1802)
+	at com.cpq.configure.service.ConfigureProductService.configure(ConfigureProductService.java:1993)
+	at com.cpq.configure.service.ConfigureProductService_Subclass.configure$$superforward(Unknown Source)
+	at com.cpq.configure.service.ConfigureProductService_Subclass$0.apply(Unknown Source)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:73)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:62)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:136)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:107)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequired.doIntercept(TransactionalInterceptorRequired.java:38)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.intercept(TransactionalInterceptorBase.java:61)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequired.intercept(TransactionalInterceptorRequired.java:32)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequired_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.perform(AroundInvokeInvocationContext.java:30)
+	at io.quarkus.arc.impl.InvocationContexts.performAroundInvoke(InvocationContexts.java:27)
+	at com.cpq.configure.service.ConfigureProductService_Subclass.configure(Unknown Source)
+	at com.cpq.configure.service.ConfigureProductService_ClientProxy.configure(Unknown Source)
+	at com.cpq.configure.resource.ConfigureProductResource.configureProduct(ConfigureProductResource.java:69)
+	at com.cpq.configure.resource.ConfigureProductResource$quarkusrestinvoker$configureProduct_46a192cc96dcbe411fb4dc85f5d4d7b627651c9f.invoke(Unknown Source)
+	at org.jboss.resteasy.reactive.server.handlers.InvocationHandler.handle(InvocationHandler.java:29)
+	at io.quarkus.resteasy.reactive.server.runtime.QuarkusResteasyReactiveRequestContext.invokeHandler(QuarkusResteasyReactiveRequestContext.java:190)
+	at org.jboss.resteasy.reactive.common.core.AbstractResteasyReactiveContext.run(AbstractResteasyReactiveContext.java:147)
+	at io.quarkus.vertx.core.runtime.VertxCoreRecorder$15.runWith(VertxCoreRecorder.java:677)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at org.jboss.threads.DelegatingRunnable.run(DelegatingRunnable.java:11)
+	at org.jboss.threads.ThreadLocalResettingRunnable.run(ThreadLocalResettingRunnable.java:11)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+Caused by: org.postgresql.util.PSQLException: ERROR: relation "v_compat_material_master" does not exist
+  Position: 194
+	at org.postgresql.core.v3.QueryExecutorImpl.receiveErrorResponse(QueryExecutorImpl.java:2875)
+	at org.postgresql.core.v3.QueryExecutorImpl.processResults(QueryExecutorImpl.java:2560)
+	at org.postgresql.core.v3.QueryExecutorImpl.execute(QueryExecutorImpl.java:429)
+	at org.postgresql.jdbc.PgStatement.executeInternal(PgStatement.java:526)
+	at org.postgresql.jdbc.PgStatement.execute(PgStatement.java:436)
+	at org.postgresql.jdbc.PgPreparedStatement.executeWithFlags(PgPreparedStatement.java:196)
+	at org.postgresql.jdbc.PgPreparedStatement.executeQuery(PgPreparedStatement.java:139)
+	at io.agroal.pool.wrapper.PreparedStatementWrapper.executeQuery(PreparedStatementWrapper.java:80)
+	at org.hibernate.sql.results.jdbc.internal.DeferredResultSetAccess.executeQuery(DeferredResultSetAccess.java:271)
+	... 47 more
+
+[S-B·cleanup] sel_part_signature 删 1 行 (cust=T2610Bbd107ed9)
+[S-B·cleanup] ds_quote_customer_part 删 1 行 (cust=T2610Bbd107ed9)
+[S-B·cleanup] ds_quote_material 删 1 行 (cust=T2610Bbd107ed9)
+[S-B·cleanup] ds_quote_material_bom 删 1 行 (cust=T2610Bbd107ed9)
+[S-B·cleanup] ds_quote_element_bom 删 2 行 (cust=T2610Bbd107ed9)
+[S-B·cleanup] ds_quote_self_process_fee 删 2 行 (cust=T2610Bbd107ed9)
+[S-B·cleanup] material_customer_map 删 1 行 (cust=T2610Bbd107ed9)
+[S-B·cleanup] quote_customer_code 删 1 行 (cust=T2610Bbd107ed9)
+[S-B·cleanup 14d0d5] 残留 ds_quote_material=0 ds_quote_material_bom=0 customer=0
