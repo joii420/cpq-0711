@@ -157,6 +157,34 @@ public class SemanticCompiler {
      */
     private static final String CUSTOMER_SCOPE_COLUMN = "customer_no";
 
+    /**
+     * 客户<b>产品编号</b>维度列名（repair-260910 B-2，AC-1 / AC-2 / AC-3 / AC-4 / AC-6）。
+     *
+     * <p><b>要修什么</b>：{@code ds_quote_customer_part} 的真实行粒度是
+     * {@code (customer_no, customer_product_no)}（{@code QuoteRegistry} 的 groupKey 两列都声明了），
+     * 而此前 JOIN 谓词只给到 {@code (material_no, customer_no)} ⇒ 少一个维度 ⇒
+     * 左表一行被放大成右表 N 行（实测 CUST-0004 / S0004 → 4 行，最严重的 0028-2609000015 → 7 行）。
+     * {@code customer_product_no} 在图里是 SUBDIM，缺的只是"绑什么值"——B-1 已把它补成
+     * 运行时占位符 {@code :customerProductNo}（来自本明细行的 {@code customer_part_no}）。
+     *
+     * <p>🚨 <b>只许出现在 {@code LEFT JOIN … ON}，绝不许进 {@code WHERE}</b>：
+     * 实测 {@code quotation_line_item.customer_part_no} 3969 行里 128 行为空，写进 {@code WHERE}
+     * 会让这些卡片整个页签 0 行且不报错（{@code repair-260908} B-2 记载过的静默失败形态）。
+     * 挂在 {@code ON} 上时该谓词恒 UNKNOWN ⇒ JOIN 不匹配 ⇒ 左表行仍在、只是客编列为空（AC-2）。
+     * ⇒ 本常量<b>只</b>被 {@link #emitMandatoryJoin} / {@link #ensureLeftJoin} 两处 ON 构造消费，
+     * 🚫 <b>刻意不进 {@link #applyFullScope}</b>（那是 WHERE 侧收窄）。
+     *
+     * <p>判据与 {@link #CUSTOMER_SCOPE_COLUMN} 同源：{@code columnCatalog} 里这张物理表**有没有
+     * 这一列**（真查 {@code information_schema.columns}）。2026-09-10 实测：全库只有
+     * {@code ds_quote_customer_part} / {@code material_customer_map} / {@code sel_product_no} 三张表
+     * 有这一列，其中只有 {@code ds_quote_customer_part} 是语义图节点 ⇒ 当前只命中 CUSTOMER_PART 一处；
+     * 核价侧 {@code ds_cost_*} 一张都没有（核价按生产料号建模，无客户产品编号维度）⇒ 零影响。
+     */
+    private static final String CUSTOMER_PRODUCT_SCOPE_COLUMN = "customer_product_no";
+
+    /** {@link #CUSTOMER_PRODUCT_SCOPE_COLUMN} 对应的运行时占位符名（与 {@code SqlViewExecutor} 同名）。 */
+    private static final String CUSTOMER_PRODUCT_NO_VAR = "customerProductNo";
+
     public CompileResult compile(SemanticGraphSnapshot snap, BuilderConfig cfg, CompileDialect dialect) {
         return compile(snap, cfg, dialect, false);
     }
@@ -546,6 +574,7 @@ public class SemanticCompiler {
             on.add(qualified);
             if (qualified.contains(":customerCode")) c.requiredVars.add("customerCode");
         }
+        appendCustomerProductScope(c, target, alias, on);
         c.joinClauses.add("JOIN " + target.physicalTable + " " + alias + " ON " + String.join(" AND ", on));
     }
 
@@ -827,8 +856,31 @@ public class SemanticCompiler {
             on.add(qualified);
             if (qualified.contains(":customerCode")) c.requiredVars.add("customerCode");
         }
+        appendCustomerProductScope(c, target, alias, on);
         c.joinClauses.add("LEFT JOIN " + target.physicalTable + " " + alias + " ON " + String.join(" AND ", on));
         return alias;
+    }
+
+    /**
+     * repair-260910 B-2：JOIN 对端表若带 {@code customer_product_no} 列，在 <b>ON 子句</b>上补一条
+     * {@code <别名>.customer_product_no = :customerProductNo}，把该表的真实行粒度补齐。
+     *
+     * <p>🚨 调用点只能是 ON 构造处（{@link #emitMandatoryJoin} / {@link #ensureLeftJoin}）。
+     * 理由与「为什么不能写进 WHERE」见 {@link #CUSTOMER_PRODUCT_SCOPE_COLUMN}。
+     *
+     * <p>🚫 <b>连接键已经含这一列时不重复发</b>：那种声明本身已把粒度表达完整，再加一条
+     * 等值谓词要么恒等冗余、要么与连接键冲突把行全打掉。
+     */
+    private void appendCustomerProductScope(Ctx c, SemanticNode target, String alias, List<String> on) {
+        if (target == null || target.physicalTable == null) return;
+        Set<String> cols = c.columnCatalog.getOrDefault(target.physicalTable, Set.of());
+        if (!cols.contains(CUSTOMER_PRODUCT_SCOPE_COLUMN)) return;
+        String predicate = alias + "." + CUSTOMER_PRODUCT_SCOPE_COLUMN + " = :" + CUSTOMER_PRODUCT_NO_VAR;
+        for (String existing : on) {
+            if (existing.contains(alias + "." + CUSTOMER_PRODUCT_SCOPE_COLUMN)) return;  // 连接键/固定谓词已覆盖
+        }
+        on.add(predicate);
+        c.requiredVars.add(CUSTOMER_PRODUCT_NO_VAR);
     }
 
     private ResolvedColumn resolveSub(Ctx c, SemanticEdge edge, SemanticNode target, SemanticNodeColumn col) {
