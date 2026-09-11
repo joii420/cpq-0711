@@ -1,0 +1,6 @@
+RUN=D38-AFTER-1789108574425
+quotationId=9ffa45ba-78eb-4b4e-9759-ca17174a868e
+customer_template_id=45cc0267-a340-43ba-80e1-3de17af47443 | status=DRAFT | user_data_version=0
+--- line items ---
+89f47247-4aa3-445d-9d2f-6362434ecc82 | pn=0028-2609000030 | template_id=45cc0267-a340-43ba-80e1-3de17af47443 | product_id=(null)
+ds_quote_material_bom=1

@@ -52,7 +52,11 @@ import java.util.stream.Collectors;
  * <ul>
  *   <li>{@code mat_bom}: V153 仅加了 part_version，无 is_current 列；INSERT 语句去掉该列.</li>
  *   <li>{@code quotation_line_item}: 无 quantity 列 (迁移中从未添加)；INSERT 语句去掉该列.
- *       product_id / template_id 在 V30 已改为 nullable — 选配行直接填 product_part_no_snapshot.</li>
+ *       product_id / template_id 在 V30 已改为 nullable — 选配行填 product_part_no_snapshot 而不填 product_id.
+ *       ⚠️ <b>2026-09-10 更正（task-260910 · D-38，修 BL-0202）</b>：本行原文曾被读成
+ *       「选配行有意不挂模板」——<b>那是误读</b>。template_id <b>现在必须写</b>
+ *       （值 = 本报价单的 customer_template_id），否则选配产品卡<b>刷新后</b>渲染不出组件结构。
+ *       理由与四条证据见 {@link #insertLineItem(UUID, String, UUID, String, UUID)} 的 javadoc.</li>
  *   <li>{@code mat_part_version_log}: PK 为 (customer_product_no NOT NULL, hf_part_no, version).
  *       选配阶段没有 customer_product_no（料号-客户映射尚未建立），故 {@code initPartVersionBaseline}
  *       无法实现 — 基线行将在后续数据导入（PartVersionService / V156）时由 per-customer 流程写入.
@@ -2385,6 +2389,48 @@ public class ConfigureProductService {
      *   <li>sort_order: INT DEFAULT 0 (original V11)</li>
      *   <li>quantity: NOT present in any migration — omitted</li>
      * </ul>
+     *
+     * <h4>task-260910 · D-38（修 {@code BL-0202}）：本行必须写 {@code template_id}</h4>
+     *
+     * <p><b>缺陷形态（准确版）</b>：选配确认后<b>当场能渲染</b>（前端
+     * {@code QuotationWizard.tsx:1837} 有 {@code li.templateId || customerTemplateId} 的
+     * <b>内存</b>兜底），<b>但一刷新就渲染不出来</b> —— 那个兜底从未被持久化，重新进编辑页
+     * 拿到的 {@code lineItem.templateId} 仍是 NULL，{@code QuotationWizard.tsx:659} 的
+     * {@code if (!li.templateId) return li;} 直接跳过 enrich ⇒ {@code componentType} 补不上 ⇒
+     * {@code QuotationStep2.tsx} 的 {@code .filter(c => c?.componentType === 'NORMAL')} 过滤后为空 ⇒
+     * 卡片内容区落到「请通过添加产品选择模板后自动加载组件结构」、产品小计 ¥0。
+     *
+     * <p><b>为什么原先「留空」不是有意设计</b>（四条证据，2026-09-10 查证）：
+     * <ol>
+     *   <li>V30 的标题是「导入 v4 改造」，注释只为 {@code product_id} 辩护（导入产品不在
+     *       {@code product} 表）；{@code template_id} 那行是跟着放开的、没有自己的理由。且 V30
+     *       远早于选配（T20/T21），当时不可能为选配行设计什么。</li>
+     *   <li>V30 亲手服务的导入链路至今照写 {@code template_id}
+     *       （{@code QuotationLineItemMaterializeService:100-103} 的列清单第三列）
+     *       ⇒ 放开约束换来的是「可以为空」，不是「应该为空」。</li>
+     *   <li>同一个兜底在 {@code QuotationService:557}（saveDraft 逐行）与 {@code :3041}（batch）
+     *       早已存在，注释里连「选配产品行」都点名了。但 AC-12 明写「全程不点保存草稿」
+     *       ⇒ 那道兜底在本路径上<b>永不执行</b>，所以必须提前到落行这一刻。</li>
+     *   <li>后端渲染管线本来就按报价单级模板算这一行（{@code CardSnapshotService:737}/{@code :1166}
+     *       传的是 {@code q.customerTemplateId}，不是 {@code li.templateId}）；实测选配行的
+     *       {@code quotation_line_component_data} 的 {@code component_id} 5/5 全部命中该模板的
+     *       {@code components_snapshot} ⇒ <b>写 FK 是把已生效的事实补登记，不是给选配行强安模板</b>。</li>
+     * </ol>
+     *
+     * <p><b>取值与空值语义</b>：值 = {@code quotation.customer_template_id}，用 INSERT 内联子查询取
+     * （同表同主键，<b>不额外发查询</b>，SQL 条数与行数无关）。报价单还没有模板时写入 NULL、
+     * <b>不抛异常</b> —— 「先加产品后选模板」是产品上允许的路径
+     * （{@code CreateQuotationRequest.java:32}「留空则后续在报价单 Step2 中由用户手工选择」），
+     * 用户在 Step2 选定模板后由 {@code QuotationService:557} 的既有兜底补齐，链路自愈。
+     *
+     * <p>🚦 <b>经用户裁决接受的行为变化（2026-09-10，不是顺带副作用，请勿当回归去「修」）</b>：
+     * {@code template_id} 非空后，选配行开始参与
+     * {@code MaterialVersionUpgradeService:356/568} 的调价重算
+     * （原先 {@code CardSnapshotService:2832} 在 {@code templateId == null} 处直接返回空）。
+     * 裁决理由：导入行一直在参与，选配行不参与只是本缺陷的副作用，与 D-14「两侧功能保持一致」相符。
+     *
+     * <p>📌 <b>存量数据按用户裁决「只修新建路径、不回填」</b>：不追加回填迁移、不跑批量 UPDATE。
+     * 存量 DRAFT 行靠 saveDraft 既有兜底自愈；已审批单保持现状（详见任务回报 §2）。
      */
     UUID insertLineItem(UUID quotationId, String hfPartNo,
                         UUID parentLineItemId, String compositeType, UUID tempId) {
@@ -2392,8 +2438,11 @@ public class ConfigureProductService {
         em.createNativeQuery(
                 "INSERT INTO quotation_line_item " +
                 "(id, quotation_id, product_part_no_snapshot, " +
-                "parent_line_item_id, composite_type, sort_order, created_at) " +
-                "VALUES (:id, :q, :pn, :pp, :ct, 0, NOW())")
+                "parent_line_item_id, composite_type, sort_order, created_at, template_id) " +
+                // D-38: template_id 取本报价单的 customer_template_id（内联子查询，不多发查询）；
+                //       报价单尚未选模板时得到 NULL —— 与改动前一致，不抛异常。
+                "VALUES (:id, :q, :pn, :pp, :ct, 0, NOW(), " +
+                "        (SELECT customer_template_id FROM quotation WHERE id = :q))")
             .setParameter("id", id)
             .setParameter("q", quotationId)
             .setParameter("pn", hfPartNo)

@@ -12,7 +12,7 @@
  *
  * 📌 **顺序语义（两件事，别混）**：
  *    - 顺序**不进指纹**（后端 `PRC=` 是 `sorted().join(",")`）⇒ 换个次序仍复用同一个销售料号（AC-19）。
- *    - 顺序**影响** `unit_price.seq_no` 与报价单里的显示顺序 ⇒ ↑↓ 调序不能因此取消。
+ *    - 顺序**影响** `ds_quote_self_process_fee.operation_item_seq`（切表裁决见 task-260910 D-3）与报价单里的显示顺序 ⇒ ↑↓ 调序不能因此取消。
  *    ⇒ 提交时 `processNos` **按列表顺序原样发送，🚫 不排序**（排序是后端算指纹时的事）。
  * 🚨 **重复次数仍进指纹**（`["Z100","Z101","Z100"].sort()` → `Z100,Z100,Z101` ≠ `Z100,Z101`）⇒
  *    🚫 提交前**不许 `distinct()`**，那会把「焊两次」和「焊一次」静默算成同一个料号（AC-20）。
@@ -240,7 +240,7 @@ const ProcessSection: React.FC<Props> = ({
           <NoteBlock style={{ background: '#fff' }}>
             🔄 <b>工序可以重复加入</b>（「粗车 → 热处理 → 精车」是常态），所以这里显示「已加 N 次」而不是灰显禁用。
             <br />
-            📌 列表顺序 = 工艺顺序，影响报价单显示顺序与 <code>unit_price.seq_no</code>；
+            📌 列表顺序 = 工艺顺序，影响报价单显示顺序与 <code>ds_quote_self_process_fee.operation_item_seq</code>（切表裁决见 <code>task-260910</code> D-3）；
             但**顺序不影响料号复用判定**（后端算指纹时会排序）。这是两件事。
           </NoteBlock>
         </div>

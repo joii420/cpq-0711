@@ -513,9 +513,9 @@ const NewPartPanel: React.FC<Props> = ({
         />
 
         <NoteBlock>
-          品名 / 规格 / 尺寸 / 总重 分别落 <code>material_master</code> 的
+          品名 / 规格 / 尺寸 / 总重 分别落 <code>ds_quote_material</code> 的
           <code>material_name / specification / dimension / unit_weight</code>；材质占比落
-          <code>material_bom_item.material_ratio</code>。本页<b>零新增字段</b>。
+          <code>ds_quote_material_bom.material_ratio</code>（切表裁决见 <code>task-260910</code> D-3）。本页<b>零新增字段</b>。
         </NoteBlock>
       </div>
 
