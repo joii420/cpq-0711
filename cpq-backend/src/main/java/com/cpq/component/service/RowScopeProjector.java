@@ -399,14 +399,39 @@ public class RowScopeProjector {
                 String key = e.getKey();
                 if (key == null) continue;
                 for (String vc : cs.blankViewColumns()) {
-                    // 路径形如 "$builder_221dc7668ab6._客户料号_客户产品编号"：按「.<视图列名>」结尾匹配，
-                    // 不按 contains（避免列名恰好是另一列名的后缀时误清）。
-                    if (key.endsWith("." + vc)) { e.setValue(null); break; }
+                    if (bdvKeyTargets(key, vc)) { e.setValue(null); break; }
                 }
             }
             out.basicDataValues = bd;
         }
         return out;
+    }
+
+    /**
+     * {@code basicDataValues} 的某个键是否指向该视图列。
+     *
+     * <p>🚨 <b>2026-09-11 返修（S3 实测缺陷）</b>：键的真实形态是
+     * <b>带花括号</b>的 {@code "{$builder_221dc7668ab6._客户料号_客户产品编号}"}
+     * —— 见 {@code ExpandDriverResponse.Row#basicDataValues} 的 javadoc（「key = 字段原始路径
+     * <b>(含花括号)</b>」）与 {@code FormulaCalculator#bnfDriverLookupKey}（读取侧统一补花括号）。
+     * 上一轮写成 {@code key.endsWith("." + viewColumn)}，键以 {@code '}'} 收尾 ⇒ <b>恒不匹配</b> ⇒
+     * {@code driverRow} 清了、{@code basicDataValues} 没清。症状不是报错：
+     * {@code FormulaCalculator#resolveRowByFieldName} 解 {@code INPUT_*} 时是
+     * {@code editValues → driverRow[字段名] → default_source→basicDataValues → content} 的瀑布，
+     * 前两级都空 ⇒ 第三级从<b>未置空的</b> {@code basicDataValues} 里读到 <b>pivot 行（属于别的明细行）</b>
+     * 的客编，原样落进 {@code row_data} 并显示在输入框里 —— 用户看到并可能保存<b>别人的</b>客户产品编号。
+     *
+     * <p>⚠️ 单测当时是绿的，因为夹具把键写成了<b>不带花括号</b>的形态。本方法两种形态都认，
+     * 单测夹具也已改成实查形态（{@code RowScopeProjectionTest#BD_PATH}）。
+     *
+     * <p>匹配口径仍是「按 {@code .<视图列名>} 结尾」，🚫 不用 {@code contains}
+     * （避免某列名恰好是另一列名的后缀时误清）。
+     */
+    static boolean bdvKeyTargets(String key, String viewColumn) {
+        if (key == null || viewColumn == null || viewColumn.isEmpty()) return false;
+        String k = key.trim();
+        if (k.startsWith("{") && k.endsWith("}")) k = k.substring(1, k.length() - 1).trim();
+        return k.endsWith("." + viewColumn);
     }
 
     /** 同 driverPath / debugSql，换一批行。🚫 不改入参对象（AP-37：桶里的 Row 被多行共享）。 */
