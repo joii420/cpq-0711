@@ -1,0 +1,30 @@
+## builder view 执行次数汇总（AC-12 基线 run1，1200 明细行）
+   1201 driver path=$builder_221dc7668ab6
+      1 driver path=$builder_7f9a5bbf264f
+      2 driver path=$builder_98ee51d1832e
+
+## quote-bucket 全部行
+2026-09-11 07:19:27.551 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-16) [quote-bucket] comp=98ee51d1-832e-4881-aa3d-e9512824cc14 eligible eligible parts=1182 bucketEntries=1182
+2026-09-11 07:19:27.551 INFO  [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-16) [quote-bucket] quotation=5f641c55-8387-4eee-a7ff-a78f312bbf06 eligibleComps=1 totalComps=3 distinctParts=1182
+
+## 前 12 行原文
+2026-09-11 07:19:27.540 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-16) [SqlViewExecutor] driver path=$builder_98ee51d1832e rows=1216
+2026-09-11 07:19:27.551 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-16) [quote-bucket] comp=98ee51d1-832e-4881-aa3d-e9512824cc14 eligible eligible parts=1182 bucketEntries=1182
+2026-09-11 07:19:27.551 INFO  [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-16) [quote-bucket] quotation=5f641c55-8387-4eee-a7ff-a78f312bbf06 eligibleComps=1 totalComps=3 distinctParts=1182
+2026-09-11 07:19:27.609 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-16) [Y1.5 expand-driver] componentId=221dc766-8ab6-4d95-82c0-08cc03e6267d code=COMP-2344 dataDriverPath=$builder_221dc7668ab6 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-11 07:19:27.651 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-16) [SqlViewExecutor] driver path=$builder_221dc7668ab6 rows=1191
+2026-09-11 07:19:27.662 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-16) [Y1.5 expand-driver] expanded: id=221dc766-8ab6-4d95-82c0-08cc03e6267d code=COMP-2344 rows=1191 partVersion=null
+2026-09-11 07:19:27.667 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-16) [Y1.5 expand-driver] componentId=7f9a5bbf-264f-4b07-8dff-3118a9428a48 code=COMP-2345 dataDriverPath=$builder_7f9a5bbf264f (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-11 07:19:27.797 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-16) [SqlViewExecutor] driver path=$builder_7f9a5bbf264f rows=3871
+2026-09-11 07:19:27.820 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-16) [Y1.5 expand-driver] expanded: id=7f9a5bbf-264f-4b07-8dff-3118a9428a48 code=COMP-2345 rows=3871 partVersion=null
+2026-09-11 07:19:27.822 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-16) [Y1.5 expand-driver] componentId=98ee51d1-832e-4881-aa3d-e9512824cc14 code=COMP-2346 dataDriverPath=$builder_98ee51d1832e (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-11 07:19:27.886 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-16) [SqlViewExecutor] driver path=$builder_98ee51d1832e rows=1216
+2026-09-11 07:19:27.897 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-16) [Y1.5 expand-driver] expanded: id=98ee51d1-832e-4881-aa3d-e9512824cc14 code=COMP-2346 rows=1216 partVersion=null
+
+## 后 6 行原文
+2026-09-11 07:19:54.714 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-16) [SqlViewExecutor] driver path=$builder_221dc7668ab6 rows=1
+2026-09-11 07:19:54.715 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-16) [Y1.5 expand-driver] expanded: id=221dc766-8ab6-4d95-82c0-08cc03e6267d code=COMP-2344 rows=1 partVersion=null
+2026-09-11 07:19:54.715 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-16) [Y1.5 expand-driver] axisScope=SELF ⇒ 不加宽 hfPartNos（只出卡片自身料号 PERFHOT-B00360），component=COMP-2344
+2026-09-11 07:19:54.715 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-16) [Y1.5 expand-driver] componentId=221dc766-8ab6-4d95-82c0-08cc03e6267d code=COMP-2344 dataDriverPath=$builder_221dc7668ab6 (override=false) partNo=PERFHOT-B00360 customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=f6b366e5-48cd-44b8-b86c-4870a007ea7c compositeType=SIMPLE
+2026-09-11 07:19:54.763 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-16) [SqlViewExecutor] driver path=$builder_221dc7668ab6 rows=1
+2026-09-11 07:19:54.763 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-16) [Y1.5 expand-driver] expanded: id=221dc766-8ab6-4d95-82c0-08cc03e6267d code=COMP-2344 rows=1 partVersion=null
