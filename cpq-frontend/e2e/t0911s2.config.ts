@@ -16,7 +16,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: '.',
-  testMatch: /t0911s2-.*\.spec\.ts$/,
+  testMatch: new RegExp(process.env.T0911S2_MATCH || 't0911s2-.*\\.spec\\.ts$'),
   timeout: 600_000,
   expect: { timeout: 25_000 },
   fullyParallel: false,

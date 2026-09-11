@@ -1,0 +1,49 @@
+# S2 · 环境与四层实测 原始输出（2026-09-11）
+## 采集时刻
+Fri Sep 11 09:51:21 AM PDT 2026
+
+## 8081 身份自证
+8081 owner pid=20503 <- ppid 19937 = 主仓默认 profile ./mvnw quarkus:dev（非 uat 实例）
+8081 GET /quotations totalElements = 172 ; cpq_db_0724 count(quotation) = 172 ; cpq_db_test=140 ; cpq_db_0910=4 => 8081 连 cpq_db_0724
+8081 /api/cpq/components = 401 (期望 401)
+5174 / = 200 (期望 200)
+
+## flyway 末 3 条
+ version |                                  script                                  | success |        installed_on        
+---------+--------------------------------------------------------------------------+---------+----------------------------
+ 441     | db/migration/V441__task260911_row_scope_role.sql                         | t       | 2026-09-11 09:23:30.365844
+ 440     | db/migration/V440__repair260910_costing_element_price_customer_level.sql | t       | 2026-09-11 02:09:47.170245
+ 439     | db/migration/V439__task260909_drop_compat_views.sql                      | t       | 2026-09-09 17:40:27.182372
+(3 rows)
+
+## 全库 ROW_SCOPE 分布
+   node_key    | dialect |      db_column      |    roles    
+---------------+---------+---------------------+-------------
+ CUSTOMER_PART | QUOTE   | customer_product_no | {ROW_SCOPE}
+(1 row)
+
+## 三态检查：集合谓词在 ON / 不在 WHERE
+builder_221dc7668ab6 IN_ON=1 | IN_WHERE=0
+builder_7277969cc41c IN_ON=1 | IN_WHERE=0
+builder_a71947b68d50 IN_ON=1 | IN_WHERE=0
+
+## FRESH 载体（无 row_data 残留）四层实测
+ so |   li_cpn    | n_rows | snap_driverrow | snap_basicdatavalues |  row_data   |    品名    
+----+-------------+--------+----------------+----------------------+-------------+------------
+  0 | T0911S2-CP1 |      1 | T0911S2-CP1    | T0911S2-CP1          | T0911S2-CP1 | S2测试件甲
+  1 | T0911S2-CP2 |      1 | T0911S2-CP2    | T0911S2-CP2          | T0911S2-CP2 | S2测试件甲
+  2 | T0911S2-CP3 |      1 | T0911S2-CP3    | T0911S2-CP3          | T0911S2-CP3 | S2测试件甲
+  3 | T0911S2-CP1 |      1 | T0911S2-CP1    | T0911S2-CP1          | T0911S2-CP1 | S2测试件甲
+  4 | <NULL>      |      1 | <NULL>         | T0911S2-CP1          | T0911S2-CP1 | S2测试件甲
+(5 rows)
+
+## MAIN 夹具还原确认（= cases.json 交接态）
+ sort_order |  coalesce   
+------------+-------------
+          0 | T0911S2-CP1
+          1 | T0911S2-CP2
+          2 | T0911S2-CP3
+          3 | T0911S2-CP1
+          4 | <NULL>
+(5 rows)
+

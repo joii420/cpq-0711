@@ -4,11 +4,31 @@
   "quotationNumber": "QT-20260911-0838",
   "name": "T0911S2-MAIN",
   "lineItems": [
-   { "id": "92d7dfa3-235b-42ab-9d82-5ea5b928a97f", "sortOrder": 0, "custPartNo": "T0911S2-CP1" },
-   { "id": "700a2569-284b-44a3-af2f-d9940426a9c4", "sortOrder": 1, "custPartNo": "T0911S2-CP2" },
-   { "id": "8ea8d0b1-0e12-4e3b-b061-e47c18d87696", "sortOrder": 2, "custPartNo": "T0911S2-CP3" },
-   { "id": "0d0f41f5-a1f9-4d0f-8ba2-258ad1062be6", "sortOrder": 3, "custPartNo": "T0911S2-CP1" },
-   { "id": "75b324c9-3721-49d1-9c86-5df58186e0f7", "sortOrder": 4, "custPartNo": null }
+   {
+    "id": "92d7dfa3-235b-42ab-9d82-5ea5b928a97f",
+    "sortOrder": 0,
+    "custPartNo": "T0911S2-CP1"
+   },
+   {
+    "id": "700a2569-284b-44a3-af2f-d9940426a9c4",
+    "sortOrder": 1,
+    "custPartNo": "T0911S2-CP2"
+   },
+   {
+    "id": "8ea8d0b1-0e12-4e3b-b061-e47c18d87696",
+    "sortOrder": 2,
+    "custPartNo": "T0911S2-CP3"
+   },
+   {
+    "id": "0d0f41f5-a1f9-4d0f-8ba2-258ad1062be6",
+    "sortOrder": 3,
+    "custPartNo": "T0911S2-CP1"
+   },
+   {
+    "id": "75b324c9-3721-49d1-9c86-5df58186e0f7",
+    "sortOrder": 4,
+    "custPartNo": null
+   }
   ]
  },
  "EMPTY": {
@@ -16,7 +36,11 @@
   "quotationNumber": "QT-20260911-0839",
   "name": "T0911S2-EMPTY",
   "lineItems": [
-   { "id": "b8a0a5db-911d-4f97-a8b0-f3d404ae54be", "sortOrder": 0, "custPartNo": null }
+   {
+    "id": "b8a0a5db-911d-4f97-a8b0-f3d404ae54be",
+    "sortOrder": 0,
+    "custPartNo": null
+   }
   ]
  },
  "NEG": {
@@ -24,7 +48,43 @@
   "quotationNumber": "QT-20260911-0840",
   "name": "T0911S2-NEG",
   "lineItems": [
-   { "id": "5cd90a77-d280-43b7-98f5-515c2b30ad6c", "sortOrder": 0, "custPartNo": "T0911S2-NOMATCH" }
+   {
+    "id": "5cd90a77-d280-43b7-98f5-515c2b30ad6c",
+    "sortOrder": 0,
+    "custPartNo": "T0911S2-NOMATCH"
+   }
+  ]
+ },
+ "FRESH": {
+  "quotationId": "11110911-5222-4fff-9001-000000000001",
+  "quotationNumber": "QT-20260911-S2FRESH",
+  "name": "T0911S2-FRESH",
+  "lineItems": [
+   {
+    "id": "11110911-5222-4fff-9002-000000000000",
+    "sortOrder": 0,
+    "custPartNo": "T0911S2-CP1"
+   },
+   {
+    "id": "11110911-5222-4fff-9002-000000000001",
+    "sortOrder": 1,
+    "custPartNo": "T0911S2-CP2"
+   },
+   {
+    "id": "11110911-5222-4fff-9002-000000000002",
+    "sortOrder": 2,
+    "custPartNo": "T0911S2-CP3"
+   },
+   {
+    "id": "11110911-5222-4fff-9002-000000000003",
+    "sortOrder": 3,
+    "custPartNo": "T0911S2-CP1"
+   },
+   {
+    "id": "11110911-5222-4fff-9002-000000000004",
+    "sortOrder": 4,
+    "custPartNo": null
+   }
   ]
  }
 }

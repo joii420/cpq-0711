@@ -1,0 +1,262 @@
+{
+ "MAIN": {
+  "quotationNumber": "QT-20260911-0838",
+  "items": [
+   {
+    "sortOrder": 0,
+    "lineItemId": "92d7dfa3-235b-42ab-9d82-5ea5b928a97f",
+    "expectCustPartNo": "T0911S2-CP1",
+    "status": "OK",
+    "error": null,
+    "rowCount": 1,
+    "driverPath": "$builder_221dc7668ab6",
+    "rows": [
+     {
+      "driverRow": {
+       "_客户料号_客户产品编号": "T0911S2-CP1",
+       "_物料_销售料号": "T0911S2-M1",
+       "_物料_规格": "SPEC-S2-A",
+       "_物料_尺寸": "20x10x5",
+       "hf_part_no": "T0911S2-M1",
+       "_物料_品名": "S2测试件甲",
+       "_物料_旧料号": "OLD-S2-A",
+       "_物料_单重": "7.777777777777",
+       "_物料_生产料号": "PROD-S2-A"
+      },
+      "basicDataValues": {
+       "{$builder_221dc7668ab6._物料_销售料号}": "T0911S2-M1",
+       "{$builder_221dc7668ab6._客户料号_客户产品编号}": "T0911S2-CP1",
+       "{$builder_221dc7668ab6._物料_生产料号}": "PROD-S2-A",
+       "{$builder_221dc7668ab6._物料_品名}": "S2测试件甲",
+       "{$builder_221dc7668ab6._物料_规格}": "SPEC-S2-A",
+       "{$builder_221dc7668ab6._物料_尺寸}": "20x10x5",
+       "{$builder_221dc7668ab6._物料_旧料号}": "OLD-S2-A",
+       "{$builder_221dc7668ab6._物料_单重}": "7.777777777777"
+      }
+     }
+    ],
+    "debugSql": null
+   },
+   {
+    "sortOrder": 1,
+    "lineItemId": "700a2569-284b-44a3-af2f-d9940426a9c4",
+    "expectCustPartNo": "T0911S2-CP2",
+    "status": "OK",
+    "error": null,
+    "rowCount": 1,
+    "driverPath": "$builder_221dc7668ab6",
+    "rows": [
+     {
+      "driverRow": {
+       "_客户料号_客户产品编号": "T0911S2-CP2",
+       "_物料_销售料号": "T0911S2-M1",
+       "_物料_规格": "SPEC-S2-A",
+       "_物料_尺寸": "20x10x5",
+       "hf_part_no": "T0911S2-M1",
+       "_物料_品名": "S2测试件甲",
+       "_物料_旧料号": "OLD-S2-A",
+       "_物料_单重": "7.777777777777",
+       "_物料_生产料号": "PROD-S2-A"
+      },
+      "basicDataValues": {
+       "{$builder_221dc7668ab6._物料_销售料号}": "T0911S2-M1",
+       "{$builder_221dc7668ab6._客户料号_客户产品编号}": "T0911S2-CP2",
+       "{$builder_221dc7668ab6._物料_生产料号}": "PROD-S2-A",
+       "{$builder_221dc7668ab6._物料_品名}": "S2测试件甲",
+       "{$builder_221dc7668ab6._物料_规格}": "SPEC-S2-A",
+       "{$builder_221dc7668ab6._物料_尺寸}": "20x10x5",
+       "{$builder_221dc7668ab6._物料_旧料号}": "OLD-S2-A",
+       "{$builder_221dc7668ab6._物料_单重}": "7.777777777777"
+      }
+     }
+    ],
+    "debugSql": null
+   },
+   {
+    "sortOrder": 2,
+    "lineItemId": "8ea8d0b1-0e12-4e3b-b061-e47c18d87696",
+    "expectCustPartNo": "T0911S2-CP3",
+    "status": "OK",
+    "error": null,
+    "rowCount": 1,
+    "driverPath": "$builder_221dc7668ab6",
+    "rows": [
+     {
+      "driverRow": {
+       "_客户料号_客户产品编号": "T0911S2-CP3",
+       "_物料_销售料号": "T0911S2-M1",
+       "_物料_规格": "SPEC-S2-A",
+       "_物料_尺寸": "20x10x5",
+       "hf_part_no": "T0911S2-M1",
+       "_物料_品名": "S2测试件甲",
+       "_物料_旧料号": "OLD-S2-A",
+       "_物料_单重": "7.777777777777",
+       "_物料_生产料号": "PROD-S2-A"
+      },
+      "basicDataValues": {
+       "{$builder_221dc7668ab6._物料_销售料号}": "T0911S2-M1",
+       "{$builder_221dc7668ab6._客户料号_客户产品编号}": "T0911S2-CP3",
+       "{$builder_221dc7668ab6._物料_生产料号}": "PROD-S2-A",
+       "{$builder_221dc7668ab6._物料_品名}": "S2测试件甲",
+       "{$builder_221dc7668ab6._物料_规格}": "SPEC-S2-A",
+       "{$builder_221dc7668ab6._物料_尺寸}": "20x10x5",
+       "{$builder_221dc7668ab6._物料_旧料号}": "OLD-S2-A",
+       "{$builder_221dc7668ab6._物料_单重}": "7.777777777777"
+      }
+     }
+    ],
+    "debugSql": null
+   },
+   {
+    "sortOrder": 3,
+    "lineItemId": "0d0f41f5-a1f9-4d0f-8ba2-258ad1062be6",
+    "expectCustPartNo": "T0911S2-CP1",
+    "status": "OK",
+    "error": null,
+    "rowCount": 1,
+    "driverPath": "$builder_221dc7668ab6",
+    "rows": [
+     {
+      "driverRow": {
+       "_客户料号_客户产品编号": "T0911S2-CP1",
+       "_物料_销售料号": "T0911S2-M1",
+       "_物料_规格": "SPEC-S2-A",
+       "_物料_尺寸": "20x10x5",
+       "hf_part_no": "T0911S2-M1",
+       "_物料_品名": "S2测试件甲",
+       "_物料_旧料号": "OLD-S2-A",
+       "_物料_单重": "7.777777777777",
+       "_物料_生产料号": "PROD-S2-A"
+      },
+      "basicDataValues": {
+       "{$builder_221dc7668ab6._物料_销售料号}": "T0911S2-M1",
+       "{$builder_221dc7668ab6._客户料号_客户产品编号}": "T0911S2-CP1",
+       "{$builder_221dc7668ab6._物料_生产料号}": "PROD-S2-A",
+       "{$builder_221dc7668ab6._物料_品名}": "S2测试件甲",
+       "{$builder_221dc7668ab6._物料_规格}": "SPEC-S2-A",
+       "{$builder_221dc7668ab6._物料_尺寸}": "20x10x5",
+       "{$builder_221dc7668ab6._物料_旧料号}": "OLD-S2-A",
+       "{$builder_221dc7668ab6._物料_单重}": "7.777777777777"
+      }
+     }
+    ],
+    "debugSql": null
+   },
+   {
+    "sortOrder": 4,
+    "lineItemId": "75b324c9-3721-49d1-9c86-5df58186e0f7",
+    "expectCustPartNo": null,
+    "status": "OK",
+    "error": null,
+    "rowCount": 1,
+    "driverPath": "$builder_221dc7668ab6",
+    "rows": [
+     {
+      "driverRow": {
+       "_客户料号_客户产品编号": null,
+       "_物料_销售料号": "T0911S2-M1",
+       "_物料_规格": "SPEC-S2-A",
+       "_物料_尺寸": "20x10x5",
+       "hf_part_no": "T0911S2-M1",
+       "_物料_品名": "S2测试件甲",
+       "_物料_旧料号": "OLD-S2-A",
+       "_物料_单重": "7.777777777777",
+       "_物料_生产料号": "PROD-S2-A"
+      },
+      "basicDataValues": {
+       "{$builder_221dc7668ab6._物料_销售料号}": "T0911S2-M1",
+       "{$builder_221dc7668ab6._客户料号_客户产品编号}": "T0911S2-CP1",
+       "{$builder_221dc7668ab6._物料_生产料号}": "PROD-S2-A",
+       "{$builder_221dc7668ab6._物料_品名}": "S2测试件甲",
+       "{$builder_221dc7668ab6._物料_规格}": "SPEC-S2-A",
+       "{$builder_221dc7668ab6._物料_尺寸}": "20x10x5",
+       "{$builder_221dc7668ab6._物料_旧料号}": "OLD-S2-A",
+       "{$builder_221dc7668ab6._物料_单重}": "7.777777777777"
+      }
+     }
+    ],
+    "debugSql": null
+   }
+  ]
+ },
+ "EMPTY": {
+  "quotationNumber": "QT-20260911-0839",
+  "items": [
+   {
+    "sortOrder": 0,
+    "lineItemId": "b8a0a5db-911d-4f97-a8b0-f3d404ae54be",
+    "expectCustPartNo": null,
+    "status": "OK",
+    "error": null,
+    "rowCount": 1,
+    "driverPath": "$builder_221dc7668ab6",
+    "rows": [
+     {
+      "driverRow": {
+       "_客户料号_客户产品编号": null,
+       "_物料_销售料号": "T0911S2-M1",
+       "_物料_规格": "SPEC-S2-A",
+       "_物料_尺寸": "20x10x5",
+       "hf_part_no": "T0911S2-M1",
+       "_物料_品名": "S2测试件甲",
+       "_物料_旧料号": "OLD-S2-A",
+       "_物料_单重": "7.777777777777",
+       "_物料_生产料号": "PROD-S2-A"
+      },
+      "basicDataValues": {
+       "{$builder_221dc7668ab6._物料_销售料号}": "T0911S2-M1",
+       "{$builder_221dc7668ab6._客户料号_客户产品编号}": null,
+       "{$builder_221dc7668ab6._物料_生产料号}": "PROD-S2-A",
+       "{$builder_221dc7668ab6._物料_品名}": "S2测试件甲",
+       "{$builder_221dc7668ab6._物料_规格}": "SPEC-S2-A",
+       "{$builder_221dc7668ab6._物料_尺寸}": "20x10x5",
+       "{$builder_221dc7668ab6._物料_旧料号}": "OLD-S2-A",
+       "{$builder_221dc7668ab6._物料_单重}": "7.777777777777"
+      }
+     }
+    ],
+    "debugSql": null
+   }
+  ]
+ },
+ "NEG": {
+  "quotationNumber": "QT-20260911-0840",
+  "items": [
+   {
+    "sortOrder": 0,
+    "lineItemId": "5cd90a77-d280-43b7-98f5-515c2b30ad6c",
+    "expectCustPartNo": "T0911S2-NOMATCH",
+    "status": "OK",
+    "error": null,
+    "rowCount": 1,
+    "driverPath": "$builder_221dc7668ab6",
+    "rows": [
+     {
+      "driverRow": {
+       "_客户料号_客户产品编号": null,
+       "_物料_销售料号": "T0911S2-M1",
+       "_物料_规格": "SPEC-S2-A",
+       "_物料_尺寸": "20x10x5",
+       "hf_part_no": "T0911S2-M1",
+       "_物料_品名": "S2测试件甲",
+       "_物料_旧料号": "OLD-S2-A",
+       "_物料_单重": "7.777777777777",
+       "_物料_生产料号": "PROD-S2-A"
+      },
+      "basicDataValues": {
+       "{$builder_221dc7668ab6._物料_销售料号}": "T0911S2-M1",
+       "{$builder_221dc7668ab6._客户料号_客户产品编号}": null,
+       "{$builder_221dc7668ab6._物料_生产料号}": "PROD-S2-A",
+       "{$builder_221dc7668ab6._物料_品名}": "S2测试件甲",
+       "{$builder_221dc7668ab6._物料_规格}": "SPEC-S2-A",
+       "{$builder_221dc7668ab6._物料_尺寸}": "20x10x5",
+       "{$builder_221dc7668ab6._物料_旧料号}": "OLD-S2-A",
+       "{$builder_221dc7668ab6._物料_单重}": "7.777777777777"
+      }
+     }
+    ],
+    "debugSql": null
+   }
+  ]
+ }
+}

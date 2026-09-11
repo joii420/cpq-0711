@@ -1,0 +1,1381 @@
+{
+ "code": 200,
+ "message": "success",
+ "data": {
+  "id": "11110911-5222-4fff-9001-000000000001",
+  "quotationNumber": "QT-20260911-S2FRESH",
+  "customerId": "1f5818d8-b934-44be-b1c3-47df7053cff4",
+  "name": "T0911S2-FRESH",
+  "contactId": null,
+  "contactName": null,
+  "contactPhone": null,
+  "contactEmail": null,
+  "projectName": null,
+  "opportunityId": null,
+  "salesRepId": "d1e1147c-a639-4156-aeac-9f938a65ad05",
+  "quoteType": "STANDARD",
+  "priority": "MEDIUM",
+  "stage": "INITIAL_CONTACT",
+  "expectedCloseDate": null,
+  "status": "DRAFT",
+  "totalAmount": "0",
+  "expiryDate": null,
+  "paymentTerms": null,
+  "deliveryCycle": null,
+  "originalAmount": "0",
+  "systemDiscountRate": "100",
+  "finalDiscountRate": "100",
+  "taxRate": "0",
+  "taxAmount": "0",
+  "discountAdjustmentReason": null,
+  "isManuallyAdjusted": false,
+  "sourceQuotationId": null,
+  "assignedApproverId": null,
+  "assignedApproverName": null,
+  "remarks": null,
+  "quoteCardStructure": {
+   "tabs": [
+    {
+     "fields": [
+      {
+       "name": "销售料号",
+       "label": "销售料号",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_TEXT",
+       "sortOrder": 0,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_221dc7668ab6._物料_销售料号",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "客户产品编号",
+       "label": "客户产品编号",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_TEXT",
+       "sortOrder": 1,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_221dc7668ab6._客户料号_客户产品编号",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "生产料号",
+       "label": "生产料号",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_TEXT",
+       "sortOrder": 2,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_221dc7668ab6._物料_生产料号",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "品名",
+       "label": "品名",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_TEXT",
+       "sortOrder": 3,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_221dc7668ab6._物料_品名",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "规格",
+       "label": "规格",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_TEXT",
+       "sortOrder": 4,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_221dc7668ab6._物料_规格",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "尺寸",
+       "label": "尺寸",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_TEXT",
+       "sortOrder": 5,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_221dc7668ab6._物料_尺寸",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "旧料号",
+       "label": "旧料号",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_TEXT",
+       "sortOrder": 6,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_221dc7668ab6._物料_旧料号",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "单重",
+       "label": "单重",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_NUMBER",
+       "sortOrder": 7,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_221dc7668ab6._物料_单重",
+        "type": "BASIC_DATA"
+       }
+      }
+     ],
+     "tabName": "产品",
+     "formulas": [],
+     "sortOrder": 0,
+     "componentId": "221dc766-8ab6-4d95-82c0-08cc03e6267d",
+     "rowKeyFields": [
+      "销售料号"
+     ],
+     "componentCode": "COMP-2344",
+     "componentType": "NORMAL",
+     "dataDriverPath": "$builder_221dc7668ab6",
+     "formula_assignments": {}
+    },
+    {
+     "fields": [
+      {
+       "name": "销售料号",
+       "label": "销售料号",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_TEXT",
+       "sortOrder": 0,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_7f9a5bbf264f._物料BOM_销售料号",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "项次",
+       "label": "项次",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_NUMBER",
+       "sortOrder": 1,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_7f9a5bbf264f._物料BOM_项次",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "料号",
+       "label": "料号",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_TEXT",
+       "sortOrder": 2,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_7f9a5bbf264f._物料BOM_投入料号",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "材料名",
+       "label": "材料名",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_TEXT",
+       "sortOrder": 3,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_7f9a5bbf264f._物料_材料名",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "组成数量",
+       "label": "组成数量",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_NUMBER",
+       "sortOrder": 4,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_7f9a5bbf264f._物料BOM_组成数量",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "材料毛重",
+       "label": "材料毛重",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_NUMBER",
+       "sortOrder": 5,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_7f9a5bbf264f._物料BOM_材料毛重",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "材料净重",
+       "label": "材料净重",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_NUMBER",
+       "sortOrder": 6,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_7f9a5bbf264f._物料BOM_材料净重",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "损耗率（%）",
+       "label": "损耗率（%）",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_NUMBER",
+       "sortOrder": 7,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_7f9a5bbf264f._物料BOM_损耗率（%）",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "重量单位",
+       "label": "重量单位",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_TEXT",
+       "sortOrder": 8,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_7f9a5bbf264f._物料BOM_重量单位",
+        "type": "BASIC_DATA"
+       }
+      }
+     ],
+     "tabName": "BOM",
+     "formulas": [],
+     "sortOrder": 1,
+     "componentId": "7f9a5bbf-264f-4b07-8dff-3118a9428a48",
+     "rowKeyFields": [
+      "销售料号",
+      "料号"
+     ],
+     "componentCode": "COMP-2345",
+     "componentType": "NORMAL",
+     "dataDriverPath": "$builder_7f9a5bbf264f",
+     "formula_assignments": {}
+    },
+    {
+     "fields": [
+      {
+       "name": "销售料号",
+       "label": "销售料号",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_TEXT",
+       "sortOrder": 0,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_98ee51d1832e._物料与元素BOM_销售料号",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "项次",
+       "label": "项次",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_NUMBER",
+       "sortOrder": 1,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_98ee51d1832e._物料与元素BOM_项次",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "料号",
+       "label": "料号",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_TEXT",
+       "sortOrder": 2,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_98ee51d1832e._物料与元素BOM_材质料号",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "材料名",
+       "label": "材料名",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_TEXT",
+       "sortOrder": 3,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_98ee51d1832e._材质_材料名",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "元素",
+       "label": "元素",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_TEXT",
+       "sortOrder": 4,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_98ee51d1832e._物料与元素BOM_元素",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "组成含量（%）",
+       "label": "组成含量（%）",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_NUMBER",
+       "sortOrder": 5,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_98ee51d1832e._物料与元素BOM_组成含量（%）",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "损耗率%",
+       "label": "损耗率%",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_NUMBER",
+       "sortOrder": 6,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_98ee51d1832e._物料与元素BOM_损耗率%",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "毛用量",
+       "label": "毛用量",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_NUMBER",
+       "sortOrder": 7,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_98ee51d1832e._物料与元素BOM_毛用量",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "净用量",
+       "label": "净用量",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_NUMBER",
+       "sortOrder": 8,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_98ee51d1832e._物料与元素BOM_净用量",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "回收折扣(%)",
+       "label": "回收折扣(%)",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_NUMBER",
+       "sortOrder": 9,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_98ee51d1832e._物料与元素BOM_回收折扣(%)",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "元素单价",
+       "label": "元素单价",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_NUMBER",
+       "sortOrder": 10,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_98ee51d1832e.元素单价",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "元素小计",
+       "label": "元素小计",
+       "width": 0,
+       "editable": false,
+       "isAmount": true,
+       "fieldType": "FORMULA",
+       "formulaId": "f-1788931981025-xsttu9gx",
+       "sortOrder": 0,
+       "isRequired": false,
+       "isSubtotal": true,
+       "formulaName": "公式1",
+       "defaultValue": ""
+      }
+     ],
+     "tabName": "材质元素",
+     "formulas": [
+      {
+       "id": "f-1788931981025-xsttu9gx",
+       "name": "公式1",
+       "expression": [
+        {
+         "type": "field",
+         "value": "组成含量（%）"
+        },
+        {
+         "type": "operator",
+         "value": "*"
+        },
+        {
+         "type": "field",
+         "value": "损耗率%"
+        },
+        {
+         "type": "operator",
+         "value": "*"
+        },
+        {
+         "type": "field",
+         "value": "毛用量"
+        }
+       ],
+       "result_type": "NUMBER"
+      }
+     ],
+     "sortOrder": 2,
+     "componentId": "98ee51d1-832e-4881-aa3d-e9512824cc14",
+     "rowKeyFields": [
+      "销售料号",
+      "料号",
+      "元素"
+     ],
+     "componentCode": "COMP-2346",
+     "componentType": "NORMAL",
+     "dataDriverPath": "$builder_98ee51d1832e",
+     "elementCodeField": "元素",
+     "elementPriceField": "元素单价",
+     "formula_assignments": {}
+    },
+    {
+     "fields": [],
+     "tabName": "产品单价",
+     "formulas": [
+      {
+       "id": "f-1788932025810-l9zewx5d",
+       "name": "公式1",
+       "expression": [
+        {
+         "type": "component_subtotal",
+         "label": "材质元素",
+         "value": "__amount_total__",
+         "tab_name": "__amount_total__",
+         "is_tab_total": true,
+         "component_code": "COMP-2346"
+        },
+        {
+         "type": "operator",
+         "value": "*"
+        },
+        {
+         "type": "number",
+         "value": "10"
+        }
+       ],
+       "result_type": "NUMBER"
+      }
+     ],
+     "sortOrder": 3,
+     "componentId": "2c539680-91c8-4afe-80d6-fa07e8b2bbb0",
+     "rowKeyFields": [],
+     "componentCode": "COMP-2347",
+     "componentType": "SUBTOTAL",
+     "dataDriverPath": "",
+     "formula_assignments": {}
+    },
+    {
+     "fields": [
+      {
+       "name": "销售料号",
+       "label": "销售料号",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_TEXT",
+       "sortOrder": 0,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_4aa23fde7ac9._来料固定加工费_销售料号",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "项次",
+       "label": "项次",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_NUMBER",
+       "sortOrder": 1,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_4aa23fde7ac9._来料固定加工费_项次",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "材料名",
+       "label": "材料名",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_TEXT",
+       "sortOrder": 2,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_4aa23fde7ac9._物料_材料名",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "料号",
+       "label": "料号",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_TEXT",
+       "sortOrder": 3,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_4aa23fde7ac9._来料固定加工费_投入料号",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "基准值",
+       "label": "基准值",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_NUMBER",
+       "sortOrder": 4,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_4aa23fde7ac9._来料固定加工费_基准值",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "比例（%）",
+       "label": "比例（%）",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_NUMBER",
+       "sortOrder": 5,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_4aa23fde7ac9._来料固定加工费_比例（%）",
+        "type": "BASIC_DATA"
+       }
+      }
+     ],
+     "tabName": "加工费",
+     "formulas": [],
+     "sortOrder": 4,
+     "componentId": "4aa23fde-7ac9-4189-997c-cdfe00a6080f",
+     "rowKeyFields": [
+      "销售料号",
+      "料号"
+     ],
+     "componentCode": "COMP-2413",
+     "componentType": "NORMAL",
+     "dataDriverPath": "$builder_4aa23fde7ac9",
+     "formula_assignments": {}
+    },
+    {
+     "fields": [
+      {
+       "name": "销售料号",
+       "label": "销售料号",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_TEXT",
+       "sortOrder": 0,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_3fda805a52da._自制加工费_销售料号",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "项次",
+       "label": "项次",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_NUMBER",
+       "sortOrder": 1,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_3fda805a52da._自制加工费_项次",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "料号",
+       "label": "料号",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_TEXT",
+       "sortOrder": 2,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_3fda805a52da._自制加工费_投入料号",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "材料名",
+       "label": "材料名",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_TEXT",
+       "sortOrder": 3,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_3fda805a52da._物料_材料名",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "工序项次",
+       "label": "工序项次",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_NUMBER",
+       "sortOrder": 4,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_3fda805a52da._自制加工费_工序项次",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "工序编号",
+       "label": "工序编号",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_TEXT",
+       "sortOrder": 5,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_3fda805a52da._自制加工费_工序编号",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "值",
+       "label": "值",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_NUMBER",
+       "sortOrder": 6,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_3fda805a52da._自制加工费_值",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "比例（%）",
+       "label": "比例（%）",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_NUMBER",
+       "sortOrder": 7,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_3fda805a52da._自制加工费_比例（%）",
+        "type": "BASIC_DATA"
+       }
+      },
+      {
+       "name": "计价单位",
+       "label": "计价单位",
+       "width": 0,
+       "editable": true,
+       "isAmount": false,
+       "fieldType": "INPUT_TEXT",
+       "sortOrder": 8,
+       "isRequired": false,
+       "isSubtotal": false,
+       "defaultValue": "",
+       "defaultSource": {
+        "path": "$builder_3fda805a52da._自制加工费_计价单位",
+        "type": "BASIC_DATA"
+       }
+      }
+     ],
+     "tabName": "自制加工费",
+     "formulas": [],
+     "sortOrder": 5,
+     "componentId": "3fda805a-52da-4c9a-8741-51766ccf820f",
+     "rowKeyFields": [
+      "销售料号",
+      "料号",
+      "工序编号"
+     ],
+     "componentCode": "COMP-2414",
+     "componentType": "NORMAL",
+     "dataDriverPath": "$builder_3fda805a52da",
+     "formula_assignments": {}
+    }
+   ],
+   "version": 2,
+   "templateId": "45cc0267-a340-43ba-80e1-3de17af47443",
+   "templateKind": "QUOTATION",
+   "productAttributes": []
+  },
+  "quoteExcelStructure": {
+   "columns": [],
+   "version": 1,
+   "templateId": "45cc0267-a340-43ba-80e1-3de17af47443",
+   "templateKind": "QUOTATION"
+  },
+  "costingCardStructure": null,
+  "costingExcelStructure": null,
+  "quoteExcelColumns": [],
+  "costingExcelColumns": null,
+  "customerTemplateId": "45cc0267-a340-43ba-80e1-3de17af47443",
+  "categoryId": null,
+  "costingCardTemplateId": null,
+  "snapshotCustomerName": "正泰",
+  "snapshotCustomerLevel": "DIAMOND",
+  "snapshotCustomerRegion": null,
+  "snapshotCustomerIndustry": null,
+  "snapshotCustomerAddress": null,
+  "createdAt": "2026-09-11T16:48:14.665696Z",
+  "updatedAt": "2026-09-11T16:49:07.395964Z",
+  "lineItems": [
+   {
+    "id": "11110911-5222-4fff-9002-000000000000",
+    "productId": null,
+    "templateId": "45cc0267-a340-43ba-80e1-3de17af47443",
+    "productPartNo": "T0911S2-M1",
+    "productName": null,
+    "customerPartNo": "T0911S2-CP1",
+    "customerPartName": "S2客件1",
+    "customerProductNo": "T0911S2-CP1",
+    "customerDrawingNo": "DWG-S2-1",
+    "hfPartInfo": {
+     "partNo": "PROD-S2-A",
+     "partName": null,
+     "specification": null,
+     "sizeInfo": null,
+     "oldMaterialNo": null
+    },
+    "productAttributeValues": "{}",
+    "subtotal": "0",
+    "systemDiscountRate": "100",
+    "finalDiscountRate": "100",
+    "discountAdjustmentReason": null,
+    "isManuallyAdjusted": false,
+    "sortOrder": 0,
+    "processes": [],
+    "compositeProcesses": [],
+    "componentData": [
+     {
+      "id": "265f00c7-7faf-47f4-8a1c-7e4db7ec7757",
+      "componentId": "98ee51d1-832e-4881-aa3d-e9512824cc14",
+      "tabName": "材质元素",
+      "rowData": "[]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     },
+     {
+      "id": "3d64ee0a-3060-4be6-bada-10b55d1d6c7b",
+      "componentId": "3fda805a-52da-4c9a-8741-51766ccf820f",
+      "tabName": "自制加工费",
+      "rowData": "[]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     },
+     {
+      "id": "b553e44f-98ec-44aa-9a15-21dfb0012641",
+      "componentId": "221dc766-8ab6-4d95-82c0-08cc03e6267d",
+      "tabName": "产品",
+      "rowData": "[{\"单重\": \"7.777777777777\", \"品名\": \"S2测试件甲\", \"尺寸\": \"20x10x5\", \"规格\": \"SPEC-S2-A\", \"row_index\": 0, \"旧料号\": \"OLD-S2-A\", \"生产料号\": \"PROD-S2-A\", \"销售料号\": \"T0911S2-M1\", \"客户产品编号\": \"T0911S2-CP1\"}]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     },
+     {
+      "id": "b932076c-2609-4838-bac5-0937f1c2584b",
+      "componentId": "7f9a5bbf-264f-4b07-8dff-3118a9428a48",
+      "tabName": "BOM",
+      "rowData": "[{\"row_index\": 0}]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     },
+     {
+      "id": "bf7a23f5-36a8-4b7e-9edd-8fec383653d8",
+      "componentId": "4aa23fde-7ac9-4189-997c-cdfe00a6080f",
+      "tabName": "加工费",
+      "rowData": "[]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     }
+    ],
+    "snapshot": null,
+    "partVersionLocked": 2000,
+    "productType": null,
+    "compositeType": "SIMPLE",
+    "parentLineItemId": null,
+    "quoteCardValues": "{\"tabs\": [{\"tabName\": \"产品\", \"baseRows\": [{\"driverRow\": {\"hf_part_no\": \"T0911S2-M1\", \"_物料_单重\": \"7.777777777777\", \"_物料_品名\": \"S2测试件甲\", \"_物料_尺寸\": \"20x10x5\", \"_物料_规格\": \"SPEC-S2-A\", \"_物料_旧料号\": \"OLD-S2-A\", \"_物料_生产料号\": \"PROD-S2-A\", \"_物料_销售料号\": \"T0911S2-M1\", \"_客户料号_客户产品编号\": \"T0911S2-CP1\"}, \"basicDataValues\": {\"{$builder_221dc7668ab6._物料_单重}\": \"7.777777777777\", \"{$builder_221dc7668ab6._物料_品名}\": \"S2测试件甲\", \"{$builder_221dc7668ab6._物料_尺寸}\": \"20x10x5\", \"{$builder_221dc7668ab6._物料_规格}\": \"SPEC-S2-A\", \"{$builder_221dc7668ab6._物料_旧料号}\": \"OLD-S2-A\", \"{$builder_221dc7668ab6._物料_生产料号}\": \"PROD-S2-A\", \"{$builder_221dc7668ab6._物料_销售料号}\": \"T0911S2-M1\", \"{$builder_221dc7668ab6._客户料号_客户产品编号}\": \"T0911S2-CP1\"}}], \"editRows\": [{\"rowKey\": \"T0911S2-M1\", \"values\": {\"单重\": \"7.777777777777\", \"品名\": \"S2测试件甲\", \"尺寸\": \"20x10x5\", \"规格\": \"SPEC-S2-A\", \"旧料号\": \"OLD-S2-A\", \"生产料号\": \"PROD-S2-A\", \"销售料号\": \"T0911S2-M1\", \"客户产品编号\": \"T0911S2-CP1\"}}], \"subtotal\": \"0\", \"componentId\": \"221dc766-8ab6-4d95-82c0-08cc03e6267d\", \"resolvedRows\": [{\"单重\": \"7.777777777777\", \"品名\": \"S2测试件甲\", \"尺寸\": \"20x10x5\", \"规格\": \"SPEC-S2-A\", \"旧料号\": \"OLD-S2-A\", \"生产料号\": \"PROD-S2-A\", \"销售料号\": \"T0911S2-M1\", \"客户产品编号\": \"T0911S2-CP1\"}], \"componentType\": \"NORMAL\", \"formulaResults\": [{\"rowKey\": \"T0911S2-M1\", \"values\": {}}]}, {\"tabName\": \"BOM\", \"baseRows\": [{\"__lvl\": 1, \"__nodeId\": \"T0911S2-M1\", \"driverRow\": {\"parent_no\": null, \"hf_part_no\": \"T0911S2-M1\", \"material_no\": \"T0911S2-M1\", \"_物料BOM_项次\": null, \"_物料_材料名\": null, \"_物料BOM_投入料号\": null, \"_物料BOM_材料净重\": null, \"_物料BOM_材料毛重\": null, \"_物料BOM_组成数量\": null, \"_物料BOM_重量单位\": null, \"_物料BOM_销售料号\": null, \"_物料BOM_损耗率（%）\": null}, \"__hfPartNo\": \"T0911S2-M1\", \"__nodeType\": null, \"__parentId\": null, \"__parentNo\": null, \"__bomVersion\": null, \"basicDataValues\": {\"{$builder_7f9a5bbf264f._物料BOM_项次}\": null, \"{$builder_7f9a5bbf264f._物料_材料名}\": null, \"{$builder_7f9a5bbf264f._物料BOM_投入料号}\": null, \"{$builder_7f9a5bbf264f._物料BOM_材料净重}\": null, \"{$builder_7f9a5bbf264f._物料BOM_材料毛重}\": null, \"{$builder_7f9a5bbf264f._物料BOM_组成数量}\": null, \"{$builder_7f9a5bbf264f._物料BOM_重量单位}\": null, \"{$builder_7f9a5bbf264f._物料BOM_销售料号}\": null, \"{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}\": null}}], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"7f9a5bbf-264f-4b07-8dff-3118a9428a48\", \"resolvedRows\": [{\"层级\": 1, \"__nodeId\": \"T0911S2-M1\", \"是否根\": 1, \"是否叶子\": 1}], \"componentType\": \"NORMAL\", \"formulaResults\": [{\"rowKey\": \"T0911S2-M1::0\", \"values\": {}}]}, {\"tabName\": \"材质元素\", \"baseRows\": [], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"98ee51d1-832e-4881-aa3d-e9512824cc14\", \"resolvedRows\": [], \"componentType\": \"NORMAL\", \"formulaResults\": [], \"subtotalByColumn\": {\"元素小计\": \"0\"}}, {\"tabName\": \"产品单价\", \"baseRows\": [], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"2c539680-91c8-4afe-80d6-fa07e8b2bbb0\", \"resolvedRows\": [], \"componentType\": \"SUBTOTAL\", \"formulaResults\": []}, {\"tabName\": \"加工费\", \"baseRows\": [], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"4aa23fde-7ac9-4189-997c-cdfe00a6080f\", \"resolvedRows\": [], \"componentType\": \"NORMAL\", \"formulaResults\": []}, {\"tabName\": \"自制加工费\", \"baseRows\": [], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"3fda805a-52da-4c9a-8741-51766ccf820f\", \"resolvedRows\": [], \"componentType\": \"NORMAL\", \"formulaResults\": []}]}",
+    "quoteExcelValues": null,
+    "costingCardValues": null,
+    "costingExcelValues": null,
+    "annualVolume": null,
+    "discountSource": null,
+    "discountBaseAmount": null,
+    "discountRateApplied": null,
+    "lineDiscountAmount": null,
+    "lineUnitPrice": null,
+    "lineFinalPrice": null,
+    "lineTotalAmount": null,
+    "discountRuleCode": null
+   },
+   {
+    "id": "11110911-5222-4fff-9002-000000000001",
+    "productId": null,
+    "templateId": "45cc0267-a340-43ba-80e1-3de17af47443",
+    "productPartNo": "T0911S2-M1",
+    "productName": null,
+    "customerPartNo": "T0911S2-CP2",
+    "customerPartName": "S2客件2",
+    "customerProductNo": "T0911S2-CP2",
+    "customerDrawingNo": "DWG-S2-2",
+    "hfPartInfo": {
+     "partNo": "PROD-S2-A",
+     "partName": null,
+     "specification": null,
+     "sizeInfo": null,
+     "oldMaterialNo": null
+    },
+    "productAttributeValues": "{}",
+    "subtotal": "0",
+    "systemDiscountRate": "100",
+    "finalDiscountRate": "100",
+    "discountAdjustmentReason": null,
+    "isManuallyAdjusted": false,
+    "sortOrder": 1,
+    "processes": [],
+    "compositeProcesses": [],
+    "componentData": [
+     {
+      "id": "17452796-1610-4a6e-82ed-8c6d9c11a6c9",
+      "componentId": "98ee51d1-832e-4881-aa3d-e9512824cc14",
+      "tabName": "材质元素",
+      "rowData": "[]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     },
+     {
+      "id": "1c9052a7-6668-40d5-8c73-b10255dc466b",
+      "componentId": "4aa23fde-7ac9-4189-997c-cdfe00a6080f",
+      "tabName": "加工费",
+      "rowData": "[]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     },
+     {
+      "id": "a6110052-5c23-4e3e-a012-d0d205405384",
+      "componentId": "3fda805a-52da-4c9a-8741-51766ccf820f",
+      "tabName": "自制加工费",
+      "rowData": "[]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     },
+     {
+      "id": "bfb90ff0-417f-47fc-a124-570b156fd8d1",
+      "componentId": "221dc766-8ab6-4d95-82c0-08cc03e6267d",
+      "tabName": "产品",
+      "rowData": "[{\"单重\": \"7.777777777777\", \"品名\": \"S2测试件甲\", \"尺寸\": \"20x10x5\", \"规格\": \"SPEC-S2-A\", \"row_index\": 0, \"旧料号\": \"OLD-S2-A\", \"生产料号\": \"PROD-S2-A\", \"销售料号\": \"T0911S2-M1\", \"客户产品编号\": \"T0911S2-CP2\"}]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     },
+     {
+      "id": "fd1d6e86-f0e9-4c78-b8f9-b549c8af2b77",
+      "componentId": "7f9a5bbf-264f-4b07-8dff-3118a9428a48",
+      "tabName": "BOM",
+      "rowData": "[{\"row_index\": 0}]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     }
+    ],
+    "snapshot": null,
+    "partVersionLocked": 2000,
+    "productType": null,
+    "compositeType": "SIMPLE",
+    "parentLineItemId": null,
+    "quoteCardValues": "{\"tabs\": [{\"tabName\": \"产品\", \"baseRows\": [{\"driverRow\": {\"hf_part_no\": \"T0911S2-M1\", \"_物料_单重\": \"7.777777777777\", \"_物料_品名\": \"S2测试件甲\", \"_物料_尺寸\": \"20x10x5\", \"_物料_规格\": \"SPEC-S2-A\", \"_物料_旧料号\": \"OLD-S2-A\", \"_物料_生产料号\": \"PROD-S2-A\", \"_物料_销售料号\": \"T0911S2-M1\", \"_客户料号_客户产品编号\": \"T0911S2-CP2\"}, \"basicDataValues\": {\"{$builder_221dc7668ab6._物料_单重}\": \"7.777777777777\", \"{$builder_221dc7668ab6._物料_品名}\": \"S2测试件甲\", \"{$builder_221dc7668ab6._物料_尺寸}\": \"20x10x5\", \"{$builder_221dc7668ab6._物料_规格}\": \"SPEC-S2-A\", \"{$builder_221dc7668ab6._物料_旧料号}\": \"OLD-S2-A\", \"{$builder_221dc7668ab6._物料_生产料号}\": \"PROD-S2-A\", \"{$builder_221dc7668ab6._物料_销售料号}\": \"T0911S2-M1\", \"{$builder_221dc7668ab6._客户料号_客户产品编号}\": \"T0911S2-CP2\"}}], \"editRows\": [{\"rowKey\": \"T0911S2-M1\", \"values\": {\"单重\": \"7.777777777777\", \"品名\": \"S2测试件甲\", \"尺寸\": \"20x10x5\", \"规格\": \"SPEC-S2-A\", \"旧料号\": \"OLD-S2-A\", \"生产料号\": \"PROD-S2-A\", \"销售料号\": \"T0911S2-M1\", \"客户产品编号\": \"T0911S2-CP2\"}}], \"subtotal\": \"0\", \"componentId\": \"221dc766-8ab6-4d95-82c0-08cc03e6267d\", \"resolvedRows\": [{\"单重\": \"7.777777777777\", \"品名\": \"S2测试件甲\", \"尺寸\": \"20x10x5\", \"规格\": \"SPEC-S2-A\", \"旧料号\": \"OLD-S2-A\", \"生产料号\": \"PROD-S2-A\", \"销售料号\": \"T0911S2-M1\", \"客户产品编号\": \"T0911S2-CP2\"}], \"componentType\": \"NORMAL\", \"formulaResults\": [{\"rowKey\": \"T0911S2-M1\", \"values\": {}}]}, {\"tabName\": \"BOM\", \"baseRows\": [{\"__lvl\": 1, \"__nodeId\": \"T0911S2-M1\", \"driverRow\": {\"parent_no\": null, \"hf_part_no\": \"T0911S2-M1\", \"material_no\": \"T0911S2-M1\", \"_物料BOM_项次\": null, \"_物料_材料名\": null, \"_物料BOM_投入料号\": null, \"_物料BOM_材料净重\": null, \"_物料BOM_材料毛重\": null, \"_物料BOM_组成数量\": null, \"_物料BOM_重量单位\": null, \"_物料BOM_销售料号\": null, \"_物料BOM_损耗率（%）\": null}, \"__hfPartNo\": \"T0911S2-M1\", \"__nodeType\": null, \"__parentId\": null, \"__parentNo\": null, \"__bomVersion\": null, \"basicDataValues\": {\"{$builder_7f9a5bbf264f._物料BOM_项次}\": null, \"{$builder_7f9a5bbf264f._物料_材料名}\": null, \"{$builder_7f9a5bbf264f._物料BOM_投入料号}\": null, \"{$builder_7f9a5bbf264f._物料BOM_材料净重}\": null, \"{$builder_7f9a5bbf264f._物料BOM_材料毛重}\": null, \"{$builder_7f9a5bbf264f._物料BOM_组成数量}\": null, \"{$builder_7f9a5bbf264f._物料BOM_重量单位}\": null, \"{$builder_7f9a5bbf264f._物料BOM_销售料号}\": null, \"{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}\": null}}], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"7f9a5bbf-264f-4b07-8dff-3118a9428a48\", \"resolvedRows\": [{\"层级\": 1, \"__nodeId\": \"T0911S2-M1\", \"是否根\": 1, \"是否叶子\": 1}], \"componentType\": \"NORMAL\", \"formulaResults\": [{\"rowKey\": \"T0911S2-M1::0\", \"values\": {}}]}, {\"tabName\": \"材质元素\", \"baseRows\": [], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"98ee51d1-832e-4881-aa3d-e9512824cc14\", \"resolvedRows\": [], \"componentType\": \"NORMAL\", \"formulaResults\": [], \"subtotalByColumn\": {\"元素小计\": \"0\"}}, {\"tabName\": \"产品单价\", \"baseRows\": [], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"2c539680-91c8-4afe-80d6-fa07e8b2bbb0\", \"resolvedRows\": [], \"componentType\": \"SUBTOTAL\", \"formulaResults\": []}, {\"tabName\": \"加工费\", \"baseRows\": [], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"4aa23fde-7ac9-4189-997c-cdfe00a6080f\", \"resolvedRows\": [], \"componentType\": \"NORMAL\", \"formulaResults\": []}, {\"tabName\": \"自制加工费\", \"baseRows\": [], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"3fda805a-52da-4c9a-8741-51766ccf820f\", \"resolvedRows\": [], \"componentType\": \"NORMAL\", \"formulaResults\": []}]}",
+    "quoteExcelValues": null,
+    "costingCardValues": null,
+    "costingExcelValues": null,
+    "annualVolume": null,
+    "discountSource": null,
+    "discountBaseAmount": null,
+    "discountRateApplied": null,
+    "lineDiscountAmount": null,
+    "lineUnitPrice": null,
+    "lineFinalPrice": null,
+    "lineTotalAmount": null,
+    "discountRuleCode": null
+   },
+   {
+    "id": "11110911-5222-4fff-9002-000000000002",
+    "productId": null,
+    "templateId": "45cc0267-a340-43ba-80e1-3de17af47443",
+    "productPartNo": "T0911S2-M1",
+    "productName": null,
+    "customerPartNo": "T0911S2-CP3",
+    "customerPartName": "S2客件3",
+    "customerProductNo": "T0911S2-CP3",
+    "customerDrawingNo": "DWG-S2-3",
+    "hfPartInfo": {
+     "partNo": "PROD-S2-A",
+     "partName": null,
+     "specification": null,
+     "sizeInfo": null,
+     "oldMaterialNo": null
+    },
+    "productAttributeValues": "{}",
+    "subtotal": "0",
+    "systemDiscountRate": "100",
+    "finalDiscountRate": "100",
+    "discountAdjustmentReason": null,
+    "isManuallyAdjusted": false,
+    "sortOrder": 2,
+    "processes": [],
+    "compositeProcesses": [],
+    "componentData": [
+     {
+      "id": "025b4398-ced0-4d15-83d6-acf47772e243",
+      "componentId": "3fda805a-52da-4c9a-8741-51766ccf820f",
+      "tabName": "自制加工费",
+      "rowData": "[]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     },
+     {
+      "id": "6a8dbc31-6024-4004-9f41-12164c85708f",
+      "componentId": "4aa23fde-7ac9-4189-997c-cdfe00a6080f",
+      "tabName": "加工费",
+      "rowData": "[]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     },
+     {
+      "id": "93367fd7-ef64-417d-badf-3bf6e8146441",
+      "componentId": "98ee51d1-832e-4881-aa3d-e9512824cc14",
+      "tabName": "材质元素",
+      "rowData": "[]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     },
+     {
+      "id": "9b331235-dda6-4fdf-bea4-35c15048914a",
+      "componentId": "7f9a5bbf-264f-4b07-8dff-3118a9428a48",
+      "tabName": "BOM",
+      "rowData": "[{\"row_index\": 0}]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     },
+     {
+      "id": "a0109422-904d-4284-879a-9c9e70612b4c",
+      "componentId": "221dc766-8ab6-4d95-82c0-08cc03e6267d",
+      "tabName": "产品",
+      "rowData": "[{\"单重\": \"7.777777777777\", \"品名\": \"S2测试件甲\", \"尺寸\": \"20x10x5\", \"规格\": \"SPEC-S2-A\", \"row_index\": 0, \"旧料号\": \"OLD-S2-A\", \"生产料号\": \"PROD-S2-A\", \"销售料号\": \"T0911S2-M1\", \"客户产品编号\": \"T0911S2-CP3\"}]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     }
+    ],
+    "snapshot": null,
+    "partVersionLocked": 2000,
+    "productType": null,
+    "compositeType": "SIMPLE",
+    "parentLineItemId": null,
+    "quoteCardValues": "{\"tabs\": [{\"tabName\": \"产品\", \"baseRows\": [{\"driverRow\": {\"hf_part_no\": \"T0911S2-M1\", \"_物料_单重\": \"7.777777777777\", \"_物料_品名\": \"S2测试件甲\", \"_物料_尺寸\": \"20x10x5\", \"_物料_规格\": \"SPEC-S2-A\", \"_物料_旧料号\": \"OLD-S2-A\", \"_物料_生产料号\": \"PROD-S2-A\", \"_物料_销售料号\": \"T0911S2-M1\", \"_客户料号_客户产品编号\": \"T0911S2-CP3\"}, \"basicDataValues\": {\"{$builder_221dc7668ab6._物料_单重}\": \"7.777777777777\", \"{$builder_221dc7668ab6._物料_品名}\": \"S2测试件甲\", \"{$builder_221dc7668ab6._物料_尺寸}\": \"20x10x5\", \"{$builder_221dc7668ab6._物料_规格}\": \"SPEC-S2-A\", \"{$builder_221dc7668ab6._物料_旧料号}\": \"OLD-S2-A\", \"{$builder_221dc7668ab6._物料_生产料号}\": \"PROD-S2-A\", \"{$builder_221dc7668ab6._物料_销售料号}\": \"T0911S2-M1\", \"{$builder_221dc7668ab6._客户料号_客户产品编号}\": \"T0911S2-CP3\"}}], \"editRows\": [{\"rowKey\": \"T0911S2-M1\", \"values\": {\"单重\": \"7.777777777777\", \"品名\": \"S2测试件甲\", \"尺寸\": \"20x10x5\", \"规格\": \"SPEC-S2-A\", \"旧料号\": \"OLD-S2-A\", \"生产料号\": \"PROD-S2-A\", \"销售料号\": \"T0911S2-M1\", \"客户产品编号\": \"T0911S2-CP3\"}}], \"subtotal\": \"0\", \"componentId\": \"221dc766-8ab6-4d95-82c0-08cc03e6267d\", \"resolvedRows\": [{\"单重\": \"7.777777777777\", \"品名\": \"S2测试件甲\", \"尺寸\": \"20x10x5\", \"规格\": \"SPEC-S2-A\", \"旧料号\": \"OLD-S2-A\", \"生产料号\": \"PROD-S2-A\", \"销售料号\": \"T0911S2-M1\", \"客户产品编号\": \"T0911S2-CP3\"}], \"componentType\": \"NORMAL\", \"formulaResults\": [{\"rowKey\": \"T0911S2-M1\", \"values\": {}}]}, {\"tabName\": \"BOM\", \"baseRows\": [{\"__lvl\": 1, \"__nodeId\": \"T0911S2-M1\", \"driverRow\": {\"parent_no\": null, \"hf_part_no\": \"T0911S2-M1\", \"material_no\": \"T0911S2-M1\", \"_物料BOM_项次\": null, \"_物料_材料名\": null, \"_物料BOM_投入料号\": null, \"_物料BOM_材料净重\": null, \"_物料BOM_材料毛重\": null, \"_物料BOM_组成数量\": null, \"_物料BOM_重量单位\": null, \"_物料BOM_销售料号\": null, \"_物料BOM_损耗率（%）\": null}, \"__hfPartNo\": \"T0911S2-M1\", \"__nodeType\": null, \"__parentId\": null, \"__parentNo\": null, \"__bomVersion\": null, \"basicDataValues\": {\"{$builder_7f9a5bbf264f._物料BOM_项次}\": null, \"{$builder_7f9a5bbf264f._物料_材料名}\": null, \"{$builder_7f9a5bbf264f._物料BOM_投入料号}\": null, \"{$builder_7f9a5bbf264f._物料BOM_材料净重}\": null, \"{$builder_7f9a5bbf264f._物料BOM_材料毛重}\": null, \"{$builder_7f9a5bbf264f._物料BOM_组成数量}\": null, \"{$builder_7f9a5bbf264f._物料BOM_重量单位}\": null, \"{$builder_7f9a5bbf264f._物料BOM_销售料号}\": null, \"{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}\": null}}], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"7f9a5bbf-264f-4b07-8dff-3118a9428a48\", \"resolvedRows\": [{\"层级\": 1, \"__nodeId\": \"T0911S2-M1\", \"是否根\": 1, \"是否叶子\": 1}], \"componentType\": \"NORMAL\", \"formulaResults\": [{\"rowKey\": \"T0911S2-M1::0\", \"values\": {}}]}, {\"tabName\": \"材质元素\", \"baseRows\": [], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"98ee51d1-832e-4881-aa3d-e9512824cc14\", \"resolvedRows\": [], \"componentType\": \"NORMAL\", \"formulaResults\": [], \"subtotalByColumn\": {\"元素小计\": \"0\"}}, {\"tabName\": \"产品单价\", \"baseRows\": [], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"2c539680-91c8-4afe-80d6-fa07e8b2bbb0\", \"resolvedRows\": [], \"componentType\": \"SUBTOTAL\", \"formulaResults\": []}, {\"tabName\": \"加工费\", \"baseRows\": [], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"4aa23fde-7ac9-4189-997c-cdfe00a6080f\", \"resolvedRows\": [], \"componentType\": \"NORMAL\", \"formulaResults\": []}, {\"tabName\": \"自制加工费\", \"baseRows\": [], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"3fda805a-52da-4c9a-8741-51766ccf820f\", \"resolvedRows\": [], \"componentType\": \"NORMAL\", \"formulaResults\": []}]}",
+    "quoteExcelValues": null,
+    "costingCardValues": null,
+    "costingExcelValues": null,
+    "annualVolume": null,
+    "discountSource": null,
+    "discountBaseAmount": null,
+    "discountRateApplied": null,
+    "lineDiscountAmount": null,
+    "lineUnitPrice": null,
+    "lineFinalPrice": null,
+    "lineTotalAmount": null,
+    "discountRuleCode": null
+   },
+   {
+    "id": "11110911-5222-4fff-9002-000000000003",
+    "productId": null,
+    "templateId": "45cc0267-a340-43ba-80e1-3de17af47443",
+    "productPartNo": "T0911S2-M1",
+    "productName": null,
+    "customerPartNo": "T0911S2-CP1",
+    "customerPartName": "S2客件1",
+    "customerProductNo": "T0911S2-CP1",
+    "customerDrawingNo": "DWG-S2-1",
+    "hfPartInfo": {
+     "partNo": "PROD-S2-A",
+     "partName": null,
+     "specification": null,
+     "sizeInfo": null,
+     "oldMaterialNo": null
+    },
+    "productAttributeValues": "{}",
+    "subtotal": "0",
+    "systemDiscountRate": "100",
+    "finalDiscountRate": "100",
+    "discountAdjustmentReason": null,
+    "isManuallyAdjusted": false,
+    "sortOrder": 3,
+    "processes": [],
+    "compositeProcesses": [],
+    "componentData": [
+     {
+      "id": "3180f8c7-0e01-4d3a-9173-36e4bd64dd3e",
+      "componentId": "7f9a5bbf-264f-4b07-8dff-3118a9428a48",
+      "tabName": "BOM",
+      "rowData": "[{\"row_index\": 0}]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     },
+     {
+      "id": "54f3e74b-9905-41e5-8135-c0b31d3f99f3",
+      "componentId": "221dc766-8ab6-4d95-82c0-08cc03e6267d",
+      "tabName": "产品",
+      "rowData": "[{\"单重\": \"7.777777777777\", \"品名\": \"S2测试件甲\", \"尺寸\": \"20x10x5\", \"规格\": \"SPEC-S2-A\", \"row_index\": 0, \"旧料号\": \"OLD-S2-A\", \"生产料号\": \"PROD-S2-A\", \"销售料号\": \"T0911S2-M1\", \"客户产品编号\": \"T0911S2-CP1\"}]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     },
+     {
+      "id": "bfd7643a-f354-47b6-9db8-afb61cef9de8",
+      "componentId": "3fda805a-52da-4c9a-8741-51766ccf820f",
+      "tabName": "自制加工费",
+      "rowData": "[]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     },
+     {
+      "id": "c84d2d43-9d5b-4c7f-80b7-f65cbb22539f",
+      "componentId": "98ee51d1-832e-4881-aa3d-e9512824cc14",
+      "tabName": "材质元素",
+      "rowData": "[]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     },
+     {
+      "id": "defd155b-1613-4bec-b1a4-646cb46ff4ed",
+      "componentId": "4aa23fde-7ac9-4189-997c-cdfe00a6080f",
+      "tabName": "加工费",
+      "rowData": "[]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     }
+    ],
+    "snapshot": null,
+    "partVersionLocked": 2000,
+    "productType": null,
+    "compositeType": "SIMPLE",
+    "parentLineItemId": null,
+    "quoteCardValues": "{\"tabs\": [{\"tabName\": \"产品\", \"baseRows\": [{\"driverRow\": {\"hf_part_no\": \"T0911S2-M1\", \"_物料_单重\": \"7.777777777777\", \"_物料_品名\": \"S2测试件甲\", \"_物料_尺寸\": \"20x10x5\", \"_物料_规格\": \"SPEC-S2-A\", \"_物料_旧料号\": \"OLD-S2-A\", \"_物料_生产料号\": \"PROD-S2-A\", \"_物料_销售料号\": \"T0911S2-M1\", \"_客户料号_客户产品编号\": \"T0911S2-CP1\"}, \"basicDataValues\": {\"{$builder_221dc7668ab6._物料_单重}\": \"7.777777777777\", \"{$builder_221dc7668ab6._物料_品名}\": \"S2测试件甲\", \"{$builder_221dc7668ab6._物料_尺寸}\": \"20x10x5\", \"{$builder_221dc7668ab6._物料_规格}\": \"SPEC-S2-A\", \"{$builder_221dc7668ab6._物料_旧料号}\": \"OLD-S2-A\", \"{$builder_221dc7668ab6._物料_生产料号}\": \"PROD-S2-A\", \"{$builder_221dc7668ab6._物料_销售料号}\": \"T0911S2-M1\", \"{$builder_221dc7668ab6._客户料号_客户产品编号}\": \"T0911S2-CP1\"}}], \"editRows\": [{\"rowKey\": \"T0911S2-M1\", \"values\": {\"单重\": \"7.777777777777\", \"品名\": \"S2测试件甲\", \"尺寸\": \"20x10x5\", \"规格\": \"SPEC-S2-A\", \"旧料号\": \"OLD-S2-A\", \"生产料号\": \"PROD-S2-A\", \"销售料号\": \"T0911S2-M1\", \"客户产品编号\": \"T0911S2-CP1\"}}], \"subtotal\": \"0\", \"componentId\": \"221dc766-8ab6-4d95-82c0-08cc03e6267d\", \"resolvedRows\": [{\"单重\": \"7.777777777777\", \"品名\": \"S2测试件甲\", \"尺寸\": \"20x10x5\", \"规格\": \"SPEC-S2-A\", \"旧料号\": \"OLD-S2-A\", \"生产料号\": \"PROD-S2-A\", \"销售料号\": \"T0911S2-M1\", \"客户产品编号\": \"T0911S2-CP1\"}], \"componentType\": \"NORMAL\", \"formulaResults\": [{\"rowKey\": \"T0911S2-M1\", \"values\": {}}]}, {\"tabName\": \"BOM\", \"baseRows\": [{\"__lvl\": 1, \"__nodeId\": \"T0911S2-M1\", \"driverRow\": {\"parent_no\": null, \"hf_part_no\": \"T0911S2-M1\", \"material_no\": \"T0911S2-M1\", \"_物料BOM_项次\": null, \"_物料_材料名\": null, \"_物料BOM_投入料号\": null, \"_物料BOM_材料净重\": null, \"_物料BOM_材料毛重\": null, \"_物料BOM_组成数量\": null, \"_物料BOM_重量单位\": null, \"_物料BOM_销售料号\": null, \"_物料BOM_损耗率（%）\": null}, \"__hfPartNo\": \"T0911S2-M1\", \"__nodeType\": null, \"__parentId\": null, \"__parentNo\": null, \"__bomVersion\": null, \"basicDataValues\": {\"{$builder_7f9a5bbf264f._物料BOM_项次}\": null, \"{$builder_7f9a5bbf264f._物料_材料名}\": null, \"{$builder_7f9a5bbf264f._物料BOM_投入料号}\": null, \"{$builder_7f9a5bbf264f._物料BOM_材料净重}\": null, \"{$builder_7f9a5bbf264f._物料BOM_材料毛重}\": null, \"{$builder_7f9a5bbf264f._物料BOM_组成数量}\": null, \"{$builder_7f9a5bbf264f._物料BOM_重量单位}\": null, \"{$builder_7f9a5bbf264f._物料BOM_销售料号}\": null, \"{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}\": null}}], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"7f9a5bbf-264f-4b07-8dff-3118a9428a48\", \"resolvedRows\": [{\"层级\": 1, \"__nodeId\": \"T0911S2-M1\", \"是否根\": 1, \"是否叶子\": 1}], \"componentType\": \"NORMAL\", \"formulaResults\": [{\"rowKey\": \"T0911S2-M1::0\", \"values\": {}}]}, {\"tabName\": \"材质元素\", \"baseRows\": [], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"98ee51d1-832e-4881-aa3d-e9512824cc14\", \"resolvedRows\": [], \"componentType\": \"NORMAL\", \"formulaResults\": [], \"subtotalByColumn\": {\"元素小计\": \"0\"}}, {\"tabName\": \"产品单价\", \"baseRows\": [], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"2c539680-91c8-4afe-80d6-fa07e8b2bbb0\", \"resolvedRows\": [], \"componentType\": \"SUBTOTAL\", \"formulaResults\": []}, {\"tabName\": \"加工费\", \"baseRows\": [], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"4aa23fde-7ac9-4189-997c-cdfe00a6080f\", \"resolvedRows\": [], \"componentType\": \"NORMAL\", \"formulaResults\": []}, {\"tabName\": \"自制加工费\", \"baseRows\": [], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"3fda805a-52da-4c9a-8741-51766ccf820f\", \"resolvedRows\": [], \"componentType\": \"NORMAL\", \"formulaResults\": []}]}",
+    "quoteExcelValues": null,
+    "costingCardValues": null,
+    "costingExcelValues": null,
+    "annualVolume": null,
+    "discountSource": null,
+    "discountBaseAmount": null,
+    "discountRateApplied": null,
+    "lineDiscountAmount": null,
+    "lineUnitPrice": null,
+    "lineFinalPrice": null,
+    "lineTotalAmount": null,
+    "discountRuleCode": null
+   },
+   {
+    "id": "11110911-5222-4fff-9002-000000000004",
+    "productId": null,
+    "templateId": "45cc0267-a340-43ba-80e1-3de17af47443",
+    "productPartNo": "T0911S2-M1",
+    "productName": null,
+    "customerPartNo": null,
+    "customerPartName": "S2客件1",
+    "customerProductNo": "T0911S2-CP1",
+    "customerDrawingNo": "DWG-S2-1",
+    "hfPartInfo": {
+     "partNo": "PROD-S2-A",
+     "partName": null,
+     "specification": null,
+     "sizeInfo": null,
+     "oldMaterialNo": null
+    },
+    "productAttributeValues": "{}",
+    "subtotal": "0",
+    "systemDiscountRate": "100",
+    "finalDiscountRate": "100",
+    "discountAdjustmentReason": null,
+    "isManuallyAdjusted": false,
+    "sortOrder": 4,
+    "processes": [],
+    "compositeProcesses": [],
+    "componentData": [
+     {
+      "id": "57b55d1d-d76f-4c63-988b-3edbfd5513dd",
+      "componentId": "3fda805a-52da-4c9a-8741-51766ccf820f",
+      "tabName": "自制加工费",
+      "rowData": "[]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     },
+     {
+      "id": "68f81572-3bbe-423a-94c9-6c57f24d8d06",
+      "componentId": "221dc766-8ab6-4d95-82c0-08cc03e6267d",
+      "tabName": "产品",
+      "rowData": "[{\"单重\": \"7.777777777777\", \"品名\": \"S2测试件甲\", \"尺寸\": \"20x10x5\", \"规格\": \"SPEC-S2-A\", \"row_index\": 0, \"旧料号\": \"OLD-S2-A\", \"生产料号\": \"PROD-S2-A\", \"销售料号\": \"T0911S2-M1\", \"客户产品编号\": \"T0911S2-CP1\"}]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     },
+     {
+      "id": "6c1bb967-2d6d-4b31-b38c-5c3682ddcf56",
+      "componentId": "7f9a5bbf-264f-4b07-8dff-3118a9428a48",
+      "tabName": "BOM",
+      "rowData": "[{\"row_index\": 0}]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     },
+     {
+      "id": "7a53d4a7-0836-4a92-808e-0a68826b359d",
+      "componentId": "4aa23fde-7ac9-4189-997c-cdfe00a6080f",
+      "tabName": "加工费",
+      "rowData": "[]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     },
+     {
+      "id": "f741b830-7ec2-493e-bb57-fa6d21a37337",
+      "componentId": "98ee51d1-832e-4881-aa3d-e9512824cc14",
+      "tabName": "材质元素",
+      "rowData": "[]",
+      "deletedRowKeys": "[]",
+      "subtotal": "0",
+      "sortOrder": 0
+     }
+    ],
+    "snapshot": null,
+    "partVersionLocked": 2000,
+    "productType": null,
+    "compositeType": "SIMPLE",
+    "parentLineItemId": null,
+    "quoteCardValues": "{\"tabs\": [{\"tabName\": \"产品\", \"baseRows\": [{\"driverRow\": {\"hf_part_no\": \"T0911S2-M1\", \"_物料_单重\": \"7.777777777777\", \"_物料_品名\": \"S2测试件甲\", \"_物料_尺寸\": \"20x10x5\", \"_物料_规格\": \"SPEC-S2-A\", \"_物料_旧料号\": \"OLD-S2-A\", \"_物料_生产料号\": \"PROD-S2-A\", \"_物料_销售料号\": \"T0911S2-M1\", \"_客户料号_客户产品编号\": null}, \"basicDataValues\": {\"{$builder_221dc7668ab6._物料_单重}\": \"7.777777777777\", \"{$builder_221dc7668ab6._物料_品名}\": \"S2测试件甲\", \"{$builder_221dc7668ab6._物料_尺寸}\": \"20x10x5\", \"{$builder_221dc7668ab6._物料_规格}\": \"SPEC-S2-A\", \"{$builder_221dc7668ab6._物料_旧料号}\": \"OLD-S2-A\", \"{$builder_221dc7668ab6._物料_生产料号}\": \"PROD-S2-A\", \"{$builder_221dc7668ab6._物料_销售料号}\": \"T0911S2-M1\", \"{$builder_221dc7668ab6._客户料号_客户产品编号}\": \"T0911S2-CP1\"}}], \"editRows\": [{\"rowKey\": \"T0911S2-M1\", \"values\": {\"单重\": \"7.777777777777\", \"品名\": \"S2测试件甲\", \"尺寸\": \"20x10x5\", \"规格\": \"SPEC-S2-A\", \"旧料号\": \"OLD-S2-A\", \"生产料号\": \"PROD-S2-A\", \"销售料号\": \"T0911S2-M1\", \"客户产品编号\": \"T0911S2-CP1\"}}], \"subtotal\": \"0\", \"componentId\": \"221dc766-8ab6-4d95-82c0-08cc03e6267d\", \"resolvedRows\": [{\"单重\": \"7.777777777777\", \"品名\": \"S2测试件甲\", \"尺寸\": \"20x10x5\", \"规格\": \"SPEC-S2-A\", \"旧料号\": \"OLD-S2-A\", \"生产料号\": \"PROD-S2-A\", \"销售料号\": \"T0911S2-M1\", \"客户产品编号\": \"T0911S2-CP1\"}], \"componentType\": \"NORMAL\", \"formulaResults\": [{\"rowKey\": \"T0911S2-M1\", \"values\": {}}]}, {\"tabName\": \"BOM\", \"baseRows\": [{\"__lvl\": 1, \"__nodeId\": \"T0911S2-M1\", \"driverRow\": {\"parent_no\": null, \"hf_part_no\": \"T0911S2-M1\", \"material_no\": \"T0911S2-M1\", \"_物料BOM_项次\": null, \"_物料_材料名\": null, \"_物料BOM_投入料号\": null, \"_物料BOM_材料净重\": null, \"_物料BOM_材料毛重\": null, \"_物料BOM_组成数量\": null, \"_物料BOM_重量单位\": null, \"_物料BOM_销售料号\": null, \"_物料BOM_损耗率（%）\": null}, \"__hfPartNo\": \"T0911S2-M1\", \"__nodeType\": null, \"__parentId\": null, \"__parentNo\": null, \"__bomVersion\": null, \"basicDataValues\": {\"{$builder_7f9a5bbf264f._物料BOM_项次}\": null, \"{$builder_7f9a5bbf264f._物料_材料名}\": null, \"{$builder_7f9a5bbf264f._物料BOM_投入料号}\": null, \"{$builder_7f9a5bbf264f._物料BOM_材料净重}\": null, \"{$builder_7f9a5bbf264f._物料BOM_材料毛重}\": null, \"{$builder_7f9a5bbf264f._物料BOM_组成数量}\": null, \"{$builder_7f9a5bbf264f._物料BOM_重量单位}\": null, \"{$builder_7f9a5bbf264f._物料BOM_销售料号}\": null, \"{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}\": null}}], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"7f9a5bbf-264f-4b07-8dff-3118a9428a48\", \"resolvedRows\": [{\"层级\": 1, \"__nodeId\": \"T0911S2-M1\", \"是否根\": 1, \"是否叶子\": 1}], \"componentType\": \"NORMAL\", \"formulaResults\": [{\"rowKey\": \"T0911S2-M1::0\", \"values\": {}}]}, {\"tabName\": \"材质元素\", \"baseRows\": [], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"98ee51d1-832e-4881-aa3d-e9512824cc14\", \"resolvedRows\": [], \"componentType\": \"NORMAL\", \"formulaResults\": [], \"subtotalByColumn\": {\"元素小计\": \"0\"}}, {\"tabName\": \"产品单价\", \"baseRows\": [], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"2c539680-91c8-4afe-80d6-fa07e8b2bbb0\", \"resolvedRows\": [], \"componentType\": \"SUBTOTAL\", \"formulaResults\": []}, {\"tabName\": \"加工费\", \"baseRows\": [], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"4aa23fde-7ac9-4189-997c-cdfe00a6080f\", \"resolvedRows\": [], \"componentType\": \"NORMAL\", \"formulaResults\": []}, {\"tabName\": \"自制加工费\", \"baseRows\": [], \"editRows\": [], \"subtotal\": \"0\", \"componentId\": \"3fda805a-52da-4c9a-8741-51766ccf820f\", \"resolvedRows\": [], \"componentType\": \"NORMAL\", \"formulaResults\": []}]}",
+    "quoteExcelValues": null,
+    "costingCardValues": null,
+    "costingExcelValues": null,
+    "annualVolume": null,
+    "discountSource": null,
+    "discountBaseAmount": null,
+    "discountRateApplied": null,
+    "lineDiscountAmount": null,
+    "lineUnitPrice": null,
+    "lineFinalPrice": null,
+    "lineTotalAmount": null,
+    "discountRuleCode": null
+   }
+  ],
+  "approvalHistory": [],
+  "cardValuesWarming": false,
+  "userDataVersion": 0,
+  "backfill": null,
+  "dsBackfill": null
+ }
+}
