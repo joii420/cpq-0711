@@ -69,7 +69,7 @@
 1. 按 `问题说明.md ⑤ B-6` 的**重建定义逐键写回** `component 54001a3b.fields`，插到 `sort_order=8`（「元素单价」之后）。
    🚫 **不许凭感觉补键值** —— 每个键的依据都写在那张表里，照它写。
 2. 写回后**再走一次 `publish`** 出 `核价模板 v1.2` 重新冻结。
-3. 🚫 **绝对不许再调 `PUT /builder` / `POST /builder/compile`** —— `BuilderService:1077` 的 `compReq.fields = fields` 会**再删一次**。这正是本字段丢失的根因。
+3. 🚫 **绝对不许再调 `PUT /builder` / `POST /builder/compile`** —— `BuilderService` 的 `compReq.fields = fields`（`:1091`，2026-09-10 合并 master 前是 `:1077`） 会**再删一次**。这正是本字段丢失的根因。
 4. 🚫 **不许改 `BuilderService`** —— 根因按 `A0-5` 已另立项。改了就打破「Java 零改动」前提。
 5. 回报里给出写回前后的 `jsonb_array_length(fields)`（8 → 9）与该字段的完整 JSON。
 
