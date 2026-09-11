@@ -47,11 +47,16 @@ GET /api/cpq/quotations/configure/search-parts?customerNo=CUST-0004&q=<keyword>&
   "sizeInfo": "5×3×2",
   "statusCode": "Y",
 
+  "unitWeight": "7.000000000000",     // ✅ 保留（D-2 裁定）—— 「单重」列在读它，不在本次变更面内
+
   // 🔄 材质字段：单值 → 多值（AC-8）
   "materials": [
-    { "recipeCode": "00006", "recipeSymbol": "AgNi10", "recipeName": "银镍10", "recipeSpec": "…", "recipeType": "…" },
-    { "recipeCode": "00168", "recipeSymbol": "…",      "recipeName": "…",     "recipeSpec": "…", "recipeType": "…" }
+    { "recipeCode": "00006", "recipeSymbol": "AgNi10", "recipeName": "银镍10", "recipeSpec": "…", "recipeType": "…", "ratio": "55" },
+    { "recipeCode": "00168", "recipeSymbol": "…",      "recipeName": "…",     "recipeSpec": "…", "recipeType": "…", "ratio": "45" }
   ]
+  // 🆕 ratio（D-1 裁定）= ds_quote_material_bom.material_ratio 字符串。前后端已独立收敛到同一形状：
+  //    后端实发（实测 materials=[{992,AgNi11#-Ⅰ,ratio 55},{00017,AgCu70,ratio 45}]）
+  //    前端 types/configure.ts 的 SearchPartMaterial 已声明它
 }]
 ```
 
@@ -192,5 +197,6 @@ SELECT operation_no, operation_item_seq AS seq_no
 | `ds_quote_self_process_fee` 列映射 | `material_no`←`finished_material_no` · `input_material_no`←`code`（**零件料号**，D-4）· `operation_no`←`operation_no` · `operation_item_seq`←`seq_no` · `item_seq` 新增（`required=true`，按行序 1..N）· `currency`←`currency` · `pricing_unit`←`unit` · `value` 留 NULL（`required=false`） |
 | `ds_quote_assembly_fee` 列映射 | `material_no`←`material_no`(父) · `customer_no` 新增（从 `customerCode` 透传）· `assembly_operation`←`process_no` · `item_seq`←`seq_no` · **`assembly_fee=0`**（D-5，`required=true`）· `currency`←`currency` · `pricing_unit`←`capacity_unit` · `defect_rate`←`default_defect_rate`。**无落点**：`process_name`（可 JOIN `process_master` 现算）· `production_type`（硬编码常量，不迁） |
 | 写入器 | `VersionedGroupWriter.writeGroup(sheet, AxisKey.of(sd, customerNo, materialNo), rows, SOURCE_MANUAL, REASON_MANUAL_UPGRADE, operator)`。🚫 不再用 `VersionedV6Writer` |
-| `_record` patch 合并 | 关联键 `_record.origin_id → 主表.id`；`origin_id` 非空 ⇒ **按列 COALESCE 覆盖**（D-9）；`origin_id` 为 NULL ⇒ 追加；主表有而 `_record` 无 ⇒ 原样用主表 |
+| ~~`_record` patch 合并~~ | 🔴 **随 D-14 整条作废** —— 带版本表改直写主表，渲染侧不再读 `_record`。<br>📌 两条实证保留备查：① 渲染层拿到的 `driverRow` 是**视图输出行、身上没有主表 `id`** ⇒ `origin_id → 主表.id` 这条关联在那一层建不起来；② **回填侧的列级覆盖本来就有**（`DsBackfillCollector.patchedColumns`），不受本次影响 |
+| `_record` 的角色 | **报价单对主数据的投影 / 核价回填的数据来源**。两侧挂点：导入 `CreateQuotationMaterializer:179` · 选配 `ConfigureProductResource`（建单末尾）。🚫 **不是渲染数据源** |
 | `:quotationId` | 现成可用，与 `:customerCode` 同一条注入管线；`ConfigureSnapshotService` 是 `QuotationIdContext` 的 set 点之一 |
