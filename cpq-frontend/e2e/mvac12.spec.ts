@@ -80,7 +80,7 @@ test('AC-12 亲验：同组件上 BASIC_DATA ↔ INPUT_TEXT 往返，值不变�
   console.log('① 初始态（BASIC_DATA）渲染');
   const s0 = await renderAndRead(page);
   console.log('   值 =', JSON.stringify(s0.vals), ' input 数 =', JSON.stringify(s0.inputs));
-  expect(s0.vals.filter(v=>v!=='').length, 'AC-12：初始值必须非空，否则"值不变"恒真').toBeGreaterThan(0);
+  expect(s0.vals.filter((v:string)=>v!=='').length, 'AC-12：初始值必须非空，否则"值不变"恒真').toBeGreaterThan(0);
   expect(s0.inputs, 'AC-12①：BASIC_DATA 态该列应为纯文本').toEqual(s0.inputs.map(()=>0));
 
   console.log('② 改为 INPUT_TEXT');

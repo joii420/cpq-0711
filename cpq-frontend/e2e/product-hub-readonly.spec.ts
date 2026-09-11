@@ -647,7 +647,7 @@ test('E2E-15 / AC-15：超长品名省略号截断、页面不出现横向滚动
   await expect(page.locator('.ant-table-tbody tr.ant-table-row').first(),
     'AC-15：销售产品首屏应有行（0 行 ⇒ 下面的样式断言空跑）').toBeVisible({ timeout: 10_000 });
   const nameCell = await firstRowCellByHeader(page, '品名');
-  const ellipsis = await nameCell.evaluate((el) => {
+  const ellipsis = await nameCell.evaluate((el: any) => {
     const cs = getComputedStyle(el as HTMLElement);
     return { textOverflow: cs.textOverflow, whiteSpace: cs.whiteSpace, overflow: cs.overflow };
   });
@@ -685,7 +685,7 @@ test('E2E-15 / AC-15：超长品名省略号截断、页面不出现横向滚动
   await expect(longRowLoc, `AC-15：应能搜到超长品名的行 ${longRow}`).toBeVisible({ timeout: 10_000 });
   const cell = await cellByHeader(page, longRowLoc, '品名');
   await expect(cell, `AC-15：${longRow} 的「品名」单元格应可见`).toBeVisible({ timeout: 10_000 });
-  const clipped = await cell.evaluate((el) => ({
+  const clipped = await cell.evaluate((el: any) => ({
     scrollW: el.scrollWidth, clientW: el.clientWidth,
     textOverflow: getComputedStyle(el as HTMLElement).textOverflow,
   }));

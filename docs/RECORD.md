@@ -1,6 +1,18 @@
 
 # CPQ 系统开发记录
 
+[2026-09-10] 前端类型自检补全 —— `e2e/` 此前从未被类型检查（路径 B 直接修） - **已修复** | 涉及文件：`cpq-frontend/tsconfig.json`（加第 4 个 reference）· 新增 `cpq-frontend/e2e/tsconfig.e2e.json` · `docs/rules/frontend.md` §2.1 + checklist · 6 个 e2e spec 的类型修正 | 用户裁决「直接修就行」。
+
+🚨 **根因是两层叠加**：① 根 `tsconfig.json` 是 solution-style（`"files": []`），`tsc -p` **不跟进 references** ⇒ 编译 0 文件恒返回 0（此坑 2026-09-01 已记录并更正过命令）；② **但三个子项目的 `include` 分别是 `src` / `src` 下的 `*.test.*` / `vite.config.ts` —— 没有一个含 `e2e/`**。⇒ 两层叠加，**全仓 229 个 E2E 用例从来没被类型检查过**，而它们正是 UI 改动的主要回归防线。
+
+🔬 **证伪实验**（同一个 `const x: number = "字符串"`，四个位置/命令组合）：放 `e2e/` 用 `tsc -p tsconfig.json` → **EXIT=0 静默通过**；用 `tsc -p tsconfig.app.json` → **EXIT=0**；用 `tsc --ignoreConfig <该文件>` → `TS2322`（**错误是真的**）；放 `src/` 用 `tsc -p tsconfig.app.json` → `TS2322`。
+
+🛠 **修法**：新增 `e2e/tsconfig.e2e.json`（编译选项对齐 app，`types` 加 `node`）+ 挂进根 `references` + 自检命令改 `tsc -b`。修后同样做了**反向证伪**：注入类型错误 → `tsc -b` 报 `TS2322`，删掉 → 回绿 ⇒ 新配置不是空验证。
+
+📌 **刻意不启用 `verbatimModuleSyntax` / `erasableSyntaxOnly`**：这两个选项服务于构建产物（保证类型导入被正确擦除），而 e2e 不参与 vite 构建、由 playwright 自行处理。对测试代码启用它们会产生 **154 条 TS1484**「应改用 `import type`」，逼着改 **129 个文件**的 import 写法却**换不来任何类型安全** —— 关掉后剩下的 16 条才是真问题。
+
+🎯 **首次覆盖即抓出 16 个真问题**，最值钱的一个是 `task260901-incremental-request.spec.ts:272`：`status` 只在 `page.on('response')` 回调里赋值，TS 控制流不追踪回调 ⇒ `if (status !== null)` 分支被收窄成 `never`。类型报错本身是误报，**但它指出了一个真实的假绿形态**：回调若因任何原因没触发（请求没发出 / URL 没匹配上），`status` 恒为 `null` ⇒ 其中 **4 条 AC-24 断言被整体跳过、测试照样报绿** —— 正是 `subagents.md`「四类假绿」的第四类「断言从未执行」。本次只做**最小改动**（改为对象包装，`const captured = { status: null as number|null }`，属性访问不受该收窄影响，语义零变化）并在代码里留下问题说明；**真正的修法是「先断言请求必须发出」，让没发请求时红而不是静默跳过 —— 该文件属 `task-260901`，已登记待其负责方处理**。
+
 [2026-09-10] 核价树版本切换查 V6 老表（task-260909-核价树骨架/repair-260910） - **✅ 已交付合 master `4ebf8f0b` · 用户验收通过** | 涉及文件：`CostingVersionService.java`(+166) / `CostingVersionTreeSourceGuardTest.java`(新增 198) / `QuotationStep2.tsx` / `ReadonlyProductCard.tsx` + **骨架 SQL 配置**（`costing_bom_tree_config` DB 内，不进 git） | **16 条 AC：14 通过 / 2 缺口如实登记**。
 
 **症状**：核价单 BOM 树的「版本」下拉恒为「无可选版本」，但**树渲染正常、当前版本也显示正确**。⚠️ 这个组合本身就是线索 —— **显示值与候选值来自两个不同数据源，其中一个已经迁走了**。

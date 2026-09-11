@@ -1,0 +1,43 @@
+{
+  /*
+   * e2e/ 目录的**类型检查**专用 TS 项目。
+   *
+   * 🚨 存在理由（2026-09-10 证伪实验实测）：在此之前 `e2e/` **不在任何 tsconfig project 的
+   *    include 里**（app=src / test=src 下的 *.test.* / node=vite.config.ts），
+   *    且根 tsconfig 是 solution-style（"files": []）⇒ `tsc -p tsconfig.json` 不跟进
+   *    references、编译 0 个文件、**恒返回 0**。
+   *    实测：往 e2e 文件注入 `const x: number = "字符串"` 后，
+   *      tsc -p tsconfig.json      → EXIT=0   ← 静默通过
+   *      tsc -p tsconfig.app.json  → EXIT=0
+   *      tsc --ignoreConfig <该文件> → TS2322  ← 错误是真的
+   *    ⇒ 全仓所有 E2E 用例的「tsc 0 错误」此前都是空验证。
+   *
+   * 用法：cd cpq-frontend && npx tsc -p e2e/tsconfig.e2e.json
+   *       或（已挂进根 references）：npx tsc -b
+   *
+   * 📌 编译选项对齐 tsconfig.app.json，四处刻意不同：
+   *    - types 加 "node"（e2e 用 process / child_process / fs 等 node API）
+   *    - 不启用 jsx（e2e 下没有 .tsx）
+   *    - 🚫 不启用 verbatimModuleSyntax：它是**为构建产物服务的**（保证类型导入被正确擦除），
+   *      而 e2e 不参与 vite 构建、由 playwright 自行处理。对测试代码启用它只会产生 154 条
+   *      TS1484「应改用 import type」——逼着改 129 个文件的 import 写法，
+   *      **换不来任何类型安全**。关掉后剩下的才是真问题。
+   *    - 🚫 不启用 erasableSyntaxOnly：同理，构建相关。
+   */
+  "compilerOptions": {
+    "tsBuildInfoFile": "../node_modules/.tmp/tsconfig.e2e.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "esnext",
+    "types": ["node"],
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["**/*.ts"]
+}

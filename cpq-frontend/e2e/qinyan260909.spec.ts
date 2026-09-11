@@ -14,17 +14,17 @@ const SHOT = '/home/joii/project/cpq/dev-docs/task-260908-取数配置器优化/
 const CODE = process.env.QY_COMPONENT || 'COMP-2254';
 
 let n = 0;
-async function shot(page, name: string) {
+async function shot(page: any, name: string) {
   const f = path.join(SHOT, `qy-${String(++n).padStart(2, '0')}-${name}.png`);
   await page.screenshot({ path: f, fullPage: false });
   console.log(`📸 ${f}`);
 }
 
 /** 读左侧字段面板里所有分组的标题；价格策略组是带框的 .svb-grp */
-async function readGroups(page): Promise<string[]> {
+async function readGroups(page: any): Promise<string[]> {
   await expandAllGroups(page).catch(() => {});
   const titles = await page.locator('.svb-grp .svb-grp-h').allInnerTexts().catch(() => []);
-  return titles.map(t => t.replace(/\s+/g, ' ').trim());
+  return titles.map((t: string) => t.replace(/\s+/g, ' ').trim());
 }
 
 test.beforeEach(async ({ page }) => {

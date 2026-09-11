@@ -119,10 +119,10 @@ test('AC-12 序列: BASIC_DATA → 改 INPUT_TEXT → 渲染（值同、变 <inp
       const v0 = colValues(s0, ci); const in0 = colInputs(s0, ci);
       await FT.shot(page, 'AC-12-01-初态BASIC_DATA');
       console.log(`[AC-12] ①初态 ${TARGET_COL} 值=${JSON.stringify(v0)} 该列input数=${JSON.stringify(in0)}`);
-      expect(v0.filter((x) => x !== '' && x !== '—').length,
+      expect(v0.filter((x: string) => x !== '' && x !== '—').length,
         `AC-12 前置：初态「${TARGET_COL}」列一个非空值都没有 ⇒ 「值不变」会在空数据上恒真，判【未验证】。值=${JSON.stringify(v0)}`)
         .toBeGreaterThan(0);
-      expect(in0.reduce((a, b) => a + b, 0),
+      expect(in0.reduce((a: number, b: number) => a + b, 0),
         `AC-12 前置：初态该列是 BASIC_DATA，不应有 <input>，实际 ${JSON.stringify(in0)}`).toBe(0);
       report.push(`## ① 初态 BASIC_DATA`, `- 值 = ${JSON.stringify(v0)}`, `- 该列 input 数 = ${JSON.stringify(in0)}`, '');
 
@@ -147,7 +147,7 @@ test('AC-12 序列: BASIC_DATA → 改 INPUT_TEXT → 渲染（值同、变 <inp
 
       expect(v1, `AC-12②：改成 INPUT_TEXT 后该列**值应不变**。前=${JSON.stringify(v0)} 后=${JSON.stringify(v1)}`)
         .toEqual(v0);
-      expect(in1.reduce((a, b) => a + b, 0),
+      expect(in1.reduce((a: number, b: number) => a + b, 0),
         `AC-12②：改成 INPUT_TEXT 后该列应**变回 <input>**，实际逐行 input 数 ${JSON.stringify(in1)} 全为 0。\n` +
         `  （模板 snapshot 里该字段此刻是 ${snapAfterSave}）`).toBeGreaterThan(0);
 
@@ -164,7 +164,7 @@ test('AC-12 序列: BASIC_DATA → 改 INPUT_TEXT → 渲染（值同、变 <inp
 
       expect(v2, `AC-12③：改回 BASIC_DATA 后该列**值应不变**。初=${JSON.stringify(v0)} 末=${JSON.stringify(v2)}`)
         .toEqual(v0);
-      expect(in2.reduce((a, b) => a + b, 0),
+      expect(in2.reduce((a: number, b: number) => a + b, 0),
         `AC-12③：改回 BASIC_DATA 后该列应**变回纯文本**（无 <input>），实际 ${JSON.stringify(in2)}`).toBe(0);
     } finally {
       // 🔒 无条件还原

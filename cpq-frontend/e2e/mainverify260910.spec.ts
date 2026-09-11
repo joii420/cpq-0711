@@ -48,7 +48,7 @@ test('AC-3/AC-4 亲验：核价工作台版本下拉候选', async ({ page, requ
   const rows = await card.evaluate((root:any) => {
     const tables=[...root.querySelectorAll('table')].filter((t:any)=>t.offsetParent!==null);
     const t:any=tables.sort((a:any,b:any)=>b.querySelectorAll('tbody tr').length-a.querySelectorAll('tbody tr').length)[0];
-    if(!t) return {head:[],rows:[]};
+    if(!t) return {head:[] as string[],rows:[] as any[],vi:-1};
     const head=[...t.querySelectorAll('thead th')].map((h:any)=>(h.textContent||'').trim());
     const vi=head.findIndex((h:string)=>h==='版本');
     const rows=[...t.querySelectorAll('tbody tr')].map((r:any)=>{
