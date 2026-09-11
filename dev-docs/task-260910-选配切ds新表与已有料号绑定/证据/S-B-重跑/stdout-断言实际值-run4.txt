@@ -1,0 +1,126 @@
+2026-09-10 18:18:22.660 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1765 列（3 套数据集）
+2026-09-10 18:18:23.135 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (executor-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-09-10 18:18:23.154 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=57 edges=78 tabViews=48
+2026-09-10 18:18:23.204 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-09-10 18:18:23.238 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-10 18:18:23.263 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：57 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-10 18:18:23.264 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 153 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-09-10 18:18:23.561 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-09-10 18:18:23.667 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 15.232s. Listening on: http://localhost:8141
+2026-09-10 18:18:23.668 INFO  [io.quarkus] (main) Profile test activated. 
+2026-09-10 18:18:23.668 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+[S-B·fx] AC21 customerNo=T2610B6dda92e0 quotation=dec0cb69-277b-4d74-b20d-75f9322a16a2
+2026-09-10 18:18:24.962 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-1) User logged in: admin role=SYSTEM_ADMIN
+2026-09-10 18:18:25.705 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-1) Session created for user: admin
+[S-B] admin 登录成功，role=SYSTEM_ADMIN
+2026-09-10 18:18:27.335 DEBUG [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] quotation=dec0cb69-277b-4d74-b20d-75f9322a16a2 命中 1 个轴值但无组件数据，跳过
+[TC-B6 第一次] {"lineItems":[{"productPartNo":"1090-2609000001","parentLineItemId":null,"processNos":["Z100","Z101"],"id":"88bc5119-9e3e-4f35-b8ba-20333f65e78c","compositeType":"SIMPLE"}],"fingerprintMatched":false,"reusedHfPartNos":[],"productType":"SIMPLE","reusedProductInfo":null,"structureVersion":"v2","editRowMismatchCount":null,"editRowMismatches":null,"editRowMismatchTruncated":null}
+[TC-B6 第一次落库] 料号=1090-2609000001 ds_quote_material=1 行, ds_quote_customer_part=1 行
+2026-09-10 18:18:28.135 DEBUG [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] quotation=dec0cb69-277b-4d74-b20d-75f9322a16a2 命中 1 个轴值但无组件数据，跳过
+[TC-B6 第二次] {"lineItems":[{"productPartNo":"1090-2609000001","parentLineItemId":null,"processNos":["Z100","Z101"],"id":"2006dd26-8cae-4fa7-a3b7-4fb1be17816f","compositeType":"SIMPLE"}],"fingerprintMatched":true,"reusedHfPartNos":["1090-2609000001"],"productType":"SIMPLE","reusedProductInfo":{"hfPartNo":"1090-2609000001","partName":"T260910B-零件A","specification":"A13","dimension":"2343","unitWeight":"11","materials":[{"recipeCode":"00006","name":"AgNi10","ratio":"100"}],"firstCreatedAt":"2026-09-11T01:18:29.751537Z","lastQuotedPrice":null},"structureVersion":"v2","editRowMismatchCount":null,"editRowMismatches":null,"editRowMismatchTruncated":null}
+[TC-B6 复用] reusedHfPartNos=[1090-2609000001]（期望含 1090-2609000001）
+[TC-B6 第二次落库] 本客户 ds_quote_material=1 行（其中 1090-2609000001 占 1 行）
+[TC-B6 一料号多编号] ds_quote_customer_part=2 行：[T260910B-PROD-A-4f6a59 → 1090-2609000001, T260910B-PROD-B-4f6a59 → 1090-2609000001]
+2026-09-10 18:18:29.062 DEBUG [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] quotation=dec0cb69-277b-4d74-b20d-75f9322a16a2 命中 2 个轴值但无组件数据，跳过
+[TC-B6 反方向] 只改总重 11→12 → matched=false 料号=1090-2609000002（期望 matched=false 且是一个<b>新</b>料号）
+[TC-B6 反方向落库] 本客户 ds_quote_material=2 行（期望 2：1090-2609000001 + 1090-2609000002）
+[S-B·cleanup] sel_part_signature 删 2 行 (cust=T2610B6dda92e0)
+[S-B·cleanup] ds_quote_customer_part 删 3 行 (cust=T2610B6dda92e0)
+[S-B·cleanup] ds_quote_material 删 2 行 (cust=T2610B6dda92e0)
+[S-B·cleanup] ds_quote_material_bom 删 2 行 (cust=T2610B6dda92e0)
+[S-B·cleanup] ds_quote_element_bom 删 4 行 (cust=T2610B6dda92e0)
+[S-B·cleanup] ds_quote_self_process_fee 删 4 行 (cust=T2610B6dda92e0)
+[S-B·cleanup] material_customer_map 删 2 行 (cust=T2610B6dda92e0)
+[S-B·cleanup] quote_customer_code 删 1 行 (cust=T2610B6dda92e0)
+[S-B·cleanup 4f6a59] 残留 ds_quote_material=0 ds_quote_material_bom=0 customer=0
+[S-B·fx] AC22 customerNo=T2610B7f7a7d3c quotation=f9466980-bf71-4d86-990e-00ee8d826cf7
+2026-09-10 18:18:30.676 DEBUG [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] quotation=f9466980-bf71-4d86-990e-00ee8d826cf7 命中 1 个轴值但无组件数据，跳过
+[TC-B7 前置] 料号=1091-2609000001 提交顺序=[Z100, Z101]
+[TC-B7 落库对照] ds_quote_self_process_fee=[Z100, Z101] / unit_price(自制加工费)=[]
+2026-09-10 18:18:31.393 DEBUG [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] quotation=f9466980-bf71-4d86-990e-00ee8d826cf7 命中 1 个轴值但无组件数据，跳过
+[TC-B7 换序提交] 顺序=[Z101, Z100] → matched=true reused=[1091-2609000001]
+[TC-B7 确认页] {"matched":true,"hfPartNo":"1091-2609000001","matchedPartNo":"1091-2609000001","snapshot":{"processes":[{"seqNo":1,"processCode":"Z100"},{"seqNo":2,"processCode":"Z101"}]}}
+[TC-B7 确认页顺序] snapshot.processes.processCode=[Z100, Z101]（期望 [Z100, Z101]，即已有产品的真实落库顺序）
+[TC-B7 契约裁剪] snapshot 的键集合=[processes]（api.md §2.4 要求：processes 保留、unitWeightGrams 与 compositeProcesses 删除）
+[S-B·cleanup] sel_part_signature 删 1 行 (cust=T2610B7f7a7d3c)
+[S-B·cleanup] ds_quote_customer_part 删 2 行 (cust=T2610B7f7a7d3c)
+[S-B·cleanup] ds_quote_material 删 1 行 (cust=T2610B7f7a7d3c)
+[S-B·cleanup] ds_quote_material_bom 删 1 行 (cust=T2610B7f7a7d3c)
+[S-B·cleanup] ds_quote_element_bom 删 2 行 (cust=T2610B7f7a7d3c)
+[S-B·cleanup] ds_quote_self_process_fee 删 2 行 (cust=T2610B7f7a7d3c)
+[S-B·cleanup] material_customer_map 删 1 行 (cust=T2610B7f7a7d3c)
+[S-B·cleanup] quote_customer_code 删 1 行 (cust=T2610B7f7a7d3c)
+[S-B·cleanup 4f6a59] 残留 ds_quote_material=0 ds_quote_material_bom=0 customer=0
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 15.29 s -- in S-B · AC-21/22 指纹复用与工序顺序回归
+[INFO] Running S-B · AC-5/6/7 读取侧切表与客户维度
+[S-B·seed 4f6a59] 对照料号已就绪：T260910B-C1ONLY(CUST-0001) / T260910B-MULTI(CUST-0004,2材质+1落空) / T260910B-OUTDUAL(双客户) / T260910B-OUTC1(CUST-0001)
+2026-09-10 18:18:33.046 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: 已有零件搜索必须携带客户编号(customerNo)
+[TC-B3b 实际] 不带 customerNo q=T260910B-C1ONLY → HTTP 400 body={"code":400,"message":"已有零件搜索必须携带客户编号(customerNo)","data":{"code":"CUSTOMER_NO_REQUIRED"},"detail":{"bizCode":"CUSTOMER_NO_REQUIRED"}}
+[S-B·cleanup 4f6a59] 残留 ds_quote_material=0 ds_quote_material_bom=0 customer=0
+[S-B·seed 4f6a59] 对照料号已就绪：T260910B-C1ONLY(CUST-0001) / T260910B-MULTI(CUST-0004,2材质+1落空) / T260910B-OUTDUAL(双客户) / T260910B-OUTC1(CUST-0001)
+[TC-B3c 前提] T260907M-AC17ANCHOR 在 ds_quote_material 的客户 = [CUST-0001]
+[TC-B3c 阳性] customerNo=CUST-0001 q=T260907M-AC17ANCHOR → [T260907M-AC17ANCHOR]
+[TC-B3c 主断言] customerNo=CUST-0004 q=T260907M-AC17ANCHOR → 0 条：[]
+[S-B·cleanup 4f6a59] 残留 ds_quote_material=0 ds_quote_material_bom=0 customer=0
+[S-B·seed 4f6a59] 对照料号已就绪：T260910B-C1ONLY(CUST-0001) / T260910B-MULTI(CUST-0004,2材质+1落空) / T260910B-OUTDUAL(双客户) / T260910B-OUTC1(CUST-0001)
+2026-09-10 18:18:34.336 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: 外购件候选必须携带客户编号(customerNo)
+[TC-B2b 实际] 不带 customerNo → HTTP 400 body={"code":400,"message":"外购件候选必须携带客户编号(customerNo)","data":{"code":"CUSTOMER_NO_REQUIRED"},"detail":{"bizCode":"CUSTOMER_NO_REQUIRED"}}
+[S-B·cleanup 4f6a59] 残留 ds_quote_material=0 ds_quote_material_bom=0 customer=0
+[S-B·seed 4f6a59] 对照料号已就绪：T260910B-C1ONLY(CUST-0001) / T260910B-MULTI(CUST-0004,2材质+1落空) / T260910B-OUTDUAL(双客户) / T260910B-OUTC1(CUST-0001)
+[S-B·FT-2 反事实] T260910B-OUTDUAL 不带客户谓词=2 行；带 CUST-0001=1 行；带 CUST-0004=1 行
+[TC-B2 实际] CUST-0001 total=7 items=[S0003, S0007, S0011, S0014, T260907-M2, T260910B-OUTC1, T260910B-OUTDUAL]
+[TC-B2 实际] CUST-0004 total=6 items=[S0003, S0007, S0011, S0014, T260907-M2, T260910B-OUTDUAL]
+[TC-B2 total 自洽] CUST-0001 api=7 db=7 ; CUST-0004 api=6 db=6
+[S-B·cleanup 4f6a59] 残留 ds_quote_material=0 ds_quote_material_bom=0 customer=0
+[S-B·seed 4f6a59] 对照料号已就绪：T260910B-C1ONLY(CUST-0001) / T260910B-MULTI(CUST-0004,2材质+1落空) / T260910B-OUTDUAL(双客户) / T260910B-OUTC1(CUST-0001)
+[TC-B3 阳性①] customerNo=CUST-0001 q=T260910B-C1ONLY → [T260910B-C1ONLY]
+[TC-B3 阳性②] customerNo=CUST-0004 q=T260910B-MULTI → [T260910B-MULTI]
+[TC-B3 主断言] customerNo=CUST-0004 q=T260910B-C1ONLY → 0 条：[]
+[S-B·cleanup 4f6a59] 残留 ds_quote_material=0 ds_quote_material_bom=0 customer=0
+[S-B·seed 4f6a59] 对照料号已就绪：T260910B-C1ONLY(CUST-0001) / T260910B-MULTI(CUST-0004,2材质+1落空) / T260910B-OUTDUAL(双客户) / T260910B-OUTC1(CUST-0001)
+[TC-B1 前提] S0013@CUST-0004 ds_quote_material=1 行（material_name=导电排C）; material_master=0 行（期望 0 = 老 SQL 必然 0 命中）
+[TC-B1 锚点稳健性] CUST-0004 在 ds_quote_material 有 2663 个料号，其中在老表 material_master 也存在的 = 0（D-16：全体 2672 个都不存在 ⇒ 期望 0）
+[TC-B1 实际] customerNo=CUST-0004 q=S0013 → 1 条：[S0013]
+[TC-B1 响应原文] [{"materials":[{"recipeName":"AgNi11#-Ⅰ","recipeSymbol":"AgNi11#-Ⅰ","recipeType":"locked","recipeSpec":null,"recipeCode":"992","ratio":"55.000000000000"},{"recipeName":"AgCu70","recipeSymbol":"AgCu70","recipeType":"locked","recipeSpec":null,"recipeCode":"00017","ratio":"45.000000000000"}],"hfPartNo":"S0013","specification":"Φ20","sizeInfo":"20×15×5","partName":"导电排C","statusCode":"Y"}]
+[TC-B1 证伪] customerNo=CUST-0004 q=T260910B-GHOST-4f6a59 → 0 条：[]（期望 0 ⇒ 关键词确实生效）
+[TC-B1 证伪·守卫已响] 证伪实验·空结果守卫：结果为空列表（0 行）—— 空列表 / 0 行 / 「—」/「加载中…」一律不算通过（test.md §2）。此时后续断言全部恒真，判定为未验证。 ==> expected: <false> but was: <true>
+[S-B·cleanup 4f6a59] 残留 ds_quote_material=0 ds_quote_material_bom=0 customer=0
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.624 s -- in S-B · AC-5/6/7 读取侧切表与客户维度
+[INFO] Running S-B · AC-8/9 材质多值与 JOIN 命中判据
+[S-B·seed 4f6a59] 对照料号已就绪：T260910B-C1ONLY(CUST-0001) / T260910B-MULTI(CUST-0004,2材质+1落空) / T260910B-OUTDUAL(双客户) / T260910B-OUTC1(CUST-0001)
+[TC-B5c 自造] T260910B-MULTI 材质集合=[00006, 00168]（T260910B-NOTARECIPE 声明 RECIPE 但 JOIN 落空，🚫 不许出现）
+[TC-B5c 现网前提] S-2120011659@CUST-0001 声明 RECIPE 的行=4，其中 JOIN 命中=2
+[TC-B5c 现网实际] S-2120011659@CUST-0001 期望=[00006, 00168]（2 个）实际=[00006, 00168]（2 个）
+[S-B·cleanup 4f6a59] 残留 ds_quote_material=0 ds_quote_material_bom=0 customer=0
+[S-B·seed 4f6a59] 对照料号已就绪：T260910B-C1ONLY(CUST-0001) / T260910B-MULTI(CUST-0004,2材质+1落空) / T260910B-OUTDUAL(双客户) / T260910B-OUTC1(CUST-0001)
+[TC-B5b 前提] 「声明非 RECIPE 但 JOIN 命中」的行数=4
+   CUST-0001 / S0002 / input=992 / omt=(NULL)
+   CUST-0004 / S0002 / input=992 / omt=(NULL)
+   CUST-0004 / T260907-M1 / input=00006 / omt=零件
+   CUST-0004 / T260910B-MULTI / input=00168 / omt=(NULL)
+[TC-B5b 实际] S0002@CUST-0001 omt=(NULL) input=992 → 材质集合=[992]
+[TC-B5b 实际] S0002@CUST-0004 omt=(NULL) input=992 → 材质集合=[992]
+[TC-B5b 实际] T260907-M1@CUST-0004 omt=零件 input=00006 → 材质集合=[00006]
+[TC-B5b 实际] T260910B-MULTI@CUST-0004 omt=(NULL) input=00168 → 材质集合=[00006, 00168]
+[S-B·cleanup 4f6a59] 残留 ds_quote_material=0 ds_quote_material_bom=0 customer=0
+[S-B·seed 4f6a59] 对照料号已就绪：T260910B-C1ONLY(CUST-0001) / T260910B-MULTI(CUST-0004,2材质+1落空) / T260910B-OUTDUAL(双客户) / T260910B-OUTC1(CUST-0001)
+[TC-B4 实际] T260910B-MULTI 返回的材质 code 集合=[00006, 00168]（期望恰好 [00006, 00168]，N=2）
+[TC-B4 D-17 粒度事实] 按 (customer_no, material_no) 分组的材质数分布：1 材质→19 个; 2 材质→6 个; 
+[TC-B4 交叉] S0013@CUST-0004 期望=[992, 00017] 实际=[992, 00017]
+[S-B·cleanup 4f6a59] 残留 ds_quote_material=0 ds_quote_material_bom=0 customer=0
+[S-B·seed 4f6a59] 对照料号已就绪：T260910B-C1ONLY(CUST-0001) / T260910B-MULTI(CUST-0004,2材质+1落空) / T260910B-OUTDUAL(双客户) / T260910B-OUTC1(CUST-0001)
+[TC-B5a 前提] PERF0909-B00001@CUST-0004 BOM 行=1 JOIN 命中=0 output_material_type=成品 input=T260907T-RM01
+[TC-B5a 阳性对照] 搜 PERF0909-B00001 → [PERF0909-B00001]
+[TC-B5a 主断言] PERF0909-B00001 材质集合=[]（期望空）
+[S-B·cleanup 4f6a59] 残留 ds_quote_material=0 ds_quote_material_bom=0 customer=0
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.497 s -- in S-B · AC-8/9 材质多值与 JOIN 命中判据
+2026-09-10 18:18:40.743 INFO  [io.quarkus] (main) cpq-backend stopped in 0.039s
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  52.519 s

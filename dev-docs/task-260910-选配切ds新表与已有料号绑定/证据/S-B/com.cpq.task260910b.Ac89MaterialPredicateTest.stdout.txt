@@ -1,0 +1,28 @@
+[S-B·seed 14d0d5] 对照料号已就绪：T260910B-C1ONLY(CUST-0001) / T260910B-MULTI(CUST-0004,2材质+1落空) / T260910B-OUTDUAL(双客户) / T260910B-OUTC1(CUST-0001)
+[TC-B5c 自造] T260910B-MULTI 材质集合=[00006, 00168]（T260910B-NOTARECIPE 声明 RECIPE 但 JOIN 落空，🚫 不许出现）
+[TC-B5c 现网前提] S-2120011659@CUST-0001 声明 RECIPE 的行=4，其中 JOIN 命中=2
+[TC-B5c 现网实际] S-2120011659@CUST-0001 期望=[00006, 00168]（2 个）实际=[00006, 00168]（2 个）
+[S-B·cleanup 14d0d5] 残留 ds_quote_material=0 ds_quote_material_bom=0 customer=0
+
+[S-B·seed 14d0d5] 对照料号已就绪：T260910B-C1ONLY(CUST-0001) / T260910B-MULTI(CUST-0004,2材质+1落空) / T260910B-OUTDUAL(双客户) / T260910B-OUTC1(CUST-0001)
+[TC-B5b 前提] 「声明非 RECIPE 但 JOIN 命中」的行数=4
+   CUST-0001 / S0002 / input=992 / omt=(NULL)
+   CUST-0004 / S0002 / input=992 / omt=(NULL)
+   CUST-0004 / T260907-M1 / input=00006 / omt=零件
+   CUST-0004 / T260910B-MULTI / input=00168 / omt=(NULL)
+[TC-B5b 实际] S0002@CUST-0001 omt=(NULL) input=992 → 材质集合=[992]
+[TC-B5b 实际] S0002@CUST-0004 omt=(NULL) input=992 → 材质集合=[992]
+[TC-B5b 实际] T260907-M1@CUST-0004 omt=零件 input=00006 → 材质集合=[00006]
+[TC-B5b 实际] T260910B-MULTI@CUST-0004 omt=(NULL) input=00168 → 材质集合=[00006, 00168]
+[S-B·cleanup 14d0d5] 残留 ds_quote_material=0 ds_quote_material_bom=0 customer=0
+
+[S-B·seed 14d0d5] 对照料号已就绪：T260910B-C1ONLY(CUST-0001) / T260910B-MULTI(CUST-0004,2材质+1落空) / T260910B-OUTDUAL(双客户) / T260910B-OUTC1(CUST-0001)
+[TC-B4 实际] T260910B-MULTI 返回的材质 code 集合=[00006, 00168]（期望恰好 [00006, 00168]，N=2）
+[TC-B4 交叉] S0013@CUST-0004 期望=[992, 00017] 实际=[992, 00017]
+[S-B·cleanup 14d0d5] 残留 ds_quote_material=0 ds_quote_material_bom=0 customer=0
+
+[S-B·seed 14d0d5] 对照料号已就绪：T260910B-C1ONLY(CUST-0001) / T260910B-MULTI(CUST-0004,2材质+1落空) / T260910B-OUTDUAL(双客户) / T260910B-OUTC1(CUST-0001)
+[TC-B5a 前提] PERF0909-B00001@CUST-0004 BOM 行=1 JOIN 命中=0 output_material_type=成品 input=T260907T-RM01
+[TC-B5a 阳性对照] 搜 PERF0909-B00001 → [PERF0909-B00001]
+[TC-B5a 主断言] PERF0909-B00001 材质集合=[]（期望空）
+[S-B·cleanup 14d0d5] 残留 ds_quote_material=0 ds_quote_material_bom=0 customer=0
