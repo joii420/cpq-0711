@@ -7,6 +7,9 @@ import com.cpq.template.service.TemplateSqlViewService;
 import com.cpq.component.dto.RuntimeContext;
 import com.cpq.component.entity.ComponentSqlView;
 import com.cpq.component.service.ComponentSqlViewService;
+import com.cpq.semanticgraph.entity.SemanticNodeColumn;
+import com.cpq.semanticgraph.service.SemanticGraphLoader;
+import com.cpq.semanticgraph.service.SemanticGraphSnapshot;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
@@ -126,23 +129,6 @@ public class SqlViewExecutor {
      */
     private static final String CUSTOMER_CODE_PARAM = "customerCode";
 
-    /**
-     * repair-260910 B-1（AC-1 / AC-2 / AC-4）：{@code :customerProductNo}（客户产品编号）。
-     *
-     * <p>B-2 起，凡取数配置器产物 JOIN 了 {@code ds_quote_customer_part}（行粒度
-     * {@code (customer_no, customer_product_no)}）的视图，都会在 <b>{@code LEFT JOIN … ON}</b> 上
-     * 带 {@code <别名>.customer_product_no = :customerProductNo}，把「一个销售料号在同一客户下挂
-     * N 个客户产品编号」收窄成「当前卡片自己的那一个」。
-     *
-     * <p>🚨 <b>刻意不进 {@link #rewriteNamedParams} 的硬阻断名单</b>（与 {@code :customerCode} /
-     * {@code :total_material_no} <b>相反</b>）：{@code quotation_line_item.customer_part_no} 实测
-     * 3969 行里有 <b>128 行为空</b>，本来就允许没有。硬阻断会把这些卡片整页签打成 400；
-     * 而走「未绑定 → 字面量 NULL」的既有安全降级时，谓词挂在 {@code ON} 上恒 UNKNOWN ⇒
-     * JOIN 不匹配 ⇒ <b>左表行仍在、只是客编列为空</b>，这正是 AC-2 要的行为
-     * （🚫 谓词绝不许写进 {@code WHERE}，那才会整页签 0 行且不报错）。
-     */
-    private static final String CUSTOMER_PRODUCT_NO_PARAM = "customerProductNo";
-
     @Inject
     DataSource dataSource;
 
@@ -151,6 +137,13 @@ public class SqlViewExecutor {
 
     @Inject
     TemplateSqlViewService templateSqlViewService;
+
+    /**
+     * task-260911 B-5：行级维度（{@code ROW_SCOPE}）的唯一判据来源 —— 内存语义图快照，
+     * 读它<b>不查库</b>（{@link SemanticGraphLoader} 启动全量加载 + 保存后整体换引用）。
+     */
+    @Inject
+    SemanticGraphLoader semanticGraphLoader;
 
     /**
      * 判断 path 是否需要本执行器处理。
@@ -365,13 +358,13 @@ public class SqlViewExecutor {
         Map<String, Object> namedParams = new HashMap<>(ctx.toNamedParams());
         enrichCustomerCode(namedParams);
         enrichPriceBaseDate(namedParams);
-        enrichCustomerProductNo(namedParams);
         if (partNos != null && !partNos.isEmpty()) {
             namedParams.put("hfPartNos", partNos);
         }
         injectCostingTreeVars(namedParams);
         injectPendingParam(namedParams);
         String expandedSql = sql.toString();
+        enrichRowScopeSets(expandedSql, namedParams);
         RewrittenSql rewritten = rewriteNamedParams(expandedSql, namedParams);
         SqlDebugContext.record(rewritten.sql, rewritten.params);
 
@@ -441,13 +434,13 @@ public class SqlViewExecutor {
         Map<String, Object> namedParams = new HashMap<>(ctx.toNamedParams());
         enrichCustomerCode(namedParams);
         enrichPriceBaseDate(namedParams);
-        enrichCustomerProductNo(namedParams);
         if (partNos != null && !partNos.isEmpty()) {
             namedParams.put("hfPartNos", partNos);
         }
         injectCostingTreeVars(namedParams);
         injectPendingParam(namedParams);
         String expandedSql = sql;
+        enrichRowScopeSets(expandedSql, namedParams);
         RewrittenSql rewritten = rewriteNamedParams(expandedSql, namedParams);
         SqlDebugContext.record(rewritten.sql, rewritten.params);
 
@@ -515,62 +508,103 @@ public class SqlViewExecutor {
     }
 
     /**
-     * 补充 {@code :customerProductNo} 命名占位符（repair-260910 B-1，AC-1 / AC-2 / AC-4）。
+     * 补充<b>全部</b>行级维度集合占位符（task-260911 B-5 / B-6，AC-1 / AC-2 / AC-5 / AC-8）。
      *
-     * <p>值 = <b>当前报价明细行自己的</b> {@code quotation_line_item.customer_part_no}，
-     * 从 {@code namedParams} 里已有的 {@code :lineItemId} 反查。
+     * <p><b>哪些列是行级维度</b>：唯一判据是语义图 {@code semantic_node_column.roles} 含
+     * {@code ROW_SCOPE}（迁移 {@code V441} 写入）。🚫 本方法<b>不硬编码任何列名</b> ——
+     * 给第二个列打上标记即自动多绑一个集合参数（AC-9）。图快照是内存对象（{@link SemanticGraphLoader}
+     * 启动加载 + 保存后换引用），遍历它<b>不查库</b>。
      *
-     * <p><b>为什么读 {@code namedParams} 而不是 {@link SqlViewRuntimeContext}</b>：与
-     * {@link #enrichCustomerCode} / {@link #enrichPriceBaseDate} <b>同款模式</b>——
-     * {@code ComponentDriverService#expand} 调 {@code SqlViewRuntimeContext.setNested(componentId,
-     * null, null, null)}，那条上下文里的 lineItem 恒为 null；真正贯穿 driver 展开链路的是
-     * {@code DataLoader.loadByPath} 从 driverRow hint 取出的 {@code quotation_line_item_id} →
-     * {@code ctx.lineItem.id} → {@code ctx.toNamedParams()} 暴露的 {@code lineItemId}，
-     * 与 {@code :customerId}/{@code :customerCode} 完全同一条注入管线。
+     * <p><b>值从哪来</b>：{@code namedParams} 里已有的 {@code :quotationId} →
+     * {@code SELECT DISTINCT <明细行列> FROM quotation_line_item WHERE quotation_id = ?}。
+     * 「节点列 → 明细行列」的名字映射见 {@link com.cpq.semanticgraph.service.RowScopeSupport#lineItemColumnFor}
+     * （约定同名，只列例外）。
      *
-     * <p>🚫 <b>刻意不加进程级缓存</b>（与上面两个 enrich 的 {@code customerCodeCache} /
-     * {@code priceBaseDateCache} <b>不同</b>）：那两个缓存的前提是取值<b>不可变</b>
-     * （{@code customer.code} 是业务主键、{@code quotation.created_at} 不可变），
-     * 而 {@code customer_part_no} 是用户随时可以在报价单上改的字段——缓存它会让改完之后
-     * 页签仍按旧客户产品编号取数，且只在进程重启后自愈。
+     * <p><b>N+1 纪律</b>：只在 SQL 文本<b>真的含</b>该占位符时才发查询（绝大多数视图一条都不发），
+     * 且每次视图执行至多 1 条、与明细行数无关。合桶路径下整单每组件 1 条。
      *
-     * <p>取不到（无 lineItemId 上下文 / 该行 {@code customer_part_no} 为空）时<b>什么都不放</b>，
-     * 让 {@link #rewriteNamedParams} 走既有的「未绑定 → 字面量 NULL」安全降级 ——
-     * 见 {@link #CUSTOMER_PRODUCT_NO_PARAM} 注释（AC-2 的正向要求）。
+     * <p>🚨 <b>刻意不进 {@link #rewriteNamedParams} 的硬阻断名单</b>（与 {@code :customerCode} /
+     * {@code :total_material_no} <b>相反</b>）：{@code customer_part_no} 实测 3970 行里 <b>128 行为空</b>，
+     * 本来就允许没有。硬阻断会把这些卡片整页签打成 400。未绑定时走既有「→ 字面量 NULL」降级，
+     * {@code = ANY(NULL)} 在 {@code LEFT JOIN … ON} 上恒 UNKNOWN ⇒ JOIN 不匹配 ⇒
+     * 左表行仍在、只是右表侧列为空。🚫 谓词绝不许写进 {@code WHERE}，那才会整页签 0 行且不报错。
+     *
+     * <p>🚫 <b>刻意不加进程级缓存</b>（与 {@code customerCodeCache} / {@code priceBaseDateCache} 不同）：
+     * 那两个缓存的前提是取值不可变，而 {@code customer_part_no} 是用户随时可以在报价单上改的字段
+     * —— 缓存它会让改完之后页签仍按旧编号取数，且只在进程重启后自愈（AC-8 的序列断言正是验这个）。
+     *
+     * <p><b>空值兜底</b>（B-6）：整单一个非空值都没有 → 绑<b>空数组</b>（不是不绑、也不是 NULL）。
+     * {@code x = ANY(ARRAY[]::text[])} 恒 false，挂在 {@code LEFT JOIN … ON} 上 ⇒ 不匹配 ⇒
+     * 左表行仍在、右表侧列为空 —— 与「未绑定降级成 NULL」殊途同归，但显式绑定让
+     * {@code SqlDebugContext} 里看得见「确实查过、确实是空集」，不会与「忘了传 quotationId」混淆。
      */
-    private void enrichCustomerProductNo(Map<String, Object> namedParams) {
-        if (namedParams.containsKey(CUSTOMER_PRODUCT_NO_PARAM)) return;   // 上层显式给了则不覆盖
-        Object lidObj = namedParams.get("lineItemId");
-        UUID lid = null;
-        if (lidObj instanceof UUID u) {
-            lid = u;
-        } else if (lidObj != null) {
-            try { lid = UUID.fromString(lidObj.toString()); } catch (Exception ignored) { /* 非 UUID，放弃 */ }
+    private void enrichRowScopeSets(String sql, Map<String, Object> namedParams) {
+        if (sql == null || sql.isEmpty()) return;
+        SemanticGraphSnapshot snap;
+        try {
+            snap = semanticGraphLoader.get();
+        } catch (Exception e) {
+            LOG.warnf("[SqlViewExecutor] 语义图不可用，行级维度集合参数保持未绑定: %s", e.getMessage());
+            return;
         }
-        if (lid == null) return;
-        String cpn = queryLineItemCustomerPartNo(lid);
-        if (cpn != null && !cpn.isBlank()) {
-            namedParams.put(CUSTOMER_PRODUCT_NO_PARAM, cpn);
+        Object qidObj = namedParams.get("quotationId");
+        UUID qid = asUuidOrNull(qidObj);
+        // 同一次执行里同一个明细行列只查一次（不同节点可能声明同名列）
+        Map<String, List<String>> valuesByLineItemColumn = new HashMap<>();
+        for (SemanticNodeColumn col : snap.nodeColumns) {
+            if (!Arrays.asList(col.roles).contains(com.cpq.semanticgraph.service.RowScopeSupport.ROLE)) continue;
+            String param = com.cpq.semanticgraph.service.RowScopeSupport.setParamName(col.dbColumn);
+            if (namedParams.containsKey(param)) continue;          // 上层显式给了则不覆盖
+            if (!sql.contains(":" + param)) continue;              // 本视图没用到 → 不发查询
+            if (qid == null) continue;                             // 无单据上下文 → 走未绑定降级（AC-5 同款语义）
+            String liCol = com.cpq.semanticgraph.service.RowScopeSupport.lineItemColumnFor(col.dbColumn);
+            List<String> values = valuesByLineItemColumn.get(liCol);
+            if (values == null) {
+                values = queryRowScopeValues(qid, liCol);
+                valuesByLineItemColumn.put(liCol, values);
+            }
+            namedParams.put(param, values);                        // 可能是空 List = 空数组（B-6）
         }
     }
 
     /**
-     * 查该报价明细行的客户产品编号。查不到 / 出错一律返回 null（由调用方降级为未绑定），
+     * 查该报价单<b>整单</b>某个行级维度列的去重值集合（顺序稳定：按值升序，便于日志比对）。
+     * 查不到 / 出错一律返回空集合（由 {@code = ANY(ARRAY[]::text[])} 天然降级为「JOIN 不匹配」），
      * 🚫 不抛异常打断渲染链路 —— 与 {@link #queryQuotationDate} 同款容错口径。
+     *
+     * <p>🚫 {@code lineItemColumn} 不是用户输入：它来自语义图列名经
+     * {@code RowScopeSupport.lineItemColumnFor} 映射，此处仍按标识符白名单再验一次才拼进 SQL。
      */
-    private String queryLineItemCustomerPartNo(UUID lineItemId) {
+    private List<String> queryRowScopeValues(UUID quotationId, String lineItemColumn) {
+        List<String> out = new ArrayList<>();
+        if (!SQL_IDENT.matcher(lineItemColumn).matches()) {
+            LOG.warnf("[SqlViewExecutor] 行级维度列名非法，跳过: %s", lineItemColumn);
+            return out;
+        }
+        String sql = "SELECT DISTINCT " + lineItemColumn + " FROM quotation_line_item"
+                + " WHERE quotation_id = ? AND " + lineItemColumn + " IS NOT NULL"
+                + " AND btrim(" + lineItemColumn + "::text) <> '' ORDER BY 1";
         try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(
-                     "SELECT customer_part_no FROM quotation_line_item WHERE id = ?")) {
-            ps.setObject(1, lineItemId);
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setObject(1, quotationId);
             try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) return rs.getString(1);
+                while (rs.next()) {
+                    String v = rs.getString(1);
+                    if (v != null && !v.isBlank()) out.add(v);
+                }
             }
         } catch (Exception e) {
-            LOG.warnf("[SqlViewExecutor] 解析明细行客户产品编号失败 lineItemId=%s，:customerProductNo 保持未绑定: %s",
-                    lineItemId, e.getMessage());
+            LOG.warnf("[SqlViewExecutor] 解析整单行级维度集合失败 quotation=%s col=%s，按空集合处理: %s",
+                    quotationId, lineItemColumn, e.getMessage());
         }
-        return null;
+        return out;
+    }
+
+    /** {@code Object}（UUID / String / null）→ UUID，解析不了返回 null。 */
+    private static UUID asUuidOrNull(Object o) {
+        if (o instanceof UUID u) return u;
+        if (o == null) return null;
+        try { return UUID.fromString(o.toString()); } catch (Exception ignored) { return null; }
     }
 
     /**
