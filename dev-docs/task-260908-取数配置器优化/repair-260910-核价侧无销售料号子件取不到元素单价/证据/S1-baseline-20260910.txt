@@ -1,0 +1,44 @@
+S-1 片 · 改动前基线快照
+采集时刻：DB 2026-09-11 02:53~02:55 UTC ≈ 本地 2026-09-10 19:53~19:55 PDT（DB TimeZone=Etc/UTC，本机 PDT=UTC-7）
+库：10.177.152.12:5432/cpq_db_0910   采集手段：只读 SELECT
+🚨 采集窗口紧邻 B-1/B-2 落库（02:55~02:57 UTC 之间语义图与核价侧编译产物已被改写），
+   本文件是「改动前」的最后一张快照，🚫 任何情况下不许回来改这些数值。
+
+--- semantic_node（三个 FUNC_ELEMENT_PRICE 节点） ---
+26090901-0000-4000-8000-000000000001 | COST_BASIC  | 价格策略 f_material_element_price | f_material_element_price(:customerCode, :priceBaseDate) | ACTIVE
+26090901-0000-4000-8000-000000000002 | COST_DETAIL | 价格策略 f_material_element_price | f_material_element_price(:customerCode, :priceBaseDate) | ACTIVE
+ddc7fafa-0fd3-5c47-a86c-e3f8b86b0f76 | QUOTE       | 价格策略 f_material_element_price | f_material_element_price(:customerCode, :priceBaseDate) | ACTIVE
+
+--- semantic_edge_key（三条 PRICE 边，各 2 条键） ---
+26090904-0000-4000-8000-000000000001 COST_BASIC  seq0 element_code->element_code | seq1 sales_material_no->material_no
+26090904-0000-4000-8000-000000000002 COST_DETAIL seq0 element_code->element_code | seq1 sales_material_no->material_no
+5b1bfc30-551b-511c-bb2b-42becb609a06 QUOTE       seq0 element_code->element_code | seq1 material_no->material_no
+
+--- component_sql_view（全库仅 2 个组件的产物含取价函数） ---
+54001a3b-fd2e-4580-b90e-4bfa157ea77c builder_54001a3bfd2e COST_BASIC ACTIVE md5=5ada59e3a232887cf8b3229b08cec7aa len=903  updated_at=2026-09-10 17:53:37.544516
+813b4ead-d89a-416c-b5a8-fdbbe4e6e183 builder_813b4eadd89a QUOTE      ACTIVE md5=ea79ee6381eebb3717a9bc5a0a9ef644 len=930  updated_at=2026-09-10 17:48:22.150243
+锚点别名（COST_BASIC）：vdcbeba    锚点表：v_ds_cost_basic_element_bom_all
+（另有 5 个 builder 组件不含取价函数：6f75982093b9 / 99a12512b726 (COST_BASIC)，02dd8af4cd0c / 4bf22ca60dd0 / e766ca6ae7b9 (QUOTE)）
+
+--- template（AC-8 的判定基线） ---
+正泰模板 62dd00cb-2fcc-47f5-a055-9801ab11461e  series=83faa13e-efed-4d22-85e1-1e9f8de0e8c8
+  version=v1.0  status=PUBLISHED  template_kind=QUOTATION
+  updated_at   = 2026-09-11 01:01:02.608232   (to_char 口径，无时区后缀)
+  published_at = 2026-09-11 01:01:02.585227
+  sql_views_snapshot   md5=2825b27f1749811b676caea2e5e22e42  len=7941
+  components_snapshot  md5=2c469b538651cb6ad3ce2fa094d0a3b3
+  series 内行数=1（v1.0/PUBLISHED）
+  快照内含的 4 个视图 key：02dd8af4cd0c / 4bf22ca60dd0 / 813b4eadd89a / e766ca6ae7b9（均为 QUOTE 侧）
+
+核价模板 28c595d3-55ef-471c-8f63-7c3efdb901c2  series=1f76134e-9c3b-4aed-8db3-7809e2dc2111
+  version=v1.0  status=PUBLISHED  template_kind=COSTING
+  updated_at   = 2026-09-11 01:01:33.754498
+  published_at = 2026-09-11 01:01:33.702509
+  sql_views_snapshot   md5=14b8a92d209a3ae753b8fbbd69678a80  len=6519
+  components_snapshot  md5=bdf0cb0ae291c511c5dcdfcb6fb83f38
+  series 内行数=1（v1.0/PUBLISHED）
+  快照内含的 3 个视图 key：54001a3bfd2e / 6f75982093b9 / 99a12512b726（均为 COST_BASIC 侧）
+
+--- 数据面（用于证明 AC-9「数据面未覆盖」不是托词） ---
+v_ds_cost_detail_element_bom_all : all_rows=0   is_current 行=0     ← COST_DETAIL 方言空
+v_ds_cost_basic_element_bom_all  : all_rows=15  is_current 行=15
