@@ -1,0 +1,5 @@
+{
+ "A": {"quotationId":"dbc73620-a67d-492a-b549-e55cb9077f4a","quotationNumber":"QT-20260910-0818","lineItemId":"2421c1fa-3ed2-46b7-ba24-b769a9c19cc7","partNo":"S0004","custPartNo":"RW-A004"},
+ "B": {"quotationId":"57018cf3-e3c1-497f-ae91-dcbd4ab80633","quotationNumber":"QT-20260910-0819","lineItemId":"99a86d98-1976-4fa6-8bbc-e0cf39cb1e0e","partNo":"0028-2609000015","custPartNo":"B1SELF-050259"},
+ "C": {"quotationId":"24d64a6a-bcfb-40f7-9632-98d3895756c0","quotationNumber":"QT-20260910-0820","lineItemId":"d7303f74-f3a4-4359-8491-6019a0ddbc8a","partNo":"S0004","custPartNo":null}
+}

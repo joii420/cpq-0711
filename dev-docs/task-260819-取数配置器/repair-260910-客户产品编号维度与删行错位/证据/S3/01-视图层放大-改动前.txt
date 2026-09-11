@@ -1,0 +1,8 @@
+SQL 同 builder_221dc7668ab6 的 FROM/JOIN/WHERE/ORDER BY（未加 customer_product_no 谓词）
+
+material_no|cp_id|customer_product_no|customer_part_name
+R0910S3-M1|21346|R0910S3-CP1|S3客户件一
+R0910S3-M1|21347|R0910S3-CP2|S3客户件二
+R0910S3-M1|21348|R0910S3-CP3|S3客户件三
+R0910S3-M1|21349|R0910S3-CP4|S3客户件四
+(4 rows)

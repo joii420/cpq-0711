@@ -1,0 +1,12 @@
+报价单 QT-20260910-0821 / 明细行 R0910S3-M1 / 组件「产品」
+本次操作：从干净态点击**屏幕第 1 行**(R0910S3-CP1) 的删除按钮
+
+deleted_row_keys = [{"fp": "∅R0910S3-CP112.345678901234S3测试品名10x5x2R0910S3-OLDR0910S3-PRODS3-SPEC-001R0910S3-M1R0910S3-M1", "effKey": "R0910S3-M1#0"}]
+  ⇒ 前端算出的身份 effKey=R0910S3-M1#0 / fp 含 CP1 —— **指向第 1 行，是对的**
+
+quoteCardValues.tabs[0] 三段：
+  baseRows     (4 行) 客编 = ['R0910S3-CP1', 'R0910S3-CP2', 'R0910S3-CP3', 'R0910S3-CP4']
+  editRows     (4 条) 客编 = ['R0910S3-CP1', 'R0910S3-CP1', 'R0910S3-CP2', 'R0910S3-CP3']
+  resolvedRows (3 行) 客编 = ['R0910S3-CP1', 'R0910S3-CP2', 'R0910S3-CP3']
+
+rowData (3 条) 客编 = ['R0910S3-CP1', 'R0910S3-CP2', 'R0910S3-CP3']

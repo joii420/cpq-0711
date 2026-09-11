@@ -1,0 +1,1914 @@
+{
+ "R0910S2-A (S0004/RW-A004)": {
+  "code": 200,
+  "message": "success",
+  "data": {
+   "results": [
+    {
+     "key": "221dc766-8ab6-4d95-82c0-08cc03e6267d:1f5818d8-b934-44be-b1c3-47df7053cff4:S0004:_",
+     "status": "OK",
+     "data": {
+      "rowCount": 4,
+      "driverPath": "$builder_221dc7668ab6",
+      "rows": [
+       {
+        "driverRow": {
+         "_客户料号_客户产品编号": "B17-DUP-0910-1",
+         "_物料_销售料号": "S0004",
+         "_物料_规格": "Φ12",
+         "_物料_尺寸": "12×8×3",
+         "hf_part_no": "S0004",
+         "_物料_品名": "触桥组件A",
+         "_物料_旧料号": "12140",
+         "_物料_单重": "16.7",
+         "_物料_生产料号": "300021"
+        },
+        "basicDataValues": {
+         "{$builder_221dc7668ab6._物料_销售料号}": "S0004",
+         "{$builder_221dc7668ab6._客户料号_客户产品编号}": "B17-DUP-0910-1",
+         "{$builder_221dc7668ab6._物料_生产料号}": "300021",
+         "{$builder_221dc7668ab6._物料_品名}": "触桥组件A",
+         "{$builder_221dc7668ab6._物料_规格}": "Φ12",
+         "{$builder_221dc7668ab6._物料_尺寸}": "12×8×3",
+         "{$builder_221dc7668ab6._物料_旧料号}": "12140",
+         "{$builder_221dc7668ab6._物料_单重}": "16.7"
+        }
+       },
+       {
+        "driverRow": {
+         "_客户料号_客户产品编号": "B17-DUP-0910-2",
+         "_物料_销售料号": "S0004",
+         "_物料_规格": "Φ12",
+         "_物料_尺寸": "12×8×3",
+         "hf_part_no": "S0004",
+         "_物料_品名": "触桥组件A",
+         "_物料_旧料号": "12140",
+         "_物料_单重": "16.7",
+         "_物料_生产料号": "300021"
+        },
+        "basicDataValues": {
+         "{$builder_221dc7668ab6._物料_销售料号}": "S0004",
+         "{$builder_221dc7668ab6._客户料号_客户产品编号}": "B17-DUP-0910-2",
+         "{$builder_221dc7668ab6._物料_生产料号}": "300021",
+         "{$builder_221dc7668ab6._物料_品名}": "触桥组件A",
+         "{$builder_221dc7668ab6._物料_规格}": "Φ12",
+         "{$builder_221dc7668ab6._物料_尺寸}": "12×8×3",
+         "{$builder_221dc7668ab6._物料_旧料号}": "12140",
+         "{$builder_221dc7668ab6._物料_单重}": "16.7"
+        }
+       },
+       {
+        "driverRow": {
+         "_客户料号_客户产品编号": "B18-BIND-0910B",
+         "_物料_销售料号": "S0004",
+         "_物料_规格": "Φ12",
+         "_物料_尺寸": "12×8×3",
+         "hf_part_no": "S0004",
+         "_物料_品名": "触桥组件A",
+         "_物料_旧料号": "12140",
+         "_物料_单重": "16.7",
+         "_物料_生产料号": "300021"
+        },
+        "basicDataValues": {
+         "{$builder_221dc7668ab6._物料_销售料号}": "S0004",
+         "{$builder_221dc7668ab6._客户料号_客户产品编号}": "B18-BIND-0910B",
+         "{$builder_221dc7668ab6._物料_生产料号}": "300021",
+         "{$builder_221dc7668ab6._物料_品名}": "触桥组件A",
+         "{$builder_221dc7668ab6._物料_规格}": "Φ12",
+         "{$builder_221dc7668ab6._物料_尺寸}": "12×8×3",
+         "{$builder_221dc7668ab6._物料_旧料号}": "12140",
+         "{$builder_221dc7668ab6._物料_单重}": "16.7"
+        }
+       },
+       {
+        "driverRow": {
+         "_客户料号_客户产品编号": "RW-A004",
+         "_物料_销售料号": "S0004",
+         "_物料_规格": "Φ12",
+         "_物料_尺寸": "12×8×3",
+         "hf_part_no": "S0004",
+         "_物料_品名": "触桥组件A",
+         "_物料_旧料号": "12140",
+         "_物料_单重": "16.7",
+         "_物料_生产料号": "300021"
+        },
+        "basicDataValues": {
+         "{$builder_221dc7668ab6._物料_销售料号}": "S0004",
+         "{$builder_221dc7668ab6._客户料号_客户产品编号}": "RW-A004",
+         "{$builder_221dc7668ab6._物料_生产料号}": "300021",
+         "{$builder_221dc7668ab6._物料_品名}": "触桥组件A",
+         "{$builder_221dc7668ab6._物料_规格}": "Φ12",
+         "{$builder_221dc7668ab6._物料_尺寸}": "12×8×3",
+         "{$builder_221dc7668ab6._物料_旧料号}": "12140",
+         "{$builder_221dc7668ab6._物料_单重}": "16.7"
+        }
+       }
+      ],
+      "debugSql": null
+     },
+     "error": null,
+     "debugSql": null
+    },
+    {
+     "key": "7f9a5bbf-264f-4b07-8dff-3118a9428a48:1f5818d8-b934-44be-b1c3-47df7053cff4:S0004:_",
+     "status": "OK",
+     "data": {
+      "rowCount": 8,
+      "driverPath": "$builder_7f9a5bbf264f",
+      "rows": [
+       {
+        "driverRow": {
+         "material_no": "00006",
+         "parent_no": "T260907-M1",
+         "_物料BOM_项次": 1,
+         "_物料BOM_材料毛重": "1.2",
+         "_物料BOM_材料净重": "1",
+         "_物料_材料名": "AgNi10",
+         "_物料BOM_重量单位": "KG",
+         "hf_part_no": "00006",
+         "_物料BOM_销售料号": "T260907-M1",
+         "_物料BOM_投入料号": "00006",
+         "_物料BOM_组成数量": "2",
+         "_物料BOM_损耗率（%）": "1"
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "T260907-M1",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "00006",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "AgNi10",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": "2",
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": "1.2",
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": "1",
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": "1",
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": "KG"
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "00006",
+         "parent_no": "S0005",
+         "_物料BOM_项次": 1,
+         "_物料BOM_材料毛重": "8.2",
+         "_物料BOM_材料净重": "7.9",
+         "_物料_材料名": "AgNi10",
+         "_物料BOM_重量单位": "G",
+         "hf_part_no": "00006",
+         "_物料BOM_销售料号": "S0005",
+         "_物料BOM_投入料号": "00006",
+         "_物料BOM_组成数量": "1",
+         "_物料BOM_损耗率（%）": "1.5"
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "S0005",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "00006",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "AgNi10",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": "1",
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": "8.2",
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": "7.9",
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": "1.5",
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": "G"
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "00006",
+         "parent_no": "0028-2609000014",
+         "_物料BOM_项次": 1,
+         "_物料BOM_材料毛重": null,
+         "_物料BOM_材料净重": null,
+         "_物料_材料名": "AgNi10",
+         "_物料BOM_重量单位": null,
+         "hf_part_no": "00006",
+         "_物料BOM_销售料号": "0028-2609000014",
+         "_物料BOM_投入料号": "00006",
+         "_物料BOM_组成数量": null,
+         "_物料BOM_损耗率（%）": null
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "0028-2609000014",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "00006",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "AgNi10",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": null
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "00168",
+         "parent_no": "S0006",
+         "_物料BOM_项次": 1,
+         "_物料BOM_材料毛重": "6.4",
+         "_物料BOM_材料净重": "6.1",
+         "_物料_材料名": "301/Cu/301",
+         "_物料BOM_重量单位": "G",
+         "hf_part_no": "00168",
+         "_物料BOM_销售料号": "S0006",
+         "_物料BOM_投入料号": "00168",
+         "_物料BOM_组成数量": "1",
+         "_物料BOM_损耗率（%）": "1.2"
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "S0006",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "00168",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "301/Cu/301",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": "1",
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": "6.4",
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": "6.1",
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": "1.2",
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": "G"
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "S0005",
+         "parent_no": "S0004",
+         "_物料BOM_项次": 1,
+         "_物料BOM_材料毛重": "8.2",
+         "_物料BOM_材料净重": "7.9",
+         "_物料_材料名": "动触头A",
+         "_物料BOM_重量单位": "G",
+         "hf_part_no": "S0005",
+         "_物料BOM_销售料号": "S0004",
+         "_物料BOM_投入料号": "S0005",
+         "_物料BOM_组成数量": "1",
+         "_物料BOM_损耗率（%）": "1.5"
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "S0004",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "S0005",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "动触头A",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": "1",
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": "8.2",
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": "7.9",
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": "1.5",
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": "G"
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "S0006",
+         "parent_no": "S0004",
+         "_物料BOM_项次": 2,
+         "_物料BOM_材料毛重": "6.4",
+         "_物料BOM_材料净重": "6.1",
+         "_物料_材料名": "静触片A",
+         "_物料BOM_重量单位": "G",
+         "hf_part_no": "S0006",
+         "_物料BOM_销售料号": "S0004",
+         "_物料BOM_投入料号": "S0006",
+         "_物料BOM_组成数量": "1",
+         "_物料BOM_损耗率（%）": "1.2"
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "S0004",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 2,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "S0006",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "静触片A",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": "1",
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": "6.4",
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": "6.1",
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": "1.2",
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": "G"
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "S0007",
+         "parent_no": "S0004",
+         "_物料BOM_项次": 3,
+         "_物料BOM_材料毛重": "4.2",
+         "_物料BOM_材料净重": "4",
+         "_物料_材料名": "弹簧件A",
+         "_物料BOM_重量单位": "G",
+         "hf_part_no": "S0007",
+         "_物料BOM_销售料号": "S0004",
+         "_物料BOM_投入料号": "S0007",
+         "_物料BOM_组成数量": "2",
+         "_物料BOM_损耗率（%）": "0.8"
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "S0004",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 3,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "S0007",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "弹簧件A",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": "2",
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": "4.2",
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": "4",
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": "0.8",
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": "G"
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "S0004",
+         "parent_no": null,
+         "_物料BOM_项次": null,
+         "_物料BOM_材料毛重": null,
+         "_物料BOM_材料净重": null,
+         "_物料_材料名": null,
+         "_物料BOM_重量单位": null,
+         "hf_part_no": "S0004",
+         "_物料BOM_销售料号": null,
+         "_物料BOM_投入料号": null,
+         "_物料BOM_组成数量": null,
+         "_物料BOM_损耗率（%）": null
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": null,
+         "{$builder_7f9a5bbf264f._物料_材料名}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": null
+        }
+       }
+      ],
+      "debugSql": null
+     },
+     "error": null,
+     "debugSql": null
+    },
+    {
+     "key": "98ee51d1-832e-4881-aa3d-e9512824cc14:1f5818d8-b934-44be-b1c3-47df7053cff4:S0004:_",
+     "status": "OK",
+     "data": {
+      "rowCount": 4,
+      "driverPath": "$builder_98ee51d1832e",
+      "rows": [
+       {
+        "driverRow": {
+         "_物料与元素BOM_净用量": "4.76",
+         "_材质_材料名": "301/Cu/301",
+         "_物料与元素BOM_元素": "301",
+         "_物料与元素BOM_项次": 2,
+         "_物料与元素BOM_回收折扣(%)": "2",
+         "_物料与元素BOM_材质料号": "00168",
+         "_物料与元素BOM_毛用量": "4.99",
+         "hf_part_no": "S0006",
+         "_物料与元素BOM_损耗率%": "1.2",
+         "_物料与元素BOM_销售料号": "S0006",
+         "_物料与元素BOM_组成含量（%）": "78",
+         "元素单价": null
+        },
+        "basicDataValues": {
+         "{$builder_98ee51d1832e._物料与元素BOM_销售料号}": "S0006",
+         "{$builder_98ee51d1832e._物料与元素BOM_项次}": 2,
+         "{$builder_98ee51d1832e._物料与元素BOM_材质料号}": "00168",
+         "{$builder_98ee51d1832e._材质_材料名}": "301/Cu/301",
+         "{$builder_98ee51d1832e._物料与元素BOM_元素}": "301",
+         "{$builder_98ee51d1832e._物料与元素BOM_组成含量（%）}": "78",
+         "{$builder_98ee51d1832e._物料与元素BOM_损耗率%}": "1.2",
+         "{$builder_98ee51d1832e._物料与元素BOM_毛用量}": "4.99",
+         "{$builder_98ee51d1832e._物料与元素BOM_净用量}": "4.76",
+         "{$builder_98ee51d1832e._物料与元素BOM_回收折扣(%)}": "2",
+         "{$builder_98ee51d1832e.元素单价}": null
+        }
+       },
+       {
+        "driverRow": {
+         "_物料与元素BOM_净用量": "1.34",
+         "_材质_材料名": "301/Cu/301",
+         "_物料与元素BOM_元素": "Cu",
+         "_物料与元素BOM_项次": 1,
+         "_物料与元素BOM_回收折扣(%)": "4",
+         "_物料与元素BOM_材质料号": "00168",
+         "_物料与元素BOM_毛用量": "1.41",
+         "hf_part_no": "S0006",
+         "_物料与元素BOM_损耗率%": "1.2",
+         "_物料与元素BOM_销售料号": "S0006",
+         "_物料与元素BOM_组成含量（%）": "22",
+         "元素单价": "101.14"
+        },
+        "basicDataValues": {
+         "{$builder_98ee51d1832e._物料与元素BOM_销售料号}": "S0006",
+         "{$builder_98ee51d1832e._物料与元素BOM_项次}": 1,
+         "{$builder_98ee51d1832e._物料与元素BOM_材质料号}": "00168",
+         "{$builder_98ee51d1832e._材质_材料名}": "301/Cu/301",
+         "{$builder_98ee51d1832e._物料与元素BOM_元素}": "Cu",
+         "{$builder_98ee51d1832e._物料与元素BOM_组成含量（%）}": "22",
+         "{$builder_98ee51d1832e._物料与元素BOM_损耗率%}": "1.2",
+         "{$builder_98ee51d1832e._物料与元素BOM_毛用量}": "1.41",
+         "{$builder_98ee51d1832e._物料与元素BOM_净用量}": "1.34",
+         "{$builder_98ee51d1832e._物料与元素BOM_回收折扣(%)}": "4",
+         "{$builder_98ee51d1832e.元素单价}": "101.14"
+        }
+       },
+       {
+        "driverRow": {
+         "_物料与元素BOM_净用量": "7.11",
+         "_材质_材料名": "AgNi10",
+         "_物料与元素BOM_元素": "Ag",
+         "_物料与元素BOM_项次": 1,
+         "_物料与元素BOM_回收折扣(%)": "5",
+         "_物料与元素BOM_材质料号": "00006",
+         "_物料与元素BOM_毛用量": "7.38",
+         "hf_part_no": "S0005",
+         "_物料与元素BOM_损耗率%": "1.5",
+         "_物料与元素BOM_销售料号": "S0005",
+         "_物料与元素BOM_组成含量（%）": "90",
+         "元素单价": "3000"
+        },
+        "basicDataValues": {
+         "{$builder_98ee51d1832e._物料与元素BOM_销售料号}": "S0005",
+         "{$builder_98ee51d1832e._物料与元素BOM_项次}": 1,
+         "{$builder_98ee51d1832e._物料与元素BOM_材质料号}": "00006",
+         "{$builder_98ee51d1832e._材质_材料名}": "AgNi10",
+         "{$builder_98ee51d1832e._物料与元素BOM_元素}": "Ag",
+         "{$builder_98ee51d1832e._物料与元素BOM_组成含量（%）}": "90",
+         "{$builder_98ee51d1832e._物料与元素BOM_损耗率%}": "1.5",
+         "{$builder_98ee51d1832e._物料与元素BOM_毛用量}": "7.38",
+         "{$builder_98ee51d1832e._物料与元素BOM_净用量}": "7.11",
+         "{$builder_98ee51d1832e._物料与元素BOM_回收折扣(%)}": "5",
+         "{$builder_98ee51d1832e.元素单价}": "3000"
+        }
+       },
+       {
+        "driverRow": {
+         "_物料与元素BOM_净用量": "0.79",
+         "_材质_材料名": "AgNi10",
+         "_物料与元素BOM_元素": "Ni",
+         "_物料与元素BOM_项次": 2,
+         "_物料与元素BOM_回收折扣(%)": "3",
+         "_物料与元素BOM_材质料号": "00006",
+         "_物料与元素BOM_毛用量": "0.82",
+         "hf_part_no": "S0005",
+         "_物料与元素BOM_损耗率%": "1.5",
+         "_物料与元素BOM_销售料号": "S0005",
+         "_物料与元素BOM_组成含量（%）": "10",
+         "元素单价": "105"
+        },
+        "basicDataValues": {
+         "{$builder_98ee51d1832e._物料与元素BOM_销售料号}": "S0005",
+         "{$builder_98ee51d1832e._物料与元素BOM_项次}": 2,
+         "{$builder_98ee51d1832e._物料与元素BOM_材质料号}": "00006",
+         "{$builder_98ee51d1832e._材质_材料名}": "AgNi10",
+         "{$builder_98ee51d1832e._物料与元素BOM_元素}": "Ni",
+         "{$builder_98ee51d1832e._物料与元素BOM_组成含量（%）}": "10",
+         "{$builder_98ee51d1832e._物料与元素BOM_损耗率%}": "1.5",
+         "{$builder_98ee51d1832e._物料与元素BOM_毛用量}": "0.82",
+         "{$builder_98ee51d1832e._物料与元素BOM_净用量}": "0.79",
+         "{$builder_98ee51d1832e._物料与元素BOM_回收折扣(%)}": "3",
+         "{$builder_98ee51d1832e.元素单价}": "105"
+        }
+       }
+      ],
+      "debugSql": null
+     },
+     "error": null,
+     "debugSql": null
+    },
+    {
+     "key": "2c539680-91c8-4afe-80d6-fa07e8b2bbb0:1f5818d8-b934-44be-b1c3-47df7053cff4:S0004:_",
+     "status": "OK",
+     "data": {
+      "rowCount": 0,
+      "driverPath": null,
+      "rows": [],
+      "debugSql": null
+     },
+     "error": null,
+     "debugSql": null
+    },
+    {
+     "key": "4aa23fde-7ac9-4189-997c-cdfe00a6080f:1f5818d8-b934-44be-b1c3-47df7053cff4:S0004:_",
+     "status": "OK",
+     "data": {
+      "rowCount": 1,
+      "driverPath": "$builder_4aa23fde7ac9",
+      "rows": [
+       {
+        "driverRow": {
+         "_来料固定加工费_销售料号": "S0004",
+         "_来料固定加工费_投入料号": "S0005",
+         "_来料固定加工费_比例（%）": null,
+         "_物料_材料名": "动触头A",
+         "_来料固定加工费_基准值": "6.5",
+         "hf_part_no": "S0004",
+         "_来料固定加工费_项次": 1
+        },
+        "basicDataValues": {
+         "{$builder_4aa23fde7ac9._来料固定加工费_销售料号}": "S0004",
+         "{$builder_4aa23fde7ac9._来料固定加工费_项次}": 1,
+         "{$builder_4aa23fde7ac9._物料_材料名}": "动触头A",
+         "{$builder_4aa23fde7ac9._来料固定加工费_投入料号}": "S0005",
+         "{$builder_4aa23fde7ac9._来料固定加工费_基准值}": "6.5",
+         "{$builder_4aa23fde7ac9._来料固定加工费_比例（%）}": null
+        }
+       }
+      ],
+      "debugSql": null
+     },
+     "error": null,
+     "debugSql": null
+    },
+    {
+     "key": "3fda805a-52da-4c9a-8741-51766ccf820f:1f5818d8-b934-44be-b1c3-47df7053cff4:S0004:_",
+     "status": "OK",
+     "data": {
+      "rowCount": 2,
+      "driverPath": "$builder_3fda805a52da",
+      "rows": [
+       {
+        "driverRow": {
+         "_自制加工费_工序编号": "Z008",
+         "_物料_材料名": "动触头A",
+         "_自制加工费_比例（%）": null,
+         "_自制加工费_计价单位": "KG",
+         "hf_part_no": "S0004",
+         "_自制加工费_销售料号": "S0004",
+         "_自制加工费_项次": 2,
+         "_自制加工费_投入料号": "S0005",
+         "_自制加工费_值": "0.18",
+         "_自制加工费_工序项次": 2
+        },
+        "basicDataValues": {
+         "{$builder_3fda805a52da._自制加工费_销售料号}": "S0004",
+         "{$builder_3fda805a52da._自制加工费_项次}": 2,
+         "{$builder_3fda805a52da._自制加工费_投入料号}": "S0005",
+         "{$builder_3fda805a52da._物料_材料名}": "动触头A",
+         "{$builder_3fda805a52da._自制加工费_工序项次}": 2,
+         "{$builder_3fda805a52da._自制加工费_工序编号}": "Z008",
+         "{$builder_3fda805a52da._自制加工费_值}": "0.18",
+         "{$builder_3fda805a52da._自制加工费_比例（%）}": null,
+         "{$builder_3fda805a52da._自制加工费_计价单位}": "KG"
+        }
+       },
+       {
+        "driverRow": {
+         "_自制加工费_工序编号": "Z053",
+         "_物料_材料名": "动触头A",
+         "_自制加工费_比例（%）": null,
+         "_自制加工费_计价单位": "KG",
+         "hf_part_no": "S0004",
+         "_自制加工费_销售料号": "S0004",
+         "_自制加工费_项次": 1,
+         "_自制加工费_投入料号": "S0005",
+         "_自制加工费_值": "0.42",
+         "_自制加工费_工序项次": 1
+        },
+        "basicDataValues": {
+         "{$builder_3fda805a52da._自制加工费_销售料号}": "S0004",
+         "{$builder_3fda805a52da._自制加工费_项次}": 1,
+         "{$builder_3fda805a52da._自制加工费_投入料号}": "S0005",
+         "{$builder_3fda805a52da._物料_材料名}": "动触头A",
+         "{$builder_3fda805a52da._自制加工费_工序项次}": 1,
+         "{$builder_3fda805a52da._自制加工费_工序编号}": "Z053",
+         "{$builder_3fda805a52da._自制加工费_值}": "0.42",
+         "{$builder_3fda805a52da._自制加工费_比例（%）}": null,
+         "{$builder_3fda805a52da._自制加工费_计价单位}": "KG"
+        }
+       }
+      ],
+      "debugSql": null
+     },
+     "error": null,
+     "debugSql": null
+    }
+   ]
+  }
+ },
+ "R0910S2-B (0028../B1SELF)": {
+  "code": 200,
+  "message": "success",
+  "data": {
+   "results": [
+    {
+     "key": "221dc766-8ab6-4d95-82c0-08cc03e6267d:1f5818d8-b934-44be-b1c3-47df7053cff4:0028-2609000015:_",
+     "status": "OK",
+     "data": {
+      "rowCount": 7,
+      "driverPath": "$builder_221dc7668ab6",
+      "rows": [
+       {
+        "driverRow": {
+         "_客户料号_客户产品编号": "B1IDEM-050616",
+         "_物料_销售料号": "0028-2609000015",
+         "_物料_规格": "S050259",
+         "_物料_尺寸": "D050259",
+         "hf_part_no": "0028-2609000015",
+         "_物料_品名": "B1SELF-050259",
+         "_物料_旧料号": null,
+         "_物料_单重": "11",
+         "_物料_生产料号": null
+        },
+        "basicDataValues": {
+         "{$builder_221dc7668ab6._物料_销售料号}": "0028-2609000015",
+         "{$builder_221dc7668ab6._客户料号_客户产品编号}": "B1IDEM-050616",
+         "{$builder_221dc7668ab6._物料_生产料号}": null,
+         "{$builder_221dc7668ab6._物料_品名}": "B1SELF-050259",
+         "{$builder_221dc7668ab6._物料_规格}": "S050259",
+         "{$builder_221dc7668ab6._物料_尺寸}": "D050259",
+         "{$builder_221dc7668ab6._物料_旧料号}": null,
+         "{$builder_221dc7668ab6._物料_单重}": "11"
+        }
+       },
+       {
+        "driverRow": {
+         "_客户料号_客户产品编号": "B1SELF-050259",
+         "_物料_销售料号": "0028-2609000015",
+         "_物料_规格": "S050259",
+         "_物料_尺寸": "D050259",
+         "hf_part_no": "0028-2609000015",
+         "_物料_品名": "B1SELF-050259",
+         "_物料_旧料号": null,
+         "_物料_单重": "11",
+         "_物料_生产料号": null
+        },
+        "basicDataValues": {
+         "{$builder_221dc7668ab6._物料_销售料号}": "0028-2609000015",
+         "{$builder_221dc7668ab6._客户料号_客户产品编号}": "B1SELF-050259",
+         "{$builder_221dc7668ab6._物料_生产料号}": null,
+         "{$builder_221dc7668ab6._物料_品名}": "B1SELF-050259",
+         "{$builder_221dc7668ab6._物料_规格}": "S050259",
+         "{$builder_221dc7668ab6._物料_尺寸}": "D050259",
+         "{$builder_221dc7668ab6._物料_旧料号}": null,
+         "{$builder_221dc7668ab6._物料_单重}": "11"
+        }
+       },
+       {
+        "driverRow": {
+         "_客户料号_客户产品编号": "B1UPG-050617",
+         "_物料_销售料号": "0028-2609000015",
+         "_物料_规格": "S050259",
+         "_物料_尺寸": "D050259",
+         "hf_part_no": "0028-2609000015",
+         "_物料_品名": "B1SELF-050259",
+         "_物料_旧料号": null,
+         "_物料_单重": "11",
+         "_物料_生产料号": null
+        },
+        "basicDataValues": {
+         "{$builder_221dc7668ab6._物料_销售料号}": "0028-2609000015",
+         "{$builder_221dc7668ab6._客户料号_客户产品编号}": "B1UPG-050617",
+         "{$builder_221dc7668ab6._物料_生产料号}": null,
+         "{$builder_221dc7668ab6._物料_品名}": "B1SELF-050259",
+         "{$builder_221dc7668ab6._物料_规格}": "S050259",
+         "{$builder_221dc7668ab6._物料_尺寸}": "D050259",
+         "{$builder_221dc7668ab6._物料_旧料号}": null,
+         "{$builder_221dc7668ab6._物料_单重}": "11"
+        }
+       },
+       {
+        "driverRow": {
+         "_客户料号_客户产品编号": "N1CHK-051505819212",
+         "_物料_销售料号": "0028-2609000015",
+         "_物料_规格": "S050259",
+         "_物料_尺寸": "D050259",
+         "hf_part_no": "0028-2609000015",
+         "_物料_品名": "B1SELF-050259",
+         "_物料_旧料号": null,
+         "_物料_单重": "11",
+         "_物料_生产料号": null
+        },
+        "basicDataValues": {
+         "{$builder_221dc7668ab6._物料_销售料号}": "0028-2609000015",
+         "{$builder_221dc7668ab6._客户料号_客户产品编号}": "N1CHK-051505819212",
+         "{$builder_221dc7668ab6._物料_生产料号}": null,
+         "{$builder_221dc7668ab6._物料_品名}": "B1SELF-050259",
+         "{$builder_221dc7668ab6._物料_规格}": "S050259",
+         "{$builder_221dc7668ab6._物料_尺寸}": "D050259",
+         "{$builder_221dc7668ab6._物料_旧料号}": null,
+         "{$builder_221dc7668ab6._物料_单重}": "11"
+        }
+       },
+       {
+        "driverRow": {
+         "_客户料号_客户产品编号": "N1CHK-051506947213",
+         "_物料_销售料号": "0028-2609000015",
+         "_物料_规格": "S050259",
+         "_物料_尺寸": "D050259",
+         "hf_part_no": "0028-2609000015",
+         "_物料_品名": "B1SELF-050259",
+         "_物料_旧料号": null,
+         "_物料_单重": "11",
+         "_物料_生产料号": null
+        },
+        "basicDataValues": {
+         "{$builder_221dc7668ab6._物料_销售料号}": "0028-2609000015",
+         "{$builder_221dc7668ab6._客户料号_客户产品编号}": "N1CHK-051506947213",
+         "{$builder_221dc7668ab6._物料_生产料号}": null,
+         "{$builder_221dc7668ab6._物料_品名}": "B1SELF-050259",
+         "{$builder_221dc7668ab6._物料_规格}": "S050259",
+         "{$builder_221dc7668ab6._物料_尺寸}": "D050259",
+         "{$builder_221dc7668ab6._物料_旧料号}": null,
+         "{$builder_221dc7668ab6._物料_单重}": "11"
+        }
+       },
+       {
+        "driverRow": {
+         "_客户料号_客户产品编号": "N1CHK-051509400098",
+         "_物料_销售料号": "0028-2609000015",
+         "_物料_规格": "S050259",
+         "_物料_尺寸": "D050259",
+         "hf_part_no": "0028-2609000015",
+         "_物料_品名": "B1SELF-050259",
+         "_物料_旧料号": null,
+         "_物料_单重": "11",
+         "_物料_生产料号": null
+        },
+        "basicDataValues": {
+         "{$builder_221dc7668ab6._物料_销售料号}": "0028-2609000015",
+         "{$builder_221dc7668ab6._客户料号_客户产品编号}": "N1CHK-051509400098",
+         "{$builder_221dc7668ab6._物料_生产料号}": null,
+         "{$builder_221dc7668ab6._物料_品名}": "B1SELF-050259",
+         "{$builder_221dc7668ab6._物料_规格}": "S050259",
+         "{$builder_221dc7668ab6._物料_尺寸}": "D050259",
+         "{$builder_221dc7668ab6._物料_旧料号}": null,
+         "{$builder_221dc7668ab6._物料_单重}": "11"
+        }
+       },
+       {
+        "driverRow": {
+         "_客户料号_客户产品编号": "N1CHK-051510103150",
+         "_物料_销售料号": "0028-2609000015",
+         "_物料_规格": "S050259",
+         "_物料_尺寸": "D050259",
+         "hf_part_no": "0028-2609000015",
+         "_物料_品名": "B1SELF-050259",
+         "_物料_旧料号": null,
+         "_物料_单重": "11",
+         "_物料_生产料号": null
+        },
+        "basicDataValues": {
+         "{$builder_221dc7668ab6._物料_销售料号}": "0028-2609000015",
+         "{$builder_221dc7668ab6._客户料号_客户产品编号}": "N1CHK-051510103150",
+         "{$builder_221dc7668ab6._物料_生产料号}": null,
+         "{$builder_221dc7668ab6._物料_品名}": "B1SELF-050259",
+         "{$builder_221dc7668ab6._物料_规格}": "S050259",
+         "{$builder_221dc7668ab6._物料_尺寸}": "D050259",
+         "{$builder_221dc7668ab6._物料_旧料号}": null,
+         "{$builder_221dc7668ab6._物料_单重}": "11"
+        }
+       }
+      ],
+      "debugSql": null
+     },
+     "error": null,
+     "debugSql": null
+    },
+    {
+     "key": "7f9a5bbf-264f-4b07-8dff-3118a9428a48:1f5818d8-b934-44be-b1c3-47df7053cff4:0028-2609000015:_",
+     "status": "OK",
+     "data": {
+      "rowCount": 14,
+      "driverPath": "$builder_7f9a5bbf264f",
+      "rows": [
+       {
+        "driverRow": {
+         "material_no": "AgCu90",
+         "parent_no": "0028-2609000013",
+         "_物料BOM_项次": 1,
+         "_物料BOM_材料毛重": null,
+         "_物料BOM_材料净重": null,
+         "_物料_材料名": "AgCu",
+         "_物料BOM_重量单位": null,
+         "hf_part_no": "AgCu90",
+         "_物料BOM_销售料号": "0028-2609000013",
+         "_物料BOM_投入料号": "AgCu90",
+         "_物料BOM_组成数量": null,
+         "_物料BOM_损耗率（%）": null
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "0028-2609000013",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "AgCu90",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "AgCu",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": null
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "AgCu90",
+         "parent_no": "0028-2609000015",
+         "_物料BOM_项次": 1,
+         "_物料BOM_材料毛重": null,
+         "_物料BOM_材料净重": null,
+         "_物料_材料名": "AgCu",
+         "_物料BOM_重量单位": null,
+         "hf_part_no": "AgCu90",
+         "_物料BOM_销售料号": "0028-2609000015",
+         "_物料BOM_投入料号": "AgCu90",
+         "_物料BOM_组成数量": null,
+         "_物料BOM_损耗率（%）": null
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "0028-2609000015",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "AgCu90",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "AgCu",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": null
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "AgCu90",
+         "parent_no": "0028-2609000016",
+         "_物料BOM_项次": 1,
+         "_物料BOM_材料毛重": null,
+         "_物料BOM_材料净重": null,
+         "_物料_材料名": "AgCu",
+         "_物料BOM_重量单位": null,
+         "hf_part_no": "AgCu90",
+         "_物料BOM_销售料号": "0028-2609000016",
+         "_物料BOM_投入料号": "AgCu90",
+         "_物料BOM_组成数量": null,
+         "_物料BOM_损耗率（%）": null
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "0028-2609000016",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "AgCu90",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "AgCu",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": null
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "AgCu90",
+         "parent_no": "0028-2609000017",
+         "_物料BOM_项次": 1,
+         "_物料BOM_材料毛重": null,
+         "_物料BOM_材料净重": null,
+         "_物料_材料名": "AgCu",
+         "_物料BOM_重量单位": null,
+         "hf_part_no": "AgCu90",
+         "_物料BOM_销售料号": "0028-2609000017",
+         "_物料BOM_投入料号": "AgCu90",
+         "_物料BOM_组成数量": null,
+         "_物料BOM_损耗率（%）": null
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "0028-2609000017",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "AgCu90",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "AgCu",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": null
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "AgCu90",
+         "parent_no": "0028-2609000019",
+         "_物料BOM_项次": 1,
+         "_物料BOM_材料毛重": null,
+         "_物料BOM_材料净重": null,
+         "_物料_材料名": "AgCu",
+         "_物料BOM_重量单位": null,
+         "hf_part_no": "AgCu90",
+         "_物料BOM_销售料号": "0028-2609000019",
+         "_物料BOM_投入料号": "AgCu90",
+         "_物料BOM_组成数量": null,
+         "_物料BOM_损耗率（%）": null
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "0028-2609000019",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "AgCu90",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "AgCu",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": null
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "AgCu90",
+         "parent_no": "0028-2609000020",
+         "_物料BOM_项次": 1,
+         "_物料BOM_材料毛重": null,
+         "_物料BOM_材料净重": null,
+         "_物料_材料名": "AgCu",
+         "_物料BOM_重量单位": null,
+         "hf_part_no": "AgCu90",
+         "_物料BOM_销售料号": "0028-2609000020",
+         "_物料BOM_投入料号": "AgCu90",
+         "_物料BOM_组成数量": null,
+         "_物料BOM_损耗率（%）": null
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "0028-2609000020",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "AgCu90",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "AgCu",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": null
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "AgCu90",
+         "parent_no": "0028-2609000022",
+         "_物料BOM_项次": 1,
+         "_物料BOM_材料毛重": null,
+         "_物料BOM_材料净重": null,
+         "_物料_材料名": "AgCu",
+         "_物料BOM_重量单位": null,
+         "hf_part_no": "AgCu90",
+         "_物料BOM_销售料号": "0028-2609000022",
+         "_物料BOM_投入料号": "AgCu90",
+         "_物料BOM_组成数量": null,
+         "_物料BOM_损耗率（%）": null
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "0028-2609000022",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "AgCu90",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "AgCu",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": null
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "AgCu90",
+         "parent_no": "0028-2609000023",
+         "_物料BOM_项次": 1,
+         "_物料BOM_材料毛重": null,
+         "_物料BOM_材料净重": null,
+         "_物料_材料名": "AgCu",
+         "_物料BOM_重量单位": null,
+         "hf_part_no": "AgCu90",
+         "_物料BOM_销售料号": "0028-2609000023",
+         "_物料BOM_投入料号": "AgCu90",
+         "_物料BOM_组成数量": null,
+         "_物料BOM_损耗率（%）": null
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "0028-2609000023",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "AgCu90",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "AgCu",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": null
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "AgCu90",
+         "parent_no": "0028-2609000024",
+         "_物料BOM_项次": 1,
+         "_物料BOM_材料毛重": null,
+         "_物料BOM_材料净重": null,
+         "_物料_材料名": "AgCu",
+         "_物料BOM_重量单位": null,
+         "hf_part_no": "AgCu90",
+         "_物料BOM_销售料号": "0028-2609000024",
+         "_物料BOM_投入料号": "AgCu90",
+         "_物料BOM_组成数量": null,
+         "_物料BOM_损耗率（%）": null
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "0028-2609000024",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "AgCu90",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "AgCu",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": null
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "AgCu90",
+         "parent_no": "0028-2609000025",
+         "_物料BOM_项次": 1,
+         "_物料BOM_材料毛重": null,
+         "_物料BOM_材料净重": null,
+         "_物料_材料名": "AgCu",
+         "_物料BOM_重量单位": null,
+         "hf_part_no": "AgCu90",
+         "_物料BOM_销售料号": "0028-2609000025",
+         "_物料BOM_投入料号": "AgCu90",
+         "_物料BOM_组成数量": null,
+         "_物料BOM_损耗率（%）": null
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "0028-2609000025",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "AgCu90",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "AgCu",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": null
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "AgCu90",
+         "parent_no": "0028-2609000026",
+         "_物料BOM_项次": 1,
+         "_物料BOM_材料毛重": null,
+         "_物料BOM_材料净重": null,
+         "_物料_材料名": "AgCu",
+         "_物料BOM_重量单位": null,
+         "hf_part_no": "AgCu90",
+         "_物料BOM_销售料号": "0028-2609000026",
+         "_物料BOM_投入料号": "AgCu90",
+         "_物料BOM_组成数量": null,
+         "_物料BOM_损耗率（%）": null
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "0028-2609000026",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "AgCu90",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "AgCu",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": null
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "AgCu90",
+         "parent_no": "0028-2609000027",
+         "_物料BOM_项次": 1,
+         "_物料BOM_材料毛重": null,
+         "_物料BOM_材料净重": null,
+         "_物料_材料名": "AgCu",
+         "_物料BOM_重量单位": null,
+         "hf_part_no": "AgCu90",
+         "_物料BOM_销售料号": "0028-2609000027",
+         "_物料BOM_投入料号": "AgCu90",
+         "_物料BOM_组成数量": null,
+         "_物料BOM_损耗率（%）": null
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "0028-2609000027",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "AgCu90",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "AgCu",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": null
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "AgCu90",
+         "parent_no": "0028-2609000028",
+         "_物料BOM_项次": 1,
+         "_物料BOM_材料毛重": null,
+         "_物料BOM_材料净重": null,
+         "_物料_材料名": "AgCu",
+         "_物料BOM_重量单位": null,
+         "hf_part_no": "AgCu90",
+         "_物料BOM_销售料号": "0028-2609000028",
+         "_物料BOM_投入料号": "AgCu90",
+         "_物料BOM_组成数量": null,
+         "_物料BOM_损耗率（%）": null
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "0028-2609000028",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "AgCu90",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "AgCu",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": null
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "0028-2609000015",
+         "parent_no": null,
+         "_物料BOM_项次": null,
+         "_物料BOM_材料毛重": null,
+         "_物料BOM_材料净重": null,
+         "_物料_材料名": null,
+         "_物料BOM_重量单位": null,
+         "hf_part_no": "0028-2609000015",
+         "_物料BOM_销售料号": null,
+         "_物料BOM_投入料号": null,
+         "_物料BOM_组成数量": null,
+         "_物料BOM_损耗率（%）": null
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": null,
+         "{$builder_7f9a5bbf264f._物料_材料名}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": null
+        }
+       }
+      ],
+      "debugSql": null
+     },
+     "error": null,
+     "debugSql": null
+    },
+    {
+     "key": "98ee51d1-832e-4881-aa3d-e9512824cc14:1f5818d8-b934-44be-b1c3-47df7053cff4:0028-2609000015:_",
+     "status": "OK",
+     "data": {
+      "rowCount": 2,
+      "driverPath": "$builder_98ee51d1832e",
+      "rows": [
+       {
+        "driverRow": {
+         "_物料与元素BOM_净用量": null,
+         "_材质_材料名": "AgCu",
+         "_物料与元素BOM_元素": "Ag",
+         "_物料与元素BOM_项次": 1,
+         "_物料与元素BOM_回收折扣(%)": null,
+         "_物料与元素BOM_材质料号": "AgCu90",
+         "_物料与元素BOM_毛用量": null,
+         "hf_part_no": "0028-2609000015",
+         "_物料与元素BOM_损耗率%": null,
+         "_物料与元素BOM_销售料号": "0028-2609000015",
+         "_物料与元素BOM_组成含量（%）": "90",
+         "元素单价": "3000"
+        },
+        "basicDataValues": {
+         "{$builder_98ee51d1832e._物料与元素BOM_销售料号}": "0028-2609000015",
+         "{$builder_98ee51d1832e._物料与元素BOM_项次}": 1,
+         "{$builder_98ee51d1832e._物料与元素BOM_材质料号}": "AgCu90",
+         "{$builder_98ee51d1832e._材质_材料名}": "AgCu",
+         "{$builder_98ee51d1832e._物料与元素BOM_元素}": "Ag",
+         "{$builder_98ee51d1832e._物料与元素BOM_组成含量（%）}": "90",
+         "{$builder_98ee51d1832e._物料与元素BOM_损耗率%}": null,
+         "{$builder_98ee51d1832e._物料与元素BOM_毛用量}": null,
+         "{$builder_98ee51d1832e._物料与元素BOM_净用量}": null,
+         "{$builder_98ee51d1832e._物料与元素BOM_回收折扣(%)}": null,
+         "{$builder_98ee51d1832e.元素单价}": "3000"
+        }
+       },
+       {
+        "driverRow": {
+         "_物料与元素BOM_净用量": null,
+         "_材质_材料名": "AgCu",
+         "_物料与元素BOM_元素": "Cu",
+         "_物料与元素BOM_项次": 2,
+         "_物料与元素BOM_回收折扣(%)": null,
+         "_物料与元素BOM_材质料号": "AgCu90",
+         "_物料与元素BOM_毛用量": null,
+         "hf_part_no": "0028-2609000015",
+         "_物料与元素BOM_损耗率%": null,
+         "_物料与元素BOM_销售料号": "0028-2609000015",
+         "_物料与元素BOM_组成含量（%）": "10",
+         "元素单价": "101.14"
+        },
+        "basicDataValues": {
+         "{$builder_98ee51d1832e._物料与元素BOM_销售料号}": "0028-2609000015",
+         "{$builder_98ee51d1832e._物料与元素BOM_项次}": 2,
+         "{$builder_98ee51d1832e._物料与元素BOM_材质料号}": "AgCu90",
+         "{$builder_98ee51d1832e._材质_材料名}": "AgCu",
+         "{$builder_98ee51d1832e._物料与元素BOM_元素}": "Cu",
+         "{$builder_98ee51d1832e._物料与元素BOM_组成含量（%）}": "10",
+         "{$builder_98ee51d1832e._物料与元素BOM_损耗率%}": null,
+         "{$builder_98ee51d1832e._物料与元素BOM_毛用量}": null,
+         "{$builder_98ee51d1832e._物料与元素BOM_净用量}": null,
+         "{$builder_98ee51d1832e._物料与元素BOM_回收折扣(%)}": null,
+         "{$builder_98ee51d1832e.元素单价}": "101.14"
+        }
+       }
+      ],
+      "debugSql": null
+     },
+     "error": null,
+     "debugSql": null
+    },
+    {
+     "key": "2c539680-91c8-4afe-80d6-fa07e8b2bbb0:1f5818d8-b934-44be-b1c3-47df7053cff4:0028-2609000015:_",
+     "status": "OK",
+     "data": {
+      "rowCount": 0,
+      "driverPath": null,
+      "rows": [],
+      "debugSql": null
+     },
+     "error": null,
+     "debugSql": null
+    },
+    {
+     "key": "4aa23fde-7ac9-4189-997c-cdfe00a6080f:1f5818d8-b934-44be-b1c3-47df7053cff4:0028-2609000015:_",
+     "status": "OK",
+     "data": {
+      "rowCount": 0,
+      "driverPath": "$builder_4aa23fde7ac9",
+      "rows": [],
+      "debugSql": null
+     },
+     "error": null,
+     "debugSql": null
+    },
+    {
+     "key": "3fda805a-52da-4c9a-8741-51766ccf820f:1f5818d8-b934-44be-b1c3-47df7053cff4:0028-2609000015:_",
+     "status": "OK",
+     "data": {
+      "rowCount": 3,
+      "driverPath": "$builder_3fda805a52da",
+      "rows": [
+       {
+        "driverRow": {
+         "_自制加工费_工序编号": "Z008",
+         "_物料_材料名": "B1SELF-050259",
+         "_自制加工费_比例（%）": null,
+         "_自制加工费_计价单位": "PCS",
+         "hf_part_no": "0028-2609000015",
+         "_自制加工费_销售料号": "0028-2609000015",
+         "_自制加工费_项次": 3,
+         "_自制加工费_投入料号": "0028-2609000015",
+         "_自制加工费_值": null,
+         "_自制加工费_工序项次": 3
+        },
+        "basicDataValues": {
+         "{$builder_3fda805a52da._自制加工费_销售料号}": "0028-2609000015",
+         "{$builder_3fda805a52da._自制加工费_项次}": 3,
+         "{$builder_3fda805a52da._自制加工费_投入料号}": "0028-2609000015",
+         "{$builder_3fda805a52da._物料_材料名}": "B1SELF-050259",
+         "{$builder_3fda805a52da._自制加工费_工序项次}": 3,
+         "{$builder_3fda805a52da._自制加工费_工序编号}": "Z008",
+         "{$builder_3fda805a52da._自制加工费_值}": null,
+         "{$builder_3fda805a52da._自制加工费_比例（%）}": null,
+         "{$builder_3fda805a52da._自制加工费_计价单位}": "PCS"
+        }
+       },
+       {
+        "driverRow": {
+         "_自制加工费_工序编号": "Z100",
+         "_物料_材料名": "B1SELF-050259",
+         "_自制加工费_比例（%）": null,
+         "_自制加工费_计价单位": "PCS",
+         "hf_part_no": "0028-2609000015",
+         "_自制加工费_销售料号": "0028-2609000015",
+         "_自制加工费_项次": 1,
+         "_自制加工费_投入料号": "0028-2609000015",
+         "_自制加工费_值": null,
+         "_自制加工费_工序项次": 1
+        },
+        "basicDataValues": {
+         "{$builder_3fda805a52da._自制加工费_销售料号}": "0028-2609000015",
+         "{$builder_3fda805a52da._自制加工费_项次}": 1,
+         "{$builder_3fda805a52da._自制加工费_投入料号}": "0028-2609000015",
+         "{$builder_3fda805a52da._物料_材料名}": "B1SELF-050259",
+         "{$builder_3fda805a52da._自制加工费_工序项次}": 1,
+         "{$builder_3fda805a52da._自制加工费_工序编号}": "Z100",
+         "{$builder_3fda805a52da._自制加工费_值}": null,
+         "{$builder_3fda805a52da._自制加工费_比例（%）}": null,
+         "{$builder_3fda805a52da._自制加工费_计价单位}": "PCS"
+        }
+       },
+       {
+        "driverRow": {
+         "_自制加工费_工序编号": "Z101",
+         "_物料_材料名": "B1SELF-050259",
+         "_自制加工费_比例（%）": null,
+         "_自制加工费_计价单位": "PCS",
+         "hf_part_no": "0028-2609000015",
+         "_自制加工费_销售料号": "0028-2609000015",
+         "_自制加工费_项次": 2,
+         "_自制加工费_投入料号": "0028-2609000015",
+         "_自制加工费_值": null,
+         "_自制加工费_工序项次": 2
+        },
+        "basicDataValues": {
+         "{$builder_3fda805a52da._自制加工费_销售料号}": "0028-2609000015",
+         "{$builder_3fda805a52da._自制加工费_项次}": 2,
+         "{$builder_3fda805a52da._自制加工费_投入料号}": "0028-2609000015",
+         "{$builder_3fda805a52da._物料_材料名}": "B1SELF-050259",
+         "{$builder_3fda805a52da._自制加工费_工序项次}": 2,
+         "{$builder_3fda805a52da._自制加工费_工序编号}": "Z101",
+         "{$builder_3fda805a52da._自制加工费_值}": null,
+         "{$builder_3fda805a52da._自制加工费_比例（%）}": null,
+         "{$builder_3fda805a52da._自制加工费_计价单位}": "PCS"
+        }
+       }
+      ],
+      "debugSql": null
+     },
+     "error": null,
+     "debugSql": null
+    }
+   ]
+  }
+ },
+ "R0910S2-C (S0004/空客编)": {
+  "code": 200,
+  "message": "success",
+  "data": {
+   "results": [
+    {
+     "key": "221dc766-8ab6-4d95-82c0-08cc03e6267d:1f5818d8-b934-44be-b1c3-47df7053cff4:S0004:_",
+     "status": "OK",
+     "data": {
+      "rowCount": 4,
+      "driverPath": "$builder_221dc7668ab6",
+      "rows": [
+       {
+        "driverRow": {
+         "_客户料号_客户产品编号": "B17-DUP-0910-1",
+         "_物料_销售料号": "S0004",
+         "_物料_规格": "Φ12",
+         "_物料_尺寸": "12×8×3",
+         "hf_part_no": "S0004",
+         "_物料_品名": "触桥组件A",
+         "_物料_旧料号": "12140",
+         "_物料_单重": "16.7",
+         "_物料_生产料号": "300021"
+        },
+        "basicDataValues": {
+         "{$builder_221dc7668ab6._物料_销售料号}": "S0004",
+         "{$builder_221dc7668ab6._客户料号_客户产品编号}": "B17-DUP-0910-1",
+         "{$builder_221dc7668ab6._物料_生产料号}": "300021",
+         "{$builder_221dc7668ab6._物料_品名}": "触桥组件A",
+         "{$builder_221dc7668ab6._物料_规格}": "Φ12",
+         "{$builder_221dc7668ab6._物料_尺寸}": "12×8×3",
+         "{$builder_221dc7668ab6._物料_旧料号}": "12140",
+         "{$builder_221dc7668ab6._物料_单重}": "16.7"
+        }
+       },
+       {
+        "driverRow": {
+         "_客户料号_客户产品编号": "B17-DUP-0910-2",
+         "_物料_销售料号": "S0004",
+         "_物料_规格": "Φ12",
+         "_物料_尺寸": "12×8×3",
+         "hf_part_no": "S0004",
+         "_物料_品名": "触桥组件A",
+         "_物料_旧料号": "12140",
+         "_物料_单重": "16.7",
+         "_物料_生产料号": "300021"
+        },
+        "basicDataValues": {
+         "{$builder_221dc7668ab6._物料_销售料号}": "S0004",
+         "{$builder_221dc7668ab6._客户料号_客户产品编号}": "B17-DUP-0910-2",
+         "{$builder_221dc7668ab6._物料_生产料号}": "300021",
+         "{$builder_221dc7668ab6._物料_品名}": "触桥组件A",
+         "{$builder_221dc7668ab6._物料_规格}": "Φ12",
+         "{$builder_221dc7668ab6._物料_尺寸}": "12×8×3",
+         "{$builder_221dc7668ab6._物料_旧料号}": "12140",
+         "{$builder_221dc7668ab6._物料_单重}": "16.7"
+        }
+       },
+       {
+        "driverRow": {
+         "_客户料号_客户产品编号": "B18-BIND-0910B",
+         "_物料_销售料号": "S0004",
+         "_物料_规格": "Φ12",
+         "_物料_尺寸": "12×8×3",
+         "hf_part_no": "S0004",
+         "_物料_品名": "触桥组件A",
+         "_物料_旧料号": "12140",
+         "_物料_单重": "16.7",
+         "_物料_生产料号": "300021"
+        },
+        "basicDataValues": {
+         "{$builder_221dc7668ab6._物料_销售料号}": "S0004",
+         "{$builder_221dc7668ab6._客户料号_客户产品编号}": "B18-BIND-0910B",
+         "{$builder_221dc7668ab6._物料_生产料号}": "300021",
+         "{$builder_221dc7668ab6._物料_品名}": "触桥组件A",
+         "{$builder_221dc7668ab6._物料_规格}": "Φ12",
+         "{$builder_221dc7668ab6._物料_尺寸}": "12×8×3",
+         "{$builder_221dc7668ab6._物料_旧料号}": "12140",
+         "{$builder_221dc7668ab6._物料_单重}": "16.7"
+        }
+       },
+       {
+        "driverRow": {
+         "_客户料号_客户产品编号": "RW-A004",
+         "_物料_销售料号": "S0004",
+         "_物料_规格": "Φ12",
+         "_物料_尺寸": "12×8×3",
+         "hf_part_no": "S0004",
+         "_物料_品名": "触桥组件A",
+         "_物料_旧料号": "12140",
+         "_物料_单重": "16.7",
+         "_物料_生产料号": "300021"
+        },
+        "basicDataValues": {
+         "{$builder_221dc7668ab6._物料_销售料号}": "S0004",
+         "{$builder_221dc7668ab6._客户料号_客户产品编号}": "RW-A004",
+         "{$builder_221dc7668ab6._物料_生产料号}": "300021",
+         "{$builder_221dc7668ab6._物料_品名}": "触桥组件A",
+         "{$builder_221dc7668ab6._物料_规格}": "Φ12",
+         "{$builder_221dc7668ab6._物料_尺寸}": "12×8×3",
+         "{$builder_221dc7668ab6._物料_旧料号}": "12140",
+         "{$builder_221dc7668ab6._物料_单重}": "16.7"
+        }
+       }
+      ],
+      "debugSql": null
+     },
+     "error": null,
+     "debugSql": null
+    },
+    {
+     "key": "7f9a5bbf-264f-4b07-8dff-3118a9428a48:1f5818d8-b934-44be-b1c3-47df7053cff4:S0004:_",
+     "status": "OK",
+     "data": {
+      "rowCount": 8,
+      "driverPath": "$builder_7f9a5bbf264f",
+      "rows": [
+       {
+        "driverRow": {
+         "material_no": "00006",
+         "parent_no": "T260907-M1",
+         "_物料BOM_项次": 1,
+         "_物料BOM_材料毛重": "1.2",
+         "_物料BOM_材料净重": "1",
+         "_物料_材料名": "AgNi10",
+         "_物料BOM_重量单位": "KG",
+         "hf_part_no": "00006",
+         "_物料BOM_销售料号": "T260907-M1",
+         "_物料BOM_投入料号": "00006",
+         "_物料BOM_组成数量": "2",
+         "_物料BOM_损耗率（%）": "1"
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "T260907-M1",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "00006",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "AgNi10",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": "2",
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": "1.2",
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": "1",
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": "1",
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": "KG"
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "00006",
+         "parent_no": "S0005",
+         "_物料BOM_项次": 1,
+         "_物料BOM_材料毛重": "8.2",
+         "_物料BOM_材料净重": "7.9",
+         "_物料_材料名": "AgNi10",
+         "_物料BOM_重量单位": "G",
+         "hf_part_no": "00006",
+         "_物料BOM_销售料号": "S0005",
+         "_物料BOM_投入料号": "00006",
+         "_物料BOM_组成数量": "1",
+         "_物料BOM_损耗率（%）": "1.5"
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "S0005",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "00006",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "AgNi10",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": "1",
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": "8.2",
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": "7.9",
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": "1.5",
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": "G"
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "00006",
+         "parent_no": "0028-2609000014",
+         "_物料BOM_项次": 1,
+         "_物料BOM_材料毛重": null,
+         "_物料BOM_材料净重": null,
+         "_物料_材料名": "AgNi10",
+         "_物料BOM_重量单位": null,
+         "hf_part_no": "00006",
+         "_物料BOM_销售料号": "0028-2609000014",
+         "_物料BOM_投入料号": "00006",
+         "_物料BOM_组成数量": null,
+         "_物料BOM_损耗率（%）": null
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "0028-2609000014",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "00006",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "AgNi10",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": null
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "00168",
+         "parent_no": "S0006",
+         "_物料BOM_项次": 1,
+         "_物料BOM_材料毛重": "6.4",
+         "_物料BOM_材料净重": "6.1",
+         "_物料_材料名": "301/Cu/301",
+         "_物料BOM_重量单位": "G",
+         "hf_part_no": "00168",
+         "_物料BOM_销售料号": "S0006",
+         "_物料BOM_投入料号": "00168",
+         "_物料BOM_组成数量": "1",
+         "_物料BOM_损耗率（%）": "1.2"
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "S0006",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "00168",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "301/Cu/301",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": "1",
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": "6.4",
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": "6.1",
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": "1.2",
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": "G"
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "S0005",
+         "parent_no": "S0004",
+         "_物料BOM_项次": 1,
+         "_物料BOM_材料毛重": "8.2",
+         "_物料BOM_材料净重": "7.9",
+         "_物料_材料名": "动触头A",
+         "_物料BOM_重量单位": "G",
+         "hf_part_no": "S0005",
+         "_物料BOM_销售料号": "S0004",
+         "_物料BOM_投入料号": "S0005",
+         "_物料BOM_组成数量": "1",
+         "_物料BOM_损耗率（%）": "1.5"
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "S0004",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "S0005",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "动触头A",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": "1",
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": "8.2",
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": "7.9",
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": "1.5",
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": "G"
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "S0006",
+         "parent_no": "S0004",
+         "_物料BOM_项次": 2,
+         "_物料BOM_材料毛重": "6.4",
+         "_物料BOM_材料净重": "6.1",
+         "_物料_材料名": "静触片A",
+         "_物料BOM_重量单位": "G",
+         "hf_part_no": "S0006",
+         "_物料BOM_销售料号": "S0004",
+         "_物料BOM_投入料号": "S0006",
+         "_物料BOM_组成数量": "1",
+         "_物料BOM_损耗率（%）": "1.2"
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "S0004",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 2,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "S0006",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "静触片A",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": "1",
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": "6.4",
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": "6.1",
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": "1.2",
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": "G"
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "S0007",
+         "parent_no": "S0004",
+         "_物料BOM_项次": 3,
+         "_物料BOM_材料毛重": "4.2",
+         "_物料BOM_材料净重": "4",
+         "_物料_材料名": "弹簧件A",
+         "_物料BOM_重量单位": "G",
+         "hf_part_no": "S0007",
+         "_物料BOM_销售料号": "S0004",
+         "_物料BOM_投入料号": "S0007",
+         "_物料BOM_组成数量": "2",
+         "_物料BOM_损耗率（%）": "0.8"
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "S0004",
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": 3,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "S0007",
+         "{$builder_7f9a5bbf264f._物料_材料名}": "弹簧件A",
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": "2",
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": "4.2",
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": "4",
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": "0.8",
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": "G"
+        }
+       },
+       {
+        "driverRow": {
+         "material_no": "S0004",
+         "parent_no": null,
+         "_物料BOM_项次": null,
+         "_物料BOM_材料毛重": null,
+         "_物料BOM_材料净重": null,
+         "_物料_材料名": null,
+         "_物料BOM_重量单位": null,
+         "hf_part_no": "S0004",
+         "_物料BOM_销售料号": null,
+         "_物料BOM_投入料号": null,
+         "_物料BOM_组成数量": null,
+         "_物料BOM_损耗率（%）": null
+        },
+        "basicDataValues": {
+         "{$builder_7f9a5bbf264f._物料BOM_销售料号}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_项次}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_投入料号}": null,
+         "{$builder_7f9a5bbf264f._物料_材料名}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_组成数量}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_材料净重}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": null,
+         "{$builder_7f9a5bbf264f._物料BOM_重量单位}": null
+        }
+       }
+      ],
+      "debugSql": null
+     },
+     "error": null,
+     "debugSql": null
+    },
+    {
+     "key": "98ee51d1-832e-4881-aa3d-e9512824cc14:1f5818d8-b934-44be-b1c3-47df7053cff4:S0004:_",
+     "status": "OK",
+     "data": {
+      "rowCount": 4,
+      "driverPath": "$builder_98ee51d1832e",
+      "rows": [
+       {
+        "driverRow": {
+         "_物料与元素BOM_净用量": "4.76",
+         "_材质_材料名": "301/Cu/301",
+         "_物料与元素BOM_元素": "301",
+         "_物料与元素BOM_项次": 2,
+         "_物料与元素BOM_回收折扣(%)": "2",
+         "_物料与元素BOM_材质料号": "00168",
+         "_物料与元素BOM_毛用量": "4.99",
+         "hf_part_no": "S0006",
+         "_物料与元素BOM_损耗率%": "1.2",
+         "_物料与元素BOM_销售料号": "S0006",
+         "_物料与元素BOM_组成含量（%）": "78",
+         "元素单价": null
+        },
+        "basicDataValues": {
+         "{$builder_98ee51d1832e._物料与元素BOM_销售料号}": "S0006",
+         "{$builder_98ee51d1832e._物料与元素BOM_项次}": 2,
+         "{$builder_98ee51d1832e._物料与元素BOM_材质料号}": "00168",
+         "{$builder_98ee51d1832e._材质_材料名}": "301/Cu/301",
+         "{$builder_98ee51d1832e._物料与元素BOM_元素}": "301",
+         "{$builder_98ee51d1832e._物料与元素BOM_组成含量（%）}": "78",
+         "{$builder_98ee51d1832e._物料与元素BOM_损耗率%}": "1.2",
+         "{$builder_98ee51d1832e._物料与元素BOM_毛用量}": "4.99",
+         "{$builder_98ee51d1832e._物料与元素BOM_净用量}": "4.76",
+         "{$builder_98ee51d1832e._物料与元素BOM_回收折扣(%)}": "2",
+         "{$builder_98ee51d1832e.元素单价}": null
+        }
+       },
+       {
+        "driverRow": {
+         "_物料与元素BOM_净用量": "1.34",
+         "_材质_材料名": "301/Cu/301",
+         "_物料与元素BOM_元素": "Cu",
+         "_物料与元素BOM_项次": 1,
+         "_物料与元素BOM_回收折扣(%)": "4",
+         "_物料与元素BOM_材质料号": "00168",
+         "_物料与元素BOM_毛用量": "1.41",
+         "hf_part_no": "S0006",
+         "_物料与元素BOM_损耗率%": "1.2",
+         "_物料与元素BOM_销售料号": "S0006",
+         "_物料与元素BOM_组成含量（%）": "22",
+         "元素单价": "101.14"
+        },
+        "basicDataValues": {
+         "{$builder_98ee51d1832e._物料与元素BOM_销售料号}": "S0006",
+         "{$builder_98ee51d1832e._物料与元素BOM_项次}": 1,
+         "{$builder_98ee51d1832e._物料与元素BOM_材质料号}": "00168",
+         "{$builder_98ee51d1832e._材质_材料名}": "301/Cu/301",
+         "{$builder_98ee51d1832e._物料与元素BOM_元素}": "Cu",
+         "{$builder_98ee51d1832e._物料与元素BOM_组成含量（%）}": "22",
+         "{$builder_98ee51d1832e._物料与元素BOM_损耗率%}": "1.2",
+         "{$builder_98ee51d1832e._物料与元素BOM_毛用量}": "1.41",
+         "{$builder_98ee51d1832e._物料与元素BOM_净用量}": "1.34",
+         "{$builder_98ee51d1832e._物料与元素BOM_回收折扣(%)}": "4",
+         "{$builder_98ee51d1832e.元素单价}": "101.14"
+        }
+       },
+       {
+        "driverRow": {
+         "_物料与元素BOM_净用量": "7.11",
+         "_材质_材料名": "AgNi10",
+         "_物料与元素BOM_元素": "Ag",
+         "_物料与元素BOM_项次": 1,
+         "_物料与元素BOM_回收折扣(%)": "5",
+         "_物料与元素BOM_材质料号": "00006",
+         "_物料与元素BOM_毛用量": "7.38",
+         "hf_part_no": "S0005",
+         "_物料与元素BOM_损耗率%": "1.5",
+         "_物料与元素BOM_销售料号": "S0005",
+         "_物料与元素BOM_组成含量（%）": "90",
+         "元素单价": "3000"
+        },
+        "basicDataValues": {
+         "{$builder_98ee51d1832e._物料与元素BOM_销售料号}": "S0005",
+         "{$builder_98ee51d1832e._物料与元素BOM_项次}": 1,
+         "{$builder_98ee51d1832e._物料与元素BOM_材质料号}": "00006",
+         "{$builder_98ee51d1832e._材质_材料名}": "AgNi10",
+         "{$builder_98ee51d1832e._物料与元素BOM_元素}": "Ag",
+         "{$builder_98ee51d1832e._物料与元素BOM_组成含量（%）}": "90",
+         "{$builder_98ee51d1832e._物料与元素BOM_损耗率%}": "1.5",
+         "{$builder_98ee51d1832e._物料与元素BOM_毛用量}": "7.38",
+         "{$builder_98ee51d1832e._物料与元素BOM_净用量}": "7.11",
+         "{$builder_98ee51d1832e._物料与元素BOM_回收折扣(%)}": "5",
+         "{$builder_98ee51d1832e.元素单价}": "3000"
+        }
+       },
+       {
+        "driverRow": {
+         "_物料与元素BOM_净用量": "0.79",
+         "_材质_材料名": "AgNi10",
+         "_物料与元素BOM_元素": "Ni",
+         "_物料与元素BOM_项次": 2,
+         "_物料与元素BOM_回收折扣(%)": "3",
+         "_物料与元素BOM_材质料号": "00006",
+         "_物料与元素BOM_毛用量": "0.82",
+         "hf_part_no": "S0005",
+         "_物料与元素BOM_损耗率%": "1.5",
+         "_物料与元素BOM_销售料号": "S0005",
+         "_物料与元素BOM_组成含量（%）": "10",
+         "元素单价": "105"
+        },
+        "basicDataValues": {
+         "{$builder_98ee51d1832e._物料与元素BOM_销售料号}": "S0005",
+         "{$builder_98ee51d1832e._物料与元素BOM_项次}": 2,
+         "{$builder_98ee51d1832e._物料与元素BOM_材质料号}": "00006",
+         "{$builder_98ee51d1832e._材质_材料名}": "AgNi10",
+         "{$builder_98ee51d1832e._物料与元素BOM_元素}": "Ni",
+         "{$builder_98ee51d1832e._物料与元素BOM_组成含量（%）}": "10",
+         "{$builder_98ee51d1832e._物料与元素BOM_损耗率%}": "1.5",
+         "{$builder_98ee51d1832e._物料与元素BOM_毛用量}": "0.82",
+         "{$builder_98ee51d1832e._物料与元素BOM_净用量}": "0.79",
+         "{$builder_98ee51d1832e._物料与元素BOM_回收折扣(%)}": "3",
+         "{$builder_98ee51d1832e.元素单价}": "105"
+        }
+       }
+      ],
+      "debugSql": null
+     },
+     "error": null,
+     "debugSql": null
+    },
+    {
+     "key": "2c539680-91c8-4afe-80d6-fa07e8b2bbb0:1f5818d8-b934-44be-b1c3-47df7053cff4:S0004:_",
+     "status": "OK",
+     "data": {
+      "rowCount": 0,
+      "driverPath": null,
+      "rows": [],
+      "debugSql": null
+     },
+     "error": null,
+     "debugSql": null
+    },
+    {
+     "key": "4aa23fde-7ac9-4189-997c-cdfe00a6080f:1f5818d8-b934-44be-b1c3-47df7053cff4:S0004:_",
+     "status": "OK",
+     "data": {
+      "rowCount": 1,
+      "driverPath": "$builder_4aa23fde7ac9",
+      "rows": [
+       {
+        "driverRow": {
+         "_来料固定加工费_销售料号": "S0004",
+         "_来料固定加工费_投入料号": "S0005",
+         "_来料固定加工费_比例（%）": null,
+         "_物料_材料名": "动触头A",
+         "_来料固定加工费_基准值": "6.5",
+         "hf_part_no": "S0004",
+         "_来料固定加工费_项次": 1
+        },
+        "basicDataValues": {
+         "{$builder_4aa23fde7ac9._来料固定加工费_销售料号}": "S0004",
+         "{$builder_4aa23fde7ac9._来料固定加工费_项次}": 1,
+         "{$builder_4aa23fde7ac9._物料_材料名}": "动触头A",
+         "{$builder_4aa23fde7ac9._来料固定加工费_投入料号}": "S0005",
+         "{$builder_4aa23fde7ac9._来料固定加工费_基准值}": "6.5",
+         "{$builder_4aa23fde7ac9._来料固定加工费_比例（%）}": null
+        }
+       }
+      ],
+      "debugSql": null
+     },
+     "error": null,
+     "debugSql": null
+    },
+    {
+     "key": "3fda805a-52da-4c9a-8741-51766ccf820f:1f5818d8-b934-44be-b1c3-47df7053cff4:S0004:_",
+     "status": "OK",
+     "data": {
+      "rowCount": 2,
+      "driverPath": "$builder_3fda805a52da",
+      "rows": [
+       {
+        "driverRow": {
+         "_自制加工费_工序编号": "Z008",
+         "_物料_材料名": "动触头A",
+         "_自制加工费_比例（%）": null,
+         "_自制加工费_计价单位": "KG",
+         "hf_part_no": "S0004",
+         "_自制加工费_销售料号": "S0004",
+         "_自制加工费_项次": 2,
+         "_自制加工费_投入料号": "S0005",
+         "_自制加工费_值": "0.18",
+         "_自制加工费_工序项次": 2
+        },
+        "basicDataValues": {
+         "{$builder_3fda805a52da._自制加工费_销售料号}": "S0004",
+         "{$builder_3fda805a52da._自制加工费_项次}": 2,
+         "{$builder_3fda805a52da._自制加工费_投入料号}": "S0005",
+         "{$builder_3fda805a52da._物料_材料名}": "动触头A",
+         "{$builder_3fda805a52da._自制加工费_工序项次}": 2,
+         "{$builder_3fda805a52da._自制加工费_工序编号}": "Z008",
+         "{$builder_3fda805a52da._自制加工费_值}": "0.18",
+         "{$builder_3fda805a52da._自制加工费_比例（%）}": null,
+         "{$builder_3fda805a52da._自制加工费_计价单位}": "KG"
+        }
+       },
+       {
+        "driverRow": {
+         "_自制加工费_工序编号": "Z053",
+         "_物料_材料名": "动触头A",
+         "_自制加工费_比例（%）": null,
+         "_自制加工费_计价单位": "KG",
+         "hf_part_no": "S0004",
+         "_自制加工费_销售料号": "S0004",
+         "_自制加工费_项次": 1,
+         "_自制加工费_投入料号": "S0005",
+         "_自制加工费_值": "0.42",
+         "_自制加工费_工序项次": 1
+        },
+        "basicDataValues": {
+         "{$builder_3fda805a52da._自制加工费_销售料号}": "S0004",
+         "{$builder_3fda805a52da._自制加工费_项次}": 1,
+         "{$builder_3fda805a52da._自制加工费_投入料号}": "S0005",
+         "{$builder_3fda805a52da._物料_材料名}": "动触头A",
+         "{$builder_3fda805a52da._自制加工费_工序项次}": 1,
+         "{$builder_3fda805a52da._自制加工费_工序编号}": "Z053",
+         "{$builder_3fda805a52da._自制加工费_值}": "0.42",
+         "{$builder_3fda805a52da._自制加工费_比例（%）}": null,
+         "{$builder_3fda805a52da._自制加工费_计价单位}": "KG"
+        }
+       }
+      ],
+      "debugSql": null
+     },
+     "error": null,
+     "debugSql": null
+    }
+   ]
+  }
+ }
+}
