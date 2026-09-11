@@ -1,0 +1,14 @@
+   node_key    | dialect |     physical_table     |      db_column      | display_name | roles | status 
+---------------+---------+------------------------+---------------------+--------------+-------+--------
+ CUSTOMER_PART | QUOTE   | ds_quote_customer_part | customer_no         | 客户编号     | {}    | ACTIVE
+ CUSTOMER_PART | QUOTE   | ds_quote_customer_part | customer_part_name  | 客户料号名称 | {}    | ACTIVE
+ CUSTOMER_PART | QUOTE   | ds_quote_customer_part | customer_product_no | 客户产品编号 | {}    | ACTIVE
+ CUSTOMER_PART | QUOTE   | ds_quote_customer_part | customer_drawing_no | 客户图号     | {}    | ACTIVE
+ CUSTOMER_PART | QUOTE   | ds_quote_customer_part | material_no         | 销售料号     | {}    | ACTIVE
+(5 rows)
+
+ row_scope_cols 
+----------------
+              0
+(1 row)
+

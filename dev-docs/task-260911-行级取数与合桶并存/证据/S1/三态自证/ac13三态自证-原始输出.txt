@@ -1,0 +1,249 @@
+================== AC-13 三态自证（检查器可信性前提）==================
+日期: 2026-09-11 07:23:40  库: cpq_db_0724  基准模板: builder_221dc7668ab6(改动前 master)
+
+#################### 输入: 三态自证/A-FAIL-谓词缺失.sql ####################
+########## AC-13 原始证据 · 文件=三态自证/A-FAIL-谓词缺失.sql · 占位符=:customerProductNos ##########
+----- [1] 完整 sql_template（带行号，/usr/bin/grep -an 原始输出） -----
+1:SELECT
+2:  dqm.material_no AS hf_part_no,
+3:  dqm.material_no AS "_物料_销售料号",
+4:  dqcp.customer_product_no AS "_客户料号_客户产品编号",
+5:  dqm.production_no AS "_物料_生产料号",
+6:  dqm.material_name AS "_物料_品名",
+7:  dqm.specification AS "_物料_规格",
+8:  dqm.dimension AS "_物料_尺寸",
+9:  dqm.old_material_no AS "_物料_旧料号",
+10:  dqm.unit_weight AS "_物料_单重"
+11:FROM ds_quote_material dqm
+12:  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode
+13:WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode
+14:ORDER BY dqm.material_no
+
+----- [2] 含 :customerProductNos 的所有行 -----
+(无匹配)
+
+----- [3] 含 customer_product_no 的所有行 -----
+4:  dqcp.customer_product_no AS "_客户料号_客户产品编号",
+
+----- [0] UNION 分块数 = 1 -----
+----- [4] 块 blk_0 · JOIN 段（FROM..WHERE 之间） -----
+FROM ds_quote_material dqm
+  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode
+--- JOIN 段内 :customerProductNos 匹配 ---
+(JOIN 段无匹配)
+----- [5] 块 blk_0 · WHERE 段（必须无 :customerProductNos） -----
+WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode
+--- WHERE 段内 :customerProductNos 匹配 ---
+(WHERE 段无匹配 —— 这是期望结果)
+
+########## 判定 ##########
+PRESENT (谓词存在,      期望 1) = 0
+IN_ON   (在 LEFT JOIN..ON, 期望 1) = 0
+IN_WHERE(在 WHERE 段,    期望 0) = 0
+AC-13: FAIL (MISSING — 谓词根本没生成)
+  >>> exit=2
+
+#################### 输入: 三态自证/B-FAIL-谓词误入WHERE.sql ####################
+########## AC-13 原始证据 · 文件=三态自证/B-FAIL-谓词误入WHERE.sql · 占位符=:customerProductNos ##########
+----- [1] 完整 sql_template（带行号，/usr/bin/grep -an 原始输出） -----
+1:SELECT
+2:  dqm.material_no AS hf_part_no,
+3:  dqm.material_no AS "_物料_销售料号",
+4:  dqcp.customer_product_no AS "_客户料号_客户产品编号",
+5:  dqm.production_no AS "_物料_生产料号",
+6:  dqm.material_name AS "_物料_品名",
+7:  dqm.specification AS "_物料_规格",
+8:  dqm.dimension AS "_物料_尺寸",
+9:  dqm.old_material_no AS "_物料_旧料号",
+10:  dqm.unit_weight AS "_物料_单重"
+11:FROM ds_quote_material dqm
+12:  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode
+13:WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode AND dqcp.customer_product_no = ANY(:customerProductNos)
+14:ORDER BY dqm.material_no
+
+----- [2] 含 :customerProductNos 的所有行 -----
+13:WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode AND dqcp.customer_product_no = ANY(:customerProductNos)
+
+----- [3] 含 customer_product_no 的所有行 -----
+4:  dqcp.customer_product_no AS "_客户料号_客户产品编号",
+13:WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode AND dqcp.customer_product_no = ANY(:customerProductNos)
+
+----- [0] UNION 分块数 = 1 -----
+----- [4] 块 blk_0 · JOIN 段（FROM..WHERE 之间） -----
+FROM ds_quote_material dqm
+  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode
+--- JOIN 段内 :customerProductNos 匹配 ---
+(JOIN 段无匹配)
+----- [5] 块 blk_0 · WHERE 段（必须无 :customerProductNos） -----
+WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode AND dqcp.customer_product_no = ANY(:customerProductNos)
+--- WHERE 段内 :customerProductNos 匹配 ---
+1:WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode AND dqcp.customer_product_no = ANY(:customerProductNos)
+
+########## 判定 ##########
+PRESENT (谓词存在,      期望 1) = 1
+IN_ON   (在 LEFT JOIN..ON, 期望 1) = 0
+IN_WHERE(在 WHERE 段,    期望 0) = 1
+AC-13: FAIL (IN_WHERE — 谓词误入 WHERE，空客编行会整页签 0 行)
+  >>> exit=3
+
+#################### 输入: 三态自证/C-PASS-谓词在ON.sql ####################
+########## AC-13 原始证据 · 文件=三态自证/C-PASS-谓词在ON.sql · 占位符=:customerProductNos ##########
+----- [1] 完整 sql_template（带行号，/usr/bin/grep -an 原始输出） -----
+1:SELECT
+2:  dqm.material_no AS hf_part_no,
+3:  dqm.material_no AS "_物料_销售料号",
+4:  dqcp.customer_product_no AS "_客户料号_客户产品编号",
+5:  dqm.production_no AS "_物料_生产料号",
+6:  dqm.material_name AS "_物料_品名",
+7:  dqm.specification AS "_物料_规格",
+8:  dqm.dimension AS "_物料_尺寸",
+9:  dqm.old_material_no AS "_物料_旧料号",
+10:  dqm.unit_weight AS "_物料_单重"
+11:FROM ds_quote_material dqm
+12:  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = ANY(:customerProductNos)
+13:WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode
+14:ORDER BY dqm.material_no
+
+----- [2] 含 :customerProductNos 的所有行 -----
+12:  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = ANY(:customerProductNos)
+
+----- [3] 含 customer_product_no 的所有行 -----
+4:  dqcp.customer_product_no AS "_客户料号_客户产品编号",
+12:  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = ANY(:customerProductNos)
+
+----- [0] UNION 分块数 = 1 -----
+----- [4] 块 blk_0 · JOIN 段（FROM..WHERE 之间） -----
+FROM ds_quote_material dqm
+  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = ANY(:customerProductNos)
+--- JOIN 段内 :customerProductNos 匹配 ---
+2:  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = ANY(:customerProductNos)
+----- [5] 块 blk_0 · WHERE 段（必须无 :customerProductNos） -----
+WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode
+--- WHERE 段内 :customerProductNos 匹配 ---
+(WHERE 段无匹配 —— 这是期望结果)
+
+########## 判定 ##########
+PRESENT (谓词存在,      期望 1) = 1
+IN_ON   (在 LEFT JOIN..ON, 期望 1) = 1
+IN_WHERE(在 WHERE 段,    期望 0) = 0
+AC-13: PASS
+  >>> exit=0
+
+================== 旁证1: 改动前真实 live 模板（标量占位符 customerProductNo）==================
+########## AC-13 原始证据 · 文件=BEFORE-sqltemplate-builder_221dc7668ab6.txt · 占位符=:customerProductNo ##########
+----- [1] 完整 sql_template（带行号，/usr/bin/grep -an 原始输出） -----
+1:SELECT
+2:  dqm.material_no AS hf_part_no,
+3:  dqm.material_no AS "_物料_销售料号",
+4:  dqcp.customer_product_no AS "_客户料号_客户产品编号",
+5:  dqm.production_no AS "_物料_生产料号",
+6:  dqm.material_name AS "_物料_品名",
+7:  dqm.specification AS "_物料_规格",
+8:  dqm.dimension AS "_物料_尺寸",
+9:  dqm.old_material_no AS "_物料_旧料号",
+10:  dqm.unit_weight AS "_物料_单重"
+11:FROM ds_quote_material dqm
+12:  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = :customerProductNo
+13:WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode
+14:ORDER BY dqm.material_no
+
+----- [2] 含 :customerProductNo 的所有行 -----
+12:  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = :customerProductNo
+
+----- [3] 含 customer_product_no 的所有行 -----
+4:  dqcp.customer_product_no AS "_客户料号_客户产品编号",
+12:  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = :customerProductNo
+
+----- [0] UNION 分块数 = 1 -----
+----- [4] 块 blk_0 · JOIN 段（FROM..WHERE 之间） -----
+FROM ds_quote_material dqm
+  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = :customerProductNo
+--- JOIN 段内 :customerProductNo 匹配 ---
+2:  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = :customerProductNo
+----- [5] 块 blk_0 · WHERE 段（必须无 :customerProductNo） -----
+WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode
+--- WHERE 段内 :customerProductNo 匹配 ---
+(WHERE 段无匹配 —— 这是期望结果)
+
+########## 判定 ##########
+PRESENT (谓词存在,      期望 1) = 1
+IN_ON   (在 LEFT JOIN..ON, 期望 1) = 1
+IN_WHERE(在 WHERE 段,    期望 0) = 0
+AC-13: PASS
+  >>> exit=0
+
+================== 旁证2: UNION ALL 视图 builder_7f9a5bbf264f(BOM, 无该谓词, 应 MISSING) ==================
+########## AC-13 原始证据 · 文件=/tmp/bomv.sql · 占位符=:customerProductNos ##########
+----- [1] 完整 sql_template（带行号，/usr/bin/grep -an 原始输出） -----
+1:-- 树契约: material_no=子 / parent_no=父 + :total_material_no; 边式全子件 + 根分支
+2:SELECT
+3:  dqmb.input_material_no AS material_no,
+4:  dqmb.material_no AS parent_no,
+5:  dqmb.input_material_no AS hf_part_no,
+6:  dqmb.material_no AS "_物料BOM_销售料号",
+7:  dqmb.item_seq AS "_物料BOM_项次",
+8:  dqmb.input_material_no AS "_物料BOM_投入料号",
+9:  COALESCE(dqm.material_name, mr.symbol) AS "_物料_材料名",
+10:  dqmb.component_qty AS "_物料BOM_组成数量",
+11:  dqmb.gross_weight AS "_物料BOM_材料毛重",
+12:  dqmb.net_weight AS "_物料BOM_材料净重",
+13:  dqmb.loss_rate AS "_物料BOM_损耗率（%）",
+14:  dqmb.weight_unit AS "_物料BOM_重量单位"
+15:FROM ds_quote_material_bom dqmb
+16:  LEFT JOIN ds_quote_material dqm ON dqm.material_no = dqmb.input_material_no AND dqm.customer_no = dqmb.customer_no
+17:  LEFT JOIN material_recipe mr ON mr.code = dqmb.input_material_no
+18:WHERE dqmb.input_material_no = ANY(:total_material_no) AND dqmb.customer_no = :customerCode
+19:UNION ALL
+20:-- 根分支：本单闭包里无父边的成品自身（树根，parent_no 恒 NULL）
+21:SELECT
+22:  dqm2.material_no,
+23:  NULL::text,
+24:  dqm2.material_no,
+25:  NULL,
+26:  NULL,
+27:  NULL,
+28:  NULL,
+29:  NULL,
+30:  NULL,
+31:  NULL,
+32:  NULL,
+33:  NULL
+34:FROM ds_quote_material dqm2
+35:WHERE dqm2.material_no = ANY(:total_material_no) AND dqm2.customer_no = :customerCode
+36:  AND NOT EXISTS (SELECT 1 FROM ds_quote_material_bom dqmb2 WHERE dqmb2.input_material_no = dqm2.material_no AND dqmb2.customer_no = dqm2.customer_no)
+37:ORDER BY parent_no, material_no, "_物料BOM_项次"
+
+----- [2] 含 :customerProductNos 的所有行 -----
+(无匹配)
+
+----- [3] 含 customer_product_no 的所有行 -----
+(无匹配)
+
+----- [0] UNION 分块数 = 2 -----
+----- [4] 块 blk_0 · JOIN 段（FROM..WHERE 之间） -----
+FROM ds_quote_material_bom dqmb
+  LEFT JOIN ds_quote_material dqm ON dqm.material_no = dqmb.input_material_no AND dqm.customer_no = dqmb.customer_no
+  LEFT JOIN material_recipe mr ON mr.code = dqmb.input_material_no
+--- JOIN 段内 :customerProductNos 匹配 ---
+(JOIN 段无匹配)
+----- [5] 块 blk_0 · WHERE 段（必须无 :customerProductNos） -----
+WHERE dqmb.input_material_no = ANY(:total_material_no) AND dqmb.customer_no = :customerCode
+--- WHERE 段内 :customerProductNos 匹配 ---
+(WHERE 段无匹配 —— 这是期望结果)
+
+----- [4] 块 blk_1 · JOIN 段（FROM..WHERE 之间） -----
+FROM ds_quote_material dqm2
+--- JOIN 段内 :customerProductNos 匹配 ---
+(JOIN 段无匹配)
+----- [5] 块 blk_1 · WHERE 段（必须无 :customerProductNos） -----
+WHERE dqm2.material_no = ANY(:total_material_no) AND dqm2.customer_no = :customerCode
+  AND NOT EXISTS (SELECT 1 FROM ds_quote_material_bom dqmb2 WHERE dqmb2.input_material_no = dqm2.material_no AND dqmb2.customer_no = dqm2.customer_no)
+--- WHERE 段内 :customerProductNos 匹配 ---
+(WHERE 段无匹配 —— 这是期望结果)
+
+########## 判定 ##########
+PRESENT (谓词存在,      期望 1) = 0
+IN_ON   (在 LEFT JOIN..ON, 期望 1) = 0
+IN_WHERE(在 WHERE 段,    期望 0) = 0
+AC-13: FAIL (MISSING — 谓词根本没生成)
+  >>> exit=2

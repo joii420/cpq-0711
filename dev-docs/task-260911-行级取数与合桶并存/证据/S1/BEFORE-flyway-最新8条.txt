@@ -1,0 +1,12 @@
+ installed_rank | version |                    description                    | success |        installed_on        
+----------------+---------+---------------------------------------------------+---------+----------------------------
+             86 | 440     | repair260910 costing element price customer level | t       | 2026-09-11 02:09:47.170245
+             85 | 439     | task260909 drop compat views                      | t       | 2026-09-09 17:40:27.182372
+             84 | 438     | task260909 cost element bom all bridge ds quote   | t       | 2026-09-09 10:59:16.340078
+             83 | 437     | task260909 composite child views read ds quote    | t       | 2026-09-09 10:59:16.200747
+             82 | 436     | task260909 idx ds quote customer part customer no | t       | 2026-09-09 05:10:50.147204
+             81 | 435     | repair260908 compat master dedup ds branch        | t       | 2026-09-09 03:40:29.493083
+             80 | 434     | repair260909 costing price strategy               | t       | 2026-09-09 02:34:26.067743
+             79 | 433     | repair260908 costing row key roles                | t       | 2026-09-08 18:34:04.065433
+(8 rows)
+
