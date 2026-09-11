@@ -95,6 +95,15 @@ public class ConfigureSnapshotService {
     @Inject
     com.cpq.quotation.service.MasterPartTypeService masterPartTypeService;
 
+    /**
+     * task-260911 B-8：行级作用域投影器（AC-1 / AC-3 / AC-5 / AC-6）。
+     *
+     * <p>合桶查回的是<b>整单超集</b>（集合谓词 {@code = ANY(:<列>s)}），必须按本明细行的作用域值
+     * 挑出属于它的那一行。未打 {@code ROW_SCOPE} 标记的组件在投影里恒等返回（AC-7 加法式）。
+     */
+    @Inject
+    com.cpq.component.service.RowScopeProjector rowScopeProjector;
+
     public static class DriverComp {
         public UUID id;
         public String name;
@@ -447,6 +456,12 @@ public class ConfigureSnapshotService {
                     buckets = Map.of();
                 }
 
+                // task-260911 B-8（AC-1 / AC-3 / AC-5 / AC-6）：整单构建一次行级作用域投影计划。
+                // 语义图里没有 ROW_SCOPE 列时 active()==false，下方投影恒等返回 ⇒ 零开销（AC-7）。
+                // 🚫 不在循环里建：planFor 要发 1 条 SQL 取整单作用域值，放进循环就是 N+1。
+                final com.cpq.component.service.RowScopeProjector.Plan rowScopePlan =
+                        rowScopeProjector.planFor(quotationId);
+
                 // task-0721 B3：树页签 → 整单一次调 BomTreeRenderService.render(usage=QUOTE)，
                 // 逐 line 复用其 spine + 系统列结果（treeBaseRowsByLine.get(lineItemId).get(compIdStr)）。
                 // 单一路由收口点：task-260904 B-4 起为 TabSemanticResolver 的双判据（新模型按数据源
@@ -619,6 +634,13 @@ public class ConfigureSnapshotService {
                                 exp = componentDriverService.expand(
                                         comp.id, customerId, partNo, null, null, null, lineItemId, compositeType);
                             }
+                            // ── task-260911 B-8：行级作用域投影（AC-1 / AC-3 / AC-5 / AC-6）──
+                            // 🚨 **两条分支都要过**，不是只给合桶那条：谓词是集合成员
+                            // (= ANY(:<列>s)，值 = 整单去重集合)，逐行回落分支执行的是**同一个视图**，
+                            // 同样拿回整单超集。只投影合桶分支的话，凡是回落逐行的组件（EXCEL /
+                            // composite / spineKeys / 合桶预取抛异常）都会把 N 行全渲染出来 ——
+                            // 而且不报错，只是页签里多出几行别的明细行的客编。
+                            exp = rowScopePlan.project(comp.id, comp.driverPath, lineItemId, exp);
                             List<ExpandDriverResponse.Row> rows = (exp != null && exp.rows != null) ? exp.rows : new ArrayList<>();
                             // task-0722：组件级 sort_field → 按该列对 driver 行数字感知升序排列(平铺页签)。
                             // 视图 ORDER BY 在报价单 pending 改写管线下会被丢弃(SELECT* 外壳无外层排序),故排序落此处。

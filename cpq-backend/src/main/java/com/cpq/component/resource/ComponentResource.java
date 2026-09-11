@@ -61,6 +61,14 @@ public class ComponentResource {
     @Inject
     BomTreeRenderService bomTreeRenderService;
 
+    /**
+     * task-260911 B-8：行级作用域投影器（AC-3 / AC-5 / AC-6）。
+     * batch-expand 是前端渲染期的实时展开入口，B-9 撤回行维度登记后这里会重新合桶，
+     * 拿回的是整单超集 —— 必须按 task 的 lineItemId 投影回「属于本行的那一行」。
+     */
+    @Inject
+    com.cpq.component.service.RowScopeProjector rowScopeProjector;
+
     @GET
     public ApiResponse<List<ComponentDTO>> list(
             @QueryParam("directoryId") UUID directoryId,
@@ -276,6 +284,10 @@ public class ComponentResource {
             Map<UUID, BomTreeRenderService.MaterialUnionResult> quoteUnions) {
         // ── Phase 1:每个 task 先试 snapshot,命中直返;未命中收集进 Phase 2 候选 ──
         List<Integer> phase2 = new ArrayList<>();
+        // task-260911 B-8：合桶 kill switch 关闭时，task 在下方 !bucketEnabled 分支就地跑完并 continue，
+        // **永远进不了 phase2** ⇒ 也就绕过了末尾的行级作用域投影。那条路执行的是同一个视图、
+        // 拿回的同样是整单超集 ⇒ 不收进来的话，关掉开关就会静默多显示别的明细行的客编。
+        List<Integer> killSwitchDone = new ArrayList<>();
         for (int i = 0; i < req.tasks.size(); i++) {
             Task t = req.tasks.get(i);
             Result r = resp.results.get(i);
@@ -312,6 +324,7 @@ public class ComponentResource {
                         } finally {
                             if (_bvOpened) BomTreeVarsContext.clear();
                         }
+                        killSwitchDone.add(i);   // task-260911 B-8：这条路也要过投影
                         continue;
                     }
                     // Flag 开 → Phase 1 仅【窥探】snapshot:命中直返;未命中绝不实时展开,直接进 Phase 2。
@@ -346,6 +359,7 @@ public class ComponentResource {
         }
 
         if (phase2.isEmpty()) {
+            applyRowScopeProjection(req, resp, killSwitchDone, Map.of());
             return ApiResponse.success(resp);
         }
 
@@ -361,9 +375,14 @@ public class ComponentResource {
         //    isQuoteUsage 判定同一套兜底），garbage 值不会额外裂桶。
         Map<String, List<Integer>> buckets = new LinkedHashMap<>();
         Map<String, String> bucketDriverPath = new HashMap<>();
+        // task-260911 B-8：顺带记下每个 task 的生效 driverPath —— 本循环本来就逐 task 算了一次 dp，
+        // 复用它让下方投影阶段**零额外查询**（🚫 不要在投影循环里再调 resolveEffectiveDriverPath，
+        // 那个方法内部有 Component.findById，逐 task 调就是 N+1）。
+        Map<Integer, String> dpByTaskIdx = new HashMap<>();
         for (int idx : phase2) {
             Task t = req.tasks.get(idx);
             String dp = componentDriverService.resolveEffectiveDriverPath(t.componentId, t.overrideDataDriverPath);
+            dpByTaskIdx.put(idx, dp);
             String fieldsTag = t.overrideFieldsJson == null ? "" : Integer.toHexString(t.overrideFieldsJson.hashCode());
             String key = t.componentId + "|" + t.customerId + "|" + t.partVersion + "|" + dp + "|" + fieldsTag
                     + "|u=" + usageTag(t.usage)
@@ -454,7 +473,50 @@ public class ComponentResource {
                 }
             }
         }
+        List<Integer> toProject = new ArrayList<>(phase2);
+        toProject.addAll(killSwitchDone);
+        applyRowScopeProjection(req, resp, toProject, dpByTaskIdx);
         return ApiResponse.success(resp);
+    }
+
+    /**
+     * task-260911 B-8：把 phase2 的展开结果按各 task 自己的明细行作用域值投影回一行（AC-3 / AC-5 / AC-6）。
+     *
+     * <p>🚨 <b>放在两条分支汇合之后，不是塞进合桶分支里</b>：谓词是集合成员
+     * {@code = ANY(:<列>s)}（值 = 整单去重集合），<b>合桶跑</b>和<b>逐 task 跑</b>执行的是同一个视图、
+     * 拿回的都是整单超集。只处理合桶分支的话，凡是走 {@code runSingleTask} 的 task
+     * （桶内只有 1 个 task / 视图含 lineItemId 维度 / 合桶抛异常回落）都会把整单的行全渲染出来，
+     * 而且<b>不报错</b>——只是页签里多出几行别的明细行的客户产品编号。
+     *
+     * <p><b>N+1 纪律</b>：{@code planFor} 按 <b>quotationId 记忆化</b>，每单 1 条 SQL（与 task 数无关）；
+     * driverPath 复用上面分桶循环已算好的 {@code dpByTaskIdx}，本方法循环体内<b>零查库</b>。
+     */
+    private void applyRowScopeProjection(BatchExpandDriverRequest req, BatchExpandDriverResponse resp,
+                                         List<Integer> taskIdxs, Map<Integer, String> dpByTaskIdx) {
+        if (taskIdxs == null || taskIdxs.isEmpty()) return;
+        Map<UUID, com.cpq.component.service.RowScopeProjector.Plan> plans = new HashMap<>();
+        // driverPath 记忆化：kill-switch 路径没有现成的 dpByTaskIdx，需要补算。
+        // 🚫 按 task 逐个调 resolveEffectiveDriverPath 就是 N+1（它内部有 Component.findById）——
+        //    按 (componentId|override) 记忆化后，查询条数与**组件数**成正比、与 task 数无关。
+        Map<String, String> dpMemo = new HashMap<>();
+        for (int idx : taskIdxs) {
+            final Task t = req.tasks.get(idx);
+            Result r = resp.results.get(idx);
+            if (t == null || r == null || r.data == null) continue;
+            if (t.componentId == null || t.quotationId == null || t.lineItemId == null) continue;
+            com.cpq.component.service.RowScopeProjector.Plan plan =
+                    plans.computeIfAbsent(t.quotationId, rowScopeProjector::planFor);
+            if (!plan.active()) continue;
+            String dp = dpByTaskIdx.get(idx);
+            if (dp == null) {
+                String memoKey = t.componentId + "|"
+                        + (t.overrideDataDriverPath == null ? "" : t.overrideDataDriverPath);
+                dp = dpMemo.computeIfAbsent(memoKey,
+                        k -> componentDriverService.resolveEffectiveDriverPath(
+                                t.componentId, t.overrideDataDriverPath));
+            }
+            r.data = plan.project(t.componentId, dp, t.lineItemId, r.data);
+        }
     }
 
     /** Phase 2 桶不可合时的单 task 跑(同原 batchExpand 逻辑),包 QuotationIdContext 让视图能用 :quotationId。 */

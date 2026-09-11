@@ -75,11 +75,16 @@ public class DriverBatchSafetyAuditor {
             return BatchSafetyLevel.PER_LINE_ITEM;
         }
         String tpl = v.sqlTemplate;
-        // repair-260910 B-1 配套：:customerProductNo 由 SqlViewExecutor 从 :lineItemId 反查
-        // quotation_line_item.customer_part_no 得到，取值逐明细行不同 ⇒ 与 :lineItemId 同级，
-        // 必须一并判 PER_LINE_ITEM，否则批量渲染会用 pivot 那一行的客户产品编号喂给整批（静默串号）。
-        if (tpl.contains(":quotationId") || tpl.contains(":lineItemId") || tpl.contains(":customerProductNo")) {
-            LOG.warnf("[batch-safety] component=%s viewName=%s 含 :quotationId/:lineItemId/:customerProductNo -> PER_LINE_ITEM 强制逐项", componentId, viewName);
+        // 🔄 task-260911 B-9（AC-2 / AC-7）：**撤回** repair-260910 在这里加的 :customerProductNo 登记。
+        //    当时它确实与 :lineItemId 同级（标量谓词，值从明细行反查，逐行不同）；本任务把它换成
+        //    集合成员谓词 = ANY(:customerProductNos)（值 = 整单去重集合）后，视图输出只依赖**单**、
+        //    不依赖**行**，行维度在 SQL 层已经不存在 ⇒ 不再需要强制逐项。
+        //    「挑出属于本行那一行」由 RowScopeProjector 在分发层做（B-7/B-8）。
+        //
+        // ⚠️ 注意 :quotationId 保留在判据里 —— 它是**单**维度不是**行**维度，但本审计器的
+        //    GLOBAL 级别意思是「跨单也能共用」，含 :quotationId 的视图跨单不能共用，与本次改动无关。
+        if (tpl.contains(":quotationId") || tpl.contains(":lineItemId")) {
+            LOG.warnf("[batch-safety] component=%s viewName=%s 含 :quotationId/:lineItemId -> PER_LINE_ITEM 强制逐项", componentId, viewName);
             return BatchSafetyLevel.PER_LINE_ITEM;
         }
         if (tpl.contains(":priceBaseDate")) {

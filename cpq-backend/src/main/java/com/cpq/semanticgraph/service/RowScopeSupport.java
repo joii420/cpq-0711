@@ -81,6 +81,27 @@ public final class RowScopeSupport {
         return toCamel(dbColumn) + "s";
     }
 
+    /**
+     * 语义图里<b>全部</b>行级维度列的集合占位符名（复数形态，见 {@link #setParamName}）。
+     *
+     * <p>用途：{@code /preview}、dry-run 校验这类<b>不走 {@code SqlViewExecutor} enrich 管线</b>的
+     * 裸 JDBC 路径，模板里留一个未绑定的 {@code :xxx} 会让 PG 直接报语法错，必须逐个加桩。
+     *
+     * <p>🚫 <b>这些打桩点绝不能写死列名</b>：写死了，第二个列被打上 {@code ROW_SCOPE} 时预览/保存
+     * 当场报错，而 AC-9 的立项前提就是「加第二个列只改配置不改 Java」。所以统一从这里枚举。
+     */
+    public static java.util.Set<String> setParamNames(SemanticGraphSnapshot snap) {
+        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+        if (snap == null || snap.nodeColumns == null) return out;
+        for (SemanticNodeColumn col : snap.nodeColumns) {
+            if (col == null || col.roles == null || col.dbColumn == null) continue;
+            for (String r : col.roles) {
+                if (ROLE.equals(r)) { out.add(setParamName(col.dbColumn)); break; }
+            }
+        }
+        return out;
+    }
+
     /** 该行级维度列的值，来自 {@code quotation_line_item} 的哪一列（约定同名 + 例外表）。 */
     public static String lineItemColumnFor(String dbColumn) {
         return LINE_ITEM_COLUMN_ALIAS.getOrDefault(dbColumn, dbColumn);

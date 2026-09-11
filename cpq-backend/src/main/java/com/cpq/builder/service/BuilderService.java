@@ -552,16 +552,32 @@ public class BuilderService {
         if (priceBaseDate != null) {
             result = result.replaceAll("(?<!:):priceBaseDate\\b", Matcher.quoteReplacement("'" + priceBaseDate + "'"));
         }
-        // repair-260910 B-3（AC-7）：:customerProductNo 是 B-2 新发的 JOIN 谓词占位符，而 /preview
-        // 走的是裸 JDBC 字面量替换、**不经** SqlViewExecutor 的 enrich 管线 ⇒ 不绑就会被
-        // detectUnboundPlaceholders 拦成 500 PREVIEW_UNBOUND_PLACEHOLDER（配置人员点一下预览就报错）。
+        // 🔄 task-260911（AC-7 / AC-9）：行级维度占位符已由单数标量 :customerProductNo 改成
+        //    **复数集合** :customerProductNos（= ANY(...)）。/preview 走裸 JDBC 字面量替换、
+        //    **不经** SqlViewExecutor 的 enrich 管线 ⇒ 不绑就会被 detectUnboundPlaceholders 拦成
+        //    500 PREVIEW_UNBOUND_PLACEHOLDER（配置人员点一下预览就报错）。
         //
-        // 🔑 绑 **NULL** 而不是某个具体客户产品编号：预览页没有报价明细行上下文，"当前卡片自己的
-        //    那一个客户产品编号"这件事在预览里根本不存在。绑 NULL 时该谓词在 LEFT JOIN … ON 上恒
-        //    UNKNOWN ⇒ JOIN 不匹配 ⇒ **左表行照常全部返回**（AC-7 要的"非空行"），只是客户料号侧
-        //    的列显示为空 —— 与 AC-2（明细行客编为空）走的是同一条降级语义，两处口径一致。
+        // 🚫 **占位符名必须从语义图枚举，不许写死**：写死 "customerProductNos" 的话，第二个列被
+        //    打上 ROW_SCOPE 时预览当场 500，而 AC-9 的前提正是「加第二个列只改配置不改 Java」。
+        //
+        // 🔑 绑**空数组**而不是某个具体编号：预览页没有报价明细行上下文，"属于当前卡片的那一个
+        //    客户产品编号"在预览里根本不存在。x = ANY(ARRAY[]::text[]) 恒 false，挂在
+        //    LEFT JOIN … ON 上 ⇒ JOIN 不匹配 ⇒ **左表行照常全部返回**（AC-7 要的"非空行"），
+        //    只是对端表侧的列显示为空 —— 与 AC-5（明细行客编为空）同一条降级语义，两处口径一致。
         // 🚫 不要绑成恒真形态（如 `IS NOT DISTINCT FROM` 或 `(NULL IS NULL OR …)`）：那会让预览
         //    看到 N 行放大后的结果，与渲染期"只出 1 行"不一致 —— 预览与渲染口径不一致本身就是故障源。
+        try {
+            for (String p : com.cpq.semanticgraph.service.RowScopeSupport.setParamNames(loader.get())) {
+                result = result.replaceAll("(?<!:):" + Pattern.quote(p) + "\\b",
+                        Matcher.quoteReplacement("(ARRAY[]::text[])"));
+            }
+        } catch (Exception ignored) {
+            // 语义图不可用时不阻断预览：未绑占位符会被 detectUnboundPlaceholders 明确报出来，
+            // 比在这里吞成一个看不懂的 SQL 语法错好。
+        }
+        // 过渡期：尚未重编译的存量模板仍带 repair-260910 的单数标量占位符。两条 replace 互不干扰
+        // —— 上面那条 \b 要求 "No" 后面是非单词字符，对 ":customerProductNos" 不匹配；本条同理，
+        // 所以先后顺序不影响结果。B-10 重编译完成后本条恒不命中，可随存量清理一并删除。
         result = result.replaceAll("(?<!:):customerProductNo\\b", "NULL");
         return result;
     }

@@ -949,12 +949,20 @@ public class ComponentDriverService {
         try {
             com.cpq.component.entity.ComponentSqlView v = com.cpq.component.entity.ComponentSqlView
                     .find("sqlViewName", viewName).firstResult();
-            // 🚨 repair-260910 B-1 配套（AC-1）：:customerProductNo 与 :lineItemId 是同一个行维度
-            //    （前者由 enrichCustomerProductNo 从后者反查而来），必须同样阻止跨卡片合桶，并让
-            //    ComponentResource 的 bucketKey 带上 |li= 维度。方法名保持不变（3 处调用点稳定），
-            //    语义已从"含 :lineItemId"放宽为"含任一 per-lineItem 占位符"。
+            // 🔄 task-260911 B-9（AC-2 / AC-7）：**撤回** repair-260910 加的 :customerProductNo 登记。
+            //    撤回的依据不是"当时判错了"——当时它确实是行维度（标量谓词 = :customerProductNo，
+            //    值从 lineItemId 反查，逐行不同）。是**前提变了**：本任务把它改成集合成员谓词
+            //    (= ANY(:customerProductNos)，值 = 整单去重集合) ⇒ 视图输出只依赖单、不依赖行 ⇒
+            //    合桶重新成立；"挑出属于本行那一行"下沉到 RowScopeProjector（B-7/B-8）。
+            //
+            // 🚨 **撤回的前提是 B-7/B-8 已经能按行挑对**（backtask B-9 明写顺序不可反）。顺序反了
+            //    会退回"页签 1 行但客编恒空且不报错"那个静默故障。
+            //
+            // ⚠️ 顺带说明为什么必须**真的删掉**而不是留着无害：contains(":customerProductNo") 对
+            //    重编译后的 ":customerProductNos" 同样为真（前者是后者的子串）⇒ 留着的话这类视图
+            //    永远判为不可合桶，AC-1/AC-2 直接不成立，而且看起来像"合桶没生效"查不到原因。
             boolean uses = v != null && v.sqlTemplate != null
-                    && (v.sqlTemplate.contains(":lineItemId") || v.sqlTemplate.contains(":customerProductNo"));
+                    && v.sqlTemplate.contains(":lineItemId");
             viewUsesLineItemIdCache.put(cacheKey, uses);
             return uses;
         } catch (Exception e) {
@@ -1013,16 +1021,15 @@ public class ComponentDriverService {
         String tpl = v.sqlTemplate;
         if (com.cpq.datasource.sqlview.SpineKeysMacro.containsMacro(tpl)) return false;  // ④ 无 :spineKeys
         if (tpl.contains(":lineItemId") || tpl.contains("quotation_line_item_id")) return false;  // ④ 无行维度
-        // 🚨 repair-260910 B-1 配套（AC-1）：:customerProductNo **也是行维度**。
-        //    它由 SqlViewExecutor.enrichCustomerProductNo 从 :lineItemId 反查
-        //    quotation_line_item.customer_part_no 得到 ⇒ 值逐行不同，和 :lineItemId 是同一个维度、
-        //    只是换了个名字出现在模板里。不登记在这儿会有两个后果，且**都不报错**：
-        //      ① 合桶路径（ConfigureSnapshotService.precomputeQuoteDriverBuckets /
-        //         CardSnapshotService.precomputeCostingDriverUnion）调 expandMulti 时**压根不传
-        //         lineItemId** ⇒ enrich 拿不到值 ⇒ 占位符降级成 NULL ⇒ 该页签客户产品编号列**恒空**；
-        //      ② 就算某条路径传了 lineItemId，整桶也只按 pivot 求值一次 ⇒ 同料号不同明细行串号。
-        //    ⇒ 含该占位符的视图一律回落逐行 expand（慢但正确），与 :lineItemId 完全同一条既有退路。
-        if (tpl.contains(":customerProductNo")) return false;                                     // ④ 无行维度
+        // 🔄 task-260911 B-9（AC-2 / AC-7）：**撤回** repair-260910 在这里加的 :customerProductNo 登记。
+        //    理由见 viewUsesLineItemId 里同款注释——谓词已从"标量、依赖行"改成"集合、只依赖单"，
+        //    行维度在 SQL 层已经消失，挑行下沉到 RowScopeProjector（B-7/B-8）。
+        //    ⇒ 这类视图重新判为可合桶，整单物化从 N 次 expand + N 次反查回到 1 次 expandMulti。
+        //
+        // 🚫 **不要因为"保守点更安全"把它加回来**：加回来 = 放弃本任务的全部收益（AC-1 的
+        //    "SQL 执行次数 = 1" 与 AC-2 的 eligibleForQuoteBucket==true 同时不成立），
+        //    而且 contains(":customerProductNo") 连重编译后的复数形态 ":customerProductNos"
+        //    一起命中，症状是"改完没变快"且无任何报错。
         return true;
     }
 
