@@ -1,6 +1,24 @@
 
 # CPQ 系统开发记录
 
+[2026-09-10] 核价树版本切换查 V6 老表（task-260909-核价树骨架/repair-260910） - **✅ 已交付合 master `4ebf8f0b` · 用户验收通过** | 涉及文件：`CostingVersionService.java`(+166) / `CostingVersionTreeSourceGuardTest.java`(新增 198) / `QuotationStep2.tsx` / `ReadonlyProductCard.tsx` + **骨架 SQL 配置**（`costing_bom_tree_config` DB 内，不进 git） | **16 条 AC：14 通过 / 2 缺口如实登记**。
+
+**症状**：核价单 BOM 树的「版本」下拉恒为「无可选版本」，但**树渲染正常、当前版本也显示正确**。⚠️ 这个组合本身就是线索 —— **显示值与候选值来自两个不同数据源，其中一个已经迁走了**。
+
+🔑 **根因**：`CostingVersionService#listVersionOptions` 的**树分支硬编码**查 V6 老表 `material_bom_item(system_type='PRICING', customer_no='_GLOBAL_')`，而正泰数据早已迁到 `ds_*` 新表 —— 树内 7 个料号在老表命中**全部 0 行**。**与主任务 `task-260909` 同根因的第二个执行点**：主任务修的是**配置层**骨架 SQL（树渲染因此恢复），这段查询**硬编码在 Java 里、不在配置层覆盖范围内**。非树分支（`dsCostBase != null`）早已适配新表，`switchVersion` 走 `bomTreeRenderService.render` 也不查老表 —— 所以只有候选列表这一处坏。
+
+🚦 **用户在立项对话中重定了业务模型**（原实现被推翻）：BOM 表一行的含义是「父件 X 的第 N 版清单里包含子件 Y」，版本号描述的是 **X 那张清单** ⇒ ①**每行显示自己那张清单的版本**（不是上级的）②**有自己 BOM 的都可切**（判据＝BOM 表 `material_no`/`production_no` 查得到）③候选 = `_history` 全部历史 + 主表当前 ④叶子无版本无下拉。**改动面因此从「只修候选查询」扩到「显示值也要改」**（骨架 SQL 递归体的 `bom_version` 改为照抄锚点写法）。📌 该模型顺带消灭一个歧义：实测 `300015` 同挂 `300012`(v1) 与 `300001`(v2) 两个父件，按「查自己那张清单」其候选恒为 `[1]`，与挂在谁下面无关 ⇒ `repair-0590`「下拉给了料号它没有的版本」在本模型下不可能发生。
+
+⚠️ **主线三次同型失误（全部由子代理挡下，已写进任务目录）**：① 读 `costing_render` 的 `driverRow.bom_version` —— **该 key 根本不存在**（真实位置是行级系统列 `row.__bomVersion`），恒 `None` 却被当成"渲染坏了"，据此向用户误报"我把配置改砸了"；② 手工复现时把**非树组件的 override** 喂进树宏（`treeOverrides` 只取树组件那一份），造出"7 行变 6 行"的假象，据此向用户报了一个**不存在的存量兼容问题**；③ 拿 `curl` 返回 `000` 当"进程已停"的证据（**服务重启中同样返回 000**），导致任务二那轮的 `8099` 后端僵尸存活 8 小时。**三次共同点：拿到一个读数就往下推，没有先验证判据本身是否有意义。** ⇒ 这正是 `CLAUDE.md`「同一结论第 2 次得出：换搜索空间」要治的 —— 第二次"复现"用的还是同一套读法，只是把错误又加固一遍；真正打破它的是后端子代理去查了**行级 key 集合**这个主线从未查过的维度。
+
+📌 **量具/工具坑四方合计 13 个，全族同因「不抛错、只安静给错值或 0 命中」**：① 按 `/料号/` 找列命中的是字段列「生产料号」而非树骨架列（后者表头是页签名 `BOM`）⇒ 同一份 DOM 两种读法一红一绿；② **「进对了页面」≠「进对了视图」** —— `/costing-orders/{coid}/review` **默认停在「报价单」分段**，那一侧 BOM 表**没有「版本」列**且树用**销售料号**（`S0001`）而非生产料号，只 assert URL/卡片数/行数**都发现不了**；③ 行 `innerText` **无分隔拼接**（`▼3000013————`）击穿词边界正则 ⇒ locator 匹配 0 行被读成「这行没有版本控件」；④ 树节点文本带 `▼` 前缀 ⇒ `=== '300001'` 精确匹配 0 命中。**可复用判据：在表格 DOM 上做文本匹配，永远不要假设单元格之间有分隔符；要么按列取 `td`，要么按下标定位。**
+
+🔬 **两个还原实验全部变红**（证明非空验证）：① 树分支改回查老表 → 守卫测试 `Failures:1` + 老表对 4 个料号命中全 0（**正是用户报障时的原始症状**）；② 骨架 `bom_version` 改回 `ch.version_no` → 7 行里 **5 行不符**。还原以 **md5 / `git status` 校验**，不靠"看起来一样"。⚠️ **REAPPLY 时踩到一个坑**：`psql -t` 读回文本会附加尾部空白，**每次「读回→写入」往返漂移 1 字符且功能完全无感**，靠核对 md5 才发现（`left(...,2521)` 精确削回）⇒ **改配置类数据要么库内 `replace()` 直改，要么每次核对 md5**。
+
+⛔ **两处缺口如实登记未洗绿**：`AC-10` 库中 5 个树组件方言分布 `COST_BASIC×1 + QUOTE×4`，**无 `COST_DETAIL` 树组件**且无 detail 骨架配置 ⇒ detail 分支端到端零覆盖，仅纯函数层已验；`AC-16③`「版本 `"0"` 不得被 `!!` 吞掉」在当前数据不可达（全库版本号 `1..10`），裁定**不为一条风险为 0 的防御性判据写共享库基础数据表**。
+
+🆕 **顺带暴露 3 个既有缺口（均非本次引入，待裁决）**：① **双快照不同源** —— `switchVersion` 只写 `costing_order.costing_render`、不写 `quotation_line_item.costing_card_values`，⇒ **工作台切完版本，编辑页看到的仍是旧值**；② 全工程另有 **9 处**硬编码 `FROM material_bom_item`（`BuilderService:659` / `SemanticCompiler:1640` / `QuotePendingRewriter:461,526` / 两个 Repository 等），本次 bug 的形态就是「表停止接收数据后代码层引用静默失效」，同类点大概率同病；③ **`e2e/` 从未被类型检查** —— solution-style `tsconfig.json` 三个 project 的 `include` **都不含 `e2e/`**，注入 `const x: number = "字符串"` 后仓库根 `tsc --noEmit` 依旧 0 输出 ⇒ **全仓所有 e2e spec 的「tsc 0 错误」都是空验证**（与前端独立发现的「根 tsconfig 是 solution-style、`tsc -p` 编译 0 文件恒返回 0」是同一问题的两半）。
+
 [2026-09-10] 取数配置器字段类型选择（task-260909-取数配置器字段类型选择） - **✅ 已交付合 master `2371592a` · 用户验收通过** | 涉及文件：`BuilderService.java`(+184) / `SqlViewBuilderTab.tsx`(+172) / `sqlViewBuilderService.ts` / `styles.css` + 测试 `FieldTypeWhitelistAndDialectDefaultSelfCheckTest`(597) + e2e 若干 | **AC 16/16 全部主线独立亲验达成**。
 
 **做了什么**：取数配置器每列暴露「字段类型」选择器（**3 值白名单** `BASIC_DATA`/`INPUT_TEXT`/`INPUT_NUMBER`）+ 整列批量入口；核价两方言（`COST_BASIC`/`COST_DETAIL`）**默认 `BASIC_DATA`**（=只读展示），报价侧 `QUOTE` 行为逐位不变。绑定键跟 `field_type` 走（`BASIC_DATA`→顶层 `basic_data_path`；`INPUT_*`→`default_source.path`），`D-73/B-30` 不变量原样保留。
