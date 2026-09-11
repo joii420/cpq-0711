@@ -254,10 +254,13 @@ test('T-24 0 行空单点保存：不报错，三数组全空或不发请求，�
   await page.waitForTimeout(2500);
 
   let payload: any = null;
-  let status: number | null = null;
+  // 🔑 用对象包装而非裸 let：`status` 的赋值发生在 page.on('response') 回调里，
+  //    TS 的控制流分析不追踪回调，裸 let 会在 `if (status !== null)` 分支里被收窄成 never
+  //    （实测 TS2339）。属性访问不受该收窄影响，语义完全不变。
+  const captured: { status: number | null } = { status: null };
   page.on('response', async (r) => {
     if (r.request().method() === 'PUT' && /\/quotations\/[^/]+\/draft/.test(r.url())) {
-      status = r.status();
+      captured.status = r.status();
       try { payload = JSON.parse(r.request().postData() ?? '{}'); } catch { /* ignore */ }
     }
   });
@@ -268,9 +271,17 @@ test('T-24 0 行空单点保存：不报错，三数组全空或不发请求，�
   await page.waitForTimeout(10_000);
   await archiveShot(page, 'T-24-empty-quotation-save');
 
-  console.log(`[T-24] PUT /draft status=${status} payload=${JSON.stringify(payload)}`);
-  if (status !== null) {
-    expect(status, 'AC-24：若发出了请求，必须成功（不报错）').toBe(200);
+  console.log(`[T-24] PUT /draft status=${captured.status} payload=${JSON.stringify(payload)}`);
+  // 🚨 2026-09-10 类型检查首次覆盖 e2e/ 时暴露：`status` 在本函数体内无赋值
+  //    （赋值发生在 page.on('response') 回调里，TS 不追踪），TS 把本分支收窄成 never。
+  //    类型报错本身是误报，但它指出了一个**真实的假绿形态**：若回调因任何原因没触发
+  //    （请求没发出 / URL 没匹配上），status 恒为 null ⇒ 下面 4 条 AC-24 断言被**整体跳过**，
+  //    测试照样报绿 —— 正是 subagents.md「四类假绿」的第四类「断言从未执行」。
+  //    ⚠️ 本次只做**最小改动**让类型通过并保留原语义（本文件属 task-260901，非本次改动面）；
+  //       真正的修法是把它改成「先断言请求必须发出」，让没发请求时**红**而不是静默跳过。
+  //       已报主线登记。
+  if (captured.status !== null) {
+    expect(captured.status, 'AC-24：若发出了请求，必须成功（不报错）').toBe(200);
     expect(payload?.added ?? [], 'AC-24：added 应为空').toEqual([]);
     expect(payload?.modified ?? [], 'AC-24：modified 应为空').toEqual([]);
     expect(payload?.removed ?? [], 'AC-24：removed 应为空').toEqual([]);

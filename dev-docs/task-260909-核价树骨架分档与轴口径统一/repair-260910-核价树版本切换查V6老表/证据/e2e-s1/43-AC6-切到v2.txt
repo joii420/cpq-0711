@@ -1,0 +1,11 @@
+before renderMd5=aecfdc8f795389cff23fa6e39def2652 total=0.000000000000
+after  renderMd5=8da7b8c796b29874e772beca237c3aab total=0.000000000000
+v2 树:
+  300001 lvl=1 parent=(root) ver=2
+  300001/300012 lvl=2 parent=300001 ver=1
+  300001/300013 lvl=2 parent=300001 ver=1
+  300001/300015 lvl=2 parent=300001 ver=1
+  300001/300012/300015 lvl=3 parent=300012 ver=1
+  300001/300013/991 lvl=3 parent=300013 ver=(null)
+  300001/300015/992 lvl=3 parent=300015 ver=(null)
+  300001/300012/300015/992 lvl=4 parent=300015 ver=(null)

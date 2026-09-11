@@ -33,14 +33,18 @@
 | **B-10** | AC-5, AC-7 | 另两处读点同样切表 + 加客户：① `loadCatalog` ⑥（外购件料号存在性，`WHERE material_no IN (:nos)` → 加 `customer_no`）；② `resolvePart` existing 分支的存在性校验（`SELECT … FROM v_compat_material_master WHERE material_no = :p`）。<br>📌 服务内部已有 `customerCode`，**不用改方法签名** |
 | **B-11** | AC-5 | 选配侧对 `v_compat_material_master` 的引用清零自检：`ConfigureProductService` + `ConfigureSearchResource` 两个类里应为 **0 处**。<br>🚫 **不许 DROP 那 3 个 `v_compat_*` 视图** —— 本期明确不做（其余消费方 `ExistingProductService` / `ExistingProductDTO` / `QuotePendingRewriter` / `SemanticCompiler` 仍在用）|
 
-## S-4 方案 ②（带版本表只写 `_record`）
+## S-4 🔴 已按 D-14 改写：带版本表**直写主表**（与导入一致）
+
+> 🚨 **本段是回退任务，不是新开发。** 原 B-12/B-14 是为方案② 写的，方案② 已作废（D-14）。
+> **裁决依据**：实测 `ds_quote_material_bom` 的 source = `IMPORT` **2734 行** / `MANUAL` 18 / `QUOTE_BACKFILL` 8 ⇒ **导入侧直写主表、一次核价审核都没过** ⇒ 「新料号必须过核价才进主库」这条规则本来只约束选配一侧，用户已放弃。
 
 | 编号 | 服务的 AC | 任务内容 |
 |---|---|---|
-| **B-12** | AC-10 | `SelDsQuoteWriter`：`writeMaterialBomGroup` / `writeElementBomGroup` **停止直写主表**，改写对应 `_record`（带 `quotation_id`）。<br>🔒 **`upsertMaterial` 与 `insertCustomerPart` 不动** —— 免版本表**没有 `_record` 对应物**（全库 13 张 `_record` 清单里无 `material` / `customer_part`），且 `DsQuoteBackfillService` 的 B-13「免版本表排除」会拒收（D-7）。<br>⚠️ `writeOutsourcedSelfRow` 的「先读现状再合并」逻辑要同步迁到 `_record` 口径 |
-| **B-13** | AC-13 | `ConfigureProductResource.configureProduct`：**调换 `snapshotLines`(`:72`) 与 `syncRecordsForFlow`(`:103`) 的顺序** —— 必须先写 `_record` 再冻结，否则冻结时 `_record` 还没写、卡片冻成空。<br>🚨 **保留原有的显式 `flush` 前置**（`D-40` 教训：挂点的 `try/catch` 会把调用方自己的失败吞掉 ⇒ 接口返 200 而整单静默回滚）|
-| **B-14** | AC-11 | `ComponentDriverService`：冻结期取数加 **patch 合并层** —— 主表结果为基底，用 `_record`（`WHERE quotation_id = :quotationId`）按 `origin_id` 做**按列 COALESCE 覆盖** + `origin_id IS NULL` 追加（D-8/D-9）。<br>🚫 **组件 SQL 一段不改**（D-8 选方案甲）。<br>🚫 **不许自己写第二套 patch 逻辑** —— 复用 `DsQuoteBackfillService` / `DsBackfillCollector` 的实现（`VersionedGroupWriter` 类注释原话：「两套实现必然漂移」）。<br>⚠️ **`quotationId` 为 null 的老调用者**（详情页走老协议）必须**跳过 patch**、原样返回主表结果，否则详情页查空 |
-| **B-15** | AC-12 | 全链路自验：建单（主表 0 行 / `_record` 有行）→ 提交 → 核价通过 → 主表 1 行 `version_no=1` `source='QUOTE_BACKFILL'` `material_ratio=100`。<br>📌 **回填链路本身不用改** —— `QuotationService.costingApprove` → `dsQuoteBackfillService.execute` 已在 master |
+| **B-12R** | AC-10 | **回退 B-12**：`SelDsQuoteWriter.writeMaterialBomGroup` / `writeElementBomGroup` **改回直写主表**（`VersionedGroupWriter.writeGroup`，轴 `(customer_no, material_no)`）；`writeOutsourcedSelfRow` 的「先读现状再合并」回到**主表**口径。<br>🔒 `upsertMaterial` / `insertCustomerPart` 仍不动。<br>🗑️ **删除** `DsRecordDirectWriter.java`（245 行）与 `SelQuotationScope.java`（50 行）—— 前者是 `_record` 直写器、后者存在的唯一目的是把 `quotationId` 传进写入侧，两者随方案② 一并作废。<br>⚠️ **`resolvePart` 签名保持不变**（回退后写入侧不再需要 quotationId） |
+| **B-14R** | AC-11 | **作废 B-14**：🗑️ **删除** `DsRecordDriverPatch.java`（357 行）+ 摘掉 `ComponentDriverService` 的两处挂点与注入（`:78-84` + 2 处）。<br>🔑 **AC-11 的达成路径改为「主表有数据 ⇒ 树骨架能递归」** —— 实测反向证据：方案② 下 `BOM|1`（只有合成根行），核价通过后主表有边则 `BOM|2`。<br>🚫 **不要动 `costing_bom_tree_config`**（那是原方案甲要突破 D-8 边界的做法，已不需要） |
+| **B-13** | AC-13 | ✅ **保留现状**（`syncRecordsForFlow` 早于 `snapshotLines`）。理由：与导入侧「物化末尾投影」顺序语义一致，且无害。🚫 不要改回去。<br>⚠️ **保留原有的显式 flush 前置**（D-40 教训：挂点 `try/catch` 会吞掉调用方自己的失败 ⇒ 接口返 200 而整单静默回滚） |
+| **B-15R** | AC-12 | 全链路自验，**终态断言已变**：核价通过后主表**仍是 1 行 / `version_no=1` / `source='MANUAL'`**（回填判 `UNCHANGED`、一行不写）、`_history` 零新增。<br>🔑 若出现升版到 `v2 source=QUOTE_BACKFILL`，说明 `_record` 与主表内容对不上（最可能是 `material_ratio` 没补 ⇒ 见 B-16） |
+| **B-16** | AC-12/14/15 | 🟡 **从阻塞项降为优化项**：`material_ratio` 直写主表本来就带。补 `_record` 投影的价值只剩「回填时指纹能对上、不无意义升版」（= AC-12 的终态判据）。<br>📌 **B-16 的原落点已被证明做不到**：4 个绑 `ds_quote_material_bom` 的组件里**只有 1 个有「材料占比（%）」字段**，`DsRecordProjector` 只能产出页签表征的列。⇒ 若要补，只能走 `syncRecords` 的「页签未表征列从上一版继承」，而那动的是**导入+saveDraft+submit 三路共用写入面** ⇒ **本期不做，登记 BACKLOG** |
 
 ## S-5 / S-6 `_record` 层
 
@@ -56,6 +60,12 @@
 | **B-18** | AC-18, AC-20 | `ConfigureProductRequest` 加 `bindExistingMaterialNo`（契约见 `api.md §2.3`）；`ConfigureProductService.configure` 加**绑定分支**：跳过 `prepareParts` / 指纹 / 发号 / BOM 与元素写入，只写 `ds_quote_customer_part` + `quotation_line_item`。<br>🚫 `parts` 与 `bindExistingMaterialNo` 互斥（400 `BIND_AND_PARTS_EXCLUSIVE`）。<br>⚠️ `validateRequest` 现在硬要求 `parts` 非空，绑定路径要放行 |
 | **B-19** | AC-18 | 绑定路径的 `_record`：走既有 `syncRecordsForFlow`（不用特殊处理）—— 该料号已有主表行 ⇒ 投影的 `origin_id` 指向已有行，回填时判 `UNCHANGED` 不升版 |
 | **B-20** | AC-18, AC-19 | 绑定路径的编号占用校验：**复用** `assertCustomerProductNoAvailable` + `insertSelProductNo` 的 23505→409 映射（🚫 不写第二套）。`BIND_MATERIAL_NOT_FOUND`：料号不在该客户的 `ds_quote_material` 中 → 400 |
+
+## S-8 🆕 树页签重影修复（D-20 / D-28）
+
+| 编号 | 服务的 AC | 任务内容 |
+|---|---|---|
+| **B-23** | AC-24 | **修法甲：spine 五元组去重**。`CostingTreeGrouping.java:26` 把 `byRoot.computeIfAbsent(...).add(r)` 改为按 `(rootNo, materialNo, bomVersion, parentNo, nodePath)` **五元组去重**后再入列。<br>🚨 **改的是 `docs/三大核心模块基线.md` 的报价单渲染核心模块** —— 改前必读该文档 + `docs/反模式.md` 的 **AP-51**（driver 行数权威）与 **AP-60**（不拿渲染投影当权威）。<br>🔒 **必须就地写明这条区分**：「同料号多 occurrence 保留」指的是**同子件挂不同父**（`node_path` 不同，仍保留）；折叠的只是 `node_path` **逐字相同**的那些。🚫 不写清楚，下一个人会当成把 occurrence 语义删了。<br>🚫 **不改** `BomTreeRenderService.edgeKey()` / `treeRowNode()` / 骨架 CTE 契约 / 树页签 `$view` / `costing_bom_tree_config`（那些是已登 BACKLOG 的修法乙）。<br>🚫 **不在渲染后折叠 `baseRows`**（修法丙，已否决：会误伤 `seqs {1,1}` 合法行，且违反 AP-51/AP-60）。<br>🚫 **不加 DB 唯一约束、不清那 14 行重复边**（修法丁，已登 BACKLOG；清理属 §3.2 红线）。<br>🧪 **阳性 + 阴性对照都要做**（AC-24 里写明了），🚫 缺任一视为未完成 |
 
 ## 通用
 
@@ -73,18 +83,21 @@
 | AC | 认领 | | AC | 认领 |
 |---|---|---|---|---|
 | AC-1 | B-1, B-4, B-5 | | AC-13 | B-13 |
-| AC-2 | B-2, B-4 | | AC-14 | B-16 |
-| AC-3 | B-3, B-4 | | AC-15 | B-16 |
+| AC-2 | B-2, B-4 | | AC-14 | ~~B-16~~ 🟡 降级 ⇒ 改由 B-12R 主表侧覆盖 |
+| AC-3 | B-3, B-4 | | AC-15 | ~~B-16~~ 🟡 降级（导入侧零改动 ⇒ 本条转纯回归）|
 | AC-4 | B-1 | | AC-16 | B-17 |
 | AC-5 | B-7, B-10, B-11 | | AC-17 | B-17 |
 | AC-6 | B-9 | | AC-18 | B-18, B-19, B-20 |
 | AC-7 | B-7, B-10 | | AC-19 | B-20 |
 | AC-8 | B-7, B-8 | | AC-20 | B-18 |
 | AC-9 | B-7 | | AC-21 | （零改动，测试侧回归）|
-| AC-10 | B-12 | | AC-22 | B-6 |
-| AC-11 | B-14, B-22 | | AC-23 | （零改动，测试侧回归）|
-| AC-12 | B-15 | | 全部 | B-21 |
+| AC-10 | **B-12R** 🔴 | | AC-22 | B-6 |
+| AC-11 | **B-14R** 🔴, B-22 | | AC-23 | （零改动，测试侧回归）|
+| AC-12 | **B-15R** 🔴 | | 全部 | B-21 |
+| **AC-24** 🆕 | **B-23** 🆕 | | | |
 
-⚠️ **AC-21 / AC-23 是回归 AC，无对应实现任务** —— 它们验的是「**不该变的没变**」，由 `test.md` 片 S-E 覆盖。这不是覆盖缺口。
+⚠️ **AC-21 / AC-23 是回归 AC，无对应实现任务** —— 它们验的是「**不该变的没变**」，由 `test.md` 片 S-全局 覆盖。这不是覆盖缺口。
 
-**反向**（每个 `B-x` 都指回 AC）：B-1~B-22 全部已标，无孤立项。
+**反向**（每个 `B-x` 都指回 AC）：B-1~B-23 全部已标，无孤立项。
+
+🔴 **D-14 引起的覆盖变更（2026-09-10）**：`B-12`→`B-12R`（回退直写主表）· `B-14`→`B-14R`（删 patch）· `B-15`→`B-15R`（终态断言变）· `B-16` 由阻塞项降为 BACKLOG。**`B-1`~`B-11` / `B-17`~`B-22` 逐字不动。**

@@ -1,0 +1,27 @@
+repair-260910 · S-只读片 · 执行说明（test-engineer，2026-09-10）
+
+【环境正身】
+  被测前端 = worktree 临时 vite  http://localhost:5212
+  被测后端 = worktree 临时 Quarkus http://localhost:8212
+    实测 pid cwd = /home/joii/project/cpq/.claude/worktrees/repair-260910-detail-header/cpq-backend  ✅ 在 worktree 内
+    库正身：API totalElements=143 == SELECT count(*) FROM quotation = 143（同一时刻）✅
+  🚫 全程未占用共享 5174 / 8081 / 8091 / 8099 做验收（仅负对照轮**只读**打过 5174/8081，见下）
+
+【被测代码版本】
+  cpq-frontend/src/pages/quotation/ReadonlyProductCard.tsx  mtime 2026-09-10 04:30:48（工作区未提交改动，git status = M）
+  两轮执行之间该文件 mtime 未变 ⇒ 两轮测的是同一份代码
+
+【A/B 证伪实验（证明断言不是空跑）】
+  A 轮（负对照 · 改动前 master 代码，服务在主工作区 5174/8081，cwd=/home/joii/project/cpq/cpq-backend，进程起于 Sep 8）
+     → AC-R1 **硬失败**：左块实际 = ["示例客户料号","客户产品编号: A002","料号: S0001"]，hasRight=false
+     → 见 negctl-master-证伪实验-AC-R1硬失败.log
+  B 轮（worktree 5212/8212，含本次修复）
+     → AC-R1/R2/R3/R4/R5/R8/R9 全绿，见 after-*.txt / after2-全量执行日志.log
+  ⇒ 同一份 spec 在改动前红、改动后绿 ⇒ 断言确实接在被修的行为上。
+
+【重复次数】
+  worktree 正式轮跑了 2 次（after / after2），结果逐条一致，无抖动。
+  本次修复是**结构性**改动（头部拆左右分区），不是概率性修复。
+
+【写入面】
+  零写库。spec 的 SQL 通道 sqlRO() 硬拒非 SELECT；未造数、未清理、未改任何全局状态。

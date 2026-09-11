@@ -1,0 +1,5 @@
+执行时实查（2026-09-10T11:37:48.466Z）：
+  quotation_line_item 中 product_attribute_values->>'产品名称' 非空的行数 = 0
+  quotation_line_item 中 product_attribute_values 非空对象的行数 = 0
+⇒ 全库没有满足 AC-R7 前置（customerPartName 空 + attrValues['产品名称'] 有值）的样本。
+⇒ 本条判【未验证 · 恒空样本】（testing.md §5.5 ③）。造数属写库，S-只读片无批准权 ⇒ 停下报主线。

@@ -1,0 +1,2 @@
+992 → HTTP 400 {"code":400,"message":"料号 992 没有自己的 BOM（在 v_ds_cost_basic_material_bom_all 中查不到以它为 production_no 的记录），不可切换版本"}
+msg=料号 992 没有自己的 BOM（在 v_ds_cost_basic_material_bom_all 中查不到以它为 production_no 的记录），不可切换版本

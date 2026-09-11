@@ -110,7 +110,7 @@
 ### 2.1 必跑四步（cpq 实际命令，不是示例）
 
 **前端改动**（含 `.tsx` `.ts` `.css` 修改）：
-1. `cd cpq-frontend && npx tsc --noEmit -p tsconfig.app.json && npx tsc --noEmit -p tsconfig.test.json` → 两条都必须 0 错误
+1. `cd cpq-frontend && npx tsc -b` → 必须 0 错误（**build 模式会跟进 references，四个子项目一次全查**）
 
    > 🚨 **不要用 `-p tsconfig.json`（2026-09-01 更正，原文写的就是它，那是空验证）**：
    > 根 `tsconfig.json` 是 solution-style（`"files": []` + 三个 `references`），而 `tsc -p`（**不带 `-b`**）
@@ -120,7 +120,24 @@
    > · `tsc --noEmit -p tsconfig.app.json` → EXIT=2，`TS2322` 当场抓到
    > 代价：这条错命令让本项目的前端类型自检**长期是空的**，`SqlViewBuilderTab.tsx` 的 4 条真实类型错误
    > 因此长期存活（含一条 `faa01cd7` 漏改导致「体检失败提示永不显示」的真 bug）。
-   > `npx tsc -b` 也可（三个子项目全查），但会产出 `.tsbuildinfo`。
+   > `npx tsc -b` 才是全覆盖的写法，但会产出 `.tsbuildinfo`（已在 `node_modules/.tmp/` 下，不入库）。
+   >
+   > 🚨 **第二层坑（2026-09-10 再次更正）：`e2e/` 此前不在任何 project 的 include 里。**
+   > 上面那条更正只堵住了「`tsc -p` 不跟进 references」，但三个子项目的 `include` 分别是
+   > `src` / `src` 下的 `*.test.*` / `vite.config.ts` —— **没有一个含 `e2e/`**。
+   > 两层叠加的后果：**全仓 229 个 E2E 用例从来没被类型检查过**。
+   > **证伪实验**（2026-09-10 实测，同一个 `const x: number = "字符串"`）：
+   > · 放 `e2e/` + `tsc -p tsconfig.json` → **EXIT=0 静默通过**
+   > · 放 `e2e/` + `tsc -p tsconfig.app.json` → **EXIT=0**
+   > · 放 `e2e/` + `tsc --ignoreConfig <该文件>` → `TS2322` 报错（**错误是真的**）
+   > · 放 `src/` + `tsc -p tsconfig.app.json` → `TS2322` 报错
+   > **修复**：新增 `e2e/tsconfig.e2e.json` 并挂进根 `references`，自检命令改为 `tsc -b`（本节第 1 条）。
+   > 首次覆盖即抓出 16 个真问题，其中一个是 `task260901-incremental-request.spec.ts` 里
+   > **4 条 AC-24 断言可能整体不执行**（`status` 只在 `page.on` 回调里赋值，回调没触发就静默跳过）——
+   > 正是 `subagents.md` 四类假绿的第四类「断言从未执行」。
+   > ⚠️ `e2e/tsconfig.e2e.json` **刻意不启用** `verbatimModuleSyntax` / `erasableSyntaxOnly`：
+   > 那两个选项是为构建产物服务的，而 e2e 不参与 vite 构建；对测试代码启用只会产生 154 条
+   > 「应改用 import type」，逼着改 129 个文件的 import 写法却换不来任何类型安全。
 2. **对每个改动的 `.tsx` 文件**跑 `curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5174/src/<相对路径>` → 必须 HTTP 200
 3. 如果是新加的列表页/Drawer/抽屉，再 `curl http://localhost:5174/` 看主入口 200
 4. 如果用户描述的故障路径含具体页面，必须**真的把那个 url 透过 curl 拿到 200**才能宣布修复
@@ -191,7 +208,7 @@ worktree 内的自检手段与降级顺序见 `git-worktree.md`。
 
 ## 5. 本册自检清单（前端改动收工前逐条勾）
 
-- [ ] `tsc --noEmit` 0 错误
+- [ ] `npx tsc -b` 0 错误（🚫 不是 `tsc --noEmit -p tsconfig.json` —— 那条编译 0 个文件、恒返回 0）
 - [ ] 每个改动文件的模块地址 200（worktree 内改动见 §2.2 的替代手段）
 - [ ] 用户点名的页面 URL 拿到 200
 - [ ] 新增/改动的弹出式交互用的是 Drawer，不是 Modal

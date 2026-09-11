@@ -1,0 +1,25 @@
+单=QT-20260907-0592
+DB前置=[{"sort_order":"0","customer_part_no":"","ppn":"S-3110520789","pns":"亲验-AC10"}]
+按material_no命中客户料号行数=0
+卡片=[
+ {
+  "idx": 0,
+  "hasHeader": true,
+  "hasRight": true,
+  "leftChildCount": 0,
+  "rightChildCount": 2,
+  "leftTexts": [],
+  "rightTexts": [
+   "亲验-AC10",
+   "销售料号: S-3110520789"
+  ],
+  "leftRaw": "",
+  "rightRaw": "亲验-AC10 销售料号: S-3110520789",
+  "rightButtonCount": 0,
+  "templateBadgeCount": 0,
+  "headerRaw": "亲验-AC10 销售料号: S-3110520789",
+  "cardHeadText": "亲验-AC10 销售料号: S-3110520789 来料固定加工费 物料 物料与元素BOM 来料其他费用 来料回收折扣 自制加工费 成品其他费用 组成件其他费用 组装加工费 组装加工费年降 电镀费用 来料年降 年降系数 物料BOM 销售料号 投入料号 基准值 比例 — — — — 产品小计 ¥ 0",
+  "domOrderOk": true
+ }
+]
+pageerror=[]

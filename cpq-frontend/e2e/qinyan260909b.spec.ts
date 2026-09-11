@@ -9,7 +9,7 @@ import { openComponentByCode, switchTab, selectDataset, selectSource, addField, 
 
 const SHOT = '/home/joii/project/cpq/dev-docs/task-260908-取数配置器优化/repair-260909-核价侧价格策略配置/证据/亲验';
 let n = 10;
-async function shot(page, name: string) {
+async function shot(page: any, name: string) {
   const f = path.join(SHOT, `qy-${++n}-${name}.png`);
   await page.screenshot({ path: f, fullPage: false });
   console.log(`📸 ${f}`);

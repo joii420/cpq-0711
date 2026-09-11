@@ -1,0 +1,115 @@
+单=QT-20260909-0794 costing_card_template_id=60ec613a-1b1e-4cf5-ad10-cf78dfd903c1
+卡片=[
+ {
+  "idx": 0,
+  "hasHeader": true,
+  "hasRight": true,
+  "leftChildCount": 2,
+  "rightChildCount": 2,
+  "leftTexts": [
+   "示例客户料号",
+   "客户产品编号: A002"
+  ],
+  "rightTexts": [
+   "铆钉",
+   "销售料号: S0001"
+  ],
+  "leftRaw": "示例客户料号 客户产品编号: A002",
+  "rightRaw": "铆钉 销售料号: S0001",
+  "rightButtonCount": 0,
+  "templateBadgeCount": 0,
+  "headerRaw": "示例客户料号 客户产品编号: A002 铆钉 销售料号: S0001",
+  "cardHeadText": "示例客户料号 客户产品编号: A002 铆钉 销售料号: S0001 产品 BOM 材质元素 加工费 生产料号 品名 规格 尺寸 旧料号 单重 300001 零件1 — 3.5×3.5×0.6 8DLX.550.653 12 300012 零件12 — 3.5×3.5×0.6 — 3 300013 零件13 — — — 23 300014 外购件1 — — — 3.5 300015 零件15 — ",
+  "domOrderOk": true
+ },
+ {
+  "idx": 1,
+  "hasHeader": true,
+  "hasRight": true,
+  "leftChildCount": 2,
+  "rightChildCount": 2,
+  "leftTexts": [
+   "罗克韦尔触桥组件A",
+   "客户产品编号: RW-A004"
+  ],
+  "rightTexts": [
+   "触桥组件A",
+   "销售料号: S0004"
+  ],
+  "leftRaw": "罗克韦尔触桥组件A 客户产品编号: RW-A004",
+  "rightRaw": "触桥组件A 销售料号: S0004",
+  "rightButtonCount": 0,
+  "templateBadgeCount": 0,
+  "headerRaw": "罗克韦尔触桥组件A 客户产品编号: RW-A004 触桥组件A 销售料号: S0004",
+  "cardHeadText": "罗克韦尔触桥组件A 客户产品编号: RW-A004 触桥组件A 销售料号: S0004 产品 BOM 材质元素 加工费 生产料号 品名 规格 尺寸 旧料号 单重 — — — — — — 产品小计 ¥ 0",
+  "domOrderOk": true
+ },
+ {
+  "idx": 2,
+  "hasHeader": true,
+  "hasRight": true,
+  "leftChildCount": 2,
+  "rightChildCount": 2,
+  "leftTexts": [
+   "测试客户铆钉组件B",
+   "客户产品编号: TC-B008"
+  ],
+  "rightTexts": [
+   "铆钉组件B",
+   "销售料号: S0008"
+  ],
+  "leftRaw": "测试客户铆钉组件B 客户产品编号: TC-B008",
+  "rightRaw": "铆钉组件B 销售料号: S0008",
+  "rightButtonCount": 0,
+  "templateBadgeCount": 0,
+  "headerRaw": "测试客户铆钉组件B 客户产品编号: TC-B008 铆钉组件B 销售料号: S0008",
+  "cardHeadText": "测试客户铆钉组件B 客户产品编号: TC-B008 铆钉组件B 销售料号: S0008 产品 BOM 材质元素 加工费 生产料号 品名 规格 尺寸 旧料号 单重 — — — — — — 产品小计 ¥ 0",
+  "domOrderOk": true
+ },
+ {
+  "idx": 3,
+  "hasHeader": true,
+  "hasRight": true,
+  "leftChildCount": 2,
+  "rightChildCount": 2,
+  "leftTexts": [
+   "正泰端子组件C",
+   "客户产品编号: ZT-C012"
+  ],
+  "rightTexts": [
+   "端子组件C",
+   "销售料号: S0012"
+  ],
+  "leftRaw": "正泰端子组件C 客户产品编号: ZT-C012",
+  "rightRaw": "端子组件C 销售料号: S0012",
+  "rightButtonCount": 0,
+  "templateBadgeCount": 0,
+  "headerRaw": "正泰端子组件C 客户产品编号: ZT-C012 端子组件C 销售料号: S0012",
+  "cardHeadText": "正泰端子组件C 客户产品编号: ZT-C012 端子组件C 销售料号: S0012 产品 BOM 材质元素 加工费 生产料号 品名 规格 尺寸 旧料号 单重 — — — — — — 产品小计 ¥ 0",
+  "domOrderOk": true
+ },
+ {
+  "idx": 4,
+  "hasHeader": true,
+  "hasRight": true,
+  "leftChildCount": 2,
+  "rightChildCount": 2,
+  "leftTexts": [
+   "11",
+   "客户产品编号: 43543"
+  ],
+  "rightTexts": [
+   "产品 5",
+   "销售料号: 0028-2609000014"
+  ],
+  "leftRaw": "11 客户产品编号: 43543",
+  "rightRaw": "产品 5 销售料号: 0028-2609000014",
+  "rightButtonCount": 0,
+  "templateBadgeCount": 0,
+  "headerRaw": "11 客户产品编号: 43543 产品 5 销售料号: 0028-2609000014",
+  "cardHeadText": "11 客户产品编号: 43543 产品 5 销售料号: 0028-2609000014 产品 BOM 材质元素 加工费 生产料号 品名 规格 尺寸 旧料号 单重 — — — — — — 产品小计 ¥ 0",
+  "domOrderOk": true
+ }
+]
+页签数=20 加载中=0
+pageerror=[]

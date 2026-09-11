@@ -54,21 +54,53 @@
   </div>
   <div class="df"><button class="btn">取消</button><button class="btn pri dis">下一步</button></div>
 </div>
-<div class="note">🚫 <b>互斥规则</b>（<code>api.md §2.3</code>）：<code>bindExistingMaterialNo</code> 与 <code>parts</code> 同时非空 → 400 <code>BIND_AND_PARTS_EXCLUSIVE</code>。UI 层提前禁用，不让用户走到 400。</div>
+<div class="note">🚫 <b>互斥规则</b>（<code>api.md §2.3</code>）：<code>bindExistingMaterialNo</code> 与 <code>parts</code> 同时非空 → 400 <code>BIND_AND_PARTS_EXCLUSIVE</code>。UI 层提前禁用，不让用户走到 400。<br>
+🔁 <b>对称方向见第④态</b>：这里是「已有配件 ⇒ 绑定卡禁用」，第④态是反过来「已绑定 ⇒ 添加配件禁用」+ 显式出口「移除绑定」（D-26）—— 两个方向合在一起才是完整的双向互斥。</div>
 </div></div>
 
-<div class="state"><h2>反向：选了绑定后，「+ 添加配件」禁用<span class="tag">步骤 2 主界面</span></div>
+<div class="state"><h2>反向：选了绑定后，「+ 添加配件」禁用<span class="tag">步骤 2 主界面 · 双向互斥含出口（D-26）</span></div>
 <div class="body"><div class="drawer">
   <div class="dh">添加产品 — 选配<span class="x">✕</span></div>
   <div class="dc">
     <div class="steps"><div class="done"><span class="n">✓</span>客户产品编号</div><div class="on"><span class="n">2</span>添加配件</div><div><span class="n">3</span>组合工序</div><div><span class="n">4</span>确认并添加</div></div>
-    <div class="alert ok">🔗 已选择<b>直接绑定</b>销售料号 <code>S0004</code>（触点组件 φ5）—— 该产品将沿用此料号的既有 BOM 与材质数据，无需再配零件。<a href="#" style="margin-left:8px">更换料号</a></div>
-    <div class="tip"><span class="tt">已选择「直接绑定已有销售料号」，不能再添加配件</span>
+    <div class="alert ok">🔗 已选择<b>直接绑定</b>销售料号 <code>S0004</code>（触点组件 φ5）—— 该产品将沿用此料号的既有 BOM 与材质数据，无需再配零件。
+      <a href="#" style="margin-left:8px">更换料号</a><a href="#" style="margin-left:12px;color:#ff4d4f">移除绑定</a></div>
+    <div class="tip"><span class="tt">已选择「直接绑定已有销售料号」，不能再添加配件 —— 点左上「移除绑定」可退出</span>
       <button class="btn dis" style="width:100%;height:40px;border-style:dashed">+ 添加配件</button></div>
   </div>
   <div class="df"><button class="btn">取消</button><button class="btn">上一步</button><button class="btn pri">下一步</button></div>
 </div>
-<div class="note">✅ <b>AC-20 的正向断言</b>：此状态下「下一步」与最终「添加到报价单」<b>均可点</b> —— 现状 <code>ConfigureProductDrawer.tsx:204</code> 的「请至少添加一个配件」会拦住，必须改成「已选绑定 <b>或</b> 已加配件」二者之一。</div>
+<div class="note">✅ <b>AC-20 的正向断言</b>：此状态下「下一步」与最终「添加到报价单」<b>均可点</b> —— 现状 <code>ConfigureProductDrawer.tsx:204</code> 的「请至少添加一个配件」会拦住，必须改成「已选绑定 <b>或</b> 已加配件」二者之一。<br>
+🆕 <b>「移除绑定」（D-26 补录）</b>：作用 = 清空 <code>bindExistingMaterialNo</code>、恢复到「三张卡可自由重选」的初始态（见第⑤态）。为什么需要它：互斥若只做<b>单向禁用</b>（本态原先只挡「+ 添加配件」）而没有出口，用户选错一次只能关掉整个抽屉重来；且经实证，用户能从「更换料号」→「上一步」→ 选零件，绕出 <code>bindExistingMaterialNo + parts</code> 双非空的 payload，直接命中 400 <code>BIND_AND_PARTS_EXCLUSIVE</code>。做成显式「移除绑定」出口 + <code>upsertPart</code> 第三道防线 + submit 显式传 <code>parts: []</code> 后，这个 400 从界面上已经走不到。</div>
+</div></div>
+
+<div class="state"><h2>移除绑定后 · 回到可选配件初始态<span class="tag">空态 · 「移除绑定」的落点</span></div>
+<div class="body"><div class="drawer">
+  <div class="dh">添加产品 — 选配<span class="x">✕</span></div>
+  <div class="dc">
+    <div class="steps"><div class="done"><span class="n">✓</span>客户产品编号</div><div class="on"><span class="n">2</span>添加配件</div><div><span class="n">3</span>组合工序</div><div><span class="n">4</span>确认并添加</div></div>
+    <div class="empty"><div class="ic">🧩</div><div class="t">尚未添加任何配件</div>
+      <div class="h">点下方按钮添加零件 / 外购件，或直接绑定一个已有销售料号</div></div>
+    <button class="btn" style="width:100%;height:40px;border-style:dashed;margin-top:12px">+ 添加配件</button>
+  </div>
+  <div class="df"><button class="btn">取消</button><button class="btn">上一步</button><button class="btn pri dis">下一步</button></div>
+</div>
+<div class="note">🔑 点「移除绑定」清空 <code>bindExistingMaterialNo</code> 后即落到此态 —— 与本页<b>第一态（默认态）</b>等价：三张卡全部可选，「+ 添加配件」重新可点。「下一步」因「0 配件 + 无绑定」双空而禁用（AC-20 的另一半：两者都空不能推进，呼应第①态）。</div>
+</div></div>
+
+<div class="state"><h2>最长文案 / 极值<span class="tag">超长料号绑定下的按钮布局</span></div>
+<div class="body"><div class="drawer">
+  <div class="dh">添加产品 — 选配<span class="x">✕</span></div>
+  <div class="dc">
+    <div class="steps"><div class="done"><span class="n">✓</span>客户产品编号</div><div class="on"><span class="n">2</span>添加配件</div><div><span class="n">3</span>组合工序</div><div><span class="n">4</span>确认并添加</div></div>
+    <div class="alert ok">🔗 已选择<b>直接绑定</b>销售料号 <code>T260910-VERYLONG-MATERIAL-NO-0001</code>（银镍复合触点组件（含铆钉与弹簧片总成）超长品名测试用例 φ12.5×3.2）—— 该产品将沿用此料号的既有 BOM 与材质数据，无需再配零件。
+      <a href="#" style="margin-left:8px">更换料号</a><a href="#" style="margin-left:12px;color:#ff4d4f">移除绑定</a></div>
+    <div class="tip"><span class="tt">已选择「直接绑定已有销售料号」，不能再添加配件 —— 点左上「移除绑定」可退出</span>
+      <button class="btn dis" style="width:100%;height:40px;border-style:dashed">+ 添加配件</button></div>
+  </div>
+  <div class="df"><button class="btn">取消</button><button class="btn">上一步</button><button class="btn pri">下一步</button></div>
+</div>
+<div class="note">🔑 超长料号 + 超长品名同时出现时，<code>更换料号</code> / <code>移除绑定</code> 两个链接<b>不能被挤出可视区或与正文换行错位</b> —— alert 文本区允许折行，两个链接固定跟在文本末尾，不单独换到下一行断裂成孤立按钮。</div>
 </div></div>
 
 </div></body></html>
