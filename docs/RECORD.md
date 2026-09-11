@@ -6516,3 +6516,42 @@ DB 扩到 12 位后，即便 handler 完全不归一，12 位 Excel 导入查库
 [2026-09-10] 同上任务 - **合桶与"行级取数"的本质矛盾（用户裁决合桶是性能基石，方案待立项）** - **合桶的充要条件是"视图结果不依赖行"**（`eligibleForQuoteBucket` → `viewHasNoRowDimension`；方法 javadoc 原话：「与逐行 expand 对无行维度视图**逐位等价（li.id 被视图忽略）**」）。本次让视图开始读 `lineItem.customer_part_no` ⇒ **那个等式不再成立，合桶不是变慢而是定义上不再等价**，只能退出 ⇒ 整单物化从 1 次 `expandMulti` 变成**每行 1 次 expand + 1 次反查**。实测现网：127 张单**平均 31.3 行、125 张 ≤ 15 行**（多几十条 SQL 无感），**但有 2 张 1845 行的单** ⇒ 约 3690 条 SQL，正撞 `task-260825` 刚优化过的路径。🚫 **后端代理提的备选(乙)「`:quotationId` + EXISTS 子查询」被主线实测否决**：全库 **12 组**存在"同单 + 同销售料号 + 多明细行客编不同"（`QT-20260907-0580` 的 `T260907-M1` 4 行 2 客编），(乙) 在这些组上退化回多行、保不住 `AC-1`。🔑 **主线给出的方向（待走 A0）：合桶要求"查询"不依赖行，从不要求"分发"不依赖行。** 两步——① SQL 层把 `:customerProductNo` 从**标量相等**改成**集合成员** `= ANY(:customerProductNos)`（完全沿用现成的 `:total_material_no`「整单收集→绑 PG 数组」模式），SQL 仍 1 次/组件、谓词仍由语义图生成；② 分发层回分键从 `hf_part_no` 扩成 `(hf_part_no, 客编列)`，"哪一列是客编列"从 `builder_config.columns` 的 `sourceNodeKey/sourceColumn/viewColumn` 三元组读、**不硬编码**。配置侧只需新增**一个语义标记**：该 SUBDIM 是**行级**的（对应 `docs/统一智能视图路径方案.md §13.2` 上下文变量字典的 `lineItem.*` 层级——**合桶能否保住的分界线恰好就是那个字典的层级**）。⚠️ 必须一起定的四件：**空值兜底**（128/3970 客编为空，集合谓词下挑不到行，需显式"回退左表行 + 该列置空"，不定就是 AC-2 的静默失败）· 超集膨胀（实测仅 12 组，近乎为零）· 前提是"一行对一个客编"（已由用户业务口径确认）· 与"BOM 闭包兄弟行串入"正交。
 
 [2026-09-10] 同上任务 - **子代理三次挡住主线写错的文档；主线三次自查推翻自己** - 🚨 **本次拦截点分布极不均匀，值得记**：**（A）实现代理在写代码前挡下 2 处**——① 前端代理指出 `fronttask F-2`/`api.md §3` 写的「`__row_uid` 与既有 `nodeId` 同款叠加进 `rowFingerprint`」**自相矛盾**：`nodeId` **不在** `rowFingerprint` 里，它是 `Tombstone` 的独立字段 + `keepRow` 的独立合取项，按字面做会让**存量墓碑全部失配**；② 同一代理指出原 `B-9`（把 `row_key_fields` 改成两列）**有害且与方案无关**——`fp` 第一段就是 `row_key_fields` 各值，而 `keepMask`/`isDeleted` 是**纯 fp 匹配、无 legacy fp 回退**（`buildLegacyRowKeySets` 三档只作用于 effKey 查表）⇒ **所有存量单已删的行会全部复活**。**（B）测试代理挡下 1 处方法论错误**——S2 **拒绝按字面执行**主线 `test.md §3④` 的还原实验（"把 B-2 谓词改回去重跑"），理由是它实测到「视图重生成**之前**、跑着全部 Java 改动的实例仍是 4/7/4 行」⇒ **决定渲染的是已落库的 `sql_template`，不是编译器的实时产出**，回滚编译器必然不变红、按字面判据会被误读成"白测"。它换成三个更强的实验：**E3 两版视图定义对跑**（旧 4 行/新 1 行，证明绿不恒真）· **E1 正向控制**（改明细行客编→渲染值跟着变）· **E2 ON/WHERE 判别**（填不存在的客编→**1 行且客编空**；0 行=误入 WHERE，4 行=谓词未生效）。**（C）S3 主动上报 AC 自相矛盾**——`AC-8/9/10` 与 `AC-1/AC-4` 不可能同时成立（前者要在产品页签构造 3~4 行再删第 2 行，后者要求该页签恒 1 行），用户裁决**删除这三条 AC，编号作废不复用**。**（D）主线自查推翻自己 3 次**——根因 v1（读 `rowFingerprint` 函数体）· `backtask B-5` 的指示错误（我写"不要用 `refresh-all-snapshots`，它不碰 `sql_views_snapshot`"，而该端点 javadoc 明写那是**上一版**的问题、`repair-260908 B-6` 已改成**两层都推 + md5 自证 + 不一致整体回滚**）· 代理报的 `recompileChanged=6`（含 3 个核价漂移）在 dev 库实为 **3**（代理那份是 `cpq_db_test` 的状态，两库不同）。| 🔑 **B-5 执行按 §3.2 三步前置走完**：定向到正泰 3 个模板（影响面从"22 条快照 / 31 模板 / **125 张单**"压到"3 条 / 3 模板 / **40 张单**"，且**不碰** `task-260909` 遗留的核价侧漂移）· 全量备份 3 视图旧 SQL + 3 模板旧快照 · 用户明确批准。执行后 `snapshotMismatchAfterWrite=0`，主线亲验 `IN_ON=1 / IN_WHERE=0`。⚠️ **编译器改动天然全局**：另两个「产品」视图 `7277969cc41c`/`a71947b68d50` 的 `sql_template` 也被重编译，但**它们所属模板的快照未推** ⇒ 渲染层仍走旧快照，用户"本期只修 `221dc766`"的裁决在可见层面成立。
+
+---
+
+## [2026-09-11] 选配流程 - 切 ds_quote_* 新表 + 直接绑定已有销售料号 + 树重影与哨兵粘死修复
+
+**任务**：`dev-docs/task-260910-选配切ds新表与已有料号绑定/` ｜ 合 master `195e91cc` ｜ **AC 25 条：24 达成 / 1 弱证据**
+
+**涉及文件**（16 主文件）：
+- 后端：`ConfigureProductService` · `ConfigureSearchResource` · `ConfigureProductResource` · `SelDsQuoteWriter` · `ConfigureSnapshotService` · `CardSnapshotService` · `CostingTreeGrouping` · `ComponentDriverService` · `DsQuoteRecordService` · `DsRecordCardDeduper` · `LookupFingerprintResponse` · `ConfigureProductRequest`
+- 前端：`cardValuesWarm.ts` · `BindExistingPartPanel.tsx`(新) · `NewPartPanel.tsx` · `ProcessSection.tsx` · `ExistingPartPanel.tsx` · `OutsourcedPartPanel.tsx` · `ConfirmStep.tsx` · `configureUi.tsx` · `types/configure.ts`
+- 测试：`task260910a/b/c/b24` + `CostingTreeGroupingDedupeTest` + `e2e/d38-verify.spec.ts`
+
+### 关键决策（44 条裁决，D-1~D-44，逐条经用户拍板）
+
+| # | 裁决 | 根因 / 依据 |
+|---|---|---|
+| **D-1** | 类型判据改 **JOIN `material_recipe.code` 命中**，🚫 不用 `output_material_type` | 实测该列 8 种值（`成品` 2645 行），是用户自填业务字段 |
+| **D-3** | `unit_price`→`ds_quote_self_process_fee` · `capacity`→`ds_quote_assembly_fee` · `material_master`/`v_compat_material_master`→`ds_quote_material` | — |
+| **D-6** | 外购件工序**从自制加工费改存组装加工费** | **业务计算口径变更**，非等价搬运 |
+| 🔴 **D-14** | **方案② 作废，选配与导入看齐直写主表** | 实测 `ds_quote_material_bom` 的 source = **`IMPORT` 2734 / `MANUAL` 18 / `QUOTE_BACKFILL` 8** ⇒ 导入侧一直直写主表、**一次核价审核都没过** ⇒ 「新料号必须过核价才进主库」本来只约束选配一侧、不成立。据此删 650 行方案② 专用代码 |
+| **D-21** | **修回 `_record` 投影时序**（挂回两段物化之后） | 上移后本行 `compData` 还不存在 ⇒ 投影被空 `compData` 早退跳过 ⇒ **`_record` 恒慢一个写请求**。A/B/A 还原实验：改回上移 ⇒ `record_rows=0` |
+| **D-28** | 树页签重影按 **spine 五元组去重** | `m × n` 笛卡尔积：spine 无 DISTINCT + `nodeId` 等于 `node_path` 撞号（QUOTE 骨架的 `node_path` 只拼料号、不含 `item_seq`）+ `edgeKey` 无 occurrence 维度。**触发条件是同一 `(客户,父件,子件)` 边有 ≥2 行**；「同单同料号多 line item」不是触发条件 |
+| **D-30/D-34** | **失败哨兵粘死**（跨端修） | `ensureCardValues` 的 missing 谓词只认 `IS NULL` ⇒ 选不中非 NULL 的哨兵行 ⇒ 一旦落下永不重算。前端 `shouldWarmCardValues` 同样把哨兵读作「已算」⇒ 后端自愈从 UI 永远看不见 |
+| **D-38** | **`BL-0202` 选配行写 `template_id`** | **主线亲验抓到**。「V30 有意设计」不成立：V30 原文动机是「导入产品不强制关联 Product 表」、`template_id` 那行没有自己的注释；且 `QuotationService:557` **早有同款兜底、值就是 `customerTemplateId`、连「选配行」都点名了**，只是 AC-12 全程不点保存草稿、那道兜底永不执行。**准确形态是「刷新后渲染不出」**（前端 `QuotationWizard:1837` 有内存兜底） |
+| **D-44** | AC-11④「小计不恒为 ¥0」移除，用量另登 `BL-0269` | 选配不收集用量列（`component_qty`/`gross_weight`/`net_weight` 全 NULL），而**导入侧填充率 100%（2734/2734）、选配侧仅 11/35** ⇒ 违反 D-14「两侧一致」，P1 |
+
+### 踩过的坑（写下来是因为都「差点得出错结论」）
+
+1. **共享 `target/` 假故障** —— 五路并行时四路踩到，症状**完全伪装成「代码坏了」**（`Tests run: 0`+`BUILD FAILURE` / 成片 `bad class file` / 一屏 `cannot find symbol`）。⚠️ **`-Dmaven.build.dir=` 在本项目无效**（`pom.xml` 无 `<directory>` 覆盖，超级 POM 写死）⇒ **唯一有效办法是 `rsync --exclude target/` 到 scratchpad 副本**
+2. **第 2 类假故障：端口抢占** —— `Port already bound` 报成 `Tests run: N, Errors: 1, BUILD FAILURE`，占用者是**另一个 worktree** 的服务。且 vite 会**静默 +1**（我指定 5199、实际起在 5200，curl 5199 拿到的 200 是别人的服务）
+3. **库辨识不能用 `totalElements`** —— 它随建单在涨（同日两片读到 156/161）。用 `SELECT current_database()`
+4. **§3.2 影响面量化必须先查全 FK 图** —— 删 2 张单时漏了 `import_record`，靠**事务整体回滚**才没出事。实测 9 张表指向 `quotation`（4 CASCADE / 5 NO ACTION）
+5. **量具假阴性** —— 卡片可编辑单元格的值在 **`<input>.value`** 里，只读 `td.textContent` 会把有值的行读成全空
+6. **共库并行禁用全局计数/时间窗断言** —— 我查「绑定后有无新增指纹行」得 1，那行是并发子代理造的
+7. **`BL-0202`/`BL-0253` 的既有记载都已过期** —— 前者「9226 行真实单据零命中」连分母都对不上（全表已是 3979 行）；后者「`_record.material_ratio` 为空」实际**取决于模板挂哪个 BOM 组件**
+
+### 遗留
+
+`BL-0247`~`BL-0269` 共 **22 条**，其中 P1 三条：`BL-0252`（`writeGroup` 抹导入侧带价工序行）· `BL-0259`（`QT-20260910-0803` 单卡死）· **`BL-0269`（选配不收集用量 ⇒ 小计恒 ¥0，与导入侧不一致）**
