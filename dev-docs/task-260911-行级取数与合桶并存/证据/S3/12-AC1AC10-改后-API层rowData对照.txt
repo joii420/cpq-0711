@@ -1,0 +1,10 @@
+===== ac1 =====
+sort=0 li.cpn='B17-DUP-0910-1' rows=1 rendered=['B17-DUP-0910-1'] name=['触桥组件A']
+sort=1 li.cpn='B17-DUP-0910-2' rows=1 rendered=['B17-DUP-0910-2'] name=['触桥组件A']
+sort=2 li.cpn='B18-BIND-0910B' rows=1 rendered=['B18-BIND-0910B'] name=['触桥组件A']
+sort=3 li.cpn='RW-A004' rows=1 rendered=['RW-A004'] name=['触桥组件A']
+===== r10 =====
+sort=0 li.cpn='RW-A004' rows=1 rendered=['RW-A004'] name=['触桥组件A']
+sort=1 li.cpn=None rows=1 rendered=['RW-A004'] name=['触桥组件A']
+sort=2 li.cpn='B1SELF-050259' rows=1 rendered=['B1SELF-050259'] name=['B1SELF-050259']
+sort=3 li.cpn='T0911S3-NOMATCH' rows=1 rendered=['RW-A004'] name=['触桥组件A']

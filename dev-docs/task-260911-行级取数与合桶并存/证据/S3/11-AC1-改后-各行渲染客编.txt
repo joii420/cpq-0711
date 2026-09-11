@@ -1,0 +1,9 @@
+Pager usage is off.
+ sort_order |     li_cpn     | snap_rows |  rendered_cpn  | rendered_name | rendered_weight 
+------------+----------------+-----------+----------------+---------------+-----------------
+          0 | B17-DUP-0910-1 |         1 | B17-DUP-0910-1 | 触桥组件A     | 16.7
+          1 | B17-DUP-0910-2 |         1 | B17-DUP-0910-2 | 触桥组件A     | 16.7
+          2 | B18-BIND-0910B |         1 | B18-BIND-0910B | 触桥组件A     | 16.7
+          3 | RW-A004        |         1 | RW-A004        | 触桥组件A     | 16.7
+(4 rows)
+

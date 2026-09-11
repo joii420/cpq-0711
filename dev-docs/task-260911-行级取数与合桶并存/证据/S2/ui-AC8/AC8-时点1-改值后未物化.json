@@ -1,0 +1,32 @@
+[
+ {
+  "card": 0,
+  "rows": 1,
+  "cpn": "T0911S2-CP1",
+  "name": "S2测试件甲"
+ },
+ {
+  "card": 1,
+  "rows": 1,
+  "cpn": "T0911S2-CP2",
+  "name": "S2测试件甲"
+ },
+ {
+  "card": 2,
+  "rows": 1,
+  "cpn": "T0911S2-CP3",
+  "name": "S2测试件甲"
+ },
+ {
+  "card": 3,
+  "rows": 1,
+  "cpn": "T0911S2-CP1",
+  "name": "S2测试件甲"
+ },
+ {
+  "card": 4,
+  "rows": 1,
+  "cpn": "T0911S2-CP1",
+  "name": "S2测试件甲"
+ }
+]

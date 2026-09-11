@@ -1,0 +1,37 @@
+### AC-1/AC-2 改动后 · 三轮请求窗口（按日志字节偏移切，仅本片自己的单）
+
+----- ac1_after_window.log -----
+2026-09-11 09:29:22.113 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-1) [SqlViewExecutor] driver path=$builder_221dc7668ab6 rows=4
+2026-09-11 09:29:22.115 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-1) [quote-bucket] comp=221dc766-8ab6-4d95-82c0-08cc03e6267d eligible eligible parts=1 bucketEntries=1
+2026-09-11 09:29:22.145 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-1) [SqlViewExecutor] driver path=$builder_98ee51d1832e rows=4
+2026-09-11 09:29:22.146 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-1) [quote-bucket] comp=98ee51d1-832e-4881-aa3d-e9512824cc14 eligible eligible parts=1 bucketEntries=1
+2026-09-11 09:29:22.147 INFO  [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-1) [quote-bucket] quotation=e166c7d9-5d81-49f7-a246-5ea9e3475504 eligibleComps=2 totalComps=3 distinctParts=1
+2026-09-11 09:29:22.181 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-1) [SqlViewExecutor] driver path=$builder_221dc7668ab6 rows=7
+2026-09-11 09:29:22.193 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-1) [SqlViewExecutor] driver path=$builder_7f9a5bbf264f rows=10
+2026-09-11 09:29:22.209 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-1) [SqlViewExecutor] driver path=$builder_98ee51d1832e rows=4
+-- 窗口内出现的 quotation= --
+      1 quotation=e166c7d9-5d81-49f7-a246-5ea9e3475504
+
+----- ac1_after_r2.log -----
+2026-09-11 09:39:07.244 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-18) [SqlViewExecutor] driver path=$builder_221dc7668ab6 rows=4
+2026-09-11 09:39:07.244 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-18) [quote-bucket] comp=221dc766-8ab6-4d95-82c0-08cc03e6267d eligible eligible parts=1 bucketEntries=1
+2026-09-11 09:39:07.267 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-18) [SqlViewExecutor] driver path=$builder_98ee51d1832e rows=4
+2026-09-11 09:39:07.268 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-18) [quote-bucket] comp=98ee51d1-832e-4881-aa3d-e9512824cc14 eligible eligible parts=1 bucketEntries=1
+2026-09-11 09:39:07.268 INFO  [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-18) [quote-bucket] quotation=e166c7d9-5d81-49f7-a246-5ea9e3475504 eligibleComps=2 totalComps=3 distinctParts=1
+2026-09-11 09:39:07.293 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-18) [SqlViewExecutor] driver path=$builder_221dc7668ab6 rows=7
+2026-09-11 09:39:07.305 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-18) [SqlViewExecutor] driver path=$builder_7f9a5bbf264f rows=10
+2026-09-11 09:39:07.320 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-18) [SqlViewExecutor] driver path=$builder_98ee51d1832e rows=4
+-- 窗口内出现的 quotation= --
+      1 quotation=e166c7d9-5d81-49f7-a246-5ea9e3475504
+
+----- ac1_after_r3.log -----
+2026-09-11 09:39:10.586 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-18) [SqlViewExecutor] driver path=$builder_221dc7668ab6 rows=4
+2026-09-11 09:39:10.586 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-18) [quote-bucket] comp=221dc766-8ab6-4d95-82c0-08cc03e6267d eligible eligible parts=1 bucketEntries=1
+2026-09-11 09:39:10.614 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-18) [SqlViewExecutor] driver path=$builder_98ee51d1832e rows=4
+2026-09-11 09:39:10.615 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-18) [quote-bucket] comp=98ee51d1-832e-4881-aa3d-e9512824cc14 eligible eligible parts=1 bucketEntries=1
+2026-09-11 09:39:10.615 INFO  [com.cpq.con.ser.ConfigureSnapshotService] (executor-thread-18) [quote-bucket] quotation=e166c7d9-5d81-49f7-a246-5ea9e3475504 eligibleComps=2 totalComps=3 distinctParts=1
+2026-09-11 09:39:10.645 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-18) [SqlViewExecutor] driver path=$builder_221dc7668ab6 rows=7
+2026-09-11 09:39:10.657 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-18) [SqlViewExecutor] driver path=$builder_7f9a5bbf264f rows=10
+2026-09-11 09:39:10.672 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-18) [SqlViewExecutor] driver path=$builder_98ee51d1832e rows=4
+-- 窗口内出现的 quotation= --
+      1 quotation=e166c7d9-5d81-49f7-a246-5ea9e3475504

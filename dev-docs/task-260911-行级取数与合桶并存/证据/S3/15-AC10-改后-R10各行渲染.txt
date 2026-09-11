@@ -1,0 +1,9 @@
+Pager usage is off.
+ sort_order |     li_cpn      | snap_rows | rendered_cpn  | rendered_name | rendered_weight 
+------------+-----------------+-----------+---------------+---------------+-----------------
+          0 | RW-A004         |         1 | RW-A004       | 触桥组件A     | 16.7
+          1 | (NULL)          |         1 | (EMPTY)       | 触桥组件A     | 16.7
+          2 | B1SELF-050259   |         1 | B1SELF-050259 | B1SELF-050259 | 11
+          3 | T0911S3-NOMATCH |         1 | (EMPTY)       | 触桥组件A     | 16.7
+(4 rows)
+
