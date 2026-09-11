@@ -1,0 +1,218 @@
+[
+ {
+  "case": "R0910S2-A (S0004/RW-A004)",
+  "part": "S0004",
+  "tab": "产品",
+  "status": "OK",
+  "rowCount": 4,
+  "error": null,
+  "productRowParts": [
+   "S0004",
+   "S0004",
+   "S0004",
+   "S0004"
+  ],
+  "productRowCustProdNos": [
+   "B17-DUP-0910-1",
+   "B17-DUP-0910-2",
+   "B18-BIND-0910B",
+   "RW-A004"
+  ]
+ },
+ {
+  "case": "R0910S2-A (S0004/RW-A004)",
+  "part": "S0004",
+  "tab": "BOM",
+  "status": "OK",
+  "rowCount": 8,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "R0910S2-A (S0004/RW-A004)",
+  "part": "S0004",
+  "tab": "材质元素",
+  "status": "OK",
+  "rowCount": 4,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "R0910S2-A (S0004/RW-A004)",
+  "part": "S0004",
+  "tab": "产品单价",
+  "status": "OK",
+  "rowCount": 0,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "R0910S2-A (S0004/RW-A004)",
+  "part": "S0004",
+  "tab": "加工费",
+  "status": "OK",
+  "rowCount": 1,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "R0910S2-A (S0004/RW-A004)",
+  "part": "S0004",
+  "tab": "自制加工费",
+  "status": "OK",
+  "rowCount": 2,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "R0910S2-B (0028../B1SELF)",
+  "part": "0028-2609000015",
+  "tab": "产品",
+  "status": "OK",
+  "rowCount": 7,
+  "error": null,
+  "productRowParts": [
+   "0028-2609000015",
+   "0028-2609000015",
+   "0028-2609000015",
+   "0028-2609000015",
+   "0028-2609000015",
+   "0028-2609000015",
+   "0028-2609000015"
+  ],
+  "productRowCustProdNos": [
+   "B1IDEM-050616",
+   "B1SELF-050259",
+   "B1UPG-050617",
+   "N1CHK-051505819212",
+   "N1CHK-051506947213",
+   "N1CHK-051509400098",
+   "N1CHK-051510103150"
+  ]
+ },
+ {
+  "case": "R0910S2-B (0028../B1SELF)",
+  "part": "0028-2609000015",
+  "tab": "BOM",
+  "status": "OK",
+  "rowCount": 14,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "R0910S2-B (0028../B1SELF)",
+  "part": "0028-2609000015",
+  "tab": "材质元素",
+  "status": "OK",
+  "rowCount": 2,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "R0910S2-B (0028../B1SELF)",
+  "part": "0028-2609000015",
+  "tab": "产品单价",
+  "status": "OK",
+  "rowCount": 0,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "R0910S2-B (0028../B1SELF)",
+  "part": "0028-2609000015",
+  "tab": "加工费",
+  "status": "OK",
+  "rowCount": 0,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "R0910S2-B (0028../B1SELF)",
+  "part": "0028-2609000015",
+  "tab": "自制加工费",
+  "status": "OK",
+  "rowCount": 3,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "R0910S2-C (S0004/空客编)",
+  "part": "S0004",
+  "tab": "产品",
+  "status": "OK",
+  "rowCount": 4,
+  "error": null,
+  "productRowParts": [
+   "S0004",
+   "S0004",
+   "S0004",
+   "S0004"
+  ],
+  "productRowCustProdNos": [
+   "B17-DUP-0910-1",
+   "B17-DUP-0910-2",
+   "B18-BIND-0910B",
+   "RW-A004"
+  ]
+ },
+ {
+  "case": "R0910S2-C (S0004/空客编)",
+  "part": "S0004",
+  "tab": "BOM",
+  "status": "OK",
+  "rowCount": 8,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "R0910S2-C (S0004/空客编)",
+  "part": "S0004",
+  "tab": "材质元素",
+  "status": "OK",
+  "rowCount": 4,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "R0910S2-C (S0004/空客编)",
+  "part": "S0004",
+  "tab": "产品单价",
+  "status": "OK",
+  "rowCount": 0,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "R0910S2-C (S0004/空客编)",
+  "part": "S0004",
+  "tab": "加工费",
+  "status": "OK",
+  "rowCount": 1,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "R0910S2-C (S0004/空客编)",
+  "part": "S0004",
+  "tab": "自制加工费",
+  "status": "OK",
+  "rowCount": 2,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ }
+]

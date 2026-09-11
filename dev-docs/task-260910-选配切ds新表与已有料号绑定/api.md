@@ -62,6 +62,11 @@ GET /api/cpq/quotations/configure/search-parts?customerNo=CUST-0004&q=<keyword>&
 
 🔴 **删除的字段**（原为单值，已被 `materials[]` 取代）：`recipeId` · `recipeCode` · `recipeSymbol` · `recipeName` · `recipeSpec` · `recipeType`。
 
+⚠️ **两处 `materials[]` 形状不一致**（2026-09-10 S-B 实测登记，**不违反任何 AC**，本期不改）：
+· `search-parts` 的元素 = `{recipeCode, recipeSymbol, recipeName, recipeSpec, recipeType, ratio}`
+· `reusedProductInfo.materials` 的元素 = `{recipeCode, name, ratio}`（**只有 3 个字段，且用 `name` 不是 `recipeName`**）
+⇒ 前端若想复用同一个渲染组件会踩空。已登记 `BL-0262`。
+
 > 🚦 **R-2 待定**：`materials[]`（数组）是当前方案。若前端更希望单串展示，可改为 `materialsLabel: "AgNi10 / …"` —— **原型图定稿时确定，定后本节同步更新并通知双方子代理**。
 
 **材质来源判据**（AC-9，🚫 不许用 `output_material_type`）：
@@ -141,7 +146,8 @@ GET /api/cpq/quotations/configure/outsourced-parts?customerNo=CUST-0004&keyword=
 | `ds_quote_customer_part` | ✅ 1 行（`source='MANUAL'`） |
 | `quotation_line_item` | ✅ 1 行 |
 | `ds_quote_material` | ❌ **零新增**（料号已存在） |
-| `ds_quote_material_bom` / `_element_bom`（主表与 `_record`） | ❌ **零新增**（沿用既有数据） |
+| `ds_quote_material_bom` / `_element_bom` **主表** | ❌ **零新增**（沿用既有数据） |
+| 同两表的 **`_record`** | ✅ **有投影行**（`origin_id` 认领主表既有行、值逐字一致、`source='QUOTE_DRAFT'`）—— 🔴 2026-09-10 更正，原写「零新增」是错的 |
 | `sel_part_signature` | ❌ **零新增** |
 | `quote_material_no_seq` / `quote_customer_code` / `material_customer_map` | ❌ **零新增**（不发号） |
 

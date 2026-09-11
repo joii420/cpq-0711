@@ -67,6 +67,14 @@
 |---|---|---|
 | **B-23** | AC-24 | **修法甲：spine 五元组去重**。`CostingTreeGrouping.java:26` 把 `byRoot.computeIfAbsent(...).add(r)` 改为按 `(rootNo, materialNo, bomVersion, parentNo, nodePath)` **五元组去重**后再入列。<br>🚨 **改的是 `docs/三大核心模块基线.md` 的报价单渲染核心模块** —— 改前必读该文档 + `docs/反模式.md` 的 **AP-51**（driver 行数权威）与 **AP-60**（不拿渲染投影当权威）。<br>🔒 **必须就地写明这条区分**：「同料号多 occurrence 保留」指的是**同子件挂不同父**（`node_path` 不同，仍保留）；折叠的只是 `node_path` **逐字相同**的那些。🚫 不写清楚，下一个人会当成把 occurrence 语义删了。<br>🚫 **不改** `BomTreeRenderService.edgeKey()` / `treeRowNode()` / 骨架 CTE 契约 / 树页签 `$view` / `costing_bom_tree_config`（那些是已登 BACKLOG 的修法乙）。<br>🚫 **不在渲染后折叠 `baseRows`**（修法丙，已否决：会误伤 `seqs {1,1}` 合法行，且违反 AP-51/AP-60）。<br>🚫 **不加 DB 唯一约束、不清那 14 行重复边**（修法丁，已登 BACKLOG；清理属 §3.2 红线）。<br>🧪 **阳性 + 阴性对照都要做**（AC-24 里写明了），🚫 缺任一视为未完成 |
 
+## S-9 🆕 失败哨兵粘死 + 两条顺手项（D-30 / D-32 / D-33）
+
+| 编号 | 服务的 AC | 任务内容 |
+|---|---|---|
+| **B-24** | AC-25 | **修「失败哨兵粘死」**：`ensureCardValues` 的选行谓词只认 `IS NULL` ⇒ 选不中「非 NULL 的失败哨兵行」⇒ 哨兵一旦落下**永不重算**。实测 A/B：compData 已 0→14，`quote_card_values` 仍是 `{"tabs": [], "__cardValueFailed": true}`。<br>🚨 **改的是 `CardSnapshotService`**（`docs/三大核心模块基线.md` 报价单渲染核心模块）—— 改前必读该文档 + **AP-51**（行数权威）+ 记忆教训「**Excel 快照勿持久化 loading 哨兵**：`saveDraft`/`submit`/导出前排除哨兵，否则被后端守卫锁死不重算」（**同一个坑的另一面**）。<br>⚠️ **实现前置**：先确认现网那 2 张存量单（`QT-20260908-0612`/`QT-20260907-0580`）的**产生路径**。🚫 说不清就不要下「已修好」的结论。<br>🔑 **必须给出存量单是否自愈的结论**（两种都合法，但要说清；不自愈则登记存量清理，🚫 不许自行改那两张单的数据）|
+| **B-25** | （无 AC · D-32） | `ConfigureSnapshotService:288-289` 的 `if (comps.isEmpty()) return;` **加一行日志**（打出 `quotationId` + `customer_template_id` + 命中组件数）。🔑 它零日志零异常 ⇒ **三个测试片在同一岔路口各绕半天** |
+| **B-26** | （无 AC · D-33） | 改正 `Task260910CBase#ensureLineTemplate` 的 javadoc —— 因果**写反了**，会把下一个人引向已证无因果的 `BL-0202`。<br>📌 真实因果：链路读 **`quotation.customer_template_id`**（报价单级），🚫 **不是** `quotation_line_item.template_id`。实测只绑 quotation 级、line_item 留 NULL，compData 照样 14 条 |
+
 ## 通用
 
 | 编号 | 服务的 AC | 任务内容 |
@@ -95,9 +103,10 @@
 | AC-11 | **B-14R** 🔴, B-22 | | AC-23 | （零改动，测试侧回归）|
 | AC-12 | **B-15R** 🔴 | | 全部 | B-21 |
 | **AC-24** 🆕 | **B-23** 🆕 | | | |
+| **AC-25** 🆕 | **B-24** 🆕 | | | |
 
 ⚠️ **AC-21 / AC-23 是回归 AC，无对应实现任务** —— 它们验的是「**不该变的没变**」，由 `test.md` 片 S-全局 覆盖。这不是覆盖缺口。
 
-**反向**（每个 `B-x` 都指回 AC）：B-1~B-23 全部已标，无孤立项。
+**反向**（每个 `B-x` 都指回 AC）：B-1~B-24 已标。**B-25 / B-26 无 AC**（D-32/D-33 的顺手项：一行日志 + 改正写反的注释），按 `task-docs.md` 属「可观测性与文档修正」，不构成覆盖缺口 —— 但**必须在回报里给出改动前后对照**。
 
 🔴 **D-14 引起的覆盖变更（2026-09-10）**：`B-12`→`B-12R`（回退直写主表）· `B-14`→`B-14R`（删 patch）· `B-15`→`B-15R`（终态断言变）· `B-16` 由阻塞项降为 BACKLOG。**`B-1`~`B-11` / `B-17`~`B-22` 逐字不动。**

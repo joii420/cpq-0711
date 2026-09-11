@@ -540,7 +540,10 @@ public class BuilderService {
         return left.isEmpty() ? null : String.join(", ", left);
     }
 
-    /** 把 :customerCode / :priceBaseDate 直接替换成字面量（预览只读场景，不走 PreparedStatement 位置参数）。 */
+    /**
+     * 把 :customerCode / :priceBaseDate / :customerProductNo 直接替换成字面量
+     * （预览只读场景，不走 PreparedStatement 位置参数）。
+     */
     private String bindLiterals(String sql, String customerCode, String priceBaseDate) {
         String result = sql;
         if (customerCode != null) {
@@ -549,6 +552,17 @@ public class BuilderService {
         if (priceBaseDate != null) {
             result = result.replaceAll("(?<!:):priceBaseDate\\b", Matcher.quoteReplacement("'" + priceBaseDate + "'"));
         }
+        // repair-260910 B-3（AC-7）：:customerProductNo 是 B-2 新发的 JOIN 谓词占位符，而 /preview
+        // 走的是裸 JDBC 字面量替换、**不经** SqlViewExecutor 的 enrich 管线 ⇒ 不绑就会被
+        // detectUnboundPlaceholders 拦成 500 PREVIEW_UNBOUND_PLACEHOLDER（配置人员点一下预览就报错）。
+        //
+        // 🔑 绑 **NULL** 而不是某个具体客户产品编号：预览页没有报价明细行上下文，"当前卡片自己的
+        //    那一个客户产品编号"这件事在预览里根本不存在。绑 NULL 时该谓词在 LEFT JOIN … ON 上恒
+        //    UNKNOWN ⇒ JOIN 不匹配 ⇒ **左表行照常全部返回**（AC-7 要的"非空行"），只是客户料号侧
+        //    的列显示为空 —— 与 AC-2（明细行客编为空）走的是同一条降级语义，两处口径一致。
+        // 🚫 不要绑成恒真形态（如 `IS NOT DISTINCT FROM` 或 `(NULL IS NULL OR …)`）：那会让预览
+        //    看到 N 行放大后的结果，与渲染期"只出 1 行"不一致 —— 预览与渲染口径不一致本身就是故障源。
+        result = result.replaceAll("(?<!:):customerProductNo\\b", "NULL");
         return result;
     }
 

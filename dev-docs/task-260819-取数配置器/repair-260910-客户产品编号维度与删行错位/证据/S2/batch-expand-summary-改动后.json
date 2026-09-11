@@ -1,0 +1,194 @@
+[
+ {
+  "case": "A R2 (QT-20260910-0825 S0004/RW-A004)",
+  "part": "S0004",
+  "tab": "产品",
+  "status": "OK",
+  "rowCount": 1,
+  "error": null,
+  "productRowParts": [
+   "S0004"
+  ],
+  "productRowCustProdNos": [
+   "RW-A004"
+  ]
+ },
+ {
+  "case": "A R2 (QT-20260910-0825 S0004/RW-A004)",
+  "part": "S0004",
+  "tab": "BOM",
+  "status": "OK",
+  "rowCount": 8,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "A R2 (QT-20260910-0825 S0004/RW-A004)",
+  "part": "S0004",
+  "tab": "材质元素",
+  "status": "OK",
+  "rowCount": 4,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "A R2 (QT-20260910-0825 S0004/RW-A004)",
+  "part": "S0004",
+  "tab": "产品单价",
+  "status": "OK",
+  "rowCount": 0,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "A R2 (QT-20260910-0825 S0004/RW-A004)",
+  "part": "S0004",
+  "tab": "加工费",
+  "status": "OK",
+  "rowCount": 1,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "A R2 (QT-20260910-0825 S0004/RW-A004)",
+  "part": "S0004",
+  "tab": "自制加工费",
+  "status": "OK",
+  "rowCount": 2,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "B R2 (QT-20260910-0826 0028-2609000015/B1SELF-050259)",
+  "part": "0028-2609000015",
+  "tab": "产品",
+  "status": "OK",
+  "rowCount": 1,
+  "error": null,
+  "productRowParts": [
+   "0028-2609000015"
+  ],
+  "productRowCustProdNos": [
+   "B1SELF-050259"
+  ]
+ },
+ {
+  "case": "B R2 (QT-20260910-0826 0028-2609000015/B1SELF-050259)",
+  "part": "0028-2609000015",
+  "tab": "BOM",
+  "status": "OK",
+  "rowCount": 14,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "B R2 (QT-20260910-0826 0028-2609000015/B1SELF-050259)",
+  "part": "0028-2609000015",
+  "tab": "材质元素",
+  "status": "OK",
+  "rowCount": 2,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "B R2 (QT-20260910-0826 0028-2609000015/B1SELF-050259)",
+  "part": "0028-2609000015",
+  "tab": "产品单价",
+  "status": "OK",
+  "rowCount": 0,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "B R2 (QT-20260910-0826 0028-2609000015/B1SELF-050259)",
+  "part": "0028-2609000015",
+  "tab": "加工费",
+  "status": "OK",
+  "rowCount": 0,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "B R2 (QT-20260910-0826 0028-2609000015/B1SELF-050259)",
+  "part": "0028-2609000015",
+  "tab": "自制加工费",
+  "status": "OK",
+  "rowCount": 3,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "C R2 (QT-20260910-0827 S0004/空客编)",
+  "part": "S0004",
+  "tab": "产品",
+  "status": "OK",
+  "rowCount": 1,
+  "error": null,
+  "productRowParts": [
+   "S0004"
+  ],
+  "productRowCustProdNos": [
+   null
+  ]
+ },
+ {
+  "case": "C R2 (QT-20260910-0827 S0004/空客编)",
+  "part": "S0004",
+  "tab": "BOM",
+  "status": "OK",
+  "rowCount": 8,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "C R2 (QT-20260910-0827 S0004/空客编)",
+  "part": "S0004",
+  "tab": "材质元素",
+  "status": "OK",
+  "rowCount": 4,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "C R2 (QT-20260910-0827 S0004/空客编)",
+  "part": "S0004",
+  "tab": "产品单价",
+  "status": "OK",
+  "rowCount": 0,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "C R2 (QT-20260910-0827 S0004/空客编)",
+  "part": "S0004",
+  "tab": "加工费",
+  "status": "OK",
+  "rowCount": 1,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ },
+ {
+  "case": "C R2 (QT-20260910-0827 S0004/空客编)",
+  "part": "S0004",
+  "tab": "自制加工费",
+  "status": "OK",
+  "rowCount": 2,
+  "error": null,
+  "productRowParts": null,
+  "productRowCustProdNos": null
+ }
+]

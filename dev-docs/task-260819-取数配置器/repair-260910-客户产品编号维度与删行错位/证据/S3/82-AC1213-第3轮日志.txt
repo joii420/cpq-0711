@@ -1,0 +1,91 @@
+[global-setup] Saved auth state for admin → /home/joii/project/cpq/.claude/worktrees/repair-260910-cust-product-no/cpq-frontend/e2e/.auth/admin.json
+[global-setup] Could not save auth state for alice: page.waitForURL: Timeout 15000ms exceeded.
+=========================== logs ===========================
+waiting for navigation until "load"
+============================================================
+    at saveStorageState (/home/joii/project/cpq/.claude/worktrees/repair-260910-cust-product-no/cpq-frontend/e2e/global-setup.ts:72:16)
+    at globalSetup (/home/joii/project/cpq/.claude/worktrees/repair-260910-cust-product-no/cpq-frontend/e2e/global-setup.ts:106:3) {
+  name: 'TimeoutError'
+}
+[global-setup] Could not save auth state for bob: page.waitForURL: Timeout 15000ms exceeded.
+=========================== logs ===========================
+waiting for navigation until "load"
+============================================================
+    at saveStorageState (/home/joii/project/cpq/.claude/worktrees/repair-260910-cust-product-no/cpq-frontend/e2e/global-setup.ts:72:16)
+    at globalSetup (/home/joii/project/cpq/.claude/worktrees/repair-260910-cust-product-no/cpq-frontend/e2e/global-setup.ts:107:3) {
+  name: 'TimeoutError'
+}
+
+Running 2 tests using 1 worker
+
+[1A[2K[1/2] e2e/r0910s3-ac111213.spec.ts:170:1 › AC-12 · 树页签（BOM，__nodeId 口径）删除行为
+[1A[2Ke2e/r0910s3-ac111213.spec.ts:170:1 › AC-12 · 树页签（BOM，__nodeId 口径）删除行为
+[页签] ["产品","BOM","材质元素","加工费","自制加工费"]
+
+[1A[2K[AC-12 表头] ["BOM","销售料号","项次","料号","材料名","组成数量","材料毛重","材料净重","损耗率（%）","重量单位",""]
+
+[1A[2K[AC-12 删前] [["▼✂R0910S3-M1","","","","","","","","","","＋✕"],["✂R0910S3-C1","R0910S3-M1","1","R0910S3-C1","S3子件一","1","3.5","3.1","2","G","＋✕"],["✂R0910S3-C2","R0910S3-M1","2","R0910S3-C2","S3子件二","2","2.6","2.2","3","G","＋✕"],["✂R0910S3-C3","R0910S3-M1","3","R0910S3-C3","S3子件三","3","1.7","1.3","4","G","＋✕"]]
+
+[1A[2K[evidence] 62-AC12-树删除实录.txt
+
+[1A[2K=== AC-12 树页签（BOM / __nodeId 口径）删除 · 改动后（8123/5233） ===
+报价单 QT-20260910-0830 明细行 59b2c099-7981-4462-9c4b-994f24dc386c
+表头=["BOM","销售料号","项次","料号","材料名","组成数量","材料毛重","材料净重","损耗率（%）","重量单位",""]
+
+ 删前第 1 行: ["▼✂R0910S3-M1","","","","","","","","","","＋✕"]
+ 删前第 2 行: ["✂R0910S3-C1","R0910S3-M1","1","R0910S3-C1","S3子件一","1","3.5","3.1","2","G","＋✕"]
+ 删前第 3 行: ["✂R0910S3-C2","R0910S3-M1","2","R0910S3-C2","S3子件二","2","2.6","2.2","3","G","＋✕"]
+ 删前第 4 行: ["✂R0910S3-C3","R0910S3-M1","3","R0910S3-C3","S3子件三","3","1.7","1.3","4","G","＋✕"]
+
+点击的是**屏幕第 2 行**: ["✂R0910S3-C1","R0910S3-M1","1","R0910S3-C1","S3子件一","1","3.5","3.1","2","G","＋✕"]
+
+ 删后第 1 行: ["▼✂R0910S3-M1","","","","","","","","","","＋✕"]
+ 删后第 2 行: ["✂R0910S3-C1","R0910S3-M1","1","R0910S3-C1","S3子件一","1","3.5","3.1","2","G","＋✕"]
+ 删后第 3 行: ["✂R0910S3-C2","R0910S3-M1","2","R0910S3-C2","S3子件二","2","2.6","2.2","3","G","＋✕"]
+ 删后第 4 行: ["✂R0910S3-C3","R0910S3-M1","3","R0910S3-C3","S3子件三","3","1.7","1.3","4","G","＋✕"]
+
+实际消失: []
+是否 = 被点那一行: 否
+
+发出的请求: {
+  "url": "http://localhost:5233/api/cpq/quotations/24032985-36d7-458d-a460-634d3239857d/line-items/59b2c099-7981-4462-9c4b-994f24dc386c/tree/delete-preview",
+  "body": {
+    "componentId": "7f9a5bbf-264f-4b07-8dff-3118a9428a48",
+    "mode": "ROW",
+    "nodeId": "R0910S3-M1/R0910S3-C1",
+    "rowKey": "R0910S3-M1/R0910S3-C1::R0910S3-M1||R0910S3-C1"
+  }
+}
+deleted_tree_nodes 前=∅
+deleted_tree_nodes 后=∅
+BOM deleted_row_keys 前=[]
+BOM deleted_row_keys 后=[]
+
+
+[1A[2K  1) e2e/r0910s3-ac111213.spec.ts:170:1 › AC-12 · 树页签（BOM，__nodeId 口径）删除行为 ─────────────────────────
+
+    Error: AC-12：删后行数应减少
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeLessThan[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: < [32m4[39m
+    Received:   [31m4[39m
+
+      251 |
+      252 |   expect(sent, 'AC-12：没抓到删除请求 ⇒ 量具问题，判【未验证】').not.toBeNull();
+    > 253 |   expect(after.length, 'AC-12：删后行数应减少').toBeLessThan(before.length);
+          |                                         ^
+      254 |   expect(after.map(key), 'AC-12：树页签删掉的必须是被点的那一行').toEqual(before.filter((_, i) => i !== 1).map(key));
+      255 | });
+      256 |
+        at /home/joii/project/cpq/.claude/worktrees/repair-260910-cust-product-no/cpq-frontend/e2e/r0910s3-ac111213.spec.ts:253:41
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error Context: test-results/r0910s3-ac111213-AC-12-·-树页签（BOM，-nodeId-口径）删除行为/error-context.md
+
+
+[1A[2K[2/2] e2e/r0910s3-ac111213.spec.ts:258:1 › AC-13 · 手工新增行（_origin:manual）删除行为
+[1A[2K  1 failed
+    e2e/r0910s3-ac111213.spec.ts:170:1 › AC-12 · 树页签（BOM，__nodeId 口径）删除行为 ──────────────────────────
+  1 did not run
