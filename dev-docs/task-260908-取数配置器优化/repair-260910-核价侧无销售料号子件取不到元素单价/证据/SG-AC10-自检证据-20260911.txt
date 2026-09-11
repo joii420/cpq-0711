@@ -1,0 +1,36 @@
+=== AC-10 自检证据 2026-09-11 01:07:07 PDT ===
+--- ① 迁移 success ---
+$ SELECT version,description,installed_on,success FROM flyway_schema_history WHERE version='440';
+ version |                    description                    |        installed_on        | success 
+---------+---------------------------------------------------+----------------------------+---------
+ 440     | repair260910 costing element price customer level | 2026-09-10 19:55:18.062366 | t
+(1 row)
+
+--- ② 应用真重启（本片未执行重启，给的是「V440 落库之后确有一次完整冷启且启动自检通过」的原始日志）---
+$ ps -o pid=,lstart=,etime= -p <8099 的 pid>
+pid=16007
+16007 Thu Sep 10 23:39:40 2026    01:27:27
+$ grep -E "Flyway|SelfCheck|started in|Profile" ACCEPT_backend8099.log | head
+2026-09-10 23:39:47.700 INFO  [org.fly.cor.FlywayExecutor] (Quarkus Main Thread) Database: jdbc:postgresql://10.177.152.12:5432/cpq_db_0910 (PostgreSQL 16.13)
+2026-09-10 23:39:49.260 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (Quarkus Main Thread) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-09-10 23:39:49.622 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (Quarkus Main Thread) [dataset] Registry↔DDL 自检通过：97 张表 / 1765 列（3 套数据集）
+2026-09-10 23:39:50.173 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (Quarkus Main Thread) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-09-10 23:39:50.199 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (Quarkus Main Thread) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-10 23:39:50.227 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (Quarkus Main Thread) [semantic-graph] semantic_node.dialect：57 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-10 23:39:50.228 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (Quarkus Main Thread) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 153 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-09-10 23:39:50.424 INFO  [io.quarkus] (Quarkus Main Thread) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 9.159s. Listening on: http://localhost:8099
+$ tr ... /proc/16007/environ | grep DB_NAME   (验明正身：8099 连的就是 cpq_db_0910)
+DB_NAME=cpq_db_0910
+--- ③ 后端 401 ---
+$ curl -s --noproxy "*" -o /dev/null -w "%{http_code}" http://localhost:8099/api/cpq/components   # 本片被测后端
+401
+$ curl ... http://localhost:8081/api/cpq/components   # AC 原文点名的共享端口（只读探活，连的是 cpq_db_0724）
+401
+--- ④ 前端 200 ---
+$ curl ... http://localhost:5175/   # 本片被测前端
+200
+$ curl ... http://localhost:5174/   # AC 原文点名的共享端口
+200
+--- 验明正身：经 5175 代理读到的单数 vs DB ---
+totalElements= 4 ['QT-20260911-0009', 'QT-20260911-0008', 'QT-20260910-0005', 'QT-20260910-0004']
+db count=4
