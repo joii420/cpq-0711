@@ -1,0 +1,7 @@
+T260909FT-报价模板#r3u62r v1.0 [ARCHIVED]|builder_221dc7668ab6|b90f66d1bb5d863ee827530eba23f34b|f|7fba05dfd1dbea768952b48abad612f3|t
+T260909FT-报价模板#r3xck1 v1.0 [ARCHIVED]|builder_221dc7668ab6|b90f66d1bb5d863ee827530eba23f34b|f|7fba05dfd1dbea768952b48abad612f3|t
+正泰测试模板1 v1.0 [PUBLISHED]|builder_221dc7668ab6|7fba05dfd1dbea768952b48abad612f3|t|7fba05dfd1dbea768952b48abad612f3|t
+正泰测试模板1 v1.1 [PUBLISHED]|builder_221dc7668ab6|7fba05dfd1dbea768952b48abad612f3|t|7fba05dfd1dbea768952b48abad612f3|t
+正泰测试模板1 v1.2 [PUBLISHED]|builder_221dc7668ab6|7fba05dfd1dbea768952b48abad612f3|t|7fba05dfd1dbea768952b48abad612f3|t
+取值测试模板1 v1.0 [PUBLISHED]|builder_7277969cc41c|2b7fa3b96709d24f4338ddd174730395|f|c5c10bc26163c3e3e006f1ef9edc383c|t
+取值测试模板2 v1.0 [PUBLISHED]|builder_a71947b68d50|995ccd087401f9cd20565958702d410b|f|5e5e16e4057ee81126ee36c07d4e1bad|t
