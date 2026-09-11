@@ -16,6 +16,7 @@
 import React from 'react';
 import { Alert, Button, Table, Tag } from 'antd';
 import type { ConfigureProductResponse, CompositeProcessItem, ConfigurePart } from '../../../types/configure';
+import type { BoundMaterial } from './BindExistingPartPanel';
 import { trimTrailingZeros } from '../../../utils/precision';
 import { materialTags, partTypeTags, processText } from './PartCardList';
 import { partDisplayName } from './configurePartsRequest';
@@ -40,6 +41,15 @@ export interface SubmitFailure {
 interface Props {
   customerProductNo: string;
   customerProductName: string;
+  /**
+   * 🆕 task-260910 · S-7：非空 = 走「直接绑定已有销售料号」路径（AC-18）。
+   *
+   * 🚨 **它必须影响提交前那条提示条**：绑定路径**不进指纹**，宿主也不会去查，
+   *    `preview` 会停在初始值 `{checking:false, matched:false}` ——
+   *    照原来的三分支渲染就会显示「产品库里没有相同配置的产品，**将新建一个销售料号**」，
+   *    而这条路恰恰**不铸新号**。那不是措辞问题，是界面在说假话。
+   */
+  bound: BoundMaterial | null;
   parts: ConfigurePart[];
   composites: CompositeProcessItem[];
   preview: FingerprintPreview;
@@ -76,6 +86,15 @@ function errorGuide(
         hint: '这个客户产品编号在你填完之后被别人占用了（并发提交）。同一个编号只能对应一个销售料号。',
         action: <Button size="small" type="primary" onClick={() => onOpenExistingProducts(productNo)}>→ 打开「从产品库添加」</Button>,
       };
+    // ── task-260910 · F-4（AC-19 / AC-20 反向）：绑定路径的两个新错误码 ──
+    case 'BIND_MATERIAL_NOT_FOUND':
+      return {
+        hint: '所选销售料号在当前客户下不存在 —— 料号按客户隔离，请回到步骤 2 重新检索并选一个当前客户名下的料号。',
+      };
+    case 'BIND_AND_PARTS_EXCLUSIVE':
+      return {
+        hint: '「直接绑定已有销售料号」与「添加配件」两种方式互斥，不能同时提交。请回到步骤 2 只保留一种（移除绑定，或移除已加的配件）。',
+      };
     case 'OUTSOURCED_PART_REQUIRED':
       return {
         hint: '外购件配件必须选一个料号。请回到步骤 2 补选，或到料号维护里录入外购件。',
@@ -101,14 +120,36 @@ function errorGuide(
 }
 
 const ConfirmStep: React.FC<Props> = ({
-  customerProductNo, customerProductName, parts, composites, preview, result, failure, onOpenExistingProducts,
+  customerProductNo, customerProductName, bound, parts, composites, preview, result, failure, onOpenExistingProducts,
 }) => {
   // ── 提交成功：结果页（原型状态 B / C 的 alert + 状态 C 的「带出的销售产品信息」表）──
   if (result) {
     const info = result.reusedProductInfo ?? null;
     return (
       <div>
-        {result.fingerprintMatched ? (
+        {bound ? (
+          /*
+           * 绑定路径的结果页（AC-18）。
+           * 🚨 **不能落到下面那两个分支**：`fingerprintMatched` 恒 false 且 `reusedHfPartNos` 为 `[]`
+           *    （api.md §2.3 明列）⇒ 会渲染成「已新建一个销售料号 / 新料号已生成」，
+           *    而这条路一个新料号都没铸。
+           */
+          <Alert
+            type="success"
+            showIcon
+            icon={<span>🔗</span>}
+            message={<b>已把客户产品编号绑定到已有销售料号</b>}
+            description={(
+              <div>
+                销售料号 <Mono>{bound.materialNo}</Mono>
+                <div style={{ color: '#909399', fontSize: 12, marginTop: 4 }}>
+                  没有新建料号、没有写新的 BOM / 元素行。你的客户产品编号 {customerProductNo}
+                  {' '}已作为新的映射关系记录下来。
+                </div>
+              </div>
+            )}
+          />
+        ) : result.fingerprintMatched ? (
           <Alert
             type="info"
             showIcon
@@ -197,6 +238,21 @@ const ConfirmStep: React.FC<Props> = ({
   const summary: SummaryRow[] = [
     { key: 'cpno', label: '客户产品编号', content: <Mono>{customerProductNo || '—'}</Mono> },
     { key: 'cpname', label: '客户产品名称', content: customerProductName || '—' },
+    // 绑定路径没有配件 —— 摘要里给出的是绑定关系本身，🚫 不是一行「配件 1: —」
+    ...(bound
+      ? [{
+          key: 'bind',
+          label: '绑定的销售料号',
+          content: (
+            <span>
+              <Mono>{bound.materialNo}</Mono>
+              {bound.partName ? ` · ${bound.partName}` : ''}
+              {bound.specification ? ` · ${bound.specification}` : ''}
+              <Tag color="green" style={{ marginLeft: 8 }}>直接绑定</Tag>
+            </span>
+          ),
+        }]
+      : []),
     ...parts.map((p, i) => ({
       key: p.uid,
       label: `配件 ${i + 1}`,
@@ -213,15 +269,39 @@ const ConfirmStep: React.FC<Props> = ({
     {
       key: 'combo',
       label: '组合工序',
-      content: composites.length === 0
-        ? <span style={{ color: '#c0c4cc' }}>—</span>
-        : composites.map((c) => c.name).join(' / '),
+      content: bound
+        ? <span style={{ color: '#c0c4cc' }}>不适用（绑定已有料号，不采集工序）</span>
+        : composites.length === 0
+          ? <span style={{ color: '#c0c4cc' }}>—</span>
+          : composites.map((c) => c.name).join(' / '),
     },
   ];
 
   return (
     <div>
-      {preview.checking ? (
+      {bound ? (
+        /*
+         * 绑定路径的提示条（AC-18）。文案沿用 `原型图/01` 第四态那条 alert 的口径 ——
+         * 🚫 这里**不许**出现「将新建一个销售料号」：这条路不铸新号、不进指纹。
+         */
+        <Alert
+          type="success"
+          showIcon
+          icon={<span>🔗</span>}
+          message={<b>将把客户产品编号绑定到已有销售料号，不新建料号</b>}
+          description={(
+            <div>
+              销售料号 <Mono>{bound.materialNo}</Mono>
+              {bound.partName || bound.specification
+                ? `（${[bound.partName, bound.specification].filter(Boolean).join(' ')}）`
+                : ''}
+              <div style={{ color: '#909399', fontSize: 12, marginTop: 4 }}>
+                该产品沿用此料号的既有 BOM 与材质数据；不进指纹比对，也不写新的 BOM / 元素行。
+              </div>
+            </div>
+          )}
+        />
+      ) : preview.checking ? (
         <Alert type="info" message="正在与产品库比对指纹…" showIcon />
       ) : preview.matched ? (
         <Alert

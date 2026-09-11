@@ -289,8 +289,8 @@ public class DsQuoteRecordService {
             }
         }
 
-        // ── ⑥ 逐 sheet：读基底 → 锚定 → 整组删 → 批量插 ────────────────────────────
-        int totalRows = 0, unanchored = 0, axisCount = 0;
+        // ── ⑥ 逐 sheet：读基底 → 锚定 → 去重影 → 整组删 → 批量插 ────────────────────
+        int totalRows = 0, unanchored = 0, axisCount = 0, shadowRows = 0;
         for (Map.Entry<String, Map<String, List<DsRecordRow>>> se : bySheet.entrySet()) {
             SheetDef sheet = sheetByTable.get(se.getKey());
             Map<String, List<DsRecordRow>> byAxis = se.getValue();
@@ -305,6 +305,10 @@ public class DsQuoteRecordService {
             for (Map.Entry<String, List<DsRecordRow>> ae : byAxis.entrySet()) {
                 // 纯内存锚定（🚫 无查询）
                 DsRecordProjector.anchor(ae.getValue(), base.get(ae.getKey()), colDefs, matchCols, grainCols);
+                // 🆕 task-260910 · B-17（AC-16 / AC-17）：同卡片渲染重影 —— 必须在 anchor **之后**，
+                //    判据就是「一条锚上了、另一条逐列相同却锚不上」。见 dropAnchorShadows 的注释。
+                shadowRows += DsRecordCardDeduper.dropAnchorShadows(ae.getValue(), se.getKey(), ae.getKey(),
+                        colDefs, matchCols);
                 for (DsRecordRow row : ae.getValue()) if (row.originId == null) unanchored++;
                 totalRows += ae.getValue().size();
                 axisCount++;
@@ -320,8 +324,8 @@ public class DsQuoteRecordService {
 
         Summary s = new Summary(bySheet.size(), axisCount, totalRows, unanchored);
         LOG.infof("[ds-record] quotation=%s 写入 _record：sheets=%d axes=%d rows=%d unanchored=%d "
-                        + "crossCardDeduped=%d treeDerivedAxes=%d%s crossProductAxisSkipped=%d%s"
-                        + " (sql 与产品数/轴值数无关)",
+                        + "crossCardDeduped=%d sameCardShadowDropped=" + shadowRows + " treeDerivedAxes=%d%s"
+                        + " crossProductAxisSkipped=%d%s (sql 与产品数/轴值数无关)",
                 quotationId, s.sheets(), s.axes(), s.rows(), s.unanchoredRows(), dedupedRows,
                 derivedAxes.size(), derivedAxes.isEmpty() ? "" : " " + derivedAxes,
                 crossProductSkippedRows,

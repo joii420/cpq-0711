@@ -13,8 +13,6 @@ import com.cpq.configure.dto.MaterialSelection;
 import com.cpq.configure.dto.PartRequest;
 import com.cpq.configure.dto.ReusedProductInfoDTO;
 import com.cpq.configure.dto.SalesConfigContext;
-import com.cpq.basicdata.v6.versioning.VersionedGroupSpec;
-import com.cpq.basicdata.v6.versioning.VersionedV6Writer;
 import com.cpq.partno.PartNoContext;
 import com.cpq.partno.PartNoProvider;
 import com.cpq.seltemplate.dto.EffectiveTemplateDTO;
@@ -22,6 +20,7 @@ import com.cpq.seltemplate.service.EffectiveTemplateService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
+import org.jboss.logging.Logger;
 
 import java.math.BigDecimal;
 import java.time.YearMonth;
@@ -53,7 +52,11 @@ import java.util.stream.Collectors;
  * <ul>
  *   <li>{@code mat_bom}: V153 仅加了 part_version，无 is_current 列；INSERT 语句去掉该列.</li>
  *   <li>{@code quotation_line_item}: 无 quantity 列 (迁移中从未添加)；INSERT 语句去掉该列.
- *       product_id / template_id 在 V30 已改为 nullable — 选配行直接填 product_part_no_snapshot.</li>
+ *       product_id / template_id 在 V30 已改为 nullable — 选配行填 product_part_no_snapshot 而不填 product_id.
+ *       ⚠️ <b>2026-09-10 更正（task-260910 · D-38，修 BL-0202）</b>：本行原文曾被读成
+ *       「选配行有意不挂模板」——<b>那是误读</b>。template_id <b>现在必须写</b>
+ *       （值 = 本报价单的 customer_template_id），否则选配产品卡<b>刷新后</b>渲染不出组件结构。
+ *       理由与四条证据见 {@link #insertLineItem(UUID, String, UUID, String, UUID)} 的 javadoc.</li>
  *   <li>{@code mat_part_version_log}: PK 为 (customer_product_no NOT NULL, hf_part_no, version).
  *       选配阶段没有 customer_product_no（料号-客户映射尚未建立），故 {@code initPartVersionBaseline}
  *       无法实现 — 基线行将在后续数据导入（PartVersionService / V156）时由 per-customer 流程写入.
@@ -69,14 +72,13 @@ import java.util.stream.Collectors;
 @ApplicationScoped
 public class ConfigureProductService {
 
+    private static final Logger LOG = Logger.getLogger(ConfigureProductService.class);
+
     @Inject
     EntityManager em;
 
     @Inject
     PartNoProvider partNoProvider;
-
-    @Inject
-    VersionedV6Writer versionedWriter;
 
     /** task-260903 · 阶段 A：选配产出写 {@code ds_quote_*} 新表体系（取代下面那组 {@code *V6} 方法）。 */
     @Inject
@@ -169,7 +171,7 @@ public class ConfigureProductService {
         // 已解析的 elements 算指纹，否则「预览命中」≠「提交命中」，回到 3a 之前那种误导性的恒 false。
         List<String> lfDefCodes = req.compositeProcesses == null ? List.of()
             : req.compositeProcesses.stream().map(cp -> cp.defCode).collect(Collectors.toList());
-        prepareParts(req.parts, lfDefCodes, false);   // 预览端：不强制总重（见方法注释）
+        prepareParts(req.customerNo, req.parts, lfDefCodes, false);   // 预览端：不强制总重（见方法注释）
 
         int totalQty = req.parts.stream()
             .mapToInt(pr -> (pr.quantity == null || pr.quantity < 1) ? 1 : pr.quantity)
@@ -188,7 +190,7 @@ public class ConfigureProductService {
             resp.matched = true;
             resp.hfPartNo = matched;
             resp.matchedPartNo = matched;
-            resp.snapshot = buildSnapshot(matched);
+            resp.snapshot = buildSnapshot(req.customerNo, matched);
             return resp;
         }
 
@@ -216,7 +218,7 @@ public class ConfigureProductService {
         resp.matched = true;
         resp.hfPartNo = parentHit;
         resp.matchedPartNo = parentHit;
-        resp.snapshot = buildSnapshot(parentHit);
+        resp.snapshot = buildSnapshot(req.customerNo, parentHit);
         return resp;
     }
 
@@ -270,41 +272,38 @@ public class ConfigureProductService {
         }
     }
 
+    /**
+     * <b>task-260910 · B-6（AC-22）</b>：指纹预览快照。
+     *
+     * <p><b>本次删掉了两段查询</b>（api.md §2.4，实测<b>全前端零消费方</b>，查完即丢）：
+     * <ul>
+     *   <li>{@code unitWeightGrams} —— 原查 {@code v_compat_material_master.unit_weight}；</li>
+     *   <li>{@code compositeProcesses} —— 原查已废弃的 V6 {@code capacity}。</li>
+     * </ul>
+     * 🚫 不要「顺手补回来」：{@code LookupFingerprintResponse.Snapshot} 的两个字段已同步删除，
+     * 补回来会先编译不过。要加就走契约变更（api.md）。
+     *
+     * <p>{@code processes} 的数据源从 V6 {@code unit_price} 切到 {@code ds_quote_self_process_fee}。
+     * ⚠️ 原 SQL 用 {@code DISTINCT ON (seq_no)} <b>跨客户</b>取；新表有 {@code customer_no} 复合轴
+     * ⇒ 改为<b>按客户精确取</b>，{@code DISTINCT ON} 不再需要（也不该有：它会随机丢掉同项次的行）。
+     *
+     * <p>AC-22 的第二条断言（确认页显示已有产品的<b>真实落库顺序</b>）就靠这里的
+     * {@code ORDER BY operation_item_seq} —— 落库侧刻意不排序（见
+     * {@link #appendSelfProcessFeeRows}），所以这个顺序就是「第一次写入时用户选的顺序」。
+     */
     @SuppressWarnings("unchecked")
-    LookupFingerprintResponse.Snapshot buildSnapshot(String hfPartNo) {
+    LookupFingerprintResponse.Snapshot buildSnapshot(String customerNo, String hfPartNo) {
         LookupFingerprintResponse.Snapshot s = new LookupFingerprintResponse.Snapshot();
 
-        // unit_weight from material_master (V6, material_no = hfPartNo)
-        List<Object> w = em.createNativeQuery(
-                "SELECT unit_weight FROM v_compat_material_master WHERE material_no = :p")
-            .setParameter("p", hfPartNo).getResultList();
-        s.unitWeightGrams = (w.isEmpty() || w.get(0) == null)
-            ? null
-            : new BigDecimal(w.get(0).toString());
-
-        // 工序: V6 unit_price（自制加工费，is_current）；DISTINCT ON seq_no 跨客户取工序列表
         List<Object[]> procs = em.createNativeQuery(
-                "SELECT DISTINCT ON (seq_no) operation_no, seq_no FROM unit_price " +
-                "WHERE finished_material_no = :p AND cost_type = '自制加工费' AND is_current = true ORDER BY seq_no")
+                "SELECT operation_no, operation_item_seq FROM ds_quote_self_process_fee " +
+                "WHERE customer_no = :c AND material_no = :p ORDER BY operation_item_seq, item_seq")
+            .setParameter("c", customerNo)
             .setParameter("p", hfPartNo).getResultList();
-        s.processes = procs.stream().map(row -> {
+        s.processes = procs.stream().map(row -> {                          // 循环体内零查库（纯 DTO 组装）
             Map<String, Object> m = new HashMap<>();
             m.put("processCode", row[0]); // operation_no → processCode
             m.put("seqNo", row[1]);
-            return m;
-        }).collect(Collectors.toList());
-
-        // 组合工艺: V6 capacity（QUOTE_ASSEMBLY，is_current）；V6 不存 participatingParts/paramValues → 降级 null
-        List<Object[]> cprocs = em.createNativeQuery(
-                "SELECT process_no, seq_no FROM capacity " +
-                "WHERE material_no = :p AND resource_group_no = 'QUOTE_ASSEMBLY' AND is_current = true ORDER BY seq_no")
-            .setParameter("p", hfPartNo).getResultList();
-        s.compositeProcesses = cprocs.stream().map(row -> {
-            Map<String, Object> m = new HashMap<>();
-            m.put("defCode", row[0]); // process_no → defCode
-            m.put("seqNo", row[1]);
-            m.put("participatingParts", null); // V6 capacity 不存此字段，已知降级
-            m.put("paramValues", null);        // V6 capacity 不存此字段，已知降级
             return m;
         }).collect(Collectors.toList());
 
@@ -354,8 +353,11 @@ public class ConfigureProductService {
             dsWriter.upsertMaterial(customerCode, outNo, meta[0], null, null, null,
                 SelDsQuoteWriter.TYPE_OUTSOURCED, SelDsQuoteWriter.CATEGORY_DEFAULT, opOf(operatorId));
             dsWriter.writeOutsourcedSelfRow(customerCode, outNo, opOf(operatorId));
+            // 🆕 task-260910 · B-3（AC-3）：外购件工序改落 ds_quote_assembly_fee（组装加工费）。
+            //    🚨 D-6 是**业务计算口径变更**，不是等价搬运：费用类别由「自制加工费」→「组装加工费」。
+            //    ⇒ 改回 insertProcessSimpleUnitPriceV6 会把外购件工序算进自制成本，报价金额会错。
             if (pr.processNos != null && !pr.processNos.isEmpty()) {
-                insertProcessSimpleUnitPriceV6(outNo, pr.processNos, customerCode, cat);
+                insertOutsourcedProcessAssemblyFee(outNo, pr.processNos, customerCode, cat, opOf(operatorId));
             }
             return outNo;
         }
@@ -364,17 +366,19 @@ public class ConfigureProductService {
             if (pr.existingHfPartNo == null || pr.existingHfPartNo.isBlank()) {
                 throw new IllegalArgumentException("existing 模式 existingHfPartNo 必填");
             }
-            // 存在性校验：V6 material_master 优先，V44 mat_part 兜底（修 B-2）。
-            // 指纹复用(lookupHfByFingerprint 查 V44 mat_part)命中的历史选配料号可能只在 V44、
-            // 尚未回填 V6 → 此前只查 material_master 会误报"料号不存在"。
+            // 🆕 task-260910 · B-10（AC-5 / AC-7）：存在性校验切 ds_quote_material 并按客户收窄（D-2）。
+            //    原实现查 v_compat_material_master（无客户维度）⇒ 别客户的料号也算「存在」。
+            //    ⚠️ 只取存在性，不取任何列值 —— 原实现 SELECT 的 material_recipe_id / unit_weight
+            //    两列从来没被消费（v6rows 只参与 isEmpty() 判断），新表也没有 material_recipe_id。
             @SuppressWarnings("unchecked")
-            List<Object[]> v6rows = em.createNativeQuery(
-                    "SELECT material_recipe_id, unit_weight FROM v_compat_material_master WHERE material_no = :p")
+            List<Object> existsRows = em.createNativeQuery(
+                    "SELECT 1 FROM ds_quote_material WHERE customer_no = :cn AND material_no = :p LIMIT 1")
+                .setParameter("cn", customerCode)
                 .setParameter("p", pr.existingHfPartNo)
                 .getResultList();
-            if (v6rows.isEmpty()) {
-                // V6 不存在 → 料号不存在（Phase 3 后 material_master 为权威，V44 mat_part 已停写）
-                throw new IllegalArgumentException("料号不存在: " + pr.existingHfPartNo);
+            if (existsRows.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "料号不存在(客户 " + customerCode + " 名下): " + pr.existingHfPartNo);
             }
             // 跨客户复用: V6 材质/元素按 customer_no 存。指纹命中已有料号(前端自动切 partMode=existing)
             // 复用到新客户的报价单时,当前客户名下可能无 element_bom_item/material_bom_item → 材质/元素 Tab 空。
@@ -382,17 +386,17 @@ public class ConfigureProductService {
             backfillV6MaterialsForCustomer(pr.existingHfPartNo, customerCode);
             // existing 模式无 processNos: 老行为, 直接复用物理对象
             if (pr.processNos == null || pr.processNos.isEmpty()) {
-                // hotfix: mat_process 按 customer_id 隔离, 新客户复用老料号时本客户 mat_process 0 行
-                // → ImplicitJoinRewriter 注入 customer_id 谓词查不到 → 工序 Tab 加载中.
-                // 如果当前客户尚无该料号的 mat_process 数据, 从任意已有客户复制一份给当前 customerId.
+                // task-260910 · B-5: ds_quote_self_process_fee 按 customer_no 隔离，新客户复用老料号时
+                // 本客户名下 0 行 → 工序页签空。若当前客户尚无该料号的工序数据，
+                // 从任意已有客户复制一份给当前客户（🚫 不搬单价，见方法注释）。
                 if (customerId != null) {
-                    backfillProcessesForNewCustomer(pr.existingHfPartNo, customerId);
+                    backfillProcessesForNewCustomer(pr.existingHfPartNo, customerId, opOf(operatorId));
                 }
                 return pr.existingHfPartNo;
             }
-            // V6 unit_price 版本化写入（覆盖当前 customer 工序）
-            // per-lineItem 工序渲染由 insertQuotationLineProcesses 负责，加工费由 unit_price 视图提供
-            insertProcessSimpleUnitPriceV6(pr.existingHfPartNo, pr.processNos, customerCode, cat);
+            // 🆕 task-260910 · B-1：ds_quote_self_process_fee 版本化写入（覆盖当前 customer 工序）
+            // per-lineItem 工序渲染由 insertQuotationLineProcesses 负责，加工费由组件 SQL 直读新表
+            insertProcessSimpleUnitPriceV6(pr.existingHfPartNo, pr.processNos, customerCode, cat, opOf(operatorId));
             // 仍返老 hfPartNo, 卡片显示用户选的料号
             return pr.existingHfPartNo;
         }
@@ -438,11 +442,11 @@ public class ConfigureProductService {
             return registered; // 并发败者：先赢者已落库，复用其号，跳过本次落库
         }
 
-        // 先赢者：写 V6 unit_price 工序 — 需要 customerCode (NOT NULL，上方已校验非空)
+        // 先赢者：写 ds_quote_self_process_fee 工序 — 需要 customerCode (NOT NULL，上方已校验非空)
         // ⚠️ AC-19③：seq_no 按 processNos 数组原始顺序赋值（不排序）。指纹侧排序、落库侧不排序，
         //    两者有意不对称 —— 换序复用同一料号，但显示顺序沿用第一次写入的那一次。
         if (pr.processNos != null && !pr.processNos.isEmpty()) {
-            insertProcessSimpleUnitPriceV6(hfPartNo, pr.processNos, customerCode, cat);
+            insertProcessSimpleUnitPriceV6(hfPartNo, pr.processNos, customerCode, cat, opOf(operatorId));
         }
 
         // V6 双写（AP-53 续 6 Phase 1）：确保 material_master + element_bom_item 有本料号。
@@ -655,11 +659,13 @@ public class ConfigureProductService {
     /**
      * 装载本次请求的主数据快照 —— <b>固定 6 条 SQL，与材质数 / 工序数 / 配件数无关</b>。
      *
+     * @param customerNo        客户编号（{@code customer.code}）—— ⑥ 外购件料号按客户隔离，必填
+     *                          （task-260910 · B-10 / D-2）
      * @param parts             本次请求的全部配件
      * @param compositeDefCodes 组合工艺 defCode（值 = {@code process_master.process_no}），可为 null
      */
     @SuppressWarnings("unchecked")
-    ConfigureCatalog loadCatalog(List<PartRequest> parts, List<String> compositeDefCodes) {
+    ConfigureCatalog loadCatalog(String customerNo, List<PartRequest> parts, List<String> compositeDefCodes) {
         ConfigureCatalog cat = new ConfigureCatalog();
         if (parts == null) parts = List.of();
 
@@ -744,9 +750,19 @@ public class ConfigureProductService {
         }
 
         // ⑥ 外购件料号
+        //    🆕 task-260910 · B-10（AC-5 / AC-7）：v_compat_material_master → ds_quote_material，
+        //       并加 customer_no 过滤（D-2）。⚠️ 加客户维度后本查询同时成了「该客户下存在性校验」：
+        //       别的客户名下的外购件料号在这里查不到 ⇒ resolvePart 会按 OUTSOURCED_PART_REQUIRED
+        //       拒收，这正是 D-2 想要的（不许把别客户的料号选进来）。
         if (!outsourcedNos.isEmpty()) {
+            if (customerNo == null || customerNo.isBlank()) {
+                throw new IllegalArgumentException(
+                    "外购件料号校验需要客户编号（customerNo）——报价侧料号库按客户隔离");
+            }
             List<Object[]> rows = em.createNativeQuery(
-                    "SELECT material_no, material_name, material_type FROM v_compat_material_master WHERE material_no IN (:nos)")
+                    "SELECT material_no, material_name, material_type FROM ds_quote_material " +
+                    "WHERE customer_no = :cn AND material_no IN (:nos)")
+                .setParameter("cn", customerNo)
                 .setParameter("nos", outsourcedNos).getResultList();
             for (Object[] r : rows) {
                 cat.outsourcedByNo.put(r[0].toString(), new String[]{
@@ -764,8 +780,8 @@ public class ConfigureProductService {
      * 幂等：{@link MaterialSelection#materialResolved} 下沉到 material 级，重复调用不会误报
      * {@code MATERIAL_SOURCE_AMBIGUOUS}（评审 P2-15）。
      */
-    ConfigureCatalog prepareParts(List<PartRequest> parts, List<String> compositeDefCodes) {
-        return prepareParts(parts, compositeDefCodes, true);
+    ConfigureCatalog prepareParts(String customerNo, List<PartRequest> parts, List<String> compositeDefCodes) {
+        return prepareParts(customerNo, parts, compositeDefCodes, true);
     }
 
     /**
@@ -778,8 +794,9 @@ public class ConfigureProductService {
      *                   代价是：没填重量时预览按 {@code WEIGHT=0} 算，与最终提交的指纹不同 ⇒
      *                   <b>可能预览未命中而提交命中</b>（偏保守方向，不会造成错误复用）。
      */
-    ConfigureCatalog prepareParts(List<PartRequest> parts, List<String> compositeDefCodes, boolean submitting) {
-        ConfigureCatalog cat = loadCatalog(parts, compositeDefCodes);
+    ConfigureCatalog prepareParts(String customerNo, List<PartRequest> parts, List<String> compositeDefCodes,
+                                  boolean submitting) {
+        ConfigureCatalog cat = loadCatalog(customerNo, parts, compositeDefCodes);
         if (parts != null) {
             for (PartRequest pr : parts) preparePart(pr, cat, submitting);   // 循环体内零查库（全部走 catalog）
         }
@@ -1026,16 +1043,25 @@ public class ConfigureProductService {
     // insertMatPart 已在 Phase 3 移除（V44 mat_part 写入停用）
 
     /**
-     * Phase 3 切 V6：existing 路径新客户复用老料号时，确保当前客户在 unit_price 中有工序数据。
+     * <b>task-260910 · B-5（AC-1）</b>：existing 路径新客户复用老料号时，确保当前客户在
+     * {@code ds_quote_self_process_fee} 中有工序数据。
      *
-     * <p>unit_price 按 customer_no（客户编码字符串）隔离，新客户首次复用 → 该客户名下无工序行
-     * → 工序 Tab 空。幂等：当前客户已有 is_current=true 行时跳过。
-     * 无数据时从该料号任一现有客户复制工序（operation_no/seq_no/currency/unit），
-     * 写成当前客户的新版本（writeVersionedGroup）。
+     * <p>{@code ds_quote_self_process_fee} 的轴是 {@code (customer_no, material_no)}，新客户首次复用
+     * ⇒ 该客户名下无工序行 ⇒ 工序页签空。幂等：当前客户已有行时跳过。
+     * 无数据时从该料号任一现有客户复制工序（{@code operation_no / operation_item_seq /
+     * input_material_no / currency / pricing_unit}），写成当前客户的新组。
+     *
+     * <p>🚫 <b>{@code value}（单价）与 {@code ratio_pct} 刻意不复制</b> —— 单价是<b>按客户</b>谈的，
+     * 跨客户搬价格是业务错误。老实现（{@code unit_price}）同样只搬 operation_no/seq/currency/unit，
+     * 这里逐字保持该口径。
+     *
+     * <p>📌 <b>原方法头那句「hotfix: {@code mat_process} 按 customer_id 隔离」已删除</b>：
+     * 实测全工程 {@code mat_process} 表名位引用 = 0，方法体查的一直是 {@code unit_price}
+     * （现为 {@code ds_quote_self_process_fee}）。那句注释会把下一个人引到一张根本不存在写点的表上。
      */
     @SuppressWarnings("unchecked")
-    void backfillProcessesForNewCustomer(String hfPartNo, java.util.UUID currentCustomerId) {
-        // 把 currentCustomerId(UUID) 转成 customer_no（unit_price 用 code 字符串）
+    void backfillProcessesForNewCustomer(String hfPartNo, java.util.UUID currentCustomerId, String operator) {
+        // 把 currentCustomerId(UUID) 转成 customer_no（报价侧新表一律用 customer.code 字符串）
         List<Object> cc = em.createNativeQuery(
                 "SELECT code FROM customer WHERE id = :id")
             .setParameter("id", currentCustomerId).getResultList();
@@ -1044,42 +1070,38 @@ public class ConfigureProductService {
 
         // 已有则跳过
         Object existsObj = em.createNativeQuery(
-                "SELECT 1 FROM unit_price WHERE finished_material_no = :p AND customer_no = :c " +
-                "AND cost_type = '自制加工费' AND is_current = true LIMIT 1")
+                "SELECT 1 FROM ds_quote_self_process_fee WHERE material_no = :p AND customer_no = :c LIMIT 1")
             .setParameter("p", hfPartNo).setParameter("c", currentCustomerCode)
             .getResultStream().findFirst().orElse(null);
         if (existsObj != null) return;
 
-        // 取该料号任一已有客户的当前工序（按最新版本），复制成 currentCustomerCode
+        // 取该料号任一已有客户的当前工序（按最新版本挑出那一个客户），复制成 currentCustomerCode
         List<Object[]> src = em.createNativeQuery(
-                "SELECT operation_no, seq_no, currency, unit FROM unit_price " +
-                "WHERE finished_material_no = :p AND cost_type = '自制加工费' AND is_current = true " +
-                "  AND customer_no = (SELECT customer_no FROM unit_price WHERE finished_material_no = :p " +
-                "     AND cost_type = '自制加工费' AND is_current = true ORDER BY version_no DESC LIMIT 1) " +
-                "ORDER BY seq_no").setParameter("p", hfPartNo).getResultList();
+                "SELECT operation_no, operation_item_seq, input_material_no, currency, pricing_unit "
+              + "FROM ds_quote_self_process_fee "
+              + "WHERE material_no = :p "
+              + "  AND customer_no = (SELECT customer_no FROM ds_quote_self_process_fee "
+              + "     WHERE material_no = :p ORDER BY version_no DESC, item_seq LIMIT 1) "
+              + "ORDER BY item_seq").setParameter("p", hfPartNo).getResultList();
         if (src.isEmpty()) return;
 
-        List<Map<String, Object>> rows = new ArrayList<>();
-        for (Object[] r : src) {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("operation_no", r[0]);
-            m.put("seq_no", r[1]);
-            m.put("currency", r[2] != null ? r[2] : "CNY");
-            m.put("unit", r[3] != null ? r[3] : "KG");
-            rows.add(m);
+        List<Map<String, Object>> rows = new ArrayList<>(src.size());
+        int seq = 1;
+        for (Object[] r : src) {                                          // 循环体内零查库：纯内存搬运
+            Integer opSeq = r[1] == null ? null : ((Number) r[1]).intValue();
+            Map<String, Object> row = SelDsQuoteWriter.selfProcessFeeRow(
+                hfPartNo, seq++,
+                // 投入料号：源行为空时兜回料号自身（D-4：SIMPLE 时零件料号 = 自己）
+                r[2] == null ? hfPartNo : r[2].toString(),
+                r[0] == null ? null : r[0].toString(),
+                r[3] == null ? "CNY" : r[3].toString(),
+                r[4] == null ? "KG" : r[4].toString());
+            if (opSeq != null) row.put("operation_item_seq", opSeq);      // 源行的工序项次原样保留
+            rows.add(row);
         }
-        Map<String, Object> gk = new LinkedHashMap<>();
-        gk.put("system_type", "QUOTE");
-        gk.put("price_type", "PROCESS");
-        gk.put("cost_type", "自制加工费");
-        gk.put("customer_no", currentCustomerCode);
-        gk.put("code", hfPartNo);
-        gk.put("finished_material_no", hfPartNo);
-        versionedWriter.writeVersionedGroup(new VersionedGroupSpec(
-            "unit_price", "version_no", gk,
-            List.of("operation_no", "seq_no", "currency", "unit"), rows));
-        System.out.printf("[configure backfill] customerCode=%s hfPartNo=%s backfilled %d unit_price rows%n",
-                currentCustomerCode, hfPartNo, rows.size());
+        dsWriter.writeSelfProcessFeeGroup(currentCustomerCode, hfPartNo, rows, operator);
+        System.out.printf("[configure backfill] customerCode=%s hfPartNo=%s backfilled %d "
+                + "ds_quote_self_process_fee rows%n", currentCustomerCode, hfPartNo, rows.size());
     }
 
     // readElementsFromMatBom 和 copyElementBom 已在 Phase 3 移除（V44 mat_bom 死代码）
@@ -1291,12 +1313,13 @@ public class ConfigureProductService {
     // backfillV44FromV6 和 backfillV6FromV44 已在 Phase 3 移除（V44 双写桥停用）
 
     // ─────────────────────────────────────────────────────────────────────
-    // V6 落库 Phase 2（选配 COMBO 补全，设计方案 §6 / 用户方案 B1/B2/B3）
-    //   B1 material_bom 主从版本化（ASSEMBLY 子配件 + MATERIAL 各子件材质自指）
-    //   B2 工序 → unit_price（自制加工费，按配件分组版本化）
-    //   B3 组合工艺 → capacity（QUOTE_ASSEMBLY，按 COMBO 整组版本化）
-    // 统一走 VersionedV6Writer：内容相同复用、不同 max+1 升版、is_current 翻转。
-    // 渲染 driver 不切（仍读 per-quote / mirror）；本期仅承载 V6 数据。
+    // 选配 COMBO 落库 —— task-260903（A-*）+ task-260910（B-1/B-2/B-3）后已全部切到报价侧新表：
+    //   B1 物料 BOM   → ds_quote_material_bom       （task-260903 A-2/A-4）
+    //   B2 工序       → ds_quote_self_process_fee   （task-260910 B-1，原 V6 unit_price）
+    //   B3 组合工艺   → ds_quote_assembly_fee       （task-260910 B-2，原 V6 capacity）
+    //   B3' 外购件工序 → ds_quote_assembly_fee      （task-260910 B-3，🚨 费用类别一并变更，D-6）
+    // 统一走 VersionedGroupWriter（经 SelDsQuoteWriter）：整组指纹相同则 UNCHANGED 一行不写、
+    // 不同则归档 + max(当前,历史)+1 升版。🚫 已无 VersionedV6Writer 引用（B-4 自检点）。
     // ─────────────────────────────────────────────────────────────────────
 
 
@@ -1315,90 +1338,127 @@ public class ConfigureProductService {
     @SuppressWarnings("unchecked")
 
     /**
-     * B2: 工序 → unit_price（自制加工费）。每个配件一组版本化：
-     * 分组键 (system_type=QUOTE, price_type=PROCESS, cost_type=自制加工费, customer_no, code=配件料号,
-     * finished_material_no=COMBO)，行集 = 各工序（operation_no=process_no，task-0712 缺口1 起直取，
-     * 不再经 process(V4) UUID 转译）。pricing_price 留 NULL（子项3）。
-     * currency = process_master.standard_currency（空→CNY）；unit = standard_unit（空→KG，对齐导入存量）。
-     * fail-fast: process_no 未命中 process_master 视为非法工序，抛出而非静默兜默认值。
+     * B2 → <b>task-260910 · B-1（AC-1 / AC-4）改写</b>：COMPOSITE 的子件工序落
+     * {@code ds_quote_self_process_fee}（原 V6 {@code unit_price}，{@code cost_type='自制加工费'}）。
+     *
+     * <p><b>老 → 新的分组键坍缩，这是本方法最容易写错的地方</b>：
+     * 老 {@code unit_price} 的组键有 6 维
+     * （{@code system_type/price_type/cost_type/customer_no/code=子件/finished_material_no=父}），
+     * 每个子件<b>各自一组</b>；新表的轴只有 {@code (customer_no, material_no)} 两维
+     * ⇒ 全部子件的工序行<b>同属父料号这一个组</b>，靠 {@code input_material_no}=子件料号区分
+     * （D-4，AC-4 的断言原文：2 行、{@code material_no} 均为父、{@code input_material_no}
+     * 分别是 C1/C2）。
+     * ⇒ 🚫 <b>只能调一次 {@code writeSelfProcessFeeGroup}</b>；按子件循环调 = 后一次把前一次的行
+     * 当成删除、整组重写（老代码那种 {@code groups.put(gk, rows)} 形态在新表下是错的）。
+     *
+     * <p>{@code item_seq} / {@code operation_item_seq} 按<b>跨子件的全局行序</b> 1..N 递增
+     * （新表 {@code item_seq} 是 {@code required=true} 的通用项次）。
+     * {@code value}（单价）留 NULL；{@code currency} = {@code process_master.standard_currency}（空→CNY）；
+     * {@code pricing_unit} = {@code standard_unit}（空→KG，对齐导入存量）。
+     * fail-fast: {@code process_no} 未命中 {@code process_master} 视为非法工序，抛出而非静默兜默认值。
      */
     void insertProcessUnitPriceV6(String parentHfPartNo, String customerCode,
                                   List<PartRequest> parts, List<String> childHfPartNos,
-                                  ConfigureCatalog cat) {
+                                  ConfigureCatalog cat, String operator) {
         if (customerCode == null || customerCode.isBlank()) return;
+        if (parentHfPartNo == null || parentHfPartNo.isBlank()) return;
         // 🚫 B-19①：工序主数据一律走 ConfigureCatalog（入口一次 IN 批量装载），
         //    循环体内**零查库**；原实现在双重循环里逐工序 SELECT process_master。
-        LinkedHashMap<Map<String, Object>, List<Map<String, Object>>> groups = new LinkedHashMap<>();
+        List<Map<String, Object>> rows = new ArrayList<>();
+        int seq = 1;
         for (int i = 0; i < childHfPartNos.size(); i++) {                 // 循环体内零查库
             PartRequest pr = (parts != null && i < parts.size()) ? parts.get(i) : null;
             if (pr == null || pr.processNos == null || pr.processNos.isEmpty()) continue;
-            List<Map<String, Object>> rows = buildProcessUnitPriceRows(pr.processNos, cat);
-            Map<String, Object> gk = new LinkedHashMap<>();
-            gk.put("system_type", "QUOTE");
-            gk.put("price_type", "PROCESS");
-            gk.put("cost_type", "自制加工费");
-            gk.put("customer_no", customerCode);
-            gk.put("code", childHfPartNos.get(i));
-            gk.put("finished_material_no", parentHfPartNo);
-            groups.put(gk, rows);
+            // D-4：投入料号 = 子件料号（轴列 material_no 是父料号）
+            seq = appendSelfProcessFeeRows(rows, parentHfPartNo, childHfPartNos.get(i),
+                pr.processNos, cat, seq);
         }
-        if (groups.isEmpty()) return;
-        // 多组一次提交（DB 往返与组数无关），逐位等价于逐组 writeVersionedGroup。
-        versionedWriter.writeVersionedGroups("unit_price", "version_no",
-            List.of("operation_no", "seq_no", "currency", "unit"), null, groups);
+        if (rows.isEmpty()) return;
+        dsWriter.writeSelfProcessFeeGroup(customerCode, parentHfPartNo, rows, operator);
     }
 
     /**
-     * 把 {@code processNos} 组装成 {@code unit_price} 行集 —— 循环体内零查库（工序元数据走 catalog）。
+     * 把 {@code processNos} 追加成 {@code ds_quote_self_process_fee} 行 —— 循环体内零查库
+     * （工序元数据全部走 {@link ConfigureCatalog}，入口一次 IN 批量装载）。
      *
-     * <p>🚨 <b>AC-19③ / B-6</b>：{@code seq_no} 按数组<b>原始顺序</b> 递增，🚫 不排序。
+     * <p>🚨 <b>AC-19③ / B-6</b>：项次按数组<b>原始顺序</b> 递增，🚫 不排序。
      * 指纹侧 {@code PRC=} 是排序后拼接（顺序不进指纹、换序复用同一料号），落库与显示侧认顺序 ——
-     * 两侧有意不对称，改动时不要为了「统一」把这一边也排序。
+     * 两侧有意不对称，改动时不要为了「统一」把这一边也排序（AC-22 的第二条断言正靠这个不对称）。
+     *
+     * <p><b>追加式</b>（而不是「返回一个新 list」）是为了让 COMPOSITE 的多个子件行能拼进
+     * <b>同一个组</b>、项次跨子件连续 —— 见 {@link #insertProcessUnitPriceV6} 的分组键坍缩说明。
+     *
+     * @param materialNo      轴列值（SIMPLE = 料号自身；COMPOSITE = 父料号）
+     * @param inputMaterialNo 投入料号 = <b>零件料号</b>（D-4；SIMPLE = 料号自身，COMPOSITE = 子件料号）
+     * @param startSeq        本批第一行的项次
+     * @return 下一个可用项次（= startSeq + 本批行数）
      */
-    private List<Map<String, Object>> buildProcessUnitPriceRows(List<String> processNos, ConfigureCatalog cat) {
+    private int appendSelfProcessFeeRows(List<Map<String, Object>> rows, String materialNo,
+                                         String inputMaterialNo, List<String> processNos,
+                                         ConfigureCatalog cat, int startSeq) {
+        int seq = startSeq;
+        for (String opNo : processNos) {                                  // 循环体内零查库
+            ProcessMeta pm = cat.process(opNo);
+            if (pm == null) throw new IllegalArgumentException("工序不存在: " + opNo);
+            rows.add(SelDsQuoteWriter.selfProcessFeeRow(materialNo, seq++, inputMaterialNo, opNo,
+                pm.currency() != null ? pm.currency() : "CNY",
+                pm.unit() != null ? pm.unit() : "KG"));
+        }
+        return seq;
+    }
+
+    /**
+     * 2026-06-02 缺口 B → <b>task-260910 · B-1（AC-1）改写</b>：单料号工序落
+     * {@code ds_quote_self_process_fee}（镜像组合版 {@link #insertProcessUnitPriceV6}）。
+     *
+     * <p>SIMPLE 无父子 ⇒ 轴列 {@code material_no} 与投入料号 {@code input_material_no}
+     * <b>同为 {@code hfPartNo}</b>（D-4：「投入料号装的就是零件料号」，SIMPLE 时零件就是它自己）——
+     * 逐字对应老 {@code unit_price} 组键里 {@code code = finished_material_no = hfPartNo} 那一行。
+     *
+     * <p>task-0712 缺口1: {@code operation_no} = {@code processNo} 直取，不再经 process(V4) UUID 转译；
+     * fail-fast: {@code process_no} 未命中 {@code process_master} 视为非法工序。
+     */
+    void insertProcessSimpleUnitPriceV6(String hfPartNo, List<String> processNos, String customerCode,
+                                        ConfigureCatalog cat, String operator) {
+        if (customerCode == null || customerCode.isBlank()) return;
+        if (processNos == null || processNos.isEmpty()) return;
+        // 🚫 B-19①：循环体内零查库（工序元数据走 ConfigureCatalog 的一次 IN 批量装载）。
+        List<Map<String, Object>> rows = new ArrayList<>(processNos.size());
+        appendSelfProcessFeeRows(rows, hfPartNo, hfPartNo, processNos, cat, 1);
+        dsWriter.writeSelfProcessFeeGroup(customerCode, hfPartNo, rows, operator);
+    }
+
+    /**
+     * 🆕 <b>task-260910 · B-3（AC-3）</b>：外购件的工序落 {@code ds_quote_assembly_fee}。
+     *
+     * <p>🚨 <b>这不是等价搬运，是业务口径变更</b>（D-6，用户原话：「外购件的工序新规则不存
+     * {@code unit_price} 了，这张表已经废弃了，存储 {@code ds_quote} 下的组装加工费的源的表中」）——
+     * 费用类别由「<b>自制</b>加工费」变成「<b>组装</b>加工费」，报价金额的计算口径随之改变。
+     * 🚫 不要因为「外购件工序看起来还是工序」而把它改回 {@link #insertProcessSimpleUnitPriceV6}。
+     *
+     * <p>轴值 = 外购件料号本身（外购件不铸新号）。{@code assembly_fee} 恒 0（D-5）。
+     * ⚠️ 与 B-2 的组合工艺共用 {@code ds_quote_assembly_fee}，但轴值不同（那边是父料号）⇒ 互不覆盖。
+     */
+    void insertOutsourcedProcessAssemblyFee(String outsourcedPartNo, List<String> processNos,
+                                            String customerCode, ConfigureCatalog cat, String operator) {
+        if (customerCode == null || customerCode.isBlank()) return;
+        if (outsourcedPartNo == null || outsourcedPartNo.isBlank()) return;
+        if (processNos == null || processNos.isEmpty()) return;
         List<Map<String, Object>> rows = new ArrayList<>(processNos.size());
         int seq = 1;
         for (String opNo : processNos) {                                  // 循环体内零查库
             ProcessMeta pm = cat.process(opNo);
             if (pm == null) throw new IllegalArgumentException("工序不存在: " + opNo);
-            Map<String, Object> r = new LinkedHashMap<>();
-            r.put("operation_no", opNo);
-            r.put("seq_no", seq++);
-            r.put("currency", pm.currency() != null ? pm.currency() : "CNY");
-            r.put("unit", pm.unit() != null ? pm.unit() : "KG");
-            rows.add(r);
+            rows.add(SelDsQuoteWriter.assemblyFeeRow(outsourcedPartNo, seq++, opNo,
+                pm.currency() != null ? pm.currency() : "CNY", pm.unit(), pm.defectRate()));
         }
-        return rows;
+        dsWriter.writeAssemblyFeeGroup(customerCode, outsourcedPartNo, rows, operator);
     }
 
     /**
-     * 2026-06-02 缺口 B：简单料号工序 → V6 unit_price（镜像组合版 insertProcessUnitPriceV6）。
-     * 简单料号无父子，group key 的 code = finished_material_no = hfPartNo。
-     * task-0712 缺口1: operation_no = processNo 直取，不再经 process(V4) UUID 转译；
-     * fail-fast: process_no 未命中 process_master 视为非法工序。
-     */
-    void insertProcessSimpleUnitPriceV6(String hfPartNo, List<String> processNos, String customerCode,
-                                        ConfigureCatalog cat) {
-        if (customerCode == null || customerCode.isBlank()) return;
-        if (processNos == null || processNos.isEmpty()) return;
-        // 🚫 B-19①：循环体内零查库（工序元数据走 ConfigureCatalog 的一次 IN 批量装载）。
-        List<Map<String, Object>> rows = buildProcessUnitPriceRows(processNos, cat);
-        Map<String, Object> gk = new LinkedHashMap<>();
-        gk.put("system_type", "QUOTE");
-        gk.put("price_type", "PROCESS");
-        gk.put("cost_type", "自制加工费");
-        gk.put("customer_no", customerCode);
-        gk.put("code", hfPartNo);
-        gk.put("finished_material_no", hfPartNo);
-        versionedWriter.writeVersionedGroup(new VersionedGroupSpec(
-            "unit_price", "version_no", gk,
-            List.of("operation_no", "seq_no", "currency", "unit"), rows));
-    }
-
-    /**
-     * B3（B2 落库改造，backtask §14/B2.1⑤，B6 架构决策 2-2A 定稿后收敛）: 组合工艺 → capacity
-     * （对标导入 §14 组装加工费）。按 COMBO 整组版本化：分组键
-     * (material_no=COMBO, resource_group_no=QUOTE_ASSEMBLY)，行集 = 各 process_no。
+     * B3 → <b>task-260910 · B-2（AC-2）改写</b>: 组合工艺落 {@code ds_quote_assembly_fee}
+     * （原 V6 {@code capacity}，{@code resource_group_no='QUOTE_ASSEMBLY'}）。
+     * 按 COMBO 整组版本化：轴 = {@code (customer_no, 父料号)}，行集 = 各 {@code process_no}。
      *
      * <p><b>标识锚点 = {@code process_master.process_no}</b>（不再是 {@code composite_process_def.code}）：
      * {@code cp.defCode} 即前端从 {@code GET /composite-processes} 候选选中的
@@ -1406,56 +1466,45 @@ public class ConfigureProductService {
      * {@code quotation_line_composite_process.def_code} 三处（连同候选端点、前端选值共五处）同一标识
      * （AP-44 精神，PR 自检硬项）。
      *
-     * <p>{@code process_name} 读 {@code process_master.process_name}（缺回退 process_no）；
-     * {@code currency} 空兜 CNY；{@code capacity_unit}(⚠️ 非 {@code unit})/{@code default_defect_rate}
-     * 直接透传 {@code process_master}（ASSEMBLY 现网 4 行均空 → 落库为 NULL，与自制加工费口径一致）；
-     * {@code fixed_cost} 留 NULL（单价由后续 INPUT 层维护，选配阶段未采集）。
+     * <p><b>列映射</b>（api.md §4）：{@code assembly_operation}←{@code process_no}；
+     * {@code item_seq}←行序；{@code currency} 空兜 CNY；{@code pricing_unit}←
+     * {@code process_master.standard_unit}（⚠️ 老列名是 {@code capacity_unit}）；
+     * {@code defect_rate}←{@code default_defect_rate}（ASSEMBLY 现网 4 行均空 → 落库 NULL）。
+     * <p>🚨 {@code assembly_fee} <b>恒写 0</b>（D-5，该列 {@code required=true}，选配不采集单价）；
+     * 判据「选配占位 vs 真实 0 元」靠 {@code source='MANUAL'}（AC-2③）。
+     * <p>🚫 老 {@code capacity} 的 {@code process_name} / {@code production_type} 在新表<b>无落点</b>，
+     * 不许硬塞进别的列（前者可由 {@code assembly_operation} JOIN {@code process_master} 现算，本期不做；
+     * 后者老实现写死常量 {@code BATCH_FIXED}，无消费方）。
      *
-     * <p>未在 process_master(ASSEMBLY) 命中时不在此处 fail-fast（沿用防御式回退：process_name=
-     * process_no、currency=CNY、其余 NULL）——真正的存在性校验由同一事务内的
+     * <p>未在 process_master(ASSEMBLY) 命中时不在此处 fail-fast（沿用防御式回退：currency=CNY、
+     * 其余 NULL）——真正的存在性校验由同一事务内的
      * {@link #insertCompositeProcessesPerQuote} 通过 {@code process_master} 查找兜底，
      * 非法 defCode 会在那里抛出并回滚本次全部落库（事务原子性，AP-53/B2.4 不变量）。
      */
-    void insertCompositeProcessCapacityV6(String parentHfPartNo,
+    void insertCompositeProcessCapacityV6(String parentHfPartNo, String customerCode,
                                           List<com.cpq.configure.dto.CompositeProcessRequest> cps,
-                                          ConfigureCatalog cat) {
+                                          ConfigureCatalog cat, String operator) {
         if (parentHfPartNo == null || cps == null || cps.isEmpty()) return;
+        if (customerCode == null || customerCode.isBlank()) return;
         // 🚫 B-19 同源治理：原实现在循环里逐条 SELECT process_master；改走 ConfigureCatalog（零查库）。
-        List<Map<String, Object>> rows = new ArrayList<>();
+        List<Map<String, Object>> rows = new ArrayList<>(cps.size());
         int seq = 1;
         for (com.cpq.configure.dto.CompositeProcessRequest cp : cps) {   // 循环体内零查库
             ProcessMeta pm = cat.process(cp.defCode);
-            String procName = cp.defCode;
             String currency = "CNY";
-            String capacityUnit = null;
+            String pricingUnit = null;
             BigDecimal defectRate = null;
             // 沿用防御式回退：未在 process_master(ASSEMBLY) 命中时不在此 fail-fast，
             // 真正的存在性校验由同一事务内的 insertCompositeProcessesPerQuote 兜底（命中即整体回滚）。
             if (pm != null) {
-                if (pm.processName() != null && !pm.processName().isBlank()) procName = pm.processName();
                 if (pm.currency() != null) currency = pm.currency();
-                capacityUnit = pm.unit();
+                pricingUnit = pm.unit();
                 defectRate = pm.defectRate();
             }
-            Map<String, Object> r = new LinkedHashMap<>();
-            r.put("process_no", cp.defCode);
-            r.put("process_name", procName);
-            r.put("production_type", "BATCH_FIXED");
-            r.put("currency", currency);
-            r.put("seq_no", seq++);
-            r.put("fixed_cost", null);
-            r.put("capacity_unit", capacityUnit);
-            r.put("default_defect_rate", defectRate);
-            rows.add(r);
+            rows.add(SelDsQuoteWriter.assemblyFeeRow(parentHfPartNo, seq++, cp.defCode,
+                currency, pricingUnit, defectRate));
         }
-        Map<String, Object> gk = new LinkedHashMap<>();
-        gk.put("system_type", "QUOTE");   // V290 护栏：capacity 必须按 system_type 隔离
-        gk.put("material_no", parentHfPartNo);
-        gk.put("resource_group_no", "QUOTE_ASSEMBLY");
-        versionedWriter.writeVersionedGroup(new VersionedGroupSpec(
-            "capacity", "calc_version", gk,
-            List.of("process_no", "process_name", "production_type", "currency", "seq_no",
-                    "fixed_cost", "capacity_unit", "default_defect_rate"), rows));
+        dsWriter.writeAssemblyFeeGroup(customerCode, parentHfPartNo, rows, operator);
     }
 
     /**
@@ -1468,11 +1517,17 @@ public class ConfigureProductService {
      * 兜底拒绝非法工序编号。{@code process_id} 列保留但不再写（新行恒为 NULL），收缩阶段
      * (合并 master 时)再做删列迁移。
      *
-     * <p>实测(2026-07-14 架构评审 F8)确认：本表当前无任何 SELECT/视图读取——"选配-工序列表"类
-     * Tab 实际渲染走 {@code v_composite_child_processes} 物理 PG 视图，该视图直接读
+     * <p>🚩 <b>task-260910 · B-22：下面这段注释已过时，2026-09-10 实测推翻，保留原文只为留痕</b>
+     * ——「本表当前无任何 SELECT/视图读取」<b>不成立</b>：{@code QuotationService} 现在在读它
+     * （{@code quotation_line_process} 实测 24 行），选配工序的回读/回显走的就是这条路。
+     * ⇒ 🚫 <b>不要再按「本表无人读」为由改写/停写它</b>。
+     * <p><s>实测(2026-07-14 架构评审 F8)确认：本表当前无任何 SELECT/视图读取</s>——"选配-工序列表"类
+     * Tab 当年的渲染走 {@code v_composite_child_processes} 物理 PG 视图，该视图直接读
      * {@code unit_price.operation_no}/{@code material_bom_item.operation_no}
-     * （由 {@link #insertProcessSimpleUnitPriceV6}/{@link #insertProcessUnitPriceV6} 写入），
-     * 与本表完全解耦。本表目前是纯粹的 per-quote 工序选择记录(供后续读回/展示用)。
+     * （由 {@link #insertProcessSimpleUnitPriceV6}/{@link #insertProcessUnitPriceV6} 写入）。
+     * ⚠️ 那条渲染路径本身也已作废：task-260910 S-1 起工序落
+     * {@code ds_quote_self_process_fee} / {@code ds_quote_assembly_fee}，
+     * 且 {@code v_composite_child_processes} 实测已无活引用（需求文档 §2.2）。
      *
      * <p>per-quote 隔离：只影响当前报价行,不混入导入工序,也不影响别的报价单/基础数据。
      * <ul>
@@ -1669,40 +1724,57 @@ public class ConfigureProductService {
     // ═══════════════════════════════════════════════════════════════════════
 
     /**
-     * {@code GET /quotations/configure/outsourced-parts} 的服务实现。
+     * {@code GET /quotations/configure/outsourced-parts} 的服务实现
+     * （<b>task-260910 · B-9 改写</b>，api.md §2.2，AC-6）。
      *
-     * <p>判据（闸门 A0 已裁决）：{@code WHERE material_master.material_type = '外购件'}。
-     * 该判据依赖 B-9（选配写入侧不再把材质名塞进 {@code material_type}）落地，否则同一列里
-     * 混着材质名，判据不成立。
+     * <p>判据：{@code WHERE ds_quote_material.customer_no = :customerNo AND material_type = '外购件'}。
+     * 该判据依赖 task-260903 B-9（选配写入侧不再把材质名塞进 {@code material_type}）已落地，
+     * 否则同一列里混着材质名，判据不成立。
      *
-     * <p>⚠️ 返回 0 条是<b>正常业务状态</b>（AC-16）—— 候选条数完全取决于基础数据里有多少料号被
-     * 标成「外购件」，共享开发库上它随导入随时变（2026-09-09 一天之内实测到过 1 / 8 / 6 条）。
-     * ⇒ 🚫 <b>不要把某个具体条数写进判据或断言</b>；前端必须渲染空态而非「加载中…」（AP-31 族）。
+     * <h3>🔑 为什么必须带客户（AC-6 是阳性可证伪的）</h3>
+     * 实测 5 个外购件料号（{@code S0003} 铆钉配件 / {@code S0007} 弹簧件A / {@code S0011} 密封圈B /
+     * {@code S0014} 绝缘座C / {@code T260907-M2} 测试主件B）<b>同时挂在 {@code CUST-0001} 与
+     * {@code CUST-0004} 下，共 10 行</b>（2026-09-10 实查：每个 material_no 各 2 行）。
+     * 不带客户过滤 ⇒ 列表出双份，而且用户会看到别的客户的料号。
      *
-     * <p>🔑 repair-260908 · C-1：本方法查的 {@code v_compat_material_master} 是 V6 兼容视图，
-     * <b>没有客户维度</b>（{@code material_master} 本身就没有客户列），而本端点的签名
-     * {@code (keyword, page, size)} 也<b>拿不到客户上下文</b> —— 所以「按客户过滤掉重复」在这里
-     * 物理上办不到。跨客户重号必须在<b>视图层</b>收敛（V435 的 {@code DISTINCT ON}）。
-     * 🚫 不要在本方法里加 {@code DISTINCT} 打补丁：那只治了这一个消费点，另外 7 个照样出双份。
+     * <p>📌 <b>本方法原先靠兼容视图 {@code v_compat_material_master} 的 {@code DISTINCT ON}
+     * 收敛跨客户重号</b>（V435 / {@code repair-260908 C-1}）。直连新表等于绕过那次修复
+     * ⇒ 客户过滤是它的<b>替代品</b>，不是补充。
+     * 🚫 <b>不许再加 {@code DISTINCT}</b>：{@code uq_ds_quote_material(customer_no, material_no)}
+     * 保证同一客户下每个料号最多一行，重号问题已被客户过滤彻底解决；
+     * 再加 DISTINCT 是给已解决的问题打第二个补丁，而且会掩盖将来真正的重复。
+     *
+     * <p>⚠️ 返回 0 条是<b>正常业务状态</b> —— 候选条数完全取决于该客户名下有多少料号被标成
+     * 「外购件」，共享开发库上它随导入随时变。⇒ 🚫 <b>不要把某个具体条数写进判据或断言</b>；
+     * 前端必须渲染空态而非「加载中…」（AP-31 族）。
+     *
+     * <p>N+1：恒 2 条 SQL（count + data），与候选数无关。
      */
     @SuppressWarnings("unchecked")
-    public Map<String, Object> listOutsourcedParts(String keyword, int page, int size) {
+    public Map<String, Object> listOutsourcedParts(String customerNo, String keyword, int page, int size) {
+        // D-2：客户编号必填。🚫 缺失时不许静默跨客户查。
+        if (customerNo == null || customerNo.isBlank()) {
+            throw com.cpq.configure.exception.MaterialRecipeApiException.badRequest(
+                "CUSTOMER_NO_REQUIRED", "外购件候选必须携带客户编号(customerNo)");
+        }
         int safePage = Math.max(page, 1);
         int safeSize = Math.min(Math.max(size, 1), 200);
         boolean hasKw = keyword != null && !keyword.isBlank();
         String pattern = hasKw ? "%" + keyword.trim() + "%" : null;
 
-        String where = "material_type = :t"
+        String where = "customer_no = :cn AND material_type = :t"
             + (hasKw ? " AND (material_no ILIKE :kw OR COALESCE(material_name,'') ILIKE :kw)" : "");
 
-        var countQ = em.createNativeQuery("SELECT COUNT(*) FROM v_compat_material_master WHERE " + where)
+        var countQ = em.createNativeQuery("SELECT COUNT(*) FROM ds_quote_material WHERE " + where)
+            .setParameter("cn", customerNo)
             .setParameter("t", MATERIAL_TYPE_OUTSOURCED);
         if (hasKw) countQ.setParameter("kw", pattern);
         long total = ((Number) countQ.getSingleResult()).longValue();
 
         var dataQ = em.createNativeQuery(
                 "SELECT material_no, material_name, specification, unit_weight " +
-                "FROM v_compat_material_master WHERE " + where + " ORDER BY material_no")
+                "FROM ds_quote_material WHERE " + where + " ORDER BY material_no")
+            .setParameter("cn", customerNo)
             .setParameter("t", MATERIAL_TYPE_OUTSOURCED);
         if (hasKw) dataQ.setParameter("kw", pattern);
         dataQ.setFirstResult((safePage - 1) * safeSize);
@@ -1728,18 +1800,62 @@ public class ConfigureProductService {
     // task-260902 · B-11：命中复用时带出销售产品信息（api.md §1.3 / AC-7 状态 C）
     // ═══════════════════════════════════════════════════════════════════════
 
-    /** 固定 2 条 SQL（料号身份 1 条 + 材质构成 1 条），与材质数无关。 */
+    /**
+     * 命中复用时带出销售产品信息（api.md §1.3 / task-260902 AC-7 状态 C）。
+     *
+     * <p><b>固定 2 条 SQL</b>（料号身份 1 条 + 材质构成 1 条），与材质数无关。
+     *
+     * <h3>🆕 task-260910 · B-10 / B-11 补漏（主线回流，S-2 引用面漏项）</h3>
+     * 本方法原有<b>两处</b>老表引用，都在本次切掉：
+     * <ol>
+     *   <li>🔴 <b>身份段</b>原查 {@code v_compat_material_master} —— <b>已实测造成 HTTP 500</b>：
+     *       该兼容视图在 {@code cpq_db_test} 里<b>已不存在</b>（V439「drop compat views」
+     *       {@code success=t} 真执行过），在 {@code cpq_db_0724} 里<b>还活着</b>
+     *       （2026-09-10 实查 3 个 {@code v_compat_*} 视图仍在）⇒ dev 库上被视图的意外存活掩盖，
+     *       test 库上「第 2 次提交同指纹（命中复用）」必现 {@code 42P01 relation does not exist}。
+     *       ⚠️ 这条是本任务里「迁移历史与库状态不一致」的典型代价：<b>迁移 success=t 不等于对象已消失</b>，
+     *       所以判断「还能不能读它」只能看代码要不要，不能看 dev 库能不能查通。
+     *       ⇒ 改读 {@code ds_quote_material} + {@code customer_no}（D-2）。
+     *       📌 原先靠视图的 {@code DISTINCT ON} 收敛跨客户重号（V435 / repair-260908 C-1）——
+     *       带上客户过滤后 {@code uq_ds_quote_material(customer_no, material_no)} 保证最多一行，
+     *       🚫 <b>不要再加 {@code DISTINCT}</b>。</li>
+     *   <li>🔴 <b>材质段</b>原查 {@code material_bom_item}（用户 D-1 那批已裁定弃用的表），
+     *       且用 {@code characteristic = 'RECIPE'} 当材质判据 —— {@code characteristic} 正是
+     *       {@code output_material_type} 在 V6 的对应物，<b>D-1 明确禁止用它判材质</b>
+     *       （实测该列 8 种值，{@code 成品} 2645 行，是用户自填业务字段）。
+     *       ⇒ 改读 {@code ds_quote_material_bom}，判据换成
+     *       <b>「{@code input_material_no} 能 JOIN 上 {@code material_recipe.code}」</b> ——
+     *       与 {@link ConfigureSearchResource#searchParts} 的 B-7 判据<b>同源</b>，
+     *       🚫 不许在这里写第二套材质判据。</li>
+     * </ol>
+     *
+     * <h3>📌 task-260910 · D-14：曾经的「材质构成返空」缺口已消失</h3>
+     * 方案 ②（原 D-7）曾让选配只把 BOM 写进 {@code ds_quote_material_bom_record}、主表等核价通过
+     * 才回填 ⇒ 本方法（只在<b>命中复用</b>时被调，而被复用的料号往往正是「刚建、还没核价」那个）
+     * 会<b>返空材质数组</b>，当时留了甲/乙/丙三个候选方向待裁决。
+     * <p><b>D-14 让选配回到直写主表 ⇒ 该缺口自动消失</b>：料号一建出来主表就有 BOM 行，
+     * 本方法直读主表即可拿到完整材质构成，无需任何 {@code _record} 兜底。
+     * 🚫 因此<b>不要</b>在这里加 {@code _record} 读取 —— 现在它不解决任何问题，只会重复一份
+     * 取数语义（{@code VersionedGroupWriter} 类注释原话：「两套实现必然漂移」）。
+     *
+     * @param customerCode 客户编号（{@code customer.code}）。为空时两段查询都返空 ⇒ DTO 只带
+     *                     {@code hfPartNo}（🚫 不抛异常：本方法是「顺带带出展示信息」的加法式功能，
+     *                     不该让它把整个选配提交打成 500 —— 这正是缺陷 1 的教训）
+     */
     @SuppressWarnings("unchecked")
     ReusedProductInfoDTO buildReusedProductInfo(String hfPartNo, String customerCode) {
         if (hfPartNo == null || hfPartNo.isBlank()) return null;
         ReusedProductInfoDTO dto = new ReusedProductInfoDTO();
         dto.hfPartNo = hfPartNo;
 
+        // ① 料号身份（1 条 SQL）。ds_quote_material 按 (customer_no, material_no) 唯一 ⇒ 最多 1 行。
         List<Object[]> mm = em.createNativeQuery(
-                "SELECT mm.material_name, mm.specification, mm.dimension, mm.unit_weight, " +
+                "SELECT m.material_name, m.specification, m.dimension, m.unit_weight, " +
                 "       (SELECT min(sps.created_at) FROM sel_part_signature sps " +
-                "          WHERE sps.quote_part_no = mm.material_no) " +
-                "FROM v_compat_material_master mm WHERE mm.material_no = :p")
+                "          WHERE sps.quote_part_no = m.material_no) " +
+                "FROM ds_quote_material m " +
+                "WHERE m.customer_no = :cn AND m.material_no = :p")
+            .setParameter("cn", customerCode)
             .setParameter("p", hfPartNo).getResultList();
         if (!mm.isEmpty()) {
             Object[] r = mm.get(0);
@@ -1747,21 +1863,19 @@ public class ConfigureProductService {
             dto.specification = r[1] == null ? null : r[1].toString();
             dto.dimension = r[2] == null ? null : r[2].toString();
             dto.unitWeight = r[3] == null ? null : new BigDecimal(r[3].toString());
-            dto.firstCreatedAt = (r[4] instanceof java.time.OffsetDateTime odt) ? odt : null;
+            dto.firstCreatedAt = toOffsetDateTime(r[4]);
         }
 
-        // 材质构成：material_bom_item(RECIPE, is_current) —— B-18 后它才是材质的权威，
-        // 🚫 不要回头去读 material_master.material_recipe_id（多材质时那里是 NULL）。
+        // ② 材质构成（1 条 SQL）。判据 = JOIN material_recipe 命中（D-1），
+        //    🚫 不带 output_material_type / characteristic 条件。
         List<Object[]> mats = em.createNativeQuery(
-                "SELECT mbi.component_no, COALESCE(mbi.component_usage_type, mr.symbol, mr.name), mbi.material_ratio " +
-                "FROM material_bom_item mbi " +
-                "LEFT JOIN material_recipe mr ON mr.code = mbi.component_no " +
-                "WHERE mbi.material_no = :p AND mbi.system_type = 'QUOTE' " +
-                "  AND mbi.characteristic = 'RECIPE' AND mbi.is_current = true " +
-                "  AND (:cn IS NULL OR mbi.customer_no = :cn) " +
-                "ORDER BY mbi.seq_no")
-            .setParameter("p", hfPartNo)
+                "SELECT b.input_material_no, COALESCE(mr.symbol, mr.name), b.material_ratio " +
+                "FROM ds_quote_material_bom b " +
+                "JOIN material_recipe mr ON mr.code = b.input_material_no " +
+                "WHERE b.customer_no = :cn AND b.material_no = :p " +
+                "ORDER BY b.item_seq")
             .setParameter("cn", customerCode)
+            .setParameter("p", hfPartNo)
             .getResultList();
         for (Object[] r : mats) {                                  // 循环体内零查库（纯 DTO 组装）
             dto.materials.add(new ReusedProductInfoDTO.Material(
@@ -1772,14 +1886,128 @@ public class ConfigureProductService {
         return dto;
     }
 
+    /**
+     * task-260910 · E-3（裁决 D-25）：native query 里 {@code TIMESTAMPTZ} 列（如
+     * {@code sel_part_signature.created_at} 的 {@code min()} 聚合）经 Hibernate 6 + PG JDBC
+     * 驱动实测返回 {@link java.time.Instant}（🔑 <b>不是</b> {@link java.time.OffsetDateTime}）；
+     * 同工程内 {@code VariableLabelService} / {@code MaterialRecipeService} 等已有同型兜底，
+     * 这里复用同一口径（{@code Instant} / {@code Timestamp} / {@code OffsetDateTime} 三态兜底）。
+     * 🚫 <b>不静默吞未知类型</b>：命中不了以上三态时打 warn 日志带上实际 class 名，而不是无声返 null
+     * （原实现 {@code r[4] instanceof OffsetDateTime} 判失败就是这个静默吞的反面教材）。
+     */
+    private static java.time.OffsetDateTime toOffsetDateTime(Object o) {
+        if (o == null) return null;
+        if (o instanceof java.time.OffsetDateTime odt) return odt;
+        if (o instanceof java.time.Instant ins) return ins.atOffset(java.time.ZoneOffset.UTC);
+        if (o instanceof java.sql.Timestamp ts) return ts.toInstant().atOffset(java.time.ZoneOffset.UTC);
+        LOG.warnf("toOffsetDateTime: 未识别的时间类型 class=%s value=%s，按 null 处理（需要补充兜底分支）",
+                o.getClass().getName(), o);
+        return null;
+    }
+
     // ───────────────────────────────────────────────────────────────────────
     // T21: configure 主入口 + 组合产品 + buildLineItems
     // ───────────────────────────────────────────────────────────────────────
 
+    /**
+     * 选配提交的<b>唯一</b>入口 —— 只做一件事：按 {@code bindExistingMaterialNo} 分流。
+     *
+     * <p>📌 <b>task-260910 · D-14</b>：这里曾有一个 ThreadLocal 报价单作用域
+     * （为方案 ② 把 quotationId 旁路传给写入器，因为 {@code _record.quotation_id} NOT NULL）。
+     * D-14 让选配回到<b>直写主表</b>，写入侧不再需要 quotationId ⇒ 作用域连同 {@code try/finally}
+     * 一并摘除。🚫 不要为了「以后可能用得上」把它加回来。
+     *
+     * <h3>🆕 task-260910 · B-18（AC-18 / AC-20）：绑定路径</h3>
+     * {@code bindExistingMaterialNo} 非空 ⇒ 用户手上已有一个合适的销售料号，只要把客户产品编号
+     * 绑上去。<b>跳过</b> {@code prepareParts} / 指纹 / 发号 / BOM 与元素写入
+     * （料号与它的 BOM 本来就在库里，🚫 不许重铸、也不许重写别人的 BOM）。
+     */
     @jakarta.transaction.Transactional
     public ConfigureProductResponse configure(UUID quotationId,
                                               ConfigureProductRequest req,
                                               UUID operatorId) {
+        if (req != null && req.bindExistingMaterialNo != null && !req.bindExistingMaterialNo.isBlank()) {
+            return configureByBinding(quotationId, req, operatorId);
+        }
+        return configureBySelection(quotationId, req, operatorId);
+    }
+
+    /**
+     * <b>task-260910 · B-18 / B-19 / B-20（AC-18 / AC-19 / AC-20）</b>：直接绑定已有销售料号。
+     *
+     * <h3>落库面（api.md §2.3，🚫 不多不少）</h3>
+     * <table>
+     *   <tr><td>{@code ds_quote_customer_part}</td><td>✅ 1 行（{@code source='MANUAL'}）</td></tr>
+     *   <tr><td>{@code quotation_line_item}</td><td>✅ 1 行</td></tr>
+     *   <tr><td>{@code ds_quote_material}</td><td>❌ 零新增（料号已存在，不铸新号）</td></tr>
+     *   <tr><td>{@code ds_quote_material_bom} / {@code _element_bom}（主表与 {@code _record}）</td>
+     *       <td>❌ 零新增（沿用该料号既有数据）</td></tr>
+     *   <tr><td>{@code sel_part_signature}</td><td>❌ 零新增（不进指纹）</td></tr>
+     *   <tr><td>{@code quote_material_no_seq} / {@code quote_customer_code}</td><td>❌ 零新增（不发号）</td></tr>
+     * </table>
+     *
+     * <h3>B-19：{@code _record} 不用特殊处理</h3>
+     * 该料号已有主表行 ⇒ 提交时 {@code syncRecordsForFlow} 的投影会锚到那些行
+     * （{@code origin_id} 非空），回填判 {@code UNCHANGED} 不升版。
+     * 🚫 绑定路径<b>不许</b>凭空往 {@code _record} 里补行 —— 主表已有数据，再写一份
+     * {@code origin_id=NULL} 的 {@code _record} 会让回填按新增追加 ⇒ 整组翻倍。
+     *
+     * <h3>B-20：编号占用复用同一条防线</h3>
+     * 前置 {@link #assertCustomerProductNoAvailable}（快速反馈）+ {@link #insertSelProductNo} 的
+     * 23505 → 409 映射（竞态下的正确性）。🚫 不写第二套。
+     *
+     * <h3>🚫 N+1</h3>
+     * 固定 4 条 SQL：客户 id 1 + 客户码 1 + 编号占用 1 + 料号存在性 1，再加落库 2 条
+     * （{@code quotation_line_item} 1 + {@code ds_quote_customer_part} 1）。零循环。
+     */
+    @SuppressWarnings("unchecked")
+    ConfigureProductResponse configureByBinding(UUID quotationId,
+                                                 ConfigureProductRequest req,
+                                                 UUID operatorId) {
+        String materialNo = req.bindExistingMaterialNo.trim();
+        // 🚫 互斥：两者同时非空说明前端把两条路混了，静默取一条会让用户以为配件也提交了。
+        if (req.parts != null && !req.parts.isEmpty()) {
+            throw com.cpq.configure.exception.MaterialRecipeApiException.badRequest(
+                "BIND_AND_PARTS_EXCLUSIVE",
+                "「直接绑定已有销售料号」与「选配配件」互斥，请只选一种");
+        }
+        UUID customerId = getCustomerIdFromQuotation(quotationId);
+        String customerCode = getCustomerCodeFromCustomerId(customerId);
+
+        // AC-19：编号占用仍被硬拦（与选配路径同一条防线）。
+        assertCustomerProductNoAvailable(customerCode, req.customerProductNo);
+
+        // AC-18 边界：料号必须在**该客户**的 ds_quote_material 里（D-2 客户维度）。
+        List<Object> exists = em.createNativeQuery(
+                "SELECT 1 FROM ds_quote_material WHERE customer_no = :cn AND material_no = :mn")
+            .setParameter("cn", customerCode)
+            .setParameter("mn", materialNo)
+            .getResultList();
+        if (exists.isEmpty()) {
+            throw com.cpq.configure.exception.MaterialRecipeApiException.badRequest(
+                "BIND_MATERIAL_NOT_FOUND",
+                "销售料号不存在（客户 " + customerCode + " 名下）: " + materialNo);
+        }
+
+        UUID lineItemId = insertLineItem(quotationId, materialNo, null, "SIMPLE",
+            parseUuidOrNull(req.tempId));
+        insertSelProductNo(customerCode, req.customerProductNo, req.customerProductName,
+            materialNo, quotationId, operatorId);
+
+        ConfigureProductResponse resp = new ConfigureProductResponse();
+        resp.lineItems = new ArrayList<>(List.of(
+            buildLineItemDTO(lineItemId, materialNo, "SIMPLE", null, List.of())));
+        resp.fingerprintMatched = false;          // 🚫 不进指纹（api.md §2.3）
+        resp.reusedHfPartNos = List.of();
+        resp.productType = "SIMPLE";
+        resp.structureVersion = SalesFingerprintCalculator.STRUCTURE_VERSION;
+        resp.reusedProductInfo = null;
+        return resp;
+    }
+
+    ConfigureProductResponse configureBySelection(UUID quotationId,
+                                                   ConfigureProductRequest req,
+                                                   UUID operatorId) {
         // B2.3: 后端裁决的有效 productType（Σqty 兜底），全程用它分发，不再信 req.productType。
         String effectiveType = validateRequest(req);
 
@@ -1792,12 +2020,18 @@ public class ConfigureProductService {
         // （403 / 409 / 400 AMBIGUOUS）全部掩盖成「编号必填」，那些用例验的就不再是它们要验的东西。
         List<String> defCodes = req.compositeProcesses == null ? List.of()
             : req.compositeProcesses.stream().map(cp -> cp.defCode).collect(Collectors.toList());
-        ConfigureCatalog catalog = prepareParts(req.parts, defCodes);
 
         // P4 批2 补丁: 从 quotation 拉 customer_id，传给 resolvePart → insertProcesses
+        // 🆕 task-260910 · B-10：客户码的派生**上移到 prepareParts 之前** —— loadCatalog ⑥
+        //    （外购件料号）已改按 customer_no 隔离取数（D-2），拿不到客户码就查不出候选。
+        //    ⚠️ 顺序变化只影响「quotation 不存在」这一种错误的抛出时机（现在更早），
+        //    原注释所说「先配件、后客户产品编号」的校验顺序（材质错误 vs 编号占用）不受影响 ——
+        //    assertCustomerProductNoAvailable 仍在 prepareParts 之后。
         UUID customerId = getCustomerIdFromQuotation(quotationId);
-        // V6 (AP-53 续 6 Phase 1): V6 BOM 表 customer_no 用 customer.code（非 UUID），派生一次贯穿落库
+        // 报价侧新表 customer_no 用 customer.code（非 UUID），派生一次贯穿落库
         String customerCode = getCustomerCodeFromCustomerId(customerId);
+
+        ConfigureCatalog catalog = prepareParts(customerCode, req.parts, defCodes);
 
         // 选配 Plan 3b (T3): 客户维度销售上下文 — 每 part 的 EnabledParam 投影，
         // 供 SalesFingerprintCalculator.computeSimple/computeComposite 计算客户维度指纹。
@@ -1889,15 +2123,17 @@ public class ConfigureProductService {
                     // 🆕 A-AC-11：category_code 一律写「默认分类」000000。
                     dsWriter.upsertMaterial(customerCode, parentHfPartNo, null, null, null, null,
                         SelDsQuoteWriter.TYPE_PART, SelDsQuoteWriter.CATEGORY_DEFAULT, opOf(operatorId));
-                    // V6 落库 Phase 2（选配 COMBO 补全，设计 §6 / 用户方案 B1/B2/B3）：统一走
-                    // VersionedV6Writer（内容相同复用 / 不同 max+1 升版 / is_current 翻转）。
+                    // 选配 COMBO 落库：统一走 VersionedGroupWriter（经 SelDsQuoteWriter）——
+                    // 整组指纹相同则一行不写 / 不同则归档 + max(当前,历史)+1 升版。
                     // 🆕 task-260903 · A-2 / A-4（A-AC-6）：父级 BOM 改落 ds_quote_material_bom。
                     // 🚨 ASSEMBLY 行与 RECIPE 行**必须合并成一次 writeGroup** —— V6 时代它们是
                     //    characteristic 区分的两个独立组，新表里同属 material_no 这一个轴值。
                     dsWriter.writeMaterialBomGroup(customerCode, parentHfPartNo,
                         buildCompositeBomRows(parentHfPartNo, childHfPartNos, childQtys), opOf(operatorId));
-                    insertProcessUnitPriceV6(parentHfPartNo, customerCode, req.parts, childHfPartNos, catalog);
-                    insertCompositeProcessCapacityV6(parentHfPartNo, req.compositeProcesses, catalog);
+                    insertProcessUnitPriceV6(parentHfPartNo, customerCode, req.parts, childHfPartNos,
+                        catalog, opOf(operatorId));
+                    insertCompositeProcessCapacityV6(parentHfPartNo, customerCode, req.compositeProcesses,
+                        catalog, opOf(operatorId));
                 }
             }
         }
@@ -1978,6 +2214,12 @@ public class ConfigureProductService {
      * </ul>
      *
      * @return 后端裁决后的有效 productType（"SIMPLE" 或 "COMPOSITE"），供 {@link #configure} 后续分发。
+     *
+     * <p>🆕 <b>task-260910 · B-18（AC-20）</b>：<b>绑定路径不经过本方法</b> ——
+     * {@link #configure} 在分流时就把 {@code bindExistingMaterialNo} 非空的请求交给
+     * {@link #configureByBinding}。本方法「{@code parts} 必填」这条硬校验因此对绑定路径
+     * 天然不成立，🚫 <b>不要在这里加 {@code bindExistingMaterialNo} 的旁路条件</b> ——
+     * 那会让「选配路径漏传 parts」也被放行（本方法是选配路径唯一的 parts 非空防线）。
      */
     String validateRequest(ConfigureProductRequest req) {
         if (req == null) throw new IllegalArgumentException("request body 必填");
@@ -2147,6 +2389,48 @@ public class ConfigureProductService {
      *   <li>sort_order: INT DEFAULT 0 (original V11)</li>
      *   <li>quantity: NOT present in any migration — omitted</li>
      * </ul>
+     *
+     * <h4>task-260910 · D-38（修 {@code BL-0202}）：本行必须写 {@code template_id}</h4>
+     *
+     * <p><b>缺陷形态（准确版）</b>：选配确认后<b>当场能渲染</b>（前端
+     * {@code QuotationWizard.tsx:1837} 有 {@code li.templateId || customerTemplateId} 的
+     * <b>内存</b>兜底），<b>但一刷新就渲染不出来</b> —— 那个兜底从未被持久化，重新进编辑页
+     * 拿到的 {@code lineItem.templateId} 仍是 NULL，{@code QuotationWizard.tsx:659} 的
+     * {@code if (!li.templateId) return li;} 直接跳过 enrich ⇒ {@code componentType} 补不上 ⇒
+     * {@code QuotationStep2.tsx} 的 {@code .filter(c => c?.componentType === 'NORMAL')} 过滤后为空 ⇒
+     * 卡片内容区落到「请通过添加产品选择模板后自动加载组件结构」、产品小计 ¥0。
+     *
+     * <p><b>为什么原先「留空」不是有意设计</b>（四条证据，2026-09-10 查证）：
+     * <ol>
+     *   <li>V30 的标题是「导入 v4 改造」，注释只为 {@code product_id} 辩护（导入产品不在
+     *       {@code product} 表）；{@code template_id} 那行是跟着放开的、没有自己的理由。且 V30
+     *       远早于选配（T20/T21），当时不可能为选配行设计什么。</li>
+     *   <li>V30 亲手服务的导入链路至今照写 {@code template_id}
+     *       （{@code QuotationLineItemMaterializeService:100-103} 的列清单第三列）
+     *       ⇒ 放开约束换来的是「可以为空」，不是「应该为空」。</li>
+     *   <li>同一个兜底在 {@code QuotationService:557}（saveDraft 逐行）与 {@code :3041}（batch）
+     *       早已存在，注释里连「选配产品行」都点名了。但 AC-12 明写「全程不点保存草稿」
+     *       ⇒ 那道兜底在本路径上<b>永不执行</b>，所以必须提前到落行这一刻。</li>
+     *   <li>后端渲染管线本来就按报价单级模板算这一行（{@code CardSnapshotService:737}/{@code :1166}
+     *       传的是 {@code q.customerTemplateId}，不是 {@code li.templateId}）；实测选配行的
+     *       {@code quotation_line_component_data} 的 {@code component_id} 5/5 全部命中该模板的
+     *       {@code components_snapshot} ⇒ <b>写 FK 是把已生效的事实补登记，不是给选配行强安模板</b>。</li>
+     * </ol>
+     *
+     * <p><b>取值与空值语义</b>：值 = {@code quotation.customer_template_id}，用 INSERT 内联子查询取
+     * （同表同主键，<b>不额外发查询</b>，SQL 条数与行数无关）。报价单还没有模板时写入 NULL、
+     * <b>不抛异常</b> —— 「先加产品后选模板」是产品上允许的路径
+     * （{@code CreateQuotationRequest.java:32}「留空则后续在报价单 Step2 中由用户手工选择」），
+     * 用户在 Step2 选定模板后由 {@code QuotationService:557} 的既有兜底补齐，链路自愈。
+     *
+     * <p>🚦 <b>经用户裁决接受的行为变化（2026-09-10，不是顺带副作用，请勿当回归去「修」）</b>：
+     * {@code template_id} 非空后，选配行开始参与
+     * {@code MaterialVersionUpgradeService:356/568} 的调价重算
+     * （原先 {@code CardSnapshotService:2832} 在 {@code templateId == null} 处直接返回空）。
+     * 裁决理由：导入行一直在参与，选配行不参与只是本缺陷的副作用，与 D-14「两侧功能保持一致」相符。
+     *
+     * <p>📌 <b>存量数据按用户裁决「只修新建路径、不回填」</b>：不追加回填迁移、不跑批量 UPDATE。
+     * 存量 DRAFT 行靠 saveDraft 既有兜底自愈；已审批单保持现状（详见任务回报 §2）。
      */
     UUID insertLineItem(UUID quotationId, String hfPartNo,
                         UUID parentLineItemId, String compositeType, UUID tempId) {
@@ -2154,8 +2438,11 @@ public class ConfigureProductService {
         em.createNativeQuery(
                 "INSERT INTO quotation_line_item " +
                 "(id, quotation_id, product_part_no_snapshot, " +
-                "parent_line_item_id, composite_type, sort_order, created_at) " +
-                "VALUES (:id, :q, :pn, :pp, :ct, 0, NOW())")
+                "parent_line_item_id, composite_type, sort_order, created_at, template_id) " +
+                // D-38: template_id 取本报价单的 customer_template_id（内联子查询，不多发查询）；
+                //       报价单尚未选模板时得到 NULL —— 与改动前一致，不抛异常。
+                "VALUES (:id, :q, :pn, :pp, :ct, 0, NOW(), " +
+                "        (SELECT customer_template_id FROM quotation WHERE id = :q))")
             .setParameter("id", id)
             .setParameter("q", quotationId)
             .setParameter("pn", hfPartNo)

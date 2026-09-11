@@ -1,0 +1,104 @@
+[
+    {
+        "__lvl": 1,
+        "__nodeId": "T260910D-P-01",
+        "driverRow": {
+            "parent_no": null,
+            "hf_part_no": "T260910D-P-01",
+            "material_no": "T260910D-P-01",
+            "_物料BOM_项次": null,
+            "_物料_材料名": null,
+            "_物料BOM_投入料号": null,
+            "_物料BOM_材料净重": null,
+            "_物料BOM_材料毛重": null,
+            "_物料BOM_组成数量": null,
+            "_物料BOM_重量单位": null,
+            "_物料BOM_销售料号": null,
+            "_物料BOM_损耗率（%）": null
+        },
+        "__hfPartNo": "T260910D-P-01",
+        "__nodeType": null,
+        "__parentId": null,
+        "__parentNo": null,
+        "__bomVersion": null,
+        "basicDataValues": {
+            "{$builder_7f9a5bbf264f._物料BOM_项次}": null,
+            "{$builder_7f9a5bbf264f._物料_材料名}": null,
+            "{$builder_7f9a5bbf264f._物料BOM_投入料号}": null,
+            "{$builder_7f9a5bbf264f._物料BOM_材料净重}": null,
+            "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": null,
+            "{$builder_7f9a5bbf264f._物料BOM_组成数量}": null,
+            "{$builder_7f9a5bbf264f._物料BOM_重量单位}": null,
+            "{$builder_7f9a5bbf264f._物料BOM_销售料号}": null,
+            "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": null
+        }
+    },
+    {
+        "__lvl": 2,
+        "__nodeId": "T260910D-P-01/T260910D-C-01",
+        "driverRow": {
+            "parent_no": "T260910D-P-01",
+            "hf_part_no": "T260910D-C-01",
+            "material_no": "T260910D-C-01",
+            "_物料BOM_项次": 1,
+            "_物料_材料名": "SD子件零件",
+            "_物料BOM_投入料号": "T260910D-C-01",
+            "_物料BOM_材料净重": 11,
+            "_物料BOM_材料毛重": 12,
+            "_物料BOM_组成数量": 1,
+            "_物料BOM_重量单位": "g",
+            "_物料BOM_销售料号": "T260910D-P-01",
+            "_物料BOM_损耗率（%）": 1
+        },
+        "__hfPartNo": "T260910D-C-01",
+        "__nodeType": "零件",
+        "__parentId": "T260910D-P-01",
+        "__parentNo": "T260910D-P-01",
+        "__bomVersion": null,
+        "basicDataValues": {
+            "{$builder_7f9a5bbf264f._物料BOM_项次}": 1,
+            "{$builder_7f9a5bbf264f._物料_材料名}": "SD子件零件",
+            "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "T260910D-C-01",
+            "{$builder_7f9a5bbf264f._物料BOM_材料净重}": 11,
+            "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": 12,
+            "{$builder_7f9a5bbf264f._物料BOM_组成数量}": 1,
+            "{$builder_7f9a5bbf264f._物料BOM_重量单位}": "g",
+            "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "T260910D-P-01",
+            "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": 1
+        }
+    },
+    {
+        "__lvl": 2,
+        "__nodeId": "T260910D-P-01/T260910D-C-01",
+        "driverRow": {
+            "parent_no": "T260910D-P-01",
+            "hf_part_no": "T260910D-C-01",
+            "material_no": "T260910D-C-01",
+            "_物料BOM_项次": 2,
+            "_物料_材料名": "SD子件零件",
+            "_物料BOM_投入料号": "T260910D-C-01",
+            "_物料BOM_材料净重": 22,
+            "_物料BOM_材料毛重": 24,
+            "_物料BOM_组成数量": 2,
+            "_物料BOM_重量单位": "g",
+            "_物料BOM_销售料号": "T260910D-P-01",
+            "_物料BOM_损耗率（%）": 2
+        },
+        "__hfPartNo": "T260910D-C-01",
+        "__nodeType": "零件",
+        "__parentId": "T260910D-P-01",
+        "__parentNo": "T260910D-P-01",
+        "__bomVersion": null,
+        "basicDataValues": {
+            "{$builder_7f9a5bbf264f._物料BOM_项次}": 2,
+            "{$builder_7f9a5bbf264f._物料_材料名}": "SD子件零件",
+            "{$builder_7f9a5bbf264f._物料BOM_投入料号}": "T260910D-C-01",
+            "{$builder_7f9a5bbf264f._物料BOM_材料净重}": 22,
+            "{$builder_7f9a5bbf264f._物料BOM_材料毛重}": 24,
+            "{$builder_7f9a5bbf264f._物料BOM_组成数量}": 2,
+            "{$builder_7f9a5bbf264f._物料BOM_重量单位}": "g",
+            "{$builder_7f9a5bbf264f._物料BOM_销售料号}": "T260910D-P-01",
+            "{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}": 2
+        }
+    }
+]

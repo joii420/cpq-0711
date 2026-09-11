@@ -1,0 +1,61 @@
+# task-260910 · 分片 S-A 复跑轮（稳定性确认）执行证据
+# 执行时刻 2026-09-10 05:05  库=cpq_db_test  结果 tests=4 failures=0 errors=0
+# 与 05:02 权威轮逐值一致（料号不同，其余 10 列取值全同）
+
+===== system-out =====
+2026-09-10 05:05:32.973 INFO  [org.hib.orm.jpa] (main) HHH008540: Processing PersistenceUnitInfo [name: <default>]
+2026-09-10 05:05:33.000 INFO  [org.hib.orm.core] (main) HHH000001: Hibernate ORM core version 7.2.9.Final
+2026-09-10 05:05:33.160 INFO  [org.hib.orm.con.pooling] (main) HHH10001005: Database info:
+	Database JDBC URL [undefined/unknown]
+	Database driver: undefined/unknown
+	Database dialect: PostgreSQLDialect
+	Database version: 13.0
+	Default catalog/schema: unknown/unknown
+	Autocommit mode: undefined/unknown
+	Isolation level: <unknown>
+	JDBC fetch size: undefined/unknown
+	Pool: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-09-10 05:05:33.725 INFO  [org.hib.val.int.uti.Version] (main) HV000001: Hibernate Validator 9.1.0.Final
+2026-09-10 05:05:33.887 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-09-10 05:05:34.153 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-09-10 05:05:34.277 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-09-10 05:05:34.660 INFO  [org.fly.cor.FlywayExecutor] (main) Database: jdbc:postgresql://10.177.152.12:5432/cpq_db_test?sslmode=disable (PostgreSQL 16.13)
+2026-09-10 05:05:34.850 INFO  [org.fly.cor.int.com.DbValidate] (main) Successfully validated 422 migrations (execution time 00:00.108s)
+2026-09-10 05:05:34.942 INFO  [org.fly.cor.int.com.DbMigrate] (main) Current version of schema "public": 439
+2026-09-10 05:05:34.943 WARN  [org.fly.cor.int.com.DbMigrate] (main) outOfOrder mode is active. Migration of schema "public" may not be reproducible.
+2026-09-10 05:05:34.950 INFO  [org.fly.cor.int.com.DbMigrate] (main) Schema "public" is up to date. No migration necessary.
+2026-09-10 05:05:34.990 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-09-10 05:05:34.991 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-09-10 05:05:35.516 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-09-10 05:05:35.640 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-09-10 05:05:35.685 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-09-10 05:05:35.745 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1765 列（3 套数据集）
+2026-09-10 05:05:36.103 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=57 edges=78 tabViews=48
+2026-09-10 05:05:36.119 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-09-10 05:05:36.126 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-10 05:05:36.133 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：57 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-10 05:05:36.134 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 153 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-09-10 05:05:36.237 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-09-10 05:05:36.319 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 9.054s. Listening on: http://localhost:57868
+2026-09-10 05:05:36.320 INFO  [io.quarkus] (main) Profile test activated. 
+2026-09-10 05:05:36.320 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+[env] 实际连的库 = cpq_db_test  RUN_ID=51a40f
+[夹具] 客户=T260910A-f8f7fb48 报价单=855266c5-a12a-4ded-9e39-aba68011c65a
+2026-09-10 05:05:37.550 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-1) User logged in: admin role=SYSTEM_ADMIN
+2026-09-10 05:05:37.577 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-1) Session created for user: admin
+[S-A] admin 登录成功，cookies=[CPQ_SESSION]
+2026-09-10 05:05:38.267 INFO  [com.cpq.quo.ser.dsr.DsRecordDirectWriter] (executor-thread-1) [ds-record][direct] ds_quote_material_bom_record 单=855266c5-a12a-4ded-9e39-aba68011c65a 客户=T260910A-f8f7fb48 轴值=1017-2609000001：整组覆盖 —— 删 0 行、写 1 行（主表零改动，方案② / D-7；origin_id 一律 NULL = 回填时按新增追加）
+2026-09-10 05:05:38.280 INFO  [com.cpq.quo.ser.dsr.DsRecordDirectWriter] (executor-thread-1) [ds-record][direct] ds_quote_element_bom_record 单=855266c5-a12a-4ded-9e39-aba68011c65a 客户=T260910A-f8f7fb48 轴值=1017-2609000001：整组覆盖 —— 删 0 行、写 2 行（主表零改动，方案② / D-7；origin_id 一律 NULL = 回填时按新增追加）
+2026-09-10 05:05:38.328 INFO  [com.cpq.quo.ser.dsr.DsRecordDirectWriter] (executor-thread-1) [ds-record][direct] ds_quote_material_bom_record 单=855266c5-a12a-4ded-9e39-aba68011c65a 客户=T260910A-f8f7fb48 轴值=1017-2609000002：整组覆盖 —— 删 0 行、写 1 行（主表零改动，方案② / D-7；origin_id 一律 NULL = 回填时按新增追加）
+2026-09-10 05:05:38.338 INFO  [com.cpq.quo.ser.dsr.DsRecordDirectWriter] (executor-thread-1) [ds-record][direct] ds_quote_element_bom_record 单=855266c5-a12a-4ded-9e39-aba68011c65a 客户=T260910A-f8f7fb48 轴值=1017-2609000002：整组覆盖 —— 删 0 行、写 2 行（主表零改动，方案② / D-7；origin_id 一律 NULL = 回填时按新增追加）
+2026-09-10 05:05:38.372 INFO  [com.cpq.quo.ser.dsr.DsRecordDirectWriter] (executor-thread-1) [ds-record][direct] ds_quote_material_bom_record 单=855266c5-a12a-4ded-9e39-aba68011c65a 客户=T260910A-f8f7fb48 轴值=1017-2609000003：整组覆盖 —— 删 0 行、写 4 行（主表零改动，方案② / D-7；origin_id 一律 NULL = 回填时按新增追加）
+2026-09-10 05:05:38.490 DEBUG [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] quotation=855266c5-a12a-4ded-9e39-aba68011c65a 命中 3 个轴值但无组件数据，跳过
+[TC-A2 提交（组合工序=Z100）] 200 {"lineItems":[{"productPartNo":"1017-2609000003","parentLineItemId":null,"processNos":[],"id":"56a07dfd-d371-448e-8792-cca45489efb9","compositeProcesses":[{"paramValues":{},"participatingParts":["1017-2609000001","1017-2609000002"],"defCode":"Z100","seqNo":1}],"compositeType":"COMPOSITE"},{"productPartNo":"1017-2609000001","parentLineItemId":"56a07dfd-d371-448e-8792-cca45489efb9","processNos":["Z008"],"id":"fdbda94b-30c8-4f73-a909-abfc05ebc1a3","compositeType":"PART"},{"productPartNo":"1017-2609000002","parentLineItemId":"56a07dfd-d371-448e-8792-cca45489efb9","processNos":["Z100"],"id":"eb66dff3-c0e6-4015-a4fc-68e4291e462f","compositeType":"PART"}],"fingerprintMatched":false,"reusedHfPartNos":[],"productType":"COMPOSITE","reusedProductInfo":null,"structureVersion":"v2","editRowMismatchCount":null,"editRowMismatches":null,"editRowMismatchTruncated":null}
+[TC-A2] 父料号=1017-2609000003 报价行结构=[[1017-2609000003, COMPOSITE, true], [1017-2609000002, PART, false], [1017-2609000001, PART, false]]
+[TC-A2①] ds_quote_assembly_fee(customer_no=T260910A-f8f7fb48) = [[1017-2609000003, Z100, 0.000000000000, 1, CNY, PCS, 0.010000000000, 1, MANUAL]]
+[TC-A2③] assembly_fee=0 AND source='MANUAL' 命中 1 行
+[阳性对照] 用存量行验探针：capacity WHERE material_no='S-3120014539' ⇒ 6 行
+[TC-A2②] capacity 命中本轮料号 [1017-2609000001, 1017-2609000002, 1017-2609000003] ⇒ 0 行（其中 QUOTE_ASSEMBLY 0 行）。阳性对照：新表已有 1 行 ⇒ 组合工艺写入确实执行过
+[还原] cust=T260910A-f8f7fb48 本轮料号=[1017-2609000003, 1017-2609000002, 1017-2609000001] | spf=4 asm=1 spf_hist=0 asm_hist=0 spf_rec=0 asm_rec=0 | cust_part=1 mat_bom=0 el_bom=0 mb_rec=6 eb_rec=4 material=3 | unit_price=0 capacity=0 element_bom_item=0 material_bom_item=0 | qcc=1 seq=1

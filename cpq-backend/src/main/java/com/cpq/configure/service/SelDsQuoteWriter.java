@@ -18,7 +18,8 @@ import java.util.Map;
  * task-260903 · 阶段 A —— 选配产出写入 {@code ds_quote_*} 报价侧新表体系。
  *
  * <p>取代 {@code ConfigureProductService} 里那一组 {@code *V6} 落库方法（A-7 停写 V6 五表）。
- * 本类是选配写入侧<b>唯一</b>与新表打交道的地方，四张目标表：
+ * 本类是选配写入侧<b>唯一</b>与新表打交道的地方，六张目标表
+ * （task-260910 · B-1/B-2/B-3 新增后两张）：
  *
  * <table>
  *   <tr><th>表</th><th>版本化</th><th>写法</th><th>AC</th></tr>
@@ -26,6 +27,8 @@ import java.util.Map;
  *   <tr><td>{@code ds_quote_customer_part}</td><td>否</td><td>裸 INSERT（要让 23505 冒出来）</td><td>A-6 / A-10</td></tr>
  *   <tr><td>{@code ds_quote_material_bom}</td><td>是</td><td>{@link VersionedGroupWriter}</td><td>A-2 / A-4</td></tr>
  *   <tr><td>{@code ds_quote_element_bom}</td><td>是</td><td>{@link VersionedGroupWriter}</td><td>A-3</td></tr>
+ *   <tr><td>{@code ds_quote_self_process_fee}</td><td>是</td><td>{@link VersionedGroupWriter}</td><td>AC-1 / AC-4</td></tr>
+ *   <tr><td>{@code ds_quote_assembly_fee}</td><td>是</td><td>{@link VersionedGroupWriter}</td><td>AC-2 / AC-3</td></tr>
  * </table>
  *
  * <h3>🚨 三条容易写错的地方</h3>
@@ -221,6 +224,17 @@ public class SelDsQuoteWriter {
      * <p>A-9（A-AC-5）：新料号在库中不存在 ⇒ {@code writeGroup} 走 CREATED 分支，
      * {@code version_no} 恒为 1（{@code VersionedGroupWriter} 里硬编码），选配阶段不会升版。
      * 本方法<b>不做任何版本号干预</b>，后人也不要加。
+     *
+     * <h3>task-260910 · D-14：无条件直写主表（与导入侧看齐）</h3>
+     * 本方法<b>直写主表</b>，轴 {@code (customer_no, material_no)}，与导入侧
+     * （{@code DatasetImportService} → {@code VersionedGroupWriter#writeGroups}）走同一个写入器、
+     * 产出逐列同型的行。
+     * <p>🚫 <b>不要再改回「只写 {@code _record}、等核价通过回填主表」</b>（原方案 ② / 原 D-7）。
+     * 那个方案的理由是「新料号必须过核价审核才进主库」，已于 2026-09-10 被用户裁决 <b>D-14 推翻</b>：
+     * 实测 {@code ds_quote_material_bom} 的 {@code source} 分布为
+     * IMPORT 2734 / MANUAL 18 / QUOTE_BACKFILL 8 ⇒ <b>导入侧一直直写主表、一次核价审核都没过</b>，
+     * 那条规则本来只约束选配一侧、并不成立。用户原话：
+     * 「那选配与导入看齐，也写入相同的主表，两侧功能保持一致」。
      */
     public VersionedGroupWriter.Result writeMaterialBomGroup(String customerNo, String materialNo,
                                                             List<Map<String, Object>> rows,
@@ -244,6 +258,9 @@ public class SelDsQuoteWriter {
      *
      * <p>N+1：读现状 1 条 SQL，与外购件数无关（调用方每个外购件调一次，是 V6 时代就有的形态；
      * 单次选配的外购件数是个位数常量，不随数据量增长）。
+     *
+     * <p><b>task-260910 · D-14</b>：现状与写入<b>都是主表口径</b>（曾按方案 ② 改成 {@code _record}
+     * 口径 + {@code appendRows}，已被 D-14 推翻回退，理由见 {@link #writeMaterialBomGroup}）。
      *
      * @return {@code null} 表示已存在、未写；否则为 {@code writeGroup} 的结果
      */
@@ -306,11 +323,115 @@ public class SelDsQuoteWriter {
      *
      * <p>🚨 同 {@link #writeMaterialBomGroup}：{@code rows} 是该料号<b>所有材质</b>的元素行合起来，
      * 不能按材质分多次调 —— 新表的轴只有 {@code material_no}，分次调后一次会抹掉前一次。
+     *
+     * <p><b>task-260910 · D-14</b>：<b>直写主表</b>（曾按方案 ② 改成只写
+     * {@code ds_quote_element_bom_record}，已被 D-14 推翻回退，理由见 {@link #writeMaterialBomGroup}）。
      */
     public VersionedGroupWriter.Result writeElementBomGroup(String customerNo, String materialNo,
                                                            List<Map<String, Object>> rows,
                                                            String operator) {
         SheetDef sd = sheet("ELEMENT_BOM");
+        return versionedWriter.writeGroup(sd, AxisKey.of(sd, customerNo, materialNo),
+            rows == null ? List.of() : rows, SOURCE, REASON, operator);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // task-260910 · B-1 / B-2 / B-3 · 工序与组装工艺 → 报价侧新表
+    //   自制工序    → ds_quote_self_process_fee（原 V6 unit_price，cost_type='自制加工费'）
+    //   组合工艺    → ds_quote_assembly_fee    （原 V6 capacity，resource_group_no='QUOTE_ASSEMBLY'）
+    //   外购件工序  → ds_quote_assembly_fee    （🚨 D-6：费用类别由「自制加工费」变「组装加工费」）
+    // ══════════════════════════════════════════════════════════════════
+
+    /**
+     * 组装一行 {@code ds_quote_self_process_fee}（task-260910 · B-1，api.md §4 列映射）。
+     *
+     * <p>🚨 <b>{@code inputMaterialNo} 装的是「零件料号」</b>（D-4，用户原话：「{@code input_material_no}
+     * 装的就是零件料号，就是新建的零件或者已有的零件的料号」）—— 逐字对应老 {@code unit_price.code}：
+     * SIMPLE 时 = 料号自身；COMPOSITE 时 = 子件料号（轴列 {@code material_no} 则是父料号）。
+     * 🚫 不要因为 {@code QuoteRegistry} 给这一列挂了 {@code .masterNoCheck("recipe", …)}
+     * 就改填材质料号 —— 那个校验只在<b>导入</b>的表头/值域校验里生效（{@code DatasetImportValidator}），
+     * 且它本身允许「编码域多态」（同一列既可能是材质也可能是零件）。
+     *
+     * <p>{@code item_seq} 与 {@code operation_item_seq} 同取行序（1..N）：前者是新表的通用项次
+     * （{@code required=true}，老 {@code unit_price} 没有这一列），后者对应老 {@code seq_no}。
+     * <p>{@code value}（单价）与 {@code ratio_pct} <b>不写</b> —— 选配阶段不采集单价，
+     * 留 NULL 由后续维护/导入补（AC-1① 判据之一：{@code value IS NULL}）。
+     */
+    public static Map<String, Object> selfProcessFeeRow(String materialNo, int itemSeq, String inputMaterialNo,
+                                                        String operationNo, String currency, String pricingUnit) {
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("material_no", materialNo);          // 轴列（复合轴的第二维）
+        r.put("item_seq", itemSeq);
+        r.put("input_material_no", inputMaterialNo);
+        r.put("operation_item_seq", itemSeq);
+        r.put("operation_no", operationNo);
+        r.put("currency", currency);
+        r.put("pricing_unit", pricingUnit);
+        return r;
+    }
+
+    /**
+     * B-1（AC-1 / AC-4）：写一个销售料号的自制工序整组。
+     *
+     * <p>🚨 与 {@link #writeMaterialBomGroup} 同一条纪律：新表的轴是
+     * {@code (customer_no, material_no)} <b>两维</b>，老 {@code unit_price} 的组键里那些
+     * {@code system_type / price_type / cost_type / code} 维度<b>全部不存在</b>。
+     * ⇒ COMPOSITE 的多个子件工序<b>必须一次给全</b>（各子件一行，靠 {@code input_material_no} 区分），
+     * 🚫 不许在 for 循环里按子件逐次调本方法 —— 那样第二次会把第一次的行当成删除整组重写。
+     */
+    public VersionedGroupWriter.Result writeSelfProcessFeeGroup(String customerNo, String materialNo,
+                                                                List<Map<String, Object>> rows,
+                                                                String operator) {
+        SheetDef sd = sheet("SELF_PROCESS_FEE");
+        requireCustomer(customerNo, sd.tableName, materialNo);
+        return versionedWriter.writeGroup(sd, AxisKey.of(sd, customerNo, materialNo),
+            rows == null ? List.of() : rows, SOURCE, REASON, operator);
+    }
+
+    /**
+     * 组装一行 {@code ds_quote_assembly_fee}（task-260910 · B-2 / B-3，api.md §4 列映射）。
+     *
+     * <p>🚨 <b>{@code assembly_fee} 恒写 {@code 0}</b>（D-5）：该列 {@code required=true}，
+     * 而选配阶段<b>不采集单价</b>。{@code source='MANUAL'}（本类常量）是区分「选配占位、待补价」
+     * 与「真实 0 元」的判据 —— AC-2③ 就是验这一对组合可同时查到。
+     * 🚫 不要为了「更诚实」把它改成 NULL：Registry 里它是必填列，改 NULL 会让维护端/导入端校验红。
+     *
+     * <p><b>老 {@code capacity} 的两列在新表无落点</b>，🚫 不许硬塞进别的列：
+     * {@code process_name}（可由 {@code assembly_operation} JOIN {@code process_master} 现算，本期不做）、
+     * {@code production_type}（老实现写死常量 {@code BATCH_FIXED}，无业务消费方，不迁）。
+     */
+    public static Map<String, Object> assemblyFeeRow(String materialNo, int itemSeq, String assemblyOperation,
+                                                     String currency, String pricingUnit,
+                                                     BigDecimal defectRate) {
+        Map<String, Object> r = new LinkedHashMap<>();
+        r.put("material_no", materialNo);
+        r.put("item_seq", itemSeq);
+        r.put("assembly_operation", assemblyOperation);
+        r.put("assembly_fee", ASSEMBLY_FEE_PLACEHOLDER);
+        r.put("currency", currency);
+        r.put("pricing_unit", pricingUnit);
+        r.put("defect_rate", defectRate);
+        return r;
+    }
+
+    /** D-5：选配阶段的组装加工费占位值。🚫 不是 NULL（该列 {@code required=true}）。 */
+    public static final BigDecimal ASSEMBLY_FEE_PLACEHOLDER = BigDecimal.ZERO;
+
+    /**
+     * B-2（AC-2）/ B-3（AC-3）：写一个销售料号的组装加工费整组。
+     *
+     * <p>两个来源共用本方法，且<b>轴值不同、互不干扰</b>：
+     * <ul>
+     *   <li>B-2 组合工艺：轴值 = <b>父</b>料号，行 = 各组合工序；</li>
+     *   <li>B-3 外购件工序：轴值 = <b>外购件</b>料号，行 = 用户为该外购件选的工序。</li>
+     * </ul>
+     * ⚠️ 同一轴值上<b>整组重写</b>语义照旧 —— 调用方必须一次给全该轴值应有的全部行。
+     */
+    public VersionedGroupWriter.Result writeAssemblyFeeGroup(String customerNo, String materialNo,
+                                                             List<Map<String, Object>> rows,
+                                                             String operator) {
+        SheetDef sd = sheet("ASSEMBLY_FEE");
+        requireCustomer(customerNo, sd.tableName, materialNo);
         return versionedWriter.writeGroup(sd, AxisKey.of(sd, customerNo, materialNo),
             rows == null ? List.of() : rows, SOURCE, REASON, operator);
     }

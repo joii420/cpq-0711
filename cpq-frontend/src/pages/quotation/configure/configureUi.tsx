@@ -15,12 +15,18 @@ import type { ButtonProps } from 'antd';
  * ⚠️ AntD 的 disabled `<button>` 不派发鼠标事件，tooltip 必须包一层 `<span>` 才触发得了。
  */
 export const ReasonedButton: React.FC<
-  Omit<ButtonProps, 'disabled'> & { reason?: string | null; children?: React.ReactNode }
-> = ({ reason, children, ...rest }) => {
-  if (!reason) return <Button {...rest}>{children}</Button>;
+  Omit<ButtonProps, 'disabled'> & { reason?: string | null; children?: React.ReactNode; block?: boolean }
+> = ({ reason, children, block, ...rest }) => {
+  if (!reason) return <Button {...rest} block={block}>{children}</Button>;
   return (
     <Tooltip title={reason}>
-      <span style={{ display: 'inline-block', cursor: 'not-allowed' }}>
+      {/*
+        ⚠️ `block` 不是可省的糖：外层 <span> 默认 `inline-block`，宽度由内容决定 ⇒
+           里面按钮的 `width:100%` 会**回落成内容宽**（百分比没有可解析的基准）。
+           要一颗铺满整行的禁用按钮（如原型 01 第四态那颗虚线「+ 添加配件」），
+           必须把包裹层也撑开，光给 Button 加 width:100% 是无效的。
+      */}
+      <span style={{ display: block ? 'block' : 'inline-block', width: block ? '100%' : undefined, cursor: 'not-allowed' }}>
         {/*
           `pointerEvents:'none'` 让外层 <span> 的 `cursor:not-allowed` 真正生效
           （否则 disabled <button> 自己的光标样式会盖住它）。
@@ -59,6 +65,18 @@ export const EmptyBlock: React.FC<EmptyBlockProps> = ({ icon, title, hint, actio
     {hint ? <div style={{ fontSize: 12, color: '#909399', marginTop: 6 }}>{hint}</div> : null}
     {actions ? <div style={{ marginTop: 16, display: 'flex', gap: 8, justifyContent: 'center' }}>{actions}</div> : null}
   </div>
+);
+
+/**
+ * 「未选客户」空态（task-260910 · F-1，1:1 对齐 `原型图/02-绑定料号搜索面板.html` 第三态）。
+ *
+ * 🚨 **`customerNo` 为 undefined 时不要发请求** —— 两个候选端点已把 `customerNo` 列为必填，
+ *    缺参后端直接 400 `CUSTOMER_NO_REQUIRED`。发出去再把 400 渲染成「加载失败」，
+ *    对用户是纯噪音（他要做的事是先选客户，不是重试）。
+ * 🚫 这也不是「加载中…」（AP-31 族）：它是一个**确定的**、不需要等待的状态。
+ */
+export const NoCustomerEmpty: React.FC = () => (
+  <EmptyBlock icon="👤" title="请先为报价单选择客户" hint="料号按客户隔离，未选客户无法检索" />
 );
 
 /** 灰色说明块（原型 `.note`）。 */

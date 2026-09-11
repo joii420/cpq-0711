@@ -30,7 +30,20 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>失败<b>不是</b>静默丢弃：受影响行的 {@code quote_card_values} 非 NULL 且含哨兵标记
  *       （对标已有 {@code EnsureCardValuesTest#failed_row_writes_sentinel_not_null} 的单行断言，
  *       本测试把它<b>扩展到多行</b>，验证"降级不是只对第一行生效、后面几行被漏报"）</li>
- *   <li>失败不会被误判为"部分成功"再重复无限重算（幂等：二次调用返回 0）</li>
+ *   <li><s>失败不会被误判为"部分成功"再重复无限重算（幂等：二次调用返回 0）</s>
+ *       <br>🔴 <b>2026-09-10 task-260910 B-24 / AC-25（D-30 用户裁决）语义已变更，本条随之重写</b>：
+ *       哨兵的「非 NULL ⇒ 下次选不中」被证实是一个<b>用户可见缺陷</b>（失败哨兵<b>粘死</b>：
+ *       报价单事后补绑 {@code customer_template_id} / 修好配置也<b>永不自愈</b>，实测 A/B 里
+ *       {@code compData} 已 0→14 而 {@code quote_card_values} 仍是哨兵）。
+ *       ⇒ {@code CardSnapshotService.sqlNeedsRecompute} 现在<b>按显式标记重选哨兵行</b>，
+ *       二次调用返回的是<b>被重选的行数</b>（本夹具 = 4），🚫 不再是 0。
+ *       <br>「不无限重算」这件事改由另外两道机制承担，<b>不再靠让哨兵行选不中</b>：
+ *       ① 重算只在被<b>显式触发</b>时发生（{@code ensure-card-values} 端点 / submit / 比对视图等），
+ *       没有后台循环；② {@code CardSnapshotService#materializeStatus} 的 {@code ready} 谓词
+ *       <b>刻意</b>仍把哨兵行计入 ready ⇒ 前端 {@code pollMaterializeStatus} 照旧 {@code done}、
+ *       不会空转 20 分钟反复自愈（见该方法 javadoc 的分叉裁决说明）。
+ *       <br>本条断言改为「二次调用<b>重选 4 行</b>且这 4 行<b>仍是哨兵</b>」——
+ *       后半句是新加的守卫：根因没消失时重算<b>不许</b>把空壳当成功落库（那比原缺陷更坏）。</li>
  * </ol>
  *
  * <p><b>已知覆盖缺口</b>（如实登记，见 test-report.md）：AC-5 原文"接口仍返回 cardValuesReady: false
@@ -191,11 +204,24 @@ class EnsureCardValuesFailureNotSwallowedTest {
                 "全部 4 行都应落哨兵(证明失败对该报价单下每一行都可观测,不是只报第一行、" +
                 "后面几行被漏报或误判成功)");
 
-        // 3) 幂等:二次调用应为 0(哨兵行不再被 IS NULL 谓词重选,不会无限重算同一个必然失败的行)
+        // 3) 🔴 task-260910 B-24 / AC-25（D-30 用户裁决）：语义反转，见类 javadoc 第 2 条。
+        //    原断言 = 「二次调用应为 0（哨兵行不应被重选）」—— 那个「选不中」正是 D-30 认定的缺陷
+        //    （失败哨兵粘死，事后补绑模板也不自愈）。现在哨兵行**必须**被重选。
         int second = svc.ensureCardValues(quotationId);
-        assertEquals(0, second, "第二次 ensureCardValues 应为 0(哨兵行不应被重选,避免对必然失败的" +
-                "配置无限重算浪费资源)");
+        assertEquals(4, second, "第二次 ensureCardValues 应重选全部 4 个哨兵行(B-24：谓词按 " + SENTINEL
+                + " 标记重选，这是 AC-25 自愈能力的必要条件)。实际=" + second
+                + " ⇒ 若为 0 说明 sqlNeedsRecompute 又退回只认 IS NULL，AC-25 当场失效");
 
-        System.out.printf("[T-3] quotation=%s 4行全部落哨兵=%b 二次调用=%d%n", quotationId, sentinelCount == 4, second);
+        // 3b) 新增守卫：根因（customer_template_id 仍为 NULL）没消失 ⇒ 重算只应把哨兵原样写回。
+        //     🚫 变成非哨兵反而是更坏的假绿（把空壳当成功落库）。
+        long stillSentinel = ((Number) em.createNativeQuery(
+                "SELECT count(*) FROM quotation_line_item WHERE quotation_id = :q " +
+                "AND quote_card_values::text LIKE :m")
+                .setParameter("q", quotationId).setParameter("m", "%" + SENTINEL + "%")
+                .getSingleResult()).longValue();
+        assertEquals(4L, stillSentinel, "重选重算之后 4 行都应仍是哨兵(根因未消失 ⇒ 再失败一次)，实际=" + stillSentinel);
+
+        System.out.printf("[T-3] quotation=%s 4行全部落哨兵=%b 二次调用重选=%d 重算后仍是哨兵=%d%n",
+                quotationId, sentinelCount == 4, second, stillSentinel);
     }
 }

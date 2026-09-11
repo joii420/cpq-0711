@@ -89,6 +89,16 @@ export interface ConfigureProductRequest {
   compositeProcesses?: CompositeProcessRequest[];
   /** 主 lineItem.id UUID：后端用此 UUID insert，响应 lineItem.id === tempId，前后端 id 对齐 */
   tempId?: string;
+  /**
+   * 🆕 task-260910 · S-7：直接绑定已有销售料号（AC-18，加法式 —— 老 payload 行为逐字不变）。
+   *
+   * 非空 ⇒ 走绑定路径：不铸新号、不进指纹、不写 BOM/元素，只写
+   * `ds_quote_customer_part` + `quotation_line_item` 各 1 行。
+   * 🚫 **与 `parts` 互斥**：两者同时非空 → 400 `BIND_AND_PARTS_EXCLUSIVE`
+   *    ⇒ 前端在 UI 层就双向禁用（见 `ConfigureProductDrawer` 的 bind 分支），
+   *      不让用户走到那个 400。
+   */
+  bindExistingMaterialNo?: string;
 }
 
 /** 命中复用时带出的销售产品信息（task-260902 · api.md §1.3，AC-7 状态 C）。 */
@@ -154,12 +164,26 @@ export interface LookupFingerprintResponse {
   snapshot?: LookupFingerprintSnapshot;
 }
 
-/** 已有零件的单个材质构成项（多材质零件在 task-260902 之后才会出现）。 */
+/**
+ * 已有零件的单个材质构成项（task-260910 · api.md §2.1）。
+ *
+ * 🔑 **“是材质”的判据是 JOIN 命中**（AC-9）：后端取
+ *    `ds_quote_material_bom.input_material_no` 能在 `material_recipe.code` 找到的那些行，
+ *    🚫 不看 `output_material_type`。⇒ 前端拿到的每一项都已经是真材质，
+ *    🚫 不要在前端再滤一次（那会把后端判据默默掩盖掉）。
+ */
 export interface SearchPartMaterial {
   recipeCode?: string | null;
   recipeSymbol?: string | null;
   recipeName?: string | null;
-  /** 占比 %（100 制字符串）；单材质零件为 '100' 或空。 */
+  /** 材质规格（`material_recipe.spec`）—— tag 的 hover 提示里展示。 */
+  recipeSpec?: string | null;
+  recipeType?: string | null;
+  /**
+   * 占比 %（100 制字符串）。
+   * ⚠️ `api.md §2.1` 的 `materials[]` 里**没有这个字段** —— 声明为可选只为了
+   *    后端若回填就能直接渲染；拿不到时 tag 上不显示百分比（🚫 不报错、不留空白）。
+   */
   ratio?: DecimalString | null;
 }
 
@@ -168,21 +192,22 @@ export interface SearchPartResult {
   partName?: string;
   specification?: string;
   sizeInfo?: string;
+  /**
+   * ⚠️ **契约疑点（已报主线）**：`api.md §2.1` 的返回示例里没列本字段，
+   *    也没把它列入「🔴 删除的字段」—— 保持可选：后端给就渲染，不给显示「—」。
+   */
   unitWeight?: DecimalString | null;
   statusCode?: string;
   /**
-   * 🚧 **契约缺口（已报主线）**：`原型图/4-已有零件与工序.html` 状态 A 要求「材质构成」列能显示
-   * N 个材质标签，但 `api.md §3` 把 `search-parts` 列为「复用、不改」，DTO 里只有单值
-   * `recipeCode/recipeSymbol`。本字段按**可选**声明：后端补上就渲染 N 个标签，
-   * 没有就回落到下面的单值字段渲染 1 个标签（不报错、不空白）。
+   * 材质构成（task-260910 · AC-8：**单值 → 多值**）。
+   *
+   * 🚨 **空数组是正常业务状态**（AC-9）：外购件与组合父料号就没有材质行，
+   *    渲染成「—」，🚫 不是「加载中…」（AP-31 族）。
+   * 🔴 `recipeId / recipeCode / recipeSymbol / recipeName / recipeSpec / recipeType` 六个**单值**字段
+   *    已按 `api.md §2.1` 删除，🚫 不要再加回“单值兜底”分支 ——
+   *    那正是后端补齐多材质后会静默只显示一个的写法。
    */
   materials?: SearchPartMaterial[] | null;
-  recipeId?: string;
-  recipeCode?: string;
-  recipeSymbol?: string;
-  recipeName?: string;
-  recipeSpec?: string;
-  recipeType?: 'locked' | 'editable' | 'partial';
 }
 
 // ─── F1(task-0712) 新增：有效选配模板 + 选配明细表 UI 状态类型 ────────────────

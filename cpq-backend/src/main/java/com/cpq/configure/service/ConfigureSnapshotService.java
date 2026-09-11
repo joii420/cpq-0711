@@ -286,7 +286,27 @@ public class ConfigureSnapshotService {
             // 否则增量 draft(全行已有快照→全跳过)会白白 evictAll + 报价合桶 expand(纯浪费)。
             UUID customerId = self.loadCustomerId(quotationId);
             List<DriverComp> comps = self.loadDriverComponents(quotationId);
-            if (comps.isEmpty()) return;
+            if (comps.isEmpty()) {
+                // task-260910 B-25（D-32）：本岔路口原先【零日志、零异常、零 warning】直接 return
+                // ⇒ 整条选配/加产品物化链路对「compData 恒 0 条」这个故障形态完全无信号，
+                //   三个测试片各自在同一个岔路口绕了半天（可量化的返工成本）⇒ 加这一行。
+                // 🚫 只加可观测性，不改早退行为本身（仍然 return、仍然不抛）。
+                // 📌 两种命中形态在同一行里就能分开，不用再去读代码：
+                //    · customer_template_id = (NULL) ⇒ loadDriverComponents 第一句就 return List.of()
+                //      （报价单还没绑报价模板 —— D-31 实测的单一变量）
+                //    · customer_template_id 非 NULL 但组件数 0 ⇒ 模板绑了，但它一个 driver 组件都没有
+                //      （模板配置问题 / 快照没冻结出 driver 页签）
+                // 🔒 N+1：本查询只在「已经确定要早退」这条分支上跑一次，不在任何循环体内。
+                LOG.warnf("[snapshot-lines-noop] quotation=%s customer_template_id=%s 命中 driver 组件 %d 个 "
+                                + "⇒ 本次 snapshotLines 直接早退（不写 snapshot_rows、不物化 "
+                                + "quotation_line_component_data，lineItems=%d 行全部未处理）。"
+                                + "症状侧表现为「报价单页签 0 行 / compData 0 条」，"
+                                + "customer_template_id 为 NULL 时这就是根因本身。",
+                        quotationId,
+                        String.valueOf(self.loadCustomerTemplateId(quotationId)),
+                        comps.size(), lineItems.size());
+                return;
+            }
             // Part B: driver 组件 id 集合，用于复用行"已有完整 snapshot_rows → 跳过"判定
             java.util.List<UUID> driverCompIds = new java.util.ArrayList<>();
             for (DriverComp dc : comps) driverCompIds.add(dc.id);
