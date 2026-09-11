@@ -1,0 +1,4 @@
+采样时刻=2026-09-11T01:05:52.381Z
+backend 8081 pid=20503 cwd=/home/joii/project/cpq/cpq-backend started="Thu Sep 10 08:58:38 2026"
+worktree HEAD=884cdd13ca23cdae31808ed1773460d4de715009
+⚠️ 本次目标就是**改动前现状**：分支 HEAD == master，8081/5174 跑的即改动前代码。

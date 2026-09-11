@@ -942,7 +942,12 @@ public class ComponentDriverService {
         try {
             com.cpq.component.entity.ComponentSqlView v = com.cpq.component.entity.ComponentSqlView
                     .find("sqlViewName", viewName).firstResult();
-            boolean uses = v != null && v.sqlTemplate != null && v.sqlTemplate.contains(":lineItemId");
+            // 🚨 repair-260910 B-1 配套（AC-1）：:customerProductNo 与 :lineItemId 是同一个行维度
+            //    （前者由 enrichCustomerProductNo 从后者反查而来），必须同样阻止跨卡片合桶，并让
+            //    ComponentResource 的 bucketKey 带上 |li= 维度。方法名保持不变（3 处调用点稳定），
+            //    语义已从"含 :lineItemId"放宽为"含任一 per-lineItem 占位符"。
+            boolean uses = v != null && v.sqlTemplate != null
+                    && (v.sqlTemplate.contains(":lineItemId") || v.sqlTemplate.contains(":customerProductNo"));
             viewUsesLineItemIdCache.put(cacheKey, uses);
             return uses;
         } catch (Exception e) {
@@ -1001,6 +1006,16 @@ public class ComponentDriverService {
         String tpl = v.sqlTemplate;
         if (com.cpq.datasource.sqlview.SpineKeysMacro.containsMacro(tpl)) return false;  // ④ 无 :spineKeys
         if (tpl.contains(":lineItemId") || tpl.contains("quotation_line_item_id")) return false;  // ④ 无行维度
+        // 🚨 repair-260910 B-1 配套（AC-1）：:customerProductNo **也是行维度**。
+        //    它由 SqlViewExecutor.enrichCustomerProductNo 从 :lineItemId 反查
+        //    quotation_line_item.customer_part_no 得到 ⇒ 值逐行不同，和 :lineItemId 是同一个维度、
+        //    只是换了个名字出现在模板里。不登记在这儿会有两个后果，且**都不报错**：
+        //      ① 合桶路径（ConfigureSnapshotService.precomputeQuoteDriverBuckets /
+        //         CardSnapshotService.precomputeCostingDriverUnion）调 expandMulti 时**压根不传
+        //         lineItemId** ⇒ enrich 拿不到值 ⇒ 占位符降级成 NULL ⇒ 该页签客户产品编号列**恒空**；
+        //      ② 就算某条路径传了 lineItemId，整桶也只按 pivot 求值一次 ⇒ 同料号不同明细行串号。
+        //    ⇒ 含该占位符的视图一律回落逐行 expand（慢但正确），与 :lineItemId 完全同一条既有退路。
+        if (tpl.contains(":customerProductNo")) return false;                                     // ④ 无行维度
         return true;
     }
 

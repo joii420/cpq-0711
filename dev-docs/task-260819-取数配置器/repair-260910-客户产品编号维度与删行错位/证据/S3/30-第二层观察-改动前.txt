@@ -1,0 +1,10 @@
+=== P2 ===
+restore-driver-rows → 200
+恢复后 deleted_row_keys = []
+恢复后渲染 = ["R0910S3-CP1","R0910S3-CP2","R0910S3-CP3","R0910S3-CP3"]
+点【第 1 行】(R0910S3-CP1) 后当场渲染 = ["R0910S3-CP1","R0910S3-CP2","R0910S3-CP3"]
+当场消失的是：（无）
+前端发出 body = {"componentId":"221dc766-8ab6-4d95-82c0-08cc03e6267d","effKey":"R0910S3-M1#0","fp":"∅R0910S3-CP112.345678901234S3测试品名10x5x2R0910S3-OLDR0910S3-PRODS3-SPEC-001R0910S3-M1R0910S3-M1"}
+落库 deleted_row_keys = [{"fp": "∅R0910S3-CP112.345678901234S3测试品名10x5x2R0910S3-OLDR0910S3-PRODS3-SPEC-001R0910S3-M1R0910S3-M1", "effKey": "R0910S3-M1#0"}]
+刷新后渲染 = ["R0910S3-CP1","R0910S3-CP2","R0910S3-CP3"]
+刷新后消失的是：（无）

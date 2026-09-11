@@ -1,0 +1,23 @@
+=== 观察 8：零墓碑状态下，服务端投影本身就已错配（不经浏览器，纯 API） ===
+报价单 QT-20260910-0821 / 明细行 R0910S3-M1 / 组件「产品」
+步骤：POST restore-driver-rows（清空墓碑）→ GET /api/cpq/quotations/{id} 读投影
+
+deletedRowKeys = []            ← 墓碑是空的，本次完全不涉及删除机制
+baseRows     = ['R0910S3-CP1', 'R0910S3-CP2', 'R0910S3-CP3', 'R0910S3-CP4']   ← 驱动展开：对
+editRows     = ['R0910S3-CP1', 'R0910S3-CP2', 'R0910S3-CP3', 'R0910S3-CP3']   ← ❌ 第 4 条值错
+resolvedRows = ['R0910S3-CP1', 'R0910S3-CP2', 'R0910S3-CP3', 'R0910S3-CP3']   ← ❌ 最终渲染源
+rowData      = ['R0910S3-CP1', 'R0910S3-CP2', 'R0910S3-CP3', 'R0910S3-CP3']   ← ❌ 落库的编辑行
+
+⇒ 错配发生在**服务端投影**，不是浏览器渲染。
+
+=== 本片观测到的完整状态序列（同一张单，按时间） ===
+① 刚加完产品卡片（从未删过）：页面渲染 CP1,CP2,CP3,CP4                 ✅ 对
+② 点【第 2 行】CP2 删除：墓碑 = {effKey #1, fp 含 CP2}（对）
+   页面渲染 → CP1,CP2,CP3                                              ❌ 被点的 CP2 还在，CP4 没了
+   rowData 由 4 条 → 3 条，保留的是前 3 条
+③ 整页刷新：仍是 CP1,CP2,CP3                                           ❌ 不是渲染抖动，是持久的
+   （snapshot_rows 仍是完整 4 行，说明墓碑作用在投影阶段）
+④ restore-driver-rows 清墓碑：baseRows 恢复 4 行 ✅
+   但 editRows/resolvedRows/rowData = CP1,CP2,CP3,CP3                   ❌ 第 4 行的值没恢复
+⑤ 点【第 1 行】CP1 删除：墓碑 = {effKey #0, fp 含 CP1}（对）
+   resolvedRows → CP1,CP2,CP3                                          ❌ 被点的 CP1 还在

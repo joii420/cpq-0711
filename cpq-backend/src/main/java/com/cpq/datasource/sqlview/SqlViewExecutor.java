@@ -126,6 +126,23 @@ public class SqlViewExecutor {
      */
     private static final String CUSTOMER_CODE_PARAM = "customerCode";
 
+    /**
+     * repair-260910 B-1（AC-1 / AC-2 / AC-4）：{@code :customerProductNo}（客户产品编号）。
+     *
+     * <p>B-2 起，凡取数配置器产物 JOIN 了 {@code ds_quote_customer_part}（行粒度
+     * {@code (customer_no, customer_product_no)}）的视图，都会在 <b>{@code LEFT JOIN … ON}</b> 上
+     * 带 {@code <别名>.customer_product_no = :customerProductNo}，把「一个销售料号在同一客户下挂
+     * N 个客户产品编号」收窄成「当前卡片自己的那一个」。
+     *
+     * <p>🚨 <b>刻意不进 {@link #rewriteNamedParams} 的硬阻断名单</b>（与 {@code :customerCode} /
+     * {@code :total_material_no} <b>相反</b>）：{@code quotation_line_item.customer_part_no} 实测
+     * 3969 行里有 <b>128 行为空</b>，本来就允许没有。硬阻断会把这些卡片整页签打成 400；
+     * 而走「未绑定 → 字面量 NULL」的既有安全降级时，谓词挂在 {@code ON} 上恒 UNKNOWN ⇒
+     * JOIN 不匹配 ⇒ <b>左表行仍在、只是客编列为空</b>，这正是 AC-2 要的行为
+     * （🚫 谓词绝不许写进 {@code WHERE}，那才会整页签 0 行且不报错）。
+     */
+    private static final String CUSTOMER_PRODUCT_NO_PARAM = "customerProductNo";
+
     @Inject
     DataSource dataSource;
 
@@ -348,6 +365,7 @@ public class SqlViewExecutor {
         Map<String, Object> namedParams = new HashMap<>(ctx.toNamedParams());
         enrichCustomerCode(namedParams);
         enrichPriceBaseDate(namedParams);
+        enrichCustomerProductNo(namedParams);
         if (partNos != null && !partNos.isEmpty()) {
             namedParams.put("hfPartNos", partNos);
         }
@@ -423,6 +441,7 @@ public class SqlViewExecutor {
         Map<String, Object> namedParams = new HashMap<>(ctx.toNamedParams());
         enrichCustomerCode(namedParams);
         enrichPriceBaseDate(namedParams);
+        enrichCustomerProductNo(namedParams);
         if (partNos != null && !partNos.isEmpty()) {
             namedParams.put("hfPartNos", partNos);
         }
@@ -493,6 +512,65 @@ public class SqlViewExecutor {
                 namedParams.put("customerCode", code);
             }
         }
+    }
+
+    /**
+     * 补充 {@code :customerProductNo} 命名占位符（repair-260910 B-1，AC-1 / AC-2 / AC-4）。
+     *
+     * <p>值 = <b>当前报价明细行自己的</b> {@code quotation_line_item.customer_part_no}，
+     * 从 {@code namedParams} 里已有的 {@code :lineItemId} 反查。
+     *
+     * <p><b>为什么读 {@code namedParams} 而不是 {@link SqlViewRuntimeContext}</b>：与
+     * {@link #enrichCustomerCode} / {@link #enrichPriceBaseDate} <b>同款模式</b>——
+     * {@code ComponentDriverService#expand} 调 {@code SqlViewRuntimeContext.setNested(componentId,
+     * null, null, null)}，那条上下文里的 lineItem 恒为 null；真正贯穿 driver 展开链路的是
+     * {@code DataLoader.loadByPath} 从 driverRow hint 取出的 {@code quotation_line_item_id} →
+     * {@code ctx.lineItem.id} → {@code ctx.toNamedParams()} 暴露的 {@code lineItemId}，
+     * 与 {@code :customerId}/{@code :customerCode} 完全同一条注入管线。
+     *
+     * <p>🚫 <b>刻意不加进程级缓存</b>（与上面两个 enrich 的 {@code customerCodeCache} /
+     * {@code priceBaseDateCache} <b>不同</b>）：那两个缓存的前提是取值<b>不可变</b>
+     * （{@code customer.code} 是业务主键、{@code quotation.created_at} 不可变），
+     * 而 {@code customer_part_no} 是用户随时可以在报价单上改的字段——缓存它会让改完之后
+     * 页签仍按旧客户产品编号取数，且只在进程重启后自愈。
+     *
+     * <p>取不到（无 lineItemId 上下文 / 该行 {@code customer_part_no} 为空）时<b>什么都不放</b>，
+     * 让 {@link #rewriteNamedParams} 走既有的「未绑定 → 字面量 NULL」安全降级 ——
+     * 见 {@link #CUSTOMER_PRODUCT_NO_PARAM} 注释（AC-2 的正向要求）。
+     */
+    private void enrichCustomerProductNo(Map<String, Object> namedParams) {
+        if (namedParams.containsKey(CUSTOMER_PRODUCT_NO_PARAM)) return;   // 上层显式给了则不覆盖
+        Object lidObj = namedParams.get("lineItemId");
+        UUID lid = null;
+        if (lidObj instanceof UUID u) {
+            lid = u;
+        } else if (lidObj != null) {
+            try { lid = UUID.fromString(lidObj.toString()); } catch (Exception ignored) { /* 非 UUID，放弃 */ }
+        }
+        if (lid == null) return;
+        String cpn = queryLineItemCustomerPartNo(lid);
+        if (cpn != null && !cpn.isBlank()) {
+            namedParams.put(CUSTOMER_PRODUCT_NO_PARAM, cpn);
+        }
+    }
+
+    /**
+     * 查该报价明细行的客户产品编号。查不到 / 出错一律返回 null（由调用方降级为未绑定），
+     * 🚫 不抛异常打断渲染链路 —— 与 {@link #queryQuotationDate} 同款容错口径。
+     */
+    private String queryLineItemCustomerPartNo(UUID lineItemId) {
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(
+                     "SELECT customer_part_no FROM quotation_line_item WHERE id = ?")) {
+            ps.setObject(1, lineItemId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return rs.getString(1);
+            }
+        } catch (Exception e) {
+            LOG.warnf("[SqlViewExecutor] 解析明细行客户产品编号失败 lineItemId=%s，:customerProductNo 保持未绑定: %s",
+                    lineItemId, e.getMessage());
+        }
+        return null;
     }
 
     /**

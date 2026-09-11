@@ -57,8 +57,14 @@ public class CostingTreeSqlValidator {
         // 而报出来的错长得像「SQL 写错了」，排查方向会整个跑偏到模板上。
         // 桩值用 NULL::varchar 而不是某个具体客户码：dry-run 只验「可执行 + 输出列齐」，
         // 外层还有 LIMIT 0，不产生也不需要真实数据行。
+        // repair-260910 B-4（AC-7）：:customerProductNo 与 :customerCode 同款加桩。理由完全一致——
+        // dry-run 走裸 JDBC，模板里留一个未绑定的 :customerProductNo 会让 PG 直接报语法错，
+        // 保存树配置当场失败且错得像"SQL 写错了"。桩值同样用 NULL::varchar（只验可执行 + 输出列齐）。
+        // 🚨 替换顺序无关：":customerProductNo" 不含 ":customerCode" 子串（后者以 Code 结尾），
+        //    两条 replace 互不干扰。
         String probe = "SELECT * FROM ("
                 + forValidation.replace(":production_part_nos", "ARRAY[]::text[]")
+                              .replace(":customerProductNo", "NULL::varchar")
                               .replace(":customerCode", "NULL::varchar")
                 + ") q LIMIT 0";
         try (Connection c = dataSource.getConnection();

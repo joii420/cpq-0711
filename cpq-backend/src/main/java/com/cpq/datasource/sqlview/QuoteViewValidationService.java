@@ -191,7 +191,8 @@ public class QuoteViewValidationService {
         // 替换后留下悬空单冒号导致 SQL 语法错误。
         String bound = ("SELECT * FROM (" + sql + ") _outer LIMIT 0")
             .replaceAll("(?<!:):pq\\b", "'" + UUID.randomUUID() + "'::uuid");
-        // 其余 :xxx 命名占位符（customerId/customerCode/hfPartNos 等）批量替换为 NULL 字面量，
+        // 其余 :xxx 命名占位符（customerId/customerCode/customerProductNo/hfPartNos 等）批量替换为 NULL 字面量，
+        // （repair-260910 B-4 复核：下面这条正则是**通配**的，新增 :customerProductNo 自动覆盖，无需改动）
         // 与 SqlViewExecutor.rewriteNamedParams 的"未绑定占位符→NULL"安全降级语义一致，
         // 仅用于 LIMIT 0 语法/元数据探测，不依赖具体业务值。
         return bound.replaceAll("(?<!:):[A-Za-z_][A-Za-z0-9_]*\\b", "NULL");

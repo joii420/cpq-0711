@@ -220,6 +220,10 @@ public class SqlViewValidator {
      * pgjdbc 占位符数"（因为这条路径根本不用 PreparedStatement 的位置参数，见下方 probe.executeQuery()
      * 无 setObject 调用）。
      */
+    // repair-260910 B-4（AC-7）复核结论：本方法**无需改动**。它按 extractNamedParams 的结果
+    // 逐名替换，对任意新增占位符自动生效 —— :customerProductNo 不以 s 结尾 ⇒ 落 "NULL" 分支，
+    // 与 SqlViewExecutor 的「未绑定 → 字面量 NULL」安全降级同语义（dry-run 外层还有 LIMIT 0）。
+    // 🚫 不要为它单写一条特判：那会在这里长出第二份占位符名单，与 extractNamedParams 漂移。
     private String bindWithNullPlaceholders(String sql, List<String> params) {
         String result = sql;
         for (String name : params) {
