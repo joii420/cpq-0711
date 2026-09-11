@@ -1,0 +1,107 @@
+package com.cpq.task260910c;
+
+import io.quarkus.narayana.jta.QuarkusTransaction;
+import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.RestAssured;
+import io.restassured.http.ContentType;
+import io.restassured.response.Response;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * 🔬 诊断用（非 AC 用例）：quotation_line_component_data 恒 0 条的 A/B 还原实验。
+ * 只在 scratchpad 隔离副本里存在，🚫 不落 worktree。
+ */
+@QuarkusTest
+@DisplayName("DIAG · compData=0 的 A/B 实验（干预 = 给本单补 quotation.customer_template_id）")
+class DiagCompDataRootCauseTest extends Task260910CBase {
+
+    @Test
+    void diag() {
+        UUID catId = referenceCategoryId();
+        Fx fx = newFixture("C-diag", catId);
+        System.out.println("[DIAG 夹具] quotation=" + fx.quotationId() + " customer=" + fx.customerNo());
+
+        Response res = configure(fx, submitBody(C + "DIAG-" + RUN_C,
+                newPart(freshPartName("DIAG零件"), "spec-234", "234", "11",
+                        List.of(material(RECIPE_AGCU, CONFIG_AGCU, "100")),
+                        List.of(PROC_CLEAN))));
+        System.out.println("[DIAG] 提交 status=" + res.statusCode());
+        String partNo = latestLinePartNo(fx);
+        System.out.println("[DIAG] 新铸料号=" + partNo);
+
+        System.out.println("[DIAG A] quotation.customer_template_id = "
+                + scalar("SELECT coalesce(customer_template_id::text,'(NULL)') FROM quotation WHERE id='"
+                        + fx.quotationId() + "'"));
+        System.out.println("[DIAG A] quotation_line_item.template_id = "
+                + col("SELECT coalesce(template_id::text,'(NULL)') FROM quotation_line_item WHERE quotation_id='"
+                        + fx.quotationId() + "'"));
+        System.out.println("[DIAG A] 主表 ds_quote_material_bom 本料号 = "
+                + count("SELECT count(*) FROM ds_quote_material_bom WHERE material_no='" + partNo + "'") + " 行");
+
+        long a = materialize(fx, "A");
+        System.out.println("[DIAG A] compData = " + a + " 条  ← 干预前基线");
+
+        // ── 干预：只给【本单】补 quotation.customer_template_id（命中面 = 1 行，WHERE id 限死）──
+        String pick = scalar("SELECT t.id::text FROM template t "
+                + "WHERE t.status='PUBLISHED' "
+                + "  AND EXISTS(SELECT 1 FROM template_component tc JOIN component c ON c.id=tc.component_id "
+                + "             WHERE tc.template_id=t.id AND c.name='" + TAB_MBOM_COMPONENT + "') "
+                + "  AND EXISTS(SELECT 1 FROM template_component tc JOIN component c ON c.id=tc.component_id "
+                + "             WHERE tc.template_id=t.id AND c.name='" + TAB_EBOM_COMPONENT + "') "
+                + "ORDER BY (SELECT count(*) FROM template_component x WHERE x.template_id=t.id) DESC LIMIT 1");
+        System.out.println("[DIAG 干预] 选中模板 = " + pick);
+        QuarkusTransaction.requiringNew().run(() -> em.createNativeQuery(
+                        "UPDATE quotation SET customer_template_id=CAST(:t AS uuid) WHERE id=:q")
+                .setParameter("t", pick).setParameter("q", fx.quotationId()).executeUpdate());
+        // 干预生效自检
+        System.out.println("[DIAG 干预自检] quotation.customer_template_id = "
+                + scalar("SELECT coalesce(customer_template_id::text,'(NULL)') FROM quotation WHERE id='"
+                        + fx.quotationId() + "'"));
+
+        long b = materialize(fx, "B");
+        System.out.println("[DIAG B] compData = " + b + " 条  ← 干预后");
+
+        System.out.println("[DIAG B] 各页签行数：");
+        for (Object[] r : rows("SELECT c.name, coalesce(jsonb_array_length(coalesce(cd.snapshot_rows, cd.row_data,'[]'::jsonb)),0), "
+                + "left(coalesce(cd.snapshot_rows, cd.row_data,'[]'::jsonb)::text, 400) "
+                + "FROM quotation_line_component_data cd "
+                + "JOIN quotation_line_item li ON li.id=cd.line_item_id "
+                + "JOIN component c ON c.id=cd.component_id "
+                + "WHERE li.quotation_id='" + fx.quotationId() + "' ORDER BY c.name")) {
+            System.out.println("   · " + r[0] + " → " + r[1] + " 行 | " + r[2]);
+        }
+        System.out.println("[DIAG B] quote_card_values 前 300 字 = "
+                + col("SELECT coalesce(left(quote_card_values::text,300),'(NULL)') FROM quotation_line_item WHERE quotation_id='"
+                        + fx.quotationId() + "'"));
+        System.out.println("[DIAG B] _record 行数 mbom/ebom = "
+                + count("SELECT count(*) FROM ds_quote_material_bom_record WHERE quotation_id='" + fx.quotationId() + "'")
+                + " / "
+                + count("SELECT count(*) FROM ds_quote_element_bom_record WHERE quotation_id='" + fx.quotationId() + "'"));
+    }
+
+    private long materialize(Fx fx, String tag) {
+        long n = cd(fx);
+        System.out.println("[DIAG " + tag + " 物化] 起点=" + n);
+        RestAssured.given().cookies(adminSession()).get("/api/cpq/quotations/" + fx.quotationId()).thenReturn();
+        n = cd(fx); System.out.println("[DIAG " + tag + " 物化] GET 详情后=" + n);
+        Object bv = scalar("SELECT coalesce(user_data_version,0) FROM quotation WHERE id='" + fx.quotationId() + "'");
+        Response d = RestAssured.given().cookies(adminSession()).contentType(ContentType.JSON)
+                .body("{\"baseVersion\":" + bv + ",\"added\":[],\"modified\":[],\"removed\":[]}")
+                .put("/api/cpq/quotations/" + fx.quotationId() + "/draft").thenReturn();
+        n = cd(fx); System.out.println("[DIAG " + tag + " 物化] PUT draft(" + d.statusCode() + ")后=" + n);
+        Response e = RestAssured.given().cookies(adminSession()).contentType(ContentType.JSON)
+                .post("/api/cpq/quotations/" + fx.quotationId() + "/ensure-card-values").thenReturn();
+        n = cd(fx); System.out.println("[DIAG " + tag + " 物化] POST ensure-card-values(" + e.statusCode() + ")后=" + n);
+        return n;
+    }
+
+    private long cd(Fx fx) {
+        return count("SELECT count(*) FROM quotation_line_component_data cd "
+                + "JOIN quotation_line_item li ON li.id=cd.line_item_id "
+                + "WHERE li.quotation_id='" + fx.quotationId() + "'");
+    }
+}

@@ -1,0 +1,84 @@
+package com.cpq.task260910c;
+
+import io.quarkus.narayana.jta.QuarkusTransaction;
+import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.response.Response;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.UUID;
+
+/** 🔬 诊断（非 AC 用例）：configure 之【前】就给报价单绑 customer_template_id，看 compData / _record。 */
+@QuarkusTest
+@DisplayName("DIAG2 · configure 前先绑 customer_template_id")
+class DiagPreBoundTemplateTest extends Task260910CBase {
+
+    @Test
+    void diag2() {
+        UUID catId = referenceCategoryId();
+        Fx fx = newFixture("C-diag2", catId);
+
+        String pick = scalar("SELECT t.id::text FROM template t "
+                + "WHERE t.status='PUBLISHED' "
+                + "  AND EXISTS(SELECT 1 FROM template_component tc JOIN component c ON c.id=tc.component_id "
+                + "             WHERE tc.template_id=t.id AND c.name='" + TAB_MBOM_COMPONENT + "') "
+                + "  AND EXISTS(SELECT 1 FROM template_component tc JOIN component c ON c.id=tc.component_id "
+                + "             WHERE tc.template_id=t.id AND c.name='" + TAB_EBOM_COMPONENT + "') "
+                + "ORDER BY (SELECT count(*) FROM template_component x WHERE x.template_id=t.id) DESC LIMIT 1");
+        QuarkusTransaction.requiringNew().run(() -> em.createNativeQuery(
+                        "UPDATE quotation SET customer_template_id=CAST(:t AS uuid) WHERE id=:q")
+                .setParameter("t", pick).setParameter("q", fx.quotationId()).executeUpdate());
+        System.out.println("[DIAG2 前置] quotation=" + fx.quotationId() + " customer_template_id="
+                + scalar("SELECT coalesce(customer_template_id::text,'(NULL)') FROM quotation WHERE id='"
+                        + fx.quotationId() + "'"));
+
+        Response res = configure(fx, submitBody(C + "DIAG2-" + RUN_C,
+                newPart(freshPartName("DIAG2零件"), "spec-234", "234", "11",
+                        List.of(material(RECIPE_AGCU, CONFIG_AGCU, "100")),
+                        List.of(PROC_CLEAN))));
+        System.out.println("[DIAG2] 提交 status=" + res.statusCode());
+        String partNo = latestLinePartNo(fx);
+        System.out.println("[DIAG2] 新铸料号=" + partNo);
+
+        System.out.println("[DIAG2] configure 之后（🚫 没有再调任何物化入口）：");
+        System.out.println("   · quotation_line_item.template_id = "
+                + col("SELECT coalesce(template_id::text,'(NULL)') FROM quotation_line_item WHERE quotation_id='"
+                        + fx.quotationId() + "'"));
+        System.out.println("   · quotation_line_component_data = "
+                + count("SELECT count(*) FROM quotation_line_component_data cd "
+                        + "JOIN quotation_line_item li ON li.id=cd.line_item_id "
+                        + "WHERE li.quotation_id='" + fx.quotationId() + "'") + " 条");
+        System.out.println("   · 主表 ds_quote_material_bom = "
+                + count("SELECT count(*) FROM ds_quote_material_bom WHERE material_no='" + partNo + "'") + " 行");
+        System.out.println("   · _record mbom / ebom = "
+                + count("SELECT count(*) FROM ds_quote_material_bom_record WHERE quotation_id='" + fx.quotationId() + "'")
+                + " / "
+                + count("SELECT count(*) FROM ds_quote_element_bom_record WHERE quotation_id='" + fx.quotationId() + "'"));
+        System.out.println("   · quote_card_values = "
+                + col("SELECT coalesce(left(quote_card_values::text,200),'(NULL)') FROM quotation_line_item WHERE quotation_id='"
+                        + fx.quotationId() + "'"));
+        for (Object[] r : rows("SELECT c.name, coalesce(jsonb_array_length(coalesce(cd.snapshot_rows, cd.row_data,'[]'::jsonb)),0) "
+                + "FROM quotation_line_component_data cd JOIN quotation_line_item li ON li.id=cd.line_item_id "
+                + "JOIN component c ON c.id=cd.component_id WHERE li.quotation_id='" + fx.quotationId()
+                + "' AND coalesce(jsonb_array_length(coalesce(cd.snapshot_rows, cd.row_data,'[]'::jsonb)),0) > 0 ORDER BY c.name")) {
+            System.out.println("   · 页签 " + r[0] + " → " + r[1] + " 行");
+        }
+        System.out.println("   · _record mbom 明细 = "
+                + rowsToString("SELECT input_material_no, material_ratio, origin_id FROM ds_quote_material_bom_record WHERE quotation_id='"
+                        + fx.quotationId() + "'"));
+        System.out.println("   · _record ebom 明细 = "
+                + rowsToString("SELECT element_code, material_part_no, origin_id FROM ds_quote_element_bom_record WHERE quotation_id='"
+                        + fx.quotationId() + "'"));
+    }
+
+    private String rowsToString(String sql) {
+        StringBuilder sb = new StringBuilder();
+        for (Object[] r : rows(sql)) {
+            sb.append("[");
+            for (Object o : r) sb.append(String.valueOf(o)).append(" ");
+            sb.append("] ");
+        }
+        return sb.length() == 0 ? "(无行)" : sb.toString();
+    }
+}
