@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>已有产品抽屉 · 空态与禁用态 — task-260911</title>
+<style>
+  :root{
+    --primary:#1677ff; --border:#d9d9d9; --split:#f0f0f0;
+    --text:rgba(0,0,0,.88); --text2:rgba(0,0,0,.45); --head-bg:#fafafa;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:rgba(0,0,0,.45);
+    font:14px/1.5714 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:var(--text)}
+  .note{position:fixed;left:16px;top:16px;width:340px;background:#fff;border-radius:8px;padding:14px 16px;
+    box-shadow:0 6px 16px rgba(0,0,0,.16);font-size:13px;line-height:1.7}
+  .note h3{margin:0 0 8px;font-size:14px}
+  .note code{background:#f5f5f5;padding:1px 5px;border-radius:4px;font-size:12px}
+  .note .d{color:#d46b08;font-weight:600}
+  .drawer{position:fixed;right:0;top:0;bottom:0;width:960px;background:#fff;display:flex;flex-direction:column;
+    box-shadow:-6px 0 16px rgba(0,0,0,.08)}
+  .dh{padding:16px 24px;border-bottom:1px solid var(--split);display:flex;align-items:center}
+  .dh h2{margin:0;font-size:16px;font-weight:600}
+  .dh .x{margin-left:auto;color:var(--text2);cursor:pointer;font-size:16px}
+  .db{flex:1;overflow:auto;padding:16px 24px}
+  .df{padding:12px 24px;border-top:1px solid var(--split);display:flex;align-items:center;gap:8px;position:relative}
+  .df .cnt{margin-right:auto;color:#606266}
+  .filters{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+  .inp{height:32px;padding:4px 11px;border:1px solid var(--border);border-radius:6px;width:190px;font-size:14px;color:var(--text)}
+  .inp::placeholder{color:#bfbfbf}
+  table{width:100%;border-collapse:separate;border-spacing:0;font-size:14px}
+  thead th{background:var(--head-bg);text-align:left;font-weight:600;padding:12px 8px;
+    border-bottom:1px solid var(--split);white-space:nowrap}
+  th.cb{width:40px;padding-left:12px}
+  input[type=checkbox]{width:16px;height:16px;accent-color:var(--primary)}
+  /* AntD Empty */
+  .empty{padding:64px 0;text-align:center;color:var(--text2)}
+  .empty svg{opacity:.85}
+  .empty p{margin:8px 0 0;font-size:14px}
+  .empty .hint{margin-top:4px;font-size:13px;color:#bfbfbf}
+  .btn{height:32px;padding:4px 15px;border-radius:6px;border:1px solid var(--border);background:#fff;
+    font-size:14px;cursor:pointer;color:var(--text)}
+  .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+  .btn:disabled{background:rgba(0,0,0,.04);border-color:var(--border);color:rgba(0,0,0,.25);cursor:not-allowed}
+  /* AntD tooltip */
+  .tip{position:absolute;right:24px;bottom:52px;background:rgba(0,0,0,.85);color:#fff;font-size:14px;
+    padding:6px 8px;border-radius:6px;white-space:nowrap}
+  .tip::after{content:"";position:absolute;right:38px;bottom:-5px;width:10px;height:10px;
+    background:rgba(0,0,0,.85);transform:rotate(45deg)}
+</style>
+</head>
+<body>
+
+<div class="note">
+  <h3>📌 空态 + 禁用态（F-1 / AC-5）</h3>
+  <p><b>空态</b>：AntD <code>&lt;Empty&gt;</code> 原样，🚫 不许出现空白页或红色遮罩。</p>
+  <p class="d">🚫 空态文案不许提「未审核 / 待核价」——<br>本任务<b>不过滤</b>（岔路 1 甲），所以列表为空的原因与本任务无关，写成那样会误导用户去找一个不存在的开关。</p>
+  <hr style="border:none;border-top:1px solid #f0f0f0;margin:10px 0">
+  <p><b>禁用态</b>：未选任何行时「加入报价单」禁用 + Tooltip「请至少选择一项产品」。<b>这是既有行为，本任务不改</b>，画在这里是为了让 1:1 还原时不被顺手改掉。</p>
+</div>
+
+<div class="drawer">
+  <div class="dh"><h2>添加产品 — 从已有产品</h2><span class="x">✕</span></div>
+
+  <div class="db">
+    <div class="filters">
+      <input class="inp" placeholder="客户产品编号" value="T260911-NOTEXIST">
+      <input class="inp" placeholder="销售料号">
+      <input class="inp" placeholder="品名">
+      <input class="inp" placeholder="规格">
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th class="cb"><input type="checkbox" disabled></th>
+          <th style="width:76px">来源</th>
+          <th style="width:168px">客户产品编号</th>
+          <th style="width:120px">客户图号</th>
+          <th style="width:120px">客户物料名</th>
+          <th style="width:230px">销售料号</th>
+          <th style="width:130px">品名</th>
+          <th>规格</th>
+        </tr>
+      </thead>
+    </table>
+
+    <div class="empty">
+      <svg width="64" height="41" viewBox="0 0 64 41" xmlns="http://www.w3.org/2000/svg">
+        <g transform="translate(0 1)" fill="none" fill-rule="evenodd">
+          <ellipse fill="#f5f5f5" cx="32" cy="33" rx="32" ry="7"/>
+          <g fill-rule="nonzero" stroke="#d9d9d9">
+            <path d="M55 12.76L44.854 1.258C44.367.474 43.656 0 42.907 0H21.093c-.749 0-1.46.474-1.947 1.257L9 12.761V22h46v-9.24z"/>
+            <path d="M41.613 15.931c0-1.605.994-2.93 2.227-2.931H55v18.137C55 33.26 53.68 35 52.05 35h-40.1C10.32 35 9 33.259 9 31.137V13h11.16c1.233 0 2.227 1.323 2.227 2.928v.022c0 1.605 1.005 2.901 2.237 2.901h14.752c1.232 0 2.237-1.308 2.237-2.913v-.007z" fill="#fafafa"/>
+          </g>
+        </g>
+      </svg>
+      <p>暂无数据</p>
+      <p class="hint">没有匹配的已有产品，请调整上方筛选条件</p>
+    </div>
+  </div>
+
+  <div class="df">
+    <div class="cnt">已选 0 项</div>
+    <button class="btn">取消</button>
+    <button class="btn primary" disabled>加入报价单</button>
+    <div class="tip">请至少选择一项产品</div>
+  </div>
+</div>
+
+</body>
+</html>

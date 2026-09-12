@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>已有产品抽屉 · 默认态 — task-260911</title>
+<style>
+  :root{
+    --primary:#1677ff; --border:#d9d9d9; --split:#f0f0f0;
+    --text:rgba(0,0,0,.88); --text2:rgba(0,0,0,.45); --head-bg:#fafafa;
+    --warn-bg:#fff7e6; --warn-bd:#ffd591; --warn-fg:#d46b08;
+    --purple-bg:#f9f0ff; --purple-bd:#d3adf7; --purple-fg:#531dab;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:rgba(0,0,0,.45);
+    font:14px/1.5714 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:var(--text)}
+  .note{position:fixed;left:16px;top:16px;width:340px;background:#fff;border-radius:8px;padding:14px 16px;
+    box-shadow:0 6px 16px rgba(0,0,0,.16);font-size:13px;line-height:1.7}
+  .note h3{margin:0 0 8px;font-size:14px}
+  .note code{background:#f5f5f5;padding:1px 5px;border-radius:4px;font-size:12px}
+  .note .d{color:#d46b08;font-weight:600}
+  /* Drawer */
+  .drawer{position:fixed;right:0;top:0;bottom:0;width:960px;background:#fff;display:flex;flex-direction:column;
+    box-shadow:-6px 0 16px rgba(0,0,0,.08)}
+  .dh{padding:16px 24px;border-bottom:1px solid var(--split);display:flex;align-items:center}
+  .dh h2{margin:0;font-size:16px;font-weight:600}
+  .dh .x{margin-left:auto;color:var(--text2);cursor:pointer;font-size:16px}
+  .db{flex:1;overflow:auto;padding:16px 24px}
+  .df{padding:12px 24px;border-top:1px solid var(--split);display:flex;align-items:center;gap:8px}
+  .df .cnt{margin-right:auto;color:#606266}
+  /* filters */
+  .filters{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+  .inp{height:32px;padding:4px 11px;border:1px solid var(--border);border-radius:6px;width:190px;font-size:14px;color:var(--text)}
+  .inp::placeholder{color:#bfbfbf}
+  /* table */
+  table{width:100%;border-collapse:separate;border-spacing:0;font-size:14px}
+  thead th{background:var(--head-bg);text-align:left;font-weight:600;padding:12px 8px;
+    border-bottom:1px solid var(--split);white-space:nowrap}
+  tbody td{padding:12px 8px;border-bottom:1px solid var(--split);vertical-align:top}
+  tbody tr:hover td{background:#fafafa}
+  th.cb,td.cb{width:40px;padding-left:12px}
+  input[type=checkbox]{width:16px;height:16px;accent-color:var(--primary);margin:2px 0 0}
+  .muted{color:var(--text2)}
+  .partno{font-variant-numeric:tabular-nums}
+  /* tag */
+  .tag{display:inline-block;padding:0 7px;height:22px;line-height:20px;border-radius:4px;font-size:12px;
+    border:1px solid var(--border);background:var(--head-bg);color:var(--text);white-space:nowrap}
+  .tag.purple{background:var(--purple-bg);border-color:var(--purple-bd);color:var(--purple-fg)}
+  .tag.warn{background:var(--warn-bg);border-color:var(--warn-bd);color:var(--warn-fg);margin-left:6px}
+  /* buttons */
+  .btn{height:32px;padding:4px 15px;border-radius:6px;border:1px solid var(--border);background:#fff;
+    font-size:14px;cursor:pointer;color:var(--text)}
+  .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+</style>
+</head>
+<body>
+
+<div class="note">
+  <h3>📌 本次改动（F-1 / AC-5）</h3>
+  <p><b>只加一样东西</b>：销售料号后挂一个 <span class="tag warn" style="margin:0">待核价</span> 标签。</p>
+  <p>判据 = 该 <code>(customer_no, material_no)</code> 在<b>任一带版本主表</b>无行（= 版本化数据尚未经核价转正）。</p>
+  <p class="d">🚫 不过滤、不禁用、不新增列。</p>
+  <p>已转正的行<b>不显示任何标签</b>（减少视觉噪音），🚫 不要加「已转正」绿标。</p>
+  <hr style="border:none;border-top:1px solid #f0f0f0;margin:10px 0">
+  <p>第 4 行是<b>最长文案行</b>（客户产品编号 18 位 + 品名撑满），用于验证标签不撑破布局。</p>
+</div>
+
+<div class="drawer">
+  <div class="dh"><h2>添加产品 — 从已有产品</h2><span class="x">✕</span></div>
+
+  <div class="db">
+    <div class="filters">
+      <input class="inp" placeholder="客户产品编号">
+      <input class="inp" placeholder="销售料号">
+      <input class="inp" placeholder="品名">
+      <input class="inp" placeholder="规格">
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th class="cb"><input type="checkbox"></th>
+          <th style="width:76px">来源</th>
+          <th style="width:168px">客户产品编号</th>
+          <th style="width:120px">客户图号</th>
+          <th style="width:120px">客户物料名</th>
+          <th style="width:230px">销售料号</th>
+          <th style="width:130px">品名</th>
+          <th>规格</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="cb"><input type="checkbox"></td>
+          <td><span class="tag">已有</span></td>
+          <td>B1UPG-050617</td>
+          <td class="muted">—</td>
+          <td class="muted">—</td>
+          <td><span class="partno">0028-2609000015</span></td>
+          <td>B1SELF-050259</td>
+          <td class="muted">—</td>
+        </tr>
+        <tr>
+          <td class="cb"><input type="checkbox" checked></td>
+          <td><span class="tag">已有</span></td>
+          <td>T260911A-CP01</td>
+          <td class="muted">—</td>
+          <td class="muted">—</td>
+          <td><span class="partno">T260911A-FG01</span><span class="tag warn">待核价</span></td>
+          <td>验证用成品 A</td>
+          <td class="muted">—</td>
+        </tr>
+        <tr>
+          <td class="cb"><input type="checkbox"></td>
+          <td><span class="tag purple">选配·单件</span></td>
+          <td>T260911A-SEL-CP</td>
+          <td class="muted">—</td>
+          <td class="muted">—</td>
+          <td><span class="partno">T260911A-SEL01</span><span class="tag warn">待核价</span></td>
+          <td>选配发号件</td>
+          <td class="muted">—</td>
+        </tr>
+        <tr>
+          <td class="cb"><input type="checkbox"></td>
+          <td><span class="tag purple">选配·组合</span></td>
+          <td>N1CHK-051505819212</td>
+          <td>DWG-2026-0915-A3</td>
+          <td>银镍触头组件（长文案验证用）</td>
+          <td><span class="partno">0028-2609000015-X</span><span class="tag warn">待核价</span></td>
+          <td>B1SELF-050259</td>
+          <td>φ12.5×3.2 AgNi11 双层</td>
+        </tr>
+        <tr>
+          <td class="cb"><input type="checkbox"></td>
+          <td><span class="tag">已有</span></td>
+          <td>B1IDEM-050616</td>
+          <td class="muted">—</td>
+          <td class="muted">—</td>
+          <td><span class="partno">0028-2609000015</span></td>
+          <td>B1SELF-050259</td>
+          <td class="muted">—</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="df">
+    <div class="cnt">已选 1 项</div>
+    <button class="btn">取消</button>
+    <button class="btn primary">加入报价单</button>
+  </div>
+</div>
+
+</body>
+</html>

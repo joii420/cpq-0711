@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>原型导航 — task-260911 报价数据本单私有落地</title>
+<style>
+  body{margin:0;padding:32px;background:#f0f2f5;line-height:1.7;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    color:rgba(0,0,0,.88)}
+  .wrap{max-width:940px;margin:0 auto}
+  h1{font-size:22px;margin:0 0 4px}
+  .sub{color:rgba(0,0,0,.45);margin-bottom:20px}
+  .badge{display:inline-block;background:#f6ffed;border:1px solid #b7eb8f;color:#389e0d;
+    padding:2px 10px;border-radius:4px;font-size:13px;font-weight:600}
+  .badge.pend{background:#fff7e6;border-color:#ffd591;color:#d46b08}
+  .card{background:#fff;border-radius:8px;padding:20px 24px;margin-bottom:16px;
+    box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .card h2{font-size:16px;margin:0 0 6px}
+  .card p{margin:6px 0;font-size:14px}
+  a{color:#1677ff;text-decoration:none}
+  a:hover{text-decoration:underline}
+  code{background:#f5f5f5;padding:1px 5px;border-radius:4px;font-size:12px}
+  .warn{background:#fffbe6;border:1px solid #ffe58f;border-radius:6px;padding:12px 16px;margin:16px 0;font-size:14px}
+  .danger{background:#fff2f0;border:1px solid #ffccc7;border-radius:6px;padding:12px 16px;margin:16px 0;font-size:14px}
+  ul{margin:6px 0;padding-left:20px}
+  li{margin:4px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>原型导航 — <code>task-260911</code> 报价数据本单私有落地</h1>
+  <p class="sub">
+    <span class="badge pend">📌 当前基准（待闸门 A 定稿）</span>
+    &nbsp;立项日期 2026-09-11 · 主文档 <code>../需求文档.md</code>
+  </p>
+
+  <div class="warn">
+    <b>本任务前端改动只有两处，所以原型只有三屏。</b>
+    绝大部分改动发生在<b>落库位置与取数来源</b>（后端），对界面不可见 —— 这是设计目标，不是遗漏。
+    <br>数一遍 <code>../fronttask.md</code>：<code>F-1</code>（已有产品抽屉）· <code>F-2</code>（刷新确认框）·
+    <code>F-3</code>（条件项，判据若在前端才成立，<b>不新增界面</b>）⇒ 屏数对得上。
+  </div>
+
+  <div class="card">
+    <h2>01 · <a href="01-已有产品抽屉-默认态.html">已有产品抽屉 — 默认态</a></h2>
+    <p>服务 <code>F-1</code> / <code>AC-5</code>。唯一的改动是销售料号后挂「待核价」标签。</p>
+    <p>已画：默认态 · 多来源（已有 / 选配·单件 / 选配·组合）· <b>最长文案行</b>（第 4 行）· 已选态。</p>
+    <p>🚫 不过滤、不禁用、不新增列；已转正的行不显示任何标签。</p>
+  </div>
+
+  <div class="card">
+    <h2>02 · <a href="02-已有产品抽屉-空态与禁用态.html">已有产品抽屉 — 空态与禁用态</a></h2>
+    <p>服务 <code>F-1</code> / <code>AC-5</code>。</p>
+    <p>已画：<b>空数据</b>（AntD <code>Empty</code>）· <b>禁用态</b>（未选行时「加入报价单」禁用 + Tooltip 原因）。</p>
+    <p>🚫 空态文案不许提「未审核 / 待核价」—— 本任务不过滤，那样写会把用户引去找一个不存在的开关。</p>
+  </div>
+
+  <div class="card">
+    <h2>03 · <a href="03-刷新基础数据-二次确认.html">刷新基础数据 — 二次确认</a></h2>
+    <p>服务 <code>F-2</code> / <code>AC-19</code>。只改文案，交互与按钮逐字不变。</p>
+    <p>旧文案说「更新为最新已审核版本」，而 A 之后本单已导入的料号读回的恰恰是<b>尚未审核的本单私有版</b>。</p>
+    <p>⚠️ 屏内标注了一条<b>实现前必须实测</b>的事项（删行后刷新会不会复活），结论不符须走契约变更四步。</p>
+  </div>
+
+  <div class="danger">
+    <b>🚧 收尾动作（合并前必须做，🚫 不是可选项）</b>
+    <ul>
+      <li>本页的 <span class="badge pend">📌 当前基准（待闸门 A 定稿）</span> 在闸门 A 通过后改成
+        <span class="badge">📌 当前基准</span></li>
+      <li>把上一份同页面原型
+        <code>dev-docs/task-260909-已有产品抽屉数据源收敛/原型图/index.html</code>
+        的 <b>📌 当前基准</b> 摘掉、改成 <b>🕰️ 历史快照</b>，并补<b>逐项偏差清单</b>
+        （本次偏差 = 销售料号列新增「待核价」标签，由 <code>task-260911 F-1</code> 引入）</li>
+      <li>🚫 <b>不要回改那份原型的 HTML 内容本身</b> —— 它是那次交付的验收记录。只改 <code>index.html</code> 的身份标记</li>
+    </ul>
+    <p style="margin:8px 0 0">
+      🚦 <b>现在不做这个降级</b>：闸门 A 未过、本份未定稿，提前降级会留下一段「没有任何一份是当前基准」的空窗。
+    </p>
+  </div>
+
+</div>
+</body>
+</html>
