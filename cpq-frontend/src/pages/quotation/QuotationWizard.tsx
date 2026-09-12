@@ -1030,8 +1030,7 @@ const QuotationWizard: React.FC = () => {
         //   而 comp.rows 是实时期按下标 bake 的,不重灌就会整列错开一格(根行拿到子件1的值…)。
         //   `Array.isArray(r.componentData)` 是结构性守卫:saveDraft 的瘦身响应 SaveDraftResponse
         //   根本没有这个字段 ⇒ 只有 ensure-card-values(走 getById 整份 QuotationDTO)这条路会命中。
-        // [阳性对照 · 临时禁用 F-3 —— 实验结束必须还原]
-        if (false && Array.isArray(r.componentData)) {
+        if (Array.isArray(r.componentData)) {
           const reflowed = reflowComponentRowsFromResponse((item as any).componentData, r.componentData);
           if (reflowed) patch.componentData = reflowed;
         }
