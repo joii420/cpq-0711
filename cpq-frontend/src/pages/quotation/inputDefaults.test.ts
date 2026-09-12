@@ -84,3 +84,52 @@ describe('coerceInputNumber', () => {
     expect(coerceInputNumber('')).toBeUndefined();
   });
 });
+
+// repair-260911 F-1 · AC-R3 / AC-R5
+// 背景：实时 batch-expand 通道走 axios 默认 JSON.parse（无 lossless），BASIC_DATA 源值到前端是
+// 裸 JS number；而快照通道走 tryParseSnapshotJsonLossless，同一个值是字符串 "1"。
+// 本组用例**精确锁住「number vs string」这一个变量**：把入参从 1 换成 "1"，改动前就绿。
+describe('resolveInputDefaultSourceOnly · 裸 JS number 源值（安全整数放行 / 其余仍丢弃）', () => {
+  const 项次 = (): ComponentField =>
+    f({ name: '项次', field_type: 'INPUT_NUMBER', default_source: { type: 'BASIC_DATA', path: '$b._项次' } });
+  const bdv = (v: unknown) => ({ basicDataValues: { [bnfDriverLookupKey('$b._项次')]: v } });
+
+  // AC-R3 的现成断言（诊断 J2）：改回 `return undefined` 这条必须变红
+  it('安全整数 1 → "1"（AC-R3：BOM 项次列不再全空）', () => {
+    expect(resolveInputDefaultSourceOnly(项次(), bdv(1))).toBe('1');
+  });
+
+  it('对照组：同一路径喂字符串 "1" → "1"（改动前后都绿，用来隔离变量）', () => {
+    expect(resolveInputDefaultSourceOnly(项次(), bdv('1'))).toBe('1');
+  });
+
+  // AC-R5：task-0810 精度契约的原意必须保住
+  it('小数 1.5 → undefined（IEEE-754 可能已丢精度，仍丢弃）', () => {
+    expect(resolveInputDefaultSourceOnly(项次(), bdv(1.5))).toBeUndefined();
+  });
+
+  it('超安全整数 9007199254740993 → undefined', () => {
+    expect(Number.isSafeInteger(9007199254740993)).toBe(false); // 量具自检：字面量本身已被 double 改写
+    expect(resolveInputDefaultSourceOnly(项次(), bdv(9007199254740993))).toBeUndefined();
+  });
+
+  it('NaN / Infinity → undefined', () => {
+    expect(resolveInputDefaultSourceOnly(项次(), bdv(NaN))).toBeUndefined();
+    expect(resolveInputDefaultSourceOnly(项次(), bdv(Infinity))).toBeUndefined();
+  });
+
+  it('负整数 / 0 也放行', () => {
+    expect(resolveInputDefaultSourceOnly(项次(), bdv(0))).toBe('0');
+    expect(resolveInputDefaultSourceOnly(项次(), bdv(-3))).toBe('-3');
+  });
+
+  it('INPUT_TEXT 字段同样放行安全整数（放行判据在源值类型，与 field_type 无关）', () => {
+    const field = f({ name: '项次', field_type: 'INPUT_TEXT', default_source: { type: 'BASIC_DATA', path: '$b._项次' } });
+    expect(resolveInputDefaultSourceOnly(field, bdv(2))).toBe('2');
+  });
+
+  it('bake 链路同步生效（QuotationStep2 的 resolveInputDefaultForBake → 本函数）', () => {
+    expect(resolveInputDefaultForBake(项次(), bdv(1))).toBe('1');
+    expect(resolveInputDefaultForBake(项次(), bdv(1.5))).toBeUndefined();
+  });
+});

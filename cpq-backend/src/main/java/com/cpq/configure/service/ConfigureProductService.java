@@ -1990,7 +1990,7 @@ public class ConfigureProductService {
         }
 
         UUID lineItemId = insertLineItem(quotationId, materialNo, null, "SIMPLE",
-            parseUuidOrNull(req.tempId));
+            parseUuidOrNull(req.tempId), req.customerProductNo);
         insertSelProductNo(customerCode, req.customerProductNo, req.customerProductName,
             materialNo, quotationId, operatorId);
 
@@ -2338,7 +2338,7 @@ public class ConfigureProductService {
 
         if ("SIMPLE".equals(effectiveType)) {
             String pn = childHfPartNos.get(0);
-            UUID id = insertLineItem(quotationId, pn, null, "SIMPLE", tempId);
+            UUID id = insertLineItem(quotationId, pn, null, "SIMPLE", tempId, req.customerProductNo);
             // per-quote 工序：选配工序写报价行专属 quotation_line_process（行已建，满足 FK）
             PartRequest simplePr = (req.parts != null && !req.parts.isEmpty()) ? req.parts.get(0) : null;
             insertQuotationLineProcesses(id, simplePr != null ? simplePr.processNos : null);
@@ -2348,7 +2348,8 @@ public class ConfigureProductService {
 
         // COMPOSITE: 父 + N 子 (父用 tempId; 子 line item 自动生成，
         // 各子件的 quotationLineItemId 通过 PartRequest.quotationLineItemId 传入)
-        UUID parentId = insertLineItem(quotationId, parentHfPartNo, null, "COMPOSITE", tempId);
+        UUID parentId = insertLineItem(quotationId, parentHfPartNo, null, "COMPOSITE", tempId,
+            req.customerProductNo);
         // per-quote 组合工艺:写本报价行专属表(取代 mat_composite_process 作渲染源),并把解析后的
         // 工艺步骤带回父行 DTO,供前端透传到 saveDraft 跨保存存活(全量重建换 line id 后重写)。
         Map<String, Object> parentDto = buildLineItemDTO(parentId, parentHfPartNo, "COMPOSITE", null);
@@ -2362,7 +2363,8 @@ public class ConfigureProductService {
             // 子件 line item: 优先用对应 PartRequest.quotationLineItemId 作子 id（前端可选传）
             PartRequest childPr = (req.parts != null && i < req.parts.size()) ? req.parts.get(i) : null;
             UUID childTempId = (childPr != null) ? parseUuidOrNull(childPr.quotationLineItemId) : null;
-            UUID childId = insertLineItem(quotationId, childPn, parentId, "PART", childTempId);
+            UUID childId = insertLineItem(quotationId, childPn, parentId, "PART", childTempId,
+                req.customerProductNo);
             // per-quote 工序：子件行的选配工序写 quotation_line_process
             insertQuotationLineProcesses(childId, childPr != null ? childPr.processNos : null);
             out.add(buildLineItemDTO(childId, childPn, "PART", parentId, childPr != null ? childPr.processNos : null));
@@ -2372,7 +2374,16 @@ public class ConfigureProductService {
 
     UUID insertLineItem(UUID quotationId, String hfPartNo,
                         UUID parentLineItemId, String compositeType) {
-        return insertLineItem(quotationId, hfPartNo, parentLineItemId, compositeType, null);
+        return insertLineItem(quotationId, hfPartNo, parentLineItemId, compositeType, null, null);
+    }
+
+    /**
+     * 向后兼容重载：不传客户产品编号 ⇒ {@code customer_part_no} 写 NULL
+     * （行为与 repair-260911 B-1 之前逐字一致）。
+     */
+    UUID insertLineItem(UUID quotationId, String hfPartNo,
+                        UUID parentLineItemId, String compositeType, UUID tempId) {
+        return insertLineItem(quotationId, hfPartNo, parentLineItemId, compositeType, tempId, null);
     }
 
     /**
@@ -2431,23 +2442,59 @@ public class ConfigureProductService {
      *
      * <p>📌 <b>存量数据按用户裁决「只修新建路径、不回填」</b>：不追加回填迁移、不跑批量 UPDATE。
      * 存量 DRAFT 行靠 saveDraft 既有兜底自愈；已审批单保持现状（详见任务回报 §2）。
+     *
+     * <h4>repair-260911 · B-1（裁决 {@code R-3}，AC-R1）：本行还必须写 {@code customer_part_no}</h4>
+     *
+     * <p><b>缺陷形态</b>：选配加完产品，卡片「产品」页签的「客户产品编号」<b>永远空白</b>
+     * （用户 2026-09-11 真机验收第 1 条）。
+     *
+     * <p><b>根因链路</b>：组件「产品」({@code 221dc766}) 的视图把客编做成<b>行级维度</b>谓词
+     * {@code LEFT JOIN ds_quote_customer_part dqcp ON … AND dqcp.customer_product_no = ANY(:customerProductNos)}；
+     * 该占位符的值由 {@code SqlViewExecutor#enrichRowScopeSets} →
+     * {@code SELECT DISTINCT customer_part_no FROM quotation_line_item WHERE quotation_id = ?} 取得
+     * （「语义图列 {@code customer_product_no} → 明细行列 {@code customer_part_no}」的映射见
+     * {@code RowScopeSupport.LINE_ITEM_COLUMN_ALIAS}（{@link com.cpq.semanticgraph.service.RowScopeSupport}））。
+     * 本方法原先<b>不写这一列</b> ⇒ 整单集合为空 ⇒ {@code = ANY(ARRAY[]::text[])} 恒 false ⇒
+     * JOIN 不匹配 ⇒ {@code _客户料号_客户产品编号} 为 NULL ⇒ 卡片空白。
+     * {@link com.cpq.component.service.RowScopeProjector} 的逐行投影同样取这一列，也一并落空。
+     *
+     * <p><b>实证（2026-09-11 全库口径，选配建的行）</b>：从没点过保存草稿且编号为空 <b>35</b> 行；
+     * <b>点过</b>保存草稿且编号仍为空 <b>4</b> 行 ⇒ {@code saveDraft} <b>不补</b>这一列
+     * （与 {@code template_id} 不同 —— 那个有 {@code QuotationService:557} 的兜底）
+     * ⇒ 必须在落行这一刻写。
+     *
+     * <p><b>取值</b>：{@code ConfigureProductRequest#customerProductNo}，即选配第 1 步用户填的
+     * 客户产品编号，与 {@link #insertSelProductNo} 写进 {@code ds_quote_customer_part} 的<b>同一个值</b>
+     * —— 两边同源才能 JOIN 得上。<b>空值语义与 {@code template_id} 同款：写 NULL、不抛异常</b>。
+     *
+     * <p><b>四条落行路径全覆盖</b>（都经本方法）：绑定已有销售料号（{@link #configureByBinding}）·
+     * SIMPLE · COMPOSITE 父 · COMPOSITE 子（{@code PART}）。子件行也写同一个客编 ——
+     * 它们是同一个客户产品的组成部分，且整单 {@code DISTINCT} 集合不因此改变。
+     *
+     * <p>🚫 <b>不回填存量</b>（{@code R-3} 同 {@code D-38} 口径）：不加迁移、不跑批量 UPDATE。
      */
     UUID insertLineItem(UUID quotationId, String hfPartNo,
-                        UUID parentLineItemId, String compositeType, UUID tempId) {
+                        UUID parentLineItemId, String compositeType, UUID tempId,
+                        String customerPartNo) {
         UUID id = (tempId != null) ? tempId : UUID.randomUUID();
+        // R-3 / B-1: 空白 → NULL（与 insertSelProductNo 的 isBlank 早退同口径），
+        //            🚫 不写空串 —— RowScopeSupport 的集合谓词把空串当成一个真实值。
+        String cpn = (customerPartNo == null || customerPartNo.isBlank()) ? null : customerPartNo.trim();
         em.createNativeQuery(
                 "INSERT INTO quotation_line_item " +
                 "(id, quotation_id, product_part_no_snapshot, " +
-                "parent_line_item_id, composite_type, sort_order, created_at, template_id) " +
+                "parent_line_item_id, composite_type, sort_order, created_at, template_id, " +
+                "customer_part_no) " +
                 // D-38: template_id 取本报价单的 customer_template_id（内联子查询，不多发查询）；
                 //       报价单尚未选模板时得到 NULL —— 与改动前一致，不抛异常。
                 "VALUES (:id, :q, :pn, :pp, :ct, 0, NOW(), " +
-                "        (SELECT customer_template_id FROM quotation WHERE id = :q))")
+                "        (SELECT customer_template_id FROM quotation WHERE id = :q), :cpn)")
             .setParameter("id", id)
             .setParameter("q", quotationId)
             .setParameter("pn", hfPartNo)
             .setParameter("pp", parentLineItemId)
             .setParameter("ct", compositeType)
+            .setParameter("cpn", cpn)
             .executeUpdate();
         return id;
     }
