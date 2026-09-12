@@ -1,6 +1,35 @@
 
 # CPQ 系统开发记录
 
+[2026-09-12] 核价渲染 / Excel 视图 - **核价 Excel 视图四列恒 0（两个独立根因，互为必要条件）** —— 已交付合 master `5e7be788`（fix `4dc6bae1`），⏳ 闸门 B 待验收 | 涉及文件：`CardEffectiveRows.java`（**唯一改动的生产文件**，+52/-6：`parse` 双键登记 + 抽 `readDecimal`）· 新增 `EffectiveRowsKeyContractTest`(6) / `CardEffectiveRowsSubtotalDecimalTest`(7) / `CostingExcelTreeTabKeyIT`(`@QuarkusTest`) | **AC 8 条：1/3/4/5/6/7/8 达成 · AC-2 作废** | 零迁移 / 零 DDL / 零接口结构变更 / **零前端改动** / 新增 SQL 条数 0 | `BL-0275`
+
+🔬 **两个根因，缺一不可**（2×2 还原矩阵在**离线重放 / 单元测试 / 服务层 IT 三个层面各证一遍**，只有全修才绿）：
+
+| # | 根因 | 机制 |
+|---|---|---|
+| **R1** 键不匹配 | Excel 列配置的 `tabKey` 是**裸 `componentId`**，而核价 Excel 树走的 `CardEffectiveRows.parse` **只按 `cid:sortOrder` 登记键** | `CardDataProvider.subtotalOf` 精确查 map 必然 miss → null → 0 |
+| **R2** 类型不匹配 | `costing_card_values` 的 `subtotal`/`subtotalByColumn` 在库里是 **JSON 字符串**（`jsonb_typeof=string`），而 `:141`/`:148` 用 `.decimalValue()` 读 | Jackson 对 `TextNode` 返回 `BigDecimal.ZERO`，**静默** |
+
+🚨 **两条都是「同一改动只落地一半」**：
+- **R1** = `5f1b2d72`（2026-06-19）的双键登记**只做在 `ComponentDataEffectiveRows`**（报价侧路径），`CardEffectiveRows` 一行未动；其 commit message 原文已写明根因是「Excel 列 tabKey 是裸 componentId…解析不到」，验证也只验报价单
+- **R2** = `fd83cac1`（2026-08-11，task-0810 精度契约）把**写侧改成字符串、读侧没跟着改**。全工程 12 处 `.decimalValue()` 里**只有这两处**没有 `isNumber()` 守卫
+
+**修法**：`parse` 双键登记（裸键 `put` / 复合键 `putIfAbsent`，与既有约定逐字一致）+ 抽 `readDecimal()` 让数字与十进制字符串都能读（空串/非法/其它类型 → `ZERO` 且**不抛**；**缺失与 JSON null 仍返 `null`** —— `TabRows.subtotal == null` 表示「无小计」，下游自兜 `ZERO`，不改既有语义）。**写侧 `PrecisionPolicy.toPlainDecimalString` 一行未动。**
+
+🚩 **连守卫本身也只覆盖了一半（第三层）**：后端最初的契约测试夹具用 **number** 型 `subtotal`、tab 内带 `sortOrder`，而生产是 **string**、tab 内**无** `sortOrder` ⇒ **该夹具下 R2 根本不会暴露**。证伪：改成生产形态前「只还原 R2」是 **0 失败（假绿）**，改后变 **3 失败**。同理，既有 `ExcelViewTabJoinFormulaIT` 覆盖不到本缺陷（它不传 `cardValuesJson`、走 `ComponentDataEffectiveRows` 分支），**在缺陷全盛期一直是绿的** —— 故新增 `CostingExcelTreeTabKeyIT` 走核价真实入口。
+
+📌 **`ensure-excel-values` 只补 `IS NULL`，且 `saveDraft` 不失效 Excel 值 ⇒ 存量永不自愈**。本次按用户裁决由主线执行一次性刷新（§3.2 三步前置：命中面 4 → 备份 → 置 NULL → **走生产端点**重算），S0001 非零单元格 **0/28 → 28/28**。机制缺陷（Excel 值无失效触发点 + `ensureExcelValues` 无 `forceRecomputeAll`）**未修，另议**。
+
+✅ **验证**：主线亲跑 72/72 绿（含 `@QuarkusTest` 真启动）；主线从 UI 亲验，先在自起的 8188/5188、合并后在**用户环境 5090/8091** 复验，两次一致 —— 四列 = **489985 / 5438667.5 / 5.8 / 5438673.3**；报价侧 `quote_excel_values` 落库值逐位不变（比对器带变异实验 +1e-9 → FAIL，证明有鉴别力）。
+
+⚠️ **已知语义（不是缺陷）**：四列表达式都是 `[页签(总计)]` 且 `filterByNodeId` 原样保留 `subtotal` ⇒ **每个 BOM 节点行显示同一个整页签总计**。要按节点取值属配置语义变更。
+
+🚩 **主线本次的错误（4 处，全部由实测/子代理推翻）**：① 判「是旧快照没刷」→ 置 NULL 重算仍全 0；② 判「核价侧不落 `component_data`，Excel 只从该表求和」→ 读代码发现核价走 `parseEffectiveRows` 读**卡片值**，我把报价侧分支误当核价路径；③ 影响面写「11 行 / 5 单 / 3 模板全 0」→ 实为**其余 7 行的模板 `excel_view_config` 为 NULL**（没配该功能），真正受影响只有 **1 单 4 行**；④ AC-2 要求的跨模板样本**不存在**（全库仅 2 个模板配了 Excel 组件）。<br>**①②的共同点：读了一段代码就推断整条链，没沿调用链走到底。③④的共同点：SQL 判据把「没有该功能」和「功能坏了」算成一类。**
+
+🚩 **子代理各自的一次自我更正**：后端「本 worktree 无法启动 Quarkus」——错在**一次尝试失败就升级成能力判断**（测试工程师随后实测出 `-Dquarkus.flyway.migrate-at-start=false` + `_JAVA_OPTIONS` 可行，4 个此前"跑不了"的 IT 全跑通）；测试工程师用**文件 mtime** 推断契约测试无鉴别力，被隔离还原实验推翻——**鉴别力只能靠还原实验证，不能靠时间戳推**。
+
+**遗留**：Excel 值失效机制缺陷（无触发点 + 无 force）· `CardDataProvider.hasTab` 全工程零生产调用方 · **报价侧 `quote_excel_values`(33903.41/203420.46) 与 `quote_card_values`(72903.41/437420.46) 差整数 39000/234000**（前端权威写入的陈旧值，两个子代理独立观察到，疑似独立缺陷）
+
 [2026-09-11] 公式引擎 / 连表公式 - **`cross_tab_ref` 匹配键宿主侧取不到取数列（`BASIC_DATA`/`DATA_SOURCE`）⇒ 跨页签 `SUM` 恒 0** —— ✅ **已交付合 master `ecaa6fd9`（fix `5603a173`）· 闸门 B 用户验收通过（2026-09-11）· 已结案** | 涉及文件：`FormulaCalculator.java`（`RowContext.hostRowForMatch` + `buildHostRowForMatch` + `evalCrossTab` 两处宿主取值 + `targetRowValue` sub 下传 + `outDiag`/`noteHostKeyMissing`）· `QuotationStep2.tsx`（两处构造点 + `buildResolvedRow` 加 `respectExplicitBlank`）· `formulaEngine.ts`（`evaluateExpression` 加可选 `matchRow`）· 共享夹具 `cross-tab-cases.json` 两端并集 **59 条**（md5 `3ba55041…` 逐字一致）· 新增 `FormulaCalculatorCrossTabHostDiagTest.java` · `e2e/repair260911-*` | **AC 11 条：1/2/3/4/5/6/7/8/11 达成 · AC-10 引擎层达成渲染层未验证 · AC-9 判为不适用** | 零迁移 / 零 DDL / 零接口结构变更 / 新增 SQL 条数 0 | `BL-0273`
 
 🔬 **根因**：`match` 两侧走**两套命名空间** —— 源页签行按**字段名**（`resolvedRows`，`CardSnapshotService:3157`），宿主行 `currentRowRaw` 按 **driver 视图列名**（`toRawRowMap`）。`fillInputDefaultSourceByFieldName:2651` 只按字段名补 `INPUT_NUMBER/INPUT_TEXT/INPUT` **三型** ⇒ `BASIC_DATA` / `DATA_SOURCE` 匹配键恒 `isBlank` ⇒ `hits` 空集 ⇒ `SUM` 返 `ZERO`，**不报错不红框**。现网 `QT-20260911-0010` 卡片 `S0001` 核价 BOM「物料成本」整列 0。
