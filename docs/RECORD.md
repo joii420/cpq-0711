@@ -1,6 +1,30 @@
 
 # CPQ 系统开发记录
 
+[2026-09-11] 公式引擎 / 连表公式 - **`cross_tab_ref` 匹配键宿主侧取不到取数列（`BASIC_DATA`/`DATA_SOURCE`）⇒ 跨页签 `SUM` 恒 0** —— 已交付合 master `ecaa6fd9`（fix `5603a173`），⏳ 闸门 B 待验收 | 涉及文件：`FormulaCalculator.java`（`RowContext.hostRowForMatch` + `buildHostRowForMatch` + `evalCrossTab` 两处宿主取值 + `targetRowValue` sub 下传 + `outDiag`/`noteHostKeyMissing`）· `QuotationStep2.tsx`（两处构造点 + `buildResolvedRow` 加 `respectExplicitBlank`）· `formulaEngine.ts`（`evaluateExpression` 加可选 `matchRow`）· 共享夹具 `cross-tab-cases.json` 两端并集 **59 条**（md5 `3ba55041…` 逐字一致）· 新增 `FormulaCalculatorCrossTabHostDiagTest.java` · `e2e/repair260911-*` | **AC 11 条：1/2/3/4/5/6/7/8/11 达成 · AC-10 引擎层达成渲染层未验证 · AC-9 判为不适用** | 零迁移 / 零 DDL / 零接口结构变更 / 新增 SQL 条数 0 | `BL-0273`
+
+🔬 **根因**：`match` 两侧走**两套命名空间** —— 源页签行按**字段名**（`resolvedRows`，`CardSnapshotService:3157`），宿主行 `currentRowRaw` 按 **driver 视图列名**（`toRawRowMap`）。`fillInputDefaultSourceByFieldName:2651` 只按字段名补 `INPUT_NUMBER/INPUT_TEXT/INPUT` **三型** ⇒ `BASIC_DATA` / `DATA_SOURCE` 匹配键恒 `isBlank` ⇒ `hits` 空集 ⇒ `SUM` 返 `ZERO`，**不报错不红框**。现网 `QT-20260911-0010` 卡片 `S0001` 核价 BOM「物料成本」整列 0。
+
+🚨 **不是回归，是漏修**：`431c9df2`（2026-08-04）已在**树聚合**路径修过同一根因（新增 `buildTreeAggPresenceView`，其 doc 注释 `:403-411` 把机制讲透了），但 `evalCrossTab` 的匹配路径**没跟着修**；该 commit message 自己点名的夹具盲区，也只补了 `tree-formula-parity-cases.json`，`cross-tab-cases.json` 直到本次才补。⇒ **同一句诊断只落地了一半，另一半潜伏五周**。
+
+🔬 **判决性差分**（排除「页签算序」竞争假设）：同一张卡片、同样的声明序（BOM 都排在材质元素之前），报价侧 `COMP-0011`（匹配键 `INPUT_TEXT`）算出 `203420.460972186`，核价侧 `COMP-0016`（匹配键 `BASIC_DATA`）为 `0`。**唯一变量是 `field_type`**。全库盘点：4 个组件配了 `cross_tab_ref` match，两个报价侧 `INPUT_TEXT` 正常、两个核价侧 `BASIC_DATA` 恒 0。
+
+**修法（闸门 A0 裁决方案甲）**：只给匹配这一步新建「按字段名的宿主行视图」，**不动 `currentRowRaw`**。已否决：**乙**（放开补值白名单）会外溢到 `b_field` / KSUM `mergedCurrentRow` / 单位换算三条路径，且推翻 `repair-0803` **D-2** 裁决；**丙**（只加配置期校验）不解决「用取数列做匹配键」这一合法诉求。
+
+**四条关键决策 / 坑**：
+- **仅键缺失才补**，🚫 不照抄 `buildTreeAggPresenceView:429` 的 `putAll` —— 那是整体覆盖，搬到匹配语境会把用户显式清空的 `""` 填回 default_source 值 → **虚假命中**
+- **诊断只在「匹配键整个不存在」时写**：若「键在值为空」也报，渲染层 `ComponentCell:305-310` 的 `err` 会用 ⚠ **顶掉数值**，BOM 根行当场从 `0` 变 ⚠，违反「真无匹配行仍返 0」（前端工程师发现，差点让 AC-4 变红）
+- **`targetRowValue` 的 sub 上下文必须同款下传**（`backtask` 只点名 `evalCrossTab` 两处，**后端工程师额外发现**）—— 不传则 `targetExpr` 内嵌 KSUM 在嵌套层把本次修复**重新丢掉**
+- 前后端一处**既有**空串口径分歧（后端 `""` 不补 / 前端 `buildResolvedRow:1345` 会补）统一到后端口径，由对拍夹具锁死
+
+📌 **自愈口径（查实现所得，比「下次编辑就好」准确）**：改**该行数据** → 该行卡片值置 NULL → 下次 `ensureCardValues` 重算 ✅；**提交** → `forceRecomputeAll=true` 强制整单重算 ✅；只改**单据级字段**（备注/客户）→ `invalidateCardValues` 为 false ⇒ **不自愈**（`QuotationService:3225-3233`，task-260901 B-1c 的既有设计，它要治的是「每次保存都全量补算拖 54s」）。存量按用户裁决 **D-b 不批量刷**。
+
+✅ **验证**：主线亲验 Playwright 真机 —— 先在自起的 8094/5094（worktree 代码），合并后**在用户环境 5090/8091 复验**，两次数值逐字一致：`00003`=233922.5 / `00081`=5204745 / 小计 5438667.5；`300012/300013/300014/300015` + 根行仍为 `0`；报价侧 `203420.460972186` / `33903.410162031` 逐字不变。后端夹具 59/59 + 诊断 7/7，前端 1206/1206，`tsc` 两子工程 `exit=0`。**三方各自独立做了还原实验且方向一致**（回退 → 全 0，恢复 → 正确值且逐字节一致）。
+
+⚠️ **AC-9 判为不适用（主线写 AC 的错）**：原文要求「改核价 BOM 的组成用量 → 保存 → 切页签 → 刷新」，实测**核价卡片一个可编辑单元格都没有**（三组件字段全为 `BASIC_DATA`/`FORMULA`），连「保存草稿」都触发不了（提示「无改动，无需保存」）。用户裁决**核价单本就该全只读** ⇒ 该 AC 描述的是**在核价侧不存在的场景**。归因：写 AC 时未实查 `field_type`，违反 `task-docs.md §4`「AC 引用的事实必须实查」——**这已是同一条规矩第二次被同一个人违反**（上次是 `task-260902`）。本次**序列类覆盖缺失**。
+
+**遗留**：`BL-0274`（每行都建匹配视图的性能 —— 先实测差值再决定，🚫 不是「去优化」；另主线发现**树路径现在每行调两次** `resolveRowByFieldName`，将来合并这两次比惰性构造划算）· AC-10 渲染层未验证（发布冻结后改活表配置不外溢到已发布模板 ⇒ 现网无法低成本构造）· 两端 harness 宿主行**合并序不一致**（后端 `currentRow` 最高优先 / 前端 `editValues` 最高优先，当前 **0 用例**同时给两者故不触发，是静默地雷）· `TreeFormulaParityFixtureTest` 存量红（路径常量 `task-0803-` 已改名为 `task-260803-`，用户裁决本次不修不登记）
+
 [2026-09-10] 前端类型自检补全 —— `e2e/` 此前从未被类型检查（路径 B 直接修） - **已修复** | 涉及文件：`cpq-frontend/tsconfig.json`（加第 4 个 reference）· 新增 `cpq-frontend/e2e/tsconfig.e2e.json` · `docs/rules/frontend.md` §2.1 + checklist · 6 个 e2e spec 的类型修正 | 用户裁决「直接修就行」。
 
 🚨 **根因是两层叠加**：① 根 `tsconfig.json` 是 solution-style（`"files": []`），`tsc -p` **不跟进 references** ⇒ 编译 0 文件恒返回 0（此坑 2026-09-01 已记录并更正过命令）；② **但三个子项目的 `include` 分别是 `src` / `src` 下的 `*.test.*` / `vite.config.ts` —— 没有一个含 `e2e/`**。⇒ 两层叠加，**全仓 229 个 E2E 用例从来没被类型检查过**，而它们正是 UI 改动的主要回归防线。
@@ -4581,6 +4605,7 @@ E2E:
 **自检**：后端 `UnitConversionTest`(7，含新增别名一致性用例) + `FormulaCalculatorUnitConversionTest`(4) + `SubtotalUnitConversionTest`(1) + `CardEffectiveRowsUnitConversionTest`(2) + `FormulaCalculatorUnitConvDataSourceTest`(2) = **16/16 全绿**；前端 `npx vitest run src/` = **61 files / 810 tests 全绿**（裸跑 `npx vitest run` 会误抓 `e2e/*.spec.ts` 报 Playwright `test.beforeAll` 错，属既有配置问题，package.json 无 `test` 脚本只有 `test:e2e`，须显式限定 `src/`）；`tsc --noEmit -p tsconfig.app.json` **2 错、净增量 0**（`ElementEditDrawer.tsx:148` + `useDriverExpansions.ts:172` 均为 master 既有）；worktree 临时 vite(5252) 下 `/` 与 `/src/utils/unitConversion.ts` 均 **200**。
 
 ---
+
 
 ## [2026-09-10] 报价单详情页卡片头部对齐编辑页 | repair-260910（task-260910 的 fix-forward）
 
