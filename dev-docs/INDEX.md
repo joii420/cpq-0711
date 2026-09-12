@@ -93,6 +93,7 @@
 
 | 分支 | worktree | 领先 master | 状态 |
 |---|---|---|---|
+| `repair/260912-excel-shape` | `.claude/worktrees/repair-260911-excel-tabkey`（**复用该目录**，省 6722 文件检出） | **0 笔**（刚从 master `95d83e36` 切出） | 🔵 **开发中** —— `repair-260912-核价Excel视图形态与编辑页取数`（`BL-0275` 的返修）。闸门 A 已放行，两路子代理（后端 `B-1~B-4` / 测试单片 `S1`；前端零改动无任务）。⚠️ 该 worktree 原绑 `repair/260911-excel-tabkey`（已合并、待用户删），现已切到本分支。 |
 | `repair/260911-excel-tabkey` | `.claude/worktrees/repair-260911-excel-tabkey`（**待清理**） | **已全部合入 master `5e7be788`** | ✅ **已合并，⏳ 待闸门 B 验收后清理** —— `repair-260911-核价Excel视图取数源对不上`（`BL-0275`）。闸门 A 已放行，两路子代理（后端 `B-1~B-3` / 测试单片 `S1`；**前端零改动无任务**）。零迁移 / 零 DDL / 零接口结构变更 / 零前端改动。<br>⚠️ 端口：worktree 临时实例自选，**`8091/5090` 保留给主线亲验与用户**。 |
 | `repair/260911-crosstab-match-hostrow` | ~~`.claude/worktrees/repair-260911-crosstab-match`~~ **worktree 已删（2026-09-11）** | **已全部合入 master `ecaa6fd9`**（实测 `git branch --contains 5603a173` → master） | ✅ **已交付 · 闸门 B 验收通过 · 已结案**。🚦 **分支尚未删**：删分支属 `CLAUDE.md §3.2` 历史销毁红线（deny 档硬拦，主线不执行），已呈报命令 `git branch -d repair/260911-crosstab-match-hostrow` 交用户执行；**用户执行后本行即可整行删除**。随时可由 `git branch <名> 5603a173` 重建。 |
 | ~~`feat/task-260909-v6-legacy-audit`~~ | ~~`.claude/worktrees/task-260909-v6-audit`~~（已移除，移除前实测未提交 0 / 未跟踪 0） | **已全部合入 master `82be1dd9`**（领先 0 笔） | ✅ **2026-09-09 已合并**。⚠️ **分支指针保留未删** —— 删分支属 `CLAUDE.md §3.2` 红线【历史销毁】，须用户逐次批准 |
