@@ -84,7 +84,7 @@
 
 | **BL-0184** 大单量报价单打开后 `batch-evaluate` 风暴 | 🔴 **P0 · 另立任务待查** | 1845 行的单打不开：`POST /formulas/batch-evaluate` **517 次 / 40.3MB / 29.2 分钟不收敛**，「下一步」同时卡死。**不是分块**（前端 `BATCH_EVALUATE_CHUNK=5000`，注释称「正常报价单 1 个 HTTP 搞定」）、**不是实例爆炸**（`LinkedExcelView` 仅渲染 2 处）→ 是 `useLinkedExcelRows.ts:274` 的 effect 反复重入。**`task-260825` 未改过这三个文件**（`git diff master` 为空），属既有代码、只是从未在 1845 行量级跑过。疑与「打开触发 autosave 风暴」同族 |
 
-### 未合并分支（**6 条**）· 快照 2026-09-11（新增 `feat/task-260910-sel-ds-tables` 一条：已合并 master、待验收后删；`repair-260910-cust-product-no` 已合并移出；2026-09-09 新增 `repair-260909` 一条；`task-260908` 为 2026-09-08 登记；其余 3 条为 2026-09-07 结案时重采）
+### 未合并分支（**7 条**）· 快照 2026-09-11（2026-09-11 新增 `repair/260911-crosstab-match-hostrow` 一条：开发中；此前新增 `feat/task-260910-sel-ds-tables` 一条：已合并 master、待验收后删；`repair-260910-cust-product-no` 已合并移出；2026-09-09 新增 `repair-260909` 一条；`task-260908` 为 2026-09-08 登记；其余 3 条为 2026-09-07 结案时重采）
 
 > 判据：`git rev-list --count master..<branch>`（**领先 master 的提交数**），不是凭印象。
 > ⚠️ **上一版（2026-09-06 快照）已过期**：它列了 5 条，其中 4 条实测领先 **0 笔**（早已合入），只是分支指针还在。
@@ -92,6 +92,7 @@
 
 | 分支 | worktree | 领先 master | 状态 |
 |---|---|---|---|
+| `repair/260911-crosstab-match-hostrow` | `.claude/worktrees/repair-260911-crosstab-match` | **0 笔**（实测 `git rev-list --count`；刚从 master `7c570d91` 建出，实现改动尚未提交） | 🔵 **开发中** —— `repair-260911-连表公式匹配键宿主侧取不到取数列`（`BL-0273`）。闸门 A 已放行，三路子代理并行（后端 `B-1~B-5` / 前端 `F-1~F-5` / 测试单片 `S1` AC-1~AC-11）。零迁移 / 零 DDL / 零接口结构变更。<br>⚠️ 端口约定：worktree 临时实例 **8092/5092（后端工程师）· 8093/5091（测试工程师）**；`8091/5090` 保留给主线亲验（uat profile → `cpq_db_0910`）。 |
 | ~~`feat/task-260909-v6-legacy-audit`~~ | ~~`.claude/worktrees/task-260909-v6-audit`~~（已移除，移除前实测未提交 0 / 未跟踪 0） | **已全部合入 master `82be1dd9`**（领先 0 笔） | ✅ **2026-09-09 已合并**。⚠️ **分支指针保留未删** —— 删分支属 `CLAUDE.md §3.2` 红线【历史销毁】，须用户逐次批准 |
 | `feat/task-260909-v6-retire` | `.claude/worktrees/task-260909-v6-retire` | **0 笔**（2026-09-09 建分支即登记，`git-worktree.md §5`） | 🟢 **开发中** —— `task-260909-V6老表退役` 批次 0~3。⚠️ **`B-5` `DROP VIEW` 与 `B-6` 回滚演练挂起**，等用户逐个批准 |
 | ~~`fix/repair-260910-cust-product-no`~~ | `.claude/worktrees/repair-260910-cust-product-no`（待回收） | **已全部合入 master `36620d0c`** | ✅ **2026-09-10 已交付·用户验收通过** —— `repair-260910-客户产品编号维度与删行错位`（挂 `task-260819-取数配置器` 下，**`repair-260908` 同族第二次复发**）。基于 `0d3d448d`（立项文档提交）。<br>根因：`ds_quote_customer_part` 行粒度是 `(customer_no, customer_product_no)`，而视图 JOIN 只给了 `(material_no, customer_no)` ⇒ 一行放大成 N 行（实测 `CUST-0004/S0004` **4 行**，最严重的 `0028-2609000015` **7 行**）；放大出的行 `row_key_fields=["销售料号"]` 全等 ⇒ 只能按**不稳定的排序位置**消歧 ⇒ 删除命中错行。<br>A0 裁决：**甲**（新增运行时占位符 `:customerProductNo`，仿 `enrichCustomerCode` 同构）+ 行身份 **A/B/C 三层全做**（确定性排序 / 行键补维度 / 稳定行 id `__row_uid`）。<br>🚨 **协议级改动**，影响面实测 **后端 12 主文件 + 前端 7 主文件 + 21 测试夹具**，清单在 `问题说明.md §5.3`。<br>⚠️ **与 `feat/task-260908-sqlvb-lookup` 同改 `SemanticCompiler`**，与 `task-260910-sel-ds-tables` 同碰 `ds_quote_customer_part` 数据，合并前须 `git merge master` 复跑自检。 |
