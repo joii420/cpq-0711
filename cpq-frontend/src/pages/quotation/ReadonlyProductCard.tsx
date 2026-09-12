@@ -1129,11 +1129,25 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         {/* repair-0814：占位格数同上——核价 2 / 报价 1 */}
                         {activeComponentBomTree && (<><td />{isCosting && <td />}</>)}
                         {activeComponentVersionable && <td />}
-                        <td className="qt-subtotal-label-cell">合计</td>
-                        <td colSpan={Math.max(1, activeComp.fields.length - 1)} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
-                          {/* task-0801：全口径统一 6 位去尾零（formatNumber 兜底），产品小计/页签合计不再分叉 2 位 vs 4 位 */}
-                          {`¥ ${formatNumber(sumTabColumns(activeComp as any, compSubtotals), { isComputed: true }) ?? '0'}`}
-                        </td>
+                        {/* 2026-09-11：与编辑页 QuotationStep2 同构（AP-50）——
+                            合计不再跨列右对齐，改为落进「最后一个金额小计列」这一格，
+                            与上面小计行的值逐格同列、同左对齐。 */}
+                        {(() => {
+                          const fs = activeComp.fields;
+                          let valueIdx = -1;
+                          for (let i = fs.length - 1; i >= 1; i--) {
+                            if (fs[i].is_amount === true && fs[i].is_subtotal) { valueIdx = i; break; }
+                          }
+                          if (valueIdx < 0) valueIdx = Math.max(1, fs.length - 1);
+                          const totalText = `¥ ${formatNumber(sumTabColumns(activeComp as any, compSubtotals), { isComputed: true }) ?? '0'}`;
+                          return fs.map((f, fi) => {
+                            const k = f.name || f.key || fi;
+                            if (fi === 0) return <td key={k} className="qt-subtotal-label-cell">合计</td>;
+                            // task-0801：全口径统一 6 位去尾零（formatNumber 兜底），产品小计/页签合计不再分叉 2 位 vs 4 位
+                            if (fi === valueIdx) return <td key={k} className="qt-subtotal-cell">{totalText}</td>;
+                            return <td key={k} />;
+                          });
+                        })()}
                       </tr>
                     )}
                   </tfoot>

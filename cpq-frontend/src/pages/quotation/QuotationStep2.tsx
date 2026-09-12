@@ -3919,11 +3919,31 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         {/* repair-0814：与系统固定列对齐（核价=料号+版本 2 格；报价=仅料号 1 格）——
                             7fadf5e8 落「报价侧不出版本列」裁决时只改了上面小计行，这一行漏改。 */}
                         {activeComponentBomTree && (<><td />{cardSide === 'COSTING' && <td />}</>)}
-                        <td className="qt-subtotal-label-cell">合计</td>
-                        <td colSpan={activeComponent.fields.length} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
-                          {/* task-0801：全口径统一 6 位去尾零（formatNumber 兜底），产品小计/页签合计不再分叉 2 位 vs 4 位 */}
-                          {`¥ ${formatNumber(sumTabColumns(activeComponent as any, allComponentSubtotals), { isComputed: true }) ?? '0'}`}
-                        </td>
+                        {/* 2026-09-11 修复「合计与小计列位置不一致」：
+                            原实现 = 标签1 + colSpan(N) 跨列右对齐，两处错位 ——
+                            ① colSpan 多吃一格 + 无尾部占位 ⇒ 合计值一路跨到操作列上（用户截图的「多出一节」）；
+                            ② 跨列格右对齐贴列右边，小计却是单列左对齐贴列左边 ⇒ 同列内仍差一截。
+                            改法：与小计行同构逐列渲染 —— 合计值落进「最后一个金额小计列」这一格，
+                            继承同一个 .qt-subtotal-cell 左对齐，尾部补操作列占位，逐格与小计对齐。 */}
+                        {(() => {
+                          const fs = activeComponent.fields;
+                          // 合计值落位列：最后一个「金额 且 参与小计」的列；无则退回最后一列（0 号留给标签）
+                          let valueIdx = -1;
+                          for (let i = fs.length - 1; i >= 1; i--) {
+                            if (fs[i].is_amount === true && fs[i].is_subtotal) { valueIdx = i; break; }
+                          }
+                          if (valueIdx < 0) valueIdx = Math.max(1, fs.length - 1);
+                          const totalText = `¥ ${formatNumber(sumTabColumns(activeComponent as any, allComponentSubtotals), { isComputed: true }) ?? '0'}`;
+                          return fs.map((f, fi) => {
+                            const k = f.name || f.key || fi;
+                            if (fi === 0) return <td key={k} className="qt-subtotal-label-cell">合计</td>;
+                            // task-0801：全口径统一 6 位去尾零（formatNumber 兜底），产品小计/页签合计不再分叉 2 位 vs 4 位
+                            if (fi === valueIdx) return <td key={k} className="qt-subtotal-cell">{totalText}</td>;
+                            return <td key={k} />;
+                          });
+                        })()}
+                        {/* 操作列占位（与小计行尾部 <td /> 对齐） */}
+                        <td />
                       </tr>
                     )}
                   </tfoot>
