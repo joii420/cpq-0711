@@ -297,3 +297,120 @@ test('AC-R4 · 合法空卡片单打开后行为不变、不无限转圈', async
     `AC-R4：合法空卡片单打开时**不应**触发 ensure-card-values（shouldWarmCardValues 只认缺失/失败哨兵，`
     + `🚫 不许退化成「tabs 为空就 warm」）。实际 = ${JSON.stringify(ensureCalls)}`).toBe(0);
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// repair-260911 · F-3 开发自测：**AC-R6**（不刷新那一帧行↔值必须对齐）
+//
+// AC-R6 原文（问题说明 §⑦）：
+//   前置：选配新建一个零件、挂 2 个材质，点「添加到报价单」。🚨 **不刷新**。
+//   ① 根行（nodeId 不含 `/`）业务列全为空
+//   ② 每个子件行的**料号列** == 该行 nodeId 的末段
+//   ③ 项次列按子件顺序递增且不重复（2 材质 = 1、2）
+//   ④ 刷新后与不刷新逐字节一致
+//   量具：`textContent || input.value`（probeTab 已按此实现）
+//
+// 🚫 复用 F-2 的 helpers 与 configureNewPartWith2Materials，不新建一次性 spec（裁决 R-9）。
+// ═══════════════════════════════════════════════════════════════════════════
+function colIndex(header: string[], want: string): number {
+  const norm = (s: string) => s.replace(/\s+/g, '');
+  let i = header.findIndex((h) => norm(h) === want);
+  if (i < 0) i = header.findIndex((h) => norm(h).endsWith(want));
+  return i;
+}
+
+test('AC-R6 · 不刷新那一帧 BOM 行值必须与该行 data-node-id 对齐（且与刷新后逐字节一致）', async ({ page }) => {
+  const env = await H.assertEnvIdentity();
+  // 🔬 干预生效的直接证据 ①：前端模块正文里必须能读到 F-3 的重灌函数。
+  const src = await (await fetch(`${H.BASE_URL}/src/pages/quotation/QuotationWizard.tsx`)).text();
+  // ⚠️ 探针字符串必须用**转换后**的形态：vite 服务的是已 strip TS 注解的 JS，
+  //    `(item as any).componentData` 在那里是 `item.componentData` —— 按 TS 原文探会恒 false（首轮就栽在这）。
+  const hasF3 = src.includes('reflowComponentRowsFromResponse(item.componentData');
+  console.log(`[env] db=${env.db} F-2改动=${env.hasFix} **F-3重灌调用=${hasF3}**`);
+
+  const fx = H.seedCustomerAndQuotation('R6');
+  const ensureCalls: string[] = [];
+  page.on('request', (r: any) => {
+    if (r.url().includes('/ensure-card-values')) ensureCalls.push(`${r.method()} ${new Date().toISOString()}`);
+  });
+  await H.uiLogin(page);
+  await H.openStep2(page, fx);
+
+  await page.locator('button').filter({ hasText: /添加产品/ }).first().click();
+  await page.waitForTimeout(1500);
+  const selItem = page.locator('.ant-dropdown:visible .ant-dropdown-menu-item').filter({ hasText: /选配/ }).first();
+  await expect(selItem, '找不到「选配添加」⇒ **入口问题**').toBeVisible({ timeout: 30_000 });
+  expect(await selItem.getAttribute('aria-disabled'), '「选配添加」被禁用 ⇒ **夹具问题**，判【未验证】').not.toBe('true');
+  await selItem.click({ timeout: 20_000 });
+  await page.waitForTimeout(2500);
+
+  await configureNewPartWith2Materials(page, `${H.TAG}零件${H.RUN}R6`, `${H.TAG}CPN${H.RUN}R6`);
+
+  // ══ 主断言帧：**不刷新** ═══════════════════════════════════════
+  await page.waitForFunction(() => document.querySelectorAll('.qt-product-card').length > 0,
+    undefined, { timeout: 120_000 }).catch(() => {});
+  await page.waitForTimeout(25_000);   // 等 warm(ensure-card-values) 回来并重灌
+  await page.waitForFunction(() => !((document.body.innerText || '').includes('加载中')),
+    undefined, { timeout: 60_000 }).catch(() => {});
+
+  const noRefresh = await H.probeTab(page, TAB_BOM);
+  // 🔬 干预生效的直接证据 ②：warm 真的发生了（没有它，「对齐」可能只是因为压根没翻通道）。
+  console.log('[不刷新·ensure调用] ' + JSON.stringify(ensureCalls));
+  console.log('[不刷新·表头] ' + JSON.stringify(noRefresh.header));
+  console.log('[不刷新·行] ' + JSON.stringify(noRefresh.rows));
+  await H.shot(page, 'F3-01-AC-R6-不刷新那一帧-BOM页签');
+  H.appendEvidence('F3-AC-R6.txt',
+    `\n===== ${new Date().toISOString()} F-3重灌=${hasF3} =====\n单=${fx.quotationNumber} (${fx.quotationId})\n`
+    + `表头=${JSON.stringify(noRefresh.header)}\nensure调用=${JSON.stringify(ensureCalls)}\n`
+    + `【不刷新】行=${JSON.stringify(noRefresh.rows, null, 1)}\n`);
+
+  expect(ensureCalls.length, 'AC-R6 前置：整帧没发过 ensure-card-values ⇒ 通道没翻，断言空跑，判【未验证】').toBeGreaterThan(0);
+  expect(noRefresh.rows.length, 'AC-R6 前置：BOM 页签 0 行 ⇒ 断言空跑，判【未验证】').toBeGreaterThan(0);
+  const rootRows = noRefresh.rows.filter((r) => r.nodeId && !r.nodeId.includes('/'));
+  const childRows = noRefresh.rows.filter((r) => r.nodeId && r.nodeId.includes('/'));
+  expect(rootRows.length, `AC-R6 前置：应恰好 1 个根行，实际 ${rootRows.length}；行=${JSON.stringify(noRefresh.rows)}`).toBe(1);
+  expect(childRows.length, `AC-R6 前置：2 材质应有 2 个子件行，实际 ${childRows.length}`).toBe(2);
+
+  // ① 根行业务列全空
+  //   🚨 量具口径：业务列 = **表头非空且不是首列**的那些格。
+  //     · 首列是树列「BOM」（展开符 + 行删除符），不是业务列；
+  //     · **末列表头为空**，是操作列（＋/✕ 加行删行按钮），同样不是业务列 —— 首轮把它算进去红了一次。
+  const rootBiz = rootRows[0].cells.filter((_, i) => i > 0 && (noRefresh.header[i] ?? '').trim() !== '');
+  expect(rootBiz.filter((c) => c !== '' && c !== '—' && c !== '-'),
+    `AC-R6①：根行是合成根，业务列必须全空。实际非空格 = ${JSON.stringify(rootBiz)}`
+    + `\n  🔑 非空 = comp.rows 未被服务端权威行重灌，根行拿到了子件1的值（本次缺陷原貌）。`).toEqual([]);
+
+  // ② 子件行料号列 == nodeId 末段
+  const iPartNo = colIndex(noRefresh.header, '料号');
+  expect(iPartNo, `AC-R6②：表头里找不到「料号」列 ⇒ 量具失准，判【未验证】。表头=${JSON.stringify(noRefresh.header)}`).toBeGreaterThanOrEqual(0);
+  for (const r of childRows) {
+    const tail = r.nodeId!.split('/').pop();
+    expect(r.cells[iPartNo],
+      `AC-R6②：行 ${r.nodeId} 的料号列应 = ${tail}，实际 = ${r.cells[iPartNo]}；整行=${JSON.stringify(r.cells)}`).toBe(tail);
+  }
+
+  // ③ 项次列递增不重复
+  const iSeq = colIndex(noRefresh.header, '项次');
+  expect(iSeq, `AC-R6③：表头里找不到「项次」列。表头=${JSON.stringify(noRefresh.header)}`).toBeGreaterThanOrEqual(0);
+  const seqs = childRows.map((r) => r.cells[iSeq]);
+  expect(seqs, `AC-R6③：项次应递增不重复，实际 = ${JSON.stringify(seqs)}`).toEqual(['1', '2']);
+
+  // ④ 刷新后逐字节一致
+  await page.reload();
+  await page.waitForSelector('.ant-steps-item', { timeout: 90_000 });
+  const nx = page.locator('button').filter({ hasText: /^\s*下\s*一\s*步\s*$/ }).first();
+  await expect(nx).toBeEnabled({ timeout: 40_000 });
+  await nx.click();
+  await page.waitForTimeout(20_000);
+  const after = await H.probeTab(page, TAB_BOM);
+  console.log('[刷新后·行] ' + JSON.stringify(after.rows));
+  await H.shot(page, 'F3-02-AC-R6-刷新后');
+  H.appendEvidence('F3-AC-R6.txt', `【刷新后】行=${JSON.stringify(after.rows, null, 1)}\n`);
+  expect(JSON.stringify(after.rows),
+    `AC-R6④：刷新后应与不刷新逐字节一致。\n  不刷新=${JSON.stringify(noRefresh.rows)}\n  刷新后=${JSON.stringify(after.rows)}`)
+    .toBe(JSON.stringify(noRefresh.rows));
+
+  H.writeEvidence('F3-AC-R6-结论.txt',
+    `单=${fx.quotationNumber} (${fx.quotationId})  F-3重灌=${hasF3}\n`
+    + `表头=${JSON.stringify(noRefresh.header)}\n`
+    + `【不刷新】${JSON.stringify(noRefresh.rows, null, 1)}\n【刷新后】${JSON.stringify(after.rows, null, 1)}\n`);
+});

@@ -152,6 +152,83 @@ function computeProductSubtotalSafe(
   return computeProductSubtotal(li, driverExpansions, customerId, precomputedSubtotals, globalVariableDefs);
 }
 
+/**
+ * repair-260911 F-3(AC-R6 / 裁决 R-10 · X1)：通道翻转时把服务端权威行重灌回 `comp.rows`。
+ *
+ * <p><b>根因</b>：同一组 BOM 行，后端两条通道给出的**行序不同** ——
+ *   · 实时 `batch-expand`（跑组件 `sql_template`）末行是 `ORDER BY parent_no, ...`，
+ *     合成根行 `parent_no` 恒 NULL、PG `ASC` 默认 NULLS LAST ⇒ 根**排最后**：`[00005, 00006, 根]`；
+ *   · 快照 `quote_card_values.baseRows` 与服务端 `row_data` 是 spine DFS 序 ⇒ 根**排最先**：`[根, 00005, 00006]`。
+ * 而渲染层 `rowAt(i, comp, split)`（`manualRows.ts:41`）把 `comp.rows[i]` 与 `exp.rows[i]` **纯下标配对**，
+ * `comp.rows` 又是实时期 bake 出来的（`QuotationStep2.tsx` bake effect，守卫 key 只含下标不含行身份）。
+ * `warmCardValues` 把展开从实时翻到快照的那一刻**没有任何人重排 `comp.rows`** ⇒ 整列错开一格。
+ *
+ * <p><b>修法（X1）</b>：warm 响应本来就带着服务端权威的 `componentData[].rowData`（spine 序，
+ * 与翻过去之后的展开同序），这里一并把它解析进 `comp.rows` —— 重灌后 `comp.rows` **就是**刷新后那一份，
+ * 「刷新 / 不刷新逐字节一致」按构造成立。这不是新机制：删除路径的 `applyQuoteProjection`
+ * （`QuotationStep2.tsx:2354`）早就有同一条不变量（注释原文「comp.rows 与 buildSnapshotExpansions
+ * 展开恢复同序对齐」），本次只是把它补到唯一漏掉的那条路径上。
+ *
+ * <p><b>为什么只会落在 warm 路径</b>：调用方共三处，`autoSaveDraft`/`handleSaveDraft` 两处传的是
+ * 瘦身响应 `SaveDraftResponse`——它**结构上没有 `componentData` 字段**（该词只出现在注释里）。
+ * 所以 `Array.isArray(r.componentData)` 是**结构性守卫**，不是靠判断力的「这次是不是 warm」，
+ * autoSave 热路径逐字节不变。
+ *
+ * <p><b>解析口径与刷新路径逐字同源</b>：刷新走 `enrichComponentData`（`enrichComponentData.ts:86`）
+ * 的 `parseJson(saved.rowData, [])`，其内部就是 `tryParseSnapshotJsonLossless` —— 口径不一致
+ * （比如用 `JSON.parse`）会让数值退化成 IEEE-754，断言「逐字节一致」当场失败。
+ * 空数组回退 `[{}]` 同样照抄 `enrichComponentData.ts:180`。
+ *
+ * <p><b>匹配口径同样照抄刷新路径</b>（AP-37：同一 componentId 允许在模板里实例化多次）：
+ * 按 componentId 分队列，`(componentId, tabName)` 精确匹配优先，退回同 cid 队首，再退回按 tabName；
+ * 认领后从队列剔除，保证不重复使用同一条。🚫 只按 componentId 建 Map（last-wins）会让同 cid 多 Tab 互相污染。
+ *
+ * <p>🚫 <b>不动 `deletedRowKeys`</b>：本次裁决范围只有「行值对齐」。墓碑数组的唯一写点是
+ * 删除路径的服务端权威投影（`applyQuoteProjection`），与本地那份同源，无需在此重灌。
+ *
+ * @returns 有任何一个组件的 rows 真的变了才返回新数组；全都没变返回 `null`（保住引用相等，
+ *          不制造无谓的 lineItems 重建 —— 那会连锁触发 driver 重拉与 autoSave 判脏）。
+ */
+function reflowComponentRowsFromResponse(
+  localComps: any[] | undefined,
+  respComps: any[],
+): any[] | null {
+  if (!Array.isArray(localComps) || localComps.length === 0) return null;
+  const queueByCid = new Map<string, any[]>();
+  const byTab: Record<string, any> = {};
+  for (const s of respComps) {
+    const cid = s?.componentId != null ? String(s.componentId) : '';
+    if (cid) {
+      if (!queueByCid.has(cid)) queueByCid.set(cid, []);
+      queueByCid.get(cid)!.push(s);
+    }
+    if (s?.tabName) byTab[String(s.tabName)] = s;
+  }
+  let changed = false;
+  const next = localComps.map((c: any) => {
+    const cid = c?.componentId != null ? String(c.componentId) : '';
+    const tab = c?.tabName != null ? String(c.tabName) : '';
+    let proj: any | undefined;
+    const queue = cid ? queueByCid.get(cid) : undefined;
+    if (queue && queue.length > 0) {
+      let idx = queue.findIndex(s => String(s?.tabName ?? '') === tab);
+      if (idx < 0) idx = 0;
+      proj = queue.splice(idx, 1)[0];
+    } else if (tab && byTab[tab]) {
+      proj = byTab[tab];
+    }
+    // 响应里没有这个组件 ⇒ 服务端对它没有权威行，原样保留（与 applyQuoteProjection 的 `if (!proj) return c` 同口径）。
+    if (!proj || proj.rowData == null) return c;
+    const parsed = tryParseSnapshotJsonLossless<Record<string, any>[]>(proj.rowData);
+    if (!Array.isArray(parsed)) return c;
+    const rows: Record<string, any>[] = parsed.length > 0 ? parsed : [{}];
+    if (JSON.stringify(c?.rows ?? null) === JSON.stringify(rows)) return c;
+    changed = true;
+    return { ...c, rows };
+  });
+  return changed ? next : null;
+}
+
 const QuotationWizard: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -947,6 +1024,16 @@ const QuotationWizard: React.FC = () => {
         // (loadQuotation)才显示。这里就地回灌, 第一眼即正确(与刷新后一致)。
         for (const k of ['quoteCardValues', 'costingCardValues', 'quoteExcelValues', 'costingExcelValues'] as const) {
           if (r[k] != null && r[k] !== (item as any)[k]) patch[k] = r[k];
+        }
+        // repair-260911 F-3(AC-R6 / 裁决 R-10 · X1):同一响应里若带着服务端权威的 componentData,
+        //   把 rowData 一并重灌进 comp.rows —— 上面 4 份值快照把展开从「实时 SQL 序」翻成「快照 spine 序」,
+        //   而 comp.rows 是实时期按下标 bake 的,不重灌就会整列错开一格(根行拿到子件1的值…)。
+        //   `Array.isArray(r.componentData)` 是结构性守卫:saveDraft 的瘦身响应 SaveDraftResponse
+        //   根本没有这个字段 ⇒ 只有 ensure-card-values(走 getById 整份 QuotationDTO)这条路会命中。
+        // [阳性对照 · 临时禁用 F-3 —— 实验结束必须还原]
+        if (false && Array.isArray(r.componentData)) {
+          const reflowed = reflowComponentRowsFromResponse((item as any).componentData, r.componentData);
+          if (reflowed) patch.componentData = reflowed;
         }
         if (Object.keys(patch).length > 0) { changed = true; return { ...item, ...patch }; }
         return item;

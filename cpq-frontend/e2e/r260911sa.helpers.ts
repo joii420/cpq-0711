@@ -287,8 +287,38 @@ export function cellByHeader(p: TabProbe, row: { cells: string[] }, headerLike: 
   return row.cells[j] ?? '';
 }
 
+/**
+ * 「整行全空」判据（AC-R2③）。
+ *
+ * 🚨 **这里踩过一次假绿**：初版直接 `cells.every(c => c==='')`，但每行末尾都有操作列
+ *    「＋✕」、树模式首格还有「▼」「✂」等**纯控件字形** ⇒ 任何一行都不可能被判为全空
+ *    ⇒ AC-R2③ 变成**永远为真的空断言**。
+ *    ⇒ 判空前必须先剥掉控件字形，只看**业务文本**。FT-3（把 quote_card_values 置 NULL
+ *      退回平铺）就是用来证明本判据真的会变红的。
+ */
+const CONTROL_GLYPHS = /[＋✕✂▼▶＞－​\s]/g;
 export function rowIsAllEmpty(cells: string[]): boolean {
-  return cells.length > 0 && cells.every((c) => c === '' || c === '—' || c === '-' || c.includes('加载中'));
+  const biz = cells.map((c) => c.replace(CONTROL_GLYPHS, ''));
+  return biz.length > 0 && biz.every((c) => c === '' || c === '—' || c === '-' || c.includes('加载中'));
+}
+
+// ── 证伪实验用：自造行的 jsonb 列备份 / 置空 / 还原 ────────────────────
+export function backupJsonb(table: string, idCol: string, id: string, col: string, file: string): number {
+  const json = runPsql(`SELECT coalesce(${col}::text,'') FROM ${table} WHERE ${idCol}='${id}'`, '-X -A -t');
+  fs.writeFileSync(file, json, 'utf-8');
+  console.log(`[备份] ${table}.${col} (${id}) → ${file}  ${json.length} 字节`);
+  return json.length;
+}
+export function restoreJsonb(table: string, idCol: string, id: string, col: string, file: string) {
+  const json = fs.readFileSync(file, 'utf-8').trim();
+  if (!json) throw new Error(`🚨 备份文件为空，拒绝还原：${file}`);
+  if (json.includes('$j$')) throw new Error('🚨 备份内容含 $j$ 定界符，换一个定界符再来');
+  const sql = `UPDATE ${table} SET ${col} = $j$${json}$j$::jsonb WHERE ${idCol}='${id}'`;
+  const out = sqlOwnedUpdate(sql, `SELECT count(*) FROM ${table} WHERE ${idCol}='${id}'`, 1, `还原 ${col}`);
+  const now = runPsql(`SELECT coalesce(${col}::text,'') FROM ${table} WHERE ${idCol}='${id}'`, '-X -A -t');
+  if (now.length === 0) throw new Error('🚨 还原后仍为空 —— 立即报主线');
+  console.log(`[还原] ${table}.${col} (${id}) ← ${file}  回显=${out} 现长度=${now.length}`);
+  return now.length;
 }
 
 /** 刷新编辑页并推进回 Step2（AC-R1②/AC-R2/AC-R3 的「刷新后」帧）。 */
