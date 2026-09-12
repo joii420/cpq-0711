@@ -423,6 +423,27 @@ export function evaluateExpression(
    * 与修复前一致（零破坏）。
    */
   hostFieldValues?: DecimalContext,
+  /**
+   * repair-260911：<b>cross_tab_ref `match` 专用的宿主行视图</b>（键 = 字段名 + driver 列名并存）。
+   *
+   * <p>为什么不能直接用 {@code currentRow}：{@code currentRow} 的键是 <b>driver 视图列名</b>
+   * （如 {@code production_no}），而 {@code match.b} 写的是<b>字段名</b>（如「生产料号」）。
+   * 调用方此前只额外补了 {@code INPUT_*} 的 default_source（见 QuotationStep2 `currentRowForEval`），
+   * 于是 {@code BASIC_DATA} / {@code DATA_SOURCE} 类型的匹配键按字段名永远取不到值 → 全部候选行
+   * 判不匹配 → {@code SUM} 静默返 0。取数配置器产出的字段默认就是 {@code BASIC_DATA}，核价侧必现。
+   *
+   * <p>为什么另开一个入参而不是把 {@code currentRow} 扩宽：{@code currentRow} 同时供
+   * {@code b_field} 求值、KSUM 的 mergedRow、单位换算消费，扩宽会外溢（repair-0803 决策 D-2 已否决）。
+   * 本参数<b>只</b>参与 {@code match} 判定与 {@code predicate}（SUMIF 族）的宿主侧取值。
+   *
+   * <p>与后端 {@code FormulaCalculator.RowContext.hostRowForMatch} 逐字对齐。
+   * 不传（既有调用点 / 树递归 / 老夹具）= 回落 {@code currentRow} → 逐位不变，零破坏。
+   *
+   * <p>🚨 约定：调用方应把<b>本组件声明过的每个字段名都建成键</b>（取不到值时值为 {@code undefined}）。
+   * 求值层据此区分「公式把列名写错了」（键不存在 → 写 outDiag 诊断）与「这行确实没数」
+   * （键存在但空 → 照旧静默 0）。见 QuotationStep2 `buildHostMatchRow`。
+   */
+  matchRow?: Record<string, any>,
 ): DecimalString {
   // Build expression string from tokens
   let expr = '';
@@ -558,14 +579,40 @@ export function evaluateExpression(
           rows: Array<Record<string, any>>,
           matchPairs: Array<{ a: string; b: string }>,
           hostRow: Record<string, any> | undefined,
+          /**
+           * repair-260911：以「宿主行」身份参与 match / predicate 判定的行视图。
+           * 缺省（调用方未传 matchRow）时 = hostRow，逐位等价于修复前。
+           * 🚫 不要拿它去构造 mergedRow —— 那条链喂的是 b_field，口径由 repair-0803 定死。
+           */
+          matchHostRow: Record<string, any> | undefined,
           targetExpr: ExpressionToken[] | undefined,
           agg: string,
           target: string | undefined,
           isProjectToHostKey: boolean,
         ): { value: DecimalString | null; multiMatchErr: boolean } => {
+          // repair-260911 D-a 诊断：match 的 b 键在宿主行【整个键都不存在】时写 outDiag，让渲染层
+          // 显示「为什么是 0」而不再静默。与后端 FormulaCalculator.noteHostKeyMissing 逐条对齐：
+          //   · 触发时机相同：只在某个 pair 判不匹配、且该键 not-in 宿主行时写（不是提前扫一遍）
+          //   · 只写袋子，不改数值 —— 仍走空集 → 0
+          //   · putIfAbsent 语义：已有 crossTabError 不覆盖
+          // 🚨 「键在、值为空」≠ 配置错误（BOM 根行各列全空就是这一类），必须继续静默返 0，
+          //    否则 ComponentCell 会用 ⚠ 顶掉数值，直接违反 AC-4。
+          // 🚨 仅在调用方显式传了 matchRow 时才判 —— 老调用点的键全集不可知，判了必误报。
+          const noteHostKeyMissing = (bKey: string) => {
+            if (!matchRow || !matchHostRow) return;
+            if (bKey in matchHostRow) return;
+            if (!outDiag || outDiag.crossTabError) return;
+            const label = token.sourceLabel || token.source || '';
+            outDiag.crossTabError =
+              `跨页签引用「${label}」的匹配键「${bKey}」在本行取不到值，无法匹配（按 0 计）`;
+          };
           const hits = rows.filter((ar) =>
-            matchPairs.every((p) => keyEq(ar[p.a], hostRow?.[p.b]))
-            && evalPredicate(token.predicate, ar, hostRow ?? {})
+            matchPairs.every((p) => {
+              const ok = keyEq(ar[p.a], matchHostRow?.[p.b]);
+              if (!ok) noteHostKeyMissing(p.b);
+              return ok;
+            })
+            && evalPredicate(token.predicate, ar, matchHostRow ?? {})
           );
           const A = agg.toUpperCase();
           const toValue = (value: unknown): DecimalString | null => {
@@ -626,6 +673,9 @@ export function evaluateExpression(
             // - b_field 取宿主列（如"数量"）→ 保留原 hostRow 字段（N=1 退化路径零变化）
             // - KSUM 子 token 按 ar 的行键（如"料件"）做 match → ar 字段覆盖同名项（match key 对齐）
             const mergedRow = hostRow ? { ...hostRow, ...ar } : ar;
+            // repair-260911：匹配视图同款合并（宿主匹配视图打底 + 驱动行覆盖），供内层 KSUM 的 match 使用。
+            // matchRow 未传时保持 undefined —— 内层照旧回落到自己的 currentRow(=mergedRow)，逐位不变。
+            const mergedMatchRow = matchRow ? { ...matchHostRow, ...ar } : undefined;
             return evaluateExpression(
               targetExpr!, aFieldValues, componentSubtotals, productAttributes, quotationFields,
               pathCache, partNo, basicDataValues, undefined, globalVariableDefs,
@@ -637,6 +687,8 @@ export function evaluateExpression(
               // 混入会让 targetExpr 内的 b_field 串到源页签列上）。供 b_field 键缺失时回落。
               // 与后端 `sub.hostFieldValues = ctx.hostFieldValues;`（targetRowValue :618）逐字对齐。
               hostFieldValues,
+              // repair-260911：匹配视图沿递归下传（与后端 `sub.hostRowForMatch = merge(ctx.hostRowForMatch, arow)` 对齐）。
+              mergedMatchRow,
             );
           };
 
@@ -674,11 +726,13 @@ export function evaluateExpression(
 
         const agg = (token.agg ?? 'NONE').toUpperCase();
         const hasTE = !!(token.targetExpr && token.targetExpr.length > 0);
+        // repair-260911：match / predicate 的宿主侧一律走匹配视图；未传时回落 currentRow（逐位不变）。
+        const hostMatchRow = matchRow ?? currentRow;
 
         if (token.projectToHostKey) {
           // ── KSUM 子 token 分支：按宿主行(currentRow)塌缩成标量 ──
           const rows = crossTabRows?.[token.source ?? ''] ?? [];
-          const r = aggregateRows(rows, token.match ?? [], currentRow, token.targetExpr, agg, token.target, true);
+          const r = aggregateRows(rows, token.match ?? [], currentRow, hostMatchRow, token.targetExpr, agg, token.target, true);
           if (r.value === null) {
             // I-2: KAVG/KMAX/KMIN 空集 → 注入非法表达式 → 外层 try/catch → 0; 同时写 outDiag
             // C-2: 区分"空集无定义"与"含非数值字段/多命中无法聚合"两种 null 原因
@@ -700,7 +754,7 @@ export function evaluateExpression(
           ? token.sources[0].source
           : (token.source ?? '');
         const rows = crossTabRows?.[driverSource] ?? [];
-        const r = aggregateRows(rows, token.match ?? [], currentRow, token.targetExpr, agg, token.target, false);
+        const r = aggregateRows(rows, token.match ?? [], currentRow, hostMatchRow, token.targetExpr, agg, token.target, false);
         let crossTabError = r.multiMatchErr;
         // 错误路径: 注入非法表达式让外层 try/catch 捕获并返回 0 (对齐后端 error→0 行为)
         // ★ 旁路(数值零改): 同时把可读原因写入 outDiag,供渲染层显示 ⚠ 错误态。

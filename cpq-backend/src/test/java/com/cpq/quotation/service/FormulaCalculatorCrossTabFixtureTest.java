@@ -44,6 +44,17 @@ import static org.junit.jupiter.api.DynamicTest.dynamicTest;
  *   <li>{@code expected}     — expected numeric result (required)</li>
  *   <li>{@code expectError}  — if true: assert result===0 only (error-path case)</li>
  * </ul>
+ *
+ * <p><b>repair-260911 新增的「真实宿主行」形态</b>（{@code fields} / {@code driverRow} /
+ * {@code basicDataValues} / {@code editValues}）：老用例的 {@code currentRow} 直接以<b>字段名</b>
+ * 为键，等于把两端都关在一个「driver 列名恰等于字段名」的理想世界里对拍 —— 这正是
+ * {@code cross_tab_ref} 匹配键缺陷从未被夹具拦住的原因。声明这四个字段时，harness 改走
+ * 生产代码 {@code buildCurrentRowRaw} + {@code buildHostRowForMatch} 造上下文，
+ * 于是「driver 列名 ≠ 字段名」的真实形态被覆盖。四字段全缺省 → 老路径，零影响。
+ *
+ * <p>字段定义一律用 <b>snake_case</b>（{@code field_type} / {@code basic_data_path} /
+ * {@code datasource_binding} / {@code default_source}）—— 后端访问器 camelCase/snake_case 都吃，
+ * 前端 {@code ComponentField} 只吃 snake_case，故 snake_case 是两端唯一交集。
  */
 class FormulaCalculatorCrossTabFixtureTest {
 
@@ -94,6 +105,13 @@ class FormulaCalculatorCrossTabFixtureTest {
             Map<String, Object> componentSubtotalsRaw =
                     (Map<String, Object>) c.get("componentSubtotals");
 
+            // repair-260911: real host-row shape (driver column name != field name).
+            // Present → build ctx through the PRODUCTION helpers instead of the flat currentRow map.
+            final JsonNode fieldsNode = c.get("fields") != null ? om.valueToTree(c.get("fields")) : null;
+            final JsonNode driverRowNode = c.get("driverRow") != null ? om.valueToTree(c.get("driverRow")) : null;
+            final JsonNode bdvNode = c.get("basicDataValues") != null ? om.valueToTree(c.get("basicDataValues")) : null;
+            final JsonNode editValuesNode = c.get("editValues") != null ? om.valueToTree(c.get("editValues")) : null;
+
             // Parse expected (may be Integer or Double from Jackson)
             double expectedDouble = ((Number) c.get("expected")).doubleValue();
 
@@ -102,8 +120,23 @@ class FormulaCalculatorCrossTabFixtureTest {
 
             tests.add(dynamicTest(name, () -> {
                 FormulaCalculator.RowContext ctx = new FormulaCalculator.RowContext();
-                // Populate currentRowRaw from fixture's currentRow map
-                if (currentRow != null) {
+                if (fieldsNode != null) {
+                    // repair-260911: production path — currentRowRaw keyed by DRIVER COLUMN name,
+                    // hostRowForMatch additionally keyed by FIELD name. Both built by the very
+                    // methods buildRowEvalCtx uses, so the fixture locks the real contract.
+                    Map<String, com.fasterxml.jackson.databind.JsonNode> mergedRow = new java.util.LinkedHashMap<>();
+                    if (driverRowNode != null && driverRowNode.isObject()) {
+                        driverRowNode.fields().forEachRemaining(e -> mergedRow.put(e.getKey(), e.getValue()));
+                    }
+                    if (editValuesNode != null && editValuesNode.isObject()) {
+                        editValuesNode.fields().forEachRemaining(e -> mergedRow.put(e.getKey(), e.getValue()));
+                    }
+                    ctx.currentRowRaw = calc.buildCurrentRowRaw(fieldsNode, mergedRow, bdvNode);
+                    if (currentRow != null) ctx.currentRowRaw.putAll(decimalMap(currentRow));
+                    ctx.hostRowForMatch = calc.buildHostRowForMatch(
+                            fieldsNode, driverRowNode, bdvNode, editValuesNode, ctx.currentRowRaw);
+                } else if (currentRow != null) {
+                    // Legacy shape: currentRow is already keyed by field name.
                     ctx.currentRowRaw.putAll(decimalMap(currentRow));
                 }
                 // Resolve crossTabRows

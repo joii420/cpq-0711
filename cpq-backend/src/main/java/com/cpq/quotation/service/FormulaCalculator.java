@@ -69,6 +69,40 @@ public class FormulaCalculator {
         /** cross_tab_ref：B 当前行原始值（字段名→原始值，含文本），供匹配键 b 取值。 */
         public Map<String, Object> currentRowRaw = new HashMap<>();
         /**
+         * repair-260911：<b>宿主行「匹配专用」视图</b>——{@code cross_tab_ref} 的 {@code match.b}
+         * 与 {@code predicate} 宿主侧取值只走这里，其余路径一律仍读 {@code currentRowRaw}。
+         *
+         * <p>🚨 为什么必须单独一份（缺陷原文见
+         * {@code repair-260911-连表公式匹配键宿主侧取不到取数列/问题说明.md}）：
+         * {@code currentRowRaw} 的键是 <b>driver 视图列名</b>（{@code toRawRowMap(driverRow ⊕ editValues)}），
+         * 而源页签行（{@code crossTabRows}）的键是 <b>字段名</b>（{@code CardSnapshotService} 的
+         * resolvedRows）。{@link #fillInputDefaultSourceByFieldName} 只按字段名补
+         * {@code INPUT_NUMBER/INPUT_TEXT/INPUT} 三型，于是 {@code BASIC_DATA} / {@code DATA_SOURCE}
+         * 字段按字段名<b>永远取不到值</b> → {@code isBlank(bv)} 恒真 → 全部候选行判不匹配 →
+         * {@code SUM} 空集返 0，且<b>静默</b>。取数配置器（{@code $builder_*}）产出的字段默认就是
+         * {@code BASIC_DATA}，故核价侧新配组件必现。
+         *
+         * <p>为什么不直接往 {@code currentRowRaw} 里补（A0 已否决的方案乙）：它还被
+         * {@code b_field} 求值（{@code :242}）、KSUM 的 {@code mergedCurrentRow}、单位换算三处消费，
+         * 塞新键会外溢，且与 {@code repair-0803} 决策 D-2 冲突。
+         *
+         * <p>{@code null} = 未构造（手工建 {@code RowContext} 的既有测试/调用方）→ 求值时回落
+         * {@code currentRowRaw}，行为与修复前逐字一致。
+         *
+         * @see #buildHostRowForMatch
+         */
+        public Map<String, Object> hostRowForMatch = null;
+        /**
+         * repair-260911（D-a 诊断信号）：可选诊断袋，对齐前端 {@code outDiag}
+         * （{@code crossTabError} 同源）。{@code null} = 调用方不收集 —— 求值行为与返回值
+         * <b>零变化</b>，只是不再有可见提示。
+         *
+         * <p>写入时机：{@code match} 的 {@code b} 键在宿主行匹配视图里<b>整个键都不存在</b>
+         * （= 取不到值，配置或字段类型问题），而不是「键在、值为空」（= 业务上真为空，属正常语义，
+         * 见 AC-5，不写诊断）。
+         */
+        public Map<String, String> outDiag = null;
+        /**
          * repair-0803：<b>宿主行</b>已算字段值（字段名 → 数值），供 {@code b_field} 在
          * {@code currentRowRaw} 键缺失时回落。
          *
@@ -509,6 +543,27 @@ public class FormulaCalculator {
      *
      * <p><b>外层分支</b>（存量路径，N=1 无嵌套退化，零变化）：match 须非空（防御兜底）。
      */
+    /**
+     * repair-260911：宿主行「匹配专用」视图的读取口（{@code null} → 回落 {@code currentRowRaw}）。
+     * 集中一处，避免 evalCrossTab / targetRowValue 各写一份回落逻辑而漂移。
+     */
+    private static Map<String, Object> hostRowForMatch(RowContext ctx) {
+        return ctx.hostRowForMatch != null ? ctx.hostRowForMatch : ctx.currentRowRaw;
+    }
+
+    /**
+     * repair-260911 D-a：{@code match} 的 {@code b} 键在宿主行<b>整个键都不存在</b>时写诊断。
+     * 只写袋子，不抛异常、不改返回值（仍走空集 → 0），行为零变化 —— 唯一区别是渲染层
+     * （前端 {@code outDiag.crossTabError} 展示位）能显示「为什么是 0」而不再静默。
+     */
+    private static void noteHostKeyMissing(RowContext ctx, JsonNode token, String bKey) {
+        if (ctx.outDiag == null) return;
+        String label = token.path("sourceLabel").asText("");
+        if (label.isEmpty()) label = token.path("source").asText("");
+        ctx.outDiag.putIfAbsent("crossTabError",
+            "跨页签引用「" + label + "」的匹配键「" + bKey + "」在本行取不到值，无法匹配（按 0 计）");
+    }
+
     Object evalCrossTab(JsonNode token, RowContext ctx) {
         boolean proj = token.path("projectToHostKey").asBoolean(false);
 
@@ -531,17 +586,29 @@ public class FormulaCalculator {
         List<Map<String, Object>> hits = new ArrayList<>();
         JsonNode matchNode = token.path("match");
         boolean hasMatch = matchNode.isArray() && matchNode.size() > 0;
+        // repair-260911：宿主侧取值走「匹配专用视图」（driver 列名 + 字段名双键），
+        // 未构造时（手工建 RowContext 的既有调用方/测试）回落 currentRowRaw = 修复前行为。
+        // 覆盖两处宿主身份取值：① match 的 b 键（外层 SUM 族与 KSUM/projectToHostKey 共用本循环）
+        // ② predicate 的宿主行（SUMIF 族）。b_field / 单位换算 / targetRowValue 广播不在此列。
+        Map<String, Object> hostRow = hostRowForMatch(ctx);
         for (Map<String, Object> arow : rows) {
             boolean ok = true;
             if (hasMatch) {
                 for (JsonNode pair : matchNode) {
+                    String bKey = pair.path("b").asText("");
                     Object av = arow.get(pair.path("a").asText(""));
-                    Object bv = ctx.currentRowRaw.get(pair.path("b").asText(""));
-                    if (isBlank(av) || isBlank(bv) || !valEquals(av, bv)) { ok = false; break; }
+                    Object bv = hostRow.get(bKey);
+                    if (isBlank(av) || isBlank(bv) || !valEquals(av, bv)) {
+                        // D-a 诊断：区分「键整个取不到」（配置/字段类型问题，值得提示）与
+                        // 「键在、值为空」（业务上真为空，AC-5 的正常语义，不提示）。
+                        if (!hostRow.containsKey(bKey)) noteHostKeyMissing(ctx, token, bKey);
+                        ok = false;
+                        break;
+                    }
                 }
             }
             if (ok && predicate != null) {
-                ok = predicateEval.test(predicate, arow, ctx.currentRowRaw);
+                ok = predicateEval.test(predicate, arow, hostRow);
             }
             if (ok) hits.add(arow);
         }
@@ -689,6 +756,14 @@ public class FormulaCalculator {
                     : new java.util.HashMap<>();
             mergedCurrentRow.putAll(arow);   // arow 高优先，覆盖同名宿主列（与前端 {...hostRow, ...ar} 一致）
             sub.currentRowRaw = mergedCurrentRow;
+            // repair-260911：匹配视图同款下传（宿主匹配视图打底 + 驱动行 arow 覆盖），
+            // 否则 targetExpr 内嵌的 KSUM 会退回只有 driver 列名的 currentRowRaw，
+            // 把本次修复在嵌套层重新丢掉。
+            java.util.Map<String, Object> mergedHostForMatch =
+                new java.util.HashMap<>(hostRowForMatch(ctx));
+            mergedHostForMatch.putAll(arow);
+            sub.hostRowForMatch = mergedHostForMatch;
+            sub.outDiag = ctx.outDiag;   // 内层诊断穿透到最外层（与前端 outDiag 透传对称）
             // repair-0803：宿主已算字段值原样透传（不并进 sub.fieldValues —— 那里装的是源页签行的列，
             // 混入会让 targetExpr 内的 field token 串到宿主列上）。供 b_field 键缺失时回落。
             sub.hostFieldValues = ctx.hostFieldValues;
@@ -1367,13 +1442,18 @@ public class FormulaCalculator {
         ctx.basicDataValues = toBasicDataMap(basicDataValues);
         // cross_tab_ref（Task 1.3）：兄弟组件已算行 + 本行原始合并值（含文本，供匹配键 b 取值）
         ctx.crossTabRows = crossTabRows != null ? crossTabRows : Map.of();
-        ctx.currentRowRaw = toRawRowMap(mergedRow);
-        fillInputDefaultSourceByFieldName(fields, basicDataValues, ctx.currentRowRaw);
+        ctx.currentRowRaw = buildCurrentRowRaw(fields, mergedRow, basicDataValues);
 
         // 单位换算（修正时机，物化点3）：必须在 collectFieldValues + fillInputDefaultSourceByFieldName 之后做——
         // driver / data-source(default_source $view) 列的值此刻才解析进 fieldValues / currentRowRaw，
         // 顶部对 mergedRow 换算会漏掉它们。用同行已解析单位换算 fieldValues[C] 与 currentRowRaw[C]。
         com.cpq.engine.unit.UnitConversion.convertResolvedRow(fields, fieldValues, ctx.currentRowRaw);
+
+        // repair-260911：宿主行匹配视图。必须排在单位换算<b>之后</b>——换算就地改写
+        // currentRowRaw[C]，而本视图以 currentRowRaw 为底且「仅键缺失才补」，故已换算的键
+        // 原样保留，不会被未换算的按字段名解析值顶掉。
+        ctx.hostRowForMatch = buildHostRowForMatch(
+            fields, driverRow, basicDataValues, editValues, ctx.currentRowRaw);
 
         return new RowEvalCtx(ctx, fieldValues, basicDataValues);
     }
@@ -2672,6 +2752,60 @@ public class FormulaCalculator {
             }
             if (nonEmpty(v)) currentRowRaw.put(name, unwrapNode(v));
         }
+    }
+
+    /**
+     * 宿主行原始视图（键 = driver 视图列名，INPUT 型额外补一份按字段名的 default_source）。
+     *
+     * <p>从 {@link #buildRowEvalCtx} 抽出，供共享夹具 harness
+     * （{@code FormulaCalculatorCrossTabFixtureTest}）按<b>生产同一条代码路径</b>造上下文——
+     * 夹具若自建一份简化版，锁的就不是真实口径了（本缺陷「测试没拦住」的直接原因，见
+     * 问题说明 ④「为什么测试没拦住」）。
+     */
+    Map<String, Object> buildCurrentRowRaw(JsonNode fields, Map<String, JsonNode> mergedRow,
+                                           JsonNode basicDataValues) {
+        Map<String, Object> raw = toRawRowMap(mergedRow);
+        fillInputDefaultSourceByFieldName(fields, basicDataValues, raw);
+        return raw;
+    }
+
+    /**
+     * repair-260911：构造 {@link RowContext#hostRowForMatch} —— {@code cross_tab_ref} 的
+     * {@code match.b} / {@code predicate} 宿主侧<b>专用</b>行视图。
+     *
+     * <p><b>口径：以 {@code currentRowRaw} 为底，叠加 {@link #resolveRowByFieldName} 的
+     * 按字段名解析结果，且「仅键缺失才补」。</b>三点缺一不可：
+     * <ol>
+     *   <li>以 {@code currentRowRaw} 为底 —— 保留 driver 列名直读（存量公式可能就按列名写 b 键），
+     *       以及单位换算已改写过的值</li>
+     *   <li>叠加按字段名解析 —— 覆盖 {@code BASIC_DATA} / {@code DATA_SOURCE} /
+     *       {@code INPUT_*} / {@code FIXED_VALUE} 全类型，这是本次修复的正题</li>
+     *   <li><b>仅键缺失才补</b> —— 键已存在（含显式清空的 {@code ""}）即权威，不覆盖。
+     *       与 {@link #fillInputDefaultSourceByFieldName} 的 {@code get(name) != null} 同口径，
+     *       保住「用户把输入框清空 = 该键为空，不回落 default_source」（问题说明 E-7 / AC-6③）</li>
+     * </ol>
+     *
+     * <p>⚠️ 不要照抄同族先例 {@link #buildTreeAggPresenceView} 的 {@code merged.putAll(byFieldName)}：
+     * 那是<b>整体覆盖</b>，在「有值判定」语境下无害（判据只问有没有值），搬到匹配语境会把用户
+     * 显式清空的 {@code ""} 重新填回 default_source 值 → 反而虚假命中。
+     *
+     * <p>不改 {@code currentRowRaw} 本身：它被 {@code b_field}（{@code :242}）、KSUM 的
+     * {@code mergedCurrentRow}、单位换算三处共享，往里塞键会外溢（A0 已否决的方案乙）。
+     *
+     * @param currentRowRaw 已构造好的宿主行原始视图（本方法不修改它，返回新 map）
+     * @return 匹配专用视图（driver 列名键 + 字段名键并存）
+     */
+    Map<String, Object> buildHostRowForMatch(JsonNode fields, JsonNode driverRow,
+            JsonNode basicDataValues, JsonNode editValues, Map<String, Object> currentRowRaw) {
+        Map<String, Object> merged = new LinkedHashMap<>();
+        if (currentRowRaw != null) merged.putAll(currentRowRaw);
+        Map<String, Object> byFieldName =
+            resolveRowByFieldName(fields, driverRow, basicDataValues, editValues, null);
+        // 仅键缺失才补（null 值等同缺失——toRawRowMap 从不落 null 值，与 fillInput 口径一致）
+        for (Map.Entry<String, Object> e : byFieldName.entrySet()) {
+            if (merged.get(e.getKey()) == null) merged.put(e.getKey(), e.getValue());
+        }
+        return merged;
     }
 
     private Map<String, Object> toBasicDataMap(JsonNode basicDataValues) {
