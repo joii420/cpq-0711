@@ -66,6 +66,42 @@ ${recent}
 "
 fi
 
+# ---- 新增段：docs/决策台账.md 现行裁决 ----
+# 🚨 按**有效性**注入，不按时间截断 —— 上面 RECORD 那段的 `tail -8` 恰恰是要避开的毛病：
+#    它挑的是「新」，不是「还有效」。367 条流水账里抽 8 条最新的，抽不中那条还在管事的旧裁决。
+# 🚨 **绝不传 --verify** —— 会话开局**不执行**台账里写的任何验法命令（安全护栏①）。
+#    传了就等于每个会话开局自动执行任意命令，而那是本次交付唯一的代码执行面。
+# ⚠️ **必须忽略 check-decisions.sh 的非零退出码** —— 检出非现行条目是正常业务结果，不是 hook 失败。
+# ⚠️ 用**相对自身脚本位置**解析兄弟脚本：本文件装到下游后位于 <项目>/.claude/hooks/，
+#    硬编码开发机路径会让它在所有下游项目里静默失效。
+CD="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/check-decisions.sh"
+DEC="$ROOT/docs/决策台账.md"
+if [ -f "$CD" ] && [ -f "$DEC" ]; then
+  dec_out=$(bash "$CD" "$DEC" 2>/dev/null || true)
+  # 记录行恰好 3 字段（制表符分隔）；汇总行与「台账不存在」都只有 1 字段，天然被排除。
+  dec_rec=$(printf '%s\n' "$dec_out" | awk -F'\t' 'NF>=3{c++} END{print c+0}')
+  # 台账不存在 / 无条目 → **整段不输出**，连标题行也不输出。
+  if [ "$dec_rec" -gt 0 ]; then
+    dec_live=$(printf '%s\n' "$dec_out" | awk -F'\t' '$1=="生效"{print $3}')
+    dec_x=$(printf '%s\n' "$dec_out" | awk -F'\t' '$1=="STALE"{c++} END{print c+0}')
+    dec_y=$(printf '%s\n' "$dec_out" | awk -F'\t' '$1=="前提失效"{c++} END{print c+0}')
+    # 「同对象多条生效」是**组**级记录，第 3 字段列着该组全部编号 —— 这里按编号个数折成**条数**，
+    # 🚨 不是组数：末行的 N 必须等于 X+Y+Z，读的人才对得上账。
+    dec_z=$(printf '%s\n' "$dec_out" | awk -F'\t' '$1=="同对象多条生效"{n+=gsub(/DEC-[0-9][0-9][0-9][0-9]/,"&",$3)} END{print n+0}')
+    dec_n=$(( dec_x + dec_y + dec_z ))
+    out="${out}
+── docs/决策台账.md · 现行裁决（按有效性注入，非按时间截断）──"
+    [ -n "$dec_live" ] && out="${out}
+${dec_live}"
+    # 🔧 措辞是定死的：「被取代」≠「失效」—— 被顶替的裁决**当初完全正确**，只是不再是现行口径；
+    #    「前提失效」那条**当初就是错的**。合并成一个词再合并成一个数字，
+    #    会让下一个读的人以为前者当初也错了。⇒ 三类分开计数，🚫 不许写「失效裁决」。
+    out="${out}
+已略过 ${dec_n} 条非现行裁决（被取代 ${dec_x} / 前提失效 ${dec_y} / 同对象多条 ${dec_z}）
+"
+  fi
+fi
+
 [ -n "$out" ] || exit 0
 
 printf '%s\tsession-brief\tinjected\tINDEX=%s BACKLOG_todo=%s\n' \
