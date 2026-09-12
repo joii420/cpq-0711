@@ -2363,8 +2363,17 @@ public class ConfigureProductService {
             // 子件 line item: 优先用对应 PartRequest.quotationLineItemId 作子 id（前端可选传）
             PartRequest childPr = (req.parts != null && i < req.parts.size()) ? req.parts.get(i) : null;
             UUID childTempId = (childPr != null) ? parseUuidOrNull(childPr.quotationLineItemId) : null;
+            // 🚦 repair-260911 · B-1 复议（用户 2026-09-11 裁决「子件传空」）：
+            //    子件行**刻意传 null** ⇒ customer_part_no 落 SQL NULL。
+            //    🚫 不要「顺手」改成 req.customerProductNo 来和父行统一 —— 那会让
+            //    QuotationService.loadLineItems:3638 的消歧（customer_part_no 精确命中
+            //    customer_product_no 优先）在子件行上命中**父产品**那条 ds_quote_customer_part，
+            //    把父产品的 customerPartName / customerProductNo / customerDrawingNo
+            //    安到子件 DTO 上（ds_quote_customer_part 只为父料号写了一行，见 configureBySelection
+            //    的 productPartNo = COMPOSITE ? parentHfPartNo : …）。
+            //    对 SQL 侧无损：整单 SELECT DISTINCT customer_part_no 的集合由父行贡献，内容不变。
             UUID childId = insertLineItem(quotationId, childPn, parentId, "PART", childTempId,
-                req.customerProductNo);
+                null);
             // per-quote 工序：子件行的选配工序写 quotation_line_process
             insertQuotationLineProcesses(childId, childPr != null ? childPr.processNos : null);
             out.add(buildLineItemDTO(childId, childPn, "PART", parentId, childPr != null ? childPr.processNos : null));
@@ -2467,9 +2476,17 @@ public class ConfigureProductService {
      * 客户产品编号，与 {@link #insertSelProductNo} 写进 {@code ds_quote_customer_part} 的<b>同一个值</b>
      * —— 两边同源才能 JOIN 得上。<b>空值语义与 {@code template_id} 同款：写 NULL、不抛异常</b>。
      *
-     * <p><b>四条落行路径全覆盖</b>（都经本方法）：绑定已有销售料号（{@link #configureByBinding}）·
-     * SIMPLE · COMPOSITE 父 · COMPOSITE 子（{@code PART}）。子件行也写同一个客编 ——
-     * 它们是同一个客户产品的组成部分，且整单 {@code DISTINCT} 集合不因此改变。
+     * <p><b>哪些落行路径写、哪一条刻意不写</b>（四条都经本方法）：
+     * <ul>
+     *   <li>✅ 绑定已有销售料号（{@link #configureByBinding}）· SIMPLE · <b>COMPOSITE 父</b>
+     *       —— 写 {@code req.customerProductNo}；</li>
+     *   <li>🚫 <b>COMPOSITE 子（{@code PART}）—— 刻意传 {@code null}</b>
+     *       （用户 2026-09-11 裁决「子件传空」，B-1 首版曾写、已复议改回）。
+     *       理由：{@code ds_quote_customer_part} 只为<b>父</b>料号写了一行，子件行带上同一个客编会让
+     *       {@code QuotationService.loadLineItems:3638} 的消歧命中父产品那一行，把父产品的
+     *       {@code customerPartName / customerProductNo / customerDrawingNo} 安到子件 DTO 上。
+     *       对 SQL 侧无损 —— 整单 {@code SELECT DISTINCT customer_part_no} 的集合由父行贡献，内容不变。</li>
+     * </ul>
      *
      * <p>🚫 <b>不回填存量</b>（{@code R-3} 同 {@code D-38} 口径）：不加迁移、不跑批量 UPDATE。
      */
