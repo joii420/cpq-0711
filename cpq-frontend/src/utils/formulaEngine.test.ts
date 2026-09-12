@@ -6,6 +6,10 @@ import {
 import type { ExpressionToken } from './formulaEngine';
 import type { DecimalString } from './precision';
 import crossTabCases from './__fixtures__/cross-tab-cases.json';
+// repair-260911：夹具的「宿主行匹配视图」由生产代码构造 —— harness 里绝不自己再实现一份，
+// 否则夹具验的是 harness 而不是产品（同一份解析规则两处实现必然漂移）。
+import { buildHostMatchRow } from '../pages/quotation/QuotationStep2';
+import type { ComponentField } from '../pages/quotation/QuotationStep2';
 
 function decimalizeLegacyFixture(value: any): any {
   if (typeof value === 'number') return String(value);
@@ -19,7 +23,7 @@ function decimalizeLegacyFixture(value: any): any {
 /** Legacy semantic fixtures contain small numeric literals; production output remains decimal string. */
 function evaluateExpression(...args: any[]): DecimalString {
   const normalized = [...args];
-  for (const index of [1, 2, 3, 4, 5, 7, 8, 10, 11, 14]) {
+  for (const index of [1, 2, 3, 4, 5, 7, 8, 10, 11, 14, 15]) {
     if (normalized[index] !== undefined) normalized[index] = decimalizeLegacyFixture(normalized[index]);
   }
   return evaluateExpressionDecimal(...normalized as Parameters<typeof evaluateExpressionDecimal>);
@@ -497,6 +501,21 @@ describe('cross_tab_ref', () => {
  *   currentRow   - current row values (optional)
  *   expected     - expected numeric result (required)
  *   expectError  - if true: assert result===0 only (no crossTabError check at fixture level)
+ *
+ * repair-260911 新增四个字段（与后端 FormulaCalculatorCrossTabFixtureTest 同名同义，逐字一致）：
+ *   fields           - ComponentField[]：宿主组件的字段定义（**一律 snake_case**：field_type /
+ *                      basic_data_path / datasource_binding / default_source —— 后端两种都吃，
+ *                      前端 ComponentField 只吃 snake_case，故 snake_case 是两端唯一交集）。
+ *                      给出后 harness 改用生产函数 `buildHostMatchRow` 造「按字段名的宿主行匹配视图」，
+ *                      作为 evaluateExpression 的 matchRow 入参传入（后端对应 ctx.hostRowForMatch）。
+ *   driverRow        - 宿主行的 **driver 视图列名** 键值（如 { prod_no: 'P1' }）。
+ *   editValues       - 宿主行的用户编辑值（键 = 字段名），叠在 driverRow 之上；
+ *                      两者合并 = 生产的 currentRowRaw = toRawRowMap(driverRow + editValues)。
+ *   basicDataValues  - 行级 BASIC_DATA 解析值，键 = `{path}`。
+ *
+ * 🚨 老用例（这四个字段全缺省）：matchRow 传 undefined → 引擎回落 currentRow → 逐位不变（零破坏）。
+ * 🚨 这四个字段的存在意义：老用例的 currentRow 直接以**字段名**为键，等于两端都在一个
+ *    「driver 列名恰等于字段名」的理想世界里对拍 —— 这正是本次缺陷从未被夹具拦住的原因。
  */
 describe('cross-tab fixture', () => {
   for (const c of crossTabCases) {
@@ -511,6 +530,11 @@ describe('cross-tab fixture', () => {
     // repair-0803：宿主已算字段值（b_field 在 currentRow 键缺失时的回落来源）。
     // 后端 FormulaCalculatorCrossTabFixtureTest 消费同一字段填 ctx.hostFieldValues —— 这是 AC-2 对拍锚点。
     const hostFieldValuesRaw = (c as any).hostFieldValues as Record<string, number> | undefined;
+    // repair-260911：宿主行匹配视图的三件原料（见上方夹具字段说明）。
+    const fieldsRaw = (c as any).fields as ComponentField[] | undefined;
+    const driverRowRaw = (c as any).driverRow as Record<string, any> | undefined;
+    const editValuesRaw = (c as any).editValues as Record<string, any> | undefined;
+    const basicDataValuesRaw = (c as any).basicDataValues as Record<string, any> | undefined;
     const expected = (c as any).expected as number;
     const expectError = (c as any).expectError as boolean | undefined;
 
@@ -526,6 +550,16 @@ describe('cross-tab fixture', () => {
       ? crossTabRowsRaw
       : { A: aRows ?? [] };
 
+    // 宿主行基底：driver 列名打底 + editValues（字段名键的用户编辑值）覆盖，镜像生产的
+    // currentRowRaw = toRawRowMap(driverRow + editValues)；后端 harness 同款合并顺序。
+    // driverRow/editValues 都缺省时原样保留 currentRow 对象，老用例逐位不变。
+    const resolvedHostRow: Record<string, any> | undefined = (driverRowRaw || editValuesRaw)
+      ? { ...(driverRowRaw ?? {}), ...(currentRow ?? {}), ...(editValuesRaw ?? {}) }
+      : currentRow;
+    const resolvedMatchRow: Record<string, any> | undefined = fieldsRaw
+      ? buildHostMatchRow(fieldsRaw, resolvedHostRow ?? {}, basicDataValuesRaw)
+      : undefined;
+
     it(caseName, () => {
       const result = evaluateExpression(
         resolvedTokens,
@@ -538,11 +572,12 @@ describe('cross-tab fixture', () => {
         undefined, // basicDataValues
         undefined, // previousRowSubtotal
         undefined, // globalVariableDefs
-        currentRow,
+        resolvedHostRow,
         resolvedCrossTabRows,
         undefined, // outDiag
         undefined, // treeCtx
         hostFieldValuesRaw, // repair-0803：宿主已算字段值（b_field 回落来源）
+        resolvedMatchRow,   // repair-260911：cross_tab match 的宿主行视图（按字段名）
       );
       if (expectError) {
         // Error-path cases: result collapses to 0 (crossTabError check is engine-level, not fixture-level)
@@ -552,6 +587,100 @@ describe('cross-tab fixture', () => {
       }
     });
   }
+});
+
+// ─── repair-260911 · cross_tab match 宿主行视图（AC-3 / AC-4 / AC-5 / AC-7 / AC-10） ───────
+//
+// 共享夹具（上面的 describe）只断言数值，覆盖不到 outDiag 诊断通道与「不传 matchRow 的老调用点」。
+// 这两条是前端侧独有的行为，放在这里断言。
+describe('repair-260911 cross_tab 匹配键宿主行视图', () => {
+  const hostFields = [
+    { name: '生产料号', field_type: 'BASIC_DATA', basic_data_path: '$host_view.prod_no' },
+  ] as ComponentField[];
+  const hostBdv = { '{$host_view.prod_no}': 'P1' };
+  const srcRows = [
+    { 生产料号: 'P1', 元素成本: 100 },
+    { 生产料号: 'P1', 元素成本: 200 },
+    { 生产料号: 'P9', 元素成本: 999 },
+  ];
+  const mkToken = (b: string): ExpressionToken => ({
+    type: 'cross_tab_ref', source: 'A', sourceLabel: '材质元素', target: '元素成本',
+    match: [{ a: '生产料号', b }], agg: 'SUM',
+  });
+  const run = (
+    b: string,
+    hostRow: Record<string, any>,
+    matchRow: Record<string, any> | undefined,
+    outDiag: { crossTabError?: string },
+  ) => evaluateExpression(
+    [mkToken(b)], {}, undefined, undefined, undefined, undefined, undefined,
+    undefined, undefined, undefined, hostRow, { A: srcRows }, outDiag, undefined, undefined, matchRow,
+  );
+
+  it('AC-3：宿主匹配键是 BASIC_DATA、driver 列名≠字段名 → 命中并聚合（修复前恒 0）', () => {
+    const hostRow = { prod_no: 'P1' };
+    const outDiag: { crossTabError?: string } = {};
+    expectLegacyDecimal(run('生产料号', hostRow, buildHostMatchRow(hostFields, hostRow, hostBdv), outDiag), '300');
+    expect(outDiag.crossTabError).toBeUndefined();
+  });
+
+  it('AC-4：匹配键是合法字段但这行确实没数（BOM 根行各列全空）→ 静默 0，不出 ⚠ 诊断', () => {
+    const hostRow = { prod_no: '' };
+    const outDiag: { crossTabError?: string } = {};
+    // 空 basicDataValues → 按字段名也解析不出值；此时必须只归 0，不能报诊断，
+    // 否则渲染层会把这些本该显示 0 的行画成 ⚠（ComponentCell: err 直接替换数值）。
+    expectLegacyDecimal(run('生产料号', hostRow, buildHostMatchRow(hostFields, hostRow, {}), outDiag), '0');
+    expect(outDiag.crossTabError).toBeUndefined();
+  });
+
+  it('AC-10：匹配键写了组件里根本不存在的列名 → outDiag 给出可见诊断，指明页签与键名', () => {
+    const hostRow = { prod_no: 'P1' };
+    const outDiag: { crossTabError?: string } = {};
+    expectLegacyDecimal(run('查无此列', hostRow, buildHostMatchRow(hostFields, hostRow, hostBdv), outDiag), '0');
+    expect(outDiag.crossTabError).toContain('查无此列');
+    expect(outDiag.crossTabError).toContain('材质元素');
+    // 文案与后端 FormulaCalculator.noteHostKeyMissing 逐字一致（两端同一句，便于运维对齐）。
+    expect(outDiag.crossTabError).toBe('跨页签引用「材质元素」的匹配键「查无此列」在本行取不到值，无法匹配（按 0 计）');
+  });
+
+  it('AC-7：不传 matchRow 的老调用点逐位不变 —— 回落 currentRow，取不到值就是 0', () => {
+    const hostRow = { prod_no: 'P1' };
+    const outDiag: { crossTabError?: string } = {};
+    expectLegacyDecimal(run('生产料号', hostRow, undefined, outDiag), '0');
+    expect(outDiag.crossTabError).toBeUndefined();   // 键全集不可知 → 不许误报诊断
+  });
+
+  it('AC-6③：宿主行显式清空 "" 的 INPUT 匹配键，匹配视图不得用 default_source 补回来', () => {
+    const inputFields = [
+      { name: '生产料号', field_type: 'INPUT_TEXT',
+        default_source: { type: 'BNF_PATH', path: '$host_view.prod_no' } },
+    ] as ComponentField[];
+    const hostRow = { prod_no: 'P1', 生产料号: '' };
+    const matchRow = buildHostMatchRow(inputFields, hostRow, hostBdv);
+    expect(matchRow['生产料号']).toBe('');          // 键存在即权威（后端 `!= null` 口径）
+    const outDiag: { crossTabError?: string } = {};
+    expectLegacyDecimal(run('生产料号', hostRow, matchRow, outDiag), '0');
+  });
+
+  // ⚠️ 共享夹具里锁「显式清空」的那条走的是 INPUT_TEXT + default_source 通道（后端
+  // fillInputDefaultSourceByFieldName:2662 的 `!= null`）。但问题说明 ⑤ 那张「前后端空串口径分歧」
+  // 表点名的其实是前端 buildResolvedRow:1345 —— 那是 **BASIC_DATA / DATA_SOURCE** 分支
+  // （旧口径 `== null || === ''` 会把 '' 覆盖掉）。两个分支是两处独立代码，INPUT 那条锁不住这条，
+  // 故在这里补一条前端侧断言。已向主线报告：建议共享夹具也补同形态的一条。
+  it('AC-6③补充：BASIC_DATA 匹配键宿主行为空串时，不得被按名解析值覆盖（锁 buildResolvedRow:1345）', () => {
+    const hostRow = { prod_no: 'P1', 生产料号: '' };
+    const matchRow = buildHostMatchRow(hostFields, hostRow, hostBdv);
+    expect(matchRow['生产料号']).toBe('');   // 后端口径：键存在即权威
+    const outDiag: { crossTabError?: string } = {};
+    expectLegacyDecimal(run('生产料号', hostRow, matchRow, outDiag), '0');
+  });
+
+  it('buildHostMatchRow：声明过但解析不出值的字段名也要建键（诊断靠 key in row 区分两种情况）', () => {
+    const matchRow = buildHostMatchRow(hostFields, { prod_no: '' }, {});
+    expect('生产料号' in matchRow).toBe(true);
+    expect(matchRow['生产料号']).toBeUndefined();
+    expect(matchRow['prod_no']).toBe('');           // driver 列名直读键保留
+  });
 });
 
 // ─── T5 前端引擎 KSUM ──────────────────────────────────────────────────────

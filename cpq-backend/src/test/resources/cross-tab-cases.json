@@ -2172,5 +2172,473 @@
       ]
     },
     "expected": 10
+  },
+  {
+    "name": "repair-260911 BASIC_DATA 匹配键(driver列名≠字段名) → 命中",
+    "_doc": "宿主行 driver 列名为 prod_no、字段名为「生产料号」(BASIC_DATA, basic_data_path=$builder_host.production_no)。修复前 currentRowRaw 只有 prod_no 键，match 的 b=生产料号 取不到值 → isBlank 恒真 → 命中 0 行 → SUM 静默返 0。修复后宿主行匹配视图按字段名解析出 P1 → 命中 2 行 → 100+200=300。",
+    "fields": [
+      {
+        "name": "生产料号",
+        "field_type": "BASIC_DATA",
+        "basic_data_path": "$builder_host.production_no"
+      },
+      {
+        "name": "物料成本",
+        "field_type": "FORMULA"
+      }
+    ],
+    "driverRow": {
+      "prod_no": "P1"
+    },
+    "basicDataValues": {
+      "{$builder_host.production_no}": "P1"
+    },
+    "aRows": [
+      {
+        "生产料号": "P1",
+        "元素成本": 100
+      },
+      {
+        "生产料号": "P1",
+        "元素成本": 200
+      }
+    ],
+    "token": {
+      "type": "cross_tab_ref",
+      "source": "A",
+      "sourceLabel": "材质元素",
+      "target": "元素成本",
+      "match": [
+        {
+          "a": "生产料号",
+          "b": "生产料号"
+        }
+      ],
+      "agg": "SUM"
+    },
+    "expected": 300
+  },
+  {
+    "name": "repair-260911 DATA_SOURCE 匹配键(driver列名≠字段名) → 命中",
+    "_doc": "同上，但宿主匹配字段类型为 DATA_SOURCE(datasource_binding BNF_PATH)。证明修复覆盖的是「非 INPUT 类型」整类，不是只给 BASIC_DATA 打补丁(AC-3)。",
+    "fields": [
+      {
+        "name": "生产料号",
+        "field_type": "DATA_SOURCE",
+        "datasource_binding": {
+          "type": "BNF_PATH",
+          "bnf_path": "$builder_host.production_no"
+        }
+      },
+      {
+        "name": "物料成本",
+        "field_type": "FORMULA"
+      }
+    ],
+    "driverRow": {
+      "prod_no": "P1"
+    },
+    "basicDataValues": {
+      "{$builder_host.production_no}": "P1"
+    },
+    "aRows": [
+      {
+        "生产料号": "P1",
+        "元素成本": 100
+      },
+      {
+        "生产料号": "P1",
+        "元素成本": 200
+      }
+    ],
+    "token": {
+      "type": "cross_tab_ref",
+      "source": "A",
+      "sourceLabel": "材质元素",
+      "target": "元素成本",
+      "match": [
+        {
+          "a": "生产料号",
+          "b": "生产料号"
+        }
+      ],
+      "agg": "SUM"
+    },
+    "expected": 300
+  },
+  {
+    "name": "repair-260911 INPUT_TEXT 匹配键 default_source 回填 → 命中",
+    "_doc": "对照组(修复前即为绿)：INPUT_TEXT + default_source 走既有『仅键缺失才补』通道，本就能命中。与上面两条一起构成「三种类型同一形态、同一结果」的横向对照。",
+    "fields": [
+      {
+        "name": "生产料号",
+        "field_type": "INPUT_TEXT",
+        "default_source": {
+          "type": "BNF_PATH",
+          "path": "$builder_host.production_no"
+        }
+      },
+      {
+        "name": "物料成本",
+        "field_type": "FORMULA"
+      }
+    ],
+    "driverRow": {
+      "prod_no": "P1"
+    },
+    "basicDataValues": {
+      "{$builder_host.production_no}": "P1"
+    },
+    "aRows": [
+      {
+        "生产料号": "P1",
+        "元素成本": 100
+      },
+      {
+        "生产料号": "P1",
+        "元素成本": 200
+      }
+    ],
+    "token": {
+      "type": "cross_tab_ref",
+      "source": "A",
+      "sourceLabel": "材质元素",
+      "target": "元素成本",
+      "match": [
+        {
+          "a": "生产料号",
+          "b": "生产料号"
+        }
+      ],
+      "agg": "SUM"
+    },
+    "expected": 300
+  },
+  {
+    "name": "repair-260911 INPUT_TEXT 匹配键显式清空'' → 不匹配",
+    "_doc": "锁死两端口径分歧(问题说明⑤)：宿主行该键已存在且值为空串 = 用户显式置空 → 一律不补 default_source，仍判不匹配 → 0。若某端按『空串也补』(前端 buildResolvedRow 旧口径)，这里会错误返回 300。",
+    "fields": [
+      {
+        "name": "生产料号",
+        "field_type": "INPUT_TEXT",
+        "default_source": {
+          "type": "BNF_PATH",
+          "path": "$builder_host.production_no"
+        }
+      },
+      {
+        "name": "物料成本",
+        "field_type": "FORMULA"
+      }
+    ],
+    "driverRow": {
+      "prod_no": "P1"
+    },
+    "editValues": {
+      "生产料号": ""
+    },
+    "basicDataValues": {
+      "{$builder_host.production_no}": "P1"
+    },
+    "aRows": [
+      {
+        "生产料号": "P1",
+        "元素成本": 100
+      },
+      {
+        "生产料号": "P1",
+        "元素成本": 200
+      }
+    ],
+    "token": {
+      "type": "cross_tab_ref",
+      "source": "A",
+      "sourceLabel": "材质元素",
+      "target": "元素成本",
+      "match": [
+        {
+          "a": "生产料号",
+          "b": "生产料号"
+        }
+      ],
+      "agg": "SUM"
+    },
+    "expected": 0
+  },
+  {
+    "name": "repair-260911 匹配键两侧真为空 → 不匹配(不得空值判等)",
+    "_doc": "AC-5 反向守卫：宿主行「生产料号」解析不出任何值(bdv 无该 path、driverRow 无同名键、无 content)，源行匹配列一为 null、一为空串。两侧皆空必须仍判不匹配 → 0。若实现把空与空判等，这里会返回 300。",
+    "fields": [
+      {
+        "name": "生产料号",
+        "field_type": "BASIC_DATA",
+        "basic_data_path": "$builder_host.production_no"
+      },
+      {
+        "name": "物料成本",
+        "field_type": "FORMULA"
+      }
+    ],
+    "driverRow": {
+      "prod_no": ""
+    },
+    "basicDataValues": {},
+    "aRows": [
+      {
+        "生产料号": null,
+        "元素成本": 100
+      },
+      {
+        "生产料号": "",
+        "元素成本": 200
+      }
+    ],
+    "token": {
+      "type": "cross_tab_ref",
+      "source": "A",
+      "sourceLabel": "材质元素",
+      "target": "元素成本",
+      "match": [
+        {
+          "a": "生产料号",
+          "b": "生产料号"
+        }
+      ],
+      "agg": "SUM"
+    },
+    "expected": 0
+  },
+  {
+    "name": "回归-crossTab匹配键(BASIC_DATA)：driver列名≠字段名",
+    "_doc": "AC-3/AC-6①：宿主行 driver 列名 prod_no，匹配键字段名「生产料号」是 BASIC_DATA。修复前宿主行按【字段名】取不到值 → isBlank 恒真 → hits 空集 → SUM 静默返 0；修复后经「按字段名的宿主行匹配视图」取到 P1 → 命中 2 行 → 100+200=300。",
+    "fields": [
+      {
+        "name": "生产料号",
+        "field_type": "BASIC_DATA",
+        "basic_data_path": "$host_view.prod_no"
+      }
+    ],
+    "basicDataValues": {
+      "{$host_view.prod_no}": "P1"
+    },
+    "driverRow": {
+      "prod_no": "P1"
+    },
+    "currentRow": {},
+    "aRows": [
+      {
+        "生产料号": "P1",
+        "元素成本": 100
+      },
+      {
+        "生产料号": "P1",
+        "元素成本": 200
+      },
+      {
+        "生产料号": "P9",
+        "元素成本": 999
+      }
+    ],
+    "token": {
+      "type": "cross_tab_ref",
+      "source": "A",
+      "sourceLabel": "材质元素",
+      "target": "元素成本",
+      "match": [
+        {
+          "a": "生产料号",
+          "b": "生产料号"
+        }
+      ],
+      "agg": "SUM"
+    },
+    "expected": 300
+  },
+  {
+    "name": "回归-crossTab匹配键(DATA_SOURCE)：driver列名≠字段名",
+    "_doc": "AC-3/AC-6②：同上，但匹配键字段类型是 DATA_SOURCE(BNF_PATH 子类型)。证明修复覆盖的是「非 INPUT 类型」整类，不是只给 BASIC_DATA 打补丁。",
+    "fields": [
+      {
+        "name": "生产料号",
+        "field_type": "DATA_SOURCE",
+        "datasource_binding": {
+          "type": "BNF_PATH",
+          "bnf_path": "$host_view.prod_no"
+        }
+      }
+    ],
+    "basicDataValues": {
+      "{$host_view.prod_no}": "P1"
+    },
+    "driverRow": {
+      "prod_no": "P1"
+    },
+    "currentRow": {},
+    "aRows": [
+      {
+        "生产料号": "P1",
+        "元素成本": 100
+      },
+      {
+        "生产料号": "P1",
+        "元素成本": 200
+      },
+      {
+        "生产料号": "P9",
+        "元素成本": 999
+      }
+    ],
+    "token": {
+      "type": "cross_tab_ref",
+      "source": "A",
+      "sourceLabel": "材质元素",
+      "target": "元素成本",
+      "match": [
+        {
+          "a": "生产料号",
+          "b": "生产料号"
+        }
+      ],
+      "agg": "SUM"
+    },
+    "expected": 300
+  },
+  {
+    "name": "回归-crossTab匹配键(INPUT_TEXT)：显式清空\"\"不补 default_source → 不匹配",
+    "_doc": "AC-6③：锁死前后端唯一的口径分歧 —— 宿主行已有该键但值为空串(用户显式清空)时，匹配视图【不许】拿 default_source 把它补回来。补回来 → 命中 2 行 → 300(错)；尊重置空 → 空值不匹配 → 0(对)。后端口径：fillInputDefaultSourceByFieldName 是 `!= null` 就不补。",
+    "fields": [
+      {
+        "name": "生产料号",
+        "field_type": "INPUT_TEXT",
+        "default_source": {
+          "type": "BNF_PATH",
+          "path": "$host_view.prod_no"
+        }
+      }
+    ],
+    "basicDataValues": {
+      "{$host_view.prod_no}": "P1"
+    },
+    "driverRow": {
+      "prod_no": "P1"
+    },
+    "currentRow": {
+      "生产料号": ""
+    },
+    "aRows": [
+      {
+        "生产料号": "P1",
+        "元素成本": 100
+      },
+      {
+        "生产料号": "P1",
+        "元素成本": 200
+      },
+      {
+        "生产料号": "P9",
+        "元素成本": 999
+      }
+    ],
+    "token": {
+      "type": "cross_tab_ref",
+      "source": "A",
+      "sourceLabel": "材质元素",
+      "target": "元素成本",
+      "match": [
+        {
+          "a": "生产料号",
+          "b": "生产料号"
+        }
+      ],
+      "agg": "SUM"
+    },
+    "expected": 0
+  },
+  {
+    "name": "回归-crossTab匹配键：两侧同为空 → 不匹配(不得虚假命中)",
+    "_doc": "AC-5：源行匹配列为空、宿主行同列也取不到值时，仍判不匹配 —— 不得把 null 与 null 判成相等。对应真实场景：BOM 根行各列全空，物料成本必须仍是 0。",
+    "fields": [
+      {
+        "name": "生产料号",
+        "field_type": "BASIC_DATA",
+        "basic_data_path": "$host_view.prod_no"
+      }
+    ],
+    "basicDataValues": {},
+    "driverRow": {
+      "prod_no": ""
+    },
+    "currentRow": {},
+    "aRows": [
+      {
+        "生产料号": "",
+        "元素成本": 100
+      },
+      {
+        "元素成本": 200
+      }
+    ],
+    "token": {
+      "type": "cross_tab_ref",
+      "source": "A",
+      "sourceLabel": "材质元素",
+      "target": "元素成本",
+      "match": [
+        {
+          "a": "生产料号",
+          "b": "生产料号"
+        }
+      ],
+      "agg": "SUM"
+    },
+    "expected": 0
+  },
+  {
+    "name": "回归-crossTab匹配键(BASIC_DATA)：宿主行显式清空\"\"不被按名解析值覆盖",
+    "_doc": "AC-6③ 的真正锚点 —— ⑤ 节那张「前后端空串口径分歧」表点名的是 buildResolvedRow:1345，即 BASIC_DATA/DATA_SOURCE 分支（前端旧口径 `== null || === ''` 会把 '' 覆盖掉；后端 fillInputDefaultSourceByFieldName:2662 是 `!= null` 就不补）。宿主行已有键且为空串时：按后端口径 → 保持 '' → 空值不匹配 → 0（对）；按前端旧口径 → 被 basicDataValues 的 P1 覆盖 → 命中 2 行 → 300（错）。",
+    "fields": [
+      {
+        "name": "生产料号",
+        "field_type": "BASIC_DATA",
+        "basic_data_path": "$host_view.prod_no"
+      }
+    ],
+    "basicDataValues": {
+      "{$host_view.prod_no}": "P1"
+    },
+    "driverRow": {
+      "prod_no": "P1"
+    },
+    "currentRow": {
+      "生产料号": ""
+    },
+    "aRows": [
+      {
+        "生产料号": "P1",
+        "元素成本": 100
+      },
+      {
+        "生产料号": "P1",
+        "元素成本": 200
+      },
+      {
+        "生产料号": "P9",
+        "元素成本": 999
+      }
+    ],
+    "token": {
+      "type": "cross_tab_ref",
+      "source": "A",
+      "sourceLabel": "材质元素",
+      "target": "元素成本",
+      "match": [
+        {
+          "a": "生产料号",
+          "b": "生产料号"
+        }
+      ],
+      "agg": "SUM"
+    },
+    "expected": 0
   }
 ]
