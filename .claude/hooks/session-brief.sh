@@ -59,9 +59,36 @@ fi
 # ---- 第 2 步：RECORD.md 最近记录（历史上下文与已知问题）----
 REC="$ROOT/docs/RECORD.md"
 if [ -f "$REC" ]; then
-  recent=$(grep -E '^\s*[-*]?\s*\[[0-9]' "$REC" | tail -8 || true)
+  # 🚨 只注入「够识别 + 够定向」的条目头，不注入全文。
+  #    RECORD 单条中位 1353 字符、最长 2541；原先 `tail -8` 全文 = **20642 字符**，
+  #    占整个 session-brief 注入量的 **82%**，而每个会话开局都要付一次。
+  #    CLAUDE.md 的口径本就是「hook 已注入摘要 —— 别再整篇重读，要细节时定向读」，
+  #    注入全文恰恰让「定向读」失去意义。
+  # 🚨 用**定长字符截断**，不解析 `- **标题**` 结构：RECORD 条目至少有三种格式变体
+  #    （`[日期] 模块 - **标题**` / `[日期] 长描述（括号说明） - 正文` / `[日期] 同上任务 - …`），
+  #    解析式提取在格式变化时会**静默产出垃圾**（实测把正文里第一个粗体当成了标题）。
+  #    定长截断格式无关：最坏只是「少看几个字」，不会错。
+  # ⚠️ 必须 `/usr/bin/grep -a` —— 某些环境 `grep` 是 ugrep 的别名/函数，其 `-I` 会把中文
+  #    密集的 .md **静默判为二进制返空**（见 `docs/决策台账.md` · DEC-0002）。
+  # ⚠️ 截断必须在 UTF-8 locale 下做：GNU sed 的 `.` 在 C/POSIX locale 下按**字节**匹配，
+  #    实测 30 行里 **27 行**被切出非法 UTF-8 字节序列。🚨 且 `grep -c '�'` **检测不到** ——
+  #    切坏的是不完整字节序列，不是 U+FFFD 码点，只有 `iconv -f UTF-8 -t UTF-8` 验得出来。
+  #    hook 执行环境不保证设了 LANG，所以这里显式挑一个；一个都挑不到就**退回不截断**
+  #    （宁可长，不可乱码）。
+  REC_N=25; REC_W=115; REC_LC=""
+  for c in C.utf8 C.UTF-8 en_US.utf8 en_US.UTF-8; do
+    if locale -a 2>/dev/null | /usr/bin/grep -qxa "$c"; then REC_LC="$c"; break; fi
+  done
+  if [ -n "$REC_LC" ]; then
+    recent=$(/usr/bin/grep -aE '^[[:space:]]*[-*]?[[:space:]]*\[[0-9]' "$REC" 2>/dev/null | tail -n "$REC_N" \
+      | LC_ALL="$REC_LC" sed -E "s/^[[:space:]]*[-*]?[[:space:]]*//; s/\*\*//g; s/^(.{${REC_W}}).+$/\1…/" || true)
+    rec_hdr="最近 ${REC_N} 条 · 仅条目头（细节定向读原文）"
+  else
+    recent=$(/usr/bin/grep -aE '^[[:space:]]*[-*]?[[:space:]]*\[[0-9]' "$REC" 2>/dev/null | tail -6 || true)
+    rec_hdr="最近 6 条 · 全文（未找到 UTF-8 locale，已退回不截断）"
+  fi
   [ -n "$recent" ] && out="${out}
-── docs/RECORD.md · 最近 8 条（完整历史仍需按需自行读取）──
+── docs/RECORD.md · ${rec_hdr} ──
 ${recent}
 "
 fi
