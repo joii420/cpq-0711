@@ -11,8 +11,9 @@ Excel 列配置里的 `tabKey` 是**裸 `componentId`**，而核价 Excel 树走
 
 | 编号 | 服务的 AC | 任务内容 |
 |---|---|---|
-| **B-1** | AC-1, AC-2 | `CardEffectiveRows.parse` 产出 map 时双键登记：`out.put(cid, tr)`（裸 componentId，Excel 列 tabKey 约定）+ `out.putIfAbsent(cid + ":" + sortOrder, tr)`（CardRef 约定）。<br>⚠️ **优先级须与 `ComponentDataEffectiveRows:235-236` 逐字一致**：裸键 `put`、复合键 `putIfAbsent` —— 同 componentId 多实例时裸键由先出现者占，不制造第二种规则。 |
+| **B-1** | AC-1 | `CardEffectiveRows.parse` 产出 map 时双键登记：`out.put(cid, tr)`（裸 componentId，Excel 列 tabKey 约定）+ `out.putIfAbsent(cid + ":" + sortOrder, tr)`（CardRef 约定）。<br>⚠️ **优先级须与 `ComponentDataEffectiveRows:235-236` 逐字一致**：裸键 `put`（**后者覆盖**）、复合键 `putIfAbsent`（**首者胜**）。<br>🚩 2026-09-12 更正：本行原写「裸键由先出现者占」是**写反了**，以代码形态为准。 |
 | **B-2** | AC-5 | 新增**契约测试**：断言两条 effective-rows 路径（`CardEffectiveRows.parse` / `ComponentDataEffectiveRows.compute`）对同一输入产出的**键集合口径一致** —— 同一 componentId 既能用裸键取到、也能用 `cid:sortOrder` 取到，且两者指向同一 `TabRows` 实例。<br>🚨 这条是本任务**唯一能在下次拦住同类问题**的东西（本缺陷是「同一诊断只落地一半」的第二次出现），不许省。 |
+| **B-4** | AC-1, AC-3, AC-7 | 🆕 **2026-09-12 用户 A0 裁决「甲」追加**：修第二根因 R2 —— `CardEffectiveRows.java:141`/`:148` 读 `subtotal`/`subtotalByColumn` 时改为**数字与字符串都能读**（`isNumber() ? decimalValue() : new BigDecimal(asText())`，空串/非法 → `ZERO`，🚫 不许改变异常语义、不许抛）。<br>⚠️ **写侧不动**（`CardSnapshotService` 的 `PrecisionPolicy.toPlainDecimalString` 是 task-0810 的既定精度契约，本次是把读侧补齐到该契约）。<br>📌 `subtotalByColumn` 里每个列值同样是字符串，一并处理。<br>🔬 **还原实验**：只还原 R2（保留双键）→ 四列必须回到 0；只还原双键（保留 R2 修复）→ 也必须回到 0。**两者互为必要条件，各自都要能跑红。** |
 | **B-3** | AC-3, AC-4, AC-6, AC-7, AC-8 | 回归与还原实验：① 后端 `CardEffectiveRows*` / `ComponentDataEffectiveRows*` / `ExcelView*` / `TabJoin*` 相关测试全绿；② **还原实验**：把双键改回单键 → 契约测试必须红、Excel 四列回到 0；恢复后转绿；③ 报价侧 `quote_excel_values` 数值等价比对无差异（🚫 不要逐字节 diff，见 AC-3 注）；④ 确认未引入活表穿透（`loadFrozenComponentMetaMap` 的 `TemplateNotFrozenException` 语义不变）。 |
 
 ## 明确不做
