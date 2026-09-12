@@ -1,0 +1,28 @@
+### AFTER · CUSTOMER_PART roles
+   node_key    | dialect |     physical_table     |      db_column      | display_name |    roles    | status 
+---------------+---------+------------------------+---------------------+--------------+-------------+--------
+ CUSTOMER_PART | QUOTE   | ds_quote_customer_part | customer_no         | 客户编号     | {}          | ACTIVE
+ CUSTOMER_PART | QUOTE   | ds_quote_customer_part | customer_part_name  | 客户料号名称 | {}          | ACTIVE
+ CUSTOMER_PART | QUOTE   | ds_quote_customer_part | customer_product_no | 客户产品编号 | {ROW_SCOPE} | ACTIVE
+ CUSTOMER_PART | QUOTE   | ds_quote_customer_part | customer_drawing_no | 客户图号     | {}          | ACTIVE
+ CUSTOMER_PART | QUOTE   | ds_quote_customer_part | material_no         | 销售料号     | {}          | ACTIVE
+(5 rows)
+
+### AFTER · 全库 ROW_SCOPE 分布
+   node_key    | dialect |      db_column      |    roles    
+---------------+---------+---------------------+-------------
+ CUSTOMER_PART | QUOTE   | customer_product_no | {ROW_SCOPE}
+(1 row)
+
+### AFTER · roles 分布总表（与 BEFORE 对照）
+       roles       | cols | nodes 
+-------------------+------+-------
+ {}                |  235 |    51
+ {ROW_KEY}         |   50 |    38
+ {PART_NO,ROW_KEY} |   42 |    42
+ {SORT}            |   28 |    28
+ {PART_NAME}       |    8 |     8
+ {PART_NO}         |    2 |     2
+ {ROW_SCOPE}       |    1 |     1
+(7 rows)
+

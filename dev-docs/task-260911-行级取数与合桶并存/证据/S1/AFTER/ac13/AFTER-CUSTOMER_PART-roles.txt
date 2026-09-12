@@ -1,0 +1,6 @@
+ERROR:  column c.column_name does not exist
+LINE 2: select n.node_key, c.column_name, c.roles
+                           ^
+ERROR:  column c.column_name does not exist
+LINE 2: select n.node_key, c.column_name, c.roles from semantic_node...
+                           ^

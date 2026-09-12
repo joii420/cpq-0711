@@ -1,0 +1,40 @@
+### 8081 运行期日志切片 · 2026-09-11 17:46（AFTER 采集时段）
+--- RowScopeProjector 逐条（15 条 = 3 视图 × 各自数据点数）---
+2026-09-11 17:46:14.716 DEBUG [com.cpq.com.ser.RowScopeProjector] (executor-thread-9) [row-scope] comp=7277969c-c41c-47d3-b949-8fbf51d1a5fb view=builder_7277969cc41c 作用域列=[_客户料号_客户产品编号] 兜底置空列=[_客户料号_客户产品编号, _客户料号_客户料号名称]
+2026-09-11 17:46:15.593 DEBUG [com.cpq.com.ser.RowScopeProjector] (executor-thread-9) [row-scope] comp=7277969c-c41c-47d3-b949-8fbf51d1a5fb view=builder_7277969cc41c 作用域列=[_客户料号_客户产品编号] 兜底置空列=[_客户料号_客户产品编号, _客户料号_客户料号名称]
+2026-09-11 17:46:16.441 DEBUG [com.cpq.com.ser.RowScopeProjector] (executor-thread-9) [row-scope] comp=7277969c-c41c-47d3-b949-8fbf51d1a5fb view=builder_7277969cc41c 作用域列=[_客户料号_客户产品编号] 兜底置空列=[_客户料号_客户产品编号, _客户料号_客户料号名称]
+2026-09-11 17:46:17.283 DEBUG [com.cpq.com.ser.RowScopeProjector] (executor-thread-9) [row-scope] comp=7277969c-c41c-47d3-b949-8fbf51d1a5fb view=builder_7277969cc41c 作用域列=[_客户料号_客户产品编号] 兜底置空列=[_客户料号_客户产品编号, _客户料号_客户料号名称]
+2026-09-11 17:46:18.060 DEBUG [com.cpq.com.ser.RowScopeProjector] (executor-thread-9) [row-scope] comp=a71947b6-8d50-4e04-8bf0-f2d4244b3cfe view=builder_a71947b68d50 作用域列=[_客户料号_客户产品编号] 兜底置空列=[_客户料号_客户产品编号, _客户料号_客户料号名称]
+2026-09-11 17:46:19.512 DEBUG [com.cpq.com.ser.RowScopeProjector] (executor-thread-9) [row-scope] comp=a71947b6-8d50-4e04-8bf0-f2d4244b3cfe view=builder_a71947b68d50 作用域列=[_客户料号_客户产品编号] 兜底置空列=[_客户料号_客户产品编号, _客户料号_客户料号名称]
+2026-09-11 17:46:20.613 DEBUG [com.cpq.com.ser.RowScopeProjector] (executor-thread-9) [row-scope] comp=a71947b6-8d50-4e04-8bf0-f2d4244b3cfe view=builder_a71947b68d50 作用域列=[_客户料号_客户产品编号] 兜底置空列=[_客户料号_客户产品编号, _客户料号_客户料号名称]
+2026-09-11 17:46:21.803 DEBUG [com.cpq.com.ser.RowScopeProjector] (executor-thread-9) [row-scope] comp=a71947b6-8d50-4e04-8bf0-f2d4244b3cfe view=builder_a71947b68d50 作用域列=[_客户料号_客户产品编号] 兜底置空列=[_客户料号_客户产品编号, _客户料号_客户料号名称]
+2026-09-11 17:46:22.898 DEBUG [com.cpq.com.ser.RowScopeProjector] (executor-thread-9) [row-scope] comp=a71947b6-8d50-4e04-8bf0-f2d4244b3cfe view=builder_a71947b68d50 作用域列=[_客户料号_客户产品编号] 兜底置空列=[_客户料号_客户产品编号, _客户料号_客户料号名称]
+2026-09-11 17:46:24.104 DEBUG [com.cpq.com.ser.RowScopeProjector] (executor-thread-9) [row-scope] comp=a71947b6-8d50-4e04-8bf0-f2d4244b3cfe view=builder_a71947b68d50 作用域列=[_客户料号_客户产品编号] 兜底置空列=[_客户料号_客户产品编号, _客户料号_客户料号名称]
+2026-09-11 17:46:25.211 DEBUG [com.cpq.com.ser.RowScopeProjector] (executor-thread-9) [row-scope] comp=a71947b6-8d50-4e04-8bf0-f2d4244b3cfe view=builder_a71947b68d50 作用域列=[_客户料号_客户产品编号] 兜底置空列=[_客户料号_客户产品编号, _客户料号_客户料号名称]
+2026-09-11 17:46:26.300 DEBUG [com.cpq.com.ser.RowScopeProjector] (executor-thread-9) [row-scope] comp=a71947b6-8d50-4e04-8bf0-f2d4244b3cfe view=builder_a71947b68d50 作用域列=[_客户料号_客户产品编号] 兜底置空列=[_客户料号_客户产品编号, _客户料号_客户料号名称]
+2026-09-11 17:46:28.178 DEBUG [com.cpq.com.ser.RowScopeProjector] (executor-thread-9) [row-scope] comp=221dc766-8ab6-4d95-82c0-08cc03e6267d view=builder_221dc7668ab6 作用域列=[_客户料号_客户产品编号] 兜底置空列=[_客户料号_客户产品编号]
+2026-09-11 17:46:28.178 DEBUG [com.cpq.com.ser.RowScopeProjector] (executor-thread-9) [row-scope] 桶内无匹配(want={customer_product_no=null}, 桶 1 行) → 构造兜底行并置空作用域侧列
+2026-09-11 17:46:29.532 DEBUG [com.cpq.com.ser.RowScopeProjector] (executor-thread-9) [row-scope] comp=221dc766-8ab6-4d95-82c0-08cc03e6267d view=builder_221dc7668ab6 作用域列=[_客户料号_客户产品编号] 兜底置空列=[_客户料号_客户产品编号]
+2026-09-11 17:46:29.532 DEBUG [com.cpq.com.ser.RowScopeProjector] (executor-thread-9) [row-scope] 桶内无匹配(want={customer_product_no=null}, 桶 1 行) → 构造兜底行并置空作用域侧列
+2026-09-11 17:46:30.728 DEBUG [com.cpq.com.ser.RowScopeProjector] (executor-thread-9) [row-scope] comp=221dc766-8ab6-4d95-82c0-08cc03e6267d view=builder_221dc7668ab6 作用域列=[_客户料号_客户产品编号] 兜底置空列=[_客户料号_客户产品编号]
+2026-09-11 17:46:30.729 DEBUG [com.cpq.com.ser.RowScopeProjector] (executor-thread-9) [row-scope] 桶内无匹配(want={customer_product_no=null}, 桶 1 行) → 构造兜底行并置空作用域侧列
+
+--- SqlViewExecutor 对 3 个产品视图报告的行数 ---
+2026-09-11 17:46:14.685 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-9) [SqlViewExecutor] driver path=$builder_7277969cc41c rows=1
+2026-09-11 17:46:15.557 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-9) [SqlViewExecutor] driver path=$builder_7277969cc41c rows=1
+2026-09-11 17:46:16.408 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-9) [SqlViewExecutor] driver path=$builder_7277969cc41c rows=1
+2026-09-11 17:46:17.256 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-9) [SqlViewExecutor] driver path=$builder_7277969cc41c rows=1
+2026-09-11 17:46:18.032 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-9) [SqlViewExecutor] driver path=$builder_a71947b68d50 rows=1
+2026-09-11 17:46:19.486 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-9) [SqlViewExecutor] driver path=$builder_a71947b68d50 rows=1
+2026-09-11 17:46:20.585 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-9) [SqlViewExecutor] driver path=$builder_a71947b68d50 rows=1
+2026-09-11 17:46:21.760 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-9) [SqlViewExecutor] driver path=$builder_a71947b68d50 rows=1
+2026-09-11 17:46:22.873 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-9) [SqlViewExecutor] driver path=$builder_a71947b68d50 rows=1
+2026-09-11 17:46:24.078 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-9) [SqlViewExecutor] driver path=$builder_a71947b68d50 rows=1
+2026-09-11 17:46:25.189 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-9) [SqlViewExecutor] driver path=$builder_a71947b68d50 rows=1
+2026-09-11 17:46:26.275 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-9) [SqlViewExecutor] driver path=$builder_a71947b68d50 rows=1
+2026-09-11 17:46:28.149 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-9) [SqlViewExecutor] driver path=$builder_221dc7668ab6 rows=1
+2026-09-11 17:46:29.499 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-9) [SqlViewExecutor] driver path=$builder_221dc7668ab6 rows=1
+2026-09-11 17:46:30.700 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-9) [SqlViewExecutor] driver path=$builder_221dc7668ab6 rows=1
+
+--- 本时段 lookupForResolver(模板快照命中) 条数 ---
+0

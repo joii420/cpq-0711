@@ -1,0 +1,7 @@
+name|version|view_name|snap_md5|live_md5|snap_eq_live|snap_has_new|snap_has_old
+取值测试模板1|v1.0|builder_7277969cc41c|2b7fa3b96709d24f4338ddd174730395|05ef5fd16f0a9fd31578364c937da2bc|f|f|f
+取值测试模板2|v1.0|builder_a71947b68d50|995ccd087401f9cd20565958702d410b|885026682883a50b837e092b16fd212e|f|f|f
+正泰测试模板1|v1.0|builder_221dc7668ab6|cc917aab8a9b33a801025c29a772c7f0|cc917aab8a9b33a801025c29a772c7f0|t|t|f
+正泰测试模板1|v1.1|builder_221dc7668ab6|cc917aab8a9b33a801025c29a772c7f0|cc917aab8a9b33a801025c29a772c7f0|t|t|f
+正泰测试模板1|v1.2|builder_221dc7668ab6|cc917aab8a9b33a801025c29a772c7f0|cc917aab8a9b33a801025c29a772c7f0|t|t|f
+(5 rows)

@@ -1,0 +1,19 @@
+=== 「产品」页签 客编实际取值 · BEFORE(标量谓词) vs AFTER(集合谓词+RowScopeProjector) ===
+数据点                                                            BEFORE(rows/客编)          AFTER(rows/客编)           一致
+F1-|line=28fc4e91(S0012/ZT-C012)                               1/['ZT-C012']            1/['ZT-C012']            ✅
+F1-|line=2a3ba7cb(S0001/A002)                                  1/['A002']               1/['A002']               ✅
+F1-|line=a9cf4182(S0008/TC-B008)                               1/['TC-B008']            1/['TC-B008']            ✅
+F1-|line=dcb8d49e(S0004/RW-A004)                               1/['RW-A004']            1/['RW-A004']            ✅
+F2-|line=19b6dfd2(S0008/TC-B008)                               1/['TC-B008']            1/['TC-B008']            ✅
+F2-|line=816be438(S0001/A002)                                  1/['A002']               1/['A002']               ✅
+F2-|line=9f0dca27(S0008/TC-B008)                               1/['TC-B008']            1/['TC-B008']            ✅
+F2-|line=a440c90c(S0012/ZT-C012)                               1/['ZT-C012']            1/['ZT-C012']            ✅
+F2-|line=bd61e120(S0012/ZT-C012)                               1/['ZT-C012']            1/['ZT-C012']            ✅
+F2-|line=c7c3bb3a(S0001/A002)                                  1/['A002']               1/['A002']               ✅
+F2-|line=e785fa95(S0004/RW-A004)                               1/['RW-A004']            1/['RW-A004']            ✅
+F2-|line=f26959dd(S0004/RW-A004)                               1/['RW-A004']            1/['RW-A004']            ✅
+F3-|line=174162eb(S0004/∅)                                     1/[None]                 1/[None]                 ✅
+F3-|line=98083d41(0028-2609000018/∅)                           1/[None]                 1/[None]                 ✅
+F3-|line=aa040894(T260910D-P/∅)                                1/[None]                 1/[None]                 ✅
+
+不一致数据点 = 0  | 客编非空的数据点 = 12
