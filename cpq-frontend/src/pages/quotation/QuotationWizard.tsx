@@ -1885,6 +1885,25 @@ const QuotationWizard: React.FC = () => {
         productAttributes: updated.productAttributes,
       };
     }));
+    // 4. repair-260911(F-2)：把后端**在本次 configure 请求内部就已经算好**的卡片值取回内存。
+    //    configure 响应体只回 {id, productPartNo, parentLineItemId, processNos, compositeType},
+    //    **不带 quoteCardValues** ⇒ 上面 basicItems 的 4 份值快照恒 undefined
+    //    ⇒ QuotationStep2:4363 `useSnapQuote = lineItems.every(li => !!li.quoteCardValues)` 恒 false
+    //    ⇒ 卡片走实时 batch-expand 通道,而该通道的 DTO(ExpandDriverResponse.Row)结构上
+    //      就没有 spine 系统列(__nodeId/__parentId/__lvl) —— 只有快照通道 buildSnapshotExpansions
+    //      才注入 __sys(:2196) ⇒ QuotationStep2:2977 的「树 vs 平铺」判据取不到 nodeId
+    //    ⇒ BOM 页签退化成平铺,且合成根行(业务列全 null、只在树模式下才长出「BOM」固定列)
+    //      显示为**一整行空行**。刷新页面(loadQuotation 从 DB 读回卡片值)就自愈 ——
+    //      ⇒ 缺口只在「点完成后不刷新」这一帧的**前端内存态**,DB 那一刻是有值的。
+    //    warmCardValues 内部已备齐三步(shouldWarmCardValues 判定 → ensureCardValues →
+    //    syncLineItemsFromResponse 按 id 回灌 4 份值快照),与 autoSaveDraft(:1035) 同款用法:
+    //    fire-and-forget,由 cardValuesWarmGateRef 自动开 Spin,失败静默降级回今天的实时渲染。
+    //    ⚠️ items 必须喂**本次新增的全部行**(组合产品一次 configure 回父+子多行),不能只喂第一行。
+    //    ⚠️ 合法空卡片({"tabs":[]})不会被 warm —— shouldWarmCardValues 只认缺失/失败哨兵;
+    //      真进了 warm 也最多轮询 20×800ms 后 message.warning,有界(AC-R4)。
+    if (quotationId) {
+      warmCardValues(quotationId, basicItems as any[]);
+    }
   };
 
   const next = () => {
