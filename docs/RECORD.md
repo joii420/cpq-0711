@@ -1,6 +1,39 @@
 
 # CPQ 系统开发记录
 
+[2026-09-13] 核价渲染 / Excel 视图 - **核价 Excel 视图统一为「每产品一行 + 取卡片值」（`repair-260912`，上一轮闸门 B 的返修）** —— ✅ **已交付合 master `5c260ebd`（fix `ce97b954`）· 闸门 B 用户验收通过 · 已结案** | 涉及文件：`CardSnapshotService.java`（三处 `costingTree` true→false）· `ExcelViewService.java`（`getExcelView` 核价侧传卡片值 + 抽 `EffRowsCtx`）· `CostingVersionService.java`（**第四处**调用点）· `CostingExcelTreeTest.java`（改造）· 新增 `CostingExcelFlatShapeSelfCheckIT` | **AC-1/3/4/5/6/7/8 达成**（AC-2 上一轮已作废） | 零迁移 / 零 DDL / 零接口结构变更 / **零前端改动** | `BL-0275`
+
+🚩 **上一轮闸门 B 未通过的两点**（用户新建 `QT-20260912-0011` 验收时发现）：① **详情页不该展示成 BOM 树状** —— 7 行重复同一个整页签总计，用户裁决「不要树状，每个产品一行，明细去产品卡片视图看」；② **编辑页 Excel 视图仍全 0** —— 它走**第三条路径** `getExcelView → buildRowData(5 参不传 effectiveRows) → buildTabJoinEffectiveRows → component_data`，而核价侧从不往该表落数据。
+
+🔑 **本次修法很轻的原因**：目标形态（每产品一行 + 取卡片值）的路径**仓库里已经存在且已修好** —— `buildExcelValues`（4 参）→ `buildLineRowData(…, cardValuesJson)`。本次是**把另外两条切到它上面**，不是新写渲染逻辑。
+
+**关键决策**：
+- `getExcelView` 的核价判据用**显式模板归属**（`templateIdOverride.equals(quotation.costingCardTemplateId)`），🚫 不用「有没有 cardValues」这类隐式条件 —— 该端点报价/核价共用，隐式条件会在「报价侧某天也开始写 cardValues」时静默串味
+- `buildLineTreeRows` 与 `costingTree=true` 分支**保留不删**（用户裁决），Javadoc 标「暂不使用 / 🚫 不要因无调用方而删除」
+- 后端顺手抽 `EffRowsCtx`/`loadEffRowsCtx`，把模板 `componentsSnapshot` 解析提到行循环外（原方法每次调用都 `findById` + `readTree`，直接放循环里虽有 L1 缓存挡 SQL，但**大 JSON 会被解析 N 次**）
+
+🚨 **第四处调用点（两个子代理各自独立发现，用户裁决一并切）**：`CostingVersionService:340` 原按 `templateHasTreeTab(templateId)` 传值，树模板下算出来就是 `true` ⇒ **切一次料号版本树形就回来了**。它写 `costing_order.costing_render`（核价工作台冻结渲染）而非 `costing_excel_values`，不违反 AC 字面但与裁决冲突。现四处生产调用点全部 `false`；`templateHasTreeTab` 方法保留（另有 11 处调用）。
+
+🚨 **`CostingExcelTreeTest` 是 `DEC-0007` 同族的假绿**：它断言 `treeMode == true` —— 正是本次推翻的语义，**逻辑上必红**，却因夹具料号 `3120018220` 在两库皆 0 条被 `assumeTrue` 跳过，以 `SKIPPED` 混在 `BUILD SUCCESS` 里。⇒ **「批量全绿」在这条上不构成证据。** 已按用户裁决改为直接测 `buildExcelValues(…, true)`（守护刻意保留的树形代码）+ 自建夹具 + `@TestTransaction` 不再写库 + 加开关鉴别力用例；主线亲跑确认 **Skipped: 0**。
+
+✅ **验证**：主线亲验详情页 —— **4 行 / 四产品各一行 / 值逐格正确 / 零子件料号行**（刷前 24 行、9 个子件料号）；存量刷新由主线执行（§3.2 三步前置：命中面 8 → 备份 → 置 NULL → **走生产端点** `ensure-excel-values` 重算）⇒ 8/8 全部 `rows=1` 且无 `treeMode` 键；报价侧零回归（落库逐字节一致 + 端点 `SAME`×2 单）；合并后在**用户环境 5090/8091** 复验一致。
+
+🚩 **子代理三处比主线更严谨的做法（值得留）**：
+- **测试工程师拒绝沿用主线的「不需重验」判断** —— 主线说「那两个文件本轮只改 Javadoc」，它回「手上没有旧版副本可做增量 diff」，**改用行为复跑**在最新代码上把 AC-1/4/5/6 全部重跑。结论一致，但**是跑出来的不是推出来的**。
+- **两个方向的还原实验都用真实状态，没改过任何实现文件** —— ② 用真实 master 实例（未含修复）、① 用库中现存的树形产物。比人为改代码造红更硬。
+- **后端发现既有比对器走 float 会漏报第 18 位有效数字差异**（`203420.599086531655` vs `…656` 判 SAME），而报价侧的值恰好 15 位以上 ⇒ 改写 Decimal 版 + 4 组变异实验才敢用它下结论。
+
+🚩 **主线自己踩的取证坑**：第一版亲验脚本判 FAIL（实得 5 行、期望 4 行），查下去是**该表把表头行也渲染进了 `tbody` 第一行** —— 不是产品缺陷，是取证方式错了。测试工程师**上一轮回报里已点过这个坑，主线没照做**。修法（照它的口径）：只丢弃「第一行且与 `thead` 逐格相同」的那行，**之后再出现的重复行要保留**，否则会掩盖真实的重复渲染缺陷。📌 与「整页截图是恒真的东西」「`table.first()` 抓到基本信息表」同族 —— **取证的定位方式本身也要验**。
+
+**遗留**：`CostingVersionService` 切版本路径的**运行时**行为未实测（静态已确认传 `false`，但切版本要写生产数据）· `NonDraftPrecisionReadOnlyTest` 在 HEAD 基线上就是红的（A/B 已证，与本次无交集）· 报价侧 `quote_excel_values` 与 `quote_card_values` 差整数 39000/234000 · Excel 值没有失效触发点且 `ensureExcelValues` 无 `forceRecomputeAll`（存量永不自愈，本次靠主线手工刷）
+
+**📊 拦截点统计（2 个问题）**：
+- **测试执行 2** ——（a）**第四处调用点** `CostingVersionService:340`：后端做 B-4 回归、测试工程师做全工程复扫时**各自独立发现**（`backtask` 只点名了三处，是主线派工文档的缺口）；（b）**`CostingExcelTreeTest` 恒 Skipped 的假绿**：两个子代理都独立指出它断言的是被本次推翻的语义、且因夹具缺失而从不真跑
+- **主线审用例 0 · 主线亲验 0 · 冷启动 0 · 用户验收 0**（本次返修一次通过）· **上线后 0**
+
+> 📌 上一轮（`repair-260911-核价Excel视图取数源对不上`）的「用户验收 1」就是本次返修的起因，已计在那一轮。
+> 📌 主线亲验时发现的「表头行渲染进 tbody 导致我误判 FAIL」**不计入拦截点** —— 那是取证方法错误，不是产品问题；但已写进上文教训段。
+
 [2026-09-12] 核价渲染 / Excel 视图 - **核价 Excel 视图四列恒 0（两个独立根因，互为必要条件）** —— 已交付合 master `5e7be788`（fix `4dc6bae1`），⏳ 闸门 B 待验收 | 涉及文件：`CardEffectiveRows.java`（**唯一改动的生产文件**，+52/-6：`parse` 双键登记 + 抽 `readDecimal`）· 新增 `EffectiveRowsKeyContractTest`(6) / `CardEffectiveRowsSubtotalDecimalTest`(7) / `CostingExcelTreeTabKeyIT`(`@QuarkusTest`) | **AC 8 条：1/3/4/5/6/7/8 达成 · AC-2 作废** | 零迁移 / 零 DDL / 零接口结构变更 / **零前端改动** / 新增 SQL 条数 0 | `BL-0275`
 
 🔬 **两个根因，缺一不可**（2×2 还原矩阵在**离线重放 / 单元测试 / 服务层 IT 三个层面各证一遍**，只有全修才绿）：
