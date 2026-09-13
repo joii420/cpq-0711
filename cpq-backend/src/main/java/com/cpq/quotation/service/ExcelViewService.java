@@ -154,10 +154,22 @@ public class ExcelViewService {
         Quotation quotation = Quotation.findById(quotationId);
         if (quotation != null) quotationCustomerId = quotation.customerId;
 
+        // repair-260912 B-2：核价侧 Excel 视图取数源与落库路径统一。
+        // 判据是**显式的模板归属**（templateIdOverride == 本单的核价模板 id），不是「有没有卡片值」这类
+        // 隐式条件 —— 该端点报价 / 核价共用，报价侧必须走 effectiveRows==null 的原分支，逐位不变。
+        // 背景：核价侧从不往 quotation_line_component_data 落数据（核价是自渲染），原路径
+        // （effectiveRows==null → buildTabJoinEffectiveRows 读 componentData）tabKey 一个都命不中 ⇒ 四列恒 0。
+        boolean costingSide = templateIdOverride != null && quotation != null
+                && templateIdOverride.equals(quotation.costingCardTemplateId);
+        // 整单只解析一次模板 componentsSnapshot（避免逐行重复 readTree —— 行数 N 与解析次数解耦）。
+        EffRowsCtx effRowsCtx = costingSide ? loadEffRowsCtx(templateId) : null;
+
         List<Map<String, Object>> rows = new ArrayList<>();
 
         for (QuotationLineItem li : lineItems) {
-            Map<String, Object> row = buildRowData(li, columns, templateId, formulaByName, quotationCustomerId);
+            Map<String, com.cpq.quotation.service.card.CardEffectiveRows.TabRows> eff =
+                costingSide ? parseEffectiveRows(li.costingCardValues, effRowsCtx) : null;
+            Map<String, Object> row = buildRowData(li, columns, templateId, formulaByName, quotationCustomerId, eff);
             row.put("_lineItemId", li.id.toString());
             rows.add(row);
         }
@@ -244,6 +256,16 @@ public class ExcelViewService {
      *
      * <p>仅核价侧调用（{@code cardValuesJson} = costingCardValues）。返回 N 行（= 快照树页签的
      * spine 节点数）；快照无树页签 / 解析失败 → 返回空列表（调用方降级，不抛）。
+     *
+     * <p>⚠️ <b>暂不使用（2026-09-12 用户裁决：核价 Excel 视图不走树形，改为「每产品一行 + 取卡片值」，
+     * 行级明细去产品卡片视图看）</b>。<b>四处生产调用点全部传 {@code costingTree=false}</b>
+     * （{@code CardSnapshotService} 的 snapshotCostingSideOnly / ensureExcelValues /
+     * refreshCostingCardValues，以及 {@code CostingVersionService} 的核价单版本切换），
+     * 不再有例外 —— 报价单侧 {@code costing_excel_values} 与核价工作台
+     * {@code costing_order.costing_render} 形态一致。
+     * 本方法与 {@code costingTree=true} 分支<b>刻意保留</b>，以便日后要切回树形时一行开关即可复原
+     * （repair-260912，见 {@code dev-docs/task-260712-…/repair-260912-核价Excel视图形态与编辑页取数/}）。
+     * 🚫 不要因为「没有调用方」而删除。
      */
     public List<Map<String, Object>> buildLineTreeRows(QuotationLineItem li, UUID templateId,
                                                        UUID customerId, String cardValuesJson) {
@@ -353,8 +375,27 @@ public class ExcelViewService {
     private Map<String, com.cpq.quotation.service.card.CardEffectiveRows.TabRows>
             parseEffectiveRows(String cardValuesJson, UUID templateId) {
         if (cardValuesJson == null || cardValuesJson.isBlank()) return null;
+        return parseEffectiveRows(cardValuesJson, loadEffRowsCtx(templateId));
+    }
+
+    /**
+     * repair-260912 B-2：模板侧的解析结果（componentsSnapshot + componentId→fields 索引）。
+     * 与具体 line item 无关，整单多行可复用 —— 抽出来是为了让 {@code getExcelView} 在行循环外
+     * 只解析一次（行数 N 与 JSON 解析 / 模板查询次数解耦，杜绝隐式 N+1）。
+     */
+    private static final class EffRowsCtx {
+        final com.fasterxml.jackson.databind.JsonNode componentsSnapshot;
+        final java.util.Map<String, com.fasterxml.jackson.databind.JsonNode> fieldsByCid;
+        EffRowsCtx(com.fasterxml.jackson.databind.JsonNode componentsSnapshot,
+                   java.util.Map<String, com.fasterxml.jackson.databind.JsonNode> fieldsByCid) {
+            this.componentsSnapshot = componentsSnapshot;
+            this.fieldsByCid = fieldsByCid;
+        }
+    }
+
+    /** 读模板 componentsSnapshot 并建 componentId→fields 索引；模板缺失/解析失败 → null（调用方降级）。 */
+    private EffRowsCtx loadEffRowsCtx(UUID templateId) {
         try {
-            com.fasterxml.jackson.databind.JsonNode cardValues = MAPPER.readTree(cardValuesJson);
             Template t = Template.findById(templateId);
             com.fasterxml.jackson.databind.JsonNode componentsSnapshot =
                 (t != null && t.componentsSnapshot != null)
@@ -366,10 +407,23 @@ public class ExcelViewService {
                     if (!cid.isBlank()) fieldsByCid.put(cid, c.path("fields"));
                 }
             }
-            return com.cpq.quotation.service.card.CardEffectiveRows.parse(
-                cardValues, componentsSnapshot, (cid) -> null, fieldsByCid::get);
+            return new EffRowsCtx(componentsSnapshot, fieldsByCid);
         } catch (Exception e) {
-            LOG.debugf("[ExcelView] parseEffectiveRows failed tmpl=%s: %s", templateId, e.getMessage());
+            LOG.debugf("[ExcelView] loadEffRowsCtx failed tmpl=%s: %s", templateId, e.getMessage());
+            return null;
+        }
+    }
+
+    /** 用已解析好的模板上下文解析单行卡片值快照 → 有效行 Map；空/异常 → null（降级旧路径）。 */
+    private Map<String, com.cpq.quotation.service.card.CardEffectiveRows.TabRows>
+            parseEffectiveRows(String cardValuesJson, EffRowsCtx ctx) {
+        if (cardValuesJson == null || cardValuesJson.isBlank() || ctx == null) return null;
+        try {
+            com.fasterxml.jackson.databind.JsonNode cardValues = MAPPER.readTree(cardValuesJson);
+            return com.cpq.quotation.service.card.CardEffectiveRows.parse(
+                cardValues, ctx.componentsSnapshot, (cid) -> null, ctx.fieldsByCid::get);
+        } catch (Exception e) {
+            LOG.debugf("[ExcelView] parseEffectiveRows failed: %s", e.getMessage());
             return null;
         }
     }
