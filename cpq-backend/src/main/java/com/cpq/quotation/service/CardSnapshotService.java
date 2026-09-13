@@ -1222,7 +1222,8 @@ public class CardSnapshotService {
                 // P3:computeExcel=false(首存)时跳过核价 Excel,留 NULL → ensureExcelValues 懒算。
                 if (computeExcel) {
                     managed.costingExcelValues = safeCall(() ->
-                        buildExcelValues(managed, q.costingCardTemplateId, q.customerId, managed.costingCardValues, true));
+                        // repair-260912：核价 Excel 不再走 BOM 树（用户裁决）→ costingTree=false ⇒ 每产品一行 + 取卡片值。
+                        buildExcelValues(managed, q.costingCardTemplateId, q.customerId, managed.costingCardValues, false));
                 }
             }
             managed.cardSnapshotAt = OffsetDateTime.now();
@@ -1403,7 +1404,8 @@ public class CardSnapshotService {
                 }
                 if (managed.costingExcelValues == null && costingCardTemplateId != null) {
                     managed.costingExcelValues = safeCall(() ->
-                        buildExcelValues(managed, costingCardTemplateId, customerId, managed.costingCardValues, true));
+                        // repair-260912：核价 Excel 不再走 BOM 树（用户裁决）→ costingTree=false ⇒ 每产品一行 + 取卡片值。
+                        buildExcelValues(managed, costingCardTemplateId, customerId, managed.costingCardValues, false));
                     changed = true;
                 }
                 if (changed) { changedLines.add(managed); }
@@ -2096,7 +2098,8 @@ public class CardSnapshotService {
                     buildCostingCardValues(managed, q.costingCardTemplateId, q.customerId, q.id, unionByComp, null,
                         precomputed));
                 managed.costingExcelValues = safeCall(() ->
-                    buildExcelValues(managed, q.costingCardTemplateId, q.customerId, managed.costingCardValues, true));
+                    // repair-260912：核价 Excel 不再走 BOM 树（用户裁决）→ costingTree=false ⇒ 每产品一行 + 取卡片值。
+                    buildExcelValues(managed, q.costingCardTemplateId, q.customerId, managed.costingCardValues, false));
             } catch (Exception e) {
                 LOG.warnf("[card-snapshot] refreshCostingCardValues li=%s: %s", li.id, e.getMessage());
             }
@@ -2850,6 +2853,12 @@ public class CardSnapshotService {
     /**
      * P2-B 核价 Excel 树重载：{@code costingTree=true} 时按 BOM spine 逐节点出多行（{rows:[N], treeMode:true}）；
      * 否则委托四参单行版本。仅核价侧传 true（报价 Excel 仍单行，守隔离）。
+     *
+     * <p>⚠️ <b>{@code costingTree=true} 分支暂不使用（2026-09-12 用户裁决：核价 Excel 不走树形）</b>——
+     * <b>四处生产调用点全部传 {@code false}</b>：本类的三个报价单快照落库点，
+     * 以及 {@code CostingVersionService} 的核价单版本切换。不再有例外。
+     * 分支与 {@link ExcelViewService#buildLineTreeRows} <b>刻意保留</b>，
+     * 日后要切回树形改这一个开关即可（repair-260912）。🚫 不要因「无调用方」而删除。
      */
     String buildExcelValues(QuotationLineItem li, UUID templateId, UUID customerId,
                             String cardValuesJson, boolean costingTree) {

@@ -332,9 +332,13 @@ public class CostingVersionService {
 
             String newCostingCardValues = cardSnapshotService.buildCostingCardValues(
                     li, templateId, q.customerId, q.id, null, null, baseRowsByComp);
-            boolean hasTreeTab = cardSnapshotService.templateHasTreeTab(templateId);
+            // repair-260912：核价 Excel 全面不走树形（用户裁决），含本处核价工作台冻结渲染
+            // costing_order.costing_render ⇒ costingTree=false ⇒ 每产品一行 + 取卡片值。
+            // 原先此处按 templateHasTreeTab(templateId) 传值，树模板下为 true，会与报价单侧的
+            // costing_excel_values（已切平铺）形态不一致；该判定调用随之退役（局部变量已删，
+            // templateHasTreeTab 方法本身仍有其它调用方，保留）。
             String newCostingExcelValues = cardSnapshotService.buildExcelValues(
-                    li, templateId, q.customerId, newCostingCardValues, hasTreeTab);
+                    li, templateId, q.customerId, newCostingCardValues, false);
 
             // ── 写回 costing_render（仅受影响 line） + 重算 costing_total_amount ─────────────
             Map<String, RenderEntry> renderMap = parseRenderMap(co.costingRender);
