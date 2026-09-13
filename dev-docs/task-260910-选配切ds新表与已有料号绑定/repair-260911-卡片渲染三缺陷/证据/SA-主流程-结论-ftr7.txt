@@ -1,0 +1,13 @@
+RUN=ftr7
+单=T260911RA-QT-SAftr7 (6a7e9af2-bcb9-4cff-9446-78e7c94c12c5)
+line_item=73d7e193-bf96-41ae-b226-d13526465e96 料号=1014-2609000001
+CPN=T260911RA-CPN-ftr7
+AC-R1① customer_part_no=T260911RA-CPN-ftr7
+AC-R1② 产品页签客户产品编号列=["T260911RA-CPN-ftr7"]
+AC-R1③ snapshot_rows=["T260911RA-CPN-ftr7"]
+AC-R2 刷新后 行数=3 带nodeId=3 缩进行=2 全空行=0
+AC-R3 项次列=["","1","2"]
+AC-R6 不刷新帧：总行=3 根行=1 子件行=2
+     AC-R6①根行业务列=[["","","",""]]
+     AC-R6②③子件行=[{"nodeIdTail":"00005","料号":"00005","项次":"1"},{"nodeIdTail":"00006","料号":"00006","项次":"2"}]
+     AC-R6④不刷新==刷新后 ? true

@@ -1034,6 +1034,17 @@ const QuotationWizard: React.FC = () => {
           const reflowed = reflowComponentRowsFromResponse((item as any).componentData, r.componentData);
           if (reflowed) patch.componentData = reflowed;
         }
+        // repair-260911 AC-R7(裁决 R-13):客户视角三字段同样只在服务端算得出 ——
+        //   它们由 loadLineItems 按 (customer_no, customer_product_no) 查 ds_quote_customer_part
+        //   注入(QuotationService:3643-3645),**不是** line_item 上的列(表里只有 customer_part_no)。
+        //   选配完成后前端本地新建的行没有它们 ⇒ 卡片头部 `item.customerPartName &&` 判空不渲染
+        //   (QuotationStep2.tsx:3147-3155) ⇒ 左上角空白,要整页刷新(applyQuotationData)才出现。
+        //   与上面 4 份值快照同源同源:warm 响应本就是整份 QuotationDTO、带着这三个字段,只是没人灌回来。
+        // 🔒 AC-R7③ 护栏:沿用 `!= null` 跳过语义 —— 服务端查无映射行时返回 null,
+        //   null 不进 patch ⇒ 头部维持「不渲染」,🚫 不会出现值为空的 `客户产品编号:` 徽标。
+        for (const k of ['customerPartName', 'customerProductNo', 'customerDrawingNo'] as const) {
+          if (r[k] != null && r[k] !== (item as any)[k]) patch[k] = r[k];
+        }
         if (Object.keys(patch).length > 0) { changed = true; return { ...item, ...patch }; }
         return item;
       });
