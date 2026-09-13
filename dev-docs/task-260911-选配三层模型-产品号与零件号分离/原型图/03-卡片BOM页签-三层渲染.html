@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>卡片 BOM 页签 · 三层渲染 — 三层模型</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .tbl{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px}
+  .tbl th,.tbl td{padding:9px 10px;border-bottom:1px solid var(--split);text-align:left}
+  .tbl th{background:#fafafa;font-weight:600;white-space:nowrap;width:auto}
+  .tbl td.n{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px}
+  .exp{color:rgba(0,0,0,.45);margin-right:4px}
+  .lvl0{font-weight:600}
+  .dim{color:rgba(0,0,0,.45)}
+</style></head><body>
+<div class="wrap">
+
+  <div class="note">
+    <h3>📌 03 · 卡片 BOM 页签渲染三层（<code>F-3</code> / <code>AC-6</code>）</h3>
+    <p><code>AC-6</code> 要的是 <b>根 <code>P</code> → 子 <code>C</code> → 孙 材质</b> 三层。
+       现在是两层（料号 → 材质）。</p>
+    <div class="new">
+      ✅ <b>前置依赖已解除</b>：<code>repair-260911-卡片渲染三缺陷</code> 的树渲染修复已合 master
+      （<code>2e68bc8a</code> + <code>f60b09ca</code>，2026-09-13 闸门 B 通过）。
+      在那之前卡片是<b>平铺</b>的，本屏无从验证。
+    </div>
+    <div class="old">
+      🚦 <b>验收判据（由 <code>选配问题</code> 会话实测提供，不是我推的）</b>：<br>
+      • 层级看 <code>&lt;tr&gt;</code> 上的 <b><code>data-node-id</code></b>（只在树模式下有值，平铺态为 null）与 <code>indentPx</code><br>
+      • 🚫 <b>不许只读 <code>td.textContent</code></b> —— 可编辑单元格的值在 <code>&lt;input&gt;.value</code> 里，
+        只读 textContent 会把有值的行读成全空
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="font-size:15px;font-weight:600;margin-bottom:2px">物料BOM</div>
+    <div class="dim" style="font-size:12.5px">客户产品编号 T260911-A01 · 产品料号 <span class="mono">P0007</span></div>
+    <table class="tbl">
+      <thead><tr>
+        <th style="width:40px"></th><th>料号</th><th>投入料号</th><th>项次</th><th>组成数量</th><th>比例%</th>
+      </tr></thead>
+      <tbody>
+        <tr class="lvl0">
+          <td><span class="exp">▼</span></td>
+          <td class="n"><span class="mono">P0007</span></td>
+          <td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td>
+        </tr>
+        <tr>
+          <td style="padding-left:26px"><span class="exp">▼</span></td>
+          <td class="n" style="padding-left:16px"><span class="mono c">S0021</span></td>
+          <td class="n"><span class="mono c">S0021</span></td>
+          <td>1</td><td>1</td><td class="dim">—</td>
+        </tr>
+        <tr>
+          <td style="padding-left:52px"></td>
+          <td class="n" style="padding-left:32px">AgCu90</td>
+          <td class="n">AgCu90</td>
+          <td>1</td><td>1</td><td>100</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="rel" style="margin-top:14px">
+      <b>三层各自是什么</b>：<br>
+      第 1 层 <span class="mono">P0007</span> = 产品（绑客户产品编号）—— 业务列<b>全空</b>，它只是个挂载点<br>
+      第 2 层 <span class="mono c">S0021</span> = 零件（<code>P → C</code> 那一行，<code>AC-1③</code>）<br>
+      第 3 层 <code>AgCu90</code> = 材质（<code>C → 材质</code>，<code>AC-1④</code>）
+    </div>
+  </div>
+
+  <div class="note">
+    <h3>🚫 四条</h3>
+    <p>
+    ① <b>根行业务列必须全空</b>（不是 0、不是「—」以外的占位）—— 它在主表里就是没有这些值。
+       🚨 编一个值出来会让财务在核价确认时看到一行不存在的数据。<br>
+    ② <b>缩进不许用空格模拟</b>，要走既有的 <code>indentPx</code> 机制 —— 否则导出 Excel 和比对视图会拿到带空格的脏值。<br>
+    ③ <b>不许因为「根行没数据」就把它隐藏掉</b> —— 隐藏之后这个页签又变回两层，<code>AC-6</code> 直接失效，
+       而且用户在确认页刚被告知有两个号，这里少一个会对不上。<br>
+    ④ <b>不许动 <code>QuotationWizard.tsx</code> 的 <code>syncLineItemsFromResponse</code> 里那两处回灌</b>
+       （服务端权威 <code>rowData</code> 重灌 · 客户产品名称/编号三字段）——
+       它们是 <code>repair-260911</code> 的 <code>AC-R6</code>/<code>AC-R7</code>，
+       🚨 <b>丢了不报错、只在「不刷新那一帧」显形</b>。改到那个函数就必须专门验那一帧。
+    </p>
+    <h3 style="margin-top:12px">⚠️ 加列之前先看 <code>BL-0282</code></h3>
+    <p>BOM 树页签<b>若配了 <code>BASIC_DATA</code>/<code>FORMULA</code> 列</b>，会撞上一处下标错配。
+       报价侧当前 4 个 BOM 组件都是 0 个该类列 ⇒ 当前不可达；
+       ⚠️ 但措辞是「<b>未排除</b>」不是「已证实不可达」（<code>选配问题</code> 会话按新规则收紧过）。
+       <b>三层模型若要给 BOM 页签加这两类列，这条就从「不可达」变成「会中招」。</b></p>
+  </div>
+
+</div></body></html>

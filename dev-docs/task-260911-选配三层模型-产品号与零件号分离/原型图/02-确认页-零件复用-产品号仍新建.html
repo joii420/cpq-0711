@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>确认页 · 零件复用（产品号仍新建）— 三层模型</title>
+<link rel="stylesheet" href="_shared.css"></head><body>
+<div class="wrap">
+
+  <div class="note">
+    <h3>📌 02 · 零件复用 —— 本任务最容易说错话的一屏（<code>F-2</code> / <code>AC-4</code> + <code>AC-5</code>）</h3>
+    <p>数据取自 <code>AC-4</code>：先按 <code>AC-1</code> 建过一次（得到零件 <code>S0021</code>），
+       再用<b>另一个</b>客户产品编号 <code>T260911-A02</code>，填<b>完全相同</b>的品名/规格/尺寸/总重/材质/工序。</p>
+    <div class="old">
+      🕰️ <b>现在的文案（<code>ConfirmStep.tsx</code> 第二分支）</b>：<br>
+      「产品库里已有相同配置的产品，已直接复用它的销售料号 …… <b>没有新建料号</b>。」<br>
+      🚫 三层之后<b>后半句是假话</b>：复用的只是<b>零件</b>，<b>产品料号照样新铸了一个</b>（因为客户产品编号不同）。<br>
+      📌 <code>fronttask.md F-2</code> 原文点的就是这处：「换个次序仍是同一个产品。不会新建料号」—— 三层后不再准确。
+    </div>
+    <div class="new">
+      ✅ <b>为什么这屏比 01 更要紧</b>：01 是「多告诉你一个号」，02 是<b>「原来的话变成了假话」</b>。
+      用户如果按旧文案理解（以为一个号都没新建），事后在报价行里看到一个没见过的新号，
+      会以为系统重复建号出了 bug —— 而那正是 <code>D-2</code> 明确裁决的正常行为。
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="alert ok">
+      <div class="ic">✅</div>
+      <div style="flex:1">
+        <div class="msg">零件已复用，产品料号是新建的</div>
+        <div class="dsc">
+          <div>产品料号 <span class="mono">P0008</span><span class="role p">新建</span></div>
+          <div>零件料号 <span class="mono c">S0021</span><span class="role c">复用已有</span></div>
+          <div class="rel">
+            你填的零件和 <b>T260911-A01</b> 那次<b>完全相同</b> ⇒ 直接用了同一个零件 <span class="mono c">S0021</span>，
+            <b>没有重复建零件</b>，材质和工序也不会再写一遍。<br>
+            但客户产品编号 <b>T260911-A02</b> 是新的 ⇒ <b>产品料号必须新建</b>一个
+            <span class="mono">P0008</span> 来绑它。<br>
+            👉 现在 <span class="mono">P0007</span> 和 <span class="mono">P0008</span> 两个产品，
+            共用同一个零件 <span class="mono c">S0021</span>。
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dl">
+      <h4>本次提交的结果</h4>
+      <table>
+        <tr><th>客户产品编号</th><td>T260911-A02</td></tr>
+        <tr><th>产品料号</th><td><span class="mono">P0008</span><span class="role p">新建</span></td></tr>
+        <tr><th>零件料号</th><td><span class="mono c">S0021</span><span class="role c">复用（与 T260911-A01 同一个）</span></td></tr>
+        <tr><th>材质构成</th><td>AgCu90 100% <span style="color:rgba(0,0,0,.45)">（沿用，未新增）</span></td></tr>
+        <tr><th>工序</th><td>Z008 <span style="color:rgba(0,0,0,.45)">（沿用，未新增）</span></td></tr>
+      </table>
+      <div class="tree">产品 <span class="mono">P0007</span>  ┐
+产品 <span class="mono">P0008</span>  ┴─&gt; 零件 <span class="mono c">S0021</span>
+                        └─ 材质 AgCu90 &nbsp;100%</div>
+    </div>
+  </div>
+
+  <div class="note">
+    <h3>🚫 文案红线（本屏的全部价值在这里）</h3>
+    <p>
+    ① 🚨 <b>不许再出现「不会新建料号」「没有新建料号」这类整体否定</b> —— 必须<b>分开说</b>：零件复用了、产品料号新建了。<br>
+    ② <b>不许说「换个次序仍是同一个产品」</b> —— 三层之后它们<b>不是同一个产品</b>，是两个产品共用一个零件。<br>
+    ③ <b>不许把「复用」写成好事或坏事</b> —— 它就是个事实。加价值判断（如「已为你节省一个料号」）会让用户以为自己可以选。<br>
+    ④ <b>复用判据不许前端推导</b>（<code>D-2</code>：品名/规格/材质完全相同）—— 前端只渲染后端下发的结果。
+    </p>
+    <h3 style="margin-top:12px">⚠️ 一处留给实现方实测的</h3>
+    <p>后端现在返回的 <code>reusedHfPartNos</code> 是<b>一个数组</b>（<code>ConfirmStep.tsx</code> 现有渲染逐个列出）。
+       三层之后它装的是<b>产品号还是零件号</b>？—— 🚦 <b>这条契约随闸门 A0 的裁决一并定</b>，
+       🚫 实现方不要自己假设，也不要靠「看起来像」判断。前端拿到什么就显示什么，
+       但<b>标签（产品/零件）必须由后端说了算</b>。</p>
+  </div>
+
+</div></body></html>

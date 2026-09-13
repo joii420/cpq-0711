@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>原型导航 — task-260911 选配三层模型</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+ .wrap{max-width:940px}
+ h1{font-size:22px;margin:0 0 4px}
+ .sub{color:rgba(0,0,0,.45);margin-bottom:4px;font-size:13px}
+ .badge{display:inline-block;background:#fff7e6;border:1px solid #ffd591;color:#d46b08;
+        padding:2px 10px;border-radius:4px;font-size:13px;font-weight:600}
+ .itm{background:#fff;border-radius:8px;padding:18px 22px;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+ .itm h2{font-size:16px;margin:0 0 6px}
+ .itm p{margin:6px 0;font-size:13.5px;line-height:1.8}
+ a{color:#1677ff;text-decoration:none} a:hover{text-decoration:underline}
+ .danger{background:#fff2f0;border:1px solid #ffccc7;border-radius:8px;padding:14px 18px;font-size:13.5px;line-height:1.85}
+</style></head><body>
+<div class="wrap">
+
+  <h1>原型导航 — <code>task-260911</code> 选配三层模型：产品料号与零件料号分离</h1>
+  <p class="sub">
+    <span class="badge">📌 当前基准（待闸门 A 定稿）</span>
+    &nbsp;出图 2026-09-13 · 主文档 <code>../需求文档.md</code>
+  </p>
+
+  <div class="note">
+    <b>本任务动到 3 个界面位置，原型 3 屏。</b>
+    数一遍 <code>../fronttask.md</code>：<code>F-1</code>（确认页·新建零件 → 01）·
+    <code>F-2</code>（确认页·零件复用文案 → 02）· <code>F-3</code>（卡片 BOM 页签三层 → 03）。屏数对得上。
+    <br>🚨 <b>本任务性质不是新需求</b>，是 <code>task-260910</code> 立项时把用户原话落成了错的 AC、实现照错 AC 做了
+    （25 条 AC 全绿却交付了错的结构）。⇒ <b>这三屏的价值不在「设计新界面」，在「把已经说出口的假话改回真话」</b>。
+  </div>
+
+  <div class="itm">
+    <h2>01 · <a href="01-确认页-新建零件-两个料号.html">确认页 — 新建零件（两个料号）</a></h2>
+    <p>服务 <code>F-1</code> / <code>AC-1</code>。用户第一次看到「系统造了两个号」的那一屏。</p>
+    <p>设计判据：不解释架构，只回答三件事 —— <b>谁绑客户编号 · 材质工序挂谁 · 哪个会被别的产品复用</b>。</p>
+    <p>📌 产品料号<b>蓝</b> / 零件料号<b>绿</b>，要求<b>全流程一致</b>（卡片、BOM 页签、核价单）。</p>
+  </div>
+
+  <div class="itm">
+    <h2>02 · <a href="02-确认页-零件复用-产品号仍新建.html">确认页 — 零件复用（产品号仍新建）</a></h2>
+    <p>服务 <code>F-2</code> / <code>AC-4</code> + <code>AC-5</code>。<b>本任务最容易说错话的一屏。</b></p>
+    <p>🚨 现有文案「<b>没有新建料号</b>」「换个次序仍是同一个产品」三层之后<b>都是假话</b> ——
+       复用的只是零件，产品料号照样新铸（客户产品编号不同，<code>D-2</code>）。</p>
+    <p>⚠️ 屏内标了一条<b>待 A0 裁决后才能定</b>的契约：后端 <code>reusedHfPartNos</code> 三层后装的是产品号还是零件号。</p>
+  </div>
+
+  <div class="itm">
+    <h2>03 · <a href="03-卡片BOM页签-三层渲染.html">卡片 BOM 页签 — 三层渲染</a></h2>
+    <p>服务 <code>F-3</code> / <code>AC-6</code>。根 <code>P</code> → 子 <code>C</code> → 孙 材质。</p>
+    <p>✅ <b>前置依赖已解除</b>：<code>repair-260911-卡片渲染三缺陷</code> 的树渲染修复已合 master
+       （<code>2e68bc8a</code> + <code>f60b09ca</code>）。在那之前卡片是平铺的，本条无从验证。</p>
+    <p>🚫 屏内四条禁令，其中最要命的是 <b>不许弄丢 <code>syncLineItemsFromResponse</code> 里那两处回灌</b> ——
+       丢了不报错，只在「不刷新那一帧」显形。</p>
+  </div>
+
+  <div class="danger">
+    <b>🚧 闸门状态（2026-09-13 主线实查，🚫 不要凭交接转述）</b>
+    <ul style="margin:8px 0;padding-left:20px">
+      <li><b>闸门 A0：未过</b> —— 还有 <b>2 条</b>真开着：① 实现路径选型（复用 COMPOSITE 路径 vs 另起 SIMPLE 三层，见 <code>../backtask.md</code> 开头）② 核价回填按哪个号做轴</li>
+      <li>⚠️ <b>交接时被告知「只剩 1 条」，实测是 2 条</b> —— 需求文档里另有两处「🚦 待 A0 裁决」是<b>过期标记</b>（早由 <code>D-1</code>/<code>D-2</code> 裁掉），已就地更正。<b>同一个坑（裁决落台账、正文标记没跟着改）本任务内已出现两次。</b></li>
+      <li><b>闸门 A：未过</b> ⇒ 🚫 严禁建分支、严禁写代码</li>
+      <li>本页的 <span class="badge">📌 当前基准（待闸门 A 定稿）</span> 在闸门 A 通过后改成「📌 当前基准」</li>
+    </ul>
+  </div>
+
+</div></body></html>

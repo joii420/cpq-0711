@@ -1,0 +1,32 @@
+:root{--primary:#1677ff;--border:#d9d9d9;--text:rgba(0,0,0,.88);--text2:rgba(0,0,0,.45);
+      --ok:#52c41a;--warn:#faad14;--split:#f0f0f0}
+*{box-sizing:border-box}
+body{margin:0;background:#f5f5f5;font:14px/1.5714 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:var(--text)}
+.wrap{padding:24px;display:flex;flex-direction:column;gap:20px;max-width:900px}
+.note{background:#fff;border-radius:8px;padding:14px 16px;box-shadow:0 2px 8px rgba(0,0,0,.09);font-size:13px;line-height:1.75}
+.note h3{margin:0 0 8px;font-size:14px}
+.note code{background:#f5f5f5;padding:1px 5px;border-radius:4px;font-size:12px}
+.old{background:#fff2f0;border:1px solid #ffccc7;border-radius:6px;padding:10px 12px;margin:8px 0;font-size:12.5px;line-height:1.8;color:#5c0011}
+.new{background:#f6ffed;border:1px solid #b7eb8f;border-radius:6px;padding:10px 12px;margin:8px 0;font-size:12.5px;line-height:1.8;color:#135200}
+.card{background:#fff;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.09);padding:24px}
+.alert{border-radius:8px;padding:14px 16px;display:flex;gap:12px;align-items:flex-start}
+.alert.ok{background:#f6ffed;border:1px solid #b7eb8f}
+.alert .ic{font-size:20px;line-height:1.2}
+.alert .msg{font-weight:600;font-size:14px}
+.alert .dsc{margin-top:8px;font-size:13px;line-height:1.9;color:rgba(0,0,0,.65)}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#f0f5ff;
+      border:1px solid #adc6ff;border-radius:4px;padding:1px 7px;font-size:12.5px;color:#1d39c4}
+.mono.c{background:#f6ffed;border-color:#b7eb8f;color:#237804}
+.role{display:inline-block;font-size:11px;padding:0 6px;height:18px;line-height:17px;border-radius:3px;
+      border:1px solid;margin-left:6px;vertical-align:1px}
+.role.p{background:#f0f5ff;border-color:#adc6ff;color:#1d39c4}
+.role.c{background:#f6ffed;border-color:#b7eb8f;color:#237804}
+.rel{margin-top:10px;padding:10px 12px;background:#fafafa;border:1px solid var(--split);border-radius:6px;
+     font-size:12.5px;line-height:1.9}
+.dl{margin-top:20px;border-top:1px solid var(--split);padding-top:16px}
+.dl h4{margin:0 0 10px;font-size:13px;color:var(--text2);font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:9px 12px;border:1px solid var(--split);text-align:left}
+th{background:#fafafa;font-weight:600;width:150px;color:var(--text2)}
+.tree{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;line-height:2;background:#fafafa;
+      border:1px solid var(--split);border-radius:6px;padding:12px 14px;margin-top:10px}

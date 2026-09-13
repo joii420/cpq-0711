@@ -1596,6 +1596,92 @@ pickQualifiedCustomer({ needsTakenProductNo? })
 /usr/bin/grep -oE '^### .*BL-[0-9]{4}' docs/BACKLOG.md | /usr/bin/grep -oE 'BL-[0-9]{4}' | sort | uniq -d
 ```
 
+### [报价单渲染 / 既存缺陷] BL-0285 · 组合产品的 BOM 树**重复展开**子件：递归不按 `output_material_type` 过滤
+
+- [ ] 待开发 · 优先级 **P2** · 来源：`task-260911-选配三层模型` 闸门 A0 勘察实测（2026-09-13 用户裁决登记）
+
+🚨 **既存形态，不是任何在途任务引入的。**
+
+**根因（实测）**：生效的 `costing_bom_tree_config(usage='QUOTE')` 递归条件是
+`JOIN ds_quote_material_bom ch ON ch.material_no = b.material_no`，**没有任何 `output_material_type` 谓词**。
+
+而 `buildCompositeBomRows` 给**每个子件写两行** —— 一行 `ASSEMBLY`、一行 `RECIPE`
+（后者是 V6 时代为让兼容视图 `v_composite_child_materials` 的第一分支命中而留的遗留，方法 javadoc 自己写明了）。
+
+**实测（`cpq_db_0724`，`0526-2609000005`）**：
+```
+0526-2609000005 | 1 | 0526-2609000004 | ASSEMBLY
+0526-2609000005 | 2 | TEST-Q13-CODE   | ASSEMBLY
+0526-2609000005 | 3 | 0526-2609000004 | RECIPE     ← 遗留
+0526-2609000005 | 4 | TEST-Q13-CODE   | RECIPE     ← 遗留
+```
+
+**原样跑那段递归 CTE 的输出**（不是推断，是实跑）：
+```
+root=…054  node=…052  parent=…054      ← ASSEMBLY 行
+root=…054  node=…053  parent=…054      ← ASSEMBLY 行
+root=…054  node=…052  parent=…054      ← RECIPE 行（重复）
+root=…054  node=…053  parent=…054      ← RECIPE 行（重复）
+root=…054  node=00262 parent=…052      ← 孙节点被展开 4 次
+root=…054  node=00262 parent=…053
+root=…054  node=00262 parent=…052
+root=…054  node=00262 parent=…053
+```
+
+⇒ **子件被展开两遍，孙节点四遍。**
+
+**两个可选修法（未评估，留给立项时裁）**：
+① 递归加 `output_material_type` 谓词（改配置，影响面 = 所有走 QUOTE 树的页签）
+② 退役 `buildCompositeBomRows` 的 `RECIPE` 行（先要证 `v_composite_child_materials` 还有没有活着的消费者 —— 🚨 **本项目实证过「V6 废弃表」的说法会过期**，见 `mat_part` 那条决策台账）
+
+⚠️ **为什么现在才发现**：`task-260911-选配三层模型` 闸门 A0 勘察时，为判断「能不能复用 COMPOSITE 路径」去实跑了那段递归，才撞见。**这条是那次否决 β 方案的依据之一**（三层若借用那个 helper，`AC-6` 的三层会渲成「零件 ×2、材质 ×2」）。
+
+🚫 **三层模型任务本身不修它**（`AC-7` 已明写 BOM 侧回归不覆盖），走 γ 路径只写一行 `P → C`、不产生该形态。
+
+---
+
+### [核价回填 / 测试覆盖] BL-0283 · `BLOCKED` 降级后，那片渲染分支整条不可达且零测试覆盖
+
+- [ ] 待开发 · 优先级 **P3** · 来源：`task-260911` 前端工程师在 `F-6` 收尾时主动报告（2026-09-13 用户裁决登记）
+
+**背景**：2026-09-12 用户裁决丙，撞键拦截（`C′`/`D-37`）**降级为提示、不再阻断** ⇒ `BLOCKED` 失去唯一产出者 ⇒ `summary.blockedGroups` 恒为 0、`group.result` 恒不为 `BLOCKED`。
+
+**现状（已全部留碑，符合归档纪律）**：后端两处统计点（`DsQuoteBackfillService` 的 `previewWithToken` / `execute`）· 前端 `CostingApprovePreviewDrawer`（副标题 + 页脚两支）· `CostingDsBackfillPanel`（`isBlocked` 谓词及其下游）· `costingOrderService` 契约注释 —— 全有碑文。
+
+🚨 **但碑文只对人生效，对机器不生效**：`isBlocked` 下游那几支渲染分支（橙色「本次跳过」Tag · 行底色 · 「整组跳过，本次一行不写」小注 · 升版列豁免 · `isShrinking` 豁免）现在**整条不可达，且没有任何测试覆盖**。
+
+⇒ 若将来新增别的阻断原因、`BLOCKED` 被重新启用，**没有任何自动化手段会告诉你这几支是否还对** —— 它们会以「当年写对了」的姿态直接上线。
+
+**建议做法**：加一条**契约测试**钉住 `BLOCKED` 的渲染形态（构造一个 `result==='BLOCKED'` 的 fixture，断言那几支该出现的都出现）。🚫 不是恢复阻断，只是让这片代码在被唤醒时有个体检。
+
+⚠️ **本条不是「降级做错了」** —— 降级的判据（整组对齐后行数恒等于 `_record` 行数，翻倍结构上不可能）已由后端探针 `P5`/`P6` 实测支撑。本条只管「休眠代码怎么保鲜」。
+
+---
+
+### [报价单 / 死代码清理] BL-0284 · `quotation_line_item.excel_view_snapshot` 是死字段：三个写入点都走不到，且零读取方
+
+- [ ] 待开发 · 优先级 **P3** · 来源：`task-260911` 收尾勘察（2026-09-13 用户裁决登记）
+
+**实测（2026-09-13，`cpq_db_0724`）**：`quotation_line_item` 共 **5236 行**，`excel_view_snapshot IS NOT NULL` = **0**。
+
+**为什么是 0 —— 三个写入点没有一个在正常业务里会执行**：
+
+| 写入点 | 为什么走不到 |
+|---|---|
+| `ImportExecutionService`（导入路径两处） | 属于一条 **Excel 视图导入**流程（v3 preview+confirm），其入口硬性要求模板配了 `excel_view_config`，否则直接 `400 "Template has no excel_view_config"`。而**全库 31 个模板只有 1 个有该配置**，还是测试模板「取值测试模板1」 |
+| `ExcelViewService.updateExcelViewCell`（单元格更新端点） | 前端 `quotationService` 有方法，但**零个界面组件调它**（只有一个单测在调）⇒ UI 走不到 |
+| `QuotationService`（复制报价单） | 只是原样拷贝源单的值；源是空的，拷过去还是空 |
+
+🚨 **更关键：它没有任何读取方。** 全工程 5 处引用 = 4 处写 + 1 处实体声明，**零处读** —— DTO 不暴露、前端拿不到、导出不用、渲染不用。
+
+📌 **与 `quote_excel_values` 的对照**（两个字段名字像、命运相反）：后者 5236 行里 **3956 行有值**（76%），是前端算完回存、供导出消费的**活字段**。
+
+**建议做法**：连同那条 Excel 视图导入流程一并评估 —— 是**补活**（让它真正可用）还是**退役**（删字段 + 迁移 + 清理端点）。🚫 别只删字段留流程，也别只删流程留字段。
+
+⚠️ **同一个配置的缺席让两条链路同时失效**：`excel_view_config` 只有 1 个测试模板配了 —— 这既让本条的导入流程没人用，也是 `task-260911` 删除 `AC-26` 的依据之一（Excel 联动视图碰不到 `ds_quote_*` 表）。动它之前先看那条墓碑。
+
+---
+
 ### [报价单渲染 / 潜在缺陷] BL-0282 · BOM 树页签若配了 `BASIC_DATA`/`FORMULA` 列，会撞上同一处下标错配
 
 - [ ] 待开发 · 优先级 **P3** · 来源：`repair-260911` `F-3` 顺带发现（裁决 `R-11`），2026-09-13 主线按用户要求真机核查后登记

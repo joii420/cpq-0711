@@ -14,14 +14,17 @@ String productPartNo = "COMPOSITE".equals(effectiveType) ? parentHfPartNo : ...
 
 ⇒ **「父料号 + 子件」的机制已经存在**（`buildCompositeBomRows(parentPartNo, childPartNos, …)` 就是构造 `父 → 子件` 的 BOM 行）。
 ⇒ **三层模型 ≈ 让 SIMPLE 也走 COMPOSITE 那套父子结构**，而不是新写一套。
-🚦 **A0 要裁决的第一件事就是这个**：是复用 COMPOSITE 路径，还是另起一条 SIMPLE 三层路径。**先给主线呈报对比，不要直接选。**
+🔴 **2026-09-13 已裁决：`D-6` = γ（为单件单独写一段，只写 `P → C` 一行）。**
+🚫 **不要复用 `buildCompositeBomRows`** —— 实测它给每个子件写**两行**（`ASSEMBLY` + `RECIPE`，后者是 V6 遗留），会让 `AC-1③`「`P → C` 一行」直接不成立；叠加 QUOTE 树递归不按类型过滤，`AC-6` 的三层会渲成重复节点。
+🚫 **更不要让 SIMPLE 走成 COMPOSITE** —— `"COMPOSITE"` 语义面 66 处跨 28 文件（含调价金额链路），且 COMPOSITE 工序是双轴写入、靠父子各有独立卡片才不重复计费，而 SIMPLE 只有 1 张卡 ⇒ 工序会被算两次。
+📌 完整对比与实测证据见 `需求文档.md` 裁决台账 `D-6`。
 
 ## 任务
 
 | 编号 | 服务的 AC | 任务内容 |
 |---|---|---|
 | **B-1** | AC-1, AC-5 | **新建零件路径铸两个号**：`resolvePart`（`:328`，现在返回单个 `String`）要产出**产品料号 P** 与**零件料号 C**。P 走 `QuoteMaterialNoAllocator`（`:108`）新铸；C 按 **B-3** 的复用判定决定新铸还是复用。<br>⚠️ **返回值形状变了** ⇒ 所有调用点要同步，🚫 不要用「返回 P、把 C 塞进成员变量」这种隐式传递 |
-| **B-2** | AC-1③④⑤ | **BOM 拆成两层**：现在 `:481-482` 是 `writeMaterialBomGroup(customerCode, hfPartNo, buildRecipeBomRows(hfPartNo, mats))`（一层：料号→材质）。改成：① `P → C` 一行（**优先复用 `buildCompositeBomRows`**）；② `C → 材质` N 行（`buildRecipeBomRows(C, mats)`）；③ 元素行 `buildElementBomRows(**C**, mats)` —— 🔑 **轴从 P 改成 C** |
+| **B-2** | AC-1③④⑤ | **BOM 拆成两层**：现在 `:481-482` 是 `writeMaterialBomGroup(customerCode, hfPartNo, buildRecipeBomRows(hfPartNo, mats))`（一层：料号→材质）。改成：① `P → C` 一行（🔴 **2026-09-13 更正：原写「优先复用 `buildCompositeBomRows`」，与 `D-6`（γ）冲突，已作废** —— 那个 helper 每个子件写两行。**新写一个只产一行的 helper**）；② `C → 材质` N 行（`buildRecipeBomRows(C, mats)`）；③ 元素行 `buildElementBomRows(**C**, mats)` —— 🔑 **轴从 P 改成 C** |
 | **B-3** | AC-4, AC-5 | **零件复用判定**（`D-2`）：品名/规格/尺寸/总重/材质（含占比）**完全相同**的零件 ⇒ **复用已有零件料号**，不重造。<br>🔑 **这等于把指纹口径从「产品层」下移到「零件层」** —— 现有 `SalesFingerprintCalculator` 算的是含客户维度的整体结构。**A0 要裁决**：是改指纹算法，还是在零件层另起一套判定。<br>🚫 **产品料号不参与复用**（AC-5：每次新铸） |
 | **B-4** | AC-1②, AC-2② | **客户产品编号绑 P**：`insertSelProductNo`（`:1675`）→ `insertCustomerPart`（`:1689`）的 `material_no` 参数从「那个唯一的号」改成 **P**。🚫 不是 C |
 | **B-5** | AC-1⑥, AC-2⑤ | **工序挂 C**（`D-1`）：`writeSelfProcessFeeGroup` 的轴从 P 改成 **C**。<br>📌 `task-260910` 的 `D-4` 定过「SIMPLE 时 `input_material_no` = 料号自身」—— 三层后**语义要重新表述**（轴=C、投入=C 仍成立，但「料号自身」指的是零件了）。**顺手更新那处注释**，🚫 不要留下与新模型矛盾的说明 |
@@ -37,3 +40,15 @@ String productPartNo = "COMPOSITE".equals(effectiveType) ? parentHfPartNo : ...
 1. **复用 COMPOSITE 路径 vs 另起 SIMPLE 三层路径**（见开头）
 2. **零件复用判定放哪**：改 `SalesFingerprintCalculator` vs 零件层另起一套
 3. **`ds_quote_self_process_fee` 的 `input_material_no` 语义**（`task-260910` D-4 的表述要不要改）
+
+---
+
+## 🆕 2026-09-13 用户裁决补入（扩范围，已点头）· 来源：闸门 A0 勘察
+
+| 编号 | 服务的 AC | 任务内容 |
+|---|---|---|
+| 🆕 **B-12** | AC-1②, AC-6 | **`buildLineItems` 的 SIMPLE 分支必须改写产品料号 `P`**。现在写的是 `childHfPartNos.get(0)`（即 `C`）。<br>🔑 `product_part_no_snapshot` 是**树根种子**，也是 `total_material_no` 的起点 ⇒ 不改的话闭包 = `{C, 材质}`、**`P` 不在闭包里** ⇒ 物料视图查不到 `P` ⇒ 绑在 `P` 上的 `ds_quote_customer_part` 的 LEFT JOIN **永不命中** ⇒ **客户产品编号整个消失**，且 `AC-6`「根 `P`」不成立。<br>⚠️ **原 `B-1`~`B-11` 没有任何一条对应它** —— 勘察实测发现。 |
+| 🆕 **B-13** | AC-1, AC-4 | **`lookupResolvedPartNo` 镜像同步**。它是 `resolvePart` 的**只读镜像版本**（方法 javadoc 原文：「`resolvePart` 的无副作用镜像版本」），服务 `POST /lookup-fingerprint` 预览端。<br>🚨 **它不是 `resolvePart` 的调用者 —— `grep` 和 codegraph 都建立不起关联**。改一边忘另一边**不报错**，症状是「**预览说命中、提交却新铸**」。<br>📌 同族：`MEMORY` 的 `v6-handler-registry-mirror-trap`（导入器与 Registry 声明式镜像）。<br>⚠️ 原 `B-1`~`B-11` 同样没有对应项；`api.md §2.2` 只标了「待 A0」没落任务。 |
+
+🚨 **这两条的共同点**：都是「**改 A 而 B 静默失效**」，都**不会报错**，且**都不在原 backtask 的覆盖面内**。
+它们不是勘察「顺手多提的」—— 不补的话，开发期必然撞墙（B-12）或上线后才发现（B-13）。

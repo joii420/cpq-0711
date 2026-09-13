@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>确认页 · 新建零件（两个料号）— 三层模型</title>
+<link rel="stylesheet" href="_shared.css"></head><body>
+<div class="wrap">
+
+  <div class="note">
+    <h3>📌 01 · 新建零件路径 —— 用户第一次看到「系统造了两个号」（<code>F-1</code> / <code>AC-1</code>）</h3>
+    <p>数据取自 <code>AC-1</code> 原文：<code>CUST-0004</code> 报价单，客户产品编号 <code>T260911-A01</code>，
+       选「零件 → 新建零件」，品名 <code>亲验触头A</code>、总重 10g、材质 <code>AgCu90</code> 100%、工序 <code>Z008</code>。</p>
+    <div class="old">
+      🕰️ <b>现在的样子（<code>ConfirmStep.tsx</code> 第三分支）</b>：一条「产品库里没有相同配置的产品，<b>已新建一个销售料号</b>」+
+      一行「销售料号 <code>xxx</code>」。<br>
+      🚫 三层之后这句话<b>是假话</b> —— 新建的是<b>两个</b>号，而且它们角色完全不同。
+    </div>
+    <div class="new">
+      ✅ <b>设计判据</b>：用户不关心「三层模型」这个词，他关心的是<b>「这两个号我以后各自会在哪儿见到」</b>。
+      所以不解释架构，只回答三件事：<b>谁绑客户编号</b> · <b>材质工序挂谁</b> · <b>哪个会被别的产品复用</b>。
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="alert ok">
+      <div class="ic">✅</div>
+      <div style="flex:1">
+        <div class="msg">已新建产品料号和零件料号各一个</div>
+        <div class="dsc">
+          <div>产品料号 <span class="mono">P0007</span><span class="role p">绑客户产品编号</span></div>
+          <div>零件料号 <span class="mono c">S0021</span><span class="role c">挂材质与工序</span></div>
+          <div class="rel">
+            你的客户产品编号 <b>T260911-A01</b> 绑的是<b>产品料号 <span class="mono">P0007</span></b>；<br>
+            材质 <b>AgCu90</b> 和工序 <b>Z008</b> 挂在<b>零件料号 <span class="mono c">S0021</span></b> 下面。<br>
+            👉 以后别的产品如果用<b>完全一样</b>的零件，会直接复用 <span class="mono c">S0021</span>，<b>不会再造一个</b>。
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dl">
+      <h4>本次提交的结果</h4>
+      <table>
+        <tr><th>客户产品编号</th><td>T260911-A01</td></tr>
+        <tr><th>产品料号</th><td><span class="mono">P0007</span><span class="role p">新建</span></td></tr>
+        <tr><th>零件料号</th><td><span class="mono c">S0021</span><span class="role c">新建</span></td></tr>
+        <tr><th>品名</th><td>亲验触头A</td></tr>
+        <tr><th>总重</th><td>10 g</td></tr>
+        <tr><th>材质构成</th><td>AgCu90 100%</td></tr>
+        <tr><th>工序</th><td>Z008</td></tr>
+      </table>
+      <div class="tree">产品 <span class="mono">P0007</span>
+└─ 零件 <span class="mono c">S0021</span>
+   └─ 材质 AgCu90 &nbsp;100%</div>
+    </div>
+  </div>
+
+  <div class="note">
+    <h3>🚫 实现时不许做的四件事</h3>
+    <p>
+    ① <b>不许只显示一个号</b>（哪怕「主要的那个」）—— 用户在报价行、BOM 页签、核价单上都会分别看到它们，这里瞒下会让他以为出了 bug。<br>
+    ② <b>不许用「产品料号 / 零件料号」之外的叫法</b>（如「父料号 / 子料号」「主号 / 从号」）—— 那是实现视角，用户的心智模型是「产品」和「零件」。<br>
+    ③ <b>不许把「会被复用」写成承诺</b>：文案是「用完全一样的零件会复用」，🚫 不是「以后都会复用」。复用判据在后端（<code>D-2</code>：品名/规格/材质完全相同），前端<b>不许自己推导</b>。<br>
+    ④ <b>不许在这里解释三层模型</b> —— 上面那棵小树是给「看一眼就懂」用的，🚫 不要配一段架构说明。
+    </p>
+    <h3 style="margin-top:12px">📌 两个颜色是刻意的</h3>
+    <p>产品料号<b>蓝</b>、零件料号<b>绿</b>，并在全流程保持一致（卡片、BOM 页签、核价单）。
+       用户在别处再见到这两个号时，靠颜色就能对上这一屏，🚫 不要每个页面各挑一套颜色。</p>
+  </div>
+
+</div></body></html>
