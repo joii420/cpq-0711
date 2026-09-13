@@ -1,0 +1,9 @@
+   node_key    | dialect |      db_column      |    roles    |                  id                  
+---------------+---------+---------------------+-------------+--------------------------------------
+ CUSTOMER_PART | QUOTE   | customer_drawing_no | {}          | d5f3e1db-2333-5f81-a79a-5e2dd94065c9
+ CUSTOMER_PART | QUOTE   | customer_no         | {}          | 72d3b838-096a-56f1-8cfd-fe72a9c689ef
+ CUSTOMER_PART | QUOTE   | customer_part_name  | {}          | 9284c444-6fa2-52f9-890c-f78bf2028893
+ CUSTOMER_PART | QUOTE   | customer_product_no | {ROW_SCOPE} | b781bb7d-c65b-5215-9fc6-cfb6a521881a
+ CUSTOMER_PART | QUOTE   | material_no         | {}          | 89c52cb1-cf40-56a5-bcfa-f19bf581baca
+(5 rows)
+

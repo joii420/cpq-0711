@@ -1,0 +1,9 @@
+### 谓词位置三态检查（打标记态 AFTER8107-7277969cc41c.sql）
+--- ON 子句行 ---
+  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_part_name = ANY(:customerPartNames) AND dqcp.customer_product_no = ANY(:customerProductNos)
+--- WHERE 子句行 ---
+WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode
+--- customerPartNames 出现在 WHERE 的次数（期望 0）---
+0
+--- customerPartNames 出现在 LEFT JOIN..ON 的次数（期望 1）---
+1

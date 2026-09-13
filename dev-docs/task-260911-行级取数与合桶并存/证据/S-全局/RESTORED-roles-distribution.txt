@@ -1,0 +1,11 @@
+       roles       | cols | nodes 
+-------------------+------+-------
+ {}                |  235 |    51
+ {ROW_KEY}         |   50 |    38
+ {PART_NO,ROW_KEY} |   42 |    42
+ {SORT}            |   28 |    28
+ {PART_NAME}       |    8 |     8
+ {PART_NO}         |    2 |     2
+ {ROW_SCOPE}       |    1 |     1
+(7 rows)
+

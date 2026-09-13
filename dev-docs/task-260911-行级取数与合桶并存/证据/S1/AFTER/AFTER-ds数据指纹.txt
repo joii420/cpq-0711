@@ -1,0 +1,10 @@
+           t            | customer_no | count 
+------------------------+-------------+-------
+ ds_quote_customer_part | CUST-0001   |    12
+ ds_quote_customer_part | CUST-0004   |  2716
+ ds_quote_material      | CUST-0001   |    64
+ ds_quote_material      | CUST-0004   |  2705
+ ds_quote_material_bom  | CUST-0001   |    85
+ ds_quote_material_bom  | CUST-0004   |  2728
+(6 rows)
+

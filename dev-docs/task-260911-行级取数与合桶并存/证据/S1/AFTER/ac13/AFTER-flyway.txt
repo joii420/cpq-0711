@@ -1,0 +1,7 @@
+ installed_rank | version |                    description                    | success |        installed_on        
+----------------+---------+---------------------------------------------------+---------+----------------------------
+             85 | 439     | task260909 drop compat views                      | t       | 2026-09-09 17:40:27.182372
+             86 | 440     | repair260910 costing element price customer level | t       | 2026-09-11 02:09:47.170245
+             87 | 441     | task260911 row scope role                         | t       | 2026-09-11 09:23:30.365844
+(3 rows)
+

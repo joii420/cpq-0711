@@ -1,0 +1,10 @@
+ row_scope_cols 
+----------------
+              1
+(1 row)
+
+   node_key    | dialect |      db_column      |    roles    
+---------------+---------+---------------------+-------------
+ CUSTOMER_PART | QUOTE   | customer_product_no | {ROW_SCOPE}
+(1 row)
+

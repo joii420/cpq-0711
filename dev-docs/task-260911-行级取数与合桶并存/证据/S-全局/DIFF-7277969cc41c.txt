@@ -1,0 +1,13 @@
+--- BEFORE-7277969cc41c.sql	2026-09-11 18:04:08.173838902 -0700
++++ AFTER8107-7277969cc41c.sql	2026-09-11 18:08:49.101793199 -0700
+@@ -9,8 +9,8 @@
+   dqm.unit_weight AS "_物料_单重",
+   dqm.production_no AS "_物料_生产料号"
+ FROM ds_quote_material dqm
+-  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = ANY(:customerProductNos)
++  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_part_name = ANY(:customerPartNames) AND dqcp.customer_product_no = ANY(:customerProductNos)
+ WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode
+ ORDER BY dqm.material_no
+---- requiredVariables: customerCode,customerProductNos,total_material_no
++--- requiredVariables: customerCode,customerPartNames,customerProductNos,total_material_no
+ --- warnings: []

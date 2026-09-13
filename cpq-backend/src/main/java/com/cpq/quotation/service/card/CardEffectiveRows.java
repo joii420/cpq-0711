@@ -13,7 +13,10 @@ import java.util.function.Function;
  * effectiveRow[i] = driverRow[i] ∪ basicDataValues[i] ∪ formulaResults(rowKey).values ∪ editRows(rowKey).values
  * （后者覆盖前者；editRows = 用户手改，优先级最高；formulaResults = 卡片已算好的公式值，不重算）。
  *
- * <p>tabKey = componentId:sortOrder，sortOrder 从 components_snapshot 按 componentId 取（值快照不含 sortOrder）。
+ * <p>键登记：每个页签<b>同时以两个键</b>登记同一 {@link TabRows} ——「裸 componentId」（Excel 列 tabKey 约定）
+ * 与「componentId:sortOrder」（CardRef 约定），与 {@link ComponentDataEffectiveRows} 口径一致
+ * （契约由 {@code EffectiveRowsKeyContractTest} 守护）。sortOrder 从 components_snapshot 按 componentId 取
+ * （值快照不含 sortOrder）。
  */
 public final class CardEffectiveRows {
 
@@ -134,20 +137,60 @@ public final class CardEffectiveRows {
                 }
             }
 
-            BigDecimal subtotal = tab.has("subtotal") && !tab.path("subtotal").isNull()
-                    ? tab.path("subtotal").decimalValue() : null;
+            BigDecimal subtotal = readDecimal(tab.path("subtotal"));
             // Plan 2c：读 per-column 小计（[页签.列名] 引用）。
             Map<String, BigDecimal> byCol = new java.util.LinkedHashMap<>();
             JsonNode byColNode = tab.path("subtotalByColumn");
             if (byColNode.isObject()) {
                 byColNode.fields().forEachRemaining(en -> {
-                    if (en.getValue() != null && !en.getValue().isNull())
-                        byCol.put(en.getKey(), en.getValue().decimalValue());
+                    BigDecimal v = readDecimal(en.getValue());
+                    if (v != null) byCol.put(en.getKey(), v);
                 });
             }
-            out.put(tabKey, new TabRows(rows, subtotal, byCol));
+            TabRows tr = new TabRows(rows, subtotal, byCol);
+            // 双键登记（与 ComponentDataEffectiveRows 逐字同款，见该类 Pass 2）：
+            // 消费方 CardDataProvider 是「精确命中、不做 sortOrder 回退」，而两类消费方用的键形状不同 ——
+            // Excel 列配置的 tabKey 是裸 componentId，CardRef / tabDefsOfTemplate 用 componentId:sortOrder。
+            // 只登记其一 → 另一类消费方静默 miss → TAB_JOIN_FORMULA 列恒 0（repair-260911 的根因）。
+            // 双键非对称（有意，与参照实现一致）：裸 cid 用 put（同 componentId 多实例时后者覆盖——Excel
+            // 列 tabKey 本就不区分实例，是有损便利键）；cid:sortOrder 用 putIfAbsent（首实例胜，是每实例权威键）。
+            out.put(cid, tr);                    // 裸 componentId（Excel 列 tabKey 约定）
+            out.putIfAbsent(tabKey, tr);         // componentId:sortOrder（CardRef 约定）
         }
         return out;
+    }
+
+    /**
+     * 读十进制标量：<b>数字节点与「十进制字符串」节点都能读</b>。
+     *
+     * <p><b>为什么必须容忍字符串</b>（repair-260911 第二根因 R2）：写侧 {@code CardSnapshotService}
+     * 自 {@code fd83cac1}（2026-08-11，task-0810「前后端统一十进制精度契约」）起，把 {@code tab.subtotal}
+     * 与 {@code tab.subtotalByColumn.*} 用 {@code PrecisionPolicy.toPlainDecimalString(...)} 写成
+     * <b>JSON 字符串</b>（字符串承载十进制，避免 double 精度损失）——这是既定契约，不动它。
+     * 但读侧当时没跟着改，仍用 {@code JsonNode.decimalValue()}：Jackson 对 {@code TextNode}
+     * <b>静默返回 {@code BigDecimal.ZERO}</b>（不抛、不告警）⇒ 核价 Excel 的 {@code [页签(总计)]} /
+     * {@code [页签.列名(总计)]} 引用恒 0。本方法就是把读侧补齐到该契约。
+     *
+     * <p>取值口径（<b>刻意保留原有的 null 语义，不许改成 ZERO</b>）：
+     * <ul>
+     *   <li>缺失 / JSON null → {@code null}（= 该页签没有小计，与改动前逐字一致；
+     *       下游 {@code TabJoinPlanEvaluator} 自己做 {@code s != null ? s : ZERO}）</li>
+     *   <li>数字节点 → {@code decimalValue()}（原行为）</li>
+     *   <li>十进制字符串 → 按字符串解析（<b>本次修复点</b>）</li>
+     *   <li>空串 / 非法数字 / 其它类型 → {@code ZERO}，<b>绝不抛异常</b>
+     *       （这条路径此前从不抛，不许改变异常语义——一个坏页签不能把整张卡片的 Excel 值炸掉）</li>
+     * </ul>
+     */
+    private static BigDecimal readDecimal(JsonNode n) {
+        if (n == null || n.isMissingNode() || n.isNull()) return null;
+        if (n.isNumber()) return n.decimalValue();
+        String s = n.asText("").trim();
+        if (s.isEmpty()) return BigDecimal.ZERO;
+        try {
+            return new BigDecimal(s);
+        } catch (NumberFormatException e) {
+            return BigDecimal.ZERO;
+        }
     }
 
     private static Map<String, JsonNode> indexByRowKey(JsonNode arr) {

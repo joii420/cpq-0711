@@ -1,0 +1,15 @@
+     cust     |               v                | rows | matched |   total   
+--------------+--------------------------------+------+---------+-----------
+ CUST-0729-QA | OLD(f_material,+material_no)   |   11 |       5 | 3408.4200
+ CUST-0729-QA | NEW(f_customer, 无material_no) |   11 |       8 | 6610.7000
+(2 rows)
+   cust    |               v                | rows | matched |   total   
+-----------+--------------------------------+------+---------+-----------
+ CUST-0002 | OLD(f_material,+material_no)   |   11 |       5 | 3408.4200
+ CUST-0002 | NEW(f_customer, 无material_no) |   11 |       8 | 6610.7000
+(2 rows)
+   cust    |               v                | rows | matched |       total        
+-----------+--------------------------------+------+---------+--------------------
+ CUST-0001 | OLD(f_material,+material_no)   |   11 |       4 | 43872.854000000000
+ CUST-0001 | NEW(f_customer, 无material_no) |   11 |       5 | 856.8400
+(2 rows)

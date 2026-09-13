@@ -1,0 +1,9 @@
+   node_key    |      db_column      |    roles    
+---------------+---------------------+-------------
+ CUSTOMER_PART | customer_drawing_no | {}
+ CUSTOMER_PART | customer_no         | {}
+ CUSTOMER_PART | customer_part_name  | {ROW_SCOPE}
+ CUSTOMER_PART | customer_product_no | {ROW_SCOPE}
+ CUSTOMER_PART | material_no         | {}
+(5 rows)
+

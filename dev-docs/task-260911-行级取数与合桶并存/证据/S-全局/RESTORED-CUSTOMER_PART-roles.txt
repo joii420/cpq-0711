@@ -1,0 +1,9 @@
+   node_key    | dialect |      db_column      |    roles    | updated_by  |         updated_at         
+---------------+---------+---------------------+-------------+-------------+----------------------------
+ CUSTOMER_PART | QUOTE   | customer_drawing_no | {}          |             | 2026-09-07 02:41:01.285968
+ CUSTOMER_PART | QUOTE   | customer_no         | {}          |             | 2026-09-07 02:41:01.285968
+ CUSTOMER_PART | QUOTE   | customer_part_name  | {}          |             | 2026-09-07 02:41:01.285968
+ CUSTOMER_PART | QUOTE   | customer_product_no | {ROW_SCOPE} | task-260911 | 2026-09-11 09:23:30.38909
+ CUSTOMER_PART | QUOTE   | material_no         | {}          |             | 2026-09-07 02:41:01.285968
+(5 rows)
+

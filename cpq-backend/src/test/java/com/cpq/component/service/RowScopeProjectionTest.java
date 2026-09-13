@@ -40,7 +40,20 @@ class RowScopeProjectionTest {
     private static final String CP_COL = "_客户料号_客户产品编号";   // 作用域列（CUSTOMER_PART.customer_product_no）
     private static final String CP_NAME_COL = "_客户料号_客户零件名称"; // 同源于 dqcp 的另一列
     private static final String MAT_COL = "_物料_品名";              // 物料侧列（同一个 dqm 行，各桶内行完全相同）
-    private static final String BD_PATH = "$builder_221dc7668ab6." + CP_COL;
+    /**
+     * 🚨 <b>实查形态：带花括号</b>（2026-09-11 S3 缺陷的根因就在这一行）。
+     * {@code ExpandDriverResponse.Row#basicDataValues} 的契约是「key = 字段原始路径<b>(含花括号)</b>」，
+     * 读取侧 {@code FormulaCalculator#bnfDriverLookupKey} 也统一补花括号。
+     * 本夹具上一轮写成<b>不带</b>花括号 ⇒ 单测恒绿、生产恒不置空（{@code endsWith("." + 列名)} 对
+     * 以 {@code '}'} 收尾的真实键永远为 false）。实库取证：
+     * {@code quotation_line_component_data.snapshot_rows} 的 basicDataValues 键确为
+     * {@code "{$builder_221dc7668ab6._客户料号_客户产品编号}"}。
+     */
+    private static final String BD_PATH = "{$builder_221dc7668ab6." + CP_COL + "}";
+    /** 同源于 dqcp 的另一列，同样带花括号。 */
+    private static final String BD_NAME_PATH = "{$builder_221dc7668ab6." + CP_NAME_COL + "}";
+    /** 历史/兼容形态：不带花括号也必须能被置空（两种都认，见 {@code RowScopeProjector#bdvKeyTargets}）。 */
+    private static final String BD_PATH_NO_BRACE = "$builder_221dc7668ab6." + CP_COL;
 
     private static final RowScopeProjector.CompScope SCOPE = new RowScopeProjector.CompScope(
             true,
@@ -55,7 +68,10 @@ class RowScopeProjectionTest {
         dr.put(CP_NAME_COL, cpName);
         r.driverRow = dr;
         Map<String, Object> bd = new LinkedHashMap<>();
-        bd.put(BD_PATH, cp);                // 字段 default_source.path 指向该视图列（实查形态）
+        bd.put(BD_PATH, cp);                // 字段 default_source.path 指向该视图列（实查形态：含花括号）
+        bd.put(BD_NAME_PATH, cpName);       // 同源于对端表的另一列
+        bd.put(BD_PATH_NO_BRACE, cp);       // 兼容形态：不带花括号也要清
+        bd.put("{$builder_221dc7668ab6." + MAT_COL + "}", "接触片");   // 物料侧：🚫 不许被清
         r.basicDataValues = bd;
         return r;
     }
@@ -106,8 +122,13 @@ class RowScopeProjectionTest {
                 "同源于对端表的其余列也必须置空 —— 否则会显示**别的明细行**的客户侧数据，"
                 + "那比显示空更糟：它看起来完全正常但归属是错的");
         assertNull(r.basicDataValues.get(BD_PATH),
-                "basicDataValues 同样要清 —— 字段是 BASIC_DATA 指向该视图列，"
-                + "只清 driverRow 的话渲染层照样显示 pivot 行的客编，且不报错");
+                "🚨 basicDataValues 同样要清（键**含花括号**，实查形态）—— 2026-09-11 S3 实测："
+                + "只清 driverRow 时，resolveRowByFieldName 解 INPUT_* 会退到 default_source→"
+                + "basicDataValues，从这里读到 pivot 行（属于别的明细行）的客编并写进 row_data 与输入框");
+        assertNull(r.basicDataValues.get(BD_NAME_PATH), "同源于对端表的其余列在 basicDataValues 里也要清");
+        assertNull(r.basicDataValues.get(BD_PATH_NO_BRACE), "不带花括号的历史形态同样要清");
+        assertEquals("接触片", r.basicDataValues.get("{$builder_221dc7668ab6." + MAT_COL + "}"),
+                "🚫 物料侧的 basicDataValues 条目不许被误清（它不同源于对端表）");
         assertEquals("接触片", r.driverRow.get(MAT_COL), "物料侧列必须有值（同一个 dqm 行，桶内各行相同）");
     }
 
@@ -176,6 +197,7 @@ class RowScopeProjectionTest {
         assertEquals("X-CP1", pivot.driverRow.get(CP_COL),
                 "🚨 桶里的原行必须纹丝不动 —— 它被同料号的其它明细行共享，就地置空会把别人的数据也抹掉");
         assertEquals("X-CP1", pivot.basicDataValues.get(BD_PATH));
+        assertEquals("X-CP1", pivot.basicDataValues.get(BD_PATH_NO_BRACE));
         assertNull(out.rows.get(0).driverRow.get(CP_COL));
         assertTrue(out.rows.get(0) != pivot, "兜底行必须是新对象");
     }
@@ -190,6 +212,101 @@ class RowScopeProjectionTest {
         assertEquals(1, out.rowCount);
         assertNotNull(out.driverPath);
         assertEquals(bkt.driverPath, out.driverPath);
+    }
+
+    // ─────────── S2 实测回归：**直接反序列化真实 batch-expand 响应**，不用手搓结构 ───────────
+
+    /**
+     * 🚨 <b>取自 live {@code POST /api/cpq/components/batch-expand} 的原始响应</b>
+     * （证据：{@code 证据/S2/原始输出/01-batch-expand原始响应-MAIN_EMPTY_NEG.json}，
+     * 夹具 {@code QT-20260911-S2FRESH}，料号 {@code T0911S2-M1}）——
+     * 键名、花括号、值类型、列顺序全部原样照抄，<b>一个字都没简化</b>。
+     *
+     * <p><b>为什么必须用真实结构</b>：上一轮的手搓夹具把 {@code basicDataValues} 的键写成了
+     * <b>不带花括号</b>的 {@code "$builder_xxx._客户料号_客户产品编号"}，而真实形态是
+     * <b>带花括号</b>的 {@code "{$builder_xxx._客户料号_客户产品编号}"}。置空逻辑用的是
+     * {@code endsWith("." + 视图列名)} ⇒ 对真实键（以 {@code '}'} 收尾）<b>恒 false</b>。
+     * 结果：<b>单测绿、运行时红</b> —— 手搓夹具把唯一能抓住它的那个信号也一并抹掉了。
+     */
+    private static final String LIVE_BUCKET_JSON = """
+            {
+              "rowCount": 3,
+              "driverPath": "$builder_221dc7668ab6",
+              "rows": [
+                {
+                  "driverRow": {"_客户料号_客户产品编号":"T0911S2-CP1","_物料_销售料号":"T0911S2-M1","_物料_规格":"SPEC-S2-A","_物料_尺寸":"20x10x5","hf_part_no":"T0911S2-M1","_物料_品名":"S2测试件甲","_物料_旧料号":"OLD-S2-A","_物料_单重":"7.777777777777","_物料_生产料号":"PROD-S2-A"},
+                  "basicDataValues": {"{$builder_221dc7668ab6._物料_销售料号}":"T0911S2-M1","{$builder_221dc7668ab6._客户料号_客户产品编号}":"T0911S2-CP1","{$builder_221dc7668ab6._物料_生产料号}":"PROD-S2-A","{$builder_221dc7668ab6._物料_品名}":"S2测试件甲","{$builder_221dc7668ab6._物料_规格}":"SPEC-S2-A","{$builder_221dc7668ab6._物料_尺寸}":"20x10x5","{$builder_221dc7668ab6._物料_旧料号}":"OLD-S2-A","{$builder_221dc7668ab6._物料_单重}":"7.777777777777"}
+                },
+                {
+                  "driverRow": {"_客户料号_客户产品编号":"T0911S2-CP2","_物料_销售料号":"T0911S2-M1","_物料_规格":"SPEC-S2-A","_物料_尺寸":"20x10x5","hf_part_no":"T0911S2-M1","_物料_品名":"S2测试件甲","_物料_旧料号":"OLD-S2-A","_物料_单重":"7.777777777777","_物料_生产料号":"PROD-S2-A"},
+                  "basicDataValues": {"{$builder_221dc7668ab6._物料_销售料号}":"T0911S2-M1","{$builder_221dc7668ab6._客户料号_客户产品编号}":"T0911S2-CP2","{$builder_221dc7668ab6._物料_生产料号}":"PROD-S2-A","{$builder_221dc7668ab6._物料_品名}":"S2测试件甲","{$builder_221dc7668ab6._物料_规格}":"SPEC-S2-A","{$builder_221dc7668ab6._物料_尺寸}":"20x10x5","{$builder_221dc7668ab6._物料_旧料号}":"OLD-S2-A","{$builder_221dc7668ab6._物料_单重}":"7.777777777777"}
+                },
+                {
+                  "driverRow": {"_客户料号_客户产品编号":"T0911S2-CP3","_物料_销售料号":"T0911S2-M1","_物料_规格":"SPEC-S2-A","_物料_尺寸":"20x10x5","hf_part_no":"T0911S2-M1","_物料_品名":"S2测试件甲","_物料_旧料号":"OLD-S2-A","_物料_单重":"7.777777777777","_物料_生产料号":"PROD-S2-A"},
+                  "basicDataValues": {"{$builder_221dc7668ab6._物料_销售料号}":"T0911S2-M1","{$builder_221dc7668ab6._客户料号_客户产品编号}":"T0911S2-CP3","{$builder_221dc7668ab6._物料_生产料号}":"PROD-S2-A","{$builder_221dc7668ab6._物料_品名}":"S2测试件甲","{$builder_221dc7668ab6._物料_规格}":"SPEC-S2-A","{$builder_221dc7668ab6._物料_尺寸}":"20x10x5","{$builder_221dc7668ab6._物料_旧料号}":"OLD-S2-A","{$builder_221dc7668ab6._物料_单重}":"7.777777777777"}
+                }
+              ]
+            }
+            """;
+
+    private static final String LIVE_CP_KEY = "{$builder_221dc7668ab6._客户料号_客户产品编号}";
+    private static final String LIVE_MAT_KEY = "{$builder_221dc7668ab6._物料_品名}";
+
+    private static ExpandDriverResponse liveBucket() throws Exception {
+        return new com.fasterxml.jackson.databind.ObjectMapper()
+                .readValue(LIVE_BUCKET_JSON, ExpandDriverResponse.class);
+    }
+
+    @Test
+    @DisplayName("🚨 S2 回归：真实 batch-expand 结构 + 空客编 → driverRow 与 basicDataValues **两处同源键都置空**")
+    void s2Regression_liveShape_bothMapsBlanked() throws Exception {
+        ExpandDriverResponse out = RowScopeProjector.projectRows(SCOPE, want(null), liveBucket());
+
+        assertEquals(1, out.rowCount, "AC-5：仍 1 行");
+        ExpandDriverResponse.Row r = out.rows.get(0);
+        assertNull(r.driverRow.get(CP_COL), "driverRow 侧（上一轮已生效）");
+        assertNull(r.basicDataValues.get(LIVE_CP_KEY),
+                "🚨 basicDataValues 侧：S2 在 live batch-expand 响应里实测到 T0911S2-CP1 泄漏，"
+                + "这是**不经持久化**就已存在的泄漏，row_data / 卡片标题 / 浏览器显示全是它的下游");
+        // 物料侧两条都必须留着（它们同源于 dqm，桶内各行完全相同，置空会把好数据一起抹掉）
+        assertEquals("S2测试件甲", r.driverRow.get("_物料_品名"));
+        assertEquals("S2测试件甲", r.basicDataValues.get(LIVE_MAT_KEY));
+        assertEquals("T0911S2-M1", r.driverRow.get("hf_part_no"));
+    }
+
+    @Test
+    @DisplayName("S2 回归：真实结构下命中分支仍各取各的（🚫 修兜底不许把正常行也带歪）")
+    void s2Regression_liveShape_matchBranchIntact() throws Exception {
+        ExpandDriverResponse out = RowScopeProjector.projectRows(SCOPE, want("T0911S2-CP2"), liveBucket());
+        assertEquals(1, out.rowCount);
+        assertEquals("T0911S2-CP2", out.rows.get(0).driverRow.get(CP_COL));
+        assertEquals("T0911S2-CP2", out.rows.get(0).basicDataValues.get(LIVE_CP_KEY),
+                "命中分支返回桶内原行，basicDataValues 不动");
+    }
+
+    // ───────────────── basicDataValues 键形态契约（2026-09-11 S3 缺陷的直接回归） ─────────────────
+
+    @Test
+    @DisplayName("🚨 bdvKeyTargets：带花括号的实查键必须匹配 —— 上一轮就是这里恒 false 导致生产串号")
+    void bdvKeyTargets_bracedRealWorldForm() {
+        assertTrue(RowScopeProjector.bdvKeyTargets("{$builder_221dc7668ab6." + CP_COL + "}", CP_COL),
+                "实查形态（含花括号）必须匹配");
+        assertTrue(RowScopeProjector.bdvKeyTargets("$builder_221dc7668ab6." + CP_COL, CP_COL),
+                "不带花括号的形态也必须匹配");
+        assertTrue(RowScopeProjector.bdvKeyTargets("  {$builder_221dc7668ab6." + CP_COL + "}  ", CP_COL),
+                "两端空白不影响判定（bnfDriverLookupKey 同样 trim）");
+    }
+
+    @Test
+    @DisplayName("bdvKeyTargets：🚫 不许误伤 —— 别的列、后缀撞名、@gvar、null 一律不匹配")
+    void bdvKeyTargets_doesNotOverBlank() {
+        assertTrue(!RowScopeProjector.bdvKeyTargets("{$builder_221dc7668ab6." + MAT_COL + "}", CP_COL),
+                "物料侧列不得被清");
+        assertTrue(!RowScopeProjector.bdvKeyTargets("{$builder_221dc7668ab6._X" + CP_COL + "}", CP_COL),
+                "按「.<列名>」结尾匹配，🚫 不是 contains —— 后缀撞名不许误清");
+        assertTrue(!RowScopeProjector.bdvKeyTargets("@gvar:SOME_CODE", CP_COL));
+        assertTrue(!RowScopeProjector.bdvKeyTargets(null, CP_COL));
+        assertTrue(!RowScopeProjector.bdvKeyTargets("{$builder_x." + CP_COL + "}", null));
     }
 
     // ───────────────────────── 占位符命名契约（api.md §3：单数 → 复数） ─────────────────────────

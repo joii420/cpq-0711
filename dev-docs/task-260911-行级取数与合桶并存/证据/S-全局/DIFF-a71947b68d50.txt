@@ -1,0 +1,13 @@
+--- BEFORE-a71947b68d50.sql	2026-09-11 18:04:08.473838871 -0700
++++ AFTER8107-a71947b68d50.sql	2026-09-11 18:08:49.213793182 -0700
+@@ -11,8 +11,8 @@
+   dqm.old_material_no AS "_物料_旧料号",
+   dqm.material_type AS "_物料_类型"
+ FROM ds_quote_material dqm
+-  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = ANY(:customerProductNos)
++  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_part_name = ANY(:customerPartNames) AND dqcp.customer_product_no = ANY(:customerProductNos)
+ WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode
+ ORDER BY dqm.material_no
+---- requiredVariables: customerCode,customerProductNos,total_material_no
++--- requiredVariables: customerCode,customerPartNames,customerProductNos,total_material_no
+ --- warnings: []

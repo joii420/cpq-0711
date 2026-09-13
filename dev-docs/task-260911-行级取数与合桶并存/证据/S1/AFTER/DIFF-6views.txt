@@ -1,0 +1,72 @@
+################ diff builder_221dc7668ab6 (BEFORE 02:12 -> AFTER) ################
+--- /home/joii/project/cpq/dev-docs/task-260911-行级取数与合桶并存/证据/S1/before_templates/builder_221dc7668ab6.sql	2026-09-11 09:23:18.170656220 -0700
++++ /tmp/claude-1000/-home-joii-project-cpq/439ecace-06f8-460b-8165-8858646ff9aa/scratchpad/after1/after_templates/builder_221dc7668ab6.sql	2026-09-11 17:44:54.042016143 -0700
+@@ -9,6 +9,6 @@
+   dqm.old_material_no AS "_物料_旧料号",
+   dqm.unit_weight AS "_物料_单重"
+ FROM ds_quote_material dqm
+-  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = :customerProductNo
++  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = ANY(:customerProductNos)
+ WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode
+ ORDER BY dqm.material_no
+
+################ diff builder_7277969cc41c (BEFORE 02:12 -> AFTER) ################
+--- /home/joii/project/cpq/dev-docs/task-260911-行级取数与合桶并存/证据/S1/before_templates/builder_7277969cc41c.sql	2026-09-11 09:23:18.174656220 -0700
++++ /tmp/claude-1000/-home-joii-project-cpq/439ecace-06f8-460b-8165-8858646ff9aa/scratchpad/after1/after_templates/builder_7277969cc41c.sql	2026-09-11 17:44:57.026016335 -0700
+@@ -9,6 +9,6 @@
+   dqm.unit_weight AS "_物料_单重",
+   dqm.production_no AS "_物料_生产料号"
+ FROM ds_quote_material dqm
+-  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = :customerProductNo
++  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = ANY(:customerProductNos)
+ WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode
+ ORDER BY dqm.material_no
+
+################ diff builder_a71947b68d50 (BEFORE 02:12 -> AFTER) ################
+--- /home/joii/project/cpq/dev-docs/task-260911-行级取数与合桶并存/证据/S1/before_templates/builder_a71947b68d50.sql	2026-09-11 09:23:18.174656220 -0700
++++ /tmp/claude-1000/-home-joii-project-cpq/439ecace-06f8-460b-8165-8858646ff9aa/scratchpad/after1/after_templates/builder_a71947b68d50.sql	2026-09-11 17:44:58.746016447 -0700
+@@ -11,6 +11,6 @@
+   dqm.old_material_no AS "_物料_旧料号",
+   dqm.material_type AS "_物料_类型"
+ FROM ds_quote_material dqm
+-  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = :customerProductNo
++  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = ANY(:customerProductNos)
+ WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode
+ ORDER BY dqm.material_no
+
+################ diff builder_9291b050b6a9 (BEFORE 02:12 -> AFTER) ################
+--- /home/joii/project/cpq/dev-docs/task-260911-行级取数与合桶并存/证据/S1/before_templates/builder_9291b050b6a9.sql	2026-09-11 09:23:18.174656220 -0700
++++ /tmp/claude-1000/-home-joii-project-cpq/439ecace-06f8-460b-8165-8858646ff9aa/scratchpad/after1/after_templates/builder_9291b050b6a9.sql	2026-09-11 17:44:57.970016396 -0700
+@@ -11,6 +11,6 @@
+   vdcbeba.version_no::text AS view_version
+ FROM v_ds_cost_basic_element_bom_all vdcbeba
+   LEFT JOIN material_recipe mr ON mr.code = vdcbeba.material_part_no
+-  LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep ON cep.element_code = vdcbeba.element_code AND cep.material_no = vdcbeba.sales_material_no
++  LEFT JOIN f_customer_element_price(:customerCode, :priceBaseDate) cep ON cep.element_code = vdcbeba.element_code
+ WHERE :versionFilter(vdcbeba.is_current, vdcbeba.version_no::text, vdcbeba.production_no) AND vdcbeba.production_no = ANY(:total_material_no)
+ ORDER BY vdcbeba.production_no, vdcbeba.material_part_no, vdcbeba.element_code, vdcbeba.item_seq
+
+################ diff builder_c5b6de9d6de3 (BEFORE 02:12 -> AFTER) ################
+--- /home/joii/project/cpq/dev-docs/task-260911-行级取数与合桶并存/证据/S1/before_templates/builder_c5b6de9d6de3.sql	2026-09-11 09:23:18.174656220 -0700
++++ /tmp/claude-1000/-home-joii-project-cpq/439ecace-06f8-460b-8165-8858646ff9aa/scratchpad/after1/after_templates/builder_c5b6de9d6de3.sql	2026-09-11 17:45:00.698016426 -0700
+@@ -11,6 +11,6 @@
+   vdcbeba.version_no::text AS view_version
+ FROM v_ds_cost_basic_element_bom_all vdcbeba
+   LEFT JOIN material_recipe mr ON mr.code = vdcbeba.material_part_no
+-  LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep ON cep.element_code = vdcbeba.element_code AND cep.material_no = vdcbeba.sales_material_no
++  LEFT JOIN f_customer_element_price(:customerCode, :priceBaseDate) cep ON cep.element_code = vdcbeba.element_code
+ WHERE :versionFilter(vdcbeba.is_current, vdcbeba.version_no::text, vdcbeba.production_no) AND vdcbeba.production_no = ANY(:total_material_no)
+ ORDER BY vdcbeba.production_no, vdcbeba.material_part_no, vdcbeba.element_code, vdcbeba.item_seq
+
+################ diff builder_f9bbf7ad4a5e (BEFORE 02:12 -> AFTER) ################
+--- /home/joii/project/cpq/dev-docs/task-260911-行级取数与合桶并存/证据/S1/before_templates/builder_f9bbf7ad4a5e.sql	2026-09-11 09:23:18.178656219 -0700
++++ /tmp/claude-1000/-home-joii-project-cpq/439ecace-06f8-460b-8165-8858646ff9aa/scratchpad/after1/after_templates/builder_f9bbf7ad4a5e.sql	2026-09-11 17:45:03.054015986 -0700
+@@ -11,6 +11,6 @@
+   vdcbeba.version_no::text AS view_version
+ FROM v_ds_cost_basic_element_bom_all vdcbeba
+   LEFT JOIN material_recipe mr ON mr.code = vdcbeba.material_part_no
+-  LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep ON cep.element_code = vdcbeba.element_code AND cep.material_no = vdcbeba.sales_material_no
++  LEFT JOIN f_customer_element_price(:customerCode, :priceBaseDate) cep ON cep.element_code = vdcbeba.element_code
+ WHERE :versionFilter(vdcbeba.is_current, vdcbeba.version_no::text, vdcbeba.production_no) AND vdcbeba.production_no = ANY(:total_material_no)
+ ORDER BY vdcbeba.production_no, vdcbeba.material_part_no, vdcbeba.element_code, vdcbeba.item_seq
+

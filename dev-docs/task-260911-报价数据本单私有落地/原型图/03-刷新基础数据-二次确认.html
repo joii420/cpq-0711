@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>刷新基础数据 · 二次确认 — task-260911</title>
+<style>
+  :root{--primary:#1677ff;--border:#d9d9d9;--text:rgba(0,0,0,.88);--text2:rgba(0,0,0,.45);--warn:#faad14}
+  *{box-sizing:border-box}
+  body{margin:0;background:rgba(0,0,0,.45);min-height:100vh;
+    font:14px/1.5714 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:var(--text)}
+  .wrap{display:flex;gap:24px;padding:24px;align-items:flex-start;flex-wrap:wrap}
+  .note{width:360px;background:#fff;border-radius:8px;padding:14px 16px;
+    box-shadow:0 6px 16px rgba(0,0,0,.16);font-size:13px;line-height:1.7}
+  .note h3{margin:0 0 8px;font-size:14px}
+  .note code{background:#f5f5f5;padding:1px 5px;border-radius:4px;font-size:12px}
+  .note .d{color:#d46b08;font-weight:600}
+  .old{background:#fff2f0;border:1px solid #ffccc7;border-radius:6px;padding:8px 10px;margin:8px 0;
+    font-size:12px;line-height:1.7;color:#5c0011}
+  /* AntD Modal.confirm */
+  .modal{width:460px;background:#fff;border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.08);
+    padding:20px 24px}
+  .mhead{display:flex;gap:12px;align-items:flex-start}
+  .micon{flex:0 0 22px;margin-top:2px;color:var(--warn);font-size:22px;line-height:1}
+  .mtitle{font-size:16px;font-weight:600;line-height:1.5}
+  .mbody{margin:8px 0 0 34px;font-size:14px;line-height:1.65}
+  .mbody ul{margin:8px 0;padding-left:18px}
+  .mbody li{margin:4px 0}
+  .mbody .sub{color:var(--text2);font-size:13px}
+  .mfoot{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+  .btn{height:32px;padding:4px 15px;border-radius:6px;border:1px solid var(--border);background:#fff;
+    font-size:14px;cursor:pointer;color:var(--text)}
+  .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="note">
+    <h3>📌 本次改动（F-2 / AC-19）</h3>
+    <p><b>只改文案，不改交互。</b>仍是 <code>Modal.confirm</code>（既有形态，🚫 不要顺手改成 Drawer —— <code>frontend.md §1.1</code> 针对的是弹出式交互表单，确认框不在其列）。</p>
+    <p>标题、按钮文字（<code>刷新</code> / <code>取消</code>）、图标<b>逐字不变</b>。</p>
+
+    <h3 style="margin-top:14px">为什么必须改</h3>
+    <p>旧文案说「更新为<b>最新已审核版本</b>」。A 之后，本单已导入/已选配的料号刷新读回的是<b>本单自己的 <code>_record</code></b>，它<b>恰恰还没被审核</b>。</p>
+    <div class="old">旧文案（本次替换掉）：<br>刷新后本单基础数据将更新为最新已审核版本，未提交的本单编辑保留；已删除的行可能重新出现，模板结构不会变化。是否继续？</div>
+    <p class="d">留着旧文案 = 本任务自己引入一条与实现矛盾的说明。</p>
+
+    <h3 style="margin-top:14px">⚠️ 实现前须确认一件事</h3>
+    <p>「此前删除的行可能重新出现」在新文案里被<b>收窄到「取自主数据的料号」</b>——因为岔路 5 之后，<code>_record</code> 里删掉的行是<b>物理删除</b>，刷新不会把它带回来。</p>
+    <p class="d">🚫 不许假设：开工时实测一遍「有 <code>_record</code> 的组，删行后刷新会不会复活」。结论与此处不符 ⇒ 走 <code>task-docs.md §4</code> 契约变更四步，🚫 不许自行改文案。</p>
+  </div>
+
+  <div class="modal">
+    <div class="mhead">
+      <div class="micon">⚠</div>
+      <div class="mtitle">刷新基础数据</div>
+    </div>
+    <div class="mbody">
+      刷新会重新取一次基础数据：
+      <ul>
+        <li><b>本单已导入 / 已选配的料号</b> —— 取<b>本单自己的那一版</b>（尚未核价通过，不受其他报价单影响）</li>
+        <li><b>其余料号</b> —— 取主数据的最新已转正版本，此前在本单删除的行可能重新出现</li>
+      </ul>
+      <span class="sub">本单未提交的编辑保留，模板结构不会变化。</span><br>
+      是否继续？
+    </div>
+    <div class="mfoot">
+      <button class="btn">取消</button>
+      <button class="btn primary">刷新</button>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

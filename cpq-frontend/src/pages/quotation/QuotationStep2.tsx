@@ -760,6 +760,11 @@ function computeAllFormulas(
     }
   }
 
+  // repair-260911：cross_tab_ref `match` 的宿主行视图（构造点 1/2）。
+  // 必须在单位换算之后建 —— 换算改的是 currentRowForEval[C]，匹配键若正好是被换算列，
+  // 早建会拿到换算前的值，与后端 buildRowEvalCtx 的顺序（convertResolvedRow 之后）分叉。
+  const matchRowForEval = buildHostMatchRow(comp.fields, currentRowForEval, basicDataValues);
+
   const results: Record<string, DecimalString | null> = {};
   for (const name of order) {
     const ff = formulaFields.find(f => f.name === name)!;
@@ -797,6 +802,8 @@ function computeAllFormulas(
             // repair-0803：宿主已算字段值通道 —— 同一份 fieldValues 引用，随本循环逐个公式算完
             // 即时更新，供 targetExpr 内 b_field 引用宿主 FORMULA 字段时回落取到"本行已算出的值"。
             fieldValues,
+            // repair-260911：cross_tab_ref match 的宿主行视图（按字段名，覆盖 BASIC_DATA/DATA_SOURCE 全类型）。
+            matchRowForEval,
           )
         : null;
       results[name] = val;
@@ -958,7 +965,8 @@ function resolveRowForTree(
   basicDataValues: Record<string, any> | undefined,
   partNo: string | undefined,
   pathCache: DecimalContext | undefined,
-): { fieldValues: DecimalContext; rawPresent: Record<string, boolean>; currentRowForEval: Record<string, any> } {
+): { fieldValues: DecimalContext; rawPresent: Record<string, boolean>; currentRowForEval: Record<string, any>;
+     matchRowForEval: Record<string, any> } {
   const fieldValues: DecimalContext = {};
   const rawPresent: Record<string, boolean> = {};
   const isPresent = (v: any) => v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && v.length === 0);
@@ -1089,7 +1097,12 @@ function resolveRowForTree(
     }
   }
 
-  return { fieldValues, rawPresent, currentRowForEval };
+  // repair-260911：cross_tab_ref `match` 的宿主行视图（构造点 2/2，镜像 computeAllFormulas）。
+  // 🚫 漏这一处 = AP-50 式「一个视图对、另一个错」：BOM 树页签走的是本函数，
+  //    症状会表现成「首次渲染对、切回来变 0」这类间歇态（AC-9）。
+  const matchRowForEval = buildHostMatchRow(comp.fields, currentRowForEval, basicDataValues);
+
+  return { fieldValues, rawPresent, currentRowForEval, matchRowForEval };
 }
 
 /**
@@ -1225,6 +1238,8 @@ export function computeTabFormulasTree(
         // repair-0803：该行自己的 fieldValues 即其 hostFieldValues（与后端 buildRowEvalCtx 对每行
         // 统一 `ctx.hostFieldValues = fieldValues` 的结构对称，逐行求值/单元格拓扑求值两条路径同源）。
         bundle.fieldValues,
+        // repair-260911：该行的 cross_tab match 宿主行视图（与 computeAllFormulas 同源）。
+        bundle.matchRowForEval,
       ) : null;
     } catch {
       val = null;
@@ -1334,20 +1349,31 @@ function buildResolvedRow(
   driverRow: Record<string, any> | undefined,
   basicDataValues: Record<string, any> | undefined,
   formulaCache: Record<string, DecimalString | null>,
+  /**
+   * repair-260911：`true` = 「键存在即权威」——`''`（用户显式清空）不再被按名解析的值覆盖。
+   *
+   * 🚨 这里两端曾有一处口径分歧：本函数原本是 `out[key] == null || out[key] === ''` 才补
+   * （`''` 会被覆盖），而后端 `FormulaCalculator.fillInputDefaultSourceByFieldName:2662` 是
+   * `!= null` 就不补（`''` 尊重置空）。cross_tab 匹配视图必须按【后端口径】，否则「用户清空匹配键」
+   * 在两端会得出不同的命中集。缺省 `false` = 保留既有调用点（buildCrossTabRows 的源侧 resolvedRows）
+   * 的原口径，逐位不变。
+   */
+  respectExplicitBlank = false,
 ): Record<string, any> {
   const out: Record<string, any> = { ...(driverRow ?? {}), ...row };  // raw first (text preserved)
+  const needsFill = (v: any) => respectExplicitBlank ? v == null : (v == null || v === '');
   for (const f of fields) {
     const key = f.name || f.key || '';
     if (!key) continue;
     if (f.field_type === 'FORMULA') {
       if (key in formulaCache) out[key] = formulaCache[key];
     } else if (f.field_type === 'BASIC_DATA' && f.basic_data_path) {
-      if (out[key] == null || out[key] === '') {
+      if (needsFill(out[key])) {
         const v = resolveBasicDataForRow(f, basicDataValues);
         if (v != null) out[key] = v;
       }
     } else if (f.field_type === 'DATA_SOURCE' && f.datasource_binding) {
-      if (out[key] == null || out[key] === '') {
+      if (needsFill(out[key])) {
         const v = resolveDataSourceForRow(f, basicDataValues);
         if (v != null) out[key] = v;
       }
@@ -1359,6 +1385,48 @@ function buildResolvedRow(
         if (v != null) out[key] = v;
       }
     }
+  }
+  return out;
+}
+
+/**
+ * repair-260911：构造 **cross_tab_ref `match` 专用的宿主行视图**（AC-1/AC-2/AC-3/AC-4/AC-5）。
+ *
+ * <p><b>它解决什么</b>：`match` 的两侧走两套命名空间 —— 源页签行（`crossTabRows`）由
+ * `buildResolvedRow` 按【字段名】铺好；而宿主行 `currentRowForEval` 的键是【driver 视图列名】
+ * （如 `production_no`），此前只额外补了 `INPUT_*` 的 default_source。于是 `BASIC_DATA` /
+ * `DATA_SOURCE` 类型的匹配键按字段名永远取不到值 → 候选行全判不匹配 → `SUM` 静默返 0。
+ * 取数配置器（`$builder_*`）产出的字段默认就是 `BASIC_DATA`，核价侧新配的组件必现。
+ *
+ * <p><b>为什么单开一份视图而不是扩宽 `currentRowForEval`</b>：后者同时供 `b_field` 求值、
+ * KSUM 的 mergedRow、单位换算消费，扩宽会外溢（闸门 A0 已否决方案乙；repair-0803 决策 D-2 同因）。
+ * 本视图只喂 `evaluateExpression` 的 `matchRow` 入参，影响面精确限定在匹配判定上。
+ *
+ * <p><b>口径</b>：以 `baseRow`（= 已补 INPUT default_source + 已做单位换算的 `currentRowForEval`）
+ * 打底，叠加按字段名的解析结果，**仅键缺失才补**（`''` 尊重用户显式置空）——
+ * 与后端 `FormulaCalculator.fillInputDefaultSourceByFieldName:2662` 的 `!= null` 口径对齐，
+ * 由共享夹具 `cross-tab-cases.json` 的「显式清空」用例锁死。
+ *
+ * <p><b>为什么最后要把没解析出值的字段名也建成键</b>：求值层靠 `key in matchRow` 区分
+ * 「公式把列名写错了」（→ 写 `outDiag.crossTabError` 显示 ⚠，AC-10）与「这行确实没数」
+ * （→ 照旧静默 0，AC-4 的 BOM 根行/无对应源行的四行）。不建键这两种情况无法区分，
+ * 会把 AC-4 那些本该显示 0 的行渲染成 ⚠。
+ *
+ * <p>同族先例：`431c9df2` 为树聚合的「有值」判定新增 `buildTreeAggPresenceView`
+ * （后端 `FormulaCalculator.java:399-433`）；本函数是把同一手法补到 cross_tab 的匹配路径。
+ */
+export function buildHostMatchRow(
+  fields: ComponentField[] | undefined,
+  baseRow: Record<string, any>,
+  basicDataValues: Record<string, any> | undefined,
+): Record<string, any> {
+  if (!fields || fields.length === 0) return baseRow;
+  // formulaCache 传 {}：与后端 `resolveRowByFieldName(fields, driverRow, bdv, editValues, null)`
+  // 末位传 null（不注入公式值）逐字对齐 —— 匹配键不吃本行公式列的算出值。
+  const out = buildResolvedRow(fields, baseRow, undefined, basicDataValues, {}, true);
+  for (const f of fields) {
+    const key = f.name || f.key || '';
+    if (key && !(key in out)) out[key] = undefined;   // 见上方「为什么要建键」
   }
   return out;
 }
@@ -3851,11 +3919,31 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         {/* repair-0814：与系统固定列对齐（核价=料号+版本 2 格；报价=仅料号 1 格）——
                             7fadf5e8 落「报价侧不出版本列」裁决时只改了上面小计行，这一行漏改。 */}
                         {activeComponentBomTree && (<><td />{cardSide === 'COSTING' && <td />}</>)}
-                        <td className="qt-subtotal-label-cell">合计</td>
-                        <td colSpan={activeComponent.fields.length} className="qt-subtotal-cell" style={{ textAlign: 'right' }}>
-                          {/* task-0801：全口径统一 6 位去尾零（formatNumber 兜底），产品小计/页签合计不再分叉 2 位 vs 4 位 */}
-                          {`¥ ${formatNumber(sumTabColumns(activeComponent as any, allComponentSubtotals), { isComputed: true }) ?? '0'}`}
-                        </td>
+                        {/* 2026-09-11 修复「合计与小计列位置不一致」：
+                            原实现 = 标签1 + colSpan(N) 跨列右对齐，两处错位 ——
+                            ① colSpan 多吃一格 + 无尾部占位 ⇒ 合计值一路跨到操作列上（用户截图的「多出一节」）；
+                            ② 跨列格右对齐贴列右边，小计却是单列左对齐贴列左边 ⇒ 同列内仍差一截。
+                            改法：与小计行同构逐列渲染 —— 合计值落进「最后一个金额小计列」这一格，
+                            继承同一个 .qt-subtotal-cell 左对齐，尾部补操作列占位，逐格与小计对齐。 */}
+                        {(() => {
+                          const fs = activeComponent.fields;
+                          // 合计值落位列：最后一个「金额 且 参与小计」的列；无则退回最后一列（0 号留给标签）
+                          let valueIdx = -1;
+                          for (let i = fs.length - 1; i >= 1; i--) {
+                            if (fs[i].is_amount === true && fs[i].is_subtotal) { valueIdx = i; break; }
+                          }
+                          if (valueIdx < 0) valueIdx = Math.max(1, fs.length - 1);
+                          const totalText = `¥ ${formatNumber(sumTabColumns(activeComponent as any, allComponentSubtotals), { isComputed: true }) ?? '0'}`;
+                          return fs.map((f, fi) => {
+                            const k = f.name || f.key || fi;
+                            if (fi === 0) return <td key={k} className="qt-subtotal-label-cell">合计</td>;
+                            // task-0801：全口径统一 6 位去尾零（formatNumber 兜底），产品小计/页签合计不再分叉 2 位 vs 4 位
+                            if (fi === valueIdx) return <td key={k} className="qt-subtotal-cell">{totalText}</td>;
+                            return <td key={k} />;
+                          });
+                        })()}
+                        {/* 操作列占位（与小计行尾部 <td /> 对齐） */}
+                        <td />
                       </tr>
                     )}
                   </tfoot>

@@ -1,0 +1,8 @@
+$ git rev-parse HEAD
+a8e9bae66f2551d740d40c9f2c720cf4c3395d40
+
+$ git diff --name-only -- "*.java"
+(空 = 无 Java 改动)
+
+$ git status --porcelain -- "*.java"
+(空 = 无未跟踪/未暂存 Java 文件)

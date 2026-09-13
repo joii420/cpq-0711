@@ -1,0 +1,40 @@
+########## AC-13 原始证据 · 文件=三态自证/C-PASS-谓词在ON.sql · 占位符=:customerProductNos ##########
+----- [1] 完整 sql_template（带行号，/usr/bin/grep -an 原始输出） -----
+1:SELECT
+2:  dqm.material_no AS hf_part_no,
+3:  dqm.material_no AS "_物料_销售料号",
+4:  dqcp.customer_product_no AS "_客户料号_客户产品编号",
+5:  dqm.production_no AS "_物料_生产料号",
+6:  dqm.material_name AS "_物料_品名",
+7:  dqm.specification AS "_物料_规格",
+8:  dqm.dimension AS "_物料_尺寸",
+9:  dqm.old_material_no AS "_物料_旧料号",
+10:  dqm.unit_weight AS "_物料_单重"
+11:FROM ds_quote_material dqm
+12:  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = ANY(:customerProductNos)
+13:WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode
+14:ORDER BY dqm.material_no
+
+----- [2] 含 :customerProductNos 的所有行 -----
+12:  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = ANY(:customerProductNos)
+
+----- [3] 含 customer_product_no 的所有行 -----
+4:  dqcp.customer_product_no AS "_客户料号_客户产品编号",
+12:  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = ANY(:customerProductNos)
+
+----- [0] UNION 分块数 = 1 -----
+----- [4] 块 blk_0 · JOIN 段（FROM..WHERE 之间） -----
+FROM ds_quote_material dqm
+  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = ANY(:customerProductNos)
+--- JOIN 段内 :customerProductNos 匹配 ---
+2:  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = ANY(:customerProductNos)
+----- [5] 块 blk_0 · WHERE 段（必须无 :customerProductNos） -----
+WHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode
+--- WHERE 段内 :customerProductNos 匹配 ---
+(WHERE 段无匹配 —— 这是期望结果)
+
+########## 判定 ##########
+PRESENT (谓词存在,      期望 1) = 1
+IN_ON   (在 LEFT JOIN..ON, 期望 1) = 1
+IN_WHERE(在 WHERE 段,    期望 0) = 0
+AC-13: PASS
