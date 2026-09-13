@@ -201,6 +201,9 @@ public class DatasetSchemaSelfCheck {
                     rt.remove("version_no");            // `_record` 不带版本列（AC-9：升版归主表）
                     rt.remove("row_fingerprint");
                     rt.put("quotation_id", "uuid");
+                    // task-260911 · B-1：批次归属列（V442）。🚨 Registry 不声明它，
+                    // 上面那句「多出未声明的列」会把 13 张 _record 全判红 ⇒ 后端起不来。
+                    rt.put(SheetDef.RECORD_IMPORT_BATCH_COLUMN, "uuid");
                     rt.put("origin_id", "bigint");
                     rt.put("base_row_fingerprint", "char(64)");
                     rt.put("base_version_no", "integer");

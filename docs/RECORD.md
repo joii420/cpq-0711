@@ -1,6 +1,19 @@
 
 # CPQ 系统开发记录
 
+[2026-09-13] 数据集 Registry / 迁移 - **`V442`/`V443` 与配套 Registry 声明补进 git（`task-260911` 在途，路径 B 单点提交）** | 涉及文件：`V442__task260911_ds_quote_record_import_batch.sql`(新)、`V443__task260911_fmep_record_branch.sql`(新)、`SheetDef.java`(`RECORD_COLUMNS` 加 `import_batch_id`)、`DatasetSchemaSelfCheck.java` | **根因 = 两阶段落库纪律只做了第一阶段**
+
+🚨 **症状**：共享 dev 库 `cpq_db_0724` 的 13 张 `ds_quote_*_record` 已有 `import_batch_id` 列（2026-09-11 用户批准落库），但 **git 里既没有迁移文件、`master` 的 `SheetDef` 也没有该列的声明** ⇒ `DatasetSchemaSelfCheck` 逐列比对失败 ⇒ **任何人从干净 `master` 起后端都起不来**。
+
+🔑 **为什么一直没暴露**：Quarkus dev 读的是**工作区文件**，而主工作区恰好留着未提交的副本 ⇒ 本地 8081 一直正常（实测 401）。**「本地能跑」在这类缺陷上零证据。**
+
+📌 **发现路径**：`选配问题` 会话亲验时撞上，只能用 `.env` 临时绕过，主动跨会话报来；本会话实查确认（`git ls-files` 0 命中 · `git show master:SheetDef.java | grep import_batch_id` 0 命中）。
+
+**关键决策**：
+- 用户裁决**甲：立即单点提交进 master**，不等本任务合并 —— 迁移一旦进共享库，声明必须同步进 git（两阶段落库纪律）
+- 提交前已核实这 4 个文件**主仓与特性分支逐字节相同**（`md5sum` 四项全一致）⇒ 后续合并分支不会打架
+- ⚠️ **留给下一个人的判据**：迁移落共享库时，「复制迁移文件」只做了三分之一 —— **迁移 + Registry 声明 + 自检类型表三处同改，缺一处就是起不来**。本次主线读到过这条警告、转述过，自己执行时仍只做了一处。
+
 [2026-09-13] 核价渲染 / Excel 视图 - **核价 Excel 视图统一为「每产品一行 + 取卡片值」（`repair-260912`，上一轮闸门 B 的返修）** —— ✅ **已交付合 master `5c260ebd`（fix `ce97b954`）· 闸门 B 用户验收通过 · 已结案** | 涉及文件：`CardSnapshotService.java`（三处 `costingTree` true→false）· `ExcelViewService.java`（`getExcelView` 核价侧传卡片值 + 抽 `EffRowsCtx`）· `CostingVersionService.java`（**第四处**调用点）· `CostingExcelTreeTest.java`（改造）· 新增 `CostingExcelFlatShapeSelfCheckIT` | **AC-1/3/4/5/6/7/8 达成**（AC-2 上一轮已作废） | 零迁移 / 零 DDL / 零接口结构变更 / **零前端改动** | `BL-0275`
 
 🚩 **上一轮闸门 B 未通过的两点**（用户新建 `QT-20260912-0011` 验收时发现）：① **详情页不该展示成 BOM 树状** —— 7 行重复同一个整页签总计，用户裁决「不要树状，每个产品一行，明细去产品卡片视图看」；② **编辑页 Excel 视图仍全 0** —— 它走**第三条路径** `getExcelView → buildRowData(5 参不传 effectiveRows) → buildTabJoinEffectiveRows → component_data`，而核价侧从不往该表落数据。

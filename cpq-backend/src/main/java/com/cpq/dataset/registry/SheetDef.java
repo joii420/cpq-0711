@@ -72,7 +72,27 @@ public final class SheetDef {
      * 它是报价单快照，不是版本化主数据；升版判定一律由 {@code VersionedGroupWriter} 在主表上做（AC-9）。
      */
     public static final List<String> RECORD_COLUMNS =
-            List.of("quotation_id", "origin_id", "base_row_fingerprint", "base_version_no", "extend_column");
+            List.of("quotation_id", "import_batch_id", "origin_id", "base_row_fingerprint",
+                    "base_version_no", "extend_column");
+
+    /**
+     * task-260911 · B-1 —— 「导入批次」列名（{@code = import_record.id}，R-2 两段式归属）。
+     *
+     * <h3>🚨 它为什么必须同时出现在三处，缺一处就起不来 / 静默失效</h3>
+     * <ol>
+     *   <li><b>迁移</b> {@code V442}：13 张 {@code _record} 加列 + 索引；</li>
+     *   <li><b>{@link #RECORD_COLUMNS}</b>（本列表）：{@code DatasetSchemaSelfCheck} 用
+     *       {@link #expectedRecordColumns} 做 Registry↔DDL 双向比对，
+     *       <b>DDL 有、Registry 没声明</b>会报「多出未声明的列」<b>让后端起不来</b>（实测该自检双向都硬拦）；</li>
+     *   <li><b>{@code DatasetSchemaSelfCheck} 的类型表</b>：补 {@code uuid}，否则类型比对取不到期望值。</li>
+     * </ol>
+     *
+     * <p>语义：导入落 {@code _record} 那一刻本单还不存在（岔路 2 裁决「丙」）⇒
+     * {@code quotation_id} 为 NULL、本列有值；{@code DatasetQuotationCommitService#createQuotation}
+     * 同事务把本批次的行改挂到 {@code quotation_id}（B-4）。
+     * <p>🚫 <b>刻意不建 FK 到 {@code import_record}</b>：删导入记录不该级联掉业务数据。
+     */
+    public static final String RECORD_IMPORT_BATCH_COLUMN = "import_batch_id";
 
     /**
      * task-260907 第二段 —— {@code _record} 的客户维度列（{@code varchar(20) NOT NULL}，取值 =
