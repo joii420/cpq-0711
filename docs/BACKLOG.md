@@ -17,6 +17,52 @@
 
 ## 待开发条目
 
+### [核价渲染 / Excel 视图] BL-0277 · Excel 值没有任何失效触发点，存量永不自愈
+
+- [ ] 待开发 · 优先级 **P1** · 来源：`repair-260911` / `repair-260912` 两轮各手工刷了一次存量（2026-09-13 用户裁决登记）
+- **现象**：任何影响 Excel 取值的代码修复，**都传导不到已经算过的 `*_excel_values` 快照**。两轮返修都靠主线手工「置 NULL + 走生产端点重算」才让用户看到效果。
+- 🔬 **三条路全堵**（实查）：① `ensureExcelValues` 谓词是 `costing_excel_values IS NULL`，非 NULL 就跳过（注释原文「已算的零开销」）；② `saveDraft` 的 `invalidateCardValues` 只置 `*_card_values` 为 NULL，**不碰 `*_excel_values`**（`QuotationService:3225-3233`）；③ `ensureExcelValuesDetailed` **没有 `forceRecomputeAll` 参数**（卡片值那边有，提交路径用它），提交路径调的是同一个无 force 的方法。
+- ⚠️ **对比**：卡片值改行数据会置 NULL 自愈、提交会强制重算；**Excel 值两条都没有**。
+- **可能修法**（未裁决）：给 `ensureExcelValues` 加 `forceRecomputeAll`（对齐卡片值）；或让 `saveDraft` 失效卡片值时一并失效 Excel 值。⚠️ Excel 值重算比卡片值贵，触发时机要单独想清楚 —— `saveDraft` 那条路径有过「每次保存全量补算拖 54s」的事故史。
+- **前置条件**：无
+- **预估规模**：S~M（先量化重算成本再定触发时机）
+
+---
+
+### [报价渲染 / Excel 视图] BL-0278 · 报价侧 Excel 值与卡片值差整数 39000 / 234000
+
+- [ ] 待开发 · 优先级 **P2** · 来源：`repair-260911` 后端 + `repair-260912` 测试工程师**两个子代理独立观察到**（2026-09-13 用户裁决登记）
+- **现象**：`QT-20260911-0010` 卡片 `S0001` —— `quote_excel_values` 落库 `33903.410162031` / `203420.460972186`，而引擎实时算出 `72903.410162031` / `437420.460972186`，**差恰好 39000 / 234000**（整数）。另外 3 张卡片一致，只有 S0001 有差。
+- 📌 落库那组是**前端权威写入**的（`CardSnapshotService:1169` 注释：报价侧 Excel 值前端权威（`saveDraft`），仅从未 `saveDraft` 的新行 bootstrap 一次），疑为陈旧值。
+- ⚠️ **已 A/B 排除是 `repair-260911`/`repair-260912` 引入**（两轮都验过报价侧落库逐字节不变）。
+- **要查的**：差值是整数且只发生在一张卡片上 —— 是前端某次写入用了旧数据，还是两侧口径本来就不同。
+- **前置条件**：无
+- **预估规模**：S（先定性再决定修不修）
+
+---
+
+### [核价工作台] BL-0279 · `CostingVersionService` 切料号版本路径的 Excel 形态未实测
+
+- [ ] 待开发 · 优先级 **P2** · 来源：`repair-260912` 交付（2026-09-13 用户裁决登记）
+- **背景**：该路径的 `buildExcelValues(..., costingTree)` 已随 `repair-260912` 切成 `false`（第四处调用点），**静态确认与另外三处一致**，但**运行时未验**。
+- **为什么没验**：跑通它要有 PENDING 状态的核价单 + 可切版本，且它会**写 `costing_order.costing_render`**（生产数据），属 §3.2 写操作，子代理无批准权、主线当时也没有合适样本。
+- **补验方式**：下次有 PENDING 核价单可切版本时，切一次后确认 `costing_render` 里的 Excel 形态是 `{rows:[1]}` 且无 `treeMode`。
+- **前置条件**：需要一张 PENDING 状态、有多个料号版本的核价单
+- **预估规模**：XS（补一次验证）
+
+---
+
+### [测试基线] BL-0280 · `NonDraftPrecisionReadOnlyTest.tc057` 在 HEAD 基线上恒红
+
+- [ ] 待开发 · 优先级 **P2** · 来源：`repair-260912` 后端工程师途中撞到并 A/B 归因（2026-09-13 用户裁决登记）
+- **现象**：`tc057_recalculatePreservesHistoricalNumericAndWritesOnlyCanonicalDerivedString` 两条断言失败：`TC-057 header original_amount must retain all 12 decimals ==> expected: <0> but was: <1>`（`total_amount` 同）。
+- ✅ **A/B 已证与本次无关**：把改动的三个 main 文件用 `git show HEAD:<path>` 覆盖成基线（`git diff --stat` 确认零 diff）后单跑该类，**同样两条断言、同样失败**。它测的是报价单头的 12 位小数保留，与 Excel 视图 / 核价树无交集。
+- 🚩 **登记理由**：不登的话，下一个人跑到它又要重新归因一次 —— 与 `DEC-0007`（`GoldenCardValuesEquivTest` 假绿）、`quotation-flow.spec.ts` 4 红同属「基线本来就不绿」这一族。
+- **前置条件**：无
+- **预估规模**：S（先定性是测试过期还是真缺陷）
+
+---
+
 ### [测试基础设施 / 假绿] BL-0276 · 测试依赖硬编码单据 ID → 单据被清后静默转「跳过」，从此永远绿
 
 - [ ] 待开发 · 优先级 **P1** · 来源：决策台账首批种子回填时实测发现（2026-09-12 用户裁决登记，见 `DEC-0007`）
