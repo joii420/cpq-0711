@@ -1614,10 +1614,16 @@ pickQualifiedCustomer({ needsTakenProductNo? })
 `INPUT_*` 列上已由 `R-10`（X1）根治；`BASIC_DATA`/`FORMULA` 列读的是 `exp.rows[i].basicDataValues`
 （另一条渲染分支），**当前没有任何报价侧模板会走到**。另实测：满足「`quote_card_values` 为 NULL」的行 **0 条**。
 
-⚠️ **未验证的那一半（不要当作已排除）**：核价侧那个 12 列全 `BASIC_DATA`/`FORMULA` 的组件
-**与报价侧共用 `ReadonlyProductCard` 的 `rowAt` 下标配对**（`ReadonlyProductCard.tsx:731/751/774/828`），
-理论上可达；但核价侧行来源是 `costing_card_values` 自渲染、与报价侧不对称（见 `RECORD` 2026-07 该条），
-**要不要真的中招需要单独查证**，本次未做。
+⚠️ **核价侧那一半：只证明了「代码共用」，没证明「用户走得到」——🚫 不要读成「同样会中招」**
+（按 `CLAUDE.md §5`「这段代码存在 ≠ 用户能走到它」收紧措辞，2026-09-13）：
+
+| | 状态 |
+|---|---|
+| ✅ **已证实** | 核价侧那个 12 列全 `BASIC_DATA`/`FORMULA` 的组件（`32ab8212`），与报价侧**共用同一个 `ReadonlyProductCard` 的 `rowAt` 下标配对**（`ReadonlyProductCard.tsx` 内 4 处，语义位置：只读卡片的行渲染循环）|
+| ❌ **未证实（三条都没查）** | ① 核价卡片**渲染时到底读不读** `exp.rows[i].basicDataValues`（核价侧行来源是 `costing_card_values` 自渲染，与报价侧不对称，见 `RECORD` 2026-07 该条）② 核价侧**两条通道是否真的不同序**（报价侧的不同序来自 `ORDER BY parent_no` + spine DFS，核价侧未必同构）③ **用户从哪个入口**能走到「核价卡片 + 快照缺失 + 走实时展开」这个组合 |
+
+⇒ **结论只能写成「未排除」，不能写成「理论可达」** —— 后者会让人以为链路已经通了，只差触发。
+真要定论，得把①②③逐条走一遍。
 
 **触发条件（三条同时成立才会显形）**：① 报价侧 BOM 树页签 ② 该页签配了 `BASIC_DATA`/`FORMULA` 列
 ③ 打开时 `quote_card_values` 为 NULL（走实时展开，与 `row_data` 的 spine 序不同序）。
