@@ -1,0 +1,58 @@
+
+[2mRunning [22m1[2m test using [22m1[2m worker[22m
+
+[env] db=cpq_db_0724 前端模块含 F-2 改动=true
+[夹具·照抄参照单] cat=2c4b8ed8-59ce-4125-b7f7-86ab59ca4bc3 quoteTpl=45cc0267-a340-43ba-80e1-3de17af47443 costingTpl=15eb5927-7ab4-4cfe-a999-617ca715c874
+[写库·自造客户] INSERT INTO customer (id,name,code,level,product_category_id,accumulated_amount,status,version,created_at,updated_at) VALUES (gen_random_uuid(),'R260911F2-客户-R2','R260911F2-R234i38
+[写库·自造报价单] INSERT INTO quotation (id,quotation_number,customer_id,name,sales_rep_id,status,tax_rate,tax_amount, bound_global_variables_snapshot,product_category_id,customer_template_id,costin
+[夹具] customer=R260911F2-R234i38 quotation=R260911F2-QT-R234i38 (243b3d51-f0c2-4b14-9ef2-9a145795f0c8)
+[Step1 下一步] enabled=true title=null
+[宿主Step2] 添加产品 — 选配 客户产品编号 2 添加配件 3 组合工序 4 确认并添加 + 添加配件 共 0 个配件 📦 还没有配件 一个产品至少要有一个配件才能提交 + 添加第一个配件 取 消 上一步 下一步
+[配件·选类型] 添加产品 — 选配 客户产品编号 2 添加配件 3 组合工序 4 确认并添加 + 添加配件 共 0 个配件 📦 还没有配件 一个产品至少要有一个配件才能提交 + 添加第一个配件 添加配件 · 第 1 步：选择类型 ✕ 🔩 零件 本厂加工的零件。可以新建，也可以引用已有零件。 零件下面挂 1~N 个材质，每个材质填占比。 🛒 外购件 从供应商采购的成品件，不含材质构成。 从现有料号库里选，再选它的工序。 🔗 直接绑定已有销售料号 客户产品编号绑到 一个已有销售料号 最简：无需配材质/工序 取 消 下一步
+[配件·选来源] 添加产品 — 选配 客户产品编号 2 添加配件 3 组合工序 4 确认并添加 + 添加配件 共 0 个配件 📦 还没有配件 一个产品至少要有一个配件才能提交 + 添加第一个配件 添加配件 · 第 2 步：零件来源 ✕ ✨ 新建零件 填品名 / 规格 / 尺寸 / 总重，再挂材质。 适用于这个客户产品特有的零件。 📚 已有零件 从产品列表里选一个已存在的零件，只需再选工序。 材质构成沿用它自己的，不重新配。 取 消 上一步 下一步
+[新建零件表单] 添加产品 — 选配 客户产品编号 2 添加配件 3 组合工序 4 确认并添加 + 添加配件 共 0 个配件 📦 还没有配件 一个产品至少要有一个配件才能提交 + 添加第一个配件 添加配件 · 新建零件 ✕ 零件信息 *品名 规格 尺寸 *总重 克 材质构成 各材质的克重 = 总重 × 占比，不单独录入（用户裁决 D-2）。 🧪 还没有材质 一个零件至少要有一个材质才能确定 + 添加第一个材质 + 添加材质 工序 添加方式与材质完全一致：选择器选中 → 加入列表。按列表从上到下的顺序执行，可用 ↑↓ 调序。 🧰 还没有工序 工序不是必填 —— 没有工序的零件可以直接确定 + 添加工序 品名 / 规格 / 尺寸 / 总重 分别落 ds_quote_material 的material_name / specification / dimension / unit_weight；材质占比落ds_quote_material_bom.material_ratio（切表裁决见 task-260910 D-3）。本页零新增字段。 取 消 上一步 确 定
+[材质表] 占比输入框 2 个
+[含量配置 0] 候选=["请选择含量配置","00005-01"] 选=00005-01
+[含量配置 1] 候选=["请选择含量配置","00006-01（Ag 90% / Ni 10%）"] 选=00006-01（Ag 90% / Ni 10%）
+[shot] → /home/joii/project/cpq/.claude/worktrees/repair-260911-card-render/dev-docs/task-260910-选配切ds新表与已有料号绑定/repair-260911-卡片渲染三缺陷/证据/F2-01-选配新建零件-2材质.png
+[新建零件·确定] enabled=true reason=null
+[回到宿主Step2] 添加产品 — 选配 客户产品编号 2 添加配件 3 组合工序 4 确认并添加 + 添加配件 共 1 个配件 🔩 R260911F2-零件34i38 零件 新建 规格 F2-spec · 尺寸 12 · 总重 20 g 材质：AgNi25C2 60%AgNi10 40% · 工序：— 编辑 移除 关于行内操作按钮：frontend.md §1.2 要求列表动作上提到顶部工具栏， 但它的例外白名单里明列「抽屉内部子表」 —— 本列表在抽屉内、且「编辑/移除」作用于单个配件 而非批量，属于该例外。不是违规，是例外条款适用。 取 消 上一步 下一步
+[shot] → /home/joii/project/cpq/.claude/worktrees/repair-260911-card-render/dev-docs/task-260910-选配切ds新表与已有料号绑定/repair-260911-卡片渲染三缺陷/证据/F2-01b-确认并添加.png
+[提交结果页] 添加产品 — 选配 客户产品编号 添加配件 组合工序 4 确认并添加 产品库里没有相同配置的产品，已新建一个销售料号 新料号已生成，可在报价单行里查看。 指纹结构版本：v2 完 成
+[shot] → /home/joii/project/cpq/.claude/worktrees/repair-260911-card-render/dev-docs/task-260910-选配切ds新表与已有料号绑定/repair-260911-卡片渲染三缺陷/证据/F2-01c-提交结果页.png
+[不刷新·ensure调用] []
+[不刷新·pageerror] []
+[不刷新·页签] ["产品","BOM","材质元素","加工费","自制加工费"]
+[不刷新·表头] ["销售料号","项次","料号","材料名","组成数量","材料毛重","材料净重","损耗率（%）","重量单位",""]
+[不刷新·行] [{"nodeId":null,"indentPx":0,"cells":["1007-2609000001","1","00005","AgNi25C2","","","","","","✕"]},{"nodeId":null,"indentPx":0,"cells":["1007-2609000001","2","00006","AgNi10","","","","","","✕"]},{"nodeId":null,"indentPx":0,"cells":["","","","","","","","","","✕"]}]
+[shot] → /home/joii/project/cpq/.claude/worktrees/repair-260911-card-render/dev-docs/task-260910-选配切ds新表与已有料号绑定/repair-260911-卡片渲染三缺陷/证据/F2-02-AC-R2-不刷新那一帧-BOM页签.png
+  [31m✘[39m  [2m1 [22m[31me2e/r260911f2.spec.ts:153:1 › AC-R2 · 选配新建零件挂 2 材质 →「不刷新」那一帧 BOM 页签即为树（且刷新后仍成立）[39m[2m (1.2m)[22m
+
+
+[31m  1) e2e/r260911f2.spec.ts:153:1 › AC-R2 · 选配新建零件挂 2 材质 →「不刷新」那一帧 BOM 页签即为树（且刷新后仍成立） [2m───────────────[22m[39m
+
+    Error: AC-R2①：不刷新那一帧 BOM 页签的 <tr> 应带 data-node-id（只在树模式下有值，QuotationStep2.tsx:3585）。
+      实际带 nodeId 的行 = 0 / 3
+      🔑 0 = useSnapQuote 仍为 false ⇒ 走实时 batch-expand ⇒ 无 spine ⇒ 平铺（本次缺陷原貌）。
+      行 = [{"nodeId":null,"indentPx":0,"cells":["1007-2609000001","1","00005","AgNi25C2","","","","","","✕"]},{"nodeId":null,"indentPx":0,"cells":["1007-2609000001","2","00006","AgNi10","","","","","","✕"]},{"nodeId":null,"indentPx":0,"cells":["","","","","","","","","","✕"]}]
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeGreaterThan[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: > [32m0[39m
+    Received:   [31m0[39m
+
+    [0m [90m 210 |[39m     [33m+[39m [32m`\n  实际带 nodeId 的行 = ${withNode.length} / ${noRefresh.rows.length}`[39m
+     [90m 211 |[39m     [33m+[39m [32m`\n  🔑 0 = useSnapQuote 仍为 false ⇒ 走实时 batch-expand ⇒ 无 spine ⇒ 平铺（本次缺陷原貌）。`[39m
+    [31m[1m>[22m[39m[90m 212 |[39m     [33m+[39m [32m`\n  行 = ${JSON.stringify(noRefresh.rows)}`[39m)[33m.[39mtoBeGreaterThan([35m0[39m)[33m;[39m
+     [90m     |[39m                                                    [31m[1m^[22m[39m
+     [90m 213 |[39m
+     [90m 214 |[39m   [90m// ② 至少一行带缩进[39m
+     [90m 215 |[39m   [36mconst[39m indented [33m=[39m noRefresh[33m.[39mrows[33m.[39mfilter((r) [33m=>[39m r[33m.[39mindentPx [33m>[39m [35m0[39m)[33m;[39m[0m
+    [2m    at /home/joii/project/cpq/.claude/worktrees/repair-260911-card-render/cpq-frontend/e2e/r260911f2.spec.ts:212:52[22m
+
+    [31mTest timeout of 420000ms exceeded.[39m
+
+[2m    Error Context: test-results/r260911f2-AC-R2-·-选配新建零件挂-2-材质-→「不刷新」那一帧-BOM-页签即为树（且刷新后仍成立）/error-context.md[22m
+
+[31m  1 failed[39m
+[31m    e2e/r260911f2.spec.ts:153:1 › AC-R2 · 选配新建零件挂 2 材质 →「不刷新」那一帧 BOM 页签即为树（且刷新后仍成立） [2m────────────────[22m[39m

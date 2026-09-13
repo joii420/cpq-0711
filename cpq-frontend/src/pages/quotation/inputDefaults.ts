@@ -49,7 +49,29 @@ export function resolveInputDefaultSourceOnly(field: ComponentField, ctx: InputD
   }
 
   if (resolved != null) {
-    if (typeof resolved === 'number') return undefined;
+    // 🔑 裸 JS number 的处理口径（repair-260911 F-1 / AC-R3 · AC-R5，**改这里前先读完这段**）
+    //
+    // task-0810「前后端统一十进制精度契约」把本行从 `return resolved` 改成了 `return undefined`：
+    // IEEE-754 double 装不下 numeric(26,12)，任何经过 JS number 的**小数**都可能已经丢过精度，
+    // 此时无论怎么格式化都是在给一个已经错了的值化妆 —— 所以小数必须丢弃，这条不变。
+    //
+    // 但「整数」不在这个风险里：|n| <= Number.MAX_SAFE_INTEGER 的整数在 double 里是**精确**的，
+    // String(n) 与源 JSON 字面量逐字符相同，不存在"已经丢过精度"的可能。
+    // 同一口径在 losslessJson.ts 的 STRUCTURAL_INTEGER_KEYS 里早已确立（那里也是
+    // `Number.isSafeInteger` 才放行 number），且名单里就有 '项次' / '_项次' / '序号'。
+    //
+    // ⇒ 放行安全整数**不是推翻精度契约，而是把已有的先例补到本函数上**。
+    //    为什么本函数漏网：快照通道走 lossless 解析，'项次' 命中名单；而实时 batch-expand 走
+    //    axios 默认 JSON.parse（无 lossless），且 key 形如 `{$builder_..._物料BOM_项次}` 也不匹配
+    //    名单 → 到这里是裸 number `1` → 被整条丢掉 → BOM 页签「项次」列全空（问题 4 的根因）。
+    //
+    // 🚫 转成字符串后仍必须走下面原有的 formatPathValue / coerceInputNumber 链路，不要绕过：
+    //    下游一律按 DecimalString 消费，绕过去会把 number 漏进精度链路。
+    // 🚫 非安全整数（含 2^53 以上）、小数、NaN / Infinity 一律仍然 return undefined。
+    if (typeof resolved === 'number') {
+      if (!Number.isSafeInteger(resolved)) return undefined;
+      resolved = String(resolved);
+    }
     const fmt = formatPathValue(resolved);
     if (fmt != null) return ft === 'INPUT_NUMBER' ? coerceInputNumber(fmt) : fmt;
   }

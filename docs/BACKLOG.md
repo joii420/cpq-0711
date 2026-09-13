@@ -1487,3 +1487,47 @@ pickQualifiedCustomer({ needsTakenProductNo? })
 - **要做什么**：给核价侧补一个与报价侧对等的正式刷新端点 + UI 入口；同时评估那个 admin 后门的去留（它现在是**唯一**可达路径，删之前必须先有替代）。
 - **前置条件**：无
 - **预估规模**：**S**（后端一个端点 + 前端一个按钮；难点不在实现，在于确认「核价侧重算」的正确触发时机与幂等性）
+
+### [报价单渲染 / 性能] BL-0271 · `ExpandDriverResponse.Row` 不认 spine 系统列 ⇒ 树页签的快照快路径**恒定失效**
+
+- [ ] 待开发 · 优先级 **P1** · 来源：`task-260910/repair-260911-卡片渲染三缺陷` B-2 落点调研顺带定位（2026-09-11 用户裁决登记）
+- **现象**：日志里对树页签连刷
+  ```
+  WARN [ComponentDriverService] [snapshot-read] line=… comp=… 读快照失败,回退实时:
+    Unrecognized field "__lvl" (class ExpandDriverResponse$Row),
+    not marked as ignorable (2 known properties: "driverRow", "basicDataValues")
+  ```
+- 🔑 **根因**：`ComponentDriverService.tryReadSnapshot`（`:275-307`）把 `snapshot_rows` 反序列化成 `ExpandDriverResponse.Row`，而该 DTO 只有 `driverRow` / `basicDataValues` 两个属性、**没开 `@JsonIgnoreProperties(ignoreUnknown = true)`**。
+  树页签的快照行必然带 `__nodeId` / `__parentId` / `__lvl` / `__nodeType` / `__hfPartNo` / `__parentNo` / `__bomVersion` 这组 spine 系统列 ⇒ **必然抛异常 ⇒ 必然降级实时展开**。
+- 🚨 **为什么是 P1 而不是 P3**：它**不报错、不失败**，只是「白干一次 IO + 一次实时展开」，所以从未被任何验收拦下。
+  ⇒ 每个树页签每次 `batch-expand` 都在**双倍成本**上跑；大单量场景（`task-260825` 的 1845 行口径）受影响最重。
+- ⚠️ **修之前必须先裁决一件事**：`ignoreUnknown` 只是让它**别抛异常**，spine 仍然会被丢掉 —— 也就是说实时通道**依旧没有 spine**。
+  「要不要让实时通道带上 spine」是独立的产品决策，用户已在本次返修 `R-4` 明确**判否**（C1/C5/C6 全否）。
+  ⇒ 本条只应修「白干一次」的性能问题，🚫 **不要顺手给实时通道补 spine**。
+- **前置条件**：无
+- **预估规模**：**XS**（一个注解 + 一轮回归），但**验证成本不低**：要证明「快路径真的走通了」必须看日志里 WARN 消失且实时展开次数下降，🚫 只看接口 200 是假绿。
+
+### [测试基础设施] BL-0272 · 4 个 configure 测试类 16 条失败是存量坏测试（`task-260903` 改表后断言没跟着改）
+
+- [ ] 待开发 · 优先级 **P2** · 来源：`task-260910/repair-260911-卡片渲染三缺陷` B-1 开发期 A/B 实证（2026-09-11 用户裁决登记）
+- **现象**：`configure` 相关 4 个测试类跑出 `33 run / 13 F / 3 E`。
+- 🔑 **已 A/B 实证为存量坏测试，与本次改动无关**：含改动版本与 `git show HEAD:` 改动前版本跑同一命令，结果**逐条同名、同行、同期望值**。
+- **根因**：`task-260903 A-1` 把落库目标从 `material_master` / `unit_price` 改到 `ds_quote_material` 之后，这批断言没跟着改。
+- 🚨 **为什么必须登记而不是放着**：它让「configure 这一块的测试」整体失去信号 —— 真回归混在 16 条恒红里没人看得出来。**本次 B-1 就是靠 A/B 手工比对才敢下「非本次引入」的结论**，下一个人不一定会做这个对照。
+- ⚠️ 与 `mat-tables-frozen-since-0602` 记的「全量 `mvnw test` 永远不可能全绿」是**不同**的两回事：那条是夹具引用从未建过的 `mat_*` 表；本条是断言指向了已经搬走的落库目标。
+- **前置条件**：无
+- **预估规模**：**S**（改断言，不改产品代码；难点是逐条判断「这条断言的原意是什么」，🚫 不许为了变绿而弱化断言）
+
+### [选配 / 数据修复] BL-0273 · 存量报价单行的 `customer_part_no` 不会自愈，需要一次性回填
+
+- [ ] 待开发 · 优先级 **P2** · 来源：`task-260910/repair-260911-卡片渲染三缺陷` B-1 交付时实证（2026-09-11 用户裁决登记）
+- **背景**：`repair-260911` B-1 已修好 `insertLineItem` 漏写 `customer_part_no` 的缺陷（四个入口全部补传），**但补丁只管新加的产品**。
+- 🔑 **实证：`saveDraft` 不补这一列** —— 打开老单、改一改、保存，该列仍是 NULL。也就是说**存量单靠用户日常操作不会自己好**。
+- **已知受影响的存量单**：用户验收用的 `QT-20260911-0837`（正泰，`user_data_version=27`）。全量面未统计。
+- **要做什么**：
+  1. 先统计影响面：`quotation_line_item` 里 `customer_part_no IS NULL` 且由选配生成（`template_id` 口径待定）的行数
+  2. 决定回填口径 —— 值从哪来？选配当时的 `customerProductNo` 已经**没有留痕**（正是因为没写这一列），可能只能从 `ds_quote_customer_part` 按 `material_no` 反查，**而反查可能一对多**
+  3. ⚠️ 反查歧义时**不许猜** —— 一对多的行宁可留 NULL，也不要填错一个客户的编号
+- 🚦 **属 `CLAUDE.md §3.2`「无 WHERE 或命中面不明的 UPDATE」范畴**：回填前必须先报影响面数字并取得用户批准。
+- **前置条件**：`repair-260911` 结案
+- **预估规模**：**S~M**（取决于第 2 步的反查歧义率；若歧义率高则变成「让用户逐单确认」的产品问题，规模会涨）
