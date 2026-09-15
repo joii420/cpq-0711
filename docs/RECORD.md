@@ -6747,3 +6747,17 @@ DB 扩到 12 位后，即便 handler 完全不归一，12 位 Excel 导入查库
 [2026-09-14] 打包规则确立 + 首次本地分离打包（路径 B）| `deploy/BUILD-DEPLOY.md §9`(新增一节)、`deploy/2026091401/`(产物，未进 git) | **用户裁定：以后打包一律走「前后端分开两份」**，产物落 `deploy/<yyyyMMdd><两位流水号>/`（不加分隔符，当日从 `01` 起，一次打包一个新目录不覆盖旧的）。本机**无 docker**（`command not found`），既有的 Docker 单镜像方案（`BUILD-DEPLOY.md` 方案 B）与 `build-bundle.sh` 都走不了；但 Dockerfile 三阶段的本质就是「`vite build` → dist 塞进后端 `META-INF/resources` → `mvn package`」，本地能等价复现。⚠️ **分离方案刻意不做那一步塞入** —— 那会污染源码树，且本方案前端独立部署。构建口径 `./mvnw -B -ntp -DskipTests clean package`（与 Dockerfile 一致）。🔑 **验证不止于「文件都在」**：用 `java -jar quarkus-app/quarkus-run.jar` 真启一次（`Profile prod activated` / `started in 3.544s` / 三个启动自检全过 / 登录 200 / semantic-graph 200 返 132 KB nodeKey×57），前端 dist 用 `python3 -m http.server` 真起一次逐个拉资源。📌 **顺带验证了 `deploy/db` 那两份 SQL 建出来的库能跑生产包** —— 本次连的就是 `cpq_db_updchk913`（由 `cpq-init-empty.sql` + `update-260913` 建、基线 V443）。📌 `%prod.quarkus.flyway.migrate-at-start=false`，与「内网不跑 Flyway、用 SQL 脚本建库」的方案自洽。
 
 [2026-09-14] 同上 - 两次自造假绿，都是 shell 写法问题不是判据问题 | — | ① **`cmd | head || echo "✅ 干净"`**：`head` 恒返回 0，`||` 永不触发，于是「命令失败」和「没有匹配」都表现为空输出，我差点把「目录不存在」读成「已确认干净」。改用 `[ -d ... ]` 显式分支 + 打印计数才可信。② **`cd $P && python3 -m http.server ... &` 之后的 `grep index.html`**：`cd` 只在子 shell 生效，后续 grep 在项目根找文件失败、变量取空，两条 curl 实际都请求了 `/`，**双双返回 652 B 却显示 200** —— 看起来是「JS 和 CSS 都验过了」。判据是**体积必须各不相同**：重做后 652 B / 3027620 B / 42248 B / 9522 B 四个值互异才算真验。⇒ 与 `deploy/db/README.md §⑥` 同族：**验证脚本自身的写法就是判据的一部分**。
+
+[2026-09-14] 报价单管理 - 料号搜索 + 三列扩展（`task-260914` · 已交付 · 合 master `e74065ae` · ⏳ 闸门 B 待验收）| `QuotationService.java`(list 三段过滤+批量回填名称)、`QuotationResource.java`、`QuotationDTO.java`、`QuotationList.tsx`、`quotationService.ts`、`e2e/task260914-*.ts`(新) | 路径 A 轻量档 · AC 21 条 · 四路子代理并行（后端/前端/S-API/S-UI）
+
+**做了什么**：① 工具栏加**独立料号搜索框**，模糊（不区分大小写）匹配 `quotation_line_item` 的 `product_part_no_snapshot` 与 `customer_part_no`，命中任一即命中该单；② 列表由 6 列扩到 **9 列**（客户后插「产品分类」「报价模板」，总金额后插「创建日期」），前两列带**服务端**筛选下拉。后端 `GET /quotations` 新增 `partNo` / `categoryId`（字面量 `NONE` = 未分类）/ `templateSeriesId` 三个可选参数，`QuotationDTO` 增 `categoryName` / `templateName`（两条 `IN(...)` 批量回填，实测 SQL 条数恒 4、与返回行数无关）。
+
+🚨 **三个最值得记的决策（都是开工后才暴露、由用户裁决的）**：
+
+1. **模板筛选必须按「模板系列」而非单个模板 ID**（C-3）。实查：**21 个 PUBLISHED 报价模板只有 13 个不同名称**（`正泰测试模板2`×5 / `报价模板·ds原生v1.0`×3 / `正泰测试模板1`×3）。若按单 ID 过滤，选「正泰测试模板1」只得 **32** 单、另外 **27 单静默消失**（接口正常返回、有数据、不报错）；且下拉里会出现 5 个文字完全相同、无从分辨的条目。改按 `template_series_id` 聚合后：下拉 **13 条零重名**，该系列命中 **59 = 18+9+32**。**判别性证据**：一页内同时返回 v1.0 与 v1.2 两个不同 `customer_template_id`，这是按单 ID 过滤不可能做到的。
+
+2. **创建日期必须按浏览器本地时区换算，不能 `createdAt.slice(0,10)`**（C-4）。库存 UTC（服务器 `Etc/UTC`），而单号按服务器本地时间生成：`QT-20260914-0867` 的 `created_at` 是 `2026-09-15T01:47:58Z`，UTC 口径会显示 `2026-09-15`，**比单号里的 `20260914` 晚一天**。⚠️ **原型交付当天画的就是 `2026-09-15`（UTC 口径）—— 等于把缺陷画进了验收基准**，已就地修。改用既有 `dayjs`（`package.json:24`），未新造工具。
+
+3. **三个操作按钮移到卡片标题栏右侧**（C-8）。工具栏加了 3 个条件控件后，A/B 实测（同视口 1280）：改造前按钮 y=262 与输入框同行，改造后 y=342 掉到第二行；逐档复测 **1280/1366/1440/1600 全部换行，仅 1920 不换**（四控件 900px + 按钮组 388px = 1288px > 1280 卡片可用的 962px）。已排除「缩窄控件」（1280 下要塞进 574px，料号框 placeholder 放不下）。移到标题栏后五档视口全部同行不溢出。**遗留并经用户裁决接受**：1280 下条件区本身仍排两行（可用 914 vs 需要 924，差 10px），不遮挡不影响功能（C-10）。
+
+**🚫 两处未验证（用户裁决降级，不得标绿）**：`AC-19` 真实 SALES_REP 登录后的可见范围 —— 187 单里 184 单归 SYSTEM_ADMIN，可登录的两个 SALES_REP 名下均 0 单，名下有单的三个全部登录不了（1 INACTIVE + 2 `password_hash='x'`），不造数则断言退化成 `0==0`；`AC-20` 无权限角色的运行时禁用态 —— 白名单外可登录的只有两个 `PRICING_MANAGER`，口令不可得，拒绝重置口令（写共享库全局状态）。
