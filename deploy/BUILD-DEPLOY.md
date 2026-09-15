@@ -177,3 +177,80 @@ gunzip -c /opt/cpq/cpq-latest.tar.gz | docker load
 - `CPQ_ENCRYPTION_KEY` 一旦上线**不可更换**(会导致已加密数据无法解密)
 - 容器以非 root 用户 `app` 运行,无需额外加固
 - 默认 `quarkus.mailer.mock=true`(application.properties)—— 上线前若需真实邮件,需追加邮件服务相关 env 并改配置
+
+---
+
+# 9. 方案 C:本地分离打包(不依赖 Docker)
+
+> 2026-09-14 用户裁定:**以后打包一律走本节规则**。
+> 与上面的方案 B(单镜像)并列 —— 方案 B 把前端嵌进后端出一个镜像,本节把前后端**分成两份产物**,
+> 不需要 Docker,构建机只要有 Node 24 / JDK 21 即可。
+
+## 9.1 产物落点(硬规则)
+
+```
+deploy/<yyyyMMdd><两位流水号>/          例:deploy/2026091401
+    ├── dist/           前端静态文件(给 nginx 之类的静态服务器)
+    └── quarkus-app/    后端 Quarkus fast-jar 布局(java -jar quarkus-app/quarkus-run.jar)
+```
+
+- 日期用 `date +%Y%m%d` **实取**,不许凭记忆写
+- 流水号**两位、当日从 01 起**;同一天再打一次就是 `02`,以此类推
+- 目录名里**不加分隔符**:`2026091401`,不是 `20260914-01`
+- 一次打包 = 一个新目录,**不覆盖旧目录** —— 旧产物是回滚用的
+
+## 9.2 构建步骤
+
+```bash
+# ① 前端(vite 自己会清空 outDir,不需要手工 rm)
+cd cpq-frontend && npm run build          # 产出 cpq-frontend/dist/
+
+# ② 后端(跳过测试,与 Dockerfile 口径一致)
+cd cpq-backend && ./mvnw -B -ntp -DskipTests clean package
+                                           # 产出 cpq-backend/target/quarkus-app/
+
+# ③ 归集
+D=$(date +%Y%m%d); SEQ=01                 # SEQ 按当日已有目录数递增
+mkdir -p deploy/$D$SEQ
+cp -r cpq-frontend/dist            deploy/$D$SEQ/
+cp -r cpq-backend/target/quarkus-app deploy/$D$SEQ/
+```
+
+🚫 **本方案不要把 `dist/` 拷进 `cpq-backend/src/main/resources/META-INF/resources/`** ——
+那是方案 B(单镜像)的做法,会污染源码树,而且本方案前端是独立部署的。
+
+## 9.3 内网怎么跑
+
+**后端**(需要 JRE 21):
+
+```bash
+java -jar quarkus-app/quarkus-run.jar
+```
+
+配置靠环境变量注入(与 Docker 方案同一套):`DB_HOST` `DB_PORT` `DB_NAME` `DB_USERNAME`
+`DB_PASSWORD` `REDIS_*` `CPQ_ENCRYPTION_KEY`(必须 32 字符)、`QUARKUS_HTTP_PORT`。
+数据库用 `deploy/db/` 的全量脚本 + 增量脚本建好(见 `deploy/db/README.md`),不靠 Flyway 重放。
+
+**前端**:`dist/` 交给 nginx 之类的静态服务器,并且必须做两件事,缺一个都会出问题:
+
+1. `/api` 反向代理到后端,否则前端调不到接口
+2. **SPA fallback** —— 未命中静态文件的路径一律回 `index.html`,
+   否则浏览器直接打开或刷新 `/quotations` 这类子路径会 404
+
+```nginx
+location /api { proxy_pass http://<backend-host>:<port>; }
+location /    { root /path/to/dist; try_files $uri $uri/ /index.html; }
+```
+
+## 9.4 打完必须自检
+
+```bash
+P=deploy/<本次目录>
+ls $P/dist/index.html                     # 前端入口在
+ls $P/quarkus-app/quarkus-run.jar         # 后端启动 jar 在
+ls $P/quarkus-app/lib/ | wc -l            # 依赖 jar 数量,不该是 0
+du -sh $P/dist $P/quarkus-app             # 体积,与上次打包同量级
+```
+
+⚠️ **fast-jar 布局的四个部分缺一不可**:`quarkus-run.jar` / `lib/` / `app/` / `quarkus/`。
+只拷 `quarkus-run.jar` 是**起不来**的 —— 它只是个引导壳,真正的类和依赖在另外三个目录里。
