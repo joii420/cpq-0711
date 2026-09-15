@@ -22,6 +22,12 @@ body {
 .card-head {
   padding: 16px 24px; border-bottom: 1px solid #f0f0f0;
   font-size: 16px; font-weight: 600;
+  /* 2026-09-14 C-8：三个操作按钮移到标题栏右侧（原在工具栏右端，1920 以下会被筛选控件挤到第二行） */
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+}
+.card-head .head-actions {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 14px; font-weight: 400;
 }
 .card-body { padding: 24px; }
 
@@ -74,8 +80,7 @@ th, td {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 th { background: #fafafa; font-weight: 600; color: rgba(0,0,0,.88); }
-th.filterable::after { content: " ⏷"; color: rgba(0,0,0,.29); font-size: 11px; }
-th.filterable.active::after { color: #1677ff; }
+/* 表头筛选图标已移除（2026-09-14 用户裁决：筛选入口只留工具栏，避免两处入口状态不同步） */
 td.link a { color: #1677ff; text-decoration: none; cursor: pointer; }
 td.muted { color: rgba(0,0,0,.45); }
 .cb { width: 16px; height: 16px; border: 1px solid #d9d9d9; border-radius: 4px; display: inline-block; vertical-align: -3px; }

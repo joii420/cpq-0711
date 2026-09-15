@@ -14,7 +14,21 @@
 </div>
 
 <div class="card">
-  <div class="card-head">报价单管理</div>
+  <div class="card-head">
+    <span>报价单管理</span>
+    <span class="head-actions">
+
+      <div class="btn">🕘 导入历史</div>
+      <!-- AC-20：无权限角色 = 禁用但可见 + hover 出原因（frontend.md §1.2）。本次改动不得波及它 -->
+      <div class="rel">
+        <div class="btn primary disabled">⬇ 导入报价数据</div>
+        <div class="tooltip" style="bottom:40px;left:50%;transform:translateX(-50%)">
+          仅销售 / 销售经理 / 管理员可导入报价数据
+        </div>
+      </div>
+      <div class="btn">＋ 新建报价单</div>
+    </span>
+  </div>
   <div class="card-body">
 
     <div class="tabs">
@@ -45,17 +59,7 @@
         <span class="ph">报价模板</span><span class="caret">⏷</span>
       </div>
 
-      <div class="spacer"></div>
-
-      <div class="btn">🕘 导入历史</div>
-      <!-- AC-20：无权限角色 = 禁用但可见 + hover 出原因（frontend.md §1.2）。本次改动不得波及它 -->
-      <div class="rel">
-        <div class="btn primary disabled">⬇ 导入报价数据</div>
-        <div class="tooltip" style="bottom:40px;left:50%;transform:translateX(-50%)">
-          仅销售 / 销售经理 / 管理员可导入报价数据
-        </div>
-      </div>
-      <div class="btn">＋ 新建报价单</div>
+      
     </div>
 
     <!-- 已勾选 2 行：证明新控件加入后 SelectableTable 的动作条位置与形态不变 -->
@@ -75,8 +79,8 @@
           <th style="width:180px">报价单号</th>
           <th>名称</th>
           <th style="width:140px">客户</th>
-          <th style="width:140px" class="filterable">产品分类</th>
-          <th style="width:180px" class="filterable">报价模板</th>
+          <th style="width:140px">产品分类</th>
+          <th style="width:180px">报价模板</th>
           <th style="width:100px">状态</th>
           <th style="width:130px">总金额</th>
           <th style="width:120px">创建日期</th>

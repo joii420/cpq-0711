@@ -260,8 +260,33 @@ export interface TreeDeleteExecResult {
   }>;
 }
 
+/**
+ * `GET /api/cpq/quotations` 的查询参数（task-260914 · F-1）。
+ *
+ * 三个新参数是**加法式**的（任务.md §6「接口契约变更」），不传 = 不过滤，对既有调用方零影响：
+ *  - `partNo`     —— 料号模糊搜索：命中「该单存在任意产品行，其销售料号或客户料号包含此值（不区分大小写）」
+ *  - `categoryId` —— 产品分类过滤：UUID = 该分类；字面量 `NONE` = 未分类（product_category_id IS NULL）
+ *  - `templateSeriesId` —— 报价模板过滤，**按模板系列**（C-3 裁决）：命中 customer_template_id
+ *      属于该 template.template_series_id 的**全部版本**。
+ *      🚫 不是 `templateId`（初稿如此，已废）—— 按单个模板 ID 过滤会让「选正泰测试模板1 只筛出
+ *      v1.2 的 32 单、另外 27 单静默消失」（任务.md C-3 / AC-15）。
+ */
+export interface QuotationListParams {
+  page?: number;
+  size?: number;
+  status?: string;
+  salesRepId?: string;
+  keyword?: string;
+  /** 料号模糊搜索（销售料号 / 客户料号），不区分大小写 */
+  partNo?: string;
+  /** 产品分类 UUID，或字面量 'NONE' 表示未分类 */
+  categoryId?: string;
+  /** 报价模板**系列** UUID（template.template_series_id）；命中该系列的全部版本 */
+  templateSeriesId?: string;
+}
+
 export const quotationService = {
-  list: (params: any) => api.get('/quotations', { params }) as Promise<any>,
+  list: (params: QuotationListParams) => api.get('/quotations', { params }) as Promise<any>,
   getById: (id: string) => api.get(`/quotations/${id}`) as Promise<any>,
   /** Step2 批量导入产品 — 列出该客户的料号候选;importRecordId 可选,精确"这次导入"语义 */
   listCustomerPartCandidates: (customerId: string, importRecordId?: string) =>

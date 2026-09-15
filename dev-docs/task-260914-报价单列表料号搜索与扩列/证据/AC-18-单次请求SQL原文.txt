@@ -1,0 +1,11 @@
+# AC-18 证据 · 一次 size=20 列表请求发出的全部 SQL（后端 8195 / cpq_db_0724 / 2026-09-14T21:31:54-07:00）
+
+     1	[Hibernate] select count(*) from quotation q1_0 where 1=1
+     2	[Hibernate] select q1_0.id,q1_0.assigned_approver_id,q1_0.contact_email,q1_0.contact_id,q1_0.contact_name,q1_0.contact_phone,q1_0.costing_card_template_id,q1_0.created_at,q1_0.customer_id,q1_0.customer_template_id,q1_0.delivery_cycle,q1_0.discount_adjus
+     3	[Hibernate] select pc1_0.id,pc1_0.code,pc1_0.created_at,pc1_0.description,pc1_0.name,pc1_0.parent_id,pc1_0.sort_order,pc1_0.status,pc1_0.updated_at from product_category pc1_0 where pc1_0.id in (?)
+     4	[Hibernate] select t1_0.id,t1_0.category,t1_0.category_id,t1_0.components_snapshot,t1_0.created_at,t1_0.created_by,t1_0.customer_id,t1_0.description,t1_0.excel_view_config,t1_0.formulas,t1_0.name,t1_0.product_attributes,t1_0.published_at,t1_0.sql_views_
+
+## 条数统计
+总条数: 4
+product_category: 1
+template: 1
