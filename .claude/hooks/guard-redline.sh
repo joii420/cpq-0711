@@ -113,10 +113,30 @@ for seg in $scan; do
   #    只动第一个词的目录前缀，参数原样保留（迁移文件、worktree 落点等规则匹配的是参数）。
   seg=$(printf '%s' "$seg" | sed -E 's#^([[:space:]]*)[^[:space:]]*/([^[:space:]/]+)#\1\2#')
   verb=$(printf '%s' "$seg" | sed -E 's/^[[:space:]]*//; s/[[:space:]].*//')
+  # 🚩 2026-09-14 补两条误拦豁免（task-260914 实证两次：测试代理一次、主线一次）
+  #
+  #    ① 引号内的 `|` 会被上面的分段逻辑当成管道，把 grep/sed 的**正则参数**切成独立「段」。
+  #       实例：`grep -a "DROP\|TRUNCATE" f` → 段 `TRUNCATE\` 的 verb 就是 `TRUNCATE` → 被 sql-truncate 拒。
+  #       判据：真正执行 SQL 的命令，verb 永远是 psql/mysql/psql 之类的**小写命令名**或路径，
+  #       SQL 关键字本身不会是 verb。所以「verb 以大写字母开头」⇒ 它是被错切的参数片段，不是命令。
+  #       ⚠️ 但 `PGPASSWORD=x psql -c "..."` 这种**环境变量前缀**也是大写开头 —— 它含 `=`，必须排除在豁免外。
   case "$verb" in
-    # 纯读取类：整段丢弃（注意 sed/awk 不在此列 —— sed -i 会写文件）
+    *=*) ;;                       # 形如 PGPASSWORD=xxx 的环境变量前缀：不豁免，继续往下判
+    [A-Z]*) continue ;;           # 大写开头且不含 = ⇒ 被错切的 SQL 关键字片段，丢弃
+  esac
+
+  case "$verb" in
+    # 纯读取类：整段丢弃
     grep|rg|ag|cat|head|tail|less|more|ls|find|wc|file|stat|diff|echo|printf|jq|which|type|env|date|pwd|cd|true|test|export)
       continue ;;
+    # ② sed/awk：**不带 -i / --in-place 时**是纯流编辑（读 stdin/文件 → 写 stdout），不改任何文件。
+    #    原注释说「sed/awk 不在此列 —— sed -i 会写文件」是对的，但把不带 -i 的也一起挡了。
+    #    实例：`... | sed -E 's/^\[Hibernate\] (select |delete from )?//'` 纯读日志，被判「无 WHERE 的 DELETE」。
+    sed|awk)
+      case " $seg " in
+        *" -i "*|*" -i."*|*" --in-place"*) ;;   # 原地改写：不豁免，继续往下判
+        *) continue ;;
+      esac ;;
     git)
       case "$seg" in
         *" log"*|*" diff"*|*" status"*|*" show"*|*" blame"*|*" rev-parse"*|*" branch --contains"*|*" worktree list"*|*" config --get"*)
@@ -171,19 +191,36 @@ if printf '%s' "$cmd_scan" | grep -qE 'git[[:space:]]+rebase' && printf '%s' "$c
 fi
 
 # —— 数据销毁 ——
-if printf '%s' "$C" | grep -qE 'DROP[[:space:]]+(TABLE|VIEW|SCHEMA|DATABASE|INDEX|TYPE|SEQUENCE)'; then
+# 🚩 2026-09-14（task-260914 实证）：SQL 类红线加一个**执行器前置条件**。
+#
+#    为什么需要：上面的分段逻辑按 `|` 切命令，而 grep/sed 的**正则参数里也有 `|`**，
+#    于是 `sed -E 's/^\[Hibernate\] (select |delete from )?//'` 被切成
+#    `... (select ` 和 `delete from )?//' ` 两段 —— 后者的 verb 是小写 `delete`，
+#    既不在只读白名单、也不是大写开头，于是落进 danger 并触发「无 WHERE 的 DELETE」。
+#    实测撞过两次：测试代理一次（纯读日志）、主线一次（grep 检索 hook 脚本）。
+#
+#    判据：SQL 只有交给**执行器**才危险。命令里没有 psql/mysql/sqlite3/mysqldump/pg_restore
+#    这类执行器时，SQL 关键字只可能是**被检索或被编辑的文本**，不是要执行的语句。
+#    ⚠️ 这一条只放宽「数据销毁」三条 SQL 规则，DDL 迁移文件、rm -rf、git 历史销毁等
+#    其余红线**一律不受影响**（它们不看 SQL 关键字）。
+if printf '%s' "$C" | grep -qE '(^|[^A-Z_])(PSQL|MYSQL|SQLITE3|MYSQLDUMP|PG_RESTORE|PG_DUMP)([^A-Z_]|$)'; then
+  SQL_RUNNER=1
+else
+  SQL_RUNNER=0
+fi
+if [ "$SQL_RUNNER" = 1 ] && printf '%s' "$C" | grep -qE 'DROP[[:space:]]+(TABLE|VIEW|SCHEMA|DATABASE|INDEX|TYPE|SEQUENCE)'; then
   emit deny sql-drop "🚨 CLAUDE.md §3.2 红线【数据销毁】：DROP 被 hook 拦截。
 三步前置缺一不可：① 先用只读手段量化影响面（\`SELECT count(*)\`、依赖对象清单）② 说清可恢复路径 ③ 用户明确批准**本次**（批了删 A 表不等于批了删 B 表）。
 ⚠️ 带 CASCADE 的还要额外注意 backend.md §3：DDL 之后**必须强制重启服务**，否则进程级缓存会缓存空集并永久残留。"
 fi
-if printf '%s' "$C" | grep -qE '(^|[^A-Z_])TRUNCATE([^A-Z_]|$)'; then
+if [ "$SQL_RUNNER" = 1 ] && printf '%s' "$C" | grep -qE '(^|[^A-Z_])TRUNCATE([^A-Z_]|$)'; then
   emit deny sql-truncate "🚨 CLAUDE.md §3.2 红线【数据销毁】：TRUNCATE 被 hook 拦截。先 \`SELECT count(*)\` 说清将清掉多少行，报给用户等批准。"
 fi
-if printf '%s' "$C" | grep -qE 'DELETE[[:space:]]+FROM' && ! printf '%s' "$C" | grep -qE 'DELETE[[:space:]]+FROM.*WHERE'; then
+if [ "$SQL_RUNNER" = 1 ] && printf '%s' "$C" | grep -qE 'DELETE[[:space:]]+FROM' && ! printf '%s' "$C" | grep -qE 'DELETE[[:space:]]+FROM.*WHERE'; then
   emit deny sql-delete-nowhere "🚨 CLAUDE.md §3.2 红线【数据销毁】：无 WHERE 的 DELETE 被 hook 拦截。
 同样的 WHERE 先跑 \`SELECT count(*)\` 说出数字；**说不出数字就不许执行**。"
 fi
-if printf '%s' "$C" | grep -qE 'UPDATE[[:space:]]+[A-Z_."]+[[:space:]]+SET' && ! printf '%s' "$C" | grep -qE 'WHERE'; then
+if [ "$SQL_RUNNER" = 1 ] && printf '%s' "$C" | grep -qE 'UPDATE[[:space:]]+[A-Z_."]+[[:space:]]+SET' && ! printf '%s' "$C" | grep -qE 'WHERE'; then
   emit deny sql-update-nowhere "🚨 CLAUDE.md §3.2 红线【数据销毁】：无 WHERE 的 UPDATE 被 hook 拦截。先用同样的 WHERE 跑 \`SELECT count(*)\` 量化命中面。"
 fi
 
