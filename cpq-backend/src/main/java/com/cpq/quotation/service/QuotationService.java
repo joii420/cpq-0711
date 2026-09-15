@@ -149,7 +149,14 @@ public class QuotationService {
             "DRAFT", "SUBMITTED", "APPROVED", "SENT", "ACCEPTED", "REJECTED", "EXPIRED", "CANCELLED", "COSTING_REJECTED"
     );
 
-    public PageResult<QuotationDTO> list(int page, int size, String status, UUID salesRepId, UUID assignedApproverId, String keyword) {
+    /**
+     * task-260914 B-2/B-4：产品分类过滤的「未分类」字面量。
+     * 传该值 = {@code product_category_id IS NULL}；其余非空值必须是合法 UUID，否则 400。
+     */
+    public static final String CATEGORY_NONE = "NONE";
+
+    public PageResult<QuotationDTO> list(int page, int size, String status, UUID salesRepId, UUID assignedApproverId, String keyword,
+                                         String partNo, String categoryId, UUID templateSeriesId) {
         page = com.cpq.common.dto.Pagination.clampPage(page);
         size = com.cpq.common.dto.Pagination.clampSize(size);
         StringBuilder where = new StringBuilder("1=1");
@@ -175,8 +182,55 @@ public class QuotationService {
             where.append(" AND (LOWER(name) LIKE :keyword OR LOWER(quotationNumber) LIKE :keyword OR LOWER(snapshotCustomerName) LIKE :keyword)");
             params.put("keyword", "%" + keyword.toLowerCase() + "%");
         }
+        // ── task-260914 B-2：三个新过滤条件，均以 AND 接在既有条件之后 ─────────
+        // AC-2/3/4：料号模糊搜索 —— 销售料号(product_part_no_snapshot) 或 客户料号(customer_part_no)，
+        //   不区分大小写的包含匹配，命中任一即命中该单。
+        // ⚠️ 实现刷择：用 `id IN (非相关子查询)` 而不是相关子查询 EXISTS。原因是 Panache
+        //   的 where 片段拿不到外层根别名，若写 `EXISTS (SELECT 1 FROM QuotationLineItem li
+        //   WHERE li.quotationId = id ...)`，Hibernate 会先把裸 `id` 解析到子查询根
+        //   (QuotationLineItem.id) —— 能编译、但谓词恒为 false，属静默错。
+        //   IN 的左侧在外层，无歧义；语义与基准 SQL Q1 的 EXISTS 等价。
+        if (partNo != null && !partNo.isBlank()) {
+            where.append(" AND id IN (SELECT li.quotationId FROM QuotationLineItem li"
+                    + " WHERE LOWER(li.productPartNoSnapshot) LIKE :partNo"
+                    + " OR LOWER(li.customerPartNo) LIKE :partNo)");
+            params.put("partNo", "%" + partNo.toLowerCase() + "%");
+        }
+        // AC-13/14 + AC-21：产品分类过滤。字面量 NONE = 未分类；
+        //   其余非空值必须是合法 UUID，否则 400（口径同上方 status 非法值）。
+        //   🚫 不允许静默当作「不过滤」—— 那会把过滤失效伪装成正常结果。
+        if (categoryId != null && !categoryId.isBlank()) {
+            String cidRaw = categoryId.trim();
+            if (CATEGORY_NONE.equalsIgnoreCase(cidRaw)) {
+                where.append(" AND productCategoryId IS NULL");
+            } else {
+                UUID cid;
+                try {
+                    cid = UUID.fromString(cidRaw);
+                } catch (IllegalArgumentException e) {
+                    throw new BusinessException(400,
+                            "Invalid categoryId value: " + categoryId
+                                    + ". Allowed: a category UUID or the literal '" + CATEGORY_NONE + "'");
+                }
+                where.append(" AND productCategoryId = :categoryId");
+                params.put("categoryId", cid);
+            }
+        }
+        // AC-15（C-3 裁决）：报价模板过滤改按【模板系列】聚合。
+        // 🚫 不是按单个 template.id 等值：同一系列下有多个 PUBLISHED 版本（如「正泰测试模板1」
+        //   v1.0/v1.1/v1.2 各挂 18/9/32 单），按单 ID 过滤会只筛出 32 单、另外 27 单静默消失。
+        // 匹配语义：customer_template_id 属于该 template_series_id 的【全部版本】。
+        // ⚠️ 同上方 partNo：用 `IN (非相关子查询)`。子查询里的属性全部带 `t.` 限定，
+        //   不出现裸属性名 —— 否则 Hibernate 会把它先解析到子查询根，能编译但语义错且静默。
+        if (templateSeriesId != null) {
+            where.append(" AND customerTemplateId IN ("
+                    + "SELECT t.id FROM Template t WHERE t.templateSeriesId = :templateSeriesId)");
+            params.put("templateSeriesId", templateSeriesId);
+        }
 
         String query = where + " ORDER BY updatedAt DESC";
+        // ⚠️ count 与主查询必须用同一份 where + 同一份 params（AC-16），
+        //    否则分页「共 N 条」与列表内容对不上。
         long total = Quotation.count(where.toString(), params);
         List<QuotationDTO> content = Quotation.find(query, params)
                 .page(page, size)
@@ -184,8 +238,58 @@ public class QuotationService {
                 .stream()
                 .map(QuotationDTO::from)
                 .collect(Collectors.toList());
+        // task-260914 B-3：当页批量回填分类名 / 模板名（逐行查库 = N+1 红线）
+        populateCategoryAndTemplateNames(content);
 
         return new PageResult<>(content, page, size, total);
+    }
+
+    /**
+     * task-260914 B-3（AC-9 / AC-10 / AC-18）：给当页 DTO 批量回填
+     * {@code categoryName} / {@code templateName}。
+     *
+     * <p>🚫 N+1 红线：先去重收集 ID，再每张字典表发 <b>最多 1 条</b>
+     * {@code IN (...)}，最后纯内存分发。SQL 条数与行数无关（恒≤ 2）。
+     * 查不到（分类/模板被删）或 ID 为空时留 {@code null}，由前端渲染成「—」。
+     */
+    private void populateCategoryAndTemplateNames(List<QuotationDTO> content) {
+        if (content == null || content.isEmpty()) {
+            return;
+        }
+        Set<UUID> categoryIds = new HashSet<>();
+        Set<UUID> templateIds = new HashSet<>();
+        for (QuotationDTO d : content) {            // 纯内存收集，无查库
+            if (d.categoryId != null) {
+                categoryIds.add(d.categoryId);
+            }
+            if (d.customerTemplateId != null) {
+                templateIds.add(d.customerTemplateId);
+            }
+        }
+        Map<UUID, String> categoryNames = new HashMap<>();
+        if (!categoryIds.isEmpty()) {
+            List<com.cpq.basicdata.entity.ProductCategory> cats =
+                    com.cpq.basicdata.entity.ProductCategory.list("id in ?1", categoryIds);
+            for (com.cpq.basicdata.entity.ProductCategory pc : cats) {   // 纯内存建 Map，无查库
+                categoryNames.put(pc.id, pc.name);
+            }
+        }
+        Map<UUID, String> templateNames = new HashMap<>();
+        if (!templateIds.isEmpty()) {
+            List<com.cpq.template.entity.Template> tpls =
+                    com.cpq.template.entity.Template.list("id in ?1", templateIds);
+            for (com.cpq.template.entity.Template t : tpls) {            // 纯内存建 Map，无查库
+                templateNames.put(t.id, t.name);
+            }
+        }
+        for (QuotationDTO d : content) {            // 纯内存回填，无查库
+            if (d.categoryId != null) {
+                d.categoryName = categoryNames.get(d.categoryId);
+            }
+            if (d.customerTemplateId != null) {
+                d.templateName = templateNames.get(d.customerTemplateId);
+            }
+        }
     }
 
     public QuotationDTO getById(UUID id) {

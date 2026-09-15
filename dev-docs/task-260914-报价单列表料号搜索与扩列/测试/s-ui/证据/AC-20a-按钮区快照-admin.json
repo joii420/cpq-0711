@@ -1,0 +1,186 @@
+{
+  "title": {
+    "text": "报价单管理",
+    "x": 293,
+    "y": 128,
+    "h": 25
+  },
+  "buttons": [
+    {
+      "order": 0,
+      "zone": "card-head",
+      "text": "导入历史",
+      "disabled": false,
+      "ariaDisabled": null,
+      "title": "",
+      "x": 819,
+      "y": 125,
+      "w": 110
+    },
+    {
+      "order": 1,
+      "zone": "card-head",
+      "text": "导入报价数据",
+      "disabled": false,
+      "ariaDisabled": null,
+      "title": "",
+      "x": 937,
+      "y": 125,
+      "w": 138
+    },
+    {
+      "order": 2,
+      "zone": "card-head",
+      "text": "新建报价单",
+      "disabled": false,
+      "ariaDisabled": null,
+      "title": "",
+      "x": 1083,
+      "y": 125,
+      "w": 124
+    },
+    {
+      "order": 3,
+      "zone": "card-body",
+      "text": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "title": "",
+      "x": 293,
+      "y": 192,
+      "w": 45
+    },
+    {
+      "order": 4,
+      "zone": "card-body",
+      "text": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "title": "",
+      "x": 538,
+      "y": 272,
+      "w": 12
+    },
+    {
+      "order": 5,
+      "zone": "card-body",
+      "text": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "title": "",
+      "x": 561,
+      "y": 262,
+      "w": 32
+    },
+    {
+      "order": 6,
+      "zone": "card-body",
+      "text": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "title": "",
+      "x": 786,
+      "y": 272,
+      "w": 12
+    },
+    {
+      "order": 7,
+      "zone": "card-body",
+      "text": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "title": "",
+      "x": 809,
+      "y": 262,
+      "w": 32
+    },
+    {
+      "order": 8,
+      "zone": "card-body",
+      "text": "编辑",
+      "disabled": true,
+      "ariaDisabled": null,
+      "title": "",
+      "x": 374,
+      "y": 355,
+      "w": 66
+    },
+    {
+      "order": 9,
+      "zone": "card-body",
+      "text": "复制",
+      "disabled": true,
+      "ariaDisabled": null,
+      "title": "",
+      "x": 446,
+      "y": 355,
+      "w": 66
+    },
+    {
+      "order": 10,
+      "zone": "card-body",
+      "text": "提交审批",
+      "disabled": true,
+      "ariaDisabled": null,
+      "title": "",
+      "x": 518,
+      "y": 355,
+      "w": 94
+    },
+    {
+      "order": 11,
+      "zone": "card-body",
+      "text": "撤回",
+      "disabled": true,
+      "ariaDisabled": null,
+      "title": "",
+      "x": 618,
+      "y": 355,
+      "w": 66
+    },
+    {
+      "order": 12,
+      "zone": "card-body",
+      "text": "发送给客户",
+      "disabled": true,
+      "ariaDisabled": null,
+      "title": "",
+      "x": 690,
+      "y": 355,
+      "w": 108
+    },
+    {
+      "order": 13,
+      "zone": "card-body",
+      "text": "客户接受",
+      "disabled": true,
+      "ariaDisabled": null,
+      "title": "",
+      "x": 804,
+      "y": 355,
+      "w": 94
+    },
+    {
+      "order": 14,
+      "zone": "card-body",
+      "text": "客户拒绝",
+      "disabled": true,
+      "ariaDisabled": null,
+      "title": "",
+      "x": 1028,
+      "y": 355,
+      "w": 94
+    },
+    {
+      "order": 15,
+      "zone": "card-body",
+      "text": "删除",
+      "disabled": true,
+      "ariaDisabled": null,
+      "title": "",
+      "x": 1128,
+      "y": 355,
+      "w": 66
+    }
+  ]
+}

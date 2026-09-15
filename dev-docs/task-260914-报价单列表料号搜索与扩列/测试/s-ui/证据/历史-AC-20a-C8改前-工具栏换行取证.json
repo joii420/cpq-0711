@@ -1,0 +1,33 @@
+{
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "partNoBox": {
+    "x": 613,
+    "y": 267,
+    "width": 169,
+    "height": 22
+  },
+  "buttons": [
+    {
+      "label": "导入历史",
+      "x": 293,
+      "y": 342,
+      "w": 110
+    },
+    {
+      "label": "导入报价数据",
+      "x": 411,
+      "y": 342,
+      "w": 138
+    },
+    {
+      "label": "新建报价单",
+      "x": 557,
+      "y": 342,
+      "w": 124
+    }
+  ],
+  "sameRowAsFilters": false
+}

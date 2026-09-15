@@ -116,8 +116,24 @@ public class QuotationResource {
             @QueryParam("status") String status,
             @QueryParam("salesRepId") UUID salesRepId,
             @QueryParam("assignedApproverId") UUID assignedApproverId,
-            @QueryParam("keyword") String keyword) {
-        return ApiResponse.success(quotationService.list(page, size, status, salesRepId, assignedApproverId, keyword));
+            @QueryParam("keyword") String keyword,
+            // ── task-260914 B-1：三个可选新参数（加法式，不传 = 不过滤，对既有调用方零影响）──
+            /** 料号模糊搜索：行项的销售料号或客户料号包含该关键字（不区分大小写）。 */
+            @QueryParam("partNo") String partNo,
+            /**
+             * 产品分类过滤。故意声明为 String 而非 UUID：除分类 UUID 外还要接受
+             * 字面量 {@code NONE}（= 未分类）。非法值由 service 抛 400（AC-21）。
+             */
+            @QueryParam("categoryId") String categoryId,
+            /**
+             * 报价模板过滤，按【模板系列】（C-3 裁决）：命中 {@code customer_template_id}
+             * 属于该 {@code template.template_series_id} 的<b>全部版本</b>。
+             * 🚫 不是 {@code templateId}（初稿如此，已废）—— 按单个模板 ID 过滤会让
+             * 「选正泰测试模板1 只筛出 v1.2 的 32 单、另外 27 单静默消失」。
+             */
+            @QueryParam("templateSeriesId") UUID templateSeriesId) {
+        return ApiResponse.success(quotationService.list(page, size, status, salesRepId, assignedApproverId, keyword,
+                partNo, categoryId, templateSeriesId));
     }
 
     @GET

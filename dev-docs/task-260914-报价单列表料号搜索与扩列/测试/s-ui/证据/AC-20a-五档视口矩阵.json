@@ -1,0 +1,62 @@
+[
+  {
+    "viewport": 1280,
+    "titleY": 128,
+    "buttonYs": [
+      125,
+      125,
+      125
+    ],
+    "sameRow": true,
+    "maxRight": 1207,
+    "overflow": false
+  },
+  {
+    "viewport": 1366,
+    "titleY": 128,
+    "buttonYs": [
+      125,
+      125,
+      125
+    ],
+    "sameRow": true,
+    "maxRight": 1293,
+    "overflow": false
+  },
+  {
+    "viewport": 1440,
+    "titleY": 128,
+    "buttonYs": [
+      125,
+      125,
+      125
+    ],
+    "sameRow": true,
+    "maxRight": 1367,
+    "overflow": false
+  },
+  {
+    "viewport": 1600,
+    "titleY": 128,
+    "buttonYs": [
+      125,
+      125,
+      125
+    ],
+    "sameRow": true,
+    "maxRight": 1527,
+    "overflow": false
+  },
+  {
+    "viewport": 1920,
+    "titleY": 128,
+    "buttonYs": [
+      125,
+      125,
+      125
+    ],
+    "sameRow": true,
+    "maxRight": 1847,
+    "overflow": false
+  }
+]

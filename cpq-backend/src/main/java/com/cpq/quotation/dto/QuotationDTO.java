@@ -73,6 +73,19 @@ public class QuotationDTO {
      */
     public UUID costingCardTemplateId;
 
+    /**
+     * task-260914 B-3（AC-9）：产品分类名（{@code product_category.name}）。
+     * <p>只在<b>列表查询</b>里批量回填；{@link #categoryId} 为空或分类已被删 → {@code null}。
+     * 前端渲染成「—」（D-6：🚫 不从模板反查分类兜底）。
+     */
+    public String categoryName;
+
+    /**
+     * task-260914 B-3（AC-10）：报价模板名（{@code template.name}，<b>不含版本号</b>，D-8）。
+     * <p>只在<b>列表查询</b>里批量回填；{@link #customerTemplateId} 为空或模板已被删 → {@code null}。
+     */
+    public String templateName;
+
     // Customer snapshot
     public String snapshotCustomerName;
     public String snapshotCustomerLevel;

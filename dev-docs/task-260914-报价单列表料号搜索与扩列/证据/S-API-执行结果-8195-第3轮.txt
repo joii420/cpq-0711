@@ -1,0 +1,272 @@
+=== task-260914 · S-API 用例集 ===
+后端: http://localhost:8195    库: 10.177.152.12/cpq_db_0724    开跑: 2026-09-14T21:35:07-07:00
+存活探针（未登录期望 401）: 401
+Q0 全量报价单（现场重算）= 187
+
+────────────────────────────────────────────────────────────────
+▶ TC-API-01  【服务 AC】AC-2
+  料号框输入 S0004 → 命中数 = Q1('s0004')，且抽样单确实含该料号
+────────────────────────────────────────────────────────────────
+  基准SQL : SELECT count(*) FROM quotation q WHERE EXISTS (SELECT 1 FROM quotation_line_item li WHERE li.quotation_id=q.id AND (LOWER(li.product_part_no_snapshot) LIKE '%s0004%' OR LOWER(li.customer_part_no) LIKE '%s0004%'));
+  SQL值(前): 43
+  URL     : http://localhost:8195/api/cpq/quotations?partNo=S0004&page=0&size=20
+  HTTP    : 200
+  SQL值(后): 43
+  接口值  : 43
+  收窄证据: 43 < 187 ✔（证明过滤条件真的进了 where，不是被忽略）
+  ✅ PASS  TC-API-01 — 接口 43 == 基准 SQL 43
+  —— 回库逐单核实（接口返回的整页单 → 回库查各自行项）——
+  URL     : http://localhost:8195/api/cpq/quotations?partNo=S0004&page=0&size=20
+  HTTP    : 200
+  逐单核实: 共查 20 单，不含 S0004 的有 0 单
+  ✅ PASS  TC-API-01-逐单 — 整页 20 单全部确实含 S0004
+
+────────────────────────────────────────────────────────────────
+▶ TC-API-02  【服务 AC】AC-3
+  料号框输入 A002 → 命中数 = Q1('a002')，且命中来自 customer_part_no
+────────────────────────────────────────────────────────────────
+  命中路径拆解: 经销售料号 0 单 / 经客户料号 35 单
+  基准SQL : SELECT count(*) FROM quotation q WHERE EXISTS (SELECT 1 FROM quotation_line_item li WHERE li.quotation_id=q.id AND (LOWER(li.product_part_no_snapshot) LIKE '%a002%' OR LOWER(li.customer_part_no) LIKE '%a002%'));
+  SQL值(前): 35
+  URL     : http://localhost:8195/api/cpq/quotations?partNo=A002&page=0&size=20
+  HTTP    : 200
+  SQL值(后): 35
+  接口值  : 35
+  收窄证据: 35 < 187 ✔（证明过滤条件真的进了 where，不是被忽略）
+  ✅ PASS  TC-API-02 — 接口 35 == 基准 SQL 35
+  —— 逐单核实客户料号列 ——
+  URL     : http://localhost:8195/api/cpq/quotations?partNo=A002&page=0&size=20
+  HTTP    : 200
+  逐单核实: 共查 20 单，客户料号不含 a002 的有 0 单；样例 QT-20260914-0867→A002
+  ✅ PASS  TC-API-02-逐单 — 整页 20 单的客户料号都含 A002（走的是客户料号那一路）
+
+────────────────────────────────────────────────────────────────
+▶ TC-API-03  【服务 AC】AC-4
+  小写 s000 → 命中数 = Q1('s000') 且严格大于 S0004 的命中数；再验大小写两向一致
+────────────────────────────────────────────────────────────────
+  参照值 Q1('s0004') = 43
+  基准SQL : SELECT count(*) FROM quotation q WHERE EXISTS (SELECT 1 FROM quotation_line_item li WHERE li.quotation_id=q.id AND (LOWER(li.product_part_no_snapshot) LIKE '%s000%' OR LOWER(li.customer_part_no) LIKE '%s000%'));
+  SQL值(前): 49
+  URL     : http://localhost:8195/api/cpq/quotations?partNo=s000&page=0&size=20
+  HTTP    : 200
+  SQL值(后): 49
+  接口值  : 49
+  收窄证据: 49 < 187 ✔（证明过滤条件真的进了 where，不是被忽略）
+  ✅ PASS  TC-API-03 — 接口 49 == 基准 SQL 49
+  URL     : http://localhost:8195/api/cpq/quotations?partNo=s000&page=0&size=1
+  HTTP    : 200
+  URL     : http://localhost:8195/api/cpq/quotations?partNo=S000&page=0&size=1
+  HTTP    : 200
+  小写 s000 = 49    大写 S000 = 49    S0004 = 43    全量 = 187
+  ✅ PASS  TC-API-03-大小写/模糊 — s000=49 = S000=49 且 > S0004=43（模糊 + 大小写不敏感成立）
+
+────────────────────────────────────────────────────────────────
+▶ TC-API-04  【服务 AC】AC-6
+  partNo=S0004 ∧ keyword=<子集客户名> → 严格交集，且严格小于单料号命中数
+────────────────────────────────────────────────────────────────
+  现场挑中的关键字（S0004 单的真子集）: [正泰]
+  基准SQL : SELECT count(*) FROM quotation q WHERE EXISTS (SELECT 1 FROM quotation_line_item li WHERE li.quotation_id=q.id AND (LOWER(li.product_part_no_snapshot) LIKE '%s0004%' OR LOWER(li.customer_part_no) LIKE '%s0004%')) AND (q.snapshot_customer_name ILIKE '%正泰%' OR q.name ILIKE '%正泰%' OR q.quotation_number ILIKE '%正泰%');
+  SQL值(前): 40
+  URL     : http://localhost:8195/api/cpq/quotations?partNo=S0004&keyword=%E6%AD%A3%E6%B3%B0&page=0&size=20
+  HTTP    : 200
+  SQL值(后): 40
+  接口值  : 40
+  收窄证据: 40 < 43 ✔（证明过滤条件真的进了 where，不是被忽略）
+  ✅ PASS  TC-API-04 — 接口 40 == 基准 SQL 40
+  URL     : http://localhost:8195/api/cpq/quotations?keyword=%E6%AD%A3%E6%B3%B0&page=0&size=1
+  HTTP    : 200
+  仅 keyword 命中 = 83   仅 partNo 命中 = 43
+  URL     : http://localhost:8195/api/cpq/quotations?partNo=S0004&keyword=%E6%AD%A3%E6%B3%B0&page=0&size=1
+  HTTP    : 200
+  两者同时 = 40
+  ✅ PASS  TC-API-04-AND语义 — 组合(40) ≤ 各单条件(43 / 83)，是 AND 不是 OR
+
+────────────────────────────────────────────────────────────────
+▶ TC-API-05  【服务 AC】AC-7
+  partNo=S0004 ∧ status=DRAFT → Q3；去掉 status 后回到 Q1（料号条件不被吃掉）
+────────────────────────────────────────────────────────────────
+  基准SQL : SELECT count(*) FROM quotation q WHERE q.status='DRAFT' AND EXISTS (SELECT 1 FROM quotation_line_item li WHERE li.quotation_id=q.id AND (LOWER(li.product_part_no_snapshot) LIKE '%s0004%' OR LOWER(li.customer_part_no) LIKE '%s0004%'));
+  SQL值(前): 38
+  URL     : http://localhost:8195/api/cpq/quotations?partNo=S0004&status=DRAFT&page=0&size=20
+  HTTP    : 200
+  SQL值(后): 38
+  接口值  : 38
+  收窄证据: 38 < 43 ✔（证明过滤条件真的进了 where，不是被忽略）
+  ✅ PASS  TC-API-05 — 接口 38 == 基准 SQL 38
+  —— 切回「全部」（去掉 status），料号条件必须还在 ——
+  URL     : http://localhost:8195/api/cpq/quotations?partNo=S0004&page=0&size=1
+  HTTP    : 200
+  切回后 = 43    期望 = 43（Q1 现场值）    全量 = 187
+  ✅ PASS  TC-API-05-回切 — 切回全部后仍为 43（料号条件未被清空，也没退化成全量 187）
+
+────────────────────────────────────────────────────────────────
+▶ TC-API-06  【服务 AC】AC-13
+  categoryId=<默认分类> → 命中数 = Q5，且返回的每一行 categoryName 都是该分类名
+────────────────────────────────────────────────────────────────
+  现场选中的分类: 默认分类 (2c4b8ed8-59ce-4125-b7f7-86ab59ca4bc3)  —— 取「名下单最多的 ACTIVE 分类」，不写死名字
+  基准SQL : SELECT count(*) FROM quotation WHERE product_category_id='2c4b8ed8-59ce-4125-b7f7-86ab59ca4bc3';
+  SQL值(前): 62
+  URL     : http://localhost:8195/api/cpq/quotations?categoryId=2c4b8ed8-59ce-4125-b7f7-86ab59ca4bc3&page=0&size=20
+  HTTP    : 200
+  SQL值(后): 62
+  接口值  : 62
+  收窄证据: 62 < 187 ✔（证明过滤条件真的进了 where，不是被忽略）
+  ✅ PASS  TC-API-06 — 接口 62 == 基准 SQL 62
+  —— 逐行校验（拉全量，不是只看首页）——
+  URL     : http://localhost:8195/api/cpq/quotations?categoryId=2c4b8ed8-59ce-4125-b7f7-86ab59ca4bc3&page=0&size=500
+  HTTP    : 200
+  返回行数: 62
+  categoryId 不符的行: 0 []
+  categoryName 不符的行: 0 []
+  样例前3行 categoryName: ['默认分类', '默认分类', '默认分类']
+  ROWCHECK=OK
+  ✅ PASS  TC-API-06-逐行 — 全部返回行的 categoryId/categoryName 都是 默认分类
+
+────────────────────────────────────────────────────────────────
+▶ TC-API-07  【服务 AC】AC-14
+  categoryId=NONE → 命中数 = Q6(IS NULL)，且每一行 categoryId/categoryName 均为 null
+────────────────────────────────────────────────────────────────
+  基准SQL : SELECT count(*) FROM quotation WHERE product_category_id IS NULL;
+  SQL值(前): 117
+  URL     : http://localhost:8195/api/cpq/quotations?categoryId=NONE&page=0&size=20
+  HTTP    : 200
+  SQL值(后): 117
+  接口值  : 117
+  收窄证据: 117 < 187 ✔（证明过滤条件真的进了 where，不是被忽略）
+  ✅ PASS  TC-API-07 — 接口 117 == 基准 SQL 117
+  —— 逐行校验（拉全量）——
+  URL     : http://localhost:8195/api/cpq/quotations?categoryId=NONE&page=0&size=500
+  HTTP    : 200
+  返回行数: 117
+  非空分类的行: 0 []
+  ROWCHECK=OK
+  ✅ PASS  TC-API-07-逐行 — 全部返回行的分类均为空（前端应渲染「—」）
+
+────────────────────────────────────────────────────────────────
+▶ TC-API-08  【服务 AC】AC-15
+  templateSeriesId=<多版本系列> → 命中数 = 该系列全部版本之和，且严格大于任一单版本
+────────────────────────────────────────────────────────────────
+  现场选中的系列: 正泰测试模板1
+  series_id     : a7640010-fb0b-4d70-a49c-db4918703395
+  版本数 3 个 / 按系列合计 59 单 / 单版本最多的那个 32 单
+  基准SQL : SELECT count(*) FROM quotation q JOIN template t ON t.id=q.customer_template_id WHERE t.template_series_id='a7640010-fb0b-4d70-a49c-db4918703395';
+  SQL值(前): 59
+  URL     : http://localhost:8195/api/cpq/quotations?templateSeriesId=a7640010-fb0b-4d70-a49c-db4918703395&page=0&size=20
+  HTTP    : 200
+  SQL值(后): 59
+  接口值  : 59
+  收窄证据: 59 < 187 ✔（证明过滤条件真的进了 where，不是被忽略）
+  ✅ PASS  TC-API-08 — 接口 59 == 基准 SQL 59
+  —— 判别性核验：按系列 vs 按单版本 ——
+  URL     : http://localhost:8195/api/cpq/quotations?templateSeriesId=a7640010-fb0b-4d70-a49c-db4918703395&page=0&size=1
+  HTTP    : 200
+  接口值 59   按系列应为 59   退回按单 ID 会是 32
+  ✅ PASS  TC-API-08-系列聚合 — 接口 59 == 按系列合计 59，严格大于单版本最大值 32（聚合真的生效）
+  —— 逐行校验（拉全量）——
+  该系列的版本 id 集合: 6dedb30b-a3f2-49db-ba11-9570613a66f7,839743b3-6876-435d-9aaf-dc088173d104,45cc0267-a340-43ba-80e1-3de17af47443
+  URL     : http://localhost:8195/api/cpq/quotations?templateSeriesId=a7640010-fb0b-4d70-a49c-db4918703395&page=0&size=500
+  HTTP    : 200
+  返回行数: 59
+  模板 id 不在本系列内的行: 0 []
+  templateName 不符的行: 0 []
+  实际用到的版本 id 个数: 3（多于 1 个才说明真的跨版本聚合了）
+  疑似带版本号的模板名（D-8 禁止）: []
+  DISTINCT_VER=3
+  ROWCHECK=OK
+  ✅ PASS  TC-API-08-逐行 — 全部返回行的模板都属于本系列，templateName 均为 正泰测试模板1 且不带版本号
+  ✅ PASS  TC-API-08-跨版本 — 返回行跨了 3 个版本 id（≤ 本系列 3 个，且逐行均属本系列）—— 按系列聚合的正向证据
+
+────────────────────────────────────────────────────────────────
+▶ TC-API-09  【服务 AC】AC-18
+  同一查询返回 20 行 vs 1 行，SQL 条数必须不变（N+1 红线）
+────────────────────────────────────────────────────────────────
+  URL     : http://localhost:8195/api/cpq/quotations?page=0&size=20
+  HTTP    : 200
+  [A] 返回 20 行 → SQL 共 4 条（其中 product_category 1 条 / template 1 条）
+  窄条件单号: QT-20260914-0867
+  URL     : http://localhost:8195/api/cpq/quotations?keyword=QT-20260914-0867&page=0&size=20
+  HTTP    : 200
+  [B] 返回 1 行 → SQL 共 4 条（其中 product_category 1 条 / template 1 条）
+  ✅ PASS  TC-API-09 — SQL 4 条 ≤ 上限 4，且与行数无关（20 行与 1 行同为 4 条；字典 分类1/模板1）
+  （完整 SQL 原文请从 /tmp/cpq-8195.log 归档到任务目录，作为 AC-18 的证据）
+
+────────────────────────────────────────────────────────────────
+▶ TC-API-10  【服务 AC】AC-19(降级)
+  salesRepId=<某销售> 全量 N → 叠加 partNo=S0004 必须严格小于 N，且 = 基准 SQL
+────────────────────────────────────────────────────────────────
+  现场选中的销售员: admin/SYSTEM_ADMIN (d1e1147c-a639-4156-aeac-9f938a65ad05)
+  名下总单 = 156    其中含 S0004 = 43    （43 < 156 ⇒ 有区分力）
+  基准SQL : SELECT count(*) FROM quotation WHERE sales_rep_id='d1e1147c-a639-4156-aeac-9f938a65ad05';
+  SQL值(前): 156
+  URL     : http://localhost:8195/api/cpq/quotations?salesRepId=d1e1147c-a639-4156-aeac-9f938a65ad05&page=0&size=1
+  HTTP    : 200
+  SQL值(后): 156
+  接口值  : 156
+  收窄证据: 156 < 187 ✔（证明过滤条件真的进了 where，不是被忽略）
+  ✅ PASS  TC-API-10-角色基线 — 接口 156 == 基准 SQL 156
+  基准SQL : SELECT count(*) FROM quotation q WHERE q.sales_rep_id='d1e1147c-a639-4156-aeac-9f938a65ad05' AND EXISTS (SELECT 1 FROM quotation_line_item li WHERE li.quotation_id=q.id AND (LOWER(li.product_part_no_snapshot) LIKE '%s0004%' OR LOWER(li.customer_part_no) LIKE '%s0004%'));
+  SQL值(前): 43
+  URL     : http://localhost:8195/api/cpq/quotations?salesRepId=d1e1147c-a639-4156-aeac-9f938a65ad05&partNo=S0004&page=0&size=20
+  HTTP    : 200
+  SQL值(后): 43
+  接口值  : 43
+  收窄证据: 43 < 156 ✔（证明过滤条件真的进了 where，不是被忽略）
+  ✅ PASS  TC-API-10 — 接口 43 == 基准 SQL 43
+  —— 判别性反例：同一料号换一个 uid ——
+  对照 uid: d0b2269b-2f69-490a-b581-55723e071936   其名下含 S0004 的 SQL 值 = 0   （与 43 应当互异）
+  URL     : http://localhost:8195/api/cpq/quotations?salesRepId=d1e1147c-a639-4156-aeac-9f938a65ad05&partNo=S0004&page=0&size=1
+  HTTP    : 200
+  URL     : http://localhost:8195/api/cpq/quotations?salesRepId=d0b2269b-2f69-490a-b581-55723e071936&partNo=S0004&page=0&size=1
+  HTTP    : 200
+  uid1 → 43 （SQL 43）    uid2 → 0 （SQL 0）
+  ✅ PASS  TC-API-10-判别性反例 — uid1=43 / uid2=0 互异且各自等于其 SQL 值（salesRepId 与 partNo 确是 AND）
+  ⚠️  未验证 TC-API-10-真实角色链路 — 真实 SALES_REP 登录后的可见范围：**本次未验证**（C-6 裁决不造数；现网 187 单里 184 单归 SYSTEM_ADMIN，可登录的两个 SALES_REP 名下均 0 单）
+  ⚠️  未验证 TC-API-10-前端传参 — AC-19 ①「前端 SALES_REP 时确实传 salesRepId」需读 QuotationList.tsx，**超出 S-API 可读范围**，本片未验证 —— 需主线或 S-UI 承担
+
+────────────────────────────────────────────────────────────────
+▶ TC-API-11  【服务 AC】AC-21
+  categoryId=not-a-uuid → HTTP 400 + 可读消息；对照既有 status 非法值口径
+────────────────────────────────────────────────────────────────
+  URL     : http://localhost:8195/api/cpq/quotations?categoryId=not-a-uuid&page=0&size=1
+  HTTP    : 400
+  响应体  : {"code":400,"message":"Invalid categoryId value: not-a-uuid. Allowed: a category UUID or the literal 'NONE'"}
+  message : [Invalid categoryId value: not-a-uuid. Allowed: a category UUID or the literal 'NONE']
+  该响应里的 totalElements: None （改动前基线是静默返全量 187，那是本条要挡掉的行为）
+  URL     : http://localhost:8195/api/cpq/quotations?status=NOT_A_STATUS&page=0&size=1
+  HTTP    : 400
+  对照（既有 status 非法值）HTTP = 400
+  ✅ PASS  TC-API-11 — HTTP 400 + 消息「Invalid categoryId value: not-a-uuid. Allowed: a category UUID or the literal 'NONE'」，与既有 status 非法值口径(400)一致
+  URL     : http://localhost:8195/api/cpq/quotations?templateId=not-a-uuid&page=0&size=1
+  HTTP    : 200
+  【AC 未覆盖·仅记录】templateId=not-a-uuid → HTTP 200 ；AC-21 只写了 categoryId
+
+────────────────────────────────────────────────────────────────
+S-API 汇总：PASS=23  FAIL=0  未验证=2  不稳定=0
+────────────────────────────────────────────────────────────────
+  PASS|TC-API-01|接口 43 == 基准 SQL 43
+  PASS|TC-API-01-逐单|整页 20 单全部确实含 S0004
+  PASS|TC-API-02|接口 35 == 基准 SQL 35
+  PASS|TC-API-02-逐单|整页 20 单的客户料号都含 A002（走的是客户料号那一路）
+  PASS|TC-API-03|接口 49 == 基准 SQL 49
+  PASS|TC-API-03-大小写/模糊|s000=49 = S000=49 且 > S0004=43（模糊 + 大小写不敏感成立）
+  PASS|TC-API-04|接口 40 == 基准 SQL 40
+  PASS|TC-API-04-AND语义|组合(40) ≤ 各单条件(43 / 83)，是 AND 不是 OR
+  PASS|TC-API-05|接口 38 == 基准 SQL 38
+  PASS|TC-API-05-回切|切回全部后仍为 43（料号条件未被清空，也没退化成全量 187）
+  PASS|TC-API-06|接口 62 == 基准 SQL 62
+  PASS|TC-API-06-逐行|全部返回行的 categoryId/categoryName 都是 默认分类
+  PASS|TC-API-07|接口 117 == 基准 SQL 117
+  PASS|TC-API-07-逐行|全部返回行的分类均为空（前端应渲染「—」）
+  PASS|TC-API-08|接口 59 == 基准 SQL 59
+  PASS|TC-API-08-系列聚合|接口 59 == 按系列合计 59，严格大于单版本最大值 32（聚合真的生效）
+  PASS|TC-API-08-逐行|全部返回行的模板都属于本系列，templateName 均为 正泰测试模板1 且不带版本号
+  PASS|TC-API-08-跨版本|返回行跨了 3 个版本 id（≤ 本系列 3 个，且逐行均属本系列）—— 按系列聚合的正向证据
+  PASS|TC-API-09|SQL 4 条 ≤ 上限 4，且与行数无关（20 行与 1 行同为 4 条；字典 分类1/模板1）
+  PASS|TC-API-10-角色基线|接口 156 == 基准 SQL 156
+  PASS|TC-API-10|接口 43 == 基准 SQL 43
+  PASS|TC-API-10-判别性反例|uid1=43 / uid2=0 互异且各自等于其 SQL 值（salesRepId 与 partNo 确是 AND）
+  UNVERIFIED|TC-API-10-真实角色链路|真实 SALES_REP 登录后的可见范围：**本次未验证**（C-6 裁决不造数；现网 187 单里 184 单归 SYSTEM_ADMIN，可登录的两个 SALES_REP 名下均 0 单）
+  UNVERIFIED|TC-API-10-前端传参|AC-19 ①「前端 SALES_REP 时确实传 salesRepId」需读 QuotationList.tsx，**超出 S-API 可读范围**，本片未验证 —— 需主线或 S-UI 承担
+  PASS|TC-API-11|HTTP 400 + 消息「Invalid categoryId value: not-a-uuid. Allowed: a category UUID or the literal 'NONE'」，与既有 status 非法值口径(400)一致
+────────────────────────────────────────────────────────────────
+库: 10.177.152.12/cpq_db_0724   后端: http://localhost:8195   时刻: 2026-09-14T21:35:36-07:00

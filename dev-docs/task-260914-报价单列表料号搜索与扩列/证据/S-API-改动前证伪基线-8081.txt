@@ -1,0 +1,241 @@
+=== task-260914 · S-API 用例集 ===
+后端: http://localhost:8081    库: 10.177.152.12/cpq_db_0724    开跑: 2026-09-14T21:01:27-07:00
+存活探针（未登录期望 401）: 401
+Q0 全量报价单（现场重算）= 187
+
+────────────────────────────────────────────────────────────────
+▶ TC-API-01  【服务 AC】AC-2
+  料号框输入 S0004 → 命中数 = Q1('s0004')，且抽样单确实含该料号
+────────────────────────────────────────────────────────────────
+  基准SQL : SELECT count(*) FROM quotation q WHERE EXISTS (SELECT 1 FROM quotation_line_item li WHERE li.quotation_id=q.id AND (LOWER(li.product_part_no_snapshot) LIKE '%s0004%' OR LOWER(li.customer_part_no) LIKE '%s0004%'));
+  SQL值(前): 43
+  URL     : http://localhost:8081/api/cpq/quotations?partNo=S0004&page=0&size=20
+  HTTP    : 200
+  SQL值(后): 43
+  接口值  : 187
+  ❌ FAIL  TC-API-01 — 接口 187 ≠ 基准 SQL 43
+  —— 回库逐单核实（接口返回的整页单 → 回库查各自行项）——
+  URL     : http://localhost:8081/api/cpq/quotations?partNo=S0004&page=0&size=20
+  HTTP    : 200
+    ✗ QT-20260914-0868 行项里没有 S0004
+    ✗ QT-20260913-0860 行项里没有 S0004
+    ✗ QT-20260911-0847 行项里没有 S0004
+    ✗ QT-20260911-B1FIXVERIFY 行项里没有 S0004
+    ✗ QT-20260911-S2FRESH 行项里没有 S0004
+    ✗ QT-20260911-0840 行项里没有 S0004
+  逐单核实: 共查 20 单，不含 S0004 的有 6 单
+  ❌ FAIL  TC-API-01-逐单 — 6/20 单根本不含 S0004 —— 接口把不该命中的单返回了
+
+────────────────────────────────────────────────────────────────
+▶ TC-API-02  【服务 AC】AC-3
+  料号框输入 A002 → 命中数 = Q1('a002')，且命中来自 customer_part_no
+────────────────────────────────────────────────────────────────
+  命中路径拆解: 经销售料号 0 单 / 经客户料号 35 单
+  基准SQL : SELECT count(*) FROM quotation q WHERE EXISTS (SELECT 1 FROM quotation_line_item li WHERE li.quotation_id=q.id AND (LOWER(li.product_part_no_snapshot) LIKE '%a002%' OR LOWER(li.customer_part_no) LIKE '%a002%'));
+  SQL值(前): 35
+  URL     : http://localhost:8081/api/cpq/quotations?partNo=A002&page=0&size=20
+  HTTP    : 200
+  SQL值(后): 35
+  接口值  : 187
+  ❌ FAIL  TC-API-02 — 接口 187 ≠ 基准 SQL 35
+  —— 逐单核实客户料号列 ——
+  URL     : http://localhost:8081/api/cpq/quotations?partNo=A002&page=0&size=20
+  HTTP    : 200
+    ✗ QT-20260914-0868 的客户料号里没有 a002
+    ✗ QT-20260913-0860 的客户料号里没有 a002
+    ✗ QT-20260911-0847 的客户料号里没有 a002
+    ✗ QT-20260911-B1FIXVERIFY 的客户料号里没有 a002
+    ✗ QT-20260911-S2FRESH 的客户料号里没有 a002
+    ✗ QT-20260911-0844 的客户料号里没有 a002
+    ✗ QT-20260911-0841 的客户料号里没有 a002
+    ✗ QT-20260911-0843 的客户料号里没有 a002
+    ✗ QT-20260911-0846 的客户料号里没有 a002
+    ✗ QT-20260911-0845 的客户料号里没有 a002
+    ✗ QT-20260911-0840 的客户料号里没有 a002
+  逐单核实: 共查 20 单，客户料号不含 a002 的有 11 单；样例 QT-20260914-0867→A002
+  ❌ FAIL  TC-API-02-逐单 — 11/20 单的客户料号里没有 a002
+
+────────────────────────────────────────────────────────────────
+▶ TC-API-03  【服务 AC】AC-4
+  小写 s000 → 命中数 = Q1('s000') 且严格大于 S0004 的命中数；再验大小写两向一致
+────────────────────────────────────────────────────────────────
+  参照值 Q1('s0004') = 43
+  基准SQL : SELECT count(*) FROM quotation q WHERE EXISTS (SELECT 1 FROM quotation_line_item li WHERE li.quotation_id=q.id AND (LOWER(li.product_part_no_snapshot) LIKE '%s000%' OR LOWER(li.customer_part_no) LIKE '%s000%'));
+  SQL值(前): 49
+  URL     : http://localhost:8081/api/cpq/quotations?partNo=s000&page=0&size=20
+  HTTP    : 200
+  SQL值(后): 49
+  接口值  : 187
+  ❌ FAIL  TC-API-03 — 接口 187 ≠ 基准 SQL 49
+  URL     : http://localhost:8081/api/cpq/quotations?partNo=s000&page=0&size=1
+  HTTP    : 200
+  URL     : http://localhost:8081/api/cpq/quotations?partNo=S000&page=0&size=1
+  HTTP    : 200
+  小写 s000 = 187    大写 S000 = 187    S0004 = 43    全量 = 187
+  ❌ FAIL  TC-API-03-大小写 — 两向都等于全量 187 → 料号参数根本没生效，「大小写一致」是平凡成立，不算通过
+
+────────────────────────────────────────────────────────────────
+▶ TC-API-04  【服务 AC】AC-6
+  partNo=S0004 ∧ keyword=<子集客户名> → 严格交集，且严格小于单料号命中数
+────────────────────────────────────────────────────────────────
+  现场挑中的关键字（S0004 单的真子集）: [正泰]
+  基准SQL : SELECT count(*) FROM quotation q WHERE EXISTS (SELECT 1 FROM quotation_line_item li WHERE li.quotation_id=q.id AND (LOWER(li.product_part_no_snapshot) LIKE '%s0004%' OR LOWER(li.customer_part_no) LIKE '%s0004%')) AND (q.snapshot_customer_name ILIKE '%正泰%' OR q.name ILIKE '%正泰%' OR q.quotation_number ILIKE '%正泰%');
+  SQL值(前): 40
+  URL     : http://localhost:8081/api/cpq/quotations?partNo=S0004&keyword=%E6%AD%A3%E6%B3%B0&page=0&size=20
+  HTTP    : 200
+  SQL值(后): 40
+  接口值  : 83
+  ❌ FAIL  TC-API-04 — 接口 83 ≠ 基准 SQL 40
+  URL     : http://localhost:8081/api/cpq/quotations?keyword=%E6%AD%A3%E6%B3%B0&page=0&size=1
+  HTTP    : 200
+  仅 keyword 命中 = 83   仅 partNo 命中 = 43
+  URL     : http://localhost:8081/api/cpq/quotations?partNo=S0004&keyword=%E6%AD%A3%E6%B3%B0&page=0&size=1
+  HTTP    : 200
+  两者同时 = 83
+  ❌ FAIL  TC-API-04-AND语义 — 组合(83) 超过了某个单条件 → 疑似 OR 语义
+
+────────────────────────────────────────────────────────────────
+▶ TC-API-05  【服务 AC】AC-7
+  partNo=S0004 ∧ status=DRAFT → Q3；去掉 status 后回到 Q1（料号条件不被吃掉）
+────────────────────────────────────────────────────────────────
+  基准SQL : SELECT count(*) FROM quotation q WHERE q.status='DRAFT' AND EXISTS (SELECT 1 FROM quotation_line_item li WHERE li.quotation_id=q.id AND (LOWER(li.product_part_no_snapshot) LIKE '%s0004%' OR LOWER(li.customer_part_no) LIKE '%s0004%'));
+  SQL值(前): 38
+  URL     : http://localhost:8081/api/cpq/quotations?partNo=S0004&status=DRAFT&page=0&size=20
+  HTTP    : 200
+  SQL值(后): 38
+  接口值  : 103
+  ❌ FAIL  TC-API-05 — 接口 103 ≠ 基准 SQL 38
+  —— 切回「全部」（去掉 status），料号条件必须还在 ——
+  URL     : http://localhost:8081/api/cpq/quotations?partNo=S0004&page=0&size=1
+  HTTP    : 200
+  切回后 = 187    期望 = 43（Q1 现场值）    全量 = 187
+  ❌ FAIL  TC-API-05-回切 — 切回后 187 ≠ Q1 43（若等于全量 187 说明料号条件被清空了）
+
+────────────────────────────────────────────────────────────────
+▶ TC-API-06  【服务 AC】AC-13
+  categoryId=<默认分类> → 命中数 = Q5，且返回的每一行 categoryName 都是该分类名
+────────────────────────────────────────────────────────────────
+  现场选中的分类: 默认分类 (2c4b8ed8-59ce-4125-b7f7-86ab59ca4bc3)  —— 取「名下单最多的 ACTIVE 分类」，不写死名字
+  基准SQL : SELECT count(*) FROM quotation WHERE product_category_id='2c4b8ed8-59ce-4125-b7f7-86ab59ca4bc3';
+  SQL值(前): 62
+  URL     : http://localhost:8081/api/cpq/quotations?categoryId=2c4b8ed8-59ce-4125-b7f7-86ab59ca4bc3&page=0&size=20
+  HTTP    : 200
+  SQL值(后): 62
+  接口值  : 187
+  ❌ FAIL  TC-API-06 — 接口 187 ≠ 基准 SQL 62
+  —— 逐行校验（拉全量，不是只看首页）——
+  URL     : http://localhost:8081/api/cpq/quotations?categoryId=2c4b8ed8-59ce-4125-b7f7-86ab59ca4bc3&page=0&size=500
+  HTTP    : 200
+  返回行数: 187
+  categoryId 不符的行: 125 ['QT-20260911-B1FIXVERIFY', 'QT-20260911-S2FRESH', 'QT-20260911-0844', 'QT-20260911-0841', 'QT-20260911-0843']
+  categoryName 不符的行: 187 [('QT-20260914-0867', None), ('QT-20260914-0868', None), ('QT-20260914-0866', None), ('QT-20260914-0865', None), ('QT-20260914-0864', None)]
+  样例前3行 categoryName: [None, None, None]
+  ROWCHECK=BAD
+  ❌ FAIL  TC-API-06-逐行 — 存在分类不符的行（见上方清单）
+
+────────────────────────────────────────────────────────────────
+▶ TC-API-07  【服务 AC】AC-14
+  categoryId=NONE → 命中数 = Q6(IS NULL)，且每一行 categoryId/categoryName 均为 null
+────────────────────────────────────────────────────────────────
+  基准SQL : SELECT count(*) FROM quotation WHERE product_category_id IS NULL;
+  SQL值(前): 117
+  URL     : http://localhost:8081/api/cpq/quotations?categoryId=NONE&page=0&size=20
+  HTTP    : 200
+  SQL值(后): 117
+  接口值  : 187
+  ❌ FAIL  TC-API-07 — 接口 187 ≠ 基准 SQL 117
+  —— 逐行校验（拉全量）——
+  URL     : http://localhost:8081/api/cpq/quotations?categoryId=NONE&page=0&size=500
+  HTTP    : 200
+  返回行数: 187
+  非空分类的行: 70 [('QT-20260914-0867', '2c4b8ed8-59ce-4125-b7f7-86ab59ca4bc3', None), ('QT-20260914-0868', '2c4b8ed8-59ce-4125-b7f7-86ab59ca4bc3', None), ('QT-20260914-0866', '2c4b8ed8-59ce-4125-b7f7-86ab59ca4bc3', None), ('QT-20260914-0865', '2c4b8ed8-59ce-4125-b7f7-86ab59ca4bc3', None), ('QT-20260914-0864', '2c4b8ed8-59ce-4125-b7f7-86ab59ca4bc3', None)]
+  ROWCHECK=BAD
+  ❌ FAIL  TC-API-07-逐行 — 存在分类非空的行 → NONE 语义没落实
+
+────────────────────────────────────────────────────────────────
+▶ TC-API-08  【服务 AC】AC-15
+  templateId=<被引用最多的 QUOTATION 模板> → 命中数 = 该 id 名下单数，且每行 templateName 一致
+────────────────────────────────────────────────────────────────
+  现场选中的模板: 报价模板 · ds 原生 v1.0 (a2228dae-7a54-4921-a66f-da4eed41a6c1)
+  基准SQL : SELECT count(*) FROM quotation WHERE customer_template_id='a2228dae-7a54-4921-a66f-da4eed41a6c1';
+  SQL值(前): 63
+  URL     : http://localhost:8081/api/cpq/quotations?templateId=a2228dae-7a54-4921-a66f-da4eed41a6c1&page=0&size=20
+  HTTP    : 200
+  SQL值(后): 63
+  接口值  : 187
+  ❌ FAIL  TC-API-08 — 接口 187 ≠ 基准 SQL 63
+  【口径差异记录】同名模板 3 个；按名合计 63 单；按本 id 63 单
+  —— 逐行校验（拉全量）——
+  URL     : http://localhost:8081/api/cpq/quotations?templateId=a2228dae-7a54-4921-a66f-da4eed41a6c1&page=0&size=500
+  HTTP    : 200
+  返回行数: 187
+  templateId 不符: 124 ['QT-20260914-0867', 'QT-20260914-0868', 'QT-20260914-0866', 'QT-20260914-0865', 'QT-20260914-0864']
+  templateName 不符: 187 [('QT-20260914-0867', None), ('QT-20260914-0868', None), ('QT-20260914-0866', None), ('QT-20260914-0865', None), ('QT-20260914-0864', None)]
+  样例前3行 templateName: [None, None, None]
+  疑似带版本号的模板名: []
+  ROWCHECK=BAD
+  ❌ FAIL  TC-API-08-逐行 — 存在模板不符的行（或 templateName 字段未实现）
+
+────────────────────────────────────────────────────────────────
+▶ TC-API-09  【服务 AC】AC-18
+  同一查询返回 20 行 vs 1 行，SQL 条数必须不变（N+1 红线）
+────────────────────────────────────────────────────────────────
+  ⚠️  未验证 TC-API-09 — 未提供后端 SQL 日志（S_API_SQLLOG 未设或文件不存在）—— 见 README 的启动命令
+
+────────────────────────────────────────────────────────────────
+▶ TC-API-10  【服务 AC】AC-19
+  SALES_REP 登录 + partNo=S0004 → 在其可见范围内正确收窄，且既有可见性口径未被改变
+────────────────────────────────────────────────────────────────
+  alice (091bf7ec-b500-4eea-a4e8-56206d78343c) 名下单数 = 0   Q10(名下 ∧ S0004) = 0   全库 S0004 = 43
+  URL     : http://localhost:8081/api/cpq/quotations?page=0&size=1
+  HTTP    : 200
+  SALES_REP 无过滤时可见 = 187   （全量 = 187，其名下 = 0）
+  测定口径 : ALL
+  URL     : http://localhost:8081/api/cpq/quotations?partNo=S0004&page=0&size=20
+  HTTP    : 200
+  SALES_REP + partNo=S0004 = 187   （按 ALL 口径的期望 = 43）
+  ❌ FAIL  TC-API-10 — SALES_REP 下 187 ≠ 期望 43（ALL 口径）
+  ⚠️  未验证 TC-API-10b — AC-19 假定「既有按 sales_rep_id 的角色隔离」，但实测 SALES_REP 可见全量 187 —— 该前提在本系统不成立，待主线澄清
+
+────────────────────────────────────────────────────────────────
+▶ TC-API-11  【服务 AC】AC-21
+  categoryId=not-a-uuid → HTTP 400 + 可读消息；对照既有 status 非法值口径
+────────────────────────────────────────────────────────────────
+  URL     : http://localhost:8081/api/cpq/quotations?categoryId=not-a-uuid&page=0&size=1
+  HTTP    : 200
+  响应体  : {"code":200,"message":"success","data":{"content":[{"id":"91d0f93d-2e81-4fc3-82b9-a23b1f482795","quotationNumber":"QT-20260914-0867","customerId":"1f5818d8-b934-44be-b1c3-47df7053cff4","name":"正泰 报价单","contactId":null,"contactName":null,"contactPhone":null,"contactEmail":null,"projectName":null,"opportunityId":null,"salesRepId":"d1e1147c-a639-4156-aeac-9f938a65ad05","quoteType":"STANDARD
+  message : [success]
+  该响应里的 totalElements: 187 （改动前基线是静默返全量 187，那是本条要挡掉的行为）
+  URL     : http://localhost:8081/api/cpq/quotations?status=NOT_A_STATUS&page=0&size=1
+  HTTP    : 400
+  对照（既有 status 非法值）HTTP = 400
+  ❌ FAIL  TC-API-11 — 返回 200 且 totalElements=187 —— 非法值被静默当作「不过滤」，AC-21 明确禁止
+  URL     : http://localhost:8081/api/cpq/quotations?templateId=not-a-uuid&page=0&size=1
+  HTTP    : 200
+  【AC 未覆盖·仅记录】templateId=not-a-uuid → HTTP 200 ；AC-21 只写了 categoryId
+
+────────────────────────────────────────────────────────────────
+S-API 汇总：PASS=0  FAIL=18  未验证=2  不稳定=0
+────────────────────────────────────────────────────────────────
+  FAIL|TC-API-01|接口 187 ≠ 基准 SQL 43
+  FAIL|TC-API-01-逐单|6/20 单根本不含 S0004 —— 接口把不该命中的单返回了
+  FAIL|TC-API-02|接口 187 ≠ 基准 SQL 35
+  FAIL|TC-API-02-逐单|11/20 单的客户料号里没有 a002
+  FAIL|TC-API-03|接口 187 ≠ 基准 SQL 49
+  FAIL|TC-API-03-大小写|两向都等于全量 187 → 料号参数根本没生效，「大小写一致」是平凡成立，不算通过
+  FAIL|TC-API-04|接口 83 ≠ 基准 SQL 40
+  FAIL|TC-API-04-AND语义|组合(83) 超过了某个单条件 → 疑似 OR 语义
+  FAIL|TC-API-05|接口 103 ≠ 基准 SQL 38
+  FAIL|TC-API-05-回切|切回后 187 ≠ Q1 43（若等于全量 187 说明料号条件被清空了）
+  FAIL|TC-API-06|接口 187 ≠ 基准 SQL 62
+  FAIL|TC-API-06-逐行|存在分类不符的行（见上方清单）
+  FAIL|TC-API-07|接口 187 ≠ 基准 SQL 117
+  FAIL|TC-API-07-逐行|存在分类非空的行 → NONE 语义没落实
+  FAIL|TC-API-08|接口 187 ≠ 基准 SQL 63
+  FAIL|TC-API-08-逐行|存在模板不符的行（或 templateName 字段未实现）
+  UNVERIFIED|TC-API-09|未提供后端 SQL 日志（S_API_SQLLOG 未设或文件不存在）—— 见 README 的启动命令
+  FAIL|TC-API-10|SALES_REP 下 187 ≠ 期望 43（ALL 口径）
+  UNVERIFIED|TC-API-10b|AC-19 假定「既有按 sales_rep_id 的角色隔离」，但实测 SALES_REP 可见全量 187 —— 该前提在本系统不成立，待主线澄清
+  FAIL|TC-API-11|返回 200 且 totalElements=187 —— 非法值被静默当作「不过滤」，AC-21 明确禁止
+────────────────────────────────────────────────────────────────
+库: 10.177.152.12/cpq_db_0724   后端: http://localhost:8081   时刻: 2026-09-14T21:01:42-07:00

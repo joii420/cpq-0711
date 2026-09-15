@@ -14,7 +14,15 @@
 </div>
 
 <div class="card">
-  <div class="card-head">报价单管理</div>
+  <div class="card-head">
+    <span>报价单管理</span>
+    <span class="head-actions">
+
+      <div class="btn">🕘 导入历史</div>
+      <div class="btn primary">⬇ 导入报价数据</div>
+      <div class="btn">＋ 新建报价单</div>
+    </span>
+  </div>
   <div class="card-body">
 
     <div class="tabs">
@@ -52,11 +60,7 @@
         <span class="ph">报价模板</span><span class="caret">⏷</span>
       </div>
 
-      <div class="spacer"></div>
-
-      <div class="btn">🕘 导入历史</div>
-      <div class="btn primary">⬇ 导入报价数据</div>
-      <div class="btn">＋ 新建报价单</div>
+      
     </div>
 
     <table>
@@ -66,8 +70,8 @@
           <th style="width:180px">报价单号</th>
           <th>名称</th>
           <th style="width:140px">客户</th>
-          <th style="width:140px" class="filterable">产品分类</th>
-          <th style="width:180px" class="filterable">报价模板</th>
+          <th style="width:140px">产品分类</th>
+          <th style="width:180px">报价模板</th>
           <th style="width:100px">状态</th>
           <th style="width:130px">总金额</th>
           <th style="width:120px">创建日期</th>
@@ -81,7 +85,7 @@
           <td>正泰 报价单</td><td>正泰</td>
           <td>默认分类</td><td>正泰测试模板2</td>
           <td><span class="tag default">草稿</span></td>
-          <td>¥0</td><td>2026-09-15</td><td>2026-10-14</td>
+          <td>¥0</td><td>2026-09-14</td><td>2026-10-14</td>
         </tr>
         <tr>
           <td><span class="cb"></span></td>
@@ -89,7 +93,7 @@
           <td>正泰 报价单</td><td>正泰</td>
           <td>默认分类</td><td>正泰测试模板2</td>
           <td><span class="tag success">已审核</span></td>
-          <td>¥0</td><td>2026-09-15</td><td>2026-10-14</td>
+          <td>¥0</td><td>2026-09-14</td><td>2026-10-14</td>
         </tr>
         <tr>
           <td><span class="cb"></span></td>
@@ -157,8 +161,13 @@
 
     <div class="note">
       <b>还原要点</b>：① 三个新列插在既有列之间（客户之后、状态之前插「产品分类」「报价模板」；总金额之后、到期日之前插「创建日期」），
-      不是一律追加到最右；② 分类/模板两列表头带筛选图标 ⏷；③ 空值一律 <code>—</code>（U+2014），与「客户」「到期日」列既有的空值口径一致；
-      ④ 总金额沿用现有 <code>formatNumber</code>，本次不动。
+      不是一律追加到最右；② <b>筛选入口只在工具栏的两个下拉</b>，表头<b>不出</b>筛选图标（2026-09-14 用户裁决：两处入口会产生选中状态不同步）；③ 空值一律 <code>—</code>（U+2014），与「客户」「到期日」列既有的空值口径一致；
+      ④ 总金额沿用现有 <code>formatNumber</code>，本次不动；
+      ⑤ 🕐 <b>创建日期按浏览器本地时区换算</b>（2026-09-14 裁决 C-4）——
+      <code>QT-20260914-0867</code> 的 <code>created_at</code> 在库里是 <code>2026-09-15 01:47:58+00</code>（UTC），
+      本机 PDT 下本页显示 <code>2026-09-14</code>，与单号里的 <code>20260914</code> 一致。
+      🚫 <b>不许直接 <code>createdAt.slice(0,10)</code></b> —— 那是 UTC 口径，每天有几小时窗口会比单号早一天。
+      <b>本页此列原稿写的就是 <code>2026-09-15</code>（UTC 口径），已修正</b>。
     </div>
   </div>
 </div>
