@@ -27,7 +27,8 @@
           <thead><tr><th style="width:300px">文件</th><th style="width:150px">状态</th><th style="width:130px">服务的 AC</th><th>要点</th></tr></thead>
           <tbody>
             <tr>
-              <td><a class="link" href="01-报价单列表.html">01-报价单列表.html</a></td>
+              <td><a class="link" href="01-报价单列表.html">01-报价单列表.html</a><br>
+                  <b>🕰️ 历史快照</b>（2026-09-14 起不再是基准）</td>
               <td><span class="tag tag-blue">默认态</span> <span class="tag tag-gold">禁用态</span></td>
               <td>AC-13, AC-19</td>
               <td>摘掉「从基础数据导入」后的工具栏顺序；无权限时禁用但可见 + tooltip</td>
@@ -70,6 +71,15 @@
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div class="alert alert-warn">
+        <b>🕰️ <code>01-报价单列表.html</code> 已被取代，不再是当前基准</b>（其余 6 份导入抽屉原型<b>仍是当前基准</b>）<br>
+        取代者：<code>dev-docs/task-260914-报价单列表料号搜索与扩列/原型图/</code>（📌 当前基准）。
+        <b>偏差清单</b>：① 工具栏在「搜索报价单号/名称/客户」框之后新增 3 个控件（料号搜索框 + 产品分类筛选 + 报价模板筛选）；
+        ② 表格由 6 列扩为 9 列（客户后插「产品分类」「报价模板」，总金额后插「创建日期」）；
+        ③ 右侧三个按钮的顺序、形态、权限禁用逻辑<b>不变</b>——本份快照在这一点上仍然有效，
+        task-260914 的 AC-20 正是拿它做回归基准。
       </div>
 
       <div class="alert alert-warn">

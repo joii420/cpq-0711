@@ -1,0 +1,132 @@
+/* 视觉语汇对齐 Ant Design 5.x（项目实际使用的组件库）——
+   间距 8 的倍数、圆角 6px、主色 #1677ff、边框 #d9d9d9、表头 #fafafa、字号 14px */
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 24px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+               "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-size: 14px; line-height: 1.5714;
+  color: rgba(0,0,0,.88); background: #f5f5f5;
+}
+.proto-banner {
+  max-width: 1480px; margin: 0 auto 16px;
+  background: #fffbe6; border: 1px solid #ffe58f; border-radius: 6px;
+  padding: 8px 16px; font-size: 13px; color: #614700;
+}
+.proto-banner a { color: #1677ff; }
+.card {
+  max-width: 1480px; margin: 0 auto;
+  background: #fff; border-radius: 8px;
+  box-shadow: 0 1px 2px 0 rgba(0,0,0,.03), 0 1px 6px -1px rgba(0,0,0,.02);
+}
+.card-head {
+  padding: 16px 24px; border-bottom: 1px solid #f0f0f0;
+  font-size: 16px; font-weight: 600;
+}
+.card-body { padding: 24px; }
+
+/* Tabs */
+.tabs { display: flex; gap: 32px; border-bottom: 1px solid #f0f0f0; margin-bottom: 8px; }
+.tab { padding: 12px 0; cursor: pointer; color: rgba(0,0,0,.88); }
+.tab.active { color: #1677ff; box-shadow: inset 0 -2px 0 #1677ff; font-weight: 500; }
+
+/* 工具栏 */
+.toolbar {
+  display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap; margin: 16px 0;
+}
+.toolbar .spacer { flex: 1 1 auto; }
+.input, .select {
+  height: 32px; border: 1px solid #d9d9d9; border-radius: 6px;
+  background: #fff; display: inline-flex; align-items: center;
+  padding: 0 11px; gap: 8px; color: rgba(0,0,0,.88);
+}
+.input .ph, .select .ph { color: rgba(0,0,0,.25); }
+.input.search { padding-right: 0; overflow: hidden; }
+.input.search .btn-search {
+  margin-left: auto; height: 30px; width: 40px;
+  background: #1677ff; color: #fff; display: flex;
+  align-items: center; justify-content: center; border-radius: 0 5px 5px 0;
+}
+.select { justify-content: space-between; cursor: pointer; }
+.select .caret { color: rgba(0,0,0,.25); font-size: 12px; }
+.select.filled { border-color: #1677ff; }
+.select.open { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(5,145,255,.1); }
+.btn {
+  height: 32px; padding: 0 15px; border: 1px solid #d9d9d9; border-radius: 6px;
+  background: #fff; display: inline-flex; align-items: center; gap: 8px;
+  cursor: pointer; white-space: nowrap;
+}
+.btn.primary { background: #1677ff; border-color: #1677ff; color: #fff; }
+.btn.disabled { color: rgba(0,0,0,.25); background: rgba(0,0,0,.04); border-color: #d9d9d9; cursor: not-allowed; }
+.btn.primary.disabled { background: rgba(0,0,0,.04); border-color: #d9d9d9; color: rgba(0,0,0,.25); }
+
+/* 选中条（SelectableTable 的动作条） */
+.sel-bar {
+  background: #e6f4ff; border: 1px solid #91caff; border-radius: 6px;
+  padding: 8px 16px; margin-bottom: 16px; display: flex; align-items: center; gap: 16px;
+}
+
+/* 表格 */
+table { width: 100%; border-collapse: collapse; }
+th, td {
+  padding: 12px 8px; text-align: left; border-bottom: 1px solid #f0f0f0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+th { background: #fafafa; font-weight: 600; color: rgba(0,0,0,.88); }
+th.filterable::after { content: " ⏷"; color: rgba(0,0,0,.29); font-size: 11px; }
+th.filterable.active::after { color: #1677ff; }
+td.link a { color: #1677ff; text-decoration: none; cursor: pointer; }
+td.muted { color: rgba(0,0,0,.45); }
+.cb { width: 16px; height: 16px; border: 1px solid #d9d9d9; border-radius: 4px; display: inline-block; vertical-align: -3px; }
+.cb.checked { background: #1677ff; border-color: #1677ff; position: relative; }
+.cb.checked::after { content: "✓"; color: #fff; font-size: 11px; position: absolute; left: 2px; top: -2px; }
+.tag {
+  display: inline-block; padding: 0 7px; border-radius: 4px;
+  font-size: 12px; line-height: 20px; border: 1px solid;
+}
+.tag.default    { color: rgba(0,0,0,.88); background: #fafafa; border-color: #d9d9d9; }
+.tag.processing { color: #1677ff; background: #e6f4ff; border-color: #91caff; }
+.tag.success    { color: #389e0d; background: #f6ffed; border-color: #b7eb8f; }
+.tag.cyan       { color: #08979c; background: #e6fffb; border-color: #87e8de; }
+.tag.error      { color: #cf1322; background: #fff1f0; border-color: #ffa39e; }
+.tag.warning    { color: #d46b08; background: #fff7e6; border-color: #ffd591; }
+
+/* 分页 */
+.pagination { display: flex; align-items: center; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.pagination .total { margin-right: auto; color: rgba(0,0,0,.88); }
+.page-item {
+  min-width: 32px; height: 32px; border: 1px solid #d9d9d9; border-radius: 6px;
+  display: inline-flex; align-items: center; justify-content: center; background: #fff;
+}
+.page-item.active { border-color: #1677ff; color: #1677ff; }
+
+/* 空态 */
+.empty { padding: 64px 0; text-align: center; color: rgba(0,0,0,.25); }
+.empty .icon { font-size: 40px; opacity: .35; }
+
+/* 下拉浮层 */
+.dropdown {
+  position: absolute; z-index: 10; background: #fff; border-radius: 8px;
+  box-shadow: 0 6px 16px 0 rgba(0,0,0,.08), 0 3px 6px -4px rgba(0,0,0,.12);
+  padding: 4px; min-width: 200px;
+}
+.dropdown .opt { padding: 5px 12px; border-radius: 4px; cursor: pointer; }
+.dropdown .opt:hover { background: rgba(0,0,0,.04); }
+.dropdown .opt.selected { background: #e6f4ff; font-weight: 600; }
+.dropdown .opt .hint { color: rgba(0,0,0,.45); font-weight: 400; float: right; }
+.rel { position: relative; display: inline-block; }
+
+/* tooltip */
+.tooltip {
+  position: absolute; background: rgba(0,0,0,.85); color: #fff;
+  padding: 6px 8px; border-radius: 6px; font-size: 13px;
+  white-space: nowrap; z-index: 20;
+}
+.tooltip::after {
+  content: ""; position: absolute; left: 50%; margin-left: -5px; bottom: -5px;
+  border: 5px solid transparent; border-top-color: rgba(0,0,0,.85); border-bottom: none;
+}
+.note { margin-top: 16px; padding: 12px 16px; background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 6px; font-size: 13px; }
+.note.blue { background: #e6f4ff; border-color: #91caff; }
+.note b { color: #cf1322; }

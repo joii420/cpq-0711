@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>报价单管理 · 料号搜索无结果（task-260914 原型）</title>
+<link rel="stylesheet" href="antd-like.css">
+</head>
+<body>
+
+<div class="proto-banner">
+  📌 <b>当前基准</b> · task-260914 · <b>空态</b>（料号框 = <code>zzz9999</code>，无任何单据命中）　|　
+  <a href="index.html">← 返回原型导航</a>　|　
+  本页对应 <b>AC-5</b>
+</div>
+
+<div class="card">
+  <div class="card-head">报价单管理</div>
+  <div class="card-body">
+
+    <div class="tabs">
+      <div class="tab active">全部</div>
+      <div class="tab">草稿</div>
+      <div class="tab">待核价</div>
+      <div class="tab">已驳回</div>
+      <div class="tab">已审核</div>
+      <div class="tab">已发送</div>
+      <div class="tab">已接受</div>
+      <div class="tab">客户已拒绝</div>
+      <div class="tab">已过期</div>
+    </div>
+
+    <div class="toolbar">
+      <div class="input search" style="width:300px">
+        <span class="ph">搜索报价单号/名称/客户</span>
+        <span class="btn-search">🔍</span>
+      </div>
+      <div class="input search" style="width:240px">
+        <span>zzz9999</span>
+        <span style="color:rgba(0,0,0,.25);margin-left:auto;padding-right:8px">⊗</span>
+        <span class="btn-search">🔍</span>
+      </div>
+      <div class="select" style="width:160px">
+        <span class="ph">产品分类</span><span class="caret">⏷</span>
+      </div>
+      <div class="select" style="width:200px">
+        <span class="ph">报价模板</span><span class="caret">⏷</span>
+      </div>
+      <div class="spacer"></div>
+      <div class="btn">🕘 导入历史</div>
+      <div class="btn primary">⬇ 导入报价数据</div>
+      <div class="btn">＋ 新建报价单</div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:48px"><span class="cb"></span></th>
+          <th style="width:180px">报价单号</th>
+          <th>名称</th>
+          <th style="width:140px">客户</th>
+          <th style="width:140px" class="filterable">产品分类</th>
+          <th style="width:180px" class="filterable">报价模板</th>
+          <th style="width:100px">状态</th>
+          <th style="width:130px">总金额</th>
+          <th style="width:120px">创建日期</th>
+          <th style="width:120px">到期日</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td colspan="10">
+            <div class="empty">
+              <div class="icon">🗒</div>
+              <div style="margin-top:8px">暂无数据</div>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="pagination">
+      <span class="total">共 0 条</span>
+      <span class="page-item">‹</span>
+      <span class="page-item active">1</span>
+      <span class="page-item">›</span>
+    </div>
+
+    <div class="note">
+      <b>空态纪律</b>：沿用 AntD <code>Table</code> 默认空态「暂无数据」，<b>不自造文案</b>、<b>不出现红色遮罩</b>、控制台<b>无未捕获异常</b>。
+      表头与工具栏<b>保持可见可操作</b>（用户要能直接改条件或点 ⊗ 清空），🚫 不要把整页替换成空状态插画。
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

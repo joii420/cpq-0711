@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>报价单管理 · 筛选下拉展开（task-260914 原型）</title>
+<link rel="stylesheet" href="antd-like.css">
+</head>
+<body>
+
+<div class="proto-banner">
+  📌 <b>当前基准</b> · task-260914 · <b>筛选展开态</b>（产品分类下拉打开，已选「未分类」）　|　
+  <a href="index.html">← 返回原型导航</a>　|　
+  本页对应 <b>AC-12 / AC-13 / AC-14 / AC-15 / AC-16</b>
+</div>
+
+<div class="card">
+  <div class="card-head">报价单管理</div>
+  <div class="card-body">
+
+    <div class="tabs">
+      <div class="tab active">全部</div>
+      <div class="tab">草稿</div>
+      <div class="tab">待核价</div>
+      <div class="tab">已驳回</div>
+      <div class="tab">已审核</div>
+      <div class="tab">已发送</div>
+      <div class="tab">已接受</div>
+      <div class="tab">客户已拒绝</div>
+      <div class="tab">已过期</div>
+    </div>
+
+    <div class="toolbar">
+      <div class="input search" style="width:300px">
+        <span class="ph">搜索报价单号/名称/客户</span>
+        <span class="btn-search">🔍</span>
+      </div>
+      <div class="input search" style="width:240px">
+        <span class="ph">按料号搜索（销售料号/客户料号）</span>
+        <span class="btn-search">🔍</span>
+      </div>
+
+      <!-- 分类下拉：展开 + 已选中「未分类」 -->
+      <div class="rel">
+        <div class="select open filled" style="width:160px">
+          <span>未分类</span><span class="caret">⏷</span>
+        </div>
+        <div class="dropdown" style="top:36px;left:0;width:260px">
+          <div class="opt selected">未分类 <span class="hint">117 单</span></div>
+          <div class="opt">默认分类 <span class="hint">62 单</span></div>
+          <div class="opt">T260902-分类17b-d77084</div>
+          <div class="opt">T260902-分类17b-5977dc</div>
+          <div class="opt">T260902-分类17b-70997c</div>
+          <div class="opt">T260902-分类17b-137e2d</div>
+        </div>
+      </div>
+
+      <div class="select" style="width:200px">
+        <span class="ph">报价模板</span><span class="caret">⏷</span>
+      </div>
+
+      <div class="spacer"></div>
+      <div class="btn">🕘 导入历史</div>
+      <div class="btn primary">⬇ 导入报价数据</div>
+      <div class="btn">＋ 新建报价单</div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:48px"><span class="cb"></span></th>
+          <th style="width:180px">报价单号</th>
+          <th>名称</th>
+          <th style="width:140px">客户</th>
+          <th style="width:140px" class="filterable active">产品分类</th>
+          <th style="width:180px" class="filterable">报价模板</th>
+          <th style="width:100px">状态</th>
+          <th style="width:130px">总金额</th>
+          <th style="width:120px">创建日期</th>
+          <th style="width:120px">到期日</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="cb"></span></td>
+          <td class="link"><a>QT-20260911-0844</a></td>
+          <td>T0911S3-AC4-新建单</td><td>正泰</td>
+          <td class="muted">—</td><td>正泰测试模板1</td>
+          <td><span class="tag default">草稿</span></td>
+          <td>¥15,128.88</td><td>2026-09-11</td><td>2026-10-11</td>
+        </tr>
+        <tr>
+          <td><span class="cb"></span></td>
+          <td class="link"><a>QT-20260911-0841</a></td>
+          <td>T0911S3-AC1-同料号多客编</td><td>正泰</td>
+          <td class="muted">—</td><td>正泰测试模板1</td>
+          <td><span class="tag default">草稿</span></td>
+          <td>¥60,515.52</td><td>2026-09-11</td><td>2026-10-11</td>
+        </tr>
+        <tr>
+          <td><span class="cb"></span></td>
+          <td class="link"><a>QT-20260911-0843</a></td>
+          <td>T0911S3-R10-零回归夹具</td><td>正泰</td>
+          <td class="muted">—</td><td>正泰测试模板1</td>
+          <td><span class="tag processing">待核价</span></td>
+          <td>¥45,386.64</td><td>2026-09-11</td><td>2026-10-11</td>
+        </tr>
+        <tr>
+          <td><span class="cb"></span></td>
+          <td class="link"><a>QT-20260911-S2FRESH</a></td>
+          <td>T0911S2-FRESH</td><td>正泰</td>
+          <td class="muted">—</td><td>正泰测试模板1</td>
+          <td><span class="tag default">草稿</span></td>
+          <td>¥0</td><td>2026-09-11</td><td class="muted">—</td>
+        </tr>
+        <tr>
+          <td><span class="cb"></span></td>
+          <td class="link"><a>QT-20260911-B1FIXVERIFY</a></td>
+          <td>B1 修复验证(只增不改)</td><td class="muted">—</td>
+          <td class="muted">—</td><td>正泰测试模板1</td>
+          <td><span class="tag default">草稿</span></td>
+          <td>¥0</td><td>2026-09-11</td><td class="muted">—</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="pagination">
+      <!-- 立项日实测：未分类 117 单。验收用基准 SQL Q6 现场重算 -->
+      <span class="total">共 117 条</span>
+      <span class="page-item">‹</span>
+      <span class="page-item active">1</span>
+      <span class="page-item">2</span>
+      <span class="page-item">3</span>
+      <span class="page-item">…</span>
+      <span class="page-item">6</span>
+      <span class="page-item">›</span>
+    </div>
+
+    <div class="note blue">
+      <b>三条筛选纪律</b>：
+      ① <b>服务端过滤</b>——「共 N 条」必须随筛选变化（117，不是 187），翻到第 2/5 页每行分类列仍是 <code>—</code>（AC-16）。
+      🚫 前端本地过滤只能过滤当前 20 行，是错的。
+      ② 分类下拉 = 5 个 ACTIVE 分类 + 一个<b>「未分类」</b>；选「未分类」即 <code>product_category_id IS NULL</code>（接口传 <code>categoryId=NONE</code>）。
+      ③ 下拉带 <code>allowClear</code>，清空即回到不过滤；任何条件变化都<b>重置到第 1 页</b>。
+      <br>选项后面的「117 单 / 62 单」<b>是本原型的说明标注，不是要实现的功能</b>——本期下拉<b>不显示计数</b>。
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

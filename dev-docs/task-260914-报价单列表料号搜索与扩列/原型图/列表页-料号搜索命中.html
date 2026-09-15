@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>报价单管理 · 料号搜索命中（task-260914 原型）</title>
+<link rel="stylesheet" href="antd-like.css">
+</head>
+<body>
+
+<div class="proto-banner">
+  📌 <b>当前基准</b> · task-260914 · <b>料号搜索命中态</b>（料号框 = <code>S0004</code>）　|　
+  <a href="index.html">← 返回原型导航</a>　|　
+  本页对应 <b>AC-2 / AC-3 / AC-4 / AC-7</b>
+</div>
+
+<div class="card">
+  <div class="card-head">报价单管理</div>
+  <div class="card-body">
+
+    <div class="tabs">
+      <div class="tab active">全部</div>
+      <div class="tab">草稿</div>
+      <div class="tab">待核价</div>
+      <div class="tab">已驳回</div>
+      <div class="tab">已审核</div>
+      <div class="tab">已发送</div>
+      <div class="tab">已接受</div>
+      <div class="tab">客户已拒绝</div>
+      <div class="tab">已过期</div>
+    </div>
+
+    <div class="toolbar">
+      <div class="input search" style="width:300px">
+        <span class="ph">搜索报价单号/名称/客户</span>
+        <span class="btn-search">🔍</span>
+      </div>
+
+      <!-- 有值态：文字为实色，右侧出现 allowClear 的 ⊗ -->
+      <div class="input search" style="width:240px">
+        <span>S0004</span>
+        <span style="color:rgba(0,0,0,.25);margin-left:auto;padding-right:8px">⊗</span>
+        <span class="btn-search">🔍</span>
+      </div>
+
+      <div class="select" style="width:160px">
+        <span class="ph">产品分类</span><span class="caret">⏷</span>
+      </div>
+      <div class="select" style="width:200px">
+        <span class="ph">报价模板</span><span class="caret">⏷</span>
+      </div>
+
+      <div class="spacer"></div>
+      <div class="btn">🕘 导入历史</div>
+      <div class="btn primary">⬇ 导入报价数据</div>
+      <div class="btn">＋ 新建报价单</div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:48px"><span class="cb"></span></th>
+          <th style="width:180px">报价单号</th>
+          <th>名称</th>
+          <th style="width:140px">客户</th>
+          <th style="width:140px" class="filterable">产品分类</th>
+          <th style="width:180px" class="filterable">报价模板</th>
+          <th style="width:100px">状态</th>
+          <th style="width:130px">总金额</th>
+          <th style="width:120px">创建日期</th>
+          <th style="width:120px">到期日</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="cb"></span></td>
+          <td class="link"><a>QT-20260914-0861</a></td>
+          <td>正泰 报价单</td><td>正泰</td>
+          <td>默认分类</td><td>正泰测试模板1</td>
+          <td><span class="tag default">草稿</span></td>
+          <td>¥80,194.08</td><td>2026-09-14</td><td>2026-10-14</td>
+        </tr>
+        <tr>
+          <td><span class="cb"></span></td>
+          <td class="link"><a>QT-20260913-0859</a></td>
+          <td>正泰 报价单</td><td>正泰</td>
+          <td>默认分类</td><td>正泰测试模板1</td>
+          <td><span class="tag default">草稿</span></td>
+          <td>¥80,194.08</td><td>2026-09-13</td><td>2026-10-13</td>
+        </tr>
+        <tr>
+          <td><span class="cb"></span></td>
+          <td class="link"><a>QT-20260911-0841</a></td>
+          <td>T0911S3-AC1-同料号多客编</td><td>正泰</td>
+          <td class="muted">—</td><td>正泰测试模板1</td>
+          <td><span class="tag default">草稿</span></td>
+          <td>¥60,515.52</td><td>2026-09-11</td><td>2026-10-11</td>
+        </tr>
+        <tr>
+          <td><span class="cb"></span></td>
+          <td class="link"><a>QT-20260911-0843</a></td>
+          <td>T0911S3-R10-零回归夹具</td><td>正泰</td>
+          <td class="muted">—</td><td>正泰测试模板1</td>
+          <td><span class="tag processing">待核价</span></td>
+          <td>¥45,386.64</td><td>2026-09-11</td><td>2026-10-11</td>
+        </tr>
+        <tr>
+          <td><span class="cb"></span></td>
+          <td class="link"><a>QT-20260909-0812</a></td>
+          <td>T260909FT-导入建单</td><td>苏州西门子</td>
+          <td class="muted">—</td><td>报价模板 · ds 原生 v1.0</td>
+          <td><span class="tag cyan">已发送</span></td>
+          <td>¥15,128.88</td><td>2026-09-09</td><td>2026-10-09</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="pagination">
+      <!-- 立项日（2026-09-14）实测：S0004 命中 43 单。验收时以基准 SQL Q1 现场重算，不对这个固定数字 -->
+      <span class="total">共 43 条</span>
+      <span class="page-item">‹</span>
+      <span class="page-item active">1</span>
+      <span class="page-item">2</span>
+      <span class="page-item">3</span>
+      <span class="page-item">›</span>
+    </div>
+
+    <div class="note blue">
+      <b>语义说明（给实现看的，不是页面文案）</b>：料号框命中的判据是
+      「该报价单<b>存在任意一条产品行</b>，其<b>销售料号</b>或<b>客户料号</b>模糊包含输入值（不区分大小写）」。
+      命中的是<b>单据</b>不是行 —— 列表里不展开到行级，也不高亮是哪一行命中。
+      <br>与左侧「搜索报价单号/名称/客户」框是 <b>AND</b>；与状态页签是 <b>AND</b>；切页签时料号条件<b>保留不清空</b>（AC-7）。
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

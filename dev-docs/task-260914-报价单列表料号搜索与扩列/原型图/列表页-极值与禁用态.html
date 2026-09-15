@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>报价单管理 · 极值文案与禁用态（task-260914 原型）</title>
+<link rel="stylesheet" href="antd-like.css">
+</head>
+<body>
+
+<div class="proto-banner">
+  📌 <b>当前基准</b> · task-260914 · <b>极值文案 + 无导入权限的禁用态</b>　|　
+  <a href="index.html">← 返回原型导航</a>　|　
+  本页对应 <b>AC-8（列宽不被撑破）/ AC-20（按钮禁用态不受本次改动波及）</b>
+</div>
+
+<div class="card">
+  <div class="card-head">报价单管理</div>
+  <div class="card-body">
+
+    <div class="tabs">
+      <div class="tab active">全部</div>
+      <div class="tab">草稿</div>
+      <div class="tab">待核价</div>
+      <div class="tab">已驳回</div>
+      <div class="tab">已审核</div>
+      <div class="tab">已发送</div>
+      <div class="tab">已接受</div>
+      <div class="tab">客户已拒绝</div>
+      <div class="tab">已过期</div>
+    </div>
+
+    <div class="toolbar">
+      <div class="input search" style="width:300px">
+        <span class="ph">搜索报价单号/名称/客户</span>
+        <span class="btn-search">🔍</span>
+      </div>
+      <div class="input search" style="width:240px">
+        <span class="ph">按料号搜索（销售料号/客户料号）</span>
+        <span class="btn-search">🔍</span>
+      </div>
+      <div class="select" style="width:160px">
+        <span class="ph">产品分类</span><span class="caret">⏷</span>
+      </div>
+      <div class="select" style="width:200px">
+        <span class="ph">报价模板</span><span class="caret">⏷</span>
+      </div>
+
+      <div class="spacer"></div>
+
+      <div class="btn">🕘 导入历史</div>
+      <!-- AC-20：无权限角色 = 禁用但可见 + hover 出原因（frontend.md §1.2）。本次改动不得波及它 -->
+      <div class="rel">
+        <div class="btn primary disabled">⬇ 导入报价数据</div>
+        <div class="tooltip" style="bottom:40px;left:50%;transform:translateX(-50%)">
+          仅销售 / 销售经理 / 管理员可导入报价数据
+        </div>
+      </div>
+      <div class="btn">＋ 新建报价单</div>
+    </div>
+
+    <!-- 已勾选 2 行：证明新控件加入后 SelectableTable 的动作条位置与形态不变 -->
+    <div class="sel-bar">
+      <span>已选择 <b>2</b> 项</span>
+      <span class="btn">✎ 编辑</span>
+      <span class="btn">⧉ 复制</span>
+      <span class="btn">➤ 提交审批</span>
+      <span class="btn">↩ 撤回</span>
+      <span style="color:rgba(0,0,0,.45);margin-left:8px">取消选择</span>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:48px"><span class="cb checked"></span></th>
+          <th style="width:180px">报价单号</th>
+          <th>名称</th>
+          <th style="width:140px">客户</th>
+          <th style="width:140px" class="filterable">产品分类</th>
+          <th style="width:180px" class="filterable">报价模板</th>
+          <th style="width:100px">状态</th>
+          <th style="width:130px">总金额</th>
+          <th style="width:120px">创建日期</th>
+          <th style="width:120px">到期日</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- 全库实测极值：名称最长 40 字符、客户名最长 27、模板名最长 26、分类名最长 21 -->
+        <tr>
+          <td><span class="cb checked"></span></td>
+          <td class="link"><a>QT-20260907-0569</a></td>
+          <td title="T260907R-ancFIXB-T260907R-ANCFIXB-201122">T260907R-ancFIXB-T260907R-ANCFIXB-201122</td>
+          <td title="CMPV Test Customer 99530170">CMPV Test Customer 99530170</td>
+          <td title="T260902-分类17b-70997c">T260902-分类17b-70997c</td>
+          <td title="T260902-选配builder模板-88d970">T260902-选配builder模板-88d970</td>
+          <td><span class="tag warning">已过期</span></td>
+          <td>¥1,234,567.89</td><td>2026-09-07</td><td>2026-10-07</td>
+        </tr>
+        <tr>
+          <td><span class="cb checked"></span></td>
+          <td class="link"><a>QT-20260907-0568</a></td>
+          <td title="T260907R-ancFIXA-T260907R-ANCFIXA-201053">T260907R-ancFIXA-T260907R-ANCFIXA-201053</td>
+          <td title="CMPV Test Customer 31426534">CMPV Test Customer 31426534</td>
+          <td>默认分类</td>
+          <td title="报价模板 · ds 原生 v1.0">报价模板 · ds 原生 v1.0</td>
+          <td><span class="tag error">已驳回</span></td>
+          <td>¥0</td><td>2026-09-07</td><td>2026-10-07</td>
+        </tr>
+        <tr>
+          <td><span class="cb"></span></td>
+          <td class="link"><a>QT-20260911-B1FIXVERIFY</a></td>
+          <td>B1 修复验证(只增不改)</td><td class="muted">—</td>
+          <td class="muted">—</td><td class="muted">—</td>
+          <td><span class="tag default">草稿</span></td>
+          <td>¥0</td><td>2026-09-11</td><td class="muted">—</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="pagination">
+      <span class="total">共 187 条</span>
+      <span class="page-item">‹</span>
+      <span class="page-item active">1</span>
+      <span class="page-item">2</span>
+      <span class="page-item">›</span>
+    </div>
+
+    <div class="note">
+      <b>极值处理</b>：三个新列一律<b>单行省略号截断 + <code>title</code> 悬停出全文</b>（AntD <code>ellipsis: true</code>），
+      🚫 不换行、不撑破列宽、不改变行高。<br>
+      <b>禁用态</b>：无导入权限时「导入报价数据」<b>禁用但可见 + hover 出原因</b>——这是现状行为，
+      本次在同一 toolbar 里插入 3 个新控件，<b>必须确认它没被波及</b>（<code>canImportQuoteDataset</code> 判据一个字节不动）。<br>
+      <b>窄屏</b>：工具栏 <code>flex-wrap</code> 换行，新控件换到第二行，🚫 不得把右侧三个按钮挤出可视区。
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

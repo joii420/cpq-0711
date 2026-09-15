@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>报价单管理 · 默认态（task-260914 原型）</title>
+<link rel="stylesheet" href="antd-like.css">
+</head>
+<body>
+
+<div class="proto-banner">
+  📌 <b>当前基准</b> · task-260914 · <b>默认态</b>（无任何搜索/筛选条件）　|　
+  <a href="index.html">← 返回原型导航</a>　|　
+  本页对应 <b>AC-1 / AC-8 / AC-9 / AC-10 / AC-11 / AC-20</b>
+</div>
+
+<div class="card">
+  <div class="card-head">报价单管理</div>
+  <div class="card-body">
+
+    <div class="tabs">
+      <div class="tab active">全部</div>
+      <div class="tab">草稿</div>
+      <div class="tab">待核价</div>
+      <div class="tab">已驳回</div>
+      <div class="tab">已审核</div>
+      <div class="tab">已发送</div>
+      <div class="tab">已接受</div>
+      <div class="tab">客户已拒绝</div>
+      <div class="tab">已过期</div>
+    </div>
+
+    <!-- 工具栏：🆕 本次新增 = 料号搜索框 + 两个筛选下拉；三个按钮一个字节不动（AC-20） -->
+    <div class="toolbar">
+      <div class="input search" style="width:300px">
+        <span class="ph">搜索报价单号/名称/客户</span>
+        <span class="btn-search">🔍</span>
+      </div>
+
+      <!-- 🆕 AC-1：独立料号搜索框，紧跟在现有搜索框之后 -->
+      <div class="input search" style="width:240px">
+        <span class="ph">按料号搜索（销售料号/客户料号）</span>
+        <span class="btn-search">🔍</span>
+      </div>
+
+      <!-- 🆕 AC-12：分类筛选（未选中态为占位文案） -->
+      <div class="select" style="width:160px">
+        <span class="ph">产品分类</span><span class="caret">⏷</span>
+      </div>
+
+      <!-- 🆕 AC-12：模板筛选 -->
+      <div class="select" style="width:200px">
+        <span class="ph">报价模板</span><span class="caret">⏷</span>
+      </div>
+
+      <div class="spacer"></div>
+
+      <div class="btn">🕘 导入历史</div>
+      <div class="btn primary">⬇ 导入报价数据</div>
+      <div class="btn">＋ 新建报价单</div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:48px"><span class="cb"></span></th>
+          <th style="width:180px">报价单号</th>
+          <th>名称</th>
+          <th style="width:140px">客户</th>
+          <th style="width:140px" class="filterable">产品分类</th>
+          <th style="width:180px" class="filterable">报价模板</th>
+          <th style="width:100px">状态</th>
+          <th style="width:130px">总金额</th>
+          <th style="width:120px">创建日期</th>
+          <th style="width:120px">到期日</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="cb"></span></td>
+          <td class="link"><a>QT-20260914-0868</a></td>
+          <td>正泰 报价单</td><td>正泰</td>
+          <td>默认分类</td><td>正泰测试模板2</td>
+          <td><span class="tag default">草稿</span></td>
+          <td>¥0</td><td>2026-09-15</td><td>2026-10-14</td>
+        </tr>
+        <tr>
+          <td><span class="cb"></span></td>
+          <td class="link"><a>QT-20260914-0867</a></td>
+          <td>正泰 报价单</td><td>正泰</td>
+          <td>默认分类</td><td>正泰测试模板2</td>
+          <td><span class="tag success">已审核</span></td>
+          <td>¥0</td><td>2026-09-15</td><td>2026-10-14</td>
+        </tr>
+        <tr>
+          <td><span class="cb"></span></td>
+          <td class="link"><a>QT-20260914-0861</a></td>
+          <td>正泰 报价单</td><td>正泰</td>
+          <td>默认分类</td><td>正泰测试模板1</td>
+          <td><span class="tag default">草稿</span></td>
+          <td>¥80,194.08</td><td>2026-09-14</td><td>2026-10-14</td>
+        </tr>
+        <tr>
+          <td><span class="cb"></span></td>
+          <td class="link"><a>QT-20260913-0860</a></td>
+          <td>T260913A-三层模型后端自检单</td><td>正泰</td>
+          <td>默认分类</td><td>正泰测试模板1</td>
+          <td><span class="tag default">草稿</span></td>
+          <td>¥0</td><td>2026-09-13</td><td>2026-10-13</td>
+        </tr>
+        <!-- ⬇⬇ AC-9 / AC-10 的关键状态：存量老单没有产品分类（全库 187 单里有 117 单如此），
+             以及个别单没有模板（38 单）。两者都必须显示全角破折号「—」，不是空白、不是 undefined -->
+        <tr>
+          <td><span class="cb"></span></td>
+          <td class="link"><a>QT-20260911-0844</a></td>
+          <td>T0911S3-AC4-新建单</td><td>正泰</td>
+          <td class="muted">—</td><td>正泰测试模板1</td>
+          <td><span class="tag default">草稿</span></td>
+          <td>¥15,128.88</td><td>2026-09-11</td><td>2026-10-11</td>
+        </tr>
+        <tr>
+          <td><span class="cb"></span></td>
+          <td class="link"><a>QT-20260911-B1FIXVERIFY</a></td>
+          <td>B1 修复验证(只增不改)</td><td class="muted">—</td>
+          <td class="muted">—</td><td>正泰测试模板1</td>
+          <td><span class="tag default">草稿</span></td>
+          <td>¥0</td><td>2026-09-11</td><td class="muted">—</td>
+        </tr>
+        <tr>
+          <td><span class="cb"></span></td>
+          <td class="link"><a>QT-20260909-0812</a></td>
+          <td>T260909FT-导入建单</td><td>苏州西门子</td>
+          <td class="muted">—</td><td class="muted">—</td>
+          <td><span class="tag processing">待核价</span></td>
+          <td>¥45,386.64</td><td>2026-09-09</td><td>2026-10-09</td>
+        </tr>
+        <tr>
+          <td><span class="cb"></span></td>
+          <td class="link"><a>QT-20260907-0569</a></td>
+          <td>T260907R-ancFIXB-T260907R-ANCFIXB-201122</td><td>正泰</td>
+          <td>默认分类</td><td>报价模板 · ds 原生 v1.0</td>
+          <td><span class="tag cyan">已发送</span></td>
+          <td>¥60,515.52</td><td>2026-09-07</td><td>2026-10-07</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="pagination">
+      <span class="total">共 187 条</span>
+      <span class="page-item">‹</span>
+      <span class="page-item active">1</span>
+      <span class="page-item">2</span>
+      <span class="page-item">3</span>
+      <span class="page-item">…</span>
+      <span class="page-item">10</span>
+      <span class="page-item">›</span>
+    </div>
+
+    <div class="note">
+      <b>还原要点</b>：① 三个新列插在既有列之间（客户之后、状态之前插「产品分类」「报价模板」；总金额之后、到期日之前插「创建日期」），
+      不是一律追加到最右；② 分类/模板两列表头带筛选图标 ⏷；③ 空值一律 <code>—</code>（U+2014），与「客户」「到期日」列既有的空值口径一致；
+      ④ 总金额沿用现有 <code>formatNumber</code>，本次不动。
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

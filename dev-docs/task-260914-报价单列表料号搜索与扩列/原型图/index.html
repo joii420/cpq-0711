@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>原型图导航 — task-260914 报价单列表料号搜索与扩列</title>
+<link rel="stylesheet" href="antd-like.css">
+</head>
+<body>
+
+<div class="card">
+  <div class="card-head">📌 当前基准 · <code>task-260914-报价单列表料号搜索与扩列</code> · 页面：【报价单管理】列表页</div>
+  <div class="card-body">
+
+    <div class="note blue" style="margin-top:0">
+      <b>覆盖面</b>：本任务只动 <b>1 个页面</b>（报价单管理列表页 <code>QuotationList.tsx</code>），
+      不新增页面、不新增抽屉。按 <code>frontend.md §1.3</code> 出 <b>5 份</b>原型 = 该页面的 5 个关键状态。
+      <br><b>份数判据</b>：§6 任务分解的 F-1~F-6 全部落在这一个页面上。
+    </div>
+
+    <table style="margin-top:16px">
+      <thead>
+        <tr>
+          <th style="width:300px">文件</th>
+          <th style="width:190px">状态</th>
+          <th style="width:190px">服务的 AC</th>
+          <th>要点</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><a href="列表页-默认态.html">列表页-默认态.html</a></td>
+          <td><span class="tag processing">默认态（有数据）</span></td>
+          <td>AC-1, 8, 9, 10, 11, 20</td>
+          <td>三个新控件在工具栏里的位置；9 列的列序与列宽；空值一律 <code>—</code></td>
+        </tr>
+        <tr>
+          <td><a href="列表页-料号搜索命中.html">列表页-料号搜索命中.html</a></td>
+          <td><span class="tag processing">有值态</span></td>
+          <td>AC-2, 3, 4, 7</td>
+          <td>料号框有值时的形态（实色 + ⊗ 清除）；命中的是<b>单据</b>不是行；与页签 AND</td>
+        </tr>
+        <tr>
+          <td><a href="列表页-料号搜索无结果.html">列表页-料号搜索无结果.html</a></td>
+          <td><span class="tag default">空数据</span></td>
+          <td>AC-5</td>
+          <td>AntD 默认「暂无数据」；工具栏与表头保持可见可操作；无红色遮罩</td>
+        </tr>
+        <tr>
+          <td><a href="列表页-筛选展开.html">列表页-筛选展开.html</a></td>
+          <td><span class="tag processing">下拉展开</span> <span class="tag success">已筛选</span></td>
+          <td>AC-12, 13, 14, 15, 16</td>
+          <td>分类下拉 = 5 个 ACTIVE 分类 + 「未分类」；<b>服务端</b>过滤，「共 N 条」随之变化</td>
+        </tr>
+        <tr>
+          <td><a href="列表页-极值与禁用态.html">列表页-极值与禁用态.html</a></td>
+          <td><span class="tag warning">最长文案</span> <span class="tag error">禁用态</span> <span class="tag success">已勾选</span></td>
+          <td>AC-8, 20</td>
+          <td>实测极值（名称 40 字符 / 客户名 27 / 模板名 26）截断 + title；无权限按钮禁用但可见 + tooltip</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="note" style="margin-top:16px">
+      <b>五种必画状态的落位（<code>frontend.md §1.3</code>）</b><br>
+      默认态 → <code>默认态</code>　·　空数据 → <code>无结果</code>　·　
+      禁用态（含 tooltip 文案）→ <code>极值与禁用态</code>　·　最长文案/极值 → <code>极值与禁用态</code>　·　
+      错误态 → <b>本任务无新错误态</b>：唯一的失败路径是接口 4xx/5xx，沿用页面既有的 <code>message.error(e.message)</code> 顶部提示，
+      不新增界面形态（见 <code>QuotationList.tsx:84</code>）。
+    </div>
+
+    <div class="note blue">
+      <b>🕰️ 本次取代的上一份基准</b>：<code>dev-docs/task-260907-报价导入建单切ds新表/原型图/01-报价单列表.html</code><br>
+      已在该任务的 <code>index.html</code> 里把这一份标为「🕰️ 历史快照」并附偏差清单。<b>该任务的另外 6 份（导入抽屉）仍是当前基准，本次未触碰。</b>
+      <br><b>偏差清单（01-报价单列表.html → 本次）</b>：
+      <ol style="margin:8px 0 0 20px">
+        <li>工具栏在原「搜索报价单号/名称/客户」框之后<b>新增 3 个控件</b>：料号搜索框、产品分类筛选、报价模板筛选</li>
+        <li>表格由 <b>6 列扩为 9 列</b>：客户之后插「产品分类」「报价模板」，总金额之后插「创建日期」</li>
+        <li>右侧三个按钮（导入历史 / 导入报价数据 / 新建报价单）的<b>顺序、形态、权限禁用逻辑一律不变</b>——这正是 AC-20 要回归确认的点</li>
+      </ol>
+    </div>
+
+    <div class="note">
+      <b>数据真实性</b>：本组原型的单号、客户、分类名、模板名、金额、极值长度<b>全部取自 <code>cpq_db_0724</code> 2026-09-14 实测</b>，
+      无 lorem ipsum、无占位块。分页「共 N 条」写的是立项当日采样值，<b>验收时以 <code>任务.md §7</code> 的基准 SQL 现场重算</b>，不对固定数字。
+    </div>
+
+    <div class="note blue">
+      <b>🚫 原型自身合规（<code>frontend.md §1.1 / §1.2</code>）</b>：本页无弹窗（不涉及）；
+      无行内操作按钮——所有动作走 <code>SelectableTable</code> 的勾选 + 工具栏动作条（见<code>极值与禁用态</code>页）；
+      禁用动作一律「禁用但可见 + hover 出原因」。
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>
