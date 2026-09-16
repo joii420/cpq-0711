@@ -13,8 +13,10 @@ import jakarta.transaction.Transactional;
 import java.security.MessageDigest;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -42,6 +44,30 @@ public class ComponentExportService {
         }
 
         List<Component> components = Component.list("directoryId", directoryId);
+
+        // ── task-260915 B-10（AC-20）：组件 SQL 视图**一次批量取回**，循环里只做内存分发 ──────
+        // 改动前是 `ComponentSqlView.list("componentId", c.id)` 写在下面的组件循环里 ——
+        // 导出 86 个组件 = 86 次查库（既有缺陷，非本次引入，用户裁决本期一并修掉）。
+        //
+        // 🔑 **排序口径**：显式 `order by sqlViewName`。理由 ——
+        //   改动前的 `list("componentId", id)` 没有 ORDER BY，PG 返回序未定义（实际是堆序），
+        //   即「改动前根本没有可依赖的顺序」；批量化后必须自己定一个**确定性**的序，否则
+        //   导出 JSON 里 sqlViews 数组的顺序会随执行计划漂移，AC-14 的二次往返逐字段比较会随机红。
+        //   选 sqlViewName 而不是 id：id 是随机 UUID，跨库导出同一份配置会得到不同顺序；
+        //   sqlViewName 在 (component_id, sql_view_name) 上有唯一约束 ⇒ 组件内唯一且稳定。
+        //   ⚠️ 实查 2026-09-15（cpq_db_0724 与 cpq_db_test 两库）：每个组件的视图数 max = 1，
+        //   多视图组件 0 个 ⇒ 本次换序对现存数据**不产生任何可观测差异**（AC-20 的不回归断言）。
+        Map<UUID, List<ComponentSqlView>> viewsByComponentId = new HashMap<>();
+        if (!components.isEmpty()) {
+            List<UUID> componentIds = new ArrayList<>(components.size());
+            for (Component c : components) componentIds.add(c.id);   // 纯内存
+            // 🚫 componentIds 为空时不发这条查询：`in ()` 在 PG 上是语法错误。
+            List<ComponentSqlView> allViews = ComponentSqlView.list(
+                    "componentId in ?1 order by sqlViewName", componentIds);
+            for (ComponentSqlView v : allViews) {                    // 纯内存分组，无查库
+                viewsByComponentId.computeIfAbsent(v.componentId, k -> new ArrayList<>()).add(v);
+            }
+        }
 
         ComponentExportBundle bundle = new ComponentExportBundle();
         bundle.exportedAt = OffsetDateTime.now().toString();
@@ -73,6 +99,15 @@ public class ComponentExportService {
             // 行键(多行可编辑组件的行唯一键)：源为空则保持 null，不落空数组
             item.rowKeyFields = (c.rowKeyFields == null || c.rowKeyFields.isBlank())
                     ? null : readJson(c.rowKeyFields);
+            // task-260915 B-2：此前丢失的 5 个组件级字段。
+            // treeConfig 与 rowKeyFields 同样处理空值：源为空/空串 → 保持 null，不落成空对象/空数组
+            // （readJson 对 null/blank 会返回空 ArrayNode，直接用会把「源是 NULL」写成「源是 []」）。
+            item.treeConfig = (c.treeConfig == null || c.treeConfig.isBlank())
+                    ? null : readJson(c.treeConfig);
+            item.bomRecursiveExpand = c.bomRecursiveExpand;
+            item.elementCodeField = c.elementCodeField;
+            item.elementPriceField = c.elementPriceField;
+            item.elementCurrencyField = c.elementCurrencyField;
             item.fields = readJson(c.fields);
             item.formulas = readJson(c.formulas);
             item.excelColumns = readJson(c.excelColumns);
@@ -84,8 +119,9 @@ public class ComponentExportService {
             // 不改这两个 JsonNode 本身——它们随后原样进入 bundle.components)。
             bindingReports.add(FormulaBindingInspector.inspect(item.code, item.name, item.fields, item.formulas));
 
-            // 该组件的 SQL 视图(组件内唯一,随组件走)
-            List<ComponentSqlView> views = ComponentSqlView.list("componentId", c.id);
+            // 该组件的 SQL 视图(组件内唯一,随组件走)。
+            // 🚫 不要退回 `ComponentSqlView.list("componentId", c.id)` —— 那是 B-10 修掉的 N+1。
+            List<ComponentSqlView> views = viewsByComponentId.getOrDefault(c.id, List.of());
             List<ComponentExportBundle.SqlView> sqlViews = new ArrayList<>(views.size());
             for (ComponentSqlView v : views) {
                 ComponentExportBundle.SqlView sv = new ComponentExportBundle.SqlView();
@@ -95,6 +131,12 @@ public class ComponentExportService {
                 sv.requiredVariables = v.requiredVariables == null ? List.of() : List.of(v.requiredVariables);
                 sv.scope = v.scope;
                 sv.description = v.description;
+                // task-260915 B-2：此前丢失的 3 个视图级字段。builderConfig 同 treeConfig 的空值口径
+                // （源为空 → null），且**原样透传 JSONB**，不裁剪/不规范化/不重排键序（AC-14 二次往返逐字段相等）。
+                sv.builderConfig = (v.builderConfig == null || v.builderConfig.isBlank())
+                        ? null : readJson(v.builderConfig);
+                sv.builderVersion = v.builderVersion;
+                sv.status = v.status;
                 sqlViews.add(sv);
             }
             item.sqlViews = sqlViews;

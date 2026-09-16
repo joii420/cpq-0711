@@ -268,16 +268,88 @@ public class TabSemanticResolver {
         // 只有确实存在 builder 视图时才发这条查询 —— 现网 builder_version 为 0 行，本查询不触发。
         Map<String, SemanticTabView> byCoord = new LinkedHashMap<>();
         Map<String, List<SemanticTabView>> byTabAndVariant = new LinkedHashMap<>();
-        for (SemanticTabView tv : SemanticTabView.<SemanticTabView>listAll()) {
+        indexTabViews(SemanticTabView.<SemanticTabView>listAll(), byCoord, byTabAndVariant);
+
+        for (Map.Entry<UUID, ComponentSqlView> e : chosen.entrySet()) {
+            String semantic = resolveSemantic(e.getKey(), e.getValue().builderConfig, byCoord, byTabAndVariant);
+            if (semantic != null) out.put(e.getKey(), semantic);
+        }
+        return out;
+    }
+
+    /** 把 {@code semantic_tab_view} 的 ACTIVE 行索引成「三段坐标 → 行」与「(tabType,variantKey) → 候选行」。 */
+    private static void indexTabViews(Iterable<SemanticTabView> tabViews,
+                                       Map<String, SemanticTabView> byCoord,
+                                       Map<String, List<SemanticTabView>> byTabAndVariant) {
+        for (SemanticTabView tv : tabViews) {
             if (!"ACTIVE".equals(tv.status)) continue;
             String vk = tv.variantKey == null ? "" : tv.variantKey;
             byCoord.put(coordKey(tv.tabType, vk, tv.dialect), tv);
             byTabAndVariant.computeIfAbsent(tv.tabType + SEP + vk, k -> new ArrayList<>()).add(tv);
         }
+    }
 
-        for (Map.Entry<UUID, ComponentSqlView> e : chosen.entrySet()) {
-            String semantic = resolveSemantic(e.getKey(), e.getValue().builderConfig, byCoord, byTabAndVariant);
-            if (semantic != null) out.put(e.getKey(), semantic);
+    // =========================================================================
+    // task-260915 B-6：坐标可解析性（导入预览用，只读）
+    // =========================================================================
+
+    /**
+     * 一份 {@code builder_config} 的三段坐标在<b>本库</b> {@code semantic_tab_view} 里能不能解析到。
+     *
+     * @param resolved true = 解析得到；false = 解析不到
+     * @param message  解析不到时的人话原因（缺哪个坐标）；解析得到时为 {@code null}
+     */
+    public record CoordCheck(boolean resolved, String message) { }
+
+    /**
+     * task-260915 B-6：<b>批量</b>判定一批 {@code builder_config} 的坐标在本库是否可解析。
+     *
+     * <p>用途：组件导入<b>预览</b>——包里带来的取数配置器坐标，在目标库的语义图里找不找得到。
+     * 找不到不阻断导入（{@code builder_config} 原样落库），只是如实报出，由用户决定。
+     *
+     * <p>🚨 <b>只读</b>：全程只 SELECT，绝不写库。
+     * <p>🚨 <b>N+1 硬指标</b>：恒 <b>1 条 SQL</b>（{@code semantic_tab_view} 全表一次），与入参个数无关；
+     * 之后是纯内存索引查找。🚫 不许放进按组件的循环里调。
+     *
+     * <p>🚫 <b>不要另写一份坐标解析</b>：本方法与 {@link #builderSemantics} 共用同一个
+     * {@code parseCoordDetailed} + 同一套索引口径，各写一份必然漂移。
+     *
+     * @param builderConfigJsons 与调用方列表<b>下标一一对应</b>的 builder_config JSON；
+     *                           元素为 null/空白时该位返回 {@code resolved=false} 并说明为空
+     * @return 与入参<b>等长、同下标</b>的结果列表
+     */
+    public List<CoordCheck> checkBuilderCoords(List<String> builderConfigJsons) {
+        List<CoordCheck> out = new ArrayList<>();
+        if (builderConfigJsons == null || builderConfigJsons.isEmpty()) return out;
+
+        // SQL #1（本方法唯一一条查询）：语义图页签视图声明，全量取回后在内存里按坐标索引。
+        Map<String, SemanticTabView> byCoord = new LinkedHashMap<>();
+        Map<String, List<SemanticTabView>> byTabAndVariant = new LinkedHashMap<>();
+        indexTabViews(SemanticTabView.<SemanticTabView>listAll(), byCoord, byTabAndVariant);
+
+        // 纯内存分发：本循环体内没有任何查询/懒加载（byCoord/byTabAndVariant 已在上面一次取全）
+        for (String json : builderConfigJsons) {
+            CoordParse parsed = parseCoordDetailed(null, json);
+            if (parsed.coord() == null) {
+                out.add(new CoordCheck(false, parsed.reason()));
+                continue;
+            }
+            Coord coord = parsed.coord();
+            if (coord.dialect() != null) {
+                SemanticTabView tv = byCoord.get(coordKey(coord.tabType(), coord.variantKey(), coord.dialect()));
+                out.add(tv != null ? new CoordCheck(true, null) : new CoordCheck(false,
+                        "目标库的语义图里没有坐标 (页签类型=" + coord.tabType()
+                        + ", 变体=" + (coord.variantKey().isEmpty() ? "(空)" : coord.variantKey())
+                        + ", 方言=" + coord.dialect() + ") 对应的页签声明"));
+                continue;
+            }
+            // 方言取不到：与 resolveSemantic 同一条兜底口径——按 (tabType, variantKey) 找候选行
+            List<SemanticTabView> candidates = byTabAndVariant.get(coord.tabType() + SEP + coord.variantKey());
+            out.add(candidates != null && !candidates.isEmpty()
+                    ? new CoordCheck(true, null)
+                    : new CoordCheck(false, "目标库的语义图里没有坐标 (页签类型=" + coord.tabType()
+                            + ", 变体=" + (coord.variantKey().isEmpty() ? "(空)" : coord.variantKey())
+                            + ") 对应的页签声明"));
         }
         return out;
     }
@@ -291,9 +363,21 @@ public class TabSemanticResolver {
     private record Coord(String tabType, String variantKey, String dialect) { }
 
     private static Coord parseCoord(UUID componentId, String builderConfigJson) {
+        return parseCoordDetailed(componentId, builderConfigJson).coord();
+    }
+
+    /**
+     * {@link #parseCoord} 的带原因版本 —— <b>坐标解析的唯一实现</b>，{@code parseCoord} 只是丢掉原因的
+     * 薄包装。抽出 {@code reason} 是给 task-260915 B-6 的导入预览用的：预览要把「缺哪一段坐标」
+     * 当人话报给用户，而不是只回一个 null。
+     *
+     * @param componentId 仅用于日志；预览场景（组件尚未落库）传 {@code null}
+     * @return {@code coord} 非 null = 解析成功；否则 {@code reason} 给出人话原因
+     */
+    private static CoordParse parseCoordDetailed(UUID componentId, String builderConfigJson) {
         if (builderConfigJson == null || builderConfigJson.isBlank()) {
             LOG.warnf("[tab-semantic] comp=%s builder_version 非空但 builder_config 为空", componentId);
-            return null;
+            return new CoordParse(null, "取数配置器信息(builder_config)为空");
         }
         String tabType;
         String variantKey;
@@ -305,14 +389,19 @@ public class TabSemanticResolver {
             rawDialect = text(node, "dialect");
         } catch (Exception ex) {
             LOG.warnf("[tab-semantic] comp=%s builder_config 解析失败(%s)", componentId, ex.getMessage());
-            return null;
+            return new CoordParse(null, "取数配置器信息(builder_config)不是合法 JSON：" + ex.getMessage());
         }
         if (tabType == null || tabType.isBlank()) {
             LOG.warnf("[tab-semantic] comp=%s builder_config.tabType 缺失", componentId);
-            return null;
+            return new CoordParse(null, "取数配置器信息里缺少页签类型坐标(builder_config.tabType)");
         }
-        return new Coord(tabType, variantKey == null ? "" : variantKey, normalizeDialect(rawDialect));
+        return new CoordParse(
+                new Coord(tabType, variantKey == null ? "" : variantKey, normalizeDialect(rawDialect)),
+                null);
     }
+
+    /** {@link #parseCoordDetailed} 的返回：{@code coord} 非 null 即成功，否则 {@code reason} 说明原因。 */
+    private record CoordParse(Coord coord, String reason) { }
 
     /** 解析单个 {@code builder_config} JSONB → semantic；解析不出返回 null（调用方回退分支②）。 */
     private static String resolveSemantic(UUID componentId, String builderConfigJson,

@@ -26,6 +26,21 @@
 + "bundleVersion": "1.1"
 ```
 
+### 🚨 空值序列化口径（2026-09-15 用户裁决方案「甲」后新增）
+
+**8 个新增字段一律带 `@JsonInclude(NON_NULL)` —— 值为 `null` 时该键在 JSON 里整个不出现，不是写成 `: null`。**
+
+| | 为什么 |
+|---|---|
+| **起因** | 导入端 `verifyChecksum`（`ComponentImportService:700-716`）拿**反序列化后的 DTO** 重算 checksum。DTO 加 8 字段后，1.0 老包重算的 JSON 会多出 `"treeConfig":null` 等 8 个键 ⇒ 字节不同 ⇒ **每份合法老包都报「可能被改动或损坏」** |
+| **实测** | `Task0805ExportBindingReportTest` 由基线 `23/2 失败` 恶化为 `23/18 失败`；加 NON_NULL 后回到 `23/2`，老包 `checksumValid = true` |
+| **代价** | JSON 上「源为 null」与「字段不存在」不再可区分。对本契约**无影响** —— 导入端两者都反序列化为 `null`、走同一条恢复逻辑 |
+| **守门** | 反射契约测试断言 8 个新字段**全部带** NON_NULL，漏一个即失败并点名（加注解是「下次记得加」的模式，必须有测试兜住） |
+
+⚠️ **只给这 8 个新增字段加**，🚫 **不要给既有字段加** —— 那会改变老包的既有形状，是另一类破坏。
+
+⇒ **下面示例中标 `null` 的字段，实际导出时该键不会出现。** 示例保留 `null` 只为说明它对应哪一列。
+
 ### 变更 2：`components[]` 增加 5 个字段
 
 ```jsonc
@@ -68,8 +83,18 @@
 
 ### 不变项
 
-`checksum` 的**计算方式不变**（对 `source` + `components` + `dependencies` 的实际对象序列化）。新字段自动纳入计算，**不需要改 `computeChecksum`**。
-⇒ 1.1 包的 checksum 与 1.0 包不可比，这是预期行为（内容本来就不同）。
+`checksum` 的**计算方式不变** —— 导出端 `computeChecksum` 与导入端 `verifyChecksum` 的代码**都不改**（用户已否决「改 `verifyChecksum` 校验原始字节」的根治方案：要改端点接收方式，超出本任务范围）。
+
+> 🚨 **本段原有一句话已被证伪（2026-09-15，后端 A/B 实验）**：原写「新字段自动纳入计算，老包 checksum 仍自洽」。
+> **错在只查了导出端** —— `computeChecksum` 确实对实际对象序列化、加字段自动纳入，**该句对导出端成立**；
+> 但**导入端** `verifyChecksum`（`ComponentImportService:700-716`）拿**反序列化后的 DTO** 重算，
+> 老包反序列化后新字段为 `null`、再序列化时 Jackson 会写出 `"treeConfig":null` ⇒ 字节不同 ⇒ **老包 checksum 必然失配**。
+> 实测：`Task0805ExportBindingReportTest` 由基线 `23/2 失败` 恶化为 `23/18 失败`。
+>
+> ✅ **本契约的解法是上面那条「空值序列化口径」**（8 个新字段带 `NON_NULL` ⇒ 老包重算字节与原始一致），
+> 而不是改 checksum 算法。验收见 `需求文档.md` **AC-19**（含阳性对照，防把校验短路掉）。
+
+⇒ 1.1 包与 1.0 包的 checksum 不可比，这是预期行为（内容本来就不同）。
 
 ---
 
@@ -109,9 +134,31 @@
 
 ---
 
+## 🚨 响应信封不对称（2026-09-15 实查更正，测试工程师报、主线核实）
+
+**导出与导入的响应信封不一样，写测试/前端解析时必须分别处理：**
+
+| 端点 | 信封 | 实据 |
+|---|---|---|
+| `GET /{id}/export` | **不套** —— 直接返回 bundle 本体 | `ComponentDirectoryResource.java:42-49`：`Response.ok(bundle)` + `Content-Disposition` 附件下载 |
+| `POST /{id}/import`（预览） | **套** `ApiResponse` ⇒ 取 `data` | `public ApiResponse<ImportPreviewResult> importBundle(...)` |
+| `POST /{id}/import/commit` | **套** `ApiResponse` ⇒ 取 `data` | `public ApiResponse<ImportCommitResult> importCommit(...)` |
+
+⚠️ 解析器两种都兼容是好的，但**认不出信封时必须硬失败**，🚫 不许静默打在空节点上 —— 那会让整条断言空跑变绿。
+
+---
+
 ## 三、`POST /{id}/import/commit` （提交）
 
-**响应结构不变**（`ImportCommitResult`，含 `createdItems[]` 等）。行为变化：
+**响应结构不变**（`ImportCommitResult`）。
+
+> 🚨 **字段名更正（2026-09-15，测试工程师报、主线核实）**：本文件与 `需求文档.md AC-8` 原写 `createdItems[]`，
+> **实际字段名是 `created`**（`ImportCommitResult.java:21`：`public List<CreatedItem> created;`）。
+> 每个元素含 `originalCode` / `finalCode` / `componentId` / `sqlViewCount` / `renamed`。
+> 另有 `createdCount`（int）/ `skippedCount` / `sqlViewsCreated` / `skipped[]` / `unboundWarnings[]` / `unboundCount`。
+> ⚠️ 断言时若 `created` 与 `createdItems` **都找不到**，必须**点名硬失败**，不许静默当 0 条。
+
+行为变化：
 
 1. 恢复 8 个此前丢失的字段（清单见 `需求文档.md §②`）
 2. 树 token 校验改用双判据，与组件新建/更新同口径

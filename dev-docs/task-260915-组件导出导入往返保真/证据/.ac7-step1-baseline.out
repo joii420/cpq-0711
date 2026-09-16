@@ -1,0 +1,73 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------------------< com.cpq:cpq-backend >-------------------------
+[INFO] Building cpq-backend 1.0.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[WARNING] The artifact io.quarkus:quarkus-junit5:jar:3.34.3 has been relocated to io.quarkus:quarkus-junit:jar:3.34.3: Update the artifactId in your project build file. Refer to https://github.com/quarkusio/quarkus/wiki/Migration-Guide-3.31 for more information.
+[WARNING] The artifact io.quarkus:quarkus-junit5-mockito:jar:3.34.3 has been relocated to io.quarkus:quarkus-junit-mockito:jar:3.34.3: Update the artifactId in your project build file. Refer to https://github.com/quarkusio/quarkus/wiki/Migration-Guide-3.31 for more information.
+[INFO] 
+[INFO] --- antlr4:4.13.1:antlr4 (antlr4-generate) @ cpq-backend ---
+[INFO] No grammars to process
+[INFO] ANTLR 4: Processing source directory /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/main/antlr4
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ cpq-backend ---
+[INFO] Copying 434 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- quarkus:3.34.3:generate-code (default) @ cpq-backend ---
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ cpq-backend ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 982 source files with javac [debug parameters release 21] to target/classes
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/MaterialCustomerMapRepository.java:[208,16] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/MaterialCustomerMapRepository.java:[385,16] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/QuoteMaterialNoAllocator.java:[39,19] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/QuoteMaterialNoAllocator.java:[79,17] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/ElementRecoveryDiscountRepository.java:[56,33] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/ElementRecoveryDiscountRepository.java:[121,17] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/QuoteImportService.java:[292,41] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/main/java/com/cpq/quotation/service/QuotationService.java:[2454,47] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/main/java/com/cpq/quotation/service/backfill/QuoteBackfillService.java:[77,27] flipPending(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/main/java/com/cpq/quotation/service/PendingHygieneService.java:[123,62] deleteOrphanPendingWithGuard() in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/Q02CustomerMapHandler.java: Some input files use or override a deprecated API.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/Q02CustomerMapHandler.java: Recompile with -Xlint:deprecation for details.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/V6QuotationCommitService.java: Some input files use unchecked or unsafe operations.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/V6QuotationCommitService.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- quarkus:3.34.3:generate-code-tests (default) @ cpq-backend ---
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ cpq-backend ---
+[INFO] Copying 22 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ cpq-backend ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 712 source files with javac [debug parameters release 21] to target/test-classes
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[110,27] flipPending(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[159,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[264,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[308,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/test/java/com/cpq/basicdata/v6/service/PendingRepointNoOpTest.java:[104,22] repointPendingOwnership(java.util.UUID,java.util.UUID) in com.cpq.basicdata.v6.service.V6QuotationCommitService has been deprecated and marked for removal
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/ElementRecoveryBatchUpdateEquivTest.java: Some input files use or override a deprecated API.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/ElementRecoveryBatchUpdateEquivTest.java: Recompile with -Xlint:deprecation for details.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/test/java/com/cpq/basicdata/v6/pricing/P01P02PricingPriceVersioningTest.java: Some input files use unchecked or unsafe operations.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-260915-export-fidelity/cpq-backend/src/test/java/com/cpq/basicdata/v6/pricing/P01P02PricingPriceVersioningTest.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ cpq-backend ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.cpq.component.dto.ExportBundleFieldCoverageTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.056 s -- in com.cpq.component.dto.ExportBundleFieldCoverageTest
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  11.694 s
+[INFO] Finished at: 2026-09-15T19:46:13-07:00
+[INFO] ------------------------------------------------------------------------

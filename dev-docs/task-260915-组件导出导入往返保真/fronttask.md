@@ -51,7 +51,12 @@
 
 按 `docs/rules/frontend.md` 跑完并在回报里逐条附**命令与其输出**：
 
-- `npx tsc --noEmit` **0 错误**（⚠️ 要在 worktree 内跑，且 `node_modules` 需软链；见 `CLAUDE.md` 记载的 worktree 前端自检坑）
+- `npx tsc -b` **0 错误**（⚠️ 要在 worktree 内跑，且 `node_modules` 需软链）
+
+  > 🚨 **本条已更正（2026-09-15，前端代理在实现期挡下）**：原文写的是 `npx tsc --noEmit`，**那是空验证**。
+  > 根 `tsconfig.json` 是 solution-style（`"files": []` + references），`tsc -p`（不带 `-b`）**不跟进 references**
+  > ⇒ 编译 0 个文件、恒返回 0、什么都没检查。依据见 `docs/rules/frontend.md:113-123`（含两次证伪实验记录）。
+  > **只有 `tsc -b` 才是全覆盖写法。** 派工时若再写成 `--noEmit`，前端类型自检将长期为空。
 - 导入抽屉页面在 dev server 能正常打开（附 HTTP 状态码）
 - 用 `素材/用户原始导出包-bundleVersion1.0.json` 实际走一遍预览，**附截图或 DOM 断言**，确认「旧格式」提示出现
 - 🚫 **不许只写「已自检 ✅」** —— 没有命令输出的自检声明视为未自检

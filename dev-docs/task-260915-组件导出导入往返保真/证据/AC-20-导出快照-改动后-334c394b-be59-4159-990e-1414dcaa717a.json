@@ -1,0 +1,1697 @@
+{
+  "bundleVersion" : "1.1",
+  "exportedAt" : "2026-09-15T19:45:04.531936931-07:00",
+  "source" : {
+    "directoryId" : "334c394b-be59-4159-990e-1414dcaa717a",
+    "directoryName" : "取值配置器测试"
+  },
+  "components" : [ {
+    "id" : "76d6b89e-3e9a-49ca-a6c1-bcb270ca2275",
+    "code" : "COMP-2292",
+    "name" : "物料BOM",
+    "componentType" : "NORMAL",
+    "columnCount" : 0,
+    "status" : "ACTIVE",
+    "dataDriverPath" : null,
+    "tabType" : null,
+    "partNoField" : null,
+    "partNameField" : null,
+    "sortField" : null,
+    "rowKeyFields" : null,
+    "fields" : [ ],
+    "formulas" : [ ],
+    "excelColumns" : [ ],
+    "bomRecursiveExpand" : false,
+    "sqlViews" : [ ]
+  }, {
+    "id" : "346f8485-2767-4e60-a5f4-87155128b64d",
+    "code" : "COMP-2270",
+    "name" : "加工费",
+    "componentType" : "NORMAL",
+    "columnCount" : 0,
+    "status" : "ACTIVE",
+    "dataDriverPath" : null,
+    "tabType" : null,
+    "partNoField" : null,
+    "partNameField" : null,
+    "sortField" : null,
+    "rowKeyFields" : null,
+    "fields" : [ ],
+    "formulas" : [ ],
+    "excelColumns" : [ ],
+    "bomRecursiveExpand" : false,
+    "sqlViews" : [ ]
+  }, {
+    "id" : "7277969c-c41c-47d3-b949-8fbf51d1a5fb",
+    "code" : "COMP-2265",
+    "name" : "产品",
+    "componentType" : "NORMAL",
+    "columnCount" : 8,
+    "status" : "ACTIVE",
+    "dataDriverPath" : "$builder_7277969cc41c",
+    "tabType" : null,
+    "partNoField" : "销售料号",
+    "partNameField" : null,
+    "sortField" : null,
+    "rowKeyFields" : [ "销售料号" ],
+    "fields" : [ {
+      "name" : "客户产品编号",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 0,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_7277969cc41c._客户料号_客户产品编号",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "客户料号名称",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 1,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_7277969cc41c._客户料号_客户料号名称",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "销售料号",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 2,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_7277969cc41c._物料_销售料号",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "规格",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 3,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_7277969cc41c._物料_规格",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "尺寸",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 4,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_7277969cc41c._物料_尺寸",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "品名",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 5,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_7277969cc41c._物料_品名",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "单重",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 6,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_7277969cc41c._物料_单重",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "生产料号",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 7,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_7277969cc41c._物料_生产料号",
+        "type" : "BASIC_DATA"
+      }
+    } ],
+    "formulas" : [ ],
+    "excelColumns" : [ ],
+    "bomRecursiveExpand" : false,
+    "sqlViews" : [ {
+      "sqlViewName" : "builder_7277969cc41c",
+      "sqlTemplate" : "SELECT\n  dqm.material_no AS hf_part_no,\n  dqcp.customer_product_no AS \"_客户料号_客户产品编号\",\n  dqcp.customer_part_name AS \"_客户料号_客户料号名称\",\n  dqm.material_no AS \"_物料_销售料号\",\n  dqm.specification AS \"_物料_规格\",\n  dqm.dimension AS \"_物料_尺寸\",\n  dqm.material_name AS \"_物料_品名\",\n  dqm.unit_weight AS \"_物料_单重\",\n  dqm.production_no AS \"_物料_生产料号\"\nFROM ds_quote_material dqm\n  LEFT JOIN ds_quote_customer_part dqcp ON dqcp.material_no = dqm.material_no AND dqcp.customer_no = :customerCode AND dqcp.customer_product_no = :customerProductNo\nWHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode\nORDER BY dqm.material_no",
+      "declaredColumns" : [ {
+        "name" : "hf_part_no",
+        "dataType" : "varchar",
+        "nullable" : false
+      }, {
+        "name" : "_客户料号_客户产品编号",
+        "dataType" : "varchar",
+        "nullable" : false
+      }, {
+        "name" : "_客户料号_客户料号名称",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "_物料_销售料号",
+        "dataType" : "varchar",
+        "nullable" : false
+      }, {
+        "name" : "_物料_规格",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "_物料_尺寸",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "_物料_品名",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "_物料_单重",
+        "dataType" : "numeric",
+        "nullable" : true
+      }, {
+        "name" : "_物料_生产料号",
+        "dataType" : "varchar",
+        "nullable" : true
+      } ],
+      "requiredVariables" : [ "customerCode", "customerProductNo", "total_material_no" ],
+      "scope" : "COMPONENT",
+      "description" : null,
+      "builderConfig" : {
+        "columns" : [ {
+          "isAmount" : null,
+          "fieldName" : "客户产品编号",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_客户料号_客户产品编号",
+          "sourceColumn" : "customer_product_no",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "CUSTOMER_PART",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "客户料号名称",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_客户料号_客户料号名称",
+          "sourceColumn" : "customer_part_name",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "CUSTOMER_PART",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "销售料号",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料_销售料号",
+          "sourceColumn" : "material_no",
+          "resolvedRoles" : [ "PART_NO", "ROW_KEY" ],
+          "sourceNodeKey" : "MATERIAL",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "规格",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料_规格",
+          "sourceColumn" : "specification",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "MATERIAL",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "尺寸",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料_尺寸",
+          "sourceColumn" : "dimension",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "MATERIAL",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "品名",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料_品名",
+          "sourceColumn" : "material_name",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "MATERIAL",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "单重",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料_单重",
+          "sourceColumn" : "unit_weight",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "MATERIAL",
+          "resolvedDataType" : "NUMBER"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "生产料号",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料_生产料号",
+          "sourceColumn" : "production_no",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "MATERIAL",
+          "resolvedDataType" : "TEXT"
+        } ],
+        "dialect" : "QUOTE",
+        "tabType" : "主件",
+        "switches" : null,
+        "axisScope" : "SELF",
+        "variantKey" : null,
+        "priceStrategy" : null,
+        "builderVersion" : null
+      },
+      "builderVersion" : 1,
+      "status" : "ACTIVE"
+    } ]
+  }, {
+    "id" : "452bbdbe-13f7-4b74-9ed7-af13fac6716e",
+    "code" : "COMP-2266",
+    "name" : "BOM",
+    "componentType" : "NORMAL",
+    "columnCount" : 9,
+    "status" : "ACTIVE",
+    "dataDriverPath" : "$builder_452bbdbe13f7",
+    "tabType" : null,
+    "partNoField" : "投入料号",
+    "partNameField" : null,
+    "sortField" : "项次",
+    "rowKeyFields" : [ "销售料号", "投入料号" ],
+    "fields" : [ {
+      "name" : "销售料号",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 0,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_452bbdbe13f7._物料BOM_销售料号",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "项次",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 1,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_452bbdbe13f7._物料BOM_项次",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "投入料号",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 2,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_452bbdbe13f7._物料BOM_投入料号",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "产出料号类型",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 3,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_452bbdbe13f7._物料BOM_产出料号类型",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "组成数量",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 4,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_452bbdbe13f7._物料BOM_组成数量",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "材料毛重",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 5,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_452bbdbe13f7._物料BOM_材料毛重",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "材料净重",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 6,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_452bbdbe13f7._物料BOM_材料净重",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "重量单位",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 7,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_452bbdbe13f7._物料BOM_重量单位",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "损耗率（%）",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 8,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_452bbdbe13f7._物料BOM_损耗率（%）",
+        "type" : "BASIC_DATA"
+      }
+    } ],
+    "formulas" : [ ],
+    "excelColumns" : [ ],
+    "bomRecursiveExpand" : true,
+    "sqlViews" : [ {
+      "sqlViewName" : "builder_452bbdbe13f7",
+      "sqlTemplate" : "-- 树契约: material_no=子 / parent_no=父 + :total_material_no; 边式全子件 + 根分支\nSELECT\n  dqmb.input_material_no AS material_no,\n  dqmb.material_no AS parent_no,\n  dqmb.input_material_no AS hf_part_no,\n  dqmb.material_no AS \"_物料BOM_销售料号\",\n  dqmb.item_seq AS \"_物料BOM_项次\",\n  dqmb.input_material_no AS \"_物料BOM_投入料号\",\n  dqmb.output_material_type AS \"_物料BOM_产出料号类型\",\n  dqmb.component_qty AS \"_物料BOM_组成数量\",\n  dqmb.gross_weight AS \"_物料BOM_材料毛重\",\n  dqmb.net_weight AS \"_物料BOM_材料净重\",\n  dqmb.weight_unit AS \"_物料BOM_重量单位\",\n  dqmb.loss_rate AS \"_物料BOM_损耗率（%）\"\nFROM ds_quote_material_bom dqmb\nWHERE dqmb.input_material_no = ANY(:total_material_no) AND dqmb.customer_no = :customerCode\nUNION ALL\n-- 根分支：本单闭包里无父边的成品自身（树根，parent_no 恒 NULL）\nSELECT\n  dqm.material_no,\n  NULL::text,\n  dqm.material_no,\n  NULL,\n  NULL,\n  NULL,\n  NULL,\n  NULL,\n  NULL,\n  NULL,\n  NULL,\n  NULL\nFROM ds_quote_material dqm\nWHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode\n  AND NOT EXISTS (SELECT 1 FROM ds_quote_material_bom dqmb2 WHERE dqmb2.input_material_no = dqm.material_no AND dqmb2.customer_no = dqm.customer_no)\nORDER BY parent_no, material_no, \"_物料BOM_项次\"",
+      "declaredColumns" : [ {
+        "name" : "material_no",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "parent_no",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "hf_part_no",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "_物料BOM_销售料号",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "_物料BOM_项次",
+        "dataType" : "int4",
+        "nullable" : true
+      }, {
+        "name" : "_物料BOM_投入料号",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "_物料BOM_产出料号类型",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "_物料BOM_组成数量",
+        "dataType" : "numeric",
+        "nullable" : true
+      }, {
+        "name" : "_物料BOM_材料毛重",
+        "dataType" : "numeric",
+        "nullable" : true
+      }, {
+        "name" : "_物料BOM_材料净重",
+        "dataType" : "numeric",
+        "nullable" : true
+      }, {
+        "name" : "_物料BOM_重量单位",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "_物料BOM_损耗率（%）",
+        "dataType" : "numeric",
+        "nullable" : true
+      } ],
+      "requiredVariables" : [ "total_material_no", "customerCode" ],
+      "scope" : "COMPONENT",
+      "description" : null,
+      "builderConfig" : {
+        "columns" : [ {
+          "isAmount" : null,
+          "fieldName" : "销售料号",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料BOM_销售料号",
+          "sourceColumn" : "material_no",
+          "resolvedRoles" : [ "ROW_KEY" ],
+          "sourceNodeKey" : "MATERIAL_BOM",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "项次",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料BOM_项次",
+          "sourceColumn" : "item_seq",
+          "resolvedRoles" : [ "SORT" ],
+          "sourceNodeKey" : "MATERIAL_BOM",
+          "resolvedDataType" : "NUMBER"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "投入料号",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料BOM_投入料号",
+          "sourceColumn" : "input_material_no",
+          "resolvedRoles" : [ "PART_NO", "ROW_KEY" ],
+          "sourceNodeKey" : "MATERIAL_BOM",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "产出料号类型",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料BOM_产出料号类型",
+          "sourceColumn" : "output_material_type",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "MATERIAL_BOM",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "组成数量",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料BOM_组成数量",
+          "sourceColumn" : "component_qty",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "MATERIAL_BOM",
+          "resolvedDataType" : "NUMBER"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "材料毛重",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料BOM_材料毛重",
+          "sourceColumn" : "gross_weight",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "MATERIAL_BOM",
+          "resolvedDataType" : "NUMBER"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "材料净重",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料BOM_材料净重",
+          "sourceColumn" : "net_weight",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "MATERIAL_BOM",
+          "resolvedDataType" : "NUMBER"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "重量单位",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料BOM_重量单位",
+          "sourceColumn" : "weight_unit",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "MATERIAL_BOM",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "损耗率（%）",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料BOM_损耗率（%）",
+          "sourceColumn" : "loss_rate",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "MATERIAL_BOM",
+          "resolvedDataType" : "NUMBER"
+        } ],
+        "dialect" : "QUOTE",
+        "tabType" : "BOM",
+        "switches" : null,
+        "axisScope" : "CLOSURE",
+        "variantKey" : "",
+        "priceStrategy" : null,
+        "builderVersion" : null
+      },
+      "builderVersion" : 1,
+      "status" : "ACTIVE"
+    } ]
+  }, {
+    "id" : "dc3297cc-e9a3-4184-8bc8-bb61db2a07d2",
+    "code" : "COMP-2267",
+    "name" : "材质元素",
+    "componentType" : "NORMAL",
+    "columnCount" : 13,
+    "status" : "ACTIVE",
+    "dataDriverPath" : "$builder_dc3297cce9a3",
+    "tabType" : null,
+    "partNoField" : "材质料号",
+    "partNameField" : null,
+    "sortField" : "项次",
+    "rowKeyFields" : [ "销售料号", "材质料号", "元素" ],
+    "fields" : [ {
+      "name" : "销售料号",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 0,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_dc3297cce9a3._物料与元素BOM_销售料号",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "材质料号",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 1,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_dc3297cce9a3._物料与元素BOM_材质料号",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "项次",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 2,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_dc3297cce9a3._物料与元素BOM_项次",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "元素",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 3,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_dc3297cce9a3._物料与元素BOM_元素",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "组成含量（%）",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 4,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_dc3297cce9a3._物料与元素BOM_组成含量（%）",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "毛用量",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 5,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_dc3297cce9a3._物料与元素BOM_毛用量",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "毛用量单位",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 6,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_dc3297cce9a3._物料与元素BOM_毛用量单位",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "净用量",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 7,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_dc3297cce9a3._物料与元素BOM_净用量",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "净用量单位",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 8,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_dc3297cce9a3._物料与元素BOM_净用量单位",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "回收折扣(%)",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 9,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_dc3297cce9a3._物料与元素BOM_回收折扣(%)",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "回收量",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 10,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_dc3297cce9a3._物料与元素BOM_回收量",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "元素单价",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 11,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_dc3297cce9a3.元素单价",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "元素小计",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : true,
+      "field_type" : "FORMULA",
+      "formula_id" : "c6283bde-d0c4-4209-8634-88bb557844f2",
+      "is_subtotal" : true,
+      "formula_name" : "公式1"
+    } ],
+    "formulas" : [ {
+      "id" : "c6283bde-d0c4-4209-8634-88bb557844f2",
+      "name" : "公式1",
+      "expression" : [ {
+        "type" : "field",
+        "value" : "组成含量（%）"
+      }, {
+        "type" : "operator",
+        "value" : "*"
+      }, {
+        "type" : "field",
+        "value" : "元素单价"
+      }, {
+        "type" : "operator",
+        "value" : "*"
+      }, {
+        "type" : "field",
+        "value" : "毛用量"
+      }, {
+        "type" : "operator",
+        "value" : "*"
+      }, {
+        "type" : "field",
+        "value" : "净用量"
+      } ],
+      "result_type" : "NUMBER"
+    } ],
+    "excelColumns" : [ ],
+    "bomRecursiveExpand" : false,
+    "elementCodeField" : "元素",
+    "elementPriceField" : "元素单价",
+    "sqlViews" : [ {
+      "sqlViewName" : "builder_dc3297cce9a3",
+      "sqlTemplate" : "SELECT\n  dqeb.material_no AS hf_part_no,\n  dqeb.material_no AS \"_物料与元素BOM_销售料号\",\n  dqeb.material_part_no AS \"_物料与元素BOM_材质料号\",\n  dqeb.item_seq AS \"_物料与元素BOM_项次\",\n  dqeb.element_code AS \"_物料与元素BOM_元素\",\n  dqeb.content_pct AS \"_物料与元素BOM_组成含量（%）\",\n  dqeb.gross_usage AS \"_物料与元素BOM_毛用量\",\n  dqeb.gross_usage_unit AS \"_物料与元素BOM_毛用量单位\",\n  dqeb.net_usage AS \"_物料与元素BOM_净用量\",\n  dqeb.net_usage_unit AS \"_物料与元素BOM_净用量单位\",\n  dqeb.recovery_discount AS \"_物料与元素BOM_回收折扣(%)\",\n  dqeb.recovery_qty AS \"_物料与元素BOM_回收量\",\n  cep.unit_price AS \"元素单价\"\nFROM ds_quote_element_bom dqeb\n  LEFT JOIN f_material_element_price(:customerCode, :priceBaseDate) cep ON cep.element_code = dqeb.element_code AND cep.material_no = dqeb.material_no\nWHERE dqeb.material_no = ANY(:total_material_no) AND dqeb.customer_no = :customerCode\nORDER BY dqeb.material_no, dqeb.material_part_no, dqeb.element_code, dqeb.item_seq",
+      "declaredColumns" : [ {
+        "name" : "hf_part_no",
+        "dataType" : "varchar",
+        "nullable" : false
+      }, {
+        "name" : "_物料与元素BOM_销售料号",
+        "dataType" : "varchar",
+        "nullable" : false
+      }, {
+        "name" : "_物料与元素BOM_材质料号",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "_物料与元素BOM_项次",
+        "dataType" : "int4",
+        "nullable" : true
+      }, {
+        "name" : "_物料与元素BOM_元素",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "_物料与元素BOM_组成含量（%）",
+        "dataType" : "numeric",
+        "nullable" : true
+      }, {
+        "name" : "_物料与元素BOM_毛用量",
+        "dataType" : "numeric",
+        "nullable" : true
+      }, {
+        "name" : "_物料与元素BOM_毛用量单位",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "_物料与元素BOM_净用量",
+        "dataType" : "numeric",
+        "nullable" : true
+      }, {
+        "name" : "_物料与元素BOM_净用量单位",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "_物料与元素BOM_回收折扣(%)",
+        "dataType" : "numeric",
+        "nullable" : true
+      }, {
+        "name" : "_物料与元素BOM_回收量",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "元素单价",
+        "dataType" : "numeric",
+        "nullable" : true
+      } ],
+      "requiredVariables" : [ "customerCode", "priceBaseDate", "total_material_no" ],
+      "scope" : "COMPONENT",
+      "description" : null,
+      "builderConfig" : {
+        "columns" : [ {
+          "isAmount" : null,
+          "fieldName" : "销售料号",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料与元素BOM_销售料号",
+          "sourceColumn" : "material_no",
+          "resolvedRoles" : [ "ROW_KEY" ],
+          "sourceNodeKey" : "ELEMENT_BOM",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "材质料号",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料与元素BOM_材质料号",
+          "sourceColumn" : "material_part_no",
+          "resolvedRoles" : [ "PART_NO", "ROW_KEY" ],
+          "sourceNodeKey" : "ELEMENT_BOM",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "项次",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料与元素BOM_项次",
+          "sourceColumn" : "item_seq",
+          "resolvedRoles" : [ "SORT" ],
+          "sourceNodeKey" : "ELEMENT_BOM",
+          "resolvedDataType" : "NUMBER"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "元素",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料与元素BOM_元素",
+          "sourceColumn" : "element_code",
+          "resolvedRoles" : [ "ROW_KEY" ],
+          "sourceNodeKey" : "ELEMENT_BOM",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "组成含量（%）",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料与元素BOM_组成含量（%）",
+          "sourceColumn" : "content_pct",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "ELEMENT_BOM",
+          "resolvedDataType" : "NUMBER"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "毛用量",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料与元素BOM_毛用量",
+          "sourceColumn" : "gross_usage",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "ELEMENT_BOM",
+          "resolvedDataType" : "NUMBER"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "毛用量单位",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料与元素BOM_毛用量单位",
+          "sourceColumn" : "gross_usage_unit",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "ELEMENT_BOM",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "净用量",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料与元素BOM_净用量",
+          "sourceColumn" : "net_usage",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "ELEMENT_BOM",
+          "resolvedDataType" : "NUMBER"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "净用量单位",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料与元素BOM_净用量单位",
+          "sourceColumn" : "net_usage_unit",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "ELEMENT_BOM",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "回收折扣(%)",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料与元素BOM_回收折扣(%)",
+          "sourceColumn" : "recovery_discount",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "ELEMENT_BOM",
+          "resolvedDataType" : "NUMBER"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "回收量",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料与元素BOM_回收量",
+          "sourceColumn" : "recovery_qty",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "ELEMENT_BOM",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : true,
+          "fieldName" : "元素单价",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "元素单价",
+          "sourceColumn" : "unit_price",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "FUNC_ELEMENT_PRICE",
+          "resolvedDataType" : "MONEY"
+        } ],
+        "dialect" : "QUOTE",
+        "tabType" : "材质元素",
+        "switches" : null,
+        "axisScope" : "CLOSURE",
+        "variantKey" : "",
+        "priceStrategy" : null,
+        "builderVersion" : null
+      },
+      "builderVersion" : 1,
+      "status" : "ACTIVE"
+    } ]
+  }, {
+    "id" : "8dc3e1b6-95e2-42f3-8c7d-0242f7c755b9",
+    "code" : "COMP-2268",
+    "name" : "小计",
+    "componentType" : "SUBTOTAL",
+    "columnCount" : 0,
+    "status" : "ACTIVE",
+    "dataDriverPath" : null,
+    "tabType" : null,
+    "partNoField" : null,
+    "partNameField" : null,
+    "sortField" : null,
+    "rowKeyFields" : null,
+    "fields" : [ ],
+    "formulas" : [ {
+      "id" : "86770254-f8ff-41be-9d76-4f86f470fd40",
+      "name" : "公式1",
+      "expression" : [ {
+        "type" : "component_subtotal",
+        "label" : "材质元素",
+        "value" : "__amount_total__",
+        "tab_name" : "__amount_total__",
+        "is_tab_total" : true,
+        "component_code" : "COMP-2267"
+      }, {
+        "type" : "operator",
+        "value" : "+"
+      }, {
+        "type" : "number",
+        "value" : "10"
+      } ],
+      "result_type" : "NUMBER"
+    } ],
+    "excelColumns" : [ ],
+    "bomRecursiveExpand" : false,
+    "sqlViews" : [ ]
+  }, {
+    "id" : "0eeef362-fce2-4673-b471-c1f5df296a17",
+    "code" : "COMP-2269",
+    "name" : "Excel",
+    "componentType" : "EXCEL",
+    "columnCount" : 0,
+    "status" : "ACTIVE",
+    "dataDriverPath" : null,
+    "tabType" : null,
+    "partNoField" : null,
+    "partNameField" : null,
+    "sortField" : null,
+    "rowKeyFields" : null,
+    "fields" : [ ],
+    "formulas" : [ ],
+    "excelColumns" : [ {
+      "tabs" : [ {
+        "alias" : "材质元素",
+        "tabKey" : "dc3297cc-e9a3-4184-8bc8-bb61db2a07d2",
+        "rowKeyFields" : [ "销售料号", "材质料号", "元素" ]
+      } ],
+      "title" : "材料费",
+      "hidden" : false,
+      "col_key" : "col_1",
+      "expression" : "[材质元素.元素小计]",
+      "source_type" : "TAB_JOIN_FORMULA"
+    }, {
+      "tabs" : [ {
+        "alias" : "小计",
+        "tabKey" : "8dc3e1b6-95e2-42f3-8c7d-0242f7c755b9",
+        "rowKeyFields" : [ ]
+      } ],
+      "title" : "单价",
+      "hidden" : false,
+      "col_key" : "col_2",
+      "expression" : "[小计(总计)]",
+      "source_type" : "TAB_JOIN_FORMULA"
+    } ],
+    "bomRecursiveExpand" : false,
+    "sqlViews" : [ ]
+  }, {
+    "id" : "04375490-927f-4802-bcc7-4156df4fc27d",
+    "code" : "COMP-2181",
+    "name" : "T260907-来料其他费用",
+    "componentType" : "NORMAL",
+    "columnCount" : 9,
+    "status" : "ACTIVE",
+    "dataDriverPath" : "$builder_04375490927f",
+    "tabType" : null,
+    "partNoField" : "投入料号",
+    "partNameField" : null,
+    "sortField" : "项次",
+    "rowKeyFields" : [ "销售料号", "投入料号" ],
+    "fields" : [ {
+      "name" : "销售料号",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 0,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_04375490927f._来料其他费用_销售料号",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "项次",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 1,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_04375490927f._来料其他费用_项次",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "投入料号",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 2,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_04375490927f._来料其他费用_投入料号",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "要素项次",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 3,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_04375490927f._来料其他费用_要素项次",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "要素名称",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 4,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_04375490927f._来料其他费用_要素名称",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "值",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 5,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_04375490927f._来料其他费用_值",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "比例（%）",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 6,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_04375490927f._来料其他费用_比例（%）",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "货币",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 7,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_04375490927f._来料其他费用_货币",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "计价单位",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 8,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_04375490927f._来料其他费用_计价单位",
+        "type" : "BASIC_DATA"
+      }
+    } ],
+    "formulas" : [ ],
+    "excelColumns" : [ ],
+    "bomRecursiveExpand" : false,
+    "sqlViews" : [ {
+      "sqlViewName" : "builder_04375490927f",
+      "sqlTemplate" : "SELECT\n  dqiof.material_no AS hf_part_no,\n  dqiof.material_no AS \"_来料其他费用_销售料号\",\n  dqiof.item_seq AS \"_来料其他费用_项次\",\n  dqiof.input_material_no AS \"_来料其他费用_投入料号\",\n  dqiof.element_item_seq AS \"_来料其他费用_要素项次\",\n  dqiof.element_name AS \"_来料其他费用_要素名称\",\n  dqiof.value AS \"_来料其他费用_值\",\n  dqiof.ratio_pct AS \"_来料其他费用_比例（%）\",\n  dqiof.currency AS \"_来料其他费用_货币\",\n  dqiof.pricing_unit AS \"_来料其他费用_计价单位\"\nFROM ds_quote_incoming_other_fee dqiof\nWHERE dqiof.material_no = ANY(:total_material_no) AND dqiof.customer_no = :customerCode\nORDER BY dqiof.material_no, dqiof.input_material_no, dqiof.item_seq",
+      "declaredColumns" : [ {
+        "name" : "hf_part_no",
+        "dataType" : "varchar",
+        "nullable" : false
+      }, {
+        "name" : "_来料其他费用_销售料号",
+        "dataType" : "varchar",
+        "nullable" : false
+      }, {
+        "name" : "_来料其他费用_项次",
+        "dataType" : "int4",
+        "nullable" : true
+      }, {
+        "name" : "_来料其他费用_投入料号",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "_来料其他费用_要素项次",
+        "dataType" : "int4",
+        "nullable" : true
+      }, {
+        "name" : "_来料其他费用_要素名称",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "_来料其他费用_值",
+        "dataType" : "numeric",
+        "nullable" : true
+      }, {
+        "name" : "_来料其他费用_比例（%）",
+        "dataType" : "numeric",
+        "nullable" : true
+      }, {
+        "name" : "_来料其他费用_货币",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "_来料其他费用_计价单位",
+        "dataType" : "varchar",
+        "nullable" : true
+      } ],
+      "requiredVariables" : [ "total_material_no", "customerCode" ],
+      "scope" : "COMPONENT",
+      "description" : null,
+      "builderConfig" : {
+        "columns" : [ {
+          "isAmount" : null,
+          "fieldName" : "销售料号",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_来料其他费用_销售料号",
+          "sourceColumn" : "material_no",
+          "resolvedRoles" : [ "ROW_KEY" ],
+          "sourceNodeKey" : "INCOMING_OTHER_FEE",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "项次",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_来料其他费用_项次",
+          "sourceColumn" : "item_seq",
+          "resolvedRoles" : [ "SORT" ],
+          "sourceNodeKey" : "INCOMING_OTHER_FEE",
+          "resolvedDataType" : "NUMBER"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "投入料号",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_来料其他费用_投入料号",
+          "sourceColumn" : "input_material_no",
+          "resolvedRoles" : [ "PART_NO", "ROW_KEY" ],
+          "sourceNodeKey" : "INCOMING_OTHER_FEE",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "要素项次",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_来料其他费用_要素项次",
+          "sourceColumn" : "element_item_seq",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "INCOMING_OTHER_FEE",
+          "resolvedDataType" : "NUMBER"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "要素名称",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_来料其他费用_要素名称",
+          "sourceColumn" : "element_name",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "INCOMING_OTHER_FEE",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "值",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_来料其他费用_值",
+          "sourceColumn" : "value",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "INCOMING_OTHER_FEE",
+          "resolvedDataType" : "NUMBER"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "比例（%）",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_来料其他费用_比例（%）",
+          "sourceColumn" : "ratio_pct",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "INCOMING_OTHER_FEE",
+          "resolvedDataType" : "NUMBER"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "货币",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_来料其他费用_货币",
+          "sourceColumn" : "currency",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "INCOMING_OTHER_FEE",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "计价单位",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_来料其他费用_计价单位",
+          "sourceColumn" : "pricing_unit",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "INCOMING_OTHER_FEE",
+          "resolvedDataType" : "TEXT"
+        } ],
+        "dialect" : "QUOTE",
+        "tabType" : "费用类",
+        "switches" : null,
+        "axisScope" : "CLOSURE",
+        "variantKey" : "INCOMING_OTHER_FEE",
+        "priceStrategy" : null,
+        "builderVersion" : 1
+      },
+      "builderVersion" : 1,
+      "status" : "ACTIVE"
+    } ]
+  }, {
+    "id" : "f6d51727-bd1e-4cc3-a839-94208cc12f41",
+    "code" : "COMP-2254",
+    "name" : "T260907-物料BOM",
+    "componentType" : "NORMAL",
+    "columnCount" : 12,
+    "status" : "ACTIVE",
+    "dataDriverPath" : "$builder_f6d51727bd1e",
+    "tabType" : null,
+    "partNoField" : "投入料号",
+    "partNameField" : null,
+    "sortField" : "项次",
+    "rowKeyFields" : [ "销售料号", "投入料号" ],
+    "fields" : [ {
+      "name" : "销售料号",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 0,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_f6d51727bd1e._物料BOM_销售料号",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "项次",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 1,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_f6d51727bd1e._物料BOM_项次",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "投入料号",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 2,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_f6d51727bd1e._物料BOM_投入料号",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "单重",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 3,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_f6d51727bd1e._物料BOM_单重",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "产出料号类型",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 4,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_f6d51727bd1e._物料BOM_产出料号类型",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "组成数量",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 5,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_f6d51727bd1e._物料BOM_组成数量",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "材料毛重",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 6,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_f6d51727bd1e._物料BOM_材料毛重",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "材料净重",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 7,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_f6d51727bd1e._物料BOM_材料净重",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "重量单位",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_TEXT",
+      "sort_order" : 8,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_f6d51727bd1e._物料BOM_重量单位",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "材料占比（%）",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 9,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_f6d51727bd1e._物料BOM_材料占比（%）",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "损耗率（%）",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 10,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_f6d51727bd1e._物料BOM_损耗率（%）",
+        "type" : "BASIC_DATA"
+      }
+    }, {
+      "name" : "不良率（%）",
+      "notes" : "",
+      "content" : "",
+      "is_amount" : false,
+      "field_type" : "INPUT_NUMBER",
+      "sort_order" : 11,
+      "is_subtotal" : false,
+      "default_source" : {
+        "path" : "$builder_f6d51727bd1e._物料BOM_不良率（%）",
+        "type" : "BASIC_DATA"
+      }
+    } ],
+    "formulas" : [ ],
+    "excelColumns" : [ ],
+    "bomRecursiveExpand" : true,
+    "sqlViews" : [ {
+      "sqlViewName" : "builder_f6d51727bd1e",
+      "sqlTemplate" : "-- 树契约: material_no=子 / parent_no=父 + :total_material_no; 边式全子件 + 根分支\nSELECT\n  dqmb.input_material_no AS material_no,\n  dqmb.material_no AS parent_no,\n  dqmb.input_material_no AS hf_part_no,\n  dqmb.material_no AS \"_物料BOM_销售料号\",\n  dqmb.item_seq AS \"_物料BOM_项次\",\n  dqmb.input_material_no AS \"_物料BOM_投入料号\",\n  dqmb.unit_weight AS \"_物料BOM_单重\",\n  dqmb.output_material_type AS \"_物料BOM_产出料号类型\",\n  dqmb.component_qty AS \"_物料BOM_组成数量\",\n  dqmb.gross_weight AS \"_物料BOM_材料毛重\",\n  dqmb.net_weight AS \"_物料BOM_材料净重\",\n  dqmb.weight_unit AS \"_物料BOM_重量单位\",\n  dqmb.material_ratio AS \"_物料BOM_材料占比（%）\",\n  dqmb.loss_rate AS \"_物料BOM_损耗率（%）\",\n  dqmb.defect_rate AS \"_物料BOM_不良率（%）\"\nFROM ds_quote_material_bom dqmb\nWHERE dqmb.input_material_no = ANY(:total_material_no) AND dqmb.customer_no = :customerCode\nUNION ALL\n-- 根分支：本单闭包里无父边的成品自身（树根，parent_no 恒 NULL）\nSELECT\n  dqm.material_no,\n  NULL::text,\n  dqm.material_no,\n  NULL,\n  NULL,\n  NULL,\n  NULL,\n  NULL,\n  NULL,\n  NULL,\n  NULL,\n  NULL,\n  NULL,\n  NULL,\n  NULL\nFROM ds_quote_material dqm\nWHERE dqm.material_no = ANY(:total_material_no) AND dqm.customer_no = :customerCode\n  AND NOT EXISTS (SELECT 1 FROM ds_quote_material_bom dqmb2 WHERE dqmb2.input_material_no = dqm.material_no AND dqmb2.customer_no = dqm.customer_no)\nORDER BY parent_no, material_no, \"_物料BOM_项次\"",
+      "declaredColumns" : [ {
+        "name" : "material_no",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "parent_no",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "hf_part_no",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "_物料BOM_销售料号",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "_物料BOM_项次",
+        "dataType" : "int4",
+        "nullable" : true
+      }, {
+        "name" : "_物料BOM_投入料号",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "_物料BOM_单重",
+        "dataType" : "numeric",
+        "nullable" : true
+      }, {
+        "name" : "_物料BOM_产出料号类型",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "_物料BOM_组成数量",
+        "dataType" : "numeric",
+        "nullable" : true
+      }, {
+        "name" : "_物料BOM_材料毛重",
+        "dataType" : "numeric",
+        "nullable" : true
+      }, {
+        "name" : "_物料BOM_材料净重",
+        "dataType" : "numeric",
+        "nullable" : true
+      }, {
+        "name" : "_物料BOM_重量单位",
+        "dataType" : "varchar",
+        "nullable" : true
+      }, {
+        "name" : "_物料BOM_材料占比（%）",
+        "dataType" : "numeric",
+        "nullable" : true
+      }, {
+        "name" : "_物料BOM_损耗率（%）",
+        "dataType" : "numeric",
+        "nullable" : true
+      }, {
+        "name" : "_物料BOM_不良率（%）",
+        "dataType" : "numeric",
+        "nullable" : true
+      } ],
+      "requiredVariables" : [ "total_material_no", "customerCode" ],
+      "scope" : "COMPONENT",
+      "description" : null,
+      "builderConfig" : {
+        "columns" : [ {
+          "isAmount" : null,
+          "fieldName" : "销售料号",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料BOM_销售料号",
+          "sourceColumn" : "material_no",
+          "resolvedRoles" : [ "ROW_KEY" ],
+          "sourceNodeKey" : "MATERIAL_BOM",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "项次",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料BOM_项次",
+          "sourceColumn" : "item_seq",
+          "resolvedRoles" : [ "SORT" ],
+          "sourceNodeKey" : "MATERIAL_BOM",
+          "resolvedDataType" : "NUMBER"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "投入料号",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料BOM_投入料号",
+          "sourceColumn" : "input_material_no",
+          "resolvedRoles" : [ "PART_NO", "ROW_KEY" ],
+          "sourceNodeKey" : "MATERIAL_BOM",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "单重",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料BOM_单重",
+          "sourceColumn" : "unit_weight",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "MATERIAL_BOM",
+          "resolvedDataType" : "NUMBER"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "产出料号类型",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料BOM_产出料号类型",
+          "sourceColumn" : "output_material_type",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "MATERIAL_BOM",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "组成数量",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料BOM_组成数量",
+          "sourceColumn" : "component_qty",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "MATERIAL_BOM",
+          "resolvedDataType" : "NUMBER"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "材料毛重",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料BOM_材料毛重",
+          "sourceColumn" : "gross_weight",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "MATERIAL_BOM",
+          "resolvedDataType" : "NUMBER"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "材料净重",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料BOM_材料净重",
+          "sourceColumn" : "net_weight",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "MATERIAL_BOM",
+          "resolvedDataType" : "NUMBER"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "重量单位",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料BOM_重量单位",
+          "sourceColumn" : "weight_unit",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "MATERIAL_BOM",
+          "resolvedDataType" : "TEXT"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "材料占比（%）",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料BOM_材料占比（%）",
+          "sourceColumn" : "material_ratio",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "MATERIAL_BOM",
+          "resolvedDataType" : "NUMBER"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "损耗率（%）",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料BOM_损耗率（%）",
+          "sourceColumn" : "loss_rate",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "MATERIAL_BOM",
+          "resolvedDataType" : "NUMBER"
+        }, {
+          "isAmount" : null,
+          "fieldName" : "不良率（%）",
+          "fieldType" : null,
+          "inSubtotal" : null,
+          "viewColumn" : "_物料BOM_不良率（%）",
+          "sourceColumn" : "defect_rate",
+          "resolvedRoles" : [ ],
+          "sourceNodeKey" : "MATERIAL_BOM",
+          "resolvedDataType" : "NUMBER"
+        } ],
+        "dialect" : "QUOTE",
+        "tabType" : "BOM",
+        "switches" : null,
+        "axisScope" : "CLOSURE",
+        "variantKey" : null,
+        "priceStrategy" : null,
+        "builderVersion" : 1
+      },
+      "builderVersion" : 1,
+      "status" : "ACTIVE"
+    } ]
+  } ],
+  "dependencies" : {
+    "globalVariables" : [ ],
+    "datasources" : [ ]
+  },
+  "checksum" : "sha256:f888e39fce13b362713f6eae3f95894565e1176eeacbe7cb0427edcbe25861a3",
+  "bindingReport" : {
+    "unboundCount" : 0,
+    "totalFormulaRefs" : 1,
+    "items" : [ {
+      "componentCode" : "COMP-2267",
+      "componentName" : "材质元素",
+      "fieldName" : "元素小计",
+      "resolvedFormulaId" : "c6283bde-d0c4-4209-8634-88bb557844f2",
+      "resolvedFormulaName" : "公式1",
+      "status" : "BOUND",
+      "message" : null
+    } ]
+  }
+}
