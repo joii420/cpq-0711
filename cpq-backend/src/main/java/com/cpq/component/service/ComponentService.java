@@ -325,7 +325,26 @@ public class ComponentService {
      */
     void assertTreeTokenGatesFor(java.util.UUID componentId, String tabType,
                                   String formulasJson, String fieldsJson) {
-        assertTreeTokenGates(tabSemanticResolver.isTreeTab(componentId, tabType), tabType, formulasJson, fieldsJson);
+        assertTreeTokenGates(tabSemanticResolver.isTreeTab(componentId, tabType), tabType,
+                formulasJson, fieldsJson, null);
+    }
+
+    /**
+     * task-260915 B-4/B-5：<b>批量场景</b>的双判据入口 —— 语义与 {@link #assertTreeTokenGatesFor}
+     * 完全一致，区别只在「是不是树页签」由调用方<b>整批算好</b>后传入。
+     *
+     * <p>为什么要这个重载：{@link #assertTreeTokenGatesFor} 内部走
+     * {@code TabSemanticResolver#isTreeTab}（单点入口），放进 N 个组件的循环里就是 N+1 查库。
+     * 组件导入（{@code ComponentImportService#commit}）有完整的组件列表，必须先调
+     * {@code TabSemanticResolver#isTreeTabBatch}（固定 ≤2 条 SQL，与组件数无关）再逐个进闸。
+     *
+     * @param isTreeTab   调用方按双判据算好的「该组件是不是树页签」
+     * @param nonTreeHint 闸②/闸②-b 因「非树页签」拒绝时，追加到错误文案末尾的定位提示；
+     *                    {@code null} = 不追加，文案与既有调用点逐字一致
+     */
+    void assertTreeTokenGatesPrecomputed(boolean isTreeTab, String tabType, String formulasJson,
+                                          String fieldsJson, String nonTreeHint) {
+        assertTreeTokenGates(isTreeTab, tabType, formulasJson, fieldsJson, nonTreeHint);
     }
 
     /**
@@ -336,7 +355,8 @@ public class ComponentService {
      */
     void assertTreeTokenGates(String tabType, String formulasJson, String fieldsJson) {
         // task-260904 B-18：字面量收编到 TabSemanticResolver；本重载 = 分支②（存量判据）。
-        assertTreeTokenGates(TabSemanticResolver.isLegacyTreeTabType(tabType), tabType, formulasJson, fieldsJson);
+        assertTreeTokenGates(TabSemanticResolver.isLegacyTreeTabType(tabType), tabType,
+                formulasJson, fieldsJson, null);
     }
 
     /**
@@ -344,7 +364,8 @@ public class ComponentService {
      * 本方法不再自己按 {@code tabType} 猜（task-260904 B-10/B-18）。{@code tabType} 仍然传进来，
      * 只用于错误文案。
      */
-    private void assertTreeTokenGates(boolean isBom, String tabType, String formulasJson, String fieldsJson) {
+    private void assertTreeTokenGates(boolean isBom, String tabType, String formulasJson,
+                                       String fieldsJson, String nonTreeHint) {
         List<Map<String, Object>> formulas = parseList(formulasJson);
         TokenMappabilityValidator innerValidator = new TokenMappabilityValidator();
 
@@ -380,7 +401,8 @@ public class ComponentService {
                 throw new BusinessException(400,
                     "公式「" + formulaName + "」使用了父子取值（tree_ref/tree_attr），" +
                     "该功能仅支持 tabType=\"BOM\" 的树页签组件，当前组件 tabType=" +
-                    (tabType == null || tabType.isBlank() ? "(未配置)" : tabType) + "。");
+                    (tabType == null || tabType.isBlank() ? "(未配置)" : tabType) + "。"
+                    + hint(nonTreeHint));
             }
             // 闸④：BOM 页签禁用 previous_row_subtotal（需求 §4.3.7，树上"上一行"语义模糊）
             if (hasPrev[0] && isBom) {
@@ -408,10 +430,20 @@ public class ComponentService {
                         "字段「" + (fn == null || fn.toString().isBlank() ? "(未命名)" : fn)
                         + "」的条件公式使用了树属性（[层级]/[是否叶子]/[是否根]），"
                         + "该功能仅支持 tabType=\"BOM\" 的树页签组件，当前组件 tabType="
-                        + (tabType == null || tabType.isBlank() ? "(未配置)" : tabType) + "。");
+                        + (tabType == null || tabType.isBlank() ? "(未配置)" : tabType) + "。"
+                        + hint(nonTreeHint));
                 }
             }
         }
+    }
+
+    /**
+     * task-260915 B-5：把调用方给的「非树页签」定位提示拼到闸②/闸②-b 的文案末尾。
+     * {@code null}/空白 → 返回空串，文案与改动前<b>逐字一致</b>（组件新建/更新路径共用这两处文案，
+     * 它们一律传 null）。
+     */
+    private static String hint(String nonTreeHint) {
+        return (nonTreeHint == null || nonTreeHint.isBlank()) ? "" : nonTreeHint;
     }
 
     /**

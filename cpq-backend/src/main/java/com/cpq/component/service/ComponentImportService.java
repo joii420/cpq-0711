@@ -48,6 +48,22 @@ public class ComponentImportService {
     @Inject
     ComponentService componentService;
 
+    // task-260915 B-4：树身份判定的全工程唯一实现。导入端只用它的**批量**入口
+    // （isTreeTabBatch：固定 ≤2 条 SQL，与组件数无关），🚫 不许在循环里调单点入口 isTreeTab。
+    @Inject
+    TabSemanticResolver tabSemanticResolver;
+
+    /**
+     * task-260915 B-5：取数配置器产出的视图名前缀。
+     * 出处 {@code BuilderService#resolveOrGenerateViewName}：{@code "builder_" + 组件id前12位}。
+     * 1.0 老包里 {@code builderConfig} 根本没有这个字段可读，「这视图是不是配置器建的」只剩视图名
+     * 这一个线索 —— 它<b>只影响错误文案</b>，不参与任何放行/拒绝判定，判错至多是少给一句提示。
+     */
+    private static final String BUILDER_VIEW_NAME_PREFIX = "builder_";
+
+    /** task-260915 B-5：当前 bundle 格式版本（导出端 {@code ComponentExportBundle#bundleVersion} 的现值）。 */
+    private static final String BUNDLE_VERSION_CURRENT = "1.1";
+
     @Transactional(Transactional.TxType.SUPPORTS)
     public ImportPreviewResult preview(UUID targetDirId, ComponentExportBundle bundle, String conflictPolicy) {
         ComponentDirectory dir = ComponentDirectory.findById(targetDirId);
@@ -117,13 +133,26 @@ public class ComponentImportService {
             }
         }
 
+        // ── task-260915 B-6（AC-12/AC-17）：取数配置器坐标可解析性，**整批一次**算完 ──────────
+        // 🚨 只读：checkBuilderCoords 全程只 SELECT，绝不写库（预览的硬约束）。
+        // 🚨 N+1：恒 1 条 SQL（semantic_tab_view 全表一次），与组件数无关；🚫 不许挪进下面的循环。
+        // 下标对齐：coordJsons 与 bundle.components **等长同序**，null 元素也占位
+        //   —— 结果按 task index 取用，不按任何后端返回的 key 配对（AP-37 的教训）。
+        List<String> coordJsons = new ArrayList<>(bundle.components.size());
+        for (ComponentExportBundle.Item it : bundle.components) {
+            coordJsons.add(firstBuilderConfigJson(it));   // 纯内存，无查库
+        }
+        List<TabSemanticResolver.CoordCheck> coordChecks = tabSemanticResolver.checkBuilderCoords(coordJsons);
+
         List<ImportPreviewResult.ComponentPlan> plans = new ArrayList<>();
         List<FormulaBindingInspector.Report> bindingReports = new ArrayList<>();
         List<ImportPreviewResult.CrossRefIssue> crossRefIssues = new ArrayList<>();
         List<String> unresolvableBlockerLines = new ArrayList<>();
         int resolvedByPositionCount = 0;
         int create = 0, rename = 0, skip = 0, conflicts = 0;
+        int itemIdx = -1;
         for (ComponentExportBundle.Item it : bundle.components) {
+            itemIdx++;
             ImportPreviewResult.ComponentPlan p = new ImportPreviewResult.ComponentPlan();
             p.code = it.code;
             p.name = it.name;
@@ -177,6 +206,19 @@ public class ComponentImportService {
                 issue.reason = hasNullOrBlankId ? "BUNDLE_MISSING_ITEM_ID" : "REF_NOT_IN_BUNDLE";
                 crossRefIssues.add(issue);
             }
+
+            // ── task-260915 B-6：配置器坐标可解析性（与 formulaBinding 并列）──────────────
+            // 🚫 结果**不进 blockers、不改 canCommit**：如实报出但不阻断导入（AC-17）。
+            ImportPreviewResult.BuilderCoord bc = new ImportPreviewResult.BuilderCoord();
+            if (coordJsons.get(itemIdx) == null) {
+                // 包里没带配置器信息：该组件本就不是配置器建的，或者这是 1.0 老包（全部落这一支）
+                bc.status = "NOT_BUILDER";
+            } else {
+                TabSemanticResolver.CoordCheck cc = coordChecks.get(itemIdx);
+                bc.status = cc.resolved() ? "RESOLVED" : "UNRESOLVABLE";
+                bc.message = cc.resolved() ? null : cc.message();
+            }
+            p.builderCoord = bc;
 
             plans.add(p);
         }
@@ -324,6 +366,8 @@ public class ComponentImportService {
         Map<String, String> codeMap = new HashMap<>();
         // 记录新建的组件实体，供第二遍重写 formulas
         List<Component> createdComponents = new ArrayList<>();
+        // task-260915 B-5：新建组件 id → 其 bundle 条目（第三遍拼报错文案用）
+        Map<UUID, ComponentExportBundle.Item> itemByComponentId = new HashMap<>();
 
         boolean hasNullId = false;
 
@@ -358,16 +402,30 @@ public class ComponentImportService {
             c.partNameField = it.partNameField;
             // task-0722 行排序列
             c.sortField = it.sortField;
-            // task-260904 B-18：判据收编到 TabSemanticResolver。此处直接用分支②（存量判据）是
-            // <b>结构上正确</b>而非图省事：bundle 的 SqlView 不携带 builder_config / builder_version
-            // （见 ComponentExportBundle.SqlView 字段清单），导入建出的 component_sql_view 两列恒为
-            // NULL ⇒ 分支① 永远不成立。这样也避免在导入循环里逐个组件查一次 component_sql_view（N+1）。
-            if (TabSemanticResolver.isLegacyTreeTabType(it.tabType)) {
+            // task-260915 B-3：树表展示配置。源为空 → 保持 NULL（该列可空），
+            // 不能走 nodeToJson —— 它把 null 落成 "[]"，会把「没配树」写成「配了个空数组」。
+            if (it.treeConfig != null && !it.treeConfig.isNull()) {
+                c.treeConfig = it.treeConfig.toString();
+            }
+            // task-260915 B-3：bom_recursive_expand。
+            // 优先用包里带来的值（1.1 包携带源库真值，含 false —— false 也是有效值，不能当"没带"）；
+            // 包里为 null（1.0 老包）时才回落 task-260904 的 tab_type 推导。
+            // ⚠️ 回落分支必须保留：老包没有这个字段，删掉它老包导入后 BOM 页签就不递归展开了。
+            if (it.bomRecursiveExpand != null) {
+                c.bomRecursiveExpand = it.bomRecursiveExpand;
+            } else if (TabSemanticResolver.isLegacyTreeTabType(it.tabType)) {
                 c.bomRecursiveExpand = Boolean.TRUE;
             }
+            // task-260915 B-3：元素价格三列。接价格策略的组件缺这三列会在目标库保存期被 400 硬拒。
+            c.elementCodeField = it.elementCodeField;
+            c.elementPriceField = it.elementPriceField;
+            c.elementCurrencyField = it.elementCurrencyField;
             c.fields = nodeToJson(it.fields);
             c.formulas = nodeToJson(it.formulas);
             // excel_columns 列 NOT NULL；nodeToJson 已把 null/缺失 → "[]"
+            // ⚠️ 这里写的是**源库原值**；其中 tabs[].tabKey 的跨页签组件引用由第二遍
+            //    FormulaRefRemapper.remapExcelColumns 重映射（task-260915 B-11）——
+            //    必须等第一遍全部建完、idMap 收集齐了才能做，理由同 formulas 那路。
             c.excelColumns = nodeToJson(it.excelColumns);
             c.directoryId = targetDirId;
             c.persist();
@@ -384,6 +442,9 @@ public class ComponentImportService {
             }
 
             createdComponents.add(c);
+            // task-260915 B-5：新建组件 → 它在包里的原始条目。第三遍拼错误文案时要回头看
+            // 「这个组件在包里带没带配置器信息」，而 Component 实体上没有这个信息。
+            itemByComponentId.put(c.id, it);
 
             int viewCnt = 0;
             if (it.sqlViews != null) {
@@ -396,8 +457,17 @@ public class ComponentImportService {
                     v.requiredVariables = (sv.requiredVariables == null)
                             ? new String[0] : sv.requiredVariables.toArray(new String[0]);
                     v.scope = sv.scope == null ? "COMPONENT" : sv.scope;
-                    v.status = "ACTIVE";
+                    // task-260915 B-3：status 照搬源值；**只有老包（1.0，无此字段）才默认 ACTIVE**。
+                    // 改动前是无条件硬编码 "ACTIVE" —— 源库里已停用的视图会被悄悄激活。
+                    v.status = sv.status == null ? "ACTIVE" : sv.status;
                     v.description = sv.description;
+                    // task-260915 B-3：取数配置器配置 + 编译器版本（成对）。原样落库，不规范化。
+                    // 它们是 TabSemanticResolver 分支① 的全部输入 —— 恢复了它们，导入后的组件
+                    // 才保住树身份、才能在取数配置器里继续编辑。源为空 → 保持 NULL（两列均可空）。
+                    if (sv.builderConfig != null && !sv.builderConfig.isNull()) {
+                        v.builderConfig = sv.builderConfig.toString();
+                    }
+                    v.builderVersion = sv.builderVersion;
                     v.persist();
                     viewCnt++;
                 }
@@ -419,7 +489,7 @@ public class ComponentImportService {
                       "component_subtotal.component_code 仍通过 codeMap 映射");
         }
 
-        // ── 第二遍：对每个新建组件重写 formulas 里的跨组件引用 ──────────────
+        // ── 第二遍：对每个新建组件重写**跨组件引用**（formulas + excel_columns）──────────
         // 必须在第一遍全部建完（idMap/codeMap 收集完整）之后执行，
         // 因为组件 A 可能引用同批次组件 B，B 必须先进 map。
         if (!idMap.isEmpty() || !codeMap.isEmpty()) {
@@ -430,8 +500,30 @@ public class ComponentImportService {
                     // Panache 实体在 @Transactional 方法内，赋值后由 Hibernate 脏检查
                     // 自动 flush；无需显式调用 c.persist()（已 managed 状态）
                 }
+                // task-260915 B-11（AC-21）：跨组件引用不止在 formulas 里 —— EXCEL 组件的
+                // excel_columns.tabs[].tabKey 指向兄弟页签组件的 id，此前从未重映射，
+                // 导入后仍指向**源目录**的旧组件（跨机器搬运时直接是悬空引用）。
+                // 🚫 纯内存 JSON 变换，无查库；与上面 formulas 那路共用同一份 idMap。
+                String remappedExcel = FormulaRefRemapper.remapExcelColumns(c.excelColumns, idMap);
+                if (remappedExcel != null && !remappedExcel.equals(c.excelColumns)) {
+                    c.excelColumns = remappedExcel;
+                }
             }
         }
+
+        // ── task-260915 B-4：树身份**批量**判定（必须在进第三遍循环之前一次性算完）──────
+        // 🚫 循环里逐个调 componentService.assertTreeTokenGatesFor / TabSemanticResolver.isTreeTab
+        //    = N+1（每个组件各查一次 component_sql_view）。isTreeTabBatch 自带承诺：固定 ≤2 条 SQL，
+        //    与入参组件数无关（5 个组件的包和 10 个组件的包发出的条数完全相等）。
+        // 前提：第一遍 persist() 的 ComponentSqlView 必须能被这里的 Panache 查询看见。成立 ——
+        //    同事务内 Hibernate 对 JPQL 查询做 auto-flush（FlushModeType.AUTO），持久化上下文里
+        //    待 INSERT 的 ComponentSqlView 会先落库再查。已实测，见
+        //    Task260915ImportTreeJudgementTest#persistedSqlViewIsVisibleToBatchResolverInSameTx。
+        Map<UUID, String> tabTypeByComponentId = new LinkedHashMap<>();
+        for (Component c : createdComponents) {
+            tabTypeByComponentId.put(c.id, c.tabType);
+        }
+        Map<UUID, Boolean> treeFlagByComponentId = tabSemanticResolver.isTreeTabBatch(tabTypeByComponentId);
 
         // ── 第三遍：BL-0098 公式 id 补齐 + 字段绑定固化 + 显式绑定校验 ──────────
         // 必须在第二遍 FormulaRefRemapper.remap 之后：remap 整体重写 c.formulas，
@@ -471,10 +563,14 @@ public class ComponentImportService {
 
                 // task-0803 Task5⑤：同一循环里跑闸①②④（父子取值 tabType 联动 + BOM 禁 PREV），
                 // 不留导入这条路径绕过配置期校验的口子。c.tabType 已在第一遍(persist 前)写入。
-                // task-260904 B-10/B-18：导入 bundle 不携带 builder_config/builder_version
-                // （见 ComponentExportBundle.SqlView 字段清单），导入建出的组件恒走分支②，
-                // 故这里用只按 tab_type 判的重载是结构上正确的，也避免在导入循环里逐个查库（N+1）。
-                componentService.assertTreeTokenGates(c.tabType, c.formulas, c.fields);
+                // task-260915 B-4：改用**双判据**（与组件新建/更新同口径）。上面那条
+                // 「导入 bundle 不携带 builder_config ⇒ 恒走分支②」的旧注释已随 B-1~B-3 作废 ——
+                // 1.1 包携带 builder_config/builder_version，导入建出的组件同样可能走分支①。
+                // 判据整批算在循环外（treeFlagByComponentId），循环体内零查库。
+                componentService.assertTreeTokenGatesPrecomputed(
+                        Boolean.TRUE.equals(treeFlagByComponentId.get(c.id)),
+                        c.tabType, c.formulas, c.fields,
+                        legacyBundleTreeHint(bundle, itemByComponentId.get(c.id)));
             } catch (BusinessException e) {
                 // 校验闸门抛出的是业务语义 400（非结构解析失败），保留原始 code，只加上下文前缀。
                 throw new BusinessException(e.getCode(),
@@ -493,6 +589,63 @@ public class ComponentImportService {
         result.unboundCount = result.unboundWarnings.size();
         result.sqlViewsCreated = sqlViews;
         return result;
+    }
+
+    /**
+     * task-260915 B-6：取该 bundle 条目里<b>第一条带 {@code builderConfig} 的视图</b>的 JSON 文本；
+     * 没有则返回 {@code null}（= 该组件不是取数配置器建的，或包是 1.0 老格式根本不带这个字段）。
+     *
+     * <p>「取第一条」与 {@code TabSemanticResolver#builderSemantics} 的口径一致：同一组件理论上
+     * 只有一条 builder 视图。纯内存，不查库。
+     */
+    private static String firstBuilderConfigJson(ComponentExportBundle.Item it) {
+        if (it == null || it.sqlViews == null) return null;
+        for (ComponentExportBundle.SqlView sv : it.sqlViews) {
+            if (sv.builderConfig != null && !sv.builderConfig.isNull()) {
+                return sv.builderConfig.toString();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * task-260915 B-5（AC-11）：闸②因「非树页签」拒绝时追加的定位提示。
+     *
+     * <p>只在<b>三个条件同时成立</b>时给出非空提示，其余一律返回 {@code null}（文案逐字不变）：
+     * <ol>
+     *   <li>包版本 &lt; 1.1（{@code bundleVersion} 缺失或不等于 {@value #BUNDLE_VERSION_CURRENT}）；</li>
+     *   <li>该组件至少有一条<b>取数配置器建的</b>视图（视图名以 {@value #BUILDER_VIEW_NAME_PREFIX} 开头）；</li>
+     *   <li>那条视图的 {@code builderConfig} 为空（= 包里确实没带配置器信息）。</li>
+     * </ol>
+     *
+     * <p>为什么要这句话：源库里这个组件的树身份记在 {@code builder_config.tabType} 里
+     * （{@code component.tab_type} 在新模型下天然为 NULL），1.0 老包把这个唯一凭据丢了 ⇒
+     * 导入端无论如何都判不出它是树页签。此时只报「当前组件 tabType=(未配置)」会把用户引向
+     * 「去改 tab_type」这条死路 —— 真正的出路是在源库升级后重新导出。
+     *
+     * <p>⚠️ 本方法<b>纯内存</b>（只读 bundle 对象），不查库；在第三遍循环里逐个调用不构成 N+1。
+     */
+    private String legacyBundleTreeHint(ComponentExportBundle bundle, ComponentExportBundle.Item item) {
+        if (bundle == null || item == null) return null;
+        if (BUNDLE_VERSION_CURRENT.equals(bundle.bundleVersion)) return null;   // 1.1 包不给这句
+        if (item.sqlViews == null || item.sqlViews.isEmpty()) return null;
+        boolean builderViewWithoutConfig = false;
+        for (ComponentExportBundle.SqlView sv : item.sqlViews) {   // 纯内存遍历，无查库
+            boolean isBuilderView = sv.sqlViewName != null
+                    && sv.sqlViewName.startsWith(BUILDER_VIEW_NAME_PREFIX);
+            boolean configMissing = sv.builderConfig == null || sv.builderConfig.isNull();
+            if (isBuilderView && configMissing) {
+                builderViewWithoutConfig = true;
+                break;
+            }
+        }
+        if (!builderViewWithoutConfig) return null;
+        return "该组件的页签类型是在「取数配置器」里配的（树身份记在配置器信息里，不在 tabType 列），"
+             + "而这个导入包是旧格式（bundleVersion "
+             + (bundle.bundleVersion == null || bundle.bundleVersion.isBlank()
+                     ? "缺失" : bundle.bundleVersion)
+             + "，不含配置器信息），导入端无从得知它是树页签。"
+             + "请在源库升级到含本次修复的版本后重新导出，再导入本包。";
     }
 
     /** 统计 bundle 依赖中在目标环境缺失的数量。 */

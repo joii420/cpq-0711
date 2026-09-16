@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Drawer, Upload, Button, Select, Space, Alert, Table, Tag, Typography, message, notification, Descriptions, Checkbox,
+  Drawer, Upload, Button, Select, Space, Alert, Table, Tag, Typography, message, notification, Descriptions, Checkbox, Tooltip,
 } from 'antd';
 import { InboxOutlined, EyeOutlined, ImportOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
@@ -26,6 +26,19 @@ interface Props {
 
 type ConflictPolicy = 'RENAME' | 'SKIP' | 'ABORT';
 
+/**
+ * 🆕 task-260915 F-1：取数配置器三段坐标在目标库 `semantic_tab_view` 的可解析性。
+ * ⚠️ 本取值域里的 `UNRESOLVABLE` 与 `FormulaBindingStatus.UNRESOLVABLE` 是**同名不同义**：
+ *    公式绑定那个**会**拦提交（见 unresolvableBlock）；本字段的**绝不拦**（AC-17：如实报出但不阻断导入）。
+ */
+type BuilderCoordStatus = 'NOT_BUILDER' | 'RESOLVED' | 'UNRESOLVABLE';
+
+interface BuilderCoordInfo {
+  status: BuilderCoordStatus;
+  /** UNRESOLVABLE 时给人话原因（缺哪个坐标），其余为 null。 */
+  message?: string | null;
+}
+
 interface ComponentPlan {
   code: string;
   name: string;
@@ -35,6 +48,8 @@ interface ComponentPlan {
   sqlViewCount: number;
   /** 🆕 task-0805 R2：逐字段绑定去向（不含 componentCode/componentName，由本 ComponentPlan 提供上下文）。 */
   formulaBinding?: FormulaBindingItem[];
+  /** 🆕 task-260915 AC-12/AC-17：配置器坐标解析结果。老后端不返回该字段 ⇒ 必须按可选处理，缺失时不渲染。 */
+  builderCoord?: BuilderCoordInfo | null;
 }
 interface DepItem { code: string; exists: boolean; }
 interface PreviewResult {
@@ -71,6 +86,12 @@ const BINDING_STATUS_TAG: Record<FormulaBindingStatus, { color: string; text: st
   RESOLVED_BY_NAME: { color: 'blue', text: '按名称解析' },
   RESOLVED_BY_POSITION: { color: 'orange', text: '按位置推导' },
   UNRESOLVABLE: { color: 'red', text: '无法解析' },
+};
+
+/** 🆕 task-260915 F-1：NOT_BUILDER 不进本表——它渲染为 '—' 而不是 Tag。 */
+const BUILDER_COORD_TAG: Record<'RESOLVED' | 'UNRESOLVABLE', { color: string; text: string }> = {
+  RESOLVED: { color: 'green', text: '可解析' },
+  UNRESOLVABLE: { color: 'orange', text: '需重绑' },
 };
 
 type BindingRow = FormulaBindingItem & { componentCode: string; componentName: string; action: string };
@@ -145,6 +166,8 @@ const ComponentImportDrawer: React.FC<Props> = ({ open, targetDirId, targetDirNa
   //  ① 预览直接放行(canCommit)；
   //  ② 或者每一类阻断原因都被对应的显式开关覆盖 —— 缺依赖→ignoreMissing；未绑定公式→ignoreUnboundFormulas；
   //     ABORT 冲突没有覆盖开关，属硬阻断，两个勾选都救不了。
+  // 🆕 task-260915 F-2（AC-10 / AC-11）：老包只提示、🚫 不阻断提交 —— 故本标志不进 canSubmit。
+  const isLegacyBundle = !!preview && preview.bundleVersion !== '1.1';
   const abortConflictBlock = !!preview && preview.conflictPolicy === 'ABORT' && preview.summary.conflicts > 0;
   const missingDepsBlock = !!preview && preview.dependencies.missingCount > 0;
   // 只统计"会真正落库"的组件（CREATE/RENAME）里的 UNRESOLVABLE——SKIP 的组件根本不会被导入，不该拖后腿。
@@ -185,6 +208,18 @@ const ComponentImportDrawer: React.FC<Props> = ({ open, targetDirId, targetDirNa
     { title: '组件 code', dataIndex: 'code', width: 150 },
     { title: '名称', dataIndex: 'name', width: 140, render: (v) => v || '—' },
     { title: 'SQL视图', dataIndex: 'sqlViewCount', width: 80, align: 'center' },
+    {
+      // 🆕 task-260915 F-1（AC-12 / AC-17）：仅展示，🚫 不参与 canSubmit —— UNRESOLVABLE 在此**不阻断提交**。
+      title: '配置器', dataIndex: 'builderCoord', width: 100, align: 'center',
+      render: (_: unknown, r: ComponentPlan) => {
+        const coord = r.builderCoord;
+        // 老后端没有该字段 ⇒ coord 为 undefined，与 NOT_BUILDER 同样显示 '—'，不抛错。
+        if (!coord || coord.status === 'NOT_BUILDER') return <Text type="secondary">—</Text>;
+        const t = BUILDER_COORD_TAG[coord.status] ?? { color: 'default', text: String(coord.status) };
+        const tag = <Tag color={t.color}>{t.text}</Tag>;
+        return coord.message ? <Tooltip title={coord.message}>{tag}</Tooltip> : tag;
+      },
+    },
     {
       title: '动作', dataIndex: 'action', width: 100,
       render: (a: string) => { const t = ACTION_TAG[a] || { color: 'default', text: a }; return <Tag color={t.color}>{t.text}</Tag>; },
@@ -274,8 +309,20 @@ const ComponentImportDrawer: React.FC<Props> = ({ open, targetDirId, targetDirNa
 
         {preview && (
           <>
+            {isLegacyBundle && (
+              <Alert
+                type="warning"
+                showIcon
+                message={`导入包是旧格式(bundleVersion ${preview.bundleVersion || '未知'})，不含取数配置器信息`}
+                description="取数配置器建的树页签组件可能导入失败，或导入成功后无法在取数配置器中继续编辑。建议在源库升级后重新导出（新格式包的 bundleVersion 为 1.1）。本包仍可继续导入。"
+              />
+            )}
+
             <Descriptions size="small" column={2} bordered>
-              <Descriptions.Item label="bundle 版本">{preview.bundleVersion}</Descriptions.Item>
+              <Descriptions.Item label="bundle 版本">
+                {preview.bundleVersion}
+                {isLegacyBundle && <Tag color="orange" style={{ marginLeft: 8 }}>旧格式</Tag>}
+              </Descriptions.Item>
               <Descriptions.Item label="checksum">
                 {preview.checksumValid ? <Tag color="green">校验通过</Tag> : <Tag color="orange">不一致(可能被改动)</Tag>}
               </Descriptions.Item>

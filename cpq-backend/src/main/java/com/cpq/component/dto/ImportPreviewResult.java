@@ -55,6 +55,34 @@ public class ImportPreviewResult {
         /** task-0805 R2：该组件逐 FORMULA 字段「将绑到哪条公式」。action=SKIP 的组件也照常给出
          *  (供核对)，但其 UNRESOLVABLE 不计入 blockers——该组件根本不会被导入。 */
         public List<FormulaBindingItem> formulaBinding;
+        /** task-260915 B-6（AC-12/AC-17）：该组件的取数配置器坐标在目标库能否解析到。
+         *  与 {@link #formulaBinding} 并列，但**不阻断**——见 {@link BuilderCoord} 的警示。 */
+        public BuilderCoord builderCoord;
+    }
+
+    /**
+     * task-260915 B-6：导入预览的「取数配置器坐标可解析性」报告项（AC-12/AC-17）。
+     *
+     * <p>回答的是：包里这个组件的配置器坐标（{@code builder_config} 的
+     * {@code tabType}/{@code variantKey}/{@code dialect} 三段），在<b>目标库</b>的
+     * {@code semantic_tab_view} 里找不找得到。跨库语义图有差异时会找不到。
+     *
+     * <p>🚫 <b>UNRESOLVABLE 不进 blockers、不让 canCommit 变 false</b>（AC-17）：
+     * 如实报出但<b>不阻断导入</b>，{@code builder_config} 原样落库，由用户决定是否重绑。
+     *
+     * <p>⚠️ 本项的 {@code UNRESOLVABLE} 与 {@link FormulaBindingItem#status} 的
+     * {@code UNRESOLVABLE} 是<b>同名不同义</b>的两个值：后者<b>会</b>拦提交，本项<b>不会</b>。
+     * 前端不要复用同一套拦截逻辑。
+     */
+    public static class BuilderCoord {
+        /**
+         * {@code NOT_BUILDER}   = 该组件没有配置器视图（包里 builderConfig 为 null，含全部 1.0 老包）；
+         * {@code RESOLVED}      = 三段坐标在目标库 semantic_tab_view 能解析到；
+         * {@code UNRESOLVABLE}  = 解析不到，{@link #message} 说明缺哪个坐标。
+         */
+        public String status;
+        /** UNRESOLVABLE 时给人话原因，其余为 null。 */
+        public String message;
     }
 
     public static class DependencyCheck {
