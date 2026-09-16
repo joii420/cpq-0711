@@ -1,7 +1,7 @@
 # CPQ 系统接口总览文档（main-api.md）
 
 > 本文件由技术总监扫描 `cpq-backend` 全部 JAX-RS Resource 自动生成，覆盖 **89 个 Resource 类、约 422 个 HTTP 端点**，按业务模块分为 12 大类。
-> 生成日期：2026-07-08 ｜ 最近契约更新：**2026-09-07（task-260907 移除主数据维护端的核价页签：删除 §6.3 中「核价基础数据导入」一节所记的 POST 端点；同批下线但总账从未登记的还有其模板下载 GET 端点与核价基础数据维护端的七个端点）** ｜ 前次：2026-09-03（task-260903 产品管理页重做：新增 `GET /dataset/{dataset}/customer-parts`，见 §6.9；其前序 task-260902 新增 9 个端点，见 §6.8 / §6.9） ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
+> 生成日期：2026-07-08 ｜ 最近契约更新：**2026-09-16（task-260915 组件导出/导入往返保真：§2.1 导出/导入预览/导入提交三个端点按真实源码整段覆盖 —— 含本次新增 8 个字段与 `builderCoord`，并顺带补齐 task-0805 遗留未回写的 `bindingReport`/`formulaBinding`/`ignoreUnboundFormulas`/`unboundWarnings` 等）** ｜ 前次：2026-09-03（task-260903 产品管理页重做：新增 `GET /dataset/{dataset}/customer-parts`，见 §6.9；其前序 task-260902 新增 9 个端点，见 §6.8 / §6.9） ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
 > 用途：前后端接口契约基线、联调对照、新接口设计参照。字段说明取自源码 javadoc / 注释，无注释处据字段名与类型推断。
 
 ---
@@ -999,7 +999,7 @@
 类级鉴权：`@RoleAllowed({"SALES_MANAGER", "SYSTEM_ADMIN"})`（本类所有端点均需登录且角色匹配）
 
 #### 导出目录组件包（P1）
-- **功能**: 把该目录**直属**组件（含 fields/formulas/dataDriverPath/excelColumns/component_sql_view + 依赖清单）打包为 JSON bundle 下载，纯只读。
+- **功能**: 把该目录**直属**组件（含 fields/formulas/dataDriverPath/excelColumns/component_sql_view + 依赖清单）打包为 JSON bundle 下载，纯只读。**不按 status 过滤**（ACTIVE 与非 ACTIVE 组件一并导出）。
 - **方法**: GET
 - **路径**: `/api/cpq/component-directories/{id}/export`
 - **鉴权**: 需登录+角色[SALES_MANAGER, SYSTEM_ADMIN]
@@ -1009,96 +1009,109 @@
 |------|------|------|
 | id | UUID | 目录 ID |
 
-- **响应内容**: 直返 `ComponentExportBundle` 实体（非 ApiResponse 包裹），并附响应头 `Content-Disposition: attachment; filename="components-{id}.json"` 触发浏览器下载。
+- **响应内容**: 直返 `ComponentExportBundle` 实体（🚨 **非 ApiResponse 包裹**，与导入两个端点的信封不对称），并附响应头 `Content-Disposition: attachment; filename="components-{id}.json"` 触发浏览器下载。
+
+> 🚨 **空值序列化口径**：`Item` 的 5 个 1.1 新增字段与 `SqlView` 的 3 个 1.1 新增字段带 `@JsonInclude(NON_NULL)` ——
+> **值为 null 时该键在 JSON 里整个不出现**（不是写成 `: null`）。
+> 原因：导入端 `verifyChecksum` 拿**反序列化后的 DTO** 重算 checksum，若写出 `"xxx":null`，1.0 老包重算字节会与原始不同 ⇒ 每份合法老包都报「可能被改动或损坏」。
+> 🚫 **既有字段不加** NON_NULL（会改变老包既有形状）。由 `ExportBundleFieldCoverageTest` 守门。
 
 `ComponentExportBundle` 字段（真实源码核对）：
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| bundleVersion | String | bundle 格式版本号，默认 `"1.0"`，导入端据此判兼容性 |
+| bundleVersion | String | bundle 格式版本号，**默认 `"1.1"`**（task-260915 由 `"1.0"` 升版）；导入端据此判兼容性 |
 | exportedAt | String | 导出时间（ISO-8601 字符串，非 Instant） |
 | source | Source | 来源目录信息（仅供追溯，导入时不依赖） |
 | components | List\<Item\> | 该目录直属组件条目（本期不递归子目录） |
 | dependencies | Dependencies | 依赖清单：组件引用但不随 bundle 走的外部对象，供导入端校验存在性 |
 | checksum | String | 内容校验和（sha256，基于 source+components+dependencies 规范 JSON），防损坏/篡改 |
+| bindingReport | BindingReport | 公式绑定完整性只读扫描报告（task-0805）。**不参与 checksum 计算**；导出永不因此阻断；老 bundle 为 null |
 
-`ComponentExportBundle.Source`：
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| directoryId | String | 来源目录 ID |
-| directoryName | String | 来源目录名称 |
+`ComponentExportBundle.Source`：`directoryId`(String) / `directoryName`(String)。
 
 `ComponentExportBundle.Item`（逐条组件）：
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| id | String | 原组件 id（UUID 字符串），供导入端重映射跨组件引用；老 bundle 无此字段则为 null |
-| code | String | 组件 code |
+| id | String | 原组件 id（UUID 字符串），供导入端**重映射跨组件引用**；老 bundle 无此字段则为 null |
+| code | String | 组件 code（⚠️ `component.code` 是**全局唯一索引** ⇒ 导入到任何目录都必触发 RENAME） |
 | name | String | 组件名称 |
 | componentType | String | 组件类型 |
 | columnCount | Integer | 列数 |
 | status | String | 状态 |
 | dataDriverPath | String | 数据驱动路径 |
+| tabType | String | 页签类型（task-0721）。⚠️ **取数配置器建的页签此列恒 null** —— 树身份记在 `SqlView.builderConfig.tabType` |
+| partNoField | String | 料号列（task-0721） |
+| partNameField | String | 料号名称列（task-0721） |
+| sortField | String | 多行页签行排序列（task-0722） |
+| rowKeyFields | JsonNode | 行键字段名列表；源为空则 null（不落空数组） |
 | fields | JsonNode | 字段定义（原 JSONB，内嵌真实 JSON 节点） |
 | formulas | JsonNode | 公式定义（原 JSONB） |
-| excelColumns | JsonNode | EXCEL 组件列定义（原 JSONB） |
-| sqlViews | List\<SqlView\> | 组件 SQL 视图（component_sql_view，随组件走） |
+| excelColumns | JsonNode | EXCEL 组件列定义（原 JSONB）。其中 `tabs[].tabKey` 可能内嵌兄弟组件 id，导入时会被重映射 |
+| 🆕 treeConfig | JsonNode | ← `component.tree_config`。**NON_NULL**；源为空则键不出现（task-260915） |
+| 🆕 bomRecursiveExpand | Boolean | ← `component.bom_recursive_expand`。**NON_NULL**。⚠️ `false` 是有效值，导入端按「非 null 优先」处理（task-260915） |
+| 🆕 elementCodeField | String | ← `component.element_code_field`（元素编码列）。**NON_NULL**。接价格策略的组件缺它会被后端 400 拒（task-260915） |
+| 🆕 elementPriceField | String | ← `component.element_price_field`（元素单价列）。**NON_NULL**（task-260915） |
+| 🆕 elementCurrencyField | String | ← `component.element_currency_field`（元素币种列）。**NON_NULL**（task-260915） |
+| sqlViews | List\<SqlView\> | 组件 SQL 视图（component_sql_view，随组件走）。**导出端批量取回**、组件内按 `sqlViewName` 排序（task-260915 消除 N+1） |
 
 `ComponentExportBundle.SqlView`：
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | sqlViewName | String | 视图逻辑名 |
-| sqlTemplate | String | SQL 模板 |
+| sqlTemplate | String | SQL 模板（导入端**原样搬运，不重编译**） |
 | declaredColumns | JsonNode | 声明列签名（原 JSONB） |
 | requiredVariables | List\<String\> | 占位符变量清单 |
 | scope | String | 作用域 COMPONENT / GLOBAL |
 | description | String | 描述 |
+| 🆕 builderConfig | JsonNode | ← `component_sql_view.builder_config`（取数配置器的完整配置）。**NON_NULL**；原样透传 JSONB。🚨 **取数配置器建的树页签，树身份唯一凭据就在这里的 `tabType`**，丢了它导入端判不出树（task-260915） |
+| 🆕 builderVersion | Integer | ← `component_sql_view.builder_version`。**NON_NULL**。⚠️ 与 `builderConfig.builderVersion` 是两个来源，两个都要带（task-260915） |
+| 🆕 status | String | ← `component_sql_view.status`。**NON_NULL**；老包缺失时导入端默认 `ACTIVE`（task-260915） |
 
-`ComponentExportBundle.Dependencies`：
+`ComponentExportBundle.Dependencies`：`globalVariables`(List\<String\>，GLOBAL_VARIABLE 绑定的 code) / `datasources`(List\<String\>，DATABASE_QUERY / HTTP_API 绑定的 code)。
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| globalVariables | List\<String\> | 引用到的全局变量 code（GLOBAL_VARIABLE 绑定） |
-| datasources | List\<String\> | 引用到的数据源 code（DATABASE_QUERY / HTTP_API 绑定） |
+`ComponentExportBundle.BindingReport`（task-0805）：`unboundCount`(int，= items 中 UNRESOLVABLE 条数) / `totalFormulaRefs`(int) / `items`(List\<BindingReportItem\>)。
+
+`ComponentExportBundle.BindingReportItem`（task-0805）：`componentCode` / `componentName` / `fieldName`（条件公式内部引用写成「字段名 › 规则N」/「字段名 › 默认」）/ `resolvedFormulaId` / `resolvedFormulaName` / `status`（BOUND · RESOLVED_BY_NAME · RESOLVED_BY_POSITION · UNRESOLVABLE）/ `message`（UNRESOLVABLE 时的人话原因），均为 String。
+
+> 来源任务：`task-260915-组件导出导入往返保真`｜回写日期：2026-09-16
 
 #### 导入预览（P2, dry-run 不写库）
-- **功能**: 校验依赖存在性 + 按冲突策略生成每组件动作计划。该端点恒为预览（不写库），实际写入走 `/import/commit`。
+- **功能**: 校验依赖存在性 + 按冲突策略生成每组件动作计划 + 公式绑定去向 + 取数配置器坐标可解析性。该端点恒为预览（**只读，不写库**），实际写入走 `/import/commit`。
 - **方法**: POST
 - **路径**: `/api/cpq/component-directories/{id}/import`
 - **鉴权**: 需登录+角色[SALES_MANAGER, SYSTEM_ADMIN]
-- **路径参数**:
-
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| id | UUID | 目标目录 ID |
-
+- **路径参数**: `id`（UUID，目标目录 ID）
 - **查询参数**:
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | conflictPolicy | String | 否 | 冲突策略，`@DefaultValue("RENAME")` |
 
-- **请求体**: `ComponentExportBundle`（导出的 bundle JSON，字段同上「导出」小节）
-- **响应内容**: `ApiResponse<ImportPreviewResult>`
+- **请求体**: `ComponentExportBundle`（导出的 bundle JSON，字段同上「导出」小节；1.0 与 1.1 均接受）
+- **响应内容**: `ApiResponse<ImportPreviewResult>`（🚨 **套** ApiResponse，取 `data`）
 
-`ImportPreviewResult` 字段（真实源码核对，非动态结构）：
+`ImportPreviewResult` 字段（真实源码核对）：
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| bundleVersion | String | bundle 版本号 |
-| checksumValid | boolean | bundle.checksum 与重算值是否一致（false=可能被改动/损坏，警告但不一定阻止） |
+| bundleVersion | String | bundle 版本号（前端据 ≠ `"1.1"` 显示「旧格式」提示） |
+| checksumValid | boolean | bundle.checksum 与重算值是否一致（false=可能被改动/损坏，警告但不阻止） |
 | targetDirectoryId | String | 目标目录 ID |
 | targetDirectoryName | String | 目标目录名称 |
 | conflictPolicy | String | 实际采用的冲突策略：RENAME / SKIP / ABORT |
 | summary | Summary | 汇总计数 |
 | components | List\<ComponentPlan\> | 每组件动作计划 |
 | dependencies | DependencyCheck | 依赖存在性校验结果 |
-| canCommit | boolean | 是否允许提交（P3）；缺依赖或 ABORT 策略下有冲突 → false |
+| canCommit | boolean | 是否允许提交；缺依赖或 ABORT 策略下有冲突 → false |
 | blockers | List\<String\> | 阻止提交的原因（人类可读） |
+| warnings | List\<String\> | 不阻止提交的警告（如 checksum 不一致） |
+| bindingSummary | BindingSummary | 公式绑定去向汇总（task-0805） |
+| crossRefIssues | List\<CrossRefIssue\> | 跨组件引用问题（task-0805） |
 
-`ImportPreviewResult.Summary`：`total`(int) / `toCreate`(int) / `toRename`(int) / `toSkip`(int) / `conflicts`(int)。
+`ImportPreviewResult.Summary`：`total` / `toCreate` / `toRename` / `toSkip` / `conflicts`，均为 int。
 
 `ImportPreviewResult.ComponentPlan`：
 
@@ -1107,35 +1120,48 @@
 | code | String | 组件 code |
 | name | String | 组件名称 |
 | action | String | CREATE / RENAME / SKIP |
-| newCode | String | RENAME 时的新 code（加后缀） |
+| newCode | String | RENAME 时的新 code |
 | conflict | boolean | 与现有组件 code 冲突 |
 | sqlViewCount | int | 随组件的 SQL 视图数 |
+| formulaBinding | List\<FormulaBindingItem\> | 逐字段公式绑定去向（task-0805）。其中 `UNRESOLVABLE` **会**拦提交 |
+| 🆕 builderCoord | BuilderCoord | 取数配置器坐标在目标库语义图中能否解析（task-260915）。前端可选处理，缺失时不渲染 |
+
+`ImportPreviewResult.BuilderCoord`（🆕 task-260915）：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| status | String | `RESOLVED`（坐标能解析）/ `UNRESOLVABLE`（解析不到）/ `NOT_BUILDER`（无 builder 视图；老包恒为此值） |
+| message | String | `UNRESOLVABLE` 时的人话原因（含缺失的坐标），其余为 null |
+
+> 🚫 **`builderCoord.status = UNRESOLVABLE` 不进 `blockers`、不让 `canCommit` 变 false**（如实报出但不阻断）。
+> ⚠️ 与 `formulaBinding[].status` 的 `UNRESOLVABLE` **同名不同义**：后者会拦提交，前者不会。前端不得复用同一套拦截逻辑。
 
 `ImportPreviewResult.DependencyCheck`：`globalVariables`(List\<DepItem\>) / `datasources`(List\<DepItem\>) / `missingCount`(int)。
 `ImportPreviewResult.DepItem`：`code`(String) / `exists`(boolean)。
+`ImportPreviewResult.BindingSummary`（task-0805）：`totalFormulaRefs` / `bound` / `resolvedByName` / `resolvedByPosition` / `unresolvable`，均为 int。
+`ImportPreviewResult.FormulaBindingItem`（task-0805）：`fieldName` / `resolvedFormulaId` / `resolvedFormulaName` / `status` / `message`，均为 String。
+`ImportPreviewResult.CrossRefIssue`（task-0805）：`componentCode` / `refType` / `ref` / `reason`，均为 String。
+
+> 来源任务：`task-260915-组件导出导入往返保真`｜回写日期：2026-09-16
 
 #### 导入提交（P3, 单事务写库）
-- **功能**: 单事务按计划 INSERT 新组件 + 其 component_sql_view（全新 UUID），不动任何现有数据、不绑定模板。依赖缺失默认阻止。
+- **功能**: **单事务**按计划 INSERT 新组件 + 其 component_sql_view（全新 UUID），不动任何现有数据、不绑定模板。**任一组件校验失败则整包回滚、DB 零残留**。第二遍对 `formulas`（`cross_tab_ref.source` / `component_subtotal.component_code`）与 `excelColumns`（`tabs[].tabKey`，task-260915）做跨组件引用重映射；指向包外的引用保持原值。树 token 校验走与组件新建/更新同口径的**双判据**（task-260915）。
 - **方法**: POST
 - **路径**: `/api/cpq/component-directories/{id}/import/commit`
 - **鉴权**: 需登录+角色[SALES_MANAGER, SYSTEM_ADMIN]
-- **路径参数**:
-
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| id | UUID | 目标目录 ID |
-
+- **路径参数**: `id`（UUID，目标目录 ID）
 - **查询参数**:
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | conflictPolicy | String | 否 | 冲突策略，`@DefaultValue("RENAME")` |
 | ignoreMissingDeps | boolean | 否 | `@DefaultValue("false")`；为 `true` 时显式忽略缺失依赖强制写入 |
+| ignoreUnboundFormulas | boolean | 否 | `@DefaultValue("false")`（task-0805）；为 `true` 时即使存在未显式绑定的 FORMULA 字段也继续，并记入 `unboundWarnings` |
 
 - **请求体**: `ComponentExportBundle`
-- **响应内容**: `ApiResponse<ImportCommitResult>`
+- **响应内容**: `ApiResponse<ImportCommitResult>`（🚨 **套** ApiResponse，取 `data`）
 
-`ImportCommitResult` 字段（真实源码核对，非动态结构）：
+`ImportCommitResult` 字段（真实源码核对）：
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -1145,18 +1171,22 @@
 | createdCount | int | 实际新建组件数 |
 | skippedCount | int | 被跳过组件数 |
 | sqlViewsCreated | int | 生成的 SQL 视图总数 |
-| created | List\<CreatedItem\> | 新建明细 |
+| created | List\<CreatedItem\> | 新建明细（⚠️ 字段名是 `created`，不是 `createdItems`） |
 | skipped | List\<String\> | 被跳过的原始 code（SKIP 策略下冲突项） |
+| unboundWarnings | List\<UnboundWarning\> | `ignoreUnboundFormulas=true` 时记录的未绑定字段（task-0805） |
+| unboundCount | int | 未绑定字段数（task-0805） |
 
-`ImportCommitResult.CreatedItem`：
+`ImportCommitResult.CreatedItem`：`originalCode`(String，bundle 里的原始 code) / `finalCode`(String，实际落库的 code) / `componentId`(String) / `renamed`(boolean) / `sqlViewCount`(int)。
+`ImportCommitResult.UnboundWarning`（task-0805）：`componentCode`(String) / `fieldName`(String)。
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| originalCode | String | bundle 里的原始 code |
-| finalCode | String | 实际落库的 code（重命名时与 original 不同） |
-| componentId | String | 新建组件的 id |
-| renamed | boolean | 是否被重命名 |
-| sqlViewCount | int | 该组件随建的 SQL 视图数 |
+- **错误响应**（`ApiResponse` + `GlobalExceptionMapper`，`code=400` + `message`）：
+
+| 场景 | 文案要求 |
+|------|------|
+| 非树页签使用 `tree_ref`/`tree_attr` | `公式「X」使用了父子取值（tree_ref/tree_attr），该功能仅支持 tabType="BOM" 的树页签组件，当前组件 tabType=…。` |
+| 🆕 **1.0 老包 + 取数配置器建的树页签使用 `tree_ref`** | 在上句之后追加：该组件的页签类型在「取数配置器」里配、**导入包是旧格式**（bundleVersion 1.0，不含配置器信息）、**请在源库升级到含本次修复的版本后重新导出**（task-260915）。判定条件：包版本 ≠ 1.1 + 有 `builder_` 前缀视图 + 该视图 `builderConfig` 为空 |
+
+> 来源任务：`task-260915-组件导出导入往返保真`｜回写日期：2026-09-16
 
 #### 目录树查询
 - **功能**: 返回组件目录树（可按关键字过滤）。
