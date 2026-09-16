@@ -95,7 +95,7 @@
 
 | 分支 | worktree | 领先 master | 状态 |
 |---|---|---|---|
-| `feat/task-260915-export-import-fidelity` | `.claude/worktrees/task-260915-export-fidelity`（**待清理**） | **0 笔**（已全部并入 master `6f777e34`） | ✅ **已合并，⏳ 待用户批准后删分支与 worktree**（删分支属 §3.2 红线） |
+| `feat/task-260915-export-import-fidelity` | ~~`.claude/worktrees/task-260915-export-fidelity`~~（**2026-09-16 已移除**） | **0 笔**（已全部并入 master `6f777e34`，可由 `git branch feat/task-260915-export-import-fidelity 15198651` 重建） | ✅ **已合并 · worktree 已移除 · ⏳ 分支待用户执行 `git branch -d`**（`git-worktree.md §2⑥`：删分支由用户执行；删后本行可删） |
 | `repair/260912-excel-shape` | `.claude/worktrees/repair-260911-excel-tabkey`（**复用该目录**，省 6722 文件检出） | **0 笔**（刚从 master `95d83e36` 切出） | ✅ **已交付 · 闸门 B 用户验收通过（2026-09-13）· 已结案** —— 合 master `5c260ebd`（fix `ce97b954`）。AC-1/3/4/5/6/7/8 达成（AC-2 上一轮已作废）。含用户裁决追加的**第四处调用点**（`CostingVersionService:340`，两个子代理独立发现）与 `CostingExcelTreeTest` 改造（原恒 Skipped 的假绿）。存量 8 行已由主线刷新。⚠️ 该 worktree 原绑 `repair/260911-excel-tabkey`（已合并、待用户删），现已切到本分支。 |
 | `repair/260911-excel-tabkey` | `.claude/worktrees/repair-260911-excel-tabkey`（**待清理**） | **已全部合入 master `5e7be788`** | ✅ **已合并，⏳ 待闸门 B 验收后清理** —— `repair-260911-核价Excel视图取数源对不上`（`BL-0275`）。闸门 A 已放行，两路子代理（后端 `B-1~B-3` / 测试单片 `S1`；**前端零改动无任务**）。零迁移 / 零 DDL / 零接口结构变更 / 零前端改动。<br>⚠️ 端口：worktree 临时实例自选，**`8091/5090` 保留给主线亲验与用户**。 |
 | `repair/260911-crosstab-match-hostrow` | ~~`.claude/worktrees/repair-260911-crosstab-match`~~ **worktree 已删（2026-09-11）** | **已全部合入 master `ecaa6fd9`**（实测 `git branch --contains 5603a173` → master） | ✅ **已交付 · 闸门 B 验收通过 · 已结案**。🚦 **分支尚未删**：删分支属 `CLAUDE.md §3.2` 历史销毁红线（deny 档硬拦，主线不执行），已呈报命令 `git branch -d repair/260911-crosstab-match-hostrow` 交用户执行；**用户执行后本行即可整行删除**。随时可由 `git branch <名> 5603a173` 重建。 |
