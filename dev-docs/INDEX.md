@@ -98,7 +98,7 @@
 
 | 分支 | worktree | 领先 master | 状态 |
 |---|---|---|---|
-| `feat/task-260916-element-price-scale9` | `.claude/worktrees/task-260916-element-price-scale9`（**待移除**） | **已全部合入 master `a7b2d1db`**（2026-09-17） | ✅ **已合并；分支实体待用户执行 `git branch -d`** —— `task-260916-元素价格支持9位小数` · `BL-0300` |
+| `feat/task-260916-element-price-scale9` | ~~`.claude/worktrees/task-260916-element-price-scale9`~~（**2026-09-17 已移除**，移除前未提交 0；冷启动用的 `coldstart-260916` 亦已移除） | **已全部合入 master `a7b2d1db`**（2026-09-17） | ✅ **已合并；分支实体待用户执行 `git branch -d`** —— `task-260916-元素价格支持9位小数` · `BL-0300` |
 | `fix/repair-260916-bfield-stale-rowdata` | ~~`.claude/worktrees/repair-260916-bfield-stale`~~（已移除；对照副本 `repair-260916-bfield-baseline` 亦已移除） | **已全部并入**（合并提交 `ebe75fb4`，分支 tip `39beced9`） | 🟡 **已合并 · 任务已结案（2026-09-17）· 分支实体待用户执行 `git branch -d fix/repair-260916-bfield-stale-rowdata`**（用户删除后清空本行）—— `repair-260803/repair-260916-改上游页签后公式按旧值算`（`BL-0297`）。纯前端，无 Flyway 迁移 |
 | `fix/repair-260916-recipe-name` | ~~`.claude/worktrees/repair-260916-recipe-name`~~（**2026-09-17 已移除**，移除前未提交 0 / 被忽略的证据日志 12 份已拷回主工作区并强制纳入版本库） | **已全部合入 master `9ab94a28`**（分支 tip `05ab81c5`） | ✅ **已合并，分支实体待用户执行 `git branch -d fix/repair-260916-recipe-name`** —— `task-260908/repair-260916-来料类材料名补查材质表`（`BL-0294`）。已占 Flyway **`V444`**（`cpq_db_0724` / `cpq_db_test` 均 `success=t`）。一次性库待用户批准回收：`cpq_db_260916`（验收库）、`cpq_upd_verify_260916`（内网脚本验证库） |
 | `feat/task-260915-export-import-fidelity` | ~~`.claude/worktrees/task-260915-export-fidelity`~~（**2026-09-16 已移除**） | **0 笔**（已全部并入 master `6f777e34`，可由 `git branch feat/task-260915-export-import-fidelity 15198651` 重建） | ✅ **已合并 · worktree 已移除 · ⏳ 分支待用户执行 `git branch -d`**（`git-worktree.md §2⑥`：删分支由用户执行；删后本行可删） |
