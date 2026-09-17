@@ -1,7 +1,7 @@
 # CPQ 系统接口总览文档（main-api.md）
 
 > 本文件由技术总监扫描 `cpq-backend` 全部 JAX-RS Resource 自动生成，覆盖 **89 个 Resource 类、约 422 个 HTTP 端点**，按业务模块分为 12 大类。
-> 生成日期：2026-07-08 ｜ 最近契约更新：**2026-09-16（repair-260916 来料类材料名补查材质表：§8.1 `ConfigCenterResource` 新增 `POST /config-center/recompile-components`（按组件重编译取数视图）；⚠️ 同节 `refresh-all-snapshots` 小节描述仍是 K4 旧实现，未随本次更正）** ｜ 更早一次：**2026-09-16（task-260915 组件导出/导入往返保真：§2.1 导出/导入预览/导入提交三个端点按真实源码整段覆盖 —— 含本次新增 8 个字段与 `builderCoord`，并顺带补齐 task-0805 遗留未回写的 `bindingReport`/`formulaBinding`/`ignoreUnboundFormulas`/`unboundWarnings` 等）** ｜ 前次：2026-09-03（task-260903 产品管理页重做：新增 `GET /dataset/{dataset}/customer-parts`，见 §6.9；其前序 task-260902 新增 9 个端点，见 §6.8 / §6.9） ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
+> 生成日期：2026-07-08 ｜ 最近契约更新：**2026-09-16（repair-260916 来料类材料名补查材质表：§8.1 `ConfigCenterResource` 新增 `POST /config-center/recompile-components`（按组件重编译取数视图）；同节 `refresh-all-snapshots` 小节按现行源码更正（2026-09-17，原描述停留在 K4 旧实现））** ｜ 更早一次：**2026-09-16（task-260915 组件导出/导入往返保真：§2.1 导出/导入预览/导入提交三个端点按真实源码整段覆盖 —— 含本次新增 8 个字段与 `builderCoord`，并顺带补齐 task-0805 遗留未回写的 `bindingReport`/`formulaBinding`/`ignoreUnboundFormulas`/`unboundWarnings` 等）** ｜ 前次：2026-09-03（task-260903 产品管理页重做：新增 `GET /dataset/{dataset}/customer-parts`，见 §6.9；其前序 task-260902 新增 9 个端点，见 §6.8 / §6.9） ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
 > 用途：前后端接口契约基线、联调对照、新接口设计参照。字段说明取自源码 javadoc / 注释，无注释处据字段名与类型推断。
 
 ---
@@ -6016,19 +6016,43 @@ Cell：`quote`(Object 报价值)、`costing`(Object 核价值)、`highlighted`(b
 | error | String | 降级时的错误信息（正常时无此字段） |
 
 #### 全量刷新模板快照
-- **功能**: K4 —— 遍历所有 template.components_snapshot 引用到的 componentId 集合，逐个调用 `refreshSnapshotsByComponent`。适合 schema 大变更后批量修复。单个组件失败不影响其他，累计 errors。
+- **功能**: 运维紧急通道（task-0806 B7 改造 K4；repair-260908 B-6 加 `recompile`）。把已发布 / 已归档模板的**组件配置快照**（`template_component_snapshot`）强制重新对齐到当前活组件配置，**明确破坏模板不可变性**。`recompile=true` 时先把**全部**取数配置器视图（`component_sql_view` 中 `builder_config IS NOT NULL AND status='ACTIVE'`）按当前连表配置重编译（写回 `sql_template` / `builder_version` / `builder_config.axisScope`），再把实时视图推进目标模板的 **SQL 视图冻结快照**（`template.sql_views_snapshot`），执行后按内容 md5 自证，不一致整体回滚；重编译、两层快照对齐、审计三者同一事务。`confirm=false` 仅预览、零写入。只想刷新少数组件的视图、不动模板时，用下方「按组件重编译取数视图」。
 - **方法**: POST
 - **路径**: `/api/cpq/config-center/refresh-all-snapshots`
 - **鉴权**: SYSTEM_ADMIN（方法级覆盖，仅系统管理员）
-- **请求体**: 无
-- **响应内容**: `ApiResponse<Map<String,Object>>`，data 结构：
+- **请求体**:
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| templateIds | string[]（UUID） | 否 | 目标模板；不传 / 空 = 全部 PUBLISHED + ARCHIVED 模板（`TemplateService.resolvePublishedOrArchivedTemplateIds`）。⚠️ 只限定快照推送的范围，`recompile=true` 的视图重编译**始终是全量** |
+| confirm | boolean | 否 | 缺省 `false` = 仅预览零写入；`true` = 执行并写 `operation_log`（按受影响模板各一行） |
+| recompile | boolean | 否 | 缺省 `false`（不传时行为与 repair-260908 之前逐位相同）；`true` = 执行前先全量重编译取数视图 |
+
+- **响应内容（预览，`confirm=false`）**: `ApiResponse<Map<String,Object>>`，data 结构：
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| components_processed | int | 处理的组件数量 |
-| templates_touched_total | int | 累计刷新的模板数 |
-| errors | int | 刷新失败的组件数 |
-| per_component | Map\<String,Integer\> | componentId → 受影响模板数 映射 |
+| preview | boolean | 恒 `true` |
+| affectedTemplates | array | 每项 `templateId` / `name` / `version` / `status` / `tabCount` / `fieldDriftCount` |
+| affectedTemplateCount | int | 目标模板数 |
+| affectedQuotationCount | long | 引用这些模板的报价单数 |
+| warning | string | 固定提示：将改写已发布模板冻结快照、破坏版本不可变性 |
+| recompile | boolean | 回显请求的 `recompile` |
+| recompileViews | int | 取数配置器视图总数（`recompile=false` 时恒 0） |
+| recompileChanged | int | 重编译后 `sql_template` 会变化的视图数 |
+| recompileChangedViewNames | string[] | 会变化的视图名 |
+| snapshotTemplates | int | 第二层（`sql_views_snapshot`）目标模板数 |
+| snapshotEntries | int | 目标模板当前持有的快照条目总数 |
+| snapshotEntriesStale | int | 与「重编译后应有文本」不一致的快照条目数 |
+| axisScopeToWrite | int | 将写入 / 改写 `builder_config.axisScope` 的视图数 |
+| snapshotStaleSamples | string[] | 不一致条目样例（最多 20 条） |
+
+- **响应内容（执行，`confirm=true` 且 `recompile=false`）**: `preview=false`、`refreshedTemplates`、`refreshedRows`、`operationLogId`（最后一行）、`operationLogIds`
+- **响应内容（执行，`confirm=true` 且 `recompile=true`）**: `preview=false`、`recompile=true`、`recompileViews`、`recompileChanged`、`recompileChangedViewNames`、`snapshotTemplates`、`snapshotEntriesRewritten`、`snapshotMismatchAfterWrite`（恒 0；非 0 时已整体回滚、不会返 200）、`templateOwnedSnapshotNonEmpty`、`axisScopeWritten`、`refreshedTemplates`、`refreshedRows`、`operationLogId`、`operationLogIds`
+- **错误**: 重编译期 `builder_config` 无法反序列化 → 500 `RECOMPILE_CONFIG_CORRUPT`；编译失败 → 500 `RECOMPILE_FAILED`（结构化编译错误原码上抛）；均整体中止，不跳过单个视图
+- **⚠️ 实测提醒**（`docs/RECORD.md` 2026-09-11）：`recompile=true` 会把所有处于「连表配置已改、视图未重编译」状态的改动一次性兑现到实时视图，执行前务必看预览里的 `recompileChangedViewNames`
+
+> 来源任务：`task-260908-取数配置器优化/repair-260916-来料类材料名补查材质表`（按现行源码更正 K4 时代的过期描述）｜回写日期：2026-09-17
 
 #### 按组件重编译取数视图
 - **功能**: 连表配置（语义图）变更后，**只**把指定组件的取数配置器视图（`component_sql_view` 中 `builder_config IS NOT NULL AND status='ACTIVE'`）按当前连表配置重新生成。与 `refresh-all-snapshots`（`recompile=true`）共用同一段编译 / 写入内核，对同一视图的产物逐字相同；**不改** `component` 表任何列，**不推**任何模板快照（`template.sql_views_snapshot` / `template_component_snapshot` 均不动）。`confirm=false` 仅预览、零写入；`confirm=true` 单事务执行，每个文本有变化的视图写 1 行审计，任一步失败整体回滚。

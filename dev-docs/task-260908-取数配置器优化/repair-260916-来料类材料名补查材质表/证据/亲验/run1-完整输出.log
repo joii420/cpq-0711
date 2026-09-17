@@ -1,0 +1,78 @@
+
+Running 3 tests using 1 worker
+
+[gotoReady] open component COMP-0004: "input[placeholder*="搜索"]" not rendered after 45s on /components; errors=["requestfailed http://localhost:5196/api/cpq/auth/me net::ERR_ABORTED","requestfailed http://localhost:5196/api/cpq/auth/me net::ERR_ABORTED"] — reloading once
+[A] COMP-0004 GET /builder isStale=false builderVersion=1 currentCompilerVersion=1
+[A] COMP-0004 panel groups=["来料固定加工费"] 材料名 in groups=["来料固定加工费"]
+[shot] 证据/亲验/A1-COMP-0004-可用字段.png
+[A] COMP-0004 SQL pane: SELECT dqiff.material_no AS hf_part_no, dqiff.material_no AS "_来料固定加工费_销售料号", dqiff.input_material_no AS "_来料固定加工费_投入料号", COALESCE(dqm.material_name, mr.symbol) AS "_物料_材料名", dqiff.item_seq AS "_来料固定加工费_项次", dqiff.base_value AS "_来料固定加工费_基准值" FROM ds_quote_incoming_fixed_fee dqiff LEFT JOIN ds_quote_material dqm ON dqm.material_no = dqiff.input_material_no AND dqm.customer_no = dqiff.customer_no LEFT JOIN material_recipe mr ON mr.code = dqiff.input_material_no WHERE dqiff.material_no = ANY(:total_material_no) AND dqiff.customer_no = :customerCode ORDER BY dqiff.material_no, dqiff.input_material_no, dqiff.item_seq
+[A] material_recipe joins=[{"alias":"mr","on":"mr.code = dqiff.input_material_no"}] ds_quote_material joins=[{"alias":"dqm","on":"dqm.material_no = dqiff.input_material_no AND dqm.customer_no = dqiff.customer_no"}]
+[shot] 证据/亲验/A2-COMP-0004-生成的SQL.png
+[preview] mainline COMP-0004: HTTP 200 rowCount=2 rows=2 diagnostics=[]
+[A] COMP-0004 preview rowCount=2 names={"00144":["H85"],"S3110520422":["料号2"]} diagnostics=[]
+[shot] 证据/亲验/A3-COMP-0004-预览-00144为H85.png
+[A] 基础核价/来料加工费 材料名 in groups=["来料加工费"]
+[A] 基础核价/来料加工费 SQL: SELECT vdcbipfa.production_no AS hf_part_no, vdcbipfa.production_no AS "production_no", vdcbipfa.incoming_material_no AS "incoming_material_no", COALESCE(dcbm.material_name, mr.symbol) AS "material_name", vdcbipfa.version_no::text AS view_version FROM v_ds_cost_basic_incoming_process_fee_all vdcbipfa LEFT JOIN ds_cost_basic_material dcbm ON dcbm.production_no = vdcbipfa.incoming_material_no LEFT JOIN material_recipe mr ON mr.code = vdcbipfa.incoming_material_no WHERE :versionFilter(vdcbipfa.is_current, vdcbipfa.version_no::text, vdcbipfa.production_no) AND vdcbipfa.production_no = ANY(:total_material_no) ORDER BY vdcbipfa.production_no, vdcbipfa.incoming_material_no, vdcbipfa.item_seq
+[shot] 证据/亲验/A4-基础核价-来料加工费-SQL.png
+[A] write guard blocked=[]
+  ✓  1 [chromium] › e2e/repair260916-mainline-qinyan.spec.ts:37:1 › 亲验 A · 取数配置器：COMP-0004 面板 / SQL / 预览（AC-2/3/4/7④）+ 基础核价来料加工费（AC-2/3） (30.1s)
+[gotoReady] open component COMP-0005: "input[placeholder*="搜索"]" not rendered after 45s on /components; errors=["requestfailed http://localhost:5196/api/cpq/auth/me net::ERR_ABORTED","requestfailed http://localhost:5196/api/cpq/auth/me net::ERR_ABORTED"] — reloading once
+[preview] mainline COMP-0005: HTTP 200 rowCount=3 rows=3 diagnostics=[]
+[B] COMP-0005 S3110520422 names={"00256":["TU2丝","TU2丝"],"00257":["羰基镍粉"]}
+[shot] 证据/亲验/B1-COMP-0005-预览-S3110520422.png
+[gotoReady] open component COMP-0008: "input[placeholder*="搜索"]" not rendered after 45s on /components; errors=[] — reloading once
+  ✘  2 [chromium] › e2e/repair260916-mainline-qinyan.spec.ts:106:1 › 亲验 B · 取数配置器：COMP-0005 / COMP-0008 预览（AC-4） (1.8m)
+[waitReady] button.qt-tab-btn not visible after 45s on /quotations/b276f66e-49ed-4e98-b60b-fcefb5503d9a; reloading once
+[C] QT-20260916-0880 详情页 来料固定加工费 00144 → ["H85"]
+[shot] 证据/亲验/C1-QT-20260916-0880-详情页-来料固定加工费.png
+[C] QT-20260916-0880 详情页 来料其他费用 00144 → ["H85"]
+[shot] 证据/亲验/C2-QT-20260916-0880-详情页-来料其他费用.png
+[C] QT-20260916-0880 详情页 来料回收 00144 → ["H85"]
+[shot] 证据/亲验/C3-QT-20260916-0880-详情页-来料回收.png
+[bad-states] new quotation detail: 加载中=0 error=0 nullCells=0
+[gotoReady] edit b276f66e-49ed-4e98-b60b-fcefb5503d9a: ".ant-steps-item" not rendered after 45s on /quotations/b276f66e-49ed-4e98-b60b-fcefb5503d9a/edit; errors=[] — reloading once
+[C] QT-20260916-0880 编辑页 来料固定加工费 00144 → ["H85"]
+[shot] 证据/亲验/C4-QT-20260916-0880-编辑页-来料固定加工费.png
+[C] QT-20260916-0877 详情页 来料固定加工费 00144 → ["—"]，S3110520422 → ["料号2"]
+[shot] 证据/亲验/C5-QT-20260916-0877-详情页-来料固定加工费-旧版仍为空.png
+[C] QT-20260916-0877 updated_at before=2026-09-17 01:06:16.881588+00 after=2026-09-17 01:06:16.881588+00
+  ✓  3 [chromium] › e2e/repair260916-mainline-qinyan.spec.ts:129:1 › 亲验 C · 报价单：新单 QT-20260916-0880（v1.7）三页签 / 详情页 H85，旧单 QT-20260916-0877 仍「—」（AC-10） (1.2m)
+
+
+  1) [chromium] › e2e/repair260916-mainline-qinyan.spec.ts:106:1 › 亲验 B · 取数配置器：COMP-0005 / COMP-0008 预览（AC-4） 
+
+    Error: open component COMP-0008: page still blank after reload (/components); errors=["requestfailed http://localhost:5196/api/cpq/auth/me net::ERR_ABORTED","requestfailed http://localhost:5196/api/cpq/auth/me net::ERR_ABORTED","requestfailed http://localhost:5196/src/pages/template/ComponentTablePreview.tsx net::ERR_NETWORK_CHANGED","requestfailed http://localhost:5196/src/pages/template/OverridesDrawer.tsx net::ERR_NETWORK_CHANGED"] ⇒ environment problem
+
+    [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: locator('input[placeholder*="搜索"]').first()
+    Expected: visible
+    Timeout: 90000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - open component COMP-0008: page still blank after reload (/components); errors=["requestfailed http://localhost:5196/api/cpq/auth/me net::ERR_ABORTED","requestfailed http://localhost:5196/api/cpq/auth/me net::ERR_ABORTED","requestfailed http://localhost:5196/src/pages/template/ComponentTablePreview.tsx net::ERR_NETWORK_CHANGED","requestfailed http://localhost:5196/src/pages/template/OverridesDrawer.tsx net::ERR_NETWORK_CHANGED"] ⇒ environment problem with timeout 90000ms[22m
+    [2m  - waiting for locator('input[placeholder*="搜索"]').first()[22m
+
+
+       at repair260916-global.helpers.ts:412
+
+      410 |       await page.reload();
+      411 |       await expect(target, `${why}: page still blank after reload (${url}); errors=${JSON.stringify(errs.slice(0, 10))} ⇒ environment problem`)
+    > 412 |         .toBeVisible({ timeout: 90_000 });
+          |          ^
+      413 |     }
+      414 |   } finally {
+      415 |     page.off('pageerror', onErr);
+        at gotoReady (/home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-frontend/e2e/repair260916-global.helpers.ts:412:10)
+        at openComponentByCode (/home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-frontend/e2e/repair260916-global.helpers.ts:421:3)
+        at Module.openBuilderTab (/home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-frontend/e2e/repair260916-global.helpers.ts:450:3)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-frontend/e2e/repair260916-mainline-qinyan.spec.ts:120:3
+
+    Error Context: test-results/repair260916-mainline-qiny-35116-OMP-0005-COMP-0008-预览（AC-4）-chromium/error-context.md
+
+    Error Context: test-results/repair260916-mainline-qiny-35116-OMP-0005-COMP-0008-预览（AC-4）-chromium/error-context.md
+
+  1 failed
+    [chromium] › e2e/repair260916-mainline-qinyan.spec.ts:106:1 › 亲验 B · 取数配置器：COMP-0005 / COMP-0008 预览（AC-4） 
+  2 passed (3.6m)

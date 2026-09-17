@@ -1,0 +1,15 @@
+
+Running 1 test using 1 worker
+
+[gotoReady] open component COMP-0005: "input[placeholder*="搜索"]" not rendered after 45s on /components; errors=["requestfailed http://localhost:5196/api/cpq/auth/me net::ERR_ABORTED","requestfailed http://localhost:5196/api/cpq/auth/me net::ERR_ABORTED"] — reloading once
+[preview] mainline COMP-0005: HTTP 200 rowCount=3 rows=3 diagnostics=[]
+[B] COMP-0005 S3110520422 names={"00256":["TU2丝","TU2丝"],"00257":["羰基镍粉"]}
+[shot] 证据/亲验/B1-COMP-0005-预览-S3110520422.png
+[gotoReady] open component COMP-0008: "input[placeholder*="搜索"]" not rendered after 45s on /components; errors=[] — reloading once
+[preview] mainline COMP-0008: HTTP 200 rowCount=1 rows=1 diagnostics=[{"level":"WARN","code":"COLUMN_ALL_NULL","column":"_来料回收折扣_回收折扣（%）","message":"整列 1/1 行全为 NULL —— 疑似绑错列，请核对该列实际取数来源"}]
+[B] COMP-0008 S3120011203 names={"00144":["H85"]}
+[shot] 证据/亲验/B2-COMP-0008-预览-S3120011203.png
+[B] write guard blocked=[]
+  ✓  1 [chromium] › e2e/repair260916-mainline-qinyan.spec.ts:106:1 › 亲验 B · 取数配置器：COMP-0005 / COMP-0008 预览（AC-4） (37.1s)
+
+  1 passed (37.7s)

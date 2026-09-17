@@ -1,0 +1,15 @@
+
+输入: [来料固定加工费.加工费]
+  存成: [{"type":"component_subtotal","value":"加工费","tab_name":"COMP-0004","component_code":"COMP-0004","label":"来料固定加工费·加工费"}]
+  回显: [来料固定加工费.加工费]
+  回显再保存是否不变: true
+
+输入: SUM([来料固定加工费.加工费])
+  存成: [{"type":"cross_tab_ref","source":"4db28822-85c6-4522-ac62-61ef2393a99c","sourceLabel":"来料固定加工费","target":"加工费","agg":"SUM","match":[{"a":"销售料号","b":"销售料号"},{"a":"料号","b":"料号"}]}]
+  回显: SUM([来料固定加工费.加工费])
+  回显再保存是否不变: true
+
+输入: [来料固定加工费.加工费(总计)]
+  存成: [{"type":"cross_tab_ref","source":"4db28822-85c6-4522-ac62-61ef2393a99c","sourceLabel":"来料固定加工费","target":"加工费","agg":"SUM","match":[{"a":"销售料号","b":"销售料号"},{"a":"料号","b":"料号"}]}]
+  回显: SUM([来料固定加工费.加工费])
+  回显再保存是否不变: true

@@ -1,0 +1,161 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------------------< com.cpq:cpq-backend >-------------------------
+[INFO] Building cpq-backend 1.0.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[WARNING] The artifact io.quarkus:quarkus-junit5:jar:3.34.3 has been relocated to io.quarkus:quarkus-junit:jar:3.34.3: Update the artifactId in your project build file. Refer to https://github.com/quarkusio/quarkus/wiki/Migration-Guide-3.31 for more information.
+[WARNING] The artifact io.quarkus:quarkus-junit5-mockito:jar:3.34.3 has been relocated to io.quarkus:quarkus-junit-mockito:jar:3.34.3: Update the artifactId in your project build file. Refer to https://github.com/quarkusio/quarkus/wiki/Migration-Guide-3.31 for more information.
+[INFO] 
+[INFO] --- antlr4:4.13.1:antlr4 (antlr4-generate) @ cpq-backend ---
+[INFO] No grammars to process
+[INFO] ANTLR 4: Processing source directory /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/antlr4
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ cpq-backend ---
+[INFO] Copying 435 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- quarkus:3.34.3:generate-code (default) @ cpq-backend ---
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ cpq-backend ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 982 source files with javac [debug parameters release 21] to target/classes
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/MaterialCustomerMapRepository.java:[208,16] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/MaterialCustomerMapRepository.java:[385,16] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/QuoteMaterialNoAllocator.java:[39,19] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/QuoteMaterialNoAllocator.java:[79,17] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/ElementRecoveryDiscountRepository.java:[56,33] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/ElementRecoveryDiscountRepository.java:[121,17] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/QuoteImportService.java:[292,41] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/quotation/service/QuotationService.java:[2454,47] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/quotation/service/backfill/QuoteBackfillService.java:[77,27] flipPending(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/quotation/service/PendingHygieneService.java:[123,62] deleteOrphanPendingWithGuard() in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/Q02CustomerMapHandler.java: Some input files use or override a deprecated API.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/Q02CustomerMapHandler.java: Recompile with -Xlint:deprecation for details.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/V6QuotationCommitService.java: Some input files use unchecked or unsafe operations.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/V6QuotationCommitService.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- quarkus:3.34.3:generate-code-tests (default) @ cpq-backend ---
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ cpq-backend ---
+[INFO] Copying 22 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ cpq-backend ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 719 source files with javac [debug parameters release 21] to target/test-classes
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[110,27] flipPending(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[159,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[264,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[308,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/test/java/com/cpq/basicdata/v6/service/PendingRepointNoOpTest.java:[104,22] repointPendingOwnership(java.util.UUID,java.util.UUID) in com.cpq.basicdata.v6.service.V6QuotationCommitService has been deprecated and marked for removal
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/ElementRecoveryBatchUpdateEquivTest.java: Some input files use or override a deprecated API.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/ElementRecoveryBatchUpdateEquivTest.java: Recompile with -Xlint:deprecation for details.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/test/java/com/cpq/basicdata/v6/pricing/P01P02PricingPriceVersioningTest.java: Some input files use unchecked or unsafe operations.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/test/java/com/cpq/basicdata/v6/pricing/P01P02PricingPriceVersioningTest.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ cpq-backend ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.cpq.repair260916.Ac5MaterialNamePriorityTest
+2026-09-16 19:47:36.650 INFO  [org.hib.orm.jpa] (main) HHH008540: Processing PersistenceUnitInfo [name: <default>]
+2026-09-16 19:47:36.676 INFO  [org.hib.orm.core] (main) HHH000001: Hibernate ORM core version 7.2.9.Final
+2026-09-16 19:47:36.846 INFO  [org.hib.orm.con.pooling] (main) HHH10001005: Database info:
+	Database JDBC URL [undefined/unknown]
+	Database driver: undefined/unknown
+	Database dialect: PostgreSQLDialect
+	Database version: 13.0
+	Default catalog/schema: unknown/unknown
+	Autocommit mode: undefined/unknown
+	Isolation level: <unknown>
+	JDBC fetch size: undefined/unknown
+	Pool: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-09-16 19:47:37.367 INFO  [org.hib.val.int.uti.Version] (main) HV000001: Hibernate Validator 9.1.0.Final
+2026-09-16 19:47:37.470 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-09-16 19:47:37.756 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-09-16 19:47:37.877 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-09-16 19:47:38.321 INFO  [org.fly.cor.FlywayExecutor] (main) Database: jdbc:postgresql://10.177.152.12:5432/cpq_db_test?sslmode=disable (PostgreSQL 16.13)
+2026-09-16 19:47:38.715 INFO  [org.fly.cor.int.com.DbValidate] (main) Successfully validated 427 migrations (execution time 00:00.193s)
+2026-09-16 19:47:39.020 INFO  [org.fly.cor.int.com.DbMigrate] (main) Current version of schema "public": 444
+2026-09-16 19:47:39.020 WARN  [org.fly.cor.int.com.DbMigrate] (main) outOfOrder mode is active. Migration of schema "public" may not be reproducible.
+2026-09-16 19:47:39.036 INFO  [org.fly.cor.int.com.DbMigrate] (main) Schema "public" is up to date. No migration necessary.
+2026-09-16 19:47:39.142 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-09-16 19:47:39.142 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-09-16 19:47:39.686 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-09-16 19:47:39.819 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-09-16 19:47:39.914 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-09-16 19:47:39.984 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1778 列（3 套数据集）
+2026-09-16 19:47:40.304 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (executor-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-09-16 19:47:40.395 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=57 edges=89 tabViews=48
+2026-09-16 19:47:40.425 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-09-16 19:47:40.457 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-16 19:47:40.475 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：57 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-16 19:47:40.476 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 153 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-09-16 19:47:40.699 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-09-16 19:47:40.770 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 9.114s. Listening on: http://localhost:57358
+2026-09-16 19:47:40.770 INFO  [io.quarkus] (main) Profile test activated. 
+2026-09-16 19:47:40.771 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+[S-2 前置] material_recipe.00144.symbol=H85
+[S-2 前置] ds_cost_basic_material(00144)=0 ds_cost_detail_material(00144)=0
+2026-09-16 19:47:41.986 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-1) User logged in: admin role=SYSTEM_ADMIN
+2026-09-16 19:47:42.021 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-1) Session created for user: admin
+2026-09-16 19:47:42.217 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=null requestedTabType=null currentTabType=null builderTreeFlag=null
+2026-09-16 19:47:42.252 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Created component id=187ec4da-b31f-4059-8357-a1dbf6742be6 code=COMP-3318
+[S-2 造数] component R260916-T-AC5-PREVIEW-8782 id=187ec4da-b31f-4059-8357-a1dbf6742be6 code=COMP-3318
+[S-2 造数] ds_quote_material customer=R260916-T-C58782 no=R260916-T-SC5-8782 name=R260916-T-销售品-C5 production_no=R260916-T-PC5-8782
+[S-2 造数] ds_cost_basic_material production_no=R260916-T-PMC5-8782 name=R260916-T-核价物料名-C5
+[S-2 造数] ds_cost_basic_incoming_process_fee production_no=R260916-T-PC5-8782 seq=1 incoming=R260916-T-PMC5-8782
+[S-2 造数] ds_cost_basic_incoming_process_fee production_no=R260916-T-PC5-8782 seq=2 incoming=00144
+[S-2 造数] ds_cost_basic_incoming_process_fee production_no=R260916-T-PC5-8782 seq=3 incoming=R260916-T-PNC5-8782
+---- preview COST_BASIC customer=R260916-T-C58782 partNo=R260916-T-SC5-8782 → status=200
+{"rowCount":0,"columns":["hf_part_no","incoming_material_no","material_name","process_fee","view_version"],"rows":[],"elapsedMs":15,"diagnostics":[{"level":"WARN","code":"PREVIEW_ZERO_ROWS","column":null,"message":"没有取到数据。核价取数是「销售料号 → 料号桥 → 生产料号」三步，请按顺序排查：① 销售料号「R260916-T-SC5-8782」在报价物料（ds_quote_material）里是否存在；② 该行的生产料号是否已填（报价阶段可能尚未确定，属正常业务状态，表现就是暂时取不到核价数据）；③ 该生产料号在本页签对应的核价表里是否已有数据。\uD83D\uDEAB 与客户无关——核价数据集没有客户维度"}]}
+[T2.4 诊断·不判定] compile COST_BASIC → 200
+{"sql":"SELECT\n  vdcbipfa.production_no AS hf_part_no,\n  vdcbipfa.incoming_material_no AS \"incoming_material_no\",\n  COALESCE(dcbm.material_name, mr.symbol) AS \"material_name\",\n  vdcbipfa.process_fee AS \"process_fee\",\n  vdcbipfa.version_no::text AS view_version\nFROM v_ds_cost_basic_incoming_process_fee_all vdcbipfa\n  LEFT JOIN ds_cost_basic_material dcbm ON dcbm.production_no = vdcbipfa.incoming_material_no\n  LEFT JOIN material_recipe mr ON mr.code = vdcbipfa.incoming_material_no\nWHERE :versionFilter(vdcbipfa.is_current, vdcbipfa.version_no::text, vdcbipfa.production_no) AND vdcbipfa.production_no = ANY(:total_material_no)\nORDER BY vdcbipfa.production_no, vdcbipfa.incoming_material_no, vdcbipfa.item_seq","declaredColumns":["hf_part_no","incoming_material_no","material_name","process_fee","view_version"],"requiredVariables":["total_material_no"],"grain":["来料加工费"],"rewriterCompatible":true,"warnings":[]}
+[S-2 residue] {ds_quote_incoming_fixed_fee=0, ds_quote_material=0, ds_cost_basic_incoming_process_fee=0, ds_cost_basic_material=0, ds_cost_detail_incoming_other_fixed_fee=0, ds_cost_detail_material=0, component=0, operation_log+component_sql_view(自建id)=0}
+[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 7.430 s <<< FAILURE! -- in com.cpq.repair260916.Ac5MaterialNamePriorityTest
+[ERROR] com.cpq.repair260916.Ac5MaterialNamePriorityTest.t24a_costBasic_threeCases -- Time elapsed: 2.700 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+🔴 预览 0 行 ⇒ 后面的取值断言全部空跑，不是通过。
+  若是核价侧：本类假设「partNo=销售料号 + customerCode」经 ds_quote_material 桥收窄到生产料号（task-260819 D-110 / repair-260908 AC-16 既有测试口径）；0 行说明该假设不成立 ⇒ 报主线，🚫 不许改判据。
+  diagnostics=[{level=WARN, code=PREVIEW_ZERO_ROWS, column=null, message=没有取到数据。核价取数是「销售料号 → 料号桥 → 生产料号」三步，请按顺序排查：① 销售料号「R260916-T-SC5-8782」在报价物料（ds_quote_material）里是否存在；② 该行的生产料号是否已填（报价阶段可能尚未确定，属正常业务状态，表现就是暂时取不到核价数据）；③ 该生产料号在本页签对应的核价表里是否已有数据。🚫 与客户无关——核价数据集没有客户维度}] ==> expected: <false> but was: <true>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:158)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:139)
+	at org.junit.jupiter.api.AssertFalse.failNotFalse(AssertFalse.java:69)
+	at org.junit.jupiter.api.AssertFalse.assertFalse(AssertFalse.java:41)
+	at org.junit.jupiter.api.Assertions.assertFalse(Assertions.java:255)
+	at com.cpq.repair260916.Ac5MaterialNamePriorityTest.parse(Ac5MaterialNamePriorityTest.java:199)
+	at com.cpq.repair260916.Ac5MaterialNamePriorityTest.runCostCase(Ac5MaterialNamePriorityTest.java:420)
+	at com.cpq.repair260916.Ac5MaterialNamePriorityTest.t24a_costBasic_threeCases(Ac5MaterialNamePriorityTest.java:375)
+
+2026-09-16 19:47:43.508 INFO  [io.quarkus] (main) cpq-backend stopped in 0.021s
+[INFO] 
+[INFO] Results:
+[INFO] 
+[ERROR] Failures: 
+[ERROR]   Ac5MaterialNamePriorityTest.t24a_costBasic_threeCases:375->runCostCase:420->parse:199 🔴 预览 0 行 ⇒ 后面的取值断言全部空跑，不是通过。
+  若是核价侧：本类假设「partNo=销售料号 + customerCode」经 ds_quote_material 桥收窄到生产料号（task-260819 D-110 / repair-260908 AC-16 既有测试口径）；0 行说明该假设不成立 ⇒ 报主线，🚫 不许改判据。
+  diagnostics=[{level=WARN, code=PREVIEW_ZERO_ROWS, column=null, message=没有取到数据。核价取数是「销售料号 → 料号桥 → 生产料号」三步，请按顺序排查：① 销售料号「R260916-T-SC5-8782」在报价物料（ds_quote_material）里是否存在；② 该行的生产料号是否已填（报价阶段可能尚未确定，属正常业务状态，表现就是暂时取不到核价数据）；③ 该生产料号在本页签对应的核价表里是否已有数据。🚫 与客户无关——核价数据集没有客户维度}] ==> expected: <false> but was: <true>
+[INFO] 
+[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  24.720 s
+[INFO] Finished at: 2026-09-16T19:47:43-07:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.4:test (default-test) on project cpq-backend: There are test failures.
+[ERROR] 
+[ERROR] See /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/target/surefire-reports for the individual test results.
+[ERROR] See dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException
+EXIT=1
