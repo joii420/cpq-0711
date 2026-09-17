@@ -110,7 +110,7 @@
 
 - 专用配置 `cpq-frontend/e2e/repair260916-global.config.ts`（无 globalSetup，`baseURL=http://localhost:5196`）；用例 `cpq-frontend/e2e/repair260916-global-*.spec.ts`。
 - 顺序：T3.1 AC-2 → T3.2 AC-3 → T3.3 AC-4 → T3.4 AC-6 → T3.5 AC-7 → T3.6 AC-10。
-- **T3.4 / T3.5**：调用前后各取一份 md5 清单（`component_sql_view` 全表、`component` 三组件、`template` 全表、`template_component_snapshot` 全表、`operation_log` 行数），归档 `证据/AC-6-7-md5-前后.md`。AC-7 ② 的「= 全量重编译预览」：执行前先调一次全量预览，取这 3 个视图的新文本存档（全量预览零写入）。
+- **T3.4 / T3.5**：调用前后各取一份 md5 清单（`component_sql_view` 全表、`component` 三组件、`template` 全表、`template_component_snapshot` 全表、`operation_log` 行数），归档 `证据/AC-6-7-md5-前后.md`。AC-7 ② 的「= 全量重编译产物」：全量预览**只返回视图名、不返回 SQL 文本**（S-1 阶段 1 回报指出），故改为 —— 执行**前**全量预览名单含这 3 个视图（与 S-1 的集合 A 一致），执行**后**立即再调一次全量预览，名单**不含**这 3 个视图（全量预览零写入）；另断言执行后落库文本逐字等于 AC-6 预览的 `newSqlTemplate`。
 - **T3.6（AC-10）**：新版本模板名沿用「施耐德5.4模板」（基于验收库里**当前最新版本**新建草稿再发布）；新报价单项目名写 `R260916-G-AC10`。第 8 步用**既有**的旧版本报价单（优先截图那张：客户产品编号 `W003374021711`），只读打开。
 - Playwright 选择器坑先读 `docs/E2E测试方法.md`；antd v6 类名、虚拟滚动、两字按钮带空格等问题见主线记忆里的已知坑（遇到空值 / 超时先怀疑选择器，再怀疑产品）。
 
