@@ -1,0 +1,103 @@
+{
+  "headers": [
+    "销售料号",
+    "品名",
+    "规格",
+    "尺寸",
+    "单重",
+    "客户产品编号",
+    "客户料号名称",
+    "客户图号",
+    "汇率",
+    "税率",
+    "管理费",
+    "A",
+    "B"
+  ],
+  "rows": [
+    {
+      "label": "S3120011203",
+      "cells": {
+        "销售料号": {
+          "text": "S3120011203",
+          "isErr": false,
+          "title": "",
+          "isFormula": false
+        },
+        "品名": {
+          "text": "料号1",
+          "isErr": false,
+          "title": "",
+          "isFormula": false
+        },
+        "规格": {
+          "text": "Φ50",
+          "isErr": false,
+          "title": "",
+          "isFormula": false
+        },
+        "尺寸": {
+          "text": "1×3",
+          "isErr": false,
+          "title": "",
+          "isFormula": false
+        },
+        "单重": {
+          "text": "15.8",
+          "isErr": false,
+          "title": "",
+          "isFormula": false
+        },
+        "客户产品编号": {
+          "text": "W003374021711",
+          "isErr": false,
+          "title": "",
+          "isFormula": false
+        },
+        "客户料号名称": {
+          "text": "—",
+          "isErr": false,
+          "title": "",
+          "isFormula": false
+        },
+        "客户图号": {
+          "text": "—",
+          "isErr": false,
+          "title": "",
+          "isFormula": false
+        },
+        "汇率": {
+          "text": "1",
+          "isErr": false,
+          "title": "",
+          "isFormula": false
+        },
+        "税率": {
+          "text": "1.13",
+          "isErr": false,
+          "title": "",
+          "isFormula": false
+        },
+        "管理费": {
+          "text": "⚠",
+          "isErr": true,
+          "title": "[b3445979-e3d6-4cdb-ab2d-53758b5f2eb2.回收成本] 细项引用命中多行,请改用 SUM 等聚合(或引用「(总计)」)",
+          "isFormula": true
+        },
+        "A": {
+          "text": "0.1",
+          "isErr": false,
+          "title": "",
+          "isFormula": true
+        },
+        "B": {
+          "text": "40.004084535",
+          "isErr": false,
+          "title": "",
+          "isFormula": true
+        }
+      }
+    }
+  ],
+  "errCount": 1
+}
