@@ -1,7 +1,7 @@
 # test-report · S-U 片（单元测试）· repair-260916
 
 > 认领 AC：**AC-11、AC-13**。本片不连库、不起服务。写用例时未读任何实现代码（只读了任务文档、`证据/`、既有 `*.test.ts`、`losslessJson.ts` 导出签名）。
-> 阶段：**第一轮 —— 修复前对照已跑完；修复分支上的执行尚未进行（等主线通知）。**
+> 阶段：修复前对照（§2.1、§2.2）+ 修复轮（§2.3，2026-09-16 22:12 执行，分支 HEAD `c2c95d10`）均已完成。
 
 ---
 
@@ -114,18 +114,115 @@ bfieldStaleRowData.repair260916.test.ts > U-4 … > computeTabFormulasTree：A=8
 ```
 ⇒ **修复前基线中既有测试的失败集合 = 空集**；修复分支的判据为「既有测试失败 0 条，本片 18 条全部通过」。
 
-### 2.3 修复分支上的执行
+### 2.3 修复轮（修复分支 worktree，HEAD `c2c95d10`）
 
-**未执行**（等主线通知前端完成）。待跑：本文件、`npx vitest run src`、`npx tsc -b`。
+前置核对：
+- `git log --oneline -1` → `c2c95d10 fix(repair-260916): 前端公式入口求值前剔除本页签公式列键，避免 b_field 读到 row_data 里的旧公式值`
+- `git diff c2c95d10 --stat -- <本片测试文件> <夹具>` → 空输出（两个文件与提交内容一致）；夹具 sha256 仍为 `e84c63eb1d15ee100a75cf5011d20485bcdc980073246adfd79e6c01d3a24d09`
 
----
+#### ① 本文件
+
+命令：`cd /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend && npx vitest run src/pages/quotation/bfieldStaleRowData.repair260916.test.ts --reporter=verbose` → 退出码 0
+输出头：`RUN  v4.1.4 /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend`
+
+```
+ ✓ 夹具形状 > 6 行、8 个公式列、6 份后端结果、00257 行存着公式列旧键
+ ✓ U-0 对照 > 6 行 × 8 公式列
+ ✓ U-1 > 00257 材料成本 0.002418226、S3110520422 0.059189199
+ ✓ U-2 > 00257 材料成本 0.002418226，且无计算错误
+ ✓ U-3 > 'E0 现状 170.404/5'
+ ✓ U-3 > 'E1 费用 200/比例 5'
+ ✓ U-3 > 'E2 费用 200/比例 10'
+ ✓ U-3 > 'E3 费用 0/比例 10'
+ ✓ U-4 > computeAllFormulas：A=8、X 存旧值 1 ⇒ X=16、Y=1
+ ✓ U-4 > computeTabFormulasTree：A=8、X 存旧值 1 ⇒ X=16、Y=1
+ ✓ U-5 > computeAllFormulas：N='' ⇒ Z=0
+ ✓ U-5 > computeAllFormulas：N=3 ⇒ Z=15
+ ✓ U-5 > computeTabFormulasTree：N='' ⇒ Z=0
+ ✓ U-5 > computeTabFormulasTree：N=3 ⇒ Z=15
+ ✓ U-6 > computeAllFormulas：0879 真实夹具 00257 行
+ ✓ U-6 > computeAllFormulas：构造组件
+ ✓ U-6 > computeTabFormulasTree：0879 真实夹具 6 行
+ ✓ U-6 > computeTabFormulasTree：构造组件
+ Test Files  1 passed (1)
+      Tests  18 passed (18)
+```
+
+打印的实际值（原文）：
+```
+== U-1
+  [0] (root)  来料加工费=0  来料损耗率=0  材料成本=0
+  [1] S3110520422  来料加工费=0  来料损耗率=0  材料成本=0.059189199486
+  [2] 00144  来料加工费=0  来料损耗率=5  材料成本=0.463735546257
+  [3] 00255  来料加工费=0  来料损耗率=0  材料成本=1.437983994015
+  [4] 00256  来料加工费=5.8  来料损耗率=5  材料成本=0.015491844826
+  [5] 00257  来料加工费=170.404  来料损耗率=0  材料成本=0.002418226427
+== U-2 00257 来料加工费=170.404 材料成本=0.002418226427 errors={}
+== U-3 E0 现状 170.404/5
+  [1] S3110520422  材料成本=0.059189199486
+  [4] 00256  来料加工费=5.8  来料损耗率=5  材料成本=0.015491844826
+  [5] 00257  来料加工费=170.404  来料损耗率=0  材料成本=0.002418226427
+   材料成本列合计(9位累加)=1.978818810 期望 1.978818810
+== U-3 E1 费用 200/比例 5
+  [1] S3110520422  材料成本=0.059194396929
+  [4] 00256  来料加工费=5.8  来料损耗率=5  材料成本=0.015491844826
+  [5] 00257  来料加工费=200  来料损耗率=0  材料成本=0.002678098576
+   材料成本列合计(9位累加)=1.979083881 期望 1.979083881
+== U-3 E2 费用 200/比例 10
+  [1] S3110520422  材料成本=0.059208386987
+  [4] 00256  来料加工费=5.8  来料损耗率=10  材料成本=0.016191347734
+  [5] 00257  来料加工费=200  来料损耗率=0  材料成本=0.002678098576
+   材料成本列合计(9位累加)=1.979797374 期望 1.979797374
+== U-3 E3 费用 0/比例 10
+  [1] S3110520422  材料成本=0.059173264383
+  [4] 00256  来料加工费=5.8  来料损耗率=10  材料成本=0.016191347734
+  [5] 00257  来料加工费=0  来料损耗率=0  材料成本=0.000921968362
+   材料成本列合计(9位累加)=1.978006120 期望 1.978006120
+（U-3 各组中 [0] 根 = 0、[2] 00144 = 0.463735546257、[3] 00255 = 1.437983994015，四组相同）
+== U-4 computeAllFormulas out={"X":"16","Z":"15","Y":"1"}
+== U-4 computeTabFormulasTree out={"X":"16","Z":"15","Y":"1"}
+== U-5 computeAllFormulas N=3 out={"X":"16","Z":"15","Y":"1"}
+== U-5 computeTabFormulasTree N=3 out={"X":"16","Z":"15","Y":"1"}
+== U-5 computeAllFormulas N='' out={"X":"16","Z":"0","Y":"1"}
+== U-5 computeTabFormulasTree N='' out={"X":"16","Z":"0","Y":"1"}
+```
+
+修复前后对比：
+
+| 用例 | 修复前（对照副本 `0ee0e57c`） | 修复后（`c2c95d10`） |
+|---|---|---|
+| U-1 00257 材料成本 | 0.002246090543 ✗ | 0.002418226427 ✓ |
+| U-1 S3110520422 | 0.059185756768 ✗ | 0.059189199486 ✓ |
+| U-2 00257 材料成本 | 0.002246090543 ✗ | 0.002418226427 ✓ |
+| U-3 E1 00257 | 0.002418226427 ✗ | 0.002678098576 ✓ |
+| U-3 E2 00256 | 0.015491844826 ✗ | 0.016191347734 ✓ |
+| U-3 E3 00257 | 0.002418226427 ✗ | 0.000921968362 ✓ |
+| U-4 Y（两个入口） | 2 ✗ | 1 ✓ |
+| U-5 Z（N=3 / N=''） | 15 / 0 ✓ | 15 / 0 ✓（不变） |
+| U-0、U-6 | 通过 | 通过 |
+
+#### ② 全量单测
+
+命令：`cd /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend && npx vitest run src` → 退出码 0
+```
+ RUN  v4.1.4 /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend
+ Test Files  101 passed (101)
+      Tests  1241 passed (1241)
+```
+`grep -c "^ FAIL "` → `0`。修复分支的失败集合为空，是修复前基线里既有测试失败集合（空集）的子集；本片 18 条全部通过。用例总数 1241 与修复前一致（修复前为 7 条失败 + 1234 条通过）。
+
+#### ③ 类型检查
+
+- `npx tsc -b` → 退出码 0，输出 0 行。
+- 核对新测试文件在检查范围内：`npx tsc -p tsconfig.test.json --listFilesOnly | grep bfieldStaleRowData` → `/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/src/pages/quotation/bfieldStaleRowData.repair260916.test.ts`
+- `tsc -b` 的增量缓存 `node_modules/.tmp/tsconfig.test.tsbuildinfo` 放在软链过去的主仓 `node_modules` 里，几个工作副本共用，所以另外做了一次不走缓存的完整检查：`npx tsc -p tsconfig.test.json --noEmit --incremental false` → 退出码 0，无输出。
 
 ## 3. 未验证 / 没做到的项
 
-- 修复分支上：U-0~U-6 全部通过、`npx vitest run src` 无新增失败、`npx tsc -b` 0 错误 —— **未验证**（尚未解锁执行）。
-- 本文件本身的类型检查（`tsc -b`，tsconfig.test.json 会覆盖它）—— **未验证**，将在修复分支执行时一并跑。
-- AC-11 **只有单元测试覆盖**（全库无样本，问题说明 AC-11 已声明），不算已验收，闸门 B 需显式列出。
-- U-4/U-5 调用构造组件时 `allComponentSubtotals` 传 `{}`、`partNo` 不传；test.md 没规定这两个参数，修复前输出与证据 §8.2 一致，说明调用方式可用。
+- 没有做「故意在测试文件里写一个类型错误，确认 tsc 会报错」的实验（那样要改已提交的文件）。「新文件确实在检查范围内」是用 `--listFilesOnly` 核实的，另外做了一次不走缓存的完整检查。
+- AC-11 **只有单元测试覆盖**（全库没有样本，问题说明 AC-11 已声明），不算已验收，闸门 B 需要显式列出。
+- test.md 没规定 U-4/U-5 调用构造组件时的两个参数，我传的是 `allComponentSubtotals={}`，`partNo` 没传。修复前的输出与证据 §8.2 一致，说明这种调用方式可用。
+- AC-13 只由本片覆盖单测部分；AC-1~AC-10 等页面行为不在本片，归 S-E 片。
 
 ## 4. 规避掉的坑
 
@@ -137,8 +234,10 @@ bfieldStaleRowData.repair260916.test.ts > U-4 … > computeTabFormulasTree：A=8
 - 第一次运行的精简输出里没看到 U-0 的打印，没有当成它跑过，用 `--reporter=verbose` 复跑，确认 U-0 执行并通过，且打印了实际值。
 - 核对了 vitest 输出头里的路径，确认跑的是对照副本；复制前确认对照副本里没有同名文件，复制后 `git status` 只多出这两项。
 - 没有使用 `git stash`，没有改动对照副本里的其他文件。
+- 修复轮先核对了 HEAD 和我的两个文件与提交内容一致，再开跑；核对了输出头路径，确认跑的是修复分支。
+- `tsc -b` 共用主仓 `node_modules/.tmp` 下的增量缓存，退出码 0 不一定代表真的检查过，所以补了一次不走缓存的完整检查。
 
-## 5. 复制进对照副本的文件（由主线清理）
+## 5. 复制进对照副本的文件（主线结案时统一清理，目前保留）
 
 - `/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-baseline/cpq-frontend/src/pages/quotation/bfieldStaleRowData.repair260916.test.ts`
 - `/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-baseline/cpq-frontend/src/pages/quotation/__fixtures__/qt20260916-0879/wuliao.json`（连同新建的目录 `__fixtures__/qt20260916-0879/`）
