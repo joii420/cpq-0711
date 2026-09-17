@@ -1,5 +1,6 @@
 package com.cpq.elementprice.pricetable;
 
+import com.cpq.common.PrecisionPolicy;
 import com.cpq.common.exception.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -173,8 +174,13 @@ public class PriceMaintenanceService {
         return s.trim();
     }
 
-    private BigDecimal requirePositive(BigDecimal price) {
-        if (price == null) throw new BusinessException(400, "price 不能为空");
+    /**
+     * task-260916 B-4：先舍入到 9 位再做「大于 0」校验，返回舍入后的值 ——
+     * 调用方拿它写库、写变更日志快照（舍入后为 0 → 400，文案不变，D-8）。
+     */
+    private BigDecimal requirePositive(BigDecimal priceRaw) {
+        if (priceRaw == null) throw new BusinessException(400, "price 不能为空");
+        BigDecimal price = PrecisionPolicy.roundElementPrice(priceRaw);
         if (price.compareTo(BigDecimal.ZERO) <= 0) throw new BusinessException(400, "price 必须大于 0");
         return price;
     }

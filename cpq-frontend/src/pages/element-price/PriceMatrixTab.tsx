@@ -4,7 +4,7 @@ import { DownloadOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import { elementPriceStrategyService } from '../../services/elementPriceStrategyService';
 import type { PriceSourceDTO, PriceMatrixDTO } from '../../types/element-price-strategy';
-import { formatDisplayDecimal } from '../../utils/precision';
+import { ELEMENT_PRICE_SCALE, formatDisplayDecimal } from '../../utils/precision';
 
 const { RangePicker } = DatePicker;
 
@@ -74,7 +74,7 @@ const PriceMatrixTab: React.FC<Props> = ({ sources }) => {
       const v = r.prices[idx];
       return v === null || v === undefined
         ? <span style={{ color: 'rgba(0,0,0,.45)' }}>—</span>
-        : formatDisplayDecimal(v, 2);
+        : formatDisplayDecimal(v, ELEMENT_PRICE_SCALE);
     },
   }));
 

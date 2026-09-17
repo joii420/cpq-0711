@@ -14,7 +14,7 @@ import { formatMethod, formatWindow } from './strategyFormat';
 import StrategyExceptionEditDrawer from './StrategyExceptionEditDrawer';
 import StrategySimulateDrawer from './StrategySimulateDrawer';
 import StrategyHistoryDrawer from './StrategyHistoryDrawer';
-import { formatDisplayDecimal, normalizeDecimalString, type DecimalString } from '../../../utils/precision';
+import { ELEMENT_PRICE_SCALE, formatDisplayDecimal, formatElementPriceInput, normalizeDecimalString, type DecimalString } from '../../../utils/precision';
 
 /**
  * 「元素价格策略」Tab 内容（task-0722 · F6.3）
@@ -221,10 +221,10 @@ const ElementPriceStrategyTab: React.FC<Props> = ({ customerNo, customerLabel })
               </Space.Compact>
             </Form.Item>
             <Form.Item name="factor" label="系数" tooltip="默认 1" style={{ width: 110 }}>
-              <InputNumber<string> stringMode style={{ width: '100%' }} min="0" />
+              <InputNumber<string> stringMode style={{ width: '100%' }} min="0" precision={ELEMENT_PRICE_SCALE} formatter={formatElementPriceInput} />
             </Form.Item>
             <Form.Item name="premium" label="加价" tooltip="默认 0" style={{ width: 110 }}>
-              <InputNumber<string> stringMode style={{ width: '100%' }} />
+              <InputNumber<string> stringMode style={{ width: '100%' }} precision={ELEMENT_PRICE_SCALE} formatter={formatElementPriceInput} />
             </Form.Item>
           </div>
           <Alert
@@ -268,8 +268,8 @@ const ElementPriceStrategyTab: React.FC<Props> = ({ customerNo, customerLabel })
               ),
             },
             { title: '窗口', dataIndex: 'windowNum', render: (_: unknown, r) => <span style={{ fontSize: 12, color: 'rgba(0,0,0,.45)' }}>{formatWindow(r.windowNum, r.windowUnit)}</span> },
-            { title: '系数', dataIndex: 'factor', align: 'right' as const, render: (v: DecimalString) => formatDisplayDecimal(v, 2) },
-            { title: '加价', dataIndex: 'premium', align: 'right' as const, render: (v: DecimalString) => formatDisplayDecimal(v, 2) },
+            { title: '系数', dataIndex: 'factor', align: 'right' as const, render: (v: DecimalString) => formatDisplayDecimal(v, ELEMENT_PRICE_SCALE) },
+            { title: '加价', dataIndex: 'premium', align: 'right' as const, render: (v: DecimalString) => formatDisplayDecimal(v, ELEMENT_PRICE_SCALE) },
             { title: '最后变更时间', dataIndex: 'updatedAt', render: (v: string) => <span style={{ fontSize: 12, color: 'rgba(0,0,0,.45)' }}>{dayjs(v).format('YYYY-MM-DD HH:mm')}</span> },
             { title: '变更用户', dataIndex: 'updatedByName', render: (v: string) => <span style={{ fontSize: 12, color: 'rgba(0,0,0,.45)' }}>{v}</span> },
           ]}

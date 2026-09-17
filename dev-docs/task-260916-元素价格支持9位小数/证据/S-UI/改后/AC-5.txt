@@ -1,0 +1,9 @@
+-- after 2026-09-17T07:20:31.928Z
+SELECT material_no, unit_price FROM f_material_element_price('CUST-0001', DATE '2026-09-16', NULL) WHERE element_code = 'Cu' AND material_no IN ('S-3120014539', 'VS-FG01')
+SET
+ material_no  |    unit_price    
+--------------+------------------
+ S-3120014539 | 171.368000000000
+ VS-FG01      |    171.367052000
+(2 rows)
+

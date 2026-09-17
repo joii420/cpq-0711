@@ -9,6 +9,7 @@ import type {
 } from '../../../types/price-adjust';
 import { formatNumber } from '../../../utils/formatNumber';
 import {
+  ELEMENT_PRICE_SCALE,
   formatDisplayDecimal,
   normalizeDecimalString,
   toDecimal,
@@ -80,8 +81,8 @@ const ReviewDetailDrawer: React.FC<ReviewDetailDrawerProps> = ({ open, reviewId,
   const elementColumns = [
     { title: '元素', render: (_: unknown, r: ElementChangeDTO) => <span><b>{r.elementCode}</b> {r.elementName}</span> },
     { title: '命中规则', dataIndex: 'matchedRule' },
-    { title: '上版价', dataIndex: 'previousPrice', align: 'right' as const, render: (v: DecimalString | null) => fmt(v) },
-    { title: '本版价', dataIndex: 'currentPrice', align: 'right' as const, render: (v: DecimalString | null) => fmt(v) },
+    { title: '上版价', dataIndex: 'previousPrice', align: 'right' as const, render: (v: DecimalString | null) => fmt(v, ELEMENT_PRICE_SCALE) },
+    { title: '本版价', dataIndex: 'currentPrice', align: 'right' as const, render: (v: DecimalString | null) => fmt(v, ELEMENT_PRICE_SCALE) },
     {
       title: '涨跌', dataIndex: 'changeRate', align: 'right' as const,
       render: (v: DecimalString | null) => { const r = fmtRate(v); return <span style={{ color: r.color }}>{r.text}</span>; },

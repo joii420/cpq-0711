@@ -1,0 +1,9 @@
+-- after 2026-09-17T07:20:32.203Z
+SELECT r.material_no, r.element_code, r.element_price FROM ds_quote_element_bom_record r JOIN public.quotation q ON q.id = r.quotation_id WHERE q.quotation_number = 'QT-20260916-0878' AND r.material_no = 'S3120011203' AND r.element_code IN ('Cu','Zn') ORDER BY r.element_code
+SET
+ material_no | element_code |  element_price   
+-------------+--------------+------------------
+ S3120011203 | Cu           | 101.139200000000
+ S3120011203 | Zn           |  24.169500000000
+(2 rows)
+

@@ -1,0 +1,84 @@
+[
+  {
+    "table": 0,
+    "header": "对单价影响",
+    "values": [
+      "—",
+      "—"
+    ],
+    "rowLabels": [
+      "Ag 银 | 客户调价策略",
+      "Cu 铜 | 客户调价策略"
+    ]
+  },
+  {
+    "table": 1,
+    "header": "阈值",
+    "values": [
+      "7",
+      "3"
+    ],
+    "rowLabels": [
+      "1 | 产品总价",
+      "2 | "
+    ]
+  },
+  {
+    "table": 1,
+    "header": "报价·现",
+    "values": [
+      "14",
+      "—"
+    ],
+    "rowLabels": [
+      "1 | 产品总价",
+      "2 | "
+    ]
+  },
+  {
+    "table": 1,
+    "header": "报价·调整后",
+    "values": [
+      "14",
+      "—"
+    ],
+    "rowLabels": [
+      "1 | 产品总价",
+      "2 | "
+    ]
+  },
+  {
+    "table": 1,
+    "header": "核价·现",
+    "values": [
+      "0",
+      "—"
+    ],
+    "rowLabels": [
+      "1 | 产品总价",
+      "2 | "
+    ]
+  },
+  {
+    "table": 1,
+    "header": "核价·调整后",
+    "values": [
+      "0",
+      "—"
+    ],
+    "rowLabels": [
+      "1 | 产品总价",
+      "2 | "
+    ]
+  },
+  {
+    "table": 2,
+    "header": "现小计",
+    "values": [
+      ""
+    ],
+    "rowLabels": [
+      "No data"
+    ]
+  }
+]

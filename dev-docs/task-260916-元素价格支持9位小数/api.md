@@ -1,6 +1,8 @@
 # api · 元素价格支持 9 位小数
 
-> **结论：接口形状零改动** —— 不新增 / 不删除端点，不改方法、路径、参数名、字段名、字段类型、错误码与错误文案。
+> ⚠️ **2026-09-16 修订（D-12）**：第 8、9 行把历史快照里的数字字段由 number 改为字符串 —— **这是响应字段类型变化**，本节「零改动」结论不再完整成立，§4 回写判定相应改为「需回写」。
+>
+> **结论（立项时）：接口形状零改动** —— 不新增 / 不删除端点，不改方法、路径、参数名、字段名、字段类型、错误码与错误文案。
 > **改的只是数值口径**：下列端点的单价 / 系数 / 加价在**写入前**按 `HALF_UP` 舍入到 9 位；相关文本里的数字改为最多 9 位、去尾零。
 > 精度字段沿用 PRD 精度契约：**请求**用十进制字符串（JSON number → 400，现状不变）；**响应**为规范十进制字符串（去尾零）。
 
@@ -22,6 +24,8 @@
 | 4 | `GET /api/cpq/element-price/prices/history` | 变更条目里单价的「A → B」文本 | 4 位（且 4 位相同时**不产生**变更条目） | 最多 9 位、去尾零（9 位内不同即产生条目） | B-5 |
 | 5 | `PUT /api/cpq/element-price/strategies/default`、`POST /api/cpq/element-price/strategies/exceptions`、`PUT /api/cpq/element-price/strategies/exceptions/{id}`（body：`customerNo` / `elementCode` / `sourceId` / `method` / `windowNum` / `windowUnit` / `factor` / `premium`） | `factor` / `premium` 落库与响应 | 原样 | 舍入到 9 位 | B-6 |
 | 6 | `GET /api/cpq/element-price/strategies/history` | 变更条目里系数、加价的「A → B」文本 | 2 位 | 最多 9 位、去尾零 | B-7 |
+| 8 | `GET /api/cpq/element-price/prices/history` | 条目 `snapshot.price` | **JSON number**（如 `12345`；前端显示「—」） | **十进制字符串**（如 `"12345"`、`"3.123456789"`），🚫 科学计数法 | B-11（D-12） |
+| 9 | `GET /api/cpq/element-price/strategies/history` | 条目 `snapshot.factor` / `snapshot.premium` | **JSON number**（如 `1.2`、`2.0E-9`；前端整页崩溃） | **十进制字符串**（如 `"1.2"`、`"0.000000002"`）；`windowNum` 仍为数字 | B-11（D-12） |
 | 7 | `POST /api/cpq/element-price/strategies/simulate` | 结果行 `finalPrice` | 4 位 | 舍入到 9 位 | B-8 |
 
 ## 3. 取值口径变化、但不经本任务接口改动的读端点
@@ -37,4 +41,4 @@
 
 ## 4. `main-api.md` 回写判定
 
-按 `task-docs.md §2.5`：本任务**方法 / 路径 / 参数 / 响应字段 / 错误码全未变**，可跳过回写；须在 `test-report.md` 写明「本次无契约形状变更，无需回写 main-api.md（仅数值舍入口径变化，见本文件 §2）」。
+按 `task-docs.md §2.5`：本任务**方法 / 路径 / 参数 / 响应字段 / 错误码全未变**，~~可跳过回写~~ ⇒ **2026-09-16 修订：需回写**。B-11 改了两个历史端点的快照字段类型；且 `main-api.md` 里**整组没有** `/api/cpq/element-price/*`（既有缺口，S-API 测试员发现）⇒ 合并前按 §2.5 把本次改动涉及的端点（至少 §2 第 4、6、8、9 行的两个历史端点）追加进总账并标来源。

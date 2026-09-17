@@ -1,0 +1,29 @@
+pre SQL = ""
+  select picked = "TEST-PM-SRC-A"
+AC-7-导入结果 结果行 = ["2 Cu 101.13921 CNY 元/kg 新增 —","3 Zn 24.123456789 CNY 元/kg 新增 —","4 Ni 2.000000001 CNY 元/kg 新增 —"]
+AC-7 SQL = "2020-09-09|Cu|101.139210000000\n2020-09-09|Ni|2.000000001000\n2020-09-09|Zn|24.123456789000"
+AC-8-导入结果 结果行 = ["2 Cu 0 CNY 元/kg 失败 单价必须大于 0"]
+AC-8 SQL(2020-09-08 行数) = 0
+AC-18-1-覆盖导入结果 结果行 = ["2 Cu 101.13922 CNY 元/kg 覆盖 原值 101.13921 → 新值 101.13922"]
+  select picked = "Cu 铜"
+  select picked = "TEST-PM-SRC-A"
+AC-9 失焦后单价输入框 = "3.123456789"
+  select picked = "TEST-PM-SRC-A"
+AC-9-AC-18-2-明细 明细行 = ["Cu 铜 2020-09-10 TEST-PM-SRC-A 3.123456789 CNY kg 手工 系统管理员 09-17 16:40","Cu 铜 2020-09-09 TEST-PM-SRC-A 101.13922 CNY 元/kg 导入 系统管理员 09-17 16:40","Ni 镍 2020-09-09 TEST-PM-SRC-A 2.000000001 CNY 元/kg 导入 系统管理员 09-17 16:40","Zn 锌 2020-09-09 TEST-PM-SRC-A 24.123456789 CNY 元/kg 导入 系统管理员 09-17 16:40"]
+AC-9 SQL = "2020-09-09|Cu|101.139220000000\n2020-09-09|Ni|2.000000001000\n2020-09-09|Zn|24.123456789000\n2020-09-10|Cu|3.123456789000"
+AC-18-3 编辑回显 = "3.123456789"
+AC-18-3 保存后列表 = ["Cu 铜 2020-09-10 TEST-PM-SRC-A 3.123456788 CNY kg 手工 系统管理员 09-17 16:40","Cu 铜 2020-09-09 TEST-PM-SRC-A 101.13922 CNY 元/kg 导入 系统管理员 09-17 16:40","Ni 镍 2020-09-09 TEST-PM-SRC-A 2.000000001 CNY 元/kg 导入 系统管理员 09-17 16:40","Zn 锌 2020-09-09 TEST-PM-SRC-A 24.123456789 CNY 元/kg 导入 系统管理员 09-17 16:40"]
+  select picked = "TEST-PM-SRC-A"
+AC-18-4 历史行 = ["2026-09-17 16:40 系统管理员 修改 Cu 铜 · TEST-PM-SRC-A · 2020-09-10 单价：3.123456789 → 3.123456788","2026-09-17 16:40 系统管理员 新建 Cu 铜 · TEST-PM-SRC-A · 2020-09-10 单价 3.123456789 CNY/kg","2026-09-17 16:39 系统管理员 删除 Cu 铜 · TEST-PM-SRC-A · 2020-09-09 单价 101.13922 CNY/元/kg","2026-09-17 16:39 系统管理员 删除 Ni 镍 · TEST-PM-SRC-A · 2020-09-09 单价 2.000000001 CNY/元/kg","2026-09-17 16:39 系统管理员 删除 Zn 锌 · TEST-PM-SRC-A · 2020-09-09 单价 24.123456789 CNY/元/kg","2026-09-17 15:34 系统管理员 删除 Cu 铜 · TEST-PM-SRC-A · 2020-09-10 单价 3.123456789 CNY/kg","2026-09-17 15:34 系统管理员 新建 Cu 铜 · TEST-PM-SRC-A · 2020-09-10 单价 3.123456789 CNY/kg"]
+  select picked = "TEST-PM-SRC-A"
+AC-18-5-关开后明细 明细行 = ["Cu 铜 2020-09-10 TEST-PM-SRC-A 3.123456788 CNY kg 手工 系统管理员 09-17 16:40","Cu 铜 2020-09-09 TEST-PM-SRC-A 101.13922 CNY 元/kg 导入 系统管理员 09-17 16:40","Ni 镍 2020-09-09 TEST-PM-SRC-A 2.000000001 CNY 元/kg 导入 系统管理员 09-17 16:40","Zn 锌 2020-09-09 TEST-PM-SRC-A 24.123456789 CNY 元/kg 导入 系统管理员 09-17 16:40"]
+  select picked = "TEST-PM-SRC-A"
+AC-18-6-刷新后明细 明细行 = ["Cu 铜 2020-09-10 TEST-PM-SRC-A 3.123456788 CNY kg 手工 系统管理员 09-17 16:40","Cu 铜 2020-09-09 TEST-PM-SRC-A 101.13922 CNY 元/kg 导入 系统管理员 09-17 16:40","Ni 镍 2020-09-09 TEST-PM-SRC-A 2.000000001 CNY 元/kg 导入 系统管理员 09-17 16:40","Zn 锌 2020-09-09 TEST-PM-SRC-A 24.123456789 CNY 元/kg 导入 系统管理员 09-17 16:40"]
+cleanup DELETE 595a1073-99d4-4184-8dce-09c2b296b447 204
+cleanup DELETE 0985ff5e-2aee-4866-baf4-c43423446e94 204
+cleanup DELETE 5d22cfa9-73e1-4c6e-9814-99deadd2f1d3 204
+cleanup DELETE e5c0488d-f59b-4a38-8306-5dca75820f19 204
+post-cleanup SQL = ""
+pageerrors = []
+blocked = []
+allowed writes = ["POST http://localhost:5198/api/cpq/element-price/import","POST http://localhost:5198/api/cpq/element-price/import","POST http://localhost:5198/api/cpq/element-price/import","POST http://localhost:5198/api/cpq/element-price/prices","PUT http://localhost:5198/api/cpq/element-price/prices/e5c0488d-f59b-4a38-8306-5dca75820f19"]

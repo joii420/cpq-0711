@@ -1,5 +1,6 @@
 package com.cpq.elementprice.priceimport;
 
+import com.cpq.common.PrecisionPolicy;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.elementprice.source.ElementPriceSource;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -117,7 +118,7 @@ public class PriceImportService {
                     rowResult = new PriceImportRowDTO();
                     rowResult.rowNo = excelRowNo;
                     rowResult.elementCode = elementCode;
-                    rowResult.price = price;
+                    rowResult.price = PrecisionPolicy.roundElementPrice(price); // task-260916 B-3：回显舍入后的值
                     rowResult.result = "FAILED";
                     rowResult.message = "写入失败: " + e.getMessage();
                 }

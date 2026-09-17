@@ -7,7 +7,7 @@ import {
 } from '../../services/elementService';
 import { elementPriceService } from '../../services/elementPriceService';
 import type { ElementLatestPriceDTO } from '../../types/element-price-strategy';
-import { formatDisplayDecimal, type DecimalString } from '../../utils/precision';
+import { ELEMENT_PRICE_SCALE, formatDisplayDecimal, type DecimalString } from '../../utils/precision';
 
 interface Props {
   open: boolean;
@@ -17,7 +17,7 @@ interface Props {
 }
 
 /** 数字 4 位小数展示（对齐 cpq-decimal-display-policy：计算/取数列 4 位） */
-const fmtPrice = (v: DecimalString) => formatDisplayDecimal(v, 4);
+const fmtPrice = (v: DecimalString) => formatDisplayDecimal(v, ELEMENT_PRICE_SCALE);
 
 const ElementEditDrawer: React.FC<Props> = ({ open, editing, onClose, onSaved }) => {
   const [form] = Form.useForm();

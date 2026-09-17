@@ -1,5 +1,6 @@
 package com.cpq.elementprice.priceimport;
 
+import com.cpq.common.PrecisionPolicy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -26,9 +27,11 @@ public class PriceImportRowWriter {
     EntityManager em;
 
     @Transactional(Transactional.TxType.REQUIRES_NEW)
-    public PriceImportRowDTO writeRow(int rowNo, String elementCodeRaw, BigDecimal price,
+    public PriceImportRowDTO writeRow(int rowNo, String elementCodeRaw, BigDecimal priceRaw,
                                        String currencyRaw, String priceUnitRaw,
                                        UUID sourceId, LocalDate priceDate, UUID operatorId) {
+        // task-260916 B-3：先舍入到 9 位，再做「大于 0」校验、写库、回显（舍入后为 0 → 失败，D-8）
+        BigDecimal price = PrecisionPolicy.roundElementPrice(priceRaw);
         PriceImportRowDTO row = new PriceImportRowDTO();
         row.rowNo = rowNo;
         String elementCode = elementCodeRaw == null ? null : elementCodeRaw.trim();
@@ -113,7 +116,8 @@ public class PriceImportRowWriter {
         return (s == null || s.isBlank()) ? def : s.trim();
     }
 
+    /** task-260916 B-3：最多 9 位、去尾零（原为 setScale(4)）。 */
     private String fmt(BigDecimal v) {
-        return v == null ? "—" : v.setScale(4, java.math.RoundingMode.HALF_UP).toPlainString();
+        return v == null ? "—" : PrecisionPolicy.toPlainDecimalString(PrecisionPolicy.roundElementPrice(v));
     }
 }

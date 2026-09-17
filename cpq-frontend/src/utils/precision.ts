@@ -2,6 +2,11 @@ import Decimal from 'decimal.js';
 
 export const CALCULATION_SCALE = 12;
 export const DISPLAY_SCALE = 9;
+/**
+ * Element unit price / strategy factor / premium scale (task-260916).
+ * Must equal backend PrecisionPolicy.ELEMENT_PRICE_SCALE. Semantically distinct from DISPLAY_SCALE.
+ */
+export const ELEMENT_PRICE_SCALE = 9;
 // Future system parameters will override these result-boundary defaults independently.
 export const FORMULA_RESULT_SCALE = 9;
 export const PRODUCT_CARD_SUBTOTAL_SCALE = 9;
@@ -69,6 +74,25 @@ export function formatDisplayDecimal(
 ): DecimalString {
   const boundedScale = Math.max(0, Math.min(DISPLAY_SCALE, Math.trunc(scale)));
   return trimFixed(toDecimal(value).toDecimalPlaces(boundedScale, ROUNDING).toFixed(boundedScale));
+}
+
+/**
+ * task-260916 M-1: shared AntD `InputNumber` formatter for element price / factor / premium inputs.
+ * - While the user is typing: echo the raw input unchanged (e.g. '1.20' stays '1.20').
+ * - Otherwise: show at most ELEMENT_PRICE_SCALE decimals with trailing zeros trimmed,
+ *   so `precision={ELEMENT_PRICE_SCALE}` padding ('1.000000000') is not displayed.
+ * Rounding on blur is still done by `precision` (value update path, independent of formatter);
+ * the submitted value is unaffected because a formatter only changes the displayed text.
+ */
+export function formatElementPriceInput(
+  value: string | number | undefined,
+  info: { userTyping: boolean; input: string },
+): string {
+  if (info.userTyping) return info.input;
+  if (value == null) return '';
+  const text = String(value);
+  if (!isDecimalString(text)) return text;
+  return formatDisplayDecimal(text, ELEMENT_PRICE_SCALE);
 }
 
 function formatResultDecimal(value: DecimalValue, scale: number): DecimalString {

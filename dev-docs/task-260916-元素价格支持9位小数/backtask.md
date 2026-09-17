@@ -18,6 +18,7 @@
 | **B-7** | AC-19 | **策略变更历史文本**（`StrategyService` 里把快照数值转文本的方法，现为 `setScale(2)`）：改为最多 9 位、去尾零（同样用于变化判断） |
 | **B-8** | AC-15 | **策略试算**（`StrategyService` 试算）：`finalPrice` 由 `setScale(4)` 改为按 B-2 舍入到 9 位；`rawValue` / `factor` / `premium` 原样返回（前端按最多 9 位显示） |
 | **B-9** | AC-20 | 跑本任务相关的既有测试（至少 `elementprice/**`、`priceadjust/**`、`semanticgraph/Sec34PriceStrategyTest`、`task260902/CustDimElementPriceAcTest`、`datasource/sqlview/QuotePendingRewriterTest`），被本次口径**合理影响**而需要改断言的，**逐个列出「原断言 → 新断言 → 为什么是口径变化而不是回归」**；与本次无关的失败做 A/B（`master` vs 本分支）后如实报告，🚫 不许顺手改 |
+| **B-11** | AC-18, AC-19, AC-21, AC-22 | 🆕 **（D-12，2026-09-16 开发中纳入）变更历史快照数字按字符串返回**：`GET /api/cpq/element-price/prices/history` 的 `snapshot.price`、`GET /api/cpq/element-price/strategies/history` 的 `snapshot.factor` / `snapshot.premium`，改为**规范十进制字符串**（去尾零、禁科学计数法，与 PRD 精度契约一致）。🚫 **不许经过 double**：快照解析须保留原始数字字面量（如 `USE_BIG_DECIMAL_FOR_FLOATS` 或逐字段取文本），`0.000000002` 必须是 `"0.000000002"` 而不是 `"2.0E-9"`；`changes` 的「A → B」文本也用同一精确值。`windowNum` 等整数结构字段**保持数字不变**。新增 / 修改 / 删除三种记录一致处理；不改库里存量日志。背景：主仓实测「策略变更历史」遇新增 / 删除记录整页崩溃（`value.trim is not a function`），「单价变更历史」新增摘要显示「—」 |
 | **B-10** | AC-20 | **内网增量升级脚本** `deploy/db/update-260916-element-price-scale9.sql`，按 `deploy/db/README.md §②③` 写：文件头（源迁移号 · 日期 · 一句话）/ `CREATE OR REPLACE FUNCTION` / **函数体用单引号 `AS '…'`、0 个非 ASCII 字符、无 TAB**（B-1 迁移里若有中文注释，脚本里一律去掉）/ 函数区在文件末尾 / 末尾更新 flyway 基线号 / 自检 SQL。同步更新 README §①「当前节点」。**验证方式**：在 `cpq_db_test` 上 `BEGIN; <脚本>; <自检>; ROLLBACK;` 跑一遍（🚫 不建临时库、不 DROP 任何库），并跑 README §③ 的「引号感知不认美元引用」切分自检 |
 
 ---
@@ -32,6 +33,7 @@
 | K-4 | 进程内缓存（取数结果 / 公式求值缓存） | 不改代码；合并后 8081 热重载即清空（主线亲验前确认已重载） | ☐ |
 | K-5 | 价格版本「涨跌幅」计算（`divide(…, 6, HALF_UP)`） | 不改；输入单价精度变化是预期 | ☐ |
 | K-6 | 全后端残留的「元素价格 / 系数 / 加价」写死位数 | 用 `/usr/bin/grep -a -rn "setScale(\|ROUND(" cpq-backend/src/main` 复扫，除 K-5 外**元素价格相关处 0 残留**，输出贴回报 | ☐ |
+| K-8 | 历史快照字段类型变化（number → string）的消费方 | 前端 `PriceHistoryTab.tsx`（`isDecimalString(snap.price)`）与 `StrategyHistoryDrawer.tsx`（`formatDisplayDecimal(snap.factor/premium)`）本就按字符串写；全仓 `/usr/bin/grep -a -rn "prices/history\|strategies/history"` 复扫无其他消费方，输出贴回报 | ☐ |
 | K-7 | 精度字段的接口形状 | 请求仍为十进制字符串（`DecimalStringDeserializer`），响应仍为规范十进制字符串（去尾零）；不新增 / 不改字段 | ☐ |
 
 ---
@@ -41,6 +43,8 @@
 - 🚫 不改库列类型、不改表结构
 - 🚫 不回算存量价格版本、不回算存量报价单快照（用户裁决）
 - 🚫 不改导出 Excel 的数字格式
+- 🚫 **不让价格导入写变更历史**（D-13：既有行为，本次不改）
+- ✅ V445 已由主线单独并入 master（`ae6dae0f`，D-10），分支上同内容提交 `4330662e`；🚫 不许再改这个迁移文件（已应用到两个共享库）
 - 🚫 不改调价 / 审核里的金额计算与涨跌幅口径
 
 ## N+1 自检口径
