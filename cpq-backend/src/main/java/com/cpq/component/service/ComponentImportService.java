@@ -61,11 +61,8 @@ public class ComponentImportService {
      */
     private static final String BUILDER_VIEW_NAME_PREFIX = "builder_";
 
-    /**
-     * task-260915 B-5：当前 bundle 格式版本（导出端 {@code ComponentExportBundle#bundleVersion} 的现值）。
-     * repair-260916 B-4：升为 1.2 —— Excel 连表公式文字的列小计写成 {@code [页签.列(小计)]}。
-     */
-    static final String BUNDLE_VERSION_CURRENT = "1.2";
+    /** task-260915 B-5：当前 bundle 格式版本（导出端 {@code ComponentExportBundle#bundleVersion} 的现值）。 */
+    private static final String BUNDLE_VERSION_CURRENT = "1.1";
 
     @Transactional(Transactional.TxType.SUPPORTS)
     public ImportPreviewResult preview(UUID targetDirId, ComponentExportBundle bundle, String conflictPolicy) {
@@ -374,20 +371,6 @@ public class ComponentImportService {
 
         boolean hasNullId = false;
 
-        // repair-260916 B-4（AC-16）：bundleVersion < 1.2 的旧包，Excel 连表公式里的裸 [页签.列]
-        // 在该列勾了小计时表示列小计 → 写库前按 问题说明 5.4 改写为 [页签.列(小计)]。
-        // 被引用组件的小计列取**包内同组件**（按包内原 id，即 tabKey 未重映射前的值）。
-        // 🚫 纯内存：只读 bundle 对象，循环外一次建好映射，不查库。
-        final boolean legacyExcelText = TabJoinSubtotalSuffixRewriter.versionLowerThan(bundle.bundleVersion, 1, 2);
-        final Map<String, java.util.Set<String>> bundleSubtotalCols = new HashMap<>();
-        if (legacyExcelText) {
-            for (ComponentExportBundle.Item bi : bundle.components) {
-                if (bi.id != null && !bi.id.isBlank()) {
-                    bundleSubtotalCols.put(bi.id, TabJoinSubtotalSuffixRewriter.subtotalColumnsOf(bi.fields));
-                }
-            }
-        }
-
         for (ComponentExportBundle.Item it : bundle.components) {
             boolean conflict = it.code != null && existing.contains(it.code);
             if (conflict && policy.equals("SKIP")) {
@@ -443,20 +426,7 @@ public class ComponentImportService {
             // ⚠️ 这里写的是**源库原值**；其中 tabs[].tabKey 的跨页签组件引用由第二遍
             //    FormulaRefRemapper.remapExcelColumns 重映射（task-260915 B-11）——
             //    必须等第一遍全部建完、idMap 收集齐了才能做，理由同 formulas 那路。
-            JsonNode excelColumnsNode = it.excelColumns;
-            if (legacyExcelText && excelColumnsNode != null && excelColumnsNode.isArray()) {
-                excelColumnsNode = excelColumnsNode.deepCopy();   // 不改入参 bundle（checksum / 预览复用）
-                TabJoinSubtotalSuffixRewriter.Result rw =
-                        TabJoinSubtotalSuffixRewriter.rewrite(excelColumnsNode, bundleSubtotalCols);
-                if (rw.rewrittenColumns > 0) {
-                    LOG.infof("[repair-260916] 旧包(bundleVersion=%s) 组件 %s 的 Excel 连表公式改写为 (小计) 写法: %d 列",
-                            bundle.bundleVersion, it.code, rw.rewrittenColumns);
-                }
-                for (String n : rw.notices) {
-                    LOG.warnf("[repair-260916] 旧包组件 %s: %s", it.code, n);
-                }
-            }
-            c.excelColumns = nodeToJson(excelColumnsNode);
+            c.excelColumns = nodeToJson(it.excelColumns);
             c.directoryId = targetDirId;
             c.persist();
 
@@ -643,7 +613,7 @@ public class ComponentImportService {
      *
      * <p>只在<b>三个条件同时成立</b>时给出非空提示，其余一律返回 {@code null}（文案逐字不变）：
      * <ol>
-     *   <li>包版本 &lt; 1.1（{@code bundleVersion} 缺失、无法解析或低于 1.1；repair-260916 起 1.2 包同样不给）；</li>
+     *   <li>包版本 &lt; 1.1（{@code bundleVersion} 缺失或不等于 {@value #BUNDLE_VERSION_CURRENT}）；</li>
      *   <li>该组件至少有一条<b>取数配置器建的</b>视图（视图名以 {@value #BUILDER_VIEW_NAME_PREFIX} 开头）；</li>
      *   <li>那条视图的 {@code builderConfig} 为空（= 包里确实没带配置器信息）。</li>
      * </ol>
@@ -657,8 +627,7 @@ public class ComponentImportService {
      */
     private String legacyBundleTreeHint(ComponentExportBundle bundle, ComponentExportBundle.Item item) {
         if (bundle == null || item == null) return null;
-        // repair-260916 B-4：判定改为「版本低于 1.1」—— 1.1 包行为与改动前一致，1.2 包同样不给这句
-        if (!TabJoinSubtotalSuffixRewriter.versionLowerThan(bundle.bundleVersion, 1, 1)) return null;
+        if (BUNDLE_VERSION_CURRENT.equals(bundle.bundleVersion)) return null;   // 1.1 包不给这句
         if (item.sqlViews == null || item.sqlViews.isEmpty()) return null;
         boolean builderViewWithoutConfig = false;
         for (ComponentExportBundle.SqlView sv : item.sqlViews) {   // 纯内存遍历，无查库

@@ -24,10 +24,15 @@
  *   - `+ - *` with a BigDecimal operand: each operand rounded to 12 places (HALF_EVEN), result kept at
  *     34 significant digits (DECIMAL128); integer-only stays exact; double-only uses double arithmetic;
  *   - `/`: dividend not rounded; divisor 0 → dividend rounded to 12 places (HALF_UP);
- *     otherwise quotient at 12 places HALF_UP; a double operand on either side THROWS
- *     (`PrecisionPolicy.of` rejects floating point) — the backend throws too;
+ *     otherwise quotient at 12 places HALF_UP; a double literal (e.g. `/ 1.13`) is converted through
+ *     its decimal text first (repair-260916 D-10 / backend B-8 `SafeArithmetic.exact`);
+ *   - `%`: remainder with the dividend's sign, same operand typing as `*`; divisor 0 → 0;
+ *   - `< <= > >= == !=`: numeric comparison (BigDecimal operands rounded to 12 places first),
+ *     not chainable; a comparison against null is false (except `==` / `!=`); a boolean result
+ *     counts as 0 when it is the value of a row; booleans count as 1 / 0 in `+ - * %`;
  *   - every row result and the column result are rounded to 12 places HALF_UP;
  *   - syntax errors throw; an unknown identifier / function call evaluates to null (= 0).
+ * Not supported (throws): logical operators, ternary, strings, regex operators.
  *
  * Errors are thrown; the caller decides how to degrade (buildExcelSnapshot returns '0').
  */
@@ -236,6 +241,7 @@ function evalRow(expr: string, row: WideRow, scalars: Scalars): Decimal {
 
 type Val =
   | { t: 'null' }
+  | { t: 'bool'; b: boolean }
   | { t: 'int'; d: Decimal }
   | { t: 'dec'; d: Decimal }
   | { t: 'dbl'; n: number };
@@ -251,10 +257,11 @@ function doubleToDecimal(n: number): Decimal {
   return new Decimal(String(n));
 }
 
-/** JexlArithmetic.toBigDecimal (mathScale 12, DECIMAL128 → HALF_EVEN). */
+/** JexlArithmetic.toBigDecimal (mathScale 12, DECIMAL128 → HALF_EVEN). Boolean → 1 / 0. */
 function toBD(v: Val): Decimal {
   switch (v.t) {
     case 'null': return new Decimal(0);
+    case 'bool': return new Decimal(v.b ? 1 : 0);
     case 'int': return v.d;
     case 'dec': return round12(v.d, Decimal.ROUND_HALF_EVEN);
     case 'dbl': return Number.isNaN(v.n) ? new Decimal(0) : round12(doubleToDecimal(v.n), Decimal.ROUND_HALF_EVEN);
@@ -264,63 +271,114 @@ function toBD(v: Val): Decimal {
 function toDouble(v: Val): number {
   switch (v.t) {
     case 'null': return 0;
+    case 'bool': return v.b ? 1 : 0;
     case 'dbl': return v.n;
     default: return v.d.toNumber();
   }
 }
 
+/** Operands JEXL treats as long numbers (Integer/Long/Boolean; null counts as 0). */
 function isIntLike(v: Val): boolean {
-  return v.t === 'int' || v.t === 'null';
+  return v.t === 'int' || v.t === 'null' || v.t === 'bool';
 }
 
-function arith(op: '+' | '-' | '*', a: Val, b: Val): Val {
+type ArithOp = '+' | '-' | '*' | '%';
+
+const DBL_ZERO: Val = { t: 'dbl', n: 0 };
+
+function arith(op: ArithOp, a: Val, b: Val): Val {
+  const apply = (x: Decimal, y: Decimal): Decimal =>
+    op === '+' ? x.plus(y) : op === '-' ? x.minus(y) : op === '*' ? x.times(y) : x.mod(y);
   if (isIntLike(a) && isIntLike(b)) {
     const x = toBD(a);
     const y = toBD(b);
-    return { t: 'int', d: op === '+' ? x.plus(y) : op === '-' ? x.minus(y) : x.times(y) };
+    // JEXL: modulo by zero is swallowed (non-strict) and yields 0.0 (Double)
+    if (op === '%' && y.isZero()) return DBL_ZERO;
+    return { t: 'int', d: apply(x, y) };
   }
   if (a.t === 'dec' || b.t === 'dec') {
     const x = toBD(a);
     const y = toBD(b);
-    const raw = op === '+' ? x.plus(y) : op === '-' ? x.minus(y) : x.times(y);
-    const r = raw.toSignificantDigits(MC_PRECISION, Decimal.ROUND_HALF_EVEN);
+    if (op === '%' && y.isZero()) return DBL_ZERO;
+    const r = apply(x, y).toSignificantDigits(MC_PRECISION, Decimal.ROUND_HALF_EVEN);
     // JexlArithmetic.narrowBigDecimal: an integer operand + exact integer result → Integer/Long
-    if ((a.t === 'int' || b.t === 'int') && r.isInteger()) return { t: 'int', d: r };
+    if ((isIntLike(a) || isIntLike(b)) && r.isInteger()) return { t: 'int', d: r };
     return { t: 'dec', d: r };
   }
   const x = toDouble(a);
   const y = toDouble(b);
+  if (op === '%') return y === 0 ? DBL_ZERO : { t: 'dbl', n: x % y };
   return { t: 'dbl', n: op === '+' ? x + y : op === '-' ? x - y : x * y };
 }
 
-/** PrecisionPolicy.of: floating point is rejected. */
-function precisionOf(v: Val): Decimal {
-  if (v.t === 'dbl') throw new Error('Precision-sensitive values must not use floating point');
-  return v.t === 'null' ? new Decimal(0) : v.d;
+/**
+ * SafeArithmetic.exact (repair-260916 B-8 / D-10): a double/float literal is converted through its
+ * shortest decimal text (`1.13` → 1.13), non-finite → 0; everything else goes through
+ * PrecisionPolicy.of (null / boolean / non-numeric → 0).
+ */
+function exact(v: Val): Decimal {
+  switch (v.t) {
+    case 'dbl': return Number.isFinite(v.n) ? doubleToDecimal(v.n) : new Decimal(0);
+    case 'int':
+    case 'dec': return v.d;
+    default: return new Decimal(0);
+  }
 }
 
 /** SafeArithmetic.divide. */
 function divide(a: Val, b: Val): Val {
-  const dividend = precisionOf(a);
+  const dividend = exact(a);
   if (b.t === 'null' || toBD(b).isZero()) {
     return { t: 'dec', d: round12(dividend, Decimal.ROUND_HALF_UP) };
   }
-  const divisor = precisionOf(b);
+  const divisor = exact(b);
+  // PrecisionPolicy.divide: divisor 0 (e.g. a boolean divisor) → 0
+  if (divisor.isZero()) return { t: 'dec', d: new Decimal(0) };
   return { t: 'dec', d: round12(dividend.dividedBy(divisor), Decimal.ROUND_HALF_UP) };
 }
 
 function negate(v: Val): Val {
   switch (v.t) {
     case 'null': return v;
+    case 'bool': return { t: 'bool', b: !v.b }; // JEXL: negating a Boolean is logical NOT
     case 'dbl': return { t: 'dbl', n: -v.n };
     default: return { t: v.t, d: v.d.negated() };
   }
 }
 
-/** ExcelViewService-side TabJoinPlanEvaluator.toBig: round to 12 places HALF_UP; null → 0. */
+type CmpOp = '==' | '!=' | '<' | '<=' | '>' | '>=';
+
+/** Numeric comparison with JEXL operand typing; returns -1 / 0 / 1. */
+function compareNumeric(a: Val, b: Val): number {
+  if (a.t === 'dec' || b.t === 'dec') return toBD(a).comparedTo(toBD(b));
+  if (a.t === 'dbl' || b.t === 'dbl') {
+    const x = toDouble(a);
+    const y = toDouble(b);
+    return x < y ? -1 : x > y ? 1 : 0;
+  }
+  return toBD(a).comparedTo(toBD(b));
+}
+
+function compare(op: CmpOp, a: Val, b: Val): Val {
+  if (op === '==' || op === '!=') {
+    let eq: boolean;
+    if (a.t === 'null' || b.t === 'null') eq = a.t === b.t;
+    else if (a.t === 'bool' && b.t === 'bool') eq = a.b === b.b;
+    else eq = compareNumeric(a, b) === 0;
+    return { t: 'bool', b: op === '==' ? eq : !eq };
+  }
+  if (a.t === 'null' || b.t === 'null') return { t: 'bool', b: false };
+  const c = compareNumeric(a, b);
+  const r = op === '<' ? c < 0 : op === '<=' ? c <= 0 : op === '>' ? c > 0 : c >= 0;
+  return { t: 'bool', b: r };
+}
+
+/** TabJoinPlanEvaluator.toBig: round to 12 places HALF_UP; null / boolean (non-numeric text) → 0. */
 function toBig(v: Val): Decimal {
   switch (v.t) {
-    case 'null': return new Decimal(0);
+    case 'null':
+    case 'bool':
+      return new Decimal(0);
     case 'dbl':
       return Number.isFinite(v.n) ? round12(doubleToDecimal(v.n), Decimal.ROUND_HALF_UP) : new Decimal(0);
     default:
@@ -330,11 +388,15 @@ function toBig(v: Val): Decimal {
 
 const NUMBER_RE = /^(?:\d+(?:\.\d+)?)(?:[eE][+-]?\d+)?([BbDdFfLlHh])?/;
 const IDENT_RE = /^[A-Za-z_$][A-Za-z0-9_$]*/;
+const CMP_RELATIONAL = ['<=', '>=', '<', '>'] as const;
+const CMP_EQUALITY = ['==', '!='] as const;
 
 /**
- * Recursive-descent evaluator for the arithmetic subset of JEXL the backend actually meets:
- * numbers, unary +/-, binary + - * /, parentheses, identifiers and function calls (→ null).
- * Anything else (comparisons, assignment, `%`, strings, …) throws.
+ * Recursive-descent evaluator for the subset of JEXL the backend actually meets:
+ * numbers, booleans (true/false), unary +/-, `* / %`, `+ -`, one relational comparison
+ * (`< <= > >=`), one equality comparison (`== !=`), parentheses, identifiers and function
+ * calls (→ null). Chained comparisons are parse errors (as in JEXL). Anything else
+ * (assignment, logical operators, ternary, strings, …) throws.
  */
 class JexlLite {
   private i = 0;
@@ -347,14 +409,44 @@ class JexlLite {
   evaluate(): Val {
     this.ws();
     if (this.i >= this.s.length) return NULL; // empty script → null
-    const v = this.additive();
+    const v = this.equality();
     this.ws();
-    if (this.i < this.s.length) throw new Error(`parsing error at ${this.i} in '${this.s}'`);
+    if (this.i < this.s.length) this.fail();
     return v;
+  }
+
+  private fail(): never {
+    throw new Error(`parsing error at ${this.i} in '${this.s}'`);
   }
 
   private ws(): void {
     while (this.i < this.s.length && /\s/.test(this.s[this.i])) this.i++;
+  }
+
+  private peekOp(ops: readonly string[]): string | null {
+    this.ws();
+    for (const op of ops) if (this.s.startsWith(op, this.i)) return op;
+    return null;
+  }
+
+  private equality(): Val {
+    const left = this.relational();
+    const op = this.peekOp(CMP_EQUALITY);
+    if (!op) return left;
+    this.i += op.length;
+    const v = compare(op as CmpOp, left, this.relational());
+    if (this.peekOp(CMP_EQUALITY)) this.fail(); // JEXL: equality is not associative
+    return v;
+  }
+
+  private relational(): Val {
+    const left = this.additive();
+    const op = this.peekOp(CMP_RELATIONAL);
+    if (!op) return left;
+    this.i += op.length;
+    const v = compare(op as CmpOp, left, this.additive());
+    if (this.peekOp(CMP_RELATIONAL)) this.fail(); // JEXL: relational is not associative
+    return v;
   }
 
   private additive(): Val {
@@ -373,13 +465,11 @@ class JexlLite {
     for (;;) {
       this.ws();
       const c = this.s[this.i];
-      if (c !== '*' && c !== '/') return v;
-      if (this.s[this.i + 1] === '*' || this.s[this.i + 1] === '/') {
-        throw new Error(`parsing error at ${this.i} in '${this.s}'`);
-      }
+      if (c !== '*' && c !== '/' && c !== '%') return v;
+      if ('*/%'.includes(this.s[this.i + 1] ?? '')) this.fail();
       this.i++;
       const r = this.unary();
-      v = c === '*' ? arith('*', v, r) : divide(v, r);
+      v = c === '/' ? divide(v, r) : arith(c, v, r);
     }
   }
 
@@ -396,9 +486,9 @@ class JexlLite {
     const rest = this.s.slice(this.i);
     if (rest.startsWith('(')) {
       this.i++;
-      const v = this.additive();
+      const v = this.equality();
       this.ws();
-      if (this.s[this.i] !== ')') throw new Error(`parsing error at ${this.i} in '${this.s}'`);
+      if (this.s[this.i] !== ')') this.fail();
       this.i++;
       return v;
     }
@@ -416,6 +506,7 @@ class JexlLite {
     const id = IDENT_RE.exec(rest);
     if (id) {
       this.i += id[0].length;
+      if (id[0] === 'true' || id[0] === 'false') return { t: 'bool', b: id[0] === 'true' };
       this.ws();
       if (this.s[this.i] === '(') {
         // unknown function (strict=false, silent=true) → null; arguments must still parse
@@ -423,18 +514,18 @@ class JexlLite {
         this.ws();
         if (this.s[this.i] !== ')') {
           for (;;) {
-            this.additive();
+            this.equality();
             this.ws();
             if (this.s[this.i] === ',') { this.i++; continue; }
             break;
           }
         }
-        if (this.s[this.i] !== ')') throw new Error(`parsing error at ${this.i} in '${this.s}'`);
+        if (this.s[this.i] !== ')') this.fail();
         this.i++;
       }
       return NULL; // unknown variable / function → null
     }
-    throw new Error(`parsing error at ${this.i} in '${this.s}'`);
+    this.fail();
   }
 }
 

@@ -39,13 +39,8 @@ public class ComponentExportBundle {
      * {@code elementCurrencyField}，视图级 {@code builderConfig} / {@code builderVersion} /
      * {@code status}。导入端据此区分：{@code "1.1"} 走完整恢复；{@code "1.0"} 或缺失走降级
      * （新字段全 null，行为与 task-260915 之前逐字一致，<b>不整包拒绝</b>）。
-     *
-     * <p><b>1.2（repair-260916）</b>：DTO 结构不变；Excel 连表公式列（{@code TAB_JOIN_FORMULA}）的
-     * {@code expression} 文字改为新写法 —— 列小计写成 {@code [页签.列(小计)]}，裸 {@code [页签.列]}
-     * 恒表示按行取值。导入端对低于 1.2 的包按旧写法改写后再写库
-     * （{@code ComponentImportService.BUNDLE_VERSION_CURRENT} 与本字段同步）。
      */
-    public String bundleVersion = "1.2";
+    public String bundleVersion = "1.1";
     /** 导出时间(ISO-8601)。 */
     public String exportedAt;
     /** 来源目录信息(仅供追溯,导入时不依赖)。 */

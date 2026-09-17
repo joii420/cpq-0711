@@ -1,0 +1,1597 @@
+{
+  "hostButtons": [
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-tabs-nav-more",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-input-clear-icon",
+      "inDrawer": false
+    },
+    {
+      "text": "新建",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-solid ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "新建目录",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "停用 / 启用",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "删 除",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "保存全部草稿",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-outlined ant-btn-sm ant-btn-background-ghost",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-typography-edit",
+      "inDrawer": false
+    },
+    {
+      "text": "配置帮助",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "保 存",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-solid ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-tabs-nav-more",
+      "inDrawer": false
+    },
+    {
+      "text": "添加字段",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "+ 默认值来源",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-link ant-btn-color-link ant-btn-variant-link ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "+ 默认值来源",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-link ant-btn-color-link ant-btn-variant-link ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "+ 默认值来源",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-link ant-btn-color-link ant-btn-variant-link ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    }
+  ],
+  "formulaHeaders": [
+    "公式名称",
+    "表达式",
+    "操作"
+  ],
+  "drawerButtons": [
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-tabs-nav-more",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-input-clear-icon",
+      "inDrawer": false
+    },
+    {
+      "text": "新建",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-solid ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "新建目录",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "停用 / 启用",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "删 除",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "保存全部草稿 (1)",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-outlined ant-btn-sm ant-btn-background-ghost",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-typography-edit",
+      "inDrawer": false
+    },
+    {
+      "text": "配置帮助",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "保 存",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-solid ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-tabs-nav-more",
+      "inDrawer": false
+    },
+    {
+      "text": "添加公式",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-solid ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "配置",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-link ant-btn-color-link ant-btn-variant-link ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-link ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-link ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "配置",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-link ant-btn-color-link ant-btn-variant-link ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-link ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-link ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-drawer-close",
+      "inDrawer": true
+    },
+    {
+      "text": "取 消",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined",
+      "inDrawer": true
+    },
+    {
+      "text": "保 存",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-solid",
+      "inDrawer": true
+    },
+    {
+      "text": "",
+      "cls": "ant-input-clear-icon ant-input-clear-icon-hidden",
+      "inDrawer": true
+    },
+    {
+      "text": "清空表达式",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": true
+    },
+    {
+      "text": "+",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": true
+    },
+    {
+      "text": "-",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": true
+    },
+    {
+      "text": "*",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": true
+    },
+    {
+      "text": "/",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": true
+    },
+    {
+      "text": "(",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": true
+    },
+    {
+      "text": ")",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": true
+    },
+    {
+      "text": "SUM",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": true
+    },
+    {
+      "text": "AVG",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": true
+    },
+    {
+      "text": "MIN",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": true
+    },
+    {
+      "text": "MAX",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": true
+    },
+    {
+      "text": "COUNT",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": true
+    },
+    {
+      "text": "SUMIF",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": true
+    },
+    {
+      "text": "COUNTIF",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": true
+    },
+    {
+      "text": "AVGIF",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": true
+    },
+    {
+      "text": "MINIF",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": true
+    },
+    {
+      "text": "MAXIF",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": true
+    },
+    {
+      "text": "PGET",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": true
+    },
+    {
+      "text": "CSUM",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": true
+    },
+    {
+      "text": "CAVG",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": true
+    },
+    {
+      "text": "CMAX",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": true
+    },
+    {
+      "text": "CMIN",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": true
+    },
+    {
+      "text": "CCOUNT",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": true
+    },
+    {
+      "text": "展开 SUMIF 条件聚合（按条件过滤后聚合）",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-link ant-btn-color-link ant-btn-variant-link",
+      "inDrawer": true
+    }
+  ],
+  "leftCardCount": 5,
+  "leftCardTexts": [
+    "RP0916宿主 [COMP-2598]\n行键: 销售料号 + 料号\n明细(本页签·同行)\n数量\n成本\n页签总计\nRP0916宿主(总计)",
+    "RP0916加工费 [COMP-2599]\n行键: 销售料号 + 料号\n明细\n加工费\n备注数\n小计列\n加工费(小计)\n页签总计\nRP0916加工费(总计)",
+    "RP0916工序 [COMP-2600]\n行键: 工序\n明细\n工时\n页签总计\nRP0916工序(总计)",
+    "RP0916小计 [COMP-2601]\n行键:\n明细\n页签总计\nRP0916小计(总计)",
+    "RP0916Excel [COMP-2602]\n行键:\n明细\n页签总计\nRP0916Excel(总计)"
+  ],
+  "leftTags": [
+    {
+      "t": "数量",
+      "style": "cursor: pointer; background: rgb(255, 255, 255); border-color: rgb(211, 173, 247); color: rgb(114, 46, 209); margin: 0px; font-size: 12px; padding: 3px 9px; border-style: solid; user-select: none;",
+      "cursor": "pointer",
+      "color": "rgb(114, 46, 209)"
+    },
+    {
+      "t": "成本",
+      "style": "cursor: pointer; background: rgb(255, 255, 255); border-color: rgb(211, 173, 247); color: rgb(114, 46, 209); margin: 0px; font-size: 12px; padding: 3px 9px; border-style: solid; user-select: none;",
+      "cursor": "pointer",
+      "color": "rgb(114, 46, 209)"
+    },
+    {
+      "t": "RP0916宿主(总计)",
+      "style": "cursor: pointer; color: rgb(56, 158, 13); border-color: rgb(183, 235, 143); border-style: dashed; background: rgb(255, 255, 255); margin: 0px; font-size: 12px; padding: 3px 9px; user-select: none;",
+      "cursor": "pointer",
+      "color": "rgb(56, 158, 13)"
+    },
+    {
+      "t": "加工费",
+      "style": "cursor: pointer; background: rgb(255, 255, 255); border-color: rgb(145, 202, 255); margin: 0px; font-size: 12px; padding: 3px 9px; border-style: solid; user-select: none;",
+      "cursor": "pointer",
+      "color": "rgba(0, 0, 0, 0.88)"
+    },
+    {
+      "t": "备注数",
+      "style": "cursor: pointer; background: rgb(255, 255, 255); border-color: rgb(145, 202, 255); margin: 0px; font-size: 12px; padding: 3px 9px; border-style: solid; user-select: none;",
+      "cursor": "pointer",
+      "color": "rgba(0, 0, 0, 0.88)"
+    },
+    {
+      "t": "加工费(小计)",
+      "style": "cursor: pointer; color: rgb(250, 140, 22); border-color: rgb(255, 213, 145); border-style: dashed; background: rgb(255, 255, 255); margin: 0px; font-size: 12px; padding: 3px 9px; user-select: none;",
+      "cursor": "pointer",
+      "color": "rgb(250, 140, 22)"
+    },
+    {
+      "t": "RP0916加工费(总计)",
+      "style": "cursor: pointer; color: rgb(56, 158, 13); border-color: rgb(183, 235, 143); border-style: dashed; background: rgb(255, 255, 255); margin: 0px; font-size: 12px; padding: 3px 9px; user-select: none;",
+      "cursor": "pointer",
+      "color": "rgb(56, 158, 13)"
+    },
+    {
+      "t": "工时",
+      "style": "cursor: not-allowed; color: rgb(191, 191, 191); background: rgb(250, 250, 250); border-color: rgb(240, 240, 240); margin: 0px; font-size: 12px; padding: 3px 9px; user-select: none;",
+      "cursor": "not-allowed",
+      "color": "rgb(191, 191, 191)"
+    },
+    {
+      "t": "RP0916工序(总计)",
+      "style": "cursor: pointer; color: rgb(56, 158, 13); border-color: rgb(183, 235, 143); border-style: dashed; background: rgb(255, 255, 255); margin: 0px; font-size: 12px; padding: 3px 9px; user-select: none;",
+      "cursor": "pointer",
+      "color": "rgb(56, 158, 13)"
+    },
+    {
+      "t": "RP0916小计(总计)",
+      "style": "cursor: pointer; color: rgb(56, 158, 13); border-color: rgb(183, 235, 143); border-style: dashed; background: rgb(255, 255, 255); margin: 0px; font-size: 12px; padding: 3px 9px; user-select: none;",
+      "cursor": "pointer",
+      "color": "rgb(56, 158, 13)"
+    },
+    {
+      "t": "RP0916Excel(总计)",
+      "style": "cursor: pointer; color: rgb(56, 158, 13); border-color: rgb(183, 235, 143); border-style: dashed; background: rgb(255, 255, 255); margin: 0px; font-size: 12px; padding: 3px 9px; user-select: none;",
+      "cursor": "pointer",
+      "color": "rgb(56, 158, 13)"
+    }
+  ],
+  "editorCount": 1,
+  "editorAttrs": [
+    "class=tabjoin-formula-rich-input",
+    "contenteditable=true",
+    "data-placeholder=例:[投料.金额] * [加工.工时] + [回料.金额(小计)] + [回料(总计)]",
+    "style=min-height: 170px; max-height: 340px; overflow-y: auto; border: 1px solid rgb(217, 217, 217); border-radius: 6px; padding: 8px 11px; margin-top: 4px; line-height: 24px; font-family: \"SF Mono\", Consolas, Monaco, monospace; font-size: 13px; outline: none; overflow-wrap: anywhere; background: rgb(255, 255, 255);"
+  ],
+  "editorBefore": {
+    "before": "none",
+    "html": "<div class=\"tabjoin-formula-rich-input\" contenteditable=\"true\" data-placeholder=\"例:[投料.金额] * [加工.工时] + [回料.金额(小计)] + [回料(总计)]\" style=\"min-height: 170px; max-height: 340px; overflow-y: auto; border: 1px solid rgb(217, 217, 217); border-radius: 6px; padding: 8px 11px; margin-top: 4px; line-height: 24px; font-family: &quot;SF Mono&quot;, Consolas, Monaco, monospace; font-size: 13px; outline: none; overflow-wrap: anywhere; background: rgb(255, 255, 255);\"></div>"
+  },
+  "drawerText": "配置页签连表公式\n取 消\n保 存\n页签组件与可选字段\n点击插入到右侧公式 · 行键不可比的明细置灰\n宿主行键 [销售料号 + 料号]；明细点击即插；更细页签明细需自行套 SUM/AVG 等聚合函数（或写 SUM(宿主列 * 细页签列) 行级聚合），否则一行命中多行报错；不可比页签仅整页签小计可用。\nRP0916宿主 [COMP-2598]\n行键: 销售料号 + 料号\n明细(本页签·同行)\n数量\n成本\n页签总计\nRP0916宿主(总计)\nRP0916加工费 [COMP-2599]\n行键: 销售料号 + 料号\n明细\n加工费\n备注数\n小计列\n加工费(小计)\n页签总计\nRP0916加工费(总计)\nRP0916工序 [COMP-2600]\n行键: 工序\n明细\n工时\n页签总计\nRP0916工序(总计)\nRP0916小计 [COMP-2601]\n行键:\n明细\n页签总计\nRP0916小计(总计)\nRP0916Excel [COMP-2602]\n行键:\n明细\n页签总计\nRP0916Excel(总计)\n公式表达式\n列来源：页签连表公式 · 单卡片单值 · 行键自动对齐(全外连·缺补0) · 明细默认按对齐行求和\n清空表达式\n块底色 = 引用语义\n普通引用 · [页签.列]\n小计 · [页签.列(小计)]\n总计\n本页签\n非法\n括号字色 = 配对深度\n( )\n第1层\n( )\n第2层\n( )\n第3层\n( )\n第4层\n光标停在括号上 → 同一对加黄底\n运算符\n+\n-\n*\n/\n(\n)\n函数\nSUM\nAVG\nMIN\nMAX\nCOUNT\n条件聚合\nSUMIF\nCOUNTIF\nAVGIF\nMINIF\nMAXIF\n父子取值\nPGET\nCSUM\nCAVG\nCMAX\nCMIN\nCCOUNT\n展开 SUMIF 条件聚合（按条件过滤后聚合）",
+  "editorAfterChip": "<div class=\"tabjoin-formula-rich-input\" contenteditable=\"true\" data-placeholder=\"例:[投料.金额] * [加工.工时] + [回料.金额(小计)] + [回料(总计)]\" style=\"min-height: 170px; max-height: 340px; overflow-y: auto; border: 1px solid rgb(217, 217, 217); border-radius: 6px; padding: 8px 11px; margin-top: 4px; line-height: 24px; font-family: &quot;SF Mono&quot;, Consolas, Monaco, monospace; font-size: 13px; outline: none; overflow-wrap: anywhere; background: rgb(255, 255, 255);\"><span contenteditable=\"false\" data-raw=\"[RP0916加工费.加工费]\" style=\"background: rgb(230, 244, 255); border: 1px solid rgb(145, 202, 255); color: rgb(9, 88, 217); border-radius: 4px; padding: 0px 5px; margin: 0px 1px; font-size: 13px; white-space: nowrap; user-select: none; cursor: default;\">RP0916加工费·加工费</span></div>",
+  "readEditor1": {
+    "raw": "[RP0916加工费.加工费]",
+    "display": "RP0916加工费·加工费",
+    "blocks": [
+      {
+        "display": "RP0916加工费·加工费",
+        "raw": "[RP0916加工费.加工费]",
+        "bg": "rgb(230, 244, 255)",
+        "border": "rgb(145, 202, 255)",
+        "color": "blue"
+      }
+    ]
+  },
+  "reqsOnDrawerSave": [],
+  "drawerVisibleAfterSave": false,
+  "formulasAfterDrawerSave": 1,
+  "pageButtonsAfterDrawer": [
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-tabs-nav-more",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-input-clear-icon",
+      "inDrawer": false
+    },
+    {
+      "text": "新建",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-solid ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "新建目录",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "停用 / 启用",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "删 除",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "保存全部草稿 (1)",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-outlined ant-btn-sm ant-btn-background-ghost",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-typography-edit",
+      "inDrawer": false
+    },
+    {
+      "text": "配置帮助",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "保 存",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-solid ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-tabs-nav-more",
+      "inDrawer": false
+    },
+    {
+      "text": "添加公式",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-solid ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "配置",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-link ant-btn-color-link ant-btn-variant-link ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-link ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-link ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "配置",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-link ant-btn-color-link ant-btn-variant-link ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-link ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-link ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    }
+  ],
+  "pageSave": "clicked",
+  "reqsOnPageSave": [
+    "PUT http://localhost:5292/api/cpq/components/73abb6e1-59f5-4996-a392-a35a92fabb5f {\"name\":\"RP0916宿主\",\"fields\":[{\"name\":\"销售料号\",\"notes\":\"\",\"content\":\"\",\"is_amount\":false,\"field_type\":\"INPUT_TEXT\",\"sort_order\":0,\"is_subtotal\":false},{\"name\":\"料号\",\"notes\":\"\",\"content\":\"\",\"is_amount\":false,\"field_type\":\"INPUT_TEXT\",\"sort_order\":1,\"is_subtotal\":false},{\"name\":\"数量\",\"notes\":\"\",\"content\":\"\",\"is_amount\":false,\"field_type\":\"INPUT_NUMBER\",\"sort_order\":2,\"is_subtotal\":false},{\"name\":\"成本\",\"no"
+  ],
+  "formulasAfterPageSave": [
+    {
+      "id": "f-1789633173521-rp0916b",
+      "name": "成本公式",
+      "expression": [
+        {
+          "type": "field",
+          "value": "数量"
+        }
+      ],
+      "result_type": "NUMBER"
+    },
+    {
+      "id": "5dad2332-9588-4b1d-af77-add8ef949079",
+      "name": "公式2",
+      "expression": [
+        {
+          "agg": "NONE",
+          "type": "cross_tab_ref",
+          "match": [
+            {
+              "a": "销售料号",
+              "b": "销售料号"
+            },
+            {
+              "a": "料号",
+              "b": "料号"
+            }
+          ],
+          "source": "f89f6d02-4db8-408c-8f5b-ba9d5932d37e",
+          "target": "加工费",
+          "sourceLabel": "RP0916加工费"
+        }
+      ],
+      "result_type": "NUMBER"
+    }
+  ],
+  "listCells": [
+    "\t[数量]\t\n配置",
+    "\t[RP0916加工费.加工费]\t\n配置"
+  ],
+  "listExpr0": "[数量]",
+  "illegalEditor": "<div class=\"tabjoin-formula-rich-input\" contenteditable=\"true\" data-placeholder=\"例:[投料.金额] * [加工.工时] + [回料.金额(小计)] + [回料(总计)]\" style=\"min-height: 170px; max-height: 340px; overflow-y: auto; border: 1px solid rgb(217, 217, 217); border-radius: 6px; padding: 8px 11px; margin-top: 4px; line-height: 24px; font-family: &quot;SF Mono&quot;, Consolas, Monaco, monospace; font-size: 13px; outline: none; overflow-wrap: anywhere; background: rgb(255, 255, 255);\"><span contenteditable=\"false\" data-raw=\"[RP0916加工费.备注数(小计)]\" style=\"background: rgb(255, 241, 240); border: 1px solid rgb(255, 163, 158); color: rgb(207, 19, 34); border-radius: 4px; padding: 0px 5px; margin: 0px 1px; font-size: 13px; white-space: nowrap; user-select: none; cursor: default;\">RP0916加工费·备注数(小计)</span></div>",
+  "messages": [
+    "页签「RP0916加工费」的列「备注数」没有勾选小计，不能写成「(小计)」"
+  ],
+  "messagesAlt": [
+    "页签「RP0916加工费」的列「备注数」没有勾选小计，不能写成「(小计)」"
+  ],
+  "drawerTextAfterIllegal": "配置页签连表公式\n取 消\n保 存\n页签组件与可选字段\n点击插入到右侧公式 · 行键不可比的明细置灰\n宿主行键 [销售料号 + 料号]；明细点击即插；更细页签明细需自行套 SUM/AVG 等聚合函数（或写 SUM(宿主列 * 细页签列) 行级聚合），否则一行命中多行报错；不可比页签仅整页签小计可用。\nRP0916宿主 [COMP-2598]\n行键: 销售料号 + 料号\n明细(本页签·同行)\n数量\n成本\n页签总计\nRP0916宿主(总计)\nRP0916加工费 [COMP-2599]\n行键: 销售料号 + 料号\n明细\n加工费\n备注数\n小计列\n加工费(小计)\n页签总计\nRP0916加工费(总计)\nRP0916工序 [COMP-2600]\n行键: 工序\n明细\n工时\n页签总计\nRP0916工序(总计)\nRP0916小计 [COMP-2601]\n行键:\n明细\n页签总计\nRP0916小计(总计)\nRP0916Excel [COMP-2602]\n行键:\n明细\n页签总计\nRP0916Excel(总计)\n公式表达式\n列来源：页签连表公式 · 单卡片单值 · 行键自动对齐(全外连·缺补0) · 明细默认按对齐行求和\n● 括号匹配\n清空表达式\nRP0916加工费·备注数(小计)\n块底色 = 引用语义\n普通引用 · [页签.列]\n小计 · [页签.列(小计)]\n总计\n本页签\n非法\n括号字色 = 配对深度\n( )\n第1层\n( )\n第2层\n( )\n第3层\n( )\n第4层\n光标停在括号上 → 同一对加黄底\n运算符\n+\n-\n*\n/\n(\n)\n函数\nSUM\nAVG\nMIN\nMAX\nCOUNT\n条件聚合\nSUMIF\nCOUNTIF\nAVGIF\nMINIF\nMAXIF\n父子取值\nPGET\nCSUM\nCAVG\nCMAX\nCMIN\nCCOUNT\n展开 SUMIF 条件聚合（按条件过滤后聚合）",
+  "subTabs": [
+    "组件",
+    "数据源",
+    "全局变量",
+    "核价树配置"
+  ],
+  "subButtons": [
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-tabs-nav-more",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-input-clear-icon",
+      "inDrawer": false
+    },
+    {
+      "text": "新建",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-solid ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "新建目录",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "停用 / 启用",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "删 除",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "保存全部草稿 (1)",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-outlined ant-btn-sm ant-btn-background-ghost",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-typography-edit",
+      "inDrawer": false
+    },
+    {
+      "text": "配置帮助",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "保 存",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-solid ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "添加公式",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-solid ant-btn-sm",
+      "inDrawer": false
+    }
+  ],
+  "excelTabs": [
+    "组件",
+    "数据源",
+    "全局变量",
+    "核价树配置"
+  ],
+  "excelButtons": [
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-tabs-nav-more",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-input-clear-icon",
+      "inDrawer": false
+    },
+    {
+      "text": "新建",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-solid ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "新建目录",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "停用 / 启用",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "删 除",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "保存全部草稿 (1)",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-outlined ant-btn-sm ant-btn-background-ghost",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-text ant-btn-sm ant-btn-icon-only",
+      "inDrawer": false
+    },
+    {
+      "text": "",
+      "cls": "ant-typography-edit",
+      "inDrawer": false
+    },
+    {
+      "text": "配置帮助",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "保 存",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-solid ant-btn-sm",
+      "inDrawer": false
+    },
+    {
+      "text": "添加列",
+      "cls": "ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-solid ant-btn-sm",
+      "inDrawer": false
+    }
+  ],
+  "excelTables": [
+    "\t列名(title)\t列键(col_key)\t来源 / 公式\t显示\t\n暂无列，点击\"添加列\""
+  ],
+  "excelMainText": "CPQ 报价系统\n工作台\n客户管理\n产品管理\n报价中心\n定价管理\n配置中心\n主数据维护\n系统管理\n99+\n系统管理员\n组件管理\n组件\n数据源\n全局变量\n核价树配置\n新建\n新建目录\n显示停用\n停用 / 启用\n删 除\n勾选卡片左侧框可批量操作\n保存全部草稿 (1)\n▶\n📁 取值配置器测试\n▶\n页签组件\n＋\n＋ 新建页签组件\n▶\nEXCEL 组件\n＋\n＋ 新建 EXCEL 组件\n▶\n小计组件\n＋\n＋ 新建小计组件\n▶\n📁 核价组件\n▶\n📁 正泰组件库2\n▶\n📁 施耐德成环检测\n▶\n📁 RP0916B-E2E\nXLS1\n▶\n页签组件\n＋\n＋ 新建页签组件\n▶\nEXCEL 组件\n＋\nRP0916Excel\nCOMP-2602—\n＋ 新建 EXCEL 组件\n▶\n小计组件\n＋\n＋ 新建小计组件\n▶\n📁 取值配置器测试2\n▶\n📁 正泰组件库-1\nRP0916Excel\nEXCEL 组件 · COMP-2602\n配置帮助\n保 存\nExcel 列配置\nEXCEL 组件 = 一整张 Excel 表，列 + 公式都在此配（原 Excel 模板已收编）\n添加列\n\t列名(title)\t列键(col_key)\t来源 / 公式\t显示\t\n暂无列，点击\"添加列\"\n「显示」开关 = 该列是否在最终 Excel 视图 / 导出中呈现。关闭即隐藏列：仍参与公式计算，但不显示（可作中间量）。"
+}

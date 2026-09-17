@@ -22,7 +22,6 @@ import * as H from './repair260916-subtotal-suffix.helpers';
 import { fx, N } from './repair260916-subtotal-suffix.helpers';
 
 test.use({ viewport: { width: 1920, height: 1080 } });
-test.setTimeout(240_000);
 
 const MATCH = [{ a: '销售料号', b: '销售料号' }, { a: '料号', b: '料号' }];
 
@@ -35,6 +34,9 @@ const MSG = {
   c6: 'KSUM() 内不支持 (小计) 小计引用 [RP0916加工费.加工费(小计)]，请引用明细字段或把小计放到外层',
   d6: 'SUMIF() 里不支持「(小计)」引用 [RP0916加工费.加工费(小计)]',
   b8: '存在与宿主无公共行键的跨页签引用（match 为空），不可对齐。请改引可比页签或用其整页签小计 [页签(总计)]。，请改用 Excel 组件',
+  // AC-6b 原写法：文案与 master 相同；主线给出的 master 行为前缀（完整文字以页面实际为准，落证据）
+  b6oldPrefix: 'SUM() 行级聚合必须引用至少一个细页签明细列 [页签别名.字段]',
+  e18: 'Excel 列暂不支持 SUMIF 类函数（SUMIF / COUNTIF / AVGIF / MINIF / MAXIF）',
   tip8: '行键 [工序] 与宿主 [销售料号+料号] 不可比；可改用「RP0916工序(总计)」',
 };
 
@@ -46,6 +48,7 @@ test.afterAll(async () => { await H.cleanupFixtures(); });
 
 let pageErrors: string[] = [];
 test.beforeEach(async ({ page }) => {
+  test.setTimeout(240_000);
   pageErrors = [];
   page.on('pageerror', (e) => pageErrors.push(String(e)));
   await loginAsAdmin(page);
@@ -72,7 +75,7 @@ function newest(data: any, baseIds: string[]) {
 }
 
 /** 反向用例共用：保存被拒 → 提示逐字 → 抽屉仍开 → 刷新后公式未新增。 */
-async function expectRejected(page: Page, drawer: Locator, host: H.Fx, baseIds: string[], msg: string, tag: string) {
+async function expectRejected(page: Page, drawer: Locator, host: H.Fx, baseIds: string[], msg: string, tag: string, rejectedExpr: string) {
   await H.drawerSave(page, drawer);
   await H.expectMessage(page, msg, tag);
   await H.shot(page, `${tag}-拒绝提示`);
@@ -85,7 +88,13 @@ async function expectRejected(page: Page, drawer: Locator, host: H.Fx, baseIds: 
   expect(ids.sort(), `${tag}：公式不应新增`).toEqual([...baseIds].sort());
   await H.openComponent(page, host);
   await H.gotoFormulaTab(page);
-  expect(await H.formulaRows(page).count(), `${tag}：刷新后公式列表行数应等于库内条数`).toBe(ids.length);
+  // 探测 260917：未保存的公式行会作为本地草稿在刷新后保留（「保存全部草稿 (N)」），
+  // 故列表判据为「没有任何一行的表达式是被拒的那段文字」，行数只打印不断言。
+  const n = await H.formulaRows(page).count();
+  const texts: (string | null)[] = [];
+  for (let i = 0; i < n; i++) texts.push(await H.formulaListExpr(page, i));
+  console.log(`[S-B] ${tag}：刷新后列表 ${n} 行（库内 ${ids.length} 条）表达式=${JSON.stringify(texts)}`);
+  expect(texts.some((t) => t !== null && H.noWs(t).includes(H.noWs(rejectedExpr))), `${tag}：刷新后列表不应出现被拒公式`).toBe(false);
   await H.shot(page, `${tag}-刷新后公式列表`);
 }
 
@@ -246,7 +255,7 @@ for (const c of [
     expect(r.blocks.length, '该式应渲染为 1 个块').toBe(1);
     H.expectBlock(r.blocks[0], 'red', `AC-5${c.k}`);
     await H.shot(drawer, `T-B5${c.k}-红块`);
-    await expectRejected(page, drawer, host, baseIds, c.msg, `T-B5${c.k}`);
+    await expectRejected(page, drawer, host, baseIds, c.msg, `T-B5${c.k}`, c.expr);
   });
 }
 
@@ -262,13 +271,13 @@ for (const c of [
     const { drawer, editor } = await newHostFormula(page);
     await H.typeExpr(page, editor, c.expr);
     await H.shot(drawer, `T-B6${c.k}-输入`);
-    await expectRejected(page, drawer, host, baseIds, c.msg, `T-B6${c.k}`);
+    await expectRejected(page, drawer, host, baseIds, c.msg, `T-B6${c.k}`, c.expr);
   });
 }
 
-test('T-B6b AC-6b 行级表达式 SUM([宿主.数量] * [加工费.加工费(小计)]) 可保存且重开不变', async ({ page }) => {
+test('T-B6b AC-6b（D-8）行级表达式 SUM([加工费.备注数] * [加工费.加工费(小计)]) 可保存且重开不变', async ({ page }) => {
   const host = fx.host!;
-  const expr = 'SUM([RP0916宿主.数量] * [RP0916加工费.加工费(小计)])';
+  const expr = 'SUM([RP0916加工费.备注数] * [RP0916加工费.加工费(小计)])';
   const baseIds = ((await H.getComponent(host.id)).data.formulas ?? []).map((f: any) => f.id);
   const { drawer, editor, baseCount } = await newHostFormula(page);
   await H.typeExpr(page, editor, expr);
@@ -281,6 +290,9 @@ test('T-B6b AC-6b 行级表达式 SUM([宿主.数量] * [加工费.加工费(小
   console.log(`[T-B6b] 存储=${JSON.stringify(f.expression)}`);
   expect(subs.length, 'b 行级表达式内应有 1 个 component_subtotal').toBe(1);
   expect(subs[0].value).toBe('加工费');
+  const bz = H.allTokens(f.expression).filter((t) => t.type === 'field' && t.value === '备注数');
+  expect(bz.length, 'b 行级表达式内「备注数」应存为 1 个字段 token').toBe(1);
+  expect(bz[0].source, 'b「备注数」应为来源页签（RP0916加工费）的列').toBe(fx.fee!.id);
 
   const L1 = await H.listTextOf(page, host, f.id);
   expect(H.noWs(L1.text), 'b 保存后公式文字与手输一致（去空白）').toBe(H.noWs(expr));
@@ -292,6 +304,24 @@ test('T-B6b AC-6b 行级表达式 SUM([宿主.数量] * [加工费.加工费(小
   const L2 = await H.listTextOf(page, host, f.id);
   H.writeEvidence('T-B6b-列表表达式.txt', `手输: ${expr}\n保存后: ${L1.text}\n重开再保存后: ${L2.text}\n`);
   expect(L2.text, 'b 重开（原样保存）后文字逐字不变').toBe(L1.text);
+});
+
+test('T-B6b′ AC-6b 原写法 SUM([宿主.数量] * [加工费.加工费(小计)]) 仍被拒（文案与 master 相同）', async ({ page }) => {
+  const host = fx.host!;
+  const expr = 'SUM([RP0916宿主.数量] * [RP0916加工费.加工费(小计)])';
+  const baseIds = ((await H.getComponent(host.id)).data.formulas ?? []).map((f: any) => f.id);
+  const { drawer, editor } = await newHostFormula(page);
+  await H.typeExpr(page, editor, expr);
+  await H.drawerSave(page, drawer);
+  await expect.poll(async () => (await H.messageTexts(page)).some((m) => m.startsWith(MSG.b6oldPrefix)),
+    { timeout: 8_000, message: `应弹出以「${MSG.b6oldPrefix}」开头的提示` }).toBe(true);
+  const msgs = await H.messageTexts(page);
+  H.writeEvidence('T-B6b′-原写法拒绝提示.txt', msgs.join('\n') + '\n');
+  await H.shot(page, 'T-B6b′-原写法拒绝提示');
+  await expect(drawer).toBeVisible();
+  await page.reload();
+  const ids = ((await H.getComponent(host.id)).data.formulas ?? []).map((f: any) => f.id);
+  expect(ids.sort(), '原写法：公式不应新增').toEqual([...baseIds].sort());
 });
 
 // ════════════════════════════════════════════════════════════════════ T-B7 · AC-7
@@ -470,20 +500,19 @@ test('T-B10 AC-10 原型对齐：分组顺序/芯片文字/图例/占位 + 整�
  * 走不通时落 DOM 文字与截图到证据目录并判【未验证·入口】，不伪装成产品缺陷。
  */
 async function addExcelTabJoinColumn(page: Page, tag: string) {
+  // 探测 260917：「添加列」按钮 → 行内来源下拉「固定值 / 页签连表公式」→ 行内「配置公式」。
+  // 表格行本身带 role=button（可拖拽排序），占位行不是 .ant-table-row。
+  const rows = page.locator('.ant-table-tbody tr.ant-table-row').filter({ visible: true });
   try {
-    const before = await page.locator('.ant-table-tbody tr').filter({ visible: true }).count();
-    await page.locator('button:not(.ant-drawer button)').filter({ hasText: /新\s*增|添\s*加/ })
-      .filter({ visible: true }).first().click();
-    await page.waitForTimeout(500);
-    const row = page.locator('.ant-table-tbody tr').filter({ visible: true }).last();
-    expect(await page.locator('.ant-table-tbody tr').filter({ visible: true }).count()).toBeGreaterThan(before);
-    const typeSel = row.locator('.ant-select').first();
-    if (await typeSel.count()) {
-      await typeSel.click();
-      await page.locator('.ant-select-item-option').filter({ hasText: '页签连表公式' }).first().click();
-      await page.waitForTimeout(300);
-    }
-    await row.getByRole('button', { name: /配\s*置/ }).first().click();
+    const before = await rows.count();
+    await page.locator('button.ant-btn').filter({ hasText: /添加列/ }).first().click();
+    await expect.poll(() => rows.count(), { message: '点「添加列」后应多一行' }).toBe(before + 1);
+    const row = rows.last();
+    await row.locator('.ant-select').first().click();
+    // 已关闭的下拉仍留在 DOM（run1 实测会先匹配到上一列的隐藏选项）⇒ 只取可见项
+    await page.locator('.ant-select-item-option').filter({ hasText: /^页签连表公式$/ }).filter({ visible: true }).first().click();
+    await page.waitForTimeout(400);
+    await row.locator('button.ant-btn').filter({ hasText: /配\s*置\s*公\s*式/ }).first().click();
     const drawer = H.drawerLoc(page);
     await expect(drawer).toBeVisible({ timeout: 10_000 });
     await expect.poll(() => H.leftCards(drawer).count(), { timeout: 15_000 }).toBeGreaterThan(0);
@@ -491,7 +520,7 @@ async function addExcelTabJoinColumn(page: Page, tag: string) {
   } catch (e) {
     H.writeEvidence(`${tag}-入口失败-DOM.txt`, await page.locator('body').innerText());
     await H.shot(page, `${tag}-入口失败`);
-    throw new Error(`[未验证·入口] Excel 组件新增页签连表公式列的入口没走通（选择器待主线/DOM 探测确认）：${e}`);
+    throw new Error(`[未验证·入口] Excel 组件新增页签连表公式列的入口没走通：${e}`);
   }
 }
 
@@ -524,7 +553,7 @@ test('T-B11 AC-18 Excel 组件抽屉：小计列 / 明细 两列保存 + 重开'
   await expect.poll(async () => {
     const g = await H.getComponent(ex.id);
     raw = g.raw;
-    cols = (g.data.excelColumns ?? []).filter((x: any) => x.source_type === 'TAB_JOIN_FORMULA');
+    cols = H.parseExcelColumns(g.data.excelColumns).filter((x: any) => x.source_type === 'TAB_JOIN_FORMULA');
     return cols.length;
   }, { timeout: 10_000, message: 'Excel 组件应落库 2 列页签连表公式' }).toBe(2);
   H.writeEvidence('T-B11-AC18-component.json', raw);
@@ -537,12 +566,15 @@ test('T-B11 AC-18 Excel 组件抽屉：小计列 / 明细 两列保存 + 重开'
   }
 
   // ③ 重开两列
-  const rows = page.locator('.ant-table-tbody tr').filter({ visible: true })
-    .filter({ has: page.getByRole('button', { name: /配\s*置/ }) });
+  const rows = page.locator('.ant-table-tbody tr.ant-table-row').filter({ visible: true });
   expect(await rows.count(), '③ 页面应有 2 行可配置列').toBeGreaterThanOrEqual(2);
   for (const [i, c] of cases.entries()) {
     const colIdx = cols.findIndex((x) => x.expression === c.expr);
-    await rows.nth(colIdx).getByRole('button', { name: /配\s*置/ }).first().click();
+    // run2 实测：保存后行内按钮文字变为「公式：[原文]」（不再是「配置公式」）
+    const btn = rows.nth(colIdx).locator('button.ant-btn').filter({ hasText: /公\s*式/ }).first();
+    const btnText = (await btn.innerText()).trim();
+    console.log(`[T-B11] 第 ${i + 1} 列行内按钮文字=「${btnText}」`);
+    await btn.click();
     const d = H.drawerLoc(page);
     await expect(d).toBeVisible();
     await page.waitForTimeout(500);
@@ -550,11 +582,67 @@ test('T-B11 AC-18 Excel 组件抽屉：小计列 / 明细 两列保存 + 重开'
     console.log(`[T-B11] 重开第 ${i + 1} 列 blocks=${JSON.stringify(r.blocks)}`);
     expect(r.blocks.map((b) => ({ display: b.display, color: b.color })),
       `③ 重开第 ${i + 1} 列块文字/颜色与保存前相同`).toEqual([seen[i]]);
-    const again = (await H.getComponent(ex.id)).data.excelColumns
+    const again = H.parseExcelColumns((await H.getComponent(ex.id)).data.excelColumns)
       .filter((x: any) => x.source_type === 'TAB_JOIN_FORMULA')[colIdx];
     expect(again.expression, `③ 重开后第 ${i + 1} 列存储文字不变`).toBe(c.expr);
     await H.shot(d, `T-B11-3-重开第${i + 1}列`);
     await d.locator('button').filter({ hasText: /取\s*消/ }).first().click();
     await expect(d).toBeHidden();
   }
+});
+
+// ════════════════════════════════════════════════════════════════════ T-B11 ④⑤ · AC-18（D-11 / D-9）
+async function excelColsCount() {
+  return H.parseExcelColumns((await H.getComponent(fx.excel!.id)).data.excelColumns)
+    .filter((x: any) => x.source_type === 'TAB_JOIN_FORMULA').length;
+}
+
+test('T-B11④ AC-18④ Excel 列手写 [RP0916加工费.备注数(小计)] → 红块 + 拒绝 + excelColumns 不新增', async ({ page }) => {
+  const before = await excelColsCount();
+  await H.openComponent(page, fx.excel!);
+  const drawer = await addExcelTabJoinColumn(page, 'T-B11④');
+  const r = await H.typeExpr(page, H.editorOf(drawer), '[RP0916加工费.备注数(小计)]');
+  expect(r.blocks.length).toBe(1);
+  H.expectBlock(r.blocks[0], 'red', 'AC-18④');
+  await H.drawerSave(page, drawer);
+  await H.expectMessage(page, MSG.a5, 'AC-18④');
+  await H.shot(page, 'T-B11④-拒绝提示');
+  await expect(drawer).toBeVisible();
+  await page.reload();
+  const after = await excelColsCount();
+  console.log(`[T-B11④] 页签连表公式列数 before=${before} after=${after}`);
+  expect(after, '④ excelColumns 不新增').toBe(before);
+});
+
+const IF_FNS = ['SUMIF', 'COUNTIF', 'AVGIF', 'MINIF', 'MAXIF'];
+async function ifButtons(drawer: import('@playwright/test').Locator) {
+  const texts = (await drawer.locator('button').allInnerTexts()).map((t) => t.replace(/\s+/g, ''));
+  return IF_FNS.filter((f) => texts.includes(f));
+}
+
+test('T-B11⑤ AC-18⑤ Excel 抽屉无 SUMIF 类按钮（页签组件对照仍有）；手写 SUMIF 被拒', async ({ page }) => {
+  // 对照：页签组件抽屉仍有这组按钮
+  const { drawer: hd } = await newHostFormula(page);
+  const hostIf = await ifButtons(hd);
+  console.log(`[T-B11⑤] 宿主抽屉 IF 按钮=${JSON.stringify(hostIf)}`);
+  expect(hostIf, '⑤ 对照：页签组件抽屉仍有 SUMIF 类按钮').toEqual(IF_FNS);
+  await H.shot(hd, 'T-B11⑤-1-宿主抽屉工具条');
+  await page.reload();
+
+  const before = await excelColsCount();
+  await H.openComponent(page, fx.excel!);
+  const drawer = await addExcelTabJoinColumn(page, 'T-B11⑤');
+  expect(await drawer.locator('button').count(), 'Excel 抽屉应能读到按钮（非空前提）').toBeGreaterThan(0);
+  const exIf = await ifButtons(drawer);
+  console.log(`[T-B11⑤] Excel 抽屉 IF 按钮=${JSON.stringify(exIf)}`);
+  expect(exIf, '⑤ Excel 抽屉不应有 SUMIF 类按钮').toEqual([]);
+  await H.shot(drawer, 'T-B11⑤-2-Excel抽屉工具条');
+
+  await H.typeExpr(page, H.editorOf(drawer), 'SUMIF([RP0916加工费.备注数] > 0, [RP0916加工费.加工费])');
+  await H.drawerSave(page, drawer);
+  await H.expectMessage(page, MSG.e18, 'AC-18⑤');
+  await H.shot(page, 'T-B11⑤-3-拒绝提示');
+  await expect(drawer).toBeVisible();
+  await page.reload();
+  expect(await excelColsCount(), '⑤ excelColumns 不新增').toBe(before);
 });

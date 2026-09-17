@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # T-C0（AC-15 前置）：迁移前只读采样。只 SELECT。输出 out-C0/
 source "$(dirname "$0")/common.sh"; guard_db
-O="$S/out-C0"; mkdir -p "$O"
+# 已于 2026-09-17T07:00:02Z 在 cpq_db_rp0916c（当时的 S-C 一次性库，V445、未迁移）上执行过一次，产物即 out-C0/。
+# D-15 后库改为 cpq_db_rp0916d，本脚本不再需要重跑；为防覆盖历史基线，产物已存在时拒绝执行。
+O="$S/out-C0"; [ -f "$O/基线.txt" ] && { echo "out-C0 基线已存在，不覆盖"; exit 0; }; mkdir -p "$O"
 {
 echo "采样时刻(UTC)=$(now)"
 echo "flyway 最新 3 条:"; q "select version,description,success,installed_on from flyway_schema_history order by installed_rank desc limit 3"

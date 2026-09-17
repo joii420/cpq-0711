@@ -1176,7 +1176,7 @@ describe('expressionToTokens / 回显 — 页签名称(componentName)作公式�
     expect(t[0]).toMatchObject({ type: 'cross_tab_ref', source: 'uuid-rl', target: '用量' });
   });
   it('用名称解析小计 [回料.金额] → component_subtotal(component_code 仍存 alias，后端不变)', () => {
-    const t = expressionToTokens('[回料.金额]', allTabs, selfRKF);
+    const t = expressionToTokens('[回料.金额(小计)]', allTabs, selfRKF);
     expect(t[0]).toMatchObject({ type: 'component_subtotal', component_code: 'COMP_RL', value: '金额' });
   });
   it('用名称解析整页签总计 [回料(总计)] → component_subtotal(BL-0017 金额哨兵键)', () => {
@@ -1193,7 +1193,7 @@ describe('expressionToTokens / 回显 — 页签名称(componentName)作公式�
     const tokens: FormulaToken[] = [
       { type: 'component_subtotal', value: '金额', tab_name: '金额', component_code: 'COMP_RL', label: '回料·金额' },
     ];
-    expect(tokensToDrawerExpression(tokens, allTabs)).toBe('[回料.金额]');
+    expect(tokensToDrawerExpression(tokens, allTabs)).toBe('[回料.金额(小计)]');
   });
   it('回显 SUM 聚合用名称 → SUM([回料.金额])', () => {
     const tokens: FormulaToken[] = [
@@ -1220,7 +1220,7 @@ describe('classifyRefSegment', () => {
     expect(classifyRefSegment('不存在(总计)', allTabs, self, true).color).toBe('red');
   });
   it('小计列 [回料.金额](金额∈subtotalCols) → yellow', () => {
-    expect(classifyRefSegment('回料.金额', allTabs, self, true)).toEqual({ kind: 'subtotal', color: 'yellow' });
+    expect(classifyRefSegment('回料.金额(小计)', allTabs, self, true)).toEqual({ kind: 'subtotal', color: 'yellow' });
   });
   it('可比明细 [回料.用量](用量∈detailFields,可比) → blue', () => {
     expect(classifyRefSegment('回料.用量', allTabs, self, true)).toEqual({ kind: 'detail', color: 'blue' });
@@ -1249,8 +1249,8 @@ describe('parseFormulaSegments', () => {
   const self = ['料号'];
 
   it('混合串切分顺序:SUM([投料.金额] * [回料.用量])', () => {
-    const segs = parseFormulaSegments('SUM([投料.金额] * [回料.用量])', allTabs, self, true);
-    expect(segs.map((s) => s.raw)).toEqual(['SUM(', '[投料.金额]', ' * ', '[回料.用量]', ')']);
+    const segs = parseFormulaSegments('SUM([投料.金额(小计)] * [回料.用量])', allTabs, self, true);
+    expect(segs.map((s) => s.raw)).toEqual(['SUM(', '[投料.金额(小计)]', ' * ', '[回料.用量]', ')']);
     expect(segs.map((s) => s.isBlock)).toEqual([false, true, false, true, false]);
     expect(segs[1].color).toBe('yellow'); // 投料.金额∈subtotalCols
     expect(segs[3].color).toBe('blue');   // 回料.用量∈detailFields 可比
@@ -1274,7 +1274,7 @@ describe('parseFormulaSegments', () => {
   });
 
   it('整体空格 [ 投料.金额 ]:整 body trim 后判色(金额∈subtotalCols → yellow)', () => {
-    const segs = parseFormulaSegments('[ 投料.金额 ]', allTabs, self, true);
+    const segs = parseFormulaSegments('[ 投料.金额(小计) ]', allTabs, self, true);
     expect(segs[0].color).toBe('yellow');
   });
 
@@ -1317,7 +1317,7 @@ describe('classifyRefSegment — 宿主自身字段(紫)', () => {
   });
   it('宿主小计列 [宿主组件.金额小计] → yellow(小计优先于 self)', () => {
     expect(classifyRefSegment('宿主组件.金额小计', tabs, self, true))
-      .toEqual({ kind: 'subtotal', color: 'yellow' });
+      .toEqual({ kind: 'self-field', color: 'purple' });
   });
   it('宿主自聚合 [宿主组件.组成用量(总计)] → red(本期不支持)', () => {
     expect(classifyRefSegment('宿主组件.组成用量(总计)', tabs, self, true).color).toBe('red');
@@ -2259,7 +2259,7 @@ describe('E1 — 同组件小计列引用应取同行值(field), 跨组件小计
         subtotalCols: ['费用小计'],
       },
     ];
-    const tokens = expressionToTokens('[他.费用小计]', tabs2, ['料件'], 'CID-self');
+    const tokens = expressionToTokens('[他.费用小计(小计)]', tabs2, ['料件'], 'CID-self');
     expect(tokens.some((t) => t.type === 'component_subtotal')).toBe(true);
     expect(tokens.some((t) => t.type === 'field')).toBe(false);
   });
@@ -2272,7 +2272,7 @@ describe('WYSIWYG: 整页签总计 [页签(总计)] 与小计列 [页签.列] �
   const normalise = (s: string) => s.replace(/\s+/g, ' ').trim();
   it('[COMP_RL(总计)] 与 [COMP_RL.金额] 解析出 token 可区分（哨兵键 + is_tab_total）', () => {
     const totalTok = expressionToTokens('[COMP_RL(总计)]', allTabs, selfRKF)[0];
-    const colTok = expressionToTokens('[COMP_RL.金额]', allTabs, selfRKF)[0];
+    const colTok = expressionToTokens('[COMP_RL.金额(小计)]', allTabs, selfRKF)[0];
     // BL-0017: 整页签总计指向金额哨兵键 + 标记；列引用指向具体列名、无标记 —— 双重可区分。
     expect(totalTok).toMatchObject({ type: 'component_subtotal', value: '__amount_total__', is_tab_total: true });
     expect(colTok.type).toBe('component_subtotal');
@@ -2304,10 +2304,10 @@ describe('WYSIWYG: 整页签总计 [页签(总计)] 与小计列 [页签.列] �
       expressionToTokens('[COMP_RL(总计)]', allTabs, selfRKF), allTabs,
     );
     const colBack = tokensToDrawerExpression(
-      expressionToTokens('[COMP_RL.金额]', allTabs, selfRKF), allTabs,
+      expressionToTokens('[COMP_RL.金额(小计)]', allTabs, selfRKF), allTabs,
     );
     expect(normalise(totalBack)).toBe(normalise('[回料(总计)]'));
-    expect(normalise(colBack)).toBe(normalise('[回料.金额]'));
+    expect(normalise(colBack)).toBe(normalise('[回料.金额(小计)]'));
   });
 
   it('is_tab_total 标记不影响求值：带标记与不带标记的 token 求值结果一致（计算不变佐证）', () => {

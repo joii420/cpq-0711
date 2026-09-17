@@ -14,6 +14,7 @@ import {
   checkMappable,
   containsTreeToken,
   validateTreeRefWhitelist,
+  validateExcelTabJoinExpression,
 } from '../component/formulaSerialize';
 import type { FormulaToken } from '../component/types';
 import { checkParenBalance } from './tabjoin/formulaBracketCheck';
@@ -473,6 +474,13 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
       }
       if (!parenCheck.ok) {
         message.error(parenCheck.error);
+        return;
+      }
+      // repair-260916 F-11（D-9 / D-11）：按 问题说明 5.1 拦截非法 (小计) 写法与 SUMIF 类函数，
+      // 被拒时不调 onSave（excelColumns 不变）。
+      const excelError = validateExcelTabJoinExpression(expr, tabDefs, componentId);
+      if (excelError) {
+        message.error(excelError);
         return;
       }
       const col = buildColumn(expr);

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# 临时前后端（只用 8293 / 5293，只连 cpq_db_rp0916c）。
+# 临时前后端（只用 8293 / 5293，只连 cpq_db_rp0916d）。
 # 用法：
-#   stack.sh start-backend <branch|master> [migrate=true|false]   # master 必须 migrate=false
+#   stack.sh start-backend <branch|master>        # 本分支已无迁移（D-15），两棵树都以 migrate-at-start=false 启动
 #   stack.sh start-vite    <branch|master>
 #   stack.sh stop                                                 # 按记录的 PID 停掉本脚本起的进程
 #   stack.sh status
 # master 树：默认 /home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab（主线提供，detached@d04ff40f；只起服务跑测试，不改文件）
 source "$(dirname "$0")/common.sh"
-RUN=/tmp/rp0916c-sc; mkdir -p "$RUN"; LOGD="$S/out-stack"; mkdir -p "$LOGD"
+RUN=/tmp/rp0916d-sc; mkdir -p "$RUN"; LOGD="$S/out-stack"; mkdir -p "$LOGD"
 root_of() { case "$1" in branch) echo "$WT";; master) echo "${MASTER_WT:-/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab}";; *) exit 2;; esac; }
 port_busy() { ss -ltn "sport = :$1" | grep -q LISTEN; }
 listener_pid() { ss -ltnp "sport = :$1" | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2; }
@@ -15,16 +15,15 @@ wait_code() { # url expected timeout
   for i in $(seq 1 "$3"); do c=$(curl -s --noproxy '*' -o /dev/null -w '%{http_code}' "$1"); [ "$c" = "$2" ] && return 0; sleep 2; done; return 1; }
 case "${1:-}" in
 start-backend)
-  who=$2; mig=${3:-false}; [ "$who" = master ] && mig=false
+  who=$2
   guard_db
   port_busy $BE_PORT && { echo "8293 已被占用，停止（pid=$(listener_pid $BE_PORT)）"; exit 3; }
-  R=$(root_of "$who"); APP="rp0916c-SC-$who-$(date +%s)"
+  R=$(root_of "$who"); APP="rp0916d-SC-$who-$(date +%s)"
   URL="jdbc:postgresql://$DBHOST:5432/$DBNAME?ApplicationName=$APP"
   # 同一 URL 以无 profile 与 %dev 两种键同时给出，防止 application.properties 里的 %dev 值优先生效连到共享库
   ARGS=(-Dquarkus.http.port=$BE_PORT -Ddebug=false
         "-Dquarkus.datasource.jdbc.url=$URL" "-D%dev.quarkus.datasource.jdbc.url=$URL"
         "-Dquarkus.flyway.migrate-at-start=false" "-D%dev.quarkus.flyway.migrate-at-start=false")
-  [ "$who" = master ] && ARGS+=("-Dquarkus.flyway.validate-on-migrate=false" "-D%dev.quarkus.flyway.validate-on-migrate=false")
   boot() {
     ( cd "$R/cpq-backend" && DB_NAME=$DBNAME QUARKUS_DATASOURCE_JDBC_URL="$URL" setsid nohup ./mvnw -q quarkus:dev "${ARGS[@]}" "$@" > "$LOGD/backend-$who.log" 2>&1 & echo $! > "$RUN/backend.pid" )
     sleep 3; echo "[stack] $(now) backend($who) pgid=$(cat $RUN/backend.pid) root=$R"
@@ -39,13 +38,8 @@ start-backend)
     [ "$bad" = 0 ] && [ "$good" -ge 1 ] || { echo "连库身份不符 good=$good bad=$bad，停止"; "$0" stop; exit 6; }
     echo "[stack] 连库身份 OK（$good 条连接，全部在 $DBNAME）"
   }
-  boot   # 第一次：不跑迁移，先验明正身
-  if [ "$mig" = true ]; then
-    "$0" stop; sleep 3
-    ARGS=("${ARGS[@]/migrate-at-start=false/migrate-at-start=true}")
-    boot
-    q "select version,description,success from flyway_schema_history order by installed_rank desc limit 3" | tee -a "$LOGD/identity-$who.txt"
-  fi
+  boot
+  q "select max(version::int) from flyway_schema_history where version ~ '^[0-9]+$'" | sed 's/^/[stack] 库内 flyway 最高版本=/' | tee -a "$LOGD/identity-$who.txt"
   # 一次性库内解锁 admin（与 global-setup 对 0724 的动作同构，只作用于本库）
   q "UPDATE \"user\" SET locked_until=NULL, failed_login_attempts=0, is_first_login=false WHERE username='admin'" ;;
 start-vite)

@@ -11,12 +11,12 @@ export const pass = (m) => console.log('✅ PASS:', m);
 export const fail = (m) => { FAILS++; console.log('❌ FAIL:', m); };
 export const check = (ok, m) => (ok ? pass(m) : fail(m));
 export function sql(q) {
-  return execFileSync('psql', ['-h', '10.177.152.12', '-U', 'postgres', '-d', 'cpq_db_rp0916c', '-v', 'ON_ERROR_STOP=1', '-At', '-F', '|', '-c', q],
+  return execFileSync('psql', ['-h', '10.177.152.12', '-U', 'postgres', '-d', 'cpq_db_rp0916d', '-v', 'ON_ERROR_STOP=1', '-At', '-F', '|', '-c', q],
     { env: { ...process.env, PGPASSWORD: 'joii5231' }, encoding: 'utf-8' }).trim();
 }
 export function guardDb() {
   const c = sql("SELECT shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database()");
-  if (!c.startsWith('repair-260916-subtotal-suffix 一次性库')) throw new Error('库身份不符: ' + c);
+  if (!c.startsWith('repair-260916-subtotal-suffix 一次性库（第二个')) throw new Error('库身份不符: ' + c);
   console.log('[guard] 库身份 OK', new Date().toISOString());
 }
 export async function login() {

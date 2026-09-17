@@ -70,14 +70,15 @@ class TabJoinExcelSharedFixtureTest {
     }
 
     @Test
-    void fixtureIsNonEmptyAndCoversAc14aToE() throws Exception {
+    void fixtureIsNonEmptyAndCoversAc14aToEAndG() throws Exception {
         JsonNode fx = fixture();
         assertTrue(fx.get("tabs").size() >= 1);
         JsonNode first = fx.get("tabs").get(0);
         assertEquals(6, first.get("rows").size(), "物料 must carry the 6 real rows of QT-20260916-0881");
         Set<String> ids = new HashSet<>();
         fx.get("cases").forEach(c -> ids.add(c.get("id").asText()));
-        for (String id : List.of("AC-14a", "AC-14b", "AC-14c", "AC-14d", "AC-14e")) {
+        for (String id : List.of("AC-14a", "AC-14b", "AC-14c", "AC-14d", "AC-14e",
+                "AC-14g-1-subtotal-div-decimal-literal", "AC-14g-2-detail-div-decimal-literal")) {
             assertTrue(ids.contains(id), "missing case " + id);
         }
         // AC-14 前置: 物料「材料成本」6 行真实值

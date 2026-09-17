@@ -10,6 +10,7 @@ import {
   classifyRefSegment,
   parseFormulaSegments,
   checkMappable,
+  validateExcelTabJoinExpression,
   type TabDef,
 } from './formulaSerialize';
 import type { FormulaToken } from './types';
@@ -140,15 +141,13 @@ describe('F-1 报错文案（问题说明 5.1，逐字）', () => {
 });
 
 describe('F-1 行级函数表达式', () => {
-  it('行级表达式内的 (小计) → component_subtotal，可保存，回显逐字不变', () => {
-    const expr = 'SUM([RP0916加工费.备注数] * [RP0916宿主.数量] * [RP0916加工费.加工费(小计)])';
+  it('AC-6b（D-8 修订）SUM([加工费.备注数] * [加工费.加工费(小计)]) → 可保存，备注数为来源列、加工费(小计)为 component_subtotal，往返不变', () => {
+    const expr = 'SUM([RP0916加工费.备注数] * [RP0916加工费.加工费(小计)])';
     const t = parse(expr);
     expect(t).toHaveLength(1);
     expect(t[0]).toMatchObject({ type: 'cross_tab_ref', source: 'cid-fee', agg: 'SUM', match: MATCH });
     expect(t[0].targetExpr).toEqual([
       { type: 'field', value: '备注数', source: 'cid-fee' },
-      { type: 'operator', value: '*' },
-      { type: 'b_field', value: '数量' },
       { type: 'operator', value: '*' },
       {
         type: 'component_subtotal', value: '加工费',
@@ -160,13 +159,9 @@ describe('F-1 行级函数表达式', () => {
     expect(parse(tokensToDrawerExpression(t, DEFS, SELF))).toEqual(t);
   });
 
-  // ⚠ AC-6b 原文 SUM([RP0916宿主.数量] * [RP0916加工费.加工费(小计)]) 要求「保存成功」，
-  //   但 SUM 内只有本页签列 + 整列小计、没有任何来源页签明细列 —— 现行规则（改动前即如此，
-  //   已用基线 HEAD 实跑确认）拒绝：「SUM() 行级聚合必须引用至少一个细页签明细列」。
-  //   这是 AC 与现行规则的冲突，已报主线裁决；此处固定「当前行为」，裁决后按结论改。
-  it('[待主线裁决] AC-6b 原文当前被拒（与改动前同一报错）', () => {
+  it('AC-6b 另：原写法 SUM([宿主.数量] * [加工费.加工费(小计)]) 仍按现行规则被拒（文案与改动前相同）', () => {
     expect(() => parse('SUM([RP0916宿主.数量] * [RP0916加工费.加工费(小计)])'))
-      .toThrow('SUM() 行级聚合必须引用至少一个细页签明细列 [页签别名.字段]');
+      .toThrow(new Error('SUM() 行级聚合必须引用至少一个细页签明细列 [页签别名.字段]'));
   });
 
   it('行级表达式里不带后缀的小计列 → 来源页签列 field（不再是整列小计）', () => {
@@ -284,5 +279,66 @@ describe('F-3 着色（AC-1~AC-3 / AC-5 / AC-8 / AC-10）', () => {
     expect(classifyRefSegment('RP0916加工费.加工费(小计)', DEFS, undefined, false).color).toBe('yellow');
     expect(classifyRefSegment('RP0916加工费.备注数(小计)', DEFS, undefined, false).color).toBe('red');
     expect(classifyRefSegment('RP0916加工费.备注数', DEFS, undefined, false).color).toBe('blue');
+  });
+});
+
+describe('F-11 Excel 组件连表公式列保存校验（AC-18④⑤，问题说明 5.1 末尾）', () => {
+  // Excel 组件自身不是页签：tabDefs 里没有 self 卡片（与原型状态 E 一致）
+  const EXCEL_DEFS = [FEE, PROC];
+  const check = (expr: string) => validateExcelTabJoinExpression(expr, EXCEL_DEFS, 'cid-excel');
+
+  it('合法写法 → null（小计 / 明细 / 页签合计 / 函数 / 行级函数内小计 / 取模比较 都不拦）', () => {
+    for (const expr of [
+      '[RP0916加工费.加工费(小计)]',
+      '[RP0916加工费.备注数]',
+      '[RP0916加工费.加工费]',
+      '[RP0916加工费(总计)]',
+      'SUM([RP0916加工费.备注数])',
+      'SUM([RP0916加工费.备注数] * [RP0916加工费.加工费(小计)])',
+      '[RP0916加工费.备注数] / 1.13 + [RP0916工序.工时] % 2',
+      '([RP0916加工费.备注数] > 0) * [RP0916加工费.加工费(小计)]',
+      'SUM(([RP0916加工费.加工费(小计)]))',
+    ]) {
+      expect(check(expr), expr).toBeNull();
+    }
+  });
+
+  it('AC-18④ 未勾小计的列写 (小计) → 5.1 文案逐字', () => {
+    expect(check('[RP0916加工费.备注数(小计)]'))
+      .toBe('页签「RP0916加工费」的列「备注数」没有勾选小计，不能写成「(小计)」');
+  });
+
+  it('没写列名 / 单列函数 / K 系列 → 5.1 文案逐字', () => {
+    expect(check('[RP0916加工费(小计)] * 2'))
+      .toBe('「(小计)」要写在列名后面，如 [页签.列(小计)]；整页签合计请写 [页签(总计)]');
+    expect(check('SUM( [RP0916加工费.加工费(小计)] ) + 1'))
+      .toBe('SUM() 里不能再对小计求和：[RP0916加工费.加工费(小计)] 已是整列小计');
+    expect(check('max([RP0916加工费.加工费(小计)])'))
+      .toBe('MAX() 里不能再对小计求和：[RP0916加工费.加工费(小计)] 已是整列小计');
+    expect(check('SUM(KSUM([RP0916加工费.加工费(小计)]))'))
+      .toBe('KSUM() 内不支持 (小计) 小计引用 [RP0916加工费.加工费(小计)]，请引用明细字段或把小计放到外层');
+  });
+
+  it('本页签（tabDefs 标了 self）的 (小计) → 5.1 文案逐字', () => {
+    expect(validateExcelTabJoinExpression('[RP0916宿主.数量(小计)]', DEFS, 'cid-excel'))
+      .toBe('不能引用本页签自身的小计：[RP0916宿主.数量(小计)]');
+  });
+
+  it('未知页签的 (小计) → 沿用现有未知页签报错', () => {
+    expect(check('[不存在.加工费(小计)]')).toMatch(/未知页签 "不存在"/);
+  });
+
+  it('AC-18⑤ SUMIF 类函数（任意大小写、含空格）→ 专用文案；方括号内同名文字不算', () => {
+    const msg = 'Excel 列暂不支持 SUMIF 类函数（SUMIF / COUNTIF / AVGIF / MINIF / MAXIF）';
+    expect(check('SUMIF([RP0916加工费.备注数] > 0, [RP0916加工费.加工费])')).toBe(msg);
+    for (const fn of ['COUNTIF', 'avgif', 'MinIf', 'MAXIF']) {
+      expect(check(`1 + ${fn} ([RP0916加工费.备注数] > 0, [RP0916加工费.加工费])`), fn).toBe(msg);
+    }
+    expect(check('[RP0916加工费.备注数] + {SUMIF(x)}')).toBeNull();
+  });
+
+  it('SUMIF 优先于 (小计) 判定：同时出现时报 SUMIF 文案', () => {
+    expect(check('SUMIF([RP0916加工费.备注数] > 0, [RP0916加工费.加工费(小计)])'))
+      .toBe('Excel 列暂不支持 SUMIF 类函数（SUMIF / COUNTIF / AVGIF / MINIF / MAXIF）');
   });
 });

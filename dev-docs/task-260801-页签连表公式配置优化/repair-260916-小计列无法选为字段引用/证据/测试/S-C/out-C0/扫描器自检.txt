@@ -1,4 +1,0 @@
-扫描器 scan_s_c.py 自检（2026-09-17T07:0xZ，离线，输入 = out-C0/comps-before.jsonl 的 /tmp 副本）
-1) 阳性对照：迁移前基线 → RESULT bare_subtotal_refs=3（COMP-2269 col_1 / COMP-0011 col_1 / col_2），与 证据/离线判决/scan-输出-260916.txt 三条逐一相同
-2) 模拟迁移后（三处加 (小计)）→ bare_subtotal_refs=0 suffix_ok=3
-3) 证伪：把 COMP-0011 col_1 改为 [物料.单位(小计)]（单位非小计列）→ suffix_on_non_subtotal=1，能抓到

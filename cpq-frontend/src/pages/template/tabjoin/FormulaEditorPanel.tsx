@@ -141,20 +141,17 @@ const FormulaEditorPanel: React.FC<Props> = ({
         onClick: () => onInsert(`${fn}()`, 1),
       })),
     },
-    {
+    // repair-260916 F-12（D-9）：Excel 列暂不支持 SUMIF 类函数（保存时拦截），故对 EXCEL 不渲染本组；
+    // 页签组件 / 小计组件不变。
+    ...(componentType === 'EXCEL' ? [] : [{
       title: '条件聚合',
       items: SUMIF_TEXT_FUNCS.map(fn => ({
         label: fn,
-        title: componentType === 'EXCEL'
-          ? `${fn}(条件, 取值表达式)，如 ${fn}([页签.类型]='管理费', [页签.金额])`
-          : `点击展开下方「条件聚合」构造器配置 ${fn}（条件过滤后按行键聚合）`,
+        title: `点击展开下方「条件聚合」构造器配置 ${fn}（条件过滤后按行键聚合）`,
         style: { color: '#722ed1', borderColor: '#d3adf7' },
-        onClick: () => {
-          if (componentType === 'EXCEL') onInsert(`${fn}()`, 1);
-          else onOpenSumif(fn);
-        },
+        onClick: () => onOpenSumif(fn),
       })),
-    },
+    }]),
     ...(componentType === 'EXCEL' ? [] : [{
       title: '父子取值',
       // 2026-08-04：树属性 [层级]/[是否叶子]/[是否根] 的按钮已移除——它们的用途是当判据，

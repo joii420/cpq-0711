@@ -134,8 +134,35 @@ describe('口径细节', () => {
   it('除数为 0 → 被除数（SafeArithmetic），不是 0', () => {
     expect(one('[物料.材料成本(小计)] / 0')).toBe('1.978941064');
   });
-  it('除以不带 B 的小数字面量 → 抛错（后端 PrecisionPolicy.of 拒绝浮点）', () => {
-    expect(() => one('[物料.材料成本(小计)] / 1.13')).toThrow(/floating point/);
+  it('D-10：除以不带 B 的小数字面量按十进制文本相除，不再抛错（被除数为小数字面量同样）', () => {
+    expect(one('[物料.材料成本(小计)] / 1.13')).toBe('1.751275277876');
+    expect(one('1.13 / 10')).toBe('0.113');
+    expect(one('[物料.材料成本(小计)] / 0.0')).toBe('1.978941064');
+  });
+  it('取模 %：余数符号随被除数；除数为 0 → 0；与 * 同优先级', () => {
+    expect(one('7 % 2')).toBe('1');
+    expect(one('-7 % 2')).toBe('-1');
+    // 顶层 +/- 拆项不识别一元负号（与后端 splitTerms 相同）：`7 % -2` 被拆成「7 %」与「2」→ 语法错误
+    expect(() => one('7 % -2')).toThrow(/parsing error/);
+    expect(one('7 % (-2)')).toBe('1');
+    expect(one('7.5 % 2')).toBe('1.5');
+    expect(one('[物料.材料成本(小计)] % 1')).toBe('0.978941064');
+    expect(one('[物料.材料成本(小计)] % 0')).toBe('0');
+    expect(one('2 * 3 % 4')).toBe('2');
+  });
+  it('比较运算：单行结果为布尔 → 按 0；参与加减乘时按 1 / 0；不可连写', () => {
+    expect(one('[物料(总计)] > 1')).toBe('0');
+    expect(one('([物料(总计)] > 1) * 5')).toBe('5');
+    expect(one('([物料(总计)] < 1) * 5 + 2')).toBe('2');
+    expect(one('([物料.材料成本(小计)] == 1.978941064) * 3')).toBe('3');
+    expect(one('(0.1 + 0.2 == 0.3) * 1')).toBe('0'); // 双精度比较，与后端一致
+    expect(one('(0.30000000000000004B == 0.3) * 1')).toBe('1'); // 含 BigDecimal → 先按 12 位舍入再比
+    expect(() => one('(1 < 2 < 3) * 1')).toThrow(/parsing error/);
+    expect(() => one('1 = 1')).toThrow(/parsing error/);
+  });
+  it('比较运算逐行求值：明细项里每行比较结果（布尔）按 1 / 0 相加', () => {
+    // X 六行中大于 0 的有 2 行
+    expect(one('([物料.X] > 0) * 1')).toBe('2');
   });
   it('AVG 按对齐行（全外连）计数：物料 6 行', () => {
     expect(one('COUNT([物料.X])')).toBe('6');

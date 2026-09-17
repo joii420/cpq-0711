@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # T-C6（AC-17）结案全量。分阶段执行，每阶段独立出结果，最后 report 汇总成 A/B 表。
-#   T-C6 static                # tsc -b + 本任务前端测试 + 本任务后端测试(一次性库)
-#   T-C6 e2e branch            # 分支栈(5293→8293 分支后端)：S-B spec 复跑、tabjoin-formula-drawer、quotation-flow、本片 spec
-#   T-C6 e2e master            # master 栈(5293 master vite → 8293 master 后端，均连一次性库)：tabjoin-formula-drawer、quotation-flow
+#   T-C6 static                # tsc -b + 本任务前端测试 + 本任务后端测试(一次性库 cpq_db_rp0916d) + 本任务无迁移
+#   T-C6 e2e branch            # 分支栈(5293→8293 分支后端)：S-B spec 复跑、本片 spec(label=branch)、tabjoin-formula-drawer、quotation-flow
+#   T-C6 e2e master            # master 栈(5293 master vite → 8293 master 后端，均连一次性库)：本片 spec(label=master，客户端在本分支树)、tabjoin-formula-drawer、quotation-flow
 #   T-C6 report                # 输出 A/B 对照表 out-C6/AB对照.md
-# 栈的起停用 stack.sh（branch: start-backend branch true + start-vite branch；master: start-backend master + start-vite master）。
+# 栈的起停用 stack.sh（branch: start-backend branch + start-vite branch；master: start-backend master + start-vite master）。
 # 需主线提供：SB_CMD（S-B 复跑命令，在 cpq-frontend 下执行）、BE_TEST_CLASS（可选覆盖）。master 树默认 repair-260916-master-ab。
-# 分支阶段的本片 spec 含 AC-16⑤，须在 T-C5 run 之后跑。
+# 本片 spec 的 AC-16⑤ 依赖 T-C5 run 建的 RP0916C-导入v10 目录，须在 T-C5 run 之后跑。
 # 含 Playwright 的阶段开跑前必须 pgrep 采样无其他 playwright 进程，并记录采样时刻。
 source "$(dirname "$0")/common.sh"; guard_wt; guard_db
 O="$S/out-C6"; mkdir -p "$O"; FAILS=0
@@ -36,6 +36,7 @@ static)
   grep -Eq 'Tests +[1-9][0-9]* passed' "$O/vitest.txt" || fail "vitest 无通过用例"
   BE=$(cd "$WT" && { git diff --name-only master -- 'cpq-backend/src/test/java/**'; git ls-files --others --exclude-standard -- 'cpq-backend/src/test/java/**'; } | grep -E 'Test\.java$' | sort -u | xargs -r -n1 basename | sed 's/\.java$//' | paste -sd, -)
   BE=${BE_TEST_CLASS:-$BE}
+  case ",$BE," in *TabJoinExcelSharedFixtureTest*) :;; *) BE="$BE,com.cpq.quotation.service.tabjoin.TabJoinExcelSharedFixtureTest";; esac
   echo "本任务后端测试类: $BE" | tee "$O/be-classes.txt"
   [ -n "$BE" ] || fail "未识别到本任务后端测试类"
   if pgrep -af "java.*$WT/cpq-backend" | grep -v pgrep; then fail "worktree 内已有 java 进程（含临时后端 quarkus:dev 会改写 target/），先 stack.sh stop"; else
@@ -43,20 +44,20 @@ static)
     DB_NAME=$DBNAME ./mvnw test -Dtest="$BE" -Dsurefire.failIfNoSpecifiedTests=true -Dquarkus.http.test-port=0 > "$O/mvn.txt" 2>&1; rc=$?
     grep -E 'Tests run:|BUILD|ERROR' "$O/mvn.txt" | tail -15
     [ $rc -eq 0 ] && pass "mvn 本任务测试 rc=0" || fail "mvn rc=$rc"
-    for c in ${BE//,/ }; do f=$(ls target/surefire-reports/TEST-*."$c".xml 2>/dev/null | head -1)
+    for c in ${BE//,/ }; do c=${c##*.}; f=$(ls target/surefire-reports/TEST-*."$c".xml 2>/dev/null | head -1)
       [ -n "$f" ] && [ "$(stat -c %Y "$f")" -ge "$START" ] && echo "  $c: $(grep -o 'tests="[0-9]*"[^>]*failures="[0-9]*"' "$f" | head -1)" || fail "$c 无本轮 surefire 报告"; done
-    n=$(psql -h $DBHOST -U postgres -d cpq_db_test -At -c "select count(*) from flyway_schema_history where description ilike '%repair260916%subtotal%'")
-    [ "$n" = 0 ] && pass "cpq_db_test 未落本任务迁移" || fail "cpq_db_test 出现本任务迁移（越界）"
   fi
-  r=$(q "select success from flyway_schema_history where description ilike '%repair260916%subtotal%'"); [ "$r" = t ] && pass "迁移 success=t（一次性库）" || fail "迁移记录 '$r'"
+  m=$(git -C "$WT" diff --name-only master...HEAD -- cpq-backend/src/main/resources/db/migration; git -C "$WT" status --porcelain -- cpq-backend/src/main/resources/db/migration)
+  [ -z "$m" ] && pass "本任务无迁移（AC-15①同口径）" || fail "存在迁移改动: $m"
+  c=$(curl -s --noproxy '*' -o /dev/null -w '%{http_code}' http://localhost:8293/api/cpq/components); echo "[自检] 8293 业务端点=$c（分支栈在跑时应 401；未起栈则记为未验证）"
   echo "RESULT FAILS=$FAILS" | tee "$O/static-result.txt" ;;
 e2e)
   who=${2:?branch|master}; pw_guard
   if [ "$who" = branch ]; then
     TREE=$WT
     if [ -n "${SB_CMD:-}" ]; then ( cd "$WT/cpq-frontend" && eval "$SB_CMD" ) > "$O/sb-rerun.log" 2>&1; echo "[S-B 复跑] rc=$? → sb-rerun.log"; else echo "[S-B 复跑] 未提供 SB_CMD，未验证" | tee "$O/sb-rerun.log"; fi
-    ( cd "$WT/cpq-frontend" && PW_BASE_URL=http://localhost:5293 PW_BACKEND_URL=http://localhost:8293 npx playwright test -c e2e/repair260916-sc.config.ts ) > "$O/sc-spec.log" 2>&1; echo "[S-C spec] rc=$?"
   else TREE=${MASTER_WT:-/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab}; fi
+  ( cd "$WT/cpq-frontend" && RP_SC_AB_LABEL=$who PW_BASE_URL=http://localhost:5293 PW_BACKEND_URL=http://localhost:8293 npx playwright test -c e2e/repair260916-sc.config.ts ) > "$O/sc-spec-$who.log" 2>&1; echo "[S-C spec/$who] rc=$? → sc-spec-$who.log"
   pw_json "$TREE" "$who" e2e/tabjoin-formula-drawer.spec.ts
   pw_json "$TREE" "$who" e2e/quotation-flow.spec.ts ;;
 report)

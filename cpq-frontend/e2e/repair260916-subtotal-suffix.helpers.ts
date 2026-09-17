@@ -121,13 +121,13 @@ async function createComponent(name: string, componentType: 'NORMAL' | 'SUBTOTAL
   return { id: d.id, code: d.code, name: d.name };
 }
 
-async function putComponent(c: Fx, patch: { fields: any[]; rowKeyFields: string[] | null; componentType: string }) {
+async function putComponent(c: Fx, patch: { fields: any[]; rowKeyFields: string[] | null; componentType: string; formulas?: any[] }) {
   const { data } = await getComponent(c.id);
   const body = {
     name: data.name, code: data.code, status: data.status ?? 'ACTIVE',
     componentType: patch.componentType,
     dataDriverPath: data.dataDriverPath ?? '',
-    fields: patch.fields, formulas: data.formulas ?? [],
+    fields: patch.fields, formulas: patch.formulas ?? data.formulas ?? [],
     rowKeyFields: patch.rowKeyFields,
     excelColumns: data.excelColumns ?? [],
   };
@@ -176,10 +176,14 @@ export async function setupFixtures() {
   console.log(`[S-B][fixture] 目录 ${DIR_NAME} = ${fx.dirId}`);
 
   fx.host = await createComponent(N.host, 'NORMAL');
+  // 后端要求公式字段显式绑定公式（400「以下公式字段未绑定公式…BL-0098」）⇒ 预置一条最简公式「成本公式 = 数量」
+  const costFormulaId = `f-${Date.now()}-rp0916b`;
+  const cost = { ...field('成本', 'FORMULA', 3, true), formula_id: costFormulaId, formula_name: '成本公式' };
   await putComponent(fx.host, {
     componentType: 'NORMAL', rowKeyFields: ['销售料号', '料号'],
     fields: [field('销售料号', 'INPUT_TEXT', 0), field('料号', 'INPUT_TEXT', 1),
-      field('数量', 'INPUT_NUMBER', 2), field('成本', 'FORMULA', 3, true)], // 6.1 修订：成本勾小计（让 AC-7① 有判别力）
+      field('数量', 'INPUT_NUMBER', 2), cost], // 6.1 修订：成本勾小计（让 AC-7① 有判别力）
+    formulas: [{ id: costFormulaId, name: '成本公式', expression: [{ type: 'field', value: '数量' }], result_type: 'NUMBER' }],
   });
   fx.fee = await createComponent(N.fee, 'NORMAL');
   await putComponent(fx.fee, {
@@ -235,31 +239,46 @@ export async function openComponent(page: Page, c: Fx) {
   await expect(search).toBeVisible({ timeout: 20_000 });
   await search.fill(c.code);
   await page.waitForTimeout(700);
-  // 只展开本片目录（名字带「📁 」前缀，精确匹配；已展开的不再点）
+  // 只展开本片目录（名字带「📁 」前缀，精确匹配；已展开的不再点）。
+  // 目录树异步加载（run1 实测刷新后 700ms 内偶发未就绪）⇒ 轮询到出现为止，最多 20s。
   const dirs = page.locator('.cmm-dir');
-  const n = await dirs.count();
-  let found = false;
-  for (let i = 0; i < n; i++) {
-    const d = dirs.nth(i);
-    const name = ((await d.locator('.cmm-dir-name').first().innerText().catch(() => '')) || '')
-      .replace(/^📁\s*/, '').trim();
-    if (name !== DIR_NAME) continue;
-    found = true;
-    if (!(await d.evaluate((el) => el.classList.contains('open')))) {
-      await d.locator('.cmm-dir-head').first().click();
-      await page.waitForTimeout(300);
+  let target: Locator | null = null;
+  const deadline = Date.now() + 20_000;
+  while (!target && Date.now() < deadline) {
+    const n = await dirs.count();
+    for (let i = 0; i < n; i++) {
+      const d = dirs.nth(i);
+      const name = ((await d.locator('.cmm-dir-name').first().innerText().catch(() => '')) || '')
+        .replace(/^📁\s*/, '').trim();
+      if (name === DIR_NAME) { target = d; break; }
     }
+    if (!target) await page.waitForTimeout(500);
   }
-  expect(found, `组件页没找到目录「${DIR_NAME}」（入口问题，判【未验证】）`).toBe(true);
+  expect(target, `组件页没找到目录「${DIR_NAME}」（入口问题，判【未验证】）`).not.toBeNull();
+  if (!(await target!.evaluate((el) => el.classList.contains('open')))) {
+    await target!.locator('.cmm-dir-head').first().click();
+    await page.waitForTimeout(300);
+  }
   const card = page.locator('.cmm-card').filter({ hasText: c.code }).first();
   await expect(card, `应能看到组件卡片 ${c.code}`).toBeVisible({ timeout: 10_000 });
   await card.click();
   await page.waitForTimeout(800);
 }
 
+/** 页签组件有「公式」页签；小计组件没有（探测 260917：「添加公式」直接在页面上）。 */
 export async function gotoFormulaTab(page: Page) {
-  await page.getByRole('tab', { name: '公式' }).click();
-  await page.waitForTimeout(300);
+  const tab = page.getByRole('tab', { name: '公式', exact: true });
+  if (await tab.count()) {
+    await tab.first().click();
+    await page.waitForTimeout(300);
+  }
+}
+
+/** 接口里 excelColumns 是 JSON 字符串（探测 260917），统一解析成数组。 */
+export function parseExcelColumns(v: any): any[] {
+  if (Array.isArray(v)) return v;
+  if (typeof v === 'string' && v.trim()) return JSON.parse(v);
+  return [];
 }
 
 /** 公式表的行（含「配置」按钮的行；字段表行在 DOM 中隐藏但仍在，不能直接数 tr）。 */
@@ -295,6 +314,7 @@ export async function openFormulaAt(page: Page, idx: number) {
 async function waitDrawer(page: Page) {
   const drawer = drawerLoc(page);
   await expect(drawer).toBeVisible({ timeout: 10_000 });
+  await page.waitForTimeout(300);
   // 左栏页签卡来自异步 tab-defs，必须等到出现
   await expect.poll(() => leftCards(drawer).count(), { timeout: 15_000, message: '左栏页签卡片未加载' })
     .toBeGreaterThan(0);
@@ -375,7 +395,8 @@ export async function readEditor(editor: Locator): Promise<{ raw: string; displa
         const name = bgToName[cs.backgroundColor];
         if (name) {
           const display = (el.textContent ?? '').replace(/​/g, '').trim();
-          const r = /^\[.*\]$/.test(display) ? display : `[${display.replace('·', '.')}]`;
+          const dr = el.getAttribute('data-raw');
+          const r = dr ?? (/^\[.*\]$/.test(display) ? display : `[${display.replace('·', '.')}]`);
           blocks.push({ display, raw: r, bg: cs.backgroundColor, border: cs.borderTopColor, color: name });
           raw += r;
           return;

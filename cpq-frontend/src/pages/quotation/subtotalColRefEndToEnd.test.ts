@@ -65,7 +65,7 @@ describe('列小计端到端：计算 → 键登记 → SUM 内引用取值', ()
   it('② 序列化产出的 component_code 必须命中已登记的键（键口径对齐护栏）', () => {
     const subs = getComponentSubtotals(lineItem);
     const tokens = expressionToTokens(
-      'SUM([材料成本.元素单价] * [产品.税率])', defs, ['料件'], 'cid-wl',
+      'SUM([材料成本.元素单价] * [产品.税率(小计)])', defs, ['料件'], 'cid-wl',
     );
     const csToken: any = (tokens[0] as any).targetExpr.find(
       (t: any) => t.type === 'component_subtotal',
@@ -80,7 +80,7 @@ describe('列小计端到端：计算 → 键登记 → SUM 内引用取值', ()
   it('③ 端到端求值：SUM 内每行 × 列小计，取到的是 1.13 而非 0', () => {
     const subs = getComponentSubtotals(lineItem);
     const tokens = expressionToTokens(
-      'SUM([材料成本.元素单价] * [产品.税率])', defs, ['料件'], 'cid-wl',
+      'SUM([材料成本.元素单价] * [产品.税率(小计)])', defs, ['料件'], 'cid-wl',
     );
     const crossTabRows = {
       'cid-mc': [
@@ -98,7 +98,7 @@ describe('列小计端到端：计算 → 键登记 → SUM 内引用取值', ()
 
   it('④ 反向护栏：键对不上时结果塌成 0（证明上面的 6.78 确实来自列小计而非巧合）', () => {
     const tokens = expressionToTokens(
-      'SUM([材料成本.元素单价] * [产品.税率])', defs, ['料件'], 'cid-wl',
+      'SUM([材料成本.元素单价] * [产品.税率(小计)])', defs, ['料件'], 'cid-wl',
     );
     const crossTabRows = {
       'cid-mc': [

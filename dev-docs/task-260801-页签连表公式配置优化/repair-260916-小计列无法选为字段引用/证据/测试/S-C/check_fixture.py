@@ -1,7 +1,7 @@
 """T-C1：核对共享夹具 tabjoin-excel-cases.json 的内容是否满足 AC-14 前置与期望值（独立 Decimal 重算，不信夹具里写的 expected）。
 用法: python3 check_fixture.py <fixture.json>   末行 RESULT fails=N"""
 import json, sys, re
-from decimal import Decimal as D, getcontext
+from decimal import Decimal as D, getcontext, ROUND_HALF_UP
 getcontext().prec = 50
 fx = json.load(open(sys.argv[1], encoding='utf-8'))
 fails = 0
@@ -40,6 +40,9 @@ want = {
   'c': (f'[物料.{X}]*2+[物料.材料成本(小计)]', (sx * 2 + D('1.978941064')) if sx is not None else None),
   'd': ('[物料(总计)]', D(str(wl.get('tabTotal'))) if wl.get('tabTotal') not in (None, '', '…') else None),
   'e': (f'SUM([物料.{X}])', sx),
+  # g（D-10）：除以小数，期望 = 精确商按 12 位 HALF_UP（AC 写「按 12 位计算口径」；舍入方式以夹具为准，不等时打印两种候选供主线裁定）
+  'g1': ('[物料.材料成本(小计)]/1.13', (D('1.978941064') / D('1.13')).quantize(D('1e-12'), ROUND_HALF_UP)),
+  'g2': (f'[物料.{X}]/1.13', (sx / D('1.13')).quantize(D('1e-12'), ROUND_HALF_UP) if sx is not None else None),
 }
 for k, (expr, ev) in want.items():
     c = cases.get(norm(expr))
@@ -49,5 +52,8 @@ for k, (expr, ev) in want.items():
     if ev is not None:
         chk(D(str(c.get('expected'))) == ev, f'AC-14{k} 夹具 expected={c.get("expected")} 与独立重算 {ev} 相等')
 chk(wl.get('tabTotal') not in (None, '', '…'), f'物料 tabTotal 已给定（{wl.get("tabTotal")}）')
+for k in ('g1', 'g2'):
+    c = cases.get(norm(want[k][0]))
+    if c: print(f'   {k} 精确商={D("1.978941064" if k == "g1" else str(sx)) / D("1.13")} 夹具={c.get("expected")} 夹具附加字段={ {x: y for x, y in c.items() if x not in ("id", "expression", "expected")} }')
 print('用例总数', len(fx.get('cases', [])), 'ids=', [c.get('id') for c in fx.get('cases', [])])
 print('RESULT fails=%d' % fails)

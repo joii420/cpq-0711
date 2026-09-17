@@ -1,0 +1,17 @@
+formulaSerialize.test.ts | [COMP_RL.金额] round-trips | 删除行 1
+formulaSerialize.test.ts | [COMP_RL.金额] + [COMP_INV.金额] → TWO component_subtotal tokens (金额 is a subtotalCol of both) | 删除行 2
+formulaSerialize.test.ts | SUM 内 [产品.税率]（小计列，行键与宿主互不包含）→ 不报错 | 删除行 1
+formulaSerialize.test.ts | 小计列落进 targetExpr 为 component_subtotal，且不污染 source/sources | 删除行 1
+formulaSerialize.test.ts | round-trip：回显归一后再解析仍稳定 | 删除行 3
+formulaSerialize.test.ts | 用名称解析小计 [回料.金额] → component_subtotal(component_code 仍存 alias，后端不变) | 删除行 1
+formulaSerialize.test.ts | 用名称解析整页签总计 [回料(总计)] → component_subtotal(BL-0017 金额哨兵键) | 删除行 1
+formulaSerialize.test.ts | 小计列 [回料.金额](金额∈subtotalCols) → yellow | 删除行 1
+formulaSerialize.test.ts | 混合串切分顺序:SUM([投料.金额] * [回料.用量]) | 删除行 2
+formulaSerialize.test.ts | 整体空格 [ 投料.金额 ]:整 body trim 后判色(金额∈subtotalCols → yellow) | 删除行 1
+formulaSerialize.test.ts | 宿主小计列 [宿主组件.金额小计] → yellow(小计优先于 self) | 删除行 1
+formulaSerialize.test.ts | 宿主自聚合 [宿主组件.组成用量(总计)] → red(本期不支持) | 删除行 1
+formulaSerialize.test.ts | [COMP_RL(总计)] 与 [COMP_RL.金额] 解析出 token 可区分（哨兵键 + is_tab_total） | 删除行 3
+buildExcelSnapshot.test.ts |  | 删除行 1
+subtotalColRefEndToEnd.test.ts | ② 序列化产出的 component_code 必须命中已登记的键（键口径对齐护栏） | 删除行 1
+subtotalColRefEndToEnd.test.ts | ③ 端到端求值：SUM 内每行 × 列小计，取到的是 1.13 而非 0 | 删除行 1
+subtotalColRefEndToEnd.test.ts | ④ 反向护栏：键对不上时结果塌成 0（证明上面的 6.78 确实来自列小计而非巧合） | 删除行 1

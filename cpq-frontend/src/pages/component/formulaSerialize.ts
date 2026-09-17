@@ -516,6 +516,98 @@ function rejectSubtotalSuffixInIfn(
   }
 }
 
+/** Excel TAB_JOIN_FORMULA columns do not support the SUMIF family (问题说明 5.1 / D-9, verbatim). */
+export const MSG_EXCEL_NO_SUMIF = 'Excel 列暂不支持 SUMIF 类函数（SUMIF / COUNTIF / AVGIF / MINIF / MAXIF）';
+
+const EXCEL_OUTER_FNS = new Set(['SUM', 'AVG', 'MAX', 'MIN', 'COUNT']);
+const EXCEL_K_FNS = new Set(['KSUM', 'KAVG', 'KMAX', 'KMIN', 'KCOUNT']);
+const EXCEL_IF_FNS = new Set(['SUMIF', 'COUNTIF', 'AVGIF', 'MINIF', 'MAXIF']);
+
+/**
+ * repair-260916 F-11（D-9 / D-11）：Excel 组件连表公式列保存前校验。
+ * Excel 列存的是公式文字、不经 expressionToTokens（其余语法由后端求值口径决定），
+ * 故这里只做 5.1 规定的两类拦截，不引入额外的保存限制：
+ *   1. 出现 SUMIF / COUNTIF / AVGIF / MINIF / MAXIF → MSG_EXCEL_NO_SUMIF；
+ *   2. 每个 `[...(小计)]` 块按 5.1 判定（没写列名 → 未知页签 → 本页签 → 单列函数 / K 系列 → 列没勾小计），
+ *      判定与页签组件保存共用 resolveSubtotalSuffixRef，文案逐字相同。
+ * 返回第一条错误文案；合法返回 null。方括号 / 花括号内的文字不参与函数识别。
+ */
+export function validateExcelTabJoinExpression(
+  expr: string,
+  tabDefs: TabDef[],
+  selfComponentId?: string,
+): string | null {
+  // ① SUMIF 类函数（方括号 / 花括号内的内容不算）
+  const outside = expr.replace(/\[[^\]]*\]/g, ' ').replace(/\{[^}]*\}/g, ' ');
+  const words = outside.match(/[A-Za-z]+(?=\s*\()/g) ?? [];
+  if (words.some((w) => EXCEL_IF_FNS.has(w.toUpperCase()))) return MSG_EXCEL_NO_SUMIF;
+
+  // ② (小计) 引用：按所在函数上下文逐块判定
+  const stack: Array<{ fn: string; open: number }> = [];
+  let word = '';
+  try {
+    for (let i = 0; i < expr.length; i++) {
+      const ch = expr[i];
+      if (ch === '[' || ch === '{') {
+        const closeCh = ch === '[' ? ']' : '}';
+        const end = expr.indexOf(closeCh, i);
+        if (end === -1) break;
+        if (ch === '[') {
+          const body = expr.slice(i + 1, end).trim();
+          let fnCtx: SubtotalFnContext | undefined;
+          const kFrame = stack.find((f) => EXCEL_K_FNS.has(f.fn));
+          const top = stack[stack.length - 1];
+          if (kFrame) {
+            fnCtx = { kind: 'kfn', fn: kFrame.fn };
+          } else if (top && EXCEL_OUTER_FNS.has(top.fn)) {
+            const close = matchCloseParen(expr, top.open);
+            const inner = close < 0 ? '' : expr.slice(top.open + 1, close).trim();
+            if (inner === expr.slice(i, end + 1)) fnCtx = { kind: 'single', fn: top.fn };
+          }
+          resolveSubtotalSuffixRef(
+            body, tabDefs, selfComponentId,
+            (al) => `表达式中引用了未知页签 "${al}"，请检查名称/编号是否与模板中页签配置一致`,
+            fnCtx,
+          );
+        }
+        word = '';
+        i = end;
+        continue;
+      }
+      if (/[A-Za-z]/.test(ch)) { word += ch; continue; }
+      if (ch === '(') {
+        stack.push({ fn: word.toUpperCase(), open: i });
+      } else if (ch === ')') {
+        stack.pop();
+      }
+      if (!/\s/.test(ch)) word = '';
+    }
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+  return null;
+}
+
+/** Index of the `)` matching the `(` at `open` (brackets/braces skipped); -1 when unmatched. */
+function matchCloseParen(s: string, open: number): number {
+  let depth = 0;
+  for (let k = open; k < s.length; k++) {
+    const c = s[k];
+    if (c === '[' || c === '{') {
+      const end = s.indexOf(c === '[' ? ']' : '}', k);
+      if (end === -1) return -1;
+      k = end;
+      continue;
+    }
+    if (c === '(') depth++;
+    else if (c === ')') {
+      depth--;
+      if (depth === 0) return k;
+    }
+  }
+  return -1;
+}
+
 // ─────────────────────────────────────────────
 // parseValueExpr: SUMIF 第二参数（值表达式）解析
 // ─────────────────────────────────────────────
@@ -1767,7 +1859,10 @@ export function classifyRefSegment(
     if (tab.self) {
       if (isAgg) return { kind: 'invalid', color: 'red' };
       // insideSumif 时条件可引用任意字段(含文本字段)，allFields 亦放行
+      // repair-260916：不带后缀的本页签小计列按本行取值（与明细同规则），故 subtotalCols 也算真实列
+      // （与下方非本页签分支的 known 集合口径一致）。
       const selfFieldValid = (tab.detailFields ?? []).includes(field)
+        || (tab.subtotalCols ?? []).includes(field)
         || (insideSumif && (tab.allFields ?? []).includes(field));
       if (!selfFieldValid) return { kind: 'invalid', color: 'red' };
       if (insideKsum) return { kind: 'insideKsum-illegal', color: 'red' };

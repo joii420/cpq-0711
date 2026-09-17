@@ -52,6 +52,8 @@
     { "id": "X-4-row-product", "expression": "[物料.X] * [物料.材料成本]", "expected": "0.462258430204" },
     { "id": "X-5-subtotal-inside-row-aggregate", "expression": "SUM([物料.X] * [物料.材料成本(小计)])", "expected": "308.581709063214" },
     { "id": "X-6-cross-tab-aligned-detail", "expression": "[物料.X] + [来料固定加工费.加工费]", "expected": "283.432743363" },
-    { "id": "X-7-cross-tab-subtotal", "expression": "[物料.材料成本(小计)] + [来料固定加工费.加工费(小计)]", "expected": "129.478941064" }
+    { "id": "X-7-cross-tab-subtotal", "expression": "[物料.材料成本(小计)] + [来料固定加工费.加工费(小计)]", "expected": "129.478941064" },
+    { "id": "AC-14g-1-subtotal-div-decimal-literal", "expression": "[物料.材料成本(小计)] / 1.13", "expected": "1.751275277876" },
+    { "id": "AC-14g-2-detail-div-decimal-literal", "expression": "[物料.X] / 1.13", "expected": "137.993578197345" }
   ]
 }

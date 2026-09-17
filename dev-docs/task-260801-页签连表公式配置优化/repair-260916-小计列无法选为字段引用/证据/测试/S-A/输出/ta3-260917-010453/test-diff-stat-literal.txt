@@ -1,0 +1,15 @@
+ .../service/Repair260916H85FormulaTest.java        | 131 ++++++++
+ .../tabjoin/TabJoinExcelSharedFixtureTest.java     | 108 +++++++
+ .../service/tabjoin/TabJoinSubtotalSuffixTest.java | 140 +++++++++
+ .../test/resources/repair-260916/h85-inputs.json   |  23 ++
+ .../src/test/resources/repair-260916/snap.jsonl    |   9 +
+ .../src/test/resources/tabjoin-excel-cases.json    |  59 ++++
+ .../formulaSerialize.repair260916.test.ts          | 344 +++++++++++++++++++++
+ .../src/pages/component/formulaSerialize.test.ts   |  38 +--
+ .../src/pages/quotation/buildExcelSnapshot.test.ts |   2 +-
+ .../pages/quotation/subtotalColRefEndToEnd.test.ts |   6 +-
+ .../quotation/tabJoinExcelEval.fixture.test.ts     | 180 +++++++++++
+ .../tabjoin/tabFieldMatrix.repair260916.test.ts    | 126 ++++++++
+ .../repair-260916-小计列无法选为字段引用/test.md   |  44 ++-
+ .../证据/测试/S-A/ta3_review_test_diff.py          | 115 +++++++
+ 14 files changed, 1286 insertions(+), 39 deletions(-)
