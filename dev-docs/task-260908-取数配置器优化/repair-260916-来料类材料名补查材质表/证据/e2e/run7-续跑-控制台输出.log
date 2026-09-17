@@ -1,0 +1,62 @@
+
+Running 4 tests using 1 worker
+
+[2026-09-17T03:34:55.306Z] S-global part2 start
+  backend http://localhost:8196 pid=14381 cwd=/tmp/claude-1000/-home-joii-project-cpq/4b0ef42f-bb97-49fa-8d26-13f122f32e2b/scratchpad/accept-backend-cc803299/cpq-backend DB_NAME(env)=cpq_db_260916
+  cmd=/usr/lib/jvm/java-21-openjdk-amd64/bin/java -Dquarkus-internal.serialized-app-model.path=/tmp/claude-1000/-home-joii-project-cpq/4b0ef42f-bb97-49fa-8d26-13f122f32e2b/scratchpad/accept-backend-cc803299/cpq-backend/target/quarkus/bootstrap/dev-app-model.dat -javaagent:/home/joii/.m2/repository/io/quar
+  frontend http://localhost:5196 pid=15061 cwd=/home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-frontend
+  flyway 444 success on cpq_db_260916 = true
+  quotations totalElements api=196 db(cpq_db_260916)=196
+
+[AC-6][来源:run6实跑] s0.at=2026-09-17T03:02:37.591Z s1.at=2026-09-17T03:02:38.620Z
+[AC-6][来源:run6实跑] preview=true componentCount=3 views=3 changed=3 changes=["builder_c35c2bd590fe","builder_4602c64a0c38","builder_46f244df7ede"] unchanged=[] skipped=[]
+[AC-6][来源:run6实跑] builder_c35c2bd590fe md5(oldSqlTemplate)=ba3c87bc73c3596d939e6ff1319fae65 stored-before=ba3c87bc73c3596d939e6ff1319fae65 same=true
+[AC-6][来源:run6实跑] builder_4602c64a0c38 md5(oldSqlTemplate)=b56b315ff3292de89c7f61359f789380 stored-before=b56b315ff3292de89c7f61359f789380 same=true
+[AC-6][来源:run6实跑] builder_46f244df7ede md5(oldSqlTemplate)=d92b26ab752fe546cab6a7d007cbc02d stored-before=d92b26ab752fe546cab6a7d007cbc02d same=true
+[AC-6②][来源:run6实跑] diffs=[] viewsTableMd5 24c66e77e1b1b8a48240a910dee02aa4→24c66e77e1b1b8a48240a910dee02aa4 opLog 170→170
+  ✓  1 [chromium] › e2e/repair260916-global-2-write.spec.ts:102:1 › T3.4 AC-6 ① recompile-components confirm=false: 200, preview, views=3, changed=3, exactly the 3 views, new SQL has material_recipe / old has not; ② zero write (17ms)
+[evidence] → /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/dev-docs/task-260908-取数配置器优化/repair-260916-来料类材料名补查材质表/证据/e2e/AC-7-snapshot-续跑现查.json
+[md5-report] 续跑现查（AC-7 执行后、T3.6 之前） → /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/dev-docs/task-260908-取数配置器优化/repair-260916-来料类材料名补查材质表/证据/AC-6-7-md5-前后.md
+[AC-7][来源:run6实跑] sPre.at=2026-09-17T03:02:38.620Z s3.at=2026-09-17T03:02:45.660Z; [来源:续跑现查] sPost.at=2026-09-17T03:34:56.384Z
+[AC-7][来源:run6实跑] full preview before: 9 names=["builder_46f244df7ede","builder_3fda805a52da","builder_4aa23fde7ac9","builder_c35c2bd590fe","builder_4602c64a0c38","builder_999eaf0a9c07","builder_9cc11850f425","builder_b2b718fe930a","builder_ead1c831ca36"]
+[AC-7][来源:run6实跑] preview=false changed=3 changedViewNames=["builder_4602c64a0c38","builder_46f244df7ede","builder_c35c2bd590fe"] operationLogIds=["f8923343-6c2d-4913-adbf-9611d2e76789","c8696ffd-261d-4401-92ed-cec105d1c6df","ee56d1be-4719-4dcc-8e58-90bd37c1996d"]
+[evidence] → /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/dev-docs/task-260908-取数配置器优化/repair-260916-来料类材料名补查材质表/证据/e2e/AC-7-operation_log-续跑现查.json
+[AC-7①][来源:续跑现查] operation_log rows: [["f8923343-6c2d-4913-adbf-9611d2e76789","COMPONENT_VIEW_RECOMPILE","COMPONENT","57554055-0896-4cc8-be98-65e45b0a5985","2026-09-17 03:02:44.938622+00"],["c8696ffd-261d-4401-92ed-cec105d1c6df","COMPONENT_VIEW_RECOMPILE","COMPONENT","39fa3d9d-54b9-4605-93ca-dd38cbfa2831","2026-09-17 03:02:44.940717+00"],["ee56d1be-4719-4dcc-8e58-90bd37c1996d","COMPONENT_VIEW_RECOMPILE","COMPONENT","4db28822-85c6-4522-ac62-61ef2393a99c","2026-09-17 03:02:44.940766+00"]]
+[AC-7②][来源:续跑现查] builder_c35c2bd590fe md5(stored)=9a4a3949d427493fb00943231cab45c6 md5(AC-6 new)=9a4a3949d427493fb00943231cab45c6
+[AC-7②][来源:续跑现查] builder_4602c64a0c38 md5(stored)=0aee4c4ed52ad8b40187603d83e9c7e6 md5(AC-6 new)=0aee4c4ed52ad8b40187603d83e9c7e6
+[AC-7②][来源:续跑现查] builder_46f244df7ede md5(stored)=829a17e8d3fca2e128e2153c04a686ad md5(AC-6 new)=829a17e8d3fca2e128e2153c04a686ad
+[AC-7][来源:run6实跑] full preview after: 6 names=["builder_3fda805a52da","builder_4aa23fde7ac9","builder_999eaf0a9c07","builder_9cc11850f425","builder_b2b718fe930a","builder_ead1c831ca36"]
+[AC-7②][来源:run6实跑] declared_columns md5 before/after: [["builder_c35c2bd590fe","73c06f18535e289c01bc4ed03cb25716","73c06f18535e289c01bc4ed03cb25716"],["builder_4602c64a0c38","0ffe001437f30255a80e523238b26b02","0ffe001437f30255a80e523238b26b02"],["builder_46f244df7ede","16a5d44f5872ab6bac14d59d3e928e44","16a5d44f5872ab6bac14d59d3e928e44"]]; [来源:续跑现查] names now: {"builder_46f244df7ede":["_来料回收折扣_回收值","_来料回收折扣_回收折扣（%）","_来料回收折扣_投入料号","_来料回收折扣_销售料号","_来料回收折扣_项次","_物料_材料名","hf_part_no"],"builder_c35c2bd590fe":["_来料固定加工费_基准值","_来料固定加工费_投入料号","_来料固定加工费_销售料号","_来料固定加工费_项次","_物料_材料名","hf_part_no"],"builder_4602c64a0c38":["_来料其他费用_值","_来料其他费用_投入料号","_来料其他费用_比例（%）","_来料其他费用_要素名称","_来料其他费用_销售料号","_来料其他费用_项次","_物料_材料名","hf_part_no"]}
+[AC-7②][来源:续跑现查] COMP-0004 builder_version(db)=1 currentCompilerVersion=undefined isStale=undefined
+  ✘  2 [chromium] › e2e/repair260916-global-2-write.spec.ts:167:1 › T3.5 AC-7 ①②③ execute confirm=true: 3 views changed + 3 audit rows; text = AC-6 new text = full-recompile product; nothing else moved; E-2 (1.4s)
+  -  3 [chromium] › e2e/repair260916-global-2-write.spec.ts:315:1 › T3.5 AC-7 ④ COMP-0004「取数配置」shows no stale hint (isStale=false)
+  -  4 [chromium] › e2e/repair260916-global-2-write.spec.ts:349:1 › T3.6 AC-10 steps 1–8: preview → recompile → publish new version → new quote → switch tabs → F5 → detail → old quote still「—」
+
+
+  1) [chromium] › e2e/repair260916-global-2-write.spec.ts:167:1 › T3.5 AC-7 ①②③ execute confirm=true: 3 views changed + 3 audit rows; text = AC-6 new text = full-recompile product; nothing else moved; E-2 
+
+    Error: COMP-0004: GET /builder lacks currentCompilerVersion
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"number"[39m
+    Received: [31m"undefined"[39m
+
+      274 |     const bv = Number(H.sqlScalar(`select builder_version from component_sql_view where sql_view_name='${c.view}'`));
+      275 |     console.log(`[AC-7②][${NOW}] ${c.code} builder_version(db)=${bv} currentCompilerVersion=${gd?.currentCompilerVersion} isStale=${gd?.isStale}`);
+    > 276 |     expect(typeof gd?.currentCompilerVersion, `${c.code}: GET /builder lacks currentCompilerVersion`).toBe('number');
+          |                                                                                                       ^
+      277 |     expect(bv, `AC-7②: ${c.code} builder_version must equal the current compiler version`).toBe(gd.currentCompilerVersion);
+      278 |   }
+      279 |
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-frontend/e2e/repair260916-global-2-write.spec.ts:276:103
+
+    Error Context: test-results/repair260916-global-2-writ-0e8d7-duct-nothing-else-moved-E-2-chromium/error-context.md
+
+    Error Context: test-results/repair260916-global-2-writ-0e8d7-duct-nothing-else-moved-E-2-chromium/error-context.md
+
+  1 failed
+    [chromium] › e2e/repair260916-global-2-write.spec.ts:167:1 › T3.5 AC-7 ①②③ execute confirm=true: 3 views changed + 3 audit rows; text = AC-6 new text = full-recompile product; nothing else moved; E-2 
+  2 did not run
+  1 passed (3.5s)
+exit=1

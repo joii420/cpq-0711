@@ -1,0 +1,459 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------------------< com.cpq:cpq-backend >-------------------------
+[INFO] Building cpq-backend 1.0.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[WARNING] The artifact io.quarkus:quarkus-junit5:jar:3.34.3 has been relocated to io.quarkus:quarkus-junit:jar:3.34.3: Update the artifactId in your project build file. Refer to https://github.com/quarkusio/quarkus/wiki/Migration-Guide-3.31 for more information.
+[WARNING] The artifact io.quarkus:quarkus-junit5-mockito:jar:3.34.3 has been relocated to io.quarkus:quarkus-junit-mockito:jar:3.34.3: Update the artifactId in your project build file. Refer to https://github.com/quarkusio/quarkus/wiki/Migration-Guide-3.31 for more information.
+[INFO] 
+[INFO] --- clean:3.2.0:clean (default-clean) @ cpq-backend ---
+[INFO] Deleting /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/target
+[INFO] 
+[INFO] --- antlr4:4.13.1:antlr4 (antlr4-generate) @ cpq-backend ---
+[INFO] ANTLR 4: Processing source directory /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/antlr4
+[INFO] Processing grammar: com/cpq/datapath/grammar/CpqPath.g4
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ cpq-backend ---
+[INFO] Copying 435 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- quarkus:3.34.3:generate-code (default) @ cpq-backend ---
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ cpq-backend ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 982 source files with javac [debug parameters release 21] to target/classes
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/MaterialCustomerMapRepository.java:[208,16] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/MaterialCustomerMapRepository.java:[385,16] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/QuoteMaterialNoAllocator.java:[39,19] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/QuoteMaterialNoAllocator.java:[79,17] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/ElementRecoveryDiscountRepository.java:[56,33] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/ElementRecoveryDiscountRepository.java:[121,17] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/QuoteImportService.java:[292,41] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/quotation/service/QuotationService.java:[2454,47] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/quotation/service/backfill/QuoteBackfillService.java:[77,27] flipPending(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/quotation/service/PendingHygieneService.java:[123,62] deleteOrphanPendingWithGuard() in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/Q02CustomerMapHandler.java: Some input files use or override a deprecated API.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/Q02CustomerMapHandler.java: Recompile with -Xlint:deprecation for details.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/V6QuotationCommitService.java: Some input files use unchecked or unsafe operations.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/V6QuotationCommitService.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- quarkus:3.34.3:generate-code-tests (default) @ cpq-backend ---
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ cpq-backend ---
+[INFO] Copying 22 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ cpq-backend ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 719 source files with javac [debug parameters release 21] to target/test-classes
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[110,27] flipPending(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[159,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[264,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[308,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/test/java/com/cpq/basicdata/v6/service/PendingRepointNoOpTest.java:[104,22] repointPendingOwnership(java.util.UUID,java.util.UUID) in com.cpq.basicdata.v6.service.V6QuotationCommitService has been deprecated and marked for removal
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/ElementRecoveryBatchUpdateEquivTest.java: Some input files use or override a deprecated API.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/ElementRecoveryBatchUpdateEquivTest.java: Recompile with -Xlint:deprecation for details.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/test/java/com/cpq/basicdata/v6/pricing/P01P02PricingPriceVersioningTest.java: Some input files use unchecked or unsafe operations.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/src/test/java/com/cpq/basicdata/v6/pricing/P01P02PricingPriceVersioningTest.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ cpq-backend ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.cpq.repair260916.Ac5MaterialNamePriorityTest
+2026-09-16 19:48:52.498 INFO  [org.hib.orm.jpa] (main) HHH008540: Processing PersistenceUnitInfo [name: <default>]
+2026-09-16 19:48:52.532 INFO  [org.hib.orm.core] (main) HHH000001: Hibernate ORM core version 7.2.9.Final
+2026-09-16 19:48:52.741 INFO  [org.hib.orm.con.pooling] (main) HHH10001005: Database info:
+	Database JDBC URL [undefined/unknown]
+	Database driver: undefined/unknown
+	Database dialect: PostgreSQLDialect
+	Database version: 13.0
+	Default catalog/schema: unknown/unknown
+	Autocommit mode: undefined/unknown
+	Isolation level: <unknown>
+	JDBC fetch size: undefined/unknown
+	Pool: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-09-16 19:48:53.310 INFO  [org.hib.val.int.uti.Version] (main) HV000001: Hibernate Validator 9.1.0.Final
+2026-09-16 19:48:53.417 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-09-16 19:48:53.672 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-09-16 19:48:53.794 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-09-16 19:48:54.343 INFO  [org.fly.cor.FlywayExecutor] (main) Database: jdbc:postgresql://10.177.152.12:5432/cpq_db_test?sslmode=disable (PostgreSQL 16.13)
+2026-09-16 19:48:56.005 INFO  [org.fly.cor.int.com.DbValidate] (main) Successfully validated 427 migrations (execution time 00:01.088s)
+2026-09-16 19:48:58.587 INFO  [org.fly.cor.int.com.DbMigrate] (main) Current version of schema "public": 444
+2026-09-16 19:48:58.588 WARN  [org.fly.cor.int.com.DbMigrate] (main) outOfOrder mode is active. Migration of schema "public" may not be reproducible.
+2026-09-16 19:48:58.726 INFO  [org.fly.cor.int.com.DbMigrate] (main) Schema "public" is up to date. No migration necessary.
+2026-09-16 19:48:58.941 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-09-16 19:48:58.941 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-09-16 19:48:59.597 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-09-16 19:48:59.734 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-09-16 19:48:59.872 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-09-16 19:48:59.968 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1778 列（3 套数据集）
+2026-09-16 19:49:00.307 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (executor-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-09-16 19:49:00.401 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=57 edges=89 tabViews=48
+2026-09-16 19:49:00.435 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-09-16 19:49:00.465 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-16 19:49:00.497 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：57 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-16 19:49:00.497 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 153 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-09-16 19:49:00.728 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-09-16 19:49:00.813 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 13.897s. Listening on: http://localhost:57222
+2026-09-16 19:49:00.813 INFO  [io.quarkus] (main) Profile test activated. 
+2026-09-16 19:49:00.813 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+[S-2 前置] material_recipe.00144.symbol=H85
+[S-2 前置] ds_cost_basic_material(00144)=0 ds_cost_detail_material(00144)=0
+2026-09-16 19:49:02.101 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-1) User logged in: admin role=SYSTEM_ADMIN
+2026-09-16 19:49:02.196 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-1) Session created for user: admin
+2026-09-16 19:49:02.333 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=null requestedTabType=null currentTabType=null builderTreeFlag=null
+2026-09-16 19:49:02.364 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Created component id=f2f368b8-8a22-46db-95fa-4edba7d17511 code=COMP-3319
+[S-2 造数] component R260916-T-AC5-PREVIEW-389F id=f2f368b8-8a22-46db-95fa-4edba7d17511 code=COMP-3319
+[S-2 造数] ds_quote_material customer=R260916-T-C1389F no=00144 name=R260916-T-物料名-00144 production_no=null
+[S-2 造数] ds_quote_material customer=R260916-T-C1389F no=R260916-T-M1-389F name=R260916-T-物料名-M1 production_no=null
+[S-2 造数] ds_quote_incoming_fixed_fee customer=R260916-T-C1389F sales=R260916-T-S1-389F seq=1 input=00144
+[S-2 造数] ds_quote_incoming_fixed_fee customer=R260916-T-C1389F sales=R260916-T-S1-389F seq=2 input=R260916-T-M1-389F
+2026-09-16 19:49:02.999 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-1) [costing-tree] bind :customerCode = null（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+---- preview QUOTE customer=R260916-T-C1389F partNo=R260916-T-S1-389F → status=200
+{"rowCount":2,"columns":["hf_part_no","_来料固定加工费_投入料号","_物料_材料名","_来料固定加工费_基准值"],"rows":[{"hf_part_no":"R260916-T-S1-389F","_来料固定加工费_投入料号":"00144","_物料_材料名":"R260916-T-物料名-00144","_来料固定加工费_基准值":"10"},{"hf_part_no":"R260916-T-S1-389F","_来料固定加工费_投入料号":"R260916-T-M1-389F","_物料_材料名":"R260916-T-物料名-M1","_来料固定加工费_基准值":"20"}],"elapsedMs":21,"diagnostics":[]}
+[AC-5 实际值] partCol=_来料固定加工费_投入料号 nameCol=_物料_材料名 我的行数=2 投入料号→材料名={00144=[R260916-T-物料名-00144], R260916-T-M1-389F=[R260916-T-物料名-M1]} diagnostics=[]
+[S-2 residue] {ds_quote_incoming_fixed_fee=0, ds_quote_material=0, ds_cost_basic_incoming_process_fee=0, ds_cost_basic_material=0, ds_cost_detail_incoming_other_fixed_fee=0, ds_cost_detail_material=0, component=0, operation_log+component_sql_view(自建id)=0}
+[S-2 前置] material_recipe.00144.symbol=H85
+[S-2 前置] ds_cost_basic_material(00144)=0 ds_cost_detail_material(00144)=0
+2026-09-16 19:49:03.558 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=null requestedTabType=null currentTabType=null builderTreeFlag=null
+2026-09-16 19:49:03.573 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Created component id=1280d494-c656-4918-8398-92ee6c1957c6 code=COMP-3320
+[S-2 造数] component R260916-T-AC5-PREVIEW-389F id=1280d494-c656-4918-8398-92ee6c1957c6 code=COMP-3320
+[S-2 造数] ds_quote_incoming_fixed_fee customer=R260916-T-C2389F sales=R260916-T-S2-389F seq=1 input=R260916-T-N2-389F
+[S-2 造数] ds_quote_incoming_fixed_fee customer=R260916-T-C2389F sales=R260916-T-S2-389F seq=2 input=00144
+2026-09-16 19:49:03.819 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-1) [costing-tree] bind :customerCode = null（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+---- preview QUOTE customer=R260916-T-C2389F partNo=R260916-T-S2-389F → status=200
+{"rowCount":2,"columns":["hf_part_no","_来料固定加工费_投入料号","_物料_材料名","_来料固定加工费_基准值"],"rows":[{"hf_part_no":"R260916-T-S2-389F","_来料固定加工费_投入料号":"00144","_物料_材料名":"H85","_来料固定加工费_基准值":"20"},{"hf_part_no":"R260916-T-S2-389F","_来料固定加工费_投入料号":"R260916-T-N2-389F","_物料_材料名":null,"_来料固定加工费_基准值":"10"}],"elapsedMs":12,"diagnostics":[]}
+[AC-5 实际值] partCol=_来料固定加工费_投入料号 nameCol=_物料_材料名 我的行数=2 投入料号→材料名={00144=[H85], R260916-T-N2-389F=[null]} diagnostics=[]
+[S-2 residue] {ds_quote_incoming_fixed_fee=0, ds_quote_material=0, ds_cost_basic_incoming_process_fee=0, ds_cost_basic_material=0, ds_cost_detail_incoming_other_fixed_fee=0, ds_cost_detail_material=0, component=0, operation_log+component_sql_view(自建id)=0}
+[S-2 前置] material_recipe.00144.symbol=H85
+[S-2 前置] ds_cost_basic_material(00144)=0 ds_cost_detail_material(00144)=0
+2026-09-16 19:49:04.346 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=null requestedTabType=null currentTabType=null builderTreeFlag=null
+2026-09-16 19:49:04.355 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Created component id=1e1a64f4-b1b6-42c6-bd47-96ee7df43bbc code=COMP-3321
+[S-2 造数] component R260916-T-AC5-PREVIEW-389F id=1e1a64f4-b1b6-42c6-bd47-96ee7df43bbc code=COMP-3321
+[S-2 造数] ds_quote_material customer=R260916-T-C4389F no=00144 name=R260916-T-他客户名-00144 production_no=null
+[S-2 造数] ds_quote_material customer=R260916-T-C4389F no=R260916-T-X3-389F name=R260916-T-他客户名-X3 production_no=null
+[S-2 造数] ds_quote_incoming_fixed_fee customer=R260916-T-C3389F sales=R260916-T-S3-389F seq=1 input=00144
+[S-2 造数] ds_quote_incoming_fixed_fee customer=R260916-T-C3389F sales=R260916-T-S3-389F seq=2 input=R260916-T-X3-389F
+[S-2 造数] ds_quote_incoming_fixed_fee customer=R260916-T-C4389F sales=R260916-T-S3B-389F seq=1 input=00144
+[S-2 造数] ds_quote_incoming_fixed_fee customer=R260916-T-C4389F sales=R260916-T-S3B-389F seq=2 input=R260916-T-X3-389F
+2026-09-16 19:49:04.688 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-1) [costing-tree] bind :customerCode = null（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+---- preview QUOTE customer=R260916-T-C4389F partNo=R260916-T-S3B-389F → status=200
+{"rowCount":2,"columns":["hf_part_no","_来料固定加工费_投入料号","_物料_材料名","_来料固定加工费_基准值"],"rows":[{"hf_part_no":"R260916-T-S3B-389F","_来料固定加工费_投入料号":"00144","_物料_材料名":"R260916-T-他客户名-00144","_来料固定加工费_基准值":"30"},{"hf_part_no":"R260916-T-S3B-389F","_来料固定加工费_投入料号":"R260916-T-X3-389F","_物料_材料名":"R260916-T-他客户名-X3","_来料固定加工费_基准值":"40"}],"elapsedMs":9,"diagnostics":[]}
+[AC-5 实际值] partCol=_来料固定加工费_投入料号 nameCol=_物料_材料名 我的行数=2 投入料号→材料名={00144=[R260916-T-他客户名-00144], R260916-T-X3-389F=[R260916-T-他客户名-X3]} diagnostics=[]
+2026-09-16 19:49:04.821 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-1) [costing-tree] bind :customerCode = null（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+---- preview QUOTE customer=R260916-T-C3389F partNo=R260916-T-S3-389F → status=200
+{"rowCount":2,"columns":["hf_part_no","_来料固定加工费_投入料号","_物料_材料名","_来料固定加工费_基准值"],"rows":[{"hf_part_no":"R260916-T-S3-389F","_来料固定加工费_投入料号":"00144","_物料_材料名":"H85","_来料固定加工费_基准值":"10"},{"hf_part_no":"R260916-T-S3-389F","_来料固定加工费_投入料号":"R260916-T-X3-389F","_物料_材料名":null,"_来料固定加工费_基准值":"20"}],"elapsedMs":13,"diagnostics":[]}
+[AC-5 实际值] partCol=_来料固定加工费_投入料号 nameCol=_物料_材料名 我的行数=2 投入料号→材料名={00144=[H85], R260916-T-X3-389F=[null]} diagnostics=[]
+[S-2 residue] {ds_quote_incoming_fixed_fee=0, ds_quote_material=0, ds_cost_basic_incoming_process_fee=0, ds_cost_basic_material=0, ds_cost_detail_incoming_other_fixed_fee=0, ds_cost_detail_material=0, component=0, operation_log+component_sql_view(自建id)=0}
+[S-2 前置] material_recipe.00144.symbol=H85
+[S-2 前置] ds_cost_basic_material(00144)=0 ds_cost_detail_material(00144)=0
+2026-09-16 19:49:05.337 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=null requestedTabType=null currentTabType=null builderTreeFlag=null
+2026-09-16 19:49:05.349 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Created component id=27ba4fd2-e68c-4985-9884-05ce3cd533e6 code=COMP-3322
+[S-2 造数] component R260916-T-AC5-PREVIEW-389F id=27ba4fd2-e68c-4985-9884-05ce3cd533e6 code=COMP-3322
+[S-2 造数] ds_quote_material customer=R260916-T-C5389F no=R260916-T-SC5-389F name=R260916-T-销售品-C5 production_no=R260916-T-PC5-389F
+[S-2 造数] ds_cost_basic_material production_no=R260916-T-PMC5-389F name=R260916-T-核价物料名-C5
+[S-2 造数] ds_cost_basic_incoming_process_fee production_no=R260916-T-PC5-389F seq=1 incoming=R260916-T-PMC5-389F
+[S-2 造数] ds_cost_basic_incoming_process_fee production_no=R260916-T-PC5-389F seq=2 incoming=00144
+[S-2 造数] ds_cost_basic_incoming_process_fee production_no=R260916-T-PC5-389F seq=3 incoming=R260916-T-PNC5-389F
+---- preview COST_BASIC customer=R260916-T-C5389F partNo=R260916-T-PC5-389F → status=200
+{"rowCount":3,"columns":["hf_part_no","incoming_material_no","material_name","process_fee","view_version"],"rows":[{"hf_part_no":"R260916-T-PC5-389F","incoming_material_no":"00144","material_name":"H85","process_fee":"1","view_version":"1"},{"hf_part_no":"R260916-T-PC5-389F","incoming_material_no":"R260916-T-PMC5-389F","material_name":"R260916-T-核价物料名-C5","process_fee":"1","view_version":"1"},{"hf_part_no":"R260916-T-PC5-389F","incoming_material_no":"R260916-T-PNC5-389F","material_name":null,"process_fee":"1","view_version":"1"}],"elapsedMs":8,"diagnostics":[]}
+[S-2 residue] {ds_quote_incoming_fixed_fee=0, ds_quote_material=0, ds_cost_basic_incoming_process_fee=0, ds_cost_basic_material=0, ds_cost_detail_incoming_other_fixed_fee=0, ds_cost_detail_material=0, component=0, operation_log+component_sql_view(自建id)=0}
+[S-2 前置] material_recipe.00144.symbol=H85
+[S-2 前置] ds_cost_basic_material(00144)=0 ds_cost_detail_material(00144)=0
+2026-09-16 19:49:06.158 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=null requestedTabType=null currentTabType=null builderTreeFlag=null
+2026-09-16 19:49:06.184 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Created component id=d22d1238-f4f1-4c39-9a63-b0b8fa4266e0 code=COMP-3323
+[S-2 造数] component R260916-T-AC5-PREVIEW-389F id=d22d1238-f4f1-4c39-9a63-b0b8fa4266e0 code=COMP-3323
+[S-2 造数] ds_quote_material customer=R260916-T-C6389F no=R260916-T-SC6-389F name=R260916-T-销售品-C6 production_no=R260916-T-PC6-389F
+[S-2 造数] ds_cost_detail_material production_no=R260916-T-PMC6-389F name=R260916-T-核价物料名-C6
+[S-2 造数] ds_cost_detail_incoming_other_fixed_fee production_no=R260916-T-PC6-389F seq=1 incoming=R260916-T-PMC6-389F
+[S-2 造数] ds_cost_detail_incoming_other_fixed_fee production_no=R260916-T-PC6-389F seq=2 incoming=00144
+[S-2 造数] ds_cost_detail_incoming_other_fixed_fee production_no=R260916-T-PC6-389F seq=3 incoming=R260916-T-PNC6-389F
+---- preview COST_DETAIL customer=R260916-T-C6389F partNo=R260916-T-PC6-389F → status=200
+{"rowCount":3,"columns":["hf_part_no","incoming_material_no","material_name","fee","view_version"],"rows":[{"hf_part_no":"R260916-T-PC6-389F","incoming_material_no":"00144","material_name":"H85","fee":"1","view_version":"1"},{"hf_part_no":"R260916-T-PC6-389F","incoming_material_no":"R260916-T-PMC6-389F","material_name":"R260916-T-核价物料名-C6","fee":"1","view_version":"1"},{"hf_part_no":"R260916-T-PC6-389F","incoming_material_no":"R260916-T-PNC6-389F","material_name":null,"fee":"1","view_version":"1"}],"elapsedMs":10,"diagnostics":[]}
+[S-2 residue] {ds_quote_incoming_fixed_fee=0, ds_quote_material=0, ds_cost_basic_incoming_process_fee=0, ds_cost_basic_material=0, ds_cost_detail_incoming_other_fixed_fee=0, ds_cost_detail_material=0, component=0, operation_log+component_sql_view(自建id)=0}
+[ERROR] Tests run: 5, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 15.20 s <<< FAILURE! -- in com.cpq.repair260916.Ac5MaterialNamePriorityTest
+[ERROR] com.cpq.repair260916.Ac5MaterialNamePriorityTest.t24a_costBasic_threeCases -- Time elapsed: 0.834 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: E-5：「材料名」列应恰好 1 个，实际 columns=[hf_part_no, incoming_material_no, material_name, process_fee, view_version] ==> expected: <1> but was: <0>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:158)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:139)
+	at org.junit.jupiter.api.AssertEquals.failNotEqual(AssertEquals.java:201)
+	at org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:152)
+	at org.junit.jupiter.api.Assertions.assertEquals(Assertions.java:590)
+	at com.cpq.repair260916.Ac5MaterialNamePriorityTest.parse(Ac5MaterialNamePriorityTest.java:210)
+	at com.cpq.repair260916.Ac5MaterialNamePriorityTest.runCostCase(Ac5MaterialNamePriorityTest.java:423)
+	at com.cpq.repair260916.Ac5MaterialNamePriorityTest.t24a_costBasic_threeCases(Ac5MaterialNamePriorityTest.java:375)
+
+[ERROR] com.cpq.repair260916.Ac5MaterialNamePriorityTest.t24b_costDetail_threeCases -- Time elapsed: 0.907 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: E-5：「材料名」列应恰好 1 个，实际 columns=[hf_part_no, incoming_material_no, material_name, fee, view_version] ==> expected: <1> but was: <0>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:158)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:139)
+	at org.junit.jupiter.api.AssertEquals.failNotEqual(AssertEquals.java:201)
+	at org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:152)
+	at org.junit.jupiter.api.Assertions.assertEquals(Assertions.java:590)
+	at com.cpq.repair260916.Ac5MaterialNamePriorityTest.parse(Ac5MaterialNamePriorityTest.java:210)
+	at com.cpq.repair260916.Ac5MaterialNamePriorityTest.runCostCase(Ac5MaterialNamePriorityTest.java:423)
+	at com.cpq.repair260916.Ac5MaterialNamePriorityTest.t24b_costDetail_threeCases(Ac5MaterialNamePriorityTest.java:382)
+
+[INFO] Running com.cpq.repair260916.Ac8RecompileComponentsTest
+[S-2 前置] material_recipe.00144.symbol=H85
+[S-2 前置] ds_cost_basic_material(00144)=0 ds_cost_detail_material(00144)=0
+2026-09-16 19:49:07.070 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=null requestedTabType=null currentTabType=null builderTreeFlag=null
+2026-09-16 19:49:07.089 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Created component id=46fecbc0-c304-4409-988b-6656c444e630 code=COMP-3324
+[S-2 造数] component R260916-T-AC8-1-A-389F id=46fecbc0-c304-4409-988b-6656c444e630 code=COMP-3324
+2026-09-16 19:49:07.381 INFO  [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [ComponentSqlView] created componentId=46fecbc0-c304-4409-988b-6656c444e630 name=builder_46fecbc0c304 scope=COMPONENT
+2026-09-16 19:49:07.413 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [driver-view] componentId=46fecbc0-c304-4409-988b-6656c444e630 set dataDriverPath='$builder_46fecbc0c304'
+2026-09-16 19:49:07.435 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [Y1.5 component update] id=46fecbc0-c304-4409-988b-6656c444e630 code=COMP-3324 incoming dataDriverPath='$builder_46fecbc0c304' (null=false)
+2026-09-16 19:49:07.435 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [Y1.5 component update] saved dataDriverPath='$builder_46fecbc0c304'
+2026-09-16 19:49:07.523 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=46fecbc0-c304-4409-988b-6656c444e630 coord=(费用类,INCOMING_FIXED_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-16 19:49:07.523 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=46fecbc0-c304-4409-988b-6656c444e630 requestedTabType=null currentTabType=null builderTreeFlag=false
+2026-09-16 19:49:07.542 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=46fecbc0-c304-4409-988b-6656c444e630 coord=(费用类,INCOMING_FIXED_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-16 19:49:07.568 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Updated component id=46fecbc0-c304-4409-988b-6656c444e630 code=COMP-3324
+2026-09-16 19:49:07.848 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: componentIds 必填且不能为空数组
+---- recompile-components body={confirm=true} → 400
+{"code":"COMPONENT_IDS_REQUIRED","message":"componentIds 必填且不能为空数组"}
+2026-09-16 19:49:07.912 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: componentIds 必填且不能为空数组
+---- recompile-components body={componentIds=null, confirm=true} → 400
+{"code":"COMPONENT_IDS_REQUIRED","message":"componentIds 必填且不能为空数组"}
+2026-09-16 19:49:07.975 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: componentIds 必填且不能为空数组
+---- recompile-components body={componentIds=[], confirm=true} → 400
+{"code":"COMPONENT_IDS_REQUIRED","message":"componentIds 必填且不能为空数组"}
+2026-09-16 19:49:08.034 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: componentIds 必填且不能为空数组
+---- recompile-components body={componentIds=[], confirm=false} → 400
+{"code":"COMPONENT_IDS_REQUIRED","message":"componentIds 必填且不能为空数组"}
+[T2.5] s0=views=builder_46fecbc0c304|962f1e63c2535128f6ca6dcbc701a53c|[{"name": "hf_part_no", "dataType": "varchar", "nullable": false}, {"name": "_来料固定加工费_投入料号", "dataType": "varchar", "nullable": true}, {"name": "_物料_材料名", "dataType": "varchar", "nullable": true}, {"name": "_来料固定加工费_基准值", "dataType": "numeric", "nullable": true}]|{"columns": [{"isAmount": null, "fieldName": "料号", "fieldType": "INPUT_TEXT", "inSubtotal": null, "viewColumn": "_来料固定加工费_投入料号", "sourceColumn": "input_material_no", "resolvedRoles": ["PART_NO", "ROW_KEY"], "sourceNodeKey": "INCOMING_FIXED_FEE", "resolvedDataType": "TEXT"}, {"isAmount": null, "fieldName": "材料名", "fieldType": "INPUT_TEXT", "inSubtotal": null, "viewColumn": "_物料_材料名", "sourceColumn": "material_name", "resolvedRoles": ["PART_NAME"], "sourceNodeKey": "MAT_NAME_LK", "resolvedDataType": "TEXT"}, {"isAmount": null, "fieldName": "基准值", "fieldType": "INPUT_NUMBER", "inSubtotal": null, "viewColumn": "_来料固定加工费_基准值", "sourceColumn": "base_value", "resolvedRoles": [], "sourceNodeKey": "INCOMING_FIXED_FEE", "resolvedDataType": "NUMBER"}], "dialect": "QUOTE", "tabType": "费用类", "switches": null, "axisScope": "CLOSURE", "variantKey": "INCOMING_FIXED_FEE", "priceStrategy": null, "builderVersion": null}|1|2026-09-16 19:49:07.439636 || comp=1f96d09b6668db65c984781c725192b4 || oplog=0
+  s1=views=builder_46fecbc0c304|962f1e63c2535128f6ca6dcbc701a53c|[{"name": "hf_part_no", "dataType": "varchar", "nullable": false}, {"name": "_来料固定加工费_投入料号", "dataType": "varchar", "nullable": true}, {"name": "_物料_材料名", "dataType": "varchar", "nullable": true}, {"name": "_来料固定加工费_基准值", "dataType": "numeric", "nullable": true}]|{"columns": [{"isAmount": null, "fieldName": "料号", "fieldType": "INPUT_TEXT", "inSubtotal": null, "viewColumn": "_来料固定加工费_投入料号", "sourceColumn": "input_material_no", "resolvedRoles": ["PART_NO", "ROW_KEY"], "sourceNodeKey": "INCOMING_FIXED_FEE", "resolvedDataType": "TEXT"}, {"isAmount": null, "fieldName": "材料名", "fieldType": "INPUT_TEXT", "inSubtotal": null, "viewColumn": "_物料_材料名", "sourceColumn": "material_name", "resolvedRoles": ["PART_NAME"], "sourceNodeKey": "MAT_NAME_LK", "resolvedDataType": "TEXT"}, {"isAmount": null, "fieldName": "基准值", "fieldType": "INPUT_NUMBER", "inSubtotal": null, "viewColumn": "_来料固定加工费_基准值", "sourceColumn": "base_value", "resolvedRoles": [], "sourceNodeKey": "INCOMING_FIXED_FEE", "resolvedDataType": "NUMBER"}], "dialect": "QUOTE", "tabType": "费用类", "switches": null, "axisScope": "CLOSURE", "variantKey": "INCOMING_FIXED_FEE", "priceStrategy": null, "builderVersion": null}|1|2026-09-16 19:49:07.439636 || comp=1f96d09b6668db65c984781c725192b4 || oplog=0
+[S-2 residue] {ds_quote_incoming_fixed_fee=0, ds_quote_material=0, ds_cost_basic_incoming_process_fee=0, ds_cost_basic_material=0, ds_cost_detail_incoming_other_fixed_fee=0, ds_cost_detail_material=0, component=0, operation_log+component_sql_view(自建id)=0}
+[S-2 前置] material_recipe.00144.symbol=H85
+[S-2 前置] ds_cost_basic_material(00144)=0 ds_cost_detail_material(00144)=0
+2026-09-16 19:49:08.699 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=null requestedTabType=null currentTabType=null builderTreeFlag=null
+2026-09-16 19:49:08.717 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Created component id=c60edb46-d973-4777-a00a-822d978fdd56 code=COMP-3325
+[S-2 造数] component R260916-T-AC8-1B-A-389F id=c60edb46-d973-4777-a00a-822d978fdd56 code=COMP-3325
+2026-09-16 19:49:08.999 INFO  [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [ComponentSqlView] created componentId=c60edb46-d973-4777-a00a-822d978fdd56 name=builder_c60edb46d973 scope=COMPONENT
+2026-09-16 19:49:09.024 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [driver-view] componentId=c60edb46-d973-4777-a00a-822d978fdd56 set dataDriverPath='$builder_c60edb46d973'
+2026-09-16 19:49:09.046 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [Y1.5 component update] id=c60edb46-d973-4777-a00a-822d978fdd56 code=COMP-3325 incoming dataDriverPath='$builder_c60edb46d973' (null=false)
+2026-09-16 19:49:09.046 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [Y1.5 component update] saved dataDriverPath='$builder_c60edb46d973'
+2026-09-16 19:49:09.113 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=c60edb46-d973-4777-a00a-822d978fdd56 coord=(费用类,INCOMING_FIXED_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-16 19:49:09.113 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=c60edb46-d973-4777-a00a-822d978fdd56 requestedTabType=null currentTabType=null builderTreeFlag=false
+2026-09-16 19:49:09.161 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=c60edb46-d973-4777-a00a-822d978fdd56 coord=(费用类,INCOMING_FIXED_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-16 19:49:09.180 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Updated component id=c60edb46-d973-4777-a00a-822d978fdd56 code=COMP-3325
+2026-09-16 19:49:09.359 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: componentIds 含非法 UUID: R260916-T-not-a-uuid
+---- recompile-components body={componentIds=[c60edb46-d973-4777-a00a-822d978fdd56, R260916-T-not-a-uuid], confirm=true} → 400
+{"code":"INVALID_COMPONENT_ID","message":"componentIds 含非法 UUID: R260916-T-not-a-uuid","invalidIds":["R260916-T-not-a-uuid"]}
+[S-2 residue] {ds_quote_incoming_fixed_fee=0, ds_quote_material=0, ds_cost_basic_incoming_process_fee=0, ds_cost_basic_material=0, ds_cost_detail_incoming_other_fixed_fee=0, ds_cost_detail_material=0, component=0, operation_log+component_sql_view(自建id)=0}
+[S-2 前置] material_recipe.00144.symbol=H85
+[S-2 前置] ds_cost_basic_material(00144)=0 ds_cost_detail_material(00144)=0
+2026-09-16 19:49:10.084 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=null requestedTabType=null currentTabType=null builderTreeFlag=null
+2026-09-16 19:49:10.101 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Created component id=7ca46271-1313-4ced-b547-996fbd232c83 code=COMP-3326
+[S-2 造数] component R260916-T-AC8-2-A-389F id=7ca46271-1313-4ced-b547-996fbd232c83 code=COMP-3326
+2026-09-16 19:49:10.423 INFO  [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [ComponentSqlView] created componentId=7ca46271-1313-4ced-b547-996fbd232c83 name=builder_7ca462711313 scope=COMPONENT
+2026-09-16 19:49:10.461 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [driver-view] componentId=7ca46271-1313-4ced-b547-996fbd232c83 set dataDriverPath='$builder_7ca462711313'
+2026-09-16 19:49:10.482 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [Y1.5 component update] id=7ca46271-1313-4ced-b547-996fbd232c83 code=COMP-3326 incoming dataDriverPath='$builder_7ca462711313' (null=false)
+2026-09-16 19:49:10.482 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [Y1.5 component update] saved dataDriverPath='$builder_7ca462711313'
+2026-09-16 19:49:10.562 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=7ca46271-1313-4ced-b547-996fbd232c83 coord=(费用类,INCOMING_FIXED_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-16 19:49:10.562 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=7ca46271-1313-4ced-b547-996fbd232c83 requestedTabType=null currentTabType=null builderTreeFlag=false
+2026-09-16 19:49:10.591 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=7ca46271-1313-4ced-b547-996fbd232c83 coord=(费用类,INCOMING_FIXED_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-16 19:49:10.606 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Updated component id=7ca46271-1313-4ced-b547-996fbd232c83 code=COMP-3326
+2026-09-16 19:49:10.876 WARN  [com.cpq.con.ConfigCenterResource] (executor-thread-1) [admin-backdoor] recompile-components 预览（未执行）：组件 1 个 / 视图 1 个 / 将变化 1 个 [builder_7ca462711313]
+---- recompile-components body={componentIds=[7ca46271-1313-4ced-b547-996fbd232c83], confirm=false} → 200
+{"code":200,"message":"success","data":{"preview":true,"componentCount":1,"views":1,"changed":1,"changes":[{"componentId":"7ca46271-1313-4ced-b547-996fbd232c83","componentCode":"COMP-3326","componentName":"R260916-T-AC8-2-A-389F","sqlViewName":"builder_7ca462711313","oldSqlTemplate":"/* R260916-T-STALE */ SELECT\n  dqiff.material_no AS hf_part_no,\n  dqiff.input_material_no AS \"_来料固定加工费_投入料号\",\n  COALESCE(dqm.material_name, mr.symbol) AS \"_物料_材料名\",\n  dqiff.base_value AS \"_来料固定加工费_基准值\"\nFROM ds_quote_incoming_fixed_fee dqiff\n  LEFT JOIN ds_quote_material dqm ON dqm.material_no = dqiff.input_material_no AND dqm.customer_no = dqiff.customer_no\n  LEFT JOIN material_recipe mr ON mr.code = dqiff.input_material_no\nWHERE dqiff.material_no = ANY(:total_material_no) AND dqiff.customer_no = :customerCode\nORDER BY dqiff.material_no, dqiff.input_material_no, dqiff.item_seq","newSqlTemplate":"SELECT\n  dqiff.material_no AS hf_part_no,\n  dqiff.input_material_no AS \"_来料固定加工费_投入料号\",\n  COALESCE(dqm.material_name, mr.symbol) AS \"_物料_材料名\",\n  dqiff.base_value AS \"_来料固定加工费_基准值\"\nFROM ds_quote_incoming_fixed_fee dqiff\n  LEFT JOIN ds_quote_material dqm ON dqm.material_no = dqiff.input_material_no AND dqm.customer_no = dqiff.customer_no\n  LEFT JOIN material_recipe mr ON mr.code = dqiff.input_material_no\nWHERE dqiff.material_no = ANY(:total_material_no) AND dqiff.customer_no = :customerCode\nORDER BY dqiff.material_no, dqiff.input_material_no, dqiff.item_seq"}],"unchangedViewNames":[],"skippedComponentIds":[],"warning":"只重编译所列组件的取数视图；不改组件字段表、公式、组件属性，不改任何模板快照。"}}
+2026-09-16 19:49:11.133 INFO  [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [ComponentSqlView] updated id=52814096-c486-4e43-80f6-3464e9fe4048 componentId=7ca46271-1313-4ced-b547-996fbd232c83
+2026-09-16 19:49:11.180 WARN  [com.cpq.con.ConfigCenterResource] (executor-thread-1) [admin-backdoor] recompile-components 已执行：组件 1 个 / 视图 1 个 / sql_template 变化 1 个 [builder_7ca462711313]，审计 1 行
+---- recompile-components body={componentIds=[7ca46271-1313-4ced-b547-996fbd232c83], confirm=true} → 200
+{"code":200,"message":"success","data":{"preview":false,"componentCount":1,"views":1,"changed":1,"changedViewNames":["builder_7ca462711313"],"unchangedViewNames":[],"skippedComponentIds":[],"operationLogIds":["81d7fc03-de82-4122-bb1e-f3a56cc38153"]}}
+[T2.6 阳性对照] before=views=builder_7ca462711313|962f1e63c2535128f6ca6dcbc701a53c|[{"name": "hf_part_no", "dataType": "varchar", "nullable": false}, {"name": "_来料固定加工费_投入料号", "dataType": "varchar", "nullable": true}, {"name": "_物料_材料名", "dataType": "varchar", "nullable": true}, {"name": "_来料固定加工费_基准值", "dataType": "numeric", "nullable": true}]|{"columns": [{"isAmount": null, "fieldName": "料号", "fieldType": "INPUT_TEXT", "inSubtotal": null, "viewColumn": "_来料固定加工费_投入料号", "sourceColumn": "input_material_no", "resolvedRoles": ["PART_NO", "ROW_KEY"], "sourceNodeKey": "INCOMING_FIXED_FEE", "resolvedDataType": "TEXT"}, {"isAmount": null, "fieldName": "材料名", "fieldType": "INPUT_TEXT", "inSubtotal": null, "viewColumn": "_物料_材料名", "sourceColumn": "material_name", "resolvedRoles": ["PART_NAME"], "sourceNodeKey": "MAT_NAME_LK", "resolvedDataType": "TEXT"}, {"isAmount": null, "fieldName": "基准值", "fieldType": "INPUT_NUMBER", "inSubtotal": null, "viewColumn": "_来料固定加工费_基准值", "sourceColumn": "base_value", "resolvedRoles": [], "sourceNodeKey": "INCOMING_FIXED_FEE", "resolvedDataType": "NUMBER"}], "dialect": "QUOTE", "tabType": "费用类", "switches": null, "axisScope": "CLOSURE", "variantKey": "INCOMING_FIXED_FEE", "priceStrategy": null, "builderVersion": null}|1|2026-09-16 19:49:10.484657 || comp=038db5d83f8f1867cd0429a20fd64c91 || oplog=0
+  after=views=builder_7ca462711313|d49022aebffc64b24d06f31efb437791|[{"name": "hf_part_no", "dataType": "varchar", "nullable": false}, {"name": "_来料固定加工费_投入料号", "dataType": "varchar", "nullable": true}, {"name": "_物料_材料名", "dataType": "varchar", "nullable": true}, {"name": "_来料固定加工费_基准值", "dataType": "numeric", "nullable": true}]|{"columns": [{"isAmount": null, "fieldName": "料号", "fieldType": "INPUT_TEXT", "inSubtotal": null, "viewColumn": "_来料固定加工费_投入料号", "sourceColumn": "input_material_no", "resolvedRoles": ["PART_NO", "ROW_KEY"], "sourceNodeKey": "INCOMING_FIXED_FEE", "resolvedDataType": "TEXT"}, {"isAmount": null, "fieldName": "材料名", "fieldType": "INPUT_TEXT", "inSubtotal": null, "viewColumn": "_物料_材料名", "sourceColumn": "material_name", "resolvedRoles": ["PART_NAME"], "sourceNodeKey": "MAT_NAME_LK", "resolvedDataType": "TEXT"}, {"isAmount": null, "fieldName": "基准值", "fieldType": "INPUT_NUMBER", "inSubtotal": null, "viewColumn": "_来料固定加工费_基准值", "sourceColumn": "base_value", "resolvedRoles": [], "sourceNodeKey": "INCOMING_FIXED_FEE", "resolvedDataType": "NUMBER"}], "dialect": "QUOTE", "tabType": "费用类", "switches": null, "axisScope": "CLOSURE", "variantKey": "INCOMING_FIXED_FEE", "priceStrategy": null, "builderVersion": null}|1|2026-09-16 19:49:11.135825 || comp=038db5d83f8f1867cd0429a20fd64c91 || oplog=1
+2026-09-16 19:49:11.426 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: 以下组件不存在: 2332b079-a97c-4db9-9ae3-3855e8cd0bd9
+---- recompile-components body={componentIds=[7ca46271-1313-4ced-b547-996fbd232c83, 2332b079-a97c-4db9-9ae3-3855e8cd0bd9], confirm=true} → 404
+{"code":"COMPONENT_NOT_FOUND","message":"以下组件不存在: 2332b079-a97c-4db9-9ae3-3855e8cd0bd9","missingIds":["2332b079-a97c-4db9-9ae3-3855e8cd0bd9"]}
+[T2.6 实际值] confirm=true missingIds=[2332b079-a97c-4db9-9ae3-3855e8cd0bd9]
+2026-09-16 19:49:11.495 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: 以下组件不存在: 2332b079-a97c-4db9-9ae3-3855e8cd0bd9
+---- recompile-components body={componentIds=[7ca46271-1313-4ced-b547-996fbd232c83, 2332b079-a97c-4db9-9ae3-3855e8cd0bd9], confirm=false} → 404
+{"code":"COMPONENT_NOT_FOUND","message":"以下组件不存在: 2332b079-a97c-4db9-9ae3-3855e8cd0bd9","missingIds":["2332b079-a97c-4db9-9ae3-3855e8cd0bd9"]}
+[T2.6 实际值] confirm=false missingIds=[2332b079-a97c-4db9-9ae3-3855e8cd0bd9]
+[T2.6] s0=views=builder_7ca462711313|962f1e63c2535128f6ca6dcbc701a53c|[{"name": "hf_part_no", "dataType": "varchar", "nullable": false}, {"name": "_来料固定加工费_投入料号", "dataType": "varchar", "nullable": true}, {"name": "_物料_材料名", "dataType": "varchar", "nullable": true}, {"name": "_来料固定加工费_基准值", "dataType": "numeric", "nullable": true}]|{"columns": [{"isAmount": null, "fieldName": "料号", "fieldType": "INPUT_TEXT", "inSubtotal": null, "viewColumn": "_来料固定加工费_投入料号", "sourceColumn": "input_material_no", "resolvedRoles": ["PART_NO", "ROW_KEY"], "sourceNodeKey": "INCOMING_FIXED_FEE", "resolvedDataType": "TEXT"}, {"isAmount": null, "fieldName": "材料名", "fieldType": "INPUT_TEXT", "inSubtotal": null, "viewColumn": "_物料_材料名", "sourceColumn": "material_name", "resolvedRoles": ["PART_NAME"], "sourceNodeKey": "MAT_NAME_LK", "resolvedDataType": "TEXT"}, {"isAmount": null, "fieldName": "基准值", "fieldType": "INPUT_NUMBER", "inSubtotal": null, "viewColumn": "_来料固定加工费_基准值", "sourceColumn": "base_value", "resolvedRoles": [], "sourceNodeKey": "INCOMING_FIXED_FEE", "resolvedDataType": "NUMBER"}], "dialect": "QUOTE", "tabType": "费用类", "switches": null, "axisScope": "CLOSURE", "variantKey": "INCOMING_FIXED_FEE", "priceStrategy": null, "builderVersion": null}|1|2026-09-16 19:49:11.135825 || comp=038db5d83f8f1867cd0429a20fd64c91 || oplog=1
+  s1=views=builder_7ca462711313|962f1e63c2535128f6ca6dcbc701a53c|[{"name": "hf_part_no", "dataType": "varchar", "nullable": false}, {"name": "_来料固定加工费_投入料号", "dataType": "varchar", "nullable": true}, {"name": "_物料_材料名", "dataType": "varchar", "nullable": true}, {"name": "_来料固定加工费_基准值", "dataType": "numeric", "nullable": true}]|{"columns": [{"isAmount": null, "fieldName": "料号", "fieldType": "INPUT_TEXT", "inSubtotal": null, "viewColumn": "_来料固定加工费_投入料号", "sourceColumn": "input_material_no", "resolvedRoles": ["PART_NO", "ROW_KEY"], "sourceNodeKey": "INCOMING_FIXED_FEE", "resolvedDataType": "TEXT"}, {"isAmount": null, "fieldName": "材料名", "fieldType": "INPUT_TEXT", "inSubtotal": null, "viewColumn": "_物料_材料名", "sourceColumn": "material_name", "resolvedRoles": ["PART_NAME"], "sourceNodeKey": "MAT_NAME_LK", "resolvedDataType": "TEXT"}, {"isAmount": null, "fieldName": "基准值", "fieldType": "INPUT_NUMBER", "inSubtotal": null, "viewColumn": "_来料固定加工费_基准值", "sourceColumn": "base_value", "resolvedRoles": [], "sourceNodeKey": "INCOMING_FIXED_FEE", "resolvedDataType": "NUMBER"}], "dialect": "QUOTE", "tabType": "费用类", "switches": null, "axisScope": "CLOSURE", "variantKey": "INCOMING_FIXED_FEE", "priceStrategy": null, "builderVersion": null}|1|2026-09-16 19:49:11.135825 || comp=038db5d83f8f1867cd0429a20fd64c91 || oplog=1
+[S-2 residue] {ds_quote_incoming_fixed_fee=0, ds_quote_material=0, ds_cost_basic_incoming_process_fee=0, ds_cost_basic_material=0, ds_cost_detail_incoming_other_fixed_fee=0, ds_cost_detail_material=0, component=0, operation_log+component_sql_view(自建id)=0}
+[S-2 前置] material_recipe.00144.symbol=H85
+[S-2 前置] ds_cost_basic_material(00144)=0 ds_cost_detail_material(00144)=0
+2026-09-16 19:49:12.142 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=null requestedTabType=null currentTabType=null builderTreeFlag=null
+2026-09-16 19:49:12.150 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Created component id=4da4499c-42f0-4ed8-8af2-43487e1163a2 code=COMP-3327
+[S-2 造数] component R260916-T-AC8-3-A-389F id=4da4499c-42f0-4ed8-8af2-43487e1163a2 code=COMP-3327
+2026-09-16 19:49:12.421 INFO  [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [ComponentSqlView] created componentId=4da4499c-42f0-4ed8-8af2-43487e1163a2 name=builder_4da4499c42f0 scope=COMPONENT
+2026-09-16 19:49:12.460 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [driver-view] componentId=4da4499c-42f0-4ed8-8af2-43487e1163a2 set dataDriverPath='$builder_4da4499c42f0'
+2026-09-16 19:49:12.482 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [Y1.5 component update] id=4da4499c-42f0-4ed8-8af2-43487e1163a2 code=COMP-3327 incoming dataDriverPath='$builder_4da4499c42f0' (null=false)
+2026-09-16 19:49:12.482 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [Y1.5 component update] saved dataDriverPath='$builder_4da4499c42f0'
+2026-09-16 19:49:12.555 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=4da4499c-42f0-4ed8-8af2-43487e1163a2 coord=(费用类,INCOMING_FIXED_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-16 19:49:12.555 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=4da4499c-42f0-4ed8-8af2-43487e1163a2 requestedTabType=null currentTabType=null builderTreeFlag=false
+2026-09-16 19:49:12.594 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=4da4499c-42f0-4ed8-8af2-43487e1163a2 coord=(费用类,INCOMING_FIXED_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-16 19:49:12.608 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Updated component id=4da4499c-42f0-4ed8-8af2-43487e1163a2 code=COMP-3327
+2026-09-16 19:49:12.789 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=null requestedTabType=null currentTabType=null builderTreeFlag=null
+2026-09-16 19:49:12.801 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Created component id=1b29a5f5-17c7-4658-85a9-1a02c6ec6cb9 code=COMP-3328
+[S-2 造数] component R260916-T-AC8-3-BLANK-389F id=1b29a5f5-17c7-4658-85a9-1a02c6ec6cb9 code=COMP-3328
+2026-09-16 19:49:12.912 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=null requestedTabType=null currentTabType=null builderTreeFlag=null
+2026-09-16 19:49:12.925 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Created component id=ebdd9129-826f-4210-873e-a9d79d4f6a38 code=COMP-3329
+[S-2 造数] component R260916-T-AC8-3-LEGACY-389F id=ebdd9129-826f-4210-873e-a9d79d4f6a38 code=COMP-3329
+2026-09-16 19:49:13.276 INFO  [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [ComponentSqlView] updated id=807a0b95-011c-48a1-b1bd-e143a59c6046 componentId=4da4499c-42f0-4ed8-8af2-43487e1163a2
+2026-09-16 19:49:13.313 WARN  [com.cpq.con.ConfigCenterResource] (executor-thread-1) [admin-backdoor] recompile-components 已执行：组件 3 个 / 视图 1 个 / sql_template 变化 1 个 [builder_4da4499c42f0]，审计 1 行
+---- recompile-components body={componentIds=[4da4499c-42f0-4ed8-8af2-43487e1163a2, 1b29a5f5-17c7-4658-85a9-1a02c6ec6cb9, ebdd9129-826f-4210-873e-a9d79d4f6a38], confirm=true} → 200
+{"code":200,"message":"success","data":{"preview":false,"componentCount":3,"views":1,"changed":1,"changedViewNames":["builder_4da4499c42f0"],"unchangedViewNames":[],"skippedComponentIds":["1b29a5f5-17c7-4658-85a9-1a02c6ec6cb9","ebdd9129-826f-4210-873e-a9d79d4f6a38"],"operationLogIds":["94775e9b-20f9-45fd-a80c-50e0274d2f4d"]}}
+[T2.7 实际值] skipped=[1b29a5f5-17c7-4658-85a9-1a02c6ec6cb9, ebdd9129-826f-4210-873e-a9d79d4f6a38] changedViewNames=[builder_4da4499c42f0] operationLogIds=[94775e9b-20f9-45fd-a80c-50e0274d2f4d] componentCount=3 views=1
+[S-2 residue] {ds_quote_incoming_fixed_fee=0, ds_quote_material=0, ds_cost_basic_incoming_process_fee=0, ds_cost_basic_material=0, ds_cost_detail_incoming_other_fixed_fee=0, ds_cost_detail_material=0, component=0, operation_log+component_sql_view(自建id)=0}
+[S-2 前置] material_recipe.00144.symbol=H85
+[S-2 前置] ds_cost_basic_material(00144)=0 ds_cost_detail_material(00144)=0
+2026-09-16 19:49:14.163 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=null requestedTabType=null currentTabType=null builderTreeFlag=null
+2026-09-16 19:49:14.179 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Created component id=870a2cb2-04dc-4b75-8322-88de5287dba3 code=COMP-3330
+[S-2 造数] component R260916-T-AC8-4-A-389F id=870a2cb2-04dc-4b75-8322-88de5287dba3 code=COMP-3330
+2026-09-16 19:49:14.464 INFO  [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [ComponentSqlView] created componentId=870a2cb2-04dc-4b75-8322-88de5287dba3 name=builder_870a2cb204dc scope=COMPONENT
+2026-09-16 19:49:14.506 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [driver-view] componentId=870a2cb2-04dc-4b75-8322-88de5287dba3 set dataDriverPath='$builder_870a2cb204dc'
+2026-09-16 19:49:14.518 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [Y1.5 component update] id=870a2cb2-04dc-4b75-8322-88de5287dba3 code=COMP-3330 incoming dataDriverPath='$builder_870a2cb204dc' (null=false)
+2026-09-16 19:49:14.518 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [Y1.5 component update] saved dataDriverPath='$builder_870a2cb204dc'
+2026-09-16 19:49:14.591 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=870a2cb2-04dc-4b75-8322-88de5287dba3 coord=(费用类,INCOMING_FIXED_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-16 19:49:14.591 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=870a2cb2-04dc-4b75-8322-88de5287dba3 requestedTabType=null currentTabType=null builderTreeFlag=false
+2026-09-16 19:49:14.631 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=870a2cb2-04dc-4b75-8322-88de5287dba3 coord=(费用类,INCOMING_FIXED_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-16 19:49:14.645 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Updated component id=870a2cb2-04dc-4b75-8322-88de5287dba3 code=COMP-3330
+2026-09-16 19:49:14.819 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=null requestedTabType=null currentTabType=null builderTreeFlag=null
+2026-09-16 19:49:14.834 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Created component id=0c5295bd-35ed-4b9f-af40-ade01502bab8 code=COMP-3331
+[S-2 造数] component R260916-T-AC8-4-B-389F id=0c5295bd-35ed-4b9f-af40-ade01502bab8 code=COMP-3331
+2026-09-16 19:49:15.107 INFO  [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [ComponentSqlView] created componentId=0c5295bd-35ed-4b9f-af40-ade01502bab8 name=builder_0c5295bd35ed scope=COMPONENT
+2026-09-16 19:49:15.137 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [driver-view] componentId=0c5295bd-35ed-4b9f-af40-ade01502bab8 set dataDriverPath='$builder_0c5295bd35ed'
+2026-09-16 19:49:15.151 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [Y1.5 component update] id=0c5295bd-35ed-4b9f-af40-ade01502bab8 code=COMP-3331 incoming dataDriverPath='$builder_0c5295bd35ed' (null=false)
+2026-09-16 19:49:15.151 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [Y1.5 component update] saved dataDriverPath='$builder_0c5295bd35ed'
+2026-09-16 19:49:15.234 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=0c5295bd-35ed-4b9f-af40-ade01502bab8 coord=(费用类,INCOMING_FIXED_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-16 19:49:15.234 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=0c5295bd-35ed-4b9f-af40-ade01502bab8 requestedTabType=null currentTabType=null builderTreeFlag=false
+2026-09-16 19:49:15.258 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=0c5295bd-35ed-4b9f-af40-ade01502bab8 coord=(费用类,INCOMING_FIXED_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-16 19:49:15.272 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Updated component id=0c5295bd-35ed-4b9f-af40-ade01502bab8 code=COMP-3331
+2026-09-16 19:49:15.582 INFO  [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [ComponentSqlView] updated id=df95ab9c-6e81-4e99-9e25-bc7243485712 componentId=0c5295bd-35ed-4b9f-af40-ade01502bab8
+2026-09-16 19:49:15.647 INFO  [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [ComponentSqlView] updated id=85a5158a-2b35-41e5-b685-9b4881744377 componentId=870a2cb2-04dc-4b75-8322-88de5287dba3
+2026-09-16 19:49:17.665 WARN  [com.cpq.con.ConfigCenterResource] (executor-thread-1) [admin-backdoor] recompile-components 已执行：组件 2 个 / 视图 2 个 / sql_template 变化 2 个 [builder_0c5295bd35ed, builder_870a2cb204dc]，审计 2 行
+---- recompile-components body={componentIds=[870a2cb2-04dc-4b75-8322-88de5287dba3, 0c5295bd-35ed-4b9f-af40-ade01502bab8], confirm=true} → 200
+{"code":200,"message":"success","data":{"preview":false,"componentCount":2,"views":2,"changed":2,"changedViewNames":["builder_0c5295bd35ed","builder_870a2cb204dc"],"unchangedViewNames":[],"skippedComponentIds":[],"operationLogIds":["aa601c25-97d7-4aa7-8d24-d5b0e604f378","ef24a350-bd26-4f67-9aca-7ff12602a950"]}}
+[T2.8 审计实际值] [COMPONENT_VIEW_RECOMPILE, COMPONENT, 0c5295bd-35ed-4b9f-af40-ade01502bab8, 按组件重编译取数视图 builder_0c5295bd35ed, builder_0c5295bd35ed, recompile-components, d1e1147c-a639-4156-aeac-9f938a65ad05]
+[T2.8 审计实际值] [COMPONENT_VIEW_RECOMPILE, COMPONENT, 870a2cb2-04dc-4b75-8322-88de5287dba3, 按组件重编译取数视图 builder_870a2cb204dc, builder_870a2cb204dc, recompile-components, d1e1147c-a639-4156-aeac-9f938a65ad05]
+2026-09-16 19:49:18.130 WARN  [com.cpq.con.ConfigCenterResource] (executor-thread-1) [admin-backdoor] recompile-components 已执行：组件 2 个 / 视图 2 个 / sql_template 变化 0 个 []，审计 0 行
+---- recompile-components body={componentIds=[870a2cb2-04dc-4b75-8322-88de5287dba3, 0c5295bd-35ed-4b9f-af40-ade01502bab8], confirm=true} → 200
+{"code":200,"message":"success","data":{"preview":false,"componentCount":2,"views":2,"changed":0,"changedViewNames":[],"unchangedViewNames":["builder_0c5295bd35ed","builder_870a2cb204dc"],"skippedComponentIds":[],"operationLogIds":[]}}
+[T2.8 实际值] 第二次 changed=0 operationLogIds=[] unchangedViewNames=[builder_0c5295bd35ed, builder_870a2cb204dc]
+[T2.8 旁证·不判定] component fields/formulas md5 before=eb47f5c0ba15b9149ed38fe6e19872f9 after=eb47f5c0ba15b9149ed38fe6e19872f9
+  第二次前后快照是否相同 A=true B=true
+[S-2 residue] {ds_quote_incoming_fixed_fee=0, ds_quote_material=0, ds_cost_basic_incoming_process_fee=0, ds_cost_basic_material=0, ds_cost_detail_incoming_other_fixed_fee=0, ds_cost_detail_material=0, component=0, operation_log+component_sql_view(自建id)=0}
+[S-2 前置] material_recipe.00144.symbol=H85
+[S-2 前置] ds_cost_basic_material(00144)=0 ds_cost_detail_material(00144)=0
+2026-09-16 19:49:18.864 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=null requestedTabType=null currentTabType=null builderTreeFlag=null
+2026-09-16 19:49:18.881 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Created component id=7c4b7666-2a56-4ee4-b844-3edaa27066d7 code=COMP-3332
+[S-2 造数] component R260916-T-AC8-5-A-389F id=7c4b7666-2a56-4ee4-b844-3edaa27066d7 code=COMP-3332
+2026-09-16 19:49:19.093 INFO  [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [ComponentSqlView] created componentId=7c4b7666-2a56-4ee4-b844-3edaa27066d7 name=builder_7c4b76662a56 scope=COMPONENT
+2026-09-16 19:49:19.120 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [driver-view] componentId=7c4b7666-2a56-4ee4-b844-3edaa27066d7 set dataDriverPath='$builder_7c4b76662a56'
+2026-09-16 19:49:19.136 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [Y1.5 component update] id=7c4b7666-2a56-4ee4-b844-3edaa27066d7 code=COMP-3332 incoming dataDriverPath='$builder_7c4b76662a56' (null=false)
+2026-09-16 19:49:19.136 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [Y1.5 component update] saved dataDriverPath='$builder_7c4b76662a56'
+2026-09-16 19:49:19.208 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=7c4b7666-2a56-4ee4-b844-3edaa27066d7 coord=(费用类,INCOMING_FIXED_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-16 19:49:19.208 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=7c4b7666-2a56-4ee4-b844-3edaa27066d7 requestedTabType=null currentTabType=null builderTreeFlag=false
+2026-09-16 19:49:19.226 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=7c4b7666-2a56-4ee4-b844-3edaa27066d7 coord=(费用类,INCOMING_FIXED_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-16 19:49:19.239 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Updated component id=7c4b7666-2a56-4ee4-b844-3edaa27066d7 code=COMP-3332
+2026-09-16 19:49:19.643 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-1) User logged in: t260903_sales role=SALES_REP
+2026-09-16 19:49:19.685 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-1) Session created for user: t260903_sales
+[T2.9] sales /auth/me → 200 {"code":200,"message":"success","data":{"id":"019d9f64-ed6f-45c2-b46a-581ed4e70cc2","username":"t260903_sales","fullName":"task-260903 销售代表测试账号","role":"SALES_REP","forceChangePassword":false}}
+---- recompile-components body={componentIds=[7c4b7666-2a56-4ee4-b844-3edaa27066d7], confirm=true} → 403
+{"code":403,"message":"无权限访问"}
+---- recompile-components body={componentIds=[7c4b7666-2a56-4ee4-b844-3edaa27066d7], confirm=true} → 401
+{"code":401,"message":"未登录"}
+---- recompile-components body={componentIds=[7c4b7666-2a56-4ee4-b844-3edaa27066d7], confirm=false} → 403
+{"code":403,"message":"无权限访问"}
+---- recompile-components body={componentIds=[7c4b7666-2a56-4ee4-b844-3edaa27066d7], confirm=false} → 401
+{"code":401,"message":"未登录"}
+2026-09-16 19:49:20.249 WARN  [com.cpq.con.ConfigCenterResource] (executor-thread-1) [admin-backdoor] recompile-components 预览（未执行）：组件 1 个 / 视图 1 个 / 将变化 1 个 [builder_7c4b76662a56]
+---- recompile-components body={componentIds=[7c4b7666-2a56-4ee4-b844-3edaa27066d7], confirm=false} → 200
+{"code":200,"message":"success","data":{"preview":true,"componentCount":1,"views":1,"changed":1,"changes":[{"componentId":"7c4b7666-2a56-4ee4-b844-3edaa27066d7","componentCode":"COMP-3332","componentName":"R260916-T-AC8-5-A-389F","sqlViewName":"builder_7c4b76662a56","oldSqlTemplate":"/* R260916-T-STALE */ SELECT\n  dqiff.material_no AS hf_part_no,\n  dqiff.input_material_no AS \"_来料固定加工费_投入料号\",\n  COALESCE(dqm.material_name, mr.symbol) AS \"_物料_材料名\",\n  dqiff.base_value AS \"_来料固定加工费_基准值\"\nFROM ds_quote_incoming_fixed_fee dqiff\n  LEFT JOIN ds_quote_material dqm ON dqm.material_no = dqiff.input_material_no AND dqm.customer_no = dqiff.customer_no\n  LEFT JOIN material_recipe mr ON mr.code = dqiff.input_material_no\nWHERE dqiff.material_no = ANY(:total_material_no) AND dqiff.customer_no = :customerCode\nORDER BY dqiff.material_no, dqiff.input_material_no, dqiff.item_seq","newSqlTemplate":"SELECT\n  dqiff.material_no AS hf_part_no,\n  dqiff.input_material_no AS \"_来料固定加工费_投入料号\",\n  COALESCE(dqm.material_name, mr.symbol) AS \"_物料_材料名\",\n  dqiff.base_value AS \"_来料固定加工费_基准值\"\nFROM ds_quote_incoming_fixed_fee dqiff\n  LEFT JOIN ds_quote_material dqm ON dqm.material_no = dqiff.input_material_no AND dqm.customer_no = dqiff.customer_no\n  LEFT JOIN material_recipe mr ON mr.code = dqiff.input_material_no\nWHERE dqiff.material_no = ANY(:total_material_no) AND dqiff.customer_no = :customerCode\nORDER BY dqiff.material_no, dqiff.input_material_no, dqiff.item_seq"}],"unchangedViewNames":[],"skippedComponentIds":[],"warning":"只重编译所列组件的取数视图；不改组件字段表、公式、组件属性，不改任何模板快照。"}}
+[S-2 residue] {ds_quote_incoming_fixed_fee=0, ds_quote_material=0, ds_cost_basic_incoming_process_fee=0, ds_cost_basic_material=0, ds_cost_detail_incoming_other_fixed_fee=0, ds_cost_detail_material=0, component=0, operation_log+component_sql_view(自建id)=0}
+[S-2 前置] material_recipe.00144.symbol=H85
+[S-2 前置] ds_cost_basic_material(00144)=0 ds_cost_detail_material(00144)=0
+2026-09-16 19:49:20.911 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=null requestedTabType=null currentTabType=null builderTreeFlag=null
+2026-09-16 19:49:20.930 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Created component id=163c9873-6519-4886-baf9-44069f4af8d3 code=COMP-3333
+[S-2 造数] component R260916-T-AC8-6-A1-389F id=163c9873-6519-4886-baf9-44069f4af8d3 code=COMP-3333
+2026-09-16 19:49:21.136 INFO  [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [ComponentSqlView] created componentId=163c9873-6519-4886-baf9-44069f4af8d3 name=builder_163c98736519 scope=COMPONENT
+2026-09-16 19:49:21.165 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [driver-view] componentId=163c9873-6519-4886-baf9-44069f4af8d3 set dataDriverPath='$builder_163c98736519'
+2026-09-16 19:49:21.189 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [Y1.5 component update] id=163c9873-6519-4886-baf9-44069f4af8d3 code=COMP-3333 incoming dataDriverPath='$builder_163c98736519' (null=false)
+2026-09-16 19:49:21.189 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [Y1.5 component update] saved dataDriverPath='$builder_163c98736519'
+2026-09-16 19:49:21.269 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=163c9873-6519-4886-baf9-44069f4af8d3 coord=(费用类,INCOMING_FIXED_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-16 19:49:21.270 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=163c9873-6519-4886-baf9-44069f4af8d3 requestedTabType=null currentTabType=null builderTreeFlag=false
+2026-09-16 19:49:21.302 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=163c9873-6519-4886-baf9-44069f4af8d3 coord=(费用类,INCOMING_FIXED_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-16 19:49:21.316 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Updated component id=163c9873-6519-4886-baf9-44069f4af8d3 code=COMP-3333
+2026-09-16 19:49:21.422 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=null requestedTabType=null currentTabType=null builderTreeFlag=null
+2026-09-16 19:49:21.440 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Created component id=8ebc7507-3690-43b1-92bb-5cce53a3c35c code=COMP-3334
+[S-2 造数] component R260916-T-AC8-6-BAD-389F id=8ebc7507-3690-43b1-92bb-5cce53a3c35c code=COMP-3334
+2026-09-16 19:49:21.631 INFO  [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [ComponentSqlView] created componentId=8ebc7507-3690-43b1-92bb-5cce53a3c35c name=builder_8ebc75073690 scope=COMPONENT
+2026-09-16 19:49:21.654 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [driver-view] componentId=8ebc7507-3690-43b1-92bb-5cce53a3c35c set dataDriverPath='$builder_8ebc75073690'
+2026-09-16 19:49:21.663 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [Y1.5 component update] id=8ebc7507-3690-43b1-92bb-5cce53a3c35c code=COMP-3334 incoming dataDriverPath='$builder_8ebc75073690' (null=false)
+2026-09-16 19:49:21.664 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [Y1.5 component update] saved dataDriverPath='$builder_8ebc75073690'
+2026-09-16 19:49:21.727 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=8ebc7507-3690-43b1-92bb-5cce53a3c35c coord=(费用类,INCOMING_FIXED_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-16 19:49:21.728 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=8ebc7507-3690-43b1-92bb-5cce53a3c35c requestedTabType=null currentTabType=null builderTreeFlag=false
+2026-09-16 19:49:21.770 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=8ebc7507-3690-43b1-92bb-5cce53a3c35c coord=(费用类,INCOMING_FIXED_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-16 19:49:21.790 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Updated component id=8ebc7507-3690-43b1-92bb-5cce53a3c35c code=COMP-3334
+2026-09-16 19:49:21.905 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=null requestedTabType=null currentTabType=null builderTreeFlag=null
+2026-09-16 19:49:21.912 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Created component id=d306dc66-7c4f-444d-8f23-b27b14f4e53a code=COMP-3335
+[S-2 造数] component R260916-T-AC8-6-A2-389F id=d306dc66-7c4f-444d-8f23-b27b14f4e53a code=COMP-3335
+2026-09-16 19:49:22.140 INFO  [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [ComponentSqlView] created componentId=d306dc66-7c4f-444d-8f23-b27b14f4e53a name=builder_d306dc667c4f scope=COMPONENT
+2026-09-16 19:49:22.173 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [driver-view] componentId=d306dc66-7c4f-444d-8f23-b27b14f4e53a set dataDriverPath='$builder_d306dc667c4f'
+2026-09-16 19:49:22.186 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [Y1.5 component update] id=d306dc66-7c4f-444d-8f23-b27b14f4e53a code=COMP-3335 incoming dataDriverPath='$builder_d306dc667c4f' (null=false)
+2026-09-16 19:49:22.186 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) [Y1.5 component update] saved dataDriverPath='$builder_d306dc667c4f'
+2026-09-16 19:49:22.262 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=d306dc66-7c4f-444d-8f23-b27b14f4e53a coord=(费用类,INCOMING_FIXED_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-16 19:49:22.262 DEBUG [com.cpq.com.ser.ComponentService] (executor-thread-1) [tab-semantic] applyTabType comp=d306dc66-7c4f-444d-8f23-b27b14f4e53a requestedTabType=null currentTabType=null builderTreeFlag=false
+2026-09-16 19:49:22.284 DEBUG [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=d306dc66-7c4f-444d-8f23-b27b14f4e53a coord=(费用类,INCOMING_FIXED_FEE,QUOTE) hit graphTabType=费用类 -> semantic=PLAIN
+2026-09-16 19:49:22.297 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Updated component id=d306dc66-7c4f-444d-8f23-b27b14f4e53a code=COMP-3335
+[T2.10] 组件编号 a1=COMP-3333 bad=COMP-3334 a2=COMP-3335（视图名 a1=builder_163c98736519 bad=builder_8ebc75073690 a2=builder_d306dc667c4f）
+2026-09-16 19:49:22.747 INFO  [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [ComponentSqlView] updated id=949f4224-14b4-4a79-97b4-f54cb252ad5b componentId=163c9873-6519-4886-baf9-44069f4af8d3
+2026-09-16 19:49:22.787 WARN  [com.cpq.con.ConfigCenterResource] (executor-thread-1) [admin-backdoor] recompile-components 已执行：组件 1 个 / 视图 1 个 / sql_template 变化 1 个 [builder_163c98736519]，审计 1 行
+---- recompile-components body={componentIds=[163c9873-6519-4886-baf9-44069f4af8d3], confirm=true} → 200
+{"code":200,"message":"success","data":{"preview":false,"componentCount":1,"views":1,"changed":1,"changedViewNames":["builder_163c98736519"],"unchangedViewNames":[],"skippedComponentIds":[],"operationLogIds":["170edc2f-71fd-4e14-9491-97b14c42e20f"]}}
+[T2.10-a1 阳性对照] before=views=builder_163c98736519|962f1e63c2535128f6ca6dcbc701a53c|[{"name": "hf_part_no", "dataType": "varchar", "nullable": false}, {"name": "_来料固定加工费_投入料号", "dataType": "varchar", "nullable": true}, {"name": "_物料_材料名", "dataType": "varchar", "nullable": true}, {"name": "_来料固定加工费_基准值", "dataType": "numeric", "nullable": true}]|{"columns": [{"isAmount": null, "fieldName": "料号", "fieldType": "INPUT_TEXT", "inSubtotal": null, "viewColumn": "_来料固定加工费_投入料号", "sourceColumn": "input_material_no", "resolvedRoles": ["PART_NO", "ROW_KEY"], "sourceNodeKey": "INCOMING_FIXED_FEE", "resolvedDataType": "TEXT"}, {"isAmount": null, "fieldName": "材料名", "fieldType": "INPUT_TEXT", "inSubtotal": null, "viewColumn": "_物料_材料名", "sourceColumn": "material_name", "resolvedRoles": ["PART_NAME"], "sourceNodeKey": "MAT_NAME_LK", "resolvedDataType": "TEXT"}, {"isAmount": null, "fieldName": "基准值", "fieldType": "INPUT_NUMBER", "inSubtotal": null, "viewColumn": "_来料固定加工费_基准值", "sourceColumn": "base_value", "resolvedRoles": [], "sourceNodeKey": "INCOMING_FIXED_FEE", "resolvedDataType": "NUMBER"}], "dialect": "QUOTE", "tabType": "费用类", "switches": null, "axisScope": "CLOSURE", "variantKey": "INCOMING_FIXED_FEE", "priceStrategy": null, "builderVersion": null}|1|2026-09-16 19:49:21.190665 || comp=82c08d18d9f1862013f2722114e1bc37 || oplog=0
+  after=views=builder_163c98736519|d49022aebffc64b24d06f31efb437791|[{"name": "hf_part_no", "dataType": "varchar", "nullable": false}, {"name": "_来料固定加工费_投入料号", "dataType": "varchar", "nullable": true}, {"name": "_物料_材料名", "dataType": "varchar", "nullable": true}, {"name": "_来料固定加工费_基准值", "dataType": "numeric", "nullable": true}]|{"columns": [{"isAmount": null, "fieldName": "料号", "fieldType": "INPUT_TEXT", "inSubtotal": null, "viewColumn": "_来料固定加工费_投入料号", "sourceColumn": "input_material_no", "resolvedRoles": ["PART_NO", "ROW_KEY"], "sourceNodeKey": "INCOMING_FIXED_FEE", "resolvedDataType": "TEXT"}, {"isAmount": null, "fieldName": "材料名", "fieldType": "INPUT_TEXT", "inSubtotal": null, "viewColumn": "_物料_材料名", "sourceColumn": "material_name", "resolvedRoles": ["PART_NAME"], "sourceNodeKey": "MAT_NAME_LK", "resolvedDataType": "TEXT"}, {"isAmount": null, "fieldName": "基准值", "fieldType": "INPUT_NUMBER", "inSubtotal": null, "viewColumn": "_来料固定加工费_基准值", "sourceColumn": "base_value", "resolvedRoles": [], "sourceNodeKey": "INCOMING_FIXED_FEE", "resolvedDataType": "NUMBER"}], "dialect": "QUOTE", "tabType": "费用类", "switches": null, "axisScope": "CLOSURE", "variantKey": "INCOMING_FIXED_FEE", "priceStrategy": null, "builderVersion": null}|1|2026-09-16 19:49:22.748555 || comp=82c08d18d9f1862013f2722114e1bc37 || oplog=1
+2026-09-16 19:49:23.091 INFO  [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [ComponentSqlView] updated id=f1128b13-a384-4009-838b-46416fecd42b componentId=d306dc66-7c4f-444d-8f23-b27b14f4e53a
+2026-09-16 19:49:23.131 WARN  [com.cpq.con.ConfigCenterResource] (executor-thread-1) [admin-backdoor] recompile-components 已执行：组件 1 个 / 视图 1 个 / sql_template 变化 1 个 [builder_d306dc667c4f]，审计 1 行
+---- recompile-components body={componentIds=[d306dc66-7c4f-444d-8f23-b27b14f4e53a], confirm=true} → 200
+{"code":200,"message":"success","data":{"preview":false,"componentCount":1,"views":1,"changed":1,"changedViewNames":["builder_d306dc667c4f"],"unchangedViewNames":[],"skippedComponentIds":[],"operationLogIds":["6670947e-5e9d-41d0-9dc8-3365f5dd1fef"]}}
+[T2.10-a2 阳性对照] before=views=builder_d306dc667c4f|962f1e63c2535128f6ca6dcbc701a53c|[{"name": "hf_part_no", "dataType": "varchar", "nullable": false}, {"name": "_来料固定加工费_投入料号", "dataType": "varchar", "nullable": true}, {"name": "_物料_材料名", "dataType": "varchar", "nullable": true}, {"name": "_来料固定加工费_基准值", "dataType": "numeric", "nullable": true}]|{"columns": [{"isAmount": null, "fieldName": "料号", "fieldType": "INPUT_TEXT", "inSubtotal": null, "viewColumn": "_来料固定加工费_投入料号", "sourceColumn": "input_material_no", "resolvedRoles": ["PART_NO", "ROW_KEY"], "sourceNodeKey": "INCOMING_FIXED_FEE", "resolvedDataType": "TEXT"}, {"isAmount": null, "fieldName": "材料名", "fieldType": "INPUT_TEXT", "inSubtotal": null, "viewColumn": "_物料_材料名", "sourceColumn": "material_name", "resolvedRoles": ["PART_NAME"], "sourceNodeKey": "MAT_NAME_LK", "resolvedDataType": "TEXT"}, {"isAmount": null, "fieldName": "基准值", "fieldType": "INPUT_NUMBER", "inSubtotal": null, "viewColumn": "_来料固定加工费_基准值", "sourceColumn": "base_value", "resolvedRoles": [], "sourceNodeKey": "INCOMING_FIXED_FEE", "resolvedDataType": "NUMBER"}], "dialect": "QUOTE", "tabType": "费用类", "switches": null, "axisScope": "CLOSURE", "variantKey": "INCOMING_FIXED_FEE", "priceStrategy": null, "builderVersion": null}|1|2026-09-16 19:49:22.187811 || comp=957010ecb1da2dd4dc68068f048caa83 || oplog=0
+  after=views=builder_d306dc667c4f|d49022aebffc64b24d06f31efb437791|[{"name": "hf_part_no", "dataType": "varchar", "nullable": false}, {"name": "_来料固定加工费_投入料号", "dataType": "varchar", "nullable": true}, {"name": "_物料_材料名", "dataType": "varchar", "nullable": true}, {"name": "_来料固定加工费_基准值", "dataType": "numeric", "nullable": true}]|{"columns": [{"isAmount": null, "fieldName": "料号", "fieldType": "INPUT_TEXT", "inSubtotal": null, "viewColumn": "_来料固定加工费_投入料号", "sourceColumn": "input_material_no", "resolvedRoles": ["PART_NO", "ROW_KEY"], "sourceNodeKey": "INCOMING_FIXED_FEE", "resolvedDataType": "TEXT"}, {"isAmount": null, "fieldName": "材料名", "fieldType": "INPUT_TEXT", "inSubtotal": null, "viewColumn": "_物料_材料名", "sourceColumn": "material_name", "resolvedRoles": ["PART_NAME"], "sourceNodeKey": "MAT_NAME_LK", "resolvedDataType": "TEXT"}, {"isAmount": null, "fieldName": "基准值", "fieldType": "INPUT_NUMBER", "inSubtotal": null, "viewColumn": "_来料固定加工费_基准值", "sourceColumn": "base_value", "resolvedRoles": [], "sourceNodeKey": "INCOMING_FIXED_FEE", "resolvedDataType": "NUMBER"}], "dialect": "QUOTE", "tabType": "费用类", "switches": null, "axisScope": "CLOSURE", "variantKey": "INCOMING_FIXED_FEE", "priceStrategy": null, "builderVersion": null}|1|2026-09-16 19:49:23.093165 || comp=957010ecb1da2dd4dc68068f048caa83 || oplog=1
+2026-09-16 19:49:23.511 INFO  [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [ComponentSqlView] updated id=949f4224-14b4-4a79-97b4-f54cb252ad5b componentId=163c9873-6519-4886-baf9-44069f4af8d3
+2026-09-16 19:49:23.525 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: 视图「builder_8ebc75073690」的 builder_config 无法反序列化，重编译已整体中止（不跳过：跳过会留下一部分新口径、一部分旧口径的混合态）: Cannot deserialize value of type `java.util.ArrayList<com.cpq.builder.compiler.BuilderConfig$ColumnConfig>` from String value (token `JsonToken.VALUE_STRING`)
+ at [Source: REDACTED (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` disabled); line: 1, column: 13] (through reference chain: com.cpq.builder.compiler.BuilderConfig["columns"])
+---- recompile-components body={componentIds=[163c9873-6519-4886-baf9-44069f4af8d3, 8ebc7507-3690-43b1-92bb-5cce53a3c35c, d306dc66-7c4f-444d-8f23-b27b14f4e53a], confirm=true} → 500
+{"code":"RECOMPILE_CONFIG_CORRUPT","message":"视图「builder_8ebc75073690」的 builder_config 无法反序列化，重编译已整体中止（不跳过：跳过会留下一部分新口径、一部分旧口径的混合态）: Cannot deserialize value of type `java.util.ArrayList<com.cpq.builder.compiler.BuilderConfig$ColumnConfig>` from String value (token `JsonToken.VALUE_STRING`)\n at [Source: REDACTED (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` disabled); line: 1, column: 13] (through reference chain: com.cpq.builder.compiler.BuilderConfig[\"columns\"])","componentId":"8ebc7507-3690-43b1-92bb-5cce53a3c35c","sqlViewName":"builder_8ebc75073690"}
+[T2.10 实际值] confirm=true status=500 body={"code":"RECOMPILE_CONFIG_CORRUPT","message":"视图「builder_8ebc75073690」的 builder_config 无法反序列化，重编译已整体中止（不跳过：跳过会留下一部分新口径、一部分旧口径的混合态）: Cannot deserialize value of type `java.util.ArrayList<com.cpq.builder.compiler.BuilderConfig$ColumnConfig>` from String value (token `JsonToken.VALUE_STRING`)\n at [Source: REDACTED (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` disabled); line: 1, column: 13] (through reference chain: com.cpq.builder.compiler.BuilderConfig[\"columns\"])","componentId":"8ebc7507-3690-43b1-92bb-5cce53a3c35c","sqlViewName":"builder_8ebc75073690"}
+2026-09-16 19:49:23.685 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: 视图「builder_8ebc75073690」的 builder_config 无法反序列化，重编译已整体中止（不跳过：跳过会留下一部分新口径、一部分旧口径的混合态）: Cannot deserialize value of type `java.util.ArrayList<com.cpq.builder.compiler.BuilderConfig$ColumnConfig>` from String value (token `JsonToken.VALUE_STRING`)
+ at [Source: REDACTED (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` disabled); line: 1, column: 13] (through reference chain: com.cpq.builder.compiler.BuilderConfig["columns"])
+---- recompile-components body={componentIds=[163c9873-6519-4886-baf9-44069f4af8d3, 8ebc7507-3690-43b1-92bb-5cce53a3c35c, d306dc66-7c4f-444d-8f23-b27b14f4e53a], confirm=false} → 500
+{"code":"RECOMPILE_CONFIG_CORRUPT","message":"视图「builder_8ebc75073690」的 builder_config 无法反序列化，重编译已整体中止（不跳过：跳过会留下一部分新口径、一部分旧口径的混合态）: Cannot deserialize value of type `java.util.ArrayList<com.cpq.builder.compiler.BuilderConfig$ColumnConfig>` from String value (token `JsonToken.VALUE_STRING`)\n at [Source: REDACTED (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` disabled); line: 1, column: 13] (through reference chain: com.cpq.builder.compiler.BuilderConfig[\"columns\"])","componentId":"8ebc7507-3690-43b1-92bb-5cce53a3c35c","sqlViewName":"builder_8ebc75073690"}
+[T2.10 实际值] confirm=false status=500 body={"code":"RECOMPILE_CONFIG_CORRUPT","message":"视图「builder_8ebc75073690」的 builder_config 无法反序列化，重编译已整体中止（不跳过：跳过会留下一部分新口径、一部分旧口径的混合态）: Cannot deserialize value of type `java.util.ArrayList<com.cpq.builder.compiler.BuilderConfig$ColumnConfig>` from String value (token `JsonToken.VALUE_STRING`)\n at [Source: REDACTED (`StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION` disabled); line: 1, column: 13] (through reference chain: com.cpq.builder.compiler.BuilderConfig[\"columns\"])","componentId":"8ebc7507-3690-43b1-92bb-5cce53a3c35c","sqlViewName":"builder_8ebc75073690"}
+[S-2 residue] {ds_quote_incoming_fixed_fee=0, ds_quote_material=0, ds_cost_basic_incoming_process_fee=0, ds_cost_basic_material=0, ds_cost_detail_incoming_other_fixed_fee=0, ds_cost_detail_material=0, component=0, operation_log+component_sql_view(自建id)=0}
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 17.47 s -- in com.cpq.repair260916.Ac8RecompileComponentsTest
+2026-09-16 19:49:24.446 INFO  [io.quarkus] (main) cpq-backend stopped in 0.024s
+[INFO] 
+[INFO] Results:
+[INFO] 
+[ERROR] Failures: 
+[ERROR]   Ac5MaterialNamePriorityTest.t24a_costBasic_threeCases:375->runCostCase:423->parse:210 E-5：「材料名」列应恰好 1 个，实际 columns=[hf_part_no, incoming_material_no, material_name, process_fee, view_version] ==> expected: <1> but was: <0>
+[ERROR]   Ac5MaterialNamePriorityTest.t24b_costDetail_threeCases:382->runCostCase:423->parse:210 E-5：「材料名」列应恰好 1 个，实际 columns=[hf_part_no, incoming_material_no, material_name, fee, view_version] ==> expected: <1> but was: <0>
+[INFO] 
+[ERROR] Tests run: 12, Failures: 2, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  51.536 s
+[INFO] Finished at: 2026-09-16T19:49:24-07:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.4:test (default-test) on project cpq-backend: There are test failures.
+[ERROR] 
+[ERROR] See /home/joii/project/cpq/.claude/worktrees/repair-260916-recipe-name/cpq-backend/target/surefire-reports for the individual test results.
+[ERROR] See dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException
+EXIT=1
