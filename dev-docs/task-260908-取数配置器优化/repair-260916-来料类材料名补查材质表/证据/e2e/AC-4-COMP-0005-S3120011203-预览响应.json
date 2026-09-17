@@ -1,0 +1,58 @@
+{
+  "request": "{\"dialect\":\"QUOTE\",\"tabType\":\"费用类\",\"variantKey\":\"INCOMING_OTHER_FEE\",\"columns\":[{\"sourceNodeKey\":\"INCOMING_OTHER_FEE\",\"sourceColumn\":\"material_no\",\"fieldName\":\"销售料号\",\"isRowKey\":true,\"fieldType\":\"INPUT_TEXT\"},{\"sourceNodeKey\":\"INCOMING_OTHER_FEE\",\"sourceColumn\":\"input_material_no\",\"fieldName\":\"料号\",\"isPartNo\":true,\"isRowKey\":true,\"fieldType\":\"INPUT_TEXT\"},{\"sourceNodeKey\":\"MAT_NAME_LK\",\"sourceColumn\":\"material_name\",\"fieldName\":\"材料名\",\"isPartName\":true,\"fieldType\":\"INPUT_TEXT\"},{\"sourceNodeKey\":\"INCOMING_OTHER_FEE\",\"sourceColumn\":\"item_seq\",\"fieldName\":\"项次\",\"isSort\":true,\"fieldType\":\"INPUT_NUMBER\"},{\"sourceNodeKey\":\"INCOMING_OTHER_FEE\",\"sourceColumn\":\"element_name\",\"fieldName\":\"要素名称\",\"fieldType\":\"INPUT_TEXT\"},{\"sourceNodeKey\":\"INCOMING_OTHER_FEE\",\"sourceColumn\":\"value\",\"fieldName\":\"费用\",\"fieldType\":\"INPUT_NUMBER\"},{\"sourceNodeKey\":\"INCOMING_OTHER_FEE\",\"sourceColumn\":\"ratio_pct\",\"fieldName\":\"比例（%）\",\"fieldType\":\"INPUT_NUMBER\"}],\"customerCode\":\"CUST-0004\",\"partNo\":\"S3120011203\"}",
+  "status": 200,
+  "response": {
+    "rowCount": 3,
+    "columns": [
+      "hf_part_no",
+      "_来料其他费用_销售料号",
+      "_来料其他费用_投入料号",
+      "_物料_材料名",
+      "_来料其他费用_项次",
+      "_来料其他费用_要素名称",
+      "_来料其他费用_值",
+      "_来料其他费用_比例（%）"
+    ],
+    "rows": [
+      {
+        "hf_part_no": "S3120011203",
+        "_来料其他费用_销售料号": "S3120011203",
+        "_来料其他费用_投入料号": "00144",
+        "_物料_材料名": "H85",
+        "_来料其他费用_项次": 2,
+        "_来料其他费用_要素名称": "来料损耗率",
+        "_来料其他费用_值": null,
+        "_来料其他费用_比例（%）": "5"
+      },
+      {
+        "hf_part_no": "S3120011203",
+        "_来料其他费用_销售料号": "S3120011203",
+        "_来料其他费用_投入料号": "S3110520422",
+        "_物料_材料名": "料号2",
+        "_来料其他费用_项次": 1,
+        "_来料其他费用_要素名称": "来料回收费",
+        "_来料其他费用_值": null,
+        "_来料其他费用_比例（%）": "1"
+      },
+      {
+        "hf_part_no": "S3120011203",
+        "_来料其他费用_销售料号": "S3120011203",
+        "_来料其他费用_投入料号": "S3110520422",
+        "_物料_材料名": "料号2",
+        "_来料其他费用_项次": 1,
+        "_来料其他费用_要素名称": "来料财务费",
+        "_来料其他费用_值": null,
+        "_来料其他费用_比例（%）": "1"
+      }
+    ],
+    "elapsedMs": 18,
+    "diagnostics": [
+      {
+        "level": "WARN",
+        "code": "COLUMN_ALL_NULL",
+        "column": "_来料其他费用_值",
+        "message": "整列 3/3 行全为 NULL —— 疑似绑错列，请核对该列实际取数来源"
+      }
+    ]
+  }
+}

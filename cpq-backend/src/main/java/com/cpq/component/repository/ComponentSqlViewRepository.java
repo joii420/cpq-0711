@@ -58,4 +58,18 @@ public class ComponentSqlViewRepository implements PanacheRepositoryBase<Compone
     public List<ComponentSqlView> listBuilderManaged() {
         return list("builderConfig IS NOT NULL AND status = 'ACTIVE' ORDER BY componentId, sqlViewName");
     }
+
+    /**
+     * repair-260916 B-2：{@link #listBuilderManaged()} 的「只看指定组件」版本 ——
+     * 判定口径（{@code builder_config IS NOT NULL AND status = 'ACTIVE'}）与排序逐字相同，
+     * 只多一个 {@code componentId IN (…)}。一条 SQL，与组件数无关。
+     *
+     * <p>🚫 两个方法的口径必须一起改：否则「按组件重编译」与「全量重编译」对同一组件看到的视图集合会不同，
+     * AC-7② 的「产物逐字等于全量重编译」就失去前提。
+     */
+    public List<ComponentSqlView> listBuilderManagedByComponents(java.util.Collection<UUID> componentIds) {
+        if (componentIds == null || componentIds.isEmpty()) return List.of();
+        return list("builderConfig IS NOT NULL AND status = 'ACTIVE' AND componentId IN ?1 "
+                + "ORDER BY componentId, sqlViewName", componentIds);
+    }
 }

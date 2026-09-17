@@ -1,0 +1,22 @@
+{
+  "before": {
+    "template_md5": "03a3cda9731e123a7eec4f7ab0f6132f",
+    "component_md5": "c028f9e7eda46a32a8de845a21914f16",
+    "semantic_edge_md5": "fd2b8f6646af1e7af01c2b42ebfcc237",
+    "operation_log_rows": 170,
+    "component_sql_view_md5": "723446b9e77e7dcfefd61b67d98adab4",
+    "component_sql_view_rows": 111,
+    "operation_log_max_created": "2026-09-11 16:24:22.633708+00",
+    "template_component_snapshot_md5": "04ba55844fea2a26f35429f501785743"
+  },
+  "after": {
+    "template_md5": "03a3cda9731e123a7eec4f7ab0f6132f",
+    "component_md5": "c028f9e7eda46a32a8de845a21914f16",
+    "semantic_edge_md5": "fd2b8f6646af1e7af01c2b42ebfcc237",
+    "operation_log_rows": 170,
+    "component_sql_view_md5": "723446b9e77e7dcfefd61b67d98adab4",
+    "component_sql_view_rows": 111,
+    "operation_log_max_created": "2026-09-11 16:24:22.633708+00",
+    "template_component_snapshot_md5": "04ba55844fea2a26f35429f501785743"
+  }
+}

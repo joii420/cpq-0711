@@ -99,7 +99,7 @@ HTTP 200，`ApiResponse` 信封（与 `refresh-all-snapshots` 一致）：
     "componentCount": 3,
     "views": 3,
     "changed": 3,
-    "changedViewNames": ["builder_46f244df7ede", "builder_4602c64a0c38", "builder_c35c2bd590fe"],
+    "changedViewNames": ["builder_4602c64a0c38", "builder_46f244df7ede", "builder_c35c2bd590fe"],
     "unchangedViewNames": [],
     "skippedComponentIds": [],
     "operationLogIds": ["…", "…", "…"]

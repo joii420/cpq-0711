@@ -1,0 +1,17 @@
+{
+  "source": "来源:run6实跑",
+  "before": {
+    "at": "2026-09-17T03:02:38.620Z",
+    "viewsTableMd5": "24c66e77e1b1b8a48240a910dee02aa4",
+    "opLogCount": 170
+  },
+  "after": {
+    "at": "2026-09-17T03:02:45.660Z",
+    "viewsTableMd5": "31fa1ad3abaf6f7e0dece4b182590daa",
+    "opLogCount": 173
+  },
+  "viewsTableMd5Changed": true,
+  "threeSqlChanged": true,
+  "opLogDelta": 3,
+  "recompileAuditDelta": 3
+}

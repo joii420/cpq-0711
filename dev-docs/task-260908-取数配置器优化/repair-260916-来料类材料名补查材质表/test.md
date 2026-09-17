@@ -20,8 +20,10 @@
 
 | 实例 | 端口 | 启动方式 | 谁启 |
 |---|---|---|---|
-| worktree 后端 | **8196** | 在 worktree 的 `cpq-backend` 下 `DB_NAME=cpq_db_260916 ./mvnw quarkus:dev -Dquarkus.http.port=8196`（首次启动会对验收库执行 `V444`） | S-1 先启；S-全局沿用或重启 |
-| worktree 前端 | **5196** | worktree 的 `cpq-frontend` 下 `VITE_API_TARGET=http://localhost:8196 npx vite --port 5196`（依赖按 `git-worktree.md` 软链） | S-全局 |
+| 验收后端 | **8196** | **主线**在后端完工并复验后，把 worktree 的 `cpq-backend` **拷一份到会话 scratch 目录**再 `DB_NAME=cpq_db_260916 ./mvnw quarkus:dev -Dquarkus.http.port=8196` 启动（首次启动会对验收库执行 `V444`）。拷副本是为了不和 S-2 在 worktree 里跑的 `mvnw test` 抢同一个 `target/`（`testing.md §4.2.5`） | **主线**。测试员只使用、🚫 不启停、🚫 不重启 |
+| 验收前端 | **5196** | **主线**在 worktree 的 `cpq-frontend` 下 `VITE_API_TARGET=http://localhost:8196 npx vite --port 5196`（`node_modules` 已软链主工作区） | **主线** |
+
+> 主线启动后会在派工消息里给出：8196 / 5196 的验明正身结果、`V444` 在验收库的 `success` 行、admin 登录方式。
 
 - 探活要**验明正身**（`testing.md §4.2`）：比对 `GET /api/cpq/quotations?page=1&size=1` 的 `totalElements` 与 `cpq_db_260916` 里 `SELECT count(*) FROM quotation` 一致，才算连对库。
 - 本机 shell 有 `http_proxy`，访问本机一律 `curl --noproxy '*'`。
@@ -33,7 +35,8 @@
 
 ```
 主线：克隆验收库 + 采集基线（8081）
-  → S-1：启 8196（此刻 V444 进验收库）→ 采集 AC-11 的集合 A → 其余只读断言
+  → 主线：后端复验通过后启 8196（此刻 V444 进验收库）+ 5196
+  → S-1：采集 AC-11 的集合 A → 其余只读断言
   → S-全局：AC-2/3/4（只看实时编译与预览）→ AC-6（预览）→ AC-7（执行）→ AC-10
 ```
 
@@ -54,7 +57,7 @@
 
 | 片 | 档位 | 库 | 本片会写什么 | 造数前缀 | 解锁条件 |
 |---|---|---|---|---|---|
-| **S-1 只读** | 只读片 | `cpq_db_260916` | **零业务写入**。唯一写入是启动 8196 时 Flyway 对验收库执行 `V444`（预期内、只发生一次）。只调预览类接口（`refresh-all-snapshots` 的 `confirm:false`、`/builder/compile`）与只读 SQL | 无 | 后端报 B-1 / B-2 / B-3 完成 |
+| **S-1 只读** | 只读片 | `cpq_db_260916` | **零写入**（`V444` 由主线启动 8196 时落入验收库，不归本片）。只调预览类接口（`refresh-all-snapshots` 的 `confirm:false`、`/builder/compile`）与只读 SQL | 无 | 后端报 B-1 / B-2 / B-3 完成 |
 | **S-2 私有写** | 私有写片 | `cpq_db_test` | 自造：`ds_quote_material` / 报价来料表 / `ds_cost_basic_material` / 核价来料表行、组件与取数视图、由本片调用产生的 `operation_log` 行 | **`R260916-T-`**（客户号、销售料号、生产料号、组件名均带；客户号列长 20，前缀后不超长） | 后端报**全部** B-x 完成，且后端工程师已停止在 worktree 内跑 maven（`testing.md §4.2.5`） |
 | **S-全局** | 🚫 串行殿后 | `cpq_db_260916` | 3 个组件的取数视图（执行按组件重编译）· `operation_log` · 施耐德5.4模板**新增一个版本**（发布）· **新建 1 张报价单** | 报价单备注 / 项目名写 `R260916-G-` | S-1 **全部跑完**（集合 A 已落盘）+ 后端全部完成 |
 
@@ -107,8 +110,8 @@
 
 - 专用配置 `cpq-frontend/e2e/repair260916-global.config.ts`（无 globalSetup，`baseURL=http://localhost:5196`）；用例 `cpq-frontend/e2e/repair260916-global-*.spec.ts`。
 - 顺序：T3.1 AC-2 → T3.2 AC-3 → T3.3 AC-4 → T3.4 AC-6 → T3.5 AC-7 → T3.6 AC-10。
-- **T3.4 / T3.5**：调用前后各取一份 md5 清单（`component_sql_view` 全表、`component` 三组件、`template` 全表、`template_component_snapshot` 全表、`operation_log` 行数），归档 `证据/AC-6-7-md5-前后.md`。AC-7 ② 的「= 全量重编译预览」：执行前先调一次全量预览，取这 3 个视图的新文本存档（全量预览零写入）。
-- **T3.6（AC-10）**：新版本模板名沿用「施耐德5.4模板」（基于 v1.4 新建草稿再发布）；新报价单项目名写 `R260916-G-AC10`。第 8 步用**既有**的 v1.4 报价单，只读打开。
+- **T3.4 / T3.5**：调用前后各取一份 md5 清单（`component_sql_view` 全表、`component` 三组件、`template` 全表、`template_component_snapshot` 全表、`operation_log` 行数），归档 `证据/AC-6-7-md5-前后.md`。AC-7 ② 的「= 全量重编译产物」：全量预览**只返回视图名、不返回 SQL 文本**（S-1 阶段 1 回报指出），故改为 —— 执行**前**全量预览名单含这 3 个视图（与 S-1 的集合 A 一致），执行**后**立即再调一次全量预览，名单**不含**这 3 个视图（全量预览零写入）；另断言执行后落库文本逐字等于 AC-6 预览的 `newSqlTemplate`。
+- **T3.6（AC-10）**：新版本模板名沿用「施耐德5.4模板」（基于验收库里**当前最新版本**新建草稿再发布）；新报价单项目名写 `R260916-G-AC10`。第 8 步用**既有**的旧版本报价单（优先截图那张：客户产品编号 `W003374021711`），只读打开。
 - Playwright 选择器坑先读 `docs/E2E测试方法.md`；antd v6 类名、虚拟滚动、两字按钮带空格等问题见主线记忆里的已知坑（遇到空值 / 超时先怀疑选择器，再怀疑产品）。
 
 ---

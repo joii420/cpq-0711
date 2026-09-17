@@ -1,0 +1,1120 @@
+{
+    "views": [
+        {
+            "id": "02d15e9e-929b-45fe-9235-5106d8759f07",
+            "sqlMd5": "88f7ace905906831c34622a66ea6191a",
+            "updatedAt": "2026-09-14 01:22:29.51517",
+            "sqlViewName": "builder_5c66b0994f73",
+            "componentCode": "COMP-2508",
+            "builderVersion": 1,
+            "builderConfigMd5": "f60b5b785677ce631e330c7c1939906a",
+            "declaredColumnsMd5": "f4cea1a862ba484acf8f7985c37f178f"
+        },
+        {
+            "id": "05527702-a424-4ba5-a356-d158d445db21",
+            "sqlMd5": "45374ef3fb9247f65c0c57d95724e346",
+            "updatedAt": "2026-09-09 21:24:34.936653",
+            "sqlViewName": "builder_223e99842f75",
+            "componentCode": "COMP-2441",
+            "builderVersion": 1,
+            "builderConfigMd5": "7955c524dbacc0ef92ec125860ed3fbe",
+            "declaredColumnsMd5": "732a18157cbdc14dfe8320c755f80da7"
+        },
+        {
+            "id": "0828c10e-5bda-4c68-a299-f7b609d574cf",
+            "sqlMd5": "4d38d728e71567e2ae84d5009f520878",
+            "updatedAt": "2026-09-09 22:58:25.081628",
+            "sqlViewName": "builder_0c432176e0e1",
+            "componentCode": "COMP-2503",
+            "builderVersion": 1,
+            "builderConfigMd5": "918aa82c6fc8c9df489931e4c5b636f0",
+            "declaredColumnsMd5": "ddd0578e1553ac7631e5da0cef35b8d0"
+        },
+        {
+            "id": "092db792-6426-4402-ba1b-2153130ab3c5",
+            "sqlMd5": "1d6a2ce50ffb525e83b92049087570a5",
+            "updatedAt": "2026-09-09 21:30:20.027785",
+            "sqlViewName": "builder_0b5b8b757b8e",
+            "componentCode": "COMP-2445",
+            "builderVersion": 1,
+            "builderConfigMd5": "956f3bb5a479cbaa2c8164bedd2aa4ac",
+            "declaredColumnsMd5": "8ea06469e3cfc413d74f3888c1ab5f8f"
+        },
+        {
+            "id": "0adb65d2-88dc-404f-9716-4197a72c3e97",
+            "sqlMd5": "39ea109382cd5a758b074ef6c4addb45",
+            "updatedAt": "2026-09-09 22:24:57.312583",
+            "sqlViewName": "builder_9469575996a2",
+            "componentCode": "COMP-2491",
+            "builderVersion": 1,
+            "builderConfigMd5": "b73987a28636d5cd131db0e02b145faa",
+            "declaredColumnsMd5": "ddd0578e1553ac7631e5da0cef35b8d0"
+        },
+        {
+            "id": "0daddbd9-91ec-4429-8faa-2db4cf44398f",
+            "sqlMd5": "66d60e11ec15eeab172b6ae1350311d7",
+            "updatedAt": "2026-09-08 21:50:04.652126",
+            "sqlViewName": "builder_cb4c1af4eabf",
+            "componentCode": "T260902-cb4c1af4",
+            "builderVersion": 1,
+            "builderConfigMd5": "e53d817f3b009af6db4e556e1e79d8e3",
+            "declaredColumnsMd5": "7d082774c31db58fdf34830677cb2ff0"
+        },
+        {
+            "id": "12d39328-3a1a-4bc2-8396-94c8bbf94c55",
+            "sqlMd5": "05ef5fd16f0a9fd31578364c937da2bc",
+            "updatedAt": "2026-09-11 09:24:22.196809",
+            "sqlViewName": "builder_7277969cc41c",
+            "componentCode": "COMP-2265",
+            "builderVersion": 1,
+            "builderConfigMd5": "587f10cf9c388220fbce5e93c5d62bf8",
+            "declaredColumnsMd5": "5177e725db41412ae9aefd947c350616"
+        },
+        {
+            "id": "12fe4c4c-5f49-458b-abad-69a872f24809",
+            "sqlMd5": "06389cd702fb01d7d938125fad00a525",
+            "updatedAt": "2026-09-09 22:22:59.774691",
+            "sqlViewName": "builder_612bc5ba6893",
+            "componentCode": "COMP-2486",
+            "builderVersion": 1,
+            "builderConfigMd5": "67ad2fd264d81b62fc88b7a4c829705d",
+            "declaredColumnsMd5": "467d79080fd15901d41d2e6e1b1e6d25"
+        },
+        {
+            "id": "1471f703-8c57-459c-adca-e1c20336e3af",
+            "sqlMd5": "174173d55a901ea7b61e870e932d0833",
+            "updatedAt": "2026-09-10 00:05:32.07529",
+            "sqlViewName": "builder_a515014e6ed3",
+            "componentCode": "COMP-2298",
+            "builderVersion": 1,
+            "builderConfigMd5": "27f74c00f00c594c8bdaa5cda00e4df9",
+            "declaredColumnsMd5": "9984996e6ce9a46978e6e00f7fe3904e"
+        },
+        {
+            "id": "15979154-d3f7-4745-935a-abe5bcdefa03",
+            "sqlMd5": "9151e72d983c9b13d7e0d41d0fe8aed7",
+            "updatedAt": "2026-09-09 21:17:03.133108",
+            "sqlViewName": "builder_7f0b70378066",
+            "componentCode": "COMP-2437",
+            "builderVersion": 1,
+            "builderConfigMd5": "0bbdf1b18af3f6b643ddec0fd46ae291",
+            "declaredColumnsMd5": "bab182f0d7bb3c68a09a80ae3559950e"
+        },
+        {
+            "id": "1a63e63b-9be6-4bd9-9246-572e3e3a9026",
+            "sqlMd5": "06389cd702fb01d7d938125fad00a525",
+            "updatedAt": "2026-09-09 22:21:56.47642",
+            "sqlViewName": "builder_68fd80e4feb2",
+            "componentCode": "COMP-2482",
+            "builderVersion": 1,
+            "builderConfigMd5": "67ad2fd264d81b62fc88b7a4c829705d",
+            "declaredColumnsMd5": "467d79080fd15901d41d2e6e1b1e6d25"
+        },
+        {
+            "id": "1b4dd4b2-f5ae-40b0-9001-67f25ec65469",
+            "sqlMd5": "d92b26ab752fe546cab6a7d007cbc02d",
+            "updatedAt": "2026-09-16 01:39:24.497968",
+            "sqlViewName": "builder_46f244df7ede",
+            "componentCode": "COMP-0008",
+            "builderVersion": 1,
+            "builderConfigMd5": "c4bdbfef5c1bdbc2ef940a1c7c0d834e",
+            "declaredColumnsMd5": "16a5d44f5872ab6bac14d59d3e928e44"
+        },
+        {
+            "id": "1fefdd80-6d72-4cd7-bf97-2f965dfd8fcf",
+            "sqlMd5": "d6489efa652c0334b9d0ab2f396e10fa",
+            "updatedAt": "2026-09-08 21:50:04.725556",
+            "sqlViewName": "builder_ea992eb4216d",
+            "componentCode": "COMP-2183",
+            "builderVersion": 1,
+            "builderConfigMd5": "5050cac34bed8bf993c5587afd6b6634",
+            "declaredColumnsMd5": "52f13ba12477d2155ff10614ac0c2caf"
+        },
+        {
+            "id": "22a98d10-ca01-482c-8600-e6d45a5a2ccb",
+            "sqlMd5": "c86ffed76b042c025a28cca8223d7833",
+            "updatedAt": "2026-09-09 21:33:59.052752",
+            "sqlViewName": "builder_ae51367b4a60",
+            "componentCode": "COMP-2458",
+            "builderVersion": 1,
+            "builderConfigMd5": "d58c0ca860f0f44082b17493f65c8a8a",
+            "declaredColumnsMd5": "467d79080fd15901d41d2e6e1b1e6d25"
+        },
+        {
+            "id": "22c043c5-d390-45b0-aa46-e016738fca46",
+            "sqlMd5": "ba3c87bc73c3596d939e6ff1319fae65",
+            "updatedAt": "2026-09-16 01:39:24.495632",
+            "sqlViewName": "builder_c35c2bd590fe",
+            "componentCode": "COMP-0004",
+            "builderVersion": 1,
+            "builderConfigMd5": "8b85a9852d601f66c0ac08ea72447df5",
+            "declaredColumnsMd5": "73c06f18535e289c01bc4ed03cb25716"
+        },
+        {
+            "id": "2343de18-4600-42f0-afa1-caa6629df61a",
+            "sqlMd5": "4d2494c07098c6691f07a1683aad9a08",
+            "updatedAt": "2026-09-08 21:50:04.17023",
+            "sqlViewName": "builder_6c093d714565",
+            "componentCode": "COMP-2315",
+            "builderVersion": 1,
+            "builderConfigMd5": "b0ca5fa52093877f8fdd2e5b2f29f772",
+            "declaredColumnsMd5": "b3901962c7a06b3dc773996d13dfb9c8"
+        },
+        {
+            "id": "25192d64-c934-46ef-8a45-9e0e671005b1",
+            "sqlMd5": "06389cd702fb01d7d938125fad00a525",
+            "updatedAt": "2026-09-09 20:55:06.876015",
+            "sqlViewName": "builder_a7470acb389e",
+            "componentCode": "COMP-2429",
+            "builderVersion": 1,
+            "builderConfigMd5": "1ba999002425eb1cc75087d4f643ef66",
+            "declaredColumnsMd5": "467d79080fd15901d41d2e6e1b1e6d25"
+        },
+        {
+            "id": "289172f9-548b-4ece-b800-9565b1f27032",
+            "sqlMd5": "a0bf751c5f9333397538db2ea99f21e7",
+            "updatedAt": "2026-09-08 21:50:04.740268",
+            "sqlViewName": "builder_eb834021ed65",
+            "componentCode": "COMP-2294",
+            "builderVersion": 1,
+            "builderConfigMd5": "1b95d92541dbc34d74dc5efcbaab9554",
+            "declaredColumnsMd5": "0ba94f37980a3893919813d1b3aad7bc"
+        },
+        {
+            "id": "28f41d13-498c-4208-a6f5-9a8f57d2787c",
+            "sqlMd5": "d7d7efe354bceb104b61a0bc7cab4334",
+            "updatedAt": "2026-09-14 01:19:19.79971",
+            "sqlViewName": "builder_76900c5f9ae5",
+            "componentCode": "COMP-2506",
+            "builderVersion": 1,
+            "builderConfigMd5": "fcf7d07c5140ad4777283d84b9a9a929",
+            "declaredColumnsMd5": "542ee76a4bc41e5651ea793c1f38edd7"
+        },
+        {
+            "id": "2a6215c7-e724-44e4-b82a-aab27d3bbe37",
+            "sqlMd5": "06389cd702fb01d7d938125fad00a525",
+            "updatedAt": "2026-09-09 21:33:19.175981",
+            "sqlViewName": "builder_006655f3d641",
+            "componentCode": "COMP-2454",
+            "builderVersion": 1,
+            "builderConfigMd5": "67ad2fd264d81b62fc88b7a4c829705d",
+            "declaredColumnsMd5": "467d79080fd15901d41d2e6e1b1e6d25"
+        },
+        {
+            "id": "2a664a6c-1ac7-4353-95df-b27e4d80603b",
+            "sqlMd5": "a1393ed24d72818e1a653f90bbfe9959",
+            "updatedAt": "2026-09-08 21:50:04.566406",
+            "sqlViewName": "builder_c127b4ddb20e",
+            "componentCode": "COMP-2190",
+            "builderVersion": 1,
+            "builderConfigMd5": "fd35ceccaf5d023ae6d27db15ce49018",
+            "declaredColumnsMd5": "b9d9723567e4be2945cf9d86ced7c9ae"
+        },
+        {
+            "id": "2a73c4d8-45aa-4037-bb9b-450885f50943",
+            "sqlMd5": "d9f7b3b57b32fc5f207bd227909b8b8e",
+            "updatedAt": "2026-09-09 06:46:02.462341",
+            "sqlViewName": "builder_d475c353288c",
+            "componentCode": "COMP-2402",
+            "builderVersion": 1,
+            "builderConfigMd5": "97f0332b77aa7f7a3bd4df1744a4ef98",
+            "declaredColumnsMd5": "ac14b8c32549654478cd905a74450071"
+        },
+        {
+            "id": "2b3ff598-e5f4-4238-9cc6-06a04b4eba05",
+            "sqlMd5": "4b4253a19ef688a3f56e3f9363fe6431",
+            "updatedAt": "2026-09-16 18:42:54.225809",
+            "sqlViewName": "builder_8ed9f42d096b",
+            "componentCode": "COMP-0007",
+            "builderVersion": 1,
+            "builderConfigMd5": "77bbc15003afa992ea35a55366e8ba6a",
+            "declaredColumnsMd5": "579c0cd5e21aefbf7dd993f3b4f74f3e"
+        },
+        {
+            "id": "31ccffd2-fe06-410b-a8c0-798b62b1436e",
+            "sqlMd5": "42c99608a72c70e9ffa536146b07d9d8",
+            "updatedAt": "2026-09-09 05:10:18.536327",
+            "sqlViewName": "builder_4aa23fde7ac9",
+            "componentCode": "COMP-2413",
+            "builderVersion": 1,
+            "builderConfigMd5": "e04c6cae3c5c39c1ede2dc13e6589f53",
+            "declaredColumnsMd5": "efe7b0c01dc0239b67fa62d7201e6c71"
+        },
+        {
+            "id": "323c791a-2f03-48be-8414-79761a4ceecd",
+            "sqlMd5": "45374ef3fb9247f65c0c57d95724e346",
+            "updatedAt": "2026-09-09 21:29:20.837868",
+            "sqlViewName": "builder_ce73d89a9c18",
+            "componentCode": "COMP-2444",
+            "builderVersion": 1,
+            "builderConfigMd5": "7955c524dbacc0ef92ec125860ed3fbe",
+            "declaredColumnsMd5": "732a18157cbdc14dfe8320c755f80da7"
+        },
+        {
+            "id": "324f63f6-2ea6-485e-80ab-4a95b6e79e97",
+            "sqlMd5": "06389cd702fb01d7d938125fad00a525",
+            "updatedAt": "2026-09-09 21:33:18.402178",
+            "sqlViewName": "builder_619e8d40f7ed",
+            "componentCode": "COMP-2453",
+            "builderVersion": 1,
+            "builderConfigMd5": "1ba999002425eb1cc75087d4f643ef66",
+            "declaredColumnsMd5": "467d79080fd15901d41d2e6e1b1e6d25"
+        },
+        {
+            "id": "34461111-63a1-41a4-8b7d-4ce69c7c712d",
+            "sqlMd5": "c86ffed76b042c025a28cca8223d7833",
+            "updatedAt": "2026-09-09 21:33:19.801712",
+            "sqlViewName": "builder_7dc4f435436b",
+            "componentCode": "COMP-2455",
+            "builderVersion": 1,
+            "builderConfigMd5": "d58c0ca860f0f44082b17493f65c8a8a",
+            "declaredColumnsMd5": "467d79080fd15901d41d2e6e1b1e6d25"
+        },
+        {
+            "id": "34b0d625-6162-46af-969d-5a39c09f943f",
+            "sqlMd5": "8fa36e6d6a4b57f44498ffda516d7df2",
+            "updatedAt": "2026-09-09 21:36:06.768622",
+            "sqlViewName": "builder_03985f520a3e",
+            "componentCode": "COMP-2462",
+            "builderVersion": 1,
+            "builderConfigMd5": "a0614d26cb1c779a989e27ea9cefc66f",
+            "declaredColumnsMd5": "b661f546874953d9a3f0acfc32cb2a77"
+        },
+        {
+            "id": "3ac4bb89-195c-4a98-bb65-5171967451cc",
+            "sqlMd5": "a2818acf4a6ed0d736785f2a335654c6",
+            "updatedAt": "2026-09-08 21:50:03.960062",
+            "sqlViewName": "builder_04375490927f",
+            "componentCode": "COMP-2181",
+            "builderVersion": 1,
+            "builderConfigMd5": "e486e81913d31a6039c8ae38d941e3cf",
+            "declaredColumnsMd5": "314143632de44df9d0ee7380c531ee06"
+        },
+        {
+            "id": "407fb43a-a490-4dad-962f-a47977175d57",
+            "sqlMd5": "54336e44733dfc3705dac78edefeefae",
+            "updatedAt": "2026-09-08 21:50:04.330841",
+            "sqlViewName": "builder_a2e1bb386be1",
+            "componentCode": "COMP-2187",
+            "builderVersion": 1,
+            "builderConfigMd5": "3e9528759c18e4609ad7ed695ae8675e",
+            "declaredColumnsMd5": "95811538b7ae0b3e9510cf9da0284a2e"
+        },
+        {
+            "id": "40be67f8-682d-4f80-8982-1c123d543d22",
+            "sqlMd5": "4d38d728e71567e2ae84d5009f520878",
+            "updatedAt": "2026-09-09 21:44:23.392154",
+            "sqlViewName": "builder_65c2f7d80f81",
+            "componentCode": "COMP-2473",
+            "builderVersion": 1,
+            "builderConfigMd5": "bcb19d6a24025dc8508c91f0e6001498",
+            "declaredColumnsMd5": "ddd0578e1553ac7631e5da0cef35b8d0"
+        },
+        {
+            "id": "41c60087-d9cf-4e19-9720-4d9e3fbfba69",
+            "sqlMd5": "f82e448905ead2707af395747552b5d9",
+            "updatedAt": "2026-09-09 21:27:46.529536",
+            "sqlViewName": "builder_ed49cd3b88a0",
+            "componentCode": "COMP-2443",
+            "builderVersion": 1,
+            "builderConfigMd5": "45c77da9749ade59c1d80cc4d1879c74",
+            "declaredColumnsMd5": "732a18157cbdc14dfe8320c755f80da7"
+        },
+        {
+            "id": "421b2422-6afb-4552-84e7-3b7dcf2fe8f0",
+            "sqlMd5": "b979894c04c3b924177f88d7c2677f89",
+            "updatedAt": "2026-09-10 00:04:24.835569",
+            "sqlViewName": "builder_818d8d4efcf2",
+            "componentCode": "COMP-2504",
+            "builderVersion": 1,
+            "builderConfigMd5": "ebd2d3e863a1be75797d9f4115db6cd5",
+            "declaredColumnsMd5": "863a910c101f9a03d45eb4a62c93f130"
+        },
+        {
+            "id": "42b0444b-5113-4cd9-b3b5-389bbba81411",
+            "sqlMd5": "c5c08cb1bde575e493d2de1beb5ceccf",
+            "updatedAt": "2026-09-11 09:24:22.443775",
+            "sqlViewName": "builder_c5b6de9d6de3",
+            "componentCode": "COMP-2423",
+            "builderVersion": 1,
+            "builderConfigMd5": "2143ff1e80723426938dd52864a1b038",
+            "declaredColumnsMd5": "ba4a689dbb5769254f29325724485875"
+        },
+        {
+            "id": "43133510-369f-4a27-95fd-32479066df45",
+            "sqlMd5": "d9f7b3b57b32fc5f207bd227909b8b8e",
+            "updatedAt": "2026-09-09 06:46:02.521156",
+            "sqlViewName": "builder_fa7d070a58c2",
+            "componentCode": "COMP-2410",
+            "builderVersion": 1,
+            "builderConfigMd5": "97f0332b77aa7f7a3bd4df1744a4ef98",
+            "declaredColumnsMd5": "ac14b8c32549654478cd905a74450071"
+        },
+        {
+            "id": "491a1c5a-ccde-401d-bff1-ae9f39e1f183",
+            "sqlMd5": "ddc366172d7e5f44443aaf57a49177e4",
+            "updatedAt": "2026-09-09 19:56:13.059725",
+            "sqlViewName": "builder_ead1c831ca36",
+            "componentCode": "COMP-2426",
+            "builderVersion": 1,
+            "builderConfigMd5": "ccfc35ebb0bd23836ffb9f56ef064511",
+            "declaredColumnsMd5": "6a29b7f8be6dc3f0c441726b59fb0582"
+        },
+        {
+            "id": "4978063b-91a5-4e30-bf85-b97465ab18bd",
+            "sqlMd5": "8fa36e6d6a4b57f44498ffda516d7df2",
+            "updatedAt": "2026-09-09 21:36:39.598366",
+            "sqlViewName": "builder_79c7a7917627",
+            "componentCode": "COMP-2464",
+            "builderVersion": 1,
+            "builderConfigMd5": "7669eb9d31661e79172ba1c04732ec43",
+            "declaredColumnsMd5": "b661f546874953d9a3f0acfc32cb2a77"
+        },
+        {
+            "id": "4d37f075-cdf1-4353-aa8a-a365dc367d58",
+            "sqlMd5": "0fcc64d1db8974dbb47960ff1d130bac",
+            "updatedAt": "2026-09-09 06:46:02.396097",
+            "sqlViewName": "builder_b40cdfa1c662",
+            "componentCode": "COMP-2353",
+            "builderVersion": 1,
+            "builderConfigMd5": "ff6ad0098e0ef2065b1933c3f2d8ff85",
+            "declaredColumnsMd5": "e131271773a80e74d14f7fe177688715"
+        },
+        {
+            "id": "4e268579-c672-478d-a936-65ec04070260",
+            "sqlMd5": "c5c08cb1bde575e493d2de1beb5ceccf",
+            "updatedAt": "2026-09-11 09:24:22.57146",
+            "sqlViewName": "builder_f9bbf7ad4a5e",
+            "componentCode": "COMP-2422",
+            "builderVersion": 1,
+            "builderConfigMd5": "103b3ebbde11b9cd1727079a05b50904",
+            "declaredColumnsMd5": "ba4a689dbb5769254f29325724485875"
+        },
+        {
+            "id": "519691fc-1c4b-4ef8-be93-29b80331b241",
+            "sqlMd5": "4ce934dcf86be08ece2f1d481222ac25",
+            "updatedAt": "2026-09-08 21:50:04.790609",
+            "sqlViewName": "builder_fb378075db5d",
+            "componentCode": "COMP-2185",
+            "builderVersion": 1,
+            "builderConfigMd5": "054fc6a289169ec7de2d0006d2347cf7",
+            "declaredColumnsMd5": "6ef607e03e0964f117129546c709572f"
+        },
+        {
+            "id": "53d284cf-5a0b-4453-a362-a75be01a8a57",
+            "sqlMd5": "9151e72d983c9b13d7e0d41d0fe8aed7",
+            "updatedAt": "2026-09-09 22:40:40.814039",
+            "sqlViewName": "builder_1d9d0fd2d579",
+            "componentCode": "COMP-2497",
+            "builderVersion": 1,
+            "builderConfigMd5": "0bbdf1b18af3f6b643ddec0fd46ae291",
+            "declaredColumnsMd5": "bab182f0d7bb3c68a09a80ae3559950e"
+        },
+        {
+            "id": "54a7f0f5-d55e-4a83-801f-c222be7df9e9",
+            "sqlMd5": "0fcc64d1db8974dbb47960ff1d130bac",
+            "updatedAt": "2026-09-09 06:46:02.37744",
+            "sqlViewName": "builder_b25b6fa6e0f0",
+            "componentCode": "COMP-2409",
+            "builderVersion": 1,
+            "builderConfigMd5": "ff6ad0098e0ef2065b1933c3f2d8ff85",
+            "declaredColumnsMd5": "e131271773a80e74d14f7fe177688715"
+        },
+        {
+            "id": "550a257f-93e9-4ce3-8df2-bd769390a893",
+            "sqlMd5": "b675d98af75986c963f19273fc64153e",
+            "updatedAt": "2026-09-09 21:32:03.600409",
+            "sqlViewName": "builder_6a89348ee758",
+            "componentCode": "COMP-2446",
+            "builderVersion": 1,
+            "builderConfigMd5": "cd7855269c265f7dff76b9a9ea358bca",
+            "declaredColumnsMd5": "ecba27aad42c7a998e17978622c2608b"
+        },
+        {
+            "id": "5667a1a0-2ed9-4c19-861b-47a26b2e7a5c",
+            "sqlMd5": "06389cd702fb01d7d938125fad00a525",
+            "updatedAt": "2026-09-09 21:32:17.958187",
+            "sqlViewName": "builder_d2b0925fb1a4",
+            "componentCode": "COMP-2448",
+            "builderVersion": 1,
+            "builderConfigMd5": "1ba999002425eb1cc75087d4f643ef66",
+            "declaredColumnsMd5": "467d79080fd15901d41d2e6e1b1e6d25"
+        },
+        {
+            "id": "57a42990-bde8-4527-acbf-1f99c8670b70",
+            "sqlMd5": "8e57ed0b72de55662df10c7944928f9a",
+            "updatedAt": "2026-09-08 21:50:04.300045",
+            "sqlViewName": "builder_9cc11850f425",
+            "componentCode": "COMP-2296",
+            "builderVersion": 1,
+            "builderConfigMd5": "13a7fd43ac16c7725986451f90c64b22",
+            "declaredColumnsMd5": "a2d2842127b04a8a15bf2b02de1cee1b"
+        },
+        {
+            "id": "597a3891-c2d5-44db-ae24-35be80d69ba7",
+            "sqlMd5": "9151e72d983c9b13d7e0d41d0fe8aed7",
+            "updatedAt": "2026-09-09 21:04:54.61023",
+            "sqlViewName": "builder_b438205bc499",
+            "componentCode": "COMP-2432",
+            "builderVersion": 1,
+            "builderConfigMd5": "0bbdf1b18af3f6b643ddec0fd46ae291",
+            "declaredColumnsMd5": "bab182f0d7bb3c68a09a80ae3559950e"
+        },
+        {
+            "id": "59a40828-ac95-4a1a-9b34-375ce81b6ba9",
+            "sqlMd5": "06389cd702fb01d7d938125fad00a525",
+            "updatedAt": "2026-09-09 21:43:26.332596",
+            "sqlViewName": "builder_c39c0f87e175",
+            "componentCode": "COMP-2472",
+            "builderVersion": 1,
+            "builderConfigMd5": "1ba999002425eb1cc75087d4f643ef66",
+            "declaredColumnsMd5": "467d79080fd15901d41d2e6e1b1e6d25"
+        },
+        {
+            "id": "5acd597a-32fd-430b-a841-8426c9fb9372",
+            "sqlMd5": "b56b315ff3292de89c7f61359f789380",
+            "updatedAt": "2026-09-16 01:39:24.49632",
+            "sqlViewName": "builder_4602c64a0c38",
+            "componentCode": "COMP-0005",
+            "builderVersion": 1,
+            "builderConfigMd5": "b322958e8b6a528d5a3e99a86442b3a3",
+            "declaredColumnsMd5": "0ffe001437f30255a80e523238b26b02"
+        },
+        {
+            "id": "5ef995f1-a2e8-4750-bdf3-4d159025e575",
+            "sqlMd5": "c86ffed76b042c025a28cca8223d7833",
+            "updatedAt": "2026-09-09 21:43:25.655941",
+            "sqlViewName": "builder_1c0f75d221ad",
+            "componentCode": "COMP-2470",
+            "builderVersion": 1,
+            "builderConfigMd5": "d58c0ca860f0f44082b17493f65c8a8a",
+            "declaredColumnsMd5": "467d79080fd15901d41d2e6e1b1e6d25"
+        },
+        {
+            "id": "6174ac12-5c97-4e6d-996a-858abc60c965",
+            "sqlMd5": "06389cd702fb01d7d938125fad00a525",
+            "updatedAt": "2026-09-09 22:23:01.902997",
+            "sqlViewName": "builder_2ac4c9326d30",
+            "componentCode": "COMP-2489",
+            "builderVersion": 1,
+            "builderConfigMd5": "1ba999002425eb1cc75087d4f643ef66",
+            "declaredColumnsMd5": "467d79080fd15901d41d2e6e1b1e6d25"
+        },
+        {
+            "id": "64c30e7c-e8a7-44ec-b3b5-68d46cf01118",
+            "sqlMd5": "06389cd702fb01d7d938125fad00a525",
+            "updatedAt": "2026-09-09 20:55:06.00507",
+            "sqlViewName": "builder_f2d33a8f18bb",
+            "componentCode": "COMP-2428",
+            "builderVersion": 1,
+            "builderConfigMd5": "67ad2fd264d81b62fc88b7a4c829705d",
+            "declaredColumnsMd5": "467d79080fd15901d41d2e6e1b1e6d25"
+        },
+        {
+            "id": "69775a60-b875-42fb-b5f5-d67e1ad9fcf4",
+            "sqlMd5": "06389cd702fb01d7d938125fad00a525",
+            "updatedAt": "2026-09-09 21:43:25.395226",
+            "sqlViewName": "builder_dbb248265a13",
+            "componentCode": "COMP-2469",
+            "builderVersion": 1,
+            "builderConfigMd5": "67ad2fd264d81b62fc88b7a4c829705d",
+            "declaredColumnsMd5": "467d79080fd15901d41d2e6e1b1e6d25"
+        },
+        {
+            "id": "730b46ca-c617-47ac-a1b1-39b70dc829fa",
+            "sqlMd5": "013d6dbdb1d7ac25b21184f87df3c445",
+            "updatedAt": "2026-09-08 21:50:04.593063",
+            "sqlViewName": "builder_c6a71e5e217a",
+            "componentCode": "COMP-2179",
+            "builderVersion": 1,
+            "builderConfigMd5": "146a7498f2a81839c60684e829b7413c",
+            "declaredColumnsMd5": "d455d11ea64c33793140d243d30dab08"
+        },
+        {
+            "id": "74317571-9519-4207-baff-46875e88dd11",
+            "sqlMd5": "885026682883a50b837e092b16fd212e",
+            "updatedAt": "2026-09-11 09:24:22.34059",
+            "sqlViewName": "builder_a71947b68d50",
+            "componentCode": "COMP-2293",
+            "builderVersion": 1,
+            "builderConfigMd5": "cc81ff40cf5b83cf99e05f2b3b79537a",
+            "declaredColumnsMd5": "69dbc8536d59420e65957097806935b7"
+        },
+        {
+            "id": "7566674c-7705-49b6-a2fa-7ba1fb810e82",
+            "sqlMd5": "75542da9dacbe05b20058085e02e3194",
+            "updatedAt": "2026-09-08 21:50:04.082248",
+            "sqlViewName": "builder_42dd870ccd17",
+            "componentCode": "COMP-2188",
+            "builderVersion": 1,
+            "builderConfigMd5": "f1aba0ad3d89432f921a6db557fa15a9",
+            "declaredColumnsMd5": "240def7cf37b0b381f3acbe9da8f26f3"
+        },
+        {
+            "id": "7abb0435-0079-460c-9f7d-00da854c5892",
+            "sqlMd5": "39ea109382cd5a758b074ef6c4addb45",
+            "updatedAt": "2026-09-09 21:45:21.243471",
+            "sqlViewName": "builder_8fced7e70854",
+            "componentCode": "COMP-2474",
+            "builderVersion": 1,
+            "builderConfigMd5": "b73987a28636d5cd131db0e02b145faa",
+            "declaredColumnsMd5": "ddd0578e1553ac7631e5da0cef35b8d0"
+        },
+        {
+            "id": "81e04275-c679-46f1-844e-4b59bc7471b0",
+            "sqlMd5": "1d6a2ce50ffb525e83b92049087570a5",
+            "updatedAt": "2026-09-09 21:25:33.19536",
+            "sqlViewName": "builder_3233bd25bf45",
+            "componentCode": "COMP-2442",
+            "builderVersion": 1,
+            "builderConfigMd5": "956f3bb5a479cbaa2c8164bedd2aa4ac",
+            "declaredColumnsMd5": "8ea06469e3cfc413d74f3888c1ab5f8f"
+        },
+        {
+            "id": "85f7acd0-01ea-43c6-a77f-708f6cbbbea5",
+            "sqlMd5": "6a3dd17fded573305900c55bc40c2b22",
+            "updatedAt": "2026-09-09 02:45:43.084016",
+            "sqlViewName": "test_pricebase_view",
+            "componentCode": "TEST-PRICEBASE-CACHE",
+            "builderVersion": null,
+            "builderConfigMd5": "d41d8cd98f00b204e9800998ecf8427e",
+            "declaredColumnsMd5": "d751713988987e9331980363e24189ce"
+        },
+        {
+            "id": "8aa93c23-03d1-4614-a2d9-4cef1b35453c",
+            "sqlMd5": "b675d98af75986c963f19273fc64153e",
+            "updatedAt": "2026-09-09 22:25:56.296384",
+            "sqlViewName": "builder_6d15e6ea1a2a",
+            "componentCode": "COMP-2492",
+            "builderVersion": 1,
+            "builderConfigMd5": "cd7855269c265f7dff76b9a9ea358bca",
+            "declaredColumnsMd5": "ecba27aad42c7a998e17978622c2608b"
+        },
+        {
+            "id": "8d483e80-c23b-4a99-a7d8-4dc52378fab7",
+            "sqlMd5": "ddc366172d7e5f44443aaf57a49177e4",
+            "updatedAt": "2026-09-09 05:10:48.36402",
+            "sqlViewName": "builder_3fda805a52da",
+            "componentCode": "COMP-2414",
+            "builderVersion": 1,
+            "builderConfigMd5": "61a19246d78ef477417e0d6801736abd",
+            "declaredColumnsMd5": "6a29b7f8be6dc3f0c441726b59fb0582"
+        },
+        {
+            "id": "8ece3312-9c02-4735-a5c6-d48916959a1d",
+            "sqlMd5": "3116590511d0750d4caa63e4b2cb86b3",
+            "updatedAt": "2026-09-08 21:50:04.207562",
+            "sqlViewName": "builder_6c4acfecbe39",
+            "componentCode": "COMP-2186",
+            "builderVersion": 1,
+            "builderConfigMd5": "26d3aa0b54551a3a2fe84bbfb20abbb6",
+            "declaredColumnsMd5": "0e73d479fe9e43c7b3fee358ecb7d076"
+        },
+        {
+            "id": "90ee008c-8eea-4a71-8f0c-6667a3f51d39",
+            "sqlMd5": "22e45e5a122031ec10895a2ba5484ebc",
+            "updatedAt": "2026-09-09 01:26:53.803262",
+            "sqlViewName": "builder_7f9a5bbf264f",
+            "componentCode": "COMP-2345",
+            "builderVersion": 1,
+            "builderConfigMd5": "b654653f8c1e291793ec561ee6e3c0ba",
+            "declaredColumnsMd5": "b3e3cde1a6a18f9b34e339d6c880bec1"
+        },
+        {
+            "id": "93906480-f162-4dce-9c7d-a872dbae1c42",
+            "sqlMd5": "66d60e11ec15eeab172b6ae1350311d7",
+            "updatedAt": "2026-09-08 21:50:03.999423",
+            "sqlViewName": "builder_196aadeeb89f",
+            "componentCode": "COMP-2180",
+            "builderVersion": 1,
+            "builderConfigMd5": "e53d817f3b009af6db4e556e1e79d8e3",
+            "declaredColumnsMd5": "7d082774c31db58fdf34830677cb2ff0"
+        },
+        {
+            "id": "9581f81b-09ca-4561-bbab-31b9f48221aa",
+            "sqlMd5": "31eeb3fe9dfb938801a69d104b4befd3",
+            "updatedAt": "2026-09-16 01:39:24.494808",
+            "sqlViewName": "builder_3aeb3cca84dc",
+            "componentCode": "COMP-0003",
+            "builderVersion": 1,
+            "builderConfigMd5": "11061993dd00e546c22c4a0d4aed84e2",
+            "declaredColumnsMd5": "ef37bc7ef9ad892406bd5bbcafb721c6"
+        },
+        {
+            "id": "988e6870-5381-4712-b80f-448221a40afc",
+            "sqlMd5": "c86ffed76b042c025a28cca8223d7833",
+            "updatedAt": "2026-09-09 21:32:19.420883",
+            "sqlViewName": "builder_a9f3370822bf",
+            "componentCode": "COMP-2450",
+            "builderVersion": 1,
+            "builderConfigMd5": "d58c0ca860f0f44082b17493f65c8a8a",
+            "declaredColumnsMd5": "467d79080fd15901d41d2e6e1b1e6d25"
+        },
+        {
+            "id": "98ec7402-a8ff-42cf-8712-59904a9d6b04",
+            "sqlMd5": "f55b945a6e6eae26b79a67899016ebf2",
+            "updatedAt": "2026-09-09 21:36:40.401423",
+            "sqlViewName": "builder_7a7b3d85fba0",
+            "componentCode": "COMP-2466",
+            "builderVersion": 1,
+            "builderConfigMd5": "892abe4420fc7f49212c639151556de5",
+            "declaredColumnsMd5": "1a720af147d16f7d415bbefaec59abd7"
+        },
+        {
+            "id": "99513af2-149f-4706-84f4-4b763af9342a",
+            "sqlMd5": "06389cd702fb01d7d938125fad00a525",
+            "updatedAt": "2026-09-09 22:21:57.295787",
+            "sqlViewName": "builder_5fd53c5fe899",
+            "componentCode": "COMP-2483",
+            "builderVersion": 1,
+            "builderConfigMd5": "1ba999002425eb1cc75087d4f643ef66",
+            "declaredColumnsMd5": "467d79080fd15901d41d2e6e1b1e6d25"
+        },
+        {
+            "id": "9cd1a65e-4bd3-46d1-84b7-e2ede7f75bc4",
+            "sqlMd5": "06389cd702fb01d7d938125fad00a525",
+            "updatedAt": "2026-09-09 21:34:00.50265",
+            "sqlViewName": "builder_24f24d6ea501",
+            "componentCode": "COMP-2460",
+            "builderVersion": 1,
+            "builderConfigMd5": "1ba999002425eb1cc75087d4f643ef66",
+            "declaredColumnsMd5": "467d79080fd15901d41d2e6e1b1e6d25"
+        },
+        {
+            "id": "9df29123-dd00-4f65-a523-821bf1941caf",
+            "sqlMd5": "12197681b7d61d4eb5bddbbf0a500e79",
+            "updatedAt": "2026-09-08 21:50:04.469936",
+            "sqlViewName": "builder_ba7c13ca994f",
+            "componentCode": "COMP-2182",
+            "builderVersion": 1,
+            "builderConfigMd5": "26bb0ecb8a636c42425cd55179f7c1c4",
+            "declaredColumnsMd5": "195c3a9480b9d2ef8cad2f89de653714"
+        },
+        {
+            "id": "9f07dd51-3e04-4e3a-8f02-de1c60bbb87c",
+            "sqlMd5": "a3807350471a7f336fcfd9d1ad2616fe",
+            "updatedAt": "2026-09-16 01:39:24.496887",
+            "sqlViewName": "builder_7506a1ebf5ab",
+            "componentCode": "COMP-0006",
+            "builderVersion": 1,
+            "builderConfigMd5": "b9fe8447fef325dbde6bfaeb5401d83f",
+            "declaredColumnsMd5": "73615a810571b3226d1c68893dcf72b1"
+        },
+        {
+            "id": "a25aa05b-a2b2-4053-a1b0-c31199d6afdd",
+            "sqlMd5": "06389cd702fb01d7d938125fad00a525",
+            "updatedAt": "2026-09-09 20:54:07.301699",
+            "sqlViewName": "builder_2d2188940743",
+            "componentCode": "COMP-2427",
+            "builderVersion": 1,
+            "builderConfigMd5": "67ad2fd264d81b62fc88b7a4c829705d",
+            "declaredColumnsMd5": "467d79080fd15901d41d2e6e1b1e6d25"
+        },
+        {
+            "id": "a3dca386-efda-4a48-8c29-e554e48239e7",
+            "sqlMd5": "ddc366172d7e5f44443aaf57a49177e4",
+            "updatedAt": "2026-09-09 19:55:45.794599",
+            "sqlViewName": "builder_b2b718fe930a",
+            "componentCode": "COMP-2424",
+            "builderVersion": 1,
+            "builderConfigMd5": "d6ccbe779198b8b5f715364cf643ec3d",
+            "declaredColumnsMd5": "6a29b7f8be6dc3f0c441726b59fb0582"
+        },
+        {
+            "id": "a6b45939-57ed-4b69-80fb-1ca36c827a79",
+            "sqlMd5": "06389cd702fb01d7d938125fad00a525",
+            "updatedAt": "2026-09-09 22:22:58.933445",
+            "sqlViewName": "builder_e4846f6b068f",
+            "componentCode": "COMP-2485",
+            "builderVersion": 1,
+            "builderConfigMd5": "1ba999002425eb1cc75087d4f643ef66",
+            "declaredColumnsMd5": "467d79080fd15901d41d2e6e1b1e6d25"
+        },
+        {
+            "id": "a6c2e930-1014-482d-aa24-23919253ff68",
+            "sqlMd5": "06389cd702fb01d7d938125fad00a525",
+            "updatedAt": "2026-09-09 21:33:58.390191",
+            "sqlViewName": "builder_6814c1b7128a",
+            "componentCode": "COMP-2457",
+            "builderVersion": 1,
+            "builderConfigMd5": "67ad2fd264d81b62fc88b7a4c829705d",
+            "declaredColumnsMd5": "467d79080fd15901d41d2e6e1b1e6d25"
+        },
+        {
+            "id": "a966bd01-d528-465d-91fd-f6638868f12f",
+            "sqlMd5": "f82e448905ead2707af395747552b5d9",
+            "updatedAt": "2026-09-09 21:22:59.277445",
+            "sqlViewName": "builder_d2d8a98d62e9",
+            "componentCode": "COMP-2440",
+            "builderVersion": 1,
+            "builderConfigMd5": "45c77da9749ade59c1d80cc4d1879c74",
+            "declaredColumnsMd5": "732a18157cbdc14dfe8320c755f80da7"
+        },
+        {
+            "id": "ac04ac1d-4179-45d9-b225-188617e6183c",
+            "sqlMd5": "4d38d728e71567e2ae84d5009f520878",
+            "updatedAt": "2026-09-09 23:15:13.975688",
+            "sqlViewName": "builder_1cd0f65a8b47",
+            "componentCode": "COMP-2501",
+            "builderVersion": 1,
+            "builderConfigMd5": "bcb19d6a24025dc8508c91f0e6001498",
+            "declaredColumnsMd5": "ddd0578e1553ac7631e5da0cef35b8d0"
+        },
+        {
+            "id": "afe97806-23dd-44ca-9170-fe8b59ece917",
+            "sqlMd5": "c5c08cb1bde575e493d2de1beb5ceccf",
+            "updatedAt": "2026-09-11 09:24:22.284735",
+            "sqlViewName": "builder_9291b050b6a9",
+            "componentCode": "COMP-2300",
+            "builderVersion": 1,
+            "builderConfigMd5": "60d2abe4127e16da5d47690d8aa4dfd3",
+            "declaredColumnsMd5": "ba4a689dbb5769254f29325724485875"
+        },
+        {
+            "id": "b2a2d612-f146-4575-8c33-a35a5ce24292",
+            "sqlMd5": "06389cd702fb01d7d938125fad00a525",
+            "updatedAt": "2026-09-09 21:43:25.012759",
+            "sqlViewName": "builder_6bbf659e9062",
+            "componentCode": "COMP-2468",
+            "builderVersion": 1,
+            "builderConfigMd5": "1ba999002425eb1cc75087d4f643ef66",
+            "declaredColumnsMd5": "467d79080fd15901d41d2e6e1b1e6d25"
+        },
+        {
+            "id": "b39e0d34-3128-4300-a8c8-a1f4294e74d0",
+            "sqlMd5": "4d38d728e71567e2ae84d5009f520878",
+            "updatedAt": "2026-09-09 22:23:58.989417",
+            "sqlViewName": "builder_4993a976eec6",
+            "componentCode": "COMP-2490",
+            "builderVersion": 1,
+            "builderConfigMd5": "bcb19d6a24025dc8508c91f0e6001498",
+            "declaredColumnsMd5": "ddd0578e1553ac7631e5da0cef35b8d0"
+        },
+        {
+            "id": "b5f2489e-3586-4358-a4e3-e4b8e6684372",
+            "sqlMd5": "8fa36e6d6a4b57f44498ffda516d7df2",
+            "updatedAt": "2026-09-09 21:36:39.959099",
+            "sqlViewName": "builder_0ab85a28cf85",
+            "componentCode": "COMP-2465",
+            "builderVersion": 1,
+            "builderConfigMd5": "a0614d26cb1c779a989e27ea9cefc66f",
+            "declaredColumnsMd5": "b661f546874953d9a3f0acfc32cb2a77"
+        },
+        {
+            "id": "b77b7157-0020-4f28-b218-ed43ce4c72e4",
+            "sqlMd5": "66d60e11ec15eeab172b6ae1350311d7",
+            "updatedAt": "2026-09-08 21:50:04.141434",
+            "sqlViewName": "builder_661e1a387f89",
+            "componentCode": "T260902-661e1a38",
+            "builderVersion": 1,
+            "builderConfigMd5": "e53d817f3b009af6db4e556e1e79d8e3",
+            "declaredColumnsMd5": "7d082774c31db58fdf34830677cb2ff0"
+        },
+        {
+            "id": "b9045fbe-5f3e-4b1f-a7cb-12f1ce217711",
+            "sqlMd5": "bfcbe15d66d88f9ac6727896a78ceb6d",
+            "updatedAt": "2026-09-08 21:50:04.623295",
+            "sqlViewName": "builder_ca66ea9a93aa",
+            "componentCode": "COMP-2177",
+            "builderVersion": 1,
+            "builderConfigMd5": "2b2a3b964b6d1e964f76385601caea2a",
+            "declaredColumnsMd5": "24409703c222ff0e654eb8c166985e9b"
+        },
+        {
+            "id": "baebba75-55b1-4c5e-9f04-4fdce7682584",
+            "sqlMd5": "9151e72d983c9b13d7e0d41d0fe8aed7",
+            "updatedAt": "2026-09-09 21:55:01.831306",
+            "sqlViewName": "builder_bf227af29bf0",
+            "componentCode": "COMP-2478",
+            "builderVersion": 1,
+            "builderConfigMd5": "0bbdf1b18af3f6b643ddec0fd46ae291",
+            "declaredColumnsMd5": "bab182f0d7bb3c68a09a80ae3559950e"
+        },
+        {
+            "id": "be5dd78f-ffe8-40d5-b3c9-b1246914593a",
+            "sqlMd5": "66d60e11ec15eeab172b6ae1350311d7",
+            "updatedAt": "2026-09-08 21:50:04.536991",
+            "sqlViewName": "builder_bc018fbefa1b",
+            "componentCode": "T260902-bc018fbe",
+            "builderVersion": 1,
+            "builderConfigMd5": "e53d817f3b009af6db4e556e1e79d8e3",
+            "declaredColumnsMd5": "7d082774c31db58fdf34830677cb2ff0"
+        },
+        {
+            "id": "bf0f1094-cab6-4073-b0a7-7a6e15b33bc2",
+            "sqlMd5": "b675d98af75986c963f19273fc64153e",
+            "updatedAt": "2026-09-09 21:46:19.208761",
+            "sqlViewName": "builder_7aae5a941bc0",
+            "componentCode": "COMP-2475",
+            "builderVersion": 1,
+            "builderConfigMd5": "cd7855269c265f7dff76b9a9ea358bca",
+            "declaredColumnsMd5": "ecba27aad42c7a998e17978622c2608b"
+        },
+        {
+            "id": "bf705fc4-6854-4aa8-a1b3-769f1942733b",
+            "sqlMd5": "f55b945a6e6eae26b79a67899016ebf2",
+            "updatedAt": "2026-09-09 22:23:01.215203",
+            "sqlViewName": "builder_5ae1a018eef2",
+            "componentCode": "COMP-2488",
+            "builderVersion": 1,
+            "builderConfigMd5": "892abe4420fc7f49212c639151556de5",
+            "declaredColumnsMd5": "1a720af147d16f7d415bbefaec59abd7"
+        },
+        {
+            "id": "c6f069a4-c7d1-42fa-888d-0131ea0f413a",
+            "sqlMd5": "81a03e1e7198d89ef39668272817a152",
+            "updatedAt": "2026-09-09 01:26:53.902388",
+            "sqlViewName": "builder_98ee51d1832e",
+            "componentCode": "COMP-2346",
+            "builderVersion": 1,
+            "builderConfigMd5": "b6e77145aeca6ee46e81d8e7a125ab46",
+            "declaredColumnsMd5": "47ed8bbdb4e7919471b42a5b9bfd1745"
+        },
+        {
+            "id": "c86e5e56-0243-4beb-b1d0-007b936b1ab5",
+            "sqlMd5": "f55b945a6e6eae26b79a67899016ebf2",
+            "updatedAt": "2026-09-09 21:43:25.922416",
+            "sqlViewName": "builder_f2de3807c126",
+            "componentCode": "COMP-2471",
+            "builderVersion": 1,
+            "builderConfigMd5": "892abe4420fc7f49212c639151556de5",
+            "declaredColumnsMd5": "1a720af147d16f7d415bbefaec59abd7"
+        },
+        {
+            "id": "cb0d57e2-cb73-464b-bd95-2d697ca7d152",
+            "sqlMd5": "ddc366172d7e5f44443aaf57a49177e4",
+            "updatedAt": "2026-09-09 19:55:46.216152",
+            "sqlViewName": "builder_999eaf0a9c07",
+            "componentCode": "COMP-2425",
+            "builderVersion": 1,
+            "builderConfigMd5": "61a19246d78ef477417e0d6801736abd",
+            "declaredColumnsMd5": "6a29b7f8be6dc3f0c441726b59fb0582"
+        },
+        {
+            "id": "ccdb2b73-a34e-435a-838c-01d66a63dd6d",
+            "sqlMd5": "4d38d728e71567e2ae84d5009f520878",
+            "updatedAt": "2026-09-09 22:56:59.545706",
+            "sqlViewName": "builder_146ade581418",
+            "componentCode": "COMP-2502",
+            "builderVersion": 1,
+            "builderConfigMd5": "459787ccc951c772131eeec182f44ae5",
+            "declaredColumnsMd5": "ddd0578e1553ac7631e5da0cef35b8d0"
+        },
+        {
+            "id": "cf205837-1146-4fb8-8d59-7ae6534027dd",
+            "sqlMd5": "66d60e11ec15eeab172b6ae1350311d7",
+            "updatedAt": "2026-09-08 21:50:04.442455",
+            "sqlViewName": "builder_b9126e2bdef8",
+            "componentCode": "T260902-b9126e2b",
+            "builderVersion": 1,
+            "builderConfigMd5": "e53d817f3b009af6db4e556e1e79d8e3",
+            "declaredColumnsMd5": "7d082774c31db58fdf34830677cb2ff0"
+        },
+        {
+            "id": "d1212a35-00a8-464c-9ae6-1a2b59cfa436",
+            "sqlMd5": "336e6ef8d771bb6c149b61b9a63ab3e6",
+            "updatedAt": "2026-09-16 01:39:24.498726",
+            "sqlViewName": "builder_aecf34a08407",
+            "componentCode": "COMP-0002",
+            "builderVersion": 1,
+            "builderConfigMd5": "38d200a66fd6099b12a3d7781892bdb3",
+            "declaredColumnsMd5": "368fc34739a58011b3a5c692db42a8a2"
+        },
+        {
+            "id": "d51fcd1e-bb6b-4c37-97a0-657d413505f9",
+            "sqlMd5": "965b092c54137b918e2a3fd2ca9e9be7",
+            "updatedAt": "2026-09-08 21:50:04.765664",
+            "sqlViewName": "builder_f6d51727bd1e",
+            "componentCode": "COMP-2254",
+            "builderVersion": 1,
+            "builderConfigMd5": "b025e68825003feb24a338c6159ea948",
+            "declaredColumnsMd5": "d59dec47537242114befb7fcb1e99872"
+        },
+        {
+            "id": "dc5f4295-5f4b-477b-8994-46bcaca19f91",
+            "sqlMd5": "2ea23a0755d1721ee1c8294f9fdd1a58",
+            "updatedAt": "2026-09-14 01:18:38.161424",
+            "sqlViewName": "builder_8819821ad6b9",
+            "componentCode": "COMP-2505",
+            "builderVersion": 1,
+            "builderConfigMd5": "a4ec1d161bd04323ac691d11ad08470d",
+            "declaredColumnsMd5": "bcbc92f4a66d7357ac24d0f9d6b68816"
+        },
+        {
+            "id": "e03571f2-b9bf-442c-84df-7ae9a847d146",
+            "sqlMd5": "0fcc64d1db8974dbb47960ff1d130bac",
+            "updatedAt": "2026-09-09 06:46:02.482831",
+            "sqlViewName": "builder_e01bc41562e0",
+            "componentCode": "COMP-2401",
+            "builderVersion": 1,
+            "builderConfigMd5": "ff6ad0098e0ef2065b1933c3f2d8ff85",
+            "declaredColumnsMd5": "e131271773a80e74d14f7fe177688715"
+        },
+        {
+            "id": "e282d46c-7392-4d71-ab9f-a972e29b18c4",
+            "sqlMd5": "d099bf7ba2516de514f68970964a4afe",
+            "updatedAt": "2026-09-10 00:04:32.37527",
+            "sqlViewName": "builder_4c40f5feffa9",
+            "componentCode": "COMP-2421",
+            "builderVersion": 1,
+            "builderConfigMd5": "f2a2215d46eb5a870707627e272dbf62",
+            "declaredColumnsMd5": "c321eb5fdd6ded3355176636fd6f016f"
+        },
+        {
+            "id": "e4e927e7-b75c-4db3-957d-6e66d4c88b23",
+            "sqlMd5": "35996d6daf6801413d02fcfdc8059c4a",
+            "updatedAt": "2026-09-08 21:50:04.053084",
+            "sqlViewName": "builder_39c738327543",
+            "componentCode": "COMP-2189",
+            "builderVersion": 1,
+            "builderConfigMd5": "d2c6cd7713162c9d15873fc9484c9b40",
+            "declaredColumnsMd5": "c5af6bfeb54d88e6cf67df270cd80056"
+        },
+        {
+            "id": "e567c567-05ef-4844-b738-5603e23ed66b",
+            "sqlMd5": "eee3655d39112f413423b23c35d78221",
+            "updatedAt": "2026-09-08 21:50:04.507778",
+            "sqlViewName": "builder_ba81142a5ddb",
+            "componentCode": "COMP-2295",
+            "builderVersion": 1,
+            "builderConfigMd5": "963f9f3121828c72f5e1457cd00665a4",
+            "declaredColumnsMd5": "bab6436a53ba2142e27dd33214f261ef"
+        },
+        {
+            "id": "e71ec0c1-67bf-48dd-8fd0-4062cbccc587",
+            "sqlMd5": "74bb01bd8c1a5d8d277df598485e7228",
+            "updatedAt": "2026-09-08 21:50:04.112532",
+            "sqlViewName": "builder_452bbdbe13f7",
+            "componentCode": "COMP-2266",
+            "builderVersion": 1,
+            "builderConfigMd5": "dc3d5752600258fbd2080e927173c9ec",
+            "declaredColumnsMd5": "bd0990bf0f8db56f4a375c3c547e09bc"
+        },
+        {
+            "id": "e8f6c6fb-ae06-4dd7-bea2-562886c684fb",
+            "sqlMd5": "c86ffed76b042c025a28cca8223d7833",
+            "updatedAt": "2026-09-09 22:23:00.539893",
+            "sqlViewName": "builder_fa78ab0a3937",
+            "componentCode": "COMP-2487",
+            "builderVersion": 1,
+            "builderConfigMd5": "d58c0ca860f0f44082b17493f65c8a8a",
+            "declaredColumnsMd5": "467d79080fd15901d41d2e6e1b1e6d25"
+        },
+        {
+            "id": "f165376f-c44b-4a3a-940b-303522069453",
+            "sqlMd5": "06389cd702fb01d7d938125fad00a525",
+            "updatedAt": "2026-09-09 21:32:18.755272",
+            "sqlViewName": "builder_013a1f12e61a",
+            "componentCode": "COMP-2449",
+            "builderVersion": 1,
+            "builderConfigMd5": "67ad2fd264d81b62fc88b7a4c829705d",
+            "declaredColumnsMd5": "467d79080fd15901d41d2e6e1b1e6d25"
+        },
+        {
+            "id": "f23adf3d-b654-45c1-8b7e-109dd58b005d",
+            "sqlMd5": "cc917aab8a9b33a801025c29a772c7f0",
+            "updatedAt": "2026-09-11 09:24:22.015014",
+            "sqlViewName": "builder_221dc7668ab6",
+            "componentCode": "COMP-2344",
+            "builderVersion": 1,
+            "builderConfigMd5": "a3b561d3bdeecd4e63740b8f5c58f4fd",
+            "declaredColumnsMd5": "22f01394ef3a12b0bf352b9d00c37b5e"
+        },
+        {
+            "id": "f3cbf0fa-e800-4eab-8898-6cb969d9319f",
+            "sqlMd5": "d9f7b3b57b32fc5f207bd227909b8b8e",
+            "updatedAt": "2026-09-09 06:46:02.34239",
+            "sqlViewName": "builder_add54d8199f9",
+            "componentCode": "COMP-2354",
+            "builderVersion": 1,
+            "builderConfigMd5": "97f0332b77aa7f7a3bd4df1744a4ef98",
+            "declaredColumnsMd5": "ac14b8c32549654478cd905a74450071"
+        },
+        {
+            "id": "f66117a2-4891-4523-ac76-e2dbda8a06ad",
+            "sqlMd5": "8fa36e6d6a4b57f44498ffda516d7df2",
+            "updatedAt": "2026-09-09 21:36:06.283286",
+            "sqlViewName": "builder_c8645ad0ddb2",
+            "componentCode": "COMP-2461",
+            "builderVersion": 1,
+            "builderConfigMd5": "7669eb9d31661e79172ba1c04732ec43",
+            "declaredColumnsMd5": "b661f546874953d9a3f0acfc32cb2a77"
+        },
+        {
+            "id": "f8d28fe3-7f99-4e3c-9b4e-ab9c7960b5ca",
+            "sqlMd5": "88efc62bea9f7950339520560193c62a",
+            "updatedAt": "2026-09-08 21:50:04.415306",
+            "sqlViewName": "builder_ae4e0034dac1",
+            "componentCode": "COMP-2319",
+            "builderVersion": 1,
+            "builderConfigMd5": "94db62b8e643b42c250c48c0607926cb",
+            "declaredColumnsMd5": "a368ca3b5450735ea59885fcb8d0b907"
+        },
+        {
+            "id": "f9d3a7e4-948c-4075-8e20-eea1760288d6",
+            "sqlMd5": "d92c7202effcf31f6b4ed4d3a3e5afc1",
+            "updatedAt": "2026-09-08 21:50:04.708032",
+            "sqlViewName": "builder_dc3297cce9a3",
+            "componentCode": "COMP-2267",
+            "builderVersion": 1,
+            "builderConfigMd5": "2a4bf899200321fc697cde316a2941c8",
+            "declaredColumnsMd5": "5827dfcdac6faa36db54cd612427944f"
+        },
+        {
+            "id": "faf225fe-e311-4c5d-a4cc-8a30d7b7f89b",
+            "sqlMd5": "c42f260007415aac142dce3fc4a7073e",
+            "updatedAt": "2026-09-14 01:20:00.949279",
+            "sqlViewName": "builder_fa956c2f58e7",
+            "componentCode": "COMP-2507",
+            "builderVersion": 1,
+            "builderConfigMd5": "23941f468af2a696d46d7f6eeb1add46",
+            "declaredColumnsMd5": "bc0914033857543d3606266f63fb8840"
+        },
+        {
+            "id": "fbe1ffe3-602c-4876-a654-19085d50a764",
+            "sqlMd5": "aebcce1ef547ec7c37352f9ede1d6e3a",
+            "updatedAt": "2026-09-10 00:05:10.677082",
+            "sqlViewName": "builder_32ab8212df6c",
+            "componentCode": "COMP-2299",
+            "builderVersion": 1,
+            "builderConfigMd5": "68d3900a6702177f9c430c2785e1a29c",
+            "declaredColumnsMd5": "73c23b0cb46696408ac1354120608ac0"
+        },
+        {
+            "id": "fd365d71-61ae-4255-a0ad-8a848d564e84",
+            "sqlMd5": "f55b945a6e6eae26b79a67899016ebf2",
+            "updatedAt": "2026-09-09 21:33:59.744449",
+            "sqlViewName": "builder_6ebe9e04230d",
+            "componentCode": "COMP-2459",
+            "builderVersion": 1,
+            "builderConfigMd5": "892abe4420fc7f49212c639151556de5",
+            "declaredColumnsMd5": "1a720af147d16f7d415bbefaec59abd7"
+        },
+        {
+            "id": "fe4e2523-c6f0-4c10-8b93-9f0cf784cb8a",
+            "sqlMd5": "a02175817dd7f4b3836edc7df9dcd3e4",
+            "updatedAt": "2026-09-16 01:39:24.497562",
+            "sqlViewName": "builder_75d89a318c2f",
+            "componentCode": "COMP-0001",
+            "builderVersion": 1,
+            "builderConfigMd5": "68ff87abf4ca34d05bad7f523ad49b28",
+            "declaredColumnsMd5": "be2b36436fe189c8bd6e7f8ea4ef5feb"
+        },
+        {
+            "id": "fecd9fa7-3557-420f-a5ed-3bc0d665b6b6",
+            "sqlMd5": "9f2557f7fa07aba872097fe6701adc1b",
+            "updatedAt": "2026-09-08 21:50:04.679994",
+            "sqlViewName": "builder_d277107524d3",
+            "componentCode": "COMP-2184",
+            "builderVersion": 1,
+            "builderConfigMd5": "ec369382f4b25d4ef34b94795ad2529a",
+            "declaredColumnsMd5": "90beefba2211622da78f2641c4c45fb4"
+        }
+    ],
+    "database": "cpq_db_260916",
+    "capturedAt": "2026-09-17T02:05:13Z",
+    "capturedBy": "S-1 test-engineer (read-only, before 8196 start)",
+    "flywayMaxVersion": 443,
+    "semanticEdgeCount": 78,
+    "componentViewRecompileLogRows": 0
+}
