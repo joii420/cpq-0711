@@ -1,0 +1,33 @@
+{
+  "request": {
+    "componentIds": [
+      "4db28822-85c6-4522-ac62-61ef2393a99c",
+      "57554055-0896-4cc8-be98-65e45b0a5985",
+      "39fa3d9d-54b9-4605-93ca-dd38cbfa2831"
+    ],
+    "confirm": true
+  },
+  "status": 200,
+  "body": {
+    "code": 200,
+    "message": "success",
+    "data": {
+      "preview": false,
+      "componentCount": 3,
+      "views": 3,
+      "changed": 3,
+      "changedViewNames": [
+        "builder_4602c64a0c38",
+        "builder_46f244df7ede",
+        "builder_c35c2bd590fe"
+      ],
+      "unchangedViewNames": [],
+      "skippedComponentIds": [],
+      "operationLogIds": [
+        "f8923343-6c2d-4913-adbf-9611d2e76789",
+        "c8696ffd-261d-4401-92ed-cec105d1c6df",
+        "ee56d1be-4719-4dcc-8e58-90bd37c1996d"
+      ]
+    }
+  }
+}

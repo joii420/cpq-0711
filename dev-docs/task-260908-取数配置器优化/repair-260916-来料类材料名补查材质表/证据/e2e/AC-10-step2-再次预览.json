@@ -1,0 +1,21 @@
+{
+  "status": 200,
+  "body": {
+    "code": 200,
+    "message": "success",
+    "data": {
+      "preview": true,
+      "componentCount": 3,
+      "views": 3,
+      "changed": 0,
+      "changes": [],
+      "unchangedViewNames": [
+        "builder_4602c64a0c38",
+        "builder_46f244df7ede",
+        "builder_c35c2bd590fe"
+      ],
+      "skippedComponentIds": [],
+      "warning": "只重编译所列组件的取数视图；不改组件字段表、公式、组件属性，不改任何模板快照。"
+    }
+  }
+}

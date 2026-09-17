@@ -1,7 +1,7 @@
 # CPQ 系统接口总览文档（main-api.md）
 
 > 本文件由技术总监扫描 `cpq-backend` 全部 JAX-RS Resource 自动生成，覆盖 **89 个 Resource 类、约 422 个 HTTP 端点**，按业务模块分为 12 大类。
-> 生成日期：2026-07-08 ｜ 最近契约更新：**2026-09-16（task-260915 组件导出/导入往返保真：§2.1 导出/导入预览/导入提交三个端点按真实源码整段覆盖 —— 含本次新增 8 个字段与 `builderCoord`，并顺带补齐 task-0805 遗留未回写的 `bindingReport`/`formulaBinding`/`ignoreUnboundFormulas`/`unboundWarnings` 等）** ｜ 前次：2026-09-03（task-260903 产品管理页重做：新增 `GET /dataset/{dataset}/customer-parts`，见 §6.9；其前序 task-260902 新增 9 个端点，见 §6.8 / §6.9） ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
+> 生成日期：2026-07-08 ｜ 最近契约更新：**2026-09-16（repair-260916 来料类材料名补查材质表：§8.1 `ConfigCenterResource` 新增 `POST /config-center/recompile-components`（按组件重编译取数视图）；⚠️ 同节 `refresh-all-snapshots` 小节描述仍是 K4 旧实现，未随本次更正）** ｜ 更早一次：**2026-09-16（task-260915 组件导出/导入往返保真：§2.1 导出/导入预览/导入提交三个端点按真实源码整段覆盖 —— 含本次新增 8 个字段与 `builderCoord`，并顺带补齐 task-0805 遗留未回写的 `bindingReport`/`formulaBinding`/`ignoreUnboundFormulas`/`unboundWarnings` 等）** ｜ 前次：2026-09-03（task-260903 产品管理页重做：新增 `GET /dataset/{dataset}/customer-parts`，见 §6.9；其前序 task-260902 新增 9 个端点，见 §6.8 / §6.9） ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
 > 用途：前后端接口契约基线、联调对照、新接口设计参照。字段说明取自源码 javadoc / 注释，无注释处据字段名与类型推断。
 
 ---
@@ -6029,6 +6029,57 @@ Cell：`quote`(Object 报价值)、`costing`(Object 核价值)、`highlighted`(b
 | templates_touched_total | int | 累计刷新的模板数 |
 | errors | int | 刷新失败的组件数 |
 | per_component | Map\<String,Integer\> | componentId → 受影响模板数 映射 |
+
+#### 按组件重编译取数视图
+- **功能**: 连表配置（语义图）变更后，**只**把指定组件的取数配置器视图（`component_sql_view` 中 `builder_config IS NOT NULL AND status='ACTIVE'`）按当前连表配置重新生成。与 `refresh-all-snapshots`（`recompile=true`）共用同一段编译 / 写入内核，对同一视图的产物逐字相同；**不改** `component` 表任何列，**不推**任何模板快照（`template.sql_views_snapshot` / `template_component_snapshot` 均不动）。`confirm=false` 仅预览、零写入；`confirm=true` 单事务执行，每个文本有变化的视图写 1 行审计，任一步失败整体回滚。
+- **方法**: POST
+- **路径**: `/api/cpq/config-center/recompile-components`
+- **鉴权**: SYSTEM_ADMIN（方法级覆盖）
+- **请求体**:
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| componentIds | string[]（UUID） | 是 | 要处理的组件 id；去重后处理。缺失 / null / 空数组 → 400 |
+| confirm | boolean | 否 | 缺省 `false` = 仅预览零写入；`true` = 执行 |
+
+- **响应内容（预览，`confirm=false`）**: `ApiResponse<Map<String,Object>>`，data 结构：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| preview | boolean | 恒 `true` |
+| componentCount | int | 去重后的组件数 |
+| views | int | 这些组件下取数配置器视图总数 |
+| changed | int | 新旧 `sql_template` 不同的视图数 |
+| changes | array | 仅变化的视图，每项 `componentId` / `componentCode` / `componentName` / `sqlViewName` / `oldSqlTemplate` / `newSqlTemplate`；按 `componentCode`、`sqlViewName` 升序 |
+| unchangedViewNames | string[] | 文本无变化的视图名（升序） |
+| skippedComponentIds | string[] | 没有取数配置器视图的组件 id（升序） |
+| warning | string | 固定文案「只重编译所列组件的取数视图；不改组件字段表、公式、组件属性，不改任何模板快照。」 |
+
+- **响应内容（执行，`confirm=true`）**: data 结构：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| preview | boolean | 恒 `false` |
+| componentCount / views / changed / unchangedViewNames / skippedComponentIds | — | 同预览 |
+| changedViewNames | string[] | 实际改写了 `sql_template` 的视图名（升序） |
+| operationLogIds | string[] | 审计行 id，与 `changedViewNames` 一一对应同序；`changed=0` 时为空数组 |
+
+- **审计**: `operation_log` 每个变化视图 1 行：`operation_type=COMPONENT_VIEW_RECOMPILE`、`target_type=COMPONENT`、`target_id`=组件 id、`summary`=「按组件重编译取数视图 <sqlViewName>」、`details`={`sqlViewName`, `componentCode`, `oldSqlMd5`, `newSqlMd5`, `builderVersion`, `source: "recompile-components"`}
+- **错误响应**（取数配置器端点族裸体格式 `{code, message, ...extra}`，全部零写入）：
+
+| HTTP | code | 触发 | extra |
+|------|------|------|-------|
+| 400 | `COMPONENT_IDS_REQUIRED` | componentIds 缺失 / null / 空数组 | — |
+| 400 | `INVALID_COMPONENT_ID` | 含非法 UUID（严格 8-4-4-4-12） | `invalidIds` |
+| 404 | `COMPONENT_NOT_FOUND` | 有 id 不存在（存在的也不处理） | `missingIds`（升序） |
+| 500 | `RECOMPILE_CONFIG_CORRUPT` | 某视图 `builder_config` 无法反序列化 | `sqlViewName` / `componentId` |
+| 500 | `RECOMPILE_FAILED` | 某视图编译失败（非结构化异常） | `sqlViewName` / `componentId` |
+| 4xx | 编译器原码 | 结构化编译错误原样上抛 | 原样 |
+| 401 / 403 | —（`ApiResponse` 信封） | 未登录 / 非 SYSTEM_ADMIN | — |
+
+- **性能**: 组件、视图各一次批量查询；每个视图编译期 1 条元数据查询、执行期另有写入与保存期 dry-run —— 条数随请求视图数线性增长，与业务数据量无关（N+1 例外，`BL-0296`，用户已批准）
+
+> 来源任务：`task-260908-取数配置器优化/repair-260916-来料类材料名补查材质表`｜回写日期：2026-09-16
 
 ---
 

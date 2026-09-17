@@ -1,0 +1,11 @@
+SELECT
+  vdcbipfa.production_no AS hf_part_no,
+  vdcbipfa.production_no AS "production_no",
+  vdcbipfa.incoming_material_no AS "incoming_material_no",
+  COALESCE(dcbm.material_name, mr.symbol) AS "material_name",
+  vdcbipfa.version_no::text AS view_version
+FROM v_ds_cost_basic_incoming_process_fee_all vdcbipfa
+  LEFT JOIN ds_cost_basic_material dcbm ON dcbm.production_no = vdcbipfa.incoming_material_no
+  LEFT JOIN material_recipe mr ON mr.code = vdcbipfa.incoming_material_no
+WHERE :versionFilter(vdcbipfa.is_current, vdcbipfa.version_no::text, vdcbipfa.production_no) AND vdcbipfa.production_no = ANY(:total_material_no)
+ORDER BY vdcbipfa.production_no, vdcbipfa.incoming_material_no, vdcbipfa.item_seq

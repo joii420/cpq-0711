@@ -1,0 +1,18 @@
+{
+  "beforeTemplateIds": [
+    "82d31ed8-199e-4c9c-b6c3-2fcfc07defdc",
+    "d79a4784-e52b-4dc7-a6ca-28d025aadc27",
+    "e381c6a6-63e0-4ef4-b633-58dc8093441c",
+    "432f060e-5ad3-4c17-9788-0d4709b238e9",
+    "75baa71e-0c48-46bb-ba6f-5631b8bdbec6",
+    "6755f31c-4756-4ffb-a70c-211356f9be07",
+    "9516751e-410a-4b02-8a59-26484c4129aa"
+  ],
+  "latestBeforeId": "9516751e-410a-4b02-8a59-26484c4129aa",
+  "latestBeforeVersion": "v1.6",
+  "newTemplateId": "fbb0545d-73f3-497e-8649-af968f86c42b",
+  "newVersion": "v1.7",
+  "quotationId": "b276f66e-49ed-4e98-b60b-fcefb5503d9a",
+  "quotationNumber": "QT-20260916-0880",
+  "oldQuotationId": "57f9c6a7-e64a-4fe9-8a18-8ede8a74aa1d"
+}

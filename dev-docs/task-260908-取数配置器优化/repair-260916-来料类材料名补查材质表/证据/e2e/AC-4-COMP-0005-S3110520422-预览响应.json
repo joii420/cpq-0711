@@ -1,0 +1,51 @@
+{
+  "request": "{\"dialect\":\"QUOTE\",\"tabType\":\"费用类\",\"variantKey\":\"INCOMING_OTHER_FEE\",\"columns\":[{\"sourceNodeKey\":\"INCOMING_OTHER_FEE\",\"sourceColumn\":\"material_no\",\"fieldName\":\"销售料号\",\"isRowKey\":true,\"fieldType\":\"INPUT_TEXT\"},{\"sourceNodeKey\":\"INCOMING_OTHER_FEE\",\"sourceColumn\":\"input_material_no\",\"fieldName\":\"料号\",\"isPartNo\":true,\"isRowKey\":true,\"fieldType\":\"INPUT_TEXT\"},{\"sourceNodeKey\":\"MAT_NAME_LK\",\"sourceColumn\":\"material_name\",\"fieldName\":\"材料名\",\"isPartName\":true,\"fieldType\":\"INPUT_TEXT\"},{\"sourceNodeKey\":\"INCOMING_OTHER_FEE\",\"sourceColumn\":\"item_seq\",\"fieldName\":\"项次\",\"isSort\":true,\"fieldType\":\"INPUT_NUMBER\"},{\"sourceNodeKey\":\"INCOMING_OTHER_FEE\",\"sourceColumn\":\"element_name\",\"fieldName\":\"要素名称\",\"fieldType\":\"INPUT_TEXT\"},{\"sourceNodeKey\":\"INCOMING_OTHER_FEE\",\"sourceColumn\":\"value\",\"fieldName\":\"费用\",\"fieldType\":\"INPUT_NUMBER\"},{\"sourceNodeKey\":\"INCOMING_OTHER_FEE\",\"sourceColumn\":\"ratio_pct\",\"fieldName\":\"比例（%）\",\"fieldType\":\"INPUT_NUMBER\"}],\"customerCode\":\"CUST-0004\",\"partNo\":\"S3110520422\"}",
+  "status": 200,
+  "response": {
+    "rowCount": 3,
+    "columns": [
+      "hf_part_no",
+      "_来料其他费用_销售料号",
+      "_来料其他费用_投入料号",
+      "_物料_材料名",
+      "_来料其他费用_项次",
+      "_来料其他费用_要素名称",
+      "_来料其他费用_值",
+      "_来料其他费用_比例（%）"
+    ],
+    "rows": [
+      {
+        "hf_part_no": "S3110520422",
+        "_来料其他费用_销售料号": "S3110520422",
+        "_来料其他费用_投入料号": "00256",
+        "_物料_材料名": "TU2丝",
+        "_来料其他费用_项次": 1,
+        "_来料其他费用_要素名称": "来料加工费",
+        "_来料其他费用_值": "5.8",
+        "_来料其他费用_比例（%）": null
+      },
+      {
+        "hf_part_no": "S3110520422",
+        "_来料其他费用_销售料号": "S3110520422",
+        "_来料其他费用_投入料号": "00256",
+        "_物料_材料名": "TU2丝",
+        "_来料其他费用_项次": 1,
+        "_来料其他费用_要素名称": "来料损耗率",
+        "_来料其他费用_值": null,
+        "_来料其他费用_比例（%）": "5"
+      },
+      {
+        "hf_part_no": "S3110520422",
+        "_来料其他费用_销售料号": "S3110520422",
+        "_来料其他费用_投入料号": "00257",
+        "_物料_材料名": "羰基镍粉",
+        "_来料其他费用_项次": 2,
+        "_来料其他费用_要素名称": "来料加工费",
+        "_来料其他费用_值": "150.8",
+        "_来料其他费用_比例（%）": null
+      }
+    ],
+    "elapsedMs": 10,
+    "diagnostics": []
+  }
+}

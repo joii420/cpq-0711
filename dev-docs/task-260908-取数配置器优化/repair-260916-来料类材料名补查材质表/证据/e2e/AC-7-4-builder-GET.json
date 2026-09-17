@@ -1,0 +1,81 @@
+{
+  "builderConfig": {
+    "builderVersion": null,
+    "tabType": "费用类",
+    "variantKey": "INCOMING_FIXED_FEE",
+    "switches": null,
+    "columns": [
+      {
+        "sourceNodeKey": "INCOMING_FIXED_FEE",
+        "sourceColumn": "material_no",
+        "fieldName": "销售料号",
+        "viewColumn": "_来料固定加工费_销售料号",
+        "fieldType": "INPUT_TEXT",
+        "isAmount": null,
+        "inSubtotal": null,
+        "resolvedDataType": "TEXT",
+        "resolvedRoles": [
+          "ROW_KEY"
+        ]
+      },
+      {
+        "sourceNodeKey": "INCOMING_FIXED_FEE",
+        "sourceColumn": "input_material_no",
+        "fieldName": "料号",
+        "viewColumn": "_来料固定加工费_投入料号",
+        "fieldType": "INPUT_TEXT",
+        "isAmount": null,
+        "inSubtotal": null,
+        "resolvedDataType": "TEXT",
+        "resolvedRoles": [
+          "PART_NO",
+          "ROW_KEY"
+        ]
+      },
+      {
+        "sourceNodeKey": "MAT_NAME_LK",
+        "sourceColumn": "material_name",
+        "fieldName": "材料名",
+        "viewColumn": "_物料_材料名",
+        "fieldType": "INPUT_TEXT",
+        "isAmount": null,
+        "inSubtotal": null,
+        "resolvedDataType": "TEXT",
+        "resolvedRoles": [
+          "PART_NAME"
+        ]
+      },
+      {
+        "sourceNodeKey": "INCOMING_FIXED_FEE",
+        "sourceColumn": "item_seq",
+        "fieldName": "项次",
+        "viewColumn": "_来料固定加工费_项次",
+        "fieldType": "INPUT_NUMBER",
+        "isAmount": null,
+        "inSubtotal": null,
+        "resolvedDataType": "NUMBER",
+        "resolvedRoles": [
+          "SORT"
+        ]
+      },
+      {
+        "sourceNodeKey": "INCOMING_FIXED_FEE",
+        "sourceColumn": "base_value",
+        "fieldName": "加工费",
+        "viewColumn": "_来料固定加工费_基准值",
+        "fieldType": "INPUT_NUMBER",
+        "isAmount": true,
+        "inSubtotal": true,
+        "resolvedDataType": "NUMBER",
+        "resolvedRoles": []
+      }
+    ],
+    "priceStrategy": null,
+    "dialect": "QUOTE"
+  },
+  "builderVersion": 1,
+  "isLegacyHandwritten": false,
+  "isStale": false,
+  "currentCompilerVersion": 1,
+  "viewState": "BUILDER"
+}

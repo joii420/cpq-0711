@@ -1,0 +1,35 @@
+{
+  "request": "{\"dialect\":\"QUOTE\",\"tabType\":\"费用类\",\"variantKey\":\"INCOMING_FIXED_FEE\",\"columns\":[{\"sourceNodeKey\":\"INCOMING_FIXED_FEE\",\"sourceColumn\":\"material_no\",\"fieldName\":\"销售料号\",\"isRowKey\":true,\"fieldType\":\"INPUT_TEXT\"},{\"sourceNodeKey\":\"INCOMING_FIXED_FEE\",\"sourceColumn\":\"input_material_no\",\"fieldName\":\"料号\",\"isPartNo\":true,\"isRowKey\":true,\"fieldType\":\"INPUT_TEXT\"},{\"sourceNodeKey\":\"MAT_NAME_LK\",\"sourceColumn\":\"material_name\",\"fieldName\":\"材料名\",\"isPartName\":true,\"fieldType\":\"INPUT_TEXT\"},{\"sourceNodeKey\":\"INCOMING_FIXED_FEE\",\"sourceColumn\":\"item_seq\",\"fieldName\":\"项次\",\"isSort\":true,\"fieldType\":\"INPUT_NUMBER\"},{\"sourceNodeKey\":\"INCOMING_FIXED_FEE\",\"sourceColumn\":\"base_value\",\"fieldName\":\"加工费\",\"isAmount\":true,\"inSubtotal\":true,\"fieldType\":\"INPUT_NUMBER\"}],\"customerCode\":\"CUST-0004\",\"partNo\":\"S3120011203\"}",
+  "status": 200,
+  "response": {
+    "rowCount": 2,
+    "columns": [
+      "hf_part_no",
+      "_来料固定加工费_销售料号",
+      "_来料固定加工费_投入料号",
+      "_物料_材料名",
+      "_来料固定加工费_项次",
+      "_来料固定加工费_基准值"
+    ],
+    "rows": [
+      {
+        "hf_part_no": "S3120011203",
+        "_来料固定加工费_销售料号": "S3120011203",
+        "_来料固定加工费_投入料号": "00144",
+        "_物料_材料名": "H85",
+        "_来料固定加工费_项次": 2,
+        "_来料固定加工费_基准值": "7.5"
+      },
+      {
+        "hf_part_no": "S3120011203",
+        "_来料固定加工费_销售料号": "S3120011203",
+        "_来料固定加工费_投入料号": "S3110520422",
+        "_物料_材料名": "料号2",
+        "_来料固定加工费_项次": 1,
+        "_来料固定加工费_基准值": "120"
+      }
+    ],
+    "elapsedMs": 45,
+    "diagnostics": []
+  }
+}

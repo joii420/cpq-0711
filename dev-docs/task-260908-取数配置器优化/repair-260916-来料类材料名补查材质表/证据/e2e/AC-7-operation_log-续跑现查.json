@@ -1,0 +1,50 @@
+[
+  {
+    "id": "f8923343-6c2d-4913-adbf-9611d2e76789",
+    "operation_type": "COMPONENT_VIEW_RECOMPILE",
+    "target_type": "COMPONENT",
+    "target_id": "57554055-0896-4cc8-be98-65e45b0a5985",
+    "summary": "按组件重编译取数视图 builder_4602c64a0c38",
+    "details": {
+      "source": "recompile-components",
+      "newSqlMd5": "0aee4c4ed52ad8b40187603d83e9c7e6",
+      "oldSqlMd5": "b56b315ff3292de89c7f61359f789380",
+      "sqlViewName": "builder_4602c64a0c38",
+      "componentCode": "COMP-0005",
+      "builderVersion": 1
+    },
+    "created_at": "2026-09-17 03:02:44.938622+00"
+  },
+  {
+    "id": "c8696ffd-261d-4401-92ed-cec105d1c6df",
+    "operation_type": "COMPONENT_VIEW_RECOMPILE",
+    "target_type": "COMPONENT",
+    "target_id": "39fa3d9d-54b9-4605-93ca-dd38cbfa2831",
+    "summary": "按组件重编译取数视图 builder_46f244df7ede",
+    "details": {
+      "source": "recompile-components",
+      "newSqlMd5": "829a17e8d3fca2e128e2153c04a686ad",
+      "oldSqlMd5": "d92b26ab752fe546cab6a7d007cbc02d",
+      "sqlViewName": "builder_46f244df7ede",
+      "componentCode": "COMP-0008",
+      "builderVersion": 1
+    },
+    "created_at": "2026-09-17 03:02:44.940717+00"
+  },
+  {
+    "id": "ee56d1be-4719-4dcc-8e58-90bd37c1996d",
+    "operation_type": "COMPONENT_VIEW_RECOMPILE",
+    "target_type": "COMPONENT",
+    "target_id": "4db28822-85c6-4522-ac62-61ef2393a99c",
+    "summary": "按组件重编译取数视图 builder_c35c2bd590fe",
+    "details": {
+      "source": "recompile-components",
+      "newSqlMd5": "9a4a3949d427493fb00943231cab45c6",
+      "oldSqlMd5": "ba3c87bc73c3596d939e6ff1319fae65",
+      "sqlViewName": "builder_c35c2bd590fe",
+      "componentCode": "COMP-0004",
+      "builderVersion": 1
+    },
+    "created_at": "2026-09-17 03:02:44.940766+00"
+  }
+]

@@ -1,0 +1,12 @@
+SELECT
+  vdcdioffa.production_no AS hf_part_no,
+  vdcdioffa.production_no AS "production_no",
+  vdcdioffa.incoming_material_no AS "incoming_material_no",
+  vdcdioffa.element_name AS "element_name",
+  COALESCE(dcdm.material_name, mr.symbol) AS "material_name",
+  vdcdioffa.version_no::text AS view_version
+FROM v_ds_cost_detail_incoming_other_fixed_fee_all vdcdioffa
+  LEFT JOIN ds_cost_detail_material dcdm ON dcdm.production_no = vdcdioffa.incoming_material_no
+  LEFT JOIN material_recipe mr ON mr.code = vdcdioffa.incoming_material_no
+WHERE :versionFilter(vdcdioffa.is_current, vdcdioffa.version_no::text, vdcdioffa.production_no) AND vdcdioffa.production_no = ANY(:total_material_no)
+ORDER BY vdcdioffa.production_no, vdcdioffa.incoming_material_no, vdcdioffa.item_seq
