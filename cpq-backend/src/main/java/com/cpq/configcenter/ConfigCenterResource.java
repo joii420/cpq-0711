@@ -33,6 +33,7 @@ import java.util.stream.Collectors;
  * <ul>
  *   <li>GET  /api/cpq/config-center/health             — 健康/统计 (运维监控用)</li>
  *   <li>POST /api/cpq/config-center/refresh-all-snapshots — 强制重新对齐已发布模板快照 (SYSTEM_ADMIN)</li>
+ *   <li>POST /api/cpq/config-center/recompile-components — 按组件重编译取数视图 (SYSTEM_ADMIN，repair-260916)</li>
  * </ul>
  */
 @Path("/api/cpq/config-center")
@@ -232,6 +233,90 @@ public class ConfigCenterResource {
         out.put("operationLogId", (logIds == null || logIds.isEmpty()) ? null : logIds.get(logIds.size() - 1));
         out.put("operationLogIds", logIds);
         LOG.warnf("[admin-backdoor] refresh-all-snapshots 已执行：已破坏 %d 个模板的不可变性", resolvedIds.size());
+        return ApiResponse.success(out);
+    }
+
+    /** repair-260916：按组件重编译预览的固定提示文案（api.md §1.4）。 */
+    static final String RECOMPILE_COMPONENTS_WARNING =
+            "只重编译所列组件的取数视图；不改组件字段表、公式、组件属性，不改任何模板快照。";
+
+    /** 严格 UUID 形态（8-4-4-4-12 十六进制）。{@link UUID#fromString} 会接受 "1-1-1-1-1" 这类非规范写法，不能单独用来校验。 */
+    private static final java.util.regex.Pattern UUID_PATTERN = java.util.regex.Pattern.compile(
+            "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+
+    /**
+     * repair-260916 B-3（api.md §1，AC-6 / AC-7 / AC-8 / AC-13）：<b>只</b>把指定组件的取数配置器视图
+     * 按当前连表配置重新生成。
+     *
+     * <p>与 {@code refresh-all-snapshots} 的区别：那个端点恒处理<b>全部</b> builder 视图并恒推模板两份快照；
+     * 本端点只处理所列组件、<b>不推任何模板快照、不改 component 表</b>。两者共用同一段编译/写入内核
+     * （{@link BuilderRecompileService}），对同一视图的产物逐字相同。
+     *
+     * <p>Body: {@code { "componentIds": ["uuid", ...], "confirm": false }}。{@code confirm} 缺省
+     * {@code false} = 仅预览、零写入。错误一律裸体格式（{@code BuilderApiException}）。
+     *
+     * <p>校验顺序（api.md §1.7）：缺失/空 → 400 {@code COMPONENT_IDS_REQUIRED}；非法 UUID →
+     * 400 {@code INVALID_COMPONENT_ID}（列出全部非法值）；去重；存在性 → 404 {@code COMPONENT_NOT_FOUND}
+     * （在 service 内与组件批量查询合为一条 SQL，执行路径下还处于同一事务）。所有错误路径零写入。
+     */
+    @POST
+    @Path("/recompile-components")
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public ApiResponse<Map<String, Object>> recompileComponents(
+            Map<String, Object> body, @Context HttpServerRequest httpRequest) {
+        Object raw = body == null ? null : body.get("componentIds");
+        if (!(raw instanceof List<?> rawList) || rawList.isEmpty()) {
+            throw new com.cpq.builder.exception.BuilderApiException(400, "COMPONENT_IDS_REQUIRED",
+                    "componentIds 必填且不能为空数组", Map.of());
+        }
+        List<String> invalid = new ArrayList<>();
+        java.util.LinkedHashSet<UUID> ids = new java.util.LinkedHashSet<>();   // 去重，保留首次出现顺序
+        for (Object o : rawList) {
+            if (o instanceof String s && UUID_PATTERN.matcher(s).matches()) {
+                ids.add(UUID.fromString(s));
+            } else {
+                invalid.add(String.valueOf(o));
+            }
+        }
+        if (!invalid.isEmpty()) {
+            throw new com.cpq.builder.exception.BuilderApiException(400, "INVALID_COMPONENT_ID",
+                    "componentIds 含非法 UUID: " + String.join(", ", invalid),
+                    Map.of("invalidIds", invalid));
+        }
+        boolean confirm = body != null && Boolean.TRUE.equals(body.get("confirm"));
+        List<UUID> idList = new ArrayList<>(ids);
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (!confirm) {
+            BuilderRecompileService.ComponentRecompileResult r =
+                    builderRecompileService.previewRecompileComponents(idList);
+            out.put("preview", true);
+            out.put("componentCount", r.componentCount);
+            out.put("views", r.views);
+            out.put("changed", r.changed);
+            out.put("changes", r.changes);
+            out.put("unchangedViewNames", r.unchangedViewNames);
+            out.put("skippedComponentIds", r.skippedComponentIds);
+            out.put("warning", RECOMPILE_COMPONENTS_WARNING);
+            LOG.warnf("[admin-backdoor] recompile-components 预览（未执行）：组件 %d 个 / 视图 %d 个 / 将变化 %d 个 %s",
+                    r.componentCount, r.views, r.changed, r.changedViewNames);
+            return ApiResponse.success(out);
+        }
+
+        // 跨 bean 调用 @Transactional 方法（本类内部自调用会静默跳过拦截器）
+        UUID operatorId = sessionHelper.getCurrentUserIdOrFallback(httpRequest);
+        BuilderRecompileService.ComponentRecompileResult r =
+                builderRecompileService.recompileComponents(idList, operatorId);
+        out.put("preview", false);
+        out.put("componentCount", r.componentCount);
+        out.put("views", r.views);
+        out.put("changed", r.changed);
+        out.put("changedViewNames", r.changedViewNames);
+        out.put("unchangedViewNames", r.unchangedViewNames);
+        out.put("skippedComponentIds", r.skippedComponentIds);
+        out.put("operationLogIds", r.operationLogIds);
+        LOG.warnf("[admin-backdoor] recompile-components 已执行：组件 %d 个 / 视图 %d 个 / sql_template 变化 %d 个 %s，审计 %d 行",
+                r.componentCount, r.views, r.changed, r.changedViewNames, r.operationLogIds.size());
         return ApiResponse.success(out);
     }
 

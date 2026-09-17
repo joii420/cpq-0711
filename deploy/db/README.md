@@ -18,14 +18,15 @@
 | **源库** | `cpq_db_0724`（schema-only + 系统配置种子） |
 | **内容** | **251 表 · 29 视图 · 106 序列 · 6 函数 · 703 行种子 · 1 个 admin 用户** |
 | **文件 md5** | `cd311bdf54d87dd9c93ba5464c94c7fd` |
-| **已应用的增量** | `update-260913-v440-v443-record-batch-and-price.sql`（V440~V443） |
-| 🎯 **全部执行后的基线** | **V443** |
+| **已应用的增量** | `update-260913-v440-v443-record-batch-and-price.sql`（V440~V443）· `update-260916-lookup-name-recipe-fallback.sql`（V444） |
+| 🎯 **全部执行后的基线** | **V444** |
 
 ### 增量清单（按顺序执行）
 
 | 顺序 | 文件 | 源迁移 | 改了什么 | md5 |
 |---|---|---|---|---|
 | 1 | `update-260913-v440-v443-record-batch-and-price.sql` | V440 / V441 / V442 / V443 | 核价取价改客户级单键 · 语义图加 `ROW_SCOPE` 角色 · 13 张 `ds_quote_*_record` 加 `import_batch_id` 且 `quotation_id` 放开可空 · 取价函数补 `_record` 分支 | `5339712c91327ba92bfb2aae6035610a` |
+| 2 | `update-260916-lookup-name-recipe-fallback.sql` | V444 | 语义图：来料类 11 个数据源（报价 5 + 基础核价 3 + 明细核价 3）的「材料名」改为两段查 —— 既有物料表查名边归入 `PART_NAME` 组顺序 1，新增材质表查名边顺序 2（连接键 `<锚点料号列> = code`，不带客户键）。**只改配置种子，零 DDL** | `ec01295e1274086eb80ed16fcac45e83` |
 
 ### 这份全量脚本刻意**不含**什么
 
@@ -229,6 +230,7 @@ bash deploy/db/refresh-test-db.sh --yes    # 跳过确认（明确授权时）
 | 2026-09-09 | 三层库隔离落地 | `application-test.properties` 改指 `cpq_db_test`（合 `b40d725a`）；新增 `refresh-test-db.sh` 定期同步脚本；§⑧ 记录隔离口径 |
 | 2026-09-09 | uat profile 落地 | 新增 `application-uat.properties`（合 `5a294c35`）连 `cpq_db_0910`，端口 8091；已实测启动（Flyway `up to date`、业务端点 401）|
 | 2026-09-13 | 首份增量脚本 | `update-260913-v440-v443-record-batch-and-price.sql`，基线 V439 → **V443**。覆盖 V440~V443 四个迁移。**V442 的 `DO` 块已按 §③ 展开为 13 组静态 DDL，V443 的函数体已去中文 + 改单引号并移至文件末尾**（见 §⑨ 验证足迹）|
+| 2026-09-16 | 第二份增量 | `update-260916-lookup-name-recipe-fallback.sql`，基线 V443 → **V444**（`repair-260916`）。只改 `semantic_edge` / `semantic_edge_key` 种子；迁移里的临时规格表 + `DO` 块自检已改为内联 `VALUES` + 只读 `SELECT` 自检（Navicat 自动提交下 `ON COMMIT DROP` 临时表会立即消失，且 `DO` 需要美元引用）。临时库 `cpq_upd_verify_260916` 验证：全量 + 两份增量 `ON_ERROR_STOP=1` 全部 exit 0 / stderr 0 字节；本增量二次执行幂等（自检输出逐字相同，影响行数 11→0）；六维签名执行前后 0 行差异；与 `cpq_db_0724` 的六维差异条数执行前后完全相同（表 10 / 列 261 / 索引 1 / 约束 29 / 函数 4 / 视图 3，均为基线自带）；还原实验两处干预均被自检抓到；GUI 切分 10 片段 / 非法开头 0 / 全文 0 个 `$` |
 
 ---
 

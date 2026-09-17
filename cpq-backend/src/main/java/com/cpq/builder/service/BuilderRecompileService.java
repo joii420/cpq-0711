@@ -107,6 +107,160 @@ public class BuilderRecompileService {
          * （🚫 预览不写库 ⇒ 实时表这时还是旧文本，只跟实时表比会漏报）。不进响应体。
          */
         public final Map<String, String> newSqlByKey = new LinkedHashMap<>();
+        /**
+         * repair-260916：文本有变化的视图明细（旧/新文本在写入<b>之前</b>取），按组件路径用；
+         * 全量路径不读它（其响应字段由 ConfigCenterResource 逐个挑选，不受影响）。
+         */
+        public final List<ViewChange> changedViews = new ArrayList<>();
+        /** repair-260916：文本无变化的视图（按组件路径的 {@code unchangedViewNames} 用）。 */
+        public final List<ViewChange> unchangedViews = new ArrayList<>();
+    }
+
+    /** repair-260916：单个视图的重编译结果（旧文本取自写入之前）。 */
+    public record ViewChange(UUID componentId, String sqlViewName, String oldSql, String newSql) {}
+
+    /** repair-260916（api.md §1.4 / §1.5）：按组件重编译的账。字段语义见 api.md。 */
+    public static final class ComponentRecompileResult {
+        public int componentCount;
+        public int views;
+        public int changed;
+        /** 仅文本有变化的视图，按 componentCode、sqlViewName 升序。 */
+        public final List<Map<String, Object>> changes = new ArrayList<>();
+        /** 升序。 */
+        public final List<String> changedViewNames = new ArrayList<>();
+        /** 升序。 */
+        public final List<String> unchangedViewNames = new ArrayList<>();
+        /** 升序。 */
+        public final List<String> skippedComponentIds = new ArrayList<>();
+        /** 与 {@link #changedViewNames} 一一对应、同序；预览恒空。 */
+        public final List<String> operationLogIds = new ArrayList<>();
+    }
+
+    static final String AUDIT_OPERATION_TYPE = "COMPONENT_VIEW_RECOMPILE";
+    static final String AUDIT_TARGET_TYPE = "COMPONENT";
+    static final String AUDIT_SOURCE = "recompile-components";
+
+    /**
+     * 按组件重编译 · 预览（repair-260916 B-2，api.md §1.3 / §1.4，AC-6）：只编译、只比对，<b>零写入</b>。
+     *
+     * <p>🚫 不加 {@code @Transactional}：理由同 {@link #previewRecompile}。
+     *
+     * @param componentIds 已去重、已校验为合法 UUID 的组件 id（参数形态校验在 Resource 层）
+     * @throws BuilderApiException 404 {@code COMPONENT_NOT_FOUND}（有 id 不存在，整体拒绝）
+     */
+    public ComponentRecompileResult previewRecompileComponents(List<UUID> componentIds) {
+        return runComponentRecompile(componentIds, false, null);
+    }
+
+    /**
+     * 按组件重编译 · 执行（repair-260916 B-2 / B-4，api.md §1.3 / §1.5，AC-7）。
+     *
+     * <p>全部写入（视图文本 / builder_version / axisScope / operation_log）在<b>同一事务</b>内；
+     * 任一步失败整体回滚。🚫 不推任何模板快照、不写 component 表（api.md §1.3 第 5 条）。
+     *
+     * <p>⚠️ 必须由外部 bean（{@code ConfigCenterResource}）经注入代理调用 —— 本类内部自调用
+     * 会因 CDI self-invocation 静默跳过拦截器（同 {@link #recompileAndRealign}）。
+     */
+    @Transactional
+    public ComponentRecompileResult recompileComponents(List<UUID> componentIds, UUID operatorId) {
+        return runComponentRecompile(componentIds, true, operatorId);
+    }
+
+    private ComponentRecompileResult runComponentRecompile(List<UUID> componentIds, boolean write, UUID operatorId) {
+        List<UUID> ids = componentIds == null ? List.of() : componentIds.stream().distinct().toList();
+
+        // ① 组件：一次批量查询（循环外）。执行路径下它们进入本事务的持久化上下文，
+        //    ComponentSqlViewService.update 内部的 Component.findById 因此命中一级缓存，不再发 SQL。
+        List<com.cpq.component.entity.Component> comps = ids.isEmpty() ? List.of()
+                : com.cpq.component.entity.Component.<com.cpq.component.entity.Component>list("id in ?1", ids);
+        Map<UUID, com.cpq.component.entity.Component> compById = new LinkedHashMap<>();
+        for (com.cpq.component.entity.Component c : comps) compById.put(c.id, c);   // 纯内存
+        List<String> missing = ids.stream().filter(id -> !compById.containsKey(id))
+                .map(UUID::toString).sorted().toList();
+        if (!missing.isEmpty()) {
+            // 整体拒绝：存在的那些也不处理（AC-8②），此时尚未发生任何写入
+            throw new BuilderApiException(404, "COMPONENT_NOT_FOUND",
+                    "以下组件不存在: " + String.join(", ", missing),
+                    Map.of("missingIds", missing));
+        }
+
+        // ② 视图：一次批量查询（循环外），口径与全量重编译 listBuilderManaged 相同
+        List<ComponentSqlView> views = sqlViewRepository.listBuilderManagedByComponents(ids);
+
+        // ③ 编译/比对/写入：与全量重编译同一段内核
+        RecompileOutcome outcome = recompileViews(views, write);
+
+        ComponentRecompileResult res = new ComponentRecompileResult();
+        res.componentCount = ids.size();
+        res.views = outcome.views;
+        res.changed = outcome.changed;
+
+        java.util.Set<UUID> withViews = new java.util.HashSet<>();
+        for (ComponentSqlView v : views) withViews.add(v.componentId);                // 纯内存
+        ids.stream().filter(id -> !withViews.contains(id)).map(UUID::toString).sorted()
+                .forEach(res.skippedComponentIds::add);
+        outcome.unchangedViews.stream().map(ViewChange::sqlViewName).sorted()
+                .forEach(res.unchangedViewNames::add);
+
+        // 按 componentCode、sqlViewName 升序（api.md §1.4）；纯内存排序
+        java.util.Comparator<ViewChange> byCodeThenName = java.util.Comparator
+                .comparing((ViewChange vc) -> String.valueOf(compById.get(vc.componentId()).code))
+                .thenComparing(ViewChange::sqlViewName);
+        List<ViewChange> changedSorted = outcome.changedViews.stream().sorted(byCodeThenName).toList();
+        for (ViewChange vc : changedSorted) {                                          // 纯内存
+            com.cpq.component.entity.Component c = compById.get(vc.componentId());
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("componentId", vc.componentId().toString());
+            m.put("componentCode", c.code);
+            m.put("componentName", c.name);
+            m.put("sqlViewName", vc.sqlViewName());
+            m.put("oldSqlTemplate", vc.oldSql());
+            m.put("newSqlTemplate", vc.newSql());
+            res.changes.add(m);
+        }
+        // changedViewNames 升序（api.md §1.5）；operationLogIds 与它一一对应、同序
+        List<ViewChange> changedByName = outcome.changedViews.stream()
+                .sorted(java.util.Comparator.comparing(ViewChange::sqlViewName)
+                        .thenComparing(vc -> vc.componentId().toString()))
+                .toList();
+        changedByName.forEach(vc -> res.changedViewNames.add(vc.sqlViewName()));
+
+        if (!write) return res;
+
+        // ④ 审计（B-4，api.md §1.6）：每个文本有变化的视图 1 行，先在内存里构造全部行，再一次性持久化；
+        //    与视图写入同一事务（本方法由 @Transactional 的 recompileComponents 调用）。
+        List<com.cpq.system.entity.OperationLog> logs = new ArrayList<>();
+        for (ViewChange vc : changedByName) {                                          // 纯内存构造
+            com.cpq.component.entity.Component c = compById.get(vc.componentId());
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("sqlViewName", vc.sqlViewName());
+            details.put("componentCode", c.code);
+            details.put("oldSqlMd5", vc.oldSql() == null ? null : md5(vc.oldSql()));
+            details.put("newSqlMd5", md5(vc.newSql()));
+            details.put("builderVersion", SemanticCompiler.CURRENT_VERSION);
+            details.put("source", AUDIT_SOURCE);
+            com.cpq.system.entity.OperationLog log = new com.cpq.system.entity.OperationLog();
+            log.operatorId = operatorId;
+            log.operationType = AUDIT_OPERATION_TYPE;
+            log.targetType = AUDIT_TARGET_TYPE;
+            log.targetId = vc.componentId();
+            log.summary = "按组件重编译取数视图 " + vc.sqlViewName();
+            try {
+                log.details = MAPPER.writeValueAsString(details);
+            } catch (Exception e) {
+                // 🚫 不吞成 null：审计缺 details 就是无痕改写的半成品，宁可整体回滚
+                throw new BuilderApiException(500, "RECOMPILE_AUDIT_SERIALIZE_FAILED",
+                        "审计明细序列化失败，已整体中止: " + e.getMessage(),
+                        Map.of("sqlViewName", vc.sqlViewName()));
+            }
+            logs.add(log);
+        }
+        if (!logs.isEmpty()) {
+            com.cpq.system.entity.OperationLog.persist(logs);   // 一次性持久化，flush 时统一 INSERT
+            em.flush();                                          // 让 id 与约束错误在本方法内暴露，而不是提交时
+            for (com.cpq.system.entity.OperationLog log : logs) res.operationLogIds.add(String.valueOf(log.id));
+        }
+        return res;   // [admin-backdoor] 日志由 ConfigCenterResource 统一写
     }
 
     /**
@@ -428,8 +582,24 @@ public class BuilderRecompileService {
      * 所以文本相同就是真的没变，可以放心不写。
      */
     private RecompileOutcome runRecompile(boolean write) {
-        SemanticGraphSnapshot snap = loader.get();                      // 循环外，1 次
         List<ComponentSqlView> views = sqlViewRepository.listBuilderManaged();  // 循环外，1 条 SQL
+        return recompileViews(views, write);
+    }
+
+    /**
+     * 重编译内核（repair-260916 B-2 从 {@link #runRecompile} 抽出，<b>循环体逐字未改</b>）：
+     * 对<b>给定的</b>视图列表做「读 builder_config → 编译 → 比对 → 写入 → 对齐 builder_version / axisScope」。
+     * 全量路径（{@link #runRecompile}）与按组件路径（{@link #previewRecompileComponents} /
+     * {@link #recompileComponents}）都调它 ⇒ 两条路径对同一视图的产物逐字相同（api.md §1.3 第 6 条）。
+     *
+     * <p>🚫 不许为按组件路径另写一份编译/写入代码。
+     *
+     * <p>N+1 例外：一个视图 = 一个工作单元。循环体内每个视图有编译器内部 1 条元数据查询
+     * （{@code information_schema.columns}），执行路径另有 1 条保存期 dry-run（{@code LIMIT 0} 探针）；
+     * 条数随<b>请求里的视图数</b>线性增长，与任何业务表的数据量无关（api.md §1.8，按 backend.md §1 走例外申请）。
+     */
+    private RecompileOutcome recompileViews(List<ComponentSqlView> views, boolean write) {
+        SemanticGraphSnapshot snap = loader.get();                      // 循环外，1 次
         RecompileOutcome outcome = new RecompileOutcome();
         outcome.views = views.size();
 
@@ -477,6 +647,10 @@ public class BuilderRecompileService {
             if (textChanged) {
                 outcome.changed++;
                 outcome.changedViewNames.add(v.sqlViewName);
+                // repair-260916：旧文本必须在写入之前取 —— update() 会就地改 v.sqlTemplate
+                outcome.changedViews.add(new ViewChange(v.componentId, v.sqlViewName, v.sqlTemplate, r.sql));
+            } else {
+                outcome.unchangedViews.add(new ViewChange(v.componentId, v.sqlViewName, v.sqlTemplate, r.sql));
             }
             if (textChanged || axisScopeChanged) {
                 if (!write) { if (axisScopeChanged) outcome.axisScopeWritten++; }
