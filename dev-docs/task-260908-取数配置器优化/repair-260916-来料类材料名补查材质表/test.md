@@ -20,8 +20,10 @@
 
 | 实例 | 端口 | 启动方式 | 谁启 |
 |---|---|---|---|
-| worktree 后端 | **8196** | 在 worktree 的 `cpq-backend` 下 `DB_NAME=cpq_db_260916 ./mvnw quarkus:dev -Dquarkus.http.port=8196`（首次启动会对验收库执行 `V444`） | S-1 先启；S-全局沿用或重启 |
-| worktree 前端 | **5196** | worktree 的 `cpq-frontend` 下 `VITE_API_TARGET=http://localhost:8196 npx vite --port 5196`（依赖按 `git-worktree.md` 软链） | S-全局 |
+| 验收后端 | **8196** | **主线**在后端完工并复验后，把 worktree 的 `cpq-backend` **拷一份到会话 scratch 目录**再 `DB_NAME=cpq_db_260916 ./mvnw quarkus:dev -Dquarkus.http.port=8196` 启动（首次启动会对验收库执行 `V444`）。拷副本是为了不和 S-2 在 worktree 里跑的 `mvnw test` 抢同一个 `target/`（`testing.md §4.2.5`） | **主线**。测试员只使用、🚫 不启停、🚫 不重启 |
+| 验收前端 | **5196** | **主线**在 worktree 的 `cpq-frontend` 下 `VITE_API_TARGET=http://localhost:8196 npx vite --port 5196`（`node_modules` 已软链主工作区） | **主线** |
+
+> 主线启动后会在派工消息里给出：8196 / 5196 的验明正身结果、`V444` 在验收库的 `success` 行、admin 登录方式。
 
 - 探活要**验明正身**（`testing.md §4.2`）：比对 `GET /api/cpq/quotations?page=1&size=1` 的 `totalElements` 与 `cpq_db_260916` 里 `SELECT count(*) FROM quotation` 一致，才算连对库。
 - 本机 shell 有 `http_proxy`，访问本机一律 `curl --noproxy '*'`。
@@ -33,7 +35,8 @@
 
 ```
 主线：克隆验收库 + 采集基线（8081）
-  → S-1：启 8196（此刻 V444 进验收库）→ 采集 AC-11 的集合 A → 其余只读断言
+  → 主线：后端复验通过后启 8196（此刻 V444 进验收库）+ 5196
+  → S-1：采集 AC-11 的集合 A → 其余只读断言
   → S-全局：AC-2/3/4（只看实时编译与预览）→ AC-6（预览）→ AC-7（执行）→ AC-10
 ```
 
@@ -54,7 +57,7 @@
 
 | 片 | 档位 | 库 | 本片会写什么 | 造数前缀 | 解锁条件 |
 |---|---|---|---|---|---|
-| **S-1 只读** | 只读片 | `cpq_db_260916` | **零业务写入**。唯一写入是启动 8196 时 Flyway 对验收库执行 `V444`（预期内、只发生一次）。只调预览类接口（`refresh-all-snapshots` 的 `confirm:false`、`/builder/compile`）与只读 SQL | 无 | 后端报 B-1 / B-2 / B-3 完成 |
+| **S-1 只读** | 只读片 | `cpq_db_260916` | **零写入**（`V444` 由主线启动 8196 时落入验收库，不归本片）。只调预览类接口（`refresh-all-snapshots` 的 `confirm:false`、`/builder/compile`）与只读 SQL | 无 | 后端报 B-1 / B-2 / B-3 完成 |
 | **S-2 私有写** | 私有写片 | `cpq_db_test` | 自造：`ds_quote_material` / 报价来料表 / `ds_cost_basic_material` / 核价来料表行、组件与取数视图、由本片调用产生的 `operation_log` 行 | **`R260916-T-`**（客户号、销售料号、生产料号、组件名均带；客户号列长 20，前缀后不超长） | 后端报**全部** B-x 完成，且后端工程师已停止在 worktree 内跑 maven（`testing.md §4.2.5`） |
 | **S-全局** | 🚫 串行殿后 | `cpq_db_260916` | 3 个组件的取数视图（执行按组件重编译）· `operation_log` · 施耐德5.4模板**新增一个版本**（发布）· **新建 1 张报价单** | 报价单备注 / 项目名写 `R260916-G-` | S-1 **全部跑完**（集合 A 已落盘）+ 后端全部完成 |
 
