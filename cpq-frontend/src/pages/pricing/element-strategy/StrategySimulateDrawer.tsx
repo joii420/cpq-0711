@@ -4,7 +4,7 @@ import dayjs, { type Dayjs } from 'dayjs';
 import { elementPriceStrategyService } from '../../../services/elementPriceStrategyService';
 import { formatMethod } from './strategyFormat';
 import type { SimulateDraft, SimulateRowDTO } from '../../../types/element-price-strategy';
-import { formatDisplayDecimal, type DecimalString } from '../../../utils/precision';
+import { ELEMENT_PRICE_SCALE, formatDisplayDecimal, type DecimalString } from '../../../utils/precision';
 
 /**
  * 策略试算抽屉（720） —— task-0722 · F7
@@ -49,7 +49,7 @@ const StrategySimulateDrawer: React.FC<Props> = ({ open, onClose, customerNo, cu
     }
   };
 
-  const num = (v: DecimalString | null) => (v === null || v === undefined ? '—' : formatDisplayDecimal(v, 4));
+  const num = (v: DecimalString | null) => (v === null || v === undefined ? '—' : formatDisplayDecimal(v, ELEMENT_PRICE_SCALE));
 
   return (
     <Drawer
@@ -102,11 +102,11 @@ const StrategySimulateDrawer: React.FC<Props> = ({ open, onClose, customerNo, cu
           },
           {
             title: '× 系数', dataIndex: 'factor', align: 'right' as const,
-            render: (v: DecimalString, r) => r.hasPrice ? formatDisplayDecimal(v, 2) : <span style={{ color: 'rgba(0,0,0,.45)' }}>—</span>,
+            render: (v: DecimalString, r) => r.hasPrice ? formatDisplayDecimal(v, ELEMENT_PRICE_SCALE) : <span style={{ color: 'rgba(0,0,0,.45)' }}>—</span>,
           },
           {
             title: '+ 加价', dataIndex: 'premium', align: 'right' as const,
-            render: (v: DecimalString, r) => r.hasPrice ? formatDisplayDecimal(v, 2) : <span style={{ color: 'rgba(0,0,0,.45)' }}>—</span>,
+            render: (v: DecimalString, r) => r.hasPrice ? formatDisplayDecimal(v, ELEMENT_PRICE_SCALE) : <span style={{ color: 'rgba(0,0,0,.45)' }}>—</span>,
           },
           {
             title: '最终单价', dataIndex: 'finalPrice', align: 'right' as const,

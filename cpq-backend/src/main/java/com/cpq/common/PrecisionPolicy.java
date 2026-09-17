@@ -30,6 +30,13 @@ public final class PrecisionPolicy {
     /** 报价单总金额结果精度。未来由系统参数覆盖；当前值是默认值。 */
     public static final int QUOTATION_TOTAL_SCALE = 9;
 
+    /**
+     * task-260916：元素单价（日价、客户取价结果、策略系数与加价）的存储 / 取价精度。
+     * 与前端 {@code utils/precision.ts} 的同名常量必须同值。刻意不复用 {@link #DISPLAY_SCALE}：
+     * 那是显示边界，将来可能单独调整，存储口径不能绑在它上面。
+     */
+    public static final int ELEMENT_PRICE_SCALE = 9;
+
     /** 除法中间精度：无限小数（如 1/3）的落点，远高于呈现精度以避免中间损失。 */
     public static final int DIVISION_SCALE = CALCULATION_SCALE;
 
@@ -52,6 +59,11 @@ public final class PrecisionPolicy {
     public static BigDecimal roundForDisplay(BigDecimal v) {
         if (v == null) return null;
         return v.setScale(DISPLAY_SCALE, ROUNDING);
+    }
+
+    /** task-260916：元素单价 / 系数 / 加价写入前舍入到 {@link #ELEMENT_PRICE_SCALE} 位（null 安全，HALF_UP）。 */
+    public static BigDecimal roundElementPrice(BigDecimal v) {
+        return round(v, ELEMENT_PRICE_SCALE);
     }
 
     public static BigDecimal roundFormulaResult(BigDecimal v) {

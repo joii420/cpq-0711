@@ -6,7 +6,7 @@ import {
   METHOD_LABEL, UNIT_LABEL,
   type PriceSourceDTO, type StrategyDTO, type StrategyUpsertRequest, type PriceMethod, type WindowUnit,
 } from '../../../types/element-price-strategy';
-import { normalizeDecimalString } from '../../../utils/precision';
+import { ELEMENT_PRICE_SCALE, formatElementPriceInput, normalizeDecimalString } from '../../../utils/precision';
 
 /**
  * 元素级例外 新建/编辑抽屉（480） —— task-0722 · F6
@@ -148,10 +148,10 @@ const StrategyExceptionEditDrawer: React.FC<Props> = ({ open, customerNo, editin
           </Space.Compact>
         </Form.Item>
         <Form.Item name="factor" label="系数" tooltip="默认 1">
-          <InputNumber<string> stringMode style={{ width: '100%' }} min="0" />
+          <InputNumber<string> stringMode style={{ width: '100%' }} min="0" precision={ELEMENT_PRICE_SCALE} formatter={formatElementPriceInput} />
         </Form.Item>
         <Form.Item name="premium" label="加价" tooltip="默认 0">
-          <InputNumber<string> stringMode style={{ width: '100%' }} />
+          <InputNumber<string> stringMode style={{ width: '100%' }} precision={ELEMENT_PRICE_SCALE} formatter={formatElementPriceInput} />
         </Form.Item>
       </Form>
     </Drawer>

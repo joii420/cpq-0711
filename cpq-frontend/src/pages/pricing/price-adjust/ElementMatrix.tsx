@@ -4,12 +4,12 @@ import type { ColumnsType } from 'antd/es/table';
 import { priceAdjustService } from '../../../services/priceAdjustService';
 import type { ElementRowDTO, VersionColumnDTO } from '../../../types/price-adjust';
 import { formatNumber } from '../../../utils/formatNumber';
-import { formatDisplayDecimal, toDecimal, type DecimalString } from '../../../utils/precision';
+import { ELEMENT_PRICE_SCALE, formatDisplayDecimal, toDecimal, type DecimalString } from '../../../utils/precision';
 
 const PAGE_SIZE = 20;
 
 function formatPrice(v: DecimalString | null | undefined): string {
-  return formatNumber(v, { isComputed: true, decimals: 2 }) ?? '—';
+  return formatNumber(v, { isComputed: true, decimals: ELEMENT_PRICE_SCALE }) ?? '—';
 }
 
 function formatRate(v: DecimalString | null | undefined): { text: string; color?: string } {

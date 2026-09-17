@@ -9,7 +9,7 @@ import type {
   CreatePriceRequest,
   UpdatePriceRequest,
 } from '../../types/element-price-strategy';
-import { normalizeDecimalString, toDecimal } from '../../utils/precision';
+import { ELEMENT_PRICE_SCALE, formatElementPriceInput, normalizeDecimalString, toDecimal } from '../../utils/precision';
 
 /**
  * 价格编辑抽屉（480，二级） —— update-0724 · F3
@@ -170,7 +170,7 @@ const PriceEditDrawer: React.FC<Props> = ({ open, mode, editing, sources, onClos
             },
           ]}
         >
-          <InputNumber<string> stringMode style={{ width: '100%' }} min="0" precision={4} placeholder="请输入单价" />
+          <InputNumber<string> stringMode style={{ width: '100%' }} min="0" precision={ELEMENT_PRICE_SCALE} formatter={formatElementPriceInput} placeholder="请输入单价" />
         </Form.Item>
         <Form.Item name="currency" label="货币" rules={[{ required: true, message: '请填写货币' }]}>
           <Input placeholder="如 CNY / USD" />

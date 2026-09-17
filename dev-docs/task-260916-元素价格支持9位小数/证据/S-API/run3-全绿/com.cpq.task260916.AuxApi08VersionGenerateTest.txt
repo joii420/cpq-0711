@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.cpq.task260916.AuxApi08VersionGenerateTest
+-------------------------------------------------------------------------------
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.263 s -- in com.cpq.task260916.AuxApi08VersionGenerateTest

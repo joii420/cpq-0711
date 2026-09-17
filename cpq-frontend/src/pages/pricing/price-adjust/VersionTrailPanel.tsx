@@ -9,12 +9,12 @@ import type {
   VersionDTO, VersionItemDTO, PendingVersionExistsPayload, StrategyNoElementsPayload,
 } from '../../../types/price-adjust';
 import { formatNumber } from '../../../utils/formatNumber';
-import { formatDisplayDecimal, toDecimal, type DecimalString } from '../../../utils/precision';
+import { ELEMENT_PRICE_SCALE, formatDisplayDecimal, toDecimal, type DecimalString } from '../../../utils/precision';
 
 const PAGE_SIZE = 10;
 
 const formatPrice = (value: DecimalString | null): string =>
-  formatNumber(value, { isComputed: true, decimals: 2 }) ?? '—';
+  formatNumber(value, { isComputed: true, decimals: ELEMENT_PRICE_SCALE }) ?? '—';
 
 function formatRate(value: DecimalString | null): { text: string; color?: string } {
   if (value == null) return { text: '—' };

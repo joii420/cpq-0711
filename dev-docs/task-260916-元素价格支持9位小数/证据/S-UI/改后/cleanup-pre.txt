@@ -1,0 +1,8 @@
+before=[]
+
+after (SQL):
+SET
+ id | element_name | price_date | raw_price 
+----+--------------+------------+-----------
+(0 rows)
+

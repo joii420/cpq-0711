@@ -24,6 +24,7 @@ import static io.restassured.http.ContentType.JSON;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -316,6 +317,33 @@ class PriceMaintenanceResourceTest {
             .then().statusCode(200)
                 .body("totalElements", equalTo(3))
                 .body("content.find { it.action == 'UPDATE' }.changes.field", hasItem("price"));
+    }
+
+    @Test
+    @Order(21)
+    @DisplayName("T15 (task-260916 B-11): history snapshot.price is an exact decimal string for CREATE/UPDATE/DELETE")
+    void history_snapshotPriceIsExactDecimalString() {
+        String id = given().contentType(JSON).body(createBody(ELEM, sourceActive, "2020-09-10", "0.000000002"))
+                .when().post(BASE + "/prices")
+                .then().statusCode(201).extract().path("id");
+        given().contentType(JSON).body("{\"price\":\"3.123456788\",\"currency\":\"CNY\",\"priceUnit\":\"kg\"}")
+            .when().put(BASE + "/prices/" + id)
+            .then().statusCode(200);
+        given().when().delete(BASE + "/prices/" + id).then().statusCode(204);
+
+        given().queryParam("sourceId", sourceActive.toString()).queryParam("keyword", ELEM)
+            .when().get(BASE + "/prices/history")
+            .then().statusCode(200)
+                .body("totalElements", equalTo(3))
+                .body("content.find { it.action == 'CREATE' }.snapshot.price", instanceOf(String.class))
+                .body("content.find { it.action == 'CREATE' }.snapshot.price", equalTo("0.000000002"))
+                .body("content.find { it.action == 'UPDATE' }.snapshot.price", instanceOf(String.class))
+                .body("content.find { it.action == 'UPDATE' }.snapshot.price", equalTo("3.123456788"))
+                .body("content.find { it.action == 'DELETE' }.snapshot.price", instanceOf(String.class))
+                .body("content.find { it.action == 'DELETE' }.snapshot.price", equalTo("3.123456788"))
+                .body("content.find { it.action == 'UPDATE' }.changes.find { it.field == 'price' }.oldValue", equalTo("0.000000002"))
+                .body("content.find { it.action == 'UPDATE' }.changes.find { it.field == 'price' }.newValue", equalTo("3.123456788"))
+                .body("content.find { it.action == 'CREATE' }.snapshot.currency", equalTo("CNY"));
     }
 
     // ══════════════════════ 事务原子性（验收 11） ══════════════════════

@@ -1,0 +1,7 @@
+[INFO] Tests run: 16, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 9.188 s -- in PriceMaintenanceService — update-0724 · B4/B5/B6 手工维护 + 变更历史
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 13.16 s -- in StrategyResource — task-0722 · B8/B9/B10
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.298 s -- in com.cpq.priceadjust.service.PriceAdjustVersionGenerationServiceTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 6.733 s -- in Sec34PriceStrategyTest — AC-20~24 全部换 v9 对象后保留（价格策略节点在 v9 图里仍然存在）
+[INFO] Tests run: 36, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+MVN_EXIT=0

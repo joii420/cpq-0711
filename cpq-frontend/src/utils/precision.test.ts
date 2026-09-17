@@ -4,6 +4,7 @@ import {
   CALCULATION_SCALE,
   DISPLAY_SCALE,
   DIVISION_SCALE,
+  ELEMENT_PRICE_SCALE,
   FORMULA_RESULT_SCALE,
   PRODUCT_CARD_SUBTOTAL_SCALE,
   QUOTATION_TOTAL_SCALE,
@@ -11,6 +12,7 @@ import {
   divideDecimal,
   evaluateArithmetic,
   formatDisplayDecimal,
+  formatElementPriceInput,
   formatFormulaResult,
   formatProductCardSubtotal,
   formatQuotationTotal,
@@ -77,6 +79,35 @@ describe('precision policy', () => {
     expect(formatDisplayDecimal('-1.2345678915')).toBe('-1.234567892');
     expect(formatDisplayDecimal('0.0000000004')).toBe('0');
     expect(formatDisplayDecimal('0.0000000005')).toBe('0.000000001');
+  });
+});
+
+describe('element price scale (task-260916)', () => {
+  it('locks ELEMENT_PRICE_SCALE=9 (mirrors backend PrecisionPolicy.ELEMENT_PRICE_SCALE)', () => {
+    expect(ELEMENT_PRICE_SCALE).toBe(9);
+  });
+
+  it('displays element prices with at most 9 decimals, trailing zeros trimmed, HALF_UP', () => {
+    expect(formatDisplayDecimal('101.139210000000', ELEMENT_PRICE_SCALE)).toBe('101.13921');
+    expect(formatDisplayDecimal('105.000000000000', ELEMENT_PRICE_SCALE)).toBe('105');
+    expect(formatDisplayDecimal('2.0000000005', ELEMENT_PRICE_SCALE)).toBe('2.000000001');
+    expect(formatDisplayDecimal('0.1234567894', ELEMENT_PRICE_SCALE)).toBe('0.123456789');
+    expect(formatDisplayDecimal('171.368000000000', ELEMENT_PRICE_SCALE)).toBe('171.368');
+  });
+
+  it('input formatter trims padded zeros when idle and echoes raw text while typing (M-1)', () => {
+    const idle = (v: string | undefined) => formatElementPriceInput(v, { userTyping: false, input: '' });
+    expect(idle('1')).toBe('1');
+    expect(idle('1.000000000')).toBe('1');
+    expect(idle('101.139220000')).toBe('101.13922');
+    expect(idle('0.000000000')).toBe('0');
+    expect(idle('-0.500000000')).toBe('-0.5');
+    expect(idle('3.123456789')).toBe('3.123456789');
+    expect(idle(undefined)).toBe('');
+    expect(idle('')).toBe('');
+    expect(idle('-')).toBe('-');
+    expect(formatElementPriceInput('1.2', { userTyping: true, input: '1.20' })).toBe('1.20');
+    expect(formatElementPriceInput('1', { userTyping: true, input: '1.' })).toBe('1.');
   });
 });
 

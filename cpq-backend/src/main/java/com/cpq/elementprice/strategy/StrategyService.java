@@ -1,6 +1,8 @@
 package com.cpq.elementprice.strategy;
 
+import com.cpq.common.PrecisionPolicy;
 import com.cpq.common.dto.PageResult;
+import com.cpq.elementprice.SnapshotDecimals;
 import com.cpq.common.exception.BusinessException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -12,7 +14,6 @@ import jakarta.transaction.Transactional;
 import jakarta.ws.rs.NotFoundException;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -244,9 +245,10 @@ public class StrategyService {
             v.windowUnit = req.windowUnit.trim().toUpperCase();
         }
 
-        v.factor = req.factor != null ? req.factor : BigDecimal.ONE;
+        // task-260916 B-6：系数 / 加价先舍入到 9 位再校验、写库、写日志快照（D-8）
+        v.factor = PrecisionPolicy.roundElementPrice(req.factor != null ? req.factor : BigDecimal.ONE);
         if (v.factor.compareTo(BigDecimal.ZERO) <= 0) throw new BusinessException(400, "系数必须大于 0");
-        v.premium = req.premium != null ? req.premium : BigDecimal.ZERO;
+        v.premium = PrecisionPolicy.roundElementPrice(req.premium != null ? req.premium : BigDecimal.ZERO);
         return v;
     }
 
@@ -388,7 +390,7 @@ public class StrategyService {
             row.sampleDays = cr.sampleDays;
             row.hasPrice = cr.rawValue != null;
             row.finalPrice = cr.rawValue != null
-                    ? cr.rawValue.multiply(eff.factor).add(eff.premium).setScale(4, RoundingMode.HALF_UP)
+                    ? PrecisionPolicy.roundElementPrice(cr.rawValue.multiply(eff.factor).add(eff.premium)) // task-260916 B-8
                     : null;
             out.add(row);
         }
@@ -574,12 +576,9 @@ public class StrategyService {
         return out;
     }
 
+    /** task-260916 B-11：精确解析（不经 double），{@code factor} / {@code premium} 转规范十进制字符串；{@code windowNum} 保持数字。 */
     private JsonNode parseSnapshot(String json) {
-        try {
-            return MAPPER.readTree(json);
-        } catch (Exception e) {
-            return MAPPER.createObjectNode();
-        }
+        return SnapshotDecimals.parse(json, "factor", "premium");
     }
 
     private List<StrategyChangeDTO> diffSnapshots(JsonNode prev, JsonNode curr) {
@@ -646,7 +645,8 @@ public class StrategyService {
         JsonNode v = n.get(field);
         if (v == null || v.isNull()) return null;
         try {
-            return new BigDecimal(v.asText()).setScale(2, RoundingMode.HALF_UP).toPlainString();
+            // task-260916 B-7：最多 9 位、去尾零（原 setScale(2)）；该文本同时用于「系数 / 加价是否变化」判断
+            return PrecisionPolicy.toPlainDecimalString(PrecisionPolicy.roundElementPrice(new BigDecimal(v.asText())));
         } catch (Exception e) {
             return v.asText();
         }

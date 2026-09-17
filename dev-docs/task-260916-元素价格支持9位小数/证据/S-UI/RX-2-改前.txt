@@ -1,0 +1,213 @@
+# RX-2 阳性对照（改前）  采样时刻: 2026-09-16 22:32:06 -0700  库: cpq_db_0724  执行人: S-UI 测试员
+
+## 0. 连库与迁移现状
+        Connection Information
+      Parameter       |     Value     
+----------------------+---------------
+ Database             | cpq_db_0724
+ Client User          | postgres
+ Host                 | 10.177.152.12
+ Server Port          | 5432
+ Options              | 
+ Protocol Version     | 3.0
+ Password Used        | true
+ GSSAPI Authenticated | false
+ Backend PID          | 3041986
+ SSL Connection       | false
+ Superuser            | on
+ Hot Standby          | off
+(12 rows)
+
+ version |                    description                    | success |        installed_on        
+---------+---------------------------------------------------+---------+----------------------------
+ 444     | repair260916 lookup name recipe fallback          | t       | 2026-09-16 21:08:49.737298
+ 443     | task260911 fmep record branch                     | t       | 2026-09-11 23:30:20.529227
+ 442     | task260911 ds quote record import batch           | t       | 2026-09-11 23:30:20.148441
+ 441     | task260911 row scope role                         | t       | 2026-09-11 09:23:30.365844
+ 440     | repair260910 costing element price customer level | t       | 2026-09-11 02:09:47.170245
+(5 rows)
+
+              fn_md5              | has_round4 
+----------------------------------+------------
+ 0b55508cabf384f70437c58c0e8990d3 | t
+(1 row)
+
+## AC-1 SQL (原样)
+SELECT element_code, unit_price FROM f_customer_element_price('CUST-0004', DATE '2026-09-16')
+ element_code | unit_price 
+--------------+------------
+ Ni           |   105.0000
+ Cu           |   101.1392
+ Zn           |    24.1695
+ Ag           | 28892.5000
+ 白银         | 12345.0000
+(5 rows)
+
+## AC-2 SQL (原样)
+SELECT unit_price FROM f_customer_element_price('CUST-0001', DATE '2026-09-16') WHERE element_code = 'Cu'
+ unit_price 
+------------
+   171.3671
+(1 row)
+
+## AC-5 SQL (原样)
+SELECT material_no, unit_price FROM f_material_element_price('CUST-0001', DATE '2026-09-16', NULL) WHERE element_code = 'Cu' AND material_no IN ('S-3120014539', 'VS-FG01')
+ material_no  |    unit_price    
+--------------+------------------
+ S-3120014539 | 171.368000000000
+ VS-FG01      |         171.3671
+(2 rows)
+
+## AC-6 基线 (合并前) QT-20260916-0878 / S3120011203
+ id | quotation_id | origin_id | base_row_fingerprint | base_version_no | material_no | material_part_no | item_seq | element_code | content_pct | loss_rate | gross_usage | gross_usage_unit | net_usage | net_usage_unit | recovery_discount | recovery_qty | extend_column | element_price | customer_no | source | created_at | created_by | updated_at | updated_by | import_batch_id 
+----+--------------+-----------+----------------------+-----------------+-------------+------------------+----------+--------------+-------------+-----------+-------------+------------------+-----------+----------------+-------------------+--------------+---------------+---------------+-------------+--------+------------+------------+------------+------------+-----------------
+(0 rows)
+
+
+## AC-6 基线（合并前）QT-20260916-0878 / S3120011203
+SELECT r.material_no, r.element_code, r.element_price FROM ds_quote_element_bom_record r JOIN quotation q ON q.id = r.quotation_id WHERE q.quotation_number='QT-20260916-0878' AND r.material_no='S3120011203' AND r.element_code IN ('Cu','Zn') ORDER BY r.element_code
+ material_no | element_code |  element_price   
+-------------+--------------+------------------
+ S3120011203 | Cu           | 101.139200000000
+ S3120011203 | Zn           |  24.169500000000
+(2 rows)
+
+
+## S-UI 私有写面前置核查（P-7）：TEST-PM-SRC-A 的日价（全部日期）与策略引用
+ERROR:  column "name" does not exist
+LINE 1: SELECT id, name, enabled FROM element_price_source WHERE id=...
+                   ^
+ daily_rows_all_dates 
+----------------------
+                    0
+(1 row)
+
+ strategy_refs 
+---------------
+             0
+(1 row)
+
+
+## P-1 长江有色网 2026-09-16 日价
+ERROR:  column s.name does not exist
+LINE 1: SELECT s.name, d.element_name, d.price_date, d.raw_price, d....
+               ^
+
+## （更正上面两条列名错误的查询）P-7 价格源本身
+                  id                  |  source_name  | status 
+--------------------------------------+---------------+--------
+ 56c41905-b695-4675-ab3b-ae0b37d0f2e9 | TEST-PM-SRC-A | ACTIVE
+(1 row)
+
+## P-1 长江有色网 2026-09-16 日价
+ source_name | element_name | price_date |     raw_price      | fetch_status 
+-------------+--------------+------------+--------------------+--------------
+ 长江有色网  | Ag           | 2026-09-16 | 28892.500000000000 | IMPORT
+ 长江有色网  | Cu           | 2026-09-16 |   101.139210000000 | IMPORT
+ 长江有色网  | Ni           | 2026-09-16 |   105.000000000000 | IMPORT
+ 长江有色网  | Zn           | 2026-09-16 |    24.169470000000 | IMPORT
+(4 rows)
+
+## P-3 罗克韦尔策略 / P-8 QA 客户策略
+ customer_no  | element_code | source_name | method |     factor     |     premium     | status 
+--------------+--------------+-------------+--------+----------------+-----------------+--------
+ CUST-0001    |              | 长江有色网  | AVG    | 1.500000000000 | 20.000000000000 | ACTIVE
+ CUST-0001    | Cu           | 长江有色网  | LATEST | 1.200000000000 | 50.000000000000 | ACTIVE
+ CUST-0004    |              | 长江有色网  | LATEST | 1.000000000000 |  0.000000000000 | ACTIVE
+ CUST-0729-QA |              | 长江有色网  | LATEST | 1.000000000000 |  0.000000000000 | ACTIVE
+(4 rows)
+
+## P-5 版本 V26090801 Cu/Ag
+       column_name       
+-------------------------
+ id
+ id
+ version_id
+ version_id
+ element_code
+ element_code
+ current_price
+ current_price
+ previous_price
+ previous_price
+ change_rate
+ change_rate
+ currency
+ currency
+ price_unit
+ price_unit
+ no_price
+ no_price
+ inherited_from_previous
+ inherited_from_previous
+ created_at
+ created_at
+(22 rows)
+
+（注：本文件中「## AC-6 基线 (合并前)」第一段是一条 LIMIT 0 取列名的探查，非 AC-6 结果；AC-6 基线见其后一段）
+
+## P-5 版本 V26090801 的 Cu / Ag 冻结价（罗克韦尔）
+ version_no | base_date  |   status   | element_code |   current_price    |   previous_price   |  change_rate   
+------------+------------+------------+--------------+--------------------+--------------------+----------------
+ V26080508  | 2026-08-05 | SUPERSEDED | Ag           | 43358.750000000000 | 43358.750000000000 | 0.000000000000
+ V26080508  | 2026-08-05 | SUPERSEDED | Cu           |   171.368000000000 |   171.368000000000 | 0.000000000000
+ V26090801  | 2026-09-08 | PENDING    | Ag           | 43358.750000000000 | 43358.750000000000 | 0.000000000000
+ V26090801  | 2026-09-08 | PENDING    | Cu           |   171.368000000000 |   171.368000000000 | 0.000000000000
+(4 rows)
+
+## P-4 S-3120014539 版本指针
+                  id                  | customer_no | material_no  |              version_id              |          updated_at           | version_no 
+--------------------------------------+-------------+--------------+--------------------------------------+-------------------------------+------------
+ 0e4a1928-55a9-471b-9168-bd840063ceb4 | CUST-0001   | S-3120014539 | ea86fbcb-6e91-4fa8-82f5-4e196a97defe | 2026-08-05 16:11:13.543208+00 | V26080508
+(1 row)
+
+
+## P-5 补：版本创建时间 / P-6 审核单
+ version_no | base_date  | status  |          created_at           
+------------+------------+---------+-------------------------------
+ V26090801  | 2026-09-08 | PENDING | 2026-09-09 06:20:26.022423+00
+(1 row)
+
+-[ RECORD 1 ]-------+-------------------------------------
+id                  | 838d39f3-787d-48bd-a362-a09cdead6651
+version_id          | 329a8bf7-8187-4b26-b4a6-cd2752d7d70e
+previous_version_id | ea86fbcb-6e91-4fa8-82f5-4e196a97defe
+customer_no         | CUST-0001
+material_no         | S-3120014539
+template_series_id  | 
+basis_quotation_id  | 
+status              | PENDING
+budget_status       | READY
+budget_error        | 
+breached_count      | 0
+amber_count         | 0
+missing_count       | 0
+stale_count         | 0
+column_count        | 0
+reviewed_by         | 
+reviewed_at         | 
+review_comment      | 
+created_at          | 2026-09-09 06:20:29.028738+00
+updated_at          | 2026-09-09 06:20:29.028743+00
+warn_code           | 
+warn_message        | 
+warn_diff           | 
+
+
+## P-6 补：该审核单的金额列行数（AC-17 第二条断言的数据是否存在）
+ review_column_rows 
+--------------------
+                  0
+(1 row)
+
+## AC-4 前置：tmp 目录下施耐德文件是否在主仓 / worktree
+ls: cannot access '/home/joii/project/cpq/.claude/worktrees/task-260916-element-price-scale9/tmp/报价 - 数据测试-施耐德.xlsx': No such file or directory
+-rw-r--r-- 1 joii joii 36896 Sep 16 19:49 /home/joii/project/cpq/tmp/报价 - 数据测试-施耐德.xlsx
+
+## RX-2 结论（S-UI 测试员，2026-09-16 22:32 -0700 采样）
+- 迁移尚未应用：flyway 最新 = V444；f_customer_element_price md5 = 0b55508cabf384f70437c58c0e8990d3（= test.md §4 底稿），函数体含 ROUND(…, 4)。
+- AC-1 改前：Cu 101.1392 / Zn 24.1695 / Ag 28892.5000 / Ni 105.0000（另有 白银 12345.0000，AC 未涉及）—— 与需求文档记载一致。
+- AC-2 改前：Cu 171.3671 —— 一致。
+- AC-5 改前：S-3120014539 171.368000000000（冻结价）/ VS-FG01 171.3671 —— 一致。
+- AC-6 基线：QT-20260916-0878 × S3120011203 Cu 101.139200000000 / Zn 24.169500000000。
+⇒ 阳性对照成立：改后若仍得上述 4 位值，AC-1/2/5 的断言会红。

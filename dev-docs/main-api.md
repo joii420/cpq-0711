@@ -1,7 +1,7 @@
 # CPQ 系统接口总览文档（main-api.md）
 
 > 本文件由技术总监扫描 `cpq-backend` 全部 JAX-RS Resource 自动生成，覆盖 **89 个 Resource 类、约 422 个 HTTP 端点**，按业务模块分为 12 大类。
-> 生成日期：2026-07-08 ｜ 最近契约更新：**2026-09-16（repair-260916 来料类材料名补查材质表：§8.1 `ConfigCenterResource` 新增 `POST /config-center/recompile-components`（按组件重编译取数视图）；同节 `refresh-all-snapshots` 小节按现行源码更正（2026-09-17，原描述停留在 K4 旧实现））** ｜ 更早一次：**2026-09-16（task-260915 组件导出/导入往返保真：§2.1 导出/导入预览/导入提交三个端点按真实源码整段覆盖 —— 含本次新增 8 个字段与 `builderCoord`，并顺带补齐 task-0805 遗留未回写的 `bindingReport`/`formulaBinding`/`ignoreUnboundFormulas`/`unboundWarnings` 等）** ｜ 前次：2026-09-03（task-260903 产品管理页重做：新增 `GET /dataset/{dataset}/customer-parts`，见 §6.9；其前序 task-260902 新增 9 个端点，见 §6.8 / §6.9） ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
+> 生成日期：2026-07-08 ｜ 最近契约更新：**2026-09-17（task-260916 元素价格支持 9 位小数：§12.5b 新增元素价格维护 / 客户策略端点组，两个历史端点快照数字改为十进制字符串）**；此前：**2026-09-16（repair-260916 来料类材料名补查材质表：§8.1 `ConfigCenterResource` 新增 `POST /config-center/recompile-components`（按组件重编译取数视图）；同节 `refresh-all-snapshots` 小节按现行源码更正（2026-09-17，原描述停留在 K4 旧实现））** ｜ 更早一次：**2026-09-16（task-260915 组件导出/导入往返保真：§2.1 导出/导入预览/导入提交三个端点按真实源码整段覆盖 —— 含本次新增 8 个字段与 `builderCoord`，并顺带补齐 task-0805 遗留未回写的 `bindingReport`/`formulaBinding`/`ignoreUnboundFormulas`/`unboundWarnings` 等）** ｜ 前次：2026-09-03（task-260903 产品管理页重做：新增 `GET /dataset/{dataset}/customer-parts`，见 §6.9；其前序 task-260902 新增 9 个端点，见 §6.8 / §6.9） ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
 > 用途：前后端接口契约基线、联调对照、新接口设计参照。字段说明取自源码 javadoc / 注释，无注释处据字段名与类型推断。
 
 ---
@@ -9662,6 +9662,48 @@ Cell：`quote`(Object 报价值)、`costing`(Object 核价值)、`highlighted`(b
 - **路径**: `/api/cpq/element-prices/available-elements`
 - **鉴权**: SALES_REP / SALES_MANAGER / PRICING_MANAGER / SYSTEM_ADMIN
 - **响应内容**: `ApiResponse<List<String>>`（元素名称字符串列表）
+
+---
+
+### 12.5b 元素价格维护 / 客户元素价格策略（`/api/cpq/element-price/*`，task-0722 · update-0724）
+
+> ⚠️ 本组端点此前**未回写**进总账（task-0722 / update-0724 遗留缺口，task-260916 测试员发现）。本节只登记 **task-260916 改动过口径或字段类型的端点**；完整契约见 `dev-docs/task-260722-元素价格策略/api.md` 与 `update-260724-元素价格手工维护/api.md`。
+> **精度口径（task-260916 · PRD §9.26）**：元素单价、策略系数与加价写入前按 `HALF_UP` 舍入到 **9 位**；舍入后为 0 的单价按「单价必须大于 0」拒绝。精度字段请求一律十进制字符串（JSON number → 400），响应为规范十进制字符串（去尾零、无科学计数法）。
+
+#### POST `/api/cpq/element-price/import` —— 价格导入
+- **请求**：`multipart/form-data`：`file`（xlsx，列 `元素符号* / 单价* / 货币 / 计价单位`）、`sourceId`、`priceDate`
+- **响应**：`PriceImportResultDTO`；每行 `PriceImportRowDTO{rowNo, elementCode, price, currency, priceUnit, result(CREATED/UPDATED/FAILED), message}`
+- **口径**：`price` 为**舍入到 9 位后的落库值**；`result=UPDATED` 时 `message` = `原值 X → 新值 Y`（X/Y 最多 9 位、去尾零）；舍入后为 0 → `FAILED` / `单价必须大于 0`。⚠️ 导入**不写**变更历史（既有行为）
+> 来源任务：`task-260916-元素价格支持9位小数`｜回写日期：2026-09-17
+
+#### POST `/api/cpq/element-price/prices` · PUT `/api/cpq/element-price/prices/{id}` —— 手工新建 / 编辑单价
+- **请求**：新建 `{elementCode, sourceId, priceDate, price, currency, priceUnit}`；编辑 `{price, currency, priceUnit}`（`price` 为十进制字符串）
+- **响应**：`ElementPriceRowDTO`（新建 201，编辑 200）
+- **口径**：`price` 舍入到 9 位后落库并返回；舍入后为 0 → 400；写变更日志（快照记录舍入后的值）
+> 来源任务：`task-260916-元素价格支持9位小数`｜回写日期：2026-09-17
+
+#### GET `/api/cpq/element-price/prices/history` —— 单价变更历史
+- **查询参数**：`sourceId?`、`from?` / `to?`（按**操作时间**筛选）、`keyword?`、`page`、`size`
+- **响应**：`PageResult<PriceHistoryDTO>`；条目 `{id, changedAt, changedByName, action, elementCode, elementName, sourceId, sourceName, priceDate, targetLabel, changes[], snapshot}`
+- **字段类型变更（task-260916 B-11）**：`snapshot.price` 由 JSON number 改为**十进制字符串**（如 `"3.123456789"`）；`changes[]` 中单价的 `oldValue/newValue` 为最多 9 位、去尾零文本（9 位内不同即产生变更条目）
+> 来源任务：`task-260916-元素价格支持9位小数`｜回写日期：2026-09-17
+
+#### PUT `/api/cpq/element-price/strategies/default` · POST `/api/cpq/element-price/strategies/exceptions` · PUT `/api/cpq/element-price/strategies/exceptions/{id}` —— 客户元素价格策略保存
+- **请求**：`StrategyUpsertRequest{customerNo, elementCode?, sourceId, method, windowNum?, windowUnit?, factor, premium}`（`factor`/`premium` 为十进制字符串）
+- **响应**：`StrategyDTO`
+- **口径**：`factor` / `premium` 舍入到 9 位后落库并返回
+> 来源任务：`task-260916-元素价格支持9位小数`｜回写日期：2026-09-17
+
+#### GET `/api/cpq/element-price/strategies/history` —— 策略变更历史
+- **查询参数**：`customerNo` 等（见 task-0722 api.md §7）
+- **响应**：条目 `{id, changedAt, changedByName, targetLabel, elementCode, action, changes[], snapshot}`
+- **字段类型变更（task-260916 B-11）**：`snapshot.factor` / `snapshot.premium` 由 JSON number 改为**十进制字符串**（如 `"0.000000002"`）；`snapshot.windowNum` 仍为数字；`changes[]` 中系数 / 加价文本最多 9 位、去尾零。修复前该字段为 number 时，前端「策略变更历史」遇新增 / 删除记录整页崩溃
+> 来源任务：`task-260916-元素价格支持9位小数`｜回写日期：2026-09-17
+
+#### POST `/api/cpq/element-price/strategies/simulate` —— 策略试算
+- **响应**：每行 `SimulateRowDTO{elementCode, elementName, hitRule, sourceName, method, rawValue, factor, premium, finalPrice, sampleDays, hasPrice}`
+- **口径**：`finalPrice` = `rawValue × factor + premium` 舍入到 9 位（原 4 位）
+> 来源任务：`task-260916-元素价格支持9位小数`｜回写日期：2026-09-17
 
 ---
 

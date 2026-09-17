@@ -1,0 +1,5 @@
+SELECT count(*) FROM element_price_strategy WHERE customer_no='CUST-0729-QA' AND element_code='Zn' → 0
+default strategy md5 before=75c7674f7b2117e1e2b9e4cc4aa6e476 after=75c7674f7b2117e1e2b9e4cc4aa6e476
+element_price_strategy_log (CUST-0729-QA × Zn) rows written since run start 2026-09-17T08:23:59.216275+00: 2 (accepted residue):
+  2026-09-17 08:24:04.344966+00 CREATE {"factor":1.123456789,"method":"LATEST","premium":2e-9,"sourceId":"6b038405-6126-48f5-8d19-2af8124ae916","windowNum":null,"sourceName":"长江有色网","windowUnit":null}
+  2026-09-17 08:24:25.876217+00 DELETE {"factor":1.123456789,"method":"LATEST","premium":2e-9,"sourceId":"6b038405-6126-48f5-8d19-2af8124ae916","windowNum":null,"sourceName":"长江有色网","windowUnit":null}

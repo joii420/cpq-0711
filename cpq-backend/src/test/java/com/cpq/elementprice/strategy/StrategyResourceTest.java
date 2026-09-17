@@ -17,6 +17,7 @@ import java.util.UUID;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.hamcrest.Matchers.nullValue;
 
@@ -117,7 +118,8 @@ class StrategyResourceTest {
                 .body("content[0].action", equalTo("UPDATE"))
                 .body("content[0].changes.size()", equalTo(1))
                 .body("content[0].changes[0].field", equalTo("factor"))
-                .body("content[0].changes[0].oldValue", equalTo("1.00"))
+                // task-260916 B-7：历史文本由 setScale(2) 改为「最多 9 位、去尾零」⇒ 1.00 显示为 "1"
+                .body("content[0].changes[0].oldValue", equalTo("1"))
                 .body("content[0].changes[0].newValue", equalTo("1.05"));
     }
 
@@ -335,6 +337,46 @@ class StrategyResourceTest {
             .when().get(BASE)
             .then().statusCode(200)
                 .body("default.factor", equalTo("1"));
+    }
+
+    @Test
+    @DisplayName("T11 (task-260916 B-11): history snapshot factor/premium are exact decimal strings; windowNum stays a number")
+    void historySnapshotDecimalsAreStrings() {
+        String id = given().contentType("application/json").body("""
+                {"customerNo":"%s","elementCode":"%s","sourceId":"%s","method":"LATEST","factor":"1.123456789","premium":"0.000000002"}
+                """.formatted(CUSTOMER, ELEM, sourceId))
+            .when().post(BASE + "/exceptions").then().statusCode(200).extract().path("id");
+        given().contentType("application/json").body("""
+                {"customerNo":"%s","elementCode":"%s","sourceId":"%s","method":"LATEST","factor":"1.123456788","premium":"0.000000002"}
+                """.formatted(CUSTOMER, ELEM, sourceId))
+            .when().put(BASE + "/exceptions/" + id).then().statusCode(200);
+        given().when().delete(BASE + "/exceptions/" + id).then().statusCode(204);
+        given().contentType("application/json").body("""
+                {"customerNo":"%s","sourceId":"%s","method":"AVG","windowNum":30,"windowUnit":"DAY","factor":"1","premium":"50"}
+                """.formatted(CUSTOMER, sourceId))
+            .when().put(BASE + "/default").then().statusCode(200);
+
+        given().queryParam("customerNo", CUSTOMER).queryParam("elementCode", ELEM)
+            .when().get(BASE + "/history")
+            .then().statusCode(200)
+                .body("content.size()", equalTo(3))
+                .body("content.find { it.action == 'CREATE' }.snapshot.factor", instanceOf(String.class))
+                .body("content.find { it.action == 'CREATE' }.snapshot.factor", equalTo("1.123456789"))
+                .body("content.find { it.action == 'CREATE' }.snapshot.premium", instanceOf(String.class))
+                .body("content.find { it.action == 'CREATE' }.snapshot.premium", equalTo("0.000000002"))
+                .body("content.find { it.action == 'UPDATE' }.snapshot.factor", equalTo("1.123456788"))
+                .body("content.find { it.action == 'UPDATE' }.changes.find { it.field == 'factor' }.oldValue", equalTo("1.123456789"))
+                .body("content.find { it.action == 'UPDATE' }.changes.find { it.field == 'factor' }.newValue", equalTo("1.123456788"))
+                .body("content.find { it.action == 'DELETE' }.snapshot.factor", instanceOf(String.class))
+                .body("content.find { it.action == 'DELETE' }.snapshot.factor", equalTo("1.123456788"))
+                .body("content.find { it.action == 'DELETE' }.snapshot.premium", equalTo("0.000000002"));
+
+        given().queryParam("customerNo", CUSTOMER).queryParam("elementCode", "__DEFAULT__")
+            .when().get(BASE + "/history")
+            .then().statusCode(200)
+                .body("content[0].snapshot.windowNum", instanceOf(Integer.class))
+                .body("content[0].snapshot.windowNum", equalTo(30))
+                .body("content[0].snapshot.premium", equalTo("50"));
     }
 
     private long strategyCount() {

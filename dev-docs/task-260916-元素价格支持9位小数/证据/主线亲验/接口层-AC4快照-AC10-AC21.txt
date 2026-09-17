@@ -1,0 +1,30 @@
+# 2026-09-17 01:45:56 PDT 主线亲验（8096 临时后端 → cpq_db_0724）
+## AC-4 快照
+ material_no | element_code |  element_price   
+-------------+--------------+------------------
+ S3110520422 | Cu           | 101.139210000000
+ S3120011203 | Cu           | 101.139210000000
+ S3120011203 | Zn           |  24.169470000000
+(3 rows)
+
+## AC-10 POST price="3.1234567895"
+{"elementCode":"Cu","elementName":"铜","priceDate":"2020-09-11","sourceId":"56c41905-b695-4675-ab3b-ae0b37d0f2e9","sourceName":"TEST-PM-SRC-A","sourceStatus":"ACTIVE","price":"3.12345679","currency":"CNY","priceUnit":"kg","operatorName":"系统管理员","updatedAt":"2026-09-17T08:45:56.859474Z","id":"1e0c840c-ab04-4a75-80ec-1820645472f9","fetchStatus":"MANUAL"}
+HTTP 201
+db after POST|3.123456790000
+## AC-10 PUT price="4.0000000004"
+{"elementCode":"Cu","elementName":"铜","priceDate":"2020-09-11","sourceId":"56c41905-b695-4675-ab3b-ae0b37d0f2e9","sourceName":"TEST-PM-SRC-A","sourceStatus":"ACTIVE","price":"4","currency":"CNY","priceUnit":"kg","operatorName":"系统管理员","updatedAt":"2026-09-17T08:45:57.238673Z","id":"1e0c840c-ab04-4a75-80ec-1820645472f9","fetchStatus":"MANUAL"}
+HTTP 200
+db after PUT|4.000000000000
+## AC-21 prices/history snapshot 类型
+UPDATE Cu 铜 · TEST-PM-SRC-A · 2020-09-11 price= '4' str
+CREATE Cu 铜 · TEST-PM-SRC-A · 2020-09-11 price= '3.12345679' str
+DELETE Cu 铜 · TEST-PM-SRC-A · 2020-09-10 price= '3.123456788' str
+DELETE Cu 铜 · TEST-PM-SRC-A · 2020-09-09 price= '101.13922' str
+DELETE Ni 镍 · TEST-PM-SRC-A · 2020-09-09 price= '2.000000001' str
+## AC-21 strategies/history snapshot 类型（CUST-0729-QA）
+DELETE 元素例外 · Zn 锌 factor= '1.123456788' str premium= '0.000000002' str
+UPDATE 元素例外 · Zn 锌 factor= '1.123456788' str premium= '0.000000002' str
+CREATE 元素例外 · Zn 锌 factor= '1.123456789' str premium= '0.000000002' str
+## cleanup
+DELETE 204
+TEST-PM-SRC-A rows|0

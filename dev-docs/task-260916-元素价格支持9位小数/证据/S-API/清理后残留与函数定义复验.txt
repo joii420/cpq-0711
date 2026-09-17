@@ -1,0 +1,11 @@
+采样 2026-09-16 23:26:55 PDT
+ customer | source | strategy | strategy_log | version | pa_strategy | pa_log | job | review | vref 
+----------+--------+----------+--------------+---------+-------------+--------+-----+--------+------
+        0 |      0 |        0 |            0 |       0 |           0 |      0 |   0 |      0 |    0
+(1 row)
+
+              round_expr_after_rx1              
+------------------------------------------------
+ ROUND(agg.raw_value * w.factor + w.premium, 9)
+(1 row)
+

@@ -1,0 +1,12 @@
+-- after 2026-09-17T07:20:31.371Z
+SELECT element_code, unit_price FROM f_customer_element_price('CUST-0004', DATE '2026-09-16')
+SET
+ element_code |   unit_price    
+--------------+-----------------
+ Ni           |   105.000000000
+ Cu           |   101.139210000
+ Zn           |    24.169470000
+ Ag           | 28892.500000000
+ 白银         | 12345.000000000
+(5 rows)
+

@@ -1,0 +1,8 @@
+-- after 2026-09-17T07:20:31.623Z
+SELECT unit_price FROM f_customer_element_price('CUST-0001', DATE '2026-09-16') WHERE element_code = 'Cu'
+SET
+  unit_price   
+---------------
+ 171.367052000
+(1 row)
+

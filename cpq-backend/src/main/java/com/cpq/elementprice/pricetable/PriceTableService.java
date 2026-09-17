@@ -1,9 +1,10 @@
 package com.cpq.elementprice.pricetable;
 
+import com.cpq.common.PrecisionPolicy;
 import com.cpq.common.dto.PageResult;
+import com.cpq.elementprice.SnapshotDecimals;
 import com.cpq.common.exception.BusinessException;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -15,7 +16,6 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -36,7 +36,6 @@ import java.util.stream.Collectors;
 public class PriceTableService {
 
     private static final long MAX_MATRIX_SPAN_DAYS = 90;
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Inject
     EntityManager em;
@@ -483,18 +482,16 @@ public class PriceTableService {
         JsonNode v = n.get(field);
         if (v == null || v.isNull()) return null;
         try {
-            return new BigDecimal(v.asText()).setScale(4, RoundingMode.HALF_UP).toPlainString();
+            // task-260916 B-5：最多 9 位、去尾零（原 setScale(4)）；该文本同时用于「单价是否变化」判断
+            return PrecisionPolicy.toPlainDecimalString(PrecisionPolicy.roundElementPrice(new BigDecimal(v.asText())));
         } catch (Exception e) {
             return v.asText();
         }
     }
 
+    /** task-260916 B-11：精确解析（不经 double），{@code price} 转规范十进制字符串。 */
     private JsonNode parseSnapshot(String json) {
-        try {
-            return MAPPER.readTree(json);
-        } catch (Exception e) {
-            return MAPPER.createObjectNode();
-        }
+        return SnapshotDecimals.parse(json, "price");
     }
 
     private Map<String, String> loadElementNamesForCodes(List<String> codes) {

@@ -1,0 +1,6 @@
+{
+  "crashed": true,
+  "trimErr": true,
+  "pageErrors": [],
+  "bodyHead": "Unexpected Application Error!\nvalue.trim is not a function\nTypeError: value.trim is not a function\n    at toDecimal (http://localhost:5174/src/utils/precision.ts:25:21)\n    at formatDisplayDecimal (http://localhost:5174/src/utils/precision.ts:49:19)\n    at renderSnapshotSummary (http://localhost:5174/src/pages/pricing/element-strategy/StrategyHistoryDrawer.tsx:105:73)\n    at renderContent (http://localhost:5174/src/pages/pricing/element-strategy/StrategyHistoryDrawer.tsx:163:15)\n    at render (http://localhost:5174/src/pages/pricing/element-strategy/StrategyHistoryDrawer.tsx:402:25)\n    at http://localhost:5174/node_modules/.vite/deps/antd.js?v=a8e0814c:66084:23\n    at useMemo (http://localhost:5174/node_modules/.vite/deps/ref-CUuqjz9F.js?v=814a5fbe:3655:28)\n    at useCellRender (http://localhost:5174/node_modules/.vite/deps/antd.js?v=a8e0814c:66078:9)\n    at Cell (http://localhost:5174/node_modules/.vite/deps/antd.js?v=a8e0814c:66148:39)\n    at Object.react_stack_bottom_frame (http://localhost:5174/node_modules/.vite/deps/client-gVb759SM.js?v=814a5fbe:12868:12)\n\n💿 Hey developer 👋\n\nYou can provide a way better UX than this when your app throws errors by providing your own ErrorBoundary or errorElement prop on your route."
+}
