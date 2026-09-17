@@ -74,7 +74,7 @@
 ## 4. 执行前提与环境口径（S-UI / S-全局）
 
 1. **迁移已先行**（2026-09-16 修订，D-10）：V445 已单独并入 master（`ae6dae0f`），开发库于 23:04 PDT 由主仓 8081 应用（`success=t`，函数 md5 `eee7891ed23fa2f72115af73b710607a`）；RX-2 改前取值已于 22:32 / 22:48 落盘。
-   ~~原写「主仓代码不认识新迁移，Flyway 视为 future 版本忽略，不影响主仓 8081 启动」~~ —— **这是主线写错的**：本项目 `quarkus.flyway.out-of-order=true`，不含迁移文件的代码连库即 `FlywayValidateException: Detected applied migration not resolved locally`（后端 A/B 实证，`证据/主线/后端AB-基线连测试库启动失败-ab-base.log`）。
+   ~~原写「主仓代码不认识新迁移，Flyway 视为 future 版本忽略，不影响主仓 8081 启动」~~ —— **这是主线写错的**：本项目 `quarkus.flyway.out-of-order=true`，不含迁移文件的代码连库即 `FlywayValidateException: Detected applied migration not resolved locally`（后端 A/B 实证，`证据/主线/后端AB-基线连测试库启动失败-ab-base.txt`）。
    **页面层改前基线**（AC-16 涨跌列、AC-17 金额列、AC-12~15 的 4 位显示）：允许 S-UI 以 `SUI_PHASE=before` 在主仓 5174/8081 **只读**跑 spec-2（主仓前端与 Java 仍是改前代码，这些显示不受 V445 影响）；spec-1 的 SQL 改前值以 RX-2 为准（V445 已应用，不能再复现）。
 2. **临时服务**：后端 `cd <worktree>/cpq-backend && ./mvnw quarkus:dev -Dquarkus.http.port=<临时端口> -Ddebug=false`；前端 `VITE_PORT=<临时端口> VITE_API_TARGET=http://localhost:<后端临时端口> npx vite`；Playwright `PW_BASE_URL=http://localhost:<前端临时端口>`。🚫 不占 8081 / 5174。端口被占会自动换号，**以日志里的实际端口为准**，并用一个业务端点验明正身（后端 401、前端 200）。
 3. **开跑前**采样确认没有别的 playwright 在跑：`pgrep -f "node.*[p]laywright test"`（决策台账 `playwright.config.ts` 条：`global-setup` 会写开发库 `user` 表）。
