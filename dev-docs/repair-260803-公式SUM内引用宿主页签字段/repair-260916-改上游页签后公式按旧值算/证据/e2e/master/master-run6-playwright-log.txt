@@ -1,0 +1,601 @@
+[global-setup] Saved auth state for admin → /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/.auth/admin.json
+[global-setup] Saved auth state for alice → /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/.auth/alice.json
+[global-setup] Saved auth state for bob → /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/.auth/bob.json
+
+Running 3 tests using 1 worker
+
+[2026-09-17T05:27:19.961Z] Q′ 建立 status=200 id=c4ba2928-7a5d-4c42-86c6-852d495cabac no=QT-20260916-0889
+[2026-09-17T05:27:20.085Z] Q′ line_item=6eafbdb6-1955-426c-b6b9-9cd3badd8fb5
+[check] E-0 T0 输入守恒 Ni: expected=105 actual=105 PASS
+[check] E-0 T0 输入守恒 Cu: expected=101.1392 actual=101.1392 PASS
+[check] E-0 T0 输入守恒 Zn: expected=24.1695 actual=24.1695 PASS
+[check] E-0 T0 输入守恒 Ag: expected=28892.5 actual=28892.5 PASS
+[check] E-0 T0 输入守恒 税率: expected=1.13 actual=1.13 PASS
+[check] E-0 T0 输入守恒 加工费小计: expected=127.5 actual=127.5 PASS
+[check] E-0 T0 00257.来料加工费: expected=170.404 actual=170.404 PASS
+[check] E-0 T0 00257.材料成本: expected=0.002418226 actual=0.002418226 PASS
+[check] E-0 T0 00256.来料损耗率: expected=5 actual=5 PASS
+[check] E-0 T0 00256.材料成本: expected=0.015491845 actual=0.015491845 PASS
+[check] E-0 T0 S3110520422.材料成本: expected=0.059189199 actual=0.059189199 PASS
+[check] E-0 T0 00255.材料成本: expected=1.437983994 actual=1.437983994 PASS
+[check] E-0 T0 00144.材料成本: expected=0.463735546 actual=0.463735546 PASS
+[check] E-0 T0 ⚠ 个数: expected=0 actual=0 PASS
+[2026-09-17T05:27:34.114Z] 编辑 来料其他费用 (00257,来料加工费).费用: 170.404 -> 200
+[2026-09-17T05:27:34.497Z] E-1 读值时刻=2026-09-17T05:27:34.497Z quote-card-edit 响应是否已返回=false
+[check] E-1 AC-1 00257.来料加工费: expected=200 actual=200 PASS
+[check] E-1 AC-1 00257.材料成本: expected=0.002678099 actual=0.002418226 DIFF (修复前对照=0.002418226 吻合)
+[check] E-1 AC-1 S3110520422.材料成本: expected=0.059194397 actual=0.059189199 DIFF (修复前对照=0.059189199 吻合)
+[check] E-1 AC-1 00255.材料成本: expected=1.437983994 actual=1.437983994 PASS
+[check] E-1 AC-1 00144.材料成本: expected=0.463735546 actual=0.463735546 PASS
+[check] E-1 AC-1 00256.材料成本: expected=0.015491845 actual=0.015491845 PASS
+[2026-09-17T05:27:34.941Z] E-2 quote-card-edit PUT status=200 响应到达=2026-09-17T05:27:34.941Z 请求体={"componentId":"57554055-0896-4cc8-be98-65e45b0a5985","rowKey":"S3110520422||00257||来料加工费","fieldName":"费用","value":"200"}
+[2026-09-17T05:27:35.000Z] E-2 响应刚到时（未等 3s）物料：00257.材料成本=⚠ S3110520422.材料成本=⚠ ⚠=2
+[2026-09-17T05:27:38.431Z] E-2 响应返回+3s 仍停在物料：⚠=2 ["S3110520422.材料成本: 前后端算值不一致\n前端 0.059189199486    输入：parent_no=S3120011203  hf_part_no=S3110520422  material_no=S3110520422  单位=g/pcs  料号=S3110520422  row_index=1  材料名=料号2  产出类型=银点类  回收成本=0  材料净重=0.111234705228  材料成本=0  组成数量=2  销售料号=S3120011203  来料加工费=0  来料回收费=1  来料损耗率=0  来料财务费=1  材料损耗成本=0  铆钉额外费用=0\n后端 0.059194397    输入：单位=g/pcs  料号=S3110520422  材料名=料号2  产出类型=银点类  回收成本=0  材料净重=0.111234705228  材料成本=0.059194397  组成数量=2  销售料号=S3120011203  来料加工费=0  来料回收费=1  来料损耗率=0  来料财务费=1  材料损耗成本=0  铆钉额外费用=127.5","00257.材料成本: 前后端算值不一致\n前端 0.002418226427    输入：parent_no=S3110520422  hf_part_no=00257  material_no=00257  单位=g/pcs  料号=00257  row_index=5  材料名=羰基镍粉  产出类型=银点类  回收成本=0  材料净重=0.111234705228  材料成本=0  组成数量=2  销售料号=S3110520422  来料加工费=170.404  来料回收费=0  来料损耗率=0  来料财务费=0  材料损耗成本=0  铆钉额外费用=0  材料占比（%）=4.46\n后端 0.002678099    输入：单位=g/pcs  料号=00257  材料名=羰基镍粉  产出类型=银点类  回收成本=0  材料净重=0.111234705228  材料成本=0.002678099  组成数量=2  销售料号=S3110520422  来料加工费=200  来料回收费=0  来料损耗率=0  来料财务费=0  材料损耗成本=0  铆钉额外费用=127.5  材料占比（%）=4.46"]
+[check] E-2 AC-2 ⚠ 个数: expected=0 actual=2 DIFF (修复前对照=2 吻合)
+[check] E-2 AC-2 6 行 × 8 公式列全部为数字: expected=[] actual=["S3110520422.材料成本=⚠","00257.材料成本=⚠"] DIFF
+[2026-09-17T05:27:41.797Z] E-2 ⚠ 悬停提示（title）: ["前后端算值不一致\n前端 0.059189199486    输入：parent_no=S3120011203  hf_part_no=S3110520422  material_no=S3110520422  单位=g/pcs  料号=S3110520422  row_index=1  材料名=料号2  产出类型=银点类  回收成本=0  材料净重=0.111234705228  材料成本=0  组成数量=2  销售料号=S3120011203  来料加工费=0  来料回收费=1  来料损耗率=0  来料财务费=1  材料损耗成本=0  铆钉额外费用=0\n后端 0.059194397    输入：单位=g/pcs  料号=S3110520422  材料名=料号2  产出类型=银点类  回收成本=0  材料净重=0.111234705228  材料成本=0.059194397  组成数量=2  销售料号=S3120011203  来料加工费=0  来料回收费=1  来料损耗率=0  来料财务费=1  材料损耗成本=0  铆钉额外费用=127.5","前后端算值不一致\n前端 0.002418226427    输入：parent_no=S3110520422  hf_part_no=00257  material_no=00257  单位=g/pcs  料号=00257  row_index=5  材料名=羰基镍粉  产出类型=银点类  回收成本=0  材料净重=0.111234705228  材料成本=0  组成数量=2  销售料号=S3110520422  来料加工费=170.404  来料回收费=0  来料损耗率=0  来料财务费=0  材料损耗成本=0  铆钉额外费用=0  材料占比（%）=4.46\n后端 0.002678099    输入：单位=g/pcs  料号=00257  材料名=羰基镍粉  产出类型=银点类  回收成本=0  材料净重=0.111234705228  材料成本=0.002678099  组成数量=2  销售料号=S3110520422  来料加工费=200  来料回收费=0  来料损耗率=0  来料财务费=0  材料损耗成本=0  铆钉额外费用=127.5  材料占比（%）=4.46"]；以「前后端算值不一致」开头=true,true
+[check] E-2 AC-2 00257.来料加工费: expected=200 actual=200 PASS
+[check] E-2 AC-2 00257.材料成本: expected=0.002678099 actual=⚠ DIFF (修复前对照=⚠ 吻合)
+[check] E-2 AC-2 S3110520422.材料成本: expected=0.059194397 actual=⚠ DIFF (修复前对照=⚠ 吻合)
+[2026-09-17T05:27:42.443Z] E-3 DB 物料 formulaResults 00257={"回收成本":"0","材料成本":"0.002678099","来料加工费":"200","来料回收费":"0","来料损耗率":"0","来料财务费":"0","材料损耗成本":"0","铆钉额外费用":"127.5"} S3110520422={"回收成本":"0","材料成本":"0.059194397","来料加工费":"0","来料回收费":"1","来料损耗率":"0","来料财务费":"1","材料损耗成本":"0","铆钉额外费用":"127.5"}
+[check] E-3 AC-3 DB 00257.材料成本: expected=0.002678099 actual=0.002678099 PASS
+[check] E-3 AC-3 DB S3110520422.材料成本: expected=0.059194397 actual=0.059194397 PASS
+[check] E-3 AC-3 页面=DB 00257.材料成本: expected=0.002678099 actual=⚠ DIFF
+[check] E-3 AC-3 页面=DB S3110520422.材料成本: expected=0.059194397 actual=⚠ DIFF
+[check] E-3 AC-3 输入守恒 Ni: expected=105 actual=105 PASS
+[check] E-3 AC-3 输入守恒 Cu: expected=101.1392 actual=101.1392 PASS
+[check] E-3 AC-3 输入守恒 Zn: expected=24.1695 actual=24.1695 PASS
+[check] E-3 AC-3 输入守恒 Ag: expected=28892.5 actual=28892.5 PASS
+[check] E-3 AC-3 输入守恒 税率: expected=1.13 actual=1.13 PASS
+[check] E-3 AC-3 输入守恒 加工费小计: expected=127.5 actual=127.5 PASS
+[2026-09-17T05:27:43.753Z] 编辑 来料其他费用 (00256,来料损耗率).比例: 5 -> 10
+[2026-09-17T05:27:44.142Z] E-4.1 读值时 quote-card-edit 响应是否已返回=false
+[check] E-4.1 AC-4 00256.来料损耗率: expected=10 actual=10 PASS
+[check] E-4.1 AC-4 00256.材料成本: expected=0.016191348 actual=0.015491845 DIFF (修复前对照=0.015491845 吻合)
+[check] E-4.1 AC-4 S3110520422.材料成本: expected=0.059208387 actual=⚠ DIFF
+[check] E-4.1 AC-4 00257.材料成本: expected=0.002678099 actual=⚠ DIFF
+[2026-09-17T05:27:44.590Z] E-4.1 响应刚到时 00256.材料成本=⚠ ⚠=3 ["S3110520422.材料成本: 前后端算值不一致\n前端 0.059189199486    输入：parent_no=S3120011203  hf_part_no=S3110520422  material_no=S3110520422  单位=g/pcs  料号=S3110520422  row_index=1  材料名=料号2  产出类型=银点类  回收成本=0  材料净重=0.111234705228  材料成本=0  组成数量=2  销售料号=S3120011203  来料加工费=0  来料回收费=1  来料损耗率=0  来料财务费=1  材料损耗成本=0  铆钉额外费用=0\n后端 0.059208387    输入：单位=g/pcs  料号=S3110520422  材料名=料号2  产出类型=银点类  回收成本=0  材料净重=0.111234705228  材料成本=0.059208387  组成数量=2  销售料号=S3120011203  来料加工费=0  来料回收费=1  来料损耗率=0  来料财务费=1  材料损耗成本=0  铆钉额外费用=127.5","00256.材料成本: 前后端算值不一致\n前端 0.015491844826    输入：parent_no=S3110520422  hf_part_no=00256  material_no=00256  单位=g/pcs  料号=00256  row_index=4  材料名=TU2丝  产出类型=银点类  回收成本=0  材料净重=0.111234705228  材料成本=0  组成数量=2  销售料号=S3110520422  来料加工费=5.8  来料回收费=0  来料损耗率=5  来料财务费=0  材料损耗成本=0  铆钉额外费用=0  材料占比（%）=70.26\n后端 0.016191348    输入：单位=g/pcs  料号=00256  材料名=TU2丝  产出类型=银点类  回收成本=0  材料净重=0.111234705228  材料成本=0.016191348  组成数量=2  销售料号=S3110520422  来料加工费=5.8  来料回收费=0  来料损耗率=10  来料财务费=0  材料损耗成本=0  铆钉额外费用=127.5  材料占比（%）=70.26","00257.材料成本: 前后端算值不一致\n前端 0.002418226427    输入：parent_no=S3110520422  hf_part_no=00257  material_no=00257  单位=g/pcs  料号=00257  row_index=5  材料名=羰基镍粉  产出类型=银点类  回收成本=0  材料净重=0.111234705228  材料成本=0  组成数量=2  销售料号=S3110520422  来料加工费=170.404  来料回收费=0  来料损耗率=0  来料财务费=0  材料损耗成本=0  铆钉额外费用=0  材料占比（%）=4.46\n后端 0.002678099    输入：单位=g/pcs  料号=00257  材料名=羰基镍粉  产出类型=银点类  回收成本=0  材料净重=0.111234705228  材料成本=0.002678099  组成数量=2  销售料号=S3110520422  来料加工费=200  来料回收费=0  来料损耗率=0  来料财务费=0  材料损耗成本=0  铆钉额外费用=127.5  材料占比（%）=4.46"]
+[2026-09-17T05:27:44.591Z] E-4.1 quote-card-edit status=200 请求体={"componentId":"57554055-0896-4cc8-be98-65e45b0a5985","rowKey":"S3110520422||00256||来料损耗率","fieldName":"比例","value":"10"}
+[check] E-4.1 AC-4 ⚠ 个数（响应后+3s）: expected=0 actual=3 DIFF
+[2026-09-17T05:27:49.493Z] E-5 PUT draft status=200 body.len=6317
+[2026-09-17T05:27:51.912Z] E-5 请求体行项: lineItems=0 added=0 modified=1; quoteExcelValues={"rows":[{"col_1":"1.978818811012","col_2":"0.3177663574","col_3":"1.804467172","__hfPartNo":"S3120011203","_lineItemId":"6eafbdb6-1955-426c-b6b9-9cd3badd8fb5"}]}
+[check] E-5 AC-12 请求体含物料页签 componentData: expected=1 actual=1 PASS
+[check] E-5 AC-12 00256 行恰好 1 条: expected=1 actual=1 PASS
+[check] E-5 AC-12 00257 行恰好 1 条: expected=1 actual=1 PASS
+[check] E-5 AC-12 00256 行含「材料成本」键: expected=含材料成本 actual=["单位","料号","row_index","材料名","产出类型","回收成本","材料净重","材料成本","组成数量","销售料号","来料加工费","来料回收费","来料损耗率","来料财务费","材料损耗成本","铆钉额外费用","材料占比（%）"] PASS
+[check] E-5 AC-12 00256 行含「来料损耗率」键: expected=含来料损耗率 actual=["单位","料号","row_index","材料名","产出类型","回收成本","材料净重","材料成本","组成数量","销售料号","来料加工费","来料回收费","来料损耗率","来料财务费","材料损耗成本","铆钉额外费用","材料占比（%）"] PASS
+[check] E-5 AC-12 00256.材料成本(9位舍入): expected=0.016191348 actual=0.015491845 DIFF (修复前对照=0.015491845 吻合)
+[check] E-5 AC-12 00256.来料损耗率: expected=10 actual=10 PASS
+[check] E-5 AC-12 00257.来料加工费: expected=200 actual=200 PASS
+[check] E-5 AC-12 00257.材料成本(9位舍入): expected=0.002678099 actual=0.002418226 DIFF
+[check] E-4.2 AC-4 00256.来料损耗率: expected=10 actual=10 PASS
+[check] E-4.2 AC-4 00256.材料成本: expected=0.016191348 actual=⚠ DIFF
+[check] E-4.2 AC-4 S3110520422.材料成本: expected=0.059208387 actual=⚠ DIFF
+[check] E-4.2 AC-4 00257.材料成本: expected=0.002678099 actual=⚠ DIFF
+[check] E-4.2 AC-4 ⚠ 个数: expected=0 actual=3 DIFF
+[check] E-4.3 AC-4 00256.来料损耗率: expected=10 actual=10 PASS
+[check] E-4.3 AC-4 00256.材料成本: expected=0.016191348 actual=0.016191348 PASS
+[check] E-4.3 AC-4 S3110520422.材料成本: expected=0.059208387 actual=0.059208387 PASS
+[check] E-4.3 AC-4 00257.材料成本: expected=0.002678099 actual=0.002678099 PASS
+[check] E-4.3 AC-4 ⚠ 个数: expected=0 actual=0 PASS
+[2026-09-17T05:28:08.788Z] 编辑 来料其他费用 (00257,来料加工费).费用: 200 -> 0
+[2026-09-17T05:28:09.165Z] E-6 读值时 quote-card-edit 响应是否已返回=false
+[check] E-6 AC-5 00257.来料加工费: expected=0 actual=0 PASS
+[check] E-6 AC-5 00257.材料成本: expected=0.000921968 actual=0.002678099 DIFF (修复前对照=0.002678099 吻合)
+[check] E-6 AC-5 S3110520422.材料成本: expected=0.059173264 actual=0.059208387 DIFF
+[check] E-6 AC-5 00256.材料成本: expected=0.016191348 actual=0.016191348 PASS
+[2026-09-17T05:28:09.610Z] E-6 quote-card-edit status=200 请求体={"componentId":"57554055-0896-4cc8-be98-65e45b0a5985","rowKey":"S3110520422||00257||来料加工费","fieldName":"费用","value":"0"}
+[check] E-6 AC-5 ⚠ 个数（响应后切走再回）: expected=0 actual=2 DIFF
+[2026-09-17T05:28:15.545Z] E-6 物料 材料成本列 6 格显示值=["0","⚠","0.463735546","1.437983994","0.016191348","⚠"]
+[2026-09-17T05:28:17.743Z] E-7 PUT draft status=200
+[2026-09-17T05:28:22.265Z] E-7 DB quote_excel_values|subtotal|quote_values_at = {"rows": [{"col_1": "1.97979737357", "col_2": "0.3177663574", "col_3": "1.805445734", "__hfPartNo": "S3120011203", "_lineItemId": "6eafbdb6-1955-426c-b6b9-9cd3badd8fb5"}]}|1.803654481000|2026-09-17 05:28:18.905603+00
+[check] E-7 AC-6 quote_excel_values.col_1: expected=1.978006120 actual=1.979797374 DIFF
+[check] E-7 AC-6 col_1 = 页面材料成本列 6 格之和: expected=<不可求和:⚠> actual=1.979797374 DIFF
+[check] E-7 AC-6 col_1 = subtotalByColumn.材料成本: expected=1.978006120 actual=1.979797374 DIFF
+[check] E-7 AC-6 col_3 = quotation_line_item.subtotal: expected=1.803654481 actual=1.805445734 DIFF
+[check] E-7 AC-6 输入守恒 Ni: expected=105 actual=105 PASS
+[check] E-7 AC-6 输入守恒 Cu: expected=101.1392 actual=101.1392 PASS
+[check] E-7 AC-6 输入守恒 Zn: expected=24.1695 actual=24.1695 PASS
+[check] E-7 AC-6 输入守恒 Ag: expected=28892.5 actual=28892.5 PASS
+[check] E-7 AC-6 输入守恒 税率: expected=1.13 actual=1.13 PASS
+[check] E-7 AC-6 输入守恒 加工费小计: expected=127.5 actual=127.5 PASS
+[2026-09-17T05:28:23.173Z] E-7 export status=200 content-type=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8 bytes=3531 -> /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/test-results/repair260916/master/E-7-AC-6-export-QT-20260916-0889.xlsx
+[2026-09-17T05:28:23.181Z] E-7 导出内容 sheet=Excel View rows=[["col_1","col_2","col_3"],["1.979797374","0.317766357","1.805445734"]]
+[check] E-7 AC-6 导出含材料成本/产品单价列且有数据行: expected=col_1/col_3 + ≥1 数据行 actual=hdr=["col_1","col_2","col_3"] rows=2 PASS
+[check] E-7 AC-6 导出只有 1 个数据行（Q′ 单产品）: expected=1 actual=1 PASS
+[check] E-7 AC-6 导出 材料成本 = col_1(9位): expected=1.979797374 actual=1.979797374 PASS
+[check] E-7 AC-6 导出 产品单价 = col_3(9位): expected=1.805445734 actual=1.805445734 PASS
+[check] E-7 AC-6 导出 材料成本 = 1.978006120: expected=1.978006120 actual=1.979797374 DIFF
+[check] E-7 AC-6 导出 产品单价 = subtotal: expected=1.803654481 actual=1.805445734 DIFF
+[check] E-8 AC-7 00257.材料成本: expected=0.000921968 actual=0.000921968 PASS
+[check] E-8 AC-7 00256.材料成本: expected=0.016191348 actual=0.016191348 PASS
+[check] E-8 AC-7 S3110520422.材料成本: expected=0.059173264 actual=0.059173264 PASS
+[check] E-8 AC-7 ⚠ 个数: expected=0 actual=0 PASS
+[2026-09-17T05:29:05.029Z] E-9 核价单页签=["产品","BOM","材质元素","加工费"] 公式格总数=1 其中非0数字格=0（样本鉴别力参考，AC-8 本身只要求非空）
+[check] E-9 AC-8 非空（至少 1 个页签有 ≥1 个公式值）: expected=≥1 actual=公式格总数=1 PASS
+[2026-09-17T05:29:05.838Z] E-12 DELETE Q′ c4ba2928-7a5d-4c42-86c6-852d495cabac (QT-20260916-0889) -> 200
+[2026-09-17T05:29:05.936Z] E-12 删除后 quotation 表该 id 行数=0
+[archive] /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/test-results/repair260916/master -> /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/dev-docs/repair-260803-公式SUM内引用宿主页签字段/repair-260916-改上游页签后公式按旧值算/证据/e2e/master
+  ✘  1 [chromium] › e2e/repair260916-bfield-stale.spec.ts:278:1 › Q′ 序列：E-0 ~ E-9（AC-1~AC-8、AC-12）+ E-12 清理 (1.8m)
+[2026-09-17T05:29:16.379Z] E-10 0874 产品.管理费 = {"text":"⚠","isErr":true,"title":"[b3445979-e3d6-4cdb-ab2d-53758b5f2eb2.回收成本] 细项引用命中多行,请改用 SUM 等聚合(或引用「(总计)」)","isFormula":true}；页签 ⚠ 总数=1
+[check] E-10 AC-9 管理费显示 ⚠: expected=⚠ actual={"text":"⚠","isErr":true,"title":"[b3445979-e3d6-4cdb-ab2d-53758b5f2eb2.回收成本] 细项引用命中多行,请改用 SUM 等聚合(或引用「(总计)」)","isFormula":true} PASS
+[check] E-10 AC-9 悬停提示含「细项引用命中多行」: expected=含「细项引用命中多行」 actual=[b3445979-e3d6-4cdb-ab2d-53758b5f2eb2.回收成本] 细项引用命中多行,请改用 SUM 等聚合(或引用「(总计)」) PASS
+  ✓  2 [chromium] › e2e/repair260916-bfield-stale.spec.ts:601:1 › E-10 AC-9：0874 详情页「产品」管理费仍显示 ⚠（细项引用命中多行） (11.0s)
+[check] E-11 AC-10 0879 物料 6×8=48 格 = 库 formulaResults: expected=0 处差异 actual=[] PASS
+[check] E-11 AC-10 0879 物料 ⚠ 个数: expected=0 actual=0 PASS
+[2026-09-17T05:29:41.766Z] E-11 QT-20260914-0866 卡片=4 「BOM」公式格=42 非0数字格=10
+[check] E-11 AC-10 QT-20260914-0866 至少 1 个非 0 公式格: expected=≥1 actual=10 PASS
+[2026-09-17T05:29:56.550Z] E-11 QT-20260913-0859 卡片=5 「材质元素」公式格=15 非0数字格=11
+[check] E-11 AC-10 QT-20260913-0859 至少 1 个非 0 公式格: expected=≥1 actual=11 PASS
+[archive] /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/test-results/repair260916/master -> /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/dev-docs/repair-260803-公式SUM内引用宿主页签字段/repair-260916-改上游页签后公式按旧值算/证据/e2e/master
+  ✓  3 [chromium] › e2e/repair260916-bfield-stale.spec.ts:621:1 › E-11 AC-10：未编辑单据详情页公式值（0879 物料 / 0866 BOM / 0859 材质元素） (38.9s)
+
+
+  1) [chromium] › e2e/repair260916-bfield-stale.spec.ts:278:1 › Q′ 序列：E-0 ~ E-9（AC-1~AC-8、AC-12）+ E-12 清理 
+
+    Error: E-1 AC-1 00257.材料成本
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"0.002[7m678099[27m"[39m
+    Received: [31m"0.002[7m418226[27m"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:330:5
+
+    Error: E-1 AC-1 S3110520422.材料成本
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"0.0591[7m94397[27m"[39m
+    Received: [31m"0.0591[7m89199[27m"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:331:5
+
+    Error: E-2 AC-2 ⚠ 个数
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"0"[39m
+    Received: [31m"2"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:355:5
+
+    Error: E-2 AC-2 6 行 × 8 公式列全部为数字: expected=[] actual=["S3110520422.材料成本=⚠","00257.材料成本=⚠"]
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32mtrue[39m
+    Received: [31mfalse[39m
+
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+      57 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${actual} ${ok ? 'PASS' : 'DIFF'}`);
+    > 58 |   expect.soft(ok, `${step} ${ac} ${name}: expected=${expected} actual=${actual}`).toBe(true);
+         |                                                                                   ^
+      59 | }
+      60 |
+      61 | // ---------------------------------------------------------------- decimal helpers (string / BigInt, no JS float)
+        at checkTrue (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:58:83)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:359:5
+
+    Error: E-2 AC-2 00257.材料成本
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"0.002678099"[39m
+    Received: [31m"⚠"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:368:5
+
+    Error: E-2 AC-2 S3110520422.材料成本
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"0.059194397"[39m
+    Received: [31m"⚠"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:369:5
+
+    Error: E-3 AC-3 页面=DB 00257.材料成本
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"0.002678099"[39m
+    Received: [31m"⚠"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:378:5
+
+    Error: E-3 AC-3 页面=DB S3110520422.材料成本
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"0.059194397"[39m
+    Received: [31m"⚠"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:379:5
+
+    Error: E-4.1 AC-4 00256.材料成本
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"0.01[7m6191348[27m"[39m
+    Received: [31m"0.01[7m5491845[27m"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:391:5
+
+    Error: E-4.1 AC-4 S3110520422.材料成本
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"0.059208387"[39m
+    Received: [31m"⚠"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:392:5
+
+    Error: E-4.1 AC-4 00257.材料成本
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"0.002678099"[39m
+    Received: [31m"⚠"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:393:5
+
+    Error: E-4.1 AC-4 ⚠ 个数（响应后+3s）
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"0"[39m
+    Received: [31m"3"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:399:5
+
+    Error: E-5 AC-12 00256.材料成本(9位舍入)
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"0.01[7m6191348[27m"[39m
+    Received: [31m"0.01[7m5491845[27m"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:429:7
+
+    Error: E-5 AC-12 00257.材料成本(9位舍入)
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"0.002[7m678099[27m"[39m
+    Received: [31m"0.002[7m418226[27m"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:433:7
+
+    Error: E-4.2 AC-4 00256.材料成本
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"0.016191348"[39m
+    Received: [31m"⚠"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:444:5
+
+    Error: E-4.2 AC-4 S3110520422.材料成本
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"0.059208387"[39m
+    Received: [31m"⚠"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:445:5
+
+    Error: E-4.2 AC-4 00257.材料成本
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"0.002678099"[39m
+    Received: [31m"⚠"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:446:5
+
+    Error: E-4.2 AC-4 ⚠ 个数
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"0"[39m
+    Received: [31m"3"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:447:5
+
+    Error: E-6 AC-5 00257.材料成本
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"0.00[7m0921968[27m"[39m
+    Received: [31m"0.00[7m2678099[27m"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:477:5
+
+    Error: E-6 AC-5 S3110520422.材料成本
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"0.059[7m173264[27m"[39m
+    Received: [31m"0.059[7m208387[27m"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:478:5
+
+    Error: E-6 AC-5 ⚠ 个数（响应后切走再回）
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"0"[39m
+    Received: [31m"2"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:488:5
+
+    Error: E-7 AC-6 quote_excel_values.col_1
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"1.97[7m8006120[27m"[39m
+    Received: [31m"1.97[7m9797374[27m"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:515:5
+
+    Error: E-7 AC-6 col_1 = 页面材料成本列 6 格之和
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"<不可求和:⚠>"[39m
+    Received: [31m"1.979797374"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:517:5
+
+    Error: E-7 AC-6 col_1 = subtotalByColumn.材料成本
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"1.97[7m8006120[27m"[39m
+    Received: [31m"1.97[7m9797374[27m"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:518:5
+
+    Error: E-7 AC-6 col_3 = quotation_line_item.subtotal
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"1.80[7m36[27m544[7m81[27m"[39m
+    Received: [31m"1.80544[7m5734[27m"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:519:5
+
+    Error: E-7 AC-6 导出 材料成本 = 1.978006120
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"1.97[7m8006120[27m"[39m
+    Received: [31m"1.97[7m9797374[27m"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:539:5
+
+    Error: E-7 AC-6 导出 产品单价 = subtotal
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"1.80[7m36[27m544[7m81[27m"[39m
+    Received: [31m"1.80544[7m5734[27m"[39m
+
+      51 |   checks.push(c);
+      52 |   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${a} ${pass ? 'PASS' : 'DIFF'}${control !== undefined ? ` (修复前对照=${control} ${c.controlMatch ? '吻合' : '不吻合'})` : ''}`);
+    > 53 |   expect.soft(a, `${step} ${ac} ${name}`).toBe(norm9(a) === norm9(expected) ? a : expected);
+         |                                           ^
+      54 | }
+      55 | function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: string, expected: string) {
+      56 |   checks.push({ step, ac, name, expected, actual, pass: ok });
+        at check (/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:53:43)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-bfield-stale.spec.ts:540:5
+
+    Error Context: test-results/repair260916/repair260916-bfield-stale--f156c--9（AC-1-AC-8、AC-12）-E-12-清理-chromium/error-context.md
+
+    Error Context: test-results/repair260916/repair260916-bfield-stale--f156c--9（AC-1-AC-8、AC-12）-E-12-清理-chromium/error-context.md
+
+  1 failed
+    [chromium] › e2e/repair260916-bfield-stale.spec.ts:278:1 › Q′ 序列：E-0 ~ E-9（AC-1~AC-8、AC-12）+ E-12 清理 
+  2 passed (2.7m)

@@ -1,0 +1,16 @@
+// 一次性自证：同一 judgeAc6 对 master 轮原文应判不通过、对修复轮原文应判通过（不进仓库）
+import { judgeAc6 } from '/home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/e2e/repair260916-ac6-judge.ts';
+const cases = {
+  'master轮 QT-20260916-0889（修复前）': { col1: '1.97979737357', col3: '1.805445734', materialSubtotal: '1.97800612', lineSubtotal: '1.803654481000', exportCol1: '1.979797374', exportCol3: '1.805445734' },
+  '修复轮 QT-20260916-0891': { col1: '1.978006120752', col3: '1.803654482', materialSubtotal: '1.97800612', lineSubtotal: '1.803654481000', exportCol1: '1.978006121', exportCol3: '1.803654482' },
+};
+let bad = 0;
+for (const [k, v] of Object.entries(cases)) {
+  const r = judgeAc6(v);
+  console.log(`== ${k}: pass=${r.pass} diff1=${r.diff1} diff3=${r.diff3}`);
+  for (const it of r.items) console.log(`   ${it.pass ? 'PASS' : 'FAIL'}  ${it.name}  ${it.detail}`);
+  const want = k.startsWith('修复轮');
+  if (r.pass !== want) { bad++; console.log(`   !! 期望 pass=${want}`); }
+}
+console.log(bad ? `SELFCHECK FAILED (${bad})` : 'SELFCHECK OK: master→不通过, fix→通过');
+process.exit(bad ? 1 : 0);

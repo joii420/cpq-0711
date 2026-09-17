@@ -10,10 +10,10 @@
 |---|---|---|---|
 | POST | `/api/cpq/quotations/{id}/copy` | 测试造副本 Q′（请求体 `{}` = 同模板复制，整份继承值快照） | 无 |
 | DELETE | `/api/cpq/quotations/{id}` | 测试回收自己建的 Q′ | 无 |
-| POST | `/api/cpq/quotations/line-items/{lineItemId}/quote-card-edit` | 页面编辑单元格（请求体 `{componentId,rowKey,fieldName,value}`，值为字符串）；响应带 `quoteCardValues` / `quoteExcelValues` / `quoteValuesAt` | 无 |
+| **PUT** | `/api/cpq/quotations/line-items/{lineItemId}/quote-card-edit` | 页面编辑单元格（请求体 `{componentId,rowKey,fieldName,value}`，值为字符串）；响应带 `quoteCardValues` / `quoteExcelValues` / `quoteValuesAt`。📝 2026-09-16 更正：原写 POST，实测与代码均为 PUT（`QuotationResource` 注解、`quotationService.editQuoteCardValue` 用 `api.put`） | 无 |
 | POST | `/api/cpq/quotations/line-items/{lineItemId}/reconcile-report` | 前端对账上报（AC-2 阳性对照时可观察） | 无 |
-| PUT | `/api/cpq/quotations/{id}/draft` | 存草稿（编辑页「保存草稿」按钮触发）；请求体 `lineItems[].componentData[].rowData` 是 **JSON 字符串**（需再解析一次），AC-12 抓该请求体 | 无 |
-| GET | `/api/cpq/quotations/{id}/export-excel-view` | AC-6 下载导出文件（xlsx，表头为列标题「材料成本」「回收价格」「产品单价」） | 无 |
+| PUT | `/api/cpq/quotations/{id}/draft` | 存草稿（编辑页「保存草稿」按钮触发）；请求体的行数组是 **`added[]` / `modified[]`**（📝 2026-09-16 更正：原写 `lineItems[]`，S-E 实测），每行 `componentData[].rowData` 是 **JSON 字符串**（需再解析一次），`quoteExcelValues` 也是 JSON 字符串；AC-12 抓该请求体 | 无 |
+| GET | `/api/cpq/quotations/{id}/export-excel-view` | AC-6 下载导出文件（xlsx）。📝 2026-09-16 更正：表头是**列键** `col_1` / `col_2` / `col_3`（该模板 Excel 列配置只有 `title` 没有 `label`，导出取 `label`，缺省回落列键），分别对应「材料成本」「回收价格」「产品单价」 | 无 |
 
 ## 2. 前端模块契约（`cpq-frontend/src/pages/quotation/QuotationStep2.tsx`）
 

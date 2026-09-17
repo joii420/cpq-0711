@@ -516,6 +516,42 @@ function valuesReconcile(a: any, b: any): boolean {
 }
 
 /**
+ * repair-260916：本组件 FORMULA 字段的键集合（字段名取法 `f.name || f.key`，与两个求值入口一致）。
+ * 与某个非公式字段同名的键不计入 —— 只剔除 FORMULA 类型，其余类型的键原样保留（fronttask 约束 2）。
+ * 每次入口调用算一次，🚫 不要在逐行循环里重算。
+ */
+function collectOwnFormulaKeys(fields: ComponentDataItem['fields'] | undefined): Set<string> {
+  const formulaKeys = new Set<string>();
+  const otherKeys = new Set<string>();
+  for (const f of fields ?? []) {
+    const k = f.name || f.key || '';
+    if (!k) continue;
+    if (f.field_type === 'FORMULA') formulaKeys.add(k); else otherKeys.add(k);
+  }
+  for (const k of otherKeys) formulaKeys.delete(k);
+  return formulaKeys;
+}
+
+/**
+ * repair-260916：返回「去掉本组件公式列键」的行视图，供求值用。
+ * 前端行数据（row_data）存着上次保存时的公式结果，编辑上游页签后不会刷新，
+ * 若留在「本行原始数据」里会被 b_field / 条件公式 / 跨页签匹配当原始值优先使用 → 读到旧值。
+ * 🚫 绝不修改入参 row（渲染层同一引用）：有键要剔时返回浅拷贝；无键可剔时原样返回 row，
+ *    调用方后续若要写入必须先克隆（两处入口的克隆守卫都以本函数返回值为比较基准）。
+ */
+function withoutOwnFormulaKeys(row: Record<string, any>, ownFormulaKeys: Set<string>): Record<string, any> {
+  if (!row || ownFormulaKeys.size === 0) return row;
+  let stripped: Record<string, any> | undefined;
+  for (const k of ownFormulaKeys) {
+    if (Object.prototype.hasOwnProperty.call(row, k)) {
+      if (!stripped) stripped = { ...row };
+      delete stripped[k];
+    }
+  }
+  return stripped ?? row;
+}
+
+/**
  * Compute ALL formula fields for a single row in topological (dependency) order.
  * Returns a map of fieldName -> computed value.
  */
@@ -711,9 +747,18 @@ function computeAllFormulas(
     }
   }
 
+  // repair-260916（构造点 1/2）：求值用的「本行原始数据」先剔除本组件全部 FORMULA 字段键。
+  // 前端 row = 库 row_data，里面存着上次保存时的公式结果（存草稿所见即所得 / 后端写时算齐）；
+  // 编辑别的页签后本页签 row 不刷新 → b_field / 跨页签匹配 / 条件公式读到的是旧值（与后端分叉）。
+  // 后端 currentRowRaw = driverRow + editValues，本就不含公式结果；剔除后两端同构，
+  // b_field 键缺失自然回落 hostFieldValues（本轮算出值）。🚫 不 mutate 入参 row；
+  // 🚫 不要把本轮算出值写回这里（repair-260803 D-2 已否决：会污染内层 KSUM 匹配键）。
+  const ownFormulaKeys = collectOwnFormulaKeys(comp.fields);
+  const baseRow = withoutOwnFormulaKeys(row, ownFormulaKeys);
+
   // cross_tab match 键 b 取宿主行字段名值；裸 row 只含驱动 _ 键，需按 INPUT default_source 补字段名键。
   // 与后端 FormulaCalculator.computeRows 方案 B 对称：仅补 INPUT default_source，不动 BASIC_DATA/DATA_SOURCE。
-  let currentRowForEval: Record<string, any> = row;
+  let currentRowForEval: Record<string, any> = baseRow;
   {
     let augmented: Record<string, any> | undefined;
     for (const f of comp.fields) {
@@ -721,9 +766,9 @@ function computeAllFormulas(
           && f.default_source) {
         const k = f.name || f.key || '';
         // 仅键缺失才补 default_source；显式清空('')尊重用户置空，不补（与 computeAllFormulas 一致）。
-        if (k && row[k] == null) {
+        if (k && baseRow[k] == null) {
           const v = resolveInputDefaultSourceForRow(f, basicDataValues);
-          if (v != null) { if (!augmented) augmented = { ...row }; augmented[k] = v; }
+          if (v != null) { if (!augmented) augmented = { ...baseRow }; augmented[k] = v; }
         }
       }
     }
@@ -742,7 +787,7 @@ function computeAllFormulas(
       if (!usf) continue;
       const C = f.name || f.key || '';
       if (!C) continue;
-      const unitText = currentRowForEval[usf] ?? (row as any)[usf];
+      const unitText = currentRowForEval[usf] ?? (baseRow as any)[usf];
       const factor = factorFor(unitText == null ? '' : String(unitText));
       if (factor === '1') continue;
       if (fieldValues[C] != null) {
@@ -752,8 +797,8 @@ function computeAllFormulas(
       if (cv != null && cv !== '') {
         const value = precisionValue(cv);
         if (value != null) {
-          // 克隆后再改，绝不 mutate 入参 row（渲染同对象）
-          if (!ctClone && currentRowForEval === row) { currentRowForEval = { ...row }; ctClone = true; }
+          // 克隆后再改，绝不 mutate 入参 row（渲染同对象）；baseRow 无公式键可剔时就是入参 row 本身
+          if (!ctClone && currentRowForEval === baseRow) { currentRowForEval = { ...baseRow }; ctClone = true; }
           currentRowForEval[C] = normalizeDecimalString(toDecimal(value).times(factor));
         }
       }
@@ -777,6 +822,9 @@ function computeAllFormulas(
       let expr: any[] | undefined;
       if (ff.conditional) {
         const lookup = (col: string) => {
+          // repair-260916：本组件公式列不读原始行（row_data 里是上次保存的旧结果），
+          // 直接取本轮算出值 —— 与后端 selectConditionalExpr（currentRowRaw 不含公式列 → 落到 fieldValues）同结果。
+          if (ownFormulaKeys.has(col)) return fieldValues[col];
           const rv = (row as any)?.[col];
           if (rv != null) return rv;
           const bf = comp.fields.find(f => (f.name || f.key) === col && f.field_type === 'BASIC_DATA');
@@ -965,6 +1013,8 @@ function resolveRowForTree(
   basicDataValues: Record<string, any> | undefined,
   partNo: string | undefined,
   pathCache: DecimalContext | undefined,
+  // repair-260916：本组件公式列键集合，由 computeTabFormulasTree 每次调用算一次后传入（避免逐行重算）。
+  ownFormulaKeys: Set<string>,
 ): { fieldValues: DecimalContext; rawPresent: Record<string, boolean>; currentRowForEval: Record<string, any>;
      matchRowForEval: Record<string, any> } {
   const fieldValues: DecimalContext = {};
@@ -1055,17 +1105,22 @@ function resolveRowForTree(
     rawPresent[key] = isPresent(raw);
   }
 
+  // repair-260916（构造点 2/2，镜像 computeAllFormulas）：求值用的「本行原始数据」先剔除本组件全部
+  // FORMULA 字段键 —— row_data 里存着上次保存的公式结果，编辑上游页签后不刷新，会被 b_field 当原始值读到旧值。
+  // 剔除后 currentRowForEval / matchRowForEval / treeCtx.rowBundles[].currentRow 全部随之一致。🚫 不 mutate 入参 row。
+  const baseRow = withoutOwnFormulaKeys(row, ownFormulaKeys);
+
   // cross_tab match 键 b_field / global_variable 动态 key 取宿主行字段名值；镜像 computeAllFormulas L629-646。
-  let currentRowForEval: Record<string, any> = row;
+  let currentRowForEval: Record<string, any> = baseRow;
   {
     let augmented: Record<string, any> | undefined;
     for (const f of comp.fields) {
       if ((f.field_type === 'INPUT_TEXT' || f.field_type === 'INPUT_NUMBER' || f.field_type === 'INPUT')
           && f.default_source) {
         const k = f.name || f.key || '';
-        if (k && row[k] == null) {
+        if (k && baseRow[k] == null) {
           const v = resolveInputDefaultSourceForRow(f, basicDataValues);
-          if (v != null) { if (!augmented) augmented = { ...row }; augmented[k] = v; }
+          if (v != null) { if (!augmented) augmented = { ...baseRow }; augmented[k] = v; }
         }
       }
     }
@@ -1080,7 +1135,7 @@ function resolveRowForTree(
       if (!usf) continue;
       const C = f.name || f.key || '';
       if (!C) continue;
-      const unitText = currentRowForEval[usf] ?? (row as any)[usf];
+      const unitText = currentRowForEval[usf] ?? (baseRow as any)[usf];
       const factor = factorFor(unitText == null ? '' : String(unitText));
       if (factor === '1') continue;
       if (fieldValues[C] != null) {
@@ -1090,7 +1145,7 @@ function resolveRowForTree(
       if (cv != null && cv !== '') {
         const value = precisionValue(cv);
         if (value != null) {
-          if (!ctClone && currentRowForEval === row) { currentRowForEval = { ...row }; ctClone = true; }
+          if (!ctClone && currentRowForEval === baseRow) { currentRowForEval = { ...baseRow }; ctClone = true; }
           currentRowForEval[C] = normalizeDecimalString(toDecimal(value).times(factor));
         }
       }
@@ -1145,7 +1200,9 @@ export function computeTabFormulasTree(
   const relations = buildTreeRelations(rows as TreeRowRef[]);
 
   // 2. 全量建每行求值素材。
-  const rowBundles = rows.map(r => resolveRowForTree(comp, r.row, r.basicDataValues, partNo, pathCache));
+  // repair-260916：公式列键集合每次调用算一次，传给逐行素材构造与条件 lookup。
+  const ownFormulaKeys = collectOwnFormulaKeys(comp.fields);
+  const rowBundles = rows.map(r => resolveRowForTree(comp, r.row, r.basicDataValues, partNo, pathCache, ownFormulaKeys));
   const rawPresent = rowBundles.map(b => b.rawPresent);
 
   const treeCtx: TreeEvalContext = {
@@ -1214,6 +1271,9 @@ export function computeTabFormulasTree(
           if (colName === '是否叶子') return relations.isLeaf(cell.row) ? 1 : 0;
           return relations.isRoot(cell.row) ? 1 : 0;
         }
+        // repair-260916：本组件公式列不读原始行（row_data 里是上次保存的旧结果），直接取本轮算出值
+        // （单元格图已按条件列建行内边，此刻该值已算出）；与后端 selectConditionalExpr 同结果。
+        if (ownFormulaKeys.has(colName)) return bundle.fieldValues[colName];
         const rv = rows[cell.row].row?.[colName];
         if (rv != null) return rv;
         const bf = comp.fields.find(f => (f.name || f.key) === colName && f.field_type === 'BASIC_DATA');
