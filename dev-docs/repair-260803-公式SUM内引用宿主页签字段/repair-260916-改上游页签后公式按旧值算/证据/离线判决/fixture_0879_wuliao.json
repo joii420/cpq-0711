@@ -1,0 +1,2069 @@
+{
+ "comp": {
+  "componentId": "b3445979-e3d6-4cdb-ab2d-53758b5f2eb2",
+  "componentCode": "COMP-0002",
+  "tabName": "物料",
+  "fields": [
+   {
+    "name": "销售料号",
+    "notes": "",
+    "content": "",
+    "is_amount": false,
+    "field_type": "INPUT_TEXT",
+    "sort_order": 0,
+    "is_subtotal": false,
+    "default_source": {
+     "path": "$builder_aecf34a08407._物料BOM_销售料号",
+     "type": "BASIC_DATA"
+    }
+   },
+   {
+    "name": "料号",
+    "notes": "",
+    "content": "",
+    "is_amount": false,
+    "field_type": "INPUT_TEXT",
+    "sort_order": 1,
+    "is_subtotal": false,
+    "default_source": {
+     "path": "$builder_aecf34a08407._物料BOM_投入料号",
+     "type": "BASIC_DATA"
+    }
+   },
+   {
+    "name": "材料名",
+    "notes": "",
+    "content": "",
+    "is_amount": false,
+    "field_type": "INPUT_TEXT",
+    "sort_order": 2,
+    "is_subtotal": false,
+    "default_source": {
+     "path": "$builder_aecf34a08407._物料_材料名",
+     "type": "BASIC_DATA"
+    }
+   },
+   {
+    "name": "产出类型",
+    "notes": "",
+    "content": "",
+    "is_amount": false,
+    "field_type": "INPUT_TEXT",
+    "sort_order": 3,
+    "is_subtotal": false,
+    "default_source": {
+     "path": "$builder_aecf34a08407._物料BOM_产出料号类型",
+     "type": "BASIC_DATA"
+    }
+   },
+   {
+    "name": "组成数量",
+    "notes": "",
+    "content": "",
+    "is_amount": false,
+    "field_type": "INPUT_NUMBER",
+    "sort_order": 4,
+    "is_subtotal": false,
+    "default_source": {
+     "path": "$builder_aecf34a08407._物料BOM_组成数量",
+     "type": "BASIC_DATA"
+    }
+   },
+   {
+    "name": "材料毛重",
+    "notes": "",
+    "content": "",
+    "is_amount": false,
+    "field_type": "INPUT_NUMBER",
+    "sort_order": 5,
+    "is_subtotal": false,
+    "default_source": {
+     "path": "$builder_aecf34a08407._物料BOM_材料毛重",
+     "type": "BASIC_DATA"
+    },
+    "unit_source_field": "单位"
+   },
+   {
+    "name": "材料净重",
+    "notes": "",
+    "content": "",
+    "is_amount": false,
+    "field_type": "INPUT_NUMBER",
+    "sort_order": 6,
+    "is_subtotal": false,
+    "default_source": {
+     "path": "$builder_aecf34a08407._物料BOM_材料净重",
+     "type": "BASIC_DATA"
+    },
+    "unit_source_field": "单位"
+   },
+   {
+    "name": "单位",
+    "notes": "",
+    "content": "",
+    "is_amount": false,
+    "field_type": "INPUT_TEXT",
+    "sort_order": 7,
+    "is_subtotal": false,
+    "default_source": {
+     "path": "$builder_aecf34a08407._物料BOM_重量单位",
+     "type": "BASIC_DATA"
+    }
+   },
+   {
+    "name": "材料占比（%）",
+    "notes": "",
+    "content": "",
+    "is_amount": false,
+    "field_type": "INPUT_NUMBER",
+    "sort_order": 8,
+    "is_subtotal": false,
+    "default_source": {
+     "path": "$builder_aecf34a08407._物料BOM_材料占比（%）",
+     "type": "BASIC_DATA"
+    }
+   },
+   {
+    "name": "损耗率（%）",
+    "notes": "",
+    "content": "",
+    "is_amount": false,
+    "field_type": "INPUT_NUMBER",
+    "sort_order": 9,
+    "is_subtotal": false,
+    "default_source": {
+     "path": "$builder_aecf34a08407._物料BOM_损耗率（%）",
+     "type": "BASIC_DATA"
+    }
+   },
+   {
+    "name": "来料回收费",
+    "notes": "",
+    "content": "",
+    "is_amount": false,
+    "field_type": "FORMULA",
+    "formula_id": "f-1789459501800-b7u5uy44",
+    "is_subtotal": false,
+    "formula_name": "来料回收费取值公式"
+   },
+   {
+    "name": "来料财务费",
+    "notes": "",
+    "content": "",
+    "is_amount": false,
+    "field_type": "FORMULA",
+    "formula_id": "f-1789459589040-hbsocbhx",
+    "is_subtotal": false,
+    "formula_name": "来料财务费取值公式"
+   },
+   {
+    "name": "材料成本",
+    "notes": "",
+    "content": "",
+    "is_amount": true,
+    "field_type": "FORMULA",
+    "formula_id": "f-1789459614352-5e1mcpvo",
+    "is_subtotal": true,
+    "formula_name": "银点材料成本公式",
+    "conditional_formula": {
+     "rules": [
+      {
+       "when": {
+        "kind": "group",
+        "logic": "and",
+        "children": [
+         {
+          "op": "eq",
+          "rhs": {
+           "type": "literal",
+           "value": "非银点类"
+          },
+          "kind": "leaf",
+          "left": "产出类型"
+         },
+         {
+          "op": "eq",
+          "rhs": {
+           "type": "literal",
+           "value": "0"
+          },
+          "kind": "leaf",
+          "left": "是否根"
+         }
+        ]
+       },
+       "formula": "非银点类材料成本公式",
+       "formula_id": "f-1789460341477-uo8pwvm7"
+      },
+      {
+       "when": {
+        "kind": "group",
+        "logic": "and",
+        "children": [
+         {
+          "op": "eq",
+          "rhs": {
+           "type": "literal",
+           "value": "0"
+          },
+          "kind": "leaf",
+          "left": "是否叶子"
+         }
+        ]
+       },
+       "formula": "零件材料成本",
+       "formula_id": "f-1789460384333-q9307zf1"
+      },
+      {
+       "when": {
+        "kind": "group",
+        "logic": "and",
+        "children": [
+         {
+          "op": "eq",
+          "rhs": {
+           "type": "literal",
+           "value": "银点粉体类"
+          },
+          "kind": "leaf",
+          "left": "产出类型"
+         }
+        ]
+       },
+       "formula": "银点粉体类材料成本公式",
+       "formula_id": "f-1789460389573-ksvip9v1"
+      }
+     ],
+     "default": "银点材料成本公式",
+     "default_formula_id": "f-1789459614352-5e1mcpvo"
+    }
+   },
+   {
+    "name": "材料损耗成本",
+    "notes": "",
+    "content": "",
+    "is_amount": true,
+    "field_type": "FORMULA",
+    "formula_id": "f-1789460345885-z0agbpq3",
+    "is_subtotal": true,
+    "formula_name": "材料损耗成本"
+   },
+   {
+    "name": "来料损耗率",
+    "notes": "",
+    "content": "",
+    "is_amount": false,
+    "field_type": "FORMULA",
+    "formula_id": "f-1789460358485-7zr4sjn3",
+    "is_subtotal": false,
+    "formula_name": "来料损耗率取值公式"
+   },
+   {
+    "name": "来料加工费",
+    "notes": "",
+    "content": "",
+    "is_amount": false,
+    "field_type": "FORMULA",
+    "formula_id": "f-1789460363774-1giy4awv",
+    "is_subtotal": false,
+    "formula_name": "来料加工费取值公式"
+   },
+   {
+    "name": "回收成本",
+    "notes": "",
+    "content": "",
+    "is_amount": false,
+    "field_type": "FORMULA",
+    "formula_id": "f-1789460368429-jbsczi4g",
+    "is_subtotal": true,
+    "formula_name": "回收成本"
+   },
+   {
+    "name": "铆钉额外费用",
+    "notes": "",
+    "content": "",
+    "is_amount": false,
+    "field_type": "FORMULA",
+    "formula_id": "f-1789460372861-3iunzzgh",
+    "is_subtotal": true,
+    "formula_name": "铆钉额外费用"
+   }
+  ],
+  "formulas": [
+   {
+    "id": "f-1789459501800-b7u5uy44",
+    "name": "来料回收费取值公式",
+    "expression": [
+     {
+      "agg": "SUM",
+      "type": "cross_tab_ref",
+      "match": [],
+      "source": "57554055-0896-4cc8-be98-65e45b0a5985",
+      "target": "",
+      "predicate": {
+       "bool": "AND",
+       "children": [
+        {
+         "op": "=",
+         "lhs": {
+          "kind": "sourceField",
+          "field": "料号"
+         },
+         "rhs": {
+          "kind": "hostField",
+          "field": "料号"
+         }
+        },
+        {
+         "op": "=",
+         "lhs": {
+          "kind": "sourceField",
+          "field": "要素"
+         },
+         "rhs": {
+          "kind": "literal",
+          "value": "来料回收费"
+         }
+        }
+       ]
+      },
+      "targetExpr": [
+       {
+        "type": "field",
+        "value": "比例",
+        "source": "57554055-0896-4cc8-be98-65e45b0a5985"
+       }
+      ],
+      "sourceLabel": "来料其他费用"
+     }
+    ],
+    "result_type": "NUMBER"
+   },
+   {
+    "id": "f-1789459589040-hbsocbhx",
+    "name": "来料财务费取值公式",
+    "expression": [
+     {
+      "agg": "SUM",
+      "type": "cross_tab_ref",
+      "match": [],
+      "source": "57554055-0896-4cc8-be98-65e45b0a5985",
+      "target": "",
+      "predicate": {
+       "bool": "AND",
+       "children": [
+        {
+         "op": "=",
+         "lhs": {
+          "kind": "sourceField",
+          "field": "料号"
+         },
+         "rhs": {
+          "kind": "hostField",
+          "field": "料号"
+         }
+        },
+        {
+         "op": "=",
+         "lhs": {
+          "kind": "sourceField",
+          "field": "要素"
+         },
+         "rhs": {
+          "kind": "literal",
+          "value": "来料财务费"
+         }
+        }
+       ]
+      },
+      "targetExpr": [
+       {
+        "type": "field",
+        "value": "比例",
+        "source": "57554055-0896-4cc8-be98-65e45b0a5985"
+       }
+      ],
+      "sourceLabel": "来料其他费用"
+     }
+    ],
+    "result_type": "NUMBER"
+   },
+   {
+    "id": "f-1789459614352-5e1mcpvo",
+    "name": "银点材料成本公式",
+    "expression": [
+     {
+      "type": "bracket_open"
+     },
+     {
+      "type": "bracket_open"
+     },
+     {
+      "type": "field",
+      "value": "材料占比（%）"
+     },
+     {
+      "type": "operator",
+      "value": "/"
+     },
+     {
+      "type": "number",
+      "value": "100"
+     },
+     {
+      "type": "bracket_close"
+     },
+     {
+      "type": "operator",
+      "value": "*"
+     },
+     {
+      "type": "bracket_open"
+     },
+     {
+      "agg": "SUM",
+      "type": "cross_tab_ref",
+      "match": [
+       {
+        "a": "销售料号",
+        "b": "销售料号"
+       },
+       {
+        "a": "料号",
+        "b": "料号"
+       }
+      ],
+      "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71",
+      "target": "",
+      "targetExpr": [
+       {
+        "type": "field",
+        "value": "组成含量（%）",
+        "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71"
+       },
+       {
+        "type": "operator",
+        "value": "/"
+       },
+       {
+        "type": "number",
+        "value": "100"
+       },
+       {
+        "type": "operator",
+        "value": "*"
+       },
+       {
+        "type": "field",
+        "value": "元素单价",
+        "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71"
+       },
+       {
+        "type": "operator",
+        "value": "*"
+       },
+       {
+        "type": "bracket_open"
+       },
+       {
+        "type": "number",
+        "value": "1"
+       },
+       {
+        "type": "operator",
+        "value": "+"
+       },
+       {
+        "type": "b_field",
+        "value": "来料损耗率"
+       },
+       {
+        "type": "operator",
+        "value": "/"
+       },
+       {
+        "type": "number",
+        "value": "100"
+       },
+       {
+        "type": "bracket_close"
+       },
+       {
+        "type": "operator",
+        "value": "+"
+       },
+       {
+        "type": "b_field",
+        "value": "来料加工费"
+       }
+      ],
+      "sourceLabel": "材料成本"
+     },
+     {
+      "type": "operator",
+      "value": "/"
+     },
+     {
+      "type": "component_subtotal",
+      "label": "产品·税率",
+      "value": "税率",
+      "tab_name": "COMP-0001",
+      "component_code": "COMP-0001"
+     },
+     {
+      "type": "bracket_close"
+     },
+     {
+      "type": "bracket_close"
+     },
+     {
+      "type": "operator",
+      "value": "*"
+     },
+     {
+      "type": "field",
+      "value": "材料净重"
+     },
+     {
+      "type": "operator",
+      "value": "*"
+     },
+     {
+      "type": "field",
+      "value": "组成数量"
+     }
+    ],
+    "result_type": "NUMBER"
+   },
+   {
+    "id": "f-1789460341477-uo8pwvm7",
+    "name": "非银点类材料成本公式",
+    "expression": [
+     {
+      "type": "field",
+      "value": "材料毛重"
+     },
+     {
+      "type": "operator",
+      "value": "*"
+     },
+     {
+      "type": "bracket_open"
+     },
+     {
+      "type": "bracket_open"
+     },
+     {
+      "agg": "SUM",
+      "type": "cross_tab_ref",
+      "match": [
+       {
+        "a": "销售料号",
+        "b": "销售料号"
+       },
+       {
+        "a": "料号",
+        "b": "料号"
+       }
+      ],
+      "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71",
+      "target": "",
+      "targetExpr": [
+       {
+        "type": "field",
+        "value": "组成含量（%）",
+        "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71"
+       },
+       {
+        "type": "operator",
+        "value": "/"
+       },
+       {
+        "type": "number",
+        "value": "100"
+       },
+       {
+        "type": "operator",
+        "value": "*"
+       },
+       {
+        "type": "field",
+        "value": "税后单价",
+        "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71"
+       }
+      ],
+      "sourceLabel": "材料成本"
+     },
+     {
+      "type": "operator",
+      "value": "*"
+     },
+     {
+      "type": "bracket_open"
+     },
+     {
+      "type": "number",
+      "value": "1"
+     },
+     {
+      "type": "operator",
+      "value": "+"
+     },
+     {
+      "type": "field",
+      "value": "来料损耗率"
+     },
+     {
+      "type": "operator",
+      "value": "/"
+     },
+     {
+      "type": "number",
+      "value": "100"
+     },
+     {
+      "type": "bracket_close"
+     },
+     {
+      "type": "bracket_close"
+     },
+     {
+      "type": "operator",
+      "value": "+"
+     },
+     {
+      "type": "component_subtotal",
+      "label": "来料固定加工费·加工费",
+      "value": "加工费",
+      "tab_name": "COMP-0004",
+      "component_code": "COMP-0004"
+     },
+     {
+      "type": "operator",
+      "value": "/"
+     },
+     {
+      "type": "component_subtotal",
+      "label": "产品·税率",
+      "value": "税率",
+      "tab_name": "COMP-0001",
+      "component_code": "COMP-0001"
+     },
+     {
+      "type": "bracket_close"
+     }
+    ],
+    "result_type": "NUMBER"
+   },
+   {
+    "id": "f-1789460345885-z0agbpq3",
+    "name": "材料损耗成本",
+    "expression": [
+     {
+      "type": "field",
+      "value": "材料净重"
+     },
+     {
+      "type": "operator",
+      "value": "*"
+     },
+     {
+      "agg": "SUM",
+      "type": "cross_tab_ref",
+      "match": [
+       {
+        "a": "销售料号",
+        "b": "销售料号"
+       },
+       {
+        "a": "料号",
+        "b": "料号"
+       }
+      ],
+      "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71",
+      "target": "",
+      "targetExpr": [
+       {
+        "type": "field",
+        "value": "组成含量（%）",
+        "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71"
+       },
+       {
+        "type": "operator",
+        "value": "/"
+       },
+       {
+        "type": "number",
+        "value": "100"
+       },
+       {
+        "type": "operator",
+        "value": "*"
+       },
+       {
+        "type": "field",
+        "value": "税后单价",
+        "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71"
+       }
+      ],
+      "sourceLabel": "材料成本"
+     },
+     {
+      "type": "operator",
+      "value": "*"
+     },
+     {
+      "type": "field",
+      "value": "损耗率（%）"
+     },
+     {
+      "type": "operator",
+      "value": "/"
+     },
+     {
+      "type": "number",
+      "value": "100"
+     },
+     {
+      "type": "operator",
+      "value": "*"
+     },
+     {
+      "type": "field",
+      "value": "组成数量"
+     }
+    ],
+    "result_type": "NUMBER"
+   },
+   {
+    "id": "f-1789460350445-y52od6x5",
+    "name": "默认公式0",
+    "expression": [
+     {
+      "type": "number",
+      "value": "0"
+     }
+    ],
+    "result_type": "NUMBER"
+   },
+   {
+    "id": "f-1789460358485-7zr4sjn3",
+    "name": "来料损耗率取值公式",
+    "expression": [
+     {
+      "agg": "SUM",
+      "type": "cross_tab_ref",
+      "match": [],
+      "source": "57554055-0896-4cc8-be98-65e45b0a5985",
+      "target": "",
+      "predicate": {
+       "bool": "AND",
+       "children": [
+        {
+         "op": "=",
+         "lhs": {
+          "kind": "sourceField",
+          "field": "料号"
+         },
+         "rhs": {
+          "kind": "hostField",
+          "field": "料号"
+         }
+        },
+        {
+         "op": "=",
+         "lhs": {
+          "kind": "sourceField",
+          "field": "要素"
+         },
+         "rhs": {
+          "kind": "literal",
+          "value": "来料损耗率"
+         }
+        }
+       ]
+      },
+      "targetExpr": [
+       {
+        "type": "field",
+        "value": "比例",
+        "source": "57554055-0896-4cc8-be98-65e45b0a5985"
+       }
+      ],
+      "sourceLabel": "来料其他费用"
+     }
+    ],
+    "result_type": "NUMBER"
+   },
+   {
+    "id": "f-1789460363774-1giy4awv",
+    "name": "来料加工费取值公式",
+    "expression": [
+     {
+      "agg": "SUM",
+      "type": "cross_tab_ref",
+      "match": [],
+      "source": "57554055-0896-4cc8-be98-65e45b0a5985",
+      "target": "",
+      "predicate": {
+       "bool": "AND",
+       "children": [
+        {
+         "op": "=",
+         "lhs": {
+          "kind": "sourceField",
+          "field": "料号"
+         },
+         "rhs": {
+          "kind": "hostField",
+          "field": "料号"
+         }
+        },
+        {
+         "op": "=",
+         "lhs": {
+          "kind": "sourceField",
+          "field": "要素"
+         },
+         "rhs": {
+          "kind": "literal",
+          "value": "来料加工费"
+         }
+        }
+       ]
+      },
+      "targetExpr": [
+       {
+        "type": "field",
+        "value": "费用",
+        "source": "57554055-0896-4cc8-be98-65e45b0a5985"
+       }
+      ],
+      "sourceLabel": "来料其他费用"
+     }
+    ],
+    "result_type": "NUMBER"
+   },
+   {
+    "id": "f-1789460368429-jbsczi4g",
+    "name": "回收成本",
+    "expression": [
+     {
+      "type": "bracket_open"
+     },
+     {
+      "type": "field",
+      "value": "材料毛重"
+     },
+     {
+      "type": "operator",
+      "value": "-"
+     },
+     {
+      "type": "field",
+      "value": "材料净重"
+     },
+     {
+      "type": "bracket_close"
+     },
+     {
+      "type": "operator",
+      "value": "*"
+     },
+     {
+      "type": "bracket_open"
+     },
+     {
+      "type": "bracket_open"
+     },
+     {
+      "agg": "SUM",
+      "type": "cross_tab_ref",
+      "match": [
+       {
+        "a": "销售料号",
+        "b": "销售料号"
+       },
+       {
+        "a": "料号",
+        "b": "料号"
+       }
+      ],
+      "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71",
+      "target": "",
+      "targetExpr": [
+       {
+        "type": "field",
+        "value": "组成含量（%）",
+        "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71"
+       },
+       {
+        "type": "operator",
+        "value": "/"
+       },
+       {
+        "type": "number",
+        "value": "100"
+       },
+       {
+        "type": "operator",
+        "value": "*"
+       },
+       {
+        "type": "field",
+        "value": "税后单价",
+        "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71"
+       }
+      ],
+      "sourceLabel": "材料成本"
+     },
+     {
+      "type": "operator",
+      "value": "*"
+     },
+     {
+      "type": "bracket_open"
+     },
+     {
+      "type": "number",
+      "value": "1"
+     },
+     {
+      "type": "operator",
+      "value": "+"
+     },
+     {
+      "type": "field",
+      "value": "来料损耗率"
+     },
+     {
+      "type": "operator",
+      "value": "/"
+     },
+     {
+      "type": "number",
+      "value": "100"
+     },
+     {
+      "type": "bracket_close"
+     },
+     {
+      "type": "bracket_close"
+     },
+     {
+      "type": "operator",
+      "value": "+"
+     },
+     {
+      "type": "component_subtotal",
+      "label": "来料固定加工费·加工费",
+      "value": "加工费",
+      "tab_name": "COMP-0004",
+      "component_code": "COMP-0004"
+     },
+     {
+      "type": "operator",
+      "value": "/"
+     },
+     {
+      "type": "component_subtotal",
+      "label": "产品·税率",
+      "value": "税率",
+      "tab_name": "COMP-0001",
+      "component_code": "COMP-0001"
+     },
+     {
+      "type": "bracket_close"
+     },
+     {
+      "type": "operator",
+      "value": "*"
+     },
+     {
+      "agg": "SUM",
+      "type": "cross_tab_ref",
+      "match": [
+       {
+        "a": "销售料号",
+        "b": "销售料号"
+       },
+       {
+        "a": "料号",
+        "b": "料号"
+       }
+      ],
+      "source": "39fa3d9d-54b9-4605-93ca-dd38cbfa2831",
+      "target": "回收值",
+      "sourceLabel": "来料回收"
+     }
+    ],
+    "result_type": "NUMBER"
+   },
+   {
+    "id": "f-1789460372861-3iunzzgh",
+    "name": "铆钉额外费用",
+    "expression": [
+     {
+      "type": "bracket_open"
+     },
+     {
+      "type": "bracket_open"
+     },
+     {
+      "type": "field",
+      "value": "材料占比（%）"
+     },
+     {
+      "type": "operator",
+      "value": "/"
+     },
+     {
+      "type": "number",
+      "value": "100"
+     },
+     {
+      "type": "operator",
+      "value": "+"
+     },
+     {
+      "type": "field",
+      "value": "损耗率（%）"
+     },
+     {
+      "type": "operator",
+      "value": "/"
+     },
+     {
+      "type": "number",
+      "value": "100"
+     },
+     {
+      "type": "bracket_close"
+     },
+     {
+      "type": "operator",
+      "value": "*"
+     },
+     {
+      "agg": "SUM",
+      "type": "cross_tab_ref",
+      "match": [
+       {
+        "a": "销售料号",
+        "b": "销售料号"
+       },
+       {
+        "a": "料号",
+        "b": "料号"
+       }
+      ],
+      "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71",
+      "target": "",
+      "targetExpr": [
+       {
+        "type": "bracket_open"
+       },
+       {
+        "type": "field",
+        "value": "组成含量（%）",
+        "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71"
+       },
+       {
+        "type": "operator",
+        "value": "/"
+       },
+       {
+        "type": "number",
+        "value": "100"
+       },
+       {
+        "type": "operator",
+        "value": "*"
+       },
+       {
+        "type": "field",
+        "value": "元素单价",
+        "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71"
+       },
+       {
+        "type": "operator",
+        "value": "*"
+       },
+       {
+        "type": "bracket_open"
+       },
+       {
+        "type": "number",
+        "value": "1"
+       },
+       {
+        "type": "operator",
+        "value": "+"
+       },
+       {
+        "type": "b_field",
+        "value": "来料损耗率"
+       },
+       {
+        "type": "operator",
+        "value": "/"
+       },
+       {
+        "type": "number",
+        "value": "100"
+       },
+       {
+        "type": "bracket_close"
+       },
+       {
+        "type": "operator",
+        "value": "+"
+       },
+       {
+        "type": "b_field",
+        "value": "来料加工费"
+       },
+       {
+        "type": "bracket_close"
+       },
+       {
+        "type": "operator",
+        "value": "/"
+       },
+       {
+        "type": "component_subtotal",
+        "label": "产品·税率",
+        "value": "税率",
+        "tab_name": "COMP-0001",
+        "component_code": "COMP-0001"
+       }
+      ],
+      "sourceLabel": "材料成本"
+     },
+     {
+      "type": "operator",
+      "value": "*"
+     },
+     {
+      "type": "bracket_open"
+     },
+     {
+      "type": "field",
+      "value": "来料财务费"
+     },
+     {
+      "type": "operator",
+      "value": "+"
+     },
+     {
+      "type": "field",
+      "value": "来料回收费"
+     },
+     {
+      "type": "bracket_close"
+     },
+     {
+      "type": "operator",
+      "value": "+"
+     },
+     {
+      "type": "component_subtotal",
+      "label": "来料固定加工费·加工费",
+      "value": "加工费",
+      "tab_name": "COMP-0004",
+      "component_code": "COMP-0004"
+     },
+     {
+      "type": "bracket_close"
+     }
+    ],
+    "result_type": "NUMBER"
+   },
+   {
+    "id": "f-1789460378694-d3ffwubd",
+    "name": "银点1.0",
+    "expression": [
+     {
+      "type": "bracket_open"
+     },
+     {
+      "type": "field",
+      "value": "材料占比（%）"
+     },
+     {
+      "type": "operator",
+      "value": "/"
+     },
+     {
+      "type": "number",
+      "value": "100"
+     },
+     {
+      "type": "operator",
+      "value": "*"
+     },
+     {
+      "type": "bracket_open"
+     },
+     {
+      "agg": "SUM",
+      "type": "cross_tab_ref",
+      "match": [
+       {
+        "a": "销售料号",
+        "b": "销售料号"
+       },
+       {
+        "a": "料号",
+        "b": "料号"
+       }
+      ],
+      "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71",
+      "target": "",
+      "targetExpr": [
+       {
+        "type": "field",
+        "value": "组成含量（%）",
+        "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71"
+       },
+       {
+        "type": "operator",
+        "value": "/"
+       },
+       {
+        "type": "number",
+        "value": "100"
+       },
+       {
+        "type": "operator",
+        "value": "*"
+       },
+       {
+        "type": "field",
+        "value": "元素单价",
+        "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71"
+       },
+       {
+        "type": "operator",
+        "value": "*"
+       },
+       {
+        "type": "bracket_open"
+       },
+       {
+        "type": "number",
+        "value": "1"
+       },
+       {
+        "type": "operator",
+        "value": "+"
+       },
+       {
+        "type": "b_field",
+        "value": "来料损耗率"
+       },
+       {
+        "type": "operator",
+        "value": "/"
+       },
+       {
+        "type": "number",
+        "value": "100"
+       },
+       {
+        "type": "bracket_close"
+       },
+       {
+        "type": "operator",
+        "value": "+"
+       },
+       {
+        "type": "b_field",
+        "value": "来料加工费"
+       }
+      ],
+      "sourceLabel": "材料成本"
+     },
+     {
+      "type": "bracket_close"
+     },
+     {
+      "type": "operator",
+      "value": "/"
+     },
+     {
+      "type": "component_subtotal",
+      "label": "产品·税率",
+      "value": "税率",
+      "tab_name": "COMP-0001",
+      "component_code": "COMP-0001"
+     },
+     {
+      "type": "bracket_close"
+     },
+     {
+      "type": "operator",
+      "value": "*"
+     },
+     {
+      "type": "field",
+      "value": "材料净重"
+     },
+     {
+      "type": "operator",
+      "value": "*"
+     },
+     {
+      "type": "field",
+      "value": "组成数量"
+     }
+    ],
+    "result_type": "NUMBER"
+   },
+   {
+    "id": "f-1789460384333-q9307zf1",
+    "name": "零件材料成本",
+    "expression": [
+     {
+      "type": "bracket_open"
+     },
+     {
+      "type": "bracket_open"
+     },
+     {
+      "agg": "SUM",
+      "dir": "CHILD",
+      "type": "tree_ref",
+      "targetExpr": [
+       {
+        "type": "field",
+        "value": "材料成本"
+       }
+      ]
+     },
+     {
+      "type": "operator",
+      "value": "+"
+     },
+     {
+      "agg": "SUM",
+      "dir": "CHILD",
+      "type": "tree_ref",
+      "targetExpr": [
+       {
+        "type": "field",
+        "value": "材料损耗成本"
+       }
+      ]
+     },
+     {
+      "type": "bracket_close"
+     },
+     {
+      "type": "operator",
+      "value": "*"
+     },
+     {
+      "type": "bracket_open"
+     },
+     {
+      "type": "field",
+      "value": "来料回收费"
+     },
+     {
+      "type": "operator",
+      "value": "+"
+     },
+     {
+      "type": "field",
+      "value": "来料财务费"
+     },
+     {
+      "type": "bracket_close"
+     },
+     {
+      "type": "operator",
+      "value": "/"
+     },
+     {
+      "type": "number",
+      "value": "100"
+     },
+     {
+      "type": "bracket_close"
+     },
+     {
+      "type": "operator",
+      "value": "+"
+     },
+     {
+      "type": "component_subtotal",
+      "label": "来料固定加工费·加工费",
+      "value": "加工费",
+      "tab_name": "COMP-0004",
+      "component_code": "COMP-0004"
+     },
+     {
+      "type": "operator",
+      "value": "*"
+     },
+     {
+      "type": "field",
+      "value": "材料净重"
+     },
+     {
+      "type": "operator",
+      "value": "*"
+     },
+     {
+      "type": "field",
+      "value": "组成数量"
+     }
+    ],
+    "result_type": "NUMBER"
+   },
+   {
+    "id": "f-1789460389573-ksvip9v1",
+    "name": "银点粉体类材料成本公式",
+    "expression": [
+     {
+      "type": "bracket_open"
+     },
+     {
+      "type": "bracket_open"
+     },
+     {
+      "type": "field",
+      "value": "材料占比（%）"
+     },
+     {
+      "type": "operator",
+      "value": "/"
+     },
+     {
+      "type": "number",
+      "value": "100"
+     },
+     {
+      "type": "bracket_close"
+     },
+     {
+      "type": "operator",
+      "value": "*"
+     },
+     {
+      "type": "bracket_open"
+     },
+     {
+      "agg": "SUM",
+      "type": "cross_tab_ref",
+      "match": [
+       {
+        "a": "销售料号",
+        "b": "销售料号"
+       },
+       {
+        "a": "料号",
+        "b": "料号"
+       }
+      ],
+      "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71",
+      "target": "",
+      "targetExpr": [
+       {
+        "type": "field",
+        "value": "组成含量（%）",
+        "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71"
+       },
+       {
+        "type": "operator",
+        "value": "/"
+       },
+       {
+        "type": "number",
+        "value": "100"
+       },
+       {
+        "type": "operator",
+        "value": "*"
+       },
+       {
+        "type": "field",
+        "value": "税后单价",
+        "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71"
+       },
+       {
+        "type": "operator",
+        "value": "*"
+       },
+       {
+        "type": "bracket_open"
+       },
+       {
+        "type": "number",
+        "value": "1"
+       },
+       {
+        "type": "operator",
+        "value": "+"
+       },
+       {
+        "type": "b_field",
+        "value": "来料损耗率"
+       },
+       {
+        "type": "operator",
+        "value": "/"
+       },
+       {
+        "type": "number",
+        "value": "100"
+       },
+       {
+        "type": "bracket_close"
+       },
+       {
+        "type": "operator",
+        "value": "+"
+       },
+       {
+        "type": "b_field",
+        "value": "来料加工费"
+       }
+      ],
+      "sourceLabel": "材料成本"
+     },
+     {
+      "type": "bracket_close"
+     },
+     {
+      "type": "bracket_close"
+     },
+     {
+      "type": "operator",
+      "value": "*"
+     },
+     {
+      "type": "field",
+      "value": "材料净重"
+     },
+     {
+      "type": "operator",
+      "value": "*"
+     },
+     {
+      "type": "field",
+      "value": "组成数量"
+     }
+    ],
+    "result_type": "NUMBER"
+   }
+  ],
+  "rows": [],
+  "subtotal": "0"
+ },
+ "rows": [
+  {
+   "row": {
+    "row_index": 0,
+    "回收成本": "0",
+    "材料成本": "0",
+    "来料加工费": "0",
+    "来料回收费": "0",
+    "来料损耗率": "0",
+    "来料财务费": "0",
+    "材料损耗成本": "0",
+    "铆钉额外费用": "0"
+   },
+   "basicDataValues": {
+    "{$builder_aecf34a08407._物料_材料名}": null,
+    "{$builder_aecf34a08407._物料BOM_投入料号}": null,
+    "{$builder_aecf34a08407._物料BOM_材料净重}": null,
+    "{$builder_aecf34a08407._物料BOM_材料毛重}": null,
+    "{$builder_aecf34a08407._物料BOM_组成数量}": null,
+    "{$builder_aecf34a08407._物料BOM_重量单位}": null,
+    "{$builder_aecf34a08407._物料BOM_销售料号}": null,
+    "{$builder_aecf34a08407._物料BOM_损耗率（%）}": null,
+    "{$builder_aecf34a08407._物料BOM_产出料号类型}": null,
+    "{$builder_aecf34a08407._物料BOM_材料占比（%）}": null
+   },
+   "nodeId": "S3120011203",
+   "parentId": null,
+   "lvl": 1
+  },
+  {
+   "row": {
+    "单位": "g/pcs",
+    "料号": "S3110520422",
+    "row_index": 1,
+    "材料名": "料号2",
+    "产出类型": "银点类",
+    "回收成本": "0",
+    "材料净重": 0.111234705228,
+    "材料成本": "0",
+    "组成数量": 2,
+    "销售料号": "S3120011203",
+    "来料加工费": "0",
+    "来料回收费": "1",
+    "来料损耗率": "0",
+    "来料财务费": "1",
+    "材料损耗成本": "0",
+    "铆钉额外费用": "0"
+   },
+   "basicDataValues": {
+    "{$builder_aecf34a08407._物料_材料名}": "料号2",
+    "{$builder_aecf34a08407._物料BOM_投入料号}": "S3110520422",
+    "{$builder_aecf34a08407._物料BOM_材料净重}": 0.111234705228,
+    "{$builder_aecf34a08407._物料BOM_材料毛重}": null,
+    "{$builder_aecf34a08407._物料BOM_组成数量}": 2,
+    "{$builder_aecf34a08407._物料BOM_重量单位}": "g/pcs",
+    "{$builder_aecf34a08407._物料BOM_销售料号}": "S3120011203",
+    "{$builder_aecf34a08407._物料BOM_损耗率（%）}": null,
+    "{$builder_aecf34a08407._物料BOM_产出料号类型}": "银点类",
+    "{$builder_aecf34a08407._物料BOM_材料占比（%）}": null
+   },
+   "nodeId": "S3120011203/S3110520422",
+   "parentId": "S3120011203",
+   "lvl": 2
+  },
+  {
+   "row": {
+    "单位": "g/pcs",
+    "料号": "00144",
+    "row_index": 2,
+    "材料名": "H85",
+    "产出类型": "非银点类",
+    "回收成本": "0",
+    "材料净重": 0.4584432,
+    "材料成本": "0",
+    "材料毛重": 2.365,
+    "组成数量": 1,
+    "销售料号": "S3120011203",
+    "来料加工费": "0",
+    "来料回收费": "0",
+    "来料损耗率": "5",
+    "来料财务费": "0",
+    "材料损耗成本": "0",
+    "铆钉额外费用": "0"
+   },
+   "basicDataValues": {
+    "{$builder_aecf34a08407._物料_材料名}": "H85",
+    "{$builder_aecf34a08407._物料BOM_投入料号}": "00144",
+    "{$builder_aecf34a08407._物料BOM_材料净重}": 0.4584432,
+    "{$builder_aecf34a08407._物料BOM_材料毛重}": 2.365,
+    "{$builder_aecf34a08407._物料BOM_组成数量}": 1,
+    "{$builder_aecf34a08407._物料BOM_重量单位}": "g/pcs",
+    "{$builder_aecf34a08407._物料BOM_销售料号}": "S3120011203",
+    "{$builder_aecf34a08407._物料BOM_损耗率（%）}": null,
+    "{$builder_aecf34a08407._物料BOM_产出料号类型}": "非银点类",
+    "{$builder_aecf34a08407._物料BOM_材料占比（%）}": null
+   },
+   "nodeId": "S3120011203/00144",
+   "parentId": "S3120011203",
+   "lvl": 2
+  },
+  {
+   "row": {
+    "单位": "g/pcs",
+    "料号": "00255",
+    "row_index": 3,
+    "材料名": "Ag粉",
+    "产出类型": "银点类",
+    "回收成本": "0",
+    "材料净重": 0.111234705228,
+    "材料成本": "0",
+    "组成数量": 2,
+    "销售料号": "S3110520422",
+    "来料加工费": "0",
+    "来料回收费": "0",
+    "来料损耗率": "0",
+    "来料财务费": "0",
+    "损耗率（%）": 1.5,
+    "材料损耗成本": "0",
+    "铆钉额外费用": "0",
+    "材料占比（%）": 25.28
+   },
+   "basicDataValues": {
+    "{$builder_aecf34a08407._物料_材料名}": "Ag粉",
+    "{$builder_aecf34a08407._物料BOM_投入料号}": "00255",
+    "{$builder_aecf34a08407._物料BOM_材料净重}": 0.111234705228,
+    "{$builder_aecf34a08407._物料BOM_材料毛重}": null,
+    "{$builder_aecf34a08407._物料BOM_组成数量}": 2,
+    "{$builder_aecf34a08407._物料BOM_重量单位}": "g/pcs",
+    "{$builder_aecf34a08407._物料BOM_销售料号}": "S3110520422",
+    "{$builder_aecf34a08407._物料BOM_损耗率（%）}": 1.5,
+    "{$builder_aecf34a08407._物料BOM_产出料号类型}": "银点类",
+    "{$builder_aecf34a08407._物料BOM_材料占比（%）}": 25.28
+   },
+   "nodeId": "S3120011203/S3110520422/00255",
+   "parentId": "S3120011203/S3110520422",
+   "lvl": 3
+  },
+  {
+   "row": {
+    "单位": "g/pcs",
+    "料号": "00256",
+    "row_index": 4,
+    "材料名": "TU2丝",
+    "产出类型": "银点类",
+    "回收成本": "0",
+    "材料净重": 0.111234705228,
+    "材料成本": "0",
+    "组成数量": 2,
+    "销售料号": "S3110520422",
+    "来料加工费": "5.8",
+    "来料回收费": "0",
+    "来料损耗率": "5",
+    "来料财务费": "0",
+    "材料损耗成本": "0",
+    "铆钉额外费用": "0",
+    "材料占比（%）": 70.26
+   },
+   "basicDataValues": {
+    "{$builder_aecf34a08407._物料_材料名}": "TU2丝",
+    "{$builder_aecf34a08407._物料BOM_投入料号}": "00256",
+    "{$builder_aecf34a08407._物料BOM_材料净重}": 0.111234705228,
+    "{$builder_aecf34a08407._物料BOM_材料毛重}": null,
+    "{$builder_aecf34a08407._物料BOM_组成数量}": 2,
+    "{$builder_aecf34a08407._物料BOM_重量单位}": "g/pcs",
+    "{$builder_aecf34a08407._物料BOM_销售料号}": "S3110520422",
+    "{$builder_aecf34a08407._物料BOM_损耗率（%）}": null,
+    "{$builder_aecf34a08407._物料BOM_产出料号类型}": "银点类",
+    "{$builder_aecf34a08407._物料BOM_材料占比（%）}": 70.26
+   },
+   "nodeId": "S3120011203/S3110520422/00256",
+   "parentId": "S3120011203/S3110520422",
+   "lvl": 3
+  },
+  {
+   "row": {
+    "单位": "g/pcs",
+    "料号": "00257",
+    "row_index": 5,
+    "材料名": "羰基镍粉",
+    "产出类型": "银点类",
+    "回收成本": "0",
+    "材料净重": 0.111234705228,
+    "材料成本": "0",
+    "组成数量": 2,
+    "销售料号": "S3110520422",
+    "来料加工费": "170.404",
+    "来料回收费": "0",
+    "来料损耗率": "0",
+    "来料财务费": "0",
+    "材料损耗成本": "0",
+    "铆钉额外费用": "0",
+    "材料占比（%）": 4.46
+   },
+   "basicDataValues": {
+    "{$builder_aecf34a08407._物料_材料名}": "羰基镍粉",
+    "{$builder_aecf34a08407._物料BOM_投入料号}": "00257",
+    "{$builder_aecf34a08407._物料BOM_材料净重}": 0.111234705228,
+    "{$builder_aecf34a08407._物料BOM_材料毛重}": null,
+    "{$builder_aecf34a08407._物料BOM_组成数量}": 2,
+    "{$builder_aecf34a08407._物料BOM_重量单位}": "g/pcs",
+    "{$builder_aecf34a08407._物料BOM_销售料号}": "S3110520422",
+    "{$builder_aecf34a08407._物料BOM_损耗率（%）}": null,
+    "{$builder_aecf34a08407._物料BOM_产出料号类型}": "银点类",
+    "{$builder_aecf34a08407._物料BOM_材料占比（%）}": 4.46
+   },
+   "nodeId": "S3120011203/S3110520422/00257",
+   "parentId": "S3120011203/S3110520422",
+   "lvl": 3
+  }
+ ],
+ "crossTabRows": {
+  "5d5b34f8-a4ae-4704-a91b-aab7d9316e71": [
+   {
+    "元素": "Ag",
+    "料号": "00255",
+    "项次": 1,
+    "材料名": "Ag粉",
+    "元素单价": "28892.5",
+    "税后单价": "25568.584070796",
+    "销售料号": "S3110520422",
+    "组成含量（%）": "100"
+   },
+   {
+    "元素": "Cu",
+    "料号": "00144",
+    "项次": 1,
+    "材料名": "H85",
+    "元素单价": "101.1392",
+    "税后单价": "89.503716814",
+    "销售料号": "S3120011203",
+    "组成含量（%）": "85"
+   },
+   {
+    "元素": "Zn",
+    "料号": "00144",
+    "项次": 2,
+    "材料名": "H85",
+    "元素单价": "24.1695",
+    "税后单价": "21.388938053",
+    "销售料号": "S3120011203",
+    "组成含量（%）": "15"
+   },
+   {
+    "元素": "Cu",
+    "料号": "00256",
+    "项次": 2,
+    "材料名": "TU2丝",
+    "元素单价": "101.1392",
+    "税后单价": "89.503716814",
+    "销售料号": "S3110520422",
+    "组成含量（%）": "100"
+   },
+   {
+    "元素": "Ni",
+    "料号": "00257",
+    "项次": 3,
+    "材料名": "羰基镍粉",
+    "元素单价": "105",
+    "税后单价": "105",
+    "销售料号": "S3110520422",
+    "组成含量（%）": "100"
+   }
+  ],
+  "COMP-0003": [
+   {
+    "元素": "Ag",
+    "料号": "00255",
+    "项次": 1,
+    "材料名": "Ag粉",
+    "元素单价": "28892.5",
+    "税后单价": "25568.584070796",
+    "销售料号": "S3110520422",
+    "组成含量（%）": "100"
+   },
+   {
+    "元素": "Cu",
+    "料号": "00144",
+    "项次": 1,
+    "材料名": "H85",
+    "元素单价": "101.1392",
+    "税后单价": "89.503716814",
+    "销售料号": "S3120011203",
+    "组成含量（%）": "85"
+   },
+   {
+    "元素": "Zn",
+    "料号": "00144",
+    "项次": 2,
+    "材料名": "H85",
+    "元素单价": "24.1695",
+    "税后单价": "21.388938053",
+    "销售料号": "S3120011203",
+    "组成含量（%）": "15"
+   },
+   {
+    "元素": "Cu",
+    "料号": "00256",
+    "项次": 2,
+    "材料名": "TU2丝",
+    "元素单价": "101.1392",
+    "税后单价": "89.503716814",
+    "销售料号": "S3110520422",
+    "组成含量（%）": "100"
+   },
+   {
+    "元素": "Ni",
+    "料号": "00257",
+    "项次": 3,
+    "材料名": "羰基镍粉",
+    "元素单价": "105",
+    "税后单价": "105",
+    "销售料号": "S3110520422",
+    "组成含量（%）": "100"
+   }
+  ],
+  "57554055-0896-4cc8-be98-65e45b0a5985": [
+   {
+    "料号": "00256",
+    "要素": "来料加工费",
+    "费用": "5.8",
+    "项次": 1,
+    "销售料号": "S3110520422"
+   },
+   {
+    "料号": "00256",
+    "比例": "5",
+    "要素": "来料损耗率",
+    "项次": 1,
+    "销售料号": "S3110520422"
+   },
+   {
+    "料号": "S3110520422",
+    "比例": "1",
+    "要素": "来料回收费",
+    "项次": 1,
+    "材料名": "料号2",
+    "销售料号": "S3120011203"
+   },
+   {
+    "料号": "S3110520422",
+    "比例": "1",
+    "要素": "来料财务费",
+    "项次": 1,
+    "材料名": "料号2",
+    "销售料号": "S3120011203"
+   },
+   {
+    "料号": "00257",
+    "要素": "来料加工费",
+    "费用": "170.404",
+    "项次": 2,
+    "销售料号": "S3110520422"
+   },
+   {
+    "料号": "00144",
+    "比例": "5",
+    "要素": "来料损耗率",
+    "项次": 2,
+    "销售料号": "S3120011203"
+   }
+  ],
+  "COMP-0005": [
+   {
+    "料号": "00256",
+    "要素": "来料加工费",
+    "费用": "5.8",
+    "项次": 1,
+    "销售料号": "S3110520422"
+   },
+   {
+    "料号": "00256",
+    "比例": "5",
+    "要素": "来料损耗率",
+    "项次": 1,
+    "销售料号": "S3110520422"
+   },
+   {
+    "料号": "S3110520422",
+    "比例": "1",
+    "要素": "来料回收费",
+    "项次": 1,
+    "材料名": "料号2",
+    "销售料号": "S3120011203"
+   },
+   {
+    "料号": "S3110520422",
+    "比例": "1",
+    "要素": "来料财务费",
+    "项次": 1,
+    "材料名": "料号2",
+    "销售料号": "S3120011203"
+   },
+   {
+    "料号": "00257",
+    "要素": "来料加工费",
+    "费用": "170.404",
+    "项次": 2,
+    "销售料号": "S3110520422"
+   },
+   {
+    "料号": "00144",
+    "比例": "5",
+    "要素": "来料损耗率",
+    "项次": 2,
+    "销售料号": "S3120011203"
+   }
+  ],
+  "39fa3d9d-54b9-4605-93ca-dd38cbfa2831": [
+   {
+    "料号": "00144",
+    "项次": 1,
+    "回收值": "0.85",
+    "销售料号": "S3120011203"
+   }
+  ],
+  "COMP-0008": [
+   {
+    "料号": "00144",
+    "项次": 1,
+    "回收值": "0.85",
+    "销售料号": "S3120011203"
+   }
+  ]
+ },
+ "backendFormulaResults": [
+  {
+   "rowKey": "S3120011203::0",
+   "values": {
+    "回收成本": "0",
+    "材料成本": "0",
+    "来料加工费": "0",
+    "来料回收费": "0",
+    "来料损耗率": "0",
+    "来料财务费": "0",
+    "材料损耗成本": "0",
+    "铆钉额外费用": "127.5"
+   }
+  },
+  {
+   "rowKey": "S3120011203/S3110520422::S3120011203||S3110520422",
+   "values": {
+    "回收成本": "0",
+    "材料成本": "0.059189199",
+    "来料加工费": "0",
+    "来料回收费": "1",
+    "来料损耗率": "0",
+    "来料财务费": "1",
+    "材料损耗成本": "0",
+    "铆钉额外费用": "127.5"
+   }
+  },
+  {
+   "rowKey": "S3120011203/00144::S3120011203||00144",
+   "values": {
+    "回收成本": "0.317766357",
+    "材料成本": "0.463735546",
+    "来料加工费": "0",
+    "来料回收费": "0",
+    "来料损耗率": "5",
+    "来料财务费": "0",
+    "材料损耗成本": "0",
+    "铆钉额外费用": "127.5"
+   }
+  },
+  {
+   "rowKey": "S3120011203/S3110520422/00255::S3110520422||00255",
+   "values": {
+    "回收成本": "0",
+    "材料成本": "1.437983994",
+    "来料加工费": "0",
+    "来料回收费": "0",
+    "来料损耗率": "0",
+    "来料财务费": "0",
+    "材料损耗成本": "0.085323417",
+    "铆钉额外费用": "127.5"
+   }
+  },
+  {
+   "rowKey": "S3120011203/S3110520422/00256::S3110520422||00256",
+   "values": {
+    "回收成本": "0",
+    "材料成本": "0.015491845",
+    "来料加工费": "5.8",
+    "来料回收费": "0",
+    "来料损耗率": "5",
+    "来料财务费": "0",
+    "材料损耗成本": "0",
+    "铆钉额外费用": "127.5"
+   }
+  },
+  {
+   "rowKey": "S3120011203/S3110520422/00257::S3110520422||00257",
+   "values": {
+    "回收成本": "0",
+    "材料成本": "0.002418226",
+    "来料加工费": "170.404",
+    "来料回收费": "0",
+    "来料损耗率": "0",
+    "来料财务费": "0",
+    "材料损耗成本": "0",
+    "铆钉额外费用": "127.5"
+   }
+  }
+ ]
+}
