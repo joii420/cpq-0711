@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>公式抽屉 · 小计与字段列</title>
+<style>
+  :root{
+    --blue:#1677ff; --border:#d9d9d9; --bg:#f5f7fa; --text:#1f2329; --sub:#8a909a;
+    --panel:#fff; --radius:6px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1680px;margin:0 auto;padding:24px 20px 60px}
+  h1{font-size:20px;margin:0 0 4px}
+  h2.state{font-size:15px;margin:34px 0 8px;display:flex;align-items:center;gap:8px}
+  h2.state .sid{background:var(--blue);color:#fff;border-radius:4px;padding:0 8px;font-size:13px}
+  .lead{color:var(--sub);font-size:13px;margin:0 0 14px}
+  .stateNote{color:#5b6b7c;font-size:13px;margin:0 0 10px}
+  code{background:#f5f5f5;border:1px solid #eee;border-radius:3px;padding:0 4px;font-size:12px}
+
+  .drawer{background:var(--panel);border:1px solid #e8eaed;border-radius:10px;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.06)}
+  .dhead{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #f0f0f0}
+  .dtitle{font-size:16px;font-weight:600}
+  .dhead .right{display:flex;gap:8px;align-items:center}
+  .btn{height:30px;padding:0 14px;border:1px solid var(--border);border-radius:var(--radius);background:#fff;font-size:13px}
+  .btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+  .btn.primary[disabled]{background:#f5f5f5;border-color:#d9d9d9;color:#bfbfbf}
+
+  .dbody{display:grid;grid-template-columns:minmax(0,42fr) minmax(0,58fr)}
+  .left{border-right:1px solid #f0f0f0;padding:14px 16px}
+  .right{padding:14px 16px}
+  .ltitle{font-size:13px;font-weight:600;margin-bottom:8px}
+  .search{height:30px;width:100%;border:1px solid var(--border);border-radius:var(--radius);padding:0 10px;color:#bfbfbf;font-size:13px;display:flex;align-items:center;margin-bottom:8px}
+  .hostbar{font-size:12px;color:var(--sub);margin-bottom:6px}
+  .hostbar b{color:#722ed1}
+
+  .tab{border:1px solid #eef0f2;border-radius:8px;margin-bottom:10px;overflow:hidden}
+  .tab.off{background:#fafafa}
+  .tab .thead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 11px;background:#fafbfc;border-bottom:1px solid #eef0f2}
+  .tab .tname{font-weight:600;font-size:13px;overflow-wrap:anywhere}
+  .tab .tname small{font-weight:400;font-size:11px;color:var(--sub)}
+  .tab .rk{font-size:11px;color:#5b6b7c;background:#eef4ff;border:1px solid #d6e4ff;border-radius:10px;padding:1px 8px;white-space:nowrap;flex-shrink:0}
+  .tab .tbody{padding:9px 11px;display:flex;flex-wrap:wrap;gap:7px;align-items:flex-start}
+  .grp{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .grp+.grp{margin-left:8px;padding-left:10px;border-left:1px dashed #e5e7eb}
+  .glabel{font-size:11px;color:var(--sub)}
+  .glabel.self{color:#722ed1}
+  .chip{position:relative;font-size:12px;padding:3px 9px;border-radius:4px;background:#fff;border:1px solid #91caff;user-select:none;overflow-wrap:anywhere}
+  .chip.self{border-color:#d3adf7;color:#722ed1}
+  .chip.sub{border-color:#ffd591;color:#fa8c16;border-style:dashed}
+  .chip.total{border-color:#b7eb8f;color:#389e0d;border-style:dashed}
+  .chip.off{border-color:#f0f0f0;background:#fafafa;color:#bfbfbf}
+  .chip .ins{display:block;font:11px/1.4 Consolas,Monaco,monospace;color:#8a909a;margin-top:2px}
+  .tip{display:block;margin-top:6px;background:rgba(0,0,0,.85);color:#fff;border-radius:6px;padding:6px 8px;font-size:12px;max-width:360px}
+  .empty{padding:12px 0;color:#8a909a;font-size:12px}
+
+  .exprLabel{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px}
+  .exprLabel b{font-size:14px}
+  .ok{color:#389e0d;font-size:12px}
+  .bad{color:#cf1322;font-size:12px}
+  .editor{min-height:170px;border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;background:#fff;
+    font:13px/26px "SF Mono",Consolas,Monaco,monospace;overflow-wrap:anywhere}
+  .editor.ph{color:#bfbfbf}
+  .blk{border-radius:4px;padding:0 5px;margin:0 1px;font-size:13px}
+  .blk.blue{background:#e6f4ff;border:1px solid #91caff;color:#0958d9}
+  .blk.yellow{background:#fffbe6;border:1px solid #ffd591;color:#d46b08}
+  .blk.green{background:#f6ffed;border:1px solid #b7eb8f;color:#389e0d}
+  .blk.red{background:#fff1f0;border:1px solid #ffa39e;color:#cf1322}
+  .blk.purple{background:#f9f0ff;border:1px solid #d3adf7;color:#722ed1}
+  .p0{color:#d4820a;font-weight:800} .p1{color:#7d3ac1;font-weight:800}
+  .mark{display:inline-block;background:#1677ff;color:#fff;border-radius:50%;width:16px;height:16px;line-height:16px;text-align:center;font:600 11px/16px sans-serif;margin-left:2px;vertical-align:top}
+
+  .legend{margin-top:8px;font-size:12px;color:var(--sub);display:flex;flex-direction:column;gap:4px}
+  .legend .row{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+  .legend .k{display:inline-flex;align-items:center;gap:5px}
+  .sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+  .msg{margin-top:10px;display:inline-flex;align-items:flex-start;gap:8px;background:#fff;border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.12);padding:9px 12px;font-size:13px;max-width:100%}
+  .msg .ic{color:#ff4d4f;font-weight:700}
+  .errtxt{color:#cf1322;font-size:12px;margin-top:4px}
+
+  .ann{margin-top:10px;background:#fffbe6;border:1px solid #ffe58f;border-radius:var(--radius);padding:9px 12px;font-size:12px;color:#874d00;line-height:1.8}
+  .ann ol{margin:0;padding-left:18px}
+  table{border-collapse:collapse;width:100%;font-size:13px;margin-top:6px;background:#fff}
+  th,td{border:1px solid #eef0f2;padding:6px 10px;text-align:left;vertical-align:top}
+  th{background:#fafbfc;font-weight:600}
+  @media (max-width:900px){ .dbody{grid-template-columns:1fr} .left{border-right:0;border-bottom:1px solid #f0f0f0} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>「配置页签连表公式」抽屉 · 小计与字段列分开写</h1>
+  <p class="lead">对应 <code>TabJoinFormulaDrawer.tsx</code> / <code>tabjoin/TabFieldMatrix.tsx</code> / <code>tabjoin/FormulaEditorPanel.tsx</code>。
+    示例数据为验收用的测试组件（前缀 <code>RP0916</code>）。芯片下方灰色等宽字 = 点击后插入公式框的文字（原型标注，实现里不显示）。</p>
+
+  <table>
+    <tr><th>状态</th><th>画的是什么</th><th>对应 AC</th></tr>
+    <tr><td>A</td><td>页签组件：默认有数据，四种写法混用</td><td>AC-1 ~ AC-4、AC-7、AC-10</td></tr>
+    <tr><td>B</td><td>非法的「(小计)」写法 → 标红 + 保存提示</td><td>AC-5、AC-6</td></tr>
+    <tr><td>C</td><td>行键不可比页签（禁用态 + 悬停提示）</td><td>AC-8 a</td></tr>
+    <tr><td>D</td><td>小计组件：点「明细」标红，点「小计列」可保存</td><td>AC-8 b</td></tr>
+    <tr><td>E</td><td>Excel 组件</td><td>AC-14（显示层）</td></tr>
+    <tr><td>F</td><td>空态：没有页签定义</td><td>—（现状不变）</td></tr>
+    <tr><td>G</td><td>最长文案</td><td>AC-10</td></tr>
+  </table>
+
+  <!-- ═══════════════ 状态 A ═══════════════ -->
+  <h2 class="state"><span class="sid">A</span>页签组件 · 默认</h2>
+  <p class="stateNote">宿主 = <b>RP0916宿主</b>（行键 销售料号 + 料号）。块 ① 由「明细」插入、块 ② 由「小计列」插入。</p>
+  <div class="drawer">
+    <div class="dhead"><span class="dtitle">配置页签连表公式</span>
+      <span class="right"><button class="btn">取消</button><button class="btn primary">保存</button></span></div>
+    <div class="dbody">
+      <div class="left">
+        <div class="ltitle">页签组件与可选字段</div>
+        <div class="search">搜索页签或字段名</div>
+        <div class="hostbar">宿主行键 <b>[销售料号 + 料号]</b>；明细点击即插；更细页签明细需自行套 SUM/AVG 等聚合函数（或写 SUM(宿主列 * 细页签列) 行级聚合），否则一行命中多行报错；不可比页签仅整页签小计可用。</div>
+
+        <div class="tab">
+          <div class="thead"><span class="tname">RP0916宿主 <small>[COMP-9001]</small></span><span class="rk">行键: 销售料号 + 料号</span></div>
+          <div class="tbody">
+            <div class="grp"><span class="glabel self">明细(本页签·同行)</span>
+              <span class="chip self">数量<span class="ins">[数量]</span></span>
+            </div>
+            <!-- 🆕 本页签卡片不显示「小计列」组 -->
+            <div class="grp"><span class="glabel">页签总计</span>
+              <span class="chip total">RP0916宿主(总计)<span class="ins">[RP0916宿主(总计)]</span></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab">
+          <div class="thead"><span class="tname">RP0916加工费 <small>[COMP-9002]</small></span><span class="rk">行键: 销售料号 + 料号</span></div>
+          <div class="tbody">
+            <div class="grp"><span class="glabel">明细</span>
+              <span class="chip">加工费<span class="ins">[RP0916加工费.加工费]</span></span>
+              <span class="chip">备注数<span class="ins">[RP0916加工费.备注数]</span></span>
+            </div>
+            <div class="grp"><span class="glabel">小计列</span>
+              <span class="chip sub">加工费(小计)<span class="ins">[RP0916加工费.加工费(小计)]</span></span>
+            </div>
+            <div class="grp"><span class="glabel">页签总计</span>
+              <span class="chip total">RP0916加工费(总计)<span class="ins">[RP0916加工费(总计)]</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="right">
+        <div class="exprLabel"><b>公式表达式</b><span class="ok">✓ 括号配对正确</span></div>
+        <div class="editor">
+          <span class="blk blue">RP0916加工费·加工费</span><span class="mark">1</span> +
+          <span class="blk yellow">RP0916加工费·加工费(小计)</span><span class="mark">2</span> +
+          <span class="blk green">RP0916加工费(总计)</span> +
+          SUM<span class="p0">(</span><span class="blk blue">RP0916加工费·加工费</span><span class="p0">)</span> +
+          <span class="blk purple">数量</span>
+        </div>
+        <div class="legend">
+          <div class="row"><b>块底色 = 引用语义</b>
+            <span class="k"><i class="sw" style="background:#e6f4ff;border:1px solid #91caff"></i>普通引用 · [页签.列]</span>
+            <span class="k"><i class="sw" style="background:#fffbe6;border:1px solid #ffd591"></i>小计 · [页签.列(小计)]</span>
+            <span class="k"><i class="sw" style="background:#f6ffed;border:1px solid #b7eb8f"></i>总计</span>
+            <span class="k"><i class="sw" style="background:#f9f0ff;border:1px solid #d3adf7"></i>本页签</span>
+            <span class="k"><i class="sw" style="background:#fff1f0;border:1px solid #ffa39e"></i>非法</span>
+          </div>
+          <div class="row"><b>括号字色 = 配对深度</b><span style="color:#874d00">光标停在括号上 → 同一对加黄底</span></div>
+        </div>
+        <div class="ann"><ol>
+          <li>块 ① 蓝色：<b>本行的值</b>，按「销售料号 + 料号」找对应行，与「加工费」勾没勾小计无关。</li>
+          <li>块 ② 黄色：<b>整列小计</b>，只有文字带「(小计)」才是黄色。</li>
+          <li><code>SUM(...)</code> 里的不带后缀引用同样是蓝色（按行匹配后相加）。</li>
+          <li>保存后关闭再打开，公式框文字与颜色与此图完全一致；组件管理「公式」列表的「表达式」列显示同样的文字。</li>
+        </ol></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ 状态 B ═══════════════ -->
+  <h2 class="state"><span class="sid">B</span>非法的「(小计)」写法（错误态）</h2>
+  <p class="stateNote">四个独立示例，每次只写一个；点「保存」后顶部弹出提示，公式不保存。</p>
+  <div class="drawer">
+    <div class="dhead"><span class="dtitle">配置页签连表公式</span>
+      <span class="right"><button class="btn">取消</button><button class="btn primary">保存</button></span></div>
+    <div class="dbody">
+      <div class="left">
+        <div class="ltitle">页签组件与可选字段</div>
+        <div class="empty">（左栏同状态 A，略）</div>
+      </div>
+      <div class="right">
+        <div class="exprLabel"><b>公式表达式</b><span class="ok">✓ 括号配对正确</span></div>
+        <div class="editor"><span class="blk red">RP0916加工费·备注数(小计)</span></div>
+        <div class="msg"><span class="ic">✕</span>页签「RP0916加工费」的列「备注数」没有勾选小计，不能写成「(小计)」</div>
+
+        <div class="editor" style="margin-top:14px"><span class="blk red">RP0916宿主·数量(小计)</span></div>
+        <div class="msg"><span class="ic">✕</span>不能引用本页签自身的小计：[RP0916宿主.数量(小计)]</div>
+
+        <div class="editor" style="margin-top:14px"><span class="blk red">RP0916加工费(小计)</span></div>
+        <div class="msg"><span class="ic">✕</span>「(小计)」要写在列名后面，如 [页签.列(小计)]；整页签合计请写 [页签(总计)]</div>
+
+        <div class="editor" style="margin-top:14px">SUM<span class="p0">(</span><span class="blk yellow">RP0916加工费·加工费(小计)</span><span class="p0">)</span></div>
+        <div class="msg"><span class="ic">✕</span>SUM() 里不能再对小计求和：[RP0916加工费.加工费(小计)] 已是整列小计</div>
+        <div class="ann">第 4 例的块本身是合法的小计引用（黄色），错在外层 <code>SUM</code>，所以只在保存时拦截。
+          行级写法 <code>SUM([RP0916宿主.数量] * [RP0916加工费.加工费(小计)])</code> 合法，可以保存。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ 状态 C ═══════════════ -->
+  <h2 class="state"><span class="sid">C</span>行键不可比页签（禁用态）</h2>
+  <p class="stateNote">与现状一致，本返修不改：明细芯片灰色不可点，悬停显示原因。</p>
+  <div class="drawer" style="max-width:720px">
+    <div class="left" style="border-right:0">
+      <div class="tab off">
+        <div class="thead"><span class="tname">RP0916工序 <small>[COMP-9003]</small></span><span class="rk">行键: 工序</span></div>
+        <div class="tbody">
+          <div class="grp"><span class="glabel">明细</span>
+            <span class="chip off">工时
+              <span class="tip">行键 [工序] 与宿主 [销售料号+料号] 不可比；可改用「RP0916工序(总计)」</span></span>
+          </div>
+          <div class="grp"><span class="glabel">页签总计</span>
+            <span class="chip total">RP0916工序(总计)<span class="ins">[RP0916工序(总计)]</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ 状态 D ═══════════════ -->
+  <h2 class="state"><span class="sid">D</span>小计组件（宿主没有行键）</h2>
+  <p class="stateNote">宿主 = <b>RP0916小计</b>。按行取值在这里没有意义，所以点「明细」得到的块标红、不能保存；要引用小计请点「小计列」。</p>
+  <div class="drawer">
+    <div class="dhead"><span class="dtitle">配置页签连表公式</span>
+      <span class="right"><button class="btn">取消</button><button class="btn primary">保存</button></span></div>
+    <div class="dbody">
+      <div class="left">
+        <div class="hostbar">宿主行键 <b>[—]</b>；明细点击即插；……（同现状）</div>
+        <div class="tab">
+          <div class="thead"><span class="tname">RP0916加工费 <small>[COMP-9002]</small></span><span class="rk">行键: 销售料号 + 料号</span></div>
+          <div class="tbody">
+            <div class="grp"><span class="glabel">明细</span>
+              <span class="chip">加工费<span class="ins">[RP0916加工费.加工费]</span></span>
+              <span class="chip">备注数<span class="ins">[RP0916加工费.备注数]</span></span>
+            </div>
+            <div class="grp"><span class="glabel">小计列</span>
+              <span class="chip sub">加工费(小计)<span class="ins">[RP0916加工费.加工费(小计)]</span></span>
+            </div>
+            <div class="grp"><span class="glabel">页签总计</span>
+              <span class="chip total">RP0916加工费(总计)<span class="ins">[RP0916加工费(总计)]</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="right">
+        <div class="exprLabel"><b>公式表达式</b><span class="ok">✓ 括号配对正确</span></div>
+        <div class="editor"><span class="blk red">RP0916加工费·加工费</span></div>
+        <div class="msg"><span class="ic">✕</span>存在与宿主无公共行键的跨页签引用（match 为空），不可对齐。请改引可比页签或用其整页签小计 [页签(总计)]。，请改用 Excel 组件</div>
+        <div class="editor" style="margin-top:14px"><span class="blk yellow">RP0916加工费·加工费(小计)</span> * 1.13</div>
+        <div class="ok" style="margin-top:4px">点「保存」→ 成功</div>
+        <div class="ann">红块提示文案与现状逐字相同（本返修不改它）。变化在于：以前在这里点「明细·加工费」会<b>意外</b>得到小计并能保存；现在两种选择各得其所。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ 状态 E ═══════════════ -->
+  <h2 class="state"><span class="sid">E</span>Excel 组件</h2>
+  <p class="stateNote">宿主 = <b>RP0916Excel</b>。左栏与状态 A 相同（无本页签卡片）；右栏没有 SUMIF 区（现状）。两种块的颜色规则同状态 A。</p>
+  <div class="drawer">
+    <div class="dhead"><span class="dtitle">配置页签连表公式</span>
+      <span class="right"><button class="btn">取消</button><button class="btn primary">保存</button></span></div>
+    <div class="dbody">
+      <div class="left">
+        <div class="tab">
+          <div class="thead"><span class="tname">物料 <small>[COMP-0002]</small></span><span class="rk">行键: 销售料号 + 料号</span></div>
+          <div class="tbody">
+            <div class="grp"><span class="glabel">明细</span>
+              <span class="chip">材料成本<span class="ins">[物料.材料成本]</span></span>
+              <span class="chip">回收成本<span class="ins">[物料.回收成本]</span></span>
+            </div>
+            <div class="grp"><span class="glabel">小计列</span>
+              <span class="chip sub">材料成本(小计)<span class="ins">[物料.材料成本(小计)]</span></span>
+              <span class="chip sub">回收成本(小计)<span class="ins">[物料.回收成本(小计)]</span></span>
+            </div>
+            <div class="grp"><span class="glabel">页签总计</span>
+              <span class="chip total">物料(总计)<span class="ins">[物料(总计)]</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="right">
+        <div class="exprLabel"><b>公式表达式</b><span class="ok">✓ 括号配对正确</span></div>
+        <div class="editor"><span class="blk yellow">物料·材料成本(小计)</span></div>
+        <div class="ann"><ol>
+          <li>现有 Excel 列 <code>[物料.材料成本]</code> 升级后自动改写为 <code>[物料.材料成本(小计)]</code>，打开即如上图，值不变。</li>
+          <li>在 Excel 列里写不带后缀的 <code>[物料.材料成本]</code>（蓝色）= 各行相加；页面与后端算出同一个数。</li>
+        </ol></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ 状态 F ═══════════════ -->
+  <h2 class="state"><span class="sid">F</span>空态（没有页签定义）</h2>
+  <p class="stateNote">现状不变。</p>
+  <div class="drawer" style="max-width:720px">
+    <div class="left" style="border-right:0">
+      <div class="ltitle">页签组件与可选字段</div>
+      <div class="search">搜索页签或字段名</div>
+      <div class="empty">暂无页签定义数据（请检查模板配置）</div>
+    </div>
+  </div>
+  <div class="drawer" style="max-width:720px;margin-top:10px">
+    <div class="right">
+      <div class="exprLabel"><b>公式表达式</b></div>
+      <div class="editor ph">例:[投料.金额] * [加工.工时] + [回料.金额(小计)] + [回料(总计)]</div>
+      <div class="ann">公式框为空时的占位文字：在现状基础上加入 <code>[回料.金额(小计)]</code> 示例。保存按钮在公式为空时的状态与现状一致。</div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ 状态 G ═══════════════ -->
+  <h2 class="state"><span class="sid">G</span>最长文案</h2>
+  <p class="stateNote">页签名与列名都很长时：芯片与块内文字换行，不撑破左栏；行键徽标不换行。</p>
+  <div class="drawer" style="max-width:980px">
+    <div class="dbody">
+      <div class="left">
+        <div class="tab">
+          <div class="thead"><span class="tname">来料固定加工费（含年度折扣与电镀外协分摊）<small>[COMP-0004]</small></span><span class="rk">行键: 销售料号 + 料号</span></div>
+          <div class="tbody">
+            <div class="grp"><span class="glabel">明细</span>
+              <span class="chip">按客户产品编号分摊的固定加工费（含税）<span class="ins">[来料固定加工费（含年度折扣与电镀外协分摊）.按客户产品编号分摊的固定加工费（含税）]</span></span>
+            </div>
+            <div class="grp"><span class="glabel">小计列</span>
+              <span class="chip sub">按客户产品编号分摊的固定加工费（含税）(小计)<span class="ins">[来料固定加工费（含年度折扣与电镀外协分摊）.按客户产品编号分摊的固定加工费（含税）(小计)]</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="right">
+        <div class="exprLabel"><b>公式表达式</b><span class="ok">✓ 括号配对正确</span></div>
+        <div class="editor">
+          <span class="blk yellow">来料固定加工费（含年度折扣与电镀外协分摊）·按客户产品编号分摊的固定加工费（含税）(小计)</span> /
+          <span class="blk yellow">产品·税率(小计)</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
