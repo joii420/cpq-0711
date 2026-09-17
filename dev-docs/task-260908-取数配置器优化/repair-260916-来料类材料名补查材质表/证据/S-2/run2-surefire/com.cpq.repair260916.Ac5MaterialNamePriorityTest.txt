@@ -1,0 +1,26 @@
+-------------------------------------------------------------------------------
+Test set: com.cpq.repair260916.Ac5MaterialNamePriorityTest
+-------------------------------------------------------------------------------
+Tests run: 5, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 15.20 s <<< FAILURE! -- in com.cpq.repair260916.Ac5MaterialNamePriorityTest
+com.cpq.repair260916.Ac5MaterialNamePriorityTest.t24a_costBasic_threeCases -- Time elapsed: 0.834 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: E-5：「材料名」列应恰好 1 个，实际 columns=[hf_part_no, incoming_material_no, material_name, process_fee, view_version] ==> expected: <1> but was: <0>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:158)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:139)
+	at org.junit.jupiter.api.AssertEquals.failNotEqual(AssertEquals.java:201)
+	at org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:152)
+	at org.junit.jupiter.api.Assertions.assertEquals(Assertions.java:590)
+	at com.cpq.repair260916.Ac5MaterialNamePriorityTest.parse(Ac5MaterialNamePriorityTest.java:210)
+	at com.cpq.repair260916.Ac5MaterialNamePriorityTest.runCostCase(Ac5MaterialNamePriorityTest.java:423)
+	at com.cpq.repair260916.Ac5MaterialNamePriorityTest.t24a_costBasic_threeCases(Ac5MaterialNamePriorityTest.java:375)
+
+com.cpq.repair260916.Ac5MaterialNamePriorityTest.t24b_costDetail_threeCases -- Time elapsed: 0.907 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: E-5：「材料名」列应恰好 1 个，实际 columns=[hf_part_no, incoming_material_no, material_name, fee, view_version] ==> expected: <1> but was: <0>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:158)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:139)
+	at org.junit.jupiter.api.AssertEquals.failNotEqual(AssertEquals.java:201)
+	at org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:152)
+	at org.junit.jupiter.api.Assertions.assertEquals(Assertions.java:590)
+	at com.cpq.repair260916.Ac5MaterialNamePriorityTest.parse(Ac5MaterialNamePriorityTest.java:210)
+	at com.cpq.repair260916.Ac5MaterialNamePriorityTest.runCostCase(Ac5MaterialNamePriorityTest.java:423)
+	at com.cpq.repair260916.Ac5MaterialNamePriorityTest.t24b_costDetail_threeCases(Ac5MaterialNamePriorityTest.java:382)
+

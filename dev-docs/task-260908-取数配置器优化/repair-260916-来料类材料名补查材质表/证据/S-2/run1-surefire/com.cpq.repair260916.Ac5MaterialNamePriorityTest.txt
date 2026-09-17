@@ -1,0 +1,32 @@
+-------------------------------------------------------------------------------
+Test set: com.cpq.repair260916.Ac5MaterialNamePriorityTest
+-------------------------------------------------------------------------------
+Tests run: 5, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 12.17 s <<< FAILURE! -- in com.cpq.repair260916.Ac5MaterialNamePriorityTest
+com.cpq.repair260916.Ac5MaterialNamePriorityTest.t24a_costBasic_threeCases -- Time elapsed: 0.909 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+🔴 预览 0 行 ⇒ 后面的取值断言全部空跑，不是通过。
+  若是核价侧：本类假设「partNo=销售料号 + customerCode」经 ds_quote_material 桥收窄到生产料号（task-260819 D-110 / repair-260908 AC-16 既有测试口径）；0 行说明该假设不成立 ⇒ 报主线，🚫 不许改判据。
+  diagnostics=[{level=WARN, code=PREVIEW_ZERO_ROWS, column=null, message=没有取到数据。核价取数是「销售料号 → 料号桥 → 生产料号」三步，请按顺序排查：① 销售料号「R260916-T-SC5-7217」在报价物料（ds_quote_material）里是否存在；② 该行的生产料号是否已填（报价阶段可能尚未确定，属正常业务状态，表现就是暂时取不到核价数据）；③ 该生产料号在本页签对应的核价表里是否已有数据。🚫 与客户无关——核价数据集没有客户维度}] ==> expected: <false> but was: <true>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:158)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:139)
+	at org.junit.jupiter.api.AssertFalse.failNotFalse(AssertFalse.java:69)
+	at org.junit.jupiter.api.AssertFalse.assertFalse(AssertFalse.java:41)
+	at org.junit.jupiter.api.Assertions.assertFalse(Assertions.java:255)
+	at com.cpq.repair260916.Ac5MaterialNamePriorityTest.parse(Ac5MaterialNamePriorityTest.java:199)
+	at com.cpq.repair260916.Ac5MaterialNamePriorityTest.runCostCase(Ac5MaterialNamePriorityTest.java:413)
+	at com.cpq.repair260916.Ac5MaterialNamePriorityTest.t24a_costBasic_threeCases(Ac5MaterialNamePriorityTest.java:375)
+
+com.cpq.repair260916.Ac5MaterialNamePriorityTest.t24b_costDetail_threeCases -- Time elapsed: 0.953 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: 
+🔴 预览 0 行 ⇒ 后面的取值断言全部空跑，不是通过。
+  若是核价侧：本类假设「partNo=销售料号 + customerCode」经 ds_quote_material 桥收窄到生产料号（task-260819 D-110 / repair-260908 AC-16 既有测试口径）；0 行说明该假设不成立 ⇒ 报主线，🚫 不许改判据。
+  diagnostics=[{level=WARN, code=PREVIEW_ZERO_ROWS, column=null, message=没有取到数据。核价取数是「销售料号 → 料号桥 → 生产料号」三步，请按顺序排查：① 销售料号「R260916-T-SC6-7217」在报价物料（ds_quote_material）里是否存在；② 该行的生产料号是否已填（报价阶段可能尚未确定，属正常业务状态，表现就是暂时取不到核价数据）；③ 该生产料号在本页签对应的核价表里是否已有数据。🚫 与客户无关——核价数据集没有客户维度}] ==> expected: <false> but was: <true>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:158)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:139)
+	at org.junit.jupiter.api.AssertFalse.failNotFalse(AssertFalse.java:69)
+	at org.junit.jupiter.api.AssertFalse.assertFalse(AssertFalse.java:41)
+	at org.junit.jupiter.api.Assertions.assertFalse(Assertions.java:255)
+	at com.cpq.repair260916.Ac5MaterialNamePriorityTest.parse(Ac5MaterialNamePriorityTest.java:199)
+	at com.cpq.repair260916.Ac5MaterialNamePriorityTest.runCostCase(Ac5MaterialNamePriorityTest.java:413)
+	at com.cpq.repair260916.Ac5MaterialNamePriorityTest.t24b_costDetail_threeCases(Ac5MaterialNamePriorityTest.java:382)
+
