@@ -543,7 +543,7 @@ describe('driver 展开端到端：lookupExpansion 真被消费', () => {
 describe('buildExcelSnapshot — 真实 v2 列(tabs 无 componentId/subtotalCols)', () => {
   const colA_real = {
     col_key: 'A', title: '材料成本', source_type: 'TAB_JOIN_FORMULA',
-    expression: '[来料.材料成本]',
+    expression: '[来料.材料成本(小计)]',
     tabs: [{ alias: '来料', tabKey: 'comp-material', rowKeyFields: [] }],
   } as unknown as CostingTemplateColumn;
   const colC_real = {

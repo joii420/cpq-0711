@@ -370,7 +370,8 @@ const TabJoinFormulaDrawer: React.FC<Props> = ({
     const refAliases = Array.from(
       new Set(
         (expr.match(/\[([^\[\]]+)\]/g) || []).map((t) => {
-          const body = t.slice(1, -1).replace(/\(总计\)$/, '');
+          // repair-260916 P10：列小计 [页签.列(小计)] 与 (总计) 同样去后缀后再取页签引用串
+          const body = t.slice(1, -1).replace(/\((总计|小计)\)$/, '');
           return body.includes('.') ? body.slice(0, body.indexOf('.')) : body;
         }),
       ),

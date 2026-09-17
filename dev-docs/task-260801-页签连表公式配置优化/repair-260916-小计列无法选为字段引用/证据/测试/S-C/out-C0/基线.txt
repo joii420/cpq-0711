@@ -1,0 +1,16 @@
+采样时刻(UTC)=2026-09-17T07:00:02Z
+flyway 最新 3 条:
+445|task260916 element price scale9|t|2026-09-16 23:04:22.41901
+444|repair260916 lookup name recipe fallback|t|2026-09-16 21:08:49.737298
+443|task260911 fmep record branch|t|2026-09-11 23:30:20.529227
+8 列 TAB_JOIN_FORMULA 原文 (code|name|col_key|expression):
+COMP-0011|ex1|col_1|[物料.材料成本]
+COMP-0011|ex1|col_2|[物料.回收成本]
+COMP-0011|ex1|col_3|[产品小计(总计)]
+COMP-2269|Excel|col_1|[材质元素.元素小计]
+COMP-2269|Excel|col_2|[小计(总计)]
+COMP-2509|E|col_1|[材质元素(总计)]
+COMP-2509|E|col_2|[BOM(总计)]
+COMP-2509|E|col_3|[XJ(总计)]
+QT-20260916-0881 quote_excel_values:
+40fe7ae7-c6e1-403a-aa30-17989ec758e9|DRAFT|44954ae6-f5a1-4f0f-9847-d2e6ad23b800|{"rows": [{"col_1": "1.978941064", "col_2": "0.317766357", "col_3": "1.804589425"}]}

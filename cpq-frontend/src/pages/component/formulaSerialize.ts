@@ -10,11 +10,25 @@
  *
  * Grammar of the drawer string (confirmed from TabJoinFormulaDrawer.buildColumn + TabFieldMatrix):
  *   [field]             — same-row field of THIS component  (no dot, no suffix)
- *   [alias.subtotalCol] — sibling's SUBTOTAL column (字段 ∈ tabDef.subtotalCols) → component_subtotal
- *   [alias.field]       — cross-tab detail ref (dot, no (总计), detailField) → cross_tab_ref agg='NONE'
+ *   [alias.field]       — cross-tab row-aligned value (dot, no suffix) → cross_tab_ref agg='NONE',
+ *                         match = common row keys. INDEPENDENT of whether `field` is ticked as subtotal
+ *                         (repair-260916; before, a subtotal column silently became component_subtotal).
+ *                         Same-component ref (alias → self) → field (same-row value).
+ *   [alias.col(小计)]   — sibling's column SUBTOTAL (repair-260916) → component_subtotal
+ *                         {value=col, tab_name=component_code=alias, label="名称·col"}, no is_tab_total.
+ *                         Echoed back by tokensToDrawerExpression as [名称.col(小计)].
+ *                         Errors (verbatim, first match wins in this order):
+ *                           no column  `[alias(小计)]`       → 「(小计)」要写在列名后面，如 [页签.列(小计)]；整页签合计请写 [页签(总计)]
+ *                           own tab                         → 不能引用本页签自身的小计：[alias.col(小计)]
+ *                           single-column FN, e.g. SUM(...) → FN() 里不能再对小计求和：[alias.col(小计)] 已是整列小计
+ *                           inside KSUM/KAVG/...            → KFN() 内不支持 (小计) 小计引用 [alias.col(小计)]，请引用明细字段或把小计放到外层
+ *                           inside SUMIF/COUNTIF/...        → IFN() 里不支持「(小计)」引用 [alias.col(小计)]
+ *                           column not ticked as subtotal   → 页签「alias」的列「col」没有勾选小计，不能写成「(小计)」
+ *                         Allowed inside a row-level FN expression, e.g. SUM([A.x] * [B.y(小计)]).
  *   [alias.field(总计)] — cross-tab aggregated DETAIL column total           → cross_tab_ref agg='SUM'
- *   [alias(总计)]       — sibling's SUBTOTAL (no dot, (总计) suffix) → component_subtotal
- *                         (value = tab's first/primary subtotalCol, or '' if none)
+ *                         (echoed back as SUM([alias.field]))
+ *   [alias(总计)]       — sibling's whole-tab total (no dot, (总计) suffix) → component_subtotal
+ *                         (is_tab_total=true, value = AMOUNT_TOTAL_KEY sentinel)
  *   {path}              — BNF path token (minimal / out-of-scope for page-tab formulas)
  *   + - * / × ÷         — arithmetic operators (× → *, ÷ → /)
  *   ( )                 — bracket_open / bracket_close
@@ -410,6 +424,99 @@ function makeCrossTabRef(
 }
 
 // ─────────────────────────────────────────────
+// repair-260916: "(小计)" column-subtotal suffix — shared resolver
+// ─────────────────────────────────────────────
+
+/** Column-subtotal suffix: `[tab.col(小计)]` → component_subtotal (问题说明 5.1). */
+export const SUBTOTAL_SUFFIX = '(小计)';
+
+/** Error text for `[tab(小计)]` without a column name (问题说明 5.1, verbatim). */
+export const MSG_SUBTOTAL_WITHOUT_COLUMN =
+  '「(小计)」要写在列名后面，如 [页签.列(小计)]；整页签合计请写 [页签(总计)]';
+
+/**
+ * Where a `(小计)` reference sits, for the "所在函数不允许" rule of 问题说明 5.1:
+ *   - 'single' : single-column function shortcut, e.g. SUM([A.x(小计)])
+ *   - 'kfn'    : inside KSUM/KAVG/... (K series)
+ *   - 'ifn'    : inside SUMIF/COUNTIF/... condition or value expression
+ */
+type SubtotalFnContext = { kind: 'single' | 'kfn' | 'ifn'; fn: string };
+
+/**
+ * Resolve a `[...]` body ending in `(小计)`. Returns null when the body has no such suffix.
+ * Otherwise validates per 问题说明 5.1 and throws the verbatim message of the FIRST violated rule.
+ * Order: 没写列名 → (未知页签, existing message) → 本页签自身 → 所在函数不允许 → 列没勾小计.
+ */
+function resolveSubtotalSuffixRef(
+  body: string,
+  tabDefs: TabDef[],
+  selfComponentId: string | undefined,
+  unknownTabMessage: (alias: string) => string,
+  fnCtx?: SubtotalFnContext,
+): { alias: string; col: string; tabDef: TabDef } | null {
+  if (!body.endsWith(SUBTOTAL_SUFFIX)) return null;
+  const head = body.slice(0, -SUBTOTAL_SUFFIX.length);
+  const dotIdx = head.indexOf('.');
+  if (dotIdx < 0 || dotIdx === head.length - 1) {
+    throw new Error(MSG_SUBTOTAL_WITHOUT_COLUMN);
+  }
+  const alias = head.slice(0, dotIdx);
+  const col = head.slice(dotIdx + 1);
+  const tabDef = findTabByRef(tabDefs, alias);
+  if (!tabDef) throw new Error(unknownTabMessage(alias));
+  if (!tabDef.componentId) throw new Error(`页签 "${alias}" 缺少 componentId`);
+  const isSelf = tabDef.self === true
+    || (!!selfComponentId && tabDef.componentId === selfComponentId);
+  if (isSelf) {
+    throw new Error(`不能引用本页签自身的小计：[${alias}.${col}${SUBTOTAL_SUFFIX}]`);
+  }
+  if (fnCtx) {
+    const ref = `[${alias}.${col}${SUBTOTAL_SUFFIX}]`;
+    if (fnCtx.kind === 'single') {
+      throw new Error(`${fnCtx.fn}() 里不能再对小计求和：${ref} 已是整列小计`);
+    }
+    if (fnCtx.kind === 'kfn') {
+      throw new Error(`${fnCtx.fn}() 内不支持 (小计) 小计引用 ${ref}，请引用明细字段或把小计放到外层`);
+    }
+    throw new Error(`${fnCtx.fn}() 里不支持「(小计)」引用 ${ref}`);
+  }
+  if (!(tabDef.subtotalCols ?? []).includes(col)) {
+    throw new Error(`页签「${alias}」的列「${col}」没有勾选小计，不能写成「(小计)」`);
+  }
+  return { alias, col, tabDef };
+}
+
+/** component_subtotal token for a column-subtotal reference (field layout unchanged vs. pre-repair). */
+function makeColumnSubtotalToken(tabDef: TabDef, col: string): FormulaToken {
+  return {
+    type: 'component_subtotal',
+    value: col,
+    // repair-0803 F1（BL-0099）：tab_name 为页签编号（alias），不是列名。
+    tab_name: tabDef.alias,
+    component_code: tabDef.alias,
+    label: `${tabDef.componentName ?? tabDef.alias}·${col}`,
+  };
+}
+
+/** Scan a SUMIF condition/value text for `[...(小计)]` blocks and reject them (问题说明 5.1). */
+function rejectSubtotalSuffixInIfn(
+  text: string,
+  fn: string,
+  tabDefs: TabDef[],
+  selfComponentId: string | undefined,
+): void {
+  const re = /\[([^\[\]]+)\]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    resolveSubtotalSuffixRef(
+      m[1].trim(), tabDefs, selfComponentId,
+      (al) => `${fn}() 中引用了未知页签 "${al}"`,
+      { kind: 'ifn', fn },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
 // parseValueExpr: SUMIF 第二参数（值表达式）解析
 // ─────────────────────────────────────────────
 
@@ -544,6 +651,9 @@ export function expressionToTokens(
 
       const [condText, valueText] = splitTopLevelComma(raw.body);
 
+      // repair-260916 P4：SUMIF 族条件与取值里不允许 "(小计)"（先于谓词解析，保证报 5.1 文案）
+      rejectSubtotalSuffixInIfn(raw.body, raw.funcName, tabDefs, selfComponentId);
+
       // 解析 cond → ConditionPredicate
       const predicate = parsePredicateText(condText);
 
@@ -630,6 +740,12 @@ export function expressionToTokens(
       // 单列快捷路径：恰好一个 [alias.field] → 旧单 target cross_tab_ref（保持现状）
       if (bodyTokens.length === 1 && bodyTokens[0].kind === 'bracket_expr') {
         const body = bodyTokens[0].body.trim();
+        // repair-260916 P3：单列函数里的 "(小计)" 一律拒绝（已是整列小计，不能再聚合）
+        resolveSubtotalSuffixRef(
+          body, tabDefs, selfComponentId,
+          (al) => `表达式中引用了未知页签 "${al}"`,
+          { kind: 'single', fn: fnName },
+        );
         if (!body.includes('.')) {
           throw new Error(
             `${fnName}() 内只支持跨页签明细引用 [alias.field]，不支持裸字段 [${body}]`,
@@ -702,6 +818,12 @@ export function expressionToTokens(
           for (const irr of innerBodyTokens) {
             if (irr.kind === 'bracket_expr') {
               const bb = irr.body.trim();
+              // repair-260916 P4：K 系列内层不支持 "(小计)"
+              resolveSubtotalSuffixRef(
+                bb, tabDefs, selfComponentId,
+                (al) => `${innerFnName}() 内引用了未知页签 "${al}"`,
+                { kind: 'kfn', fn: innerFnName },
+              );
               if (!bb.includes('.')) {
                 // 裸字段（无点）= 宿主列 → KSUM 内不允许
                 throw new Error(
@@ -800,6 +922,20 @@ export function expressionToTokens(
             throw new Error(`${fnName}() 内暂不支持 {路径} 引用`);
           case 'bracket_expr': {
             const bb = rt.body.trim();
+            // repair-260916 P2：行级表达式内 [页签.列(小计)] → 整列小计标量（component_subtotal），
+            // 与行无关，逐 join 行广播。**不进 srcTabsSeen** —— 标量不参与 N≥2 的行键两两可比校验
+            // （否则与宿主行键互不包含的页签会被误判「行键不可比」，造成"写在 SUM 外放行、写进 SUM
+            // 就拒"的口径分裂）。求值侧：前端 formulaEngine.evalRowExpr 透传 componentSubtotals；
+            // 后端 FormulaCalculator 的 C1 sub 透传 ctx.componentSubtotals。
+            // 不带后缀的 [页签.列] 一律按来源页签列（field），与该列是否勾小计无关（问题说明 5.1）。
+            const subRef = resolveSubtotalSuffixRef(
+              bb, tabDefs, selfComponentId,
+              (al) => `${fnName}() 内引用了未知页签 "${al}"`,
+            );
+            if (subRef) {
+              targetExpr.push(makeColumnSubtotalToken(subRef.tabDef, subRef.col));
+              break;
+            }
             if (!bb.includes('.')) {
               // 裸字段 = 宿主本行列 → b_field（逐 join 行广播）
               targetExpr.push({ type: 'b_field', value: bb });
@@ -814,26 +950,6 @@ export function expressionToTokens(
             if (selfComponentId && td.componentId === selfComponentId) {
               // 宿主自身列 → b_field
               targetExpr.push({ type: 'b_field', value: col });
-            } else if ((td.subtotalCols ?? []).includes(col)) {
-              // 跨组件小计列 = 整列总计标量，与行无关 → component_subtotal（与顶层同源，见本文件
-              // "跨组件小计列引用(无总计) → component_subtotal(整列总计标量)" 分支）。
-              // 关键：**不进 srcTabsSeen** —— 标量不参与 N≥2 的行键两两可比校验。否则与宿主行键
-              // 互不包含的页签（如 产品[销售料号] vs 物料[料件]）会被误判「行键不可比」而无法保存，
-              // 造成"同一个 [产品.税率] 写在 SUM 外放行、写进 SUM 就拒"的口径分裂。
-              // 求值侧两端均已就绪：前端 formulaEngine.evalRowExpr 透传 componentSubtotals 给
-              // evaluateExpression；后端 FormulaCalculator 的 C1 sub 透传 ctx.componentSubtotals。
-              targetExpr.push({
-                type: 'component_subtotal',
-                value: col,
-                // repair-0803 F1（BL-0099）：tab_name 应为**页签名**，原先误填列名 col，
-                // 导致后端 appendToken 第 2 级回退拼出 "税率#税率" 这类恒不命中的键。
-                // 当前靠第 1 级 component_code+"#"+col 兜住未出事，但一旦 alias 落空就会
-                // 连续跌到第 3/4 级「取整个组件小计合计」（如 产品 = 管理费+税率之和）而静默算错。
-                // 注意：本文件 :856 的 tab_name: AMOUNT_TOTAL_KEY 是 BL-0017 的哨兵键设计，不在此列。
-                tab_name: td.alias,
-                component_code: td.alias,
-                label: `${td.componentName ?? td.alias}·${col}`,
-              });
             } else {
               // 细/兄弟 source 列 → field；记录 source componentId 供多 source 校验
               if (!srcTabSeenIds.has(td.componentId)) {
@@ -965,6 +1081,17 @@ export function expressionToTokens(
       case 'bracket_expr': {
         const body = raw.body.trim();
 
+        // repair-260916 P1：[页签.列(小计)] → 整列小计（component_subtotal）；
+        // [页签(小计)] / 本页签 / 未勾小计的列 → 按 5.1 报错。
+        const subRef = resolveSubtotalSuffixRef(
+          body, tabDefs, selfComponentId,
+          (al) => `表达式中引用了未知页签 "${al}"，请检查名称/编号是否与模板中页签配置一致`,
+        );
+        if (subRef) {
+          result.push(makeColumnSubtotalToken(subRef.tabDef, subRef.col));
+          break;
+        }
+
         if (body.includes('.')) {
           // Cross-tab reference: [alias.field] or [alias.field(总计)]
           const dotIdx = body.indexOf('.');
@@ -990,30 +1117,16 @@ export function expressionToTokens(
             );
           }
 
-          // Disambiguate subtotal column vs detail field vs same-component row-aligned field:
-          //
           // Priority order (highest → lowest):
           //   1. 同组件列引用(无总计) → field(同行值)，即使该列是小计列。
           //      引擎拓扑序先算被引用公式列，再算本列，行内相加无循环依赖。
-          //   2. 跨组件小计列引用(无总计) → component_subtotal(整列总计标量)。
-          //   3. 其余（显式总计/跨组件明细） → cross_tab_ref。
+          //   2. 其余（显式 "(总计)" → SUM；跨组件列 → 本行取值 NONE） → cross_tab_ref。
           //
-          // 注意：isAgg(显式 "(总计)") 不进入 1/2，直接走 3 的 cross_tab_ref SUM，
-          //       component_code 始终存权威 alias(tabDef.alias)，与后端解析一致。
+          // repair-260916：跨组件 [页签.列] **不再**因为该列勾了小计就判成整列小计 ——
+          // 整列小计必须显式写 [页签.列(小计)]（上方 resolveSubtotalSuffixRef 已处理）。
           if (selfComponentId && tabDef.componentId === selfComponentId && !isAgg) {
             // 同组件列引用(无总计) → 同行值(field token)，引擎拓扑序保证被引用列先算。
-            // 即使该列是小计列也取同行值；只有显式 "(总计)" 才取整列总计。
             result.push({ type: 'field', value: fieldPart });
-          } else if (!isAgg && (tabDef.subtotalCols ?? []).includes(fieldPart)) {
-            // 跨组件小计列引用(无总计) → component_subtotal(整列总计标量)。
-            result.push({
-              type: 'component_subtotal',
-              value: fieldPart,
-              // repair-0803 F1（BL-0099）：同 :645，tab_name 应为页签名而非列名。
-              tab_name: tabDef.alias,
-              component_code: tabDef.alias,
-              label: `${tabDef.componentName ?? tabDef.alias}·${fieldPart}`,
-            });
           } else {
             result.push(
               makeCrossTabRef(alias, fieldPart, isAgg ? 'SUM' : 'NONE', tabDefs, selfRowKeyFields),
@@ -1124,11 +1237,11 @@ export function tokensToDrawerExpression(
         const col = token.value ?? '';
         // FIX (2026-06-30, WYSIWYG): is_tab_total 标记优先 → 整页签总计形式 [label(总计)]，
         // 不看 value（value 仍存首个小计列名，仅供求值，保持计算不变）。
-        // 无标记的小计列引用照旧按非空 value 回显 [label.col]，二者从此可区分、各自忠实往返。
+        // repair-260916 P5：列小计引用回显 [label.col(小计)]，与本行取值 [label.col] 从文字上区分。
         if (token.is_tab_total) {
           parts.push(`[${label}(总计)]`);
         } else if (col) {
-          parts.push(`[${label}.${col}]`);
+          parts.push(`[${label}.${col}${SUBTOTAL_SUFFIX}]`);
         } else {
           parts.push(`[${label}(总计)]`);
         }
@@ -1227,7 +1340,10 @@ export function tokensToDrawerExpression(
                     const csCode = te.component_code ?? '';
                     const csLabel = tabDefs.find((d) => d.alias === csCode)?.componentName ?? csCode;
                     const csCol = te.value ?? '';
-                    return te.is_tab_total || !csCol ? `[${csLabel}(总计)]` : `[${csLabel}.${csCol}]`;
+                    // repair-260916 P5：列小计回显带 (小计) 后缀，重新解析仍得 component_subtotal。
+                    return te.is_tab_total || !csCol
+                      ? `[${csLabel}(总计)]`
+                      : `[${csLabel}.${csCol}${SUBTOTAL_SUFFIX}]`;
                   }
                   case 'cross_tab_ref': {
                     // projectToHostKey=true → KSUM 子 token，回显为 K<AGG>(...)
@@ -1596,7 +1712,8 @@ export interface FormulaSegment {
 
 /**
  * 单个 [...] body 判色(body 已去外层方括号且已 trim)。
- * 行序即优先级(spec §3.4 / §5):总计无点(绿) → 小计列(黄) → 宿主自身字段(紫,self-agg 红) → 明细(蓝) → 查不到(红) → 无点裸字段(紫)。
+ * 行序即优先级(spec §3.4 / §5):总计无点(绿) → 带「(小计)」后缀(黄/非法红) → 宿主自身字段(紫,self-agg 红) → 明细(蓝) → 查不到(红) → 无点裸字段(紫)。
+ * repair-260916：不带后缀的 [页签.列] 不再因列勾了小计而标黄。
  * enforceMappable: NORMAL/SUBTOTAL=true(明细 match 空判红);EXCEL=false(解析得到即蓝)。
  * insideKsum: 当处于 K*(…) 括号区间内时为 true —— 宿主自身字段(tab.self)在此区间违规 → 红。
  */
@@ -1618,7 +1735,23 @@ export function classifyRefSegment(
       : { kind: 'invalid', color: 'red' };
   }
 
-  // 含点 → 跨页签引用
+  // 2) repair-260916：带 "(小计)" 后缀 → 黄色仅当「有列名 + 页签存在 + 非本页签 + 不在 K 系列/SUMIF 内
+  //    + 列确为小计列」；其余一律红（问题说明 5.1）。单列函数 SUM([A.x(小计)]) 的块本身仍为黄，
+  //    错在外层函数，由保存时的 expressionToTokens 拦截（原型状态 B 第 4 例）。
+  if (body.endsWith(SUBTOTAL_SUFFIX)) {
+    const head = body.slice(0, -SUBTOTAL_SUFFIX.length);
+    const di = head.indexOf('.');
+    if (di < 0 || di === head.length - 1) return { kind: 'invalid', color: 'red' };
+    const subTab = findTabByRef(tabDefs, head.slice(0, di));
+    if (!subTab || subTab.self) return { kind: 'invalid', color: 'red' };
+    if (insideKsum || insideSumif) return { kind: 'invalid', color: 'red' };
+    if (!(subTab.subtotalCols ?? []).includes(head.slice(di + 1))) {
+      return { kind: 'invalid', color: 'red' };
+    }
+    return { kind: 'subtotal', color: 'yellow' };
+  }
+
+  // 含点 → 跨页签引用（不带 "(小计)" 的 [页签.列] 一律按明细规则判色，与该列是否勾小计无关）
   if (body.includes('.')) {
     const dotIdx = body.indexOf('.');
     const alias = body.slice(0, dotIdx);
@@ -1628,11 +1761,6 @@ export function classifyRefSegment(
 
     const tab = findTabByRef(tabDefs, alias);
     if (!tab) return { kind: 'invalid', color: 'red' };
-
-    // 2) 非聚合 + 字段∈subtotalCols → 小计列(component_subtotal,无 match 约束)
-    if (!isAgg && (tab.subtotalCols ?? []).includes(field)) {
-      return { kind: 'subtotal', color: 'yellow' };
-    }
 
     // 宿主自身字段(spec §5):tabDef.self → 紫;自聚合(isAgg)本期不支持 → 红
     // 特例: insideKsum 内宿主自身字段 → 违规 → red（KSUM 内不能引用宿主列）

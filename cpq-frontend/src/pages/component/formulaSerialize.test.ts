@@ -395,7 +395,7 @@ describe('round-trip', () => {
   });
 
   it('[COMP_RL.金额] round-trips', () => {
-    const expr = '[回料.金额]';
+    const expr = '[回料.金额(小计)]';
     const tokens = expressionToTokens(expr, allTabs, selfRKF);
     const back = tokensToDrawerExpression(tokens, allTabs);
     expect(normalise(back)).toBe(normalise(expr));
@@ -609,7 +609,7 @@ describe('checkMappable', () => {
 describe('component_subtotal — subtotal column references', () => {
   it('[COMP_RL.金额] + [COMP_INV.金额] → TWO component_subtotal tokens (金额 is a subtotalCol of both)', () => {
     const tokens = expressionToTokens(
-      '[COMP_RL.金额] + [COMP_INV.金额]',
+      '[COMP_RL.金额(小计)] + [COMP_INV.金额(小计)]',
       allTabs,
       selfRKF,
     );
@@ -666,7 +666,7 @@ describe('component_subtotal — subtotal column references', () => {
       },
     ];
     expect(tokensToDrawerExpression(tokens, [])).toBe(
-      '[COMP-A.行小计] + [COMP-B.工序加工费]',
+      '[COMP-A.行小计(小计)] + [COMP-B.工序加工费(小计)]',
     );
   });
 
@@ -1107,12 +1107,12 @@ describe('E2 — SUM 内跨组件小计列免行键（component_subtotal）', ()
 
   it('SUM 内 [产品.税率]（小计列，行键与宿主互不包含）→ 不报错', () => {
     expect(() =>
-      expressionToTokens('SUM([材料成本.元素单价] * [产品.税率])', defs, RKF, 'cid-wl'),
+      expressionToTokens('SUM([材料成本.元素单价] * [产品.税率(小计)])', defs, RKF, 'cid-wl'),
     ).not.toThrow();
   });
 
   it('小计列落进 targetExpr 为 component_subtotal，且不污染 source/sources', () => {
-    const t = expressionToTokens('SUM([材料成本.元素单价] * [产品.税率])', defs, RKF, 'cid-wl');
+    const t = expressionToTokens('SUM([材料成本.元素单价] * [产品.税率(小计)])', defs, RKF, 'cid-wl');
     expect(t).toHaveLength(1);
     // 产品页签不进 srcTabsSeen → 仍是单 source（材料成本），不写 sources
     expect(t[0]).toMatchObject({ type: 'cross_tab_ref', source: 'cid-mc', agg: 'SUM' });
@@ -1152,12 +1152,12 @@ describe('E2 — SUM 内跨组件小计列免行键（component_subtotal）', ()
   });
 
   it('round-trip：回显归一后再解析仍稳定', () => {
-    const t = expressionToTokens('SUM([材料成本.元素单价] * [产品.税率])', defs, RKF, 'cid-wl');
+    const t = expressionToTokens('SUM([材料成本.元素单价] * [产品.税率(小计)])', defs, RKF, 'cid-wl');
     const back = tokensToDrawerExpression(t, defs, 'cid-wl');
-    expect(back.replace(/\s+/g, ' ').trim()).toBe('SUM([材料成本.元素单价] * [产品.税率])');
+    expect(back.replace(/\s+/g, ' ').trim()).toBe('SUM([材料成本.元素单价] * [产品.税率(小计)])');
     const t2 = expressionToTokens(back, defs, RKF, 'cid-wl');
     expect(tokensToDrawerExpression(t2, defs, 'cid-wl').replace(/\s+/g, ' ').trim())
-      .toBe('SUM([材料成本.元素单价] * [产品.税率])');
+      .toBe('SUM([材料成本.元素单价] * [产品.税率(小计)])');
   });
 });
 

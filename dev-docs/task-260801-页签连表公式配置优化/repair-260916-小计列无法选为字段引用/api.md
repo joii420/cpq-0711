@@ -1,7 +1,7 @@
 # api · repair-260916 小计列无法选为字段引用
 
 > 本返修**不新增、不删除、不改动任何接口的路径 / 请求结构 / 响应结构 / 状态码语义**。
-> 变的是「公式文字」这份跨端数据契约（前端 `expressionToTokens` 与后端 `TabJoinPlanEvaluator` 各解析一份），以及导出包版本号。
+> 变的是「公式文字」这份跨端数据契约（前端 `expressionToTokens` 与后端 `TabJoinPlanEvaluator` 各解析一份）。导出包版本号不变（D-15）。
 > 验收以 `问题说明.md` ⑥ 为准；写法细则的唯一出处是 `问题说明.md` 5.1 / 5.3 / 5.4，本文件只做契约登记与测试入口说明。
 
 ## §1 涉及的既有接口（路径与结构均不变）
@@ -14,10 +14,10 @@
 | `PUT /api/cpq/components/{id}`（Excel 组件的 `excelColumns`） | Excel 连表公式列文字（`source_type=TAB_JOIN_FORMULA`，`expression` 为文字） | 无结构变化；`expression` 可出现 `(小计)`（§2） |
 | `PUT /api/cpq/templates/{id}/excel-view-config` | 模板级 Excel 配置保存，含 `validateTabJoinConfig` 校验 | 新增一种 400：`页签连表公式列 {col_key} 的「(小计)」要写在列名后面，如 [页签.列(小计)]`（AC-14f） |
 | `GET /api/cpq/quotations/{id}/excel-view` | 后端重算的 Excel 视图（AC-15⑥） | 无 |
-| `GET /api/cpq/component-directories/{id}/export` | 导出包 | 响应体 `bundleVersion` 由 `"1.1"` 变为 `"1.2"`（§3） |
-| `POST /api/cpq/component-directories/{id}/import` / `…/import/commit` | 导入预览 / 提交 | 无结构变化；旧包（`bundleVersion < 1.2`）的 Excel 连表公式文字在写库前按 §2 改写（AC-16） |
+| `GET /api/cpq/component-directories/{id}/export` | 导出包 | 无变化（D-15：`bundleVersion` 保持 `"1.1"`） |
+| `POST /api/cpq/component-directories/{id}/import` / `…/import/commit` | 导入预览 / 提交 | 无变化（D-15：Excel 连表公式文字原样写库，不改写；AC-16） |
 
-⇒ `dev-docs/main-api.md` **无端点需要回写**；`test-report.md` 需写明「本次无接口契约变更，无需回写 main-api.md」，导出包版本变化在本文件登记。
+⇒ `dev-docs/main-api.md` **无端点需要回写**；`test-report.md` 需写明「本次无接口契约变更，无需回写 main-api.md」。
 
 ## §2 公式文字写法（跨端契约）
 
@@ -30,19 +30,17 @@
 | `[页签.列(总计)]` | `cross_tab_ref` `agg=SUM`（回显为 `SUM([页签.列])`） | 列小计标量（现行，不变） |
 | `[页签(总计)]` | `component_subtotal`（`is_tab_total=true`，哨兵列键） | 页签合计标量（现行，不变） |
 | `[页签(小计)]` | 报错 | 报错（后端 `IllegalArgumentException` / 保存 400） |
+| `SUMIF` / `COUNTIF` / `AVGIF` / `MINIF` / `MAXIF` | 现行（不变） | **不支持**：Excel 组件抽屉保存拒绝（D-9），后端求值得 0（现行） |
 
 **回显**（token → 文字，`tokensToDrawerExpression`）：`component_subtotal` 且非页签合计、列名非空 → `[{页签名}.{列}(小计)]`；其余不变。
 **往返稳定性**：对任意已存 token，「回显 → 解析」结果与原 token 逐字段相等（AC-3③、AC-13）。
 
-## §3 导出包版本
+## §3 导出包版本（D-15 修订：不变）
 
-| 版本 | Excel 连表公式文字的写法 | 导入时处理 |
-|---|---|---|
-| 缺失 / `1.0` / `1.1` | 旧写法：`[页签.列]` 在列勾了小计时表示小计 | 按 `问题说明.md` 5.4 改写为 `(小计)` 写法后写库 |
-| `1.2`（本返修起） | 新写法 | 原样写库 |
-
-- 「旧格式」提示（`ComponentImportService.legacyBundleTreeHint`）只对 **版本低于 1.1** 的包给出 —— 1.1 包的行为与改动前一致（AC-16④）。
-- ⚠️ 1.2 包导入到**未升级**的环境不兼容（旧环境不认识 `(小计)`）→ 部署时各环境需同批升级，交付说明写明。
+- `bundleVersion` 保持 `"1.1"`；导入时不改写任何公式文字；导入抽屉「旧格式」提示判定保持原样。
+- 升级前导出的包里，Excel 列的 `[页签.小计列]` 导入后按「本行的值」计算，需要用户手动改为 `(小计)` 写法（`问题说明.md` 5.4）；页签组件、小计组件公式存的是 token，不受影响。
+- ⚠️ 含 `(小计)` 写法的 Excel 列导出后，导入到**未升级**的环境会算错 —— 部署时各环境同批升级。
+- ~~原方案：升 `1.2` + 导入改写 + 前端判定改为「低于 1.1」~~（D-7 / P16 / P16b 已撤销）
 
 ## §4 共享对拍夹具 `tabjoin-excel-cases.json`
 
@@ -68,6 +66,7 @@
 ```
 
 - `rows` 取 `QT-20260916-0881` 物料页签 6 行真实值（AC-14 前置），`X` 为补充的不勾小计列。
+- 用例至少覆盖 AC-14 a~e 与 g（`/ 1.13` 除以小数，D-10），夹具追加用例后前端须重新逐字节拷贝。
 - `expected` 为 12 位计算口径下的字符串；两端测试按各自现行比较方式断言（后端 `compareTo`，前端 decimal 字符串比较），**不许放宽容差**。
 
 ## §5 测试可直接调用的前端入口（测试工程师无需读实现）

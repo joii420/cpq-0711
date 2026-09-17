@@ -27,6 +27,26 @@ interface Props {
 type ConflictPolicy = 'RENAME' | 'SKIP' | 'ABORT';
 
 /**
+ * repair-260916 F-10（D-7 / AC-16⑤）：导入包是否为「旧格式」= bundleVersion 低于 1.1。
+ * 解析口径镜像后端 `TabJoinSubtotalSuffixRewriter.versionLowerThan(v, 1, 1)`：
+ * 缺失 / 空白 / 无法解析一律按 1.0 处理（即旧格式）；1.1、1.2 及更高都不是旧格式。
+ */
+export function isLegacyBundleVersion(version: string | null | undefined): boolean {
+  let major = 1;
+  let minor = 0;
+  const text = (version ?? '').trim();
+  if (text) {
+    const parts = text.split('.');
+    const isInt = (s: string | undefined) => s !== undefined && /^[+-]?\d+$/.test(s);
+    if (isInt(parts[0]) && (parts.length < 2 || isInt(parts[1]))) {
+      major = Number.parseInt(parts[0], 10);
+      minor = parts.length > 1 ? Number.parseInt(parts[1], 10) : 0;
+    }
+  }
+  return major !== 1 ? major < 1 : minor < 1;
+}
+
+/**
  * 🆕 task-260915 F-1：取数配置器三段坐标在目标库 `semantic_tab_view` 的可解析性。
  * ⚠️ 本取值域里的 `UNRESOLVABLE` 与 `FormulaBindingStatus.UNRESOLVABLE` 是**同名不同义**：
  *    公式绑定那个**会**拦提交（见 unresolvableBlock）；本字段的**绝不拦**（AC-17：如实报出但不阻断导入）。
@@ -167,7 +187,9 @@ const ComponentImportDrawer: React.FC<Props> = ({ open, targetDirId, targetDirNa
   //  ② 或者每一类阻断原因都被对应的显式开关覆盖 —— 缺依赖→ignoreMissing；未绑定公式→ignoreUnboundFormulas；
   //     ABORT 冲突没有覆盖开关，属硬阻断，两个勾选都救不了。
   // 🆕 task-260915 F-2（AC-10 / AC-11）：老包只提示、🚫 不阻断提交 —— 故本标志不进 canSubmit。
-  const isLegacyBundle = !!preview && preview.bundleVersion !== '1.1';
+  // repair-260916 F-10（D-7 / AC-16⑤）：导出包升到 1.2 后，「≠ 1.1」会把新包也判成旧格式 ——
+  // 改为「版本缺失或低于 1.1」才算旧格式，与后端 legacyBundleTreeHint 同一判定。
+  const isLegacyBundle = !!preview && isLegacyBundleVersion(preview.bundleVersion);
   const abortConflictBlock = !!preview && preview.conflictPolicy === 'ABORT' && preview.summary.conflicts > 0;
   const missingDepsBlock = !!preview && preview.dependencies.missingCount > 0;
   // 只统计"会真正落库"的组件（CREATE/RENAME）里的 UNRESOLVABLE——SKIP 的组件根本不会被导入，不该拖后腿。
