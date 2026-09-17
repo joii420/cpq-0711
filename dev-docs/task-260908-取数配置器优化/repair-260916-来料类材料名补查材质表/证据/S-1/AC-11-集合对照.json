@@ -1,0 +1,105 @@
+{
+  "B_source": "证据/基线-改动前/refresh-all-snapshots-预览-8081.json",
+  "B": [],
+  "A": [
+    "builder_3fda805a52da",
+    "builder_4602c64a0c38",
+    "builder_46f244df7ede",
+    "builder_4aa23fde7ac9",
+    "builder_999eaf0a9c07",
+    "builder_9cc11850f425",
+    "builder_b2b718fe930a",
+    "builder_c35c2bd590fe",
+    "builder_ead1c831ca36"
+  ],
+  "expected": [
+    "builder_3fda805a52da",
+    "builder_4602c64a0c38",
+    "builder_46f244df7ede",
+    "builder_4aa23fde7ac9",
+    "builder_999eaf0a9c07",
+    "builder_9cc11850f425",
+    "builder_b2b718fe930a",
+    "builder_c35c2bd590fe",
+    "builder_ead1c831ca36"
+  ],
+  "expectedDetail": [
+    {
+      "dialect": "QUOTE",
+      "source_keys": "MAT_NAME_LK,SELF_PROCESS_FEE",
+      "null_key_cols": 0,
+      "sql_view_name": "builder_3fda805a52da",
+      "component_code": "COMP-2414"
+    },
+    {
+      "dialect": "QUOTE",
+      "source_keys": "INCOMING_OTHER_FEE,MAT_NAME_LK",
+      "null_key_cols": 0,
+      "sql_view_name": "builder_4602c64a0c38",
+      "component_code": "COMP-0005"
+    },
+    {
+      "dialect": "QUOTE",
+      "source_keys": "INCOMING_RECOVERY,MAT_NAME_LK",
+      "null_key_cols": 0,
+      "sql_view_name": "builder_46f244df7ede",
+      "component_code": "COMP-0008"
+    },
+    {
+      "dialect": "QUOTE",
+      "source_keys": "INCOMING_FIXED_FEE,MAT_NAME_LK",
+      "null_key_cols": 0,
+      "sql_view_name": "builder_4aa23fde7ac9",
+      "component_code": "COMP-2413"
+    },
+    {
+      "dialect": "QUOTE",
+      "source_keys": "MAT_NAME_LK,SELF_PROCESS_FEE",
+      "null_key_cols": 0,
+      "sql_view_name": "builder_999eaf0a9c07",
+      "component_code": "COMP-2425"
+    },
+    {
+      "dialect": "QUOTE",
+      "source_keys": "MAT_NAME_LK,SELF_PROCESS_FEE",
+      "null_key_cols": 0,
+      "sql_view_name": "builder_9cc11850f425",
+      "component_code": "COMP-2296"
+    },
+    {
+      "dialect": "QUOTE",
+      "source_keys": "MAT_NAME_LK,SELF_PROCESS_FEE",
+      "null_key_cols": 0,
+      "sql_view_name": "builder_b2b718fe930a",
+      "component_code": "COMP-2424"
+    },
+    {
+      "dialect": "QUOTE",
+      "source_keys": "INCOMING_FIXED_FEE,MAT_NAME_LK",
+      "null_key_cols": 0,
+      "sql_view_name": "builder_c35c2bd590fe",
+      "component_code": "COMP-0004"
+    },
+    {
+      "dialect": "QUOTE",
+      "source_keys": "MAT_NAME_LK,SELF_PROCESS_FEE",
+      "null_key_cols": 0,
+      "sql_view_name": "builder_ead1c831ca36",
+      "component_code": "COMP-2426"
+    }
+  ],
+  "A_minus_B": [
+    "builder_3fda805a52da",
+    "builder_4602c64a0c38",
+    "builder_46f244df7ede",
+    "builder_4aa23fde7ac9",
+    "builder_999eaf0a9c07",
+    "builder_9cc11850f425",
+    "builder_b2b718fe930a",
+    "builder_c35c2bd590fe",
+    "builder_ead1c831ca36"
+  ],
+  "B_minus_A": [],
+  "A_minus_B_not_expected": [],
+  "expected_not_in_A_minus_B": []
+}
