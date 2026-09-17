@@ -460,6 +460,10 @@ export function evaluateExpression(
         // 键存在但为空串 '' = 用户显式置空 → 尊重置空、按 0 算，不回落（raw != null 即视为命中，
         // 与后端 `raw != null ? toNumber(raw) : hostFieldValues.get(n)` 口径对称；JS 里 `raw != null`
         // 的宽松相等天然覆盖 undefined/null 两种"键缺失"形态）。
+        // 🚨 repair-260916：调用方传入的 currentRow 不得含本页签公式列的值 —— 前端行数据（row_data）
+        // 存着上次保存的公式结果，留在 currentRow 里会被上面的「原始值优先」当原始值使用（编辑上游页签后
+        // 读到旧值，与后端分叉并被对账标 ⚠）。两个入口（QuotationStep2 computeAllFormulas /
+        // resolveRowForTree）已在构造 currentRowForEval 处剔除（withoutOwnFormulaKeys）；新增入口须照做。
         const key = token.value ?? '';
         const raw = currentRow?.[key];
         if (raw != null) {
