@@ -13,8 +13,10 @@ import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as XLSX from 'xlsx';
+import { judgeAc6 } from './repair260916-ac6-judge';
 
-const ROUND = (process.env.R260916_ROUND || 'master') as 'master' | 'fix';
+const ROUND = (process.env.R260916_ROUND || 'master') as 'master' | 'fix' | 'fix-final';
+const IS_FIX = ROUND !== 'master';
 const SRC_ID = 'a566efeb-72fe-48f9-b2c8-e1543283beab'; // QT-20260916-0879
 const Q0874 = '6ed88659-a30f-451b-979e-62fddc073770';
 const Q0866 = '4b19dcc7-8f42-4770-8811-470a8058e5be';
@@ -56,6 +58,22 @@ function checkTrue(step: string, ac: string, name: string, ok: boolean, actual: 
   checks.push({ step, ac, name, expected, actual, pass: ok });
   console.log(`[check] ${step} ${ac} ${name}: expected=${expected} actual=${actual} ${ok ? 'PASS' : 'DIFF'}`);
   expect.soft(ok, `${step} ${ac} ${name}: expected=${expected} actual=${actual}`).toBe(true);
+}
+
+function record(step: string, ac: string, name: string, actual: string) {
+  checks.push({ step, ac, name, expected: '（仅记录，不判定）', actual, pass: true });
+  console.log(`[record] ${step} ${ac} ${name}: ${actual}`);
+}
+/** |a − b|，按两者原文里较长的小数位数精确计算（BigInt），不舍入 */
+function absDiff(a: string, b: string): string {
+  const pa = /^(-?)(\d+)(?:\.(\d+))?$/.exec((a ?? '').trim()); const pb = /^(-?)(\d+)(?:\.(\d+))?$/.exec((b ?? '').trim());
+  if (!pa || !pb) return `<非数字: ${a} / ${b}>`;
+  const sc = Math.max((pa[3] || '').length, (pb[3] || '').length);
+  const toBig = (m: RegExpExecArray) => { const v = BigInt(m[2] + (m[3] || '').padEnd(sc, '0')); return m[1] ? -v : v; };
+  let d = toBig(pa) - toBig(pb); if (d < 0n) d = -d;
+  if (sc === 0) return d.toString();
+  const str = d.toString().padStart(sc + 1, '0');
+  return `${str.slice(0, -sc)}.${str.slice(-sc)}`;
 }
 
 // ---------------------------------------------------------------- decimal helpers (string / BigInt, no JS float)
@@ -507,17 +525,17 @@ test('Q′ 序列：E-0 ~ E-9（AC-1~AC-8、AC-12）+ E-12 清理', async ({ pag
     const sbc = tabOf(cv, '物料')?.subtotalByColumn?.['材料成本'];
     const sqlOut = { quote_excel_values: qev, subtotal: subtotalText, 物料_subtotalByColumn_材料成本: sbc, formulaResults: wuliaoResults(cv), inputs: dbInputs(cv) };
     saveJson('E-7-AC-6-db.json', sqlOut);
-    // AC-6「9 位完全相等」+ ⑥「数值断言一律按 9 位小数比较」：库里 col_1/col_3 可能多于 9 位，先舍入到 9 位再比；原文附在 actual 里
+    // AC-6（用户裁决 D-4）：原文逐项记录 + 容差判定（repair260916-ac6-judge.ts，decimal.js 原文精度）
     const col1Raw = String(qev?.rows?.[0]?.col_1); const col3Raw = String(qev?.rows?.[0]?.col_3);
     const col1 = round9(col1Raw); const col3 = round9(col3Raw);
-    const sbc9 = round9(String(sbc));
-    const tag = (s: string) => { checks[checks.length - 1].actual += ` (库原文 col_1=${col1Raw} col_3=${col3Raw})`; return s; };
-    check('E-7', 'AC-6', 'quote_excel_values.col_1', col1, '1.978006120'); tag('');
-    checks[checks.length - 1].control = '≠ 后端材料成本小计'; checks[checks.length - 1].controlMatch = col1 !== sbc9;
-    check('E-7', 'AC-6', 'col_1 = 页面材料成本列 6 格之和', col1, sum9(wuliaoCostE6)); tag('');
-    check('E-7', 'AC-6', 'col_1 = subtotalByColumn.材料成本', col1, sbc9); tag('');
-    check('E-7', 'AC-6', 'col_3 = quotation_line_item.subtotal', col3, round9(subtotalText)); tag('');
-    checks[checks.length - 1].control = '≠ subtotal'; checks[checks.length - 1].controlMatch = col3 !== round9(subtotalText);
+    const sbcRaw = String(sbc);
+    record('E-7', 'AC-6', '库 quote_excel_values.col_1 原文', col1Raw);
+    record('E-7', 'AC-6', '库 quote_excel_values.col_3 原文', col3Raw);
+    record('E-7', 'AC-6', '库 物料 subtotalByColumn.材料成本 原文', sbcRaw);
+    record('E-7', 'AC-6', '库 quotation_line_item.subtotal 原文', subtotalText);
+    record('E-7', 'AC-6', '|col_1 − 材料成本小计|（原文精度）', absDiff(col1Raw, sbcRaw));
+    record('E-7', 'AC-6', '|col_3 − subtotal|（原文精度）', absDiff(col3Raw, subtotalText));
+    record('E-7', 'AC-6', '页面材料成本列 6 格显示值之和（9 位累加）', sum9(wuliaoCostE6));
     checkInputs('E-7', 'AC-6', cv);
     const exp = await page.request.get(`/api/cpq/quotations/${QID}/export-excel-view`);
     const buf = await exp.body();
@@ -534,10 +552,15 @@ test('Q′ 序列：E-0 ~ E-9（AC-1~AC-8、AC-12）+ E-12 清理', async ({ pag
     const iC3 = hdr.findIndex((h) => h === 'col_3' || h.includes('产品单价'));
     checkTrue('E-7', 'AC-6', '导出含材料成本/产品单价列且有数据行', iC1 >= 0 && iC3 >= 0 && aoa.length >= 2, `hdr=${JSON.stringify(hdr)} rows=${aoa.length}`, 'col_1/col_3 + ≥1 数据行');
     checkTrue('E-7', 'AC-6', '导出只有 1 个数据行（Q′ 单产品）', aoa.length === 2, String(aoa.length - 1), '1');
-    check('E-7', 'AC-6', '导出 材料成本 = col_1(9位)', round9(String(aoa[1]?.[iC1])), col1);
-    check('E-7', 'AC-6', '导出 产品单价 = col_3(9位)', round9(String(aoa[1]?.[iC3])), col3);
-    check('E-7', 'AC-6', '导出 材料成本 = 1.978006120', round9(String(aoa[1]?.[iC1])), '1.978006120');
-    check('E-7', 'AC-6', '导出 产品单价 = subtotal', round9(String(aoa[1]?.[iC3])), round9(subtotalText));
+    record('E-7', 'AC-6', '导出 材料成本(col_1) 原文', String(aoa[1]?.[iC1]));
+    record('E-7', 'AC-6', '导出 产品单价(col_3) 原文', String(aoa[1]?.[iC3]));
+    record('E-7', 'AC-6', '|导出材料成本 − 材料成本小计|（原文精度）', absDiff(String(aoa[1]?.[iC1]), sbcRaw));
+    record('E-7', 'AC-6', '|导出产品单价 − subtotal|（原文精度）', absDiff(String(aoa[1]?.[iC3]), subtotalText));
+    void col1; void col3;
+    const ac6 = judgeAc6({ col1: col1Raw, col3: col3Raw, materialSubtotal: sbcRaw, lineSubtotal: subtotalText,
+      exportCol1: String(aoa[1]?.[iC1]), exportCol3: String(aoa[1]?.[iC3]) });
+    note(`E-7 AC-6(D-4) diff1=${ac6.diff1} diff3=${ac6.diff3} 结论=${ac6.pass ? '通过' : '不通过'}`);
+    for (const it of ac6.items) checkTrue('E-7', 'AC-6(D-4)', it.name, it.pass, it.detail, '成立');
 
     // ================= E-8 AC-7 =================
     await gotoDetail(page, QID);
@@ -575,7 +598,7 @@ test('Q′ 序列：E-0 ~ E-9（AC-1~AC-8、AC-12）+ E-12 清理', async ({ pag
     note(`E-9 核价单页签=${JSON.stringify(tabNames)} 公式格总数=${fcount} 其中非0数字格=${nonZeroF}（样本鉴别力参考，AC-8 本身只要求非空）`);
     const hasVal = Object.values(costing).some((t: any) => t.rows.some((r: any) => Object.keys(r.f).length > 0));
     checkTrue('E-9', 'AC-8', '非空（至少 1 个页签有 ≥1 个公式值）', hasVal, `公式格总数=${fcount}`, '≥1');
-    if (ROUND === 'fix') {
+    if (IS_FIX) {
       const base = path.join(TASK_DIR, '证据', 'e2e', 'master', 'E-9-AC-8-核价单公式值.json');
       if (fs.existsSync(base)) {
         const b = fs.readFileSync(base, 'utf8');
@@ -661,7 +684,7 @@ test('E-11 AC-10：未编辑单据详情页公式值（0879 物料 / 0866 BOM / 
       checkTrue('E-11', 'AC-10', `${qno} 至少 1 个非 0 公式格`, nonZero >= 1, String(nonZero), '≥1');
     }
     fs.writeFileSync(path.join(OUT, 'E-11-AC-10-0866-0859.json'), JSON.stringify(multi, null, 2));
-    if (ROUND === 'fix') {
+    if (IS_FIX) {
       const base = path.join(TASK_DIR, '证据', 'e2e', 'master', 'E-11-AC-10-0866-0859.json');
       if (fs.existsSync(base)) {
         const same = fs.readFileSync(base, 'utf8') === JSON.stringify(multi, null, 2);

@@ -1,0 +1,860 @@
+{
+  "round": "fix-final",
+  "checks": [
+    {
+      "step": "E-0",
+      "ac": "T0",
+      "name": "输入守恒 Ni",
+      "expected": "105",
+      "actual": "105",
+      "pass": true
+    },
+    {
+      "step": "E-0",
+      "ac": "T0",
+      "name": "输入守恒 Cu",
+      "expected": "101.1392",
+      "actual": "101.1392",
+      "pass": true
+    },
+    {
+      "step": "E-0",
+      "ac": "T0",
+      "name": "输入守恒 Zn",
+      "expected": "24.1695",
+      "actual": "24.1695",
+      "pass": true
+    },
+    {
+      "step": "E-0",
+      "ac": "T0",
+      "name": "输入守恒 Ag",
+      "expected": "28892.5",
+      "actual": "28892.5",
+      "pass": true
+    },
+    {
+      "step": "E-0",
+      "ac": "T0",
+      "name": "输入守恒 税率",
+      "expected": "1.13",
+      "actual": "1.13",
+      "pass": true
+    },
+    {
+      "step": "E-0",
+      "ac": "T0",
+      "name": "输入守恒 加工费小计",
+      "expected": "127.5",
+      "actual": "127.5",
+      "pass": true
+    },
+    {
+      "step": "E-0",
+      "ac": "T0",
+      "name": "00257.来料加工费",
+      "expected": "170.404",
+      "actual": "170.404",
+      "pass": true
+    },
+    {
+      "step": "E-0",
+      "ac": "T0",
+      "name": "00257.材料成本",
+      "expected": "0.002418226",
+      "actual": "0.002418226",
+      "pass": true
+    },
+    {
+      "step": "E-0",
+      "ac": "T0",
+      "name": "00256.来料损耗率",
+      "expected": "5",
+      "actual": "5",
+      "pass": true
+    },
+    {
+      "step": "E-0",
+      "ac": "T0",
+      "name": "00256.材料成本",
+      "expected": "0.015491845",
+      "actual": "0.015491845",
+      "pass": true
+    },
+    {
+      "step": "E-0",
+      "ac": "T0",
+      "name": "S3110520422.材料成本",
+      "expected": "0.059189199",
+      "actual": "0.059189199",
+      "pass": true
+    },
+    {
+      "step": "E-0",
+      "ac": "T0",
+      "name": "00255.材料成本",
+      "expected": "1.437983994",
+      "actual": "1.437983994",
+      "pass": true
+    },
+    {
+      "step": "E-0",
+      "ac": "T0",
+      "name": "00144.材料成本",
+      "expected": "0.463735546",
+      "actual": "0.463735546",
+      "pass": true
+    },
+    {
+      "step": "E-0",
+      "ac": "T0",
+      "name": "⚠ 个数",
+      "expected": "0",
+      "actual": "0",
+      "pass": true
+    },
+    {
+      "step": "E-1",
+      "ac": "AC-1",
+      "name": "00257.来料加工费",
+      "expected": "200",
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "step": "E-1",
+      "ac": "AC-1",
+      "name": "00257.材料成本",
+      "expected": "0.002678099",
+      "actual": "0.002678099",
+      "pass": true,
+      "control": "0.002418226",
+      "controlMatch": false
+    },
+    {
+      "step": "E-1",
+      "ac": "AC-1",
+      "name": "S3110520422.材料成本",
+      "expected": "0.059194397",
+      "actual": "0.059194397",
+      "pass": true,
+      "control": "0.059189199",
+      "controlMatch": false
+    },
+    {
+      "step": "E-1",
+      "ac": "AC-1",
+      "name": "00255.材料成本",
+      "expected": "1.437983994",
+      "actual": "1.437983994",
+      "pass": true
+    },
+    {
+      "step": "E-1",
+      "ac": "AC-1",
+      "name": "00144.材料成本",
+      "expected": "0.463735546",
+      "actual": "0.463735546",
+      "pass": true
+    },
+    {
+      "step": "E-1",
+      "ac": "AC-1",
+      "name": "00256.材料成本",
+      "expected": "0.015491845",
+      "actual": "0.015491845",
+      "pass": true
+    },
+    {
+      "step": "E-2",
+      "ac": "AC-2",
+      "name": "⚠ 个数",
+      "expected": "0",
+      "actual": "0 []",
+      "pass": true,
+      "control": "2",
+      "controlMatch": false
+    },
+    {
+      "step": "E-2",
+      "ac": "AC-2",
+      "name": "6 行 × 8 公式列全部为数字",
+      "expected": "[]",
+      "actual": "[]",
+      "pass": true
+    },
+    {
+      "step": "E-2",
+      "ac": "AC-2",
+      "name": "00257.来料加工费",
+      "expected": "200",
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "step": "E-2",
+      "ac": "AC-2",
+      "name": "00257.材料成本",
+      "expected": "0.002678099",
+      "actual": "0.002678099",
+      "pass": true,
+      "control": "⚠",
+      "controlMatch": false
+    },
+    {
+      "step": "E-2",
+      "ac": "AC-2",
+      "name": "S3110520422.材料成本",
+      "expected": "0.059194397",
+      "actual": "0.059194397",
+      "pass": true,
+      "control": "⚠",
+      "controlMatch": false
+    },
+    {
+      "step": "E-3",
+      "ac": "AC-3",
+      "name": "DB 00257.材料成本",
+      "expected": "0.002678099",
+      "actual": "0.002678099",
+      "pass": true
+    },
+    {
+      "step": "E-3",
+      "ac": "AC-3",
+      "name": "DB S3110520422.材料成本",
+      "expected": "0.059194397",
+      "actual": "0.059194397",
+      "pass": true
+    },
+    {
+      "step": "E-3",
+      "ac": "AC-3",
+      "name": "页面=DB 00257.材料成本",
+      "expected": "0.002678099",
+      "actual": "0.002678099",
+      "pass": true
+    },
+    {
+      "step": "E-3",
+      "ac": "AC-3",
+      "name": "页面=DB S3110520422.材料成本",
+      "expected": "0.059194397",
+      "actual": "0.059194397",
+      "pass": true
+    },
+    {
+      "step": "E-3",
+      "ac": "AC-3",
+      "name": "输入守恒 Ni",
+      "expected": "105",
+      "actual": "105",
+      "pass": true
+    },
+    {
+      "step": "E-3",
+      "ac": "AC-3",
+      "name": "输入守恒 Cu",
+      "expected": "101.1392",
+      "actual": "101.1392",
+      "pass": true
+    },
+    {
+      "step": "E-3",
+      "ac": "AC-3",
+      "name": "输入守恒 Zn",
+      "expected": "24.1695",
+      "actual": "24.1695",
+      "pass": true
+    },
+    {
+      "step": "E-3",
+      "ac": "AC-3",
+      "name": "输入守恒 Ag",
+      "expected": "28892.5",
+      "actual": "28892.5",
+      "pass": true
+    },
+    {
+      "step": "E-3",
+      "ac": "AC-3",
+      "name": "输入守恒 税率",
+      "expected": "1.13",
+      "actual": "1.13",
+      "pass": true
+    },
+    {
+      "step": "E-3",
+      "ac": "AC-3",
+      "name": "输入守恒 加工费小计",
+      "expected": "127.5",
+      "actual": "127.5",
+      "pass": true
+    },
+    {
+      "step": "E-4.1",
+      "ac": "AC-4",
+      "name": "00256.来料损耗率",
+      "expected": "10",
+      "actual": "10",
+      "pass": true
+    },
+    {
+      "step": "E-4.1",
+      "ac": "AC-4",
+      "name": "00256.材料成本",
+      "expected": "0.016191348",
+      "actual": "0.016191348",
+      "pass": true,
+      "control": "0.015491845",
+      "controlMatch": false
+    },
+    {
+      "step": "E-4.1",
+      "ac": "AC-4",
+      "name": "S3110520422.材料成本",
+      "expected": "0.059208387",
+      "actual": "0.059208387",
+      "pass": true
+    },
+    {
+      "step": "E-4.1",
+      "ac": "AC-4",
+      "name": "00257.材料成本",
+      "expected": "0.002678099",
+      "actual": "0.002678099",
+      "pass": true
+    },
+    {
+      "step": "E-4.1",
+      "ac": "AC-4",
+      "name": "⚠ 个数（响应后+3s）",
+      "expected": "0",
+      "actual": "0 []",
+      "pass": true
+    },
+    {
+      "step": "E-5",
+      "ac": "AC-12",
+      "name": "请求体含物料页签 componentData",
+      "expected": "1",
+      "actual": "1",
+      "pass": true
+    },
+    {
+      "step": "E-5",
+      "ac": "AC-12",
+      "name": "00256 行恰好 1 条",
+      "expected": "1",
+      "actual": "1",
+      "pass": true
+    },
+    {
+      "step": "E-5",
+      "ac": "AC-12",
+      "name": "00257 行恰好 1 条",
+      "expected": "1",
+      "actual": "1",
+      "pass": true
+    },
+    {
+      "step": "E-5",
+      "ac": "AC-12",
+      "name": "00256 行含「材料成本」键",
+      "expected": "含材料成本",
+      "actual": "[\"单位\",\"料号\",\"row_index\",\"材料名\",\"产出类型\",\"回收成本\",\"材料净重\",\"材料成本\",\"组成数量\",\"销售料号\",\"来料加工费\",\"来料回收费\",\"来料损耗率\",\"来料财务费\",\"材料损耗成本\",\"铆钉额外费用\",\"材料占比（%）\"]",
+      "pass": true
+    },
+    {
+      "step": "E-5",
+      "ac": "AC-12",
+      "name": "00256 行含「来料损耗率」键",
+      "expected": "含来料损耗率",
+      "actual": "[\"单位\",\"料号\",\"row_index\",\"材料名\",\"产出类型\",\"回收成本\",\"材料净重\",\"材料成本\",\"组成数量\",\"销售料号\",\"来料加工费\",\"来料回收费\",\"来料损耗率\",\"来料财务费\",\"材料损耗成本\",\"铆钉额外费用\",\"材料占比（%）\"]",
+      "pass": true
+    },
+    {
+      "step": "E-5",
+      "ac": "AC-12",
+      "name": "00256.材料成本(9位舍入)",
+      "expected": "0.016191348",
+      "actual": "0.016191348 (原文 0.016191348)",
+      "pass": true,
+      "control": "0.015491845",
+      "controlMatch": false
+    },
+    {
+      "step": "E-5",
+      "ac": "AC-12",
+      "name": "00256.来料损耗率",
+      "expected": "10",
+      "actual": "10",
+      "pass": true
+    },
+    {
+      "step": "E-5",
+      "ac": "AC-12",
+      "name": "00257.来料加工费",
+      "expected": "200",
+      "actual": "200",
+      "pass": true
+    },
+    {
+      "step": "E-5",
+      "ac": "AC-12",
+      "name": "00257.材料成本(9位舍入)",
+      "expected": "0.002678099",
+      "actual": "0.002678099 (原文 0.002678099)",
+      "pass": true
+    },
+    {
+      "step": "E-4.2",
+      "ac": "AC-4",
+      "name": "00256.来料损耗率",
+      "expected": "10",
+      "actual": "10",
+      "pass": true
+    },
+    {
+      "step": "E-4.2",
+      "ac": "AC-4",
+      "name": "00256.材料成本",
+      "expected": "0.016191348",
+      "actual": "0.016191348",
+      "pass": true
+    },
+    {
+      "step": "E-4.2",
+      "ac": "AC-4",
+      "name": "S3110520422.材料成本",
+      "expected": "0.059208387",
+      "actual": "0.059208387",
+      "pass": true
+    },
+    {
+      "step": "E-4.2",
+      "ac": "AC-4",
+      "name": "00257.材料成本",
+      "expected": "0.002678099",
+      "actual": "0.002678099",
+      "pass": true
+    },
+    {
+      "step": "E-4.2",
+      "ac": "AC-4",
+      "name": "⚠ 个数",
+      "expected": "0",
+      "actual": "0 []",
+      "pass": true
+    },
+    {
+      "step": "E-4.3",
+      "ac": "AC-4",
+      "name": "00256.来料损耗率",
+      "expected": "10",
+      "actual": "10",
+      "pass": true
+    },
+    {
+      "step": "E-4.3",
+      "ac": "AC-4",
+      "name": "00256.材料成本",
+      "expected": "0.016191348",
+      "actual": "0.016191348",
+      "pass": true
+    },
+    {
+      "step": "E-4.3",
+      "ac": "AC-4",
+      "name": "S3110520422.材料成本",
+      "expected": "0.059208387",
+      "actual": "0.059208387",
+      "pass": true
+    },
+    {
+      "step": "E-4.3",
+      "ac": "AC-4",
+      "name": "00257.材料成本",
+      "expected": "0.002678099",
+      "actual": "0.002678099",
+      "pass": true
+    },
+    {
+      "step": "E-4.3",
+      "ac": "AC-4",
+      "name": "⚠ 个数",
+      "expected": "0",
+      "actual": "0 []",
+      "pass": true
+    },
+    {
+      "step": "E-6",
+      "ac": "AC-5",
+      "name": "00257.来料加工费",
+      "expected": "0",
+      "actual": "0",
+      "pass": true
+    },
+    {
+      "step": "E-6",
+      "ac": "AC-5",
+      "name": "00257.材料成本",
+      "expected": "0.000921968",
+      "actual": "0.000921968",
+      "pass": true,
+      "control": "0.002678099",
+      "controlMatch": false
+    },
+    {
+      "step": "E-6",
+      "ac": "AC-5",
+      "name": "S3110520422.材料成本",
+      "expected": "0.059173264",
+      "actual": "0.059173264",
+      "pass": true
+    },
+    {
+      "step": "E-6",
+      "ac": "AC-5",
+      "name": "00256.材料成本",
+      "expected": "0.016191348",
+      "actual": "0.016191348",
+      "pass": true
+    },
+    {
+      "step": "E-6",
+      "ac": "AC-5",
+      "name": "⚠ 个数（响应后切走再回）",
+      "expected": "0",
+      "actual": "0 []",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6",
+      "name": "库 quote_excel_values.col_1 原文",
+      "expected": "（仅记录，不判定）",
+      "actual": "1.978006120752",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6",
+      "name": "库 quote_excel_values.col_3 原文",
+      "expected": "（仅记录，不判定）",
+      "actual": "1.803654482",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6",
+      "name": "库 物料 subtotalByColumn.材料成本 原文",
+      "expected": "（仅记录，不判定）",
+      "actual": "1.97800612",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6",
+      "name": "库 quotation_line_item.subtotal 原文",
+      "expected": "（仅记录，不判定）",
+      "actual": "1.803654481000",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6",
+      "name": "|col_1 − 材料成本小计|（原文精度）",
+      "expected": "（仅记录，不判定）",
+      "actual": "0.000000000752",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6",
+      "name": "|col_3 − subtotal|（原文精度）",
+      "expected": "（仅记录，不判定）",
+      "actual": "0.000000001000",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6",
+      "name": "页面材料成本列 6 格显示值之和（9 位累加）",
+      "expected": "（仅记录，不判定）",
+      "actual": "1.978006120",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6",
+      "name": "输入守恒 Ni",
+      "expected": "105",
+      "actual": "105",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6",
+      "name": "输入守恒 Cu",
+      "expected": "101.1392",
+      "actual": "101.1392",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6",
+      "name": "输入守恒 Zn",
+      "expected": "24.1695",
+      "actual": "24.1695",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6",
+      "name": "输入守恒 Ag",
+      "expected": "28892.5",
+      "actual": "28892.5",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6",
+      "name": "输入守恒 税率",
+      "expected": "1.13",
+      "actual": "1.13",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6",
+      "name": "输入守恒 加工费小计",
+      "expected": "127.5",
+      "actual": "127.5",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6",
+      "name": "导出含材料成本/产品单价列且有数据行",
+      "expected": "col_1/col_3 + ≥1 数据行",
+      "actual": "hdr=[\"col_1\",\"col_2\",\"col_3\"] rows=2",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6",
+      "name": "导出只有 1 个数据行（Q′ 单产品）",
+      "expected": "1",
+      "actual": "1",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6",
+      "name": "导出 材料成本(col_1) 原文",
+      "expected": "（仅记录，不判定）",
+      "actual": "1.978006121",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6",
+      "name": "导出 产品单价(col_3) 原文",
+      "expected": "（仅记录，不判定）",
+      "actual": "1.803654482",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6",
+      "name": "|导出材料成本 − 材料成本小计|（原文精度）",
+      "expected": "（仅记录，不判定）",
+      "actual": "0.000000001",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6",
+      "name": "|导出产品单价 − subtotal|（原文精度）",
+      "expected": "（仅记录，不判定）",
+      "actual": "0.000000001000",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6(D-4)",
+      "name": "|col_1 − 材料成本小计| ≤ 0.0000001",
+      "expected": "成立",
+      "actual": "|1.978006120752 − 1.97800612| = 0.000000000752",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6(D-4)",
+      "name": "材料成本小计 = 1.97800612",
+      "expected": "成立",
+      "actual": "1.97800612",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6(D-4)",
+      "name": "|col_3 − subtotal| ≤ 0.0000001",
+      "expected": "成立",
+      "actual": "|1.803654482 − 1.803654481000| = 0.000000001",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6(D-4)",
+      "name": "导出 col_1 = 快照 col_1（9 位）",
+      "expected": "成立",
+      "actual": "1.978006121 vs 1.978006121",
+      "pass": true
+    },
+    {
+      "step": "E-7",
+      "ac": "AC-6(D-4)",
+      "name": "导出 col_3 = 快照 col_3（9 位）",
+      "expected": "成立",
+      "actual": "1.803654482 vs 1.803654482",
+      "pass": true
+    },
+    {
+      "step": "E-8",
+      "ac": "AC-7",
+      "name": "00257.材料成本",
+      "expected": "0.000921968",
+      "actual": "0.000921968",
+      "pass": true
+    },
+    {
+      "step": "E-8",
+      "ac": "AC-7",
+      "name": "00256.材料成本",
+      "expected": "0.016191348",
+      "actual": "0.016191348",
+      "pass": true
+    },
+    {
+      "step": "E-8",
+      "ac": "AC-7",
+      "name": "S3110520422.材料成本",
+      "expected": "0.059173264",
+      "actual": "0.059173264",
+      "pass": true
+    },
+    {
+      "step": "E-8",
+      "ac": "AC-7",
+      "name": "⚠ 个数",
+      "expected": "0",
+      "actual": "0 []",
+      "pass": true
+    },
+    {
+      "step": "E-9",
+      "ac": "AC-8",
+      "name": "非空（至少 1 个页签有 ≥1 个公式值）",
+      "expected": "≥1",
+      "actual": "公式格总数=1",
+      "pass": true
+    },
+    {
+      "step": "E-9",
+      "ac": "AC-8",
+      "name": "与 master 轮基线逐格相同",
+      "expected": "相同",
+      "actual": "相同",
+      "pass": true
+    },
+    {
+      "step": "E-10",
+      "ac": "AC-9",
+      "name": "管理费显示 ⚠",
+      "expected": "⚠",
+      "actual": "{\"text\":\"⚠\",\"isErr\":true,\"title\":\"[b3445979-e3d6-4cdb-ab2d-53758b5f2eb2.回收成本] 细项引用命中多行,请改用 SUM 等聚合(或引用「(总计)」)\",\"isFormula\":true}",
+      "pass": true
+    },
+    {
+      "step": "E-10",
+      "ac": "AC-9",
+      "name": "悬停提示含「细项引用命中多行」",
+      "expected": "含「细项引用命中多行」",
+      "actual": "[b3445979-e3d6-4cdb-ab2d-53758b5f2eb2.回收成本] 细项引用命中多行,请改用 SUM 等聚合(或引用「(总计)」)",
+      "pass": true
+    },
+    {
+      "step": "E-11",
+      "ac": "AC-10",
+      "name": "0879 物料 6×8=48 格 = 库 formulaResults",
+      "expected": "0 处差异",
+      "actual": "[]",
+      "pass": true
+    },
+    {
+      "step": "E-11",
+      "ac": "AC-10",
+      "name": "0879 物料 ⚠ 个数",
+      "expected": "0",
+      "actual": "0",
+      "pass": true
+    },
+    {
+      "step": "E-11",
+      "ac": "AC-10",
+      "name": "QT-20260914-0866 至少 1 个非 0 公式格",
+      "expected": "≥1",
+      "actual": "10",
+      "pass": true
+    },
+    {
+      "step": "E-11",
+      "ac": "AC-10",
+      "name": "QT-20260913-0859 至少 1 个非 0 公式格",
+      "expected": "≥1",
+      "actual": "11",
+      "pass": true
+    },
+    {
+      "step": "E-11",
+      "ac": "AC-10",
+      "name": "0866/0859 与 master 轮基线逐格相同",
+      "expected": "相同",
+      "actual": "相同",
+      "pass": true
+    }
+  ],
+  "notes": [
+    "[2026-09-17T06:08:06.561Z] Q′ 建立 status=200 id=7d12d930-c4df-4ddc-b027-ae616c4d2b0f no=QT-20260916-0896",
+    "[2026-09-17T06:08:06.689Z] Q′ line_item=9618c82e-8269-4d82-99e1-2a83d864e42e",
+    "[2026-09-17T06:08:21.165Z] 编辑 来料其他费用 (00257,来料加工费).费用: 170.404 -> 200",
+    "[2026-09-17T06:08:21.552Z] E-1 读值时刻=2026-09-17T06:08:21.552Z quote-card-edit 响应是否已返回=false",
+    "[2026-09-17T06:08:22.098Z] E-2 quote-card-edit PUT status=200 响应到达=2026-09-17T06:08:22.098Z 请求体={\"componentId\":\"57554055-0896-4cc8-be98-65e45b0a5985\",\"rowKey\":\"S3110520422||00257||来料加工费\",\"fieldName\":\"费用\",\"value\":\"200\"}",
+    "[2026-09-17T06:08:22.150Z] E-2 响应刚到时（未等 3s）物料：00257.材料成本=0.002678099 S3110520422.材料成本=0.059194397 ⚠=0",
+    "[2026-09-17T06:08:25.585Z] E-2 响应返回+3s 仍停在物料：⚠=0 []",
+    "[2026-09-17T06:08:29.120Z] E-3 DB 物料 formulaResults 00257={\"回收成本\":\"0\",\"材料成本\":\"0.002678099\",\"来料加工费\":\"200\",\"来料回收费\":\"0\",\"来料损耗率\":\"0\",\"来料财务费\":\"0\",\"材料损耗成本\":\"0\",\"铆钉额外费用\":\"127.5\"} S3110520422={\"回收成本\":\"0\",\"材料成本\":\"0.059194397\",\"来料加工费\":\"0\",\"来料回收费\":\"1\",\"来料损耗率\":\"0\",\"来料财务费\":\"1\",\"材料损耗成本\":\"0\",\"铆钉额外费用\":\"127.5\"}",
+    "[2026-09-17T06:08:30.423Z] 编辑 来料其他费用 (00256,来料损耗率).比例: 5 -> 10",
+    "[2026-09-17T06:08:30.795Z] E-4.1 读值时 quote-card-edit 响应是否已返回=false",
+    "[2026-09-17T06:08:31.226Z] E-4.1 响应刚到时 00256.材料成本=0.016191348 ⚠=0 []",
+    "[2026-09-17T06:08:31.226Z] E-4.1 quote-card-edit status=200 请求体={\"componentId\":\"57554055-0896-4cc8-be98-65e45b0a5985\",\"rowKey\":\"S3110520422||00256||来料损耗率\",\"fieldName\":\"比例\",\"value\":\"10\"}",
+    "[2026-09-17T06:08:36.969Z] E-5 PUT draft status=200 body.len=6316",
+    "[2026-09-17T06:08:39.379Z] E-5 请求体行项: lineItems=0 added=0 modified=1; quoteExcelValues={\"rows\":[{\"col_1\":\"1.97979737357\",\"col_2\":\"0.3177663574\",\"col_3\":\"1.805445734\",\"__hfPartNo\":\"S3120011203\",\"_lineItemId\":\"9618c82e-8269-4d82-99e1-2a83d864e42e\"}]}",
+    "[2026-09-17T06:08:56.162Z] 编辑 来料其他费用 (00257,来料加工费).费用: 200 -> 0",
+    "[2026-09-17T06:08:56.537Z] E-6 读值时 quote-card-edit 响应是否已返回=false",
+    "[2026-09-17T06:08:56.964Z] E-6 quote-card-edit status=200 请求体={\"componentId\":\"57554055-0896-4cc8-be98-65e45b0a5985\",\"rowKey\":\"S3110520422||00257||来料加工费\",\"fieldName\":\"费用\",\"value\":\"0\"}",
+    "[2026-09-17T06:09:02.895Z] E-6 物料 材料成本列 6 格显示值=[\"0\",\"0.059173264\",\"0.463735546\",\"1.437983994\",\"0.016191348\",\"0.000921968\"]",
+    "[2026-09-17T06:09:04.973Z] E-7 PUT draft status=200",
+    "[2026-09-17T06:09:09.540Z] E-7 DB quote_excel_values|subtotal|quote_values_at = {\"rows\": [{\"col_1\": \"1.978006120752\", \"col_2\": \"0.3177663574\", \"col_3\": \"1.803654482\", \"__hfPartNo\": \"S3120011203\", \"_lineItemId\": \"9618c82e-8269-4d82-99e1-2a83d864e42e\"}]}|1.803654481000|2026-09-17 06:09:05.851809+00",
+    "[2026-09-17T06:09:10.277Z] E-7 export status=200 content-type=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8 bytes=3532 -> /home/joii/project/cpq/.claude/worktrees/repair-260916-bfield-stale/cpq-frontend/test-results/repair260916/fix-final/E-7-AC-6-export-QT-20260916-0896.xlsx",
+    "[2026-09-17T06:09:10.286Z] E-7 导出内容 sheet=Excel View rows=[[\"col_1\",\"col_2\",\"col_3\"],[\"1.978006121\",\"0.317766357\",\"1.803654482\"]]",
+    "[2026-09-17T06:09:10.288Z] E-7 AC-6(D-4) diff1=0.000000000752 diff3=0.000000001 结论=通过",
+    "[2026-09-17T06:09:51.465Z] E-9 核价单页签=[\"产品\",\"BOM\",\"材质元素\",\"加工费\"] 公式格总数=1 其中非0数字格=0（样本鉴别力参考，AC-8 本身只要求非空）",
+    "[2026-09-17T06:09:52.062Z] E-12 DELETE Q′ 7d12d930-c4df-4ddc-b027-ae616c4d2b0f (QT-20260916-0896) -> 200",
+    "[2026-09-17T06:09:52.187Z] E-12 删除后 quotation 表该 id 行数=0",
+    "[2026-09-17T06:10:01.585Z] E-10 0874 产品.管理费 = {\"text\":\"⚠\",\"isErr\":true,\"title\":\"[b3445979-e3d6-4cdb-ab2d-53758b5f2eb2.回收成本] 细项引用命中多行,请改用 SUM 等聚合(或引用「(总计)」)\",\"isFormula\":true}；页签 ⚠ 总数=1",
+    "[2026-09-17T06:10:26.605Z] E-11 QT-20260914-0866 卡片=4 「BOM」公式格=42 非0数字格=10",
+    "[2026-09-17T06:10:41.169Z] E-11 QT-20260913-0859 卡片=5 「材质元素」公式格=15 非0数字格=11"
+  ]
+}
