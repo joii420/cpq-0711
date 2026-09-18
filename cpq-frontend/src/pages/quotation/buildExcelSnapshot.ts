@@ -53,7 +53,14 @@ import {
   isDecimalString,
   normalizeDecimalString,
   type DecimalString,
+  type DecimalValue,
 } from '../../utils/precision';
+import { AMOUNT_TOTAL_KEY } from './tabTotalLines';
+import {
+  evaluateTabJoinColumn,
+  type TabJoinDataProvider,
+  type TabJoinTabRef,
+} from './tabJoinExcelEval';
 
 // ─── 类型扩展 ──────────────────────────────────────────────────────────────────
 
@@ -205,7 +212,10 @@ function evalColumn(
   varValues: Record<string, any>,
 ): any {
   switch (col.source_type) {
-    case 'TAB_JOIN_FORMULA':
+    case 'TAB_JOIN_FORMULA': {
+      // repair-260916 F-7：与后端 TabJoinPlanEvaluator.evaluateColumn 同口径（问题说明 5.3）
+      return evalTabJoinColumn(col, item.componentData ?? [], componentSubtotals, crossTabRows);
+    }
     case 'CARD_FORMULA': {
       return evalTabJoinOrCard(col, item.componentData ?? [], partNo, productAttrs, componentSubtotals, crossTabRows, ctx);
     }
@@ -274,18 +284,71 @@ function evalColumn(
   }
 }
 
-// ─── TAB_JOIN_FORMULA / CARD_FORMULA 求值 ─────────────────────────────────────
+// ─── TAB_JOIN_FORMULA 求值（repair-260916 F-7）────────────────────────────────
 
 /**
- * 对 TAB_JOIN_FORMULA 或 CARD_FORMULA 列调用 expressionToTokens + evaluateExpression。
+ * TAB_JOIN_FORMULA 列：按后端 `TabJoinPlanEvaluator.evaluateColumn` 口径求值
+ * （纯函数移植见 ./tabJoinExcelEval.ts；两端由共享夹具 tabjoin-excel-cases.json 锁定）。
  *
- * TAB_JOIN_FORMULA 列：
- *   - `col.expression` 是字符串（如 "[来料.材料成本]"）
- *   - `col.tabs` 是引用的页签定义列表（TabDef 子集）
- *   - 需要 expressionToTokens 将字符串解析成 FormulaToken[]
+ * 本函数只负责把前端卡片引擎已算好的数据接成后端 CardDataProvider 的等价物：
+ *   - rowsOf(tab)             → buildCrossTabRows 的 store[componentId]（与卡片同源的已算行）
+ *   - subtotalOfColumn(tab,c) → componentSubtotals[`${componentId}#${c}`]，缺失再试 `${alias}#${c}`
+ *                               （改动前 `[页签.小计列]` 走的就是 `${alias}#${c}`，保证存量值不变，AC-15⑤）；
+ *                               都缺失 → 0（不回落整组件小计，与后端一致）
+ *   - subtotalOf(tab)         → 与改动前 `[页签(总计)]` 完全相同的 component_subtotal 哨兵 token 求值
+ * 求值抛错（语法错误 / 除数为浮点字面量 / [页签(小计)] 等）→ 该列记 '0'（沿用本文件既有降级口径）。
+ */
+function evalTabJoinColumn(
+  col: CostingTemplateColumn,
+  componentData: import('./QuotationStep2').ComponentDataItem[],
+  componentSubtotals: DecimalContext,
+  crossTabRows: Record<string, Array<Record<string, any>>>,
+): DecimalString {
+  const colAny = col as any as TabJoinFormulaColumn;
+  const exprStr: string | undefined = colAny.expression;
+  if (!exprStr) return '0';
+  const tabs = (colAny.tabs ?? []) as TabJoinTabRef[];
+  const compIdOf = (tab: TabJoinTabRef): string =>
+    componentData.find((c) => c.componentId === tab.tabKey)?.componentId ?? tab.tabKey;
+  const asText = (v: DecimalValue | undefined): string | undefined =>
+    v === undefined || v === null ? undefined : normalizeDecimalString(v);
+
+  const provider: TabJoinDataProvider = {
+    rowsOf: (tab) => crossTabRows[compIdOf(tab)] ?? [],
+    subtotalOfColumn: (tab, column) =>
+      asText(componentSubtotals[`${compIdOf(tab)}#${column}`] ?? componentSubtotals[`${tab.alias}#${column}`]),
+    subtotalOf: (tab) =>
+      evaluateExpression(
+        [{
+          type: 'component_subtotal',
+          value: AMOUNT_TOTAL_KEY,
+          tab_name: AMOUNT_TOTAL_KEY,
+          component_code: tab.alias,
+          is_tab_total: true,
+          label: tab.alias,
+        }] as any,
+        {},
+        componentSubtotals,
+      ),
+  };
+
+  try {
+    return evaluateTabJoinColumn(exprStr, tabs, provider);
+  } catch (e) {
+    console.warn('[buildExcelSnapshot] TAB_JOIN eval failed for col', col.col_key, e);
+    return '0';
+  }
+}
+
+// ─── CARD_FORMULA 求值 ────────────────────────────────────────────────────────
+
+/**
+ * 对 CARD_FORMULA 列调用 expressionToTokens + evaluateExpression（repair-260916 起只服务 CARD_FORMULA；
+ * TAB_JOIN_FORMULA 已改走 evalTabJoinColumn）。本函数逻辑未改动。
  *
  * CARD_FORMULA 列（理论上 expression 也可以是字符串或 token[]）：
- *   - 同 TAB_JOIN_FORMULA，统一走 expressionToTokens 路径
+ *   - `col.expression` 是字符串，`col.tabs` 是引用的页签定义列表（TabDef 子集）
+ *   - 需要 expressionToTokens 将字符串解析成 FormulaToken[]
  */
 function evalTabJoinOrCard(
   col: CostingTemplateColumn,

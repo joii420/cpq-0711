@@ -1,0 +1,65 @@
+# 回报 · 测试 S-A · 用例编写（2026-09-17，未执行）
+
+> 按 `subagents.md §1⑥` 先落盘再分析。以下为子代理回报要点的逐字摘录（数值、路径、未验证标注原样保留）。
+
+- 本轮未执行，只做语法检查：`bash -n`、Python 语法解析、`node --check`；未连库、未调接口；未读实现目录、未 commit、未动别片产物。
+- 断点文件 `sa-common.mts`（6240 字节）为中断前所写，续写脚本建在其上。
+- 产物目录：`证据/测试/S-A/`；执行输出目录：`证据/测试/S-A/输出/`。
+- 退出码约定：0 通过 / 1 断言失败 / 2 前置条件不成立（本次运行不算证据）/ 3 接口会话无效。
+
+## 用例
+
+| 用例 | 文件 | AC | 要点 |
+|---|---|---|---|
+| T-A1 | `ta1-h85.mts`（公共 `sa-common.mts`） | AC-11 前端 | ① 回显含 `[来料固定加工费.加工费(小计)]` 恰 1 次 ② 改写后加工费 token 恰 1 个、`cross_tab_ref`、`agg==='NONE'` ③ 改写后 9 位四舍五入 = `0.212585104` ④ 不改写（快照原 token 与往返 token）= `0.463735546`；另打印两项提示（原样往返是否逐字段相等、其余 token 是否不变）。tabDefs 用快照字段按 tab-defs 形状构造（0001/0002/0003/0004）。前置失败条件：函数可导入、快照非空、公式 token 非空、原公式恰 1 处加工费小计、每次求值有结果且无 `crossTabError`；0 条断言执行即判失败。改写后 token 落盘 `输出/ta1-rewritten-tokens-branch.json`。证伪：`SA_IMPL=master` 预期 ②③ 失败、退出码 1（先校验主工作区文件等于 master 且无本地改动） |
+| T-A2 | `ta2-backend-h85.sh <B-6 测试类名>` | AC-11 后端 | `cd cpq-backend && DB_NAME=cpq_db_rp0916c ./mvnw -B test -Dtest=<类> -Dquarkus.http.test-port=0 -Dquarkus.http.test-ssl-port=0`；判定：mvn 退出码 0、本次新产出 `TEST-*<类>.xml` tests>0 且 failures/errors/skipped=0、测试源码含 `0.21258510…` 与 `0.46373554…`；用正则 `0\.(21258510|46373554)\d*` 从 surefire xml 与 `-output.txt` 摘值，复制到 `输出/ta2-<时间>/`；开跑前采样本 worktree 的 maven/quarkus 进程，有则中止；按 mtime 确权，不用 `-Dsurefire.reportsDirectory` |
+| T-A3 | `ta3-rules-unchanged.sh [fe\|be\|git\|all]` + `ta3_review_test_diff.py` | AC-12 | ① 前端 `npx vitest run src/utils/formulaEngine.test.ts src/pages/quotation/crossTabOrder.test.ts`，要求「cross-tab fixture」下执行用例数 = 夹具条数（59）全部通过，点名三条（NONE zero match / NONE multi match error path / non-numeric target in SUM error path）；后端 `-Dtest='FormulaCalculator*Test,CrossTabComponentOrderTest,CardSnapshot*Test'`，只以 `FormulaCalculatorCrossTabFixtureTest`（用例数 ≥ 59）与 `FormulaCalculatorCrossTabHostDiagTest` 为通过条件，其余失败只列出待 A/B；两份夹具 sha256 相同且相对分叉点无改动 ② `git diff --stat master -- <两文件>` + 相对分叉点版本 + 阳性对照（该文件最后一次改动提交上同写法非空）③ 判定规则：只审基线已有测试文件；被改的既有文件只能是 `formulaSerialize.test.ts` / `buildExcelSnapshot.test.ts`；每条删除行须在同 hunk 配到「去掉 `(小计)` 后相同」的新增行且删除行含 `[`；排除 `dev-docs/**`、`docs/**` |
+| T-A4 | `ta4-roundtrip.mts` | AC-13 | `cpq_db_0724` 只读（`PGOPTIONS=default_transaction_read_only=on`），8081 只 GET `/components/{id}` 与 `/components/{id}/tab-defs`；① 16 处逐项（宿主编号+公式名+被引页签+列）逐字段相等 ② 15 处回显含 `[{页签名}.{列}(小计)]` ③ 遮住 16 处后本分支往返 = master 往返（master 抛错判失败）④ 公式数 ≥ 1、识别出的引用与 `scan-输出-260916.txt` 16 条完全一致；防空跑：编号各 1 行、接口 formulas 与只读库逐字段一致、tab-defs 非空、master 文件等于 master 且无本地改动（记录短哈希与 status）；证伪：`SA_BRANCH_ROOT=/home/joii/project/cpq` ② 应 15 处失败、`SA_FALSIFY=item` ① 应 16 处失败、`SA_FALSIFY=other` ③ 应 ≥1 公式失败 |
+
+## 子代理提出的待补信息
+1. B-6 测试类名；并请 B-6 把 H85 两个实际值打印到标准输出，否则实际值只能记「未验证」。
+2. 有效 admin 会话（T-A4）：按序读 worktree `e2e/.auth/admin.json`、主工作区 `e2e/.auth/admin.json`（9 月 12 日，可能过期）或 `SA_SESSION`；S-A 不发登录 POST，401 即退出码 3。
+3. maven 需与 S-C、后端工程师错开（共用 worktree `target/`）。
+4. T-A4 依赖「tab-defs 接口本返修不改」。
+
+## 子代理提出的 AC 歧义
+- AC-11「9 位显示口径」未写舍入方式：四舍五入 `0.212585104`，截断 `0.212585103`；按四舍五入写。
+- AC-11 未规定后端输入是否为前端解析出的 token；已把前端改写后 token 落盘供对照。
+- T-A1 tabDefs：`detailFields` 取非文本字段（依 4.2②），与 `parse.mts` 写法不一致；`selfRowKeyFields` 取 tab-defs `self` 项的 `rowKeyFields`，无 `self` 传空（COMP-0009）。
+- AC-13 的 16 处清单为 `2026-09-17T05:49Z` 采样，漂移应归前置数据漂移。
+- AC-12① 理解为只以读取夹具的测试类为准，`CardSnapshot*Test` 失败只列出供 A/B。
+
+---
+
+## 主线审核结论（2026-09-17）
+见同目录 `审核-S-A-S-B-用例-260917.md`。
+
+## 审核后修订回报（2026-09-17，未执行，`node --check` 通过）
+- T-A4：`selfRowKeyFields` 改为只读 SELECT 该组件 `component.row_key_fields`（为空或非数组按空行键并提示，COMP-0009 即此情况）；`selfComponentId` 传组件 id；tab-defs 的 `self` 项只作对照，不一致时打印提示、以 `row_key_fields` 为准。
+- T-A1：宿主行键取快照 COMP-0002 的 `rowkey`（= `row_key_fields`），为空视为前置失败。
+- 舍入原即 HALF_UP（`r9()`），未改；AC-12① 口径未改。
+- 等待解锁：需 B-6 类名、`SA_SESSION`、maven 执行顺序。
+
+## 部分解锁后执行回报（2026-09-17）
+- 未发 POST、未写库、未 commit。输出目录 `证据/测试/S-A/输出/`。
+- **T-A1（AC-11 前端）**：本分支退出码 **0**（5 项全过，`ta1-branch-260917-*.txt`）；证伪 `SA_IMPL=master` 退出码 **1**（`ta1-falsify-master-260917-*.txt`）。
+  - ① 回显：`[材料毛重] * (SUM([材料成本.组成含量（%）] / 100 * [材料成本.税后单价]) * (1 + [来料损耗率] / 100) + [来料固定加工费.加工费(小计)] / [产品.税率(小计)])`，`[来料固定加工费.加工费(小计)]` 出现 1 次。
+  - ② 改写后：`{"type":"cross_tab_ref","source":"4db28822-…","sourceLabel":"来料固定加工费","target":"加工费","agg":"NONE","match":[{销售料号},{料号}]}`。
+  - ③ 改写后原始值 `0.212585103779`（9 位 `0.212585104`）；④ 不改写 `0.463735546257`（9 位 `0.463735546`），往返同值；原样往返与快照 token 逐字段相等。改写后 token 存 `ta1-rewritten-tokens-branch.json`。
+  - 证伪（master 函数）：① 失败（回显无后缀）② 失败（仍 `component_subtotal`）③ 失败（仍 `0.463735546`）④ 通过；主工作区 master 副本等于 master（`2ccdc5d9`）且无本地改动。
+- **T-A3 git 部分**：退出码 0（`ta3-git-run3.txt`）；两份夹具 sha256 相同（`891f5f8b…`）且相对分叉点无改动；`git diff --stat master -- <两引擎文件>` 为空（阳性对照：同写法在 `c2c95d10`、`5603a173` 上非空）；③ 标记 0 条：改动的既有测试文件 3 个均在清单内 —— `formulaSerialize.test.ts` 19 对合规改写（其中第③类 1 对）、`buildExcelSnapshot.test.ts` 1 对、`subtotalColRefEndToEnd.test.ts` 3 对；其余为新增文件。
+  - 判定规则三处改动（子代理自述，请主线复核）：加第③类（仅标题含「宿主小计列」那条）；规则放宽为「新增行去掉紧跟列名后的 `(小计)` 与删除行相同」（首跑误标 `:1222`、`:1276`，已知盲区：数字后的 `(小计)` 也会放行）；每段 diff 重置用例标题（防串位）；均用合成 diff 证伪；备份 `输出/ta3_review_test_diff.py.bak-v1`、`.bak-v2`；标题追踪偏差带出的 3 处归属实为清单内 `:1193`、`:2259`、`:2304`。
+- **T-A3 fe 部分**：退出码 0（`ta3-fe-run.txt`）；vitest 149 条全过、0 跳过；夹具用例 59 条全执行；「0 行 / 多行 / 非数值」三条点名通过。
+- **T-A4（AC-13）：退出码 3，未验证**（`ta4-260917-*.txt`）。库侧前置成立（只读采样 `2026-09-17 08:07:30Z`，5 个编号各 1 行，master 副本一致，函数可导入）；首个 GET `/api/cpq/components/9612f71d…` → 401。`admin.json` mtime 在 08:06:52Z 被刷新过一次，随后读到的 mtime 又为 06:37:44Z、内容仍是旧会话 `6873200a…`，连续 3 次 GET 401；原因未查实；同时段另一 worktree（`task-260916-element-price-scale9`）Playwright 在跑（进程 394671），可能相关（推测）。
+- 暂缓：T-A2、T-A3 be 部分。
+
+## T-A4 执行回报（2026-09-17，主线提供会话后）
+- 运行前 GET `/api/cpq/components/9612f71d…/tab-defs` → 200；会话经环境变量传入，4 份输出文件均未出现会话值。
+- **本体**：退出码 **0**，75 项检查全过（`输出/ta4-branch-260917-010939.txt`）。数据：`cpq_db_0724` 只读采样 `2026-09-17 08:09:39Z`；5 个编号各 1 行；接口 formulas 与库逐字段一致；tab-defs 条数 10/10/10/10/6；本分支 HEAD `ba27a776`（`formulaSerialize.ts` 未提交）；master 副本 `2ccdc5d9` 与 master 一致无本地改动。
+  - ① 16/16 通过（15 处 `component_subtotal` + 1 处 COMP-2506「公式1」`cross_tab_ref agg=SUM`）
+  - ② 15/15 回显带 `(小计)`
+  - ③ 21/21 个公式与 master 往返一致
+  - ④ 公式 21 个；识别引用 16 处（A=15、B=1），与清单缺 0、多 0
+  - 例：COMP-0009「小计1」本分支回显 `[物料.材料成本(小计)] + [物料.材料损耗成本(小计)] - [物料.回收成本(小计)] + [其他费用(总计)] + [产品.管理费(小计)] + [组装加工费(总计)]`，master 同式不带 `(小计)`；COMP-2506「公式1」两边均为 `SUM([材质元素.材质成本]) * …`。
+- **证伪**（均退出码 1，符合预期）：`SA_BRANCH_ROOT=/home/joii/project/cpq` → ② 失败 15 处、①③ 0；`SA_FALSIFY=item` → ① 失败 16 处、②③ 0；`SA_FALSIFY=other` → ③ 失败 21 个公式、①② 0。
+- 仍暂缓：T-A2、T-A3 be 部分。

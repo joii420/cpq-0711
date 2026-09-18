@@ -1,0 +1,2 @@
+POST http://localhost:5295/api/cpq/components/b3445979-e3d6-4cdb-ab2d-53758b5f2eb2/row-key-candidates
+POST http://localhost:5295/api/cpq/components/b3445979-e3d6-4cdb-ab2d-53758b5f2eb2/row-key-candidates

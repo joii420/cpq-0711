@@ -1,0 +1,17 @@
+{
+  "agg": "NONE",
+  "type": "cross_tab_ref",
+  "match": [
+    {
+      "a": "销售料号",
+      "b": "销售料号"
+    },
+    {
+      "a": "料号",
+      "b": "料号"
+    }
+  ],
+  "source": "4db28822-85c6-4522-ac62-61ef2393a99c",
+  "target": "加工费",
+  "sourceLabel": "来料固定加工费"
+}

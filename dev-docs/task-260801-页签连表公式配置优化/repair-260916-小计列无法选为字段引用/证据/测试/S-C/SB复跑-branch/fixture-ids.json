@@ -1,0 +1,35 @@
+{
+  "dir": {
+    "id": "08288e2a-e8e1-49b3-86f9-24f5a716aa71",
+    "name": "RP0916B-E2E"
+  },
+  "components": [
+    {
+      "id": "d181b7ec-47dc-4e65-981b-ebf377483600",
+      "code": "COMP-2650",
+      "name": "RP0916宿主"
+    },
+    {
+      "id": "a500eafe-b0f3-4525-ada7-9f5e67b34d6c",
+      "code": "COMP-2651",
+      "name": "RP0916加工费"
+    },
+    {
+      "id": "972fa387-af2d-4716-b5da-e55e8132bd1d",
+      "code": "COMP-2652",
+      "name": "RP0916工序"
+    },
+    {
+      "id": "6346c49b-ed98-4fb1-8362-4abd8d5e0188",
+      "code": "COMP-2653",
+      "name": "RP0916小计"
+    },
+    {
+      "id": "156ac5d4-2777-43b6-9ced-8bdb40987201",
+      "code": "COMP-2654",
+      "name": "RP0916Excel"
+    }
+  ],
+  "cleaned": true,
+  "cleanedAt": "2026-09-17T12:02:07.828Z"
+}

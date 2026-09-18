@@ -1,0 +1,96 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------------------< com.cpq:cpq-backend >-------------------------
+[INFO] Building cpq-backend 1.0.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[WARNING] The artifact io.quarkus:quarkus-junit5:jar:3.34.3 has been relocated to io.quarkus:quarkus-junit:jar:3.34.3: Update the artifactId in your project build file. Refer to https://github.com/quarkusio/quarkus/wiki/Migration-Guide-3.31 for more information.
+[WARNING] The artifact io.quarkus:quarkus-junit5-mockito:jar:3.34.3 has been relocated to io.quarkus:quarkus-junit-mockito:jar:3.34.3: Update the artifactId in your project build file. Refer to https://github.com/quarkusio/quarkus/wiki/Migration-Guide-3.31 for more information.
+[INFO] 
+[INFO] --- antlr4:4.13.1:antlr4 (antlr4-generate) @ cpq-backend ---
+[INFO] No grammars to process
+[INFO] ANTLR 4: Processing source directory /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/main/antlr4
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ cpq-backend ---
+[INFO] Copying 436 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- quarkus:3.34.3:generate-code (default) @ cpq-backend ---
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ cpq-backend ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 982 source files with javac [debug parameters release 21] to target/classes
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/MaterialCustomerMapRepository.java:[208,16] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/MaterialCustomerMapRepository.java:[385,16] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/QuoteMaterialNoAllocator.java:[39,19] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/QuoteMaterialNoAllocator.java:[79,17] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/ElementRecoveryDiscountRepository.java:[56,33] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/ElementRecoveryDiscountRepository.java:[121,17] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/QuoteImportService.java:[292,41] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/main/java/com/cpq/quotation/service/QuotationService.java:[2454,47] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/main/java/com/cpq/quotation/service/backfill/QuoteBackfillService.java:[77,27] flipPending(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/main/java/com/cpq/quotation/service/PendingHygieneService.java:[123,62] deleteOrphanPendingWithGuard() in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/Q02CustomerMapHandler.java: Some input files use or override a deprecated API.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/Q02CustomerMapHandler.java: Recompile with -Xlint:deprecation for details.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/V6QuotationCommitService.java: Some input files use unchecked or unsafe operations.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/V6QuotationCommitService.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- quarkus:3.34.3:generate-code-tests (default) @ cpq-backend ---
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ cpq-backend ---
+[INFO] Copying 25 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ cpq-backend ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 723 source files with javac [debug parameters release 21] to target/test-classes
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[110,27] flipPending(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[159,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[264,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[308,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/test/java/com/cpq/basicdata/v6/service/PendingRepointNoOpTest.java:[104,22] repointPendingOwnership(java.util.UUID,java.util.UUID) in com.cpq.basicdata.v6.service.V6QuotationCommitService has been deprecated and marked for removal
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/ElementRecoveryBatchUpdateEquivTest.java: Some input files use or override a deprecated API.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/ElementRecoveryBatchUpdateEquivTest.java: Recompile with -Xlint:deprecation for details.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/test/java/com/cpq/basicdata/v6/pricing/P01P02PricingPriceVersioningTest.java: Some input files use unchecked or unsafe operations.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/test/java/com/cpq/basicdata/v6/pricing/P01P02PricingPriceVersioningTest.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ cpq-backend ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.cpq.quotation.service.Repair260916H85FormulaTest
+[repair-260916 H85] component_subtotal(整列小计) = 0.463735546257 (9位显示 0.463735546)
+[repair-260916 H85] cross_tab_ref(NONE,按行匹配) = 0.212585103779 (9位显示 0.212585104)
+[repair-260916 H85] cross_tab_ref token = {"type":"cross_tab_ref","source":"4db28822-85c6-4522-ac62-61ef2393a99c","sourceLabel":"来料固定加工费","target":"加工费","agg":"NONE","match":[{"a":"销售料号","b":"销售料号"},{"a":"料号","b":"料号"}]} diag={}
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.132 s -- in com.cpq.quotation.service.Repair260916H85FormulaTest
+[INFO] Running com.cpq.quotation.service.tabjoin.SafeArithmeticDecimalLiteralTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.053 s -- in com.cpq.quotation.service.tabjoin.SafeArithmeticDecimalLiteralTest
+[INFO] Running com.cpq.quotation.service.tabjoin.TabJoinExcelSharedFixtureTest
+[tabjoin-fixture] AC-14a [物料.材料成本(小计)] => 1.978941064000
+[tabjoin-fixture] AC-14b [物料.X] => 155.932743363000
+[tabjoin-fixture] AC-14c [物料.X] * 2 + [物料.材料成本(小计)] => 313.844427790000
+[tabjoin-fixture] AC-14d [物料(总计)] => 767.382030838000
+[tabjoin-fixture] AC-14e SUM([物料.X]) => 155.932743363000
+[tabjoin-fixture] X-1-col2-subtotal [物料.回收成本(小计)] => 0.317766357000
+[tabjoin-fixture] X-2-column-total-unchanged [物料.材料成本(总计)] => 1.978941064000
+[tabjoin-fixture] X-3-bare-detail-on-subtotal-column [物料.材料成本] => 1.978941064000
+[tabjoin-fixture] X-4-row-product [物料.X] * [物料.材料成本] => 0.462258430204
+[tabjoin-fixture] X-5-subtotal-inside-row-aggregate SUM([物料.X] * [物料.材料成本(小计)]) => 308.581709063214
+[tabjoin-fixture] X-6-cross-tab-aligned-detail [物料.X] + [来料固定加工费.加工费] => 283.432743363000
+[tabjoin-fixture] X-7-cross-tab-subtotal [物料.材料成本(小计)] + [来料固定加工费.加工费(小计)] => 129.478941064000
+[tabjoin-fixture] AC-14g-1-subtotal-div-decimal-literal [物料.材料成本(小计)] / 1.13 => 1.751275277876
+[tabjoin-fixture] AC-14g-2-detail-div-decimal-literal [物料.X] / 1.13 => 137.993578197345
+[INFO] Tests run: 15, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.056 s -- in com.cpq.quotation.service.tabjoin.TabJoinExcelSharedFixtureTest
+[INFO] Running com.cpq.quotation.service.tabjoin.TabJoinSubtotalSuffixTest
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.031 s -- in com.cpq.quotation.service.tabjoin.TabJoinSubtotalSuffixTest
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 33, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  11.208 s
+[INFO] Finished at: 2026-09-17T05:24:29-07:00
+[INFO] ------------------------------------------------------------------------

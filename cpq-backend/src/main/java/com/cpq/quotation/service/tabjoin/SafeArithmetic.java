@@ -20,11 +20,27 @@ public class SafeArithmetic extends JexlArithmetic {
 
     @Override
     public Object divide(Object left, Object right) {
-        java.math.BigDecimal dividend = PrecisionPolicy.of(left);
+        java.math.BigDecimal dividend = exact(left);
         if (right == null || isZero(right)) {
             return PrecisionPolicy.roundForCalculation(dividend);
         }
-        return PrecisionPolicy.divide(dividend, PrecisionPolicy.of(right));
+        return PrecisionPolicy.divide(dividend, exact(right));
+    }
+
+    /**
+     * repair-260916 B-8 (D-10): a formula literal without the JEXL "B" suffix (e.g. {@code / 1.13})
+     * arrives as Double/Float. {@link PrecisionPolicy#of} rejects floating point (the Excel column
+     * then silently became empty), so convert via its shortest decimal text first —
+     * {@code Double.toString(1.13)} is {@code "1.13"}, i.e. the literal the user typed.
+     * Non-finite values (NaN/Infinity) cannot be represented and count as 0.
+     */
+    static java.math.BigDecimal exact(Object v) {
+        if (v instanceof Double || v instanceof Float) {
+            double d = ((Number) v).doubleValue();
+            if (Double.isNaN(d) || Double.isInfinite(d)) return java.math.BigDecimal.ZERO;
+            return new java.math.BigDecimal(v.toString());
+        }
+        return PrecisionPolicy.of(v);
     }
 
     private boolean isZero(Object v) {

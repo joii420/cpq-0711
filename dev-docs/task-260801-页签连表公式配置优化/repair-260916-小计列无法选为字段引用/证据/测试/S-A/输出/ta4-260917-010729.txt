@@ -1,0 +1,22 @@
+# T-A4 AC-13  at=2026-09-17T08:07:29.886Z  api=http://localhost:8081  branchRoot=/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix  falsify=''
+[master-copy] /home/joii/project/cpq/cpq-frontend/src/pages/component/formulaSerialize.ts  主工作区分支=master master=2ccdc5d9 该文件最后提交=354a7149 status='' 与master一致=true
+PRE-OK 主工作区当前分支为 master（实际 master）
+PRE-OK 主工作区 cpq-frontend/src/pages/component/formulaSerialize.ts 等于 master 且无本地改动
+[master-copy] 主工作区 cpq-frontend/src 无已跟踪文件本地改动
+[branch-copy] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix HEAD=ba27a776 未提交改动(formulaSerialize/formulaEngine)='M cpq-frontend/src/pages/component/formulaSerialize.ts'
+PRE-OK 两份 formulaSerialize 均可导入
+[db] cpq_db_0724 只读采样时刻 2026-09-17 08:07:30.275521+00
+PRE-OK 库中 COMP-0001 恰 1 行（实际 1）
+PRE-OK 库中 COMP-0002 恰 1 行（实际 1）
+PRE-OK 库中 COMP-0003 恰 1 行（实际 1）
+PRE-OK 库中 COMP-0009 恰 1 行（实际 1）
+PRE-OK 库中 COMP-2506 恰 1 行（实际 1）
+PRE-OK source id 形如 uuid：af497796-fd09-4975-b9e6-d4bb0cb59be7
+PRE-OK source id 形如 uuid：b3445979-e3d6-4cdb-ab2d-53758b5f2eb2
+PRE-OK source id 形如 uuid：57554055-0896-4cc8-be98-65e45b0a5985
+PRE-OK source id 形如 uuid：5d5b34f8-a4ae-4704-a91b-aab7d9316e71
+PRE-OK source id 形如 uuid：39fa3d9d-54b9-4605-93ca-dd38cbfa2831
+PRE-OK source id 形如 uuid：fa956c2f-58e7-446b-9f66-4ce77a9f96d9
+PRE-OK source id 形如 uuid：5c66b099-4f73-4b31-9e68-d2f723661346
+[api] 会话取自 /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/e2e/.auth/admin.json
+ABORT: GET /api/cpq/components/9612f71d-a5e3-48ce-b1d7-7dfc456125a7 → 401，会话无效；请主线提供有效 CPQ_SESSION（SA_SESSION=...）

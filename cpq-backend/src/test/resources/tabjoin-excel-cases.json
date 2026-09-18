@@ -1,0 +1,59 @@
+{
+  "_about": "repair-260916 shared parity fixture for Excel TAB_JOIN_FORMULA columns. Backend: TabJoinPlanEvaluator.evaluateColumn; frontend: buildExcelSnapshot. The two copies must be byte-identical (sha256sum). Row values are copied verbatim from QT-20260916-0881 quotation_line_item.quote_card_values (tabs[].resolvedRows / subtotal / subtotalByColumn, sampled from cpq_db_rp0916c cloned from cpq_db_0724 at 2026-09-17T06:37Z). Column X is the supplementary non-subtotal numeric column required by AC-14; its values are copied verbatim from the real non-subtotal column 来料加工费 of the same rows. The root row (index 0) has no 销售料号/料号 keys in the real data and is kept that way. expected = 12-digit calculation scale, compare numerically (backend compareTo / frontend decimal string), no tolerance.",
+  "tabs": [
+    {
+      "alias": "物料",
+      "tabKey": "b3445979-e3d6-4cdb-ab2d-53758b5f2eb2",
+      "rowKeyFields": ["销售料号", "料号"],
+      "fields": [
+        { "name": "销售料号", "is_subtotal": false },
+        { "name": "料号", "is_subtotal": false },
+        { "name": "材料成本", "is_subtotal": true },
+        { "name": "回收成本", "is_subtotal": true },
+        { "name": "X", "is_subtotal": false }
+      ],
+      "rows": [
+        { "材料成本": "0", "回收成本": "0", "X": "0" },
+        { "销售料号": "S3120011203", "料号": "S3110520422", "材料成本": "0.059191597", "回收成本": "0", "X": "0" },
+        { "销售料号": "S3120011203", "料号": "00144", "材料成本": "0.463735546", "回收成本": "0.317766357", "X": "0" },
+        { "销售料号": "S3110520422", "料号": "00255", "材料成本": "1.437983994", "回收成本": "0", "X": "0" },
+        { "销售料号": "S3110520422", "料号": "00256", "材料成本": "0.015491845", "回收成本": "0", "X": "5.132743363" },
+        { "销售料号": "S3110520422", "料号": "00257", "材料成本": "0.002538082", "回收成本": "0", "X": "150.8" }
+      ],
+      "subtotalByColumn": { "材料成本": "1.978941064", "回收成本": "0.317766357" },
+      "tabTotal": "767.382030838"
+    },
+    {
+      "alias": "来料固定加工费",
+      "tabKey": "4db28822-85c6-4522-ac62-61ef2393a99c",
+      "rowKeyFields": ["销售料号", "料号"],
+      "fields": [
+        { "name": "销售料号", "is_subtotal": false },
+        { "name": "料号", "is_subtotal": false },
+        { "name": "加工费", "is_subtotal": true }
+      ],
+      "rows": [
+        { "销售料号": "S3120011203", "料号": "S3110520422", "加工费": "120" },
+        { "销售料号": "S3120011203", "料号": "00144", "加工费": "7.5" }
+      ],
+      "subtotalByColumn": { "加工费": "127.5" },
+      "tabTotal": "127.5"
+    }
+  ],
+  "cases": [
+    { "id": "AC-14a", "expression": "[物料.材料成本(小计)]", "expected": "1.978941064" },
+    { "id": "AC-14b", "expression": "[物料.X]", "expected": "155.932743363" },
+    { "id": "AC-14c", "expression": "[物料.X] * 2 + [物料.材料成本(小计)]", "expected": "313.84442779" },
+    { "id": "AC-14d", "expression": "[物料(总计)]", "expected": "767.382030838" },
+    { "id": "AC-14e", "expression": "SUM([物料.X])", "expected": "155.932743363" },
+    { "id": "X-1-col2-subtotal", "expression": "[物料.回收成本(小计)]", "expected": "0.317766357" },
+    { "id": "X-2-column-total-unchanged", "expression": "[物料.材料成本(总计)]", "expected": "1.978941064" },
+    { "id": "X-3-bare-detail-on-subtotal-column", "expression": "[物料.材料成本]", "expected": "1.978941064" },
+    { "id": "X-4-row-product", "expression": "[物料.X] * [物料.材料成本]", "expected": "0.462258430204" },
+    { "id": "X-5-subtotal-inside-row-aggregate", "expression": "SUM([物料.X] * [物料.材料成本(小计)])", "expected": "308.581709063214" },
+    { "id": "X-6-cross-tab-aligned-detail", "expression": "[物料.X] + [来料固定加工费.加工费]", "expected": "283.432743363" },
+    { "id": "X-7-cross-tab-subtotal", "expression": "[物料.材料成本(小计)] + [来料固定加工费.加工费(小计)]", "expected": "129.478941064" },
+    { "id": "AC-14g-1-subtotal-div-decimal-literal", "expression": "[物料.材料成本(小计)] / 1.13", "expected": "1.751275277876" },
+    { "id": "AC-14g-2-detail-div-decimal-literal", "expression": "[物料.X] / 1.13", "expected": "137.993578197345" }
+  ]
+}

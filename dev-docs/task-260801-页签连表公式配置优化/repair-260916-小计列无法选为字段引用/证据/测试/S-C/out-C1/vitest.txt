@@ -1,0 +1,147 @@
+
+ RUN  v4.1.4 /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14a  [物料.材料成本(小计)] = 1.978941064
+[A] AC-14a actual=1.978941064 expected=1.978941064
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14b  [物料.X] = 155.932743363
+[A] AC-14b actual=155.932743363 expected=155.932743363
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14c  [物料.X] * 2 + [物料.材料成本(小计)] = 313.84442779
+[A] AC-14c actual=313.84442779 expected=313.84442779
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14d  [物料(总计)] = 767.382030838
+[A] AC-14d actual=767.382030838 expected=767.382030838
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14e  SUM([物料.X]) = 155.932743363
+[A] AC-14e actual=155.932743363 expected=155.932743363
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-1-col2-subtotal  [物料.回收成本(小计)] = 0.317766357
+[A] X-1-col2-subtotal actual=0.317766357 expected=0.317766357
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-2-column-total-unchanged  [物料.材料成本(总计)] = 1.978941064
+[A] X-2-column-total-unchanged actual=1.978941064 expected=1.978941064
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-3-bare-detail-on-subtotal-column  [物料.材料成本] = 1.978941064
+[A] X-3-bare-detail-on-subtotal-column actual=1.978941064 expected=1.978941064
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-4-row-product  [物料.X] * [物料.材料成本] = 0.462258430204
+[A] X-4-row-product actual=0.462258430204 expected=0.462258430204
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-5-subtotal-inside-row-aggregate  SUM([物料.X] * [物料.材料成本(小计)]) = 308.581709063214
+[A] X-5-subtotal-inside-row-aggregate actual=308.581709063214 expected=308.581709063214
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-6-cross-tab-aligned-detail  [物料.X] + [来料固定加工费.加工费] = 283.432743363
+[A] X-6-cross-tab-aligned-detail actual=283.432743363 expected=283.432743363
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-7-cross-tab-subtotal  [物料.材料成本(小计)] + [来料固定加工费.加工费(小计)] = 129.478941064
+[A] X-7-cross-tab-subtotal actual=129.478941064 expected=129.478941064
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14g-1-subtotal-div-decimal-literal  [物料.材料成本(小计)] / 1.13 = 1.751275277876
+[A] AC-14g-1-subtotal-div-decimal-literal actual=1.751275277876 expected=1.751275277876
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14g-2-detail-div-decimal-literal  [物料.X] / 1.13 = 137.993578197345
+[A] AC-14g-2-detail-div-decimal-literal actual=137.993578197345 expected=137.993578197345
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14a  [物料.材料成本(小计)] = 1.978941064
+[B] AC-14a actual=1.978941064 expected=1.978941064
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14b  [物料.X] = 155.932743363
+[B] AC-14b actual=155.932743363 expected=155.932743363
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14c  [物料.X] * 2 + [物料.材料成本(小计)] = 313.84442779
+[B] AC-14c actual=313.84442779 expected=313.84442779
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14d  [物料(总计)] = 767.382030838
+[B] AC-14d actual=767.382030838 expected=767.382030838
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14e  SUM([物料.X]) = 155.932743363
+[B] AC-14e actual=155.932743363 expected=155.932743363
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-1-col2-subtotal  [物料.回收成本(小计)] = 0.317766357
+[B] X-1-col2-subtotal actual=0.317766357 expected=0.317766357
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-2-column-total-unchanged  [物料.材料成本(总计)] = 1.978941064
+[B] X-2-column-total-unchanged actual=1.978941064 expected=1.978941064
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-3-bare-detail-on-subtotal-column  [物料.材料成本] = 1.978941064
+[B] X-3-bare-detail-on-subtotal-column actual=1.978941064 expected=1.978941064
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-4-row-product  [物料.X] * [物料.材料成本] = 0.462258430204
+[B] X-4-row-product actual=0.462258430204 expected=0.462258430204
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-5-subtotal-inside-row-aggregate  SUM([物料.X] * [物料.材料成本(小计)]) = 308.581709063214
+[B] X-5-subtotal-inside-row-aggregate actual=308.581709063214 expected=308.581709063214
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-6-cross-tab-aligned-detail  [物料.X] + [来料固定加工费.加工费] = 283.432743363
+[B] X-6-cross-tab-aligned-detail actual=283.432743363 expected=283.432743363
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-7-cross-tab-subtotal  [物料.材料成本(小计)] + [来料固定加工费.加工费(小计)] = 129.478941064
+[B] X-7-cross-tab-subtotal actual=129.478941064 expected=129.478941064
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14g-1-subtotal-div-decimal-literal  [物料.材料成本(小计)] / 1.13 = 1.751275277876
+[B] AC-14g-1-subtotal-div-decimal-literal actual=1.751275277876 expected=1.751275277876
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14g-2-detail-div-decimal-literal  [物料.X] / 1.13 = 137.993578197345
+[B] AC-14g-2-detail-div-decimal-literal actual=137.993578197345 expected=137.993578197345
+
+stderr | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > 非法写法 [物料(小计)] → 该列降级为 0，不影响其它列
+[buildExcelSnapshot] TAB_JOIN eval failed for col bad Error: 「(小计)」要写在列名后面，如 [页签.列(小计)]；整页签合计请写 [页签(总计)]
+    at parseTok (/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/src/pages/quotation/tabJoinExcelEval.ts:93:11)
+    at /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/src/pages/quotation/tabJoinExcelEval.ts:579:17
+    at forEachToken (/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/src/pages/quotation/tabJoinExcelEval.ts:103:40)
+    at evaluateTabJoinColumn (/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/src/pages/quotation/tabJoinExcelEval.ts:578:3)
+    at evalTabJoinColumn (/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/src/pages/quotation/buildExcelSnapshot.ts:336:12)
+    at evalColumn (/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/src/pages/quotation/buildExcelSnapshot.ts:217:14)
+    at buildExcelSnapshot (/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/src/pages/quotation/buildExcelSnapshot.ts:175:25)
+    at /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/src/pages/quotation/tabJoinExcelEval.fixture.test.ts:125:12
+    at file:///home/joii/project/cpq/cpq-frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///home/joii/project/cpq/cpq-frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > 夹具完整性 > 前后端两份文件逐字节相同 1ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > 夹具完整性 > 非空：含 AC-14 a~e 五条及物料 6 行 1ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14a  [物料.材料成本(小计)] = 1.978941064 1ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14b  [物料.X] = 155.932743363 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14c  [物料.X] * 2 + [物料.材料成本(小计)] = 313.84442779 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14d  [物料(总计)] = 767.382030838 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14e  SUM([物料.X]) = 155.932743363 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-1-col2-subtotal  [物料.回收成本(小计)] = 0.317766357 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-2-column-total-unchanged  [物料.材料成本(总计)] = 1.978941064 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-3-bare-detail-on-subtotal-column  [物料.材料成本] = 1.978941064 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-4-row-product  [物料.X] * [物料.材料成本] = 0.462258430204 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-5-subtotal-inside-row-aggregate  SUM([物料.X] * [物料.材料成本(小计)]) = 308.581709063214 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-6-cross-tab-aligned-detail  [物料.X] + [来料固定加工费.加工费] = 283.432743363 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-7-cross-tab-subtotal  [物料.材料成本(小计)] + [来料固定加工费.加工费(小计)] = 129.478941064 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14g-1-subtotal-div-decimal-literal  [物料.材料成本(小计)] / 1.13 = 1.751275277876 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14g-2-detail-div-decimal-literal  [物料.X] / 1.13 = 137.993578197345 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > [物料(小计)] 没写列名 → 抛 5.1 文案（后端同样抛错） 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14a  [物料.材料成本(小计)] = 1.978941064 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14b  [物料.X] = 155.932743363 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14c  [物料.X] * 2 + [物料.材料成本(小计)] = 313.84442779 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14d  [物料(总计)] = 767.382030838 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14e  SUM([物料.X]) = 155.932743363 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-1-col2-subtotal  [物料.回收成本(小计)] = 0.317766357 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-2-column-total-unchanged  [物料.材料成本(总计)] = 1.978941064 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-3-bare-detail-on-subtotal-column  [物料.材料成本] = 1.978941064 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-4-row-product  [物料.X] * [物料.材料成本] = 0.462258430204 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-5-subtotal-inside-row-aggregate  SUM([物料.X] * [物料.材料成本(小计)]) = 308.581709063214 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-6-cross-tab-aligned-detail  [物料.X] + [来料固定加工费.加工费] = 283.432743363 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-7-cross-tab-subtotal  [物料.材料成本(小计)] + [来料固定加工费.加工费(小计)] = 129.478941064 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14g-1-subtotal-div-decimal-literal  [物料.材料成本(小计)] / 1.13 = 1.751275277876 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14g-2-detail-div-decimal-literal  [物料.X] / 1.13 = 137.993578197345 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > 非法写法 [物料(小计)] → 该列降级为 0，不影响其它列 4ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > 口径细节 > 除数为 0 → 被除数（SafeArithmetic），不是 0 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > 口径细节 > D-10：除以不带 B 的小数字面量按十进制文本相除，不再抛错（被除数为小数字面量同样） 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > 口径细节 > 取模 %：余数符号随被除数；除数为 0 → 0；与 * 同优先级 1ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > 口径细节 > 比较运算：单行结果为布尔 → 按 0；参与加减乘时按 1 / 0；不可连写 1ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > 口径细节 > 比较运算逐行求值：明细项里每行比较结果（布尔）按 1 / 0 相加 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > 口径细节 > AVG 按对齐行（全外连）计数：物料 6 行 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > 口径细节 > 未在 tabs 声明的页签：明细按 0、标量按 0 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > 口径细节 > 顶层减号拆项：裸明细项逐行求和后相减 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > 口径细节 > 空表达式 → 0 0ms
+
+ Test Files  1 passed (1)
+      Tests  41 passed (41)
+   Start at  05:22:22
+   Duration  1.55s (transform 422ms, setup 0ms, import 1.46s, tests 16ms, environment 0ms)
+

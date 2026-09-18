@@ -1,0 +1,267 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "bundleVersion": "1.1",
+    "checksumValid": true,
+    "targetDirectoryId": "89448b0a-e5f2-40b1-9340-77ecec2d035f",
+    "targetDirectoryName": "RP0916C-再导入v12",
+    "conflictPolicy": "RENAME",
+    "summary": {
+      "total": 10,
+      "toCreate": 0,
+      "toRename": 10,
+      "toSkip": 0,
+      "conflicts": 10
+    },
+    "components": [
+      {
+        "code": "COMP-2621",
+        "name": "来料固定加工费",
+        "action": "RENAME",
+        "newCode": "（导入时自动分配）",
+        "conflict": true,
+        "sqlViewCount": 1,
+        "formulaBinding": [],
+        "builderCoord": {
+          "status": "RESOLVED",
+          "message": null
+        }
+      },
+      {
+        "code": "COMP-2622",
+        "name": "来料其他费用",
+        "action": "RENAME",
+        "newCode": "（导入时自动分配）",
+        "conflict": true,
+        "sqlViewCount": 1,
+        "formulaBinding": [],
+        "builderCoord": {
+          "status": "RESOLVED",
+          "message": null
+        }
+      },
+      {
+        "code": "COMP-2623",
+        "name": "其他费用",
+        "action": "RENAME",
+        "newCode": "（导入时自动分配）",
+        "conflict": true,
+        "sqlViewCount": 1,
+        "formulaBinding": [],
+        "builderCoord": {
+          "status": "RESOLVED",
+          "message": null
+        }
+      },
+      {
+        "code": "COMP-2624",
+        "name": "组装加工费",
+        "action": "RENAME",
+        "newCode": "（导入时自动分配）",
+        "conflict": true,
+        "sqlViewCount": 1,
+        "formulaBinding": [],
+        "builderCoord": {
+          "status": "RESOLVED",
+          "message": null
+        }
+      },
+      {
+        "code": "COMP-2626",
+        "name": "来料回收",
+        "action": "RENAME",
+        "newCode": "（导入时自动分配）",
+        "conflict": true,
+        "sqlViewCount": 1,
+        "formulaBinding": [],
+        "builderCoord": {
+          "status": "RESOLVED",
+          "message": null
+        }
+      },
+      {
+        "code": "COMP-2625",
+        "name": "产品",
+        "action": "RENAME",
+        "newCode": "（导入时自动分配）",
+        "conflict": true,
+        "sqlViewCount": 1,
+        "formulaBinding": [
+          {
+            "fieldName": "管理费",
+            "resolvedFormulaId": "f-1789459337944-6sbm3tma",
+            "resolvedFormulaName": "管理费",
+            "status": "BOUND",
+            "message": null
+          }
+        ],
+        "builderCoord": {
+          "status": "RESOLVED",
+          "message": null
+        }
+      },
+      {
+        "code": "COMP-2620",
+        "name": "材料成本",
+        "action": "RENAME",
+        "newCode": "（导入时自动分配）",
+        "conflict": true,
+        "sqlViewCount": 1,
+        "formulaBinding": [
+          {
+            "fieldName": "税后单价 › 规则1",
+            "resolvedFormulaId": "f-1789460491524-o9gyn0ok",
+            "resolvedFormulaName": "不扣税单价公式",
+            "status": "BOUND",
+            "message": null
+          },
+          {
+            "fieldName": "税后单价 › 默认",
+            "resolvedFormulaId": "f-1789459297841-u8b87au4",
+            "resolvedFormulaName": "税后单价公式",
+            "status": "BOUND",
+            "message": null
+          }
+        ],
+        "builderCoord": {
+          "status": "RESOLVED",
+          "message": null
+        }
+      },
+      {
+        "code": "COMP-2628",
+        "name": "ex1",
+        "action": "RENAME",
+        "newCode": "（导入时自动分配）",
+        "conflict": true,
+        "sqlViewCount": 0,
+        "formulaBinding": [],
+        "builderCoord": {
+          "status": "NOT_BUILDER",
+          "message": null
+        }
+      },
+      {
+        "code": "COMP-2629",
+        "name": "物料",
+        "action": "RENAME",
+        "newCode": "（导入时自动分配）",
+        "conflict": true,
+        "sqlViewCount": 1,
+        "formulaBinding": [
+          {
+            "fieldName": "来料回收费",
+            "resolvedFormulaId": "f-1789459501800-b7u5uy44",
+            "resolvedFormulaName": "来料回收费取值公式",
+            "status": "BOUND",
+            "message": null
+          },
+          {
+            "fieldName": "来料财务费",
+            "resolvedFormulaId": "f-1789459589040-hbsocbhx",
+            "resolvedFormulaName": "来料财务费取值公式",
+            "status": "BOUND",
+            "message": null
+          },
+          {
+            "fieldName": "材料成本 › 规则1",
+            "resolvedFormulaId": "f-1789460341477-uo8pwvm7",
+            "resolvedFormulaName": "非银点类材料成本公式",
+            "status": "BOUND",
+            "message": null
+          },
+          {
+            "fieldName": "材料成本 › 规则2",
+            "resolvedFormulaId": "f-1789460384333-q9307zf1",
+            "resolvedFormulaName": "零件材料成本",
+            "status": "BOUND",
+            "message": null
+          },
+          {
+            "fieldName": "材料成本 › 规则3",
+            "resolvedFormulaId": "f-1789460389573-ksvip9v1",
+            "resolvedFormulaName": "银点粉体类材料成本公式",
+            "status": "BOUND",
+            "message": null
+          },
+          {
+            "fieldName": "材料成本 › 默认",
+            "resolvedFormulaId": "f-1789459614352-5e1mcpvo",
+            "resolvedFormulaName": "银点材料成本公式",
+            "status": "BOUND",
+            "message": null
+          },
+          {
+            "fieldName": "材料损耗成本",
+            "resolvedFormulaId": "f-1789460345885-z0agbpq3",
+            "resolvedFormulaName": "材料损耗成本",
+            "status": "BOUND",
+            "message": null
+          },
+          {
+            "fieldName": "来料损耗率",
+            "resolvedFormulaId": "f-1789460358485-7zr4sjn3",
+            "resolvedFormulaName": "来料损耗率取值公式",
+            "status": "BOUND",
+            "message": null
+          },
+          {
+            "fieldName": "来料加工费",
+            "resolvedFormulaId": "f-1789460363774-1giy4awv",
+            "resolvedFormulaName": "来料加工费取值公式",
+            "status": "BOUND",
+            "message": null
+          },
+          {
+            "fieldName": "回收成本",
+            "resolvedFormulaId": "f-1789460368429-jbsczi4g",
+            "resolvedFormulaName": "回收成本",
+            "status": "BOUND",
+            "message": null
+          },
+          {
+            "fieldName": "铆钉额外费用",
+            "resolvedFormulaId": "f-1789460372861-3iunzzgh",
+            "resolvedFormulaName": "铆钉额外费用",
+            "status": "BOUND",
+            "message": null
+          }
+        ],
+        "builderCoord": {
+          "status": "RESOLVED",
+          "message": null
+        }
+      },
+      {
+        "code": "COMP-2627",
+        "name": "产品小计",
+        "action": "RENAME",
+        "newCode": "（导入时自动分配）",
+        "conflict": true,
+        "sqlViewCount": 0,
+        "formulaBinding": [],
+        "builderCoord": {
+          "status": "NOT_BUILDER",
+          "message": null
+        }
+      }
+    ],
+    "dependencies": {
+      "globalVariables": [],
+      "datasources": [],
+      "missingCount": 0
+    },
+    "canCommit": true,
+    "blockers": [],
+    "warnings": [],
+    "bindingSummary": {
+      "totalFormulaRefs": 14,
+      "bound": 14,
+      "resolvedByName": 0,
+      "resolvedByPosition": 0,
+      "unresolvable": 0
+    },
+    "crossRefIssues": []
+  }
+}

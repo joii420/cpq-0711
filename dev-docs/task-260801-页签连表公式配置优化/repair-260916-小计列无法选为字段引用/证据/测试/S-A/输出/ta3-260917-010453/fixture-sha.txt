@@ -1,0 +1,2 @@
+891f5f8bb1f31c63b613c9d98ae6c8e6d7f8bfac9dff6b3aff86255d31845d8c  /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/src/utils/__fixtures__/cross-tab-cases.json
+891f5f8bb1f31c63b613c9d98ae6c8e6d7f8bfac9dff6b3aff86255d31845d8c  /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/test/resources/cross-tab-cases.json

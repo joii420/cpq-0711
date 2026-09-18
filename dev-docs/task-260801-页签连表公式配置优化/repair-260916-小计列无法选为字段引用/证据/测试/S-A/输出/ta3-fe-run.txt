@@ -1,0 +1,23 @@
+# T-A3 part=fe at=2026-09-17T01:05:37-07:00 out=/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/dev-docs/task-260801-页签连表公式配置优化/repair-260916-小计列无法选为字段引用/证据/测试/S-A/输出/ta3-260917-010537 HEAD=ba27a776 master=2ccdc5d9 merge-base=2ccdc5d9
+[pre] cross-tab-cases.json 用例数=59
+
+== ① 前端夹具测试（vitest）
+ ✓ src/utils/formulaEngine.test.ts > T5 前端引擎 KSUM > 决策 K + I-2: KAVG 空集 → 整外层表达式塌 0 + crossTabError 非空 0ms
+ ✓ src/utils/formulaEngine.test.ts > 多 source 广播 (token.sources §4.3) > 多 source 链: SUM([元素.单价] + [来料.组成用量]) 驱动=元素, 来料更粗按料件广播 0ms
+ ✓ src/utils/formulaEngine.test.ts > 多 source 广播 (token.sources §4.3) > 多 source: 粗 source 0 命中 → 该项=0 (不报 crossTabError) 0ms
+ ✓ src/utils/formulaEngine.test.ts > 多 source 广播 (token.sources §4.3) > 多 source: 粗 source >1 命中 → multiMatchErr → 整项塌 0 + crossTabError 0ms
+ ✓ src/utils/formulaEngine.test.ts > isWithinTolerance > identical values 0ms
+ ✓ src/utils/formulaEngine.test.ts > isWithinTolerance > uses the 12-place working-value tolerance 0ms
+ ✓ src/utils/formulaEngine.test.ts > isWithinTolerance > exceeds default tolerance 0ms
+ ✓ src/utils/formulaEngine.test.ts > isWithinTolerance > custom tolerance 0ms
+
+ Test Files  2 passed (2)
+      Tests  149 passed (149)
+   Start at  01:05:37
+   Duration  1.51s (transform 516ms, setup 0ms, import 1.47s, tests 23ms, environment 0ms)
+
+JSON report written to /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/dev-docs/task-260801-页签连表公式配置优化/repair-260916-小计列无法选为字段引用/证据/测试/S-A/输出/ta3-260917-010537/vitest.json
+[vitest] exit=0 总=149 失败=0 跳过=0 夹具用例执行=59/59 三类={'NONE zero match': 'passed', 'NONE multi match error path': 'passed', 'non-numeric target in SUM error path': 'passed'}
+PASS [AC-12①-前端] 
+
+==== T-A3 SUMMARY: FAIL 组数=0 ====

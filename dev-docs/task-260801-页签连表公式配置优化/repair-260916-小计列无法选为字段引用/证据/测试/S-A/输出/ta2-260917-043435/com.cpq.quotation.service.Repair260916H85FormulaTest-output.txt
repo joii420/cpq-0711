@@ -1,0 +1,3 @@
+[repair-260916 H85] component_subtotal(整列小计) = 0.463735546257 (9位显示 0.463735546)
+[repair-260916 H85] cross_tab_ref(NONE,按行匹配) = 0.212585103779 (9位显示 0.212585104)
+[repair-260916 H85] cross_tab_ref token = {"type":"cross_tab_ref","source":"4db28822-85c6-4522-ac62-61ef2393a99c","sourceLabel":"来料固定加工费","target":"加工费","agg":"NONE","match":[{"a":"销售料号","b":"销售料号"},{"a":"料号","b":"料号"}]} diag={}

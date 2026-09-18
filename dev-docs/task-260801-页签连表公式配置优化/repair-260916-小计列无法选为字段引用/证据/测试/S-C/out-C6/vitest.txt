@@ -1,0 +1,434 @@
+
+ RUN  v4.1.4 /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend
+
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-1 顶层：[页签.列] 一律本行取值，[页签.列(小计)] 才是整列小计 > AC-1 勾了小计的列，不带后缀 → cross_tab_ref NONE + 行键交集 match 2ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-1 顶层：[页签.列] 一律本行取值，[页签.列(小计)] 才是整列小计 > AC-1 与引用未勾小计的列同构（只差 target） 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-1 顶层：[页签.列] 一律本行取值，[页签.列(小计)] 才是整列小计 > AC-2 [页签.列(小计)] → component_subtotal，编号作 tab_name/component_code，无 is_tab_total 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-1 顶层：[页签.列] 一律本行取值，[页签.列(小计)] 才是整列小计 > 编号引用串同样可用：[COMP-9002.加工费(小计)] 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-1 顶层：[页签.列] 一律本行取值，[页签.列(小计)] 才是整列小计 > AC-3① 四种写法混用 → NONE / 小计 / 页签合计 / SUM 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-1 顶层：[页签.列] 一律本行取值，[页签.列(小计)] 才是整列小计 > 本页签的列（不带后缀）仍取同行值 field（行为不变） 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-1 报错文案（问题说明 5.1，逐字） > AC-5a 未勾小计的列写 (小计) 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-1 报错文案（问题说明 5.1，逐字） > AC-5a 不存在的列写 (小计) 同一文案 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-1 报错文案（问题说明 5.1，逐字） > AC-5b 本页签自身的小计（即使该列勾了小计） 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-1 报错文案（问题说明 5.1，逐字） > AC-5c 没写列名 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-1 报错文案（问题说明 5.1，逐字） > 没写列名优先于未知页签（判定顺序第一条） 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-1 报错文案（问题说明 5.1，逐字） > 未知页签沿用现有报错 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-1 报错文案（问题说明 5.1，逐字） > AC-6a SUM 单列写法里的 (小计) 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-1 报错文案（问题说明 5.1，逐字） > AVG 单列写法同样拒绝，函数名取实际大写名 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-1 报错文案（问题说明 5.1，逐字） > AC-6c KSUM 内层 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-1 报错文案（问题说明 5.1，逐字） > AC-6d SUMIF 取值 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-1 报错文案（问题说明 5.1，逐字） > SUMIF 条件里的 (小计) 同样拒绝 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-1 报错文案（问题说明 5.1，逐字） > 判定顺序：本页签优先于所在函数不允许 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-1 报错文案（问题说明 5.1，逐字） > 判定顺序：所在函数不允许优先于未勾小计 1ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-1 行级函数表达式 > AC-6b（D-8 修订）SUM([加工费.备注数] * [加工费.加工费(小计)]) → 可保存，备注数为来源列、加工费(小计)为 component_subtotal，往返不变 2ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-1 行级函数表达式 > AC-6b 另：原写法 SUM([宿主.数量] * [加工费.加工费(小计)]) 仍按现行规则被拒（文案与改动前相同） 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-1 行级函数表达式 > 行级表达式里不带后缀的小计列 → 来源页签列 field（不再是整列小计） 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-1 行级函数表达式 > 行级表达式里的 (小计) 仍按 5.1 校验：未勾小计 → 报错 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-2 回显与往返（AC-3③ / AC-4 / AC-13） > AC-3② 回显文字与输入逐字相同 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-2 回显与往返（AC-3③ / AC-4 / AC-13） > AC-3③ 回显 → 再解析，token 逐字段相等 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-2 回显与往返（AC-3③ / AC-4 / AC-13） > 存量 component_subtotal（旧 tab_name 为别名）回显带 (小计)，往返逐字段相等 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-2 回显与往返（AC-3③ / AC-4 / AC-13） > tabDefs 为空时回显退回编号，仍带 (小计)（公式列表场景） 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-2 回显与往返（AC-3③ / AC-4 / AC-13） > 页签合计与空列名回显不变：[名称(总计)] 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-2 回显与往返（AC-3③ / AC-4 / AC-13） > 行级表达式内的整页签合计回显不变 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-3 着色（AC-1~AC-3 / AC-5 / AC-8 / AC-10） > AC-1 勾了小计的列不带后缀 → 蓝 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-3 着色（AC-1~AC-3 / AC-5 / AC-8 / AC-10） > AC-2 带 (小计) 且确为小计列 → 黄 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-3 着色（AC-1~AC-3 / AC-5 / AC-8 / AC-10） > AC-5a 未勾小计 → 红 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-3 着色（AC-1~AC-3 / AC-5 / AC-8 / AC-10） > AC-5b 本页签 → 红 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-3 着色（AC-1~AC-3 / AC-5 / AC-8 / AC-10） > AC-5c 没写列名 → 红 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-3 着色（AC-1~AC-3 / AC-5 / AC-8 / AC-10） > 未知页签 (小计) → 红 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-3 着色（AC-1~AC-3 / AC-5 / AC-8 / AC-10） > K 系列 / SUMIF 内的 (小计) → 红；普通函数内仍黄（错在外层，保存时拦） 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-3 着色（AC-1~AC-3 / AC-5 / AC-8 / AC-10） > AC-8b 宿主无行键（小计组件）：明细红、(小计) 黄 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-3 着色（AC-1~AC-3 / AC-5 / AC-8 / AC-10） > AC-7 本页签不带后缀的小计列 → 紫（与明细同规则） 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-3 着色（AC-1~AC-3 / AC-5 / AC-8 / AC-10） > AC-3② 混合串颜色依次 蓝 / 黄 / 绿 / 蓝 1ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-3 着色（AC-1~AC-3 / AC-5 / AC-8 / AC-10） > SUM([宿主.数量] * [加工费.加工费(小计)]) 块依次 紫 / 黄 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-3 着色（AC-1~AC-3 / AC-5 / AC-8 / AC-10） > Excel（enforceMappable=false）：(小计) 规则相同 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-11 Excel 组件连表公式列保存校验（AC-18④⑤，问题说明 5.1 末尾） > 合法写法 → null（小计 / 明细 / 页签合计 / 函数 / 行级函数内小计 / 取模比较 都不拦） 1ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-11 Excel 组件连表公式列保存校验（AC-18④⑤，问题说明 5.1 末尾） > AC-18④ 未勾小计的列写 (小计) → 5.1 文案逐字 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-11 Excel 组件连表公式列保存校验（AC-18④⑤，问题说明 5.1 末尾） > 没写列名 / 单列函数 / K 系列 → 5.1 文案逐字 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-11 Excel 组件连表公式列保存校验（AC-18④⑤，问题说明 5.1 末尾） > 本页签（tabDefs 标了 self）的 (小计) → 5.1 文案逐字 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-11 Excel 组件连表公式列保存校验（AC-18④⑤，问题说明 5.1 末尾） > 未知页签的 (小计) → 沿用现有未知页签报错 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-11 Excel 组件连表公式列保存校验（AC-18④⑤，问题说明 5.1 末尾） > AC-18⑤ SUMIF 类函数（任意大小写、含空格）→ 专用文案；方括号内同名文字不算 0ms
+ ✓ src/pages/component/formulaSerialize.repair260916.test.ts > F-11 Excel 组件连表公式列保存校验（AC-18④⑤，问题说明 5.1 末尾） > SUMIF 优先于 (小计) 判定：同时出现时报 SUMIF 文案 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — basic > plain same-component field [单重] 6ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — basic > cross-tab detail ref [COMP_RL.用量] → agg NONE (用量 is a detailField, not subtotalCol) 1ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — basic > cross-tab aggregated [COMP_RL.金额(总计)] → agg SUM 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — basic > whole-tab total [COMP_RL(总计)] → component_subtotal 指向金额哨兵键 + is_tab_total 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — basic > numeric literal 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — basic > operators + - * / are preserved 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — basic > × is normalised to * 2ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — basic > ÷ is normalised to / 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — basic > parentheses → bracket_open / bracket_close 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — basic > {path} → path token 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — basic > whitespace is ignored and does not produce tokens 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — requirement example > produces 5 tokens total 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — requirement example > field tokens for 单重 and 单价 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — requirement example > operators * and - 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — requirement example > cross_tab_ref token: source uuid-rl, target 金额, agg SUM 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — requirement example > cross_tab_ref match: [{a:"料号", b:"料号"}] (single row-key align) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > match row-key alignment > single key: [{a: tabKey, b: selfKey}] 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > match row-key alignment > multi-key tab + multi-key self: positional zip 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > match row-key alignment > tab has 2 keys, self has 1: only 1 pair 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > match row-key alignment > tab has no rowKeyFields: match = [] 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > match row-key alignment > selfRowKeyFields undefined: match = [] 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — errors > unknown alias in cross-tab detail ref throws 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — errors > unknown alias in whole-tab total throws 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — errors > unmatched [ throws 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — errors > unmatched { throws 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — errors > unrecognised character throws 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > tokensToDrawerExpression > field token → [field] 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > tokensToDrawerExpression > cross_tab_ref agg=NONE → [alias.field] 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > tokensToDrawerExpression > cross_tab_ref agg=SUM with target → SUM([alias.field]) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > tokensToDrawerExpression > cross_tab_ref agg=SUM with empty target → [alias(总计)] 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > tokensToDrawerExpression > operator → spaced 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > tokensToDrawerExpression > bracket_open / bracket_close → ( ) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > tokensToDrawerExpression > path token → {path} 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > tokensToDrawerExpression > fallback to sourceLabel when componentId not found in tabDefs 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > round-trip > [COMP_RL.金额(总计)] 解析后回显归一为 SUM([COMP_RL.金额]) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > round-trip > [COMP_RL.金额] round-trips 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > round-trip > [COMP_RL(总计)] whole-tab → faithfully round-trips back to [回料(总计)] (WYSIWYG) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > round-trip > compound expression "[单重] * [单价] - [COMP_RL.金额(总计)]" 解析后回显归一 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > round-trip > expression with only same-component fields round-trips 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > round-trip > numeric expression round-trips 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > round-trip > × operator normalises to * on round-trip 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > checkMappable > no cross_tab_ref → mappable 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > checkMappable > one agg=SUM cross_tab_ref with non-empty match → mappable 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > checkMappable > one agg=NONE cross_tab_ref with non-empty match → mappable 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > checkMappable > cross_tab_ref with match=[] → NOT mappable（v4-C 命门1：空match即拒） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > checkMappable > two agg=NONE cross_tab_refs with match=[] → NOT mappable 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > checkMappable > three agg=NONE with match=[] → NOT mappable 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > checkMappable > two cross_tab_refs where one is SUM and one is NONE, both match=[] → NOT mappable 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > checkMappable > cross_tab_ref with match=[] → NOT mappable（match 为空拒绝，不计 agg） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > checkMappable > SUMIF cross_tab_ref with match=[] but predicate → mappable（SUMIF 靠 predicate 过滤, 豁免空 match） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > component_subtotal — subtotal column references > [COMP_RL.金额] + [COMP_INV.金额] → TWO component_subtotal tokens (金额 is a subtotalCol of both) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > component_subtotal — subtotal column references > mixed: [单重] * [COMP_RL.用量] — 用量 is a DETAIL field (not subtotalCol) → field + cross_tab_ref 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > component_subtotal — subtotal column references > tokensToDrawerExpression renders component_subtotal using token-own fields even with EMPTY tabDefs 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > component_subtotal — subtotal column references > component_subtotal with empty value renders [code(总计)] 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > component_subtotal — subtotal column references > [alias(总计)] bare-total maps to component_subtotal (BL-0017: 指向金额哨兵键) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > component_subtotal — subtotal column references > round-trip: subtotal formula tokens → expr → tokens preserves component_code/value 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > component_subtotal — subtotal column references > checkMappable: 8 component_subtotal tokens + operators → mappable:true 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > component_subtotal — subtotal column references > checkMappable: component_subtotal 不受"空match拒"规则影响；cross_tab_ref match=[] 仍拒（v4-C） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > component_subtotal — subtotal column references > checkMappable: 纯 component_subtotal（无 cross_tab_ref）→ mappable 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > buildMatch — 公共字段名交集配对 > host[子件] × source[工序,子件] → 配对 {a:子件,b:子件} 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > buildMatch — 公共字段名交集配对 > 乱序同集 host[A,B] × source[B,A] → 按 host 序 {A,A},{B,B} 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > buildMatch — 公共字段名交集配对 > 无公共字段 → match=[] 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > integration: expression → tokens → checkMappable > one SUM agg ref → mappable 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > integration: expression → tokens → checkMappable > one detail ref → mappable 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > integration: expression → tokens → checkMappable > two detail refs with non-empty match (same row key) → mappable（v4-C 新规则） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > lex — 函数名 token > SUM( 识别为 func token，不再抛"无法识别字符" 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > lex — 函数名 token > 大小写不敏感 avg → AVG 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > lex — 函数名 token > 非函数字母仍抛错 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — FN() 单列聚合 > SUM([JG.工时]) → 单个 cross_tab_ref agg=SUM，吞外层括号 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — FN() 单列聚合 > AVG/MAX/MIN/COUNT 各自映射 agg 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — FN() 单列聚合 > 外层算式保留：[本] * SUM([JG.工时]) → field, op, cross_tab_ref 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — FN() 单列聚合 > FN 内运算符 → 行级聚合 targetExpr（批4 取消 v5-I 单列收口） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — FN() 单列聚合 > FN 内多引用且缺运算符 → 仍报错（[a][b] 畸形） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — FN() 单列聚合 > FN 内非明细（裸字段）→ 报错 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — FN() 单列聚合 > 旧 [JG.工时(总计)] 仍解析为 agg=SUM（兼容） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > tokensToDrawerExpression — FN 回显归一 > agg=SUM → SUM([JG.工时])（不再 (总计)） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > tokensToDrawerExpression — FN 回显归一 > AVG/MAX/MIN/COUNT 往返同串 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > tokensToDrawerExpression — FN 回显归一 > 往返两次稳定 (idempotent) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > tokensToDrawerExpression — FN 回显归一 > 旧 [JG.工时(总计)] 解析后回显归一为 SUM([JG.工时]) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > comparable / isSubset（集合包含，顺序无关） > isSubset 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > comparable / isSubset（集合包含，顺序无关） > comparable = 任一方 ⊆ 另一方（顺序无关） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > checkMappable — 空 match 拒（v4-C 命门 1） > cross_tab_ref 且 match=[] → 拒绝（含 agg=NONE） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > checkMappable — 空 match 拒（v4-C 命门 1） > cross_tab_ref agg=SUM 且 match=[] → 拒绝 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > checkMappable — 空 match 拒（v4-C 命门 1） > 非空 match 放行（含多个 NONE，各自命中≤1） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > checkMappable — 空 match 拒（v4-C 命门 1） > component_subtotal（无 match）不受影响 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — FN 行级聚合 targetExpr (SUMPRODUCT) > SUM([TL.单价] * [JG.数量]) → 单 cross_tab_ref(source=细页签) + targetExpr(b_field 单价 * field 数量) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — FN 行级聚合 targetExpr (SUMPRODUCT) > source 列在前：SUM([JG.数量] * [TL.单价]) → targetExpr(field 数量 * b_field 单价)，source 仍=细页签 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — FN 行级聚合 targetExpr (SUMPRODUCT) > 同一 source 两列：SUM([JG.数量] * [JG.工时]) → targetExpr(field 数量 * field 工时) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — FN 行级聚合 targetExpr (SUMPRODUCT) > 含数字常量：SUM([JG.数量] * 2) → targetExpr(field 数量 * number 2) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — FN 行级聚合 targetExpr (SUMPRODUCT) > AVG 也走行级聚合：AVG([TL.单价] * [JG.数量]) → agg=AVG + targetExpr 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — FN 行级聚合 targetExpr (SUMPRODUCT) > 跨两个 source 页签且行键不可比（互不包含）→ 报错 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — FN 行级聚合 targetExpr (SUMPRODUCT) > FN 内只有宿主列、无细 source → 报错（没有可聚合的行集） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — FN 行级聚合 targetExpr (SUMPRODUCT) > 单列仍走旧路径：SUM([JG.数量]) → 无 targetExpr、target=数量（向后兼容） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — FN 行级聚合 targetExpr (SUMPRODUCT) > round-trip：SUM([TL.单价] * [JG.数量]) 回显归一 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > E2 — SUM 内跨组件小计列免行键（component_subtotal） > SUM 内 [产品.税率]（小计列，行键与宿主互不包含）→ 不报错 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > E2 — SUM 内跨组件小计列免行键（component_subtotal） > 小计列落进 targetExpr 为 component_subtotal，且不污染 source/sources 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > E2 — SUM 内跨组件小计列免行键（component_subtotal） > 宿主自身的小计列不受影响：仍走 b_field（同行值，非整列总计） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > E2 — SUM 内跨组件小计列免行键（component_subtotal） > 回归：SUM 内引用产品的明细列 [产品.数量] → 仍报行键不可比 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > E2 — SUM 内跨组件小计列免行键（component_subtotal） > round-trip：回显归一后再解析仍稳定 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens / 回显 — 页签名称(componentName)作公式标识 > 用名称解析明细 [回料.用量] → cross_tab_ref(source=componentId) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens / 回显 — 页签名称(componentName)作公式标识 > 编号仍兼容 [COMP_RL.用量]（旧公式不破） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens / 回显 — 页签名称(componentName)作公式标识 > 用名称解析小计 [回料.金额] → component_subtotal(component_code 仍存 alias，后端不变) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens / 回显 — 页签名称(componentName)作公式标识 > 用名称解析整页签总计 [回料(总计)] → component_subtotal(BL-0017 金额哨兵键) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens / 回显 — 页签名称(componentName)作公式标识 > 回显 cross_tab_ref 用名称 → [回料.用量] 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens / 回显 — 页签名称(componentName)作公式标识 > 回显 component_subtotal 用名称 → [回料.金额]（tabDefs 非空时按 component_code 查名称） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens / 回显 — 页签名称(componentName)作公式标识 > 回显 SUM 聚合用名称 → SUM([回料.金额]) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens / 回显 — 页签名称(componentName)作公式标识 > 名称 round-trip 幂等：[回料.用量] → tokens → [回料.用量] 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > classifyRefSegment > 页签总计 [回料(总计)] → green 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > classifyRefSegment > 页签总计但别名查不到 → red 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > classifyRefSegment > 小计列 [回料.金额](金额∈subtotalCols) → yellow 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > classifyRefSegment > 可比明细 [回料.用量](用量∈detailFields,可比) → blue 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > classifyRefSegment > 不可比明细 [无键页签.费率](rowKeyFields=[] → match 空) + enforceMappable → red 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > classifyRefSegment > 同一不可比明细,enforceMappable=false(EXCEL)→ blue 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > classifyRefSegment > selfRowKeyFields=[] + 明细 + enforceMappable → red(镜像 buildMatch 空) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > classifyRefSegment > 字段不在该 tab 任何字段 [回料.不存在列] → red 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > classifyRefSegment > 宿主自身列 [单重](无点无总计)→ purple self-field 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > classifyRefSegment > [别名(总计)] 优先于 self-field(行序) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > parseFormulaSegments > 混合串切分顺序:SUM([投料.金额] * [回料.用量]) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > parseFormulaSegments > 块 display 去括号、点换 · 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > parseFormulaSegments > [回料(总计)] display 保留总计、green 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > parseFormulaSegments > 回显形态 SUM([回料.用量]):SUM(/)为文本,内层块 blue 1ms
+ ✓ src/pages/component/formulaSerialize.test.ts > parseFormulaSegments > 整体空格 [ 投料.金额 ]:整 body trim 后判色(金额∈subtotalCols → yellow) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > parseFormulaSegments > 未闭合 [ 不抛错,降级文本段 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > parseFormulaSegments > {路径} → 中性块 color null 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > parseFormulaSegments > 空串 → [] 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > parseFormulaSegments > round-trip 无损:raw 拼接 === 原串 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > classifyRefSegment — 宿主自身字段(紫) > 宿主明细字段 [宿主组件.组成用量] → purple 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > classifyRefSegment — 宿主自身字段(紫) > 宿主小计列 [宿主组件.金额小计] → yellow(小计优先于 self) 1ms
+ ✓ src/pages/component/formulaSerialize.test.ts > classifyRefSegment — 宿主自身字段(紫) > 宿主自聚合 [宿主组件.组成用量(总计)] → red(本期不支持) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > classifyRefSegment — 宿主自身字段(紫) > 宿主未知字段 [宿主组件.不存在] → red 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > classifyRefSegment — 宿主自身字段(紫) > 兄弟明细仍蓝 [回料.用量] → blue 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — 宿主自引用归一 field(spec §4) > [回料.用量] + selfComponentId=回料 → field token 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — 宿主自引用归一 field(spec §4) > [回料.用量] + selfComponentId=别的(uuid-inv) → cross_tab_ref(回归) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — 宿主自引用归一 field(spec §4) > [回料.金额](金额∈subtotalCols) + self=回料 → field(同行值，新语义) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — 宿主自引用归一 field(spec §4) > [回料.用量(总计)](自聚合) + self=回料 → 仍 cross_tab_ref(不归一) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > expressionToTokens — 宿主自引用归一 field(spec §4) > 不传 selfComponentId → cross_tab_ref(旧行为保留) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > parseFormulaSegments — 细 source 裸引用判红(需聚合) > 裸 [元素.单价](细 source，非 FN 内) → red 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > parseFormulaSegments — 细 source 裸引用判红(需聚合) > SUM([元素.单价])(FN 内细引用) → blue 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > parseFormulaSegments — 细 source 裸引用判红(需聚合) > [元素.单价(总计)](inline 聚合) → blue 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > parseFormulaSegments — 细 source 裸引用判红(需聚合) > 裸 [投料.重量](同级 source) → blue 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T2 lexer K* + C3 + 多 source > KSUM 连写 → func token name=KSUM (不被切成 K+SUM) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T2 lexer K* + C3 + 多 source > K SUM(...) 拆写 → 专门 C3 文案 (非通用无法识别) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T2 lexer K* + C3 + 多 source > selfCid=来料时 [来料.组成用量] 判为宿主列(b_field) → srcTabsSeen 仅元素 → N=1 路径不抛错 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T2 lexer K* + C3 + 多 source > 多 source 正向：第三 host(selfCid=uuid-host) 引用元素+来料两个非宿主 source → token.sources 长度=2、最细在前、source 镜像、match 非空 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T3 KSUM 折叠 + 约束 > C2: 单列 KSUM([外购件.费用]) → projectToHostKey:true + targetExpr (非单列 shortcut) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T3 KSUM 折叠 + 约束 > K-agg 映射: KAVG→AVG+proj, KCOUNT→COUNT+proj 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T3 KSUM 折叠 + 约束 > 白名单: KSUM 内含宿主列 → 抛错 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T3 KSUM 折叠 + 约束 > 白名单: KSUM 内含跨页签(多个不同 source) → 抛错 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T3 KSUM 折叠 + 约束 > J: K 套 K → 抛错 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T3 KSUM 折叠 + 约束 > I2: 同页签既 KSUM 又裸引 → 抛错 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T3 KSUM 折叠 + 约束 > M: 顶层裸 KSUM → 抛错 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T3 KSUM 评审修复 > 修复1: KSUM 内含 {路径} global_variable → 不抛错, inner targetExpr 含 path token 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T3 KSUM 评审修复 > 修复2: KSUM 内含 (总计) 总计引用 → 抛显式错误 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T3 KSUM 评审修复 > 修复3: 纯 KSUM 容器 SUM(KSUM([外购件.费用])) → 外层 source=selfCid, match=[], targetExpr 含 projectToHostKey 子 token 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T4 回显 > KSUM token → 回显 KSUM(...) 并幂等 round-trip 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T4 回显 > KAVG 回显反查 AVG+proj → KAVG 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T4 回显 > KMAX/KMIN/KCOUNT 各自回显正确 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T4 回显 > 纯 KSUM 容器 SUM(KSUM([外购件.费用])) 回显并幂等 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T4 回显 > KSUM 内含 {路径} global_variable 回显 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T1 token schema 扩展 > FormulaToken 支持 sources 与 projectToHostKey（可选,缺省兼容） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T8 配色 insideKsum > 合法 KSUM 内被聚合的细 source 列 → 蓝(不是 needs-agg 红) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T8 配色 insideKsum > KSUM 内宿主紫块(tab.self=true) → insideKsum-illegal 红 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T8 配色 insideKsum > KSUM 外宿主紫块仍为紫色（非 KSUM 区间零变化） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > T8 配色 insideKsum > KSUM 外细 source 裸引用保持 needs-agg 红（非 KSUM 区间零变化） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > A1 — cross_tab 引用稳定身份绑定（alias/componentId 优先） > A1 alias格式两个独立SUM引用不同页签 source各自正确 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > A1 — cross_tab 引用稳定身份绑定（alias/componentId 优先） > A1 alias格式单个SUM同名页签精确命中 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > A1 — cross_tab 引用稳定身份绑定（alias/componentId 优先） > A1 RED: alias串恰好等于另一页签componentName时串号（修复前） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > A1 — cross_tab 引用稳定身份绑定（alias/componentId 优先） > A1 SUM行级路径N=2: sources数组含两个正确componentId 5ms
+ ✓ src/pages/component/formulaSerialize.test.ts > A4 — cross_tab 引用 round-trip 身份稳定护栏 > A4 alias格式表达式 round-trip 两轮 source 完全一致 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > A4 — cross_tab 引用 round-trip 身份稳定护栏 > A4 中文名格式表达式 round-trip 幂等（名称唯一场景） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > A4 — cross_tab 引用 round-trip 身份稳定护栏 > A4 tricky场景: alias串=另一页签componentName → round-trip后 source 仍正确 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > D1 多源SUM targetExpr per-field source > D1 多源SUM内每个跨页签field带各自source 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > D1 多源SUM targetExpr per-field source > D1 回显: 来料加工费.费用 不再显示成 元素.费用 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > E1 — 同组件小计列引用应取同行值(field), 跨组件小计列才取 component_subtotal > E1 同组件小计列引用(无总计)→ 同行 field（非 component_subtotal） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > E1 — 同组件小计列引用应取同行值(field), 跨组件小计列才取 component_subtotal > E1 同组件列显式(总计)→ 不取 field，走 cross_tab_ref SUM（整列总计标量） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > E1 — 同组件小计列引用应取同行值(field), 跨组件小计列才取 component_subtotal > E1 跨组件小计列引用→ component_subtotal(不变) 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > WYSIWYG: 整页签总计 [页签(总计)] 与小计列 [页签.列] 可区分且各自忠实往返 > [COMP_RL(总计)] 与 [COMP_RL.金额] 解析出 token 可区分（哨兵键 + is_tab_total） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > WYSIWYG: 整页签总计 [页签(总计)] 与小计列 [页签.列] 可区分且各自忠实往返 > BL-0017 口径切换：[COMP_RL(总计)] 命中金额哨兵键，非首列、非裸键 1ms
+ ✓ src/pages/component/formulaSerialize.test.ts > WYSIWYG: 整页签总计 [页签(总计)] 与小计列 [页签.列] 可区分且各自忠实往返 > BL-0017 裸键不变：previous_row_subtotal/裸键消费者读到的 COMP_RL 仍是 Σ小计列 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > WYSIWYG: 整页签总计 [页签(总计)] 与小计列 [页签.列] 可区分且各自忠实往返 > 整页签总计往返 [COMP_RL(总计)] → [回料(总计)]；小计列往返 [COMP_RL.金额] → [回料.金额] 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > WYSIWYG: 整页签总计 [页签(总计)] 与小计列 [页签.列] 可区分且各自忠实往返 > is_tab_total 标记不影响求值：带标记与不带标记的 token 求值结果一致（计算不变佐证） 0ms
+ ✓ src/pages/component/formulaSerialize.test.ts > WYSIWYG: 整页签总计 [页签(总计)] 与小计列 [页签.列] 可区分且各自忠实往返 > tabDefs 缺失时带标记 token 序列化兜底为 [<component_code>(总计)] 0ms
+stdout | src/pages/template/tabjoin/tabFieldMatrix.repair260916.test.ts > TabFieldMatrix — repair-260916 插入文字 > 前置：收集到了选项（非空）
+[chips] [{"group":"明细(本页签·同行)","label":"数量","inserted":"[数量]","disabledTip":null},{"group":"页签总计","label":"RP0916宿主(总计)","inserted":"[RP0916宿主(总计)]","disabledTip":null},{"group":"明细","label":"加工费","inserted":"[RP0916加工费.加工费]","disabledTip":null},{"group":"明细","label":"备注数","inserted":"[RP0916加工费.备注数]","disabledTip":null},{"group":"小计列","label":"加工费(小计)","inserted":"[RP0916加工费.加工费(小计)]","disabledTip":null},{"group":"页签总计","label":"RP0916加工费(总计)","inserted":"[RP0916加工费(总计)]","disabledTip":null},{"group":"明细","label":"工时","inserted":null,"disabledTip":"行键 [工序] 与宿主 [销售料号+料号] 不可比；可改用「RP0916工序(总计)」"},{"group":"页签总计","label":"RP0916工序(总计)","inserted":"[RP0916工序(总计)]","disabledTip":null}]
+
+ ✓ src/pages/template/tabjoin/tabFieldMatrix.repair260916.test.ts > TabFieldMatrix — repair-260916 插入文字 > 前置：收集到了选项（非空） 2ms
+ ✓ src/pages/template/tabjoin/tabFieldMatrix.repair260916.test.ts > TabFieldMatrix — repair-260916 插入文字 > AC-1 「明细」组「加工费」→ [RP0916加工费.加工费] 0ms
+ ✓ src/pages/template/tabjoin/tabFieldMatrix.repair260916.test.ts > TabFieldMatrix — repair-260916 插入文字 > AC-2 「小计列」组显示「加工费(小计)」→ 插入 [RP0916加工费.加工费(小计)] 0ms
+ ✓ src/pages/template/tabjoin/tabFieldMatrix.repair260916.test.ts > TabFieldMatrix — repair-260916 插入文字 > AC-7① 本页签卡片没有「小计列」组；② 其明细「数量」插入 [数量] 0ms
+ ✓ src/pages/template/tabjoin/tabFieldMatrix.repair260916.test.ts > TabFieldMatrix — repair-260916 插入文字 > 全局只有一张非本页签卡片有小计列组（即 RP0916加工费） 0ms
+ ✓ src/pages/template/tabjoin/tabFieldMatrix.repair260916.test.ts > TabFieldMatrix — repair-260916 插入文字 > 页签总计插入不变 0ms
+ ✓ src/pages/template/tabjoin/tabFieldMatrix.repair260916.test.ts > TabFieldMatrix — repair-260916 插入文字 > AC-8a 不可比页签明细置灰不可点，悬停文案不变 0ms
+ ✓ src/pages/template/tabjoin/tabFieldMatrix.repair260916.test.ts > TabFieldMatrix — repair-260916 插入文字 > AC-9 搜索态（TabFieldPanel 传入过滤后的 def 副本）插入文字与非搜索态逐字相同 0ms
+ ✓ src/pages/template/tabjoin/tabFieldMatrix.repair260916.test.ts > TabFieldMatrix — repair-260916 插入文字 > 名称缺失时引用串回退编号，小计仍带后缀 0ms
+stdout | src/pages/template/tabjoin/formulaEditorPanel.repair260916.test.ts > F-12 条件聚合按钮组 > 前置：能收集到工具条分组（非空）
+[NORMAL groups] {"运算符":["+","-","*","/","(",")"],"函数":["SUM","AVG","MIN","MAX","COUNT"],"条件聚合":["SUMIF","COUNTIF","AVGIF","MINIF","MAXIF"],"父子取值":["PGET","CSUM","CAVG","CMAX","CMIN","CCOUNT"]}
+
+stdout | src/pages/template/tabjoin/formulaEditorPanel.repair260916.test.ts > F-12 条件聚合按钮组 > AC-18⑤ Excel 组件：没有「条件聚合」组，也没有任何 SUMIF 类按钮
+[EXCEL groups] {"运算符":["+","-","*","/","(",")"],"函数":["SUM","AVG","MIN","MAX","COUNT"]}
+
+ ✓ src/pages/template/tabjoin/formulaEditorPanel.repair260916.test.ts > F-12 条件聚合按钮组 > 前置：能收集到工具条分组（非空） 3ms
+ ✓ src/pages/template/tabjoin/formulaEditorPanel.repair260916.test.ts > F-12 条件聚合按钮组 > AC-18⑤ Excel 组件：没有「条件聚合」组，也没有任何 SUMIF 类按钮 1ms
+ ✓ src/pages/template/tabjoin/formulaEditorPanel.repair260916.test.ts > F-12 条件聚合按钮组 > 对照：页签组件、小计组件仍有这组按钮 1ms
+ ✓ src/pages/template/tabjoin/formulaEditorPanel.repair260916.test.ts > F-5 图例与占位文字（AC-10，原型状态 A / F） > 图例含「普通引用 · [页签.列]」与「小计 · [页签.列(小计)]」 0ms
+ ✓ src/pages/template/tabjoin/formulaEditorPanel.repair260916.test.ts > F-5 图例与占位文字（AC-10，原型状态 A / F） > 公式框占位文字与原型逐字一致 0ms
+ ✓ src/pages/quotation/subtotalColRefEndToEnd.test.ts > 列小计端到端：计算 → 键登记 → SUM 内引用取值 > ① 列小计真的被算出来，且三种键（componentId / componentCode / tabName）都登记 2ms
+ ✓ src/pages/quotation/subtotalColRefEndToEnd.test.ts > 列小计端到端：计算 → 键登记 → SUM 内引用取值 > ② 序列化产出的 component_code 必须命中已登记的键（键口径对齐护栏） 1ms
+ ✓ src/pages/quotation/subtotalColRefEndToEnd.test.ts > 列小计端到端：计算 → 键登记 → SUM 内引用取值 > ③ 端到端求值：SUM 内每行 × 列小计，取到的是 1.13 而非 0 1ms
+ ✓ src/pages/quotation/subtotalColRefEndToEnd.test.ts > 列小计端到端：计算 → 键登记 → SUM 内引用取值 > ④ 反向护栏：键对不上时结果塌成 0（证明上面的 6.78 确实来自列小计而非巧合） 0ms
+ ✓ src/pages/quotation/subtotalColRefEndToEnd.test.ts > 列小计端到端：计算 → 键登记 → SUM 内引用取值 > ⑤ 多行时列小计是求和 —— 税率标 is_subtotal 的语义后果（配置警示） 0ms
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14a  [物料.材料成本(小计)] = 1.978941064
+[A] AC-14a actual=1.978941064 expected=1.978941064
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14b  [物料.X] = 155.932743363
+[A] AC-14b actual=155.932743363 expected=155.932743363
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14c  [物料.X] * 2 + [物料.材料成本(小计)] = 313.84442779
+[A] AC-14c actual=313.84442779 expected=313.84442779
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14d  [物料(总计)] = 767.382030838
+[A] AC-14d actual=767.382030838 expected=767.382030838
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14e  SUM([物料.X]) = 155.932743363
+[A] AC-14e actual=155.932743363 expected=155.932743363
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-1-col2-subtotal  [物料.回收成本(小计)] = 0.317766357
+[A] X-1-col2-subtotal actual=0.317766357 expected=0.317766357
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-2-column-total-unchanged  [物料.材料成本(总计)] = 1.978941064
+[A] X-2-column-total-unchanged actual=1.978941064 expected=1.978941064
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-3-bare-detail-on-subtotal-column  [物料.材料成本] = 1.978941064
+[A] X-3-bare-detail-on-subtotal-column actual=1.978941064 expected=1.978941064
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-4-row-product  [物料.X] * [物料.材料成本] = 0.462258430204
+[A] X-4-row-product actual=0.462258430204 expected=0.462258430204
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-5-subtotal-inside-row-aggregate  SUM([物料.X] * [物料.材料成本(小计)]) = 308.581709063214
+[A] X-5-subtotal-inside-row-aggregate actual=308.581709063214 expected=308.581709063214
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-6-cross-tab-aligned-detail  [物料.X] + [来料固定加工费.加工费] = 283.432743363
+[A] X-6-cross-tab-aligned-detail actual=283.432743363 expected=283.432743363
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-7-cross-tab-subtotal  [物料.材料成本(小计)] + [来料固定加工费.加工费(小计)] = 129.478941064
+[A] X-7-cross-tab-subtotal actual=129.478941064 expected=129.478941064
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14g-1-subtotal-div-decimal-literal  [物料.材料成本(小计)] / 1.13 = 1.751275277876
+[A] AC-14g-1-subtotal-div-decimal-literal actual=1.751275277876 expected=1.751275277876
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14g-2-detail-div-decimal-literal  [物料.X] / 1.13 = 137.993578197345
+[A] AC-14g-2-detail-div-decimal-literal actual=137.993578197345 expected=137.993578197345
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14a  [物料.材料成本(小计)] = 1.978941064
+[B] AC-14a actual=1.978941064 expected=1.978941064
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14b  [物料.X] = 155.932743363
+[B] AC-14b actual=155.932743363 expected=155.932743363
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14c  [物料.X] * 2 + [物料.材料成本(小计)] = 313.84442779
+[B] AC-14c actual=313.84442779 expected=313.84442779
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14d  [物料(总计)] = 767.382030838
+[B] AC-14d actual=767.382030838 expected=767.382030838
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14e  SUM([物料.X]) = 155.932743363
+[B] AC-14e actual=155.932743363 expected=155.932743363
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-1-col2-subtotal  [物料.回收成本(小计)] = 0.317766357
+[B] X-1-col2-subtotal actual=0.317766357 expected=0.317766357
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-2-column-total-unchanged  [物料.材料成本(总计)] = 1.978941064
+[B] X-2-column-total-unchanged actual=1.978941064 expected=1.978941064
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-3-bare-detail-on-subtotal-column  [物料.材料成本] = 1.978941064
+[B] X-3-bare-detail-on-subtotal-column actual=1.978941064 expected=1.978941064
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-4-row-product  [物料.X] * [物料.材料成本] = 0.462258430204
+[B] X-4-row-product actual=0.462258430204 expected=0.462258430204
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-5-subtotal-inside-row-aggregate  SUM([物料.X] * [物料.材料成本(小计)]) = 308.581709063214
+[B] X-5-subtotal-inside-row-aggregate actual=308.581709063214 expected=308.581709063214
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-6-cross-tab-aligned-detail  [物料.X] + [来料固定加工费.加工费] = 283.432743363
+[B] X-6-cross-tab-aligned-detail actual=283.432743363 expected=283.432743363
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-7-cross-tab-subtotal  [物料.材料成本(小计)] + [来料固定加工费.加工费(小计)] = 129.478941064
+[B] X-7-cross-tab-subtotal actual=129.478941064 expected=129.478941064
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14g-1-subtotal-div-decimal-literal  [物料.材料成本(小计)] / 1.13 = 1.751275277876
+[B] AC-14g-1-subtotal-div-decimal-literal actual=1.751275277876 expected=1.751275277876
+
+stdout | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14g-2-detail-div-decimal-literal  [物料.X] / 1.13 = 137.993578197345
+[B] AC-14g-2-detail-div-decimal-literal actual=137.993578197345 expected=137.993578197345
+
+stderr | src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > 非法写法 [物料(小计)] → 该列降级为 0，不影响其它列
+[buildExcelSnapshot] TAB_JOIN eval failed for col bad Error: 「(小计)」要写在列名后面，如 [页签.列(小计)]；整页签合计请写 [页签(总计)]
+    at parseTok (/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/src/pages/quotation/tabJoinExcelEval.ts:93:11)
+    at /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/src/pages/quotation/tabJoinExcelEval.ts:579:17
+    at forEachToken (/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/src/pages/quotation/tabJoinExcelEval.ts:103:40)
+    at evaluateTabJoinColumn (/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/src/pages/quotation/tabJoinExcelEval.ts:578:3)
+    at evalTabJoinColumn (/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/src/pages/quotation/buildExcelSnapshot.ts:336:12)
+    at evalColumn (/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/src/pages/quotation/buildExcelSnapshot.ts:217:14)
+    at buildExcelSnapshot (/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/src/pages/quotation/buildExcelSnapshot.ts:175:25)
+    at /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/src/pages/quotation/tabJoinExcelEval.fixture.test.ts:125:12
+    at file:///home/joii/project/cpq/cpq-frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///home/joii/project/cpq/cpq-frontend/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > 恒等性：C 列 == evalProductSubtotalFromSubtotals > lineItem093: C 列与 getComponentSubtotals+evalProductSubtotalFromSubtotals 结果相同 5ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > 恒等性：C 列 == evalProductSubtotalFromSubtotals > lineItemWithFormula: C 列恒等性（含税成本 = 材料成本 * 1.13） 1ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > 逐 source_type 验证 > A 列 (TAB_JOIN_FORMULA 引用来料总计): 非空数字 0ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > 逐 source_type 验证 > B 列 (FIXED_VALUE=5): 返回数字 5 0ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > 逐 source_type 验证 > C 列 (TAB_JOIN_FORMULA 产品小计): 不抛错，为有限数 0ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > 逐 source_type 验证 > D 列 (PRODUCT_ATTRIBUTE): 返回 null（lineItem093 属性值为空） 0ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > 逐 source_type 验证 > E 列 (FORMULA = [B]*2): B 列结果的 2 倍 0ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > 逐 source_type 验证 > F 列 (COMPONENT_FIELD 材料成本): 取来料组件第一行材料成本 0ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > 逐 source_type 验证 > G 列 (VARIABLE {hf_part_no}): 返回 lineItem.productPartNo 0ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > 逐 source_type 验证 > H 列 (hidden=true TAB_JOIN_FORMULA): hidden 列仍参与求值，不为 undefined 0ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > 输出元数据 > rows[0] 包含 __hfPartNo 和 _lineItemId 0ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > 输出元数据 > rows 长度恒为 1（报价侧单行语义） 0ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > 边界场景 > 空列定义不抛错，返回 rows=[{__hfPartNo, _lineItemId}] 1ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > 边界场景 > TAB_JOIN_FORMULA 无 expression 时返回 0 不抛错 0ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > 边界场景 > FIXED_VALUE 非数字字符串返回原始字符串 0ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > 边界场景 > VARIABLE 无 pathCache 时 BNF 路径列返回 __loading__（哨兵，与 useLinkedExcelRows 源行为对齐） 0ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > 边界场景 > componentData 为空时不抛错，C 列返回 0 0ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > 边界场景 > VARIABLE BNF 路径 pathCache miss → 返回 __loading__ 哨兵 0ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > twin 用例：CARD_FORMULA 与 EXCEL_FORMULA 共享分支 > CARD_FORMULA 与 TAB_JOIN_FORMULA 共走 evalTabJoinOrCard，无 expression 时返回 0 1ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > twin 用例：CARD_FORMULA 与 EXCEL_FORMULA 共享分支 > CARD_FORMULA 无 expression 时返回 0（与 TAB_JOIN_FORMULA 无 expression 行为一致） 0ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > twin 用例：CARD_FORMULA 与 EXCEL_FORMULA 共享分支 > EXCEL_FORMULA 与 FORMULA 共走 evaluateFormula second-pass，=[B]*3 引用 FIXED_VALUE 列 0ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > driverExpansions 自建 lookupExpansion（与卡片同源） > 传入空 driverExpansions 时不报错，结果与 undefined 一致（lineItem093 组件无 dataDriverPath） 1ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > driverExpansions 自建 lookupExpansion（与卡片同源） > ctx.lookupExpansion 优先级高于 driverExpansions 自建（提供时 spy 被调用） 1ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot > driverExpansions 自建 lookupExpansion（与卡片同源） > driverExpansions 中匹配 key 时不报错，A/C 列仍为有限数（key 格式验证） 1ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > driver 展开端到端：lookupExpansion 真被消费 > driverExpansions 命中 → 材料单价来自 basicDataValues(50)，料件成本=100 1ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > driver 展开端到端：lookupExpansion 真被消费 > driverExpansions miss（空 map）→ 料件成本退化为 0（rows 初始值 材料单价=0） 0ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > driver 展开端到端：lookupExpansion 真被消费 > 命中值(100) ≠ miss 值(0)：有区分度，证明 expansion 真被消费 1ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot — 真实 v2 列(tabs 无 componentId/subtotalCols) > A 列 [来料.材料成本] → component_subtotal → componentSubtotals[来料#材料成本]=10（非 0） 0ms
+ ✓ src/pages/quotation/buildExcelSnapshot.test.ts > buildExcelSnapshot — 真实 v2 列(tabs 无 componentId/subtotalCols) > C 列 [报价小计(总计)] → component_subtotal → 产品小计=10（非 0，恒等卡片） 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > 夹具完整性 > 前后端两份文件逐字节相同 1ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > 夹具完整性 > 非空：含 AC-14 a~e 五条及物料 6 行 1ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14a  [物料.材料成本(小计)] = 1.978941064 1ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14b  [物料.X] = 155.932743363 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14c  [物料.X] * 2 + [物料.材料成本(小计)] = 313.84442779 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14d  [物料(总计)] = 767.382030838 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14e  SUM([物料.X]) = 155.932743363 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-1-col2-subtotal  [物料.回收成本(小计)] = 0.317766357 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-2-column-total-unchanged  [物料.材料成本(总计)] = 1.978941064 1ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-3-bare-detail-on-subtotal-column  [物料.材料成本] = 1.978941064 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-4-row-product  [物料.X] * [物料.材料成本] = 0.462258430204 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-5-subtotal-inside-row-aggregate  SUM([物料.X] * [物料.材料成本(小计)]) = 308.581709063214 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-6-cross-tab-aligned-detail  [物料.X] + [来料固定加工费.加工费] = 283.432743363 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > X-7-cross-tab-subtotal  [物料.材料成本(小计)] + [来料固定加工费.加工费(小计)] = 129.478941064 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14g-1-subtotal-div-decimal-literal  [物料.材料成本(小计)] / 1.13 = 1.751275277876 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > AC-14g-2-detail-div-decimal-literal  [物料.X] / 1.13 = 137.993578197345 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > A. evaluateTabJoinColumn × 夹具 provider（后端 evaluateColumn 同口径） > [物料(小计)] 没写列名 → 抛 5.1 文案（后端同样抛错） 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14a  [物料.材料成本(小计)] = 1.978941064 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14b  [物料.X] = 155.932743363 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14c  [物料.X] * 2 + [物料.材料成本(小计)] = 313.84442779 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14d  [物料(总计)] = 767.382030838 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14e  SUM([物料.X]) = 155.932743363 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-1-col2-subtotal  [物料.回收成本(小计)] = 0.317766357 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-2-column-total-unchanged  [物料.材料成本(总计)] = 1.978941064 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-3-bare-detail-on-subtotal-column  [物料.材料成本] = 1.978941064 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-4-row-product  [物料.X] * [物料.材料成本] = 0.462258430204 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-5-subtotal-inside-row-aggregate  SUM([物料.X] * [物料.材料成本(小计)]) = 308.581709063214 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-6-cross-tab-aligned-detail  [物料.X] + [来料固定加工费.加工费] = 283.432743363 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > X-7-cross-tab-subtotal  [物料.材料成本(小计)] + [来料固定加工费.加工费(小计)] = 129.478941064 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14g-1-subtotal-div-decimal-literal  [物料.材料成本(小计)] / 1.13 = 1.751275277876 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > AC-14g-2-detail-div-decimal-literal  [物料.X] / 1.13 = 137.993578197345 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > B. buildExcelSnapshot 端到端（真实 PASS1/PASS2 管线 → TAB_JOIN_FORMULA 列） > 非法写法 [物料(小计)] → 该列降级为 0，不影响其它列 4ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > 口径细节 > 除数为 0 → 被除数（SafeArithmetic），不是 0 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > 口径细节 > D-10：除以不带 B 的小数字面量按十进制文本相除，不再抛错（被除数为小数字面量同样） 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > 口径细节 > 取模 %：余数符号随被除数；除数为 0 → 0；与 * 同优先级 1ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > 口径细节 > 比较运算：单行结果为布尔 → 按 0；参与加减乘时按 1 / 0；不可连写 1ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > 口径细节 > 比较运算逐行求值：明细项里每行比较结果（布尔）按 1 / 0 相加 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > 口径细节 > AVG 按对齐行（全外连）计数：物料 6 行 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > 口径细节 > 未在 tabs 声明的页签：明细按 0、标量按 0 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > 口径细节 > 顶层减号拆项：裸明细项逐行求和后相减 0ms
+ ✓ src/pages/quotation/tabJoinExcelEval.fixture.test.ts > 口径细节 > 空表达式 → 0 0ms
+
+ Test Files  7 passed (7)
+      Tests  319 passed (319)
+   Start at  05:24:15
+   Duration  1.39s (transform 1.95s, setup 0ms, import 5.96s, tests 99ms, environment 0ms)
+

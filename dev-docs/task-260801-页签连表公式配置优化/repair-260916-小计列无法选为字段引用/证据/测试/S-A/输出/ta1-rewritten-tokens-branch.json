@@ -1,0 +1,119 @@
+[
+ {
+  "type": "field",
+  "value": "材料毛重"
+ },
+ {
+  "type": "operator",
+  "value": "*"
+ },
+ {
+  "type": "bracket_open"
+ },
+ {
+  "type": "cross_tab_ref",
+  "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71",
+  "sourceLabel": "材料成本",
+  "target": "",
+  "agg": "SUM",
+  "match": [
+   {
+    "a": "销售料号",
+    "b": "销售料号"
+   },
+   {
+    "a": "料号",
+    "b": "料号"
+   }
+  ],
+  "targetExpr": [
+   {
+    "type": "field",
+    "value": "组成含量（%）",
+    "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71"
+   },
+   {
+    "type": "operator",
+    "value": "/"
+   },
+   {
+    "type": "number",
+    "value": "100"
+   },
+   {
+    "type": "operator",
+    "value": "*"
+   },
+   {
+    "type": "field",
+    "value": "税后单价",
+    "source": "5d5b34f8-a4ae-4704-a91b-aab7d9316e71"
+   }
+  ]
+ },
+ {
+  "type": "operator",
+  "value": "*"
+ },
+ {
+  "type": "bracket_open"
+ },
+ {
+  "type": "number",
+  "value": "1"
+ },
+ {
+  "type": "operator",
+  "value": "+"
+ },
+ {
+  "type": "field",
+  "value": "来料损耗率"
+ },
+ {
+  "type": "operator",
+  "value": "/"
+ },
+ {
+  "type": "number",
+  "value": "100"
+ },
+ {
+  "type": "bracket_close"
+ },
+ {
+  "type": "operator",
+  "value": "+"
+ },
+ {
+  "type": "cross_tab_ref",
+  "source": "4db28822-85c6-4522-ac62-61ef2393a99c",
+  "sourceLabel": "来料固定加工费",
+  "target": "加工费",
+  "agg": "NONE",
+  "match": [
+   {
+    "a": "销售料号",
+    "b": "销售料号"
+   },
+   {
+    "a": "料号",
+    "b": "料号"
+   }
+  ]
+ },
+ {
+  "type": "operator",
+  "value": "/"
+ },
+ {
+  "type": "component_subtotal",
+  "value": "税率",
+  "tab_name": "COMP-0001",
+  "component_code": "COMP-0001",
+  "label": "产品·税率"
+ },
+ {
+  "type": "bracket_close"
+ }
+]

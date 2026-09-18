@@ -1,0 +1,17 @@
+A	cpq-backend/src/test/java/com/cpq/quotation/service/Repair260916H85FormulaTest.java
+A	cpq-backend/src/test/java/com/cpq/quotation/service/tabjoin/TabJoinExcelSharedFixtureTest.java
+A	cpq-backend/src/test/java/com/cpq/quotation/service/tabjoin/TabJoinSubtotalSuffixTest.java
+A	cpq-backend/src/test/resources/repair-260916/h85-inputs.json
+A	cpq-backend/src/test/resources/repair-260916/snap.jsonl
+A	cpq-backend/src/test/resources/tabjoin-excel-cases.json
+A	cpq-frontend/e2e/repair260916-excel-migration.spec.ts
+A	cpq-frontend/e2e/repair260916-sc.config.ts
+A	cpq-frontend/e2e/repair260916-subtotal-suffix.helpers.ts
+A	cpq-frontend/e2e/repair260916-subtotal-suffix.spec.ts
+A	cpq-frontend/src/pages/component/formulaSerialize.repair260916.test.ts
+M	cpq-frontend/src/pages/component/formulaSerialize.test.ts
+A	cpq-frontend/src/pages/quotation/__fixtures__/tabjoin-excel-cases.json
+M	cpq-frontend/src/pages/quotation/buildExcelSnapshot.test.ts
+M	cpq-frontend/src/pages/quotation/subtotalColRefEndToEnd.test.ts
+A	cpq-frontend/src/pages/quotation/tabJoinExcelEval.fixture.test.ts
+A	cpq-frontend/src/pages/template/tabjoin/tabFieldMatrix.repair260916.test.ts

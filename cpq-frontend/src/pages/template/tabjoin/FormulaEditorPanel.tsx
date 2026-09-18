@@ -50,8 +50,9 @@ const PAREN_DEPTH_COLORS = ['#d4820a', '#7d3ac1', '#0a9396', '#c2185b'];
 
 // 引用语义图例（与 FormulaRichInput.BLOCK_STYLE 同色值）
 const REF_LEGEND: { label: string; bg: string; border: string }[] = [
-  { label: '普通引用', bg: '#e6f4ff', border: '#91caff' },
-  { label: '小计', bg: '#fffbe6', border: '#ffd591' },
+  // repair-260916（AC-10，原型状态 A）：蓝/黄两项带写法示例，区分「本行取值」与「整列小计」
+  { label: '普通引用 · [页签.列]', bg: '#e6f4ff', border: '#91caff' },
+  { label: '小计 · [页签.列(小计)]', bg: '#fffbe6', border: '#ffd591' },
   { label: '总计', bg: '#f6ffed', border: '#b7eb8f' },
   { label: '本页签', bg: '#f9f0ff', border: '#d3adf7' },
   { label: '非法', bg: '#fff1f0', border: '#ffa39e' },
@@ -140,20 +141,17 @@ const FormulaEditorPanel: React.FC<Props> = ({
         onClick: () => onInsert(`${fn}()`, 1),
       })),
     },
-    {
+    // repair-260916 F-12（D-9）：Excel 列暂不支持 SUMIF 类函数（保存时拦截），故对 EXCEL 不渲染本组；
+    // 页签组件 / 小计组件不变。
+    ...(componentType === 'EXCEL' ? [] : [{
       title: '条件聚合',
       items: SUMIF_TEXT_FUNCS.map(fn => ({
         label: fn,
-        title: componentType === 'EXCEL'
-          ? `${fn}(条件, 取值表达式)，如 ${fn}([页签.类型]='管理费', [页签.金额])`
-          : `点击展开下方「条件聚合」构造器配置 ${fn}（条件过滤后按行键聚合）`,
+        title: `点击展开下方「条件聚合」构造器配置 ${fn}（条件过滤后按行键聚合）`,
         style: { color: '#722ed1', borderColor: '#d3adf7' },
-        onClick: () => {
-          if (componentType === 'EXCEL') onInsert(`${fn}()`, 1);
-          else onOpenSumif(fn);
-        },
+        onClick: () => onOpenSumif(fn),
       })),
-    },
+    }]),
     ...(componentType === 'EXCEL' ? [] : [{
       title: '父子取值',
       // 2026-08-04：树属性 [层级]/[是否叶子]/[是否根] 的按钮已移除——它们的用途是当判据，
@@ -199,7 +197,7 @@ const FormulaEditorPanel: React.FC<Props> = ({
         tabDefs={tabDefs}
         selfRowKeyFields={selfRowKeyFields}
         enforceMappable={enforceMappable}
-        placeholder="例:[投料.金额] * [加工.工时] + [回料(总计)]"
+        placeholder="例:[投料.金额] * [加工.工时] + [回料.金额(小计)] + [回料(总计)]"
       />
       {!parenCheck.ok && (
         <Text type="danger" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>

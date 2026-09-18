@@ -1,0 +1,14 @@
+[tabjoin-fixture] AC-14a [物料.材料成本(小计)] => 1.978941064000
+[tabjoin-fixture] AC-14b [物料.X] => 155.932743363000
+[tabjoin-fixture] AC-14c [物料.X] * 2 + [物料.材料成本(小计)] => 313.844427790000
+[tabjoin-fixture] AC-14d [物料(总计)] => 767.382030838000
+[tabjoin-fixture] AC-14e SUM([物料.X]) => 155.932743363000
+[tabjoin-fixture] X-1-col2-subtotal [物料.回收成本(小计)] => 0.317766357000
+[tabjoin-fixture] X-2-column-total-unchanged [物料.材料成本(总计)] => 1.978941064000
+[tabjoin-fixture] X-3-bare-detail-on-subtotal-column [物料.材料成本] => 1.978941064000
+[tabjoin-fixture] X-4-row-product [物料.X] * [物料.材料成本] => 0.462258430204
+[tabjoin-fixture] X-5-subtotal-inside-row-aggregate SUM([物料.X] * [物料.材料成本(小计)]) => 308.581709063214
+[tabjoin-fixture] X-6-cross-tab-aligned-detail [物料.X] + [来料固定加工费.加工费] => 283.432743363000
+[tabjoin-fixture] X-7-cross-tab-subtotal [物料.材料成本(小计)] + [来料固定加工费.加工费(小计)] => 129.478941064000
+[tabjoin-fixture] AC-14g-1-subtotal-div-decimal-literal [物料.材料成本(小计)] / 1.13 => 1.751275277876
+[tabjoin-fixture] AC-14g-2-detail-div-decimal-literal [物料.X] / 1.13 => 137.993578197345

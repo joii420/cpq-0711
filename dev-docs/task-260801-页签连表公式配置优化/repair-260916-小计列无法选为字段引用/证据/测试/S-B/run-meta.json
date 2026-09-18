@@ -1,0 +1,5 @@
+{
+  "startedAt": "2026-09-17T08:53:08.224Z",
+  "baseURL": "http://localhost:5292",
+  "backend": "http://localhost:8081"
+}

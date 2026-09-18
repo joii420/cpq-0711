@@ -1,0 +1,70 @@
+# T-A3 part=git at=2026-09-17T01:04:11-07:00 out=/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/dev-docs/task-260801-页签连表公式配置优化/repair-260916-小计列无法选为字段引用/证据/测试/S-A/输出/ta3-260917-010411 HEAD=ba27a776 master=2ccdc5d9 merge-base=2ccdc5d9
+[pre] cross-tab-cases.json 用例数=59
+
+== ① 夹具守卫：两份逐字节相同、且相对基线未被改（否则「全部通过」不说明规则未变）
+891f5f8bb1f31c63b613c9d98ae6c8e6d7f8bfac9dff6b3aff86255d31845d8c  /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/src/utils/__fixtures__/cross-tab-cases.json
+891f5f8bb1f31c63b613c9d98ae6c8e6d7f8bfac9dff6b3aff86255d31845d8c  /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-backend/src/test/resources/cross-tab-cases.json
+PASS [AC-12①-夹具一致] 两份 sha256 相同
+PASS [AC-12①-夹具未改] 相对分叉点 0 改动
+
+== ② 两引擎文件 0 行改动
+[对照] cpq-frontend/src/utils/formulaEngine.ts 在 c2c95d10 的改动可见： cpq-frontend/src/utils/formulaEngine.ts | 4 ++++
+ 1 file changed, 4 insertions(+)
+[对照] cpq-backend/src/main/java/com/cpq/quotation/service/FormulaCalculator.java 在 5603a173 的改动可见： .../cpq/quotation/service/FormulaCalculator.java   | 144 ++++++++++++++++++++-
+ 1 file changed, 139 insertions(+), 5 deletions(-)
+$ git diff --stat master -- <两文件>  → ''
+$ git diff --stat $(merge-base) -- <两文件> → ''
+PASS [AC-12②] git diff --stat master 为空
+
+== ③ 既有测试断言改动审阅（判定规则见 ta3_review_test_diff.py 顶部）
+[info] 改动文件：
+A	cpq-backend/src/test/java/com/cpq/quotation/service/Repair260916H85FormulaTest.java
+A	cpq-backend/src/test/java/com/cpq/quotation/service/tabjoin/TabJoinExcelSharedFixtureTest.java
+A	cpq-backend/src/test/java/com/cpq/quotation/service/tabjoin/TabJoinSubtotalSuffixTest.java
+A	cpq-backend/src/test/resources/repair-260916/h85-inputs.json
+A	cpq-backend/src/test/resources/repair-260916/snap.jsonl
+A	cpq-backend/src/test/resources/tabjoin-excel-cases.json
+A	cpq-frontend/e2e/repair260916-excel-migration.spec.ts
+A	cpq-frontend/e2e/repair260916-sc.config.ts
+A	cpq-frontend/e2e/repair260916-subtotal-suffix.helpers.ts
+A	cpq-frontend/e2e/repair260916-subtotal-suffix.spec.ts
+A	cpq-frontend/src/pages/component/formulaSerialize.repair260916.test.ts
+M	cpq-frontend/src/pages/component/formulaSerialize.test.ts
+A	cpq-frontend/src/pages/quotation/__fixtures__/tabjoin-excel-cases.json
+M	cpq-frontend/src/pages/quotation/buildExcelSnapshot.test.ts
+M	cpq-frontend/src/pages/quotation/subtotalColRefEndToEnd.test.ts
+A	cpq-frontend/src/pages/quotation/tabJoinExcelEval.fixture.test.ts
+A	cpq-frontend/src/pages/template/tabjoin/tabFieldMatrix.repair260916.test.ts
+[info] 未跟踪：
+cpq-backend/src/test/java/com/cpq/quotation/service/tabjoin/SafeArithmeticDecimalLiteralTest.java
+cpq-frontend/e2e/repair260916-subtotal-suffix-probe.spec.ts
+cpq-frontend/src/pages/template/tabjoin/formulaEditorPanel.repair260916.test.ts
+INFO 新增测试文件（不属既有断言）: cpq-backend/src/test/java/com/cpq/quotation/service/Repair260916H85FormulaTest.java
+INFO 新增测试文件（不属既有断言）: cpq-backend/src/test/java/com/cpq/quotation/service/tabjoin/TabJoinExcelSharedFixtureTest.java
+INFO 新增测试文件（不属既有断言）: cpq-backend/src/test/java/com/cpq/quotation/service/tabjoin/TabJoinSubtotalSuffixTest.java
+INFO 新增测试文件（不属既有断言）: cpq-backend/src/test/resources/repair-260916/h85-inputs.json
+INFO 新增测试文件（不属既有断言）: cpq-backend/src/test/resources/repair-260916/snap.jsonl
+INFO 新增测试文件（不属既有断言）: cpq-backend/src/test/resources/tabjoin-excel-cases.json
+INFO 新增测试文件（不属既有断言）: cpq-frontend/e2e/repair260916-excel-migration.spec.ts
+INFO 新增测试文件（不属既有断言）: cpq-frontend/e2e/repair260916-sc.config.ts
+INFO 新增测试文件（不属既有断言）: cpq-frontend/e2e/repair260916-subtotal-suffix.helpers.ts
+INFO 新增测试文件（不属既有断言）: cpq-frontend/e2e/repair260916-subtotal-suffix.spec.ts
+INFO 新增测试文件（不属既有断言）: cpq-frontend/src/pages/component/formulaSerialize.repair260916.test.ts
+INFO 新增测试文件（不属既有断言）: cpq-frontend/src/pages/quotation/__fixtures__/tabjoin-excel-cases.json
+INFO 新增测试文件（不属既有断言）: cpq-frontend/src/pages/quotation/tabJoinExcelEval.fixture.test.ts
+INFO 新增测试文件（不属既有断言）: cpq-frontend/src/pages/template/tabjoin/tabFieldMatrix.repair260916.test.ts
+INFO 未跟踪新测试文件（不属既有断言）: cpq-backend/src/test/java/com/cpq/quotation/service/tabjoin/SafeArithmeticDecimalLiteralTest.java
+INFO 未跟踪新测试文件（不属既有断言）: cpq-frontend/e2e/repair260916-subtotal-suffix-probe.spec.ts
+INFO 未跟踪新测试文件（不属既有断言）: cpq-frontend/src/pages/template/tabjoin/formulaEditorPanel.repair260916.test.ts
+INFO cpq-frontend/src/pages/component/formulaSerialize.test.ts {'合规改写对': 17, '纯新增行': 2, '其中第③类': 1}
+INFO cpq-frontend/src/pages/quotation/buildExcelSnapshot.test.ts {'合规改写对': 1, '纯新增行': 0}
+INFO cpq-frontend/src/pages/quotation/subtotalColRefEndToEnd.test.ts {'合规改写对': 3, '纯新增行': 0}
+FLAG R2/R3/R4 cpq-frontend/src/pages/component/formulaSerialize.test.ts 用例「小计列 [回料.金额](金额∈subtotalCols) → yellow」 @@ -1220,7 +1220,7 @@ describe('classifyRefSegment', () => {
+      - expect(classifyRefSegment('回料.金额', allTabs, self, true)).toEqual({ kind: 'subtotal', color: 'yellow' });
+      （同 hunk 无「仅插入 (小计)」或「仅 黄→紫（限宿主小计列用例）」的对应新增行）
+FLAG R2/R3/R4 cpq-frontend/src/pages/component/formulaSerialize.test.ts 用例「整体空格 [ 投料.金额 ]:整 body trim 后判色(金额∈subtotalCols → yellow)」 @@ -1274,7 +1274,7 @@ describe('parseFormulaSegments', () => {
+      - const segs = parseFormulaSegments('[ 投料.金额 ]', allTabs, self, true);
+      （同 hunk 无「仅插入 (小计)」或「仅 黄→紫（限宿主小计列用例）」的对应新增行）
+FAIL [AC-12③] 既有测试断言改动审阅：FLAG 2 条
+
+==== T-A3 SUMMARY: FAIL 组数=1 ====

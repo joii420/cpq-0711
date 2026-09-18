@@ -1,0 +1,87 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "targetDirectoryId": "fd5d85e0-2157-4aa8-a7d7-f6cd4a8e8b58",
+    "targetDirectoryName": "RP0916C-导入v11",
+    "conflictPolicy": "RENAME",
+    "createdCount": 10,
+    "skippedCount": 0,
+    "sqlViewsCreated": 8,
+    "created": [
+      {
+        "originalCode": "COMP-0003",
+        "finalCode": "COMP-2620",
+        "componentId": "badd3ade-8481-48be-9277-608c1419a075",
+        "renamed": true,
+        "sqlViewCount": 1
+      },
+      {
+        "originalCode": "COMP-0004",
+        "finalCode": "COMP-2621",
+        "componentId": "b218d008-3fc3-47b7-b987-30200a77ce19",
+        "renamed": true,
+        "sqlViewCount": 1
+      },
+      {
+        "originalCode": "COMP-0005",
+        "finalCode": "COMP-2622",
+        "componentId": "9ef1a450-edca-4946-a7f0-d00ddad2ef24",
+        "renamed": true,
+        "sqlViewCount": 1
+      },
+      {
+        "originalCode": "COMP-0006",
+        "finalCode": "COMP-2623",
+        "componentId": "67ae5d84-8c0a-4da0-a56c-148545c5dd55",
+        "renamed": true,
+        "sqlViewCount": 1
+      },
+      {
+        "originalCode": "COMP-0007",
+        "finalCode": "COMP-2624",
+        "componentId": "abf16571-f393-42da-83c0-3d8c9e3776bc",
+        "renamed": true,
+        "sqlViewCount": 1
+      },
+      {
+        "originalCode": "COMP-0001",
+        "finalCode": "COMP-2625",
+        "componentId": "a7fd624e-f461-4ea4-b595-fbb6b3686e0e",
+        "renamed": true,
+        "sqlViewCount": 1
+      },
+      {
+        "originalCode": "COMP-0008",
+        "finalCode": "COMP-2626",
+        "componentId": "0280f636-43b6-41d9-83e2-da37589d6adf",
+        "renamed": true,
+        "sqlViewCount": 1
+      },
+      {
+        "originalCode": "COMP-0009",
+        "finalCode": "COMP-2627",
+        "componentId": "12c1689f-a9f9-4f5a-acc8-8972e91f7221",
+        "renamed": true,
+        "sqlViewCount": 0
+      },
+      {
+        "originalCode": "COMP-0011",
+        "finalCode": "COMP-2628",
+        "componentId": "cd1895a9-a556-415b-9037-31f29871d881",
+        "renamed": true,
+        "sqlViewCount": 0
+      },
+      {
+        "originalCode": "COMP-0002",
+        "finalCode": "COMP-2629",
+        "componentId": "0c584463-b631-4079-8ca8-f60d58930f93",
+        "renamed": true,
+        "sqlViewCount": 1
+      }
+    ],
+    "skipped": [],
+    "unboundWarnings": [],
+    "unboundCount": 0
+  }
+}

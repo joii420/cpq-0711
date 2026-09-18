@@ -1,0 +1,107 @@
+{
+  "procChip": {
+    "html": "<span class=\"ant-tag ant-tag-filled css-dev-only-do-not-override-ch9ese css-var-_r_0_\" style=\"cursor: not-allowed; color: rgb(191, 191, 191); background: rgb(250, 250, 250); border-color: rgb(240, 240, 240); margin: 0px; font-size: 12px; padding: 3px 9px; user-select: none;\">工时</span>",
+    "cursor": "not-allowed",
+    "color": "rgb(191, 191, 191)",
+    "parent": "<div class=\"ant-space-item\"><span class=\"ant-tag ant-tag-filled css-dev-only-do-not-override-ch9ese css-var-_r_0_\" style=\"cursor: not-allowed; color: rgb(191, 191, 191); background: rgb(250, 250, 250); border-color: rgb(240, 240, 240); margin: 0px; font-size: 12px; padding: 3px 9px; user-select: none;\">工时</span></div>"
+  },
+  "tooltips": [
+    "行键 [工序] 与宿主 [销售料号+料号] 不可比；可改用「RP0916工序(总计)」",
+    "行键 [工序] 与宿主 [销售料号+料号] 不可比；可改用「RP0916工序(总计)」"
+  ],
+  "subHasFormulaTab": 0,
+  "subRowsBefore": [
+    "<tr class=\"ant-table-placeholder\"><td class=\"ant-table-cell\" colspan=\"3\">暂无公式，点击\"添加公式\"</td></tr>"
+  ],
+  "subRowsAfter": [
+    "<tr class=\"ant-table-row ant-table-row-level-0\" data-row-key=\"formula-1789633682648-0.6098915603150212\"><td class=\"ant-table-cell\"><input placeholder=\"公式名称（FORMULA 字段名）\" class=\"ant-input ant-input-sm css-dev-only-do-not-override-ch9ese ant-input-outlined css-var-_r_0_ ant-input-css-var\" type=\"text\" value=\"公式1\"></td><td class=\"ant-table-cell\"><span style=\"color: rgb(191, 191, 191);\">（空表达式，点「配置」编辑）</span></td><td class=\"ant-table-cell\"><div class=\"ant-space css-dev-only-do-not-override-ch9ese ant-space-horizontal ant-space-align-center css-var-_r_0_\" style=\"gap: 4px;\"><div class=\"ant-space-item\"><button type=\"button\" class=\"ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-link ant-btn-color-link ant-btn-variant-link ant-btn-sm\"><span class=\"ant-btn-icon\"><span role=\"img\" aria-label=\"edit\" class=\"anticon anticon-edit\"><svg viewBox=\"64 64 896 896\" focusable=\"false\" data-icon=\"edit\" width=\"1em\" height=\"1em\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M257.7 752c2 0 4-.2 6-.5L431.9 722c2-.4 3.9-1.3 5.3-2.8l423.9-423.9a9.96 9.96 0 000-14.1L694.9 114.9c-1.9-1.9-4.4-2.9-7.1-2.9s-5.2 1-7.1 2.9L256.8 538.8c-1.5 1.5-2.4 3.3-2.8 5.3l-29.5 168.2a33.5 33.5 0 009.4 29.8c6.6 6.4 14.9 9.9 23.8 9.9zm67.4-174.4L687.8 215l73.3 73.3-362.7 362.6-88.9 15.7 15.6-89zM880 836H144c-17.7 0-32 14.3-32 32v36c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-36c0-17.7-14.3-32-32-32z\"></path></svg></span></span><span>配置</span></button></div><div class=\"ant-space-item\"><button type=\"button\" class=\"ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-link ant-btn-dangerous ant-btn-color-dangerous ant-btn-variant-link ant-btn-sm ant-btn-icon-only\"><span class=\"ant-btn-icon\"><span role=\"img\" aria-label=\"delete\" class=\"anticon anticon-delete\"><svg viewBox=\"64 64 896 896\" focusable=\"false\" data-icon=\"delete\" width=\"1em\" height=\"1em\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M360 184h-8c4.4 0 8-3.6 8-8v8h304v-8c0 4.4 3.6 8 8 8h-8v72h72v-80c0-35.3-28.7-64-64-64H352c-35.3 0-64 28.7-64 64v80h72v-72zm504 72H160c-17.7 0-32 14.3-32 32v32c0 4.4 3.6 8 8 8h60.4l24.7 523c1.6 34.1 29.8 61 63.9 61h454c34.2 0 62.3-26.8 63.9-61l24.7-523H888c4.4 0 8-3.6 8-8v-32c0-17.7-14.3-32-32-32zM731.3 840H292.7l-24.2-512h487l-24.2 512z\"></path></svg></span></span></button></div></div></td></tr>"
+  ],
+  "excelRowsAfterAdd": [
+    "<tr class=\"ant-table-row ant-table-row-level-0\" data-row-key=\"col_1\" role=\"button\" tabindex=\"0\" aria-disabled=\"false\" aria-roledescription=\"sortable\" aria-describedby=\"DndDescribedBy-0\"><td class=\"ant-table-cell\" style=\"text-align: center;\"><span role=\"img\" aria-label=\"holder\" class=\"anticon anticon-holder\" style=\"cursor: move; color: rgb(153, 153, 153); touch-action: none;\"><svg viewBox=\"64 64 896 896\" focusable=\"false\" data-icon=\"holder\" width=\"1em\" height=\"1em\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M300 276.5a56 56 0 1056-97 56 56 0 00-56 97zm0 284a56 56 0 1056-97 56 56 0 00-56 97zM640 228a56 56 0 10112 0 56 56 0 00-112 0zm0 284a56 56 0 10112 0 56 56 0 00-112 0zM300 844.5a56 56 0 1056-97 56 56 0 00-56 97zM640 796a56 56 0 10112 0 56 56 0 00-112 0z\"></path></svg></span></td><td class=\"ant-table-cell\"><input placeholder=\"显示列名\" class=\"ant-input ant-input-sm css-dev-only-do-not-override-ch9ese ant-input-outlined css-var-_r_0_ ant-input-css-var\" type=\"text\" value=\"\"></td><td class=\"ant-table-cell\"><input placeholder=\"col_key\" class=\"ant-input ant-input-sm css-dev-only-do-not-override-ch9ese ant-input-outlined css-var-_r_0_ ant-input-css-var\" type=\"text\" value=\"col_1\" style=\"font-family: Consolas, Monaco, monospace; font-size: 12px;\"></td><td class=\"ant-table-cell\"><div class=\"ant-space css-dev-only-do-not-override-ch9ese ant-space-horizontal ant-space-align-center css-var-_r_0_\" style=\"flex-wrap: wrap; gap: 6px;\"><div class=\"ant-space-item\"><div class=\"ant-select ant-select-sm ant-select-outlined css-var-_r_0_ ant-select-css-var css-dev-only-do-not-override-ch9ese ant-select-single ant-select-show-arrow\" style=\"width: 150px;\"><div class=\"ant-select-content ant-select-content-has-value\" title=\"固定值\">固定值<input id=\"_r_5d_\" readonly=\"\" autocomplete=\"off\" class=\"ant-select-input\" role=\"combobox\" aria-expanded=\"false\" aria-haspopup=\"listbox\" aria-autocomplete=\"list\" type=\"search\" value=\"\"></div><div class=\"ant-select-suffix\"><span role=\"img\" aria-label=\"down\" class=\"anticon anticon-down\"><svg viewBox=\"64 64 896 896\" focusable=\"false\" data-icon=\"down\" width=\"1em\" height=\"1em\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M884 256h-75c-5.1 0-9.9 2.5-12.9 6.6L512 654.2 227.9 262.6c-3-4.1-7.8-6.6-12.9-6.6h-75c-6.5 0-10.3 7.4-6.5 12.7l352.6 486.1c12.8 17.6 39 17.6 51.7 0l352.6-486.1c3.9-5.3.1-12.7-6.4-12.7z\"></path></svg></span></div></div></div><div class=\"ant-space-item\"><input placeholder=\"固定值(留空则空白)\" class=\"ant-input ant-input-sm css-dev-only-do-not-overr"
+  ],
+  "excelSelects": 1,
+  "excelOptions": [
+    "固定值",
+    "页签连表公式"
+  ],
+  "excelRowsAfterType": [
+    "<tr class=\"ant-table-row ant-table-row-level-0\" data-row-key=\"col_1\" role=\"button\" tabindex=\"0\" aria-disabled=\"false\" aria-roledescription=\"sortable\" aria-describedby=\"DndDescribedBy-0\" style=\"transition: transform linear;\"><td class=\"ant-table-cell\" style=\"text-align: center;\"><span role=\"img\" aria-label=\"holder\" class=\"anticon anticon-holder\" style=\"cursor: move; color: rgb(153, 153, 153); touch-action: none;\"><svg viewBox=\"64 64 896 896\" focusable=\"false\" data-icon=\"holder\" width=\"1em\" height=\"1em\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M300 276.5a56 56 0 1056-97 56 56 0 00-56 97zm0 284a56 56 0 1056-97 56 56 0 00-56 97zM640 228a56 56 0 10112 0 56 56 0 00-112 0zm0 284a56 56 0 10112 0 56 56 0 00-112 0zM300 844.5a56 56 0 1056-97 56 56 0 00-56 97zM640 796a56 56 0 10112 0 56 56 0 00-112 0z\"></path></svg></span></td><td class=\"ant-table-cell\"><input placeholder=\"显示列名\" class=\"ant-input ant-input-sm css-dev-only-do-not-override-ch9ese ant-input-outlined css-var-_r_0_ ant-input-css-var\" type=\"text\" value=\"\" style=\"\"></td><td class=\"ant-table-cell\"><input placeholder=\"col_key\" class=\"ant-input ant-input-sm css-dev-only-do-not-override-ch9ese ant-input-outlined css-var-_r_0_ ant-input-css-var\" type=\"text\" value=\"col_1\" style=\"font-family: Consolas, Monaco, monospace; font-size: 12px;\"></td><td class=\"ant-table-cell\"><div class=\"ant-space css-dev-only-do-not-override-ch9ese ant-space-horizontal ant-space-align-center css-var-_r_0_\" style=\"flex-wrap: wrap; gap: 6px;\"><div class=\"ant-space-item\"><span aria-live=\"polite\" style=\"width: 0px; height: 0px; position: absolute; overflow: hidden; opacity: 0;\">页签连表公式</span><div class=\"ant-select ant-select-sm ant-select-outlined css-var-_r_0_ ant-select-css-var css-dev-only-do-not-override-ch9ese ant-select-focused ant-select-single ant-select-show-arrow\" style=\"width: 150px;\"><div class=\"ant-select-content ant-select-content-has-value\" title=\"页签连表公式\">页签连表公式<input id=\"_r_5d_\" readonly=\"\" autocomplete=\"off\" class=\"ant-select-input\" role=\"combobox\" aria-expanded=\"false\" aria-haspopup=\"listbox\" aria-autocomplete=\"list\" type=\"search\" value=\"\" style=\"\"></div><div class=\"ant-select-suffix\"><span role=\"img\" aria-label=\"down\" class=\"anticon anticon-down\"><svg viewBox=\"64 64 896 896\" focusable=\"false\" data-icon=\"down\" width=\"1em\" height=\"1em\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M884 256h-75c-5.1 0-9.9 2.5-12.9 6.6L512 654.2 227.9 262.6c-3-4.1-7.8-6.6-12.9-6.6h-75c-6.5 0-10.3 7.4-6.5 12.7l352.6 486.1c12.8 17.6 39 1"
+  ],
+  "excelButtons": [
+    "",
+    "",
+    "新建",
+    "新建目录",
+    "停用 / 启用",
+    "删 除",
+    "保存全部草稿 (2)",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "配置帮助",
+    "保 存",
+    "添加列",
+    "配置公式",
+    "",
+    ""
+  ],
+  "cfgCount": 1,
+  "drawerTitles": [
+    "配置页签连表公式"
+  ],
+  "excelDrawerText": "配置页签连表公式\n取 消\n保 存\n页签组件与可选字段\n点击插入到右侧公式 · 行键不可比的明细置灰\n宿主行键 [—]；明细点击即插；更细页签明细需自行套 SUM/AVG 等聚合函数（或写 SUM(宿主列 * 细页签列) 行级聚合），否则一行命中多行报错；不可比页签仅整页签小计可用。\nRP0916宿主 [COMP-2613]\n行键: 销售料号 + 料号\n明细\n数量\n成本\n小计列\n成本(小计)\n页签总计\nRP0916宿主(总计)\nRP0916加工费 [COMP-2614]\n行键: 销售料号 + 料号\n明细\n加工费\n备注数\n小计列\n加工费(小计)\n页签总计\nRP0916加工费(总计)\nRP0916工序 [COMP-2615]\n行键: 工序\n明细\n工时\n页签总计\nRP0916工序(总计)\nRP0916小计 [COMP-2616]\n行键:\n明细\n页签总计\nRP0916小计(总计)\nRP0916Excel [COMP-2617]\n行键:\n明细(本页签·同行)\n页签总计\nRP0916Excel(总计)\n公式表达式\n列来源：页签连表公式 · 单卡片单值 · 行键自动对齐(全外连·缺补0) · 明细默认按对齐行求和\n清空表达式\n块底色 = 引用语义\n普通引用 · [页签.列]\n小计 · [页签.列(小计)]\n总计\n本页签\n非法\n括号字色 = 配对深度\n( )\n第1层\n( )\n第2层\n( )\n第3层\n( )\n第4层\n光标停在括号上 → 同一对加黄底\n运算符\n+\n-\n*\n/\n(\n)\n函数\nSUM\nAVG\nMIN\nMAX\nCOUNT",
+  "excelEditor": {
+    "raw": "[RP0916加工费.加工费(小计)]",
+    "display": "RP0916加工费·加工费(小计)",
+    "blocks": [
+      {
+        "display": "RP0916加工费·加工费(小计)",
+        "raw": "[RP0916加工费.加工费(小计)]",
+        "bg": "rgb(255, 251, 230)",
+        "border": "rgb(255, 213, 145)",
+        "color": "yellow"
+      }
+    ]
+  },
+  "drawerAfterSave": false,
+  "excelRowsAfterSave": [
+    "<tr class=\"ant-table-row ant-table-row-level-0\" data-row-key=\"col_1\" role=\"button\" tabindex=\"0\" aria-disabled=\"false\" aria-roledescription=\"sortable\" aria-describedby=\"DndDescribedBy-0\" style=\"transition: transform linear;\"><td class=\"ant-table-cell\" style=\"text-align: center;\"><span role=\"img\" aria-label=\"holder\" class=\"anticon anticon-holder\" style=\"cursor: move; color: rgb(153, 153, 153); touch-action: none;\"><svg viewBox=\"64 64 896 896\" focusable=\"false\" data-icon=\"holder\" width=\"1em\" height=\"1em\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M300 276.5a56 56 0 1056-97 56 56 0 00-56 97zm0 284a56 56 0 1056-97 56 56 0 00-56 97zM640 228a56 56 0 10112 0 56 56 0 00-112 0zm0 284a56 56 0 10112 0 56 56 0 00-112 0zM300 844.5a56 56 0 1056-97 56 56 0 00-56 97zM640 796a56 56 0 10112 0 56 56 0 00-112 0z\"></path></svg></span></td><td class=\"ant-table-cell\"><input placeholder=\"显示列名\" class=\"ant-input ant-input-sm css-dev-only-do-not-override-ch9ese ant-input-outlined css-var-_r_0_ ant-input-css-var\" type=\"text\" value=\"\" style=\"\"></td><td class=\"ant-table-cell\"><input placeholder=\"col_key\" class=\"ant-input ant-input-sm css-dev-only-do-not-override-ch9ese ant-input-outlined css-var-_r_0_ ant-input-css-var\" type=\"text\" value=\"col_1\" style=\"font-family: Consolas, Monaco, monospace; font-size: 12px;\"></td><td class=\"ant-table-cell\"><div class=\"ant-space css-dev-only-do-not-override-ch9ese ant-space-horizontal ant-space-align-center css-var-_r_0_\" style=\"flex-wrap: wrap; gap: 6px;\"><div class=\"ant-space-item\"><div class=\"ant-select ant-select-sm ant-select-outlined css-var-_r_0_ ant-select-css-var css-dev-only-do-not-override-ch9ese ant-select-single ant-select-show-arrow\" style=\"width: 150px;\"><div class=\"ant-select-content ant-select-content-has-value\" title=\"页签连表公式\">页签连表公式<input id=\"_r_5d_\" readonly=\"\" autocomplete=\"off\" class=\"ant-select-input\" role=\"combobox\" aria-expanded=\"false\" aria-haspopup=\"listbox\" aria-autocomplete=\"list\" type=\"search\" value=\"\" style=\"\"></div><div class=\"ant-select-suffix\"><span role=\"img\" aria-label=\"down\" class=\"anticon anticon-down\"><svg viewBox=\"64 64 896 896\" focusable=\"false\" data-icon=\"down\" width=\"1em\" height=\"1em\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M884 256h-75c-5.1 0-9.9 2.5-12.9 6.6L512 654.2 227.9 262.6c-3-4.1-7.8-6.6-12.9-6.6h-75c-6.5 0-10.3 7.4-6.5 12.7l352.6 486.1c12.8 17.6 39 17.6 51.7 0l352.6-486.1c3.9-5.3.1-12.7-6.4-12.7z\"></path></svg></span></div></div></div><div class=\"ant-space-item\"><button type=\"button\" cla"
+  ],
+  "reqsPageSave": [
+    "PUT http://localhost:5292/api/cpq/components/17d036b7-9b1b-449a-963c-b3d9c526272b {\"name\":\"RP0916Excel\",\"fields\":[],\"formulas\":[],\"excelColumns\":\"[{\\\"col_key\\\":\\\"col_1\\\",\\\"title\\\":\\\"\\\",\\\"source_type\\\":\\\"TAB_JOIN_FORMULA\\\",\\\"hidden\\\":false,\\\"expression\\\":\\\"[RP0916加工费.加工费(小计)]\\\",\\\"tabs\\\":[{\\\"alias\\\":\\\"RP0916加工费\\\",\\\"tabKey\\\":\\\"824ce699-80a4-4e81-9580-556e23619920\\\",\\\"rowKeyFields\\\":[\\\"销售料号\\\",\\\"料号\\\"]}]}]\"}"
+  ],
+  "excelColumnsDb": "[{\"tabs\": [{\"alias\": \"RP0916加工费\", \"tabKey\": \"824ce699-80a4-4e81-9580-556e23619920\", \"rowKeyFields\": [\"销售料号\", \"料号\"]}], \"title\": \"\", \"hidden\": false, \"col_key\": \"col_1\", \"expression\": \"[RP0916加工费.加工费(小计)]\", \"source_type\": \"TAB_JOIN_FORMULA\"}]"
+}

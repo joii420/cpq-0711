@@ -1,0 +1,12 @@
+{
+  "v1.0": {
+    "hint": true,
+    "version": "1.0",
+    "line": "导入包是旧格式(bundleVersion 1.0)，不含取数配置器信息 / bundle 版本\t1.0旧格式\tchecksum\t校验通过"
+  },
+  "v1.1": {
+    "hint": false,
+    "version": null,
+    "line": ""
+  }
+}

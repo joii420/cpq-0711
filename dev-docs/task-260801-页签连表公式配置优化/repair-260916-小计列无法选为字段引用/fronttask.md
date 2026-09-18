@@ -16,7 +16,11 @@
 | **F-6** | AC-18 | `src/pages/template/TabJoinFormulaDrawer.tsx` `buildColumn`（现 `:368-388`）：提取页签引用串时同时去掉 `(小计)` 后缀（与现有去 `(总计)` 同处理） |
 | **F-7** | AC-14, AC-15 | `src/pages/quotation/buildExcelSnapshot.ts` 的 `TAB_JOIN_FORMULA` 分支：求值口径改为与后端 `TabJoinPlanEvaluator.evaluateColumn` 一致（`问题说明.md` 5.3 五条规则）。实现方式自定（可移植为纯函数，放在 `src/pages/quotation/` 下新文件）。🚫 `CARD_FORMULA` 分支不改。🚫 不改 `src/utils/formulaEngine.ts`（AC-12②）。现网 8 列在现有报价单上的值必须不变（AC-15⑤） |
 | **F-8** | AC-14 | 共享对拍夹具前端副本 `src/pages/quotation/__fixtures__/tabjoin-excel-cases.json` + 读取它的测试。**夹具内容由后端工程师 B-5 定稿后逐字节拷贝**，前端不单独编写；两份 `sha256sum` 必须相同 |
-| **F-9** | AC-12 | 自测：改动涉及的既有单测按 `test.md` §5「允许调整的既有断言清单」调整（只许改那两类），新增覆盖 F-1~F-4、F-7 的单测；`formulaSerialize.ts` 文件头语法说明（`:11-21`）按 5.1 更新 |
+| ~~**F-10**~~ | ~~AC-16~~ | **D-15 撤销**：`ComponentImportDrawer.tsx` 与 `componentImportLegacy.repair260916.test.ts` 恢复/删除，回到 master 原样。以下为原内容，仅留痕：（`D-7` 开发期补入）`src/pages/component/ComponentImportDrawer.tsx:170`：`isLegacyBundle` 改为「`bundleVersion` 缺失，或按版本号比较低于 `1.1`」才为真（`1.1`、`1.2` 及更高均不算旧格式）；提示文案不变。补一个单测覆盖 `undefined` / `1.0` / `1.1` / `1.2` 四种输入 |
+| **F-11** | AC-18 | （D-11、D-9）`TabJoinFormulaDrawer.tsx` Excel 保存分支：保存前按 `问题说明.md` 5.1 拦截非法 `(小计)` 写法（文案逐字同 5.1，可复用 F-1 的判定），并拦截 SUMIF / COUNTIF / AVGIF / MINIF / MAXIF，文案 `Excel 列暂不支持 SUMIF 类函数（SUMIF / COUNTIF / AVGIF / MINIF / MAXIF）`；被拒时 `excelColumns` 不变 |
+| **F-12** | AC-18 | （D-9）`tabjoin/FormulaEditorPanel.tsx`：SUMIF 类函数按钮组对 `componentType === 'EXCEL'` 不渲染；页签组件、小计组件不变 |
+| **F-13** | AC-14 | `tabJoinExcelEval.ts` 补齐后端支持的取模 `%` 与比较运算；按 D-10 同步后端除法修正（浮点字面量按十进制文本转精确数后相除，不再抛错）；共享夹具由后端 B-5 追加 g 组用例后重新逐字节拷贝，前端测试随之覆盖 |
+| **F-9** | AC-12 | 自测：改动涉及的既有单测按 `test.md` §5「允许调整的既有断言清单」调整（只许改清单列出的类型与用例），新增覆盖 F-1~F-4、F-7 的单测；`formulaSerialize.ts` 文件头语法说明（`:11-21`）按 5.1 更新 |
 
 ## 协议检查点（来自 `问题说明.md` 5.2，前端部分）
 
@@ -33,6 +37,9 @@
 - [ ] P9 图例 / 占位 → F-5
 - [ ] P10 `buildColumn` → F-6
 - [ ] P11 Excel 快照求值 → F-7
+- [ ] ~~P16b 导入抽屉「旧格式」判断 → F-10~~（D-15 撤销，确认已恢复原样）
+- [ ] P22 SUMIF 按钮组对 Excel 隐藏 → F-12
+- [ ] P23 Excel 保存拦截 → F-11
 - [ ] 全仓再扫一遍：`/usr/bin/grep -arn "(总计)\|subtotalCols" cpq-frontend/src --include=*.ts --include=*.tsx`，确认没有第 12 处按文字判小计的地方（有则停下报告）
 
 ## 不改的文件（及原因）
@@ -43,6 +50,7 @@
 | `QuotationStep2.tsx` / `ReadonlyProductCard.tsx` / `QuotationWizard.tsx` 等渲染主链路 | 页签公式存的是 token，不经过文字解析；本返修不改 token 结构 |
 | `src/components/formula/FormulaZone.tsx` | 按 token 显示，不经过文字写法 |
 | `src/pages/component/ComponentManagement.tsx` | 公式列表调用 `tokensToDrawerExpression`，随 F-2 自动生效（AC-4），本文件无需改 |
+| `src/pages/component/ComponentImportDrawer.tsx` | D-15：导出包版本不升，导入抽屉判断保持原样（F-10 撤销） |
 
 ## 自检口径
 

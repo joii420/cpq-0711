@@ -201,7 +201,7 @@
         <div class="editor" style="margin-top:14px">SUM<span class="p0">(</span><span class="blk yellow">RP0916加工费·加工费(小计)</span><span class="p0">)</span></div>
         <div class="msg"><span class="ic">✕</span>SUM() 里不能再对小计求和：[RP0916加工费.加工费(小计)] 已是整列小计</div>
         <div class="ann">第 4 例的块本身是合法的小计引用（黄色），错在外层 <code>SUM</code>，所以只在保存时拦截。
-          行级写法 <code>SUM([RP0916宿主.数量] * [RP0916加工费.加工费(小计)])</code> 合法，可以保存。</div>
+          行级写法 <code>SUM([RP0916加工费.备注数] * [RP0916加工费.加工费(小计)])</code> 合法，可以保存（行级写法须至少引用一个来源页签的明细列，现行规则不变；2026-09-17 更正，原标注的例子不含来源明细列，属原型画错）。</div>
       </div>
     </div>
   </div>
@@ -291,8 +291,9 @@
         <div class="exprLabel"><b>公式表达式</b><span class="ok">✓ 括号配对正确</span></div>
         <div class="editor"><span class="blk yellow">物料·材料成本(小计)</span></div>
         <div class="ann"><ol>
-          <li>现有 Excel 列 <code>[物料.材料成本]</code> 升级后自动改写为 <code>[物料.材料成本(小计)]</code>，打开即如上图，值不变。</li>
+          <li>现有 Excel 列 <code>[物料.材料成本]</code> 升级后<b>不自动改写</b>（D-15），由用户手动改为 <code>[物料.材料成本(小计)]</code>，改后如上图；单独一项时两种写法数值相同。</li>
           <li>在 Excel 列里写不带后缀的 <code>[物料.材料成本]</code>（蓝色）= 各行相加；页面与后端算出同一个数。</li>
+          <li>Excel 组件的公式工具条<b>不显示</b> SUMIF / COUNTIF / AVGIF / MINIF / MAXIF 按钮；手写这类函数或非法的「(小计)」写法，点保存会被拒并提示（文案见问题说明 5.1）。</li>
         </ol></div>
       </div>
     </div>
@@ -312,7 +313,7 @@
     <div class="right">
       <div class="exprLabel"><b>公式表达式</b></div>
       <div class="editor ph">例:[投料.金额] * [加工.工时] + [回料.金额(小计)] + [回料(总计)]</div>
-      <div class="ann">公式框为空时的占位文字：在现状基础上加入 <code>[回料.金额(小计)]</code> 示例。保存按钮在公式为空时的状态与现状一致。</div>
+      <div class="ann">⚠️ 2026-09-17 更正（D-16）：上面这行灰字<b>页面上不显示</b> —— 公式框的占位文字只写在元素属性里，现状（自该输入框首次实现起）就没有样式把它显示出来，本原型原先画成「显示」是画错了。用户裁决接受现状，不补显示。代码里的占位文字已改为这句（含 <code>[回料.金额(小计)]</code> 示例），仅供读屏等场景读取。保存按钮在公式为空时的状态与现状一致。</div>
     </div>
   </div>
 

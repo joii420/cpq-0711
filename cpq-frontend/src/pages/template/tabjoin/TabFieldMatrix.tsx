@@ -1,7 +1,7 @@
 import React from 'react';
 import { Tag, Tooltip, Typography, Space } from 'antd';
 import type { TabDef } from '../../../services/tabJoinFormulaService';
-import { comparable } from '../../component/formulaSerialize';
+import { comparable, SUBTOTAL_SUFFIX } from '../../component/formulaSerialize';
 
 const { Text } = Typography;
 
@@ -161,8 +161,10 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, onInsert, selfRowKeyFields }
                   })}
                 </Space>
 
-                {/* 小计列（组件小计，标量引用；插入 [alias.col]，序列化为 component_subtotal） */}
-                {def.subtotalCols.length > 0 && (
+                {/* 小计列（组件小计，标量引用；插入 [页签.列(小计)]，序列化为 component_subtotal）。
+                    repair-260916：本页签卡片不渲染本组（本页签自身小计不可引用）；
+                    插入文字必须带 (小计)，否则与「明细」组插入的本行取值 [页签.列] 无法区分。 */}
+                {!def.self && def.subtotalCols.length > 0 && (
                   <Space
                     wrap
                     style={{
@@ -187,7 +189,7 @@ const TabFieldMatrix: React.FC<Props> = ({ tabDefs, onInsert, selfRowKeyFields }
                           padding: '3px 9px',
                           userSelect: 'none',
                         }}
-                        onClick={() => onInsert(`[${ref}.${f}]`)}
+                        onClick={() => onInsert(`[${ref}.${f}${SUBTOTAL_SUFFIX}]`)}
                       >
                         {f}(小计)
                       </Tag>

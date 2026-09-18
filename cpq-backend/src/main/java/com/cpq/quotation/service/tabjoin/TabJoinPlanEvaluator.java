@@ -14,24 +14,41 @@ public class TabJoinPlanEvaluator {
     // 公共令牌解析（DRY）
     // ─────────────────────────────────────────────────────────────────
 
+    /** Scalar suffix: whole-tab total ([tab(总计)]) or column subtotal ([tab.col(总计)]). */
+    static final String SUFFIX_TOTAL = "(总计)";
+    /** repair-260916: column subtotal suffix ([tab.col(小计)]), same meaning as [tab.col(总计)]. */
+    static final String SUFFIX_SUBTOTAL = "(小计)";
+    /** repair-260916: error message for [tab(小计)] (no column name); must match 问题说明 5.1 verbatim. */
+    public static final String MSG_SUBTOTAL_WITHOUT_COLUMN =
+        "「(小计)」要写在列名后面，如 [页签.列(小计)]；整页签合计请写 [页签(总计)]";
+
     /**
      * 公式令牌解析结果。
      * raw    = 原文（trim 后）
-     * total  = 是否以"(总计)"结尾
+     * total  = 是否以"(总计)"或"(小计)"结尾（标量令牌）
      * alias  = "别名.列名" 的 别名 部分；无点时 alias=body
      * column = "别名.列名" 的 列名 部分；无点时 column=null
-     *          total=true 且 column!=null → 列小计；total=true 且 column==null → 页签总计；
+     *          total=true 且 column!=null → 列小计；total=true 且 column==null → 页签总计（仅 "(总计)"）；
      *          total=false → 明细行令牌，alias 即页签别名
      */
     record Tok(String raw, boolean total, String alias, String column) {}
 
+    /**
+     * repair-260916：识别 "(小计)" 后缀 —— 与带列名的 "(总计)" 同义（列小计）。
+     * "[页签(小计)]"（无列名）非法 → IllegalArgumentException。
+     */
     static Tok parseTok(String raw) {
         raw = raw.trim();
-        boolean total = raw.endsWith("(总计)");
-        String body = total ? raw.substring(0, raw.length() - "(总计)".length()) : raw;
+        String suffix = raw.endsWith(SUFFIX_TOTAL) ? SUFFIX_TOTAL
+                      : raw.endsWith(SUFFIX_SUBTOTAL) ? SUFFIX_SUBTOTAL : null;
+        boolean total = suffix != null;
+        String body = total ? raw.substring(0, raw.length() - suffix.length()) : raw;
         int dot = body.indexOf('.');
         String alias  = dot >= 0 ? body.substring(0, dot) : body;
         String column = dot >= 0 ? body.substring(dot + 1) : null;
+        if (SUFFIX_SUBTOTAL.equals(suffix) && (column == null || column.isBlank())) {
+            throw new IllegalArgumentException(MSG_SUBTOTAL_WITHOUT_COLUMN);
+        }
         return new Tok(raw, total, alias, column);
     }
 
@@ -85,7 +102,7 @@ public class TabJoinPlanEvaluator {
 
     /**
      * v2 求值：按顶层 +/- 拆加减项；含"裸明细"(未被聚合函数圈住)的项→对齐行逐行算再求和；
-     * 否则(明细全在聚合内/纯标量)→算一次。total 令牌(以"(总计)"结尾)从 scalars 取，detail 令牌逐行取。
+     * 否则(明细全在聚合内/纯标量)→算一次。total 令牌(以"(总计)"/"(小计)"结尾)从 scalars 取，detail 令牌逐行取。
      * @param alignedRows 行键对齐后的宽行（键 别名.字段）
      * @param scalars     总计令牌(raw,如 "回料(总计)"/"投料.金额(总计)")→值
      */
@@ -126,7 +143,7 @@ public class TabJoinPlanEvaluator {
         return out;
     }
 
-    /** 项内去掉聚合函数后仍有 detail 令牌(非 "(总计)" 结尾)？复用 parseTok 判断。 */
+    /** 项内去掉聚合函数后仍有 detail 令牌(非 "(总计)"/"(小计)" 结尾)？复用 parseTok 判断。 */
     private boolean hasBareDetail(String term) {
         String stripped = blankOutAggregates(term);
         java.util.regex.Matcher m = TOKEN.matcher(stripped);
@@ -184,7 +201,7 @@ public class TabJoinPlanEvaluator {
     }
 
     /**
-     * 单行求值：detail 令牌→该行值(缺0)；total 令牌("(总计)"结尾)→scalars(缺0)；JEXL(SafeArithmetic)。
+     * 单行求值：detail 令牌→该行值(缺0)；total 令牌("(总计)"/"(小计)"结尾)→scalars(缺0)；JEXL(SafeArithmetic)。
      * 复用 parseTok 判断 total。使用 StringBuilder（JDK9+ Matcher 支持）。
      */
     private java.math.BigDecimal evalRow(String expr, Map<String, Object> row,
@@ -299,7 +316,7 @@ public class TabJoinPlanEvaluator {
         while (m.find()) {
             Tok tok = parseTok(m.group(1));
             if (tok.total()) {
-                // 列小计（alias.column(总计)）或页签总计（alias(总计)）
+                // 列小计（alias.column(总计) / alias.column(小计)）或页签总计（alias(总计)）
                 java.math.BigDecimal s;
                 if (tok.column() != null) {
                     s = provider.subtotalOfColumn(tabKeyOf.get(tok.alias()), tok.column());

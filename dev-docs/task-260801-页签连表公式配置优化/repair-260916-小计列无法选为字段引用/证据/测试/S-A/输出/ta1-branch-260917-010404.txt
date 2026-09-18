@@ -1,0 +1,31 @@
+# T-A1 AC-11 前端  impl=branch root=/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix  at=2026-09-17T08:04:04.243Z
+[branch-copy] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix HEAD=ba27a776 未提交改动(formulaSerialize/formulaEngine)='M cpq-frontend/src/pages/component/formulaSerialize.ts'
+PRE-OK api.md §5 三个函数均可导入
+PRE-OK snap.jsonl 非空（9 行）
+PRE-OK 快照含 COMP-0002 且字段非空
+PRE-OK 快照含 COMP-0001 且字段非空
+PRE-OK 快照含 COMP-0003 且字段非空
+PRE-OK 快照含 COMP-0004 且字段非空
+PRE-OK COMP-0002 自身行键非空：["销售料号","料号"]
+tabDefs = [{"alias":"COMP-0002","tabKey":"b3445979-e3d6-4cdb-ab2d-53758b5f2eb2","componentId":"b3445979-e3d6-4cdb-ab2d-53758b5f2eb2","componentName":"物料","rowKeyFields":["销售料号","料号"],"detailFields":["组成数量","材料毛重","材料净重","材料占比（%）","损耗率（%）","来料回收费","来料财务费","材料成本","材料损耗成本","来料损耗率","来料加工费","回收成本","铆钉额外费用"],"allFields":["销售料号","料号","材料名","产出类型","组成数量","材料毛重","材料净重","单位","材料占比（%）","损耗率（%）","来料回收费","来料财务费","材料成本","材料损耗成本","来料损耗率","来料加工费","回收成本","铆钉额外费用"],"subtotalCols":["材料成本","材料损耗成本","回收成本","铆钉额外费用"],"self":true},{"alias":"COMP-0001","tabKey":"9612f71d-a5e3-48ce-b1d7-7dfc456125a7","componentId":"9612f71d-a5e3-48ce-b1d7-7dfc456125a7","componentName":"产品","rowKeyFields":["销售料号"],"detailFields":["单重","汇率","税率","管理费","A","B"],"allFields":["销售料号","品名","规格","尺寸","单重","客户产品编号","客户料号名称","客户图号","汇率","税率","管理费","A","B"],"subtotalCols":["税率","管理费"]},{"alias":"COMP-0003","tabKey":"5d5b34f8-a4ae-4704-a91b-aab7d9316e71","componentId":"5d5b34f8-a4ae-4704-a91b-aab7d9316e71","componentName":"材料成本","rowKeyFields":["销售料号","料号","元素"],"detailFields":["项次","组成含量（%）","损耗率%","毛用量","元素单价","税后单价"],"allFields":["销售料号","料号","材料名","项次","元素","组成含量（%）","损耗率%","毛用量","毛用量单位","元素单价","税后单价"],"subtotalCols":[]},{"alias":"COMP-0004","tabKey":"4db28822-85c6-4522-ac62-61ef2393a99c","componentId":"4db28822-85c6-4522-ac62-61ef2393a99c","componentName":"来料固定加工费","rowKeyFields":["销售料号","料号"],"detailFields":["项次","加工费"],"allFields":["销售料号","料号","材料名","项次","加工费"],"subtotalCols":["加工费"]}]
+PRE-OK COMP-0002「非银点类材料成本公式」token 非空（17）
+PRE-OK 原公式恰含 1 处 component_subtotal(COMP-0004.加工费)（实际 1）
+回显 text0 = [材料毛重] * (SUM([材料成本.组成含量（%）] / 100 * [材料成本.税后单价]) * (1 + [来料损耗率] / 100) + [来料固定加工费.加工费(小计)] / [产品.税率(小计)])
+PRE-OK 回显文字非空
+PASS [AC-11①] 回显中 [来料固定加工费.加工费(小计)] 出现次数=1（应 1）
+INFO 原样往返与快照 token 逐字段相等
+改写 text1 = [材料毛重] * (SUM([材料成本.组成含量（%）] / 100 * [材料成本.税后单价]) * (1 + [来料损耗率] / 100) + [来料固定加工费.加工费] / [产品.税率(小计)])
+PRE-OK 改写后文字恰含 1 处不带后缀的加工费引用
+改写后引用加工费的 token = [{"path":[13],"token":{"type":"cross_tab_ref","source":"4db28822-85c6-4522-ac62-61ef2393a99c","sourceLabel":"来料固定加工费","target":"加工费","agg":"NONE","match":[{"a":"销售料号","b":"销售料号"},{"a":"料号","b":"料号"}]}}]
+PASS [AC-11②] 该项 type=cross_tab_ref agg=NONE（应 cross_tab_ref / NONE，且唯一；实际命中 1）
+eval 不改写(快照原 token): raw="0.463735546257" r9=0.463735546 crossTabError=
+PRE-OK 不改写(快照原 token) 求值有结果且无 crossTabError
+PASS [AC-11④] 不改写 = 0.463735546（应 0.463735546）
+eval 不改写(回显→解析往返): raw="0.463735546257" r9=0.463735546 crossTabError=
+PRE-OK 不改写(回显→解析往返) 求值有结果且无 crossTabError
+PASS [AC-11④-往返] 原样往返后 = 0.463735546（应 0.463735546）
+eval 改写后: raw="0.212585103779" r9=0.212585104 crossTabError=
+PRE-OK 改写后 求值有结果且无 crossTabError
+PASS [AC-11③] 改写后 = 0.212585104（应 0.212585104）
+
+==== SUMMARY: 5 checks, 5 pass, 0 fail ====

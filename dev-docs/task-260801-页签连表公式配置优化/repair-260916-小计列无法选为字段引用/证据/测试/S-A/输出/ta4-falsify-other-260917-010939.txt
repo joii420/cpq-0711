@@ -1,0 +1,198 @@
+# T-A4 AC-13  at=2026-09-17T08:09:43.563Z  api=http://localhost:8081  branchRoot=/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix  falsify='other'
+[master-copy] /home/joii/project/cpq/cpq-frontend/src/pages/component/formulaSerialize.ts  主工作区分支=master master=2ccdc5d9 该文件最后提交=354a7149 status='' 与master一致=true
+PRE-OK 主工作区当前分支为 master（实际 master）
+PRE-OK 主工作区 cpq-frontend/src/pages/component/formulaSerialize.ts 等于 master 且无本地改动
+[master-copy] 主工作区 cpq-frontend/src 无已跟踪文件本地改动
+[branch-copy] /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix HEAD=ba27a776 未提交改动(formulaSerialize/formulaEngine)='M cpq-frontend/src/pages/component/formulaSerialize.ts'
+PRE-OK 两份 formulaSerialize 均可导入
+[db] cpq_db_0724 只读采样时刻 2026-09-17 08:09:43.966061+00
+PRE-OK 库中 COMP-0001 恰 1 行（实际 1）
+PRE-OK 库中 COMP-0002 恰 1 行（实际 1）
+PRE-OK 库中 COMP-0003 恰 1 行（实际 1）
+PRE-OK 库中 COMP-0009 恰 1 行（实际 1）
+PRE-OK 库中 COMP-2506 恰 1 行（实际 1）
+PRE-OK source id 形如 uuid：af497796-fd09-4975-b9e6-d4bb0cb59be7
+PRE-OK source id 形如 uuid：b3445979-e3d6-4cdb-ab2d-53758b5f2eb2
+PRE-OK source id 形如 uuid：57554055-0896-4cc8-be98-65e45b0a5985
+PRE-OK source id 形如 uuid：5d5b34f8-a4ae-4704-a91b-aab7d9316e71
+PRE-OK source id 形如 uuid：39fa3d9d-54b9-4605-93ca-dd38cbfa2831
+PRE-OK source id 形如 uuid：fa956c2f-58e7-446b-9f66-4ce77a9f96d9
+PRE-OK source id 形如 uuid：5c66b099-4f73-4b31-9e68-d2f723661346
+PRE-OK GET /api/cpq/components/9612f71d-a5e3-48ce-b1d7-7dfc456125a7 → 200
+PRE-OK COMP-0001 接口响应含 formulas
+PRE-OK COMP-0001 接口 formulas 与 cpq_db_0724 逐字段一致（不一致=后端不是这个库或采样期间被改）
+PRE-OK GET /api/cpq/components/9612f71d-a5e3-48ce-b1d7-7dfc456125a7/tab-defs → 200
+PRE-OK COMP-0001 tab-defs 非空（顶层键：code,message,data；条数 10）
+
+=== COMP-0001 产品 id=9612f71d-a5e3-48ce-b1d7-7dfc456125a7 公式 3 个 tabDefs 10 条 selfRowKeyFields=["销售料号"]
+--- 「管理费公式」 branch: SUMIF([其他费用.类别] = '管理费', [其他费用.比例]) / 100 * (SUMIF([物料.产出类型] = '非银点类', [物料.材料成本]) + [组装加工费(总计)] - [物料.回收成本(小计)])
+    master: SUMIF([其他费用.类别] = '管理费', [其他费用.比例]) / 100 * (SUMIF([物料.产出类型] = '非银点类', [物料.材料成本]) + [组装加工费(总计)] - [物料.回收成本])
+PASS [AC-13 往返可执行 COMP-0001「管理费公式」] branch 往返无异常
+PASS [AC-13① A|COMP-0001|管理费公式|COMP-0002|回收成本] 往返后逐字段相等 {"component_code":"COMP-0002","label":"物料·回收成本","tab_name":"COMP-0002","type":"component_subtotal","value":"回收成本"}
+PASS [AC-13② A|COMP-0001|管理费公式|COMP-0002|回收成本] 回显含 [物料.回收成本(小计)] 1 次（该公式同引用 1 处）
+FAIL [AC-13③ COMP-0001「管理费公式」] diff=$.0.__falsified: undefined ≠ true
+--- 「管理费抓取」 branch: SUMIF([其他费用.类别] = '管理费', [其他费用.比例]) / 100
+    master: SUMIF([其他费用.类别] = '管理费', [其他费用.比例]) / 100
+PASS [AC-13 往返可执行 COMP-0001「管理费抓取」] branch 往返无异常
+FAIL [AC-13③ COMP-0001「管理费抓取」] diff=$.0.__falsified: undefined ≠ true
+--- 「公式3」 branch: (SUMIF([物料.产出类型] = '非银点类', [物料.材料成本]) + [组装加工费(总计)] - [物料.回收成本(小计)])
+    master: (SUMIF([物料.产出类型] = '非银点类', [物料.材料成本]) + [组装加工费(总计)] - [物料.回收成本])
+PASS [AC-13 往返可执行 COMP-0001「公式3」] branch 往返无异常
+PASS [AC-13① A|COMP-0001|公式3|COMP-0002|回收成本] 往返后逐字段相等 {"component_code":"COMP-0002","label":"物料·回收成本","tab_name":"COMP-0002","type":"component_subtotal","value":"回收成本"}
+PASS [AC-13② A|COMP-0001|公式3|COMP-0002|回收成本] 回显含 [物料.回收成本(小计)] 1 次（该公式同引用 1 处）
+FAIL [AC-13③ COMP-0001「公式3」] diff=$.0.__falsified: undefined ≠ true
+PRE-OK GET /api/cpq/components/b3445979-e3d6-4cdb-ab2d-53758b5f2eb2 → 200
+PRE-OK COMP-0002 接口响应含 formulas
+PRE-OK COMP-0002 接口 formulas 与 cpq_db_0724 逐字段一致（不一致=后端不是这个库或采样期间被改）
+PRE-OK GET /api/cpq/components/b3445979-e3d6-4cdb-ab2d-53758b5f2eb2/tab-defs → 200
+PRE-OK COMP-0002 tab-defs 非空（顶层键：code,message,data；条数 10）
+
+=== COMP-0002 物料 id=b3445979-e3d6-4cdb-ab2d-53758b5f2eb2 公式 13 个 tabDefs 10 条 selfRowKeyFields=["销售料号","料号"]
+--- 「来料回收费取值公式」 branch: SUMIF([来料其他费用.料号] = [物料.料号] AND [来料其他费用.要素] = '来料回收费', [来料其他费用.比例])
+    master: SUMIF([来料其他费用.料号] = [物料.料号] AND [来料其他费用.要素] = '来料回收费', [来料其他费用.比例])
+PASS [AC-13 往返可执行 COMP-0002「来料回收费取值公式」] branch 往返无异常
+FAIL [AC-13③ COMP-0002「来料回收费取值公式」] diff=$.0.__falsified: undefined ≠ true
+--- 「来料财务费取值公式」 branch: SUMIF([来料其他费用.料号] = [物料.料号] AND [来料其他费用.要素] = '来料财务费', [来料其他费用.比例])
+    master: SUMIF([来料其他费用.料号] = [物料.料号] AND [来料其他费用.要素] = '来料财务费', [来料其他费用.比例])
+PASS [AC-13 往返可执行 COMP-0002「来料财务费取值公式」] branch 往返无异常
+FAIL [AC-13③ COMP-0002「来料财务费取值公式」] diff=$.0.__falsified: undefined ≠ true
+--- 「银点材料成本公式」 branch: (([材料占比（%）] / 100) * (SUM([材料成本.组成含量（%）] / 100 * [材料成本.税后单价] * (1 + [物料.来料损耗率] / 100) + [物料.来料加工费]))) * [材料净重] * [组成数量]
+    master: (([材料占比（%）] / 100) * (SUM([材料成本.组成含量（%）] / 100 * [材料成本.税后单价] * (1 + [物料.来料损耗率] / 100) + [物料.来料加工费]))) * [材料净重] * [组成数量]
+PASS [AC-13 往返可执行 COMP-0002「银点材料成本公式」] branch 往返无异常
+FAIL [AC-13③ COMP-0002「银点材料成本公式」] diff=$.0.__falsified: undefined ≠ true
+--- 「非银点类材料成本公式」 branch: [材料毛重] * (SUM([材料成本.组成含量（%）] / 100 * [材料成本.税后单价]) * (1 + [来料损耗率] / 100) + [来料固定加工费.加工费(小计)] / [产品.税率(小计)])
+    master: [材料毛重] * (SUM([材料成本.组成含量（%）] / 100 * [材料成本.税后单价]) * (1 + [来料损耗率] / 100) + [来料固定加工费.加工费] / [产品.税率])
+PASS [AC-13 往返可执行 COMP-0002「非银点类材料成本公式」] branch 往返无异常
+PASS [AC-13① A|COMP-0002|非银点类材料成本公式|COMP-0004|加工费] 往返后逐字段相等 {"component_code":"COMP-0004","label":"来料固定加工费·加工费","tab_name":"COMP-0004","type":"component_subtotal","value":"加工费"}
+PASS [AC-13② A|COMP-0002|非银点类材料成本公式|COMP-0004|加工费] 回显含 [来料固定加工费.加工费(小计)] 1 次（该公式同引用 1 处）
+PASS [AC-13① A|COMP-0002|非银点类材料成本公式|COMP-0001|税率] 往返后逐字段相等 {"component_code":"COMP-0001","label":"产品·税率","tab_name":"COMP-0001","type":"component_subtotal","value":"税率"}
+PASS [AC-13② A|COMP-0002|非银点类材料成本公式|COMP-0001|税率] 回显含 [产品.税率(小计)] 1 次（该公式同引用 1 处）
+FAIL [AC-13③ COMP-0002「非银点类材料成本公式」] diff=$.0.__falsified: undefined ≠ true
+--- 「材料损耗成本」 branch: [材料净重] * SUM([材料成本.组成含量（%）] / 100 * [材料成本.税后单价]) * [损耗率（%）] / 100 * [组成数量]
+    master: [材料净重] * SUM([材料成本.组成含量（%）] / 100 * [材料成本.税后单价]) * [损耗率（%）] / 100 * [组成数量]
+PASS [AC-13 往返可执行 COMP-0002「材料损耗成本」] branch 往返无异常
+FAIL [AC-13③ COMP-0002「材料损耗成本」] diff=$.0.__falsified: undefined ≠ true
+--- 「默认公式0」 branch: 0
+    master: 0
+PASS [AC-13 往返可执行 COMP-0002「默认公式0」] branch 往返无异常
+FAIL [AC-13③ COMP-0002「默认公式0」] diff=$.0.__falsified: undefined ≠ true
+--- 「来料损耗率取值公式」 branch: SUMIF([来料其他费用.料号] = [物料.料号] AND [来料其他费用.要素] = '来料损耗率', [来料其他费用.比例])
+    master: SUMIF([来料其他费用.料号] = [物料.料号] AND [来料其他费用.要素] = '来料损耗率', [来料其他费用.比例])
+PASS [AC-13 往返可执行 COMP-0002「来料损耗率取值公式」] branch 往返无异常
+FAIL [AC-13③ COMP-0002「来料损耗率取值公式」] diff=$.0.__falsified: undefined ≠ true
+--- 「来料加工费取值公式」 branch: SUMIF([来料其他费用.料号] = [物料.料号] AND [来料其他费用.要素] = '来料加工费', [来料其他费用.费用])
+    master: SUMIF([来料其他费用.料号] = [物料.料号] AND [来料其他费用.要素] = '来料加工费', [来料其他费用.费用])
+PASS [AC-13 往返可执行 COMP-0002「来料加工费取值公式」] branch 往返无异常
+FAIL [AC-13③ COMP-0002「来料加工费取值公式」] diff=$.0.__falsified: undefined ≠ true
+--- 「回收成本」 branch: ([材料毛重] - [材料净重]) * ((SUM([材料成本.组成含量（%）] / 100 * [材料成本.税后单价]) * (1 + [来料损耗率] / 100)) + [来料固定加工费.加工费(小计)] / [产品.税率(小计)]) * SUM([来料回收.回收值])
+    master: ([材料毛重] - [材料净重]) * ((SUM([材料成本.组成含量（%）] / 100 * [材料成本.税后单价]) * (1 + [来料损耗率] / 100)) + [来料固定加工费.加工费] / [产品.税率]) * SUM([来料回收.回收值])
+PASS [AC-13 往返可执行 COMP-0002「回收成本」] branch 往返无异常
+PASS [AC-13① A|COMP-0002|回收成本|COMP-0004|加工费] 往返后逐字段相等 {"component_code":"COMP-0004","label":"来料固定加工费·加工费","tab_name":"COMP-0004","type":"component_subtotal","value":"加工费"}
+PASS [AC-13② A|COMP-0002|回收成本|COMP-0004|加工费] 回显含 [来料固定加工费.加工费(小计)] 1 次（该公式同引用 1 处）
+PASS [AC-13① A|COMP-0002|回收成本|COMP-0001|税率] 往返后逐字段相等 {"component_code":"COMP-0001","label":"产品·税率","tab_name":"COMP-0001","type":"component_subtotal","value":"税率"}
+PASS [AC-13② A|COMP-0002|回收成本|COMP-0001|税率] 回显含 [产品.税率(小计)] 1 次（该公式同引用 1 处）
+FAIL [AC-13③ COMP-0002「回收成本」] diff=$.0.__falsified: undefined ≠ true
+--- 「铆钉额外费用」 branch: (([材料占比（%）] / 100 + [损耗率（%）] / 100) * SUM(([材料成本.组成含量（%）] / 100 * [材料成本.元素单价] * (1 + [物料.来料损耗率] / 100) + [物料.来料加工费]) / [产品.税率(小计)]) * ([来料财务费] + [来料回收费]) + [来料固定加工费.加工费(小计)])
+    master: (([材料占比（%）] / 100 + [损耗率（%）] / 100) * SUM(([材料成本.组成含量（%）] / 100 * [材料成本.元素单价] * (1 + [物料.来料损耗率] / 100) + [物料.来料加工费]) / [产品.税率]) * ([来料财务费] + [来料回收费]) + [来料固定加工费.加工费])
+PASS [AC-13 往返可执行 COMP-0002「铆钉额外费用」] branch 往返无异常
+PASS [AC-13① A|COMP-0002|铆钉额外费用|COMP-0001|税率] 往返后逐字段相等 {"component_code":"COMP-0001","label":"产品·税率","tab_name":"COMP-0001","type":"component_subtotal","value":"税率"}
+PASS [AC-13② A|COMP-0002|铆钉额外费用|COMP-0001|税率] 回显含 [产品.税率(小计)] 1 次（该公式同引用 1 处）
+PASS [AC-13① A|COMP-0002|铆钉额外费用|COMP-0004|加工费] 往返后逐字段相等 {"component_code":"COMP-0004","label":"来料固定加工费·加工费","tab_name":"COMP-0004","type":"component_subtotal","value":"加工费"}
+PASS [AC-13② A|COMP-0002|铆钉额外费用|COMP-0004|加工费] 回显含 [来料固定加工费.加工费(小计)] 1 次（该公式同引用 1 处）
+FAIL [AC-13③ COMP-0002「铆钉额外费用」] diff=$.0.__falsified: undefined ≠ true
+--- 「银点1.0」 branch: ([材料占比（%）] / 100 * (SUM([材料成本.组成含量（%）] / 100 * [材料成本.元素单价] * (1 + [物料.来料损耗率] / 100) + [物料.来料加工费])) / [产品.税率(小计)]) * [材料净重] * [组成数量]
+    master: ([材料占比（%）] / 100 * (SUM([材料成本.组成含量（%）] / 100 * [材料成本.元素单价] * (1 + [物料.来料损耗率] / 100) + [物料.来料加工费])) / [产品.税率]) * [材料净重] * [组成数量]
+PASS [AC-13 往返可执行 COMP-0002「银点1.0」] branch 往返无异常
+PASS [AC-13① A|COMP-0002|银点1.0|COMP-0001|税率] 往返后逐字段相等 {"component_code":"COMP-0001","label":"产品·税率","tab_name":"COMP-0001","type":"component_subtotal","value":"税率"}
+PASS [AC-13② A|COMP-0002|银点1.0|COMP-0001|税率] 回显含 [产品.税率(小计)] 1 次（该公式同引用 1 处）
+FAIL [AC-13③ COMP-0002「银点1.0」] diff=$.0.__falsified: undefined ≠ true
+--- 「零件材料成本」 branch: ((CSUM(材料成本) + CSUM(材料损耗成本)) * ([来料回收费] + [来料财务费]) / 100) + [来料固定加工费.加工费(小计)] * [材料净重] * [组成数量]
+    master: ((CSUM(材料成本) + CSUM(材料损耗成本)) * ([来料回收费] + [来料财务费]) / 100) + [来料固定加工费.加工费] * [材料净重] * [组成数量]
+PASS [AC-13 往返可执行 COMP-0002「零件材料成本」] branch 往返无异常
+PASS [AC-13① A|COMP-0002|零件材料成本|COMP-0004|加工费] 往返后逐字段相等 {"component_code":"COMP-0004","label":"来料固定加工费·加工费","tab_name":"COMP-0004","type":"component_subtotal","value":"加工费"}
+PASS [AC-13② A|COMP-0002|零件材料成本|COMP-0004|加工费] 回显含 [来料固定加工费.加工费(小计)] 1 次（该公式同引用 1 处）
+FAIL [AC-13③ COMP-0002「零件材料成本」] diff=$.0.__falsified: undefined ≠ true
+--- 「银点粉体类材料成本公式」 branch: (([材料占比（%）] / 100) * (SUM([材料成本.组成含量（%）] / 100 * [材料成本.税后单价] * (1 + [物料.来料损耗率] / 100) + [物料.来料加工费]))) * [材料净重] * [组成数量]
+    master: (([材料占比（%）] / 100) * (SUM([材料成本.组成含量（%）] / 100 * [材料成本.税后单价] * (1 + [物料.来料损耗率] / 100) + [物料.来料加工费]))) * [材料净重] * [组成数量]
+PASS [AC-13 往返可执行 COMP-0002「银点粉体类材料成本公式」] branch 往返无异常
+FAIL [AC-13③ COMP-0002「银点粉体类材料成本公式」] diff=$.0.__falsified: undefined ≠ true
+PRE-OK GET /api/cpq/components/5d5b34f8-a4ae-4704-a91b-aab7d9316e71 → 200
+PRE-OK COMP-0003 接口响应含 formulas
+PRE-OK COMP-0003 接口 formulas 与 cpq_db_0724 逐字段一致（不一致=后端不是这个库或采样期间被改）
+PRE-OK GET /api/cpq/components/5d5b34f8-a4ae-4704-a91b-aab7d9316e71/tab-defs → 200
+PRE-OK COMP-0003 tab-defs 非空（顶层键：code,message,data；条数 10）
+
+=== COMP-0003 材料成本 id=5d5b34f8-a4ae-4704-a91b-aab7d9316e71 公式 2 个 tabDefs 10 条 selfRowKeyFields=["销售料号","料号","元素"]
+--- 「税后单价公式」 branch: [元素单价] / [产品.税率(小计)]
+    master: [元素单价] / [产品.税率]
+PASS [AC-13 往返可执行 COMP-0003「税后单价公式」] branch 往返无异常
+PASS [AC-13① A|COMP-0003|税后单价公式|COMP-0001|税率] 往返后逐字段相等 {"component_code":"COMP-0001","label":"产品·税率","tab_name":"COMP-0001","type":"component_subtotal","value":"税率"}
+PASS [AC-13② A|COMP-0003|税后单价公式|COMP-0001|税率] 回显含 [产品.税率(小计)] 1 次（该公式同引用 1 处）
+FAIL [AC-13③ COMP-0003「税后单价公式」] diff=$.0.__falsified: undefined ≠ true
+--- 「不扣税单价公式」 branch: [元素单价]
+    master: [元素单价]
+PASS [AC-13 往返可执行 COMP-0003「不扣税单价公式」] branch 往返无异常
+FAIL [AC-13③ COMP-0003「不扣税单价公式」] diff=$.0.__falsified: undefined ≠ true
+PRE-OK GET /api/cpq/components/310fedcf-8b55-4744-ace4-33d8a0ef9ee2 → 200
+PRE-OK COMP-0009 接口响应含 formulas
+PRE-OK COMP-0009 接口 formulas 与 cpq_db_0724 逐字段一致（不一致=后端不是这个库或采样期间被改）
+PRE-OK GET /api/cpq/components/310fedcf-8b55-4744-ace4-33d8a0ef9ee2/tab-defs → 200
+PRE-OK COMP-0009 tab-defs 非空（顶层键：code,message,data；条数 10）
+
+=== COMP-0009 产品小计 id=310fedcf-8b55-4744-ace4-33d8a0ef9ee2 公式 1 个 tabDefs 10 条 selfRowKeyFields=[]
+--- 「小计1」 branch: [物料.材料成本(小计)] + [物料.材料损耗成本(小计)] - [物料.回收成本(小计)] + [其他费用(总计)] + [产品.管理费(小计)] + [组装加工费(总计)]
+    master: [物料.材料成本] + [物料.材料损耗成本] - [物料.回收成本] + [其他费用(总计)] + [产品.管理费] + [组装加工费(总计)]
+PASS [AC-13 往返可执行 COMP-0009「小计1」] branch 往返无异常
+PASS [AC-13① A|COMP-0009|小计1|COMP-0002|材料成本] 往返后逐字段相等 {"component_code":"COMP-0002","label":"物料·材料成本","tab_name":"COMP-0002","type":"component_subtotal","value":"材料成本"}
+PASS [AC-13② A|COMP-0009|小计1|COMP-0002|材料成本] 回显含 [物料.材料成本(小计)] 1 次（该公式同引用 1 处）
+PASS [AC-13① A|COMP-0009|小计1|COMP-0002|材料损耗成本] 往返后逐字段相等 {"component_code":"COMP-0002","label":"物料·材料损耗成本","tab_name":"COMP-0002","type":"component_subtotal","value":"材料损耗成本"}
+PASS [AC-13② A|COMP-0009|小计1|COMP-0002|材料损耗成本] 回显含 [物料.材料损耗成本(小计)] 1 次（该公式同引用 1 处）
+PASS [AC-13① A|COMP-0009|小计1|COMP-0002|回收成本] 往返后逐字段相等 {"component_code":"COMP-0002","label":"物料·回收成本","tab_name":"COMP-0002","type":"component_subtotal","value":"回收成本"}
+PASS [AC-13② A|COMP-0009|小计1|COMP-0002|回收成本] 回显含 [物料.回收成本(小计)] 1 次（该公式同引用 1 处）
+PASS [AC-13① A|COMP-0009|小计1|COMP-0001|管理费] 往返后逐字段相等 {"component_code":"COMP-0001","label":"产品·管理费","tab_name":"COMP-0001","type":"component_subtotal","value":"管理费"}
+PASS [AC-13② A|COMP-0009|小计1|COMP-0001|管理费] 回显含 [产品.管理费(小计)] 1 次（该公式同引用 1 处）
+FAIL [AC-13③ COMP-0009「小计1」] diff=$.1.__falsified: undefined ≠ true
+PRE-OK GET /api/cpq/components/76900c5f-9ae5-4517-848c-f92782bc4646 → 200
+PRE-OK COMP-2506 接口响应含 formulas
+PRE-OK COMP-2506 接口 formulas 与 cpq_db_0724 逐字段一致（不一致=后端不是这个库或采样期间被改）
+PRE-OK GET /api/cpq/components/76900c5f-9ae5-4517-848c-f92782bc4646/tab-defs → 200
+PRE-OK COMP-2506 tab-defs 非空（顶层键：code,message,data；条数 6）
+
+=== COMP-2506 BOM id=76900c5f-9ae5-4517-848c-f92782bc4646 公式 2 个 tabDefs 6 条 selfRowKeyFields=["销售料号","料号"]
+--- 「公式1」 branch: SUM([材质元素.材质成本]) * [组成数量] * [材料净重] * (1 + [损耗率（%）] / 100) * (1 + [材料管理费] / 100)
+    master: SUM([材质元素.材质成本]) * [组成数量] * [材料净重] * (1 + [损耗率（%）] / 100) * (1 + [材料管理费] / 100)
+PASS [AC-13 往返可执行 COMP-2506「公式1」] branch 往返无异常
+PASS [AC-13① B|COMP-2506|公式1|COMP-2507|材质成本] 往返后逐字段相等 {"agg":"SUM","match":[{"a":"销售料号","b":"销售料号"},{"a":"料号","b":"料号"}],"source":"fa956c2f-58e7-446b-9f66-4ce77a9f96d9","sourceLabel":"材质元素","target":"材质成本","type":"cross_tab_ref"}
+FAIL [AC-13③ COMP-2506「公式1」] diff=$.1.__falsified: undefined ≠ true
+--- 「公式2」 branch: SUMIF([其他费用.要素名称] = '材料管理费' AND [其他费用.销售料号] = [BOM.销售料号], [其他费用.比例（%）])
+    master: SUMIF([其他费用.要素名称] = '材料管理费' AND [其他费用.销售料号] = [BOM.销售料号], [其他费用.比例（%）])
+PASS [AC-13 往返可执行 COMP-2506「公式2」] branch 往返无异常
+FAIL [AC-13③ COMP-2506「公式2」] diff=$.0.__falsified: undefined ≠ true
+
+参与比对公式数=21  识别到引用=16（A=15 B=1）
+PASS [AC-13④ 公式数≥1] 实际 21
+PASS [AC-13④ 16 处全部命中] 缺 0：[]；清单外多出 0：[]
+逐项小结：①失败 A=0 B=0；③失败公式=21
+
+==== SUMMARY: 75 checks, 54 pass, 21 fail ====
+  FAIL [AC-13③ COMP-0001「管理费公式」] diff=$.0.__falsified: undefined ≠ true
+  FAIL [AC-13③ COMP-0001「管理费抓取」] diff=$.0.__falsified: undefined ≠ true
+  FAIL [AC-13③ COMP-0001「公式3」] diff=$.0.__falsified: undefined ≠ true
+  FAIL [AC-13③ COMP-0002「来料回收费取值公式」] diff=$.0.__falsified: undefined ≠ true
+  FAIL [AC-13③ COMP-0002「来料财务费取值公式」] diff=$.0.__falsified: undefined ≠ true
+  FAIL [AC-13③ COMP-0002「银点材料成本公式」] diff=$.0.__falsified: undefined ≠ true
+  FAIL [AC-13③ COMP-0002「非银点类材料成本公式」] diff=$.0.__falsified: undefined ≠ true
+  FAIL [AC-13③ COMP-0002「材料损耗成本」] diff=$.0.__falsified: undefined ≠ true
+  FAIL [AC-13③ COMP-0002「默认公式0」] diff=$.0.__falsified: undefined ≠ true
+  FAIL [AC-13③ COMP-0002「来料损耗率取值公式」] diff=$.0.__falsified: undefined ≠ true
+  FAIL [AC-13③ COMP-0002「来料加工费取值公式」] diff=$.0.__falsified: undefined ≠ true
+  FAIL [AC-13③ COMP-0002「回收成本」] diff=$.0.__falsified: undefined ≠ true
+  FAIL [AC-13③ COMP-0002「铆钉额外费用」] diff=$.0.__falsified: undefined ≠ true
+  FAIL [AC-13③ COMP-0002「银点1.0」] diff=$.0.__falsified: undefined ≠ true
+  FAIL [AC-13③ COMP-0002「零件材料成本」] diff=$.0.__falsified: undefined ≠ true
+  FAIL [AC-13③ COMP-0002「银点粉体类材料成本公式」] diff=$.0.__falsified: undefined ≠ true
+  FAIL [AC-13③ COMP-0003「税后单价公式」] diff=$.0.__falsified: undefined ≠ true
+  FAIL [AC-13③ COMP-0003「不扣税单价公式」] diff=$.0.__falsified: undefined ≠ true
+  FAIL [AC-13③ COMP-0009「小计1」] diff=$.1.__falsified: undefined ≠ true
+  FAIL [AC-13③ COMP-2506「公式1」] diff=$.1.__falsified: undefined ≠ true
+  FAIL [AC-13③ COMP-2506「公式2」] diff=$.0.__falsified: undefined ≠ true
